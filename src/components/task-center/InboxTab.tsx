@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Inbox as InboxIcon, CheckCheck, Archive, ClipboardList, Link2, Bot, Clock, Users, AlertTriangle, ChevronRight } from "lucide-react";
+import { Inbox as InboxIcon, CheckCheck, Archive, ArchiveRestore, ClipboardList, Link2, Bot, Clock, Users, AlertTriangle, ChevronRight } from "lucide-react";
 import { getInboxManager, type InboxItem, type InboxCategory } from "../../core/inbox/inbox";
 import { useLang } from "../../core/i18n/lang";
 import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project";
@@ -54,6 +54,15 @@ export function InboxTab() {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
   const [filter, setFilter] = useState<InboxCategory | "all">("all");
+  /**
+   * 显示已归档（第 44 轮）。
+   *
+   * "归档"是通知列表上唯一的移除入口，而它原来是**不可逆且看不见**的：
+   * 写 `archived = 1`、读路径恒传 `archived: 0` → 误点一次就等于永久删除。
+   * 存储层已有 `unarchive` 与 `includeArchived`，这里把它接到界面上。
+   */
+  const [showArchived, setShowArchived] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const projectId = useCurrentProjectId();
 
   const loadItems = useCallback(() => {
@@ -68,11 +77,12 @@ export function InboxTab() {
     setItems(mgr.list({
       projectId: pid,
       category: filter === "all" ? undefined : filter,
+      includeArchived: showArchived,
     }));
     // 徽标显示「项目整体未读」，不随筛选变化（P2-11）
     setTotalUnread(mgr.getUnreadCount(pid));
     // projectId 进依赖：面板打开期间切项目必须重查，否则会显示上一个项目的通知
-  }, [filter, projectId]);
+  }, [filter, projectId, showArchived]);
 
   useEffect(() => {
     loadItems();
@@ -105,6 +115,19 @@ export function InboxTab() {
 
   const handleArchive = (id: string) => {
     getInboxManager().archive(id);
+    loadItems();
+    // 如实告诉用户"它去哪了、怎么找回来" —— 原来这里什么都没有，于是"归档"看起来像删除
+    setNotice(zh ? "已归档。可用「显示已归档」找回。" : "Archived. Use “Show archived” to restore it.");
+  };
+
+  /** 取消归档（恢复）。失败必须如实提示，不能假装成功。 */
+  const handleUnarchive = (id: string) => {
+    const ok = getInboxManager().unarchive(id);
+    setNotice(
+      ok
+        ? zh ? "已恢复。" : "Restored."
+        : zh ? "恢复失败：写入未被接受，请稍后重试。" : "Restore failed: the write was not accepted. Try again.",
+    );
     loadItems();
   };
 
@@ -150,7 +173,32 @@ export function InboxTab() {
             <CheckCheck size={14} /> {zh ? "全部已读" : "Mark all read"}
           </button>
         )}
+        {/* 「显示已归档」：归档原来不可逆且看不见，这个开关是唯一的找回入口 */}
+        <label
+          style={{
+            display: "flex", alignItems: "center", gap: 4, fontSize: "var(--fs-sm)",
+            color: "var(--text-secondary)", cursor: "pointer",
+          }}
+          title={zh ? "已归档的通知默认不显示，但一直还在库里" : "Archived items are hidden but still in the database"}
+        >
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          {zh ? "显示已归档" : "Show archived"}
+        </label>
       </div>
+
+      {notice && (
+        <div
+          role="status"
+          onClick={() => setNotice(null)}
+          style={{
+            marginBottom: "12px", padding: "6px 10px", borderRadius: "var(--radius-xs)",
+            border: "1px solid var(--border-primary)", color: "var(--text-secondary)",
+            fontSize: "var(--fs-sm)", cursor: "pointer",
+          }}
+        >
+          {notice}
+        </div>
+      )}
 
       {/* Filters */}
       <div style={{ display: "flex", gap: "4px", marginBottom: "16px", flexWrap: "wrap" }}>
@@ -228,13 +276,24 @@ export function InboxTab() {
                 {inboxTarget(item) && (
                   <ChevronRight size={12} style={{ color: "var(--text-muted)", flexShrink: 0, alignSelf: "center" }} />
                 )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleArchive(item.id); }}
-                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px", flexShrink: 0 }}
-                  title={zh ? "归档" : "Archive"}
-                >
-                  <Archive size={12} />
-                </button>
+                {item.archived ? (
+                  // 已归档的条目只给"恢复" —— 归档是唯一的移除入口，误点必须能撤销
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleUnarchive(item.id); }}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+                    title={zh ? "恢复（取消归档）" : "Restore (unarchive)"}
+                  >
+                    <ArchiveRestore size={12} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleArchive(item.id); }}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+                    title={zh ? "归档（可在「显示已归档」里恢复）" : "Archive (restore via “Show archived”)"}
+                  >
+                    <Archive size={12} />
+                  </button>
+                )}
               </div>
             );
           })}

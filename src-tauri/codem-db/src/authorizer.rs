@@ -70,6 +70,20 @@ pub fn install(conn: &Connection) {
     }));
 }
 
+/// 摘掉安全边界。**只给"引擎自己的内部维护操作"用** ——
+/// 目前只有一处：`lib.rs::storage_compact` 里的 `VACUUM`。
+///
+/// 为什么非要摘：`VACUUM` 内部会写 `PRAGMA auto_vacuum`（重建库时保留/转换自动回收模式），
+/// 而本模块把 `auto_vacuum` 的**写**一律拒绝（那是给"渲染侧不得改变引擎落盘语义"设的边界）。
+/// 于是不摘的话，VACUUM 会以 `authorization denied（该能力尚未实现（迁移期））` 失败 ——
+/// 一个完全指不到原因的错误（第 92 波 `data_version` 那次是同一类教训：
+/// 引擎自己的内部操作被自己的边界挡住，报出来的却是"能力未实现"）。
+///
+/// 调用方必须**立刻装回去**，并且只在握着连接锁、执行固定 SQL 字面量的场合使用。
+pub fn uninstall(conn: &Connection) {
+    let _ = conn.authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
+}
+
 fn decide(ctx: &AuthContext<'_>) -> Authorization {
     match ctx.action {
             // 跨库访问 = 任意文件读取原语（`ATTACH DATABASE 'C:/…' + CREATE TABLE AS SELECT`）

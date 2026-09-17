@@ -188,6 +188,103 @@ async function call<T>(
   return unwrap(reply as WireReply<T>, command);
 }
 
+// ========== 有界写重试（A-6，第 20 轮） ==========
+
+/**
+ * **允许重试的写命令**（白名单，默认拒绝）。
+ *
+ * ## 为什么必须是白名单而不是黑名单
+ *
+ * `StorageError.retryable` 早就是"值"（`port.ts` 按 code 算出来，BUSY / LOCKED /
+ * IO / UNAVAILABLE），但**它一个消费者都没有** —— 写失败就是失败，
+ * 一次 `SQLITE_BUSY` 就足够让一条本该成功的写变成"未落库"。
+ *
+ * 而"给所有写都加上重试"是更糟的做法：**非幂等写重试会制造重复数据**。
+ * 所以判据是**命令语义是否幂等**，逐条列出、其余一概不重试：
+ *
+ * | 命令 | 幂等？ | 为什么 |
+ * | --- | --- | --- |
+ * | `crud.upsert` | ✅ | 按主键 upsert；重放两次与一次结果相同（replace 亦然） |
+ * | `messages.upsert_index` | ✅ | 单事务复合写，按 message id 覆盖 |
+ * | `tool_calls.replace` | ✅ | "整批替换该消息的工具调用"，天然幂等 |
+ * | `messages.rebuild_index` | ✅ | 从权威日志重建，重放收敛到同一结果 |
+ * | `attachments.update` | ✅ | COALESCE 语义的字段更新 |
+ * | `settings.set` | ✅ | 按 key 覆盖同一个值 |
+ * | `crud.delete` | ❌ | 不重试（**不是**因为危险：重复删同一行影响 0 行）。真正的理由见下 |
+ *
+ * ## `crud.delete` 为什么不重试（这条判断值得写下来）
+ *
+ * `domainDelete` 的调用方在 `.catch` 里**如实上报一次失败**；若这里自动重试，
+ * 上报就变成"可能成功也可能没成功"，而调用方无法区分。删除类操作的语义是
+ * **用户的显式破坏性动作**（删会话 / 删项目），失败必须让用户看见并重做 ——
+ * 悄悄重试反而把"没删掉"变成"没删掉但你没被告知"。任务书也把它列入不可重试。
+ *
+ * `events.append` / `messages.create` 更是硬禁止：**重试 = 插入两条**。
+ */
+const RETRYABLE_WRITE_COMMANDS: ReadonlySet<string> = new Set([
+  "crud.upsert",
+  "messages.upsert_index",
+  "tool_calls.replace",
+  "messages.rebuild_index",
+  "attachments.update",
+  "settings.set",
+]);
+
+/** 退避表：**上限 3 次尝试**，间隔 50 / 150 / 400ms */
+const RETRY_BACKOFF_MS: readonly number[] = [50, 150, 400];
+
+/** `retryAfterMs` 的上限（避免引擎给一个荒谬的值把界面卡住） */
+const RETRY_AFTER_CAP_MS = 2000;
+
+/** 判断一个错误是否值得重试：只有 `StorageError` 且 `retryable` 为真 */
+function isRetryableError(e: unknown): e is StorageError {
+  return e instanceof StorageError && e.retryable;
+}
+
+/**
+ * 执行一次写，**必要时有界重试**。
+ *
+ * - 只对白名单里的**幂等**命令重试（见上表）；
+ * - 只对 `retryable` 的错误重试（BUSY / LOCKED / IO / UNAVAILABLE）；
+ * - 最多 3 次尝试、退避 50 / 150 / 400ms（或尊重引擎给的 `retryAfterMs`，带上限）；
+ * - **绝不吞掉最终失败**：耗尽之后照原样把最后一次的错误抛给调用方，
+ *   由调用方走它原来的 `reportPersistFailure` 通道 —— 这条是硬要求，
+ *   "重试过"不能变成"失败被吃掉了"。
+ *
+ * @param onRetry 每次重试前回调（诊断/测试用；线上用来计数，不参与控制流）
+ */
+async function callWithRetry<T>(
+  transport: StorageTransport,
+  command: string,
+  params: Record<string, unknown> | undefined,
+  onRetry?: (attempt: number, e: StorageError, delayMs: number) => void,
+): Promise<T> {
+  if (!RETRYABLE_WRITE_COMMANDS.has(command)) {
+    return call<T>(transport, command, params);
+  }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call<T>(transport, command, params);
+    } catch (e) {
+      /*
+       * 不可重试的错误（CONSTRAINT / NOT_FOUND / UNSUPPORTED / OTHER…）**只发一次**。
+       *
+       * `attempt` 从 0 起：`attempt >= RETRY_BACKOFF_MS.length - 1` 时已经没有下一次
+       * 退避可等了 —— 也就是**总共 3 次尝试**（1 次原始 + 2 次重试，间隔 50 / 150ms）。
+       * 早先写成 `>= length` 会多跑一次（共 4 次），把"上限 3 次"变成空话。
+       */
+      if (!isRetryableError(e) || attempt >= RETRY_BACKOFF_MS.length - 1) throw e;
+      const suggested = e.retryAfterMs;
+      const delayMs =
+        typeof suggested === "number" && suggested > 0
+          ? Math.min(suggested, RETRY_AFTER_CAP_MS)
+          : RETRY_BACKOFF_MS[attempt];
+      onRetry?.(attempt + 1, e, delayMs);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
 // ========== 引擎生命周期 ==========
 
 class RustEnginePort implements StorageEnginePort {
@@ -285,7 +382,24 @@ class RustEnginePort implements StorageEnginePort {
 // ========== 数据面（异步 + 分页，不接受 SQL） ==========
 
 class RustDataPort implements StorageDataPort {
-  constructor(private readonly t: StorageTransport) {}
+  constructor(
+    private readonly t: StorageTransport,
+    /**
+     * 重试计数（诊断用）。
+     *
+     * A-6 之前 `retryable` 是"算出来但没人用"的值；现在它有了消费者，
+     * 于是必须能回答"到底重试过几次" —— 一个只在代码里存在、界面上看不见的
+     * 重试机制，出问题时没法证明它到底跑没跑。
+     */
+    private readonly onRetry: (command: string, attempt: number, e: StorageError, delayMs: number) => void = () => {},
+  ) {}
+
+  /** 已发生的写重试次数（按命令累计，诊断/测试用） */
+  retryStats(): { count: number; byCommand: Record<string, number> } {
+    return { count: this.retries, byCommand: { ...this.retriesByCommand } };
+  }
+  private retries = 0;
+  private retriesByCommand: Record<string, number> = {};
 
   /**
    * 破坏性命令的控制台留痕（第 34 轮，**长期保留**）。
@@ -379,7 +493,10 @@ class RustDataPort implements StorageDataPort {
     params: Record<string, unknown> = {},
   ): Promise<{ written: number }> {
     this.traceDestructive(command, params);
-    const raw = await call<{ written?: number }>(this.t, command, params);
+    // 幂等写（白名单）走有界重试：一次 BUSY 不该让整条写丢失（A-6）
+    const raw = await callWithRetry<{ written?: number }>(this.t, command, params, (attempt, e, delayMs) =>
+      this.onRetry(command, attempt, e, delayMs),
+    );
     return { written: typeof raw?.written === "number" ? raw.written : 1 };
   }
 
@@ -402,7 +519,10 @@ class RustDataPort implements StorageDataPort {
     params: Record<string, unknown> = {},
   ): Promise<T> {
     this.traceDestructive(command, params);
-    const raw = await call<T>(this.t, command, params);
+    // 同上：`command` 与 `execute` 的差别只在返回值的整形，重试规则必须一致
+    const raw = await callWithRetry<T>(this.t, command, params, (attempt, e, delayMs) =>
+      this.onRetry(command, attempt, e, delayMs),
+    );
     if (raw === null || raw === undefined) {
       throw new Error(`命令 ${command} 返回了空结果（期望结构化对象）`);
     }
@@ -470,7 +590,12 @@ class RustConfigPort implements StorageConfigPort {
     // 先内存后落库：界面即时生效；落库失败会走统一上报（用户能看到"没保存成功"）
     this.cache.set(key, text);
     this.track(
-      call(this.t, "settings.set", { key, value: text })
+      /**
+       * `settings.set` 是**按 key 覆盖**（幂等），所以走有界重试：一次 BUSY
+       * 不该让用户刚改的设置静默回退（A-6）。重试耗尽后仍由下面的 catch
+       * 走 `onFailure` —— 也就是"重试过"绝不等于"失败被吃掉"。
+       */
+      callWithRetry<void>(this.t, "settings.set", { key, value: text })
         .then(() => undefined)
         .catch((e) => {
           this.failures++;
@@ -996,6 +1121,14 @@ export interface MirrorMessageRow {
    * 永远读不到（用户形态：重启后标记消失、fork/复制一起丢）。列在库里，缺陷在 SELECT 与映射。
    */
   generated_files?: string | null;
+  /**
+   * **索引裁剪**标记（第 44 轮新增的库列）。
+   *
+   * `hidden = 1, trimmed = 1` = "这一行是为了限制索引体积而被隐藏的"，
+   * 与"被上下文压缩隐藏"（`hidden = 1, trimmed = 0`）语义相反：前者读路径要**保留**，
+   * 后者要**排除**。所以这一列必须进镜像 —— 否则读路径又只能靠猜。
+   */
+  trimmed?: number;
 }
 
 class RustMessageMirror {
@@ -1200,8 +1333,54 @@ class RustMessageMirror {
     return this.byId.get(id);
   }
 
+  /**
+   * 只返回**上下文压缩隐藏**的 id（`hidden = 1` 且 `trimmed ≠ 1`）。
+   *
+   * ## 为什么要把"索引裁剪"那一类排除掉（第 44 轮：持久化标记）
+   *
+   * `hidden` 这一列被两条语义**相反**的路径共用：
+   *
+   * | 路径 | `hidden = 1` 的含义 | 读路径应当 |
+   * | --- | --- | --- |
+   * | 上下文压缩 | 这条消息**从上下文里移除** | 排除（否则"压缩 840 条、token 一点没降"） |
+   * | 索引裁剪（启动维护，限制索引体积） | 行**留在库里**满足 `message_feedback` 外键 | **保留**（"被裁的历史仍读得到"是裁剪的前提） |
+   *
+   * 两者原来在库里长得一模一样，渲染侧只能靠**进程内记账**区分"这次隐藏是谁做的" ——
+   * 于是重启后必然分不清：要么历史消失（用户看不到自己的消息），要么压缩失效。
+   * 现在引擎把裁剪写成 `hidden = 1, trimmed = 1`，区别成了库里的事实，这里只需读它。
+   */
   hiddenIds(sessionId: string): Set<string> {
-    return new Set((this.bySession.get(sessionId) ?? []).filter((m) => m.hidden === 1).map((m) => m.id));
+    return new Set(
+      (this.bySession.get(sessionId) ?? [])
+        // `trimmed` 缺省按 0 处理：老库/未迁移的行没有这一列的值
+        .filter((m) => m.hidden === 1 && Number(m.trimmed ?? 0) !== 1)
+        .map((m) => m.id),
+    );
+  }
+
+  /**
+   * 把一批消息标记为"被索引裁剪"（`hidden = 1, trimmed = 1`）**在镜像上的等价更新**。
+   *
+   * 为什么不能复用 `removeByIds`：引擎只把行改成隐藏，**行还在库里**；
+   * 镜像若把行删掉，下一次整会话加载就会与引擎不一致（镜像比引擎"更狠"是缺陷的来源）。
+   * 也不能只改 `hidden`：那样这一行会被读路径当成"被压缩"，用户就看不到自己的历史了。
+   */
+  applyMessageTrim(sessionId: string, ids: string[]): void {
+    this.touch(sessionId);
+    const wanted = new Set(ids);
+    for (const row of this.bySession.get(sessionId) ?? []) {
+      if (wanted.has(row.id)) {
+        row.hidden = 1;
+        row.trimmed = 1;
+      }
+    }
+    for (const id of ids) {
+      const row = this.byId.get(id);
+      if (row) {
+        row.hidden = 1;
+        row.trimmed = 1;
+      }
+    }
   }
 
   count(sessionId: string): number {
@@ -1212,6 +1391,7 @@ class RustMessageMirror {
   applyWrite(row: Partial<MirrorMessageRow> & { id: string; session_id: string }): void {
     this.touch(row.session_id);
     const list = this.bySession.get(row.session_id);
+    const prev = this.byId.get(row.id);
     const full: MirrorMessageRow = {
       id: row.id,
       session_id: row.session_id,
@@ -1221,7 +1401,34 @@ class RustMessageMirror {
       timestamp: row.timestamp ?? Date.now(),
       model: row.model ?? null,
       status: row.status ?? "done",
-      hidden: row.hidden ?? 0,
+      /**
+       * ⚠️ `hidden` **未提供 ≠ 置 0**（A-3，第 20 轮）。
+       *
+       * 原来这里是 `row.hidden ?? 0` —— 而唯一的生产调用方
+       * `writeIndexViaRust`（`message.ts`）**不传 hidden**（那是刻意的：
+       * 流式更新不该碰软删除状态）。于是每次 `updateMessage` 都把索引镜像里
+       * 已经置 1 的 `hidden` **打回 0**：被压缩（软删除）的消息重新变回可见，
+       * 上下文再也缩不小 —— 而库里那一行是对的（Rust 的 `upsert_index` 只在
+       * 显式给了 hidden 时才改它）。**镜像比库更宽松**，这类偏差最难查。
+       *
+       * 所以：未提供时**保留镜像里已有的值**；镜像里也没有（首次写入）才用 0。
+       */
+      hidden:
+        row.hidden === undefined
+          ? Number(prev?.hidden ?? 0)
+          : Number(row.hidden),
+      /**
+       * `generated_files` 同样按"未提供 = 不动"处理（A-3）。
+       *
+       * 这一列原来在 `applyWrite` 里**完全没有维护**：`upsert_index` 每次都会带上它
+       * （`writeIndexViaRust` 传的是 `message.generatedFiles ?? null`），本地镜像却从不更新 ——
+       * 于是"刚写的这行生成了哪些文件"要等下一次整会话重载才看得到（写后读丢字段）。
+       * `row` 里没有这个键时保留旧值/置 null，与 `normalize` 的读路径形状一致。
+       */
+      generated_files:
+        row.generated_files === undefined
+          ? (prev?.generated_files ?? null)
+          : (row.generated_files as string | null),
     };
     if (list) {
       const i = list.findIndex((m) => m.id === row.id);
@@ -1263,7 +1470,7 @@ class RustMessageMirror {
 // 避免"某天图谱涨到十万行"时把渲染进程压死。
 
 /**
- * **哪些表只镜像指定列**（第 14 轮）。
+ * **哪些表只镜像指定列**（第 14 轮；第 20 轮补 `turn_file_changes`）。
  *
  * 判据不是"表重不重要"，而是"整行会不会把大体积列拉进渲染进程"：
  * `attachments.content` 存的是附件正文（长文档可达几十 MB），而渲染侧只用到元数据
@@ -1271,6 +1478,27 @@ class RustMessageMirror {
  *
  * 不投影的话，`listExternalAttachmentMarkers()` 这类调用会把**整张附件表连同正文**
  * 读进内存 —— 正是 P6 花大力气消灭的那类占用。
+ *
+ * ## `turn_file_changes.patch`（A-2，第 20 轮）
+ *
+ * 同一类问题，量级更狠：`patch` 是**单行上限 500,000 字符**的统一 diff，
+ * 而这张表是**热表**（每轮一行，会话一多必然几千行）。
+ * 按全列装载的实测后果有两层：
+ * 1. 更容易先撞上"超过 5000 行被 `refused`" → `getById` 恒返回 null → 回滚功能整域失效
+ *    （拒绝的永久性由 A-2 的 `refusedAt` 退避重试修掉）；
+ * 2. 即使没被拒，5000 行 × 500KB ≈ 2.5GB 的渲染进程占用 —— 正是要消灭的那类占用。
+ *
+ * ⚠️ **投影之后 `getById` 返回的记录里 `patch` 就是 `undefined`** —— 这是刻意的契约：
+ * 它表示"镜像里没有这一列"，而不是"这条记录没有 patch"。
+ * 需要 patch 正文的调用方（`FileChangeTracker.revert`）走
+ * `crud.list` + `columns: ["patch"]` + `where: { id }` **只取那一行的那一列** ——
+ * 这条按需路径由 `environment/file-change-tracker.ts::fetchPatchById`（任务 C-7）提供。
+ *
+ * ⚠️ 写入侧的相容性（为什么投影不会把库里的 patch 写没）：
+ * `crud.upsert` 的列集合是**由提供行的键求并集**（`codem-db/src/crud.rs`，其测试
+ * `crud_upsert_replace_does_not_cascade_delete_children` 明确断言"未提供的列要保持原值"），
+ * 而 `JSON.stringify` 会丢掉值为 `undefined` 的键 ——
+ * 所以"从镜像读回来的记录少了 patch、再整体写回库"**不会**把 `patch` 清成 NULL。
  */
 const DOMAIN_COLUMN_PROJECTION: Record<string, string[]> = {
   attachments: [
@@ -1286,6 +1514,20 @@ const DOMAIN_COLUMN_PROJECTION: Record<string, string[]> = {
     "size",
     "added_at",
   ],
+  /** 除 `patch` 正文之外的全部列（列表 / 状态更新 / 回滚要用的 changed_files 都不需要它） */
+  turn_file_changes: [
+    "id",
+    "session_id",
+    "message_id",
+    "turn_index",
+    "before_tree",
+    "after_tree",
+    "changed_files",
+    "patch_sha256",
+    "current_brief",
+    "status",
+    "created_at",
+  ],
 };
 
 export class RustDomainMirror {
@@ -1294,6 +1536,31 @@ export class RustDomainMirror {
   private loaded = new Set<string>();
   private loading = new Map<string, Promise<void>>();
   private refused = new Set<string>();
+  /**
+   * 每张"被拒"表的**上次尝试时间**（A-2，第 20 轮）。
+   *
+   * ## 为什么必须有它
+   *
+   * 原来的 `refused` 是一个**只进不出**的集合：一旦某表超过镜像行数上限，
+   * `loadTable` 就 `refused.add(table)` 并 `return`，而 `refused` **只在
+   * `replaceTable` 里被清除** —— 那个方法零生产调用者。于是"这张表太大"
+   * 一旦成立，就变成**进程内永久不再重试**：该域的读路径永远拿到空结果，
+   * 直到用户重启。
+   *
+   * 真机形态很具体：`turn_file_changes` 是热表（`patch` 单行上限 500,000 字符），
+   * 会话一多必然超过 5000 行 → 被拒 → **回滚功能整个会话期内失效**。
+   * 而且"太大"这件事本身也可能只是**那一刻**太大（用户后来删了旧会话）。
+   *
+   * 处置：记下尝试时间，**下次访问时若已过退避窗口就再试一次**。
+   * 重试仍然超限就再记一次时间，退避窗口翻倍（上限
+   * `REFUSED_RETRY_MAX_MS`）—— 既不会每次访问都白拉一遍几千行，
+   * 也不会让"永久空"成立。
+   */
+  private refusedAt = new Map<string, number>();
+  /** 退避窗口起点：首次尝试失败后等这么久才重试 */
+  private static readonly REFUSED_RETRY_BASE_MS = 30_000;
+  /** 退避窗口上限（再大就等于不再重试了，那正是要修掉的形态） */
+  private static readonly REFUSED_RETRY_MAX_MS = 10 * 60_000;
   private failures = 0;
   /** 单表镜像行数上限（超过则放弃镜像，回退旧路径） */
   private readonly maxRows: number;
@@ -1311,8 +1578,41 @@ export class RustDomainMirror {
     return this.loaded.has(table) && !this.refused.has(table);
   }
 
+  /**
+   * 该表**正在加载**（异步 IPC 在途；既没就绪也没失败）。
+   *
+   * ## 为什么必须能问出这个状态（A-1）
+   *
+   * `ensureLoaded` 是**异步**的，所以每次启动后对某张表的**第一次写**都落在
+   * "加载中"这个窗口里。写路径只有能区分"**还在加载**"（应当排队等就绪）
+   * 与"**永远不会就绪**"（超上限被拒 / 加载失败，应当如实返回未接手），
+   * 才能既修掉"首触必丢"、又不把"永远不成的写"排进一个只涨不消的队列。
+   */
+  isLoading(table: string): boolean {
+    return this.loading.has(table);
+  }
+
   /** 同步触发加载（后台进行） */
   ensureLoaded(table: string, onLoaded?: () => void, maxRowsOverride?: number): void {
+    /*
+     * A-2：被拒过的表**不是永久拒绝**。
+     *
+     * 先看退避窗口是否已过；过了就把这张表从 `refused` 里放出来重新加载一次，
+     * 并按尝试次数把窗口翻倍。这样"超限后进程内永久空"不再成立 ——
+     * 用户删掉旧会话之后，下一次访问就能把回滚记录重新镜像回来。
+     */
+    if (this.refused.has(table)) {
+      const waited = Date.now() - (this.refusedAt.get(table) ?? 0);
+      const misses = this.refusedMisses.get(table) ?? 1;
+      const window = Math.min(
+        RustDomainMirror.REFUSED_RETRY_BASE_MS * 2 ** (misses - 1),
+        RustDomainMirror.REFUSED_RETRY_MAX_MS,
+      );
+      // 窗口内、或本轮已经重试过一次 → 不再白拉一遍（几千行的代价），也不回调 onLoaded
+      if (waited < window || this.refusedRetryUsed) return;
+      this.refusedRetryUsed = true;
+      this.refused.delete(table);
+    }
     if (this.loaded.has(table) || this.loading.has(table)) {
       if (this.loaded.has(table)) onLoaded?.();
       else if (onLoaded) void this.loading.get(table)?.then(() => { if (this.isReady(table)) onLoaded(); });
@@ -1331,6 +1631,59 @@ export class RustDomainMirror {
       });
     this.loading.set(table, job);
     if (onLoaded) void job.then(() => { if (this.isReady(table)) onLoaded(); });
+  }
+
+  /**
+   * **显式重试全部被拒的表**（A-2）。
+   *
+   * 退避重试解决的是"迟早会再试一次"；这个入口解决的是"**现在**重试" ——
+   * 重建时机（索引重建、库被外部恢复、维护清理之后）恰恰是"表可能已经不再超限"
+   * 的时刻，等退避窗口白等一遍没有意义。
+   *
+   * 注意它**真的重新发起加载**（而不是只把表从 `refused` 里放出去）：
+   * 只"放出去"是不够的 —— 那些表的读路径都在等 `isReady`，而没有谁会替它们
+   * 再调一次 `ensureLoaded`（`domainPort` 会，但它要等到下一次访问，
+   * 中间这段时间的读依旧是空）。
+   *
+   * @returns 已重新发起加载的表名（供日志/诊断与测试断言）
+   */
+  retryRefusedTables(): string[] {
+    const retry = [...this.refused];
+    for (const table of retry) {
+      this.refused.delete(table);
+      this.refusedAt.delete(table);
+      this.refusedMisses.delete(table);
+      this.ensureLoaded(table);
+    }
+    return retry;
+  }
+
+  /** 每张被拒表**连续**被拒的次数（退避窗口按它翻倍） */
+  private refusedMisses = new Map<string, number>();
+  /**
+   * 本次"加载周期"里是否已经重试过被拒的表（A-2）。
+   *
+   * 为什么要这个闩锁：退避重试的自然触发点是 `ensureLoaded`（每次访问都会走到），
+   * 而 `ensureLoaded` 在一次页面渲染里会被调很多次。没有闩锁的话，
+   * 那张 2.5GB 量级的大表会被**反复拉取**（每次都拉到超限才放弃）——
+   * 那比"永久不重试"更糟。一旦某次重试仍被拒，就等下一个加载周期
+   * （`beginLoadCycle()`，由启动/预取调用）再试。
+   */
+  private refusedRetryUsed = false;
+
+  /**
+   * 开始一个新的**加载周期**：允许再次重试被拒的表。
+   *
+   * 由 `bootstrap.ts` 的域镜像预取（每次启动一次）调用。语义是
+   * "上一轮判断（太大）可能已经过时了（用户删了旧会话 / 清理跑过）"。
+   */
+  beginLoadCycle(): void {
+    this.refusedRetryUsed = false;
+  }
+
+  /** 被拒表的上次尝试时间（诊断/测试用） */
+  refusedSince(): Record<string, number> {
+    return Object.fromEntries(this.refusedAt);
   }
 
   private async loadTable(table: string, maxRowsOverride?: number): Promise<void> {
@@ -1357,10 +1710,19 @@ export class RustDomainMirror {
       if (rows.length > cap) {
         // 放弃镜像：这张表比预期大得多，继续镜像会把渲染进程压死
         this.refused.add(table);
+        /*
+         * A-2：记下**这次尝试的时间**与连续被拒次数。
+         *
+         * 没有这两个字段时 `refused` 就是一个只进不出的集合 —— "太大"会变成
+         * 永久结论（详见 `refusedAt` 的说明）。有了它，退避窗口一过就会自动再试，
+         * 窗口按连续失败次数翻倍、有上限，所以既不会永久空、也不会每次访问都白拉。
+         */
+        this.refusedAt.set(table, Date.now());
+        this.refusedMisses.set(table, (this.refusedMisses.get(table) ?? 0) + 1);
         this.onFailure(
           `domain.${table}.too-large`,
           new Error(`表 ${table} 超过镜像上限 ${cap} 行`),
-          `表 ${table} 改用旧引擎读取（超出内存镜像上限）`,
+          `表 ${table} 暂不镜像（超出内存上限）；稍后会自动重试，本次该域读给空结果`,
         );
         return;
       }
@@ -1368,6 +1730,9 @@ export class RustDomainMirror {
       offset += items.length;
     }
     this.byTable.set(table, rows);
+    // 加载成功：清掉这张表的退避记录（下次超限重新从最小窗口起算）
+    this.refusedMisses.delete(table);
+    this.refusedAt.delete(table);
   }
 
   all<R = Record<string, unknown>>(table: string): R[] {
@@ -1415,11 +1780,20 @@ export class RustDomainMirror {
     );
   }
 
-  /** 整表替换（清空+重建类操作用，例如按 notebook 重算图谱） */
+  /**
+   * 只有镜像的整表替换（清空 + 重建）。
+   *
+   * ⚠️ **它不写穿**。`domain-store.ts` 的 `domainReplaceTable` 曾用它当"写穿"的
+   * 实现（只改内存就返回成功），第 20 轮已把那条路改成逐行 `crud.delete` +
+   * `crud.upsert`。这里保留它只作为"镜像维护"原语，并在 `refused` 上做正确的事：
+   * 替换成功意味着这张表**现在**是完整的，所以清掉退避记录（A-2）。
+   */
   replaceTable(table: string, rows: Array<Record<string, unknown>>): void {
     this.byTable.set(table, [...rows]);
     this.loaded.add(table);
     this.refused.delete(table);
+    this.refusedAt.delete(table);
+    this.refusedMisses.delete(table);
   }
 
   /**
@@ -1470,7 +1844,17 @@ export class RustStoragePort implements StoragePort {
     this.reportFailure = onFailure;
     this.transport = transport;
     this.engine = new RustEnginePort(transport);
-    this.data = new RustDataPort(transport);
+    this.data = new RustDataPort(transport, (command, attempt, e, delayMs) => {
+      this.retryCount++;
+      this.retryByCommand[command] = (this.retryByCommand[command] ?? 0) + 1;
+      /*
+       * 重试**只留痕、不上报为用户可见失败**：这一刻还没失败，只是引擎说"稍后重试"。
+       * 真失败了由调用方的 `.catch` 走统一上报（那次才是用户该看见的）。
+       */
+      console.warn(
+        `[Storage] ${command} 第 ${attempt} 次重试（${e.code}，${delayMs}ms 后）：${e.message}`,
+      );
+    });
     this.config = new RustConfigPort(transport, onFailure);
     this.append = new RustAppendPort(transport, onFailure);
     this.configDomain = new RustConfigDomainCache(transport, onFailure);
@@ -1479,6 +1863,18 @@ export class RustStoragePort implements StoragePort {
     this.messages = new RustMessageMirror(transport, onFailure, opts.messageMirrorBudgetRows);
     this.domains = new RustDomainMirror(transport, onFailure);
   }
+
+  /**
+   * 已发生的写重试次数（诊断用）。
+   *
+   * 为什么值得留一个计数：重试是**不可见的延迟**（最坏 3 次 × 数秒），
+   * 真机上"界面偶尔卡一下"很可能就是它。没有计数就只能靠猜。
+   */
+  retryStats(): { count: number; byCommand: Record<string, number> } {
+    return { count: this.retryCount, byCommand: { ...this.retryByCommand } };
+  }
+  private retryCount = 0;
+  private retryByCommand: Record<string, number> = {};
 
   /** 为某个会话预热消息索引镜像（打开会话时调用） */
   warmupMessages(sessionId: string): void {
@@ -1538,6 +1934,11 @@ export class RustStoragePort implements StoragePort {
   /** 供删除路径使用：把已删除的 id 从镜像移除 */
   applyMessageDelete(sessionId: string, ids: string[]): void {
     this.messages.removeByIds(sessionId, ids);
+  }
+
+  /** 供索引裁剪路径使用：把一批消息标成"裁剪隐藏"（行仍在库里，只是不再从索引出） */
+  applyMessageTrim(sessionId: string, ids: string[]): void {
+    this.messages.applyMessageTrim(sessionId, ids);
   }
 
   /** 供事件日志使用：把一条追加排队落库（并回传真实 seq 修正镜像） */
@@ -1606,18 +2007,64 @@ export class RustStoragePort implements StoragePort {
   }
 }
 
+/**
+ * 能力自省的**真实线协议形状**（A-5，第 20 轮）。
+ *
+ * ## 原来错在哪
+ *
+ * `rustCapabilities()` 按**扁平字段**读（`raw.commands` / `raw.max_rows_per_query`），
+ * 但 Tauri 命令 `storage_capabilities` 返回的是**裸 `Value`**：
+ *
+ * ```rust
+ * // src-tauri/src/storage.rs
+ * #[tauri::command]
+ * pub fn storage_capabilities() -> Value { capabilities() }
+ * ```
+ *
+ * 没有 `{ok, result}` 包装（那个包装只属于 `storage_invoke` / `storage_batch` 这条路）。
+ * 于是渲染侧读到的 `raw.commands` **恒为 undefined** → `?? []` → **能力集恒空**。
+ * 影响不是"少了个诊断字段"：`no_whole_file_export` 这类架构承诺是**契约测试的
+ * 判据**（`rust-port.test.ts` 的 PORT-23），它恒为 `false` 时，"引擎承诺不提供
+ * 整库导出"这件事在渲染侧**从来没有被真正验证过**。
+ *
+ * ## 现在怎么读
+ *
+ * 以**真实形状为准**（裸对象），同时**容忍** `{ok, result}` 包装 —— 不是"猜两种"，
+ * 而是因为包装形态在 Tauri 里确实存在（`storage_invoke` 那条路），
+ * 将来若有人把这条命令也套上 `reply()`，这里不该静默变空。
+ * 两种形状都认不出来时**抛错**，不返回"看起来合法但全空"的结果：
+ * 静默给出空能力集正是这个缺陷本身。
+ */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function unwrapCapabilities(raw: unknown): {
+  commands?: string[];
+  max_rows_per_query?: number;
+  no_whole_file_export?: boolean;
+} {
+  if (!isRecord(raw)) {
+    throw new StorageError("OTHER", "storage_capabilities 返回了无法识别的响应（既不是对象也不是包装响应）");
+  }
+  // 1) 包装形态：{ok:false,...} 是明确的失败，不能当成"没有能力"
+  if (typeof raw.ok === "boolean") {
+    const reply = raw as unknown as WireReply<Record<string, unknown>>;
+    if (!reply.ok) throw toStorageError(reply.error, "storage_capabilities 失败");
+    if (isRecord(reply.result)) return reply.result as Record<string, unknown>;
+  }
+  // 2) 真实形态：裸 Value（`storage.rs::storage_capabilities`）
+  return raw as Record<string, unknown>;
+}
+
 /** 供测试与诊断：命令清单（Rust 侧白名单） */
 export async function rustCapabilities(
   transport: StorageTransport = tauriTransport,
 ): Promise<{ commands: string[]; max_rows_per_query: number; no_whole_file_export: boolean }> {
-  const raw = (await transport.capabilities()) as unknown as {
-    commands?: string[];
-    max_rows_per_query?: number;
-    no_whole_file_export?: boolean;
-  };
+  const raw = unwrapCapabilities(await transport.capabilities());
   return {
-    commands: raw.commands ?? [],
-    max_rows_per_query: raw.max_rows_per_query ?? 0,
+    commands: Array.isArray(raw.commands) ? (raw.commands as string[]) : [],
+    max_rows_per_query: typeof raw.max_rows_per_query === "number" ? raw.max_rows_per_query : 0,
     no_whole_file_export: Boolean(raw.no_whole_file_export),
   };
 }

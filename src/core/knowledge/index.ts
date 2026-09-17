@@ -54,6 +54,11 @@ export {
   addChunksBulk,
   getChunks,
   getChunkCount,
+  // 任务 C-3：索引未就绪必须能被区分出来（`getChunks` 会抛，这个不会）
+  getChunksOrStatus,
+  chunkIndexState,
+  chunkMirrorLastSeenReadyForDiagnostics,
+  ChunkIndexUnavailableError,
   deleteChunksBySource,
   embeddingToBase64,
   base64ToEmbedding,
@@ -100,6 +105,7 @@ export { chunkText, estimateTokens } from './chunker';
 // Indexer
 export { indexSource, indexNotebook, generateSummary, generateGuidedQuestions, reindexSource, deleteSourceAndCleanup, getNotebookConfig, generateStudioContent, generateSourceSummary, generateFlashcards } from './indexer';
 export type { StudioContentType, StudioContentResult, GeneratedFlashcard } from './indexer';
+export type { ChunkIndexState } from './storage';
 
 // Retriever
 export { retrieve, retrieveWithContext, clearRetrievalCache, setActiveSourceFilter, getActiveSourceFilter } from './retriever';

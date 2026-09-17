@@ -347,8 +347,15 @@ db.run(
 报告落在 `docs/STORAGE-COVERAGE.md`（`node tools/audit/storage-coverage.mjs --md` 重新生成）。
 
 **规模基准**：`tools/bench/db-scale.mjs`（`npm run bench:db`）在 **1k / 10k / 100k** 三档、
-用同一份数据形状同时压 Rust 引擎与 sql.js(WASM)，报告落到 `docs/DB-SCALE-BENCH.json`。
-关键结论见下节。
+用同一份数据形状压 Rust 引擎，报告默认落到 `.preview-shot/DB-SCALE-BENCH.json`（已 gitignore，
+可用 `--out <路径>` 指定）。关键结论见下节。
+
+> **第 44 轮修订**：这里的"同时压 Rust 引擎与 sql.js(WASM)"以及"报告落到 `docs/DB-SCALE-BENCH.json`"
+> 两句话**都已不成立**。sql.js 已随 L1 从工程里删除（`node_modules/sql.js` 不存在），
+> 那个对比基线**没有对应物**，于是基准里 wasm 那一侧整段移除 ——
+> 留着它的后果不只是"跑不通"，而是它的 catch 分支会把"依赖不存在"打印成
+> 「wasm **失败**（这正是要证明的问题）」，让**缺失**被读成**结论**。
+> 历史上的对比数字仍保留在 `docs/DB-SCALE-BENCH.json` 里（该文件不再被默认覆盖）。
 
 **未做（下一轮 P3）**：把 129 个方法按模块逐个切到 Rust（配置面 → 只追加 → 数据面 → 会话/项目 → 其余域），
 每切一个模块就删掉 D 类允许清单里的对应条目。
@@ -1069,6 +1076,11 @@ tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D
 - 父进程每 40ms 采样子进程的**峰值工作集**（Windows `tasklist`、Linux `/proc/<pid>/status`）；
 - 子进程做真实动作：插入 N 条 KB 级大文档 → **立刻落盘**（sql.js 走 `db.export()`，
   Rust 走 `messages.create_many`）→ 分页读一页。
+
+> **第 44 轮修订**：基准里的 wasm 那一侧已随 L1 删除（`node_modules/sql.js` 不存在），
+> 现在只测 Rust 引擎；`--only wasm` 会**明确报错退出 1** 而不是静默什么都不做
+> （"收下参数却没测"会让"我测过 wasm"变成假记忆）。
+> 下面的 wasm 数字是**历史记录**，保留下来是因为它是"为什么删掉旧引擎"的原始证据。
 
 **实测结果（正文总量 = 行数 × 每行大小）**
 
@@ -1797,9 +1809,19 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 |---|---|
 | `src-tauri/codem-db/src/migrate.rs` | 迁移原语：`import.begin/table/end/rollback`、`import.tables`、`migration.status/mark`、`digest.tables`、`digest.rows`、`rebuild_fts`；另有单进程批量入口 `import_all` |
 | `src/bin/codem-db-cli.rs` 的 `import` 子命令 | **整批在同一个进程/连接里导入**（原因见下） |
-| `tools/migrate/storage-migrate.mjs` | 端到端工具：预检 → 备份 → 单事务导入 → 重建 FTS → 逐表对账 → 打标记；含 `--dry-run/--verify/--apply/--strict-fk/--rollback-hint` |
-| `tools/migrate/lib/digest.mjs` | 与 Rust 逐字节一致的摘要算法（对账的核心） |
-| `tools/migrate/bite-reconcile.mjs` | **咬合测试**：制造 5 类破坏，证明对账会失败（7 项全部符合预期） |
+| `tools/migrate/storage-migrate.mjs` | 迁移工具的**薄封装**：`--dry-run` / `--apply` / `--verify` / `--rollback-hint` / `--strict-fk` / `--force` 全部保留，实际动作交给 Rust 的 `migration.auto`（预检 + 备份 + 单事务导入 + 重建 FTS + 逐表对账 + 打标记都在引擎里） |
+| `tools/migrate/lib/digest.mjs` | 与 Rust 逐字节一致的摘要算法（对账工具侧复算用；`src/test/rust-port-wire.test.ts` 仍以它为跨语言契约） |
+| `tools/migrate/bite-reconcile.mjs` | **咬合测试**：制造破坏，证明对账会失败（8 项全部符合预期） |
+
+> **第 44 轮修订（这份工具曾经一跑就失败）**：
+> ① 它原来用 `import node_modules/sql.js` **读旧库**，而该依赖已随 L1 删除 → 工具直接不可用；
+> 现在读旧库改走 **Rust CLI**（`legacy.read_table` / `migration.auto` 的 `legacy_path` 参数，
+> 两者内部都是 `SQLITE_OPEN_READ_ONLY`）。
+> ② 旧 `--rollback-hint` 告诉操作者改 `localStorage[codem-storage-engine]` 就能切回 sql.js ——
+> 那个开关**已在 v1.16.62 退役**、它指向的引擎也已删除，照着做**什么都不会发生**。
+> 新文案把这件事正面写出来，并给出真正可执行的回退方式（装回上一版安装包）。
+> ③ `settings` 的对账改**逐键比对**：引擎迁移后必然往目标端写 `codem-storage-migrated-at`，
+> 于是"两边行数必须相等"会让一次**成功的**迁移之后必定报红（永远喊狼来了的对账工具）。
 
 **导入通道为什么不是"裸 SQL"**：`import.table` 的表名走白名单（由 `sql/tables.json` 生成）、
 列名与真实列定义逐字核对、值参数化绑定、不接受任何 SQL 片段。
@@ -1847,6 +1869,13 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 **回滚开关（已在 P3 段落实现，这里补齐文档）**：`localStorage[codem-storage-engine]`，
 `wasm` 即回退；`node tools/migrate/storage-migrate.mjs --rollback-hint` 打印可执行步骤
 （开关 + 备份路径 + 如何撤销迁移标记）。**旧库在 P5 之前一直是安全退路。**
+
+> **⚠️ 第 44 轮修订：这个开关已退役，这段文档描述的退路不存在了。**
+> 开关本身在 **v1.16.62（第 15 轮）**移除（`selectedEngine()` 不再读 localStorage、恒为 `rust`），
+> 而它指向的 sql.js 引擎已随 L1 从工程里删除（`node_modules/sql.js` 不存在）。
+> 也就是说：往 localStorage 里写这个键**不会有任何效果**。
+> 真正的回退是**应用级回退**（装回上一版安装包），`--rollback-hint` 现在就是这么说的。
+> 保留这段原文是为了让照旧文档操作的人能对得上：**它曾经是真的，现在已经不是。**
 
 ### P1 规模基准（Rust 引擎 vs sql.js/WASM，1k / 10k / 100k）
 

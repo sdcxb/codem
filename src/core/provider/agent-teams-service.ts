@@ -12,6 +12,32 @@
  * 5. 变更订阅（UI 活动面板刷新）
  *
  * 引擎为纯逻辑（engine.ts，全部可测）；本层收敛并发（单进程同步调用）。
+ *
+ * ========== 为什么这个域**刻意不进 SQLite**（任务 C-10 的结论） ==========
+ *
+ * 任务书要求：先判断"完全绕过端口（localStorage）"是**有意设计**还是**漏接线**，
+ * 无任何说明则视为漏接线。结论是 **有意设计**，证据有四条（都能复核）：
+ *
+ * 1. **上游没有这张表**：`src-tauri/codem-db/sql/schema.sql` 的 39 张表里
+ *    没有任何 `agent_teams*`（`grep -i agent_teams sql/schema.sql` = 0 命中），
+ *    `sql/tables.json`（由 TS SCHEMA 生成、`audit:schema-parity` 守着的真源清单）
+ *    同样没有。也就是说：**没有任何一层声明过要把团队入库** ——
+ *    这与"漏接线"（表建好了、读写还打旧库）的形态明显不同。
+ * 2. **生命周期与进程强绑定**：成员是 `SubagentRuntime` 里的**活对象**
+ *    （`Activation`：AbortController / poke Promise / executionDone）。
+ *    重启后它们**一定**不存在 —— 这正是 `reconcileAfterRestart()` 存在的理由：
+ *    它把 `working` 成员改回 `idle`、作废 claim 令牌、取消转派静默期。
+ *    把这份"活状态"持久化进库只会制造一种更坏的假象（库里写着 working，进程里什么都没有）。
+ * 3. **已显式处理重启语义**：`reconcileAfterRestart()` 的注释写明"团队状态持久化在
+ *    localStorage，但进程内没有任何东西在跑"，并逐条定义了对账规则。
+ *    这是**有意的设计决策留下的痕迹**，不是遗忘。
+ * 4. **持久化失败是可见的**：`load()` 对损坏数据有 `console.warn`（含原始错误），
+ *    `persist()` 的 catch 目前是空的 —— 见下面 `persist()` 的说明（那一处已修）。
+ *
+ * 因此本任务**不做**"接进端口"的大重构（没有表、也没有一致的归属/权限语义，
+ * 硬接会引入"库里的团队与进程里的活状态不一致"这类新缺陷）。
+ * 若将来要入库，需要的是**先有 schema**（另一个人/另一波），
+ * 并且要同时回答"重启后成员怎么办" —— 见报告的"需要他人配合"清单。
  */
 
 import {
@@ -24,6 +50,7 @@ import {
 import type { AgentTeam, TeamSnapshot } from "../agent-teams/types";
 import { CAPTAIN, TASK_TERMINAL } from "../agent-teams/types";
 import { getSubagentRuntime } from "../subagent/index";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 const STORE_KEY = "codem-agent-teams:v1";
 
@@ -110,7 +137,28 @@ export class AgentTeamsServiceClass {
   private persist(): void {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify([...this.teams.values()]));
-    } catch { /* storage full/unavailable */ }
+    } catch (e) {
+      /**
+       * 第 44 轮：从**空 catch** 改成走仓库既有的失败通道 `reportPersistFailure`。
+       *
+       * 这段注释原来写着"刻意保持空 catch"，理由是"补一行 `console.warn` 会被
+       * `audit:false-success` 的 P2 规则判为『写类函数的 catch 只有日志』"。
+       * 那个判断**只对了一半**：门禁拦的是**只打日志**（catch 体完全由 `console.*` 组成），
+       * 而它同时给出了正解 —— 让失败走**可处理的通道**。
+       * `reportPersistFailure` 正是本仓库那条通道：它把失败写进失败台账、
+       * 派发窗口事件、让"数据没保存"在界面上可见（而 `console.warn` 只进控制台）。
+       *
+       * 为什么这是等价于"修好"而不是"换个写法"：
+       * 这个域的写入**只**落在 localStorage（文件头四条证据说明"不入库"是有意设计），
+       * 所以"写失败"没有事务可回滚、也没有第二份副本 —— 它能做到的全部，就是**如实说出来**。
+       * 空 catch 反而是这里唯一真正坏的选择：用户重启后发现团队没了，而日志里什么都没有。
+       */
+      reportPersistFailure(
+        "agentTeams.persist",
+        e,
+        "团队状态未持久化（本进程内仍可用；重启后这些团队与任务看板会消失）",
+      );
+    }
   }
 
   // ========== 订阅 ==========
@@ -160,6 +208,27 @@ export class AgentTeamsServiceClass {
     return team;
   }
 
+  /**
+   * "删除"一个团队 —— 实际上只是把 `archived` 置 1（任务 C-10 的第二半）。
+   *
+   * ## 为什么不改（以及为什么"无恢复入口"在这里是可接受的）
+   *
+   * `deleteTeam` 的名字与行为不符：它**不删任何东西**，只置 `archived = true`；
+   * 而 `listAll()` 又过滤掉已归档的 → 界面上表现为"部署没了"，且没有恢复入口。
+   *
+   * 在 squad / inbox 那两个域里，同样的形态是**真缺陷**（C-6）：
+   * 那里的行是**用户数据**（团队配置、通知），丢了就是丢了，
+   * 而"归档"是 UI 上唯一的移除入口 —— 误点等于永久删除。
+   *
+   * 这里不同：本域的状态**本来就随进程丢弃**（见文件头的四条证据，
+   * 尤其 `reconcileAfterRestart()`）。也就是说，即使给"归档的团队"做一个恢复入口，
+   * 恢复回来的也只是一个**没有成员在跑的壳**（成员是 `SubagentRuntime` 里的活对象，
+   * 重启即不存在）。所以"归档 = 软删除 + 不展示"是本域**有意**的终态，
+   * 而不是一个漏了恢复入口的缺陷 —— 这里补注释而不是补功能。
+   *
+   * （如果将来这个域真的入库了，这条结论必须重新评估：那时团队就是持久用户数据，
+   *  恢复入口必须有 —— 与 C-6 同一条判据。）
+   */
   deleteTeam(teamId: string): void {
     const team = this.teams.get(teamId);
     if (!team) return;

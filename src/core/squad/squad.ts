@@ -116,10 +116,21 @@ class SquadManagerClass {
     return { ...rowToSquad(row), members, leader };
   }
 
-  listSquads(projectId?: string): SquadWithMembers[] {
+  /**
+   * 列出 Squad。
+   *
+   * ## `includeArchived`（第 44 轮）
+   *
+   * 归档原来是**不可逆且看不见**的：`archiveSquad` 只写 `archived = 1`，
+   * 而所有读路径都过滤掉归档行，界面上的"归档"按钮因此等价于永久删除
+   * （数据还在库里，但没有任何入口能再看到它）。
+   * 现在给出显式开关（**默认行为一个字没变**：仍然只列未归档），
+   * UI 用它在"显示已归档"时把那些行取回来，并据此提供"恢复"。
+   */
+  listSquads(projectId?: string, options: { includeArchived?: boolean } = {}): SquadWithMembers[] {
     const rows = projectId
-      ? SquadStorage.listByProject(projectId)
-      : SquadStorage.listAll();
+      ? SquadStorage.listByProject(projectId, options)
+      : SquadStorage.listAll(options.includeArchived ?? false);
     return rows.map((row) => {
       const members = SquadStorage.getMembers(row.id).map(rowToMember);
       const leader = getAgentRegistry().get(row.leader_agent_id);
@@ -140,6 +151,20 @@ class SquadManagerClass {
   archiveSquad(id: string): void {
     SquadStorage.archive(id);
     this.notify(id);
+  }
+
+  /**
+   * 取消归档（恢复）。
+   *
+   * 为什么必须有：归档是 UI 上唯一的"移除"入口，而它原来**没有任何恢复途径** ——
+   * 误点一次就等于永久删除（数据还在库里，界面上却再也看不到）。
+   * 返回 `false` 表示写入没被接受（存储未就绪或该行不存在），**调用方要如实提示**，
+   * 不能当成"恢复成功"。
+   */
+  unarchiveSquad(id: string): boolean {
+    const ok = SquadStorage.unarchive(id);
+    if (ok) this.notify(id);
+    return ok;
   }
 
   deleteSquad(id: string): void {

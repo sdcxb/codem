@@ -281,6 +281,7 @@ import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./core/s
 import { setLang, useLang, S } from "./core/i18n/lang";
 import { useWindowState } from "./hooks/useWindowState";
 import * as MessageStorage from "./core/storage/message";
+import * as SessionStorage from "./core/storage/session";
 import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
 import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
 import { ThemeManager, useSkin } from "./core/theme";
@@ -296,6 +297,46 @@ import type { ClarificationFormData } from "./core/llm/agentic-loop";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
+import { reportActionFailure } from "./core/storage/persist-failure";
+
+/**
+ * 退出前的收尾：**排空在途写入 + checkpoint 存储端口**（第 44 轮补上的缺口）。
+ *
+ * ## 为什么必须有这一步
+ *
+ * `shutdownRustStoragePort()`（`core/storage/bootstrap.ts`）会做两件退出时必须做的事：
+ * ① 排空 `RustStoragePort` 的三个队列（append / events / config）；
+ * ② `engine.checkpoint()` 把 WAL 并回主库。
+ *
+ * 而它在**生产代码里零调用**（只有定义与两个测试）—— 也就是说：退出时这两件事从来没做过。
+ * 后果实测（应用内长连接）：
+ * - 冷启动 WAL 16.1 KB → 写入约 20 MB 后 **30,425.3 KB**；
+ * - **干净退出后仍然 30,425.3 KB**（没 checkpoint）；
+ * - 强杀重启后仍然 30,425.3 KB；
+ * - 而显式跑一次 `checkpoint` 只要 **10.2 ms**，WAL 立刻归零。
+ *
+ * 这**不会丢数据**（崩溃测试证明追加日志与事务都已落地），但它让"磁盘上看起来只涨不落"，
+ * 并且下次启动要重放 30 MB 的 WAL —— 退出时 10 毫秒的事被挪到了下次启动。
+ *
+ * ## 为什么放在这里而不是塞进 `quit_app`
+ *
+ * `quit_app` 是 Rust 侧命令，调用它会立刻结束进程 —— 所以收尾必须在**调用之前**
+ * 由渲染侧 await 完成（三处退出路径：窗口关闭 / 托盘退出 / `quit-requested` 事件）。
+ * 收敛成一个函数是为了**三处行为一致**：否则"从托盘退出不 flush"这类偏差迟早会出现。
+ */
+async function finalizeBeforeQuit(): Promise<void> {
+  try {
+    await flushSessionLogWrites();
+  } catch {
+    // `flushSessionLogWrites` 内部已自行上报失败；此处兜底防御（退出路径不能再抛）
+  }
+  try {
+    const { shutdownRustStoragePort } = await import("./core/storage/bootstrap");
+    await shutdownRustStoragePort();
+  } catch {
+    // 同上：收尾失败不能让退出流程卡住（Rust 侧有 2.5s 兜底强退）
+  }
+}
 
 /**
  * 动态获取应用根目录（用户主目录）。
@@ -1283,9 +1324,15 @@ flushStreamBuffer(); // flush all on unmount
               if (!hasStoragePort()) return false;
               const port = getStoragePort() as unknown as {
                 domains?: { isReady?: (t: string) => boolean };
-                kind?: string;
               };
-              if (port.kind !== "rust") return true; // wasm 回退：旧库就是数据源
+              /**
+               * 第 19 轮：这里原来有一句 `if (port.kind !== "rust") return true;`
+               * （"wasm 回退：旧库就是数据源"）—— 它是删旧引擎时漏下的**最后一点 A 态判断**，
+               * 而且方向是反的：端口在却不是 rust 时就宣布"就绪"，于是重试根本不会触发。
+               *
+               * 它**恒不成立**（`kind` 已是常量 `"rust"`），删除后判据只剩一条：
+               * **projects 域的镜像是否真的就绪** —— 这正是下面注释里说的、第一版踩过的坑。
+               */
               return port.domains?.isReady?.("projects") === true;
             };
             for (let attempt = 0; attempt < 40; attempt++) {
@@ -1771,8 +1818,11 @@ flushStreamBuffer(); // flush all on unmount
          * 旧引擎的写入有 500ms 防抖 + 整库导出，所以"退出前 flush"是必需的；
          * 端口世界的写入**是一条命令 = 一次事务**，已经落地，没有可 flush 的缓冲。
          * 但**追加日志（权威副本）**仍然是排队异步写的 —— 那才是退出前真正必须 flush 的东西。
+         *
+         * 第 44 轮：再加上存储端口的 stop + checkpoint（见 `finalizeBeforeQuit` 的说明：
+         * 这两件事原来在生产路径上从来没做过）。
          */
-        await flushSessionLogWrites();
+        await finalizeBeforeQuit();
         const { invoke } = (window as any).__TAURI__?.core || {};
         invoke?.("quit_app");
         return;
@@ -1925,11 +1975,8 @@ flushStreamBuffer(); // flush all on unmount
     // Rust 侧有 2.5s 兜底强退，因此这里不需要超时保护。
     let unlistenQuitReq: (() => void) | undefined;
     listen("quit-requested", async () => {
-      try {
-        await flushSessionLogWrites();
-      } catch {
-        // flushSessionLogWrites 内部已自行上报失败；此处兜底防御。
-      }
+      // 第 44 轮：统一走 `finalizeBeforeQuit`（排空在途追加 + 存储端口 stop/checkpoint）
+      await finalizeBeforeQuit();
       const { invoke } = (window as any).__TAURI__?.core || {};
       invoke?.("quit_app");
     }).then((un: () => void) => { unlistenQuitReq = un; });
@@ -1948,8 +1995,9 @@ flushStreamBuffer(); // flush all on unmount
       void flushSessionLogWrites();
       invoke?.("hide_to_tray");
     } else {
-      // 退出前写完在途追加；quit_app 会立刻结束 Rust 进程，所以必须 await
-      await flushSessionLogWrites();
+      // 退出前写完在途追加；quit_app 会立刻结束 Rust 进程，所以必须 await。
+      // 第 44 轮：统一走 `finalizeBeforeQuit`（含存储端口 stop/checkpoint）。
+      await finalizeBeforeQuit();
       invoke?.("quit_app");
     }
   }, []);
@@ -3290,6 +3338,30 @@ abortControllersRef.current.delete(session?.id || "");
   };
 
   /**
+   * 「分叉」入口（第 44 轮：从三份内联实现收敛到这里）。
+   *
+   * 三处 `onFork` 原来各自把整段逻辑抄了一遍，而三份都没有写 `parent_id` ——
+   * 于是 `session_trace`（按 `parent_id` 追溯祖先/后代）在生产里永远只报
+   * `Parent: (root)` / `Ancestors: []`，也就是"完整谱系"这个能力从来没有数据。
+   *
+   * 现在统一调 `useProjectStore.forkSession`：它会走 `SessionStorage.forkSession`
+   * （**写 parent_id + 继承事件日志**）并按 `messageIndex` 复制消息。
+   * UI 这边只负责"分叉完把新会话的消息读进来"。
+   */
+  const handleFork = useCallback((messageIndex: number) => {
+    const store = useProjectStore.getState();
+    const source = store.currentSession;
+    if (!source) return;
+    try {
+      const child = store.forkSession(source.id, messageIndex, 'Fork: ' + source.title);
+      loadMessages(child.id);
+    } catch (e) {
+      // 分叉失败必须可见：静默失败会让用户以为"新会话建好了"而实际什么都没有
+      reportActionFailure("app.forkSession", e, "分叉会话创建失败");
+    }
+  }, [loadMessages]);
+
+  /**
    * P0 (对标 dsh-message-rewind / Trae "编辑并回退"):
    * Edit a past user message and resend it in a NEW forked session.
    * - The new session contains everything BEFORE the edited message (the
@@ -3322,6 +3394,20 @@ abortControllersRef.current.delete(session?.id || "");
 
     const prefix = allMessages.slice(0, targetIdx); // everything before the edited message
     const newSession = createSession(`Rewind: ${session.title}`);
+    /*
+     * 记下谱系（第 44 轮）。
+     *
+     * "编辑并回退"产生的新会话与原会话是**明确的父子关系**，但这里原来只调了
+     * `createSession`（不写 `parent_id`）—— 于是 `session_trace` 对新会话只报
+     * `Parent: (root)` / `Ancestors: []`，"这个会话是从哪一条分出来的"这个事实永久丢失。
+     * `SessionStorage.forkSession` 是**唯一**会写 `parent_id` 的写点（并顺带让事件日志
+     * 继承源会话），所以这里补一次调用把关系钉住 —— 会话行走 upsert，重复写是幂等的。
+     */
+    try {
+      SessionStorage.forkSession(session.id, newSession.id, newSession.projectId, newSession.title);
+    } catch (e) {
+      reportActionFailure("app.rewind.linkParent", e, "回退会话的谱系未写入");
+    }
 
     // 1. Copy prefix messages into the new session (fresh IDs).
     const ts = Date.now();
@@ -3530,28 +3616,7 @@ onRemoveProject={(id, name, path) => {
                           onEditAndResend={handleEditAndResend}
 onEditAndRewind={handleEditAndRewind}
                           sessionId={currentSession?.id}
-                          onFork={(messageIndex) => {
-                            if (currentSession && currentProject) {
-                              const newSession = createSession('Fork: ' + currentSession.title);
-                              const sourceMessages = MessageStorage.listMessages(currentSession.id);
-                              if (sourceMessages.length > 0) {
-                                let endIdx = sourceMessages.length;
-                                for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
-                                  if (sourceMessages[i].role === "user") { endIdx = i; break; }
-                                }
-                                const forkedMessages = sourceMessages.slice(0, endIdx);
-                                const forkTs = Date.now();
-                                for (const msg of forkedMessages) {
-                                  const newMsgId = `${msg.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`;
-                                  MessageStorage.createMessage({
-                                    ...msg, id: newMsgId,
-                                    toolCalls: msg.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}` })),
-                                  }, newSession.id);
-                                }
-                                loadMessages(newSession.id);
-                              }
-                            }
-                          }}
+                          onFork={handleFork}
                           connected={true}
                           model={cliModel}
                           onModelChange={handleModelChange}
@@ -3654,28 +3719,7 @@ onSend={handleSend}
                         onEditAndResend={handleEditAndResend}
 onEditAndRewind={handleEditAndRewind}
                         sessionId={currentSession?.id}
-                        onFork={(messageIndex) => {
-                          if (currentSession && currentProject) {
-                            const newSession = createSession('Fork: ' + currentSession.title);
-                            const sourceMessages = MessageStorage.listMessages(currentSession.id);
-                            if (sourceMessages.length > 0) {
-                              let endIdx = sourceMessages.length;
-                              for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
-                                if (sourceMessages[i].role === "user") { endIdx = i; break; }
-                              }
-                              const forkedMessages = sourceMessages.slice(0, endIdx);
-                              const forkTs = Date.now();
-                              for (const msg of forkedMessages) {
-                                const newMsgId = `${msg.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`;
-                                MessageStorage.createMessage({
-                                  ...msg, id: newMsgId,
-                                  toolCalls: msg.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}` })),
-                                }, newSession.id);
-                              }
-                              loadMessages(newSession.id);
-                            }
-                          }
-                        }}
+                        onFork={handleFork}
                         connected={true}
                         model={cliModel}
                         onModelChange={handleModelChange}
@@ -3810,39 +3854,7 @@ onSend={handleSend}
                 onEditAndResend={handleEditAndResend}
 onEditAndRewind={handleEditAndRewind}
                 sessionId={currentSession?.id}
-                onFork={(messageIndex) => {
-                  if (currentSession && currentProject) {
-                    const newSession = createSession('Fork: ' + currentSession.title);
-                    // Fork messages from SQLite via MessageStorage
-                    const sourceMessages = MessageStorage.listMessages(currentSession.id);
-                    if (sourceMessages.length > 0) {
-                      // Fork the entire Q&A turn: from the user message at messageIndex
-                      // through all subsequent assistant messages until the next user message.
-                      let endIdx = sourceMessages.length;
-                      for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
-                        if (sourceMessages[i].role === "user") {
-                          endIdx = i;
-                          break;
-                        }
-                      }
-                      const forkedMessages = sourceMessages.slice(0, endIdx);
-                      const forkTs = Date.now();
-                      for (const msg of forkedMessages) {
-                        // Generate new IDs to avoid conflicts with source messages
-                        const newMsgId = `${msg.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`;
-                        MessageStorage.createMessage({
-                          ...msg,
-                          id: newMsgId,
-                          toolCalls: msg.toolCalls?.map((tc) => ({
-                            ...tc,
-                            id: `${tc.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`,
-                          })),
-                        }, newSession.id);
-                      }
-                      loadMessages(newSession.id);
-                    }
-                  }
-                }}
+                onFork={handleFork}
                 connected={true}
                 model={cliModel}
                 onModelChange={handleModelChange}

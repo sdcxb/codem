@@ -20,6 +20,23 @@
 .squads-header-title svg { color: var(--accent); }
 .squads-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); }
 
+/* 右侧动作区：「显示已归档」开关 + 新建按钮（第 44 轮） */
+.squads-header-actions { display: flex; align-items: center; gap: var(--space-8); }
+
+/* 「显示已归档」：归档原来不可逆且看不见，这个开关是唯一的找回入口 */
+.squads-archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 归档 / 恢复的结果提示（可点击关闭） */
+.squads-notice { cursor: pointer; }
+
 /* 主按钮（§3）：accent 底 + --text-on-accent 字 */
 .squads-new-btn {
   display: grid;

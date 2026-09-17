@@ -13,36 +13,42 @@ import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNo
 // 风险远大于收益。所以端口里的"配置面"就是**唯一允许同步读**的形态：
 // 启动时一次性预热进内存（`settings` 表极小，实测 24 行），之后读永远同步。
 //
-// ## 分流规则（迁移期）
+// ## 分流规则（迁移期 → 第 19 轮：只剩一条路）
 //
-// - 端口已注册且是 `rust` → 读走端口的内存缓存（同步），写走"内存即时生效 + 写穿队列"；
-// - 否则（默认）→ 完全维持原来的 WASM 行为，**一个字节都不变**。
+// - 端口已注册 → 读走端口的内存缓存（同步），写走"内存即时生效 + 写穿队列"；
+// - 端口未注册（**唯一**的"没有可用存储"形态）→ 返回该配置的默认值，**不抛**。
 //
-// 这条分流是"回滚开关"能生效的关键：`localStorage[codem-storage-engine]=wasm`
-// 时端口不注册，这里自动退回原路径。
+// 第 19 轮收紧：原来的"否则 → 完全维持 WASM 行为"那条路已随旧引擎删除；
+// `kind` 也已是常量 `"rust"`，因此本文件里所有 `kind` 判据都删掉了。
 //
 // ## 硬约束
 //
 // `settings` 是**唯一**允许进内存镜像的数据（配置的量级是几十行）。
 // 消息语料绝不进渲染进程 —— 见 port.ts 的硬约束 4。
 
-/** 端口可用时用端口（rust 引擎），否则返回 null 走原路径 */
+/** 端口可用时用端口（**唯一实现**：rust），否则返回 null 表示"没有配置源" */
 function rustConfig() {
   if (!hasStoragePort()) return null;
-  const port = getStoragePort();
-  return port.kind === "rust" ? port.config : null;
+  // 第 19 轮：`port.kind === "rust" ? port.config : null` 收成 `port.config`
+  // —— `kind` 是常量 "rust"，那个三元里"另一条路"永不可达。
+  return getStoragePort().config;
 }
 
-/** 是否处于 rust 引擎（配置面扩展域的分流判据） */
+/**
+ * 端口是否可用（配置面扩展域的分流判据）。
+ *
+ * 第 19 轮：原来是 `hasStoragePort() && getStoragePort().kind === "rust"` ——
+ * `kind` 收成常量后，后半句恒为真，等于只是 `hasStoragePort()`。
+ */
 function isRust(): boolean {
-  return hasStoragePort() && getStoragePort().kind === "rust";
+  return hasStoragePort();
 }
 
 /** 配置面**扩展域**的内存镜像（quick_phrases / mcp_servers / memory） */
 function rustConfigDomain() {
   if (!hasStoragePort()) return null;
+  // 第 19 轮：`if (port.kind !== "rust") return null;` 已删（恒不成立）。
   const port = getStoragePort();
-  if (port.kind !== "rust") return null;
   return (port as { configDomain?: unknown }).configDomain as
     | {
         isWarmed(): boolean;
@@ -360,6 +366,27 @@ export function removeRecoveryData(sessionId: string): void {
 }
 
 // ========== Cost Records Storage ==========
+//
+// ## ⚠️ 这个域**当前没有接线**，第 44 轮把三个"看起来有实现"的死函数删掉了
+//
+// 审计（真机 + 全仓 grep）坐实的现状：
+//
+// - `cost_records` 表在 schema 里、也被迁移搬过来，但**零写点、零读点**；
+// - 真实的成本持久化在 `cost-tracker.ts`：整个记录数组被 JSON 序列化后塞进
+//   `settings` 表的一个键（`codem-cost-tracker`）；
+// - 而 `rust-port.ts` 里那句注释写着 "`cost_records`（可能上万行）**不进这个缓存**……
+//   属于数据面" —— 与"其实一条都没用"完全相反。
+//
+// 原来这里有 `addCostRecord` / `getCostRecords` / `getCostStats` 三个导出函数：
+// 它们**全仓零调用者**（只有定义与自引用）。留着它们的代价不是"多几行代码"，
+// 而是让"成本已经入库了"这件事看起来成立 —— 审计就是这么被骗过一次的。
+//
+// 所以现在删掉函数，只留这段说明。**`cost_records` 表本身不删**：
+// 迁移进来的历史行是用户数据的副本，删表只会让"想用起来"这条路更难走。
+// 将来若要把成本搬进这张表，需要先回答三件在 `getCostStats` 里已经写在纸上的事：
+// 服务端分页（上万行）、按时间的聚合、以及"settings 里那份旧数据怎么迁"。
+//
+// `CostRecord` 类型保留：`cost-tracker.ts` 的记录形状与它一致，是将来落库的接口草案。
 
 export interface CostRecord {
   id: string;
@@ -373,68 +400,3 @@ export interface CostRecord {
   timestamp: number;
 }
 
-/** `cost_records` 行 → `CostRecord`（列名 snake_case → 驼峰） */
-function wireToCostRecord(row: Record<string, unknown>): CostRecord {
-  return {
-    id: String(row.id ?? ""),
-    sessionId: String(row.session_id ?? ""),
-    model: String(row.model ?? ""),
-    provider: String(row.provider ?? ""),
-    promptTokens: Number(row.prompt_tokens ?? 0),
-    completionTokens: Number(row.completion_tokens ?? 0),
-    cost: Number(row.cost ?? 0),
-    duration: Number(row.duration ?? 0),
-    timestamp: Number(row.timestamp ?? 0),
-  };
-}
-
-export function addCostRecord(record: CostRecord): void {
-  if (domainWrite(COST_TABLE, [{
-    id: record.id,
-    session_id: record.sessionId,
-    model: record.model,
-    provider: record.provider,
-    prompt_tokens: record.promptTokens,
-    completion_tokens: record.completionTokens,
-    cost: record.cost,
-    duration: record.duration,
-    timestamp: record.timestamp,
-  }], { scope: "settings.addCostRecord", note: "成本记录未保存" })) {
-    return;
-  }
-    reportWriteNotAccepted("settings.addCostRecord", "成本记录未保存");
-    return;
-}
-
-export function getCostRecords(limit: number = 1000): CostRecord[] {
-  const rust = domainReadMany(COST_TABLE, wireToCostRecord);
-  if (rust) {
-    // 旧 SQL：ORDER BY timestamp DESC LIMIT ?
-    return rust.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
-  }
-  return []; // 第 17 轮（L4）：旧库回退已删 —— 镜像未就绪 → 诚实的空结果（端口就绪后重读）
-}
-
-export function getCostStats(): { totalCost: number; todayCost: number; totalSessions: number; totalTokens: number } {
-  const rust = domainReadMany(COST_TABLE, wireToCostRecord);
-  if (rust) {
-    // 四个聚合在**同一份数据**上算完（旧实现是四条独立 SELECT）
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const since = todayStart.getTime();
-    let totalCost = 0;
-    let todayCost = 0;
-    let totalTokens = 0;
-    const sessions = new Set<string>();
-    for (const r of rust) {
-      totalCost += r.cost;
-      if (r.timestamp >= since) todayCost += r.cost;
-      totalTokens += r.promptTokens + r.completionTokens;
-      sessions.add(r.sessionId);
-    }
-    return { totalCost, todayCost, totalSessions: sessions.size, totalTokens };
-  }
-  // 第 17 轮（L4）：旧库回退（`tryGetDatabase()` + 四条聚合 SQL + catch）已删 ——
-  // 四个聚合在端口分支里已经在**同一份数据**上算完了；镜像未就绪时给空统计。
-  return { totalCost: 0, todayCost: 0, totalSessions: 0, totalTokens: 0 };
-}

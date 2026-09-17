@@ -53,10 +53,17 @@ describe("两态判据：端口未注册（A） vs 端口在但镜像未就绪�
     expect(domainPort(TABLE)).toBeNull();
   });
 
-  it("A 态：端口是 wasm（回滚开关）→ 同样回退旧库", () => {
-    setStoragePort(createFakeStoragePort({ kind: "wasm" }));
-    expect(shouldFallbackToLegacy(), "wasm 引擎下旧库就是数据源").toBe(true);
+  it("A 态：端口未注册 → 判据为真且端口层面完全不可用（第 19 轮：wasm 端口形态已不存在（旧引擎删除））", () => {
+    setStoragePort(null);
+    /**
+     * 第 19 轮：这条用例原来叫"A 态：端口是 wasm（回滚开关）→ 同样回退旧库"，
+     * 用 `createFakeStoragePort({ kind: "wasm" })` 模拟回滚形态。
+     * wasm 端口形态已不存在（旧引擎删除），A 态只剩"端口未注册"，
+     * 所以改写成 `setStoragePort(null)` —— 断言一条没少（还多了一条 `domainPort` 为 null）。
+     */
+    expect(shouldFallbackToLegacy(), "端口都没有，只能回退旧库").toBe(true);
     expect(domainPortRegistered()).toBe(false);
+    expect(domainPort(TABLE), "没有端口就没有域端口").toBeNull();
   });
 
   it("B 态：端口是 rust 且镜像已就绪 → 不回退，且端口可用", () => {

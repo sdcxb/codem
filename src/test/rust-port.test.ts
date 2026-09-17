@@ -39,6 +39,13 @@ class FakeTransport implements StorageTransport {
   integrityReply: unknown = { ok: true, result: { ok: true, detail: "ok" } };
   checkpointReply: unknown = { ok: true, result: { ok: true } };
 
+  capabilitiesReply: unknown = {
+    engine: "rust",
+    commands: ["settings.get_all", "settings.set", "settings.remove", "messages.list"],
+    max_rows_per_query: 5000,
+    no_whole_file_export: true,
+  };
+
   async invokeCommand<T>(command: string, params?: Record<string, unknown>): Promise<T> {
     this.calls.push({ method: "invokeCommand", command, params });
     if (this.replies.has(command)) return this.replies.get(command) as T;
@@ -65,14 +72,17 @@ class FakeTransport implements StorageTransport {
     return this.checkpointReply as T;
   }
 
+  /**
+   * ⚠️ **裸 `Value`**，不是 `{ok, result}`（A-5）。
+   *
+   * `src-tauri/src/storage.rs::storage_capabilities` 的签名是 `-> Value`，
+   * 它直接返回 `capabilities()` 的结果 —— 没有 `reply()` 包装。
+   * 这个假传输层早先返回的是**扁平对象**，形状恰好与"按扁平字段读"的错误实现
+   * 互相吻合，于是那个缺陷在测试里**永远绿**。
+   */
   async capabilities<T>(): Promise<T> {
     this.calls.push({ method: "capabilities" });
-    return {
-      engine: "rust",
-      commands: ["settings.get_all", "settings.set", "settings.remove", "messages.list"],
-      max_rows_per_query: 5000,
-      no_whole_file_export: true,
-    } as T;
+    return this.capabilitiesReply as T;
   }
 
   /** 所有被发出的命令名 */

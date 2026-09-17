@@ -63,6 +63,9 @@ pub const COMMANDS: &[&str] = &[
     "audit.recent",
     "audit.summary",
     "audit.clear",
+    "audit.prune",
+    "audit.stats",
+    "storage.compact",
     "health",
     "integrity_check",
     "checkpoint",
@@ -127,8 +130,21 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
      *
      * 打印到 stderr（CLI 与 Tauri 都会随进程输出可见），
      * 带上调用线程与命令名/参数摘要（不打印正文）。
+     *
+     * ⚠️ **第 44 轮：加开关，默认关闭**。这段留痕原本是**无条件**执行的，
+     * 于是每一次 `*delete*` / `*replace*` / `*compact*` 都要：
+     * ① 抓一次 `Backtrace::force_capture()`（要解析符号表）；② 往 stderr 写约 2.7 KB。
+     * 真机基准实测：`tool_calls.replace` 中位 **56.7 ms** vs 对照 `messages.get` **27.0 ms**
+     * —— **净增 29.7 ms**，而 `tool_calls.replace` 是流式响应的热路径（每次工具调用走一遍）。
+     * 而且这些字节会进入打包版由安装器收集的日志，长期看是纯粹的噪音。
+     *
+     * 保留能力、去掉默认代价：需要时设 `CODEM_RUST_TRACE=1` 打开。
+     * 排查"是谁在删数据"时它仍然是唯一能区分"JS 发的"与"进程内别处发的"的仪器，
+     * 所以**不删**，只改成按需。
      */
-    if command.contains("delete") || command.contains("replace") || command.contains("compact") {
+    if std::env::var_os("CODEM_RUST_TRACE").is_some()
+        && (command.contains("delete") || command.contains("replace") || command.contains("compact"))
+    {
         eprintln!(
             "[RustTrace] dispatch {command} params={}",
             serde_json::to_string(params).unwrap_or_default()
@@ -169,6 +185,9 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "audit.recent" => audit_recent(engine, params),
         "audit.summary" => audit_summary(engine, params),
         "audit.clear" => audit_clear(engine, params),
+        "audit.prune" => audit_prune(engine, params),
+        "audit.stats" => audit_stats(engine, params),
+        "storage.compact" => storage_compact(engine, params),
         "projects.list" => repo::projects_list(engine, params),
         "projects.delete" => repo::projects_delete(engine, params),
         "counts" => repo::counts_of(engine, params),
@@ -258,6 +277,171 @@ fn audit_clear(engine: &Engine, _p: &Value) -> DbResult<Value> {
         let removed = audit::clear(conn)?;
         Ok(json!({ "removed": removed }))
     })
+}
+
+/// **按水位线裁剪审计**（`{ before: <毫秒时间戳> }`，必填）。
+///
+/// 与 `audit.clear` 的区别是**语义**而不是程度：`clear` 是"我看完了，全清"，
+/// `prune` 是"保留窗口内、丢掉窗口外"。启动维护走后者 —— 于是这张表不再无界增长
+/// （真机实测它一度是库内最大的表：11.8 小时 61,416 行）。
+/// 缺 `before` 直接报错：删除必须有明确水位线（与 `telemetry.prune` 同一条原则）。
+fn audit_prune(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let before = repo::req_i64(p, "before")?;
+    engine.write_tx(|tx| {
+        let removed = audit::prune(tx, before)?;
+        let (remaining, min_at, max_at) = audit::stats(tx)?;
+        Ok(json!({
+            "removed": removed,
+            "before": before,
+            "remaining": remaining,
+            "oldest": min_at,
+            "newest": max_at,
+        }))
+    })
+}
+
+/// 审计表现状（行数 / 时间跨度）—— 维护汇总行据此如实报数
+fn audit_stats(engine: &Engine, _p: &Value) -> DbResult<Value> {
+    engine.with_conn(|conn| {
+        let (count, min_at, max_at) = audit::stats(conn)?;
+        Ok(json!({
+            "count": count,
+            "oldest": min_at,
+            "newest": max_at,
+        }))
+    })
+}
+
+/// 库文件的**空间回收**（第 44 轮：真机实测 115,191,808 B 的库里活数据只有 16,392,192 B，
+/// `freelist_count` = 98,799,616 B —— **85.8% 是永不回收的空闲页**，而全 crate `VACUUM` 零命中）。
+///
+/// ## 为什么需要一条命令而不是"打开时顺手 VACUUM"
+///
+/// `VACUUM` 会把整库重写一遍：需要与库等量的临时空间、在此期间占住单写者锁。
+/// 对 115 MB 的库这是**秒级到十秒级**的操作，放在 `open` 里就等于"启动随机变慢"。
+/// 所以做成显式命令，由渲染侧的维护流程按阈值触发（库大到值得做才做），
+/// 并且**如实回报做了没有、回收了多少** —— "维护跑了但什么都没做"与"维护根本没跑"
+/// 必须能区分（这是本模块维护汇总行的一贯要求）。
+///
+/// ## 阈值
+///
+/// `min_free_bytes`（默认 8 MiB）与 `min_free_ratio`（默认 0.25）**两个都要满足**才动手：
+/// 小库不做（费劲又不省多少），碎片少也不做。返回里带 `performed` 与前后数字，
+/// 调用方不需要猜。
+///
+/// `auto_vacuum=INCREMENTAL` 会在 `open` 时设置（对**新建**库立即生效；
+/// 对老库，第一次 `VACUUM` 会顺便把它转成 auto_vacuum，之后 `incremental_vacuum`
+/// 就能按页归还，不必再整库重写）。
+fn storage_compact(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let min_free_bytes = p
+        .get("min_free_bytes")
+        .and_then(|x| x.as_i64())
+        .unwrap_or(8 * 1024 * 1024);
+    let min_free_ratio = p
+        .get("min_free_ratio")
+        .and_then(|x| x.as_f64())
+        .unwrap_or(0.25);
+    let force = p.get("force").and_then(|x| x.as_bool()).unwrap_or(false);
+
+    let (page_size, page_count, freelist, auto_vacuum) = engine.with_conn(|conn| {
+        let page_size: i64 = conn
+            .query_row("PRAGMA page_size", [], |r| r.get(0))
+            .unwrap_or(0);
+        let page_count: i64 = conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        let freelist: i64 = conn
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        let av: i64 = conn
+            .query_row("PRAGMA auto_vacuum", [], |r| r.get(0))
+            .unwrap_or(0);
+        Ok((page_size, page_count, freelist, av))
+    })?;
+
+    let free_bytes = freelist.saturating_mul(page_size);
+    let ratio = if page_count > 0 {
+        freelist as f64 / page_count as f64
+    } else {
+        0.0
+    };
+    let worth_it = force || (free_bytes >= min_free_bytes && ratio >= min_free_ratio);
+
+    if !worth_it {
+        return Ok(json!({
+            "performed": false,
+            "reason": "空闲页规模未达阈值（不做整库重写）",
+            "page_size": page_size,
+            "page_count": page_count,
+            "freelist_count": freelist,
+            "free_bytes": free_bytes,
+            "free_ratio": ratio,
+            "auto_vacuum": auto_vacuum,
+            "min_free_bytes": min_free_bytes,
+            "min_free_ratio": min_free_ratio,
+        }));
+    }
+
+    let before_bytes = page_count.saturating_mul(page_size);
+    let started = std::time::Instant::now();
+    /*
+     * `VACUUM` 不能在事务里执行（SQLite 明确禁止），所以走 `with_conn` 而不是 `write_tx`。
+     * 单写者锁（`Mutex<Connection>`）保证 VACUUM 期间没有别的写插进来。
+     *
+     * ⚠️ 必须在 VACUUM 期间**临时摘掉 authorizer**：
+     * `VACUUM` 内部会写 `PRAGMA auto_vacuum`（重建库时要保留/转换自动回收模式），
+     * 而 `authorizer.rs` 的 `ENGINE_PRAGMAS` 把 `auto_vacuum` 的**写**一律拒绝
+     * （那是给"渲染侧不得改变引擎落盘语义"设的边界）。
+     * 于是不摘 authorizer 的话，VACUUM 会以
+     * `[UNSUPPORTED] authorization denied（该能力尚未实现（迁移期））` 失败 ——
+     * 一个完全指不到原因的错误（第 92 波 `data_version` 那次是同一类教训：
+     * 引擎自己的内部操作被自己的边界挡住，报出来的却是"能力未实现"）。
+     *
+     * 摘掉是安全的：这里是**引擎自己的命令**、执行的是**固定 SQL 字面量**
+     * （不来自参数），而且我们此刻握着连接锁、别的语句进不来。
+     * 做完立刻装回来 —— 边界在这条命令之外仍然全程有效。
+     */
+    engine.with_conn(|conn| -> DbResult<()> {
+        crate::authorizer::uninstall(conn);
+        /*
+         * 顺手把库转成 `auto_vacuum=INCREMENTAL`（第 44 轮）。
+         *
+         * 这个 pragma **只对空库立即生效**；老库上必须先设它、再 `VACUUM`，
+         * 模式才会真正落进文件结构里。而这里正好就要做一次整库重写 ——
+         * 于是"回收空闲页"和"开启之后按页归还的能力"一次付费同时拿到。
+         * 之后 `incremental_vacuum` 就能小步归还，不必再整库重写。
+         */
+        let _ = conn.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;");
+        let out = conn.execute_batch("VACUUM").map_err(DbError::from);
+        crate::authorizer::install(conn);
+        out
+    })?;
+    let elapsed_ms = started.elapsed().as_millis() as i64;
+
+    let (page_count_after, freelist_after, auto_vacuum_after) = engine.with_conn(|conn| {
+        let pc: i64 = conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        let fl: i64 = conn
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        let av: i64 = conn
+            .query_row("PRAGMA auto_vacuum", [], |r| r.get(0))
+            .unwrap_or(0);
+        Ok((pc, fl, av))
+    })?;
+    let after_bytes = page_count_after.saturating_mul(page_size);
+    Ok(json!({
+        "performed": true,
+        "before_bytes": before_bytes,
+        "after_bytes": after_bytes,
+        "reclaimed_bytes": before_bytes.saturating_sub(after_bytes),
+        "freelist_before": freelist,
+        "freelist_after": freelist_after,
+        "auto_vacuum_before": auto_vacuum,
+        "auto_vacuum_after": auto_vacuum_after,
+        "elapsed_ms": elapsed_ms,
+    }))
 }
 
 /// 命令清单 + 当前实现（自省）

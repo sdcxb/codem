@@ -191,7 +191,13 @@ describe("TC-DEDUP 单一元数据来源", () => {
   it("DEDUP-5: SquadsTab 把当前项目放进依赖（切项目会重查）", () => {
     const src = read("components/task-center/SquadsTab.tsx");
     expect(src).toContain("useCurrentProjectId");
-    expect(src).toMatch(/\}, \[projectId\]\)/);
+    /*
+     * 依赖数组里**必须含 `projectId`**（切项目要重查，P2-12 项目边界约定）。
+     * 第 44 轮加了「显示已归档」开关之后依赖变成 `[projectId, showArchived]` ——
+     * 断言因此从"精确等于 `[projectId]`"放宽成"含 projectId"：
+     * 前者会把"多了一个正当依赖"误判成回归，而真正要守的是**项目边界**。
+     */
+    expect(src, "loadSquads 的依赖必须包含 projectId").toMatch(/\}, \[projectId(?:, [^\]]+)?\]\)/);
     expect(src).not.toContain("useProjectStore.getState()");
   });
 

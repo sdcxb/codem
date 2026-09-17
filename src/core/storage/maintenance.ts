@@ -12,20 +12,31 @@
  *   · 会话追加日志（JSONL，权威副本）—— 文件 I/O；
  *   · 外置附件正文 —— 文件 I/O + 域端口；
  *   · 索引裁剪与重建 —— 域端口 + JSONL；
- *   · 遥测裁剪 —— 引擎命令 `telemetry.prune`。
+ *   · 遥测裁剪 —— 引擎命令 `telemetry.prune`；
+ *   · 审计裁剪 / 审计规模 —— 引擎命令 `audit.prune` / `audit.stats`（第 45 轮接线）；
+ *   · 空间回收 —— 引擎命令 `storage.compact`（**整库重写，按阈值**，第 45 轮接线）；
+ *   · 完整性检查 —— 引擎命令 `integrity_check`（**异步 + 节流**，第 45 轮接线）。
  *
  * ## 顺带修掉的一件事：日志必须能区分"没跑"和"跑了没事做"
  *
  * 缺陷能长期存在的另一半原因是那两种情况在日志里长得一样（rust 模式下连"维护完成"都不打印）。
  * 现在**每次维护结束都打一行带数字的日志**，任何一步真的做了事都能看见。
+ *
+ * ## 第 45 轮：四条"引擎有能力、渲染侧零调用"的接线
+ *
+ * 这一轮加进来的四个引擎能力原来都**只有定义没有调用者**（正是本仓库反复抓到的
+ * "有能力没人用"形态）：`audit.prune` / `audit.stats` / `storage.compact` / `integrity_check`。
+ * 接线时统一遵守同一条规矩：**每一步都要能区分"没跑 / 跑了没做 / 跑了做了多少（失败就带原因）"**。
+ * 这不是日志洁癖 —— 真机上"维护看起来在跑但其实什么都没做"在这个模块里发生过多次。
  */
 
 import { reportPersistFailure } from "./persist-failure";
 
 export interface MaintenanceResult {
-  /** 旧引擎时代的库体积统计；现在恒为 0（库文件由 Rust 引擎持有，渲染侧不读它） */
+  /** 旧引擎时代的库体积统计（现在由 `storage.compact` 的 before/after 承担，这里保持 0 兼容签名） */
   sizeBefore: number;
   sizeAfter: number;
+  /** 旧引擎时代的 VACUUM 回收量；现在恒为 0（真正的回收量在 `compactedBytes`） */
   reclaimed: number;
   prunedEvents: number;
   prunedTelemetry: number;
@@ -36,6 +47,22 @@ export interface MaintenanceResult {
   backfilledMessages: number;
   /** 本次**从权威日志重建进索引**的消息数（第 91 波：崩溃自愈） */
   rebuiltIndexMessages: number;
+  /**
+   * 本次重建时因**会话墓碑**跳过的会话数（B-1）。
+   *
+   * 为什么这个数字必须出现在汇总里：它是"用户删掉的会话会不会复活"这件事的
+   * **唯一可观测信号**。跳过而不计数 = 重建悄悄少几个会话，而少掉的那几个正是
+   * 用户显式删除的；哪天墓碑机制失效（写失败、日志被清），只有这行数字对不上能发现。
+   */
+  skippedDeletedSessions: number;
+  /**
+   * 本次重建时**没能取到项目归属**的会话数（第 45 轮）。
+   *
+   * `messages.rebuild_index` 现在支持 `sessions[].project_id`；取不到时仍传 `""`，
+   * 而 `""` 是"全局项目"—— 也就是说这种会话会掉进"全局对话"。
+   * 这个计数就是那件事的可见性：**它是 0 才说明"复活的会话归属正确"**。
+   */
+  rebuildWithoutProject: number;
   /** 本次从查询索引裁剪掉的消息数（第 78 波） */
   trimmedIndexMessages: number;
   /** 本次预热的外置附件正文数 */
@@ -44,7 +71,45 @@ export interface MaintenanceResult {
   prunedAttachmentOrphans: number;
   /** 本次压缩的追加日志会话数（权威副本的膨胀控制） */
   compactedLogSessions: number;
+  /** 本次从 `storage_audit` 裁掉的审计行数（第 45 轮；这张表曾无界增长到 61,416 行） */
+  prunedAuditRows: number;
+  /** 裁剪之后 `storage_audit` 的剩余行数（`-1` = 没读到，见 `auditStatsRead`） */
+  auditRemainingRows: number;
+  /** 审计规模是否读到了（`false` = `audit.stats` 没跑成，此时 `auditRemainingRows` 不可信） */
+  auditStatsRead: boolean;
+  /** 本次 `storage.compact` 是否**真的**做了整库重写（false = 未达阈值 / 失败，原因见汇总行） */
+  compactPerformed: boolean;
+  /** 本次真正回收的字节数（只有 `compactPerformed` 为真时才有意义） */
+  compactedBytes: number;
+  /** 本次完整性检查的结论：`ok` / `failed` / `skipped`（节流或命令不可用） */
+  integrity: "ok" | "failed" | "skipped";
 }
+
+/**
+ * 审计保留窗口（第 45 轮）。
+ *
+ * 真机实测 `storage_audit` 11.8 小时涨到 **61,416 行**（库内最大的表、占活数据 35.6%），
+ * 而其中 99.98% 来自同一批全库重灌事件。7 天是"排查事故仍然够用"与"表不再无界增长"
+ * 之间的折中：真机事故排查的取证窗口从来是小时级，7 天已经远超需要。
+ */
+export const AUDIT_RETENTION_DAYS = 7;
+
+/**
+ * 完整性检查的节流窗口（第 45 轮，12 小时）。
+ *
+ * ## 为什么必须节流、为什么是这个粒度
+ *
+ * `PRAGMA quick_check` 真机成本实测：**901 ms @ 10k 行 / 4,469 ms @ 100k 行** ——
+ * 每次启动都跑一次等于给启动加一秒到四秒半；而"数据页损坏"这种事**不需要 12 小时内发现两次**
+ * （发现之后的动作是"写重建标记 → 下次索引重建"，那本身是分钟级的事）。
+ *
+ * 12 小时的选择理由：它让"同一天多次启动"只跑一次，且**跨天必然跑一次** ——
+ * 既覆盖"一天内至少检查一次"，也不会因为用户频繁重启而反复付那 4.5 秒。
+ */
+export const INTEGRITY_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
+
+/** 上次完整性检查的时间戳存在 settings 里（`settings` 是"几行数据、读起来最便宜"的配置面） */
+export const INTEGRITY_CHECK_MARKER_KEY = "codem-storage-integrity-checked-at";
 
 /** 索引重建标记文件（写文件走 IPC，与数据库无关） */
 export const INDEX_REBUILD_MARKER = "codem-index-rebuild-needed.json";
@@ -127,28 +192,538 @@ export async function markIndexRebuildNeeded(reason: string): Promise<boolean> {
  * 因为"以为传了条件其实全表清空"这类事故的代价太高。失败不抛：维护永远不能让应用不可用；
  * 但要**如实留痕**（否则又变成"看起来做了"）。
  */
-export async function pruneTelemetryViaPort(before: number): Promise<number> {
-  try {
-    const { hasStoragePort, getStoragePort } = await import("./port");
-    if (!hasStoragePort()) return 0;
-    const port = getStoragePort();
-    if (port.kind !== "rust") return 0;
-    const res = await port.data.execute("telemetry.prune", { before });
-    return Number((res as { written?: number } | undefined)?.written ?? 0);
-  } catch (e) {
-    console.warn("[Maintenance] 遥测裁剪（端口）失败（跳过）:", e);
-    return 0;
+/**
+ * 遥测表名与列名（B-8：裁剪之后要**同步镜像**，不能只打一条引擎命令）。
+ *
+ * 与 `telemetry.ts` 的 `TABLE` / `wireToTelemetry` 保持一致 —— 那边不在本批所有权内，
+ * 所以这里不 import 它的私有常量，而是把这两个**线上契约名**写在这里并注明出处。
+ */
+const TELEMETRY_TABLE = "telemetry_events";
+
+/**
+ * 遥测裁剪的结果（B-8：**必须能区分"裁了 / 失败 / 没得裁"**）。
+ *
+ * ## 为什么返回值从 `number` 改成三态
+ *
+ * 原来失败时 `catch { console.warn(...); return 0; }` —— 于是汇总行照打
+ * "遥测裁剪 0 条"。而 `0` 同时代表三件完全不同的事：
+ * 1. **裁了 0 条**（没有过期数据，一切正常）；
+ * 2. **端口未注册 / 没接手**（这次维护根本没做这件事）；
+ * 3. **命令失败**（可能有数据但没裁掉，越攒越多）。
+ *
+ * 这个模块的**头注释**恰恰把"必须能区分没跑与跑了没事做"当设计目标 ——
+ * 而遥测这一步是唯一没做到的地方（真机排查时最需要它：库只涨不降时，
+ * 判断"裁剪没跑"还是"跑了但没东西可删"决定了下一步查哪里）。
+ */
+export type TelemetryPruneOutcome =
+  | { status: "pruned"; rows: number; remaining?: number }
+  | { status: "noop"; reason: string }
+  | { status: "failed"; reason: string };
+
+export async function pruneTelemetryViaPort(before: number): Promise<TelemetryPruneOutcome> {
+  const { hasStoragePort, getStoragePort } = await import("./port");
+  if (!hasStoragePort()) {
+    return { status: "noop", reason: "端口未注册（本次维护没有可用的存储）" };
   }
+  const port = getStoragePort();
+  let rows = 0;
+  try {
+    const res = await port.data.execute("telemetry.prune", { before });
+    rows = Number((res as { written?: number } | undefined)?.written ?? 0);
+  } catch (e) {
+    /**
+     * 失败不再静默（原来只有一行 `console.warn`，而汇总行照打"遥测裁剪 0 条"→
+     * 与"没得裁"无法区分）。这里**两层都留**：
+     * - `console.warn` 保留原样：它是既有告警契约（`snapshot-compaction.test.ts` 的 SNAP-6、
+     *   `database-maintenance-bounds.test.ts` 的 MAINT-5 都按 warn 认领这一条）；
+     * - `reportPersistFailure` 把失败送进**结构化**通道（可查询的失败清单 + 界面提示）。
+     */
+    console.warn("[Maintenance] 遥测裁剪（端口）失败（跳过）:", e);
+    reportPersistFailure(
+      "maintenance.telemetryPrune",
+      e,
+      `遥测裁剪失败（水位线 ${new Date(before).toISOString()}）：本次没有裁掉任何数据`,
+    );
+    return { status: "failed", reason: e instanceof Error ? e.message : String(e) };
+  }
+
+  /**
+   * ## 裁剪之后**必须同步域镜像**（B-8 的另一半）
+   *
+   * 引擎那一条 `telemetry.prune` 只改库，而**性能面板读的是域镜像**
+   * （`telemetry.ts` 的 `telemetryRows()` → `domainReadMany`）。只发命令不更新镜像，
+   * 用户看到的是"裁剪之后事件还在"（面板刷新也不对），下一个人就会以为裁剪没生效。
+   *
+   * 这里的做法与 `telemetry.ts::clearAll` **完全一致**（那是这个仓库里已经验证过的
+   * 正确形态）：按镜像里的 `id` 逐行 `crud.delete` —— 它同时改**本地镜像**与写穿，
+   * 于是"引擎已删"与"镜像已删"是同一批 id，不会出现两张不同的真相。
+   *
+   * 为什么不重载整张镜像：`RustDomainMirror.ensureLoaded` 对**已加载**的表是
+   * "回调一下就返回"（`if (this.loaded.has(table)) { onLoaded?.(); return; }`），
+   * 所以"重新 ensureLoaded"根本刷不掉已经删掉的行。逐 id 删是这里唯一可靠的形态。
+   *
+   * ⚠️ 代价：镜像只镜像到上限（`telemetry.ts` 的 5000 行），所以**超出上限的那部分
+   * 行不在镜像里**，也就不会被这一步删掉 —— 它们由引擎那条命令删掉了，但镜像里
+   * 本来就没有，面板看不到它们，所以不影响"面板显示正确"。这一点记在这里，
+   * 免得下一个人以为"删的行数必须等于引擎报的 written"。
+   */
+  try {
+    const { domainReadMany, domainDeleteWhere } = await import("./domain-store");
+    const mirrored = domainReadMany<Record<string, unknown>>(TELEMETRY_TABLE, (r) => r, {
+      maxRows: 5000,
+    });
+    if (mirrored && mirrored.length > 0) {
+      const expired = mirrored.filter((r) => Number(r.timestamp ?? 0) < before);
+      if (expired.length > 0) {
+        domainDeleteWhere(
+          TELEMETRY_TABLE,
+          (row) => Number(row.timestamp ?? 0) < before,
+          "id",
+          {
+            scope: "maintenance.telemetryPrune.mirror",
+            note: "遥测镜像未同步裁剪（面板仍会显示已删事件）",
+            maxRows: 5000,
+          },
+        );
+        console.log(
+          `[Maintenance] 遥测镜像同步：按 id 删掉 ${expired.length} 条（镜像上限内的那部分）`,
+        );
+      }
+    }
+  } catch (e) {
+    // 镜像同步失败不该让维护失败（引擎已经删了），但必须留痕
+    reportPersistFailure(
+      "maintenance.telemetryPrune.mirror",
+      e,
+      "引擎侧已裁剪，但遥测镜像未同步（性能面板仍会显示已删事件，重启后一致）",
+    );
+  }
+
+  if (rows > 0) return { status: "pruned", rows };
+  return { status: "noop", reason: "没有早于水位线的遥测事件" };
+}
+
+/**
+ * 把裁剪结果渲染成**汇总行里的一小段**（B-8：三态各有各的说法、失败带原因）。
+ *
+ * 第 45 轮补上 `remaining`：任务书要求"裁剪 N 条 / **剩余 M 条**" ——
+ * 只看裁掉多少看不出"这张表到底还多大"，而"它在涨"正是要盯的事。
+ */
+function formatTelemetryPrune(outcome: TelemetryPruneOutcome): string {
+  switch (outcome.status) {
+    case "pruned": {
+      const left = typeof outcome.remaining === "number" ? `、剩余 ${outcome.remaining} 条` : "";
+      return `遥测裁剪 ${outcome.rows} 条${left}`;
+    }
+    case "noop":
+      return `遥测裁剪 未执行（${outcome.reason}）`;
+    case "failed":
+      return `遥测裁剪 失败（${outcome.reason}）`;
+  }
+}
+
+/**
+ * 取端口的"结构化命令"能力（没有就抛，让调用方的 catch 走如实上报）。
+ *
+ * 为什么要有这个小函数：`StorageDataPort.command` 是**可选**能力
+ * （见 `port.ts` 的注释），所以每个调用点都得处理"没有它"这一态 ——
+ * 到处写 `port.data.command?.()` 会让"缺能力"静默变成"什么都没做"。
+ * 抛出去之后，各步的 `catch` 会把它变成"这一步失败（原因：端口没有命令能力）"，
+ * 那才是如实表达。
+ */
+function structuredCommand<T>(
+  port: { data: { command?: <R>(cmd: string, params?: Record<string, unknown>) => Promise<R> } },
+  cmd: string,
+  params: Record<string, unknown> = {},
+): Promise<T> {
+  const fn = port.data.command;
+  if (!fn) throw new Error(`端口没有 command 能力，无法执行 ${cmd}（结构化结果读不到）`);
+  return fn.call(port.data, cmd, params) as Promise<T>;
+}
+
+/**
+ * `audit.prune { before }` 的结果（第 45 轮接线）。
+ *
+ * `storage_audit` 原来**无界增长**（真机 11.8 小时 61,416 行、库内最大的表、
+ * 占活数据 35.6%），而引擎侧的 `audit.prune` 一直零生产调用者 —— 典型"有能力没人用"。
+ */
+export interface AuditPruneOutcome {
+  status: "pruned" | "noop" | "failed";
+  /** 本次裁掉的行数 */
+  rows: number;
+  /** 裁剪之后的剩余行数（引擎在同一个事务里返回，比再问一次 `audit.stats` 更准） */
+  remaining?: number;
+  /** 剩余数据里最早/最晚的时间戳（诊断"这个窗口是不是在涨"） */
+  oldest?: number | null;
+  newest?: number | null;
+  reason?: string;
+}
+
+/**
+ * 按**保留窗口**裁剪审计表（`audit.prune`）。
+ *
+ * ## 为什么这一步不能省
+ *
+ * 审计表是"删除审计"（`storage_audit` 的 `AFTER DELETE` / `AFTER UPDATE` 触发器），
+ * 它记的是**每一次行消失/被隐藏**。一次"隐藏 10,000 条消息"就写 10,000 行 ——
+ * 真机上 11.8 小时 61,416 行，占活数据 35.6%，是库内最大的表。
+ * 而它**天生只增不减**：没有任何东西会删它（`audit.clear` 是人工收尾用的）。
+ *
+ * ## 为什么宁可"裁掉旧记录"也不"根本不开审计"
+ *
+ * 审计的价值在**事后取证**（事故排查的窗口是小时级），7 天窗口远远够用；
+ * 而"开审计"这件事本身就是当初那起"数据被谁删了查不出来"事故的教训 —— 关掉它
+ * 等于把那个教训退回去。所以正确处置是**保留窗口**，不是保留全部。
+ *
+ * @param before 毫秒水位线（`at < before` 的行被删）。缺了水位线引擎直接报错 ——
+ *   这与 `telemetry.prune` 同一条原则：**删除必须有明确条件**。
+ */
+export async function pruneAuditViaPort(before: number): Promise<AuditPruneOutcome> {
+  const { hasStoragePort, getStoragePort } = await import("./port");
+  if (!hasStoragePort()) {
+    return { status: "noop", rows: 0, reason: "端口未注册（本次维护没有可用的存储）" };
+  }
+  try {
+    const port = getStoragePort();
+    const res = await structuredCommand<{
+      removed?: number;
+      remaining?: number;
+      oldest?: number | null;
+      newest?: number | null;
+    }>(port, "audit.prune", { before });
+    const rows = Number(res?.removed ?? 0);
+    const remaining = typeof res?.remaining === "number" ? res.remaining : undefined;
+    const out: AuditPruneOutcome = {
+      status: rows > 0 ? "pruned" : "noop",
+      rows,
+      remaining,
+      oldest: res?.oldest ?? null,
+      newest: res?.newest ?? null,
+    };
+    if (rows === 0) out.reason = `没有早于 ${new Date(before).toISOString()} 的审计记录`;
+    return out;
+  } catch (e) {
+    /**
+     * 走 `reportPersistFailure` + 保留原有的 warn 形态：这一步失败**不影响使用**
+     * （审计只是取证工具），但必须留痕 —— 否则"审计表在涨"这件事又看不见了。
+     */
+    console.warn("[Maintenance] 审计裁剪（端口）失败（跳过）:", e);
+    reportPersistFailure(
+      "maintenance.auditPrune",
+      e,
+      `审计裁剪失败（水位线 ${new Date(before).toISOString()}）：storage_audit 本次没有被裁剪`,
+    );
+    return { status: "failed", rows: 0, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** `audit.stats` 的读数（第 45 轮：这是"审计表在涨"能被看见的**唯一**途径） */
+export interface AuditStatsOutcome {
+  read: boolean;
+  count?: number;
+  oldest?: number | null;
+  newest?: number | null;
+  reason?: string;
+}
+
+/**
+ * 读审计表规模（`audit.stats`）。
+ *
+ * 为什么单独读一次而不是复用 `audit.prune` 的 `remaining`：`prune` 只在**维护跑到那一步**
+ * 时才返回数字，而且**失败时什么都没有**；而"审计表现在多大"是排查时要看的独立事实
+ * （哪怕裁剪失败了也要知道它多大）。两者都报，原因不同。
+ */
+export async function auditStatsViaPort(): Promise<AuditStatsOutcome> {
+  const { hasStoragePort, getStoragePort } = await import("./port");
+  if (!hasStoragePort()) return { read: false, reason: "端口未注册" };
+  try {
+    const port = getStoragePort();
+    const res = await structuredCommand<{ count?: number; oldest?: number | null; newest?: number | null }>(
+      port,
+      "audit.stats",
+      {},
+    );
+    if (typeof res?.count !== "number") {
+      return { read: false, reason: "audit.stats 返回的形状不符合契约" };
+    }
+    return { read: true, count: res.count, oldest: res.oldest ?? null, newest: res.newest ?? null };
+  } catch (e) {
+    console.warn("[Maintenance] 读审计规模（端口）失败（跳过）:", e);
+    return { read: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** `storage.compact` 的结果（第 45 轮接线） */
+export interface StorageCompactOutcome {
+  status: "compacted" | "noop" | "failed";
+  /** 真正回收的字节数（只有 `status === "compacted"` 时有意义） */
+  reclaimedBytes: number;
+  /** 空闲页规模（未达阈值时的诊断依据） */
+  freeBytes?: number;
+  freeRatio?: number;
+  elapsedMs?: number;
+  reason?: string;
+}
+
+/**
+ * 回收库文件里的空闲页（`storage.compact`，引擎侧是整库 `VACUUM`）。
+ *
+ * ## 为什么需要这一步（真机实测）
+ *
+ * 库文件 **115,191,808 B**，而活数据只有 16,392,192 B；`freelist_count` = 98,799,616 B
+ * —— **85.8% 是永不回收的空闲页**。而全 crate 搜 `VACUUM` 零命中：
+ * 没有任何东西会回收它们，库只会越长越大（每次全库重灌、每次大删除都制造空闲页）。
+ *
+ * ## 为什么**用默认阈值**、且绝不传 `force`
+ *
+ * 它是**整库重写**：需要与库等量的临时空间，期间占住单写者锁；115 MB 的库是秒级到十秒级。
+ * 默认阈值是"空闲 ≥ 8 MiB **且** 空闲占比 ≥ 25%"——两个都满足才做。
+ * 调低阈值 = 把"每次启动都重写一遍库"变成常态，那比不回收更糟（启动变慢 + 磁盘磨损）。
+ * 传 `force` 只在人工排查时用，**不属于启动维护**。
+ *
+ * ## 为什么必须如实报"做了没有"
+ *
+ * `performed:false`（未达阈值）与"这一步根本没跑"在真机上必须能区分 ——
+ * 这正是本模块头注释里那条设计目标，也是这次接线最容易做成"看起来跑了"的地方。
+ */
+export async function compactStorageViaPort(): Promise<StorageCompactOutcome> {
+  const { hasStoragePort, getStoragePort } = await import("./port");
+  if (!hasStoragePort()) return { status: "noop", reclaimedBytes: 0, reason: "端口未注册" };
+  try {
+    const port = getStoragePort();
+    /**
+     * **刻意不传任何参数**：让引擎用它自己的默认阈值（8 MiB 且 25%）。
+     * 渲染侧一旦开始传 `min_free_*`，阈值就有了第二个真相 —— 而它的取值需要
+     * 跟着"库有多大 / 启动预算多长"变，那种判断属于引擎侧（那里才看得到页数）。
+     */
+    const res = await structuredCommand<{
+      performed?: boolean;
+      reason?: string;
+      reclaimed_bytes?: number;
+      free_bytes?: number;
+      free_ratio?: number;
+      elapsed_ms?: number;
+    }>(port, "storage.compact", {});
+    if (res?.performed) {
+      return {
+        status: "compacted",
+        reclaimedBytes: Number(res.reclaimed_bytes ?? 0),
+        elapsedMs: Number(res.elapsed_ms ?? 0),
+      };
+    }
+    return {
+      status: "noop",
+      reclaimedBytes: 0,
+      freeBytes: Number(res?.free_bytes ?? 0),
+      freeRatio: Number(res?.free_ratio ?? 0),
+      reason: res?.reason ?? "引擎判定未达阈值",
+    };
+  } catch (e) {
+    console.warn("[Maintenance] 空间回收（端口）失败（跳过）:", e);
+    reportPersistFailure(
+      "maintenance.storageCompact",
+      e,
+      "空间回收失败：本次没有回收任何空闲页（库会继续持有它们，下次维护会再试）",
+    );
+    return { status: "failed", reclaimedBytes: 0, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 完整性检查的结果（第 45 轮接线） */
+export interface IntegrityCheckOutcome {
+  status: "ok" | "failed" | "skipped";
+  detail?: string;
+  reason?: string;
+}
+
+/**
+ * **异步、节流**地跑一次 `PRAGMA quick_check`（`integrity_check`）。
+ *
+ * ## 为什么必须有这一步（D12）
+ *
+ * 引擎在**数据页**损坏时**不会**走自动恢复（`open_with_recovery` 只在**头部**损坏时
+ * 备份并重建），而渲染侧的 `integrityCheck` 生产零调用 —— 也就是说：
+ * 数据页坏了，**没有任何人会知道**，用户只会看到某个查询开始报错或结果不对。
+ *
+ * ## 为什么必须节流（真机成本）
+ *
+ * `quick_check` 真机实测：**901 ms @10k 行 / 4,469 ms @100k 行**。所以：
+ * - **不能放在首屏路径上**：维护本身就是 `App.tsx` 启动时 await 的一步，
+ *   这一条直接加了 1–4.5 秒；这里靠"12 小时内不重复跑"把成本摊到每天一次；
+ * - **节流状态存 settings**（`INTEGRITY_CHECK_MARKER_KEY`），不是内存变量：
+ *   内存变量在"用户一天开十次应用"时形同没有节流（每次都是新进程）。
+ *
+ * ## 失败时的动作
+ *
+ * `ok: false` → **复用既有的 `markIndexRebuildNeeded`** 写"索引需要重建"标记
+ * （下次维护会据此从权威日志重建索引 + 清标记），并如实上报。
+ * 这是"索引可从权威日志重建"这条分层在完整性维度的落地：
+ * 页损坏时索引不可信，而**权威副本在 JSONL 里，重建是有意义的**。
+ *
+ * @param now 注入当前时间（测试用；生产省略）
+ */
+export async function verifyIntegrityThrottled(
+  now: number = Date.now(),
+): Promise<IntegrityCheckOutcome> {
+  const { hasStoragePort, getStoragePort } = await import("./port");
+  if (!hasStoragePort()) return { status: "skipped", reason: "端口未注册" };
+  const port = getStoragePort();
+
+  /**
+   * 节流：读上次检查时间。
+   *
+   * ⚠️ 读不到（settings 面读失败 / 这一行不存在）**不当作"刚检查过"**：
+   * 前者会让完整性检查被永久跳过（比不检查更坏，因为它看起来"在跑"），
+   * 后者的正确语义是"从来没检查过" → **应当检查**。
+   * 两种形态在这里的处置相同（都继续检查），但原因不同，所以分开写清楚。
+   */
+  let lastAt: number | null = null;
+  try {
+    const page = await port.data.query<{ key: string; value: string }>("crud.list", {
+      table: "settings",
+      limit: 2000,
+    });
+    const raw = (page.items ?? []).find((s) => s.key === INTEGRITY_CHECK_MARKER_KEY)?.value;
+    if (raw) {
+      const parsed = Number(raw);
+      lastAt = Number.isFinite(parsed) ? parsed : null;
+    }
+  } catch (e) {
+    console.warn("[Maintenance] 读完整性检查时间戳失败（本次照常检查）:", e);
+  }
+  if (lastAt !== null && now - lastAt < INTEGRITY_CHECK_INTERVAL_MS) {
+    const waitH = ((INTEGRITY_CHECK_INTERVAL_MS - (now - lastAt)) / 3_600_000).toFixed(1);
+    return {
+      status: "skipped",
+      reason: `距上次检查 ${((now - lastAt) / 3_600_000).toFixed(1)} 小时（${
+        INTEGRITY_CHECK_INTERVAL_MS / 3_600_000
+      } 小时内不重复跑，还需 ${waitH} 小时）`,
+    };
+  }
+
+  /** 先写时间戳再检查：宁可"这次失败了下一次 12 小时后才重试"，也不要每次启动都付 4.5 秒 */
+  try {
+    await port.data.execute("settings.set", {
+      key: INTEGRITY_CHECK_MARKER_KEY,
+      value: String(now),
+    });
+  } catch (e) {
+    console.warn("[Maintenance] 写完整性检查时间戳失败（不影响本次检查）:", e);
+  }
+
+  try {
+    const res = await structuredCommand<{ ok?: boolean; detail?: string }>(port, "integrity_check", {});
+    if (res?.ok) return { status: "ok", detail: res.detail ?? "ok" };
+    const detail = res?.detail ?? "（引擎没有给出细节）";
+    /**
+     * 页损坏 → 写"索引需要重建"标记（复用既有能力），并如实上报。
+     *
+     * ⚠️ 标记这一步**只在真的判失败时**做：`ok:true` 时写标记会让每次启动都白重建一次索引
+     * （那是分钟级 + 全库 upsert），把"损坏自愈"变成"常态开销"。
+     */
+    await markIndexRebuildNeeded(`完整性检查失败：${detail}`);
+    reportPersistFailure(
+      "maintenance.integrityCheck",
+      new Error(detail),
+      "完整性检查失败：已留「索引需要重建」标记（下次维护会从权威日志重建索引）；" +
+        "数据页损坏时引擎不会自动恢复，需要人工确认库文件",
+    );
+    return { status: "failed", detail };
+  } catch (e) {
+    console.warn("[Maintenance] 完整性检查（端口）失败（跳过）:", e);
+    return { status: "skipped", reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 审计裁剪那一段（第 45 轮："裁剪 N 条 / 剩余 M 条"是任务书明确要求的形态）。
+ *
+ * 为什么"剩余"与"裁剪"要一起报：只看裁掉多少**看不出这张表是不是还在涨** ——
+ * 而"`storage_audit` 无界增长"正是这一轮要解决的那个问题。真机上 61,416 行 / 35.6%
+ * 这个数字当初就是因为没人报"它多大"才藏了 11.8 小时。
+ */
+function formatAuditPrune(outcome: AuditPruneOutcome, result: MaintenanceResult): string {
+  const size = result.auditStatsRead
+    ? `、审计表 ${result.auditRemainingRows} 行`
+    : (() => {
+        const why = outcome.status === "failed" ? "（规模未读到：audit.stats 也失败）" : "";
+        return `、审计表 规模未读到${why}`;
+      })();
+  switch (outcome.status) {
+    case "pruned":
+      return `审计裁剪 ${outcome.rows} 条、剩余 ${
+        typeof outcome.remaining === "number" ? outcome.remaining : "（未报）"
+      } 条${size}`;
+    case "noop":
+      return `审计裁剪 未执行（${outcome.reason}）${size}`;
+    case "failed":
+      return `审计裁剪 失败（${outcome.reason}）${size}`;
+  }
+}
+
+/**
+ * 空间回收那一段（第 45 轮）。
+ *
+ * **"跑了但没做（未达阈值）"与"跑了并回收了 N 字节"必须能区分** —— 这是任务书的
+ * 明确要求，也是本模块头注释里那条设计目标最容易在这里被做砸的地方：
+ * 直接把 `performed:false` 渲染成"回收 0 字节"就退回了"三种情况一个样子"。
+ */
+function formatCompact(outcome: StorageCompactOutcome): string {
+  switch (outcome.status) {
+    case "compacted":
+      return `空间回收 已回收 ${formatBytes(outcome.reclaimedBytes)}（耗时 ${outcome.elapsedMs ?? 0} ms）`;
+    case "noop": {
+      const detail =
+        typeof outcome.freeBytes === "number"
+          ? `空闲 ${formatBytes(outcome.freeBytes)}（占比 ${((outcome.freeRatio ?? 0) * 100).toFixed(1)}%）`
+          : undefined;
+      return `空间回收 未执行（${outcome.reason ?? "未达阈值"}${detail ? `；${detail}` : ""}）`;
+    }
+    case "failed":
+      return `空间回收 失败（${outcome.reason}）`;
+  }
+}
+
+/** 完整性检查那一段（第 45 轮） */
+function formatIntegrity(outcome: IntegrityCheckOutcome): string {
+  switch (outcome.status) {
+    case "ok":
+      return "完整性检查 通过";
+    case "skipped":
+      return `完整性检查 跳过（${outcome.reason ?? "未执行"}）`;
+    case "failed":
+      return `完整性检查 **失败**（${outcome.detail ?? "无细节"}）—— 已留索引重建标记`;
+  }
+}
+
+/** 字节数 → 人读的形态（维护汇总行里报 `reclaimed_bytes` 用） */
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 export async function runDatabaseMaintenance(
   opts: {
-    /** 事件裁剪开关（保留参数：端口模式下由引擎侧的快照压缩负责） */
+    /**
+     * 事件裁剪开关（**惰性参数：签名兼容用，不是一个有效的维护开关**）。
+     *
+     * B-2 核实过：事件日志里含**权威日志（JSONL）里没有**的信息（`session_meta` 的
+     * preset/feedback、`compaction`、`tool_call`/`tool_result` 配对、`turn_*` 的时间线），
+     * 所以"按会话保留 N 条事件"这种截断会把它们删掉 —— 详见 `MaintenanceResult.prunedEvents`
+     * 上的长注释。这个参数保留是为了**不让既有调用点与测试签名破**，它不产生任何行为。
+     */
     keepEventsPerSession?: number;
     keepTelemetryDays?: number;
     /** 兼容旧签名（旧引擎的 VACUUM 阈值）；端口模式下无对应动作 */
     vacuumMaxBytes?: number;
-    /** 兼容旧签名（旧引擎的事件快照压缩阈值）；端口模式下由引擎侧负责 */
+    /**
+     * 事件快照压缩阈值（**同为惰性参数**：见 `keepEventsPerSession` 与
+     * `MaintenanceResult.prunedEvents` 的注释）。
+     *
+     * 不接回启动维护的理由不是"没时间接"，而是"接回会删权威数据"：
+     * 快照载荷是**投影结果**（`messages`），而不是事件本身，回放等价只对投影成立。
+     */
     compactEventsOver?: number;
     /** 每个会话在查询索引里至少保留多少条消息（0 = 不裁剪索引） */
     keepIndexedMessages?: number;
@@ -156,21 +731,78 @@ export async function runDatabaseMaintenance(
 ): Promise<MaintenanceResult> {
   const keepTelemetryDays = opts.keepTelemetryDays ?? 7;
   const keepIndexedMessages = opts.keepIndexedMessages ?? 500;
+  /** 遥测裁剪结果（B-8：三态，不再用一个 `0` 混着"没得裁 / 失败 / 没跑"） */
+  let telemetryPrune: TelemetryPruneOutcome = { status: "noop", reason: "本次维护未走到遥测裁剪" };
+  /** 审计裁剪结果（第 45 轮） */
+  let auditPrune: AuditPruneOutcome = { status: "noop", rows: 0, reason: "本次维护未走到审计裁剪" };
+  /** 空间回收结果（第 45 轮） */
+  let compact: StorageCompactOutcome = { status: "noop", reclaimedBytes: 0, reason: "本次维护未走到空间回收" };
+  /** 完整性检查结果（第 45 轮） */
+  let integrity: IntegrityCheckOutcome = { status: "skipped", reason: "本次维护未走到完整性检查" };
 
   const result: MaintenanceResult = {
     sizeBefore: 0,
     sizeAfter: 0,
     reclaimed: 0,
+    /**
+     * ## `prunedEvents` / `compactedSessions` **刻意恒为 0**（B-2 的结论，不是"忘了接"）
+     *
+     * 审阅时的原始判断：`runDatabaseMaintenance` 收下 `keepEventsPerSession` /
+     * `compactEventsOver` 却从不读取，`prunedEvents` / `compactedSessions` 恒为 0
+     * → "事件表只增不减，维护参数是空开关，应当把压缩接回启动维护"。
+     *
+     * **接回之前必须先回答"压缩会不会删权威数据"，答案是：会。**（读代码 + 真引擎取证）
+     *
+     * `session_events` 里有**JSONL 里没有**的信息，所以它不是"可从权威日志重建的派生数据"：
+     * - `session_meta`（`selectPresetForSession` / `recordSessionFeedback` 写它）：
+     *   `getSessionPreset` / `listSessionFeedback` / `project/files.ts` 的
+     *   `instructions_override` 全靠读它 —— 这些**不在消息表里**，删了永久消失。
+     *   （引擎的压缩确实豁免了 `session_meta`，但下面几条不豁免。）
+     * - `compaction` 事件（`CompactionPayload`：`removedMessageIds` / `summary`）：
+     *   `event-projection` 的 `applyCompaction` 与 `getActiveGenerations` 靠它把消息
+     *   标记为被取代；`validateReplay` 也检查它。快照载荷里只固化了
+     *   `{ messages, compactionSummary, removedMessageIds }`，**没有逐条的 compaction 事件**。
+     * - `tool_call` / `tool_result` 的配对：`runtime-invariants` 的
+     *   `checkToolCallPairingInvariant` 靠事件配对判断"有没有未完成的工具调用"，
+     *   而快照只固化投影出的 `messages`（配对关系不是它的形状）。
+     * - **时间上下文**：`time-context.ts::findLastVisibleMessageTime` 从
+     *   `user_message` / `assistant_text` / `tool_result` 事件取时间戳；
+     *   快照里这些事件消失后它只能回退到别的来源（信息量下降）。
+     *
+     * 而且压缩**本身是有损的**：快照的载荷是
+     * `projectUpTo(events) → { messages }`（`event-log.ts::compactWithSnapshot`
+     * 的调用方就是 `projection.projectFromEvents`），也就是"投影结果"而不是"事件"——
+     * 回放等价只对**投影**成立，对 `readAll` 的消费方（上面那一串）不成立。
+     *
+     * 所以本批的处置与 `event-log.ts` 里的决定一致：
+     * 1. **不把压缩接回启动维护**（接回 = 用"省空间"换"悄悄改数据"，代价不对称）；
+     * 2. 修掉 `compactWithSnapshot` 里那个**真**会毁数据的 `cutoff_seq` 缺陷
+     *    （见 `event-log.ts` 的注释与 `snapshot-compaction.test.ts` 的 SNAP-7/8）；
+     * 3. 这两个计数字段**保持 0 并如实声明**"事件不压缩"——
+     *    `snapshot-compaction.test.ts` 的 SNAP-5 把这条断言钉着；
+     * 4. 两个参数保留（签名兼容），但它们**不是维护开关**：文档写在参数类型上。
+     * 5. 事件表"只增不减"这件事若要认真解决，方向是**独立的保留策略**（按会话 TTL
+     * 清 `session_events`，而不是把事件换成投影快照）—— 那需要产品决策，超出本批范围。
+     */
     prunedEvents: 0,
     prunedTelemetry: 0,
     vacuumed: false,
+    /** 见上面 `prunedEvents` 的长注释：事件压缩不在启动维护里做，所以恒为 0 */
     compactedSessions: 0,
     backfilledMessages: 0,
     rebuiltIndexMessages: 0,
+    skippedDeletedSessions: 0,
+    rebuildWithoutProject: 0,
     trimmedIndexMessages: 0,
     warmedAttachments: 0,
     prunedAttachmentOrphans: 0,
     compactedLogSessions: 0,
+    prunedAuditRows: 0,
+    auditRemainingRows: -1,
+    auditStatsRead: false,
+    compactPerformed: false,
+    compactedBytes: 0,
+    integrity: "skipped",
   };
 
   try {
@@ -192,6 +824,8 @@ export async function runDatabaseMaintenance(
           console.log(`[Maintenance] 检测到索引重建标记（原因：${marker.reason || "未知"}）—— 从权威日志重建索引`);
           const rebuilt = await bridge.rebuildIndexFromSessionLogs();
           result.rebuiltIndexMessages = rebuilt.messages;
+          result.skippedDeletedSessions = rebuilt.skippedDeleted;
+          result.rebuildWithoutProject = rebuilt.withoutProject;
           await clearIndexRebuildMarker();
         }
       } catch (e) {
@@ -236,7 +870,54 @@ export async function runDatabaseMaintenance(
 
     // 遥测按天裁剪（引擎命令，显式水位线）
     const cutoff = Date.now() - keepTelemetryDays * 24 * 60 * 60 * 1000;
-    result.prunedTelemetry = await pruneTelemetryViaPort(cutoff);
+    telemetryPrune = await pruneTelemetryViaPort(cutoff);
+    result.prunedTelemetry = telemetryPrune.status === "pruned" ? telemetryPrune.rows : 0;
+
+    /**
+     * ## 审计裁剪（`audit.prune`，第 45 轮接线）
+     *
+     * `storage_audit` 原来**无界增长**（真机 11.8 小时 61,416 行、库内最大的表、
+     * 占活数据 35.6%），而引擎侧的 `audit.prune` 一直是零调用的死能力。
+     * 放在**数据裁剪之后**：这条顺序让"本次维护删掉的东西"在审计里留到**下一次**维护才被裁，
+     * 也就是说刚发生的大删除仍然查得到（排查窗口不会被自己的裁剪吃掉）。
+     */
+    auditPrune = await pruneAuditViaPort(Date.now() - AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    result.prunedAuditRows = auditPrune.rows;
+    if (typeof auditPrune.remaining === "number") result.auditRemainingRows = auditPrune.remaining;
+    // 规模单独读一次（`prune` 失败时什么都没有，而"审计表现在多大"是独立事实）
+    const auditStats = await auditStatsViaPort();
+    result.auditStatsRead = auditStats.read;
+    if (auditStats.read && typeof auditStats.count === "number") {
+      // prune 的 remaining 更"同事务"，但 stats 是权威现状：以它为最终数字
+      result.auditRemainingRows = auditStats.count;
+    }
+
+    /**
+     * ## 空间回收（`storage.compact`，第 45 轮接线）
+     *
+     * 放在**所有删除动作之后**：空闲页是那些删除制造出来的，先删再收才收得动。
+     * 用引擎默认阈值（8 MiB 且 25%），**不传 `force`** —— 见 `compactStorageViaPort` 的注释。
+     */
+    const compactResult = await compactStorageViaPort();
+    compact = compactResult;
+    result.compactPerformed = compactResult.status === "compacted";
+    result.compactedBytes = compactResult.reclaimedBytes;
+
+    /**
+     * ## 完整性检查（`integrity_check`，第 45 轮接线，**异步 + 节流**）
+     *
+     * 放在**最后**：它是只读的（`PRAGMA quick_check`），失败时的动作是写重建标记，
+     * 而那件事应当发生在"本次维护的数据动作都做完之后"。
+     * 12 小时节流把 901 ms–4,469 ms 的成本摊到每天一次，见 `verifyIntegrityThrottled`。
+     */
+    const integrityResult = await verifyIntegrityThrottled();
+    integrity = integrityResult;
+    result.integrity = integrityResult.status;
+    if (integrityResult.status === "failed") {
+      console.warn(
+        `[Maintenance] 完整性检查失败：${integrityResult.detail ?? "（无细节）"} —— 已留索引重建标记`,
+      );
+    }
   } catch (e) {
     console.warn("[Maintenance] 维护失败（不影响使用）:", e);
   }
@@ -247,11 +928,25 @@ export async function runDatabaseMaintenance(
    * ⚠️ 这不是"日志洁癖"：这个功能曾经在真机上**整段没跑**却没人发现，
    * 因为"没跑"与"跑了但没事做"在日志里完全一样（当时 rust 模式连这行都不打印）。
    * 可观测性的最低要求就是——**做了什么都得看得见**。
+   *
+   * 第 45 轮把三段"引擎有能力、渲染侧没人用"的能力接上来时，这条要求就是接线本身的一部分：
+   * 审计裁剪要报"裁了多少 / **还剩多少**"（只看裁掉多少看不出这张表是不是还在涨）；
+   * 空间回收要报 `performed` 与回收字节（**"跑了但没做（未达阈值）"与"跑了并回收了 N 字节"
+   * 必须分得开**）；完整性检查要报"检查了 / 节流跳过 / 失败"。
    */
   console.log(
-    `[Maintenance] 维护完成：索引重建 ${result.rebuiltIndexMessages} 条、日志回填 ${result.backfilledMessages} 条、` +
+    `[Maintenance] 维护完成：索引重建 ${result.rebuiltIndexMessages} 条` +
+      // B-1：跳过数紧跟在重建数后面 —— 它是"用户删掉的会话有没有被复活"的唯一信号
+      (result.skippedDeletedSessions > 0 ? `（跳过 ${result.skippedDeletedSessions} 个已删除会话）` : "") +
+      // 第 45 轮：取不到项目归属的会话数是"复活的会话会不会掉进全局项目"的信号
+      (result.rebuildWithoutProject > 0
+        ? `（其中 ${result.rebuildWithoutProject} 个没取到项目归属 → 落到全局项目）`
+        : "") +
+      `、日志回填 ${result.backfilledMessages} 条、` +
       `索引裁剪 ${result.trimmedIndexMessages} 条、附件预热 ${result.warmedAttachments} 个、孤儿清理 ${result.prunedAttachmentOrphans} 个、` +
-      `日志压缩 ${result.compactedLogSessions} 个会话、遥测裁剪 ${result.prunedTelemetry} 条`,
+      `日志压缩 ${result.compactedLogSessions} 个会话、${formatTelemetryPrune(telemetryPrune)}、` +
+      formatAuditPrune(auditPrune, result) +
+      `、${formatCompact(compact)}、${formatIntegrity(integrity)}`,
   );
   return result;
 }

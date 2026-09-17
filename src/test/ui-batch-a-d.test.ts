@@ -1459,20 +1459,44 @@ expect(src).toContain("for (let i = effectiveIdx + 1");
     });
   });
 
-  // ===== E6: App.tsx handleFork 整轮分叉 =====
-  describe("E6: App.tsx handleFork 整轮分叉", () => {
-    it("源码包含 endIdx 计算逻辑", () => {
-      expect(appSrc).toContain("endIdx");
-      expect(appSrc).toContain("sourceMessages.length");
+  // ===== E6: 分叉整轮逻辑（第 44 轮：实现从 App.tsx 内联收敛到 store/store.ts） =====
+  //
+  // ## 为什么这几条断言换了目标文件
+  //
+  // 原来 App.tsx 里有**三份**逐字重复的内联 fork 实现，而三份都**不写 `parent_id`** ——
+  // 于是 `session_trace`（按 `parent_id` 追溯祖先/后代）在生产里永远只报
+  // `Parent: (root)` / `Ancestors: []`，也就是"完整谱系"这个能力从来没有数据。
+  // 第 44 轮把三份收敛成 `useProjectStore.forkSession` → `SessionStorage.forkSession`
+  // （**唯一**会写 `parent_id` 的写点，同时让事件日志继承源会话）。
+  //
+  // 所以"整轮分叉"这条不变量的**归属文件**变了：现在要盯的是 `store.ts` 里那一段
+  // 与 App.tsx 的接线，而不是 App.tsx 里的字面实现。
+  describe("E6: 分叉整轮逻辑（App.tsx 接线 + store 实现）", () => {
+    const storeSrc = fs.readFileSync(path.resolve(__dirname, "../core/store.ts"), "utf-8");
+    const sessionSrc = fs.readFileSync(path.resolve(__dirname, "../core/storage/session.ts"), "utf-8");
+
+    it("App.tsx 的三处 onFork 已收敛成同一个处理器（不再有三份内联实现）", () => {
+      const inline = appSrc.match(/onFork=\{\(messageIndex\) => \{/g) ?? [];
+      expect(inline.length, "不应再有内联的 onFork 实现").toBe(0);
+      const wired = appSrc.match(/onFork=\{handleFork\}/g) ?? [];
+      expect(wired.length, "三处调用点都应接到 handleFork").toBeGreaterThanOrEqual(3);
     });
 
-    it("源码包含查找下一条 user 消息的逻辑", () => {
-      expect(appSrc).toContain('sourceMessages[i].role === "user"');
+    it("整轮边界（endIdx）逻辑在 store 的实现里，且按“下一条 user 消息”收尾", () => {
+      expect(storeSrc).toContain("endIdx");
+      expect(storeSrc).toContain("sourceMessages.length");
+      expect(storeSrc).toContain('sourceMessages[i].role === "user"');
+      expect(storeSrc).toContain("sourceMessages.slice(0, endIdx)");
+      expect(storeSrc).not.toContain("sourceMessages.slice(0, messageIndex + 1)");
     });
 
-    it("源码使用 slice(0, endIdx) 而非 slice(0, messageIndex + 1)", () => {
-      expect(appSrc).toContain("slice(0, endIdx)");
-      expect(appSrc).not.toContain("slice(0, messageIndex + 1)");
+    it("分叉写 `parent_id`：走 SessionStorage.forkSession（唯一的谱系写点）", () => {
+      // 这条是第 44 轮新增的能力保证：fork 出来的会话必须能被 session_trace 追溯
+      expect(sessionSrc).toContain("parent_id: sourceSessionId");
+      expect(storeSrc, "store 的 fork 必须走 forkSession 而不是 createSession").toContain(
+        "SessionStorage.forkSession(",
+      );
+      expect(storeSrc).not.toContain("SessionStorage.createSession(newSession)");
     });
   });
 

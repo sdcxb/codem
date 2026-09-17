@@ -182,7 +182,7 @@ export async function indexNotebook(
 // ========== 生成笔记本摘要 ==========
 
 export async function generateSummary(notebookId: string): Promise<void> {
-  const { getNotebook, listSources, getChunks } = await import('./storage');
+  const { getNotebook, listSources, getChunksOrStatus } = await import('./storage');
 
   const notebook = getNotebook(notebookId);
   if (!notebook) return;
@@ -196,7 +196,18 @@ export async function generateSummary(notebookId: string): Promise<void> {
 
   try {
     // Gather all chunk contents for summary
-    const chunks = getChunks(notebookId);
+    /*
+     * 任务 C-3：`getChunks` 在索引未就绪时会抛（不再返回 `[]` 冒充"没有内容"），
+     * 所以这里用不抛的形态，并让"未就绪"与"确实没有块"各自得到**不同**的结论：
+     * 未就绪 → summaryStatus 回 `pending`（而不是 failed）——那是个可重试的状态。
+     */
+    const loaded = getChunksOrStatus(notebookId);
+    if (!loaded.ok) {
+      console.warn(`[Indexer] 摘要未生成（索引未就绪，稍后可重试）：${loaded.reason}`);
+      updateNotebook(notebookId, { summaryStatus: 'pending' });
+      return;
+    }
+    const chunks = loaded.chunks;
     const allText = chunks
       .slice(0, 50) // Limit to first 50 chunks to avoid token overflow
       .map((c) => c.content)
@@ -233,12 +244,18 @@ export async function generateSummary(notebookId: string): Promise<void> {
 // ========== 生成建议问题 ==========
 
 export async function generateGuidedQuestions(notebookId: string): Promise<string[]> {
-  const { getNotebook, getChunks } = await import('./storage');
+  const { getNotebook, getChunksOrStatus } = await import('./storage');
 
   const notebook = getNotebook(notebookId);
   if (!notebook) return [];
 
-  const chunks = getChunks(notebookId);
+  // 任务 C-3：索引未就绪 → 明确返回"这次生成不了"（空列表 + 日志），不是"没有内容"
+  const loadedQ = getChunksOrStatus(notebookId);
+  if (!loadedQ.ok) {
+    console.warn(`[Indexer] 建议问题未生成（索引未就绪）：${loadedQ.reason}`);
+    return [];
+  }
+  const chunks = loadedQ.chunks;
   if (chunks.length === 0) return [];
 
   try {
@@ -283,7 +300,7 @@ export async function generateSourceSummary(
   sourceId: string,
   chunks?: { content: string }[],
 ): Promise<boolean> {
-  const { getSource, updateSource, getChunks } = await import('./storage');
+  const { getSource, updateSource, getChunksOrStatus } = await import('./storage');
 
   const source = getSource(sourceId);
   if (!source) {
@@ -294,7 +311,16 @@ export async function generateSourceSummary(
   }
 
   // Use provided chunks or load from storage
-  const sourceChunks = chunks ?? getChunks(source.notebookId).filter(c => c.sourceId === sourceId);
+  // 任务 C-3：索引未就绪 → 返回 false（可重试），不要被误读成"这个来源没内容"
+  let sourceChunks = chunks;
+  if (!sourceChunks) {
+    const loadedS = getChunksOrStatus(source.notebookId);
+    if (!loadedS.ok) {
+      console.warn(`[Indexer] 跳过来源摘要：索引未就绪（可重试）—— ${loadedS.reason}`);
+      return false;
+    }
+    sourceChunks = loadedS.chunks.filter(c => c.sourceId === sourceId);
+  }
   if (sourceChunks.length === 0) {
     console.warn(`[Indexer] 跳过摘要生成：来源 ${sourceId} 没有可用分块`);
     return false;
@@ -464,12 +490,17 @@ export async function generateStudioContent(
   notebookId: string,
   contentType: StudioContentType,
 ): Promise<StudioContentResult> {
-  const { getNotebook, getChunks } = await import('./storage');
+  const { getNotebook, getChunksOrStatus } = await import('./storage');
 
   const notebook = getNotebook(notebookId);
   if (!notebook) throw new Error('Notebook not found');
 
-  const chunks = getChunks(notebookId);
+  // 任务 C-3：把"索引未就绪"与"没有内容"分成两句**不同**的错误（调用方/UI 据此区分）
+  const loadedStudio = getChunksOrStatus(notebookId);
+  if (!loadedStudio.ok) {
+    throw new Error(`知识库索引未就绪（请稍后重试）：${loadedStudio.reason}`);
+  }
+  const chunks = loadedStudio.chunks;
   if (chunks.length === 0) throw new Error('No indexed content available');
 
   const isZh = navigator.language?.startsWith('zh');
@@ -539,7 +570,7 @@ export async function generateFlashcards(
   count: number = 10,
   noteId?: string,
 ): Promise<GeneratedFlashcard[]> {
-  const { getNotebook, getChunks, getNote } = await import('./storage');
+  const { getNotebook, getChunksOrStatus, getNote } = await import('./storage');
 
   const notebook = getNotebook(notebookId);
   if (!notebook) throw new Error('Notebook not found');
@@ -554,7 +585,10 @@ export async function generateFlashcards(
     if (!note.content || note.content.trim().length === 0) throw new Error(isZh ? '笔记内容为空' : 'Note content is empty');
     allText = note.content.slice(0, 8000);
   } else {
-    const chunks = getChunks(notebookId);
+    // 任务 C-3：索引未就绪 → 可重试的错误，而不是"没有内容"
+    const loadedFc = getChunksOrStatus(notebookId);
+    if (!loadedFc.ok) throw new Error(isZh ? `知识库索引未就绪（请稍后重试）：${loadedFc.reason}` : `Notebook index not ready (retry later): ${loadedFc.reason}`);
+    const chunks = loadedFc.chunks;
     if (chunks.length === 0) throw new Error('No indexed content available');
     allText = chunks
       .slice(0, 40)

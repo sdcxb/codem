@@ -36,7 +36,8 @@ export { trimIndexedMessages };
  */
 async function externalizedViaPort(): Promise<Array<{ id: string; content: string }> | undefined> {
   const port = hasStoragePort() ? getStoragePort() : null;
-  if (!port || port.kind !== "rust") return undefined;
+  // 第 19 轮：`port.kind !== "rust"` 判据已删（`kind` 是常量 "rust"，恒不成立）。
+  if (!port) return undefined;
   const probe = port.data as unknown as {
     command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
   };
@@ -182,34 +183,125 @@ export async function countSessionLogs(): Promise<number> {
  *    日志里记着压缩状态与消息链，重建后不一致会让被压缩的消息复活
  *    （`messages.upsert_index` 的 hidden 语义见 repo.rs 的注释）。
  *
- * 端口不可用时（回滚到 wasm）继续走原来的旧路径。
+ * 端口不可用时（第 19 轮：只剩"端口未注册"这一种形态，wasm 回滚已随旧引擎删除）
+ * 继续走原来的旧路径。
  *
- * @returns 重建的会话数与消息数
+ * @returns 重建的会话数与消息数（`skippedDeleted` = 因**会话墓碑**被跳过的会话数）
  */
-export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{ sessions: number; messages: number }> {
+export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
+  sessions: number;
+  messages: number;
+  /** 因"日志里有会话墓碑"被跳过的会话数（B-1：跳过必须**如实计数并上报**，不能静默） */
+  skippedDeleted: number;
+  /** 因会话没有任何消息而跳过的会话数（诊断用：与"已删除"区分开，两者含义完全不同） */
+  skippedEmpty: number;
+  /**
+   * 本次重建时**没能取到项目归属**的会话数（第 45 轮）。
+   *
+   * 取不到时仍然传 `""`（引擎的缺省语义），而 `""` = **全局项目** ——
+   * 也就是说这些会话会掉进"全局对话"。这个计数就是那件事的可见性：
+   * **它是 0 才说明"复活的会话归属正确"**。
+   */
+  withoutProject: number;
+}> {
   // 第 17 轮（L4）：原来的 `await initDatabase()` 已删（同上：只为"确保旧库存在"）。
   const targets = sessionId ? [sessionId] : await listSessionLogs();
-  const out = { sessions: 0, messages: 0 };
+  const out = { sessions: 0, messages: 0, skippedDeleted: 0, skippedEmpty: 0, withoutProject: 0 };
+
+  /**
+   * ## 项目归属从哪来（第 45 轮）
+   *
+   * 引擎侧 `messages_rebuild_index` 原来把 `project_id` **硬编码为 `''`** ——
+   * 于是"索引重建复活的会话"全部掉进"全局对话"（真机形态：删掉的会话自愈后
+   * 出现在全局项目下、标题看着像一句用户话）。现在它支持 `sessions[].project_id`，
+   * 而权威日志（JSONL）里**没有**这一列 —— 它记的是消息，不是会话归属。
+   *
+   * 所以归属只能从**会话元数据**取，也就是 `sessions` 域镜像（`sessions` 是小表，
+   * 域镜像的适用边界正好覆盖它）。**必须在下面那次重建写库之前读** ——
+   * 重建会 upsert `sessions` 行，读完再读就不是"重建前的归属"了。
+   *
+   * 取不到的两种情况，都是**如实退让**而不是猜：
+   * 1. 镜像未就绪 / 没接手（`domainReadMany` 返回 undefined）→ 全部按 `""`，
+   *    并在返回值里报 `withoutProject`；
+   * 2. 这个会话在 `sessions` 里没有行（库被清过、或这个会话只存在于 JSONL）→ 同样报数。
+   *
+   * ⚠️ 刻意**不**去猜（比如"按消息 id 前缀推断"或"取上次已知的归属"）：
+   * 猜错的后果是把用户的会话挂到**别的项目**下，那比落到全局项目更难发现。
+   */
+  const projectOf = new Map<string, string>();
+  const sessionRows = domainReadMany<Record<string, unknown>>("sessions", (r) => r);
+  if (sessionRows) {
+    for (const row of sessionRows) {
+      const id = String(row.id ?? "");
+      if (id) projectOf.set(id, String(row.project_id ?? ""));
+    }
+  } else {
+    console.warn(
+      "[SessionLog] sessions 域镜像未就绪：本次重建的项目归属取不到，复活的会话会落到全局项目（已计入 withoutProject）",
+    );
+  }
 
   // 先把日志全部读出来（异步），再决定走端口还是旧路径
-  const batches: Array<{ id: string; messages: Awaited<ReturnType<typeof readSessionMessages>>["messages"] }> = [];
-  const { readSessionMessages } = await import("./session-jsonl");
+  const batches: Array<{
+    id: string;
+    projectId: string;
+    messages: Awaited<ReturnType<typeof readSessionMessages>>["messages"];
+  }> = [];
+  const { readSessionMessages, isSessionDeleted } = await import("./session-jsonl");
   for (const sid of targets) {
     try {
+      /**
+       * **B-1：先读会话墓碑，被删过的会话绝不写回索引。**
+       *
+       * 为什么必须放在"读消息"之前、且单独一次读：墓碑行会被
+       * `readSessionMessages` 丢掉（后写者胜的删除语义），从它的返回值里
+       * **看不出**这个会话被删过 —— 只看"有没有消息"会把"已删除"与"日志还空着"
+       * 混成一件事，而前者应该永久跳过、后者只是这次没得写。
+       *
+       * 计数为什么不省：跳过而不计数，真机上就变成了"重建了 N 个会话"里悄悄少了几个，
+       * 而少了的那几个恰恰是**用户显式删掉的**——一旦哪天墓碑机制失效，唯一能发现的
+       * 窗口就是这行数字对不上。所以它进返回值、进维护汇总、进日志。
+       */
+      if (await isSessionDeleted(sid)) {
+        out.skippedDeleted++;
+        continue;
+      }
       const { messages } = await readSessionMessages(sid);
-      if (messages.length === 0) continue;
-      batches.push({ id: sid, messages });
+      if (messages.length === 0) {
+        out.skippedEmpty++;
+        continue;
+      }
+      const projectId = projectOf.get(sid);
+      if (projectId === undefined) out.withoutProject++;
+      batches.push({ id: sid, projectId: projectId ?? "", messages });
     } catch (e) {
       console.warn(`[SessionLog] 会话 ${sid} 日志读取失败（跳过）:`, e);
     }
   }
+  if (out.skippedDeleted > 0) {
+    console.log(
+      `[Database] 索引重建：跳过 ${out.skippedDeleted} 个**已删除**会话（日志里有会话墓碑，绝不复活）`,
+    );
+  }
+  if (out.withoutProject > 0) {
+    console.warn(
+      `[Database] 索引重建：${out.withoutProject} 个会话取不到项目归属（会话元数据里没有它们）` +
+        "—— 这些会话会落到全局项目；这个数字应当长期为 0",
+    );
+  }
   if (batches.length === 0) return out;
 
   const port = hasStoragePort() ? getStoragePort() : null;
-  if (port && port.kind === "rust") {
+  // 第 19 轮：`port && port.kind === "rust"` 的 kind 判据已删（恒为真）。
+  if (port) {
     const payload = {
       sessions: batches.map((b) => ({
         id: b.id,
+        /**
+         * 项目归属（第 45 轮）。引擎侧 `INSERT ... ON CONFLICT(id) DO UPDATE` **不碰这一列**，
+         * 所以它只影响"新建的行" —— 正是需要它影响的那部分（已存在的会话归属不变）。
+         */
+        project_id: b.projectId,
         messages: b.messages.map((rec) => ({
           id: rec.id,
           session_id: b.id,
@@ -224,6 +316,15 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
           parent_message_id: (rec as { parentMessageId?: string | null }).parentMessageId ?? null,
           metadata: (rec as { metadata?: unknown }).metadata ?? null,
           tool_calls: (rec as { toolCalls?: unknown[] }).toolCalls ?? null,
+          /**
+           * B-3：`generated_files` / `retrieved_sources` 也要还原。
+           *
+           * 这两个 JSON 列在**索引重建**这条路上原来整个缺席（连 `generated_files` 都没传）——
+           * 于是"索引可从日志重建"对它们不成立：重建之后消息上的生成文件标记与引用来源
+           * 永久消失。日志里既然已经记了（见 `session-jsonl.ts` 的白名单），就必须送回去。
+           */
+          generated_files: (rec as { generatedFiles?: unknown }).generatedFiles ?? null,
+          retrieved_sources: (rec as { retrievedSources?: unknown }).retrievedSources ?? null,
         })),
       })),
     };
@@ -259,7 +360,11 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
       // 重建后把镜像换成新数据（否则镜像里还是崩溃前的旧集合）
       for (const b of batches) await hydrateSessionLog(b.id);
       if (out.messages > 0) {
-        console.log(`[Database] 索引已从权威日志重建（Rust 单事务）：${out.sessions} 个会话 / ${out.messages} 条消息`);
+        console.log(
+          `[Database] 索引已从权威日志重建（Rust 单事务）：${out.sessions} 个会话 / ${out.messages} 条消息` +
+            // B-1：跳过数必须出现在这一行里，否则"整件事做了多少"看不出来
+            (out.skippedDeleted > 0 ? `，跳过 ${out.skippedDeleted} 个已删除会话` : ""),
+        );
       }
       return out;
     } catch (e) {

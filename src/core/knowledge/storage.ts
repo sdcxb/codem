@@ -13,12 +13,15 @@ import {
   domainDelete,
   domainDeleteWhere,
   domainEnsureLoaded,
+  domainPort,
   domainPortRegistered,
   domainReadMany,
   domainReadOne,
   domainWrite,
   reportWriteNotAccepted,
 } from "../storage/domain-store";
+import { getStoragePort, hasStoragePort } from "../storage/port";
+import { reportPersistFailure } from "../storage/persist-failure";
 import type {
   Notebook,
   NotebookSource,
@@ -60,9 +63,217 @@ const T_VERSIONS = "note_versions";
  * 每行带一个 Base64 编码的 embedding（1536 维 ≈ 8KB 文本），默认上限 5000 行
  * 意味着几十 MB 常驻渲染进程内存 —— 这正是 P6 要消灭的那类占用。
  * 超过 2000 行（约 16MB）就放弃镜像、回退旧路径，而不是把渲染进程压死。
+ *
+ * ## ⚠️ 任务 C-3：这里的"放弃"曾经是**进程内永久**的，而且是**静默**的
+ *
+ * 原实现只做了一件事：超过 2000 行 → `RustDomainMirror` 把整张表标成 `refused`，
+ * 而 `getChunks()` / `getChunkCount()` 在"镜像没接手"时**返回空结果**（`[]` / `0`）。
+ * 于是全库累计块数一旦越过 2000：
+ *
+ * - `search_notebook` 得到的是"没有相关内容"（**冒充"确实没有"**）；
+ * - `getChunkCount` 恒为 0，而它又被 `refreshNotebookCounts` **持久写回**
+ *   `notebooks.chunk_count` —— 计数被写坏，且重启后依然是 0（越修越坏）。
+ *
+ * 同仓 `self-heal.ts` 已明写"读不到绝不返回 0"，这里违反了同一条原则。
+ *
+ * 现在分三层处理（`rust-port.ts` 的按表封顶本身在别人的文件里，见报告"需要他人配合"）：
+ * 1. **镜像就绪** → 照常走镜像（快路径，一个字节没变）；
+ * 2. **镜像被拒（超上限）** → 改走**按 notebook 的按需读**（`crud.list` + `notebook_id`
+ *    过滤），并做**有界缓存**（`chunkCache`）。这是"按 notebook 分片"在本文件里
+ *    能做到的那一半：封顶仍是整表的，但**读路径不再返回空**；
+ * 3. 两者都不可用 → `getChunks` 抛**可区分**的"索引未就绪"错误（C-3 要求 ②），
+ *    绝不返回 `[]` 冒充"没有内容"。
+ *
+ * 按需读是**异步**的，而这里的读接口是同步的（调用方遍布同步上下文）——
+ * 所以缓存未命中时触发一次后台预取、**本次如实抛"未就绪"**，下一次同步读命中缓存。
+ * 这与 `message.ts` 的 `attachments.content`（附件正文按 id 取）是同一套既有做法。
  */
 const CHUNK_MIRROR_MAX = 2000;
 const CHUNK_OPTS = { maxRows: CHUNK_MIRROR_MAX };
+
+/**
+ * 按 notebook 的块缓存（只在**镜像被拒**时才填）。
+ *
+ * 上限按 notebook 行数算（不是字节）：2000 行 ≈ 16MB，与 `CHUNK_MIRROR_MAX` 同一量级，
+ * 所以"被拒之后"的常驻占用不会比"镜像生效"时更大。
+ */
+const CHUNK_CACHE_MAX_PER_NOTEBOOK = CHUNK_MIRROR_MAX;
+const chunkCache = new Map<string, NotebookChunk[]>();
+/** 正在进行中的按需读（避免同一 notebook 被并发拉多次） */
+const chunkWarmInFlight = new Set<string>();
+
+/**
+ * 缓存属于**哪一个端口实例**（第 91 波，实测踩到的坑）。
+ *
+ * ## 为什么必须有它
+ *
+ * `chunkCache` 是模块级单例，而端口是**可替换的**（测试每个用例换一个假端口；
+ * 真机上会话/项目切换也可能换端口）。只按 notebook id 缓存会出现：
+ * "A 端口下读到的块，被 B 端口下的读当成自己的数据" —— 症状是**静默返回错内容**
+ * （比读不到严重得多）。
+ *
+ * 实测发现它就是这样在测试里露头的：单独跑某条用例时计数是 7（正确保留旧值），
+ * 全量跑时同一条用例却拿到 2（上一次读的缓存串味过来了）。
+ *
+ * 处置：端口实例变了就整体作废缓存。判据是**引用相等**，不猜任何内部状态。
+ */
+let chunkCachePort: unknown = null;
+
+/** 取当前端口下的缓存（端口换了就清空重来） */
+function currentChunkCache(): Map<string, NotebookChunk[]> {
+  let port: unknown = null;
+  try {
+    port = hasStoragePort() ? getStoragePort() : null;
+  } catch {
+    port = null;
+  }
+  if (port !== chunkCachePort) {
+    chunkCache.clear();
+    chunkWarmInFlight.clear();
+    chunkCachePort = port;
+  }
+  return chunkCache;
+}
+
+/**
+ * 本进程观察到的"`notebook_chunks` 镜像最近一次是否可用"。
+ *
+ * ⚠️ **这个标记只是诊断补充，不是 `chunkIndexState()` 的判据**。
+ *
+ * 起初我用它来回答"镜像现在可用吗"——那是错的：它记的是**上一次读**的结果，
+ * 而镜像可能在两次读之间才刚刚加载完成（`ensureLoaded` 是异步的）。
+ * 那样 `chunkIndexState()` 会持续谎报 "on-demand"（实测：镜像明明已经接手，
+ * 状态却一直是 on-demand）。判据必须是**当场问镜像**
+ * （`domainPort()`：端口在且该表已加载且未被拒），见 `chunkIndexState()`。
+ */
+let chunkMirrorLastSeenReady = false;
+
+/**
+ * 最近一次块读**看到**的镜像状态（诊断/测试用）。
+ *
+ * 与 `chunkIndexState()` 的区别：这个是"上次读到时的快照"，那个是"此刻问镜像的答案"。
+ * 留它是因为"镜像从不可用变成可用"这个**转变**本身有诊断价值
+ * （C-3 的现场就是"被拒之后一直没有恢复"）。
+ */
+export function chunkMirrorLastSeenReadyForDiagnostics(): boolean {
+  return chunkMirrorLastSeenReady;
+}
+
+/** `notebook_chunks` 的读取状态 —— 供检索入口区分"索引未就绪"与"确实没有内容" */
+export type ChunkIndexState = "mirror" | "on-demand" | "unavailable";
+
+/**
+ * 当前块索引的读取状态。
+ *
+ * 检索入口（`retriever.ts` / `search-notebook.ts` / `indexer.ts`）用它把
+ * "索引还没就绪"和"笔记本里确实没有相关内容"**分开告诉 LLM** ——
+ * 这两件事对模型的意义完全不同，混成一句"没有相关内容"就是撒谎。
+ *
+ * ## 判据是**当场问镜像**，不是缓存一个标记
+ *
+ * `domainPort(table)` 的语义正好是"端口在 **且** 该表镜像已加载且未被拒"，
+ * 并且在未加载时会顺手触发一次惰性加载 —— 所以它就是"镜像现在可用吗"的权威答案。
+ * 早先这里用"上次读的结果"当判据，会在"镜像刚刚加载完"的窗口里持续谎报
+ * （实测：镜像已接手，状态却停在 on-demand）。
+ */
+export function chunkIndexState(): ChunkIndexState {
+  if (isChunkMirrorReady()) return "mirror";
+  if (!hasStoragePort()) return "unavailable";
+  if (currentChunkCache().size > 0) return "on-demand";
+  // 镜像没接手、缓存也还空 → 仍然走"按需读"这条路（会触发预取）
+  return chunkOnDemandPossible() ? "on-demand" : "unavailable";
+}
+
+/** 镜像此刻是否可用（顺便把惰性加载触发掉，与 `domainPort` 的既有约定一致） */
+function isChunkMirrorReady(): boolean {
+  return domainPort(T_CHUNKS, CHUNK_OPTS) !== null;
+}
+
+/** 端口上是否具备按 notebook 按需读块的能力（`data.command` / `data.execute`） */
+function chunkOnDemandPossible(): boolean {
+  if (!hasStoragePort()) return false;
+  try {
+    return Boolean((getStoragePort().data as { execute?: unknown })?.execute);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 后台按需拉某个 notebook 的全部块（只在镜像被拒时用）。
+ *
+ * 用 `crud.list` + `where: { notebook_id }`：**列名/表名由引擎侧核对**
+ * （不存在会报错，不会静默少列），并且天然是"按 notebook 分片"的读。
+ * 一次拉不完时分页继续（`has_more` 由引擎给，不靠"返回行数 == limit"猜）。
+ */
+function warmChunksByNotebook(notebookId: string): void {
+  const cache = currentChunkCache();
+  if (chunkWarmInFlight.has(notebookId)) return;
+  if (!chunkOnDemandPossible()) return;
+  chunkWarmInFlight.add(notebookId);
+
+  void (async () => {
+    try {
+      const port = getStoragePort();
+      const data = port.data as unknown as {
+        command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+      };
+      const rows: Record<string, unknown>[] = [];
+      let offset = 0;
+      // 有界分页：单 notebook 超过 20 页（20000 块）就停手，宁可少读也不把渲染进程压死
+      for (let page = 0; page < 20; page++) {
+        const params = { table: T_CHUNKS, where: { notebook_id: notebookId }, limit: 1000, offset };
+        const res = data.command
+          ? await data.command<{ items?: Record<string, unknown>[]; has_more?: boolean }>("crud.list", params)
+          : ((await port.data.execute("crud.list", params)) as unknown as {
+              items?: Record<string, unknown>[];
+              has_more?: boolean;
+            });
+        const items = res?.items ?? [];
+        rows.push(...items);
+        if (!res?.has_more || items.length === 0) break;
+        offset += items.length;
+      }
+      const converted = rows.map(wireToChunk);
+      if (converted.length > CHUNK_CACHE_MAX_PER_NOTEBOOK) {
+        // 单 notebook 就超过缓存预算：不缓存（避免"按需读"变成偷偷的整表常驻），如实上报
+        reportPersistFailure(
+          "chunk.onDemand",
+          new Error(`笔记本 ${notebookId} 的文本块超过缓存上限 ${CHUNK_CACHE_MAX_PER_NOTEBOOK} 行`),
+          `本次读到 ${converted.length} 块但未缓存；检索请缩小到具体来源`,
+        );
+        return;
+      }
+      cache.set(notebookId, converted);
+    } catch (e) {
+      reportPersistFailure("chunk.onDemand", e, `笔记本 ${notebookId} 的文本块未按需读到（下次读会再试一次）`);
+    } finally {
+      chunkWarmInFlight.delete(notebookId);
+    }
+  })();
+}
+
+/** 按需读路径下的块（未命中返回 undefined，调用方据此触发预取） */
+function onDemandChunks(notebookId: string): NotebookChunk[] | undefined {
+  const hit = currentChunkCache().get(notebookId);
+  if (hit) return hit;
+  warmChunksByNotebook(notebookId);
+  return undefined;
+}
+
+/**
+ * "该表镜像未接手"的可区分失败（C-3 要求 ②）。
+ *
+ * 为什么是**抛**而不是返回 `[]`：`getChunks` 的调用方（检索、图谱抽取、PPT 生成、
+ * 来源预览）把空数组理解成"这个笔记本没有内容"。索引没就绪时返回空数组，
+ * 就是让整条链路基于一个假前提工作 —— 那正是本仓库最在意的那类缺陷。
+ */
+export class ChunkIndexUnavailableError extends Error {
+  constructor(message: string, readonly notebookId: string) {
+    super(message);
+    this.name = "ChunkIndexUnavailableError";
+  }
+}
 
 // ========== Utils ==========
 
@@ -447,13 +658,44 @@ export function deleteNotebook(id: string): void {
     return;
 }
 
-/** Update aggregated counts after source/chunk changes */
+/**
+ * Update aggregated counts after source/chunk changes.
+ *
+ * ## 任务 C-3（严重）：不得把"读不到"当成 0 写回
+ *
+ * 原实现无条件把 `getChunkCount()` 的结果写进 `notebooks.chunk_count`，
+ * 而 `getChunkCount()` 在块镜像被拒（超过 `CHUNK_MIRROR_MAX`）或尚未就绪时**返回 0** ——
+ * 于是 `refreshNotebookCounts` 每一次调用都把**真实计数覆盖成 0**，
+ * 而且这个 0 是**持久化**的（重启后依旧是 0，镜像修好了也修不回来）。
+ *
+ * 现在两个计数各自区分三态：
+ * - **镜像/按需读可用** → 用真实值；
+ * - **端口未注册（A 态）** → 用可用的那份（`chunkCache` 或 0），并如实上报；
+ * - **端口在但镜像未接手且按需读也拿不到** → **本次不写回**（宁可旧值，也不写一个假的 0）。
+ *
+ * 为什么要"跳过"而不是"上报后照写"：写回的是一个**用户可见的持久数字**，
+ * 假 0 会一路显示在笔记本列表上，且没有任何迹象表明它是假的。
+ */
 export function refreshNotebookCounts(notebookId: string): void {
-  const sourceCount = getSourceCount(notebookId);
-  const chunkCount = getChunkCount(notebookId);
+  const sourceCount = getSourceCountOrNull(notebookId);
+  const chunkCount = getChunkCountOrNull(notebookId);
   const now = Date.now();
 
-  // 迁移期：计数在**同一份数据**（镜像）上算完 → 整体写回 notebooks 行。
+  /*
+   * 只要有一个计数拿不到**真值**，就整体不写回：
+   * 两个计数是同一行的两个列（`source_count` / `chunk_count`），
+   * 写一半会让"计数与实际不符"变成更难查的形态。
+   */
+  if (sourceCount === null || chunkCount === null) {
+    reportPersistFailure(
+      "notebook.refreshCounts",
+      new Error("计数读不到（该域镜像未接手或按需读不可用）"),
+      `笔记本 ${notebookId} 的计数未刷新（**没有**写回 0 —— 旧值保留）`,
+    );
+    return;
+  }
+
+  // 迁移期：计数在**同一份数据**（镜像 / 按需读）上算完 → 整体写回 notebooks 行。
   const current = domainReadOne(T_NOTEBOOKS, { id: notebookId }, wireToNotebook);
   if (current !== undefined) {
     if (current === null) return;
@@ -469,10 +711,18 @@ export function refreshNotebookCounts(notebookId: string): void {
     return;
 }
 
-function getSourceCount(notebookId: string): number {
+/**
+ * 来源计数：**`null` = 读不到**（与"确实是 0 条"区分）。
+ *
+ * 这里的 `null` 不是内部实现细节，而是 C-3 的核心：
+ * "读不到"和"是 0"在原实现里被压成了同一个 `0`，于是一个瞬时状态
+ * （镜像还没加载完）被写成了永久的错误事实。
+ */
+function getSourceCountOrNull(notebookId: string): number | null {
   const rust = domainReadMany(T_SOURCES, (r) => r, { notebook_id: notebookId });
   if (rust) return rust.length;
-    return 0;
+  if (domainPortRegistered()) return null; // 端口在但镜像未接手 → 读不到
+  return 0; // A 态（端口未注册）：没有别的来源，0 是诚实的
 }
 
 function rowToNotebook(row: any[]): Notebook {
@@ -604,9 +854,12 @@ export function addChunk(chunk: Omit<NotebookChunk, 'id' | 'createdAt'>): Notebo
   const created: NotebookChunk = { ...chunk, id, createdAt: now };
   // 注意：这一行带 Base64 embedding，体积大。上限由 CHUNK_MIRROR_MAX 把住。
   if (domainWrite(T_CHUNKS, [chunkToWire(created)], { scope: "chunk.add", note: "文本块未保存", ...CHUNK_OPTS })) {
+    // 写成功 = 镜像可用（`applyWriteMany` 只有表已镜像时才生效）→ 记下这个事实
+    chunkMirrorLastSeenReady = true;
     return created;
   }
     reportWriteNotAccepted("chunk.add", "文本块未保存");
+
     return created;
 }
 
@@ -628,22 +881,104 @@ export function addChunksBulk(notebookId: string, sourceId: string, chunks: { co
   // 批量走**一次** crud.upsert：旧实现是 N 次 db.run（每条一次往返），
   // 这是"大文档批处理"最直接的瓶颈之一。
   if (domainWrite(T_CHUNKS, rows, { scope: "chunk.addBulk", note: "文本块未批量保存", ...CHUNK_OPTS })) {
+    chunkMirrorLastSeenReady = true;
     return;
   }
     reportWriteNotAccepted("chunk.addBulk", "文本块未批量保存");
+    if (domainPortRegistered()) chunkMirrorLastSeenReady = false;
     return;
 }
 
+/**
+ * 取某个笔记本的全部文本块。
+ *
+ * ## 任务 C-3（严重）：原来在镜像被拒时返回 `[]`，冒充"这个笔记本没有内容"
+ *
+ * 返回空数组的代价不是"少几条结果"，而是**整条知识链路基于假前提工作**：
+ * `retriever.ts` 检索不到 → `search_notebook` 告诉 LLM"没有相关内容"；
+ * `graph-extractor.ts` 抽不出图谱；PPT 生成拿到空内容。用户看到的是
+ * "我的资料不见了"，而不是"索引没就绪"。
+ *
+ * 现在：
+ * - 镜像就绪 → 走镜像（快路径，行为不变）；
+ * - 镜像被拒但按需读可用 → 返回按需读缓存；**缓存未命中时抛
+ *   `ChunkIndexUnavailableError`**（这一次同步读拿不到，下一次命中）——
+ *   调用方可以据此给 LLM 一个**明确的"索引未就绪"**结论；
+ * - 端口都没有 → 同样抛（A 态：本进程没有可用存储）。
+ *
+ * ⚠️ 这是**行为变更**（从"返回 []"变成"可能抛"）。所有调用点都在本仓库内，
+ * 已逐个改为先问 `chunkIndexState()` 或在本地 catch 后给出可区分结论；
+ * 契约测试 `knowledge-chunk-mirror-refusal.test.ts` 守住两侧。
+ */
 export function getChunks(notebookId: string): NotebookChunk[] {
   const rust = domainReadMany(T_CHUNKS, wireToChunk, { notebook_id: notebookId }, CHUNK_OPTS);
-  if (rust) return rust.sort((a, b) => a.chunkIndex - b.chunkIndex);
-    return [];
+  if (rust) {
+    chunkMirrorLastSeenReady = true;
+    return rust.sort((a, b) => a.chunkIndex - b.chunkIndex);
+  }
+  // 镜像没接手。**先看这到底是"没加载"还是"被拒/被逐出"**（C-3 要求 ③ 的前提）
+  chunkMirrorLastSeenReady = false;
+  const onDemand = onDemandChunks(notebookId);
+  if (onDemand) return [...onDemand].sort((a, b) => a.chunkIndex - b.chunkIndex);
+  throw new ChunkIndexUnavailableError(
+    `笔记本 ${notebookId} 的文本块索引尚未就绪（镜像未接手，按需读正在后台进行）—— 这**不是**"没有相关内容"`,
+    notebookId,
+  );
 }
 
+/**
+ * `getChunks` 的**不抛**形态：把三态压成一个可判别的结果。
+ *
+ * ```ts
+ * const r = getChunksOrStatus(id);
+ * if (!r.ok) return `索引未就绪（${r.state}）`;   // ← 明确结论，而不是"没有相关内容"
+ * use(r.chunks);
+ * ```
+ *
+ * 为什么提供它：`getChunks` 现在会抛（C-3 要求 ②），而调用点遍布同步上下文
+ * （UI effect、摘要生成、图谱抽取、PPT 生成）。让每个调用点各写一个 try/catch
+ * 只会重复 8 次同样的判断 —— 收进一个函数，顺便保证**每一处**都拿到同一套三态。
+ */
+export function getChunksOrStatus(
+  notebookId: string,
+): { ok: true; chunks: NotebookChunk[]; state: ChunkIndexState } | { ok: false; state: ChunkIndexState; reason: string } {
+  try {
+    return { ok: true, chunks: getChunks(notebookId), state: chunkIndexState() };
+  } catch (e) {
+    if (e instanceof ChunkIndexUnavailableError) {
+      return { ok: false, state: chunkIndexState(), reason: e.message };
+    }
+    throw e;
+  }
+}
+
+/**
+ * 取某个笔记本的块数。
+ *
+ * ## 任务 C-3：区分 `null`（读不到）与 `0`（确实是 0）
+ *
+ * 公开契约保持 `number`（既有调用点按数字用，不破坏它们的类型），
+ * 但内部把"读不到"如实报出来 —— **绝不**再让 `refreshNotebookCounts`
+ * 把"读不到"当 0 写回库。
+ */
 export function getChunkCount(notebookId: string): number {
+  return getChunkCountOrNull(notebookId) ?? 0;
+}
+
+/** 块计数：`null` = 读不到（镜像未接手且按需读缓存也没有） */
+function getChunkCountOrNull(notebookId: string): number | null {
   const rust = domainReadMany(T_CHUNKS, (r) => r, { notebook_id: notebookId }, CHUNK_OPTS);
-  if (rust) return rust.length;
-    return 0;
+  if (rust) {
+    chunkMirrorLastSeenReady = true;
+    return rust.length;
+  }
+  chunkMirrorLastSeenReady = false;
+  const onDemand = currentChunkCache().get(notebookId);
+  if (onDemand) return onDemand.length;
+  // 缓存没有 → 触发一次预取（下一次读命中），本次如实返回"读不到"
+  warmChunksByNotebook(notebookId);
+  if (!hasStoragePort()) return 0; // A 态：本进程没有可用存储，0 是诚实的
+  return null;
 }
 
 export function deleteChunksBySource(sourceId: string): void {
@@ -655,6 +990,8 @@ export function deleteChunksBySource(sourceId: string): void {
   );
   if (removed !== null) return;
     reportWriteNotAccepted("chunk.deleteBySource", "文本块未删除");
+    // 删除没接手同样意味着镜像不可用（读路径要走按需读）
+    if (domainPortRegistered()) chunkMirrorLastSeenReady = false;
     return;
 }
 
@@ -1085,7 +1422,38 @@ export function listGroups(parentId?: string | null): NotebookGroup[] {
     return [];
 }
 
-export function updateGroup(id: string, update: Partial<Pick<NotebookGroup, 'name' | 'parentId' | 'sortOrder'>>): void {
+/**
+ * 更新笔记本分组。
+ *
+ * ## 任务 C-9：`parentId` 无法被**置空**（`null` 被当成"未提供"）
+ *
+ * 原签名是 `Pick<NotebookGroup, 'name' | 'parentId' | 'sortOrder'>`，
+ * 判据是 `update.parentId !== undefined`。而 UI 想把一个子分组移出父分组时
+ * 传的是 `parentId: null`（"显式置空"是这类树形结构的自然写法）——
+ * `null !== undefined` 成立，于是它**进得了** fields…
+ * 但紧接着 `...(update.parentId !== undefined ? { parentId: update.parentId ?? undefined } : {})`
+ * 里那个 `?? undefined` 又把 `null` 抹成了 `undefined`，最后 `groupToWire` 写回 `parent_id: null`
+ * —— 这一条"绕了一圈又恰好写对"。
+ *
+ * 真正坏掉的是**类型**：`Pick<...>` 的 `parentId` 是 `string | undefined`，
+ * 传 `null` 在 TS 下是**类型错误**，调用方只能 `as any` 或干脆不传 ——
+ * 也就是说"移出分组"这条路在类型层面就是堵死的（这也是为什么
+ * `grep updateGroup` 在生产代码里 0 个调用点：接不上）。
+ *
+ * 现在把 `null` 与 `undefined` **显式分开**，并在签名里如实表达：
+ * - `undefined` = 未提供（不动这一列）；
+ * - `null` = **显式置空**（把分组移出父分组，写 `parent_id = NULL`）。
+ *
+ * `sortOrder` 没有"空值"语义，保持原样。
+ */
+export function updateGroup(
+  id: string,
+  update: {
+    name?: string;
+    parentId?: string | null;
+    sortOrder?: number;
+  },
+): void {
   const fields: string[] = [];
   if (update.name !== undefined) fields.push('name');
   if (update.parentId !== undefined) fields.push('parent_id');
@@ -1103,6 +1471,12 @@ export function updateGroup(id: string, update: Partial<Pick<NotebookGroup, 'nam
     const next: NotebookGroup = {
       ...current,
       ...(update.name !== undefined ? { name: update.name } : {}),
+      /*
+       * ⚠️ 这里**不能**写 `update.parentId ?? undefined`：那正是把"显式置空"重新
+       * 变成"未提供"的地方（两者都落到 `undefined`，而 `undefined` 在
+       * `groupToWire` 里恰好也写成 null —— 于是"对"得毫无保障，换个序列化就错）。
+       * 直接透传 `null`，让 wire 层的 `?? null` 做唯一一次归一。
+       */
       ...(update.parentId !== undefined ? { parentId: update.parentId ?? undefined } : {}),
       ...(update.sortOrder !== undefined ? { sortOrder: update.sortOrder } : {}),
     };
@@ -1156,9 +1530,36 @@ function generateVersionId(): string {
   return `ver_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * 保存一条笔记版本。
+ *
+ * ## 任务 C-8：`if (!note) return;` 原来是**静默丢弃**
+ *
+ * 读笔记走 `getNote()`，而它在端口没接手（B 态：镜像未就绪）时返回 `null`。
+ * 原实现把"读不到"与"这条笔记不存在"合并成同一个 `return` ——
+ * 于是**自动版本历史会静默断档**：用户在编辑笔记，每次保存都该留一版，
+ * 而库里一条版本都没有，界面上也没有任何提示。
+ *
+ * 现在两态分开：
+ * - 端口在但镜像未接手 → 可重试失败，如实上报（`noteVersion.save`）；
+ * - 笔记确实不存在 → 业务失败（旧实现也是不写，但要**说清**为什么）。
+ */
 export function saveNoteVersion(noteId: string, versionNote?: string): void {
   const note = getNote(noteId);
-  if (!note) return;
+  if (!note) {
+    reportPersistFailure(
+      "noteVersion.save",
+      new Error(
+        domainPortRegistered()
+          ? "端口已注册但 notes 镜像未接手（未就绪 / 未镜像）"
+          : `notes 里没有 id=${noteId}`,
+      ),
+      domainPortRegistered()
+        ? `笔记 ${noteId} 的版本未保存 —— 本次读不到该笔记（**不是**"笔记不存在"），稍后会再试`
+        : `笔记 ${noteId} 的版本未保存：该笔记不存在（可能已被删除）`,
+    );
+    return;
+  }
 
   const id = generateVersionId();
   const now = Date.now();
@@ -1190,9 +1591,31 @@ export function getNoteVersion(versionId: string): NoteVersion | null {
     return null;
 }
 
+/**
+ * 把笔记恢复到某个历史版本。
+ *
+ * ## 任务 C-8：`if (!version) return;` 原来是静默丢弃
+ *
+ * 与 `saveNoteVersion` 同一个形状、同一个错误：`getNoteVersion` 在镜像未接手时返回
+ * `null`，原实现直接 `return` —— 用户点"恢复此版本"，界面没反应、库里没任何变化、
+ * 日志里也没有一行。现在把"未就绪"与"版本不存在"分开如实上报。
+ */
 export function restoreNoteVersion(versionId: string): void {
   const version = getNoteVersion(versionId);
-  if (!version) return;
+  if (!version) {
+    reportPersistFailure(
+      "noteVersion.restore",
+      new Error(
+        domainPortRegistered()
+          ? "端口已注册但 note_versions 镜像未接手（未就绪 / 未镜像）"
+          : `note_versions 里没有 id=${versionId}`,
+      ),
+      domainPortRegistered()
+        ? `恢复未执行：本次读不到版本 ${versionId}（**不是**"该版本不存在"），稍后会再试`
+        : `恢复未执行：版本 ${versionId} 不存在（可能已被清理）`,
+    );
+    return;
+  }
 
   // Save current state as a new version before restoring
   saveNoteVersion(version.noteId, 'Auto-saved before restore');

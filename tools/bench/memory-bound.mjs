@@ -1,25 +1,37 @@
 #!/usr/bin/env node
 /**
- * 大文档批处理的**内存**基准：Rust 引擎 vs sql.js(WASM)
+ * 大文档批处理的**内存**基准（Rust CLI 子进程）
  *
  * ## 为什么必须单独测内存
  *
- * `db-scale.mjs` 比的是**耗时**，但历史事故的形态不是"慢"，是
- * `RuntimeError: memory access out of bounds` —— WASM 线性内存是**固定上限**的，
- * 而 sql.js 的两件事会同时顶上去：
- * 1. 整个语料常驻渲染进程堆；
- * 2. `persistDatabase()` 走 `db.export()`，**再复制一整份**数据库字节。
+ * `db-scale.mjs` 比的是**耗时**，而历史事故的形态不是"慢"，是
+ * `RuntimeError: memory access out of bounds` —— 那是 WASM 线性内存时代的形态：
+ * sql.js 把整个语料常驻渲染进程堆，`persistDatabase()` 再走 `db.export()` 复制一整份字节。
  *
- * 所以判定标准必须是**峰值内存**，不是耗时。这里把两个实现各自放进**子进程**测量：
- * - 子进程里跑真实的"插入 N 条大文档 → 立刻导出/落盘"；
- * - 父进程采样子进程的峰值工作集（Windows `tasklist`，Linux 读 `/proc/<pid>/status`）；
- * - 子进程崩溃/被杀也算结果（`oomOrCrash: true`）—— 那正是要复现的现象。
+ * ⚠️ 那个引擎已随 L1 从工程里删除（`node_modules` 下的 sql.js 包已不存在），所以这个基准里
+ * **wasm 一侧整段删掉了** —— 原来它在 catch 分支打印 `wasm : **失败**（这正是要证明的问题）`，
+ * 于是"依赖不存在"会被读成"我们证明了 wasm 更差"。那是误导性结论，不能留。
+ *
+ * 但"判定标准必须是**峰值内存**"这件事没变，而且换到 Rust 侧更该盯：
+ * - `messages.create_many` 的每一批负载都要经过"JSON 序列化 → 管道 → 反序列化"，
+ *   一批 200 条 × 200 KB 就是 40 MB 的临时字节，峰值工作集是真实风险；
+ * - 单次查询还有 16 MiB / 5000 行的引擎硬上限（`MAX_BYTES_PER_QUERY` / `MAX_ROWS_PER_QUERY`），
+ *   逼近它时该看到的是**分页**而不是硬顶。
+ *
+ * 所以流程是：把被测实现放进**子进程**，父进程轮询采样子进程的峰值工作集
+ * （Windows `tasklist`，Linux `/proc/<pid>/status`）；子进程崩溃/被杀也算结果
+ * （`oomOrCrash: true`）—— 那正是要复现的现象。子进程里只回元数据与计数，
+ * **绝不把正文回显到 stdout**（否则"基准自身"就变成内存大户，测出来的东西不是被测对象）。
  *
  * ## 用法
  *
  *   node tools/bench/memory-bound.mjs                 # 默认 2000 条 × 200KB
- *   node tools/bench/memory-bound.mjs --rows 4000 --kb 200
- *   node tools/bench/memory-bound.mjs --only wasm
+ *   node tools/bench/memory-bound.mjs --rows 4000 --kb 50
+ *   node tools/bench/memory-bound.mjs --keep          # 保留临时库与 worker
+ *
+ * 关于 `--only`：只接受 `rust` / `both`（现在两者等价）。
+ * 历史上还有 `--only wasm`，那条基线已随 L1 移除 —— 传它会**明确报错并退出 1**，
+ * 而不是"收下参数、什么都不做"（静默 no-op 会让"我测过 wasm 了"变成假记忆）。
  *
  * 库文件（tools/ 下的 .mjs）在顶层**不得**有 exit/写盘/长任务这类副作用，
  * 因此一切都在 `main()` 里、并有 `isMain` 守卫。
@@ -34,8 +46,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const EXE = process.platform === "win32" ? "codem-db-cli.exe" : "codem-db-cli";
 const CLI = path.join(ROOT, "src-tauri", "codem-db", "target", "debug", EXE);
-const SQL_JS = path.join(ROOT, "node_modules", "sql.js", "dist", "sql-wasm.js");
-const WASM = path.join(ROOT, "node_modules", "sql.js", "dist", "sql-wasm.wasm");
 
 const argv = process.argv.slice(2);
 const argOf = (name, dflt) => {
@@ -108,38 +118,6 @@ function runChild(scriptPath, args, env = {}) {
 }
 
 function writeWorkerFiles(dir) {
-  const wasmWorker = path.join(dir, "wasm-worker.mjs");
-  fs.writeFileSync(
-    wasmWorker,
-    `
-import fs from "node:fs";
-const [rows, kb, dbPath, sqlJsPath, wasmPath] = process.argv.slice(2);
-const N = parseInt(rows, 10), KB = parseInt(kb, 10);
-const initSqlJs = (await import("file://" + sqlJsPath.replace(/\\\\/g, "/"))).default;
-const SQL = await initSqlJs({ locateFile: () => wasmPath });
-const db = new SQL.Database();
-db.run(\`CREATE TABLE messages (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL,
-  content TEXT NOT NULL, timestamp INTEGER NOT NULL, hidden INTEGER DEFAULT 0);
-  CREATE TABLE sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL,
-  created_at INTEGER NOT NULL, last_message_at INTEGER NOT NULL, message_count INTEGER DEFAULT 0);
-  CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, created_at INTEGER NOT NULL);\`);
-db.run("INSERT INTO projects VALUES ('p','基准','',1)");
-db.run("INSERT INTO sessions VALUES ('s','p','会话',1,1,0)");
-// 一份大文档：KB 级别的正文（真实形态：粘贴进来的长文/代码）
-const body = "x".repeat(KB * 1024);
-const INS = "INSERT OR REPLACE INTO messages (id, session_id, role, content, timestamp, hidden) VALUES (?,?,?,?,?,0)";
-for (let i = 0; i < N; i++) db.run(INS, ["m" + i, "s", "user", body, i]);
-// 这一步就是历史事故点：整库导出 = 再复制一整份字节
-const bytes = db.export();
-fs.writeFileSync(dbPath, Buffer.from(bytes));
-// 读回来（模拟渲染进程持有语料）
-const again = new SQL.Database(bytes);
-const r = again.exec("SELECT COUNT(*) FROM messages");
-console.log(JSON.stringify({ rows: r[0].values[0][0], fileBytes: bytes.length }));
-`,
-    "utf8",
-  );
-
   const rustWorker = path.join(dir, "rust-worker.mjs");
   fs.writeFileSync(
     rustWorker,
@@ -163,7 +141,7 @@ for (let start = 0; start < N; start += batch) {
   call(["invoke", "messages.create_many", "-"], JSON.stringify({ items }));
 }
 // 分页读**一页**（每页 5 条大文档）：证明"读一页只搬一页"，
-// 而不是像 WASM 那样整库导出/整表进堆。返回体体积也要报出来。
+// 而不是整表进内存。返回体体积也要报出来（它决定了 IPC 边界的成本）。
 const page = call(["invoke", "messages.list", "-"], JSON.stringify({ session_id: "s", limit: 5, offset: 0, include_hidden: true }));
 const pageBytes = JSON.stringify(page).length;
 // 只回元数据 + 计数，绝不把正文回显到 stdout（那会让"基准自身"变成内存大户）
@@ -172,35 +150,40 @@ console.log(JSON.stringify({ rows: counts.messages, firstPage: page.result.items
 `,
     "utf8",
   );
-  return { wasmWorker, rustWorker };
+  return { rustWorker };
 }
 
 async function main() {
+  /*
+   * `--only` 的取值必须严格：历史基线（sql.js/wasm）已随 L1 删除。
+   * "收下参数然后什么都不做"是最坏的一种兼容 —— 使用者以为测过 wasm 了，其实没有。
+   */
+  if (ONLY !== "both" && ONLY !== "rust") {
+    if (ONLY === "wasm") {
+      console.error(
+        "--only wasm 已不可用：sql.js(WASM) 引擎已随 L1 从工程里删除（node_modules 下的 sql.js 包已不存在），" +
+          "这个基准里 wasm 那一侧也整段移除了。\n  现在只有 Rust 引擎可测：用 --only rust（或省略 --only）。",
+      );
+    } else {
+      console.error(`--only 只接受 rust / both，收到 "${ONLY}"。`);
+    }
+    return 1;
+  }
+
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codem-mem-"));
   const workers = writeWorkerFiles(tmpRoot);
   const report = { rows: ROWS, contentKB: KB, totalMB: +((ROWS * KB) / 1024).toFixed(1), impls: {} };
 
-  if (ONLY !== "rust") {
-    const dbPath = path.join(tmpRoot, "wasm.bin");
-    const r = await runChild(workers.wasmWorker, [String(ROWS), String(KB), dbPath, SQL_JS, WASM]);
-    report.impls["wasm(sql.js)"] = {
-      ...r,
-      dbBytes: fs.existsSync(dbPath) ? fs.statSync(dbPath).size : null,
-    };
-  }
-
-  if (ONLY !== "wasm") {
-    const dbPath = path.join(tmpRoot, "rust.bin");
-    const r = await runChild(workers.rustWorker, [String(ROWS), String(KB), dbPath, CLI]);
-    report.impls.rust = {
-      ...r,
-      dbBytes: fs.existsSync(dbPath) ? fs.statSync(dbPath).size : null,
-      walBytes: fs.existsSync(`${dbPath}-wal`) ? fs.statSync(`${dbPath}-wal`).size : 0,
-    };
-  }
+  const dbPath = path.join(tmpRoot, "rust.bin");
+  const r = await runChild(workers.rustWorker, [String(ROWS), String(KB), dbPath, CLI]);
+  report.impls.rust = {
+    ...r,
+    dbBytes: fs.existsSync(dbPath) ? fs.statSync(dbPath).size : null,
+    walBytes: fs.existsSync(`${dbPath}-wal`) ? fs.statSync(`${dbPath}-wal`).size : 0,
+  };
 
   // 结论表
-  console.log(`\n# 大文档批处理内存基准 —— ${ROWS} 条 × ${KB}KB = ${report.totalMB}MB 正文\n`);
+  console.log(`\n# 大文档批处理内存基准（Rust CLI）—— ${ROWS} 条 × ${KB}KB = ${report.totalMB}MB 正文\n`);
   const rows = [];
   for (const [name, v] of Object.entries(report.impls)) {
     rows.push({
@@ -223,14 +206,19 @@ async function main() {
 
   if (!KEEP) fs.rmSync(tmpRoot, { recursive: true, force: true });
   else console.log(`\n临时目录保留：${tmpRoot}`);
-  return report;
+  return 0;
 }
 
 if (isMain) {
-  main().catch((e) => {
-    console.error("基准失败：", e?.message ?? e);
-    process.exitCode = 1;
-  });
+  main()
+    .then((code) => {
+      // 用 exitCode 而不是 process.exit：管道下 process.exit 会截断还没刷出去的 stdout
+      process.exitCode = code ?? 0;
+    })
+    .catch((e) => {
+      console.error("基准失败：", e?.message ?? e);
+      process.exitCode = 1;
+    });
 }
 
 export { main };

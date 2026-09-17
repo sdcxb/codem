@@ -23,6 +23,8 @@
 
 import { FileChangeStorage, type ChangedFile } from "../storage/file-change-storage";
 import { buildGitCommand, psQuote } from "../utils/ps-command";
+import { getStoragePort, hasStoragePort } from "../storage/port";
+import { reportActionFailure, reportPersistFailure } from "../storage/persist-failure";
 
 const MAX_PATCH_BYTES = 500_000;
 const MAX_FILES_LIST_BYTES = 2_000_000;
@@ -66,6 +68,60 @@ async function sha256(data: string): Promise<string> {
 
 function generateId(): string {
   return `tfc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** `fetchPatchById` 的三态结果（"取不到"与"不存在"必须分开，见 `FileChangeTracker.revert`） */
+type PatchFetchResult =
+  | { status: "ok"; patch: string }
+  | { status: "absent" }
+  | { status: "unavailable"; error: Error };
+
+/**
+ * 按 id **只取 `patch` 一列**（C-7）。
+ *
+ * ## 为什么不用 `FileChangeStorage.getById`
+ *
+ * `getById` 走域镜像，而镜像对 `turn_file_changes` 是**按全列**装载的
+ * （`DOMAIN_COLUMN_PROJECTION` 里只有 `attachments`）。于是：
+ * - 每次启动都会把整表的 patch 正文拉进渲染进程（500KB/行 × 行数）；
+ * - 超过 5000 行该表被永久 `refused`，`getById` 恒返回 null → 回滚功能整域失效。
+ *
+ * 这里用 `crud.list` + `columns: ["patch"]` + `where: { id }` **只取那一行的那一列** ——
+ * 与 `message.ts` 用 `attachments.content` 按 id 取附件正文是同一套做法
+ * （列名由引擎侧核对，不存在会报错，不会静默少列）。
+ *
+ * ## 为什么"取不到"和"不存在"要分开
+ *
+ * 原来两者都表现为"拿不到 patch"，日志只有一句 `no patch found` ——
+ * 排查者无法区分"这条记录没了"（用户该知道变更历史丢了）与
+ * "这次读不到"（重试即可）。两者对用户的意义完全不同。
+ */
+async function fetchPatchById(artifactId: string): Promise<PatchFetchResult> {
+  if (!hasStoragePort()) {
+    return { status: "unavailable", error: new Error("端口未注册（本进程没有可用存储）") };
+  }
+  try {
+    const port = getStoragePort();
+    // `command` 拿结构化结果；端口实现没暴露它时退回 `execute`（两者都是同一 dispatch）
+    const probe = port.data as unknown as {
+      command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+    };
+    const params = { table: "turn_file_changes", columns: ["patch"], where: { id: artifactId }, limit: 1 };
+    const res = probe.command
+      ? await probe.command<{ items?: Array<{ patch?: string | null }> }>("crud.list", params)
+      : ((await port.data.execute("crud.list", params)) as unknown as {
+          items?: Array<{ patch?: string | null }>;
+        });
+    const items = res?.items ?? [];
+    if (items.length === 0) return { status: "absent" };
+    return { status: "ok", patch: items[0]?.patch ?? "" };
+  } catch (e) {
+    // 命令失败（引擎不可用 / 表不存在 / 参数被拒）：**可重试**，如实上报原始错误
+    return {
+      status: "unavailable",
+      error: e instanceof Error ? e : new Error(String(e)),
+    };
+  }
 }
 
 async function runGit(cwd: string, args: string[]): Promise<string> {
@@ -167,6 +223,23 @@ export class FileChangeTracker {
 
     try {
       this.beforeTree = await runGit(this.workspace, ["rev-parse", "HEAD^{tree}"]);
+      /**
+       * **必须在这里就把"本轮开始的工作区快照"取下来**（第 91 波，任务 C-7 连带修复）。
+       *
+       * 第 84 波引入了 `beforeSnapshot`（`finalize()` 用它算"本轮新增的未跟踪文件"），
+       * 但 `start()` 里**从来没有赋值** —— 而 `finalize()` 的第一句是
+       * `if (!this.active || !this.beforeTree || !this.beforeSnapshot) return null;`。
+       * 于是 `beforeSnapshot` 恒为 `null` → **`finalize()` 恒返回 null** →
+       * `turn_file_changes` 里**永远没有行** → `revert()` 永远走"取不到 patch"那条路。
+       *
+       * 也就是说：文件变更面板恒空、回滚永远不可用。这与 C-7 描述的症状
+       * （`file-change-tracker.ts` 打 `no patch found`）是**同一个缺陷的两端**：
+       * 一端是"根本没有记录"，另一端是"有记录但 mirror 里没有 patch 正文"。
+       *
+       * 放在 `beforeTree` 之后取：两次快照之间只隔一次 git 调用，
+       * 而 `stash create` 不改工作区/索引，所以顺序不影响正确性。
+       */
+      this.beforeSnapshot = await snapshotWorkingTree(this.workspace);
       this.active = true;
       return true;
     } catch (e) {
@@ -327,11 +400,68 @@ export class FileChangeTracker {
 
   /**
    * Revert to a specific turn's before state by applying reverse patch.
+   *
+   * ## 任务 C-7：patch 正文必须**按 id 按需取**
+   *
+   * `turn_file_changes` 是热表，而单行 `patch` 上限 500,000 字符。域镜像原来按**全列**
+   * 装载它 → 每次启动把整表连同 patch 正文拉进渲染进程（>5000 行即永久 `refused`）。
+   * 真 CLI 实测：一张 12 列的表、只有 1 行 500KB patch 时，一次 `crud.list`（不传 columns）
+   * 的返回体就是 **500,275 字节**。
+   *
+   * 列投影本身在 `rust-port.ts`（别人的文件，已列进"需要他人配合"）。本文件能做的是：
+   * **需要 patch 正文时按 id 单独取**（走既有端口读能力），并且把三种情形**分开**：
+   *
+   * | 情形 | 判据 | 处置 |
+   * |---|---|---|
+   * | 记录不存在 | 镜像/引擎都没有这一行 | 业务失败：这条变更记录已经没了 |
+   * | 记录在、patch 取不到 | 行在但 `patch` 为 null/空 | 业务失败：**不**说"没有补丁"这种含糊话 |
+   * | 存储未就绪 | 端口没注册 / 命令失败 | 可重试失败：如实上报，明确"稍后再试" |
    */
   static async revert(artifactId: string, workspace: string): Promise<boolean> {
     const record = FileChangeStorage.getById(artifactId);
-    if (!record || !record.patch) {
-      console.warn("[FileChangeTracker] revert: no patch found for", artifactId);
+    if (!record) {
+      /*
+       * ⚠️ 不能把 `null` 直接说成"没有这条记录"：`getById` 在端口没接手时也返回 null。
+       * 所以这里再问一次"端口在不在"，把**未就绪**与**不存在**分开报。
+       */
+      if (!hasStoragePort()) {
+        reportPersistFailure(
+          "fileChange.revert",
+          new Error("端口未注册（本进程没有可用存储）"),
+          `回滚未执行：读不到变更记录 ${artifactId}，请稍后重试`,
+        );
+      } else {
+        reportActionFailure(
+          "fileChange.revert",
+          new Error(`turn_file_changes 里没有 id=${artifactId}`),
+          "回滚未执行：这条变更记录不存在（可能随会话被清理）",
+        );
+      }
+      return false;
+    }
+
+    /*
+     * patch 正文：记录里可能**没有**（列投影 / 镜像只带了元数据），这时按 id 按需取。
+     * 取回来之后仍然为空 → 如实区分"记录在但补丁缺失"，而不是笼统的 "no patch found"。
+     */
+    let patch = record.patch ?? "";
+    if (!patch) {
+      const fetched = await fetchPatchById(artifactId);
+      if (fetched.status === "ok") {
+        patch = fetched.patch;
+      } else if (fetched.status === "unavailable") {
+        reportPersistFailure("fileChange.revert", fetched.error, `回滚未执行：补丁正文本次取不到，请稍后重试`);
+        return false;
+      }
+      // fetched.status === "absent" → 落到下面统一的"记录在但补丁缺失"处理
+    }
+    if (!patch) {
+      reportActionFailure(
+        "fileChange.revert",
+        new Error(`turn_file_changes id=${artifactId} 的 patch 为空`),
+        "回滚未执行：这条变更记录里没有补丁正文（记录存在，但补丁缺失或已被截断为空的旧记录）",
+      );
+      console.warn("[FileChangeTracker] revert: 记录存在但没有 patch 正文", artifactId);
       return false;
     }
 
@@ -340,7 +470,7 @@ export class FileChangeTracker {
       const { invoke } = (window as any).__TAURI__.core;
       // Write patch to temp file, then apply with --reverse
       const tempPath = `${workspace}/.git/revert-${artifactId}.patch`;
-      await invoke("write_file", { path: tempPath, content: record.patch });
+      await invoke("write_file", { path: tempPath, content: patch });
 
       const result = await invoke("execute_command", {
         command: `git -C ${psQuote(workspace)} apply --reverse ${psQuote(tempPath)}`,

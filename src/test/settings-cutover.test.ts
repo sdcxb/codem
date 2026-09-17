@@ -149,26 +149,13 @@ describe("配置面切换 —— 未注册端口（默认/回滚已退役）", (
     expect(getSetting("任意键")).toBeNull();
   });
 
-  it("SET-7: 端口是 wasm 时不误用端口（回滚形态在生产里已不可能出现）", async () => {
-    const wasmPort = {
-      kind: "wasm" as const,
-      engine: {} as never,
-      data: {} as never,
-      config: {
-        get() {
-          throw new Error("不应该调用 wasm 端口的配置面");
-        },
-        set() {
-          throw new Error("不应该调用 wasm 端口的配置面");
-        },
-        remove() {
-          throw new Error("不应该调用 wasm 端口的配置面");
-        },
-        stats: () => ({ warmed: false, keys: 0, pendingWrites: 0, failures: 0 }),
-      } as never,
-      append: {} as never,
-    };
-    setStoragePort(wasmPort);
-        expect(getSetting("任意键")).toBeNull();
-  });
+  /**
+   * 第 19 轮：这里原来还有一条 SET-7（`kind: "wasm"` 的端口里 config 面全是 `throw`，
+   * 断言 `getSetting` 返回 null）——它守的是"别误用 wasm 端口的配置面"。
+   *
+   * 第 19 轮：wasm 端口形态已不存在（旧引擎删除），而 `kind` 收成常量后 `rustConfig()`
+   * 只剩"端口在不在"一条判据：**端口在就必定用它的配置面**（不再有"看着像端口、
+   * 实际不该用"的中间形态），所以那条断言已无对应代码路径，直接删除。
+   * 真正有意义的"未预热不误用"由上面 SET-5 守着（`configWarmed:false`）。
+   */
 });

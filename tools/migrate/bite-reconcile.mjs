@@ -9,10 +9,16 @@
  *
  * 所以这里逐条制造**真实的破坏**，验证工具会报出来：
  *   1. 少搬一行（行数不符）
- *   2. 偷偷改一个值（行数一致、内容不符）
+ *   2. 偷偷改一个值（settings 逐键比对必须抓住）
  *   3. 源库有表不在导入清单里（覆盖性守卫）
  *   4. 源库有外键孤儿（必须显式处置，默认丢弃并报告；--strict-fk 直接失败）
  *   5. 正常的迁移必须**通过**（否则前面四条毫无意义）
+ *   6. 覆盖性检查里的「已知缺口」必须如实打印，而不是伪装成"全都查过了"
+ *
+ * 说明（本轮）：`storage-migrate.mjs` 已改成对引擎 `migration.auto` 的薄封装
+ * （旧实现用渲染进程的 sql.js 读旧库，而 sql.js 已随 L1 删除；`legacy.read_table`
+ * 又有 20000 行的静默截断上限，不能拿来全量搬运）。这些用例的**判据不变**：
+ * 一旦对账工具"该失败却通过"，它们就要红。
  *
  * 用法：node tools/migrate/bite-reconcile.mjs
  * 退出码 0 = 咬合全部符合预期；1 = 有"该失败却通过"或"该通过却失败"的用例。
@@ -102,7 +108,7 @@ function record(name, ok, detail) {
   );
 }
 
-// ========== 用例 2：值被偷改（行数一致、内容不符必须被抓住） ==========
+// ========== 用例 2：值被偷改（内容不符必须被抓住） ==========
 {
   const src = makeSource("src-tamper", {
     projects: { columns: ["id", "name", "path", "created_at", "last_accessed_at"], rows: [["p1", "项目", "", 1, 1]] },
@@ -113,10 +119,13 @@ function record(name, ok, detail) {
   cli(dst, ["invoke", "settings.set", "-"], JSON.stringify({ key: "k1", value: "被改过的值" })); // 破坏：改内容
   const v = spawnSync("node", [MIGRATE, "--verify", "--src", src, "--dst", dst], { encoding: "utf8" });
   const out = `${v.stdout}\n${v.stderr}`;
-  const rowsSame = /settings: 1 行/.test(out);
+  // 注意：这里**不能**再要求"两边行数相同" —— 引擎迁移后会往目标端 settings 写自己的
+  // 状态键（codem-storage-migrated-at），所以目标端必然多一行。改动后的值由
+  // settings 的**逐键比对**抓住（这正是它存在的理由：摘要比对在这种场合比不了）。
+  const rowsLine = /settings: 1 行/.test(out);
   record(
-    "2. 值被改 → 对账失败（行数相同也不能放过）",
-    v.status === 1 && /settings/.test(out) && rowsSame,
+    "2. 值被改 → 对账失败（逐键比对抓住，行数不同也照样抓）",
+    v.status === 1 && /settings/.test(out) && rowsLine && /对账失败/.test(out),
     `exit=${v.status}`,
   );
 }
@@ -127,10 +136,9 @@ function record(name, ok, detail) {
   const src = makeSource("src-unknown", {
     projects: { columns: ["id", "name", "path", "created_at", "last_accessed_at"], rows: [["p1", "项目", "", 1, 1]] },
   });
-  // 通过 import.table 无法建表（表名白名单），所以这里直接用 CLI 的 sql.raw 也不行——
-  // 改为：在**源库**上插入一张表是不可行的（引擎不允许裸 DDL）。
-  // 因此这一条改测"顺序表未覆盖"的那种形态：用 --src 指向一个含未知表的库由 sql.js 造。
-  // 这里退一步验证守卫的**代码路径**（覆盖性检查会列出未覆盖表并退出 1）：
+  // 通过 import.table 无法建表（表名白名单），所以这里没法真的造出一张"不在清单里的表"：
+  // 引擎不开裸 DDL。这一条因此退一步验证守卫的**代码路径**确实被执行到
+  // （覆盖性检查会打印结论；用例 6 另外验证它把「已知缺口」如实标注出来）。
   const dst = path.join(tmp, "dst-unknown.bin");
   runMigrate(src, dst);
   const r = spawnSync("node", [MIGRATE, "--dry-run", "--src", src, "--dst", dst], { encoding: "utf8" });
@@ -176,9 +184,27 @@ function record(name, ok, detail) {
   const out = spawnSync("node", [MIGRATE, "--rollback-hint"], { encoding: "utf8" });
   const text = `${out.stdout}${out.stderr}`;
   record(
-    "5. 回滚提示给出可执行步骤（开关 + 备份路径）",
+    "5. 回滚提示给出可执行步骤（且如实说明开关已退役 + 备份路径）",
     out.status === 0 && /codem-storage-engine/.test(text) && /备份/.test(text),
     `exit=${out.status}`,
+  );
+}
+
+// ========== 用例 6：已知缺口必须如实打印（不做假绿） ==========
+{
+  // 覆盖性检查现在**查不到**"源库有、但不在引擎清单里"的表（CLI 没有只读列出任意库
+  // schema 的命令）。这种能力缺口必须打印出来，否则读者会把"检查通过"当成"全都查过了"——
+  // 而"假绿"正是这个仓库反复踩到的坑。
+  const src = makeSource("src-gap", {
+    projects: { columns: ["id", "name", "path", "created_at", "last_accessed_at"], rows: [["p1", "项目", "", 1, 1]] },
+  });
+  const dst = path.join(tmp, "dst-gap.bin");
+  const r = spawnSync("node", [MIGRATE, "--dry-run", "--src", src, "--dst", dst], { encoding: "utf8" });
+  const out = `${r.stdout}\n${r.stderr}`;
+  record(
+    "6. 覆盖性检查如实标注已知缺口",
+    r.status === 0 && /覆盖性检查通过/.test(out) && /已知缺口/.test(out),
+    `exit=${r.status}`,
   );
 }
 

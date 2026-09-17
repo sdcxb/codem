@@ -21,8 +21,32 @@
 //! ## 记什么
 //!
 //! 只记"行没了"这件事本身与其身份，**不记正文**（审计表不该成为第二份用户语料）：
-//! 时间、表名、操作、主键、会话 id。这样即使一次删掉 821 行，也只是 821 条小记录 ——
-//! 排查完清掉即可。
+//! 时间、表名、操作、主键、会话 id。这样即使一次删掉 821 行，也只是 821 条小记录。
+//!
+//! ## 记多少（第 44 轮：把与实现矛盾的注释改对，并补上裁剪）
+//!
+//! 本文件原来的注释声称"按 (表,操作,会话) 归组、`row_count` 累加、一次删除只留一条记录"，
+//! 而**实现是每行一条、`row_count` 恒为 1**（测试 `mass_delete_is_recorded_per_row_but_aggregatable`
+//! 断言的也是 50 行 → 50 条）。文档与实现矛盾比"文档缺失"更坏：它会让后来者以为
+//! "审计不会涨"，从而不去做裁剪。
+//!
+//! 真机实测代价：11.8 小时 **61,416 行**，占当时活数据的 35.6%，是库内最大的表；
+//! 一次"隐藏 10,000 条消息"就写 10,000 行。而这 61,404 行（99.98%）全都来自同一批
+//! 全库重灌事件 —— 也就是说：**记录密度最高的时刻，恰好是最不需要逐行细节的时刻**。
+//!
+//! 现在两侧都补齐：
+//! - **聚合由 `summary()` 提供**（`GROUP BY table_name, op`，并额外给出 `COUNT(*)` 与 `SUM(row_count)`），
+//!   排查"哪张表被删得最多"用它，不要用 `recent()` 自己数；
+//! - **裁剪由 `prune()` 提供**（显式水位线，与 `telemetry.prune` 同形）——
+//!   启动维护按保留窗口调用它，于是这张表**不再无界增长**。
+//!
+//! ## 为什么这几张表被审计、那几张不被审计
+//!
+//! 判据是"这张表被大规模删除，是否意味着**某个功能的数据整体消失**"。
+//! `telemetry_events`（有显式水位线裁剪，天生高频批量删）与 `cost_records`
+//! （迁移期整表重灌）**故意不审计**：给它们挂 `AFTER DELETE` 触发器，
+//! 只会让审计表被"自己造成的噪音"灌满 —— 那正是 61,416 行的来源形态。
+//! 换句话说：审计的对象是**用户语料与知识资产**，不是诊断流水。
 
 use crate::error::{DbError, DbResult};
 use rusqlite::Connection;
@@ -37,6 +61,10 @@ use serde::Serialize;
 /// `project_id` 挂在 `projects` 上（schema 里是 `ON DELETE CASCADE`）。
 /// 也就是说：**删一个项目行会让该项目的全部会话与消息级联消失**，而审计只看得见
 /// 子表的删除、看不见"是谁触发的"。加上这张表的触发器，"级联的源头"才会留下痕迹。
+///
+/// ⚠️ **第 44 轮新增知识库三张表**（`notebook_chunks` / `notebook_sources` / `notes`）：
+/// 原来的六张全是"会话语料"，而知识库是**另一份用户资产**（一次删笔记本会级联带走
+/// 全部块与笔记），却完全不在审计范围内 —— 也就是说，删掉整个知识库**不留任何痕迹**。
 const AUDITED: &[(&str, &str, &str)] = &[
     ("messages", "OLD.id", "OLD.session_id"),
     ("sessions", "OLD.id", "OLD.id"),
@@ -44,6 +72,9 @@ const AUDITED: &[(&str, &str, &str)] = &[
     ("tool_calls", "OLD.id", "OLD.message_id"),
     ("projects", "OLD.id", "OLD.id"),
     ("notebooks", "OLD.id", "OLD.id"),
+    ("notebook_chunks", "OLD.id", "OLD.notebook_id"),
+    ("notebook_sources", "OLD.id", "OLD.notebook_id"),
+    ("notes", "OLD.id", "OLD.notebook_id"),
 ];
 
 /// 审计表名
@@ -214,6 +245,40 @@ pub fn clear(conn: &Connection) -> DbResult<usize> {
     ensure_table(conn)?;
     conn.execute(&format!("DELETE FROM {AUDIT_TABLE}"), [])
         .map_err(DbError::from)
+}
+
+/// **按水位线裁剪审计**（第 44 轮：这张表原来无界增长 —— 11.8 小时 61,416 行，
+/// 占当时活数据的 35.6%，是库内最大的表）。
+///
+/// 与 `telemetry.prune` **同一条原则**：删除必须有明确水位线，
+/// 没有 `before` 就报错 —— 否则"以为传了条件其实清了全表"。
+/// 这里**不接受**"无参清空"：`clear()` 是显式清空，`prune()` 只按时间裁，
+/// 两者的语义差别必须在签名上就看得出来。
+pub fn prune(conn: &Connection, before: i64) -> DbResult<usize> {
+    ensure_table(conn)?;
+    let n = conn
+        .execute(
+            &format!("DELETE FROM {AUDIT_TABLE} WHERE at < ?1"),
+            [before],
+        )
+        .map_err(DbError::from)?;
+    Ok(n)
+}
+
+/// 审计表的现状（行数 / 最早最晚时间 / 占用页数）—— 供维护汇总行如实报数
+pub fn stats(conn: &Connection) -> DbResult<(i64, Option<i64>, Option<i64>)> {
+    ensure_table(conn)?;
+    let count: i64 = conn
+        .query_row(&format!("SELECT COUNT(*) FROM {AUDIT_TABLE}"), [], |r| r.get(0))
+        .map_err(DbError::from)?;
+    let (min_at, max_at): (Option<i64>, Option<i64>) = conn
+        .query_row(
+            &format!("SELECT MIN(at), MAX(at) FROM {AUDIT_TABLE}"),
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(DbError::from)?;
+    Ok((count, min_at, max_at))
 }
 
 #[cfg(test)]

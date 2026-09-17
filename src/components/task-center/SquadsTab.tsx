@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Users, Plus, Trash2, Archive, Crown, User, ChevronRight, Bot } from "lucide-react";
+import { Users, Plus, Trash2, Archive, ArchiveRestore, Crown, User, ChevronRight, Bot } from "lucide-react";
 import { getSquadManager, type SquadWithMembers } from "../../core/squad";
 import { getAgentRegistry, type AgentDefinition } from "../../core/agent/agent";
 import { useLang } from "../../core/i18n/lang";
@@ -21,14 +21,24 @@ export function SquadsTab() {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [editing, setEditing] = useState<Partial<{ name: string; leaderAgentId: string; instructions: string }> | null>(null);
   const [selectedSquad, setSelectedSquad] = useState<string | null>(null);
+  /**
+   * 显示已归档（第 44 轮）。
+   *
+   * 归档是 UI 上唯一的"移除"入口，而它原来是**不可逆且看不见**的：写 `archived = 1`、
+   * 读路径全过滤掉归档行 → 误点一次就等于永久删除（数据还在库里，界面上再也看不到）。
+   * 存储层已经有 `unarchive` 与 `includeArchived`，这里把它接到界面上：
+   * 打开开关就能看到归档过的 Squad，并逐个"恢复"。
+   */
+  const [showArchived, setShowArchived] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   // 当前项目进依赖：切换项目必须重查（对齐 Issues/看板/收件箱的 P2-12 项目边界约定）
   const projectId = useCurrentProjectId();
 
   const loadSquads = useCallback(() => {
     const mgr = getSquadManager();
-    setSquads(mgr.listSquads(projectId ?? undefined));
+    setSquads(mgr.listSquads(projectId ?? undefined, { includeArchived: showArchived }));
     setAgents(getAgentRegistry().getAll());
-  }, [projectId]);
+  }, [projectId, showArchived]);
 
   useEffect(() => {
     loadSquads();
@@ -53,6 +63,19 @@ export function SquadsTab() {
   const handleArchive = (id: string) => {
     getSquadManager().archiveSquad(id);
     if (selectedSquad === id) setSelectedSquad(null);
+    loadSquads();
+    // 如实告诉用户"它去哪了、怎么找回来" —— 原来这里什么都没有，于是"归档"看起来像删除
+    setNotice(zh ? "已归档。可用右上角「显示已归档」找回。" : "Archived. Use “Show archived” to restore it.");
+  };
+
+  /** 取消归档（恢复）。失败必须如实提示，不能假装成功。 */
+  const handleUnarchive = (id: string) => {
+    const ok = getSquadManager().unarchiveSquad(id);
+    setNotice(
+      ok
+        ? zh ? "已恢复。" : "Restored."
+        : zh ? "恢复失败：写入未被接受，请稍后重试。" : "Restore failed: the write was not accepted. Try again.",
+    );
     loadSquads();
   };
 
@@ -85,18 +108,41 @@ export function SquadsTab() {
             {zh ? "Squads" : "Squads"} ({squads.length})
           </span>
         </div>
-        <button
-          onClick={() => setEditing({ name: "", leaderAgentId: "", instructions: "" })}
-          className="squads-new-btn"
-        >
-          <Plus size={14} /> {zh ? "新建 Squad" : "New Squad"}
-        </button>
+        <div className="squads-header-actions">
+          <label className="squads-archived-toggle" title={zh ? "归档过的 Squad 默认不显示，但一直还在库里" : "Archived squads are hidden but still in the database"}>
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />
+            {zh ? "显示已归档" : "Show archived"}
+          </label>
+          <button
+            onClick={() => setEditing({ name: "", leaderAgentId: "", instructions: "" })}
+            className="squads-new-btn"
+          >
+            <Plus size={14} /> {zh ? "新建 Squad" : "New Squad"}
+          </button>
+        </div>
       </div>
+
+      {/* 归档/恢复的结果提示：这两件事必须对用户可见（归档原来像删除，恢复原来不存在） */}
+      {notice && (
+        <div className="tc-empty squads-notice" onClick={() => setNotice(null)} role="status">
+          {notice}
+        </div>
+      )}
 
       {/* Squad list */}
       {squads.length === 0 && !editing && (
         <div className="tc-empty">
-          {zh ? "暂无 Squad。点击上方按钮创建第一个 Squad。" : "No squads yet. Click above to create one."}
+          {zh
+            ? showArchived
+              ? "没有 Squad（含已归档）。"
+              : "暂无 Squad。点击上方按钮创建第一个 Squad。"
+            : showArchived
+              ? "No squads (including archived)."
+              : "No squads yet. Click above to create one."}
         </div>
       )}
 
@@ -112,14 +158,28 @@ export function SquadsTab() {
               <span className="squads-count-badge">
                 {squad.members.length} {zh ? "成员" : "members"}
               </span>
+              {squad.archived === true && (
+                <span className="squads-count-badge">{zh ? "已归档" : "archived"}</span>
+              )}
               <span className="squads-card-actions">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleArchive(squad.id); }}
-                  className="squads-icon-btn"
-                  title={zh ? "归档" : "Archive"}
-                >
-                  <Archive size={14} />
-                </button>
+                {squad.archived === true ? (
+                  // 已归档的行只给"恢复"—— 归档才是 UI 上唯一的移除入口，误点必须能撤销
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleUnarchive(squad.id); }}
+                    className="squads-icon-btn"
+                    title={zh ? "恢复（取消归档）" : "Restore (unarchive)"}
+                  >
+                    <ArchiveRestore size={14} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleArchive(squad.id); }}
+                    className="squads-icon-btn"
+                    title={zh ? "归档（可在「显示已归档」里恢复）" : "Archive (restore via “Show archived”)"}
+                  >
+                    <Archive size={14} />
+                  </button>
+                )}
                 <ChevronRight
                   size={14}
                   className={`squads-chevron${selectedSquad === squad.id ? " is-open" : ""}`}

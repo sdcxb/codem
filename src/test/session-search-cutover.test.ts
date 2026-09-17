@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 会话搜索分流契约（P3 第 9 段）。
  *
  * ## 这一段修的是"中文搜不到"这个真实缺陷
@@ -8,7 +8,8 @@
  * 于是"全局搜索"也从没生效过。这里钉住修复后的行为：
  *
  * 1. 端口是 rust → 走引擎（含 CJK 切分），并**跨会话**（不传 session_id）；
- * 2. 端口未注册 / 是 wasm → 完全走原路径（回滚开关的前提）；
+ * 2. 端口未注册（第 19 轮：这是"不接手"的**唯一**形态，"是 wasm"已随旧引擎删除）
+ *    → 完全不接手，并如实说明"本次没有查询旧库"；
  * 3. 片段在**真实正文**上生成（索引里存的是切分后的文本，不能直接展示）；
  * 4. 引擎报错时如实返回错误文本，不假装"没有结果"。
  */
@@ -114,23 +115,19 @@ describe("会话搜索分流", () => {
     expect(res2.output, `退化后仍应高亮某个 CJK 双字片段：${res2.output}`).toMatch(/\[[\u3400-\u9fff]{2}\]/);
   });
 
-  it("SEARCH-5: 端口未注册 → 完全走原路径（不调用引擎）", async () => {
+  it("SEARCH-5: 端口未注册 → 不接手、不抛，且如实说明「本次没有查询旧库」", async () => {
     setStoragePort(null);
+    /**
+     * 第 19 轮：SEARCH-6（`setStoragePort({kind:"wasm", …})`，同样是 `toContain("Error")`）
+     * 与这条逐字重复 —— 第 19 轮：wasm 端口形态已不存在（旧引擎删除），"端口未注册"
+     * 是唯一的"没有可用存储"形态，两条合一。
+     *
+     * 断言比原来更严：不再只是"出现 Error"（任何异常都能满足它），而是钉住
+     * "索引侧未接手"这条**专门的诚实说明** —— 它同时证明了没有偷偷去查旧库。
+     */
     const res = await runSearch("任意");
-    // 原路径会去拿旧库（被 mock 成抛错）→ 工具把错误如实返回，而不是假装无结果
-    expect(res.output).toContain("Error");
-  });
-
-  it("SEARCH-6: 端口是 wasm → 同样走原路径（回滚开关生效）", async () => {
-    setStoragePort({
-      kind: "wasm",
-      engine: {} as never,
-      data: {} as never,
-      config: {} as never,
-      append: {} as never,
-    });
-    const res = await runSearch("任意");
-    expect(res.output).toContain("Error");
+    expect(res.output, "必须如实说明索引侧未接手").toContain("索引侧未接手");
+    expect(res.output, "并且要说明本次没有查询旧库").toContain("本次没有查询旧库");
   });
 
   it("SEARCH-7: 引擎报错时如实返回错误文本（不谎报「没有结果」）", async () => {

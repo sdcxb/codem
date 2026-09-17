@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Project, Session, ProjectSkill, ProjectMemory, ProjectInstructions, ProjectConfig, Attachment } from "./types";
 import * as ProjectStorage from "./storage/project";
 import * as SessionStorage from "./storage/session";
+import * as MessageStorage from "./storage/message";
 import { getProjectExecutionMode, createWorktree, removeWorktree, getWorktreeRoot } from "./environment";
 import { reportPersistFailure, reportActionFailure } from "./storage/persist-failure";
 
@@ -24,7 +25,7 @@ interface ProjectState {
   getProjectSessions: (projectId: string) => Session[];
 
   createSession: (title?: string) => Session;
-  forkSession: (sourceSessionId: string, messageIndex: number) => Session;
+  forkSession: (sourceSessionId: string, messageIndex: number, title?: string) => Session;
   switchSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
   setSessions: (sessions: Session[]) => void;
@@ -94,7 +95,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   deleteProject: (projectId) => {
-    try { ProjectStorage.deleteProject(projectId); } catch (e) { reportPersistFailure("store.deleteProject", e); }
+    /*
+     * 删项目是**级联删除的源头**：`projects` → `sessions`（外键 ON DELETE CASCADE）
+     * → `messages` / `tool_calls` / `session_events`。也就是说 `written` 只显示 1 行，
+     * 实际可能带走整个项目的语料。
+     *
+     * 第 44 轮给 `projects.delete` 补上了与 `crud.delete` **共用**的闸门
+     * （按真实影响行数判定，含级联、已剔除审计行；见 `crud::measure_delete_impact`）：
+     * 单次删除超过 50 行必须显式 `confirm_bulk`。用户点"删除项目"并在确认框里确认，
+     * 就是明确的破坏性意图 —— 这里如实传达（与大项目一起失效的会是"删不掉"这个假象）。
+     */
+    try { ProjectStorage.deleteProject(projectId, { confirmBulk: true }); } catch (e) { reportPersistFailure("store.deleteProject", e); }
     /*
      * 删项目的会话：**显式表达"我在做批量删除"**。
      *
@@ -182,27 +193,91 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     return session;
   },
 
-  forkSession: (sourceSessionId, messageIndex) => {
+  /**
+   * 从某个消息处分叉出一个新会话（UI 的「重新生成 / 分叉」入口）。
+   *
+   * ## 第 44 轮：这个方法原来是**没人调用的空壳**
+   *
+   * 它带 `messageIndex` 参数却**从不使用**、也不复制任何消息、也不写 `parent_id`；
+   * 而 UI 的三处 `onFork` 各自内联实现了一遍（那三份实现同样不写 `parent_id`）。
+   * 后果是一条能被实测验证的**功能空洞**：`parent_id` 全仓唯一写点在
+   * `SessionStorage.forkSession` 里，而它零 UI 调用者 —— 于是 `session_trace`
+   * （按 `parent_id` 追溯祖先/后代）在生产里永远只报 `Parent: (root)` / `Ancestors: []`，
+   * 也就是说"完整谱系"这个能力从来没有数据。
+   *
+   * 现在把三份内联实现收敛到这里，并且：
+   * ① 会话行走 `SessionStorage.forkSession`（**带 `parent_id` 并继承事件日志**）；
+   * ② 真的按 `messageIndex` 复制消息（原实现的参数语义）；
+   * ③ 消息 id 与工具调用 id 都重新生成（否则新会话里的 id 与源会话撞车）。
+   */
+  forkSession: (sourceSessionId, messageIndex, title) => {
     const project = get().currentProject;
-    if (!project) throw new Error("No project selected");
-    const newSession: Session = { id: generateId(), projectId: project.id, title: "分叉自对话", createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0, attachments: [] };
-    // Inherit execution mode from project preference
-    const execMode = getProjectExecutionMode(project.path);
-    newSession.executionMode = execMode;
-    // If worktree mode, create an isolated worktree for the forked session
-    if (execMode === "git_worktree" && project.path) {
+    const projectId = project?.id || "";
+    const newSessionId = generateId();
+    const source = get().sessions.find((s) => s.id === sourceSessionId);
+    /*
+     * 会话行：走 forkSession 而不是 createSession —— 只有前者会写 `parent_id`
+     * 并让事件日志跟着继承（谱系与事件投影同时成立）。
+     */
+    const child = SessionStorage.forkSession(
+      sourceSessionId,
+      newSessionId,
+      projectId,
+      title || (source ? `Fork: ${source.title}` : "分叉自对话"),
+    );
+    if (!child) {
+      // 会话行没落地就返回：复制消息只会造出"有消息、没有会话行"的孤儿（外键也会拒绝）
+      throw new Error("分叉失败：源会话不存在或写入未被接受");
+    }
+    // Inherit execution mode from project preference（与 createSession 同一条规则）
+    if (project?.path) {
       try {
-        const wtPath = createWorktreeSync(project.path, newSession.id);
-        newSession.worktreePath = wtPath;
+        child.executionMode = getProjectExecutionMode(project.path);
+      } catch (e) { console.warn('[store.ts]', e) }
+    }
+    if (child.executionMode === "git_worktree" && project?.path) {
+      try {
+        child.worktreePath = createWorktreeSync(project.path, child.id);
       } catch (e) {
         console.error("[forkSession] Failed to create worktree:", e);
-        newSession.executionMode = "current_workspace";
+        child.executionMode = "current_workspace";
       }
     }
-    try { SessionStorage.createSession(newSession); } catch (e) { console.warn('[store.ts]', e) }
-    const updated = [...get().sessions, newSession];
-    set({ sessions: updated, currentSession: newSession });
-    return newSession;
+    try {
+      SessionStorage.updateSession(child.id, {
+        executionMode: child.executionMode,
+        worktreePath: child.worktreePath,
+      });
+    } catch (e) { console.warn('[store.ts]', e) }
+
+    /*
+     * 复制消息：从 0 到 `messageIndex` 所在的**这一轮**结束为止
+     * （源实现按"下一个 user 消息"划边界，这里保持一致 —— 分叉点落在一轮中间时
+     * 会把当轮答完再分叉，否则新会话里会出现"用户没说话、助手却回答了"）。
+     */
+    try {
+      const sourceMessages = MessageStorage.listMessages(sourceSessionId);
+      if (sourceMessages.length > 0) {
+        let endIdx = Math.min(Math.max(messageIndex + 1, 0), sourceMessages.length);
+        for (let i = Math.max(messageIndex + 1, 0); i < sourceMessages.length; i++) {
+          if (sourceMessages[i].role === "user") { endIdx = i; break; }
+          endIdx = i + 1;
+        }
+        const forkTs = Date.now();
+        for (const msg of sourceMessages.slice(0, endIdx)) {
+          const suffix = `${forkTs}-${Math.random().toString(36).slice(2, 7)}`;
+          MessageStorage.createMessage({
+            ...msg,
+            id: `${msg.id}-fork-${suffix}`,
+            toolCalls: msg.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${suffix}` })),
+          }, child.id);
+        }
+      }
+    } catch (e) { console.warn('[store.ts]', e) }
+
+    const updated = [...get().sessions, child];
+    set({ sessions: updated, currentSession: child });
+    return child;
   },
 
   switchSession: (sessionId) => { const s = get().sessions.find((s) => s.id === sessionId); if (s) set({ currentSession: s }); },

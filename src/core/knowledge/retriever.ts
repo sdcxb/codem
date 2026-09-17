@@ -8,7 +8,7 @@
  */
 
 import { generateEmbeddings, cosineSimilarity } from '../llm/multimodal';
-import { getChunks, listSources } from './storage';
+import { getChunksOrStatus, listSources, ChunkIndexUnavailableError } from './storage';
 import type { RetrievalResult, NotebookConfig } from './types';
 import { DEFAULT_CONFIG } from './types';
 import { getSettingJSON } from '../storage/settings';
@@ -66,8 +66,21 @@ export async function retrieve(
 ): Promise<RetrievalResult[]> {
   const cfg = { ...getConfig(), ...config };
 
-  // Load all chunks for this notebook
-  let chunks = getChunks(notebookId);
+  /**
+   * 任务 C-3：**必须区分"索引未就绪"与"确实没有内容"**。
+   *
+   * 原来这里直接 `getChunks()`，而它在块镜像被拒（全库 >2000 块）或未就绪时返回 `[]` ——
+   * 于是检索静默变空，`search_notebook` 会理直气壮地告诉 LLM"没有相关内容"。
+   * 那是**撒谎**：内容在库里，只是这个进程读不到。
+   *
+   * 现在索引未就绪时**抛出可区分的错误**（`ChunkIndexUnavailableError`），
+   * 由调用方转成一句明确的"索引未就绪"结论。
+   */
+  const loaded = getChunksOrStatus(notebookId);
+  if (!loaded.ok) {
+    throw new ChunkIndexUnavailableError(loaded.reason, notebookId);
+  }
+  let chunks = loaded.chunks;
   if (chunks.length === 0) return [];
 
   // Filter by source IDs if provided, or use active filter

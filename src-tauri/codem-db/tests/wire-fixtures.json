@@ -1,6 +1,6 @@
 {
   "_comment": "由 src-tauri/codem-db/tests/wire_contract.rs 生成/校验；TS 侧 src/test/rust-port-wire.test.ts 用同一份样本断言解包结果。字段名是跨语言契约，改名等于破坏协议。",
-  "_generatedAtMs": 1789613459238,
+  "_generatedAtMs": 1789638288932,
   "_generatedBy": "cargo test --manifest-path src-tauri/codem-db/Cargo.toml --test wire_contract",
   "count": {
     "engine": "rust",
@@ -94,16 +94,23 @@
       "has_more": false,
       "items": [
         {
+          "completion_tokens": 0,
           "content": "线协议内容",
+          "cost": 0.0,
           "generated_files": null,
           "hidden": 0,
           "id": "m1",
+          "metadata": null,
           "model": null,
+          "parent_message_id": null,
+          "prompt_tokens": 0,
           "reasoning": null,
+          "retrieved_sources": null,
           "role": "user",
           "session_id": "s1",
           "status": "done",
-          "timestamp": 1700000000000
+          "timestamp": 1700000000000,
+          "trimmed": 0
         }
       ],
       "next_cursor": null
@@ -121,16 +128,23 @@
     "ok": true,
     "result": {
       "item": {
+        "completion_tokens": 0,
         "content": "线协议内容",
+        "cost": 0.0,
         "generated_files": null,
         "hidden": 0,
         "id": "m1",
+        "metadata": null,
         "model": null,
+        "parent_message_id": null,
+        "prompt_tokens": 0,
         "reasoning": null,
+        "retrieved_sources": null,
         "role": "user",
         "session_id": "s1",
         "status": "done",
-        "timestamp": 1700000000000
+        "timestamp": 1700000000000,
+        "trimmed": 0
       }
     }
   },

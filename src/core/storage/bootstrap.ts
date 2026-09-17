@@ -81,19 +81,19 @@ export async function registerRustStoragePort(
    * 留着这个分支只会让读代码的人以为"还有另一种可能"。
    */
   if (hasStoragePort()) {
-    const existing = getStoragePort();
-    if (existing.kind === "rust") {
-      // 复用：**不重复预热**（StrictMode 双调用 / 热重载都会走到这里）。
-      // 注意 `opened: false` + 无 health：调用方不得拿"没有 health"当成"引擎没就绪"。
-      return { kind: "registered", engine: "rust", opened: false };
-    }
-    // 已有 WASM 端口却要求 rust：说明启动顺序有问题，如实上报而不是悄悄替换
-    reportActionFailure(
-      label,
-      new Error("端口已注册为 wasm，无法切换为 rust（当前构建里旧引擎已不存在）"),
-      "存储引擎未就绪：本进程没有可用存储",
-    );
-    return { kind: "failed", error: new Error("端口类型冲突") };
+    /**
+     * 第 19 轮：这里原来还有一次 `if (existing.kind === "rust")` 的判别，
+     * 以及它后面那条"已注册为 wasm 却要求 rust → 如实上报 + 返回 failed"的分支。
+     *
+     * 那条分支**恒不成立**：`kind` 已收成字面量 `"rust"`（唯一实现），
+     * 任何已注册的端口都必然是 rust 端口。也就是说"端口类型冲突"这个失败原因
+     * 在这一版构建里不可能发生 —— 留着它只会让人以为"还有另一种端口会被注册"。
+     *
+     * 判据因此收成一条：**端口在不在**（在就复用、不在就注册）。
+     */
+    // 复用：**不重复预热**（StrictMode 双调用 / 热重载都会走到这里）。
+    // 注意 `opened: false` + 无 health：调用方不得拿"没有 health"当成"引擎没就绪"。
+    return { kind: "registered", engine: "rust", opened: false };
   }
 
   const port = new RustStoragePort(transport, (stream, e, note) => {
@@ -221,11 +221,37 @@ export async function prefetchDomainMirrors(
 
   if (!hasStoragePort()) return { ready: [], pending: [...tables], ms: 0 };
   const port = getStoragePort();
-  if (port.kind !== "rust") return { ready: [], pending: [...tables], ms: 0 };
+  // 第 19 轮：原来这里还有 `if (port.kind !== "rust") return …` —— 恒不成立（`kind` 已收成 "rust"）。
   const probe = port as unknown as {
-    domains?: { isReady?: (t: string) => boolean };
+    domains?: {
+      isReady?: (t: string) => boolean;
+      beginLoadCycle?: () => void;
+      retryRefusedTables?: () => string[];
+      refusedSince?: () => Record<string, number>;
+    };
   };
   if (!probe.domains?.isReady) return { ready: [], pending: [...tables], ms: 0 };
+
+  /**
+   * **开一个新的加载周期，并立刻重试上一轮"因超限被拒"的表**（A-2，第 20 轮）。
+   *
+   * ## 为什么放在这里（而不是只靠退避）
+   *
+   * `RustDomainMirror` 的 `refused` 原来**只进不出**（清理它的 `replaceTable` 零调用者），
+   * 于是"这张表太大"一旦成立，就成了**进程内永久结论**：该域读路径永远拿到空结果。
+   * 而"太大"很可能只是**那一刻**太大 —— 用户删掉旧会话、维护清理跑过之后，
+   * 同一张表早就不超限了。启动/预取是唯一一个"上一轮判断可能已过时"的确定时刻，
+   * 所以在这里把被拒的表放出来重新加载一次。
+   *
+   * 失败**不抛**：重试仍然超限就再记一次时间（退避窗口翻倍），与首次被拒同一条路。
+   */
+  if (probe.domains.beginLoadCycle) {
+    probe.domains.beginLoadCycle();
+    const retried = probe.domains.retryRefusedTables?.() ?? [];
+    if (retried.length > 0) {
+      console.info(`[Storage] 重试上一轮超限被拒的域镜像：${retried.join(", ")}`);
+    }
+  }
 
   const jobs = tables.map(
     (t) =>
@@ -254,7 +280,7 @@ export async function prefetchDomainMirrors(
 export async function shutdownRustStoragePort(): Promise<void> {
   if (!hasStoragePort()) return;
   const port = getStoragePort();
-  if (port.kind !== "rust") return;
+  // 第 19 轮：`if (port.kind !== "rust") return;` 已删（恒不成立）。
   try {
     await (port as RustStoragePort).stop();
   } catch (e) {
@@ -314,8 +340,9 @@ export async function repairSearchIndexOnce(
   label = "storage.fts-repair",
 ): Promise<{ kind: "skipped"; reason: string } | { kind: "repaired"; sessions: number; refreshed: number } | { kind: "failed"; error: unknown }> {
   if (!hasStoragePort()) return { kind: "skipped", reason: "端口未注册" };
+  // 第 19 轮：`if (port.kind !== "rust") return { kind:"skipped", reason:`引擎为 ${port.kind}` }`
+  // 已删 —— `kind` 收成 "rust" 后它恒不成立，且"引擎为 rust"这条 skipped 原因自相矛盾。
   const port = getStoragePort();
-  if (port.kind !== "rust") return { kind: "skipped", reason: `引擎为 ${port.kind}` };
 
   const MARKER = "codem-fts-bigram-rebuilt";
   try {
@@ -411,7 +438,8 @@ export async function migrateFromLegacyDb(
 ): Promise<{ kind: "skipped"; reason: string } | { kind: "migrated"; tables: number; rows: number } | { kind: "failed"; error: unknown }> {
   if (!hasStoragePort()) return { kind: "skipped", reason: "端口未注册" };
   const port = getStoragePort();
-  if (port.kind !== "rust") return { kind: "skipped", reason: `引擎为 ${port.kind}` };
+  // 第 19 轮：`if (port.kind !== "rust") return { kind:"skipped", reason:`引擎为 ${port.kind}` }` 已删
+  // （恒不成立）；"没有可用存储"现在只有"端口未注册"这一种形态，已由上一行兜住。
 
   // 条件 2：**新库里既没有会话、也没有消息**才允许用旧库覆盖。
   //
@@ -607,7 +635,7 @@ export async function importSettingsFromLegacyDb(
 ): Promise<number> {
   if (!hasStoragePort()) return 0;
   const port = getStoragePort();
-  if (port.kind !== "rust") return 0;
+  // 第 19 轮：`if (port.kind !== "rust") return 0;` 已删（恒不成立）。
 
   const stats = port.config.stats();
   if (!stats.warmed) return 0;

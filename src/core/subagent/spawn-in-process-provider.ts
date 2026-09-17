@@ -16,6 +16,7 @@ import type {
 } from './runtime-types';
 import { parseTaskResult } from './subagent';
 import { sanitizeSubagentOutput } from './runtime';
+import { ensureSubagentSession } from './subagent-session';
 import type { LLMEngine } from '../llm';
 import { getLang } from '../i18n/lang';
 
@@ -41,6 +42,14 @@ export class InProcessSpawnProvider implements SubagentProvider {
   async start(request: SubagentStartRequest): Promise<SubagentRun> {
     const childId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const abort = new AbortController();
+
+    /**
+     * 任务 C-2：**子会话必须有 `sessions` 行**，否则它后面所有带外键的写
+     * （消息索引 / 事件 / 遥测 / 成本）都会被引擎以 `FOREIGN KEY constraint failed` 拒绝。
+     * 这里刻意**不 await 结果做门控**：补行失败只让"这条轨迹入不了库"，
+     * 子智能体照常启动（降级但要可见，见 subagent-session.ts 的说明）。
+     */
+    ensureSubagentSession(childId, request.parentSessionId);
 
     // 监听调用方的取消信号
     request.signal.addEventListener('abort', () => abort.abort());

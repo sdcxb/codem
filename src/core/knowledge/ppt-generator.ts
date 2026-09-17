@@ -59,9 +59,12 @@ export async function generatePPTContent(
     console.warn('[ppt-generator] Failed to register oh-my-ppt skills:', err);
   }
 
-  const { getChunks } = await import('./storage');
+  const { getChunksOrStatus } = await import('./storage');
   onProgress?.('loading', '正在加载知识库内容...');
-  let chunks = getChunks(notebookId);
+  // 任务 C-3：索引未就绪 → 明确的可重试错误（不是"没有内容"，不要提示用户去加来源）
+  const loadedPpt = getChunksOrStatus(notebookId);
+  if (!loadedPpt.ok) throw new Error(`知识库索引未就绪（请稍后重试）：${loadedPpt.reason}`);
+  let chunks = loadedPpt.chunks;
 
   // 按选中来源过滤 (对标 NotebookLM 的来源选择器)
   if (sourceIds && sourceIds.length > 0) {

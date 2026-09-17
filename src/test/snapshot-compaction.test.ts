@@ -154,6 +154,157 @@ describe("事件日志快照式压缩", () => {
   });
 
   /**
+   * 这一段守的是 **B-2**：`cutoff_seq` 必须让"引擎侧真实删除"与"镜像侧乐观更新"**逐条一致**，
+   * 而且**快照必须活下来**（它是这次压缩的全部意义）。
+   *
+   * ## 真引擎取证（第 20 轮，`codem-db-cli` 直跑，事件 seq 1..8、锚点 8、`snapshot_seq=8`）
+   *
+   * | `cutoff_seq` | 引擎返回 | 库内 `events.list` | 结论 |
+   * | --- | --- | --- | --- |
+   * | **9**（= 锚点+1，**原代码**） | `{"removed_events":7}` | `[session_meta@1]` | **快照被自己的删除命中，整段历史归零** |
+   * | **8**（= 锚点，**修好之后**） | `{"removed_events":6}` | `[session_meta@1, session_snapshot@8]` | 快照活着 ✓ |
+   * | 9007199254740991 | **报错**（`req_i64` 的 `as_i64()` 拿不到 f64） | 未执行 | "取个很大的数"这条路是死的 |
+   *
+   * 即：`cutoff_seq` 是 `seq < cutoff` 的**排他**上界，快照占着锚点的 seq，所以
+   * `cutoff_seq = anchorSeq + 1` 会把它删掉，正确值是 `cutoff_seq = anchorSeq`。
+   * 原注释正好记反了（"取锚点自己 → 快照被删"），所以这个 bug 才长期活着 ——
+   * 加上假端口当时多两条豁免（比真引擎宽松），测试里根本看不见。
+   */
+
+  describe("SNAP-7/8（B-2）: cutoff_seq 与事件保留集合逐条对齐", () => {
+    const makePort = (events: Array<Record<string, unknown>>) =>
+      createFakeStoragePort({
+        seed: {
+          sessions: [
+            { id: "s1", project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 },
+          ],
+          session_events: events,
+        },
+      });
+
+    /**
+     * 按 `repo.rs::events_compact` 的两条 SQL 推演"引擎侧会剩下什么"：
+     * 1. `INSERT OR REPLACE` 快照到 `snapshotSeq`；
+     * 2. `DELETE … WHERE seq < cutoffSeq AND event_type <> 'session_meta'`。
+     */
+    const engineKeptAfterCompact = (
+      seeded: Array<Record<string, unknown>>,
+      snapshotSeq: number,
+      cutoffSeq: number,
+    ): number[] =>
+      Array.from(
+        new Set(
+          seeded
+            .filter((r) => Number(r.seq) >= cutoffSeq || String(r.event_type) === "session_meta")
+            .map((r) => Number(r.seq))
+            .concat(snapshotSeq),
+        ),
+      ).sort((a, b) => a - b);
+
+    it("SNAP-7: 无尾部事件（keepEvents 缺省）—— cutoff_seq 必须等于锚点，快照才活下来", () => {
+      const seeded = [
+        { seq: 1, session_id: "s1", event_type: "session_meta", payload: '{"preset":"std"}', timestamp: 1 },
+        { seq: 2, session_id: "s1", event_type: "user_message", payload: '{"messageId":"u1"}', timestamp: 2 },
+        { seq: 9, session_id: "s1", event_type: "assistant_text", payload: '{"messageId":"a1"}', timestamp: 9 },
+      ];
+      const port = makePort(seeded);
+      setStoragePort(port);
+
+      const log = getEventLog();
+      const projection = getEventProjection();
+      const result = log.compactWithSnapshot("s1", (evs) => ({ messages: projection.projectFromEvents(evs) }));
+
+      const sent = (port as { __writes(): Array<{ command: string; params?: Record<string, unknown> }> })
+        .__writes()
+        .filter((w) => w.command === "events.compact");
+      expect(sent.length, "这条形状下命令必须发出去").toBe(1);
+      const snapshotSeq = Number(sent[0].params?.snapshot_seq);
+      const cutoffSeq = Number(sent[0].params?.cutoff_seq);
+      expect(snapshotSeq, "快照必须占锚点自己的 seq（最后一条事件）").toBe(9);
+      expect(result.snapshotSeq).toBe(9);
+
+      /**
+       * 核心判据 ①：**不得命中快照**。
+       *
+       * 真引擎上 `seq < cutoff_seq` 是排他的，快照在 `seq = snapshotSeq`，
+       * 所以 `cutoff_seq > snapshotSeq` 就等于"把快照自己删掉"（实测库内只剩 `session_meta`）。
+       */
+      expect(
+        cutoffSeq,
+        `cutoff_seq=${cutoffSeq} 不得 > 快照 seq=${snapshotSeq}` +
+          "（真引擎实测：锚点+1 会让 DELETE 命中刚写的快照，库内只剩 session_meta）",
+      ).toBe(snapshotSeq);
+
+      const kept = log.readAll("s1").map((e) => Number(e.seq));
+      expect(kept, "快照必须留在事件流里").toContain(snapshotSeq);
+
+      const engineKept = engineKeptAfterCompact(seeded, snapshotSeq, cutoffSeq);
+      expect(
+        kept,
+        `镜像留下的 [${kept.join(",")}] 与引擎会留下的 [${engineKept.join(",")}] 必须一致 ——` +
+          " 不一致时 `readAll` 重新加载后读到的集合会突然变化（多出/少掉事件）",
+      ).toEqual(engineKept);
+    });
+
+    it("SNAP-8: 有尾部事件时 cutoff_seq = 第一条被保留尾部事件的 seq（与引擎逐字等价）", () => {
+      const seeded = [
+        { seq: 1, session_id: "s1", event_type: "session_meta", payload: '{"preset":"std"}', timestamp: 1 },
+        { seq: 2, session_id: "s1", event_type: "user_message", payload: '{"messageId":"u1"}', timestamp: 2 },
+        { seq: 3, session_id: "s1", event_type: "assistant_text", payload: '{"messageId":"a1"}', timestamp: 3 },
+        { seq: 4, session_id: "s1", event_type: "user_message", payload: '{"messageId":"u2"}', timestamp: 4 },
+        { seq: 5, session_id: "s1", event_type: "assistant_text", payload: '{"messageId":"a2"}', timestamp: 5 },
+      ];
+      const port = makePort(seeded);
+      setStoragePort(port);
+      const log = getEventLog();
+      const projection = getEventProjection();
+
+      /** 保留最近 2 条尾部 → 锚点 = seq 3，第一条被保留的尾部事件是 seq 4 */
+      const result = log.compactWithSnapshot(
+        "s1",
+        (evs) => ({ messages: projection.projectFromEvents(evs) }),
+        { keepEvents: 2 },
+      );
+      const sent = (port as { __writes(): Array<{ command: string; params?: Record<string, unknown> }> })
+        .__writes()
+        .filter((w) => w.command === "events.compact");
+      expect(sent.length).toBe(1);
+      const snapshotSeq = Number(sent[0].params?.snapshot_seq);
+      const cutoffSeq = Number(sent[0].params?.cutoff_seq);
+      expect(snapshotSeq, "锚点 = 第 cutoffIndex 条之前的那条（seq 3）").toBe(3);
+      expect(cutoffSeq, "上界 = 第一条被保留尾部事件的 seq（seq 4）").toBe(4);
+      expect(result.snapshotSeq).toBe(3);
+
+      const kept = log.readAll("s1").map((e) => Number(e.seq));
+      const engineKept = engineKeptAfterCompact(seeded, snapshotSeq, cutoffSeq);
+      expect(
+        kept,
+        `镜像留下的 [${kept.join(",")}] 与引擎会留下的 [${engineKept.join(",")}] 必须一致`,
+      ).toEqual(engineKept);
+      expect(kept, "快照必须留在事件流里（锚点位置换成快照）").toContain(snapshotSeq);
+      expect(kept, "尾部事件原样保留").toEqual(expect.arrayContaining([4, 5]));
+    });
+
+    /**
+     * ## 关于"锚点不是最高位"那条守卫（`event-log.ts` 里的 `anchorIsTop`）
+     *
+     * 它**在当前产品路径下不可达**，这一点如实记在这里，不要当成"已验证的保护"：
+     *
+     * - `readAll` 的两种实现都按 seq 排序返回（`rust-port.ts::RustEventMirror.readAll`、
+     *   假端口的 `eventsSorted`），所以锚点（`events[cutoffIndex - 1]`）天然是最高位；
+     * - `appendViaMirror` 用 `appendLocal` 给的本地占位 seq 也**大于**已加载的水位
+     *   （`RustEventMirror` 的 `nextSeq` = 已加载最大值 + 1），所以"本地新追加"同样不会
+     *   让锚点掉到非最高位。
+     *
+     * 之所以仍然留着这条守卫：它拦的正是 B-2 那一类**会毁数据**的线
+     * （`cutoff_seq <= snapshot_seq` → 真引擎把快照自己删掉，库内 `items: []`）。
+     * 一旦将来"读回来的 seq 不单调"（本地占位没对账、导入/迁移写进稀疏 seq、
+     * 换一个有缺口的引擎实现），这条守卫会把命令拦住并如实上报，而不是静默删库。
+     * 要让它变成"活代码"，得先有一条**非单调 seq** 的真实来源 —— 现在没有。
+     */
+  });
+
+  /**
    * ⚠️ **第 18 轮（L1）改判据 —— 这一条原来依赖"产品读旧库"，那个语义已经删了。**
    *
    * 原用例断言："维护只在事件超阈值时才压缩（`compactedSessions` 从 0 变正）"。

@@ -311,6 +311,34 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
         .ok_or_else(|| DbError::invalid("payload", "期望数组或 {tables:[...]}"))?;
 
     // 先做**整体校验**：表名/列名/行形状全对才开事务（参数错误不该留下半个事务）
+    //
+    // ⚠️ **顶层 `replace` 必须被读进来**（第 44 轮修掉的真机缺陷）。
+    //
+    // `migration.auto` 固定传 `{ "tables": [...], "replace": true }`，
+    // 而这里原来**只**看每一项自己的 `mode`，缺省 `"insert"` ——
+    // 也就是说顶层那个 `replace: true` 从来没有生效过。后果是两条，都很严重：
+    //
+    // ① **同名行永远不被覆盖**：`INSERT OR IGNORE` 撞主键就静默跳过，
+    //    于是"旧库那份内容"在目标已有该行时被直接丢弃（迁移报告却说搬了 N 行）；
+    // ② **对账必然失败**：目标行还是旧值 → 内容摘要对不上 →
+    //    `migration.auto` 报"对账未通过"并且**不写迁移标记** →
+    //    下次启动再跑一遍，永远修不好（每次都要再全量读一遍旧库 + 重建 FTS + 备份整库）。
+    //    真机审计里"11.8 小时跑了 16 次"正与这种"反复重试、每轮看起来都在正常工作"
+    //    的形态吻合。
+    //
+    // 这个缺陷是**那条测试没有覆盖**的直接结果：`migration.auto` 是全仓唯一一条
+    // "整库重写"的命令，而在这一轮之前它一条用例都没有。
+    // 现在 `auto_migrate_refuses_non_empty_target_and_backs_up_before_writing` 钉住它：
+    // 迁移必须成功、且目标里**已存在**的行必须被源端内容覆盖。
+    let default_mode = if payload
+        .get("replace")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false)
+    {
+        "replace"
+    } else {
+        "insert"
+    };
     let mut jobs: Vec<(String, Vec<String>, Vec<Vec<SqlValue>>, String)> = Vec::with_capacity(items.len());
     for (i, it) in items.iter().enumerate() {
         let table = it
@@ -333,7 +361,12 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
         if columns.is_empty() {
             return Err(DbError::invalid("columns", format!("表 {table} 的 columns 为空")));
         }
-        let mode = it.get("mode").and_then(|x| x.as_str()).unwrap_or("insert").to_string();
+        // 每项可以覆盖顶层默认（顶层是 `migration.auto` 的"整批语义"，单项是自己的语义）
+        let mode = it
+            .get("mode")
+            .and_then(|x| x.as_str())
+            .unwrap_or(default_mode)
+            .to_string();
         if mode != "insert" && mode != "replace" {
             return Err(DbError::invalid("mode", "只允许 insert 或 replace"));
         }
@@ -921,6 +954,15 @@ pub fn fts_remove(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
+/// `fts.search` 的结果条数上限。
+///
+/// 取 50 是为了**与文档一致**（`fts_search` 的注释一直写"最大 50"），而不是新定一个数：
+/// 搜索结果是给人看的列表，50 条以外没有意义；而每一条都要把**真实正文**读出来
+/// （这里刻意不返回 `snippet()`，因为索引里存的是 bigram 切分形式，没法展示），
+/// 所以条数上限直接决定了单次查询的字节量。
+/// 实测：这个上限缺失时 limit=5000 会返回 **7,769,093 B**。
+pub const FTS_SEARCH_MAX: usize = 50;
+
 /// 全文检索（返回命中消息的 id / 角色 / 时间 / **正文**，供搜索界面用）
 ///
 /// ## 三个必须说明的点
@@ -931,16 +973,26 @@ pub fn fts_remove(engine: &Engine, p: &Value) -> DbResult<Value> {
 /// 2. **不返回 `snippet()`**：索引里存的是切分后的文本，snippet 出来是
 ///    `存 存储 储 …` 这种形式，没法展示。改成返回真实正文（取自 `messages`），
 ///    由渲染侧在正文上做高亮 —— 这也符合"索引是索引、正文在正文表里"的分工。
-///    `limit` 有上限（默认 10、最大 50），所以正文读取量是有界的。
+///    因为返回的是**真实正文**，所以这里的上限必须真的管住（见下面的第 4 点）。
 /// 3. **`session_id` 可选**：不传就是**跨会话搜索**（原来的渲染侧实现里
 ///    "全局搜索"其实从没生效过 —— 见 `session-search.ts` 的 matchExpr 死代码）。
+/// 4. **上限真的实施（第 44 轮）**：上面第 2 点原来写着"`limit` 有上限（默认 10、最大 50）"，
+///    而实现用的是通用 `limit_of`（默认 100、最大 5000）—— **文档与实现不一致**。
+///    真机实测：中文搜索 limit=50 → 776,988 B；**limit=5000 → 7,769,093 B**。
+///    也就是说"正文读取量是有界的"这句话当时是假的，而这个假承诺的代价是
+///    一次搜索就能把 7.7 MB 正文推过 IPC 并驻留在渲染进程里。
+///    现在：① `FTS_SEARCH_MAX` 把行数夹到 50（与文档一致）；
+///    ② 再用 `repo::cap_by_bytes` 实施 16 MiB 字节预算（与所有分页读共用一份实现）；
+///    ③ `has_more` 从"硬编码 false"改成**如实**回答"还有没有更多"。
 pub fn fts_search(engine: &Engine, p: &Value) -> DbResult<Value> {
     let session_id = opt_text(p, "session_id")?;
     let raw_query = req_text(p, "query")?;
     // 空查询 / 全是不可索引字符：明确报参数错误，**不要**退化成"匹配全表"
     let expr = crate::fts::query_expr(&raw_query)
         .ok_or_else(|| DbError::invalid("query", "查询词为空或全是不可索引字符"))?;
-    let limit = limit_of(p)?;
+    // 夹到文档承诺的上限：搜索结果是给人看的，50 条以外没有意义，
+    // 而每一条都要把**真实正文**读出来（这是没有 snippet 的代价）。
+    let limit = limit_of(p)?.min(FTS_SEARCH_MAX);
     let desc = p.get("order").and_then(|x| x.as_str()) != Some("asc");
     engine.with_conn(|conn| {
         let dir = if desc { "DESC" } else { "ASC" };
@@ -973,11 +1025,14 @@ pub fn fts_search(engine: &Engine, p: &Value) -> DbResult<Value> {
                 "session_title": r.get::<_, Option<String>>(5)?,
             }))
         };
+        // 多取一行用来**如实**回答 has_more（原来这里硬编码 false：
+        // 调用方据此以为"结果就这么多"，于是"还有更多命中"这件事在协议层不可见）
+        let probe = (limit + 1) as i64;
         let mut items = Vec::new();
         match &session_id {
             Some(sid) => {
                 let rows = stmt
-                    .query_map(params![expr, sid, limit as i64], map_row)
+                    .query_map(params![expr, sid, probe], map_row)
                     .map_err(DbError::from)?;
                 for r in rows {
                     items.push(r.map_err(DbError::from)?);
@@ -985,16 +1040,25 @@ pub fn fts_search(engine: &Engine, p: &Value) -> DbResult<Value> {
             }
             None => {
                 let rows = stmt
-                    .query_map(params![expr, limit as i64], map_row)
+                    .query_map(params![expr, probe], map_row)
                     .map_err(DbError::from)?;
                 for r in rows {
                     items.push(r.map_err(DbError::from)?);
                 }
             }
         }
+        let mut has_more = items.len() > limit;
+        if has_more {
+            items.truncate(limit);
+        }
+        if crate::repo::cap_by_bytes(&mut items) {
+            has_more = true;
+        }
         Ok(json!({
             "items": items,
-            "has_more": false,
+            "has_more": has_more,
+            "limit": limit,
+            "max_limit": FTS_SEARCH_MAX,
             "next_cursor": Value::Null,
             "scope": session_id.unwrap_or_else(|| "<all>".to_string()),
         }))
@@ -1002,19 +1066,119 @@ pub fn fts_search(engine: &Engine, p: &Value) -> DbResult<Value> {
 }
 
 /// 从 `messages` 重建全文索引（迁移不搬 FTS 影子表，导入后调这个）
+///
+/// ## 为什么不能 `INSERT ... SELECT content`（第 44 轮修掉的真机缺陷）
+///
+/// 这里原来是 `INSERT INTO session_fts (...) SELECT id, session_id, content FROM messages`
+/// —— 把**原文**直接灌进索引。而中文检索依赖 `fts::tokenize` 的 **CJK bigram 切分**
+/// （见 `fts.rs` 头注释）：查询侧会切成 `"存储"`/`"迁移"` 这样的 token，
+/// 索引里却是**未切分的整句** → **迁移之后中文搜索恒为 0 条**。
+///
+/// 之所以长期没被发现：ASCII 词两边一致，**英文搜索照常工作**，
+/// 于是"英文能搜、中文搜不到"看起来像数据问题而不是索引形态问题
+/// （这与 `fts_rebuild` 头注释里记的是同一类故障，那次是"行在、内容空"）。
+///
+/// 同仓 `migrate::fts_rebuild`（按会话）早就按切分形式写入了 ——
+/// 只有这个"全库重建"漏了同一件事，而它正好是**迁移之后**跑的那一个。
+/// 两处必须用同一套 token 形态，否则谁后跑谁说了算。
+///
+/// ## 事务（同一轮修掉的第二个缺陷）
+///
+/// 原来是"整表 `DELETE` + 重灌"，且**不在事务里**（`with_conn` + 两条独立语句）。
+/// 中途失败（磁盘满、进程被杀）会留下**索引整表为空**的库，
+/// 用户看到的现象是"搜索突然什么都搜不到"，而 messages 一行没少 ——
+/// 这种"数据在、能力没了"的中间态是最难排查的一类。
+/// 现在整段走 `write_tx`：要么全成，要么全不动。
+///
+/// 顺带把"每次全表重写"改成"内容一致就跳过"（切分后的文本逐条比对）：
+/// 每次调用重写 100k 行是白写，而且会长时间占住单写者锁。
 pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
     let _ = p;
-    engine.with_conn(|conn| {
-        // FTS4 与 FTS5 都支持 DELETE FROM + INSERT INTO ... SELECT
-        conn.execute("DELETE FROM session_fts", []).map_err(DbError::from)?;
-        let n = conn
+    engine.write_tx(|tx| {
+        // 现有索引内容（`message_id` → 切分后的文本），用于"一致就跳过"
+        let existing: std::collections::HashMap<String, String> = {
+            let mut stmt = tx
+                .prepare("SELECT message_id, content FROM session_fts")
+                .map_err(DbError::from)?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
+                })
+                .map_err(DbError::from)?;
+            let mut m = std::collections::HashMap::new();
+            for r in rows {
+                let (id, content) = r.map_err(DbError::from)?;
+                if let Some(id) = id {
+                    m.insert(id, content.unwrap_or_default());
+                }
+            }
+            m
+        };
+
+        let mut stmt = tx
+            .prepare(
+                "SELECT id, session_id, content, role, timestamp FROM messages \
+                 WHERE hidden = 0 ORDER BY session_id ASC, timestamp ASC",
+            )
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                ))
+            })
+            .map_err(DbError::from)?;
+
+        let mut indexed = 0usize;
+        let mut unchanged = 0usize;
+        for r in rows {
+            let (id, session_id, content, role, timestamp) = r.map_err(DbError::from)?;
+            let tokenized = crate::fts::tokenize(content.as_deref().unwrap_or(""));
+            if existing.get(&id).map(|c| c == &tokenized).unwrap_or(false) {
+                unchanged += 1;
+                continue;
+            }
+            tx.execute(
+                "DELETE FROM session_fts WHERE message_id = ?1",
+                params![id],
+            )
+            .map_err(DbError::from)?;
+            tx.execute(
+                "INSERT INTO session_fts (message_id, session_id, content, role, timestamp) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    id,
+                    session_id,
+                    tokenized,
+                    role.unwrap_or_default(),
+                    timestamp.unwrap_or(0)
+                ],
+            )
+            .map_err(DbError::from)?;
+            indexed += 1;
+        }
+        drop(stmt);
+
+        // 孤儿行：FTS 里有、但 `messages` 里已经没有（FTS 是虚拟表，没有外键级联）。
+        // 旧实现靠"整表 DELETE"顺带清掉它们；改成增量写入后必须显式清，
+        // 否则会搜出已经不存在的 message_id（渲染侧点进去是空）。
+        let orphans = tx
             .execute(
-                "INSERT INTO session_fts (message_id, session_id, content) \
-                 SELECT id, session_id, content FROM messages WHERE hidden = 0",
+                "DELETE FROM session_fts \
+                 WHERE message_id NOT IN (SELECT id FROM messages WHERE hidden = 0)",
                 [],
             )
             .map_err(DbError::from)?;
-        Ok(json!({ "indexed": n }))
+
+        Ok(json!({
+            "indexed": indexed,
+            "unchanged": unchanged,
+            "orphans_removed": orphans,
+        }))
     })
 }
 
@@ -1053,6 +1217,16 @@ pub fn importable_existing(engine: &Engine, p: &Value) -> DbResult<Value> {
 ///
 /// 这条命令把那个能力补回来，并且**只读打开**旧库（绝不给回滚开关添乱）：
 /// 表名走白名单、行数有上限、只返回结构化行。
+///
+/// ## 上限必须**如实报出来**（第 44 轮修掉的静默截断）
+///
+/// 原来这里有 `limit.clamp(1, 20000)` 然后 `rows.truncate(limit)` —— **没有任何提示**。
+/// 一个想用它做全量搬运的调用方（这正是"读旧库"最自然的用法）会在
+/// `settings` 有 25,024 行时拿到 20,000 行，然后以为"旧库就这么些行"。
+/// 这不是理论问题：迁移工具的第一版预检就是这么写的，于是打印的行数比引擎实际搬运的少。
+///
+/// 现在返回里给出 `total` / `limit` / `truncated` / `has_more` / `next_offset`，
+/// 并且接受 `offset` 让调用方**真的能翻页**（而不是只能干看着被截断）。
 pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
     let _ = engine; // 只读旧库，不碰新库
     let legacy_path = crate::repo::req_text(p, "legacy_path")?;
@@ -1068,6 +1242,11 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         .and_then(|x| x.as_i64())
         .unwrap_or(2_000)
         .clamp(1, 20_000) as usize;
+    let offset = p
+        .get("offset")
+        .and_then(|x| x.as_i64())
+        .unwrap_or(0)
+        .max(0) as usize;
 
     if !std::path::Path::new(&legacy_path).exists() {
         return Err(DbError::not_found(format!("旧库不存在：{legacy_path}")));
@@ -1080,12 +1259,36 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
 
     let columns = read_legacy_columns(&conn, &table)?;
     if columns.is_empty() {
-        return Ok(json!({ "table": table, "columns": [], "rows": [] }));
+        return Ok(json!({
+            "table": table, "columns": [], "rows": [],
+            "total": 0, "limit": limit, "offset": offset, "truncated": false,
+            "has_more": false, "next_offset": Value::Null,
+        }));
     }
-    // 复用迁移的行转换（含 BLOB → `blobhex:` 文本的约定），只截断到 limit
-    let (mut rows, _blobs) = read_legacy_table(&conn, &table)?;
-    rows.truncate(limit);
-    Ok(json!({ "table": table, "columns": columns, "rows": rows }))
+    // 表名来自白名单、列名来自真实 schema，拼接安全
+    let total: i64 = conn
+        .query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |r| r.get(0))
+        .map_err(DbError::from)?;
+    /*
+     * 分页**在 SQL 里做**，而不是"整表读出来再 truncate"。
+     *
+     * 后者在 25,024 行的表上会把整表读进内存再丢掉一半 —— 而且"读全了"这件事
+     * 会掩盖截断（调用方看到的就是一个正常的数组，没有任何"被截断"的痕迹）。
+     */
+    let (rows, _blobs) = read_legacy_table_page(&conn, &table, limit, offset)?;
+    let has_more = (offset + rows.len()) < total as usize;
+    Ok(json!({
+        "table": table,
+        "columns": columns,
+        "rows": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        // `truncated` 保留给"调用方没翻页就当成全量"的那种误用：只要还有更多，它就是 true
+        "truncated": has_more,
+        "has_more": has_more,
+        "next_offset": if has_more { json!(offset + rows.len()) } else { Value::Null },
+    }))
 }
 /// 迁移状态（是否已导入过、导了多少行）—— 供"只迁一次"的判断与诊断
 pub fn migration_status(engine: &Engine, p: &Value) -> DbResult<Value> {
@@ -1760,6 +1963,73 @@ fn fk_parent_of(table: &str) -> Option<&'static str> {
     FK_PARENTS.iter().find(|(c, _)| *c == table).map(|(_, p)| *p)
 }
 
+/// 读旧库某张表的**一页**行（`limit` / `offset`）；表不存在时返回空（旧库可能没有新表）
+///
+/// 迁移自己用的是 `read_legacy_table`（整表：它本来就要全量搬），
+/// 而 `legacy.read_table` 用这一页版 —— **分页在 SQL 里做**，
+/// 而不是"整表读出来再 truncate"（后者会掩盖截断，见 `legacy_read_table` 的说明）。
+fn read_legacy_table_page(
+    conn: &Connection,
+    table: &str,
+    limit: usize,
+    offset: usize,
+) -> DbResult<(Vec<Value>, usize)> {
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get(0),
+        )
+        .map_err(DbError::from)?;
+    if exists == 0 {
+        return Ok((Vec::new(), 0));
+    }
+    /*
+     * 排序键必须是**确定的**，否则翻页会重不漏：SQLite 不保证无 ORDER BY 的两次查询
+     * 返回同样的顺序。用 `rowid`（普通表都有；旧库这些表没有 `WITHOUT ROWID` 的）。
+     */
+    let sql = format!("SELECT * FROM \"{table}\" ORDER BY rowid LIMIT ?1 OFFSET ?2");
+    let mut stmt = conn.prepare(&sql).map_err(DbError::from)?;
+    let col_count = stmt.column_count();
+    let mut rows = stmt
+        .query(rusqlite::params![limit as i64, offset as i64])
+        .map_err(DbError::from)?;
+    let mut out: Vec<Value> = Vec::new();
+    let mut blob_columns_seen: usize = 0;
+    while let Some(row) = rows.next().map_err(DbError::from)? {
+        let mut arr: Vec<Value> = Vec::with_capacity(col_count);
+        for i in 0..col_count {
+            let v: SqlValue = row.get(i).map_err(DbError::from)?;
+            arr.push(legacy_value_to_json(v, &mut blob_columns_seen));
+        }
+        out.push(Value::Array(arr));
+    }
+    Ok((out, blob_columns_seen))
+}
+
+/// 旧库某个值 → JSON。
+///
+/// BLOB 用**十六进制**搬运（不引入 base64 依赖；十六进制只比 base64 大 33%，
+/// 而旧库里真正的二进制列很少）。调用方拿到的是 `blobhex:<hex>` 前缀的文本，
+/// 一眼能看出它原本是 BLOB；`blob_columns_seen` 让调用方能如实回报"有几处被改形"。
+fn legacy_value_to_json(v: SqlValue, blob_columns_seen: &mut usize) -> Value {
+    match v {
+        SqlValue::Null => Value::Null,
+        SqlValue::Integer(n) => json!(n),
+        SqlValue::Real(f) => json!(f),
+        SqlValue::Text(s) => Value::String(s),
+        SqlValue::Blob(b) => {
+            let mut hex = String::with_capacity(7 + b.len() * 2);
+            hex.push_str("blobhex:");
+            for byte in &b {
+                hex.push_str(&format!("{byte:02x}"));
+            }
+            *blob_columns_seen += 1;
+            Value::String(hex)
+        }
+    }
+}
+
 /// 读旧库某张表的全部行；表不存在时返回空（旧库可能没有新表）
 fn read_legacy_table(conn: &Connection, table: &str) -> DbResult<(Vec<Value>, usize)> {
     let exists: i64 = conn
@@ -1783,24 +2053,7 @@ fn read_legacy_table(conn: &Connection, table: &str) -> DbResult<(Vec<Value>, us
         let mut arr: Vec<Value> = Vec::with_capacity(col_count);
         for i in 0..col_count {
             let v: SqlValue = row.get(i).map_err(DbError::from)?;
-            arr.push(match v {
-                SqlValue::Null => Value::Null,
-                SqlValue::Integer(n) => json!(n),
-                SqlValue::Real(f) => json!(f),
-                SqlValue::Text(s) => Value::String(s),
-                SqlValue::Blob(b) => {
-                    // BLOB 用**十六进制**搬运（不引入 base64 依赖；十六进制只比 base64 大 33%，
-                    // 而旧库里真正的二进制列很少）。调用方拿到的是 `blobhex:<hex>` 前缀的文本，
-                    // 一眼能看出它原本是 BLOB。
-                    let mut hex = String::with_capacity(7 + b.len() * 2);
-                    hex.push_str("blobhex:");
-                    for byte in &b {
-                        hex.push_str(&format!("{byte:02x}"));
-                    }
-                    blob_columns_seen += 1;
-                    Value::String(hex)
-                }
-            });
+            arr.push(legacy_value_to_json(v, &mut blob_columns_seen));
         }
         out.push(Value::Array(arr));
     }
@@ -1809,7 +2062,7 @@ fn read_legacy_table(conn: &Connection, table: &str) -> DbResult<(Vec<Value>, us
 
 /// `SELECT *` 的列名（顺序与行数组一致）
 fn read_legacy_columns(conn: &Connection, table: &str) -> DbResult<Vec<String>> {
-    let mut stmt = conn
+    let stmt = conn
         .prepare(&format!("SELECT * FROM \"{table}\" LIMIT 0"))
         .map_err(DbError::from)?;
     Ok(stmt
@@ -1865,7 +2118,7 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         .ok_or_else(|| DbError::missing("legacy_path"))?
         .to_string();
     let dry_run = p.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
-    /** 目标库非空时是否仍允许迁移（默认**不允许**，见下面的守卫） */
+    /* 目标库非空时是否仍允许迁移（默认**不允许**，见下面的守卫） */
     let force = p.get("force").and_then(|x| x.as_bool()).unwrap_or(false);
 
     if !std::path::Path::new(&legacy_path).exists() {
@@ -1933,7 +2186,19 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
 
     let allowed = importable_tables();
     let mut jobs: Vec<Value> = Vec::new();
-    let mut source_rows: Vec<(String, i64, String)> = Vec::new();
+    /*
+     * 源端逐表读数（行数 + 内容摘要 + **列清单**）。
+     *
+     * `columns` 是第 44 轮补上的，理由见下面目标端对账那段：
+     * 摘要必须**按同一套列**算，否则"新 schema 加了一列"就会让对账永久失败。
+     */
+    struct SourceTable {
+        table: String,
+        rows: i64,
+        digest: String,
+        columns: Vec<String>,
+    }
+    let mut source_rows: Vec<SourceTable> = Vec::new();
     let mut skipped: Vec<(String, i64)> = Vec::new();
     let mut blob_columns_total: usize = 0;
     // 每张表"有效主键"的集合（父表的），用于过滤子表的孤儿行
@@ -1995,13 +2260,33 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         }
 
         let (n, digest) = digest_json_rows(&rows);
-        source_rows.push((table.to_string(), n, digest));
+        source_rows.push(SourceTable {
+            table: table.to_string(),
+            rows: n,
+            digest,
+            columns: columns.clone(),
+        });
         if !rows.is_empty() {
+            /*
+             * ⚠️ 这里**刻意不写每一项的 `mode`**（第 44 轮修掉的真机缺陷）。
+             *
+             * 原来这里硬编码 `"mode": "insert"`，而本函数末尾给 `import_all` 传的是
+             * `{ "tables": […], "replace": true }` —— 两处**互相矛盾**，而 `import_all`
+             * 只看每一项的 `mode`：于是"覆盖已存在的行"这件事从来没发生过。
+             *
+             * 后果（真机形态，见 `import_all` 里那段说明）：
+             * `INSERT OR IGNORE` 撞主键就静默跳过 → 目标里那一行仍是旧值 →
+             * 对账按**内容摘要**比对必然不等 → `migration.auto` 报"对账未通过"、
+             * **不写迁移标记** → 下次启动再来一遍（永远修不好，每次都全量读旧库 + 重建 FTS）。
+             * 真机审计里"11.8 小时 16 次"正是这种"每轮看起来都正常、却总也完不成"的形态。
+             *
+             * 现在只留**一个**真相来源：顶层的 `replace: true`（`import_all` 会读它作为
+             * 每一项的默认 mode）。两处都写、还能写不一致，本身就是缺陷的温床。
+             */
             jobs.push(json!({
                 "table": table,
                 "columns": columns,
                 "rows": rows,
-                "mode": "insert",
             }));
         }
     }
@@ -2011,16 +2296,55 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
             "dry_run": true,
             "legacy_path": legacy_path,
             "tables": jobs.len(),
-            "rows": source_rows.iter().map(|(_, n, _)| *n).sum::<i64>(),
+            "rows": source_rows.iter().map(|s| s.rows).sum::<i64>(),
             "per_table": source_rows
                 .iter()
-                .map(|(t, n, d)| json!({ "table": t, "rows": n, "digest": d }))
+                .map(|s| json!({ "table": s.table, "rows": s.rows, "digest": s.digest, "columns": s.columns.len() }))
                 .collect::<Vec<_>>(),
         }));
     }
 
     // 单事务导入（**整表清空已彻底去掉**，见 `import_all` 里那段说明：
     // `replace: true` 曾经让每一次自动迁移都先把新库清空再重灌，是历史上"数据变 0"的形态）
+    //
+    // 第 44 轮加的两道保险（针对真机审计里那 16 次"全库删除 + 重灌"）：
+    //
+    // ① **执行前先备份整个库文件**。真机取证显示这件事曾经发生过 16 次，
+    //    每次清空 3,838 行（当时全库内容）。现在实现上已经不会清空了，
+    //    但"整库级操作之前先留一份"是这类命令**唯一**能在事后补救的手段 ——
+    //    而它只在真正要写的时候做（`dry_run` 不备份）。
+    //    先 `checkpoint` 再拷贝：否则最新数据还在 `-wal` 里，拷出来的"备份"是旧的
+    //    （这一点很容易漏，结果就是"备份看着有、内容却是几小时前的"）。
+    // ② **把这次迁移的关键数字写进返回**（表数 / 行数 / 备份路径），
+    //    让"跑过一次迁移"这件事在日志与审计里都有据可查。
+    engine.checkpoint()?;
+    let backup_path = {
+        let src = engine.path().to_path_buf();
+        let stamp = crate::schema::now_ms();
+        let mut name = src.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        name.push_str(&format!(".pre-migration-{stamp}"));
+        let dst = src.with_file_name(name);
+        match std::fs::copy(&src, &dst) {
+            Ok(_) => Some(dst),
+            Err(e) => {
+                /*
+                 * 备份失败**必须中止**，不能"报个错继续搬"。
+                 * 整库重写 + 无备份 = 一旦判据错了就是不可逆的数据丢失；
+                 * 而备份失败（磁盘满 / 权限）恰恰说明环境已经不正常，
+                 * 此时继续做整库操作是最不该做的选择。
+                 */
+                return Err(DbError::new(
+                    ErrorCode::Io,
+                    format!(
+                        "迁移前备份失败（{}→{}）：{e}。已中止迁移 —— 整库级操作在没有备份的情况下不执行",
+                        src.display(),
+                        dst.display()
+                    ),
+                ));
+            }
+        }
+    };
+
     let payload = json!({ "tables": jobs, "replace": true });
     let imported = import_all(engine, &payload)?;
     let _ = imported;
@@ -2028,9 +2352,34 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
     // **对账**：逐表比对行数与内容摘要（两端各自算）
     let mut mismatches: Vec<Value> = Vec::new();
     let mut reconciled: Vec<Value> = Vec::new();
-    /** 目标端比源端多的表（用户在新库里继续产生的数据，**刻意保留**） */
+    /* 目标端比源端多的表（用户在新库里继续产生的数据，**刻意保留**） */
     let mut kept_newer: Vec<Value> = Vec::new();
-    for (table, src_rows, src_digest) in &source_rows {
+    for src in &source_rows {
+        let table = &src.table;
+        /*
+         * ## 摘要必须按**同一套列**算（第 44 轮修掉的真机缺陷）
+         *
+         * 这里原来是两端各 `SELECT *` 再逐列编码。而源端是**旧库**（老 schema）、
+         * 目标端是**新库**（schema 已经过迁移加过列）—— 于是只要新 schema 多加一列，
+         * 两端的列数就不同、摘要**必然**不等、对账**永远**失败：
+         * 迁移标记写不上 → 下次启动再来一遍（真机审计里"11.8 小时 16 次"正是这个形态）。
+         *
+         * 这个坑在给 `messages` 加 `trimmed` 列时被实测抓到：
+         * 真 CLI 复现——源 16 列 / 目标 17 列，两边都是 821 行，摘要却不等；
+         * 只把那一列补到源库里做对照，同一个迁移立刻成功。
+         * 也就是说：**给新 schema 加一列就永久打死自动迁移**，
+         * 而"加列"恰恰是这套 schema 演进里最常见的动作 —— 所以必须按列投影，不能 `SELECT *`。
+         *
+         * 投影到**源端的列清单**：那正是本次导入实际搬运（也是唯一声明要覆盖）的列，
+         * 因此"搬得对不对"的答案恰好落在这个子集上。目标端多出来的列（如 `trimmed`）
+         * 与本次迁移无关，不参与比对；列顺序也必须与源端一致（摘要按顺序逐个编码）。
+         */
+        let projection: String = src
+            .columns
+            .iter()
+            .map(|c| format!("\"{c}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
         let after = engine.with_conn(|conn| {
             let exists: i64 = conn
                 .query_row(
@@ -2040,11 +2389,39 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
                 )
                 .map_err(DbError::from)?;
             if exists == 0 {
-                return Ok((0i64, String::new()));
+                return Ok((0i64, String::new(), Vec::<String>::new()));
             }
-            let mut stmt = conn
-                .prepare(&format!("SELECT * FROM \"{table}\""))
-                .map_err(DbError::from)?;
+            // 目标端真实列清单：既用于诊断"是哪一列不一致"，也用于判断投影能否执行
+            let target_cols: Vec<String> = {
+                let mut stmt = conn
+                    .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+                    .map_err(DbError::from)?;
+                let rows = stmt
+                    .query_map([], |r| r.get::<_, String>(1))
+                    .map_err(DbError::from)?;
+                let mut out = Vec::new();
+                for r in rows {
+                    out.push(r.map_err(DbError::from)?);
+                }
+                out
+            };
+            // 源端有、目标端没有的列：导入时会被 SQLite 拒绝（INSERT 撞未知列），
+            // 所以正常走不到这里；真出现时按"缺列"如实报出，**不要**伪装成内容不一致。
+            let missing: Vec<String> = src
+                .columns
+                .iter()
+                .filter(|c| !target_cols.contains(c))
+                .cloned()
+                .collect();
+            if !missing.is_empty() {
+                return Ok((0i64, format!("目标端缺少列：{}", missing.join(", ")), target_cols));
+            }
+            let sql = if projection.is_empty() {
+                format!("SELECT * FROM \"{table}\"")
+            } else {
+                format!("SELECT {projection} FROM \"{table}\"")
+            };
+            let mut stmt = conn.prepare(&sql).map_err(DbError::from)?;
             let col_count = stmt.column_count();
             let mut rows = stmt.query([]).map_err(DbError::from)?;
             let mut hash: i64 = -0x7a5b_2a3d_1c4f_9e11i64;
@@ -2063,25 +2440,31 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
                 hash ^= 0x1e;
                 hash = hash.wrapping_mul(0x100_0000_01b3);
             }
-            Ok((n, format!("{:016x}", hash as u64)))
+            Ok((n, format!("{:016x}", hash as u64), target_cols))
         })?;
+        let (target_rows, target_digest, _target_cols) = after;
+        let src_rows = &src.rows;
+        let src_digest = &src.digest;
         /*
-         * 对账：源端每一行都必须到目标端（`after.0 < src_rows` = 真失败），
+         * 对账：源端每一行都必须到目标端（`target_rows < src_rows` = 真失败），
          * 但**目标端多出来的行不算失败** —— 那是"新库里比旧库更新"的正常情形
          * （用户在 rust 引擎下继续产生数据，而旧库那份是冻结的历史副本）。
          *
          * 这一条与"去掉整表清空"是配套的：从前靠清空把目标端裁到与源端一致，
          * 代价是把用户更新的数据删掉；现在保留它们，并把数量如实报出来。
          */
-        if after.0 < *src_rows || (after.0 == *src_rows && after.1 != *src_digest && *src_rows > 0) {
+        if target_rows < *src_rows
+            || (target_rows == *src_rows && &target_digest != src_digest && *src_rows > 0)
+        {
             mismatches.push(json!({
                 "table": table,
                 "source_rows": src_rows, "source_digest": src_digest,
-                "target_rows": after.0, "target_digest": after.1,
+                "target_rows": target_rows, "target_digest": target_digest,
+                "source_columns": src.columns.len(),
             }));
         } else {
-            if after.0 > *src_rows {
-                kept_newer.push(json!({ "table": table, "target_rows": after.0, "source_rows": src_rows }));
+            if target_rows > *src_rows {
+                kept_newer.push(json!({ "table": table, "target_rows": target_rows, "source_rows": src_rows }));
             }
             reconciled.push(json!({ "table": table, "rows": src_rows, "digest": src_digest }));
         }
@@ -2117,6 +2500,16 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         // BLOB 列被转成 `blobhex:` 文本搬运 —— 数量如实上报（静默改形是最坏的一种）
         "blob_columns_converted": blob_columns_total,
         "fts": fts,
+        /*
+         * 第 44 轮：把"这次整库级操作干了什么"的关键事实留在返回值里。
+         *
+         * 真机审计显示 `migration.auto` 曾经在 11.8 小时内跑过 **16 次**，
+         * 每次清空 3,838 行（当时全库内容）—— 而当时的返回值里
+         * **看不出"这是一次清空"**，事后只能靠 `storage_audit` 的 61,404 条记录反推。
+         * 现在至少三件事是可查的：有哪些表被搬了、总量多少、备份文件在哪。
+         */
+        "backup_path": backup_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+        "forced": force,
     }))
 }
 

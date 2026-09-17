@@ -197,21 +197,32 @@ describe("存储引导 —— 失败必须可见、且不注册半死端口", ()
     expect(reported).toEqual([]);
   });
 
-  it("BOOT-9: 已注册为 wasm 却要求 rust 时如实上报（不悄悄替换端口）", async () => {
+  /**
+   * 第 19 轮：wasm 端口形态已不存在（旧引擎删除）——这条用例原来叫
+   * "BOOT-9: 已注册为 wasm 却要求 rust 时如实上报（不悄悄替换端口）"，
+   * 用一个 `kind: "wasm"` 的手搓端口去模拟"启动顺序错乱"。
+   *
+   * 那个形态**已不存在**：`kind` 收成常量 `"rust"`（唯一实现），`registerRustStoragePort`
+   * 里"端口类型冲突 → failed"那条分支因此**恒不成立**，已删除。
+   *
+   * 但它里面有一条**仍然有价值**的断言：**不得悄悄替换已注册的端口**（否则模块之间
+   * 会各自持有不同的端口实例，真机排查时"仪器装了但删除不经过它"就是这么来的）。
+   * 所以改写而不删除：注册第二个端口后，端口对象必须还是原来那个、且不得上报失败。
+   */
+  it("BOOT-9: 已注册端口时不得悄悄替换它（复用原实例）", async () => {
     localStorage.setItem(LEGACY_ENGINE_KEY, "rust");
-    // 模拟启动顺序错乱：WASM 端口已经先注册了
-    setStoragePort({
-      kind: "wasm",
+    const fake = {
+      kind: "rust" as const,
       engine: {} as never,
       data: {} as never,
       config: {} as never,
       append: {} as never,
-    });
+    };
+    setStoragePort(fake);
     const r = await registerRustStoragePort(makeTransport());
-    expect(r.kind).toBe("failed");
-    expect(getStoragePort().kind, "不得覆盖已注册的端口").toBe("wasm");
-    // 第 18 轮：文案里的"回滚开关需要在刷新后生效"已随回滚开关退役；现在直接说"没有可用存储"
-    expect(reported[0].note).toContain("没有可用存储");
+    expect(r.kind, "端口在 → 幂等复用，不是失败").toBe("registered");
+    expect(getStoragePort(), "不得覆盖已注册的端口实例").toBe(fake);
+    expect(reported, "复用不是故障，不得上报失败").toEqual([]);
   });
 
   it("BOOT-10: 未注册端口时 shutdown 是安全的 no-op", async () => {

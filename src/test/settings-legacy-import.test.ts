@@ -130,15 +130,17 @@ describe("首次切换的配置导入", () => {
     expect(legacyQueries).toBe(0);
   });
 
-  it("IMP-4: 端口不是 rust（未注册 / wasm）时不导入", async () => {
+  /**
+   * 第 19 轮：wasm 端口形态已不存在（旧引擎删除），这里原本还有一段
+   * `setStoragePort({ ...port, kind: "wasm" })` 的断言。现在"没有可用存储"的
+   * **唯一**形态是"端口未注册"，所以只保留那一段（`legacyQueries === 0` 的
+   * "不许碰旧库"断言一并前移，保证删掉 wasm 变体后仍被守住）。
+   */
+  it("IMP-4: 端口未注册时不导入、也不读旧库", async () => {
     const { importSettingsFromLegacyDb } = await import("../core/storage/bootstrap");
     setStoragePort(null);
     expect(await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH)).toBe(0);
-
-    const { port } = rustPortWith({});
-    setStoragePort({ ...port, kind: "wasm" } as never);
-    expect(await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH)).toBe(0);
-    expect(legacyQueries).toBe(0);
+    expect(legacyQueries, "端口都没有时不得去读旧库").toBe(0);
   });
 
   it("IMP-5: 旧库读不到（全新安装）时不报错、不导入", async () => {

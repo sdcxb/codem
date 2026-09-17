@@ -85,9 +85,8 @@ type RustEventPortLike = {
  */
 function rustEventPort(sessionId?: string): RustEventPortLike | null {
   if (!hasStoragePort()) return null;
-  const port = getStoragePort();
-  if (port.kind !== "rust") return null;
-  const candidate = port as unknown as RustEventPortLike;
+  // 第 19 轮：`if (port.kind !== "rust") return null;` 已删（`kind` 是常量 "rust"，恒不成立）。
+  const candidate = getStoragePort() as unknown as RustEventPortLike;
   if (!candidate.events?.ensureLoaded) return null;
   if (sessionId === undefined) return candidate;
   // 加载中或未加载 → 注册补写回调，并在加载完成后把窗口期事件补进 Rust 库与镜像
@@ -119,9 +118,8 @@ function rustEventPort(sessionId?: string): RustEventPortLike | null {
  */
 function rustEventPortAny(): RustEventPortLike | null {
   if (!hasStoragePort()) return null;
-  const port = getStoragePort();
-  if (port.kind !== "rust") return null;
-  const candidate = port as unknown as RustEventPortLike;
+  // 第 19 轮：`if (port.kind !== "rust") return null;` 已删（恒不成立）。
+  const candidate = getStoragePort() as unknown as RustEventPortLike;
   // 用对象存在性判断（不要判 `appendLocal` 这种"函数是否定义"—— 类型上它必然存在，
   // `tsc` 会直接报 TS2774：这种守卫等于没写）
   return candidate.events ? candidate : null;
@@ -362,66 +360,133 @@ export class EventLog {
       const anchorSeq = anchor.seq;
       const now = Date.now();
       /**
-       * 与旧库那两条 SQL **逐字对齐**（这是"等价"的唯一判据）：
-       * 1. 快照 `INSERT OR REPLACE` 在锚点 seq 上（锚点那条事件被替换掉）；
-       * 2. `DELETE ... WHERE seq < anchor AND event_type <> 'session_meta'`
-       *    —— 锚点之后的分片原样保留（回放顺序不变），`session_meta` 永不删。
+       * ## `cutoff_seq` 怎么算（第 20 轮，真引擎取证——这是 B-2 的真 bug）
+       *
+       * Rust 侧 `events.compact` 是两条 SQL（`repo.rs::events_compact`）：
+       * 1. `INSERT OR REPLACE` 快照到 `snapshot_seq`（= 锚点自己的 seq）；
+       * 2. `DELETE … WHERE seq < cutoff_seq AND event_type <> 'session_meta'`
+       *    —— **排他上界**，且 `session_meta` 永不删。
+       *
+       * 于是保留集合必然是 `seq >= cutoff_seq ∪ {session_meta}`。
+       * **镜像必须逐条对齐这个集合**（否则 `readAll` 重新加载后读到的集合会突然变），
+       * 而"快照自己"也必须活下来 —— 它是这次压缩的全部意义。
+       *
+       * ### 之前错在哪
+       *
+       * 原代码在"无尾部事件"（`keepEvents` 缺省 = 0，也是唯一默认值）时取
+       * `cutoff_seq = anchorSeq + 1`。看着像"删掉锚点及其之前的一切"，实际是
+       * `seq < anchorSeq + 1` —— **把刚写进锚点 seq 的快照自己也删掉了**。
+       * 真 CLI 实测（事件 seq 1..8，锚点 8，`snapshot_seq=8`）：
+       *
+       * | `cutoff_seq` | 引擎返回 | 库内 `events.list` |
+       * | --- | --- | --- |
+       * | **9**（= 锚点+1，原代码） | `removed_events: 7` | **只剩 `session_meta@1`（快照没了）** |
+       * | **8**（= 锚点，现代码） | `removed_events: 6` | `session_meta@1` + `session_snapshot@8` ✓ |
+       *
+       * 也就是说原注释写的"取锚点自己 → 快照又被删掉"是记反的：**取锚点+1 才会删掉快照**。
+       * 这个 bug 之所以在测试里看不见，是因为假端口当时多两条豁免
+       * （`seq !== snapshotSeq`、`event_type !== 'session_snapshot'`，比真引擎宽松）——
+       * 那两条豁免已由引擎侧工作者删除（`fake-storage-port.ts` 的 A-7），缺陷随即在
+       * SNAP-1/2/3 上现形。
+       *
+       * ### 现在的取法
+       *
+       * - **有尾部事件**（`keepEvents > 0`）：`cutoff_seq` = 第一条被保留尾部事件的 seq
+       *   （尾部本来就是序列最大的一段，与 `seq < cutoff` 逐字等价）；
+       * - **无尾部事件**：`cutoff_seq` = `anchorSeq`（**不是** `anchorSeq + 1`）——
+       *   删除只在锚点**之前**生效，锚点位置已被换成快照，于是"只留下快照"才是真的。
+       *
+       * ⚠️ 不能取 `Number.MAX_SAFE_INTEGER` 当"足够大的上界"：真引擎实测该值**报错**
+       * （Rust 的 `req_i64` 用 `as_i64()`，serde_json 把这种字面量解析成 f64 → None）。
+       *
+       * ⚠️ `anchor.seq` 可能是**字符串**（镜像/历史数据没数值化）：`"8" + 1` 会变成 `"81"`，
+       * 而 `seq < 81` 会把锚点之后的一切都删掉。所以这里一律先 `Number()`。
        */
-      const retained = events.filter((e, i) => i >= cutoffIndex || e.type === "session_meta");
-      const replaced = retained.map((e) =>
-        e.seq === anchorSeq
-          ? {
-              seq: anchorSeq,
-              sessionId,
-              type: "session_snapshot",
-              payload: payloadStr,
-              timestamp: now,
-            }
-          : {
-              seq: e.seq,
-              sessionId,
-              type: String(e.type),
-              payload: JSON.stringify(e.payload ?? {}),
-              timestamp: e.timestamp,
-            },
+      const anchorNum = Number(anchorSeq);
+      const seqNumbers = events.map((e) => Number(e.seq)).filter((n) => Number.isFinite(n));
+      const maxSeq = seqNumbers.length > 0 ? Math.max(...seqNumbers) : anchorNum;
+      const firstKept = events[cutoffIndex];
+      /**
+       * **无尾部时的守卫**：锚点若不是最高位事件，说明镜像里的 seq 非单调
+       * （正常路径下 `readAll` 按 seq 排序返回、`appendLocal` 的本地占位也大于水位，
+       * 所以这条分支在产品里不可达）。此时 `cutoff_seq = anchorNum` 仍会**留下**锚点之上
+       * 那些非 meta 行（`seq >= cutoff_seq`），而镜像按下标把它们剔了 —— 两边不一致。
+       * 与其静默产生分歧，不如**不落库**并如实上报：权威侧保持原样，代价只是"这次没省空间"。
+       */
+      const hasNonMetaAboveAnchor = events.some(
+        (e, i) => i > cutoffIndex - 1 && Number(e.seq) > anchorNum && e.type !== "session_meta",
       );
-      // 锚点若本身就是 `session_meta`（它在 filter 里被保留但不是快照位置），要单独补上快照
-      if (!replaced.some((e) => e.seq === anchorSeq)) {
+      let cutoffSeq: number;
+      if (firstKept !== undefined) {
+        cutoffSeq = Number(firstKept.seq);
+      } else if (!hasNonMetaAboveAnchor) {
+        cutoffSeq = anchorNum;
+      } else {
+        reportPersistFailure(
+          "eventLog.compact",
+          new Error("锚点之上存在非 session_meta 事件，cutoff_seq 无法同时保住快照与集合一致"),
+          `会话 ${sessionId} 的事件压缩未落库（锚点 seq=${anchorNum}、最大 seq=${maxSeq}）：` +
+            `一条 seq 上界表达不了"只保留快照"；权威侧保持原样，本次只是没有省下空间`,
+        );
+        return { removedEvents: 0, snapshotSeq: anchorNum };
+      }
+      /**
+       * ## 镜像的保留集合必须**逐条对齐引擎的删除规则**（不能按"我猜它删了哪些"来写）
+       *
+       * 之前这里是 `events.filter((e, i) => i >= cutoffIndex || e.type === "session_meta")` ——
+       * 那个集合**不含锚点自己**（锚点下标是 `cutoffIndex - 1`），于是"镜像留下的"里
+       * 从来没有快照：SNAP-1/2/3 在假端口变严格之后立刻红（`readAll` 里看不到 `session_snapshot`）。
+       * 现在按引擎规则取：`seq >= cutoff_seq` ∪ `session_meta` —— 锚点（秒=快照）自然在其中。
+       */
+      const replaced = events
+        .filter((e) => Number(e.seq) >= cutoffSeq || e.type === "session_meta")
+        .map((e) =>
+          Number(e.seq) === anchorNum
+            ? {
+                seq: anchorNum,
+                sessionId,
+                type: "session_snapshot",
+                payload: payloadStr,
+                timestamp: now,
+              }
+            : {
+                seq: Number(e.seq),
+                sessionId,
+                type: String(e.type),
+                payload: JSON.stringify(e.payload ?? {}),
+                timestamp: e.timestamp,
+              },
+        );
+      /**
+       * 锚点若本身就是 `session_meta`（它在 filter 里被保留、但不是快照位置），要单独补上快照。
+       * 用 `Number()` 比较：`seq` 从镜像读回来时可能是字符串，`===` 会漏判。
+       */
+      if (!replaced.some((e) => Number(e.seq) === anchorNum)) {
         replaced.push({
-          seq: anchorSeq,
+          seq: anchorNum,
           sessionId,
           type: "session_snapshot",
           payload: payloadStr,
           timestamp: now,
         });
       }
+      replaced.sort((a, b) => a.seq - b.seq);
       const removedEvents = Math.max(0, events.length - replaced.length);
+      /**
+       * ## ⚠️ 顺序：**先"写穿"（引擎那两条 SQL），再刷镜像**
+       *
+       * 踩过一次（第 20 轮）：原来是"先 `replaceSession`（镜像乐观更新）→ 再
+       * `compactEventAsync`（写穿）"。**假端口就是库本身**（它的 `replaceSession` 改的正是
+       * 那张表），于是随后写穿的删除把刚放进镜像的快照又删掉了 ——
+       * SNAP-8 的表现是"镜像里没有快照"，看起来像镜像逻辑写错了，其实是顺序错了。
+       *
+       * 真实端口下这条顺序同样是对的：`appendLocal` 的本地占位是"远大于水位"的高 seq，
+       * 重放后不会打乱顺序；而"先算清楚引擎会留下什么、再按那个集合刷镜像"才能保证
+       * **镜像与权威侧逐条一致**（`replaceSession` 只在权威侧落地后才有意义）。
+       */
+      routed.compactEventAsync(sessionId, anchorNum, cutoffSeq, payloadStr);
       routed.events.replaceSession(sessionId, replaced);
-      /**
-       * `cutoff_seq` 是 Rust `events.compact` 的**排他上界**（`DELETE ... WHERE seq < cutoff_seq`），
-       * 所以它要取**第一条被保留的尾部事件的 seq**。
-       *
-       * 这里踩过两个坑，都记下来：
-       * - 传锚点自己 → 锚点被 `INSERT OR REPLACE` 换成快照之后**又被删掉**，
-       *   症状是"压缩完历史整段消失"；
-       * - 传 `anchorSeq + 1` → 只在"存在尾部事件"时才对；没有尾部（`keepEvents` 省略）时
-       *   等于"删掉锚点及其之前的一切"，**快照照样被删**（实测症状：压缩后只剩一条
-       *   `session_meta`）。
-       *
-       * 取"第一条保留事件的 seq"在两种情况下都正确：有尾部 → 精确等于旧库那条
-       * `seq < anchor`（因为保留集合从尾部开始）；无尾部 → 取 `anchorSeq + 1`，
-       * 此时序列里没有任何 seq ≥ 锚点的行，删除不会命中快照。
-       */
-      const firstKept = events[cutoffIndex];
-      /**
-       * ⚠️ `anchor.seq` **可能是字符串**（`readAll` 从镜像/旧库读回来的 `seq` 没做数值化），
-       * 于是 `anchorSeq + 1` 会变成**字符串拼接**：锚点 81 → `"811"`（锚点 8 → `"82"`），
-       * 传给 Rust 之后 `seq < cutoff` 把快照自己也算进去删掉了。
-       * 这个坑很隐蔽：算出来的界线"看起来"是对的，只有在"没有尾部事件"时才暴露。
-       */
-      const cutoffSeq = firstKept ? Number(firstKept.seq) : Number(anchorSeq) + 1;
-      routed.compactEventAsync(sessionId, Number(anchorSeq), cutoffSeq, payloadStr);
-      return { removedEvents, snapshotSeq: Number(anchorSeq) };
+      return { removedEvents, snapshotSeq: anchorNum };
     }
 
     /**
@@ -551,7 +616,7 @@ export class EventLog {
        * 触发惰性加载，下一次调用即成；这里不额外上报，避免"仓库里有数据却报失败"的误报
        * （那是 B 态语义，不属于本批要删的 A 态）。
        */
-      if (!hasStoragePort() || getStoragePort().kind !== "rust") {
+      if (!hasStoragePort()) {
         reportPersistFailure(
           "eventLog.forkSession",
           new Error("端口未接手（该域镜像未注册或未就绪）"),

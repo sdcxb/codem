@@ -16180,6 +16180,15 @@
   "spinning": {
     "animation": "spin 1s linear infinite"
   },
+  "squads-archived-toggle": {
+    "align-items": "center",
+    "color": "var(--text-secondary)",
+    "cursor": "pointer",
+    "display": "flex",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-4)",
+    "user-select": "none"
+  },
   "squads-card": {
     "background": "var(--bg-tertiary)",
     "border": "1px solid var(--border-primary)",
@@ -16219,6 +16228,11 @@
     "display": "flex",
     "justify-content": "space-between",
     "margin-bottom": "var(--space-8)"
+  },
+  "squads-header-actions": {
+    "align-items": "center",
+    "display": "flex",
+    "gap": "var(--space-8)"
   },
   "squads-header-title": {
     "align-items": "center",
@@ -16321,6 +16335,9 @@
     "grid-template-columns": "max-content minmax(0, 1fr)",
     "padding": "var(--space-3) var(--space-7)",
     "transition": "var(--transition-color)"
+  },
+  "squads-notice": {
+    "cursor": "pointer"
   },
   "squads-title": {
     "color": "var(--text-primary)",

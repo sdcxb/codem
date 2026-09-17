@@ -23,6 +23,8 @@
 
 use std::collections::HashSet;
 
+use rusqlite::params;
+
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{params_from_iter, Connection};
 use serde_json::{json, Value};
@@ -52,6 +54,33 @@ pub const PROTECTED_TABLES: &[&str] = &["messages", "sessions", "session_events"
 /// 都在这个量级以下；而"级联清空语料"（数百上千）会立刻被拦下。
 pub const BULK_DELETE_LIMIT: i64 = 50;
 
+/// **级联规模闸门**只在从这些表删除时生效（第 44 轮定的范围）。
+///
+/// ## 为什么必须有这个范围（而不是"所有表一律拦"）
+///
+/// 闸门要防的是**一类特定事故**：会话语料在调用方**完全没有表达该意图**的情况下消失
+/// （真机：删 2 个会话 → 821 条消息 + 883 个工具调用 + 2131 条事件；调用参数里只写"删 1 行"）。
+/// 这一类的共同点是：**删除的规模不体现在参数里，而后果是不可逆的用户语料损失**。
+///
+/// 同样的规则套到别的域上会变成**新的缺陷**。例：`notebooks` 删除必然级联带走它的
+/// `notebook_chunks`（"删掉笔记本但保留它的块"没有语义），而知识库的真实调用点里
+/// 有**内部路径**（`indexer.ts` 重建索引时删旧 source）与**工具路径**
+/// （`note-operations.ts` 让模型删笔记）—— 给这些路径强加"必须显式确认"只会让
+/// 正常功能开始报错，而它们并不是事故来源。也就是说：
+/// **闸门的作用域必须等于它要防的事故的作用域**，扩大作用域本身就是在造缺陷。
+///
+/// 因此这里只列"会话语料"这张图上的根：
+/// `messages` / `sessions` / `session_events` / `tool_calls` / `projects`
+/// （`projects` 是根中之根：删一个项目会带走它下面全部会话与消息）。
+/// 其它表的删除**仍然如实回报 `affected_rows`**（规模可见），但不会因为规模大而被拒绝。
+pub const CASCADE_GUARD_ROOTS: &[&str] = &[
+    "messages",
+    "sessions",
+    "session_events",
+    "tool_calls",
+    "projects",
+];
+
 /// **级联影响**闸门（供 `sessions_delete` 这类"只删一行、却级联几百行"的命令使用）。
 ///
 /// 单独抽出来是因为事故的形态正是这个：调用方删 1 个会话（`where {id}` 只命中 1 行），
@@ -73,6 +102,64 @@ pub fn guard_cascade_scope(
              confirm_bulk: true —— 要求调用方明确表达自己在做批量删除。"
         ),
     ))
+}
+
+/// 把一次删除的**真实影响规模**量出来：执行它、读出净影响行数，并把"要不要拦"的判断
+/// 交给调用方；调用方判定超限时返回 `Err`，整个写事务回滚 —— **库里什么都没变**。
+///
+/// ## 为什么必须"先删再量"（而不是按 where 命中数预检）
+///
+/// `guard_bulk_delete` 只能看见 `where` 命中的行数，而事故的形态恰恰是
+/// **`where` 命中 1 行、外键级联带走 821 行**。想按子表 FK 图**预先**算准级联规模，
+/// 要么漏（`notebooks → chunks` 这类不在 `PROTECTED_TABLES` 名单里），
+/// 要么被自引用/环状 FK 绕死（`goals.parent_id → goals.id` 就是自级联）。
+/// 而 SQLite 本身没有"这条 DELETE 会影响多少行"的接口 ——
+/// 唯一准确的量法是**真的删一次**。所以：在事务里删、量、判；超限就回滚。
+/// 代价是"被拒绝的那次"多做了一次删除，收益是**闸门不可能算错**。
+///
+/// ## 为什么必须减掉审计行
+///
+/// `audit::install` 给每张受审计表挂了 `AFTER DELETE` 触发器，**每删一行就插一行审计**。
+/// 于是 `Connection::total_changes()` 的增量 = 真实删除行 + 审计行（本来就有 2~3 倍放大）。
+/// 不减掉它，删 20 条消息会被当成 60 行而**误拦正常操作**。
+/// `storage_audit.id` 是 `INTEGER PRIMARY KEY`，所以"本次新增多少审计行"可以按
+/// id 水位线精确查到；而且这些审计行会随事务回滚一起消失，绝不污染库。
+///
+/// 返回 `(调用方产物, 净影响行数)`。净影响行数**含** `where` 直接命中的行。
+///
+/// `pub` 是给 `repo.rs` 里那些"删 1 行、级联几百行"的专用命令复用
+/// （`sessions.delete` / `projects.delete`）—— 判据必须只有一份，
+/// 否则某个命令漏改就会出现"同一个操作走两条路、防护不一样"，
+/// 而这正是这次事故的形态（闸门装了，但装的不是生产路径）。
+pub fn measure_delete_impact<T>(
+    tx: &rusqlite::Transaction<'_>,
+    run: impl FnOnce() -> DbResult<T>,
+) -> DbResult<(T, i64)> {
+    let audit_table = crate::audit::AUDIT_TABLE;
+    // 表不存在（老库/裁剪过的库）时退化为 0：此时也没有触发器，不影响结论
+    let watermark: i64 = tx
+        .query_row(
+            &format!("SELECT COALESCE(MAX(id), 0) FROM {audit_table}"),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let before: i64 = tx
+        .query_row("SELECT total_changes()", [], |r| r.get(0))
+        .unwrap_or(0);
+    let out = run()?;
+    let total: i64 = tx
+        .query_row("SELECT total_changes()", [], |r| r.get(0))
+        .unwrap_or(before)
+        - before;
+    let audit_rows: i64 = tx
+        .query_row(
+            &format!("SELECT COUNT(*) FROM {audit_table} WHERE id > ?1"),
+            params![watermark],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    Ok((out, total - audit_rows))
 }
 
 /// 统计某条 where 会命中多少行（删除前预检用）
@@ -536,10 +623,40 @@ pub fn crud_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
             }
         }
         let sql = format!("DELETE FROM \"{table}\" WHERE {}", clauses.join(" AND "));
-        let n = tx
-            .execute(&sql, params_from_iter(vals.iter()))
-            .map_err(DbError::from)?;
-        Ok(json!({ "written": n, "table": table }))
+        /*
+         * 级联规模闸门（第 44 轮，真机缺陷修正）。
+         *
+         * 上面那道 `guard_bulk_delete` 只看 `where` 命中数 —— 而**渲染侧删会话走的就是
+         * 这条路**：`domainDelete("sessions", {id})` → `crud.delete`，`where {id}` 命中 1 行，
+         * 于是一路放行，外键级联静默带走该会话的全部消息/工具调用/事件。
+         * 真机复现：`crud.delete {table:sessions, where:{id:s1}}` → `{"written":1}`，
+         * 300 条消息全没了。也就是说：为这起事故加的防护**在生产路径上从未生效**
+         * —— 它只装在**没被接线**的 `sessions.delete` 里。
+         *
+         * 所以闸门必须装在**真正执行 SQL 的地方**（这里），并且按**实际影响行数**判定，
+         * 而不是按调用方声明的范围。判定的方式是"先删、再量、超限就回滚"：
+         * 事务保证被拒绝时库里一行未动。
+         */
+        let (n, impact) = measure_delete_impact(tx, || {
+            tx.execute(&sql, params_from_iter(vals.iter()))
+                .map_err(DbError::from)
+        })?;
+        // 闸门只装在"会话语料"的根表上（作用域的理由见 `CASCADE_GUARD_ROOTS`）：
+        // 别处仍然如实报出含级联的真实规模，但不会因为规模大而被拒绝。
+        if CASCADE_GUARD_ROOTS.contains(&table.as_str()) {
+            guard_cascade_scope(
+                &format!("从 {table} 删除（where 命中 {n} 行）"),
+                impact,
+                confirmed,
+            )?;
+        }
+        Ok(json!({
+            "written": n,
+            "table": table,
+            // 如实报出**含级联**的真实规模：调用方看到的 `written` 只是它声明的范围，
+            // 两者差多少正是"级联带走了多少" —— 这是排查这类事故最需要的一个数
+            "affected_rows": impact,
+        }))
     })
 }
 

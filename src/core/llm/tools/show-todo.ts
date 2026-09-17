@@ -8,6 +8,7 @@
 import type { ToolDef, ToolExecuteResult, ToolContext } from "../tools";
 import type { TodoItem } from "../agentic-loop";
 import { domainReadOne, domainWrite, reportWriteNotAccepted } from "../../storage/domain-store";
+import { reportActionFailure, reportPersistFailure } from "../../storage/persist-failure";
 
 /**
  * `todo_lists` 表与行转换（P5 第 2 段：接入域端口）
@@ -171,16 +172,40 @@ function saveTodoList(sessionId: string, todoId: string, todos: TodoItem[]): voi
 
 /**
  * Load todo list from database
+ *
+ * ## 任务 C-5：`null` 有两种含义，调用方必须能分开
+ *
+ * 返回 `null` 原本同时表示"这条待办不存在"与"镜像未接手、这次读不到"。
+ * 对勾选功能来说这两者的处置**完全不同**：前者是"你点的那条已经没了"，
+ * 后者是"稍后再点一次就行"。所以读不到时**如实上报**（不再静默），
+ * 并给出**明确**的失败结果 —— 而不是让调用方以为"没有这条待办"。
  */
 export function loadTodoList(todoId: string): TodoItem[] | null {
   const rust = domainReadOne(TODO_TABLE, { id: todoId }, wireToTodoRow);
   if (rust !== undefined) return rust ? parseTodos(rust.todos) : null;
-  // 两态：B 态（端口在、镜像未就绪）不碰旧库，如实返回"现在读不到"
+  /*
+   * 两态：B 态（端口在、镜像未就绪）不碰旧库。
+   *
+   * 但**不能静默**：C-5 的现场就是"勾选全部无效且无任何提示"。
+   * 这里补上上报，让"这个进程此刻读不到待办列表"可见（调用方据此提示"稍后重试"）。
+   */
+  reportPersistFailure(
+    "todo.load",
+    new Error("端口已注册但 todo_lists 镜像未接手（未就绪 / 未镜像）"),
+    `待办列表 ${todoId} 本次读不到 —— 这**不是**"该待办不存在"，请稍后重试`,
+  );
   return null;
 }
 
 /**
  * Update todo item status
+ *
+ * ## 任务 C-5：勾选分支原来**静默 return，连上报都没有**
+ *
+ * 原实现（`domainReadOne` 返回 `undefined` 时）在函数末尾直接 `return;` ——
+ * 与同仓 `goal.ts` / `inbox-storage.ts` 的写法冲突（它们都走 `reportPersistFailure`）。
+ * 现场表现：用户在待办面板上勾选，界面动了一下（前端本地状态），
+ * 库里没有任何写入、日志里没有任何痕迹 —— 一次"看起来成功了"的假成功。
  */
 export function updateTodoStatus(todoId: string, itemId: string, status: TodoItem["status"]): void {
   const applyStatus = (todos: TodoItem[]): TodoItem[] =>
@@ -189,9 +214,39 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
   // 迁移期：读出整行 → 改状态 → 整体写回（旧实现是读出 JSON、改、再 UPDATE 回去）
   const rustCurrent = domainReadOne(TODO_TABLE, { id: todoId }, wireToTodoRow);
   if (rustCurrent !== undefined) {
-    if (!rustCurrent) return; // 待办列表不存在：旧实现是直接 return
+    /*
+     * "未就绪"与"不存在"必须分开：
+     * - `null` = 这条待办确实不在库里（例如会话已删除、列表被清掉）→ 业务失败，如实上报；
+     * - `undefined` = 端口没接手（下面那条分支）。
+     * 原实现把两者都写成 `return`，所以用户根本不知道勾选为什么没生效。
+     */
+    if (rustCurrent === null) {
+      reportPersistFailure(
+        "todo.updateStatus",
+        new Error(`待办列表 ${todoId} 不存在`),
+        `勾选未生效：这条待办列表已经不在库里（可能随会话一起被删除）`,
+      );
+      return;
+    }
     const todos = parseTodos(rustCurrent.todos);
-    if (!todos) return;
+    if (!todos) {
+      // 坏 JSON：待办行在、但内容解析不出来 —— 这是**数据**问题，必须可见
+      reportPersistFailure(
+        "todo.updateStatus",
+        new Error(`待办列表 ${todoId} 的 todos 字段不是合法 JSON 数组`),
+        `勾选未生效：待办内容已损坏（没有覆盖写，避免把坏数据写回去）`,
+      );
+      return;
+    }
+    if (!todos.some((t) => t.id === itemId)) {
+      // 勾选了一个不存在的条目：旧实现会写回一份"没有任何变化"的 JSON（静默空写）
+      reportActionFailure(
+        "todo.updateStatus",
+        new Error(`待办 ${itemId} 不在列表 ${todoId} 中`),
+        "勾选未生效：这条待办已不在列表里（界面显示的是旧快照）",
+      );
+      return;
+    }
     domainWrite(
       TODO_TABLE,
       [{ ...rustCurrent, todos: JSON.stringify(applyStatus(todos)), updated_at: Date.now() }],
@@ -200,6 +255,12 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
     return;
   }
 
-  // 两态：B 态不碰旧库（该域由端口负责，镜像未就绪时本次变更不落地）
+  // 两态：B 态不碰旧库（该域由端口负责，镜像未就绪时本次变更不落地）——
+  // 但**必须如实上报**，否则就是"勾选静默无效"（C-5 的现场）。
+  reportPersistFailure(
+    "todo.updateStatus",
+    new Error("端口已注册但 todo_lists 镜像未接手（未就绪 / 未镜像）"),
+    `勾选未生效：本次读不到待办列表 ${todoId}，请稍后重试`,
+  );
   return;
 }

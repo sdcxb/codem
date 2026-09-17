@@ -160,8 +160,29 @@ export function updateProject(id: string, update: Partial<Project>): void {
   return;
 }
 
-export function deleteProject(id: string): void {
-  if (domainDelete(TABLE, { id }, { scope: "project.delete", note: "项目未删除" })) return;
+/**
+ * 删项目（**会级联**删掉它的全部会话 → 全部消息 / 工具调用 / 事件）。
+ *
+ * ## `confirmBulk`（第 44 轮）
+ *
+ * Rust 侧对"一次命令的真实影响规模"有闸门：删项目这一条命令 `written` 只显示 1，
+ * 而外键级联会带走该项目的全部语料 —— 这是本系统里单条命令能造成的最大规模删除。
+ * 所以超过上限时必须显式声明"我知道这是批量删除"。
+ *
+ * 用户点"删除项目"并确认是明确的破坏性意图 → UI 路径传 `confirmBulk: true`；
+ * **任何非交互路径**（对账、清理、修复）都不该传 —— 那正是闸门要拦的。
+ * 缺省不传是刻意的：**安全默认必须是"不确认"**，否则闸门形同不存在。
+ */
+export function deleteProject(id: string, opts: { confirmBulk?: boolean } = {}): void {
+  if (
+    domainDelete(TABLE, { id }, {
+      scope: "project.delete",
+      note: "项目未删除",
+      confirmBulk: opts.confirmBulk,
+    })
+  ) {
+    return;
+  }
   // 删除路径尤其不能静默：静默失败会让项目"看着在、实际已删"或反之（数据不一致）
   reportWriteNotAccepted("project.delete", "项目未删除");
   return;

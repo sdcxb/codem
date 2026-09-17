@@ -267,21 +267,11 @@ describe("域镜像分流 —— 账号域", () => {
      * 新契约（同样是"诚实"的，只是诚实的方式变了）：
      * 读路径在没有端口时**不抛**，返回该域的合理空结果 —— 调用方拿到 `[]`
      * （界面显示"没有账号"），而不是整块面板崩成"此面板不可用"。
+     *
+     * 第 19 轮：这里原来还有一条 DOM-10（`setStoragePort({kind:"wasm", …})`）断同样的东西。
+     * 第 19 轮：wasm 端口形态已不存在（旧引擎删除），而"没有端口"是**唯一**的
+     * "没有可用存储"形态，所以两条用例合并成这一条（`setStoragePort(null)`）——断言一条都没丢。
      */
-    expect(listAccounts()).toEqual([]);
-  });
-
-  it("DOM-10: 端口是 wasm 时不接手（回滚开关已退役，行为同上：不抛 + 空结果）", async () => {
-    setStoragePort({
-      kind: "wasm",
-      engine: {} as never,
-      data: {} as never,
-      config: {} as never,
-      append: {} as never,
-    });
-    const { listAccounts } = await import("../core/storage/account");
-    // wasm 端口在生产里已不可能出现（`DEFAULT_ENGINE` 收窄为 rust、开关退役），
-    // 这里保留"不接手"的语义验证：不回退旧库、不抛、给空结果。
     expect(listAccounts()).toEqual([]);
   });
 });

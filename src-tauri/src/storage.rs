@@ -222,15 +222,38 @@ pub fn storage_batch(
         match dispatch(engine, &item.command, &params) {
             Ok(v) => done.push(json!({ "command": item.command, "ok": true, "result": v })),
             Err(e) => {
+                /*
+                 * 错误信息里**不再内嵌已完成步骤的完整 JSON**（第 44 轮）。
+                 *
+                 * 原来这里把 `done` 整个序列化进 message，于是"第 3 步失败"这条错误会带上
+                 * 前两步的**完整结果** —— 一条 `messages.list` 的结果就能是几 MB，
+                 * 而这段文本会原样出现在：
+                 * ① 用户看到的告警（"数据保存失败：batch 在第 2 步失败…已完成 1 步：[{…7MB…}]"）；
+                 * ② 日志文件；③ 渲染侧的错误对象里。
+                 * 实测形态就是"界面上弹出一坨 JSON"。
+                 *
+                 * 排查真正需要的是"第几步、哪条命令、为什么失败、前面成功了几步"，
+                 * 不是一个可复现的结果快照。要结果快照的调用方应当改用**逐条调用**
+                 * （那也是它本来就能做到的事）。所以这里只留**命令名清单**：
+                 * 足够回答"前面那几步做了什么"，且长度与数据量无关。
+                 */
+                let completed: Vec<&str> = done
+                    .iter()
+                    .filter_map(|d| d.get("command").and_then(|c| c.as_str()))
+                    .collect();
                 return reply(Err(DbError::new(
                     e.code,
                     format!(
-                        "batch 在第 {} 步失败（command={}）：{}；已完成 {} 步：{}",
+                        "batch 在第 {} 步失败（command={}）：{}；已完成 {} 步{}",
                         done.len() + 1,
                         item.command,
                         e.message,
                         done.len(),
-                        serde_json::to_string(&done).unwrap_or_default()
+                        if completed.is_empty() {
+                            String::new()
+                        } else {
+                            format!("（依次为：{}）", completed.join(" → "))
+                        }
                     ),
                 )));
             }
@@ -261,13 +284,11 @@ pub fn storage_health(state: State<'_, StorageState>) -> StorageReply {
     };
     reply(engine.health().and_then(|h| {
         let mut v = serde_json::to_value(h).map_err(|e| DbError::other(e.to_string()))?;
-        /**
-         * 把"是否发生过损坏恢复"附在健康检查上（第 19 轮）。
+        /* 把"是否发生过损坏恢复"附在健康检查上（第 19 轮）。
          *
          * 为什么放在这里而不是单开一条命令：渲染侧**每次启动都会调 health**（端口预热的第一步），
          * 而恢复这事只在打开引擎时发生一次 —— 附着在 health 上就自动被看到，
-         * 不需要调用方记得"额外问一句"（那种设计一定会有人忘）。
-         */
+         * 不需要调用方记得"额外问一句"（那种设计一定会有人忘）。 */
         if let Some(backup) = state.recovered_from() {
             if let Value::Object(ref mut map) = v {
                 map.insert("recovered".to_string(), Value::Bool(true));

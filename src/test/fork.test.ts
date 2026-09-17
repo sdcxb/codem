@@ -286,4 +286,36 @@ describe("Fork 功能 — 从 SQLite 复制消息到新会话", () => {
       expect(existsInSource).toBe(false);
     }
   });
+
+  /**
+   * 第 44 轮：分叉必须**留下谱系**（`parent_id`）。
+   *
+   * ## 这条测试守的是什么
+   *
+   * `parent_id` 全仓**唯一**的写点是 `SessionStorage.forkSession`，而它原来
+   * **零 UI 调用者** —— UI 里那三份内联 fork 实现都不写 `parent_id`。
+   * 后果是一条能被实测验证的功能空洞：`session_trace`（按 `parent_id` 追溯祖先/后代）
+   * 在生产里永远只报 `Parent: (root)` / `Ancestors: []` / `Descendants: (none)`，
+   * 也就是说"完整谱系"这个能力从来没有数据。
+   *
+   * 现在 UI 的分叉走 `useProjectStore.forkSession` → `SessionStorage.forkSession`。
+   * 这里直接对存储层断言"子会话行里真的有 `parent_id`"，而不是对着源码文本猜。
+   */
+  it("分叉写 parent_id：子会话行里能读回源会话 id（session_trace 的谱系依赖它）", () => {
+    const childId = "forked-lineage-1";
+    const child = SessionStorage.forkSession(sourceSessionId, childId, projectId, "Fork: 源对话");
+    expect(child, "forkSession 应返回子会话（源会话存在时）").not.toBeNull();
+    expect(child?.id).toBe(childId);
+
+    // 从会话行读回：`parent_id` 是 ALTER 加的列，读映射必须把它带出来
+    const read = getStoragePort().__table("sessions").find((r) => r.id === childId);
+    expect(read, "子会话行必须真的写进库").toBeTruthy();
+    expect(String(read?.parent_id ?? ""), "子会话必须记住它从哪来").toBe(sourceSessionId);
+  });
+
+  it("分叉源会话不存在时不写任何行（不制造孤儿会话）", () => {
+    const child = SessionStorage.forkSession("不存在的源会话", "forked-orphan-1", projectId, "Fork: x");
+    expect(child).toBeNull();
+    expect(getStoragePort().__table("sessions").some((r) => r.id === "forked-orphan-1")).toBe(false);
+  });
 });

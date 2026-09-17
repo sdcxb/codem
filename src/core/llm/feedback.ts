@@ -23,6 +23,14 @@ import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../sto
 
 // ========== Types ==========
 
+/**
+ * 反馈评分。
+ *
+ * ⚠️ `"neutral"` **不是**一个能存进库的值：`message_feedback` 表上有
+ * `CHECK (feedback IN ('like','dislike'))`（真 CLI 实测会报 `CHECK constraint failed`）。
+ * 它在本 API 里表示"**取消反馈**"，由 `putMessageFeedback` 归一成**删除那一行** ——
+ * "未评价"这个状态在库里表达为"没有这一行"，不是"有一行 neutral"。
+ */
 export type FeedbackRating = "like" | "dislike" | "neutral";
 
 export interface MessageFeedbackItem {
@@ -189,6 +197,25 @@ function feedbackToItem(row: FeedbackWireRow): MessageFeedbackItem {
  * 乐观并发：如果该消息已有反馈，request 中的 ifVersion 必须匹配。
  * 对标 DSH MessageFeedbackService.put()。
  *
+ * ## 任务 C-4 ②：`ifVersion` 的 `undefined` 语义（原实现恒判冲突）
+ *
+ * 原实现是 `if (ifVersion !== currentVersion)`，其中 `currentVersion = existing?.version ?? null`。
+ * 于是**没传版本**（`ifVersion === undefined`）与"当前没有版本"（`null`）被比成
+ * `undefined !== null` —— **恒为真** → 直接返回 `version-conflict`，**任何写入都没发生**。
+ * 而 UI 侧（`store.ts` 的 `setFeedback`）调用的正是**不传版本**的形态，
+ * 且它把返回值 `catch {}` 掉了 —— 用户点了赞/踩，界面变了，库里一条都没有。
+ *
+ * 正确语义（也是 DSH `put()` 的语义）：
+ * - `ifVersion === undefined` → **不做版本校验**（"我没看到版本"≠"我要求一个特定版本"）；
+ * - `ifVersion === null` → 要求"当前**没有**反馈行"（新增语义，供"首次评价"用）；
+ * - 给了具体字符串 → 必须与当前版本**严格相等**。
+ *
+ * ## 任务 C-4 ③：`neutral` 不是"评分"
+ *
+ * `message_feedback.feedback` 上有 `CHECK (feedback IN ('like','dislike'))`，
+ * 传 `'neutral'` 会被引擎拒绝（真 CLI 实测）—— 而调用方把它当"取消反馈"用。
+ * 真正的取消在表里表达为"没有这一行"，所以这里把 `neutral` 归一成**删除**。
+ *
  * @returns 成功则返回提交的 item，失败返回错误信息
  */
 export function putMessageFeedback(
@@ -208,12 +235,34 @@ export function putMessageFeedback(
   // 查找现有反馈
   const existing = getMessageFeedback(messageId);
 
-  // 版本检查
-  const currentVersion = existing?.version ?? null;
-  if (ifVersion !== currentVersion) {
+  // 版本检查（C-4 ②：`undefined` = 不校验，见上面的说明）
+  const versionConflict = checkVersion("put", ifVersion, existing?.version ?? null);
+  if (versionConflict) return { ok: false, error: versionConflict };
+
+  /**
+   * `neutral` = 取消反馈（C-4 ③）。
+   *
+   * 归一成删除而不是"写一个 neutral 值"：表上的 CHECK 不允许 neutral，
+   * 而"没有这一行"正是这个域表达"未评价"的方式（`getMessageFeedback` 返回 null）。
+   *
+   * 契约形态：`MessageFeedbackItem.version` 的语义是"**当前存库行**的并发 token"，
+   * 取消之后没有行 —— 所以这里显式返回空串（`feedbackToItem` 对无 version 的历史行
+   * 也是这么给的：`row.version || ""`）。**不编造**一个 UUID：那会让调用方以为
+   * "取消"产生了一个可继续做乐观并发的新版本。
+   */
+  if (rating === "neutral") {
+    const removed = deleteMessageFeedback(messageId, ifVersion);
+    if (!removed.ok) return { ok: false, error: removed.error };
     return {
-      ok: false,
-      error: `version-conflict: expected ${ifVersion ?? "null"}, got ${currentVersion ?? "null"}`,
+      ok: true,
+      item: {
+        messageId,
+        rating,
+        ...(noteResult.value !== undefined ? { note: noteResult.value } : {}),
+        version: "",
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      },
     };
   }
 
@@ -275,6 +324,33 @@ export function putMessageFeedback(
 }
 
 /**
+ * 乐观并发的版本判据（`put` / `delete` 共用，保证两处语义**永远一致**）。
+ *
+ * 三态语义见 `putMessageFeedback` 的说明：`undefined` 不校验、`null` 要求"当前无行"、
+ * 字符串必须严格相等。抽成函数是因为这个判据原来在两个地方各写了一遍，
+ * 而其中一处写错了（`!= null` 那半边）—— 同一个判断写两遍就会变成两个不同的判断。
+ *
+ * @returns 冲突时的错误文案；不冲突返回 `null`
+ */
+function checkVersion(
+  op: "put" | "delete",
+  ifVersion: string | null | undefined,
+  currentVersion: string | null,
+): string | null {
+  // 未提供版本 = 不做校验（**不是**"当前必须为 null"）—— 这是 C-4 ② 的核心
+  if (ifVersion === undefined) return null;
+  // 显式 `null` = 要求"当前没有反馈行"（首次评价 / 期望已取消）
+  if (ifVersion === null) {
+    return currentVersion === null
+      ? null
+      : `version-conflict: expected null (no existing feedback), got ${currentVersion}`;
+  }
+  return ifVersion === currentVersion
+    ? null
+    : `version-conflict: expected ${ifVersion}, got ${currentVersion ?? "null"} (op=${op})`;
+}
+
+/**
  * 获取消息级反馈。
  */
 export function getMessageFeedback(messageId: string): MessageFeedbackItem | null {
@@ -300,12 +376,9 @@ export function deleteMessageFeedback(
     return { ok: true, absent: true };
   }
 
-  if (ifVersion !== existing.version) {
-    return {
-      ok: false,
-      error: `version-conflict: expected ${ifVersion ?? "null"}, got ${existing.version}`,
-    };
-  }
+  // C-4 ②：与 `put` 用**同一个**判据（原来这里也是 `!==`，同样会被 undefined 误判）
+  const versionConflict = checkVersion("delete", ifVersion, existing.version);
+  if (versionConflict) return { ok: false, error: versionConflict };
 
   const rust = domainReadOne(TABLE, { message_id: messageId }, wireToFeedback);
   if (rust !== undefined) {

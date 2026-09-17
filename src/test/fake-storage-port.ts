@@ -14,6 +14,23 @@
  * `createMessage` 把索引写发往 Rust，`getMessage` 却只读旧库。已修（见 message.ts）。
  * 这正是这个基座的价值：它逼出了回退分支一直在掩盖的东西。
  *
+ * ## ⚠️ 就绪时机：**真端口是异步的**（A-7，第 20 轮）
+ *
+ * 真实端口（`rust-port.ts` 的 `RustDomainMirror` / `RustMessageMirror`）的
+ * `ensureLoaded` 会发一次 **IPC**，所以"调用 `ensureLoaded`"与"`isReady` 为真"
+ * 之间**隔着一段真实的时间** —— 这就是"加载窗口"。
+ *
+ * 本假端口默认**同步就绪**（`ensureLoaded` 立刻就绪）。这是刻意的取舍：
+ * 5194 个既有用例都建立在"端口即时可用"之上，一次性改成异步会把基线整体打红，
+ * 而那些用例验证的本来**不是**加载窗口的语义。
+ *
+ * 代价必须说清楚：**默认（同步）模式下，测试在结构上看不见"加载窗口"这一类缺陷**
+ * （`domainWrite` 的首触必丢就是这一类，见 A-1）。所以：
+ *
+ * - 新增的、与"加载窗口 / 首触写 / 就绪时机"有关的用例**必须显式切到异步**：
+ *   `createFakeStoragePort({ asyncLoad: true })` 或构造后 `port.__setAsyncLoad(true)`；
+ * - 改动任何写/读路径的就绪判据时，顺手加一条异步模式用例 —— 否则修好的东西没人守。
+ *
  * ## 它不是什么
  *
  * - **不是** wire 契约的替身：Rust 侧真实契约由 `cargo test` 的契约测试 + 真机验证守住。
@@ -67,12 +84,6 @@ export interface FakeStoragePortOptions {
   /** 模拟落库失败（验证"写穿失败必须如实上报"的反向用例） */
   failWrites?: boolean;
   /**
-   * 端口标识（默认 `"rust"`）。
-   *
-   * 设为 `"wasm"` 用来模拟**回滚开关切到旧引擎**的形态：此时读/写路径应走旧库。
-   */
-  kind?: "rust" | "wasm";
-  /**
    * 这些表**永不就绪**：`isReady` 恒为 false。
    *
    * 用来模拟"端口在、但镜像没就绪"（加载中 / 超上限被拒 / LRU 逐出 / 被截断）——
@@ -92,6 +103,25 @@ export interface FakeStoragePortOptions {
    * （`self-heal` 的判据要求"旧库确有可恢复内容"才会恢复）。
    */
   legacyMessageRows?: number;
+  /**
+   * **异步就绪模式**（默认 `false`，A-7）。
+   *
+   * 打开后 `domains.ensureLoaded` 不再同步就绪，而是把"完成加载"排到下一个微任务，
+   * 于是"调用 ensureLoaded"与"isReady 为真"之间真的存在一个窗口 —— 与真端口的
+   * 异步 IPC 同形。**验证"加载窗口"语义的用例必须打开它**；
+   * 既有用例默认保持同步（理由见文件头）。
+   */
+  asyncLoad?: boolean;
+  /**
+   * `storage.compact` 的测试双开关：**要模拟"真的回收了 N 字节"就设它**
+   * （默认 `0` = `performed: false`，与真机小库的实际形态一致）。
+   */
+  compactReclaims?: number;
+  /**
+   * `integrity_check` 的测试双开关：设成一段细节文本即表示**检查失败**
+   * （用来验"页损坏 → 写索引重建标记 + 如实上报"那条路径）。
+   */
+  integrityFailure?: string;
 }
 
 export interface FakeStoragePort extends StoragePort {
@@ -101,6 +131,13 @@ export interface FakeStoragePort extends StoragePort {
   __writeFailures(): number;
   /** 端口累计落库的写命令（断言"确实写穿了"，而不是只改了内存） */
   __writes(): Array<{ command: string; params?: Record<string, unknown> }>;
+  /**
+   * 运行期切换"异步就绪"（A-7）。
+   *
+   * 为什么要有 setter 而不只是构造参数：部分用例的形状是"先建端口 → 塞数据 →
+   * 切模式 → 触发一次写"，构造参数在这一类里用不上。
+   */
+  __setAsyncLoad(on: boolean): void;
 }
 
 export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeStoragePort {
@@ -148,6 +185,25 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       }
       return rows.length;
     }
+    /*
+     * `settings.set`：真引擎 `repo::settings_set` 是 `INSERT … ON CONFLICT(key) DO UPDATE`。
+     *
+     * ⚠️ 补它的理由（第 45 轮）：假端口原来对这条命令**什么都不做**（落到末尾 `return 0`），
+     * 于是**任何"把状态写进 settings"的生产代码在测试里都静默不生效**。
+     * 实测踩到：`self-heal` 的内容水位、完整性检查的节流时间戳都写不进去 ——
+     * 于是"水位写下了没有""12 小时内不重复跑"这些契约在测试里根本验不了，
+     * 而且用例红点看起来像被测代码的错（其实是基座缺了这条命令）。
+     */
+    if (command === "settings.set") {
+      const key = String((params as { key?: unknown } | undefined)?.key ?? "");
+      if (!key) throw new Error("fake-port: settings.set 需要 key");
+      const value = String((params as { value?: unknown } | undefined)?.value ?? "");
+      const target = table("settings");
+      const idx = target.findIndex((r) => r.key === key);
+      if (idx >= 0) target[idx] = { ...target[idx], value };
+      else target.push({ key, value });
+      return 1;
+    }
     if (command === "crud.delete") {
       const name = String(params?.table ?? "");
       const where = (params?.where as Record<string, unknown> | undefined) ?? {};
@@ -155,6 +211,55 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       const removed = table(name).length - kept.length;
       tables.set(name, kept);
       return removed;
+    }
+    /**
+     * `feedback.set`（轻量路径，见 `config.rs::feedback_set`）。
+     *
+     * ## 为什么必须实现它（第 44 轮：测试双不能比实现宽松）
+     *
+     * 真实现是"**先按 message_id 整行 DELETE，再 INSERT 这 5 列**"
+     * （`message_id / session_id / feedback / timestamp` + 主键）。
+     * 也就是说：**它会抹掉它不认识的那四列**（`note` / `version` / `created_at` / `updated_at`）。
+     *
+     * 真 CLI 实测的后果：先用 9 列域写写入 note/version，再来一次 5 列的 `feedback.set`，
+     * 读回来 `note` / `version` / `created_at` / `updated_at` **全变成 NULL**。
+     * 而假端口原来对这条命令什么都不做（落到末尾 `return 0`），于是
+     * "一次点击把备注与版本号抹掉"这个真实缺陷**在测试基座里完全看不见**。
+     *
+     * 现在按真实现逐条对齐，包括它最不讨人喜欢的那一面：
+     * - 先删该 message_id 的所有行，再插一行 5 列（四列写 NULL）；
+     * - `feedback` 只允许 `like` / `dislike`；`null`/`undefined`/空串 = 取消（只删不插）。
+     *   真引擎对非法值直接报错（`参数 feedback 不合法：只允许 like / dislike（或 null 取消）`），
+     *   这里同样报错 —— 否则"写了个库里存不进去的值"在测试里会被静默放过。
+     */
+    if (command === "feedback.set") {
+      const messageId = String(params?.message_id ?? "");
+      if (!messageId) throw new Error("fake-port: feedback.set 缺少 message_id");
+      const feedback = params?.feedback;
+      const target = table("message_feedback");
+      tables.set(
+        "message_feedback",
+        target.filter((r) => r.message_id !== messageId),
+      );
+      if (feedback === null || feedback === undefined || feedback === "") return 0; // 取消反馈
+      if (feedback !== "like" && feedback !== "dislike") {
+        throw new Error(
+          `fake-port: feedback.set 只允许 like / dislike（或 null 取消），收到 ${String(feedback)}`,
+        );
+      }
+      table("message_feedback").push({
+        id: `fb-${messageId}`,
+        message_id: messageId,
+        session_id: String(params?.session_id ?? ""),
+        feedback,
+        timestamp: Number(params?.timestamp ?? Date.now()),
+        // 真实现不写这四列 → NULL（这正是"5 列路径会抹掉它们"的机制）
+        note: null,
+        version: null,
+        created_at: null,
+        updated_at: null,
+      });
+      return 1;
     }
     /**
      * 索引写命令：真实 Rust 侧是单事务复合命令（主行 + 两个 JSON 列 + 整批替换 tool_calls）。
@@ -246,24 +351,34 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     }
     if (command === "messages.delete") {
       /*
-       * 软删除（压缩走这条）：把 `hidden` 置 1。
+       * 软删除（压缩走这条）：把 `hidden` 置 1；裁剪（`trim: true`）额外置 `trimmed = 1`。
        *
        * 为什么假端口必须实现它（第 39 轮）：Rust 侧 `messages_delete` 支持 `soft: true`，
        * 而假端口早先对这条命令**什么都不做** → 镜像里那些行仍是 `hidden=0` →
        * 读路径照常返回它们 → 一批"压缩后不该复活"的用例**假绿**
        * （掩盖了真实端口上的行为）。测试双不得比实现更宽松。
        *
+       * `trim`（第 44 轮）必须逐字对齐真实现：真引擎写的是
+       * `UPDATE messages SET hidden = 1, trimmed = 1` —— 因为它与"压缩隐藏"
+       * （只设 hidden）**语义相反**（前者读路径要保留、后者要排除），
+       * 而两者的区别是**库里的持久事实**。假端口若只设 `hidden`，
+       * 那么"被裁的历史仍然读得到"这条不变量在测试里就永远测不出来。
+       *
        * `soft` 未给或为 false 时按硬删除（与 Rust 侧默认一致）。
        */
       const ids = (params?.ids as string[] | undefined) ?? [];
-      const soft = params?.soft === true;
+      const trim = params?.trim === true;
+      const soft = params?.soft === true || trim;
       const target = table("messages");
       let n = 0;
       for (const id of ids) {
         const idx = target.findIndex((r) => r.id === id);
         if (idx < 0) continue;
-        if (soft) target[idx] = { ...target[idx], hidden: 1 };
-        else target.splice(idx, 1);
+        if (soft) {
+          target[idx] = trim
+            ? { ...target[idx], hidden: 1, trimmed: 1 }
+            : { ...target[idx], hidden: 1 };
+        } else target.splice(idx, 1);
         n++;
       }
       return n;
@@ -346,13 +461,57 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         const hit = table(scope).find((r) => r.id === id);
         return hit ? (cloneRow(hit) as any) : undefined;
       },
-      hiddenIds: (sid: string) => new Set(rowsFor(sid).filter((r) => Number(r.hidden ?? 0) === 1).map((r) => String(r.id))),
+      /**
+       * 只返回**上下文压缩隐藏**的 id（`hidden=1 && trimmed≠1`）—— 与真镜像逐字对齐。
+       *
+       * `hidden` 被两条语义相反的路径共用：压缩（读路径要排除）与索引裁剪
+       * （读路径要**保留**，否则用户看不到自己的历史）。引擎把裁剪写成
+       * `hidden=1, trimmed=1`，读路径据此区分；假端口若只认 `hidden`，
+       * 就会把"被裁掉的历史"当成"已压缩"而从读集合里赶走 ——
+       * 那正是 `session-jsonl-index.test.ts` 的 SLOG-6/SLOG-8 要守的东西
+       * （实测：不区分时 12 条会变成 3 条）。
+       */
+      hiddenIds: (sid: string) =>
+        new Set(
+          rowsFor(sid)
+            .filter((r) => Number(r.hidden ?? 0) === 1 && Number(r.trimmed ?? 0) !== 1)
+            .map((r) => String(r.id)),
+        ),
+      /**
+       * 索引裁剪的镜像同步（第 44 轮）：**改标记而不是移除行**。
+       *
+       * 真引擎只把行改成 `hidden = 1, trimmed = 1`（行还在库里，`message_feedback`
+       * 的外键目标必须留着）；镜像若把行删掉就比引擎"更狠"，下一次整会话加载两边不一致。
+       */
+      applyTrim: (sid: string, ids: string[]) => {
+        const wanted = new Set(ids);
+        const target = table(scope);
+        for (const r of target) {
+          if (r[sessionColumn] === sid && wanted.has(String(r.id))) {
+            r.hidden = 1;
+            r.trimmed = 1;
+          }
+        }
+      },
       applyWrite: (row: Row) => {
         const pk = primaryKeyOf(scope);
         const target = table(scope);
         const idx = target.findIndex((r) => r[pk] === row[pk]);
-        if (idx >= 0) target[idx] = { ...target[idx], ...cloneRow(row) };
-        else target.push(cloneRow(row));
+        /*
+         * 同样按"未提供 = 保留已有值"合并（A-3/A-7）。
+         *
+         * `writeIndexViaRust` 不传 `hidden`（流式更新不该碰软删除状态），
+         * 若这里把 `hidden: undefined` 展开进去，就等于"每次更新都把已压缩的消息复活" ——
+         * 真实端口早先正是这么错的，而假端口当时是"合并进共享表、恰好保住了 hidden"，
+         * 于是那个缺陷在测试里看不见（测试双比实现宽松的典型形态）。
+         */
+        const patch: Row = {};
+        for (const [k, v] of Object.entries(row)) {
+          if (v === undefined) continue;
+          patch[k] = v;
+        }
+        if (idx >= 0) target[idx] = { ...target[idx], ...cloneRow(patch) };
+        else target.push(cloneRow(patch));
         /*
          * ⚠️ **不要**在这里把会话标记为已加载（第 39 轮修正）。
          *
@@ -542,12 +701,40 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
   };
 
   // ===== 数据面 =====
+  /**
+   * `execute` 的入口：真端口里 `execute` 与 `command` 是**同一条 dispatch**
+   * （差别只在返回值的整形），而假端口的额外能力都实现在 `persist()` 里 ——
+   * 所以这里保持"转发到 persist"这一层，不做别的事。
+   */
+  function writeCommand(command: string, params?: Record<string, unknown>): number {
+    return persist(command, params);
+  }
+
   const data: StorageDataPort = {
     async query<T>(command: string, params?: Record<string, unknown>, page?: PageRequest): Promise<Page<T>> {
       const name = String(params?.table ?? command.split("_")[0] ?? "");
       let rows = table(name).map(cloneRow) as T[];
       const where = params?.where as Record<string, unknown> | undefined;
       if (where) rows = rows.filter((r) => matches(r as Row, where)) as T[];
+      /**
+       * `columns` 参数必须**真的生效**（第 20 轮）。
+       *
+       * 真引擎的 `crud.list` 支持"只取指定列"，并在引擎侧核对列名
+       * （`crud.rs::check_columns`，列不存在直接报错）。假端口早先**忽略这个参数** ——
+       * 于是"按需只取某一列"（`file-change-tracker.ts::fetchPatchById` 取 `patch` 正文）
+       * 在测试里看起来也对（整行返回、字段都在），而真机上"忘了传 columns"
+       * 或"列名拼错"都不会被发现。测试双不得比实现宽松。
+       */
+      const columns = params?.columns;
+      if (Array.isArray(columns) && columns.length > 0) {
+        const wanted = columns.map(String);
+        rows = rows.map((r) => {
+          const src = r as Row;
+          const picked: Row = {};
+          for (const c of wanted) if (c in src) picked[c] = src[c];
+          return picked as T;
+        });
+      }
       const total = rows.length;
       const limit = page?.limit ?? total;
       const offset = page?.offset ?? 0;
@@ -555,11 +742,28 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     },
     async write(commands) {
       let written = 0;
-      for (const c of commands) written += persist(c.command, c.params);
+      for (const c of commands) written += writeCommand(c.command, c.params);
       return { written };
     },
     async execute(command: string, params?: Record<string, unknown>) {
-      return { written: persist(command, params) };
+      /*
+       * ⚠️ **落库失败必须 reject，不能"记账 + 返回 {written:0}"**（第 20 轮修正）。
+       *
+       * 真端口的 `RustDataPort.execute` 在引擎报错时是 **reject**（`call()` 里
+       * `unwrap` 直接抛）—— 而这里早先 catch 掉自己抛的错、只把计数加一就返回，
+       * 于是"写穿失败"在测试里**永远走不到调用方的 `.catch`**：
+       * 上报通道、重试、以及"失败要如实上报"这条纪律全都没有被真正执行过。
+       * 测试双比实现宽松，正是本仓库一直在消灭的那类偏差。
+       *
+       * `writeFailures` 计数保留（既有用例用它断言"失败被记账"）。
+       *
+       * 第 45 轮：`settings.set` 改走 `writeCommand`（与 `command` 分支共用同一个实现）——
+       * 真端口里 `execute` 与 `command` **是同一条 dispatch**，差别只在返回值的整形。
+       * 假端口原来 `settings.set` 落到末尾的通用 `persist`（不动任何表），
+       * 于是"把状态写进 settings"的生产代码在测试里**静默不生效**：
+       * 实测踩到完整性检查的节流时间戳写不进去。
+       */
+      return { written: writeCommand(command, params) };
     },
     /**
      * **结构化命令**（与真实 `RustDataPort.command` 对应）。
@@ -605,6 +809,54 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         return { count: table(name).length, table: name } as unknown as T;
       }
       /**
+       * `crud.list`（**读**命令）：真实现见 `codem-db/src/crud.rs::crud_list`。
+       *
+       * 为什么必须给 `command` 也补上它（第 20 轮）：
+       * 「按需只取某一列」这条路径（`file-change-tracker.ts::fetchPatchById` 用
+       * `crud.list` + `columns: ["patch"]` + `where: { id }` 取补丁正文）走的是
+       * `data.command`。假端口早先只给 `data.query` 实现了 `crud.list`，
+       * 于是同一条命令经 `command` 发出时落到末尾的
+       * `throw 未实现的命令 crud.list` —— 测试里表现为"取补丁失败"，
+       * 掩盖的是**假端口的缺口**，不是产品的行为。
+       *
+       * 逐条对齐真引擎：`columns` 缺省 = 整行，给了就只返回那些列；
+       * **列名必须真实存在**（真引擎 `check_columns` 会报错，这里同样报错，
+       * 否则"列名拼错"在测试里被静默忽略）；`where` 只支持等值匹配；
+       * 返回 `{items, has_more, next_cursor}`。
+       */
+      if (command === "crud.list") {
+        const name = String(params?.table ?? "");
+        const src = table(name);
+        // 列名核对：只按"表里已有行"的键判断（空表无从核对，与真引擎的 schema 核对不同，
+        // 但足以挡住拼错的列名）
+        if (src.length > 0) {
+          const known = new Set(Object.keys(src[0]));
+          const check = (cols: string[]) => {
+            for (const c of cols) {
+              if (!known.has(c)) throw new Error(`fake-port: 表 ${name} 没有列 ${c}`);
+            }
+          };
+          check(Object.keys((params?.where as Record<string, unknown> | undefined) ?? {}));
+          if (Array.isArray(params?.columns)) check((params?.columns as unknown[]).map(String));
+        }
+        let rows = table(name).map(cloneRow);
+        const where = (params?.where as Record<string, unknown> | undefined) ?? {};
+        if (Object.keys(where).length > 0) rows = rows.filter((r) => matches(r, where));
+        const cols = params?.columns;
+        if (Array.isArray(cols) && cols.length > 0) {
+          const wanted = cols.map(String);
+          rows = rows.map((r) => {
+            const picked: Row = {};
+            for (const c of wanted) if (c in r) picked[c] = r[c];
+            return picked;
+          });
+        }
+        const limit = Number(params?.limit ?? rows.length);
+        const offset = Number(params?.offset ?? 0);
+        const items = rows.slice(offset, offset + limit);
+        return { items, has_more: offset + items.length < rows.length, next_cursor: null } as unknown as T;
+      }
+      /**
        * `migration.auto`：测试双按"从旧库搬 N 条消息"的等价语义实现 ——
        * `dry_run` 只报数（旧库探测），真跑则把 N 行写进 messages 表
        * （真实侧是整库重灌；这里只需要"搬运后行数变了"这个可观测效果）。
@@ -638,6 +890,26 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
        * 否则"用 command 调一条已实现的命令"会在测试里报"未实现"（AR-4 踩到的就是它）。
        */
       const written = persist(command, params);
+      /**
+       * ⚠️ `settings.set` 在这里**不走 `persist`**（`persist` 对它什么都不做），
+       * 而是就地更新 `settings` 表 —— 真引擎 `repo::settings_set` 是
+       * `INSERT … ON CONFLICT(key) DO UPDATE`。
+       *
+       * 为什么要补（第 45 轮）：`settings.set` 原来落到末尾的通用 `persist`（返回 0、不动表），
+       * 于是**任何"把状态写进 settings"的生产代码在测试里都静默不生效**。
+       * 实测踩到：完整性检查的节流时间戳写不进去 → "12 小时内不重复"这条契约验不了，
+       * 而且红点看起来像被测代码的错（其实是基座缺了这条命令）。
+       */
+      if (command === "settings.set") {
+        const key = String((params as { key?: unknown } | undefined)?.key ?? "");
+        if (!key) throw new Error("fake-port: settings.set 需要 key");
+        const value = String((params as { value?: unknown } | undefined)?.value ?? "");
+        const target = table("settings");
+        const idx = target.findIndex((r) => r.key === key);
+        if (idx >= 0) target[idx] = { ...target[idx], value };
+        else target.push({ key, value });
+        return { written: 1, key } as unknown as T;
+      }
       if (command === "messages.rebuild_index") {
         const sessions = (params?.sessions as Array<{ messages?: unknown[] }> | undefined) ?? [];
         return { written, sessions: sessions.length, messages: written } as unknown as T;
@@ -654,19 +926,184 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
           .map((r) => ({ id: String(r.id), path: String(r.content).slice("file:".length) }));
         return { items, count: items.length } as unknown as T;
       }
+      /*
+       * ===== 第 45 轮接线的四条引擎命令 =====
+       *
+       * 它们原来在假端口里落到末尾的 `throw 未实现的命令` —— 于是"维护接了它们"
+       * 这件事在测试里**只能测到失败分支**（真实语义一条都测不到）。
+       * 这里按真引擎的返回形状逐条实现（`lib.rs::audit_prune` / `audit_stats` /
+       * `storage_compact`、`engine.rs::integrity_check`），
+       * 并保留"测试双不得比实现更宽松"这条要求：形状与字段名逐字对齐。
+       */
+      /*
+       * `settings.set`：真引擎 `repo::settings_set` 是 `INSERT … ON CONFLICT(key) DO UPDATE`。
+       *
+       * ⚠️ 补它的理由（第 45 轮）：假端口原来对这条命令落到"通用 persist 返回 0"——
+       * 于是**任何"把状态写进 settings"的生产代码在测试里都静默不生效**。
+       * 实测踩到：完整性检查的节流时间戳写不进去 → 第二次维护又跑满一次 `quick_check`
+       * （"12 小时内不重复"这条契约在测试里根本验不了），而且用例的红点是
+       * "读不到时间戳"，看起来像被测代码的错。
+       */
+      if (command === "settings.set") {
+        const key = String((params as { key?: unknown } | undefined)?.key ?? "");
+        if (!key) throw new Error("fake-port: settings.set 需要 key");
+        const value = String((params as { value?: unknown } | undefined)?.value ?? "");
+        const target = table("settings");
+        const idx = target.findIndex((r) => r.key === key);
+        if (idx >= 0) target[idx] = { ...target[idx], value };
+        else target.push({ key, value });
+        return { written: 1, key } as unknown as T;
+      }
+      if (command === "audit.prune") {
+        const before = Number((params as { before?: unknown } | undefined)?.before ?? NaN);
+        // 真引擎里 `before` 是**必填**（`repo::req_i64`），缺了直接报错
+        if (!Number.isFinite(before)) {
+          throw new Error("fake-port: audit.prune 需要 before（毫秒水位线，真引擎里是必填）");
+        }
+        /** `storage_audit` 的现状（真引擎 `audit.stats` 的等价实现：行数 / 最早 / 最晚） */
+        const auditStats = () => {
+          const rows = table("storage_audit");
+          if (rows.length === 0) return { count: 0, oldest: null as number | null, newest: null as number | null };
+          const times = rows.map((r) => Number(r.at ?? 0));
+          return { count: rows.length, oldest: Math.min(...times), newest: Math.max(...times) };
+        };
+        const target = table("storage_audit");
+        const kept = target.filter((r) => Number(r.at ?? 0) >= before);
+        const removed = target.length - kept.length;
+        tables.set("storage_audit", kept);
+        const stats = auditStats();
+        return {
+          removed,
+          before,
+          remaining: stats.count,
+          oldest: stats.oldest,
+          newest: stats.newest,
+        } as unknown as T;
+      }
+      if (command === "audit.stats") {
+        const rows = table("storage_audit");
+        if (rows.length === 0) {
+          return { count: 0, oldest: null, newest: null } as unknown as T;
+        }
+        const times = rows.map((r) => Number(r.at ?? 0));
+        return {
+          count: rows.length,
+          oldest: Math.min(...times),
+          newest: Math.max(...times),
+        } as unknown as T;
+      }
+      if (command === "storage.compact") {
+        /**
+         * 真引擎按阈值（默认 8 MiB 且 25%）决定做不做整库重写。
+         *
+         * 内存假端口没有页/空闲页的概念，用一个显式开关模拟两种形态 ——
+         * **默认走 `performed: false`**（小库的正常形态，真机探针实测同一份库就是它）。
+         * `opts.compactReclaims` 用来验"跑了并回收了 N 字节"那一条分支。
+         */
+        const reclaim = opts.compactReclaims ?? 0;
+        if (reclaim <= 0) {
+          return {
+            performed: false,
+            reason: "空闲页规模未达阈值（不做整库重写）",
+            page_size: 4096,
+            page_count: 0,
+            freelist_count: 0,
+            free_bytes: 0,
+            free_ratio: 0,
+            auto_vacuum: 2,
+          } as unknown as T;
+        }
+        return {
+          performed: true,
+          before_bytes: reclaim * 2,
+          after_bytes: reclaim,
+          reclaimed_bytes: reclaim,
+          freelist_before: Math.ceil(reclaim / 4096),
+          freelist_after: 0,
+          auto_vacuum_before: 0,
+          auto_vacuum_after: 2,
+          elapsed_ms: 10,
+        } as unknown as T;
+      }
+      if (command === "integrity_check") {
+        // 真引擎：`PRAGMA quick_check` → `{ ok, detail }`
+        return (opts.integrityFailure
+          ? { ok: false, detail: opts.integrityFailure }
+          : { ok: true, detail: "ok" }) as unknown as T;
+      }
       throw new Error(`fake-port: 未实现的命令 ${command}（测试双不得比实现更宽松）`);
     },
   };
 
   // ===== 通用域镜像（`domainPort` 只认 rust，且要求 domains.ensureLoaded 存在）=====
   const ready = new Set<string>();
+  /** 正在加载的表（异步就绪模式下的"加载窗口"） */
+  const loading = new Set<string>();
+  let asyncLoad = opts.asyncLoad ?? false;
+  /**
+   * 走完一次"加载"：标为就绪并通知**所有**等待者。
+   *
+   * ⚠️ **顺序有意为之**：先 `loading.delete` 再 `ready.add`，最后才回调 ——
+   * 真端口里 `loading` 是在 `finally` 里清掉的，回调则在 `.then` 里按"isReady"
+   * 过滤。三者顺序错了，"就绪回调"与"仍在加载"就会同时为真，
+   * 写路径会既排队又当场写，重放就变成重复写。
+   *
+   * ⚠️ **回调必须攒起来、加载完成时全部触发**（第 20 轮修正）。
+   * 真实端口的 `ensureLoaded` 在 `loading` 期间会把 `onLoaded` 挂到
+   * **已经在途的那个 job** 上（`this.loading.get(table)?.then(...)`），
+   * 所以"窗口期内再注册一个回调"同样是有效的。早先这里在 `loading` 时直接
+   * `return`，那个回调就**永远不触发** —— 于是"我要等这批数据就绪"这类调用
+   * （`domainEnsureLoaded`、以及写队列的重放）在假端口的异步模式下静默失效。
+   */
+  const pendingCallbacks = new Map<string, Array<() => void>>();
+  const completeLoad = (name: string, onLoaded?: () => void) => {
+    loading.delete(name);
+    ready.add(name);
+    onLoaded?.();
+    for (const cb of pendingCallbacks.get(name) ?? []) cb();
+    pendingCallbacks.delete(name);
+  };
   /** 永不就绪的表（B 态载体）：见 FakeStoragePortOptions.neverReady */
   const neverReady = new Set(opts.neverReady ?? []);
   const domains = {
     isReady: (name: string) => ready.has(name) && !neverReady.has(name),
+    /**
+     * 真端口的 `isLoading`（A-1 的判据来源）。
+     *
+     * `neverReady` 的表**不算"加载中"**：它是"永远不会就绪"（超上限被拒 / 加载失败），
+     * 写路径对这两种态的处置不同（前者排队、后者如实返回"未接手"）——
+     * 假端口必须保住这条区分，否则它会比实现更宽松。
+     */
+    isLoading: (name: string) => loading.has(name) && !neverReady.has(name),
     ensureLoaded: (name: string, onLoaded?: () => void) => {
-      ready.add(name);
-      onLoaded?.();
+      if (neverReady.has(name)) return; // 永不就绪：不回调，与真端口"加载失败不回调"一致
+      if (ready.has(name)) {
+        onLoaded?.();
+        return;
+      }
+      if (loading.has(name)) {
+        // 已在加载：把回调挂到"这次加载完成时"（真端口挂的是在途 job，语义一致）
+        if (onLoaded) {
+          const list = pendingCallbacks.get(name) ?? [];
+          list.push(onLoaded);
+          pendingCallbacks.set(name, list);
+        }
+        return;
+      }
+      if (!asyncLoad) {
+        completeLoad(name, onLoaded);
+        return;
+      }
+      /*
+       * **异步就绪**：把"完成加载"排到下一个微任务。
+       *
+       * 这就是 A-1 的复现条件 —— 同一次同步调用里先 `ensureLoaded()` 再判 `isReady()`，
+       * 在真端口上必然拿到"还没好"。默认关掉它是为了不动既有基线（见文件头）。
+       */
+      loading.add(name);
+      void Promise.resolve().then(() => {
+        if (loading.has(name)) completeLoad(name, onLoaded);
+      });
     },
     all<R>(name: string): R[] {
       return table(name).map(cloneRow) as R[];
@@ -684,8 +1121,21 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     applyWrite(name: string, row: Row, primaryKey = primaryKeyOf(name)) {
       const target = table(name);
       const idx = target.findIndex((r) => r[primaryKey] === row[primaryKey]);
-      if (idx >= 0) target[idx] = { ...target[idx], ...cloneRow(row) };
-      else target.push(cloneRow(row));
+      /*
+       * ⚠️ **未提供的列不许把已有值抹成 0/undefined**（A-7/A-3）。
+       *
+       * 早先这里直接 `{...target[idx], ...row}`：一旦某个调用点传进来的行里
+       * 带着 `hidden: undefined`（"我没要改这一列"），展开就会**覆盖**掉已有值。
+       * 真实端口在 `RustMessageMirror.applyWrite` 里的处置是"未提供 = 保留"，
+       * 假端口必须与之一致 —— 测试双比实现宽松，缺陷就永远测不出来。
+       */
+      const patch: Row = {};
+      for (const [k, v] of Object.entries(row)) {
+        if (v === undefined) continue;
+        patch[k] = v;
+      }
+      if (idx >= 0) target[idx] = { ...target[idx], ...cloneRow(patch) };
+      else target.push(cloneRow(patch));
       ready.add(name);
     },
     applyWriteMany(name: string, rows: Row[], primaryKey = primaryKeyOf(name)) {
@@ -805,6 +1255,7 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       configDomain,
       applyMessageWrite: (row: Row) => messages.applyWrite(row),
       applyMessageDelete: (sid: string, ids: string[]) => messages.removeByIds(sid, ids),
+      applyMessageTrim: (sid: string, ids: string[]) => messages.applyTrim(sid, ids),
       appendEventAsync: (sid: string, type: string, payload: string, timestamp: number, placeholderSeq: number) => {
         try {
           /**
@@ -869,6 +1320,19 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
           anchor.payload = payload;
           anchor.timestamp = Date.now();
           persist("events.compact", { session_id: sid, snapshot_seq: snapshotSeq, cutoff_seq: cutoffSeq, payload });
+          /*
+           * ⚠️ 与真 SQL **逐字一致**（A-7，第 20 轮）。
+           *
+           * `repo.rs::events_compact` 的第二条只有两个条件：
+           * ```sql
+           * DELETE FROM session_events
+           *  WHERE session_id = ?1 AND seq < ?2 AND event_type <> 'session_meta'
+           * ```
+           * 本假端口早先还多两条豁免（`seq !== snapshotSeq`、`event_type !== "session_snapshot"`），
+           * 于是它**比真引擎宽松**：真机上"快照被自己的删除规则带走"（症状是压缩后
+           * 整段历史消失）在测试里永远不会发生。测试双比实现宽松 = 缺陷测不出来，
+           * 所以这两条豁免删除。
+           */
           tables.set(
             "session_events",
             table("session_events").filter(
@@ -876,9 +1340,7 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
                 !(
                   r.session_id === sid &&
                   Number(r.seq) < cutoffSeq &&
-                  Number(r.seq) !== snapshotSeq &&
-                  r.event_type !== "session_meta" &&
-                  r.event_type !== "session_snapshot"
+                  r.event_type !== "session_meta"
                 ),
             ),
           );
@@ -913,6 +1375,9 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     },
     __writes() {
       return writeLog.map((w) => ({ ...w }));
+    },
+    __setAsyncLoad(on: boolean) {
+      asyncLoad = on;
     },
   } as FakeStoragePort;
 }

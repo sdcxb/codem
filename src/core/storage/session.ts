@@ -1,5 +1,6 @@
 import { getEventLog } from "./event-log";
 import type { Session } from "../types";
+import { appendSessionTombstone } from "./session-jsonl";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
 /**
@@ -21,9 +22,29 @@ import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNo
  */
 const SESSION_TABLE = "sessions";
 
+/**
+ * 拖拽排序的落点（B-6）。
+ *
+ * `sort_order` 一直是**"写了但没人读"**的一列：`reorderSessions` 写它，
+ * 而 `listSessions` 只按 `pinned DESC, last_message_at DESC` 排 —— 于是拖拽之后
+ * 下一次 list 就把它盖掉了（UI 上表现为"拖完弹回原位"）。
+ *
+ * 这里不去动 `Session` 类型（它在 `src/core/types.ts`，不在本批所有权内），
+ * 而是把这一列**挂在这个模块自己的映射上**：读取时捕获、写回时带上、排序时使用。
+ * 好处是零类型改动、零跨文件影响；代价是"排序值"不随 `Session` 对象外流 ——
+ * 而它本来也不该外流（UI 不该关心排序键，它只该收到排好序的列表）。
+ */
+const sessionSortOrder = new Map<string, number>();
+
 function wireToSession(row: Record<string, unknown>): Session {
+  const id = String(row.id ?? "");
+  // 捕获排序键（同一次读出顺手记下，避免再查一次库）
+  const rawOrder = row.sort_order;
+  if (rawOrder !== null && rawOrder !== undefined && Number.isFinite(Number(rawOrder))) {
+    sessionSortOrder.set(id, Number(rawOrder));
+  }
   return {
-    id: String(row.id ?? ""),
+    id,
     projectId: String(row.project_id ?? ""),
     title: String(row.title ?? ""),
     model: (row.model as string) ?? undefined,
@@ -57,6 +78,15 @@ function sessionToWire(s: Session): Record<string, unknown> {
     correction_mode: s.correctionMode ?? null,
     deep_thinking_mode: s.deepThinkingMode ?? null,
     preserve_executor: s.preserveExecutor ?? null,
+    /**
+     * `sort_order` 必须一起写回（B-6）。
+     *
+     * 这条路径是"读出整行 → 改几个字段 → 整体 replace 写回"（见 `updateSession` /
+     * `togglePinned` / `forkSession`）—— 而 Rust 侧的 upsert 是**按传入列**写的：
+     * 不带上这一列，`replace` 语义就会把用户的拖拽顺序**清成 NULL**。
+     * 显式写 `null` 也是一种表达（"这个会话没有排序键"），所以用 `?? null` 而不是省略键。
+     */
+    sort_order: sessionSortOrder.get(s.id) ?? null,
   };
 }
 
@@ -119,11 +149,33 @@ function rowToSessionFromAny(row: any[]): Session {
 export function listSessions(projectId: string): Session[] {
   const rust = domainReadMany(SESSION_TABLE, wireToSession, { project_id: projectId });
   if (rust) {
-    // 旧 SQL：ORDER BY pinned DESC, last_message_at DESC
+    /**
+     * 排序：`pinned DESC, sort_order ASC, last_message_at DESC`（B-6）。
+     *
+     * 旧 SQL 是 `ORDER BY pinned DESC, last_message_at DESC`（端口化之后由这里承担）。
+     * 第一段（`pinned DESC`）语义不变，**新增的只是中间那段 `sort_order ASC`**。
+     *
+     * ## 为什么必须让 `sort_order` 参与
+     *
+     * 它原来是"写了没人读"：`reorderSessions` 老老实实写 `sort_order`，
+     * 而这里只按 `pinned` + `last_message_at` 排 —— 拖拽之后**下一次 list 就弹回原位**，
+     * 交互等于纯装饰。UI 既然已经暴露了拖拽（`Sidebar.tsx`），写点就不能是假的。
+     *
+     * ## `?? Number.MAX_SAFE_INTEGER` 的语义（这是"默认值"的关键）
+     *
+     * 从未拖拽过的会话 `sort_order` 是 NULL。绝**不能**用 `?? 0`：那会让它们全部排到
+     * 已拖拽会话（0、1、2…）**前面**，于是"用户刚拖过的顺序"被一堆没拖过的会话顶下去 ——
+     * 比不排序还糟。给一个"最大"值，等价于"全都跟在有排序键的会话后面"，
+     * 组内再按 `last_message_at DESC` → **默认就是时间序**（与拖拽前完全一致）。
+     */
     return rust.sort((a, b) => {
       const pa = a.pinned ? 1 : 0;
       const pb = b.pinned ? 1 : 0;
-      return pa !== pb ? pb - pa : b.lastMessageAt - a.lastMessageAt;
+      if (pa !== pb) return pb - pa;
+      const oa = sessionSortOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const ob = sessionSortOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      if (oa !== ob) return oa - ob;
+      return b.lastMessageAt - a.lastMessageAt;
     });
   }
   return []; // 第 17 轮（L4）：旧库回退（ORDER BY pinned/last_message_at）已删 —— 空结果
@@ -197,8 +249,35 @@ export function updateSession(id: string, update: Partial<Session>): void {
  *
  * 用户点"删除会话"是明确的破坏性意图，所以 UI 路径传 `confirmBulk: true`；
  * 而**任何非交互路径**（自动清理、对账、修复）都不该传 —— 那正是闸门要拦的。
+ *
+ * ## B-1：删除必须**同时写会话墓碑**（否则索引重建会把整批会话复活）
+ *
+ * 缺陷机制（已核实）：
+ * 1. 这里只删 `sessions` 那一行（Rust 侧按外键级联删消息等）；
+ * 2. 权威 JSONL 日志**一个字节没动**（这是对的，见 `deleteSessionLog` 的注释：
+ *    日志删了不可恢复，删除要靠墓碑表达）；
+ * 3. 但 `rebuildIndexFromSessionLogs` 的输入清单来自**磁盘上的 JSONL 文件**
+ *    （`listSessionLogs()`），Rust 侧 `messages_rebuild_index` 对 `sessions`
+ *    又是**无条件 upsert**、不看任何"已删除"标记；
+ * 4. ⇒ 索引一旦需要重建（损坏自动恢复、写过重建标记），**用户删掉的会话整批回来**。
+ *
+ * 修法：删除会话时往**它自己的日志**里追加一条会话墓碑（`appendSessionTombstone`），
+ * 重建时读墓碑并跳过（跳过要如实计数并上报，见 `rebuildIndexFromSessionLogs` 的
+ * `skippedDeleted`）。墓碑与消息墓碑同处一文件、同一种格式 —— 只有一份真相。
+ *
+ * ⚠️ 顺序：**先写墓碑、再删行**。
+ * - 先写墓碑：即使随后的删除失败（网络/引擎报错），后果是"会话被标记为已删但行还在"
+ *   —— 用户还能看到它（可重试删除），数据没丢；
+ * - 反过来先删行再写墓碑：万一墓碑写失败，重建就会把会话复活，且**没有任何痕迹**表明
+ *   用户删过它。两害相权，前者是"多留一条待清理的记录"，后者是"删除被静默撤销"。
  */
 export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}): void {
+  /**
+   * 墓碑是 fire-and-forget（`appendSessionTombstone` 内部自己吞异常并告警）：
+   * 删除路径不该因为一次文件写入失败而卡住 —— 日志写入失败会留下
+   * `[SessionJSONL] 追加会话墓碑失败` 的告警，而删除本身照常进行。
+   */
+  void appendSessionTombstone(id);
   if (
     domainDelete(SESSION_TABLE, { id }, {
       scope: "session.delete",
@@ -245,17 +324,33 @@ export function searchSessions(query: string): Session[] {
 }
 
 /**
- * R3-2.2: Fork a session — create a child session that inherits the event log
- * of the source session. The child session has parent_id set to the source.
+ * R3-2.2: Fork 一个会话 —— 建一个子会话，`parent_id` 指向源会话，
+ * 并把源会话的**事件日志整段复制**过去（新会话带着源会话的历史起步）。
  *
- * This is the API-level fork (not a model tool): it creates a new session row,
- * copies the event log, and optionally copies messages for backward compat.
+ * ## 这个入口为什么必须存在（B-7：`parent_id` 全仓零调用者）
  *
- * @param sourceSessionId The parent session to fork from
- * @param newSessionId The new session ID for the forked child
- * @param projectId The project the child belongs to
- * @param title Optional title for the child session
- * @returns The created child Session, or null if the source doesn't exist
+ * `session_trace` 的谱系功能（`Parent: …` / `Ancestors: […]`）读的就是 `parent_id`，
+ * 而全仓**唯一**写这一列的地方就是这里。UI 上真正的 fork 是内联在 `App.tsx` 里的
+ * （不走这个函数），那条路径**不写 `parent_id`** —— 于是谱系功能永远只报
+ * `Parent: (root)` / `Ancestors: []`：数据模型有它、读侧有它，只有写侧没人用。
+ *
+ * 修法（本文件内能做的部分）：把这个入口修成"能被 UI 直接调用的最小入口"——
+ * 确认它真的复制消息、真的写 `parent_id`、参数全都用到（原来 `title` 是可选的、
+ * `projectId` 只写进子行），并把用法写清楚（见报告里给 `App.tsx` 的最小改法）。
+ *
+ * ## 契约（调用方需要知道的三件事）
+ *
+ * 1. **子会话的消息由事件日志复制而来**（`getEventLog().forkSession`），
+ *    消息索引不在这里重建 —— UI 进入子会话时会按日志 hydrate，与正常会话一致；
+ * 2. **源会话不存在 → 返回 `null`**（不造一个没有父的孤儿会话）；
+ * 3. **落库失败 → 返回 `null` 并如实上报**，**不会**去复制事件日志
+ *    （会话行都没落地就去写事件，只会造出"有事件、没有会话行"的孤儿数据）。
+ *
+ * @param sourceSessionId 父会话
+ * @param newSessionId 子会话的新 id（由调用方生成，便于 UI 立刻跳转）
+ * @param projectId 子会话所属项目
+ * @param title 子会话标题（缺省 `"<父标题> (fork)"`）
+ * @returns 建好的子会话；源会话不存在或落库失败时为 `null`
  */
 export function forkSession(
   sourceSessionId: string,
@@ -265,6 +360,8 @@ export function forkSession(
 ): Session | null {
   const source = getSession(sourceSessionId);
   if (!source) return null;
+  // 自己 fork 自己没有意义，且会让谱系变成自环（`session_trace` 的 Ancestors 会绕圈）
+  if (newSessionId === sourceSessionId) return null;
 
   const now = Date.now();
   const child: Session = {
@@ -279,14 +376,21 @@ export function forkSession(
   };
 
   // Create the child session row with parent_id。
-  // 走端口：`parent_id` 是 ALTER 加的列，整体 upsert 时显式带上（否则 fork 关系丢失）。
+  // 走端口：`parent_id` 与 `sort_order` 都是 ALTER 加的列，整体 upsert 时**显式带上**
+  // （否则 fork 关系丢失 / 把用户拖拽出来的顺序清掉 —— 后者是 B-6 那一类"写了没人读"的近亲）。
   if (
     domainWrite(
       SESSION_TABLE,
-      [{ ...sessionToWire(child), parent_id: sourceSessionId }],
+      [{ ...sessionToWire(child), parent_id: sourceSessionId, sort_order: null }],
       { scope: "session.fork", note: "fork 出的会话未保存" },
     )
   ) {
+    /**
+     * 只有会话行**确实落地**之后才复制事件日志（顺序有语义）：
+     * `session_events.session_id` 有外键指向 `sessions(id)`，先复制事件会撞外键；
+     * 而"会话行在、事件复制失败"是可恢复的（重新 fork 或重建索引即可），
+     * 反过来"有事件没有会话行"就是纯孤儿数据。
+     */
     getEventLog().forkSession(sourceSessionId, newSessionId);
     return child;
   }

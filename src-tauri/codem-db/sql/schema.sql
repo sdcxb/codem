@@ -179,6 +179,40 @@ CREATE TABLE IF NOT EXISTS cost_records (
   timestamp INTEGER NOT NULL
 );
 
+-- 第 44 轮：给三张"有 session_id 但没有外键"的表补上级联语义。
+--
+-- 为什么不是直接加 FOREIGN KEY：SQLite **不能**给已有表加约束
+-- （`ALTER TABLE ... ADD CONSTRAINT` 不存在），唯一办法是"建新表 → 拷数据 → 删旧表 → 改名"。
+-- 在一个 100 MB 级的生产库上做整表重建，收益是"和触发器完全相同的语义"，
+-- 而风险是"迁移中途失败留下半个表" —— 不值得。
+--
+-- 为什么不加：这三张表的孤儿行是**真缺陷**，不是理论问题。
+-- `needs_you_pending` 的孤儿会让"待你确认"面板在会话已删之后仍然弹出一个无法归属的提问；
+-- `agent_messages` 的孤儿让智能体间消息面板显示"来自已删除会话"的消息；
+-- `cost_records` 的孤儿则会被成本统计按 session 聚合时算进去，让总额对不上。
+-- 而 `sessions` 的删除在真实事故里发生过（一次带走 2131 条事件），
+-- 也就是说"会话被删、子表留下"不是假想。
+--
+-- 触发器与 `ON DELETE CASCADE` 的差别只有一处：**级联深度**（触发器只做一层）。
+-- 这三张表都没有下级子表，所以这里是等价的。
+CREATE TRIGGER IF NOT EXISTS trg_sessions_cascade_needs_you_pending
+AFTER DELETE ON sessions
+BEGIN
+  DELETE FROM needs_you_pending WHERE session_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_sessions_cascade_agent_messages
+AFTER DELETE ON sessions
+BEGIN
+  DELETE FROM agent_messages WHERE session_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_sessions_cascade_cost_records
+AFTER DELETE ON sessions
+BEGIN
+  DELETE FROM cost_records WHERE session_id = OLD.id;
+END;
+
 CREATE TABLE IF NOT EXISTS notebooks (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -222,6 +256,13 @@ CREATE TABLE IF NOT EXISTS notebook_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+-- 第 44 轮：`messages.list` 是 `WHERE session_id=? ORDER BY timestamp ASC, id ASC LIMIT ? OFFSET ?`，
+-- 而原来只有 `idx_messages_session(session_id)` —— 每次翻页都要把该会话**全部**行取出来重排。
+-- 实测（真机基准）：全量分页读 1k→10k→100k 行 = 338 ms → 6.3 s → 159.2 s，
+-- 10 倍数据量要 25.2 倍时间（超线性），末页从 34 ms 涨到 217 ms。
+-- 复合索引让"按 (session_id, timestamp, id) 有序取一页"变成索引区间扫描，
+-- 偏移量再大也只读这一页。第三列 `id` 是为了让排序键**完全**被索引覆盖（同 timestamp 的并列）。
+CREATE INDEX IF NOT EXISTS idx_messages_session_ts ON messages(session_id, timestamp, id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON tool_calls(message_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_active ON accounts(is_active);

@@ -10,6 +10,7 @@
 import {
   domainDelete,
   domainDeleteWhere,
+  domainPortRegistered,
   domainReadMany,
   domainReadOne,
   domainWrite,
@@ -249,11 +250,35 @@ export function deleteFlashcardsByNotebook(notebookId: string): void {
 export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
 
 /**
- * SM-2 algorithm: update flashcard scheduling based on review rating
+ * 按 SM-2 更新复习进度。
+ *
+ * ## 任务 C-8：`if (!card) return;` 原来是静默丢弃
+ *
+ * `getFlashcard` 在镜像未接手时返回 `undefined`，与"这张卡不存在"用的是**同一个值** ——
+ * 原实现直接 `return`，于是用户点了"再来一次/简单"，界面上的下次复习时间变了（前端本地状态），
+ * 库里**一行都没写**，且没有任何上报。
+ *
+ * 现在把三态分开：
+ * - 卡片**确实不存在** → 业务失败（如实上报，"这张卡没了"）；
+ * - **端口在但镜像未接手** → 可重试失败（如实上报，"稍后再点一次"）；
+ * - 卡片内容解析不出调度字段 → 数据问题（如实上报）。
  */
 export function reviewFlashcard(id: string, rating: ReviewRating): void {
   const card = getFlashcard(id);
-  if (!card) return;
+  if (!card) {
+    reportPersistFailure(
+      "flashcard.review",
+      new Error(
+        domainPortRegistered()
+          ? "端口已注册但 flashcards 镜像未接手（未就绪 / 未镜像）"
+          : `flashcards 里没有 id=${id}`,
+      ),
+      domainPortRegistered()
+        ? `复习进度未保存：本次读不到卡片 ${id}（**不是**"卡片不存在"），请稍后重试`
+        : `复习进度未保存：卡片 ${id} 不存在（可能已被删除）`,
+    );
+    return;
+  }
 
   const now = Date.now();
   let { easeFactor, intervalDays, repetitions } = card;

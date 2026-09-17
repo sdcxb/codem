@@ -131,7 +131,13 @@ export async function trimIndexedMessages(
    * - `total <= keepPerSession` → 跳过；
    * - 日志里没有的（`durable` 不含）→ 一律不删；
    * - 带附件的消息 → 不删（附件行不在 JSONL 里，删消息会级联删附件）；
-   * - 删除走 `messages.delete`（**硬删除**，与旧库路径一致：日志才是权威副本）。
+   * - 隐藏走 `messages.delete { ids, trim: true }`（**软删除 + 裁剪标记**，见下面裁剪那一段的长注释：
+   *   行必须留在库里，否则 `message_feedback` 的外键目标消失、反馈写不进去 —— B-4；
+   *   而 `trim` 这个独立标记让"被裁"与"被压缩"在库里可区分 —— 第 44 轮）。
+   *
+   * ⚠️ 这段描述的是**现在**的做法。它原来是硬删除（`messages.delete { ids }`），
+   * 那段历史与"为什么改软删除、以及软删除之后读路径怎么不变"写在函数体里。
+   * 软删除路径**刻意不带 `confirm_bulk`**：隐藏不删行、不触发级联，不是破坏性删除。
    *
    * 注意**不动全文索引**：被裁掉的消息在日志里还在、也仍然可搜（`fts.rebuild` 的
    * `keep_ids` 就是为这件事留的）。
@@ -178,13 +184,68 @@ for (const row of sessionRows) {
       out.skippedSessions++;
       continue;
     }
+    /**
+     * ## 裁剪必须是**软删除**（B-4，真机实测的"反馈写不进去"）
+     *
+     * 原来这里是 `messages.delete { ids }`（**硬删除**）。看着很合理（日志才是权威副本，
+     * 索引里的行可以重建），但它踢掉了一个隐藏的依赖：`message_feedback.message_id` 是
+     * **外键指向 `messages(id)`**（`migrate.rs` 的表依赖里写着 `("message_feedback","messages")`）。
+     *
+     * 于是用户路径断成两截：
+     * 1. 裁剪把索引行硬删了；
+     * 2. `listMessagesMerged` 又把"只在 JSONL 里的消息"**合回 UI**（这正是设计意图 ——
+     *    被裁掉的历史仍然读得到），所以用户看得到、点得动那条消息；
+     * 3. 点"点赞" → `saveFeedback` → `feedback.set` → **`FOREIGN KEY constraint failed`**。
+     *    真 CLI 实测（见报告）：先 `messages.delete {ids}` 再 `feedback.set` 必失败。
+     * 用户的观感更糟：图标先亮了（`feedbackCache` 是**先内存后落库**），重启之后消失。
+     *
+     * 修法就是让裁剪走 `soft: true`（Rust 侧 `messages_delete` 的真实现是
+     * `UPDATE messages SET hidden = 1`，行留着 → 外键目标还在 → 反馈写得进去）。
+     *
+     * ### 读路径语义**不变**（这是硬要求，一条都不能松）
+     *
+     * - `listMessages` / `listMessagesMerged` 走 `hiddenMessageIds()` 过滤 → 被裁剪的消息
+     *   依旧不出现在默认列表里（靠 `hidden` 而不是靠"行不存在"）；
+     * - `messages.count` 的可见计数本来就是 `hidden = 0`，语义一致；
+     * - 附件消息、日志里没有的消息依旧不裁（上面两条过滤器原样保留）。
+     *
+     * ### 为什么这里还要额外记一次 `rememberHidden`
+     *
+     * `hiddenMessageIds()` 的 hidden 来源是**域镜像**（`port.messages.hiddenIds`）。
+     * 镜像此刻可能还没加载完（或已被内存预算 LRU 逐出），或者它按"行已删除"的旧约定
+     * 把行剔了 —— 两种情况下它都看不到这次隐藏，合并阶段就会把这些消息**复活**
+     * （用户现场那个"压缩了 840 条、token 一点没降"最怕的就是这个）。
+     * `rememberHidden()` 是既有原语（`deleteMessagesByIds` 也用它），让**本进程**立刻看见。
+     */
+    /**
+     * ## 裁剪走 `trim: true`（第 44 轮：把"谁做的这次隐藏"变成**库里的持久事实**）
+     *
+     * 引擎侧 `messages.delete { trim: true }` = `UPDATE messages SET hidden = 1, trimmed = 1`。
+     *
+     * 为什么必须要一个独立标记：`hidden = 1` 被两条语义**相反**的路径共用 ——
+     * 上下文压缩要求读路径**排除**这条消息（否则"压缩 840 条、token 一点没降"死循环），
+     * 而索引裁剪要求读路径**保留**（"被裁掉的历史仍读得到"是裁剪的前提，
+     * `session-jsonl-index.test.ts` 的 SLOG-6/SLOG-8 就是这条不变量）。
+     *
+     * 前一版修法是**进程内记账**（`trimmedIndexIds`）—— 它只在同一个进程里成立，
+     * 重启后"被裁过"与"只被压缩过"在库里重新变得一模一样：要么历史消失，
+     * 要么压缩失效，两者都不可接受。现在区别落在 `trimmed` 列上，
+     * 镜像的 `hiddenIds()` 直接读它（`hidden=1 && trimmed≠1` 才等于"被压缩"），
+     * 于是读路径不需要任何进程内状态就能给出正确答案。
+     */
     void port.data
-      .execute("messages.delete", { ids: deletable })
-      .catch((e) => reportPersistFailure("message.trimIndexedMessages", e, "索引裁剪的删除未落到查询索引"));
-    port.applyMessageDelete?.(sessionId, deletable);
+      .execute("messages.delete", { ids: deletable, trim: true })
+      .catch((e) => reportPersistFailure("message.trimIndexedMessages", e, "索引裁剪的隐藏未落到查询索引"));
+    /**
+     * 镜像同步：**改隐藏与裁剪标记，而不是移除行**。
+     *
+     * 引擎只是 `hidden = 1, trimmed = 1`（行还在库里，`message_feedback` 的外键目标必须留着）；
+     * 若镜像把行删掉，下一次整会话加载就会与引擎不一致 —— 镜像比引擎"更狠"是缺陷的来源。
+     */
+    port.applyMessageTrim?.(sessionId, deletable);
     out.deletedMessages += deletable.length;
     console.log(
-      `[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（rust；均在 JSONL 中；附件消息已跳过）`,
+      `[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（rust；软删除 hidden=1；均在 JSONL 中；附件消息已跳过）`,
     );
   } catch (e) {
     console.warn(`[Index] 会话 ${sessionId} 裁剪失败（跳过）:`, e);
@@ -192,7 +253,6 @@ for (const row of sessionRows) {
   }
 }
 return out;
-  return out;
 }
 
 /**
@@ -324,6 +384,28 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
       ...(rec.reasoning ? { reasoning: rec.reasoning } : {}),
       ...(rec.model ? { model: rec.model } : {}),
       ...((rec as any).toolCalls ? { toolCalls: (rec as any).toolCalls } : {}),
+      /**
+       * B-3：`retrievedSources` 与 `generatedFiles` 必须一起带上。
+       *
+       * 这一支是"**权威日志覆盖索引**"的方向（`...existing` 在前、日志字段在后）。
+       * 而日志记录里如果没有这两个字段，覆盖就等于**把它们擦掉**：
+       * 索引里明明有引用来源（`writeIndexViaRust` 一直传 `retrieved_sources`），
+       * 合并之后却没了 —— `MessageBubble` 的引用块随即消失。
+       *
+       * 两个来源都给不出时才落到 `undefined`（既有语义：没有就是没有）。
+       * 日志那份是权威（`session-jsonl.ts` 的白名单已经收录它们），索引那份是兜底
+       * （老日志是这次修之前写的，里面没有这两个字段）。
+       */
+      ...((rec as any).retrievedSources
+        ? { retrievedSources: (rec as any).retrievedSources }
+        : existing?.retrievedSources
+          ? { retrievedSources: existing.retrievedSources }
+          : {}),
+      ...((rec as any).generatedFiles
+        ? { generatedFiles: (rec as any).generatedFiles }
+        : existing?.generatedFiles
+          ? { generatedFiles: existing.generatedFiles }
+          : {}),
     } as Message);
   }
   const all = [...merged.values()].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
@@ -331,7 +413,23 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
   return limit ? enriched.slice(-limit) : enriched;
 }
 
-/** 索引里被软删除（hidden=1）的消息 id 集合 */
+/**
+ * 索引里被**上下文压缩**隐藏（`hidden = 1`）的消息 id 集合。
+ *
+ * ## `hidden` 这一列被两条语义相反的路径共用，而它们的读处置必须相反
+ *
+ * | 路径 | `hidden = 1` 的含义 | 读路径应当 |
+ * | --- | --- | --- |
+ * | 上下文压缩（`deleteMessagesByIds`） | 这条消息**从上下文里移除** | 排除（否则"压缩了 840 条、token 一点没降"） |
+ * | 索引裁剪（`trimIndexedMessages`） | 行**留在库里**满足 `message_feedback` 的外键 | **保留**（"被裁的历史仍读得到"是裁剪的前提） |
+ *
+ * 第 44 轮之前，两者的区别只能靠**进程内记账**表达（`trimmedIndexIds`），
+ * 于是重启后就分不清：不排除 → 用户看不到自己的历史（SLOG-6/SLOG-8 实测 12 条变 3 条）；
+ * 一刀切排除 → 压缩失效（那个著名死循环）。真正的解法是把它变成库里的事实，
+ * 所以引擎现在把裁剪写成 `hidden = 1, trimmed = 1`，
+ * 而**镜像的 `hiddenIds()` 只返回 `hidden=1 && trimmed≠1` 的那些** ——
+ * 这里因此不需要任何进程内状态，也不需要"事后减掉裁剪那批"的第二段逻辑。
+ */
 function hiddenMessageIds(sessionId: string): Set<string> {
   // 迁移期分流：走 Rust 时**必须**用镜像的 hidden 集合 ——
   // 索引里的 hidden 状态是权威（软删除行只在索引里），用旧库那份会把已压缩的消息**复活**
@@ -355,8 +453,12 @@ function hiddenMessageIds(sessionId: string): Set<string> {
    *
    * 所以把"本进程隐藏过的 id"记在内存里当**权威补充**：只要这次 hide 是我们做的，
    * 读路径立刻就能看见它，不必等镜像重新加载。
+   * （裁剪那一路**不写**这里 —— 它的隐藏会被引擎的 `trimmed` 列标出来，
+   *   镜像的 `hiddenIds()` 已经把它排除在外了。）
    */
-  for (const id of localHiddenIds.get(sessionId) ?? []) out.add(id);
+  for (const id of localHiddenIds.get(sessionId) ?? []) {
+    out.add(id);
+  }
   if (out.size > 0) return out;
   /**
    * B 态（端口在 rust）：**不再碰旧库**。
@@ -367,6 +469,20 @@ function hiddenMessageIds(sessionId: string): Set<string> {
    */
   return out;
 }
+
+/**
+ * ## 这里原来有一段"被索引裁剪隐藏的 id"的**进程内**记账（第 20 轮），第 44 轮已删除
+ *
+ * 它存在的理由是：`hidden = 1` 被"上下文压缩"与"索引裁剪"两条语义相反的路径共用，
+ * 而读路径对两者的处置必须相反（一个排除、一个保留）。当时只能靠"这次隐藏是谁做的"
+ * 在内存里记一笔来区分 —— **只在同一个进程里成立**：重启后两者在库里重新变得一模一样，
+ * 于是要么历史消失、要么压缩失效。
+ *
+ * 现在引擎把裁剪写成 `hidden = 1, trimmed = 1`（见 `messages_delete` 的 `trim` 参数），
+ * 区别成了**库里的持久事实**，镜像的 `hiddenIds()` 直接读它。
+ * 所以这段记账、它的容量上限、以及"事后从 hiddenIds 里减掉裁剪那批"的第二段逻辑
+ * 一起删掉了 —— 少一套需要维护、且只在特定生命周期内成立的中间状态。
+ */
 
 /** 会话日志的内存镜像（由 hydrateSessionLog 填充） */
 const cachedLogMessages = new Map<string, Awaited<ReturnType<typeof readSessionMessages>>["messages"]>();
@@ -853,7 +969,8 @@ export function createMessage(message: Message, sessionId: string): void {
 // ## 返回 false 的含义
 //
 // 返回 false = "本次不接手，请调用方走原来的旧路径"。这样：
-// - 端口未注册 / 引擎是 wasm（回滚开关）→ 完全维持原行为；
+// - 端口未注册（**第 19 轮起这是"没有可用存储"的唯一形态**；原来的"引擎是 wasm"已随旧引擎删除）
+//   → 完全维持原行为；
 // - 读不到 base 行（更新路径）→ 回退到原路径，不猜数据。
 
 type RustMessagePortLike = {
@@ -872,6 +989,8 @@ type RustMessagePortLike = {
       model?: string | null;
       status?: string | null;
       hidden?: number;
+      /** 索引裁剪标记（第 44 轮）：`hidden=1 && trimmed=1` = 被裁剪而不是被压缩 */
+      trimmed?: number;
     }>;
     byIdLookup(id: string): { id: string; session_id: string } | undefined;
     hiddenIds(sessionId: string): Set<string>;
@@ -887,6 +1006,13 @@ type RustMessagePortLike = {
   };
   applyMessageWrite?(row: Record<string, unknown> & { id: string; session_id: string }): void;
   applyMessageDelete?(sessionId: string, ids: string[]): void;
+  /**
+   * 索引裁剪的镜像同步（第 44 轮）：把这批行标成 `hidden=1, trimmed=1`。
+   *
+   * 声明为可选：真实端口与假端口都有，但契约测试里的极简假端口可能没有 ——
+   * 缺省时读路径靠引擎下次加载时的真实列值收敛（不会抛、不会错）。
+   */
+  applyMessageTrim?(sessionId: string, ids: string[]): void;
 };
 
 /**
@@ -1021,9 +1147,8 @@ function warmToolCalls(messageId: string): void {
 }
 function rustMessagePort(): RustMessagePortLike | null {
   if (!hasStoragePort()) return null;
-  const port = getStoragePort();
-  if (port.kind !== "rust") return null;
-  return port as unknown as RustMessagePortLike;
+  // 第 19 轮：`if (port.kind !== "rust") return null;` 已删（`kind` 是常量 "rust"，恒不成立）。
+  return getStoragePort() as unknown as RustMessagePortLike;
 }
 
 /**
@@ -1057,6 +1182,15 @@ function messageRowToMessage(r: {
   status?: string | null;
   /** `generated_files` 的 JSON 文本（第 14 轮：这一列从前没有被映射回来） */
   generated_files?: string | string[] | null;
+  /**
+   * `retrieved_sources` 的 JSON 文本（**B-3**：这一列同样是"写了但读不回来"）。
+   *
+   * 两种形态都要认（snake / camel）：镜像行给的是库里的列名 `retrieved_sources`，
+   * 而 `Message` 对象上的字段是 `retrievedSources` —— 既有测试与调用方两种拼法都出现过，
+   * 只认一种就会在另一条路径上静默丢数据（这正是 `generated_files` 当初的老毛病）。
+   */
+  retrieved_sources?: string | unknown[] | null;
+  retrievedSources?: string | unknown[] | null;
 }): Message {
   /*
    * `generated_files` 的解析（第 14 轮修正）。
@@ -1071,6 +1205,23 @@ function messageRowToMessage(r: {
   } else if (Array.isArray(r.generated_files) && r.generated_files.length > 0) {
     generatedFiles = r.generated_files.map(String);
   }
+  /**
+   * `retrieved_sources`（B-3）。
+   *
+   * 真 CLI 实测 `messages.get` / `messages.list` 返回的列里**没有**这一列
+   * （Rust 侧 `repo.rs` 的 `message_row` 只映射到 `generated_files` 为止），所以
+   * rust 模式下这条路径拿不到引用来源 —— **渲染侧先就绪**，等 Rust SELECT 补列
+   * （见报告"需要他人配合"）。这里把映射补齐：拿到就解析、解析不出来就当作没有，
+   * 与 `generated_files` 同一条规矩（坏一行数据不该让整次读失败）。
+   */
+  const rawSources = r.retrieved_sources ?? r.retrievedSources;
+  let retrievedSources: RetrievedSource[] | undefined;
+  if (typeof rawSources === "string" && rawSources.trim().length > 0) {
+    const parsed = safeJsonParse<RetrievedSource[]>(rawSources, []);
+    if (Array.isArray(parsed) && parsed.length > 0) retrievedSources = parsed;
+  } else if (Array.isArray(rawSources) && rawSources.length > 0) {
+    retrievedSources = rawSources as RetrievedSource[];
+  }
   return {
     id: r.id,
     sessionId: r.session_id,
@@ -1081,6 +1232,7 @@ function messageRowToMessage(r: {
     ...(r.model ? { model: r.model } : {}),
     status: (r.status ?? "done") as Message["status"],
     ...(generatedFiles ? { generatedFiles } : {}),
+    ...(retrievedSources ? { retrievedSources } : {}),
   } as Message;
 }
 
@@ -1560,9 +1712,22 @@ export function deleteMessage(id: string): void {
      * 原来的实现第一行就是 `getDatabase()` —— 在 rust 引擎下直接抛，
      * **墓碑那一行永远走不到**，于是"删除"在下一次从权威日志重建时复活。
      * 顺序按删除链路的约定：索引（端口）→ 墓碑（日志）→ 内存镜像。
+     *
+     * ## `confirm_bulk: true` 为什么连"删一条"也要声明
+     *
+     * Rust 侧 `messages_delete` 在**硬删除**路径上有批量闸门：**按真实影响行数**
+     * （含外键级联，审计触发器行已剔除）超过 50 行时必须显式声明，否则整条命令报错回滚。
+     *
+     * 闸门要拦的是**规模不体现在参数里**的隐式级联删除 —— 参数里只写了 1 个 id，
+     * 实际可能带走它的 tool_calls / message_feedback（都是 `ON DELETE CASCADE`）。
+     * 而这里的调用方**已经枚举出了确切目标**（`deleteMessage(id)` 就是用户点了"删除这一条"），
+     * 所以"我在做批量（含级联）删除"这句话是**事实**，声明它是如实表达，不是绕过闸门。
+     *
+     * ⚠️ 反过来：`soft: true`（隐藏）**不带**这个字段 —— 隐藏不删行、不触发级联，
+     * 它不是破坏性删除，声明它会误导闸门的语义（见 `deleteMessagesByIds` 的调用）。
      */
     void port.data
-      .execute("messages.delete", { ids: [id] })
+      .execute("messages.delete", { ids: [id], confirm_bulk: true })
       .catch((e) => reportPersistFailure("message.deleteMessage", e, "消息未从查询索引删除"));
     if (sessionId) {
       port.applyMessageDelete?.(sessionId, [id]);
@@ -1639,8 +1804,16 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
         .filter((r) => Number(r.timestamp) < timestamp)
         .map((r) => r.id);
       if (ids.length === 0) return 0;
+      /**
+       * **硬删除 + `confirm_bulk: true`**：`ids` 是"本会话里时间早于 `timestamp` 的全部消息"，
+       * 已经在上一步从镜像里**枚举出确切目标**（调用方是 `App.tsx` 的"清空更早的上下文"）。
+       *
+       * 必须声明的原因：这是**真正的批量**（一次可能是几百条），而且每条还会级联带走
+       * 它的 `tool_calls` / `message_feedback` —— 闸门按真实影响行数算，不声明就整条回滚。
+       * 闸门要拦的不是这种"目标已经写清楚"的删除，而是**规模不体现在参数里**的隐式级联。
+       */
       void port.data
-        .execute("messages.delete", { ids })
+        .execute("messages.delete", { ids, confirm_bulk: true })
         .catch((e) => reportPersistFailure("message.deleteMessagesBefore", e, "旧消息未从查询索引删除"));
       port.applyMessageDelete?.(sessionId, ids);
       removeFtsViaPort(sessionId, ids);
@@ -1690,8 +1863,18 @@ export function deleteMessagesByIds(ids: string[]): number {
    * 后果是压缩**一条都没隐藏**：日志里写了墓碑、索引里没有，
    * 下一次读又把它们从日志合并回来（正是用户现场的"移除 840 条、token 一点没降"）。
    *
-   * 所以这里改成：端口可用 → 走 `messages.delete`（Rust 侧真改 hidden）+ 记入
-   * `localHiddenIds`（让本次同步读立刻看见）；端口不可用 → 保留旧库路径（回滚开关）。
+   * 所以这里改成：端口可用 → 走 `messages.delete { ids, soft: true }`（Rust 侧真改 hidden）
+   * + 记入 `localHiddenIds`（让本次同步读立刻看见）；端口不可用 → 保留旧库路径（回滚开关）。
+   *
+   * ## 为什么**不带** `confirm_bulk`（与三条硬删除路径刻意不同）
+   *
+   * Rust 侧的批量闸门只约束**硬删除**（按真实影响行数含级联，超 50 行必须显式声明）。
+   * 这里是 `soft: true` —— 它只 `UPDATE … SET hidden = 1`，**不删行、不触发外键级联**，
+   * 语义上不是破坏性操作。给它加 `confirm_bulk` 会让闸门那侧的语义变浑：
+   * "声明了 confirm_bulk" 就不再等于"这次真的会删掉很多行"。
+   *
+   * 规模也不是问题：这条路一次可能隐藏几百条，但它不删任何东西 —— 闸门要拦的是
+   * "参数里看不出规模、实际级联删掉一大堆"，而这里根本没有删除。
    */
   const port = rustMessagePort();
   if (port) {
@@ -1753,14 +1936,23 @@ function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
       if (list) list.push(id);
       else out.set(sid, [id]);
     }
-    if (out.size > 0) return out;
     return out; // 端口在但查不到归属：不再退回旧库（旧库本来就不存在）
   }
   /**
-   * B 态：端口在（rust）却没有 `messages` 能力（不应发生，但测试双可能如此）——
-   * 也**不许**退回旧库：查不到归属就返回空 Map（调用方据此跳过墓碑），
-   * 让"没写墓碑"成为一个可见的、可上报的事实，而不是悄悄写进旧库造成读写分裂。
+   * ⚠️ **这一支的注释原来是不实之词（B-5）**：它写着"让'没写墓碑'成为一个可见的、
+   * 可上报的事实"，而那段代码**既没有上报、调用方也没有分支**——`deleteMessagesByIds`
+   * 拿到空 Map 之后只是"一条墓碑都不写"，静默地什么也没发生。
+   *
+   * 现在把"没写墓碑"真的说出去：`sessionIdsForMessages` 自己上报一次（通道用既有的
+   * `reportPersistFailure`，语义正是"这次没生效"）。给**每个 id** 都报一次会刷屏，
+   * 所以按"本次调用"报一条，带上条数与例子 —— 出问题时至少要能看出"哪一批没写墓碑"。
    */
+  reportPersistFailure(
+    "message.sessionIdsForMessages",
+    new Error("端口已注册但没有 messages 能力（无法判定消息归属）"),
+    `本次 ${ids.length} 条消息未能按会话分组（例：${ids.slice(0, 3).join(",") || "无"}）：` +
+      "权威日志的墓碑不会写入 —— 这些消息在下次从日志重建时会复活",
+  );
   return out;
 }
 
@@ -1845,7 +2037,8 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
  * 正好符合**通用域镜像**的适用边界，所以直接走 `domainReadOne`：
  * - 端口接手（镜像已加载）→ 命中返回、未命中 null；
  * - 端口在但镜像未就绪（B 态）→ 返回 null（**不碰旧库**），界面显示"未评价"；
- * - A 态（端口未注册 / wasm 回滚）→ 维持原来的旧库读取，一个字节不变。
+ * - A 态（端口未注册）→ 维持原来的旧库读取，一个字节不变。
+ *   （第 19 轮：A 态原来还有"wasm 回滚"这第二种形态，已随旧引擎删除。）
  */
 export function loadFeedback(messageId: string): FeedbackType | null {
   // 本进程写过的优先（与写入落在同一处：都走 Rust）
@@ -1904,8 +2097,16 @@ export function deleteMessagesAfter(
         .filter((r) => (includeSelf ? Number(r.timestamp) >= targetTs : Number(r.timestamp) > targetTs))
         .map((r) => r.id);
       if (ids.length === 0) return 0;
+      /**
+       * **硬删除 + `confirm_bulk: true`**：`ids` = "从被编辑的那条起（含/不含自己）之后的全部消息"，
+       * 同样已经在镜像上**枚举出确切目标**（调用方是 `App.tsx` 的"编辑并重发"）。
+       *
+       * 这里的规模完全可能超闸门（编辑第一轮 = 删掉整段会话的后续），而且每一条都会级联
+       * 带走 `tool_calls` / `message_feedback` —— 不声明的话整条命令回滚，用户看到的形态是
+       * "编辑重发之后旧回复还在"（比删错更难查）。
+       */
       void port.data
-        .execute("messages.delete", { ids })
+        .execute("messages.delete", { ids, confirm_bulk: true })
         .catch((e) => reportPersistFailure("message.deleteMessagesAfter", e, "编辑重发时后续消息未从查询索引删除"));
       port.applyMessageDelete?.(sessionId, ids);
       removeFtsViaPort(sessionId, ids);

@@ -94,8 +94,11 @@ export interface Page<T> {
 // ========== 引擎生命周期 ==========
 
 export interface StorageHealth {
-  /** 引擎种类：迁移期是 "wasm"，切换后是 "rust" */
-  engine: "wasm" | "rust";
+  /**
+   * 引擎种类。**第 19 轮起只剩 `"rust"` 这一个值** —— 旧引擎（sql.js/WASM）已整体删除，
+   * 这里再留 `"wasm"` 只会让类型"说谎"：读代码的人会以为还存在第二种实现。
+   */
+  engine: "rust";
   ready: boolean;
   /** 库文件路径（诊断用） */
   path?: string;
@@ -153,6 +156,27 @@ export interface StorageDataPort {
 
   /** 单条写命令（便捷形态） */
   execute(command: string, params?: Record<string, unknown>): Promise<{ written: number }>;
+
+  /**
+   * 执行命令并返回**完整的结构化结果**（与 `execute` 的区别只在返回值的整形）。
+   *
+   * ## 为什么类型上标成可选（第 45 轮补上这一条）
+   *
+   * 真实端口（`rust-port.ts::RustDataPort.command`）与假端口都提供它，生产代码也一直在用 ——
+   * 但**接口上从来没写**，于是调用点只能写成
+   * `posrt.data as unknown as { command?: … }`（`self-heal` / `session-log-bridge` /
+   * `bootstrap` 里各有几处这种强制转换）。那些转换是"类型撒谎"的常见来源：
+   * 一旦某个端口实现不再提供它，`as unknown as` 不会报错，只会在运行时变成
+   * "读不到字段 → `?? 0` 兜底"的静默假成功。
+   *
+   * 标成**可选**而不是必需，是因为它确实不是所有实现都有（测试双可能只实现
+   * `query` / `write` / `execute`），调用方必须显式处理"没有这个能力"这一态 ——
+   * 而 `?.` 正好把这件事写在脸上。
+   */
+  command?<T = Record<string, unknown>>(
+    command: string,
+    params?: Record<string, unknown>,
+  ): Promise<T>;
 }
 
 // ========== 配置面（同步读 + 写穿） ==========
@@ -192,8 +216,17 @@ export interface StoragePort {
   data: StorageDataPort;
   config: StorageConfigPort;
   append: StorageAppendPort;
-  /** 端口实现标识（迁移期是 "wasm"，切换后是 "rust"） */
-  readonly kind: "wasm" | "rust";
+  /**
+   * 端口实现标识。**第 19 轮起收成字面量 `"rust"`**（不再是 `"wasm" | "rust"`）。
+   *
+   * 为什么必须收：`RustStoragePort` 是**唯一**实现，所以 `kind` 是常量 ——
+   * 任何形如 `port.kind !== "rust"` 的判断都**恒不成立**，它们读起来却像"还有另一条路"
+   * （那是删旧引擎时留下的最后一批幻影分支，已在第 19 轮全部删除）。
+   *
+   * 现在"没有可用存储"的**唯一**形态是**端口未注册**，判据只有 `hasStoragePort()`。
+   * 留着这个字段不是为了让调用方分支，而是诊断用（日志/健康面板要能打印实现标识）。
+   */
+  readonly kind: "rust";
 }
 
 // ========== 注册表（只有一个实现：Rust 端口） ==========

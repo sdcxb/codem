@@ -113,8 +113,17 @@ export const InboxStorage = {
     return created;
   },
 
-  listAll(filters?: { projectId?: string; unreadOnly?: boolean; category?: InboxCategory }): InboxRow[] {
-    const rust = domainReadMany(TABLE, wireToInbox, { archived: 0 });
+  /**
+   * 列出通知。
+   *
+   * ## 任务 C-6：`{ archived: 0 }` 原来是**恒传**的，没有"看归档"的出口
+   *
+   * `archive()` 是这个域 UI 上唯一的移除入口，而读取永远过滤归档
+   * → 误点一次"归档"就等于永久删除（行还在库里，但看不到、数不到、无恢复入口）。
+   * 现在加 `includeArchived`（**默认行为不变**：仍然只列未归档）。
+   */
+  listAll(filters?: { projectId?: string; unreadOnly?: boolean; category?: InboxCategory; includeArchived?: boolean }): InboxRow[] {
+    const rust = domainReadMany(TABLE, wireToInbox, filters?.includeArchived ? undefined : { archived: 0 });
     if (rust) {
       const filtered = rust.filter((r) => {
         if (filters?.projectId && r.project_id !== filters.projectId && r.project_id !== null) return false;
@@ -199,6 +208,38 @@ export const InboxStorage = {
       new Error("端口未接手（该域镜像未注册或未就绪）"),
       "通知未删除",
     );
+  },
+
+  /**
+   * **取消归档**（任务 C-6）。
+   *
+   * `archive()` 是通知在 UI 上唯一的移除入口，而 `listAll` 原来恒传 `{ archived: 0 }`
+   * → "归档"事实上是不可逆删除。这个方法是那条恢复路径的另一半。
+   *
+   * 语义与 `squad-storage.unarchive` 对称：行不存在 → 不写（`UPDATE 影响 0 行`）；
+   * 本来就未归档 → 幂等返回 true；否则写回 `archived = 0`。
+   *
+   * @returns 这次调用结束后该通知是否**处于未归档状态**（含"本来就没归档"）
+   */
+  unarchive(id: string): boolean {
+    const current = domainReadOne(TABLE, { id }, wireToInbox);
+    if (current === undefined) {
+      // B 态：端口在、镜像未接手 → 如实上报（不静默当成"已恢复"）
+      reportPersistFailure(
+        "inbox.unarchive",
+        new Error("端口未接手（该域镜像未注册或未就绪）"),
+        "通知未取消归档",
+      );
+      return false;
+    }
+    if (current === null) return false; // 通知不存在：旧实现是 UPDATE 影响 0 行
+    if (current.archived === 0) return true; // 幂等
+
+    return domainWrite(TABLE, [inboxToWire({ ...current, archived: 0 })], {
+      mode: "replace",
+      scope: "inbox.unarchive",
+      note: "通知未取消归档",
+    });
   },
 
   getUnreadCount(projectId?: string): number {

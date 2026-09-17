@@ -104,15 +104,35 @@ async function realCount(table: string): Promise<number | null> {
   }
 }
 
-function readWatermark(settings: Array<{ key: string; value: string }>): Watermark | null {
-  const raw = settings.find((s) => s.key === MARKER_KEY)?.value;
-  if (!raw) return null;
+function readWatermark(
+  settings: Array<{ key: string; value: string }>,
+): { watermark: Watermark | null; read: boolean } {
+  /**
+   * ## "读不到"与"真是 0"必须分开（B-9）
+   *
+   * 原来这里返回 `Watermark | null`，调用方写 `(previous?.messages ?? 0) >= 阈值` ——
+   * `?? 0` 把"这一行压根没读到"（settings 面读失败、key 不存在、JSON 坏了）
+   * 悄悄当成"上次水位是 0"，于是判定"不异常"、不恢复。那一刻自愈是**静默解除武装**的。
+   *
+   * 三态在这里表达清楚：
+   * - `read: false` → 这一行**没读到**（settings 项缺失或解析失败）：不能当成 0；
+   * - `read: true, watermark: null` → 明确"从来没有过水位"（全新用户/第一次启动）；
+   * - `read: true, watermark: {...}` → 正常。
+   *
+   * 为什么区分这件事重要：`messages = 0 且上次水位 ≥ 50` 才会触发恢复，
+   * 而"读不到"时**不该恢复**（那可能是读抖动）；但如果把它当成 0，
+   * 就变成"永远不恢复"——两者都是错的方向，只有分开才能各自如实上报。
+   */
+  const entry = settings.find((s) => s.key === MARKER_KEY);
+  if (!entry) return { watermark: null, read: true }; // 明确"还没有水位"
+  const raw = entry.value;
+  if (!raw) return { watermark: null, read: false };
   try {
     const parsed = JSON.parse(raw) as Watermark;
-    if (typeof parsed?.messages !== "number") return null;
-    return parsed;
+    if (typeof parsed?.messages !== "number") return { watermark: null, read: false };
+    return { watermark: parsed, read: true };
   } catch {
-    return null;
+    return { watermark: null, read: false };
   }
 }
 
@@ -137,6 +157,17 @@ function writeWatermark(w: Watermark): Promise<unknown> {
  *
  * 判据与启动自检完全一致（同一水位、同一阈值、同样要求旧库确有内容），
  * 并带一个"进行中"闩锁避免并发恢复。
+ *
+ * ## B-9 更正：它**不是**"全仓 0 调用者的死代码"
+ *
+ * 审阅时看它像没人调用（连带 `store.ts::reloadSessionMessages` 也"不可达"），
+ * 实际调用点是 `store.ts:334`（`loadMessages` 里 `Promise.all` 取到它之后
+ * `await guardContentBeforeSessionOpen(await legacyDbPath())`）。**已经接线，不要删。**
+ *
+ * 之所以看起来"没人用"：它是**动态 import** 取的（`const [{ guardContentBeforeSessionOpen }] = await Promise.all([...])`），
+ * 静态搜索 `guardContentBeforeSessionOpen(` 之外还得搜 `import("./core/storage/self-heal")`。
+ * 记在这里，免得下一次审计又把它当死代码删掉 —— 删了就等于把"使用中数据消失"的
+ * 第二道防线拆了（那道防线覆盖的正是启动自检覆盖不到的那段时间）。
  */
 let healInFlight: Promise<SelfHealResult> | null = null;
 
@@ -161,13 +192,15 @@ export async function verifyUserContentOrRestore(
   if (!hasStoragePort()) return { kind: "unavailable", reason: "端口未注册" };
   try {
     const port = getStoragePort();
-    if (port.kind !== "rust") return { kind: "unavailable", reason: `引擎为 ${port.kind}` };
+    // 第 19 轮：`if (port.kind !== "rust") return { kind:"unavailable", reason:`引擎为 ${port.kind}` }`
+    // 已删 —— `kind` 是常量 "rust"，它恒不成立；"没有可用存储"只剩"端口未注册"一种形态（上一行已兜住）。
 
     const settingsPage = await port.data.query<{ key: string; value: string }>("crud.list", {
       table: "settings",
       limit: 2000,
     });
-    const previous = readWatermark(settingsPage.items ?? []);
+    const watermarkRead = readWatermark(settingsPage.items ?? []);
+    const previous = watermarkRead.watermark;
 
     /**
      * ⚠️ **读不到 ≠ 是 0**（第 11 轮修正，安全关键）。
@@ -215,7 +248,33 @@ export async function verifyUserContentOrRestore(
       return { kind: "ok", previous: previous ?? undefined, current };
     }
 
-    // 一条消息都没有：只有"上一次明明有很多"才算异常
+    /**
+     * 一条消息都没有：只有"上一次明明有很多"才算异常。
+     *
+     * ## B-9：水位**读不到**时不许当成 0
+     *
+     * `previous?.messages ?? 0` 把"这一行没读到"与"上次水位是 0"混成一件事：
+     * 前者会让 `suspicious` 恒为 false → **自愈静默解除武装**（而且没有任何痕迹）。
+     * 现在分开处理：
+     * - 水位行读不到（`read: false`）→ 如实上报"本次不判定"，**也不写水位**
+     *   （写下去等于用"现在的 0"覆盖掉"上次的高水位"，那才是真正的永久解除武装）；
+     * - 明确"从来没有过水位"（`read: true` 且 `watermark === null`）→ 全新用户，
+     *   正常写水位后返回 ok（这是原语义，保留）。
+     */
+    if (!watermarkRead.read) {
+      reportActionFailure(
+        "storage.selfHeal",
+        new Error("水位记录读不到，无法判断内容是否异常丢失"),
+        "水位记录读不到（settings 项缺失或解析失败）—— 本次自检不判定（也不覆盖水位）；" +
+          "下一次自检会重试；若持续如此，说明 settings 面写入有问题",
+      );
+      return {
+        kind: "unavailable",
+        previous: undefined,
+        current,
+        reason: "水位记录读不到，本次不判定",
+      };
+    }
     const suspicious = (previous?.messages ?? 0) >= SUSPICIOUS_MIN_MESSAGES;
     if (!suspicious) {
       await writeWatermark(current);
@@ -230,6 +289,12 @@ export async function verifyUserContentOrRestore(
         new Error("用户内容疑似丢失，但旧库没有可恢复的内容"),
         `查询索引里一条消息都没有（上次水位 ${previous?.messages} 条），旧库也没有内容 —— 需要人工确认`,
       );
+      /**
+       * 这里**仍然写水位**：本次判定已经做完，而且"旧库没有可恢复内容"意味着
+       * 自愈这条路已经走到头了；继续留着旧水位只会让每次启动都重复报一次同样的告警。
+       * 争议点记在这里：如果哪天旧库可用了（用户接回旧库文件），这个覆盖会让自愈
+       * 失去触发条件 —— 那时应当改成"只在用户显式要求时覆盖"。
+       */
       await writeWatermark(current);
       return { kind: "suspicious", previous: previous ?? undefined, current, reason: "旧库无可恢复内容" };
     }
@@ -251,8 +316,58 @@ export async function verifyUserContentOrRestore(
     const res = await probe.command?.<{ rows?: number }>("migration.auto", {
       legacy_path: legacyPath,
     });
-    const after = (await realCount("messages")) ?? 0;
-    await writeWatermark({ at: Date.now(), messages: after, sessions: await realCount("sessions").then((n) => n ?? 0) });
+    /**
+     * ## B-9：恢复之后必须**复核**，成功了才清标记（写水位）
+     *
+     * 原来这里是 `const after = (await realCount("messages")) ?? 0;` 然后**无条件**
+     * `writeWatermark({ messages: after })`，并返回 `kind: "restored"`。三种坏形态：
+     *
+     * 1. `migration.auto` 报错（`probe.command` 不存在、命令被拒、旧库路径过期）→
+     *    异常被下面那个大 catch 吞成 `unavailable`，而**水位已经被写成 0** ——
+     *    下次启动"上次水位是 0" → 不再判定异常 → **自愈被永久解除武装**；
+     * 2. 恢复"成功"但一条都没搬回来（`after` 仍是 0）→ 同样把水位清成 0，
+     *    而且对外报 `kind: "restored"`（**与事实相反的假成功**）；
+     * 3. `realCount` 复核读不到（null）→ `?? 0` 又走回形态 2。
+     *
+     * 现在的规则：
+     * - 复核**读到了**且 > 0 → 才算恢复成功，才更新水位（用新的真实行数）；
+     * - 复核读不到或仍是 0 → **保持原水位不动**（这是关键：旧水位是"这里曾经有很多内容"
+     *   的唯一记录，清掉它等于让下一次自检失去判据），如实上报失败原因，返回 `suspicious`。
+     */
+    const after = await realCount("messages");
+    if (after === null) {
+      reportActionFailure(
+        "storage.selfHeal",
+        new Error("恢复后复核读取失败"),
+        "已执行旧库恢复，但无法确认恢复结果 —— 保持原水位，下一次自检会重试",
+      );
+      return {
+        kind: "unavailable",
+        previous: previous ?? undefined,
+        current,
+        reason: "恢复后复核读取失败（水位未改动）",
+      };
+    }
+    if (after <= 0) {
+      reportActionFailure(
+        "storage.selfHeal",
+        new Error("旧库恢复执行了但没有恢复出任何消息"),
+        `已对旧库执行恢复，复核仍是 0 条消息（旧库报告搬运 ${res?.rows ?? 0} 行）—— ` +
+          "保持原水位，下一次自检会重试；需要人工确认旧库是否真的有内容",
+      );
+      return {
+        kind: "suspicious",
+        previous: previous ?? undefined,
+        current,
+        reason: "恢复后复核仍是 0 条（水位未改动）",
+      };
+    }
+    await writeWatermark({
+      at: Date.now(),
+      messages: after,
+      sessions: (await realCount("sessions")) ?? 0,
+    });
+    console.log(`[Storage] 自检恢复完成并复核通过：现在有 ${after} 条消息`);
     return {
       kind: "restored",
       previous: previous ?? undefined,

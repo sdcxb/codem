@@ -11,7 +11,7 @@
  * - 实体去重和关系合并在前端完成, 不依赖外部图数据库
  */
 
-import { getChunks, listSources, findOrCreateNode, addGraphEdge, deleteGraphData, getGraphData, updateNodeCommunity } from './storage';
+import { getChunksOrStatus, listSources, findOrCreateNode, addGraphEdge, deleteGraphData, getGraphData, updateNodeCommunity } from './storage';
 import type { EntityType, RelationType, GraphData } from './types';
 import { extractJSON } from '../llm/output-parser';
 
@@ -75,7 +75,19 @@ function parseRelationType(relStr: string): RelationType {
  * - 简单社区发现算法 (基于连通分量)
  */
 export async function extractKnowledgeGraph(notebookId: string): Promise<GraphData> {
-  const chunks = getChunks(notebookId);
+  /**
+   * 任务 C-3：索引未就绪时**不能**返回空图谱。
+   *
+   * "没有块"与"这次读不到块"在调用方（`KnowledgeGraphView` / agent 工具）看来
+   * 是完全不同的结论：前者是"这个笔记本还没内容"，后者是"稍后再试"。
+   * 更危险的是本函数下面紧接着 `deleteGraphData()` —— 把"读不到"当成"没有"，
+   * 会在清掉旧图谱之后返回一张空图。
+   */
+  const loaded = getChunksOrStatus(notebookId);
+  if (!loaded.ok) {
+    throw new Error(`知识图谱未抽取：${loaded.reason}`);
+  }
+  const chunks = loaded.chunks;
   if (chunks.length === 0) {
     return { nodes: [], edges: [] };
   }

@@ -503,16 +503,41 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearGuidanceMessages: () => set({ guidanceMessages: [] }),
 
   setFeedback: (messageId, feedback, sessionId) => {
-    // Persist to database if we have a sessionId
+    /*
+     * 第 44 轮：**收敛成单一写者**。
+     *
+     * 原来这里同时发两条写：
+     * ① `MessageStorage.saveFeedback`（`feedback.set`，**5 列**，实现是"先 DELETE 再 INSERT"）；
+     * ② `putMessageFeedback`（域写，**9 列**）。
+     *
+     * 三条实测后果（真 CLI 取证）：
+     * - ①会**抹掉** ②写的 `note / version / created_at / updated_at`（5 列 INSERT 不覆盖这四列 → NULL）；
+     * - ②的返回值被 `catch { /* non-critical *\/ }` 吞掉 —— 失败对调用方完全不可见；
+     * - 取消反馈时传 `"neutral"`，而表上有 `CHECK (feedback IN ('like','dislike'))` →
+     *   真 CLI 实测 `参数 feedback 不合法：只允许 like / dislike（或 null 取消），收到 neutral`，
+     *   也就是说"点取消反馈"从来没成功过（界面上的图标只是先被内存状态点亮了）。
+     *
+     * 现在只留**域写**这一条（9 列是 5 列的超集），并且：
+     * - `neutral` 由 `putMessageFeedback` 归一成**删除那一行**（取消反馈的正确语义）；
+     * - `ifVersion` 不传 = **不校验版本**（`feedback.ts` 的 `checkVersion` 已按此实现）；
+     * - 失败**如实上报**，不再吞。
+     */
     if (sessionId) {
       try {
-        MessageStorage.saveFeedback(messageId, sessionId, feedback);
-        // R3-2.2: Also record through the feedback module for event log integration
-        try {
-          putMessageFeedback(sessionId, messageId, feedback === "like" ? "like" : feedback === "dislike" ? "dislike" : "neutral");
-        } catch { /* non-critical */ }
+        const res = putMessageFeedback(
+          sessionId,
+          messageId,
+          feedback === "like" ? "like" : feedback === "dislike" ? "dislike" : "neutral",
+        );
+        if (!res.ok) {
+          reportPersistFailure(
+            "store.setFeedback",
+            new Error(res.error || "写未被接受"),
+            "消息反馈未保存（重启后会丢失）",
+          );
+        }
       } catch (e) {
-        console.warn("[setFeedback] DB save failed:", e);
+        reportPersistFailure("store.setFeedback", e, "消息反馈未保存（重启后会丢失）");
       }
     }
     // Update in-memory state

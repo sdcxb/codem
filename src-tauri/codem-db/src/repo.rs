@@ -13,7 +13,7 @@ use rusqlite::{params, params_from_iter, OptionalExtension, Row};
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::engine::{Engine, MAX_ROWS_PER_QUERY};
+use crate::engine::{Engine, MAX_BYTES_PER_QUERY, MAX_ROWS_PER_QUERY};
 use crate::error::{DbError, DbResult, ErrorCode};
 use crate::schema::now_ms;
 
@@ -48,7 +48,8 @@ pub fn opt_i64(v: &Value, key: &str) -> DbResult<Option<i64>> {
     }
 }
 
-fn req_i64(v: &Value, key: &str) -> DbResult<i64> {
+/// 必填的整数参数（缺了就是参数错误，不静默取默认值 —— 删除类命令靠它拿到水位线）
+pub fn req_i64(v: &Value, key: &str) -> DbResult<i64> {
     opt_i64(v, key)?.ok_or_else(|| DbError::missing(key))
 }
 
@@ -95,20 +96,66 @@ struct PageOut {
 }
 
 /// 分页收尾：查询时多取一行用来判断 `has_more`，这里丢掉多的那行。
+///
+/// ## 字节预算（第 44 轮：把 `MAX_BYTES_PER_QUERY` 真正实施起来）
+///
+/// `engine.rs` 里 `MAX_BYTES_PER_QUERY = 16 MiB` 从第 20 轮起就存在，
+/// 但它**只被导出、只被 `capabilities()` 当卖点广告出去**，全 crate 没有任何执行点
+/// —— 唯一真正生效的上限是行数（`MAX_ROWS_PER_QUERY`）。
+/// 而行数上限挡不住大 payload：审计用真机实测**单行返回 204,963 B**，
+/// 于是应用内 `messages.list limit=5000` 已经返回过 **7,801,077 B**，
+/// 推算 5000 条 × 200 KB 的会话一次读可达 **约 1 GB** ——
+/// 这个数字要穿过 IPC 序列化、穿过 WebView 桥、再在渲染进程里驻留。
+/// 也就是说：**被公开承诺的上限是假的**，而在"库是索引、正文可以很大"的设计下，
+/// 这个假承诺迟早会以"打开大会话就卡死/爆内存"的形态暴露。
+///
+/// 所以按**累计字节**截断，并把 `has_more = true` 交给调用方继续翻页
+/// （与行数上限共用同一套分页语义，调用方不需要区分是被哪种上限截断的）。
+/// 至少保留一行：否则"单行就超预算"会让每一页都为空 → 调用方永远翻不到它，成为死循环。
 fn paged(mut items: Vec<Value>, limit: usize, offset: usize) -> PageOut {
-    let has_more = items.len() > limit;
+    let mut has_more = items.len() > limit;
     if has_more {
         items.truncate(limit);
     }
+    if cap_by_bytes(&mut items) {
+        has_more = true;
+    }
+    let kept = items.len();
     PageOut {
         items,
         has_more,
         next_cursor: if has_more {
-            Some((offset + limit).to_string())
+            // 注意：`next_cursor` 是**偏移量**语义，按行数推进。
+            // 字节截断时"这一页少给了几行"，但偏移必须按**实际给出的行数**推进，
+            // 否则会跳过数据（按 `offset + limit` 推进会漏掉被字节截断的那部分）。
+            Some((offset + kept).to_string())
         } else {
             None
         },
     }
+}
+
+/// 按 `MAX_BYTES_PER_QUERY` 截断，返回"是否发生了截断"。
+///
+/// **唯一的字节预算实现**：`paged`（所有分页读）与 `fts.search` 都走它 ——
+/// 两处各写一份的话，迟早会出现"某条读路径忘了实施"，
+/// 而 `MAX_BYTES_PER_QUERY` 之所以值得单独抽出来讲，正是因为它**曾经只被广告、从未实施**。
+///
+/// 至少保留一行：否则"单行就超预算"会让每一页都为空 → 调用方永远翻不到它，成为死循环。
+pub fn cap_by_bytes(items: &mut Vec<Value>) -> bool {
+    let mut used = 0usize;
+    let mut kept = 0usize;
+    for it in items.iter() {
+        // 序列化长度 ≈ 实际过线的字节量（key 与分隔符的差异在 16 MiB 量级下可忽略）
+        let n = serde_json::to_string(it).map(|s| s.len()).unwrap_or(0);
+        if kept > 0 && used + n > MAX_BYTES_PER_QUERY {
+            items.truncate(kept);
+            return true;
+        }
+        used += n;
+        kept += 1;
+    }
+    false
 }
 
 // ========== 配置面 ==========
@@ -453,6 +500,16 @@ pub fn telemetry_prune(engine: &Engine, p: &Value) -> DbResult<Value> {
 
 // ========== 消息（数据面第一切片） ==========
 
+/// 消息读路径的列清单（`messages.get` / `messages.list` 共用**一份**）。
+///
+/// 抽成常量是为了堵住"两条读路径漂移"：这个仓库已经因为"写路径加了列、读路径漏了"
+/// 复发过三次（`hidden` / `generated_files` / `retrieved_sources`），而每次的形态都一样 ——
+/// 单元测试用手写行对象，看不见真 SELECT 少了列。
+/// 只要列清单只有一份，新增列就只需要改这里 + `message_row` 的索引。
+const MESSAGE_SELECT: &str = "SELECT id, session_id, role, content, reasoning, timestamp, model, status, \
+     hidden, generated_files, prompt_tokens, completion_tokens, cost, retrieved_sources, \
+     parent_message_id, metadata, trimmed FROM messages";
+
 fn message_row(r: &Row<'_>) -> rusqlite::Result<Value> {
     Ok(json!({
         "id": r.get::<_, String>(0)?,
@@ -478,6 +535,44 @@ fn message_row(r: &Row<'_>) -> rusqlite::Result<Value> {
          * fork / 复制时也一起丢。证据来自端口化测试（CHAT-025 / CHAIN-009）。
          */
         "generated_files": r.get::<_, Option<String>>(9)?,
+        /*
+         * 第 44 轮：把**库里已有、读路径却一直没返回**的列补齐。
+         *
+         * 这是同一个教训的第三次复发（前两次是 `hidden` 与 `generated_files`）：
+         * 列在 schema 里、写路径也传了，但 SELECT 漏了它 —— 于是端口模式下
+         * 这一列**永远读不出来**，而单元测试用的是手写行对象，看不见这个缺口。
+         * 这次是审计用**真 CLI** 逐个命令读返回列时发现的：
+         * `messages.get` 只回 10 列，而 messages 表有 16 列。
+         *
+         * 各列的后果：
+         * - `retrieved_sources`：检索来源/引文。只写不读 → 引文只能靠会话日志镜像
+         *   侥幸兜住，未 hydrate 时整批消失且无法重建（`prompt.ts` 会把它渲染成 `[1] name`）。
+         * - `prompt_tokens` / `completion_tokens` / `cost`：token 与成本统计。
+         * - `parent_message_id`：消息级谱系（编辑重发/fork 的追溯）。
+         * - `metadata`：写入时保留的扩展面（回读不到就等于没存）。
+         */
+        "prompt_tokens": r.get::<_, Option<i64>>(10)?,
+        "completion_tokens": r.get::<_, Option<i64>>(11)?,
+        "cost": r.get::<_, Option<f64>>(12)?,
+        "retrieved_sources": r.get::<_, Option<String>>(13)?,
+        "parent_message_id": r.get::<_, Option<String>>(14)?,
+        "metadata": r.get::<_, Option<String>>(15)?,
+        /*
+         * `trimmed`：**索引裁剪**专用的隐藏标记（第 44 轮新增的列）。
+         *
+         * ## 为什么需要它（`hidden` 一列被两条语义相反的路径共用）
+         *
+         * | 路径 | `hidden = 1` 的含义 | 读路径应当 |
+         * | --- | --- | --- |
+         * | 上下文压缩 | 这条消息**从上下文里移除** | 排除（否则"压缩 840 条、token 一点没降"死循环） |
+         * | 索引裁剪（启动维护，为限制索引体积） | 行**留在库里**（满足 `message_feedback` 外键） | **保留**（"被裁的历史仍读得到"是裁剪的前提） |
+         *
+         * 两者在库里长得一模一样，而渲染侧的读路径必须给出**不同**的答案：
+         * 靠"这次隐藏是谁做的"在进程内记账能骗过同一进程，**重启后就分不清了**
+         * —— 于是要么历史消失（用户看不到自己的消息），要么压缩失效（token 不降）。
+         * 加一列把它变成**库里的持久事实**，比在内存里记一笔靠谱。
+         */
+        "trimmed": r.get::<_, Option<i64>>(16)?.unwrap_or(0),
     }))
 }
 
@@ -531,15 +626,64 @@ const MESSAGE_UPSERT: &str = "INSERT INTO messages \
        model = excluded.model, status = excluded.status, timestamp = excluded.timestamp, \
        hidden = excluded.hidden";
 
+/// 维护 `sessions.message_count`（第 44 轮）。
+///
+/// ## 为什么必须由引擎自己维护
+///
+/// 真机实测同一个会话有三个互相矛盾的数：**权威 JSONL 612 条 / 索引 544 行 /
+/// `sessions.message_count` 写的是 27**。第三个数是"谁都不想维护它"的结果 ——
+/// 渲染侧只在极少数地方显式 `updateSession({ messageCount })`，
+/// 于是这个列一直停在上一次有人记得写它的时刻，而侧边栏就把它显示给用户。
+/// **一个由多个写入者"有空才更新"的计数列，必然会漂移**；要么让它只有一个写入者，
+/// 要么不要有这一列。这里选前者：**引擎是唯一的写入者**，因为只有引擎知道
+/// 每一行消息的生死（`messages.create` / `create_many` / `upsert_index` / `delete` 全都经过它）。
+///
+/// ## 为什么是增量而不是每次 COUNT(*)
+///
+/// 流式响应里 `messages.upsert_index` 是**逐 token** 调的（见 `session/executor.ts`），
+/// 每次都 `COUNT(*)` 一个 5000 条消息的会话是每次写都要扫 5000 行 —— 而计数要的是 O(1)。
+/// 所以：调用方已经知道"这次是新增还是覆盖/删除了几行"，把增量传进来即可。
+///
+/// 负增量用 `MAX(0, …)` 夹住：删除路径的计数可能因为历史漂移而偏小，
+/// **不能让它变成负数**（负的"消息数"比偏小更难解释）。
+/// `COALESCE` 同理：老库这一列可能是 NULL。
+fn bump_session_message_count(
+    tx: &rusqlite::Transaction<'_>,
+    session_id: &str,
+    delta: i64,
+) -> DbResult<()> {
+    if delta == 0 {
+        return Ok(());
+    }
+    tx.execute(
+        "UPDATE sessions SET message_count = MAX(0, COALESCE(message_count, 0) + ?2) WHERE id = ?1",
+        params![session_id, delta],
+    )
+    .map_err(DbError::from)?;
+    Ok(())
+}
+
+/// 这一行消息**是否已存在**（用于判断 upsert 是"新增"还是"覆盖"，从而决定计数加减）
+fn message_exists(tx: &rusqlite::Transaction<'_>, id: &str) -> DbResult<bool> {
+    let n: i64 = tx
+        .query_row("SELECT COUNT(*) FROM messages WHERE id = ?1", params![id], |r| {
+            r.get(0)
+        })
+        .map_err(DbError::from)?;
+    Ok(n > 0)
+}
+
 pub fn messages_create(engine: &Engine, p: &Value) -> DbResult<Value> {
     let f = message_fields(p)?;
     engine.write_tx(|tx| {
+        let is_new = !message_exists(tx, &f.id)?;
         let n = tx
             .execute(
                 MESSAGE_UPSERT,
                 params![f.id, f.session_id, f.role, f.content, f.reasoning, f.timestamp, f.model, f.status, f.hidden],
             )
             .map_err(DbError::from)?;
+        bump_session_message_count(tx, &f.session_id, if is_new { 1 } else { 0 })?;
         Ok(json!({ "written": n, "id": f.id }))
     })
 }
@@ -554,9 +698,17 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
     // 先在事务外把参数全部解析校验完：参数错误不应产生半个事务
     let parsed: Vec<MessageFields> = items.iter().map(message_fields).collect::<DbResult<Vec<_>>>()?;
     engine.write_tx(|tx| {
+        let mut exists_stmt = tx
+            .prepare_cached("SELECT COUNT(*) FROM messages WHERE id = ?1")
+            .map_err(DbError::from)?;
         let mut stmt = tx.prepare_cached(MESSAGE_UPSERT).map_err(DbError::from)?;
         let mut n = 0usize;
+        // 每个会话的**新增**行数（覆盖写不该让计数变大）
+        let mut new_per_session: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
         for f in &parsed {
+            let already: i64 = exists_stmt
+                .query_row(params![f.id], |r| r.get(0))
+                .map_err(DbError::from)?;
             stmt.execute(params![
                 f.id,
                 f.session_id,
@@ -569,7 +721,15 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
                 f.hidden
             ])
             .map_err(DbError::from)?;
+            if already == 0 {
+                *new_per_session.entry(f.session_id.clone()).or_insert(0) += 1;
+            }
             n += 1;
+        }
+        drop(stmt);
+        drop(exists_stmt);
+        for (sid, delta) in &new_per_session {
+            bump_session_message_count(tx, sid, *delta)?;
         }
         Ok(json!({ "written": n, "count": parsed.len() }))
     })
@@ -578,6 +738,13 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
 pub fn messages_update(engine: &Engine, p: &Value) -> DbResult<Value> {
     let id = req_text(p, "id")?;
     // 列白名单：只有这些列可以通过 `messages.update` 改（其它列必须走各自的语义化命令）
+    //
+    // 第 44 轮补上 `prompt_tokens` / `completion_tokens` / `cost`：这三列在 schema 里
+    // （`messages` 建表语句就有），读路径现在也会返回它们，但**没有任何一条命令能写**
+    // （既不在 `MessageFields` 里、也不在这个白名单里）—— 也就是说它们恒为 0，
+    // 是"看着有、其实没有"的第三种形态：**列在、永远填不上**。
+    // 渲染侧目前把 token/成本记在 `cost_records` 与 settings 里，所以这三列仍可能是 0；
+    // 但至少"想写就能写"，而不是留一个谁都改不了的列。
     const UPDATABLE: &[&str] = &[
         "content",
         "reasoning",
@@ -588,6 +755,12 @@ pub fn messages_update(engine: &Engine, p: &Value) -> DbResult<Value> {
         "generated_files",
         "retrieved_sources",
         "parent_message_id",
+        "prompt_tokens",
+        "completion_tokens",
+        "cost",
+        // 索引裁剪标记：可写是为了让"清掉陈旧的裁剪标记"成为可能
+        // （例如这条消息后来又被写回成可见的，`trimmed` 不该再挂着）。
+        "trimmed",
     ];
     let mut sets: Vec<String> = Vec::new();
     let mut vals: Vec<SqlValue> = Vec::new();
@@ -765,6 +938,11 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
             }
         }
 
+        // 3) 会话计数（第 44 轮）：**只有真正新增行时**才 +1（覆盖写不该让计数变大）
+        if exists == 0 {
+            bump_session_message_count(tx, &f.session_id, 1)?;
+        }
+
         Ok(json!({
             "written": written,
             "id": f.id,
@@ -921,10 +1099,7 @@ pub fn messages_get(engine: &Engine, p: &Value) -> DbResult<Value> {
     let id = req_text(p, "id")?;
     engine.with_conn(|conn| {
         let mut stmt = conn
-            .prepare_cached(
-                "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden, generated_files \
-                 FROM messages WHERE id = ?1",
-            )
+            .prepare_cached(&format!("{MESSAGE_SELECT} WHERE id = ?1"))
             .map_err(DbError::from)?;
         let out = stmt
             .query_row(params![id], message_row)
@@ -947,8 +1122,8 @@ pub fn messages_list(engine: &Engine, p: &Value) -> DbResult<Value> {
     engine.with_conn(|conn| {
         let hidden_clause = if include_hidden { "" } else { " AND hidden = 0" };
         let sql = format!(
-            "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden, generated_files \
-             FROM messages WHERE session_id = ?1{hidden_clause} ORDER BY timestamp ASC, id ASC LIMIT ?2 OFFSET ?3"
+            "{MESSAGE_SELECT} WHERE session_id = ?1{hidden_clause} \
+             ORDER BY timestamp ASC, id ASC LIMIT ?2 OFFSET ?3"
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(DbError::from)?;
         // 多取一行判断 has_more（避免额外 COUNT(*) 全表扫描）
@@ -998,18 +1173,125 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
     // 现在两态齐备：`soft` 为真 → `UPDATE ... SET hidden = 1`；
     // 缺省/为假 → 原来的硬删除（`DELETE FROM messages`，tool_calls / 反馈按外键级联）。
     let soft = p.get("soft").and_then(|x| x.as_bool()).unwrap_or(false);
+    // `trim: true` = 索引裁剪的隐藏（`hidden = 1` **且** `trimmed = 1`）。
+    // 它蕴含软删除语义（行不删），所以调用方不必同时传 `soft`。
+    let trim = p.get("trim").and_then(|x| x.as_bool()).unwrap_or(false);
+    let soft = soft || trim;
+    let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
-        let sql = if soft {
-            "UPDATE messages SET hidden = 1 WHERE id = ?1"
+        /*
+         * 硬删除的两件事（第 44 轮）：
+         *
+         * ① **批量删除闸门**。`BULK_DELETE_LIMIT` 的闸门原来只装在 `crud.delete` 与
+         *    `sessions.delete` 上，而**真正做大范围删除的路径恰好不受保护**：
+         *    启动维护的索引裁剪、`deleteMessagesBefore`（按时间清理）走的都是这里。
+         *    判据与 `crud.delete` 共用同一份实现（`measure_delete_impact` +
+         *    `guard_cascade_scope`）：先删、量净影响（含级联、已剔除审计行）、超限回滚。
+         *    调用方**明确枚举了 id**时应当传 `confirm_bulk: true` —— 闸门要拦的是
+         *    "规模不体现在参数里"的那类删除，不是"声明清楚的大删除"。
+         *    隐藏（`soft`）不是破坏性操作，**不受**该闸门约束。
+         *
+         * ② **目标不存在时的假成功**。原来无论删掉 0 行还是 N 行都回 `ok`，
+         *    于是"删一条不存在的消息"与"删成功"在调用方看来完全一样
+         *    （`written: 0` 只体现在数字里，而渲染侧的 `.catch` 根本不会触发）。
+         *    单目标删除（`ids` 只有一个元素）时，删不到就是**没删掉**，必须报 `not_found`；
+         *    批量删除则如实回报 `written` / `missing` —— 批量里"有些已经没了"是正常形态，
+         *    报错会让幂等重试变成永远失败。
+         */
+        let (n, impact, per_session) = if soft {
+            /*
+             * 软删除有两种语义，必须分得开（第 44 轮）。
+             *
+             * - `soft: true`（缺省语义）→ `hidden = 1`：**从上下文里移除**（压缩）。
+             *   读路径必须把这条消息排除，否则就是"压缩了 840 条、token 一点没降"。
+             * - `trim: true` → `hidden = 1, trimmed = 1`：**索引裁剪**。
+             *   裁剪的目的是限制索引体积，而"被裁掉的历史仍能从权威日志读到"是它的前提 ——
+             *   所以读路径把这一条**保留**在历史里，只是不再从索引里出。
+             *
+             * 两者原来在库里完全一样（都是 `hidden = 1`），渲染侧只能靠进程内记账区分，
+             * 重启后必然分不清。`trimmed` 这一列把区别变成**库里的持久事实**。
+             */
+            let sql = if trim {
+                "UPDATE messages SET hidden = 1, trimmed = 1 WHERE id = ?1"
+            } else {
+                "UPDATE messages SET hidden = 1 WHERE id = ?1"
+            };
+            let mut stmt = tx
+                .prepare_cached(sql)
+                .map_err(DbError::from)?;
+            let mut n = 0usize;
+            for id in &parsed {
+                n += stmt.execute(params![id]).map_err(DbError::from)?;
+            }
+            // 隐藏不删行 → 计数不变
+            (n, n as i64, std::collections::HashMap::new())
         } else {
-            "DELETE FROM messages WHERE id = ?1"
+            /*
+             * 硬删除：**先记下每个 id 属于哪个会话，再删**。
+             *
+             * 顺序不能反：`session_id` 就在被删的那一行上，删完就查不到了 ——
+             * 而"会话消息数"要按会话逐个减（第 44 轮消掉的正是这类"计数漂移"）。
+             */
+            let mut per_session: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+            let (n, impact) = crate::crud::measure_delete_impact(tx, || {
+                let mut lookup = tx
+                    .prepare_cached("SELECT session_id FROM messages WHERE id = ?1")
+                    .map_err(DbError::from)?;
+                let mut stmt = tx
+                    .prepare_cached("DELETE FROM messages WHERE id = ?1")
+                    .map_err(DbError::from)?;
+                let mut n = 0usize;
+                for id in &parsed {
+                    if let Some((sid,)) = lookup
+                        .query_row(params![id], |r| Ok((r.get::<_, String>(0)?,)))
+                        .optional()
+                        .map_err(DbError::from)?
+                    {
+                        *per_session.entry(sid).or_insert(0) += 1;
+                    }
+                    n += stmt.execute(params![id]).map_err(DbError::from)?;
+                }
+                Ok(n)
+            })?;
+            (n, impact, per_session)
         };
-        let mut stmt = tx.prepare_cached(sql).map_err(DbError::from)?;
-        let mut n = 0usize;
-        for id in &parsed {
-            n += stmt.execute(params![id]).map_err(DbError::from)?;
+        if n == 0 {
+            if parsed.len() == 1 {
+                return Err(DbError::not_found(format!(
+                    "messages 里没有 id={}（{}）",
+                    parsed[0],
+                    if soft { "无法隐藏不存在的消息" } else { "无法删除不存在的消息" }
+                )));
+            }
+            // 批量：不报错，但让"一条都没命中"这件事在返回值里可见
+            return Ok(json!({
+                "written": 0,
+                "requested": parsed.len(),
+                "missing": parsed.len(),
+                "soft": soft,
+                "affected_rows": impact,
+                "note": "所有 id 都不存在（没有任何行被改动）",
+            }));
         }
-        Ok(json!({ "written": n, "requested": parsed.len(), "soft": soft }))
+        if !soft {
+            crate::crud::guard_cascade_scope(
+                &format!("硬删除 {} 条消息", n),
+                impact,
+                confirmed,
+            )?;
+            // 会话计数按会话逐个减（`per_session` 是在删除**之前**采集的）
+            for (sid, delta) in &per_session {
+                bump_session_message_count(tx, sid, -*delta)?;
+            }
+        }
+        Ok(json!({
+            "written": n,
+            "requested": parsed.len(),
+            "missing": parsed.len() - n.min(parsed.len()),
+            "soft": soft,
+            "trim": trim,
+            "affected_rows": impact,
+        }))
     })
 }
 
@@ -1086,6 +1368,13 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
     // 先在事务外把参数解析校验完：参数错误不该留下半个事务
     struct Parsed {
         id: String,
+        /// 归属项目。日志里通常没记 → 落到全局项目 `""`（schema 阶段已种下该行，满足外键）。
+        ///
+        /// ⚠️ 第 44 轮：这里原来是**硬编码 `''`**，于是"索引重建复活的会话"会全部掉进
+        /// "全局对话"项目下（真机复现：删掉的会话自愈后回到全局项目、标题看起来像一句用户话）。
+        /// 现在支持从参数里带 `project_id`；**已存在的会话行不会被改**（`ON CONFLICT` 不碰这一列），
+        /// 所以这个参数只影响"新建的行" —— 正是需要它影响的那部分。
+        project_id: String,
         title: String,
         first_ts: i64,
         last_ts: i64,
@@ -1105,7 +1394,8 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
             let calls = parse_tool_calls(m)?;
             msgs.push((f, calls));
         }
-        // 归属项目在日志里没有记录 → 落到全局项目 ""（schema 阶段已种下该行，满足外键）
+        // 项目归属：优先用参数里的 `project_id`；缺省仍是全局项目（保持既有语义）
+        let project_id = opt_text(s, "project_id")?.unwrap_or_default();
         let first_user = items.iter().find(|m| {
             m.get("role").and_then(|r| r.as_str()) == Some("user")
         });
@@ -1124,6 +1414,7 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         let last_ts = msgs.last().map(|(f, _)| f.timestamp).unwrap_or(first_ts);
         parsed.push(Parsed {
             id: sid,
+            project_id,
             title,
             first_ts,
             last_ts,
@@ -1136,7 +1427,7 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         let mut sess_stmt = tx
             .prepare_cached(
                 "INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count, pinned) \
-                 VALUES (?1, '', ?2, ?3, ?4, ?5, 0) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0) \
                  ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at, \
                    message_count = excluded.message_count",
             )
@@ -1163,7 +1454,7 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         let mut tools_written = 0i64;
         for s in &parsed {
             sess_stmt
-                .execute(params![s.id, s.title, s.first_ts, s.last_ts, s.count])
+                .execute(params![s.id, s.project_id, s.title, s.first_ts, s.last_ts, s.count])
                 .map_err(DbError::from)?;
             for (f, calls) in &s.messages {
                 msg_stmt
@@ -1307,30 +1598,29 @@ pub fn sessions_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
     let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
         /*
-         * 级联规模预检（第 32 轮事故）：这一步删的是 **1 行**，
-         * 但外键级联会带走该会话的全部消息 / 工具调用 / 事件。
+         * 级联规模闸门（第 32 轮事故）。
+         *
+         * 这一步删的是 **1 行**，但外键级联会带走该会话的全部消息 / 工具调用 / 事件。
          * 实测事故：删 2 个会话 → 821 条消息 + 883 个工具调用 + 2131 条事件消失，
          * 而调用参数里完全看不出这个规模。
+         *
+         * 第 44 轮修正：原来这里只**预检 messages 的行数**，于是
+         * ① 事件与工具调用的规模看不见（三个数只算了一个）；
+         * ② 更要命的是**判据只装在这一条命令上**，而渲染侧删会话走的是 `crud.delete`
+         *    → 防护在生产路径上等于不存在（真机复现 300 条消息静默消失）。
+         * 现在两处都用 `crud::measure_delete_impact`：真删一次、量净影响、超限回滚。
          */
-        let affected: i64 = tx
-            .query_row(
-                "SELECT COUNT(*) FROM messages WHERE session_id = ?1",
-                params![id],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-        crate::crud::guard_cascade_scope(
-            &format!("删除会话 {id}"),
-            affected,
-            confirmed,
-        )?;
-        let n = tx
-            .execute("DELETE FROM sessions WHERE id = ?1", params![id])
-            .map_err(DbError::from)?;
-        if n == 0 {
-            return Err(DbError::not_found(format!("sessions 里没有 id={id}")));
-        }
-        Ok(json!({ "written": n, "cascaded_messages": affected }))
+        let (n, impact) = crate::crud::measure_delete_impact(tx, || {
+            let n = tx
+                .execute("DELETE FROM sessions WHERE id = ?1", params![id])
+                .map_err(DbError::from)?;
+            if n == 0 {
+                return Err(DbError::not_found(format!("sessions 里没有 id={id}")));
+            }
+            Ok(n)
+        })?;
+        crate::crud::guard_cascade_scope(&format!("删除会话 {id}"), impact, confirmed)?;
+        Ok(json!({ "written": n, "affected_rows": impact }))
     })
 }
 
@@ -1342,14 +1632,29 @@ pub fn projects_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
             "不允许删除全局项目（projects.id='' 是全局会话的外键目标）",
         ));
     }
+    let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
-        let n = tx
-            .execute("DELETE FROM projects WHERE id = ?1", params![id])
-            .map_err(DbError::from)?;
-        if n == 0 {
-            return Err(DbError::not_found(format!("projects 里没有 id={id}")));
-        }
-        Ok(json!({ "written": n }))
+        /*
+         * 删项目会级联删掉它的**全部会话 → 全部消息/工具调用/事件**，
+         * 而 `written` 只显示 1。这是本系统里单条命令能造成的最大规模删除。
+         * 判据与 `crud.delete` 完全共用（见 `crud::measure_delete_impact` 的说明）：
+         * 先删、再量、超限回滚 —— 事务保证被拒绝时库里一行未动。
+         */
+        let (n, impact) = crate::crud::measure_delete_impact(tx, || {
+            let n = tx
+                .execute("DELETE FROM projects WHERE id = ?1", params![id])
+                .map_err(DbError::from)?;
+            if n == 0 {
+                return Err(DbError::not_found(format!("projects 里没有 id={id}")));
+            }
+            Ok(n)
+        })?;
+        crate::crud::guard_cascade_scope(
+            &format!("删除项目 {id}（连带其全部会话与消息）"),
+            impact,
+            confirmed,
+        )?;
+        Ok(json!({ "written": n, "affected_rows": impact }))
     })
 }
 

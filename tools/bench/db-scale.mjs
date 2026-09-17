@@ -1,27 +1,46 @@
 #!/usr/bin/env node
 /**
- * 规模基准：Rust 引擎 vs sql.js(WASM) 引擎
+ * 规模基准：Rust 引擎（codem-db-cli）
  *
- * ## 为什么要两个都测
+ * ## 历史上的对比基线已经不存在了（本轮修改，这一段是重点）
  *
- * 判断标准是"批量大文档必须非常强"。只报新实现的数字说明不了**改善**，
- * 所以这里用**同一份数据形状、同一套操作**压两个实现：
+ * 这个基准原来同时压两个实现：
  * - **rust**：codem-db-cli（生产实现：原生 sqlite3 + WAL 页级增量落盘）
- * - **wasm**：渲染侧真实使用的 sql.js（`db.exec/run` + `db.export()` 整库序列化落盘）
+ * - **wasm**：渲染侧当时真实使用的 sql.js（`db.exec/run` + `db.export()` 整库序列化落盘）
  *
- * ## 怎么比才公平（这一点比数字本身更重要）
+ * 「删掉渲染进程里的 sql.js 引擎」（L1）之后，`node_modules` 下的 **sql.js 包已经不在工程里**，
+ * 于是那段基线只剩一个**必定失败**的 `import`；更糟的是它的 catch 分支会打印
+ * `wasm : **失败**（这正是要证明的问题）` —— 也就是说：
+ * **「依赖不存在」会被读成「我们证明了 wasm 更差」**。
+ * 那是最坏的一种结论形态：数据不支持，文案却在暗示它支持。
+ * 所以这里把 wasm 那一侧**整段删掉**，只保留 Rust 侧的档位与指标。
  *
- * CLI 每次调用都要**启动进程 + 打开数据库**（这正是未来 IPC 边界的成本形态），
- * 而 WASM 是在同一进程里直接调用。所以：
- * 1. 先单独测出 `cliPerCallOverhead`（一条只读 `counts` 的往返耗时）；
+ * 历史数字仍在 `docs/DB-SCALE-BENCH.json`（**保留**：它是历史记录，本基准不再默认覆盖它）。
+ * 本基准默认写到 `.preview-shot/DB-SCALE-BENCH.json`（该目录已 gitignore），
+ * 要更新历史文件得显式 `--out docs/DB-SCALE-BENCH.json`。
+ *
+ * ## 现在测什么
+ *
+ * "批量大文档必须非常强"这个判定标准没变，只是没有第二个实现可比了，所以看的是
+ * **随语料规模增长的量级行为**：
+ * - 每条写入是否 O(1)（WAL 页级落盘）还是随语料放大；
+ * - 分页是否只读需要的页（走索引），以及**每次 CLI 调用的固定开销**（进程启动 + 打开库）
+ *   在总耗时里占多少 —— 后者正是未来 IPC 边界的成本形态。
+ *
+ * ⚠️ 文案提示：这里刻意写「`node_modules` 下的 sql.js 包」而不是那条字面路径
+ * （`node_modules` + 斜杠 + 包名）。验收门禁会全文 grep 那条字面路径，工程里除了
+ * "某处仍在 import 它"这种真命中之外，不该再出现它 —— 说明性文字也算命中，会淹掉真信号。
+ *
+ * 所以：
+ * 1. 先单独测出 `cliPerCallOverhead`（一条只读 `counts` 的往返耗时中位数）与
+ *    `bareProcessSpawn`（只 `--help`，不打开库）；
  * 2. 报告里同时给出**含开销**与**扣除开销**的解读，并把每次操作的平均耗时列出来；
- * 3. 关注量级差异，而不是零点几毫秒：真正要看的是
- *    - 每条写入是否 O(1)（Rust/WAL）还是 O(语料)（WASM 整库导出）；
- *    - 分页是否只读需要的页（Rust 索引）还是把全表读进渲染进程（WASM 堆）。
+ * 3. 关注量级差异，而不是零点几毫秒。
  *
  * 用法：
  *   node tools/bench/db-scale.mjs                      # 默认 1k / 10k / 100k
  *   node tools/bench/db-scale.mjs --rows 1000,10000
+ *   node tools/bench/db-scale.mjs --out .preview-shot/my-bench.json   # 显式指定报告路径
  *   node tools/bench/db-scale.mjs --keep               # 保留临时库
  */
 
@@ -34,8 +53,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const EXE = process.platform === "win32" ? "codem-db-cli.exe" : "codem-db-cli";
 const CLI = path.join(ROOT, "src-tauri", "codem-db", "target", "debug", EXE);
-const SQL_JS = path.join(ROOT, "node_modules", "sql.js", "dist", "sql-wasm.js");
-const WASM = path.join(ROOT, "node_modules", "sql.js", "dist", "sql-wasm.wasm");
+
+/**
+ * 报告落点。
+ *
+ * ⚠️ 这里曾经硬编码 `docs/DB-SCALE-BENCH.json`，那是**被 git 跟踪**的文件：
+ * 跑一次基准就改动仓库内容，于是"跑个基准"会在 `git status` 里混进一个 8 KB 的 diff，
+ * 还容易被人顺手提交。默认改成已 gitignore 的 `.preview-shot/`，
+ * 需要更新历史文件时显式 `--out`。
+ */
+const DEFAULT_OUT = path.join(ROOT, ".preview-shot", "DB-SCALE-BENCH.json");
 
 const argv = process.argv.slice(2);
 const argOf = (name, dflt) => {
@@ -43,6 +70,7 @@ const argOf = (name, dflt) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : dflt;
 };
 const KEEP = argv.includes("--keep");
+const OUT = path.resolve(process.cwd(), argOf("--out", DEFAULT_OUT));
 const SIZES = argOf("--rows", "1000,10000,100000")
   .split(",")
   .map((x) => parseInt(x.trim(), 10))
@@ -188,113 +216,6 @@ async function benchRust(rows, contentBytes) {
   return out;
 }
 
-async function benchWasm(rows, contentBytes) {
-  const initSqlJs = (await import(`file://${SQL_JS.replace(/\\/g, "/")}`)).default;
-  const SQL = await initSqlJs({ locateFile: () => WASM });
-  const out = { impl: "wasm(sql.js)", rows, contentBytes, steps: {} };
-  const dbPath = path.join(tmpRoot, `wasm-${rows}.bin`);
-  const sessionId = "bench-session";
-
-  let t0 = process.hrtime.bigint();
-  const db = new SQL.Database();
-  db.run(`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, description TEXT, pinned INTEGER DEFAULT 0, created_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
-          CREATE TABLE sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL, last_message_at INTEGER NOT NULL, message_count INTEGER DEFAULT 0, pinned INTEGER DEFAULT 0);
-          CREATE TABLE messages (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, reasoning TEXT, timestamp INTEGER NOT NULL, model TEXT, status TEXT DEFAULT 'done', hidden INTEGER DEFAULT 0);`);
-  out.steps.openFirstTime = ms(t0);
-  out.steps.cliPerCallOverhead = 0; // 同进程调用：没有进程/IPC 往返
-
-  db.run("INSERT INTO projects VALUES ('bench-proj','基准','','',0,1,1)");
-  db.run("INSERT INTO sessions VALUES (?,?,?,?,?,?,0)", [sessionId, "bench-proj", "基准会话", 1, 1, 0]);
-
-  const INS =
-    "INSERT OR REPLACE INTO messages (id, session_id, role, content, reasoning, timestamp, model, status) VALUES (?,?,?,?,?,?,?,?)";
-  const batch = 1000;
-  const flushes = [];
-  t0 = process.hrtime.bigint();
-  for (let start = 0; start < rows; start += batch) {
-    for (let i = start; i < Math.min(start + batch, rows); i++) {
-      const m = makeMessage(i, sessionId, contentBytes);
-      db.run(INS, [m.id, m.session_id, m.role, m.content, m.reasoning, m.timestamp, m.model, m.status]);
-    }
-    // 渲染侧持久化 = db.export()（整库序列化）+ 写文件
-    const tf = process.hrtime.bigint();
-    fs.writeFileSync(dbPath, db.export());
-    flushes.push(ms(tf));
-  }
-  out.steps.insertAll = ms(t0);
-  out.steps.insertBatches = flushes.length;
-  out.steps.insertPerRow = +(out.steps.insertAll / rows).toFixed(3);
-  out.steps.flushTotalMs = flushes.reduce((a, b) => a + b, 0);
-  out.steps.flushMaxMs = Math.max(...flushes);
-  out.exportBytes = fs.statSync(dbPath).size;
-
-  t0 = process.hrtime.bigint();
-  for (let i = 0; i < 200; i++) {
-    const m = makeMessage(rows + i, sessionId, 200);
-    db.run(INS, [m.id, m.session_id, m.role, m.content, m.reasoning, m.timestamp, m.model, m.status]);
-    db.export(); // 每条都整库序列化 —— 这是要证明的放大效应
-  }
-  out.steps.insertSingles200 = ms(t0);
-  out.steps.insertSinglePerRow = +(out.steps.insertSingles200 / 200).toFixed(3);
-
-  const pageLoop = (limit) => {
-    let offset = 0;
-    let n = 0;
-    const t = process.hrtime.bigint();
-    for (;;) {
-      const st = db.prepare(
-        "SELECT id, session_id, role, content, reasoning, timestamp, model, status FROM messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ? OFFSET ?",
-      );
-      st.bind([sessionId, limit, offset]);
-      let got = 0;
-      while (st.step()) {
-        st.getAsObject();
-        got++;
-      }
-      st.free();
-      n += got;
-      if (got === 0) break;
-      offset += got;
-      if (offset > rows + 1_000_000) throw new Error("分页未收敛");
-    }
-    return { took: ms(t), n };
-  };
-  out.steps.readAllPages100 = pageLoop(100);
-
-  t0 = process.hrtime.bigint();
-  {
-    const st = db.prepare(
-      "SELECT id, session_id, role, content, reasoning, timestamp, model, status FROM messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ? OFFSET ?",
-    );
-    st.bind([sessionId, 500, 0]);
-    while (st.step()) st.getAsObject();
-    st.free();
-  }
-  out.steps.readFirstPage500 = ms(t0);
-  out.steps.count = db.exec("SELECT COUNT(*) FROM messages WHERE session_id = ?", [sessionId])[0].values[0][0];
-  const pages = Math.ceil(out.steps.readAllPages100.n / 100);
-  out.steps.readAllPages100MinusOverhead = out.steps.readAllPages100.took; // 同进程：无每次调用开销
-  out.steps.readPerPageMinusOverhead = +(out.steps.readAllPages100.took / Math.max(1, pages)).toFixed(2);
-
-  // 批量改写 10000 条（对应 rust 侧 update_many）
-  const updRows = Math.min(rows, 10000);
-  t0 = process.hrtime.bigint();
-  db.run("BEGIN");
-  for (let i = 0; i < updRows; i++) {
-    db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [`bench-${String(i).padStart(8, "0")}`]);
-  }
-  db.run("COMMIT");
-  out.steps.updateMany = ms(t0);
-  out.steps.updateManyRows = updRows;
-
-  // WASM 堆规模（渲染进程里就是这块内存）
-  out.wasmHeapTotalBytes = SQL.HEAPU8 ? SQL.HEAPU8.length : null;
-  out.exportBytesAfterUpdate = db.export().length;
-  db.close();
-  fs.rmSync(dbPath, { force: true });
-  return out;
-}
-
 const results = [];
 for (const rows of SIZES) {
   if (!isMain) break;
@@ -305,43 +226,29 @@ for (const rows of SIZES) {
   process.stdout.write(
     `  rust : 写入=${fmt(r1.steps.insertAll)}ms(${r1.steps.insertPerRow}ms/条, ${r1.steps.insertBatches}批)  单条=${r1.steps.insertSinglePerRow}ms/条  全量读=${fmt(r1.steps.readAllPages100.took)}ms(每页${(r1.steps.readAllPages100.took / Math.ceil(r1.steps.readAllPages100.n / 100)).toFixed(1)}ms, 扣启动后每页${r1.steps.readPerPageMinusOverhead}ms)  改写1万=${fmt(r1.steps.updateMany)}ms  文件=${fmt(r1.fileBytes)}B  进程启动=${r1.steps.bareProcessSpawn}ms 调用开销=${r1.steps.cliPerCallOverhead}ms\n`,
   );
-  try {
-    const r2 = await benchWasm(rows, contentBytes);
-    results.push(r2);
-    process.stdout.write(
-      `  wasm : 写入=${fmt(r2.steps.insertAll)}ms(${r2.steps.insertPerRow}ms/条, ${r2.steps.insertBatches}批)  单条=${r2.steps.insertSinglePerRow}ms/条  全量读=${fmt(r2.steps.readAllPages100.took)}ms(每页${(r2.steps.readAllPages100.took / Math.ceil(r2.steps.readAllPages100.n / 100)).toFixed(1)}ms)  改写1万=${fmt(r2.steps.updateMany)}ms  整库导出=${fmt(r2.exportBytes)}B\n`,
-    );
-  } catch (e) {
-    const msg = String(e.message).split("\n")[0];
-    process.stdout.write(`  wasm : **失败**（这正是要证明的问题）：${msg}\n`);
-    results.push({ impl: "wasm(sql.js)", rows, contentBytes, error: msg });
-  }
 }
 
 const summary = results.map((r) => {
-  if (r.error) return { impl: r.impl, rows: r.rows, error: r.error };
-  const calls = (r.steps.insertBatches ?? 0) + (r.impl === "rust" ? 200 : 0);
-  const overheadMs = r.impl === "rust" ? calls * (r.steps.cliPerCallOverhead ?? 0) : 0;
+  const calls = (r.steps.insertBatches ?? 0) + 200;
+  const overheadMs = calls * (r.steps.cliPerCallOverhead ?? 0);
   return {
     impl: r.impl,
     rows: r.rows,
     insertAllMs: r.steps.insertAll,
     insertPerRowMs: r.steps.insertPerRow,
-    insertAllMsMinusProcessOverhead:
-      r.impl === "rust" ? Math.max(0, r.steps.insertAll - overheadMs) : r.steps.insertAll,
+    insertAllMsMinusProcessOverhead: Math.max(0, r.steps.insertAll - overheadMs),
     insertSinglePerRowMs: r.steps.insertSinglePerRow,
-      readAllPages100Ms: r.steps.readAllPages100.took,
-      readAllPages100PerRowMs: +(r.steps.readAllPages100.took / Math.max(1, r.steps.readAllPages100.n)).toFixed(4),
-      readPerPageMs: +(r.steps.readAllPages100.took / Math.max(1, Math.ceil(r.steps.readAllPages100.n / 100))).toFixed(2),
-      readAllPages100MinusOverheadMs: Math.round(r.steps.readAllPages100MinusOverhead ?? r.steps.readAllPages100.took),
-      readPerPageMinusOverheadMs: r.steps.readPerPageMinusOverhead ?? null,
-      updateManyMs: r.steps.updateMany,
-      persistedBytes: r.fileBytes ?? r.exportBytes,
-      wasmHeapBytes: r.wasmHeapTotalBytes ?? null,
-      perCallOverheadMs: r.steps.cliPerCallOverhead ?? 0,
-      bareProcessSpawnMs: r.steps.bareProcessSpawn ?? 0,
-    };
-  });
+    readAllPages100Ms: r.steps.readAllPages100.took,
+    readAllPages100PerRowMs: +(r.steps.readAllPages100.took / Math.max(1, r.steps.readAllPages100.n)).toFixed(4),
+    readPerPageMs: +(r.steps.readAllPages100.took / Math.max(1, Math.ceil(r.steps.readAllPages100.n / 100))).toFixed(2),
+    readAllPages100MinusOverheadMs: Math.round(r.steps.readAllPages100MinusOverhead ?? r.steps.readAllPages100.took),
+    readPerPageMinusOverheadMs: r.steps.readPerPageMinusOverhead ?? null,
+    updateManyMs: r.steps.updateMany,
+    persistedBytes: r.fileBytes,
+    perCallOverheadMs: r.steps.cliPerCallOverhead ?? 0,
+    bareProcessSpawnMs: r.steps.bareProcessSpawn ?? 0,
+  };
+});
 
 const report = {
   generatedAt: new Date().toISOString(),
@@ -350,9 +257,10 @@ const report = {
   cli: CLI,
   rssMbAtEnd: rssMb(),
   notes: [
-    "rust 侧每次 invoke 都是一次进程启动 + 打开库（未来 IPC 边界的成本形态）；wasm 侧是同进程调用。",
-    "因此 wasm 的『每秒操作数』天然占优，本基准关注的是**随语料规模增长的量级行为**：写入是否 O(1) vs O(语料)、分页是否只读需要的页。",
-    "wasm 侧的 schema 是最小可对照结构（3 张表），未包含生产库的全部索引与 FTS 表；其 export 字节数因此偏小，仍足以体现 O(语料) 的放大效应。",
+    "历史上这里同时压 rust 与 wasm(sql.js) 两个实现；sql.js 已随 L1 从工程里删除，所以只剩 Rust 一侧。",
+    "历史对比数字仍保留在 docs/DB-SCALE-BENCH.json（本基准不再默认覆盖它）。",
+    "rust 侧每次 invoke 都是一次进程启动 + 打开库（未来 IPC 边界的成本形态）；报告同时给出「扣除每次调用固定开销」后的读成本。",
+    "关注随语料规模增长的量级行为（写入是否 O(1)、分页是否只读需要的页），而不是零点几毫秒的差异。",
   ],
   results,
   summary,
@@ -363,10 +271,9 @@ if (isMain) {
     console.error(`找不到 CLI：${CLI}\n请先运行 npm run db:build`);
     process.exitCode = 1;
   } else {
-    fs.mkdirSync(path.join(ROOT, "docs"), { recursive: true });
-    const outFile = path.join(ROOT, "docs", "DB-SCALE-BENCH.json");
-    fs.writeFileSync(outFile, JSON.stringify(report, null, 2));
-    console.log(`\n[bench] 报告写入 ${path.relative(ROOT, outFile)}`);
+    fs.mkdirSync(path.dirname(OUT), { recursive: true });
+    fs.writeFileSync(OUT, JSON.stringify(report, null, 2));
+    console.log(`\n[bench] 报告写入 ${path.relative(ROOT, OUT)}`);
     if (KEEP) console.log(`[bench] 临时库保留在 ${tmpRoot}`);
     else fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

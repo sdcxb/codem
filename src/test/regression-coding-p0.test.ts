@@ -109,14 +109,14 @@ describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
   });
 
   it("start() — Git 工作区返回 true，捕获 beforeTree", async () => {
-    let callCount = 0;
+    const commands: string[] = [];
     mockTauriInvoke({
       execute_command: (args: any) => {
+        commands.push(String(args.command));
         if (args.command.includes("rev-parse --is-inside-work-tree")) {
           return { stdout: "true", stderr: "", exitCode: 0 };
         }
         if (args.command.includes("HEAD^{tree}")) {
-          callCount++;
           return { stdout: "abc123tree456\n", stderr: "", exitCode: 0 };
         }
         return { stdout: "", stderr: "", exitCode: 0 };
@@ -126,7 +126,17 @@ describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
     const tracker = new FileChangeTracker("/fake/repo", "session-1", "msg-1", 1);
     const result = await tracker.start();
     expect(result).toBe(true);
-    expect(callCount).toBe(1);
+    /**
+     * 断言从"`HEAD^{tree}` 只被调用 1 次"改成"两条基准都被取到"（第 91 波，任务 C-7）。
+     *
+     * 旧断言钉住的是"start() 只做一次 git 调用"这个**实现细节**，而第 84 波引入的
+     * `beforeSnapshot` 必须在这里取（否则 `finalize()` 的第一句
+     * `!this.beforeSnapshot` 恒成立 → `finalize()` 恒返回 null → 整个文件变更/回滚
+     * 功能域永久失效）。真实缺陷已由 `finalize()` 的回归用例覆盖
+     * （`persist-domain-fixes.test.ts` 的 C7-3/4），这里只钉住"基准确实取到了"。
+     */
+    expect(commands.some((c) => c.includes("HEAD^{tree}")), "必须取过 HEAD 树作为 beforeTree").toBe(true);
+    expect(commands.some((c) => c.includes("stash create")), "必须取过工作区快照（未提交改动才算数）").toBe(true);
   });
 
   it("finalize() — 无变更时返回 null", async () => {

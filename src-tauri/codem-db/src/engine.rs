@@ -159,6 +159,30 @@ impl Engine {
         )
         .map_err(DbError::from)?;
 
+        /*
+         * 自动回收空闲页（第 44 轮：真机实测 115,191,808 B 的库里活数据只有 16,392,192 B，
+         * `freelist_count` = 98,799,616 B —— **85.8% 是永不回收的空闲页**，全 crate 零处 VACUUM）。
+         *
+         * ⚠️ 顺序极其关键：这句必须在**其它任何 pragma 之前**。
+         *
+         * SQLite 的 `auto_vacuum` 只对**还没有页的库**生效；一旦库里有了页，
+         * 写这个 pragma 会被**静默忽略**（不报错、读回来还是 0）。
+         * 而紧跟着的那串 pragma 里 `journal_mode=WAL` 就会把文件头写出来 ——
+         * 于是"先设 WAL、再设 auto_vacuum"永远拿不到想要的结果。
+         * （这个坑是写这条测试时踩到的：先按直觉把 auto_vacuum 拼进那串 pragma，
+         *   测试报 `auto_vacuum == 0`，而代码看上去完全正确。）
+         *
+         * 老库（已有页）不在这里处理：它需要一次 `VACUUM` 才能转换，
+         * 那个动作留给 `storage.compact`（那里本来就要整库重写，顺手转换不额外花钱）。
+         */
+        let pages_on_disk: i64 = conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        if pages_on_disk == 0 {
+            conn.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;")
+                .map_err(DbError::from)?;
+        }
+
         // === 引擎级 PRAGMA（必须在装 authorizer 之前设置）===
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;\
@@ -240,6 +264,27 @@ impl Engine {
 
     /// 写事务：**所有写都走这里**（顺序执行、全成或全败）
     pub fn write_tx<T>(&self, f: impl FnOnce(&rusqlite::Transaction<'_>) -> DbResult<T>) -> DbResult<T> {
+        /*
+         * 导入事务开着的时候**不许**走普通写路径（第 44 轮：把注释里的承诺真的兑现）。
+         *
+         * `import_open` 这个标志存在的理由，注释里写得很清楚："保证不会和普通 `write_tx` 交错
+         * —— 交错会让 COMMIT 把别人的写入一起提交"。但在这一轮之前，`write_tx`
+         * **从来没有读过它**：真交错时 SQLite 会以 `BEGIN DEFERRED` 撞上已有事务、
+         * 抛一句"cannot start a transaction within a transaction"，
+         * 调用方拿到的是**引擎内部术语**而不是"现在正在导入，稍后再写"。
+         *
+         * 更糟的一种可能是：如果哪天有人把 `transaction()` 换成 `savepoint()`（看起来更"稳"），
+         * 交错就会**真的发生**，而且是静默的 —— 导入事务的 `COMMIT` 会把这次写入一起提交，
+         * 于是"导入失败 → 回滚"不再能保证"库里回到导入前"。标志位就是为这件事存在的，
+         * 那么使用它必须发生在**唯一的写入口**上。
+         */
+        if self.import_in_progress() {
+            return Err(DbError::new(
+                ErrorCode::Unavailable,
+                "正在导入（import.begin 与 import.end 之间），此时不接受普通写入：\
+                 导入事务提交时会把并发的写入一起提交，导致导入失败后无法完整回滚",
+            ));
+        }
         let mut guard = self
             .conn
             .lock()

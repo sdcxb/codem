@@ -10,7 +10,8 @@
  *
  * 1. 权威日志**永远先写**，且不因索引失败而受影响；
  * 2. 端口是 rust 时索引写走 `messages.upsert_index`（单事务复合写）；
- * 3. 端口未注册 / 是 wasm（回滚）时**完全不接手**，走原路径；
+ * 3. 端口未注册（第 19 轮：唯一的"不接手"形态）时**完全不接手**，
+ *    不碰旧库、但**必须如实上报**；
  * 4. 更新路径拿不到 base 行时回退原路径（不猜数据）；
  * 5. 传参形状必须与 Rust 契约一致（snake_case、tool_calls 整体替换语义）。
  */
@@ -166,21 +167,13 @@ describe("消息索引写分流", () => {
     expect(failures.some((n) => n.includes("索引")), "没写进去必须如实上报").toBe(true);
   });
 
-  it("MSG-5: 端口是 wasm 时同样不接手（回滚开关已退役，行为与 MSG-4 一致）", async () => {
-    setStoragePort({
-      kind: "wasm",
-      engine: {} as never,
-      data: {} as never,
-      config: {} as never,
-      append: {} as never,
-    });
-    const { createMessage } = await import("../core/storage/message");
-    createMessage({ id: "m5", role: "user", content: "x", timestamp: 1 } as never, "s1");
-    await settle();
-    expect(legacyQuery, "wasm 端口在生产里已不可能出现；无论如何都不许回退旧库").toBe(0);
-    expect(failures.some((n) => n.includes("索引")), "不接手就要如实上报").toBe(true);
-  });
-
+  /**
+   * 第 19 轮：这里原来还有一条 MSG-5（`setStoragePort({kind:"wasm", …})`），
+   * 断的是"不接手 + 不许回退旧库 + 如实上报"——与上面 MSG-4 逐条重复。
+   * 第 19 轮：wasm 端口形态已不存在（旧引擎删除），而"端口未注册"是唯一的
+   * "没有可用存储"形态，所以那条用例直接删除，它的断言**没有一条**随之丢失
+   * （全部由 MSG-4 守着）。
+   */
   it("MSG-6: 索引写失败不抛、不影响权威日志，且如实上报", async () => {
     const { port } = rustPortRecorder({ failIndex: true });
     setStoragePort(port);

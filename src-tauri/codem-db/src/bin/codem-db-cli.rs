@@ -19,6 +19,17 @@
 //!
 //! 约定：**stdout 只输出一行 JSON**（结果或错误），退出码 0=成功、1=错误。
 //!
+//! ## ⚠️ `--db` 是**读写**打开的（会应用 schema 并安装删除审计触发器）
+//!
+//! 这一条必须写在最显眼的地方，因为它踩过一次：有人想"只用 CLI 读一下旧库"，
+//! 于是 `--db <旧库路径>`，结果那个文件被改动了（多出 8 个触发器 + 新表结构，
+//! sha256 前后不同）—— 而旧库是**回滚时唯一的那一份**。
+//!
+//! 要读旧库，请用**只读**通道（它们内部都是 `SQLITE_OPEN_READ_ONLY`）：
+//!   codem-db-cli --db <新库> invoke legacy.read_table -   # 参数 {"legacy_path":"<旧库>","table":"messages"}
+//!   codem-db-cli --db <新库> invoke migration.auto  -     # 参数 {"legacy_path":"<旧库>"}
+//! 也就是说：`--db` 指向**目标（新）库**，旧库通过参数传进去。
+//!
 //! 响应形状（**每条响应都自描述**，调用方不需要猜）：
 //! - 成功：`{"ok":true, ...}`（`invoke` 是 `{"ok":true,"result":…}`）
 //! - 失败：`{"ok":false,"error":{"code":"BUSY","message":"…","retryable":true}}`
@@ -272,17 +283,62 @@ fn main() -> ExitCode {
         }
     };
 
+    /*
+     * 打开成功之后再提醒一次：如果这个库看起来是**旧引擎（sql.js）**写出来的，
+     * 那么刚才那次打开已经改动过它了（应用 schema + 安装删除审计触发器）。
+     *
+     * 为什么不直接拒绝打开：判据（"有 sessions 表但没有 storage_audit"）对
+     * 极老的 Rust 库也可能成立，而那种库恰恰**需要**被打开以应用迁移 ——
+     * 拒绝会让它永久打不开。所以这里选择"如实说出来"而不是"替用户决定"。
+     * 真正该做的是让调用方一开始就别把 `--db` 指向旧库（见文件头的说明）。
+     */
+    if let Ok(true) = engine.with_conn(|conn| {
+        let has_sessions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(codem_db::DbError::from)?;
+        let has_audit: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='storage_audit'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(codem_db::DbError::from)?;
+        Ok(has_sessions > 0 && has_audit == 0)
+    }) {
+        eprintln!(
+            "[codem-db-cli] ⚠️ {path} 看起来不是本引擎创建的库（有 sessions 表、但没有 storage_audit）。\
+             `--db` 是**读写**打开的，这次调用可能已经改动了这个文件。\
+             要只读读旧库，请用 `--db <新库> invoke legacy.read_table -`（参数里传 legacy_path）。"
+        );
+    }
+
     // 统一的成功包装：**每条成功响应都带 `ok:true`**。
     // 这样调用方永远不需要"猜字段名"来判断这是结果还是错误体。
     // （实测被契约测试抓到过：`commands`/`counts` 等分支曾经漏了这个字段。）
     match run(&engine, &path, &rest) {
         Ok(mut v) => {
             if let Value::Object(ref mut map) = v {
-                map.insert("ok".to_string(), Value::Bool(true));
-                /**
-                 * 发生过"损坏库自动恢复"时**必须报出来**：调用方（渲染侧 / 排查者）
-                 * 要据此写"索引需要重建"标记并提示用户 —— 悄悄恢复等于用户永远不知道自己丢过一次索引。
+                /*
+                 * 第 44 轮修正：**不能无条件覆盖 `ok`**。
+                 *
+                 * 这里原来是无条件 `map.insert("ok", true)`，于是 `integrity` 子命令
+                 * 的 `ok` 被它盖掉 —— 实测数据页损坏的库：
+                 * `{"detail":"*** in database main ***\nTree 1239 page 2049: btreeInitPage() returns error code 11…","ok":true}`
+                 * 也就是说：**损坏的库报 ok:true**。任何读顶层 `.ok` 的契约测试、
+                 * 排查脚本、CI 判据都会被这条假绿骗过去 —— 而 `integrity` 存在的唯一理由
+                 * 就是回答"这个库还好吗"。
+                 *
+                 * 现在的规则：`ok` 缺省为 true，但**已经带了 `ok` 的响应一律尊重它自己的判断**
+                 * （`integrity` 是唯一会带 `false` 的分支；将来若有别的自检命令同理）。
                  */
+                map.entry("ok".to_string())
+                    .or_insert(Value::Bool(true));
+                /* 发生过"损坏库自动恢复"时**必须报出来**：调用方（渲染侧 / 排查者）
+                 * 要据此写"索引需要重建"标记并提示用户 —— 悄悄恢复等于用户永远不知道自己丢过一次索引。 */
                 if let Some(backup) = &recovered_from {
                     map.insert(
                         "recovered_from".to_string(),

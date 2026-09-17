@@ -34,6 +34,7 @@ import type { LLMEngine } from '../llm';
 import * as MessageStorage from '../storage/message';
 import { getLang } from '../i18n/lang';
 import { parseTaskResult, type SubagentTask, type SubagentActivity } from './subagent';
+import { ensureSubagentSession } from './subagent-session';
 import { idleWatchdog } from '../session/idle-watchdog';
 
 // ========== 活化状态 ==========
@@ -204,6 +205,17 @@ export class SubagentRuntime {
 
     const childId = generateId();
     const messageId = generateMessageId();
+
+    /**
+     * 任务 C-2：先给子会话补一条最小 `sessions` 行。
+     *
+     * 必须在 `executeContinuable()` **之前**：子智能体的第一件事就是写消息索引
+     * （`LLMEngine.processSubagent` → `MessageStorage.createMessage`），
+     * 那一步在 `messages.session_id` 上有外键 —— 行没建好，第一条消息就已经写不进去了。
+     *
+     * 补行失败**不阻止启动**（只上报）：子智能体要能跑，代价是它的轨迹这次入不了库。
+     */
+    ensureSubagentSession(childId, spec.request.parentSessionId);
 
     // 准备子智能体
     await provider.prepareContinuable({

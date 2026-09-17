@@ -11,7 +11,7 @@
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
 import { retrieve } from "../../knowledge/retriever";
-import { getNotebook } from "../../knowledge/storage";
+import { getNotebook, ChunkIndexUnavailableError } from "../../knowledge/storage";
 
 /** 检索结果中的来源元数据 */
 export interface CitationSource {
@@ -115,6 +115,23 @@ export function createSearchNotebookTool(): ToolDef {
           },
         };
       } catch (error) {
+        /**
+         * 任务 C-3：**索引未就绪 ≠ 没有相关内容**。
+         *
+         * 块镜像被拒（全库块数超过 `CHUNK_MIRROR_MAX`）或尚未接手时，读不到块是
+         * **本进程的**状态，不是笔记本的事实。原来的措辞（"No relevant results found"）
+         * 会让模型据此断言"你的资料里没有这个"，而真相是"这次没读到，稍后重试"。
+         * 所以这里给一句**明确的、可行动**的结论，并明说不要下"没有内容"的结论。
+         */
+        if (error instanceof ChunkIndexUnavailableError) {
+          return {
+            title: `Search: "${query}"`,
+            output:
+              `索引未就绪：笔记本 "${notebook.name}" 的文本块索引暂时读不到（${error.message}）。\n` +
+              `这不代表笔记本里没有相关内容 —— 请稍后重试一次；如果连续多次如此，请告诉用户"知识库索引未就绪"，` +
+              `不要让用户以为资料丢了。`,
+          };
+        }
         const errMsg = error instanceof Error ? error.message : String(error);
         return {
           title: "Search Notebook",

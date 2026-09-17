@@ -20,7 +20,18 @@ export const sessionPersistenceSqliteProvider: Plugin = (ctx: any) => {
     listSessions(projectId: string) { return SessionStorage.listSessions(projectId) },
     getSession(sessionId: string) { return SessionStorage.getSession(sessionId) },
     updateSession(sessionId: string, updates: any) { return SessionStorage.updateSession(sessionId, updates) },
-    deleteSession(sessionId: string) { return SessionStorage.deleteSession(sessionId) },
+    /*
+     * 第 44 轮：把 `confirmBulk` 透传出去。
+     *
+     * 删会话是**级联删除的源头**（sessions → messages / tool_calls / session_events），
+     * Rust 侧按**真实影响行数**判定：超过 50 行必须显式声明"我知道这是批量删除"。
+     * 这个 provider 是扩展点，调用方是插件 —— 它才知道自己是在响应用户的破坏性操作
+     * （该传 true）还是在做对账/清理（不该传）。
+     * **缺省不传**是刻意的：安全默认必须是"不确认"，否则闸门对插件路径形同不存在。
+     */
+    deleteSession(sessionId: string, opts?: { confirmBulk?: boolean }) {
+      return SessionStorage.deleteSession(sessionId, opts)
+    },
 
     // Message CRUD
     createMessage(msg: any, sessionId: string) { return MessageStorage.createMessage(msg, sessionId) },

@@ -9,7 +9,7 @@
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from '../tools';
 import { generatePPTContent, serializeSlideDeck } from '../../knowledge/ppt-generator';
-import { createNote, getNotebook, getChunks, listSources } from '../../knowledge/storage';
+import { createNote, getNotebook, getChunksOrStatus, listSources } from '../../knowledge/storage';
 import { syncNoteLinks } from '../../knowledge/note-manager';
 
 export function createGeneratePPTTool(): ToolDef {
@@ -83,7 +83,16 @@ export function createGeneratePPTTool(): ToolDef {
       }
 
       // 检查是否有知识库内容
-      const chunks = getChunks(notebookId);
+      // 任务 C-3：把"索引未就绪"与"没有内容"分成两句不同的话 ——
+      // 前者让模型稍后重试，后者才该提示用户去添加来源。
+      const loadedPptTool = getChunksOrStatus(notebookId);
+      if (!loadedPptTool.ok) {
+        return {
+          title: 'Generate PPT',
+          output: `Error: 知识库索引未就绪（请稍后重试一次）：${loadedPptTool.reason}`,
+        };
+      }
+      const chunks = loadedPptTool.chunks;
       if (chunks.length === 0) {
         return {
           title: 'Generate PPT',

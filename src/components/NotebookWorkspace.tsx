@@ -48,6 +48,7 @@ import {
   generateStudioContent,
   exportNotebookAsMarkdown, downloadMarkdown, generateStudyPath,
   getChunks,
+  getChunksOrStatus,
   setActiveSourceFilter,
 } from '../core/knowledge';
 import type { Notebook, NotebookSource, IndexProgress, Note, StudioContentType, NoteContentType } from '../core/knowledge';
@@ -809,10 +810,20 @@ notebookId={notebookId}
                   setViewingSource({ sourceId: node.sourceIds[0], highlightText: node.label });
                 } else if (node.chunkIds && node.chunkIds.length > 0) {
                   // 如果有 chunk ID，尝试找到对应的 source
-                  const chunks = getChunks(notebookId);
-                  const chunk = chunks.find(c => c.id === node.chunkIds[0]);
+                  //
+                  // 第 44 轮：`getChunks` 现在**可能抛**（块镜像被上限拒绝时不再假装"没有内容"，
+                  // 见 `getChunksOrStatus` 的说明）。这里是**点击回调**而不是渲染路径，
+                  // 但同样不能让异常冒到 React 事件层（用户看到的是"点了没反应"）。
+                  const loaded = getChunksOrStatus(notebookId);
+                  const chunk = loaded.ok
+                    ? loaded.chunks.find((c) => c.id === node.chunkIds![0])
+                    : undefined;
                   if (chunk) {
                     setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex, highlightText: node.label });
+                  } else if (!loaded.ok) {
+                    console.warn(
+                      `[NotebookWorkspace] 知识库索引未就绪（state=${loaded.state}），无法按块定位：${loaded.reason}`,
+                    );
                   }
                 }
               }}

@@ -14,7 +14,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { FileText, Search, FileWarning } from 'lucide-react';
 import { ActionIcons } from '../core/icons/icon-map';
-import { getSource, getChunks } from '../core/knowledge';
+import { getSource, getChunksOrStatus } from '../core/knowledge';
 import type { NotebookSource, NotebookChunk } from '../core/knowledge';
 import { PdfViewer } from './PdfViewer';
 import { DocxViewer } from './DocxViewer';
@@ -46,8 +46,25 @@ export function SourceViewer({
     const src = getSource(sourceId);
     if (src) setSource(src);
 
-    const allChunks = getChunks(notebookId).filter(c => c.sourceId === sourceId);
-    setChunks(allChunks);
+    /*
+     * 第 44 轮：`getChunks` 现在**可能抛** `ChunkIndexUnavailableError`。
+     *
+     * 背景：知识库的块镜像按**整表** 2000 行封顶，超限即被拒；旧实现让"被拒"表现为
+     * `[]` —— 也就是"这个笔记本没有任何块"，而真相是"索引没接手"。于是检索静默变空、
+     * Studio 生成报"没有可索引内容"。现在那种状态会**抛**，让上位能区分两种情形。
+     *
+     * 但**抛不能抛进 React 渲染**（那会白屏）：所以这里用不抛的 `getChunksOrStatus`，
+     * 未就绪时把块列表置空并保留提示，等下一次进入/重试。
+     */
+    const loaded = getChunksOrStatus(notebookId);
+    if (loaded.ok) {
+      setChunks(loaded.chunks.filter((c) => c.sourceId === sourceId));
+    } else {
+      setChunks([]);
+      console.warn(
+        `[SourceViewer] 知识库索引未就绪（state=${loaded.state}）：${loaded.reason} —— 正文仍可读，块高亮暂不可用`,
+      );
+    }
 
     // 不再强制 text 模式 — 让 PDF/DOCX 用各自的渲染模式，高亮由组件内部处理
     if (src?.type === 'file' && src.filePath?.toLowerCase().endsWith('.pdf')) {

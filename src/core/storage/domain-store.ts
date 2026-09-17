@@ -33,6 +33,17 @@ import { recordWrite } from "./write-audit";
 export interface DomainMirrorPort {
   domains: {
     isReady(table: string): boolean;
+    /**
+     * **该表是否正在加载**（A-1，第 20 轮）：异步 IPC 在途、既没就绪也没失败。
+     *
+     * 为什么必须能问出这个状态：真端口的 `ensureLoaded` 是异步 IPC，所以**每次启动后的
+     * 第一次写**都落在"加载中"这个窗口里。只有能区分"**还在加载**"与
+     * "**永远不会就绪**"（超上限被拒 / 加载失败 / 从未被请求），写路径才能做出正确处置：
+     * 前者应当**排队等就绪**，后者才该如实返回"未接手"。
+     *
+     * 可选：老实现没有它就退回旧行为（返回 false / 不上报丢弃），绝不假装排队成功。
+     */
+    isLoading?(table: string): boolean;
     ensureLoaded(table: string, onLoaded?: () => void, maxRowsOverride?: number): void;
     all<R>(table: string): R[];
     find<R>(table: string, where: Record<string, unknown>): R[];
@@ -62,18 +73,209 @@ export interface DomainReadOpts {
 }
 
 /**
- * 取某表可用的域端口 —— **未加载完就返回 null**（调用方据此回退旧路径）。
+ * 取该表可用的域端口，**并顺带触发一次惰性加载**（不判断是否已就绪）。
  *
- * 副作用：每次调用都会顺带触发一次惰性加载，因此最迟在该域第二次访问时切过来。
+ * 这是 `domainPort` 的"下层"：写路径需要拿到端口对象本身才能把写**排队**
+ * （见 `deferWrite`），而它恰恰是在"未就绪"的时候才需要端口。
+ */
+function domainMirror(table: string, opts: DomainReadOpts = {}): DomainMirrorPort | null {
+  // 判据只有"端口在不在"：`kind` 已是常量 `"rust"`（唯一实现），再加一次 `kind` 判断
+  // 就是恒不成立的分支 —— 第 19 轮已删。
+  if (!hasStoragePort()) return null;
+  const candidate = getStoragePort() as unknown as DomainMirrorPort;
+  if (!candidate.domains?.ensureLoaded) return null;
+  /*
+   * 把"该表刚刚就绪"这件事接住 —— 这是写队列重放的**主路径**。
+   *
+   * 为什么不能只靠 `if (isReady) replayDeferred()`（下一行）：加载是异步的，
+   * 而这次调用只负责**发起**加载，函数返回时表还没就绪 —— 那一刻队列里有东西，
+   * 却没有任何人在"就绪的那一刻"把它取走。没有这个回调，重放永远不会发生。
+   *
+   * 兜底的那次判断仍然保留：万一回调因为实现细节没被触发（例如某天换了端口实现），
+   * 下一次访问也能把队列清掉（`replayDeferred` 以摘走条目开头，重复调用安全）。
+   */
+  candidate.domains.ensureLoaded(table, () => {
+    if (candidate.domains.isReady(table)) replayDeferred(table);
+  }, opts.maxRows);
+  if (candidate.domains.isReady(table)) replayDeferred(table);
+  return candidate;
+}
+
+/**
+ * 取某表可用的域端口 —— **未加载完就返回 null**（读路径据此给该域的合理空结果）。
  */
 export function domainPort(table: string, opts: DomainReadOpts = {}): DomainMirrorPort | null {
-  if (!hasStoragePort()) return null;
-  const port = getStoragePort();
-  if (port.kind !== "rust") return null;
-  const candidate = port as unknown as DomainMirrorPort;
-  if (!candidate.domains?.ensureLoaded) return null;
-  candidate.domains.ensureLoaded(table, undefined, opts.maxRows);
-  return candidate.domains.isReady(table) ? candidate : null;
+  const candidate = domainMirror(table, opts);
+  return candidate && candidate.domains.isReady(table) ? candidate : null;
+}
+
+// ========== 写入排队（A-1，第 20 轮） ==========
+
+/**
+ * 一次"端口已接手、但镜像还在加载"的写请求。
+ *
+ * 参数形状刻意与 `data.execute` 一致（`cmd` + `params`），这样重放时能走**同一个**
+ * 写穿函数 `persistWriteThrough` —— 镜像更新、审计留痕、失败上报全都不必写第二遍
+ * （重复实现出来的第二条路，就是下一个"两边行为不一致"的来源）。
+ */
+type DeferredOp = "write" | "delete" | "deleteWhere";
+
+interface DeferredWrite {
+  table: string;
+  op: DeferredOp;
+  /** 行（`write`） */
+  rows?: Array<Record<string, unknown>>;
+  /** 等值条件（`delete`） */
+  where?: Record<string, unknown>;
+  /**
+   * 谓词（`deleteWhere`）。范围删除必须**在镜像上**筛出要删的 id
+   * （线协议 `where` 只支持等值匹配），所以重放时要重新算一次：
+   * 镜像在排队期间可能已被填充，重算得到的正是"本地删掉的与写穿的同一批 id"。
+   */
+  match?: (row: Record<string, unknown>) => boolean;
+  key?: string;
+  /**
+   * 重放时要不要**再在镜像上应用一次**本地变更。
+   *
+   * `domainDeleteWhere` 的本地删除必须发生在**排队时**（它要用
+   * `applyDeleteWhere` 的"删了几行"作为返回值），排队那一刻镜像还不存在，
+   * 所以重放时**不能**再按 `where` 删一次 —— 那会把刚加载回来的整表清空。
+   * 这类条目置 `false`，重放只负责写穿。
+   */
+  applyLocally: boolean;
+  cmd: string;
+  params: Record<string, unknown>;
+  scope: string;
+  note: string;
+  /** 入队序号（诊断用；重放严格按入队顺序） */
+  seq: number;
+}
+
+/**
+ * 队列上限。
+ *
+ * 500 是"够用且不至于把内存吃穿"的量级：这个窗口的常态是**一次 IPC 往返**
+ * （几十毫秒），能在这个窗口里攒到 500 次写的场景不存在于正常工作流。
+ * 真撞上上限就说明有别的更严重的问题，此时**如实上报丢弃**比悄悄吞掉好得多。
+ */
+const DEFER_MAX = 500;
+
+let deferQueue: DeferredWrite[] = [];
+let deferSeq = 0;
+let deferredDropped = 0;
+
+/**
+ * 把一次写排到"该表镜像就绪之后"执行，返回是否**已入队**。
+ *
+ * ## 为什么必须有这一段（A-1：首触必丢）
+ *
+ * 原来的写路径是"先 `ensureLoaded()`（异步 IPC）→ 紧接着同步判 `isReady()`"，
+ * 于是**每次启动后对某张表的第一次写**必然落在"未就绪"上 → 直接 `return false`，
+ * 既不写镜像也不排队 —— 而且 `applyWriteMany` 写在 `return` 之后，连镜像都没动。
+ * 不在 `HOT_DOMAIN_TABLES` 里的 12 张表（`todo_lists` / `delegation_tasks` /
+ * `issue_comments` / `telemetry_events` / `message_feedback` / `cost_records` /
+ * `notebook_sources` / `notebook_chunks` / `note_links` / `note_versions` /
+ * `graph_nodes` / `graph_edges`）**每次启动后的第一次写都会静默消失**。
+ *
+ * ## 判据：只有"还在加载"才排队
+ *
+ * - **正在加载** → 排队，就绪后按序重放（这才是"等一下就成"的状态）；
+ * - **永远不会就绪**（加载失败 / 超上限被拒 / 端口不提供 `isLoading`）→ **不排队**，
+ *   仍旧如实返回"未接手"，让调用方走它原来的上报分支。
+ *
+ * 这个区分不是"更严格"，而是**修掉缺陷的前提**：若把"永不就绪"也排进队列，
+ * 队列会只涨不消，且 `domainWrite` 会对调用方谎报"已接手"。
+ *
+ * ## 为什么入队即算"已接手"（返回 true）
+ *
+ * 调用方（`show-todo.ts` / `goal.ts` / `inbox-storage.ts` …）的形状是
+ * `if (domainWrite(...)) return; reportWriteNotAccepted(...)`。
+ * 若入队后仍返回 `false`，调用方会**立刻上报一次失败**，而重放成功之后这件事
+ * 又"什么都没发生" —— 用户看到一次假告警。所以入队的返回值是 `true`：
+ * **接手了**，失败时由重放路径上报**恰好一次**。
+ *
+ * 队列满时返回 `false` **并显式上报丢弃**：绝不允许"排不进去"变成静默丢数据。
+ */
+function deferWrite(item: Omit<DeferredWrite, "seq">): boolean {
+  if (deferQueue.length >= DEFER_MAX) {
+    deferredDropped++;
+    reportPersistFailure(
+      item.scope,
+      new Error(`域写队列已满（上限 ${DEFER_MAX} 条），本次写被丢弃：${item.table}`),
+      item.note,
+    );
+    return false;
+  }
+  deferQueue.push({ ...item, seq: ++deferSeq });
+  return true;
+}
+
+/**
+ * 重放某张表在加载窗口里排下的写（**按入队顺序**）。
+ *
+ * 由 `domainMirror` 的 `onLoaded`（已就绪时立刻触发）与 `domainEnsureLoaded`
+ * 的既有"就绪后回调"调用 —— 不新造第二套加载触发。
+ *
+ * 失败**不吞**：`persistWriteThrough` 里的 `.catch` 会带**原始的** scope/note
+ * 走上报通道，也就是说这里不会把"没写进去"变成静默成功。
+ */
+function replayDeferred(table: string): void {
+  const mine = deferQueue.filter((q) => q.table === table);
+  if (mine.length === 0) return;
+  deferQueue = deferQueue.filter((q) => q.table !== table);
+  // 严格按入队顺序重放：`filter` 本来就保持相对顺序，但这里**显式**排一次序 ——
+  // 免得将来有人换了队列结构，把"顺序"这条保证悄悄弄丢。
+  mine
+    .sort((a, b) => a.seq - b.seq)
+    .forEach((item) =>
+      persistWriteThrough(item.table, item.cmd, item.params, item.scope, item.note, item.applyLocally),
+    );
+}
+
+/** 还压在队列里的写条数（诊断/测试用） */
+export function deferredWriteStats(): { pending: number; dropped: number } {
+  return { pending: deferQueue.length, dropped: deferredDropped };
+}
+
+/** 清空写队列（**仅供测试**：避免用例之间通过模块级状态串味） */
+export function __resetDeferredWritesForTests(): void {
+  deferQueue = [];
+  deferSeq = 0;
+  deferredDropped = 0;
+}
+
+/**
+ * **写穿的唯一实现**（`domainWrite` / `domainDelete` / `domainDeleteWhere` 与重放共用）。
+ *
+ * 顺序不能改：**先更新本地镜像、再写穿**。镜像是读路径的即时可见性来源 ——
+ * 反过来（等 IPC 回来再改镜像）就会出现"写完读不到自己刚写的内容"这种最难查的时序 bug。
+ */
+function persistWriteThrough(
+  table: string,
+  cmd: string,
+  params: Record<string, unknown>,
+  scope: string,
+  note: string,
+  applyLocally = true,
+): void {
+  const port = domainMirror(table);
+  if (!port) {
+    // 端口在排队期间被撤掉（理论上只有测试会这样）：如实上报，不静默丢
+    reportPersistFailure(scope, new Error("域写重放时端口已不在"), note);
+    return;
+  }
+  if (applyLocally && cmd === "crud.upsert") {
+    const rows = (params.rows as Array<Record<string, unknown>> | undefined) ?? [];
+    port.domains.applyWriteMany(table, rows);
+  } else if (applyLocally && cmd === "crud.delete") {
+    port.domains.applyDelete(table, (params.where as Record<string, unknown> | undefined) ?? {});
+  }
+  /*
+   * `deleteWhere` 的本地删除已经由 `domainDeleteWhere` 在**排队时**做完
+   * （它需要 `applyDeleteWhere` 的"删了几行"作为返回值），这里只补写穿。
+   */
+  recordWrite(cmd, params);
+  void port.data.execute(cmd, params).catch((e) => reportPersistFailure(scope, e, note));
 }
 
 /**
@@ -85,8 +287,11 @@ export function domainPort(table: string, opts: DomainReadOpts = {}): DomainMirr
  *
  * | 态 | 判据 | 旧库状态 | 正确处置 |
  * | --- | --- | --- | --- |
- * | **A** | 端口**未注册**（回滚到 wasm / 旧引擎测试基座） | 是唯一数据源 | **必须**回退旧库 |
+ * | **A** | 端口**未注册** | 是唯一数据源 | **必须**回退旧库 |
  * | **B** | 端口在，但该表**镜像未就绪**（加载中 / 超上限被拒 / LRU 逐出 / 被截断） | **刻意不存在** | **不能**回退：应等就绪（`domainEnsureLoaded`）或如实上报 |
+ *
+ * 第 19 轮：A 态原来的第二种形态（"回滚开关切到 wasm"）已随旧引擎删除，
+ * A 态现在**只剩**"端口未注册"这一种。
  *
  * `domainRead*` / `domainDelete*` 对这两态返回**同一个值**（`undefined` / `null`），
  * 所以调用方无法区分、只能一律回退 —— 而"一律回退"在 B 态下就是**读写分裂**：
@@ -110,9 +315,11 @@ export function domainPort(table: string, opts: DomainReadOpts = {}): DomainMirr
 export function shouldFallbackToLegacy(): boolean {
   // 端口未注册 → A 态：旧库是唯一数据源，回退是唯一正确做法
   if (!hasStoragePort()) return true;
-  const port = getStoragePort();
-  // wasm 引擎（回滚开关）→ 也是 A 态
-  if (port.kind !== "rust") return true;
+  /**
+   * 第 19 轮：这里原来还有一句 `if (port.kind !== "rust") return true`（"wasm 引擎
+   * = 也是 A 态"）。**它恒不成立** —— `kind` 已收成字面量 `"rust"`，旧引擎整体删除，
+   * 回滚开关退役，生产里不存在第二种实现。留着只会让"两种态"读起来像有三种。
+   */
   // 端口在（rust）→ B 态：镜像无论就绪与否都不该碰旧库（旧库在 rust 模式下刻意不加载）
   return false;
 }
@@ -132,7 +339,7 @@ export function shouldFallbackToLegacy(): boolean {
  * 重复 180 次的东西，一定会有人写漏其中一种态。
  *
  * 所以收进一个函数：
- * - 返回 `true` → **调用方该走旧库**（A 态：端口未注册 / wasm 回滚，旧库是唯一数据源）；
+ * - 返回 `true` → **调用方该走旧库**（A 态：端口未注册，旧库是唯一数据源）；
  * - 返回 `false` → B 态（端口在 rust，只是镜像没就绪）：已**如实上报**，调用方直接 return。
  *
  * 用法（写与删都一样）：
@@ -193,17 +400,19 @@ export function reportWriteNotAccepted(scope: string, note: string): void {
 }
 
 /**
- * **端口是否已注册且是 rust 引擎**（不看镜像是否就绪）。
+ * **端口是否已注册**（不看镜像是否就绪）。
  *
  * 与 `domainPort()` 的区别正是这套分流的关键：
  * - `domainPort()` 回答"**现在能不能读/写**"（镜像未就绪时为 null）；
  * - `domainPortRegistered()` 回答"**这个进程该不该走端口**"。
  *
  * 写路径必须用后者决定去路：端口已注册却回退旧库 = 本进程内读写分裂。
+ *
+ * 第 19 轮：名字里的 "rust" 判据已随类型收紧消失（`kind` 是常量 `"rust"`，
+ * `kind === "rust"` 与"端口在不在"完全等价），函数名保留是为了不动 14 个调用点的语义。
  */
 export function domainPortRegistered(): boolean {
-  if (!hasStoragePort()) return false;
-  return getStoragePort().kind === "rust";
+  return hasStoragePort();
 }
 
 /**
@@ -221,15 +430,19 @@ export function domainPortRegistered(): boolean {
  * （`note-links-order.test.ts` 的 NL-2 抓到的就是这个）。
  *
  * 正确处置：端口已注册时，**等镜像就绪再写**（一次性回调，不轮询）；
- * 端口未注册（回滚到 wasm）才走旧库。
+ * 端口未注册才走旧库（第 19 轮：`kind` 已是常量，判据只剩"端口在不在"）。
  */
 export function domainEnsureLoaded(table: string, onReady: () => void): void {
   if (!hasStoragePort()) return;
-  const port = getStoragePort();
-  if (port.kind !== "rust") return;
-  const candidate = port as unknown as DomainMirrorPort;
+  const candidate = getStoragePort() as unknown as DomainMirrorPort;
   candidate.domains?.ensureLoaded?.(table, () => {
-    if (candidate.domains.isReady(table)) onReady();
+    // 镜像就绪 → 先把加载窗口里排下的写按序重放（A-1），再执行调用方自己的回调。
+    // 顺序很关键：调用方回调里常常是"就绪后重做一次写"，让它排在重放之后，
+    // 否则同一条行的两次写会以相反的顺序落库。
+    if (candidate.domains.isReady(table)) {
+      replayDeferred(table);
+      onReady();
+    }
   });
 }
 
@@ -267,22 +480,46 @@ export function domainReadMany<R>(
  *   "写完读不到"这种最难查的时序 bug）；
  * - 写穿失败**如实上报**（绝不静默吞 —— 那是 B 类假成功）；
  * - `mode: "replace"` 用于"整行覆盖"（与旧实现 `INSERT OR REPLACE` 对应）。
+ *
+ * ## 返回值语义（A-1 之后仍在，只是多了一种"接手"方式）
+ *
+ * - `true` —— **端口接手了这次写**。两种形态都算接手：镜像已就绪（当场写穿），
+ *   或镜像**正在加载**（已入队，就绪后按序重放，失败时上报一次）。
+ * - `false` —— 没接手：端口未注册（A 态）或该表**永远不会就绪**（超上限被拒 / 加载失败）。
+ *   调用方据此走它原来的"旧库回退 / 如实上报"分支。
+ *
+ * ⚠️ 入队必须返回 `true`（而不是"照旧返回 false 再重放"）：调用方的形状是
+ * `if (domainWrite(...)) return; reportWriteNotAccepted(...)`，
+ * 返回 false 会让它**当场上报一次失败**，而写其实成功了 —— 那是一次假告警。
  */
 export function domainWrite(
   table: string,
   rows: Array<Record<string, unknown>>,
   opts: { mode?: "insert" | "replace"; note: string; scope: string } & DomainReadOpts,
 ): boolean {
-  const port = domainPort(table, opts);
-  if (!port) return false; // 未接手，调用方走旧路径
+  const mode = opts.mode ?? "insert";
+  const params = { table, rows, mode };
+  const port = domainMirror(table, opts);
+  if (!port) return false; // 端口没注册：调用方走旧路径
+  if (port.domains.isReady(table)) {
+    if (rows.length === 0) return true;
+    // `mode: "replace"` 的覆盖写是"事实上的删除 + 重写"，同样要能被审计看见
+    persistWriteThrough(table, "crud.upsert", params, opts.scope, opts.note);
+    return true;
+  }
   if (rows.length === 0) return true;
-  port.domains.applyWriteMany(table, rows);
-  // `mode: "replace"` 的覆盖写是"事实上的删除 + 重写"，同样要能被审计看见
-  recordWrite("crud.upsert", { table, rows, mode: opts.mode ?? "insert" });
-  void port.data
-    .execute("crud.upsert", { table, rows, mode: opts.mode ?? "insert" })
-    .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
-  return true;
+  // 未就绪：只有"正在加载"才排队（日志与可测性都要求这两种态分开处置）
+  if (!port.domains.isLoading?.(table)) return false;
+  return deferWrite({
+    table,
+    op: "write",
+    rows,
+    applyLocally: true,
+    cmd: "crud.upsert",
+    params,
+    scope: opts.scope,
+    note: opts.note,
+  });
 }
 
 /**
@@ -298,18 +535,28 @@ export function domainDelete(
   where: Record<string, unknown>,
   opts: { note: string; scope: string; confirmBulk?: boolean } & DomainReadOpts,
 ): boolean {
-  const port = domainPort(table, opts);
+  const params = {
+    table,
+    where,
+    ...(opts.confirmBulk ? { confirm_bulk: true } : {}),
+  };
+  const port = domainMirror(table, opts);
   if (!port) return false;
-  port.domains.applyDelete(table, where);
-  recordWrite("crud.delete", { table, where });
-  void port.data
-    .execute("crud.delete", {
-      table,
-      where,
-      ...(opts.confirmBulk ? { confirm_bulk: true } : {}),
-    })
-    .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
-  return true;
+  if (port.domains.isReady(table)) {
+    persistWriteThrough(table, "crud.delete", params, opts.scope, opts.note);
+    return true;
+  }
+  if (!port.domains.isLoading?.(table)) return false;
+  return deferWrite({
+    table,
+    op: "delete",
+    where,
+    applyLocally: true,
+    cmd: "crud.delete",
+    params,
+    scope: opts.scope,
+    note: opts.note,
+  });
 }
 
 /**
@@ -366,16 +613,67 @@ export function domainDeleteBeyond(
   return ids.length;
 }
 
-/** 整表替换（清空+重建类操作用，例如按 notebook 重算图谱） */
+/**
+ * **整表替换**（清空 + 重建类操作，例如按 notebook 重算图谱）。
+ *
+ * ## 第 20 轮：从"只改镜像"改成**真的写穿**
+ *
+ * 原实现返回 `true`、只调用 `port.domains.replaceTable()`（只改渲染进程内存），
+ * 而且把 **`crud.replace_table`** 记进删除审计 —— 那个命令名在 Rust `COMMANDS`
+ * 白名单里**根本不存在**（真引擎会回 `UNSUPPORTED`）。也就是说：调用方拿到"成功"，
+ * 库里一行没动，审计里还留下一条**假证据**。这正是本仓库最在意的那类缺陷
+ * （静默假成功 + 审计说谎），所以这里把它改成**诚实的实现**：
+ *
+ * 1. 按主键逐行 `crud.delete`（**不是**空 `where` —— Rust 侧明确拒绝空条件）；
+ * 2. 逐行 `crud.upsert`（整体替换语义）；
+ * 3. 每一步都如实上报失败，审计只记**真实发出过**的命令名。
+ *
+ * `replaceTable`（只改镜像、零生产调用者）随之下线：留着一个"只改内存"的入口，
+ * 就是给下一个人留一个"看起来成功、其实没落库"的坑。
+ *
+ * ## 为什么先删再写、而不是只 upsert
+ *
+ * "整表替换"的语义包含**删除**（旧集合里有、新集合里没有的行必须消失）。
+ * 只 upsert 会把它们留在库里 —— 那是"替换"名下的静默数据残留。
+ *
+ * @returns `true` = 已接手（清空与重建都已发出）；`false` = 未接手（端口没注册，
+ *          或该表永远不会就绪），调用方据此如实上报。
+ */
 export function domainReplaceTable(
   table: string,
   rows: Array<Record<string, unknown>>,
+  key = "id",
 ): boolean {
-  const port = domainPort(table);
+  const port = domainMirror(table);
   if (!port) return false;
-  // 整表替换是"事实上的全量删除 + 重写"，必须能被审计看见
-  recordWrite("crud.replace_table", { table, rows: Array.isArray(rows) ? rows : [] });
-  port.domains.replaceTable(table, rows);
+  if (!port.domains.isReady(table)) {
+    // 整表替换没有"排队"形态：它要先把旧集合**全量**读出来才知道删哪些行，
+    // 而本函数拿不到那一份（调用方传的是新集合）。未就绪时如实返回 false。
+    return false;
+  }
+  const scope = "domain.replaceTable";
+  const doomed = port.domains
+    .all<Record<string, unknown>>(table)
+    .map((row) => row[key])
+    .filter((v) => v !== undefined && v !== null);
+  for (const id of doomed) {
+    persistWriteThrough(
+      table,
+      "crud.delete",
+      { table, where: { [key]: id } },
+      scope,
+      `表 ${table} 未能整表替换（清空阶段失败）`,
+    );
+  }
+  for (const row of rows) {
+    persistWriteThrough(
+      table,
+      "crud.upsert",
+      { table, rows: [row], mode: "replace" },
+      scope,
+      `表 ${table} 未能整表替换（重建阶段失败）`,
+    );
+  }
   return true;
 }
 
@@ -402,8 +700,36 @@ export function domainDeleteWhere(
   key: string,
   opts: { note: string; scope: string } & DomainReadOpts,
 ): number | null {
+  /*
+   * ⚠️ **先判"能不能接手"，再判"要不要排队"** —— 这两步的顺序是有意义的。
+   *
+   * 早先这里直接调 `domainMirror`（它不判就绪），于是"该表永远不会就绪"这条路上
+   * `all()` 拿到空数组、算出来 0 行，函数就返回了 **0** —— 而 0 的语义是
+   * "**接手了，删了 0 行**"。调用方（删空判定、清理计数）会把它读成
+   * "清理已完成，确实没有要删的"，而真相是"这次根本没接手，什么都没做"。
+   * 这正是本仓库最在意的"把'没做到'说成'做到了'"。
+   *
+   * 所以：**未就绪且未在加载** → `null`（未接手，如实）；**正在加载** → 排队 + `null`
+   * （本次同步调用没做，但到了库里会被执行）。
+   */
   const port = domainPort(table, opts);
-  if (!port) return null;
+  if (!port) {
+    const mirror = domainMirror(table, opts);
+    if (!mirror?.domains.isLoading?.(table)) return null;
+    deferWrite({
+      table,
+      op: "deleteWhere",
+      match,
+      key,
+      // 本地删除已在排队时做完（见下面的说明），重放只补写穿
+      applyLocally: false,
+      cmd: "crud.delete",
+      params: { table },
+      scope: opts.scope,
+      note: opts.note,
+    });
+    return null;
+  }
   const all = port.domains.all<Record<string, unknown>>(table);
   const doomed = all
     .filter(match)

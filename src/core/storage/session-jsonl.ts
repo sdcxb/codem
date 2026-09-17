@@ -39,6 +39,16 @@ export interface JsonlMessageRecord {
   /** 生成文件等附加信息 */
   generatedFiles?: unknown;
   /**
+   * 引用来源（RAG / 检索证据）。
+   *
+   * **B-3**：写侧（`message.ts` 的 `writeIndexViaRust`）一直在传 `retrieved_sources`，
+   * 但这条**可重建**的路径上它整个缺席 —— 索引行被裁剪/索引崩了重建之后，
+   * 消息上的"引用来源"就永久消失了（`MessageBubble` 靠 `message.retrievedSources` 渲染，
+   * 于是用户看到引用块消失）。权威日志必须记它，否则"索引可从日志重建"这条不变量
+   * 在这一个字段上不成立。
+   */
+  retrievedSources?: unknown;
+  /**
    * 墓碑标记（第 78 波自查发现的问题）：删除必须**追加一条墓碑**，否则
    * "日志是权威、索引可重建"会立刻变成"删过的消息下次读取又回来了"。
    */
@@ -102,6 +112,14 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
         ...(message.status ? { status: message.status } : {}),
         ...((message as any).toolCalls ? { toolCalls: (message as any).toolCalls } : {}),
         ...((message as any).generatedFiles ? { generatedFiles: (message as any).generatedFiles } : {}),
+        /**
+         * B-3：引用来源必须进权威日志。
+         *
+         * 之前这里没有它 —— 于是"索引可从日志重建"在这一个字段上不成立：
+         * 索引裁剪 / 索引损坏重建之后，消息的 `retrievedSources` 永久消失
+         * （`MessageBubble` 的引用块跟着消失，用户看到的是"引用来源没了"）。
+         */
+        ...((message as any).retrievedSources ? { retrievedSources: (message as any).retrievedSources } : {}),
       };
       // Rust 侧 append_file 会补一个换行 —— 正好是 JSONL 需要的行分隔
       await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
@@ -232,7 +250,118 @@ export async function listSessionLogs(): Promise<string[]> {
   }
 }
 
-/** 会话被删除时同时清掉它的追加日志 */
+/**
+ * 追加一条**会话级墓碑**（B-1：删会话之后索引重建会把整批会话复活）。
+ *
+ * ## 为什么必须有（缺陷机制，已核实）
+ *
+ * 删除一个会话走的是 `session.ts::deleteSession` → `domainDelete("sessions")`：
+ * 它只删 **sessions 那一行**（Rust 侧再按外键级联删消息/工具调用/事件）。而
+ * **JSONL 权威日志一个字节都没动**，索引重建的输入清单又来自**磁盘上的 JSONL 文件**
+ * （`session-log-bridge.ts::rebuildIndexFromSessionLogs` → `listSessionLogs()`），
+ * 且 Rust 侧 `messages_rebuild_index` 对 `sessions` 是**无条件 upsert**、没有任何墓碑检查 ——
+ * 于是"索引崩过一次 / 写过重建标记"之后，**用户删掉的会话会整批回来**。
+ *
+ * 与消息墓碑同一条道理（见 `appendMessageTombstone`）：日志是权威、索引可重建，
+ * 那么"删除"也必须是日志里一条**可回放**的记录 —— 否则重建方向没有删除语义。
+ *
+ * ## 为什么写在**会话自己的日志文件**里（而不是一个全局清单文件）
+ *
+ * 1. 复用消息墓碑的存放位置与格式（`deleted: true` + `role: "tombstone"`）：
+ *    墓碑与它所属会话的日志同生共死，不会出现"清单与日志不一致"的第二份真相；
+ * 2. `rebuildIndexFromSessionLogs` 的输入就是"每个会话的日志"，读墓碑**不需要额外一次 IO**
+ *    （`readSessionMessages` 已经把这个文件读进来了）；
+ * 3. 全局清单文件在"日志目录被删/迁移"时会出现孤儿状态，而按会话放则天然一致。
+ */
+export async function appendSessionTombstone(sessionId: string): Promise<void> {
+  const task = (async () => {
+    try {
+      const record: JsonlMessageRecord = {
+        v: LINE_VERSION,
+        id: `${SESSION_TOMBSTONE_PREFIX}${sessionId}`,
+        sessionId,
+        role: "tombstone",
+        content: "",
+        timestamp: Date.now(),
+        deleted: true,
+      };
+      await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
+    } catch (e) {
+      console.warn("[SessionJSONL] 追加会话墓碑失败（会话行已删除，但重建时可能复活）:", e);
+    }
+  })();
+  // 与消息墓碑一致：登记在途，`flushSessionLogWrites()` 才等得到它（第 83 波的教训）
+  pendingAppends.add(task);
+  void task.finally(() => pendingAppends.delete(task));
+  return task;
+}
+
+/**
+ * 会话墓碑的 id 前缀。
+ *
+ * 为什么要有前缀：墓碑是放在**同一个 JSONL 文件**里的（`session-jsonl.ts` 的行格式
+ * 是消息行），所以它必须能被一眼认出来、且不会与真实消息 id 撞车。
+ * `readSessionMessages` 会把 `deleted` 行整条丢掉，因此**它不会污染消息集合**。
+ */
+export const SESSION_TOMBSTONE_PREFIX = "__session_deleted__:";
+
+/** 这份记录是不是会话墓碑 */
+export function isSessionTombstone(record: { id?: unknown; deleted?: unknown }): boolean {
+  return (
+    record?.deleted === true &&
+    typeof record.id === "string" &&
+    record.id.startsWith(SESSION_TOMBSTONE_PREFIX)
+  );
+}
+
+/**
+ * 这个会话被删除过吗（读它的日志、只看墓碑行）。
+ *
+ * 与 `readSessionMessages` 分开是刻意的：那个函数**会丢掉墓碑行**（后写者胜的语义），
+ * 所以从它的返回值里**看不出**会话是否被删过 —— 必须单独扫一遍原始行。
+ *
+ * @returns true = 日志里有会话墓碑
+ */
+export async function isSessionDeleted(sessionId: string): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await readFile(await sessionLogPath(sessionId));
+  } catch {
+    return false; // 没有日志文件 = 没有墓碑（老会话）
+  }
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      if (isSessionTombstone(JSON.parse(trimmed))) return true;
+    } catch {
+      /* 坏行跳过：坏行不该被当成墓碑（宁可多复活一个会话，也不要因为一行坏数据把活会话判死） */
+    }
+  }
+  return false;
+}
+
+/**
+ * 会话被删除时同时清掉它的追加日志。
+ *
+ * ## ⚠️ 这**不是**删除会话的路径（B-1 结论：全仓 0 调用者是刻意的）
+ *
+ * 审阅时它看起来像"一个没人调用的删除函数"（0 调用者），于是很容易被误判成
+ * "删除链路上漏接线了"。**不是漏接线，是它不该被接到删除链路上**：
+ *
+ * - 追加日志是**权威副本**（`session.ts` 头注释与 `docs` 里那条分层原则）——
+ *   索引、事件日志都可以重建，日志本身**删了就不可恢复**；
+ * - 会话删除必须留下**墓碑**（`appendSessionTombstone`）让"删除"成为一条可回放记录，
+ *   而不是把文件抹掉 —— 抹掉之后"这个会话曾经存在且被用户删过"这件事就无从表达，
+ *   而索引重建恰恰需要知道它（否则删掉的会话会整批复活）。
+ *
+ * 所以 `deleteSession` **不调用**它，只写墓碑。保留这个函数是给**用户显式清理**用的：
+ * "删除某会话的全部本地日志"是一个合法的破坏性操作（相当于清空那个会话的历史），
+ * 但它必须是用户明确要求的行为，不能被会话删除顺带触发。
+ *
+ * 换句话说：这个函数的调用点只有两个合法形态 —— 用户显式清理、或测试夹具。
+ * 如果将来有人在"删会话"的流程里调用它，那是**回归**（会绕过墓碑 + 丢权威数据）。
+ */
 export async function deleteSessionLog(sessionId: string): Promise<void> {
   try {
     await deleteFile(await sessionLogPath(sessionId));

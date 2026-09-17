@@ -104,7 +104,8 @@ Returns matching messages with snippets showing the matched content.`,
         /**
          * **B 态（端口在 rust）止步于此**（第 17 轮 L4：旧库回退已删）。
          *
-         * `searchViaRust` 返回 null 只有一种可能：端口未注册或不是 rust 引擎；
+         * `searchViaRust` 返回 null 只有一种可能：**端口未注册**（第 19 轮：
+         * "不是 rust 引擎"这第二种原因已随 `kind` 收紧为常量而删除）；
          * 而那时旧库同样不可用（rust 模式下刻意不加载），所以"继续往下走"只会抛异常，
          * 模型拿到的会是一段与查询毫无关系的堆栈。这里如实告诉模型"稍后重试"。
          *
@@ -135,7 +136,8 @@ Returns matching messages with snippets showing the matched content.`,
 /**
  * 走 Rust 引擎做全文检索。
  *
- * @returns 命中结果数组；`null` = 本次不接手（端口未注册 / 是 wasm 引擎），调用方走原路径
+ * @returns 命中结果数组；`null` = 本次不接手（**只有一种原因**：端口未注册 ——
+ *          第 19 轮删掉了"引擎是 wasm"那第二种形态），调用方如实说明而不改走旧路径
  *
  * 关键点：
  * - 引擎侧做了 **CJK 切分**（旧实现中文永远搜不到）；
@@ -150,8 +152,9 @@ async function searchViaRust(
 ): Promise<SessionSearchResult[] | null> {
   const { hasStoragePort, getStoragePort } = await import("../../storage/port");
   if (!hasStoragePort()) return null;
+  // 第 19 轮：`if (port.kind !== "rust") return null;` 已删 —— `kind` 是常量 "rust"，
+  // 它恒不成立；"没接手"现在只有"端口未注册"这一种原因（已由上一行兜住）。
   const port = getStoragePort();
-  if (port.kind !== "rust") return null;
 
   type Row = {
     message_id?: string | null;

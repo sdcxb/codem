@@ -62,7 +62,15 @@ class InboxManagerClass {
     return rowToItem(row);
   }
 
-  list(filters?: { projectId?: string; unreadOnly?: boolean; category?: InboxCategory }): InboxItem[] {
+  /**
+   * 列出通知。
+   *
+   * `includeArchived`（第 44 轮）：归档原来是**不可逆且看不见**的 ——
+   * `archive()` 只写 `archived = 1`，而这个读路径**恒传** `archived: 0`，
+   * 界面上的"归档"按钮因此等价于永久删除（提示"归档"却再也找不回来）。
+   * 现在给出显式开关（**默认行为一个字没变**：仍然只列未归档）。
+   */
+  list(filters?: { projectId?: string; unreadOnly?: boolean; category?: InboxCategory; includeArchived?: boolean }): InboxItem[] {
     return InboxStorage.listAll(filters).map(rowToItem);
   }
 
@@ -79,6 +87,16 @@ class InboxManagerClass {
   archive(id: string): void {
     InboxStorage.archive(id);
     this.notify();
+  }
+
+  /**
+   * 取消归档（恢复）。返回 `false` = 写入未被接受（存储未就绪 / 该行不存在），
+   * **调用方必须如实提示**，不能当成恢复成功。
+   */
+  unarchive(id: string): boolean {
+    const ok = InboxStorage.unarchive(id);
+    if (ok) this.notify();
+    return ok;
   }
 
   getUnreadCount(projectId?: string): number {
