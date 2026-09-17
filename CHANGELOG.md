@@ -2,6 +2,67 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.67] - 2026-09-17 — **修掉 1.16.66 引入的新建会话写入回归 + 两批审计尾巴**
+
+### 🔴 回归（本版必升的理由）
+
+1. **新建会话写不进去**：1.16.66 的 Rust 批次把 `sort_order` 收进了"语义非空列"清单（"0 表示未指定"），
+   而渲染侧对**从未拖拽过**的会话写的正是 `sort_order: null` —— 那是**有含义的值**
+   （排序里它表示"排在所有已拖拽会话之后、组内按时间倒序"；换成 0 会与"第一个被拖拽的会话"撞、
+   改变既有用户的列表顺序）。于是整笔 `sessions.upsert` 被拒 →
+   **会话行不存在 → 它的消息索引 / 事件 / 遥测全部因外键被拒**。
+   真机现象（本轮实测复现）：新建会话里消息**只进权威 JSONL 日志**，`messages` 表 0 行、
+   `sessions` 表没有它、**搜索搜不到**、计数为 0、重启后会话可能消失；控制台持续出现
+   `[PersistFailure] session.create 写盘失败：参数 sort_order 不合法…` 与
+   `message.createMessage.index … FOREIGN KEY constraint failed`。
+   现在判据收窄为"**NULL 会让读路径崩掉或让语义变歧义**的列才拒绝"
+   （`hidden`/`trimmed`/`message_count`/`pinned` 保留），`sort_order` 的 NULL 原样放行。
+   真 CLI 复核四项判据全绿；回归 `renderer_new_session_payload_is_accepted`（用与 `sessionToWire`
+   **逐字一致**的载荷）与 `semantic_not_null_columns_still_reject_explicit_null`（反向：放开不等于删掉判据）。
+
+### 🟠 设置链路尾巴（10 条）
+
+2. **分层设置整条链是死的**：来源名拼两次、`flag.` 前缀查错、`policy` 来源无装载器（三个策略 getter
+   恒返回默认）、`loadAll`/`importSettings` 生产零调用、单例固化首个项目路径 → 现在按来源取键、
+   策略从 DB 的 `codem-policy` 装载、`loadAll` 幂等且**不吞异常**、导出改 async 先 `await loadAll`、
+   换项目重建实例。
+3. **凭证读路径恒空**（读 `OPENAI_API_KEY` 而用户密钥在 `codem-settings.providers[].apiKey`）→ 加只读桥接。
+4. **菜单宣称的快捷键没有 handler**（`Ctrl+N`/`Ctrl+,`/`Ctrl+B`/`Ctrl+\``，mac 的 `⌘Q`），
+   `aria-keyshortcuts` 还塞了展示串（规范只认 `Control+B`）→ 建 `app-shortcuts.ts` 作单一真相源；
+   mac 上不再显示/注册 `⌘Q`。
+5. **`app.model-selector` 没有任何出口**、注册不传 props（`models.find` 抛错被边界吞）、
+   两个 UI 服务调的 manager 方法全不存在 → props 可缺省、映射真实 API、服务缺席返回 `{ok:false}`
+   **不再恒真**、删掉无出口 slot 的声明与注册。
+6. **`theme-provider` 的五个方法在 `ThemeManager` 上都不存在**（`@ts-nocheck` 掩盖）→ 重写为真实映射。
+7. **首屏皮肤没有镜像**（hub/dream 下切主题不写镜像、迁移也不写）→ 新增皮肤镜像 + 端口就绪后用 DB 校正。
+8. **面板宽度与侧栏宽度两种介质** → DB 优先、localStorage 兜底并在读时迁移。
+9. **`ui-language` 兜底默认与应用默认相反**（`en` vs `zh`）→ 兜底改 `getLang()`。
+
+### 🟠 线协议与功能上下文尾巴
+
+10. **`messages.delete` 的 `count_clamped`/`affected_rows`/`missing` 全仓无人读**（而引擎侧论证正建立在
+    "调用方会消费它"上）→ 五处调用点收口到唯一入口、逐字段消费；**被夹断当场按索引真值重算计数并写回**。
+11. **范围删除是 N 条 IPC 同时起飞、闸门只看得到 1 行** → 有界批量（在飞 ≤ 50、批次串行有序、失败逐行归因）；
+    并如实写明"单事务那一半需要引擎侧新增命令"。
+12. **不变量检查在生产无人断言**（只在 dev 跑），且纯工具轮恒报违规（**断言恒红 = 没有判据**）→ 口径修正
+    （只有"该 tool 事件也在"时才跳过、有正文的判据一个字没松）+ 接进启动维护并打出检查会话数/违规数。
+
+### 量化与实测
+
+| 项 | 结果 |
+| --- | --- |
+| 渲染侧测试 | **298 文件 / 5546 通过 / 16 跳过 / 0 失败** |
+| Rust 测试 | **139 条**（52 + 83 + 2 + 2） |
+| 真 CLI 存储契约 | **28 条** |
+| `tsc --noEmit` | 0 错误（用 `--incremental false` 全量重算复核过） |
+| 审计门禁 / UI 门禁 | 7 道 gate exit 0；`scan-ui` error 0 / warn 0；CSS 契约无变化 |
+| 启动耗时（打包版，正确口径） | 进程启动 → 页面出现 **0.68 s**；页面导航 → 存储就绪 **≈0.65 s**；**合计 ≈1.3 s** |
+| 空闲 10 分钟（30 样本） | working set 74.1→74.4 MB（**+0.4%，非单调**）、private 44.1–44.3 MB 平、句柄 366→359、线程 44→38、库 15.62 MB 恒定、WAL 3.93 MB 恒定 → **无泄漏形态** |
+
+### 真机验证（打包产物）
+
+**待填**（出包后补：新建会话落库 / 消息索引不再被外键拒 / 事件双写写入 `user_message`+`assistant_text` / 面板走查）
+
 ## [1.16.66] - 2026-09-17 — **两轮全盘只读审计的逐条修复：跨会话数据污染、假的 API、以及"设置了不生效"**
 
 ### 一句话
