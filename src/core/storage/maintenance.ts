@@ -947,20 +947,36 @@ export async function runDatabaseMaintenance(
     result.recountedSessions = 0;
     try {
       const { domainReadMany } = await import("./domain-store");
-      const { getStoragePort } = await import("./port");
-      const port = getStoragePort() as unknown as {
-        data: { query<T>(cmd: string, params?: Record<string, unknown>): Promise<T> };
-      };
       const sessions = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
-      for (const row of sessions) {
-        const id = String(row.id ?? "");
-        if (!id) continue;
-        const stored = Number(row.message_count ?? 0);
-        const counted = await port.data.query<{ total?: number }>("messages.count", { session_id: id });
-        const total = Number(counted?.total ?? 0);
-        if (total === stored) continue;
-        SessionStorage.updateSession(id, { messageCount: total });
-        result.recountedSessions += 1;
+      const { hasStoragePort, getStoragePort } = await import("./port");
+      if (!hasStoragePort() || sessions.length === 0) {
+        // 端口没有 / 镜像未就绪：**什么都不做**（不做成"当成 0 写回去"）
+      } else {
+        const port = getStoragePort() as unknown as {
+          data: { command?: <R>(cmd: string, params?: Record<string, unknown>) => Promise<R> };
+        };
+        for (const row of sessions) {
+          const id = String(row.id ?? "");
+          if (!id) continue;
+          const stored = Number(row.message_count ?? 0);
+          /*
+           * ⚠️ 必须走 `command`（结构化结果），**不能**走 `data.query`。
+           *
+           * 这是我在真机上踩到的：`RustDataPort.query` 的实现是"把 `items`/`item` 整形，
+           * 其余原样塞进 `items: [raw]`" —— 也就是说它**不返回 `total`**。
+           * 于是 `query("messages.count").total` 恒为 `undefined` → `?? 0` → **把 0 写了回去**：
+           * 真机上把两个会话的 8 / 27 改成了 **0 / 0**（原本只是陈旧，被我改成了更错的）。
+           * `command` 拿的是引擎的原始返回（`{count,total,visible,hidden}`），才是这条命令的契约。
+           */
+          const counted = await structuredCommand<{ total?: number; count?: number }>(port, "messages.count", {
+            session_id: id,
+          });
+          const total = Number(counted?.total ?? counted?.count ?? NaN);
+          // 读不到就**跳过**（不要猜、更不要写 0）
+          if (!Number.isFinite(total) || total === stored) continue;
+          SessionStorage.updateSession(id, { messageCount: total });
+          result.recountedSessions += 1;
+        }
       }
       if (result.recountedSessions > 0) {
         console.log(`[Maintenance] 会话计数对账：修正 ${result.recountedSessions} 个会话的 message_count`);
