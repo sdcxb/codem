@@ -146,7 +146,18 @@ const effectiveWidth = sidebarWidth;
                   <span>{zh ? "文件树" : "Files"}</span>
                 </button>
                 <div className="right-sidebar-preview-body">
-                  <FileEditor filePath={editingFile} onClose={() => setEditingFile(null)} />
+                  {/*
+                    key={editingFile}：切换文件时**必须换新实例**。
+                    没有 key 时 React 复用同一个 FileEditor，内部 state（content / modified）
+                    会跨文件残留 —— 读不到新文件内容时点"保存"就是把上一个文件的正文写进新路径
+                    （真落盘、不可撤销）。见 P0-3 回归用例 RA-1 / RA-2
+                    （renderer-robustness-a.test.tsx）。
+                  */}
+                  <FileEditor
+                    key={editingFile}
+                    filePath={editingFile}
+                    onClose={() => setEditingFile(null)}
+                  />
                 </div>
               </div>
             ) : (

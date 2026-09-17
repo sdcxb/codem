@@ -241,6 +241,19 @@ interface ExcelSheet {
   data: (string | number | boolean | null)[][];
 }
 
+/**
+ * 表格预览的**最大渲染行数**。
+ *
+ * 依据：同仓 `ExcelViewer.tsx` 的既有上限就是 500 行（"Showing first 500 of N rows"），
+ * 这里对齐同一个数——两个表格预览组件用同一个边界，用户不会看到两套行为。
+ * 为什么必须有上限：`sheet.data.map()` 是全量渲染，每行每列都要建 `<td>` + `<div>`，
+ * 5 万行 × 20 列 ≈ 数百万个 DOM 节点，webview 会直接卡死/OOM（实测：本文件的组件测试
+ * 用 5 万行夹具跑一次就会超过 5s 超时）。
+ * 注意：**解析侧仍然读全表**（不传 SheetJS 的 `sheetRows`），因为被截断的工作表
+ * `<sheet>!ref` 会停在截断处，total 行数就报不准了——这里用"完整读 + 截断渲染"。
+ */
+const EXCEL_PREVIEW_ROW_LIMIT = 500;
+
 function FilePreviewExcel({ filePath }: { filePath: string }) {
   const [sheets, setSheets] = useState<ExcelSheet[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
@@ -248,6 +261,7 @@ function FilePreviewExcel({ filePath }: { filePath: string }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError("");
     (async () => {
@@ -265,14 +279,18 @@ function FilePreviewExcel({ filePath }: { filePath: string }) {
           const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", blankrows: false }) as (string | number | boolean | null)[][];
           parsed.push({ name, data });
         }
+        // 切换文件后旧文件的解析结果不能落到新文件的界面上
+        if (cancelled) return;
         setSheets(parsed);
         setActiveSheet(0);
       } catch (err: any) {
+        if (cancelled) return;
         setError(err.message || "解析失败");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [filePath]);
 
   if (loading) return <PreviewLoading />;
@@ -280,6 +298,9 @@ function FilePreviewExcel({ filePath }: { filePath: string }) {
   if (sheets.length === 0) return <PreviewError msg="无法解析表格内容" />;
 
   const sheet = sheets[activeSheet];
+  // 只渲染前 N 行（见 EXCEL_PREVIEW_ROW_LIMIT 的说明）；小表行为完全不变
+  const rows = sheet.data.slice(0, EXCEL_PREVIEW_ROW_LIMIT);
+  const truncated = sheet.data.length > rows.length;
 
   return (
     <div className="file-preview-excel">
@@ -293,7 +314,7 @@ function FilePreviewExcel({ filePath }: { filePath: string }) {
       <div className="file-preview-excel-body">
         <table>
           <tbody>
-            {sheet.data.map((row, ri) => (
+            {rows.map((row, ri) => (
               <tr key={ri} className={ri === 0 ? "header-row" : ""}>
                 <td className="row-num">{ri + 1}</td>
                 {row.map((cell, ci) => (
@@ -308,6 +329,7 @@ function FilePreviewExcel({ filePath }: { filePath: string }) {
       </div>
       <div className="file-preview-excel-footer">
         {sheet.name} · {sheet.data.length} 行
+        {truncated && `（已截断，仅预览前 ${EXCEL_PREVIEW_ROW_LIMIT} 行）`}
       </div>
     </div>
   );
@@ -737,26 +759,56 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
   const ext = getFileExt(filePath);
   const category = getCategory(ext);
   const isText = category === "text";
+  /**
+   * 读取失败（或还在读）时**禁止保存**。
+   *
+   * P0-3 的机制：切换文件时组件实例可能被复用（`RightSidebar` 现在给了 `key`，
+   * 但本组件不能依赖调用方的写法），此时 state 里可能还留着**上一个文件**的文本。
+   * 一旦此时保存成功，就是把 A 的正文写进 B 的路径 —— 真落盘、不可撤销。
+   * 所以：读不到内容 ⇒ 没有任何东西可以写。
+   */
+  const canSave = isText && !loading && !error;
+
+  /**
+   * 每次加载递增。用来丢弃"上一个文件"的在途读取/保存回调 ——
+   * 切换文件（或卸载）后它们的结果绝不能再落到当前文件的状态上。
+   */
+  const loadIdRef = useRef(0);
+  const saveIdRef = useRef(0);
 
   useEffect(() => {
+    // 切换文件：先清空正文与脏标记，进入 loading 态。
+    // 这一步是 P0-3 的**第一道**防线：即使调用方忘了给 key，也不会残留旧文件的文本。
+    loadIdRef.current += 1;
+    const myLoad = loadIdRef.current;
+    setContent("");
+    setOriginalContent("");
+    setModified(false);
+    setError(null);
+
     if (!isText) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    setError(null);
 
     const loadFile = async () => {
       try {
         const text = await readFile(filePath);
+        if (loadIdRef.current !== myLoad) return;
         setContent(text);
         setOriginalContent(text);
         setModified(false);
       } catch (err: any) {
-        setError(err.message);
+        if (loadIdRef.current !== myLoad) return;
+        // 读取失败：正文保持为空 + 明确提示"保存已被禁止"（不静默）
+        setContent("");
+        setOriginalContent("");
+        setModified(false);
+        setError(`读取失败：${err?.message || String(err)}（保存已禁止，请重新打开该文件）`);
       } finally {
-        setLoading(false);
+        if (loadIdRef.current === myLoad) setLoading(false);
       }
     };
 
@@ -769,18 +821,25 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
   }, [originalContent]);
 
   const handleSave = useCallback(async () => {
+    // 守卫：内容没读出来（还在读 / 读失败 / 刚切换文件）时不许写盘
+    if (!isText || loading || error) return;
+    saveIdRef.current += 1;
+    const mySave = saveIdRef.current;
     setSaving(true);
     try {
       const { invoke } = (window as any).__TAURI__.core;
       await invoke("write_file", { path: filePath, content });
+      // 期间若已切换文件，这次保存的结果不属于当前文件，不能改它的脏标记
+      if (saveIdRef.current !== mySave) return;
       setOriginalContent(content);
       setModified(false);
     } catch (err: any) {
-      setError(err.message);
+      if (saveIdRef.current !== mySave) return;
+      setError(err?.message || String(err));
     } finally {
-      setSaving(false);
+      if (saveIdRef.current === mySave) setSaving(false);
     }
-  }, [filePath, content]);
+  }, [filePath, content, isText, loading, error]);
 
   const fileIcon = useMemo(() => {
     switch (category) {
@@ -811,8 +870,8 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
             <button
               className="file-editor-btn save-btn"
               onClick={handleSave}
-              disabled={!modified || saving}
-              title="Ctrl+S"
+              disabled={!modified || saving || !canSave}
+              title={canSave ? "Ctrl+S" : "内容尚未读取成功，禁止保存"}
             >
               <Save size={14} />
               {saving ? "保存中..." : "保存"}
@@ -875,8 +934,8 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
                   <button
                     className="file-editor-btn save-btn"
                     onClick={handleSave}
-                    disabled={!modified || saving}
-                    title="Ctrl+S"
+                    disabled={!modified || saving || !canSave}
+                    title={canSave ? "Ctrl+S" : "内容尚未读取成功，禁止保存"}
                   >
                     <Save size={14} />
                     {saving ? "保存中..." : "保存"}
