@@ -441,208 +441,235 @@ export class OpenAICompatibleProvider implements LLMProvider {
       request.abortSignal.addEventListener("abort", () => idleTimeout.dispose(), { once: true });
     }
 
-    yield { type: "start", id: msgId, model: request.model };
+    /*
+     * ⚠️ **清理必须在 finally 里**（第 44 轮渲染层审计的 P2-1）。
+     *
+     * 原来这段清理（移除 abort 监听、dispose idle 定时器）写在生成器体的**末尾**：
+     * 只有「正常读到底」才会执行。而下面三条路都不会走到那里 ——
+     *   ① 120 秒无数据的 idle 超时（`idlePromise` reject）；
+     *   ② `reader.read()` 因网络错误 reject；
+     *   ③ 消费方在迭代中抛错（`agentic-loop.ts` 的 `EMPTY_RESPONSE` 重试路径）。
+     * 后果：reader 既不 `cancel()` 也不被回收（HTTP 响应体/连接可能一直挂着）、
+     * idle 定时器的 interval 不被 dispose、`idlePromise` 的拒绝无人 await 变成
+     * **未处理拒绝**（只被 main.tsx 打成一行 console，用户无感）。
+     *
+     * 正常取消路径本来是干净的（`abortHandler` 会 `reader.cancel()`），所以这个缺陷
+     * 只在「异常 / 超时 / 消费方抛错」时显形 —— 而那正是最需要回收资源的时候。
+     */
+    try {
+      yield { type: "start", id: msgId, model: request.model };
 
-    // Race the reader loop against the idle timeout
-    const idlePromise = idleTimeout.promise.catch(() => {
-      throw new Error("LLM stream idle timeout — no data received for 120 seconds. The connection may have stalled.");
-    });
+      // Race the reader loop against the idle timeout
+      const idlePromise = idleTimeout.promise.catch(() => {
+        throw new Error("LLM stream idle timeout — no data received for 120 seconds. The connection may have stalled.");
+      });
 
-    // === No idle timeout ===
-    // We deliberately do NOT use any time-based idle timeout here.
-    // Time-based timeouts are fundamentally unreliable:
-    //   - Too short → kills legitimate long-paused responses (DeepSeek R1 thinking)
-    //   - Too long  → real dead connections hang for a long time
-    //   - Any value  → a guess, not a deterministic judgment
-    //
-    // Instead, we rely on STATE-BASED detection + user control:
-    //   1. The agentic loop emits "connecting" → "streaming" → "executing_tools"
-    //   2. The UI shows the current state to the user in real time
-    //   3. The user can cancel at ANY time via the ■ button (AbortController)
-    //   4. If the TCP connection truly dies, the OS will eventually return an error
-    //      from reader.read(), which we handle in the catch block below.
-    //
-    // This is zero-risk: no normal request will ever be killed by a timer.
+      // === No idle timeout ===
+      // We deliberately do NOT use any time-based idle timeout here.
+      // Time-based timeouts are fundamentally unreliable:
+      //   - Too short → kills legitimate long-paused responses (DeepSeek R1 thinking)
+      //   - Too long  → real dead connections hang for a long time
+      //   - Any value  → a guess, not a deterministic judgment
+      //
+      // Instead, we rely on STATE-BASED detection + user control:
+      //   1. The agentic loop emits "connecting" → "streaming" → "executing_tools"
+      //   2. The UI shows the current state to the user in real time
+      //   3. The user can cancel at ANY time via the ■ button (AbortController)
+      //   4. If the TCP connection truly dies, the OS will eventually return an error
+      //      from reader.read(), which we handle in the catch block below.
+      //
+      // This is zero-risk: no normal request will ever be killed by a timer.
 
-    while (true) {
-      // P-OPT6: Race read() against idle timeout
-      // If no data arrives within 120s, the idle timeout fires
-      const { done, value } = await Promise.race([
-        reader.read(),
-        idlePromise,
-      ]);
-      if (done) break;
+      while (true) {
+        // P-OPT6: Race read() against idle timeout
+        // If no data arrives within 120s, the idle timeout fires
+        const { done, value } = await Promise.race([
+          reader.read(),
+          idlePromise,
+        ]);
+        if (done) break;
 
-      // Data received — reset idle timer
-      idleTimeout.pulse();
+        // Data received — reset idle timer
+        idleTimeout.pulse();
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
-      for (const line of lines) {
-        // P-OPT3: SSE comment heartbeat detection
-        // DeepSeek API sends `: keep-alive` comments during long reasoning
-        // to indicate the connection is still alive. We detect these and
-        // yield a heartbeat event so the consumer can reset idle timers.
-        if (line.startsWith(":")) {
-          // P-OPT3: SSE comment heartbeat — reset idle timer
-          idleTimeout.pulse();
-          yield { type: "heartbeat" } as StreamEvent;
-          continue;
-        }
-
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
-
-        try {
-          const parsed = JSON.parse(data);
-          msgId = parsed.id || msgId;
-
-          const delta = parsed.choices?.[0]?.delta;
-          const finishReason = parsed.choices?.[0]?.finish_reason;
-
-          // Handle reasoning_content (DeepSeek thinking models)
-          if (delta?.reasoning_content) {
-            yield { type: "reasoning_delta", text: delta.reasoning_content };
+        for (const line of lines) {
+          // P-OPT3: SSE comment heartbeat detection
+          // DeepSeek API sends `: keep-alive` comments during long reasoning
+          // to indicate the connection is still alive. We detect these and
+          // yield a heartbeat event so the consumer can reset idle timers.
+          if (line.startsWith(":")) {
+            // P-OPT3: SSE comment heartbeat — reset idle timer
+            idleTimeout.pulse();
+            yield { type: "heartbeat" } as StreamEvent;
+            continue;
           }
 
-          if (delta?.content) {
-            yield { type: "text_delta", text: delta.content };
-          }
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
 
-          if (delta?.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const idx = tc.index || 0;
-              if (!currentToolCalls[idx]) {
-                currentToolCalls[idx] = { id: tc.id || `tc-${Date.now()}`, name: tc.function?.name || "", arguments: "" };
-                if (tc.function?.name) {
-                  yield { type: "tool_use_start", id: currentToolCalls[idx].id, name: tc.function.name };
-                }
-              }
-              if (tc.function?.arguments) {
-                currentToolCalls[idx].arguments += tc.function.arguments;
-                yield { type: "tool_use_delta", id: currentToolCalls[idx].id, input: tc.function.arguments };
-              }
+          try {
+            const parsed = JSON.parse(data);
+            msgId = parsed.id || msgId;
+
+            const delta = parsed.choices?.[0]?.delta;
+            const finishReason = parsed.choices?.[0]?.finish_reason;
+
+            // Handle reasoning_content (DeepSeek thinking models)
+            if (delta?.reasoning_content) {
+              yield { type: "reasoning_delta", text: delta.reasoning_content };
             }
-          }
 
-          if (finishReason) {
-            streamEnded = true;
-            // Yield tool_use_end events for each tool call
-            for (const key of Object.keys(currentToolCalls)) {
-              const tc = currentToolCalls[key];
-              if (tc) {
-                // Parse args if available
-                let parsedArgs: Record<string, unknown> = {};
-                let argsParseError: string | undefined;
-                if (tc.arguments) {
-                  try {
-                    parsedArgs = JSON.parse(tc.arguments);
-                  } catch (e: any) {
-                    // 第 66 波：**不再静默降级成空参数**。
-                    // 空参数会让 write 之类"内容型"工具拿着 content:"" 执行（写出空文件/清空已有文件），
-                    // 也会让模型完全看不出失败原因。这里把原因与长度带出去，由循环拒绝执行并给出指引。
-                    argsParseError = e?.message || String(e);
-                    console.error(
-                      `[Provider] Failed to parse tool args for ${tc.name} (${tc.arguments.length} chars):`,
-                      argsParseError,
-                      "…tail:",
-                      tc.arguments.slice(-120),
-                    );
+            if (delta?.content) {
+              yield { type: "text_delta", text: delta.content };
+            }
+
+            if (delta?.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index || 0;
+                if (!currentToolCalls[idx]) {
+                  currentToolCalls[idx] = { id: tc.id || `tc-${Date.now()}`, name: tc.function?.name || "", arguments: "" };
+                  if (tc.function?.name) {
+                    yield { type: "tool_use_start", id: currentToolCalls[idx].id, name: tc.function.name };
                   }
                 }
-                // 第 67 波：流里丢过行 ⇒ 参数可能不完整 ⇒ 标出来（由循环拒绝执行并引导重试）
-                if (droppedStreamLines > 0 && !argsParseError) {
-                  argsParseError = `stream had ${droppedStreamLines} unparsable SSE line(s); arguments may be incomplete`;
+                if (tc.function?.arguments) {
+                  currentToolCalls[idx].arguments += tc.function.arguments;
+                  yield { type: "tool_use_delta", id: currentToolCalls[idx].id, input: tc.function.arguments };
                 }
-                debugLog("provider", "Tool call end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
-                yield { 
-                  type: "tool_use_end" as const, 
-                  id: tc.id,
-                  name: tc.name,
-                  input: parsedArgs,
-                  ...(argsParseError ? { argsParseError, rawLength: tc.arguments.length } : {}),
-                };
               }
             }
 
-            const usage = parsed.usage || {};
-            // 缓存字段透传（对标 dsh TokenUsage：cacheRead/uncached 分离）。
-            // 归一化口径见 usage-normalize.ts（DeepSeek 显式 miss 最准；
-            // OpenAI cache_read 无 miss 时取 prompt - cacheRead 折中）。
-            const nu = parseProviderUsage(usage);
-            yield {
-              type: "usage",
-              usage: {
-                promptTokens: nu.promptTokens,
-                completionTokens: nu.completionTokens,
-                totalTokens: nu.totalTokens,
-                cacheHitTokens: nu.cacheHitTokens,
-                uncachedInputTokens: nu.uncachedInputTokens,
-              },
-            };
+            if (finishReason) {
+              streamEnded = true;
+              // Yield tool_use_end events for each tool call
+              for (const key of Object.keys(currentToolCalls)) {
+                const tc = currentToolCalls[key];
+                if (tc) {
+                  // Parse args if available
+                  let parsedArgs: Record<string, unknown> = {};
+                  let argsParseError: string | undefined;
+                  if (tc.arguments) {
+                    try {
+                      parsedArgs = JSON.parse(tc.arguments);
+                    } catch (e: any) {
+                      // 第 66 波：**不再静默降级成空参数**。
+                      // 空参数会让 write 之类"内容型"工具拿着 content:"" 执行（写出空文件/清空已有文件），
+                      // 也会让模型完全看不出失败原因。这里把原因与长度带出去，由循环拒绝执行并给出指引。
+                      argsParseError = e?.message || String(e);
+                      console.error(
+                        `[Provider] Failed to parse tool args for ${tc.name} (${tc.arguments.length} chars):`,
+                        argsParseError,
+                        "…tail:",
+                        tc.arguments.slice(-120),
+                      );
+                    }
+                  }
+                  // 第 67 波：流里丢过行 ⇒ 参数可能不完整 ⇒ 标出来（由循环拒绝执行并引导重试）
+                  if (droppedStreamLines > 0 && !argsParseError) {
+                    argsParseError = `stream had ${droppedStreamLines} unparsable SSE line(s); arguments may be incomplete`;
+                  }
+                  debugLog("provider", "Tool call end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
+                  yield { 
+                    type: "tool_use_end" as const, 
+                    id: tc.id,
+                    name: tc.name,
+                    input: parsedArgs,
+                    ...(argsParseError ? { argsParseError, rawLength: tc.arguments.length } : {}),
+                  };
+                }
+              }
 
-            yield { type: "end", finishReason: finishReason === "tool_calls" ? "tool_use" : finishReason };
-          }
-        } catch (e) {
-          // 第 66/67 波（同类问题清查）：**这条 catch 以前只是打一行 warn 就把整行丢了** ——
-          // 若被丢的那行正好带 tool_calls 的参数增量，累积出来的 JSON 就是残缺的，
-          // 现象与"参数被截断"一模一样（用户的报错就是这一类）。现在**计数并上报**：
-          // 丢过行就在 tool_use_end 上标出"参数可能不完整"，让它走"拒绝执行 + 引导重试"，
-          // 而不是拿着可能残缺的参数继续跑。
-          droppedStreamLines++;
-          console.warn(`[provider.ts] 丢弃了 1 行无法解析的流数据（累计 ${droppedStreamLines} 行）:`, e);
-        }
-      }
-    }
+              const usage = parsed.usage || {};
+              // 缓存字段透传（对标 dsh TokenUsage：cacheRead/uncached 分离）。
+              // 归一化口径见 usage-normalize.ts（DeepSeek 显式 miss 最准；
+              // OpenAI cache_read 无 miss 时取 prompt - cacheRead 折中）。
+              const nu = parseProviderUsage(usage);
+              yield {
+                type: "usage",
+                usage: {
+                  promptTokens: nu.promptTokens,
+                  completionTokens: nu.completionTokens,
+                  totalTokens: nu.totalTokens,
+                  cacheHitTokens: nu.cacheHitTokens,
+                  uncachedInputTokens: nu.uncachedInputTokens,
+                },
+              };
 
-    // Fallback: if stream ended without finish_reason, yield tool_use_end + end
-    // This handles APIs that close the connection without an explicit finish_reason
-    if (!streamEnded) {
-      console.warn("[Provider] Stream ended without finish_reason, yielding fallback events");
-      for (const key of Object.keys(currentToolCalls)) {
-        const tc = currentToolCalls[key];
-        if (tc) {
-          let parsedArgs: Record<string, unknown> = {};
-          let argsParseError: string | undefined;
-          if (tc.arguments) {
-            try {
-              parsedArgs = JSON.parse(tc.arguments);
-            } catch (e: any) {
-              argsParseError = e?.message || String(e);
-              console.error(
-                `[Provider] Fallback: failed to parse tool args for ${tc.name} (${tc.arguments.length} chars):`,
-                argsParseError,
-                "…tail:",
-                tc.arguments.slice(-120),
-              );
+              yield { type: "end", finishReason: finishReason === "tool_calls" ? "tool_use" : finishReason };
             }
+          } catch (e) {
+            // 第 66/67 波（同类问题清查）：**这条 catch 以前只是打一行 warn 就把整行丢了** ——
+            // 若被丢的那行正好带 tool_calls 的参数增量，累积出来的 JSON 就是残缺的，
+            // 现象与"参数被截断"一模一样（用户的报错就是这一类）。现在**计数并上报**：
+            // 丢过行就在 tool_use_end 上标出"参数可能不完整"，让它走"拒绝执行 + 引导重试"，
+            // 而不是拿着可能残缺的参数继续跑。
+            droppedStreamLines++;
+            console.warn(`[provider.ts] 丢弃了 1 行无法解析的流数据（累计 ${droppedStreamLines} 行）:`, e);
           }
-          if (droppedStreamLines > 0 && !argsParseError) {
-            argsParseError = `stream had ${droppedStreamLines} unparsable SSE line(s); arguments may be incomplete`;
-          }
-          console.log("[Provider] Fallback tool_use_end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
-          yield {
-            type: "tool_use_end" as const,
-            id: tc.id,
-            name: tc.name,
-            input: parsedArgs,
-            ...(argsParseError ? { argsParseError, rawLength: tc.arguments.length } : {}),
-          };
         }
       }
-      yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
-      yield { type: "end", finishReason: Object.keys(currentToolCalls).length > 0 ? "tool_use" : "stop" };
-    }
 
-    // Clean up abort listener
-    if (request.abortSignal) {
-      request.abortSignal.removeEventListener("abort", abortHandler);
+      // Fallback: if stream ended without finish_reason, yield tool_use_end + end
+      // This handles APIs that close the connection without an explicit finish_reason
+      if (!streamEnded) {
+        console.warn("[Provider] Stream ended without finish_reason, yielding fallback events");
+        for (const key of Object.keys(currentToolCalls)) {
+          const tc = currentToolCalls[key];
+          if (tc) {
+            let parsedArgs: Record<string, unknown> = {};
+            let argsParseError: string | undefined;
+            if (tc.arguments) {
+              try {
+                parsedArgs = JSON.parse(tc.arguments);
+              } catch (e: any) {
+                argsParseError = e?.message || String(e);
+                console.error(
+                  `[Provider] Fallback: failed to parse tool args for ${tc.name} (${tc.arguments.length} chars):`,
+                  argsParseError,
+                  "…tail:",
+                  tc.arguments.slice(-120),
+                );
+              }
+            }
+            if (droppedStreamLines > 0 && !argsParseError) {
+              argsParseError = `stream had ${droppedStreamLines} unparsable SSE line(s); arguments may be incomplete`;
+            }
+            console.log("[Provider] Fallback tool_use_end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
+            yield {
+              type: "tool_use_end" as const,
+              id: tc.id,
+              name: tc.name,
+              input: parsedArgs,
+              ...(argsParseError ? { argsParseError, rawLength: tc.arguments.length } : {}),
+            };
+          }
+        }
+        yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
+        yield { type: "end", finishReason: Object.keys(currentToolCalls).length > 0 ? "tool_use" : "stop" };
+      }
+    } finally {
+      /* 清理无条件执行：正常读完、抛错、消费者提前 break/return 三条路都会到这里 */
+      if (request.abortSignal) {
+        request.abortSignal.removeEventListener("abort", abortHandler);
+      }
+      // P-OPT6: Clean up idle timeout
+      idleTimeout.dispose();
+      /*
+       * `reader.cancel()` 也要在这里兜一次：超时/读取异常时它从没被取消过，
+       * HTTP 响应体与连接会一直挂到 GC（甚至更久）。流已正常读完时再 cancel
+       * 是幂等的无害操作（对已关闭的流而言是一次 resolved 的空操作）。
+       */
+      try {
+        await reader.cancel();
+      } catch {
+        /* 已关闭 / 已取消 / 实现对已结束的流抛错：都不该影响调用方 */
+      }
     }
-    // P-OPT6: Clean up idle timeout
-    idleTimeout.dispose();
   }
 
   /**
