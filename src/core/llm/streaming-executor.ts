@@ -204,6 +204,8 @@ export class StreamingToolExecutorImpl {
           tc.status = "running";
           tc.abortController = new AbortController();
           this.running.set(tc.id, tc);
+          /* 超时定时器句柄：在 finally 里取消（见 timeoutTimer 的说明） */
+          let toolTimer: { promise: Promise<never>; cancel: () => void } | null = null;
 
           try {
             if (ctx.abort?.aborted || tc.abortController.signal.aborted) {
@@ -241,7 +243,9 @@ export class StreamingToolExecutorImpl {
                 }
                 return pr.result;
               }),
-              useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
+              useTimeout
+                ? (toolTimer = this.timeoutTimer(this.config.toolTimeout)).promise
+                : new Promise<never>(() => {}),
             ]);
 
             // F2.5: Append security warning to result if detected
@@ -285,6 +289,7 @@ export class StreamingToolExecutorImpl {
 
             return { type: "error" as const, toolCall: tc, error: error.message };
           } finally {
+            toolTimer?.cancel();
             this.running.delete(tc.id);
           }
         })
@@ -322,6 +327,8 @@ export class StreamingToolExecutorImpl {
     tc.status = "running";
     tc.abortController = new AbortController();
     this.running.set(tc.id, tc);
+    /* 超时定时器句柄：在 finally 里取消（见 timeoutTimer 的说明） */
+    let toolTimer: { promise: Promise<never>; cancel: () => void } | null = null;
 
     try {
       if (ctx.abort?.aborted || tc.abortController.signal.aborted) {
@@ -355,7 +362,9 @@ export class StreamingToolExecutorImpl {
           }
           return pr.result;
         }),
-        useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
+        useTimeout
+          ? (toolTimer = this.timeoutTimer(this.config.toolTimeout)).promise
+          : new Promise<never>(() => {}),
       ]);
 
       // F2.5: Append security warning to result if detected
@@ -399,14 +408,40 @@ export class StreamingToolExecutorImpl {
 
       yield { type: "tool_error", toolCall: tc, error: error.message };
     } finally {
+      toolTimer?.cancel();
       this.running.delete(tc.id);
     }
   }
 
-  private timeout(ms: number): Promise<never> {
-    return new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(`Tool execution timed out after ${ms}ms`)), ms);
+  /**
+   * 工具执行超时定时器（第 44 轮渲染层审计 P2-3）。
+   *
+   * 原来是 `new Promise((_, reject) => setTimeout(...))` 直接丢进 `Promise.race` ——
+   * **race 的败者不会被取消**，所以只要工具在超时前完成（几乎每次都是），这个 60 秒定时器
+   * 就留在那里，到期时产生一次无人观察的拒绝：
+   * `Unhandled Rejection: Tool execution timed out after 60000ms`（用户无感，只污染日志与诊断导出），
+   * 长时间多工具会话里会持续累积。
+   *
+   * 现在返回**可取消的句柄**：调用方在 finally 里 `cancel()`（清掉定时器）；
+   * 同时给 promise 挂一个空 catch —— 即使 cancel 与超时擦肩而过，这个拒绝也**永远是被观察过的**，
+   * 不会再变成未处理拒绝。
+   */
+  private timeoutTimer(ms: number): { promise: Promise<never>; cancel: () => void } {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const promise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Tool execution timed out after ${ms}ms`)), ms);
     });
+    // 拒绝必须始终有观察者：race 结束后（或调用方忘了 cancel 时）不会变成 unhandledRejection
+    promise.catch(() => {});
+    return {
+      promise,
+      cancel: () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      },
+    };
   }
 
   abortAll() {
