@@ -17,7 +17,8 @@
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { redactSecrets } from "../core/utils/redact";
-import { resetPersistFailures } from "../core/storage/persist-failure";
+import { reportActionFailure, resetPersistFailures } from "../core/storage/persist-failure";
+import { resetUiPreferencesToDefaults } from "../core/settings/ui-preferences";
 
 /** localStorage 键：最近一次渲染崩溃证据（App 启动时消费并清除）。 */
 export const RENDERER_CRASH_KEY = "codem-renderer-crash";
@@ -296,12 +297,40 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     location.reload();
   }
 
-  /** 清空本地界面设置（localStorage 中 codem-* 键，不动数据库）后重新加载。 */
+  /**
+   * 清空**界面偏好**后重新加载。
+   *
+   * ## 第 45 轮修正：它原来只清 localStorage，而真正的偏好在数据库里
+   *
+   * 这段原来是"`localStorage` 里 `codem-*` 键全删 + reload"，文案却承诺"关闭行为、窗口状态等偏好"——
+   * 而 `codem-close-behavior` / 主题 / 语言 / 字号 / 字体 / 显示模式这些键**都在 DB 的 settings 表**里，
+   * `localStorage` 里根本没有它们（真机取证：该键名的写入方为 0）。于是"重置界面设置"名不副实：
+   * 用户点完、确认完、页面刷新了，设置**一个都没变**。
+   *
+   * 现在先调 `resetUiPreferencesToDefaults()`（同步删 DB 里的界面偏好键 + 复位 `codem-settings`
+   * 的界面字段 + 清首屏镜像），再清 `localStorage` 里剩下的 `codem-*` 键。
+   *
+   * 边界（写清楚，别让下一个人以为它清了一切）：**安全策略、身份/用户配置、API Key/provider/模型、
+   * 会话与项目数据一律不动** —— 那些不是"界面设置"，清掉等于毁用户数据。文案与实现逐项对齐。
+   */
   handleResetReload(): void {
-    let confirmText = "将清除本地界面设置（关闭行为、窗口状态等偏好），会话数据保存在数据库中、不受影响。确定继续？";
+    const confirmText =
+      "将恢复**界面设置**为默认值（主题 / 皮肤 / 语言 / 字号 / 字体 / 显示模式 / 关闭行为 / 侧栏宽度），" +
+      "并清除本地界面缓存后重新加载。\n\n" +
+      "不会动：安全策略、模型与 API Key、会话与项目数据。\n\n确定继续？";
     if (typeof window !== "undefined" && typeof window.confirm === "function") {
       const ok = window.confirm(confirmText);
       if (!ok) return;
+    }
+    /*
+     * 数据库里的界面偏好 —— 与设置页的「♻️ 恢复默认界面设置」共用同一个实现
+     * （一个入口一个语义；两处各写一份必然会漂）。
+     */
+    try {
+      resetUiPreferencesToDefaults();
+    } catch (e) {
+      // 复位失败要说出来：否则"点了没反应"会变成一次静默失败
+      reportActionFailure("appErrorBoundary.resetUiPreferences", e, "界面设置未恢复（部分偏好可能仍是旧值）");
     }
     try {
       const doomed: string[] = [];

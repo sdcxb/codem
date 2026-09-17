@@ -52,14 +52,28 @@ export interface CostTrackerConfig {
   maxRecords: number;
   /** Whether to persist to localStorage */
   persist: boolean;
-  /** Cost limits */
+  /**
+   * Cost limits.
+   *
+   * ## 为什么三个字段都可以是 `null`（第 45 轮，设置审计 D-12 的另一半）
+   *
+   * "清空输入框"在设置页里的语义是**不限**。原来的类型是 `number | undefined`，
+   * 而 `undefined` 的自有属性会被 `JSON.stringify` **丢掉** —— 于是落库对象里根本没有这个键，
+   * 重启时与默认值 merge（`{...DEFAULT_CONFIG.limits, ...saved}`）→ **$5 上限复活**，
+   * 而界面刚刚显示过"已保存"。
+   *
+   * `null` 是 JSON 里能表达的"显式无值"：它会被序列化、会被这里的 merge 保留，
+   * 而所有消费方（`checkLimits` / 用量面板）本来就是**真值判断**，`null` 正好等于"不限"。
+   * 所以类型必须诚实地说出这件事 —— 否则设置页写 `null` 时只能靠 `as any` 绕过类型系统，
+   * 那正是这条缺陷能长期隐身的原因。
+   */
   limits: {
-    /** Maximum cost per session */
-    perSession?: number;
-    /** Maximum cost per day */
-    perDay?: number;
-    /** Maximum total cost */
-    total?: number;
+    /** Maximum cost per session（`null` = 不限） */
+    perSession?: number | null;
+    /** Maximum cost per day（`null` = 不限） */
+    perDay?: number | null;
+    /** Maximum total cost（`null` = 不限） */
+    total?: number | null;
   };
 }
 
