@@ -31,11 +31,19 @@ use serde::Serialize;
 /// 被审计的表（这些表的整表清空是本轮事故的形态）
 ///
 /// 每项 `(表名, 主键表达式, 会话列表达式)` —— 会话列用于把删除归因到某个会话。
+///
+/// ⚠️ **第 12 轮新增 `projects`**：真机审计显示"`sessions` 被删 + messages/tool_calls/
+/// session_events 跟着消失"，而这三张表都是 `sessions` 的子表 —— `sessions` 又通过
+/// `project_id` 挂在 `projects` 上（schema 里是 `ON DELETE CASCADE`）。
+/// 也就是说：**删一个项目行会让该项目的全部会话与消息级联消失**，而审计只看得见
+/// 子表的删除、看不见"是谁触发的"。加上这张表的触发器，"级联的源头"才会留下痕迹。
 const AUDITED: &[(&str, &str, &str)] = &[
     ("messages", "OLD.id", "OLD.session_id"),
     ("sessions", "OLD.id", "OLD.id"),
     ("session_events", "OLD.seq", "OLD.session_id"),
     ("tool_calls", "OLD.id", "OLD.message_id"),
+    ("projects", "OLD.id", "OLD.id"),
+    ("notebooks", "OLD.id", "OLD.id"),
 ];
 
 /// 审计表名

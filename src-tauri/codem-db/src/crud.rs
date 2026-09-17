@@ -321,6 +321,25 @@ pub fn crud_list(engine: &Engine, p: &Value) -> DbResult<Value> {
 /// 通用 upsert：`{ table, rows: [{列: 值}], mode?: "insert"|"replace" }`
 ///
 /// 每行的列可以不同（按并集收集列名）；整批在**一个事务**里完成。
+///
+/// ## ⚠️ `mode: "replace"` **不再是 `INSERT OR REPLACE`**（第 13 轮，真机数据事故的根因）
+///
+/// SQLite 的 `INSERT OR REPLACE` 语义是"**冲突时先 DELETE 再 INSERT**"。
+/// 对**父表**（`projects` → `sessions` → `messages` / `tool_calls` / `session_events` /
+/// `message_feedback` 都是 `ON DELETE CASCADE`）来说，这句"覆盖一行"会**级联删掉它的全部子行**：
+///
+/// - `updateSession()`（渲染侧改标题/最后消息时间/置顶都走它）用 `mode: "replace"` →
+///   `INSERT OR REPLACE INTO sessions` → **该会话的消息、工具调用、事件被级联删光**，
+///   而会话行本身还在 —— 用户看到的就是"**点开会话，内容全空**"（真机长期悬案）；
+/// - `storage_audit` 的证据：2026-09-17T01:13:34Z / 02:12:14Z 两次"删 2~3 个 sessions +
+///   821 条 messages + 883 tool_calls + 2131 events"，全部在同一秒、形态就是级联。
+///
+/// 现在的 `replace` 走**真正的 upsert**：`INSERT ... ON CONFLICT(<主键>) DO UPDATE SET …`，
+/// 只更新**本次提供的列**、绝不删行，因此：
+/// - 子行不会被级联删除；
+/// - 本次没提供的列（如 `project_id`）保持原值（`INSERT OR REPLACE` 会把它们清成 NULL）。
+///
+/// 没有主键的表退回普通 `INSERT`（没有冲突可处理，"replace" 无意义）。
 pub fn crud_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
     let table = p
         .get("table")
@@ -367,13 +386,7 @@ pub fn crud_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
         })
         .collect();
 
-    let verb = if mode == "replace" { "INSERT OR REPLACE" } else { "INSERT" };
     let placeholders: Vec<String> = (1..=cols.len()).map(|i| format!("?{i}")).collect();
-    let sql = format!(
-        "{verb} INTO \"{table}\" ({}) VALUES ({})",
-        cols.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(", "),
-        placeholders.join(", ")
-    );
 
     engine.write_tx(|tx| {
         // 列名核对放在事务内（需要 conn），但**任何写入之前**
@@ -389,14 +402,103 @@ pub fn crud_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
                 ));
             }
         }
-        let mut stmt = tx.prepare_cached(&sql).map_err(DbError::from)?;
+
+        /*
+         * `replace` → **两段式"先更新、没有再插入"**（绝不删除行，见函数头说明）。
+         *
+         * 为什么不用 `INSERT ... ON CONFLICT DO UPDATE`：那要求 INSERT 的那一半也能成立 ——
+         * 对"只提供部分列"的调用（例如只改 `title`）会被 `NOT NULL constraint failed` 挡下
+         * （实测踩到：`sessions.project_id` NOT NULL）。而 `UPDATE ... WHERE pk` 天然只碰提供的列。
+         *
+         * 代价是每行先执行一次 UPDATE（0 行才 INSERT）—— 行数都在几十到上百的量级，可接受；
+         * 换来的是**父表覆盖不会级联删子表**，以及**未提供的列保持原值**。
+         */
+        let pk_cols = primary_key_columns(tx, &table)?;
+        let set_cols: Vec<&String> = cols.iter().filter(|c| !pk_cols.contains(c)).collect();
+        let pk_idx: Vec<usize> = pk_cols
+            .iter()
+            .map(|pk| cols.iter().position(|c| c == pk))
+            .collect::<Option<Vec<usize>>>()
+            .unwrap_or_default();
+        let use_update_first = mode == "replace"
+            && !pk_cols.is_empty()
+            && pk_idx.len() == pk_cols.len()
+            && !set_cols.is_empty();
+
+        let insert_sql = format!(
+            "INSERT INTO \"{table}\" ({}) VALUES ({})",
+            cols.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(", "),
+            placeholders.join(", ")
+        );
+        let update_sql = if use_update_first {
+            let sets = set_cols
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("\"{c}\" = ?{}", i + 1))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let wheres = pk_cols
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("\"{c}\" = ?{}", set_cols.len() + i + 1))
+                .collect::<Vec<_>>()
+                .join(" AND ");
+            Some(format!("UPDATE \"{table}\" SET {sets} WHERE {wheres}"))
+        } else {
+            None
+        };
+
+        let mut insert_stmt = tx.prepare_cached(&insert_sql).map_err(DbError::from)?;
+        let mut update_stmt = match &update_sql {
+            Some(sql) => Some(tx.prepare_cached(sql).map_err(DbError::from)?),
+            None => None,
+        };
         let mut n = 0usize;
         for vals in &parsed {
-            stmt.execute(params_from_iter(vals.iter())).map_err(DbError::from)?;
+            if let Some(stmt) = update_stmt.as_mut() {
+                let mut args: Vec<SqlValue> = set_cols
+                    .iter()
+                    .map(|c| {
+                        let i = cols.iter().position(|x| x == *c).unwrap_or(0);
+                        vals[i].clone()
+                    })
+                    .collect();
+                for i in &pk_idx {
+                    args.push(vals[*i].clone());
+                }
+                let changed = stmt.execute(params_from_iter(args.iter())).map_err(DbError::from)?;
+                if changed > 0 {
+                    n += 1;
+                    continue;
+                }
+            }
+            insert_stmt.execute(params_from_iter(vals.iter())).map_err(DbError::from)?;
             n += 1;
         }
         Ok(json!({ "written": n, "table": table, "mode": mode, "columns": cols }))
     })
+}
+
+/// 该表的主键列（按 `PRAGMA table_info` 的 pk 序号排序；无主键则空）
+///
+/// 与 `migrate.rs` 里同名助手用途一致：**覆盖已存在行时必须按主键定位，
+/// 而且不能用 `INSERT OR REPLACE`**（它会先删行，父表会级联带走子表数据）。
+fn primary_key_columns(conn: &rusqlite::Connection, table: &str) -> DbResult<Vec<String>> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+        .map_err(DbError::from)?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, i64>(5)?, r.get::<_, String>(1)?)))
+        .map_err(DbError::from)?;
+    let mut pk: Vec<(i64, String)> = Vec::new();
+    for r in rows {
+        let (idx, name) = r.map_err(DbError::from)?;
+        if idx > 0 {
+            pk.push((idx, name));
+        }
+    }
+    pk.sort_by_key(|(i, _)| *i);
+    Ok(pk.into_iter().map(|(_, n)| n).collect())
 }
 
 /// 通用删除：`{ table, where: {列: 值} }`
@@ -529,9 +631,80 @@ mod tests {
         (engine, dir)
     }
 
+    /// **`mode: "replace"` 不得级联删除子行**（第 13 轮：真机"点开会话内容全空"的根因）
+    ///
+    /// SQLite 的 `INSERT OR REPLACE` 是"冲突时先 DELETE 再 INSERT"。`sessions` 是父表
+    /// （messages / tool_calls / session_events / message_feedback 都是 `ON DELETE CASCADE`），
+    /// 而渲染侧 `updateSession()`（改标题/最后消息时间/置顶都走它）用的就是 `mode: "replace"` ——
+    /// 于是"更新会话"变成了"清空该会话的全部消息"，而会话行本身还在。
+    ///
+    /// 证据（`storage_audit`）：2026-09-17T01:13:34Z / 02:12:14Z 两次"删 2~3 个 sessions +
+    /// 821 条 messages + 883 tool_calls + 2131 events"，全部落在同一秒 —— 级联的典型形态。
+    #[test]
+    fn crud_upsert_replace_does_not_cascade_delete_children() {
+        let (engine, _d) = engine_with_sessions(3);
+        let before: i64 = engine
+            .with_conn(|c| {
+                c.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+                    .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(before, 3);
+
+        // 只提供 title —— 与 `updateSession({title})` 同形
+        crud_upsert(
+            &engine,
+            &json!({
+                "table": "sessions",
+                "mode": "replace",
+                "rows": [{ "id": "s1", "title": "改过的标题", "created_at": 1, "last_message_at": 2, "message_count": 3 }],
+            }),
+        )
+        .unwrap();
+
+        let after: i64 = engine
+            .with_conn(|c| {
+                c.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+                    .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(
+            after, 3,
+            "覆盖会话行**不得**级联删掉它的消息（这正是真机'点开会话内容全空'的形态）"
+        );
+
+        // 本次没提供的列必须保持原值（INSERT OR REPLACE 会把它们清成 NULL）
+        let project_id: String = engine
+            .with_conn(|c| {
+                c.query_row("SELECT project_id FROM sessions WHERE id = 's1'", [], |r| r.get(0))
+                    .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(project_id, "p", "未提供的列要保持原值，不能被清成空");
+    }
+
+    #[test]
+    fn crud_upsert_insert_mode_still_inserts() {
+        let (engine, _d) = engine_with_sessions(0);
+        crud_upsert(
+            &engine,
+            &json!({
+                "table": "sessions",
+                "rows": [{ "id": "s2", "project_id": "p", "title": "新会话", "created_at": 1, "last_message_at": 1, "message_count": 0 }],
+            }),
+        )
+        .unwrap();
+        let n: i64 = engine
+            .with_conn(|c| {
+                c.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+                    .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(n, 2, "insert 语义不受影响");
+    }
+
     #[test]
     fn bulk_delete_on_protected_table_is_refused_without_confirmation() {
-        // 事故形态：看起来只是"删一些消息"，实际会清掉整段语料
         let (engine, _d) = engine_with_sessions(120);
         let err = crud_delete(&engine, &json!({ "table": "messages", "where": { "session_id": "s1" } }))
             .unwrap_err();

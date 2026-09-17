@@ -402,7 +402,7 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
             "INSERT OR IGNORE INTO \"{table}\" ({col_list}) VALUES ({})",
             placeholders.join(", ")
         );
-        /**
+        /*
          * 覆盖已存在行时**不能**用 `INSERT OR REPLACE`（见上面的说明：它会先删行，
          * 触发子表级联删除）。这里用"`INSERT OR IGNORE` → 未插入则 `UPDATE`"两段式：
          * 先试插入，插入成功就完事；被主键挡下（0 行）才更新那些**非主键列**。

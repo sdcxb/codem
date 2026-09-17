@@ -2,6 +2,58 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.60] - 2026-09-17 — **"点开会话内容全空"的根因找到并修掉**：`mode:"replace"` 会级联删子表
+
+### 根因（一句话）
+
+SQLite 的 `INSERT OR REPLACE` 语义是"**冲突时先 DELETE 再 INSERT**"。而 `sessions` 是父表 ——
+`messages` / `tool_calls` / `session_events` / `message_feedback` 全都是
+`ON DELETE CASCADE`。渲染侧的 `updateSession()`（改标题 / 最后消息时间 / 置顶 / 消息数都走它）
+用的是 `domainWrite(..., { mode: "replace" })`，于是：
+
+```
+打开一个会话 → updateSession({ lastMessageAt / messageCount }) 
+            → INSERT OR REPLACE INTO sessions
+            → 该会话的**全部消息 / 工具调用 / 事件被级联删除**
+            → 会话行本身还在（所以列表看起来正常，点进去却是空的）
+```
+
+这正是用户长期报告、前几轮用 8 层仪器都没抓到的"**点开会话清空数据**"。
+`storage_audit` 的两条记录与它完全吻合：**同一秒内**删掉 2~3 个 `sessions` 行 +
+821 条 `messages` + 883 `tool_calls` + 2131 `session_events`（级联的典型形态，
+而且"渲染侧端口审计没有任何删除"—— 因为调用方发的是 **`crud.upsert`（写命令）**，
+删除是 SQLite 在引擎内部做的级联）。
+
+### 修法：`crud.upsert` 的 `replace` 改成"**先更新、没有再插入**"
+
+```rust
+// 旧：INSERT OR REPLACE INTO sessions ...            ← 先 DELETE，级联带走子表
+// 新：UPDATE sessions SET <提供的列> WHERE <主键>     ← 0 行才 INSERT
+```
+
+- **绝不删行** → 子表不会被级联删除；
+- **只更新本次提供的列** → 未提供的列（如 `project_id`）保持原值（`INSERT OR REPLACE`
+  会把它们清成 NULL）；
+- 为什么不用 `INSERT ... ON CONFLICT DO UPDATE`：那一半 INSERT 仍要满足所有 NOT NULL 列，
+  对"只改一个字段"的调用会直接报 `NOT NULL constraint failed`（实测踩到）。
+
+这一处改动同时修掉**所有** `mode: "replace"` 的写路径上的同类风险：
+`projects`（→ sessions → 消息全链）、`notebooks`、`v2_sessions`、`notes`、`goals`、`inbox` 等。
+
+### 量化与真机验收
+
+| 指标 | 本批前 | 本批后 |
+| --- | --- | --- |
+| 基线（`CODEM_TEST_PORT=0`） | 5235 通过 / 0 失败 | **5235 通过 / 0 失败** |
+| 端口模式 | 74 失败 / 5160 通过 | **74 失败 / 5161 通过（失败集合未变）** |
+| Rust 测试 | 97 通过 | **99 通过 / 0 失败** |
+
+新增 Rust 契约 `crud_upsert_replace_does_not_cascade_delete_children`：
+覆盖会话行之后**消息必须还在**、且未提供的列保持原值。
+
+另外把审计触发器扩到 `projects` / `notebooks` ——
+从前只看得见子表的删除、看不见"是谁触发的级联"。
+
 ## [1.16.59] - 2026-09-17 — L3 门控收尾：**171 处旧库调用全部两态化**
 
 ### 这一版做了什么
