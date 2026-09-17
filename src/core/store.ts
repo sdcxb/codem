@@ -310,6 +310,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
      * （源实现按"下一个 user 消息"划边界，这里保持一致 —— 分叉点落在一轮中间时
      * 会把当轮答完再分叉，否则新会话里会出现"用户没说话、助手却回答了"）。
      */
+    let copiedCount = 0;
     try {
       const sourceMessages = MessageStorage.listMessages(sourceSessionId);
       if (sourceMessages.length > 0) {
@@ -323,9 +324,42 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           const suffix = `${forkTs}-${Math.random().toString(36).slice(2, 7)}`;
           // 消息 id / 工具调用 id / 附件 id 一起换新（P1-D3），附件正文按新 id 落库
           MessageStorage.copyMessageToSession(msg, child.id, suffix);
+          copiedCount += 1;
         }
       }
     } catch (e) { console.warn('[store.ts]', e) }
+
+    /**
+     * ## 第 47 轮（功能上下文审计 P2-D11）：`messageCount` 必须按**实际复制的条数**写
+     *
+     * 改前：子会话行是 `SessionStorage.forkSession` 建的，那一行**直接抄源会话的
+     * `messageCount`**（`session.ts:401`）。而这里只复制 `endIdx` 条
+     * （`endIdx ≤ messageIndex + 1 ≤ 源会话总条数`）—— 从会话中间分叉时，
+     * 子会话一落地就带着一个**比实际条数大**的计数，并被侧边栏与 `session_trace`
+     * 直接展示，直到 12 小时一次的启动维护对账才会被改回来。
+     *
+     * 现在的顺序（两段都要，缺一不可）：
+     * 1. 复制循环**如实计数**（`copiedCount`），用它把会话行的 `message_count` 写成真值 ——
+     *    这是**同步**可见的那一份（内存 + 域写的 `sessions.upsert`）；
+     * 2. 再调 `reconcileSessionMessageCountById`（**已存在**的实现，`message.ts:2533`）
+     *    用引擎的 `messages.count.total` 复核一次 —— 因为 `createMessage` 每条是否都被引擎
+     *    计入 `message_count` 取决于引擎的 bump 语义，而"引擎侧真值"只能问引擎。
+     *    这里**不再写第二份重算**（项目纪律：一个事实一个实现）。
+     *    三态返回如实记录：`unavailable`（端口没有 `command` 能力）不是"对上了"。
+     */
+    try {
+      SessionStorage.updateSession(child.id, { messageCount: copiedCount });
+      child.messageCount = copiedCount;
+    } catch (e) { reportPersistFailure("store.forkSession.messageCount", e, "分叉会话的消息计数未写入"); }
+
+    void MessageStorage.reconcileSessionMessageCountById(
+      child.id,
+      "分叉后按索引真值复核",
+    ).then((state) => {
+      if (state === "unavailable") {
+        console.warn("[forkSession] 索引真值读不到（端口无 command 能力），message_count 只写了复制条数");
+      }
+    }).catch((e) => reportPersistFailure("store.forkSession.reconcile", e, "分叉会话的消息计数未复核"));
 
     const updated = [...get().sessions, child];
     set({ sessions: updated, currentSession: child });
@@ -368,6 +402,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // 用户点"删除会话"是明确的破坏性意图 → 如实传达给存储层（见 deleteProject 的说明）
     try { SessionStorage.deleteSession(sessionId, { confirmBulk: true }); } catch (e) { console.warn('[store.ts]', e) }
     set({ sessions: get().sessions.filter((s) => s.id !== sessionId), currentSession: get().currentSession?.id === sessionId ? null : get().currentSession });
+    /**
+     * 第 47 轮（D-20）：被删掉的会话不该继续是"上次打开的会话"。
+     *
+     * 不清的话每次启动都会为一条**已删除**的会话白查一次库，再打一行
+     * "上次打开的会话已不存在"——功能上无害（恢复端会安静回落），但那是
+     * 一条永远读不到的键长期躺在 DB 里，且用户每次开机都看到一行"已不存在"的日志。
+     * 只清 `codem-last-session`，**不动** `codem-last-project`：项目还在，
+     * 下次打开仍然该落在那个项目上。
+     */
+    void (async () => {
+      try {
+        const { forgetLastSessionIfDeleted } = await import("./session/preferences");
+        forgetLastSessionIfDeleted(sessionId);
+      } catch (e) {
+        console.warn("[store.deleteSession] 清理'上次打开的会话'键失败（不影响删除本身）:", e);
+      }
+    })();
   },
 
   setSessions: (sessions) => set({ sessions }),

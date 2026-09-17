@@ -202,7 +202,7 @@ async function getCordisContext(): Promise<Context> {
   return _codemCtxPromise;
 }
 // ====== Cordis 插件系统初始化结束 ======
-import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity, GitBranch, Gamepad2 } from "lucide-react";
+import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Search, Activity, GitBranch, Gamepad2 } from "lucide-react";
 // 子智能体任务（任务管理「子智能体」页签）：ESM 环境不能用 require()，必须静态导入 + 订阅
 import { getSubagentRuntime } from "./core/subagent/index";
 import type { SubagentTask } from "./core/subagent/subagent";
@@ -288,7 +288,8 @@ import { ThemeManager, useSkin } from "./core/theme";
 import { HubLayout } from "./components/HubLayout";
 import { DreamLayout } from "./components/DreamLayout";
 import { OnboardingTour } from "./components/OnboardingTour";
-import { QuickAccessCards } from "./components/QuickAccessCards";
+// 第 47 轮（D-19）：`QuickAccessCards` 的 App 级死 UI 已删除（理由见原渲染点注释），
+// 该组件仍由 `ChatPanel.tsx` 通过 `chat-panel-quick-access` 槽位真实渲染，故组件本身保留。
 import { CorrectionResultPanel } from "./components/CorrectionResultPanel";
 import { ClarificationForm } from "./components/ClarificationForm";
 import { PipelineNextStepDialog } from "./components/PipelineNextStepDialog";
@@ -399,6 +400,16 @@ function App() {
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages, loadedSessionId } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
 
+  /**
+   * 第 47 轮（设置链路审计 D-20）：「上次打开的会话」只恢复**一次**。
+   *
+   * 下面的恢复逻辑挂在 `dbReady` 的 effect 里，而那个 effect 的依赖含
+   * `currentProject?.path`（它本来就是"切项目时重新同步安全模式"用的）。
+   * 恢复动作自己会把 `currentProject` 从 null 换成项目，从而**再次触发同一 effect** ——
+   * 没有这个一次性闸门，就是"恢复 → effect 再跑 → 再恢复"的自激。
+   */
+  const restoredLastSessionRef = useRef(false);
+
 // P0-FIX: Sync global cwd for file-link resolution — without this, clicking
 // file links in markdown output resolves paths against the wrong base dir
 // (get_default_cwd returns the global workspace, not the project dir).
@@ -437,11 +448,16 @@ const [showPluginManager, setShowPluginManager] = useState(false);
 const [showCicdPanel, setShowCicdPanel] = useState(false);
 const [showPerfDashboard, setShowPerfDashboard] = useState(false);
 // 插件启用状态 — 控制按钮/面板的显示与隐藏
+//
+// 第 47 轮（设置链路审计 D-22）：初值仍然**同步**从 localStorage 镜像读 ——
+// 首帧不可能拿到 DB（端口未就绪），改成异步初始化会让首帧把 20 多个 UI 插件
+// 全部按"启用"渲染一遍再闪回来。DB 权威值与 localStorage→DB 迁移在下方
+// `dbReady` 的 effect 里补做（`loadDisabledPlugins`），迁移发生过会打一行 log。
 const [pluginDisabledList, setPluginDisabledList] = useState<string[]>(() => {
   try {
     const raw = localStorage.getItem('codem:disabled-plugins');
     if (raw === null) {
-      // 首次运行：默认禁用游戏插件
+      // 首次运行：默认禁用游戏插件（与 `DEFAULT_DISABLED_PLUGINS` 同一份判据，DB 侧由 loadDisabledPlugins 落盘）
       const defaultDisabled = ['@codem/ui-game'];
       localStorage.setItem('codem:disabled-plugins', JSON.stringify(defaultDisabled));
       return defaultDisabled;
@@ -462,6 +478,21 @@ useEffect(() => {
       const raw = localStorage.getItem('codem:disabled-plugins');
       setPluginDisabledList(raw ? JSON.parse(raw) : []);
     } catch (e) { console.warn('[App] catch', e) }
+    // 第 47 轮（D-22）：插件开关的权威介质是 DB。`PluginManagerService` 目前仍只写
+    // localStorage 镜像，所以镜像一变就把它的新值**收编**进 DB（镜像永远只是 DB 的副本，
+    // 而不是第二个真相源；换 profile / 清缓存后用户的选择不会再凭空丢失）。
+    // 这里刻意**不**在收编后回写镜像：写镜像同样是 setItem，不加这道闸就会
+    // 在这一处形成 setItem → 收编 → setItem 的自激循环。
+    void (async () => {
+      try {
+        const { adoptDisabledPluginsMirror } = await import("./core/session/preferences");
+        if (adoptDisabledPluginsMirror()) {
+          console.log('[App] 插件禁用列表的 localStorage 镜像已收编进 DB（D-22：DB 为权威介质）');
+        }
+      } catch (e) {
+        console.warn('[App] 插件禁用列表收编进 DB 失败（镜像仍有效）:', e);
+      }
+    })();
   };
   window.addEventListener('storage', onStorage);
   window.addEventListener('codem:plugin-state-changed', onPluginChange);
@@ -672,8 +703,103 @@ useEffect(() => {
       } catch (e) {
         console.warn("[dbReady] Failed to sync securityMode from settings:", e);
       }
+
+      /**
+       * ## 第 47 轮（设置链路审计 D-20）：恢复「上次打开的会话 / 项目」
+       *
+       * 改前这个能力**完全不存在**：启动路径只跑 `loadFromDB()`（只写 `projects` 与
+       * `dbReady`），从不设置 `currentProject / currentSession` —— 每次启动都停在
+       * "无会话"空状态，用户昨天聊到一半的会话要自己在侧边栏里翻出来。
+       *
+       * 三条纪律（实现在 `core/session/preferences.ts::restoreLastOpenedSession`）：
+       * 1. **必须 `dbReady` 之后**才恢复：`getSession` 走引擎端口，首帧读到的是空镜像，
+       *    那时"目标不存在"是**假**结论 —— 会走到"清掉这个键"，把"能力缺失"升级成
+       *    "用户的上次会话记录被删"；
+       * 2. **目标必须能在库里读回来**才恢复（会话可能已被删除、项目可能已级联删会话）；
+       *    读不回来就安静回落到"无会话"，走 `console.log` 而不是 `console.error`
+       *    （"上次的会话被删了"是完全正常的用户操作，不是故障）；
+       * 3. 只做一次（`restoredLastSessionRef`，理由见它的声明处）。
+       *
+       * 用户在恢复发生前就手动选了会话/项目时**不抢**：`currentSession` 已有值就跳过。
+       */
+      if (!restoredLastSessionRef.current) {
+        restoredLastSessionRef.current = true;
+        if (!useProjectStore.getState().currentSession) {
+          void (async () => {
+            try {
+              const { restoreLastOpenedSession } = await import("./core/session/preferences");
+              restoreLastOpenedSession(
+                {
+                  setProjects: (p) => useProjectStore.getState().setProjects(p),
+                  setSessions: (s) => useProjectStore.getState().setSessions(s),
+                  setState: (partial) => useProjectStore.setState(partial),
+                },
+                "启动恢复",
+              );
+            } catch (e) {
+              // 恢复失败不许影响正常使用：应用停在"无会话"状态是可用形态
+              console.warn("[App] 恢复上次打开的会话失败（按无会话启动）:", e);
+            }
+          })();
+        }
+      }
+
+      /**
+       * 第 47 轮（设置链路审计 D-22）：插件启用状态的**权威介质**是 DB
+       * （与 `codem-sidebar-width` 等同一种介质），localStorage 只是旧读方的镜像。
+       *
+       * 首帧的同步初值来自镜像（见 `pluginDisabledList` 的声明处），这里补做：
+       * 读 DB 权威值 + 把镜像里的历史值迁移进 DB。
+       */
+      void (async () => {
+        try {
+          const { loadDisabledPlugins } = await import("./core/session/preferences");
+          const state = loadDisabledPlugins();
+          setPluginDisabledList(state.list);
+          if (state.migrated) {
+            console.log("[App] 插件禁用列表的介质已从 localStorage 迁移到 DB（D-22）");
+          }
+        } catch (e) {
+          console.warn("[App] 读取插件禁用列表（DB）失败，继续用 localStorage 镜像:", e);
+        }
+      })();
     }
   }, [dbReady, currentProject?.path]);
+
+  /**
+   * 第 47 轮（设置链路审计 D-20）：记下"当前打开的会话 / 项目"，供下次启动恢复。
+   *
+   * ## 为什么必须有一个**记录**端（而不是只在恢复端写代码）
+   *
+   * 改前的状况是"两端都没有"：既没有恢复，也没有任何地方写
+   * `codem-last-session`（全仓 0 命中）。只补恢复端的话，那个键永远是空的 ——
+   * 恢复逻辑每天安静地返回 `no-key`，功能看起来"实现了"其实一次都不会生效。
+   *
+   * ## 写入时机与失败可见性
+   *
+   * - 依赖 `dbReady`：DB 就绪前 `setSettingJSON` 写不进去（端口未注册）；
+   * - 每次 `currentSession?.id` 变化都记一次（切换、新建、删除回落都算）——
+   *   这是"最近一次真实打开的会话"，与"最后修改时间"不是一回事；
+   * - 会话被删除后由 `deleteSession` 路径调 `forgetLastSessionIfDeleted` 清键
+   *   （见 `core/store.ts`）；这里不做"目标是否存在"的判断（那是恢复端的职责，
+   *   记的时候目标必然是存在的）。
+   * - 写失败只记 `console.warn`：这是一个**便利性**偏好，不是数据 ——
+   *   丢了只影响"下次打开落在哪个会话"，不该弹错误打扰用户。
+   */
+  useEffect(() => {
+    if (!dbReady) return;
+    void (async () => {
+      try {
+        const { writeLastSessionId, writeLastProjectId } = await import("./core/session/preferences");
+        writeLastSessionId(currentSession?.id ?? null);
+        // `currentSession` 有值时就以它自己的归属为准（会话可能被移动到别的项目）；
+        // 没有会话时记当前项目（`""` 表示"上次就是全局、没有项目"，是合法值）
+        writeLastProjectId(currentSession?.projectId ?? currentProject?.id ?? null);
+      } catch (e) {
+        console.warn("[App] 记录'上次打开的会话'失败（只影响下次启动的落地位置）:", e);
+      }
+    })();
+  }, [dbReady, currentSession?.id, currentSession?.projectId, currentProject?.id]);
   // Initialize from saved settings synchronously to avoid UI flash showing wrong model list.
   // getMode() reads from SQLite synchronously; if DB not ready yet, falls back to "api".
   const _initialSettings = (() => {
@@ -968,11 +1094,8 @@ if (!uiSessionId) return;
 setPendingPipelineSteps(prev => { const next = new Map(prev); next.delete(uiSessionId); return next; });
 };
 
-// P2: QuickAccessCards — agent quick access
-const [showQuickAccess, setShowQuickAccess] = useState(false);
-const [quickAccessFavorites, setQuickAccessFavorites] = useState<Set<string>>(() => {
-try { return new Set(getSettingJSON<string[]>("codem-quick-access-favorites", [])); } catch { return new Set(); }
-});
+// 第 47 轮（D-19）：`showQuickAccess` / `QuickAccessCards` / `quickAccessFavorites`
+// 三个状态随死 UI 一起删除 —— 理由见下方原渲染点处的注释（`showQuickAccess` 从来没有被设过 true）。
 
 // D2: Pending prompt changes — per-session for parallel safety
 const [pendingPromptChangesMap, setPendingPromptChangesMap] = useState<Map<string, {
@@ -3745,6 +3868,31 @@ abortControllersRef.current.delete(session?.id || "");
       }, newSession.id);
     } catch (e) { console.warn("[Rewind] write edited message failed:", e); }
 
+    /**
+     * ## 第 47 轮（功能上下文审计 P2-D11）：回退之后必须重算会话的消息计数
+     *
+     * `createSession` 建出来的会话行 `message_count = 0`，随后这里
+     * **逐条 `copyMessageToSession` + `createMessage`** 往库里写（`prefix.length` 条 + 1 条编辑后的），
+     * 而会话行的计数只靠引擎侧 `bump_session_message_count` 递增 —— 任何一条没 bump
+     * （历史形态：外键拒绝 / 写被回绝 / 复制时抛错被下面吞掉）都会让侧边栏与
+     * `session_trace` 长期显示错的条数，直到 12 小时一次的启动维护对账。
+     *
+     * 这里调用**已存在**的 `reconcileSessionMessageCountById`（`message.ts:2533`，
+     * 读引擎 `messages.count.total` 真值写回），**不写第二份重算实现**。
+     * 三态如实处理：`unavailable`（端口没有 `command` 能力 / 该会话读失败）时
+     * 留下一行告警 —— "读不到"不许被读成"对上了"。
+     */
+    void MessageStorage.reconcileSessionMessageCountById(
+      newSession.id,
+      "编辑并回退后按索引真值重算",
+    ).then((state) => {
+      if (state === "unavailable") {
+        console.warn("[Rewind] 索引真值读不到（端口无 command 能力），会话消息计数未重算");
+      }
+    }).catch((e) => {
+      reportActionFailure("app.rewind.reconcileMessageCount", e, "回退会话的消息计数未重算");
+    });
+
     // 3. Load the new session from DB (also switches currentSession rendering).
     loadMessages(newSession.id);
 
@@ -4698,46 +4846,21 @@ onClose={() => setCitationViewer(null)}
         />
       )}
 
-      {/* P2: Quick Access Cards — show agent shortcuts */}
-      {showQuickAccess && messages.length === 0 && !isStreaming && (
-        <div style={{ padding: "12px 16px", maxWidth: "600px", margin: "0 auto" }}>
-          <SlotBridge name="app.quick-access-cards" fallback={QuickAccessCards}
-            agents={((getCtxService('agentRegistry') as any) || { getPrimary: () => [] as any[] }).getPrimary().map((a: any) => ({
-              id: a.id,
-              name: a.name,
-              description: a.description,
-              icon: a.id === 'build' ? <Hammer size={20} /> : a.id === 'plan' ? <ClipboardList size={20} /> : a.id === 'explore' ? <Search size={20} /> : <Bot size={20} />,
-            }))}
-            favoriteIds={quickAccessFavorites}
-            onSelect={(agentId: string) => {
-              const agent = ((getCtxService('agentRegistry') as any) || { get: () => null }).get(agentId);
-              if (agent) {
-                // Switch collaboration mode based on agent's config
-                if (agent.collaborationMode === "plan") {
-                  setCollaborationMode("plan");
-                } else {
-                  setCollaborationMode("default");
-                }
-                // Pre-fill input with agent context and send
-                const prompt = lang === 'zh'
-                  ? `使用${agent.name}模式：${agent.description}`
-                  : `Use ${agent.name} mode: ${agent.description}`;
-                handleSend(prompt);
-              }
-              setShowQuickAccess(false);
-            }}
-            onToggleFavorite={(agentId: string) => {
-              setQuickAccessFavorites(prev => {
-                const next = new Set(prev);
-                if (next.has(agentId)) next.delete(agentId);
-                else next.add(agentId);
-                setSettingJSON("codem-quick-access-favorites", Array.from(next));
-                return next;
-              });
-            }}
-          />
-        </div>
-      )}
+      {/*
+        第 47 轮（设置链路审计 D-19 收口）：这里原来有一整块「快速访问卡片」
+        （`SlotBridge name="app.quick-access-cards"` + `QuickAccessCards` fallback）。
+        它的显示条件是 `showQuickAccess && …`，而 `showQuickAccess` 是
+        `useState(false)`，全仓**只有 `setShowQuickAccess(false)`** ——
+        从来没有一处把它设成 `true`，所以这块 JSX 在运行时**永远不渲染**：
+        槽位 `app.quick-access-cards` 也永远不会被求值，插件往那个名字注册的卡片
+        一辈子不会出现（"注册成功但永远不显示"）。
+
+        按"能看见的功能优先于看不见的代码"处理：**删除这块死 UI**，而不是在这里
+        随手补一个入口——那是产品决策（空会话首屏到底要不要展示 agent 快捷卡片），
+        不属于审计整改范围。活着的同类能力在 `ChatPanel`（它 `useState(true)`，
+        由 `chat-panel-quick-access` 槽位渲染，`SlotBridge` 在那里是真接入的）。
+        守门用例：`settings-tail-fixes.test.ts` 的 SKEY-D19-*。
+      */}
 
       {/* D2: Prompt Change Review Dialog */}
       {pendingPromptChanges && (

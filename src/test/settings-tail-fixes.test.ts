@@ -468,26 +468,56 @@ describe("D-17 皮肤/主题的首屏镜像", () => {
 });
 
 // ==========================================================================
-// D-19 / D-20 只能守门（修它们要改 src/App.tsx —— 本批次禁区）
+// D-19 / D-20：第 47 轮已**修好**（守门用例反转成真实契约）
 // ==========================================================================
 
-describe("D-19 / D-20 守门（真实状态钉成断言）", () => {
-  it("SKEY-D19-1: App 侧快速访问区块仍然没有任何 `setShowQuickAccess(true)`（死 UI 未接线）", () => {
+describe("D-19 / D-20 已修复（守门 → 契约，行为面用例在 session-preferences.test.ts）", () => {
+  it("SKEY-D19-1: App 级那块不可达的快速访问 UI 已**删除**（不再留一块永远不渲染的 JSX）", () => {
     const src = readCode("src/App.tsx");
-    expect(src).toContain("showQuickAccess");
-    const setTrue = /setShowQuickAccess\(\s*true\s*\)/.test(src);
-    // 断言当前状态：一旦有人补上接线，这条会红 —— 那时请把这一段改成"可达性"用例
-    expect(setTrue, "App 级快速访问区块目前不可达（需要 App.tsx 的所有者接线或删除）").toBe(false);
-    // 活着的入口在 ChatPanel（初值 true）
+    /**
+     * 第 45 轮这条用例钉的是"现状"：`showQuickAccess` 是 `useState(false)`，
+     * 全仓只有 `setShowQuickAccess(false)`，所以那块 `SlotBridge
+     * name="app.quick-access-cards"` 永远不渲染（插件往那个槽位注册的卡片一辈子不显示）。
+     *
+     * 第 47 轮的处置是**删掉死 UI**（而不是随手补一个入口 —— 那是产品决策）。
+     * 现在断言反转：这块死 UI 连同它的三个状态都不该再存在。
+     */
+    expect(src.includes("showQuickAccess"), "死 UI 与它的状态必须一起消失（留着状态还会有人以为它可达）").toBe(false);
+    expect(src.includes("quickAccessFavorites"), "只有这块死 UI 用过的收藏状态也该一起删").toBe(false);
+    // 活着的同类能力在 ChatPanel（初值 true，`chat-panel-quick-access` 槽位真接入）
     const chat = readCode("src/components/ChatPanel.tsx");
+    expect(chat).toContain("QuickAccessCards");
     expect(chat).toMatch(/useState\(true\)/);
   });
 
-  it("SKEY-D20-1: 仍然没有任何'上次会话/项目'的恢复键（能力缺失未补）", () => {
+  it("SKEY-D20-1: 「上次打开的会话/项目」能力已补上（App 侧真的有恢复 + 记录两端）", () => {
     const app = readCode("src/App.tsx");
-    for (const key of ["codem-last-session", "codem-last-project", "lastOpened", "restoreLast"]) {
-      expect(app.includes(key), `${key} 目前不存在（需要 App.tsx + store 的所有者实现）`).toBe(false);
-    }
+    /**
+     * 第 45 轮这条用例钉的是"能力缺失"：`codem-last-session` / `codem-last-project`
+     * 在全仓 0 命中，启动路径只跑 `loadFromDB()`，于是每次启动都停在"无会话"空状态。
+     *
+     * 第 47 轮补实现（`src/core/session/preferences.ts`）+ **两端接线**：
+     * - 恢复端 `restoreLastOpenedSession`（必须落在这里，且必须在 `dbReady` 守卫内）；
+     * - 记录端 `writeLastSessionId` / `writeLastProjectId`（**只补恢复端的话那个键永远是空的**，
+     *   恢复逻辑每天安静返回 no-key —— "实现了但一次都不生效"）。
+     *
+     * 键名本身刻意**不**在 App.tsx 里出现（它们只该是
+     * `core/session/preferences.ts` 里的常量），所以这里断言的是**调用点**。
+     */
+    expect(app, "恢复端必须在 App 接线").toContain("restoreLastOpenedSession");
+    expect(app, "记录端必须在 App 接线（否则键永远是空的）").toContain("writeLastSessionId");
+    expect(app).toContain("writeLastProjectId");
+    // 键名的唯一定义处
+    const prefs = readCode("src/core/session/preferences.ts");
+    expect(prefs).toContain("codem-last-session");
+    expect(prefs).toContain("codem-last-project");
+    /**
+     * 恢复**必须**在 `dbReady` 之后：`getSession` 走引擎端口，首帧读到的是空镜像，
+     * 那时"目标不存在"是假结论 —— 会走到"清掉这个键"，把"能力缺失"升级成"数据丢失"。
+     */
+    const guard = app.indexOf("if (dbReady) {");
+    expect(guard).toBeGreaterThan(-1);
+    expect(app.indexOf("restoreLastOpenedSession")).toBeGreaterThan(guard);
   });
 });
 

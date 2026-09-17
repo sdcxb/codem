@@ -20,6 +20,16 @@
       "file": "src/core/store.ts",
       "contains": "Failed to count existing sessions",
       "reason": "createSession 里读会话数失败 → 退回内存计数，属读路径降级；真正的写失败已走 reportPersistFailure"
+    },
+    {
+      "file": "src/App.tsx",
+      "contains": "恢复上次打开的会话失败",
+      "reason": "第 47 轮 D-20 启动恢复的 catch：这是『便利性』路径，失败时应用停在『无会话』状态 —— 那是完全可用的形态（用户点一下侧边栏即可）。它不是动作假成功：没有任何数据被写，也没有任何调用方据此认为恢复成功（restoreLastOpenedSession 返回 boolean，这里刻意不使用它的返回值）。真正的写盘失败在 preferences.ts 内部另有 reportPersistFailure，所以这里只需让日志里能看到一行。"
+    },
+    {
+      "file": "src/core/session/preferences.ts",
+      "contains": "localStorage 镜像未写入",
+      "reason": "第 47 轮 D-22：localStorage 在本次改动后只是**兼容镜像**，权威介质是 DB（setSettingJSON 那一路，失败会走 reportPersistFailure）。镜像写不进去只有隐私模式 / 配额满两种情形，两者都不影响权威值；把镜像写失败升级成失败上报会让『隐私模式下打开应用』每次都弹一条错误，而用户偏好其实一切正常。"
     }
   ],
   "silentWrites": [],
