@@ -14,12 +14,15 @@
  * | --- | --- | --- |
  * | `persistDatabase()/flushDatabase()` 不抛 trap | **旧引擎**（整库导出 + WASM 堆） | **已删**：渲染进程里不再有 WASM 堆，也没有"整库导出"这个动作 |
  * | `listMessages()` 读回 400 条 | 产品行为（大会话可读、不丢） | **保留**（等价覆盖：`db-contract.test.ts` C19 + Rust `messages_list_pagination_is_exact`） |
- * | 单条大工具结果在 `tool_calls.result` 里逐字保留（130 KB / 5 MB） | 产品行为（大 payload 不截断） | **保留**（契约等价：C11 ≈500 KB 往返 + Rust `message_roundtrip_including_unicode_and_large_content` 1 MiB）；**量级差异有意留着** |
+ * | 单条大工具结果在 `tool_calls.result` 里逐字保留（130 KB / 5 MB） | 产品行为（大 payload 不截断） | **保留**（契约等价：**C27**（**真 CLI** 走同一写入链 `messages.upsert_index` → `tool_calls.list` 读回，130 KB 与 5 MB 两个量级**逐字比对**，并断言 `max_bytes_per_query` > 5 MB）+ C11 ≈500 KB 往返 + Rust `message_roundtrip_including_unicode_and_large_content` 1 MiB） |
  *
- * **为什么量级要留着**：这是**唯一**在 130 KB / 5 MB 量级上走**渲染侧**写入链的用例，
- * 而 rust 引擎对单次查询有硬上限 `MAX_BYTES_PER_QUERY = 16 MiB`
+ * **为什么量级要留着**：这是**唯一**在 130 KB / 5 MB 量级上走**渲染侧**写入链的用例（渲染侧 = 假端口，
+ * 断言"我们的写入链不截断"），而**引擎侧的同量级**由 **C27** 在真 CLI 上守
+ * （同一条 `messages.upsert_index → tool_calls.list` 路径，130 KB / 5 MB 逐字比对）。
+ * 两侧都必要：一个证明"我们没截断"，一个证明"引擎没截断"。
+ * rust 引擎对单次查询有硬上限 `MAX_BYTES_PER_QUERY = 16 MiB`
  * （`src-tauri/codem-db/src/engine.rs:23`）。5 MB 正处在这个上限的同一量级 ——
- * "离上限多远"值得留一条用例盯着。
+ * "离上限多远"值得留一条用例盯着（C27 里也断言了这条上限 > 5 MB）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { setStoragePort } from "../core/storage/port";
