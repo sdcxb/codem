@@ -38,13 +38,18 @@ import { domainEnsureLoaded } from "./domain-store";
  *   宽松版反馈在 Rust 引擎下**写不进去**（真机复现，已修）；
  * - `llm/feedback.ts` 的四个操作全部改走域端口。
  *
- * ## 回滚开关仍然在
+ * ## ✅ 回滚开关已退役（第 15 轮，v1.16.62）
  *
- * `localStorage["codem-storage-engine"] = "wasm"` 改完刷新即回退。
- * 注意：要让它真的可用，**sql.js 依赖在本段之后暂时保留**（真机验证过没有回退需求
- * 再单独删除依赖，见 docs 的 P5 顺序说明）。
+ * 迁移期靠 `localStorage["codem-storage-engine"] = "wasm"` 一键回退到旧引擎。
+ * 现在 **SQLite 引擎已经完全从渲染进程移除**（L1 清零、端口模式套件全绿），
+ * 那个开关已经没有可回退的目标了 —— 继续留着它只会制造一个**假的**安全感：
+ * 用户以为"切回去还能用"，实际切过去没有任何引擎可用。
+ *
+ * 所以开关**不再被读取**（`selectedEngine()` 恒为 `rust`）。真正的回退手段是
+ * **应用级**的：装回上一版安装包 + 旧库 `codem-db.bin` 始终只读不改。
+ * 常量 `STORAGE_ENGINE_KEY` 保留只是为了清理历史 localStorage 键（见 `settings` 的启动清理）。
  */
-export const DEFAULT_ENGINE: "wasm" | "rust" = "rust";
+export const DEFAULT_ENGINE: "rust" = "rust";
 
 export type StorageBootResult =
   | {
@@ -58,14 +63,18 @@ export type StorageBootResult =
   | { kind: "skipped"; reason: string }
   | { kind: "failed"; error: unknown };
 
-/** 读回滚开关（localStorage 不可用时退回默认，不抛） */
-export function selectedEngine(): "wasm" | "rust" {
-  try {
-    const raw = globalThis.localStorage?.getItem(STORAGE_ENGINE_KEY);
-    if (raw === "rust" || raw === "wasm") return raw;
-  } catch {
-    /* 隐私模式等场景下 localStorage 会抛；用默认值 */
-  }
+/**
+ * 当前存储引擎 —— **恒为 `rust`**（第 15 轮：回滚开关退役）。
+ *
+ * 保留这个函数而不是直接删掉调用点，是为了：
+ * 1. 调用方（`registerRustStoragePort` / `App.tsx` 的诊断日志）不必改形状；
+ * 2. 把"为什么恒为 rust"写在一处：**旧引擎已经不存在了**，
+ *    唯一的存储实现就是 Rust 端口（`localStorage` 里那个开关不再被读取）。
+ *
+ * 历史背景：迁移期这里读 `localStorage["codem-storage-engine"]`，
+ * `"wasm"` 即回退到渲染进程内的 sql.js。那个引擎已经随 L1 清零一起移除。
+ */
+export function selectedEngine(): "rust" {
   return DEFAULT_ENGINE;
 }
 

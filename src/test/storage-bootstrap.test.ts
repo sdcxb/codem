@@ -78,15 +78,22 @@ describe("存储引导 —— 回滚开关", () => {
     expect(DEFAULT_ENGINE, "默认引擎已切到 rust —— 这是 P5 的核心开关").toBe("rust");
   });
 
-  it("BOOT-2: 开关为 wasm 时明确跳过（不是失败）", async () => {
+  it("BOOT-2: 回滚开关已退役 —— 写 wasm 也仍然注册 rust 端口", async () => {
+    /**
+     * 第 15 轮（v1.16.62）：旧引擎已从渲染进程移除，回滚开关**不再被读取**。
+     * 这条用例从前断言「写 wasm 就跳过注册」；现在那样的行为只会制造一个**假的**安全感
+     * ——用户以为切回去还能用，实际切过去没有任何引擎可用。
+     * 所以契约改成：**任何 localStorage 取值都不影响引擎选择**，端口照常注册。
+     */
     localStorage.setItem(STORAGE_ENGINE_KEY, "wasm");
     const r = await registerRustStoragePort(makeTransport());
-    expect(r.kind).toBe("skipped");
-    expect(hasStoragePort(), "跳过时不得注册端口").toBe(false);
-    expect(reported, "跳过不是失败，不该上报错误").toEqual([]);
+    expect(r.kind, "开关退役后必须照样注册端口").toBe("registered");
+    expect(hasStoragePort(), "端口必须已注册").toBe(true);
+    expect(getStoragePort().kind).toBe("rust");
+    expect(reported, "这不是失败，不该上报错误").toEqual([]);
   });
 
-  it("BOOT-3: 开关为 rust 时注册端口并预热配置", async () => {
+  it("BOOT-3: 注册端口并预热配置（开关已退役，取值不再影响结果）", async () => {
     localStorage.setItem(STORAGE_ENGINE_KEY, "rust");
     const r = await registerRustStoragePort(makeTransport());
     expect(r.kind).toBe("registered");
@@ -99,9 +106,9 @@ describe("存储引导 —— 回滚开关", () => {
     expect(getStoragePort().kind).toBe("rust");
   });
 
-  it("BOOT-4: 开关值非法时退回默认（不因脏数据而崩）", () => {
+  it("BOOT-4: 开关值非法也不影响引擎选择（已退役，恒为 rust）", () => {
     localStorage.setItem(STORAGE_ENGINE_KEY, "postgres");
-    expect(selectedEngine()).toBe(DEFAULT_ENGINE);
+    expect(selectedEngine(), "引擎选择不再读 localStorage").toBe("rust");
   });
 
   it("BOOT-5: localStorage 抛异常时立刻退回默认（不能因为读开关把启动搞挂）", () => {
