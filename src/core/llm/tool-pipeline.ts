@@ -741,18 +741,22 @@ export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
        * 第 90 波（用户现场）：数据库崩掉后，这里**每次工具调用**都打一行
        * "Failed to write tool events (non-critical)"，日志里同类错误刷满屏，
        * 而且看不出"数据库整体已经不可用"这个真正的问题。
-       * 现在：致命状态只提示一次（App 已经收到 codem:db-fatal 并在抢救会话），
-       * 不再逐次刷屏。
+       * 现在：存储不可用只提示一次，不再逐次刷屏。
+       *
+       * 第 18 轮：判据从 `isDatabaseFatal()`（旧引擎致命态，rust 下恒为 false）
+       * 换成 `storageUnavailable()`（端口未注册 = 本进程没有可用存储）。
+       * 抢救会话那件事现在由 App 监听 `codem:storage-unavailable` 负责
+       * （生产者是 bootstrap 的注册失败路径，见 `storage/health.ts`）。
        */
-      const { isDatabaseFatal, noteDatabaseError } = await import("../storage/database");
-      if (isDatabaseFatal()) {
+      const { storageUnavailable } = await import("../storage/health");
+      if (storageUnavailable()) {
         if (!warnedEventLogFatal) {
           warnedEventLogFatal = true;
           console.warn(
-            "[EventLogFinalize] 数据库已不可用，停止写入工具事件（本次运行内不再提示；界面已提示抢救当前会话）",
+            "[EventLogFinalize] 存储不可用，停止写入工具事件（本次运行内不再提示；界面已提示抢救当前会话）",
           );
         }
-      } else if (!noteDatabaseError(err)) {
+      } else {
         console.warn("[EventLogFinalize] Failed to write tool events (non-critical):", err);
       }
     }

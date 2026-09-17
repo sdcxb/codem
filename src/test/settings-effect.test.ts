@@ -54,11 +54,16 @@ describe("设置项落地契约（第 61 波）", () => {
       /savedDisplayMode\s*===\s*["']unified["'][\s\S]{0,120}setDisplayMode\(savedDisplayMode\)/,
     );
 
-    // 必须在数据库就绪之后 —— 太早读只会拿到空值（这正是"看起来读了、其实没生效"的形状）
-    const initAt = app.indexOf("await initDatabase()");
+    /**
+     * 必须在存储就绪之后 —— 太早读只会拿到空值（这正是"看起来读了、其实没生效"的形状）。
+     *
+     * 第 18 轮：锚点从 `await initDatabase()`（旧引擎初始化，App.tsx 已删掉这一步）
+     * 换成 `await registerRustStoragePort()` —— 那才是新架构下"存储就绪"的分界线。
+     */
+    const readyAt = app.indexOf("registerRustStoragePort()");
     const readAt = app.indexOf("getSetting(\"codem-display-mode\")");
-    expect(initAt, "App.tsx 里应有 initDatabase() 调用").toBeGreaterThan(-1);
-    expect(readAt, "读取点应位于 initDatabase() 之后").toBeGreaterThan(initAt);
+    expect(readyAt, "App.tsx 里应有 registerRustStoragePort() 调用").toBeGreaterThan(-1);
+    expect(readAt, "读取点应位于存储端口注册之后").toBeGreaterThan(readyAt);
   });
 
   it("SKEY-E2: codegraph 索引检测不得再读没有写入方的 codem-current-project-path", () => {

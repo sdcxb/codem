@@ -61,13 +61,17 @@ describe("全局字号缩放（第 56 波）", () => {
     expect(panel).toMatch(/max="20"/);
   });
 
-  it("UI-FONT-5: 启动时就应用字号（数据库就绪后），而不是等打开设置才应用", () => {
+  it("UI-FONT-5: 启动时就应用字号（存储就绪后），而不是等打开设置才应用", () => {
     const app = read("src/App.tsx");
-    const initIdx = app.indexOf("await initDatabase()");
+    /**
+     * 第 18 轮：锚点从 `await initDatabase()`（旧引擎初始化，App.tsx 已删）换成
+     * `registerRustStoragePort()` —— 新架构下"设置可读"的分界线是**端口注册完成**。
+     */
+    const readyIdx = app.indexOf("registerRustStoragePort()");
     const applyIdx = app.indexOf("applyStoredUiFont()");
-    expect(initIdx, "App.tsx 应有 await initDatabase()").toBeGreaterThan(0);
-    expect(applyIdx, "App.tsx 应在数据库就绪后调用 applyStoredUiFont()").toBeGreaterThan(0);
-    expect(applyIdx, "applyStoredUiFont() 必须在 initDatabase() 之后（设置存在 SQLite 里）").toBeGreaterThan(initIdx);
+    expect(readyIdx, "App.tsx 应有 registerRustStoragePort()").toBeGreaterThan(0);
+    expect(applyIdx, "App.tsx 应在存储就绪后调用 applyStoredUiFont()").toBeGreaterThan(0);
+    expect(applyIdx, "applyStoredUiFont() 必须在存储端口注册之后（设置存在端口里）").toBeGreaterThan(readyIdx);
     // 侧栏启动路径也必须用同一个解析器（不能再直接读旧键）
     const sidebar = read("src/components/Sidebar.tsx");
     expect(sidebar).toMatch(/applyStoredUiFont\(\)/);

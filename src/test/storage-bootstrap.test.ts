@@ -141,8 +141,13 @@ describe("存储引导 —— 失败必须可见、且不注册半死端口", ()
     const r = await registerRustStoragePort(t);
     expect(r.kind).toBe("failed");
     expect(hasStoragePort(), "半死的端口绝不能注册").toBe(false);
+    /**
+     * 第 18 轮：文案从"已保持 WASM 数据库"改成"本进程没有可用存储"——
+     * 旧引擎已经不存在，引擎起不来就是**没有存储**，不该再暗示"退回 WASM"。
+     * 这里同时钉住"失败必须如实上报"（这才是本条用例的本意）。
+     */
     expect(reported.length).toBe(1);
-    expect(reported[0].note).toContain("WASM");
+    expect(reported[0].note).toContain("没有可用存储");
   });
 
   it("BOOT-7: IPC 通道整个炸了也要被包住并上报", async () => {
@@ -187,7 +192,8 @@ describe("存储引导 —— 失败必须可见、且不注册半死端口", ()
     const r = await registerRustStoragePort(makeTransport());
     expect(r.kind).toBe("failed");
     expect(getStoragePort().kind, "不得覆盖已注册的端口").toBe("wasm");
-    expect(reported[0].note).toContain("未生效");
+    // 第 18 轮：文案里的"回滚开关需要在刷新后生效"已随回滚开关退役；现在直接说"没有可用存储"
+    expect(reported[0].note).toContain("没有可用存储");
   });
 
   it("BOOT-10: 未注册端口时 shutdown 是安全的 no-op", async () => {

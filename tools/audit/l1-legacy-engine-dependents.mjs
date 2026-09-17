@@ -94,7 +94,19 @@ export function stripComments(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
+/**
+ * ⚠️ 第 18 轮补上的**漏网形态**（实测漏掉了 `src/core/llm/tool-pipeline.ts` 与 App.tsx 的两处监听）：
+ *
+ * 1. **动态 import**：`const { isDatabaseFatal } = await import("../storage/database")`
+ *    —— 只匹配静态 import 的正则完全看不见它；
+ * 2. **经 `storage/index.ts` 再导出**：`import { getDatabase } from "../storage"`
+ *    —— 路径里没有 `database` 字样，按路径匹配同样漏掉；
+ * 3. **事件名字面量**：`window.addEventListener("codem:db-fatal", …)` 消费的是引擎模块的语义，
+ *    却一个符号都不 import。这类"间接依赖"按字面量兜（见 ENGINE_EVENT_LITERALS）。
+ */
 const IMPORT_RE = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["'][^"']*storage\/database["']|import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']\.\/database["']/g;
+const DYNAMIC_IMPORT_RE = /(?:await\s+)?import\s*\(\s*["'](?:[^"']*\/)?(?:database|storage)["']\s*\)[^\n]*|\{\s*([A-Za-z_$][\w$]*)[^}]*\}\s*=\s*await\s+import\s*\(\s*["'][^"']*(?:database|storage)["']/g;
+const ENGINE_EVENT_LITERALS = ["codem:db-fatal", "codem:db-save-failed", "codem:db-save-recovered"];
 
 function importedEngineSymbols(code) {
   const found = new Set();
@@ -102,6 +114,14 @@ function importedEngineSymbols(code) {
     const list = (m[1] ?? m[2] ?? "").split(",");
     for (const raw of list) {
       const name = raw.trim().split(/\s+as\s+/)[0].trim();
+      if (!name) continue;
+      if (ENGINE_SYMBOLS.includes(name) || ENGINE_INFRA_SYMBOLS.includes(name)) found.add(name);
+    }
+  }
+  // 动态 import：`const { a, b } = await import("…/database")`
+  for (const m of code.matchAll(/\{\s*([^}]*)\}\s*=\s*await\s+import\s*\(\s*["'][^"']*(?:database|storage)["']/g)) {
+    for (const raw of m[1].split(",")) {
+      const name = raw.trim().split(/[\s:]+/)[0].trim();
       if (!name) continue;
       if (ENGINE_SYMBOLS.includes(name) || ENGINE_INFRA_SYMBOLS.includes(name)) found.add(name);
     }
@@ -129,6 +149,8 @@ export function assess() {
     const rawLines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
     const code = stripComments(rawLines.join("\n"));
     const syms = isEngine ? [] : importedEngineSymbols(code);
+    /** 事件名字面量依赖（`codem:db-fatal` 等）—— 一个符号都不 import 的间接依赖。⚠️ 只看代码，注释里提到不算 */
+    const eventDeps = isEngine ? [] : ENGINE_EVENT_LITERALS.filter((ev) => code.includes(ev));
 
     // 逐站点分类（只看代码行，注释行跳过）
     const codeLines = stripComments(rawLines.join("\n")).split("\n");
@@ -157,13 +179,13 @@ export function assess() {
       }
     }
 
-    if (syms.length === 0 && raw === 0 && tryNull === 0 && gated === 0) continue;
+    if (syms.length === 0 && raw === 0 && tryNull === 0 && gated === 0 && (eventDeps?.length ?? 0) === 0) continue;
     const calls = {};
     for (const s of syms) {
       const n = callCount(code, s);
       if (n > 0) calls[s] = n;
     }
-    prod.push({ file: rel, isEngine, imports: syms, calls, idiom: { gated, tryNull, raw } });
+    prod.push({ file: rel, isEngine, imports: syms, eventDeps, calls, idiom: { gated, tryNull, raw } });
     if (!isEngine) {
       idiom.gated += gated;
       idiom.tryNull += tryNull;
@@ -227,7 +249,8 @@ if (isMain) {
     );
     for (const p of r.prod) {
       console.log(`   ${String(Object.values(p.calls).reduce((x, y) => x + y, 0)).padStart(3)} 处 · ${p.file}`);
-      console.log(`         import: ${p.imports.join(", ")}`);
+      console.log(`         import: ${p.imports.join(", ") || "（无符号 import）"}`);
+      if (p.eventDeps?.length) console.log(`         事件字面量依赖: ${p.eventDeps.join(", ")}（间接依赖，删引擎时必须一起处置）`);
     }
     console.log(
       `\n测试侧：${s.testFilesWithEngineApi} 个用例文件用旧引擎 API（另有 ${s.testHarnessFiles} 个基座文件），裸 SQL ${s.testRawSqlSites} 处 / ${s.testRawSqlFiles} 个文件，getDatabase 绑定 ${s.testBindings} 处`,

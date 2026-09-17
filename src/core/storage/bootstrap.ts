@@ -104,8 +104,8 @@ export async function registerRustStoragePort(
     // 已有 WASM 端口却要求 rust：说明启动顺序有问题，如实上报而不是悄悄替换
     reportActionFailure(
       label,
-      new Error("端口已注册为 wasm，无法切换为 rust（回滚开关需要在刷新后生效）"),
-      "存储引擎切换未生效，本次仍使用 WASM 数据库",
+      new Error("端口已注册为 wasm，无法切换为 rust（当前构建里旧引擎已不存在）"),
+      "存储引擎未就绪：本进程没有可用存储",
     );
     return { kind: "failed", error: new Error("端口类型冲突") };
   }
@@ -154,11 +154,17 @@ export async function registerRustStoragePort(
       },
     };
   } catch (e) {
-    reportActionFailure(
-      label,
-      e,
-      "Rust 存储引擎未能启动，已保持 WASM 数据库；设置项可能无法保存",
-    );
+    /**
+     * ⚠️ 第 18 轮：失败信息改了，并且**广播"存储不可用"**。
+     *
+     * 旧文案"已保持 WASM 数据库；设置项可能无法保存"是迁移期的话 —— 旧引擎已经不存在，
+     * 现在引擎起不来就是**没有存储**。App 收到 `codem:storage-unavailable` 后会
+     * 把当前会话抢救成 JSON 并提示用户（这正是旧 `codem:db-fatal` 那条抢救链，
+     * 换了生产者而已）。
+     */
+    reportActionFailure(label, e, "Rust 存储引擎未能启动：本进程没有可用存储（写入会如实上报失败）");
+    const { notifyStorageUnavailable } = await import("./health");
+    notifyStorageUnavailable("存储引擎未能启动（Rust 侧打开失败）", e instanceof Error ? e.message : e);
     return { kind: "failed", error: e };
   }
 }

@@ -273,7 +273,8 @@ import { getLLMEngine } from "./core/llm";
 import { resolveProviderForModel, getFirstConfiguredModel } from "./core/model-config";
 import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
-import { initDatabase, resetDatabase, flushDatabase } from "./core/storage";
+import { flushSessionLogWrites } from "./core/storage/session-jsonl";
+import { STORAGE_UNAVAILABLE_EVENT } from "./core/storage/health";
 import { getModelProfileManager } from "./core/llm/model-profile";
 import { migrateFromLocalStorage } from "./core/storage/migration";
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./core/storage/settings";
@@ -1117,38 +1118,27 @@ flushStreamBuffer(); // flush all on unmount
 }, [flushStreamBuffer]);
 
   useEffect(() => {
-    // ⚠️ 顺序在这里是**语义**，不是风格（P5 第 4 段）：
-    //
-    // 1) **先**注册存储端口（它只取决于回滚开关，不需要旧库）；
-    // 2) 再决定要不要初始化 WASM 数据库 —— **引擎是 rust 时整段跳过**。
-    //
-    // 为什么必须跳过：`initDatabase()` 会把整个 `codem-db.bin` 读进渲染进程堆
-    // （还要再建一份 sql.js 实例）。只要它被调用，P6 实测的"3.7 倍内存"就原样存在 ——
-    // 换句话说，**默认走 Rust 但启动仍加载 WASM 库 = 一点内存都没省**。
-    //
-    // 跳过之后，所有仍写着"回退旧路径"的代码都会拿到"旧库不可用"，
-    // 这正好把**还没真正切到端口的路径**暴露出来（而不是让它们继续悄悄读写旧库）。
-    // 失败不阻塞启动的既有约定保持不变。
+    /**
+     * 启动顺序（第 18 轮简化）：**只注册 Rust 存储端口**。
+     *
+     * 历史（P5 第 4 段）：这里曾经要"先注册端口，再决定要不要 `initDatabase()`"——
+     * 因为当时默认走 Rust 但仍会加载 WASM 库，等于一点内存都没省。
+     * 现在旧引擎整个不存在了：注册失败就是**没有存储**（`bootstrap` 会广播
+     * `codem:storage-unavailable`，App 收到后抢救会话并提示用户），没有第二条路可退。
+     */
     (async () => {
       try {
         const { registerRustStoragePort, importSettingsFromLegacyDb, migrateFromLegacyDb, selectedEngine } = await import("./core/storage/bootstrap");
 
-        // ① 先注册端口。不 await 旧库相关的任何东西。
+        // ① 注册端口（唯一的数据源）
         let boot: Awaited<ReturnType<typeof registerRustStoragePort>> = { kind: "skipped", reason: "未尝试" };
         try {
           boot = await registerRustStoragePort();
         } catch (e) {
-          console.error("[Storage] 端口注册未预期地抛错（继续走旧库）:", e);
+          // 注册函数内部已把失败如实上报 + 广播"存储不可用"；这里只补一行诊断
+          console.error("[Storage] 端口注册未预期地抛错（本进程将没有可用存储）:", e);
         }
         const rustActive = boot.kind === "registered";
-
-        // ② 旧库只在"本次确实要用 WASM"时加载
-        if (!rustActive) {
-          setBootSplashPhase("loading-db");
-          await initDatabase();
-        } else {
-          console.log("[Storage] 引擎为 rust：本次启动**不加载 WASM 数据库**（不再把整库读进渲染进程）");
-        }
 
         if (rustActive && boot.kind === "registered" && boot.opened) {
           console.log(`[Storage] Rust 引擎已就绪：${boot.health?.path}（${boot.health?.tables} 表 / ${boot.health?.journalMode}）`);
@@ -1775,15 +1765,20 @@ flushStreamBuffer(); // flush all on unmount
     listen("close-requested", async () => {
       const closeBehavior = getSetting("codem-close-behavior"); // "tray" | "close" | null
       if (closeBehavior === "close") {
-        // Flush all pending DB writes BEFORE quitting; quit_app exits the Rust process
-        // immediately, so a fire-and-forget flush would be killed mid-write.
-        await flushDatabase();
+        /**
+         * 退出前把在途写入落盘（第 18 轮：`flushDatabase()` → `flushSessionLogWrites()`）。
+         *
+         * 旧引擎的写入有 500ms 防抖 + 整库导出，所以"退出前 flush"是必需的；
+         * 端口世界的写入**是一条命令 = 一次事务**，已经落地，没有可 flush 的缓冲。
+         * 但**追加日志（权威副本）**仍然是排队异步写的 —— 那才是退出前真正必须 flush 的东西。
+         */
+        await flushSessionLogWrites();
         const { invoke } = (window as any).__TAURI__?.core || {};
         invoke?.("quit_app");
         return;
       }
-      // Flush any pending DB writes before minimizing
-      flushDatabase();
+      // 最小化到托盘前也把权威日志的在途追加写完
+      void flushSessionLogWrites();
       if (closeBehavior === "tray") {
         // Minimize to tray
         const { invoke } = (window as any).__TAURI__?.core || {};
@@ -1822,21 +1817,12 @@ flushStreamBuffer(); // flush all on unmount
       });
     }
 
-    // 数据库保存失败可见性（对标 dsh：持久化失败必须提示而非静默丢失）：
-    // saveDatabase 写盘失败（磁盘满/文件占用）首次 dispatch 事件 → 提示用户。
-    // 修复后（任何一次成功）自动复位，无需用户操作。
-    let unlistenDbSaveFail: (() => void) | undefined;
-    const onDbSaveFail = () => {
-      useAppStore.getState().addGuidanceMessage({
-        id: `db-save-fail-${Date.now()}`,
-        message: "数据保存到数据库失败：最近的更改可能无法保存。请检查磁盘空间或数据库文件是否被占用；问题修复后应用会自动恢复保存。",
-        timestamp: Date.now(),
-        consumed: false,
-      });
-    };
-    window.addEventListener("codem:db-save-failed", onDbSaveFail);
-    unlistenDbSaveFail = () => window.removeEventListener("codem:db-save-failed", onDbSaveFail);
-
+    // 存储不可用提示（第 18 轮：接替旧的 `codem:db-save-failed`）。
+    //
+    // 旧事件由 sql.js 的保存路径派发；旧引擎删除后没人再派发它 —— 而**"写盘失败要可见"**
+    // 这件事在端口世界里由 `persist-failure.ts` 统一承担（下面的 `onPersistFail`，
+    // 所有 `reportPersistFailure` 都会经过它）。所以这里不再需要第二个监听器：
+    // 重复的通道只会让"同一次失败提示两遍"。
     /**
      * 第 87 波（B 类：假成功）：统一承接"写盘失败但界面照常当成功"的上报。
      *
@@ -1889,12 +1875,18 @@ flushStreamBuffer(); // flush all on unmount
     window.addEventListener("codem:session-persist-failed", onSessionPersistFail as EventListener);
     unlistenSessionPersist = () => window.removeEventListener("codem:session-persist-failed", onSessionPersistFail as EventListener);
 
-    // 数据库致命错误（sql.js 模块 OOM/abort）：写入已经不可能成功，此时最重要的不是重试，
-    // 而是**把当前会话抢救到磁盘**并给用户一条可执行说明 —— 数据库内存耗尽时，
-    // 直接写 JSON 备份（不经过 sql.js）是唯一还走得通的路。
-    let unlistenDbFatal: (() => void) | undefined;
-    const onDbFatal = async (ev: Event) => {
-      const detail = (ev as CustomEvent).detail as { message?: string } | undefined;
+    /**
+     * **存储不可用 → 抢救当前会话**（第 18 轮：接替旧的 `codem:db-fatal`）。
+     *
+     * 旧事件由 sql.js 派发（OOM / WASM 陷阱），旧引擎删除后没人再派发它 —— 但**抢救能力本身
+     * 必须留着**：新架构下"写入已经不可能成功"的唯一成因是 **Rust 引擎没起来**（端口未注册），
+     * 生产者就是 `bootstrap` 的注册失败路径（`notifyStorageUnavailable`）。
+     *
+     * 抢救方式与旧实现一致：**直接写 JSON 文件、不经过存储层**（那时唯一还走得通的路）。
+     */
+    let unlistenStorageDown: (() => void) | undefined;
+    const onStorageUnavailable = async (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { reason?: string; detail?: string } | undefined;
       const state = useAppStore.getState();
       const sessionId = useProjectStore.getState().currentSession?.id || "";
       let rescuePath = "";
@@ -1909,41 +1901,40 @@ flushStreamBuffer(); // flush all on unmount
               path: rescuePath,
               content: JSON.stringify({ sessionId, rescuedAt: new Date().toISOString(), messages: msgs }, null, 2),
             });
-            console.log(`[Database] 会话已抢救到 ${rescuePath}（${msgs.length} 条消息）`);
+            console.log(`[Storage] 会话已抢救到 ${rescuePath}（${msgs.length} 条消息）`);
           }
         }
       } catch (e) {
-        console.warn("[Database] 会话抢救写入失败:", e);
+        console.warn("[Storage] 会话抢救写入失败:", e);
       }
       useAppStore.getState().addGuidanceMessage({
-        id: `db-fatal-${Date.now()}`,
+        id: `storage-down-${Date.now()}`,
         message:
-          `本地数据库内存耗尽，已停止写入（原因：${detail?.message || "out of memory"}）。` +
+          `存储引擎未启动，本次写入不会保存（原因：${detail?.reason || "未知"}）。` +
           (rescuePath ? `当前会话已抢救到：${rescuePath}。` : "") +
-          "请**关闭并重新打开应用**后再继续（数据库会从磁盘上最近一次成功保存的状态恢复）；" +
-          "若反复出现，请清理旧会话/附件，或把上面那份 rescue 文件发我。",
+          "请**关闭并重新打开应用**后重试；若反复出现，请把上面那份 rescue 文件发我。",
         timestamp: Date.now(),
         consumed: false,
       });
     };
-    window.addEventListener("codem:db-fatal", onDbFatal as EventListener);
-    unlistenDbFatal = () => window.removeEventListener("codem:db-fatal", onDbFatal as EventListener);
+    window.addEventListener(STORAGE_UNAVAILABLE_EVENT, onStorageUnavailable as EventListener);
+    unlistenStorageDown = () => window.removeEventListener(STORAGE_UNAVAILABLE_EVENT, onStorageUnavailable as EventListener);
 
-    // 托盘"退出"菜单 → Rust emit quit-requested：先 flush 所有待写 DB 再真正退出
-    // （此前托盘退出直接 exit，跳过 flush，丢最近防抖窗口的写入）。
-    // Rust 侧有 2.5s 兜底强退，因此这里不需要超时保护（flush 不会 reject）。
+    // 托盘"退出"菜单 → Rust emit quit-requested：先把**权威日志的在途追加**写完再真正退出
+    // （端口写入是事务、已落地；有防抖缓冲的是 JSONL 追加，见上）。
+    // Rust 侧有 2.5s 兜底强退，因此这里不需要超时保护。
     let unlistenQuitReq: (() => void) | undefined;
     listen("quit-requested", async () => {
       try {
-        await flushDatabase();
+        await flushSessionLogWrites();
       } catch {
-        // flushDatabase 永不 reject；此处兜底防御。
+        // flushSessionLogWrites 内部已自行上报失败；此处兜底防御。
       }
       const { invoke } = (window as any).__TAURI__?.core || {};
       invoke?.("quit_app");
     }).then((un: () => void) => { unlistenQuitReq = un; });
 
-    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenDbFatal?.(); unlistenSessionPersist?.(); unlistenPersist?.(); unlistenQuitReq?.(); };
+    return () => { unlisten?.(); unlistenCrash?.(); unlistenStorageDown?.(); unlistenSessionPersist?.(); unlistenPersist?.(); unlistenQuitReq?.(); };
   }, []);
 
   const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {
@@ -1953,12 +1944,12 @@ flushStreamBuffer(); // flush all on unmount
     }
     const { invoke } = (window as any).__TAURI__?.core || {};
     if (action === "tray") {
-      // Flush any pending DB writes before minimizing
-      flushDatabase();
+      // 最小化到托盘前把权威日志的在途追加写完
+      void flushSessionLogWrites();
       invoke?.("hide_to_tray");
     } else {
-      // Flush ALL pending DB writes before quitting; quit_app exits the Rust process immediately
-      await flushDatabase();
+      // 退出前写完在途追加；quit_app 会立刻结束 Rust 进程，所以必须 await
+      await flushSessionLogWrites();
       invoke?.("quit_app");
     }
   }, []);
