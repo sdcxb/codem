@@ -5,7 +5,14 @@
  * 自研实现: 将笔记本的来源、笔记、生成内容合并为 Markdown 文件
  */
 
-import { getNotebook, listSources, listNotes, getChunks } from './storage';
+/*
+ * ⚠️ 这里原来还 import 了 `getChunks` —— 但本文件**从未调用它**（第 37 行用的是同文件内
+ * 的 `getChunksLabel()`，名字像、来源完全不同）。死 import 的危险不在于多打几个字节：
+ * 它会让"这个导出器读过文本块"变成一个看起来成立的事实（`getChunks` 现在还会在
+ * 索引未就绪时**抛** `ChunkIndexUnavailableError`），后来的人据此去猜行为边界。
+ * 审计发现后删除（任务 Y）。
+ */
+import { getNotebook, listSources, listNotes } from './storage';
 import type { Notebook, NotebookSource, Note } from './types';
 
 /**

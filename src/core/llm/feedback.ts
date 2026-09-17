@@ -18,8 +18,8 @@
  */
 
 import { getEventLog } from "../storage/event-log";
-import { getStoragePort, hasStoragePort } from "../storage/port";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
+import { domainDelete, domainPortRegistered, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Types ==========
 
@@ -232,8 +232,13 @@ export function putMessageFeedback(
 
   const now = Date.now();
 
-  // 查找现有反馈
-  const existing = getMessageFeedback(messageId);
+  /*
+   * 这次读**一次取齐**（任务 Y-1）：`undefined`（没接手）/ `null`（确实没有）/ 行 三态
+   * 全都要用 —— 后面的写入分支要判"端口接没接手"，若再调一次 `getMessageFeedback()`
+   * 就把 `undefined` 压成了 `null`，那个判据就没了（原来正是这么写的，
+   * 只不过当时还有第二次 `domainReadOne` 兜着）。
+   */
+  const { row: existingRow, item: existing } = readMessageFeedback(messageId);
 
   // 版本检查（C-4 ②：`undefined` = 不校验，见上面的说明）
   const versionConflict = checkVersion("put", ifVersion, existing?.version ?? null);
@@ -249,6 +254,13 @@ export function putMessageFeedback(
    * 取消之后没有行 —— 所以这里显式返回空串（`feedbackToItem` 对无 version 的历史行
    * 也是这么给的：`row.version || ""`）。**不编造**一个 UUID：那会让调用方以为
    * "取消"产生了一个可继续做乐观并发的新版本。
+   *
+   * ## Y-1：`removed.ok === false` 必须**原样传出去**
+   *
+   * 存储不可用时 `deleteMessageFeedback` 现在返回 `{ ok:false, error:"…暂不可用…" }`
+   * （改前它会把"读不到"当"本来就没有"而返回成功）。这里若把失败吞掉，
+   * 就又在**上一层**重演了同一个假成功 —— 所以 `error` 必须带上去，
+   * 由 `store.setFeedback` 走上报通道告诉用户"没有真的取消"。
    */
   if (rating === "neutral") {
     const removed = deleteMessageFeedback(messageId, ifVersion);
@@ -288,8 +300,9 @@ export function putMessageFeedback(
 
   // 迁移期：先用镜像判空/取现有行，再整体写回（旧实现是 DELETE + INSERT 两条语句，
   // 中间失败会留下"反馈消失"的状态；整体 upsert 没有这个中间态）。
-  const rustExisting = domainReadOne(TABLE, { message_id: messageId }, wireToFeedback);
-  if (rustExisting !== undefined) {
+  // Y-1：这里的"判空/取现有行"直接复用开头那一次读的结果（同一个快照），
+  // 不重复问一次镜像 —— 两次读之间镜像状态可以变化，那就又出现两个不同的判断了。
+  if (existingRow !== undefined) {
     const writeRow = (): void => {
       domainWrite(
         TABLE,
@@ -307,10 +320,10 @@ export function putMessageFeedback(
         { mode: "replace", scope: "feedback.put", note: "消息反馈未保存" },
       );
     };
-    if (rustExisting && rustExisting.id !== `fb-${messageId}`) {
+    if (existingRow && existingRow.id !== `fb-${messageId}`) {
       // 历史行用了别的 id（例如 message.ts 的轻量路径写的 `fb-...`）：
       // 先删掉再加，保持"一条消息最多一条反馈"这个不变量。
-      domainDelete(TABLE, { id: rustExisting.id }, { scope: "feedback.replace", note: "旧反馈未删除" });
+      domainDelete(TABLE, { id: existingRow.id }, { scope: "feedback.replace", note: "旧反馈未删除" });
     }
     writeRow();
     return { ok: true, item };
@@ -351,19 +364,85 @@ function checkVersion(
 }
 
 /**
+ * 反馈行的**原始读结果**：把"读不到"与"确实没有"分开（任务 Y-1）。
+ *
+ * ## 为什么必须有一个把 `undefined` 留在原地的读函数
+ *
+ * `getMessageFeedback` 的契约是 `MessageFeedbackItem | null` —— 它把
+ * `domainReadOne` 的 **`undefined`（没接手）压成了 `null`（确实没有）**。
+ * 这对"读"是对的（调用方只能拿到"这条反馈现在读不到"这一件事），
+ * 但对"删除"是致命的：
+ *
+ * – `deleteMessageFeedback` 用 `existing === null` 当作"本来就没有这一行"，
+ *   于是在"端口未接手 / 镜像未就绪"这两个**什么都没确认**的状态下，
+ *   直接返回 `{ ok: true, absent: true }`（取消成功）；
+ * - 而 `putMessageFeedback` 的**写入**路径在同一个状态下是
+ *   `{ ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" }`。
+ *
+ * **同一个函数里两条路对同一个状态给出相反的答复**，用户看到的就是
+ * "点取消赞 → 界面变了、库里那行还在 → 重启后赞又回来了"。
+ *
+ * 所以这里保留三态原样返回，让调用方**自己**决定"读不到"该怎么处置。
+ */
+function readMessageFeedback(
+  messageId: string,
+): {
+  /** `undefined` = 端口没接手（读不到）；`null` = 镜像接手了但确实没有这一行 */
+  row: FeedbackWireRow | null | undefined;
+  item: MessageFeedbackItem | null;
+} {
+  ensureNoteColumn();
+  const row: FeedbackWireRow | null | undefined = domainReadOne(TABLE, { message_id: messageId }, wireToFeedback);
+  return { row, item: row ? feedbackToItem(row) : null };
+}
+
+/**
  * 获取消息级反馈。
+ *
+ * 读语义**一个字没改**（Y-1 只改删除路径）：读不到时返回 `null`，
+ * 因为调用方（`getMessageFeedback` 的读路径 / UI）能表达的只有"现在读不到"。
+ * 区分"读不到"与"确实没有"的责任在写/删路径（见 `readMessageFeedback`）。
  */
 export function getMessageFeedback(messageId: string): MessageFeedbackItem | null {
-  ensureNoteColumn();
-  const rust = domainReadOne(TABLE, { message_id: messageId }, wireToFeedback);
-  if (rust !== undefined) return rust ? feedbackToItem(rust) : null;
-  // 端口没接手 = 这条反馈在这个进程里读不到（旧库已从渲染进程移除）→ 如实返回 null
-  return null;
+  return readMessageFeedback(messageId).item;
 }
 
 /**
  * 删除消息级反馈。
  * 对标 DSH MessageFeedbackService.delete()。
+ *
+ * ## 任务 Y-1（中高）：原实现在"没确认过"的状态下报"取消成功"
+ *
+ * 原实现的第一件事是 `existing = getMessageFeedback(messageId)`，**为 null 直接
+ * `return { ok: true, absent: true }`** —— 而 `getMessageFeedback` 在
+ * **端口未接手 / 该域镜像未就绪**时同样返回 `null`（那是"读不到"，不是"没有"）。
+ * 于是"存储不可用"被表达成"本来就没有这一行 → 取消成功"，
+ * `putMessageFeedback(neutral)` 返回 `{ ok: true, item: { rating: "neutral", version: "" } }`。
+ *
+ * 症状：点"取消赞" → 界面图标灭了、库里那一行还在 → 重启后赞又回来。
+ * 同一函数里的**写入**路径（见 `putMessageFeedback` 末尾）对同一个状态是正确的
+ * `{ ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" }` ——
+ * 一个函数里两条路给出相反的答复，正是这条缺陷的本质。
+ *
+ * ## 四种形态（端口未接手 / 镜像未就绪 / 确实不存在 / 确实存在）
+ *
+ * `domainReadOne` 的三态（`undefined` / `null` / 行）**加上**端口的注册与否，
+ * 恰好把这四态分干净 —— 判据只有 `domainPortRegistered()`，不猜任何内部状态：
+ *
+ * | 形态 | `hasStoragePort()` | `domainReadOne` | 处置 | 返回 |
+ * |---|---|---|---|---|
+ * | ① 端口未接手（本进程没有可用存储） | false | `undefined` | 上报 + 不删 | `{ ok:false, error:"…暂不可用…" }` |
+ * | ② 端口在、镜像未就绪（加载窗口/被拒/被逐出） | true | `undefined` | 上报 + 不删 | `{ ok:false, error:"…暂不可用…" }` |
+ * | ③ 镜像已就绪、确实没有这一行 | true | `null` | 无需删除（本次确实没删任何行） | `{ ok:true, absent:true }` |
+ * | ④ 镜像已就绪、确实有这一行 | true | 行 | 版本校验 → 删除 | `{ ok:true, absent:true }` |
+ *
+ * ⚠️ ① 与 ② 的**处置相同**（都回绝），但必须分开写：它们的成因不同
+ * （没有存储 vs 存储还在加载），日志与上报文案要说清是哪一种，
+ * 否则真机排查时看到"暂不可用"根本不知道等一会儿会不会好。
+ *
+ * ⚠️ ③ 与 ④ 都返回 `absent: true` —— 这是**既有契约**（"这次调用之后库里没有这一行"），
+ * ④ 的删除动作本身失败会走 `domainDelete` 的写穿失败上报，不会静默。
+ * 本任务**不动**这个契约（改了会连带影响 `putMessageFeedback` 的返回值语义）。
  */
 export function deleteMessageFeedback(
   messageId: string,
@@ -371,25 +450,41 @@ export function deleteMessageFeedback(
 ): { ok: true; absent: boolean } | { ok: false; error: string } {
   ensureNoteColumn();
 
-  const existing = getMessageFeedback(messageId);
-  if (!existing) {
-    return { ok: true, absent: true };
+  // 形态 ①②③④ 的判据一次取齐：`row === undefined` = 没接手（①②），
+  // 否则镜像确实接手了，`row === null` 就是"确实没有这一行"（③）。
+  const { row, item } = readMessageFeedback(messageId);
+
+  if (row === undefined) {
+    /*
+     * ①②：**什么都没确认** —— 绝不能报"本来就没有"。
+     *
+     * 这里必须**上报**（而不是只返回错误）：调用方里既有走返回值判断的
+     * （`putMessageFeedback` → `store.setFeedback`），也有只看界面的路径；
+     * 上报通道（`persist-failure`）是同仓"失败必须可见"的统一约定。
+     * 文案区分两态，理由见函数注释上方。
+     */
+    const registered = domainPortRegistered();
+    reportPersistFailure(
+      "feedback.delete",
+      new Error(registered ? "反馈域镜像未就绪" : "本进程没有可用存储（端口未注册）"),
+      registered
+        ? `消息 ${messageId} 的反馈未删除（镜像未就绪，**不能**当作"本来就没有"）`
+        : `消息 ${messageId} 的反馈未删除（没有可用存储，**不能**当作"本来就没有"）`,
+    );
+    return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
   }
 
   // C-4 ②：与 `put` 用**同一个**判据（原来这里也是 `!==`，同样会被 undefined 误判）
-  const versionConflict = checkVersion("delete", ifVersion, existing.version);
+  // ③ 的 `item` 是 null → `currentVersion` 传 null，语义正是"当前没有反馈行"。
+  const versionConflict = checkVersion("delete", ifVersion, item?.version ?? null);
   if (versionConflict) return { ok: false, error: versionConflict };
 
-  const rust = domainReadOne(TABLE, { message_id: messageId }, wireToFeedback);
-  if (rust !== undefined) {
-    if (rust) {
-      domainDelete(TABLE, { id: rust.id }, { scope: "feedback.delete", note: "消息反馈未删除" });
-    }
-    return { ok: true, absent: true };
-  }
+  // ③：镜像确认接手且确实无行 —— 这才是真正可以报"本来就没有"的唯一形态
+  if (row === null) return { ok: true, absent: true };
 
-  // 端口没接手 → 如实回绝（不写一份读路径看不见的删除）
-  return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
+  // ④：确实有行 → 删。删除写穿的失败由 `domainDelete` 上报，不静默。
+  domainDelete(TABLE, { id: row.id }, { scope: "feedback.delete", note: "消息反馈未删除" });
+  return { ok: true, absent: true };
 }
 /**
  * 列出会话的所有消息级反馈。

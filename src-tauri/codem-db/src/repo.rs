@@ -525,7 +525,18 @@ fn message_row(r: &Row<'_>) -> rusqlite::Result<Value> {
         // 已压缩的消息会被**复活**（上下文永不缩小）。
         // 这个缺陷是**真机验证**抓到的：单元测试里我在假数据里带了 hidden 字段，
         // 而真实引擎的 SELECT 漏了这一列 —— 页面刷新后隐藏消息又出现了。
-        "hidden": r.get::<_, i64>(8)?,
+        //
+        // ⚠️ 第 45 轮：**读成 `Option<i64>` 再 `unwrap_or(0)`**（与 `trimmed` 一致）。
+        // 原来这里是 `r.get::<_, i64>(8)?`，而列定义是 `INTEGER DEFAULT 0`（**没有 NOT NULL**）
+        // —— 于是一旦库里有一条 `hidden IS NULL` 的行（历史数据 / 手工 SQL / 迁移前的老库），
+        // 这条读路径就整体失败：
+        //   `messages.get` → Invalid column type Null at index: 8, name: hidden
+        //   `messages.list { include_hidden: true }` → 同样报错，**整个会话读不出来**
+        // 而 `crud.list` 会照样返回 `"hidden": null` —— 同一个库两条读路径给出两种答案。
+        // 写侧的 `reject_null_semantic_columns` 挡的是**新**污染；这里挡的是**已有**的污染，
+        // 两件事都要做（只做一边都会留下一个打不开的库）。
+        // 语义上 `NULL` 与 `0` 等价：0 是"可见"，而 NULL 从来不是一种刻意表达的隐藏状态。
+        "hidden": r.get::<_, Option<i64>>(8)?.unwrap_or(0),
         /*
          * `generated_files` 也必须返回（第 14 轮修正）。
          *
@@ -619,12 +630,79 @@ struct MessageFields {
     metadata: Option<String>,
 }
 
+/// 语义上 NOT NULL 的列：**拒绝写入 SQL NULL**（第 45 轮）。
+///
+/// ## 为什么必须在写入边界就把 NULL 挡掉（真缺陷，审计实测）
+///
+/// `messages.update { "id": "m1", "hidden": null }` 原来"成功"了 —— 它把
+/// **SQL NULL** 写进 `hidden`（列定义是 `INTEGER DEFAULT 0`，没有 NOT NULL 约束），
+/// 于是：
+/// - `messages.get` → `Invalid column type Null at index: 8, name: hidden`（读路径崩）；
+/// - `messages.list { include_hidden: true }` → 同样报错 —— **整个会话都读不出来了**；
+/// - 而 `crud.list` 照样返回 `"hidden": null` —— **两条读路径给出两种答案**。
+///
+/// 更糟的是它不可自愈：那条行会一直毒住读路径，除非再显式写回一个整数。
+/// 所以这里做两件事（缺一不可）：
+/// ① 写侧拒绝：语义上非 0 即 1 的列收到 `null` 直接 `invalid`，文案说清是哪一列；
+/// ② 读侧防御：`message_row` 把 `hidden` 读成 `Option<i64>` 再 `unwrap_or(0)`，
+///    这样**库里已经有 NULL**（历史数据 / 手工 SQL）也不会打崩读路径。
+/// 只做①挡不住历史数据，只做②挡不住新的污染 —— 两条都要。
+const SEMANTIC_NOT_NULL_COLUMNS: &[(&str, &str)] = &[
+    ("hidden", "0=可见 / 1=隐藏（压缩或裁剪）"),
+    ("trimmed", "0=普通隐藏 / 1=索引裁剪"),
+    ("message_count", "会话消息数（引擎是唯一写入者）"),
+    ("pinned", "0/1 置顶标记"),
+    ("sort_order", "排序位（0 表示未指定）"),
+];
+
+/// 对一次写入涉及的列逐个检查"语义上非空"的列有没有被显式写成 `null`。
+///
+/// 只检查**调用方显式给出的**列（`p.get(col)` 命中且值为 `Value::Null`）：
+/// 缺省（没给这一列）是正常形态，由各自的 `unwrap_or(0)` / `DEFAULT 0` 兜底。
+pub fn reject_null_semantic_columns(p: &Value) -> DbResult<()> {
+    for (col, why) in SEMANTIC_NOT_NULL_COLUMNS {
+        if let Some(Value::Null) = p.get(*col) {
+            return Err(DbError::invalid(
+                *col,
+                format!("列 {col} 语义上不可为空（{why}）：拒绝写入 NULL。要表示\"无\"请显式写 0"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// **裁剪标记的不变量**（第 45 轮）：`hidden = 0 ⇒ trimmed = 0`。
+///
+/// ## 为什么这一条必须写进 SQL，而不能靠调用方自觉
+///
+/// `trimmed = 1` 的含义是"**这一行是被索引裁剪掉的**"（行还在库里，只是不进上下文）。
+/// 它与 `hidden = 1` 是同一个事实的两半：裁剪必然隐藏。
+/// 于是 `hidden = 0, trimmed = 1` 是**矛盾态** —— 行是可见的，却被标着"被裁过"。
+///
+/// 审计实测：光照下三条路径都能造出这个矛盾态（`messages.create` 覆盖写、
+/// `messages.upsert_index` 的显式 `hidden: 0`、`messages.rebuild_index` 的日志重放），
+/// 因为**每条路径都在改 `hidden`，而没有人负责清 `trimmed`**。
+/// 与其在 N 个调用点各清一次（下次加第 N+1 条写路径就会再漏一次），
+/// 不如把不变量放进唯一那份 upsert SQL：**只要 `hidden` 被写成 0，`trimmed` 一定归 0**。
 const MESSAGE_UPSERT: &str = "INSERT INTO messages \
      (id, session_id, role, content, reasoning, timestamp, model, status, hidden) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
      ON CONFLICT(id) DO UPDATE SET content = excluded.content, reasoning = excluded.reasoning, \
        model = excluded.model, status = excluded.status, timestamp = excluded.timestamp, \
-       hidden = excluded.hidden";
+       hidden = excluded.hidden, \
+       trimmed = CASE WHEN excluded.hidden = 0 THEN 0 ELSE trimmed END";
+
+/// 单行 `hidden` 写入时的配套 `trimmed` 维护（SQL 片段，供 `messages.upsert_index` /
+/// `messages.update` 这类**自己拼 UPDATE** 的路径复用，保证与 `MESSAGE_UPSERT` 同一条不变量）。
+///
+/// 形态刻意与 `MESSAGE_UPSERT` 里那句 `CASE WHEN …` 完全一致：
+/// 两处规则不同 = 两条写路径给出两种状态，正是这类缺陷的成因。
+const HIDDEN_WRITE_SQL: &str = "hidden = ?{hidden}, trimmed = CASE WHEN ?{hidden} = 0 THEN 0 ELSE trimmed END";
+
+/// 把 `HIDDEN_WRITE_SQL` 展开成带编号占位符的片段。
+fn hidden_write_clause(idx: usize) -> String {
+    HIDDEN_WRITE_SQL.replace("{hidden}", &idx.to_string())
+}
 
 /// 维护 `sessions.message_count`（第 44 轮）。
 ///
@@ -647,20 +725,43 @@ const MESSAGE_UPSERT: &str = "INSERT INTO messages \
 /// 负增量用 `MAX(0, …)` 夹住：删除路径的计数可能因为历史漂移而偏小，
 /// **不能让它变成负数**（负的"消息数"比偏小更难解释）。
 /// `COALESCE` 同理：老库这一列可能是 NULL。
+///
+/// ## ⚠️ 第 45 轮：夹断必须**被上报**，不能静默（Z-10）
+///
+/// 审计实测：把 `message_count` 人为写成 1（库里其实 5 条）→ 硬删 3 条 →
+/// 计数走 `MAX(0, 1-3)` 变成 **0**，而库里还剩 2 条 —— 于是库里出现
+/// "0 条消息的会话里躺着 2 条"，**没有任何告警**，用户与后续维护都看不到这件事。
+/// 夹断本身是对的（负的计数更糟），错的是"夹了却不说"：
+/// 夹断**恰好**意味着这个计数已经漂移过，那正是需要被看见的信息。
+///
+/// 所以返回值里带 `clamped`：调用方把它转发到结果里（见 `messages.delete` 的 `count_clamped`），
+/// 维护对账（`maintenance.ts` 的 `reconcileMessageCounts`）也正是靠这个信号
+/// 知道"这个会话的计数不可信，该按索引真值重算一次"。
 fn bump_session_message_count(
     tx: &rusqlite::Transaction<'_>,
     session_id: &str,
     delta: i64,
-) -> DbResult<()> {
+) -> DbResult<bool> {
     if delta == 0 {
-        return Ok(());
+        return Ok(false);
     }
+    // 先取现值：`MAX(0, x + d)` 到底夹断了没有，只有拿 x 比一次才知道
+    let before: Option<i64> = tx
+        .query_row(
+            "SELECT message_count FROM sessions WHERE id = ?1",
+            params![session_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(DbError::from)?
+        .flatten();
+    let clamped = matches!(before, Some(b) if b + delta < 0);
     tx.execute(
         "UPDATE sessions SET message_count = MAX(0, COALESCE(message_count, 0) + ?2) WHERE id = ?1",
         params![session_id, delta],
     )
     .map_err(DbError::from)?;
-    Ok(())
+    Ok(clamped)
 }
 
 /// 这一行消息**是否已存在**（用于判断 upsert 是"新增"还是"覆盖"，从而决定计数加减）
@@ -674,6 +775,7 @@ fn message_exists(tx: &rusqlite::Transaction<'_>, id: &str) -> DbResult<bool> {
 }
 
 pub fn messages_create(engine: &Engine, p: &Value) -> DbResult<Value> {
+    reject_null_semantic_columns(p)?;
     let f = message_fields(p)?;
     engine.write_tx(|tx| {
         let is_new = !message_exists(tx, &f.id)?;
@@ -697,6 +799,10 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
         .ok_or_else(|| DbError::missing("items（数组）"))?;
     // 先在事务外把参数全部解析校验完：参数错误不应产生半个事务
     let parsed: Vec<MessageFields> = items.iter().map(message_fields).collect::<DbResult<Vec<_>>>()?;
+    // 同上：语义上不可为空的列不许被写成 NULL（`create_many` 与 `create` 共用 MESSAGE_UPSERT）
+    for it in items {
+        reject_null_semantic_columns(it)?;
+    }
     engine.write_tx(|tx| {
         let mut exists_stmt = tx
             .prepare_cached("SELECT COUNT(*) FROM messages WHERE id = ?1")
@@ -737,6 +843,9 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
 
 pub fn messages_update(engine: &Engine, p: &Value) -> DbResult<Value> {
     let id = req_text(p, "id")?;
+    // 语义上非空的列不许被写成 SQL NULL（见 `reject_null_semantic_columns` 的说明：
+    // `hidden: null` 曾经让 `messages.get` / `messages.list` 把**整个会话**读崩）
+    reject_null_semantic_columns(p)?;
     // 列白名单：只有这些列可以通过 `messages.update` 改（其它列必须走各自的语义化命令）
     //
     // 第 44 轮补上 `prompt_tokens` / `completion_tokens` / `cost`：这三列在 schema 里
@@ -766,6 +875,21 @@ pub fn messages_update(engine: &Engine, p: &Value) -> DbResult<Value> {
     let mut vals: Vec<SqlValue> = Vec::new();
     for col in UPDATABLE {
         if let Some(v) = p.get(*col) {
+            /*
+             * `hidden` 这一列**不能**只写它自己（第 45 轮）。
+             *
+             * `hidden = 0` 意味着"这一行是可见的"，而 `trimmed = 1` 意味着"这一行被索引裁剪过"
+             * —— 两者同时成立是矛盾态（审计实测：三条写路径都能造出来）。
+             * 于是这里把 `trimmed` 的维护**绑在 `hidden` 的写入上**：
+             * 写 0 就必然清标记，写 1 则不动它（裁剪/压缩各自的语义由调用方决定）。
+             * 判据与 `MESSAGE_UPSERT` 里那句 `CASE WHEN excluded.hidden = 0` 完全一致
+             * （两处规则必须一样，否则"同一件事走两条路给出两种状态"）。
+             */
+            if *col == "hidden" {
+                vals.push(to_sql_value(v));
+                sets.push(hidden_write_clause(vals.len()));
+                continue;
+            }
             sets.push(format!("{col} = ?{}", vals.len() + 1));
             vals.push(to_sql_value(v));
         }
@@ -812,6 +936,17 @@ pub fn messages_update(engine: &Engine, p: &Value) -> DbResult<Value> {
 /// - `tool_calls`：数组（**给了就整体替换**：先删该消息的旧记录再插入）
 /// - `prompt_tokens` / `completion_tokens` / `cost`：可选，缺省不动（更新时）或 0（新建时）
 pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
+    /*
+     * 语义上非空的列拒绝 NULL（第 45 轮 Z-3）。
+     *
+     * ⚠️ 这一条对 `trimmed` 尤其重要：它**不在** `MessageFields` 里，
+     * 所以下面 `hidden_arg` 那段 `match` 管不到它 —— 而 `messages.upsert_index`
+     * 又是流式响应的热路径。审计实测 `messages.upsert_index { …, "hidden": 0 }`
+     * 能把一行裁剪过的行（`hidden=1, trimmed=1`）改成矛盾态 `hidden=0, trimmed=1`。
+     * `trimmed` 本身在这里没有"写 0/写 1"的语义（那是 `messages.delete { trim: true }`
+     * 与 `messages.update` 的事），所以对它最正确的处理是：**一律不许在这里写 NULL**。
+     */
+    reject_null_semantic_columns(p)?;
     let f = message_fields(p)?;
     // JSON 列：数组 → JSON 文本；null/缺省 → NULL
     let generated_files = json_col(p, "generated_files")?;
@@ -872,15 +1007,28 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         let hidden_next = hidden_arg.unwrap_or(current_hidden);
 
         let written = if exists > 0 {
+            /*
+             * `hidden = ?6` 这一处**必须走 `hidden_write_clause`**（第 45 轮）。
+             *
+             * 这条路径是"日志重建"的主路径（`session-log-bridge` 的 `rebuildSessionLogs`），
+             * 它显式带着日志里的 `hidden` —— 审计实测：一条被裁剪过的行
+             * （`hidden=1, trimmed=1`）经这里重放后变成 `hidden=0, trimmed=1`，
+             * 即"裁剪被静默撤销"，而 `trimmed = 1` 这个矛盾标记还挂着。
+             * 现在的规则是 `hidden` 写 0 ⇒ `trimmed` 一起清 0；写 1 ⇒ 不动 `trimmed`
+             * （裁剪路径自己在 `messages.delete { trim: true }` 里设它）。
+             */
             tx.execute(
-                "UPDATE messages SET content = ?1, reasoning = ?2, model = ?3, status = ?4, \
-                   timestamp = ?5, hidden = ?6, \
-                   generated_files = COALESCE(?7, generated_files), \
-                   retrieved_sources = COALESCE(?8, retrieved_sources), \
-                   prompt_tokens = COALESCE(?9, prompt_tokens), \
-                   completion_tokens = COALESCE(?10, completion_tokens), \
-                   cost = COALESCE(?11, cost) \
-                 WHERE id = ?12",
+                &format!(
+                    "UPDATE messages SET content = ?1, reasoning = ?2, model = ?3, status = ?4, \
+                       timestamp = ?5, {}, \
+                       generated_files = COALESCE(?7, generated_files), \
+                       retrieved_sources = COALESCE(?8, retrieved_sources), \
+                       prompt_tokens = COALESCE(?9, prompt_tokens), \
+                       completion_tokens = COALESCE(?10, completion_tokens), \
+                       cost = COALESCE(?11, cost) \
+                     WHERE id = ?12",
+                    hidden_write_clause(6)
+                ),
                 params![
                     f.content,
                     f.reasoning,
@@ -1061,10 +1209,18 @@ pub fn messages_update_many(engine: &Engine, p: &Value) -> DbResult<Value> {
     let mut all_vals: Vec<Vec<SqlValue>> = Vec::new();
     for it in items {
         let id = req_text(it, "id")?;
+        // 语义上非空的列不许被写成 SQL NULL（与 `messages.update` 同一条防线）
+        reject_null_semantic_columns(it)?;
         let mut sets: Vec<String> = Vec::new();
         let mut vals: Vec<SqlValue> = Vec::new();
         for col in ["content", "reasoning", "model", "status", "hidden", "metadata"] {
             if let Some(v) = it.get(col) {
+                // `hidden` 同 `messages.update`：写 0 必须顺带清掉裁剪标记（不变量只有一份）
+                if col == "hidden" {
+                    vals.push(to_sql_value(v));
+                    sets.push(hidden_write_clause(vals.len()));
+                    continue;
+                }
                 sets.push(format!("{col} = ?{}", vals.len() + 1));
                 vals.push(to_sql_value(v));
             }
@@ -1179,6 +1335,8 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
     let soft = soft || trim;
     let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
+        // 会话计数是否被 `MAX(0, …)` 夹断过（见 `bump_session_message_count` 的说明）
+        let mut count_clamped = false;
         /*
          * 硬删除的两件事（第 44 轮）：
          *
@@ -1270,6 +1428,8 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
                 "missing": parsed.len(),
                 "soft": soft,
                 "affected_rows": impact,
+                // 这一支里 n == 0 → 一条都没删 → 计数不可能被夹断，字段仍然给出（形状恒定）
+                "count_clamped": false,
                 "note": "所有 id 都不存在（没有任何行被改动）",
             }));
         }
@@ -1281,7 +1441,9 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
             )?;
             // 会话计数按会话逐个减（`per_session` 是在删除**之前**采集的）
             for (sid, delta) in &per_session {
-                bump_session_message_count(tx, sid, -*delta)?;
+                if bump_session_message_count(tx, sid, -*delta)? {
+                    count_clamped = true;
+                }
             }
         }
         Ok(json!({
@@ -1291,6 +1453,15 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
             "soft": soft,
             "trim": trim,
             "affected_rows": impact,
+            /*
+             * `count_clamped`（第 45 轮 Z-10）：会话消息计数被 `MAX(0, …)` 夹断过。
+             *
+             * 夹断**只可能**发生在"计数已经漂移过"的会话上（删除数 > 计数现值），
+             * 所以它不是噪音，而是"这个会话的 `message_count` 不可信"的**唯一在线信号**。
+             * 静默夹断的实测形态：计数 1、库里 5 条 → 硬删 3 条 → 计数 0、库里还剩 2 条
+             * ——"0 条消息的会话里躺着 2 条"，没有任何地方能看到。
+             */
+            "count_clamped": count_clamped,
         }))
     })
 }
@@ -1320,6 +1491,9 @@ pub fn messages_count(engine: &Engine, p: &Value) -> DbResult<Value> {
 
 pub fn sessions_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
     let id = req_text(p, "id")?;
+    // `message_count` / `pinned` 语义上不可空（Z-3：`crud.list` 与 `messages.get` 对 NULL 的
+    // 处理不一致，两条读路径给出两种答案）；写侧先把 NULL 挡住
+    reject_null_semantic_columns(p)?;
     // `project_id` 缺省 = `""`（全局项目行由 schema 阶段种下，满足外键）
     let project_id = opt_text(p, "project_id")?.unwrap_or_default();
     let title = opt_text(p, "title")?.unwrap_or_else(|| format!("会话 {id}"));
@@ -1378,7 +1552,6 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         title: String,
         first_ts: i64,
         last_ts: i64,
-        count: i64,
         messages: Vec<(MessageFields, Option<Vec<ToolCallRow>>)>,
     }
     let mut parsed: Vec<Parsed> = Vec::with_capacity(sessions.len());
@@ -1418,7 +1591,6 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
             title,
             first_ts,
             last_ts,
-            count: msgs.len() as i64,
             messages: msgs,
         });
     }
@@ -1426,13 +1598,62 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
     engine.write_tx(|tx| {
         let mut sess_stmt = tx
             .prepare_cached(
+                /*
+                 * ⚠️ `message_count` **不能**写日志条数（第 45 轮，Z-9）。
+                 *
+                 * 原来这里写的是 `excluded.message_count`，也就是"这次请求里带了几条消息"。
+                 * 审计实测：索引里 60 行、日志只给 5 条 → 重建后 `sessions.message_count = 5`，
+                 * 而 `messages.count` 是 60 —— **两个真值当场分叉**，而且是无条件覆盖：
+                 * 维护对账（`maintenance.ts` 的 `reconcileMessageCounts`）会按**索引真值**改回来，
+                 * 下一次重建又按日志条数改回去，两个写入者来回打架，用户看到侧边栏数字跳。
+                 *
+                 * 现在写的是**索引真值**：`SELECT COUNT(*) FROM messages WHERE session_id = ?1`，
+                 * 也就是这个会话在库里**真实存在多少行**（下面在事务内先算出 `index_counts`）。理由：
+                 * ① 这一列的定义就是"这个会话有几条消息"，而 `messages` 表才是它的唯一载体；
+                 * ② 维护对账用的正是同一个数 —— 于是"重建"与"对账"指向同一个不动点，
+                 *    不再有两个写入者互相覆盖；
+                 * ③ 日志条数少不等于"消息变少了"：日志可能是**部分**的
+                 *    （`rebuildSessionLogs` 只喂它读到的那些会话/条数），
+                 *    拿局部真相去覆盖全量真值必然错。
+                 *
+                 * 注意：**这次重放了多少条**仍然在返回值 `messages` 里如实汇报
+                 * （另加 `index_message_count` 给出引擎看到的索引总行数），
+                 * 调用方想知道"日志给了多少"看返回值，不要看这一列。
+                 */
                 "INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count, pinned) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0) \
                  ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at, \
                    message_count = excluded.message_count",
             )
             .map_err(DbError::from)?;
-        let mut msg_stmt = tx.prepare_cached(MESSAGE_UPSERT).map_err(DbError::from)?;
+        /*
+         * 消息 upsert 用的**不是**全局那份 `MESSAGE_UPSERT`（第 45 轮）。
+         *
+         * 差别只有一处，但是关键的一处：`trimmed` 在冲突时**保持库里的值**。
+         * 全局那份走 `trimmed = CASE WHEN excluded.hidden = 0 THEN 0 ELSE trimmed END` ——
+         * 规则本身没错（那正是"写可见就必须清裁剪标记"的不变量），但**不能**用在日志重放上：
+         * 日志里**根本没有 `trimmed` 这一维**（`MessageFields` 没有它，`distillMessageForLog`
+         * 也不写它）。于是重建时日志说 `hidden = 0` 就等价于"这条消息是可见的"——
+         * 而它可能只是**日志比索引旧**，库里那条明明是裁剪隐藏的。
+         * 结果就是把"被裁过"这个事实静默抹掉（审计实测：`hidden=0, trimmed=1` 的矛盾态，
+         * 且 `messages.count` 的 visible 计数跟着变）。
+         *
+         * 所以重建路径的规则是：**`trimmed` 永不由重建改写**。
+         * - 冲突（库里已有）：`trimmed` 保持原值；
+         * - 新插入：`trimmed` 取默认 0 —— 新行不可能"曾经被裁过"。
+         * "裁剪"这件事只有 `messages.delete { trim: true }` 能设，
+         * 只有 `messages.update { hidden: 0 }` / `upsert_index { hidden: 0 }` 能清。
+         */
+        let mut msg_stmt = tx
+            .prepare_cached(
+                "INSERT INTO messages \
+                   (id, session_id, role, content, reasoning, timestamp, model, status, hidden, trimmed) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+                 ON CONFLICT(id) DO UPDATE SET content = excluded.content, reasoning = excluded.reasoning, \
+                   model = excluded.model, status = excluded.status, timestamp = excluded.timestamp, \
+                   hidden = excluded.hidden, trimmed = excluded.trimmed",
+            )
+            .map_err(DbError::from)?;
         let mut del_tc = tx
             .prepare_cached("DELETE FROM tool_calls WHERE message_id = ?1")
             .map_err(DbError::from)?;
@@ -1452,9 +1673,60 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
 
         let mut msgs_written = 0i64;
         let mut tools_written = 0i64;
+        /*
+         * 库里**已有的** `trimmed` 值（第 45 轮）：重建不产生、也不清除"被裁剪过"这个事实。
+         *
+         * 为什么在事务里先查一遍而不是用 SQL 表达式：
+         * 需要在"值本身"上判断（NULL 要与 0 同义，且 `hidden` 有 0/1 两种值时 CASE 会变复杂），
+         * 用 `HashMap` 表达最直白，也最容易被下一个人读懂。
+         * 表不大（一次重建的会话数有限），一次全表扫描的代价可接受。
+         */
+        let trimmed_keep: std::collections::HashMap<String, i64> = {
+            let mut stmt = tx
+                .prepare("SELECT id, COALESCE(trimmed, 0) FROM messages")
+                .map_err(DbError::from)?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+                .map_err(DbError::from)?;
+            let mut m = std::collections::HashMap::new();
+            for r in rows {
+                let (id, t) = r.map_err(DbError::from)?;
+                m.insert(id, t);
+            }
+            m
+        };
+        /*
+         * 每个会话的**索引真值**（库里真实行数，按 `session_id` 聚合，一次扫描算完）。
+         *
+         * 在**本事务内、写之前**算：这样 `messages.create` 之后紧接着的重建也能拿到正确的数
+         * （写入是本次事务里发生的，事务外的连接看不到自己的写 —— 那种"自己看不见自己"的坑
+         * 会让计数少一批，比原来按日志条数写更糟）。
+         */
+        let index_counts: std::collections::HashMap<String, i64> = {
+            let mut stmt = tx
+                .prepare("SELECT session_id, COUNT(*) FROM messages GROUP BY session_id")
+                .map_err(DbError::from)?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+                .map_err(DbError::from)?;
+            let mut m = std::collections::HashMap::new();
+            for r in rows {
+                let (sid, n) = r.map_err(DbError::from)?;
+                m.insert(sid, n);
+            }
+            m
+        };
         for s in &parsed {
             sess_stmt
-                .execute(params![s.id, s.project_id, s.title, s.first_ts, s.last_ts, s.count])
+                .execute(params![
+                    s.id,
+                    s.project_id,
+                    s.title,
+                    s.first_ts,
+                    s.last_ts,
+                    // 索引真值；该会话在 messages 里一行都没有时才落 0
+                    index_counts.get(&s.id).copied().unwrap_or(0)
+                ])
                 .map_err(DbError::from)?;
             for (f, calls) in &s.messages {
                 msg_stmt
@@ -1467,7 +1739,8 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                         f.timestamp,
                         f.model,
                         f.status,
-                        f.hidden
+                        f.hidden,
+                        trimmed_keep.get(&f.id).copied().unwrap_or(0)
                     ])
                     .map_err(DbError::from)?;
                 msgs_written += 1;
@@ -1489,9 +1762,24 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                 }
             }
         }
+        drop(msg_stmt);
+        drop(meta_stmt);
+        /*
+         * 返回值里如实报出**引擎当前看到的**消息总数（第 45 轮）。
+         *
+         * `messages` 字段是"这次重放写入的条数"（原来唯一的一个数），
+         * 而它**不是** `sessions.message_count` 的来源 —— 恰恰因为两者不是一回事，
+         * 原来看这一个数去写那一个列才会分叉。多给一个 `index_message_count`
+         * 让调用方能一眼看出"日志 5 条 / 索引 60 行"这种局部真相，
+         * 而不是从两个命令的返回值里自己去猜。
+         */
+        let index_total: i64 = tx
+            .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+            .map_err(DbError::from)?;
         Ok(json!({
             "sessions": parsed.len(),
             "messages": msgs_written,
+            "index_message_count": index_total,
             "tool_calls": tools_written,
         }))
     })

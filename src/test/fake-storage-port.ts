@@ -113,6 +113,26 @@ export interface FakeStoragePortOptions {
    */
   asyncLoad?: boolean;
   /**
+   * **这些表"正在加载、但最终加载失败"**（FIX-X，第 46 轮）。
+   *
+   * ## 为什么必须补这个状态（测试双不得比实现宽松）
+   *
+   * 真端口 `RustDomainMirror.ensureLoaded` 的 `.catch` 只做三件事：计数、
+   * `onFailure(...)` 上报、`finally` 里 `loading.delete(table)` —— **它不置 `loaded`**。
+   * 也就是说"加载失败"之后的准确状态是：
+   *
+   * - `isLoading(table)` → **false**（`finally` 已清掉）；`isReady` → false；`onLoaded` → **永不触发**。
+   *
+   * 而 `neverReady` 表达不了这个状态（它连"进过 loading"都没有，
+   * `ensureLoaded` 一进门就 `return`）—— 于是"**排队排进去了、然后这张表再也没就绪**"
+   * 这条路径在测试里**根本造不出来**，写队列的滞留缺陷（X-2）也就无从守起。
+   *
+   * 所以这里补一个独立状态：`ensureLoaded` 照常进入 `loading`（于是写路径会判定
+   * "正在加载 → 排队"），随后**失败**：清掉 `loading`、**不回调**、此后 `isReady` 恒 false
+   * （走 `neverReady` 那套判据，因为两者对调用方是同一个观测态）。
+   */
+  domainsFailLoading?: string[];
+  /**
    * `storage.compact` 的测试双开关：**要模拟"真的回收了 N 字节"就设它**
    * （默认 `0` = `performed: false`，与真机小库的实际形态一致）。
    */
@@ -1156,6 +1176,22 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
   };
   /** 永不就绪的表（B 态载体）：见 FakeStoragePortOptions.neverReady */
   const neverReady = new Set(opts.neverReady ?? []);
+  /**
+   * "加载失败"的表（FIX-X）：`ensureLoaded` **先进入 `loading`**（让写路径正确判定
+   * "正在加载 → 排队"），随后清掉 `loading` 但**不置就绪、不回调**，
+   * 并把表挪进 `neverReady` —— 这就是真端口 `.catch` 之后的观测态。
+   * 详见 `FakeStoragePortOptions.domainsFailLoading`。
+   */
+  const loadFailures = new Set(opts.domainsFailLoading ?? []);
+  /**
+   * ⚠️ `loading` **必须保持"曾经发起过加载"的痕迹**，不能在失败时删掉。
+   *
+   * 真端口失败后 `isLoading` 是 false，但它同时会把表从 `refused` 退避里放出来
+   * （下次 `ensureLoaded` 会重新发起）。这里的等价物是：`isLoading` 报 false，
+   * 但表**仍然"知道自己在加载中"** —— 否则 `applyWrite` 会以为"这张表已被就绪"，
+   * 把镜像写当成成功（真实端口在 `byTable` 未建立时 `applyWrite` 是 no-op）。
+   */
+  const everLoading = new Set<string>();
   const domains = {
     isReady: (name: string) => ready.has(name) && !neverReady.has(name),
     /**
@@ -1164,6 +1200,9 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
      * `neverReady` 的表**不算"加载中"**：它是"永远不会就绪"（超上限被拒 / 加载失败），
      * 写路径对这两种态的处置不同（前者排队、后者如实返回"未接手"）——
      * 假端口必须保住这条区分，否则它会比实现更宽松。
+     *
+     * `domainsFailLoading` 的表在**失败之后**同样报 false（与真端口的
+     * `finally { loading.delete }` 一致）；失败之前报 true（那才是"加载窗口"）。
      */
     isLoading: (name: string) => loading.has(name) && !neverReady.has(name),
     ensureLoaded: (name: string, onLoaded?: () => void) => {
@@ -1179,6 +1218,20 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
           list.push(onLoaded);
           pendingCallbacks.set(name, list);
         }
+        return;
+      }
+      everLoading.add(name);
+      if (loadFailures.has(name)) {
+        /*
+         * "加载失败"：与真端口 `.catch` + `.finally` 逐条对齐 ——
+         * `loading` 清掉、`loaded` **不置位**、`onLoaded` **永不触发**；
+         * 并把表挪进 `neverReady`（对调用方来说，两者的观测态是同一个）。
+         */
+        loading.add(name);
+        void Promise.resolve().then(() => {
+          loading.delete(name);
+          neverReady.add(name);
+        });
         return;
       }
       if (!asyncLoad) {
@@ -1227,7 +1280,20 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       }
       if (idx >= 0) target[idx] = { ...target[idx], ...cloneRow(patch) };
       else target.push(cloneRow(patch));
-      ready.add(name);
+      /*
+       * ⚠️ 这里**只**把"曾经发起过加载"的表标成就绪（FIX-X）。
+       *
+       * 真端口 `RustDomainMirror.applyWrite` 的头两行是 `const list = this.byTable.get(table);
+       * if (!list) return;` —— **镜像不存在时它是彻底的空操作**（`byTable` 只在
+       * `loadTable` 成功后才建立）。而假端口早先无条件 `ready.add(name)`，
+       * 等于"写一次就等于这张表已经加载完了"：加载失败之后的镜像写会**假装成功**
+       * （真实端口那边什么都没发生），于是"加载失败 → 队列滞留"这条路径
+       * 在测试里会被这个副作用掩盖（`isReady` 突然变真 → 队列被当成重放成功清掉）。
+       *
+       * `everLoading` 记录"这张表发起过加载"：正常路径下它必然为真（`ensureLoaded`
+       * 先跑），所以既有用例的行为不变；只有"从未加载就写镜像"这种形态才被挡下。
+       */
+      if (everLoading.has(name)) ready.add(name);
     },
     applyWriteMany(name: string, rows: Row[], primaryKey = primaryKeyOf(name)) {
       for (const row of rows) domains.applyWrite(name, row, primaryKey);

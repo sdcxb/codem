@@ -92,6 +92,10 @@ export interface MaintenanceResult {
    * 这个数字是"以前写坏的那些修好了几个"的可见性：**长期应当是 0**。
    */
   recountedSessions: number;
+  /** 本次**实际检查**了几个会话（与 `recountedSessions` 配对：区分"只跑了 3 个"与"3 个不一致"） */
+  recountCheckedSessions: number;
+  /** 读取失败而跳过的会话数（单会话失败不再中断整轮，但要可见） */
+  recountFailedSessions: number;
 }
 
 /**
@@ -813,6 +817,8 @@ export async function runDatabaseMaintenance(
     compactedBytes: 0,
     integrity: "skipped",
     recountedSessions: 0,
+    recountCheckedSessions: 0,
+    recountFailedSessions: 0,
   };
 
   try {
@@ -861,6 +867,7 @@ export async function runDatabaseMaintenance(
         if (trimmed.deletedMessages > 0 || trimmed.skippedSessions > 0) {
           const reasons: string[] = [];
           if (trimmed.skippedNotLoaded > 0) reasons.push(`镜像未就绪 ${trimmed.skippedNotLoaded} 个`);
+          if (trimmed.skippedTruncated > 0) reasons.push(`镜像被截断 ${trimmed.skippedTruncated} 个`);
           if (trimmed.skippedNoLog > 0) reasons.push(`日志尚未覆盖 ${trimmed.skippedNoLog} 个`);
           if (trimmed.skippedNoCandidates > 0) reasons.push(`无可裁候选 ${trimmed.skippedNoCandidates} 个`);
           console.log(
@@ -970,31 +977,60 @@ export async function runDatabaseMaintenance(
         const port = getStoragePort() as unknown as {
           data: { command?: <R>(cmd: string, params?: Record<string, unknown>) => Promise<R> };
         };
-        for (const row of sessions) {
-          const id = String(row.id ?? "");
-          if (!id) continue;
-          const stored = Number(row.message_count ?? 0);
-          /*
-           * ⚠️ 必须走 `command`（结构化结果），**不能**走 `data.query`。
-           *
-           * 这是我在真机上踩到的：`RustDataPort.query` 的实现是"把 `items`/`item` 整形，
-           * 其余原样塞进 `items: [raw]`" —— 也就是说它**不返回 `total`**。
-           * 于是 `query("messages.count").total` 恒为 `undefined` → `?? 0` → **把 0 写了回去**：
-           * 真机上把两个会话的 8 / 27 改成了 **0 / 0**（原本只是陈旧，被我改成了更错的）。
-           * `command` 拿的是引擎的原始返回（`{count,total,visible,hidden}`），才是这条命令的契约。
-           */
-          const counted = await structuredCommand<{ total?: number; count?: number }>(port, "messages.count", {
-            session_id: id,
-          });
-          const total = Number(counted?.total ?? counted?.count ?? NaN);
-          // 读不到就**跳过**（不要猜、更不要写 0）
-          if (!Number.isFinite(total) || total === stored) continue;
-          SessionStorage.updateSession(id, { messageCount: total });
-          result.recountedSessions += 1;
+        /*
+         * ⚠️ 两条"部分完成"必须可见（第 44 轮，对抗性审计指出的漏洞）：
+         *
+         * ① 端口**没有 `command` 能力**时（`structuredCommand` 会抛），原来这个 throw
+         *    发生在循环体内部、被外层整体 catch 接住 → 一行 `console.warn` 收尾，
+         *    而汇总行里的 `recountedSessions` 看着像"跑过了、没发现不一致"。
+         *    现在先探测一次能力：没有就**明确标记本次没跑**（`checked = 0`）。
+         * ② 单个会话失败（IPC 抖动）原来会**中断整轮**，其余会话不再对账 ——
+         *    而 `recountedSessions = 3` 无法区分"只跑了 3 个"与"3 个不一致、其余都对"。
+         *    现在逐会话容错，并把"实际检查了几个 / 几个失败"报出来。
+         */
+        if (typeof port.data.command !== "function") {
+          console.warn(
+            "[Maintenance] 会话计数对账：端口没有 command 能力，**本次一个会话都没对账**（不是“都对上了”）",
+          );
+        } else {
+          for (const row of sessions) {
+            const id = String(row.id ?? "");
+            if (!id) continue;
+            const stored = Number(row.message_count ?? 0);
+            /*
+             * ⚠️ 必须走 `command`（结构化结果），**不能**走 `data.query`。
+             *
+             * 这是我在真机上踩到的：`RustDataPort.query` 的实现是"把 `items`/`item` 整形，
+             * 其余原样塞进 `items: [raw]`" —— 也就是说它**不返回 `total`**。
+             * 于是 `query("messages.count").total` 恒为 `undefined` → `?? 0` → **把 0 写了回去**：
+             * 真机上把两个会话的 8 / 27 改成了 **0 / 0**（原本只是陈旧，被我改成了更错的）。
+             * `command` 拿的是引擎的原始返回（`{count,total,visible,hidden}`），才是这条命令的契约。
+             */
+            let total = NaN;
+            try {
+              const counted = await structuredCommand<{ total?: number; count?: number }>(port, "messages.count", {
+                session_id: id,
+              });
+              total = Number(counted?.total ?? counted?.count ?? NaN);
+            } catch (e) {
+              // 单个会话失败不该中断整轮：记下来，继续对账其余会话
+              result.recountFailedSessions += 1;
+              console.warn(`[Maintenance] 会话计数对账：会话 ${id} 读取失败（跳过，其余继续）:`, e);
+              continue;
+            }
+            result.recountCheckedSessions += 1;
+            // 读不到就**跳过**（不要猜、更不要写 0）
+            if (!Number.isFinite(total) || total === stored) continue;
+            SessionStorage.updateSession(id, { messageCount: total });
+            result.recountedSessions += 1;
+          }
         }
       }
-      if (result.recountedSessions > 0) {
-        console.log(`[Maintenance] 会话计数对账：修正 ${result.recountedSessions} 个会话的 message_count`);
+      if (result.recountedSessions > 0 || result.recountFailedSessions > 0) {
+        console.log(
+          `[Maintenance] 会话计数对账：检查 ${result.recountCheckedSessions} 个、修正 ${result.recountedSessions} 个` +
+            (result.recountFailedSessions > 0 ? `、读取失败 ${result.recountFailedSessions} 个` : ""),
+        );
       }
     } catch (e) {
       console.warn("[Maintenance] 会话计数对账失败（跳过）:", e);

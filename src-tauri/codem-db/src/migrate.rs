@@ -258,6 +258,35 @@ pub fn import_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         parsed.push(arr.iter().map(to_sql_value).collect());
     }
 
+    /*
+     * 语义上非空的列必须是**真的非空**（第 45 轮 Z-3）。
+     *
+     * `import.table` 是**唯一的批量写面**（迁移、补搬、外部工具都走它），
+     * 而它按列清单原样绑值 —— 于是一份"某列为 NULL"的源数据（旧库真实存在这种行，
+     * 例如 sql.js 时代某次 `UPDATE` 留下的）会被照搬进来，然后毒住读路径：
+     * `messages.get` 对 NULL `hidden` 直接报 `Invalid column type Null …`。
+     *
+     * 只拒绝 `hidden`：它是**唯一**"NULL 会把整条读路径打崩"的列（非 Option 读取）。
+     * 其余列容忍 NULL 是刻意的 —— 那些 NULL 是真实存在的历史数据形态，
+     * 拒绝元数据列会让合法的迁移整批失败；而"容忍"的前提是读侧必须防住
+     * （`messages.get` 的 `trimmed` 早就用了 `unwrap_or(0)`，`hidden` 第 45 轮补上）。
+     */
+    if columns.iter().any(|c| c == "hidden") {
+        let idx = columns.iter().position(|c| c == "hidden").expect("刚判断过");
+        for (i, row) in parsed.iter().enumerate() {
+            if matches!(row.get(idx), Some(SqlValue::Null)) {
+                return Err(DbError::invalid(
+                    "rows",
+                    format!(
+                        "表 {table} 的第 {i} 行把 `hidden` 写成了 NULL —— 该列语义上不可为空\
+                         （0=可见 / 1=隐藏），NULL 会让 `messages.get` / `messages.list` 报\
+                         `Invalid column type Null`，整个会话读不出来。请在源数据里改成 0 或 1。"
+                    ),
+                ));
+            }
+        }
+    }
+
     let verb = if mode == "replace" { "INSERT OR REPLACE" } else { "INSERT" };
     let placeholders: Vec<String> = (1..=columns.len()).map(|i| format!("?{i}")).collect();
     let sql = format!(
@@ -1095,8 +1124,17 @@ pub fn fts_search(engine: &Engine, p: &Value) -> DbResult<Value> {
 pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
     let _ = p;
     engine.write_tx(|tx| {
-        // 现有索引内容（`message_id` → 切分后的文本），用于"一致就跳过"
-        let existing: std::collections::HashMap<String, String> = {
+        /*
+         * 现有索引内容（`message_id` → 切分后的文本），用于"一致就跳过"。
+         *
+         * ⚠️ 第 45 轮：这里原来只留**一行**（`HashMap` 的 insert 让重复 message_id
+         * "后一行覆盖前一行"），于是"内容一致就跳过"对**重复行永远判一致** ——
+         * 一行都不删，`fts.search` 同一条消息返回两次（实测）。
+         * 旧实现是"整表 DELETE + 重灌"，天然自愈；改成增量写入后这个自愈能力丢了。
+         * 现在**按 id 计数**：计数 != 1 就是对账不上的重复（或者从未见过的行），
+         * 走 DELETE + INSERT，顺带把重复行收敛回一行。
+         */
+        let existing: std::collections::HashMap<String, (usize, String)> = {
             let mut stmt = tx
                 .prepare("SELECT message_id, content FROM session_fts")
                 .map_err(DbError::from)?;
@@ -1105,16 +1143,32 @@ pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
                     Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
                 })
                 .map_err(DbError::from)?;
-            let mut m = std::collections::HashMap::new();
+            let mut m: std::collections::HashMap<String, (usize, String)> =
+                std::collections::HashMap::new();
             for r in rows {
                 let (id, content) = r.map_err(DbError::from)?;
                 if let Some(id) = id {
-                    m.insert(id, content.unwrap_or_default());
+                    let e = m.entry(id).or_insert((0, String::new()));
+                    e.0 += 1;
+                    // 内容无所谓取哪一份：计数 != 1 时本来就不看内容
+                    e.1 = content.unwrap_or_default();
                 }
             }
             m
         };
 
+        /*
+         * ⚠️ 第 45 轮：`messages.id` 可能是 NULL（列定义 `TEXT PRIMARY KEY` 在 SQLite 里
+         * **允许多行 NULL** —— 主键不约束 NULL），而这里原来读的是 `r.get::<_, String>(0)`。
+         *
+         * 后果实测（真 CLI）：
+         *   rebuild_fts → {"error":{"code":"OTHER","message":"Invalid column type Null at index: 0, name: id"}}
+         * 于是**整次重建整体失败** —— 而它同时还是**唯一**能清 FTS 孤儿的路径，
+         * 也就是说"库里有一行 id 为 NULL"会让那个库的全文索引**永远修不好**。
+         * 旧实现是一条 `INSERT … SELECT`（NULL id 会照样被插进去、不报错），所以这是
+         * 本轮改写新引入的回退。现在：读成 `Option<String>`，NULL 的行**跳过并计数**，
+         * 结果里如实报 `skipped_null_id` —— 不整体失败，也不静默漏。
+         */
         let mut stmt = tx
             .prepare(
                 "SELECT id, session_id, content, role, timestamp FROM messages \
@@ -1124,7 +1178,7 @@ pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
         let rows = stmt
             .query_map([], |r| {
                 Ok((
-                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, Option<String>>(2)?,
                     r.get::<_, Option<String>>(3)?,
@@ -1135,10 +1189,20 @@ pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
 
         let mut indexed = 0usize;
         let mut unchanged = 0usize;
+        let mut skipped_null_id = 0usize;
         for r in rows {
             let (id, session_id, content, role, timestamp) = r.map_err(DbError::from)?;
+            let Some(id) = id else {
+                skipped_null_id += 1;
+                continue;
+            };
             let tokenized = crate::fts::tokenize(content.as_deref().unwrap_or(""));
-            if existing.get(&id).map(|c| c == &tokenized).unwrap_or(false) {
+            // "一致"必须是**恰有一行且内容一致**（重复行一律重建，见上面的说明）
+            let is_clean_single = matches!(
+                existing.get(&id),
+                Some((1, c)) if c == &tokenized
+            );
+            if is_clean_single {
                 unchanged += 1;
                 continue;
             }
@@ -1178,6 +1242,8 @@ pub fn rebuild_fts(engine: &Engine, p: &Value) -> DbResult<Value> {
             "indexed": indexed,
             "unchanged": unchanged,
             "orphans_removed": orphans,
+            // 有多少行因为 `messages.id IS NULL` 被跳过（如实上报：不整体失败，也不静默漏）
+            "skipped_null_id": skipped_null_id,
         }))
     })
 }

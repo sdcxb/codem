@@ -36,14 +36,31 @@ describe("退出收尾必须真的执行（finalizeBeforeQuit）", () => {
     expect(fn, "必须停端口（port.stop() = 排空队列 + checkpoint）").toContain("shutdownRustStoragePort");
   });
 
-  it("QUIT-2: 三处退出路径都走它（不能只改一处，留两条路径不收尾）", () => {
+  it("QUIT-2: 三处退出路径都走它，且**收尾必须发生在 quit_app 之前**", () => {
     const calls = appSrc.match(/await finalizeBeforeQuit\(\);/g) ?? [];
     expect(calls.length, "窗口关闭 / 托盘退出 / quit-requested 三条路径都要收尾").toBeGreaterThanOrEqual(3);
-    // 收尾必须发生在 quit_app 之前（quit_app 会立刻结束进程）
-    const quitAt = appSrc.indexOf('invoke?.("quit_app")');
-    const finAt = appSrc.indexOf("await finalizeBeforeQuit();");
-    expect(finAt).toBeGreaterThanOrEqual(0);
-    expect(quitAt, "必须有 quit_app 调用点").toBeGreaterThanOrEqual(0);
+
+    /*
+     * ⚠️ 这一条原本只断言"调用次数 ≥ 3"和"两处 indexOf 都 ≥ 0" —— 那**没有验证顺序**：
+     * `quit_app` 会立刻结束 Rust 进程，所以"收尾在它之后"等于没收尾。
+     * 对抗性审计指出了这个漏洞（取到 `finAt` 却从未用它做比较），现在逐点比较：
+     * 每一处 `quit_app` 之前都必须有一个 `finalizeBeforeQuit`，且距离在**同一个代码块**的量级内
+     * （用 400 字符窗口近似"紧邻"，避免跨函数误配）。
+     */
+    const quitIdx: number[] = [];
+    for (let i = appSrc.indexOf('invoke?.("quit_app")'); i >= 0; i = appSrc.indexOf('invoke?.("quit_app")', i + 1)) {
+      quitIdx.push(i);
+    }
+    expect(quitIdx.length, "必须有 quit_app 调用点").toBeGreaterThanOrEqual(3);
+
+    for (const q of quitIdx) {
+      const before = appSrc.lastIndexOf("await finalizeBeforeQuit();", q);
+      expect(before, `第 ${q} 字符处的 quit_app 之前必须有收尾调用`).toBeGreaterThanOrEqual(0);
+      expect(
+        q - before,
+        `quit_app 之前 ${q - before} 字符处才有收尾 —— 必须紧邻（收尾要先 await 完）`,
+      ).toBeLessThan(400);
+    }
   });
 
   it("QUIT-3: 收尾失败不能把退出流程卡死（两条 await 各自兜底）", () => {

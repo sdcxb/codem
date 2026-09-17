@@ -27,6 +27,51 @@ export interface TelemetryEvent {
 
 const TABLE = "telemetry_events";
 
+/** 一轮 flush 的汇总（诊断/测试用） */
+interface RoundSummary {
+  written: number;
+  rejectedForeignKey: number;
+  retried: number;
+  /** 本轮**提交**的事件数（恒等式的右边，见 `flushSummary()`） */
+  expected: number;
+}
+
+/**
+ * 已结账轮次的保留上限。
+ *
+ * 只是诊断数据（"最近几次 flush 各自写了几条"），留一段就够；
+ * 不设上限会在长跑进程里慢慢攒对象（每轮一个新对象，且永不被读）。
+ */
+const FLUSH_ROUND_HISTORY_MAX = 20;
+
+/**
+ * 一轮 flush 的**独立**计数载体（任务 Y-3）。
+ *
+ * ## 为什么是一个"每轮新建的对象"而不是实例字段
+ *
+ * 结账（`trackShard` 的 `settle`）是**异步**的：上一轮的结账可能在下一轮
+ * `flush()` 之后才跑完。只要计数放在实例字段上并"每轮清零"，迟到的结账就会把
+ * 自己那一轮的数字加进新一轮里，得到"2 条事件里 1 条被写、1 条待重试"这种
+ * **自相矛盾**的汇总（实测：`after flush#2: {written:1, retried:1}` →
+ * `after release: {written:2, retried:1}`）。
+ *
+ * 每轮一个对象之后，"谁的数字"由**引用的对象**决定，不再依赖"什么时候跑完"。
+ *
+ * 恒等式（并发下也成立）：
+ * ```
+ * result.written + result.rejectedForeignKey + result.retried == expected
+ * ```
+ * （`expected` = 本轮真正交给 `domainWrite` / `trackShard` 的事件；
+ * 上一轮已发出、结果未回的事件属于**上一轮**，本轮不重复提交也不计入。）
+ */
+interface FlushRound {
+  /** 轮次序号（只用于判断"是不是最新一轮"；不用时间戳，同毫秒会判错） */
+  seq: number;
+  result: RoundSummary;
+  /** 本轮所有分片是否都已结账（诊断用） */
+  settled: boolean;
+}
+
 /**
  * `telemetry_events` 的镜像上限（P5 第 2 段）。
  *
@@ -82,11 +127,34 @@ function isDeterministicRejection(err: unknown): boolean {
  * 这里刻意走 `getStoragePort().data.execute` 拿到**原始 Promise**，
  * 让 `trackShard()` 能读到 `StorageError.code`。
  *
- * ## 为什么它**不是**"重复写一次"
+ * ## ⚠️ 它与 `domainWrite` 的写穿**是两次写**（任务 Y-3：文档曾经与实现矛盾）
  *
- * 正常路径（分片落库成功）根本不会走到它：`domainWrite` 的写穿已经在飞了，
- * 这里只在**那一次失败之后**用同一批行重放，目的是把被 `domainWrite` 吞掉的
- * 错误码取回来。`crud.upsert` 是按主键的幂等覆盖写，重放不会产生重复行。
+ * 这里原来的注释写着"正常路径根本不会走到它 —— 这里只在**那一次失败之后**用同一批行重放"。
+ * **那是错的**，实测（审计探针）确认：
+ *
+ * ```
+ * flush() → domainWrite 的写穿（crud.upsert）            # 第 1 次
+ *         → trackShard().settle → probe(crud.upsert)     # 第 2 次 —— 无条件发生
+ * ```
+ *
+ * `domainWrite` 的写穿是**异步在飞**的，它把失败 `catch` 掉并上报之后就不再对外表达
+ * 任何结果，所以 `trackShard` **根本无从知道"那一次失败了"** ——
+ * 于是它只能每次都重放一遍来取错误码。文档说"只在失败后发生"，实现却是无条件发生，
+ * 这就是 Y-3 要求消灭的那种"文档与实现互相矛盾"。
+ *
+ * **为什么不改成"只在失败后才探测"**（那才是原注释描述的形态）：
+ * `domainWrite` 不把写穿 Promise 交给调用方（`persistWriteThrough` 里的 `.catch()` 是
+ * 终点，`domain-store.ts` 不在本任务的改动范围内），所以"失败信号"在 `trackShard`
+ * 这一侧**无法被观察到**。要么改 `domain-store.ts` 让写穿的 Promise 可被订阅
+ * （跨出了本任务的文件边界，见报告"需要他人配合"），要么就只能如实承认这 2× 代价。
+ * 本任务选了后者：**宁可多一次 IPC，也不要"结账永远判成功"** ——
+ * 那会让外键剔除、可重试失败全部退化成静默（正是 C-1 消灭的那类缺陷）。
+ *
+ * ## 代价与为什么它不产生重复行
+ *
+ * - 代价：**每个分片每轮 flush 2× IPC / 2× WAL 写入**；
+ * - 无重复行：`telemetry_events.id` 是 `TEXT PRIMARY KEY`（`schema.sql`），
+ *   而 `crud.upsert` 是 `INSERT OR REPLACE` —— 幂等，重放只是把同一行再写一遍。
  *
  * @returns 一个"写一批行"的函数；端口不可用时返回 `null`（调用方据此不结账）
  */
@@ -179,20 +247,54 @@ class TelemetryCollector {
    * 失败通道是**按 area 累计**的（`persist-failure.ts` 的设计），
    * 它回答得了"有没有失败"，回答不了"这一次到底写成功几条、因外键剔除几条"。
    * C-1 的要求是后者要能被区分出来。
+   *
+   * ## 任务 Y-3：它必须是**这一轮 flush 的快照**，不能是共享可变对象
+   *
+   * 原实现的结构是"实例上一个 `this.counters` + 每次 `flush()` 把它清零"，
+   * 而 `settle` 是**异步**的：上一轮的结账在下一轮清零之后才跑完时，
+   * 它把**自己那一轮**的数字加进了**新一轮**的计数里。实测（审计）：
+   *
+   * ```
+   * after flush#2: {"written":1,…,"retried":1}   ← 2 条事件被报成"1 条已写 + 1 条待重试"
+   * after release: {"written":2,…,"retried":1}   ← 汇总自相矛盾（3 条？批大小只有 2）
+   * ```
+   *
+   * 也就是说：**汇总与它描述的那一批根本不是同一件事**，
+   * 而这份汇总正是"诊断遥测为什么没落库"时唯一能看的东西 —— 一个会自相矛盾的
+   * 诊断数字比没有数字更坏（它会把排查引向错误的方向）。
+   *
+   * 现在每次 `flush()` 都新建一个**轮次对象**（`FlushRound`），
+   * `trackShard` 只往**它自己那一轮**的对象里累加，迟到结账与并发 flush 因此
+   * 互不干扰。恒等式 `written + rejectedForeignKey + retried == 该轮提交的批大小`
+   * 在并发下也成立。
    */
-  private lastSummary: { written: number; rejectedForeignKey: number; retried: number } | null = null;
+  private lastSummary: RoundSummary | null = null;
+
+  /** 已结账的轮次汇总（按轮次先后；有上限，诊断用） */
+  private roundHistory: RoundSummary[] = [];
+  private roundCounter = 0;
 
   /**
-   * 当轮 flush 的实时计数（由 `trackShard` 的异步结账逐片累加）。
+   * 最近一次 flush 的汇总（诊断/测试用；异步结账完成后更新）。
    *
-   * 之所以是**实例字段**而不是 `flush()` 里的局部变量：结账是异步的，
-   * 局部变量在 `flush()` 返回时就定格了 —— 那会得到一个"永远说写入成功的假汇总"。
+   * `expected` = 本轮**提交**的事件数，恒等式 `written + rejectedForeignKey + retried == expected`
+   * 在并发下也成立（未结账时前者还在增长）。加它是为了让"汇总自相矛盾"这件事
+   * **可以被当场验出来** —— 审计实测的 `{written:2, retried:1}`（批大小只有 2）
+   * 就是这条恒等式被破坏的形态。
    */
-  private counters = { written: 0, rejectedForeignKey: 0, retried: 0 };
-
-  /** 最近一次 flush 的汇总（诊断/测试用；异步结账完成后才更新） */
-  flushSummary(): { written: number; rejectedForeignKey: number; retried: number } | null {
+  flushSummary(): RoundSummary | null {
     return this.lastSummary ? { ...this.lastSummary } : null;
+  }
+
+  /**
+   * **每一轮** flush 的汇总（诊断/测试用；按轮次先后）。
+   *
+   * 为什么除了 `flushSummary()` 还要有它：并发 flush 的场景下，
+   * "两条事件被两个轮次各写了一条"与"两条事件被同一轮写了两条"是**不同的事实**，
+   * 而只看"最近一轮"无法区分。回归测试要钉住的正是"每一轮自己算自己的"。
+   */
+  flushRoundSummaries(): RoundSummary[] {
+    return this.roundHistory.map((r) => ({ ...r }));
   }
 
   /** 当前仍在等待写入的事件条数（诊断/测试用） */
@@ -215,11 +317,22 @@ class TelemetryCollector {
    *
    * 所以这里用**同一批行**把命令重放一次取真实错误码。重放是安全的：
    * `crud.upsert` 是幂等 upsert（同 id 覆盖写），真成功的分片不会走到这里。
+   * ⚠️ 但它是**无条件发生**的（不是"只在失败后"），代价与理由见 `directWrite()` 的注释。
+   *
+   * ## 任务 Y-3：计数只写进**本轮的轮次对象**
+   *
+   * `round` 由 `flush()` 在创建本轮时传入，而 `settle` 是异步的 —— 只认自己那一个对象，
+   * 于是"上一轮的结账迟到"不会污染下一轮的汇总（原实现是实例上共享的 `this.counters`，
+   * 每次 flush 清零 → 迟到结账把旧数字加进新一轮）。
+   * 结账完成时把本轮数字发布到 `lastSummary`，但**只在它仍是最新一轮**时才发布：
+   * 旧轮的迟到发布会把"最近一次 flush"换成更早批次的数字，那还是"汇总与批不对应"，
+   * 只是换成了跨轮的形态。
    */
   private trackShard(
     sessionId: string,
     shard: TelemetryEvent[],
     rows: Array<Record<string, unknown>>,
+    round: FlushRound,
   ): void {
     for (const e of shard) {
       // 占位 Promise：让 `pending()` 立刻知道"这片已经发出去了"，避免下一次 flush 重复提交
@@ -232,19 +345,19 @@ class TelemetryCollector {
         // 拿不到探测能力（真端口之外的实现）：**不猜**，按"写入成功"结账。
         // 这与改动前的行为一致（那时无条件清缓冲），但已经不会再静默丢弃 ——
         // 因为 domainWrite 自己的失败上报仍在。
-        this.counters.written += shard.length;
+        round.result.written += shard.length;
         this.dropFromBuffer(new Set(shard));
         return;
       }
       try {
         await probe(TABLE, rows);
-        this.counters.written += shard.length;
+        round.result.written += shard.length;
         // 确认落库 → 才允许从缓冲里去掉（C-1 要求 ③）
         this.dropFromBuffer(new Set(shard));
       } catch (err) {
         if (isDeterministicRejection(err)) {
           // 确定性拒绝：剔除 + 上报。**不重发**（重发会永远失败 → 无限重试风暴）
-          this.counters.rejectedForeignKey += shard.length;
+          round.result.rejectedForeignKey += shard.length;
           this.dropFromBuffer(new Set(shard));
           reportPersistFailure(
             "telemetry.flush",
@@ -256,14 +369,21 @@ class TelemetryCollector {
         // 可重试失败：留在缓冲里，并且**必须**把它们从 inFlight 里放出来，
         // 否则下一次 flush 会把它们当成"已提交"而永远不再尝试。
         for (const e of shard) this.inFlight.delete(e);
-        this.counters.retried += shard.length;
+        round.result.retried += shard.length;
       }
     })()
       .catch(() => {
         /* 结账自身出错绝不影响功能 */
       })
       .finally(() => {
-        this.lastSummary = { ...this.counters };
+        round.settled = true;
+        // 只有**最新那一轮**才有资格回答"最近一次 flush 的汇总"
+        const newest = this.rounds[this.rounds.length - 1];
+        if (newest && newest.seq === round.seq) {
+          this.lastSummary = { ...round.result };
+          // 最新一轮已结账 → 更早的轮次不会再被任何人读到，放掉它们（诊断数据不无限增长）
+          this.rounds = this.rounds.filter((r) => r.seq === round.seq);
+        }
       });
 
     for (const e of shard) this.inFlight.set(e, settle);
@@ -386,13 +506,31 @@ class TelemetryCollector {
       /**
        * 计数**必须由异步结账来写**（`trackShard`），不能在这里同步累加 ——
        * 落库结果还没回来，同步算出来的"已写入 N 条"是**假的**（那正是本缺陷的同类错误：
-       * 把一个尚未确认的动作当成已完成）。所以这里只**清零**，由 settle 逐片累加。
+       * 把一个尚未确认的动作当成已完成）。
+       *
+       * 任务 Y-3：计数不再放在实例字段上（那样会被下一轮清零、被上一轮的迟到结账污染），
+       * 而是**每轮一个新对象**，随 `trackShard` 一起传下去。它同时是
+       * `written + rejectedForeignKey + retried == 本轮提交的批大小` 这条恒等式的载体。
        */
-      this.counters = { written: 0, rejectedForeignKey: 0, retried: 0 };
+      const round: FlushRound = {
+        seq: ++this.roundCounter,
+        result: { written: 0, rejectedForeignKey: 0, retried: 0 },
+        settled: false,
+      };
+      this.rounds.push(round);
 
       for (const [sessionId, group] of bySession) {
         const fresh = group.filter((e) => !alreadyInFlight.has(e));
-        this.counters.retried += group.length - fresh.length;
+        /*
+         * 本轮**确实提交**的事件数 —— 恒等式的右边。
+         *
+         * ⚠️ 原来这里写的是 `this.counters.retried += group.length - fresh.length;`，
+         * 把"上一轮已经发出、结果未回"的事件也算成"本轮待重试"。那既让恒等式失真
+         * （本轮一条都没提交，汇总里却有 `retried: 1`），也让 `flushSummary()` 看起来
+         * 与"这一批"矛盾 —— 正是 Y-3 要消灭的自相矛盾汇总。
+         * 已发出的事件由**它自己那一轮**负责结账（`round.result.retried`），
+         * 本文这一轮对它们唯一该做的事就是"不重复提交"。
+         */
         if (fresh.length === 0) continue;
 
         const rows = fresh.map((e) => ({
@@ -429,12 +567,13 @@ class TelemetryCollector {
             new Error("端口未接手（该域镜像未注册或未就绪）"),
             `${rows.length} 条遥测事件未写入（保留在内存等待重试）`,
           );
-          this.counters.retried += fresh.length;
+          // 与 `trackShard` 的"可重试失败"同一语义：这批留在缓冲里，本轮如实记为待重试
+          round.result.retried += fresh.length;
           continue;
         }
 
         // 本片交给结账：成功/确定性拒绝才从缓冲里去掉，其余留在缓冲里等重试。
-        this.trackShard(sessionId, fresh, rows);
+        this.trackShard(sessionId, fresh, rows, round);
       }
       return;
     } catch (err) {

@@ -1322,6 +1322,20 @@ class RustMessageMirror {
       status: (o.status as string | null) ?? null,
       hidden: Number(o.hidden ?? 0),
       generated_files: (o.generated_files as string | null) ?? null,
+      /*
+       * ⚠️ `trimmed` **必须**在这里搬进来（第 44 轮：漏了它就是"整批修复在真机上没生效"）。
+       *
+       * 这一处是 eager 转换：wire 行 → 镜像行时**只搬列在这里列出的字段**。
+       * 我加了 `MirrorMessageRow.trimmed`、也让 `hiddenIds()` 去读它，却忘了在这里搬 ——
+       * 于是真端口上每一行的 `trimmed` 都是 `undefined`，`hiddenIds()` 的
+       * `Number(m.trimmed ?? 0) !== 1` 恒真 → **所有被隐藏的行都被当成"上下文压缩"** →
+       * `listMessagesMerged` 把"被索引裁剪掉、本该仍读得到的历史"整批删掉。
+       *
+       * 更糟的是 CI 看不见它：假端口的 `hiddenIds()` 是**惰性读共享表**（原始 wire 行形状，
+       * `trimmed` 一直在），而真端口是**eager 转换**（在这里被丢掉）—— 测试双比实现宽松的又一处。
+       * 所以修完这一行必须配一条**真端口**的转换契约用例（见 `rust-port.test.ts` 的 MIRROR-TRIM）。
+       */
+      trimmed: Number(o.trimmed ?? 0),
     };
   }
 

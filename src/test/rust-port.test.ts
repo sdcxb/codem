@@ -111,6 +111,67 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// ========== 真端口的"wire 行 → 镜像行"转换契约（第 44 轮） ==========
+//
+// ## 为什么必须用**真端口**跑这一组
+//
+// 第 44 轮给消息加了 `trimmed` 列（区分"索引裁剪隐藏"与"上下文压缩隐藏"），
+// 而真端口在 `normalize()` 里做的是 **eager 转换**：只有列在那个函数里被显式搬过来，
+// 镜像行才有这个字段。假端口的 `hiddenIds()` 是**惰性读共享表**（原始 wire 行形状），
+// 于是"真端口漏搬一列"这类缺陷**在假端口的用例里结构上不可能被发现** ——
+// 实测就是这么漏掉的：`trimmed` 没被搬 → 真机上 `hiddenIds()` 把所有隐藏行都当成
+// "被上下文压缩" → `listMessagesMerged` 把"被裁剪掉、本该仍读得到的历史"整批删掉。
+//
+// 所以这一组刻意跨过 `RustStoragePort` → `messages.list` 的**真实转换路径**。
+describe("RustStoragePort —— wire 行 → 镜像行的字段搬运（真端口转换契约）", () => {
+  it("MIRROR-TRIM: `trimmed` 必须被搬进镜像，且 `hiddenIds()` 据此排除被裁剪的行", async () => {
+    t.replies.set("messages.list", {
+      ok: true,
+      result: {
+        items: [
+          { id: "m-compressed", session_id: "s1", role: "user", content: "被压缩", timestamp: 1, hidden: 1, trimmed: 0 },
+          { id: "m-trimmed", session_id: "s1", role: "user", content: "被裁剪", timestamp: 2, hidden: 1, trimmed: 1 },
+          { id: "m-visible", session_id: "s1", role: "user", content: "可见", timestamp: 3, hidden: 0, trimmed: 0 },
+        ],
+        has_more: false,
+        next_cursor: null,
+      },
+    });
+    port.messages.ensureLoaded("s1");
+    await new Promise((r) => setTimeout(r, 20));
+
+    const rows = port.messages.list("s1");
+    expect(rows.length, "三条都应在镜像里").toBe(3);
+    const trimmedRow = rows.find((r) => r.id === "m-trimmed");
+    expect(
+      trimmedRow && Number(trimmedRow.trimmed ?? -1),
+      "wire 行的 trimmed 必须被搬进镜像（漏搬会让下面那条断言在生产上失效）",
+    ).toBe(1);
+
+    const hidden = port.messages.hiddenIds("s1");
+    expect(hidden.has("m-compressed"), "被上下文压缩的行必须仍算隐藏").toBe(true);
+    expect(
+      hidden.has("m-trimmed"),
+      "被**索引裁剪**的行不该算隐藏 —— 它必须仍能从权威日志读到（用户看得到自己的历史）",
+    ).toBe(false);
+  });
+
+  it("MIRROR-TRIM-2: 老库/缺列时按 0 处理（等价于“被压缩”），不会把 NULL 当成裁剪", async () => {
+    t.replies.set("messages.list", {
+      ok: true,
+      result: {
+        items: [{ id: "m1", session_id: "s1", role: "user", content: "x", timestamp: 1, hidden: 1 }],
+        has_more: false,
+        next_cursor: null,
+      },
+    });
+    port.messages.ensureLoaded("s1");
+    await new Promise((r) => setTimeout(r, 20));
+    const rows = port.messages.list("s1");
+    expect(Number(rows[0]?.trimmed ?? -1), "缺列 → 0").toBe(0);
+    expect(port.messages.hiddenIds("s1").has("m1"), "缺列时按“被压缩”处理（安全一侧）").toBe(true);
+  });
+});
 // ========== 错误是值 ==========
 
 describe("RustStoragePort —— 错误是值（不是文本，也不是进程中毒）", () => {

@@ -98,41 +98,112 @@ const CHUNK_OPTS = { maxRows: CHUNK_MIRROR_MAX };
  * 所以"被拒之后"的常驻占用不会比"镜像生效"时更大。
  */
 const CHUNK_CACHE_MAX_PER_NOTEBOOK = CHUNK_MIRROR_MAX;
-const chunkCache = new Map<string, NotebookChunk[]>();
-/** 正在进行中的按需读（避免同一 notebook 被并发拉多次） */
-const chunkWarmInFlight = new Set<string>();
 
 /**
- * 缓存属于**哪一个端口实例**（第 91 波，实测踩到的坑）。
+ * 缓存桶：`端口标识 → (notebookId → 块)`（任务 Y-2 的分端口分桶）。
  *
- * ## 为什么必须有它
+ * ## 为什么必须是两层，而不是"一个 Map + 换端口时 clear()"
  *
- * `chunkCache` 是模块级单例，而端口是**可替换的**（测试每个用例换一个假端口；
- * 真机上会话/项目切换也可能换端口）。只按 notebook id 缓存会出现：
- * "A 端口下读到的块，被 B 端口下的读当成自己的数据" —— 症状是**静默返回错内容**
- * （比读不到严重得多）。
+ * 读接口是**同步**的，而按需读是**异步**的（见 `warmChunksByNotebook`），
+ * 所以缓存写入永远发生在"发起读"之后的好几个微任务/一次 IPC 之后。
+ * 单层 Map 的形态是"换端口就整体作废"，而作废**只在下一次读缓存时发生**：
  *
- * 实测发现它就是这样在测试里露头的：单独跑某条用例时计数是 7（正确保留旧值），
- * 全量跑时同一条用例却拿到 2（上一次读的缓存串味过来了）。
+ * ```
+ * t0  currentChunkCache()            → 桶=A（此时端口还是 A）
+ * t1  warmChunksByNotebook 发起 crud.list（await 中）
+ * t2  端口被换成 B；某次读触发 currentChunkCache() → clear() → 桶=B
+ * t3  A 的 job 回来，cache.set(nb, A 的块)  ← cache 是 t0 抓到的**同一个 Map**
+ * t4  B 的读 currentChunkCache().get(nb) → **拿到 A 的数据**
+ * ```
  *
- * 处置：端口实例变了就整体作废缓存。判据是**引用相等**，不猜任何内部状态。
+ * 实测形态（审计探针原文）：
+ * ```
+ * PROBE chunk ids under port B: ["<threw>"]
+ * AssertionError: expected [ '<threw>' ] to deeply equal [ 'B1' ]
+ * ```
+ * 也就是"B 端口读到 A 的数据" —— 注释自己写过，这种症状是**静默返回错内容**，
+ * 比"读不到"严重得多。
+ *
+ * 分桶之后 `t3` 落进的是 **A 的桶**，B 的读永远只看 B 的桶，
+ * 串味在结构上就不可能发生（不依赖"写回时复核"这种时序检查是否写全）。
+ * 代价是端口 A 的桶会成为垃圾 —— 每次换端口时整体丢弃（见 `currentChunkCache`），
+ * 与"单层 Map + clear"的清理时机**完全一致**，没有新增常驻。
  */
-let chunkCachePort: unknown = null;
+const chunkCacheBuckets = new Map<unknown, Map<string, NotebookChunk[]>>();
 
-/** 取当前端口下的缓存（端口换了就清空重来） */
-function currentChunkCache(): Map<string, NotebookChunk[]> {
-  let port: unknown = null;
+/**
+ * 给端口实例取一个稳定的标识（分桶的键）。
+ *
+ * 用 `WeakMap` 而不是"端口对象本身"当键：`Map<StoragePort, …>` 会**强引用**端口，
+ * 而端口持有镜像数据 —— 换端口之后旧端口的桶虽然被丢弃，但如果键仍是对象引用，
+ * 旧端口对象本身也可能被这张表拖住（GC 语义说不清）。`WeakMap` + 数值 token
+ * 让键是原始值，桶表里不含任何对象引用。
+ */
+const portTokens = new WeakMap<object, number>();
+let nextPortToken = 1;
+
+function portTokenOf(port: object | null): unknown {
+  if (!port) return null; // A 态（端口未注册）
   try {
-    port = hasStoragePort() ? getStoragePort() : null;
+    let token = portTokens.get(port);
+    if (token === undefined) {
+      token = nextPortToken++;
+      portTokens.set(port, token);
+    }
+    return token;
   } catch {
-    port = null;
+    // 极端环境（不可扩展对象等）：退回"弱标识不可用"这一态，绝不让缓存层抛错
+    return null;
   }
-  if (port !== chunkCachePort) {
-    chunkCache.clear();
-    chunkWarmInFlight.clear();
-    chunkCachePort = port;
+}
+
+/** 当前端口（端口查询自身出错时按"没有端口"处理，与 `chunkOnDemandPossible` 同一约定） */
+function currentPort(): object | null {
+  try {
+    return hasStoragePort() ? (getStoragePort() as unknown as object) : null;
+  } catch {
+    return null;
   }
-  return chunkCache;
+}
+
+/**
+ * 正在进行中的按需读。
+ *
+ * 键是 `token|notebookId` 而不是单独的 notebookId：端口 A 的 job 还在飞时，
+ * 端口 B 对**同一个 notebook** 的读不该被 A 的在途 job 挡掉（那会让 B 这一轮
+ * 读不到 —— 虽然不是串味，但同样是"换端口之后的错答复"）。
+ */
+const chunkWarmInFlight = new Set<string>();
+
+function warmKeyOf(token: unknown, notebookId: string): string {
+  return `${String(token)}|${notebookId}`;
+}
+
+/**
+ * 取当前端口的缓存桶 —— **这个函数不会跨 `await` 使用**。
+ *
+ * 调用方分两类（这条纪律是 Y-2 的修法边界，改代码前先看自己在哪一类）：
+ * 1. **同步读**（`getChunks` / `getChunkCountOrNull` / `chunkIndexState`）：
+ *    当场取、当场用，`await` 边界不存在；
+ * 2. **异步按需读**（`warmChunksByNotebook`）：必须在**开头**取桶，
+ *    并且把"端口是否还是那一个"的判据一起取下来 —— 写回时先在 `finally`
+ *    里核对端口没变，才 `bucket.set(...)`（写进的是**当初那个端口的桶**）。
+ */
+function currentChunkCache(): Map<string, NotebookChunk[]> {
+  const port = currentPort();
+  const token = portTokenOf(port);
+  let bucket = chunkCacheBuckets.get(token);
+  if (!bucket) {
+    /*
+     * 端口变了（或这是第一个端口）：**丢弃所有旧桶**。
+     *
+     * 只保留"当前端口"一个桶，内存占用与改动前完全一样（旧版是单层 Map + clear）。
+     */
+    chunkCacheBuckets.clear();
+    bucket = new Map<string, NotebookChunk[]>();
+    chunkCacheBuckets.set(token, bucket);
+  }
+  return bucket;
 }
 
 /**
@@ -205,14 +276,50 @@ function chunkOnDemandPossible(): boolean {
  * 用 `crud.list` + `where: { notebook_id }`：**列名/表名由引擎侧核对**
  * （不存在会报错，不会静默少列），并且天然是"按 notebook 分片"的读。
  * 一次拉不完时分页继续（`has_more` 由引擎给，不靠"返回行数 == limit"猜）。
+ *
+ * ## 任务 Y-2：这一段的"缓存归属"原来是错的
+ *
+ * 原实现的开头是 `const cache = currentChunkCache()`，`await` 之后才 `cache.set(...)`；
+ * 而端口的归属比较**只发生在 `currentChunkCache()` 被调用那一刻**。于是
+ * "端口在 await 期间被换掉"时会出现：
+ *
+ * ```
+ * t0  cache = currentChunkCache()  → 桶 A（chunkCachePort = A）
+ * t1  await crud.list …（端口被换成 B；某次读把 chunkCache.clear() 成 B 的桶）
+ * t2  cache.set(nb, A 的块)        → 写进的是 t0 抓到的**同一个 Map**（即 B 的桶）
+ * ```
+ *
+ * 之后的 B 端口读会拿到 **A 的数据** —— 静默返回错内容，比读不到严重得多。
+ *
+ * ## 修法（两条一起，缺一不可）
+ *
+ * 1. **分桶**（`chunkCacheBuckets`）：缓存的键是"端口标识 + notebookId"，
+ *    A 的 job 只能写进 A 的桶，结构上就不可能串味；
+ * 2. **写回复核**：写回之前核对端口**还是当初那一个**（`currentPort() === portAtStart`），
+ *    变了就**丢弃结果并如实上报** —— 因为这份数据对新端口未必成立
+ *    （端口换了通常意味着换了库/换了会话），宁可让下一次读重新拉，也不落一份来路不明的数据。
+ *
+ * 为什么两条都要：只有 ② 的话，任何一处漏写复核就退化成原缺陷；
+ * 只有 ① 的话，旧端口的数据会静默堆在一个永远没人读的桶里（不串味，但沉默）。
+ *
+ * @returns 本次预取的 Promise（**测试要确定性等待它，生产不等待**）。
+ *   早先返回 `void` 且是 fire-and-forget，测试只能靠"等若干个微任务"猜时机 ——
+ *   那会让"端口在 await 期间被换掉"这条竞态**无法被稳定复现**。
+ *   返回一个可 await 的句柄不改变生产语义（`getChunks` 仍然立刻抛"未就绪"），
+ *   只是把"这一轮预取什么时候结束"变成可观察的事实。
  */
-function warmChunksByNotebook(notebookId: string): void {
-  const cache = currentChunkCache();
-  if (chunkWarmInFlight.has(notebookId)) return;
-  if (!chunkOnDemandPossible()) return;
-  chunkWarmInFlight.add(notebookId);
+function warmChunksByNotebook(notebookId: string): Promise<void> {
+  // ① 开头就把"桶"与"端口"一起定下来（顺序在同一 tick 内，二者必然属于同一个端口）
+  const bucket = currentChunkCache();
+  const portAtStart = currentPort();
+  const tokenAtStart = portTokenOf(portAtStart);
+  const warmKey = warmKeyOf(tokenAtStart, notebookId);
 
-  void (async () => {
+  if (chunkWarmInFlight.has(warmKey)) return Promise.resolve();
+  if (!chunkOnDemandPossible()) return Promise.resolve();
+  chunkWarmInFlight.add(warmKey);
+
+  return (async () => {
     try {
       const port = getStoragePort();
       const data = port.data as unknown as {
@@ -244,21 +351,54 @@ function warmChunksByNotebook(notebookId: string): void {
         );
         return;
       }
-      cache.set(notebookId, converted);
+      /*
+       * ② 写回复核：端口在 await 期间被换掉 → **丢弃**这份结果。
+       *
+       * 判据是**端口引用相等**（`currentPort()` 与开头那一次取值比），不猜任何内部状态。
+       * 丢弃必须**如实上报**：否则表现成"按需读永远不命中"，
+       * 下一次读照样抛"索引未就绪"，而没有任何痕迹指向"端口换了"。
+       */
+      if (currentPort() !== portAtStart) {
+        reportPersistFailure(
+          "chunk.onDemand",
+          new Error("存储端口在按需读期间被更换"),
+          `笔记本 ${notebookId} 的本次按需读作废（结果不属于当前端口，已丢弃；下一次读会重新拉）`,
+        );
+        return;
+      }
+      bucket.set(notebookId, converted);
     } catch (e) {
       reportPersistFailure("chunk.onDemand", e, `笔记本 ${notebookId} 的文本块未按需读到（下次读会再试一次）`);
     } finally {
-      chunkWarmInFlight.delete(notebookId);
+      chunkWarmInFlight.delete(warmKey);
     }
   })();
 }
 
-/** 按需读路径下的块（未命中返回 undefined，调用方据此触发预取） */
+/**
+ * 按需读路径下的块（未命中返回 undefined，调用方据此触发预取）。
+ *
+ * 读只认**当前端口**的桶（`currentChunkCache()`），所以永远读不到别的端口的数据。
+ */
 function onDemandChunks(notebookId: string): NotebookChunk[] | undefined {
   const hit = currentChunkCache().get(notebookId);
   if (hit) return hit;
   warmChunksByNotebook(notebookId);
   return undefined;
+}
+
+/**
+ * **仅供测试**：等一次"按需读预取"真正结束（成功 / 作废 / 失败都算结束）。
+ *
+ * 为什么需要它：Y-2 的缺陷只在"端口在 await 期间被换掉"这一个窗口里出现，
+ * 而这个窗口在测试里只能靠"控制异步读什么时候 resolve"来稳定复现 ——
+ * 若拿不到预取的句柄，就只能等若干个微任务去猜，那是一条**靠时序碰运气**的回归测试
+ * （本仓库已经吃过"时序碰运气"的亏，见 `chunkCachePort` 那段注释里的实测记录）。
+ *
+ * 它不是产品 API：名字带 `__` 前缀，生产代码不调用它。
+ */
+export function __warmChunksForTests(notebookId: string): Promise<void> {
+  return warmChunksByNotebook(notebookId);
 }
 
 /**

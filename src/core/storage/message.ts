@@ -100,6 +100,21 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: Mess
 
 
 /**
+ * 索引裁剪等待镜像就绪的**整批**预算（毫秒）。
+ *
+ * 取值依据：真机启动维护的观测值是"19 个域镜像就绪 9 ms"，
+ * 而这里的每个会话是**一次分页 IPC**（真机 544 行约几十毫秒）。
+ * 5 秒是"网络/磁盘极端慢"与"不能让维护无限期挂住"之间的折中：
+ * 健康引擎下永远用不到它，出问题时最多拖住整条维护链 5 秒（而不是 N×5 秒）。
+ */
+const TRIM_MIRROR_WAIT_TOTAL_MS = 5000;
+
+/** 到整批截止时间还剩多少毫秒（至少 0；已过期就立即返回 0 → 走同步快路径判定） */
+function remainingWaitMs(deadline: number): number {
+  return Math.max(0, deadline - Date.now());
+}
+
+/**
  * 等某个会话的**消息镜像就绪**（第 44 轮：这是"索引裁剪在生产上从未生效"的根因）。
  *
  * ## 为什么必须有它
@@ -178,12 +193,14 @@ async function waitForSessionMirror(
  *           真机上真实原因是"镜像未就绪"，排查方向因此被日志带偏）
  */
 export async function trimIndexedMessages(
-  opts: { keepPerSession?: number } = {},
+  opts: { keepPerSession?: number; mirrorWaitMs?: number } = {},
 ): Promise<{
   deletedMessages: number;
   skippedSessions: number;
   /** 镜像没能就绪（真端口是异步的；这里会用回调等它） */
   skippedNotLoaded: number;
+  /** 镜像存在但被上限截断（集合不完整 → 一律不动；与"没就绪"是两件事） */
+  skippedTruncated: number;
   /** 日志里还没有这些消息（耐久性不变量：不裁） */
   skippedNoLog: number;
   /** 有候选但一条都裁不了（带附件 / 日志缺该 id） */
@@ -194,6 +211,7 @@ export async function trimIndexedMessages(
     deletedMessages: 0,
     skippedSessions: 0,
     skippedNotLoaded: 0,
+    skippedTruncated: 0,
     skippedNoLog: 0,
     skippedNoCandidates: 0,
   };
@@ -245,6 +263,25 @@ const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) =
     );
     return out;
   }
+  /*
+   * ## 先**并发**发起所有会话的镜像加载（第 44 轮：修"每会话 5s 串行"）
+   *
+   * 真端口的 `ensureLoaded` 是异步的，而等待只在**成功**时被唤醒（失败时回调永不触发）。
+   * 如果"发起 + 等待"写在同一个串行循环里，N 个坏会话就要付 N × 超时：
+   * 审计实测 3 个会话 = **15009 ms**，外推 100 个会话 ≈ 8.3 分钟 ——
+   * 而这一步后面还串着附件预热 / 遥测裁剪 / 审计裁剪 / 空间回收 / 完整性检查 / 计数对账。
+   *
+   * 所以：所有加载**先一起发起**，再用**一个整批共享的截止时间**逐个确认。
+   * 最坏情况从 N × 5s 变成 5s（总量有界），正常情况几乎立即全部就绪。
+   */
+  // `mirrorWaitMs` 只为测试注入（默认走上面那个有依据的常量）：
+  // 让"超时分支"能被快速覆盖，而不必让用例真的等 5 秒。
+  const deadline = Date.now() + (opts.mirrorWaitMs ?? TRIM_MIRROR_WAIT_TOTAL_MS);
+  for (const row of sessionsMirror) {
+    const sid = String(row.id ?? "");
+    if (sid) port.messages.ensureLoaded(sid);
+  }
+
   for (const row of sessionsMirror) {
   const sessionId = String(row.id ?? "");
   if (!sessionId) continue;
@@ -252,15 +289,23 @@ const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) =
     /**
      * ⚠️ **必须等镜像就绪**（第 44 轮修掉的"整条维护步骤从不生效"）。
      *
-     * 真端口的 `ensureLoaded` 是异步的（内部走 IPC 分页读），
+     * 真端口的 `ensureLoaded` 是**异步**的（内部走 IPC 分页读），
      * 所以"调用它之后立刻同步判 `isLoaded`"**必然为 false** —— 每个会话都会被跳过，
      * 于是索引裁剪在真机上一条都没裁过，而日志还把原因写成"日志尚未覆盖"。
      * 测试双的 `ensureLoaded` 是同步就绪的，所以 CI 里看不见这件事。
+     *
+     * ⚠️ 等待用的是**整批共享的截止时间**（`deadline`），**不是每会话 5 秒**：
+     * 真端口的 `ensureLoaded` 只在**加载成功**时回调，加载失败时回调**永不触发** ——
+     * 于是"每会话 5s 超时"会让 N 个坏会话付 N×5s（审计实测 3 个会话 = **15009 ms**，
+     * 线性外推 100 个会话 ≈ 8.3 分钟），而它后面还串着附件预热、遥测裁剪、审计裁剪、
+     * 空间回收、完整性检查、计数对账 —— 拖住的不是一步，是整条维护链。
+     * 所有会话的加载已经在循环之前**并发发起**了，所以共享截止时间不会漏掉谁会把谁饿死。
      */
-    const readiness = await waitForSessionMirror(port, sessionId);
+    const readiness = await waitForSessionMirror(port, sessionId, remainingWaitMs(deadline));
     if (readiness !== "ready") {
       out.skippedSessions++;
-      out.skippedNotLoaded++;
+      if (readiness === "truncated") out.skippedTruncated++;
+      else out.skippedNotLoaded++;
       continue;
     }
     const rows = port.messages.list(sessionId);

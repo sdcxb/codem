@@ -32,7 +32,7 @@ use serde_json::{json, Value};
 use crate::engine::Engine;
 use crate::error::{DbError, DbResult};
 use crate::migrate::TABLE_LIST_JSON;
-use crate::repo::{limit_of, offset_of, to_sql_value};
+use crate::repo::{limit_of, offset_of, reject_null_semantic_columns, to_sql_value};
 
 /// 受保护的"用户内容"表：一次删除如果波及它们太多行，必须显式确认。
 ///
@@ -456,6 +456,14 @@ pub fn crud_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
         if obj.is_empty() {
             return Err(DbError::invalid("rows", format!("第 {i} 行为空对象")));
         }
+        /*
+         * 语义上非空的列拒绝 NULL（第 45 轮 Z-3）：
+         * `crud.upsert { table: "messages", rows: [{ id: "m1", hidden: null }] }` 原来会写进 SQL NULL，
+         * 而 `messages.get` / `messages.list` 用的是 `r.get::<_, i64>()` → 整个会话读不出来；
+         * 更糟的是 `crud.list` 照样返回 `"hidden": null` —— 两条读路径给出两种答案。
+         * 这是**两个写入面**（`messages.*` 与通用 `crud.upsert`）必须共用同一条判据的原因。
+         */
+        reject_null_semantic_columns(row)?;
         for k in obj.keys() {
             if seen.insert(k.clone()) {
                 cols.push(k.clone());

@@ -9,16 +9,16 @@
  * ① **裁剪根本没跑**：`trimIndexedMessages` 调用 `port.messages.ensureLoaded(id)` 之后
  *    **立刻同步**判 `isLoaded(id)` —— 而真端口的 `ensureLoaded` 是**异步**的
  *    （内部走 IPC 分页读），那一瞬间必然为 false，于是每个会话都被跳过。
- *    现在改成用 `ensureLoaded(id, cb)` **等它就绪**（带超时兜底）。
+ *    现在改成用 `ensureLoaded(id, cb)` **等它就绪**（整批共享一个截止时间）。
  * ② **日志把原因说错了**：三种完全不同的跳过原因（镜像未就绪 / 日志未覆盖 / 无可裁候选）
  *    一律印成"日志尚未覆盖"，于是真机上真实原因（①）被日志掩盖了 —— 排查方向就是这样被带偏的。
  *    现在按原因分别计数、分别打印。
  *
  * ## 为什么既有的裁剪用例看不见它
  *
- * 假端口（与其它测试双）的 `ensureLoaded` 是**同步就绪**的：调用后立刻 `isLoaded === true`，
- * 于是"同步判就绪"这种写法在 CI 里永远是对的。`asyncLoad: true` 就是为这类偏差准备的
- * （见 `fake-storage-port.ts` 文件头：与就绪时机有关的用例**必须**显式切异步）。
+ * 假端口（与其它测试双）的 `ensureLoaded` 原来是**同步就绪**的：调用后立刻 `isLoaded === true`，
+ * 于是"同步判就绪"这种写法在 CI 里永远是对的。第 44 轮把假端口的**会话镜像**也改成尊重
+ * `asyncLoad`（以前只有域镜像尊重它）—— 这一条保真度缺口正是缺陷藏身之处。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
@@ -80,10 +80,24 @@ function installFsStub(): void {
 
 function seedMessages(n: number): void {
   for (let i = 0; i < n; i++) {
-    const msg: Message = { id: `m${i}`, role: "user", content: `内容 ${i}`, timestamp: 1000 + i, status: "done" } as Message;
+    const msg: Message = {
+      id: `m${i}`,
+      role: "user",
+      content: `内容 ${i}`,
+      timestamp: 1000 + i,
+      status: "done",
+    } as Message;
     createMessage(msg, SESSION);
     appendSessionMessage(SESSION, msg);
   }
+}
+
+/** 会话清单来自 `domainReadMany("sessions")`，而域镜像也是异步的 —— 先等它就绪 */
+async function warmSessionsMirror(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    domainEnsureLoaded("sessions", () => resolve());
+    setTimeout(resolve, 50);
+  });
 }
 
 describe("索引裁剪必须等镜像就绪（真端口是异步的）", () => {
@@ -119,29 +133,55 @@ describe("索引裁剪必须等镜像就绪（真端口是异步的）", () => {
     port = createFakeStoragePort({
       asyncLoad: true,
       seed: {
-        sessions: [{ id: SESSION, project_id: PROJECT, title: "T", created_at: 1, last_message_at: 1, message_count: 0 }],
+        sessions: [
+          { id: SESSION, project_id: PROJECT, title: "T", created_at: 1, last_message_at: 1, message_count: 0 },
+        ],
       },
     });
     setStoragePort(port);
     seedMessages(6);
     await flushSessionLogWrites();
-    /*
-     * ⚠️ 先等 `sessions` 域镜像就绪：`trimIndexedMessages` 的会话清单来自
-     * `domainReadMany("sessions")`，而**真端口与这个异步假端口的域镜像都是异步的** ——
-     * 未就绪时它读到 `undefined` → 清单为空 → 整个函数什么都不做（这也是"维护啥也没干"
-     * 的一种形态，产品侧已加如实上报）。
-     */
-    await new Promise<void>((resolve) => {
-      domainEnsureLoaded("sessions", () => resolve());
-      // 兜底：某些端口可能同步就绪（回调不会来），用一个立即检查兜住
-      setTimeout(resolve, 50);
-    });
+    await warmSessionsMirror();
 
     const out = await trimIndexedMessages({ keepPerSession: 2 });
 
     expect(out.deletedMessages, "镜像异步就绪也必须裁掉（这正是生产上从未发生的事）").toBeGreaterThan(0);
     expect(out.skippedNotLoaded, "不该再因为“镜像没就绪”而跳过").toBe(0);
     expect(out.skippedNoLog, "日志已经被 flush 过，不该报“日志尚未覆盖”").toBe(0);
+  });
+
+  it("TRIM-ASYNC-2: 镜像**始终等不到就绪**时如实计入 skippedNotLoaded，且整批等待有界", async () => {
+    /*
+     * 覆盖"回调永不触发"那条路 —— 真端口只在**加载成功**时回调，
+     * 所以加载失败 = 只能等超时。这正是"每会话 5s × N 个坏会话拖住整条维护链"的现场
+     * （审计实测 3 个会话 = 15009 ms）。
+     *
+     * 这里用 `mirrorWaitMs` 把预算压到 60ms，断言两件事：
+     * ① 跳过原因**如实计数**（不是静默）；② 用时**有界**（远小于"每会话 5s × N"）。
+     */
+    port = createFakeStoragePort({
+      asyncLoad: true,
+      seed: {
+        sessions: [
+          { id: SESSION, project_id: PROJECT, title: "T", created_at: 1, last_message_at: 1, message_count: 0 },
+        ],
+      },
+    });
+    setStoragePort(port);
+    seedMessages(6);
+    await flushSessionLogWrites();
+    await warmSessionsMirror();
+
+    // 模拟"加载永不成功"：真端口的 onLoaded 只在成功分支里被调用
+    (port.messages as unknown as { ensureLoaded: () => void }).ensureLoaded = () => {};
+
+    const started = Date.now();
+    const out = await trimIndexedMessages({ keepPerSession: 1, mirrorWaitMs: 60 });
+    const elapsed = Date.now() - started;
+
+    expect(out.deletedMessages, "等不到镜像就不能裁（耐久性优先）").toBe(0);
+    expect(out.skippedNotLoaded, "跳过原因必须如实计数").toBeGreaterThan(0);
+    expect(elapsed, `整批等待必须有界（实测 ${elapsed}ms；修前是每会话 5s × N）`).toBeLessThan(1000);
   });
 
   it("TRIM-ASYNC-3: 机制证明 —— 异步端口上“ensureLoaded 之后同步判 isLoaded”必然为 false", () => {
@@ -178,21 +218,5 @@ describe("索引裁剪必须等镜像就绪（真端口是异步的）", () => {
     m.ensureLoaded(SESSION);
     const oldGuardWouldSkip = !m.isLoaded(SESSION) || m.isTruncated();
     expect(oldGuardWouldSkip, "旧守卫在真端口语义下必然跳过（这就是维护步骤从未生效的机制）").toBe(true);
-  });
-
-  it("TRIM-ASYNC-2: 镜像**真的**就绪不了时如实计入 skippedNotLoaded（不是静默跳过）", async () => {
-    port = createFakeStoragePort({
-      asyncLoad: true,
-      // 故意不给这个会话的 sessions 行 → 裁剪遍历不到它；改用另一种"就绪不了"的形态：
-      // 端口没有 messages 能力时整个函数直接返回（见函数开头的早退），
-      // 所以这里验的是"能遍历到、但镜像加载被拒"的等价形态：sessions 行在、消息表为空。
-    });
-    setStoragePort(port);
-    await flushSessionLogWrites();
-    const out = await trimIndexedMessages({ keepPerSession: 2 });
-    // 这个会话一条消息都没有 → 走到 `visible.length <= keepPerSession` 的早退，
-    // 不产生任何跳过计数（"没什么可裁"不是"跳过"）。这里只钉住"不抛、不误报"。
-    expect(out.deletedMessages).toBe(0);
-    expect(out.skippedNotLoaded).toBe(0);
   });
 });

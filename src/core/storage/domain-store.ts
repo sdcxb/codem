@@ -109,60 +109,164 @@ export function domainPort(table: string, opts: DomainReadOpts = {}): DomainMirr
   return candidate && candidate.domains.isReady(table) ? candidate : null;
 }
 
-// ========== 写入排队（A-1，第 20 轮） ==========
+/**
+ * 摘掉内部字段（下划线前缀），只留**线协议参数**。
+ *
+ * 为什么要这一步：`resolveDeferredAtReplay` 会往参数里塞 `_ids` / `_key`
+ * （"这次要按 id 拆成多条命令"的内部标记）。它们必须**不进** `data.execute`
+ * 的参数 —— 真引擎的参数校验遇到不认识的字段会报错，而报错的那次删除
+ * 才是真正该发出去的那次。
+ */
+function pickLineParams(params: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params)) if (!k.startsWith("_")) out[k] = v;
+  return out;
+}
+
+// ========== 写入排队（A-1，第 20 轮；X-1/X-2 修于第 46 轮） ==========
 
 /**
  * 一次"端口已接手、但镜像还在加载"的写请求。
  *
- * 参数形状刻意与 `data.execute` 一致（`cmd` + `params`），这样重放时能走**同一个**
- * 写穿函数 `persistWriteThrough` —— 镜像更新、审计留痕、失败上报全都不必写第二遍
- * （重复实现出来的第二条路，就是下一个"两边行为不一致"的来源）。
+ * ## 两条不变量
+ *
+ * 1. **`params` 是重放时的真参数，必须带条件**。早先这里只为 `deleteWhere` 存了
+ *    `params: { table }`（**没有 where**），重放时发出的是空 where 的 `crud.delete`
+ *    —— 真引擎明确拒绝（`crud.rs::crud_delete`："删除必须给出 where 条件"），
+ *    而审计却照记一条"删过 T 表"，于是**一行都没删、审计里却有证据**（X-1）。
+ *    现在 `where` 一律在**重放那一刻**从镜像上现算，见 `resolveDeferredAtReplay`。
+ * 2. **声明了的字段必须真有人读**。`match` 早先是"声明了却没有任何代码读"的装饰
+ *    （说明那段没写完），现在它是重放时重新求值谓词的**唯一依据**。
+ *
+ * ## 为什么范围删除必须"就绪后重算"而不是"入队时算好 id 集合"
+ *
+ * 入队发生在**镜像还没加载回来**的时刻 —— 那一刻 `all()` 是空数组，
+ * 算出来的 id 集合必然为空（"什么都没删"），而真相是"镜像还没到手"。
+ * 所以入队只能存下**谓词**（`match`），等镜像真的存在了再求值 ——
+ * 那时算出的 id 才与"本地要删的"和"要写穿的"是同一批。
  */
 type DeferredOp = "write" | "delete" | "deleteWhere";
 
 interface DeferredWrite {
   table: string;
+  /** 语义类型。**真的被消费**：决定重放时要不要在镜像上现算目标行（见 `resolveDeferredAtReplay`） */
   op: DeferredOp;
-  /** 行（`write`） */
-  rows?: Array<Record<string, unknown>>;
-  /** 等值条件（`delete`） */
-  where?: Record<string, unknown>;
-  /**
-   * 谓词（`deleteWhere`）。范围删除必须**在镜像上**筛出要删的 id
-   * （线协议 `where` 只支持等值匹配），所以重放时要重新算一次：
-   * 镜像在排队期间可能已被填充，重算得到的正是"本地删掉的与写穿的同一批 id"。
-   */
+  /** 谓词（`deleteWhere`）。重放时在**已就绪的镜像**上重新求值 —— 见类型上方的说明 */
   match?: (row: Record<string, unknown>) => boolean;
-  key?: string;
-  /**
-   * 重放时要不要**再在镜像上应用一次**本地变更。
-   *
-   * `domainDeleteWhere` 的本地删除必须发生在**排队时**（它要用
-   * `applyDeleteWhere` 的"删了几行"作为返回值），排队那一刻镜像还不存在，
-   * 所以重放时**不能**再按 `where` 删一次 —— 那会把刚加载回来的整表清空。
-   * 这类条目置 `false`，重放只负责写穿。
-   */
-  applyLocally: boolean;
+  /** 主键列名（`deleteWhere` 用它把行映射成 id；默认 `id`） */
+  key: string;
   cmd: string;
-  params: Record<string, unknown>;
+  /**
+   * 写穿参数。`write` / `delete` 在入队时就已确定（调用方给全了）；
+   * `deleteWhere` 这里是 `undefined`，重放时现算（入队那刻镜像还是空的）。
+   */
+  params?: Record<string, unknown>;
   scope: string;
   note: string;
+  /** 入队时刻（毫秒）。老化判据的起点，见 `DEFER_STALE_MS` */
+  at: number;
   /** 入队序号（诊断用；重放严格按入队顺序） */
   seq: number;
 }
 
 /**
- * 队列上限。
+ * 单张表的排队上限。
+ *
+ * ## 为什么必须有"按表"这一层（X-2）
+ *
+ * 队列原来是**全局**上限 500，而唯一的上限判据也是全局的。于是一张**加载失败**的表
+ * （`rust-port.ts` 的 `.catch` 只计数上报、不置就绪、回调不触发）能靠滞留把整个额度占满：
+ * 实测 `{"pending":500}` 之后，另一张**确实正在加载、本该排队成功**的表的写直接
+ * `return false` 被丢弃（审计原文：`goals accepted = 0`）。一张坏表饿死全库。
+ *
+ * 100 的依据：正常窗口是**一次 IPC 往返**（`domainMirror` 的注释里写的量级是几十毫秒），
+ * 能在这个窗口里对**同一张表**攒到 100 次写的场景不存在于正常工作流；
+ * 而单表 100 / 全局 500 = 一张坏表最多占掉 20% 的额度，剩下 400 条留给别的表排队。
+ * 数值不是精度问题，量级才是：它要保证"一张坏表无论如何都占不满"。
+ */
+const DEFER_MAX_PER_TABLE = 100;
+
+/**
+ * **全局**队列上限（所有表加起来的硬顶）。
  *
  * 500 是"够用且不至于把内存吃穿"的量级：这个窗口的常态是**一次 IPC 往返**
  * （几十毫秒），能在这个窗口里攒到 500 次写的场景不存在于正常工作流。
  * 真撞上上限就说明有别的更严重的问题，此时**如实上报丢弃**比悄悄吞掉好得多。
+ *
+ * ⚠️ 它**不能**是唯一的上限（X-2）：全局上限 + 全局队列 = 一张坏表能占满整个额度，
+ * 于是别的表的写全部被拒（实测 `goals accepted = 0`）。按表那一层见 `DEFER_MAX_PER_TABLE`。
  */
 const DEFER_MAX = 500;
 
+/**
+ * 入队条目在队列里的**最长滞留时间**（老化窗口）。
+ *
+ * ## 为什么必须有它（X-2 的滞留）
+ *
+ * 出队只有两个触发点：该表就绪时的 `replayDeferred`，以及每次访问时的兜底判断。
+ * 而"加载失败"的表**永远不会就绪** —— 它的条目既不落库、也不再有任何上报，
+ * 就那么压在队列里（实测：`after replay todos -> stats = {"pending":2,...}`）。
+ * 于是那些写**被静默吞掉**（调用方拿到的是 `true`/`null` = "已接手"）。
+ *
+ * ## 数值依据（15 秒）
+ *
+ * 这个窗口要覆盖的是**正常的中等加载**：`loadTable` 按 1000 行/页分页拉，
+ * 真机上几百毫秒到几秒是常态，表大一点到十几秒也出现过（"太大"才被拒，那是另一条路）。
+ * 反过来，15 秒之后还没就绪，就已经不是"等一下就成"，而是"这次不成"：
+ * 与其把用户的操作永远挂在内存里假装"已接手"，不如**现在如实上报放弃**。
+ *
+ * ⚠️ 老化**只在队列被触碰时才结算**（`deferWrite` / `replayDeferred` /
+ * `deferredWriteStats`），刻意**不**起定时器：
+ *
+ * - 这段逻辑活在渲染进程的主路径上，一个常驻 `setInterval` 是**新的后台负担**
+ *   （本仓库一直在消灭这类占用）；
+ * - 定时器会让"入队 → 过期"变成依赖真实时钟的时序断言，测试必然抖。
+ *
+ * 代价要说清：**如果之后没有任何写、也没有人读诊断，滞留条目会原地等到下一次触碰**。
+ * 那份内存（≤500 个对象、每个几十字节）与"谎报已接手"相比可以忽略；
+ * 而一旦真的发生了滞留，下一次任何表的写都会把整条队列结算一次 —— 不会积累成雪崩。
+ */
+const DEFER_STALE_MS = 15_000;
+
 let deferQueue: DeferredWrite[] = [];
 let deferSeq = 0;
+/** 因**额度**被拒的条数（单表上限 + 全局上限）—— 这些写从来就没进过队列 */
 let deferredDropped = 0;
+/** 入过队、但因**滞留过久**被放弃的条数（X-2）。与 `dropped` 分开计：
+ *  "压根没排上"和"排上了但没成"是两件事，混成一个数就没法诊断了 */
+let deferredExpired = 0;
+
+/**
+ * 结算老化：把滞留超过 `DEFER_STALE_MS` 的条目**出队并如实上报**。
+ *
+ * 判据用"这张表现在是否仍然**正在加载**"而不是单纯看时间：
+ * 15 秒之内表就绪了，条目早被 `replayDeferred` 取走了；
+ * 15 秒之后**还没就绪**（不论加载失败、退避窗口里、还是被拒），这次写就是不成。
+ *
+ * 绝不静默丢 —— 每个条目一条 `reportPersistFailure`，文案里带表名与窗口时长。
+ */
+function sweepDeferQueue(now = Date.now(), onlyTable?: string): number {
+  if (deferQueue.length === 0) return 0;
+  const stale: DeferredWrite[] = [];
+  const kept: DeferredWrite[] = [];
+  for (const item of deferQueue) {
+    if (item.table !== onlyTable && now - item.at >= DEFER_STALE_MS) stale.push(item);
+    else kept.push(item);
+  }
+  if (stale.length === 0) return 0;
+  deferQueue = kept;
+  for (const item of stale) {
+    deferredExpired++;
+    reportPersistFailure(
+      item.scope,
+      new Error(
+        `表 ${item.table} 在 ${DEFER_STALE_MS} ms 内未就绪，本次写放弃（已排队 ${now - item.at} ms）`,
+      ),
+      item.note,
+    );
+  }
+  return stale.length;
+}
 
 /**
  * 把一次写排到"该表镜像就绪之后"执行，返回是否**已入队**。
@@ -195,19 +299,75 @@ let deferredDropped = 0;
  * **接手了**，失败时由重放路径上报**恰好一次**。
  *
  * 队列满时返回 `false` **并显式上报丢弃**：绝不允许"排不进去"变成静默丢数据。
+ * （"已接手但最终没成"由老化通道上报，也绝不静默。）
  */
-function deferWrite(item: Omit<DeferredWrite, "seq">): boolean {
-  if (deferQueue.length >= DEFER_MAX) {
+function deferWrite(item: Omit<DeferredWrite, "seq" | "at">): boolean {
+  /*
+   * 先结算老化再判额度：否则一张坏表的滞留条目会在**额度上**一直占着位置，
+   * 而它们其实早就该被放弃了（X-2 的"饿死"就是这么发生的）。
+   */
+  sweepDeferQueue();
+  const mine = deferQueue.reduce((n, q) => (q.table === item.table ? n + 1 : n), 0);
+  if (mine >= DEFER_MAX_PER_TABLE || deferQueue.length >= DEFER_MAX) {
     deferredDropped++;
     reportPersistFailure(
       item.scope,
-      new Error(`域写队列已满（上限 ${DEFER_MAX} 条），本次写被丢弃：${item.table}`),
+      new Error(
+        `域写队列已满（单表上限 ${DEFER_MAX_PER_TABLE} 条 / 全局上限 ${DEFER_MAX} 条，` +
+          `表 ${item.table} 已排队 ${mine} 条），本次写被丢弃：${item.table}`,
+      ),
       item.note,
     );
     return false;
   }
-  deferQueue.push({ ...item, seq: ++deferSeq });
+  deferQueue.push({ ...item, at: Date.now(), seq: ++deferSeq });
   return true;
+}
+
+/**
+ * **重放的那一刻**才求值：这次排队到底要写穿什么。
+ *
+ * ## 为什么必须推迟到这里（X-1）
+ *
+ * 入队发生在"镜像还没加载回来"的时刻：`all()` 是空数组。所以
+ * `deleteWhere` 的目标 id 集合**不可能在入队时算出来** ——
+ * 入队时算的结果恒为空集，而空集写穿就是"发一条没有 where 的 `crud.delete`"，
+ * 真引擎会直接拒绝（"删除必须给出 where 条件"）。镜像就绪之后再求值，
+ * 才拿得到"本地要删的"与"要写穿的"那**同一批** id。
+ *
+ * `write` / `delete` 的条件在入队时就已确定（调用方给全了），原样返回。
+ *
+ * @returns `null` = 这次重放**没有内容**（例如谓词一行都不匹配）→ 不发命令、不记审计
+ */
+function resolveDeferredAtReplay(
+  port: DomainMirrorPort,
+  item: DeferredWrite,
+): Record<string, unknown> | null {
+  if (item.op !== "deleteWhere") return item.params ?? null;
+  const match = item.match;
+  if (!match) return null;
+  const doomed = port.domains
+    .all<Record<string, unknown>>(item.table)
+    .filter(match)
+    .map((row) => row[item.key])
+    .filter((v) => v !== undefined && v !== null);
+  if (doomed.length === 0) return null;
+  /*
+   * 幂等去重：镜像里同一个主键出现两次（理论上不该有）时，
+   * 对同一个 id 发两条 `crud.delete` 是纯浪费（第一条已把它删掉）。
+   */
+  const ids = [...new Set(doomed.map((v) => String(v)))];
+  return {
+    table: item.table,
+    /*
+     * `where` 里给一个**看得懂**的形状；真正发命令时按 `_ids` 拆成逐 id 等值删除
+     * （引擎的 `where` 只支持等值匹配）。`_ids` / `_key` 是内部字段，下划线前缀
+     * 表示"不是线协议参数"，`persistWriteThrough` 会把它们摘掉。
+     */
+    where: ids.length === 1 ? { [item.key]: ids[0] } : { [item.key]: `${ids.length} 行（按谓词）` },
+    _ids: ids,
+    _key: item.key,
+  };
 }
 
 /**
@@ -220,21 +380,56 @@ function deferWrite(item: Omit<DeferredWrite, "seq">): boolean {
  * 走上报通道，也就是说这里不会把"没写进去"变成静默成功。
  */
 function replayDeferred(table: string): void {
-  const mine = deferQueue.filter((q) => q.table === table);
+  /*
+   * 先结算老化：`replayDeferred` 是"这张表就绪了"的信号，但**别的表**的滞留条目
+   * 同样到了该结算的时候（它们的就绪信号可能永远不会来）。只结算**别的表**，
+   * 本表的条目正要重放，不能被老化掉。
+   */
+  sweepDeferQueue(Date.now(), table);
+  replaySpecific(table, deferQueue.filter((q) => q.table === table));
+}
+
+/**
+ * 重放给定的条目集合（**已经被摘出队列**）。
+ *
+ * 拆出来是为了让"摘队"与"重放"是同一段代码：摘错了条目（漏摘 / 多摘）
+ * 是这类队列最难查的 bug，而摘与放写在两处必然有一天会对不上。
+ */
+function replaySpecific(table: string, mine: DeferredWrite[]): void {
   if (mine.length === 0) return;
-  deferQueue = deferQueue.filter((q) => q.table !== table);
+  const picked = new Set(mine);
+  deferQueue = deferQueue.filter((q) => !picked.has(q));
   // 严格按入队顺序重放：`filter` 本来就保持相对顺序，但这里**显式**排一次序 ——
   // 免得将来有人换了队列结构，把"顺序"这条保证悄悄弄丢。
   mine
     .sort((a, b) => a.seq - b.seq)
-    .forEach((item) =>
-      persistWriteThrough(item.table, item.cmd, item.params, item.scope, item.note, item.applyLocally),
-    );
+    .forEach((item) => persistWriteThrough(item.table, item.cmd, undefined, item.scope, item.note, item));
 }
 
-/** 还压在队列里的写条数（诊断/测试用） */
-export function deferredWriteStats(): { pending: number; dropped: number } {
-  return { pending: deferQueue.length, dropped: deferredDropped };
+/**
+ * 队列诊断（X-2 第 3 条）。
+ *
+ * 要能回答三个问题：**现在有几张表在排队、各自多少、有多少被老化丢弃**。
+ * - `pending`：总条数；`tables`：按表的分布（`{ 表名: 条数 }`）；
+ * - `dropped`：**从未入队**的条数（单表 / 全局额度满了）；
+ * - `expired`：入过队、但**滞留超过 `DEFER_STALE_MS` 被放弃**的条数。
+ *
+ * `dropped` 与 `expired` 分开：前者是"压根没排上"，后者是"排上了但一直没成" ——
+ * 排查时这是两条完全不同的线索（后者意味着**某张表再也加载不出来**）。
+ *
+ * ⚠️ 调用它会**结算一次老化**（并可能产生上报）：它是"有人来看了"的信号，
+ * 顺手把滞留条目结清比让它们继续谎报"已接手"好。这也让"过没过期"可测。
+ */
+export function deferredWriteStats(): {
+  pending: number;
+  dropped: number;
+  expired: number;
+  tables: Record<string, number>;
+} {
+  sweepDeferQueue();
+  const tables: Record<string, number> = {};
+  for (const q of deferQueue) tables[q.table] = (tables[q.table] ?? 0) + 1;
+  return { pending: deferQueue.length, dropped: deferredDropped, expired: deferredExpired, tables };
 }
 
 /** 清空写队列（**仅供测试**：避免用例之间通过模块级状态串味） */
@@ -242,6 +437,7 @@ export function __resetDeferredWritesForTests(): void {
   deferQueue = [];
   deferSeq = 0;
   deferredDropped = 0;
+  deferredExpired = 0;
 }
 
 /**
@@ -249,13 +445,23 @@ export function __resetDeferredWritesForTests(): void {
  *
  * 顺序不能改：**先更新本地镜像、再写穿**。镜像是读路径的即时可见性来源 ——
  * 反过来（等 IPC 回来再改镜像）就会出现"写完读不到自己刚写的内容"这种最难查的时序 bug。
+ *
+ * ## 两个参数为什么在"重放"时和"当场写"时不一样（X-1）
+ *
+ * - `params`：当场写时调用方已经算好了条件；重放时由
+ *   `resolveDeferredAtReplay` 在**已就绪的镜像上**现算（`resolved` 给了就用它）。
+ * - `deferred`：给了就说明这是重放。范围删除的"本地删除"因此从**入队时**
+ *   挪到了这里 —— 入队那一刻镜像还不存在，删不了任何东西；而"重放却不按 where 删本地"
+ *   会把刚加载回来的整表清空（早先的注释正是这么写的，所以那条路干脆什么都不写，
+ *   于是既没本地删除、也没写穿，只留下一条假审计）。
  */
 function persistWriteThrough(
   table: string,
   cmd: string,
-  params: Record<string, unknown>,
+  params: Record<string, unknown> | undefined,
   scope: string,
   note: string,
+  deferred?: DeferredWrite,
   applyLocally = true,
 ): void {
   const port = domainMirror(table);
@@ -264,18 +470,39 @@ function persistWriteThrough(
     reportPersistFailure(scope, new Error("域写重放时端口已不在"), note);
     return;
   }
+  /*
+   * 重放：条件在**已就绪的镜像上现算**。`null` = 这次排队无事可做
+   * （例如谓词一行都不匹配）—— 不发命令、不记审计。
+   * 绝不发空条件删除：真引擎会拒绝，而审计却会记成"删过 T 表"（X-1 的假证据）。
+   */
+  const resolved = deferred ? resolveDeferredAtReplay(port, deferred) : params;
+  if (!resolved) return;
   if (applyLocally && cmd === "crud.upsert") {
-    const rows = (params.rows as Array<Record<string, unknown>> | undefined) ?? [];
+    const rows = (resolved.rows as Array<Record<string, unknown>> | undefined) ?? [];
     port.domains.applyWriteMany(table, rows);
   } else if (applyLocally && cmd === "crud.delete") {
-    port.domains.applyDelete(table, (params.where as Record<string, unknown> | undefined) ?? {});
+    // `deleteWhere` 的镜像删除就是**按算出来的 where** 删（底层就是"按谓词删"），
+    // 不需要第二套 API；这与当场写路径的 `applyDelete` 是同一条规则。
+    port.domains.applyDelete(table, (resolved.where as Record<string, unknown> | undefined) ?? {});
   }
+  const ids = resolved._ids as string[] | undefined;
+  const lineParams = pickLineParams(resolved);
+  recordWrite(cmd, lineParams);
   /*
-   * `deleteWhere` 的本地删除已经由 `domainDeleteWhere` 在**排队时**做完
-   * （它需要 `applyDeleteWhere` 的"删了几行"作为返回值），这里只补写穿。
+   * 条件里可能有"一次删多个 id"的形状（`{ in: [...] }`）：线协议/引擎侧的
+   * `where` 只支持**等值**匹配（`crud.rs::crud_delete`），所以这里必须拆成
+   * 一条一个 id 的命令 —— 发一条引擎认不出来的条件，等于什么都没删而审计已经记上。
    */
-  recordWrite(cmd, params);
-  void port.data.execute(cmd, params).catch((e) => reportPersistFailure(scope, e, note));
+  if (ids && ids.length > 0) {
+    const key = String(resolved._key ?? "id");
+    for (const id of ids) {
+      void port.data
+        .execute(cmd, { table, where: { [key]: id } })
+        .catch((e) => reportPersistFailure(scope, e, note));
+    }
+    return;
+  }
+  void port.data.execute(cmd, resolved).catch((e) => reportPersistFailure(scope, e, note));
 }
 
 /**
@@ -513,8 +740,7 @@ export function domainWrite(
   return deferWrite({
     table,
     op: "write",
-    rows,
-    applyLocally: true,
+    key: "id",
     cmd: "crud.upsert",
     params,
     scope: opts.scope,
@@ -550,8 +776,7 @@ export function domainDelete(
   return deferWrite({
     table,
     op: "delete",
-    where,
-    applyLocally: true,
+    key: "id",
     cmd: "crud.delete",
     params,
     scope: opts.scope,
@@ -647,8 +872,13 @@ export function domainReplaceTable(
   const port = domainMirror(table);
   if (!port) return false;
   if (!port.domains.isReady(table)) {
-    // 整表替换没有"排队"形态：它要先把旧集合**全量**读出来才知道删哪些行，
-    // 而本函数拿不到那一份（调用方传的是新集合）。未就绪时如实返回 false。
+    /*
+     * 整表替换没有"排队"形态：它要先把旧集合**全量**读出来才知道删哪些行，
+     * 而本函数拿不到那一份（调用方传的是新集合）。未就绪时如实返回 false。
+     *
+     * （X-1 复查：这条路**不产生队列条目**，所以不存在"排队了却什么都不写"的形态。
+     * 队列里别的条目由加载完成时的 `replayDeferred` 负责，与这里无关。）
+     */
     return false;
   }
   const scope = "domain.replaceTable";
@@ -692,6 +922,27 @@ export function domainReplaceTable(
  * 本地先删还有一个必须性：这类清理常常是**先写新行、再顺手清旧行**，
  * 若等到写穿返回才删本地，调用方紧接着的同步读就会看到"早该过期的行"。
  *
+ * ## 加载窗口里（排队）的语义 —— X-1 修的是这里
+ *
+ * 入队发生在镜像**还没加载回来**的时刻，所以：
+ *
+ * - 目标 id 集合**不可能在入队时算出来**（那一刻 `all()` 是空的，算出来恒是空集），
+ *   只能把**谓词**存进去，等镜像就绪后由 `resolveDeferredAtReplay` 现算；
+ * - 因此"本地删除"也一并从入队时挪到重放时 —— 排队那一刻删不了任何东西。
+ *
+ * 早先的实现把 `params` 存成 `{ table }`（**没有 where**）、`applyLocally: false`，
+ * 于是重放发出的是**空条件删除**：真引擎明确拒绝（`crud.rs::crud_delete`：
+ * "删除必须给出 where 条件"）→ 一行都没删，而审计里却留下一条"删过这张表"的
+ * **假证据**（连带后果比什么也没做更坏：排查时会以为删除路径是通的）。
+ * 并且它连本地镜像都没删，调用方拿到的 `null` 之后紧接着的读会看到"早该消失的行"。
+ *
+ * ## `null` 仍然是"未接手"（以及它为什么不矛盾）
+ *
+ * 排队分支返回 `null`：**本次同步调用确实什么都没删**（镜像还没到手上），
+ * 调用方的"未接手"分支是对阅读者诚实的（例如 `inbox-storage.ts` 会如实上报一次
+ * "过期通知未清理"）。区别在于：现在这次删除**真的会到库里执行**，
+ * 而不是像早先那样只留一条审计 —— 宁多一条偏保守的告警，也不要静默丢数据。
+ *
  * @returns 被删除的行数；未路由（未接手）时返回 `null`，调用方回退旧路径
  */
 export function domainDeleteWhere(
@@ -714,6 +965,7 @@ export function domainDeleteWhere(
    */
   const port = domainPort(table, opts);
   if (!port) {
+    // 兜底那次判断仍然要"顺带发起加载"（`domainMirror` 会注册 onLoaded 回调）
     const mirror = domainMirror(table, opts);
     if (!mirror?.domains.isLoading?.(table)) return null;
     deferWrite({
@@ -721,10 +973,8 @@ export function domainDeleteWhere(
       op: "deleteWhere",
       match,
       key,
-      // 本地删除已在排队时做完（见下面的说明），重放只补写穿
-      applyLocally: false,
       cmd: "crud.delete",
-      params: { table },
+      // 没有 params：条件要到重放那一刻、在**已就绪的镜像上**才有得算（见文件头说明）
       scope: opts.scope,
       note: opts.note,
     });
