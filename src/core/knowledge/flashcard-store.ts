@@ -15,6 +15,8 @@ import {
   domainReadMany,
   domainReadOne,
   domainWrite,
+  shouldFallbackToLegacy,
+  writeShouldFallBackToLegacy,
 } from "../storage/domain-store";
 
 // ========== Types ==========
@@ -114,6 +116,11 @@ export function createFlashcard(input: CreateFlashcardInput): Flashcard {
   if (domainWrite(TABLE, [flashcardToWire(created)], { scope: "flashcard.create", note: "闪卡未保存" })) {
     return getFlashcard(id) ?? created;
   }
+  /*
+   * B 态（端口在、镜像未就绪）：不写旧库，如实上报并返回已构造的对象
+   * （镜像里那份是有效的，与上面"读回来的那一份"语义一致）。
+   */
+  if (!writeShouldFallBackToLegacy("flashcard.create", "闪卡未保存")) return created;
   const db = getDatabase();
   db.run(
     `INSERT INTO flashcards (id, notebook_id, note_id, front, back, tags, ease_factor, interval_days, repetitions, next_review, created_at, updated_at)
@@ -128,7 +135,8 @@ export function createFlashcard(input: CreateFlashcardInput): Flashcard {
 export function getFlashcard(id: string): Flashcard | undefined {
   const rust = domainReadOne(TABLE, { id }, wireToFlashcard);
   if (rust !== undefined) return rust ?? undefined;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return undefined;
+const db = getDatabase();
   const result = db.exec('SELECT * FROM flashcards WHERE id = ?', [id]);
   if (result.length === 0 || result[0].values.length === 0) return undefined;
   return rowToFlashcard(result[0].values[0]);
@@ -137,7 +145,8 @@ export function getFlashcard(id: string): Flashcard | undefined {
 export function listFlashcards(notebookId: string): Flashcard[] {
   const rust = readFlashcards({ notebook_id: notebookId });
   if (rust) return rust.sort(bySchedule);
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT * FROM flashcards WHERE notebook_id = ? ORDER BY next_review ASC, created_at DESC',
     [notebookId]
@@ -150,7 +159,8 @@ export function listFlashcards(notebookId: string): Flashcard[] {
 export function listFlashcardsByNote(noteId: string): Flashcard[] {
   const rust = readFlashcards({ note_id: noteId });
   if (rust) return rust.sort(bySchedule);
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT * FROM flashcards WHERE note_id = ? ORDER BY next_review ASC, created_at DESC',
     [noteId]
@@ -165,7 +175,8 @@ export function getDueFlashcards(notebookId: string): Flashcard[] {
   if (rust) {
     return rust.filter((c) => c.nextReview <= now).sort((a, b) => a.nextReview - b.nextReview);
   }
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT * FROM flashcards WHERE notebook_id = ? AND next_review <= ? ORDER BY next_review ASC',
     [notebookId, now]
@@ -181,7 +192,8 @@ export function getDueFlashcardsByNote(noteId: string): Flashcard[] {
   if (rust) {
     return rust.filter((c) => c.nextReview <= now).sort((a, b) => a.nextReview - b.nextReview);
   }
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT * FROM flashcards WHERE note_id = ? AND next_review <= ? ORDER BY next_review ASC',
     [noteId, now]
@@ -220,7 +232,8 @@ export function updateFlashcard(id: string, update: Partial<Pick<Flashcard, 'fro
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("flashcard.update", "卡片未更新")) return;
+const db = getDatabase();
   const values: (string | number | null)[] = [];
   if (update.front !== undefined) values.push(update.front);
   if (update.back !== undefined) values.push(update.back);
@@ -238,7 +251,8 @@ export function updateFlashcard(id: string, update: Partial<Pick<Flashcard, 'fro
 
 export function deleteFlashcard(id: string): void {
   if (domainDelete(TABLE, { id }, { scope: "flashcard.delete", note: "闪卡未删除" })) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("flashcard.delete", "卡片未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM flashcards WHERE id = ?', [id]);
 }
 
@@ -250,7 +264,8 @@ export function deleteFlashcardsByNotebook(notebookId: string): void {
     { scope: "flashcard.deleteByNotebook", note: "笔记本的闪卡未删除" },
   );
   if (removed !== null) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("flashcard.deleteByNotebook", "卡片未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM flashcards WHERE notebook_id = ?', [notebookId]);
 }
 
@@ -311,7 +326,8 @@ export function reviewFlashcard(id: string, rating: ReviewRating): void {
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("flashcard.review", "复习记录未保存")) return;
+const db = getDatabase();
   db.run(
     `UPDATE flashcards SET ease_factor = ?, interval_days = ?, repetitions = ?, next_review = ?, updated_at = ? WHERE id = ?`,
     [easeFactor, intervalDays, repetitions, nextReview, now, id]

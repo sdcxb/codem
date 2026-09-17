@@ -7,7 +7,7 @@
 
 import { getDatabase, persistDatabase } from "../storage/database";
 import { runGuarded } from "../storage/write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -101,7 +101,8 @@ export const SquadStorage = {
     if (domainWrite(SQUADS, [squadToWire(created)], { scope: "squad.create", note: "团队未保存" })) {
       return created;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("squad.create", "团队未保存")) return created;
+const db = getDatabase();
     db.run(
       `INSERT INTO squads (id, name, leader_agent_id, instructions, project_id, archived, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
@@ -114,7 +115,8 @@ export const SquadStorage = {
   getById(id: string): SquadRow | null {
     const rust = domainReadOne(SQUADS, { id }, wireToSquad);
     if (rust !== undefined) return rust;
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
     const result = db.exec("SELECT * FROM squads WHERE id = ?", [id]);
     if (result.length === 0) return null;
     return rowToSquad(result[0].values[0], result[0].columns);
@@ -123,7 +125,8 @@ export const SquadStorage = {
   listAll(includeArchived = false): SquadRow[] {
     const rust = domainReadMany(SQUADS, wireToSquad, includeArchived ? undefined : { archived: 0 });
     if (rust) return rust.sort((a, b) => b.updated_at - a.updated_at);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const sql = includeArchived
       ? "SELECT * FROM squads ORDER BY updated_at DESC"
       : "SELECT * FROM squads WHERE archived = 0 ORDER BY updated_at DESC";
@@ -135,7 +138,8 @@ export const SquadStorage = {
   listByProject(projectId: string): SquadRow[] {
     const rust = domainReadMany(SQUADS, wireToSquad, { project_id: projectId, archived: 0 });
     if (rust) return rust.sort((a, b) => b.updated_at - a.updated_at);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec(
       "SELECT * FROM squads WHERE project_id = ? AND archived = 0 ORDER BY updated_at DESC",
       [projectId],
@@ -175,7 +179,8 @@ export const SquadStorage = {
       return;
     }
 
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("squad.update", "团队未更新")) return;
+const db = getDatabase();
     const values: any[] = [];
     for (const key of fields) values.push((updates as Record<string, unknown>)[key]);
     values.push(Date.now());
@@ -200,7 +205,8 @@ export const SquadStorage = {
       });
       return;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("squad.archive", "团队归档状态未更新")) return;
+const db = getDatabase();
     runGuarded(db, "UPDATE squads SET archived = 1, updated_at = ? WHERE id = ?", [Date.now(), id],
       { table: "squads", op: "archive", id, from: "archiveSquad" });
     persistDatabase();
@@ -208,7 +214,8 @@ export const SquadStorage = {
 
   delete(id: string): void {
     if (domainDelete(SQUADS, { id }, { scope: "squad.delete", note: "团队未删除" })) return;
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("squad.delete", "团队未删除")) return;
+const db = getDatabase();
     db.run("DELETE FROM squads WHERE id = ?", [id]);
     persistDatabase();
   },
@@ -225,7 +232,8 @@ export const SquadStorage = {
     if (domainWrite(MEMBERS, [memberToWire(created)], { scope: "squad.addMember", note: "团队成员未保存" })) {
       return created;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("squad.addMember", "团队成员未添加")) return created;
+const db = getDatabase();
     db.run(
       `INSERT INTO squad_members (id, squad_id, member_type, member_id, member_name, role_description, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -238,7 +246,8 @@ export const SquadStorage = {
   getMembers(squadId: string): SquadMemberRow[] {
     const rust = domainReadMany(MEMBERS, wireToSquadMember, { squad_id: squadId });
     if (rust) return rust.sort((a, b) => a.created_at - b.created_at);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec("SELECT * FROM squad_members WHERE squad_id = ? ORDER BY created_at ASC", [squadId]);
     if (result.length === 0) return [];
     return result[0].values.map((row) => rowToMember(row, result[0].columns));
@@ -246,7 +255,8 @@ export const SquadStorage = {
 
   removeMember(memberId: string): void {
     if (domainDelete(MEMBERS, { id: memberId }, { scope: "squad.removeMember", note: "团队成员未移除" })) return;
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("squad.removeMember", "团队成员未移除")) return;
+const db = getDatabase();
     db.run("DELETE FROM squad_members WHERE id = ?", [memberId]);
     persistDatabase();
   },
@@ -262,7 +272,8 @@ export const SquadStorage = {
       });
       return;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("squad.updateMemberRole", "成员角色未更新")) return;
+const db = getDatabase();
     runGuarded(db, "UPDATE squad_members SET role_description = ? WHERE id = ?", [roleDescription, memberId],
       { table: "squad_members", op: "update-role", id: memberId, from: "updateMemberRole" });
     persistDatabase();

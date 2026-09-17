@@ -15,6 +15,7 @@
 
 import { getDatabase, persistDatabase } from "./database";
 import { getStoragePort, hasStoragePort } from "./port";
+import { shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-store";
 
 // ========== 迁移期：事件镜像分流（P3 第 4 段） ==========
 //
@@ -421,7 +422,8 @@ export class EventLog {
   readAll(sessionId: string): SessionEvent[] {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readAll(sessionId).map(toSessionEvent);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec(
       "SELECT seq, session_id, event_type, payload, timestamp FROM session_events WHERE session_id = ? ORDER BY seq ASC",
       [sessionId],
@@ -445,7 +447,8 @@ export class EventLog {
   readFrom(sessionId: string, fromSeq: number): SessionEvent[] {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readFrom(sessionId, fromSeq).map(toSessionEvent);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec(
       "SELECT seq, session_id, event_type, payload, timestamp FROM session_events WHERE session_id = ? AND seq >= ? ORDER BY seq ASC",
       [sessionId, fromSeq],
@@ -468,7 +471,8 @@ export class EventLog {
   readRange(sessionId: string, fromSeq: number, toSeq: number): SessionEvent[] {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readRange(sessionId, fromSeq, toSeq).map(toSessionEvent);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec(
       "SELECT seq, session_id, event_type, payload, timestamp FROM session_events WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC",
       [sessionId, fromSeq, toSeq],
@@ -492,7 +496,8 @@ export class EventLog {
   getLatestSeq(sessionId: string): number {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.latestSeq(sessionId);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return 0;
+const db = getDatabase();
     const result = db.exec(
       "SELECT MAX(seq) FROM session_events WHERE session_id = ?",
       [sessionId],
@@ -508,7 +513,8 @@ export class EventLog {
   count(sessionId: string): number {
     const routed = rustEventPort(sessionId);
     if (routed && routed.events.isLoaded(sessionId)) return routed.events.count(sessionId);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return 0;
+const db = getDatabase();
     const result = db.exec(
       "SELECT COUNT(*) FROM session_events WHERE session_id = ?",
       [sessionId],
@@ -557,7 +563,8 @@ export class EventLog {
       return prepared.length;
     }
 
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return 0;
+const db = getDatabase();
     const timestamp = Date.now();
 
     db.run("BEGIN TRANSACTION");
