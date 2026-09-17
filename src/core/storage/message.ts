@@ -228,8 +228,24 @@ if (!port?.messages) return out;
 const { durableMessageIds, flushSessionLogWrites } = await import("./session-jsonl");
 await flushSessionLogWrites();
 
-const sessionRows = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
-for (const row of sessionRows) {
+const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) => r);
+  /*
+   * **未就绪 ≠ 没有会话**（第 44 轮）。
+   *
+   * 这里原来写 `?? []`：域镜像没就绪时清单为空 → 循环一次都不进 → 函数返回全 0，
+   * 而调用方（启动维护）看到的是"索引裁剪 0 条" —— **与"确实没什么可裁"完全一样**。
+   * 这个维护步骤已经因为另一处缺陷（同步判镜像就绪）在真机上从未执行过，
+   * 而这一条会让它在"另一种未就绪形态"下继续静默 no-op。如实上报之后两者分得开。
+   */
+  if (sessionsMirror === undefined) {
+    reportPersistFailure(
+      "message.trimIndexedMessages",
+      new Error("sessions 域镜像未就绪"),
+      "本次索引裁剪整体跳过（未就绪不等于没有会话；下次维护会重试）",
+    );
+    return out;
+  }
+  for (const row of sessionsMirror) {
   const sessionId = String(row.id ?? "");
   if (!sessionId) continue;
   try {
