@@ -579,6 +579,14 @@ const createMessageMock = vi.fn();
 
 vi.mock("../core/storage/message", () => ({
   listMessages: (...args: any[]) => listMessagesMock(...args),
+  /**
+   * 第 47 轮（功能上下文审计 P2-D12）：`ContextMonitor` 现在按**模型侧同一口径**
+   * 读可见消息（`listVisibleMessages`，见 `message.ts:757`），不再用 `listMessages`
+   * 自己 `filter(!hidden)`。测试双必须跟着补齐 —— 只 mock `listMessages` 的话
+   * 这个函数在组件里是 `undefined`，面板直接渲染不出来（表现为"按钮不存在"，
+   * 而不是"断言失败"，很难定位）。
+   */
+  listVisibleMessages: (...args: any[]) => listMessagesMock(...args),
   deleteMessagesByIds: (...args: any[]) => deleteMessagesByIdsMock(...args),
   createMessage: (...args: any[]) => createMessageMock(...args),
 }));

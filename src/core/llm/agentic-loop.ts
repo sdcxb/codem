@@ -23,7 +23,7 @@ import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guar
 import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
-import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId } from "./compaction-budget";
+import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority } from "./compaction-budget";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
@@ -3080,96 +3080,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
   /**
    * E6: Priority-based message selection when context exceeds token budget.
    *
-   * Priority levels:
-   *   4 (CRITICAL) — Compaction markers (summaries of past context)
-   *   3 (HIGH)     — User messages (original intent must be preserved)
-   *   2 (MEDIUM)   — Assistant messages with tool calls, recent tool results
-   *   1 (LOW)      — Old tool results, old assistant text-only messages
-   *
-   * Selection strategy: greedy by priority, then by recency within each tier.
-   * Large tool results are truncated if budget is tight.
+   * 第 47 轮（P2-D8/D12）：实现搬到 `compaction-budget.ts::selectMessagesByPriority` ——
+   * `ContextMonitor` 面板要显示"模型实际收到的上下文占用"，就必须与循环用**同一份**
+   * 选择算法；两份实现在这种地方必然分叉（面板显示 130%、模型其实只收到一半）。
+   * 这里保留薄封装，语义与抽取前逐字一致。
    */
   private selectMessagesByPriority(messages: any[], maxTokens: number): any[] {
-    if (messages.length === 0) return [];
-
-    // Estimate tokens for each message with the shared estimator (CJK-aware).
-    const tokens = messages.map((msg) => {
-      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
-      return Math.max(1, Math.ceil(estimateTokens(content)));
-    });
-
-    const totalTokens = tokens.reduce((a, b) => a + b, 0);
-    if (totalTokens <= maxTokens) return [...messages]; // Everything fits
-
-    // Assign priorities
-    const recencyThreshold = Math.floor(messages.length * 0.7);
-    const priorities = messages.map((msg, i) => {
-      const content = typeof msg.content === "string" ? msg.content : "";
-      const isRecent = i >= recencyThreshold ? 1 : 0;
-
-      // Compaction markers — CRITICAL
-      if (msg.role === "user" && content.startsWith("[上下文已自动压缩]")) return 4;
-      // User messages — HIGH
-      if (msg.role === "user") return 3;
-      // Assistant with tool calls — MEDIUM
-      if (msg.role === "assistant" && (msg as any).tool_calls) return 2 + isRecent;
-      // Tool results — LOW-MEDIUM
-      if (msg.role === "tool") return 1 + isRecent;
-      // Assistant text-only — LOW
-      return 1 + isRecent;
-    });
-
-    // Greedy selection: keep by priority tier, most recent first within each tier
-    const selected = new Set<number>();
-    let usedTokens = 0;
-
-    // Tier 1: CRITICAL + HIGH (always keep)
-    for (let i = 0; i < messages.length; i++) {
-      if (priorities[i] >= 3) {
-        selected.add(i);
-        usedTokens += tokens[i];
-      }
-    }
-
-    // Tier 2: MEDIUM (most recent first)
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (priorities[i] >= 2 && !selected.has(i)) {
-        if (usedTokens + tokens[i] <= maxTokens) {
-          selected.add(i);
-          usedTokens += tokens[i];
-        }
-      }
-    }
-
-    // Tier 3: LOW (most recent first)
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (!selected.has(i)) {
-        if (usedTokens + tokens[i] <= maxTokens) {
-          selected.add(i);
-          usedTokens += tokens[i];
-        }
-      }
-    }
-
-    // Build result preserving order, with truncation for oversized tool results
-    const result: any[] = [];
-    for (let i = 0; i < messages.length; i++) {
-      if (!selected.has(i)) continue;
-      let msg = messages[i];
-      // Truncate very large tool results if over 90% budget
-      if (msg.role === "tool" && usedTokens > maxTokens * 0.9) {
-        const content = typeof msg.content === "string" ? msg.content : "";
-        if (content.length > 5000) {
-          const truncated = content.substring(0, 2000) + "\n...(truncated for context budget)";
-          usedTokens -= tokens[i];
-          usedTokens += Math.max(1, Math.ceil(estimateTokens("x".repeat(2000))));
-          msg = { ...msg, content: truncated };
-        }
-      }
-      result.push(msg);
-    }
-
-    return result;
+    return selectMessagesByPriority(messages, maxTokens);
   }
 
   /**
@@ -3251,7 +3168,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
    */
   private async compactMessages(sessionId: string): Promise<number> {
     // R3-3.3: Acquire compaction lock — prevent concurrent compaction
-    const { acquireCompactionLock, releaseCompactionLock, isCompactionBoundarySafe } =
+    const { acquireCompactionLock, releaseCompactionLock } =
       await import("./compaction-control");
     if (!acquireCompactionLock(sessionId)) {
       console.log("[compactMessages] Compaction already in progress, skipping");
@@ -3259,7 +3176,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     }
 
     try {
-      const result = await this.doCompactMessages(sessionId, isCompactionBoundarySafe);
+      const result = await this.doCompactMessages(sessionId);
       return result;
     } finally {
       releaseCompactionLock(sessionId);
@@ -3274,10 +3191,15 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     return alignKeepToRoundBoundary(messages, desiredCount);
   }
 
-  private async doCompactMessages(
-    sessionId: string,
-    isBoundarySafe: (events: any[], seq: number) => { safe: boolean; reason?: string },
-  ): Promise<number> {
+  /**
+   * 第 47 轮（P2-D13）：这里原来还有一个形参
+   * `isBoundarySafe: (events, seq) => {…}`，由 `compaction-control.isCompactionBoundarySafe`
+   * 传进来 —— **函数体里一次都没用过**（于是"事件日志侧的配对边界检查"在这条路径上
+   * 形同虚设，而读代码的人会以为它在检查）。已删除；真实消费者清单写在
+   * `compaction-control.ts::isCompactionBoundarySafe` 的注释里（唯一真消费者是
+   * `repairCrashedSession`）。消息侧的边界对齐由 `alignKeepBoundary` 负责。
+   */
+  private async doCompactMessages(sessionId: string): Promise<number> {
     const allMessages = this.getMessageStorage().listMessages(sessionId);
     // Only consider visible (non-hidden) messages for compaction
     const messages = allMessages.filter((m: any) => !m.hidden);

@@ -45,6 +45,30 @@ export function releaseCompactionLock(sessionId: string): void {
  * 不能落在：
  * - tool_call 和 tool_result 之间
  * - assistant 消息的中间
+ *
+ * ## ⚠️ 生产路径上的真实消费者清单（第 47 轮 P2-D13：形参零使用的收口）
+ *
+ * 这个文件里两个"边界检查"函数的调用情况**必须说清楚**，因为原来不是：
+ *
+ * | 函数 | 生产消费者 | 说明 |
+ * | --- | --- | --- |
+ * | `acquireCompactionLock` / `releaseCompactionLock` | `agentic-loop.ts::compactMessages` | 真的在用（防并发压缩） |
+ * | `repairCrashedSession` | `agentic-loop.ts:822` | **唯一的真消费者**：每次 `run()` 修崩溃遗留的未配对工具调用 |
+ * | `isCompactionBoundarySafe` / `findSafeCompactionBoundary` | **无**（只有 `dsh-integration-full.test.ts` 的用例） | 见下 |
+ *
+ * `AgenticLoop.doCompactMessages` 原来把 `isCompactionBoundarySafe` 当**形参**收进去，
+ * 函数体里从没用过它（`grep` 该标识符在函数体内零命中）—— 一个"看起来在做事件侧配对
+ * 边界检查、实际什么都没做"的参数。**现在那个形参已删除**（`doCompactMessages(sessionId)`）。
+ *
+ * 为什么不是"真的在选点处调用它"：这条压缩路径工作在**消息**上
+ * （`listMessages`→`foldStaleCompactionMarkers`→`alignKeepToRoundBoundary`），
+ * 而 `isCompactionBoundarySafe(events, cutAtSeq)` 的入参是**事件 seq**。
+ * 消息与事件之间没有可用的 seq 映射（`SessionEvent.seq` 是引擎侧的全局序号，
+ * 消息行里不带它），硬接就得先猜一个 seq —— 那会让"边界安全"这个结论建立在猜测上，
+ * 比不检查更糟。消息侧的轮次/工具配对对齐由 `alignKeepToRoundBoundary`
+ * （`compaction-budget.ts:92`）负责，它按角色对齐，本来就不会切进 tool_result 中间。
+ * 所以这里保留这两个**纯函数**（用例守着，未来事件侧压缩要接时是现成的判据），
+ * 但如实标注"当前无生产消费者"。
  */
 export function isCompactionBoundarySafe(
   events: SessionEvent[],

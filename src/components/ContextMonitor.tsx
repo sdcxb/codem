@@ -1,10 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { getContextManager, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
-import { listMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
+import { listVisibleMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
-import { foldStaleCompactionMarkers, nextCompactionMarkerId } from "../core/llm/compaction-budget";
+import {
+  foldStaleCompactionMarkers,
+  nextCompactionMarkerId,
+  renderStructuredHistorySummary,
+  summarizeModelContext,
+} from "../core/llm/compaction-budget";
+import { getTokenTracker } from "../core/llm/token-tracker";
+import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
 
@@ -79,11 +86,36 @@ async function fetchDeepSeekBalance(apiKey: string, baseUrl: string): Promise<{ 
  *
  * 导出是为了让"手动压缩"这条数据路径可以被用例直接驱动
  * （`src/test/feature-context-fixes.test.ts` 的 FC-D5* 就是对着它跑的）。
+ *
+ * ## 第 47 轮修正（功能上下文审计 P2-D8）：摘要不再是"100 字符截断拼接"
+ *
+ * 原来这里自己拼摘要：
+ * ```ts
+ * const snippet = (msg.content || "").substring(0, 100);   // ← 从中间切断代码/路径/命令
+ * summaryParts.push(`- 工具调用: ${tc.tool}`);              // ← 只有名字，参数与结果全丢
+ * if (summary.length > 1000) summary = summary.substring(0, 1000) + "\n...(更多历史已省略)";
+ * ```
+ * 一个几十万 token 的会话被压成 ≤1000 字符的无结构列表 —— 与自动路径的 LLM 结构化检查点
+ * **不可比**，恢复工作时既不知道动过哪些文件、也不知道报过什么错。
+ *
+ * 现在改用共享渲染器 `renderStructuredHistorySummary`（`compaction-budget.ts`）：
+ * 每条消息的正文上限从 100 提到 2000/1500（实际内容基本完整），工具调用保留
+ * **名字 / 参数 / 结果**三段，并抽出 `涉及文件` / `错误` / `待办` 三段可检索结论；
+ * 超限时按段显式标记省略了多少字符（不再静默砍尾）。
+ *
+ * ⚠️ 诚实交代：这里仍然**不调 LLM**（手动压缩是同步动作，面板按钮不该等一次模型调用），
+ * 所以它与自动路径**不是同一种摘要**：自动路径是 LLM 检查点，这里是确定性结构化摘要。
+ * 但两者的**渲染契约**（段名、显式上限、不丢路径/错误/待办）已经统一，
+ * 且这里的摘要会作为级联输入带进下一次自动压缩（`folded.existingSummary`）。
  */
 export function manualCompact(sessionId: string): { removed: number; kept: number } {
-  const allMessages = listMessages(sessionId);
-  // Only consider visible messages for compaction
-  const messages = allMessages.filter((m: any) => !(m as any).hidden);
+  /**
+   * P2-D12：可见消息的**唯一读法**是 `listVisibleMessages` ——
+   * `listMessages` 会把软删（压缩隐藏）的历史也带回来，用它算"要压缩多少条／
+   * 压缩后剩多少条"口径就与模型看到的集合不一致（模型侧读的是 `listMessages` 后
+   * `filter(!hidden)`，见 `agentic-loop.ts::buildMessages`）。
+   */
+  const messages = listVisibleMessages(sessionId);
   if (messages.length <= 2) return { removed: 0, kept: messages.length };
 
   const keepCountPlanned = Math.min(20, messages.length);
@@ -98,26 +130,8 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
 
   if (messagesToRemove.length === 0) return { removed: 0, kept: messages.length };
 
-  // Build summary
-  let summaryParts: string[] = [];
-  for (const msg of messagesToRemove) {
-    if (msg.role === "user") {
-      const snippet = (msg.content || "").substring(0, 100);
-      if (snippet.trim()) summaryParts.push(`- 用户请求: ${snippet}`);
-    } else if (msg.role === "assistant") {
-      const snippet = (msg.content || "").substring(0, 100);
-      if (snippet.trim()) summaryParts.push(`- AI回复: ${snippet}`);
-      if (msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
-          summaryParts.push(`- 工具调用: ${tc.tool}`);
-        }
-      }
-    }
-  }
-  let summary = summaryParts.join("\n");
-  if (summary.length > 1000) {
-    summary = summary.substring(0, 1000) + "\n...(更多历史已省略)";
-  }
+  // Build summary —— 见函数头第 47 轮说明：共享的结构化渲染器（不再 100 字符截断拼接）
+  let summary = renderStructuredHistorySummary(messagesToRemove);
   /**
    * 上一次压缩的摘要必须**原样带进新摘要**（级联），否则手动压缩第二次开始就把
    * 前一次的结论丢掉。折叠逻辑已经把它取出来了（`folded.existingSummary`）。
@@ -216,13 +230,50 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           return;
         }
 
-        const messages = listMessages(sessionId);
-        setMessageCount(messages.length);
+        /**
+         * ## 第 47 轮（功能上下文审计 P2-D12）：“消息数 / 占用”必须与送往模型的口径一致
+         *
+         * 改前：
+         * ```ts
+         * const messages = listMessages(sessionId);      // ← 含软删的压缩隐藏行 + 被裁历史
+         * setMessageCount(messages.length);
+         * const b = contextManager.calculateBudgetFromMessages(messages);   // ← 面板自己一套口径
+         * ```
+         * 模型侧的真实口径是三层（`agentic-loop.ts::buildMessages`）：
+         * `listMessages` → `filter(!hidden)` → `pruneStaleToolResults` →
+         * `selectMessagesByPriority(预算 = 真实窗口 × 0.9)`。
+         * 于是面板的数字与"模型到底收到多少"是两回事（压缩过 200 条的会话会显示成
+         * 200 条更多、占用率虚高），而这个面板存在的意义就是回答"上下文还剩多少"。
+         *
+         * 改后：
+         * - **消息数** = `listVisibleMessages(sessionId).length`（与模型侧同一个入口，
+         *   不含软删行；`listMessages` 只用于拿"库里总共多少行"的对照，不再当模型口径）；
+         * - **占用** = 完全按模型侧那条链算：可见 → 裁剪陈旧大工具结果 → 按优先级选进
+         *   "真实窗口 × 0.9"的预算（`summarizeModelContext`，与循环共用同一份选择算法）。
+         *   于是"占用"= **模型这一次真的会收到的消息的估算 token**，
+         *   而不是"库里所有行的估算 token"。
+         */
+        const visible = listVisibleMessages(sessionId);
+        setMessageCount(visible.length);
 
+        const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
+        const { usedTokens, budgetTokens } = summarizeModelContext(
+          pruneStaleToolResults(visible as any[]),
+          contextWindow,
+        );
+        /**
+         * `calculateBudgetFromMessages` / `getPressureLevelFromMessages` 仍然用**同一份可见列表**
+         * 计算（它们读的是"消息集合"，不是"库里有多少行"）—— 口径与上面一致。
+         */
         const contextManager = getContextManager();
-        const b = contextManager.calculateBudgetFromMessages(messages);
-        setBudget(b);
-        setPressure(contextManager.getPressureLevelFromMessages(messages));
+        const b = contextManager.calculateBudgetFromMessages(visible as any[]);
+        setBudget({
+          ...b,
+          used: usedTokens,
+          available: budgetTokens,
+          remaining: Math.max(0, budgetTokens - usedTokens),
+        });
+        setPressure(contextManager.getPressureLevelFromMessages(visible as any[]));
       } catch (e) {
         console.error("[ContextMonitor] update failed:", e);
       }
@@ -317,13 +368,18 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       await Promise.resolve();
       const result = manualCompact(sessionId);
       setCompactResult(result);
-      // Trigger a refresh
-      const messages = listMessages(sessionId);
-      setMessageCount(messages.length);
+      // Trigger a refresh —— 与上面 update() 同一口径（可见消息 + 模型侧选择，P2-D12）
+      const visible = listVisibleMessages(sessionId);
+      setMessageCount(visible.length);
       const contextManager = getContextManager();
-      const b = contextManager.calculateBudgetFromMessages(messages);
-      setBudget(b);
-      setPressure(contextManager.getPressureLevelFromMessages(messages));
+      const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
+      const { usedTokens, budgetTokens } = summarizeModelContext(
+        pruneStaleToolResults(visible as any[]),
+        contextWindow,
+      );
+      const b = contextManager.calculateBudgetFromMessages(visible as any[]);
+      setBudget({ ...b, used: usedTokens, available: budgetTokens, remaining: Math.max(0, budgetTokens - usedTokens) });
+      setPressure(contextManager.getPressureLevelFromMessages(visible as any[]));
     } catch (e) {
       // 失败必须可见：既有上报通道（kind=action：这次压缩没生效）+ 组件内提示
       const detail = e instanceof Error ? e.message : String(e);
@@ -375,8 +431,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
             <span className="context-stat-value">{budget.remaining.toLocaleString()} tokens</span>
           </div>
           <div className="context-stat">
-            <span className="context-stat-label">消息数</span>
-            <span className="context-stat-value">{messageCount}</span>
+            <span className="context-stat-label" title="与模型侧同一口径：listVisibleMessages（不含压缩隐藏的历史）">消息数</span>
+            <span className="context-stat-value" title="送往模型的消息条数（与模型的可见集合一致）">{messageCount}</span>
           </div>
           <div className="context-stat">
             <span className="context-stat-label">今日费用</span>
