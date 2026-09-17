@@ -76,7 +76,20 @@ function toStorageError(e: unknown, fallbackMessage: string): StorageError {
     const code = (KNOWN_CODES as readonly string[]).includes(wire.code)
       ? (wire.code as StorageErrorCode)
       : "OTHER";
-    return new StorageError(code, wire.message ?? fallbackMessage, { detail: wire.hint });
+    /*
+     * **引擎的 `retryable` 优先**（第 45 轮线协议审计 P2-5）。
+     *
+     * 它就在线协议里（`storage.rs` 转发 `DbError.retryable`），此前被这里丢掉、
+     * 改用 `StorageError` 构造函数里那张按 `code` 重算的本地表。两边不一致时，
+     * 唯一知道"这次失败的真实原因是不是瞬时的"的是引擎 —— 丢掉它的判断等于
+     * 让渲染侧一直在重试引擎已经明确说别重试的失败。
+     *
+     * 没带这个字段时（老的假传输 / 手搓错误对象）传 `undefined`，回落到本地表。
+     */
+    return new StorageError(code, wire.message ?? fallbackMessage, {
+      detail: wire.hint,
+      ...(typeof wire.retryable === "boolean" ? { retryable: wire.retryable } : {}),
+    });
   }
   return new StorageError("OTHER", e instanceof Error ? e.message : fallbackMessage);
 }

@@ -49,16 +49,41 @@ const RETRYABLE: ReadonlySet<StorageErrorCode> = new Set<StorageErrorCode>(["BUS
 
 export class StorageError extends Error {
   readonly code: StorageErrorCode;
+  /**
+   * 是否值得重试。
+   *
+   * ## 为什么允许线协议**覆盖**本地表（第 45 轮线协议审计 P2-5）
+   *
+   * 引擎的错误体里**本来就带 `retryable`**（`error.rs` 的 `DbError.retryable`，
+   * `storage.rs` 原样转发），而渲染侧此前把它**丢掉**、只用下面这张本地表按 `code` 重算。
+   * 两边一旦不一致（例如引擎把某类 `IO` 判成不可重试，或反过来把某类 `OTHER` 判成可重试），
+   * 表现是"渲染侧一直在重试一个引擎已经明确说别重试的失败"——**引擎的判断必须优先**，
+   * 因为只有它知道那一刻的真实原因（`retryable` 是它算出来的，不是从 code 推出来的）。
+   *
+   * 线协议没带这个字段时（老的假传输、手搓错误）回落到本地表 —— 保持既有语义不变。
+   */
   readonly retryable: boolean;
-  /** 建议的重试延迟（毫秒，Rust 侧可给） */
+  /**
+   * 建议的重试延迟（毫秒）。
+   *
+   * ⚠️ **当前没有生产者**：`storage.rs` 的错误体只有 `{code, message, retryable, hint}`，
+   * 不含这个字段。`callWithRetry` 会消费它（并夹到 `RETRY_AFTER_CAP_MS`），所以一旦引擎开始
+   * 提供（例如按 `busy_timeout` 算出更准的退避），渲染侧立刻就能用上 ——
+   * 在那之前这条分支是**待接线**状态，不是"活的机制"。写在这里是为了不让下一个人
+   * 以为"引擎已经会给建议延迟了"。
+   */
   readonly retryAfterMs?: number;
   readonly detail?: unknown;
 
-  constructor(code: StorageErrorCode, message: string, opts: { retryAfterMs?: number; detail?: unknown } = {}) {
+  constructor(
+    code: StorageErrorCode,
+    message: string,
+    opts: { retryAfterMs?: number; detail?: unknown; retryable?: boolean } = {},
+  ) {
     super(message);
     this.name = "StorageError";
     this.code = code;
-    this.retryable = RETRYABLE.has(code);
+    this.retryable = opts.retryable ?? RETRYABLE.has(code);
     this.retryAfterMs = opts.retryAfterMs;
     this.detail = opts.detail;
   }
