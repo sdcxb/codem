@@ -40,5 +40,5 @@
     "goals",
     "telemetry_events"
   ],
-  "source": "SCHEMA DDL in src/core/storage/database.ts"
+  "source": "schema.sql（Rust 侧真源，L1 后 renderer 不再持有 schema）"
 }

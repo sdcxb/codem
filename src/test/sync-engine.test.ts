@@ -17,13 +17,6 @@ vi.mock("../core/storage/settings", () => ({
 }));
 
 // Mock database
-vi.mock("../core/storage/database", () => ({
-  getDatabase: vi.fn(() => ({
-    run: vi.fn(),
-    exec: vi.fn(() => []),
-  })),
-  persistDatabase: vi.fn(),
-}));
 
 // Mock event-log
 vi.mock("../core/storage/event-log", () => ({

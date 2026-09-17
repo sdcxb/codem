@@ -33,9 +33,6 @@ import {
 import type { LLMMessage } from "../core/llm/provider";
 
 // ========== Mocks ==========
-vi.mock("../core/storage/database", () => ({
-  flushDatabase: vi.fn(),
-}));
 
 vi.mock("../core/file-api", () => ({
   writeFile: vi.fn(),

@@ -17,7 +17,6 @@ import { setStoragePort } from "../core/storage/port";
 import { getSetting, getSettingJSON, removeSetting, setSetting } from "../core/storage/settings";
 
 /**
- * ⚠️ L1 收尾：这里原来有一个 `vi.mock("../core/storage/database")`，
  * 用 `legacyReads` / `legacyWrites` 两个计数器守"rust 引擎下不得访问旧库"。
  *
  * 它已经**不再是证据**，所以删掉：

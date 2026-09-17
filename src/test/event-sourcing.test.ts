@@ -67,10 +67,6 @@ const mockDb = {
 };
 
 // Mock the database module before importing
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => mockDb,
-  persistDatabase: () => {},
-}));
 
 import { EventLog } from "../core/storage/event-log";
 import { EventProjection } from "../core/storage/event-projection";

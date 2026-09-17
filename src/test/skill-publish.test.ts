@@ -20,9 +20,6 @@ vi.mock("../core/storage/settings", () => ({
   setSettingJSON: vi.fn(),
 }));
 
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => ({ run: vi.fn(), exec: vi.fn().mockReturnValue([]) }),
-}));
 
 vi.mock("../core/skill/skill", () => ({
   getSkillRegistry: () => ({ getAll: () => [], get: () => undefined, register: vi.fn() }),

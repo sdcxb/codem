@@ -5,9 +5,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => ({ run: vi.fn(), exec: vi.fn().mockReturnValue([]) }),
-}));
 
 const mockStore: Record<string, any> = {};
 vi.mock("../core/storage/settings", () => ({

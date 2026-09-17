@@ -9,13 +9,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock storage/database
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => ({
-    run: vi.fn(),
-    exec: vi.fn().mockReturnValue([]),
-  }),
-  persistDatabase: vi.fn(),
-}));
 
 vi.mock("../core/storage/message", () => ({
   listMessages: vi.fn().mockReturnValue([

@@ -1700,7 +1700,6 @@ describe("批次 F: 子智能体状态 + 全局对话 + 性能 + 通知", () => 
   const msgBubbleSrc = fs.readFileSync(path.resolve(__dirname, "../components/MessageBubble.tsx"), "utf-8");
   const sidebarSrc = fs.readFileSync(path.resolve(__dirname, "../components/Sidebar.tsx"), "utf-8");
   const sessionStorageSrc = fs.readFileSync(path.resolve(__dirname, "../core/storage/session.ts"), "utf-8");
-  const dbSrc = fs.readFileSync(path.resolve(__dirname, "../core/storage/database.ts"), "utf-8");
   const settingsPanelSrc = fs.readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf-8");
 
   // ===== F1: SubagentStatus 历史回退 =====
@@ -1745,16 +1744,25 @@ describe("批次 F: 子智能体状态 + 全局对话 + 性能 + 通知", () => 
   });
 
   // ===== F3: 性能优化 - DB 防抖 =====
-  describe("F3: DB 写入防抖", () => {
-    it("saveDatabaseAsync 使用 debounce", () => {
-      expect(dbSrc).toContain("saveDebounceTimer");
-      expect(dbSrc).toContain("clearTimeout");
-    });
-
-    it("flushDatabase 函数存在", () => {
-      expect(dbSrc).toContain("flushDatabase");
-    });
-
+  /**
+   * ⚠️ **第 18 轮（L1 收尾）退休：「saveDatabaseAsync 使用 debounce」与「flushDatabase 函数存在」。**
+   *
+   * 这两条读的是 `core/storage/database.ts` 的源码，断言 `saveDebounceTimer` / `clearTimeout` /
+   * `flushDatabase` —— 那是 **sql.js 的整库落盘防抖**：`saveDatabase()` 每次 `db.export()`
+   * 把**整库**（含 WASM 堆）重新物化一次，代价 O(库大小)，所以必须防抖 + 退出前 flush。
+   * 引擎模块已随 sql.js 删除（渲染进程不再持有整库），这件事在新架构里**没有载体**：
+   * 落盘是 Rust 侧 SQLite 的 WAL + **逐命令事务**，一条写就是一次提交，没有"待落盘的整库"。
+   *
+   * 覆盖移交：
+   * - "不再有整库导出 / 整库落盘" → `db-contract.test.ts` **C7**（命令清单里没有
+   *   `db.export` / `export` / `backup` / `sql.raw`）+ **C1**（`caps.no_whole_file_export === true`）；
+   * - "一次写入要么整体落、要么整体不落" → `db-contract.test.ts` **C15**（批次内一条失败整批不落）
+   *   + Rust 侧 `create_many_is_all_or_nothing` / `upsert_index_replaces_tool_calls_atomically`；
+   * - "退出前把在途写入落盘" → 语义已换到**权威日志**：`App.tsx` 的
+   *   `flushSessionLogWrites()`（原来的 `flushDatabase()`），由
+   *   `session-jsonl-index.test.ts` **SLOG-1**（追加即持久，不需要任何整库导出）等守着。
+   */
+  describe("F3: DB 写入防抖（防抖机制已随旧引擎退休，见上）", () => {
     it("handleNewSession 不再使用嵌套 setTimeout", () => {
       // handleNewSession should be direct calls, not nested setTimeout
       const handleNewSessionMatch = sidebarSrc.match(/handleNewSession[\s\S]*?\n  \};/);

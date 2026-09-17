@@ -5,10 +5,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => ({ run: vi.fn(), exec: vi.fn().mockReturnValue([]) }),
-  persistDatabase: vi.fn(),
-}));
 
 vi.mock("../core/file-api", () => ({
   executeCommand: vi.fn(),

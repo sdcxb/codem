@@ -68,11 +68,12 @@ describe("存储迁移门禁 —— 盘点与 Rust 实现必须对得上", () =>
     expect(coverage.rustCommandCount).toBeGreaterThan(15);
   });
 
-  it("GATE-DB-5: 核心域的**写路径**必须被盘点覆盖（旧库 SQL 或端口调用任一）", () => {
-    // 直接钉住"曾经被漏掉的那一类"：如果旧库正则又退回"引号必须紧跟括号"，这条会立刻红。
-    const legacy = new Set(computeCoverage().done.concat(coverage.pending).map((m: { method: string }) => m.method));
-    // 第 17 轮：写路径已从旧库 SQL 迁到端口（`domainWrite` / `crud.upsert` / `config.set` / 事件发件箱），
-    // 所以判据是"这个域在盘点里**能被看到一处写路径**"，而不是"必须还是 SQL"。
+  it("GATE-DB-5: 核心域的**写路径**必须被盘点覆盖（端口调用）", () => {
+    /**
+     * 第 18 轮（L1 完成）：旧库 SQL **已经归零**，所以这条判据只剩端口这一半 —— 而它仍然有用：
+     * 它守的是"某个域的写路径**在盘点里完全看不到**"这类静默失效（扫描器写坏了 / 有人绕开端口直接写文件）。
+     */
+    expect(coverage.legacySites, "旧库 SQL 调用点应已归零（L1 的终点）").toBe(0);
     const portWrites = new Set(
       coverage.portTableOps
         .filter((o: { method: string }) => /\.(upsert|delete)$/.test(o.method))
@@ -81,13 +82,16 @@ describe("存储迁移门禁 —— 盘点与 Rust 实现必须对得上", () =>
     const portCommands = new Set(coverage.portCommands.map((c: { command: string }) => c.command));
 
     const covered = {
-      messages: legacy.has("messages.update") || legacy.has("messages.insert"),
-      sessions: portWrites.has("sessions") || legacy.has("sessions.insert"),
-      projects: portWrites.has("projects") || legacy.has("projects.insert"),
+      messages: portWrites.has("messages"),
+      sessions: portWrites.has("sessions"),
+      projects: portWrites.has("projects"),
       settings: portCommands.has("settings.set") || portCommands.has("config.set"),
       notebooks: portWrites.has("notebooks"),
-      "session_events": portCommands.has("events.append") || portCommands.has("events.append_batch") || legacy.has("session_events.insert"),
-      attachments: portCommands.has("attachments.update") || legacy.has("attachments.insert"),
+      session_events:
+        portCommands.has("events.append") ||
+        portCommands.has("events.append_batch") ||
+        portCommands.has("events.appendLocal"),
+      attachments: portCommands.has("attachments.update") || portWrites.has("attachments"),
     };
     for (const [domain, ok] of Object.entries(covered)) {
       expect(ok, `域 ${domain} 的写路径在盘点里完全看不到（扫描器漏了写入调用）`).toBe(true);

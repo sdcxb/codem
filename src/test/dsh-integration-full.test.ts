@@ -65,12 +65,6 @@ const mockDb = {
   },
 };
 
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => mockDb,
-  persistDatabase: () => {},
-  initDatabase: vi.fn(),
-  resetDatabase: vi.fn(),
-}));
 
 vi.mock("../core/storage/settings", () => ({
   getSetting: vi.fn().mockReturnValue(null),

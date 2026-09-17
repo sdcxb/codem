@@ -196,15 +196,11 @@ export interface StoragePort {
   readonly kind: "wasm" | "rust";
 }
 
-// ========== 注册表（迁移期可切换） ==========
-
-/**
- * 回滚开关在 localStorage 里的键名。
- *
- * 刻意**不放在数据库里**：如果开关存在数据库里，那么"数据库读不出来"时你就无法回退 ——
- * 而那恰好是最需要回退的时刻。存储层的开关必须住在存储层之外。
- */
-export const STORAGE_ENGINE_KEY = "codem-storage-engine";
+// ========== 注册表（只有一个实现：Rust 端口） ==========
+//
+// 第 18 轮：原来的"回滚开关键名" `STORAGE_ENGINE_KEY` 已删除 —— 开关退役（第 15 轮）之后
+// 它只剩"清理历史 localStorage 键"这一个用途，而那件事在 `settings` 的启动清理里按字符串直接做。
+// 留着一个名叫"引擎开关"的常量，只会让人以为还有开关可拨。
 
 let current: StoragePort | null = null;
 

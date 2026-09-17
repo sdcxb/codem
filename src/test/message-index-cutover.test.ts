@@ -34,19 +34,6 @@ vi.mock("../core/storage/persist-failure", () => ({
 }));
 // 旧库不可用（rust 模式下不该用它）；需要时由测试自己设置
 let legacyQuery = 0;
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    legacyQuery++;
-    return { exec: () => [], run: () => {} };
-  },
-  persistDatabase: () => {},
-  isFts5Available: () => false,
-  isDatabaseFatal: () => false,
-  noteDatabaseError: () => true,
-}));
-vi.mock("../core/storage/write-guard", () => ({
-  runGuarded: () => undefined,
-}));
 vi.mock("../core/storage/event-log", () => ({
   getEventLog: () => ({ append: () => ({ seq: 1 }), appendBatch: () => [] }),
 }));

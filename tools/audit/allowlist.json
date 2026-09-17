@@ -105,10 +105,6 @@
       "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
     },
     {
-      "file": "src/core/storage/database.ts",
-      "reason": "迁移期 WASM 实现本体（sql.js + schema + 整库导出）：P5 删除，届时本条一起删"
-    },
-    {
       "file": "src/core/storage/event-log.ts",
       "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
     },

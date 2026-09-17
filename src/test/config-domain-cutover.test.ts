@@ -30,15 +30,6 @@ import {
 } from "../core/storage/settings";
 
 let legacyTouched = 0;
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    legacyTouched++;
-    throw new Error("旧库（WASM）不应在 rust 引擎下被访问");
-  },
-  persistDatabase: () => {
-    legacyTouched++;
-  },
-}));
 const reported: string[] = [];
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (_scope: string, _e: unknown, note: string) => {

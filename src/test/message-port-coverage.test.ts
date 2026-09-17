@@ -18,7 +18,6 @@
  * 1. **写/删必须真的落到端口**（命令 + 参数形状），且端口表**真的少了一行**；
  * 2. **权威日志/墓碑照写** —— 少任何一条都会退化成"假成功"或"消息复活"。
  *
- * ⚠️ L1 收尾：本文件原来还有一条"B 态不得碰旧库"的判据（`vi.mock("../core/storage/database")`
  * + `legacyQuery` 计数，逐条断言 `toBe(0)`）。它已经**不再是证据**，所以删掉：
  *
  * - `message.ts` 现在只 import `./port` / `./session-jsonl` 等，全仓没有模块再 import
@@ -51,9 +50,6 @@ vi.mock("../core/storage/session-jsonl", () => ({
   flushSessionLogWrites: async () => {},
 }));
 
-vi.mock("../core/storage/write-guard", () => ({
-  runGuarded: () => undefined,
-}));
 vi.mock("../core/storage/event-log", () => ({
   getEventLog: () => ({ append: () => ({ seq: 1 }), appendBatch: () => [] }),
 }));

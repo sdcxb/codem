@@ -59,6 +59,18 @@ import { describe, it, expect, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 
+// ========== 引擎侧 schema 真源（第 18 轮，L1 收尾） ==========
+//
+// F1（数据库表结构扩展）与 X8（表名唯一）原来读的是 `core/storage/database.ts`
+// （sql.js 引擎模块，被当 **schema 目录**用）。该模块已随引擎删除：引擎建库真正执行的 DDL 是
+// `src-tauri/codem-db/sql/schema.sql`（`schema.rs` 用 `include_str!` 编译进引擎，`apply()`
+// 一次 `execute_batch`），所以这两处断言的**真源换成它** —— 表名 / 列名 / 索引名一字不改。
+/** 引擎建库执行的 DDL（`codem-db` 侧 `schema.rs` 读的就是它） */
+const ENGINE_SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+);
+
 // 静态导入需要运行时测试的模块
 import {
   createNotebook, getNotebook, listNotebooks, updateNotebook, deleteNotebook,
@@ -537,7 +549,8 @@ describe("Phase D: 高级技能", () => {
 describe("Phase F: 笔记本式知识管理", () => {
   // ===== F1: 数据库表结构 =====
   describe("F1: 数据库表结构扩展", () => {
-    const dbSrc = fs.readFileSync(path.join(__dirname, "../core/storage/database.ts"), "utf-8");
+    // 真源 = 引擎建库执行的 DDL（原来读的是已删除的 `core/storage/database.ts`）
+    const dbSrc = ENGINE_SCHEMA_SQL;
 
     it("notebooks 表存在", () => {
       expect(dbSrc).toContain("CREATE TABLE IF NOT EXISTS notebooks");
@@ -1468,7 +1481,9 @@ describe("跨模块集成测试", () => {
 
   // ===== X8: 数据库初始化不冲突 =====
   describe("X8: 数据库表无命名冲突", () => {
-    const dbSrc = fs.readFileSync(path.join(__dirname, "../core/storage/database.ts"), "utf-8");
+    // 真源 = 引擎建库执行的 DDL（原来读的是已删除的 `core/storage/database.ts`）；
+    // 断言不变：每张笔记本表的建表语句在真源里只出现一次（幂等 + 无重名冲突）
+    const dbSrc = ENGINE_SCHEMA_SQL;
 
     it("notebooks 表名唯一", () => {
       const matches = dbSrc.match(/CREATE TABLE IF NOT EXISTS notebooks/g);

@@ -4,18 +4,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock storage/database with proper path resolution
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => ({
-    run: vi.fn(),
-    exec: vi.fn().mockReturnValue([]),
-  }),
-  persistDatabase: vi.fn(),
-  saveMessage: vi.fn(),
-  listMessages: vi.fn(),
-  updateMessage: vi.fn(),
-  deleteMessagesByIds: vi.fn(),
-  messagesToLLMMessages: vi.fn().mockReturnValue([]),
-}));
 
 import { createShowTodoTool } from "../core/llm/tools/show-todo";
 import type { ToolContext } from "../core/llm/tools";

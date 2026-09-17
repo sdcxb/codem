@@ -1129,7 +1129,7 @@ flushStreamBuffer(); // flush all on unmount
      */
     (async () => {
       try {
-        const { registerRustStoragePort, importSettingsFromLegacyDb, migrateFromLegacyDb, selectedEngine } = await import("./core/storage/bootstrap");
+        const { registerRustStoragePort, importSettingsFromLegacyDb, migrateFromLegacyDb } = await import("./core/storage/bootstrap");
 
         // ① 注册端口（唯一的数据源）
         let boot: Awaited<ReturnType<typeof registerRustStoragePort>> = { kind: "skipped", reason: "未尝试" };
@@ -1179,7 +1179,6 @@ flushStreamBuffer(); // flush all on unmount
           } catch (e) {
             console.warn("[Storage] 启动自检未完成（不影响启动）:", e);
           }
-          void selectedEngine;
         }
 
         // 第 92 波 P3 第 5 段：为**当前会话**预热事件镜像。

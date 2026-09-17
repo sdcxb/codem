@@ -8,6 +8,42 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import { AgentMessageQueue, onAgentMessage } from "../core/llm/agent-message-queue";
 
+// ========== 引擎侧 schema 真源（第 18 轮，L1 收尾） ==========
+//
+// 本文件原来有两处读 `src/core/storage/database.ts`（sql.js 引擎模块）来判断"表 / 列存在"。
+// 该模块已随引擎删除：引擎建库真正执行的 DDL 是 `src-tauri/codem-db/sql/schema.sql`
+// （`schema.rs` 用 `include_str!` 编译进引擎，`apply()` 一次 `execute_batch`）。
+// 表 / 列是否存在的**真源换成它**（等价于旧库的 `sqlite_master` 查询 + `PRAGMA table_info`）。
+const ENGINE_SCHEMA_SQL = require("fs").readFileSync(
+  require("path").join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+);
+
+/** 该表是否在引擎 schema 里声明 */
+function schemaDeclaresTable(table: string): boolean {
+  return new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(`).test(ENGINE_SCHEMA_SQL);
+}
+
+/** 某张表的建表语句原文（等价于旧库 `SELECT sql FROM sqlite_master WHERE name=?`） */
+function createTableSql(table: string): string {
+  const m = ENGINE_SCHEMA_SQL.match(
+    new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(([\\s\\S]*?)\\n\\);`),
+  );
+  if (!m) throw new Error(`引擎 schema 里没有表 ${table}`);
+  return m[0];
+}
+
+/** 该表在引擎 schema 里声明的列名（等价于旧库 `PRAGMA table_info(t)` 的 name 列） */
+function schemaColumns(table: string): string[] {
+  return createTableSql(table)
+    .split("\n")
+    .slice(1) // 去掉 `CREATE TABLE … (`
+    .map((line) => line.trim().replace(/,$/, ""))
+    .filter((line) => line.length > 0 && !/^\)/.test(line))
+    .filter((line) => !/^(FOREIGN|PRIMARY|UNIQUE|CHECK|CONSTRAINT)\b/i.test(line))
+    .map((line) => line.split(/\s+/)[0]);
+}
+
 // Mock Tauri
 function mockTauriInvoke(responses: Record<string, any>) {
   const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
@@ -180,11 +216,9 @@ describe("P2-10: AgentMessageQueue — 异步 Agent 间通信", () => {
   });
 
   it("agent_messages 表 — 独立于压缩", () => {
-    const source = require("fs").readFileSync(
-      "src/core/storage/database.ts",
-      "utf-8"
-    );
-    expect(source).toContain("agent_messages");
+    // 第 18 轮（L1 收尾）：真源换成引擎建库执行的 DDL（原来读已删除的 database.ts）。
+    // 断言的表一字未改，强度不变（更紧：要求它出现在**建表语句**里）。
+    expect(schemaDeclaresTable("agent_messages")).toBe(true);
   });
 
   it("agentic-loop — 导入 AgentMessageQueue", () => {
@@ -241,13 +275,12 @@ describe("P2-12: Artifact 快照引用 — 集成验证", () => {
   });
 
   it("turn_file_changes 表 — 包含 artifact_id (id 字段)", () => {
-    const source = require("fs").readFileSync(
-      "src/core/storage/database.ts",
-      "utf-8"
-    );
-    expect(source).toContain("turn_file_changes");
-    expect(source).toContain("patch_sha256");
-    expect(source).toContain("current_brief");
+    // 第 18 轮（L1 收尾）：真源换成引擎建库执行的 DDL（原来读已删除的 database.ts）。
+    // 表名与两个列名一字未改；列断言从"整个文件里出现过"收紧为"**这张表**里声明了"。
+    expect(schemaDeclaresTable("turn_file_changes")).toBe(true);
+    const columns = schemaColumns("turn_file_changes");
+    expect(columns).toContain("patch_sha256");
+    expect(columns).toContain("current_brief");
   });
 
   it("FileChangeResult — 返回 artifactId", async () => {

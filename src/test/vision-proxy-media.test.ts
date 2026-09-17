@@ -73,15 +73,6 @@ vi.mock("../core/storage/settings", () => ({
 }));
 
 // Mock database to avoid SQLite init
-vi.mock("../core/storage/database", () => ({
-  getDatabase: vi.fn(() => { throw new Error("mock"); }),
-  persistDatabase: vi.fn(),
-  flushDatabase: vi.fn(),
-  initDatabase: vi.fn(),
-  closeDatabase: vi.fn(),
-  exportDatabase: vi.fn(() => null),
-  importDatabase: vi.fn(),
-}));
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch as any;

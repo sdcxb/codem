@@ -19,7 +19,7 @@
  * 让用户和日志都能看见。
  */
 
-import { STORAGE_ENGINE_KEY, getStoragePort, hasStoragePort, setStoragePort, type StoragePort } from "./port";
+import { getStoragePort, hasStoragePort, setStoragePort, type StoragePort } from "./port";
 import { RustStoragePort, type StorageTransport } from "./rust-port";
 import { reportActionFailure } from "./persist-failure";
 import { domainEnsureLoaded } from "./domain-store";
@@ -38,18 +38,19 @@ import { domainEnsureLoaded } from "./domain-store";
  *   宽松版反馈在 Rust 引擎下**写不进去**（真机复现，已修）；
  * - `llm/feedback.ts` 的四个操作全部改走域端口。
  *
- * ## ✅ 回滚开关已退役（第 15 轮，v1.16.62）
+ * ## ✅ 回滚开关与"引擎选择"都已退役（第 15 轮退役开关，第 18 轮删掉最后一点痕迹）
  *
  * 迁移期靠 `localStorage["codem-storage-engine"] = "wasm"` 一键回退到旧引擎。
- * 现在 **SQLite 引擎已经完全从渲染进程移除**（L1 清零、端口模式套件全绿），
- * 那个开关已经没有可回退的目标了 —— 继续留着它只会制造一个**假的**安全感：
+ * 现在 **SQLite 引擎已经完全从渲染进程移除**（L1 清零：`sql.js` 依赖与 wasm 资源都已删除），
+ * 那个开关没有可回退的目标了 —— 继续留着它只会制造一个**假的**安全感：
  * 用户以为"切回去还能用"，实际切过去没有任何引擎可用。
  *
- * 所以开关**不再被读取**（`selectedEngine()` 恒为 `rust`）。真正的回退手段是
- * **应用级**的：装回上一版安装包 + 旧库 `codem-db.bin` 始终只读不改。
- * 常量 `STORAGE_ENGINE_KEY` 保留只是为了清理历史 localStorage 键（见 `settings` 的启动清理）。
+ * 所以**"选择引擎"这件事本身不存在了**：`selectedEngine()` / `DEFAULT_ENGINE` /
+ * `STORAGE_ENGINE_KEY` 三个符号在这一轮一起删除（留着的唯一理由是"清理历史 localStorage 键"，
+ * 而那件事由 `settings` 的启动清理按字符串直接做，不需要这个常量）。
+ *
+ * 真正的回退手段是**应用级**的：装回上一版安装包 + 旧库 `codem-db.bin` 始终只读不改。
  */
-export const DEFAULT_ENGINE: "rust" = "rust";
 
 export type StorageBootResult =
   | {
@@ -64,24 +65,8 @@ export type StorageBootResult =
   | { kind: "failed"; error: unknown };
 
 /**
- * 当前存储引擎 —— **恒为 `rust`**（第 15 轮：回滚开关退役）。
- *
- * 保留这个函数而不是直接删掉调用点，是为了：
- * 1. 调用方（`registerRustStoragePort` / `App.tsx` 的诊断日志）不必改形状；
- * 2. 把"为什么恒为 rust"写在一处：**旧引擎已经不存在了**，
- *    唯一的存储实现就是 Rust 端口（`localStorage` 里那个开关不再被读取）。
- *
- * 历史背景：迁移期这里读 `localStorage["codem-storage-engine"]`，
- * `"wasm"` 即回退到渲染进程内的 sql.js。那个引擎已经随 L1 清零一起移除。
- */
-export function selectedEngine(): "rust" {
-  return DEFAULT_ENGINE;
-}
-
-/**
  * 注册 Rust 存储端口并预热配置面。
  *
- * - 未选择 rust → 直接跳过（返回 `skipped`，**不是**失败）
  * - 已经注册过 → 幂等复用（热重载 / StrictMode 双调用不会重复预热）
  * - 打开失败 → 上报 + 返回 `failed`，**绝不注册一个半死的端口**
  *   （注册了但不可用最危险：调用方以为有后端，实际全部静默失败）
@@ -90,10 +75,11 @@ export async function registerRustStoragePort(
   transport?: StorageTransport,
   label = "storage.bootstrap",
 ): Promise<StorageBootResult> {
-  const engine = selectedEngine();
-  if (engine !== "rust") {
-    return { kind: "skipped", reason: `当前引擎为 ${engine}（未启用 Rust 存储）` };
-  }
+  /**
+   * 第 18 轮：这里原来先问一次 `selectedEngine()`（"本次要用哪个引擎"）。
+   * 那个选择**已经不存在了** —— 旧引擎（sql.js）整体删除，端口是唯一实现。
+   * 留着这个分支只会让读代码的人以为"还有另一种可能"。
+   */
   if (hasStoragePort()) {
     const existing = getStoragePort();
     if (existing.kind === "rust") {

@@ -1,45 +1,49 @@
-//! **列级** schema 契约：建一个全新库，逐表逐列比对"渲染侧 TS 真源声明的列"。
+//! **列级** schema 契约：建一个全新库，逐表逐列比对"引擎真源声明的列"。
 //!
 //! ## 为什么必须有这一项（而不是只比对文件）
 //!
-//! `npm run audit:schema-parity` 比的是 **`schema.sql` 这个文件**有没有被重新生成过。
+//! `npm run audit:schema-parity` 比的是 **`schema.sql` / `tables.json` 这些资源自不自洽**。
 //! 它是"生成物没被手改"的证据，**不是"库能接受真源声明的所有列"的证据**：
 //!
-//! - 真源（`src/core/storage/database.ts`）里有一半列是后来用
-//!   `ALTER TABLE … ADD COLUMN` 加上去的（23 条）；`schema.sql` 里根本不含这些列。
+//! - 一部分列是后来用 `ALTER TABLE … ADD COLUMN` 加上去的（见 `migrations.json`）；
+//!   `schema.sql` 里根本不含这些列。
 //! - 运行期靠 `schema::apply()` 的迁移把列补齐 —— 这段逻辑**没有任何门禁覆盖**。
-//!   一旦 `migrations.json` 生成漏一条、或迁移被 `migrations_ignored` 静默吞掉，
-//!   表现是"渲染侧写入某列失败/静默丢列"，而门禁全绿。
+//!   一旦 `migrations.json` 漏一条、或迁移被 `migrations_ignored` 静默吞掉，
+//!   表现是"写入某列失败/静默丢列"，而门禁全绿。
 //!
-//! 本测试直接从**真源 TS 文本**里解析出「每张表应有的列」，全部走一遍
-//! `PRAGMA table_info`，再逐列核对。缺表、缺列都会在这里失败。
+//! ## 第 18 轮（L1）：真源从 TS 换成资源本身
 //!
-//! 注意这里**不写**具体列名字面量：清单来自真源，真源改了就自动跟着变；
+//! 本文件原来解析的是 `src/core/storage/database.ts` 里的 `SCHEMA` / `migrations` 模板串 ——
+//! 那是迁移期（WASM 与 Rust 双实现）的真源。**sql.js 已整体删除**，渲染进程不再持有 schema，
+//! 所以现在直接读引擎**编进二进制执行的那两份资源**：
+//! `../sql/schema.sql`（DDL）与 `../sql/migrations.json`（ALTER 列表）。
+//!
+//! 语义因此更直接：以前是"TS 声明的列，库里有吗"，现在是"**引擎自己声明要建的列，库里都有吗**"。
+//!
+//! 注意这里**不写**具体列名字面量：清单来自资源，资源改了就自动跟着变；
 //! 需要人工判断的地方只有"解析失败"（解析不到 CREATE TABLE 会直接 panic，不会静默通过）。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-/// 仓库根目录（本文件在 `src-tauri/codem-db/tests/` 下）
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("CARGO_MANIFEST_DIR 应有 ../../ 前缀")
-        .to_path_buf()
+/// `codem-db/sql/` 资源目录（本文件在 `src-tauri/codem-db/tests/` 下）
+fn sql_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sql")
 }
 
-fn real_source() -> String {
-    let p = repo_root().join("src").join("core").join("storage").join("database.ts");
+/// 引擎建库时执行的 DDL（`schema.rs::SCHEMA_SQL` 用的就是这份）
+fn schema_ddl() -> String {
+    let p = sql_dir().join("schema.sql");
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("读不到真源 {}：{e}", p.display()))
 }
 
-/// `const SCHEMA = \`…\`;` 里的 DDL 文本
-fn schema_ddl(src: &str) -> String {
-    let start = src.find("const SCHEMA").expect("真源里找不到 SCHEMA 定义");
-    let open = src[start..].find('`').expect("SCHEMA 不是模板字符串") + start;
-    let close = src[open + 1..].find('`').expect("SCHEMA 模板字符串没有结束反引号") + open + 1;
-    src[open + 1..close].to_string()
+/// 引擎建库后逐条执行的迁移（`schema.rs::MIGRATIONS_JSON` 用的就是这份）
+fn migrations_json() -> Vec<String> {
+    let p = sql_dir().join("migrations.json");
+    let raw = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("读不到真源 {}：{e}", p.display()));
+    let parsed: Vec<String> = serde_json::from_str(&raw).unwrap_or_else(|e| panic!("migrations.json 解析失败：{e}"));
+    assert!(!parsed.is_empty(), "migrations.json 是空的（真源被清空了？）");
+    parsed
 }
 
 /// 从 DDL 里解析 `CREATE TABLE IF NOT EXISTS x ( 列 类型, … )`，得到「表 → 列集合」
@@ -95,15 +99,10 @@ fn ddl_columns(ddl: &str) -> BTreeMap<String, BTreeSet<String>> {
     out
 }
 
-/// 从真源里解析 `ALTER TABLE x ADD COLUMN y …` 迁移语句，得到「表 → 列集合」
-fn migration_columns(src: &str) -> BTreeMap<String, BTreeSet<String>> {
-    let start = src.find("const migrations").expect("真源里找不到 migrations 定义");
-    let open = src[start..].find('[').expect("migrations 不是数组") + start;
-    let close = src[open..].find("];").expect("migrations 数组没有结束") + open;
-    let body = &src[open..close];
-
+/// 从 `migrations.json` 的语句里解析 `ALTER TABLE x ADD COLUMN y …`，得到「表 → 列集合」
+fn migration_columns(stmts: &[String]) -> BTreeMap<String, BTreeSet<String>> {
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for stmt in body.split('"').filter(|s| s.to_uppercase().contains("ALTER TABLE")) {
+    for stmt in stmts.iter().filter(|s| s.to_uppercase().contains("ALTER TABLE")) {
         let toks: Vec<&str> = stmt.split_whitespace().collect();
         // ALTER TABLE <t> ADD COLUMN <c> …
         let ti = toks
@@ -120,15 +119,14 @@ fn migration_columns(src: &str) -> BTreeMap<String, BTreeSet<String>> {
             .or_default()
             .insert(col.trim_matches(|c| c == '"' || c == '`').to_string());
     }
-    assert!(!out.is_empty(), "从真源里没解析出任何 ALTER TABLE 迁移");
+    assert!(!out.is_empty(), "从 migrations.json 里没解析出任何 ALTER TABLE 迁移");
     out
 }
 
 #[test]
-fn fresh_db_accepts_every_column_the_ts_source_declares() {
-    let src = real_source();
-    let from_ddl = ddl_columns(&schema_ddl(&src));
-    let from_migrations = migration_columns(&src);
+fn fresh_db_accepts_every_column_the_schema_declares() {
+    let from_ddl = ddl_columns(&schema_ddl());
+    let from_migrations = migration_columns(&migrations_json());
 
     // 临时库（进程退出后由 TempDir 语义外的显式删除处理）
     let dir = std::env::temp_dir().join(format!("codem-schema-cols-{}", std::process::id()));
@@ -209,9 +207,9 @@ fn fresh_db_accepts_every_column_the_ts_source_declares() {
 fn every_migration_column_lands_even_on_a_fresh_database() {
     // 这一项盯的是"迁移被静默吞掉"：ignored 只允许出现在**列已存在于 CREATE TABLE** 的情况，
     // 不允许出现"执行成功但列没加上"。
-    let src = real_source();
-    let hard = migration_columns(&src);
-    let soft: BTreeSet<String> = ddl_columns(&schema_ddl(&src))
+    let src = schema_ddl();
+    let hard = migration_columns(&migrations_json());
+    let soft: BTreeSet<String> = ddl_columns(&src)
         .into_iter()
         .map(|(t, c)| format!("{t}.{}", c.iter().next().unwrap_or(&String::new())))
         .collect();

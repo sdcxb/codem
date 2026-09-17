@@ -17,13 +17,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { RustStoragePort } from "../core/storage/rust-port";
 
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    throw new Error("旧库不应在已路由的域上被访问");
-  },
-  persistDatabase: () => {},
-}));
-vi.mock("../core/storage/write-guard", () => ({ runGuarded: () => undefined }));
 const failures: string[] = [];
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (_s: string, _e: unknown, note: string) => failures.push(note),

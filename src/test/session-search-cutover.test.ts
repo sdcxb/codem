@@ -20,15 +20,6 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
   reportActionFailure: () => {},
 }));
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    throw new Error("旧库不应在 rust 引擎下被搜索路径访问");
-  },
-  persistDatabase: () => {},
-  isFts5Available: () => false,
-  isDatabaseFatal: () => false,
-  noteDatabaseError: () => true,
-}));
 
 function rustPortWith(rows: Array<Record<string, unknown>>, opts: { fail?: boolean } = {}) {
   const calls: Array<{ cmd: string; params: Record<string, unknown> }> = [];

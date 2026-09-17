@@ -218,6 +218,29 @@ export function scanPortSites() {
             const key = `${t[1]}.${op}`;
             tableOps.set(key, (tableOps.get(key) ?? 0) + 1);
           }
+        } else {
+          /**
+           * 具名命令 → 表/操作（第 18 轮补）。
+           *
+           * 为什么需要：门禁要回答"每个核心域的**写路径**有没有被盘点覆盖"。
+           * 旧库 SQL 归零之后，`messages` 这类域的写路径**只剩具名命令**
+           * （`messages.upsert_index` / `messages.create` / `messages.delete`…），
+           * 而它们原先不被计入 `portTableOps` —— 于是 GATE-DB-5 会在"迁移完成"的那一刻
+           * 报"messages 没有写路径"（假警报）。
+           */
+          const named = /^(messages|tool_calls|attachments|session_events|telemetry_events|message_feedback)\.([a-z_]+)$/.exec(cmd);
+          if (named) {
+            const [, table, verb] = named;
+            const op = /^(create|create_many|upsert_index|update|update_many|replace|set)$/.test(verb)
+              ? "upsert"
+              : /^(delete|delete_many|delete_session|remove|prune|clear)$/.test(verb)
+                ? "delete"
+                : /^(rebuild|rebuild_all|rebuild_index|reindex)$/.test(verb)
+                  ? "upsert"
+                  : "select";
+            const key = `${table}.${op}`;
+            tableOps.set(key, (tableOps.get(key) ?? 0) + 1);
+          }
         }
       }
     });
@@ -419,17 +442,33 @@ export function computeCoverage() {
   const totalSites = required.reduce((a, m) => a + m.sites, 0);
   const doneSites = done.reduce((a, m) => a + m.sites, 0);
   const port = scanPortSites();
+
+  /**
+   * ⚠️ 第 18 轮（L1 完成）：**旧库 SQL 调用点已经归零**，分母为 0。
+   *
+   * `0 / 0` 在 JS 里是 `NaN`，而 `NaN >= 下限` 恒为 false、`NaN < 下限` 也恒为 false ——
+   * 也就是说门禁会**静默失效**（既不通过也不失败，取决于写法）。这正是"指标在迁移完成那天
+   * 变成假数字"的典型形态。
+   *
+   * 所以这里显式定义：**没有旧库 SQL 调用点 = 迁移在这条轴上已经完成 = 100%**，
+   * 并把"迁移完成"这件事写进输出（让人一眼看出 100% 意味着什么，而不是"分母没了"）。
+   */
+  const migrationComplete = required.length === 0;
+  const pct = (n, d) => (d === 0 ? 100 : +((n / d) * 100).toFixed(2));
+
   return {
     scannedFiles: scanned.files,
     requiredMethods: required.length,
     implementedMethods: done.length,
-    coveragePercent: +((done.length / required.length) * 100).toFixed(2),
+    /** 迁移是否已完成（旧库 SQL 调用点归零）：完成时覆盖率定义为 100% */
+    migrationComplete,
+    coveragePercent: pct(done.length, required.length),
     /** 渲染侧调用点已切到端口的比例（保守口径，人工维护） */
     commandAvailableMethods: commandAvailable.length,
-    commandCoveragePercent: +((commandAvailable.length / required.length) * 100).toFixed(2),
+    commandCoveragePercent: pct(commandAvailable.length, required.length),
     totalSites,
     implementedSites: doneSites,
-    siteCoveragePercent: +((doneSites / totalSites) * 100).toFixed(2),
+    siteCoveragePercent: pct(doneSites, totalSites),
     /**
      * ⚠️ 第 17 轮的关键口径修正：**旧库 SQL 与端口调用必须一起盘**。
      *
@@ -482,20 +521,31 @@ if (isMain) {
   lines.push("> 由 `node tools/audit/storage-coverage.mjs --md` 生成；不要手工编辑。");
   lines.push("");
   lines.push(`- 扫描生产文件：**${result.scannedFiles}**`);
-  lines.push(`- **旧库 SQL 调用点：${result.legacySites}**（${result.requiredMethods} 个方法）—— 迁移推进中，应持续下降`);
+  if (result.migrationComplete) {
+    lines.push(
+      `- **旧库 SQL 调用点：0 —— 迁移已完成**（渲染侧不再有 ` + "`db.run`/`db.exec`" + ` 这类旧库调用；真源与引擎都在 Rust 侧）`,
+    );
+  } else {
+    lines.push(`- **旧库 SQL 调用点：${result.legacySites}**（${result.requiredMethods} 个方法）—— 迁移推进中，应持续下降`);
+  }
   lines.push(
-    `- **端口调用点：${result.portSites}**（其中表名解析不出的 ${result.portUnresolved} 处）—— 迁移推进中，应持续上升`,
+    `- **端口调用点：${result.portSites}**（其中表名解析不出的 ${result.portUnresolved} 处）—— 渲染侧唯一的存储通路`,
   );
   lines.push(`- **存储调用点合计：${result.totalStorageSites}** —— 门禁的规模护栏盯这个和（只盘旧库会在迁移末期失去意义）`);
-  lines.push(
-    `- 已实现：**${result.implementedMethods}** → 方法覆盖率 **${result.coveragePercent}%**，调用点覆盖率 **${result.siteCoveragePercent}%**`,
-  );
+  lines.push(`- 已实现：**${result.implementedMethods}** → 方法覆盖率 **${result.coveragePercent}%**，调用点覆盖率 **${result.siteCoveragePercent}%**`);
   lines.push(`- Rust 侧已注册命令：**${result.rustCommandCount}**`);
-  lines.push(
-    `- **命令可用性覆盖：${result.commandAvailableMethods}/${result.requiredMethods}（${result.commandCoveragePercent}%）**` +
-      ` —— 这一项在第 10 段引入通用命令后已达 100%，但**不等于迁移完成**：` +
-      `渲染侧调用点是否已切到端口，看上面那个保守数字。`,
-  );
+  if (result.migrationComplete) {
+    lines.push(
+      `- **旧库那一半已经清零**：` + "`IMPLEMENTED`/`genericCommandFor` 这套映射服务的对象（旧库 SQL）已不存在，" +
+        `因此"命令可用性覆盖"这一项不再有意义 —— 现在要盯的是**端口侧调用点的规模与分布**（上面那两行）。`,
+    );
+  } else {
+    lines.push(
+      `- **命令可用性覆盖：${result.commandAvailableMethods}/${result.requiredMethods}（${result.commandCoveragePercent}%）**` +
+        ` —— 这一项在第 10 段引入通用命令后已达 100%，但**不等于迁移完成**：` +
+        `渲染侧调用点是否已切到端口，看上面那个保守数字。`,
+    );
+  }
   lines.push("");
   if (result.phantomCommands.length) {
     lines.push(`⚠️ 映射表引用了 Rust 侧不存在的命令：${result.phantomCommands.join(", ")}`);

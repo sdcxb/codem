@@ -24,18 +24,6 @@ vi.mock("../core/storage/settings", () => ({
 }));
 
 // Mock database
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => ({
-    run: vi.fn(),
-    exec: vi.fn().mockReturnValue([]),
-  }),
-  persistDatabase: vi.fn(),
-  saveMessage: vi.fn(),
-  listMessages: vi.fn(),
-  updateMessage: vi.fn(),
-  deleteMessagesByIds: vi.fn(),
-  messagesToLLMMessages: vi.fn().mockReturnValue([]),
-}));
 
 const mockCtx: ToolContext = {
   sessionId: "test-session",

@@ -26,13 +26,6 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
   reportActionFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
 }));
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    throw new Error("旧库不应在已路由的会话上被访问");
-  },
-  persistDatabase: () => {},
-}));
-vi.mock("../core/storage/write-guard", () => ({ runGuarded: () => undefined }));
 vi.mock("../core/storage/session-jsonl", () => ({
   appendSessionMessage: async () => {},
   appendMessageTombstone: async () => {},

@@ -20,7 +20,8 @@ const ALLOWLIST = path.join(__dirname, "allowlist.json");
 /** 按域给出理由与目标阶段（迁移顺序见 docs/ARCH-SQLITE-TO-RUST.md §3 P3） */
 function describe(file) {
   if (file.endsWith("storage/database.ts")) {
-    return "迁移期 WASM 实现本体（sql.js + schema + 整库导出）：P5 删除，届时本条一起删";
+    // 第 18 轮（L1）：这个文件已被删除。分支保留一行说明，免得有人以为它还该在清单里。
+    return "（已删除）迁移期 WASM 实现本体：L1 收尾时随 sql.js 依赖一起移除";
   }
   if (file.includes("storage/port")) {
     return "端口定义本身（P0 新增，不含 SQL 访问）";

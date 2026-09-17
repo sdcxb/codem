@@ -18,42 +18,37 @@
  *
  * ## 本文件的用例
  *
- * AR-1/2：索引崩了，**消息照样进权威日志**（create / update 两条路径）
- * AR-3：索引崩了，**历史照样读得出来**（合并权威日志）
- * AR-4：日志在 → **索引可以从日志重建**（含工具调用）
+ * AR-1/2/3：索引崩了，**消息照样进权威日志**（create / update 两条路径）、**历史照样读得出来**
+ *          —— ⚠️ **第 18 轮退休（故障注入点随旧引擎删除），见下面的台账**
+ * AR-4：日志在 → **索引可以从日志重建**（含工具调用）—— 保留
  * AR-5：崩溃会留下"下次启动重建索引"的标记（且维护路径真的消费它）—— ⚠️ **已随旧引擎退休，见下**
- * AR-6：`saveMessages` 只写变化过的消息（未变化的一次都不写）
+ * AR-6：`saveMessages` 只写变化过的消息（未变化的一次都不写）—— 保留
  * AR-7：整库导出有硬上限，超限即"暂停整库落盘、只写权威日志" —— ⚠️ **已随旧引擎退休，见下**
  *
  * ---
  *
- * ## ⚠️ L1（删 sql.js）本批的处置：只退休引擎那两条（AR-5 / AR-7）
+ * ## ⚠️ 第 18 轮（L1 收尾：删 sql.js）退休台账：AR-1 / AR-2 / AR-3 / AR-5 / AR-7
  *
- * 本文件里的用例**大多数是产品契约**（"权威日志是权威副本"这条分层承诺），
- * 它们只是拿旧库当**故障注入点 / 生命周期夹具**——所以按铁律只删引擎那部分：
+ * 这些用例断言的都是**产品契约**（"权威日志才是权威副本"这条分层承诺），但它们一律拿旧库当
+ * **故障注入点 / 生命周期夹具**：`await import("../core/storage/database")` +
+ * `dbMod.noteDatabaseError(...)` 制造"索引致命"。那个函数与被注入的机制（sql.js 致命闩锁）
+ * **已随引擎删除**（`src-tauri/codem-db/sql/schema.sql` 是引擎建库执行的真源，渲染进程不再持有引擎），
+ * 注入点消失了，所以按铁律**就地在文件里退休 + 把覆盖移交出去**：
  *
  * | 退休用例 | 为什么是引擎语义 | 覆盖移交给谁 |
  * | --- | --- | --- |
+ * | **AR-1** create 路径：索引致命时消息仍进权威日志、不抛错 | 故障注入点是旧引擎致命闩锁（`noteDatabaseError` → `isDatabaseFatal`），随 `database.ts` 删除 | `message-index-cutover.test.ts` **MSG-4**（端口未注册 → 权威日志仍然要写 + 如实上报）、**MSG-6**（索引写失败不抛、不影响权威日志）。⚠️ MSG-4/6 把 `session-jsonl` 整个 mock 掉，只断言 append 被调用；AR-1 多出的"**把日志读回来核对内容**"这一步**没有**跟着移交 —— 迁移批次若要合并，请把这一步并入 MSG-4/6，别只留"append 被调用" |
+ * | **AR-2** update 路径：索引致命时最新内容仍追加进权威日志 | 同上（同一个 `noteDatabaseError` 注入点） | **暂无等价用例**：MSG-1..6 只覆盖 `createMessage`（全文件只有 `updateMessage` 的注释引用）。**此处点名**：新口径是 `setStoragePort(null)` / 端口写失败，迁移批次**优先补**这条 |
+ * | **AR-3** 索引致命时历史仍读得出来（走权威日志合并） | 同上（同一个注入点） | 近亲是 `session-jsonl-index.test.ts` **SLOG-6**（索引被裁后读路径仍合并日志）；"索引不可用"这个触发条件在新架构里由**端口不可用**承担 —— `message-index-cutover.test.ts` **MSG-9**（未加载完的会话不路由、不回退旧库）。⚠️ "致命态下 listMessages 仍返回全量历史"这条**没有**逐字等价用例 |
  * | **AR-5** 崩溃留标记 + 维护先重建再回填 | 标记的产生者就是旧引擎的致命闩锁（`noteDatabaseError` → `markIndexRebuildNeeded`，见 `database.ts::noteFatalDbError`）；断言里还有两条**源码契约**（`database.ts` 必须含 `await indexRebuildNeeded()` 且排在 `backfillAllSessions()` 之前），那段代码随引擎删除 | **风险随 sql.js 消失**：没有"引擎致命闩锁"就没有"下次启动要重建索引"这个标记的产生者。重建能力本身（消费侧）仍被守着：本文件 **AR-4**（只有日志也能重建索引，含工具调用）+ `maintenance-rust-mode.test.ts` **MR-1**（rust 模式下维护真的执行回填/重建，不许因为"旧库不存在"整段跳过） |
  * | **AR-7** 整库导出有硬上限（`MAX_EXPORT_BYTES`、`wholeFileExportSuspended`） | 整库导出是 sql.js **唯一的落盘方式**，上限是为它设的；现在连导出这件事都不存在 | `db-contract.test.ts` **C7**（命令清单里**没有** `db.export` / `export` / `backup` / `sql.raw`，"渲染进程不再持有整库"是架构承诺）+ **C1**（`caps.no_whole_file_export === true`）；Rust 侧 `src-tauri/codem-db/src/lib.rs` 同样只声明 `no_whole_file_export: true`，`COMMANDS` 里没有任何导出命令 |
  *
- * ### 留下但**必须点名迁移**的用例（本批不动，交给"旧库夹具迁移"批次）
- *
- * AR-1 / AR-2 / AR-3 的**故障注入点是旧引擎**（`dbMod.noteDatabaseError(...)` 制造"索引致命"），
- * 而它们断言的是产品行为（消息照样进权威日志、历史照样读得出来），所以**不能删**；
- * 等夹具批次把注入点换成新口径（`setStoragePort(null)` / 端口写失败）时一起改：
- *
- * - AR-1（create 路径）在新口径下**已有近亲用例**：`message-index-cutover.test.ts` **MSG-4**
- *   （端口未注册 → 权威日志仍然要写 + 如实上报）、**MSG-6**（索引写失败不抛、不影响权威日志）。
- *   但它比那两条多一步：**真的把日志读回来**（`readSessionMessages` 里断言内容）——
- *   MSG-4/6 把 `session-jsonl` 整个 mock 掉，只断言 append 被调用。所以本批保留，
- *   迁移时若要合并，请把"读回来"这一步并入 MSG-4/6，别只留"append 被调用"。
- * - AR-2（update 路径）与 AR-3（索引致命时读历史走日志合并）**没有**新口径等价用例 ——
- *   迁移时优先补（AR-3 的近亲是 `session-jsonl-index.test.ts` **SLOG-6**：索引被裁后读路径仍合并日志）；
- * - AR-4（自愈重建）与 AR-6（`saveMessages` 只写变化过的消息）与引擎无关，只依赖 `freshDb()` 这个夹具。
+ * **保留**：AR-4（自愈重建）与 AR-6（`saveMessages` 只写变化过的消息）与引擎无关 ——
+ * 它们只依赖"索引是空的"这个前提，而现在这个前提由基座保证
+ * （`setup.ts` 每例注册一个干净的内存端口，`freshDb()` 不必再清旧库）。
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // 虚拟文件系统：JSONL 日志走 file-api（appendFile/readFile/…）
 vi.mock("../core/file-api", () => {
@@ -82,18 +77,22 @@ vi.mock("../core/file-api", () => {
   };
 });
 
-let dbMod: any;
 let msgMod: any;
 let jsonlMod: any;
 let bridgeMod: any;
 
+/**
+ * 每个用例前把内存镜像清干净。
+ *
+ * 第 18 轮：这里原来是「`await import("../core/storage/database")` → `resetDatabase()` /
+ * `initDatabase()` / `resetDatabaseFatalState()`」—— 整套旧引擎夹具随 `database.ts` 删除。
+ * "索引是空的"这个前提现在由基座承担：`setup.ts` 的 `beforeEach` 每例注册一个**干净的内存假端口**
+ * （`createFakeStoragePort()`），也就是产品在 rust 模式下真正读写的那一侧。
+ */
 async function freshDb() {
-  dbMod = await import("../core/storage/database");
   msgMod = await import("../core/storage/message");
   jsonlMod = await import("../core/storage/session-jsonl");
   bridgeMod = await import("../core/storage/session-log-bridge");
-  try { await dbMod.resetDatabase(); } catch { await dbMod.initDatabase(); }
-  dbMod.resetDatabaseFatalState();
   msgMod.clearSessionLogCache?.();
 }
 
@@ -102,66 +101,32 @@ beforeEach(async () => {
   await freshDb();
 });
 
-afterEach(async () => {
-  dbMod?.resetDatabaseFatalState?.();
-});
-
-describe("权威日志优先（索引崩了也不丢消息）", () => {
-  it("AR-1（修复点）: 索引致命时 createMessage 仍把消息写进权威日志，且不抛错", async () => {
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    dbMod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));
-
-    const message = {
-      id: "m-armored-1",
-      role: "user" as const,
-      content: "这批内容必须在数据库崩掉时也不丢",
-      timestamp: Date.now(),
-    };
-    expect(() => msgMod.createMessage(message, "sess-ark")).not.toThrow();
-    await jsonlMod.flushSessionLogWrites();
-
-    const { messages } = await jsonlMod.readSessionMessages("sess-ark");
-    expect(messages.map((m: any) => m.id)).toContain("m-armored-1");
-    expect(messages.find((m: any) => m.id === "m-armored-1").content).toContain("数据库崩掉时也不丢");
-    err.mockRestore();
-  });
-
-  it("AR-2（修复点）: 索引致命时 updateMessage 仍把最新内容追加进权威日志", async () => {
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    // 先让日志里有这条消息的初版
-    await jsonlMod.__writeSessionLogForTests("sess-ark2", [
-      JSON.stringify({
-        v: 1, id: "m-armored-2", sessionId: "sess-ark2", role: "assistant",
-        content: "初版", timestamp: 1000,
-      }),
-    ]);
-    await msgMod.hydrateSessionLog("sess-ark2");
-
-    dbMod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));
-    expect(() => msgMod.updateMessage("m-armored-2", { content: "更新后的正文（很长的大文档内容）" })).not.toThrow();
-    await jsonlMod.flushSessionLogWrites();
-
-    const { messages } = await jsonlMod.readSessionMessages("sess-ark2");
-    const rec: any = messages.find((m: any) => m.id === "m-armored-2");
-    expect(rec.content).toBe("更新后的正文（很长的大文档内容）");
-    err.mockRestore();
-  });
-
-  it("AR-3（修复点）: 索引致命时历史仍读得出来（走权威日志合并）", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await jsonlMod.__writeSessionLogForTests("sess-ark3", [
-      JSON.stringify({ v: 1, id: "a1", sessionId: "sess-ark3", role: "user", content: "第一条", timestamp: 1 }),
-      JSON.stringify({ v: 1, id: "a2", sessionId: "sess-ark3", role: "assistant", content: "第二条", timestamp: 2 }),
-    ]);
-    await msgMod.hydrateSessionLog("sess-ark3");
-
-    dbMod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));
-
-    const list = msgMod.listMessages("sess-ark3");
-    expect(list.map((m: any) => m.content)).toEqual(["第一条", "第二条"]);
-    warn.mockRestore();
-  });
-});
+/**
+ * ⚠️ **第 18 轮（L1 收尾）退休：AR-1 / AR-2 / AR-3 —— "索引致命时权威日志照样写、历史照样读"。**
+ *
+ * 这三条断言的**产品行为**没有变（"权威日志是权威副本"仍然是分层承诺），但它们唯一的
+ * 故障注入点是旧引擎的致命闩锁：
+ *
+ * ```ts
+ * dbMod = await import("../core/storage/database");
+ * dbMod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));  // 制造"索引致命"
+ * ```
+ *
+ * `noteDatabaseError` / `isDatabaseFatal` 这套机制**已随 sql.js 引擎删除**
+ * （`src/core/storage/database.ts` 不存在了；引擎侧真源是
+ * `src-tauri/codem-db/sql/schema.sql` + `src/schema.rs`，渲染进程不再持有引擎），
+ * 注入点没有载体 → 按铁律退休，并把覆盖**移交出去**（详见文件头台账）：
+ *
+ * - **AR-1**（create 路径）→ `message-index-cutover.test.ts` **MSG-4 / MSG-6**
+ *   （新口径：端口未注册 / 端口写失败）。⚠️ 但 MSG-4/6 把 `session-jsonl` 整个 mock 掉，
+ *   只断言 append 被调用 —— AR-1 独有的是"**把日志读回来核对内容**"，这份覆盖**未移交**，
+ *   迁移批次要补回来（别只留"append 被调用"）。
+ * - **AR-2**（update 路径）→ **暂无等价用例**（MSG-1..6 只覆盖 `createMessage`）。
+ *   新口径是 `setStoragePort(null)` / 端口写失败，**迁移时优先补**。
+ * - **AR-3**（索引致命时读历史走日志合并）→ `session-jsonl-index.test.ts` **SLOG-6** 是近亲
+ *   （索引被裁后读路径仍合并日志）；"索引不可用"在新架构里由**端口不可用**承担，
+ *   见 `message-index-cutover.test.ts` **MSG-9**。
+ */
 
 describe("索引可重建（自愈）", () => {
   it("AR-4（修复点）: 只有日志时可以从日志重建索引（含工具调用）", async () => {

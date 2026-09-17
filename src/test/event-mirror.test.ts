@@ -32,7 +32,6 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportActionFailure: (_s: string, _e: unknown, note: string) => reported.push(note),
 }));
 /**
- * ⚠️ L1 收尾：这里原来有一个**可用的假旧库**（`vi.mock("../core/storage/database")`：
  * 内存版 `session_events` + `legacyAccess` 访问计数），用来断言"路由之后不再访问旧库"。
  *
  * 它已经不再是证据，所以删掉：

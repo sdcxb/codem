@@ -97,8 +97,15 @@ export function assess() {
       l3.push({ file: rel, dbCalls, portSymbols, gated, tryNull });
     }
 
-    // L4：开关与引导
-    if (/DEFAULT_ENGINE|STORAGE_ENGINE_KEY|selectedEngine/.test(text)) {
+    /**
+     * L4：开关与引导。
+     *
+     * ⚠️ 第 18 轮修正：这里原来扫的是**原文**（含注释），于是"退役说明里提到
+     * `selectedEngine` / `DEFAULT_ENGINE`"本身就会被算成残留 —— 而正确的做法是**删掉代码、
+     * 把历史写进注释**。用原文扫描等于在惩罚"把原因写清楚"这件事。
+     * 改成与 L2/L3 同一口径：**剥掉注释再看**。
+     */
+    if (/DEFAULT_ENGINE|STORAGE_ENGINE_KEY|selectedEngine/.test(code)) {
       l4.push({ file: rel });
     }
   }

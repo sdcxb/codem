@@ -1,4 +1,5 @@
 {
-  "source": "src/core/storage/database.ts",
-  "generatedBy": "tools/audit/gen-schema-sql.mjs"
+  "source": "src-tauri/codem-db/sql/schema.sql（L1 后真源在 Rust 侧：渲染进程不再持有 schema）",
+  "checkedBy": "tools/audit/gen-schema-sql.mjs",
+  "note": "迁移期真源曾是 src/core/storage/database.ts 的 SCHEMA 模板串；随 sql.js 删除一并切换"
 }

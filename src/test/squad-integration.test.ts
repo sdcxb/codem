@@ -70,16 +70,20 @@ describe("Squad 类型完整性", () => {
 });
 
 describe("Squad DB Schema", () => {
+  /**
+   * 第 18 轮（L1 收尾）：真源从已删除的 `core/storage/database.ts` 换成**引擎建库执行的 DDL**
+   * （`src-tauri/codem-db/sql/schema.sql`）。断言的表名与索引名一字未改。
+   */
   it(" squads 和 squad_members 表在 SCHEMA 中定义", async () => {
     const fs = await import("fs");
     const path = await import("path");
-    const dbSource = fs.readFileSync(
-      path.join(__dirname, "../core/storage/database.ts"),
+    const schemaSql = fs.readFileSync(
+      path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
       "utf-8",
     );
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS squads");
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS squad_members");
-    expect(dbSource).toContain("idx_squad_members_squad");
+    expect(schemaSql).toContain("CREATE TABLE IF NOT EXISTS squads");
+    expect(schemaSql).toContain("CREATE TABLE IF NOT EXISTS squad_members");
+    expect(schemaSql).toContain("idx_squad_members_squad");
   });
 });
 

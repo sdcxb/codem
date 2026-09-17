@@ -13,6 +13,22 @@ import { NeedsYouQueue, getNeedsYouQueue } from "../core/llm/needs-you-queue";
 import { TranscriptCache } from "../core/storage/transcript-cache";
 import { isAutoCommitEnabled, setAutoCommitEnabled, onAutoCommitted } from "../core/environment/git-commit-service";
 
+// ========== 引擎侧 schema 真源（第 18 轮，L1 收尾） ==========
+//
+// 本文件原来有一处读 `src/core/storage/database.ts`（sql.js 引擎模块）来判断"表存在"。
+// 该模块已随引擎删除：引擎建库真正执行的 DDL 是 `src-tauri/codem-db/sql/schema.sql`
+// （`schema.rs` 用 `include_str!` 编译进引擎，`apply()` 一次 `execute_batch`）。
+// 表是否存在的**真源换成它**（等价于旧库那一次 `sqlite_master` 查询）。
+const ENGINE_SCHEMA_SQL = require("fs").readFileSync(
+  require("path").join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+);
+
+/** 该表是否在引擎 schema 里声明 */
+function schemaDeclaresTable(table: string): boolean {
+  return new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(`).test(ENGINE_SCHEMA_SQL);
+}
+
 /**
  * 会话行夹具（**端口语义**，L1 收尾）。
  *
@@ -470,11 +486,12 @@ describe("P1-8: NeedsYouQueue — Agent→Human 精确提问", () => {
   it("needs_you_pending 表 — 独立于压缩", async () => {
     // needs_you_pending is designed to survive context compaction
     // because it's stored in a separate SQLite table
-    const source = require("fs").readFileSync(
-      "src/core/storage/database.ts",
-      "utf-8"
-    );
-    expect(source).toContain("needs_you_pending");
+    //
+    // 第 18 轮（L1 收尾）：真源从已删除的 `src/core/storage/database.ts` 换成**引擎建库执行的 DDL**
+    // （`src-tauri/codem-db/sql/schema.sql`，`schema.rs` 以 `include_str!` 编译进引擎）。
+    // 断言的表一字未改，强度不变（甚至更紧：原来只匹配"文件里出现过这个字符串"，
+    // 现在要求它出现在**建表语句**里）。
+    expect(schemaDeclaresTable("needs_you_pending")).toBe(true);
   });
 
   it("getNeedsYouQueue — 单例 getter 返回同一实例", () => {

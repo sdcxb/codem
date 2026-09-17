@@ -21,47 +21,65 @@ function readFile(relPath: string): string {
   return fs.readFileSync(path.join(SRC, relPath), "utf-8");
 }
 
+// ========== 引擎侧 schema 真源（第 18 轮，L1 收尾） ==========
+//
+// 本文件原来把 `core/storage/database.ts`（sql.js 引擎模块）当 **schema 目录**读：
+// `readFile("core/storage/database.ts")` + `toContain("CREATE TABLE IF NOT EXISTS …")`。
+// 那个模块已随引擎删除 —— 引擎建库时真正执行的 DDL 是 `src-tauri/codem-db/sql/schema.sql`
+// （`src-tauri/codem-db/src/schema.rs` 用 `include_str!` 编译进引擎，`apply()` 一次
+// `execute_batch`；渲染进程不再持有 schema）。所以表 / 列 / 索引断言的**真源换成它**，
+// 断言的表名列名一字不改（强度不变）。
+
+/** 引擎建库执行的 DDL（`codem-db` 侧 `schema.rs` 读的就是它） */
+const SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+);
+
+/** 该表是否在引擎 schema 里声明（等价于旧库那一次 `sqlite_master` 查询） */
+function schemaDeclaresTable(table: string): boolean {
+  return new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(`).test(SCHEMA_SQL);
+}
+
 // ========== 1. 数据层：DB Schema ==========
 
 describe("数据层 — DB Schema", () => {
-  const dbSource = readFile("core/storage/database.ts");
-
   it("squads 表已创建", () => {
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS squads");
-    expect(dbSource).toContain("leader_agent_id TEXT NOT NULL");
+    expect(schemaDeclaresTable("squads"), "引擎 schema 必须声明 squads").toBe(true);
+    expect(SCHEMA_SQL).toContain("leader_agent_id TEXT NOT NULL");
   });
 
   it("squad_members 表已创建 + 外键", () => {
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS squad_members");
-    expect(dbSource).toContain("FOREIGN KEY (squad_id) REFERENCES squads(id) ON DELETE CASCADE");
+    expect(schemaDeclaresTable("squad_members"), "引擎 schema 必须声明 squad_members").toBe(true);
+    expect(SCHEMA_SQL).toContain("FOREIGN KEY (squad_id) REFERENCES squads(id) ON DELETE CASCADE");
   });
 
   it("issues 表已创建 + 7 种状态字段", () => {
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS issues");
-    expect(dbSource).toContain("status TEXT NOT NULL DEFAULT 'todo'");
-    expect(dbSource).toContain("priority TEXT DEFAULT 'normal'");
+    expect(schemaDeclaresTable("issues"), "引擎 schema 必须声明 issues").toBe(true);
+    expect(SCHEMA_SQL).toContain("status TEXT NOT NULL DEFAULT 'todo'");
+    expect(SCHEMA_SQL).toContain("priority TEXT DEFAULT 'normal'");
   });
 
   it("issue_comments 表已创建 + 外键", () => {
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS issue_comments");
-    expect(dbSource).toContain("FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE");
+    expect(schemaDeclaresTable("issue_comments"), "引擎 schema 必须声明 issue_comments").toBe(true);
+    expect(SCHEMA_SQL).toContain("FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE");
   });
 
   it("inbox 表已创建 + 未读/归档字段", () => {
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS inbox");
-    expect(dbSource).toContain("read INTEGER DEFAULT 0");
-    expect(dbSource).toContain("archived INTEGER DEFAULT 0");
+    expect(schemaDeclaresTable("inbox"), "引擎 schema 必须声明 inbox").toBe(true);
+    expect(SCHEMA_SQL).toContain("read INTEGER DEFAULT 0");
+    expect(SCHEMA_SQL).toContain("archived INTEGER DEFAULT 0");
   });
 
   it("所有索引已创建", () => {
-    expect(dbSource).toContain("idx_squad_members_squad");
-    expect(dbSource).toContain("idx_issues_project");
-    expect(dbSource).toContain("idx_issues_status");
-    expect(dbSource).toContain("idx_issues_squad");
-    expect(dbSource).toContain("idx_issue_comments_issue");
-    expect(dbSource).toContain("idx_inbox_read");
-    expect(dbSource).toContain("idx_inbox_project");
-    expect(dbSource).toContain("idx_inbox_created");
+    expect(SCHEMA_SQL).toContain("idx_squad_members_squad");
+    expect(SCHEMA_SQL).toContain("idx_issues_project");
+    expect(SCHEMA_SQL).toContain("idx_issues_status");
+    expect(SCHEMA_SQL).toContain("idx_issues_squad");
+    expect(SCHEMA_SQL).toContain("idx_issue_comments_issue");
+    expect(SCHEMA_SQL).toContain("idx_inbox_read");
+    expect(SCHEMA_SQL).toContain("idx_inbox_project");
+    expect(SCHEMA_SQL).toContain("idx_inbox_created");
   });
 });
 
@@ -635,22 +653,26 @@ describe("回归 — Prompt 系统提示词不变", () => {
   });
 });
 
+/**
+ * ⚠️ **第 18 轮（L1 收尾）退休：「getDatabase 导出仍存在」与「initDatabase 导出仍存在」。**
+ *
+ * 这两条断言的是**旧引擎模块的导出**（`src/core/storage/database.ts`：sql.js 句柄 + 建库入口）。
+ * 该模块已随引擎删除 —— 现在渲染进程通过**存储端口**访问引擎
+ * （`src/core/storage/port.ts` 的 `getStoragePort()` / `setStoragePort()`），建库由 Rust 侧
+ * `src-tauri/codem-db/src/schema.rs::apply()` 执行。再断言"这两个导出存在"等于要求
+ * 一个被刻意删掉的模块复活，属于**只对旧引擎有意义**的断言 → 退休。
+ *
+ * 覆盖移交：
+ * - "渲染进程不再持有整库 / 没有整库导出" → `db-contract.test.ts` **C7**
+ *   （命令清单里没有 `db.export` / `export` / `backup` / `sql.raw`）+ **C1**（`caps.no_whole_file_export === true`）；
+ * - "建库入口仍然存在且在跑" → 本文件下面的「原有表仍存在于引擎 schema」+ `db-contract.test.ts` **C24**
+ *   （反复打开同一个库幂等：schema 不重复执行、不报错）+ **C25**（data 目录被删后能重建）；
+ * - 端口 API 本身就是"新的 getDatabase"：见 `message-index-cutover.test.ts`（读写分流契约）。
+ */
 describe("回归 — 存储层不变", () => {
-  it("getDatabase 导出仍存在", () => {
-    const source = readFile("core/storage/database.ts");
-    expect(source).toContain("export function getDatabase");
-  });
-
-  it("initDatabase 导出仍存在", () => {
-    const source = readFile("core/storage/database.ts");
-    expect(source).toContain("export async function initDatabase");
-  });
-
-  it("原有表仍存在 (projects, sessions, messages, tool_calls)", () => {
-    const source = readFile("core/storage/database.ts");
-    expect(source).toContain("CREATE TABLE IF NOT EXISTS projects");
-    expect(source).toContain("CREATE TABLE IF NOT EXISTS sessions");
-    expect(source).toContain("CREATE TABLE IF NOT EXISTS messages");
-    expect(source).toContain("CREATE TABLE IF NOT EXISTS tool_calls");
+  it("原有表仍存在于引擎 schema (projects, sessions, messages, tool_calls)", () => {
+    for (const table of ["projects", "sessions", "messages", "tool_calls"]) {
+      expect(schemaDeclaresTable(table), `引擎 schema 必须声明 ${table}`).toBe(true);
+    }
   });
 });

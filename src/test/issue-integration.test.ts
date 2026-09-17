@@ -93,19 +93,24 @@ describe("Issue 类型完整性", () => {
 });
 
 describe("Issue DB Schema", () => {
+  /**
+   * 第 18 轮（L1 收尾）：真源从已删除的 `core/storage/database.ts` 换成**引擎建库执行的 DDL**
+   * （`src-tauri/codem-db/sql/schema.sql`，`schema.rs` 用 `include_str!` 编译进引擎、
+   * `apply()` 一次 `execute_batch`）。断言的表名与索引名一字未改。
+   */
   it("issues 和 issue_comments 表在 SCHEMA 中定义", async () => {
     const fs = await import("fs");
     const path = await import("path");
-    const dbSource = fs.readFileSync(
-      path.join(__dirname, "../core/storage/database.ts"),
+    const schemaSql = fs.readFileSync(
+      path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
       "utf-8",
     );
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS issues");
-    expect(dbSource).toContain("CREATE TABLE IF NOT EXISTS issue_comments");
-    expect(dbSource).toContain("idx_issues_project");
-    expect(dbSource).toContain("idx_issues_status");
-    expect(dbSource).toContain("idx_issues_squad");
-    expect(dbSource).toContain("idx_issue_comments_issue");
+    expect(schemaSql).toContain("CREATE TABLE IF NOT EXISTS issues");
+    expect(schemaSql).toContain("CREATE TABLE IF NOT EXISTS issue_comments");
+    expect(schemaSql).toContain("idx_issues_project");
+    expect(schemaSql).toContain("idx_issues_status");
+    expect(schemaSql).toContain("idx_issues_squad");
+    expect(schemaSql).toContain("idx_issue_comments_issue");
   });
 });
 
