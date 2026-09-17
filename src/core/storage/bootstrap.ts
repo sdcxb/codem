@@ -22,6 +22,7 @@
 import { STORAGE_ENGINE_KEY, getStoragePort, hasStoragePort, setStoragePort, type StoragePort } from "./port";
 import { RustStoragePort, type StorageTransport } from "./rust-port";
 import { reportActionFailure } from "./persist-failure";
+import { domainEnsureLoaded } from "./domain-store";
 
 /**
  * 默认引擎（P5 第 2 段：已切到 `rust`）。
@@ -151,6 +152,100 @@ export async function registerRustStoragePort(
     );
     return { kind: "failed", error: e };
   }
+}
+
+/**
+ * 首屏要用到的**热表**（域镜像预取的清单）。
+ *
+ * 判据是"首屏或首个交互会读到它"，而不是"重要"：漏一张，那张表对应的面板
+ * 就还是会掉进"首次渲染读到空、之后没人重读"的坑里。
+ */
+export const HOT_DOMAIN_TABLES: readonly string[] = [
+  "projects",
+  "sessions",
+  "v2_sessions",
+  "notebooks",
+  "notebook_groups",
+  "goals",
+  "inbox",
+  "issues",
+  "squads",
+  "squad_members",
+  "flashcards",
+  "agent_profiles",
+  "prompt_drafts",
+  "turn_file_changes",
+  "recovery_data",
+  "accounts",
+  "notes",
+  "mcp_servers",
+  "quick_phrases",
+];
+
+/**
+ * **首屏之前把热表的域镜像拉齐**（第 12 轮）。
+ *
+ * ## 为什么必须在首屏之前做，而不是"就绪后重读"
+ *
+ * 域镜像的**读是同步的**（React 渲染路径里直接调 `listProjects()` 这类函数），
+ * 而**加载是异步的**（一次 IPC）。两者之间那个窗口就是问题：
+ *
+ * - 面板首次渲染时读一次 → 镜像还没就绪 → 拿到"该域的合理空结果"（B 态的正确行为）；
+ * - 而**没有任何东西会在稍后触发重读** —— 项目列表之所以没事，是因为
+ *   `App.tsx` 里给它单独打了一个"端口就绪后重新加载"的补丁（第 24 轮），
+ *   其余十几个域（目标 / 收件箱 / 问题 / 团队 / 闪卡 / 画像 / 草稿 / 轮次文件变更…）
+ *   **一个都没有**。
+ *
+ * 真机实测（v1.16.57 启动日志）：`[Store] loadFromDB: found 0 "projects"` →
+ * 紧接着（端口就绪后重读）`found 1 "projects"` —— 空读窗口是**可复现的**。
+ *
+ * 所以把就绪窗口挪到首屏之前：这里一次性触发全部热表加载并等它们就绪。
+ * 超时/被拒的表不会被静默忽略 —— 返回的 `pending` 会进日志，调用方还可以据此
+ * 注册"就绪后重读"作为兜底。
+ *
+ * ## 边界（为什么不会拖垮启动）
+ *
+ * - 单表超时 `perTableMs`（默认 1200ms）：一张坏表不会拖住整个启动；
+ * - 总超时 `totalMs`（默认 2500ms）：即使全部超时，启动也只多花 2.5 秒；
+ * - 表都小（几十到几百行）：正常情况下这一步是几十毫秒。
+ */
+export async function prefetchDomainMirrors(
+  opts: { tables?: readonly string[]; perTableMs?: number; totalMs?: number } = {},
+): Promise<{ ready: string[]; pending: string[]; ms: number }> {
+  const tables = opts.tables ?? HOT_DOMAIN_TABLES;
+  const perTableMs = opts.perTableMs ?? 1200;
+  const totalMs = opts.totalMs ?? 2500;
+  const started = Date.now();
+
+  if (!hasStoragePort()) return { ready: [], pending: [...tables], ms: 0 };
+  const port = getStoragePort();
+  if (port.kind !== "rust") return { ready: [], pending: [...tables], ms: 0 };
+  const probe = port as unknown as {
+    domains?: { isReady?: (t: string) => boolean };
+  };
+  if (!probe.domains?.isReady) return { ready: [], pending: [...tables], ms: 0 };
+
+  const jobs = tables.map(
+    (t) =>
+      new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        domainEnsureLoaded(t, finish);
+        setTimeout(finish, perTableMs);
+      }),
+  );
+  await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, totalMs))]);
+
+  const ready: string[] = [];
+  const pending: string[] = [];
+  for (const t of tables) {
+    (probe.domains.isReady(t) ? ready : pending).push(t);
+  }
+  return { ready, pending, ms: Date.now() - started };
 }
 
 /** 退出前的收尾：排空写队列 + checkpoint（不是整库导出） */

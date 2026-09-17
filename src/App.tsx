@@ -1233,6 +1233,42 @@ flushStreamBuffer(); // flush all on unmount
             useAppStore.getState().setDisplayMode(savedDisplayMode);
           }
         } catch { /* 读不到就用默认值 */ }
+        /**
+         * **域镜像预取：把"就绪窗口"挪到首屏之前**（第 12 轮）。
+         *
+         * 下面那段项目列表的补丁是"事后补救"（有界重试 + 重读），而且**只覆盖 projects 一个域**。
+         * 其余十几个域（目标 / 收件箱 / 问题 / 团队 / 闪卡 / 画像 / 草稿 / 轮次文件变更…）
+         * 都是"面板首次渲染时同步读一次"，**没有任何重读机制** ——
+         * 如果那一瞬间镜像还没加载完，它们会一直显示空列表直到用户手动切换页面。
+         *
+         * 所以在这里（所有迁移/自检之后、**任何读会话/项目之前**）把热表拉齐：
+         * 就绪的域从此永远命中；超时/被拒的域会进 `pending`，
+         * 下面按"就绪即重读"注册一次性兜底（不轮询）。
+         */
+        try {
+          const { prefetchDomainMirrors, HOT_DOMAIN_TABLES } = await import("./core/storage/bootstrap");
+          const pf = await prefetchDomainMirrors();
+          console.log(
+            `[Storage] 域镜像预取：就绪 ${pf.ready.length}/${HOT_DOMAIN_TABLES.length}（${pf.ms}ms）` +
+              (pf.pending.length > 0 ? `；未就绪：${pf.pending.join(" / ")}` : ""),
+          );
+          if (pf.pending.length > 0) {
+            /**
+             * 兜底：未就绪的表**就绪后重读一次**（一次性回调，不轮询）。
+             * 判据与项目列表那条补丁同源：必须是"这张表的镜像就绪了"，
+             * 而不是"端口存在"—— 否则重读会在镜像加载完成前触发，拿到的还是空。
+             */
+            const { domainEnsureLoaded } = await import("./core/storage/domain-store");
+            for (const table of pf.pending) {
+              domainEnsureLoaded(table, () => {
+                console.log(`[Storage] ${table} 镜像就绪 → 重新加载一次（预取超时兜底）`);
+                useProjectStore.getState().loadFromDB();
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("[Storage] 域镜像预取失败（不影响启动，各域按需惰性加载）:", e);
+        }
         useProjectStore.getState().loadFromDB();
         // S0-3: Initialize Capability Seam — register default local providers
         /**
