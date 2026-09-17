@@ -976,11 +976,28 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     seedHistory(S, 25);
 
     let gateDuringWrite: boolean | null = null;
-    // 用一条自定义账号的写入观察闸门：数据面 execute 在压缩体内同步发生
+    /**
+     * 用一条自定义包装观察闸门。
+     *
+     * ## 第 45 轮（线协议 P2-4）：两个通道都要包
+     *
+     * 手动压缩的删除走 `deleteMessagesByIds` → `message.ts::deleteMessageIndexRows`，
+     * 而它现在优先走 `data.command`（结构化回报）—— 只包 `execute` 会让这个观察点
+     * **永远不触发**（`gateDuringWrite` 恒为 `null`），用例从"验闸门"退化成"验空转"。
+     * 真端口里 `execute` 与 `command` 是同一条 dispatch，所以这里两个都包、判据一致。
+     */
     const originalExecute = port.data.execute.bind(port.data);
-    (port.data as any).execute = async (cmd: string, params?: Record<string, unknown>) => {
+    const originalCommand = port.data.command!.bind(port.data);
+    const observe = (cmd: string) => {
       if (cmd === "messages.delete" && gateDuringWrite === null) gateDuringWrite = isCompactionInProgress();
+    };
+    (port.data as any).execute = async (cmd: string, params?: Record<string, unknown>) => {
+      observe(cmd);
       return originalExecute(cmd as any, params as any);
+    };
+    (port.data as any).command = async (cmd: string, params?: Record<string, unknown>) => {
+      observe(cmd);
+      return originalCommand(cmd as any, params as any);
     };
 
     manualCompact(S);

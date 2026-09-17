@@ -1012,6 +1012,64 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         return { removed, added, refreshed, session_id: sid } as unknown as T;
       }
       writeLog.push({ command, params });
+      /**
+       * `messages.delete`（**结构化回报**）—— 第 45 轮线协议审计 P2-4。
+       *
+       * ## 为什么必须在这里补
+       *
+       * 真引擎的 `messages_delete`（`repo.rs:1510–1526`）返回
+       * `{written, requested, missing, soft, trim, affected_rows, count_clamped}`，
+       * 而渲染侧原来五个调用点都用 `data.execute` —— `execute` 把结果压成 `{written}`，
+       * 那些字段**一个都读不到**（P2-4 的缺陷本身）。
+       * 修完之后调用点改走 `data.command` 读它们，于是假端口必须让 `command` 也能跑这条命令：
+       * 走 `persist` 拿到真实的删除行数（`persist` 早已实现软/硬删除语义），
+       * 再补出结构化字段。否则测试只会得到一句"未实现的命令 messages.delete" ——
+       * 那是**基座缺口**，不是产品行为（与本文件里 `fts.rebuild` / `crud.list` 补 `command`
+       * 分支是同一类修正）。
+       *
+       * ## 字段形状逐条对齐 Rust
+       *
+       * - `missing = requested - written`（批量删除里"有些已经没了"是正常形态）；
+       * - `affected_rows`：真实现含**外键级联**（`tool_calls` / `message_feedback`，都是
+       *   `ON DELETE CASCADE`），软删除不删行所以等于 `written`；
+       * - `count_clamped`：引擎按会话把 `message_count` 减到 0 以下时由 `MAX(0, …)` 夹断
+       *   —— 假端口**不维护**那一列（没有 `bump_session_message_count` 的等价物），
+       *   所以这里如实回 `false`，并**不假装**做过这件事（需要"夹断态"的用例
+       *   应当自己构造前置漂移，见 `feature-wire-tail-fixes.test.ts` 的 FWT-4a）。
+       */
+      if (command === "messages.delete") {
+        const ids = (params?.ids as string[] | undefined) ?? [];
+        if (ids.length === 0) {
+          // 真实现：`ids` 空数组直接报 invalid（"删除是危险操作，必须显式给出目标"）
+          throw new StorageError("INVALID", "不能为空数组（删除是危险操作，必须显式给出目标）");
+        }
+        const target = table("messages");
+        const before = new Set(target.map((r) => String(r.id)));
+        const written = persist(command, params);
+        const hard = params?.soft !== true && params?.trim !== true;
+        let cascaded = 0;
+        if (hard) {
+          // 外键级联的等价物（真引擎按 ON DELETE CASCADE 真删这些行）
+          for (const t of ["tool_calls", "message_feedback"]) {
+            const rows = table(t);
+            const kept = rows.filter((r) => {
+              const key = t === "tool_calls" ? r.message_id : r.message_id;
+              return !(before.has(String(key)) && !target.some((m) => String(m.id) === String(key)));
+            });
+            cascaded += rows.length - kept.length;
+            tables.set(t, kept);
+          }
+        }
+        return {
+          written,
+          requested: ids.length,
+          missing: Math.max(0, ids.length - written),
+          soft: params?.soft === true || params?.trim === true,
+          trim: params?.trim === true,
+          affected_rows: written + cascaded,
+          count_clamped: false,
+        } as unknown as T;
+      }
       if (command === "crud.count") {
         const name = String(params?.table ?? "");
         return { count: table(name).length, table: name } as unknown as T;

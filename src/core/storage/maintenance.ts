@@ -96,6 +96,29 @@ export interface MaintenanceResult {
   recountCheckedSessions: number;
   /** 读取失败而跳过的会话数（单会话失败不再中断整轮，但要可见） */
   recountFailedSessions: number;
+  /**
+   * 本次**实际检查**了不变量（"模型可见即已记录" + 工具调用配对）的会话数。
+   *
+   * ## 为什么这个数字必须存在（第 45 轮功能上下文审计 §"未做"）
+   *
+   * `runtime-invariants` 原来**只在 `NODE_ENV === "development"` 或
+   * `DEBUG_INVARIANTS=1` 时运行**（调用点 `agentic-loop.ts:831`），
+   * 而发布包是 production —— 也就是说**生产上没有任何人断言**这条不变量，
+   * 而它正是 P0-D0（主聊天的 `user_message` / `assistant_text` 事件曾经整体不写）
+   * 的唯一自动判据。改成"在启动维护里跑一次"之后，`0` 与"跑过且没有违规"
+   * 必须能分开 —— 这就是这个字段（与 `recountCheckedSessions` 同一个理由）。
+   */
+  invariantCheckedSessions: number;
+  /**
+   * 本次发现的不变量违规条数（**长期应当是 0**）。
+   *
+   * 非 0 意味着"消息表里有一行在事件日志里没有任何对应事件"（或反之），
+   * 也就是**事件双写又断了一条路**。这个数字进维护汇总行 —— 它是那条不变量
+   * 在生产上唯一会被打印出来的地方。
+   */
+  invariantViolations: number;
+  /** 违规样本（最多 5 条，形如 `sessionId/type`）—— 只报数字的话排查还得再跑一次 */
+  invariantSamples: string[];
 }
 
 /**
@@ -716,6 +739,78 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
+/**
+ * 在生产路径上跑一次运行时不变量审计（第 45 轮功能上下文审计 §"未做" 的收口）。
+ *
+ * ## 为什么是这里，而不是"把 `agentic-loop.ts:831` 的门控拆掉"
+ *
+ * `agentic-loop.ts:831` 的门控（`NODE_ENV === "development" || DEBUG_INVARIANTS === "1"`）
+ * 是**有意**的：那个调用点在**每一轮 `run()`** 上，而 `checkVisibleRecordedInvariant`
+ * 每个会话要读**全部事件** + 全部消息（`listMessages` 还会合并权威日志）。
+ * 拆掉门控 = 每次用户发一条消息就付一次全量读，代价与收益不对称。
+ *
+ * 而这条不变量要抓的缺陷（事件双写断了）是**持久状态**，不是瞬时状态：
+ * 消息写进去了、事件没写，那个差异不会自己消失。所以"启动时（以及每次维护时）
+ * 检查一遍"就足够，且成本被摊到每天几次 —— 这与 `verifyIntegrityThrottled`
+ * （12 小时一次的 `PRAGMA quick_check`）是同一个取舍。
+ *
+ * ## 为什么会话列表从这里传进去
+ *
+ * `checkVisibleRecordedInvariant()` **无参调用什么都不检查**（它自己列不出会话，
+ * 原注释写着这一点）却返回 `passed: true` —— 那是"没跑"冒充"通过"。
+ * 这里已经有 `sessions` 镜像（对账那一段刚读过），显式传进去，
+ * 于是"检查了几个"在返回结构里是诚实的。
+ *
+ * ## 三态与容错
+ *
+ * - 端口没有 `command` 能力 / 会话列表为空 → `checked = 0`，**不假装通过**；
+ * - 单个会话抛错不中断整轮（记 `checked` 为已尝试的那个数，跳过该会话并上报）；
+ * - 违规**不抛**：它是一条"需要被看见"的数据事实，不是维护失败。
+ */
+export async function auditInvariantsForSessions(
+  sessionIds: readonly string[],
+): Promise<{ checked: number; violations: number; samples: string[] }> {
+  const out = { checked: 0, violations: 0, samples: [] as string[] };
+  if (sessionIds.length === 0) return out;
+  try {
+    // 动态 import：`runtime-invariants` 会拉进 `event-log` + `message`（体量不小），
+    // 而维护是低频路径，不值得让它进启动包的静态图。
+    const { runAllInvariants } = await import("../llm/runtime-invariants");
+    for (const sid of sessionIds) {
+      if (!sid) continue;
+      try {
+        const res = runAllInvariants(sid);
+        out.checked += 1;
+        if (res.violations.length > 0) {
+          out.violations += res.violations.length;
+          for (const v of res.violations.slice(0, 3)) {
+            if (out.samples.length < 5) out.samples.push(`${sid}/${v.type}`);
+          }
+        }
+      } catch (e) {
+        /*
+         * 单会话失败**不算检查过**（`checked` 不加）：与对账段同一条规则 ——
+         * 不加的话"跑了 3 个"里会混进"3 个里 1 个抛了"，而汇总行看不出区别。
+         */
+        reportPersistFailure("maintenance.invariantAudit", e, `会话 ${sid} 的不变量检查未跑成（未计入已检查数）`);
+      }
+    }
+  } catch (e) {
+    reportPersistFailure("maintenance.invariantAudit", e, "运行时不变量审计未跑成（本次 checked=0）");
+  }
+  return out;
+}
+
+/** 不变量审计那一段（第 45 轮）：`0` 与"没跑"必须分得开 */
+function formatInvariantAudit(outcome: { checked: number; violations: number; samples: string[] }): string {
+  if (outcome.checked === 0) return "不变量审计 跳过（没有可检查的会话）";
+  if (outcome.violations === 0) return `不变量审计 ${outcome.checked} 个会话 全部通过`;
+  return (
+    `不变量审计 **${outcome.violations} 条违规**（检查 ${outcome.checked} 个会话）` +
+    (outcome.samples.length > 0 ? `：${outcome.samples.join("、")}` : "")
+  );
+}
+
 export async function runDatabaseMaintenance(
   opts: {
     /**
@@ -768,13 +863,20 @@ export async function runDatabaseMaintenance(
      *
      * `session_events` 里有**JSONL 里没有**的信息，所以它不是"可从权威日志重建的派生数据"：
      * - `session_meta`（`selectPresetForSession` / `recordSessionFeedback` 写它）：
-     *   `getSessionPreset` / `listSessionFeedback` / `project/files.ts` 的
-     *   `instructions_override` 全靠读它 —— 这些**不在消息表里**，删了永久消失。
-     *   （引擎的压缩确实豁免了 `session_meta`，但下面几条不豁免。）
+     *   **本报告复核后只留下真实存在的消费者** —— `project/files.ts:204–207`
+     *   （`action === "instructions_override"`）真的读它，这些内容**不在消息表里**，
+     *   删了永久消失。
+     *   （第 45 轮功能上下文审计的修正：这段原来把 `getSessionPreset`
+     *   （`preset-discovery.ts:333`）与 `listSessionFeedback`（`feedback.ts:87`）
+     *   也列为消费者，但两者都**零生产调用者**（全仓只命中定义处与测试）。
+     *   用不存在的消费者论证"不能压缩"是**假论据** —— 论据换成真实的那一个，
+     *   结论不变。P2-D7 的处置见另案。）
      * - `compaction` 事件（`CompactionPayload`：`removedMessageIds` / `summary`）：
-     *   `event-projection` 的 `applyCompaction` 与 `getActiveGenerations` 靠它把消息
-     *   标记为被取代；`validateReplay` 也检查它。快照载荷里只固化了
+     *   `event-projection` 的 `applyCompaction` 真的读它（把消息标记为被取代）；
+     *   `validateReplay` 也检查它。快照载荷里只固化了
      *   `{ messages, compactionSummary, removedMessageIds }`，**没有逐条的 compaction 事件**。
+     *   （原注释此处还列了 `getActiveGenerations`：它是 `event-projection.ts:471` 的
+     *   定义，同样**零生产调用者** —— 一并按"只列真实消费者"处理。）
      * - `tool_call` / `tool_result` 的配对：`runtime-invariants` 的
      *   `checkToolCallPairingInvariant` 靠事件配对判断"有没有未完成的工具调用"，
      *   而快照只固化投影出的 `messages`（配对关系不是它的形状）。
@@ -819,6 +921,9 @@ export async function runDatabaseMaintenance(
     recountedSessions: 0,
     recountCheckedSessions: 0,
     recountFailedSessions: 0,
+    invariantCheckedSessions: 0,
+    invariantViolations: 0,
+    invariantSamples: [],
   };
 
   try {
@@ -1035,6 +1140,39 @@ export async function runDatabaseMaintenance(
     } catch (e) {
       console.warn("[Maintenance] 会话计数对账失败（跳过）:", e);
     }
+
+    /**
+     * ## 运行时不变量审计（第 45 轮功能上下文审计 §"未做" 的收口）
+     *
+     * 见 `auditInvariantsForSessions` 的长注释：`runtime-invariants` 原来只在
+     * `NODE_ENV === "development"` 下跑（`agentic-loop.ts:831`），**生产无人断言** ——
+     * 而那条不变量（模型可见即已记录）正是 P0-D0（主聊天事件整体不写）的唯一自动判据。
+     * 这里把它接到**每次维护**（启动时必跑）上：缺陷是持久状态，不是瞬时状态，
+     * 所以"每天检查几次"足够；关键是**它真的会跑，而且跑没跑、违规几条都进汇总行**。
+     *
+     * ⚠️ 放在对账之后：对账段读的就是同一份 `sessions` 镜像，
+     * 两会话集合不一致（一个读镜像、一个读列表）会让"检查了几个会话"这个数自相矛盾。
+     */
+    result.invariantCheckedSessions = 0;
+    result.invariantViolations = 0;
+    result.invariantSamples = [];
+    try {
+      const { domainReadMany } = await import("./domain-store");
+      const rows = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
+      const ids = rows.map((r) => String(r.id ?? "")).filter((id) => id.length > 0);
+      const audit = await auditInvariantsForSessions(ids);
+      result.invariantCheckedSessions = audit.checked;
+      result.invariantViolations = audit.violations;
+      result.invariantSamples = audit.samples;
+      if (audit.violations > 0) {
+        console.warn(
+          `[Maintenance] 不变量违规：${audit.violations} 条（检查 ${audit.checked} 个会话）` +
+            `—— 消息表与事件日志已经不一致（样例：${audit.samples.join("、") || "无"}）`,
+        );
+      }
+    } catch (e) {
+      console.warn("[Maintenance] 不变量审计失败（跳过）:", e);
+    }
   } catch (e) {
     console.warn("[Maintenance] 维护失败（不影响使用）:", e);
   }
@@ -1063,7 +1201,13 @@ export async function runDatabaseMaintenance(
       `索引裁剪 ${result.trimmedIndexMessages} 条、附件预热 ${result.warmedAttachments} 个、孤儿清理 ${result.prunedAttachmentOrphans} 个、` +
       `日志压缩 ${result.compactedLogSessions} 个会话、${formatTelemetryPrune(telemetryPrune)}、` +
       formatAuditPrune(auditPrune, result) +
-      `、${formatCompact(compact)}、${formatIntegrity(integrity)}`,
+      `、${formatCompact(compact)}、${formatIntegrity(integrity)}、` +
+      // 第 45 轮：这条不变量原来在生产上**无人断言**，现在它每次维护都会在这里报一次
+      formatInvariantAudit({
+        checked: result.invariantCheckedSessions,
+        violations: result.invariantViolations,
+        samples: result.invariantSamples,
+      }),
   );
   return result;
 }

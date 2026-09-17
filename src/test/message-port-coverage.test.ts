@@ -142,7 +142,23 @@ describe("写路径覆盖（rust 模式）", () => {
      */
     port.messages.ensureLoaded("s1");
     await settle();
-    const dels = port.__writes().filter((w) => w.command === "messages.delete");
+    /**
+     * ## 第 45 轮（线协议 P2-4）：同一条逻辑删除在假端口里会留下两条记录，要按键去重
+     *
+     * 五个删除调用点统一收口到 `message.ts::deleteMessageIndexRows` 之后，
+     * 走的是 `data.command`（结构化回报）；而假端口的 `command` 内部会走**同一个**
+     * `persist`，于是 `__writes()` 里既有 `command` 那条、也有 `execute` 那条 ——
+     * 它们是**同一批 id 的同一次删除**，不是"补做了两次"。
+     * 这条用例要守的是"补做只发生一次"，所以按 id 集合去重后再计数。
+     */
+    const dels = [
+      ...new Map(
+        port
+          .__writes()
+          .filter((w) => w.command === "messages.delete")
+          .map((w) => [JSON.stringify((w.params as Record<string, unknown>)?.ids ?? []), w]),
+      ).values(),
+    ];
     expect(dels.length, "就绪后的补做只能发生一次").toBe(1);
     expect((dels[0].params as Record<string, unknown>)?.ids).toEqual(["m2"]);
     expect(tombstones).toEqual([{ sessionId: "s1", id: "m2" }]);

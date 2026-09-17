@@ -18,6 +18,7 @@
  */
 
 import { getEventLog } from "../storage/event-log";
+import { invalidateFeedbackCache } from "../storage/message";
 import { domainDelete, domainPortRegistered, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
 import { reportPersistFailure } from "../storage/persist-failure";
 
@@ -319,6 +320,16 @@ export function putMessageFeedback(
         }],
         { mode: "replace", scope: "feedback.put", note: "消息反馈未保存" },
       );
+      /**
+       * **P2-D9**：域写之后必须让 `message.ts` 的 `feedbackCache` 失效。
+       *
+       * 那个缓存是 `loadFeedback`（同步接口）的写穿缓存，唯一写入者是遗留的
+       * `saveFeedback`。只要它里面有这条消息的值，`loadFeedback` 就**永远**返回它 ——
+       * 而这里刚刚把库里改成了别的评级（或取消了）。
+       * 失效必须在**这里**发生：缓存键是 message id，与 session 无关，
+       * 而"域写发生在哪"只有本模块知道。
+       */
+      invalidateFeedbackCache(messageId);
     };
     if (existingRow && existingRow.id !== `fb-${messageId}`) {
       // 历史行用了别的 id（例如 message.ts 的轻量路径写的 `fb-...`）：
@@ -484,6 +495,12 @@ export function deleteMessageFeedback(
 
   // ④：确实有行 → 删。删除写穿的失败由 `domainDelete` 上报，不静默。
   domainDelete(TABLE, { id: row.id }, { scope: "feedback.delete", note: "消息反馈未删除" });
+  /**
+   * **P2-D9**：删除也是"换人写"——`message.ts` 的 `feedbackCache` 若还留着一条旧评级，
+   * `loadFeedback` 会**永远**返回它，于是"用户点了取消、界面却仍然显示已点赞"
+   * 这个形态会一直存在（缓存没有别的失效点）。与 `putMessageFeedback` 同一个理由。
+   */
+  invalidateFeedbackCache(messageId);
   return { ok: true, absent: true };
 }
 /**

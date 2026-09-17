@@ -390,9 +390,21 @@ const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) =
      * 镜像的 `hiddenIds()` 直接读它（`hidden=1 && trimmed≠1` 才等于"被压缩"），
      * 于是读路径不需要任何进程内状态就能给出正确答案。
      */
-    void port.data
-      .execute("messages.delete", { ids: deletable, trim: true })
-      .catch((e) => reportPersistFailure("message.trimIndexedMessages", e, "索引裁剪的隐藏未落到查询索引"));
+    /**
+     * ## P2-4：走 `deleteMessageIndexRows`（**读引擎回报**），不再走裸 `execute`
+     *
+     * 裁剪是 `soft`（`trim: true` → `hidden=1, trimmed=1`，不删行）——
+     * 引擎在软删除分支里也照常回报 `count_clamped`（恒 `false`：行没少，计数不可能被夹断），
+     * 所以这条路的回报里唯一有信息量的是 `missing`（"要裁的 id 已经不在库里了"）。
+     */
+    deleteMessageIndexRows(
+      port,
+      deletable,
+      "trim",
+      [sessionId],
+      "message.trimIndexedMessages",
+      "索引裁剪的隐藏未落到查询索引",
+    );
     /**
      * 镜像同步：**改隐藏与裁剪标记，而不是移除行**。
      *
@@ -2073,9 +2085,19 @@ export function deleteMessage(id: string): void {
      * ⚠️ 反过来：`soft: true`（隐藏）**不带**这个字段 —— 隐藏不删行、不触发级联，
      * 它不是破坏性删除，声明它会误导闸门的语义（见 `deleteMessagesByIds` 的调用）。
      */
-    void port.data
-      .execute("messages.delete", { ids: [id], confirm_bulk: true })
-      .catch((e) => reportPersistFailure("message.deleteMessage", e, "消息未从查询索引删除"));
+    /*
+     * P2-4：这条是**硬删除**（真删行 + 外键级联），所以它是 `count_clamped`
+     * 最可能的来源 —— 引擎按会话把计数减掉，减到 0 以下就夹断。
+     * 夹断时这里会立刻按索引真值把该会话的计数重算回去。
+     */
+    deleteMessageIndexRows(
+      port,
+      [id],
+      "hard",
+      sessionId ? [sessionId] : [],
+      "message.deleteMessage",
+      "消息未从查询索引删除",
+    );
     if (sessionId) {
       port.applyMessageDelete?.(sessionId, [id]);
       removeFtsViaPort(sessionId, [id]);
@@ -2159,9 +2181,19 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
        * 它的 `tool_calls` / `message_feedback` —— 闸门按真实影响行数算，不声明就整条回滚。
        * 闸门要拦的不是这种"目标已经写清楚"的删除，而是**规模不体现在参数里**的隐式级联。
        */
-      void port.data
-        .execute("messages.delete", { ids, confirm_bulk: true })
-        .catch((e) => reportPersistFailure("message.deleteMessagesBefore", e, "旧消息未从查询索引删除"));
+      /*
+       * P2-4：范围硬删除（一次可能几百条）是**最容易夹断**的一条 ——
+       * 删的行数远超 `message_count` 现值时引擎把它夹到 0，而库里还有行。
+       * 走统一入口后这件事会被当场看见、并立刻按索引真值重算。
+       */
+      deleteMessageIndexRows(
+        port,
+        ids,
+        "hard",
+        [sessionId],
+        "message.deleteMessagesBefore",
+        "旧消息未从查询索引删除",
+      );
       port.applyMessageDelete?.(sessionId, ids);
       removeFtsViaPort(sessionId, ids);
       appendTombstonesFor(sessionId, ids);
@@ -2225,9 +2257,20 @@ export function deleteMessagesByIds(ids: string[]): number {
    */
   const port = rustMessagePort();
   if (port) {
-    void port.data
-      .execute("messages.delete", { ids, soft: true })
-      .catch((e) => reportPersistFailure("message.deleteMessagesByIds", e, "消息未能软删除（索引侧未更新）"));
+    /*
+     * P2-4：软删除（压缩隐藏）**不删行**，所以引擎回报里 `count_clamped` 恒 false
+     * （行没少 → 计数不可能被夹断）。走统一入口仍然有意义：`missing` 会告诉我们
+     * "这次要隐藏的 id 已经有不在库里的"（渲染侧 id 集合与库不一致的信号），
+     * 且回报读不到时会如实降级告警，而不是静默当成"没有异常"。
+     */
+    deleteMessageIndexRows(
+      port,
+      ids,
+      "soft",
+      [...bySession.keys()],
+      "message.deleteMessagesByIds",
+      "消息未能软删除（索引侧未更新）",
+    );
     // 同步记录：镜像可能还没加载完，读路径必须立刻看到这次隐藏
     for (const [sid, sids] of bySession) {
       for (const id of sids) rememberHidden(sid, id);
@@ -2318,6 +2361,228 @@ export function getMessageCount(sessionId: string): number {
     return 0;
 }
 
+// ========== P2-4：`messages.delete` 回报的字段必须真的有人读 ==========
+
+/**
+ * `messages.delete` 的**结构化回报**（Rust `messages_delete`，`repo.rs:1510–1526`）。
+ *
+ * 五个字段都是引擎刻意给的，其中 `count_clamped` 是"`message_count` 已经漂移过"
+ * 这件事的**唯一在线信号**（见 `bump_session_message_count` 的长注释，`repo.rs:790–800`）。
+ */
+export interface MessageDeleteOutcome {
+  /** 真正被删/被隐藏的行数 */
+  written: number;
+  /** 请求里给了几个 id */
+  requested: number;
+  /** 其中在库里找不到的 id 数（批量幂等删除的正常形态） */
+  missing: number;
+  /** 真实影响行数（含外键级联，审计触发器行已剔除） */
+  affectedRows: number;
+  /**
+   * 会话消息计数被 `MAX(0, …)` **夹断**过。
+   *
+   * 夹断**只可能**发生在"计数已经漂移过"的会话上（删除数 > 计数现值），
+   * 所以它不是噪音 —— 它是"这个会话的 `message_count` 不可信"的判据。
+   * 实测形态：计数 1、库里 5 条 → 硬删 3 条 → 计数 0、库里还剩 2 条。
+   */
+  countClamped: boolean;
+}
+
+/**
+ * 硬/软删除消息索引行 —— **唯一入口**，并且**读引擎回报的每一个字段**（P2-4）。
+ *
+ * ## 它修的是什么
+ *
+ * 五个调用点原来都是 `void port.data.execute("messages.delete", …)`，
+ * 而 `execute` 刻意把结果压成 `{ written }`（`rust-port.ts:504–514`）——
+ * 于是 Rust 侧刻意返回的 `count_clamped` / `affected_rows` / `missing`
+ * **一个都没被读过**（全仓 `grep` 零命中，连测试都没读）。
+ * 而 `repo.rs:790–800` 的设计论证正是建立在"调用方会把它转发出去"之上：
+ * "夹断本身是对的，错的是'夹了却不说'"。论证与实现因此是**脱节**的，
+ * 后果是"0 条消息的会话里躺着 2 条"这种状态只有 12 小时一次的启动维护才可能发现。
+ *
+ * ## 现在的闭环（判据落在行为上）
+ *
+ * 1. 读回报 → `countClamped === true` 时**立刻**按索引真值重算该会话的 `message_count`
+ *    （`reconcileSessionMessageCount`，与启动维护用的是**同一个**实现）；
+ * 2. 重算这件事写一条 `console.warn` —— 也就是"夹断"在日志里**看得见**，
+ *    而不是等下一次维护的汇总行；
+ * 3. `affected_rows > written`（有外键级联）与 `missing > 0`（请求的 id 已不存在）
+ *    也各留一条信号：前者是"这次删除比参数里写的更大"，后者是"这套 bookkeeping 已经与库不一致"。
+ *
+ * ## 拿不到回报时**不假装拿到了**（没有 `command` 能力 → 退回 `execute`）
+ *
+ * `StorageDataPort.command` 是**可选**能力（`port.ts` 的说明），契约测试里的极简假端口
+ * 可能没有它。这一态下退回 `execute`（至少把这次删除发出去），但**如实打一条**：
+ * 否则"夹断没被看见"会被误读成"这次没有夹断"。
+ *
+ * 顺带记下：`execute` 与 `command` 在真端口里是**同一条 dispatch**，重试规则也相同
+ * （`rust-port.ts:530–543` 的注释），而 `messages.delete` 本来就不在
+ * `RETRYABLE_WRITE_COMMANDS` 白名单里 —— 所以换通道**不改变**重试行为。
+ */
+export type MessageDeleteMode = "hard" | "soft" | "trim";
+
+export function messageDeleteParams(ids: string[], mode: MessageDeleteMode): Record<string, unknown> {
+  if (mode === "trim") return { ids, trim: true };
+  if (mode === "soft") return { ids, soft: true };
+  return { ids, confirm_bulk: true };
+}
+
+function deleteMessageIndexRows(
+  port: RustMessagePortLike,
+  ids: string[],
+  mode: MessageDeleteMode,
+  sessionIdsForReconcile: readonly string[],
+  scope: string,
+  note: string,
+): void {
+  const cmdParams: Record<string, unknown> = messageDeleteParams(ids, mode);
+  if (!port.data.command) {
+    /*
+     * 没有结构化通道：命令照样发，但"回报读不到"这件事必须可见。
+     * 这是一条**降级**信号（不是失败）：真机上它意味着这台机器上的夹断判据失效了。
+     */
+    console.warn(
+      `[MessageStorage] ${scope}：端口没有 command 能力，本次删除的 count_clamped/affected_rows 读不到` +
+        `（删 ${ids.length} 条；这条降级不是"没有夹断"）`,
+    );
+    void port.data.execute("messages.delete", cmdParams).catch((e) => reportPersistFailure(scope, e, note));
+    return;
+  }
+
+  void port.data
+    .command<Record<string, unknown>>("messages.delete", cmdParams)
+    .then((raw) => {
+      const written = Number(raw?.written ?? 0);
+      const requested = Number(raw?.requested ?? ids.length);
+      const missing = Number(raw?.missing ?? 0);
+      const affected = Number(raw?.affected_rows ?? 0);
+      /** 字段是否**真的在回报里**：读不到时不许当成 false（"字段读不到就取默认值"是本仓库一直在消灭的模式） */
+      const hasClampedField = typeof raw?.count_clamped === "boolean";
+
+      if (missing > 0 && written === 0) {
+        // 请求的 id 一个都不在库里：这不是错误（幂等删除的正常形态），但它是 bookkeeping 偏了的信号
+        console.warn(
+          `[MessageStorage] ${scope}：${requested} 个目标在索引里一条都不存在（missing=${missing}）——` +
+            `渲染侧的 id 集合与库已经不一致`,
+        );
+      } else if (missing > 0) {
+        console.warn(`[MessageStorage] ${scope}：删 ${written}/${requested} 条，另有 ${missing} 个目标已不存在`);
+      }
+      if (affected > written) {
+        // 外键级联：参数里看不出规模的那部分（这就是闸门关心的事）
+        console.warn(
+          `[MessageStorage] ${scope}：影响行数 ${affected} > 直接删除 ${written}（差额是外键级联：tool_calls / message_feedback）`,
+        );
+      }
+
+      if (!hasClampedField) {
+        console.warn(
+          `[MessageStorage] ${scope}：引擎回报里没有 count_clamped 字段 —— 夹断判据不可用（不是"没有夹断"）`,
+        );
+        return;
+      }
+      if (raw.count_clamped !== true) return;
+
+      /*
+       * ## 夹断 → 立即按索引真值重算（P2-4 想要的那条闭环）
+       *
+       * 为什么必须**当场**修：夹断意味着这个会话的 `message_count` 已经不可信，
+       * 而它正被侧边栏与 `session_trace` 直接展示 —— 不改的话用户看到的是
+       * "0 条消息的会话"（库里其实还有行），一直持续到 12 小时后的启动维护。
+       *
+       * ⚠️ 一次删除**可能跨会话**（`deleteMessagesByIds` 的入参只给 id，
+       * 归属由 `sessionIdsForMessages` 反查）—— 所以这里逐个会话重算，
+       * 而不是"挑一个"：挑错会话等于把真值写进另一个会话。
+       */
+      console.warn(
+        `[MessageStorage] ${scope}：` +
+          `会话消息计数被夹断（count_clamped=true，删 ${written} 条）→ 立即按索引真值重算` +
+          (sessionIdsForReconcile.length > 0
+            ? `（会话 ${sessionIdsForReconcile.join(", ")}）`
+            : "（无法定位会话：调用方没给 sessionId）"),
+      );
+      for (const sid of sessionIdsForReconcile) {
+        void reconcileSessionMessageCountById(sid, `${scope} 检测到计数被夹断`);
+      }
+    })
+    .catch((e) => reportPersistFailure(scope, e, note));
+}
+
+/**
+ * 按**索引真值**重算并写回一个会话的 `message_count`（P2-4 的闭环动作）。
+ *
+ * ## 为什么读 `messages.count` 的 `total`
+ *
+ * `total` = `SELECT COUNT(*) FROM messages WHERE session_id = ?`（**库里的行数**，
+ * 含 `hidden = 1` 的软删行）—— 这正是引擎自己维护那一列时用的口径
+ * （`bump_session_message_count` 是按"真实删掉的行数"增减的）。
+ * 拿 `visible`（`hidden = 0`）去写会得到**第二个真相**：压缩隐藏 200 条之后，
+ * 索引真值没变而写回去的计数掉了 200 —— 下一次对账又要改回来，用户看到数字自己跳。
+ * （启动维护的 `maintenance.ts` 对账块用的是同一个字段，见那里的长注释。）
+ *
+ * ## 返回值是**三态**，不许压成 boolean
+ *
+ * - `"reconciled"` —— 读到了真值，与现存计数不一致，已写回；
+ * - `"consistent"` —— 读到了真值，本来就一致（**不等于失败**）；
+ * - `"unavailable"` —— 读不到真值（端口没有 `command` / 该会话读失败）：**什么都没写**。
+ *
+ * 三态是刻意的：`consistent` 与 `unavailable` 混成一个 `false`，
+ * 就会让"没读到"被读成"对上了"——那正是本项目一直在消灭的那类谎报。
+ */
+export async function reconcileSessionMessageCountById(
+  sessionId: string,
+  reason: string,
+): Promise<"reconciled" | "consistent" | "unavailable"> {
+  const port = rustMessagePort();
+  if (!port?.data.command) return "unavailable";
+  let total: number;
+  try {
+    const counted = await port.data.command<{ total?: number; count?: number }>("messages.count", {
+      session_id: sessionId,
+    });
+    const n = Number(counted?.total ?? counted?.count ?? NaN);
+    if (!Number.isFinite(n)) return "unavailable";
+    total = n;
+  } catch (e) {
+    reportPersistFailure("message.reconcileMessageCount", e, `会话 ${sessionId} 的索引真值读不到（计数未重算）`);
+    return "unavailable";
+  }
+
+  /*
+   * 现存值从**域镜像**读（`sessions` 表的同一行）。
+   *
+   * 用动态 import 而不是顶层 import：`maintenance.ts` 顶层 import 了
+   * `./session`（它会 import `./domain-store`），而 `domain-store` 与 `message.ts`
+   * 之间已有静态依赖 —— 顶层再拉一条 `message → domain-store` 的边会把这条链
+   * 绕成环（`domainWrite` 在模块初始化期被求值时拿到 `undefined`）。
+   */
+  const { domainReadOne } = await import("./domain-store");
+  const row = domainReadOne<{ message_count?: number }>("sessions", { id: sessionId }, (r) => ({
+    message_count: Number(r.message_count ?? 0),
+  }));
+  if (row === undefined || row === null) {
+    /*
+     * 镜像里没有这个会话（`undefined` = 未接手；`null` = 行不存在）。
+     * 这两种态**都不能**写：写一个"读不到来源"的值就是第二次漂移。
+     */
+    reportPersistFailure(
+      "message.reconcileMessageCount",
+      new Error("会话行在镜像里读不到"),
+      `会话 ${sessionId} 的 message_count 未重算（${reason}）`,
+    );
+    return "unavailable";
+  }
+  if (Number(row.message_count) === total) return "consistent";
+
+  const { updateSession } = await import("./session");
+  updateSession(sessionId, { messageCount: total });
+  console.log(
+    `[MessageStorage] 会话计数重算：${sessionId} ${row.message_count} → ${total}（原因：${reason}）`,
+  );
+  return "reconciled";
+}
+
 // ========== P0: Message Feedback (like / dislike) ==========
 
 export type FeedbackType = "like" | "dislike";
@@ -2348,6 +2613,41 @@ export interface FeedbackRecord {
  */
 const feedbackCache = new Map<string, FeedbackType | null>();
 
+/**
+ * 反馈**写路径换人**之后的缓存失效钩子（第 45 轮功能上下文审计 **P2-D9**）。
+ *
+ * ## 原来坏在哪（可复现的现场形态）
+ *
+ * `feedbackCache` 的唯一写入者是下面的 `saveFeedback`（`feedback.set`），
+ * 而 UI 上的真实写路径是 `core/llm/feedback.ts` 的 `putMessageFeedback` /
+ * `deleteMessageFeedback`（走**域写** `crud.upsert` / `crud.delete`）——
+ * 它们**不碰**这个缓存。于是读路径 `loadFeedback` 第一行就 `if (feedbackCache.has(id)) return …`：
+ *
+ * 1. 任何一次 `saveFeedback`（遗留路径、测试夹具、未来的插件）把值塞进缓存；
+ * 2. 之后用户点赞 → 改踩 → 取消（走域写，库里已经是新值 / 已经没有行）；
+ * 3. 而 `loadFeedback` **永远**返回缓存里那一次的值 —— 取消之后界面仍显示有点赞。
+ *
+ * 缓存从来没有失效点，所以这不是"概率性问题"，是"一旦进缓存就再也出不来"。
+ *
+ * ## 修法与"为什么不直接删掉缓存"
+ *
+ * `loadFeedback` 是**同步**接口而 IPC 是异步的，缓存是它唯一的同步来源；
+ * 删掉缓存 = "刚写完读不到"（原注释里的第 11 段缺陷）。
+ * 所以保留缓存，但把**失效点补上**：两个域写路径在写成功后调用本函数。
+ *
+ * ## 换人之后这里返回什么（⚠️ 如实记下的残余缺陷）
+ *
+ * `saveFeedback` 走的是引擎的 `feedback.set`（5 列），**不写域镜像**；
+ * 而 `loadFeedback` 的镜像是启动时读进来的那份 —— 也就是说
+ * **写进去了、镜像里没有**（下次读镜像还是旧值 / 没有行）。
+ * 彻底修法是让 `saveFeedback` 自己走域写；但它的三个调用点里两个是测试，
+ * 一个是 `store.ts:639` 的**注释**（生产调用者 0），改它的收益与风险不成比例。
+ * 所以这里把这件事变成**可见**的：调它的人都从 doc 里看得见"镜像不会同步"。
+ */
+export function invalidateFeedbackCache(messageId: string): void {
+  feedbackCache.delete(messageId);
+}
+
 /** 反馈写入是否走 Rust（端口可用时的分流判据） */
 function rustFeedbackPort(): RustMessagePortLike | null {
   const port = rustMessagePort();
@@ -2357,7 +2657,14 @@ function rustFeedbackPort(): RustMessagePortLike | null {
 export function saveFeedback(messageId: string, sessionId: string, feedback: FeedbackType | null): void {
   const port = rustFeedbackPort();
   if (port) {
-    // 先内存后落库：本进程内读立即可见，落库失败如实上报
+    /*
+     * 先内存后落库：本进程内读立即可见，落库失败如实上报。
+     *
+     * ⚠️ P2-D9 的残余（见 `invalidateFeedbackCache` 的说明）：这条命令**不写域镜像**，
+     * 而 `loadFeedback` 的镜像是启动时那一份 —— 所以本函数写过的值，
+     * 在**同一进程内**靠这个缓存可见，跨进程/镜像重载后读到的仍是镜像里的旧值。
+     * 生产调用者为 0（UI 走 `feedback.ts` 的域写），所以这里只记事实、不改行为。
+     */
     feedbackCache.set(messageId, feedback);
     void port.data
       .execute("feedback.set", { message_id: messageId, session_id: sessionId, feedback })
@@ -2452,9 +2759,18 @@ export function deleteMessagesAfter(
        * 带走 `tool_calls` / `message_feedback` —— 不声明的话整条命令回滚，用户看到的形态是
        * "编辑重发之后旧回复还在"（比删错更难查）。
        */
-      void port.data
-        .execute("messages.delete", { ids, confirm_bulk: true })
-        .catch((e) => reportPersistFailure("message.deleteMessagesAfter", e, "编辑重发时后续消息未从查询索引删除"));
+      /*
+       * P2-4：这条是**硬删除 + 可能很大**（"编辑并重发"会删掉该点之后的整段会话），
+       * 是 `count_clamped` 的第二个来源。走统一入口后夹断可见、并当场重算。
+       */
+      deleteMessageIndexRows(
+        port,
+        ids,
+        "hard",
+        [sessionId],
+        "message.deleteMessagesAfter",
+        "编辑重发时后续消息未从查询索引删除",
+      );
       port.applyMessageDelete?.(sessionId, ids);
       removeFtsViaPort(sessionId, ids);
       appendTombstonesFor(sessionId, ids);

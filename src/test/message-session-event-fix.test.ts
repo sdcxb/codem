@@ -572,20 +572,37 @@ describe("FIXB-8：硬删除必须声明 confirm_bulk（软删除不许带）", 
    * ⚠️ `trim` 也要看：索引裁剪走的是 `trim: true`（第 44 轮加的**裁剪专用**软删除语义，
    * 引擎侧 = `UPDATE messages SET hidden = 1, trimmed = 1`）—— **不带 `soft`**，
    * 所以"有没有 `soft`"不能当"是不是软删除"的判据，必须把两个键都取出来。
+   *
+   * ## 第 45 轮（线协议 P2-4）：同一次删除会**同时**出现在两个通道里，必须去重
+   *
+   * 五个调用点统一收口到 `message.ts::deleteMessageIndexRows` 之后：
+   * - 端口有 `command` 能力 → 发 `data.command("messages.delete", …)`（结构化回报）；
+   * - 没有 → 退回 `data.execute(...)`。
+   *
+   * 而假端口的 `command` 内部会走**同一个** `persist`，于是 `__writes()` 里
+   * 同一条逻辑删除会留下**两条**记录（一条来自 `command`、一条来自 `execute`）——
+   * 它们是同一个目标，不是"删了两次"。这里按键去重，用例要守的
+   * "参数长什么样 / 发了几次**逻辑**删除"因此仍然成立。
    */
+  const deleteParams = (port: ReturnType<typeof createFakeStoragePort>) => {
+    const byKey = new Map<string, Record<string, unknown>>();
+    for (const w of port.__writes()) {
+      if (w.command !== "messages.delete") continue;
+      const p = (w.params ?? {}) as Record<string, unknown>;
+      byKey.set(`${JSON.stringify(p.ids ?? [])}|${String(p.soft ?? "")}|${String(p.trim ?? "")}`, p);
+    }
+    return [...byKey.values()];
+  };
   const deleteCalls = (port: ReturnType<typeof createFakeStoragePort>) =>
-    port
-      .__writes()
-      .filter((w) => w.command === "messages.delete")
-      .map(
-        (w) =>
-          (w.params ?? {}) as {
-            ids?: string[];
-            soft?: boolean;
-            trim?: boolean;
-            confirm_bulk?: boolean;
-          },
-      );
+    deleteParams(port).map(
+      (p) =>
+        p as {
+          ids?: string[];
+          soft?: boolean;
+          trim?: boolean;
+          confirm_bulk?: boolean;
+        },
+    );
 
   /** 一条 `messages.delete` 是不是软删除（`hidden` 路径）—— 两个键任一为真即是 */
   const isSoft = (p: { soft?: boolean; trim?: boolean }) => p.soft === true || p.trim === true;
@@ -682,12 +699,25 @@ describe("FIXB-8：硬删除必须声明 confirm_bulk（软删除不许带）", 
     ).toBeUndefined();
   });
 
-  it("FIXB-8d: 源码级不变量 —— `message.ts` 里每个 messages.delete 要么软删除、要么带 confirm_bulk", async () => {
+  it("FIXB-8d: 源码级不变量 —— 参数生成点三模式互斥，且每个调用点显式传模式", async () => {
     /**
      * 为什么还要一条源码扫描：假端口不校验闸门，所以"今天测到的三条路径"之外
      * **将来新增的第四条**不会有任何测试照看它 —— 真机上表现为"这个功能静默不生效"
      * （命令整条回滚），而单测全绿。这条扫描把"新增硬删除必须声明"变成编译期之外
      * 的第二道网（与 `MR-6` 那条"生产代码不许 import 旧引擎"同一个套路）。
+     *
+     * ## 第 45 轮（线协议 P2-4）：判据跟着"收口"改，但**没有变松**
+     *
+     * 五个调用点原来各自写 `messages.delete` 的参数；现在统一收口到
+     * `messageDeleteParams(ids, mode)`（**参数形状的唯一生成点**），调用点传的是
+     * `"hard" | "soft" | "trim"` 字面量（同时它们走结构化通道读引擎回报 —— P2-4）。
+     * 于是扫描分两步：
+     *
+     * 1. **生成点**：三种模式各自只映射到一组参数（硬删除 `confirm_bulk: true`、
+     *    压缩隐藏 `soft: true`、索引裁剪 `trim: true`），且后两者**不许**带
+     *    `confirm_bulk`（软删除不是破坏性删除）；
+     * 2. **调用点**：必须显式传模式字面量 —— 不许出现"缺参数即默认硬删除"
+     *    这种要在脑子里推的形态（那正是这条网要防的）。
      */
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -696,32 +726,40 @@ describe("FIXB-8：硬删除必须声明 confirm_bulk（软删除不许带）", 
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 
+    // ---- ① 生成点：三种模式的参数形状 ----
+    const genAt = src.indexOf("export function messageDeleteParams(");
+    expect(genAt, "参数生成点必须存在（P2-4 把五处参数收口到这里）").toBeGreaterThan(0);
+    const genBody = src.slice(genAt, src.indexOf("\n}", genAt));
+    /** 取某个模式分支的单行返回（`if (mode === "x") return {...};`） */
+    const branchOf = (mode: string): string => {
+      const at = genBody.indexOf(`mode === "${mode}"`);
+      if (at < 0) return "";
+      const end = genBody.indexOf(";", at);
+      return genBody.slice(at, end < 0 ? at + 120 : end);
+    };
+    expect(/confirm_bulk: true/.test(genBody), "硬删除的生成点必须带 confirm_bulk").toBe(true);
+    expect(/trim: true/.test(branchOf("trim")), "裁剪生成点必须是 trim: true").toBe(true);
+    expect(/soft: true/.test(branchOf("soft")), "压缩隐藏生成点必须是 soft: true").toBe(true);
+    expect(/confirm_bulk/.test(branchOf("soft")), "软删除的生成点不许带 confirm_bulk").toBe(false);
+    expect(/confirm_bulk/.test(branchOf("trim")), "裁剪的生成点不许带 confirm_bulk").toBe(false);
+
+    // ---- ② 每个调用点必须显式给出模式 ----
     const offenders: string[] = [];
     let from = 0;
+    let calls = 0;
     for (;;) {
-      const at = src.indexOf('"messages.delete"', from);
+      const at = src.indexOf("deleteMessageIndexRows(", from);
       if (at < 0) break;
       from = at + 1;
-      /** 取 `"messages.delete"` 之后到语句结束的那段参数文本 */
+      if (src.slice(Math.max(0, at - 30), at).includes("function ")) continue; // 定义处本身
+      calls += 1;
       const tail = src.slice(at, at + 400);
-      const close = tail.indexOf(")\n");
-      const args = close > 0 ? tail.slice(0, close) : tail;
-      /**
-       * 判据（第 45 轮更新）：**软删除的两种形态都算软删除** ——
-       * `soft: true`（压缩隐藏）与 `trim: true`（索引裁剪，第 44 轮加的裁剪专用语义）。
-       * 只认 `soft` 会让裁剪那一条被误判成"硬删除没带 confirm_bulk"，
-       * 于是用例逼着人去给它加 `confirm_bulk` —— 那恰好是错的（软删除不是破坏性删除）。
-       */
-      const soft = /soft:\s*true/.test(args) || /trim:\s*true/.test(args);
-      const confirm = /confirm_bulk:\s*true/.test(args);
-      if (soft) {
-        if (confirm) offenders.push(`软删除却带了 confirm_bulk：${args.slice(0, 80)}`);
-      } else if (!confirm) {
-        offenders.push(`硬删除没带 confirm_bulk：${args.slice(0, 80)}`);
+      if (!/["'](hard|soft|trim)["']/.test(tail)) {
+        offenders.push(`调用点没有显式传模式（不许有隐式默认）：${tail.slice(0, 100)}`);
       }
     }
     expect(offenders, `message.ts 里的 messages.delete 调用点违反了闸门契约：\n${offenders.join("\n")}`).toEqual([]);
-    expect(from, "至少要扫到一处调用（否则这条用例是空转）").toBeGreaterThan(0);
+    expect(calls, "至少要扫到五处调用（否则这条用例是空转）").toBeGreaterThanOrEqual(5);
   });
 });
 

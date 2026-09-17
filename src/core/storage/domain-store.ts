@@ -785,13 +785,110 @@ export function domainDelete(
 }
 
 /**
+ * 一次"按 id 批量删除"的物理分批大小（第 45 轮线协议审计 P2-6 的**有界批量**）。
+ *
+ * ## 它解决的是什么（原缺陷的形态）
+ *
+ * `domainDeleteWhere` / `domainDeleteBeyond` / `domainReplaceTable` 原来是
+ * **一个 `for` 循环里 `void port.data.execute(...)`**：循环体内没有 `await`，
+ * 于是 N 行目标 = **N 条同时在飞的 IPC**（Tauri 线程池上同时排 N 个命令，
+ * 每个都要抢 `Mutex<Connection>`）。真机量级：`telemetry` 的 7 天窗口几千行、
+ * `delegation_tasks` 的 TTL、`inbox` 的过期清理、`audit` 表 11.8 小时 6 万行。
+ * 后果不是丢数据（单写者锁会串行化），而是**不可见的延迟**：删除几百行时
+ * 其它所有写（包括流式响应的 `tool_calls.replace`）被排到后面。
+ * 而且失败只有一句 `reportPersistFailure`，**归因不到具体是哪一行**。
+ *
+ * ## 为什么是"分批 + 顺序"而不是"一条批量命令"
+ *
+ * 引擎侧确实有单事务多行能力，但那是 `crud.upsert`（整批在一个事务里）；
+ * **`crud.delete` 的 `where` 在线协议与 Rust 实现里都只支持等值匹配**
+ * （`crud.rs::crud_delete`，明文拒绝空 where），没有 `crud.delete_many` 这条命令
+ * （`src-tauri/codem-db/src/lib.rs` 的 `COMMANDS` 白名单里不存在）——
+ * 发一个引擎不认识的命令，等于"什么都没删而审计已经记上"（第 31 轮事故的假证据形态）。
+ * 所以不改 Rust 的前提下，能做的**有界**就是"分批 + 顺序"：
+ * 同时最多 `PERSIST_CHUNK_SIZE` 条在飞，且**批与批之间是顺序的**。
+ *
+ * ⚠️ 这不是"已经最优"：真正的收口是引擎侧加一条
+ * `crud.delete_many { table, ids, confirm_bulk }`（一个 `write_tx` +
+ * `measure_delete_impact` + `guard_cascade_scope`），那时这里应当**整段删掉**、
+ * 换成一次 IPC + 一个事务，并且批量闸门才第一次能看见真实规模（逐 id 删除每次只命中 1 行，
+ * `guard_bulk_delete` 看 `where` 命中数 → 闸门形同不存在）。
+ */
+export const PERSIST_CHUNK_SIZE = 50;
+
+/**
+ * 把"已枚举好的 id 批量删除"写穿 —— **有界批量**版本（P2-6）。
+ *
+ * ## 为什么是"批次串行链"而不是 `await` 循环
+ *
+ * 这两个函数的调用方（`telemetry` / `inbox` / `note-manager` / `knowledge` /
+ * `flashcard-store` / `maintenance` 共十余处）**全部依赖同步返回值**
+ * （`0` = "接手了、确实没有要删的行" vs `null` = "没接手" 是它们的分支判据，
+ * 见 `telemetry-clear-contract.test.ts`）。把函数改成 `async` 会让那个返回类型
+ * 变成 `Promise<number | null>`，而 `await` 一个非 Promise 的 `null` 会让
+ * "没接手"在调用方静默变成 `undefined` —— 那是把一条**如实上报**的分支弄丢。
+ * `Promise.resolve(null)` 的形态也救不了：调用方写的是 `removed === null` 的**同步**比较。
+ *
+ * 所以这里不是"先调度一批、等它回来再调度下一批"，而是：
+ * **一批一批地挂进同一条 promise 链**（`chain = chain.then(发下一批)`），
+ * 于是任何时刻在飞的命令 ≤ `PERSIST_CHUNK_SIZE`，且批次之间严格有序，
+ * 而函数本身仍然是同步返回。代价如实说清：**返回时最后一批还没落地** ——
+ * 这与改前的 fire-and-forget 是同一个时序（改前连"第一批发出去"都不保证有序）。
+ *
+ * 失败逐批归因并汇总上报（`note` 里带行号、id），且吞掉 rejection
+ * （否则这条脱离调用栈的 promise 链会在全局产生未处理的拒绝）。
+ *
+ * @returns 无（失败的可见性走 `reportPersistFailure` 通道）
+ */
+function persistDeleteIdsBounded(
+  port: DomainMirrorPort,
+  table: string,
+  ids: string[],
+  key: string,
+  scope: string,
+  note: string,
+): void {
+  const total = ids.length;
+  let chain: Promise<void> = Promise.resolve();
+  for (let i = 0; i < total; i += PERSIST_CHUNK_SIZE) {
+    const start = i;
+    const chunk = ids.slice(start, start + PERSIST_CHUNK_SIZE);
+    chain = chain
+      .then(() =>
+        Promise.allSettled(chunk.map((id) => port.data.execute("crud.delete", { table, where: { [key]: id } }))),
+      )
+      .then((results) => {
+        results.forEach((r, idx) => {
+          if (r.status === "rejected") {
+            reportPersistFailure(
+              scope,
+              r.reason,
+              `${note}（第 ${start + idx + 1}/${total} 行，id=${chunk[idx]}）`,
+            );
+          }
+        });
+      })
+      .catch((e) => {
+        // `Promise.allSettled` 不会 reject，这一层只为"上报本身抛了"兜底（上报绝不影响功能）
+        reportPersistFailure(scope, e, `${note}（第 ${start + 1}/${total} 行起的那一批）`);
+      });
+  }
+}
+
+
+
+/**
  * 「保留最近的 N 条，其余删除」。
  *
  * 对应旧 SQL 的 `DELETE … WHERE … AND id NOT IN (SELECT id … ORDER BY x DESC LIMIT ?)`。
  * 排序键用 `sorted` 列名（例如 `completed_at`），**排序与截断都在镜像上算**，
- * 再把要删的 id 逐个写穿 —— 线协议 where 不支持子查询。
+ * 再把要删的 id 逐批写穿 —— 线协议 where 不支持子查询。
  *
  * @returns 被删除的行数；未路由时返回 `null`，调用方回退旧路径
+ *
+ * ⚠️ 第 45 轮线协议审计 P2-6：写穿改成**有界批量**（`PERSIST_CHUNK_SIZE`，
+ * 分批 + 批间顺序，见该常量的说明）。返回值与"镜像已删"的同步语义**没有变** ——
+ * 改的只是"命令怎么发出去"（原来一次把 N 条全部同时发出去）。
  */
 export function domainDeleteBeyond(
   table: string,
@@ -830,11 +927,19 @@ export function domainDeleteBeyond(
    * 审计要回答的是"哪条代码路径删了多少行"，逐行记会把缓冲冲掉、反而看不见调用栈。
    */
   recordWrite("crud.delete", { table, where: { [key]: `${ids.length} 行（保留 ${keep}）` } });
-  for (const id of ids) {
-    void port.data
-      .execute("crud.delete", { table, where: { [key]: id } })
-      .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
-  }
+  /*
+   * P2-6：写穿走**有界批量**（分批 + 批间顺序，见 `PERSIST_CHUNK_SIZE`），
+   * 失败逐批归因上报。返回的"删了几行"仍然是镜像上算出的 `ids.length` ——
+   * 那是这个函数的语义（本地已删），写穿失败由上报通道如实表达。
+   */
+  persistDeleteIdsBounded(
+    port,
+    table,
+    ids.map((v) => String(v)),
+    key,
+    opts.scope,
+    opts.note,
+  );
   return ids.length;
 }
 
@@ -849,8 +954,9 @@ export function domainDeleteBeyond(
  * 库里一行没动，审计里还留下一条**假证据**。这正是本仓库最在意的那类缺陷
  * （静默假成功 + 审计说谎），所以这里把它改成**诚实的实现**：
  *
- * 1. 按主键逐行 `crud.delete`（**不是**空 `where` —— Rust 侧明确拒绝空条件）；
- * 2. 逐行 `crud.upsert`（整体替换语义）；
+ * 1. 按主键删 `crud.delete`（**不是**空 `where` —— Rust 侧明确拒绝空条件），
+ *    第 45 轮起走**有界批次**（`PERSIST_CHUNK_SIZE`，见清空阶段那段注释）；
+ * 2. 重建用**一条** `crud.upsert` 带全部行（引擎侧整批一个事务，`crud.rs:486`）；
  * 3. 每一步都如实上报失败，审计只记**真实发出过**的命令名。
  *
  * `replaceTable`（只改镜像、零生产调用者）随之下线：留着一个"只改内存"的入口，
@@ -860,6 +966,16 @@ export function domainDeleteBeyond(
  *
  * "整表替换"的语义包含**删除**（旧集合里有、新集合里没有的行必须消失）。
  * 只 upsert 会把它们留在库里 —— 那是"替换"名下的静默数据残留。
+ *
+ * ## 返回值为什么**不能**表达"部分失败"（如实记下）
+ *
+ * 写穿是异步 IPC，而这个函数的返回类型是同步 `boolean`（调用点与
+ * `domain-mirror-window.test.ts` 的 A-4 用例都依赖它）。所以返回 `true` 的准确含义是
+ * **"已接手，清空与重建的命令都已发出"** —— 与改前同一句话，但改后它**真的成立**了
+ * （改前 `persistWriteThrough` 的逐行拆分同样不保证发出顺序）。
+ * "部分失败"的可见性走 `reportPersistFailure` 通道（改前每个失败点也一样），
+ * 而不是被一个同步的 `true`/`false` 冒充 —— 同步 `false` 只能表达"没接手"
+ * （端口未注册 / 该表永远不会就绪），这正是 `false` 分支唯一的语义。
  *
  * @returns `true` = 已接手（清空与重建都已发出）；`false` = 未接手（端口没注册，
  *          或该表永远不会就绪），调用方据此如实上报。
@@ -886,23 +1002,57 @@ export function domainReplaceTable(
     .all<Record<string, unknown>>(table)
     .map((row) => row[key])
     .filter((v) => v !== undefined && v !== null);
-  for (const id of doomed) {
-    persistWriteThrough(
+
+  /*
+   * ## P2-6：清空阶段 = **一次** `crud.delete ... where { in }`？不 —— 但有界
+   *
+   * 原来这里是一个 `for` + `persistWriteThrough` 循环：N 行 = N 条命令，
+   * 每条都在 `void execute()` 里**同时起飞**。现在：
+   * - 本地镜像一次性删掉整组行（`applyDeleteWhere`，与"按谓词删"同一条规则）；
+   * - 写穿走有界的批次串行链（`persistDeleteIdsBounded`，在飞 ≤ `PERSIST_CHUNK_SIZE`），
+   *   失败逐批归因。
+   *
+   * ### 没有做到的那一半（如实记下）
+   *
+   * 这仍然是 N 条命令 / N 个独立事务 —— 因为 `crud.delete` 的 `where` 在
+   * 线协议与 Rust 实现里**只支持等值匹配**（`crud.rs::crud_delete`），引擎侧
+   * 也没有 `crud.delete_many`（`src-tauri/codem-db/src/lib.rs` 的 `COMMANDS` 白名单里没有）。
+   * 所以"中途进程被杀 → 表处于删了一半 / 写了一半"这个半状态**依然存在**，
+   * 真原子性要引擎侧加命令（属 `src-tauri/**`，本次不动）。
+   */
+  const doomedIds = doomed.map((v) => String(v));
+  if (doomedIds.length > 0) {
+    port.domains.applyDeleteWhere(table, (row) => doomedIds.includes(String(row[key])));
+    recordWrite("crud.delete", { table, where: { [key]: `${doomedIds.length} 行（整表替换的清空阶段）` } });
+    persistDeleteIdsBounded(
+      port,
       table,
-      "crud.delete",
-      { table, where: { [key]: id } },
+      doomedIds,
+      key,
       scope,
       `表 ${table} 未能整表替换（清空阶段失败）`,
     );
   }
-  for (const row of rows) {
-    persistWriteThrough(
-      table,
-      "crud.upsert",
-      { table, rows: [row], mode: "replace" },
-      scope,
-      `表 ${table} 未能整表替换（重建阶段失败）`,
-    );
+
+  /*
+   * 重建阶段：**一次 `crud.upsert` 带全部行**。
+   *
+   * 这里正是 P2-6 想指的方向"引擎已有单事务多行能力，只是没用"——
+   * `crud_upsert` 的整批在**一个事务**里完成（`crud.rs:486` 的 `engine.write_tx`
+   * + 每行列可不同）。原来逐行调用把 M 行拆成 M 条 IPC / M 个事务
+   * （`persistWriteThrough` 里是"按 `_ids` 逐条拆"的形态，这里每行一条），
+   * 于是"替换一半就崩"与"整批要么全成要么全不成"这两件事在真机上分不开。
+   *
+   * 本地镜像用 `applyWriteMany` 一次写入（与 `domainWrite` 的 `mode: "replace"` 同序：
+   * 先本地、再写穿），端口在期间消失时如实上报而不是静默。
+   */
+  if (rows.length > 0) {
+    const params = { table, rows, mode: "replace" };
+    port.domains.applyWriteMany(table, rows, key);
+    recordWrite("crud.upsert", pickLineParams(params));
+    void port.data
+      .execute("crud.upsert", params)
+      .catch((e) => reportPersistFailure(scope, e, `表 ${table} 未能整表替换（重建阶段失败）`));
   }
   return true;
 }
@@ -988,11 +1138,15 @@ export function domainDeleteWhere(
   if (doomed.length === 0) return 0;
   const removed = port.domains.applyDeleteWhere(table, (row) => match(row));
   recordWrite("crud.delete", { table, where: { [key]: `${doomed.length} 行（按谓词）` } });
-  for (const id of doomed) {
-    void port.data
-      .execute("crud.delete", { table, where: { [key]: id } })
-      .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
-  }
+  // P2-6：有界批量（分批 + 批间顺序，见 `PERSIST_CHUNK_SIZE`），失败逐批归因
+  persistDeleteIdsBounded(
+    port,
+    table,
+    doomed.map((v) => String(v)),
+    key,
+    opts.scope,
+    opts.note,
+  );
   return removed;
 }
 
