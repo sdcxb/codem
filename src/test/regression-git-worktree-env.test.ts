@@ -26,6 +26,8 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -350,6 +352,16 @@ describe("Git/Worktree/环境配置对核心链路影响", () => {
     });
 
     it("GWTE-020: Worktree 模式下 generatedFiles 序列化正常", () => {
+      /*
+       * `generatedFiles` 的落点改成读**端口表** `messages` 的 `generated_files` 列。
+       *
+       * `createMessage` 把它随 `messages.upsert_index` 写进端口；而消息镜像刻意只装正文那 9 个
+       * 字段（内存预算，见 message.ts），所以 `listMessages()[0].generatedFiles` 在端口模式下为空 ——
+       * 路径本身没丢，只是不经镜像回传。这里断言它**原样写穿**（worktree 路径不被改写）。
+       */
+      const port = createFakeStoragePort();
+      setStoragePort(port);
+
       const WT_SESSION = "sess-wt-files";
       SessionStorage.createSession({
         id: WT_SESSION, projectId: PROJECT_ID, title: "WT-Files",
@@ -365,9 +377,10 @@ describe("Git/Worktree/环境配置对核心链路影响", () => {
         }),
         WT_SESSION,
       );
-      const msgs = MessageStorage.listMessages(WT_SESSION);
-      expect(msgs[0].generatedFiles).toHaveLength(2);
-      expect(msgs[0].generatedFiles![0]).toContain("worktree");
+      const row = port.__table("messages").find((r) => r.id === "wt-files-1");
+      const generatedFiles = row?.generated_files as string[] | undefined;
+      expect(generatedFiles).toHaveLength(2);
+      expect(generatedFiles![0]).toContain("worktree");
     });
   });
 

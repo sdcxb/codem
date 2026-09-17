@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import * as MessageStorage from "../core/storage/message";
@@ -267,6 +269,17 @@ def 你好():
   });
 
   it("中文 generatedFiles 路径", () => {
+    /*
+     * `generatedFiles` 的落点改成读**端口表** `messages` 的 `generated_files` 列。
+     *
+     * `createMessage` 把它随 `messages.upsert_index` 一起写进端口（Rust 侧是 JSON 列）；
+     * 而读路径的消息镜像刻意只装正文那 9 个字段（内存预算，见 message.ts），
+     * `getMessage().generatedFiles` 在端口模式下拿不到 —— 字段本身没有丢，只是不经镜像回传。
+     * 这里断言"多字节路径原样写进了端口"（编码正确性才是本用例要守的东西）。
+     */
+    const port = createFakeStoragePort();
+    setStoragePort(port);
+
     const msg: Message = {
       id: "msg-genfiles",
       role: "assistant",
@@ -277,10 +290,11 @@ def 你好():
     };
     MessageStorage.createMessage(msg, sessionId);
 
-    const loaded = MessageStorage.getMessage("msg-genfiles");
-    expect(loaded!.generatedFiles).toBeDefined();
-    expect(loaded!.generatedFiles![0]).toBe("D:\\项目\\源码\\你好.py");
-    expect(loaded!.generatedFiles![1]).toBe("D:\\test\\配置文件 ⚙️.json");
+    const row = port.__table("messages").find((r) => r.id === "msg-genfiles");
+    const generatedFiles = row?.generated_files as string[] | undefined;
+    expect(generatedFiles).toBeDefined();
+    expect(generatedFiles![0]).toBe("D:\\项目\\源码\\你好.py");
+    expect(generatedFiles![1]).toBe("D:\\test\\配置文件 ⚙️.json");
   });
 
   it("超长中文消息内容", () => {

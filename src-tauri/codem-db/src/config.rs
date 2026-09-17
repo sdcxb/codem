@@ -1,4 +1,4 @@
-﻿//! 配置面仓储命令（P3 第 3 段）：`quick_phrases` / `mcp_servers` / `memory`。
+//! 配置面仓储命令（P3 第 3 段）：`quick_phrases` / `mcp_servers` / `memory`。
 //!
 //! ## 为什么这三张表归"配置面"
 //!
@@ -374,6 +374,64 @@ fn attachment_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
         "preview": r.get::<_, Option<String>>(8)?,
         "sandbox_path": r.get::<_, Option<String>>(9)?,
     }))
+}
+
+/// **单条附件的正文**（`attachments.content { id }`）。
+///
+/// ## 为什么必须单独一条命令（第 14 轮）
+///
+/// `attachments.content` 可能是**几十 MB 的文档全文**，所以列表命令刻意不返回它
+/// （见本文件开头那段说明）。渲染侧的读取路径是**同步**的（`getAttachmentContent()`），
+/// 而 IPC 是异步的 —— 解法与 `file:` 标记那套既有约定完全一致：
+/// **按 id 单独取 + 渲染侧同步缓存**（未命中时发一次异步预取，下次命中）。
+///
+/// 这条命令只回正文，不回任何其它列（越少越好传）。
+pub fn attachments_content(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let id = req_text(p, "id")?;
+    engine.with_conn(|conn| {
+        let row: Option<Option<String>> = conn
+            .query_row(
+                "SELECT content FROM attachments WHERE id = ?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(DbError::from)?;
+        match row {
+            None => Err(DbError::not_found(format!("attachments 里没有 id={id}"))),
+            Some(content) => Ok(json!({ "id": id, "content": content })),
+        }
+    })
+}
+
+/// **已外置的附件**（`content` 形如 `file:<路径>`）→ 只回 `{id, path}`。
+///
+/// 用途：启动维护要预热外置正文、并清理孤儿文件。渲染侧从前靠"把 attachments 表
+/// （含正文）整表读进内存"来拿这份清单 —— 那正是 P6 要消灭的占用。过滤在**引擎侧**做，
+/// 只把 id + 路径传出来。
+pub fn attachments_externalized(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let _ = p;
+    engine.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare_cached("SELECT id, content FROM attachments WHERE content LIKE 'file:%'")
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                ))
+            })
+            .map_err(DbError::from)?;
+        let mut items: Vec<Value> = Vec::new();
+        for r in rows {
+            let (id, content) = r.map_err(DbError::from)?;
+            let content = content.unwrap_or_default();
+            let path = content.strip_prefix("file:").unwrap_or("").to_string();
+            items.push(json!({ "id": id, "path": path }));
+        }
+        Ok(json!({ "items": items, "count": items.len() }))
+    })
 }
 
 #[cfg(test)]

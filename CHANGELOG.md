@@ -2,6 +2,57 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.61] - 2026-09-17 — **端口模式全绿（74 → 0）** + 附件域端口覆盖 + 四个真机缺陷
+
+### 一、端口模式套件**清零**（目标①达成）
+
+迁移期的"两态"里，B 态（端口在 rust，打包版真实形态）那套套件长期有失败 —— 它们是
+"测试直接读写旧库、而产品已经只读写端口"的待办清单。本轮把最后 **74 个**逐个处置：
+
+| 手段 | 说明 |
+| --- | --- |
+| 断言读**端口表** | `port.__table("messages"/"tool_calls"/"generated_files")` —— 判据强度不变，落点从旧库换成端口 |
+| 预置数据走**端口 seed / 端口命令** | `createFakeStoragePort({seed})`、`messages.upsert_index`、`crud.upsert` |
+| 补齐**测试替身与真引擎的差距** | `messages.list` 的 `ORDER BY timestamp ASC, id ASC`；`crud.delete` 的外键级联；`messages.rebuild_index` 的 `{sessions:[…]}` 契约；`attachments.update` |
+| 用例间**串味** | `localHiddenIds` 是进程级状态，多个用例共用同一会话 id 会互相污染 → 各用例独立会话 id |
+
+**结果：端口模式 0 失败 / 5235 通过；A 态对照 0 失败 / 5235 通过**（两侧同一套脚本）。
+
+### 二、附件域端口覆盖（rust 模式下附件从"完全不可用"到可用）
+
+端口化测试暴露的真机缺陷：**rust 模式下附件既不写也不读** ——
+唯一那条 `INSERT INTO attachments` 在 A 态分支里（端口接手后整段被短路），
+JSONL 记录也不含附件，`getAttachmentContent()` 在 B 态硬返回 `undefined`。
+修法（4 条）：
+
+1. **写**：`createMessage` 的附件走 `crud.upsert { table: "attachments" }`；
+2. **外置标记写回**：走 `attachments.update`（旧路径在 B 态被门控挡住 → 标记永远写不回去，
+   大正文内联在库里、外置文件白写一份）；
+3. **读**：新增 Rust `attachments.content {id}`（按 id 取正文）+ 渲染侧**同步缓存 + 一次异步预取**
+   （与 `file:` 标记那套既有约定一致）；列表走域镜像的**元数据投影**（不含正文）；
+4. **外置清单**：新增 Rust `attachments.externalized {}`（引擎侧 `content LIKE 'file:%'` 过滤，
+   只回 id + 路径）—— 从前靠"把整张附件表连同正文读进渲染进程"来拿这份清单，正是 P6 要消灭的占用。
+
+### 三、四个真机缺陷（都由端口化测试抓出来，全部修复）
+
+| 缺陷 | 用户可见形态 | 修法 |
+| --- | --- | --- |
+| **孤儿清理会误删所有外置附件** | `attachments` 域就绪但为空时 `referenced = ∅` → `pruneOrphanAttachmentFiles` 把 `<appData>/attachments/` 下**所有**文件当孤儿删掉（不可逆） | 判据改成"清单是否权威"：端口清单**空**不再当作"没有附件" |
+| **`tool_calls` 刚写读不到** | 写路径（`upsert_index`）声称维护 `toolCallCache` 却从未调用 → `getMessage`/`listMessages` 拿不到工具调用 → **fork 复制时整批丢失**、重启后工具调用不显示 | 写路径补 `cacheToolCalls`；`getMessage` 命中镜像行时再同步兜底查一次权威日志镜像 |
+| **`generated_files` 读不回来** | 列在库里、写路径也传了，但 Rust `messages.list` 的 SELECT 与镜像映射都漏了它 → **重启后"生成了哪些文件"标记消失** | Rust SELECT + `message_row` + 镜像 `normalize` + `messageRowToMessage` 四处补齐 |
+| **索引重建"计数恒为 0"** | `rebuildIndexFromSessionLogs` 用 `data.execute` 读结构化结果（它按契约只回 `{written}`）→ 写成功但计数 0、那行日志永远打不出来 | 改用 `command`；读不到计数时不再静默取 0，而以"确实送进去的条数"为下界 |
+
+### 四、量化
+
+| 指标 | 本批前 | 本批后 |
+| --- | --- | --- |
+| 端口模式 | **74 失败** / 5161 通过 | **0 失败 / 5235 通过** |
+| A 态对照 | 5235 通过 / 0 失败 | 5235 通过 / 0 失败 |
+| Rust 测试 | 99 | **101 全绿** |
+| L3 已门控 | 171 处 / 178 门控 | 171 处 / 178 门控（不变） |
+
+`tsc` 0 错误，七道审计门 exit 0。
+
 ## [1.16.60] - 2026-09-17 — **"点开会话内容全空"的根因找到并修掉**：`mode:"replace"` 会级联删子表
 
 ### 根因（一句话）

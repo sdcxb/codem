@@ -36,6 +36,8 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import {
   createNotebook, getNotebook, listNotebooks, deleteNotebook,
   addSource, listSources, getSource,
@@ -147,13 +149,24 @@ describe("知识管理 — 笔记 CRUD 与版本历史", () => {
 
   // KM-009
   it("KM-009: addNoteLink 创建笔记间链接", () => {
+    /*
+     * 链接现在住在**端口**（域镜像）里：断言改成读端口表 `note_links`。
+     *
+     * 原来断言的是 `db.exec("SELECT * FROM note_links …")` —— 端口模式下产品写的是端口、
+     * 旧库那侧一行都没有，于是 `result[0]` 是 undefined（用例红）。
+     * 本用例自己注册端口，是为了两种态（A 态 / 端口模式）下行为一致：
+     * A 态下 setup 注册的是 null，若不注册端口，写入会落到旧库、端口表读出来是空的。
+     */
+    const port = createFakeStoragePort();
+    setStoragePort(port);
+
     const noteA = createNote({ notebookId: NOTEBOOK_ID, title: "A", content: "c", contentType: "markdown" });
     const noteB = createNote({ notebookId: NOTEBOOK_ID, title: "B", content: "c", contentType: "markdown" });
     addNoteLink(noteA.id, noteB.id, "关联到B");
-    // Link should exist in DB
-    const db = getDatabase();
-    const result = db.exec("SELECT * FROM note_links WHERE source_note_id = ?", [noteA.id]);
-    expect(result[0].values.length).toBe(1);
+    // 链接应存在于端口（域镜像）里
+    const rows = port.__table("note_links").filter((r) => r.source_note_id === noteA.id);
+    expect(rows.length).toBe(1);
+    expect(String(rows[0].target_note_id)).toBe(noteB.id);
   });
 
   // KM-010
@@ -399,6 +412,33 @@ describe("知识管理 — note-operations 工具执行", () => {
     try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupNotebook();
+    /*
+     * 笔记本预置进**端口**（`create_note` 工具第一件事就是 `getNotebook(notebookId)` 校验存在性，
+     * 而它读的是域镜像）。`setupNotebook()` 写的是旧库 —— 端口模式下镜像里没有这行，
+     * 工具于是返回 `Error: Notebook not found`（KM-057 红：title 回落到 'Create Note'）。
+     * 这里用假端口 seed 把笔记本预置好，两种态下 `getNotebook` 都从端口读到同一份数据。
+     */
+    const now = Date.now();
+    setStoragePort(
+      createFakeStoragePort({
+        seed: {
+          notebooks: [
+            {
+              id: NOTEBOOK_ID,
+              name: NOTEBOOK_NAME,
+              description: "测试用",
+              summary: null,
+              summary_status: "pending",
+              source_count: 0,
+              chunk_count: 0,
+              group_id: null,
+              created_at: now,
+              updated_at: now,
+            },
+          ],
+        },
+      }),
+    );
     registry = createDefaultToolRegistry();
   });
 

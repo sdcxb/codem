@@ -9,10 +9,46 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase } from "../core/storage/database";
+import { getStoragePort, hasStoragePort } from "../core/storage/port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
 import type { Message } from "../store";
+
+/**
+ * 读回某条消息的工具调用 —— 读**产品真正把 tool_calls 写进去的那一侧**。
+ *
+ * - **B 态**（端口已注册，默认）：`createMessage` → `messages.upsert_index`（整批替换）
+ *   → 端口的 `tool_calls` 表（真实 Rust 侧读它就是 `tool_calls.list`）；
+ * - **A 态**（`CODEM_TEST_PORT=0`）：旧库是唯一数据源，从 `getMessage` 读回。
+ *
+ * 顺带把"fork 到底有没有把工具调用复制过去"钉在**存储层**上：端口那张表里
+ * 有没有新消息 id 的行，是这件事唯一可信的判据。
+ *
+ * ⚠️ 这条用例在端口模式下仍红，且**是产品缺口不是测试问题**：`App.tsx` 的 fork 只用
+ * `MessageStorage.listMessages`（同步），而端口模式下同步读路径拿不到 tool_calls ——
+ * `writeIndexViaRust` 不填 `toolCallCache`（与 `message.ts` 注释里"upsert_index 也维护缓存"
+ * 不符），镜像行不含这一列，异步预热只在 `getMessage` 里触发。于是 fork 复制的是
+ * `msg.toolCalls === undefined`：**真机上 fork 出来的消息会丢掉工具调用**。
+ */
+function toolCallsOf(messageId: string): Array<{ id: string; tool: string; args: Record<string, unknown> }> {
+  if (hasStoragePort()) {
+    const port = getStoragePort() as unknown as { __table(name: string): Array<Record<string, unknown>> };
+    return port
+      .__table("tool_calls")
+      .filter((r) => r.message_id === messageId)
+      .map((r) => ({
+        id: String(r.id ?? ""),
+        tool: String(r.tool ?? ""),
+        args: (typeof r.args === "string" ? JSON.parse(r.args) : (r.args ?? {})) as Record<string, unknown>,
+      }));
+  }
+  return (MessageStorage.getMessage(messageId)?.toolCalls ?? []) as Array<{
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+  }>;
+}
 
 describe("Fork 功能 — 从 SQLite 复制消息到新会话", () => {
   const projectId = "test-project-1";
@@ -191,8 +227,11 @@ describe("Fork 功能 — 从 SQLite 复制消息到新会话", () => {
     expect(newMsgs).toHaveLength(6);
     const toolMsg = newMsgs.find((m) => m.content === "我执行了一个工具");
     expect(toolMsg).toBeDefined();
-    expect(toolMsg!.toolCalls).toBeDefined();
-    expect(toolMsg!.toolCalls![0].tool).toBe("read_file");
+    // fork 有没有把 tool_calls 一起复制过去 —— 判据是端口里新消息 id 下的那一行
+    const forkedCalls = toolCallsOf(toolMsg!.id);
+    expect(forkedCalls).toHaveLength(1);
+    expect(forkedCalls[0].tool).toBe("read_file");
+    expect(forkedCalls[0].args.path).toBe("test.txt");
   });
 
   it("空会话 fork 不崩溃", () => {

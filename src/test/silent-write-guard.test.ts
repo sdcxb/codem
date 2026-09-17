@@ -41,6 +41,8 @@ import {
   noteWriteResult, runGuarded, getSilentWriteReport, resetSilentWriteReport, setSilentWriteDetection,
 } from "../core/storage/write-guard";
 import { getDatabase, initDatabase, resetDatabaseFatalState, resetSaveFailureState } from "../core/storage/database";
+import { setStoragePort, getStoragePort } from "../core/storage/port";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { createMessage, updateMessage, updateToolCall, addToolCall, listMessages, clearSessionLogCache } from "../core/storage/message";
 import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
 import { createProject } from "../core/storage/project";
@@ -50,6 +52,46 @@ import { resetSessionMessageBus } from "../core/session/bus";
 import { resetDelegationOrchestrator } from "../core/session/orchestrator";
 
 const SESSION = "sess-write-guard";
+
+/** 当前注册的存储端口（`setup.ts` 每个用例前注册一个内存假端口）—— 断言读端口表 / `__writes()` */
+function port(): FakeStoragePort {
+  return getStoragePort() as unknown as FakeStoragePort;
+}
+
+/**
+ * 用例内**自己**注册一个内存端口（覆盖 `setup.ts` 那一个），让断言针对端口契约。
+ * `CODEM_TEST_PORT=0`（A 态对照）下 `setup.ts` 注册的是 `null`，所以断言端口的用例
+ * 必须显式注册，才能在两种档位下验证同一条契约。
+ */
+function useFreshPort(): FakeStoragePort {
+  const p = createFakeStoragePort();
+  setStoragePort(p);
+  return p;
+}
+
+/**
+ * 把用例显式切到**回滚 / 旧引擎档（A 态）**：`setStoragePort(null)` 与 `setup.ts` 在
+ * `CODEM_TEST_PORT=0` 下注册的完全是同一个形态。
+ *
+ * 为什么 SWG-2 / SWG-3 / SWG-4 需要它：这三条守的是**旧库 SQL 写入**的静默空写探测器，
+ * 而 `runGuarded(db, sql)` 本身就只存在于旧库路径 —— 端口模式下写的是
+ * `crud.upsert` / `messages.upsert_index` / `tool_calls.replace` 这类**盲 upsert**，
+ * 根本没有"影响 0 行"这个概念，也就没有可探测的空写。切档后旧库里要补齐父行夹具：
+ * 本文件 beforeEach 的项目 / 会话是**在端口档下**建的，而旧库同样开着
+ * `PRAGMA foreign_keys = ON`，缺父行时消息行会被外键拒绝。
+ */
+function switchToLegacyEngine(): void {
+  setStoragePort(null);
+  const db = getDatabase();
+  db.run(
+    "INSERT OR REPLACE INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
+    ["proj-guard", "空写测试", "D:\\proj", Date.now(), Date.now()],
+  );
+  db.run(
+    "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+    [SESSION, "proj-guard", "空写测试会话", Date.now(), Date.now(), 0],
+  );
+}
 
 beforeEach(async () => {
   installFsStub();
@@ -105,6 +147,7 @@ describe("静默空写探测器", () => {
   });
 
   it("SWG-2: 真改到行时不记账（正常路径零噪音）", () => {
+    switchToLegacyEngine(); // 探测器只对旧库 SQL 生效（端口侧是盲 upsert，没有空写这个概念）
     const db = getDatabase();
     createMessage({ id: "m-ok", role: "user", content: "x", timestamp: Date.now(), status: "done" } as any, SESSION);
     resetSilentWriteReport();
@@ -117,6 +160,7 @@ describe("静默空写探测器", () => {
   });
 
   it("SWG-3: 接了线的写入路径 —— updateMessage / updateToolCall 打不存在的 id 会被发现", () => {
+    switchToLegacyEngine(); // 旧库写入路径才接了探测器（见 switchToLegacyEngine 的说明）
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     resetSilentWriteReport();
 
@@ -130,6 +174,7 @@ describe("静默空写探测器", () => {
   });
 
   it("SWG-4: 接了线的任务管理侧写入（sessions）同样会被发现", () => {
+    switchToLegacyEngine(); // 同 SWG-3
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     resetSilentWriteReport();
     updateSession("不存在的会话", { title: "新标题" } as any);
@@ -170,10 +215,25 @@ describe("静默空写探测器", () => {
   });
 
   it("SWG-6: addToolCall 落在真实消息上（幽灵 tool_calls 会污染历史）", () => {
+    useFreshPort();
+    createProject({ id: "proj-guard", name: "空写测试", path: "D:\\proj", createdAt: Date.now(), lastAccessedAt: Date.now() } as any);
+    createSession({
+      id: SESSION, projectId: "proj-guard", title: "空写测试会话",
+      createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
+    } as any);
     createMessage({ id: "m-parent", role: "assistant", content: "", timestamp: Date.now(), status: "streaming" } as any, SESSION);
     addToolCall("m-parent", { id: "tc-x", tool: "bash", args: {}, status: "running" } as any);
-    const rows = getDatabase().exec("SELECT message_id FROM tool_calls WHERE id = 'tc-x'");
-    expect(String(rows?.[0]?.values?.[0]?.[0])).toBe("m-parent");
+    /**
+     * B 态：工具调用写穿到端口（`tool_calls.replace`，Rust 侧单事务、按 message_id 整批替换）。
+     *
+     * 假端口刻意没有为这条命令实现内存落表（基座缺口），所以"确实写穿了"用 `__writes()` 断言：
+     * 命令在、参数里的 `message_id` 是**真实存在的那条消息**（幽灵 id 才是这条用例要防的）。
+     */
+    const replace = port().__writes().filter((w) => w.command === "tool_calls.replace").at(-1);
+    expect(replace, "工具调用必须写穿到端口（否则重启后历史里是幽灵 tool_calls）").toBeTruthy();
+    const params = (replace?.params ?? {}) as { message_id?: string; tool_calls?: Array<{ id?: string }> };
+    expect(params.message_id).toBe("m-parent");
+    expect((params.tool_calls ?? []).map((c) => c.id)).toContain("tc-x");
     expect(listMessages(SESSION).find((m) => m.id === "m-parent")?.toolCalls?.length).toBe(1);
   });
 });

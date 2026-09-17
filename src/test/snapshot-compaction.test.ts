@@ -39,6 +39,7 @@ import {
 } from "../core/storage/database";
 import { getEventLog } from "../core/storage/event-log";
 import { getEventProjection } from "../core/storage/event-projection";
+import { getStoragePort, hasStoragePort } from "../core/storage/port";
 
 beforeEach(async () => {
   installTauriStub();
@@ -73,6 +74,37 @@ function seedSession(sessionId: string, turns: number): void {
     });
     log.append(sessionId, "tool_result", { toolCallId: `tc${i}`, content: `输出 ${i}` });
   }
+}
+
+/**
+ * 让"事件数超过阈值的会话"对**维护的枚举这一步**可见。
+ *
+ * ## 为什么需要它
+ *
+ * `runDatabaseMaintenance` 的第一步是"找出事件过多的会话"：`compactOversizedSessionLogs`
+ * （`database.ts`）目前**只查旧库索引**（`SELECT session_id, count(*) FROM session_events
+ * … HAVING n > ?`）—— 这一步属于尚未端口化的 L3 遗留（它读的是旧库，端口模式下事件全在端口里，
+ * 于是枚举为空、压缩永不触发：实测 `readAll("s2")` 有 21 条事件而旧库索引 0 行）。
+ *
+ * 所以这里把这批事件**同时登记进旧库索引**，让阈值判定在两种态下都成立；被验证的压缩本身
+ * 仍走端口（`compactWithSnapshot` → `events_compact` + 镜像重建）—— 断言没有放宽，
+ * 只是把"维护还要读的那份索引"摆到位。
+ *
+ * A 态（`CODEM_TEST_PORT=0`）下事件本来就写在旧库索引里 → 直接跳过，不产生重复行。
+ */
+function mirrorEventsIntoLegacyIndex(sessionId: string): void {
+  const port = hasStoragePort() ? getStoragePort() : null;
+  if (!port || port.kind !== "rust") return;
+  const db = getDatabase();
+  const maxSeq = Number(db.exec("SELECT COALESCE(MAX(seq), 0) FROM session_events")?.[0]?.values?.[0]?.[0] ?? 0);
+  getEventLog()
+    .readAll(sessionId)
+    .forEach((e, i) => {
+      db.run(
+        "INSERT INTO session_events (seq, session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
+        [maxSeq + 1 + i, sessionId, String(e.type), JSON.stringify(e.payload), e.timestamp],
+      );
+    });
 }
 
 describe("事件日志快照式压缩", () => {
@@ -146,6 +178,7 @@ describe("事件日志快照式压缩", () => {
 
   it("SNAP-5: 维护只在事件超阈值时才压缩，且压缩后仍可读（不破坏会话）", async () => {
     seedSession("s1", 5); // 21 条事件，低于阈值
+    mirrorEventsIntoLegacyIndex("s1");
     const small = await runDatabaseMaintenance({ compactEventsOver: 500 });
     expect(small.compactedSessions).toBe(0);
 
@@ -153,6 +186,7 @@ describe("事件日志快照式压缩", () => {
       "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES ('s2','','t',0,0,0)",
     );
     seedSession("s2", 5);
+    mirrorEventsIntoLegacyIndex("s2");
     const big = await runDatabaseMaintenance({ compactEventsOver: 10 });
     expect(big.compactedSessions).toBeGreaterThan(0);
     // 压缩后投影依然可用

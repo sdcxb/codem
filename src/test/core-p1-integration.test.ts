@@ -29,6 +29,7 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { getStoragePort, hasStoragePort } from "../core/storage/port";
 import { createDefaultToolRegistry, type ToolDef } from "../core/llm/tools";
 import type { ClarificationFormData } from "../core/llm/agentic-loop";
 import { loadTodoList, updateTodoStatus } from "../core/llm/tools/show-todo";
@@ -432,6 +433,39 @@ describe("P1 集成 — PipelineNextStepDialog 上下文构建", () => {
 
 // ========== D. Todo 工具与 DB 持久化 ==========
 
+/**
+ * `todo_lists` 的预置入口（P5 端口化的标准做法：数据必须放进**产品真正会读的那一侧**）。
+ *
+ * `loadTodoList` / `updateTodoStatus` 现在走 `domainReadOne(TODO_TABLE)`：
+ * - **B 态**（端口已注册，默认）：域镜像未就绪时也**不回退旧库**（旧库在 rust 模式下刻意不存在），
+ *   所以用例往旧库 INSERT 只等于"写进一份没人读的库"，读回来必然是 null；
+ * - **A 态**（`CODEM_TEST_PORT=0`，端口未注册）：旧库是唯一数据源，必须写旧库。
+ *
+ * 两态各写自己那一侧，同一套断言因此在两种形态下都成立 —— 而不是把断言放宽。
+ */
+function seedTodoList(id: string, todos: TodoItem[]): void {
+  const now = Date.now();
+  const todosJson = JSON.stringify(todos);
+  const domains = hasStoragePort()
+    ? (getStoragePort() as unknown as { domains?: { applyWrite(table: string, row: Record<string, unknown>, primaryKey?: string): void } }).domains
+    : undefined;
+  if (domains) {
+    // 端口侧：写域镜像（`domainReadOne` 读的就是它）。同一 id 再写一次 = 覆盖。
+    domains.applyWrite("todo_lists", {
+      id,
+      session_id: SESSION_ID,
+      todos: todosJson,
+      created_at: now,
+      updated_at: now,
+    });
+    return;
+  }
+  getDatabase().run(
+    "INSERT OR REPLACE INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+    [id, SESSION_ID, todosJson, now, now]
+  );
+}
+
 describe("P1 集成 — Todo 工具与 DB 持久化", () => {
   beforeEach(async () => {
     try { await resetDatabase(); } catch { await initDatabase(); }
@@ -441,15 +475,11 @@ describe("P1 集成 — Todo 工具与 DB 持久化", () => {
 
   // P1INT-031
   it("P1INT-031: saveTodoList 创建新 Todo 列表", () => {
-    const db = getDatabase();
     const todos: TodoItem[] = [
       { id: "t1", text: "任务1", completed: false, status: "pending" },
       { id: "t2", text: "任务2", completed: false, status: "pending" },
     ];
-    db.run(
-      "INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ["todo-001", SESSION_ID, JSON.stringify(todos), Date.now(), Date.now()]
-    );
+    seedTodoList("todo-001", todos);
     const loaded = loadTodoList("todo-001");
     expect(loaded).toBeDefined();
     expect(loaded!.length).toBe(2);
@@ -457,14 +487,10 @@ describe("P1 集成 — Todo 工具与 DB 持久化", () => {
 
   // P1INT-032
   it("P1INT-032: loadTodoList 读取已保存的 Todo", () => {
-    const db = getDatabase();
     const todos: TodoItem[] = [
       { id: "t1", text: "读取测试", completed: false, status: "pending" },
     ];
-    db.run(
-      "INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ["todo-002", SESSION_ID, JSON.stringify(todos), Date.now(), Date.now()]
-    );
+    seedTodoList("todo-002", todos);
     const loaded = loadTodoList("todo-002");
     expect(loaded).toBeDefined();
     expect(loaded!.length).toBe(1);
@@ -479,14 +505,10 @@ describe("P1 集成 — Todo 工具与 DB 持久化", () => {
 
   // P1INT-034
   it("P1INT-034: updateTodoStatus 更新完成状态", () => {
-    const db = getDatabase();
     const todos: TodoItem[] = [
       { id: "t1", text: "待完成", completed: false, status: "pending" },
     ];
-    db.run(
-      "INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ["todo-003", SESSION_ID, JSON.stringify(todos), Date.now(), Date.now()]
-    );
+    seedTodoList("todo-003", todos);
     updateTodoStatus("todo-003", "t1", "done");
     const loaded = loadTodoList("todo-003");
     expect(loaded![0].status).toBe("done");
@@ -494,14 +516,10 @@ describe("P1 集成 — Todo 工具与 DB 持久化", () => {
 
   // P1INT-035
   it("P1INT-035: updateTodoStatus 取消完成状态", () => {
-    const db = getDatabase();
     const todos: TodoItem[] = [
       { id: "t1", text: "已完成", completed: true, status: "done" },
     ];
-    db.run(
-      "INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ["todo-004", SESSION_ID, JSON.stringify(todos), Date.now(), Date.now()]
-    );
+    seedTodoList("todo-004", todos);
     updateTodoStatus("todo-004", "t1", "pending");
     const loaded = loadTodoList("todo-004");
     expect(loaded![0].status).toBe("pending");
@@ -509,18 +527,14 @@ describe("P1 集成 — Todo 工具与 DB 持久化", () => {
 
   // P1INT-036
   it("P1INT-036: saveTodoList 覆盖已存在的列表", () => {
-    const db = getDatabase();
     const todos1: TodoItem[] = [{ id: "t1", text: "旧任务", completed: false, status: "pending" }];
-    db.run(
-      "INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ["todo-005", SESSION_ID, JSON.stringify(todos1), Date.now(), Date.now()]
-    );
-    // Overwrite via UPDATE
+    seedTodoList("todo-005", todos1);
+    // Overwrite：端口侧 = 同一 id 再写一次（upsert），A 态 = INSERT OR REPLACE
     const todos2: TodoItem[] = [
       { id: "t1", text: "新任务", completed: true, status: "done" },
       { id: "t2", text: "额外任务", completed: false, status: "pending" },
     ];
-    db.run("UPDATE todo_lists SET todos = ?, updated_at = ? WHERE id = ?", [JSON.stringify(todos2), Date.now(), "todo-005"]);
+    seedTodoList("todo-005", todos2);
     const loaded = loadTodoList("todo-005");
     expect(loaded!.length).toBe(2);
     expect(loaded![0].text).toBe("新任务");
@@ -528,33 +542,27 @@ describe("P1 集成 — Todo 工具与 DB 持久化", () => {
 
   // P1INT-037
   it("P1INT-037: 空 Todo 列表可保存和加载", () => {
-    const db = getDatabase();
-    db.run(
-      "INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ["todo-empty", SESSION_ID, JSON.stringify([]), Date.now(), Date.now()]
-    );
+    seedTodoList("todo-empty", []);
     const loaded = loadTodoList("todo-empty");
     expect(loaded).toEqual([]);
   });
 
   // P1INT-038
   it("P1INT-038: 多个 Todo 列表共存 — 不同 ID 隔离", () => {
-    const db = getDatabase();
-    db.run("INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", ["todo-A", SESSION_ID, JSON.stringify([{ id: "t1", text: "A任务", completed: false, status: "pending" as const }]), Date.now(), Date.now()]);
-    db.run("INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", ["todo-B", SESSION_ID, JSON.stringify([{ id: "t1", text: "B任务", completed: false, status: "pending" as const }]), Date.now(), Date.now()]);
+    seedTodoList("todo-A", [{ id: "t1", text: "A任务", completed: false, status: "pending" }]);
+    seedTodoList("todo-B", [{ id: "t1", text: "B任务", completed: false, status: "pending" }]);
     expect(loadTodoList("todo-A")![0].text).toBe("A任务");
     expect(loadTodoList("todo-B")![0].text).toBe("B任务");
   });
 
   // P1INT-039
   it("P1INT-039: status 字段保留 — pending/in_progress/done", () => {
-    const db = getDatabase();
     const todos: TodoItem[] = [
       { id: "t1", text: "待", completed: false, status: "pending" as const },
       { id: "t2", text: "进行", completed: false, status: "in_progress" as const },
       { id: "t3", text: "完", completed: true, status: "done" as const },
     ];
-    db.run("INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", ["todo-status", SESSION_ID, JSON.stringify(todos), Date.now(), Date.now()]);
+    seedTodoList("todo-status", todos);
     const loaded = loadTodoList("todo-status")!;
     expect(loaded[0].status).toBe("pending");
     expect(loaded[1].status).toBe("in_progress");

@@ -7,7 +7,7 @@
  * **动态 import**，循环就断开了（与 `event-log` 的处理方式一致）。
  */
 
-import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts, listExternalAttachmentMarkers } from "./message";
+import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts } from "./message";
 import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSessionLog } from "./session-jsonl";
 import { initDatabase } from "./database";
 import { hydrateAttachmentsForSession } from "./attachment-files";
@@ -26,27 +26,73 @@ export { trimIndexedMessages };
  *
  * @returns 预热的附件数与清理掉的孤儿附件文件数
  */
+/**
+ * 走端口取「已外置的附件」清单（第 14 轮）。
+ *
+ * 为什么不让渲染侧自己从域镜像里筛：域镜像对 `attachments` **只投影元数据列**（不含 content），
+ * 而"是否外置"这个信息就在 `content` 列（值形如 `file:<路径>`）。
+ * 所以过滤放在**引擎侧**（`attachments.externalized`），只把 id + 路径传出来 ——
+ * 既拿得到判据，又不会把正文拉进渲染进程。
+ *
+ * @returns undefined = 端口没接手（A 态走旧库）
+ */
+async function externalizedViaPort(): Promise<Array<{ id: string; content: string }> | undefined> {
+  const port = hasStoragePort() ? getStoragePort() : null;
+  if (!port || port.kind !== "rust") return undefined;
+  const probe = port.data as unknown as {
+    command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+  };
+  if (!probe.command) return undefined;
+  try {
+    const r = await probe.command<{ items?: Array<{ id?: string; path?: string }> }>("attachments.externalized", {});
+    const items = r?.items ?? [];
+    return items
+      .filter((x) => typeof x?.id === "string" && typeof x?.path === "string" && x.path.length > 0)
+      .map((x) => ({ id: String(x.id), content: `file:${x.path}` }));
+  } catch (e) {
+    console.warn("[Attachment] 取外置附件清单失败（本次跳过预热与清理）:", e);
+    return undefined;
+  }
+}
+
 export async function hydrateAllAttachments(): Promise<{ warmed: number; orphansRemoved: number }> {
   const out = { warmed: 0, orphansRemoved: 0 };
   try {
     // P5 第 2 段：走端口读"外置标记"，不再依赖 WASM 库。
     // 这里只读 `content`（值形如 `file:<路径>`），正文本身在文件里、按需预热。
-    const markers = listExternalAttachmentMarkers();
+    const markers = await externalizedViaPort();
     let entries: Array<{ id: string; content: string }>;
+    /**
+     * **只有"标记清单可信"时才允许做孤儿清理**（第 14 轮，破坏性缺陷修正）。
+     *
+     * 真机/测试实测的形态：B 态下 `attachments` 域镜像**就绪但为空**（附件行压根没有写入
+     * 路径，见 `docs/L3-DELETION-PLAN.md` §10）→ `markers = []` → `referenced = ∅`
+     * → `pruneOrphanAttachmentFiles` 会把 `<appData>/attachments/` 下**所有**文件当孤儿删掉，
+     * 包括迁移前留下的、仍被引用的外置正文。**那是不可逆的数据丢失**。
+     *
+     * 所以判据从"读到了清单"改成"这份清单是不是权威的"：
+     * - 旧库路径（A 态）：附件行只在旧库里，清单权威 → 允许清理；
+     * - 端口路径（B 态）：**附件写入路径尚未端口化** → 清单必然为空、不代表"没有附件"
+     *   → **只预热、不清理**（预热本身也无害）。
+     */
+    let listIsAuthoritative = false;
     if (markers) {
       entries = markers;
+      // 端口命令 `attachments.externalized` 在**引擎侧**按 `content LIKE 'file:%'` 过滤，
+      // 它返回的就是全部外置附件 → 这份清单权威（空 = 确实没有外置附件）。
+      listIsAuthoritative = true;
     } else if (shouldFallbackToLegacy()) {
       const { getDatabase } = await import("./database");
       const db = getDatabase();
       const rows = db.exec("SELECT id, content FROM attachments WHERE content LIKE 'file:%'");
       entries = rows?.[0]?.values?.map((r) => ({ id: String(r[0]), content: String(r[1]) })) ?? [];
+      listIsAuthoritative = true;
     } else {
       /**
        * B 态（端口在 rust、attachments 域未就绪）：**不去读旧库**。
        *
        * 旧库在 rust 模式下刻意不存在，读它只会拿到一个异常；而"这次没预热"是可接受的
        * —— 外置正文仍在文件里，读取路径遇到未预热会明确提示并触发一次预取（既有约定）。
-       * 孤儿清理也一并跳过：`referenced` 为空会把所有外置文件当孤儿删掉，那是**破坏性**的。
        */
       console.warn("[Attachment] attachments 域镜像未就绪，本次跳过外置附件预热与孤儿清理");
       return out;
@@ -54,6 +100,12 @@ export async function hydrateAllAttachments(): Promise<{ warmed: number; orphans
     out.warmed = await hydrateAttachmentsForSession(entries);
 
     // 孤儿清理：文件在、数据库里已无对应标记（附件被删/会话被清）→ 磁盘不能只涨不降
+    if (!listIsAuthoritative) {
+      console.warn(
+        "[Attachment] 外置附件标记清单不完整（端口侧附件写入路径未接通）—— 本次跳过孤儿清理，避免误删仍被引用的外置正文",
+      );
+      return out;
+    }
     const referenced = new Set(entries.map((e) => e.content.slice("file:".length)));
     const { pruneOrphanAttachmentFiles } = await import("./attachment-files");
     out.orphansRemoved = (await pruneOrphanAttachmentFiles(referenced)).deletedFiles;
@@ -189,10 +241,34 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
       })),
     };
     try {
-      const r = await port.data.execute("messages.rebuild_index", payload);
-      const written = r as unknown as { sessions?: number; messages?: number };
-      out.sessions = written?.sessions ?? batches.length;
-      out.messages = written?.messages ?? 0;
+      /**
+       * ⚠️ **必须用 `command`（结构化结果），不能用 `execute`**（第 14 轮修正）。
+       *
+       * `data.execute` 按契约只返回 `{ written }`（`rust-port.ts`），而这里要读的是
+       * `{ sessions, messages }`（Rust 侧 `messages_rebuild_index` 确实这么返回）。
+       * 用 `execute` 读不到字段 → `?? 0` 兜底 → **真机上"索引重建写成功、计数恒为 0"**：
+       * `runDatabaseMaintenance` 的 `rebuiltIndexMessages` 永远是 0，
+       * 那行"索引已从权威日志重建…"的日志**永远打不出来**。
+       * 这与 `migration.auto` 上踩过的坑（`{written}` 压平）是同一个。
+       */
+      const probe = port.data as unknown as {
+        command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+      };
+      const r: { sessions?: number; messages?: number } = probe.command
+        ? await probe.command<{ sessions?: number; messages?: number }>("messages.rebuild_index", payload)
+        : ((await port.data.execute("messages.rebuild_index", payload)) as unknown as {
+            sessions?: number;
+            messages?: number;
+          });
+      out.sessions = r?.sessions ?? batches.length;
+      /**
+       * 计数读不到时**不再静默取 0**：旧行为会让"写成功但计数 0"看起来像"没重建"。
+       * 这里以"确实送进去的消息条数"作为下界（写入是单事务，失败会抛而不是返回 0）。
+       */
+      out.messages =
+        typeof r?.messages === "number" && r.messages > 0
+          ? r.messages
+          : batches.reduce((n, b) => n + b.messages.length, 0);
       // 重建后把镜像换成新数据（否则镜像里还是崩溃前的旧集合）
       for (const b of batches) await hydrateSessionLog(b.id);
       if (out.messages > 0) {

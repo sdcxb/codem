@@ -13,6 +13,9 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { getStoragePort, setStoragePort } from "../core/storage/port";
+import { createRustEngineSemanticsPort } from "./rust-engine-semantics-port";
+import type { FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
@@ -217,6 +220,16 @@ describe("存储 — 项目 CRUD", () => {
 
   // STOR-015
   it("STOR-015: deleteProject 级联删除会话和消息", () => {
+    /*
+     * 换用**带真引擎语义**的假端口：`crud.delete` 按 `ON DELETE CASCADE` 带走子行
+     * （见 `rust-engine-semantics-port.ts`，出处 `engine.rs:87` + `schema.sql`）。
+     *
+     * 旧实现里 `DELETE FROM projects WHERE id = ?` 之后的"会话/消息也没了"正是 **SQLite 外键级联**
+     * 做的（端口模式下列表由引擎负责），假端口不实现这条 → 用例在端口模式下假红。
+     * 端口在这里注册，随后本用例自建的 project/session/message 都落在同一份数据里。
+     */
+    setStoragePort(createRustEngineSemanticsPort());
+
     ProjectStorage.createProject({
       id: "p-cascade", name: "级联", path: "D:\\cas",
       createdAt: Date.now(), lastAccessedAt: Date.now(),
@@ -235,6 +248,11 @@ describe("存储 — 项目 CRUD", () => {
 
     expect(SessionStorage.getSession("s-cascade")).toBeNull();
     expect(MessageStorage.listMessages("s-cascade")).toHaveLength(0);
+    // 端口表上同样不该留下子行（"只改了内存镜像"不算数）
+    const port = getStoragePort() as unknown as FakeStoragePort;
+    expect(port.__table("sessions")).toHaveLength(0);
+    expect(port.__table("messages")).toHaveLength(0);
+    expect(port.__table("tool_calls")).toHaveLength(0);
   });
 
   it("STOR-015b: listProjects 不包含全局 project (id='')", () => {

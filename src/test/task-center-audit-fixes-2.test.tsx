@@ -320,22 +320,39 @@ describe("TC-AUDIT2-P2-9 single 槽位最高优先级胜出", () => {
 describe("TC-AUDIT2-P3-13 收件箱裁剪", () => {
   it("写入新通知时删除 30 天前的旧行", async () => {
     const { InboxStorage } = await import("../core/inbox/inbox-storage");
-    const { getDatabase } = await import("../core/storage/database");
+    const { createFakeStoragePort } = await import("./fake-storage-port");
+    const { setStoragePort } = await import("../core/storage/port");
 
-    InboxStorage.create({
-      id: "inbox-old",
-      category: "automation",
-      title: "很久以前的通知",
-      body: null,
-      source_type: null,
-      source_id: null,
-      project_id: PROJECT_A,
-      squad_id: null,
-      issue_id: null,
-      priority: "low",
-    } as any);
-    const db = getDatabase();
-    db.run("UPDATE inbox SET created_at = ? WHERE id = ?", [Date.now() - 40 * 24 * 60 * 60 * 1000, "inbox-old"]);
+    /*
+     * 旧行用**端口 seed 预置**（原来是 `db.run("UPDATE inbox SET created_at = …")` 改旧库）。
+     *
+     * 端口模式下 `inbox` 的行住在端口镜像里（`domainReadMany/domainDeleteWhere` 都读镜像），
+     * 对旧库那条 UPDATE 改的是另一份数据 —— 旧行仍带着"刚刚创建"的时间戳，于是永远不会被
+     * 30 天保留期裁掉（症状：`inbox-old` 还在）。预置进端口后，"写入新通知 → 顺带清理过期行"
+     * 这条链路才真的被验证到（清理本身走 `domainDeleteWhere` → `crud.delete` 写穿）。
+     */
+    const port = createFakeStoragePort({
+      seed: {
+        inbox: [
+          {
+            id: "inbox-old",
+            category: "automation",
+            title: "很久以前的通知",
+            body: null,
+            source_type: null,
+            source_id: null,
+            project_id: PROJECT_A,
+            squad_id: null,
+            issue_id: null,
+            priority: "low",
+            read: 0,
+            archived: 0,
+            created_at: Date.now() - 40 * 24 * 60 * 60 * 1000,
+          },
+        ],
+      },
+    });
+    setStoragePort(port);
 
     InboxStorage.create({
       id: "inbox-new",
@@ -353,5 +370,7 @@ describe("TC-AUDIT2-P3-13 收件箱裁剪", () => {
     const rows = InboxStorage.listAll({ projectId: PROJECT_A });
     expect(rows.some((r) => r.id === "inbox-new")).toBe(true);
     expect(rows.some((r) => r.id === "inbox-old")).toBe(false);
+    // 端口侧也要真的少一行（"只改了内存"不算数）
+    expect(port.__table("inbox").some((r) => r.id === "inbox-old")).toBe(false);
   });
 });

@@ -5,6 +5,9 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { getStoragePort, setStoragePort } from "../core/storage/port";
+import { createRustEngineSemanticsPort } from "./rust-engine-semantics-port";
+import type { FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
@@ -12,6 +15,25 @@ import type { Message } from "../store";
 
 const PROJECT_ID = "proj-msgc-test";
 const SESSION_ID = "sess-msgc-test";
+
+/**
+ * 本文件用**带真引擎语义**的假端口（见 `rust-engine-semantics-port.ts`）：
+ *
+ * - 消息列表按 `ORDER BY timestamp ASC, id ASC`（`repo.rs:942`）—— MSGC-020 验的就是这条；
+ * - `crud.delete` 按 `ON DELETE CASCADE` 带走子行（`engine.rs:87` + `schema.sql`）——
+ *   MSGC-014 验的"删项目级联"在旧实现里正是靠它，端口模式下列表由引擎负责，替身不实现就会假红。
+ *
+ * 这个 hook 属于**根套件**，先于 `describe` 里的 beforeEach 执行 —— 所以下面的
+ * `setupProjectAndSession()` 建的项目/会话落在同一份数据里（不会出现"断言读的是空端口"的假绿）。
+ */
+beforeEach(() => {
+  setStoragePort(createRustEngineSemanticsPort());
+});
+
+/** 当前用例生效的端口（断言"写穿到端口"用） */
+function currentPort(): FakeStoragePort {
+  return getStoragePort() as unknown as FakeStoragePort;
+}
 
 function setupProjectAndSession(): void {
   ProjectStorage.createProject({
@@ -193,23 +215,33 @@ describe("消息链路与存储完整性", () => {
   });
 
   it("MSGC-013: generatedFiles 序列化", () => {
+    /*
+     * 断言改读**端口表** `messages` 的 `generated_files` 列。
+     *
+     * 读路径的消息镜像刻意只装正文那 9 个字段（内存预算，见 message.ts 的说明），
+     * `listMessages()[…].generatedFiles` 在端口模式下拿不到；而这条数据的真实落点是
+     * `messages.upsert_index` 写进端口的 `generated_files` —— 本用例要守的就是"写穿了"。
+     */
     const msg = makeMessage({
       id: "msgc-013",
       generatedFiles: ["test.ts", "config.json"],
     });
     MessageStorage.createMessage(msg, SESSION_ID);
-    const msgs = MessageStorage.listMessages(SESSION_ID);
-    expect(msgs.find((m: any) => m.id === "msgc-013")!.generatedFiles).toHaveLength(2);
+    const row = currentPort().__table("messages").find((r) => r.id === "msgc-013");
+    expect(row?.generated_files).toEqual(["test.ts", "config.json"]);
   });
 
   it("MSGC-014: 项目删除级联清理", () => {
     MessageStorage.createMessage(makeMessage({ id: "msgc-014" }), SESSION_ID);
     ProjectStorage.deleteProject(PROJECT_ID);
-    // 会话应被删除
+    // 会话应被删除（外键 ON DELETE CASCADE：删父行时引擎带走子行）
     const sessions = SessionStorage.listSessions(PROJECT_ID);
     expect(sessions).toHaveLength(0);
     // 消息也应被级联删除
     expect(MessageStorage.listMessages(SESSION_ID)).toHaveLength(0);
+    // 端口表上同样不该留下子行（"只改了内存镜像"不算数）
+    expect(currentPort().__table("sessions")).toHaveLength(0);
+    expect(currentPort().__table("messages")).toHaveLength(0);
   });
 
   it("MSGC-015: delegation_tasks 表正常", () => {

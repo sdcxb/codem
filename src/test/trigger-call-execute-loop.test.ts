@@ -39,6 +39,8 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { initDatabase, resetDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -252,6 +254,16 @@ describe("功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-050", () =>
     });
 
     it("LOOP-012: 工具执行结果写入消息存储", () => {
+      /*
+       * 工具结果的落点改成读**端口表** `tool_calls`（`messages.upsert_index` 的持久化目标）。
+       *
+       * 消息镜像刻意不含 `tool_calls`（内存预算，见 message.ts 的说明）：`listMessages` 返回的
+       * Message 上只有"同步缓存命中"时才带 toolCalls，而缓存由 `addToolCall` / `updateToolCall`
+       * 维护。本用例是"执行结果随消息**一起**写入"的形态 → 断言它的端口落点。
+       */
+      const port = createFakeStoragePort();
+      setStoragePort(port);
+
       const msg: Message = {
         id: "loop-012",
         role: "assistant",
@@ -270,9 +282,11 @@ describe("功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-050", () =>
       };
       MessageStorage.createMessage(msg, SESSION_ID);
       const msgs = MessageStorage.listMessages(SESSION_ID);
-      const found = msgs.find((m: any) => m.id === "loop-012")!;
-      expect(found.toolCalls).toBeDefined();
-      expect(found.toolCalls!.length).toBe(1);
+      expect(msgs.find((m: any) => m.id === "loop-012")).toBeDefined();
+      const toolRows = port.__table("tool_calls").filter((r) => r.message_id === "loop-012");
+      expect(toolRows).toHaveLength(1);
+      expect(String(toolRows[0].tool)).toBe("bash");
+      expect(String(toolRows[0].result)).toBe("test");
     });
 
     it("LOOP-013: 工具调用状态从 running → done 更新", () => {

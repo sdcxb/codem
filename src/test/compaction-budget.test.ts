@@ -38,9 +38,33 @@ import {
   createMessage, listMessages, deleteMessagesByIds, deleteMessage, hydrateSessionLog, clearSessionLogCache, listVisibleMessages,
 } from "../core/storage/message";
 import { flushSessionLogWrites, readSessionMessages, appendSessionMessage, __resetJsonlCache } from "../core/storage/session-jsonl";
+import { getStoragePort, hasStoragePort } from "../core/storage/port";
+import type { FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
 
-const SESSION = "sess-compaction-budget";
+/** B 态（端口在 rust）时产品使用的内存假端口；A 态（`CODEM_TEST_PORT=0`）为 null */
+function activePort(): FakeStoragePort | null {
+  if (!hasStoragePort()) return null;
+  const port = getStoragePort();
+  return port.kind === "rust" ? (port as unknown as FakeStoragePort) : null;
+}
+
+/**
+ * ⚠️ **每个用例用独立的会话 id**（第 84 轮）。
+ *
+ * `message.ts` 里有一份**模块级**的"本进程已软删除 id"集合（`localHiddenIds`，按会话分组），
+ * 它是读路径的权威补充、且刻意不随端口更换而清空。而本文件原来的所有用例共用同一个
+ * `SESSION` 与同一批 id（`m0..m39`）：CB-7 软删除 `m0..m34` 之后，那份集合在**后续用例里
+ * 仍然生效** —— 于是 CB-8 里 `listMessages` 只剩 5 条（于是"删前 35 条"删错了对象）、
+ * CB-9/CB-11 里刚建的消息被上一条用例的隐藏集合整批过滤掉（读到空列表）。
+ *
+ * 这不是产品缺陷（生产里会话 id 是唯一的，不存在"同一会话被两条用例反复重建"），
+ * 而是**用例之间通过模块级状态串味**：新端口 ≠ 新进程。用独立会话 id 隔开即可。
+ */
+const SESSION_BASE = "sess-compaction-budget";
+let SESSION = SESSION_BASE;
+let caseSeq = 0;
+
 const mk = (id: string, ts: number, content?: string): Message =>
   ({ id, role: "user", content: content ?? `内容 ${id}`, timestamp: ts } as Message);
 
@@ -134,6 +158,8 @@ describe("压缩后的读路径（真机上压缩必须真的变小）", () => {
     clearSessionLogCache();
     resetSaveFailureState();
     resetDatabaseFatalState();
+    // 每条用例一个会话 id：见 SESSION_BASE 处的说明（模块级隐藏集合会跨用例串味）
+    SESSION = `${SESSION_BASE}-${++caseSeq}`;
     await initDatabase();
     getDatabase().run("DELETE FROM messages");
     getDatabase().run(
@@ -224,8 +250,21 @@ describe("压缩后的读路径（真机上压缩必须真的变小）", () => {
     // 复刻用户现场：老代码只改了索引（hidden=1），日志里干干净净
     for (let i = 0; i < 10; i++) createMessage(mk(`m${i}`, 1000 + i), SESSION);
     await flushSessionLogWrites();
-    const db = getDatabase();
-    for (let i = 0; i < 7; i++) db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [`m${i}`]);
+    const softIds = Array.from({ length: 7 }, (_, i) => `m${i}`);
+    const port = activePort();
+    if (port) {
+      /**
+       * B 态：索引就是**端口**，所以"老版本只改索引"要用端口命令复刻 ——
+       * `messages.delete {soft:true}` 只把 `hidden` 置 1，**不写墓碑**。
+       *
+       * 刻意不调用产品的 `deleteMessagesByIds`：它会顺带记进程内的隐藏集合，
+       * 那就不是"日志里干干净净、只有索引知道"的现场了（本用例考的正是这一条）。
+       */
+      await port.data.execute("messages.delete", { ids: softIds, soft: true });
+    } else {
+      const db = getDatabase();
+      for (const id of softIds) db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [id]);
+    }
     clearSessionLogCache();
     __resetJsonlCache();
     await hydrateSessionLog(SESSION); // 日志里 10 条都在，且没有墓碑

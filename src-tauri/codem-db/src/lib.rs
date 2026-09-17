@@ -88,6 +88,8 @@ pub const COMMANDS: &[&str] = &[
     "feedback.delete",
     "attachments.list",
     "attachments.update",
+    "attachments.content",
+    "attachments.externalized",
     // ===== P4 迁移原语（受控的结构化通道，非裸 SQL）=====
     "import.begin",
     "import.table",
@@ -192,6 +194,8 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "feedback.delete" => config::feedback_delete(engine, params),
         "attachments.list" => config::attachments_list(engine, params),
         "attachments.update" => config::attachments_update(engine, params),
+        "attachments.content" => config::attachments_content(engine, params),
+        "attachments.externalized" => config::attachments_externalized(engine, params),
         "health" => serde_json::to_value(engine.health()?).map_err(|e| DbError::other(e.to_string())),
         "integrity_check" => {
             serde_json::to_value(engine.integrity_check()?).map_err(|e| DbError::other(e.to_string()))

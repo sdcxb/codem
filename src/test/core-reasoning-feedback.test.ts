@@ -23,7 +23,9 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { initDatabase, resetDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
@@ -63,6 +65,16 @@ describe("思考过程 — reasoning 存储与加载", () => {
 
   // REAS-001
   it("REAS-001: createMessage 带 reasoning 存储到 DB", () => {
+    /*
+     * 索引现在住在**端口**里：断言改成读端口表 `messages`（`messages.upsert_index` 的落点）。
+     *
+     * 原来断言的是 `db.exec("SELECT reasoning FROM messages WHERE id = ?")` —— 端口模式下
+     * 产品只写端口，旧库那侧没有行（`result[0]` 是 undefined → 用例红）。
+     * 本用例自己注册端口，是为了 A 态（setup 注册 null）下也走同一条路，两种态行为一致。
+     */
+    const port = createFakeStoragePort();
+    setStoragePort(port);
+
     const msg = makeMsg({
       id: "reas-001",
       content: "回复内容",
@@ -71,9 +83,8 @@ describe("思考过程 — reasoning 存储与加载", () => {
     });
     MessageStorage.createMessage(msg, SESSION_ID);
 
-    const db = getDatabase();
-    const result = db.exec("SELECT reasoning FROM messages WHERE id = ?", ["reas-001"]);
-    expect(result[0].values[0][0]).toBe("这是思考过程");
+    const row = port.__table("messages").find((r) => r.id === "reas-001");
+    expect(row?.reasoning).toBe("这是思考过程");
   });
 
   // REAS-002
@@ -374,6 +385,18 @@ describe("回答反馈 — 错误消息处理", () => {
 
   // REAS-023
   it("REAS-023: error 消息含 toolCalls 保留", () => {
+    /*
+     * 工具调用的落点改成读**端口表** `tool_calls`。
+     *
+     * 消息镜像刻意**只装正文那 9 个字段**（内存预算：几百 KB × N 个会话，见 message.ts 的说明），
+     * 不含 `tool_calls` —— 所以 `getMessage().toolCalls` 走的是"同步缓存命中就带上"那条路，
+     * 而缓存只由 `addToolCall` / `updateToolCall` 维护；`createMessage` 一次性带进来的
+     * toolCalls 由 `messages.upsert_index` **整批替换**写进端口（那才是它的持久化落点）。
+     * 这里断言这个落点：error 消息的工具调用确实写穿了，而不是丢在半路。
+     */
+    const port = createFakeStoragePort();
+    setStoragePort(port);
+
     const msg = makeMsg({
       id: "reas-023",
       content: "内容",
@@ -384,9 +407,10 @@ describe("回答反馈 — 错误消息处理", () => {
     });
     MessageStorage.createMessage(msg, SESSION_ID);
 
-    const loaded = MessageStorage.getMessage("reas-023");
-    expect(loaded!.toolCalls).toBeDefined();
-    expect(loaded!.toolCalls).toHaveLength(1);
+    const rows = port.__table("tool_calls").filter((r) => r.message_id === "reas-023");
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0].id)).toBe("tc-err");
+    expect(String(rows[0].result)).toBe("结果");
   });
 });
 

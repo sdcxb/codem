@@ -31,6 +31,8 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { getStoragePort, setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
@@ -40,6 +42,77 @@ import { useAppStore, type Message } from "../store";
 
 const PROJECT_ID = "proj-chain-test";
 const SESSION_ID = "sess-chain-test";
+
+/**
+ * 当前注册的存储端口（`setup.ts` 每个用例前注册一个内存假端口）。
+ *
+ * 端口模式下（B 态）产品**只读写端口**，旧库在真机上刻意不存在 ——
+ * 所以断言一律读端口表（`__table` / `__writes`），不再 `getDatabase().exec(...)`。
+ */
+function port(): FakeStoragePort {
+  return getStoragePort() as unknown as FakeStoragePort;
+}
+
+/**
+ * 用例内**自己**注册一个内存端口（覆盖 `setup.ts` 那一个），随后由 `setupBase()`
+ * 把项目 / 会话夹具写进它。
+ *
+ * 为什么必须显式：这些用例断言的是**端口契约**（B 态）。`setup.ts` 默认注册的也是假端口，
+ * 但 `CODEM_TEST_PORT=0`（A 态对照）下它注册的是 `null`，断言目标就变成旧库了 ——
+ * 显式注册让两种档位验证同一条契约（`message-port-coverage.test.ts` 是同一个写法）。
+ */
+function useFreshPort(): FakeStoragePort {
+  const p = createFakeStoragePort();
+  setStoragePort(p);
+  return p;
+}
+
+/**
+ * 假端口**没有实现外键级联**，而真实引擎是 `PRAGMA foreign_keys = ON`（`migrate.rs`）
+ * + `sql/schema.sql` 的 `ON DELETE CASCADE`（`sessions.project_id → projects.id`、
+ * `messages.session_id → sessions.id`、`tool_calls.message_id → messages.id`、
+ * `attachments.session_id → sessions.id`）。
+ *
+ * 产品侧删会话/删项目只发**一条** `crud.delete`（`session.ts` 的 `confirmBulk` 注释写得很清楚：
+ * "删 1 个会话会级联删掉它的全部消息 / 工具调用 / 事件" —— 级联是引擎的活），
+ * 所以"删了父行之后子行也没了"这条断言必须让测试双具备引擎那一步。
+ *
+ * ⚠️ 级联挂在 `data.execute` 上（而不是断言前自己删一遍）：只有**产品真的发出了删除命令**，
+ * 级联才会发生 —— 断言因此仍与产品行为因果相连，不是自证。
+ */
+function installForeignKeyCascade(p: FakeStoragePort): void {
+  const execute = p.data.execute.bind(p.data);
+  const deleteRows = (table: string, where: Record<string, unknown>) => {
+    void execute("crud.delete", { table, where });
+  };
+  const cascadeSession = (sessionId: string): void => {
+    // tool_calls 挂在 messages 上（FK 是 message_id），所以先按会话取 message id 再删
+    for (const m of p.__table("messages").filter((r) => r.session_id === sessionId)) {
+      deleteRows("tool_calls", { message_id: m.id });
+    }
+    deleteRows("messages", { session_id: sessionId });
+    deleteRows("attachments", { session_id: sessionId });
+    deleteRows("session_events", { session_id: sessionId });
+  };
+  const cascade = (table: string, where: Record<string, unknown>): void => {
+    if (table === "sessions") {
+      cascadeSession(String(where.id ?? ""));
+      return;
+    }
+    if (table === "projects") {
+      const projectId = String(where.id ?? "");
+      for (const s of p.__table("sessions").filter((r) => r.project_id === projectId)) {
+        cascadeSession(String(s.id));
+        deleteRows("sessions", { id: s.id });
+      }
+    }
+  };
+  p.data.execute = (command: string, params?: Record<string, unknown>) => {
+    const result = execute(command, params); // 假端口的落表本身就是同步的
+    if (command === "crud.delete") cascade(String(params?.table ?? ""), (params?.where as Record<string, unknown>) ?? {});
+    return result;
+  };
+}
 
 function setupBase(): void {
   ProjectStorage.createProject({
@@ -92,15 +165,20 @@ describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
 
   // CHAIN-003
   it("CHAIN-003: createMessage 带 reasoning 存储到 DB", () => {
+    useFreshPort();
+    setupBase();
     const msg = makeMsg({ id: "chain-003", role: "assistant", content: "回复", reasoning: "思考过程" });
     MessageStorage.createMessage(msg, SESSION_ID);
-    const db = getDatabase();
-    const result = db.exec("SELECT reasoning FROM messages WHERE id = ?", ["chain-003"]);
-    expect(result[0].values[0][0]).toBe("思考过程");
+    // 端口模式：索引行落在端口上（旧库刻意没有这一行）
+    const row = port().__table("messages").find((r) => r.id === "chain-003");
+    expect(row, "消息行必须落在端口上").toBeTruthy();
+    expect(row!.reasoning).toBe("思考过程");
   });
 
   // CHAIN-004
   it("CHAIN-004: createMessage 带 toolCalls 存储到 DB", () => {
+    useFreshPort();
+    setupBase();
     const msg = makeMsg({
       id: "chain-004",
       role: "assistant",
@@ -111,9 +189,13 @@ describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
       }],
     });
     MessageStorage.createMessage(msg, SESSION_ID);
-    const loaded = MessageStorage.getMessage("chain-004");
-    expect(loaded.toolCalls).toBeDefined();
-    expect(loaded.toolCalls![0].tool).toBe("read");
+    // 工具调用由 `messages.upsert_index` 的 `tool_calls` 整批替换落到端口的 tool_calls 表
+    const rows = port().__table("tool_calls").filter((r) => r.message_id === "chain-004");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("tc-1");
+    expect(rows[0].tool).toBe("read");
+    expect(rows[0].result).toBe("file content");
+    expect(rows[0].status).toBe("done");
   });
 
   // CHAIN-005
@@ -150,11 +232,19 @@ describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
 
   // CHAIN-008
   it("CHAIN-008: deleteMessagesAfter 删除指定消息之后的所有消息", () => {
+    useFreshPort();
+    setupBase();
     for (let i = 0; i < 5; i++) {
       MessageStorage.createMessage(makeMsg({
         id: `chain-008-${i}`, timestamp: 2000 + i,
       }), SESSION_ID);
     }
+    /**
+     * B 态下删除候选**从会话镜像上算**；镜像未就绪时产品如实返回 0 并登记"就绪后补做"
+     * （契约见 `message-port-coverage.test.ts` 的 PC-3）。真机上用户就在这个会话里、
+     * 镜像已加载，所以先让镜像就绪再断言真实删除条数。
+     */
+    port().messages.ensureLoaded(SESSION_ID);
     const deleted = MessageStorage.deleteMessagesAfter(SESSION_ID, "chain-008-2");
     expect(deleted).toBe(2); // chain-008-3, chain-008-4
     const list = MessageStorage.listMessages(SESSION_ID);
@@ -163,14 +253,19 @@ describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
 
   // CHAIN-009
   it("CHAIN-009: createMessage 带 generatedFiles 存储到 DB", () => {
+    useFreshPort();
+    setupBase();
     const msg = makeMsg({
       id: "chain-009",
       role: "assistant",
       generatedFiles: ["/tmp/a.ts", "/tmp/b.ts"],
     });
     MessageStorage.createMessage(msg, SESSION_ID);
-    const loaded = MessageStorage.getMessage("chain-009");
-    expect(loaded.generatedFiles).toEqual(["/tmp/a.ts", "/tmp/b.ts"]);
+    // generated_files 是 `messages.upsert_index` 的参数之一（Rust 侧落进 JSON 列）
+    const row = port().__table("messages").find((r) => r.id === "chain-009");
+    expect(row, "消息行必须落在端口上").toBeTruthy();
+    const generated = typeof row!.generated_files === "string" ? JSON.parse(row!.generated_files as string) : row!.generated_files;
+    expect(generated).toEqual(["/tmp/a.ts", "/tmp/b.ts"]);
   });
 
   // CHAIN-010
@@ -185,6 +280,8 @@ describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
 
   // CHAIN-011
   it("CHAIN-011: updateMessage 更新 toolCall 状态", () => {
+    useFreshPort();
+    setupBase();
     const msg = makeMsg({
       id: "chain-011",
       role: "assistant",
@@ -194,8 +291,12 @@ describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
     MessageStorage.updateMessage("chain-011", {
       toolCalls: [{ id: "tc-011", tool: "bash", args: {}, status: "done" as const, result: "output" }],
     });
-    const loaded = MessageStorage.getMessage("chain-011");
-    expect(loaded.toolCalls![0].status).toBe("done");
+    // 「整表替换」由 `messages.upsert_index` 的 `tool_calls` 参数实现（Rust 侧同一语义），落到端口表
+    const rows = port().__table("tool_calls").filter((r) => r.message_id === "chain-011");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("tc-011");
+    expect(rows[0].status).toBe("done");
+    expect(rows[0].result).toBe("output");
   });
 
   // CHAIN-012
@@ -408,6 +509,9 @@ describe("消息链路 — Session CRUD 与消息关联", () => {
 
   // CHAIN-038
   it("CHAIN-038: deleteSession 删除会话及其消息", () => {
+    useFreshPort();
+    setupBase(); // 被删的会话要在端口里真实存在
+    installForeignKeyCascade(port()); // 级联是引擎的活（PRAGMA foreign_keys=ON + ON DELETE CASCADE），测试双要补上
     MessageStorage.createMessage(makeMsg({ id: "chain-038" }), SESSION_ID);
     SessionStorage.deleteSession(SESSION_ID);
     const sess = SessionStorage.getSession(SESSION_ID);
@@ -451,6 +555,9 @@ describe("消息链路 — Session CRUD 与消息关联", () => {
 
   // CHAIN-042
   it("CHAIN-042: deleteProject 删除项目及关联会话", () => {
+    useFreshPort();
+    setupBase(); // 被删的项目要在端口里真实存在
+    installForeignKeyCascade(port()); // 级联是引擎的活，测试双要补上（见 installForeignKeyCascade）
     SessionStorage.createSession({
       id: "sess-del-proj", projectId: PROJECT_ID, title: "待删",
       createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,

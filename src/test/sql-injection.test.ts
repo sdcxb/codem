@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -183,6 +185,17 @@ describe("SQL 注入和特殊字符测试 — 消息内容", () => {
   });
 
   it("tool call result 包含 SQL 注入模式", () => {
+    /*
+     * 工具结果的落点改成读**端口表** `tool_calls`（`messages.upsert_index` 会把该消息的
+     * tool_calls 整批替换写进去）。
+     *
+     * 消息镜像刻意不含 `tool_calls`（内存预算，见 message.ts 的说明），所以按 id 读回来的
+     * Message 上没有这个字段 —— 原来断言 `loaded!.toolCalls![0].result` 在端口模式下必然红，
+     * 而它想验证的事实（这段注入串**原样**落库、没有被拼进 SQL）在端口表上可以直接断言。
+     */
+    const port = createFakeStoragePort();
+    setStoragePort(port);
+
     const msg: Message = {
       id: "msg-sql-4",
       role: "assistant",
@@ -201,8 +214,9 @@ describe("SQL 注入和特殊字符测试 — 消息内容", () => {
     };
     MessageStorage.createMessage(msg, sessionId);
 
-    const loaded = MessageStorage.getMessage("msg-sql-4");
-    expect(loaded!.toolCalls![0].result).toBe("test\n'); DROP TABLE messages; --");
+    const tcRows = port.__table("tool_calls").filter((r) => r.message_id === "msg-sql-4");
+    expect(tcRows).toHaveLength(1);
+    expect(tcRows[0].result).toBe("test\n'); DROP TABLE messages; --");
 
     // 验证表还在
     expect(MessageStorage.listMessages(sessionId)).toHaveLength(1);

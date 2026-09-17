@@ -12,6 +12,9 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { getStoragePort, setStoragePort } from "../core/storage/port";
+import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
@@ -23,6 +26,132 @@ const PROJECT_ID = "proj-chat-test";
 const SESSION_ID = "sess-chat-test";
 
 // ========== 辅助函数 ==========
+
+/**
+ * 当前注册的存储端口（`setup.ts` 每个用例前注册一个内存假端口）。
+ *
+ * 端口模式下（B 态）产品**只读写端口**，旧库在真机上刻意不存在 ——
+ * 所以断言一律读端口表（`__table` / `__writes`），不再 `getDatabase().exec(...)`。
+ */
+function port(): FakeStoragePort {
+  return getStoragePort() as unknown as FakeStoragePort;
+}
+
+/**
+ * 用例内**自己**注册一个内存端口（覆盖 `setup.ts` 那一个），随后由 `setupProjectAndSession()`
+ * 把项目 / 会话夹具写进它。
+ *
+ * 为什么必须显式：这些用例断言的是**端口契约**（B 态）。`setup.ts` 默认注册的也是假端口，
+ * 但 `CODEM_TEST_PORT=0`（A 态对照）下它注册的是 `null`，断言目标就变成旧库了 ——
+ * 显式注册让两种档位验证同一条契约（`message-port-coverage.test.ts` / `domain-store.test.ts`
+ * 是同一个写法）。
+ */
+function useFreshPort(): FakeStoragePort {
+  const p = createFakeStoragePort();
+  setStoragePort(p);
+  return p;
+}
+
+/** 端口行里 `args` 可能是对象（线协议形状）或 JSON 文本（Rust 侧 JSON 列） */
+function parseArgs(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== "string") return (raw ?? {}) as Record<string, unknown>;
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 假端口**没有实现外键级联**，而真实引擎是 `PRAGMA foreign_keys = ON`
+ * （`migrate.rs`）+ `sql/schema.sql` 里的 `ON DELETE CASCADE`
+ * （`sessions.project_id → projects.id`、`messages.session_id → sessions.id`、
+ * `tool_calls.message_id → messages.id`、`attachments.session_id → sessions.id`）。
+ *
+ * 产品侧删会话只发**一条** `crud.delete`（见 `session.ts` 关于 `confirmBulk` 的注释：
+ * "删 1 个会话会级联删掉它的全部消息 / 工具调用 / 事件" —— 级联是引擎的活，不是渲染侧的活），
+ * 所以"删了会话之后消息也没了"这条断言必须让测试双具备引擎那一步，否则测的是测试双的缺陷。
+ *
+ * ⚠️ 级联挂在 `data.execute` 上（而不是在断言前自己删一遍）：只有**产品真的发出了删除命令**，
+ * 级联才会发生 —— 断言因此仍然与产品行为因果相连，不是自证。
+ */
+function installForeignKeyCascade(p: FakeStoragePort): void {
+  const execute = p.data.execute.bind(p.data);
+  /** 直接复用端口自己的写命令，落表语义与端口一致 */
+  const deleteRows = (table: string, where: Record<string, unknown>) => {
+    void execute("crud.delete", { table, where });
+  };
+  const cascadeSession = (sessionId: string): void => {
+    // tool_calls 挂在 messages 上（FK 是 message_id），所以先按会话取 message id 再删
+    for (const m of p.__table("messages").filter((r) => r.session_id === sessionId)) {
+      deleteRows("tool_calls", { message_id: m.id });
+    }
+    deleteRows("messages", { session_id: sessionId });
+    deleteRows("attachments", { session_id: sessionId });
+    deleteRows("session_events", { session_id: sessionId });
+  };
+  const cascade = (table: string, where: Record<string, unknown>): void => {
+    if (table === "sessions") {
+      cascadeSession(String(where.id ?? ""));
+      return;
+    }
+    if (table === "projects") {
+      const projectId = String(where.id ?? "");
+      for (const s of p.__table("sessions").filter((r) => r.project_id === projectId)) {
+        cascadeSession(String(s.id));
+        deleteRows("sessions", { id: s.id });
+      }
+    }
+  };
+  p.data.execute = (command: string, params?: Record<string, unknown>) => {
+    const result = execute(command, params); // 假端口的落表本身就是同步的
+    if (command === "crud.delete") cascade(String(params?.table ?? ""), (params?.where as Record<string, unknown>) ?? {});
+    return result;
+  };
+}
+
+/**
+ * 把**权威日志（会话 JSONL）**在测试里真正打通。
+ *
+ * 为什么这几条用例需要它：本仓库的分层是"追加日志 = 权威存储，SQLite/端口 = 可重建的查询索引"，
+ * 而读路径 `listMessages` 是**索引 ∪ 权威日志**（合并后按 timestamp 升序）。
+ * 没有 Tauri 文件通道时日志是死的 → 合并那一步永远不发生 → 只能看到索引那一份，
+ * 与真机行为（进会话时会 `hydrateSessionLog`）不一致。
+ * 同一个桩在 `silent-write-guard.test.ts` 里也是这么用的。
+ */
+function installSessionLogStub(): void {
+  const files = new Map<string, string>();
+  const stub = {
+    core: {
+      invoke: async (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === "get_app_data_dir") return "C:\\appdata\\";
+        if (cmd === "write_file") { files.set(args.path as string, args.content as string); return undefined; }
+        if (cmd === "append_file") {
+          files.set(args.path as string, (files.get(args.path as string) ?? "") + (args.content as string) + "\n");
+          return undefined;
+        }
+        if (cmd === "read_file") {
+          if (!files.has(args.path as string)) throw new Error("no such file");
+          return files.get(args.path as string);
+        }
+        if (cmd === "exists") return files.has(args.path as string);
+        if (cmd === "list_directory") return [];
+        return undefined;
+      },
+    },
+  };
+  (window as any).__TAURI__ = stub;
+  (globalThis as any).__TAURI__ = stub;
+  __resetJsonlCache();
+  MessageStorage.clearSessionLogCache();
+}
+
+function removeSessionLogStub(): void {
+  delete (window as any).__TAURI__;
+  delete (globalThis as any).__TAURI__;
+  __resetJsonlCache();
+  MessageStorage.clearSessionLogCache();
+}
 
 function setupProjectAndSession(): void {
   ProjectStorage.createProject({
@@ -68,6 +197,8 @@ describe("对话核心链路 — 消息存储与加载", () => {
 
   // ===== CHAT-016: 消息持久化 ==========
   it("CHAT-016: createMessage 写入 SQLite，字段完整", () => {
+    useFreshPort();
+    setupProjectAndSession();
     const msg = makeMessage({
       id: "chat-016",
       role: "user",
@@ -77,29 +208,44 @@ describe("对话核心链路 — 消息存储与加载", () => {
     });
     MessageStorage.createMessage(msg, SESSION_ID);
 
-    const db = getDatabase();
-    const result = db.exec("SELECT id, session_id, role, content, timestamp, status FROM messages WHERE id = ?", ["chat-016"]);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].values[0][0]).toBe("chat-016");
-    expect(result[0].values[0][1]).toBe(SESSION_ID);
-    expect(result[0].values[0][2]).toBe("user");
-    expect(result[0].values[0][3]).toBe("你好世界");
-    expect(result[0].values[0][4]).toBe(1000000);
-    expect(result[0].values[0][5]).toBe("done");
+    // 端口模式（B 态）：这条索引行落在**端口**上（`messages.upsert_index`），旧库刻意没有它
+    const rows = port().__table("messages").filter((r) => r.id === "chat-016");
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.id).toBe("chat-016");
+    expect(row.session_id).toBe(SESSION_ID);
+    expect(row.role).toBe("user");
+    expect(row.content).toBe("你好世界");
+    expect(row.timestamp).toBe(1000000);
+    expect(row.status).toBe("done");
   });
 
   // ===== CHAT-017: 消息加载 ==========
-  it("CHAT-017: listMessages 按 timestamp 升序排列", () => {
-    const ts = Date.now();
-    MessageStorage.createMessage(makeMessage({ id: "m2", content: "第二条", timestamp: ts + 200 }), SESSION_ID);
-    MessageStorage.createMessage(makeMessage({ id: "m1", content: "第一条", timestamp: ts + 100 }), SESSION_ID);
-    MessageStorage.createMessage(makeMessage({ id: "m3", content: "第三条", timestamp: ts + 300 }), SESSION_ID);
+  it("CHAT-017: listMessages 按 timestamp 升序排列", async () => {
+    useFreshPort();
+    setupProjectAndSession();
+    /**
+     * 真实引擎里 `messages.list` 是 `ORDER BY timestamp ASC, id ASC`（`repo.rs`），
+     * 而 `listMessages` = 索引 ∪ 权威日志、**合并后按 timestamp 升序**（`listMessagesMerged`）。
+     * 后者才是这条断言在真机上的依据 —— 所以先把权威日志打通再读（见 installSessionLogStub）。
+     */
+    installSessionLogStub();
+    try {
+      const ts = Date.now();
+      MessageStorage.createMessage(makeMessage({ id: "m2", content: "第二条", timestamp: ts + 200 }), SESSION_ID);
+      MessageStorage.createMessage(makeMessage({ id: "m1", content: "第一条", timestamp: ts + 100 }), SESSION_ID);
+      MessageStorage.createMessage(makeMessage({ id: "m3", content: "第三条", timestamp: ts + 300 }), SESSION_ID);
+      await flushSessionLogWrites();
+      await MessageStorage.hydrateSessionLog(SESSION_ID);
 
-    const messages = MessageStorage.listMessages(SESSION_ID);
-    expect(messages).toHaveLength(3);
-    expect(messages[0].id).toBe("m1");
-    expect(messages[1].id).toBe("m2");
-    expect(messages[2].id).toBe("m3");
+      const messages = MessageStorage.listMessages(SESSION_ID);
+      expect(messages).toHaveLength(3);
+      expect(messages[0].id).toBe("m1");
+      expect(messages[1].id).toBe("m2");
+      expect(messages[2].id).toBe("m3");
+    } finally {
+      removeSessionLogStub();
+    }
   });
 
   // ===== CHAT-018: 消息更新 ==========
@@ -122,6 +268,8 @@ describe("对话核心链路 — 消息存储与加载", () => {
 
   // ===== CHAT-019: 工具调用存储 ==========
   it("CHAT-019: createMessage 带 toolCalls 存储到 tool_calls 表", () => {
+    useFreshPort();
+    setupProjectAndSession();
     const msg = makeMessage({
       id: "chat-019",
       role: "assistant",
@@ -132,14 +280,14 @@ describe("对话核心链路 — 消息存储与加载", () => {
     });
     MessageStorage.createMessage(msg, SESSION_ID);
 
-    const db = getDatabase();
-    const result = db.exec("SELECT id, message_id, tool, args, status FROM tool_calls WHERE message_id = ?", ["chat-019"]);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].values[0][0]).toBe("tc-1");
-    expect(result[0].values[0][1]).toBe("chat-019");
-    expect(result[0].values[0][2]).toBe("read_file");
-    expect(JSON.parse(result[0].values[0][3] as string).path).toBe("/test.txt");
-    expect(result[0].values[0][4]).toBe("running");
+    // 工具调用由 `messages.upsert_index` 的 `tool_calls` 整批替换落到端口的 tool_calls 表
+    const rows = port().__table("tool_calls").filter((r) => r.message_id === "chat-019");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("tc-1");
+    expect(rows[0].message_id).toBe("chat-019");
+    expect(rows[0].tool).toBe("read_file");
+    expect(parseArgs(rows[0].args).path).toBe("/test.txt");
+    expect(rows[0].status).toBe("running");
   });
 
   // ===== CHAT-020: 工具调用更新 ==========
@@ -227,6 +375,8 @@ describe("对话核心链路 — 消息存储与加载", () => {
 
   // ===== CHAT-025: generatedFiles 序列化 ==========
   it("CHAT-025: generatedFiles JSON 序列化保存", () => {
+    useFreshPort();
+    setupProjectAndSession();
     const msg = makeMessage({
       id: "chat-025",
       role: "assistant",
@@ -235,10 +385,14 @@ describe("对话核心链路 — 消息存储与加载", () => {
     });
     MessageStorage.createMessage(msg, SESSION_ID);
 
-    const loaded = MessageStorage.getMessage("chat-025");
-    expect(loaded!.generatedFiles).toBeDefined();
-    expect(loaded!.generatedFiles).toHaveLength(2);
-    expect(loaded!.generatedFiles![0]).toBe("/test/file1.ts");
+    // generated_files 是 `messages.upsert_index` 的一个参数（Rust 侧落进 JSON 列）
+    const row = port().__table("messages").find((r) => r.id === "chat-025");
+    expect(row, "消息行必须落在端口上").toBeTruthy();
+    const generated = typeof row!.generated_files === "string" ? JSON.parse(row!.generated_files as string) : row!.generated_files;
+    expect(generated).toBeDefined();
+    expect(generated).toHaveLength(2);
+    expect(generated[0]).toBe("/test/file1.ts");
+    expect(generated).toEqual(["/test/file1.ts", "/test/file2.ts"]);
   });
 
   // ===== CHAT-025b: generatedFiles 空数组 ==========
@@ -314,41 +468,60 @@ describe("对话核心链路 — 消息存储与加载", () => {
   });
 
   // ===== CHAT-030: Fork 会话消息复制 ==========
-  it("CHAT-030: Fork 会话正确复制消息和 tool_calls", () => {
-    const sourceMsg: Message = {
-      id: "fork-src",
-      role: "assistant",
-      content: "源消息",
-      timestamp: Date.now(),
-      status: "done",
-      toolCalls: [
-        { id: "tc-fork", tool: "read_file", args: { path: "/a.txt" }, result: "内容", status: "done" },
-      ],
-    };
-    MessageStorage.createMessage(sourceMsg, SESSION_ID);
+  it("CHAT-030: Fork 会话正确复制消息和 tool_calls", async () => {
+    /**
+     * Fork 是"读一个会话、写进另一个会话"，而工具调用**不在端口镜像行里**
+     * （镜像刻意只有 9 个字段，工具结果全文不进镜像）：它来自权威日志
+     * （`listMessagesMerged` 的合并会带上日志记录里的 toolCalls）。
+     * 真机上进会话时就会 `hydrateSessionLog`，所以这里照做 —— 否则测的是"测试环境没有文件通道"。
+     */
+    installSessionLogStub();
+    try {
+      useFreshPort();
+      setupProjectAndSession();
+      const sourceMsg: Message = {
+        id: "fork-src",
+        role: "assistant",
+        content: "源消息",
+        timestamp: Date.now(),
+        status: "done",
+        toolCalls: [
+          { id: "tc-fork", tool: "read_file", args: { path: "/a.txt" }, result: "内容", status: "done" },
+        ],
+      };
+      MessageStorage.createMessage(sourceMsg, SESSION_ID);
 
-    const forkSessionId = "sess-fork-test";
-    SessionStorage.createSession({
-      id: forkSessionId, projectId: PROJECT_ID, title: "Fork",
-      createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
-    });
+      const forkSessionId = "sess-fork-test";
+      SessionStorage.createSession({
+        id: forkSessionId, projectId: PROJECT_ID, title: "Fork",
+        createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
+      });
 
-    // 模拟 fork：复制消息
-    const sourceMsgs = MessageStorage.listMessages(SESSION_ID);
-    for (const m of sourceMsgs) {
-      MessageStorage.createMessage({
-        ...m,
-        id: `${m.id}-fork-${Date.now()}`,
-        toolCalls: m.toolCalls?.map(tc => ({ ...tc, id: `${tc.id}-fork-${Date.now()}` })),
-      }, forkSessionId);
+      // 模拟 fork：复制消息
+      await flushSessionLogWrites();
+      await MessageStorage.hydrateSessionLog(SESSION_ID);
+      const sourceMsgs = MessageStorage.listMessages(SESSION_ID);
+      expect(sourceMsgs).toHaveLength(1);
+      expect(sourceMsgs[0].toolCalls, "源会话必须读得到 tool_calls（它来自权威日志）").toBeDefined();
+      for (const m of sourceMsgs) {
+        MessageStorage.createMessage({
+          ...m,
+          id: `${m.id}-fork-${Date.now()}`,
+          toolCalls: m.toolCalls?.map(tc => ({ ...tc, id: `${tc.id}-fork-${Date.now()}` })),
+        }, forkSessionId);
+      }
+
+      await flushSessionLogWrites();
+      await MessageStorage.hydrateSessionLog(forkSessionId);
+      const forkedMsgs = MessageStorage.listMessages(forkSessionId);
+      expect(forkedMsgs).toHaveLength(1);
+      expect(forkedMsgs[0].content).toBe("源消息");
+      expect(forkedMsgs[0].toolCalls).toBeDefined();
+      expect(forkedMsgs[0].toolCalls![0].args.path).toBe("/a.txt");
+      expect(forkedMsgs[0].toolCalls![0].result).toBe("内容");
+    } finally {
+      removeSessionLogStub();
     }
-
-    const forkedMsgs = MessageStorage.listMessages(forkSessionId);
-    expect(forkedMsgs).toHaveLength(1);
-    expect(forkedMsgs[0].content).toBe("源消息");
-    expect(forkedMsgs[0].toolCalls).toBeDefined();
-    expect(forkedMsgs[0].toolCalls![0].args.path).toBe("/a.txt");
-    expect(forkedMsgs[0].toolCalls![0].result).toBe("内容");
   });
 
   // ===== CHAT-013b: getMessageCount ==========
@@ -362,10 +535,18 @@ describe("对话核心链路 — 消息存储与加载", () => {
 
   // ===== CHAT-014b: deleteMessagesBefore ==========
   it("CHAT-014b: deleteMessagesBefore 删除指定时间前的消息", () => {
+    useFreshPort();
+    setupProjectAndSession();
     const baseTs = Date.now();
     MessageStorage.createMessage(makeMessage({ id: "old", timestamp: baseTs - 1000 }), SESSION_ID);
     MessageStorage.createMessage(makeMessage({ id: "new", timestamp: baseTs + 1000 }), SESSION_ID);
 
+    /**
+     * B 态下删除候选是**从会话镜像上算的**；镜像未就绪时产品会如实返回 0 并登记"就绪后补做"
+     * （契约见 `message-port-coverage.test.ts` 的 PC-3：不假装删了）。
+     * 真机上用户就在这个会话里、镜像已加载，所以先让镜像就绪再断言真实删除条数。
+     */
+    port().messages.ensureLoaded(SESSION_ID);
     const deleted = MessageStorage.deleteMessagesBefore(SESSION_ID, baseTs);
     expect(deleted).toBe(1);
 
@@ -431,6 +612,8 @@ describe("对话核心链路 — 消息存储与加载", () => {
 
   // ===== CHAT-021b: updateMessage 带 toolCalls 替换 ==========
   it("CHAT-021b: updateMessage 替换 toolCalls（先删后插）", () => {
+    useFreshPort();
+    setupProjectAndSession();
     MessageStorage.createMessage(makeMessage({
       id: "replace-tc",
       role: "assistant",
@@ -447,13 +630,24 @@ describe("对话核心链路 — 消息存储与加载", () => {
       ],
     });
 
-    const loaded = MessageStorage.getMessage("replace-tc");
-    expect(loaded!.toolCalls).toHaveLength(2);
-    expect(loaded!.toolCalls![0].result).toBe("旧结果");
-    expect(loaded!.toolCalls![1].tool).toBe("write_file");
+    // 「整表替换」由 `messages.upsert_index` 的 `tool_calls` 参数实现（Rust 侧同一语义），落到端口表
+    const rows = port().__table("tool_calls").filter((r) => r.message_id === "replace-tc");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].id).toBe("old-tc");
+    expect(rows[0].result).toBe("旧结果");
+    expect(rows[1].tool).toBe("write_file");
+    expect(rows.map((r) => r.id)).toEqual(["old-tc", "new-tc"]);
   });
 
   // ===== CHAT-022b: 附件存储 ==========
+  /**
+   * ⚠️ 已知产品缺陷（B 态，本批未修 —— 属产品代码那条线）：
+   * `createMessage` 在端口模式下 **一条附件都不落**（`writeMessageIndex` 走
+   * `writeIndexViaRust` 之后直接 return，附件那段旧库 INSERT 在 1450 行、永不执行；
+   * 端口也没有对应的附件写命令），而读路径同样不返回附件
+   * （`getMessage` / `listMessages` 在 B 态都不读 `attachments` 域）。
+   * 断言保持不动 —— 这是"写进了端口但读路径没走端口"的真实缺陷，不该改测试迁就。
+   */
   it("CHAT-022b: 消息附件完整存储和加载", () => {
     const msg = makeMessage({
       id: "att-test",
@@ -478,6 +672,7 @@ describe("对话核心链路 — 消息存储与加载", () => {
   });
 
   // ===== CHAT-023b: 多附件 ==========
+  /** ⚠️ 同 CHAT-022b：B 态附件既不落端口也不由读路径返回（产品缺陷，断言保持不动） */
   it("CHAT-023b: 一条消息多附件存储", () => {
     MessageStorage.createMessage(makeMessage({
       id: "multi-att",
@@ -679,6 +874,9 @@ describe("对话核心链路 — 会话 CRUD", () => {
   });
 
   it("CHAT-044: deleteSession 级联删除消息", () => {
+    useFreshPort();
+    setupProjectAndSession(); // 被删的会话要在端口里真实存在
+    installForeignKeyCascade(port()); // 级联是引擎的活（PRAGMA foreign_keys=ON + ON DELETE CASCADE），测试双要补上
     MessageStorage.createMessage(makeMessage({ id: "cascade-1" }), SESSION_ID);
     SessionStorage.deleteSession(SESSION_ID);
     expect(MessageStorage.listMessages(SESSION_ID)).toHaveLength(0);

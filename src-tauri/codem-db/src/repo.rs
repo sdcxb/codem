@@ -469,6 +469,15 @@ fn message_row(r: &Row<'_>) -> rusqlite::Result<Value> {
         // 这个缺陷是**真机验证**抓到的：单元测试里我在假数据里带了 hidden 字段，
         // 而真实引擎的 SELECT 漏了这一列 —— 页面刷新后隐藏消息又出现了。
         "hidden": r.get::<_, i64>(8)?,
+        /*
+         * `generated_files` 也必须返回（第 14 轮修正）。
+         *
+         * 与 `hidden` 同一类教训：列在库里、写路径也传了，但**读路径的 SELECT 漏了它** ——
+         * 于是镜像行里没有这一列，`getMessage` / `listMessages` 在 rust 模式下永远拿不到
+         * "生成了哪些文件"。用户可见形态：**重启后消息上的生成文件标记消失**，
+         * fork / 复制时也一起丢。证据来自端口化测试（CHAT-025 / CHAIN-009）。
+         */
+        "generated_files": r.get::<_, Option<String>>(9)?,
     }))
 }
 
@@ -913,7 +922,7 @@ pub fn messages_get(engine: &Engine, p: &Value) -> DbResult<Value> {
     engine.with_conn(|conn| {
         let mut stmt = conn
             .prepare_cached(
-                "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden \
+                "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden, generated_files \
                  FROM messages WHERE id = ?1",
             )
             .map_err(DbError::from)?;
@@ -938,7 +947,7 @@ pub fn messages_list(engine: &Engine, p: &Value) -> DbResult<Value> {
     engine.with_conn(|conn| {
         let hidden_clause = if include_hidden { "" } else { " AND hidden = 0" };
         let sql = format!(
-            "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden \
+            "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden, generated_files \
              FROM messages WHERE session_id = ?1{hidden_clause} ORDER BY timestamp ASC, id ASC LIMIT ?2 OFFSET ?3"
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(DbError::from)?;

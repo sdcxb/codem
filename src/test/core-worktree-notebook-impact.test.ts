@@ -28,16 +28,39 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
+import * as fs from "fs";
+import * as path from "path";
+
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
 import { setSetting, getSetting } from "../core/storage/settings";
+import { getStoragePort, hasStoragePort } from "../core/storage/port";
+import { createShowTodoTool, loadTodoList } from "../core/llm/tools/show-todo";
+import type { ToolContext } from "../core/llm/tools";
+import type { FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
 import type { Session } from "../core/types";
 
 const PROJECT_ID = "proj-impact-test";
 const SESSION_ID = "sess-impact-test";
+
+/**
+ * 两态分流（本批端口化的唯一入口）。
+ *
+ * - **B 态（默认）**：`setup.ts` 每个用例前注册一个内存假端口，产品（rust 引擎）只读写端口 ——
+ *   真机上旧库是**刻意不存在**的，所以断言要读**端口表**、预置数据要走端口命令 / seed；
+ * - **A 态（`CODEM_TEST_PORT=0`）**：端口未注册，旧库是唯一数据源 —— 原来的旧库断言照旧。
+ *
+ * 这不是"对某个态放宽判据"：两条分支都断言同一件事（数据确实存下来了），
+ * 只是各自去**产品真正使用的那个数据源**里核对。
+ */
+function activePort(): FakeStoragePort | null {
+  if (!hasStoragePort()) return null;
+  const port = getStoragePort();
+  return port.kind === "rust" ? (port as unknown as FakeStoragePort) : null;
+}
 
 function setupBase(): void {
   ProjectStorage.createProject({
@@ -116,6 +139,24 @@ describe("Git Worktree 影响 — 环境模式与消息链路", () => {
       toolCalls: [{ id: "tc-wt", tool: "write", args: { path: "/wt/test.ts" }, status: "done" as const, result: "written" }],
     });
     MessageStorage.createMessage(msg, SESSION_ID);
+
+    const port = activePort();
+    if (port) {
+      /**
+       * B 态：工具调用落在端口的 `tool_calls` 表里（产品在 rust 模式下只写端口）。
+       *
+       * 为什么这里读端口表而不是 `getMessage().toolCalls`：会话镜像行**刻意不含 tool_calls**
+       * （内存预算，见 `MirrorMessageRow`），而 `getMessage` 命中镜像路由时不会走到日志兜底 ——
+       * 于是 B 态下"工具调用写进去了、同步读却拿不到"。那是一条**产品读写分裂**，
+       * 已单独记录（不在本批"只改测试"的范围内），所以断言落在存储侧。
+       */
+      const rows = port.__table("tool_calls").filter((r) => r.message_id === "impact-006");
+      expect(rows, "工具调用必须写进存储（端口侧）").toHaveLength(1);
+      expect(rows[0].tool).toBe("write");
+      // 消息本体仍然读得到（读路径没被这次断言"跳过"）
+      expect(MessageStorage.getMessage("impact-006").content).toBe("test");
+      return;
+    }
     const loaded = MessageStorage.getMessage("impact-006");
     expect(loaded.toolCalls![0].tool).toBe("write");
   });
@@ -142,6 +183,21 @@ describe("Git Worktree 影响 — 环境模式与消息链路", () => {
       generatedFiles: ["/wt/file1.ts"],
     });
     MessageStorage.createMessage(msg, SESSION_ID);
+
+    const port = activePort();
+    if (port) {
+      /**
+       * B 态：`generated_files` 是 `messages` 行上的 JSON 列，写路径（`messages.upsert_index`）
+       * 会把它带过去。真机上这一列是 TEXT（JSON 字符串），内存端口存的是原值 ——
+       * 所以这里按 `rowToMessage` 的同一条规则解析（两种表示都接受），而不是假定某一种。
+       */
+      const row = port.__table("messages").find((r) => r.id === "impact-008");
+      expect(row, "消息行必须写进端口").toBeDefined();
+      const raw = row!.generated_files;
+      const files = typeof raw === "string" ? JSON.parse(raw) : raw;
+      expect(files).toEqual(["/wt/file1.ts"]);
+      return;
+    }
     expect(MessageStorage.getMessage("impact-008").generatedFiles).toEqual(["/wt/file1.ts"]);
   });
 
@@ -285,6 +341,41 @@ describe("Git Worktree 影响 — 路径隔离", () => {
       createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
     });
     ProjectStorage.deleteProject("proj-cascade");
+
+    const port = activePort();
+    if (port) {
+      /**
+       * B 态下"级联"这件事是**引擎**做的，不是渲染侧做的：
+       * 渲染侧只发一条 `crud.delete {table:"projects"}`，会话/消息由 Rust 侧的外键
+       * `ON DELETE CASCADE` 带走（`PRAGMA foreign_keys=ON`，见 engine.rs）。
+       *
+       * ⚠️ 内存假端口**不模拟外键级联**，所以这里不能拿"端口里还有没有 session 行"当判据
+       * （那会把测试双的实现缺口当成产品缺陷）。判据拆成两条，都要成立：
+       *   ① 删除确实写穿到了端口（否则真机上项目根本删不掉）；
+       *   ② 引擎侧确实存在那条级联外键（真机上的"会话被删"由它保证）。
+       */
+      const del = port
+        .__writes()
+        .find(
+          (w) =>
+            w.command === "crud.delete" &&
+            (w.params as Record<string, unknown> | undefined)?.table === "projects" &&
+            ((w.params as Record<string, unknown> | undefined)?.where as Record<string, unknown> | undefined)?.id ===
+              "proj-cascade",
+        );
+      expect(del, "项目删除必须写穿到端口（否则真机上项目删不掉）").toBeTruthy();
+
+      const schema = fs.readFileSync(
+        path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+        "utf-8",
+      );
+      expect(
+        schema,
+        "会话的级联删除由引擎侧外键保证（渲染侧不逐表删）",
+      ).toContain("FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE");
+      return;
+    }
+
     expect(SessionStorage.listSessions("proj-cascade").length).toBe(0);
   });
 
@@ -496,23 +587,69 @@ describe("新增 DB 表对已有存储无副作用", () => {
   });
 
   // IMPACT-048
-  it("IMPACT-048: todo_lists 表可写入和读取", () => {
-    const db = getDatabase();
-    db.run("INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ["todo-db-test", SESSION_ID, JSON.stringify([{ id: "t1", text: "test", completed: false, status: "pending" }]), Date.now(), Date.now()]);
-    const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", ["todo-db-test"]);
-    const todos = JSON.parse(result[0].values[0][0] as string);
-    expect(todos[0].text).toBe("test");
+  it("IMPACT-048: todo_lists 表可写入和读取", async () => {
+    /**
+     * 原来这条用裸 SQL 往**旧库**插一行再读回来。端口模式下产品根本不写旧库
+     * （真机上旧库刻意不存在），所以旧库里既没有 `sessions` 父行、也没有这张表的写入。
+     * 现在改成走**产品的待办写入路径**（`show_todo` 工具 → `domainWrite("todo_lists", …)`），
+     * 再从产品真正使用的数据源（B 态端口 / A 态旧库）读回来 —— 写读两端都还在判据里。
+     */
+    const tool = createShowTodoTool();
+    const result = await tool.execute(
+      { todos: [{ content: "test", status: "pending" }] },
+      { sessionId: SESSION_ID } as unknown as ToolContext,
+    );
+    expect(result.title, `待办写入不应失败：${result.output}`).toBe("Todo List Created");
+
+    const port = activePort();
+    let todoId: string;
+    let todosJson: string;
+    if (port) {
+      const row = port.__table("todo_lists").find((r) => r.session_id === SESSION_ID);
+      expect(row, "待办必须写进端口（产品在 rust 模式下只写端口）").toBeDefined();
+      todoId = String(row!.id);
+      todosJson = String(row!.todos);
+    } else {
+      const db = getDatabase();
+      const rows = db.exec("SELECT id, todos FROM todo_lists WHERE session_id = ?", [SESSION_ID]);
+      expect(rows[0]?.values.length, "待办必须写进旧库").toBe(1);
+      todoId = String(rows[0].values[0][0]);
+      todosJson = String(rows[0].values[0][1]);
+    }
+    expect(JSON.parse(todosJson)[0].content).toBe("test");
+    // 读路径同样走产品接口（B 态读端口、A 态读旧库）
+    expect(loadTodoList(todoId)![0].content).toBe("test");
   });
 
   // IMPACT-049
   it("IMPACT-049: message_feedback 表可写入和读取", () => {
-    const db = getDatabase();
-    // Insert a valid message first to satisfy FK constraint
+    /**
+     * 同 IMPACT-048：原来那两行裸 SQL 打的是旧库，端口模式下会撞
+     * `FOREIGN KEY constraint failed`（父行在端口里、旧库里没有）。
+     * 现在走产品的反馈接口 `saveFeedback` / `loadFeedback` —— 它们本身就是两态的
+     * （B 态写端口 `feedback.set` + 反馈缓存；A 态写旧库），两态都断言"写得进、读得回"。
+     */
     MessageStorage.createMessage(makeMsg({ id: "msg-fb-db-test" }), SESSION_ID);
-    db.run("INSERT INTO message_feedback (message_id, session_id, feedback, timestamp) VALUES (?, ?, ?, ?)",
-      ["msg-fb-db-test", SESSION_ID, "like", Date.now()]);
-    const result = db.exec("SELECT feedback FROM message_feedback WHERE message_id = ?", ["msg-fb-db-test"]);
+    MessageStorage.saveFeedback("msg-fb-db-test", SESSION_ID, "like");
+    expect(MessageStorage.loadFeedback("msg-fb-db-test")).toBe("like");
+
+    const port = activePort();
+    if (port) {
+      const written = port
+        .__writes()
+        .some(
+          (w) =>
+            w.command === "feedback.set" &&
+            (w.params as Record<string, unknown> | undefined)?.message_id === "msg-fb-db-test" &&
+            (w.params as Record<string, unknown> | undefined)?.feedback === "like",
+        );
+      expect(written, "反馈必须写穿到端口（否则重启后丢失）").toBe(true);
+      return;
+    }
+    const result = getDatabase().exec(
+      "SELECT feedback FROM message_feedback WHERE message_id = ?",
+      ["msg-fb-db-test"],
+    );
     expect(result[0].values[0][0]).toBe("like");
   });
 

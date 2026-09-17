@@ -64,7 +64,31 @@ import {
 import { createMessage, getAttachmentContent, clearSessionLogCache, rebuildSessionFts, listMessages } from "../core/storage/message";
 import { clearExternalContentCache, DEFAULT_EXTERNALIZE_THRESHOLD, FILE_CONTENT_PREFIX } from "../core/storage/attachment-files";
 import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
-import { setStoragePort } from "../core/storage/port";
+import { setStoragePort, getStoragePort, hasStoragePort } from "../core/storage/port";
+
+/**
+ * 读一条附件行：**端口优先**（第 14 轮之后附件写入已端口化），A 态回退旧库。
+ *
+ * 为什么必须这样读：B 态下 `createMessage` 的附件行走 `crud.upsert {table:"attachments"}`，
+ * 旧库里没有这一行 —— 直接 `getDatabase().exec(...)` 会拿到 `undefined`（用例假红）。
+ */
+function attachmentRow(id: string): Record<string, unknown> | undefined {
+  /**
+   * ⚠️ A 态下 `getStoragePort()` 是**抛错**的（"端口尚未注册"），不是返回 null ——
+   * 所以这里必须先判 `hasStoragePort()`，否则 A 态用例会整体红（实测踩到）。
+   */
+  if (hasStoragePort()) {
+    const port = getStoragePort() as unknown as {
+      __table?: (n: string) => Array<Record<string, unknown>>;
+    };
+    const fromPort = port?.__table?.("attachments")?.find((r) => String(r.id) === id);
+    if (fromPort) return fromPort;
+  }
+  const rows = getDatabase().exec("SELECT content, preview FROM attachments WHERE id = ?", [id]);
+  if (rows.length === 0 || rows[0].values.length === 0) return undefined;
+  const v = rows[0].values[0];
+  return { id, content: v[0], preview: v[1] };
+}
 import type { Message } from "../store";
 
 const SESSION = "sess-att";
@@ -112,7 +136,7 @@ describe("附件外置", () => {
     createMessage(msgWithAttachment("m1", "a1", "短内容"), SESSION);
     await flushSessionLogWrites();
 
-    const row = getDatabase().exec("SELECT content FROM attachments WHERE id = 'a1'")[0].values[0][0] as string;
+    const row = String(attachmentRow("a1")?.content ?? "");
     expect(row).toBe("短内容");
     expect(row.startsWith(FILE_CONTENT_PREFIX)).toBe(false);
     expect(getAttachmentContent("a1")).toBe("短内容");
@@ -125,12 +149,12 @@ describe("附件外置", () => {
     await new Promise((r) => setTimeout(r, 50));
     await flushSessionLogWrites();
 
-    const row = getDatabase().exec("SELECT content, preview FROM attachments WHERE id = 'a2'")[0].values[0];
-    const stored = String(row[0]);
+    const row = attachmentRow("a2");
+    const stored = String(row?.content ?? "");
     expect(stored.startsWith(FILE_CONTENT_PREFIX)).toBe(true);
     const path = stored.slice(FILE_CONTENT_PREFIX.length);
     expect(files.get(path)).toBe(big); // 全文在文件里
-    expect(String(row[1])).toContain("X"); // 预览仍在库里，列表能显示
+    expect(String(row?.preview ?? "")).toContain("X"); // 预览仍在库里，列表能显示
     // 文件写入是原子的（先 .tmp 再 rename）
     expect(invokeCalls).toContain("rename_file");
 

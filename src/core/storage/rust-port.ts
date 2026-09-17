@@ -945,6 +945,14 @@ export interface MirrorMessageRow {
   model?: string | null;
   status?: string | null;
   hidden?: number;
+  /**
+   * `generated_files` 的 JSON 文本（与原样返回的列一致）。
+   *
+   * 为什么必须进镜像（第 14 轮）：写路径一直在传这一列，而**读路径从来没把它带回来** ——
+   * `getMessage` / `listMessages` 的端口分支只认镜像行，于是 rust 模式下"生成了哪些文件"
+   * 永远读不到（用户形态：重启后标记消失、fork/复制一起丢）。列在库里，缺陷在 SELECT 与映射。
+   */
+  generated_files?: string | null;
 }
 
 class RustMessageMirror {
@@ -1137,6 +1145,7 @@ class RustMessageMirror {
       model: (o.model as string | null) ?? null,
       status: (o.status as string | null) ?? null,
       hidden: Number(o.hidden ?? 0),
+      generated_files: (o.generated_files as string | null) ?? null,
     };
   }
 
@@ -1210,7 +1219,34 @@ class RustMessageMirror {
 // 每个域的镜像都会在加载时记录行数，超过上限（`maxRows`）就**放弃镜像**并回退旧路径，
 // 避免"某天图谱涨到十万行"时把渲染进程压死。
 
+/**
+ * **哪些表只镜像指定列**（第 14 轮）。
+ *
+ * 判据不是"表重不重要"，而是"整行会不会把大体积列拉进渲染进程"：
+ * `attachments.content` 存的是附件正文（长文档可达几十 MB），而渲染侧只用到元数据
+ * （列表展示、按 id 取正文走 `attachments.content` 命令 + 同步缓存）。
+ *
+ * 不投影的话，`listExternalAttachmentMarkers()` 这类调用会把**整张附件表连同正文**
+ * 读进内存 —— 正是 P6 花大力气消灭的那类占用。
+ */
+const DOMAIN_COLUMN_PROJECTION: Record<string, string[]> = {
+  attachments: [
+    "id",
+    "session_id",
+    "message_id",
+    "name",
+    "type",
+    "path",
+    "preview",
+    "sandbox_path",
+    "mime_type",
+    "size",
+    "added_at",
+  ],
+};
+
 export class RustDomainMirror {
+
   private byTable = new Map<string, Array<Record<string, unknown>>>();
   private loaded = new Set<string>();
   private loading = new Map<string, Promise<void>>();
@@ -1261,10 +1297,17 @@ export class RustDomainMirror {
     const rows: Array<Record<string, unknown>> = [];
     let offset = 0;
     for (let round = 0; round < 40; round++) {
+      /**
+       * **按表列投影**（第 14 轮）：默认取全部列，但有些表的整行**不能**进渲染进程 ——
+       * 典型是 `attachments.content`（可能是几十 MB 的文档全文，而这里只要元数据）。
+       * 投影清单在 `DOMAIN_COLUMN_PROJECTION` 里声明；`crud.list` 的 `columns` 参数
+       * 会在引擎侧核对列名真实性（不存在会报错，不会静默少列）。
+       */
+      const projection = DOMAIN_COLUMN_PROJECTION[table];
       const page = await call<{ items?: Array<Record<string, unknown>>; has_more?: boolean }>(
         this.t,
         "crud.list",
-        { table, limit: 1000, offset },
+        projection ? { table, columns: projection, limit: 1000, offset } : { table, limit: 1000, offset },
       );
       const items = page?.items ?? [];
       rows.push(...items);

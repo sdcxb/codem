@@ -28,6 +28,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 
 // Mock database
 const mockDb = {
@@ -136,30 +138,64 @@ describe("A1: Compaction Control — 压缩锁 + 崩溃修复", () => {
 
   it("repairCrashedSession — 修复不完整的工具调用", async () => {
     const { repairCrashedSession } = await import("../core/llm/compaction-control");
-    // 添加一个没有 result 的 tool_call
-    mockDb.data.push(
-      { seq: 1, session_id: "sess-crash", event_type: "tool_call", payload: { toolCallId: "tc1", tool: "read", messageId: "m1", status: "running" }, timestamp: 1 },
-    );
-    mockDb.seq = 1;
+    /*
+     * 事件住在**端口**（`EventLog.readAll` 走的正是端口镜像），所以预置一个没有 result 的
+     * tool_call 事件要用端口 seed，而不是往 `mockDb.data` 里 push：
+     * 原来那条 push 只改旧库替身，端口侧一条事件都没有 → `repairCrashedSession` 读到 0 个事件 →
+     * `repairedCount` 为 0（用例红）。断言也一并改成读端口表 `session_events`
+     * （"合成的 tool_result 被追加"这件事的落点就在那里）。
+     */
+    const port = createFakeStoragePort({
+      seed: {
+        session_events: [
+          {
+            seq: 1,
+            session_id: "sess-crash",
+            event_type: "tool_call",
+            payload: JSON.stringify({ toolCallId: "tc1", tool: "read", messageId: "m1", status: "running" }),
+            timestamp: 1,
+          },
+        ],
+      },
+    });
+    setStoragePort(port);
 
     const result = repairCrashedSession("sess-crash");
     expect(result.repairedCount).toBe(1);
     expect(result.repairs[0].status).toBe("TOOL_OUTCOME_UNKNOWN");
     // 验证合成的 tool_result 事件被追加
-    expect(mockDb.data.length).toBe(2);
-    expect(mockDb.data[1].event_type).toBe("tool_result");
+    const rows = port.__table("session_events");
+    expect(rows).toHaveLength(2);
+    expect(rows[1].event_type).toBe("tool_result");
   });
 
   it("repairCrashedSession — 已有结果的工具调用不被修复", async () => {
     const { repairCrashedSession } = await import("../core/llm/compaction-control");
-    mockDb.data.push(
-      { seq: 1, session_id: "sess-ok", event_type: "tool_call", payload: { toolCallId: "tc1", tool: "read", messageId: "m1", status: "completed" }, timestamp: 1 },
-      { seq: 2, session_id: "sess-ok", event_type: "tool_result", payload: { toolCallId: "tc1", status: "completed" }, timestamp: 2 },
-    );
-    mockDb.seq = 2;
+    const port = createFakeStoragePort({
+      seed: {
+        session_events: [
+          {
+            seq: 1,
+            session_id: "sess-ok",
+            event_type: "tool_call",
+            payload: JSON.stringify({ toolCallId: "tc1", tool: "read", messageId: "m1", status: "completed" }),
+            timestamp: 1,
+          },
+          {
+            seq: 2,
+            session_id: "sess-ok",
+            event_type: "tool_result",
+            payload: JSON.stringify({ toolCallId: "tc1", status: "completed" }),
+            timestamp: 2,
+          },
+        ],
+      },
+    });
+    setStoragePort(port);
 
     const result = repairCrashedSession("sess-ok");
     expect(result.repairedCount).toBe(0);
+    expect(port.__table("session_events")).toHaveLength(2);
   });
 });
 
@@ -272,13 +308,38 @@ describe("B2: Request Header — 请求头追踪", () => {
 describe("B3: Postmortem — 事后复盘", () => {
   it("generatePostmortem — 生成复盘报告", async () => {
     const { generatePostmortem, listPostmortems } = await import("../core/llm/postmortem");
-    // 先添加一些事件
-    mockDb.data.push(
-      { seq: 1, session_id: "sess-pm", event_type: "user_message", payload: { messageId: "u1", content: "do something" }, timestamp: 1 },
-      { seq: 2, session_id: "sess-pm", event_type: "tool_call", payload: { toolCallId: "tc1", tool: "write", messageId: "a1", status: "running" }, timestamp: 2 },
-      { seq: 3, session_id: "sess-pm", event_type: "error", payload: { message: "Permission denied" }, timestamp: 3 },
-    );
-    mockDb.seq = 3;
+    /*
+     * 复盘读的是 `EventLog.readAll` → **端口镜像**，所以事件要用端口 seed（原来 push 的是
+     * 旧库替身 `mockDb.data`，端口侧为空 → `totalEvents` 为 0，用例红）。
+     */
+    const port = createFakeStoragePort({
+      seed: {
+        session_events: [
+          {
+            seq: 1,
+            session_id: "sess-pm",
+            event_type: "user_message",
+            payload: JSON.stringify({ messageId: "u1", content: "do something" }),
+            timestamp: 1,
+          },
+          {
+            seq: 2,
+            session_id: "sess-pm",
+            event_type: "tool_call",
+            payload: JSON.stringify({ toolCallId: "tc1", tool: "write", messageId: "a1", status: "running" }),
+            timestamp: 2,
+          },
+          {
+            seq: 3,
+            session_id: "sess-pm",
+            event_type: "error",
+            payload: JSON.stringify({ message: "Permission denied" }),
+            timestamp: 3,
+          },
+        ],
+      },
+    });
+    setStoragePort(port);
 
     const report = await generatePostmortem("sess-pm", "Permission denied");
     expect(report.sessionId).toBe("sess-pm");

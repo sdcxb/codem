@@ -1,9 +1,31 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase, getDatabase } from "../core/storage/database";
+import { getStoragePort, hasStoragePort } from "../core/storage/port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
 import type { Message } from "../store";
+
+/**
+ * 按 id 读回 `sessions` 行的三个字段 —— 读**产品真正把会话写进去的那一侧**。
+ *
+ * - **B 态**（端口已注册，默认）：`createSession` 走 `domainWrite` → 端口的 `sessions` 表。
+ *   旧库那份在 rust 模式下刻意不存在，所以原来那句 `db.exec("SELECT ... FROM sessions")`
+ *   查的就成了一份没人写的库（这就是本用例失败的原因）；
+ * - **A 态**（`CODEM_TEST_PORT=0`，端口未注册）：旧库是唯一数据源，仍按原样 SELECT。
+ *
+ * 两种形态下断言（id / project_id / title 逐字相等）都成立，判据没有放宽。
+ */
+function selectSessionRow(sessionId: string): Record<string, unknown> | undefined {
+  if (hasStoragePort()) {
+    const port = getStoragePort() as unknown as { __table(name: string): Array<Record<string, unknown>> };
+    return port.__table("sessions").find((r) => r.id === sessionId);
+  }
+  const result = getDatabase().exec("SELECT id, project_id, title FROM sessions WHERE id = ?", [sessionId]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  const [id, project_id, title] = result[0].values[0];
+  return { id, project_id, title };
+}
 
 describe("全局对话持久化修复", () => {
   beforeEach(async () => {
@@ -32,12 +54,11 @@ describe("全局对话持久化修复", () => {
       pinned: false,
     });
 
-    const db = getDatabase();
-    const result = db.exec("SELECT id, project_id, title FROM sessions WHERE id = ?", [sessionId]);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].values[0][0]).toBe(sessionId);
-    expect(result[0].values[0][1]).toBe("");
-    expect(result[0].values[0][2]).toBe("全局对话 1");
+    const row = selectSessionRow(sessionId);
+    expect(row).toBeDefined();
+    expect(row!.id).toBe(sessionId);
+    expect(row!.project_id).toBe("");
+    expect(row!.title).toBe("全局对话 1");
   });
 
   it("全局对话 message + attachment 完整往返", () => {

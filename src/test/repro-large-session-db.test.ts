@@ -7,9 +7,35 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase, resetDatabase, getDatabase, persistDatabase, flushDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
+
+/**
+ * 当前用例生效的端口。
+ *
+ * 本文件里消息/工具结果的落点已经是**端口**（`messages.upsert_index` 单事务写主行 +
+ * `generated_files` 两个 JSON 列 + 整批替换 `tool_calls`）—— 断言"大工具结果完整保留"
+ * 只能读端口表：消息镜像刻意只装正文那 9 个字段（内存预算，见 message.ts 的说明），
+ * 不含 `tool_calls`，所以 `listMessages()[…].toolCalls` 在端口模式下必然为空。
+ *
+ * 用例自己注册端口（覆盖 setup 的默认端口），让 A 态（`CODEM_TEST_PORT=0`）下也走同一条路，
+ * 两种态断言的是同一件事。
+ */
+function portWithMessages(): FakeStoragePort {
+  const port = createFakeStoragePort();
+  setStoragePort(port);
+  return port;
+}
+
+/** 从端口表里取某条消息的某个工具调用 */
+function toolCallOf(port: FakeStoragePort, messageId: string, toolCallId: string): Record<string, unknown> | undefined {
+  return port
+    .__table("tool_calls")
+    .find((r) => r.message_id === messageId && r.id === toolCallId);
+}
 
 describe("大数据量会话：database 使用 memory-growth 版本不崩溃", () => {
   beforeEach(async () => {
@@ -39,6 +65,7 @@ describe("大数据量会话：database 使用 memory-growth 版本不崩溃", (
   it("BIG-001: 写入 200 条消息（含大工具结果，总量 > 25MB）不触发 trap，且可持久化", async () => {
     const db = await initDatabase();
     expect(db).toBeDefined();
+    const port = portWithMessages();
 
     const sessionId = "big-session-001";
     ensureSession(sessionId);
@@ -79,14 +106,14 @@ describe("大数据量会话：database 使用 memory-growth 版本不崩溃", (
     const rows = MessageStorage.listMessages(sessionId);
     expect(rows.length).toBe(400);
 
-    // 单条大工具结果完整保留
-    const assistantMsg = rows.find((m: any) => m.id === "a-100");
-    const bigTool = assistantMsg?.toolCalls?.find((tc: any) => tc.id === "tc-100");
-    expect(bigTool?.result?.length).toBe(130_000);
+    // 单条大工具结果完整保留（工具调用写在端口表 `tool_calls` 上）
+    const bigTool = toolCallOf(port, "a-100", "tc-100");
+    expect(String(bigTool?.result ?? "").length).toBe(130_000);
   }, 60_000);
 
   it("BIG-002: 单条超大消息（5MB）写入 + export 正常（memory-growth 自动扩堆）", async () => {
     const db = await initDatabase();
+    const port = portWithMessages();
     const sessionId = "big-session-002";
     ensureSession(sessionId);
     MessageStorage.createMessage({
@@ -108,7 +135,9 @@ describe("大数据量会话：database 使用 memory-growth 版本不崩溃", (
     await flushDatabase();
 
     const rows = MessageStorage.listMessages(sessionId);
-    const tool = rows[0]?.toolCalls?.[0];
-    expect(tool?.result?.length).toBe(5 * 1024 * 1024);
+    expect(rows).toHaveLength(1);
+    // 单条超大工具结果完整保留（端口表上的 `tool_calls.result` 有全文）
+    const tool = toolCallOf(port, "huge-1", "huge-tc");
+    expect(String(tool?.result ?? "").length).toBe(5 * 1024 * 1024);
   }, 60_000);
 });

@@ -25,6 +25,42 @@ import {
 /** `attachments` 表名（P5 第 2 段：外置附件预热也走端口） */
 const ATTACHMENT_TABLE = "attachments";
 
+/**
+ * 附件正文的**同步缓存**（第 14 轮）。
+ *
+ * 为什么需要它：`getAttachmentContent()` 是**同步**接口（读取路径遍布同步上下文），
+ * 而正文要从引擎按 id 单独取（`attachments.content`，异步 IPC）。解法与附件外置那套
+ * 既有约定完全一致：**未命中就发一次异步预取，本次返回 undefined 并提示重试一次**，
+ * 下一次同步读命中。
+ *
+ * 为什么不整表进镜像：正文可能是几十 MB 的长文档 —— 那正是 P6 要消灭的占用
+ * （域镜像对 `attachments` 只投影元数据列）。
+ */
+const attachmentContentCache = new Map<string, string>();
+const attachmentWarmInFlight = new Set<string>();
+
+/** 取一次正文并填缓存（未命中时调用；失败只上报，不抛） */
+function warmAttachmentContent(id: string): void {
+  const port = rustMessagePort();
+  if (!port || attachmentWarmInFlight.has(id)) return;
+  attachmentWarmInFlight.add(id);
+  const probe = port.data as unknown as {
+    command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+  };
+  const call = probe.command
+    ? probe.command<{ content?: string | null }>("attachments.content", { id })
+    : port.data.execute("attachments.content", { id });
+  void call
+    .then((r) => {
+      const content = (r as { content?: string | null })?.content;
+      if (typeof content === "string") attachmentContentCache.set(id, content);
+    })
+    .catch((e) => {
+      reportPersistFailure("message.attachmentContent", e, "附件正文未取到（下次读取会再试一次）");
+    })
+    .finally(() => attachmentWarmInFlight.delete(id));
+}
+
 /** `message_feedback` 表名（P5 第 11 段：反馈读取走通用域镜像） */
 const FEEDBACK_TABLE = "message_feedback";
 
@@ -580,7 +616,8 @@ export function listMessagesFromIndex(sessionId: string, limit?: number): Messag
     const visible = all.filter((m) => !m.hidden);
     // limit 语义与旧实现一致：取**最后** limit 条（`listMessagesMerged` 也是 slice(-limit)）
     const rows = limit ? visible.slice(-limit) : visible;
-    return rows.map(messageRowToMessage);
+    // 附件在另一张表：端口读路径要显式补上（否则「消息回来了、附件没了」）
+    return rows.map((r) => withMirrorAttachments(messageRowToMessage(r)));
   }
   /**
    * 第 91 波（架构级修正）：索引是**可重建的查询索引**，日志才是权威 ——
@@ -662,9 +699,37 @@ export function listVisibleMessages(sessionId: string): Message[] {
  * Also adds a default LIMIT of 200 to prevent unbounded result sets.
  */
 export function listAllAttachments(limit?: number): Array<MessageAttachment & { sessionId: string; messageId: string }> {
-    if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
   const effectiveLimit = limit ?? 200;
+  /**
+   * **端口优先**（第 14 轮）：附件元数据走域镜像（`attachments` 已按列投影，**不含正文**），
+   * 排序与截断在镜像上做（旧 SQL 是 `ORDER BY added_at DESC LIMIT n`）。
+   * 正文仍然按需取（`getAttachmentContent` → `attachments.content` + 同步缓存）。
+   */
+  const viaPort = domainReadMany<Record<string, unknown>>(ATTACHMENT_TABLE, (r) => r);
+  if (viaPort) {
+    return viaPort
+      .map((r) => ({
+        id: String(r.id ?? ""),
+        sessionId: String(r.session_id ?? ""),
+        messageId: String(r.message_id ?? ""),
+        name: String(r.name ?? ""),
+        type: String(r.type ?? "file") as "file" | "image" | "code" | "url",
+        path: (r.path as string | undefined) ?? undefined,
+        content: undefined, // 按需取：getAttachmentContent
+        preview: (r.preview as string | undefined) ?? undefined,
+        sandboxPath: (r.sandbox_path as string | undefined) ?? undefined,
+        mimeType: (r.mime_type as string | undefined) ?? undefined,
+        size: typeof r.size === "number" ? (r.size as number) : undefined,
+      }))
+      .sort((a, b) => {
+        const av = viaPort.find((r) => String(r.id) === a.id)?.added_at;
+        const bv = viaPort.find((r) => String(r.id) === b.id)?.added_at;
+        return Number(bv ?? 0) - Number(av ?? 0);
+      })
+      .slice(0, effectiveLimit);
+  }
+  if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const limitClause = `LIMIT ${effectiveLimit}`;
   try {
     const result = db.exec(
@@ -721,15 +786,38 @@ function queueAttachmentExternalization(attachmentId: string, name: string, cont
   void (async () => {
     try {
       const { marker, preview } = await externalizeAttachmentContent(attachmentId, name, content);
-            if (!writeShouldFallBackToLegacy("message.attachmentExternalize", "附件未外置（正文保留内联，不影响使用）")) return;
+      /**
+       * **端口优先**（第 14 轮）：外置成功后把 `file:<路径>` 标记写回库。
+       *
+       * 旧实现只有旧库一条路 —— rust 模式下它被门控挡住直接返回，于是
+       * **标记永远写不回去**：库里的 `content` 还是那份大正文（内联），
+       * 而外置文件已经落在磁盘上（白写一份），列表里的附件也不会显示为"已外置"。
+       * Rust 侧本来就有 `attachments.update`（`content`/`preview` 均为 COALESCE 语义）。
+       */
+      const port = rustMessagePort();
+      if (port) {
+        /**
+         * 标记本身也进同步缓存：`getAttachmentContent()` 命中它之后会走**文件缓存**，
+         * 于是"已外置且已预热"的附件在 B 态也能同步读到全文（不必先失败一次再重试）。
+         * 标记是几个字符的短串，缓存它没有内存代价。
+         */
+        attachmentContentCache.set(attachmentId, marker);
+        void port.data
+          .execute("attachments.update", { id: attachmentId, content: marker, preview })
+          .catch((e) => {
+            reportPersistFailure("message.attachmentExternalize", e, "附件外置标记未写回（正文保留内联，不影响使用）");
+          });
+      } else {
+        if (!writeShouldFallBackToLegacy("message.attachmentExternalize", "附件未外置（正文保留内联，不影响使用）")) return;
 const db = getDatabase();
-      runGuarded(
-        db,
-        "UPDATE attachments SET content = ?, preview = COALESCE(preview, ?) WHERE id = ?",
-        [marker, preview, attachmentId],
-        { table: "attachments", op: "externalize", id: attachmentId, from: "externalizeAttachment" },
-      );
-      persistDatabase();
+        runGuarded(
+          db,
+          "UPDATE attachments SET content = ?, preview = COALESCE(preview, ?) WHERE id = ?",
+          [marker, preview, attachmentId],
+          { table: "attachments", op: "externalize", id: attachmentId, from: "externalizeAttachment" },
+        );
+        persistDatabase();
+      }
       await hydrateAttachmentsForSession([{ id: attachmentId, content: marker }]);
     } catch (e) {
       console.warn("[Attachment] 外置失败，保留内联（不影响使用）:", e);
@@ -867,8 +955,36 @@ const db = getDatabase();
   return out;
 }
 
+/**
+ * `file:` 标记 → 正文（命中缓存就返回全文，否则触发一次异步预取并返回 `undefined`）。
+ *
+ * 抽成函数是因为现在有**两条**来源（端口按 id 取的缓存 / 旧库的 content 列）都要走同一套
+ * 标记语义 —— 第 80 波定的约定：**绝不把 `file:` 标记当正文返回给调用方**。
+ */
+function resolveAttachmentText(text: string): string | undefined {
+  if (!text.startsWith("file:")) return text;
+  const path = text.slice("file:".length);
+  const cached = getCachedExternalContent(path);
+  if (cached !== undefined) return cached;
+  void warmExternalContent(path);
+  console.warn("[getAttachmentContent] 外置附件尚未预热，已触发预取（请重试一次）:", path);
+  return undefined;
+}
+
 export function getAttachmentContent(id: string): string | undefined {
-    if (!shouldFallbackToLegacy()) return undefined;
+  /**
+   * **端口优先 + 同步缓存**（第 14 轮）：正文不进镜像（可能是几十 MB），
+   * 改为按 id 单独取、取回来缓存在渲染进程里（见 `warmAttachmentContent`）。
+   * 未命中时返回 `undefined` 并触发一次预取 —— 与"外置附件尚未预热"完全同一套约定：
+  **宁可说"还没预热"，也绝不把标记当正文**。
+   */
+  const cachedContent = attachmentContentCache.get(id);
+  if (cachedContent !== undefined) return resolveAttachmentText(cachedContent);
+  if (!shouldFallbackToLegacy()) {
+    warmAttachmentContent(id);
+    console.warn(`[getAttachmentContent] 附件 ${id} 正文尚未预热，已触发预取（请重试一次）`);
+    return undefined;
+  }
 const db = getDatabase();
   try {
     const result = db.exec(
@@ -878,19 +994,7 @@ const db = getDatabase();
     if (result.length === 0 || result[0].values.length === 0) return undefined;
     const content = result[0].values[0][0];
     if (!content) return undefined;
-    const text = content as string;
-    // 第 80 波：大附件内容外置在文件里。读取路径是同步的，所以走"预取 + 同步命中"：
-    // 命中即返回全文；未命中时**补一次异步预取**（下次读取命中），
-    // 绝不让调用方拿到 `file:` 标记去当正文用。
-    if (text.startsWith("file:")) {
-      const path = text.slice("file:".length);
-      const cached = getCachedExternalContent(path);
-      if (cached !== undefined) return cached;
-      void warmExternalContent(path);
-      console.warn("[getAttachmentContent] 外置附件尚未预热，已触发预取（请重试一次）:", path);
-      return undefined;
-    }
-    return text;
+    return resolveAttachmentText(content as string);
   } catch (e) {
     console.warn("[getAttachmentContent] Failed:", e);
     return undefined;
@@ -950,11 +1054,33 @@ export function getMessage(id: string): Message | null {
         if (!cached) warmToolCalls(id);
         /**
          * `byIdLookup` 的声明只覆盖"定位字段"（id / session_id），所以这里要显式放宽一次：
-         * 真实实现返回的是**完整镜像行**（`MirrorMessageRow`，9 个字段）。
+         * 真实实现返回的是**完整镜像行**（`MirrorMessageRow`）。
          * 保持窄声明是为了防止有人拿它当"读整行"用 —— 镜像行不含 `tool_calls`。
          */
         const message = messageRowToMessage(mirrored as unknown as Parameters<typeof messageRowToMessage>[0]);
-        return cached ? ({ ...message, toolCalls: cached } as Message) : message;
+        if (cached) return { ...message, toolCalls: cached } as Message;
+        /**
+         * **同步兜底：权威日志镜像里就带 `toolCalls`**（第 14 轮修正）。
+         *
+         * 上面的注释说"缓存由写路径维护，因此刚写的立刻读得到" —— 但写路径之外还有两条
+         * 会产生工具调用的路径：**索引重建**（`messages.rebuild_index` 把日志里的消息写回索引）
+         * 与**会话打开时的 hydrate**。这两条路都不经过 `addToolCall`，于是缓存是空的，
+         * 而这里一旦命中镜像行就**直接返回**，永远不会走到下面那段日志兜底 ——
+         * 真实形态：**重启/重建索引之后，工具调用在界面上整批消失**（fork 复制也跟着丢）。
+         *
+         * 日志是权威副本，它就在内存里（`cachedLogMessages`），同步读一次几乎零成本：
+         * 命中就顺手填进缓存，让后续读都走快路径。
+         */
+        const enriched = withMirrorAttachments(message);
+        const logSessionId = sessionIdFromLogMirror(id);
+        if (logSessionId) {
+          const fromLog = logMirrorMessage(logSessionId, id);
+          if (fromLog?.toolCalls && fromLog.toolCalls.length > 0) {
+            cacheToolCalls(id, fromLog.toolCalls);
+            return { ...enriched, toolCalls: fromLog.toolCalls } as Message;
+          }
+        }
+        return enriched;
       }
     }
   }
@@ -1203,8 +1329,21 @@ function warmToolCalls(messageId: string): void {
   const port = rustMessagePort();
   if (!port || toolCallWarmInFlight.has(messageId)) return;
   toolCallWarmInFlight.add(messageId);
-  void port.data
-    .execute("tool_calls.list", { message_id: messageId })
+  /**
+   * ⚠️ **必须走 `command`（返回结构化结果），不能用 `execute`**（第 14 轮修正）。
+   *
+   * `data.execute` 刻意把结果压成 `{ written }`（见 `rust-port.ts` 的说明）——
+   * 用它读 `tool_calls.list` 永远拿不到 `items`，于是这个"异步预热"**从来没有预热成功过**：
+   * 缓存一直是空的，而 `getMessage` 的端口分支只认那个缓存（它不读旧库），
+   * 真实形态就是"**刚写的工具调用、同步读读不到**"，连带 fork 复制时整批丢失。
+   */
+  const probe = port.data as unknown as {
+    command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+  };
+  const call = probe.command
+    ? probe.command<{ items?: unknown[] }>("tool_calls.list", { message_id: messageId })
+    : port.data.execute("tool_calls.list", { message_id: messageId });
+  void call
     .then((r) => {
       const rows = (r as { items?: unknown[] })?.items;
       if (!Array.isArray(rows)) return;
@@ -1278,7 +1417,22 @@ function messageRowToMessage(r: {
   timestamp: number;
   model?: string | null;
   status?: string | null;
+  /** `generated_files` 的 JSON 文本（第 14 轮：这一列从前没有被映射回来） */
+  generated_files?: string | string[] | null;
 }): Message {
+  /*
+   * `generated_files` 的解析（第 14 轮修正）。
+   *
+   * 库里是 TEXT（JSON 文本），历史数据也可能已经是数组。解析失败**不抛**
+   * （一条坏数据不该让整次列表读取失败），但也不静默吞成"没有文件"。
+   */
+  let generatedFiles: string[] | undefined;
+  if (typeof r.generated_files === "string" && r.generated_files.trim().length > 0) {
+    const parsed = safeJsonParse<string[]>(r.generated_files, []);
+    if (Array.isArray(parsed) && parsed.length > 0) generatedFiles = parsed.map(String);
+  } else if (Array.isArray(r.generated_files) && r.generated_files.length > 0) {
+    generatedFiles = r.generated_files.map(String);
+  }
   return {
     id: r.id,
     sessionId: r.session_id,
@@ -1288,6 +1442,7 @@ function messageRowToMessage(r: {
     timestamp: r.timestamp,
     ...(r.model ? { model: r.model } : {}),
     status: (r.status ?? "done") as Message["status"],
+    ...(generatedFiles ? { generatedFiles } : {}),
   } as Message;
 }
 
@@ -1349,6 +1504,20 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
     model: message.model ?? null,
     status: message.status ?? "done",
   });
+  /**
+   * **工具调用同步缓存也要在这里刷新**（第 14 轮修正）。
+   *
+   * `message.ts` 里那段注释写着"缓存由**写路径**（`addToolCall` / `updateToolCall` /
+   * **`upsert_index`**）负责维护，因此'刚写的立刻读得到'"—— 但这条写路径（`writeIndexViaRust`）
+   * 从来没有调用过缓存，于是那句话是**空头承诺**：
+   * `getMessage` 的端口分支只认缓存（不读旧库），真实形态就是"刚创建带工具调用的消息，
+   * 紧接着同步读读不到 toolCalls"，连带 fork/复制整批丢失。
+   *
+   * 异步预热（`warmToolCalls`）是兜底，不能当作唯一手段：它是下一次读才生效。
+   */
+  if (message.toolCalls && message.toolCalls.length > 0) {
+    cacheToolCalls(message.id, message.toolCalls);
+  }
 
   void port.data
     .execute("messages.upsert_index", params)
@@ -1369,6 +1538,98 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
 }
 
 /** 消息 → SQLite 索引（createMessage 的索引侧；失败由调用方兜底） */
+/**
+ * 把消息的附件写进查询索引（**端口优先**，第 14 轮）。
+ *
+ * @returns true = 已交给端口（调用方不要再走旧库）
+ *
+ * 细节与旧库路径保持一致：大正文先外置（`externalizeIfLargeSync` → `file:<路径>` 标记），
+ * 行里存 `content`/`preview`/`sandbox_path`/`mime_type`/`size`/`added_at`。
+ * 失败只上报不抛：附件正文的权威副本是 JSONL 与外置文件，索引可以重建。
+ */
+/**
+ * 从 **attachments 域镜像**取某条消息的附件（元数据；`content` 一律留空、按需取）。
+ *
+ * 为什么需要它（第 14 轮）：B 态下消息行的读路径（`listMessagesFromIndex` / `getMessage`）
+ * 走的是消息镜像，而**附件是另一张表** —— 旧实现在那条路径上从不去取附件，
+ * 于是 rust 模式下出现「消息读回来了、附件没了」（用户可见：附件面板/引用消失）。
+ * 域镜像对 `attachments` 只投影元数据列，所以这一步**不会**把正文拉进内存。
+ *
+ * @returns undefined = 该域没接手（A 态由旧库路径负责）
+ */
+function attachmentsFromMirror(messageId: string): MessageAttachment[] | undefined {
+  const rows = domainReadMany<Record<string, unknown>>(ATTACHMENT_TABLE, (r) => r, { message_id: messageId });
+  if (!rows) return undefined;
+  if (rows.length === 0) return [];
+  return rows
+    .sort((a, b) => Number(a.added_at ?? 0) - Number(b.added_at ?? 0))
+    .map((r) => ({
+      id: String(r.id ?? ""),
+      name: String(r.name ?? ""),
+      type: String(r.type ?? "file") as MessageAttachment["type"],
+      content: undefined, // 懒加载：getAttachmentContent
+      preview: (r.preview as string | undefined) ?? undefined,
+      path: (r.path as string | undefined) ?? undefined,
+      sandboxPath: (r.sandbox_path as string | undefined) ?? undefined,
+      mimeType: (r.mime_type as string | undefined) ?? undefined,
+      size: typeof r.size === "number" ? (r.size as number) : undefined,
+    }));
+}
+
+/** 给一条已映射好的消息补上附件（仅在端口接手时生效） */
+function withMirrorAttachments(message: Message): Message {
+  if (message.attachments && message.attachments.length > 0) return message;
+  const atts = attachmentsFromMirror(message.id);
+  if (!atts || atts.length === 0) return message;
+  return { ...message, attachments: atts };
+}
+
+function writeAttachmentsViaPort(message: Message, sessionId: string): boolean {
+  const atts = message.attachments;
+  if (!atts || atts.length === 0) return false;
+  const port = rustMessagePort();
+  if (!port) return false;
+  const now = Date.now();
+  const rows = atts.map((att) => {
+    const stored = externalizeIfLargeSync(att);
+    return {
+      id: att.id,
+      session_id: sessionId,
+      message_id: message.id,
+      name: att.name,
+      type: att.type,
+      path: (att as { path?: string }).path ?? null,
+      content: stored.content,
+      preview: stored.preview,
+      sandbox_path: att.sandboxPath ?? null,
+      mime_type: att.mimeType ?? null,
+      size: att.size ?? null,
+      added_at: now,
+    };
+  });
+  /**
+   * **内联正文顺手进同步缓存**：刚创建的附件立刻读得到（与工具调用"写路径维护缓存"同一条规则）。
+   *
+   * 不加这一步的话，`getAttachmentContent()` 在 B 态第一次读必然是"未预热 → 返回 undefined
+   * + 提示重试一次" —— 对**用户刚上传的小附件**来说这是没必要的来回。
+   * 只缓存**内联**内容（外置的正文在文件里，仍走文件缓存那套），所以不会把大正文留在内存。
+   */
+  for (const r of rows) {
+    if (
+      typeof r.content === "string" &&
+      r.content.length > 0 &&
+      r.content.length <= DEFAULT_EXTERNALIZE_THRESHOLD && // 大正文即将外置，不进缓存
+      !r.content.startsWith("file:")
+    ) {
+      attachmentContentCache.set(r.id, r.content);
+    }
+  }
+  void port.data.execute("crud.upsert", { table: ATTACHMENT_TABLE, rows, mode: "replace" }).catch((e) => {
+    reportPersistFailure("message.attachmentIndex", e, "附件未写入查询索引（正文仍在外置文件/会话日志里）");
+  });
+  return true;
+}
+
 function writeMessageIndex(message: Message, sessionId: string): void {
   /**
    * 全文索引（P1-7 / P5 第 11 段）**必须在这里分流，而不是塞在下面的旧库分支里**。
@@ -1380,6 +1641,15 @@ function writeMessageIndex(message: Message, sessionId: string): void {
    * 端口不在 → 由下面旧库分支末尾那段插行（一个字节不变）。
    */
   const ftsViaPort = indexFtsForMessageViaPort(sessionId, message);
+  /**
+   * **附件也要在这里分流**（第 14 轮修正，真机数据缺口）。
+   *
+   * 原来附件只在下面那段旧库分支里写（`INSERT OR REPLACE INTO attachments`），
+   * 而端口接手时那一整段被短路跳过 —— 于是 rust 模式下**新附件只存在于内存里**：
+   * 查询索引里没有行、`listAllAttachments()` 看不到、`getAttachmentContent()` 取不到。
+   * 端口化测试（CHAT-022b/023b、ATT-1/2/4、全局对话往返）抓到的就是这个。
+   */
+  const attachmentsViaPort = writeAttachmentsViaPort(message, sessionId);
 
   // 迁移期分流：端口是 rust → 索引写走 Rust（**单事务**：主行 + JSON 列 + tool_calls 整体替换）
   if (writeIndexViaRust(message, sessionId, "create")) return;

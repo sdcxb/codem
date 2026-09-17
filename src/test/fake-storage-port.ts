@@ -193,6 +193,25 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       }
       return 1;
     }
+    /**
+     * `attachments.update`：按 COALESCE 语义更新附件正文/预览（真 Rust 命令见
+     * `codem-db/src/config.rs::attachments_update`）。假端口早先没实现它 →
+     * "大附件外置后把标记写回库"这一步在测试里**静默丢行**（ATT-2 因此假红）。
+     */
+    if (command === "attachments.update") {
+      const id = String(params?.id ?? "");
+      const target = table("attachments");
+      const idx = target.findIndex((r) => r.id === id);
+      if (idx < 0) throw new Error(`fake-port: attachments 里没有 id=${id}`);
+      const content = params?.content;
+      const preview = params?.preview;
+      target[idx] = {
+        ...target[idx],
+        content: content === undefined || content === null ? target[idx].content : content,
+        preview: preview === undefined || preview === null ? target[idx].preview : preview,
+      };
+      return 1;
+    }
     if (command === "messages.delete") {
       /*
        * 软删除（压缩走这条）：把 `hidden` 置 1。
@@ -218,12 +237,23 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       return n;
     }
     if (command === "messages.rebuild_index") {
+      /**
+       * ⚠️ 参数形状必须与**线上契约**一致（第 14 轮修正）：
+       * `{ sessions: [{ id, messages: [...] }] }`（`repo.rs::messages_rebuild_index` 读的就是它），
+       * 而这里原来只认 `{ rows: [...] }` —— 于是测试里"重建索引"根本没写进去，
+       * `authority-first-storage` 的 AR-4 因此**假红**（产品真机上是对的）。
+       * 同时保留对旧 `rows` 形状的兼容（早期用例可能仍在用）。
+       */
       const p = (params ?? {}) as Row;
-      const rows = (p.rows as Row[] | undefined) ?? [];
+      const sessions = (p.sessions as Array<{ id?: string; messages?: Row[] }> | undefined) ?? [];
+      const flat: Row[] =
+        sessions.length > 0
+          ? sessions.flatMap((s) => (s.messages ?? []).map((m) => ({ ...m, session_id: m.session_id ?? s.id })))
+          : ((p.rows as Row[] | undefined) ?? []);
       const name = "messages";
       const target = table(name);
       const pk = "id";
-      for (const row of rows) {
+      for (const row of flat) {
         const idx = target.findIndex((r) => r[pk] === row[pk]);
         /*
          * ⚠️ 必须**保留已有的 hidden**（第 40 轮修正）。
@@ -237,7 +267,23 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         if (idx >= 0) target[idx] = { ...cloneRow(row), hidden };
         else target.push({ ...cloneRow(row), hidden });
       }
-      return rows.length;
+      // 会话行也要补（与 Rust 侧一致：先 upsert sessions 再写 messages，满足外键）
+      for (const s of sessions) {
+        if (!s.id) continue;
+        const sessTarget = table("sessions");
+        if (!sessTarget.some((r) => r.id === s.id)) {
+          sessTarget.push({
+            id: s.id,
+            project_id: "",
+            title: `会话 ${s.id}`,
+            created_at: Number((s.messages?.[0] as Row | undefined)?.timestamp ?? 1),
+            last_message_at: Number((s.messages?.[s.messages.length - 1] as Row | undefined)?.timestamp ?? 1),
+            message_count: (s.messages ?? []).length,
+            pinned: 0,
+          });
+        }
+      }
+      return flat.length;
     }
     if (command === "crud.delete_where") {
       const name = String(params?.table ?? "");
@@ -531,6 +577,29 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
           total_rows: legacyMessages,
           per_table: [{ table: "messages", rows: legacyMessages }],
         } as unknown as T;
+      }
+      /**
+       * 其余命令：真端口里 `command` 与 `execute` 走同一条 dispatch，区别只在**返回值的整形**
+       * （`execute` 压成 `{written}`，`command` 给结构化结果）。所以这里也让 `command`
+       * 落到同一套 `persist()` 语义上，再补出结构化字段 ——
+       * 否则"用 command 调一条已实现的命令"会在测试里报"未实现"（AR-4 踩到的就是它）。
+       */
+      const written = persist(command, params);
+      if (command === "messages.rebuild_index") {
+        const sessions = (params?.sessions as Array<{ messages?: unknown[] }> | undefined) ?? [];
+        return { written, sessions: sessions.length, messages: written } as unknown as T;
+      }
+      if (command === "attachments.content") {
+        const id = String(params?.id ?? "");
+        const row = table("attachments").find((r) => r.id === id);
+        if (!row) throw new Error(`fake-port: attachments 里没有 id=${id}`);
+        return { id, content: (row.content as string | null) ?? null } as unknown as T;
+      }
+      if (command === "attachments.externalized") {
+        const items = table("attachments")
+          .filter((r) => typeof r.content === "string" && String(r.content).startsWith("file:"))
+          .map((r) => ({ id: String(r.id), path: String(r.content).slice("file:".length) }));
+        return { items, count: items.length } as unknown as T;
       }
       throw new Error(`fake-port: 未实现的命令 ${command}（测试双不得比实现更宽松）`);
     },

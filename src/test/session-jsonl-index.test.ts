@@ -71,6 +71,9 @@ import {
 } from "../core/storage/database";
 import { createMessage, listMessages, listMessagesFromIndex, listMessagesMerged, clearSessionLogCache, trimIndexedMessages } from "../core/storage/message";
 import { appendSessionMessage, readSessionMessages, durableMessageIds, backfillSessionLog, flushSessionLogWrites, sessionLogPath, __resetJsonlCache } from "../core/storage/session-jsonl";
+import { getStoragePort, hasStoragePort, setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
+import type { FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
 
 function makeMessage(id: string, timestamp: number, content = `内容 ${id}`): Message {
@@ -79,12 +82,39 @@ function makeMessage(id: string, timestamp: number, content = `内容 ${id}`): M
 
 const SESSION = "sess-jsonl";
 
+/**
+ * 当前用例里的内存假端口（B 态）；A 态（`CODEM_TEST_PORT=0`）为 null。
+ *
+ * 这个文件里的维护类用例（SLOG-4/5/6/8）依赖"会话清单 + 消息索引"两处数据：
+ * `trimIndexedMessages` / `backfillAllSessions` 的会话清单来自 `sessions` 域镜像，
+ * 消息来自会话镜像。端口模式下产品**只写端口**，所以预置必须落在端口上 ——
+ * 原来把它们插进旧库，产品在端口里一个会话都看不到，于是裁剪/回填静默变成 0。
+ */
+let port: FakeStoragePort | null = null;
+
+/** B 态：注册一个带 `sessions` 父行的假端口（覆盖 setup.ts 注册的那个空端口）；A 态：no-op */
+function seedPort(): FakeStoragePort | null {
+  if (!hasStoragePort()) return null;
+  if (getStoragePort().kind !== "rust") return null;
+  const p = createFakeStoragePort({
+    seed: {
+      sessions: [
+        { id: SESSION, project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 },
+      ],
+    },
+  });
+  setStoragePort(p);
+  return p;
+}
+
 beforeEach(async () => {
   installFsStub();
   __resetJsonlCache();
   clearSessionLogCache();
   resetSaveFailureState();
   resetDatabaseFatalState();
+  // 先注册端口（B 态），再初始化/重置旧库 —— 与 setup.ts 的顺序约定一致
+  port = seedPort();
   await initDatabase();
   const db = getDatabase();
   db.run("DELETE FROM messages");
@@ -156,16 +186,38 @@ describe("追加日志（JSONL）", () => {
   });
 
   it("SLOG-5: 日志覆盖后只裁'日志里确实有'的消息，且**附件消息不裁**", async () => {
-    const db = getDatabase();
     for (let i = 0; i < 12; i++) {
       const m = makeMessage(`m${i}`, 1000 + i);
       createMessage(m, SESSION); // 同时写索引与日志
     }
-    // 给**最老的一条**挂附件：附件行不在日志里 → 即使它在裁剪窗口内也不许删
-    db.run(
-      "INSERT INTO attachments (id, session_id, message_id, name, type, content, added_at, size) VALUES ('a1', ?, 'm0', 'x.txt', 'file', 'hi', 0, 2)",
-      [SESSION],
-    );
+    /**
+     * 给**最老的一条**挂附件：附件行不在日志里 → 即使它在裁剪窗口内也不许删。
+     *
+     * 预置必须落在**产品真正读的那一侧**：B 态裁剪用 `domainReadMany("attachments")` 读端口，
+     * 只往旧库插 = 端口里没有这一行 = 裁剪会误删 m0（判据跟着一起失真）。
+     */
+    const attachmentRow = {
+      id: "a1",
+      session_id: SESSION,
+      message_id: "m0",
+      name: "x.txt",
+      type: "file",
+      content: "hi",
+      added_at: 0,
+      size: 2,
+    };
+    if (port) {
+      await port.data.execute("crud.upsert", {
+        table: "attachments",
+        primaryKey: "id",
+        rows: [attachmentRow],
+      });
+    } else {
+      getDatabase().run(
+        "INSERT INTO attachments (id, session_id, message_id, name, type, content, added_at, size) VALUES ('a1', ?, 'm0', 'x.txt', 'file', 'hi', 0, 2)",
+        [SESSION],
+      );
+    }
 
     const result = await trimIndexedMessages({ keepPerSession: 3 });
 
@@ -205,14 +257,29 @@ describe("追加日志（JSONL）", () => {
   });
 
   it("SLOG-8: 维护会先回填、再裁剪，并把数字报出来", async () => {
-    const db = getDatabase();
-    db.run("DELETE FROM messages");
-    // 直接写索引（绕过 createMessage）→ 模拟"老库只有索引、没有日志"的迁移场景
+    getDatabase().run("DELETE FROM messages");
+    /**
+     * 直接写索引（绕过 createMessage）→ 模拟"只有索引、没有日志"的迁移场景。
+     *
+     * 索引在 B 态就是**端口**（产品只写端口），所以预置走端口命令 `messages.upsert_index`；
+     * 往旧库插行的话，端口里那份索引是空的 → 回填 0 条、裁剪 0 条（数字全是假绿）。
+     */
     for (let i = 0; i < 8; i++) {
-      db.run(
-        "INSERT INTO messages (id, session_id, role, content, timestamp, status) VALUES (?, ?, 'user', ?, ?, 'done')",
-        [`k${i}`, SESSION, `内容 k${i}`, 500 + i],
-      );
+      if (port) {
+        await port.data.execute("messages.upsert_index", {
+          id: `k${i}`,
+          session_id: SESSION,
+          role: "user",
+          content: `内容 k${i}`,
+          timestamp: 500 + i,
+          status: "done",
+        });
+      } else {
+        getDatabase().run(
+          "INSERT INTO messages (id, session_id, role, content, timestamp, status) VALUES (?, ?, 'user', ?, ?, 'done')",
+          [`k${i}`, SESSION, `内容 k${i}`, 500 + i],
+        );
+      }
     }
     await flushSessionLogWrites();
     files.clear();
