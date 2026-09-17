@@ -847,10 +847,25 @@ export async function runDatabaseMaintenance(
       if (keepIndexedMessages > 0) {
         const trimmed = await bridge.trimIndexedMessages({ keepPerSession: keepIndexedMessages });
         result.trimmedIndexMessages = trimmed.deletedMessages;
+        /**
+         * 跳过原因必须**分开报**（第 44 轮修掉的误导性日志）。
+         *
+         * 原来这里把三种完全不同的原因一律印成"日志尚未覆盖"：
+         * ① 镜像没就绪（真端口是异步的，曾因此让**整条裁剪步骤在真机上从未执行**）；
+         * ② 日志确实还没覆盖这些消息（耐久性不变量：正常跳过）；
+         * ③ 有候选但一条都裁不了（带附件 / 日志缺该 id）。
+         *
+         * 三者的处置完全不同：①是缺陷、②是正常、③要看是不是附件太多。
+         * 真机上真实原因是①，而日志说成②——排查方向就是这样被带偏的。
+         */
         if (trimmed.deletedMessages > 0 || trimmed.skippedSessions > 0) {
+          const reasons: string[] = [];
+          if (trimmed.skippedNotLoaded > 0) reasons.push(`镜像未就绪 ${trimmed.skippedNotLoaded} 个`);
+          if (trimmed.skippedNoLog > 0) reasons.push(`日志尚未覆盖 ${trimmed.skippedNoLog} 个`);
+          if (trimmed.skippedNoCandidates > 0) reasons.push(`无可裁候选 ${trimmed.skippedNoCandidates} 个`);
           console.log(
             `[Maintenance] 追加日志：索引裁剪 ${trimmed.deletedMessages} 条` +
-              `（跳过 ${trimmed.skippedSessions} 个会话：日志尚未覆盖）`,
+              (reasons.length > 0 ? `（跳过 ${trimmed.skippedSessions} 个会话：${reasons.join("、")}）` : ""),
           );
         }
       }

@@ -100,6 +100,69 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: Mess
 
 
 /**
+ * 等某个会话的**消息镜像就绪**（第 44 轮：这是"索引裁剪在生产上从未生效"的根因）。
+ *
+ * ## 为什么必须有它
+ *
+ * `trimIndexedMessages` 原来是这样写的：`port.messages.ensureLoaded(sessionId)` 之后
+ * **立刻同步**判 `isLoaded(sessionId)`。而真端口的 `ensureLoaded` 是**异步**的
+ * （内部 `loadSession` 走 IPC 分页读，见 `rust-port.ts::RustMessageMirror.ensureLoaded`）——
+ * 也就是说那一瞬间 `isLoaded` **必然为 false**，于是每个会话都走"镜像未就绪 → 跳过"。
+ *
+ * 后果是一整条维护步骤在真机上**什么都没做**（真机日志：`索引裁剪 0 条`），
+ * 而日志给出的原因还是错的（写成"日志尚未覆盖"）。测试双的 `ensureLoaded` 是同步就绪的，
+ * 所以这个缺陷在 CI 里**结构上不可见** —— 与 D3 是同一类偏差。
+ *
+ * `ensureLoaded(id, cb)` 的契约本来就有回调（已加载时立即调用、加载中时挂到在途任务上），
+ * 所以这里直接用它，并且：① 超时兜底（端口卡住时不能让维护永久挂住）；
+ * ② 同步就绪的端口立即返回（测试双与"刚被别的路径加载过"这两种情形）。
+ */
+async function waitForSessionMirror(
+  port: {
+    messages?: {
+      isLoaded(id: string): boolean;
+      isTruncated(): boolean;
+      ensureLoaded(id: string, cb?: () => void): void;
+    };
+  },
+  sessionId: string,
+  timeoutMs = 5000,
+): Promise<"ready" | "truncated" | "timeout"> {
+  const m = port.messages;
+  if (!m) return "timeout";
+  const settled = (): "ready" | "truncated" | null => {
+    if (!m.isLoaded(sessionId)) return null;
+    return m.isTruncated() ? "truncated" : "ready";
+  };
+  const immediate = settled();
+  if (immediate) return immediate;
+  return await new Promise<"ready" | "truncated" | "timeout">((resolve) => {
+    let done = false;
+    const finish = (v: "ready" | "truncated" | "timeout") => {
+      if (done) return;
+      done = true;
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish("timeout"), timeoutMs);
+    try {
+      m.ensureLoaded(sessionId, () => {
+        clearTimeout(timer);
+        finish(settled() ?? "timeout");
+      });
+    } catch {
+      clearTimeout(timer);
+      finish("timeout");
+    }
+    // 同步就绪的端口（测试双 / 已在途完成）—— 立即返回
+    const after = settled();
+    if (after) {
+      clearTimeout(timer);
+      finish(after);
+    }
+  });
+}
+
+/**
  * 有界裁剪 SQLite 索引 —— **只有确实已在 JSONL 里持久化的消息才允许删**（第 78 波）。
  *
  * 这是"SQLite 只是可重建索引"的落地：权威日志是 append-only JSONL，索引可以随体积增长被裁剪，
@@ -110,13 +173,30 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: Mess
  *   - 带附件（attachments）的消息**不裁**：附件行不在 JSONL 里，裁消息会级联删掉附件；
  *   - 每个会话至少保留最新 `keepPerSession` 条（默认 500），常用会话完全不触发裁剪。
  *
- * @returns 裁剪的消息数与跳过的会话数（因耐久性不足而放弃）
+ * @returns 裁剪的消息数、跳过总数，以及**按原因分解的跳过数**
+ *          （第 44 轮：原来只有总数，而日志把三种原因**一律**说成"日志尚未覆盖"——
+ *           真机上真实原因是"镜像未就绪"，排查方向因此被日志带偏）
  */
 export async function trimIndexedMessages(
   opts: { keepPerSession?: number } = {},
-): Promise<{ deletedMessages: number; skippedSessions: number }> {
+): Promise<{
+  deletedMessages: number;
+  skippedSessions: number;
+  /** 镜像没能就绪（真端口是异步的；这里会用回调等它） */
+  skippedNotLoaded: number;
+  /** 日志里还没有这些消息（耐久性不变量：不裁） */
+  skippedNoLog: number;
+  /** 有候选但一条都裁不了（带附件 / 日志缺该 id） */
+  skippedNoCandidates: number;
+}> {
   const keepPerSession = opts.keepPerSession ?? 500;
-  const out = { deletedMessages: 0, skippedSessions: 0 };
+  const out = {
+    deletedMessages: 0,
+    skippedSessions: 0,
+    skippedNotLoaded: 0,
+    skippedNoLog: 0,
+    skippedNoCandidates: 0,
+  };
 
   /**
    * **B 态（rust 引擎）走端口**（P5 第 11 段，真机缺陷修正）。
@@ -153,9 +233,18 @@ for (const row of sessionRows) {
   const sessionId = String(row.id ?? "");
   if (!sessionId) continue;
   try {
-    port.messages.ensureLoaded(sessionId);
-    if (!port.messages.isLoaded(sessionId) || port.messages.isTruncated()) {
+    /**
+     * ⚠️ **必须等镜像就绪**（第 44 轮修掉的"整条维护步骤从不生效"）。
+     *
+     * 真端口的 `ensureLoaded` 是异步的（内部走 IPC 分页读），
+     * 所以"调用它之后立刻同步判 `isLoaded`"**必然为 false** —— 每个会话都会被跳过，
+     * 于是索引裁剪在真机上一条都没裁过，而日志还把原因写成"日志尚未覆盖"。
+     * 测试双的 `ensureLoaded` 是同步就绪的，所以 CI 里看不见这件事。
+     */
+    const readiness = await waitForSessionMirror(port, sessionId);
+    if (readiness !== "ready") {
       out.skippedSessions++;
+      out.skippedNotLoaded++;
       continue;
     }
     const rows = port.messages.list(sessionId);
@@ -165,6 +254,7 @@ for (const row of sessionRows) {
     const durable = await durableMessageIds(sessionId);
     if (durable.size === 0) {
       out.skippedSessions++; // 老会话尚未回填 → 一律不动
+      out.skippedNoLog++;
       continue;
     }
 
@@ -182,6 +272,7 @@ for (const row of sessionRows) {
     const deletable = candidates.filter((id) => durable.has(id) && !withAttachments.has(id));
     if (deletable.length === 0) {
       out.skippedSessions++;
+      out.skippedNoCandidates++;
       continue;
     }
     /**

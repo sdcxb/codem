@@ -447,13 +447,59 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
   function sessionMirror(scope: string, sessionColumn: string) {
     const loaded = new Set<string>();
     let truncated = false;
+    /** 正在加载的会话（`asyncLoad` 打开时的"加载窗口"） */
+    const loadingSessions = new Set<string>();
+    /** 加载窗口期内注册的回调：加载完成时**全部**触发（与域镜像同一条规则） */
+    const pendingSessionCallbacks = new Map<string, Array<() => void>>();
     const rowsFor = (sid: string): Row[] => table(scope).filter((r) => r[sessionColumn] === sid);
     return {
       isLoaded: (sid: string) => loaded.has(sid),
       isTruncated: () => truncated,
+      /**
+       * 会话镜像的加载 —— **必须与域镜像一样尊重 `asyncLoad`**（第 44 轮补的保真度缺口）。
+       *
+       * ## 为什么这一条是"测试双比实现宽松"的典型
+       *
+       * 真端口的 `RustMessageMirror.ensureLoaded` 是**异步**的（内部 `loadSession`
+       * 走 IPC 分页读）。而这里原来是无条件 `loaded.add(sid); onLoaded?.()` ——
+       * 也就是**同步就绪**。后果：任何"先 `ensureLoaded()` 再在同一个同步 tick 里
+       * 判 `isLoaded()`"的写法在测试里**永远是对的**，而真机上一律为 false。
+       *
+       * 实测代价：`trimIndexedMessages` 就是这样写的 —— 真机上**每个会话都被跳过**，
+       * 索引裁剪这条维护步骤从未执行，而 CI 全绿。
+       * （这正是 `trim-async-readiness.test.ts` 要守的东西；那个文件里有一条
+       * `TRIM-ASYNC-3` 专门钉住"异步模式下同步判据必然为 false"这个前提。）
+       *
+       * 语义与域镜像逐条对齐：已就绪 → 立即回调；加载中 → 回调挂到在途那次加载上；
+       * `asyncLoad` 关（默认）→ 同步就绪（保住既有基线）；开 → 排到下一个微任务。
+       */
       ensureLoaded: (sid: string, onLoaded?: () => void) => {
-        loaded.add(sid);
-        onLoaded?.();
+        if (loaded.has(sid)) {
+          onLoaded?.();
+          return;
+        }
+        if (loadingSessions.has(sid)) {
+          if (onLoaded) {
+            const list = pendingSessionCallbacks.get(sid) ?? [];
+            list.push(onLoaded);
+            pendingSessionCallbacks.set(sid, list);
+          }
+          return;
+        }
+        if (!asyncLoad) {
+          loaded.add(sid);
+          onLoaded?.();
+          return;
+        }
+        loadingSessions.add(sid);
+        void Promise.resolve().then(() => {
+          if (!loadingSessions.has(sid)) return;
+          loadingSessions.delete(sid);
+          loaded.add(sid);
+          onLoaded?.();
+          for (const cb of pendingSessionCallbacks.get(sid) ?? []) cb();
+          pendingSessionCallbacks.delete(sid);
+        });
       },
       list: (sid: string) => rowsFor(sid).map(cloneRow),
       count: (sid: string) => rowsFor(sid).length,
