@@ -426,6 +426,43 @@ describe("启动维护 —— rust 模式（本进程唯一形态）下必须照
     expect(String(files.get(markerPath))).toContain("完整性检查失败");
   });
 
+  it("MR-14: 会话计数对账 —— `message_count` 与索引真值不一致时被修正（第 44 轮）", async () => {
+    /**
+     * 真机实测的形态：同一个会话三个互相矛盾的数 ——
+     * 权威 JSONL 612 条 / 索引 544 行 / `sessions.message_count` 写着 **27**。
+     * 那一列长期由"多个写入者有空才更新"，必然漂移；
+     * 引擎已改成唯一写入者（只管以后），维护里这一次对账负责**修以前写坏的**。
+     */
+    port = createFakeStoragePort({
+      seed: {
+        sessions: [
+          // 故意写一个错的值（真机上是 27，这里是 3）
+          { id: SESSION, project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 3 },
+        ],
+      },
+    });
+    setStoragePort(port);
+    for (let i = 0; i < 5; i++) {
+      await port.data.execute("messages.upsert_index", {
+        id: `m${i}`,
+        session_id: SESSION,
+        role: "user",
+        content: `内容 ${i}`,
+        timestamp: 1000 + i,
+      });
+    }
+
+    const result = await runDatabaseMaintenance({ keepIndexedMessages: 0 });
+
+    expect(result.recountedSessions, "必须修正那个不一致的会话").toBe(1);
+    const row = port.__table("sessions").find((r) => r.id === SESSION);
+    expect(Number(row?.message_count ?? -1), "message_count 必须等于索引里真实的行数").toBe(5);
+
+    // 幂等：再跑一次不该再"修正"任何东西（长期这个数字应当是 0）
+    const again = await runDatabaseMaintenance({ keepIndexedMessages: 0 });
+    expect(again.recountedSessions, "一致之后不该再改（否则每次维护都在写库）").toBe(0);
+  });
+
   it("MR-6: 生产代码里**不许再有旧引擎入口**（L1 收尾的不变量）", async () => {
     /**
      * 这条原来是"每处 `initDatabase()` 调用都必须先判引擎"（那时函数还在）。

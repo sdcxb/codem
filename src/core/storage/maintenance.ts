@@ -31,6 +31,7 @@
  */
 
 import { reportPersistFailure } from "./persist-failure";
+import * as SessionStorage from "./session";
 
 export interface MaintenanceResult {
   /** 旧引擎时代的库体积统计（现在由 `storage.compact` 的 before/after 承担，这里保持 0 兼容签名） */
@@ -83,6 +84,14 @@ export interface MaintenanceResult {
   compactedBytes: number;
   /** 本次完整性检查的结论：`ok` / `failed` / `skipped`（节流或命令不可用） */
   integrity: "ok" | "failed" | "skipped";
+  /**
+   * 本次修正了 `message_count` 的会话数（第 44 轮）。
+   *
+   * 这一列长期漂移（真机实测同一会话：日志 612 / 索引 544 / 该列 **27**），
+   * 因为它的写入者太多而没人负责。引擎已改成唯一写入者（只管以后），
+   * 这个数字是"以前写坏的那些修好了几个"的可见性：**长期应当是 0**。
+   */
+  recountedSessions: number;
 }
 
 /**
@@ -803,6 +812,7 @@ export async function runDatabaseMaintenance(
     compactPerformed: false,
     compactedBytes: 0,
     integrity: "skipped",
+    recountedSessions: 0,
   };
 
   try {
@@ -917,6 +927,46 @@ export async function runDatabaseMaintenance(
       console.warn(
         `[Maintenance] 完整性检查失败：${integrityResult.detail ?? "（无细节）"} —— 已留索引重建标记`,
       );
+    }
+
+    /*
+     * ## 会话计数对账（第 44 轮）
+     *
+     * `sessions.message_count` 长期漂移：真机实测同一个会话有**三个互相矛盾的数** ——
+     * 权威 JSONL 612 条 / 索引 544 行 / 这一列写着 **27**。
+     * 原因是"多个写入者有空才更新"：渲染侧只在极少数地方显式写它。
+     *
+     * 引擎侧已经改成**唯一写入者**（新增 +1、硬删除按实际行数减），但那只能管住**以后**；
+     * 已经写坏的值得有人修一次。这里就是对账那一次：拿引擎的 `messages.count`
+     * （**索引真值**，与引擎维护的是同一个真相）与这一列比，不一致才写回。
+     *
+     * 为什么用索引真值而不是日志条数：两个真相会立刻再次漂移。
+     * 日志里可能有索引没有的历史（旧版硬删除裁剪留下的），那种差异会随着
+     * "裁剪改为软删除 + `trimmed` 标记"而不再产生；把它当成计数只会制造第二个真相。
+     */
+    result.recountedSessions = 0;
+    try {
+      const { domainReadMany } = await import("./domain-store");
+      const { getStoragePort } = await import("./port");
+      const port = getStoragePort() as unknown as {
+        data: { query<T>(cmd: string, params?: Record<string, unknown>): Promise<T> };
+      };
+      const sessions = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
+      for (const row of sessions) {
+        const id = String(row.id ?? "");
+        if (!id) continue;
+        const stored = Number(row.message_count ?? 0);
+        const counted = await port.data.query<{ total?: number }>("messages.count", { session_id: id });
+        const total = Number(counted?.total ?? 0);
+        if (total === stored) continue;
+        SessionStorage.updateSession(id, { messageCount: total });
+        result.recountedSessions += 1;
+      }
+      if (result.recountedSessions > 0) {
+        console.log(`[Maintenance] 会话计数对账：修正 ${result.recountedSessions} 个会话的 message_count`);
+      }
+    } catch (e) {
+      console.warn("[Maintenance] 会话计数对账失败（跳过）:", e);
     }
   } catch (e) {
     console.warn("[Maintenance] 维护失败（不影响使用）:", e);

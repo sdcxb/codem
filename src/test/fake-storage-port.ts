@@ -712,6 +712,29 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
 
   const data: StorageDataPort = {
     async query<T>(command: string, params?: Record<string, unknown>, page?: PageRequest): Promise<Page<T>> {
+      /**
+       * `messages.count`：真引擎返回 `{count, total, visible, hidden}`（见 `repo.rs::messages_count`）。
+       *
+       * 为什么必须**在通用分支之前**实现（第 44 轮实测踩到）：
+       * 通用分支用 `params.table ?? command.split("_")[0]` 猜表名，而这条命令的名字里
+       * **没有下划线**（`messages.count`），于是 `split("_")[0]` 原样返回 `"messages.count"` ——
+       * 表名不存在 → 命中空表 → `total` 恒为 **0**。
+       * 后果不是"读不到"，而是 `maintenance.ts` 的会话计数对账会把
+       * `sessions.message_count` **写成 0**（真值 5、写成 0），也就是"测试里看起来跑了、实际写坏数据"。
+       * 这正是本仓库反复消灭的那类偏差：测试双必须与实现同语义，而不是"能跑就行"。
+       */
+      if (command === "messages.count") {
+        const sid = String(params?.session_id ?? "");
+        if (!sid) throw new Error("fake-port: messages.count 缺少 session_id");
+        const all = table("messages").filter((r) => r.session_id === sid);
+        const visible = all.filter((r) => Number(r.hidden ?? 0) === 0).length;
+        return {
+          count: all.length,
+          total: all.length,
+          visible,
+          hidden: all.length - visible,
+        } as unknown as Page<T>;
+      }
       const name = String(params?.table ?? command.split("_")[0] ?? "");
       let rows = table(name).map(cloneRow) as T[];
       const where = params?.where as Record<string, unknown> | undefined;
@@ -855,6 +878,28 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         const offset = Number(params?.offset ?? 0);
         const items = rows.slice(offset, offset + limit);
         return { items, has_more: offset + items.length < rows.length, next_cursor: null } as unknown as T;
+      }
+      /**
+       * `messages.count`：真引擎返回 `{count, total, visible, hidden}`（见 `repo.rs::messages_count`）。
+       *
+       * 为什么必须实现（第 44 轮）：`maintenance.ts` 的"会话计数对账"用它把
+       * `sessions.message_count` 修回索引真值。假端口原来对这条命令落到**通用列表分支**
+       * （它把任何命令都当成"取某张表的行"），于是 `params.table` 缺失、`command.split("_")[0]`
+       * 得到 `"messages"` —— 返回的是一**页消息行**而不是计数对象，
+       * `counted.total` 因此恒为 `undefined` → 对账会把 `message_count` 写成 **0**。
+       * 也就是说：假端口不实现它，这条对账在测试里会"看起来跑了、实际写坏数据"。
+       */
+      if (command === "messages.count") {
+        const sid = String(params?.session_id ?? "");
+        if (!sid) throw new Error("fake-port: messages.count 缺少 session_id");
+        const rows = table("messages").filter((r) => r.session_id === sid);
+        const visible = rows.filter((r) => Number(r.hidden ?? 0) === 0).length;
+        return {
+          count: rows.length,
+          total: rows.length,
+          visible,
+          hidden: rows.length - visible,
+        } as unknown as T;
       }
       /**
        * `migration.auto`：测试双按"从旧库搬 N 条消息"的等价语义实现 ——
