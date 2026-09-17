@@ -56,6 +56,9 @@ import type {
   StoragePort,
   StorageDataPort,
 } from "../core/storage/port";
+// 运行时值（不是 type）：假端口要能抛出与真引擎同码的错误（`CONSTRAINT`），
+// 否则"主键冲突"在测试里只能是一句普通 Error，`retryable` 分类会与真机分叉。
+import { StorageError } from "../core/storage/port";
 
 type Row = Record<string, unknown>;
 
@@ -221,6 +224,23 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       const target = table(name);
       for (const row of rows) {
         const idx = target.findIndex((r) => r[pk] === row[pk]);
+        /**
+         * ⚠️ `mode !== "replace"` 是**裸 INSERT**，主键冲突必须**报错**（第 45 轮线协议审计 P2-1）。
+         *
+         * 真实现见 `crud.rs:518-527`：只有 `mode === "replace"` 才会走
+         * "先 UPDATE 再 INSERT"，其余一律是 `INSERT INTO …` —— 同一主键写第二次会撞
+         * `UNIQUE constraint failed`。
+         *
+         * 假端口原来把两种模式都当成 upsert（"有就合并、没有就插入"），于是
+         * **"重放同一批行"在测试里永远成功、在真机上必然报错**。这不是理论问题：
+         * `telemetry.ts` 的 `directWrite()` 探测就是"把同一批行再写一遍来观察错误码"，
+         * 它传的正是 `mode: "insert"` —— 真机上每一次成功写入之后的那次探测都会撞主键，
+         * 于是"写成功"被分类成"可重试失败"（详见该文件的注释与 `cost-limit-null` 之外的
+         * 遥测用例）。测试双比实现宽松，正是本仓库反复消灭的那类偏差。
+         */
+        if (idx >= 0 && !replace) {
+          throw new StorageError("CONSTRAINT", `UNIQUE constraint failed: ${name}.${pk}`);
+        }
         if (idx >= 0) target[idx] = replace ? cloneRow(row) : { ...target[idx], ...cloneRow(row) };
         else target.push(cloneRow(row));
       }

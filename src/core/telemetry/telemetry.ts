@@ -153,8 +153,24 @@ function isDeterministicRejection(err: unknown): boolean {
  * ## 代价与为什么它不产生重复行
  *
  * - 代价：**每个分片每轮 flush 2× IPC / 2× WAL 写入**；
- * - 无重复行：`telemetry_events.id` 是 `TEXT PRIMARY KEY`（`schema.sql`），
- *   而 `crud.upsert` 是 `INSERT OR REPLACE` —— 幂等，重放只是把同一行再写一遍。
+ * - 无重复行、且重放必须**幂等**：`telemetry_events.id` 是 `TEXT PRIMARY KEY`（`schema.sql`）。
+ *
+ * ⚠️ **第 45 轮修正（线协议审计 P2-1）：探测必须用 `mode: "replace"`，不能沿用默认的 `insert`。**
+ *
+ * 默认模式在引擎侧是**裸 `INSERT`**（`crud.rs:518-527`：只有 `mode === "replace"` 才走
+ * "先 UPDATE 再 INSERT"），所以"把同一批行重放一遍"会撞 `UNIQUE constraint failed` ——
+ * 而这个探测的**全部用途**就是重放同一批行去观察错误码。结果是：
+ * **每一次成功写入之后的探测都必然失败**，`trackShard` 于是把"写成功了"分类成"可重试失败"
+ * （`CONSTRAINT`/`UNIQUE` 会被当成确定性拒绝 → 更糟：直接把好行从缓冲里剔除并计进失败数）。
+ *
+ * 为什么之前的测试没抓到：假端口把 `insert` 与 `replace` **都**实现成 upsert
+ * （"有就合并、没有就插入"），于是"重放"在测试里永远成功、在真机上必然报错。
+ * 这条偏差已随假端口的保真度修正暴露出来（4 条遥测用例当场变红），现在两边都对齐了：
+ * 假端口按真引擎语义对 `insert` 报主键冲突，这里改用 `replace`（幂等，且**不是**危险的
+ * `INSERT OR REPLACE` —— 引擎的 replace 是先 UPDATE 再 INSERT，不会级联删子表）。
+ *
+ * 用 `replace` 仍然能探测外键：目标 `sessions` 行不存在时，INSERT 分支照旧会报
+ * `FOREIGN KEY constraint failed`（UPDATE 影响 0 行 → 落到 INSERT）。
  *
  * @returns 一个"写一批行"的函数；端口不可用时返回 `null`（调用方据此不结账）
  */
@@ -162,7 +178,7 @@ function directWrite(): ((table: string, rows: Array<Record<string, unknown>>) =
   try {
     if (!hasStoragePort()) return null;
     const port = getStoragePort();
-    return (table, rows) => port.data.execute("crud.upsert", { table, rows, mode: "insert" });
+    return (table, rows) => port.data.execute("crud.upsert", { table, rows, mode: "replace" });
   } catch {
     /*
      * 端口查询本身出错（模块初始化异常等）→ **不猜**，按"拿不到探测能力"处理：
