@@ -264,7 +264,7 @@ import { getProject as getStoredProject } from "./core/storage/project";
 const GameViewLazy = lazy(() => import("./plugins/monopoly-game/components/GameView").then(m => ({ default: m.GameView })));
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
-import type { Message } from "./store";
+import type { Message, ToolCall } from "./store";
 import { useProjectStore } from "./core/store";
 import { setGlobalCwd } from "./utils/file-link";
 import { loadAppIdentity } from "./core/config/loader";
@@ -1110,6 +1110,40 @@ const streamBufferRef = useRef<Map<string, { id: string; text: string; timer: Re
 // Reasoning buffer — same pattern as text buffer, batch reasoning updates to 100ms
 const reasoningBufferRef = useRef<Map<string, { id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>>(new Map());
 const generatedFilesRef = useRef<Set<string>>(new Set());
+/**
+ * P0-1：当前正在跑的 `runAgenticLoop` 的**那份消息快照**（见 loop 里的 `loopMessages`）。
+ *
+ * 为什么用 ref 而不是把 `loopMessages` 直接传进来：`flushStreamBuffer` /
+ * `flushReasoningBuffer` 是组件级 `useCallback`（定义在 loop 之前），
+ * 而 `loopMessages` 是每次调用 loop 时新建的局部量 —— 只能通过 ref 共享。
+ * 一次只有一个活跃的流式 loop（`streamingSessionIdRef` 也是同一个假设），
+ * 所以单个 ref 足够；`sessionId` 用来防止"上一个 loop 的残留"被误用。
+ */
+const loopMessageSnapshotRef = useRef<{ sessionId: string; messages: Map<string, Message> } | null>(null);
+/**
+ * 把一段**流式增量**记进 loop 自己那份消息里。
+ *
+ * 为什么必须有：`buffer.text` 原来只在"正在查看这个会话"时才通过
+ * `appendToMessage` 进 store，**非查看态直接丢弃**（`buffer.text = ""`）——
+ * 于是后台会话的正文从头到尾只存在于内存 buffer 里，用户切回来时它已经没了。
+ * 光把消息落库还不够：落下去的那条 `content` 会是空壳。
+ *
+ * ⚠️ 这里刻意**不**读 store 里那条消息（不 `useAppStore.getState().messages.find()`）：
+ * 归属不一致时（用户已切走）那份列表属于别的会话，按 id 去查可能**命中别的会话的同名 id**
+ * 并把两边的正文拼在一起。内容只从 loop 自己那份里取，来源单一。
+ */
+const appendToLoopSnapshot = (
+  sessionId: string,
+  messageId: string,
+  text: string,
+  field: "content" | "reasoning",
+) => {
+  const snapshot = loopMessageSnapshotRef.current;
+  if (!snapshot || snapshot.sessionId !== sessionId || !text) return;
+  const own = snapshot.messages.get(messageId);
+  if (!own) return;
+  snapshot.messages.set(messageId, { ...own, [field]: (own[field] || "") + text } as Message);
+};
   const flushStreamBuffer = useCallback((sessionId?: string) => {
     const buffers = streamBufferRef.current;
     // If sessionId given, flush only that session's buffer; otherwise flush all
@@ -1121,6 +1155,9 @@ const generatedFilesRef = useRef<Set<string>>(new Set());
         const viewing = useProjectStore.getState().currentSession?.id;
         if (viewing === sessionId) {
           appendToMessage(buffer.id, buffer.text);
+        } else if (sessionId) {
+          // P0-1：**非查看态不再丢文本** —— 记进 loop 自己那份，落库时它才不是空壳
+          appendToLoopSnapshot(sessionId, buffer.id, buffer.text, "content");
         }
         buffer.text = "";
       }
@@ -1142,6 +1179,9 @@ const generatedFilesRef = useRef<Set<string>>(new Set());
           if (msg) {
             useAppStore.getState().updateMessage(buffer.id, { reasoning: (msg.reasoning || "") + buffer.text } as any);
           }
+        } else if (sessionId) {
+          // P0-1：同上 —— 后台会话的 reasoning 也要进 loop 自己那份
+          appendToLoopSnapshot(sessionId, buffer.id, buffer.text, "reasoning");
         }
         buffer.text = "";
       }
@@ -2573,27 +2613,131 @@ streamingSessionIdRef.current = session.id;
     // Record start time for execution timer
     useAppStore.getState().setStreamStartTime(Date.now());
 
+    /**
+     * ===== P0-1：这个 loop **自己的那份消息列表**（跨会话污染的修法） =====
+     *
+     * ## 为什么必须由 loop 自己记
+     *
+     * 原来的 `safeAddMessage` 长这样：
+     * ```
+     * if (isViewingSession()) addMessage(msg);
+     * if (session) saveMessages(session.id);          // ← 注释写着 "Always persist to DB regardless"
+     * ```
+     * 两句合起来是**两个方向都错**：
+     *
+     * 1. `saveMessages(sessionId)` 内部写的是 `get().messages`，也就是"**当前加载的那个会话**"
+     *    的列表 —— 用户切走之后那份列表属于别的会话，于是**别的会话的消息被按本会话落库**
+     *    （权威 JSONL 按 sessionId 决定文件名，读路径还会把它合并显示出来）；
+     * 2. `addMessage` 被"只在查看时更新 UI"拦掉之后，"持久化"实际上依赖 store 列表 ——
+     *    于是**后台会话自己产生的 App 级消息一条都没落库**，注释里那句承诺是假的
+     *    （真机形态：后台跑完一轮，切回去看不到那轮的系统消息/工具消息）。
+     *
+     * 修法：loop 维护自己创建/更新的那几条消息（下面的 `loopMessages`），落库一律走
+     * `saveMessages(session.id, [...loopMessages.values()])` —— **explicit 形态**，
+     * 于是"写谁的消息"由 loop 自己声明，与用户当前在看哪个会话彻底解耦。
+     *
+     * ## 为什么初始要装一份"快照"而不是空 Map
+     *
+     * loop 开始时（用户还在看这个会话）store 里那份列表就是本会话的当前全量；
+     * 把它装进来，loop 的落库才是"本会话的完整列表"。否则一旦用户切走，
+     * loop 再落库就只剩自己新建的几条，而 store 里那份**本会话**的既有消息
+     * 再也不会有任何调用点去写（autosave 也被 `messagesSessionRef` 挡住了）。
+     *
+     * 快照只在归属一致时取（`loadedSessionId === session.id`）—— 不一致说明
+     * store 里那份是别的会话的，一条都不能进 loop 的这份。
+     */
+    const loopMessages = new Map<string, Message>();
+    {
+      const store = useAppStore.getState();
+      if (store.loadedSessionId === session.id) {
+        for (const m of store.messages) loopMessages.set(m.id, m);
+      }
+    }
+    /**
+     * 把这个 loop 的这份快照挂到组件级 ref 上，供上面的
+     * `appendToLoopSnapshot`（流式 buffer 的两条 flush 路径）写入。
+     * loop 结束时清掉，避免下一个会话的 loop 误用上一轮的残留。
+     */
+    loopMessageSnapshotRef.current = { sessionId: session.id, messages: loopMessages };
+
+    /**
+     * 落库：**只写本 loop 自己那份**（explicit），并返回同一个 Map 供上层同步取用。
+     *
+     * 选 `saveMessages(session.id, explicit)` 而不是直接 `MessageStorage.createMessage(msg, session.id)`：
+     * - 前者保留了 `saveMessages` 既有的两件事 —— 指纹去重（第 91 波：长会话下绝大多数消息
+     *   内容没变，不该反复写库）与统一失败上报（`reportPersistFailure("store.saveMessages")`）；
+     * - 后者会绕开它们，把"每次 start/tool_start/tool_complete/tool_error/finally 都全量重写"
+     *   请回来（那正是存储压力的来源），而且失败再也不可见。
+     * 另外它就是**同步**的（内部逐条同步 `MessageStorage.createMessage`），不引入 await。
+     */
+    const persistLoopMessages = () => {
+      if (!session) return;
+      saveMessages(session.id, [...loopMessages.values()]);
+    };
+
+    // Helper: check if this session is currently being viewed (for UI updates)
+    const isViewingSession = () => {
+      const viewing = useProjectStore.getState().currentSession?.id;
+      return viewing === session.id;
+    };
+    /**
+     * Safe message helpers：**UI 只在查看这个会话时更新**（这条行为不变），
+     * 但**落库与查看态无关** —— 一律写 loop 自己那份（上面 `persistLoopMessages`）。
+     *
+     * ⚠️ 这几个 helper 必须定义在 `try` **之外**：`catch` 分支也要用
+     * （原来的 `catch` 里那句裸 `addMessage` 会把错误气泡加进"当前显示的会话"）。
+     */
+    const safeAddMessage = (msg: Message) => {
+      // 先记进 loop 自己那份：即使此刻没在看这个会话，这条也必须有归属、必须落库
+      loopMessages.set(msg.id, msg);
+      if (isViewingSession()) addMessage(msg);
+      persistLoopMessages();
+    };
+    const safeUpdateMessage = (id: string, update: any) => {
+      // loop 自己那份同步更新（落库时写的才是"最新版本"，而不是创建时的空壳）
+      const own = loopMessages.get(id);
+      if (own) loopMessages.set(id, { ...own, ...update });
+      if (isViewingSession()) useAppStore.getState().updateMessage(id, update);
+    };
+    /**
+     * 工具调用的等价物。
+     *
+     * 原实现是 `if (isViewingSession()) addToolCall(...)` / `updateToolCall(...)` —— 于是
+     * **非查看态那次工具调用根本没进 loop 的这份列表**，落库写下去的消息永远是"没有工具调用"
+     * 的版本。而下一轮迭代要从存储里读回工具调用来构造上下文
+     * （见下面 `Immediately save tool call so agentic loop can read it` 的注释），
+     * 读到的就是缺了 `result` 的旧版本 → 模型看不到自己刚拿到的结果（会反复重发同一个调用）。
+     * 这里把两边都做：UI 仍然只在查看时更新，loop 自己那份无论何时都更新。
+     */
+    const applyToolCallToOwnCopy = (
+      messageId: string,
+      mutate: (toolCalls: ToolCall[]) => ToolCall[],
+    ) => {
+      const own = loopMessages.get(messageId);
+      if (!own) return;
+      loopMessages.set(messageId, { ...own, toolCalls: mutate(own.toolCalls || []) });
+    };
+    const safeAddToolCall = (messageId: string, toolCall: ToolCall) => {
+      applyToolCallToOwnCopy(messageId, (list) =>
+        list.some((t) => t.id === toolCall.id)
+          ? list.map((t) => (t.id === toolCall.id ? { ...t, ...toolCall } : t))
+          : [...list, toolCall],
+      );
+      if (isViewingSession()) addToolCall(messageId, toolCall);
+    };
+    const safeUpdateToolCall = (messageId: string, toolId: string, update: Partial<ToolCall>) => {
+      applyToolCallToOwnCopy(messageId, (list) =>
+        list.map((t) => (t.id === toolId ? { ...t, ...update } : t)),
+      );
+      if (isViewingSession()) updateToolCall(messageId, toolId, update);
+    };
+
     // Watchdog timer lives outside try so the finally block can clear it.
     let watchdogTimer: ReturnType<typeof setInterval> | undefined;
     try {
 console.log(`[runAgenticLoop] starting engine.process for session=${session.id}`);
 const sessionAbort = new AbortController();
 abortControllersRef.current.set(session.id, sessionAbort);
-
-// Helper: check if this session is currently being viewed (for UI updates)
-const isViewingSession = () => {
-  const viewing = useProjectStore.getState().currentSession?.id;
-  return viewing === session.id;
-};
-// Safe message helpers: only update UI if viewing this session, always save to DB
-const safeAddMessage = (msg: any) => {
-  if (isViewingSession()) addMessage(msg);
-  // Always persist to DB regardless
-  if (session) saveMessages(session.id);
-};
-const safeUpdateMessage = (id: string, update: any) => {
-  if (isViewingSession()) useAppStore.getState().updateMessage(id, update);
-};
 
       // 事件级 idle 看门狗：仅当连续 WATCHDOG_IDLE_MS 无任何事件输出才触发。
       // 触发后 abort 该会话底层 LLM 调用并强制清理状态，让会话恢复可用。
@@ -2722,7 +2866,8 @@ const safeUpdateMessage = (id: string, update: any) => {
           case "reasoning_delta":
             reasoningContent += event.text;
             // Create assistant message if it doesn't exist yet (reasoning often arrives before text)
-            if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+            // 判据同 text_delta：问 loop 自己那份，而不是"当前显示的那个会话"的列表（P0-1）
+            if (!loopMessages.has(assistantMsgId)) {
               safeAddMessage({
                 id: assistantMsgId,
                 role: "assistant",
@@ -2762,14 +2907,13 @@ const safeUpdateMessage = (id: string, update: any) => {
 // Finalize previous, create new message — same for both modes
 flushStreamBuffer(session.id);
 flushReasoningBuffer(session.id);
-              if (useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+              if (loopMessages.has(assistantMsgId)) {
                 safeUpdateMessage(assistantMsgId, {
                   status: "done",
                   reasoning: reasoningContent || undefined,
                 } as any);
-                if (session) {
-                  saveMessages(session.id);
-                }
+                // P0-1：写 loop 自己那份（不能用无 explicit 的 saveMessages —— 那会写"当前显示的会话"）
+                persistLoopMessages();
               }
               // Start a new assistant message for this iteration
               lastAssistantMsgId = assistantMsgId;
@@ -2819,7 +2963,12 @@ flushReasoningBuffer(session.id);
 
           case "text_delta":
             assistantContent += event.text;
-            if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+            /*
+             * 判据换成 loop 自己那份（P0-1）。原来问的是 `useAppStore.getState().messages`：
+             * 用户切走之后那份列表属于**别的**会话，这里永远查不到 → 每个 delta 都会
+             * `safeAddMessage` 一次（非查看态下就是"每 100ms 把同一条消息重写一遍库"）。
+             */
+            if (!loopMessages.has(assistantMsgId)) {
               safeAddMessage({
                 id: assistantMsgId,
                 role: "assistant",
@@ -2857,7 +3006,7 @@ flushReasoningBuffer(session.id);
               });
             }
             if (tc) {
-              if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+              if (!loopMessages.has(assistantMsgId)) {
                 safeAddMessage({
                   id: assistantMsgId,
                   role: "assistant",
@@ -2869,16 +3018,17 @@ flushReasoningBuffer(session.id);
               let buf2 = streamBufferRef.current.get(session.id);
               if (!buf2) { buf2 = { id: "", text: "", timer: null }; streamBufferRef.current.set(session.id, buf2); }
               buf2.id = assistantMsgId;
-              if (isViewingSession()) addToolCall(assistantMsgId, {
+              // UI：只在查看本会话时更新；loop 自己那份**无论何时**都要记
+              // （否则落库写下去的是"没有工具调用"的版本 —— 下一轮迭代读回来就缺 result）
+              safeAddToolCall(assistantMsgId, {
                 id: tc.id,
                 tool: tc.name,
                 args: { ...tc.input, name: tc.input?.name || (tc as any).metadata?.name },
                 status: "running",
               });
               // Immediately save tool call so agentic loop can read it
-if (session) {
-saveMessages(session.id);
-}
+              // P0-1：explicit 形态（写 loop 自己那份），且**保留即时性** —— 下一轮迭代要读回来
+              persistLoopMessages();
             }
             break;
           }
@@ -2911,7 +3061,9 @@ saveMessages(session.id);
               const resultStatus = (event.result && typeof event.result === "object" && "status" in event.result)
                 ? (event.result as any).status
                 : undefined;
-              if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
+              // UI 只在查看时更新；loop 自己那份必须记下 result ——
+              // 下一轮迭代就是从存储里读回工具调用结果的，缺了它就等于模型看不到自己的输出
+              safeUpdateToolCall(assistantMsgId, tc.id, {
                 status: resultStatus === "error" ? "error" : "done",
                 result: resultStr,
                 metadata: toolMetadata,
@@ -2927,9 +3079,8 @@ saveMessages(session.id);
                 }));
               }
               // Immediately save so next agentic loop iteration can read it
-if (session) {
-saveMessages(session.id);
-}
+              // P0-1：explicit 形态（写 loop 自己那份）
+              persistLoopMessages();
             }
             break;
           }
@@ -2947,14 +3098,16 @@ saveMessages(session.id);
             
             if (tc) {
               if (tc.id) {
-                if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
+                // UI 只在查看时更新；loop 自己那份无论何时都记（工具调用必须留下"失败"这个事实）
+                safeUpdateToolCall(assistantMsgId, tc.id, {
                   status: "error",
                   result: err,
                 });
               } else {
                 // executeIteration 级错误（无具体 tool call）— 空 id 的
                 // updateToolCall 无效，用户看不到任何反馈。直接上报错误消息。
-                if (isViewingSession()) safeAddMessage({
+                // P0-1：safeAddMessage 的 UI 那一支仍然按查看态，但**落库不再依赖查看态**
+                safeAddMessage({
                   id: 'tool-error-' + Date.now(),
                   role: "system",
                   content: `⚠️ 工具执行失败：${err}`,
@@ -2963,9 +3116,8 @@ saveMessages(session.id);
                 });
               }
               // Immediately save tool error
-if (session) {
-saveMessages(session.id);
-}
+              // P0-1：explicit 形态（写 loop 自己那份）
+              persistLoopMessages();
             }
             break;
           }
@@ -2986,9 +3138,13 @@ saveMessages(session.id);
             // (it still contains the pre-compaction messages), and writing it back
             // would re-create the soft-deleted messages as non-hidden, undoing the
             // compaction. The DB is the source of truth after compaction.
-        if (session) {
-          loadMessages(session.id);
-        }
+            /*
+             * P0-1（同类）：`loadMessages` 是**UI 的读**，它会连 `loadedSessionId` 一起改掉。
+             * 后台会话压缩完成时若无条件调用，就会把**别的会话**的列表铺到用户正在看的界面上，
+             * 并把归属改成后台会话（于是用户那个会话的 autosave 全部被守卫拒绝）。
+             * 所以这一句与 `addMessage` 同一条规则：只在查看本会话时做。
+             */
+            if (isViewingSession()) loadMessages(session.id);
             // P1-8: 恢复宠物状态 + 压缩完成气泡
             getPet().setPetState("idle");
             if (removed > 0) {
@@ -3177,14 +3333,16 @@ saveMessages(session.id);
       }
     } catch (error: any) {
       
-      addMessage({
+      // P0-1：错误消息也必须落进 loop 自己那份（原来这句 addMessage 连 UI 都会漏到别的会话上：
+      // `addMessage` 写的是**当前加载的列表** —— 后台会话出错时它把错误气泡加到了别的会话里，
+      // 再被 autosave 保存到那个会话。safeAddMessage 的 UI 那一支仍按查看态。
+      safeAddMessage({
         id: 'err-' + Date.now(),
         role: 'system',
         content: '[Error] ' + (error.message || String(error)),
         timestamp: Date.now(),
         status: 'error',
       });
-      if (session) saveMessages(session.id);
     } finally {
 if (watchdogTimer) clearInterval(watchdogTimer);
 // Flush any remaining buffered text for this session
@@ -3215,8 +3373,12 @@ resetWriteConfirmStats(session.id);
 }
 streamingSessionIdRef.current = null;
 abortControllersRef.current.delete(session?.id || "");
-      if (session) {
-        saveMessages(session.id);
+      // P0-1：回合结束时把 loop 自己那份落库（explicit 形态）——
+      // 用户已经切走时，这一步就是"后台跑完的那轮消息"唯一的落库点
+      persistLoopMessages();
+      // 快照用完就摘掉（只属于这一次 loop）
+      if (loopMessageSnapshotRef.current?.messages === loopMessages) {
+        loopMessageSnapshotRef.current = null;
       }
       // Task completion notification when app is in background or minimized
       if (!windowVisibleRef.current) {
