@@ -21,6 +21,7 @@ import * as SessionStorage from "../storage/session";
 import * as MessageStorage from "../storage/message";
 import * as ProjectStorage from "../storage/project";
 import { initDatabase } from "../storage/database";
+import { getStoragePort, hasStoragePort } from "../storage/port";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { getLLMEngine } from "../llm";
 import {
@@ -543,7 +544,23 @@ function defaultWorkspacePath(): Promise<string> {
 }
 
 async function ensureWorkspaceProject(cwd: string): Promise<void> {
-  await initDatabase();
+  /**
+   * ⚠️ 第 18 轮（真机缺陷）：这里原来是**无条件** `await initDatabase()`。
+   *
+   * rust 模式下旧库刻意不加载，而这句会把 sql.js **重新拖回渲染进程**并整库读写
+   * `codem-db.bin`（真机日志形态：`[Database] sql.js 引擎：wasm` +
+   * `Loaded 11137024 bytes from file` + `Saved 11137024 bytes to file`）——
+   * 也就是"渲染进程不再持有 WASM 数据库"这件事**被这一句无声地废掉**，
+   * 顺带把一次性省下的内存全花回来、还会重写迁移源那份旧库文件。
+   *
+   * 同样的坑在 `storage/migration.ts` 里已经修过一次（那里留着详细的事故记录），
+   * 这处是漏网的最后一处。判据一样：**只有引擎是旧库时才需要初始化旧库**；
+   * 端口模式下 `ProjectStorage` 的读写本来就只走域端口。
+   */
+  const rustActive = hasStoragePort() && getStoragePort().kind === "rust";
+  if (!rustActive) {
+    await initDatabase();
+  }
   const now = Date.now();
   if (!ProjectStorage.getProject(WX_PROJECT_ID)) {
     ProjectStorage.createProject({

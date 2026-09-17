@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { useLang, S } from "../core/i18n/lang";
 import { getTelemetry } from "../core/telemetry/telemetry";
-import { getDatabase, persistDatabase } from "../core/storage";
 
 interface PerformanceDashboardProps {
   onClose: () => void;
@@ -52,6 +51,8 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
   const [, setTick] = useState(0);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [exportMsg, setExportMsg] = useState("");
+  /** 清空结果回执（第 18 轮）：原来清空是"点了没有任何反馈"，成败都看不出来 */
+  const [clearMsg, setClearMsg] = useState("");
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const telemetry = getTelemetry();
@@ -75,22 +76,30 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
   const latencyStats = telemetry.getLatencyStats();
 
   const handleClearAll = useCallback(() => {
+    /**
+     * 第 18 轮：这里原来有一条 A 态回退 —— `clearAll()` 返回 `null`（端口未接手）时
+     * 组件**自己去 `getDatabase()` + `db.run("DELETE FROM telemetry_events")`**。
+     * 在 rust 模式下那句必抛 `Database not initialized`，被 catch 吞成一行 warn，
+     * 而下面的 `setShowClearConfirm(false)` 在抛点之后 → **确认弹窗不关、界面像卡住**。
+     *
+     * 现在 `clearAll()` 只返回真实删除行数（失败走 persist-failure 如实上报），
+     * 组件不再碰数据库（D 类边界违例一并消除）。
+     */
+    let removed = 0;
     try {
-      // P5 第 2 段：不再由组件直接操作数据库（那是 D 类边界违例，
-      // 而且在 rust 引擎下会打在旧库上）。清空逻辑收进采集器、走域端口。
-      const removed = telemetry.clearAll();
-      if (removed === null) {
-        // 端口未接手（回滚到 wasm）→ 回退旧路径，行为与迁移前一致
-        const db = getDatabase();
-        db.run("DELETE FROM telemetry_events");
-        persistDatabase();
-      }
-      setShowClearConfirm(false);
-      refresh();
+      removed = telemetry.clearAll();
     } catch (err) {
       console.warn("[PerfDashboard] Clear failed:", err);
     }
-  }, [refresh, telemetry]);
+    // 不管成败都要关确认框、刷新一次 —— 否则用户以为"点了没反应"
+    setShowClearConfirm(false);
+    setClearMsg(
+      removed > 0
+        ? (lang === "zh" ? `已清空 ${removed} 条遥测事件` : `Cleared ${removed} telemetry events`)
+        : (lang === "zh" ? "没有可清空的遥测事件（若刚写过，见失败提示）" : "Nothing to clear (see failure notice if any)"),
+    );
+    refresh();
+  }, [refresh, telemetry, lang]);
 
   const handleExportOTel = useCallback(() => {
     // Export all sessions' OTel data
@@ -166,6 +175,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         {exportMsg && (
           <div className="perf-msg">{exportMsg}</div>
         )}
+        {clearMsg && <div className="perf-msg">{clearMsg}</div>}
 
         {/* Content */}
         <div className="perf-content">

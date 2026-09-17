@@ -1110,6 +1110,29 @@ async function loadSqlJsEngine(): Promise<any> {
 export async function initDatabase(): Promise<SqlJsDatabase> {
   if (db) return db;
 
+  /**
+   * **rust 模式下这个入口必须拒绝，而不是"顺手把 WASM 库加载起来"**（第 18 轮）。
+   *
+   * 为什么要有这道闸：`markLegacyDbNotUsed()` 表达的约定是"本进程不用旧库"，
+   * 但它此前**只是约定** —— 全仓任何一处 `await initDatabase()` 都会把 sql.js
+   * 重新拖回渲染进程并整库读写 `codem-db.bin`（真机日志：
+   * `[Database] sql.js 引擎：wasm` + `Loaded 11137024 bytes from file` +
+   * `Saved 11137024 bytes to file`）。实测踩到两处：`storage/migration.ts`
+   * （已修，那里留着详细事故记录）与 `wechat-bridge.ts::ensureWorkspaceProject`
+   * （漏网，第 18 轮修）。也就是说："渲染进程不再持有 WASM 数据库"这件事
+   * 曾经被一句无害的调用**无声地废掉**，而且没有任何测试能发现。
+   *
+   * 现在把它变成**运行期不变量**：rust 模式下调用即抛，日志里第一眼就能看到；
+   * 同时这条 throw 也是"这个文件还不该被调用"的自解释提示（L1 之后整个入口都会消失）。
+   */
+  if (legacyDbIntentionallyAbsent()) {
+    throw new Error(
+      "引擎是 rust：本进程刻意不加载旧库（initDatabase 是旧引擎专用入口）。" +
+        "新增功能请改走存储端口（domainRead*/domainWrite/域命令）；" +
+        "若这是维护/迁移逻辑，请先判断引擎再决定是否初始化旧库。",
+    );
+  }
+
   const SQL = await loadSqlJsEngine();
   sqlJsModule = SQL;
 
@@ -1228,6 +1251,17 @@ const migrations = [
 }
 
 export async function resetDatabase(): Promise<SqlJsDatabase> {
+  /**
+   * ⚠️ 第 18 轮：闸门必须在**删文件之前**（这个函数会 `delete_file codem-db.bin`）。
+   * rust 模式下 `codem-db.bin` 是**迁移源**（引擎的库是另一份），
+   * 让这个入口在 rust 模式下静默删掉它，等于把用户的迁移基线抹了。
+   */
+  if (legacyDbIntentionallyAbsent()) {
+    throw new Error(
+      "引擎是 rust：resetDatabase 会删掉旧库文件（迁移源），已拒绝。" +
+        "本进程的存储由 Rust 引擎持有，请用引擎侧命令维护。",
+    );
+  }
   if (db) {
     db.close();
     db = null;
@@ -1370,6 +1404,12 @@ export interface MaintenanceResult {
   rebuiltIndexMessages: number;
   /** 本次从 SQLite 索引裁剪掉的消息数（第 78 波） */
   trimmedIndexMessages: number;
+  /** 本次预热的外置附件正文数（第 18 轮：这些数字原来只在日志里出现，真机看不到） */
+  warmedAttachments: number;
+  /** 本次清理的孤儿附件文件数 */
+  prunedAttachmentOrphans: number;
+  /** 本次压缩的追加日志会话数（权威副本的膨胀控制） */
+  compactedLogSessions: number;
 }
 
 /**
@@ -1405,6 +1445,28 @@ export interface MaintenanceResult {
  *   - `telemetry_events`：本地遥测，按天保留（只用于本地统计，删除不影响任何状态重建）；
  *   - `VACUUM`：删除后回收文件空间（带两个护栏，见下）。
  */
+/**
+ * 遥测裁剪的**端口版**（rust 模式，第 18 轮）。
+ *
+ * 引擎侧 `telemetry.prune` 刻意要求显式水位线 `before`（没有它直接报错），
+ * 因为"以为传了条件其实全表清空"这类事故的代价太高。这里传明确的时间戳。
+ *
+ * 失败不抛：维护永远不能让应用不可用；但要**如实留痕**（否则又变成"看起来做了"）。
+ */
+async function pruneTelemetryViaPort(before: number): Promise<number> {
+  try {
+    const { hasStoragePort, getStoragePort } = await import("./port");
+    if (!hasStoragePort()) return 0;
+    const port = getStoragePort();
+    if (port.kind !== "rust") return 0;
+    const res = await port.data.execute("telemetry.prune", { before });
+    return Number(res?.written ?? 0);
+  } catch (e) {
+    console.warn("[Database] 遥测裁剪（端口）失败（跳过）:", e);
+    return 0;
+  }
+}
+
 export async function runDatabaseMaintenance(
   opts: {
     keepEventsPerSession?: number;
@@ -1441,11 +1503,43 @@ export async function runDatabaseMaintenance(
     backfilledMessages: 0,
     rebuiltIndexMessages: 0,
     trimmedIndexMessages: 0,
+    warmedAttachments: 0,
+    prunedAttachmentOrphans: 0,
+    compactedLogSessions: 0,
   };
-  if (!db || dbFatal) return { ...result, sizeAfter: result.sizeBefore };
+
+  /**
+   * ⚠️ **真机缺陷修正（第 18 轮）**：这一行的原来写法是
+   *
+   * ```ts
+   * if (!db || dbFatal) return { ...result, sizeAfter: result.sizeBefore };
+   * ```
+   *
+   * 而引擎切到 rust 之后，`db` 在正常路径下**永远是 `null`**（旧库刻意不加载，
+   * 那正是省内存的前提；`getDatabase()` 在 rust 模式下抛 "Database not initialized"
+   * 就是这个事实的另一面）。于是整个维护函数**在真机上一行都没跑**：
+   *
+   * - 追加日志（权威副本）的回填与压缩 —— 从未执行；
+   * - 索引裁剪 `trimIndexedMessages` —— 从未执行；
+   * - 外置附件正文预热与孤儿清理 —— 从未执行（只有按需的单会话预热在跑）；
+   * - 崩溃后"索引重建标记"驱动的自愈（`rebuildIndexFromSessionLogs`）—— 从未执行。
+   *
+   * 而 `App.tsx` 每次启动都会 `await runDatabaseMaintenance()` —— 也就是说这件事
+   * **看起来在做，实际没做**（这比"没这个功能"更糟：日志里只有"维护失败"以外的沉默）。
+   *
+   * 现在把它拆成两半，判据是"这一步依赖旧库吗"：
+   *
+   * | 半边 | 内容 | 何时执行 |
+   * | --- | --- | --- |
+   * | **与旧库无关** | 日志回填 / 日志压缩 / 索引裁剪 / 附件预热与孤儿清理 / 从权威日志重建索引 | **无条件** |
+   * | **旧库专属** | 库体积统计 / VACUUM / `session_events` 截断 | 仅旧库存在时（rust 模式下遥测裁剪改走引擎命令 `telemetry.prune`） |
+   */
+  const legacy = db && !dbFatal ? db : null;
 
   try {
-    if (compactEventsOver > 0) {
+    // 旧库专属：事件量过大的会话做**快照式压缩**（要读 `session_events` 的行数，只有旧库能做）。
+    // 端口模式下的等价物是引擎侧的快照压缩（`events.compact`，由事件端口在写入时维持水位）。
+    if (legacy && compactEventsOver > 0) {
       result.compactedSessions = await compactOversizedSessionLogs(compactEventsOver);
     }
 
@@ -1489,6 +1583,8 @@ export async function runDatabaseMaintenance(
       }
 
       const attachments = await bridge.hydrateAllAttachments();
+      result.warmedAttachments = attachments.warmed;
+      result.prunedAttachmentOrphans = attachments.orphansRemoved;
       if (attachments.warmed > 0 || attachments.orphansRemoved > 0) {
         console.log(
           `[Database] 外置附件：预热 ${attachments.warmed} 个，清理孤儿文件 ${attachments.orphansRemoved} 个`,
@@ -1496,6 +1592,7 @@ export async function runDatabaseMaintenance(
       }
 
       const compactedLog = await bridge.compactOversizedSessionLogs();
+      result.compactedLogSessions = compactedLog.compactedSessions;
       if (compactedLog.compactedSessions > 0) {
         console.log(
           `[Database] 追加日志压缩：${compactedLog.compactedSessions} 个会话，省下 ${compactedLog.linesSaved} 行`,
@@ -1505,10 +1602,10 @@ export async function runDatabaseMaintenance(
       console.warn("[Database] 追加日志/附件维护失败（跳过）:", e);
     }
 
-    if (keepEvents > 0) {
+    if (legacy && keepEvents > 0) {
       // 显式开启时也**永不裁剪 session_meta**（预设归属/反馈状态靠它）。
       // 只有事件日志改为"快照 + 截断"之后，这个开关才应该被打开。
-      db.run(
+      legacy.run(
         `DELETE FROM session_events WHERE event_type <> 'session_meta' AND seq NOT IN (
            SELECT seq FROM session_events se2
            WHERE se2.session_id = session_events.session_id
@@ -1516,14 +1613,26 @@ export async function runDatabaseMaintenance(
          )`,
         [keepEvents],
       );
-      result.prunedEvents = Number(db.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
+      result.prunedEvents = Number(legacy.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
     }
 
+    /**
+     * 遥测裁剪：**两半各有实现**。
+     *
+     * - 旧库在时走旧库（保持原有语义与 `changes()` 计数）；
+     * - rust 模式（真机常态）走引擎命令 `telemetry.prune { before }` ——
+     *   原来这一步随"旧库不存在就整体 return"一起没了，于是**遥测表只增不减**。
+     *   引擎侧刻意要求显式水位线（没有 `before` 直接报错），所以这里传明确的时间戳。
+     */
     const cutoff = Date.now() - keepTelemetryDays * 24 * 60 * 60 * 1000;
-    db.run("DELETE FROM telemetry_events WHERE timestamp < ?", [cutoff]);
-    result.prunedTelemetry = Number(db.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
+    if (legacy) {
+      legacy.run("DELETE FROM telemetry_events WHERE timestamp < ?", [cutoff]);
+      result.prunedTelemetry = Number(legacy.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
+    } else {
+      result.prunedTelemetry = await pruneTelemetryViaPort(cutoff);
+    }
 
-    if (result.prunedEvents > 0 || result.prunedTelemetry > 0) {
+    if (legacy && (result.prunedEvents > 0 || result.prunedTelemetry > 0)) {
       // VACUUM 会把整库在内存里重写一遍：只有"真有可回收空间"且库不算大时才做 ——
       // 否则宁可不回收，也不能在启动路径上卡住界面（这正是本波要治的那类自我伤害）。
       const freeRatio = freePageRatio();
@@ -1536,7 +1645,7 @@ export async function runDatabaseMaintenance(
       } else if (freeRatio < 0.05) {
         console.log(`[Database] 跳过 VACUUM：空闲页仅 ${(freeRatio * 100).toFixed(1)}%，回收收益极小`);
       } else {
-        db.run("VACUUM");
+        legacy.run("VACUUM");
         result.vacuumed = true;
       }
       markDatabaseDirty();
@@ -1546,13 +1655,28 @@ export async function runDatabaseMaintenance(
     console.warn("[Database] 维护失败（不影响使用）:", e);
   }
 
-  result.sizeAfter = databaseSizeBytes();
-  result.reclaimed = Math.max(0, result.sizeBefore - result.sizeAfter);
-  console.log(
-    `[Database] 维护完成：事件裁剪 ${result.prunedEvents} 行、遥测 ${result.prunedTelemetry} 行，` +
-      `占用 ${(result.sizeBefore / 1024 / 1024).toFixed(1)} MB → ${(result.sizeAfter / 1024 / 1024).toFixed(1)} MB` +
-      `（回收 ${(result.reclaimed / 1024).toFixed(0)} KB${result.vacuumed ? "，已 VACUUM" : ""}）`,
-  );
+  if (legacy) {
+    result.sizeAfter = databaseSizeBytes();
+    result.reclaimed = Math.max(0, result.sizeBefore - result.sizeAfter);
+    console.log(
+      `[Database] 维护完成：事件裁剪 ${result.prunedEvents} 行、遥测 ${result.prunedTelemetry} 行，` +
+        `占用 ${(result.sizeBefore / 1024 / 1024).toFixed(1)} MB → ${(result.sizeAfter / 1024 / 1024).toFixed(1)} MB` +
+        `（回收 ${(result.reclaimed / 1024).toFixed(0)} KB${result.vacuumed ? "，已 VACUUM" : ""}）`,
+    );
+  } else {
+    /**
+     * 端口模式（真机常态）：**必须也留下一行日志**。
+     *
+     * 这个缺陷之所以能长期存在，一半原因是"没跑"和"跑了但没事做"在日志里长得一样
+     * （原来 rust 模式下这行日志根本不打印，与"维护成功但无事可做"无法区分）。
+     * 现在把每一步的数字都打出来，并在有实际动作时升级为可见。
+     */
+    console.log(
+      `[Database] 维护完成（端口模式）：索引重建 ${result.rebuiltIndexMessages} 条、日志回填 ${result.backfilledMessages} 条、` +
+        `索引裁剪 ${result.trimmedIndexMessages} 条、附件预热 ${result.warmedAttachments} 个、孤儿清理 ${result.prunedAttachmentOrphans} 个、` +
+        `日志压缩 ${result.compactedLogSessions} 个会话、遥测裁剪 ${result.prunedTelemetry} 条`,
+    );
+  }
   return result;
 }
 

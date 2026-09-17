@@ -1,6 +1,78 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to Codem will be documented in this file.
+
+## [1.16.63] - 2026-09-17 — 启动维护在 rust 模式下**从未执行过**（真机缺陷）+ 最后两处"偷偷加载 WASM"的入口
+
+### 一、启动维护是一段**从未跑过**的代码
+
+`runDatabaseMaintenance()` 的第一行原来是：
+
+```ts
+if (!db || dbFatal) return { ...result, sizeAfter: result.sizeBefore };
+```
+
+引擎切到 rust 之后，`db`（旧引擎句柄）在正常路径下**永远是 `null`** —— 旧库刻意不加载，
+那正是省内存的前提。于是这个函数在打包版里**一行都没跑**，而 `App.tsx` 每次启动都 `await` 它：
+
+| 本该执行的事 | 真机实际 |
+| --- | --- |
+| 追加日志（**权威副本**）的回填与压缩 | 从未执行 |
+| 索引裁剪 `trimIndexedMessages` | 从未执行 |
+| 外置附件正文预热与孤儿清理 | 从未执行（只有按需的单会话预热在跑） |
+| 崩溃后"索引重建标记"驱动的自愈 | 从未执行（标记写了也没人读） |
+| 遥测按天裁剪 | 从未执行（遥测表只增不减） |
+
+**为什么长期没人发现**：`src/test/setup.ts` 每个用例都会 `await initDatabase()`，
+测试里 `db` 永远非空 —— 维护路径在测试里一直是活的，**与真机恰好相反**。
+这是一条方法论教训：测试基座把"产品不会出现的状态"维持成常态，会让一整类缺陷隐身。
+
+**修法**：按"这一步依赖旧库吗"把函数拆成两半 —— 与旧库无关的那半（日志回填/压缩、
+索引裁剪、附件预热与孤儿清理、从权威日志重建索引）**无条件执行**；旧库专属的那半
+（库体积统计 / VACUUM / `session_events` 截断）只在旧库存在时执行，
+rust 模式下的遥测裁剪改走引擎命令 `telemetry.prune { before }`（显式水位线）。
+另外端口模式下**也必须留一行日志**并带上每一步的数字 —— 原来"没跑"和"跑了但没事做"
+在日志里长得一模一样。
+
+新增 `src/test/maintenance-rust-mode.test.ts`（MR-1..MR-6），用 `closeDatabase()`
+**显式模拟真机**（旧库句柄不存在）。已验证它在修复前会红（MR-1/MR-3 复现缺陷）。
+
+### 二、最后两处会把 sql.js 拖回渲染进程的入口
+
+`markLegacyDbNotUsed()` 表达的约定（"本进程不用旧库"）此前**只是约定**：
+
+1. `wechat-bridge.ts::ensureWorkspaceProject` **无条件** `await initDatabase()`
+   —— rust 模式下会把 sql.js 重新拖进渲染进程，并整库读写 `codem-db.bin`
+   （`Loaded 11137024 bytes` + `Saved 11137024 bytes`），也就是"渲染进程不再持有 WASM 数据库"
+   这件事被一句无害的调用无声废掉、还会重写迁移源那份旧库。同样的坑在
+   `storage/migration.ts` 修过一次，这里是漏网的最后一处 → 改为先判引擎。
+2. `PerformanceDashboard.tsx::handleClearAll` 在 `clearAll()` 返回 `null` 时
+   组件**自己去 `getDatabase()` + `DELETE FROM telemetry_events`**（D 类边界违例）——
+   rust 模式下那句必抛，被 catch 吞成一行 warn，而 `setShowClearConfirm(false)`
+   在抛点之后 → **确认弹窗不关、界面像卡住**。现在 `telemetry.clearAll()` 只返回真实删除行数
+   （失败走 `reportPersistFailure` 如实上报），组件不再碰数据库，并给出清空回执。
+
+并把约定升级为**运行期不变量**：rust 模式下 `initDatabase()` 与 `resetDatabase()` **直接拒绝**
+（后者会 `delete_file codem-db.bin`，等于抹掉迁移源）。MR-6 是全仓静态守门：
+生产代码里每一处 `initDatabase()` 调用都必须先判引擎。
+
+### 三、L4：A 态（旧库回退）分支已全部删除（内部整改）
+
+L3 字面量 **165 处 / 18 文件 → 19 处 / 1 文件**（只剩 `message.ts`）。写路径的删除
+不是"删两行"：新增 `reportWriteNotAccepted(scope, note)`，行为与 B 态逐字一致
+（上报 + 不回退），避免"没写进去"退化成**静默假成功**。同时给两个审计工具补了口径
+（`wasm-removal-readiness` 增加 `tryGetDatabase` 列；`storage-coverage` 增加**端口侧盘点**
+——旧口径只盘旧库 SQL，L4 之后它从 277 掉到 49，那是目标达成而不是退化）。
+
+### 量化
+
+| 指标 | 本批前 | 本批后 |
+| --- | --- | --- |
+| 套件 | 276 文件 / 5235 通过 / 0 失败 | **277 文件 / 5241 通过 / 0 失败** |
+| L3 字面量 | 165 处 / 18 文件 | **19 处 / 1 文件** |
+| `tsc` | 0 错误 | 0 错误 |
+| 七道审计门 | exit 0 | exit 0 |
+| Rust 测试 | 99 全绿 | 99 全绿 |
 
 ## [1.16.62] - 2026-09-17 — 退役回滚开关（L4 第一步）：不再存在「切回旧引擎」这个假选项
 

@@ -235,18 +235,35 @@ class TelemetryCollector {
    * 那个 DELETE 打的是旧库，仪表盘会"看起来清空了、刷新又回来"。
    * 现在收进采集器，走域端口（按 id 逐个删，线协议 where 不支持整表删除）。
    *
-   * @returns 删除的行数；`null` 表示端口未接手（由调用方回退旧路径）
+   * ## 第 18 轮：返回值契约改了（真机缺陷修正）
+   *
+   * 原来是 `number | null`，`null` 表示"端口未接手 → 调用方回退旧库"。
+   * 而调用方（`PerformanceDashboard`）拿到 `null` 就去 `getDatabase()` ——
+   * 在 rust 模式下那句**必抛** `Database not initialized`，于是"清空遥测"整个失败：
+   * 失败被 catch 吞成一行 warn，而 `setShowClearConfirm(false)` 在抛点之后，
+   * **确认弹窗根本不关**（界面卡住，用户以为点了没反应）。
+   *
+   * A 态（旧库回退）已删，所以只剩一种诚实表达：**返回真实删除行数，
+   * 失败走 `reportPersistFailure` 如实上报**（`domainDeleteWhere` 内部已经做了）。
+   * `0` 因此有两种含义（本来就没有 / 没删成），但"没删成"一定伴随上报，不会静默。
    */
-  clearAll(): number | null {
+  clearAll(): number {
     const rows = telemetryRows();
-    if (!rows) return null;
+    if (!rows) {
+      reportPersistFailure(
+        "telemetry.clearAll",
+        new Error("遥测域镜像未就绪"),
+        "遥测事件未清空（本次没有清空任何行）",
+      );
+      return 0;
+    }
     const removed = domainDeleteWhere(
       TABLE,
       () => true, // 全清（旧实现就是无条件 DELETE FROM telemetry_events）
       "id",
       { scope: "telemetry.clearAll", note: "遥测事件未清空", ...TELEMETRY_OPTS },
     );
-    return removed;
+    return removed ?? 0;
   }
 
   /**
