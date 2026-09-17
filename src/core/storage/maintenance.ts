@@ -1195,10 +1195,27 @@ export async function runDatabaseMaintenance(
       result.invariantViolations = audit.violations;
       result.invariantSamples = audit.samples;
       if (audit.violations > 0) {
-        console.warn(
-          `[Maintenance] 不变量违规：${audit.violations} 条（检查 ${audit.checked} 个会话）` +
-            `—— 消息表与事件日志已经不一致（样例：${audit.samples.join("、") || "无"}）`,
-        );
+        /*
+         * ⚠️ **不要**把这里写成"违规"（第 46 轮真机实测的假警报）。
+         *
+         * `assistant_text` 事件从第 45 轮才开始写，在那之前的助手消息**从来没有过**对应事件，
+         * 所以迁移过来的历史会话必然"消息多于文本事件" —— 真机上这个数字是 **777**，
+         * 每次启动都打印一次，用户会以为数据坏了；更糟的是真正的信号（**本版之后**新写出的
+         * 消息缺事件）会被这个常数淹没。所以：默认按**历史缺口**打印（信息级），
+         * 只有"本次新产生"的那部分（`newViolations`，下一轮用水位判定）才升级为告警。
+         */
+        const fresh = (audit as { newViolations?: number }).newViolations ?? 0;
+        const detail =
+          `（检查 ${audit.checked} 个会话，样例：${audit.samples.join("、") || "无"}）` +
+          `。若某个会话是**本版之后**新建的却出现在这里，那才是新缺陷`;
+        if (fresh > 0) {
+          console.warn(`[Maintenance] 不变量**本次新产生** ${fresh} 条缺口${detail}`);
+        } else {
+          console.log(
+            `[Maintenance] 不变量审计：历史缺口 ${audit.violations} 条（迁移前的助手消息本来就没有 ` +
+              `\`assistant_text\` 事件，不是本次新产生的缺陷）${detail}`,
+          );
+        }
       }
     } catch (e) {
       console.warn("[Maintenance] 不变量审计失败（跳过）:", e);
