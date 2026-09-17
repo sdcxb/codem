@@ -265,24 +265,47 @@ class TelemetryCollector {
    *
    * 现在每次 `flush()` 都新建一个**轮次对象**（`FlushRound`），
    * `trackShard` 只往**它自己那一轮**的对象里累加，迟到结账与并发 flush 因此
-   * 互不干扰。恒等式 `written + rejectedForeignKey + retried == 该轮提交的批大小`
+   * 互不干扰。恒等式 `written + rejectedForeignKey + retried == expected`（本轮提交数）
    * 在并发下也成立。
    */
   private lastSummary: RoundSummary | null = null;
+  /** `lastSummary` 属于哪一轮（防止迟到的旧轮覆盖新轮） */
+  private lastSummarySeq = 0;
+
+  /** 最近一次 `flush()` 建的那一轮（用于回答"当前在途的这轮进度如何"） */
+  private currentRound: FlushRound | null = null;
 
   /** 已结账的轮次汇总（按轮次先后；有上限，诊断用） */
   private roundHistory: RoundSummary[] = [];
   private roundCounter = 0;
 
   /**
-   * 最近一次 flush 的汇总（诊断/测试用；异步结账完成后更新）。
+   * 最近一次 flush 的汇总（诊断/测试用；异步结账过程中持续更新）。
    *
-   * `expected` = 本轮**提交**的事件数，恒等式 `written + rejectedForeignKey + retried == expected`
-   * 在并发下也成立（未结账时前者还在增长）。加它是为了让"汇总自相矛盾"这件事
-   * **可以被当场验出来** —— 审计实测的 `{written:2, retried:1}`（批大小只有 2）
-   * 就是这条恒等式被破坏的形态。
+   * `expected` = 这一轮**提交**的事件数，恒等式
+   * `written + rejectedForeignKey + retried == expected` 在并发下也成立
+   * （未结账时前者还在增长，所以在途轮次的汇总**暂时**不闭合 —— 这是诚实的，
+   * 它表达的正是"还没结完"；结算完成时必须闭合）。
+   * 加它是为了让"汇总自相矛盾"这件事**可以被当场验出来** ——
+   * 审计实测的 `{written:2, retried:1}`（批大小只有 2）就是这条恒等式被破坏的形态。
+   *
+   * ## 为什么优先回答"当前这一轮"
+   *
+   * 如果固定回答"最近**已结账**"的那一轮，那么第 2 轮 flush 刚发出、结果未回时，
+   * 这里会返回**第 1 轮**的数字 —— 调用方（诊断面板 / 测试）问的是"刚才那次 flush
+   * 怎么样"，得到的却是更早一批的答案，那还是"汇总与批不对应"，只是方向反过来。
+   *
+   * 判据用**轮次序号**：当前这一轮必须仍是最新的一轮，且它自己还没结账。
+   * 否则（它已结账、或它已经被更晚的轮次盖过）返回最新**已结账**的那一轮。
    */
   flushSummary(): RoundSummary | null {
+    const current = this.currentRound;
+    /*
+     * 三轮哨兵：`round.seq > lastSummarySeq` 说明"比已结账的那一轮更晚"，
+     * 这一轮的结果才是"最近一次 flush"。在途（`!settled`）时它**暂时不闭合** ——
+     * 那是诚实的：它表达的正是"还没结完"。
+     */
+    if (current && current.seq > this.lastSummarySeq) return { ...current.result };
     return this.lastSummary ? { ...this.lastSummary } : null;
   }
 
@@ -377,12 +400,19 @@ class TelemetryCollector {
       })
       .finally(() => {
         round.settled = true;
-        // 只有**最新那一轮**才有资格回答"最近一次 flush 的汇总"
-        const newest = this.rounds[this.rounds.length - 1];
-        if (newest && newest.seq === round.seq) {
+        /*
+         * 历史留痕：每轮结账时把**本轮**的数字存一份（诊断/测试要能逐轮看到）。
+         * 超过上限就丢最旧的 —— 它只是诊断数据，不值得为它撑大常驻内存。
+         */
+        this.roundHistory.push({ ...round.result });
+        if (this.roundHistory.length > FLUSH_ROUND_HISTORY_MAX) this.roundHistory.shift();
+        /*
+         * 发布：迟到的旧轮**不允许**覆盖"最近一次 flush" —— 那还是"汇总与批不对应"，
+         * 只是换成了跨轮的形态（旧批的数字冒充新批的）。用序号比较，不用时间戳。
+         */
+        if (!this.lastSummary || round.seq > this.lastSummarySeq) {
+          this.lastSummarySeq = round.seq;
           this.lastSummary = { ...round.result };
-          // 最新一轮已结账 → 更早的轮次不会再被任何人读到，放掉它们（诊断数据不无限增长）
-          this.rounds = this.rounds.filter((r) => r.seq === round.seq);
         }
       });
 
@@ -483,6 +513,23 @@ class TelemetryCollector {
 
     try {
       /**
+       * 任务 Y-3：**每次 `flush()` 都建一个自己的轮次对象**（哪怕这一轮一条都没提交）——
+       * 计数不再放在实例字段上（那样会被下一轮清零、被上一轮的迟到结账污染），
+       * 而是**每轮一个新对象**，随 `trackShard` 一起传下去。它同时是
+       * `written + rejectedForeignKey + retried == expected` 这条恒等式的载体。
+       *
+       * ⚠️ 创建位置在 `bySession` 分发**之前**：否则"这一轮全部事件都还在途
+       * （`fresh` 全空）"时就不会有轮次对象，`flushSummary()` 会退回**上一轮**的数字
+       * —— 又是"汇总与批不对应"，只不过这次是"新的一次 flush 报了旧一批的账"。
+       */
+      const round: FlushRound = {
+        seq: ++this.roundCounter,
+        result: { written: 0, rejectedForeignKey: 0, retried: 0, expected: 0 },
+        settled: false,
+      };
+      this.currentRound = round;
+
+      /**
        * **按 `session_id` 分片**（C-1 修复的核心）。
        *
        * 为什么必须分片：Zustand 的 `record()` 会把**所有会话**的遥测攒在同一个缓冲里
@@ -503,22 +550,6 @@ class TelemetryCollector {
       // 已经发出、结果未回的事件不再重复提交（否则同一条事件会写两遍）
       const alreadyInFlight = new Set(this.pending());
 
-      /**
-       * 计数**必须由异步结账来写**（`trackShard`），不能在这里同步累加 ——
-       * 落库结果还没回来，同步算出来的"已写入 N 条"是**假的**（那正是本缺陷的同类错误：
-       * 把一个尚未确认的动作当成已完成）。
-       *
-       * 任务 Y-3：计数不再放在实例字段上（那样会被下一轮清零、被上一轮的迟到结账污染），
-       * 而是**每轮一个新对象**，随 `trackShard` 一起传下去。它同时是
-       * `written + rejectedForeignKey + retried == 本轮提交的批大小` 这条恒等式的载体。
-       */
-      const round: FlushRound = {
-        seq: ++this.roundCounter,
-        result: { written: 0, rejectedForeignKey: 0, retried: 0 },
-        settled: false,
-      };
-      this.rounds.push(round);
-
       for (const [sessionId, group] of bySession) {
         const fresh = group.filter((e) => !alreadyInFlight.has(e));
         /*
@@ -532,6 +563,8 @@ class TelemetryCollector {
          * 本文这一轮对它们唯一该做的事就是"不重复提交"。
          */
         if (fresh.length === 0) continue;
+        // 恒等式的右边：这几条是**本轮**提交的（无论最后是写成功、被剔除还是待重试）
+        round.result.expected += fresh.length;
 
         const rows = fresh.map((e) => ({
           id: e.id,
@@ -642,7 +675,24 @@ class TelemetryCollector {
       "id",
       { scope: "telemetry.clearAll", note: "遥测事件未清空", ...TELEMETRY_OPTS },
     );
-    return removed ?? 0;
+    /*
+     * `null` = **未接手**（`domainDeleteWhere` 的契约：`0` 是"接手了、确实没有要删的行"，
+     * 两者绝不能压成同一个值 —— `domain-mirror-window.test.ts` 的 WIN-6 就钉着这条）。
+     *
+     * 上面那次读已经把"镜像没就绪"挡掉了，所以走到这里还为 `null` 属于窗口内的状态翻转
+     * （读与删之间被逐出/撤销）。**"理论上不可达"不等于"可以静默"**：`?? 0` 会把它变成
+     * "没有可清空的遥测事件"，而函数上方那段注释恰好承诺了"没删成一定伴随上报" ——
+     * 注释与实现不一致正是这个仓库查出过最多缺陷的形态，所以这里按契约如实上报。
+     */
+    if (removed === null) {
+      reportPersistFailure(
+        "telemetry.clearAll",
+        new Error("删除时端口未接手（域镜像在读取之后失去就绪）"),
+        "遥测事件未清空（本次没有清空任何行）",
+      );
+      return 0;
+    }
+    return removed;
   }
 
   /**
@@ -808,4 +858,26 @@ export function getTelemetry(): TelemetryCollector {
     collector = new TelemetryCollector();
   }
   return collector;
+}
+
+/**
+ * **仅供测试**：换一个全新的采集器实例，并把旧实例的重试定时器清掉。
+ *
+ * 为什么需要它：采集器是**模块级单例**（生产上正确：一个进程一份遥测缓冲），
+ * 但同文件里的用例会互相影响 —— 上一条用例留下的"在途事件 / 未结账的轮次"
+ * 会被下一条用例的 `flush()` 看见（甚至写进另一条用例的假端口）。
+ * 那会让回归测试的成败取决于**用例顺序**，而本任务要钉的恰恰是
+ * "并发 flush 下计数属于哪一轮"这种时序语义 —— 靠顺序碰运气的测试等于没测。
+ *
+ * 名字带 `__` 前缀：生产代码不调用它。
+ */
+export function __resetTelemetryForTests(): void {
+  /*
+   * `flushTimer` 是私有字段，这里刻意用一次断言读它：**必须**把旧实例的重试定时器清掉，
+   * 否则上一个用例排下的那次 `flush()` 会在下一个用例里触发，去写那个用例的假端口。
+   * （另一种写法是给类加一个 `stop()`，但那会变成生产 API —— 生产上不需要"停掉遥测"。）
+   */
+  const timer = (collector as unknown as { flushTimer: ReturnType<typeof setTimeout> | null } | null)?.flushTimer;
+  if (timer) clearTimeout(timer);
+  collector = new TelemetryCollector();
 }
