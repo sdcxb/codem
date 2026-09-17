@@ -10,6 +10,8 @@ import {
   domainReadMany,
   domainReadOne,
   domainWrite,
+  shouldFallbackToLegacy,
+  writeShouldFallBackToLegacy,
 } from "../storage/domain-store";
 
 // ========== Types ==========
@@ -92,7 +94,8 @@ export const InboxStorage = {
       if (removed !== null) return created;
     }
 
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("inbox.create", "通知未保存")) return created;
+const db = getDatabase();
     if (!db) return created;
     db.run(
       `INSERT INTO inbox (id, category, title, body, source_type, source_id, project_id, squad_id, issue_id, priority, read, archived, created_at)
@@ -123,7 +126,8 @@ export const InboxStorage = {
       // 与旧 SQL 一致：created_at DESC + LIMIT 100
       return filtered.sort((a, b) => b.created_at - a.created_at).slice(0, 100);
     }
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     let sql = "SELECT * FROM inbox WHERE archived = 0";
     const params: any[] = [];
     if (filters?.projectId) { sql += " AND (project_id = ? OR project_id IS NULL)"; params.push(filters.projectId); }
@@ -148,7 +152,8 @@ export const InboxStorage = {
       });
       return;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("inbox.markRead", "通知已读状态未更新")) return;
+const db = getDatabase();
     runGuarded(db, "UPDATE inbox SET read = 1 WHERE id = ?", [id],
     { table: "inbox", op: "mark-read", id, from: "markInboxRead" });
   },
@@ -167,7 +172,8 @@ export const InboxStorage = {
       });
       return;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("inbox.markAllRead", "通知已读状态未更新")) return;
+const db = getDatabase();
     if (projectId) {
       db.run("UPDATE inbox SET read = 1 WHERE read = 0 AND (project_id = ? OR project_id IS NULL)", [projectId]);
     persistDatabase();
@@ -188,14 +194,16 @@ export const InboxStorage = {
       });
       return;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("inbox.archive", "通知归档状态未更新")) return;
+const db = getDatabase();
     runGuarded(db, "UPDATE inbox SET archived = 1 WHERE id = ?", [id],
     { table: "inbox", op: "archive", id, from: "archiveInbox" });
   },
 
   delete(id: string): void {
     if (domainDelete(TABLE, { id }, { scope: "inbox.delete", note: "通知未删除" })) return;
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("inbox.delete", "通知未删除")) return;
+const db = getDatabase();
     if (!db) return;
     db.run("DELETE FROM inbox WHERE id = ?", [id]);
     persistDatabase();
@@ -208,7 +216,8 @@ export const InboxStorage = {
         (r) => !projectId || r.project_id === projectId || r.project_id === null,
       ).length;
     }
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return 0;
+const db = getDatabase();
     let sql = "SELECT COUNT(*) as count FROM inbox WHERE read = 0 AND archived = 0";
     const params: any[] = [];
     if (projectId) { sql += " AND (project_id = ? OR project_id IS NULL)"; params.push(projectId); }
@@ -225,7 +234,8 @@ export const InboxStorage = {
       { scope: "inbox.deleteOlderThan", note: "过期通知未删除" },
     );
     if (removed !== null) return;
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("inbox.deleteOlderThan", "过期通知未清理")) return;
+const db = getDatabase();
     if (!db) return;
     db.run("DELETE FROM inbox WHERE created_at < ?", [timestamp]);
     persistDatabase();

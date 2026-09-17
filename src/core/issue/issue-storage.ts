@@ -4,7 +4,7 @@
 
 import { getDatabase, persistDatabase } from "../storage/database";
 import { runGuarded } from "../storage/write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -126,7 +126,8 @@ export const IssueStorage = {
     if (domainWrite(ISSUES, [issueToWire(created)], { scope: "issue.create", note: "议题未保存" })) {
       return created;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("issue.create", "议题未保存")) return created;
+const db = getDatabase();
     db.run(
       `INSERT INTO issues (id, title, description, status, priority, assignee_type, assignee_id, project_id, squad_id, session_id, labels, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -143,7 +144,8 @@ export const IssueStorage = {
   getById(id: string): IssueRow | null {
     const rust = domainReadOne(ISSUES, { id }, wireToIssue);
     if (rust !== undefined) return rust;
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
     const result = db.exec("SELECT * FROM issues WHERE id = ?", [id]);
     if (result.length === 0) return null;
     return rowToIssue(result[0].values[0], result[0].columns);
@@ -162,7 +164,8 @@ export const IssueStorage = {
         })
         .sort((a, b) => b.updated_at - a.updated_at);
     }
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     let sql = "SELECT * FROM issues WHERE 1=1";
     const params: any[] = [];
     if (filters?.projectId) { sql += " AND project_id = ?"; params.push(filters.projectId); }
@@ -209,7 +212,8 @@ export const IssueStorage = {
       return written ? 1 : 0;
     }
 
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("issue.update", "议题未更新")) return 0;
+const db = getDatabase();
     const fields: string[] = [];
     const values: any[] = [];
     for (const [key, val] of entries) {
@@ -229,7 +233,8 @@ export const IssueStorage = {
 
   delete(id: string): void {
     if (domainDelete(ISSUES, { id }, { scope: "issue.delete", note: "议题未删除" })) return;
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("issue.delete", "议题未删除")) return;
+const db = getDatabase();
     db.run("DELETE FROM issues WHERE id = ?", [id]);
     persistDatabase();
   },
@@ -257,7 +262,8 @@ export const IssueStorage = {
       }
       return created;
     }
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("issue.addComment", "议题评论未保存")) return created;
+const db = getDatabase();
     db.run(
       `INSERT INTO issue_comments (id, issue_id, author_type, author_id, author_name, content, is_system, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -274,7 +280,8 @@ export const IssueStorage = {
   getComments(issueId: string): IssueCommentRow[] {
     const rust = domainReadMany(COMMENTS, wireToComment, { issue_id: issueId });
     if (rust) return rust.sort((a, b) => a.created_at - b.created_at);
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec("SELECT * FROM issue_comments WHERE issue_id = ? ORDER BY created_at ASC", [issueId]);
     if (result.length === 0) return [];
     return result[0].values.map((row) => rowToComment(row, result[0].columns));
@@ -282,7 +289,8 @@ export const IssueStorage = {
 
   deleteComment(commentId: string): void {
     if (domainDelete(COMMENTS, { id: commentId }, { scope: "issue.deleteComment", note: "议题评论未删除" })) return;
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("issue.deleteComment", "议题评论未删除")) return;
+const db = getDatabase();
     db.run("DELETE FROM issue_comments WHERE id = ?", [commentId]);
     persistDatabase();
   },
@@ -301,7 +309,8 @@ export const IssueStorage = {
       }
       return stats as Record<IssueStatus, number>;
     }
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return {} as Record<IssueStatus, number>;
+const db = getDatabase();
     let sql = "SELECT status, COUNT(*) as count FROM issues";
     const params: any[] = [];
     if (projectId) { sql += " WHERE project_id = ?"; params.push(projectId); }
