@@ -354,20 +354,25 @@ const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) =
      * 修法就是让裁剪走 `soft: true`（Rust 侧 `messages_delete` 的真实现是
      * `UPDATE messages SET hidden = 1`，行留着 → 外键目标还在 → 反馈写得进去）。
      *
-     * ### 读路径语义**不变**（这是硬要求，一条都不能松）
+     * ### 读路径的处置（第 44 轮把区别钉在 `trimmed` 列上）
      *
-     * - `listMessages` / `listMessagesMerged` 走 `hiddenMessageIds()` 过滤 → 被裁剪的消息
-     *   依旧不出现在默认列表里（靠 `hidden` 而不是靠"行不存在"）；
-     * - `messages.count` 的可见计数本来就是 `hidden = 0`，语义一致；
-     * - 附件消息、日志里没有的消息依旧不裁（上面两条过滤器原样保留）。
+     * 两条路径对「被裁剪的行」的**可见性刻意不同**，这正是 `trimmed` 这一列存在的理由：
      *
-     * ### 为什么这里还要额外记一次 `rememberHidden`
+     * | 读路径 | 被裁剪（`hidden=1, trimmed=1`） | 被压缩（`hidden=1, trimmed=0`） |
+     * | --- | --- | --- |
+     * | `listMessagesFromIndex`（索引视图 = `WHERE hidden = 0`） | 看不到（它读的就是索引） | 看不到 |
+     * | `listMessages` / `listMessagesMerged`（用户面） | **看得到**（从权威 JSONL 合回来，SLOG-6/SLOG-8） | 看不到（否则压缩白做、token 永不下降） |
      *
-     * `hiddenMessageIds()` 的 hidden 来源是**域镜像**（`port.messages.hiddenIds`）。
-     * 镜像此刻可能还没加载完（或已被内存预算 LRU 逐出），或者它按"行已删除"的旧约定
-     * 把行剔了 —— 两种情况下它都看不到这次隐藏，合并阶段就会把这些消息**复活**
-     * （用户现场那个"压缩了 840 条、token 一点没降"最怕的就是这个）。
-     * `rememberHidden()` 是既有原语（`deleteMessagesByIds` 也用它），让**本进程**立刻看见。
+     * `messages.count` 的可见计数是 `hidden = 0`，与索引视图一致（它数的是索引，不是历史）。
+     * 附件消息、日志里没有的消息依旧不裁（上面两条过滤器原样保留）。
+     *
+     * ### 这里**不再**需要任何进程内记账
+     *
+     * 第 44 轮之前，读路径靠 `hiddenMessageIds()` 里「事后减掉裁剪那批」的 `trimmedIndexIds`
+     * 来区分两者 —— 那份记账一重启就没了：要么历史消失，要么压缩失效。
+     * 现在区别落在库里的 `trimmed` 列上，`hiddenMessageIds()` 直接读它，所以这里
+     * **刻意不调用** `rememberHidden()` —— 调用它等于把这次裁剪又写回「压缩」，
+     * 用户的历史会当场消失。`rememberHidden()` 只属于 `deleteMessagesByIds`（压缩）那条路径。
      */
     /**
      * ## 裁剪走 `trim: true`（第 44 轮：把"谁做的这次隐藏"变成**库里的持久事实**）

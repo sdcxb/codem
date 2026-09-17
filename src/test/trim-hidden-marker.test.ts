@@ -84,6 +84,7 @@ import {
   hydrateSessionLog,
   createMessage,
   listMessagesMerged,
+  listMessagesFromIndex,
   trimIndexedMessages,
   deleteMessagesByIds,
   clearSessionLogCache,
@@ -221,5 +222,41 @@ describe("索引裁剪的持久标记（hidden vs trimmed）", () => {
       hidden.has("m0"),
       "被**裁剪**的消息不该进隐藏集合 —— 它必须仍能从权威日志读到（用户看得到自己的历史）",
     ).toBe(false);
+  });
+
+  /**
+   * TRIM-4 = **用户面的最终判据**。
+   *
+   * TRIM-1..3 守的是「库里分得清」，可「分得清」只是手段，不是目的。目的是两句话：
+   * **被裁剪的历史必须仍然读得到**（`session-jsonl-index.test.ts` 的 SLOG-6/SLOG-8 就是这条不变量），
+   * 而**被压缩的必须仍然读不到**（否则就是那个著名死循环：压缩 840 条、token 一点没降）。
+   *
+   * 这两句话只有在**用户面读路径**（`listMessagesMerged`）上才能被同时验证 ——
+   * 而真机上出错的位置恰好就在这里：`normalize()` 漏搬 `trimmed` 之后，
+   * 裁剪被当成压缩，用户的历史整批消失。所以这一条不能只测 `hiddenIds()` 的返回值。
+   */
+  it("TRIM-4: 裁剪之后**仍读得到**被裁的历史，同时被压缩的**不复活**", async () => {
+    seed(6);
+    await flushSessionLogWrites();
+    const trimmed = await trimIndexedMessages({ keepPerSession: 3 }); // 裁掉 m0..m2
+    expect(trimmed.deletedMessages, "裁掉 3 条（保留最新 3 条）").toBe(3);
+    deleteMessagesByIds(["m5"]); // 压缩：hidden=1 且 trimmed=0
+    await new Promise((r) => setTimeout(r, 0)); // 索引写入是异步的（假端口也一样）
+
+    resetReadCaches(); // 合并读重新从权威日志读一遍（等价于重启后的第一次读）
+    await hydrateSessionLog(SESSION);
+
+    const index = listMessagesFromIndex(SESSION).map((m) => m.id);
+    const merged = listMessagesMerged(SESSION).map((m) => m.id);
+
+    expect(index, "索引视图里不出现被裁剪的行（它读的就是索引 = `WHERE hidden = 0`）").toEqual(["m3", "m4"]);
+    expect(merged, "用户面：被裁剪的历史必须仍然读得到（这正是裁剪能成立的前提）").toEqual([
+      "m0",
+      "m1",
+      "m2",
+      "m3",
+      "m4",
+    ]);
+    expect(merged, "被压缩的消息绝不能复活（否则上下文 token 永远降不下来）").not.toContain("m5");
   });
 });
