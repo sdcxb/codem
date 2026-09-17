@@ -18,8 +18,16 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 export interface AppMenuAction {
   id: string;
   label: string;
-  /** 快捷键提示（仅展示；真实绑定在各自组件里） */
+  /** 快捷键提示（仅展示；真实绑定在 `core/shortcuts/app-shortcuts.ts`） */
   shortcut?: string;
+  /**
+   * ARIA 规范写法的快捷键（`Control+B` / `Meta+B`）。
+   *
+   * 第 45 轮 D-14：以前直接把展示用的 `Ctrl+B` 塞进 `aria-keyshortcuts`
+   * —— 规范只接受 `Alt/Control/Meta/Shift` + 键名，`Ctrl+B` 会被辅助技术读成无意义字符串。
+   * 现在由 `APP_SHORTCUTS` 同时给出展示值与 ARIA 值。
+   */
+  ariaShortcut?: string;
   onSelect?: () => void;
   /** 分组分隔线：在这项**之前**画一条 */
   separatorBefore?: boolean;
@@ -206,7 +214,7 @@ export function AppMenuBar({ zh, menus }: AppMenuBarProps) {
                       className="app-menu-item"
                       role="menuitem"
                       disabled={item.disabled}
-                      aria-keyshortcuts={item.shortcut}
+                      aria-keyshortcuts={item.ariaShortcut ?? item.shortcut}
                       onClick={() => {
                         setOpenId(null);
                         item.onSelect?.();

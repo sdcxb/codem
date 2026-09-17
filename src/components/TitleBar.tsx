@@ -14,9 +14,10 @@ import { ActionIcons } from "../core/icons/icon-map";
 import codemLogoUrl from "../assets/codem-logo.png";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
-import { DEFAULT_THEME, applyThemeAttribute, isThemeMode, resolveEffectiveTheme } from "../core/theme/theme-default";
+import { DEFAULT_THEME, applyThemeAttribute, cacheTheme, isThemeMode, resolveEffectiveTheme } from "../core/theme/theme-default";
 import { AppMenuBar } from "./AppMenuBar";
 import type { AppMenuSection } from "./AppMenuBar";
+import { buildAppShortcuts, isMacPlatform, matchesShortcut, shortcutAria, shortcutLabel } from "../core/shortcuts/app-shortcuts";
 import { useProjectStore } from "../core/store";
 import { useAppStore } from "../store";
 import { getLang } from "../core/i18n/lang";
@@ -147,6 +148,10 @@ export function TitleBar({
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
     setSetting("codem-theme", next);
+    // 第 45 轮 D-17：镜像必须在这里也写一次 —— 旧写法在 dream/hub 皮肤下**直接 return**，
+    // 于是这两个皮肤的用户切过主题后，镜像永远停在旧档位，下次启动先按旧档位渲染一帧。
+    // 镜像只是首屏预测（真相源仍是 DB 的 codem-theme），与当前皮肤无关，所以写在返回之前。
+    cacheTheme(next);
     // 梦幻皮肤和 Hub 皮肤由 ThemeManager 管理 data-theme，不覆盖
     const skin = ThemeManager.getSkin();
     if (skin === 'dream' || skin === 'hub') return;
@@ -210,27 +215,64 @@ export function TitleBar({
     return () => window.removeEventListener("keydown", handler);
   }, [onSearch]);
 
+  /**
+   * 应用级快捷键（第 45 轮 D-14）。
+   *
+   * 菜单里印着的每个快捷键都必须**真的有人处理** —— 所以这里从
+   * `core/shortcuts/app-shortcuts.ts` 的同一张表里取匹配规则，菜单标签也从那里取：
+   * 标签与按键处理不可能再漂移（旧写法只有 Ctrl+K 有 handler，其余 4 条纯装饰，
+   * 还会经 `aria-keyshortcuts` 播报给辅助技术）。
+   *
+   * 平台差异：macOS 上 `⌘Q` 由系统菜单处理（这里不显示、不接管）；
+   * 可编辑控件里不抢 `Ctrl+B`（那是光标左移）/`Ctrl+`` `（会打断输入）。
+   */
+  useEffect(() => {
+    const mac = isMacPlatform();
+    const specs = buildAppShortcuts(mac);
+    const actions: Record<string, (() => void) | undefined> = {
+      "new-chat": onNewChat,
+      search: onSearch,
+      settings: onSettings,
+      sidebar: onToggleSidebar,
+      terminal: onToggleTerminal,
+    };
+    const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      for (const spec of specs) {
+        const action = actions[spec.id];
+        if (typeof action !== "function") continue;
+        if (!matchesShortcut(e, spec, mac)) continue;
+        e.preventDefault();
+        action();
+        return; // 一次按键只触发一条
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onNewChat, onSearch, onSettings, onToggleSidebar, onToggleTerminal]);
+
   // 第 41 波：应用级菜单栏（文件 / 视图 / 帮助）。
   // 只放**真实可用**的命令 —— 菜单项全部映射到已有回调或已有快捷键上，
   // 不放灰掉的假项（那只会让人以为功能存在）。
-  const mod = isMac ? "⌘" : "Ctrl+";
+  // 第 45 轮 D-14：`shortcut` / `aria-keyshortcuts` 都从 `APP_SHORTCUTS` 取，
+  // 与上面那段 handler 同源；该平台不支持的项（如 mac 的 ⌘Q）返回 undefined，不显示。
   const appMenus: AppMenuSection[] = [
     {
       id: "file",
       label: zh ? "文件" : "File",
       items: [
-        { id: "new-chat", label: zh ? "新建对话" : "New chat", shortcut: `${mod}N`, onSelect: onNewChat },
-        { id: "search", label: zh ? "搜索" : "Search", shortcut: `${mod}K`, onSelect: onSearch },
-        { id: "settings", label: zh ? "设置" : "Settings", shortcut: `${mod},`, separatorBefore: true, onSelect: onSettings },
-        { id: "close", label: zh ? "关闭窗口" : "Close window", shortcut: isMac ? "⌘Q" : "Alt+F4", separatorBefore: true, onSelect: handleClose },
+        { id: "new-chat", label: zh ? "新建对话" : "New chat", shortcut: shortcutLabel("new-chat", isMac), ariaShortcut: shortcutAria("new-chat", isMac), onSelect: onNewChat },
+        { id: "search", label: zh ? "搜索" : "Search", shortcut: shortcutLabel("search", isMac), ariaShortcut: shortcutAria("search", isMac), onSelect: onSearch },
+        { id: "settings", label: zh ? "设置" : "Settings", shortcut: shortcutLabel("settings", isMac), ariaShortcut: shortcutAria("settings", isMac), separatorBefore: true, onSelect: onSettings },
+        { id: "close", label: zh ? "关闭窗口" : "Close window", shortcut: shortcutLabel("close", isMac), ariaShortcut: shortcutAria("close", isMac), separatorBefore: true, onSelect: handleClose },
       ],
     },
     {
       id: "view",
       label: zh ? "视图" : "View",
       items: [
-        { id: "sidebar", label: zh ? "显示/隐藏侧边栏" : "Toggle sidebar", shortcut: `${mod}B`, onSelect: onToggleSidebar },
-        { id: "terminal", label: zh ? "显示/隐藏终端" : "Toggle terminal", shortcut: `${mod}\``, onSelect: onToggleTerminal },
+        { id: "sidebar", label: zh ? "显示/隐藏侧边栏" : "Toggle sidebar", shortcut: shortcutLabel("sidebar", isMac), ariaShortcut: shortcutAria("sidebar", isMac), onSelect: onToggleSidebar },
+        { id: "terminal", label: zh ? "显示/隐藏终端" : "Toggle terminal", shortcut: shortcutLabel("terminal", isMac), ariaShortcut: shortcutAria("terminal", isMac), onSelect: onToggleTerminal },
         {
           id: "theme",
           label: theme === "dark" ? (zh ? "切换到浅色主题" : "Switch to light theme") : (zh ? "切换到深色主题" : "Switch to dark theme"),
@@ -242,7 +284,7 @@ export function TitleBar({
       id: "help",
       label: zh ? "帮助" : "Help",
       items: [
-        { id: "commands", label: zh ? "命令与搜索" : "Commands & search", shortcut: `${mod}K`, onSelect: onSearch },
+        { id: "commands", label: zh ? "命令与搜索" : "Commands & search", shortcut: shortcutLabel("search", isMac), ariaShortcut: shortcutAria("search", isMac), onSelect: onSearch },
         { id: "help-settings", label: zh ? "设置与帮助" : "Settings & help", onSelect: onSettings },
       ],
     },
@@ -341,7 +383,7 @@ export function TitleBar({
           <button
             className="titlebar-action-btn"
             onClick={onSearch}
-            title="搜索 (Ctrl+K)"
+            title={`${zh ? "搜索" : "Search"} (${shortcutLabel("search", isMac) ?? ""})`}
             aria-label="搜索"
           >
             <Search size={14} />

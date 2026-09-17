@@ -11,12 +11,51 @@
 
 import type { SkinId, DreamSkinConfig, ExtractedPalette } from './types';
 import { DEFAULT_DREAM_CONFIG } from './presets';
-import { applyThemeAttribute, resolveEffectiveTheme } from './theme-default';
+import { applyThemeAttribute, cacheTheme, resolveEffectiveTheme } from './theme-default';
 import { ThemeExtractor } from './theme-extractor';
 import { getSetting, setSetting } from '../storage/settings';
 
 const SETTINGS_KEY_SKIN = 'skin-id';
 const SETTINGS_KEY_DREAM = 'dream-config';
+
+/**
+ * 皮肤的首屏镜像键（第 45 轮 D-17）。
+ *
+ * 为什么需要：`skin-id` 存在 DB（`settings` 表），而 DB 要等端口预热后才读得到
+ * （`App.tsx` 里 `ThemeManager.init()` 早于端口注册）。`data-skin` 的唯一写入点是
+ * `applySkin()`，于是 Hub / Dream 用户启动时**先按默认皮肤渲染**（含启动闪屏），
+ * 等 `init()` 真正读到 DB 才切过去 —— 和主题那条 `codem-theme-cache` 是同一类问题。
+ *
+ * 镜像只是**首屏预测**，真相源仍是 DB 的 `skin-id`；`init()` 用它兜底，
+ * `resyncFromStorage()` 在端口就绪后再用 DB 校正一次。
+ */
+const SKIN_CACHE_KEY = 'codem-skin-cache';
+
+const SKIN_IDS: readonly SkinId[] = ['default', 'hub', 'dream'];
+
+function isSkinId(v: unknown): v is SkinId {
+  return typeof v === 'string' && (SKIN_IDS as readonly string[]).includes(v);
+}
+
+/** 读首屏皮肤镜像；读不到返回 null（调用方回落到 DB / 默认皮肤） */
+export function readCachedSkin(): SkinId | null {
+  try {
+    const v = globalThis.localStorage?.getItem(SKIN_CACHE_KEY);
+    return isSkinId(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 写首屏皮肤镜像（值没变就不写，避免无谓抖动） */
+export function cacheSkin(skin: SkinId): void {
+  try {
+    if (globalThis.localStorage?.getItem(SKIN_CACHE_KEY) === skin) return;
+    globalThis.localStorage?.setItem(SKIN_CACHE_KEY, skin);
+  } catch {
+    /* localStorage 不可用时静默降级：只是少了首屏预测 */
+  }
+}
 
 /** 需要在切回 default 时清理的 CSS 变量 */
 const DREAM_CSS_VARS = [
@@ -87,12 +126,19 @@ class ThemeManagerClass {
 
   /**
    * 初始化：从存储加载皮肤状态
+   *
+   * 第 45 轮（D-17）：DB 还没就绪时用**首屏镜像**兜底（镜像 = 上次实际生效的皮肤，
+   * 与预渲染的首帧一致），避免 Hub / Dream 用户先看到默认皮肤的一帧。
+   * 镜像值会在端口就绪后被 `resyncFromStorage()` 用 DB 校正。
    */
   init(): void {
     try {
       const savedSkin = getSetting(SETTINGS_KEY_SKIN) as SkinId | null;
-      if (savedSkin && ['default', 'hub', 'dream'].includes(savedSkin)) {
+      if (isSkinId(savedSkin)) {
         this.currentSkin = savedSkin;
+      } else {
+        const mirrored = readCachedSkin();
+        if (mirrored) this.currentSkin = mirrored;
       }
 
       const savedDream = getSetting(SETTINGS_KEY_DREAM);
@@ -105,8 +151,38 @@ class ThemeManagerClass {
     } catch {
       // 首次启动或配置损坏，使用默认值
     }
+    cacheSkin(this.currentSkin);
     this.applySkin();
     this.notifyListeners();
+  }
+
+  /**
+   * 端口就绪后用 DB 校正一次皮肤（第 45 轮 D-17）。
+   *
+   * `init()` 早于存储端口注册，若那时 DB 还读不到 `skin-id`，它会用镜像兜底；
+   * 镜像可能是过期的（别的窗口改过皮肤 / 手工清过库）。这里在真实值可读之后重读一次，
+   * **只在与当前值不同**时才重应用 + 通知监听器（幂等，可重复调用）。
+   *
+   * @returns 皮肤是否因为这次校正而改变
+   */
+  resyncFromStorage(): boolean {
+    let saved: unknown = null;
+    try {
+      saved = getSetting(SETTINGS_KEY_SKIN);
+    } catch {
+      saved = null;
+    }
+    // 读不到（端口仍未就绪 / 键不存在）时不动现状：镜像至少是"上次生效值"
+    if (!isSkinId(saved)) return false;
+    if (saved === this.currentSkin) {
+      cacheSkin(saved); // 镜像缺失时补一次
+      return false;
+    }
+    this.currentSkin = saved;
+    cacheSkin(saved);
+    this.applySkin();
+    this.notifyListeners();
+    return true;
   }
 
   /** 获取当前皮肤 ID */
@@ -123,6 +199,7 @@ class ThemeManagerClass {
   setSkin(skin: SkinId): void {
     this.currentSkin = skin;
     setSetting(SETTINGS_KEY_SKIN, skin);
+    cacheSkin(skin); // 第 45 轮 D-17：同时更新首屏镜像，否则下次启动先渲染默认皮肤
     this.applySkin();
     this.notifyListeners();
   }

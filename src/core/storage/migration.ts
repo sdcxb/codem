@@ -1,6 +1,9 @@
 import * as SessionStorage from "./session";
 import * as MessageStorage from "./message";
 import { getSetting, setSetting, setSettingJSON, getSettingJSON, removeSetting } from "./settings";
+// 第 45 轮 D-17：把迁移过来的主题同时写进首屏镜像（否则镜像停在旧值，
+// 下次启动 index.html 的预渲染脚本会按旧档位先渲染一帧）
+import { THEME_SETTING_KEY, THEME_CACHE_KEY, isThemeMode, cacheTheme } from "../theme/theme-default";
 
 interface MigrationResult {
   projects: number;
@@ -40,6 +43,20 @@ function migrateSettingsKeys(): number {
       migrated++;
       console.log(`[Migration] SQLite key: ${oldKey} → ${newKey}`);
     }
+  }
+
+  // 第 45 轮 D-17：`mimo-theme → codem-theme` 迁移后补写首屏镜像。
+  // 老用户从没有过 `codem-theme-cache`（镜像键是第 36 波才有的），
+  // 若这里不补，`index.html` 的预渲染脚本读不到镜像 → 首帧按 CSS 默认档渲染，
+  // 与刚迁移过来的档位不一致（浅色用户看不出，暗色用户会看到白闪）。
+  try {
+    const migratedTheme = getSetting(THEME_SETTING_KEY);
+    if (isThemeMode(migratedTheme)) {
+      cacheTheme(migratedTheme);
+      console.log(`[Migration] 补写首屏主题镜像 ${THEME_CACHE_KEY}=${migratedTheme}`);
+    }
+  } catch {
+    /* 镜像只是首屏预测，写不进去不影响功能 */
   }
 
   return migrated;

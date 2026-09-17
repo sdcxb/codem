@@ -13,7 +13,9 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { Cpu, ChevronDown, Check, ChevronRight } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
 import { getSettingJSON, setSettingJSON } from '../core/storage/settings'
+import { getModelsForMode } from '../core/model-config'
 import type { ModelOption } from '../core/model-config'
+import { useAppStore } from '../store'
 
 export interface ModelSelectorProps {
   /** 当前选中的模型 ID */
@@ -30,15 +32,39 @@ export interface ModelSelectorProps {
  * Composer 模型选择器组件。
  * 显示当前模型名称，点击展开下拉列表选择模型。
  * 底部附带推理强度切换（从 settings 读取/写入）。
+ *
+ * ## 第 45 轮 D-15：注册到 Slot 时**必须能空 props 渲染**
+ *
+ * 审计事实：这个组件被 `ui-model-selection-provider.ts:92/96` 与
+ * `ui-plugins/ui-panels/index.ts:128` 注册进 slot，而 `SlotBridge`/`SlotListBridge`
+ * **不传 props**（`SlotBridge.tsx:254` 只转发调用点给的 props）——
+ * 于是 `models` 是 `undefined`，`models.find(...)` 直接抛错并被 `SlotErrorBoundary` 吞掉
+ * （表现为"这个 slot 一片空白、控制台一行错误"）。
+ *
+ * 现在 props 全部可缺省：缺省时模型列表按 `codem-settings.mode` 推导
+ * （`getModelsForMode`，与 ChatPanel/InputArea 同一来源）、当前模型取 `useAppStore.currentModel`；
+ * 没有 `onModelChange` 时列表项不可点（不假装能切换）。
  */
-export function ModelSelector({ model, models, onModelChange, locked = false }: ModelSelectorProps) {
+export function ModelSelector({ model: modelProp, models: modelsProp, onModelChange, locked = false }: Partial<ModelSelectorProps>) {
   const lang = useLang()
   const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
+  // 空 props 时的活性来源（同一份 store/设置，不是新造第二份状态）
+  const storeModel = useAppStore((s) => s.currentModel)
+  const mode: 'cli' | 'api' =
+    getSettingJSON<{ mode?: string }>('codem-settings', {}).mode === 'api' ? 'api' : 'cli'
+  const model = modelProp ?? storeModel ?? ''
+  const canPick = typeof onModelChange === 'function'
+  const models = useMemo<ModelOption[]>(() => {
+    if (Array.isArray(modelsProp)) return modelsProp
+    return getModelsForMode(mode)
+  }, [modelsProp, mode])
+
   const currentModelName = useMemo(
-    () => models.find(m => m.id === model)?.name || model || '',
+    // 第 45 轮 D-15：`models` 可能为空数组/undefined（旧版本直接 `models.find` 抛错）
+    () => models?.find?.(m => m.id === model)?.name || model || '',
     [models, model]
   )
 
@@ -129,7 +155,10 @@ export function ModelSelector({ model, models, onModelChange, locked = false }: 
             <button
               key={m.id}
               className={`bottom-bar-dropdown-item ${model === m.id ? 'active' : ''}`}
+              // D-15：没有 onModelChange 时不可点 —— 不假装能切换（点击后什么都不会发生最伤人）
+              disabled={!canPick}
               onClick={() => {
+                if (!canPick) return
                 onModelChange(m.id)
                 setOpen(false)
               }}

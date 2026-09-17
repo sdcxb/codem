@@ -36,6 +36,14 @@ const ALLOWLIST = new Map<string, string>([
   ["system-prompt-instructions", "高级旋钮：系统提示词覆盖，运行期只读，供手工配置"],
   ["ui-language", "由语言切换的其它通道写入（codem-language），此处兼容读取"],
   /*
+   * 第 45 轮 D-7 新增：`codem-policy` 是**组织下发的策略快照**，由 IT/管理端或运维脚本
+   * 写进 DB 的 `settings` 表（企业屏蔽模型/供应商、禁用绕过权限），**不应由本应用写入**
+   * —— 应用侧只读它（`core/settings/settings.ts::applyPolicyFromDb`）。
+   * 之前它连读点都没有（`get("policy.blockedModels")` 结构性查错层级，恒为默认值），
+   * 所以这条"只读不写"是**修好之后才出现**的、且是有意为之的一侧。
+   */
+  ["codem-policy", "组织策略：由管理端/脚本写入 DB settings，应用侧只读（企业策略不是用户偏好）"],
+  /*
    * `codem-storage-engine` 已从白名单移除：第 15 轮（v1.16.62）回滚开关**退役** ——
    * 旧引擎（渲染进程内的 sql.js）已随 L1 清零一起移除，那个键不再被读写。
    * 历史：迁移期它是唯一的回退手段，所以刻意「只读不写」（数据库打不开时它仍要可用）。

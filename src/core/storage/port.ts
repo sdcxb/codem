@@ -272,6 +272,31 @@ let current: StoragePort | null = null;
  */
 let registrationCount = 0;
 
+/**
+ * 端口注册/注销的订阅者（第 45 轮 D-17）。
+ *
+ * 为什么需要：有些模块必须在"配置面可读"之后**立刻**校正自己缓存的首屏预测值
+ * （典型：皮肤镜像 `codem-skin-cache` → `ThemeManager.resyncFromStorage()`）。
+ * 端口注册发生在 `App.tsx` 首个 effect 里的 `await registerRustStoragePort()`，
+ * 没有事件可听；轮询或"等下一次用户操作"都不成立。
+ * 这里的回调是**同步**调用的，且注册那一刻内存镜像已经预热完毕
+ * （`RustStoragePort.start()` 先 `await config.warmup()` 再 `setStoragePort(port)`），
+ * 所以订阅者可以立即同步读到真值。
+ */
+type StoragePortListener = (port: StoragePort | null) => void;
+const portListeners = new Set<StoragePortListener>();
+
+/**
+ * 订阅端口注册/注销。返回取消订阅函数。
+ * 注册时**不会**立即回调 —— 需要"当下同步一次"的调用方自行判 `hasStoragePort()`。
+ */
+export function setStoragePortListener(listener: StoragePortListener): () => void {
+  portListeners.add(listener);
+  return () => {
+    portListeners.delete(listener);
+  };
+}
+
 export function setStoragePort(port: StoragePort | null): void {
   current = port;
   if (port) {
@@ -280,6 +305,14 @@ export function setStoragePort(port: StoragePort | null): void {
       (globalThis as unknown as Record<string, unknown>).__codemStoragePorts = registrationCount;
     } catch {
       /* 诊断失败不影响功能 */
+    }
+  }
+  // 逐个隔离：一个订阅者抛错不能让别的订阅者（以及其他启动流程）看不到这次注册
+  for (const listener of portListeners) {
+    try {
+      listener(port);
+    } catch (e) {
+      console.warn('[storage/port] 端口订阅者失败', e);
     }
   }
 }

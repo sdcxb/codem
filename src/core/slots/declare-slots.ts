@@ -130,7 +130,12 @@ export function declareAppSlots(ctx: Context): void {
   slots.declareSlot('app.goal-bar', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.jobs-badge', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.plan-mode-chip', { kind: 'single', scope: 'root' }, 'framework')
-  slots.declareSlot('app.model-selector', { kind: 'single', scope: 'root' }, 'framework')
+  /*
+   * 第 45 轮 D-15：`app.model-selector` 的声明与两处注册已删除 —— 全仓**没有任何**
+   * `<SlotBridge name="app.model-selector">` 出口（有出口的只有 `conversation.composer.bar`），
+   * 所以它是"声明 + 注册 + 永远不渲染"的三件套死代码。
+   * 活着的模型选择入口是 ChatPanel 的 `.model-selector`（`ChatPanel.tsx:500`）。
+   */
   slots.declareSlot('app.permission-preset-selector', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.trajectory-panel', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.deliverable-files', { kind: 'single', scope: 'root' }, 'framework')

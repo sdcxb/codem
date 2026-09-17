@@ -70,8 +70,25 @@ export function LayeredSettingsPanel() {
     }
   };
 
+  /**
+   * 装载所有来源（第 45 轮 D-7）。
+   *
+   * 原实现从不装载：`loadAll()` 全仓零调用，于是来源列表永远"无数据"、
+   * 「导出所有设置」永远导出 `{}`（一个直接对用户撒谎的按钮）。
+   * 这里在挂载 / 项目变化时真正读一次文件来源（策略来源由 `applyPolicyFromDb` 从 DB 装载），
+   * 装载完再 `refresh()`，让页面显示真实数据。
+   */
   useEffect(() => {
+    let cancelled = false;
+    const mgr = getSettingsManager(currentProject?.path || ".");
+    if (!mgr) return;
     refresh();
+    void mgr.loadAll().then(() => {
+      if (!cancelled) refresh();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [currentProject?.path]);
 
   const mgr = getSettingsManager(currentProject?.path || ".");
@@ -80,9 +97,12 @@ export function LayeredSettingsPanel() {
 
   const selectedConfig = sources.find(s => s.source === selectedSource);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!mgr) return;
-    const data = mgr.exportSettings();
+    // D-7：exportSettings 现在是 async（导出前先装载来源），必须 await ——
+    // 旧写法拿到的是 Promise，`JSON.stringify(promise)` 会导出 `{}`。
+    const data = await mgr.exportSettings();
+    refresh();
     setExportData(JSON.stringify(data, null, 2));
     setShowExport(true);
   };
@@ -90,6 +110,8 @@ export function LayeredSettingsPanel() {
   // 一次算好，避免同一个 getter 在渲染里被反复调用（原代码每处都调了两遍）
   const blockedModels = mgr ? mgr.getBlockedModels() : [];
   const blockedProviders = mgr ? mgr.getBlockedProviders() : [];
+  /** 策略来源（DB 的 codem-policy）—— 用于区分"未配置策略"与"策略为空" */
+  const policySource = sources.find((s) => s.source === "policy");
 
   return (
     <div className="layered-panel">
@@ -193,7 +215,11 @@ export function LayeredSettingsPanel() {
 
           {(!selectedConfig.data || Object.keys(selectedConfig.data).length === 0) && (
             <div className="layered-empty-data">
-              {zh ? "无数据" : "No data"}
+              {selectedConfig.loadError
+                ? (zh ? `无数据（读取失败：${selectedConfig.loadError}）` : `No data (read failed: ${selectedConfig.loadError})`)
+                : selectedConfig.path
+                  ? (zh ? "无数据（文件不存在或为空）" : "No data (file missing or empty)")
+                  : (zh ? "无数据（该来源不来自磁盘文件）" : "No data (this source is not file-backed)")}
             </div>
           )}
         </div>
@@ -205,6 +231,22 @@ export function LayeredSettingsPanel() {
           <div className="layered-card-title">
             🛡️ {zh ? "策略限制" : "Policy Restrictions"}
           </div>
+          {/*
+            D-7：策略来源是 DB 的 `codem-policy` 键（不是磁盘文件，也没有默认内容）。
+            读不到时必须**说清"没有策略"而不是暗示"策略为空"** —— 旧的恒定 `❌ 否 / None`
+            既骗用户也骗审计（看起来像"检查过了，没有限制"）。
+          */}
+          {policySource?.loadError ? (
+            <div className="layered-empty-data">
+              {zh ? `策略读取失败：${policySource.loadError}` : `Policy read failed: ${policySource.loadError}`}
+            </div>
+          ) : !policySource?.data || Object.keys(policySource.data).length === 0 ? (
+            <div className="layered-empty-data">
+              {zh
+                ? "未配置组织策略（DB 键 codem-policy 不存在）—— 以下限制不适用，不代表已检查通过"
+                : "No organization policy configured (DB key codem-policy absent) — restrictions below do not apply"}
+            </div>
+          ) : (
           <div className="layered-policy">
             <div>
               <span className="layered-policy-key">{zh ? "绕过权限禁用" : "Bypass disabled"}: </span>
@@ -225,6 +267,7 @@ export function LayeredSettingsPanel() {
               </span>
             </div>
           </div>
+          )}
         </div>
       )}
 

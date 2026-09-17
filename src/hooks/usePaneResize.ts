@@ -6,6 +6,8 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { getSetting, setSetting } from "../core/storage/settings";
+import { hasStoragePort } from "../core/storage/port";
 
 interface PaneResizeConfig {
   /** 最小宽度 */
@@ -16,23 +18,145 @@ interface PaneResizeConfig {
   initial: number;
   /** 持久化 key（可选） */
   storageKey?: string;
+  /**
+   * 持久化介质（第 45 轮 D-22）。
+   *
+   * - `"db"`（默认）：写 DB 的 `settings` 表 —— 与 `codem-sidebar-width` 同类偏好同介质；
+   * - `"localStorage"`：只写 localStorage（历史行为，留给不想动库的调用方/测试）。
+   *
+   * 旧实现**只会**写 localStorage，于是"同类偏好两种介质"：清 localStorage（或换 profile）
+   * 会不同步地丢掉一部分界面偏好，崩溃恢复卡的"重置界面设置"也只清到这一半。
+   */
+  storage?: "db" | "localStorage";
+}
+
+/** 旧 localStorage 键（`"db"` 介质下读它做一次性迁移，写完 DB 后清掉） */
+const legacyKey = (key: string) => key;
+
+/**
+ * 同一 key 的宽度变化广播。
+ * 宽度变化时广播，让同一进程里的其它同 key 面板（例如 Hub 布局）同步。
+ */
+const paneWidthEvent = (key: string) => `codem-pane-width:${key}`;
+
+/**
+ * D-22 的订阅式读取：端口未就绪时先按 `initial` 渲染，端口注册那一刻
+ * （`App.tsx` 首个 effect）由 `port.ts` 的订阅者广播一次，这里再读 DB。
+ *
+ * 为什么需要"重复读"：`getSetting` 在端口未注册时同步返回 `null`，而 `useState`
+ * 的初值只算一次 —— 只读一次就会把"读不到"当成"用默认宽度"永久固化。
+ */
+function subscribePaneWidth(key: string, onChange: () => void): () => void {
+  const handler = () => onChange();
+  const w = window as unknown as {
+    addEventListener?: (t: string, h: EventListenerOrEventListenerObject) => void;
+    removeEventListener?: (t: string, h: EventListenerOrEventListenerObject) => void;
+  };
+  w.addEventListener?.(paneWidthEvent(key), handler as EventListener);
+  return () => w.removeEventListener?.(paneWidthEvent(key), handler as EventListener);
 }
 
 export function usePaneResize(config: PaneResizeConfig) {
-  const [width, setWidth] = useState(() => {
-    if (config.storageKey) {
+  const min = config.min;
+  const max = config.max;
+  const initial = config.initial;
+  const storageKey = config.storageKey;
+  const storage = config.storage ?? "db";
+
+  const clamp = useCallback((n: number) => Math.max(min, Math.min(max, n)), [min, max]);
+
+  /** 从配置的介质读宽度；读不到返回 null（**不返回默认值**，由调用方决定怎么兜） */
+  const readStored = useCallback((): number | null => {
+    if (!storageKey) return null;
+    const parse = (raw: string | null | undefined): number | null => {
+      if (!raw) return null;
+      const num = parseInt(raw, 10);
+      return Number.isNaN(num) ? null : num;
+    };
+    if (storage === "localStorage") {
       try {
-        const saved = localStorage.getItem(config.storageKey);
-        if (saved) {
-          const num = parseInt(saved, 10);
-          if (!isNaN(num) && num >= config.min && num <= config.max) {
-            return num;
-          }
-        }
-      } catch {}
+        return parse(localStorage.getItem(legacyKey(storageKey)));
+      } catch {
+        return null;
+      }
     }
-    return config.initial;
+    // DB 优先（与 codem-sidebar-width 同介质）
+    try {
+      const fromDb = parse(getSetting(storageKey));
+      if (fromDb !== null) return fromDb;
+    } catch {
+      /* 端口未就绪 → 走下面的 localStorage 兜底 */
+    }
+    /**
+     * 旧 localStorage 值兜底 + **在读取处就搬进 DB**（第 45 轮 D-22）。
+     *
+     * 为什么不在 `endResize` 里搬：那要等用户拖一次才迁移，用户不拖就永远两种介质并存
+     * （旧键一直在、DB 一直是空）。在读取处搬的好处是"读一次就收敛"——
+     * 而端口未就绪时 `setSetting` 会走 `reportWriteNotAccepted`，此时**不删旧键**，
+     * 等端口注册后（`port.ts` 的订阅者会触发 resync → 再读一次）自然完成迁移。
+     */
+    let legacy: number | null = null;
+    try {
+      legacy = parse(localStorage.getItem(legacyKey(storageKey)));
+    } catch {
+      legacy = null;
+    }
+    if (legacy === null) return null;
+    try {
+      // 端口未注册时不写 DB（`setSetting` 不抛，但会在权限上报通道里留一条"未保存"）：
+      // 先按旧值渲染，等端口注册后由订阅者触发 resync → 再读一次自然完成迁移
+      if (hasStoragePort()) {
+        setSetting(storageKey, String(legacy));
+        localStorage.removeItem(legacyKey(storageKey));
+      }
+    } catch {
+      /* 迁移失败：旧值仍然生效，下一次读取再试 */
+    }
+    return legacy;
+  }, [storageKey, storage]);
+
+  const [width, setWidth] = useState(() => {
+    const saved = readStored();
+    // 第 45 轮 D-22：范围校验保留（脏值不能把面板顶出屏幕）
+    if (saved !== null && saved >= min && saved <= max) return saved;
+    return initial;
   });
+
+  const persist = useCallback((value: number) => {
+    if (!storageKey) return;
+    if (storage === "localStorage") {
+      try {
+        localStorage.setItem(legacyKey(storageKey), String(value));
+      } catch {}
+      return;
+    }
+    /**
+     * DB 优先；**端口不可用时退回 localStorage 写**（不是静默丢）。
+     *
+     * 两个理由：
+     * - 端口注册是 App 首个 effect 里的事，在此之前用户也可能拖宽度（启动早期）；
+     * - 退回写保证"任何时刻都能持久化"，只是介质在端口就绪前后不同，
+     *   而端口就绪时 `readStored()` 会把 localStorage 那份**搬进 DB 并清掉**（收敛到单一介质）。
+     */
+    let wroteToDb = false;
+    try {
+      // `setSetting` 在端口未注册时**不抛**（只走 `reportWriteNotAccepted`），
+      // 所以必须先自己判端口是否可用，否则会把"只改了内存镜像"当成落库成功
+      if (hasStoragePort()) {
+        setSetting(storageKey, String(value));
+        wroteToDb = true;
+      }
+    } catch {
+      wroteToDb = false;
+    }
+    try {
+      if (wroteToDb) localStorage.removeItem(legacyKey(storageKey));
+      else localStorage.setItem(legacyKey(storageKey), String(value));
+    } catch {}
+    try {
+      window.dispatchEvent(new CustomEvent(paneWidthEvent(storageKey)));
+    } catch {}
+  }, [storageKey, storage]);
 
   const [isResizing, setIsResizing] = useState(false);
   const startRef = useRef({ x: 0, width: 0 });
@@ -49,6 +173,46 @@ export function usePaneResize(config: PaneResizeConfig) {
   useEffect(() => {
     widthRef.current = width;
   }, [width]);
+
+  /**
+   * 端口就绪 / 其它面板改了同一 key 时重新读一次（D-22）。
+   *
+   * 只在**手势没在进行中**时覆盖，否则会把用户正在拖的宽度拽回去。
+   * 两个来源：① 本进程里别的同 key 面板广播的自定义事件；
+   * ② 存储端口注册（`App.tsx` 首个 effect 里的 `await registerRustStoragePort()`）——
+   * 那一刻 DB 才能同步读到，必须重读一次，否则首帧的 `initial` 会被永久固化。
+   */
+  useEffect(() => {
+    if (!storageKey) return;
+    const resync = () => {
+      if (activeRef.current) return;
+      const saved = readStored();
+      if (saved === null || saved < min || saved > max) return;
+      if (saved === widthRef.current) return;
+      widthRef.current = saved;
+      pendingWidthRef.current = saved;
+      setWidth(saved);
+    };
+    const unsub = subscribePaneWidth(storageKey, resync);
+
+    let disposed = false;
+    let unsubPort: (() => void) | null = null;
+    // 延迟导入 + 忽略失败：纯 UI 测试环境里没有存储端口模块也没关系
+    void import("../core/storage/port")
+      .then((mod) => {
+        if (disposed) return;
+        unsubPort = mod.setStoragePortListener(() => {
+          resync();
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unsub();
+      unsubPort?.();
+    };
+  }, [storageKey, readStored, min, max]);
 
   /**
    * 结束拖拽 —— **幂等**，并且是唯一的释放路径。
@@ -88,18 +252,15 @@ export function usePaneResize(config: PaneResizeConfig) {
     detachRef.current = null;
     document.body.classList.remove("resizing-columns");
 
-    if (config.storageKey) {
-      try {
-        localStorage.setItem(config.storageKey, String(widthRef.current));
-      } catch {}
-    }
-  }, [config.storageKey]);
+    // 落盘（D-22：走 persist，按 `storage` 决定写 DB 还是 localStorage）
+    persist(widthRef.current);
+  }, [persist]);
 
   /** 由指针坐标算出夹紧后的宽度 */
   const widthForX = useCallback((clientX: number) => {
     const delta = startRef.current.x - clientX;
-    return Math.max(config.min, Math.min(config.max, startRef.current.width + delta));
-  }, [config.min, config.max]);
+    return clamp(startRef.current.width + delta);
+  }, [clamp]);
 
   const onResizeStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault();

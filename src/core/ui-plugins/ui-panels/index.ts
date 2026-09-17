@@ -58,7 +58,6 @@ import { SlashCommandMenu as UICommands } from '../../../components/SlashCommand
 
 // B类: 从嵌入组件提取的独立组件
 import { PlanModeChip } from '../../../components/PlanModeChip'
-import { ModelSelector } from '../../../components/ModelSelector'
 import { PermissionPresetSelector } from '../../../components/PermissionPresetSelector'
 import { DeliverableFiles } from '../../../components/DeliverableFiles'
 
@@ -125,7 +124,11 @@ export function apply(ctx: any) {
 
   // B类: 从嵌入组件提取的独立组件
   slots.register({ name: 'app.plan-mode-chip', id: 'default-plan-mode-chip', priority: 0 }, PlanModeChip)
-  slots.register({ name: 'app.model-selector', id: 'default-model-selector', priority: 0 }, ModelSelector)
+  /*
+   * 第 45 轮 D-15：`app.model-selector` 的注册已删除 —— 该 slot 全仓没有出口
+   * （`declare-slots.ts` 的声明也已一并删除），注册它只会让"插件面板"显示一个永远不出现的组件。
+   * 活着的模型选择入口是 ChatPanel 的 `.model-selector`（`ChatPanel.tsx:500`）。
+   */
   slots.register({ name: 'app.permission-preset-selector', id: 'default-permission-preset', priority: 0 }, PermissionPresetSelector)
   slots.register({ name: 'app.deliverable-files', id: 'default-deliverable-files', priority: 0 }, DeliverableFiles)
 

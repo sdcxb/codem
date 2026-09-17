@@ -68,6 +68,7 @@ import { FileEditor } from "../components/FileEditor";
 import { usePaneResize } from "../hooks/usePaneResize";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { getSetting, setSetting } from "../core/storage/settings";
+import { getStoragePort } from "../core/storage/port";
 
 const FILE_A = "C:\\proj\\a.txt";
 const FILE_B = "C:\\proj\\b.txt";
@@ -252,6 +253,19 @@ describe("P1-9 Excel/CSV 预览行数上限", () => {
 
 // ==================== RA-4：P1-10 拖拽释放 ====================
 
+/**
+ * 面板宽度的落盘判据（第 45 轮 D-22）。
+ *
+ * 这一组原来断言 `localStorage.getItem(storageKey)`；D-22 把 `usePaneResize` 的介质
+ * 从 localStorage 收敛到配置面（DB `settings` 表）——与 `codem-sidebar-width` 同介质
+ * ——所以断言改成读配置面（测试基座提供的假端口）。
+ * 旧 localStorage 值的**迁移**路径由 `settings-tail-fixes.test.ts` 的
+ * SKEY-D22-2 专门守着。
+ */
+function storedPaneWidth(key: string): string | null {
+  return (getStoragePort().config.get<string | null>(key, null) as string | null) ?? null;
+}
+
 describe("P1-10 usePaneResize 释放逻辑", () => {
   function startResize(hook: { current: { onResizeStart: (e: any) => void } }, clientX = 100) {
     act(() => {
@@ -275,7 +289,7 @@ describe("P1-10 usePaneResize 释放逻辑", () => {
       document.dispatchEvent(new window.PointerEvent("pointerup", { clientX: 80 }));
     });
     expect(document.body.classList.contains("resizing-columns")).toBe(false);
-    expect(localStorage.getItem("test-pane-width-a")).toBe("440");
+    expect(storedPaneWidth("test-pane-width-a")).toBe("440");
     unmount();
   });
 
@@ -361,7 +375,7 @@ describe("P1-10 usePaneResize 释放逻辑", () => {
       unmount();
     });
     expect(document.body.classList.contains("resizing-columns")).toBe(false);
-    expect(localStorage.getItem("test-pane-width-e")).toBe("480");
+    expect(storedPaneWidth("test-pane-width-e")).toBe("480");
   });
 
   it("RA-4f: 真实接线（pointerdown 事件 → 拖动 → pointerup）宽度正确且 class 被摘掉", () => {
@@ -381,7 +395,7 @@ describe("P1-10 usePaneResize 释放逻辑", () => {
     expect(document.body.classList.contains("resizing-columns")).toBe(false);
     // 向左 40 → 420 + 40 = 460
     expect(result.current.width).toBe(460);
-    expect(localStorage.getItem("test-pane-width-f")).toBe("460");
+    expect(storedPaneWidth("test-pane-width-f")).toBe("460");
     document.body.removeChild(handle);
     unmount();
   });

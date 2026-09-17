@@ -53,6 +53,40 @@ export const credentialsProvider: Plugin = (ctx: any) => {
   // In-memory cache for runtime-only credentials (not persisted)
   const runtimeStore: Record<string, string> = {}
 
+  /**
+   * 第 45 轮 D-13：`apiKeys` 这个键**全仓没有写入方**，于是"密钥混淆存储"（D1-2）
+   * 从来没有被写过一次，`credentials.get()` 永远走 env / 空 —— 也就是说这条
+   * "把 API Key 交给凭证层"的路径一直是死的。
+   *
+   * 真正在用的密钥住在 `codem-settings.providers[].apiKey`（设置页写、`ProviderRegistry`
+   * 读，`llm/provider.ts:855-863`）。在设置页被接到 `ctx.credentials.set` 之前，
+   * 这里做一次**只读桥接**：混淆键里没有的，去 `codem-settings.providers` 里按
+   * provider id 找（`{PROVIDER}_API_KEY` → `providers[id].apiKey`）。
+   * 这样 `ctx.get('credentials').get('OPENAI_API_KEY')` 至少拿得到用户在设置里填的密钥。
+   *
+   * 注意：这是**读侧的兼容**，不是把明文抄一份进 `apiKeys` —— 写入仍只发生在
+   * `set()`（混淆存储）里。真正的接线需要在 `SettingsPanel` 的 API Key 输入上调用它。
+   */
+  const canonicalKey = (key: string): { providerId: string } | null => {
+    const m = /^([A-Z0-9]+)_API_KEY$/.exec(key)
+    if (!m) return null
+    return { providerId: m[1].toLowerCase() }
+  }
+
+  const lookupCanonicalProviderKey = (key: string): string | undefined => {
+    const parsed = canonicalKey(key)
+    if (!parsed) return undefined
+    try {
+      const settings = getSettingJSON<any>('codem-settings', null)
+      const providers = Array.isArray(settings?.providers) ? settings.providers : []
+      const hit = providers.find((p: any) => String(p?.id || '').toLowerCase() === parsed.providerId)
+      const value = typeof hit?.apiKey === 'string' ? hit.apiKey.trim() : ''
+      return value || undefined
+    } catch {
+      return undefined
+    }
+  }
+
   /** Read API keys from settings (persisted, obfuscated) */
   const getApiKeys = (): Record<string, string> => {
     const raw = getSettingJSON<Record<string, string>>('apiKeys', {})
@@ -83,7 +117,10 @@ export const credentialsProvider: Plugin = (ctx: any) => {
       // 2. Persisted settings (decoded)
       const apiKeys = getApiKeys()
       if (apiKeys[key]) return apiKeys[key]
-      // 3. Environment variable fallback
+      // 3. D-13：设置页真正在写的密钥（codem-settings.providers[].apiKey）
+      const canonical = lookupCanonicalProviderKey(key)
+      if (canonical) return canonical
+      // 4. Environment variable fallback
       if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key]
       return undefined
     },

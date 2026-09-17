@@ -32,6 +32,8 @@ export function SkinSelector() {
 
   const handleSkinChange = (newSkin: SkinId) => {
     setSkin(newSkin);
+    // 第 45 轮 D-17：必须走 `ThemeManager.setSkin` —— 它除了落库还会刷新首屏镜像
+    // （若改成只 `setSetting("skin-id", …)`，镜像会停在旧皮肤 → 下次启动先渲染错的皮肤一帧）
     ThemeManager.setSkin(newSkin);
   };
 

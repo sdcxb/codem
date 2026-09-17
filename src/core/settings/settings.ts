@@ -1,5 +1,6 @@
 // ========== Settings Types ==========
 import { reportPersistFailure } from "../storage/persist-failure";
+import { getSettingJSON } from "../storage/settings";
 
 export type SettingsSource =
   | "cli"           // Command line arguments (highest priority)
@@ -17,6 +18,8 @@ export interface SettingsSourceConfig {
   path?: string;
   data?: Record<string, unknown>;
   lastLoaded?: number;
+  /** 最近一次装载失败的原因（如实记录，供诊断面板显示"为什么无数据"） */
+  loadError?: string;
 }
 
 export interface SettingsValue {
@@ -151,12 +154,37 @@ export interface SettingsChangeEvent {
   timestamp: number;
 }
 
+/** `policy` 来源在 DB 里的键（第 45 轮 D-7）：组织下发的策略快照 */
+export const POLICY_SETTING_KEY = "codem-policy";
+
 // ========== Settings Manager ==========
+
+/**
+ * 分层设置管理器。
+ *
+ * ## 第 45 轮 D-7 修复说明（原实现整条链路是死的）
+ *
+ * 原实现有三处**结构性**错误，使"分层设置"面板上的一切都是装饰品：
+ *
+ * 1. `getPermissionRules/getMCPServers` 循环里已经按来源取，却又拼了一次来源名
+ *    （`this.get(\`${source}.permissions\`)` → 查 `data[source].permissions`），永远 undefined；
+ * 2. `isFeatureEnabled` 同样拼了来源名（`get("flag.\${feature}")`）；
+ * 3. `policy` 来源**没有 path、也没有装载器**，而 `isBypassDisabled/getBlockedModels/
+ *    getBlockedProviders` 直接读 `this.get("policy.xxx")` → 恒定返回默认值
+ *    （面板把它当"真实检查结果"渲染成 `❌ 否 / None`）。
+ *
+ * 现在：来源内的键**只按来源取**（`getFromSource`），`policy` 从 DB 的
+ * `codem-policy` 键装载（`applyPolicyFromDb`），装载失败的原因记进 `loadError`（不再静默）。
+ */
 export class SettingsManager {
   private sources: Map<SettingsSource, SettingsSourceConfig> = new Map();
   private cache: Map<string, SettingsValue> = new Map();
   private listeners: Map<string, (event: SettingsChangeEvent) => void> = new Map();
   private projectPath: string;
+  /** 文件来源是否已经装载过（`loadAll()` 的幂等依据） */
+  private loaded = false;
+  /** 装载中的 promise（并发调用共用同一次装载，避免重复 IO） */
+  private loading: Promise<void> | null = null;
 
   constructor(projectPath: string) {
     this.projectPath = projectPath;
@@ -170,6 +198,7 @@ export class SettingsManager {
       { source: "project", priority: 2, enabled: true, path: `${this.projectPath}/.codem/settings.json` },
       { source: "user", priority: 3, enabled: true, path: "~/.codem/settings.json" },
       { source: "flag", priority: 4, enabled: true },
+      // policy 的来源是 DB 的 `codem-policy` 键（见 applyPolicyFromDb），不是磁盘文件
       { source: "policy", priority: 5, enabled: true },
       { source: "cli", priority: 6, enabled: true },
     ];
@@ -179,20 +208,74 @@ export class SettingsManager {
     }
   }
 
-  /** Load settings from all sources */
+  /** 当前管理器绑定的项目路径（诊断用） */
+  getProjectPath(): string {
+    return this.projectPath;
+  }
+
+  /**
+   * 装载所有文件来源（幂等；并发调用共用同一次装载）。
+   *
+   * 注意：原来这个方法全仓**零调用**，所以 `config.data` 永远是空的 ——
+   * 导出为空、来源列表"无数据"、策略恒默认值，三个现象都是同一个根因。
+   */
   async loadAll(): Promise<void> {
+    if (this.loading) return this.loading;
+    this.loading = this.doLoadAll().finally(() => {
+      this.loading = null;
+    });
+    return this.loading;
+  }
+
+  private async doLoadAll(): Promise<void> {
     for (const [, config] of this.sources) {
-      if (config.path) {
-        try {
-          const data = await this.loadFile(config.path);
-          config.data = data;
-          config.lastLoaded = Date.now();
-        } catch {
-          config.data = {};
-        }
+      if (!config.path) continue;
+      // 已经有数据（`importSettings()` 灌进来的 / 之前装载过）就不重读：
+      // `exportSettings()` 每次都会 `await loadAll()`，若不跳过就会把调用方刚灌进去的来源**清空**
+      if (config.data !== undefined) continue;
+      // `loadFile` **不吞异常**（读不到 ≠ 空设置）：读失败时记 `loadError`，面板才能说清"为什么无数据"
+      try {
+        const data = await this.loadFile(config.path);
+        config.data = data;
+        config.lastLoaded = Date.now();
+        config.loadError = undefined;
+      } catch (e) {
+        config.data = {};
+        config.loadError = e instanceof Error ? e.message : String(e);
       }
     }
+    this.applyPolicyFromDb();
+    this.loaded = true;
     this.cache.clear();
+  }
+
+  /**
+   * 从 DB 装载组织策略（第 45 轮 D-7）。
+   *
+   * 策略存在 DB 的 `codem-policy` 键里（JSON 对象，形如
+   * `{"blockedModels":["gpt-4o"],"bypassPermissionsDisabled":true}`）。
+   * 端口未就绪 / 键不存在时**保持原 data**（不清空 —— 清了会把"读不到"当成"策略为空"）。
+   */
+  applyPolicyFromDb(): boolean {
+    const config = this.sources.get("policy");
+    if (!config) return false;
+    try {
+      const stored = getSettingJSON<PolicySettings | null>(POLICY_SETTING_KEY, null);
+      if (!stored || typeof stored !== "object") return false;
+      config.data = { ...(stored as Record<string, unknown>) };
+      config.lastLoaded = Date.now();
+      config.loadError = undefined;
+      this.cache.clear();
+      return true;
+    } catch (e) {
+      config.loadError = e instanceof Error ? e.message : String(e);
+      return false;
+    }
+  }
+
+  /** 是否已装载过（面板可据此区分"无数据"与"还没装载"） */
+  isLoaded(): boolean {
+    return this.loaded;
   }
 
   /** Get a setting value with priority merging */
@@ -229,8 +312,13 @@ export class SettingsManager {
     return result as T;
   }
 
-  /** Get value from a specific source */
-  private getFromSource(key: string, source: SettingsSource): unknown {
+  /**
+   * Get value from a specific source（来源内的相对键路径，如 `permissions` / `features.x`）。
+   *
+   * 公开的（第 45 轮 D-7）：`getPermissionRules/getMCPServers/isFeatureEnabled` 就是
+   * "按来源取同一个相对键"的循环 —— 之前它们错误地走了 `this.get(来源名 + "." + 键)`。
+   */
+  getFromSource(key: string, source: SettingsSource): unknown {
     const config = this.sources.get(source);
     if (!config?.data) return undefined;
 
@@ -288,8 +376,9 @@ export class SettingsManager {
       .sort(([, a], [, b]) => a.priority - b.priority);
 
     for (const [source] of sortedSources) {
-      const sourceRules = this.get<PermissionRule[]>(`${source}.permissions`, []);
-      rules.push(...sourceRules);
+      // D-7：来源内的键是相对的 `permissions`，不能再拼来源名
+      const sourceRules = this.getFromSource("permissions", source);
+      if (Array.isArray(sourceRules)) rules.push(...(sourceRules as PermissionRule[]));
     }
 
     return rules;
@@ -304,8 +393,11 @@ export class SettingsManager {
       .sort(([, a], [, b]) => a.priority - b.priority);
 
     for (const [source] of sortedSources) {
-      const sourceServers = this.get<Record<string, unknown>>(`${source}.mcpServers`, {});
-      Object.assign(servers, sourceServers);
+      // D-7：同上
+      const sourceServers = this.getFromSource("mcpServers", source);
+      if (sourceServers && typeof sourceServers === "object") {
+        Object.assign(servers, sourceServers as Record<string, unknown>);
+      }
     }
 
     return servers;
@@ -313,17 +405,21 @@ export class SettingsManager {
 
   /** Check if a feature is enabled */
   isFeatureEnabled(feature: string): boolean {
-    // Check flag source first
-    const flagValue = this.get<boolean>(`flag.${feature}`);
-    if (flagValue !== undefined) return flagValue;
+    // 按优先级从高到低找第一个显式声明（cli → policy → flag → user → project → local → default）
+    const sortedSources = Array.from(this.sources.entries())
+      .filter(([, config]) => config.enabled)
+      .sort(([, a], [, b]) => b.priority - a.priority);
 
-    // Check project settings
-    const projectValue = this.get<boolean>(`project.features.${feature}`);
-    if (projectValue !== undefined) return projectValue;
-
-    // Check user settings
-    const userValue = this.get<boolean>(`user.features.${feature}`);
-    if (userValue !== undefined) return userValue;
+    for (const [source] of sortedSources) {
+      // D-7：来源内的键是相对的 `features.<name>`
+      const value = this.getFromSource(`features.${feature}`, source);
+      if (value !== undefined) return value === true || value === "true";
+      // `flag` 来源的形态是顶层开关名（`{"new-ui": true}`），不是 features 子对象
+      if (source === "flag") {
+        const flagValue = this.getFromSource(feature, source);
+        if (flagValue !== undefined) return flagValue === true || flagValue === "true";
+      }
+    }
 
     return false;
   }
@@ -340,17 +436,21 @@ export class SettingsManager {
 
   /** Check if bypass permissions is disabled by policy */
   isBypassDisabled(): boolean {
-    return this.get<boolean>("policy.bypassPermissionsDisabled", false);
+    // D-7：只查 policy 来源内的键（原来 get("policy.bypassPermissionsDisabled") 在多来源
+    // 合并的结果上又拼了一次来源名 → 恒定 false）
+    return this.getFromSource("bypassPermissionsDisabled", "policy") === true;
   }
 
   /** Get blocked models */
   getBlockedModels(): string[] {
-    return this.get<string[]>("policy.blockedModels", []);
+    const v = this.getFromSource("blockedModels", "policy");
+    return Array.isArray(v) ? (v as string[]) : [];
   }
 
   /** Get blocked providers */
   getBlockedProviders(): string[] {
-    return this.get<string[]>("policy.blockedProviders", []);
+    const v = this.getFromSource("blockedProviders", "policy");
+    return Array.isArray(v) ? (v as string[]) : [];
   }
 
   /** Check if model is allowed */
@@ -390,15 +490,18 @@ export class SettingsManager {
     }
   }
 
-  /** Load settings from file */
+  /**
+   * 读一个设置文件。
+   *
+   * ⚠️ 读不到时**必须抛**（原来 `catch { return {} }`）。返回空对象会让"文件不存在 / 无权限 /
+   * 内容不是 JSON"三种情况全部退化成"这个来源没有配置" —— 面板上表现为"无数据"，
+   * 而用户/排查者无从知道到底是没有文件还是读不动（这正是 D-7 里"失败没有任何提示"的一半）。
+   * 异常由 `doLoadAll()` 捕获并记进 `loadError`。
+   */
   private async loadFile(path: string): Promise<Record<string, unknown>> {
-    try {
-      const { readFile } = await import("../file-api");
-      const content = await readFile(path);
-      return JSON.parse(content);
-    } catch {
-      return {};
-    }
+    const { readFile } = await import("../file-api");
+    const content = await readFile(path);
+    return JSON.parse(content);
   }
 
   /** Save settings to file */
@@ -412,33 +515,79 @@ export class SettingsManager {
     }
   }
 
-  /** Export all settings */
-  exportSettings(): Record<string, unknown> {
+  /**
+   * Export all settings（第 45 轮 D-7）。
+   *
+   * 原实现直接遍历 `sources` 里已有的 `config.data`，而 `data` 只可能由 `loadAll()` /
+   * `set()` / `importSettings()` 填充 —— 三者当时**全都没有调用点**，于是号称
+   * "导出所有设置"的按钮永远导出 `{}`（而且失败/空结果没有任何提示）。
+   *
+   * 现在：导出前先 `await loadAll()`（幂等，装载过一次就直接返回），
+   * 于是导出的是**磁盘上的真实来源数据**；没装载成功的来源仍会出现在结果里（空对象），
+   * 具体原因看 `getAllSources()[i].loadError`。
+   */
+  async exportSettings(): Promise<Record<string, unknown>> {
+    await this.loadAll();
+    this.applyPolicyFromDb();
+
     const result: Record<string, unknown> = {};
     for (const [source, config] of this.sources) {
-      if (config.data) {
-        result[source] = config.data;
+      if (config.enabled) {
+        result[source] = config.data ?? {};
       }
     }
     return result;
   }
 
-  /** Import settings */
+  /** Import settings（把一份配置灌进指定来源；`loadAll()` 之后不会再被文件覆盖） */
   importSettings(data: Record<string, unknown>, source: SettingsSource = "user"): void {
     const config = this.sources.get(source);
     if (config) {
       config.data = data;
+      config.lastLoaded = Date.now();
       this.cache.clear();
     }
   }
 }
 
 // ========== Singleton ==========
-let instance: SettingsManager | null = null;
 
+let instance: SettingsManager | null = null;
+/** 单例当前绑定的项目路径（用于识别"面板换了项目"） */
+let instancePath: string | undefined;
+
+/**
+ * 取分层设置管理器单例。
+ *
+ * 第 45 轮 D-7：原实现 `if (!instance && projectPath)` 把**首次调用时的项目路径固化**，
+ * 之后无论传什么路径都返回同一个实例 —— 面板每次渲染都传新路径，却永远拿回第一次那个，
+ * 于是"当前项目"标题与实际的 `.codem/settings.json` 路径对不上。
+ * 现在显式路径会触发**重建**（不同项目就是不同的来源集合）。
+ *
+ * ⚠️ 已知限制（写在报告里，需要他人配合）：`LLMEngine` 在构造时按当时的路径取走一份引用
+ * （`llm/index.ts:200`），重建不会自动换掉它手里那份。引擎侧读取的
+ * `getPermissionRules/isFeatureEnabled` 目前没有生产消费者，所以实际影响为零。
+ */
 export function getSettingsManager(projectPath?: string): SettingsManager {
-  if (!instance && projectPath) {
-    instance = new SettingsManager(projectPath);
+  if (!instance && !projectPath) {
+    // 与旧行为一致：没有路径时返回空（非空断言只是为了兼容既有签名，
+    // 调用方 `llm/index.ts:200` 已经用 `?? new SettingsManager(...)` 兜住了这种情况）
+    return instance!;
   }
-  return instance!;
+  if (!instance) {
+    instance = new SettingsManager(projectPath!);
+    instancePath = projectPath;
+    return instance;
+  }
+  if (projectPath && projectPath !== instancePath) {
+    instance = new SettingsManager(projectPath);
+    instancePath = projectPath;
+  }
+  return instance;
+}
+
+/** 测试用：丢弃单例（避免用例之间互相串味） */
+export function __resetSettingsManagerForTests(): void {
+  instance = null;
+  instancePath = undefined;
 }
