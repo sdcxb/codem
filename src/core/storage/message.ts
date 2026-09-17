@@ -921,10 +921,27 @@ export async function rebuildSessionFts(sessionId: string): Promise<{ removed: n
   if (!port) return out;
   const keepIds = (cachedLogMessages.get(sessionId) ?? []).map((m) => m.id);
   try {
-    const res = (await port.data.execute("fts.rebuild", {
+    /**
+     * ⚠️ 必须用**结构化结果**那条通道（`data.command`），**不能**用 `data.execute`。
+     *
+     * `execute` 刻意把结果压成 `{ written }`（见 `rust-port.ts` 的说明），而
+     * `fts.rebuild` 的真实结果是 `{ removed, added, refreshed, skipped_null_id, … }` ——
+     * 用 `execute` 调它，这几个字段**永远读不到**，`?? 0` 一兜底就恒报 `{removed: 0, added: 0}`：
+     * 于是这行"索引对齐"日志**从不打印**，而 `message-port-coverage.test.ts` 又把这个 0
+     * 断言成了期望值 —— CI 从结构上看不见这个缺陷（第 45 轮线协议审计的 P1-1）。
+     *
+     * 与 `migration.auto` 踩过的坑是同一个：**契约对不上时不许猜**。
+     * `command` 是**可选能力**（`port.ts` 有说明），缺能力时**抛**而不是静默返回 0 ——
+     * 与 `maintenance.ts::structuredCommand` 同一条纪律：缺能力要如实表达成"这一步失败"。
+     */
+    const structured = port.data.command;
+    if (!structured) {
+      throw new Error("端口没有 command 能力，无法执行 fts.rebuild（结构化结果读不到）");
+    }
+    const res = (await structured.call(port.data, "fts.rebuild", {
       session_id: sessionId,
       keep_ids: keepIds,
-    })) as unknown as { removed?: number; added?: number; refreshed?: number };
+    })) as { removed?: number; added?: number; refreshed?: number };
     out.removed = Number(res?.removed ?? 0);
     out.added = Number(res?.added ?? 0) + Number(res?.refreshed ?? 0);
     if (out.removed > 0 || out.added > 0) {
@@ -1131,7 +1148,17 @@ export function createMessage(message: Message, sessionId: string): void {
 // - 读不到 base 行（更新路径）→ 回退到原路径，不猜数据。
 
 type RustMessagePortLike = {
-  data: { execute(cmd: string, params?: Record<string, unknown>): Promise<{ written: number }> };
+  data: {
+    execute(cmd: string, params?: Record<string, unknown>): Promise<{ written: number }>;
+    /**
+     * **结构化结果**通道（第 45 轮线协议审计 P1-1 之后这里必须有它）。
+     *
+     * 声明成可选：它是可选能力（`port.ts` 的 `StorageDataPort.command?`），
+     * 调用方必须显式处理"没有它"这一态（`fts.rebuild` 就是这么做的：缺能力就抛，
+     * 而不是静默返回 0 —— "字段读不到就取默认值"正是本项目一直在消灭的模式）。
+     */
+    command?: <R>(cmd: string, params?: Record<string, unknown>) => Promise<R>;
+  };
   messages?: {
     isLoaded(sessionId: string): boolean;
     isTruncated(): boolean;
@@ -1598,62 +1625,75 @@ function writeMessageIndex(message: Message, sessionId: string): void {
    */
   const attachmentsViaPort = writeAttachmentsViaPort(message, sessionId);
 
+  /**
+   * ## 事件溯源双写必须在这里 —— 在下面那行"端口接手就 return"**之前**（第 45 轮功能上下文审计 P0-1）
+   *
+   * 原来这段在 `if (writeIndexViaRust(...)) return;` **之后**。而 `writeIndexViaRust` 在端口可用时
+   * 返回 `true` —— 也就是**所有生产运行**都走那条 return，于是这段一次都没执行过：
+   * 主聊天的 `user_message` 事件**从未写入事件日志**（`assistant_text` / `tool_call` / `tool_result` 同理）。
+   *
+   * 为什么危害不只是"少一张表的数据"：事件日志是 `event-projection` 的唯一输入，
+   * 而投影结果被 `runtime-invariants` / `time-context` / `session-search` / `surface-manager`
+   * 读去描述"这个会话现在有什么"。日志恒空 → 那些地方会给出**与事实相反**的自我描述
+   * （典型形态：把"Context: 0 visible messages"这类假事实喂进系统提示词）。
+   *
+   * ### 为什么只搬 `user_message` / `assistant_text` 这两种事件
+   *
+   * `tool_call` / `tool_result` 在生产上有一个**专职写入者**：`tool-pipeline` 的
+   * `EventLogFinalizeMiddleware`（它是工具流水线的 finalize 层，每次工具调用都会走）。
+   * 如果这里也写一份，同一次工具调用会在事件表里留两行（投影按 id 去重所以语义无害，
+   * 但那是纯粹的行数浪费）。**一个事实一个写入者**，所以这两种事件从这里移交给流水线。
+   *
+   * ### 已知的边界（如实记下，别让下一个人以为它覆盖了更多）
+   *
+   * 主聊天的助手消息是**先建空壳、再流式更新**：`createMessage` 那一刻 `content` 还是空串，
+   * 所以这里不会写 `assistant_text`；而 `updateMessage`（流式增量）**没有**事件写入点 ——
+   * 也就是说**助手正文目前不进事件日志**。要闭合它需要一条"消息定稿"事件写入点
+   * （在 `updateMessage` 的 `status → done/error` 转变处），那要先确认消费方对
+   * `assistant_text` 的期望语义（见 `.preview-shot/_audit/FEATURE-CONTEXT.md` 的 E1/E17）。
+   */
+  appendMessageCreatedEvents(sessionId, message);
+
   // 迁移期分流：端口是 rust → 索引写走 Rust（**单事务**：主行 + JSON 列 + tool_calls 整体替换）
   if (writeIndexViaRust(message, sessionId, "create")) return;
   if (!ftsViaPort) {
     // 端口没接手：查询索引这一步没有落地，如实上报（旧库那条回退路径已退役）
     reportWriteNotAccepted("message.writeMessageIndex", "消息索引未写入");
   }
-  // ========== P0-1: Event Sourcing dual-write ==========
-  // Append events to the event log alongside the CRUD write.
-  // This enables gradual migration: buildMessages() can read from
-  // either the old CRUD or the new event projection.
-  //
-  // 第 17 轮（L4）：这里原来包在 `try { … } catch (eventErr) { … }` 里（catch 只打一行告警）。
-  // A 态（旧库回退）删除后，块内只剩同步的 `getEventLog()` 调用，没有可 catch 的失败路径，
-  // 所以改成带说明的裸块 —— **事件日志双写本身一个字节都没动**（它才是事件溯源的写入口）。
-  {
+
+  // 第 78 波：**权威日志是追加式 JSONL**（对齐 DSH 的 session-persistence-jsonl），
+  // SQLite 退化为"可重建的查询索引"。这条追加已由 createMessage 在**索引之前**完成（第 91 波）。
+  // 第 17 轮（L4）：原来这里还有一句 `persistDatabase()`（旧库整库导出）—— 随 A 态一起删除，
+  // 它在新架构下既无对象（旧库不加载）也无意义（端口写入是单事务落地的）。
+}
+/**
+ * 消息创建时的**事件溯源双写**（`user_message` / `assistant_text`）。
+ *
+ * 为什么抽成函数：它必须在 `writeMessageIndex` 里**端口早退之前**执行（见那里的说明）。
+ * 抽出来还能让"哪些事件由这里写"这件事只有一个落点 ——
+ * `tool_call` / `tool_result` **刻意不在这里**，它们由 `tool-pipeline` 的
+ * `EventLogFinalizeMiddleware` 专职写入（一个事实一个写入者）。
+ *
+ * 边界（如实记下）：助手消息在主聊天里是"先建空壳、再流式更新"，所以创建这一刻
+ * `content` 为空 → 这里不写 `assistant_text`；当前也**没有**定稿写入点，
+ * 因此助手正文暂不进事件日志。
+ */
+function appendMessageCreatedEvents(sessionId: string, message: Message): void {
   const eventLog = getEventLog();
   if (message.role === "user") {
     eventLog.append(sessionId, "user_message", {
       messageId: message.id,
       content: message.content,
     });
-  } else if (message.role === "assistant") {
-    if (message.content) {
-      eventLog.append(sessionId, "assistant_text", {
-        messageId: message.id,
-        content: message.content,
-        model: message.model,
-      });
-    }
-    if (message.toolCalls) {
-      for (const tc of message.toolCalls) {
-        eventLog.append(sessionId, "tool_call", {
-          toolCallId: tc.id,
-          messageId: message.id,
-          tool: tc.tool,
-          args: tc.args,
-          status: tc.status,
-        });
-        if (tc.result) {
-          eventLog.append(sessionId, "tool_result", {
-            toolCallId: tc.id,
-            messageId: message.id,
-            result: tc.result,
-            status: "completed",
-          });
-        }
-      }
-    }
+    return;
   }
-
+  if (message.role === "assistant" && message.content) {
+    eventLog.append(sessionId, "assistant_text", {
+      messageId: message.id,
+      content: message.content,
+      model: message.model,
+    });
   }
-
-  // 第 78 波：**权威日志是追加式 JSONL**（对齐 DSH 的 session-persistence-jsonl），
-  // SQLite 退化为"可重建的查询索引"。这条追加已由 createMessage 在**索引之前**完成（第 91 波）。
-  // 第 17 轮（L4）：原来这里还有一句 `persistDatabase()`（旧库整库导出）—— 随 A 态一起删除，
-  // 它在新架构下既无对象（旧库不加载）也无意义（端口写入是单事务落地的）。
 }
 
 /**

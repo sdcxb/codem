@@ -189,6 +189,37 @@ describe("读路径覆盖（rust 模式）", () => {
     setStoragePort(port);
     const { rebuildSessionFts, hydrateSessionLog } = await import("../core/storage/message");
 
+    /**
+     * ## 这条用例为什么必须造出**非零**的结果（第 45 轮线协议审计 P1-1）
+     *
+     * 它原来只断言 `out` 等于 `{removed: 0, added: 0}` —— 而那个 0 在真机上**恒成立**：
+     * `rebuildSessionFts` 当时用 `data.execute` 调 `fts.rebuild`，而 `execute` 只回 `{written}`
+     * （完整结果被压掉），`?? 0` 一兜底就永远是 0。
+     * 于是"fts.rebuild 退化 → 搜索永远搜不到新消息"这件事，**CI 结构上不可能发现** ——
+     * 测试把 bug 本身钉成了期望值。
+     *
+     * 现在：库里放一条**索引里没有**的消息（应补 1 条）、索引里放一条**库和日志里都没有**的
+     * 幽灵行（应删 1 条），rebuild 必须如实报出这两个数字。若哪天有人把 `data.command`
+     * 改回 `data.execute`，这条会立刻红成 `{removed: 0, added: 0}`。
+     */
+    await port.data.execute("crud.upsert", {
+      table: "messages",
+      rows: [
+        {
+          id: "m-fts-1",
+          session_id: "s1",
+          role: "user",
+          content: "中文内容 hello",
+          timestamp: 1,
+          hidden: 0,
+          trimmed: 0,
+        },
+      ],
+    });
+    // 幽灵行：索引里有、messages 里没有、也不在 keep_ids 里 → 必须被当孤儿删掉
+    // （走 execute —— 那正是产品写 FTS 用的通道，见 `indexFtsForMessageViaPort`）
+    await port.data.execute("fts.upsert", { session_id: "s1", message_id: "ghost", content: "x" });
+
     // 日志镜像里有内容时，keep_ids 必须带上它们（否则会被当孤儿删掉）
     await hydrateSessionLog("s1");
     const out = await rebuildSessionFts("s1");
@@ -198,7 +229,10 @@ describe("读路径覆盖（rust 模式）", () => {
     expect(call, "rust 模式下必须交给 Rust 侧重建（那边会按 bigram 切分）").toBeTruthy();
     expect(call?.params).toMatchObject({ session_id: "s1" });
     expect(Array.isArray((call?.params as Record<string, unknown>)?.keep_ids)).toBe(true);
-    expect(out).toEqual({ removed: 0, added: 0 });
+    expect(
+      out,
+      "必须报出**真实**的删除/补齐数字。恒为 {0,0} 就是「用 execute 解包结构化命令」的形态（P1-1）",
+    ).toEqual({ removed: 1, added: 1 });
   });
 });
 

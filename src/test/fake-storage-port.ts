@@ -177,6 +177,27 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
 
   const writeLog: Array<{ command: string; params?: Record<string, unknown> }> = [];
   let writeFailures = 0;
+  /**
+   * **全文索引的等价物**（第 45 轮线协议审计 P1-1 之后补的保真度缺口）。
+   *
+   * 为什么必须补：假端口原来对 `fts.upsert` 不做任何事（`persist` 末尾 `return 0`）、
+   * 对 `fts.rebuild` 落到末尾的通用分支。于是：
+   *   · "新消息进了全文索引"在测试里是**假成功**（一行都没进）；
+   *   · `rebuildSessionFts` 的返回值恒为 `{0,0}`，而 `message-port-coverage.test.ts` 的 PC-6
+   *     又把这个 0 断言成了**期望值** —— 也就是说"fts.rebuild 退化成恒 0"这件事
+   *     CI 结构上不可能发现（真机上它意味着"搜索永远搜不到新消息"，而日志一声不响）。
+   *
+   * 结构：sessionId → (messageId → 索引里的正文)。字段名与 Rust 侧 `session_fts` 对齐。
+   */
+  const ftsIndex = new Map<string, Map<string, string>>();
+  const ftsOf = (sessionId: string): Map<string, string> => {
+    let m = ftsIndex.get(sessionId);
+    if (!m) {
+      m = new Map();
+      ftsIndex.set(sessionId, m);
+    }
+    return m;
+  };
   /** 全局事件 seq 水位（真实侧是 AUTOINCREMENT，这里用一个单调计数器等价替代） */
   let eventSeqWatermark = 0;
   const reportFakeFailure = (scope: string, e: unknown) => {
@@ -451,6 +472,19 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         }
       }
       return flat.length;
+    }
+    /**
+     * `fts.upsert`：把一条消息写进全文索引（真实现见 `migrate.rs::fts_upsert` /
+     * `repo.rs` 的 `messages.upsert_index` 内的 FTS 维护）。
+     *
+     * 参数形状与线上契约对齐：`{ session_id, message_id, content }`。
+     */
+    if (command === "fts.upsert") {
+      const sid = String(params?.session_id ?? "");
+      const messageId = String(params?.message_id ?? "");
+      if (!sid || !messageId) throw new Error("fake-port: fts.upsert 缺少 session_id/message_id");
+      ftsOf(sid).set(messageId, String(params?.content ?? ""));
+      return 1;
     }
     return 0;
   }
@@ -891,6 +925,49 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
             return ai < bi ? -1 : ai > bi ? 1 : 0;
           });
         return { items, has_more: false, next_cursor: null } as unknown as T;
+      }
+      /**
+       * `fts.rebuild`：**结构化结果**才是这条命令的契约（第 45 轮线协议审计 P1-1）。
+       *
+       * 真实现见 `migrate.rs::rebuild_fts`：删孤儿（索引里有、messages 里没有、且不在
+       * `keep_ids` 里的）／补齐缺的／内容不符就重写，返回 `{removed, added, refreshed, …}`。
+       *
+       * 为什么这一条必须补：产品的 `rebuildSessionFts` 以前用 `data.execute` 调它，
+       * 而 `execute` 只回 `{written}` —— 于是它**恒报** `{removed:0, added:0}`，
+       * 那行"索引对齐"日志从不打印，而 PC-6 又把 0 断言成期望值。
+       * 假端口现在返回**真实的三元组**，PC-6 随之改成断言真实数字：
+       * "fts.rebuild 退化成恒 0" 从今往后是**可见的失败**，而不是沉默。
+       */
+      if (command === "fts.rebuild") {
+        // 它是**写**命令（会改全文索引）→ 必须进 writeLog（`__writes()` 的判据）
+        writeLog.push({ command, params });
+        const sid = String(params?.session_id ?? "");
+        if (!sid) throw new Error("fake-port: fts.rebuild 缺少 session_id");
+        const keepIds = new Set(((params?.keep_ids as string[] | undefined) ?? []).map(String));
+        const msgs = table("messages").filter((r) => r.session_id === sid);
+        const idx = ftsOf(sid);
+        let removed = 0;
+        let added = 0;
+        let refreshed = 0;
+        for (const key of [...idx.keys()]) {
+          const alive = msgs.some((m) => String(m.id) === key) || keepIds.has(key);
+          if (!alive) {
+            idx.delete(key);
+            removed += 1;
+          }
+        }
+        for (const m of msgs) {
+          const id = String(m.id);
+          const content = String(m.content ?? "");
+          if (!idx.has(id)) {
+            idx.set(id, content);
+            added += 1;
+          } else if (idx.get(id) !== content) {
+            idx.set(id, content);
+            refreshed += 1;
+          }
+        }
+        return { removed, added, refreshed, session_id: sid } as unknown as T;
       }
       writeLog.push({ command, params });
       if (command === "crud.count") {

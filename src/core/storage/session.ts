@@ -224,7 +224,31 @@ export function updateSession(id: string, update: Partial<Session>): void {
       ...(update.deepThinkingMode !== undefined ? { deepThinkingMode: update.deepThinkingMode ?? undefined } : {}),
       ...(update.preserveExecutor !== undefined ? { preserveExecutor: update.preserveExecutor ?? undefined } : {}),
     };
-    domainWrite(SESSION_TABLE, [sessionToWire(next)], {
+    domainWrite(SESSION_TABLE, [
+      /**
+       * ## `message_count` 不写回（第 45 轮线协议审计 P1-2）
+       *
+       * 这一列在引擎侧是**由消息写入自动维护**的（`repo.rs::bump_session_message_count`，
+       * 注释里写着"引擎是唯一写入者"），而渲染侧的镜像行是**启动时读进来的快照** ——
+       * 引擎后来增减的计数**从不回流到镜像**。
+       *
+       * 于是"读出整行 → 改标题 → 整体 replace 写回"会把镜像里那个**陈旧**的计数写回去：
+       * 用户重命名一次会话，侧边栏的条数就退回启动那一刻的值，而 12 小时一次的
+       * 计数对账（`maintenance.ts`，写的是索引真值）随后又会把它改回来 ——
+       * 两个机制互相打架，用户看到的是数字自己跳。
+       *
+       * 修法：**只在这一列没有被调用方显式给出时不写它**（`crud.upsert` 的 replace 语义
+       * 只写传入列，于是引擎的值保持不动）。显式给出时必须照写 ——
+       * `maintenance.ts` 的对账与 `NotebookWorkspace` 的计数都是**有意**在写它。
+       */
+      update.messageCount === undefined
+        ? (() => {
+            const wire = sessionToWire(next);
+            delete wire.message_count;
+            return wire;
+          })()
+        : sessionToWire(next),
+    ], {
       mode: "replace",
       scope: "session.update",
       note: "会话未更新（会话不存在或写入失败）",
