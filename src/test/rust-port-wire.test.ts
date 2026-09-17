@@ -20,12 +20,41 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { RustStoragePort, type StorageTransport } from "../core/storage/rust-port";
+import { RustStoragePort, type MirrorMessageRow, type StorageTransport } from "../core/storage/rust-port";
 import { StorageError } from "../core/storage/port";
 
 const FIXTURES_PATH = path.join(__dirname, "..", "..", "src-tauri", "codem-db", "tests", "wire-fixtures.json");
 
 const fixtures: Record<string, any> = JSON.parse(fs.readFileSync(FIXTURES_PATH, "utf8"));
+
+/**
+ * 镜像字段清单（**第二份**盘点，与 `rust-port.test.ts` 的 `WIRE_SAMPLE` 同构）。
+ *
+ * 为什么要两份：`WIRE_SAMPLE` 证明"TS 会把登记的字段搬进镜像"，
+ * 但它用的是**手写的 wire 行** —— 手写行里当然有你刚加的那个字段。
+ * 真实的断裂点是另一半：**Rust 那行里根本没有这个字段**（`MESSAGE_SELECT` 漏列、
+ * 列投影写错、`message_row` 下标错位），此时 `normalize()` 会安静地填默认值。
+ *
+ * `trimmed` 就是活例子：它缺了会被填成 `0`，而 `hiddenIds()` 把 `trimmed ≠ 1`
+ * 当成"被上下文压缩" → 被索引裁剪的历史整批消失（`trim-hidden-marker` 的 TRIM-4 守这条）。
+ * 所以这里用**引擎真生成的金样本**再验一遍字段齐不齐。
+ *
+ * 类型写成 `Record<keyof MirrorMessageRow, true>`：谁往镜像加字段，`tsc` 会同时点名两处。
+ */
+const MIRROR_FIELDS: Record<keyof MirrorMessageRow, true> = {
+  id: true,
+  session_id: true,
+  role: true,
+  content: true,
+  reasoning: true,
+  timestamp: true,
+  model: true,
+  status: true,
+  hidden: true,
+  generated_files: true,
+  trimmed: true,
+};
+
 
 /** 把金样本按命令喂给端口 */
 function transportBackedByFixtures(map: Record<string, unknown>, health?: unknown): StorageTransport {
@@ -166,5 +195,46 @@ describe("线协议 —— Rust 生成的金样本必须被 TS 端口正确解�
     expect(digestRows([[null]]).digest).not.toBe(digestRows([[""]]).digest);
     // 整数值的浮点与整数摘要**必须相同**（这是与 Rust 约定好的规则，不是缺陷）
     expect(digestRows([[0]]).digest).toBe(digestRows([[0.0]]).digest);
+  });
+
+  /**
+   * WIRE-9：**真实 Rust 行**必须带齐镜像要搬的每一个字段。
+   *
+   * 这是"字段清单"这道闸门的第三层，三层缺一不可：
+   *
+   * | 层 | 位置 | 抓的是 |
+   * | --- | --- | --- |
+   * | 编译期 | `WIRE_SAMPLE: Record<keyof MirrorMessageRow, unknown>` | 加字段却没登记 |
+   * | 行为（合成行） | `MIRROR-FIELDS` | 登记了却没在 `normalize()` 里搬 |
+   * | **本层（真实行）** | 引擎生成的金样本 | **Rust 那行里压根没有这个字段** |
+   *
+   * 第三层为什么必须存在：前两层都用**手写**的 wire 行 —— 手写行里当然有你刚加的那个字段。
+   * 而真正的断裂点在 Rust 侧（`MESSAGE_SELECT` 漏列、列投影漏一列、`message_row` 下标错位），
+   * 此时 `normalize()` 会安静地填默认值：`trimmed` 缺 → `0` → `hiddenIds()` 把这一行
+   * 当成"被上下文压缩" → 被索引裁剪的历史整批消失。**这正是第 44 轮真机上发生的事，
+   * 只不过那次断在 TS 侧（`normalize` 没搬），断在 Rust 侧的样子与它一模一样。**
+   */
+  it("WIRE-9: 金样本里的真实 Rust 行必须带齐镜像要搬的每一个字段", async () => {
+    const rows: Array<Record<string, unknown>> = fixtures.list?.result?.items ?? [];
+    expect(rows.length, "金样本里没有 messages.list 的行（fixture 需要重跑）").toBeGreaterThan(0);
+
+    for (const [label, row] of [["list", rows[0]], ["single", fixtures.single?.result?.item]] as const) {
+      expect(row, `金样本缺少 ${label} 行`).toBeTruthy();
+      const missing = (Object.keys(MIRROR_FIELDS) as Array<keyof MirrorMessageRow>).filter(
+        (k) => !(k in (row as Record<string, unknown>)),
+      );
+      expect(
+        missing,
+        `Rust 的 ${label} 行缺少镜像要搬的字段：${missing.join(", ")} —— ` +
+          `缺字段时 normalize() 会填默认值（trimmed 缺 → 0 → 被当成"压缩隐藏" → 用户历史消失）`,
+      ).toEqual([]);
+    }
+
+    // 标量字段还必须是数字形态：`"1"` 这种字符串会被 Number() 悄悄接受，
+    // 但 null/undefined 不会 —— 上面那条已经拦住 undefined，这里补一条类型断言。
+    const first = rows[0];
+    for (const key of ["hidden", "trimmed"] as const) {
+      expect(typeof first[key], `${key} 必须是 number（线上行形状）`).toBe("number");
+    }
   });
 });
