@@ -402,6 +402,28 @@ export function __warmChunksForTests(notebookId: string): Promise<void> {
 }
 
 /**
+ * **仅供测试**：当前进程里一共存了几个端口的缓存桶，以及每个桶（按端口 token）里的块数。
+ *
+ * 为什么需要它：Y-2 的缺陷是"**数据落进了错误的桶**"，而从一个端口的角度看，
+ * 症状（本次读拿不到 / 抛未就绪）与"本来就该读不到"**一模一样** ——
+ * 只断言"B 端口读不到 A 的数据"会分不清"修好了"与"结果被丢掉了"。
+ * 有了桶视图，测试才能同时钉住两件事：
+ * 1. B 的桶里**没有** A 的数据（不串味）；
+ * 2. A 的数据**确实被丢掉了**（不是悄悄存在某个角落）。
+ *
+ * 另一个用途：反过来证明**修前的形态**（旧版本只有一层 `chunkCache`，
+ * 没有这个概念）—— 对照探针靠它把"当时的缓存里到底是什么"打出来。
+ */
+export function __chunkCacheBucketsForTests(): Array<{ token: string; notInCurrentPort: boolean; entries: Record<string, string[]> }> {
+  const currentToken = String(portTokenOf(currentPort()));
+  return [...chunkCacheBuckets.entries()].map(([token, bucket]) => ({
+    token: String(token),
+    notInCurrentPort: String(token) !== currentToken,
+    entries: Object.fromEntries([...bucket.entries()].map(([nb, chunks]) => [nb, chunks.map((c) => c.id)])),
+  }));
+}
+
+/**
  * "该表镜像未接手"的可区分失败（C-3 要求 ②）。
  *
  * 为什么是**抛**而不是返回 `[]`：`getChunks` 的调用方（检索、图谱抽取、PPT 生成、
