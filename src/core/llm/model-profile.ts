@@ -290,9 +290,25 @@ export class ModelProfileManager {
     return true;
   }
 
-  /** Update a single slot configuration in the active profile */
-  updateSlot(slot: TaskSlot, config: ModelSlotConfig | null): boolean {
-    const idx = this.profiles.findIndex(p => p.id === this.activeProfileId);
+  /**
+   * Update a single slot configuration.
+   *
+   * ## ⚠️ 必须带上"改哪个档案"（第 45 轮设置审计 D-6）
+   *
+   * 原来签名是 `updateSlot(slot, config)`，内部用 `this.activeProfileId` 定位 —— 而**激活的档案**
+   * 与**正在编辑的档案**是两个不同的东西：`ModelProfilePanel` 进入编辑态只设 `editingProfileId`，
+   * 并不会切换激活档案。于是用户点开自己另一个档案的「编辑槽位」时：
+   *
+   * - 激活的是内置 `default`（全新安装就是这样）→ `updateSlot` 返回 `false`，编辑**静默消失**
+   *   （调用方原来还忽略了返回值）；
+   * - 激活的是另一个自建档案 A，而用户在 B 上编辑 → **改动落到 A 并 `save()` 落盘**，
+   *   界面却一直显示 B。这比"无效"更难发现：它改了**别的东西**。
+   *
+   * 所以档案 id 必须是**显式入参**（默认仍取激活档案，保留既有调用点的语义），
+   * 由调用方传入它正在编辑的那个档案。
+   */
+  updateSlot(slot: TaskSlot, config: ModelSlotConfig | null, profileId: string = this.activeProfileId): boolean {
+    const idx = this.profiles.findIndex(p => p.id === profileId);
     if (idx < 0) return false;
     if (this.profiles[idx].isBuiltIn) return false;
 

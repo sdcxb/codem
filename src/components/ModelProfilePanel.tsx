@@ -8,6 +8,7 @@ import {
   type ModelSlotConfig,
 } from "../core/llm/model-profile";
 import { getSettingJSON } from "../core/storage/settings";
+import { reportActionFailure } from "../core/storage/persist-failure";
 import { getMergedDynamicModels } from "../core/llm/model-catalog";
 import { MIMO_MODELS } from "../core/model-config";
 import { ActionIcons } from "../core/icons/icon-map";
@@ -153,11 +154,36 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
     }
   };
 
+  /**
+   * 编辑某个档案的槽位。
+   *
+   * ## 第 45 轮（设置审计 D-6）：必须传**正在编辑的那个档案 id**
+   *
+   * 原来只传 `slot`，`updateSlot` 内部按 `activeProfileId` 定位 —— 而"激活的档案"与
+   * "正在编辑的档案"是两个东西：内置 `default` 被激活时编辑自建档案会静默无效（返回 false），
+   * 激活的是另一个自建档案时**改动会落到那个档案并落盘**，而界面一直显示正在编辑的那个。
+   * 两种形态都是数据错误，后者更隐蔽。
+   *
+   * 返回值也不再忽略：失败必须让用户看见（否则"点了没反应"）。
+   */
   const handleUpdateSlot = (slot: TaskSlot, config: ModelSlotConfig | null) => {
-    if (editingProfileId) {
-      manager.updateSlot(slot, config);
-      refresh();
+    if (!editingProfileId) return;
+    const ok = manager.updateSlot(slot, config, editingProfileId);
+    if (!ok) {
+      /*
+       * 失败必须可见：这条通道（`reportActionFailure`）是仓库统一的失败上报 ——
+       * App 侧会把它变成用户可见提示并计入诊断台账。这里**不再**自己造一个 toast 状态，
+       * 因为"每个面板各写一套提示"正是提示互相盖掉的原因。
+       */
+      reportActionFailure(
+        "modelProfile.updateSlot",
+        new Error(`档案 ${editingProfileId} 的槽位 ${slot} 未更新（档案不存在，或是内置档案）`),
+        "模型档案槽位未保存（内置档案请先复制一份再编辑）",
+      );
+      return;
     }
+    refresh();
+    window.dispatchEvent(new Event("codem-settings-changed"));
   };
 
   const handleRenameProfile = (id: string, name: string, description: string) => {
