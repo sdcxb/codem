@@ -3,6 +3,7 @@ import {
   getSessionRecoveryService,
   type RecoveryConfig,
 } from "../core/recovery/recovery";
+import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
 import { useLang } from "../core/i18n/lang";
 import { ActionIcons } from "../core/icons/icon-map";
 
@@ -16,13 +17,36 @@ export function RecoveryPanel() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [showExport, setShowExport] = useState(false);
   const [exportData, setExportData] = useState("");
+  /**
+   * P1-6：面板内的"上一步动作没成功"提示。
+   *
+   * 原来四处 catch 全是空的 —— 清除全部恢复数据失败后，界面与成功**完全一样**
+   * （列表照旧刷新、没有任何提示），用户以为删干净了；删除单个会话失败也一样。
+   * 现在每次失败都会：① 走仓库既有上报通道（`reportActionFailure` / `reportPersistFailure`）
+   * + ② 在面板内显示一行可读提示，并且**不把列表当成已删除**（保留原项，提示可重试）。
+   */
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const fail = (scope: string, error: unknown, note: string, kind: "action" | "persist" = "action") => {
+    if (kind === "persist") reportPersistFailure(scope, error, note);
+    else reportActionFailure(scope, error, note);
+    setActionError(note);
+  };
 
   const refresh = () => {
     try {
       const svc = getSessionRecoveryService();
       setSummary(svc.getRecoverySummary());
       setSessions(svc.getAllSessions());
-    } catch {}
+      return true;
+    } catch (e) {
+      fail(
+        "recoveryPanel.refresh",
+        e,
+        zh ? "恢复数据读取失败：下面的列表可能不是最新的，请稍后重试。" : "Failed to read recovery data: the list below may be stale.",
+      );
+      return false;
+    }
   };
 
   useEffect(() => {
@@ -34,16 +58,34 @@ export function RecoveryPanel() {
   const handleForceSave = () => {
     try {
       getSessionRecoveryService().forceSave();
-      refresh();
-    } catch {}
+      const ok = refresh();
+      if (ok) setActionError(null);
+    } catch (e) {
+      fail(
+        "recoveryPanel.forceSave",
+        e,
+        zh ? "强制保存没有生效：本次改动的恢复快照未写入，重启后可能回到上一版。" : "Force save did not take effect — the recovery snapshot was not written.",
+        "persist",
+      );
+    }
   };
 
   const handleClear = () => {
     if (!confirm(zh ? "确认清除所有恢复数据？此操作不可撤销。" : "Clear all recovery data? This cannot be undone.")) return;
     try {
       getSessionRecoveryService().clear();
-      refresh();
-    } catch {}
+      // 只有真的没抛错才允许把界面当成"已清空"（refresh 之后列表自然变空）
+      setSelectedSessionId(null);
+      const ok = refresh();
+      if (ok) setActionError(null);
+    } catch (e) {
+      // 不可撤销的删除失败：**不刷新**（保留原列表），提示重试
+      fail(
+        "recoveryPanel.clear",
+        e,
+        zh ? "清除恢复数据失败（数据仍在，未删除任何内容），请重试。" : "Clearing recovery data failed — nothing was deleted. Please retry.",
+      );
+    }
   };
 
   const handleExport = () => {
@@ -51,7 +93,14 @@ export function RecoveryPanel() {
       const data = getSessionRecoveryService().exportData();
       setExportData(data);
       setShowExport(true);
-    } catch {}
+      setActionError(null);
+    } catch (e) {
+      fail(
+        "recoveryPanel.export",
+        e,
+        zh ? "导出恢复数据失败：没有可复制的内容，请重试。" : "Exporting recovery data failed — nothing to copy. Please retry.",
+      );
+    }
   };
 
   const handleDeleteSession = (id: string) => {
@@ -59,8 +108,16 @@ export function RecoveryPanel() {
     try {
       getSessionRecoveryService().deleteSession(id);
       if (selectedSessionId === id) setSelectedSessionId(null);
-      refresh();
-    } catch {}
+      const ok = refresh();
+      if (ok) setActionError(null);
+    } catch (e) {
+      // 删除失败：**不清选中态、不刷新**，该项留在列表里等用户重试
+      fail(
+        "recoveryPanel.deleteSession",
+        e,
+        zh ? `删除会话 ${id.substring(0, 8)}… 的恢复数据失败（该项仍在列表中），请重试。` : `Deleting recovery data for session ${id.substring(0, 8)}… failed (still listed). Please retry.`,
+      );
+    }
   };
 
   const selectedSession = sessions.find(s => s.id === selectedSessionId);
@@ -90,6 +147,13 @@ export function RecoveryPanel() {
               <div className="stat-card-label">{s.label}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 失败提示（P1-6）：面板内可见的"上一步动作没成功" */}
+      {actionError && (
+        <div className="panel-empty" role="alert" data-testid="recovery-action-error">
+          ⚠️ {actionError}
         </div>
       )}
 

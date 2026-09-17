@@ -14,10 +14,11 @@
  * 4. 每个 entry 用 SlotErrorBoundary 包裹，key=entryKeyOf(entry)
  * 5. 崩溃的 entry 通过 reportEntryError abdicate，触发重渲染到下一个 survivor
  */
-import { useSyncExternalStore, useState, useEffect, type ComponentType, type ReactNode, Component } from 'react'
+import { Fragment, useSyncExternalStore, useState, useEffect, type ComponentType, type ReactNode, Component } from 'react'
 import { tryGetCtx, onCtxReady, useCtxReady } from '../consumer/index.ts'
 import type { StoredEntry } from '../slots/index.ts'
 import { ActionIcons } from "../../core/icons/icon-map";
+import { reportActionFailure } from "../storage/persist-failure";
 
 /**
  * 插件组件错误边界 — 对标 DSH scoped-slots.tsx SlotErrorBoundary。
@@ -26,16 +27,17 @@ import { ActionIcons } from "../../core/icons/icon-map";
  */
 class SlotErrorBoundary extends Component<
   { children: ReactNode; slotName: string; fallback?: ReactNode; entryKey?: string | number },
-  { hasError: boolean; error?: Error }
+  { hasError: boolean; error?: Error; attempt: number }
 > {
-  state: { hasError: boolean; error?: Error } = { hasError: false }
+  state: { hasError: boolean; error?: Error; attempt: number } = { hasError: false, attempt: 0 }
 
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error }
   }
 
   componentDidCatch(error: Error) {
-    console.error(`[SlotBridge] Plugin component crashed for slot "${this.props.slotName}":`, error)
+    // 插件组件崩了 → 走仓库既有失败通道（action：该槽位本次没有渲染出插件内容）
+    reportActionFailure(`slotBridge.${this.props.slotName}.plugin`, error, "插件组件崩溃，已回退到降级组件")
   }
 
   componentDidUpdate(prevProps: Readonly<{ children: ReactNode; slotName: string; fallback?: ReactNode; entryKey?: string | number }>) {
@@ -46,9 +48,24 @@ class SlotErrorBoundary extends Component<
     }
   }
 
+  /**
+   * 用户自助重试：复位错误态并重建子树（attempt 进 key）。
+   * 原来没有这个入口 —— entry 不变时 `hasError` 永远为真，用户只能重启。
+   */
+  handleRetry = () => {
+    this.setState((prev) => ({ hasError: false, error: undefined, attempt: prev.attempt + 1 }))
+  }
+
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) return this.props.fallback
+      if (this.props.fallback) {
+        return (
+          <Fragment key={`fb-${this.state.attempt}`}>
+            <MinimalRetryRow slotName={this.props.slotName} error={this.state.error} onRetry={this.handleRetry} />
+            {this.props.fallback}
+          </Fragment>
+        )
+      }
       return (
         <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
           ⚠️ 插件组件崩溃（slot: {this.props.slotName}）
@@ -57,42 +74,197 @@ class SlotErrorBoundary extends Component<
               {this.state.error.message}
             </div>
           )}
+          <MinimalRetryRow slotName={this.props.slotName} error={this.state.error} onRetry={this.handleRetry} />
         </div>
       )
     }
-    return this.props.children
+    return <Fragment key={this.state.attempt}>{this.props.children}</Fragment>
   }
+}
+
+/** 崩溃态下的"重试"一行（SlotErrorBoundary 用）。 */
+function MinimalRetryRow({
+  slotName,
+  error,
+  onRetry,
+}: {
+  slotName: string
+  error?: Error
+  onRetry: () => void
+}): ReactNode {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+        插件内容未能渲染，已回退到默认组件
+        {error?.message ? `（${error.message.length > 60 ? `${error.message.slice(0, 60)}…` : error.message}）` : ''}
+      </span>
+      <button
+        type="button"
+        onClick={onRetry}
+        data-slot-action={`retry-plugin:${slotName}`}
+        style={{
+          background: 'none',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 'var(--radius-sm)',
+          color: 'var(--text-secondary)',
+          cursor: 'pointer',
+          fontSize: 'var(--fs-sm)',
+          padding: '2px 8px',
+        }}
+      >
+        重试
+      </button>
+    </div>
+  )
 }
 
 /**
  * 级联降级错误边界 — 当 Fallback 组件本身崩溃时，显示错误提示而非白屏。
+ *
+ * P1-2 修复（原实现有四个问题）：
+ *   ① 崩溃后 `hasError` **永不复位** —— 只要 mount 时抛过一次，这个槽位就永久
+ *      变成一行"⚠️ 此面板不可用（组件依赖的服务被禁用）"，直到重启应用；
+ *   ② 提示文案里的"组件依赖的服务被禁用"是**猜的原因**：崩溃可能是任何异常；
+ *   ③ 用户没有任何自助恢复入口（没有重试按钮）；
+ *   ④ 失败只走 `console.warn`，不进仓库既有的失败上报通道，用户与诊断都看不见。
+ *
+ * 现在：崩溃后给"重试"入口（递增 key 强制重建子树）+ 指数退避 + 次数上限；
+ * 次数用尽则**降级成"该槽位缺失"的最小可视形态**（只有一行说明，不再占满面板），
+ * 并且每一次崩溃都经 `reportActionFailure` 如实上报（kind=action：该面板本次没渲染出来）。
  */
-class FallbackErrorBoundary extends Component<{ children: ReactNode; slotName: string }, { hasError: boolean; error?: Error }> {
-  state: { hasError: boolean; error?: Error } = { hasError: false }
+interface FallbackErrorBoundaryProps {
+  children: ReactNode
+  slotName: string
+}
 
-  static getDerivedStateFromError(error: Error) {
+interface FallbackErrorBoundaryState {
+  hasError: boolean
+  error?: Error
+  /** 剩余重试次数（0 = 已用尽，只剩"重新加载"这条路）。 */
+  retryBudget: number
+  /** 递增后作为 children 的 key，用来**强制重建**子树（否则 React 复用崩溃实例）。 */
+  attempt: number
+}
+
+/**
+ * 重试上限（每挂载一次）：同一个 fallback 在这个实例里最多重试这么多次，
+ * 用尽后不再重建，直接显示"该槽位缺失"的最小可视形态。
+ * 计数随实例走 —— entry 变化（entryKey 变）或父级重挂时自然拿到新的预算。
+ */
+export const SLOT_FALLBACK_MAX_RETRIES = 2
+
+/** 第 n 次重试前的等待（指数退避），避免"点一下崩一下"的重试风暴。 */
+export function slotRetryBackoffMs(attemptSoFar: number): number {
+  return 300 * Math.pow(2, Math.max(0, attemptSoFar))
+}
+
+class FallbackErrorBoundary extends Component<FallbackErrorBoundaryProps, FallbackErrorBoundaryState> {
+  state: FallbackErrorBoundaryState = { hasError: false, retryBudget: SLOT_FALLBACK_MAX_RETRIES, attempt: 0 }
+
+  /** 退避定时器：卸载时必须清，否则卸载后还会去 setState。 */
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+
+  static getDerivedStateFromError(error: Error): Partial<FallbackErrorBoundaryState> {
     return { hasError: true, error }
   }
 
   componentDidCatch(error: Error) {
-    console.warn(`[SlotBridge] Fallback component crashed for slot "${this.props.slotName}":`, error)
+    // 如实上报：这个槽位本次没有渲染出内容（kind=action），界面同时给出说明与重试入口。
+    reportActionFailure(
+      `slotBridge.${this.props.slotName}.fallback`,
+      error,
+      `槽位「${this.props.slotName}」的降级组件崩溃，已回退为「该槽位缺失」的最小形态` +
+        (this.state.retryBudget > 0 ? `（仍可重试 ${this.state.retryBudget} 次）` : "（重试次数已用尽）"),
+    )
+  }
+
+  componentWillUnmount() {
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = null
+    }
+  }
+
+  handleRetry = () => {
+    if (this.retryTimer !== null) return // 退避窗口内的重复点击直接忽略
+    const budget = this.state.retryBudget
+    if (budget <= 0) return
+    this.retryTimer = setTimeout(
+      () => {
+        this.retryTimer = null
+        // 只允许在仍然处于错误态时复位；期间 entry 变了则由 SlotErrorBoundary 的
+        // entryKey 分支或父级重挂处理。
+        if (!this.state.hasError) return
+        this.setState((prev) => ({
+          hasError: false,
+          error: undefined,
+          retryBudget: prev.retryBudget - 1,
+          attempt: prev.attempt + 1,
+        }))
+      },
+      slotRetryBackoffMs(SLOT_FALLBACK_MAX_RETRIES - budget),
+    )
   }
 
   render() {
     if (this.state.hasError) {
-      return (
-        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
-          ⚠️ 此面板不可用（组件依赖的服务被禁用）
-          {this.state.error && (
-            <div style={{ marginTop: 4, fontSize: 'var(--fs-sm)', opacity: 0.7 }}>
-              {this.state.error.message}
-            </div>
-          )}
-        </div>
-      )
+      return <SlotMissingNotice slotName={this.props.slotName} state={this.state} onRetry={this.handleRetry} />
     }
-    return this.props.children
+    // attempt 作为 key：重试时强制废弃崩溃过的子树实例，重新走一遍 mount。
+    return <Fragment key={this.state.attempt}>{this.props.children}</Fragment>
   }
+}
+
+/**
+ * 「该槽位缺失」的最小可视形态（P1-2 要求②）：
+ * 只用一行说明 + 一个重试入口占位，不让整个插槽区域变成不可用。
+ */
+function SlotMissingNotice({
+  slotName,
+  state,
+  onRetry,
+}: {
+  slotName: string
+  state: FallbackErrorBoundaryState
+  onRetry: () => void
+}): ReactNode {
+  const exhausted = state.retryBudget <= 0
+  const message = exhausted
+    ? "⚠️ 此面板不可用（降级组件持续失败，已停止自动重试；可重新加载应用）"
+    : "⚠️ 此面板不可用（降级组件崩溃）"
+  return (
+    <div
+      data-slot-error={slotName}
+      data-slot-missing={slotName}
+      role="status"
+      style={{ padding: '2px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+    >
+      <span>{message}</span>
+      {state.error && (
+        <span title={state.error.message} style={{ fontSize: 'var(--fs-xs)', opacity: 0.7 }}>
+          {state.error.message.length > 60 ? `${state.error.message.slice(0, 60)}…` : state.error.message}
+        </span>
+      )}
+      {!exhausted && (
+        <button
+          type="button"
+          onClick={onRetry}
+          data-slot-action={`retry-fallback:${slotName}`}
+          style={{
+            background: 'none',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: 'var(--fs-sm)',
+            padding: '2px 8px',
+          }}
+        >
+          重试（剩余 {state.retryBudget} 次）
+        </button>
+      )}
+    </div>
+  )
 }
 
 // ====== 渲染 fallback 的公共逻辑 ======
@@ -104,7 +276,9 @@ function renderFallback(
   showDegraded: boolean | undefined,
 ): ReactNode {
   return (
-    <>
+    // degraded 横幅与 fallback **一起**进同一个边界：横幅本身崩了也不能带走整个插槽
+    // （第 44 轮 P1-2：原来横幅在边界外，它一崩整个槽位区域直接不可用）。
+    <SlotErrorBoundary slotName={name}>
       {showDegraded && <DegradedBanner slotName={name} />}
       {Fallback ? (
         <FallbackErrorBoundary slotName={name}>
@@ -113,7 +287,7 @@ function renderFallback(
       ) : (
         <NullFallbackDiagnostic slotName={name} />
       )}
-    </>
+    </SlotErrorBoundary>
   )
 }
 

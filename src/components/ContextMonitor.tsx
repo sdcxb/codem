@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getContextManager, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import { listMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
 import { getSettingJSON } from "../core/storage/settings";
+import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
 
 interface ContextMonitorProps {
   sessionId: string;
@@ -114,6 +115,19 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [balances, setBalances] = useState<ProviderBalance[]>([]);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [compacting, setCompacting] = useState(false);
+  /**
+   * P1-8：真正生效的重入守卫。
+   *
+   * 原来 `handleManualCompact` 里是同步执行 + `finally { setCompacting(false) }`：
+   * `setCompacting(true)` 与随后的 `setCompacting(false)` 落在**同一批**里，React 渲染时
+   * 状态已经是 false —— `compacting` 从来没有真正变成过 true，`disabled={compacting}`
+   * 与函数入口的 `if (compacting) return` 都拦不住第二次点击。实测：连点两次
+   * `deleteMessagesByIds` 被调用 **2 次**，第二次是在**已经被删掉一批**的列表上再删一批
+   * （多删一批旧消息）。ref 是同步置位/复位的，用它做守卫才拦得住同一 tick 内的第二次点击。
+   */
+  const compactingRef = useRef(false);
+  /** 压缩失败的可见提示（原来只 console.error，界面完全看不出失败）。 */
+  const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<{ removed: number; kept: number } | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [ctxConfig, setCtxConfig] = useState<CompactionConfig | null>(null);
@@ -219,15 +233,21 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const balanceProviders = balances.filter((b) => b.balance !== null);
   const unsupportedProviders = balances.filter((b) => b.balance === null && b.error === "不支持");
 
-  const handleManualCompact = () => {
-    if (!sessionId || compacting) return;
+  const handleManualCompact = async (): Promise<void> => {
+    // P1-8：守卫必须"同步生效"——用 ref 而不是 state（state 在同一批里会被 finally 复位）
+    if (!sessionId || compactingRef.current) return;
     if (messageCount <= 2) {
       setCompactResult({ removed: 0, kept: messageCount });
       setTimeout(() => setCompactResult(null), 3000);
       return;
     }
+    compactingRef.current = true;
     setCompacting(true);
+    setCompactError(null);
     try {
+      // 让出一次微任务：守卫在整个动作期间是真的"held"（否则同步动作一返回守卫就放开了，
+      // 同一 tick 内到达的第二次点击照样能进来）
+      await Promise.resolve();
       const result = manualCompact(sessionId);
       setCompactResult(result);
       // Trigger a refresh
@@ -238,8 +258,18 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       setBudget(b);
       setPressure(contextManager.getPressureLevelFromMessages(messages));
     } catch (e) {
-      console.error("[ContextMonitor] manual compact failed:", e);
+      // 失败必须可见：既有上报通道（kind=action：这次压缩没生效）+ 组件内提示
+      const detail = e instanceof Error ? e.message : String(e);
+      reportActionFailure("contextMonitor.manualCompact", e, "手动压缩未生效（旧消息与摘要标记的写入没有全部完成）");
+      try {
+        reportPersistFailure("contextMonitor.manualCompact.write", e, `压缩写盘失败：${detail}`);
+      } catch {
+        // 二次上报失败不影响主流程
+      }
+      setCompactError(`压缩失败：${detail}（旧消息未被完整删除，请重试）`);
     } finally {
+      // finally 里复位：无论成功失败，下一次仍然可以尝试
+      compactingRef.current = false;
       setCompacting(false);
       setTimeout(() => setCompactResult(null), 3000);
     }
@@ -303,6 +333,11 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 {compactResult.removed > 0
                   ? `✅ 移除 ${compactResult.removed} 条，保留 ${compactResult.kept} 条`
                   : "消息太少，无需压缩"}
+              </span>
+            )}
+            {compactError && (
+              <span className="context-compact-result error" role="alert" data-testid="compact-error">
+                ⚠️ {compactError}
               </span>
             )}
           </div>

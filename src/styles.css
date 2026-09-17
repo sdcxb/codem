@@ -26,10 +26,18 @@
      同一个代码块在不同组件里可能落到不同字体上。参考实现只有 15 处声明，全部走令牌栈。
      现在收成三档：UI / 等宽 / 展示（展示档目前与 UI 同源，留给将来换标题字体）。
      插件 CSS 用 `var(--font-mono, ui-monospace, monospace)` 这种**带兜底**写法（插件须能独立渲染）。 */
-  --font-ui: 'AlimamaFangYuanTi', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* 第 45 轮（D-3）：设置页的「全局字体」写在这里 —— `--font-ui` 是全项目**唯一**被消费的
+     字体入口（`body`/侧栏/代码块等 9 处 `font-family: var(--font-ui)`）。
+     注意分工：
+       · `--font-ui-default` 是"默认档的完整 fallback 栈"的**唯一定义处**；
+       · 「默认字体」这一档**不写行内覆盖**（`removeProperty("--font-ui")`）就回到它 ——
+         因为选项值 `AlimamaFangYuanTi` 只是裸字体名，直接写上去会把整条 fallback 栈覆盖掉。
+     （历史：设置页与侧栏此前写的是 `--font-family`，而全项目 0 处消费它 → 选字体毫无效果。） */
+  --font-ui-default: 'AlimamaFangYuanTi', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-ui: var(--font-ui-default);
   --font-display: var(--font-ui);
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
-  /* 兼容别名：历史代码与插件里仍按 --font-family 取用 */
+  /* 兼容别名：历史代码与插件里仍按 --font-family 取用（它跟随 --font-ui，故设置页改字体时一并生效） */
   --font-family: var(--font-ui);
   --font-weight: 400;
   /* 字重档位（第 33 波）：参考实现用 560/620/650/720 这种细档建层次，
@@ -7988,6 +7996,12 @@ color: var(--text-on-accent);
 
 .context-compact-result.info {
   color: var(--text-muted);
+}
+
+/* P1-8：手动压缩失败必须是可见的错误态（原来只 console.error，界面完全看不出失败） */
+.context-compact-result.error {
+  color: var(--error);
+  font-weight: 600;
 }
 
 .context-pressure-warning {
