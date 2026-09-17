@@ -18,9 +18,8 @@ import {
   getNoteLinks,
 } from './storage';
 import type { Note, NoteLink } from './types';
-import { getDatabase, persistDatabase } from '../storage/database';
 import { reportPersistFailure } from "../storage/persist-failure";
-import { domainDeleteWhere, writeShouldFallBackToLegacy } from "../storage/domain-store";
+import { domainDeleteWhere } from "../storage/domain-store";
 
 /** `note_links` 表名（与 knowledge/storage.ts 里的常量保持一致） */
 const LINK_TABLE = "note_links";
@@ -241,10 +240,18 @@ function deleteNoteLinksBySource(noteId: string): void {
      * - B 态（端口在 rust、该表镜像未就绪）：**不回退**，如实上报 ——
      *   写进旧库而随后的读/删都走镜像 = 本进程内读写分裂（"刚写的链接读不到、也删不掉"）。
      */
-    if (!writeShouldFallBackToLegacy("noteManager.deleteNoteLinksBySource", "旧出链未清除，笔记链接可能出现重复")) return;
-    const db = getDatabase();
-    db.run('DELETE FROM note_links WHERE source_note_id = ?', [noteId]);
-    persistDatabase();
+    /**
+     * **旧库回退已删除**（第 16 轮，L4）：回滚开关退役后，A 态（端口未注册）在生产里
+     * 已不可能出现；唯一还会走到这里的是 `CODEM_TEST_PORT=0` 那个对照测试基座，
+     * 它本身也要在 L4 收尾时下线。
+     *
+     * 语义保持不变：`domainDeleteWhere` 返回 `null` 时**如实上报**（绝不静默当成删成功）。
+     */
+    reportPersistFailure(
+      "noteManager.deleteNoteLinksBySource",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "旧出链未清除，笔记链接可能出现重复",
+    );
   } catch (e) {
     // 第 87 波：删旧出链失败会让旧链接残留（与刚重建的链接叠加成重复/错误图谱）
     reportPersistFailure("noteManager.deleteNoteLinksBySource", e, "旧出链未清除，笔记链接可能出现重复");

@@ -131,34 +131,16 @@ function validateNote(note: string | undefined): { ok: true; value: string | und
  */
 function ensureNoteColumn(): void {
   /**
-   * 两态门控（第 12 轮统一到标准判据）：**B 态不碰旧库**。
+   * **这个函数已经什么都不做了**（第 16 轮，L4）。
    *
-   * 原来的判据是 `hasStoragePort()`（任何引擎）—— 语义上更宽：连"端口是 wasm 回滚形态"
-   * 也会跳过这四条 ALTER。而 wasm 形态下旧库才是数据源，这四条 ALTER 恰恰是需要的
-   * （`shouldFallbackToLegacy()` 对"端口未注册 / 端口是 wasm"都返回 true，正合此意）。
+   * 它存在的唯一理由是"极老库缺这四列时补上"：`note` / `version` / `created_at` / `updated_at`。
+   * 而渲染进程**已经没有旧库可 ALTER 了**（回滚开关退役、旧引擎即将删除）——
+   * 列的存在由引擎侧保证：它们已在 `SCHEMA` 里声明，并由 `migrations` 幂等补齐
+   * （两条路径都验过，见 `src-tauri/codem-db/sql/`）。
+   *
+   * 保留函数壳而不删调用点，是为了让"为什么这里不再需要 ALTER"留下痕迹；
+   * 顺带把 import 一起收掉（`getDatabase` / `shouldFallbackToLegacy` 在本文件若不再使用）。
    */
-  if (!shouldFallbackToLegacy()) return;
-  const db = getDatabase();
-  try {
-    db.run("ALTER TABLE message_feedback ADD COLUMN note TEXT");
-  } catch {
-    // 列已存在
-  }
-  try {
-    db.run("ALTER TABLE message_feedback ADD COLUMN version TEXT");
-  } catch {
-    // 列已存在
-  }
-  try {
-    db.run("ALTER TABLE message_feedback ADD COLUMN created_at INTEGER");
-  } catch {
-    // 列已存在
-  }
-  try {
-    db.run("ALTER TABLE message_feedback ADD COLUMN updated_at INTEGER");
-  } catch {
-    // 列已存在
-  }
 }
 
 // ========== 行 ↔ 线协议行（P5 第 1 段：走域端口，不再依赖 WASM 库） ==========
