@@ -801,12 +801,42 @@ export async function auditInvariantsForSessions(
   return out;
 }
 
-/** 不变量审计那一段（第 45 轮）：`0` 与"没跑"必须分得开 */
-function formatInvariantAudit(outcome: { checked: number; violations: number; samples: string[] }): string {
+/**
+ * 不变量审计那一段（第 45 轮）：`0` 与"没跑"必须分得开。
+ *
+ * ## 为什么把"非 0"改称**历史缺口**，而不是"违规"（第 46 轮真机实测）
+ *
+ * 第一次在真机上跑出来的是 `不变量违规 777 条（检查 3 个会话）` —— 而这**不是**新缺陷：
+ * `assistant_text` 事件是从第 45 轮（`appendMessageTextEvent`）才开始写的，在那之前的
+ * 助手消息**从来没有过**对应事件（旧路径只在 `createMessage` 里写 `user_message`，
+ * 而助手正文是流式更新，那条路没有事件写入点）。所以迁移过来的历史会话必然"消息多于文本事件"。
+ *
+ * 把它打成"违规"会有两个坏处：① 每次启动都报一个吓人的大数字，用户会以为数据坏了；
+ * ② 真信号（**本版之后**新写的消息缺事件）会被淹没在这个常数里 —— 而这条不变量存在的意义
+ * 恰恰是发现"事件双写又断了一条路"（那就应当**新增**）。
+ *
+ * 所以现在如实分成两句话：历史缺口（迁移前数据，**不是缺陷**）与本次新产生的缺口
+ * （`auditInvariantsForSessions` 用"上次审计水位"判定），后者才进失败上报。
+ */
+function formatInvariantAudit(outcome: {
+  checked: number;
+  violations: number;
+  newViolations?: number;
+  samples: string[];
+}): string {
   if (outcome.checked === 0) return "不变量审计 跳过（没有可检查的会话）";
+  const fresh = outcome.newViolations ?? 0;
   if (outcome.violations === 0) return `不变量审计 ${outcome.checked} 个会话 全部通过`;
+  if (fresh === 0) {
+    return (
+      `不变量审计 ${outcome.checked} 个会话：**历史缺口 ${outcome.violations} 条**` +
+      `（迁移前的助手消息本来就没有 \`assistant_text\` 事件，不是本次新产生的缺陷）` +
+      (outcome.samples.length > 0 ? `；样例：${outcome.samples.join("、")}` : "")
+    );
+  }
   return (
-    `不变量审计 **${outcome.violations} 条违规**（检查 ${outcome.checked} 个会话）` +
+    `不变量审计 **本次新产生 ${fresh} 条缺口**（历史缺口另有 ${outcome.violations - fresh} 条）` +
+    `（检查 ${outcome.checked} 个会话）` +
     (outcome.samples.length > 0 ? `：${outcome.samples.join("、")}` : "")
   );
 }
