@@ -2,6 +2,64 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.64] - 2026-09-17 — **SQLite 引擎（sql.js）从渲染进程彻底删除**：L1/L2/L3/L4 四项归零
+
+### 一句话
+
+渲染进程里那套 **WASM SQLite 引擎、它的依赖包与 wasm 资源，以及"回退到它"的全部代码路径**，这一版全部删除。
+这不是"默认不再加载"——是**没有这个引擎了**。
+
+### 量化（删掉的东西）
+
+| 项 | 内容 |
+| --- | --- |
+| 引擎本体 | `src/core/storage/database.ts`（1758 行：建库 / 整库导出 / 致命闩锁 / 损坏恢复 / 原子写盘 / schema 模板串） |
+| 类型与依赖 | `src/types/sql.js.d.ts`、`package.json` 的 `sql.js` 依赖、`node_modules/sql.js` |
+| 死模块 | `src/core/storage/write-guard.ts`（静默空写探测器，只对旧库 SQL 有效，已无生产调用点） |
+| 回退分支 | L3：**165 处 / 18 文件 → 0**（含 `tryGetDatabase()` 判空回退口径） |
+| 引擎开关 | L4：**3 文件 → 0**（`selectedEngine()` / `DEFAULT_ENGINE` / `STORAGE_ENGINE_KEY` 三个符号删除） |
+| 测试残留 | 22 个用例文件里的死 `vi.mock("…/storage/database")` 共 139 行；2 个 sql.js 实验用例；引擎语义用例 29 条（逐条写明覆盖移交） |
+| 产物验证 | `dist/` 里 **0 处** `sql-wasm` / `initSqlJs` / `SqlJsDatabase` 痕迹 |
+
+审计脚本（`tools/audit/wasm-removal-readiness.mjs`）最终读数：**L1 0 / L2 0 / L3 0 / L4 0**。
+
+### schema 真源切换到 Rust 侧（这一步不做，删引擎会把门禁一起删掉）
+
+迁移期的真源是渲染侧 TS 里的 `SCHEMA` 模板串，Rust 侧资源由脚本生成。旧引擎删除后，
+真源换成**引擎编进二进制执行的那份** `src-tauri/codem-db/sql/schema.sql`，
+`gen-schema-sql.mjs` 从"生成 + 比对"改成查**三类真正会写坏数据的漂移**：
+
+1. `tables.json` 与 `schema.sql` 的表清单一一对应（漏一张表的后果是**数据静默少搬**）；
+2. `migrations.json` 的每条 ALTER 指向的表存在且是 ALTER…ADD COLUMN
+   （"迁移-only 列"打印供核对但不判失败 —— 引擎的 `apply()` = DDL + 逐条迁移，两边结构一致）；
+3. `fts.json` 覆盖会话检索的 5 个列并显式声明 `tokenize=`。
+
+Rust 侧两条列级契约（`schema_columns.rs`）同步改成读引擎资源本身 —— 语义更直接：
+"**引擎自己声明要建的列，库里都有吗**"。
+
+### 顺带修掉的三个指标缺陷（否则"0"是假的）
+
+1. **覆盖率门禁会在迁移完成那天静默失效**：旧库 SQL 归零 → `0/0 = NaN`，而 `NaN` 与下限的比较**两边都是 false**。
+   现在显式定义"旧库 SQL 调用点 = 0 → 这条轴已完成 → 100%"并把"迁移已完成"写进输出；
+2. **GATE-DB-5 会在迁移完成时报假警报**：`messages` 的写路径只剩具名命令（`messages.upsert_index` 等），
+   原先不计入端口侧的 表/操作 统计 → 现在把具名命令映射进去；
+3. `wasm-removal-readiness.mjs` 的 L4 原来扫**原文**（含注释），于是"把退役原因写进注释"本身被算成残留 →
+   改成与其他层级同口径：剥掉注释再看。
+
+### 能力保留（删引擎不等于删功能）
+
+| 原有能力 | 现在的载体 |
+| --- | --- |
+| 崩溃后"从权威日志重建索引" | 索引重建标记（文件 I/O）+ `maintenance.ts` 的消费侧；`AR-4` 用例守着 |
+| 存储不可用时的**会话抢救**（写 JSON） | `codem:storage-unavailable` 事件（生产者换成 bootstrap 的注册失败路径）；App 的抢救动作不变 |
+| 退出前把在途写入落盘 | `flushSessionLogWrites()`（端口写入是事务、已落地；**有防抖队列的是追加日志**） |
+| 外置附件预热 / 孤儿清理 / 日志压缩 / 遥测裁剪 | 启动维护（v1.16.63 起在真机上真的会跑） |
+
+### 实测
+
+**271 文件 / 5193 通过 / 0 失败**；`tsc` 0 错误；七道审计门 exit 0；**Rust 99 测试全绿**；
+打包版实机验证见下方（无 WASM 加载、维护日志带数字、用户数据完好）。
+
 ## [1.16.63] - 2026-09-17 — 启动维护在 rust 模式下**从未执行过**（真机缺陷）+ 最后两处"偷偷加载 WASM"的入口
 
 ### 一、启动维护是一段**从未跑过**的代码
