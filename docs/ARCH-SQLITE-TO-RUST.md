@@ -2040,6 +2040,37 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 **结论**：确认存在一条**绕过渲染进程存储端口**的删除路径，在"进会话"这条用户路径上触发。
 本轮**没有定位到它**，因此**不声称已修复**。
 
+> ### ✅ 结案（第 12 轮，v1.16.57）：不是"绕过端口"，是**端口自己调的迁移命令**
+>
+> 上面那条结论**已被推翻**。真凶是 `migration.auto` —— 它**确实经过了端口**
+> （`data.command("migration.auto")`），所以端口审计只看到"一条写命令"、看不到任何删除；
+> 而删除是**在 Rust 内部**由 `import_all` 的整表清空执行的
+> （`for table in IMPORT_ORDER.iter().rev() { DELETE FROM "<table>" }`，由 `replace: true` 触发）。
+> 这正好解释了当时那条最关键的观测：**"端口三层只记到 3 条写、没有任何删除"**。
+>
+> 定位证据（`storage_audit` 触发器按时间聚合）：
+>
+> | 时间（UTC） | 被删内容 | 与什么同秒 |
+> | --- | --- | --- |
+> | 2026-09-16T23:47:45Z | sessions 2 + 某会话 277 条 messages + 317 tool_calls | 运行时日志写入 |
+> | 2026-09-17T01:13:34Z | sessions 3 + **messages 821（全部）** + 883 tool_calls + 2131 events | `codem-db.bin-shm`（旧库被打开）mtime + 运行时日志 |
+>
+> 三个缺陷合起来构成完整因果链（详见 `docs/L3-DELETION-PLAN.md` 第五节）：
+> ①自检把"计数读失败"当成"0 条消息"（`?? 0`）→ ②对完好的库跑 `migration.auto` →
+> ③该命令整库清空再重灌（中间态被打断就是真实的 821→0），且同名行走
+> `INSERT OR REPLACE`（SQLite 语义是先 DELETE 再 INSERT）会**级联删掉子表消息**；
+> 另外 `bootstrap` 读 settings 失败时 `catch {}` 会跳过全部守卫继续跑迁移。
+>
+> 四道修法（v1.16.57）：去掉整表清空（改为 `INSERT OR IGNORE` → 未插入则 `UPDATE`）、
+> 对账改单向（目标端多出的行保留并报 `kept_newer`）、**引擎侧守卫**
+> （目标库有消息时拒绝 `migration.auto`，除非显式 `force: true`）、
+> 两处"读不到 ≠ 是 0"。
+>
+> ⚠️ **恢复手册随之更新**：以前"删掉迁移标记再跑 `migration.auto`"就是恢复步骤；
+> 现在**新库非空时必须显式传 `force: true`**，否则会被守卫拒绝（这是有意的：
+> 拒绝比误覆盖安全）。命令：
+> `codem-db-cli --db <新库> invoke migration.auto '{"legacy_path":"…codem-db.bin","force":true}'`
+
 **已做的加固（都不是"修好了"，只是降低危害）**：
 
 1. **迁移守卫可续做**：原来"新库有用户项目就不覆盖"会把**半迁移**状态永久挡住
