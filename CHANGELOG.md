@@ -123,9 +123,28 @@ All notable changes to Codem will be documented in this file.
 | UI 一致性门禁 | error 0 / warn 0 | error 0 / warn 0 |
 | `tsc --noEmit` | 0 | 0 |
 
-### 真机验证（打包产物）
+### 真机验证（打包产物 v1.16.66）
 
-**待填**
+**产物**：`Codem_1.16.66_x64-setup.exe`（40.3 MB，已签名）+ `Codem_1.16.66_x64_en-US.msi`（43.7 MB，已签名）
++ `latest.json`（无 BOM）；发布后更新器端点实测 `HTTP 200 | version=1.16.66 | sig_len=416`，
+`assets` 五项齐全、`isPrerelease=false`。
+
+| 项 | 实测 |
+| --- | --- |
+| 用户数据 | **完好**：messages 821 / sessions 3 / session_events 2131 / tool_calls 883 / projects 3 / notebooks 1 / notebook_chunks 26 / message_feedback 0 —— 与升级前逐项一致 |
+| 引擎健康 | `engine=rust, ready=true, journal_mode=wal, tables=46, size=16,375,808 B, wal=3,003,512 B, last_error_code=null` |
+| 完整性 | `integrity_check → {ok:true, detail:"ok"}` |
+| 启动维护 | 一行数字，**每一项都带理由**：索引重建 0 / 日志回填 0 / 索引裁剪 0 / 附件预热 0 / 孤儿清理 0 / **日志压缩 1 个会话（省下 15 行）** / 遥测裁剪 未执行（没有早于水位线的遥测事件）/ 审计裁剪 未执行（没有早于 2026-09-10 的记录）/ 审计表 61,417 行 / 空间回收 未执行（空闲 68 KiB、占比 0.4%，未达阈值）/ 完整性检查 跳过（距上次 2.5 小时，12 小时节流） |
+| `storage.compact` | `performed=false` + 明确理由（空闲页未达阈值），**不是静默跳过** |
+| 事件日志 | 两个有内容的会话分别 640 / 1491 条（合计 2131 ✓），类型含 `user_message` / `tool_call` / `tool_result` |
+| 逐面板走查 | **16/16 步点击成功、0 个错误面板、0 个空面板**（`.preview-shot/panel-walk.mjs`，截图留在 `.preview-shot/ui-walk/`） |
+| 能力守卫 | 启动后**没有**任何"引擎缺少必需命令"的上报（引擎命令面与本版一致） |
+
+**尚未在真机上覆盖的一项（如实标注）**：本轮修好的"新建消息写事件"（`user_message` / `assistant_text` 双写）
+由**单元测试**守着（改前红：`expected ['半截','定稿正文','定稿正文'] to deeply equal ['定稿正文']`），
+真机上要触发它需要跑一轮真实对话 —— 我已把探针与步骤准备好（`.preview-shot/verify-11666.js`），
+下一轮在第一轮对话后按"该会话事件里应出现 1 条 `user_message` + 1 条 `assistant_text`、且事件里的
+`messageId` 都能在消息表里找到"复核。
 
 ## [1.16.65] - 2026-09-17 — **四个只读审计员的全盘审计 + 逐条修复：会话语料的"静默消失"路径全部封死**
 
