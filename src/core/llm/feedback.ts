@@ -17,10 +17,9 @@
  * - note 有最大字节限制
  */
 
-import { getDatabase, persistDatabase } from "../storage/database";
 import { getEventLog } from "../storage/event-log";
 import { getStoragePort, hasStoragePort } from "../storage/port";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -268,34 +267,11 @@ export function putMessageFeedback(
     return { ok: true, item };
   }
 
-  // B 态：端口在但镜像未接手 → 不能写旧库（读写分裂），如实上报
-  if (!writeShouldFallBackToLegacy("feedback.put", "消息反馈未保存")) {
-    return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
-  }
-  const legacyDb = getDatabase();
-
-  // 删除现有
-  legacyDb.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);
-
-  // 插入新记录
-  legacyDb.run(
-    `INSERT INTO message_feedback (id, message_id, session_id, feedback, timestamp, note, version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      `fb-${messageId}`,
-      messageId,
-      sessionId,
-      rating,
-      now,
-      noteResult.value ?? null,
-      newVersion,
-      existing?.createdAt ?? now,
-      now,
-    ],
-  );
-  persistDatabase();
-
-  return { ok: true, item };
+  /**
+   * **旧库写入已删除**（第 17 轮，L4）：端口没接手时**如实回绝**，绝不写一份读路径看不见的副本。
+   * （原实现会把反馈写进旧库，而 rust 模式下旧库既不存在、读路径也只认端口 —— 那就是读写分裂。）
+   */
+  return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
 }
 
 /**
@@ -305,25 +281,8 @@ export function getMessageFeedback(messageId: string): MessageFeedbackItem | nul
   ensureNoteColumn();
   const rust = domainReadOne(TABLE, { message_id: messageId }, wireToFeedback);
   if (rust !== undefined) return rust ? feedbackToItem(rust) : null;
-  if (!shouldFallbackToLegacy()) return null;
-  const db = getDatabase();
-  const result = db.exec(
-    `SELECT message_id, feedback, note, version, created_at, updated_at
-     FROM message_feedback WHERE message_id = ?`,
-    [messageId],
-  );
-
-  if (result.length === 0 || result[0].values.length === 0) return null;
-
-  const row = result[0].values[0];
-  return {
-    messageId: row[0] as string,
-    rating: row[1] as FeedbackRating,
-    ...(row[2] ? { note: row[2] as string } : {}),
-    version: (row[3] as string) || "",
-    createdAt: (row[4] as number) || 0,
-    updatedAt: (row[5] as number) || 0,
-  };
+  // 端口没接手 = 这条反馈在这个进程里读不到（旧库已从渲染进程移除）→ 如实返回 null
+  return null;
 }
 
 /**
@@ -356,13 +315,8 @@ export function deleteMessageFeedback(
     return { ok: true, absent: true };
   }
 
-  if (!writeShouldFallBackToLegacy("feedback.clear", "消息反馈未删除")) {
-    return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
-  }
-  const legacyDb = getDatabase();
-  legacyDb.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);
-  persistDatabase();
-  return { ok: true, absent: true };
+  // 端口没接手 → 如实回绝（不写一份读路径看不见的删除）
+  return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
 }
 /**
  * 列出会话的所有消息级反馈。
@@ -376,22 +330,6 @@ export function listMessageFeedback(sessionId: string): MessageFeedbackItem[] {
       .sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0))
       .map(feedbackToItem);
   }
-  if (!shouldFallbackToLegacy()) return [];
-  const db = getDatabase();
-  const result = db.exec(
-    `SELECT message_id, feedback, note, version, created_at, updated_at
-     FROM message_feedback WHERE session_id = ? ORDER BY created_at ASC`,
-    [sessionId],
-  );
-
-  if (result.length === 0) return [];
-
-  return result[0].values.map((row) => ({
-    messageId: row[0] as string,
-    rating: row[1] as FeedbackRating,
-    ...(row[2] ? { note: row[2] as string } : {}),
-    version: (row[3] as string) || "",
-    createdAt: (row[4] as number) || 0,
-    updatedAt: (row[5] as number) || 0,
-  }));
+  // 端口没接手 → 该域的合理空结果（旧库已从渲染进程移除）
+  return [];
 }
