@@ -17,7 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RustStoragePort, rustCapabilities, type StorageTransport } from "../core/storage/rust-port";
+import { RustStoragePort, rustCapabilities, type StorageTransport, type MirrorMessageRow } from "../core/storage/rust-port";
 import { StorageError } from "../core/storage/port";
 
 interface Call {
@@ -123,6 +123,52 @@ afterEach(() => {
 // "被上下文压缩" → `listMessagesMerged` 把"被裁剪掉、本该仍读得到的历史"整批删掉。
 //
 // 所以这一组刻意跨过 `RustStoragePort` → `messages.list` 的**真实转换路径**。
+// ========== 镜像字段清单：**编译期**闸门 ==========
+//
+// ## 为什么要用"类型 + 对象字面量"而不是一条普通的断言
+//
+// 真端口的 `normalize()` 是 **eager 转换**：只有列在那个函数里被显式搬过来的字段，
+// 镜像行才有它。第 44 轮就是这么漏掉 `trimmed` 的 —— 类型里声明了、`hiddenIds()` 里读了，
+// 但 `normalize()` 没搬 → 真机上所有隐藏行都被当成"被上下文压缩" → 被索引裁剪的历史
+// 从会话里消失。**假端口的惰性读让它结构上不可能被发现。**
+//
+// 下面这个 `Record<keyof MirrorMessageRow, unknown>` 是**编译期闸门**：
+// 谁往 `MirrorMessageRow` 加一个字段却忘了在这里登记，`npx tsc --noEmit` 就会红 ——
+// 于是"加字段时顺手想一想 normalize 要不要搬"变成一件被强制发生的事，
+// 而不是靠下一个人记得。（审计的原话：这一族偏差已经出现过四次。）
+const WIRE_SAMPLE: Record<keyof MirrorMessageRow, unknown> = {
+  id: "m-inventory",
+  session_id: "s-inv",
+  role: "assistant",
+  content: "内容",
+  reasoning: "思考",
+  timestamp: 12345,
+  model: "deepseek-v4.1",
+  status: "done",
+  hidden: 1,
+  generated_files: "[\"a.ts\"]",
+  trimmed: 1,
+};
+
+describe("RustStoragePort —— 镜像字段清单必须被 normalize 全部搬过来（编译期 + 行为）", () => {
+  it("MIRROR-FIELDS: wire 行里的每一个字段都要出现在镜像行里", async () => {
+    t.replies.set("messages.list", {
+      ok: true,
+      result: { items: [{ ...WIRE_SAMPLE }], has_more: false, next_cursor: null },
+    });
+    port.messages.ensureLoaded("s-inv");
+    await new Promise((r) => setTimeout(r, 20));
+
+    const row = port.messages.list("s-inv")[0] as unknown as Record<string, unknown>;
+    expect(row, "镜像里必须有一行").toBeTruthy();
+    for (const [key, value] of Object.entries(WIRE_SAMPLE)) {
+      // 值可以等价（例如 String/Number 归一），但**不能是 undefined** ——
+      // 那正是"字段声明了、normalize 没搬"的形态
+      expect(row[key], `字段 ${key} 没有被 normalize 搬进镜像（真端口上它会永远是 undefined）`).not.toBeUndefined();
+      expect(String(row[key]), `字段 ${key} 的值与 wire 行不一致`).toBe(String(value));
+    }
+  });
+});
 describe("RustStoragePort —— wire 行 → 镜像行的字段搬运（真端口转换契约）", () => {
   it("MIRROR-TRIM: `trimmed` 必须被搬进镜像，且 `hiddenIds()` 据此排除被裁剪的行", async () => {
     t.replies.set("messages.list", {
