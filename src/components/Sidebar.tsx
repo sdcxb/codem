@@ -9,7 +9,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { SpaceSwitcher } from "./SpaceSwitcher";
 import { getSetting, setSetting, getSettingJSON } from "../core/storage/settings";
-import { applyStoredUiFont } from "../core/ui-font";
+import { applyStoredUiFont, applyStoredUiFontFamily } from "../core/ui-font";
 import * as SessionStorage from "../core/storage/session";
 import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -151,10 +151,13 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
 
   // Apply saved font family/weight on mount (theme is handled by TitleBar)
   useEffect(() => {
-    const savedFont = getSetting("codem-font-family");
-    if (savedFont) {
-      document.documentElement.style.setProperty("--font-family", savedFont);
-    }
+    /**
+     * D-3：全局字体的生效点是 `--font-ui`（`styles.css` 的 `body { font-family: var(--font-ui) }`
+     * 等 9 处消费），而 `--font-family` 全项目 **0 处** `var()` 引用 —— 旧写法把用户选的字体
+     * 写到那个没人读的变量上，于是"重启后字体不恢复"。现在与设置页共用同一个入口
+     * （`applyStoredUiFontFamily`）：默认档走 `removeProperty`，其余档写 `--font-ui`。
+     */
+    applyStoredUiFontFamily();
     const savedWeight = getSetting("codem-font-weight");
     if (savedWeight) {
       document.documentElement.style.setProperty("--font-weight", String(savedWeight));

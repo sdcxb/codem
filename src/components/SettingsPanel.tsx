@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { version as APP_VERSION } from "../../package.json";
@@ -6,9 +6,19 @@ import { getMiMoAuth } from "../core/auth/mimo";
 import type { LoginResult } from "../core/auth/mimo";
 import { useAppStore } from "../store";
 import { inferContextWindow } from "../core/llm/provider";
-import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
+import {
+  getSettingJSON,
+  setSettingJSON,
+  getSetting,
+  setSetting,
+  removeSetting,
+  beginSettingsWriteProbe,
+  flushSettingsWrites,
+  type SettingsWriteReport,
+} from "../core/storage/settings";
 import { addCustomModel, removeCustomModel, customNamesFor } from "../core/llm/custom-models";
 import { mergeModelsWithCatalog, getMergedDynamicModels, catalogFor } from "../core/llm/model-catalog";
+import { MIMO_MODELS } from "../core/model-config";
 import { getCatalogHealthFor, describeCatalogHealth, subscribeCatalogHealth, orderModelsByHealth, catalogModelLabelSuffix } from "../core/llm/catalog-health";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
@@ -40,7 +50,8 @@ import { PersonaManager } from "./PersonaManager";
 import { ComputerUseSettings } from "./ComputerUseSettings";
 import { WechatSettings } from "./WechatSettings";
 import { PhoneLinkSettings } from "./PhoneLinkSettings";
-import { applyUiFontScale, applyStoredUiFont, FONT_BASE_PX } from "../core/ui-font";
+import { applyUiFontScale, applyStoredUiFont, applyUiFontFamily, applyStoredUiFontFamily, readStoredUiFontFamily, FONT_BASE_PX } from "../core/ui-font";
+import { resetUiPreferencesToDefaults } from "../core/settings/ui-preferences";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
 import { setSandboxAclEnabled, isSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
@@ -266,8 +277,22 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [mimoAccount, setMimoAccount] = useState<{ email: string; uid: string } | null>(null);
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [fontFamily, setFontFamily] = useState<string>(getSetting("codem-font-family") || "AlimamaFangYuanTi");
+  const [fontFamily, setFontFamily] = useState<string>(() => readStoredUiFontFamily());
   const [fontWeight, setFontWeight] = useState<string>(getSetting("codem-font-weight") || "400");
+  /** 保存结果提示（D-21）：`saved` 只在**确认落库**后为真；失败时走 `saveFailure` */
+  const [saveFailure, setSaveFailure] = useState<string | null>(null);
+  /** 重置界面设置的结果提示（D-11） */
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
+  /**
+   * 面板里**只在本地 state 改、保存时才落库**的字段（D-23）。
+   *
+   * 为什么要记这个：`handleSave` 写的是面板 mount 时读到的快照演变来的 `settings` state。
+   * 若面板打开期间别处改写了库里的同一个字段（header 切模型、`configureEngine` 落盘
+   * mode/model），直接整块覆盖就会把**更新的那次写入顶回旧值**。
+   * 现在保存时以"保存这一刻的库值"为基座，只把**面板真正改过的本地字段**盖上去
+   * —— 没改过的字段以库为准（库是更晚的事实）。
+   */
+  const dirtyLocalFields = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const stored = getSettingJSON<Settings | null>("codem-settings", null);
@@ -347,8 +372,50 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
     }).catch(() => {});
   }, []);
 
-  const handleSave = () => {
-    setSettingJSON("codem-settings", settings);
+  /**
+   * 保存基座（D-23）：以**保存这一刻的库值**为底，再盖上面板本地改动过的字段。
+   *
+   * 关键点：`mode` / `language` / `fontSize` 这类字段在面板里"改了就立刻写库"
+   * （见各自 onChange），所以**库里的值就是用户最后一次的选择**，以库为准不会丢选择；
+   * 而 `model` / `providers` 是"只在本地 state 改、保存时才落库"的字段（见
+   * `dirtyLocalFields`），面板改过就以面板为准，否则同样以库为准。
+   */
+  const buildSavePayload = (panel: Settings): Settings => {
+    let fresh: (Partial<Settings> & Record<string, unknown>) | null = null;
+    try {
+      fresh = getSettingJSON<(Partial<Settings> & Record<string, unknown>) | null>("codem-settings", null);
+    } catch {
+      fresh = null;
+    }
+    if (!fresh || typeof fresh !== "object") return panel; // 库读不到 ⇒ 只能用面板值
+    const merged: Settings = { ...(fresh as Settings), ...panel };
+    const dirty = dirtyLocalFields.current;
+    // 面板没在本地改过的字段 ⇒ 以库为准（库是更晚的事实）
+    if (typeof fresh.mode === "string" && !dirty.has("mode")) merged.mode = fresh.mode;
+    if (typeof fresh.model === "string" && !dirty.has("model")) merged.model = fresh.model;
+    if (typeof (fresh as { language?: unknown }).language === "string" && !dirty.has("language")) {
+      merged.language = (fresh as { language: Language }).language;
+    }
+    if (typeof (fresh as { fontSize?: unknown }).fontSize === "number" && !dirty.has("fontSize")) {
+      merged.fontSize = (fresh as { fontSize: number }).fontSize;
+    }
+    if (Array.isArray((fresh as { providers?: unknown }).providers) && !dirty.has("providers")) {
+      merged.providers = (fresh as { providers: ProviderKey[] }).providers;
+    }
+    return merged;
+  };
+
+  const handleSave = async () => {
+    /**
+     * D-21：写入是"内存即时生效 + 异步落库"，`setSetting*` 返回 `void`，
+     * 所以"✅ 已保存"必须建立在**可等待的确认**上，而不是"没抛异常"。
+     * `beginSettingsWriteProbe()` 记下写入前的失败水位；`flushSettingsWrites()` 等写队列排空
+     * 并检查这段窗口里有没有新增失败。落库失败本身仍有旁路上报（guidance 提示），
+     * 这里修的是"**即时反馈**不许撒谎"。
+     */
+    const probe = beginSettingsWriteProbe();
+
+    setSettingJSON("codem-settings", buildSavePayload(settings));
     setLang(settings.language);
 
     const identityToSave: IdentityConfig = {
@@ -386,8 +453,38 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
     // Trigger engine reconfigure (mode/provider/apiKey may have changed)
     window.dispatchEvent(new Event("codem-settings-changed"));
 
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    // 面板本地改动已经落库（无论成功与否），下次保存重新按库值算基座
+    dirtyLocalFields.current = new Set();
+
+    const report = await flushSettingsWrites(probe);
+    if (report.settled) {
+      setSaveFailure(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      return;
+    }
+    // **不许把"写入失败"演成"已保存"**：如实显示未确认 + 为什么会失败
+    setSaved(false);
+    const reason = describeWriteFailure(report, lang);
+    setSaveFailure(reason);
+    showToast("error", reason, 6000);
+  };
+
+  /** 把"没落库"讲清楚（给用户看的原因 + 给排查看的区域名） */
+  const describeWriteFailure = (report: SettingsWriteReport, locale: Language): string => {
+    if (!report.accepted) {
+      return locale === "zh"
+        ? "⚠️ 未确认保存：存储端口不可用，设置只存在于内存里（重启会丢）"
+        : "⚠️ Not confirmed: storage port unavailable, changes live in memory only";
+    }
+    if (report.newAreas.length > 0) {
+      return locale === "zh"
+        ? `⚠️ 未确认保存：${report.newAreas.join("、")} 落库失败（重启会回到旧值）`
+        : `⚠️ Not confirmed: failed to persist ${report.newAreas.join(", ")} (reverts on restart)`;
+    }
+    return locale === "zh"
+      ? `⚠️ 未确认保存：仍有 ${report.pending} 条写入未落库（超时）`
+      : `⚠️ Not confirmed: ${report.pending} write(s) still pending (timed out)`;
   };
 
   const handleLogin = async () => {
@@ -603,6 +700,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
   };
 
   const updateProvider = (id: string, update: Partial<ProviderKey>) => {
+    // D-23：provider 表单（API Key / Base URL）**只在本地 state 改** ⇒ 记进本地改动集合
+    dirtyLocalFields.current.add("providers");
     setSettings({
       ...settings,
       providers: settings.providers.map((p) =>
@@ -624,6 +723,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       custom: true,
     };
     const newSettings = { ...settings, providers: [...settings.providers, newProvider] };
+    dirtyLocalFields.current.add("providers");
     setSettings(newSettings);
     setSettingJSON("codem-settings", newSettings);
     window.dispatchEvent(new Event("codem-settings-changed"));
@@ -664,6 +764,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
   const removeCustomProvider = (id: string) => {
     const newSettings = { ...settings, providers: settings.providers.filter((p) => p.id !== id) };
+    dirtyLocalFields.current.add("providers");
     setSettings(newSettings);
     setSettingJSON("codem-settings", newSettings);
     window.dispatchEvent(new Event("codem-settings-changed"));
@@ -913,7 +1014,24 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               <button
                 className={`mode-btn ${settings.mode === "cli" ? "active" : ""}`}
                 onClick={() => {
-                  const newSettings = { ...settings, mode: "cli" as const };
+                  /**
+                   * D-9：切到 CLI 时**必须同一次写入里把模型也切成 MiMo 模型**。
+                   *
+                   * 旧写法只改 `mode`，于是 `codem-settings` 落下的是
+                   * `{ mode: "cli", model: "deepseek-…" }`；而 `codem-settings-changed`
+                   * 会立刻触发 `configureEngine`，它的"历史脏数据修正"看到
+                   * "mode=cli 但 model 是 API 模型前缀"就判定为脏数据、把 mode 翻回 `api`
+                   * **并回写落库**（`App.tsx:1701-1711` / `:1787-1790`）。
+                   * 结果：面板仍显示 CLI 选中、库里已是 api —— 用户的选择静默无效。
+                   * 把模型一起换掉，这次写入就不再是"脏数据"，自愈逻辑自然不触发。
+                   */
+                  const nextModel = MIMO_MODELS[0]?.id ?? "mimo-v2.5-pro";
+                  const keepMimoModel = (settings.model || "").startsWith("mimo-");
+                  const newSettings = {
+                    ...settings,
+                    mode: "cli" as const,
+                    model: keepMimoModel ? settings.model : nextModel,
+                  };
                   setSettings(newSettings);
                   setSettingJSON("codem-settings", newSettings);
                   window.dispatchEvent(new Event("codem-settings-changed"));
@@ -983,7 +1101,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <div className="sp-row">
               <select
                 value={settings.model}
-                onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+                onChange={(e) => {
+                  // D-23：模型下拉**只在本地 state 改**（保存时才落库）⇒ 记进"本地改动"集合，
+                  // 保存时这一项以面板为准，而不是被库里的更晚写入顶掉（反之亦然）。
+                  dirtyLocalFields.current.add("model");
+                  setSettings({ ...settings, model: e.target.value });
+                }}
                 className="sp-select-flex"
               >
               {settings.mode === "cli" ? (
@@ -1207,7 +1330,13 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               onChange={(e) => {
                 setFontFamily(e.target.value);
                 setSetting("codem-font-family", e.target.value);
-                document.documentElement.style.setProperty("--font-family", e.target.value);
+                /**
+                 * D-3：生效点是 `--font-ui`（`body { font-family: var(--font-ui) }` 等 9 处消费），
+                 * 不是 `--font-family` —— 后者全项目 **0 处** `var()` 引用（只是给外部插件留的
+                 * 兼容别名），所以旧写法等于"选字体毫无效果"。
+                 * 默认档由 `applyUiFontFamily` 走 `removeProperty`，避免裸字体名覆盖整条 fallback 栈。
+                 */
+                applyUiFontFamily(e.target.value);
                 window.dispatchEvent(new Event("codem-settings-changed"));
               }}
               className="sp-select--inherit"
@@ -1221,6 +1350,49 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <div className="sp-hint sp-hint--tiny">
               {lang === "zh" ? "选择应用全局使用的字体（外观选项卡可调粗细）" : "Select the global font (adjust weight in Appearance tab)"}
             </div>
+          </div>
+
+          {/**
+            * D-11：「恢复默认设置」此前**全项目不存在** —— 崩溃恢复卡上的那个按钮
+            * （`AppErrorBoundary.tsx:155-168`，属禁区文件）只清 localStorage 里 `codem-*`
+            * 开头的键，而真正的偏好（关闭行为、字号、字体、语言、主题）都在 DB 的 settings 表里，
+            * 文案却承诺"将清除本地界面设置（关闭行为、窗口状态等偏好）"。这里补上真正的实现与入口：
+            * 删 DB 里的界面偏好键 + 清 localStorage 镜像，**不碰**会话/项目/身份等数据。
+            */}
+          <div className="settings-divider" />
+
+          <div className="setting-group">
+            <label>{lang === "zh" ? "恢复默认界面设置" : "Reset UI Preferences"}</label>
+            <div className="sp-hint sp-hint--tiny">
+              {lang === "zh"
+                ? "把主题、皮肤、语言、字号/字体/字重、关闭行为、对话显示模式、侧栏宽度恢复为默认；窗口尺寸/位置缓存一并清空。会话、项目、API Key 与身份配置不受影响。"
+                : "Restore theme, skin, language, font size/family/weight, close behavior, display mode and sidebar width to defaults; window size/position cache is cleared too. Chats, projects, API keys and identity are untouched."}
+            </div>
+            <div className="sp-row">
+              <button
+                className="sp-btn"
+                onClick={() => {
+                  const confirmText = lang === "zh"
+                    ? "将把界面偏好恢复为默认值（主题、皮肤、语言、字号、字体、字重、关闭行为、显示模式、侧栏宽度、窗口尺寸/位置）。会话与项目数据不受影响。确定继续？"
+                    : "Reset UI preferences to defaults (theme, skin, language, font size, family, weight, close behavior, display mode, sidebar width, window geometry)? Chats and projects are untouched.";
+                  if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(confirmText)) return;
+                  const result = resetUiPreferencesToDefaults();
+                  setFontFamily(readStoredUiFontFamily());
+                  setFontWeight(getSetting("codem-font-weight") || "400");
+                  applyStoredUiFont();
+                  applyStoredUiFontFamily();
+                  const total = result.removedKeys.length + result.patchedFields.length + result.clearedLocalKeys.length;
+                  setResetNotice(
+                    lang === "zh"
+                      ? `已恢复 ${total} 项界面设置${result.failed.length > 0 ? `（${result.failed.length} 项未恢复：${result.failed.join("、")}）` : ""}`
+                      : `Reset ${total} UI preference(s)${result.failed.length > 0 ? ` (${result.failed.length} failed: ${result.failed.join(", ")})` : ""}`,
+                  );
+                }}
+              >
+                {lang === "zh" ? "♻️ 恢复默认界面设置" : "♻️ Reset UI Preferences"}
+              </button>
+            </div>
+            {resetNotice && <div className="sp-hint sp-hint--tiny">{resetNotice}</div>}
           </div>
 
 </>
@@ -1914,6 +2086,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </button>
           )}
           {saved && <span className="save-success">{S.settings.saved[lang]}</span>}
+          {saveFailure && <span className="sp-hint">{saveFailure}</span>}
           <button className="save-btn" onClick={handleSave}>{S.settings.saveSettings[lang]}</button>
         </div>
       </div>

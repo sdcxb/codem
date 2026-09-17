@@ -4,19 +4,108 @@
 
 import { useState, useEffect } from "react";
 import { getSetting, setSetting } from "../storage/settings";
+import { hasStoragePort } from "../storage/port";
 
 export type Language = "zh" | "en";
 
+/** 应用默认语言：只在"用户从未选过"时使用（不是"读不到时"使用） */
+export const DEFAULT_LANG: Language = "zh";
+
+/**
+ * 语言缓存。
+ *
+ * ## 为什么"读不到"绝不能写成"用户选了默认值"（第 45 轮 D-2 修复）
+ *
+ * 旧实现是 `const stored = getSetting("codem-language"); cachedLang = stored === "en" ? "en" : "zh";`
+ * —— 而 `getSetting` 在**存储端口还没注册**时同步返回 `null`（`storage/settings.ts:95-102`）。
+ * 端口注册发生在 `App` 的第一个 effect 里（`App.tsx` `registerRustStoragePort()`，异步），
+ * 所以 `App` 首帧的 `useLang() → useState(getLang())` **一定**读不到值：
+ * 于是用户明明存着 `codem-language = "en"`，首帧却把 `"zh"` 写进缓存，而 `cachedLang`
+ * 一旦置值就再也不会重读（唯一重赋值点是 `setLang`）→ 英文用户重启后界面变中文，
+ * 更严重的是 `core/prompt/prompt.ts` 的 `getLang()` 会把整场会话钉成"必须用中文回答"。
+ *
+ * 现在分成三种情形，绝不混为一谈：
+ * - **端口未注册**（真正的"读不到"）→ 返回默认值但**不缓存**，并安排一次重同步；
+ * - **端口已注册但键不存在**（用户确实没选过）→ 缓存默认值（正确，且省掉后续读）；
+ * - 读到 "zh"/"en" → 缓存该值。
+ *
+ * 为什么"端口已注册 ⇒ 键不存在就是没选过"成立：`registerRustStoragePort()` 先
+ * `await port.start()`（内部 `config.warmup()` 把 settings 表整体读进内存）再 `setStoragePort(port)`，
+ * 也就是**注册晚于预热**（`storage/bootstrap.ts:111-112`、`storage/rust-port.ts:1920+`）。
+ */
 let cachedLang: Language | null = null;
+
+/**
+ * 最近一次**对外呈现**（或广播）的语言。
+ *
+ * 首帧渲染用的就是它（`DEFAULT_LANG`），因为首帧一定读不到存储。
+ * 重同步读到真值后，只有它与真值不同才需要广播 —— 否则每次启动都会白广播一次。
+ */
+let reportedLang: Language = DEFAULT_LANG;
+
+/** 重同步定时器（只有一个，避免每次读都排一个） */
+let resyncTimer: ReturnType<typeof setTimeout> | null = null;
+let resyncAttempts = 0;
+
+/**
+ * 重同步退避（ms）。启动期端口注册通常 <1s，慢盘/冷启动可能到数秒，所以尾部拉长；
+ * 上限 20 次（约 2 分钟）后停止排定时器 —— 但 `getLang()` 每次调用仍会重新尝试读取，
+ * 所以"停止重试"不等于"永久读不到"。
+ */
+const RESYNC_DELAYS_MS = [120, 300, 700, 1500, 3000, 5000, 5000, 5000, 10000, 10000];
+const RESYNC_MAX_ATTEMPTS = 20;
+
+function storageReadable(): boolean {
+  try {
+    return hasStoragePort();
+  } catch {
+    return false;
+  }
+}
+
+function dispatchLangChanged(): void {
+  try {
+    if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(new Event("codem-language-changed"));
+    }
+  } catch {
+    /* 非浏览器环境（测试/SSR）：广播失败不影响读值 */
+  }
+}
+
+/** 端口就绪后把语言"自愈"回存储里的真值，并在与首帧呈现不一致时广播一次 */
+function scheduleLangResync(): void {
+  if (resyncTimer !== null) return;
+  if (resyncAttempts >= RESYNC_MAX_ATTEMPTS) return;
+  if (typeof setTimeout !== "function") return;
+  const delay = RESYNC_DELAYS_MS[Math.min(resyncAttempts, RESYNC_DELAYS_MS.length - 1)];
+  resyncTimer = setTimeout(() => {
+    resyncTimer = null;
+    resyncAttempts += 1;
+    if (!storageReadable()) {
+      scheduleLangResync();
+      return;
+    }
+    const lang = getLang(); // 现在读得到真值了（并落缓存）
+    if (lang === reportedLang) return;
+    reportedLang = lang;
+    dispatchLangChanged();
+  }, delay);
+}
 
 /** Get current language setting (cached, defaults to "zh") */
 export function getLang(): Language {
   if (cachedLang) return cachedLang;
+  if (!storageReadable()) {
+    // "读不到" ≠ "用户选了默认值"：返回默认值但**不缓存**，并等端口就绪后重同步
+    scheduleLangResync();
+    return DEFAULT_LANG;
+  }
   try {
     const stored = getSetting("codem-language");
-    cachedLang = (stored === "en") ? "en" : "zh";
+    cachedLang = (stored === "en") ? "en" : (stored === "zh" ? "zh" : DEFAULT_LANG);
   } catch {
-    cachedLang = "zh";
+    cachedLang = DEFAULT_LANG;
   }
   return cachedLang;
 }
@@ -24,6 +113,7 @@ export function getLang(): Language {
 /** Set language and persist to database */
 export function setLang(lang: Language): void {
   cachedLang = lang;
+  reportedLang = lang;
   setSetting("codem-language", lang);
   // Dispatch event so React components using useLang() re-render
   window.dispatchEvent(new Event("codem-language-changed"));

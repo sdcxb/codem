@@ -1,4 +1,4 @@
-import { reportPersistFailure } from "./persist-failure";
+import { getPersistFailures, reportPersistFailure } from "./persist-failure";
 import { getStoragePort, hasStoragePort } from "./port";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
@@ -133,6 +133,111 @@ export function getSettingJSON<T>(key: string, defaultValue: T): T {
 
 export function setSettingJSON(key: string, value: unknown): void {
   setSetting(key, JSON.stringify(value));
+}
+
+// ========== 落库确认（第 45 轮 D-21：「已保存」不许是许愿）==========
+//
+// ## 为什么需要它
+//
+// `setSetting` / `setSettingJSON` 的契约是**内存即时生效 + 异步落库**（见文件头），
+// 所以它们返回 `void`：调用方拿到的是"已经交给存储"，**不是**"已经写进磁盘"。
+// 而界面上的"✅ 已保存"是**无条件的**——只要 setSettingJSON 没抛就显示。
+// 真实失败路径（磁盘满 / 引擎 BUSY 重试耗尽）走的是旁路上报
+// （`persist-failure.ts` → `codem:persist-failed` → App 的 guidance 提示），
+// 于是用户可能**先看到"已保存"、再看到"设置未保存，重启后会丢失"**两条相反的提示。
+//
+// ## 做法
+//
+// 端口自己知道"还有几条写在途"（`StorageConfigPort.stats().pendingWrites`）与
+// "已经失败了几条"（`.failures`），所以这里不去改写入路径（那 500 个调用点全部
+// 依赖它是同步的），而是给**要显示"已保存"的那几处**提供一次可等待的确认：
+//
+// ```ts
+// const probe = beginSettingsWriteProbe();
+// setSettingJSON("codem-settings", settings);
+// const report = await flushSettingsWrites(probe);
+// if (report.settled) setSaved(true); else setSaveFailure(report);
+// ```
+//
+// 判据三条，缺一不可：**写入被接受**（端口在）、**写队列排空**（在途 = 0）、
+// **这段窗口内没有新增失败**。
+
+/** 一次写入窗口的起点快照 */
+export interface SettingsWriteProbe {
+  /** 起点时配置面是否可用（端口未注册 ⇒ 写入根本没被接受） */
+  accepted: boolean;
+  /** 起点时配置面的累计失败数 */
+  portFailures: number;
+  /** 起点时已上报过失败的区域（只看**新增**区域，避免把别人的历史失败算到自己头上） */
+  areas: string[];
+}
+
+export interface SettingsWriteReport extends SettingsWriteProbe {
+  /** 等待窗口结束时仍在途的写条数（>0 = 没等到落库确认） */
+  pending: number;
+  /** 本次窗口内配置面新增的失败数 */
+  newFailures: number;
+  /** 本次窗口内新出现的失败区域（人可读的诊断） */
+  newAreas: string[];
+  /** 是否可以作为"已保存"的依据 */
+  settled: boolean;
+}
+
+/** 读配置面的写队列状态；端口不可用或实现没有 stats 时返回 null（= 无法确认） */
+function configWriteStats(): { pending: number; failures: number } | null {
+  if (!hasStoragePort()) return null;
+  try {
+    const s = getStoragePort().config.stats();
+    return { pending: Number(s?.pendingWrites ?? 0), failures: Number(s?.failures ?? 0) };
+  } catch {
+    return null;
+  }
+}
+
+/** 开始一次写入窗口（在任何 setSetting 之前调用） */
+export function beginSettingsWriteProbe(): SettingsWriteProbe {
+  const stats = configWriteStats();
+  let areas: string[] = [];
+  try {
+    areas = getPersistFailures().map((f) => f.area);
+  } catch {
+    areas = [];
+  }
+  return { accepted: stats !== null, portFailures: stats?.failures ?? 0, areas };
+}
+
+/**
+ * 等待写入落库并给出可判断的结果。
+ *
+ * @param probe `beginSettingsWriteProbe()` 的快照
+ * @param timeoutMs 等待上限（默认 2s；超时即"没确认"，**不**当成成功）
+ */
+export async function flushSettingsWrites(
+  probe: SettingsWriteProbe,
+  timeoutMs = 2000,
+): Promise<SettingsWriteReport> {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  let stats = configWriteStats();
+  // 写是异步落库的，只有 `pendingWrites` 归零才谈得上"已经交给引擎"
+  while (stats && stats.pending > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    stats = configWriteStats();
+  }
+
+  const after = stats;
+  const newFailures = Math.max(0, (after?.failures ?? probe.portFailures) - probe.portFailures);
+  let newAreas: string[] = [];
+  try {
+    const known = new Set(probe.areas);
+    newAreas = [...new Set(getPersistFailures().map((f) => f.area))].filter((a) => !known.has(a));
+  } catch {
+    newAreas = [];
+  }
+
+  const accepted = after !== null;
+  const pending = after?.pending ?? -1; // -1 = 读不到（不能当成"排空了"）
+  const settled = accepted && pending === 0 && newFailures === 0 && newAreas.length === 0;
+  return { ...probe, accepted, pending, newFailures, newAreas, settled };
 }
 
 // ========== Quick Phrase Storage (P2) ==========

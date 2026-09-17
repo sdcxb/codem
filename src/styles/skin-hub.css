@@ -62,7 +62,10 @@
   color: var(--hub-text-main);
   overflow: hidden;
   font-family: var(--font-ui);
-  font-size: 14px;
+  /* 第 45 轮 D-18：Hub 下这行原来是写死的 14px，于是**字号滑杆对 Hub 皮肤无效**
+     （--fs-* 刻度全都乘了 var(--ui-font-scale)，只有这里不乘）。14px 正好是 --fs-md 的基准值，
+     换成令牌后缩放基准不变（scale=1 时逐像素相同），只是从此跟着滑杆走。 */
+  font-size: var(--fs-md);
 }
 
 /* Hub 标题栏样式 */

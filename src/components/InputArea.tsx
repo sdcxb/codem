@@ -46,6 +46,27 @@ const securityIconMap: Record<string, JSX.Element> = {
   "🚀": <Rocket size={14} />,
 };
 
+/**
+ * 模型是否**原生**支持视觉输入（附件区的"视觉能力"提示用）。
+ *
+ * 第 45 轮 D-8：这是从原内联表达式抽出来的纯函数，只为一件事：
+ * 让"未知模型 = 保守判定为不支持"这条语义可以被单测钉住。判定口径**没有改动**
+ * （前缀表与原实现逐字相同），改的是**取值来源**——原实现从 localStorage 读
+ * `codem-settings`（那个键没有任何写入方，恒为空），现在读组件自己的 `model` prop。
+ */
+export function modelSupportsVision(modelId: string): boolean {
+  const m = (modelId || "").trim();
+  return (
+    m.startsWith("gpt-4o") ||
+    m.startsWith("claude-3") ||
+    m.startsWith("claude-4") ||
+    m.startsWith("gemini-1.5") ||
+    m.startsWith("gemini-2") ||
+    m.startsWith("o3") ||
+    m.startsWith("o4")
+  );
+}
+
 interface InputAreaProps {
 onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
 /** When provided and the agent is streaming, the send button injects guidance instead of a new message */
@@ -1186,9 +1207,20 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           ))}
           {pendingAttachments.some((a) => a.type === "image") && (() => {
             const visionConfig = getMultimodalSettings().vision;
-            const settings = JSON.parse(localStorage.getItem("codem-settings") || "{}");
-            const currentModel = settings.model || "";
-            const supportsVision = currentModel.startsWith("gpt-4o") || currentModel.startsWith("claude-3") || currentModel.startsWith("claude-4") || currentModel.startsWith("gemini-1.5") || currentModel.startsWith("gemini-2") || currentModel.startsWith("o3") || currentModel.startsWith("o4");
+            /**
+             * 第 45 轮 D-8：当前模型必须取**活性来源**，不能再读 localStorage 的 `codem-settings`。
+             *
+             * 旧实现是 `JSON.parse(localStorage.getItem("codem-settings") || "{}")` ——
+             * 而 `codem-settings` 这个键在 localStorage 里**没有任何写入方**（全仓
+             * `setItem("codem-settings")` 0 次；真正的权威副本在 DB 里，`migration.ts` 当年
+             * 从 `mimo-settings` 迁到 localStorage 后还会把它删掉）。于是 `currentModel` 恒为 `""`、
+             * `supportsVision` 恒为 false：配了视觉代理时永远显示"将使用视觉代理描述图片"，
+             * 没配时 GPT-4o/Claude/Gemini 用户被告知"当前模型不支持视觉"。
+             * 顺带：渲染期裸 `JSON.parse` 遇到历史坏值会直接抛错。
+             *
+             * 现在直接用组件已有的 `model` prop（它就是当前生效的模型，CLI 模式下也对）。
+             */
+            const supportsVision = modelSupportsVision(model || "");
             if (!supportsVision && !visionConfig?.enabled) {
               return <div className="attachment-hint">{zh ? "当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。" : "Current model doesn't support vision. Images will be sent as text. Configure vision proxy in Settings→Multimodal→Vision."}</div>;
             } else if (!supportsVision && visionConfig?.enabled) {

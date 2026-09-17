@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { getCostTracker, type UsageRecord } from "../core/llm/cost-tracker";
+import { beginSettingsWriteProbe, flushSettingsWrites } from "../core/storage/settings";
 import { formatCacheHitPercent } from "../core/llm/cache-percent";
 import { TokenActivityGrid, UsageChart } from "./UsageVisuals";
 import { Activity, BarChart3, Wrench, ClipboardList, Calendar, CheckCircle, Infinity as InfinityIcon } from "lucide-react";
@@ -9,6 +10,29 @@ import { useProjectStore } from "../core/store";
 
 interface UsageStatsProps {
   onClose: () => void;
+}
+
+/** 追踪器里的限额形状 */
+type CostLimits = ReturnType<typeof getCostTracker.prototype.getLimits>;
+
+/**
+ * 限额草稿：允许 `null`。
+ *
+ * 第 45 轮 D-12：清空输入框表示"不限"，而 `undefined` **不能**表达这件事 ——
+ * `setLimits` 是 `{...this.config.limits, ...limits}` 合并后 `JSON.stringify` 落库，
+ * 而 `JSON.stringify` 会丢掉值为 `undefined` 的自有属性：于是"清空每会话限额"落库后
+ * 只剩 `perDay`，重启时又与默认值 merge → **$5 上限原样复活**（`agentic-loop` 据此停止运行）。
+ * 用显式哨兵 `null` 落库（JSON 保留键），消费方本来就是真值判断（`if (limits.perSession)`），
+ * 所以 `null` 的语义正好是"不限"。
+ */
+type LimitDraft = { [K in keyof CostLimits]?: CostLimits[K] | null };
+
+/** 输入框文本 → 限额值：空串 = 不限（null 哨兵）；非法输入也按"不限"处理（消费方按真值判断） */
+export function parseLimitInput(raw: string): number | null {
+  const trimmed = (raw ?? "").trim();
+  if (trimmed === "") return null;
+  const n = Number.parseFloat(trimmed);
+  return Number.isFinite(n) ? n : null;
 }
 
 function formatDuration(ms: number): string {
@@ -29,8 +53,10 @@ export function UsageStats({ onClose }: UsageStatsProps) {
   const [costByModel, setCostByModel] = useState<Record<string, number>>({});
   const [records, setRecords] = useState<UsageRecord[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "models" | "history" | "limits">("overview");
-  const [limits, setLimits] = useState<ReturnType<typeof getCostTracker.prototype.getLimits> | null>(null);
+  const [limits, setLimits] = useState<LimitDraft | null>(null);
   const [savingLimits, setSavingLimits] = useState(false);
+  /** 限额保存结果（D-21）：只有确认落库才显示"已保存"，否则如实显示未确认 */
+  const [limitsSaveState, setLimitsSaveState] = useState<"idle" | "saved" | "failed">("idle");
   const [vizRecords, setVizRecords] = useState<UsageRecord[]>([]);
 
   useEffect(() => {
@@ -230,7 +256,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   step="0.5"
                   min="0"
                   value={limits.perSession ?? ""}
-                  onChange={(e) => setLimits({ ...limits, perSession: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  onChange={(e) => setLimits({ ...limits, perSession: parseLimitInput(e.target.value) })}
                   placeholder="不限"
                   className="usage-limit-input"
                 />
@@ -254,7 +280,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   step="1"
                   min="0"
                   value={limits.perDay ?? ""}
-                  onChange={(e) => setLimits({ ...limits, perDay: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  onChange={(e) => setLimits({ ...limits, perDay: parseLimitInput(e.target.value) })}
                   placeholder="不限"
                   className="usage-limit-input"
                 />
@@ -278,7 +304,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   step="1"
                   min="0"
                   value={limits.total ?? ""}
-                  onChange={(e) => setLimits({ ...limits, total: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  onChange={(e) => setLimits({ ...limits, total: parseLimitInput(e.target.value) })}
                   placeholder="不限"
                   className="usage-limit-input"
                 />
@@ -321,15 +347,33 @@ export function UsageStats({ onClose }: UsageStatsProps) {
 
             {/* Save button */}
             <button
-              onClick={() => {
+              onClick={async () => {
                 const tracker = getCostTracker();
-                tracker.setLimits(limits);
+                /**
+                 * D-21：`setLimits` 是"内存即时生效 + 异步落库"（`setSettingJSON` 返回 void），
+                 * 所以"已保存"不能无条件显示 —— 先记失败水位，等写队列排空后再决定显示什么。
+                 */
+                const probe = beginSettingsWriteProbe();
+                // `null` 是刻意的哨兵（见 LimitDraft 的说明）：消费方按真值判断，null = 不限
+                tracker.setLimits(limits as unknown as CostLimits);
                 setSavingLimits(true);
-                setTimeout(() => setSavingLimits(false), 2000);
+                setLimitsSaveState("idle");
+                const report = await flushSettingsWrites(probe, 1500);
+                setSavingLimits(false);
+                setLimitsSaveState(report.settled ? "saved" : "failed");
+                if (report.settled) {
+                  setTimeout(() => setLimitsSaveState("idle"), 2000);
+                }
               }}
               className="usage-save-btn"
             >
-              {savingLimits ? <span className="usage-saved"><CheckCircle size={16} /> 已保存</span> : "保存限额"}
+              {savingLimits
+                ? <span className="usage-saved">保存中…</span>
+                : limitsSaveState === "saved"
+                  ? <span className="usage-saved"><CheckCircle size={16} /> 已保存</span>
+                  : limitsSaveState === "failed"
+                    ? <span className="usage-saved">⚠️ 未确认保存（未落库）</span>
+                    : "保存限额"}
             </button>
           </div>
         )}

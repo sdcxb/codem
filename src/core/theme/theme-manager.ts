@@ -199,10 +199,22 @@ class ThemeManagerClass {
         applyThemeAttribute(resolveEffectiveTheme(getSetting), root);
       } catch (e) { console.warn('[theme-manager.ts]', e) }
     } else if (this.currentSkin === 'hub') {
-      // Hub 皮肤是暗色皮肤，强制 data-theme=dark 确保所有 dark 模式 CSS 变量生效
+      /**
+       * Hub 皮肤是暗色皮肤，强制 data-theme=dark 确保所有 dark 模式 CSS 变量生效。
+       *
+       * ⚠️ 顺序不能反（第 45 轮 D-5）：`cleanDreamCSS()` 内部会
+       * `applyThemeAttribute(resolveEffectiveTheme(getSetting))` —— 也就是把 data-theme
+       * **写回用户档位**（DB `codem-theme` → 首屏镜像 → 默认档）。旧写法是"先强制 dark、
+       * 再清理"，于是 DB 里 `codem-theme="light"` 的用户最终得到
+       * `data-skin="hub"` + **`data-theme="light"`** —— "Hub 永远是暗色"这条不变式在 JS 层破裂
+       * （只有 `codem-theme` 缺失时才碰巧正确：那时刚被 ① 写过的镜像也是 dark）。
+       * 后果：`[data-theme="dark"] <descendant>` 系列规则全部失效，Hub 覆盖块没重写的令牌
+       * 会取到浅色值（滚动条、遮罩、光标色…）。先清理、最后钉死档位才是"清掉梦幻行内变量后
+       * 强制暗色"该有的语义。
+       */
       root.setAttribute('data-skin', 'hub');
-      applyThemeAttribute('dark', root);
       this.cleanDreamCSS();
+      applyThemeAttribute('dark', root);
     } else {
       // Dream 皮肤：由 applyDreamCSS 根据 palette.isDark 自适应设置 data-theme
       root.setAttribute('data-skin', this.currentSkin);
