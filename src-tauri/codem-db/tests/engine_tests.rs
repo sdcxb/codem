@@ -2884,3 +2884,77 @@ fn legacy_read_table_handles_without_rowid_tables() {
     assert_eq!(page["paging"], json!("keyset"), "无 rowid 的表也必须能分页：{page}");
 }
 
+// ========== 渲染侧载荷必须被引擎接受（第 45 轮真机回归） ==========
+
+/// **新建会话**的载荷必须被接受 —— 这条守卫的代价是一次真机数据事故。
+///
+/// 起因：`sort_order` 曾被收进 `SEMANTIC_NOT_NULL_COLUMNS`（"0 表示未指定"），
+/// 而渲染侧 `sessionToWire` 对"从未拖拽过"的会话写的就是 `sort_order: null`（**有含义的值**）
+/// ⇒ 整笔 `sessions.upsert` 被拒 ⇒ 会话行不存在 ⇒ 它下面的消息索引 / 事件 / 遥测
+/// **全部因外键被拒**。真机现象：新建会话里消息只进权威 JSONL 日志，
+/// `messages` 表 0 行、搜索搜不到、重启后会话可能消失。
+///
+/// 这里用的列集合与 `src/core/storage/session.ts::sessionToWire` **逐字一致**：
+/// 将来那边加列/改值形态而引擎拒收，这条会第一时间红。
+#[test]
+fn renderer_new_session_payload_is_accepted() {
+    let (_d, eng) = temp_engine("new-session-payload");
+    let payload = json!({
+        "id": "1789650041902-0mjfyfib7",
+        "project_id": "",
+        "title": "对话 1",
+        "model": null,
+        "created_at": 1_789_650_041_902_i64,
+        "last_message_at": 1_789_650_041_902_i64,
+        "message_count": 0,
+        "pinned": 0,
+        "execution_mode": null,
+        "worktree_path": null,
+        "worktree_branch": null,
+        "correction_mode": null,
+        "deep_thinking_mode": null,
+        "preserve_executor": null,
+        // ⚠️ 这一列就是回归的元凶："从未拖拽过"= NULL（有含义），不是"缺省"
+        "sort_order": null,
+    });
+    let r = dispatch(&eng, "sessions.upsert", &payload);
+    assert!(r.is_ok(), "渲染侧的新建会话载荷必须被接受，实际：{:?}", r.err());
+
+    let listed = call(&eng, "sessions.list", json!({}));
+    let items = listed["items"].as_array().expect("items 数组");
+    assert_eq!(items.len(), 1, "会话行必须真的写进去（这正是回归时缺的那一行）");
+    assert!(items[0]["sort_order"].is_null(), "NULL 要原样保留：它表示从未拖拽过");
+
+    // fork 也走同一条载荷形态（`session.ts` 显式写 `sort_order: null`）
+    let fork = dispatch(
+        &eng,
+        "sessions.upsert",
+        &json!({ "id": "child-1", "project_id": "", "title": "Fork", "created_at": 2, "last_message_at": 2, "message_count": 0, "pinned": 0, "parent_id": "1789650041902-0mjfyfib7", "sort_order": null }),
+    );
+    assert!(fork.is_ok(), "fork 的子会话载荷同样必须被接受，实际：{:?}", fork.err());
+}
+
+/// 语义非空列的 NULL **仍然必须被拒** —— 放开 `sort_order` 不等于把判据删掉。
+#[test]
+fn semantic_not_null_columns_still_reject_explicit_null() {
+    let (_d, eng) = temp_engine("semantic-null");
+    call(&eng, "sessions.upsert", json!({ "id": "s1", "project_id": "", "title": "t" }));
+    call(
+        &eng,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "x", "timestamp": 1 }),
+    );
+
+    for (cmd, params) in [
+        ("messages.update", json!({ "id": "m1", "hidden": null })),
+        ("messages.update", json!({ "id": "m1", "trimmed": null })),
+        ("sessions.upsert", json!({ "id": "s1", "project_id": "", "title": "t", "pinned": null })),
+    ] {
+        let err = dispatch(&eng, cmd, &params).expect_err(&format!("{cmd} 写 NULL 必须被拒：{params}"));
+        assert!(
+            err.message.contains("语义上不可为空"),
+            "{cmd} 的拒绝理由要说清是哪一列：{}",
+            err.message
+        );
+    }
+}

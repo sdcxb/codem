@@ -708,12 +708,31 @@ struct MessageFields {
 /// ② 读侧防御：`message_row` 把 `hidden` 读成 `Option<i64>` 再 `unwrap_or(0)`，
 ///    这样**库里已经有 NULL**（历史数据 / 手工 SQL）也不会打崩读路径。
 /// 只做①挡不住历史数据，只做②挡不住新的污染 —— 两条都要。
+/*
+ * 语义上不可为空的列：**显式写 `null`** 一律拒绝（缺省由 DEFAULT/unwrap_or 兜底）。
+ *
+ * ## `sort_order` 为什么**不在**这个清单里（第 45 轮真机回归的修正）
+ *
+ * 它曾经被收进来（"0 表示未指定"），结果**新建会话直接写不进去**：
+ * 渲染侧的 `sessionToWire` 对"从未拖拽过"的会话写的是 `sort_order: null`，
+ * 而这条判据把整笔 `sessions.upsert` 拒掉 ——
+ * `[PersistFailure] session.create 写盘失败：参数 sort_order 不合法…拒绝写入 NULL`
+ * → 会话行不存在 → 该会话的消息索引 / 事件 / 遥测**全部因外键被拒**。
+ * 真机实测：消息只进权威 JSONL 日志，`messages` 表 0 行、搜索搜不到、重启后会话可能消失。
+ *
+ * 而 `sort_order` 的 `NULL` 是**有含义的值**，不是"缺省"：渲染侧的排序把"没有排序键"
+ * 当成"排在所有已拖拽会话之后、组内按时间倒序"（`session.ts` 的 `?? Number.MAX_SAFE_INTEGER`），
+ * 旧实现就是这么排的。把 NULL 换成 0 会**改变既有用户的列表顺序**（0 会和"第一个被拖拽的会话"撞）。
+ *
+ * 判据的边界因此是：**NULL 会让读路径崩掉或让语义变歧义的列才拒绝**
+ * （`hidden`/`trimmed` 是被读路径直接解成整数、`message_count`/`pinned` 是计数与布尔），
+ * 而 `sort_order` 的读取侧本来就显式处理 NULL（`Number.isFinite` 检查 + 兜底）。
+ */
 const SEMANTIC_NOT_NULL_COLUMNS: &[(&str, &str)] = &[
     ("hidden", "0=可见 / 1=隐藏（压缩或裁剪）"),
     ("trimmed", "0=普通隐藏 / 1=索引裁剪"),
     ("message_count", "会话消息数（引擎是唯一写入者）"),
     ("pinned", "0/1 置顶标记"),
-    ("sort_order", "排序位（0 表示未指定）"),
 ];
 
 /// 对一次写入涉及的列逐个检查"语义上非空"的列有没有被显式写成 `null`。
