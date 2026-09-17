@@ -10,9 +10,7 @@
  * - 不抛异常，失败时返回 null/空数组并 console.error
  */
 
-import { getDatabase, persistDatabase, tryGetDatabase } from "../storage/database";
 import type { DelegationTask, DelegationTaskRow, DelegationState } from "./types";
-import { runGuarded } from "../storage/write-guard";
 import { reportPersistFailure } from "../storage/persist-failure";
 import {
   domainDelete,
@@ -20,6 +18,7 @@ import {
   domainReadMany,
   domainReadOne,
   domainWrite,
+  reportWriteNotAccepted,
 } from "../storage/domain-store";
 
 // ========== 行 → 对象转换 ==========
@@ -84,27 +83,9 @@ export function createDelegationTask(task: DelegationTask): void {
     if (domainWrite(TABLE, [taskToWire(task)], { scope: "delegation.createDelegationTask", note: "委派任务未保存" })) {
       return;
     }
-    const db = tryGetDatabase();
-  if (!db) return;
-    db.run(
-      `INSERT INTO delegation_tasks
-        (id, source_session_id, target_session_id, task, status, result, error, project_id, created_at, started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        task.id,
-        task.sourceSessionId,
-        task.targetSessionId,
-        task.task,
-        task.status,
-        task.result ?? null,
-        task.error ?? null,
-        task.projectId,
-        task.createdAt,
-        task.startedAt ?? null,
-        task.completedAt ?? null,
-      ],
-    );
-    persistDatabase();
+    // 第 17 轮（L4）：旧库回退（INSERT delegation_tasks + persistDatabase）已删 → 如实上报。
+    // 契约是 void，调用方（编排器）只能靠上报判断"任务没落库"。
+    reportWriteNotAccepted("delegation.createDelegationTask", "委派任务未保存");
   } catch (e) {
     reportPersistFailure("delegation.createDelegationTask", e);
   }
@@ -137,33 +118,8 @@ export function updateDelegationTaskStatus(
       );
       return;
     }
-    const db = tryGetDatabase();
-  if (!db) return;
-    const sets: string[] = ["status = ?"];
-    const params: any[] = [status];
-
-    if (extra?.result !== undefined) {
-      sets.push("result = ?");
-      params.push(extra.result);
-    }
-    if (extra?.error !== undefined) {
-      sets.push("error = ?");
-      params.push(extra.error);
-    }
-    if (extra?.startedAt !== undefined) {
-      sets.push("started_at = ?");
-      params.push(extra.startedAt);
-    }
-    if (extra?.completedAt !== undefined) {
-      sets.push("completed_at = ?");
-      params.push(extra.completedAt);
-    }
-
-    params.push(taskId);
-    // 第 83 波：委派任务的"假成功"就是从这里开始的 —— 状态更新打不到行必须可见
-  runGuarded(db, `UPDATE delegation_tasks SET ${sets.join(", ")} WHERE id = ?`, params,
-    { table: "delegation_tasks", op: "update", id: taskId, from: "updateDelegationTask" });
-    persistDatabase();
+    // 第 17 轮（L4）：旧库回退（动态拼 UPDATE + runGuarded + persistDatabase）已删 → 如实上报。
+    reportWriteNotAccepted("delegation.updateDelegationTaskStatus", "委派任务状态未更新");
   } catch (e) {
     console.error("[DelegationStorage] updateDelegationTaskStatus failed:", e);
   }
@@ -174,25 +130,7 @@ export function getDelegationTask(taskId: string): DelegationTask | null {
   try {
     const rust = domainReadOne(TABLE, { id: taskId }, wireToTask);
     if (rust !== undefined) return rust;
-    const db = tryGetDatabase();
-  if (!db) return null;
-    const result = db.exec("SELECT * FROM delegation_tasks WHERE id = ?", [taskId]);
-    if (result.length === 0 || result[0].values.length === 0) return null;
-
-    const v = result[0].values[0];
-    return rowToTask({
-      id: v[0] as string,
-      source_session_id: v[1] as string,
-      target_session_id: v[2] as string,
-      task: v[3] as string,
-      status: v[4] as string,
-      result: v[5] as string | null,
-      error: v[6] as string | null,
-      project_id: v[7] as string,
-      created_at: v[8] as number,
-      started_at: v[9] as number | null,
-      completed_at: v[10] as number | null,
-    });
+    return null; // 第 17 轮（L4）：旧库回退已删 —— 镜像未就绪就是"查不到"
   } catch (e) {
     console.error("[DelegationStorage] getDelegationTask failed:", e);
     return null;
@@ -204,14 +142,7 @@ export function getDelegationsBySource(sourceSessionId: string): DelegationTask[
   try {
     const rust = domainReadMany(TABLE, wireToTask, { source_session_id: sourceSessionId });
     if (rust) return rust.sort((a, b) => a.createdAt - b.createdAt);
-    const db = tryGetDatabase();
-  if (!db) return [];
-    const result = db.exec(
-      "SELECT * FROM delegation_tasks WHERE source_session_id = ? ORDER BY created_at ASC",
-      [sourceSessionId],
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map(rowToTaskFromValues);
+    return []; // 第 17 轮（L4）：旧库回退已删 —— 诚实的空结果
   } catch (e) {
     console.error("[DelegationStorage] getDelegationsBySource failed:", e);
     return [];
@@ -223,14 +154,7 @@ export function getDelegationsByTarget(targetSessionId: string): DelegationTask[
   try {
     const rust = domainReadMany(TABLE, wireToTask, { target_session_id: targetSessionId });
     if (rust) return rust.sort((a, b) => a.createdAt - b.createdAt);
-    const db = tryGetDatabase();
-  if (!db) return [];
-    const result = db.exec(
-      "SELECT * FROM delegation_tasks WHERE target_session_id = ? ORDER BY created_at ASC",
-      [targetSessionId],
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map(rowToTaskFromValues);
+    return []; // 第 17 轮（L4）：旧库回退已删 —— 诚实的空结果
   } catch (e) {
     console.error("[DelegationStorage] getDelegationsByTarget failed:", e);
     return [];
@@ -242,14 +166,7 @@ export function getDelegationsByProject(projectId: string): DelegationTask[] {
   try {
     const rust = domainReadMany(TABLE, wireToTask, { project_id: projectId });
     if (rust) return rust.sort((a, b) => a.createdAt - b.createdAt);
-    const db = tryGetDatabase();
-  if (!db) return [];
-    const result = db.exec(
-      "SELECT * FROM delegation_tasks WHERE project_id = ? ORDER BY created_at ASC",
-      [projectId],
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map(rowToTaskFromValues);
+    return []; // 第 17 轮（L4）：旧库回退已删 —— 诚实的空结果
   } catch (e) {
     console.error("[DelegationStorage] getDelegationsByProject failed:", e);
     return [];
@@ -265,13 +182,7 @@ export function getActiveDelegations(): DelegationTask[] {
         .filter((t) => t.status === "pending" || t.status === "running")
         .sort((a, b) => a.createdAt - b.createdAt);
     }
-    const db = tryGetDatabase();
-  if (!db) return [];
-    const result = db.exec(
-      "SELECT * FROM delegation_tasks WHERE status IN ('pending', 'running') ORDER BY created_at ASC",
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map(rowToTaskFromValues);
+    return []; // 第 17 轮（L4）：旧库回退已删 —— 诚实的空结果
   } catch (e) {
     console.error("[DelegationStorage] getActiveDelegations failed:", e);
     return [];
@@ -289,14 +200,7 @@ export function getRecentDelegations(limit: number = 200): DelegationTask[] {
     if (rust) {
       return rust.sort((a, b) => b.createdAt - a.createdAt).slice(0, Math.max(1, limit));
     }
-    const db = tryGetDatabase();
-  if (!db) return [];
-    const result = db.exec(
-      "SELECT * FROM delegation_tasks ORDER BY created_at DESC LIMIT ?",
-      [Math.max(1, limit)],
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map(rowToTaskFromValues);
+    return []; // 第 17 轮（L4）：旧库回退已删 —— 诚实的空结果
   } catch (e) {
     console.error("[DelegationStorage] getRecentDelegations failed:", e);
     return [];
@@ -309,10 +213,8 @@ export function deleteDelegationTask(taskId: string): void {
     if (domainDelete(TABLE, { id: taskId }, { scope: "delegation.deleteDelegationTask", note: "委派任务未删除" })) {
       return;
     }
-    const db = tryGetDatabase();
-  if (!db) return;
-    db.run("DELETE FROM delegation_tasks WHERE id = ?", [taskId]);
-    persistDatabase();
+    // 第 17 轮（L4）：旧库回退（DELETE + persistDatabase）已删 → 如实上报。
+    reportWriteNotAccepted("delegation.deleteDelegationTask", "委派任务未删除");
   } catch (e) {
     reportPersistFailure("delegation.deleteDelegationTask", e);
   }
@@ -334,20 +236,8 @@ export function clearCompletedDelegations(keepCount: number = 50): void {
       );
       if (removed !== null) return;
     }
-    const db = tryGetDatabase();
-  if (!db) return;
-    db.run(
-      `DELETE FROM delegation_tasks
-       WHERE status IN ('completed', 'failed', 'cancelled')
-       AND id NOT IN (
-         SELECT id FROM delegation_tasks
-         WHERE status IN ('completed', 'failed', 'cancelled')
-         ORDER BY completed_at DESC
-         LIMIT ?
-       )`,
-      [keepCount],
-    );
-    persistDatabase();
+    // 第 17 轮（L4）：旧库回退（保留最近 N 条的 DELETE）已删 → 如实上报。
+    reportWriteNotAccepted("delegation.clearCompletedDelegations", "已完成的委派任务未清理");
   } catch (e) {
     reportPersistFailure("delegation.clearCompletedDelegations", e);
   }

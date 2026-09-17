@@ -7,17 +7,14 @@
  * - 支持从笔记内容 AI 生成闪卡
  */
 
-import { getDatabase } from '../storage/database';
-import { runGuarded } from "../storage/write-guard";
 import {
   domainDelete,
   domainDeleteWhere,
   domainReadMany,
   domainReadOne,
   domainWrite,
-  shouldFallbackToLegacy,
-  writeShouldFallBackToLegacy,
 } from "../storage/domain-store";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Types ==========
 
@@ -116,57 +113,45 @@ export function createFlashcard(input: CreateFlashcardInput): Flashcard {
   if (domainWrite(TABLE, [flashcardToWire(created)], { scope: "flashcard.create", note: "闪卡未保存" })) {
     return getFlashcard(id) ?? created;
   }
-  /*
-   * B 态（端口在、镜像未就绪）：不写旧库，如实上报并返回已构造的对象
-   * （镜像里那份是有效的，与上面"读回来的那一份"语义一致）。
+  /**
+   * **旧库写入已删除**（L4 收尾）：端口没接手时如实上报，返回内存里那份已构造好的对象。
+   *
+   * 返回 `created` 与原来 B 态（端口在、该域镜像未就绪）的行为**完全一致** ——
+   * 那时就已经是"不碰旧库 + 如实上报 + 返回已构造的对象"。
+   * 所以这里不是新造的"假成功"：差别只是失败现在**可见**（原来 A 态静默落旧库，
+   * 而读路径只认端口 = 本进程内读写分裂）。
    */
-  if (!writeShouldFallBackToLegacy("flashcard.create", "闪卡未保存")) return created;
-  const db = getDatabase();
-  db.run(
-    `INSERT INTO flashcards (id, notebook_id, note_id, front, back, tags, ease_factor, interval_days, repetitions, next_review, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 2.5, 0, 0, ?, ?, ?)`,
-    [id, input.notebookId, input.noteId || null, input.front, input.back,
-     input.tags ? JSON.stringify(input.tags) : null, now, now, now]
+  reportPersistFailure(
+    "flashcard.create",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "闪卡未保存",
   );
-
-  return getFlashcard(id)!;
+  return created;
 }
 
 export function getFlashcard(id: string): Flashcard | undefined {
   const rust = domainReadOne(TABLE, { id }, wireToFlashcard);
   if (rust !== undefined) return rust ?? undefined;
-    if (!shouldFallbackToLegacy()) return undefined;
-const db = getDatabase();
-  const result = db.exec('SELECT * FROM flashcards WHERE id = ?', [id]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToFlashcard(result[0].values[0]);
+  // 端口没接手 → 该域读不到这一行（旧库已从渲染进程移除）→ 如实返回 undefined
+  return undefined;
 }
 
 export function listFlashcards(notebookId: string): Flashcard[] {
   const rust = readFlashcards({ notebook_id: notebookId });
   if (rust) return rust.sort(bySchedule);
-    if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-  const result = db.exec(
-    'SELECT * FROM flashcards WHERE notebook_id = ? ORDER BY next_review ASC, created_at DESC',
-    [notebookId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToFlashcard);
+  /**
+   * **旧库读取已删除**（L4 收尾）：端口没接手 → 该域的合理空结果（空数组）。
+   * 与原来门控里那句 `if (!shouldFallbackToLegacy()) return [];` **语义一致**。
+   */
+  return [];
 }
 
 // C5: 按笔记 ID 列出闪卡 — 支持从特定笔记生成和管理闪卡
 export function listFlashcardsByNote(noteId: string): Flashcard[] {
   const rust = readFlashcards({ note_id: noteId });
   if (rust) return rust.sort(bySchedule);
-    if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-  const result = db.exec(
-    'SELECT * FROM flashcards WHERE note_id = ? ORDER BY next_review ASC, created_at DESC',
-    [noteId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToFlashcard);
+  // 端口没接手 → 该域的合理空结果（与原来门控那句 `return []` 语义一致）
+  return [];
 }
 
 export function getDueFlashcards(notebookId: string): Flashcard[] {
@@ -175,14 +160,8 @@ export function getDueFlashcards(notebookId: string): Flashcard[] {
   if (rust) {
     return rust.filter((c) => c.nextReview <= now).sort((a, b) => a.nextReview - b.nextReview);
   }
-    if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-  const result = db.exec(
-    'SELECT * FROM flashcards WHERE notebook_id = ? AND next_review <= ? ORDER BY next_review ASC',
-    [notebookId, now]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToFlashcard);
+  // 端口没接手 → 该域的合理空结果（与原来门控那句 `return []` 语义一致）
+  return [];
 }
 
 // C5: 按笔记 ID 获取待复习闪卡
@@ -192,14 +171,8 @@ export function getDueFlashcardsByNote(noteId: string): Flashcard[] {
   if (rust) {
     return rust.filter((c) => c.nextReview <= now).sort((a, b) => a.nextReview - b.nextReview);
   }
-    if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-  const result = db.exec(
-    'SELECT * FROM flashcards WHERE note_id = ? AND next_review <= ? ORDER BY next_review ASC',
-    [noteId, now]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToFlashcard);
+  // 端口没接手 → 该域的合理空结果（与原来门控那句 `return []` 语义一致）
+  return [];
 }
 
 export function updateFlashcard(id: string, update: Partial<Pick<Flashcard, 'front' | 'back' | 'tags'>>): void {
@@ -232,28 +205,27 @@ export function updateFlashcard(id: string, update: Partial<Pick<Flashcard, 'fro
     return;
   }
 
-    if (!writeShouldFallBackToLegacy("flashcard.update", "卡片未更新")) return;
-const db = getDatabase();
-  const values: (string | number | null)[] = [];
-  if (update.front !== undefined) values.push(update.front);
-  if (update.back !== undefined) values.push(update.back);
-  if (update.tags !== undefined) values.push(JSON.stringify(update.tags));
-  values.push(Date.now());
-  values.push(id);
-
-  runGuarded(
-    db,
-    `UPDATE flashcards SET ${fields.map((f) => `${f} = ?`).join(', ')}, updated_at = ? WHERE id = ?`,
-    values,
-    { table: "flashcards", op: "update", id, from: "updateFlashcard" },
+  /**
+   * **旧库更新已删除**（L4 收尾）：端口没接手时**如实上报为"未更新"**。
+   *
+   * ⚠️ 不能静默 return：`updateFlashcard` 的契约是 void，调用方只能靠
+   * "有没有失败上报"判断这次改动有没有落地 —— 静默就是 B 类假成功。
+   */
+  reportPersistFailure(
+    "flashcard.update",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "卡片未更新",
   );
 }
 
 export function deleteFlashcard(id: string): void {
   if (domainDelete(TABLE, { id }, { scope: "flashcard.delete", note: "闪卡未删除" })) return;
-    if (!writeShouldFallBackToLegacy("flashcard.delete", "卡片未删除")) return;
-const db = getDatabase();
-  db.run('DELETE FROM flashcards WHERE id = ?', [id]);
+  // 旧库删除已删除（L4）：端口没接手 → 如实上报为"未删除"（不静默当成删成功）
+  reportPersistFailure(
+    "flashcard.delete",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "卡片未删除",
+  );
 }
 
 export function deleteFlashcardsByNotebook(notebookId: string): void {
@@ -264,9 +236,12 @@ export function deleteFlashcardsByNotebook(notebookId: string): void {
     { scope: "flashcard.deleteByNotebook", note: "笔记本的闪卡未删除" },
   );
   if (removed !== null) return;
-    if (!writeShouldFallBackToLegacy("flashcard.deleteByNotebook", "卡片未删除")) return;
-const db = getDatabase();
-  db.run('DELETE FROM flashcards WHERE notebook_id = ?', [notebookId]);
+  // 旧库删除已删除（L4）：端口没接手 → 如实上报为"未删除"
+  reportPersistFailure(
+    "flashcard.deleteByNotebook",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "卡片未删除",
+  );
 }
 
 // ========== SM-2 Spaced Repetition Algorithm ==========
@@ -314,7 +289,7 @@ export function reviewFlashcard(id: string, rating: ReviewRating): void {
 
   const nextReview = now + intervalDays * 24 * 60 * 60 * 1000;
 
-  // 迁移期：整体写回（调度四元组 + updated_at）。未接手时继续走旧库。
+  // 迁移期：整体写回（调度四元组 + updated_at）。
   const rust = domainReadOne(TABLE, { id }, wireToFlashcard);
   if (rust !== undefined) {
     if (rust === null) return;
@@ -326,29 +301,10 @@ export function reviewFlashcard(id: string, rating: ReviewRating): void {
     return;
   }
 
-    if (!writeShouldFallBackToLegacy("flashcard.review", "复习记录未保存")) return;
-const db = getDatabase();
-  db.run(
-    `UPDATE flashcards SET ease_factor = ?, interval_days = ?, repetitions = ?, next_review = ?, updated_at = ? WHERE id = ?`,
-    [easeFactor, intervalDays, repetitions, nextReview, now, id]
+  // 旧库更新已删除（L4）：端口没接手 → 如实上报为"复习进度未保存"（不静默丢弃）
+  reportPersistFailure(
+    "flashcard.review",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "复习记录未保存",
   );
-}
-
-// ========== Helpers ==========
-
-function rowToFlashcard(row: any[]): Flashcard {
-  return {
-    id: row[0] as string,
-    notebookId: row[1] as string,
-    noteId: row[2] as string || undefined,
-    front: row[3] as string,
-    back: row[4] as string,
-    tags: row[5] ? JSON.parse(row[5] as string) : undefined,
-    easeFactor: row[6] as number,
-    intervalDays: row[7] as number,
-    repetitions: row[8] as number,
-    nextReview: row[9] as number,
-    createdAt: row[10] as number,
-    updatedAt: row[11] as number,
-  };
 }

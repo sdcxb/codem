@@ -1,7 +1,6 @@
-import { getDatabase, tryGetDatabase, persistDatabase } from "./database";
 import { reportPersistFailure } from "./persist-failure";
 import { getStoragePort, hasStoragePort } from "./port";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
 // ========== Settings Storage (replaces localStorage) ==========
 //
@@ -93,17 +92,7 @@ export function getSetting(key: string): string | null {
     // 端口未预热时 `get` 会返回 fallback 并留痕（不抛、不假装有值）
     return cfg.get<string | null>(key, null);
   }
-  try {
-        if (!shouldFallbackToLegacy()) return null;
-const db = getDatabase();
-    const result = db.exec("SELECT value FROM settings WHERE key = ?", [key]);
-    if (result.length > 0 && result[0].values.length > 0) {
-      return result[0].values[0][0] as string;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+        return null;
 }
 
 export function setSetting(key: string, value: string): void {
@@ -112,14 +101,8 @@ export function setSetting(key: string, value: string): void {
     cfg.set(key, value);
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.setSetting", "设置未保存")) return;
-const db = getDatabase();
-  const now = Date.now();
-  db.run(
-    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
-    [key, value, now]
-  );
-  persistDatabase();
+    reportWriteNotAccepted("settings.setSetting", "设置未保存");
+    return;
 }
 
 export function removeSetting(key: string): void {
@@ -128,10 +111,8 @@ export function removeSetting(key: string): void {
     cfg.remove(key);
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.removeSetting", "设置未删除")) return;
-const db = getDatabase();
-  db.run("DELETE FROM settings WHERE key = ?", [key]);
-  persistDatabase();
+    reportWriteNotAccepted("settings.removeSetting", "设置未删除");
+    return;
 }
 
 export function getSettingJSON<T>(key: string, defaultValue: T): T {
@@ -200,23 +181,8 @@ export function saveQuickPhrase(phrase: QuickPhrase): void {
     );
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.saveQuickPhrase", "快捷短语未保存")) return;
-const db = getDatabase();
-  const now = Date.now();
-
-  db.run(
-    `INSERT INTO quick_phrases (id, title, content, category, usage_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       title = excluded.title,
-       content = excluded.content,
-       category = excluded.category,
-       usage_count = usage_count + 1,
-       updated_at = excluded.updated_at`,
-    [phrase.id, phrase.title, phrase.content, phrase.category, phrase.usageCount + 1, phrase.createdAt || now, now]
-  );
-
-  persistDatabase();
+    reportWriteNotAccepted("settings.saveQuickPhrase", "快捷短语未保存");
+    return;
 }
 
 export function loadQuickPhrases(): QuickPhrase[] {
@@ -237,25 +203,7 @@ export function loadQuickPhrases(): QuickPhrase[] {
       updatedAt: Number(r.updated_at ?? 0),
     }));
   }
-  try {
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec(
-      "SELECT id, title, content, category, usage_count, created_at, updated_at FROM quick_phrases ORDER BY usage_count DESC, updated_at DESC"
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map((row: any[]) => ({
-      id: row[0] as string,
-      title: row[1] as string,
-      content: row[2] as string,
-      category: row[3] as string as QuickPhrase["category"],
-      usageCount: row[4] as number,
-      createdAt: row[5] as number,
-      updatedAt: row[6] as number,
-    }));
-  } catch {
-    return [];
-  }
+        return [];
 }
 
 export function deleteQuickPhrase(phraseId: string): void {
@@ -270,12 +218,8 @@ export function deleteQuickPhrase(phraseId: string): void {
     writeThrough("quick_phrases.delete", { id: phraseId }, "storage.deleteQuickPhrase", "快捷短语未删除，重启后还会出现");
     return;
   }
-  try {
-        if (!writeShouldFallBackToLegacy("settings.deleteQuickPhrase", "快捷短语未删除")) return;
-const db = getDatabase();
-    db.run("DELETE FROM quick_phrases WHERE id = ?", [phraseId]);
-    persistDatabase();
-  } catch (e) { reportPersistFailure("storage.deleteQuickPhrase", e, "快捷短语未删除，重启后还会出现"); }
+        reportWriteNotAccepted("settings.deleteQuickPhrase", "快捷短语未删除");
+        return;
 }
 
 export function incrementQuickPhraseUsage(phraseId: string): void {
@@ -295,15 +239,8 @@ export function incrementQuickPhraseUsage(phraseId: string): void {
     writeThrough("quick_phrases.touch", { id: phraseId, updated_at: now }, "storage.incrementQuickPhraseUsage", "快捷短语使用次数未累加");
     return;
   }
-  try {
-        if (!writeShouldFallBackToLegacy("settings.incrementQuickPhraseUsage", "快捷短语使用次数未更新")) return;
-const db = getDatabase();
-    db.run(
-      "UPDATE quick_phrases SET usage_count = usage_count + 1, updated_at = ? WHERE id = ?",
-      [Date.now(), phraseId]
-    );
-    persistDatabase();
-  } catch (e) { console.warn('[settings.ts]', e) }
+        reportWriteNotAccepted("settings.incrementQuickPhraseUsage", "快捷短语使用次数未更新");
+        return;
 }
 
 // ========== MCP Server Storage ==========
@@ -330,20 +267,7 @@ export function loadMcpServers(): McpServerConfig[] {
       enabled: r.enabled === true,
     }));
   }
-  try {
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec("SELECT id, name, config, enabled FROM mcp_servers ORDER BY name");
-    if (result.length === 0) return [];
-    return result[0].values.map((row: any[]) => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      config: row[2] as string,
-      enabled: (row[3] as number) === 1,
-    }));
-  } catch {
-    return [];
-  }
+        return [];
 }
 
 export function saveMcpServer(id: string, name: string, config: string, enabled: boolean): void {
@@ -357,14 +281,8 @@ export function saveMcpServer(id: string, name: string, config: string, enabled:
     writeThrough("mcp_servers.save", { id, name, config, enabled }, "storage.saveMcpServer", "MCP 服务器配置未保存");
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.saveMcpServer", "MCP 服务未保存")) return;
-const db = getDatabase();
-  const now = Date.now();
-  db.run(
-    "INSERT OR REPLACE INTO mcp_servers (id, name, config, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-    [id, name, config, enabled ? 1 : 0, now, now]
-  );
-  persistDatabase();
+    reportWriteNotAccepted("settings.saveMcpServer", "MCP 服务未保存");
+    return;
 }
 
 export function removeMcpServer(id: string): void {
@@ -375,10 +293,8 @@ export function removeMcpServer(id: string): void {
     writeThrough("mcp_servers.remove", { id }, "storage.removeMcpServer", "MCP 服务器未删除");
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.removeMcpServer", "MCP 服务未删除")) return;
-const db = getDatabase();
-  db.run("DELETE FROM mcp_servers WHERE id = ?", [id]);
-  persistDatabase();
+    reportWriteNotAccepted("settings.removeMcpServer", "MCP 服务未删除");
+    return;
 }
 
 // ========== Memory Storage ==========
@@ -388,17 +304,7 @@ export function loadMemory(): string {
   if (dom && isRust()) {
     return dom.read<string>((s) => (s as { memory: string }).memory, "", "memory");
   }
-  try {
-        if (!shouldFallbackToLegacy()) return "";
-const db = getDatabase();
-    const result = db.exec("SELECT content FROM memory WHERE id = 'default'");
-    if (result.length > 0 && result[0].values.length > 0) {
-      return result[0].values[0][0] as string;
-    }
-    return "";
-  } catch {
-    return "";
-  }
+        return "";
 }
 
 export function saveMemory(content: string): void {
@@ -408,14 +314,8 @@ export function saveMemory(content: string): void {
     writeThrough("memory.set", { content }, "storage.saveMemory", "记忆内容未保存");
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.saveMemory", "记忆未保存")) return;
-const db = getDatabase();
-  const now = Date.now();
-  db.run(
-    "INSERT OR REPLACE INTO memory (id, content, updated_at) VALUES ('default', ?, ?)",
-    [content, now]
-  );
-  persistDatabase();
+    reportWriteNotAccepted("settings.saveMemory", "记忆未保存");
+    return;
 }
 
 // ========== Recovery Data Storage ==========
@@ -430,17 +330,9 @@ const COST_TABLE = "cost_records";
 export function loadRecoveryData(sessionId: string): string | null {
   const rust = domainReadOne(RECOVERY_TABLE, { session_id: sessionId }, (row) => String(row.data ?? ""));
   if (rust !== undefined) return rust;
-  try {
-    const db = tryGetDatabase();
-    if (!db) return null;
-    const result = db.exec("SELECT data FROM recovery_data WHERE session_id = ?", [sessionId]);
-    if (result.length > 0 && result[0].values.length > 0) {
-      return result[0].values[0][0] as string;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  // 第 17 轮（L4）：旧库回退（`tryGetDatabase()` + 旧 SQL + catch）已删 ——
+  // 镜像未就绪时返回 null（"现在读不到"），不再去碰一份刻意不存在的旧库。
+  return null;
 }
 
 export function saveRecoveryData(sessionId: string, data: string): void {
@@ -452,13 +344,8 @@ export function saveRecoveryData(sessionId: string, data: string): void {
   })) {
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.saveRecoveryData", "崩溃恢复数据未保存")) return;
-const db = getDatabase();
-  db.run(
-    "INSERT OR REPLACE INTO recovery_data (session_id, data, updated_at) VALUES (?, ?, ?)",
-    [sessionId, data, now]
-  );
-  persistDatabase();
+    reportWriteNotAccepted("settings.saveRecoveryData", "崩溃恢复数据未保存");
+    return;
 }
 
 export function removeRecoveryData(sessionId: string): void {
@@ -468,10 +355,8 @@ export function removeRecoveryData(sessionId: string): void {
   })) {
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.removeRecoveryData", "崩溃恢复数据未删除")) return;
-const db = getDatabase();
-  db.run("DELETE FROM recovery_data WHERE session_id = ?", [sessionId]);
-  persistDatabase();
+    reportWriteNotAccepted("settings.removeRecoveryData", "崩溃恢复数据未删除");
+    return;
 }
 
 // ========== Cost Records Storage ==========
@@ -517,13 +402,8 @@ export function addCostRecord(record: CostRecord): void {
   }], { scope: "settings.addCostRecord", note: "成本记录未保存" })) {
     return;
   }
-    if (!writeShouldFallBackToLegacy("settings.addCostRecord", "成本记录未保存")) return;
-const db = getDatabase();
-  db.run(
-    "INSERT INTO cost_records (id, session_id, model, provider, prompt_tokens, completion_tokens, cost, duration, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [record.id, record.sessionId, record.model, record.provider, record.promptTokens, record.completionTokens, record.cost, record.duration, record.timestamp]
-  );
-  persistDatabase();
+    reportWriteNotAccepted("settings.addCostRecord", "成本记录未保存");
+    return;
 }
 
 export function getCostRecords(limit: number = 1000): CostRecord[] {
@@ -532,28 +412,7 @@ export function getCostRecords(limit: number = 1000): CostRecord[] {
     // 旧 SQL：ORDER BY timestamp DESC LIMIT ?
     return rust.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
   }
-  try {
-    const db = tryGetDatabase();
-    if (!db) return [];
-    const result = db.exec(
-      "SELECT id, session_id, model, provider, prompt_tokens, completion_tokens, cost, duration, timestamp FROM cost_records ORDER BY timestamp DESC LIMIT ?",
-      [limit]
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map((row: any[]) => ({
-      id: row[0] as string,
-      sessionId: row[1] as string,
-      model: row[2] as string,
-      provider: row[3] as string,
-      promptTokens: row[4] as number,
-      completionTokens: row[5] as number,
-      cost: row[6] as number,
-      duration: row[7] as number,
-      timestamp: row[8] as number,
-    }));
-  } catch {
-    return [];
-  }
+  return []; // 第 17 轮（L4）：旧库回退已删 —— 镜像未就绪 → 诚实的空结果（端口就绪后重读）
 }
 
 export function getCostStats(): { totalCost: number; todayCost: number; totalSessions: number; totalTokens: number } {
@@ -575,25 +434,7 @@ export function getCostStats(): { totalCost: number; todayCost: number; totalSes
     }
     return { totalCost, todayCost, totalSessions: sessions.size, totalTokens };
   }
-  try {
-    const db = tryGetDatabase();
-    if (!db) return { totalCost: 0, todayCost: 0, totalSessions: 0, totalTokens: 0 };
-    const totalResult = db.exec("SELECT COALESCE(SUM(cost), 0) FROM cost_records");
-    const totalCost = totalResult.length > 0 ? (totalResult[0].values[0][0] as number) : 0;
-    
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayResult = db.exec("SELECT COALESCE(SUM(cost), 0) FROM cost_records WHERE timestamp >= ?", [todayStart.getTime()]);
-    const todayCost = todayResult.length > 0 ? (todayResult[0].values[0][0] as number) : 0;
-    
-    const sessionsResult = db.exec("SELECT COUNT(DISTINCT session_id) FROM cost_records");
-    const totalSessions = sessionsResult.length > 0 ? (sessionsResult[0].values[0][0] as number) : 0;
-    
-    const tokensResult = db.exec("SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) FROM cost_records");
-    const totalTokens = tokensResult.length > 0 ? (tokensResult[0].values[0][0] as number) : 0;
-    
-    return { totalCost, todayCost, totalSessions, totalTokens };
-  } catch {
-    return { totalCost: 0, todayCost: 0, totalSessions: 0, totalTokens: 0 };
-  }
+  // 第 17 轮（L4）：旧库回退（`tryGetDatabase()` + 四条聚合 SQL + catch）已删 ——
+  // 四个聚合在端口分支里已经在**同一份数据**上算完了；镜像未就绪时给空统计。
+  return { totalCost: 0, todayCost: 0, totalSessions: 0, totalTokens: 0 };
 }

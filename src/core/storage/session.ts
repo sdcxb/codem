@@ -1,8 +1,6 @@
-import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
 import { getEventLog } from "./event-log";
 import type { Session } from "../types";
-import { runGuarded } from "./write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
 /**
  * `sessions` 域接入端口（P5 第 4 段）。
@@ -128,52 +126,23 @@ export function listSessions(projectId: string): Session[] {
       return pa !== pb ? pb - pa : b.lastMessageAt - a.lastMessageAt;
     });
   }
-  const db = tryGetDatabase();
-  if (!db) return [];
-  const result = db.exec(
-    "SELECT * FROM sessions WHERE project_id = ? ORDER BY pinned DESC, last_message_at DESC",
-    [projectId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToSessionFromAny);
+  return []; // 第 17 轮（L4）：旧库回退（ORDER BY pinned/last_message_at）已删 —— 空结果
 }
 
 export function getSession(id: string): Session | null {
   const rust = domainReadOne(SESSION_TABLE, { id }, wireToSession);
   if (rust !== undefined) return rust;
-  const db = tryGetDatabase();
-  if (!db) return null;
-  const result = db.exec("SELECT * FROM sessions WHERE id = ?", [id]);
-  if (result.length === 0 || result[0].values.length === 0) return null;
-  return rowToSessionFromAny(result[0].values[0]);
+  return null; // 第 17 轮（L4）：旧库回退已删 —— 镜像未就绪就是"查不到"（端口就绪后会重读）
 }
 
 export function createSession(session: Session): void {
   if (domainWrite(SESSION_TABLE, [sessionToWire(session)], { scope: "session.create", note: "会话未保存" })) {
     return;
   }
-  const db = tryGetDatabase();
-  if (!db) return;
-  db.run(
-    "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned, execution_mode, worktree_path, worktree_branch, correction_mode, deep_thinking_mode, preserve_executor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [
-      session.id,
-      session.projectId,
-      session.title,
-      session.model ?? null,
-      session.createdAt,
-      session.lastMessageAt,
-      session.messageCount,
-      session.pinned ? 1 : 0,
-      session.executionMode ?? null,
-      session.worktreePath ?? null,
-      session.worktreeBranch ?? null,
-      session.correctionMode ?? null,
-      session.deepThinkingMode ?? null,
-      session.preserveExecutor ?? null,
-    ]
-  );
-  persistDatabase();
+  // 第 17 轮（L4）：旧库回退（`tryGetDatabase()` + 旧 INSERT + persistDatabase）已删。
+  // B 态（端口已注册、镜像未接手）**必须如实上报** —— 静默 return 就是"会话没保存"
+  // 却让调用方以为成功（`createSession` 的契约是 void，上报是唯一可见通道）。
+  reportWriteNotAccepted("session.create", "会话未保存");
 }
 
 export function updateSession(id: string, update: Partial<Session>): void {
@@ -211,28 +180,9 @@ export function updateSession(id: string, update: Partial<Session>): void {
     return;
   }
 
-  const db = tryGetDatabase();
-  if (!db) return;
-  const fields: string[] = [];
-  const values: (string | number | null)[] = [];
-
-  if (update.title !== undefined) { fields.push("title = ?"); values.push(update.title); }
-  if (update.model !== undefined) { fields.push("model = ?"); values.push(update.model ?? null); }
-  if (update.lastMessageAt !== undefined) { fields.push("last_message_at = ?"); values.push(update.lastMessageAt); }
-  if (update.messageCount !== undefined) { fields.push("message_count = ?"); values.push(update.messageCount); }
-  if (update.pinned !== undefined) { fields.push("pinned = ?"); values.push(update.pinned ? 1 : 0); }
-  if (update.executionMode !== undefined) { fields.push("execution_mode = ?"); values.push(update.executionMode ?? null); }
-  if (update.worktreePath !== undefined) { fields.push("worktree_path = ?"); values.push(update.worktreePath ?? null); }
-  if (update.worktreeBranch !== undefined) { fields.push("worktree_branch = ?"); values.push(update.worktreeBranch ?? null); }
-  if (update.correctionMode !== undefined) { fields.push("correction_mode = ?"); values.push(update.correctionMode ?? null); }
-  if (update.deepThinkingMode !== undefined) { fields.push("deep_thinking_mode = ?"); values.push(update.deepThinkingMode ?? null); }
-  if (update.preserveExecutor !== undefined) { fields.push("preserve_executor = ?"); values.push(update.preserveExecutor ?? null); }
-
-  if (fields.length === 0) return;
-  values.push(id);
-  runGuarded(db, `UPDATE sessions SET ${fields.join(", ")} WHERE id = ?`, values,
-    { table: "sessions", op: "update", id, from: "updateSession" });
-  persistDatabase();
+  // 第 17 轮（L4）：旧库回退（`tryGetDatabase()` + 动态拼 SQL + `runGuarded` + persistDatabase）已删。
+  // B 态如实上报：契约是 void，调用方只能靠上报判断"这次更新没落地"。
+  reportWriteNotAccepted("session.update", "会话未更新（会话不存在或写入失败）");
 }
 
 /**
@@ -258,10 +208,8 @@ export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}):
   ) {
     return;
   }
-  const db = tryGetDatabase();
-  if (!db) return;
-  db.run("DELETE FROM sessions WHERE id = ?", [id]);
-  persistDatabase();
+  // 第 17 轮（L4）：旧库回退（`DELETE FROM sessions` + persistDatabase）已删 → 如实上报。
+  reportWriteNotAccepted("session.delete", "会话未删除");
 }
 
 /** Atomically toggle the pinned state of a session */
@@ -277,15 +225,11 @@ export function togglePinned(id: string): boolean {
     });
     return nextPinned;
   }
-  const db = tryGetDatabase();
-  if (!db) return false;
-  const result = db.exec("SELECT pinned FROM sessions WHERE id = ?", [id]);
-  const current = result.length > 0 && result[0].values.length > 0 ? (result[0].values[0][0] as number) : 0;
-  const newPinned = current === 1 ? 0 : 1;
-  runGuarded(db, "UPDATE sessions SET pinned = ? WHERE id = ?", [newPinned, id],
-    { table: "sessions", op: "pin", id, from: "setSessionPinned" });
-  persistDatabase();
-  return newPinned === 1;
+  // 第 17 轮（L4）：旧库回退（SELECT pinned → UPDATE → persistDatabase）已删。
+  // 返回 `false` 即"没有切换成功"，与旧实现 `if (!db) return false` 同义 ——
+  // 这里**不上报**是刻意的：`boolean` 返回值本身就是调用方可见的如实回绝
+  // （与 `fileChange.updateStatus` 返回 0 同理，见 L3-DELETION-PLAN.md 第 17 轮）。
+  return false;
 }
 
 export function searchSessions(query: string): Session[] {
@@ -297,14 +241,7 @@ export function searchSessions(query: string): Session[] {
       .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
       .slice(0, 50);
   }
-  const db = tryGetDatabase();
-  if (!db) return [];
-  const result = db.exec(
-    "SELECT * FROM sessions WHERE title LIKE ? AND project_id NOT LIKE 'notebook:%' ORDER BY last_message_at DESC LIMIT 50",
-    [`%${query}%`]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToSessionFromAny);
+  return []; // 第 17 轮（L4）：旧库回退（LIKE 查询）已删 —— 镜像未就绪 → 诚实的空结果
 }
 
 /**
@@ -354,28 +291,11 @@ export function forkSession(
     return child;
   }
 
-  const db = tryGetDatabase();
-  if (!db) return null;
-  db.run(
-    "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [
-      child.id,
-      child.projectId,
-      child.title,
-      child.model ?? null,
-      child.createdAt,
-      child.lastMessageAt,
-      child.messageCount,
-      0,
-      sourceSessionId, // parent_id
-    ],
-  );
-  persistDatabase();
-
-  // Copy the event log from source to child
-  getEventLog().forkSession(sourceSessionId, newSessionId);
-
-  return child;
+  // 第 17 轮（L4）：旧库回退（INSERT 子会话 + persistDatabase）已删。
+  // ⚠️ 这里**没有**沿用"回退旧库时也照做 forkSession"的旧行为：会话行都没落地，
+  // 再去复制事件日志只会造出"有事件、没有会话行"的孤儿数据 —— 如实上报后返回 null。
+  reportWriteNotAccepted("session.fork", "fork 出的会话未保存");
+  return null;
 }
 
 /** P2 #29: Reorder sessions by a given list of IDs (for drag-and-drop sorting) */
@@ -401,12 +321,7 @@ export function reorderSessions(projectId: string, orderedIds: string[]): void {
     return;
   }
 
-  const db = tryGetDatabase();
-  if (!db) return;
-  // Update sort_order for each session
-  for (let i = 0; i < orderedIds.length; i++) {
-    runGuarded(db, "UPDATE sessions SET sort_order = ? WHERE id = ? AND project_id = ?", [i, orderedIds[i], projectId],
-      { table: "sessions", op: "reorder", id: orderedIds[i], from: "reorderSessions" });
-  }
-  persistDatabase();
+  // 第 17 轮（L4）：旧库回退（逐条 UPDATE sort_order + persistDatabase）已删 → 如实上报。
+  // 契约是 void，调用方只能靠上报判断"这次排序没落地"。
+  reportWriteNotAccepted("session.reorder", "会话顺序未保存");
 }

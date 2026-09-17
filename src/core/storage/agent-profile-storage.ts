@@ -5,10 +5,9 @@
  * Independent from v2_sessions.messages JSON — not affected by compaction.
  */
 
-import { getDatabase, persistDatabase } from "./database";
+import { reportPersistFailure } from "./persist-failure";
 import { safeJsonParse } from "../utils/safe-json";
-import { runGuarded } from "./write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
 export interface AgentProfile {
   id: string;
@@ -19,19 +18,6 @@ export interface AgentProfile {
   experience_summary?: string;
   created_at: number;
   updated_at: number;
-}
-
-function rowToProfile(row: any): AgentProfile {
-  return {
-    id: row.id,
-    identity: row.identity,
-    domain: row.domain,
-    scope: row.scope,
-    skills: row.skills ? safeJsonParse(row.skills, undefined) : undefined,
-    experience_summary: row.experience_summary,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
 }
 
 const TABLE = "agent_profiles";
@@ -73,58 +59,34 @@ export const AgentProfileStorage = {
       return created;
     }
     /*
-     * 两态分流（B3 批）。原来这里抛 `Database not loaded` —— 而 `if (!db)` 永不触发
-     * （旧库读取入口从不返回 null），所以 B 态下真正抛的是那句"Database not initialized"，
-     * 且**调用方没有预期会抛**（返回类型声明是具体的 AgentProfile）。
-     * 现在 B 态如实上报并返回已构造的对象（内存镜像里那份是有效的）。
+     * **旧库写入已删除**（L4 收尾）：端口没接手时如实上报，返回已构造的对象。
+     *
+     * 返回类型声明是具体的 `AgentProfile`（不是 `{ok:false}` 契约），且这里**不抛**
+     * —— `getDatabase()` 在 rust 模式下会抛 "Database not initialized"，
+     * 而调用方从没预期这个高频路径会抛（原来 B 态就是这么炸的）。
+     * 返回 `created` 与旧实现在 A 态下的行为一致（旧实现无论 SQL 成败都返回它），
+     * 差别只是失败现在**可见**：一条 persist 失败记录，而不是静默写进一份读不到的库。
      */
-    if (!writeShouldFallBackToLegacy("agentProfile.create", "智能体画像未保存")) return created;
-    const db = getDatabase();
-    db.run(
-      `INSERT INTO agent_profiles (id, identity, domain, scope, skills, experience_summary, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        profile.id,
-        profile.identity,
-        profile.domain,
-        profile.scope,
-        profile.skills ? JSON.stringify(profile.skills) : null,
-        profile.experience_summary || null,
-        now,
-        now,
-      ],
+    reportPersistFailure(
+      "agentProfile.create",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "智能体画像未保存",
     );
-    persistDatabase();
     return created;
   },
 
   getById(id: string): AgentProfile | null {
     const rust = domainReadOne(TABLE, { id }, wireToProfile);
     if (rust !== undefined) return rust;
-    if (!shouldFallbackToLegacy()) return null;
-    const db = getDatabase();
-    const result = db.exec(`SELECT * FROM agent_profiles WHERE id = ?`, [id]);
-    if (!result.length || !result[0].values.length) return null;
-    const columns = result[0].columns;
-    const row = result[0].values[0];
-    const obj: any = {};
-    columns.forEach((col, i) => (obj[col] = row[i]));
-    return rowToProfile(obj);
+    // 端口没接手 → 该域读不到这一行（旧库已从渲染进程移除）→ 如实返回 null
+    return null;
   },
 
   listAll(): AgentProfile[] {
     const rust = domainReadMany(TABLE, wireToProfile);
     if (rust) return rust.sort((a, b) => b.updated_at - a.updated_at);
-    if (!shouldFallbackToLegacy()) return [];
-    const db = getDatabase();
-    const result = db.exec(`SELECT * FROM agent_profiles ORDER BY updated_at DESC`);
-    if (!result.length || !result[0].values.length) return [];
-    const columns = result[0].columns;
-    return result[0].values.map((row) => {
-      const obj: any = {};
-      columns.forEach((col, i) => (obj[col] = row[i]));
-      return rowToProfile(obj);
-    });
+    // 端口没接手 → 该域的合理空结果（空数组）；与原来门控那句 `return [];` 语义一致
+    return [];
   },
 
   update(id: string, updates: Partial<Omit<AgentProfile, "id" | "created_at">>): void {
@@ -149,33 +111,21 @@ export const AgentProfileStorage = {
       });
       return;
     }
-    // B 态：原来静默 return = 调用方以为更新成功（假成功）。两态分流后如实上报。
-    if (!writeShouldFallBackToLegacy("agentProfile.update", "智能体画像未更新")) return;
-    const db = getDatabase();
-    const fields: string[] = [];
-    const values: any[] = [];
-    for (const [key, value] of Object.entries(updates)) {
-      if (key === "skills" && Array.isArray(value)) {
-        fields.push("skills = ?");
-        values.push(JSON.stringify(value));
-      } else if (key !== "updated_at") {
-        fields.push(`${key} = ?`);
-        values.push(value);
-      }
-    }
-    fields.push("updated_at = ?");
-    values.push(Date.now());
-    values.push(id);
-    runGuarded(db, `UPDATE agent_profiles SET ${fields.join(", ")} WHERE id = ?`, values,
-    { table: "agent_profiles", op: "update", id, from: "updateAgentProfile" });
+    // B 态：原来静默 return = 调用方以为更新成功（假成功）。L4 收尾后一律如实上报。
+    reportPersistFailure(
+      "agentProfile.update",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "智能体画像未更新",
+    );
   },
 
   delete(id: string): void {
     if (domainDelete(TABLE, { id }, { scope: "agentProfile.delete", note: "智能体画像未删除" })) return;
-    // 删除静默失败 = 数据不一致（画像"看着还在"或"以为删了其实没删"）
-    if (!writeShouldFallBackToLegacy("agentProfile.delete", "智能体画像未删除")) return;
-    const db = getDatabase();
-    db.run(`DELETE FROM agent_profiles WHERE id = ?`, [id]);
-    persistDatabase();
+    // 删除静默失败 = 数据不一致（画像"看着还在"或"以为删了其实没删"）→ 如实上报
+    reportPersistFailure(
+      "agentProfile.delete",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "智能体画像未删除",
+    );
   },
 };

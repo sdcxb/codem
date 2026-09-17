@@ -22,7 +22,7 @@
 import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
 import type { Project } from "../types";
 import { runGuarded } from "./write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, writeShouldFallBackToLegacy } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
 export interface ProjectRow {
   id: string;
@@ -92,46 +92,18 @@ function rowToProject(row: ProjectRow): Project {
 export function listProjects(): Project[] {
   const rust = domainReadMany(TABLE, wireToProject);
   if (rust) return rust.filter(visible).sort(byPinnedThenAccess);
-  // P5 第 7 段：引擎是 rust 但端口**还没注册好**（启动前几百毫秒）时，
-  // 旧库并不存在 —— 这是正常状态，不是异常（原来在这里抛
-  // "Database not initialized"，打包版实测把 store 与插件侧边栏一起打崩了）。
-  // 返回空列表是安全的：端口就绪后调用方会重新加载。
-  const db = tryGetDatabase();
-  if (!db) return [];
-  // Exclude the global project (id="") and notebook virtual projects (id LIKE 'notebook:%')
-  // — global is a FK seed record; notebook projects are internal and shown in the notebook UI only
-  const result = db.exec("SELECT * FROM projects WHERE id != '' AND id NOT LIKE 'notebook:%' ORDER BY pinned DESC, last_accessed_at DESC");
-  if (result.length === 0) return [];
-  return result[0].values.map((row: any[]) =>
-    rowToProject({
-      id: row[0] as string,
-      name: row[1] as string,
-      path: row[2] as string,
-      description: row[3] as string | null,
-      pinned: row[4] as number,
-      created_at: row[5] as number,
-      last_accessed_at: row[6] as number,
-    })
-  );
+  // 第 17 轮（L4）：旧库回退已删。这里只剩 B 态：端口在 rust，只是镜像还没就绪
+  // （启动前几百毫秒）。那时**没有别的数据源**，返回空列表是诚实的答案 ——
+  // 端口就绪后调用方会重新加载（`prefetchDomainMirrors` 已把这段窗口挪到首屏前）。
+  // 原来的 `tryGetDatabase() → if (!db) return []` 之所以要删：它把"没有旧库"
+  // 当成一个**可能的**状态，而那个状态在新架构里不存在（旧库在 rust 模式下刻意不加载）。
+  return [];
 }
 
 export function getProject(id: string): Project | null {
   const rust = domainReadOne(TABLE, { id }, wireToProject);
   if (rust !== undefined) return rust;
-  const db = tryGetDatabase();
-  if (!db) return null;
-  const result = db.exec("SELECT * FROM projects WHERE id = ?", [id]);
-  if (result.length === 0 || result[0].values.length === 0) return null;
-  const row = result[0].values[0];
-  return rowToProject({
-    id: row[0] as string,
-    name: row[1] as string,
-    path: row[2] as string,
-    description: row[3] as string | null,
-    pinned: row[4] as number,
-    created_at: row[5] as number,
-    last_accessed_at: row[6] as number,
-  });
+  return null; // 同上：镜像未就绪 → 诚实的"查不到"，端口就绪后会重读
 }
 
 export function createProject(project: Project): void {
@@ -149,13 +121,8 @@ export function createProject(project: Project): void {
     return;
   }
   // 两态：A 态（端口未注册）才回退旧库；B 态（端口在、镜像未就绪）已如实上报
-  if (!writeShouldFallBackToLegacy("project.create", "项目未保存")) return;
-  const db = getDatabase();
-  db.run(
-    "INSERT INTO projects (id, name, path, description, pinned, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [row.id, row.name, row.path, row.description ?? null, row.pinned ? 1 : 0, row.createdAt, row.lastAccessedAt]
-  );
-  persistDatabase();
+  reportWriteNotAccepted("project.create", "项目未保存");
+  return;
 }
 
 export function updateProject(id: string, update: Partial<Project>): void {
@@ -191,31 +158,13 @@ export function updateProject(id: string, update: Partial<Project>): void {
     return;
   }
 
-  if (!writeShouldFallBackToLegacy("project.update", "项目未更新")) return;
-  const db = getDatabase();
-  const values: (string | number | null)[] = [];
-  for (const f of fields) {
-    if (f === "name") values.push(update.name as string);
-    else if (f === "path") values.push(update.path as string);
-    else if (f === "description") values.push(update.description ?? null);
-    else if (f === "pinned") values.push(update.pinned ? 1 : 0);
-    else values.push(update.lastAccessedAt as number);
-  }
-  values.push(id);
-  runGuarded(
-    db,
-    `UPDATE projects SET ${fields.map((f) => `${f} = ?`).join(", ")} WHERE id = ?`,
-    values,
-    { table: "projects", op: "update", id, from: "updateProject" },
-  );
-  persistDatabase();
+  reportWriteNotAccepted("project.update", "项目未更新");
+  return;
 }
 
 export function deleteProject(id: string): void {
   if (domainDelete(TABLE, { id }, { scope: "project.delete", note: "项目未删除" })) return;
   // 删除路径尤其不能静默：静默失败会让项目"看着在、实际已删"或反之（数据不一致）
-  if (!writeShouldFallBackToLegacy("project.delete", "项目未删除")) return;
-  const db = getDatabase();
-  db.run("DELETE FROM projects WHERE id = ?", [id]);
-  persistDatabase();
+  reportWriteNotAccepted("project.delete", "项目未删除");
+  return;
 }

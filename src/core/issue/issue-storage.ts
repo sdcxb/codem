@@ -2,9 +2,8 @@
  * Issue Storage — DB CRUD for issues + issue_comments tables
  */
 
-import { getDatabase, persistDatabase } from "../storage/database";
-import { runGuarded } from "../storage/write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
+import { reportPersistFailure } from "../storage/persist-failure";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -126,29 +125,25 @@ export const IssueStorage = {
     if (domainWrite(ISSUES, [issueToWire(created)], { scope: "issue.create", note: "议题未保存" })) {
       return created;
     }
-        if (!writeShouldFallBackToLegacy("issue.create", "议题未保存")) return created;
-const db = getDatabase();
-    db.run(
-      `INSERT INTO issues (id, title, description, status, priority, assignee_type, assignee_id, project_id, squad_id, session_id, labels, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [created.id, created.title, created.description, created.status, created.priority,
-       created.assignee_type, created.assignee_id, created.project_id,
-       created.squad_id, created.session_id, created.labels, now, now],
+    /**
+     * **旧库写入已删除**（L4 第 18 轮）：端口没接手时**如实上报**，不再写旧库。
+     *
+     * 返回值形状（`IssueRow`）保持不变 —— 调用方拿它继续跑"创建后"的流程，
+     * 但这次上报会让"议题没真的存下来"可见，绝不静默当成创建成功。
+     */
+    reportPersistFailure(
+      "issue.create",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "议题未保存",
     );
-    // 第 83 波（审计修正）：本文件原来**从不 persistDatabase()** —— 写入只留在内存里，
-    // 只有"正常退出"或别处触发脏标记才会落盘 → 强杀进程就丢议题。
-    persistDatabase();
     return created;
   },
 
   getById(id: string): IssueRow | null {
     const rust = domainReadOne(ISSUES, { id }, wireToIssue);
     if (rust !== undefined) return rust;
-        if (!shouldFallbackToLegacy()) return null;
-const db = getDatabase();
-    const result = db.exec("SELECT * FROM issues WHERE id = ?", [id]);
-    if (result.length === 0) return null;
-    return rowToIssue(result[0].values[0], result[0].columns);
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时如实返回"查不到"
+    return null;
   },
 
   listAll(filters?: { projectId?: string; status?: IssueStatus; squadId?: string; assigneeId?: string }): IssueRow[] {
@@ -164,18 +159,8 @@ const db = getDatabase();
         })
         .sort((a, b) => b.updated_at - a.updated_at);
     }
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    let sql = "SELECT * FROM issues WHERE 1=1";
-    const params: any[] = [];
-    if (filters?.projectId) { sql += " AND project_id = ?"; params.push(filters.projectId); }
-    if (filters?.status) { sql += " AND status = ?"; params.push(filters.status); }
-    if (filters?.squadId) { sql += " AND squad_id = ?"; params.push(filters.squadId); }
-    if (filters?.assigneeId) { sql += " AND assignee_id = ?"; params.push(filters.assigneeId); }
-    sql += " ORDER BY updated_at DESC";
-    const result = db.exec(sql, params);
-    if (result.length === 0) return [];
-    return result[0].values.map((row) => rowToIssue(row, result[0].columns));
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    return [];
   },
 
   /**
@@ -212,31 +197,26 @@ const db = getDatabase();
       return written ? 1 : 0;
     }
 
-        if (!writeShouldFallBackToLegacy("issue.update", "议题未更新")) return 0;
-const db = getDatabase();
-    const fields: string[] = [];
-    const values: any[] = [];
-    for (const [key, val] of entries) {
-      const dbKey = key;
-      fields.push(`${dbKey} = ?`);
-      values.push(val ?? null);
-    }
-    fields.push("updated_at = ?");
-    values.push(Date.now());
-    values.push(id);
-    // 第 83 波：任务管理链路也走空写探测 —— 议题更新打不到行 = 界面显示的状态与库不一致
-  const modified = runGuarded(db, `UPDATE issues SET ${fields.join(", ")} WHERE id = ?`, values,
-    { table: "issues", op: "update", id, from: "updateIssue" });
-    persistDatabase();
-    return modified;
+    /**
+     * **旧库更新已删除**（L4 第 18 轮）：端口没接手（或镜像里没有这一行）时**如实上报**，
+     * 并返回既有的失败形状 `0`（与"UPDATE 影响 0 行"同义）—— 调用方据此能发现没更新成。
+     */
+    reportPersistFailure(
+      "issue.update",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "议题未更新",
+    );
+    return 0;
   },
 
   delete(id: string): void {
     if (domainDelete(ISSUES, { id }, { scope: "issue.delete", note: "议题未删除" })) return;
-        if (!writeShouldFallBackToLegacy("issue.delete", "议题未删除")) return;
-const db = getDatabase();
-    db.run("DELETE FROM issues WHERE id = ?", [id]);
-    persistDatabase();
+    // **旧库删除已删除**（L4 第 18 轮）：端口没接手时如实上报，绝不静默当成删成功
+    reportPersistFailure(
+      "issue.delete",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "议题未删除",
+    );
   },
 
   // ========== Comment CRUD ==========
@@ -262,37 +242,35 @@ const db = getDatabase();
       }
       return created;
     }
-        if (!writeShouldFallBackToLegacy("issue.addComment", "议题评论未保存")) return created;
-const db = getDatabase();
-    db.run(
-      `INSERT INTO issue_comments (id, issue_id, author_type, author_id, author_name, content, is_system, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [created.id, created.issue_id, created.author_type, created.author_id,
-       created.author_name, created.content, created.is_system, now],
+    /**
+     * **旧库写入已删除**（L4 第 18 轮）：端口没接手时**如实上报**，不再写旧库。
+     *
+     * 返回值形状（`IssueCommentRow`）保持不变；关于"议题 updated_at 没顶上去"，
+     * 端口路径里那段"议题必须确实存在才写"的判据（B 态语义）**原样保留**。
+     */
+    reportPersistFailure(
+      "issue.addComment",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "议题评论未保存",
     );
-    // Update issue's updated_at
-    runGuarded(db, "UPDATE issues SET updated_at = ? WHERE id = ?", [now, comment.issue_id],
-    { table: "issues", op: "touch", id: comment.issue_id, from: "addIssueComment" });
-    persistDatabase();
     return created;
   },
 
   getComments(issueId: string): IssueCommentRow[] {
     const rust = domainReadMany(COMMENTS, wireToComment, { issue_id: issueId });
     if (rust) return rust.sort((a, b) => a.created_at - b.created_at);
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec("SELECT * FROM issue_comments WHERE issue_id = ? ORDER BY created_at ASC", [issueId]);
-    if (result.length === 0) return [];
-    return result[0].values.map((row) => rowToComment(row, result[0].columns));
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    return [];
   },
 
   deleteComment(commentId: string): void {
     if (domainDelete(COMMENTS, { id: commentId }, { scope: "issue.deleteComment", note: "议题评论未删除" })) return;
-        if (!writeShouldFallBackToLegacy("issue.deleteComment", "议题评论未删除")) return;
-const db = getDatabase();
-    db.run("DELETE FROM issue_comments WHERE id = ?", [commentId]);
-    persistDatabase();
+    // **旧库删除已删除**（L4 第 18 轮）：端口没接手时如实上报
+    reportPersistFailure(
+      "issue.deleteComment",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "议题评论未删除",
+    );
   },
 
   // ========== Stats ==========
@@ -309,32 +287,9 @@ const db = getDatabase();
       }
       return stats as Record<IssueStatus, number>;
     }
-        if (!shouldFallbackToLegacy()) return {} as Record<IssueStatus, number>;
-const db = getDatabase();
-    let sql = "SELECT status, COUNT(*) as count FROM issues";
-    const params: any[] = [];
-    if (projectId) { sql += " WHERE project_id = ?"; params.push(projectId); }
-    sql += " GROUP BY status";
-    const result = db.exec(sql, params);
-    if (result.length > 0) {
-      for (const row of result[0].values) {
-        stats[row[0] as string] = row[1] as number;
-      }
-    }
-    return stats as Record<IssueStatus, number>;
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    // （`{}` 与门控里那句一致：不是"全 0 的完整统计"，而是"没有统计可给"）
+    return {} as Record<IssueStatus, number>;
   },
 };
 
-// ========== Helpers ==========
-
-function rowToIssue(row: any[], columns: string[]): IssueRow {
-  const obj: any = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj as IssueRow;
-}
-
-function rowToComment(row: any[], columns: string[]): IssueCommentRow {
-  const obj: any = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj as IssueCommentRow;
-}

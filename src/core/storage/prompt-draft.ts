@@ -4,7 +4,6 @@
  * 用于保存、加载、删除 Prompt 草稿，支持版本对比
  */
 
-import { tryGetDatabase, persistDatabase } from "./database";
 import { reportPersistFailure } from "./persist-failure";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
@@ -17,9 +16,15 @@ import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./doma
 const TABLE = "prompt_drafts";
 
 /**
- * 旧库入口（P5 第 10 段）。
+ * 旧库入口 —— **已整体删除**（L4 收尾）。
  *
- * ## 为什么这个文件要单独修
+ * 这里原来有个 `legacyDb()` = `tryGetDatabase()` 的小包装，本文件的 6 处旧库读写
+ * 全都挂在它后面。回滚开关退役、旧库在 rust 模式下刻意不加载之后，
+ * 它**只可能返回 null**（真机上表现为 `Database not initialized` → `app.conversation` 整体崩溃，
+ * 见下面 P5 第 10 段那段历史）。现在"端口没接手"一律直接表达为
+ * **如实回绝 / 该域的合理空结果**，不再去碰一份不存在的库。
+ *
+ * 历史（保留作为"为什么不再回退"的记录）：
  *
  * 真机验收（打包版）实测：`app.conversation` 面板**整体崩溃**，
  * 控制台是 `Database not initialized. Call initDatabase() first.`，
@@ -33,16 +38,7 @@ const TABLE = "prompt_drafts";
  *
  * 根因是**把"旧库不存在"当成了异常**。在新架构下它是正常状态，正确表达是
  * `tryGetDatabase()` 返回 null，由调用方给出"该域在 rust 模式下的合理结果"。
- *
- * ⚠️ 注意：`getDatabase()` 本身**保持抛错不变**（写路径上"没有库"是真错误，
- * 不该被静默吞掉）。所以这里逐个改为 `tryGetDatabase()` + 判空返回，
- * 而不是去改底层语义 —— 那种改法会把真实故障一起静默掉。
  */
-
-/** 取旧库；rust 模式下旧库刻意不存在 → 返回 null（调用方给空结果，不抛） */
-function legacyDb() {
-  return tryGetDatabase();
-}
 
 /** 线协议行 → PromptDraft（tags 是 JSON 文本） */
 function wireToDraft(row: Record<string, unknown>): PromptDraft {
@@ -107,28 +103,20 @@ export function savePromptDraft(
     return id;
   }
 
-  const db = legacyDb();
-  if (!db) {
-    // 写路径：不能静默，也不能抛（调用方多为 UI 动作）。如实上报为"未保存"。
-    reportPersistFailure("promptDraft.save", new Error("旧库不存在且端口未接手"), "草稿未保存（查询索引不可用）");
-    return id;
-  }
-
-  // Get current version count
-  const result = db.exec(
-    "SELECT MAX(version) as max_version FROM prompt_drafts WHERE session_id = ?",
-    [sessionId]
+  /**
+   * **旧库写入已删除**（L4 收尾）：端口没接手时**如实上报为"未保存"**。
+   *
+   * 写路径：不能静默，也不能抛（调用方多为 UI 动作）。返回 `id` 与原来
+   * `if (!db) { report…; return id; }` 那条**完全一致** —— 这是既有契约
+   * （`savePromptDraft` 只回一个 id，没有 `{ok:false}` 形状），而不是新造的假成功：
+   * 失败会走 `reportPersistFailure`（error 日志 + `codem:persist-failed` 事件）变得可见。
+   * 唯一的改动是**不再去碰一份不存在的旧库**（原来 `getDatabase()` 在这里会抛）。
+   */
+  reportPersistFailure(
+    "promptDraft.save",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "草稿未保存（查询索引不可用）",
   );
-  const version = result.length > 0 && result[0].values[0][0]
-    ? (result[0].values[0][0] as number) + 1
-    : 1;
-
-  db.run(
-    "INSERT INTO prompt_drafts (id, session_id, version, content, tags, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    [id, sessionId, version, content, JSON.stringify(tags || []), now]
-  );
-
-  persistDatabase();
   return id;
 }
 
@@ -141,23 +129,12 @@ export function loadPromptDrafts(sessionId: string): PromptDraft[] {
     // 与旧实现一致：version DESC
     return rust.sort((a, b) => b.version - a.version);
   }
-  const db = legacyDb();
-  if (!db) return []; // rust 模式且镜像未就绪：给空结果，绝不在渲染期抛
-  const result = db.exec(
-    "SELECT id, session_id, version, content, tags, created_at FROM prompt_drafts WHERE session_id = ? ORDER BY version DESC",
-    [sessionId]
-  );
-
-  if (result.length === 0) return [];
-
-  return result[0].values.map((row) => ({
-    id: row[0] as string,
-    sessionId: row[1] as string,
-    version: row[2] as number,
-    content: row[3] as string,
-    tags: JSON.parse(row[4] as string || "[]") as string[],
-    createdAt: row[5] as number,
-  }));
+  /**
+   * **旧库读取已删除**（L4 收尾）：端口没接手 → 该域的合理空结果（空数组）。
+   * 与原来 `if (!db) return [];` 语义一致：rust 模式且镜像未就绪时给空结果，
+   * **绝不在渲染期抛**（那正是 `app.conversation` 整体崩溃的根因）。
+   */
+  return [];
 }
 
 /**
@@ -165,13 +142,15 @@ export function loadPromptDrafts(sessionId: string): PromptDraft[] {
  */
 export function deletePromptDraft(draftId: string): void {
   if (domainDelete(TABLE, { id: draftId }, { scope: "promptDraft.delete", note: "草稿未删除" })) return;
-  const db = legacyDb();
-  if (!db) {
-    reportPersistFailure("promptDraft.delete", new Error("旧库不存在且端口未接手"), "草稿未删除");
-    return;
-  }
-  db.run("DELETE FROM prompt_drafts WHERE id = ?", [draftId]);
-  persistDatabase();
+  /**
+   * **旧库删除已删除**（L4 收尾）：端口没接手时如实上报为"未删除"（与原来
+   * `if (!db) { report…; return; }` 那条**完全一致**，只是不再去碰不存在的旧库）。
+   */
+  reportPersistFailure(
+    "promptDraft.delete",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "草稿未删除",
+  );
 }
 
 /**
@@ -191,33 +170,15 @@ export function comparePromptDrafts(
     // 与旧实现一致：按 version 升序排列
     [draft1, draft2] = d1.version <= d2.version ? [d1, d2] : [d2, d1];
   } else {
-    const db = legacyDb();
-    const result = db
-      ? db.exec("SELECT * FROM prompt_drafts WHERE id IN (?, ?) ORDER BY version", [draftId1, draftId2])
-      : [];
-
-    if (result.length === 0 || result[0].values.length < 2) {
-      // 读不到就是"找不到草稿"（业务语义），不该是"数据库没初始化"（基础设施语义）
-      throw new Error("Drafts not found");
-    }
-
-    const rows = result[0].values;
-    draft1 = {
-      id: rows[0][0] as string,
-      sessionId: rows[0][1] as string,
-      version: rows[0][2] as number,
-      content: rows[0][3] as string,
-      tags: JSON.parse(rows[0][4] as string || "[]") as string[],
-      createdAt: rows[0][5] as number,
-    };
-    draft2 = {
-      id: rows[1][0] as string,
-      sessionId: rows[1][1] as string,
-      version: rows[1][2] as number,
-      content: rows[1][3] as string,
-      tags: JSON.parse(rows[1][4] as string || "[]") as string[],
-      createdAt: rows[1][5] as number,
-    };
+    /**
+     * **旧库读取已删除**（L4 收尾）：端口没接手 → 与"查不到这两份草稿"是同一件事。
+     *
+     * 原来这里是 `const db = legacyDb(); const result = db ? db.exec(...) : [];` +
+     * 紧接着的同一个 `throw` —— 也就是**旧库不存在时结果与被删掉的语义完全一样**。
+     * 所以直接走到同一句 `throw` 才是诚实的等价替换（抛的是业务语义
+     * "Drafts not found"，不是基础设施语义"数据库没初始化"，这点刻意保持不变）。
+     */
+    throw new Error("Drafts not found");
   }
 
   // Simple line-by-line diff

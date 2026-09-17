@@ -7,9 +7,9 @@
  * - 支持 OpenTelemetry 格式导出（预留接口）
  */
 
-import { getDatabase, persistDatabase, isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "../storage/database";
+import { isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "../storage/database";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { domainDeleteWhere, domainReadMany, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
+import { domainDeleteWhere, domainReadMany, domainWrite } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -29,8 +29,9 @@ const TABLE = "telemetry_events";
  * `telemetry_events` 的镜像上限（P5 第 2 段）。
  *
  * 遥测是只增不改的日志，量级可能到十万条。全表进渲染进程内存不可接受，
- * 所以给一个**较小**的镜像上限：超过就放弃镜像、回退旧路径。
- * 代价是"仪表盘在超大遥测表上仍然依赖旧库" —— 这比把渲染进程压死要好，
+ * 所以给一个**较小**的镜像上限：超过就放弃镜像（此时读取如实返回空结果，
+ * L4 第 18 轮起不再回退旧库）。
+ * 代价是"仪表盘在超大遥测表上会显示空" —— 这比把渲染进程压死要好，
  * 而且遥测的历史数据本来就不需要精确（它是诊断用的，不是用户数据）。
  */
 const TELEMETRY_MIRROR_MAX = 5000;
@@ -66,7 +67,12 @@ function telemetryToEvent(row: TelemetryRow): TelemetryEvent {
   return { id: row.id, sessionId: row.session_id, name: row.event_name, data, timestamp: row.timestamp };
 }
 
-/** 读整个遥测镜像；未接手时返回 undefined（调用方回退旧库） */
+/**
+ * 读整个遥测镜像；未接手时返回 `undefined`。
+ *
+ * L4 第 18 轮起：`undefined` 不再意味着"回退旧库"（那条路已删除），
+ * 而是"该域当前读不到" —— 调用方据此返回合理空结果或如实上报。
+ */
 function telemetryRows(): TelemetryRow[] | undefined {
   return domainReadMany(TABLE, wireToTelemetry, undefined, TELEMETRY_OPTS);
 }
@@ -173,22 +179,19 @@ class TelemetryCollector {
         return;
       }
       /*
-       * 两态分流（B4 批）：B 态（端口在、镜像未就绪）不写旧库。
+       * **旧库回退已删除**（L4 第 18 轮）：端口没接手时**如实上报**，不再把事件写进
+       * 一份本进程读路径看不见的旧库副本（旧库已从渲染进程移除，写它既读不回来、
+       * 也算不上"保存成功"）。
        *
        * 这里**不清空 `this.events`** —— 与上面"成功才清空"的既有约定一致：
        * 遥测写不进去时保留在内存里等下次重试，而不是静默丢掉。
        */
-      if (!writeShouldFallBackToLegacy("telemetry.flush", "遥测事件未写入（保留在内存等待重试）")) return;
-      const db = getDatabase();
-      for (const event of this.events) {
-        db.run(
-          "INSERT INTO telemetry_events (id, session_id, event_name, event_data, timestamp) VALUES (?, ?, ?, ?, ?)",
-          [event.id, event.sessionId, event.name, JSON.stringify(event.data || {}), event.timestamp],
-        );
-      }
-      persistDatabase();
-      // 成功才清空 — 失败时保留 events 供下次重试（防静默丢失遥测）。
-      this.events = [];
+      reportPersistFailure(
+        "telemetry.flush",
+        new Error("端口未接手（该域镜像未注册或未就绪）"),
+        "遥测事件未写入（保留在内存等待重试）",
+      );
+      return;
     } catch (err) {
       // 第 90 波：致命错误不再无限重试（见上方说明）；普通错误保留事件并有限重试
       if (noteDatabaseError(err)) {
@@ -218,26 +221,9 @@ class TelemetryCollector {
         .slice(0, limit ?? undefined)
         .map(telemetryToEvent);
     }
-    if (!shouldFallbackToLegacy()) return [];
-    const db = getDatabase();
-    const nameClause = name ? `AND event_name = ?` : "";
-    const limitClause = limit ? `LIMIT ${limit}` : "";
-    const params = name ? [sessionId, name] : [sessionId];
-
-    const result = db.exec(
-      `SELECT id, session_id, event_name, event_data, timestamp FROM telemetry_events WHERE session_id = ? ${nameClause} ORDER BY timestamp DESC ${limitClause}`,
-      params,
-    );
-
-    if (result.length === 0) return [];
-
-    return result[0].values.map((row) => ({
-      id: row[0] as string,
-      sessionId: row[1] as string,
-      name: row[2] as string,
-      data: row[3] ? JSON.parse(row[3] as string) : undefined,
-      timestamp: row[4] as number,
-    }));
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    // （旧库已从渲染进程移除，读不到就是读不到）
+    return [];
   }
 
   /**
@@ -308,41 +294,9 @@ class TelemetryCollector {
       };
     }
 
-    if (!shouldFallbackToLegacy()) {
-      // B 态：该域由端口负责，镜像未就绪时如实返回"空统计"（而不是去读不存在的旧库）
-      return { totalEvents: 0, totalSessions: 0, eventsByType: [], recentEventRate: 0 };
-    }
-    const db = getDatabase();
-
-    let totalEvents = 0;
-    let totalSessions = 0;
-    let eventsByType: Array<{ name: string; count: number }> = [];
-    let recentCount = 0;
-
-    try {
-      const r1 = db.exec("SELECT COUNT(*) as cnt FROM telemetry_events");
-      if (r1.length > 0) totalEvents = r1[0].values[0][0] as number;
-
-      const r2 = db.exec("SELECT COUNT(DISTINCT session_id) as cnt FROM telemetry_events");
-      if (r2.length > 0) totalSessions = r2[0].values[0][0] as number;
-
-      const r3 = db.exec("SELECT event_name, COUNT(*) as cnt FROM telemetry_events GROUP BY event_name ORDER BY cnt DESC");
-      if (r3.length > 0) {
-        eventsByType = r3[0].values.map((row: any[]) => ({ name: row[0] as string, count: row[1] as number }));
-      }
-
-      const r4 = db.exec("SELECT COUNT(*) as cnt FROM telemetry_events WHERE timestamp > ?", [fiveMinAgo]);
-      if (r4.length > 0) recentCount = r4[0].values[0][0] as number;
-    } catch (err) {
-      console.warn("[Telemetry] getOverviewStats failed:", err);
-    }
-
-    return {
-      totalEvents,
-      totalSessions,
-      eventsByType,
-      recentEventRate: Math.round((recentCount / 5) * 10) / 10,
-    };
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时如实返回"空统计"
+    // （而不是去读一份已从渲染进程移除的旧库）
+    return { totalEvents: 0, totalSessions: 0, eventsByType: [], recentEventRate: 0 };
   }
 
   /**
@@ -368,28 +322,8 @@ class TelemetryCollector {
         .sort((a, b) => b.lastEventAt - a.lastEventAt)
         .slice(0, limit);
     }
-    if (!shouldFallbackToLegacy()) return [];
-    const db = getDatabase();
-    try {
-      const result = db.exec(`
-        SELECT session_id, COUNT(*) as cnt, MIN(timestamp) as first_ts, MAX(timestamp) as last_ts
-        FROM telemetry_events
-        GROUP BY session_id
-        ORDER BY last_ts DESC
-        LIMIT ${limit}
-      `);
-      if (result.length === 0) return [];
-      return result[0].values.map((row: any[]) => ({
-        sessionId: row[0] as string,
-        eventCount: row[1] as number,
-        firstEventAt: row[2] as number,
-        lastEventAt: row[3] as number,
-        duration: (row[3] as number) - (row[2] as number),
-      }));
-    } catch (err) {
-      console.warn("[Telemetry] getSessionStats failed:", err);
-      return [];
-    }
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    return [];
   }
 
   /**
@@ -415,24 +349,8 @@ class TelemetryCollector {
       return buckets;
     }
 
-    if (!shouldFallbackToLegacy()) return [];
-    const db = getDatabase();
-    for (let i = 0; i < bucketCount; i++) {
-      const bucketStart = since + i * bucketMs;
-      const bucketEnd = bucketStart + bucketMs;
-      try {
-        const r = db.exec(
-          "SELECT COUNT(*) as cnt FROM telemetry_events WHERE timestamp >= ? AND timestamp < ?",
-          [bucketStart, bucketEnd],
-        );
-        const count = r.length > 0 ? (r[0].values[0][0] as number) : 0;
-        buckets.push({ timestamp: bucketStart, count });
-      } catch {
-        buckets.push({ timestamp: bucketStart, count: 0 });
-      }
-    }
-
-    return buckets;
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    return [];
   }
 
   /**
@@ -480,47 +398,8 @@ class TelemetryCollector {
         .sort((a, b) => b.count - a.count);
     }
 
-    if (!shouldFallbackToLegacy()) return [];
-    const db = getDatabase();
-    try {
-      // Fetch events that have duration_ms in their data
-      const result = db.exec(`
-        SELECT event_name, event_data FROM telemetry_events
-        WHERE event_data LIKE '%"duration_ms"%'
-        ORDER BY timestamp DESC
-        LIMIT 10000
-      `);
-      if (result.length === 0) return [];
-
-      // Group by event_name and compute stats
-      const groups: Record<string, number[]> = {};
-      for (const row of result[0].values as any[]) {
-        const eventName = row[0] as string;
-        const data = JSON.parse(row[1] as string);
-        if (typeof data.duration_ms === "number") {
-          if (!groups[eventName]) groups[eventName] = [];
-          groups[eventName].push(data.duration_ms);
-        }
-      }
-
-      return Object.entries(groups).map(([eventName, durations]) => {
-        const sorted = durations.sort((a, b) => a - b);
-        const sum = sorted.reduce((a, b) => a + b, 0);
-        const count = sorted.length;
-        return {
-          eventName,
-          count,
-          avgMs: Math.round(sum / count),
-          minMs: sorted[0],
-          maxMs: sorted[count - 1],
-          p50Ms: sorted[Math.floor(count * 0.5)] || sorted[0],
-          p95Ms: sorted[Math.floor(count * 0.95)] || sorted[count - 1],
-        };
-      }).sort((a, b) => b.count - a.count);
-    } catch (err) {
-      console.warn("[Telemetry] getLatencyStats failed:", err);
-      return [];
-    }
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    return [];
   }
 }
 

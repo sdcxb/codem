@@ -2,16 +2,13 @@
  * Inbox Storage — DB CRUD for inbox table
  */
 
-import { getDatabase, persistDatabase } from "../storage/database";
-import { runGuarded } from "../storage/write-guard";
+import { reportPersistFailure } from "../storage/persist-failure";
 import {
   domainDelete,
   domainDeleteWhere,
   domainReadMany,
   domainReadOne,
   domainWrite,
-  shouldFallbackToLegacy,
-  writeShouldFallBackToLegacy,
 } from "../storage/domain-store";
 
 // ========== Types ==========
@@ -92,25 +89,27 @@ export const InboxStorage = {
         { scope: "inbox.sweep", note: "过期通知未清理" },
       );
       if (removed !== null) return created;
+      // 写入已接手、但清理没接手（两者用同一个端口判据，理论上不可达）：
+      // 如实上报"清理没做"，**不要**掉进下面那句"通知未保存"（那会把一次成功的写入说成失败）。
+      reportPersistFailure(
+        "inbox.sweep",
+        new Error("端口未接手（该域镜像未注册或未就绪）"),
+        "过期通知未清理",
+      );
+      return created;
     }
 
-        if (!writeShouldFallBackToLegacy("inbox.create", "通知未保存")) return created;
-const db = getDatabase();
-    if (!db) return created;
-    db.run(
-      `INSERT INTO inbox (id, category, title, body, source_type, source_id, project_id, squad_id, issue_id, priority, read, archived, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
-      [created.id, created.category, created.title, created.body, created.source_type,
-       created.source_id, created.project_id, created.squad_id, created.issue_id,
-       created.priority, now],
+    /**
+     * **旧库写入已删除**（L4 第 18 轮）：端口没接手时**如实上报**，不再写旧库。
+     *
+     * 返回值形状（`InboxRow`）保持不变 —— 调用方拿它去更新界面，但这次上报会通过
+     * `codem:persist-failed` 让"没保存成功"可见，绝不静默当成写入成功。
+     */
+    reportPersistFailure(
+      "inbox.create",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "通知未保存",
     );
-    persistDatabase();
-    try {
-      db.run("DELETE FROM inbox WHERE created_at < ?", [now - RETENTION_MS]);
-      persistDatabase();
-    } catch {
-      /* 清理失败不影响写入 */
-    }
     return created;
   },
 
@@ -126,17 +125,8 @@ const db = getDatabase();
       // 与旧 SQL 一致：created_at DESC + LIMIT 100
       return filtered.sort((a, b) => b.created_at - a.created_at).slice(0, 100);
     }
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    let sql = "SELECT * FROM inbox WHERE archived = 0";
-    const params: any[] = [];
-    if (filters?.projectId) { sql += " AND (project_id = ? OR project_id IS NULL)"; params.push(filters.projectId); }
-    if (filters?.unreadOnly) { sql += " AND read = 0"; }
-    if (filters?.category) { sql += " AND category = ?"; params.push(filters.category); }
-    sql += " ORDER BY created_at DESC LIMIT 100";
-    const result = db.exec(sql, params);
-    if (result.length === 0) return [];
-    return result[0].values.map((row) => rowToInbox(row, result[0].columns));
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+    return [];
   },
 
   markRead(id: string): void {
@@ -152,10 +142,12 @@ const db = getDatabase();
       });
       return;
     }
-        if (!writeShouldFallBackToLegacy("inbox.markRead", "通知已读状态未更新")) return;
-const db = getDatabase();
-    runGuarded(db, "UPDATE inbox SET read = 1 WHERE id = ?", [id],
-    { table: "inbox", op: "mark-read", id, from: "markInboxRead" });
+    // **旧库更新已删除**（L4 第 18 轮）：端口没接手时如实上报，绝不静默当成标记成功
+    reportPersistFailure(
+      "inbox.markRead",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "通知已读状态未更新",
+    );
   },
 
   markAllRead(projectId?: string): void {
@@ -172,15 +164,12 @@ const db = getDatabase();
       });
       return;
     }
-        if (!writeShouldFallBackToLegacy("inbox.markAllRead", "通知已读状态未更新")) return;
-const db = getDatabase();
-    if (projectId) {
-      db.run("UPDATE inbox SET read = 1 WHERE read = 0 AND (project_id = ? OR project_id IS NULL)", [projectId]);
-    persistDatabase();
-    } else {
-      db.run("UPDATE inbox SET read = 1 WHERE read = 0");
-    persistDatabase();
-    }
+    // **旧库更新已删除**（L4 第 18 轮）：端口没接手时如实上报
+    reportPersistFailure(
+      "inbox.markAllRead",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "通知已读状态未更新",
+    );
   },
 
   archive(id: string): void {
@@ -194,19 +183,22 @@ const db = getDatabase();
       });
       return;
     }
-        if (!writeShouldFallBackToLegacy("inbox.archive", "通知归档状态未更新")) return;
-const db = getDatabase();
-    runGuarded(db, "UPDATE inbox SET archived = 1 WHERE id = ?", [id],
-    { table: "inbox", op: "archive", id, from: "archiveInbox" });
+    // **旧库更新已删除**（L4 第 18 轮）：端口没接手时如实上报
+    reportPersistFailure(
+      "inbox.archive",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "通知归档状态未更新",
+    );
   },
 
   delete(id: string): void {
     if (domainDelete(TABLE, { id }, { scope: "inbox.delete", note: "通知未删除" })) return;
-        if (!writeShouldFallBackToLegacy("inbox.delete", "通知未删除")) return;
-const db = getDatabase();
-    if (!db) return;
-    db.run("DELETE FROM inbox WHERE id = ?", [id]);
-    persistDatabase();
+    // **旧库删除已删除**（L4 第 18 轮）：端口没接手时如实上报，绝不静默当成删成功
+    reportPersistFailure(
+      "inbox.delete",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "通知未删除",
+    );
   },
 
   getUnreadCount(projectId?: string): number {
@@ -216,14 +208,8 @@ const db = getDatabase();
         (r) => !projectId || r.project_id === projectId || r.project_id === null,
       ).length;
     }
-        if (!shouldFallbackToLegacy()) return 0;
-const db = getDatabase();
-    let sql = "SELECT COUNT(*) as count FROM inbox WHERE read = 0 AND archived = 0";
-    const params: any[] = [];
-    if (projectId) { sql += " AND (project_id = ? OR project_id IS NULL)"; params.push(projectId); }
-    const result = db.exec(sql, params);
-    if (result.length === 0) return 0;
-    return result[0].values[0][0] as number;
+    // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果（0 条未读）
+    return 0;
   },
 
   deleteOlderThan(timestamp: number): void {
@@ -234,18 +220,11 @@ const db = getDatabase();
       { scope: "inbox.deleteOlderThan", note: "过期通知未删除" },
     );
     if (removed !== null) return;
-        if (!writeShouldFallBackToLegacy("inbox.deleteOlderThan", "过期通知未清理")) return;
-const db = getDatabase();
-    if (!db) return;
-    db.run("DELETE FROM inbox WHERE created_at < ?", [timestamp]);
-    persistDatabase();
+    // **旧库删除已删除**（L4 第 18 轮）：端口没接手时如实上报
+    reportPersistFailure(
+      "inbox.deleteOlderThan",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "过期通知未清理",
+    );
   },
 };
-
-// ========== Helpers ==========
-
-function rowToInbox(row: any[], columns: string[]): InboxRow {
-  const obj: any = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj as InboxRow;
-}

@@ -173,16 +173,34 @@ describe("静默空写探测器", () => {
     warn.mockRestore();
   });
 
-  it("SWG-4: 接了线的任务管理侧写入（sessions）同样会被发现", () => {
-    switchToLegacyEngine(); // 同 SWG-3
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("SWG-4: 任务管理侧写入打不到行 —— 不造幽灵行，且对调用方**可见**（第 17 轮 L4 后的新契约）", () => {
+    /**
+     * 这条用例原来是"旧库 UPDATE 影响 0 行 → 静默空写探测器记账"。
+     * A 态（旧库回退）删除后，`sessions` 的写入只走端口，而端口侧不存在
+     * "UPDATE 影响 0 行"这件事 —— 判据变成两条更本质的不变量：
+     *
+     *   1. **不许造幽灵行**：端口是 `crud.upsert`（会 insert），所以"会话不存在"时
+     *      必须在写入前就返回，而不是 upsert 出一行不存在的会话；
+     *   2. **不许静默假成功**：`togglePinned` 必须把"没切成"通过返回值告诉调用方。
+     *
+     * 这正是原用例想守的东西（"写没落地必须可见"），只是换到了端口这半边。
+     */
+    const p = useFreshPort();
     resetSilentWriteReport();
+
+    const pinned = togglePinned("不存在的会话");
+    expect(pinned, "切换不存在的会话必须返回 false（可见的如实回绝，不是静默成功）").toBe(false);
+
     updateSession("不存在的会话", { title: "新标题" } as any);
-    togglePinned("不存在的会话");
-    const keys = getSilentWriteReport().map((e) => `${e.table}:${e.op}`);
-    expect(keys).toContain("sessions:update");
-    expect(keys).toContain("sessions:pin");
-    warn.mockRestore();
+
+    const ghost = p
+      .__writes()
+      .filter(
+        (w) =>
+          w.command === "crud.upsert" &&
+          (w.params as { table?: string } | undefined)?.table === "sessions",
+      );
+    expect(ghost, "会话不存在时不许 upsert 出幽灵行（旧实现是 UPDATE 影响 0 行）").toHaveLength(0);
   });
 
   it("SWG-5（系统级不变量）: 跑完一整轮后台执行，不允许出现任何静默空写", async () => {

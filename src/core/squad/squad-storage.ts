@@ -5,9 +5,8 @@
  * Tables are created in the SCHEMA constant (database.ts).
  */
 
-import { getDatabase, persistDatabase } from "../storage/database";
-import { runGuarded } from "../storage/write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Types ==========
 
@@ -101,51 +100,40 @@ export const SquadStorage = {
     if (domainWrite(SQUADS, [squadToWire(created)], { scope: "squad.create", note: "团队未保存" })) {
       return created;
     }
-        if (!writeShouldFallBackToLegacy("squad.create", "团队未保存")) return created;
-const db = getDatabase();
-    db.run(
-      `INSERT INTO squads (id, name, leader_agent_id, instructions, project_id, archived, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-      [created.id, created.name, created.leader_agent_id, created.instructions, created.project_id, now, now],
+    /**
+     * **旧库写入已删除**（L4 收尾）：端口没接手时如实上报，返回内存里那份已构造好的对象。
+     * 与原来 B 态（端口在、镜像未就绪）的行为完全一致 —— 差别只是失败现在**可见**。
+     */
+    reportPersistFailure(
+      "squad.create",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "团队未保存",
     );
-    persistDatabase();
     return created;
   },
 
   getById(id: string): SquadRow | null {
     const rust = domainReadOne(SQUADS, { id }, wireToSquad);
     if (rust !== undefined) return rust;
-        if (!shouldFallbackToLegacy()) return null;
-const db = getDatabase();
-    const result = db.exec("SELECT * FROM squads WHERE id = ?", [id]);
-    if (result.length === 0) return null;
-    return rowToSquad(result[0].values[0], result[0].columns);
+    // 端口没接手 → 该域读不到这一行（旧库已从渲染进程移除）→ 如实返回 null
+    return null;
   },
 
   listAll(includeArchived = false): SquadRow[] {
     const rust = domainReadMany(SQUADS, wireToSquad, includeArchived ? undefined : { archived: 0 });
     if (rust) return rust.sort((a, b) => b.updated_at - a.updated_at);
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const sql = includeArchived
-      ? "SELECT * FROM squads ORDER BY updated_at DESC"
-      : "SELECT * FROM squads WHERE archived = 0 ORDER BY updated_at DESC";
-    const result = db.exec(sql);
-    if (result.length === 0) return [];
-    return result[0].values.map((row) => rowToSquad(row, result[0].columns));
+    /**
+     * **旧库读取已删除**（L4 收尾）：端口没接手 → 该域的合理空结果（空数组）。
+     * 与原来门控里那句 `if (!shouldFallbackToLegacy()) return [];` **语义一致**。
+     */
+    return [];
   },
 
   listByProject(projectId: string): SquadRow[] {
     const rust = domainReadMany(SQUADS, wireToSquad, { project_id: projectId, archived: 0 });
     if (rust) return rust.sort((a, b) => b.updated_at - a.updated_at);
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec(
-      "SELECT * FROM squads WHERE project_id = ? AND archived = 0 ORDER BY updated_at DESC",
-      [projectId],
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map((row) => rowToSquad(row, result[0].columns));
+    // 端口没接手 → 该域的合理空结果（与原来门控那句 `return []` 语义一致）
+    return [];
   },
 
   update(id: string, updates: Partial<Pick<SquadRow, "name" | "instructions" | "leader_agent_id" | "project_id">>): void {
@@ -179,19 +167,15 @@ const db = getDatabase();
       return;
     }
 
-        if (!writeShouldFallBackToLegacy("squad.update", "团队未更新")) return;
-const db = getDatabase();
-    const values: any[] = [];
-    for (const key of fields) values.push((updates as Record<string, unknown>)[key]);
-    values.push(Date.now());
-    values.push(id);
-    runGuarded(
-      db,
-      `UPDATE squads SET ${fields.map((f) => `${f} = ?`).join(", ")}, updated_at = ? WHERE id = ?`,
-      values,
-      { table: "squads", op: "update", id, from: "update" },
+    /**
+     * **旧库更新已删除**（L4 收尾）：端口没接手时**如实上报为"未更新"**。
+     * `update` 的契约是 void，静默 return 就是 B 类假成功。
+     */
+    reportPersistFailure(
+      "squad.update",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "团队未更新",
     );
-    persistDatabase();
   },
 
   archive(id: string): void {
@@ -205,19 +189,22 @@ const db = getDatabase();
       });
       return;
     }
-        if (!writeShouldFallBackToLegacy("squad.archive", "团队归档状态未更新")) return;
-const db = getDatabase();
-    runGuarded(db, "UPDATE squads SET archived = 1, updated_at = ? WHERE id = ?", [Date.now(), id],
-      { table: "squads", op: "archive", id, from: "archiveSquad" });
-    persistDatabase();
+    // 旧库更新已删除（L4）：端口没接手 → 如实上报为"归档状态未更新"
+    reportPersistFailure(
+      "squad.archive",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "团队归档状态未更新",
+    );
   },
 
   delete(id: string): void {
     if (domainDelete(SQUADS, { id }, { scope: "squad.delete", note: "团队未删除" })) return;
-        if (!writeShouldFallBackToLegacy("squad.delete", "团队未删除")) return;
-const db = getDatabase();
-    db.run("DELETE FROM squads WHERE id = ?", [id]);
-    persistDatabase();
+    // 旧库删除已删除（L4）：端口没接手 → 如实上报为"未删除"（不静默当成删成功）
+    reportPersistFailure(
+      "squad.delete",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "团队未删除",
+    );
   },
 
   // ========== Member CRUD ==========
@@ -232,33 +219,33 @@ const db = getDatabase();
     if (domainWrite(MEMBERS, [memberToWire(created)], { scope: "squad.addMember", note: "团队成员未保存" })) {
       return created;
     }
-        if (!writeShouldFallBackToLegacy("squad.addMember", "团队成员未添加")) return created;
-const db = getDatabase();
-    db.run(
-      `INSERT INTO squad_members (id, squad_id, member_type, member_id, member_name, role_description, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [created.id, created.squad_id, created.member_type, created.member_id, created.member_name, created.role_description, now],
+    /**
+     * **旧库写入已删除**（L4 收尾）：端口没接手时如实上报，返回内存里那份已构造好的对象。
+     * 与原来 B 态（端口在、镜像未就绪）的行为完全一致 —— 差别只是失败现在**可见**。
+     */
+    reportPersistFailure(
+      "squad.addMember",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "团队成员未添加",
     );
-    persistDatabase();
     return created;
   },
 
   getMembers(squadId: string): SquadMemberRow[] {
     const rust = domainReadMany(MEMBERS, wireToSquadMember, { squad_id: squadId });
     if (rust) return rust.sort((a, b) => a.created_at - b.created_at);
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec("SELECT * FROM squad_members WHERE squad_id = ? ORDER BY created_at ASC", [squadId]);
-    if (result.length === 0) return [];
-    return result[0].values.map((row) => rowToMember(row, result[0].columns));
+    // 端口没接手 → 该域的合理空结果（与原来门控那句 `return []` 语义一致）
+    return [];
   },
 
   removeMember(memberId: string): void {
     if (domainDelete(MEMBERS, { id: memberId }, { scope: "squad.removeMember", note: "团队成员未移除" })) return;
-        if (!writeShouldFallBackToLegacy("squad.removeMember", "团队成员未移除")) return;
-const db = getDatabase();
-    db.run("DELETE FROM squad_members WHERE id = ?", [memberId]);
-    persistDatabase();
+    // 旧库删除已删除（L4）：端口没接手 → 如实上报为"未移除"
+    reportPersistFailure(
+      "squad.removeMember",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "团队成员未移除",
+    );
   },
 
   updateMemberRole(memberId: string, roleDescription: string): void {
@@ -272,24 +259,17 @@ const db = getDatabase();
       });
       return;
     }
-        if (!writeShouldFallBackToLegacy("squad.updateMemberRole", "成员角色未更新")) return;
-const db = getDatabase();
-    runGuarded(db, "UPDATE squad_members SET role_description = ? WHERE id = ?", [roleDescription, memberId],
-      { table: "squad_members", op: "update-role", id: memberId, from: "updateMemberRole" });
-    persistDatabase();
+    // 旧库更新已删除（L4）：端口没接手 → 如实上报为"角色未更新"
+    reportPersistFailure(
+      "squad.updateMemberRole",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "成员角色未更新",
+    );
   },
 };
 
 // ========== Helpers ==========
-
-function rowToSquad(row: any[], columns: string[]): SquadRow {
-  const obj: any = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj as SquadRow;
-}
-
-function rowToMember(row: any[], columns: string[]): SquadMemberRow {
-  const obj: any = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj as SquadMemberRow;
-}
+//
+// `rowToSquad` / `rowToMember`（按 `db.exec` 的 `values` + `columns` 拼行的解码器）
+// 在 L4 收尾时随旧库读取分支一并删除：端口侧的行是**线协议行**（对象），
+// 由 `wireToSquad` / `wireToSquadMember` 解码，不再有"按列数组还原"这条路。

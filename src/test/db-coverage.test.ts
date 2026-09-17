@@ -54,20 +54,43 @@ describe("存储迁移门禁 —— 盘点与 Rust 实现必须对得上", () =>
     // 这些下限不是"期望值"，而是**防退化护栏**：扫描器写坏了会扫出远小于此的数字，
     // 那时覆盖率会因为分母变小而"看起来变好"—— 这是最隐蔽的失效。
     expect(coverage.scannedFiles).toBeGreaterThan(500);
-    expect(coverage.requiredMethods).toBeGreaterThan(100);
-    expect(coverage.totalSites).toBeGreaterThan(200);
+    /**
+     * 第 17 轮口径修正：**旧库 SQL 与端口调用必须一起盘**。
+     *
+     * L4 把回退分支删完之后，渲染侧的存储调用已绝大多数走端口
+     * （`domainWrite` / 具名 `crud.*` / `events.*` / `config.*`），旧库 SQL 只剩 `message.ts`。
+     * 只盯旧库数字的话，这条护栏会在**正确的方向**上变红（49 < 200），
+     * 而把阈值直接调低又会让它在"盘点彻底失效"时报通过 —— 两个都不行。
+     * 所以护栏改成盯**两半之和**：迁移推进时旧库那半降、端口那半升，总和始终有效。
+     */
+    expect(coverage.totalStorageSites, "存储调用点合计（旧库 + 端口）").toBeGreaterThan(200);
+    expect(coverage.portSites, "端口调用点必须被盘到（否则 L1 之后门禁就没有分母了）").toBeGreaterThan(100);
     expect(coverage.rustCommandCount).toBeGreaterThan(15);
   });
 
-  it("GATE-DB-5: 写路径必须被盘点覆盖（messages/sessions/settings 的 insert 不能缺席）", () => {
-    // 直接钉住"曾经被漏掉的那一类"：如果正则又退回"引号必须紧跟括号"，这条会立刻红。
-    const required = new Set(
-      computeCoverage()
-        .done.concat(coverage.pending)
-        .map((m: { method: string }) => m.method),
+  it("GATE-DB-5: 核心域的**写路径**必须被盘点覆盖（旧库 SQL 或端口调用任一）", () => {
+    // 直接钉住"曾经被漏掉的那一类"：如果旧库正则又退回"引号必须紧跟括号"，这条会立刻红。
+    const legacy = new Set(computeCoverage().done.concat(coverage.pending).map((m: { method: string }) => m.method));
+    // 第 17 轮：写路径已从旧库 SQL 迁到端口（`domainWrite` / `crud.upsert` / `config.set` / 事件发件箱），
+    // 所以判据是"这个域在盘点里**能被看到一处写路径**"，而不是"必须还是 SQL"。
+    const portWrites = new Set(
+      coverage.portTableOps
+        .filter((o: { method: string }) => /\.(upsert|delete)$/.test(o.method))
+        .map((o: { method: string }) => o.method.split(".")[0]),
     );
-    for (const must of ["messages.insert", "messages.update", "sessions.insert", "settings.insert"]) {
-      expect(required.has(must), `写路径 ${must} 未被盘点覆盖（扫描器漏了写入调用）`).toBe(true);
+    const portCommands = new Set(coverage.portCommands.map((c: { command: string }) => c.command));
+
+    const covered = {
+      messages: legacy.has("messages.update") || legacy.has("messages.insert"),
+      sessions: portWrites.has("sessions") || legacy.has("sessions.insert"),
+      projects: portWrites.has("projects") || legacy.has("projects.insert"),
+      settings: portCommands.has("settings.set") || portCommands.has("config.set"),
+      notebooks: portWrites.has("notebooks"),
+      "session_events": portCommands.has("events.append") || portCommands.has("events.append_batch") || legacy.has("session_events.insert"),
+      attachments: portCommands.has("attachments.update") || legacy.has("attachments.insert"),
+    };
+    for (const [domain, ok] of Object.entries(covered)) {
+      expect(ok, `域 ${domain} 的写路径在盘点里完全看不到（扫描器漏了写入调用）`).toBe(true);
     }
   });
 

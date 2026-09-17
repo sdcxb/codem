@@ -13,9 +13,8 @@
  * - Phase 3: Old CRUD removed
  */
 
-import { getDatabase, persistDatabase } from "./database";
 import { getStoragePort, hasStoragePort } from "./port";
-import { shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-store";
+import { reportPersistFailure } from "./persist-failure";
 
 // ========== 迁移期：事件镜像分流（P3 第 4 段） ==========
 //
@@ -27,7 +26,7 @@ import { shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-st
 // 这正是回滚开关能生效的前提。
 
 /**
- * "加载窗口期"内写进旧库、但需要补进镜像与 Rust 库的事件。
+ * "加载窗口期"内的 append 需要补进镜像与 Rust 库时用的缓冲。
  *
  * ## 为什么需要它
  *
@@ -37,9 +36,19 @@ import { shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-st
  *
  * 解法：窗口期内的 append 记在这里，加载完成后补写进 Rust 库（发件箱）
  * 并放进镜像，于是**两处最终一致**，一条都不丢。
+ *
+ * ⚠️ **L4 收尾后它已没有生产者**（保留，不删）：唯一调用点原来在 `append` 的
+ * **旧库写入分支**里（那里有一条真实 seq 要补进镜像）。那条分支删除后，窗口期
+ * append 一律走 `appendViaMirror()`：占位 seq 由 `RustEventMirror.loadSession`
+ * 原样保留（`pendingLocal`）并在落库后 `reconcile` 成真实水位，
+ * 所以**不存在事件丢失**，这段缓冲成为冗余。
+ *
+ * 之所以保留而不是删掉：它属于**端口侧（B 态）的补偿机制**，不是旧库回退分支；
+ * 删除它要连带改 `rustEventPort()` 的回调，超出"只删 A 态"的范围（记入 L4 报告）。
  */
 const pendingDuringLoad = new Map<string, Array<{ type: string; payload: string; timestamp: number; seq: number }>>();
 
+/** 记一条"窗口期事件"（⚠️ L4 后无调用点，见 `pendingDuringLoad` 的注释） */
 function notePendingDuringLoad(sessionId: string, type: string, payload: string, timestamp: number, seq: number): void {
   const list = pendingDuringLoad.get(sessionId) ?? [];
   list.push({ type, payload, timestamp, seq });
@@ -183,7 +192,7 @@ export class EventLog {
     payload: Record<string, unknown>,
   ): SessionEvent {
     // 路由到镜像的**唯一条件**：该会话的事件已完整加载（见 rustEventPort 注释）。
-    // 未加载完 → 继续走下面的旧路径，保证"读到的与写到的在同一处"。
+    // 未加载完 → 由下面的 `rustEventPortAny()` 接手（占位 seq 会被加载逻辑保留）。
     const routed = rustEventPort(sessionId);
     if (routed) return this.appendViaMirror(routed, sessionId, type, payload);
     /**
@@ -197,43 +206,26 @@ export class EventLog {
     const anyPort = rustEventPortAny();
     if (anyPort) return this.appendViaMirror(anyPort, sessionId, type, payload);
 
-    if (!writeShouldFallBackToLegacy("eventLog.append", "事件未写入（端口已注册但没有事件能力）")) {
-      // B 态但端口缺事件能力：如实返回一个**未落库**的事件（seq=0），并已上报失败。
-      // 不抛是刻意的：事件日志是"可重建的投影源"，让它炸掉上层消息写入的代价更大。
-      const timestamp = Date.now();
-      const event: SessionEvent = { seq: 0, sessionId, type: type as SessionEventType, payload, timestamp };
-      emitToBus(event);
-      return event;
-    }
-
-    const db = getDatabase();
-    const timestamp = Date.now();
-    const payloadStr = JSON.stringify(payload);
-
-    db.run(
-      "INSERT INTO session_events (session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?)",
-      [sessionId, type, payloadStr, timestamp],
+    /**
+     * **B 态（端口在但缺事件能力）与 A 态（端口未接手）在这里合流**：
+     * 两者的正确处置**恰好相同** —— 都不碰旧库，都**如实上报**，
+     * 并返回一个**未落库**的事件（seq=0）。
+     *
+     * - 不抛是刻意的（原注释保留）：事件日志是"可重建的投影源"，
+     *   让它炸掉上层消息写入的代价更大；
+     * - `seq=0` 是**如实的失败形状**，不是成功：它告诉调用方"这条没有 seq、
+     *   不在持久日志里"（原来 A 态会静默写进旧库，而读路径只认镜像 —— 写成读写分裂，
+     *   且引擎启动失败时旧库同样不可用，那份写入根本无处可读）。
+     *
+     * 旧库写入（`getDatabase()` + INSERT + `persistDatabase()`）已在 L4 收尾时删除。
+     */
+    reportPersistFailure(
+      "eventLog.append",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "事件未写入（端口侧事件通道不可用）",
     );
-
-    // Get the assigned sequence number
-    const result = db.exec("SELECT last_insert_rowid()");
-    const seq = result.length > 0 ? (result[0].values[0][0] as number) : 0;
-
-    persistDatabase();
-
-    const event: SessionEvent = {
-      seq,
-      sessionId,
-      type,
-      payload,
-      timestamp,
-    };
-
-    // 若该会话正在加载事件镜像：记下这条，加载完成后补进 Rust 库与镜像（契约测试 EV-5）
-    if (hasStoragePort() && getStoragePort().kind === "rust") {
-      notePendingDuringLoad(sessionId, String(type), payloadStr, timestamp, seq);
-    }
-
+    const timestamp = Date.now();
+    const event: SessionEvent = { seq: 0, sessionId, type: type as SessionEventType, payload, timestamp };
     emitToBus(event);
     return event;
   }
@@ -295,48 +287,26 @@ export class EventLog {
       }));
     }
 
-    if (!writeShouldFallBackToLegacy("eventLog.appendBatch", "批量事件未写入（端口侧事件通道不可用）")) {
-      // B 态但端口缺事件能力：如实返回"未落库"的事件（seq=0），失败已上报（不抛，理由同 append）
-      const timestamp = Date.now();
-      return events.map((evt) => ({
-        seq: 0,
-        sessionId,
-        type: evt.type as SessionEventType,
-        payload: evt.payload,
-        timestamp,
-      }));
-    }
-
-    const db = getDatabase();
+    /**
+     * **端口没接手 → 如实返回"未落库"的事件（seq=0）并上报失败**（不抛，理由同 append）。
+     *
+     * 与 `append` 一样，"端口在但缺事件能力"和"端口未注册"在这里合流：
+     * 两者都不该碰旧库（rust 模式下旧库刻意不存在；引擎启动失败时它同样不可用）。
+     * 旧库写入（BEGIN/INSERT/COMMIT + `persistDatabase()`）已在 L4 收尾时删除。
+     */
+    reportPersistFailure(
+      "eventLog.appendBatch",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "批量事件未写入（端口侧事件通道不可用）",
+    );
     const timestamp = Date.now();
-    const result: SessionEvent[] = [];
-
-    // Use a transaction for atomicity
-    db.run("BEGIN TRANSACTION");    try {
-      for (const evt of events) {
-        const payloadStr = JSON.stringify(evt.payload);
-        db.run(
-          "INSERT INTO session_events (session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?)",
-          [sessionId, evt.type, payloadStr, timestamp],
-        );
-        const seqResult = db.exec("SELECT last_insert_rowid()");
-        const seq = seqResult.length > 0 ? (seqResult[0].values[0][0] as number) : 0;
-        result.push({
-          seq,
-          sessionId,
-          type: evt.type,
-          payload: evt.payload,
-          timestamp,
-        });
-      }
-      db.run("COMMIT");
-    } catch (e) {
-      db.run("ROLLBACK");
-      throw e;
-    }
-
-    persistDatabase();
-    return result;
+    return events.map((evt) => ({
+      seq: 0,
+      sessionId,
+      type: evt.type as SessionEventType,
+      payload: evt.payload,
+      timestamp,
+    }));
   }
 
   /**
@@ -455,29 +425,19 @@ export class EventLog {
     }
 
     /**
-     * B 态（端口在 rust 但事件通道不可用）：**不碰旧库**。
+     * **端口没接手（事件通道不可用 / 端口未注册）→ 同上，绝不碰旧库。**
      *
-     * 原来的最后一段是"端口压缩没接手就写旧库"—— 在 rust 模式下旧库刻意不存在，
-     * 只会撞一个无关的异常。返回 `removedEvents: 0` 是**如实**的结果（本次一条都没删）。
+     * 返回 `removedEvents: 0` 是**如实**的结果（本次一条都没删，快照也没写），
+     * 并已上报为一次持久化失败。
+     * 旧库那两条 SQL（`INSERT OR REPLACE` 快照 + `DELETE … seq < anchor`）
+     * 已在 L4 收尾时删除：rust 模式下旧库刻意不存在，写进去也无人读。
      */
-    if (!writeShouldFallBackToLegacy("eventLog.compact", "事件压缩未落库（端口侧事件通道不可用）")) {
-      return { removedEvents: 0, snapshotSeq: anchor.seq };
-    }
-
-    const db = getDatabase();
-    // 占位：用锚点的 seq 写入快照（替换掉那条事件，保持回放的顺序语义）
-    db.run(
-      "INSERT OR REPLACE INTO session_events (seq, session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
-      [anchor.seq, sessionId, "session_snapshot", payloadStr, Date.now()],
+    reportPersistFailure(
+      "eventLog.compact",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "事件压缩未落库（端口侧事件通道不可用）",
     );
-    db.run("DELETE FROM session_events WHERE session_id = ? AND seq < ? AND event_type <> 'session_meta'", [
-      sessionId,
-      anchor.seq,
-    ]);
-    const removedEvents = Number(db.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
-    persistDatabase();
-
-    return { removedEvents, snapshotSeq: anchor.seq };
+    return { removedEvents: 0, snapshotSeq: anchor.seq };
   }
 
   /**
@@ -486,22 +446,16 @@ export class EventLog {
   readAll(sessionId: string): SessionEvent[] {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readAll(sessionId).map(toSessionEvent);
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec(
-      "SELECT seq, session_id, event_type, payload, timestamp FROM session_events WHERE session_id = ? ORDER BY seq ASC",
-      [sessionId],
-    );
-
-    if (result.length === 0) return [];
-
-    return result[0].values.map((row) => ({
-      seq: row[0] as number,
-      sessionId: row[1] as string,
-      type: row[2] as SessionEventType,
-      payload: JSON.parse(row[3] as string),
-      timestamp: row[4] as number,
-    }));
+    /**
+     * **旧库读取已删除**（L4 收尾）：端口没接手 → 该域的合理空结果（空数组）。
+     * 与原来门控里那句 `if (!shouldFallbackToLegacy()) return [];` **语义一致**。
+     *
+     * ⚠️ 这里返回空**不会丢事件**：事件日志是"读不到就当成没有"的投影源，
+     * 权威副本在 Rust 库；端口没接手时这个进程本来也读不到它（旧库已移除）。
+     * 调用方（投影 / 压缩 / fork）看到空日志的后果是"这次会话看起来没有历史"，
+     * 而不是"把已有历史删掉" —— 没有任何删除路径会因为这里返回空而被触发。
+     */
+    return [];
   }
 
   /**
@@ -511,22 +465,8 @@ const db = getDatabase();
   readFrom(sessionId: string, fromSeq: number): SessionEvent[] {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readFrom(sessionId, fromSeq).map(toSessionEvent);
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec(
-      "SELECT seq, session_id, event_type, payload, timestamp FROM session_events WHERE session_id = ? AND seq >= ? ORDER BY seq ASC",
-      [sessionId, fromSeq],
-    );
-
-    if (result.length === 0) return [];
-
-    return result[0].values.map((row) => ({
-      seq: row[0] as number,
-      sessionId: row[1] as string,
-      type: row[2] as SessionEventType,
-      payload: JSON.parse(row[3] as string),
-      timestamp: row[4] as number,
-    }));
+    // 端口没接手 → 该域的合理空结果（与原来门控那句 `return []` 语义一致；旧库已移除）
+    return [];
   }
 
   /**
@@ -535,22 +475,8 @@ const db = getDatabase();
   readRange(sessionId: string, fromSeq: number, toSeq: number): SessionEvent[] {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readRange(sessionId, fromSeq, toSeq).map(toSessionEvent);
-        if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-    const result = db.exec(
-      "SELECT seq, session_id, event_type, payload, timestamp FROM session_events WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq ASC",
-      [sessionId, fromSeq, toSeq],
-    );
-
-    if (result.length === 0) return [];
-
-    return result[0].values.map((row) => ({
-      seq: row[0] as number,
-      sessionId: row[1] as string,
-      type: row[2] as SessionEventType,
-      payload: JSON.parse(row[3] as string),
-      timestamp: row[4] as number,
-    }));
+    // 端口没接手 → 该域的合理空结果（与原来门控那句 `return []` 语义一致；旧库已移除）
+    return [];
   }
 
   /**
@@ -560,15 +486,8 @@ const db = getDatabase();
   getLatestSeq(sessionId: string): number {
     const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.latestSeq(sessionId);
-        if (!shouldFallbackToLegacy()) return 0;
-const db = getDatabase();
-    const result = db.exec(
-      "SELECT MAX(seq) FROM session_events WHERE session_id = ?",
-      [sessionId],
-    );
-
-    if (result.length === 0 || !result[0].values[0][0]) return 0;
-    return result[0].values[0][0] as number;
+    // 端口没接手 → 0（"没有已知事件"），与原来门控那句 `return 0` 语义一致；旧库已移除
+    return 0;
   }
 
   /**
@@ -577,15 +496,8 @@ const db = getDatabase();
   count(sessionId: string): number {
     const routed = rustEventPort(sessionId);
     if (routed && routed.events.isLoaded(sessionId)) return routed.events.count(sessionId);
-        if (!shouldFallbackToLegacy()) return 0;
-const db = getDatabase();
-    const result = db.exec(
-      "SELECT COUNT(*) FROM session_events WHERE session_id = ?",
-      [sessionId],
-    );
-
-    if (result.length === 0) return 0;
-    return result[0].values[0][0] as number;
+    // 端口没接手 → 0，与原来门控那句 `return 0` 语义一致（旧库已从渲染进程移除）
+    return 0;
   }
 
   /**
@@ -606,10 +518,18 @@ const db = getDatabase();
       routed.deleteEventsAsync(sessionId);
       return;
     }
-    if (!writeShouldFallBackToLegacy("eventLog.deleteAllForSession", "会话事件未删除")) return;
-    const db = getDatabase();
-    db.run("DELETE FROM session_events WHERE session_id = ?", [sessionId]);
-    persistDatabase();
+    /**
+     * **端口彻底没接手 → 如实上报"会话事件未删除"。**
+     *
+     * ⚠️ 这里**不能静默 return**：`deleteAllForSession` 是删除会话时的唯一事件清理路径，
+     * 静默返回会让调用方以为"事件已经清掉了"（B 类假成功）。
+     * 旧库的 `DELETE FROM session_events` + `persistDatabase()` 已在 L4 收尾时删除。
+     */
+    reportPersistFailure(
+      "eventLog.deleteAllForSession",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "会话事件未删除",
+    );
   }
 
   /**
@@ -618,7 +538,28 @@ const db = getDatabase();
    */
   forkSession(sourceSessionId: string, targetSessionId: string): number {
     const events = this.readAll(sourceSessionId);
-    if (events.length === 0) return 0;
+    if (events.length === 0) {
+      /**
+       * 源会话读不到任何事件：**两种原因必须分开**。
+       *
+       * - 源会话本来就是空的（正常）→ 什么都不上报（否则每 fork 一次空会话就误报一次失败）；
+       * - **端口根本没接手**（未注册 / 不是 rust）→ 这是 A 态，即本批删掉的那条路：
+       *   `readAll` 已不再回退旧库，所以"读不到"就是"这次 fork 拿不到数据"，
+       *   如实上报（**不允许**静默返回 0 让调用方以为"源会话是空的"）。
+       *
+       * 中间态（端口在 rust、但源会话镜像还没加载完）**保持原样**：`readAll` 会顺带
+       * 触发惰性加载，下一次调用即成；这里不额外上报，避免"仓库里有数据却报失败"的误报
+       * （那是 B 态语义，不属于本批要删的 A 态）。
+       */
+      if (!hasStoragePort() || getStoragePort().kind !== "rust") {
+        reportPersistFailure(
+          "eventLog.forkSession",
+          new Error("端口未接手（该域镜像未注册或未就绪）"),
+          "会话事件未复制（fork 未生效：源会话事件读不到）",
+        );
+      }
+      return 0;
+    }
 
     // 两端都已加载完才走镜像（fork 会同时写源与目标两侧的镜像状态）
     const srcOk = rustEventPort(sourceSessionId) !== null;
@@ -634,26 +575,22 @@ const db = getDatabase();
       return prepared.length;
     }
 
-        if (!shouldFallbackToLegacy()) return 0;
-const db = getDatabase();
-    const timestamp = Date.now();
-
-    db.run("BEGIN TRANSACTION");
-    try {
-      for (const evt of events) {
-        db.run(
-          "INSERT INTO session_events (session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?)",
-          [targetSessionId, evt.type, JSON.stringify(evt.payload), timestamp],
-        );
-      }
-      db.run("COMMIT");
-    } catch (e) {
-      db.run("ROLLBACK");
-      throw e;
-    }
-
-    persistDatabase();
-    return events.length;
+    /**
+     * **端口没接手（源或目标任一侧不可用）→ 如实上报，返回 0。**
+     *
+     * 返回 `0` 与原来门控那句 `if (!shouldFallbackToLegacy()) return 0;` 语义一致，
+     * 但**多了一次失败上报**：`0` 既可以读成"源会话本来就没有事件"，
+     * 也可以读成"这次没拷贝成功"，只有上报能把后者说出来（不然就是 B 类假成功）。
+     *
+     * 旧库的 `BEGIN/INSERT/COMMIT` + `persistDatabase()` 已在 L4 收尾时删除
+     * （写进旧库而读走镜像 = 本进程内读写分裂，且 rust 模式下旧库刻意不存在）。
+     */
+    reportPersistFailure(
+      "eventLog.forkSession",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "会话事件未复制（fork 未生效）",
+    );
+    return 0;
   }
 }
 

@@ -5,9 +5,8 @@
  * Independent from v2_sessions.messages JSON — not affected by context compaction.
  */
 
-import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
-import { runGuarded } from "./write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, writeShouldFallBackToLegacy } from "./domain-store";
+import { reportPersistFailure } from "./persist-failure";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
 export interface TurnFileChangeRecord {
   id: string;
@@ -74,66 +73,37 @@ export const FileChangeStorage = {
     if (domainWrite(TABLE, [recordToWire(record)], { scope: "fileChange.create", note: "文件变更记录未保存" })) {
       return;
     }
-  /*
-   * 两态分流（B0-2）：`getDatabase()` **从不返回 null**（它抛错），
-   * 所以原来的 `if (!db) return;` 是**无效防御** —— 永不触发，实际在 B 态直接抛。
-   * 改为真判据：A 态（端口未注册）才回退；B 态已如实上报。
-   */
-    if (!writeShouldFallBackToLegacy("fileChange.create", "文件变更记录未保存")) return;
-    const db = getDatabase();
-    db.run(
-      `INSERT INTO turn_file_changes
-       (id, session_id, message_id, turn_index, before_tree, after_tree, patch, changed_files, patch_sha256, current_brief, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        record.id,
-        record.session_id,
-        record.message_id,
-        record.turn_index,
-        record.before_tree,
-        record.after_tree,
-        record.patch,
-        record.changed_files,
-        record.patch_sha256,
-        record.current_brief,
-        record.status,
-        record.created_at,
-      ],
+    /**
+     * **旧库写入已删除**（L4 收尾）：端口没接手时如实上报，绝不写一份读路径看不见的副本。
+     *
+     * 原实现回到 `getDatabase()` 写旧库 —— 但回滚开关已退役、旧库在 rust 模式下刻意不加载，
+     * A 态（端口未注册）在生产里已不可能出现；那时 `getDatabase()` 只会抛
+     * "Database not initialized"，把一个"未就绪"的瞬时状态变成真故障。
+     */
+    reportPersistFailure(
+      "fileChange.create",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "文件变更记录未保存",
     );
-    persistDatabase();
   },
 
   listBySession(sessionId: string): TurnFileChangeRecord[] {
     const rust = domainReadMany(TABLE, rowToRecord, { session_id: sessionId });
     if (rust) return rust.sort((a, b) => b.turn_index - a.turn_index);
-    // P5 第 7 段：旧库在 rust 模式下刻意不存在 → 返回空（端口就绪后调用方会重载）
-    const db = tryGetDatabase();
-    if (!db) return [];
-    const result = db.exec(
-      `SELECT * FROM turn_file_changes WHERE session_id = ? ORDER BY turn_index DESC`,
-      [sessionId],
-    );
-    if (!result.length || !result[0].values.length) return [];
-    const columns = result[0].columns;
-    return result[0].values.map((row) => {
-      const obj: any = {};
-      columns.forEach((col, i) => (obj[col] = row[i]));
-      return rowToRecord(obj);
-    });
+    /**
+     * **旧库读取已删除**（L4 收尾）：端口没接手 → 该域的合理空结果（空数组）。
+     *
+     * 与原来 `if (!db) return [];` 的**语义完全一致**（原来也只是返回空），
+     * 区别只是不再去碰一份不存在的旧库 —— 调用方在端口就绪后重载即可。
+     */
+    return [];
   },
 
   getById(id: string): TurnFileChangeRecord | null {
     const rust = domainReadOne(TABLE, { id }, rowToRecord);
     if (rust !== undefined) return rust;
-    const db = tryGetDatabase();
-    if (!db) return null;
-    const result = db.exec(`SELECT * FROM turn_file_changes WHERE id = ?`, [id]);
-    if (!result.length || !result[0].values.length) return null;
-    const columns = result[0].columns;
-    const row = result[0].values[0];
-    const obj: any = {};
-    columns.forEach((col, i) => (obj[col] = row[i]));
-    return rowToRecord(obj);
+    // 端口没接手 → 该域读不到这一行（旧库已从渲染进程移除）→ 如实返回 null
+    return null;
   },
 
   /**
@@ -160,36 +130,27 @@ export const FileChangeStorage = {
       });
       return 1;
     }
-  /*
-   * 两态分流（B0-2）：`getDatabase()` **从不返回 null**（它抛错），
-   * 所以原来的 `if (!db) return;` 是**无效防御** —— 永不触发，实际在 B 态直接抛。
-   * 改为真判据：A 态（端口未注册）才回退；B 态已如实上报。
-   */
-    if (!writeShouldFallBackToLegacy("fileChange.updateStatus", "文件变更状态未更新")) return 0;
-    const db = getDatabase();
-    const modified = runGuarded(
-      db,
-      `UPDATE turn_file_changes SET status = ? WHERE id = ?`,
-      [status, id],
-      { table: "turn_file_changes", op: "updateStatus", id, from: "FileChangeStorage.updateStatus" },
-    );
-    persistDatabase();
-    return modified;
+    /**
+     * **旧库更新已删除**（L4 收尾）：端口没接手时**如实返回 0** ——
+     * 调用方据此知道"状态根本没改成"，而不是拿到一个假成功。
+     *
+     * 这保住了第 84 波那次的 A 类语义（"返回真实影响行数"）：0 的**含义不变**，
+     * 只是从"SQL UPDATE 影响 0 行"变成"连写都没发生"。
+     * 注意这里**不能**上报成 persist 失败后返回 1 —— 那正好就是它要修的假成功。
+     */
+    return 0;
   },
 
   deleteBySession(sessionId: string): void {
     if (domainDelete(TABLE, { session_id: sessionId }, { scope: "fileChange.deleteBySession", note: "文件变更记录未删除" })) {
       return;
     }
-  /*
-   * 两态分流（B0-2）：`getDatabase()` **从不返回 null**（它抛错），
-   * 所以原来的 `if (!db) return;` 是**无效防御** —— 永不触发，实际在 B 态直接抛。
-   * 改为真判据：A 态（端口未注册）才回退；B 态已如实上报。
-   */
-    if (!writeShouldFallBackToLegacy("fileChange.deleteBySession", "文件变更记录未删除")) return;
-    const db = getDatabase();
-    db.run(`DELETE FROM turn_file_changes WHERE session_id = ?`, [sessionId]);
-    persistDatabase();
+    // 端口没接手 → 未执行任何删除，如实上报（绝不静默当成已删除）
+    reportPersistFailure(
+      "fileChange.deleteBySession",
+      new Error("端口未接手（该域镜像未注册或未就绪）"),
+      "文件变更记录未删除",
+    );
   },
 
   parseChangedFiles(record: TurnFileChangeRecord): ChangedFile[] {

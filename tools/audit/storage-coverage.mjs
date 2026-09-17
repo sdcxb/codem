@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * 仓储覆盖率门禁（P2）：把"82 个仓储方法实现了多少"变成一个**可复跑、会自己变红**的数字。
  *
@@ -123,6 +123,139 @@ export function scanRequiredMethods() {
     });
   }
   return { files: files.length, methods: [...byMethod.values()].sort((a, b) => b.sites - a.sites || a.method.localeCompare(b.method)) };
+}
+
+// ========== 渲染侧（第 17 轮新增）：端口调用点盘点 ==========
+//
+// ## 为什么必须补这一半
+//
+// 原来的盘点只认**旧库 SQL**（`db.run/exec/prepare` + `runGuarded`）。L4 把回退分支删完之后，
+// 渲染侧的存储调用**已经绝大多数走端口**（`domainRead*` / `domainWrite` / `domainDelete*`
+// + 具名命令 `crud.*` / `fts.*` / `messages.*` …），旧库 SQL 只剩 `message.ts` 一处。
+// 于是旧口径的"调用点总数"从 277 掉到 49 —— 那是**目标达成的表现**，不是退化；
+// 但如果门禁还钉着旧数字（`> 200`），它就会在正确的方向上变红；
+// 而如果直接把阈值调低，门禁又会在"盘点彻底失效"时报"通过"。
+//
+// 正确做法是把**两半都盘**：旧库 SQL + 端口调用。总规模的护栏盯两者之和，
+// 这样"迁移推进"会让旧的一半下降、新的一半上升，护栏始终有效（且不会把成功判成失败）。
+
+/** 域端口读/写函数 → 操作名 */
+const DOMAIN_FNS = {
+  domainRead: "select",
+  domainReadMany: "select",
+  domainReadOne: "select",
+  domainOr: "select",
+  domainWrite: "upsert",
+  domainDelete: "delete",
+  domainDeleteWhere: "delete",
+  domainDeleteBeyond: "delete",
+};
+
+/** 同一文件里的 `const X = "table_name";` —— 域端口调用普遍传常量 */
+function constStringMap(src) {
+  const map = new Map();
+  for (const m of src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*["']([a-z_][\w]*)["']\s*(?:as\s+const\s*)?;/g)) {
+    map.set(m[1], m[2]);
+  }
+  return map;
+}
+
+function resolveTableArg(raw, consts) {
+  const s = raw.trim();
+  const lit = /^["'`]([a-z_][\w]*)["'`]$/.exec(s);
+  if (lit) return lit[1];
+  if (consts.has(s)) return consts.get(s);
+  return null;
+}
+
+export function scanPortSites() {
+  const files = listFiles(SRC);
+  const commands = new Map(); // 具名命令 → 调用点数
+  const tableOps = new Map(); // "table.op" → 调用点数
+  let sites = 0;
+  let unresolved = 0;
+  const unresolvedSamples = [];
+
+  for (const file of files) {
+    const src = stripComments(fs.readFileSync(file, "utf8"));
+    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+    const consts = constStringMap(src);
+    /** 域端口实现自身（泛型包装器，表名是参数）—— 它不是"调用点"，不该计入解析失败 */
+    const isDomainStoreItself = rel === "src/core/storage/domain-store.ts";
+
+    // ① 域端口调用：domainReadMany(T, …) / domainWrite("sessions", …)
+    for (const m of src.matchAll(
+      /\b(domainReadMany|domainReadOne|domainRead|domainOr|domainWrite|domainDeleteWhere|domainDeleteBeyond|domainDelete)\s*(?:<[^>()]*>\s*)?\(\s*([^,)\n]+)/g,
+    )) {
+      sites++;
+      const op = DOMAIN_FNS[m[1]];
+      const table = resolveTableArg(m[2], consts);
+      if (table) {
+        const key = `${table}.${op}`;
+        tableOps.set(key, (tableOps.get(key) ?? 0) + 1);
+      } else if (!isDomainStoreItself) {
+        unresolved++;
+        if (unresolvedSamples.length < 10) {
+          unresolvedSamples.push(`${rel}: ${m[1]}(${m[2].trim().slice(0, 40)})`);
+        }
+      }
+    }
+
+    const lines = src.split("\n");
+
+    // ② 具名端口命令：port.data.command("crud.upsert", …) / .query("fts.search", …)
+    lines.forEach((line, i) => {
+      for (const m of line.matchAll(/\.(?:command|query|execute)\s*(?:<[^>()]*>\s*)?\(\s*["']([a-z_]+(?:\.[a-z_]+)+)["']/g)) {
+        sites++;
+        const cmd = m[1];
+        commands.set(cmd, (commands.get(cmd) ?? 0) + 1);
+        // `crud.*` 的表名写在参数里（常在同一行或紧接着几行）
+        if (cmd.startsWith("crud.")) {
+          const window = lines.slice(i, i + 6).join(" ");
+          const t = /table\s*:\s*["']([a-z_][\w]*)["']/.exec(window);
+          if (t) {
+            const op = cmd === "crud.upsert" ? "upsert" : cmd === "crud.delete" ? "delete" : "select";
+            const key = `${t[1]}.${op}`;
+            tableOps.set(key, (tableOps.get(key) ?? 0) + 1);
+          }
+        }
+      }
+    });
+
+    // ③ 配置面（同步读 / 写走 rustConfig）：`cfg.set(...)` / `.config.remove(...)`
+    for (const m of src.matchAll(/\.config\.(set|remove|get|getAll)\s*\(/g)) {
+      sites++;
+      commands.set(`config.${m[1]}`, (commands.get(`config.${m[1]}`) ?? 0) + 1);
+    }
+
+    // ④ 事件通道（session_events 的写路径**不走 crud**，走专用发件箱）
+    //    `port.events.appendLocal(...)` + `port.appendEventAsync(...)` ——
+    //    盘不到它，门禁就会以为"事件表没有写路径"（实际上它是最关键的写入路径之一）。
+    for (const m of src.matchAll(/\.events\.(appendLocal|replaceSession|ensureLoaded|isLoaded|count)\s*\(/g)) {
+      sites++;
+      commands.set(`events.${m[1]}`, (commands.get(`events.${m[1]}`) ?? 0) + 1);
+    }
+    for (const m of src.matchAll(/\bappendEventBatchAsync\s*\(/g)) {
+      sites++;
+      commands.set("events.append_batch", (commands.get("events.append_batch") ?? 0) + 1);
+    }
+    for (const m of src.matchAll(/\bappendEventAsync\s*\(/g)) {
+      sites++;
+      commands.set("events.append", (commands.get("events.append") ?? 0) + 1);
+    }
+  }
+
+  const toSorted = (map, keyName) =>
+    [...map.entries()].map(([k, v]) => ({ [keyName]: k, sites: v })).sort((a, b) => b.sites - a.sites || String(a[keyName]).localeCompare(String(b[keyName])));
+
+  return {
+    files: files.length,
+    sites,
+    unresolved,
+    unresolvedSamples,
+    commands: toSorted(commands, "command"),
+    tableOps: toSorted(tableOps, "method"),
+  };
 }
 
 // ========== Rust 侧：已经实现了哪些 ==========
@@ -285,6 +418,7 @@ export function computeCoverage() {
   const commandAvailable = required.filter((m) => resolve(m.method) ?? genericCommandFor(m.method));
   const totalSites = required.reduce((a, m) => a + m.sites, 0);
   const doneSites = done.reduce((a, m) => a + m.sites, 0);
+  const port = scanPortSites();
   return {
     scannedFiles: scanned.files,
     requiredMethods: required.length,
@@ -296,6 +430,20 @@ export function computeCoverage() {
     totalSites,
     implementedSites: doneSites,
     siteCoveragePercent: +((doneSites / totalSites) * 100).toFixed(2),
+    /**
+     * ⚠️ 第 17 轮的关键口径修正：**旧库 SQL 与端口调用必须一起盘**。
+     *
+     * 只盘旧库 SQL 的话，L4/L1 推进到末期时这个数字会趋近 0 ——
+     * 而那正是"目标达成"的样子，不是盘点失效。把两半加起来（`totalStorageSites`）
+     * 才既能防"扫描器写坏了扫出 0 个"，又不会把迁移的成功判成失败。
+     */
+    legacySites: totalSites,
+    portSites: port.sites,
+    portUnresolved: port.unresolved,
+    portUnresolvedSamples: port.unresolvedSamples,
+    portCommands: port.commands,
+    portTableOps: port.tableOps,
+    totalStorageSites: totalSites + port.sites,
     rustCommandCount: rust.size,
     phantomCommands: phantom,
     inventoryDrift,
@@ -334,7 +482,11 @@ if (isMain) {
   lines.push("> 由 `node tools/audit/storage-coverage.mjs --md` 生成；不要手工编辑。");
   lines.push("");
   lines.push(`- 扫描生产文件：**${result.scannedFiles}**`);
-  lines.push(`- 需要实现的仓储方法：**${result.requiredMethods}**（对应 ${result.totalSites} 个 SQL 调用点）`);
+  lines.push(`- **旧库 SQL 调用点：${result.legacySites}**（${result.requiredMethods} 个方法）—— 迁移推进中，应持续下降`);
+  lines.push(
+    `- **端口调用点：${result.portSites}**（其中表名解析不出的 ${result.portUnresolved} 处）—— 迁移推进中，应持续上升`,
+  );
+  lines.push(`- **存储调用点合计：${result.totalStorageSites}** —— 门禁的规模护栏盯这个和（只盘旧库会在迁移末期失去意义）`);
   lines.push(
     `- 已实现：**${result.implementedMethods}** → 方法覆盖率 **${result.coveragePercent}%**，调用点覆盖率 **${result.siteCoveragePercent}%**`,
   );

@@ -15,7 +15,7 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
-import { domainReadMany, shouldFallbackToLegacy } from "../../storage/domain-store";
+import { domainReadMany } from "../../storage/domain-store";
 
 export interface SessionSearchResult {
   sessionId: string;
@@ -101,92 +101,19 @@ Returns matching messages with snippets showing the matched content.`,
           };
         }
 
-        const { getDatabase } = await import("../../storage/database");
-
         /**
-         * **B 态（端口在 rust）不再往下走**（第 12 轮）。
+         * **B 态（端口在 rust）止步于此**（第 17 轮 L4：旧库回退已删）。
          *
-         * `searchViaRust` 返回 null 有两种含义：端口不存在（A 态 → 该回退旧库），
-         * 或端口在但查询失败（引擎忙 / 索引缺失）。后者若继续往下走，
-         * 就会去读一份在 rust 模式下**刻意不存在**的旧库 —— 结果是抛异常，
-         * 而模型收到的会是一段与查询毫无关系的堆栈。两种含义必须分开表达。
+         * `searchViaRust` 返回 null 只有一种可能：端口未注册或不是 rust 引擎；
+         * 而那时旧库同样不可用（rust 模式下刻意不加载），所以"继续往下走"只会抛异常，
+         * 模型拿到的会是一段与查询毫无关系的堆栈。这里如实告诉模型"稍后重试"。
+         *
+         * 被删掉的是原 WASM 分支：它把查询原样加引号交给 FTS4/unicode61
+         * （**中文永远搜不到**），而且算了 `matchExpr` 却从未用于 SQL（死代码）。
          */
-        if (!shouldFallbackToLegacy()) {
-          return {
-            title: "session_search",
-            output: "Error: 全文搜索暂时不可用（索引侧未接手，可稍后重试）—— 本次没有查询旧库",
-          };
-        }
-
-        // Build FTS5 query
-        // Sanitize: escape double quotes, wrap in quotes for safety
-        const sanitizedQuery = query.replace(/"/g, '""');
-        // Build the FTS5 MATCH query
-        let matchExpr = `"${sanitizedQuery}"`;
-        if (sessionIdFilter) {
-          matchExpr = `content MATCH '${sanitizedQuery}' AND session_id = '${sessionIdFilter.replace(/'/g, "''")}'`;
-        }
-
-        // Execute FTS4 search with snippet generation
-        const db = getDatabase();
-        const sql = sessionIdFilter
-          ? `SELECT s.session_id, s.message_id, s.role, s.timestamp,
-                    snippet(session_fts, 2, '[', ']', '...', 10) as snippet,
-                    m.content as full_content,
-                    sess.title as session_title
-             FROM session_fts s
-             LEFT JOIN messages m ON s.message_id = m.id
-             LEFT JOIN sessions sess ON s.session_id = sess.id
-             WHERE s.content MATCH ?
-             AND s.session_id = ?
-             ORDER BY s.timestamp DESC
-             LIMIT ?`
-          : `SELECT s.session_id, s.message_id, s.role, s.timestamp,
-                    snippet(session_fts, 2, '[', ']', '...', 10) as snippet,
-                    m.content as full_content,
-                    sess.title as session_title
-             FROM session_fts s
-             LEFT JOIN messages m ON s.message_id = m.id
-             LEFT JOIN sessions sess ON s.session_id = sess.id
-             WHERE s.content MATCH ?
-             ORDER BY s.timestamp DESC
-             LIMIT ?`;
-
-        const params = sessionIdFilter
-          ? [sanitizedQuery, sessionIdFilter, limit]
-          : [sanitizedQuery, limit];
-
-        const result = db.exec(sql, params);
-
-        if (result.length === 0 || result[0].values.length === 0) {
-          return {
-            title: "session_search",
-            output: `No results found for query: "${query}"`,
-          };
-        }
-
-        // Format results
-        const results: SessionSearchResult[] = result[0].values.map((row: any[]) => ({
-          sessionId: row[0] as string,
-          messageId: row[1] as string,
-          role: row[2] as string,
-          timestamp: row[3] as number,
-          snippet: row[4] as string,
-          content: (row[5] as string) || "",
-          sessionTitle: row[6] as string | undefined,
-        }));
-
-        const formatted = results.map((r, i) => {
-          const date = new Date(r.timestamp).toLocaleString();
-          const title = r.sessionTitle || r.sessionId.substring(0, 8);
-          return `${i + 1}. [${r.role}] ${title} (${date})
-   Session: ${r.sessionId}
-   ${r.snippet}`;
-        }).join("\n\n");
-
         return {
-          title: `session_search: ${query}`,
-          output: `Found ${results.length} result(s) for "${query}":\n\n${formatted}`,
+          title: "session_search",
+          output: "Error: 全文搜索暂时不可用（索引侧未接手，可稍后重试）—— 本次没有查询旧库",
         };
       } catch (err: any) {
         // FTS5 table might not exist yet
@@ -443,68 +370,13 @@ Use this to understand session relationships and history.`,
           return { title: `session_trace: ${sessionId.substring(0, 8)}`, output: lines.join("\n") };
         }
 
-        if (!shouldFallbackToLegacy()) {
-          // B 态且 sessions 域镜像未就绪：**不碰旧库**，如实告诉模型"稍后再试"
-          return {
-            title: "session_trace",
-            output: "Error: 会话谱系暂时不可读（sessions 域镜像未就绪，可稍后重试）—— 本次没有查询旧库",
-          };
-        }
-
-        const { getDatabase } = await import("../../storage/database");
-        const db = getDatabase();
-
-        // Get session info including parent
-        const sessionResult = db.exec(
-          "SELECT id, title, parent_id, created_at FROM sessions WHERE id = ?",
-          [sessionId],
-        );
-
-        if (sessionResult.length === 0 || sessionResult[0].values.length === 0) {
-          return {
-            title: "session_trace",
-            output: `Session ${sessionId} not found.`,
-          };
-        }
-
-        const session = sessionResult[0].values[0];
-        const parentId = session[2] as string | null;
-
-        // Trace ancestors
-        const ancestors: string[] = [];
-        let currentParent = parentId;
-        while (currentParent) {
-          ancestors.push(currentParent);
-          const parentResult = db.exec(
-            "SELECT parent_id FROM sessions WHERE id = ?",
-            [currentParent],
-          );
-          if (parentResult.length === 0 || parentResult[0].values.length === 0) break;
-          currentParent = parentResult[0].values[0][0] as string | null;
-        }
-
-        // Trace descendants
-        const descendantsResult = db.exec(
-          "SELECT id, title FROM sessions WHERE parent_id = ? ORDER BY created_at",
-          [sessionId],
-        );
-        const descendants = descendantsResult.length > 0
-          ? descendantsResult[0].values.map((row) => `${row[0]} (${row[1] || "untitled"})`)
-          : [];
-
-        const lines: string[] = [];
-        lines.push(`Session: ${sessionId}`);
-        lines.push(`Title: ${session[1] || "untitled"}`);
-        lines.push(`Created: ${new Date(session[3] as number).toLocaleString()}`);
-        lines.push(`Parent: ${parentId || "(root)"}`);
-        if (ancestors.length > 1) {
-          lines.push(`Ancestors: ${ancestors.join(" → ")}`);
-        }
-        lines.push(`Descendants: ${descendants.length > 0 ? descendants.join(", ") : "(none)"}`);
-
+        /**
+         * 第 17 轮（L4）：旧库回退（`sessions` 表三段 SQL 的谱系遍历）已删。
+         * `viaPort` 为 null 只剩一种含义 —— `sessions` 域镜像未就绪；如实告诉模型"稍后重试"。
+         */
         return {
-          title: `session_trace: ${sessionId.substring(0, 8)}`,
-          output: lines.join("\n"),
+          title: "session_trace",
+          output: "Error: 会话谱系暂时不可读（sessions 域镜像未就绪，可稍后重试）—— 本次没有查询旧库",
         };
       } catch (err: any) {
         return {

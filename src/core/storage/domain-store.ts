@@ -157,6 +157,42 @@ export function writeShouldFallBackToLegacy(scope: string, note: string): boolea
 }
 
 /**
+ * **端口已注册但该域镜像未接手** → 如实上报，**不回退旧库**（第 17 轮，L4 收尾）。
+ *
+ * ## 为什么需要它（而不是直接 `return;`）
+ *
+ * 删 A 态（旧库回退）时，写路径的形态是：
+ * ```ts
+ * if (domainWrite(T, rows, { scope, note })) return created;
+ * if (!writeShouldFallBackToLegacy(scope, note)) return created;  // ← 里面**已经在上报**
+ * const db = getDatabase(); …旧 SQL…                              // ← 要删的是这一段
+ * ```
+ * 天真删法是连门控一起删、直接 `return created;` —— 那会把
+ * `reportPersistFailure` 一起删掉，"没写进去"于是变成**静默假成功**
+ * （本仓库最在意的那类缺陷，`audit:false-success` 门禁守的就是它）。
+ *
+ * 所以写路径的删除不是"删两行"，而是"把**回退判据**换成**只上报**"：
+ * ```ts
+ * if (domainWrite(T, rows, { scope, note })) return created;
+ * reportWriteNotAccepted(scope, note);   // 行为与 B 态**逐字一致**：上报 + 不回退
+ * return created;
+ * ```
+ *
+ * 读路径不需要它：那里门控的返回值（`[]` / `null` / `0`）本身就是诚实的空结果，
+ * 直接 `return X;` 即可。
+ *
+ * 全部站点换完之后，`shouldFallbackToLegacy()` 与 `writeShouldFallBackToLegacy()`
+ * 就只剩"回滚开关已退役"这一个答案了 —— 那是 L4 真正结束的标志。
+ */
+export function reportWriteNotAccepted(scope: string, note: string): void {
+  reportPersistFailure(
+    scope,
+    new Error("端口已注册但该域镜像未接手（未就绪 / 未镜像 / 被逐出）"),
+    note,
+  );
+}
+
+/**
  * **端口是否已注册且是 rust 引擎**（不看镜像是否就绪）。
  *
  * 与 `domainPort()` 的区别正是这套分流的关键：

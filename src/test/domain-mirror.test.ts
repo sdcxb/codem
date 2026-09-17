@@ -263,14 +263,22 @@ describe("域镜像分流 —— 账号域", () => {
     expect(failures.some((n) => n.includes("上限")), "应留痕说明原因").toBe(true);
   });
 
-  it("DOM-9: 端口未注册（默认/回滚）时完全不接手", async () => {
+  it("DOM-9: 端口未注册时读路径**不抛**，返回诚实的空结果（第 17 轮 L4：A 态回退已删）", async () => {
     setStoragePort(null);
     const { listAccounts } = await import("../core/storage/account");
-    // 旧库被 mock 成抛错 → 原实现会把错误抛出（证明走的是旧路径）
-    expect(() => listAccounts()).toThrow();
+    /**
+     * 这条用例原来断言的是 `toThrow()` —— 用"旧库被 mock 成抛错"来**证明走了旧路径**。
+     * 而旧库在 rust 模式下刻意不存在，A 态（旧库回退）已在整个仓库删除
+     * （见 `docs/ROLLBACK-SWITCH-RETIREMENT.md` 第八节），所以那个断言守的是一条死路径。
+     *
+     * 新契约（同样是"诚实"的，只是诚实的方式变了）：
+     * 读路径在没有端口时**不抛**，返回该域的合理空结果 —— 调用方拿到 `[]`
+     * （界面显示"没有账号"），而不是整块面板崩成"此面板不可用"。
+     */
+    expect(listAccounts()).toEqual([]);
   });
 
-  it("DOM-10: 端口是 wasm 时不接手（回滚开关生效）", async () => {
+  it("DOM-10: 端口是 wasm 时不接手（回滚开关已退役，行为同上：不抛 + 空结果）", async () => {
     setStoragePort({
       kind: "wasm",
       engine: {} as never,
@@ -279,7 +287,9 @@ describe("域镜像分流 —— 账号域", () => {
       append: {} as never,
     });
     const { listAccounts } = await import("../core/storage/account");
-    expect(() => listAccounts()).toThrow();
+    // wasm 端口在生产里已不可能出现（`DEFAULT_ENGINE` 收窄为 rust、开关退役），
+    // 这里保留"不接手"的语义验证：不回退旧库、不抛、给空结果。
+    expect(listAccounts()).toEqual([]);
   });
 });
 

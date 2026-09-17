@@ -9,11 +9,9 @@
 
 import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts } from "./message";
 import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSessionLog } from "./session-jsonl";
-import { initDatabase } from "./database";
 import { hydrateAttachmentsForSession } from "./attachment-files";
 import { getStoragePort, hasStoragePort } from "./port";
-import { tryGetDatabase } from "./database";
-import { domainReadMany, shouldFallbackToLegacy } from "./domain-store";
+import { domainReadMany } from "./domain-store";
 import { reportPersistFailure } from "./persist-failure";
 
 export { trimIndexedMessages };
@@ -81,15 +79,9 @@ export async function hydrateAllAttachments(): Promise<{ warmed: number; orphans
       // 端口命令 `attachments.externalized` 在**引擎侧**按 `content LIKE 'file:%'` 过滤，
       // 它返回的就是全部外置附件 → 这份清单权威（空 = 确实没有外置附件）。
       listIsAuthoritative = true;
-    } else if (shouldFallbackToLegacy()) {
-      const { getDatabase } = await import("./database");
-      const db = getDatabase();
-      const rows = db.exec("SELECT id, content FROM attachments WHERE content LIKE 'file:%'");
-      entries = rows?.[0]?.values?.map((r) => ({ id: String(r[0]), content: String(r[1]) })) ?? [];
-      listIsAuthoritative = true;
     } else {
       /**
-       * B 态（端口在 rust、attachments 域未就绪）：**不去读旧库**。
+       * B 态（端口在 rust、attachments 域未就绪）：**不去读旧库**（第 17 轮 L4：旧库回退已删）。
        *
        * 旧库在 rust 模式下刻意不存在，读它只会拿到一个异常；而"这次没预热"是可接受的
        * —— 外置正文仍在文件里，读取路径遇到未预热会明确提示并触发一次预取（既有约定）。
@@ -124,7 +116,8 @@ export async function hydrateAllAttachments(): Promise<{ warmed: number; orphans
  * @returns 本次回填的消息总数
  */
 export async function backfillAllSessions(): Promise<number> {
-  await initDatabase();
+  // 第 17 轮（L4）：原来的 `await initDatabase()` 已删 —— 它的唯一作用是"确保旧库存在"，
+  // 而新架构下旧库刻意不加载（那次调用只会把 sql.js 拖进渲染进程）。
   let sessionIds: string[] = [];
   /**
    * 会话清单：**端口优先**（第 12 轮）。
@@ -137,15 +130,9 @@ export async function backfillAllSessions(): Promise<number> {
   const fromPort = domainReadMany<Record<string, unknown>>("sessions", (r) => r);
   if (fromPort) {
     sessionIds = fromPort.map((r) => String(r.id ?? "")).filter((id) => id.length > 0);
-  } else if (shouldFallbackToLegacy()) {
-    try {
-      const rows = tryGetDatabase()?.exec("SELECT DISTINCT session_id FROM messages") ?? [];
-      sessionIds = rows?.[0]?.values?.map((r) => String(r[0])) ?? [];
-    } catch (e) {
-      console.warn("[SessionLog] 枚举会话失败（跳过回填）:", e);
-      return 0;
-    }
   } else {
+    // 第 17 轮（L4）：旧库回退（`SELECT DISTINCT session_id FROM messages`）已删 ——
+    // 镜像未就绪时如实跳过，下次维护重试（静默"回填 0 条"才是要避免的那种假正常）。
     console.warn("[SessionLog] sessions 域镜像未就绪，本次跳过回填（下次维护会重试）");
     return 0;
   }
@@ -200,7 +187,7 @@ export async function countSessionLogs(): Promise<number> {
  * @returns 重建的会话数与消息数
  */
 export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{ sessions: number; messages: number }> {
-  await initDatabase();
+  // 第 17 轮（L4）：原来的 `await initDatabase()` 已删（同上：只为"确保旧库存在"）。
   const targets = sessionId ? [sessionId] : await listSessionLogs();
   const out = { sessions: 0, messages: 0 };
 
@@ -286,91 +273,12 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
   }
 
   /**
-   * B 态：端口在但重建失败 → **不回退旧库重试**（第 12 轮）。
+   * 第 17 轮（L4）：旧库回退（"回退旧路径再试一次"的整段重建）已删。
    *
-   * 原来的注释写着"回退旧路径再试一次（用户的数据没丢，别让自愈失效）" —— 那在 A 态成立，
-   * 在 B 态却只会撞上"旧库刻意不存在"，把**真实的失败原因**（Rust 侧重建报的错）
-   * 换成另一个无关的异常。已如实上报，交给下一次维护重试才是正确处置。
+   * 那段代码在 A 态成立，在 B 态却只会撞上"旧库刻意不存在"，把**真实的失败原因**
+   * （Rust 侧重建报的错）换成另一个无关的异常。现在只剩如实上报 + 返回本次实际结果，
+   * 交给下一次维护重试。
    */
-  if (!shouldFallbackToLegacy()) return out;
-
-  const { getDatabase } = await import("./database");
-  const db = getDatabase();
-
-  for (const b of batches) {
-    const sid = b.id;
-    const messages = b.messages;
-    try {
-      db.run("BEGIN TRANSACTION");
-      try {
-        /**
-         * 先补 `sessions` 行（第 91 波实测发现）。
-         *
-         * `messages.session_id` 有指向 `sessions(id)` 的外键 —— 崩溃后重建的库是空的，
-         * 直接插消息会 `FOREIGN KEY constraint failed`（真机验证时就是这么失败的）。
-         * 会话归属项目在日志里没有记录，落到内置的全局项目 `""`（initDatabase 会种下这一行），
-         * 标题取首条 user 消息的首行，便于用户在列表里认出来。
-         */
-        const firstUser = messages.find((m) => m.role === "user");
-        const title = (firstUser?.content || `会话 ${sid}`).split("\n")[0].slice(0, 60) || `会话 ${sid}`;
-        const firstTs = messages[0]?.timestamp ?? Date.now();
-        const lastTs = messages[messages.length - 1]?.timestamp ?? firstTs;
-        db.run(
-          `INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count, pinned)
-             VALUES (?, '', ?, ?, ?, ?, 0)
-           ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at, message_count = excluded.message_count`,
-          [sid, title, firstTs, lastTs, messages.length],
-        );
-        for (const rec of messages) {
-          db.run(
-            `INSERT OR REPLACE INTO messages
-               (id, session_id, role, content, reasoning, timestamp, model, prompt_tokens, completion_tokens, cost, status, hidden)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 0)`,
-            [
-              rec.id,
-              sid,
-              rec.role,
-              rec.content ?? "",
-              (rec as any).reasoning ?? null,
-              rec.timestamp ?? Date.now(),
-              (rec as any).model ?? null,
-              (rec as any).status ?? "done",
-            ],
-          );
-          // 工具调用：日志里带着完整数组，索引侧重建（幂等：先清后插）
-          const toolCalls = (rec as any).toolCalls as Array<any> | undefined;
-          if (Array.isArray(toolCalls)) {
-            db.run("DELETE FROM tool_calls WHERE message_id = ?", [rec.id]);
-            for (const tc of toolCalls) {
-              db.run(
-                "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [
-                  tc.id ?? `${rec.id}-${tc.tool}`,
-                  rec.id,
-                  tc.tool ?? "unknown",
-                  JSON.stringify(tc.args ?? {}),
-                  tc.result ?? null,
-                  tc.status ?? "done",
-                  tc.metadata ? JSON.stringify(tc.metadata) : null,
-                ],
-              );
-            }
-          }
-          out.messages++;
-        }
-        db.run("COMMIT");
-      } catch (e) {
-        db.run("ROLLBACK");
-        throw e;
-      }
-      out.sessions++;
-    } catch (e) {
-      console.warn(`[SessionLog] 会话 ${sid} 索引重建失败（跳过）:`, e);
-    }
-  }
-  if (out.messages > 0) {
-    console.log(`[Database] 索引已从权威日志重建：${out.sessions} 个会话 / ${out.messages} 条消息`);
-  }
   return out;
 }
 

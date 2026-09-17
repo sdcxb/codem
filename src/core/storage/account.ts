@@ -1,13 +1,12 @@
-import { getDatabase, persistDatabase } from "./database";
-import { runGuarded } from "./write-guard";
-import { shouldFallbackToLegacy, writeShouldFallBackToLegacy, domainDelete, domainPort, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
+import { reportPersistFailure } from "./persist-failure";
+import { domainDelete, domainPort, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
 // ========== 迁移期分流（P3 第 11/12 段） ==========
 //
 // 账号表是**典型的小表域**（几条记录），读写都要同步（设置面板直接读）。
 // 走通用域镜像：按表加载 → 同步读 → 写穿 + 本地更新。
 //
-// 骨架（加载判定、写穿上报、超限回退）都在 `domain-store.ts`：
+// 骨架（加载判定、写穿上报、超限放弃镜像）都在 `domain-store.ts`：
 // 本文件只负责"行 shape 转换"与业务语义（`setActiveAccount` 的不变量）。
 
 const TABLE = "accounts";
@@ -85,91 +84,47 @@ function rowToAccount(row: AccountRow): Account {
   };
 }
 
-function rowToAccountFromAny(row: any[]): Account {
-  return rowToAccount({
-    id: row[0] as string,
-    email: row[1] as string,
-    url: row[2] as string,
-    access_token: row[3] as string,
-    refresh_token: row[4] as string | null,
-    token_expiry: row[5] as number | null,
-    org_id: row[6] as string | null,
-    is_active: row[7] as number,
-    created_at: row[8] as number,
-    updated_at: row[9] as number,
-  });
-}
-
 export function listAccounts(): Account[] {
   const rust = domainReadMany(TABLE, (row) => rowToAccount(wireToRow(row)));
   if (rust) {
     // 与旧实现的排序一致：updated_at DESC
     return rust.sort((a, b) => b.updatedAt - a.updatedAt);
   }
-  if (!shouldFallbackToLegacy()) return [];
-  const db = getDatabase();
-  const result = db.exec("SELECT * FROM accounts ORDER BY updated_at DESC");
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToAccountFromAny);
+  // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果
+  // （旧库已从渲染进程移除，读不到就是读不到）
+  return [];
 }
 
 export function getAccount(id: string): Account | null {
   const rust = domainReadOne(TABLE, { id }, (row) => rowToAccount(wireToRow(row)));
   if (rust !== undefined) return rust;
-  if (!shouldFallbackToLegacy()) return null;
-  const db = getDatabase();
-  const result = db.exec("SELECT * FROM accounts WHERE id = ?", [id]);
-  if (result.length === 0 || result[0].values.length === 0) return null;
-  return rowToAccountFromAny(result[0].values[0]);
+  // **旧库回退已删除**（L4 第 18 轮）：端口没接手时如实返回"查不到"
+  return null;
 }
 
 export function getActiveAccount(): Account | null {
   const rust = domainReadOne(TABLE, { is_active: 1 }, (row) => rowToAccount(wireToRow(row)));
   if (rust !== undefined) return rust;
-  if (!shouldFallbackToLegacy()) return null;
-  const db = getDatabase();
-  const result = db.exec("SELECT * FROM accounts WHERE is_active = 1 LIMIT 1");
-  if (result.length === 0 || result[0].values.length === 0) return null;
-  return rowToAccountFromAny(result[0].values[0]);
+  // **旧库回退已删除**（L4 第 18 轮）：端口没接手时如实返回"没有当前账号"
+  return null;
 }
 
 export function createAccount(account: Account): void {
   if (domainWrite(TABLE, [accountToRow(account)], { mode: "replace", scope: "account.create", note: "账号未保存" })) {
     return;
   }
-  // 两态：A 态才回退旧库；B 态已如实上报
-  if (!writeShouldFallBackToLegacy("account.save", "账号未保存，重启后会恢复")) return;
-  const db = getDatabase();
-  const existing = db.exec("SELECT id FROM accounts WHERE id = ?", [account.id]);
-  if (existing.length > 0 && existing[0].values.length > 0) {
-    updateAccount(account.id, {
-      email: account.email,
-      url: account.url,
-      accessToken: account.accessToken,
-      refreshToken: account.refreshToken,
-      tokenExpiry: account.tokenExpiry,
-      orgId: account.orgId,
-      isActive: account.isActive,
-    });
-    return;
-  }
-  db.run(
-    `INSERT INTO accounts (id, email, url, access_token, refresh_token, token_expiry, org_id, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      account.id,
-      account.email,
-      account.url,
-      account.accessToken,
-      account.refreshToken ?? null,
-      account.tokenExpiry ?? null,
-      account.orgId ?? null,
-      account.isActive ? 1 : 0,
-      account.createdAt,
-      account.updatedAt,
-    ]
+  /**
+   * **旧库写入已删除**（L4 第 18 轮）。
+   *
+   * 原实现在端口没接手时会去旧库先查重、再 INSERT/UPDATE —— 而 rust 模式下旧库
+   * 刻意不存在，那条路要么抛错、要么写进一份读路径看不见的副本（本进程内读写分裂）。
+   * 现在**如实上报**：账号没保存，重启后不会"恢复"成用户以为的样子。
+   */
+  reportPersistFailure(
+    "account.save",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "账号未保存，重启后会恢复",
   );
-  persistDatabase();
 }
 
 export function updateAccount(id: string, update: Partial<Account>): void {
@@ -182,43 +137,25 @@ export function updateAccount(id: string, update: Partial<Account>): void {
       return;
     }
   }
-  // 未接手 / 镜像里没有这条：先判两态（B 态不碰旧库，由 runGuarded 的记账取代静默）
-  if (!writeShouldFallBackToLegacy("account.update", "账号未更新，重启后会恢复")) return;
-  const db = getDatabase();
-  const fields: string[] = [];
-  const values: (string | number | null)[] = [];
-
-  if (update.email !== undefined) { fields.push("email = ?"); values.push(update.email); }
-  if (update.url !== undefined) { fields.push("url = ?"); values.push(update.url); }
-  if (update.accessToken !== undefined) { fields.push("access_token = ?"); values.push(update.accessToken); }
-  if (update.refreshToken !== undefined) { fields.push("refresh_token = ?"); values.push(update.refreshToken ?? null); }
-  if (update.tokenExpiry !== undefined) { fields.push("token_expiry = ?"); values.push(update.tokenExpiry ?? null); }
-  if (update.orgId !== undefined) { fields.push("org_id = ?"); values.push(update.orgId ?? null); }
-  if (update.isActive !== undefined) { fields.push("is_active = ?"); values.push(update.isActive ? 1 : 0); }
-  fields.push("updated_at = ?");
-  values.push(Date.now());
-
-  if (fields.length === 0) {
-      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
-      console.warn(`[account.ts] update 调用未提供任何可更新字段 —— 本次没有任何写入`);
-      return;
-    }
-  values.push(id);
-  runGuarded(
-    db,
-    `UPDATE accounts SET ${fields.join(", ")} WHERE id = ?`,
-    values,
-    { table: "accounts", op: "update", id, from: "updateAccount" },
+  /**
+   * **旧库更新已删除**（L4 第 18 轮）：端口没接手（或镜像里没有这一行）时**如实上报**。
+   * 绝不静默当成更新成功 —— 那正是 B 类假成功。
+   */
+  reportPersistFailure(
+    "account.update",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "账号未更新，重启后会恢复",
   );
-  persistDatabase();
 }
 
 export function deleteAccount(id: string): void {
   if (domainDelete(TABLE, { id }, { scope: "account.delete", note: "账号未删除，重启后会恢复" })) return;
-  if (!writeShouldFallBackToLegacy("account.delete", "账号未删除，重启后会恢复")) return;
-  const db = getDatabase();
-  db.run("DELETE FROM accounts WHERE id = ?", [id]);
-  persistDatabase();
+  // **旧库删除已删除**（L4 第 18 轮）：端口没接手时如实上报，绝不静默当成删成功
+  reportPersistFailure(
+    "account.delete",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "账号未删除，重启后会恢复",
+  );
 }
 
 /**
@@ -226,8 +163,10 @@ export function deleteAccount(id: string): void {
  *
  * ⚠️ 这是本域**唯一有业务语义**的写操作：必须"先清空所有 is_active，再置位目标"。
  * 通用命令表达不了这个语义，所以这里显式算出**全部行**的新状态一次性写回
- * （Rust 路径逐行 upsert；旧路径用两条语句，第二句走 runGuarded）。
- * 不变量（恰好一个 active）由 DOM-6 守住。
+ * （逐行 upsert）。不变量（恰好一个 active）由 DOM-6 守住。
+ *
+ * L4 第 18 轮：原来"端口没接手 → 旧库两条 UPDATE"的回退已删除，
+ * 端口没接手时改为**如实上报**（切换没生效，而不是静默装作切好了）。
  */
 export function setActiveAccount(id: string): void {
   const port = domainPort(TABLE);
@@ -241,10 +180,9 @@ export function setActiveAccount(id: string): void {
     domainWrite(TABLE, rows, { mode: "replace", scope: "account.activate", note: "当前账号未切换（重启后可能回到旧账号）" });
     return;
   }
-  if (!writeShouldFallBackToLegacy("account.activate", "当前账号未切换，重启后会恢复")) return;
-  const db = getDatabase();
-  db.run("UPDATE accounts SET is_active = 0");
-  runGuarded(db, "UPDATE accounts SET is_active = 1, updated_at = ? WHERE id = ?", [Date.now(), id],
-    { table: "accounts", op: "activate", id, from: "activateAccount" });
-  persistDatabase();
+  reportPersistFailure(
+    "account.activate",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "当前账号未切换，重启后会恢复",
+  );
 }

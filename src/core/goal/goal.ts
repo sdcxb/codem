@@ -8,9 +8,8 @@
  * - 支持子目标和依赖关系
  */
 
-import { getDatabase, persistDatabase } from "../storage/database";
-import { runGuarded } from "../storage/write-guard";
-import { domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
+import { reportPersistFailure } from "../storage/persist-failure";
+import { domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -81,32 +80,26 @@ export function createGoal(goal: Omit<Goal, "id" | "createdAt" | "updatedAt">): 
     return created;
   }
 
-  // 两态：A 态才回退旧库；B 态已如实上报（返回内存镜像里那份有效对象）
-  if (!writeShouldFallBackToLegacy("goal.create", "目标未保存")) return created;
-  const db = getDatabase();
-  db.run(
-    `INSERT INTO goals (id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, goal.sessionId, goal.title, goal.description || null, goal.status, goal.priority,
-     goal.parentId || null, goal.successCriteria || null, now, now],
+  /**
+   * **旧库写入已删除**（L4 收尾）：端口没接手时如实上报，返回内存里那份已构造好的对象。
+   *
+   * 返回 `created` 与旧实现在 A 态下的行为**完全一致**（旧实现无论 SQL 是否成功都返回它），
+   * 所以这里不是新造的"假成功"—— 差别只是失败现在**可见**（原来静默落库，
+   * 现在是一条 persist 失败记录），也不会再出现"写进旧库、读路径却只认端口"的读写分裂。
+   */
+  reportPersistFailure(
+    "goal.create",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "目标未保存",
   );
-  persistDatabase();
-
   return created;
 }
 
 export function getGoal(id: string): Goal | null {
   const rust = domainReadOne(TABLE, { id }, wireToGoal);
   if (rust !== undefined) return rust;
-  if (!shouldFallbackToLegacy()) return null;
-  const db = getDatabase();
-  const result = db.exec(
-    `SELECT id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at, completed_at
-     FROM goals WHERE id = ?`,
-    [id],
-  );
-  if (result.length === 0 || result[0].values.length === 0) return null;
-  return rowToGoal(result[0].values[0]);
+  // 端口没接手 → 该域读不到这一行（旧库已从渲染进程移除）→ 如实返回 null
+  return null;
 }
 
 export function listGoals(sessionId: string, status?: string): Goal[] {
@@ -128,23 +121,11 @@ export function listGoals(sessionId: string, status?: string): Goal[] {
       return Number(a.createdAt) - Number(b.createdAt);
     });
   }
-  if (!shouldFallbackToLegacy()) return [];
-  const db = getDatabase();
-  /*
-   * ⚠️ 顺带修掉一处 SQL 拼接（B3 批审计发现）：原来是
-   *   `const statusClause = status ? `AND status = '${status}'` : ""`
-   * 把调用方传来的 status 直接串进 SQL。虽然这条路径走的是渲染内的 sql.js（不是 IPC），
-   * 但"值必须参数化绑定"是这套迁移的硬约束 —— 拼接写法一旦被复制到别的语句上就是注入。
-   * 改为按需绑定参数。
+  /**
+   * **旧库读取已删除**（L4 收尾）：端口没接手 → 该域的合理空结果（空数组）。
+   * 与原来门控里那句 `if (!shouldFallbackToLegacy()) return [];` **语义一致**。
    */
-  const sql = status
-    ? `SELECT id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at, completed_at
-       FROM goals WHERE session_id = ? AND status = ? ORDER BY priority DESC, created_at ASC`
-    : `SELECT id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at, completed_at
-       FROM goals WHERE session_id = ? ORDER BY priority DESC, created_at ASC`;
-  const result = db.exec(sql, status ? [sessionId, status] : [sessionId]);
-  if (result.length === 0) return [];
-  return result[0].values.map(rowToGoal);
+  return [];
 }
 
 export function updateGoal(id: string, update: Partial<Goal>): void {
@@ -173,42 +154,15 @@ export function updateGoal(id: string, update: Partial<Goal>): void {
     return;
   }
 
-  if (!writeShouldFallBackToLegacy("goal.update", "目标未更新")) return;
-  const db = getDatabase();
-  const fields: string[] = [];
-  const values: any[] = [];
-
-  if (update.title !== undefined) { fields.push("title = ?"); values.push(update.title); }
-  if (update.description !== undefined) { fields.push("description = ?"); values.push(update.description); }
-  if (update.status !== undefined) {
-    fields.push("status = ?");
-    values.push(update.status);
-    if (update.status === "completed") { fields.push("completed_at = ?"); values.push(now); }
-  }
-  if (update.priority !== undefined) { fields.push("priority = ?"); values.push(update.priority); }
-  if (update.successCriteria !== undefined) { fields.push("success_criteria = ?"); values.push(update.successCriteria); }
-
-  fields.push("updated_at = ?");
-  values.push(now);
-  values.push(id);
-
-  runGuarded(db, `UPDATE goals SET ${fields.join(", ")} WHERE id = ?`, values,
-    { table: "goals", op: "update", id, from: "updateGoal" });
-  persistDatabase();
-}
-
-function rowToGoal(row: any[]): Goal {
-  return {
-    id: row[0] as string,
-    sessionId: row[1] as string,
-    title: row[2] as string,
-    description: row[3] as string || undefined,
-    status: row[4] as Goal["status"],
-    priority: row[5] as Goal["priority"],
-    parentId: row[6] as string || undefined,
-    successCriteria: row[7] as string || undefined,
-    createdAt: row[8] as number,
-    updatedAt: row[9] as number,
-    completedAt: row[10] as number || undefined,
-  };
+  /**
+   * **旧库更新已删除**（L4 收尾）：端口没接手时**如实上报为"未更新"**。
+   *
+   * ⚠️ 这里**不能**静默 return：`updateGoal` 的契约是 void，调用方（进度面板 / 主循环）
+   * 只能靠"有没有失败上报"来判断这次改动有没有落地 —— 静默就是 B 类假成功。
+   */
+  reportPersistFailure(
+    "goal.update",
+    new Error("端口未接手（该域镜像未注册或未就绪）"),
+    "目标未更新",
+  );
 }

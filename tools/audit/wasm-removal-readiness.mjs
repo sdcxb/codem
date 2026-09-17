@@ -85,8 +85,16 @@ export function assess() {
     const dbCalls = (code.match(/getDatabase\(\)/g) ?? []).length;
     const portSymbols = (code.match(/domainRead|domainWrite|domainDelete|domainOr|hasStoragePort|getStoragePort|tryGetDatabase|shouldFallbackToLegacy|writeShouldFallBackToLegacy|domainPortRegistered|domainEnsureLoaded/g) ?? []).length;
     const gated = (code.match(/shouldFallbackToLegacy\(\)|writeShouldFallBackToLegacy\(/g) ?? []).length;
-    if (dbCalls > 0 && portSymbols > 0 && rel !== "src/core/storage/database.ts") {
-      l3.push({ file: rel, dbCalls, portSymbols, gated });
+    /**
+     * ⚠️ **L3 口径的已知盲区**（第 17 轮实测）：有些文件不用
+     * `if (!shouldFallbackToLegacy()) …; const db = getDatabase();` 这个形态，而是
+     * `const db = tryGetDatabase(); if (!db) return X;` —— 语义同样是"端口没接手就回退旧库"，
+     * 但**一个字面量都不落在 L3 计数器里**（实测：`prompt-draft.ts` 6 处、`session.ts` 9 处）。
+     * 所以这里单列一列，避免"清单没动 = 没干活"这种误判。
+     */
+    const tryNull = (code.match(/tryGetDatabase\(\)/g) ?? []).length;
+    if ((dbCalls > 0 || tryNull > 0) && portSymbols > 0 && rel !== "src/core/storage/database.ts") {
+      l3.push({ file: rel, dbCalls, portSymbols, gated, tryNull });
     }
 
     // L4：开关与引导
@@ -117,9 +125,11 @@ if (isMain) {
     for (const x of r.L2_engineBody) console.log(`   ${x.file}: ${x.what}`);
     const l3Total = r.L3_fallbackBranches.reduce((n, x) => n + x.dbCalls, 0);
 const l3Gated = r.L3_fallbackBranches.reduce((n, x) => n + (x.gated ?? 0), 0);
+const l3TryNull = r.L3_fallbackBranches.reduce((n, x) => n + (x.tryNull ?? 0), 0);
 console.log(`\nL3 回退分支（${r.L3_fallbackBranches.length} 个文件 / ${l3Total} 处旧库调用，其中 ${l3Gated} 处已门控）—— 字面量要等回滚开关退役才清零，gate 计数才反映真实进度`);
+    console.log(`   ⚠️ 另有 ${l3TryNull} 处走 tryGetDatabase() 判空回退（同一语义，不落在这个字面量口径里，别当成没干活）`);
     for (const x of r.L3_fallbackBranches) {
-      console.log(`   ${String(x.dbCalls).padStart(2)} 处旧库调用 · 已门控 ${String(x.gated ?? 0).padStart(2)} · 端口符号 ${x.portSymbols} · ${x.file}`);
+      console.log(`   ${String(x.dbCalls).padStart(2)} 处旧库调用 · 已门控 ${String(x.gated ?? 0).padStart(2)} · tryGet ${String(x.tryNull ?? 0).padStart(2)} · 端口符号 ${x.portSymbols} · ${x.file}`);
     }
     console.log(`\nL4 引擎开关 / 引导（${r.L4_switch.length}）`);
     for (const x of r.L4_switch) console.log(`   ${x.file}`);

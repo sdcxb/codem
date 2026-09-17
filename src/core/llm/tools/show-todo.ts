@@ -7,8 +7,7 @@
 
 import type { ToolDef, ToolExecuteResult, ToolContext } from "../tools";
 import type { TodoItem } from "../agentic-loop";
-import { getDatabase, persistDatabase } from "../../storage/database";
-import { domainReadOne, domainWrite, writeShouldFallBackToLegacy, shouldFallbackToLegacy } from "../../storage/domain-store";
+import { domainReadOne, domainWrite, reportWriteNotAccepted } from "../../storage/domain-store";
 
 /**
  * `todo_lists` 表与行转换（P5 第 2 段：接入域端口）
@@ -166,16 +165,8 @@ function saveTodoList(sessionId: string, todoId: string, todos: TodoItem[]): voi
     return;
   }
   // 两态：A 态才回退旧库；B 态由 writeShouldFallBackToLegacy 如实上报
-  if (!writeShouldFallBackToLegacy("todo.save", "待办列表未保存")) return;
-  const db = getDatabase();
-
-  // Insert todo list
-  db.run(
-    "INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-    [todoId, sessionId, JSON.stringify(todos), now, now]
-  );
-
-  persistDatabase();
+  reportWriteNotAccepted("todo.save", "待办列表未保存");
+  return;
 }
 
 /**
@@ -185,16 +176,7 @@ export function loadTodoList(todoId: string): TodoItem[] | null {
   const rust = domainReadOne(TODO_TABLE, { id: todoId }, wireToTodoRow);
   if (rust !== undefined) return rust ? parseTodos(rust.todos) : null;
   // 两态：B 态（端口在、镜像未就绪）不碰旧库，如实返回"现在读不到"
-  if (!shouldFallbackToLegacy()) return null;
-  const db = getDatabase();
-  const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", [todoId]);
-
-  if (result.length === 0 || result[0].values.length === 0) {
-    return null;
-  }
-
-  const todosJson = result[0].values[0][0] as string;
-  return JSON.parse(todosJson) as TodoItem[];
+  return null;
 }
 
 /**
@@ -219,23 +201,5 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
   }
 
   // 两态：B 态不碰旧库（该域由端口负责，镜像未就绪时本次变更不落地）
-  if (!shouldFallbackToLegacy()) return;
-  const db = getDatabase();
-  const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", [todoId]);
-
-  if (result.length === 0 || result[0].values.length === 0) {
-    return;
-  }
-
-  const todosJson = result[0].values[0][0] as string;
-  const todos: TodoItem[] = JSON.parse(todosJson);
-
-  const updatedTodos = applyStatus(todos);
-
-  db.run(
-    "UPDATE todo_lists SET todos = ?, updated_at = ? WHERE id = ?",
-    [JSON.stringify(updatedTodos), Date.now(), todoId]
-  );
-
-  persistDatabase();
+  return;
 }
