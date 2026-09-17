@@ -1,7 +1,7 @@
 import type { Session, MessageV2 } from "../llm/session";
 import { loadRecoveryData, saveRecoveryData, removeRecoveryData } from "../storage/settings";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { isDatabaseFatal, noteDatabaseError } from "../storage/database";
+import { storageUnavailable } from "../storage/health";
 
 // ========== Recovery Types ==========
 export type RecoveryLayer = "memory" | "local" | "file";
@@ -233,8 +233,9 @@ export class MultiLayerRecovery {
 
   /** Save to SQLite */
   private saveToLocal(): void {
-    // 第 90 波：数据库致命状态下不再尝试（恢复数据也在抢救范围内），避免定时器每轮报一次
-    if (isDatabaseFatal()) return;
+    // 第 90 波：存储不可用时不再尝试（恢复数据也在抢救范围内），避免定时器每轮报一次。
+    // 第 18 轮：判据换成 storageUnavailable()（端口未注册 = 本进程没有可用存储）。
+    if (storageUnavailable()) return;
     try {
       // Save state
       saveRecoveryData(`${this.config.storagePrefix}-state`, JSON.stringify(this.state));
@@ -246,18 +247,18 @@ export class MultiLayerRecovery {
       }
       saveRecoveryData(`${this.config.storagePrefix}-sessions`, JSON.stringify(sessionsObj));
     } catch (e) {
-      // 第 90 波：数据库已崩（WASM 陷阱）时不再每轮都报一次，交给致命状态的抢救流程
-      if (!noteDatabaseError(e)) reportPersistFailure("recovery.multiLayer.saveSessions", e);
+      // 第 18 轮：`noteDatabaseError` 那套"是否致命"分类随旧引擎删除，一律如实上报
+      reportPersistFailure("recovery.multiLayer.saveSessions", e);
     }
   }
 
   /** Save state */
   private saveState(): void {
-    if (isDatabaseFatal()) return;
+    if (storageUnavailable()) return;
     try {
       saveRecoveryData(`${this.config.storagePrefix}-state`, JSON.stringify(this.state));
     } catch (e) {
-      if (!noteDatabaseError(e)) reportPersistFailure("recovery.multiLayer.saveState", e);
+      reportPersistFailure("recovery.multiLayer.saveState", e);
     }
   }
 

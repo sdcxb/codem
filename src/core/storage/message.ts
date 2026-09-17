@@ -7,7 +7,7 @@ import {
   isExternalContent,
   DEFAULT_EXTERNALIZE_THRESHOLD,
 } from "./attachment-files";
-import { isDatabaseFatal, noteDatabaseError } from "./database";
+import { storageUnavailable } from "./health";
 import { getEventLog } from "./event-log";
 import { getStoragePort, hasStoragePort } from "./port";
 import type { SessionEventType } from "./event-types";
@@ -817,13 +817,17 @@ export function createMessage(message: Message, sessionId: string): void {
   void appendSessionMessage(sessionId, message);
 
   // ② 索引：尽力而为。索引崩了不影响上面那条已经落盘的记录。
-  if (isDatabaseFatal()) return;
+  //
+  // ⚠️ 第 18 轮**不要**在这里加"存储不可用就 return"的短路：原来的 `isDatabaseFatal()` 早退
+  // 是防"往已崩的 WASM 堆上反复撞"，而端口世界没有那个问题 —— 端口不在时
+  // `writeMessageIndex` 内部会走 `reportWriteNotAccepted` **如实上报**。
+  // 短路会让"索引没写"变成静默无动作（实测：MSG-4 立刻变红，抓的正是这一点）。
   try {
     writeMessageIndex(message, sessionId);
   } catch (e) {
-    if (!noteDatabaseError(e)) {
-      reportPersistFailure("message.createMessage.index", e, "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）");
-    }
+    // 旧实现用 `noteDatabaseError(e)` 分类"是否致命"再决定报不报；分类机制随旧引擎删除，
+    // 现在一律如实上报（索引失败永远只影响索引，不影响已落盘的权威日志）。
+    reportPersistFailure("message.createMessage.index", e, "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）");
   }
 }
 
@@ -1357,7 +1361,7 @@ export function updateMessage(id: string, update: Partial<Message>): void {
   /** 本次用的"现存快照"：下面第 ③ 步（全文索引）复用同一份，不重复读一次 */
   let snapshot: Message | null = null;
   if (sessionId) {
-    const base = logMirrorMessage(sessionId, id) ?? (isDatabaseFatal() ? null : safeGetMessage(id));
+    const base = logMirrorMessage(sessionId, id) ?? (storageUnavailable() ? null : safeGetMessage(id));
     if (base) {
       snapshot = { ...base, ...update, id, timestamp: base.timestamp ?? Date.now() } as Message;
       void appendSessionMessage(sessionId, snapshot);
@@ -1368,14 +1372,11 @@ export function updateMessage(id: string, update: Partial<Message>): void {
     void appendUpdatedMessageToLog(id);
   }
 
-  // ② 索引：尽力而为
-  if (isDatabaseFatal()) return;
+  // ② 索引：尽力而为（同理**不加**"存储不可用就短路"—— 那会让没写成变成静默无动作）
   try {
     writeMessageUpdateIndex(id, update);
   } catch (e) {
-    if (!noteDatabaseError(e)) {
-      reportPersistFailure("message.updateMessage.index", e, "消息改动已写入权威日志，但查询索引更新失败（索引可由日志重建）");
-    }
+    reportPersistFailure("message.updateMessage.index", e, "消息改动已写入权威日志，但查询索引更新失败（索引可由日志重建）");
   }
 
   /**
@@ -1403,7 +1404,7 @@ function safeGetMessage(id: string): Message | null {
 /** 消息更新 → SQLite 索引（updateMessage 的索引侧；失败由调用方兜底） */
 function writeMessageUpdateIndex(id: string, update: Partial<Message>): void {
   // 迁移期分流：端口是 rust → 走单事务复合写
-  const base = isDatabaseFatal() ? null : safeGetMessage(id);
+  const base = storageUnavailable() ? null : safeGetMessage(id);
   const sid = base ? currentSessionIdForMessage(id) : null;
   if (base && sid && writeIndexViaRust({ ...base, ...update, id } as Message, sid, "update")) return;
   // 端口没接手：索引这一步没有落地，如实上报（旧库那条回退路径已随 L4 退役）
@@ -1849,8 +1850,8 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
 export function loadFeedback(messageId: string): FeedbackType | null {
   // 本进程写过的优先（与写入落在同一处：都走 Rust）
   if (feedbackCache.has(messageId)) return feedbackCache.get(messageId) ?? null;
-  // 数据库致命状态下直接返回（不再每次撞已崩的堆、也不再刷屏）
-  if (isDatabaseFatal()) return null;
+  // 没有可用存储时直接返回"未评价"（不再每次去撞不存在的端口、也不再刷屏）
+  if (storageUnavailable()) return null;
 
   const rust = domainReadOne<{ feedback: string }>(
     FEEDBACK_TABLE,

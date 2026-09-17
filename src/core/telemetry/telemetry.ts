@@ -7,7 +7,8 @@
  * - 支持 OpenTelemetry 格式导出（预留接口）
  */
 
-import { isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "../storage/database";
+import { isCompactionInProgress } from "../storage/compaction-state";
+import { storageUnavailable } from "../storage/health";
 import { reportPersistFailure } from "../storage/persist-failure";
 import { domainDeleteWhere, domainReadMany, domainWrite } from "../storage/domain-store";
 
@@ -133,23 +134,24 @@ class TelemetryCollector {
      * 这里会**无限重排定时器** —— 日志里同一条 flush 失败刷了十几遍、还带着层层嵌套的
      * `setTimeout` 调用栈，事件却永远写不进去。
      * 现在：致命状态**不再重排**（事件留在内存、一次性上报给用户），普通失败才继续重试。
+     *
+     * 第 18 轮：判据从 `isDatabaseFatal()`（旧引擎致命态，rust 下恒为 false）
+     * 换成 `storageUnavailable()`（本进程没有可用存储 = 端口没注册）。
      */
-    if (isDatabaseFatal()) {
+    if (storageUnavailable()) {
       if (!this.reportedFatal) {
         this.reportedFatal = true;
-        console.warn(`[Telemetry] 数据库已不可用，停止重试（${this.events.length} 条遥测事件保留在内存中）`);
+        console.warn(`[Telemetry] 存储不可用，停止重试（${this.events.length} 条遥测事件保留在内存中）`);
         reportPersistFailure(
           "telemetry.flush",
-          new Error("数据库模块已崩溃"),
+          new Error("本进程没有可用存储（端口未注册）"),
           `${this.events.length} 条遥测事件未能写入（遥测不影响功能）`,
         );
       }
       return;
     }
 
-    // Defense-in-depth: skip while compaction is mutating the DB.
-    // Interleaving db.run with compaction's synchronous commit block corrupts
-    // sql.js state ("bad parameter or other API misuse" / wasm traps).
+    // Defense-in-depth: skip while compaction is mutating the message set.
     // Same guard as store.saveMessages — telemetry flush runs on a 5s timer
     // and can otherwise land inside a compaction window.
     if (isCompactionInProgress()) {
@@ -193,14 +195,9 @@ class TelemetryCollector {
       );
       return;
     } catch (err) {
-      // 第 90 波：致命错误不再无限重试（见上方说明）；普通错误保留事件并有限重试
-      if (noteDatabaseError(err)) {
-        if (!this.reportedFatal) {
-          this.reportedFatal = true;
-          reportPersistFailure("telemetry.flush", err, `${this.events.length} 条遥测事件未能写入（遥测不影响功能）`);
-        }
-        return;
-      }
+      // 第 90 波：致命错误不再无限重试（见上方说明）；普通错误保留事件并有限重试。
+      // 第 18 轮：`noteDatabaseError` 那套"是否致命"分类随旧引擎删除 ——
+      // 分类的用途（决定要不要一次性上报）现在由"端口是否可用"表达。
       console.warn("[Telemetry] Flush failed, keeping events for retry:", err);
       // 保留 events；安排一次重试（限制频率避免热循环）
       if (!this.flushTimer) {

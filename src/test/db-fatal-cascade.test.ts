@@ -141,37 +141,47 @@ describe("致命数据库错误识别（第 90 波）", () => {
 });
 
 describe("致命状态下的调用点行为（不刷屏、不重试、可上报）", () => {
-  it("DBF-6（修复点）: saveMessages 在致命状态下跳过并一次性上报（不再每几秒打一行）", async () => {
-    const mod = await db();
+  /**
+   * ⚠️ 第 18 轮口径变更：这两条守卫原来由**旧引擎的致命闩锁**（`noteDatabaseError` → `dbFatal`）驱动，
+   * 而那个闩锁只可能由 sql.js 的 WASM 陷阱触发 —— rust 模式下恒不成立。
+   *
+   * 守卫本身仍然有用（"本进程没有可用存储时不要反复重试、要一次性如实上报"），
+   * 所以判据换成它的新表达：**端口未注册**（`storageUnavailable()`）。
+   * 数据库致命闩锁本身的用例（DBF-1..DBF-5）留在本文件上半部分，随旧引擎一起退休。
+   */
+  it("DBF-6（修复点）: 没有可用存储时 saveMessages 跳过并一次性上报（不再每几秒打一行）", async () => {
+    const { setStoragePort } = await import("../core/storage/port");
     const warn = vi.spyOn(console, "error").mockImplementation(() => {});
     const { useAppStore } = await import("../store");
     const persist = await import("../core/storage/persist-failure");
     persist.resetPersistFailures();
 
-    mod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));
+    setStoragePort(null); // = storageUnavailable()
     useAppStore.getState().saveMessages("sess-1");
     useAppStore.getState().saveMessages("sess-1"); // 第二次不应再产生新上报
 
     const failures = persist.getPersistFailures().filter((f) => f.area === "store.saveMessages");
     expect(failures).toHaveLength(1);
     expect(failures[0].count).toBe(1);
-    expect(failures[0].lastMessage).toMatch(/数据库模块已崩溃/);
+    expect(failures[0].lastMessage).toMatch(/没有可用存储/);
     warn.mockRestore();
   });
 
-  it("DBF-7（修复点）: 遥测在致命状态下不再无限重排定时器", async () => {
-    const mod = await db();
+  it("DBF-7（修复点）: 没有可用存储时遥测不再无限重排定时器", async () => {
+    const { setStoragePort } = await import("../core/storage/port");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const { getTelemetry } = await import("../core/telemetry/telemetry");
     const tel: any = getTelemetry();
 
-    mod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));
+    setStoragePort(null); // = storageUnavailable()
     tel.record("sess-1", "probe", { a: 1 });
     tel.flush();
 
-    expect(tel.flushTimer ?? null, "致命状态下不应再安排重试").toBeNull();
-    expect(warn.mock.calls.flat().join(" ")).toMatch(/数据集已不可用|数据库已不可用/);
+    expect(tel.flushTimer ?? null, "没有可用存储时不应再安排重试").toBeNull();
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/存储不可用/);
+    // 事件必须**留在内存里**（不能因为写不进去就丢掉）
+    expect(tel.events.length, "遥测事件应保留待下次重试").toBeGreaterThan(0);
     warn.mockRestore();
     err.mockRestore();
   });

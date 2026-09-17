@@ -8,7 +8,6 @@
  * Fallback chain: tts/imageGen/embedding → chat, memory/compaction → subagent → chat
  */
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
-import { flushDatabase } from "../storage/database";
 import { normalizeModelId } from "./model-catalog";
 import { reportPersistFailure } from "../storage/persist-failure";
 
@@ -153,13 +152,15 @@ export class ModelProfileManager {
 
   private save() {
     try {
+      /**
+       * 第 18 轮：这里原来跟着一句 `flushDatabase()`（"强制立刻落盘、别等 500ms 防抖"）。
+       * 旧引擎的整库导出有防抖，所以需要它；**端口写入是一条命令 = 一次事务**，
+       * 没有可 flush 的缓冲 —— 那次调用在新架构下是空操作（而且旧库句柄已不存在）。
+       */
       setSettingJSON(STORAGE_KEY, {
         profiles: this.profiles,
         activeProfileId: this.activeProfileId,
       });
-      // Force immediate flush instead of debounced 500ms delay
-      // This ensures profile changes are persisted before app close/reload
-      flushDatabase();
     } catch (e) { reportPersistFailure("modelProfile.save", e); }
   }
 

@@ -20,8 +20,6 @@
 import * as SessionStorage from "../storage/session";
 import * as MessageStorage from "../storage/message";
 import * as ProjectStorage from "../storage/project";
-import { initDatabase } from "../storage/database";
-import { getStoragePort, hasStoragePort } from "../storage/port";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { getLLMEngine } from "../llm";
 import {
@@ -554,13 +552,9 @@ async function ensureWorkspaceProject(cwd: string): Promise<void> {
    * 顺带把一次性省下的内存全花回来、还会重写迁移源那份旧库文件。
    *
    * 同样的坑在 `storage/migration.ts` 里已经修过一次（那里留着详细的事故记录），
-   * 这处是漏网的最后一处。判据一样：**只有引擎是旧库时才需要初始化旧库**；
-   * 端口模式下 `ProjectStorage` 的读写本来就只走域端口。
+   * 这处是漏网的最后一处。**现在连"有条件初始化"也一并删掉了**：A 态（回滚到旧引擎）
+   * 已不存在，端口是唯一形态，`ProjectStorage` 的读写本来就走域端口，没有任何需要用旧库的场合。
    */
-  const rustActive = hasStoragePort() && getStoragePort().kind === "rust";
-  if (!rustActive) {
-    await initDatabase();
-  }
   const now = Date.now();
   if (!ProjectStorage.getProject(WX_PROJECT_ID)) {
     ProjectStorage.createProject({

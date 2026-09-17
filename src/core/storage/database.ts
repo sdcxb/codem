@@ -24,24 +24,12 @@ let db: SqlJsDatabase | null = null;
 let ftsAvailable = false;
 
 /**
- * Compaction mutual-exclusion flag.
- * When true, UI auto-save (saveMessages) must NOT touch the database
- * because compactMessages is in the middle of a multi-step DB operation
- * (delete → LLM summary → insert marker). An intervening saveMessages
- * call during the `await` gap corrupts sql.js's internal state and
- * produces "bad parameter or other API misuse" errors.
+ * ⚠️ 压缩互斥标志已于第 18 轮搬到 `./compaction-state`。
+ *
+ * 它**与 sql.js 无关**（是"压缩期间的 UI 自动保存要退让"这条并发不变量），
+ * 住在旧引擎模块里会让"删引擎"连带删掉一个仍然有用的保护。
+ * 现在 `store.ts` / `telemetry.ts` / `agentic-loop.ts` 都从新模块取它。
  */
-let compactionInProgress = false;
-
-/** Returns true if a compaction is currently in progress. */
-export function isCompactionInProgress(): boolean {
-  return compactionInProgress;
-}
-
-/** Set the compaction flag. Called by AgenticLoop.compactMessages. */
-export function setCompactionInProgress(value: boolean): void {
-  compactionInProgress = value;
-}
 // DB_STORAGE_KEY was used in old localStorage-based persistence; now using Tauri file system
 // const DB_STORAGE_KEY = "codem-sqlite-db";
 const DB_FILE_NAME = "codem-db.bin";

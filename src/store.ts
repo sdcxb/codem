@@ -2,7 +2,8 @@ import { create } from "zustand";
 import * as MessageStorage from "./core/storage/message";
 import type { FeedbackType } from "./core/storage/message";
 import { putMessageFeedback } from "./core/llm/feedback";
-import { isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "./core/storage/database";
+import { isCompactionInProgress } from "./core/storage/compaction-state";
+import { storageUnavailable } from "./core/storage/health";
 import { reportPersistFailure } from "./core/storage/persist-failure";
 
 /** 第 90 波：致命状态只上报一次（否则 AutoSave 每几秒刷一条） */
@@ -431,10 +432,10 @@ export const useAppStore = create<AppState>((set, get) => ({
      * 日志刷屏 + 不知道"消息到底存没存下来"。
      * 现在：致命状态直接跳过并**走统一失败上报**（界面能看见），普通失败也如实上报。
      */
-    if (isDatabaseFatal()) {
+    if (storageUnavailable()) {
       if (!warnedSaveMessagesFatal) {
         warnedSaveMessagesFatal = true;
-        reportPersistFailure("store.saveMessages", new Error("数据库模块已崩溃"), "本次运行内不再尝试写入（请重启应用，界面已尝试抢救当前会话）");
+        reportPersistFailure("store.saveMessages", new Error("本进程没有可用存储（端口未注册）"), "本次运行内不再尝试写入（请重启应用，界面已尝试抢救当前会话）");
       }
       return;
     }
@@ -467,13 +468,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.debug(`[Store] saveMessages: 写入 ${written} 条，跳过未变化 ${skipped} 条（会话 ${sessionId}）`);
       }
     } catch (e) {
-      if (noteDatabaseError(e)) {
-        if (!warnedSaveMessagesFatal) {
-          warnedSaveMessagesFatal = true;
-          reportPersistFailure("store.saveMessages", e, "数据库模块已崩溃，消息未能保存（界面已尝试抢救当前会话）");
-        }
-        return;
-      }
+      // 第 18 轮：`noteDatabaseError` 的"是否致命"分类随旧引擎删除；
+      // 一次性提示 / 限流的职责由上面的 storageUnavailable() 守卫承担。
       console.error("[Store] saveMessages failed:", e);
       reportPersistFailure("store.saveMessages", e, "消息未能保存");
     }

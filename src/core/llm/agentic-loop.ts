@@ -3429,7 +3429,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // Pre-resolve all dynamic imports so we never yield during DB mutation.
     // The compaction flag also blocks UI auto-save from touching the DB.
     const { getEventLog } = await import("../storage/event-log");
-    const { setCompactionInProgress } = await import("../storage/database");
+    const { setCompactionInProgress } = await import("../storage/compaction-state");
     const eventLog = this.getEventLog();
     const messageStorage = this.getMessageStorage();
     const removedIds = messagesToRemove.map((m: any) => m.id);
