@@ -10,11 +10,17 @@
  * 因此路由规则是硬性的：**只有该会话的事件已完整加载，才允许它的读写都走镜像**；
  * 否则一律留在旧路径。本文件把这条规则及其配套细节逐条钉住：
  *
- * 1. 未加载完 → 不路由（继续用旧路径）；
+ * 1. 未加载完 → `isLoaded` 为 false（判据本身）；
  * 2. 加载完成后 → 读写都走镜像；
  * 3. 加载**不能丢掉**加载期间本地追加的事件；
  * 4. 落库成功后用**真实 seq** 修正占位（seq 是全局 AUTOINCREMENT，本地猜不到水位）；
  * 5. 失败要走统一上报，不静默丢数据。
+ *
+ * ⚠️ **第 12 轮的修正（EV-11）**：上面第 1 条的后半句"继续走旧路径"**在 rust 引擎下是错的** ——
+ * 旧库刻意不存在，"回退"只会变成抛错（真机形态：启动窗口期内事件整段丢失）。
+ * 现在写路径（append / appendBatch / deleteAllForSession）在"端口是 rust"时**一律由端口接手**，
+ * 与加载状态无关；镜像侧用占位 seq 承接窗口期写入，加载完成后 reconcile 对账成真实水位。
+ * "未加载完不路由"这条规则**只对读路径**（以及需要读写同处的语义）继续成立。
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -186,10 +192,42 @@ afterEach(() => {
 });
 
 describe("只追加面 —— 路由规则（读与写必须在同一处）", () => {
-  it("EV-1: 未加载完的会话不路由（继续用旧路径，避免读写分裂）", async () => {
+  it("EV-1: 未加载完的会话 `isLoaded` 为 false（路由判据本身）", async () => {
     const { port } = await setupPort();
-    // 刻意不 warmup：该会话未加载
+    // 刻意不 warmup：该会话未加载。
+    // 注意（第 12 轮改写）：这里**只**断言"加载状态"这条判据本身 ——
+    // 从前它同时隐含"未加载完就写旧库"，而那条规则在 rust 引擎下是错的
+    // （旧库刻意不存在，写路径直接抛）→ 见 EV-11。
     expect(port.events.isLoaded("s-new"), "未加载就该是 false").toBe(false);
+  });
+
+  it("EV-11: 未加载完时 append 也由端口接手（B 态不许回退旧库）", async () => {
+    /**
+     * 这是 `rustEventPortAny()` 存在的理由：`rustEventPort()` 要求"已加载才路由"，
+     * 那条规则的本意是**避免读写分裂**（写进镜像、读还从旧库）。而 rust 引擎下旧库
+     * 刻意不存在 —— 没有旧库可分裂，剩下的只有"写路径抛错"：
+     * 真机表现为启动窗口期内的事件整段丢失（`append` 第一行 `getDatabase()` 抛）。
+     *
+     * 镜像侧对窗口期写入是有准备的：占位 seq 会被 `loadSession` 保留（`pendingLocal`），
+     * 加载完成后由 `reconcile` 对账成真实水位 —— 所以这里同时验证"加载后不丢"。
+     */
+    const { port, log } = await setupPort([]);
+    // 刻意不 warmup
+    expect(port.events.isLoaded("s-new")).toBe(false);
+
+    const ev = log.append("s-new", "user_message", { x: 1 });
+    await settle();
+
+    expect(legacyAccess, "B 态**不得**访问旧库（rust 下它刻意不存在）").toBe(0);
+    expect(ev.seq, "占位 seq 必须是个正数（加载后会对账成真实水位）").toBeGreaterThan(0);
+
+    // 加载完成后：窗口期写入的事件既在镜像里、也已落库，一条都不丢
+    port.events.ensureLoaded("s-new");
+    await settle();
+    const after = log.readAll("s-new");
+    expect(after.map((e) => e.payload)).toContainEqual({ x: 1 });
+    expect(after[0].type).toBe("user_message");
+    expect(legacyAccess, "加载完成后同样不得访问旧库").toBe(0);
   });
 
   it("EV-2: ensureLoaded 之后 isLoaded 为真，且能读到库里已有的事件", async () => {

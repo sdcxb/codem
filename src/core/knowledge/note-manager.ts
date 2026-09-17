@@ -20,7 +20,7 @@ import {
 import type { Note, NoteLink } from './types';
 import { getDatabase, persistDatabase } from '../storage/database';
 import { reportPersistFailure } from "../storage/persist-failure";
-import { domainDeleteWhere } from "../storage/domain-store";
+import { domainDeleteWhere, writeShouldFallBackToLegacy } from "../storage/domain-store";
 
 /** `note_links` 表名（与 knowledge/storage.ts 里的常量保持一致） */
 const LINK_TABLE = "note_links";
@@ -231,6 +231,17 @@ function deleteNoteLinksBySource(noteId: string): void {
      * 删回退的前提，是先把这两种状态分开表达 —— 而不是把回退整段删掉。
      */
     if (removed !== null) return;
+    /**
+     * **两态门控**（第 12 轮补上：第 42 轮曾把回退整段删掉，结果基线立刻红了一条 ——
+     * 那次的结论是"判据缺了两态区分"，而不是"回退不该存在"）。
+     *
+     * - A 态（端口未注册 / 回滚 wasm）：`domainDeleteWhere` 返回 `null`，旧库是唯一数据源
+     *   → `writeShouldFallBackToLegacy` 返回 true → 照原样删旧库（`note-links-order.test.ts`
+     *   的 NL-2 正是这条路径，必须继续绿）；
+     * - B 态（端口在 rust、该表镜像未就绪）：**不回退**，如实上报 ——
+     *   写进旧库而随后的读/删都走镜像 = 本进程内读写分裂（"刚写的链接读不到、也删不掉"）。
+     */
+    if (!writeShouldFallBackToLegacy("noteManager.deleteNoteLinksBySource", "旧出链未清除，笔记链接可能出现重复")) return;
     const db = getDatabase();
     db.run('DELETE FROM note_links WHERE source_note_id = ?', [noteId]);
     persistDatabase();

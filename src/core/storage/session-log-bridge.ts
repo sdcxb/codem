@@ -13,6 +13,7 @@ import { initDatabase } from "./database";
 import { hydrateAttachmentsForSession } from "./attachment-files";
 import { getStoragePort, hasStoragePort } from "./port";
 import { tryGetDatabase } from "./database";
+import { domainReadMany, shouldFallbackToLegacy } from "./domain-store";
 import { reportPersistFailure } from "./persist-failure";
 
 export { trimIndexedMessages };
@@ -34,11 +35,21 @@ export async function hydrateAllAttachments(): Promise<{ warmed: number; orphans
     let entries: Array<{ id: string; content: string }>;
     if (markers) {
       entries = markers;
-    } else {
+    } else if (shouldFallbackToLegacy()) {
       const { getDatabase } = await import("./database");
       const db = getDatabase();
       const rows = db.exec("SELECT id, content FROM attachments WHERE content LIKE 'file:%'");
       entries = rows?.[0]?.values?.map((r) => ({ id: String(r[0]), content: String(r[1]) })) ?? [];
+    } else {
+      /**
+       * B 态（端口在 rust、attachments 域未就绪）：**不去读旧库**。
+       *
+       * 旧库在 rust 模式下刻意不存在，读它只会拿到一个异常；而"这次没预热"是可接受的
+       * —— 外置正文仍在文件里，读取路径遇到未预热会明确提示并触发一次预取（既有约定）。
+       * 孤儿清理也一并跳过：`referenced` 为空会把所有外置文件当孤儿删掉，那是**破坏性**的。
+       */
+      console.warn("[Attachment] attachments 域镜像未就绪，本次跳过外置附件预热与孤儿清理");
+      return out;
     }
     out.warmed = await hydrateAttachmentsForSession(entries);
 
@@ -63,12 +74,27 @@ export async function hydrateAllAttachments(): Promise<{ warmed: number; orphans
 export async function backfillAllSessions(): Promise<number> {
   await initDatabase();
   let sessionIds: string[] = [];
-  try {
-    const { getDatabase } = await import("./database");
-    const rows = tryGetDatabase()?.exec("SELECT DISTINCT session_id FROM messages") ?? [];
-    sessionIds = rows?.[0]?.values?.map((r) => String(r[0])) ?? [];
-  } catch (e) {
-    console.warn("[SessionLog] 枚举会话失败（跳过回填）:", e);
+  /**
+   * 会话清单：**端口优先**（第 12 轮）。
+   *
+   * 原来只有 `tryGetDatabase()` 一条路径 —— rust 模式下旧库刻意不存在 → 清单为空 →
+   * 循环一次都不进 → 函数返回 0，日志打出"回填 0 条"这种**看着正常、实则整件事没做**的结果
+   * （回填是"日志成为权威副本"的前提，长期不执行意味着崩溃后无从重建）。
+   * 现在从端口枚举；端口没接手（A 态）才回退旧库。
+   */
+  const fromPort = domainReadMany<Record<string, unknown>>("sessions", (r) => r);
+  if (fromPort) {
+    sessionIds = fromPort.map((r) => String(r.id ?? "")).filter((id) => id.length > 0);
+  } else if (shouldFallbackToLegacy()) {
+    try {
+      const rows = tryGetDatabase()?.exec("SELECT DISTINCT session_id FROM messages") ?? [];
+      sessionIds = rows?.[0]?.values?.map((r) => String(r[0])) ?? [];
+    } catch (e) {
+      console.warn("[SessionLog] 枚举会话失败（跳过回填）:", e);
+      return 0;
+    }
+  } else {
+    console.warn("[SessionLog] sessions 域镜像未就绪，本次跳过回填（下次维护会重试）");
     return 0;
   }
 
@@ -182,6 +208,15 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
       );
     }
   }
+
+  /**
+   * B 态：端口在但重建失败 → **不回退旧库重试**（第 12 轮）。
+   *
+   * 原来的注释写着"回退旧路径再试一次（用户的数据没丢，别让自愈失效）" —— 那在 A 态成立，
+   * 在 B 态却只会撞上"旧库刻意不存在"，把**真实的失败原因**（Rust 侧重建报的错）
+   * 换成另一个无关的异常。已如实上报，交给下一次维护重试才是正确处置。
+   */
+  if (!shouldFallbackToLegacy()) return out;
 
   const { getDatabase } = await import("./database");
   const db = getDatabase();

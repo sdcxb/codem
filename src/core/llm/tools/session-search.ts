@@ -15,6 +15,7 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
+import { domainReadMany, shouldFallbackToLegacy } from "../../storage/domain-store";
 
 export interface SessionSearchResult {
   sessionId: string;
@@ -102,10 +103,24 @@ Returns matching messages with snippets showing the matched content.`,
 
         const { getDatabase } = await import("../../storage/database");
 
+        /**
+         * **B 态（端口在 rust）不再往下走**（第 12 轮）。
+         *
+         * `searchViaRust` 返回 null 有两种含义：端口不存在（A 态 → 该回退旧库），
+         * 或端口在但查询失败（引擎忙 / 索引缺失）。后者若继续往下走，
+         * 就会去读一份在 rust 模式下**刻意不存在**的旧库 —— 结果是抛异常，
+         * 而模型收到的会是一段与查询毫无关系的堆栈。两种含义必须分开表达。
+         */
+        if (!shouldFallbackToLegacy()) {
+          return {
+            title: "session_search",
+            output: "Error: 全文搜索暂时不可用（索引侧未接手，可稍后重试）—— 本次没有查询旧库",
+          };
+        }
+
         // Build FTS5 query
         // Sanitize: escape double quotes, wrap in quotes for safety
         const sanitizedQuery = query.replace(/"/g, '""');
-
         // Build the FTS5 MATCH query
         let matchExpr = `"${sanitizedQuery}"`;
         if (sessionIdFilter) {
@@ -376,6 +391,66 @@ Use this to understand session relationships and history.`,
       const sessionId = args.session_id as string;
 
       try {
+        /**
+         * **端口优先**（第 12 轮）：`session_trace` 读的是 `sessions` 表（fork 谱系），
+         * 而这张表在 rust 模式下由**域镜像**持有 —— 旧实现只有旧库一条路径，
+         * 在 rust 模式下必然抛错（引擎侧刻意不加载旧库），模型拿到的是一段堆栈。
+         *
+         * 镜像里 `sessions` 是"整表即工作集"量级（几十到几百行），
+         * 所以谱系遍历直接在镜像上做，语义与原来的 SQL 一一对应：
+         * 祖先 = 沿 `parent_id` 往上走；后代 = `parent_id = 当前` 按 created_at 升序。
+         */
+        const viaPort = (() => {
+          const all = domainReadMany<Record<string, unknown>>("sessions", (r) => r);
+          if (!all) return null; // A 态：端口没接手 → 走旧库
+          const byId = new Map(all.map((r) => [String(r.id ?? ""), r]));
+          const found = byId.get(sessionId);
+          if (!found) return { missing: true as const };
+
+          const parentId = (found.parent_id as string | null) ?? null;
+          const ancestors: string[] = [];
+          let currentParent = parentId;
+          // 上限防环（数据异常时 parent 成环会让 while 停不下来）
+          for (let i = 0; i < 64 && currentParent; i++) {
+            ancestors.push(currentParent);
+            const parentRow = byId.get(currentParent);
+            if (!parentRow) break;
+            currentParent = (parentRow.parent_id as string | null) ?? null;
+          }
+          const descendants = all
+            .filter((r) => (r.parent_id as string | null) === sessionId)
+            .sort((a, b) => Number(a.created_at ?? 0) - Number(b.created_at ?? 0))
+            .map((r) => `${String(r.id ?? "")} (${String(r.title ?? "") || "untitled"})`);
+
+          return { missing: false as const, found, parentId, ancestors, descendants };
+        })();
+
+        if (viaPort) {
+          if (viaPort.missing) {
+            return { title: "session_trace", output: `Session ${sessionId} not found.` };
+          }
+          const lines: string[] = [];
+          lines.push(`Session: ${sessionId}`);
+          lines.push(`Title: ${String(viaPort.found.title ?? "") || "untitled"}`);
+          lines.push(`Created: ${new Date(Number(viaPort.found.created_at ?? 0)).toLocaleString()}`);
+          lines.push(`Parent: ${viaPort.parentId || "(root)"}`);
+          if (viaPort.ancestors.length > 1) {
+            lines.push(`Ancestors: ${viaPort.ancestors.join(" → ")}`);
+          }
+          lines.push(
+            `Descendants: ${viaPort.descendants.length > 0 ? viaPort.descendants.join(", ") : "(none)"}`,
+          );
+          return { title: `session_trace: ${sessionId.substring(0, 8)}`, output: lines.join("\n") };
+        }
+
+        if (!shouldFallbackToLegacy()) {
+          // B 态且 sessions 域镜像未就绪：**不碰旧库**，如实告诉模型"稍后再试"
+          return {
+            title: "session_trace",
+            output: "Error: 会话谱系暂时不可读（sessions 域镜像未就绪，可稍后重试）—— 本次没有查询旧库",
+          };
+        }
+
         const { getDatabase } = await import("../../storage/database");
         const db = getDatabase();
 

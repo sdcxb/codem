@@ -130,7 +130,14 @@ function validateNote(note: string | undefined): { ok: true; value: string | und
  * （踩过一次：契约测试里表现为"旧库不应在已路由的域上被访问"）。
  */
 function ensureNoteColumn(): void {
-  if (hasStoragePort()) return;
+  /**
+   * 两态门控（第 12 轮统一到标准判据）：**B 态不碰旧库**。
+   *
+   * 原来的判据是 `hasStoragePort()`（任何引擎）—— 语义上更宽：连"端口是 wasm 回滚形态"
+   * 也会跳过这四条 ALTER。而 wasm 形态下旧库才是数据源，这四条 ALTER 恰恰是需要的
+   * （`shouldFallbackToLegacy()` 对"端口未注册 / 端口是 wasm"都返回 true，正合此意）。
+   */
+  if (!shouldFallbackToLegacy()) return;
   const db = getDatabase();
   try {
     db.run("ALTER TABLE message_feedback ADD COLUMN note TEXT");

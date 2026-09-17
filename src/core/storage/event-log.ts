@@ -94,6 +94,30 @@ function rustEventPort(sessionId?: string): RustEventPortLike | null {
   return candidate.events.isLoaded(sessionId) ? candidate : null;
 }
 
+/**
+ * 取该会话的 Rust 事件通道 —— **不看是否加载完**（第 12 轮新增）。
+ *
+ * ## 为什么"未加载完"也必须由端口接手
+ *
+ * `rustEventPort()` 的规则是"未加载完不路由"，那条规则的目的是**避免读写分裂**
+ * （写进镜像、读还从旧库）。但在 rust 引擎下旧库**刻意不存在** —— 没有旧库可分裂，
+ * 那条规则的代价就只剩"写路径直接抛错"：真机上表现为事件日志在启动窗口期整段丢失
+ * （`EventLog.append` 第一行就 `getDatabase()` 抛）。
+ *
+ * 镜像侧对"加载窗口期写入"是有准备的：`appendLocal` 分配的占位 seq 会被
+ * `RustEventMirror.loadSession` **保留下来**（`pendingLocal` 过滤后追加在真实行之后），
+ * 加载完成后由 `reconcile` 把占位 seq 对账成真实水位。所以窗口期写入是安全的。
+ */
+function rustEventPortAny(): RustEventPortLike | null {
+  if (!hasStoragePort()) return null;
+  const port = getStoragePort();
+  if (port.kind !== "rust") return null;
+  const candidate = port as unknown as RustEventPortLike;
+  // 用对象存在性判断（不要判 `appendLocal` 这种"函数是否定义"—— 类型上它必然存在，
+  // `tsc` 会直接报 TS2774：这种守卫等于没写）
+  return candidate.events ? candidate : null;
+}
+
 /** 镜像事件 → SessionEvent（payload 是 JSON 文本，要解析回来） */
 function toSessionEvent(e: { seq: number; sessionId: string; type: string; payload: string; timestamp: number }): SessionEvent {
   let payload: Record<string, unknown> = {};
@@ -162,6 +186,25 @@ export class EventLog {
     // 未加载完 → 继续走下面的旧路径，保证"读到的与写到的在同一处"。
     const routed = rustEventPort(sessionId);
     if (routed) return this.appendViaMirror(routed, sessionId, type, payload);
+    /**
+     * B 态（端口在 rust、该会话事件镜像还没加载完）：**仍然由端口接手**（第 12 轮）。
+     *
+     * 这里原来是"未加载完就继续走下面的旧库路径" —— 那条规则在 wasm 时代是对的
+     * （避免读写分裂），但在 rust 模式下旧库刻意不存在，`getDatabase()` 直接抛：
+     * 用户看到的是"刚发的消息在事件日志里消失"。镜像对窗口期写入有准备
+     * （见 `rustEventPortAny` 的注释：占位 seq 会被加载逻辑保留、随后 reconcile）。
+     */
+    const anyPort = rustEventPortAny();
+    if (anyPort) return this.appendViaMirror(anyPort, sessionId, type, payload);
+
+    if (!writeShouldFallBackToLegacy("eventLog.append", "事件未写入（端口已注册但没有事件能力）")) {
+      // B 态但端口缺事件能力：如实返回一个**未落库**的事件（seq=0），并已上报失败。
+      // 不抛是刻意的：事件日志是"可重建的投影源"，让它炸掉上层消息写入的代价更大。
+      const timestamp = Date.now();
+      const event: SessionEvent = { seq: 0, sessionId, type: type as SessionEventType, payload, timestamp };
+      emitToBus(event);
+      return event;
+    }
 
     const db = getDatabase();
     const timestamp = Date.now();
@@ -234,7 +277,7 @@ export class EventLog {
     events: Array<{ type: SessionEventType | string; payload: Record<string, unknown> }>,
   ): SessionEvent[] {
     // 与 append 同样的分流：该会话已加载完 → 走镜像 + 批量发件箱（单事务、seq 连续）
-    const routed = rustEventPort(sessionId);
+    const routed = rustEventPort(sessionId) ?? rustEventPortAny();
     if (routed) {
       const timestamp = Date.now();
       const prepared = events.map((evt) => {
@@ -252,13 +295,24 @@ export class EventLog {
       }));
     }
 
+    if (!writeShouldFallBackToLegacy("eventLog.appendBatch", "批量事件未写入（端口侧事件通道不可用）")) {
+      // B 态但端口缺事件能力：如实返回"未落库"的事件（seq=0），失败已上报（不抛，理由同 append）
+      const timestamp = Date.now();
+      return events.map((evt) => ({
+        seq: 0,
+        sessionId,
+        type: evt.type as SessionEventType,
+        payload: evt.payload,
+        timestamp,
+      }));
+    }
+
     const db = getDatabase();
     const timestamp = Date.now();
     const result: SessionEvent[] = [];
 
     // Use a transaction for atomicity
-    db.run("BEGIN TRANSACTION");
-    try {
+    db.run("BEGIN TRANSACTION");    try {
       for (const evt of events) {
         const payloadStr = JSON.stringify(evt.payload);
         db.run(
@@ -400,6 +454,16 @@ export class EventLog {
       return { removedEvents, snapshotSeq: Number(anchorSeq) };
     }
 
+    /**
+     * B 态（端口在 rust 但事件通道不可用）：**不碰旧库**。
+     *
+     * 原来的最后一段是"端口压缩没接手就写旧库"—— 在 rust 模式下旧库刻意不存在，
+     * 只会撞一个无关的异常。返回 `removedEvents: 0` 是**如实**的结果（本次一条都没删）。
+     */
+    if (!writeShouldFallBackToLegacy("eventLog.compact", "事件压缩未落库（端口侧事件通道不可用）")) {
+      return { removedEvents: 0, snapshotSeq: anchor.seq };
+    }
+
     const db = getDatabase();
     // 占位：用锚点的 seq 写入快照（替换掉那条事件，保持回放的顺序语义）
     db.run(
@@ -529,13 +593,20 @@ const db = getDatabase();
    * This is the ONLY deletion path — individual events are never deleted.
    */
   deleteAllForSession(sessionId: string): void {
-    const routed = rustEventPort(sessionId);
+    /**
+     * 端口优先，且**不要求镜像已加载**（第 12 轮）：删除是幂等的写穿操作，
+     * 而未加载时走旧库在 rust 模式下只会抛错。镜像侧若正在加载，
+     * `replaceSession([])` 之后加载完成会把行读回来 —— 那没关系：
+     * 权威侧的 `deleteEventsAsync` 已经写穿，下一次加载就不会再读到它们。
+     */
+    const routed = rustEventPort(sessionId) ?? rustEventPortAny();
     if (routed) {
       // 镜像先清（读立刻一致），再排队落库
       routed.events.replaceSession(sessionId, []);
       routed.deleteEventsAsync(sessionId);
       return;
     }
+    if (!writeShouldFallBackToLegacy("eventLog.deleteAllForSession", "会话事件未删除")) return;
     const db = getDatabase();
     db.run("DELETE FROM session_events WHERE session_id = ?", [sessionId]);
     persistDatabase();

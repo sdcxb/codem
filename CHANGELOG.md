@@ -2,6 +2,50 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.59] - 2026-09-17 — L3 门控收尾：**171 处旧库调用全部两态化**
+
+### 这一版做了什么
+
+L3 清单（"端口没接手就回退旧库"的每一处）最后 10 个站点全部处置完，现在**每个文件都满足
+`已门控 ≥ 旧库调用数`**（合计 171 处调用 / 178 个门控）。剩下的字面量要等**回滚开关退役**时才随
+A 态分支一起消失 —— 那不是"没做完"，而是 L4 的内容。
+
+| 位置 | 修的是什么 |
+| --- | --- |
+| `note-manager.ts::deleteNoteLinksBySource` | 第 42 轮"删回退导致基线红"的教训落定：**A 态回退 + B 态上报**（`note-links-order` NL-2 两种模式都绿） |
+| `feedback.ts::ensureNoteColumn` | 判据统一成 `shouldFallbackToLegacy()`（wasm 形态下这四条 ALTER 恰恰需要） |
+| `session-search.ts::session_search` | 端口在但搜索失败时**不读旧库**（原来会给模型一段与查询无关的堆栈） |
+| `session-search.ts::session_trace` | **端口化**：读 `sessions` 域镜像做 fork 谱系遍历（原来在 rust 模式下必然抛错） |
+| `session-log-bridge.ts::hydrateAllAttachments` | B 态跳过预热**并跳过孤儿清理** —— `referenced` 为空会把所有外置附件文件当孤儿删掉（破坏性） |
+| `session-log-bridge.ts::backfillAllSessions` | 会话清单端口优先（原来 rust 模式下清单恒为空 → "回填 0 条"的假正常） |
+| `session-log-bridge.ts::rebuildIndexFromSessionLogs` | 端口重建失败后**不回退旧库重试**（会把真实失败原因换成另一个无关异常） |
+| `event-log.ts::append` / `appendBatch` / `deleteAllForSession` | 新增 `rustEventPortAny()`：**写路径不要求镜像已加载** |
+| `event-log.ts::compact` | 端口压缩未接手时如实返回"删了 0 条" |
+
+### 事件日志那条规则为什么必须改（EV-11）
+
+`rustEventPort()` 要求"**该会话事件镜像已加载**才路由"，本意是避免读写分裂
+（写进镜像、读还从旧库）。但在 rust 引擎下旧库**刻意不存在** —— 没有旧库可分裂，
+那条规则的代价就只剩"**写路径直接抛错**"：真机上表现为**启动窗口期内的事件整段丢失**
+（`EventLog.append` 第一行 `getDatabase()` 抛）。
+
+镜像侧对"窗口期写入"本来就有准备：`appendLocal` 分配的占位 seq 会被
+`RustEventMirror.loadSession` 保留（`pendingLocal` 过滤后追加在真实行之后），
+加载完成后由 `reconcile` 对账成真实水位。所以写路径**不看加载状态**是安全的，
+而"未加载完不路由"这条规则**只对读路径**继续成立。新增契约 `EV-11` 钉住：
+窗口期 append 之后 `legacyAccess === 0`、事件已落库、加载完成后一条不丢。
+
+### 量化
+
+| 指标 | 本批前 | 本批后 |
+| --- | --- | --- |
+| 基线（`CODEM_TEST_PORT=0`） | 5234 通过 / 0 失败 | **5235 通过 / 0 失败** |
+| 端口模式 | 74 失败 / 5160 通过 | **74 失败 / 5160 通过（失败集合未变，无新增）** |
+| L3 已门控 | 171 处 / 167 门控 | **171 处 / 178 门控（每个文件都 gated ≥ calls）** |
+| Rust 测试 | 97 通过 | 97 通过 / 0 失败 |
+
+`tsc` 0 错误，七道审计门 exit 0。
+
 ## [1.16.58] - 2026-09-17 — 面板不再"有时是空的"：把域镜像的就绪窗口挪到首屏之前
 
 ### 现象与根因
