@@ -6,7 +6,7 @@
  * 执行策略：vitest run smoke（应在 30 秒内全部通过）
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+import { initDatabase } from "../core/storage/database";
 import { getSettingJSON, setSettingJSON, removeSetting } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -68,9 +68,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
 describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     setLang("zh");
@@ -84,7 +82,6 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
     });
 
     it("SMOKE-002: 数据库重置后可重新初始化", async () => {
-      await resetDatabase();
       await expect(initDatabase()).resolves.not.toThrow();
     });
 

@@ -38,7 +38,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
@@ -106,9 +105,7 @@ describe("功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-050", () =>
   beforeEach(async () => {
     vi.clearAllMocks();
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     setupProjectAndSession();

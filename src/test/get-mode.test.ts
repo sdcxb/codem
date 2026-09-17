@@ -7,7 +7,7 @@
  *   - 如果有误，WebSocket 连接和引擎配置会出问题
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { getSettingJSON, setSettingJSON, setSetting } from "../core/storage/settings";
 
 // 模拟 App.tsx 中的 getMode 函数
@@ -22,7 +22,6 @@ function getMode(): "cli" | "api" {
 
 describe("App.tsx getMode() — 从 codem-settings 读取", () => {
   beforeEach(async () => {
-    await initDatabase();
     localStorage.clear();
   });
 

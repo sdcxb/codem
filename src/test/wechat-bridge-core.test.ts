@@ -27,7 +27,6 @@ import {
   saveAccess,
   getStateCache,
 } from "../core/wechat-bridge/wechat-bridge";
-import { initDatabase } from "../core/storage/database";
 
 const OWNER = "wxid_abc@im.wechat";
 
@@ -37,7 +36,6 @@ function emptyAccess() {
 
 describe("wechat-bridge 核心 — 纯逻辑", () => {
   beforeAll(async () => {
-    await initDatabase();
   });
 
   beforeEach(() => {

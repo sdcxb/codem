@@ -24,7 +24,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
 import {
@@ -61,7 +60,6 @@ function makeTask(overrides: Partial<DelegationTask> = {}): DelegationTask {
 
 describe("跨会话委派 — SessionMessageBus", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     resetSessionMessageBus();
   });
@@ -167,7 +165,6 @@ describe("跨会话委派 — SessionMessageBus", () => {
 
 describe("跨会话委派 — DelegationStorage", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupProject();
   });
@@ -211,7 +208,6 @@ describe("跨会话委派 — DelegationStorage", () => {
 
 describe("跨会话委派 — DelegationOrchestrator", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupProject();
     resetSessionMessageBus();
@@ -531,7 +527,6 @@ describe("跨会话委派 — executeSessionTurn", () => {
  */
 describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupProject();
     resetSessionMessageBus();

@@ -12,7 +12,7 @@
  *   5. 边界场景：禁用、无项目路径、已连接、连接失败
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { resetDatabase, initDatabase } from "../core/storage/database";
+
 import { getSetting, setSetting } from "../core/storage/settings";
 import { getLang, setLang } from "../core/i18n/lang";
 import {
@@ -106,8 +106,6 @@ function buildMinimalAgent() {
 describe("CodeGraph 集成 — MCP 层", () => {
   beforeEach(async () => {
     clearTauri();
-    await resetDatabase();
-    await initDatabase();
   });
 
   afterEach(() => {
@@ -477,8 +475,6 @@ describe("CodeGraph 集成 — 工具注册与 Deferred 呈现（新契约：可
 describe("CodeGraph 集成 — 端到端流程", () => {
   beforeEach(async () => {
     clearTauri();
-    await resetDatabase();
-    await initDatabase();
   });
 
   afterEach(() => {
@@ -581,8 +577,6 @@ describe("CodeGraph 集成 — 端到端流程", () => {
 describe("CodeGraph 集成 — 边界场景", () => {
   beforeEach(async () => {
     clearTauri();
-    await resetDatabase();
-    await initDatabase();
   });
 
   afterEach(() => {
@@ -706,8 +700,6 @@ describe("CodeGraph 集成 — 边界场景", () => {
 describe("CodeGraph 集成 — launcher 路径（一键安装产物）", () => {
   beforeEach(async () => {
     clearTauri();
-    await resetDatabase();
-    await initDatabase();
     setCodeGraphEnabled(true);
   });
 

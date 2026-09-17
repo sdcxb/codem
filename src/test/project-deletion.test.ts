@@ -8,12 +8,11 @@
  *   - 如果有误，删除项目后侧边栏仍显示已删除项目，或项目列表不一致
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import * as ProjectStorage from "../core/storage/project";
 
 describe("项目删除不依赖 localStorage", () => {
   beforeEach(async () => {
-    await initDatabase();
     localStorage.clear();
   });
 

@@ -136,9 +136,12 @@ describe("权限 — 三级安全策略", () => {
     });
 
     it("SECU-007: 无效值回退默认 ask", () => {
-      // Setting an invalid value via raw setSetting
-      const db = getDatabase();
-      db.run("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)", ["codem-security-mode", "invalid", Date.now()]);
+      /**
+       * 第 18 轮：原来直接用裸 SQL 往**旧库**的 settings 表塞一个非法值。
+       * 旧库已不再是本进程的数据源（A 态已删），所以改成走**设置接口**塞同一个非法值 ——
+       * 被测的东西（"非法值 → 回退默认 ask"）一个字节没变，夹具换到端侧而已。
+       */
+      setSetting("codem-security-mode", "invalid");
 
       expect(getGlobalSecurityMode()).toBe("ask");
     });
@@ -465,16 +468,22 @@ describe("权限 — writeRejected 行为", () => {
 });
 
 describe("权限 — SQL 注入防护", () => {
-  it("SECU-024: Settings 使用参数化查询（不拼接 SQL）", () => {
-    // setSetting with SQL injection attempt
-    setSetting("test'; DROP TABLE projects;--", "value");
-    // The key should be stored as-is, not executed as SQL
-    expect(getSetting("test'; DROP TABLE projects;--")).toBe("value");
+  it("SECU-024: 注入串被当作**数据**处理（端口协议里根本没有 SQL 字符串面）", () => {
+    /**
+     * 第 18 轮改写：原来这里塞完注入串后去查 `sqlite_master` 里的 `projects` 表还在不在。
+     * 那个断言的前提是"渲染进程里有 SQL 字符串面"—— 现在渲染侧只发**结构化命令**
+     * （`settings.set { key, value }` / `crud.*`），注入串没有任何地方可以变成 SQL。
+     *
+     * 所以判据换成端口世界真正能守的两条：
+     *   1. 注入串被**原样当作 key** 存下来（不是被解析、拼接或吃掉）；
+     *   2. 设置面在之后仍然正常工作（没有被"注入"搞坏）。
+     */
+    const injectionKey = "test'; DROP TABLE projects;--";
+    setSetting(injectionKey, "value");
+    expect(getSetting(injectionKey)).toBe("value");
 
-    // Projects table should still exist
-    const db = getDatabase();
-    const result = db.exec("SELECT name FROM sqlite_master WHERE name='projects'");
-    expect(result.length).toBeGreaterThan(0);
+    setSetting("secu-after-injection", "ok");
+    expect(getSetting("secu-after-injection")).toBe("ok");
   });
 
   it("SECU-024b: Session 标题含 SQL 注入字符串", async () => {

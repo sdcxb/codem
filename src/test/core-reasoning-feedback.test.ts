@@ -23,7 +23,7 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
@@ -58,7 +58,6 @@ function makeMsg(overrides: Partial<Message> = {}): Message {
 
 describe("思考过程 — reasoning 存储与加载", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupBase();
   });
@@ -195,7 +194,6 @@ describe("思考过程 — reasoning 存储与加载", () => {
 
 describe("思考过程 — reasoning 回传 LLM（DeepSeek thinking mode 强制要求）", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -239,7 +237,6 @@ describe("思考过程 — reasoning 回传 LLM（DeepSeek thinking mode 强制�
 
 describe("回答反馈 — 消息状态流转", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupBase();
   });
@@ -312,7 +309,6 @@ describe("回答反馈 — 消息状态流转", () => {
 
 describe("回答反馈 — model 字段", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupBase();
   });
@@ -349,7 +345,6 @@ describe("回答反馈 — model 字段", () => {
 
 describe("回答反馈 — 错误消息处理", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupBase();
   });
@@ -416,7 +411,6 @@ describe("回答反馈 — 错误消息处理", () => {
 
 describe("回答反馈 — system-reminder 过滤", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 

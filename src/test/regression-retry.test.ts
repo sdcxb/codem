@@ -5,7 +5,7 @@
  * 不破坏现有 execute/shouldRetry/getDelay/reset 逻辑。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import {
   RetryExecutor,
@@ -16,9 +16,7 @@ import {
 describe("RetryExecutor 配置回归", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
   });

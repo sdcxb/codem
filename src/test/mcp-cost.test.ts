@@ -7,12 +7,11 @@
  *   - 如果有误，MCP 服务器配置丢失，费用跟踪数据丢失
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 
 describe("MCP servers — codem-mcp-servers key", () => {
   beforeEach(async () => {
-    await resetDatabase();
   });
 
   it("默认返回空数组", () => {
@@ -59,7 +58,6 @@ describe("MCP servers — codem-mcp-servers key", () => {
 
 describe("Cost tracker — codem-cost-tracker key", () => {
   beforeEach(async () => {
-    await resetDatabase();
   });
 
   it("数据存储在 codem-cost-tracker（非 mimo-cost-tracker）", () => {

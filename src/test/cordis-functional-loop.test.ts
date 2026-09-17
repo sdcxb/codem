@@ -29,7 +29,7 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -54,7 +54,6 @@ describe("功能闭环 A: LLM 对话闭环", () => {
   let registry: ProviderRegistry;
 
   beforeEach(async () => {
-    await resetDatabase();
     registry = new ProviderRegistry();
   });
 
@@ -168,7 +167,6 @@ describe("功能闭环 B: 工具调用闭环", () => {
   let tools: ToolRegistry;
 
   beforeEach(async () => {
-    await resetDatabase();
     tools = new ToolRegistry();
   });
 
@@ -278,7 +276,6 @@ describe("功能闭环 B: 工具调用闭环", () => {
 // ============================================================
 describe("功能闭环 C: Skills 功能链路", () => {
   beforeEach(async () => {
-    await resetDatabase();
   });
 
   it("FUNC-031: SkillRegistry 单例可获取", () => {
@@ -328,7 +325,6 @@ describe("功能闭环 C: Skills 功能链路", () => {
 // ============================================================
 describe("功能闭环 D: 子智能体功能链路", () => {
   beforeEach(async () => {
-    await resetDatabase();
   });
 
   it("FUNC-041: SubagentRuntime 可获取", () => {
@@ -359,7 +355,6 @@ describe("功能闭环 D: 子智能体功能链路", () => {
 // ============================================================
 describe("功能闭环 E: 数据流闭环", () => {
   beforeEach(async () => {
-    await resetDatabase();
     // 创建外键依赖的 project
     ProjectStorage.createProject({
       id: "test",

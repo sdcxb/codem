@@ -11,7 +11,6 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
 
 describe("idle-tracker 的 0 语义", () => {
   it("HC-1: 阈值 0 表示**不设空闲上限**，而不是立刻超时", async () => {
@@ -76,7 +75,6 @@ describe("ask_clarification 的通道诚实性", () => {
 
 describe("议题与笔记链接的空写诚实性", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
   });
 
   it("HC-6: IssueStorage.update 无字段可更新时返回 0 并告警", async () => {

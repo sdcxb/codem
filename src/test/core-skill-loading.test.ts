@@ -25,7 +25,7 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import {
   SkillRegistry,
   type SkillDefinition,
@@ -52,7 +52,6 @@ describe("技能调用 — SkillRegistry", () => {
   let registry: SkillRegistry;
 
   beforeEach(() => {
-    try { resetDatabase(); } catch { initDatabase(); }
     localStorage.clear();
     registry = new SkillRegistry();
   });
@@ -151,7 +150,6 @@ describe("技能调用 — SkillRegistry", () => {
 
 describe("技能调用 — load_skill 工具", () => {
   beforeEach(() => {
-    try { resetDatabase(); } catch { initDatabase(); }
     localStorage.clear();
   });
 

@@ -26,7 +26,6 @@ vi.mock("../core/file-api", () => ({
   getAppDataDir: vi.fn().mockResolvedValue("C:\\AppData"),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import * as MessageStorage from "../core/storage/message";
@@ -108,9 +107,7 @@ describe("复现：完整 Cordis ctx 委托路径 securityMode", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
 

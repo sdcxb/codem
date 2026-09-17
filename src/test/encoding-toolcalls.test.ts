@@ -12,7 +12,7 @@
  * 所以"args 里的中文/emoji 有没有坏"必须**读端口那张表**来验（见 `toolCallsOf`）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { getStoragePort, hasStoragePort } from "../core/storage/port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -70,7 +70,6 @@ describe("编码测试 — Tool Calls 参数中的中文和 Emoji", () => {
   const sessionId = "sess-tc-test";
 
   beforeEach(async () => {
-    await initDatabase();
     ProjectStorage.createProject({
       id: projectId,
       name: "测试项目 🧪",

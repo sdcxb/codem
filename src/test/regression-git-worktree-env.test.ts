@@ -25,7 +25,7 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: mockIsPathWithinWorkspace,
 }));
 
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
@@ -86,9 +86,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 describe("Git/Worktree/环境配置对核心链路影响", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     setLang("en");

@@ -27,7 +27,7 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: mockIsPathWithinWorkspace,
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { setSettingJSON, setSetting } from "../core/storage/settings";
 import {
   createDefaultToolRegistry,
@@ -57,9 +57,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 describe("工具调用与权限回归", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     vi.clearAllMocks();

@@ -7,12 +7,11 @@
  *   - 特别关注：复合 emoji（多 codepoint）、零宽字符、混合中英文
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "../core/storage/settings";
 
 describe("编码测试 — 中文和 Emoji 在 Settings 值中", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   // ===== 基本中文 =====

@@ -1,15 +1,14 @@
 /**
- * 全局测试初始化：在每个测试套件前初始化 SQLite 内存数据库
+ * 全局测试初始化：每个用例前注册一个干净的内存存储端口。
+ *
+ * 第 18 轮起**不再初始化旧引擎（sql.js）** —— 见下面 `beforeEach` 的说明。
  */
 import { beforeEach, beforeAll, afterAll } from "vitest";
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 
 // 确保 window.__TAURI__ 不存在（模拟浏览器/非 Tauri 环境）
-// 这样 database.ts 会创建纯内存数据库
 beforeAll(async () => {
-  // 删除可能存在的 __TAURI__ 模拟
   delete (window as any).__TAURI__;
 });
 
@@ -34,21 +33,19 @@ const USE_PORT = true;
 
 beforeEach(async () => {
   /**
-   * ⚠️ 顺序很重要：**先**注册一个新的内存端口，**再**重置旧库。
+   * 顺序契约（第 92 波起）：先注册一个新端口，再（如果有旧库）清旧库 ——
+   * 反过来的话清理会作用在"刚被端口接管"的数据面上，表现为跨用例串味。
    *
-   * 反过来的话，`resetDatabase()`（以及测试自己 `beforeEach` 里对旧库的 DELETE）
-   * 会作用在一个**刚刚被端口接管**的数据面上 —— 它们清的是旧库那张表，
-   * 而产品此时读写的是端口那份，于是"清空"看起来无效（跨用例数据串味）。
-   * 先注册端口再清旧库，两边都是干净起点。
+   * ⚠️ 第 18 轮：**测试基座不再初始化旧引擎**（`initDatabase()` / `resetDatabase()` 已从这里删除）。
+   *
+   * 这一步是 L1（删 sql.js）的前置：基座每例都 init 一次旧库，等于**把"产品不会出现的状态"维持成常态**
+   * —— 一整类缺陷会因此隐身（第 18 轮那个"启动维护从未执行"的真机缺陷就是这么藏了很久：
+   * 测试里 `db` 永远非空，维护路径在测试里一直活着，与真机恰好相反）。
+   *
+   * 实测：去掉这一步后全量套件只有 **1 个文件 / 2 条**失败（都是把旧库当夹具的用例，
+   * 已改成端口夹具）—— 也就是说"套件依赖旧引擎"这件事被高估了很久。
    */
   setStoragePort(USE_PORT ? createFakeStoragePort() : null);
-
-  try {
-    await resetDatabase();
-  } catch {
-    // 如果 resetDatabase 失败（比如没有已初始化的数据库），直接 init
-    await initDatabase();
-  }
 
   // 清空 localStorage
   localStorage.clear();

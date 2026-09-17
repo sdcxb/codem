@@ -19,13 +19,12 @@ import {
   savePhoneSettings,
   getPhoneStateCache,
 } from "../core/phone-link/phone-link";
-import { initDatabase } from "../core/storage/database";
+
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 
 describe("phone-link 核心 — 纯逻辑", () => {
   beforeAll(async () => {
-    await initDatabase();
   });
 
   beforeEach(() => {

@@ -46,7 +46,7 @@ import {
   type SkillDefinition,
 } from "../core/skill/skill";
 import { setSettingJSON } from "../core/storage/settings";
-import { initDatabase } from "../core/storage/database";
+
 
 // ========== 辅助函数 ==========
 
@@ -72,7 +72,6 @@ function createFreshRegistry(): SkillRegistry {
 describe("技能触发机制三层改造", () => {
   beforeEach(async () => {
     localStorage.clear();
-    await initDatabase();
   });
 
   afterEach(() => {

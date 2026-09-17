@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { AgentMessageQueue, onAgentMessage } from "../core/llm/agent-message-queue";
 
 // Mock Tauri
@@ -238,7 +238,6 @@ describe("P2-11: Workbench Overview — 轻量可观测性", () => {
 describe("P2-12: Artifact 快照引用 — 集成验证", () => {
   beforeEach(async () => {
     delete (window as any).__TAURI__;
-    await initDatabase();
   });
 
   it("turn_file_changes 表 — 包含 artifact_id (id 字段)", () => {

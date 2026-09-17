@@ -28,7 +28,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import { GuidanceQueue } from "../core/llm/guidance-queue";
 import { useAppStore } from "../store";
 
@@ -38,7 +37,6 @@ describe("引导对话 — GuidanceQueue 基础操作", () => {
   let queue: GuidanceQueue;
 
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     queue = new GuidanceQueue();
   });
@@ -164,7 +162,6 @@ describe("引导对话 — GuidanceQueue 基础操作", () => {
 
 describe("引导对话 — useAppStore guidance 集成", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     useAppStore.getState().clearGuidanceMessages();
   });
@@ -232,7 +229,6 @@ describe("引导对话 — useAppStore guidance 集成", () => {
 
 describe("暂停/恢复/取消 — AbortController 与流式状态", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -315,7 +311,6 @@ describe("暂停/恢复/取消 — AbortController 与流式状态", () => {
 
 describe("并行会话隔离 — per-session Map 验证", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     useAppStore.getState().clearGuidanceMessages();
   });
@@ -469,7 +464,6 @@ describe("并行会话隔离 — per-session Map 验证", () => {
 
 describe("引导消息与存储链路交互", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     useAppStore.getState().clearGuidanceMessages();
   });

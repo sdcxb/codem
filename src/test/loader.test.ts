@@ -8,12 +8,11 @@
  *   - 如果有误，Bootstrap 向导完成后身份信息不持久化，下次启动仍需重新配置
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 
 describe("loader.ts — codem-app-identity / codem-user key", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   it("loadAppIdentity 默认值", async () => {

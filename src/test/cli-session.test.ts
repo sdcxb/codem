@@ -8,7 +8,7 @@
  *   - 如果 key 格式错误或存储失败，CLI 模式的 WebSocket 会话映射会丢失
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { getSetting, setSetting } from "../core/storage/settings";
 
 // 模拟 App.tsx 中的函数
@@ -32,7 +32,6 @@ function saveCliSessionId(projectId: string, sessionId: string, mimoSessionId: s
 
 describe("CLI Session 映射 — codem-cli-session-*", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   it("getCliSessionKey 返回正确格式", () => {

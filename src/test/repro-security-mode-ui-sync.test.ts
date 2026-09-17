@@ -31,7 +31,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import { LLMEngine } from "../core/llm";
@@ -136,9 +135,7 @@ describe("复现：清理 DB 后 UI 选择 full 未生效", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
 

@@ -10,7 +10,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { buildSystemPrompt } from "../core/prompt/prompt";
 import { getLang, setLang } from "../core/i18n/lang";
-import { resetDatabase, initDatabase } from "../core/storage/database";
 
 function buildMinimalAgent() {
   return {
@@ -32,8 +31,6 @@ function commonPrefixRatio(a: string, b: string): number {
 
 describe("系统提示前缀稳定性", () => {
   beforeAll(async () => {
-    await resetDatabase();
-    await initDatabase();
     setLang("en");
   });
 

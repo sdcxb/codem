@@ -18,7 +18,7 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import {
   parseTaskResult,
   type SubagentTask,
@@ -30,7 +30,6 @@ import { sanitizeSubagentOutput } from "../core/subagent/runtime";
 
 describe("子智能体 — SubagentRuntime 基础类型", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -104,7 +103,6 @@ describe("子智能体 — sanitizeSubagentOutput 防注入", () => {
 
 describe("子智能体 — 工具定义存在性检查", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 

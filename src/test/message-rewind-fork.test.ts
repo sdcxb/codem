@@ -12,7 +12,7 @@
  * 大量 UI 状态，不在本文件范围。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
@@ -73,8 +73,6 @@ function rewindDataLayer(
 
 describe("MessageStorage — Edit & Rewind fork 语义（数据层）", () => {
   beforeEach(async () => {
-    await resetDatabase();
-    await initDatabase();
     setup();
   });
 

@@ -7,12 +7,11 @@
  *   - 如果有误，会话恢复功能无法读取之前保存的恢复数据
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { setSettingJSON, getSettingJSON, setSetting } from "../core/storage/settings";
 
 describe("Recovery 数据 — codem-recovery 前缀", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   it("recovery 数据存储在 codem-recovery（非 mimo-recovery）", () => {

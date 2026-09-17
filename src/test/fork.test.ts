@@ -8,7 +8,7 @@
  *   - 如果有误，fork 后新会话将没有消息或消息不完整
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { getStoragePort, hasStoragePort } from "../core/storage/port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -55,7 +55,6 @@ describe("Fork 功能 — 从 SQLite 复制消息到新会话", () => {
   const sourceSessionId = "source-session-1";
 
   beforeEach(async () => {
-    await initDatabase();
 
     // 先创建 project（sessions 表有外键约束）
     ProjectStorage.createProject({

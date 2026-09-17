@@ -6,7 +6,7 @@
  *   - 如果有误，余额查询面板无法读取 provider 配置，导致无法查询 DeepSeek 余额等
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 
 // 模拟 ContextMonitor.tsx 中的 getConfiguredProviders 函数
@@ -22,7 +22,6 @@ function getConfiguredProviders(): Array<{ id: string; name: string; apiKey: str
 
 describe("ContextMonitor — getConfiguredProviders 从 codem-settings 读取", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   it("无设置时返回空数组", () => {

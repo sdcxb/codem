@@ -8,13 +8,12 @@
  *   - 如果旧数据是损坏的 JSON，迁移不应崩溃
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { getSetting, setSetting, getSettingJSON } from "../core/storage/settings";
 import { migrateFromLocalStorage } from "../core/storage/migration";
 
 describe("迁移边界测试 — 幂等性和混合数据源", () => {
   beforeEach(async () => {
-    await initDatabase();
     localStorage.clear();
   });
 

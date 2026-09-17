@@ -33,7 +33,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import { LLMEngine } from "../core/llm";
@@ -129,9 +128,7 @@ describe("复现：LLMEngine.process 完整链路 full 模式写操作被拦截"
   beforeEach(async () => {
     vi.clearAllMocks();
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     setupProjectAndSession();

@@ -7,7 +7,7 @@
  *   - 需验证单引号、分号、注释符等不会破坏查询或导致注入
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "../core/storage/settings";
@@ -18,7 +18,6 @@ import type { Message } from "../store";
 
 describe("SQL 注入和特殊字符测试 — Settings", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   it("值包含单引号", () => {
@@ -113,7 +112,6 @@ describe("SQL 注入和特殊字符测试 — 消息内容", () => {
   const sessionId = "sess-sql-test";
 
   beforeEach(async () => {
-    await initDatabase();
     ProjectStorage.createProject({
       id: projectId,
       name: "SQL注入测试",
@@ -240,7 +238,6 @@ describe("SQL 注入和特殊字符测试 — 消息内容", () => {
 
 describe("SQL 注入和特殊字符测试 — 项目和会话", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   it("项目名包含 SQL 注入模式", () => {

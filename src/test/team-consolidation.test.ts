@@ -13,7 +13,6 @@ import { getSquadManager } from "../core/squad/squad";
 import { createSquadDispatchTool, createSquadStatusTool } from "../core/squad/squad-tools";
 import { AgentTeamsService } from "../core/provider/agent-teams-service";
 import { createTeam, addMember as engineAddMember, snapshot } from "../core/agent-teams/engine";
-import { initDatabase } from "../core/storage/database";
 
 function fakeCtx(sessionId: string) {
   return { sessionId, messageId: "m", cwd: "D:/test", abort: new AbortController().signal } as any;
@@ -35,7 +34,6 @@ async function makeTemplate(name: string) {
 
 describe("团队深合并 Phase1 — Squad→模板 + dispatch 桥接", () => {
   beforeAll(async () => {
-    await initDatabase();
   });
 
   beforeEach(() => {

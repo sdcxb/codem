@@ -17,7 +17,7 @@
  *   - src/App.tsx (项目切换时 runSetupScript/runCleanupScript)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { getSetting, setSetting, getSettingJSON, setSettingJSON, removeSetting } from "../core/storage/settings";
 import { buildSystemPrompt, type SystemPromptConfig } from "../core/prompt/prompt";
 import type { GitConfig, EnvironmentConfig, CustomOperation } from "../core/settings/settings";
@@ -53,9 +53,7 @@ vi.mock("../core/file-api", () => ({
 describe("Git 配置 + 环境脚本 — 枚举测试", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     vi.clearAllMocks();

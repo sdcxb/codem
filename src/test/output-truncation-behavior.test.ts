@@ -26,7 +26,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import { createDefaultToolRegistry } from "../core/llm/tools";
@@ -73,9 +72,7 @@ describe("输出被截断 ⇒ 自动续写（行为）", () => {
     mockReadFile.mockRejectedValue(new Error("ENOENT"));
     mockWriteFile.mockResolvedValue(undefined);
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     ProjectStorage.createProject({
       id: PROJECT_ID,

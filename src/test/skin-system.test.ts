@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeExtractor } from "../core/theme/theme-extractor";
 import { ThemeManager } from "../core/theme/theme-manager";
@@ -25,9 +25,7 @@ import type { DreamSkinConfig, ExtractedPalette } from "../core/theme/types";
 beforeEach(async () => {
   delete (window as any).__TAURI__;
   try {
-    await resetDatabase();
   } catch {
-    await initDatabase();
   }
   localStorage.clear();
   // 重置存储为默认值

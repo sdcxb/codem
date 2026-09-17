@@ -4,7 +4,7 @@
  * 验证 SessionRecoveryService 在新增特性后仍正常工作。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { SessionRecoveryService } from "../core/recovery/recovery";
 import type { Session, MessageV2 } from "../core/llm/session";
 
@@ -35,9 +35,7 @@ describe("会话恢复与多层恢复回归", () => {
 
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     // Create a fresh instance for each test

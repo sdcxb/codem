@@ -4,7 +4,7 @@
  * 验证 buildSystemPrompt 在各种配置组合下不崩溃，输出格式正确。
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { buildSystemPrompt, type SystemPromptConfig } from "../core/prompt/prompt";
 import { getAgentRegistry, type AgentDefinition } from "../core/agent/agent";
 import { setLang } from "../core/i18n/lang";
@@ -14,9 +14,7 @@ import type { AppIdentity, UserConfig } from "../core/types";
 describe("系统提示词构建回归", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     setLang("en");

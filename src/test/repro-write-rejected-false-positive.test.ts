@@ -41,7 +41,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import { createDefaultToolRegistry } from "../core/llm/tools";
@@ -144,9 +143,7 @@ describe("回归：read 读取含 'User rejected the overwrite' 字符串的文�
   beforeEach(async () => {
     vi.clearAllMocks();
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     setupProjectAndSession();

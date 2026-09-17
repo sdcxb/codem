@@ -12,7 +12,7 @@
  *   2. provider.ts toAPIMessage：assistant 消息带 reasoning 时输出 reasoning_content
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import * as MessageStorage from "../core/storage/message";
@@ -45,7 +45,6 @@ function setup(): void {
 
 describe("DeepSeek thinking mode: reasoning_content 必须回传 API", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setup();
   });

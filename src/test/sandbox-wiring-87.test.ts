@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { setSetting, removeSetting, getSetting } from "../core/storage/settings";
 import {
   SANDBOX_SETTING_KEY,
@@ -23,7 +23,6 @@ import {
 import { initDefaultPipeline, getToolPipeline } from "../core/llm/tool-pipeline";
 
 beforeEach(async () => {
-  try { await resetDatabase(); } catch { await initDatabase(); }
   removeSetting(SANDBOX_SETTING_KEY);
 });
 

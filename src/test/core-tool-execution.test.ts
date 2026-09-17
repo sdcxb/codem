@@ -35,7 +35,7 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { setSetting, removeSetting } from "../core/storage/settings";
 import {
   ToolRegistry,
@@ -92,7 +92,6 @@ function createMockExecutorCtx(overrides: Partial<ToolExecutorContext> = {}): To
 describe("工具调用 — ToolRegistry 注册与获取", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -163,7 +162,6 @@ describe("工具调用 — ToolRegistry 注册与获取", () => {
 describe("工具调用 — read 工具", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     removeSetting("codem-sandbox-enabled");
   });
@@ -198,7 +196,6 @@ describe("工具调用 — read 工具", () => {
 describe("工具调用 — write 工具", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     removeSetting("codem-sandbox-enabled");
   });
@@ -230,7 +227,6 @@ describe("工具调用 — write 工具", () => {
 describe("工具调用 — bash 工具", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     removeSetting("codem-sandbox-enabled");
   });
@@ -286,7 +282,6 @@ describe("工具调用 — bash 工具", () => {
 describe("工具调用 — grep 工具", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -307,7 +302,6 @@ describe("工具调用 — grep 工具", () => {
 describe("工具调用 — glob 工具", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -329,7 +323,6 @@ describe("工具调用 — glob 工具", () => {
 describe("工具调用 — edit 工具", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     removeSetting("codem-sandbox-enabled");
   });
@@ -362,7 +355,6 @@ describe("工具调用 — edit 工具", () => {
 describe("工具调用 — StreamingToolExecutor", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -652,7 +644,6 @@ describe("工具调用 — load_skill 工具", () => {
 describe("工具调用 — multi_edit 工具", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     removeSetting("codem-sandbox-enabled");
   });

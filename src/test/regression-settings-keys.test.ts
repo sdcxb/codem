@@ -5,7 +5,7 @@
  * 不与现有设置键冲突。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import {
   getSetting,
   setSetting,
@@ -17,9 +17,7 @@ import {
 describe("新增设置键不冲突", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
   });

@@ -7,7 +7,7 @@
  *   - 如果 SQLite 的 TEXT 类型在序列化/反序列化多字节字符时有问题，数据会损坏
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase } from "../core/storage/database";
+
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import * as ProjectStorage from "../core/storage/project";
@@ -17,7 +17,6 @@ import type { Message } from "../store";
 
 describe("编码测试 — 项目名/路径中的中文和 Emoji", () => {
   beforeEach(async () => {
-    await initDatabase();
   });
 
   it("中文项目名存储和读取", () => {
@@ -110,7 +109,6 @@ describe("编码测试 — 会话标题中的中文和 Emoji", () => {
   const projectId = "proj-session-test";
 
   beforeEach(async () => {
-    await initDatabase();
     ProjectStorage.createProject({
       id: projectId,
       name: "Test",
@@ -170,7 +168,6 @@ describe("编码测试 — 消息内容中的中文和 Emoji", () => {
   const sessionId = "sess-msg-test";
 
   beforeEach(async () => {
-    await initDatabase();
     ProjectStorage.createProject({
       id: projectId,
       name: "Test",

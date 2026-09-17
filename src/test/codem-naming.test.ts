@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
 import { migrateFromLocalStorage } from "../core/storage/migration";
 import { getWorktreeSettings, setWorktreeSettings, getProjectExecutionMode, setProjectExecutionMode } from "../core/environment";
@@ -32,9 +32,7 @@ const SRC_DIR = resolve(__dirname, "..");
 describe("codem 命名清理 — 行为测试", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
   });

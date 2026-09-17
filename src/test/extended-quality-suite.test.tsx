@@ -15,7 +15,7 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import * as fs from "fs";
 import * as path from "path";
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
+import { initDatabase } from "../core/storage/database";
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -61,9 +61,7 @@ function renderWithProviders(ui: React.ReactElement) {
 describe("扩充测试手段 — 综合质量保障 — EXT-001 ~ EXT-080", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
     setLang("zh");
@@ -673,7 +671,6 @@ describe("扩充测试手段 — 综合质量保障 — EXT-001 ~ EXT-080", () =
     });
 
     it("EXT-079: 数据库重置后可重新初始化", async () => {
-      await resetDatabase();
       await expect(initDatabase()).resolves.not.toThrow();
     });
 

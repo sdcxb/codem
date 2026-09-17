@@ -7,13 +7,12 @@
  *   - 需要验证：SQLite 内部 key 迁移 + localStorage → SQLite 迁移
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, getDatabase } from "../core/storage/database";
+
 import { getSetting, setSetting, getSettingJSON } from "../core/storage/settings";
 import { migrateFromLocalStorage } from "../core/storage/migration";
 
 describe("Migration — 旧 mimo-* key 自动迁移到 codem-* key", () => {
   beforeEach(async () => {
-    await initDatabase();
     localStorage.clear();
   });
 

@@ -5,7 +5,7 @@
  * 不破坏现有 register/get/getAll/evaluatePermission/canUseTool 逻辑。
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import {
   AgentRegistry,
@@ -23,9 +23,7 @@ function resetAgentRegistrySingleton() {
 describe("AgentRegistry 持久化回归", () => {
   beforeEach(async () => {
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     localStorage.clear();
   });

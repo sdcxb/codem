@@ -30,7 +30,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import * as ProjectStorage from "../core/storage/project";
 import * as SessionStorage from "../core/storage/session";
 import { createDefaultToolRegistry } from "../core/llm/tools";
@@ -102,9 +101,7 @@ describe("语义计划 + update_plan 动态插入（loop 集成）", () => {
     mockReadFile.mockRejectedValue(new Error("ENOENT"));
     mockWriteFile.mockResolvedValue(undefined);
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
     ProjectStorage.createProject({
       id: PROJECT_ID,

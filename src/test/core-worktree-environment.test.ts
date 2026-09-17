@@ -81,7 +81,6 @@ describe("Git Worktree — Git 命令封装", () => {
     // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
     // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
     // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
-    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -163,7 +162,6 @@ describe("Git Worktree — 创建与移除", () => {
     // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
     // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
     // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
-    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -243,7 +241,6 @@ describe("Git Worktree — 扫描与配额", () => {
     // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
     // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
     // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
-    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -310,7 +307,6 @@ describe("Git Worktree — 执行模式", () => {
     // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
     // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
     // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
-    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -349,7 +345,6 @@ describe("Git Worktree — 与对话/工具集成", () => {
     // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
     // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
     // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
-    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 

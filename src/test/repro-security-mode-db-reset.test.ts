@@ -10,7 +10,6 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { initDatabase, resetDatabase } from "../core/storage/database";
 import {
   getGlobalSecurityMode,
   setGlobalSecurityMode,
@@ -25,9 +24,7 @@ describe("复现：清理 DB 后安全策略读写", () => {
     vi.clearAllMocks();
     localStorage.clear();
     try {
-      await resetDatabase();
     } catch {
-      await initDatabase();
     }
   });
 
