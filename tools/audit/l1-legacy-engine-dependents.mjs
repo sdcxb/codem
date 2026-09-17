@@ -95,6 +95,21 @@ export function stripComments(text) {
 }
 
 /**
+ * 剥掉**字符串/模板字面量**（第 18 轮补）。
+ *
+ * 为什么需要：`src/test/audit-gates.test.ts` 这类**扫描器夹具**会把
+ * `import { getDatabase } from "../core/storage/database";` 当作**样本字符串**写进临时文件，
+ * 用来验证门禁规则本身能咬到它。不剥字符串时，本脚本会把样本当成真实 import ——
+ * 实测就是这么一个假阳性（清单里长期挂着一个"用旧引擎 API"的文件，实际它一行都不用）。
+ */
+export function stripStringLiterals(text) {
+  return text
+    .replace(/`(?:\\.|[^`\\])*`/g, '""')
+    .replace(/'(?:\\.|[^'\\\n])*'/g, '""')
+    .replace(/"(?:\\.|[^"\\\n])*"/g, '""');
+}
+
+/**
  * ⚠️ 第 18 轮补上的**漏网形态**（实测漏掉了 `src/core/llm/tool-pipeline.ts` 与 App.tsx 的两处监听）：
  *
  * 1. **动态 import**：`const { isDatabaseFatal } = await import("../storage/database")`
@@ -135,6 +150,18 @@ function callCount(code, name) {
   return (code.match(re) ?? []).length;
 }
 
+/**
+ * **扫描器夹具白名单**（第 18 轮）。
+ *
+ * `src/test/audit-gates.test.ts` 会把"含 `getDatabase()` / `import { getDatabase } from "./database"`
+ * 的**样本源码字符串**写进临时目录，用来验证门禁规则本身能不能咬到它 —— 文件里**没有任何真实调用**。
+ * 任何按文本扫的脚本都会被它骗到（实测它长期挂在"用旧引擎 API 的文件"清单里）。
+ *
+ * 这类误报的代价不是"多一条噪音"，而是**清单失去可信度**：清理引擎时你会去改一个本来就没问题的文件。
+ * 所以这里显式列出并写明理由 —— 宁可白名单，也不要让脚本去猜"这段文本是不是代码"。
+ */
+const SCANNER_FIXTURE_FILES = new Set(["src/test/audit-gates.test.ts"]);
+
 export function assess() {
   const files = walk(SRC);
   const prodFiles = files.filter((f) => !f.includes(`${path.sep}test${path.sep}`));
@@ -145,6 +172,7 @@ export function assess() {
   const rawSites = [];
   for (const abs of prodFiles) {
     const rel = path.relative(ROOT, abs).replace(/\\/g, "/");
+    if (SCANNER_FIXTURE_FILES.has(rel)) continue;
     const isEngine = rel === "src/core/storage/database.ts"; // 引擎自身
     const rawLines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
     const code = stripComments(rawLines.join("\n"));
@@ -199,6 +227,7 @@ export function assess() {
   const tests = [];
   for (const abs of testFiles) {
     const rel = path.relative(ROOT, abs).replace(/\\/g, "/");
+    if (SCANNER_FIXTURE_FILES.has(rel)) continue; // 扫描器夹具（样本字符串，不是真实调用）
     const base = path.basename(abs);
     const code = stripComments(fs.readFileSync(abs, "utf8"));
     const syms = importedEngineSymbols(code);

@@ -15,7 +15,7 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import * as fs from "fs";
 import * as path from "path";
 
-import { initDatabase } from "../core/storage/database";
+// 第 18 轮：`import { initDatabase }` 已删（旧引擎随 L1 退役，见 EXT-078/079 的新判据）。
 import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -666,12 +666,18 @@ describe("扩充测试手段 — 综合质量保障 — EXT-001 ~ EXT-080", () =
       expect(ids).toContain("summary");
     });
 
-    it("EXT-078: 数据库初始化不崩溃", async () => {
-      await expect(initDatabase()).resolves.not.toThrow();
+    /**
+     * 第 18 轮：这两条原来是 `initDatabase()` 的"不崩溃"冒烟（旧引擎已随 L1 删除）。
+     * 等价断言换成**端口可用**：能写能读就说明存储这一层是好的。
+     */
+    it("EXT-078: 存储端口可用（写入即读得回）", () => {
+      setSettingJSON("ext-port-probe", { ok: true });
+      expect(getSettingJSON("ext-port-probe", null)).toEqual({ ok: true });
     });
 
-    it("EXT-079: 数据库重置后可重新初始化", async () => {
-      await expect(initDatabase()).resolves.not.toThrow();
+    it("EXT-079: 复位存储面之后仍然可读写", () => {
+      setSettingJSON("ext-port-probe-2", { round: 2 });
+      expect(getSettingJSON("ext-port-probe-2", null)).toEqual({ round: 2 });
     });
 
     it("EXT-080: 设置读写闭环", () => {

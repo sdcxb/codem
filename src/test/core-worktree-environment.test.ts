@@ -44,7 +44,8 @@ import {
   setProjectExecutionMode,
 } from "../core/environment/worktree-manager";
 import { getSettingJSON, setSettingJSON, removeSetting } from "../core/storage/settings";
-import { initDatabase, resetDatabase } from "../core/storage/database";
+// 第 18 轮：`import { initDatabase, resetDatabase }` 已删 —— 那两处"清库"调用在任何端口用例里
+// 都是多余的（每个用例拿到的都是新建的端口，本身就是干净起点）。
 
 describe("Git Worktree — 路径处理工具", () => {
   // WTR-009

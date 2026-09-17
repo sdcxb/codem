@@ -13,7 +13,8 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+// 第 18 轮：`import { initDatabase, resetDatabase, getDatabase }` 已删 ——
+// schema 断言改读引擎 DDL（见下面的 `SCHEMA_SQL`），夹具不再需要旧库。
 import { createDefaultToolRegistry } from "../core/llm/tools";
 import { readFileSync } from "fs";
 
@@ -80,58 +81,48 @@ describe("交叉影响：LoopEvent 联合类型完整性", () => {
   });
 });
 
-// ========== 数据库表完整性 — 行为测试（保留原有） ==========
+// ========== 数据库表完整性 — 行为测试（第 18 轮改判据：读引擎 DDL，不读旧库） ==========
+/**
+ * 这一段原来用 `getDatabase()` + `sqlite_master` 做 schema 自省 —— 那是**引擎自身**的视角，
+ * 而旧引擎（sql.js）已随 L1 删除。
+ *
+ * 判据改成读**引擎建库时真正执行的那份 DDL**（`src-tauri/codem-db/sql/schema.sql`）：
+ * 同一个断言对象（"表存在 / 有这条外键"），但真源从"渲染进程内存里那份库"换成"引擎的 schema 定义"，
+ * 而后者才是"表存在"的可证伪依据。
+ */
+const SCHEMA_SQL = readFileSync(
+  require("path").join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+) as string;
+
+function tableBlock(table: string): string {
+  const re = new RegExp(`CREATE TABLE IF NOT EXISTS\\s+["\`]?${table}["\`]?\\s*\\(([\\s\\S]*?)\\n\\);`, "i");
+  return re.exec(SCHEMA_SQL)?.[1] ?? "";
+}
+
 describe("交叉影响：database 新增表不破坏现有表", () => {
-  beforeEach(async () => {
-    delete (window as any).__TAURI__;
-    try {
-      await resetDatabase();
-    } catch {
-      await initDatabase();
+  it("原有表全部存在 — projects/sessions/messages/memory/mcp_servers等", () => {
+    for (const table of ["projects", "sessions", "messages", "memory", "mcp_servers", "recovery_data", "cost_records"]) {
+      expect(tableBlock(table), `引擎 schema 必须声明表 ${table}`).not.toBe("");
     }
   });
 
-  it("原有表全部存在 — projects/sessions/messages/memory/mcp_servers等", async () => {
-    await initDatabase();
-    const db = getDatabase();
-    expect(db).not.toBe(null);
-    const tables = db!.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
-    const tableNames = tables[0]?.values.map((v) => v[0]) || [];
-    expect(tableNames).toContain("projects");
-    expect(tableNames).toContain("sessions");
-    expect(tableNames).toContain("messages");
-    expect(tableNames).toContain("memory");
-    expect(tableNames).toContain("mcp_servers");
-    expect(tableNames).toContain("recovery_data");
-    expect(tableNames).toContain("cost_records");
+  it("新增表全部存在 — turn_file_changes/agent_profiles/needs_you_pending/agent_messages", () => {
+    for (const table of ["turn_file_changes", "agent_profiles", "needs_you_pending", "agent_messages"]) {
+      expect(tableBlock(table), `引擎 schema 必须声明表 ${table}`).not.toBe("");
+    }
   });
 
-  it("新增表全部存在 — turn_file_changes/agent_profiles/needs_you_pending/agent_messages", async () => {
-    await initDatabase();
-    const db = getDatabase();
-    const tables = db!.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
-    const tableNames = tables[0]?.values.map((v) => v[0]) || [];
-    expect(tableNames).toContain("turn_file_changes");
-    expect(tableNames).toContain("agent_profiles");
-    expect(tableNames).toContain("needs_you_pending");
-    expect(tableNames).toContain("agent_messages");
+  it("新增表 — turn_file_changes 有 ON DELETE CASCADE", () => {
+    expect(tableBlock("turn_file_changes")).toContain(
+      "FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE",
+    );
   });
 
-  it("新增表 — turn_file_changes 有 ON DELETE CASCADE", async () => {
-    await initDatabase();
-    const db = getDatabase();
-    const result = db!.exec("SELECT sql FROM sqlite_master WHERE name='turn_file_changes'");
-    const sql = result[0]?.values[0][0] as string;
-    expect(sql).toContain("FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE");
-  });
-
-  it("新增表不与现有表名冲突", async () => {
-    await initDatabase();
-    const db = getDatabase();
-    const tables = db!.exec("SELECT name FROM sqlite_master WHERE type='table'");
-    const names = tables[0].values.map((v) => v[0] as string);
-    const unique = new Set(names);
-    expect(unique.size).toBe(names.length);
+  it("新增表不与现有表名冲突", () => {
+    const names = [...SCHEMA_SQL.matchAll(/CREATE TABLE IF NOT EXISTS\s+["`]?([a-z_][\w]*)["`]?/gi)].map((m) => m[1]);
+    expect(names.length, "schema 里应有多张表（否则本断言是空洞的）").toBeGreaterThan(10);
+    expect(new Set(names).size, "表名不得重复声明").toBe(names.length);
   });
 });
 

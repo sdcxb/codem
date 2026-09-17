@@ -552,10 +552,11 @@ useEffect(() => {
       // 放在启动后台执行：不阻塞首屏，失败也只记日志。
       void (async () => {
         try {
-          const { runDatabaseMaintenance } = await import("./core/storage/database");
+          // 第 18 轮：维护模块从旧引擎里抽出来了（它本来一行都不跑，见 storage/maintenance.ts 的说明）
+          const { runDatabaseMaintenance } = await import("./core/storage/maintenance");
           await runDatabaseMaintenance();
         } catch (e) {
-          console.warn("[App] 数据库维护失败（不影响使用）:", e);
+          console.warn("[App] 存储维护失败（不影响使用）:", e);
         }
         try {
           const { pruneSpillFiles } = await import("./core/storage/spill");

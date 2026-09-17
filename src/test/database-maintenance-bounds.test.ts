@@ -42,7 +42,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
-import { runDatabaseMaintenance } from "../core/storage/database";
+import { runDatabaseMaintenance } from "../core/storage/maintenance";
 
 afterEach(() => {
   vi.restoreAllMocks();

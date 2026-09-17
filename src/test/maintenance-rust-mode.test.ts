@@ -21,6 +21,13 @@
  * "测试基座把产品不会出现的状态维持成常态"会让一整类缺陷隐身。
  *
  * 所以本文件用 `closeDatabase()` 把旧库句柄清掉，**显式模拟真机**。
+ *
+ * ## 第 18 轮（L1）：这份用例反而变成了**常态**
+ *
+ * 现在旧引擎与测试基座的旧库初始化**都已删除** —— 本文件里的用例从一开始就跑在
+ * "没有旧库"的形态下，不需要再模拟什么。MR-4（旧库存在时的旧路径）与
+ * MR-5（`initDatabase()` 在 rust 模式下拒绝）随引擎退休；MR-6 升级为
+ * "生产代码不许再有旧引擎入口"。
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -76,7 +83,7 @@ function installFsStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import { closeDatabase, getDatabase, initDatabase, resetDatabaseFatalState, resetSaveFailureState, runDatabaseMaintenance } from "../core/storage/database";
+import { runDatabaseMaintenance } from "../core/storage/maintenance";
 import { createMessage, listMessages, clearSessionLogCache } from "../core/storage/message";
 import { readSessionMessages, __resetJsonlCache, flushSessionLogWrites } from "../core/storage/session-jsonl";
 import { hasStoragePort, getStoragePort, setStoragePort } from "../core/storage/port";
@@ -108,37 +115,17 @@ beforeEach(async () => {
   installFsStub();
   __resetJsonlCache();
   clearSessionLogCache();
-  resetSaveFailureState();
-  resetDatabaseFatalState();
+  // 干净端口 = 干净数据面（第 18 轮：旧引擎的 initDatabase/getDatabase 夹具已删）
   port = seedPort();
-  await initDatabase();
-  const db = getDatabase();
-  db.run("DELETE FROM messages");
-  db.run("DELETE FROM telemetry_events");
-  db.run(
-    "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES ('sess-maint','','t',0,0,0)",
-  );
 });
 
 afterEach(() => {
-  resetDatabaseFatalState();
-  resetSaveFailureState();
   delete (window as any).__TAURI__;
   __resetJsonlCache();
   clearSessionLogCache();
 });
 
-/**
- * 把进程切到**真机 rust 模式的数据形态**：旧库句柄不存在。
- *
- * `closeDatabase()` 关掉并置空句柄 —— 这正是 bootstrap 调 `markLegacyDbNotUsed()`
- * 之后、`getDatabase()` 会抛 "Database not initialized" 的那个状态。
- */
-function enterRustMode(): void {
-  closeDatabase();
-}
-
-describe("启动维护 —— rust 模式（旧库不存在）下必须照常执行", () => {
+describe("启动维护 —— rust 模式（本进程唯一形态）下必须照常执行", () => {
   it("MR-1: 旧库不存在时，维护**仍**回填追加日志（权威副本）与裁剪索引", async () => {
     /**
      * 造"只有索引、没有日志"的迁移场景：直接写索引命令（绕过 `createMessage`，
@@ -160,13 +147,6 @@ describe("启动维护 —— rust 模式（旧库不存在）下必须照常执
     __resetJsonlCache();
     clearSessionLogCache();
 
-    /**
-     * 从这里开始就是真机的形态：旧库句柄没了。
-     * 原来（缺陷版）`runDatabaseMaintenance()` 在这一行之后立刻 return，
-     * 于是下面两个数字恒为 0 —— 而日志里连一行"维护完成"都没有。
-     */
-    enterRustMode();
-
     const result = await runDatabaseMaintenance({ keepEventsPerSession: 0, compactEventsOver: 0, keepIndexedMessages: 3 });
 
     expect(
@@ -180,7 +160,6 @@ describe("启动维护 —— rust 模式（旧库不存在）下必须照常执
   });
 
   it("MR-2: 旧库不存在时维护不抛，且结果形状完整（防「字段缺失」这类静默退化）", async () => {
-    enterRustMode();
     const result = await runDatabaseMaintenance();
     for (const key of [
       "sizeBefore",
@@ -198,7 +177,6 @@ describe("启动维护 —— rust 模式（旧库不存在）下必须照常执
   });
 
   it("MR-3: 遥测裁剪在 rust 模式下走引擎命令 telemetry.prune（显式水位线）", async () => {
-    enterRustMode();
     await runDatabaseMaintenance({ keepTelemetryDays: 7 });
 
     const prune = port?.__writes().filter((w) => w.command === "telemetry.prune") ?? [];
@@ -208,42 +186,16 @@ describe("启动维护 —— rust 模式（旧库不存在）下必须照常执
     expect(before!).toBeLessThan(Date.now());
   });
 
-  it("MR-4: 旧库存在时行为不变（回归护栏：体积统计与事件裁剪仍按原子路径走）", async () => {
-    // 不调 enterRustMode()：旧库在，走旧路径
-    const result = await runDatabaseMaintenance({ keepEventsPerSession: 0, compactEventsOver: 0 });
-    expect(result.sizeAfter).toBeGreaterThan(0); // 旧库在时才有"库体积"这个数字
-  });
-
-  it("MR-5: rust 模式下 initDatabase() **拒绝**而不是偷偷把 WASM 库加载起来", async () => {
+  it("MR-6: 生产代码里**不许再有旧引擎入口**（L1 收尾的不变量）", async () => {
     /**
-     * `markLegacyDbNotUsed()` 表达的约定原来只是**约定**：任何一处
-     * `await initDatabase()` 都会把 sql.js 拖回渲染进程并整库读写 `codem-db.bin`。
-     * 实测漏网处是 `wechat-bridge.ts::ensureWorkspaceProject`（已修）。
-     * 现在这条约定是**运行期不变量**，本用例把它钉住。
-     */
-    enterRustMode(); // 关掉句柄
-    const { markLegacyDbNotUsed } = await import("../core/storage/database");
-    markLegacyDbNotUsed();
-    try {
-      await expect(initDatabase(), "rust 模式下 initDatabase 必须抛（加载 WASM 才是真错误）").rejects.toThrow(
-        /刻意不加载旧库/,
-      );
-    } finally {
-      const { resetLegacyDbNotUsed } = await import("../core/storage/database");
-      resetLegacyDbNotUsed(); // 别把标记漏给同文件后续用例
-      await initDatabase(); // 恢复旧库，供 afterEach/后续用例使用
-    }
-  });
-
-  it("MR-6: 生产代码里每一处 initDatabase() 调用都必须**先判引擎**（rust 模式下不许加载旧库）", async () => {
-    /**
-     * 与 settings-effect / ui-font-scale 同风格：这条不变量只能从源码上守
-     * （真机才跑得到 WeChat 桥，而漏网的那处就在那里）。
+     * 这条原来是"每处 `initDatabase()` 调用都必须先判引擎"（那时函数还在）。
+     * 现在判据升级成更彻底的一条：**生产代码里不得出现指向旧引擎模块的 import**
+     * （静态 / 动态 / 再导出都算）—— 那是"渲染进程重新加载 WASM 库"的唯一入口，
+     * 也正是整轮迁移要消灭的东西。
      *
-     * 判据：每个 `initDatabase(` 调用点的**上方 5 行窗口**里必须出现引擎判据
-     * （`rustActive` / `kind === "rust"` / `hasStoragePort()` / `legacyDb`）。
-     * 这样"无条件调用"和"藏在 if 里"都能被区分 —— 上一版正则只看单行，
-     * 把守卫块内部的合法调用也判成了违规，等于这条用例永远红。
+     * 注意这条**不检查文件是否存在**：引擎模块 `src/core/storage/database.ts` 会在
+     * L1 的最后一步整体删除，而这条不变量的语义在删除前后都成立（"没有任何生产模块依赖它"），
+     * 所以它不需要随删除一起改。
      */
     const { readFileSync, readdirSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -262,22 +214,19 @@ describe("启动维护 —— rust 模式（旧库不存在）下必须照常执
       return out;
     };
 
+    /** 引擎模块自身是唯一允许"提到自己"的文件（它在 L1 最后一步会被整体删除） */
+    const ENGINE_MODULE = "core/storage/database.ts";
+
     for (const file of walk(SRC)) {
       const rel = file.slice(SRC.length + 1).replace(/\\/g, "/");
-      if (rel === "core/storage/database.ts") continue; // 引擎自身（resetDatabase 在守卫之后回调它）
-      const lines = readFileSync(file, "utf8").split(/\r?\n/);
-      lines.forEach((line, i) => {
-        if (!/\binitDatabase\s*\(/.test(line)) return;
-        if (/^\s*(\*|\/\/|\/\*)/.test(line)) return; // 注释
-        const window = lines.slice(Math.max(0, i - 5), i + 1).join(" ");
-        if (/rustActive|legacyDb|kind === "rust"|hasStoragePort\(\)/.test(window)) return;
-        offenders.push(`${rel}:${i + 1}  ${line.trim()}`);
-      });
+      if (rel === ENGINE_MODULE) continue;
+      const text = readFileSync(file, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      if (/(?:from|import\s*\()\s*["'][^"']*storage\/database["']/.test(text) || /["']\.\/database["']/.test(text)) {
+        offenders.push(rel);
+      }
     }
-
-    expect(
-      offenders,
-      `以下调用点没有先判引擎 —— rust 模式下它们会把 sql.js 拖回渲染进程并整库读写 codem-db.bin：\n${offenders.join("\n")}`,
-    ).toEqual([]);
+    expect(offenders, `以下生产模块仍在 import 旧引擎模块：\n${offenders.join("\n")}`).toEqual([]);
   });
 });

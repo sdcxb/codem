@@ -54,7 +54,7 @@ function installFsStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import { runDatabaseMaintenance } from "../core/storage/database";
+import { runDatabaseMaintenance } from "../core/storage/maintenance";
 import { createMessage, getAttachmentContent, clearSessionLogCache, rebuildSessionFts, listMessages } from "../core/storage/message";
 import { clearExternalContentCache, DEFAULT_EXTERNALIZE_THRESHOLD, FILE_CONTENT_PREFIX } from "../core/storage/attachment-files";
 import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";

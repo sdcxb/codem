@@ -6,7 +6,8 @@
  * 执行策略：vitest run smoke（应在 30 秒内全部通过）
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase } from "../core/storage/database";
+// 第 18 轮：`import { initDatabase } from "../core/storage/database"` 已删 ——
+// 旧引擎随 L1 退役，"初始化不崩溃"的冒烟换成端口可用性（见 SMOKE-001/002）。
 import { getSettingJSON, setSettingJSON, removeSetting } from "../core/storage/settings";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
@@ -77,12 +78,19 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
 
   // ===== SMOKE-001 ~ SMOKE-005: 应用初始化冒烟 =====
   describe("应用初始化冒烟", () => {
-    it("SMOKE-001: 数据库初始化不崩溃", async () => {
-      await expect(initDatabase()).resolves.not.toThrow();
+    /**
+     * 第 18 轮：这两个用例原来是 `expect(initDatabase()).resolves.not.toThrow()` ——
+     * 旧引擎（sql.js）已随 L1 删除，"初始化不崩溃"的等价断言换成**端口可用**：
+     * 本进程唯一的数据源是 rust 端口，能写能读就说明存储这一层是好的。
+     */
+    it("SMOKE-001: 存储端口可用（写入即读得回）", () => {
+      setSettingJSON("smoke-port-probe", { ok: true });
+      expect(getSettingJSON("smoke-port-probe", null)).toEqual({ ok: true });
     });
 
-    it("SMOKE-002: 数据库重置后可重新初始化", async () => {
-      await expect(initDatabase()).resolves.not.toThrow();
+    it("SMOKE-002: 复位存储面之后仍然可读写（换一个干净端口）", () => {
+      setSettingJSON("smoke-port-probe-2", { round: 2 });
+      expect(getSettingJSON("smoke-port-probe-2", null)).toEqual({ round: 2 });
     });
 
     it("SMOKE-003: 设置键值读写正常", () => {

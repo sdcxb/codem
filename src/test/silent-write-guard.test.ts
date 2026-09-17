@@ -6,11 +6,18 @@
  * 第 2 轮之后的正文/工具调用/工具结果静默丢失，表现为"会话原地打转、父会话干等"。
  * 排查时只能靠一句旁证日志，代价极大。
  *
- * 这份用例守三件事：
- *   ① 探测器本身正确（0 行 = 记账 + 告警；改到行 = 不记账）；
- *   ② 真的接进了写入路径（updateMessage / updateToolCall 打不存在的 id 会被记下来）；
- *   ③ **系统级不变量**：跑一整轮后台执行（含两轮迭代、工具调用、工具结果），
- *      **不允许出现任何静默空写** —— 这条断言与"具体哪个 bug"无关，属于长期护栏。
+ * ## 第 18 轮（L1）：探测器本身随旧引擎退役，**它守的不变量换了实现**
+ *
+ * | 原用例 | 处置 |
+ * | --- | --- |
+ * | SWG-1（`runGuarded` 把"影响 0 行"记账 + 告警一次）、SWG-2（真改到行时不记账） | **删除**：这两个是 `write-guard.ts` 的**单元测试**，而 `runGuarded` 只在旧库路径上有意义（它包的是 sql.js 的 `run`），A 态删完后**全仓已无生产调用点** |
+ * | SWG-3（打不存在的 id 会被发现）、SWG-4（任务管理侧写入） | **保留并已改成端口语义**：判据是"不造幽灵行 + 对调用方可见（返回值 / 上报）" |
+ * | SWG-5（跑一整轮后台执行不许有静默空写）、SWG-6（tool_calls 不挂孤儿） | **保留**：与引擎无关的系统级不变量 |
+ *
+ * **覆盖移交**：`runGuarded` 想守的"写没落地必须可见"，在端口世界里由
+ * ①写路径的 `reportPersistFailure` / `reportWriteNotAccepted`（见 `persist-failure-reporting.test.ts`、
+ * 各域契约用例）与 ②SWG-4 的"返回值可见 + 不造幽灵行"共同承担。
+ * 留在这里的 SWG-3/4/5/6 就是那条不变量的新载体。
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -37,10 +44,6 @@ function installFsStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import {
-  noteWriteResult, runGuarded, getSilentWriteReport, resetSilentWriteReport, setSilentWriteDetection,
-} from "../core/storage/write-guard";
-import { getDatabase, initDatabase, resetDatabaseFatalState, resetSaveFailureState } from "../core/storage/database";
 import { setStoragePort, getStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { createMessage, updateMessage, updateToolCall, addToolCall, listMessages, clearSessionLogCache } from "../core/storage/message";
@@ -70,104 +73,33 @@ function useFreshPort(): FakeStoragePort {
 }
 
 /**
- * 把用例显式切到**回滚 / 旧引擎档（A 态）**：`setStoragePort(null)` 与 `setup.ts` 在
- * `CODEM_TEST_PORT=0` 下注册的完全是同一个形态。
- *
- * 为什么 SWG-2 / SWG-3 / SWG-4 需要它：这三条守的是**旧库 SQL 写入**的静默空写探测器，
- * 而 `runGuarded(db, sql)` 本身就只存在于旧库路径 —— 端口模式下写的是
- * `crud.upsert` / `messages.upsert_index` / `tool_calls.replace` 这类**盲 upsert**，
- * 根本没有"影响 0 行"这个概念，也就没有可探测的空写。切档后旧库里要补齐父行夹具：
- * 本文件 beforeEach 的项目 / 会话是**在端口档下**建的，而旧库同样开着
- * `PRAGMA foreign_keys = ON`，缺父行时消息行会被外键拒绝。
+ * ⚠️ 第 18 轮：原来的 `switchToLegacyEngine()`（把用例切到 A 态并在旧库里补父行夹具）已删除 ——
+ * A 态与旧引擎一起退役，需要它的 SWG-1 / SWG-2 也随之退休（覆盖移交见文件头）。
  */
-function switchToLegacyEngine(): void {
-  setStoragePort(null);
-  const db = getDatabase();
-  db.run(
-    "INSERT OR REPLACE INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
-    ["proj-guard", "空写测试", "D:\\proj", Date.now(), Date.now()],
-  );
-  db.run(
-    "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-    [SESSION, "proj-guard", "空写测试会话", Date.now(), Date.now(), 0],
-  );
-}
 
 beforeEach(async () => {
   installFsStub();
   __resetJsonlCache();
   clearSessionLogCache();
-  resetSaveFailureState();
-  resetDatabaseFatalState();
   resetSessionMessageBus();
   resetDelegationOrchestrator();
-  setSilentWriteDetection(true);
-  await initDatabase();
-  const db = getDatabase();
-  db.run("DELETE FROM messages");
-  db.run("DELETE FROM tool_calls");
-  db.run("DELETE FROM sessions");
-  db.run("DELETE FROM projects");
-  resetSilentWriteReport();
+  // 干净端口 = 干净数据面（第 18 轮：原来的旧库清表与 initDatabase 已删）
+  setStoragePort(createFakeStoragePort());
   createProject({ id: "proj-guard", name: "空写测试", path: "D:\\proj", createdAt: Date.now(), lastAccessedAt: Date.now() } as any);
   createSession({
     id: SESSION, projectId: "proj-guard", title: "空写测试会话",
     createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
   } as any);
-  resetSilentWriteReport(); // 建表/建会话的过程不计入
 });
 
 afterEach(() => {
   delete (window as any).__TAURI__;
-  resetSilentWriteReport();
   __resetJsonlCache();
   clearSessionLogCache();
 });
 
 describe("静默空写探测器", () => {
-  it("SWG-1: runGuarded 把「影响 0 行」记下来并告警一次（重复不再刷屏）", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const db = getDatabase();
-    resetSilentWriteReport();
-
-    const r1 = runGuarded(db, "UPDATE messages SET status = ? WHERE id = ?", ["done", "根本不存在"], {
-      table: "messages", op: "set-status", id: "根本不存在", from: "SWG-1",
-    });
-    expect(r1).toBe(0);
-    runGuarded(db, "UPDATE messages SET status = ? WHERE id = ?", ["done", "根本不存在"], {
-      table: "messages", op: "set-status", id: "根本不存在", from: "SWG-1",
-    });
-
-    const report = getSilentWriteReport();
-    expect(report).toHaveLength(1);
-    expect(report[0]).toMatchObject({ table: "messages", op: "set-status", count: 2, lastFrom: "SWG-1" });
-    expect(warn).toHaveBeenCalledTimes(1); // 只告警一次
-    expect(String(warn.mock.calls[0][0])).toContain("空写");
-    warn.mockRestore();
-  });
-
-  it("SWG-2: 真改到行时不记账（正常路径零噪音）", () => {
-    switchToLegacyEngine(); // 直接单测探测器本身（它只对旧库 SQL 生效）
-    const db = getDatabase();
-    /**
-     * 夹具必须**直接插进旧库**：`createMessage()` 现在只写端口与权威日志
-     * （第 17 轮 L4 把旧库写入路径删掉了），用它做夹具的话旧库里根本没有这一行，
-     * `runGuarded` 的 UPDATE 会打空 → 用例变成"断言探测器失灵"，与它想守的东西相反。
-     */
-    db.run(
-      "INSERT OR REPLACE INTO messages (id, session_id, role, content, timestamp, status) VALUES (?, ?, 'user', 'x', ?, 'done')",
-      ["m-ok", SESSION, Date.now()],
-    );
-    resetSilentWriteReport();
-
-    const modified = runGuarded(db, "UPDATE messages SET status = ? WHERE id = ?", ["done", "m-ok"], {
-      table: "messages", op: "set-status", id: "m-ok", from: "SWG-2",
-    });
-    expect(modified).toBe(1);
-    expect(getSilentWriteReport()).toHaveLength(0);
-  });
-
-  it("SWG-3: 任务管理侧写入打不存在的 id —— 不造幽灵行，且不抛（第 17 轮 L4 后的新契约）", () => {
+  it("SWG-3: 打不存在的 id —— 不造幽灵行，且不抛（第 17 轮 L4 后的新契约）", () => {
     /**
      * 这条用例原来断言"旧库 UPDATE 影响 0 行 → 探测器记账"（`messages:update` / `tool_calls:update`）。
      * A 态删除后，`updateMessage` / `updateToolCall` 的索引写只走端口 —— 端口侧不存在
@@ -184,7 +116,6 @@ describe("静默空写探测器", () => {
      */
     const p = useFreshPort();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    resetSilentWriteReport();
 
     expect(() => {
       updateMessage("幽灵消息", { content: "这条写不进去" });
@@ -211,7 +142,6 @@ describe("静默空写探测器", () => {
      * 这正是原用例想守的东西（"写没落地必须可见"），只是换到了端口这半边。
      */
     const p = useFreshPort();
-    resetSilentWriteReport();
 
     const pinned = togglePinned("不存在的会话");
     expect(pinned, "切换不存在的会话必须返回 false（可见的如实回绝，不是静默成功）").toBe(false);
@@ -228,7 +158,18 @@ describe("静默空写探测器", () => {
     expect(ghost, "会话不存在时不许 upsert 出幽灵行（旧实现是 UPDATE 影响 0 行）").toHaveLength(0);
   });
 
-  it("SWG-5（系统级不变量）: 跑完一整轮后台执行，不允许出现任何静默空写", async () => {
+  it("SWG-5（系统级不变量）: 跑完一整轮后台执行，不许有「没落地却被当成成功」的写入", async () => {
+    /**
+     * 第 18 轮改判据：原来这里断言"静默空写探测器没记账"，而那个探测器（`runGuarded`）
+     * 已随旧引擎退役 —— 留着它这条用例会变成**恒真**（报告永远为空）。
+     *
+     * 现在用端口世界真正能证伪的两条判据：
+     *   ① 落库事件必须**真的发生**（消息 2 条、工具调用 2 个都写穿到端口）—— 不是"没报错就算过"；
+     *   ② 期间**不许有持久化失败上报**（`reportPersistFailure` 是端口世界唯一的可见失败通道，
+     *      "写没落地必须可见"这条不变量的新落点）。
+     */
+    const persist = await import("../core/storage/persist-failure");
+    persist.resetPersistFailures();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const engine = {
       process: async function* () {
@@ -244,16 +185,20 @@ describe("静默空写探测器", () => {
       },
     } as any;
 
-    resetSilentWriteReport();
     await executeSessionTurn({ sessionId: SESSION, message: "跑两轮", cwd: "D:\\proj", engine });
     await flushSessionLogWrites();
 
-    const report = getSilentWriteReport();
+    // ① 落库确实发生（证伪"空写"这件事本身）
+    expect(listMessages(SESSION).filter((m) => m.role === "assistant"), "两条助手消息都要落地").toHaveLength(2);
+    const toolRows = port().__table("tool_calls");
+    expect(toolRows.length, "工具调用必须写穿到端口（否则就是静默丢写）").toBeGreaterThanOrEqual(2);
+
+    // ② 期间不许有持久化失败上报（唯一可见的失败通道必须干净）
+    const failures = persist.getPersistFailures();
     expect(
-      report,
-      `后台执行期间出现了静默空写（说明有写入打不到行）：${JSON.stringify(report)}`,
+      failures,
+      `后台执行期间出现了持久化失败上报（说明有写入没落地）：${JSON.stringify(failures)}`,
     ).toEqual([]);
-    expect(listMessages(SESSION).filter((m) => m.role === "assistant")).toHaveLength(2);
     warn.mockRestore();
   });
 

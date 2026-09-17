@@ -30,7 +30,7 @@ function installTauriStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import { runDatabaseMaintenance } from "../core/storage/database";
+import { runDatabaseMaintenance } from "../core/storage/maintenance";
 import { getEventLog } from "../core/storage/event-log";
 import { getEventProjection } from "../core/storage/event-projection";
 import { setStoragePort } from "../core/storage/port";
