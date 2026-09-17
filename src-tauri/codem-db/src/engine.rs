@@ -60,10 +60,90 @@ pub struct Engine {
     import_written: Mutex<usize>,
 }
 
+/// 把损坏的库文件改名备份（`<name>.corrupt-<ts>`），并返回备份路径。
+///
+/// 细节：
+/// - **改名而不是复制**：坏文件可能很大，复制既慢又占双份空间；改名之后原路径就空了，
+///   紧接着的 `open_inner` 会建一个新库。用户在磁盘上仍然拿得到那份坏数据。
+/// - **WAL / SHM 一起搬走**：损坏常常出在 WAL 里（半截事务）。只搬主文件会留下
+///   `-wal`/`-shm`，新库打开时可能又把它当成自己的日志读进去 —— 那就是"重建了还是坏的"。
+/// - 改名失败（被占用/权限）→ 退回 `copy`，仍失败则如实报 IO 错误，**不假装成功**。
+fn backup_corrupt_file(path: &Path) -> DbResult<PathBuf> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let backup = PathBuf::from(format!("{}.corrupt-{stamp}", path.display()));
+
+    let mut moved_any = false;
+    for suffix in ["", "-wal", "-shm"] {
+        let from = PathBuf::from(format!("{}{suffix}", path.display()));
+        if !from.exists() {
+            continue;
+        }
+        let to = PathBuf::from(format!("{}{suffix}", backup.display()));
+        if std::fs::rename(&from, &to).is_ok() {
+            moved_any = true;
+            continue;
+        }
+        // 改名失败（Windows 上文件被占用是常见原因）→ 退回复制
+        std::fs::copy(&from, &to)
+            .map_err(|e| DbError::new(ErrorCode::Io, format!("备份损坏库失败（{}）：{e}", from.display())))?;
+        let _ = std::fs::remove_file(&from);
+        moved_any = true;
+    }
+
+    if !moved_any {
+        return Err(DbError::new(
+            ErrorCode::Io,
+            format!("库被判损坏但文件不存在，无法备份：{}", path.display()),
+        ));
+    }
+    Ok(backup)
+}
+
 impl Engine {
     /// 打开（或新建）库：PRAGMA → 装安全边界 → schema/迁移
     pub fn open(path: impl AsRef<Path>) -> DbResult<Self> {
+        Self::open_inner(path.as_ref())
+    }
+
+    /// **打开失败且属于"库损坏"时：备份坏文件、重建空库**（第 19 轮补的缺口）。
+    ///
+    /// ## 为什么需要它（这条能力曾经存在，删 sql.js 时丢了）
+    ///
+    /// 旧引擎（sql.js）在 `PRAGMA quick_check` 失败时会把坏文件备份成 `<path>.corrupt-<ts>`，
+    /// 然后重建一个空库继续跑 —— 索引丢了没关系，**权威副本是会话 JSONL**，
+    /// 下次启动的维护会从日志把索引重建回来。删掉旧引擎之后这条能力**没有对应物**：
+    /// 库文件一旦损坏，`Engine::open` 直接失败 → 渲染侧端口注册失败 →
+    /// 「本进程没有可用存储」→ 用户看到的是"应用不能用了"，而他的数据其实还在日志里。
+    ///
+    /// ## 为什么"备份"不能省
+    ///
+    /// 重建 = 从零开始；备份 = 把**可能还能救的那一份**原样留在磁盘上（改名，不改内容）。
+    /// 直接删掉坏文件等于替用户销毁证据，而这类文件用 `.recover` / 手工 SQL 有时还能捞出东西。
+    ///
+    /// ## 返回值
+    ///
+    /// `(engine, Some(备份路径))` = 发生过恢复；`(engine, None)` = 正常打开。
+    /// **调用方必须把这件事报出去**（渲染侧会据此写"索引需要重建"标记并提示用户），
+    /// 悄悄恢复 = 用户永远不会知道自己丢过一次索引。
+    pub fn open_with_recovery(path: impl AsRef<Path>) -> DbResult<(Self, Option<PathBuf>)> {
         let path = path.as_ref().to_path_buf();
+        match Self::open_inner(&path) {
+            Ok(engine) => Ok((engine, None)),
+            Err(e) if e.code == ErrorCode::Corrupt => {
+                let backup = backup_corrupt_file(&path)?;
+                // 重建：坏文件已经改名走了，这里拿到的一定是全新库
+                let engine = Self::open_inner(&path)?;
+                Ok((engine, Some(backup)))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn open_inner(path: &Path) -> DbResult<Self> {
+        let path = path.to_path_buf();
         if let Some(dir) = path.parent() {
             if !dir.as_os_str().is_empty() {
                 std::fs::create_dir_all(dir)

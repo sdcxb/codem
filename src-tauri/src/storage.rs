@@ -80,6 +80,11 @@ pub struct StorageState {
     /// 库文件路径（惰性打开时使用；诊断与迁移工具也要读它）
     path: PathBuf,
     engine: Mutex<Option<Engine>>,
+    /// 本次进程里若发生过"损坏库自动重建"，这里是那份坏文件的备份路径
+    ///
+    /// 渲染侧必须知道这件事（写"索引需要重建"标记 + 提示用户）：
+    /// 悄悄恢复等于用户永远不知道自己丢过一次索引。
+    recovered_from: Mutex<Option<String>>,
 }
 
 impl StorageState {
@@ -87,20 +92,34 @@ impl StorageState {
         Self {
             path,
             engine: Mutex::new(None),
+            recovered_from: Mutex::new(None),
         }
     }
 
     /// 惰性打开引擎（幂等；已打开则直接复用）
+    ///
+    /// 第 19 轮：改用 `Engine::open_with_recovery` —— 库文件损坏时**先备份坏文件再重建**，
+    /// 而不是让"本进程没有存储"。备份路径记在 state 里，由 `storage_health` 报给渲染侧。
     fn engine(&self) -> Result<std::sync::MutexGuard<'_, Option<Engine>>, DbError> {
         let mut guard = self
             .engine
             .lock()
             .map_err(|_| DbError::new(codem_db::ErrorCode::Unavailable, "存储状态锁已中毒"))?;
         if guard.is_none() {
-            let engine = Engine::open(&self.path)?;
+            let (engine, recovered) = Engine::open_with_recovery(&self.path)?;
+            if let Some(backup) = recovered {
+                if let Ok(mut slot) = self.recovered_from.lock() {
+                    *slot = Some(backup.to_string_lossy().to_string());
+                }
+            }
             *guard = Some(engine);
         }
         Ok(guard)
+    }
+
+    /// 本次进程是否发生过损坏恢复（诊断/健康检查用）
+    pub fn recovered_from(&self) -> Option<String> {
+        self.recovered_from.lock().ok().and_then(|g| g.clone())
     }
 
     pub fn path(&self) -> &std::path::Path {
@@ -241,7 +260,21 @@ pub fn storage_health(state: State<'_, StorageState>) -> StorageReply {
         )));
     };
     reply(engine.health().and_then(|h| {
-        serde_json::to_value(h).map_err(|e| DbError::other(e.to_string()))
+        let mut v = serde_json::to_value(h).map_err(|e| DbError::other(e.to_string()))?;
+        /**
+         * 把"是否发生过损坏恢复"附在健康检查上（第 19 轮）。
+         *
+         * 为什么放在这里而不是单开一条命令：渲染侧**每次启动都会调 health**（端口预热的第一步），
+         * 而恢复这事只在打开引擎时发生一次 —— 附着在 health 上就自动被看到，
+         * 不需要调用方记得"额外问一句"（那种设计一定会有人忘）。
+         */
+        if let Some(backup) = state.recovered_from() {
+            if let Value::Object(ref mut map) = v {
+                map.insert("recovered".to_string(), Value::Bool(true));
+                map.insert("recovered_from".to_string(), Value::String(backup));
+            }
+        }
+        Ok(v)
     }))
 }
 

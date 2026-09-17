@@ -401,4 +401,74 @@ describe("存储契约 —— 幂等与可恢复性", () => {
       probe.dispose();
     }
   });
+
+  /**
+   * ## 第 19 轮补的两条：把 v1.16.64（删 sql.js）时点名的两个"覆盖缺口"关上
+   *
+   * 删旧引擎时我们逐条写了覆盖移交台账，其中两条是**明说没有等价物**的：
+   *   1. `tool_calls.result` 的 **130 KB / 5 MB 量级保真** —— C11 覆盖的是 `messages.content`（≈500 KB），
+   *      而渲染侧的写入链是 `createMessage → messages.upsert_index → tool_calls`，工具结果走的是另一条路；
+   *   2. **损坏库的备份** —— 旧引擎在 `PRAGMA quick_check` 失败时会把坏文件备份成 `.corrupt-<ts>`
+   *      再重建；Rust 引擎当时没有对应能力（开局失败 = 本进程没有存储）。
+   * 这两条现在都有实现 + 契约用例（C27 / C28）。
+   */
+  it("C27: 工具结果的大 payload 逐字保真（130 KB 与 5 MB 两个量级）", () => {
+    const s = seededSession(DB, "tool-payload");
+    const small = "x".repeat(130_000);
+    const huge = "z".repeat(5 * 1024 * 1024);
+
+    DB.must("messages.upsert_index", {
+      id: "m-tc-large",
+      session_id: s,
+      role: "assistant",
+      content: "两条工具结果",
+      timestamp: 2_000,
+      status: "done",
+      tool_calls: [
+        { id: "tc-small", tool: "bash", args: { command: "echo" }, result: small, status: "done" },
+        { id: "tc-huge", tool: "read", args: { path: "big.txt" }, result: huge, status: "done" },
+      ],
+    });
+
+    const rows = DB.must<{ items: Array<{ id: string; result: string | null }> }>("tool_calls.list", {
+      message_id: "m-tc-large",
+    }).items;
+    const byId = new Map(rows.map((r) => [r.id, r.result ?? ""]));
+
+    expect(byId.get("tc-small")?.length, "130 KB 工具结果不得被截断").toBe(small.length);
+    expect(byId.get("tc-huge")?.length, "5 MB 工具结果不得被截断").toBe(huge.length);
+    // 逐字比对（只比首尾与长度会漏掉中间被改写的情况）
+    expect(byId.get("tc-small")).toBe(small);
+    expect(byId.get("tc-huge")).toBe(huge);
+
+    // 引擎对单次查询有硬上限（16 MiB）：这个量级必须仍在可读范围内，否则就是"能写不能读"
+    const caps = DB.raw(["commands"]).result;
+    expect(caps.max_bytes_per_query ?? 0).toBeGreaterThan(huge.length);
+  });
+
+  it("C28: 损坏的库文件会被**备份后重建**，而不是让本进程完全没有存储", () => {
+    const probe = new TempDb("corrupt");
+    try {
+      // 造一个"看起来像 SQLite、实际是垃圾"的文件：SQLite 头 + 乱码正文
+      fs.writeFileSync(probe.path, Buffer.concat([Buffer.from("SQLite format 3\0"), Buffer.alloc(4096, 0x7a)]));
+
+      const init = probe.raw(["init"]);
+      expect(init.result.ok, `损坏库必须能被自动恢复：${JSON.stringify(init.result)}`).toBe(true);
+
+      // ① 备份必须存在（用户的坏数据不能被静默丢弃 —— 那是可救援的最后一份）
+      const backups = fs.readdirSync(path.dirname(probe.path)).filter((f) => f.includes("corrupt"));
+      expect(backups.length, "损坏文件必须被改名备份（.corrupt-<ts>）").toBeGreaterThan(0);
+
+      // ② 重建后的库必须可用（schema 就位、可写可读）
+      const caps = probe.raw(["commands"]).result;
+      expect(caps.engine).toBe("rust");
+      const integrity = probe.raw(["integrity"]).result;
+      expect(integrity.ok, "重建后的库必须完整性通过").toBe(true);
+
+      // ③ 恢复这件事必须**可见**（不能悄悄发生）
+      expect(String(init.result.recovered_from ?? ""), "应当报告「从哪个文件恢复过来」").toContain("corrupt");
+    } finally {
+      probe.dispose();
+    }
+  });
 });

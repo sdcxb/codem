@@ -259,9 +259,13 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     };
 
-    // 打开引擎（含 schema/迁移）：失败也返回结构化错误，绝不 panic
-    let engine = match Engine::open(&path) {
-        Ok(e) => e,
+    // 打开引擎（含 schema/迁移）：失败也返回结构化错误，绝不 panic。
+    //
+    // 第 19 轮：改用 `open_with_recovery` —— 库文件损坏时**先备份坏文件再重建**，
+    // 并在响应里报出 `recovered_from`。CLI 与 Tauri 命令层共用这一条路径，
+    // 所以契约测试（C28）验证的就是生产行为。
+    let (engine, recovered_from) = match Engine::open_with_recovery(&path) {
+        Ok(pair) => pair,
         Err(e) => {
             print_json(&json!({ "ok": false, "path": path, "error": error_json(&e) }));
             return ExitCode::from(1);
@@ -275,6 +279,17 @@ fn main() -> ExitCode {
         Ok(mut v) => {
             if let Value::Object(ref mut map) = v {
                 map.insert("ok".to_string(), Value::Bool(true));
+                /**
+                 * 发生过"损坏库自动恢复"时**必须报出来**：调用方（渲染侧 / 排查者）
+                 * 要据此写"索引需要重建"标记并提示用户 —— 悄悄恢复等于用户永远不知道自己丢过一次索引。
+                 */
+                if let Some(backup) = &recovered_from {
+                    map.insert(
+                        "recovered_from".to_string(),
+                        Value::String(backup.display().to_string()),
+                    );
+                    map.insert("recovered".to_string(), Value::Bool(true));
+                }
             }
             print_json(&v);
             ExitCode::SUCCESS

@@ -18,6 +18,62 @@ fn call(engine: &Engine, cmd: &str, params: serde_json::Value) -> serde_json::Va
     dispatch(engine, cmd, &params).unwrap_or_else(|e| panic!("{cmd} 失败：{}", e.to_line()))
 }
 
+// ========== 损坏库的自动恢复（第 19 轮补的缺口） ==========
+
+/// 旧引擎（sql.js）在 quick_check 失败时会"备份坏文件 + 重建"，删引擎时这条能力一度没有对应物
+/// —— 库一坏就是"本进程没有存储"。本测试钉住新的语义：
+/// ① 坏文件被**改名备份**（不是删掉：那可能是还能救的最后一份）；② 空库被重建且可用；
+/// ③ 恢复这件事**被报出来**（`recovered_from`），而不是悄悄发生。
+#[test]
+fn corrupt_database_is_backed_up_and_rebuilt() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("corrupt.bin");
+
+    // 造一个"看起来像 SQLite、实际不是"的文件：正确的 16 字节头 + 乱码正文
+    let mut bytes = Vec::from(&b"SQLite format 3\0"[..]);
+    bytes.extend(std::iter::repeat(0x7au8).take(4096));
+    std::fs::write(&path, &bytes).unwrap();
+
+    // ① 普通 open 必须失败，且错误码是 CORRUPT（否则恢复逻辑根本不会被触发）
+    let err = match Engine::open(&path) {
+        Ok(_) => panic!("损坏文件不该被正常打开"),
+        Err(e) => e,
+    };
+    assert_eq!(err.code, codem_db::ErrorCode::Corrupt, "损坏必须映射为 CORRUPT：{err:?}");
+
+    // ② open_with_recovery：备份 + 重建
+    let (engine, backup) = Engine::open_with_recovery(&path).expect("损坏库应当能被恢复");
+    let backup = backup.expect("恢复时必须给出备份路径");
+
+    assert!(backup.exists(), "备份文件必须真的存在：{}", backup.display());
+    assert_eq!(std::fs::metadata(&backup).unwrap().len(), bytes.len() as u64, "备份必须与坏文件同内容（改名，不改写）");
+    /**
+     * ⚠️ 这里**不比对"原路径的文件大小"**：WAL 模式下新建的库主文件可能只有几 KB
+     * （数据都还在 `-wal` 里），拿"比坏文件大"当判据是我第一版写的**假判据** ——
+     * 实测它会在一个完全正常的恢复上失败。
+     * "原路径已经换成新库"这件事用**行为**验证（下面那几条：schema 就位、完整性通过、能读能写）。
+     */
+
+    // ③ 重建后的库可用：schema 就位、可写可读、完整性通过
+    let report = engine.schema_report();
+    assert!(report.fresh, "重建出来的应当是全新库");
+    assert!(report.tables >= 30, "新库必须有完整 schema：{} 张表", report.tables);
+    let integrity = engine.integrity_check().unwrap();
+    assert!(integrity.ok, "重建后的库必须完整性通过：{}", integrity.detail);
+    call(&engine, "projects.upsert", json!({ "id": "p-after-recovery", "name": "恢复后" }));
+    let listed = call(&engine, "projects.list", json!({}));
+    assert!(
+        listed["items"].as_array().unwrap().iter().any(|p| p["id"] == "p-after-recovery"),
+        "重建后的库必须能正常读写"
+    );
+
+    // ④ 正常库不该触发恢复（否则每次启动都会备份一遍）
+    let clean = dir.path().join("clean.bin");
+    Engine::open(&clean).unwrap();
+    let (_e, none) = Engine::open_with_recovery(&clean).expect("正常库直接打开");
+    assert!(none.is_none(), "正常库不得产生备份");
+}
+
 // ========== schema / 迁移 ==========
 
 #[test]

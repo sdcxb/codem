@@ -81,6 +81,18 @@ function toStorageError(e: unknown, fallbackMessage: string): StorageError {
   return new StorageError("OTHER", e instanceof Error ? e.message : fallbackMessage);
 }
 
+/**
+ * "损坏库已恢复"只通知一次（`health()` 会被反复调用）。
+ * 与 `health.ts` 里的 `notifyStorageUnavailable` 同一套思路：**一次性**，
+ * 避免同一个事件在每个调用点各提示一遍。
+ */
+let recoveryNotified = false;
+
+/** 测试隔离：复位"已通知损坏恢复"闩锁 */
+export function __resetRecoveryNotifiedForTests(): void {
+  recoveryNotified = false;
+}
+
 // ========== 传输层 ==========
 
 /**
@@ -199,6 +211,37 @@ class RustEnginePort implements StorageEnginePort {
       throw toStorageError(e, "storage_health 的 IPC 调用失败");
     }
     const raw = unwrap(reply as WireReply<Record<string, unknown>>, "storage_health");
+    /**
+     * **损坏库自动重建**的通知（第 19 轮）。
+     *
+     * 引擎侧在库文件损坏时会"备份坏文件 + 重建空库"（`Engine::open_with_recovery`），
+     * 并把备份路径附在 health 上。这里**必须把这件事传出去**：
+     *  - 写"索引需要重建"标记 → 启动维护会从**权威日志（会话 JSONL）**把索引重建回来；
+     *  - 如实上报一件用户可见的事（索引丢过一次、坏文件备份在哪）。
+     * 悄悄恢复 = 用户永远不知道自己的索引经历过一次重建。
+     *
+     * ⚠️ 只做一次（health 会被反复调用），用模块级闩锁。
+     */
+    if (raw.recovered === true && !recoveryNotified) {
+      recoveryNotified = true;
+      const backup = typeof raw.recovered_from === "string" ? raw.recovered_from : "(未知备份路径)";
+      console.error(`[Storage] 库文件损坏：已备份坏文件并重建空库（备份：${backup}）`);
+      void (async () => {
+        try {
+          const { markIndexRebuildNeeded } = await import("./maintenance");
+          await markIndexRebuildNeeded(`存储库损坏后重建（备份：${backup}）`);
+        } catch (e) {
+          console.warn("[Storage] 写索引重建标记失败（下次启动仍会重试）:", e);
+        }
+        const { reportActionFailure } = await import("./persist-failure");
+        reportActionFailure(
+          "storage.recovered",
+          new Error(`库文件损坏，已重建空库（坏文件备份：${backup}）`),
+          "查询索引已丢失，将从会话日志自动重建；历史消息本身不受影响（权威副本是会话 JSONL）",
+        );
+      })();
+    }
+
     return {
       engine: "rust",
       ready: Boolean(raw.ready),

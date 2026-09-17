@@ -90,6 +90,37 @@ export async function clearIndexRebuildMarker(): Promise<void> {
 }
 
 /**
+ * **写下"索引需要重建"标记**（第 19 轮新增）。
+ *
+ * 消费侧一直是 `runDatabaseMaintenance`（它看到标记就**从权威日志重建索引**再清标记），
+ * 但**生产者**在删 sql.js 时随旧引擎的致命闩锁一起消失了 —— 也就是说
+ * "索引坏了能自愈"这条能力当时**只剩一半**（能消费、没人生产）。
+ *
+ * 现在生产者有两个：
+ * 1. **损坏库自动恢复**（`Engine::open_with_recovery` → 渲染侧端口 health 里报 `recovered`，
+ *    见 `rust-port.ts` 的 `health()`）：坏文件备份走人、空库重建，索引必须从日志重建回来；
+ * 2. 将来任何"检测到索引与日志不一致"的自愈入口。
+ *
+ * 失败不抛：写标记本身失败不该阻塞启动（下次维护仍会做常规回填/裁剪）。
+ */
+export async function markIndexRebuildNeeded(reason: string): Promise<boolean> {
+  try {
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    if (!invoke) return false;
+    const dir = await invoke("get_app_data_dir");
+    await invoke("write_file", {
+      path: `${dir}${INDEX_REBUILD_MARKER}`,
+      content: JSON.stringify({ reason, at: new Date().toISOString() }),
+    });
+    console.log("[Maintenance] 已留索引重建标记（下次启动将从权威日志重建索引）");
+    return true;
+  } catch (e) {
+    console.warn("[Maintenance] 写索引重建标记失败（不影响主流程）:", e);
+    return false;
+  }
+}
+
+/**
  * 遥测裁剪的**端口版**。
  *
  * 引擎侧 `telemetry.prune` 刻意要求显式水位线 `before`（没有它直接报错），

@@ -102,31 +102,83 @@ beforeEach(async () => {
 });
 
 /**
- * ⚠️ **第 18 轮（L1 收尾）退休：AR-1 / AR-2 / AR-3 —— "索引致命时权威日志照样写、历史照样读"。**
+ * ⚠️ **第 18 轮（L1 收尾）退休：AR-1 / AR-2 / AR-3 的旧写法**（拿旧引擎致命闩锁当故障注入点）。
  *
- * 这三条断言的**产品行为**没有变（"权威日志是权威副本"仍然是分层承诺），但它们唯一的
- * 故障注入点是旧引擎的致命闩锁：
+ * 三条断言的**产品行为**没有变（"权威日志是权威副本"仍然是分层承诺），但注入点
+ * `await import("../core/storage/database")` + `noteDatabaseError(...)` **随 sql.js 引擎删除**
+ * 而没有载体 → 旧写法退休（台账见文件头）。
  *
- * ```ts
- * dbMod = await import("../core/storage/database");
- * dbMod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));  // 制造"索引致命"
- * ```
+ * ## ✅ 第 19 轮：用**新注入点**把这三条补齐（`setStoragePort(null)` = 本进程没有可用存储）
  *
- * `noteDatabaseError` / `isDatabaseFatal` 这套机制**已随 sql.js 引擎删除**
- * （`src/core/storage/database.ts` 不存在了；引擎侧真源是
- * `src-tauri/codem-db/sql/schema.sql` + `src/schema.rs`，渲染进程不再持有引擎），
- * 注入点没有载体 → 按铁律退休，并把覆盖**移交出去**（详见文件头台账）：
+ * 退役时台账点名了三处**未移交**的覆盖，这一批全部关掉：
+ *   1. AR-1 独有的"**把日志读回来核对内容**"（MSG-4/6 只断言 append 被调用）；
+ *   2. AR-2（update 路径）当时**暂无等价用例**；
+ *   3. AR-3 的"**索引不可用时仍能读出全部历史**"。
  *
- * - **AR-1**（create 路径）→ `message-index-cutover.test.ts` **MSG-4 / MSG-6**
- *   （新口径：端口未注册 / 端口写失败）。⚠️ 但 MSG-4/6 把 `session-jsonl` 整个 mock 掉，
- *   只断言 append 被调用 —— AR-1 独有的是"**把日志读回来核对内容**"，这份覆盖**未移交**，
- *   迁移批次要补回来（别只留"append 被调用"）。
- * - **AR-2**（update 路径）→ **暂无等价用例**（MSG-1..6 只覆盖 `createMessage`）。
- *   新口径是 `setStoragePort(null)` / 端口写失败，**迁移时优先补**。
- * - **AR-3**（索引致命时读历史走日志合并）→ `session-jsonl-index.test.ts` **SLOG-6** 是近亲
- *   （索引被裁后读路径仍合并日志）；"索引不可用"在新架构里由**端口不可用**承担，
- *   见 `message-index-cutover.test.ts` **MSG-9**。
+ * 新注入点比旧注入点**更严格**：旧的是"索引崩了但库还在"，新的是"本进程根本没有存储" ——
+ * 后者才是删掉 sql.js 之后唯一可能出现的严重故障形态。
  */
+describe("权威日志优先（第 19 轮用新注入点补齐 AR-1/AR-2/AR-3）", () => {
+  /** 让本进程"没有可用存储"：端口撤掉（生产里对应引擎起不来） */
+  const noStorage = async () => {
+    const { setStoragePort } = await import("../core/storage/port");
+    setStoragePort(null);
+  };
+
+  it("AR-1b: 没有可用存储时 createMessage 不抛，且消息**确实写进了权威日志**（读回来核对内容）", async () => {
+    await noStorage();
+    await jsonlMod.__writeSessionLogForTests("sess-ar1b", []); // 建一个空日志（模拟已有会话）
+
+    expect(() => {
+      msgMod.createMessage(
+        { id: "ar1b-1", role: "user", content: "索引不可用时也要落日志", timestamp: 100 } as never,
+        "sess-ar1b",
+      );
+    }, "写索引失败不得让 createMessage 抛（权威日志那一步已经成功）").not.toThrow();
+
+    await jsonlMod.flushSessionLogWrites();
+    // ⭐ 关键一步（旧 AR-1 独有、退役时未移交）：把日志读回来核对**内容**
+    const { messages } = await jsonlMod.readSessionMessages("sess-ar1b");
+    expect(messages.map((m) => m.id)).toContain("ar1b-1");
+    expect(messages.find((m) => m.id === "ar1b-1")?.content).toBe("索引不可用时也要落日志");
+  });
+
+  it("AR-2b: 没有可用存储时 updateMessage 不抛，且**最新内容**追加进权威日志", async () => {
+    await noStorage();
+    await jsonlMod.__writeSessionLogForTests("sess-ar2b", [
+      JSON.stringify({ v: 1, id: "ar2b-1", sessionId: "sess-ar2b", role: "assistant", content: "第一版", timestamp: 1 }),
+    ]);
+    await msgMod.hydrateSessionLog("sess-ar2b"); // 让读路径能看到这条（日志镜像）
+
+    expect(() => {
+      msgMod.updateMessage("ar2b-1", { content: "第二版（索引不可用时的更新）" });
+    }, "索引写失败不得让 updateMessage 抛").not.toThrow();
+
+    await jsonlMod.flushSessionLogWrites();
+    const { messages } = await jsonlMod.readSessionMessages("sess-ar2b");
+    const latest = messages.filter((m) => m.id === "ar2b-1").at(-1);
+    // 同 id 后写者胜：日志里的**最后一条**必须是新内容（旧内容还在，这是追加日志的语义）
+    expect(latest?.content, "更新必须落进权威日志，否则索引一裁内容就回退了").toBe("第二版（索引不可用时的更新）");
+  });
+
+  it("AR-3b: 没有可用存储时 listMessages 仍能读出**全部历史**（走权威日志合并，而不是返回空）", async () => {
+    await noStorage();
+    await jsonlMod.__writeSessionLogForTests("sess-ar3b", [
+      JSON.stringify({ v: 1, id: "h1", sessionId: "sess-ar3b", role: "user", content: "历史一", timestamp: 1 }),
+      JSON.stringify({ v: 1, id: "h2", sessionId: "sess-ar3b", role: "assistant", content: "历史二", timestamp: 2 }),
+      JSON.stringify({ v: 1, id: "h3", sessionId: "sess-ar3b", role: "user", content: "历史三", timestamp: 3 }),
+    ]);
+    await msgMod.hydrateSessionLog("sess-ar3b");
+
+    const list = msgMod.listMessages("sess-ar3b");
+    expect(list.map((m) => m.id), "索引不可用时必须靠日志镜像给出完整历史（否则用户会以为会话空了）").toEqual([
+      "h1",
+      "h2",
+      "h3",
+    ]);
+    expect(list.map((m) => m.content)).toEqual(["历史一", "历史二", "历史三"]);
+  });
+});
 
 describe("索引可重建（自愈）", () => {
   it("AR-4（修复点）: 只有日志时可以从日志重建索引（含工具调用）", async () => {
