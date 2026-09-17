@@ -236,24 +236,25 @@ pub fn storage_batch(
                  * 不是一个可复现的结果快照。要结果快照的调用方应当改用**逐条调用**
                  * （那也是它本来就能做到的事）。所以这里只留**命令名清单**：
                  * 足够回答"前面那几步做了什么"，且长度与数据量无关。
+                 *
+                 * ⚠️ 第 45 轮 Z-7：这段格式化**搬进 `codem_db::batch_failure_message`** 了。
+                 * 起因：CLI 那份 batch 有一份**自己的**文案（仍在内嵌完整结果 JSON），
+                 * 而两边的注释都写着"与另一侧对齐"却已经分歧 —— 说明"同一件事写两份"
+                 * 靠注释是维持不住的。现在两处调用同一个函数，形状不可能再分叉；
+                 * 这里只负责把"已完成的命令名"收集起来。
                  */
-                let completed: Vec<&str> = done
+                let completed: Vec<String> = done
                     .iter()
                     .filter_map(|d| d.get("command").and_then(|c| c.as_str()))
+                    .map(|s| s.to_string())
                     .collect();
                 return reply(Err(DbError::new(
                     e.code,
-                    format!(
-                        "batch 在第 {} 步失败（command={}）：{}；已完成 {} 步{}",
+                    codem_db::batch_failure_message(
                         done.len() + 1,
-                        item.command,
-                        e.message,
-                        done.len(),
-                        if completed.is_empty() {
-                            String::new()
-                        } else {
-                            format!("（依次为：{}）", completed.join(" → "))
-                        }
+                        &item.command,
+                        &e.message,
+                        &completed,
                     ),
                 )));
             }

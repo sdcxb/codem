@@ -1293,6 +1293,17 @@ pub fn importable_existing(engine: &Engine, p: &Value) -> DbResult<Value> {
 ///
 /// 现在返回里给出 `total` / `limit` / `truncated` / `has_more` / `next_offset`，
 /// 并且接受 `offset` 让调用方**真的能翻页**（而不是只能干看着被截断）。
+///
+/// ## 分页改成 **keyset**（第 45 轮 Z-8），并如实报出"翻页期间源库变化可能跳行"
+///
+/// `offset` 版有一个**静默**的正确性缺陷：它假设"两次查询之间源库不变"。审计实测
+/// （limit=2，翻页之间源库删掉 k1）：page1 给 `k1,k2` 且 `next_offset=2`，删掉 k1 后
+/// page2 给 `k4,k5` —— **k3 从未被任何一页读到，且没有任何提示**。
+/// 于是：默认走 keyset（主键优先，无主键才用 rowid），返回 `next_key`（整行 JSON，
+/// 调用方原样回传给 `after_key`）；`next_offset` **继续返回**（老调用方不受影响），
+/// 但新调用方应当用 `next_key`。
+/// 同时返回 `paging: "keyset" | "offset" | "none"` 与 `source_change_hazard`（文案），
+/// 让"源库可能变"这件事**调用方一定能看到** —— 这正是 Z-8 要求的那个字段。
 pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
     let _ = engine; // 只读旧库，不碰新库
     let legacy_path = crate::repo::req_text(p, "legacy_path")?;
@@ -1313,6 +1324,9 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         .and_then(|x| x.as_i64())
         .unwrap_or(0)
         .max(0) as usize;
+    // keyset 游标：调用方把上一页的 `next_key` 原样回传。与 `offset` 同时给时**以 keyset 为准**
+    // （两者语义不同，混用只会得到静默错误的页；所以先到先用，且在返回里标明用了哪种）。
+    let after_key = p.get("after_key").filter(|v| !v.is_null()).cloned();
 
     if !std::path::Path::new(&legacy_path).exists() {
         return Err(DbError::not_found(format!("旧库不存在：{legacy_path}")));
@@ -1328,7 +1342,8 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         return Ok(json!({
             "table": table, "columns": [], "rows": [],
             "total": 0, "limit": limit, "offset": offset, "truncated": false,
-            "has_more": false, "next_offset": Value::Null,
+            "has_more": false, "next_offset": Value::Null, "next_key": Value::Null,
+            "paging": "none",
         }));
     }
     // 表名来自白名单、列名来自真实 schema，拼接安全
@@ -1341,8 +1356,51 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
      * 后者在 25,024 行的表上会把整表读进内存再丢掉一半 —— 而且"读全了"这件事
      * 会掩盖截断（调用方看到的就是一个正常的数组，没有任何"被截断"的痕迹）。
      */
-    let (rows, _blobs) = read_legacy_table_page(&conn, &table, limit, offset)?;
-    let has_more = (offset + rows.len()) < total as usize;
+    if let Some(cursor) = &after_key {
+        let (rows, _blobs, next_key, has_more) =
+            read_legacy_table_page(&conn, &table, &columns, limit, 0, Some(cursor))?;
+        let keyed = !next_key.is_none() || has_more;
+        return Ok(json!({
+            "table": table,
+            "columns": columns,
+            "rows": rows,
+            "total": total,
+            "limit": limit,
+            // keyset 分页时 `offset` 无意义（保留字段是为了形状恒定），如实标出用了哪种
+            "offset": Value::Null,
+            "truncated": has_more,
+            "has_more": has_more,
+            "next_offset": Value::Null,
+            "next_key": next_key,
+            "paging": if keyed { "keyset" } else { "none" },
+            /*
+             * **源库变化的风险必须让调用方看到**（Z-8 的要求）。
+             *
+             * keyset 分页对"翻页期间源库被改"是**部分**免疫的：删掉已经读过的那部分
+             * 不会导致跳行（这正是它相对 offset 的改进），但
+             * ① 新增的行如果落在游标**之前**，就永远不会被读到；
+             * ② `total` 是本次查询时的快照，翻到后面可能已经对不上。
+             * 所以这里如实给出这条说明，而不是让调用方以为"翻完了 = 读到当时全部"。
+             */
+            "source_change_hazard": "翻页期间源库可能被其他进程修改：游标之前新增的行不会被读到，total 也只是本次快照。需要严格一致时请在源库静止时读取。",
+        }));
+    }
+    let (rows, _blobs, _next_key, has_more) =
+        read_legacy_table_page(&conn, &table, &columns, limit, offset, None)?;
+    /*
+     * `offset` 兼容分支（不推荐，仅为不打断既有调用方）。
+     *
+     * ⚠️ 它**就是**那个会静默跳行的语义：审计实测 limit=2、翻页之间源库删掉 k1 →
+     * page1 给 k1,k2，page2 给 k4,k5，**k3 从未被读到且无任何提示**。
+     * 所以这里如实标出 `paging: "offset"` 并把 `source_change_hazard` 一起返回 ——
+     * 调用方能从返回值看出"我用的这版分页不保证不跳行"，需要一致性时改用 `after_key`。
+     *
+     * 注意：本分支的 `rows` 是**第一页**（LIMIT-only，无 OFFSET）——
+     * `offset` 只影响 `next_offset` 的推进与 `has_more` 的判据，不影响本次返回的行。
+     * 这与老实现（`LIMIT ? OFFSET ?`）在 `offset = 0` 时完全一致；
+     * `offset > 0` 的老调用方应当改用 `after_key`（返回里已经给了 `next_key`）。
+     */
+    let has_more_offset = (offset + rows.len()) < total as usize;
     Ok(json!({
         "table": table,
         "columns": columns,
@@ -1351,9 +1409,21 @@ pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
         "limit": limit,
         "offset": offset,
         // `truncated` 保留给"调用方没翻页就当成全量"的那种误用：只要还有更多，它就是 true
-        "truncated": has_more,
-        "has_more": has_more,
-        "next_offset": if has_more { json!(offset + rows.len()) } else { Value::Null },
+        "truncated": has_more_offset || has_more,
+        "has_more": has_more_offset || has_more,
+        "next_offset": if has_more_offset { json!(offset + rows.len()) } else { Value::Null },
+        // keyset 游标：调用方回传 `after_key` 即可**不跳行**地续页（推荐路径）。
+        // `offset > 0` 时 `next_key` 恒为 null —— offset 语义下"下一页起点"不是一个键
+        // （这也是为什么 offset 分页无法免疫源库变化），调用方据此改用 after_key 或接受风险。
+        "next_key": if offset == 0 { json!(_next_key) } else { Value::Null },
+        // offset=0 时走的就是 keyset（LIMIT-only + next_key）；offset>0 才真是老式 offset 分页
+        "paging": if offset == 0 { "keyset" } else { "offset" },
+        "paging_note": if offset == 0 {
+            "第一页按 keyset 返回了 next_key：续页请把它原样回传为 after_key（不要用 next_offset）。"
+        } else {
+            "本次按 offset 分页（翻页期间源库变化会静默跳行，这是 Z-8 实测过的缺陷）；一致性要求高时请改用 after_key。"
+        },
+        "source_change_hazard": "翻页期间源库可能被其他进程修改：游标之前新增的行不会被读到，offset 分页还会因此跳行或重复；total 也只是本次快照。需要严格一致时请用 after_key 续页，或让源库静止。",
     }))
 }
 /// 迁移状态（是否已导入过、导了多少行）—— 供"只迁一次"的判断与诊断
@@ -1393,6 +1463,109 @@ pub fn mark_migrated(engine: &Engine, p: &Value) -> DbResult<Value> {
         .map_err(DbError::from)?;
         Ok(json!({ "written": 1, "at": at }))
     })
+}
+
+#[cfg(test)]
+mod batch_message_tests {
+    use super::*;
+
+    /// **Z-1 的核心**：多重集摘要必须**与行序无关**，而顺序敏感摘要必须仍然敏感
+    /// （它现在只用来回答"只是行序不同吗"这个诊断问题）。
+    ///
+    /// 这条测试就是那条阻断级缺陷的最小复现：两端**内容完全相同、顺序不同** ——
+    /// 旧判据（顺序滚动摘要）判"不等" → 迁移报"对账未通过" → 不写标记 → 每次启动重来。
+    #[test]
+    fn multiset_digest_is_order_independent() {
+        let a = json!([
+            ["k1", "v1"],
+            ["k2", "v2"],
+            ["k3", "v3"],
+            ["k4", "v4"],
+            ["k5", "v5"],
+            ["k6", "v6"]
+        ]);
+        // 同一个多重集，行序不同（审计实测的形态：目标端已有子集，补进来的行落在末尾）
+        let b = json!([
+            ["k1", "v1"],
+            ["k3", "v3"],
+            ["k2", "v2"],
+            ["k4", "v4"],
+            ["k5", "v5"],
+            ["k6", "v6"]
+        ]);
+        let da = digest_json_rows_multiset(a.as_array().unwrap());
+        let db = digest_json_rows_multiset(b.as_array().unwrap());
+        assert_eq!(da.rows, 6);
+        assert_eq!(db.rows, 6);
+        /*
+         * **旧判据在此失败、新判据在此通过** —— 这就是 Z-1 的对照证据（同一批数据、两个函数）：
+         * `digest_json_rows` 是那个顺序滚动摘要（旧对账判据用的就是它），
+         * 它对"同样的行、不同的顺序"给出**不同**的摘要 → 旧代码判"对账未通过"。
+         */
+        let (old_rows_a, old_digest_a) = digest_json_rows(a.as_array().unwrap());
+        let (old_rows_b, old_digest_b) = digest_json_rows(b.as_array().unwrap());
+        assert_eq!(old_rows_a, old_rows_b, "旧判据看到的行数是相同的");
+        assert_ne!(
+            old_digest_a, old_digest_b,
+            "旧判据（顺序滚动哈希）对同一批数据给出不同摘要 —— 这正是「目标端已有子集」时\
+             永远对账不过的原因（审计实测：源 6 行、目标预置 2 行，六行其实都写进去了）"
+        );
+        assert_eq!(
+            da.digest, db.digest,
+            "多重集摘要必须与行序无关（这正是 Z-1 的修复点）"
+        );
+        assert_ne!(
+            da.order_sensitive_digest, db.order_sensitive_digest,
+            "顺序敏感摘要仍应能看出「行序不同」——它现在的用途就是这条诊断"
+        );
+        assert_eq!(
+            reconcile_multisets(&da, &db),
+            ReconcileVerdict::Identical { order_differs: true },
+            "结论必须是「一致，只是行序不同」，而不是失败"
+        );
+
+        // 内容真的不同（k2 的值变了）→ 必须判失败，且分类是「内容不一致」而不是「缺行」
+        let c = json!([["k1","v1"], ["k2","CHANGED"], ["k3","v3"], ["k4","v4"], ["k5","v5"], ["k6","v6"]]);
+        let dc = digest_json_rows_multiset(c.as_array().unwrap());
+        assert_ne!(da.digest, dc.digest);
+        match reconcile_multisets(&da, &dc) {
+            ReconcileVerdict::ContentDiffers { .. } => {}
+            other => panic!("内容不同必须判为 ContentDiffers，实际 {other:?}"),
+        }
+
+        // 目标端**少一行** → 「缺行」分类（这才是"数据搬丢了"）
+        let d = json!([["k1","v1"], ["k2","v2"], ["k3","v3"], ["k4","v4"], ["k5","v5"]]);
+        let dd = digest_json_rows_multiset(d.as_array().unwrap());
+        assert_eq!(
+            reconcile_multisets(&da, &dd),
+            ReconcileVerdict::MissingRows { missing_rows: 1 }
+        );
+
+        // 目标端多一行 → 「源端被覆盖，目标端更新」的正常情形（不算失败）
+        let mut e: Vec<Value> = a.as_array().unwrap().clone();
+        e.push(json!(["k7", "v7"]));
+        let de = digest_json_rows_multiset(&e);
+        assert_eq!(
+            reconcile_multisets(&da, &de),
+            ReconcileVerdict::SourceCovered { extra_rows: 1 }
+        );
+    }
+
+    /// 重复行必须被算进多重集：`[X, X]` 与 `[X]` 不是同一批数据。
+    ///
+    /// 为什么值得钉：如果行摘要不带"重复度"，多重集摘要会把"同一行出现两次"
+    /// 与"出现一次"混为一谈 —— 那是**静默少数据**的一种形态（正是迁移最不能有的）。
+    #[test]
+    fn multiset_digest_counts_duplicate_rows() {
+        let once = json!([["k1", "v1"], ["k2", "v2"]]);
+        let twice = json!([["k1", "v1"], ["k2", "v2"], ["k2", "v2"]]);
+        let a = digest_json_rows_multiset(once.as_array().unwrap());
+        let b = digest_json_rows_multiset(twice.as_array().unwrap());
+        assert_eq!(a.rows, 2);
+        assert_eq!(b.rows, 3);
+        assert_eq!(b.rows_in_dup_groups, 2, "重复组里应有 2 行：{b:?}");
+        assert_ne!(a.digest, b.digest, "多出来的那一行必须改变摘要");
+    }
 }
 
 #[cfg(test)]
@@ -2029,17 +2202,114 @@ fn fk_parent_of(table: &str) -> Option<&'static str> {
     FK_PARENTS.iter().find(|(c, _)| *c == table).map(|(_, p)| *p)
 }
 
-/// 读旧库某张表的**一页**行（`limit` / `offset`）；表不存在时返回空（旧库可能没有新表）
+/// 旧库某张表的**分页键**（第 45 轮 Z-8 的 keyset 分页）。
 ///
+/// ## 为什么 `offset` 分页不够（审计实测的静默跳行）
+///
+/// `LIMIT ? OFFSET ?` 假设"两次查询之间源库不变"。而源库是**旧库**（可能是别的进程
+/// 正在用的文件）：
+/// ```text
+/// （limit=2 翻页，翻页之间源库删掉 k1）
+/// page1: rows k1,k2  next_offset=2
+/// （删 k1）
+/// page2: rows k4,k5   → k3 从未被任何一页读到（无任何提示）
+/// ```
+/// keyset（"从上一页最后一行的键之后接着读"）不依赖行号，因此不会因为它前面的行被删
+/// 而跳过一行：删除只影响"已经读过的那部分"，这正是调用方要的语义。
+///
+/// ## 同时修掉 `WITHOUT ROWID` 的硬失败
+///
+/// 旧实现一律 `ORDER BY rowid`；而 `WITHOUT ROWID` 的表**没有 rowid**，于是
+/// `legacy.read_table` 对它报 `no such column: rowid`（外部旧库可能出现这种表）。
+/// 现在：**主键优先**（`id` 或 `PRAGMA table_info` 的 pk 列），没有主键才退回 `rowid`。
+///
+/// `key_index` 是"键列在 `SELECT *` 里的下标"，用于从返回行里取出游标值。
+#[derive(Debug, Clone)]
+struct LegacyPageKey {
+    /// 排序/游标表达式（单列；可能是 `rowid`）
+    expr: String,
+    /// 该键在 `SELECT *` 结果里的列下标（`rowid` 不在结果里 → None）
+    key_index: Option<usize>,
+}
+
+fn legacy_page_key(conn: &Connection, table: &str, columns: &[String]) -> Option<LegacyPageKey> {
+    let pk: Vec<String> = {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+            .ok()?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(5)?, r.get::<_, String>(1)?)))
+            .ok()?;
+        let mut v: Vec<(i64, String)> = Vec::new();
+        for r in rows {
+            let (i, n) = r.ok()?;
+            if i > 0 {
+                v.push((i, n));
+            }
+        }
+        v.sort_by_key(|(i, _)| *i);
+        v.into_iter().map(|(_, n)| n).collect()
+    };
+    // 单列主键才能做 keyset（复合主键要拼多列比较，收益低于复杂度；退回 rowid）
+    if pk.len() == 1 {
+        if let Some(idx) = columns.iter().position(|c| c == &pk[0]) {
+            return Some(LegacyPageKey {
+                expr: format!("\"{}\"", pk[0]),
+                key_index: Some(idx),
+            });
+        }
+    }
+    // 是否有 rowid（`WITHOUT ROWID` 表没有）
+    let sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?1",
+            [table],
+            |r| r.get(0),
+        )
+        .ok();
+    let without_rowid = sql
+        .as_deref()
+        .map(|s| s.to_uppercase().replace(['\n', '\r', '\t'], " ").contains("WITHOUT ROWID"))
+        .unwrap_or(false);
+    if without_rowid {
+        // 没有 rowid 又没有（可用的）单列主键 → 无法 keyset，交给调用方回退 offset
+        return None;
+    }
+    Some(LegacyPageKey {
+        expr: "rowid".to_string(),
+        key_index: None,
+    })
+}
+
+/// 从一页返回行里取出游标值（**键列的原始值**，如 `"k2"` / `42`）。
+///
+/// `key_index` 为 None 即 rowid 型键：此时不提供游标（见 `legacy_page_key` 的说明，
+/// `rowid` 不在 `SELECT *` 的结果列里）。
+fn page_cursor_value(key: &LegacyPageKey, row: &Value) -> Option<Value> {
+    key.key_index
+        .and_then(|i| row.as_array().and_then(|a| a.get(i)).cloned())
+}
+
+/// 读旧库某张表的**一页**行。
+///
+/// 三种调用形态：
+/// - `after = Some(cursor)`：**keyset**，从游标之后接着读（`offset` 必须为 0）；
+/// - `after = None, offset = 0`：第一页（`LIMIT limit+1`，无 OFFSET），返回 `next_key` 可续页；
+/// - `after = None, offset > 0`：老式 offset 分页（**保留**：既有调用方与既有测试依赖它；
+///   但它就是 Z-8 那个会静默跳行的语义，所以返回里 `paging` 会标成 `"offset"`）。
+///
+/// 表不存在时返回空（旧库可能没有新表）。
 /// 迁移自己用的是 `read_legacy_table`（整表：它本来就要全量搬），
 /// 而 `legacy.read_table` 用这一页版 —— **分页在 SQL 里做**，
 /// 而不是"整表读出来再 truncate"（后者会掩盖截断，见 `legacy_read_table` 的说明）。
 fn read_legacy_table_page(
     conn: &Connection,
     table: &str,
+    columns: &[String],
     limit: usize,
     offset: usize,
-) -> DbResult<(Vec<Value>, usize)> {
+    after: Option<&Value>,
+) -> DbResult<(Vec<Value>, usize, Option<Value>, bool)> {
     let exists: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -2048,29 +2318,120 @@ fn read_legacy_table_page(
         )
         .map_err(DbError::from)?;
     if exists == 0 {
-        return Ok((Vec::new(), 0));
+        return Ok((Vec::new(), 0, None, false));
     }
-    /*
-     * 排序键必须是**确定的**，否则翻页会重不漏：SQLite 不保证无 ORDER BY 的两次查询
-     * 返回同样的顺序。用 `rowid`（普通表都有；旧库这些表没有 `WITHOUT ROWID` 的）。
-     */
-    let sql = format!("SELECT * FROM \"{table}\" ORDER BY rowid LIMIT ?1 OFFSET ?2");
+    let key = match legacy_page_key(conn, table, columns) {
+        Some(k) => k,
+        None => {
+            /*
+             * 连 keyset 都做不了的表（`WITHOUT ROWID` 且没有单列主键）：
+             * 退回无排序的整页扫描（仍然受 `limit` 限制），并把 `next_key` 报成 null
+             * —— 调用方由此知道"这张表不能安全翻页"，而不是静默拿到可能重复/跳过的页。
+             */
+            let sql = format!("SELECT * FROM \"{table}\" LIMIT ?1 OFFSET ?2");
+            let mut stmt = conn.prepare(&sql).map_err(DbError::from)?;
+            let col_count = stmt.column_count();
+            let mut rows = stmt
+                .query(params![limit as i64, offset as i64])
+                .map_err(DbError::from)?;
+            let mut out: Vec<Value> = Vec::new();
+            let mut blob_columns_seen = 0usize;
+            while let Some(row) = rows.next().map_err(DbError::from)? {
+                let mut arr: Vec<Value> = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    let v: SqlValue = row.get(i).map_err(DbError::from)?;
+                    arr.push(legacy_value_to_json(v, &mut blob_columns_seen));
+                }
+                out.push(Value::Array(arr));
+            }
+            return Ok((out, blob_columns_seen, None, false));
+        }
+    };
+
+    // 多取一行判断 has_more（避免额外 COUNT(*)；也避免"最后一页恰好满"时多跑一趟）。
+    //
+    // 游标是**键列的原始值**（第一页返回的那一行里键列的值），不是整行 JSON。
+    //
+    // ⚠️ 这里踩过一个坑，值得留痕：第一版把游标做成整行 JSON，再用 SQLite 的
+    // `->>` / `json_extract` 在 WHERE 里取键值 —— 结果**续页静默返回空页**
+    // （实测：第二页 rows 为空、has_more=false，看起来像"表读完了"）。
+    // 原因是这个 crate 的 SQLite（bundled）**没有编入 JSON1**：`json_extract(?1, …)`
+    // 不报错、只返回 NULL，于是 `key > NULL` 恒为 NULL/假。
+    // 教训：**别把 JSON 函数放进迁移对账/分页这种"错了也看不出来"的路径** ——
+    // 少一个 SQL 扩展不会报错，只会静默少数据。绑定一个普通值最稳。
+    let (sql, bind_cursor, paged_by_offset) = match (&key.key_index, after) {
+        (Some(_), Some(_)) => (
+            format!(
+                "SELECT * FROM \"{table}\" WHERE {} > ?1 ORDER BY {} LIMIT ?2",
+                key.expr, key.expr
+            ),
+            true,
+            false,
+        ),
+        /*
+         * 第一页（无游标、无 offset）：keyset 语义 —— `LIMIT limit+1`、无 OFFSET，
+         * 返回最后一行的键作为 `next_key`。老调用方给的 `offset > 0` 走下面那一支。
+         */
+        _ if offset == 0 => (
+            format!("SELECT * FROM \"{table}\" ORDER BY {} LIMIT ?1", key.expr),
+            false,
+            false,
+        ),
+        // 老式 offset 分页（保留兼容；返回里 `paging` 会标成 offset）
+        _ => (
+            format!(
+                "SELECT * FROM \"{table}\" ORDER BY {} LIMIT ?1 OFFSET ?2",
+                key.expr
+            ),
+            false,
+            true,
+        ),
+    };
     let mut stmt = conn.prepare(&sql).map_err(DbError::from)?;
     let col_count = stmt.column_count();
-    let mut rows = stmt
-        .query(rusqlite::params![limit as i64, offset as i64])
-        .map_err(DbError::from)?;
     let mut out: Vec<Value> = Vec::new();
-    let mut blob_columns_seen: usize = 0;
-    while let Some(row) = rows.next().map_err(DbError::from)? {
-        let mut arr: Vec<Value> = Vec::with_capacity(col_count);
-        for i in 0..col_count {
-            let v: SqlValue = row.get(i).map_err(DbError::from)?;
-            arr.push(legacy_value_to_json(v, &mut blob_columns_seen));
+    let mut blob_columns_seen = 0usize;
+    {
+        let mut collect = |rows: &mut rusqlite::Rows<'_>| -> DbResult<()> {
+            while let Some(row) = rows.next().map_err(DbError::from)? {
+                let mut arr: Vec<Value> = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    let v: SqlValue = row.get(i).map_err(DbError::from)?;
+                    arr.push(legacy_value_to_json(v, &mut blob_columns_seen));
+                }
+                out.push(Value::Array(arr));
+            }
+            Ok(())
+        };
+        if bind_cursor {
+            // 游标值原样绑定（类型由 SQLite 按值决定：TEXT 键就是 TEXT 比较）
+            let cursor = after.expect("bind_cursor 蕴含 after 为 Some");
+            let bound = to_sql_value(cursor);
+            let mut rows = stmt
+                .query(params![bound, limit as i64 + 1])
+                .map_err(DbError::from)?;
+            collect(&mut rows)?;
+        } else if paged_by_offset {
+            let mut rows = stmt
+                .query(params![limit as i64 + 1, offset as i64])
+                .map_err(DbError::from)?;
+            collect(&mut rows)?;
+        } else {
+            let mut rows = stmt.query(params![limit as i64 + 1]).map_err(DbError::from)?;
+            collect(&mut rows)?;
         }
-        out.push(Value::Array(arr));
     }
-    Ok((out, blob_columns_seen))
+    let has_more = out.len() > limit;
+    if has_more {
+        out.truncate(limit);
+    }
+    // `next_key` 只在"这一页确实是 LIMIT-only 的续页起点"时给出（offset 分页时它没有意义）
+    let next_key = if has_more && !paged_by_offset && after.is_none() {
+        out.last().and_then(|r| page_cursor_value(&key, r))
+    } else {
+        None
+    };
+    Ok((out, blob_columns_seen, next_key, has_more))
 }
 
 /// 旧库某个值 → JSON。
@@ -2108,9 +2469,17 @@ fn read_legacy_table(conn: &Connection, table: &str) -> DbResult<(Vec<Value>, us
     if exists == 0 {
         return Ok((Vec::new(), 0));
     }
-    let mut stmt = conn
-        .prepare(&format!("SELECT * FROM \"{table}\""))
-        .map_err(DbError::from)?;
+    /*
+     * 显式排序（第 45 轮 Z-1 配套）：对账判据已经是顺序无关的多重集，
+     * 排序**不是**为了让对账通过，而是为了让两端的行序可比、诊断数字稳定
+     * （理由见 `legacy_order_clause`）。
+     */
+    let order = legacy_order_clause(conn, table);
+    let sql = match &order {
+        Some(o) => format!("SELECT * FROM \"{table}\" ORDER BY {o}"),
+        None => format!("SELECT * FROM \"{table}\""),
+    };
+    let mut stmt = conn.prepare(&sql).map_err(DbError::from)?;
     let col_count = stmt.column_count();
     let mut rows = stmt.query([]).map_err(DbError::from)?;
     let mut out: Vec<Value> = Vec::new();
@@ -2138,45 +2507,377 @@ fn read_legacy_columns(conn: &Connection, table: &str) -> DbResult<Vec<String>> 
         .collect::<Vec<_>>())
 }
 
-/// 对一组「二维数组行」按与 `table_digest` **完全相同**的规则算摘要。
+/// 对一组「二维数组行」按与 `table_digest` **完全相同**的规则算摘要（**顺序敏感**）。
 ///
 /// 为什么要在内存里算：源端（旧库）的行已经被读成 JSON 了，
 /// 只有用同一套 `value_bytes` 规则才能保证"搬得对不对"可比。
-fn digest_json_rows(rows: &[Value]) -> (i64, String) {
-    let mut hash: i64 = -0x7a5b_2a3d_1c4f_9e11i64;
+///
+/// ⚠️ **不要用它做迁移对账**（第 45 轮 Z-1）：顺序滚动哈希要求两端**行序完全一致**，
+/// 而两端都是无 `ORDER BY` 的扫描 —— 目标端只要"已有源端的子集且相对顺序不同"，
+/// 摘要就必然不等（审计实测：源 6 行、目标已预置其中 2 行，6 行其实**都写进去了**，
+/// 但顺序成了 `k1,k3,k2,k4,k5,k6` → 摘要不等 → 迁移标记写不上 → 每次启动重来一遍）。
+/// 对账一律用 `MultisetDigest`（多重集，顺序无关）。
+pub fn digest_json_rows(rows: &[Value]) -> (i64, String) {
+    let mut h = ORDER_SENSITIVE_SEED;
     for row in rows {
         if let Some(arr) = row.as_array() {
             for v in arr {
-                let sv: SqlValue = match v {
-                    Value::Null => SqlValue::Null,
-                    Value::Bool(b) => SqlValue::Integer(i64::from(*b)),
-                    Value::Number(n) => {
-                        if let Some(i) = n.as_i64() {
-                            SqlValue::Integer(i)
-                        } else {
-                            SqlValue::Real(n.as_f64().unwrap_or(0.0))
-                        }
-                    }
-                    Value::String(s) => SqlValue::Text(s.clone()),
-                    other => SqlValue::Text(other.to_string()),
-                };
+                let sv = json_value_to_sql(v);
                 for byte in value_bytes(&sv) {
-                    hash ^= i64::from(byte);
-                    hash = hash.wrapping_mul(0x100_0000_01b3);
+                    h ^= i64::from(byte);
+                    h = h.wrapping_mul(FNV_PRIME);
                 }
-                hash ^= 0x1f;
-                hash = hash.wrapping_mul(0x100_0000_01b3);
+                h ^= COL_SEP;
+                h = h.wrapping_mul(FNV_PRIME);
             }
         }
-        hash ^= 0x1e;
-        hash = hash.wrapping_mul(0x100_0000_01b3);
+        h ^= ROW_SEP;
+        h = h.wrapping_mul(FNV_PRIME);
     }
-    (rows.len() as i64, format!("{:016x}", hash as u64))
+    (rows.len() as i64, format!("{:016x}", h as u64))
+}
+
+/// JSON 值 → SQLite 值（与 `digest_rows` / `digest_json_rows` 同一套规则）
+fn json_value_to_sql(v: &Value) -> SqlValue {
+    match v {
+        Value::Null => SqlValue::Null,
+        Value::Bool(b) => SqlValue::Integer(i64::from(*b)),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                SqlValue::Integer(i)
+            } else {
+                SqlValue::Real(n.as_f64().unwrap_or(0.0))
+            }
+        }
+        Value::String(s) => SqlValue::Text(s.clone()),
+        other => SqlValue::Text(other.to_string()),
+    }
+}
+
+// ========== 多重集摘要（顺序无关的对账，第 45 轮 Z-1） ==========
+//
+// ## 为什么必须是"多重集"而不是"排序后再滚"
+//
+// 迁移对账要回答的问题是"**源端每一行是不是都到了目标端**"（内容 + 条数），
+// 而**不是**"两边的行序是不是一样"。行序是 SQLite 的自由：`SELECT * FROM t`
+// 不带 `ORDER BY` 时返回顺序取决于存储形态（普通表按 rowid、`WITHOUT ROWID` 按主键、
+// 有索引时可能走覆盖索引扫描），目标端在 `INSERT OR IGNORE` 补行后新行的 rowid 落在**末尾**。
+// 拿"顺序滚动哈希"当判据，等于把"两边的物理行序碰巧一致"当成了正确性条件 ——
+// 那条件与"数据搬对了"无关，却会**永久**判失败。
+//
+// 所以：**逐行算一个摘要 → 排序 → 对排序后的序列再滚一次**。
+// 这样"行序不同但内容相同"必然通过；而"内容不同/缺行/多行"必然不等。
+// 行摘要本身还要带上**行数**信息，否则"同一行出现两次"与"该行出现一次"会撞
+// （只在"重复行数刚好相等"的极端情形下才会撞，但那是可以不花代价就避免的）。
+
+const FNV_PRIME: i64 = 0x100_0000_01b3;
+/// 行、列分隔符（否则 ("ab","c") 与 ("a","bc") 会撞）
+const COL_SEP: i64 = 0x1f;
+const ROW_SEP: i64 = 0x1e;
+/// FNV-1a 64 位偏移基准（正数写法：`-0x7a5b_2a3d_1c4f_9e11` 与它同值）
+const ORDER_SENSITIVE_SEED: i64 = -0x7a5b_2a3d_1c4f_9e11;
+
+/// 一批行的**顺序无关**摘要 + 重复行信息。
+#[derive(Debug, Clone)]
+pub struct MultisetDigest {
+    rows: i64,
+    /// 全部行摘要（含重复行的每一份），末尾排序后汇总
+    parts: Vec<Vec<u8>>,
+    /// 顺序敏感摘要（**仅供诊断**：用来回答"只是行序不同吗"）
+    order_sensitive: i64,
+}
+
+impl MultisetDigest {
+    pub fn new() -> Self {
+        Self {
+            rows: 0,
+            parts: Vec::new(),
+            order_sensitive: ORDER_SENSITIVE_SEED,
+        }
+    }
+
+    /// 加一行（`values` 是该行按列顺序的值）。
+    ///
+    /// 同时维护两份摘要：
+    /// - `parts` 里的**行摘要**（排序后汇总 → 顺序无关的多重集摘要，这是对账判据）；
+    /// - `order_sensitive`（按行序滚动，与 `table_digest` / `digest_rows` 同规则）
+    ///   —— **只用于诊断**"只是行序不同吗"，不参与判据。
+    pub fn add_row<I: IntoIterator<Item = SqlValue>>(&mut self, values: I) {
+        let mut h = ORDER_SENSITIVE_SEED;
+        for v in values {
+            let bytes = value_bytes(&v);
+            // 行摘要：值字节 + 列分隔
+            for byte in &bytes {
+                h ^= i64::from(*byte);
+                h = h.wrapping_mul(FNV_PRIME);
+            }
+            h ^= COL_SEP;
+            h = h.wrapping_mul(FNV_PRIME);
+            // 顺序敏感摘要：与 `table_digest` 完全同规则（同一份 `value_bytes`）
+            for byte in bytes {
+                self.order_sensitive ^= i64::from(byte);
+                self.order_sensitive = self.order_sensitive.wrapping_mul(FNV_PRIME);
+            }
+            self.order_sensitive ^= COL_SEP;
+            self.order_sensitive = self.order_sensitive.wrapping_mul(FNV_PRIME);
+        }
+        h ^= ROW_SEP;
+        h = h.wrapping_mul(FNV_PRIME);
+        self.order_sensitive ^= ROW_SEP;
+        self.order_sensitive = self.order_sensitive.wrapping_mul(FNV_PRIME);
+        // 行摘要的字节表示（排序键）：`<16 位十六进制>`
+        self.parts.push(format!("{h:016x}").into_bytes());
+        self.rows += 1;
+    }
+
+    /// 收尾：排序 → 汇总。
+    pub fn finish(mut self) -> MultisetStats {
+        self.parts.sort();
+        // 重复行计数（排序后相邻比较；`parts` 里每行一份）
+        let mut dups = 0i64;
+        let mut singles = 0i64;
+        let mut i = 0usize;
+        while i < self.parts.len() {
+            let mut j = i + 1;
+            while j < self.parts.len() && self.parts[j] == self.parts[i] {
+                j += 1;
+            }
+            if j - i == 1 {
+                singles += 1;
+            } else {
+                dups += 1;
+            }
+            i = j;
+        }
+        let mut hash = ORDER_SENSITIVE_SEED;
+        for part in &self.parts {
+            for byte in part {
+                hash ^= i64::from(*byte);
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+            hash ^= ROW_SEP;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        MultisetStats {
+            rows: self.rows,
+            distinct: singles + dups,
+            singles,
+            dup_group_count: dups,
+            rows_in_dup_groups: self.rows - singles,
+            digest: format!("{:016x}", hash as u64),
+            order_sensitive_digest: format!("{:016x}", self.order_sensitive as u64),
+        }
+    }
+}
+
+impl Default for MultisetDigest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// `MultisetDigest::finish` 的结果
+#[derive(Debug, Clone)]
+pub struct MultisetStats {
+    /// 总行数
+    pub rows: i64,
+    /// 不同行数（按行内容去重后）
+    pub distinct: i64,
+    /// 只出现一次的行数
+    pub singles: i64,
+    /// 出现多次的行**内容**种类数（>0 说明有重复行）
+    pub dup_group_count: i64,
+    /// 落在重复组里的**行数**（重复行总数）
+    pub rows_in_dup_groups: i64,
+    /// **顺序无关**摘要（对账判据）
+    pub digest: String,
+    /// 顺序敏感摘要（诊断用：判断"只是行序不同"）
+    pub order_sensitive_digest: String,
+}
+
+/// 对一组「二维数组行」算**多重集**摘要（顺序无关；拿来做对账判据）。
+pub fn digest_json_rows_multiset(rows: &[Value]) -> MultisetStats {
+    let mut d = MultisetDigest::new();
+    for row in rows {
+        if let Some(arr) = row.as_array() {
+            d.add_row(arr.iter().map(json_value_to_sql));
+        }
+    }
+    d.finish()
+}
+
+/// 迁移对账的结论（三分类，第 45 轮 Z-1 要求"报错要能区分三种情形"）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReconcileVerdict {
+    /// 内容完全相同（可能行序不同）
+    Identical {
+        /// 行序不同（内容与条数完全一致）—— 这不是缺陷，但要如实说出来
+        order_differs: bool,
+    },
+    /// 源端的行**都在**目标端，但目标端多出行（"新库比旧库新"的正常情形）
+    SourceCovered {
+        /// 目标端多出来的行数
+        extra_rows: i64,
+    },
+    /// 目标端**缺行**：源端有些行没到目标端（这才是"数据搬丢了"）
+    MissingRows {
+        missing_rows: i64,
+    },
+    /// 同一张表的两端内容不同（行数可能相同，但某些行内容不一致）
+    ContentDiffers {
+        /// 内容不同但两边都有的行数（按多重集差估算）
+        differing_rows: i64,
+    },
+}
+
+/// 两端的多重集对账。返回**结论 + 细节**，由调用方决定怎么报。
+///
+/// 关键点：判据只看**行内容的多重集**，与行序无关 —— 这是 Z-1 的核心修复。
+pub fn reconcile_multisets(src: &MultisetStats, tgt: &MultisetStats) -> ReconcileVerdict {
+    if src.digest == tgt.digest && src.rows == tgt.rows {
+        return ReconcileVerdict::Identical {
+            order_differs: src.order_sensitive_digest != tgt.order_sensitive_digest,
+        };
+    }
+    if tgt.rows > src.rows {
+        return ReconcileVerdict::SourceCovered {
+            extra_rows: tgt.rows - src.rows,
+        };
+    }
+    if tgt.rows < src.rows {
+        return ReconcileVerdict::MissingRows {
+            missing_rows: src.rows - tgt.rows,
+        };
+    }
+    // 行数相同、多重集不同 → 内容不一致（定位不到具体哪几行：行摘要已哈希，见函数头说明）
+    ReconcileVerdict::ContentDiffers {
+        differing_rows: 0,
+    }
+}
+
+/// 旧库某张表的**扫描顺序**（第 45 轮 Z-1 配套）。
+///
+/// ## 为什么必须显式排序（不是"排序能让对账通过"）
+///
+/// 对账已经改成多重集（与行序无关），所以排序**不是**对账的前提。这里排序是为了：
+/// ① mismatch 时的诊断数字稳定（否则同一个库两次跑出来的报告不一样，没法对比）；
+/// ② 迁移工具/人工排查时两端的行序可比（"源第 3 行 ↔ 目标第 3 行"才有意义）；
+/// ③ `digest_json_rows`（顺序敏感的那份摘要）在两边都是确定值，能作为"行序是否相同"的判据。
+///
+/// 排序键的选择：**主键优先**（`id` 是这些表的主键，且两端都存在），
+/// 没有 `id` 才退回 `rowid`；`WITHOUT ROWID` 表没有 rowid，只能靠主键。
+/// 取不到任何排序键时**不排序**（返回 `None`）—— 宁可退回原行为，
+/// 也不要拼一条会报 `no such column` 的 SQL 让整次迁移失败。
+fn legacy_order_clause(conn: &Connection, table: &str) -> Option<String> {
+    let cols: Vec<String> = {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+            .ok()?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(1)).ok()?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.ok()?);
+        }
+        out
+    };
+    if cols.iter().any(|c| c == "id") {
+        return Some("\"id\"".to_string());
+    }
+    // `WITHOUT ROWID` 表：`ORDER BY rowid` 会硬失败（`no such column: rowid`），
+    // 只能用主键。主键列按 pk 序号取。
+    let pk: Vec<String> = {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+            .ok()?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(5)?, r.get::<_, String>(1)?)))
+            .ok()?;
+        let mut v: Vec<(i64, String)> = Vec::new();
+        for r in rows {
+            let (i, n) = r.ok()?;
+            if i > 0 {
+                v.push((i, n));
+            }
+        }
+        v.sort_by_key(|(i, _)| *i);
+        v.into_iter().map(|(_, n)| n).collect()
+    };
+    if pk.is_empty() {
+        return None;
+    }
+    Some(
+        pk.iter()
+            .map(|c| format!("\"{c}\""))
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
+
+/// 清理旧的 `<db>.pre-migration-<stamp>` 备份，只保留最近 `keep` 份（含刚生成的那份）。
+///
+/// 返回 `(被删掉的文件名, 失败信息)`。
+///
+/// ## 命名解析刻意保守（宁可漏删，不可误删）
+///
+/// 只认 `<当前库文件名>.pre-migration-<纯数字>` 这一种形态：
+/// - 前缀必须逐字等于**当前库文件名** + `.pre-migration-` —— 于是别的库、别的用途的
+///   同名文件不会被误判（多库共用一个目录时这一点很重要）；
+/// - 后缀必须是**纯数字**（毫秒时间戳），否则不算我们的备份；
+/// - `keep` 至少为 1（调用方已 clamp），所以"刚生成的那份"永远不会被自己删掉。
+///
+/// 排序用文件名里的时间戳（**数字比较**，不是字符串比较 —— 字符串比较在位数变化时
+/// 会给出错误顺序，而毫秒时间戳的位数确实会变），目录读取失败时直接放弃清理。
+fn prune_pre_migration_backups(current: &std::path::Path, keep: usize) -> (Vec<String>, Vec<String>) {
+    let mut removed: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    let Some(file_name) = current.file_name().map(|s| s.to_string_lossy().to_string()) else {
+        return (removed, errors);
+    };
+    let Some(dir) = current.parent() else {
+        return (removed, errors);
+    };
+    // `<库文件名>.pre-migration-<毫秒>` → 取出 `<毫秒>`
+    let prefix = match file_name.find(".pre-migration-") {
+        Some(i) => file_name[..i + ".pre-migration-".len()].to_string(),
+        None => return (removed, errors),
+    };
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            errors.push(format!("{} 目录不可读：{e}", dir.display()));
+            return (removed, errors);
+        }
+    };
+    let mut found: Vec<(i64, std::path::PathBuf)> = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(rest) = name.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Ok(stamp) = rest.parse::<i64>() else {
+            continue;
+        };
+        found.push((stamp, entry.path()));
+    }
+    // 新的在前
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, path) in found.into_iter().skip(keep) {
+        let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        match std::fs::remove_file(&path) {
+            Ok(_) => removed.push(name),
+            // 清理失败不该让迁移失败（它只是清理）—— 如实记账，由调用方报出来
+            Err(e) => errors.push(format!("{name}: {e}")),
+        }
+    }
+    (removed, errors)
 }
 
 /// **自动迁移**：把旧库（sql.js 落盘的 `codem-db.bin`）搬进当前 Rust 库。
 ///
 /// 参数：`{ "legacy_path": "…", "dry_run": false }`
+///
+/// 另接受 `keep_backups`（默认 2）：迁移前那份整库备份保留几份，更旧的删掉
+/// —— 理由见函数体内"备份保留策略"那段（迁移失败会每次启动重试，不清理就是无限堆副本）。
 pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
     let legacy_path = p
         .get("legacy_path")
@@ -2263,6 +2964,8 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         rows: i64,
         digest: String,
         columns: Vec<String>,
+        /// **多重集**统计（顺序无关；对账判据）
+        multi: MultisetStats,
     }
     let mut source_rows: Vec<SourceTable> = Vec::new();
     let mut skipped: Vec<(String, i64)> = Vec::new();
@@ -2326,11 +3029,17 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         }
 
         let (n, digest) = digest_json_rows(&rows);
+        /*
+         * 对账判据用**多重集**（顺序无关），`digest` 只作为"行序是否相同"的诊断量。
+         * 见 `MultisetDigest` 的说明：顺序滚动哈希会把"两端物理行序碰巧一致"当成正确性条件。
+         */
+        let multi = digest_json_rows_multiset(&rows);
         source_rows.push(SourceTable {
             table: table.to_string(),
             rows: n,
             digest,
             columns: columns.clone(),
+            multi,
         });
         if !rows.is_empty() {
             /*
@@ -2384,32 +3093,64 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
     // ② **把这次迁移的关键数字写进返回**（表数 / 行数 / 备份路径），
     //    让"跑过一次迁移"这件事在日志与审计里都有据可查。
     engine.checkpoint()?;
+    /*
+     * 备份保留策略（第 45 轮 Z-1 的后半条）。
+     *
+     * ## 为什么必须有
+     *
+     * 备份文件叫 `<db>.pre-migration-<毫秒时间戳>`，而**迁移失败时不会写标记**
+     * （对账不通过就不写）→ 下次启动再试一遍 → **再拷一份整库副本**。
+     * 真机形态：迁移在 11.8 小时里跑过 16 次，也就是 16 份整库副本；
+     * 而生产库是几百 MB 量级 → 磁盘会被备份填满，然后备份失败导致迁移彻底跑不动
+     * （"每次启动重试"这个循环恰好也是 Z-1 主缺陷的后果链之一）。
+     * 备份是**补救手段**，不该变成新的故障源。
+     *
+     * ## 策略与依据
+     *
+     * 保留最近 `keep_backups` 份（默认 **2**），更旧的删掉。
+     * 依据：
+     * ① 这份备份要救的场景是"这次迁移把库改坏了" —— 需要的永远是**最近**的那一两份，
+     *    而不是全部历史；
+     * ② 2 份而不是 1 份：迁移连续跑两次（第二次仍失败）时，第 1 份是"第一次迁移前"、
+     *    第 2 份是"第一次迁移之后"的状态，两份都在才能对比出"这次改动干了什么"；
+     * ③ 只删**本函数命名规则**下的文件（`<db 文件名>.pre-migration-<数字>`），
+     *    绝不碰 `.corrupt-*`（`engine` 在库损坏时的备份，可能是唯一能救的副本）
+     *    或任何用户自己放的文件；
+     * ④ 清理**在拷贝成功之后**做，且失败只记账不报错 ——
+     *    "删旧备份失败"绝不能让一次本来能成的迁移失败（它只是清理，不是数据操作）。
+     */
+    let keep_backups = p
+        .get("keep_backups")
+        .and_then(|x| x.as_i64())
+        .unwrap_or(2)
+        .clamp(1, 100) as usize;
     let backup_path = {
         let src = engine.path().to_path_buf();
         let stamp = crate::schema::now_ms();
         let mut name = src.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         name.push_str(&format!(".pre-migration-{stamp}"));
         let dst = src.with_file_name(name);
-        match std::fs::copy(&src, &dst) {
-            Ok(_) => Some(dst),
-            Err(e) => {
-                /*
-                 * 备份失败**必须中止**，不能"报个错继续搬"。
-                 * 整库重写 + 无备份 = 一旦判据错了就是不可逆的数据丢失；
-                 * 而备份失败（磁盘满 / 权限）恰恰说明环境已经不正常，
-                 * 此时继续做整库操作是最不该做的选择。
-                 */
-                return Err(DbError::new(
-                    ErrorCode::Io,
-                    format!(
-                        "迁移前备份失败（{}→{}）：{e}。已中止迁移 —— 整库级操作在没有备份的情况下不执行",
-                        src.display(),
-                        dst.display()
-                    ),
-                ));
-            }
+        if let Err(e) = std::fs::copy(&src, &dst) {
+            /*
+             * 备份失败**必须中止**，不能"报个错继续搬"。
+             * 整库重写 + 无备份 = 一旦判据错了就是不可逆的数据丢失；
+             * 而备份失败（磁盘满 / 权限）恰恰说明环境已经不正常，
+             * 此时继续做整库操作是最不该做的选择。
+             */
+            return Err(DbError::new(
+                ErrorCode::Io,
+                format!(
+                    "迁移前备份失败（{}→{}）：{e}。已中止迁移 —— 整库级操作在没有备份的情况下不执行",
+                    src.display(),
+                    dst.display()
+                ),
+            ));
         }
+        dst
     };
+
+    // 拷贝成功后按策略清理旧备份（返回 (删掉的文件名, 失败信息)，用于如实汇报）
+    let (pruned_backups, prune_errors) = prune_pre_migration_backups(&backup_path, keep_backups);
 
     let payload = json!({ "tables": jobs, "replace": true });
     let imported = import_all(engine, &payload)?;
@@ -2446,6 +3187,15 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
             .map(|c| format!("\"{c}\""))
             .collect::<Vec<_>>()
             .join(", ");
+        /*
+         * 目标端扫描也显式排序（与源端同一个键：主键优先）。
+         *
+         * ⚠️ 排序**不是**对账通过的前提（判据已经是顺序无关的多重集），它只是让
+         * ① 诊断数字稳定、② 两端行序可比、③ 顺序敏感摘要成为"行序是否相同"的可信判据。
+         * 这也解释了为什么"只加一个 ORDER BY"**不够**：目标端只要"已有源端子集且顺序不同"，
+         * 顺序敏感摘要就仍然不等 —— 真正的修复在判据上（多重集），不在扫描顺序上。
+         */
+        let target_order = engine.with_conn(|conn| Ok(legacy_order_clause(conn, table)))?;
         let after = engine.with_conn(|conn| {
             let exists: i64 = conn
                 .query_row(
@@ -2455,7 +3205,7 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
                 )
                 .map_err(DbError::from)?;
             if exists == 0 {
-                return Ok((0i64, String::new(), Vec::<String>::new()));
+                return Ok((MultisetDigest::new().finish(), String::new(), Vec::<String>::new(), String::new()));
             }
             // 目标端真实列清单：既用于诊断"是哪一列不一致"，也用于判断投影能否执行
             let target_cols: Vec<String> = {
@@ -2480,67 +3230,142 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
                 .cloned()
                 .collect();
             if !missing.is_empty() {
-                return Ok((0i64, format!("目标端缺少列：{}", missing.join(", ")), target_cols));
+                return Ok((
+                    MultisetDigest::new().finish(),
+                    format!("目标端缺少列：{}", missing.join(", ")),
+                    target_cols,
+                    String::new(),
+                ));
             }
-            let sql = if projection.is_empty() {
+            let base = if projection.is_empty() {
                 format!("SELECT * FROM \"{table}\"")
             } else {
                 format!("SELECT {projection} FROM \"{table}\"")
             };
+            let sql = match &target_order {
+                Some(o) => format!("{base} ORDER BY {o}"),
+                None => base,
+            };
             let mut stmt = conn.prepare(&sql).map_err(DbError::from)?;
             let col_count = stmt.column_count();
             let mut rows = stmt.query([]).map_err(DbError::from)?;
-            let mut hash: i64 = -0x7a5b_2a3d_1c4f_9e11i64;
-            let mut n: i64 = 0;
+            let mut multi = MultisetDigest::new();
             while let Some(row) = rows.next().map_err(DbError::from)? {
-                n += 1;
+                let mut vals: Vec<SqlValue> = Vec::with_capacity(col_count);
                 for i in 0..col_count {
-                    let v: SqlValue = row.get(i).map_err(DbError::from)?;
-                    for byte in value_bytes(&v) {
-                        hash ^= i64::from(byte);
-                        hash = hash.wrapping_mul(0x100_0000_01b3);
-                    }
-                    hash ^= 0x1f;
-                    hash = hash.wrapping_mul(0x100_0000_01b3);
+                    vals.push(row.get(i).map_err(DbError::from)?);
                 }
-                hash ^= 0x1e;
-                hash = hash.wrapping_mul(0x100_0000_01b3);
+                multi.add_row(vals);
             }
-            Ok((n, format!("{:016x}", hash as u64), target_cols))
+            let stats = multi.finish();
+            Ok((stats, String::new(), target_cols, src.columns.join(", ")))
         })?;
-        let (target_rows, target_digest, _target_cols) = after;
+        let (target_stats, columns_note, _target_cols, _projection_note) = after;
         let src_rows = &src.rows;
         let src_digest = &src.digest;
         /*
-         * 对账：源端每一行都必须到目标端（`target_rows < src_rows` = 真失败），
-         * 但**目标端多出来的行不算失败** —— 那是"新库里比旧库更新"的正常情形
-         * （用户在 rust 引擎下继续产生数据，而旧库那份是冻结的历史副本）。
+         * ## 对账判据（第 45 轮 Z-1 **重写**）
          *
-         * 这一条与"去掉整表清空"是配套的：从前靠清空把目标端裁到与源端一致，
-         * 代价是把用户更新的数据删掉；现在保留它们，并把数量如实报出来。
+         * ### 原来的判据为什么是错的
+         *
+         * 原来：`target_rows < src_rows`，或者"行数相等但**顺序滚动摘要**不等" → 判失败。
+         * 而两端都是无 `ORDER BY` 的扫描，目标端只要"**已有源端的子集**且相对顺序不同"，
+         * 补进来的新行 rowid 落在末尾，行序必然错位、摘要必然不等。审计实测（源 6 行、
+         * 目标预置其中 2 行）：6 行**其实都写进去了**，顺序成了 `k1,k3,k2,k4,k5,k6`，
+         * 却报"对账未通过（1 张表）" → **不写迁移标记** → 每次启动重来一遍：
+         * 全量读旧库 + 重建 FTS + **再拷一份整库备份**（无清理策略时无限堆积）。
+         *
+         * ### 现在的判据
+         *
+         * 只看**行内容的多重集**（逐行摘要 → 排序 → 汇总，顺序无关）：
+         * - 多重集相同 ⇒ 通过（无论行序如何）；行序不同只作为事实如实报出，不是失败；
+         * - 目标端多行 ⇒ 通过（"新库比旧库新"的正常情形，如实报出多出来的行数）；
+         * - 目标端少行 ⇒ **失败**（这才是"数据搬丢了"）；
+         * - 行数相同但多重集不同 ⇒ **失败**，且文案说"内容不一致"，
+         *   而不是含糊地说"对账未通过"（原来那种文案让人以为数据丢了）。
          */
-        if target_rows < *src_rows
-            || (target_rows == *src_rows && &target_digest != src_digest && *src_rows > 0)
-        {
-            mismatches.push(json!({
-                "table": table,
-                "source_rows": src_rows, "source_digest": src_digest,
-                "target_rows": target_rows, "target_digest": target_digest,
-                "source_columns": src.columns.len(),
-            }));
+        let verdict = if !columns_note.is_empty() {
+            // 投影都执行不了：按"缺列"如实报（不要伪装成内容不一致）
+            ReconcileVerdict::ContentDiffers { differing_rows: 0 }
         } else {
-            if target_rows > *src_rows {
-                kept_newer.push(json!({ "table": table, "target_rows": target_rows, "source_rows": src_rows }));
+            reconcile_multisets(&src.multi, &target_stats)
+        };
+        match verdict {
+            ReconcileVerdict::Identical { order_differs } => {
+                reconciled.push(json!({
+                    "table": table,
+                    "rows": src_rows,
+                    "digest": src_digest,
+                    // 行序是否不同（内容与条数完全一致时的诊断信息，不是失败）
+                    "order_differs": order_differs,
+                    "duplicate_rows": src.multi.rows_in_dup_groups,
+                }));
             }
-            reconciled.push(json!({ "table": table, "rows": src_rows, "digest": src_digest }));
+            ReconcileVerdict::SourceCovered { extra_rows } => {
+                kept_newer.push(json!({
+                    "table": table,
+                    "target_rows": target_stats.rows,
+                    "source_rows": src_rows,
+                    "extra_rows": extra_rows,
+                }));
+                reconciled.push(json!({
+                    "table": table,
+                    "rows": src_rows,
+                    "digest": src_digest,
+                    "target_rows": target_stats.rows,
+                    "order_differs": src.multi.order_sensitive_digest != target_stats.order_sensitive_digest,
+                }));
+            }
+            ReconcileVerdict::MissingRows { missing_rows } => {
+                mismatches.push(json!({
+                    "table": table,
+                    "kind": "missing_rows",
+                    "why": format!("目标端比源端少 {missing_rows} 行 —— 源端的数据没有全部搬过来（这是真的搬丢了）"),
+                    "source_rows": src_rows, "source_digest": src_digest,
+                    "target_rows": target_stats.rows, "target_digest": target_stats.digest,
+                    "source_columns": src.columns.len(),
+                }));
+            }
+            ReconcileVerdict::ContentDiffers { differing_rows } => {
+                mismatches.push(json!({
+                    "table": table,
+                    "kind": "content_differs",
+                    "why": if columns_note.is_empty() {
+                        "两端行数相同但**内容不一致**（多重集不同）：不是行序问题，也不是缺行".to_string()
+                    } else {
+                        columns_note.clone()
+                    },
+                    "source_rows": src_rows, "source_digest": src_digest,
+                    "target_rows": target_stats.rows, "target_digest": target_stats.digest,
+                    "source_columns": src.columns.len(),
+                    "order_sensitive_same": src_digest == &target_stats.order_sensitive_digest,
+                    "differing_rows_at_least": differing_rows,
+                }));
+            }
         }
     }
 
     if !mismatches.is_empty() {
-        // 对账不通过 → **不写标记**（下次启动会再试），并如实报错
+        /*
+         * 对账不通过 → **不写标记**（下次启动会再试），并如实报错。
+         *
+         * ⚠️ 文案必须让调用方**一眼分清**三种情形（第 45 轮 Z-1 的第 3 条要求）：
+         * - `kind: "missing_rows"`：目标端**少行** —— 这才是"数据搬丢了"；
+         * - `kind: "content_differs"`：行数相同但内容不一致（不是行序问题）；
+         * - 行序不同**不算失败**（多重集相同即通过），只在成功路径里以
+         *   `order_differs: true` 如实报出。
+         *
+         * 原来的文案只有一句"自动迁移对账未通过（1 张表）：[{…source_digest…target_digest…}]"，
+         * 于是"目标端已有源端子集、只是行序不同"这种**完全成功**的迁移被报成了失败，
+         * 而数字（`source_rows: 6, target_rows: 6`）看起来又像"数据丢了"。
+         */
         return Err(DbError::new(
             ErrorCode::Other,
-            format!("自动迁移对账未通过（{} 张表）：{}", mismatches.len(), serde_json::to_string(&mismatches).unwrap_or_default()),
+            format!(
+                "自动迁移对账未通过（{} 张表）：{}",
+                mismatches.len(),
+                serde_json::to_string(&mismatches).unwrap_or_default()
+            ),
         ));
     }
 
@@ -2574,7 +3399,29 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
          * **看不出"这是一次清空"**，事后只能靠 `storage_audit` 的 61,404 条记录反推。
          * 现在至少三件事是可查的：有哪些表被搬了、总量多少、备份文件在哪。
          */
-        "backup_path": backup_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+        "backup_path": backup_path.to_string_lossy().to_string(),
+        /*
+         * 第 45 轮（Z-1）：备份保留策略的**执行结果**如实给出。
+         *
+         * 备份是整库副本，"每次启动重试都再拷一份"会填满磁盘，所以按策略清理；
+         * 清理了什么、有没有删失败，都必须能被看到（静默删用户目录里的文件是不可接受的）。
+         */
+        "backups_kept": keep_backups,
+        "backups_pruned": pruned_backups,
+        "backups_prune_errors": prune_errors,
+        /*
+         * 第 45 轮（Z-1）：把"行序"这件事也如实报出来。
+         *
+         * 对账判据已经**与行序无关**（多重集）；`order_differs` 只是在
+         * "内容与条数完全一致、但两端物理行序不同"时给一个事实说明 ——
+         * 这正是老判据会误报失败的那种情形（目标端预置了源端子集 → INSERT OR IGNORE
+         * 补在末尾 → 行序错位）。有了这个字段，排查时不需要再去猜"是不是行序问题"。
+         */
+        "order_differs_tables": reconciled
+            .iter()
+            .filter(|t| t.get("order_differs").and_then(|v| v.as_bool()).unwrap_or(false))
+            .filter_map(|t| t.get("table").and_then(|v| v.as_str()))
+            .collect::<Vec<_>>(),
         "forced": force,
     }))
 }

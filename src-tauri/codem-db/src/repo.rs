@@ -390,13 +390,38 @@ pub fn events_watermark(engine: &Engine, p: &Value) -> DbResult<Value> {
 }
 
 /// 删除会话的全部事件（级联清理时用）
+///
+/// ## ⚠️ 第 45 轮：这里原来**绕过了批量删除闸门**（Z-6）
+///
+/// 审计实测（真 CLI，`session_events` 4000 行）：
+/// ```text
+/// crud.delete { table: "session_events", where: { session_id: "s1" } }
+///   → 被闸门拒绝（上限 50）
+/// events.delete_session { session_id: "s1" }
+///   → {"ok":true,"result":{"written":4000}}      # 无条件删光
+/// ```
+/// 而它**是生产路径**：`rust-port.ts` 的 `EventsPort.deleteSession` 直连这条命令。
+/// 也就是说"闸门装了，但装的不是生产路径"—— 这正是第 44 轮装闸门时要防的那类事故形态
+/// （规模不体现在参数里 + 后果不可逆）。
+///
+/// 现在复用与 `crud.delete` / `sessions.delete` **同一份**判据
+/// （`measure_delete_impact` + `guard_cascade_scope`），`confirmed` 取参数里的 `confirm_bulk`。
+/// 于是"删 4000 条事件"这件事要么被拒绝（并报出规模），要么调用方显式说"我确认"。
 pub fn events_delete_session(engine: &Engine, p: &Value) -> DbResult<Value> {
     let session_id = req_text(p, "session_id")?;
+    let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
-        let n = tx
-            .execute("DELETE FROM session_events WHERE session_id = ?1", params![session_id])
-            .map_err(DbError::from)?;
-        Ok(json!({ "written": n }))
+        let (n, impact) = crate::crud::measure_delete_impact(tx, || {
+            tx.execute("DELETE FROM session_events WHERE session_id = ?1", params![session_id])
+                .map_err(DbError::from)
+        })?;
+        crate::crud::guard_cascade_scope(
+            &format!("删除会话 {session_id} 的全部事件"),
+            impact,
+            confirmed,
+        )?;
+        // 规模如实给出（即使被拒绝，调用方在错误文案里也已经看到 impact 这个数）
+        Ok(json!({ "written": n, "affected_rows": impact }))
     })
 }
 
@@ -405,6 +430,24 @@ pub fn events_delete_session(engine: &Engine, p: &Value) -> DbResult<Value> {
 /// 为什么必须保留锚点 seq（而不是用新的最大 seq）：回放逻辑靠 seq 单调来保证
 /// "快照排在被它覆盖的事件之后"。用新 seq 会让快照跑到未来，删掉旧事件后投影就缺段了
 /// —— 渲染侧早先正是踩了这个坑（所以裁剪默认关掉过）。
+///
+/// ## ⚠️ 第 45 轮：这里也**绕过了批量删除闸门**（Z-6），现在的口径是"内部维护路径 + 如实报账"
+///
+/// 审计实测：它一次能删掉任意规模的事件而**不受 `BULK_DELETE_LIMIT` 约束**。
+/// 与 `events.delete_session` 的处理**刻意不同**，理由必须写清楚（否则就是"留一条无判据的删除路径"）：
+///
+/// - `events.compact` **不是**"把语料删掉"，而是**有损替换**：删掉的 `seq < cutoff_seq` 段
+///   先被 `snapshot_seq` 上那条 `session_snapshot` 覆盖（锚点必须真实存在，否则直接 `not_found`）。
+///   也就是说"删多少"这件事由**快照**兜住 —— 这正是它存在的意义，
+///   而要求调用方再传一次 `confirm_bulk` 只会让维护路径在正常场景下报错（闸门的作用域
+///   必须等于它要防的事故的作用域，见 `CASCADE_GUARD_ROOTS` 的说明）。
+/// - 但"内部路径"**不等于**"无判据"：这里做了两件事让规模可见：
+///   ① 返回里**如实给出** `affected_rows`（含级联、已剔除审计行的净影响），
+///      调用方与审计日志都能看到"这一次删了多少行"；
+///   ② `enforce_limit: true` 时按与 `crud.delete` **同一份**判据拒绝
+///      （想让维护路径也受闸门约束的调用方可以显式打开；默认关，因为维护路径本身是合法的）。
+/// - 删掉的**不是 meta 事件**（`event_type <> 'session_meta'`）：会话身份必须留下，
+///   这与"整会话删光"（`events.delete_session`，受闸门约束）是完全不同的量级。
 pub fn events_compact(
     engine: &Engine,
     p: &Value,
@@ -414,6 +457,9 @@ pub fn events_compact(
     let payload = p.get("payload").cloned().unwrap_or_else(|| json!({}));
     let cutoff_seq = req_i64(p, "cutoff_seq")?;
     let ts = opt_i64(p, "timestamp")?.unwrap_or_else(now_ms);
+    // 维护路径默认放行；显式 `enforce_limit: true` 时按 crud.delete 同一份判据拒绝
+    let enforce_limit = p.get("enforce_limit").and_then(|x| x.as_bool()).unwrap_or(false);
+    let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
         // 锚点必须真实存在，否则"压缩"会凭空造出一条孤立快照
         let exists: i64 = tx
@@ -435,13 +481,28 @@ pub fn events_compact(
         )
         .map_err(DbError::from)?;
         // 删掉锚点之前的非 meta 事件（meta 必须保留：它承载会话身份）
-        let removed = tx
-            .execute(
+        let (removed, impact) = crate::crud::measure_delete_impact(tx, || {
+            tx.execute(
                 "DELETE FROM session_events WHERE session_id = ?1 AND seq < ?2 AND event_type <> 'session_meta'",
                 params![session_id, cutoff_seq],
             )
-            .map_err(DbError::from)?;
-        Ok(json!({ "removed_events": removed, "snapshot_seq": snapshot_seq }))
+            .map_err(DbError::from)
+        })?;
+        if enforce_limit {
+            crate::crud::guard_cascade_scope(
+                &format!("压缩会话 {session_id} 的历史事件（替换为快照）"),
+                impact,
+                confirmed,
+            )?;
+        }
+        Ok(json!({
+            "removed_events": removed,
+            // `snapshot_seq` 保持既有形状（调用方可能已经依赖它）
+            "snapshot_seq": snapshot_seq,
+            // 规模**如实给出**：这是"内部路径放行"的前提（见函数头说明）
+            "affected_rows": impact,
+            "enforce_limit": enforce_limit,
+        }))
     })
 }
 
@@ -1629,20 +1690,26 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         /*
          * 消息 upsert 用的**不是**全局那份 `MESSAGE_UPSERT`（第 45 轮）。
          *
-         * 差别只有一处，但是关键的一处：`trimmed` 在冲突时**保持库里的值**。
-         * 全局那份走 `trimmed = CASE WHEN excluded.hidden = 0 THEN 0 ELSE trimmed END` ——
-         * 规则本身没错（那正是"写可见就必须清裁剪标记"的不变量），但**不能**用在日志重放上：
-         * 日志里**根本没有 `trimmed` 这一维**（`MessageFields` 没有它，`distillMessageForLog`
-         * 也不写它）。于是重建时日志说 `hidden = 0` 就等价于"这条消息是可见的"——
-         * 而它可能只是**日志比索引旧**，库里那条明明是裁剪隐藏的。
-         * 结果就是把"被裁过"这个事实静默抹掉（审计实测：`hidden=0, trimmed=1` 的矛盾态，
-         * 且 `messages.count` 的 visible 计数跟着变）。
+         * 差别只有一处，但是关键的一处：库里**已存在**的行，`hidden` / `trimmed` 保持原值
+         * （参数 `?11` 为真时）。
          *
-         * 所以重建路径的规则是：**`trimmed` 永不由重建改写**。
-         * - 冲突（库里已有）：`trimmed` 保持原值；
-         * - 新插入：`trimmed` 取默认 0 —— 新行不可能"曾经被裁过"。
-         * "裁剪"这件事只有 `messages.delete { trim: true }` 能设，
-         * 只有 `messages.update { hidden: 0 }` / `upsert_index { hidden: 0 }` 能清。
+         * 为什么：日志里**根本没有 `trimmed` 这一维**（`MessageFields` 没有它，
+         * `distillMessageForLog` 也不写它），而 `hidden` 维度上日志可能比索引**旧** ——
+         * 于是"日志说 hidden = 0"并不等于"这一行是可见的"。
+         * 旧行为（`hidden = excluded.hidden`）实测有确切后果：一条裁剪过的行
+         * （`hidden=1, trimmed=1`）经重建后变成 `hidden=0, trimmed=1` ——
+         * ① 矛盾态（不变量被破坏）；② **"被裁过"这个事实被静默抹掉**；
+         * ③ `messages.count` 的 visible 计数跟着变（用户看到的可见条数变了）。
+         *
+         * 那为什么不能只保留 `trimmed`、让 `hidden` 跟着日志走？因为那样**必然**造出
+         * `hidden=0, trimmed=1` 的矛盾态（除非把 `trimmed` 清掉，而那正是要避免的）。
+         * 两条不变量只能选一条守住，这里选"**重建不改变隐藏状态**"：
+         * - 冲突（库里已有）：`hidden` 与 `trimmed` 都保持原值 —— 重建只负责**内容**；
+         * - 新插入：按日志给的 `hidden`、`trimmed` 取默认 0（新行不可能"曾经被裁过"）。
+         *
+         * 这与"索引是权威、日志是历史副本"的分工一致：日志能补回索引里缺的**行**，
+         * 但不该覆盖索引里更**新**的**状态**。撤销隐藏这件事只有语义化命令能做
+         * （`messages.update { hidden: 0 }` / `messages.delete { soft: true }`）。
          */
         let mut msg_stmt = tx
             .prepare_cached(
@@ -1651,7 +1718,9 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
                  ON CONFLICT(id) DO UPDATE SET content = excluded.content, reasoning = excluded.reasoning, \
                    model = excluded.model, status = excluded.status, timestamp = excluded.timestamp, \
-                   hidden = excluded.hidden, trimmed = excluded.trimmed",
+                   hidden = CASE WHEN ?11 THEN hidden ELSE excluded.hidden END, \
+                   trimmed = CASE WHEN ?11 THEN trimmed \
+                                  WHEN excluded.hidden = 0 THEN 0 ELSE trimmed END",
             )
             .map_err(DbError::from)?;
         let mut del_tc = tx
@@ -1674,35 +1743,42 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         let mut msgs_written = 0i64;
         let mut tools_written = 0i64;
         /*
-         * 库里**已有的** `trimmed` 值（第 45 轮）：重建不产生、也不清除"被裁剪过"这个事实。
+         * 库里**已有的**隐藏/裁剪状态（第 45 轮）：重建**不产生、也不改变**它们。
          *
-         * 为什么在事务里先查一遍而不是用 SQL 表达式：
-         * 需要在"值本身"上判断（NULL 要与 0 同义，且 `hidden` 有 0/1 两种值时 CASE 会变复杂），
+         * 为什么在事务里先查一遍而不是全用 SQL 表达式：
+         * 需要在"这一行是否存在"上判断（存在 → 保留原状态；不存在 → 按日志新建），
          * 用 `HashMap` 表达最直白，也最容易被下一个人读懂。
-         * 表不大（一次重建的会话数有限），一次全表扫描的代价可接受。
+         * 表不大（一次重建涉及的行数有限），一次全表扫描的代价可接受。
          */
-        let trimmed_keep: std::collections::HashMap<String, i64> = {
+        let hidden_trim_keep: std::collections::HashMap<String, (i64, i64)> = {
             let mut stmt = tx
-                .prepare("SELECT id, COALESCE(trimmed, 0) FROM messages")
+                .prepare("SELECT id, COALESCE(hidden, 0), COALESCE(trimmed, 0) FROM messages")
                 .map_err(DbError::from)?;
             let rows = stmt
-                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                })
                 .map_err(DbError::from)?;
             let mut m = std::collections::HashMap::new();
             for r in rows {
-                let (id, t) = r.map_err(DbError::from)?;
-                m.insert(id, t);
+                let (id, h, t) = r.map_err(DbError::from)?;
+                m.insert(id, (h, t));
             }
             m
         };
         /*
          * 每个会话的**索引真值**（库里真实行数，按 `session_id` 聚合，一次扫描算完）。
          *
-         * 在**本事务内、写之前**算：这样 `messages.create` 之后紧接着的重建也能拿到正确的数
-         * （写入是本次事务里发生的，事务外的连接看不到自己的写 —— 那种"自己看不见自己"的坑
-         * 会让计数少一批，比原来按日志条数写更糟）。
+         * ⚠️ 时机很重要：**必须在消息写完之后**算（第 45 轮实测踩到）。
+         * 第一版放在写之前，于是"日志里的新消息本次才插进去"那一批没被算进 `message_count`
+         * —— 计数又变成了一个错的数（比原来按日志条数写还隐蔽：它看起来"合理"）。
+         * 索引真值的定义就是"写完这次重放之后，库里有多少行"，所以只能后算。
          */
-        let index_counts: std::collections::HashMap<String, i64> = {
+        let index_counts = |tx: &rusqlite::Transaction<'_>| -> DbResult<std::collections::HashMap<String, i64>> {
             let mut stmt = tx
                 .prepare("SELECT session_id, COUNT(*) FROM messages GROUP BY session_id")
                 .map_err(DbError::from)?;
@@ -1714,9 +1790,15 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                 let (sid, n) = r.map_err(DbError::from)?;
                 m.insert(sid, n);
             }
-            m
+            Ok(m)
         };
+        let pre_counts = index_counts(tx)?;
         for s in &parsed {
+            /*
+             * 会话行先按"当前索引真值"落一次（新建的会话必须存在，否则消息的外键不成立；
+             * `INSERT ... ON CONFLICT DO UPDATE` 同时把标题/时间刷成日志里的值）。
+             * 消息写完后会再刷一次计数 —— 那时才是最终真值（见下面的 `final_counts`）。
+             */
             sess_stmt
                 .execute(params![
                     s.id,
@@ -1725,10 +1807,13 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                     s.first_ts,
                     s.last_ts,
                     // 索引真值；该会话在 messages 里一行都没有时才落 0
-                    index_counts.get(&s.id).copied().unwrap_or(0)
+                    pre_counts.get(&s.id).copied().unwrap_or(0)
                 ])
                 .map_err(DbError::from)?;
             for (f, calls) in &s.messages {
+                // 库里已有这一行 → 保持它的 hidden/trimmed（重建只改内容）；
+                // 新行 → 按日志的 hidden 落库，trimmed 默认 0
+                let keep = hidden_trim_keep.get(&f.id).copied();
                 msg_stmt
                     .execute(params![
                         f.id,
@@ -1740,7 +1825,8 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                         f.model,
                         f.status,
                         f.hidden,
-                        trimmed_keep.get(&f.id).copied().unwrap_or(0)
+                        keep.map(|(_, t)| t).unwrap_or(0),
+                        keep.is_some()
                     ])
                     .map_err(DbError::from)?;
                 msgs_written += 1;
@@ -1764,6 +1850,33 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         }
         drop(msg_stmt);
         drop(meta_stmt);
+        /*
+         * **最终计数刷新**（第 45 轮 Z-9）：消息都写完之后再按索引真值写一次
+         * `sessions.message_count`。
+         *
+         * 为什么必须再刷一次：上面的 `sess_stmt` 是在写消息**之前**执行的，
+         * 那时"本次才新插入的消息"还不存在 —— 计数会少掉正好这一批。
+         * 而这一列的定义是"这个会话在库里有多少行"，所以只能用**写完之后的**真值。
+         *
+         * 为什么这是"一个写入者"而不是"又一个写入者"：写的是
+         * `SELECT COUNT(*) FROM messages WHERE session_id = ?1` —— 与
+         * `maintenance.ts` 的对账（`reconcileMessageCounts`）**完全同一个数**。
+         * 两个机制指向同一个不动点，因此不会你改过去我改回来。
+         */
+        {
+            let final_counts = index_counts(tx)?;
+            let mut touch = tx
+                .prepare_cached("UPDATE sessions SET message_count = ?2 WHERE id = ?1")
+                .map_err(DbError::from)?;
+            for s in &parsed {
+                touch
+                    .execute(params![
+                        s.id,
+                        final_counts.get(&s.id).copied().unwrap_or(0)
+                    ])
+                    .map_err(DbError::from)?;
+            }
+        }
         /*
          * 返回值里如实报出**引擎当前看到的**消息总数（第 45 轮）。
          *

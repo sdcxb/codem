@@ -209,15 +209,28 @@ fn run(engine: &Engine, path: &str, rest: &[String]) -> Result<Value, DbError> {
                 match dispatch(engine, &cmd, &params) {
                     Ok(v) => results.push(json!({ "command": cmd, "ok": true, "result": v })),
                     Err(e) => {
-                        // 部分成功是**事实**，必须如实返回（调用方据此决定补偿）
+                        /*
+                         * 部分成功是**事实**，必须如实返回（调用方据此决定补偿）。
+                         *
+                         * ⚠️ 第 45 轮 Z-7：文案改由 `codem_db::batch_failure_message` 统一生成
+                         * —— 这里原来是 `…已完成 {} 步：{}` + `serde_json::to_string(&results)`，
+                         * 把**已完成的完整结果 JSON** 内嵌进错误（一条 `messages.list` 就是几 MB），
+                         * 于是 CLI/Tauri 两条 batch 的**错误形状分歧**：那边早在第 44 轮就改成
+                         * 只留命令名清单了，这边没跟上（两侧注释都声称"与另一侧对齐"）。
+                         * 现在文案只有一处实现，不可能再分歧。
+                         */
+                        let completed: Vec<String> = results
+                            .iter()
+                            .filter_map(|d| d.get("command").and_then(|c| c.as_str()))
+                            .map(|s| s.to_string())
+                            .collect();
                         return Err(DbError::new(
                             e.code,
-                            format!(
-                                "batch 在第 {} 步失败（command={cmd}）：{}；已完成 {} 步：{}",
+                            codem_db::batch_failure_message(
                                 results.len() + 1,
-                                e.message,
-                                results.len(),
-                                serde_json::to_string(&results).unwrap_or_default()
+                                &cmd,
+                                &e.message,
+                                &completed,
                             ),
                         ));
                     }

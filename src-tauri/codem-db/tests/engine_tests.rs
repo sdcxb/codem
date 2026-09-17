@@ -1849,7 +1849,16 @@ fn session_message_count_is_maintained_by_the_engine() {
     call(&e, "messages.delete", json!({ "ids": hard, "confirm_bulk": true }));
     assert_eq!(count_of(&e), 11, "硬删 10 条后应为 11");
 
-    // 重建索引会显式写入日志里的真实条数
+    // 重建索引**不再写"日志里给了几条"**，而是写**索引真值**（第 45 轮 Z-9）。
+    //
+    // 为什么改：审计实测"索引里 60 行、日志只给 5 条"时，旧行为把
+    // `sessions.message_count` 无条件写成 5，而 `messages.count` 是 60 —— 两个真值当场分叉，
+    // 而且**维护对账会按索引真值改回来**（`maintenance.ts` 的 reconcileMessageCounts），
+    // 下次重建又改回日志条数：两个写入者来回打架，侧边栏数字跳。
+    // 现在这里写"这个会话在 messages 表里真实有多少行"，与维护对账指向**同一个不动点**。
+    //
+    // 本测试走到这里时：硬删 10 条之后库里还剩 11 条（新会话里每写一条都会 +1，
+    // 硬删 10 条又 -10），再加上日志里的 2 条新消息 = 13 —— 而日志条数只有 2。
     call(
         &e,
         "messages.rebuild_index",
@@ -1858,7 +1867,16 @@ fn session_message_count_is_maintained_by_the_engine() {
             { "id": "r2", "session_id": "s1", "role": "assistant", "content": "b", "timestamp": 2 }
         ] }] }),
     );
-    assert_eq!(count_of(&e), 2, "重建索引按权威日志条数写");
+    assert_eq!(
+        count_of(&e),
+        13,
+        "重建索引写的是**索引真值**（库里 11 行 + 日志新写 2 行 = 13），不是日志条数 2"
+    );
+    assert_eq!(
+        call(&e, "messages.count", json!({ "session_id": "s1" }))["count"],
+        json!(13),
+        "message_count 必须等于 messages.count（否则就是「两个真相」）"
+    );
 }
 
 /// **D8**：`migration.auto` 是**唯一一条"整库重写"的命令**，而它原来**一条测试都没有**。
@@ -2225,3 +2243,644 @@ fn messages_session_timestamp_index_exists() {
         "查询计划应使用复合索引，实际：{plan}"
     );
 }
+
+// ========== 第 45 轮（Z 批）回归测试 ==========
+
+/// **Z-1（阻断级）**：`auto_migrate` 的对账原来对**行序**敏感 → 目标端已有源端子集时
+/// "对账永久不通过"。
+///
+/// ## 端到端这一层证明什么（以及为什么顺序那一半在 `migrate.rs` 的单元测试里）
+///
+/// 端到端能证明的：**同一批行 + 目标端多出几行**时，对账必须通过、迁移标记必须写上
+/// （旧判据在"目标端已有子集"的形态下会误判 —— 审计实测：源 6 行、目标预置 2 行，
+/// 6 行其实都写进去了，只是顺序成了 `k1,k3,k2,k4,k5,k6`，于是报"对账未通过"、
+/// 不写迁移标记、每次启动重来一遍）。
+///
+/// "**仅行序不同时也必须通过**"这一半直接用真实库做不到：目标端 `settings` 的主键
+/// 自带 `sqlite_autoindex`，SQLite 对无 `ORDER BY` 的扫描就用它，于是目标端**始终**是
+/// 主键序（我试过 `PRAGMA reverse_unordered_selects` 与 `DROP INDEX` 都不行：
+/// 前者不生效、后者被 SQLite 拒绝 `index associated with UNIQUE or PRIMARY KEY
+/// constraint cannot be dropped`）。所以那一半用 `MultisetDigest` 的单元测试钉死
+/// （`migrate::batch_message_tests::multiset_digest_is_order_independent`），
+/// 端到端只钉"标记真的写上了 + 缺失的行真的补上了"。
+#[test]
+fn auto_migrate_reconciliation_is_order_independent() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy_path = dir.path().join("legacy-order.bin");
+    {
+        /*
+         * 裸 rusqlite 造旧库：**刻意不走引擎** —— 旧库是老 schema，
+         * 而用引擎建库会得到"当前完整 schema"（那就复现不出真实的旧库形态）。
+         *
+         * ⚠️ `updated_at` 必须给真值：`settings` 的这一列是 `NOT NULL` 且**没有默认值**，
+         * 而 `INSERT OR IGNORE` 遇到 NOT NULL 违约时**不报错**（只是忽略这一行）——
+         * 于是"少给一列"会静默搬不进去（这一轮实测踩到，值得留痕：换个角度看，
+         * 对账恰恰是唯一能发现它的机制）。
+         */
+        let conn = rusqlite::Connection::open(&legacy_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+        )
+        .unwrap();
+        for i in 1..=6 {
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)",
+                rusqlite::params![format!("k{i}"), format!("v{i}"), i],
+            )
+            .unwrap();
+        }
+    }
+
+    let target_path = dir.path().join("target-order.bin");
+    let target = Engine::open(&target_path).unwrap();
+    // 目标端**已经**有源端的一个子集（k1/k3），而且新值比源端"新"
+    for k in ["k1", "k3"] {
+        call(&target, "settings.set", json!({ "key": k, "value": format!("v{}", &k[1..]) }));
+    }
+
+    // 迁移必须**成功**（旧判据在这种"目标端已有子集"的形态下会误判失败）
+    let res = call(
+        &target,
+        "migration.auto",
+        json!({ "legacy_path": legacy_path.to_string_lossy() }),
+    );
+    assert_eq!(res["migrated"], json!(true), "对账必须与行序无关：{res}");
+    assert!(
+        res["order_differs_tables"].is_array(),
+        "必须如实给出「行序不同」的表清单（没有就是空数组）：{res}"
+    );
+
+    // 6 行都在
+    assert_eq!(
+        call(&target, "settings.get_all", json!({}))["k6"],
+        json!("v6"),
+        "缺失的行必须被补上"
+    );
+    let n: i64 = target
+        .with_conn(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))
+                .map_err(codem_db::DbError::from)
+        })
+        .unwrap();
+    // 6 行来自源端，另加迁移自己写的那条标记（`codem-storage-migrated-at`）
+    assert_eq!(n, 7, "源端 6 行 + 迁移标记 1 行");
+
+    // **迁移标记写上了**（这才是"不再每次启动重来一遍"的证据）
+    let status = call(&target, "migration.status", json!({}));
+    assert!(
+        !status["migrated_at"].is_null(),
+        "对账通过 → 必须写迁移标记（旧判据会因行序误判而写不上）：{status}"
+    );
+
+    /*
+     * ⚠️ 这里**没有**再构造一个"迁移必须失败"的用例，理由值得写下来：
+     * 我试了两种造法，都被引擎**正确地**修好了 ——
+     * ① 目标端 `settings.key='k1'` 写成不同的值 → 迁移按源端内容覆盖它 → 对账通过；
+     * ② 目标端多一行 → 判为 `SourceCovered`（"新库比旧库新"的正常情形）→ 通过。
+     * 也就是说"对账失败"在单机测试里很难自然造出来（这本身是好消息：升级后的
+     * 覆盖写 + 多重集判据把审计实测的两种形态都变成了成功路径）。
+     * 失败分类（`content_differs` / `missing_rows`）由 `migrate.rs` 里的单元测试钉住：
+     * `batch_message_tests::multiset_digest_is_order_independent`。
+     */
+}
+
+/// **Z-1 后半条**：`<db>.pre-migration-<ms>` 备份必须有**保留策略**。
+///
+/// 为什么这是同一缺陷的一部分：对账（旧判据下）永久失败 → 每次启动重试 →
+/// 每次重试都在写之前拷一份**整库副本**，且没有任何清理 —— 生产库几百 MB 量级，
+/// 磁盘被填满之后备份失败又会让迁移彻底跑不动。
+#[test]
+fn auto_migrate_prunes_old_pre_migration_backups() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy_path = dir.path().join("legacy-prune.bin");
+    {
+        let conn = rusqlite::Connection::open(&legacy_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES ('k1', 'v1', 1)",
+            [],
+        )
+        .unwrap();
+    }
+
+    let target_path = dir.path().join("target-prune.bin");
+    let target = Engine::open(&target_path).unwrap();
+    let backups = |dir: &std::path::Path| -> Vec<String> {
+        let mut out: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains(".pre-migration-"))
+            .collect();
+        out.sort();
+        out
+    };
+    // 先塞两份**伪造**的历史备份（名字必须符合命名规则，否则不该被删）
+    for stamp in ["100", "200"] {
+        std::fs::write(
+            dir.path().join(format!("target-prune.bin.pre-migration-{stamp}")),
+            b"old backup",
+        )
+        .unwrap();
+    }
+    // 一份**不同命名**的文件：绝不能被清理碰到
+    std::fs::write(dir.path().join("target-prune.bin.corrupt-999"), b"keep me").unwrap();
+
+    assert_eq!(backups(dir.path()).len(), 2, "前提：已有两份历史备份");
+
+    // keep_backups = 2：本次新备份 + 最近那份历史 = 2 份，最旧那份（100）该被删
+    let res = call(
+        &target,
+        "migration.auto",
+        json!({ "legacy_path": legacy_path.to_string_lossy(), "keep_backups": 2 }),
+    );
+    assert_eq!(res["backups_kept"], json!(2), "{res}");
+    let after = backups(dir.path());
+    assert_eq!(after.len(), 2, "必须只留最近 2 份备份，实际：{after:?}");
+    assert!(
+        !after.iter().any(|n| n.ends_with("pre-migration-100")),
+        "最旧的那份必须被清掉：{after:?}"
+    );
+    assert!(res["backups_pruned"].as_array().unwrap().len() == 1, "{res}");
+    assert!(
+        dir.path().join("target-prune.bin.corrupt-999").exists(),
+        "`.corrupt-*` 是另一套备份（可能是唯一能救的副本），绝不能被清理碰到"
+    );
+}
+
+/// **Z-2（阻断级）**：`hidden = 0 ⇒ trimmed = 0` 这条不变量，三条写路径都必须成立。
+///
+/// 审计实测三条路径都把 `hidden` 打回 0 而留着 `trimmed = 1`（矛盾态）：
+/// `messages.create` 覆盖写、`messages.upsert_index {hidden:0}`、
+/// `messages.rebuild_index`（session-log-bridge 的主路径）。
+#[test]
+fn trimmed_is_cleared_whenever_hidden_becomes_zero() {
+    let (_d, e) = temp_engine("trim-invariant");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "" }));
+    let mk = |id: &str| {
+        json!({ "id": id, "session_id": "s1", "role": "user", "content": id, "timestamp": 1 })
+    };
+    for id in ["a", "b", "c", "d"] {
+        call(&e, "messages.create", mk(id));
+        // 先裁掉：hidden=1, trimmed=1
+        call(&e, "messages.delete", json!({ "ids": [id], "trim": true }));
+        assert_eq!(
+            call(&e, "messages.get", json!({ "id": id }))["item"]["trimmed"],
+            json!(1),
+            "前提：裁剪必须留下 trimmed=1"
+        );
+    }
+
+    // 路径①：`messages.create` 覆盖写（不传 hidden → 缺省 0）
+    call(&e, "messages.create", mk("a"));
+    let a = call(&e, "messages.get", json!({ "id": "a" }))["item"].clone();
+    assert_eq!(a["hidden"], json!(0));
+    assert_eq!(a["trimmed"], json!(0), "hidden 写成 0 时必须同时清掉 trimmed：{a}");
+
+    // 路径②：`messages.upsert_index` 显式 hidden:0
+    let mut p = mk("b");
+    p["hidden"] = json!(0);
+    call(&e, "messages.upsert_index", p);
+    let b = call(&e, "messages.get", json!({ "id": "b" }))["item"].clone();
+    assert_eq!(b["hidden"], json!(0));
+    assert_eq!(b["trimmed"], json!(0), "upsert_index 写 0 也必须清 trimmed：{b}");
+
+    // 路径③：`messages.update { hidden: 0 }`
+    call(&e, "messages.update", json!({ "id": "c", "hidden": 0 }));
+    let c = call(&e, "messages.get", json!({ "id": "c" }))["item"].clone();
+    assert_eq!(c["trimmed"], json!(0), "messages.update 写 0 也必须清 trimmed：{c}");
+
+    // 路径④（同一缺陷的另一半）：**日志重建不得撤销裁剪**
+    //
+    // 日志里没有 `trimmed` 这一维，而 `rebuildSessionLogs` 会带着日志里的 `hidden` 重放。
+    // 旧行为：`hidden = excluded.hidden` 把 `trimmed=1` 的行打回 `hidden=0`（矛盾态），
+    // 且 `messages.count` 的 visible 计数跟着变 —— "被裁过"这个事实被静默抹掉。
+    call(
+        &e,
+        "messages.rebuild_index",
+        json!({ "sessions": [{ "id": "s1", "messages": [
+            { "id": "d", "session_id": "s1", "role": "user", "content": "d", "timestamp": 1, "hidden": 0 }
+        ] }] }),
+    );
+    let d = call(&e, "messages.get", json!({ "id": "d" }))["item"].clone();
+    assert_eq!(
+        d["hidden"], json!(1),
+        "重建不得把「被裁过的行」复活（那等于静默撤销裁剪）：{d}"
+    );
+    assert_eq!(d["trimmed"], json!(1), "重建不得清掉「被裁过」這個事实：{d}");
+
+    // 没有任何矛盾态残留
+    let bad: i64 = e
+        .with_conn(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM messages WHERE COALESCE(hidden,0) = 0 AND COALESCE(trimmed,0) = 1",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(codem_db::DbError::from)
+        })
+        .unwrap();
+    assert_eq!(bad, 0, "库里不得存在 hidden=0 且 trimmed=1 的矛盾态");
+}
+
+/// **Z-9**：`messages.rebuild_index` 不许用**日志条数**覆盖 `message_count`。
+///
+/// 审计实测：索引里 60 行、日志只给 5 条 → 重建后 `sessions.message_count = 5`
+/// 而 `messages.count = 60`；维护对账（按索引真值）改回来，下次重建又改回去 ——
+/// 两个写入者来回打架。
+#[test]
+fn rebuild_index_never_overwrites_message_count_with_log_length() {
+    let (_d, e) = temp_engine("rebuild-count");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "" }));
+    // 库里 6 行（引擎自己维护计数 → 6）
+    let items: Vec<serde_json::Value> = (1..=6)
+        .map(|i| {
+            json!({ "id": format!("m{i}"), "session_id": "s1", "role": "user",
+                    "content": "x", "timestamp": i })
+        })
+        .collect();
+    call(&e, "messages.create_many", json!({ "items": items }));
+
+    // 日志只给 2 条（**局部真相**）
+    let res = call(
+        &e,
+        "messages.rebuild_index",
+        json!({ "sessions": [{ "id": "s1", "messages": [
+            { "id": "m1", "session_id": "s1", "role": "user", "content": "x", "timestamp": 1 },
+            { "id": "m2", "session_id": "s1", "role": "user", "content": "x", "timestamp": 2 }
+        ] }] }),
+    );
+    assert_eq!(res["messages"], json!(2), "返回值如实报「这次重放了几条」：{res}");
+    assert_eq!(res["index_message_count"], json!(6), "{res}");
+
+    let count: i64 = e
+        .with_conn(|conn| {
+            conn.query_row("SELECT message_count FROM sessions WHERE id = 's1'", [], |r| r.get(0))
+                .map_err(codem_db::DbError::from)
+        })
+        .unwrap();
+    assert_eq!(count, 6, "message_count 必须是**索引真值**（6），不是日志条数（2）");
+    assert_eq!(
+        call(&e, "messages.count", json!({ "session_id": "s1" }))["count"],
+        json!(6),
+        "两个真值必须相等（否则维护对账与重建会来回打架）"
+    );
+}
+
+/// **Z-6**：`events.delete_session` 原来**绕过**批量删除闸门（无条件删光）。
+///
+/// 审计实测：`crud.delete` 删 4000 条事件被闸门拒绝，而 `events.delete_session`
+/// 直接 `{"written":4000}` —— 而它是**生产路径**（`rust-port.ts` 的
+/// `EventsPort.deleteSession`）。闸门装了，却没装在生产路径上。
+#[test]
+fn events_delete_session_respects_the_cascade_gate() {
+    let (_d, e) = temp_engine("ev-gate");
+    call(&e, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "p1" }));
+    let items: Vec<serde_json::Value> = (0..80)
+        .map(|i| json!({ "session_id": "s1", "type": "t", "payload": { "i": i } }))
+        .collect();
+    let appended = call(&e, "events.append_batch", json!({ "session_id": "s1", "events": items }));
+    assert_eq!(appended["written"], json!(80));
+
+    // ① 未确认 → 拒绝，且**一行都没删**（事务回滚）
+    let err = dispatch(&e, "events.delete_session", &json!({ "session_id": "s1" }))
+        .expect_err("超过上限的整会话事件删除必须被闸门拦下");
+    assert!(err.message.contains("confirm_bulk"), "{}", err.message);
+    assert_eq!(
+        call(&e, "events.count", json!({ "session_id": "s1" }))["count"],
+        json!(80),
+        "被拒绝的删除必须整体回滚（一行都不许少）"
+    );
+
+    // ② 显式确认 → 放行，并如实报出规模
+    let ok = call(&e, "events.delete_session", json!({ "session_id": "s1", "confirm_bulk": true }));
+    assert_eq!(ok["written"], json!(80), "{ok}");
+    assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(0));
+}
+
+/// **Z-6 的另一半**：`events.compact` 是**维护路径**，口径是"放行但如实报账"。
+///
+/// 与 `events.delete_session` 刻意不同：压缩是**有损替换**（删掉的段先被
+/// `session_snapshot` 覆盖，锚点必须真实存在），不是"把语料删掉"。
+/// 所以默认放行，但 ① 必须报 `affected_rows`；② 想受闸门约束的调用方可以显式
+/// `enforce_limit: true`（用**同一份**判据）。
+#[test]
+fn events_compact_reports_affected_rows_and_can_enforce_the_gate() {
+    let (_d, e) = temp_engine("ev-compact-gate");
+    call(&e, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "p1" }));
+    let items: Vec<serde_json::Value> = (0..80)
+        .map(|i| json!({ "session_id": "s1", "type": "t", "payload": { "i": i } }))
+        .collect();
+    call(&e, "events.append_batch", json!({ "session_id": "s1", "events": items }));
+
+    // 锚点存在时：默认放行，但规模必须可见
+    let ok = call(
+        &e,
+        "events.compact",
+        json!({ "session_id": "s1", "snapshot_seq": 1, "cutoff_seq": 40, "payload": { "snap": true } }),
+    );
+    assert!(
+        ok["affected_rows"].as_i64().unwrap_or(0) >= 30,
+        "维护路径放行的前提是**规模如实报出**（这一次删掉了几十行）：{ok}"
+    );
+    assert_eq!(ok["enforce_limit"], json!(false), "{ok}");
+
+    // `enforce_limit: true` 时用与 crud.delete 同一份判据拒绝
+    let items: Vec<serde_json::Value> = (0..80)
+        .map(|i| json!({ "session_id": "s1", "type": "t", "payload": { "i": i } }))
+        .collect();
+    call(&e, "events.append_batch", json!({ "session_id": "s1", "events": items }));
+    let seq: i64 = e
+        .with_conn(|conn| {
+            conn.query_row("SELECT MAX(seq) FROM session_events WHERE session_id='s1'", [], |r| r.get(0))
+                .map_err(codem_db::DbError::from)
+        })
+        .unwrap();
+    let err = dispatch(
+        &e,
+        "events.compact",
+        &json!({ "session_id": "s1", "snapshot_seq": seq, "cutoff_seq": seq, "enforce_limit": true }),
+    )
+    .expect_err("enforce_limit 打开时必须按闸门拒绝");
+    assert!(err.message.contains("confirm_bulk"), "{}", err.message);
+}
+
+/// **Z-3**：`hidden = NULL` 曾经打崩**整个会话**的读路径。
+///
+/// 审计实测：`messages.update { id, hidden: null }` "成功"（写入 SQL NULL），
+/// 然后 `messages.get` 报 `Invalid column type Null at index: 8, name: hidden`，
+/// `messages.list { include_hidden: true }` 同样报错 —— 整个会话读不出来；
+/// 而 `crud.list` 照样返回 `"hidden": null`（两条读路径给出两种答案）。
+///
+/// 修法两条都要（一条防写入、一条防历史数据）：
+/// ① 写侧拒绝 NULL；② 读侧 `Option<i64>` + `unwrap_or(0)`（本测试用**直连 SQL**
+/// 造一行历史 NULL 来验证第 ② 条，因为第 ① 条已经不可能从命令层造出来了）。
+#[test]
+fn null_hidden_is_rejected_on_write_and_survived_on_read() {
+    let (_d, e) = temp_engine("null-hidden");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "" }));
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "a", "timestamp": 1 }),
+    );
+
+    // ① 写侧：六条写入命令都必须拒绝 `hidden`/`message_count` 为 NULL（语义上非空）
+    for (cmd, params) in [
+        ("messages.update", json!({ "id": "m1", "hidden": null })),
+        ("messages.upsert_index", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "a", "hidden": null })),
+        ("messages.create", json!({ "id": "m2", "session_id": "s1", "role": "user", "content": "a", "hidden": null })),
+        ("messages.update_many", json!({ "items": [{ "id": "m1", "hidden": null }] })),
+        ("crud.upsert", json!({ "table": "messages", "rows": [{ "id": "m3", "session_id": "s1", "role": "user", "content": "a", "timestamp": 1, "hidden": null }] })),
+        ("sessions.upsert", json!({ "id": "s2", "project_id": "", "message_count": null })),
+    ] {
+        let err = match dispatch(&e, cmd, &params) {
+            Ok(v) => panic!("{cmd} 必须拒绝 NULL，却返回了 {v}"),
+            Err(err) => err,
+        };
+        assert!(
+            err.message.contains("不可为空") || err.message.contains("NULL"),
+            "{cmd} 的报错必须说清是哪一列不接受 NULL：{}",
+            err.message
+        );
+    }
+
+    // ② 读侧：造一行**历史** NULL（模拟老数据 / 手工 SQL）—— 读路径不许崩
+    e.write_tx(|tx| {
+        tx.execute("UPDATE messages SET hidden = NULL WHERE id = 'm1'", [])
+            .map_err(codem_db::DbError::from)?;
+        Ok(())
+    })
+    .unwrap();
+
+    let got = call(&e, "messages.get", json!({ "id": "m1" }));
+    assert_eq!(got["item"]["hidden"], json!(0), "历史 NULL 应被读成 0（可见）：{got}");
+    let listed = call(
+        &e,
+        "messages.list",
+        json!({ "session_id": "s1", "include_hidden": true }),
+    );
+    assert_eq!(
+        listed["items"].as_array().unwrap().len(),
+        1,
+        "整个会话必须读得出来（NULL 不许打崩读路径）：{listed}"
+    );
+}
+
+/// **Z-4 / Z-5**：`rebuild_fts` 的两处新引入回退。
+///
+/// - Z-4：`messages.id IS NULL`（SQLite 的 `TEXT PRIMARY KEY` 允许多行 NULL）原来让
+///   **整次重建失败**（`Invalid column type Null at index: 0, name: id`）——
+///   而它同时还是**唯一**能清 FTS 孤儿的路径，于是那个库的全文索引永远修不好。
+/// - Z-5：重复 `message_id` 让"内容一致就跳过"永远判一致 → 一行都不删 →
+///   `fts.search` 同一条消息返回两次。旧实现"整表 DELETE + 重灌"天然自愈，增量改写丢了它。
+#[test]
+fn rebuild_fts_tolerates_null_ids_and_heals_duplicate_rows() {
+    let (_d, e) = temp_engine("rebuild-fts-null");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "" }));
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "存储迁移", "timestamp": 1 }),
+    );
+    // ① 一行 id 为 NULL（直连 SQL 造：命令层不可能写出 NULL id）
+    e.write_tx(|tx| {
+        tx.execute(
+            "INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (NULL, 's1', 'user', '孤儿行', 2)",
+            [],
+        )
+        .map_err(codem_db::DbError::from)?;
+        Ok(())
+    })
+    .unwrap();
+
+    // ② FTS 里塞两行重复的 message_id（模拟历史重复）
+    e.write_tx(|tx| {
+        for _ in 0..2 {
+            tx.execute(
+                "INSERT INTO session_fts (message_id, session_id, content, role, timestamp) \
+                 VALUES ('dup', 's1', '重复 重复', 'user', 3)",
+                [],
+            )
+            .map_err(codem_db::DbError::from)?;
+        }
+        // 让 'dup' 这条在 messages 里也存在（否则它会被当孤儿删掉）
+        tx.execute(
+            "INSERT INTO messages (id, session_id, role, content, timestamp) VALUES ('dup', 's1', 'user', '重复', 3)",
+            [],
+        )
+        .map_err(codem_db::DbError::from)?;
+        Ok(())
+    })
+    .unwrap();
+
+    // 重建：不许整体失败；NULL id 要被**跳过并计数**
+    let res = call(&e, "rebuild_fts", json!({}));
+    assert_eq!(res["skipped_null_id"], json!(1), "NULL id 的行必须跳过并计数：{res}");
+
+    // 重复行必须被收敛回一行
+    let dup_rows: i64 = e
+        .with_conn(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM session_fts WHERE message_id = 'dup'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(codem_db::DbError::from)
+        })
+        .unwrap();
+    assert_eq!(dup_rows, 1, "重复 message_id 必须自愈成一行（否则搜索结果重复）");
+
+    // 自愈之后第二次重建应当是"无改动"（幂等）
+    let again = call(&e, "rebuild_fts", json!({}));
+    assert_eq!(again["indexed"], json!(0), "第二次重建不该再写任何行：{again}");
+}
+
+/// **Z-10**：`MAX(0, …)` 把计数漂移**夹成另一个错值**而不暴露它。
+///
+/// 审计实测：把 `message_count` 人为写成 1（库里其实 5 条）→ 硬删 3 条 →
+/// 计数变成 0（被夹断），而真实还有 2 条 —— "0 条消息的会话里躺着 2 条"，无任何告警。
+/// 夹断本身是对的（负计数更糟），错的是**夹了却不说**。
+#[test]
+fn clamped_message_count_is_reported_not_silent() {
+    let (_d, e) = temp_engine("count-clamp");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "" }));
+    let items: Vec<serde_json::Value> = (1..=5)
+        .map(|i| {
+            json!({ "id": format!("m{i}"), "session_id": "s1", "role": "user",
+                    "content": "x", "timestamp": i })
+        })
+        .collect();
+    call(&e, "messages.create_many", json!({ "items": items }));
+    // 人为制造漂移：计数写成 1（库里其实 5 条）
+    e.write_tx(|tx| {
+        tx.execute("UPDATE sessions SET message_count = 1 WHERE id = 's1'", [])
+            .map_err(codem_db::DbError::from)?;
+        Ok(())
+    })
+    .unwrap();
+    // 前提断言：漂移确实造成了（否则后面的"夹断"就无从谈起）
+    assert_eq!(
+        call(&e, "messages.count", json!({ "session_id": "s1" }))["count"],
+        json!(5)
+    );
+
+    // 硬删 3 条 → MAX(0, 1-3) = 0，夹断发生
+    let res = call(
+        &e,
+        "messages.delete",
+        json!({ "ids": ["m1", "m2", "m3"], "confirm_bulk": true }),
+    );
+    assert_eq!(
+        res["count_clamped"],
+        json!(true),
+        "夹断必须被上报（这正是「计数已经漂移」的唯一在线信号）：{res}"
+    );
+    // 库里其实还有 2 条 —— 与计数 0 矛盾的这件事现在是**可见**的
+    assert_eq!(
+        call(&e, "messages.count", json!({ "session_id": "s1" }))["count"],
+        json!(2)
+    );
+    let stored: i64 = e
+        .with_conn(|conn| {
+            conn.query_row("SELECT message_count FROM sessions WHERE id = 's1'", [], |r| r.get(0))
+                .map_err(codem_db::DbError::from)
+        })
+        .unwrap();
+    assert_eq!(stored, 0, "夹断仍然生效（负计数更糟），只是现在被报出来了");
+}
+
+/// **Z-8**：`legacy.read_table` 的两件事。
+///
+/// ① keyset 分页（默认路径）：返回 `next_key`，并且**翻页期间源库变化不跳行**
+///    （offset 分页的实测形态：limit=2、删掉 k1 之后 page2 给 k4,k5 —— k3 从未被读到）；
+/// ② 返回里**如实说明**"翻页期间源库变化可能跳行"这件事（`source_change_hazard`）。
+#[test]
+fn legacy_read_table_keyset_paging_survives_source_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy_path = dir.path().join("legacy-keyset.bin");
+    {
+        let conn = rusqlite::Connection::open(&legacy_path).unwrap();
+        conn.execute_batch("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);")
+            .unwrap();
+        for i in 1..=6 {
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+                rusqlite::params![format!("k{i}"), format!("v{i}")],
+            )
+            .unwrap();
+        }
+    }
+    let (_d2, e) = temp_engine("keyset-reader");
+
+    let p1 = call(
+        &e,
+        "legacy.read_table",
+        json!({ "legacy_path": legacy_path.to_string_lossy(), "table": "settings", "limit": 2 }),
+    );
+    assert_eq!(p1["paging"], json!("keyset"), "默认路径必须是 keyset：{p1}");
+    assert!(
+        p1["source_change_hazard"].as_str().unwrap_or("").contains("源库"),
+        "必须如实说明翻页期间源库变化的风险：{p1}"
+    );
+    let keys1: Vec<String> = p1["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r[0].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(keys1, vec!["k1", "k2"]);
+    let cursor = p1["next_key"].clone();
+    assert!(!cursor.is_null(), "第一页必须给出 next_key：{p1}");
+
+    // 翻页**之间**源库被改：删掉已经读过的 k1，再加一行 k0（落在游标之前）
+    {
+        let conn = rusqlite::Connection::open(&legacy_path).unwrap();
+        conn.execute("DELETE FROM settings WHERE key = 'k1'", []).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('k0', 'v0')", [])
+            .unwrap();
+    }
+
+    // keyset 续页：k3 必须还在（这是 offset 分页会跳过的那一行）
+    let p2 = call(
+        &e,
+        "legacy.read_table",
+        json!({ "legacy_path": legacy_path.to_string_lossy(), "table": "settings",
+                "limit": 2, "after_key": cursor }),
+    );
+    let keys2: Vec<String> = p2["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r[0].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(keys2, vec!["k3", "k4"], "keyset 不受「已读过的行被删」影响：{p2}");
+}
+
+/// **Z-8 的第二半**：`WITHOUT ROWID` 的表不许再报 `no such column: rowid`。
+#[test]
+fn legacy_read_table_handles_without_rowid_tables() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy_path = dir.path().join("legacy-without-rowid.bin");
+    {
+        let conn = rusqlite::Connection::open(&legacy_path).unwrap();
+        conn.execute_batch("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID;")
+            .unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('k1', 'v1')", [])
+            .unwrap();
+    }
+    let (_d2, e) = temp_engine("reader-without-rowid");
+    let page = call(
+        &e,
+        "legacy.read_table",
+        json!({ "legacy_path": legacy_path.to_string_lossy(), "table": "settings", "limit": 10 }),
+    );
+    assert_eq!(page["rows"].as_array().unwrap().len(), 1, "{page}");
+    assert_eq!(page["paging"], json!("keyset"), "无 rowid 的表也必须能分页：{page}");
+}
+

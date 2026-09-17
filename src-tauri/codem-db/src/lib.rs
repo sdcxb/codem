@@ -444,6 +444,38 @@ fn storage_compact(engine: &Engine, p: &Value) -> DbResult<Value> {
     }))
 }
 
+/// 批量写的**错误文案**（第 45 轮 Z-7：抽成一处，两侧共用）。
+///
+/// ## 为什么必须共用（而不是各写一份）
+///
+/// 有**两条** batch 实现，各自有一条"部分成功"的错误文案：
+/// - `codem-db-cli` 的 `batch` 子命令（契约测试、迁移工具走它）；
+/// - `src-tauri` 的 `storage_batch`（Tauri 命令，渲染侧走它）。
+///
+/// 两边的注释都写着"与另一侧对齐"，但**形状已经分歧**：`storage.rs` 那份第 44 轮改成了
+/// "只留命令名清单"，而 CLI 那份仍是 `format!("… 已完成 {} 步：{}", …, serde_json::to_string(&results))`
+/// —— 于是一条 `messages.list` 的失败会把**几 MB 的完整结果 JSON** 塞进错误消息
+/// （实测形态：界面上弹出一坨 JSON；同时进日志、进错误对象）。
+/// 审计实测的 CLI 形态：
+/// `{"error":{…,"message":"batch 在第 2 步失败（command=messages.create）：FOREIGN KEY constraint failed；已完成 1 步：[{\"command\":\"sessions.upsert\",\"ok\":true,\"result\":{\"id\":\"s1\",\"written\":1}}]"}}`
+///
+/// 这正是"同一件事写两份实现"的必然结果：改了一处，另一处看不出来。
+/// 所以：**文案在这里，两侧都调它**。谁也不许再自己拼一份。
+/// 返回的字符串长度与数据量无关（只含命令名），可以安全地进日志与告警。
+///
+/// 参数 `completed` 是**已成功步骤的命令名**（按执行顺序）；空切片表示第一步就失败。
+pub fn batch_failure_message(step: usize, command: &str, cause: &str, completed: &[String]) -> String {
+    let names = if completed.is_empty() {
+        String::new()
+    } else {
+        format!("（依次为：{}）", completed.join(" → "))
+    };
+    format!(
+        "batch 在第 {step} 步失败（command={command}）：{cause}；已完成 {} 步{names}",
+        completed.len()
+    )
+}
+
 /// 命令清单 + 当前实现（自省）
 pub fn capabilities() -> Value {
     json!({
@@ -458,4 +490,33 @@ pub fn capabilities() -> Value {
             "fts_shadow_excluded": true,
         },
     })
+}
+
+#[cfg(test)]
+mod batch_message_tests {
+    use super::batch_failure_message;
+
+    /// Z-7：文案**必须**只含命令名 —— 已完成的**结果体**不许再进来（那是几 MB 的噪音）。
+    #[test]
+    fn batch_failure_message_lists_command_names_only() {
+        let done = vec!["sessions.upsert".to_string(), "messages.create".to_string()];
+        let msg = batch_failure_message(
+            3,
+            "tool_calls.replace",
+            "FOREIGN KEY constraint failed",
+            &done,
+        );
+        assert!(msg.contains("第 3 步"), "{msg}");
+        assert!(msg.contains("command=tool_calls.replace"), "{msg}");
+        assert!(msg.contains("已完成 2 步"), "{msg}");
+        assert!(msg.contains("sessions.upsert → messages.create"), "{msg}");
+        // 结果体不在这里（没有 `{` 这类形状）—— 这正是 CLI 那份原来违反的
+        assert!(!msg.contains('{'), "错误文案不得内嵌结果 JSON：{msg}");
+        assert!(!msg.contains("\"result\""), "{msg}");
+
+        // 第一步就失败：不出现"依次为"
+        let first = batch_failure_message(1, "sessions.upsert", "boom", &[]);
+        assert!(first.contains("已完成 0 步"), "{first}");
+        assert!(!first.contains("依次为"), "{first}");
+    }
 }
