@@ -68,7 +68,21 @@ async function countRows(table: string): Promise<number | null> {
 }
 void countRows;
 
-/** 用 `crud.count` 读真实行数（结构化返回，不走会被压平的 execute） */
+/**
+ * 用 `crud.count` 读真实行数（结构化返回，不走会被压平的 execute）。
+ *
+ * **读不到就返回 null —— 绝不返回 0**（第 11 轮修正）。
+ *
+ * 为什么这一点是安全关键：调用方要根据这个数判断"用户内容是不是丢了"，
+ * 而一旦判定为"丢了"，它会去跑一次 `migration.auto` —— 那个命令**会重写整库**。
+ * 也就是说：**"读不到"被当成"是 0"= 可能对一份完好的数据库执行破坏性恢复**。
+ * 真机证据（`storage_audit`）：2026-09-17T01:13:34Z 一次性删掉 sessions 3 行 +
+ * messages 821 条（全部）+ tool_calls 883 + session_events 2131，与"恢复/迁移"
+ * 同秒发生 —— 详见 `docs/L3-DELETION-PLAN.md` 第五节。
+ *
+ * 顺带把失败原因打出来：原来 `catch { return null }` 把"为什么读不到"吞掉了，
+ * 出事时没有任何线索。
+ */
 async function realCount(table: string): Promise<number | null> {
   try {
     const port = getStoragePort();
@@ -76,12 +90,16 @@ async function realCount(table: string): Promise<number | null> {
     const probe = port.data as unknown as {
       command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
     };
-    if (probe.command) {
-      const r = await probe.command<{ count?: number }>("crud.count", { table });
-      if (typeof r?.count === "number") return r.count;
+    if (!probe.command) {
+      console.warn(`[Storage] 自检：端口没有 command 能力，无法读取 ${table} 的真实行数（本次不判定）`);
+      return null;
     }
+    const r = await probe.command<{ count?: number }>("crud.count", { table });
+    if (typeof r?.count === "number") return r.count;
+    console.warn(`[Storage] 自检：crud.count(${table}) 返回的形状不符合契约：`, r);
     return null;
-  } catch {
+  } catch (e) {
+    console.warn(`[Storage] 自检：读取 ${table} 的真实行数失败（本次不判定，避免误恢复）:`, e);
     return null;
   }
 }
@@ -151,7 +169,43 @@ export async function verifyUserContentOrRestore(
     });
     const previous = readWatermark(settingsPage.items ?? []);
 
-    const messages = (await realCount("messages")) ?? 0;
+    /**
+     * ⚠️ **读不到 ≠ 是 0**（第 11 轮修正，安全关键）。
+     *
+     * 这两个计数是"要不要恢复"的唯一依据，而恢复会**重写整库**。原来的写法是
+     * `(await realCount("messages")) ?? 0` —— 一次读失败（端口正在启动、命令超时、
+     * 契约不匹配）就会被当成"一条消息都没有"，进而对一份**完好的数据库**执行
+     * 破坏性恢复。真机上看到的那次"821 条全部被删又重灌"就发生在这条判据上。
+     *
+     * 现在的规则：**读不到就不判定**（既不恢复、也不改水位）。代价是"这一次自检没生效"，
+     * 而数据本来就在那里；下一次自检还会再来。
+     */
+    const messagesRaw = await realCount("messages");
+    if (messagesRaw === null) {
+      return { kind: "unavailable", previous: previous ?? undefined, reason: "消息行数读取失败，本次不判定" };
+    }
+    /**
+     * 第二次确认：0 是一个"要么真、要么读错了"的值，而二者的后果极不对称
+     * （误判 = 重写整库；多读一次 = 几十毫秒）。所以 0 必须**连读两次都是 0** 才算数。
+     */
+    let messages = messagesRaw;
+    if (messages === 0) {
+      await new Promise((r) => setTimeout(r, 250));
+      const again = await realCount("messages");
+      if (again === null) {
+        return { kind: "unavailable", previous: previous ?? undefined, reason: "复核读取失败，本次不判定" };
+      }
+      if (again > 0) {
+        // 复核推翻了"0"这个读数 → 内容其实是健康的，按正常路径继续（会写水位）
+        console.warn(`[Storage] 自检：首次读到 0 条消息，复核读到 ${again} 条 —— 判定为读抖动，不恢复`);
+      }
+      messages = again;
+    }
+    /**
+     * `sessions` 只用于**报告**（水位里的字段），不参与任何判定：
+     * 恢复与否只看 `messages` 与水位。所以这里允许 `?? 0` 兜底，但消息数不允许 ——
+     * 两者在"读不到"时的后果完全不对称。
+     */
     const sessions = (await realCount("sessions")) ?? 0;
     const current: Watermark = { at: Date.now(), messages, sessions };
 

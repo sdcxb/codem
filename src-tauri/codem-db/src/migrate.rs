@@ -153,6 +153,35 @@ fn real_columns(conn: &Connection, table: &str) -> DbResult<HashSet<String>> {
     Ok(out)
 }
 
+/// 该表的**主键列**（按 `PRAGMA table_info` 的 pk 序号排序；无主键则空）。
+///
+/// 用途：导入覆盖已存在行时**必须按主键定位**，而且不能用 `INSERT OR REPLACE` ——
+/// SQLite 的 `REPLACE` 语义是"先 DELETE 冲突行再 INSERT"，父表（如 `sessions`）
+/// 被 REPLACE 时会触发子表的 `ON DELETE CASCADE`，把该会话的消息一并删掉。
+/// 所以覆盖走 `UPDATE … WHERE pk = ?`，主键列必须准确。
+fn primary_key_columns(engine: &Engine, table: &str) -> DbResult<Vec<String>> {
+    engine.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+            .map_err(DbError::from)?;
+        // (pk 序号, 列名)；pk=0 表示不是主键列
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, i64>(5)?, r.get::<_, String>(1)?))
+            })
+            .map_err(DbError::from)?;
+        let mut pk: Vec<(i64, String)> = Vec::new();
+        for r in rows {
+            let (idx, name) = r.map_err(DbError::from)?;
+            if idx > 0 {
+                pk.push((idx, name));
+            }
+        }
+        pk.sort_by_key(|(i, _)| *i);
+        Ok(pk.into_iter().map(|(_, n)| n).collect())
+    })
+}
+
 fn to_sql_value(v: &Value) -> SqlValue {
     match v {
         Value::Null => SqlValue::Null,
@@ -334,62 +363,115 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
 
     engine.import_begin()?;
 
-    // `replace: true` = 先把目标表清空再导入（同一个事务内）。
-    //
-    // 为什么需要它：新库由引擎创建时 schema 阶段会**种下一行全局项目**（`projects.id=''`），
-    // 而旧库里也有这一行 —— 直接 INSERT 会撞 `UNIQUE constraint failed: projects.id`
-    // （实测踩到）。清空（而不是改成 OR REPLACE）更符合"迁移"的语义：
-    // 目标端的旧数据不该和源端混在一起。
-    //
-    // 删除顺序 = **依赖顺序的逆序**（先删子表再删父表），否则外键会拦住删除。
-    if payload.get("replace").and_then(|x| x.as_bool()).unwrap_or(false) {
-        let allowed = importable_tables();
-        for table in IMPORT_ORDER.iter().rev() {
-            if !allowed.iter().any(|t| t == table) {
-                continue;
-            }
-            engine.import_write(|conn| {
-                conn.execute(&format!("DELETE FROM \"{table}\""), [])
-                    .map(|_| ())
-                    .map_err(DbError::from)
-            })?;
-        }
-    }
-
+    /*
+     * ⚠️ **这里原来会按 `replace: true` 把每张目标表整表清空**，而 `replace: true` 正是
+     * `migration.auto`（启动迁移 + 自检恢复都走它）固定传的参 —— 也就是说：
+     * **任何一次自动迁移都会先把新库清空再重灌旧库那份内容**。
+     *
+     * 真机证据（第 11 轮，`storage_audit` 触发器记下的两次删除）：
+     * - 2026-09-16T23:47:45Z：sessions 2 行 + 某会话的 277 条 messages + 317 tool_calls；
+     * - 2026-09-17T01:13:34Z：sessions 3 行 + **821 条 messages（全部）+ 883 tool_calls
+     *   + 2131 session_events** —— 与"整表清空再重灌"完全吻合，且与
+     *   `codem-db.bin-shm`（旧库被打开）和运行时日志**同秒**。
+     * 这两次都发生在应用自己拉起迁移/恢复的那一刻，而不是什么第三方进程。
+     *
+     * 危险不在"清空"本身，而在**中间态**：DELETE 与 INSERT 之间只要被打断
+     * （崩溃 / 强杀 / 事务失败），用户数据就真的没了 —— 这正是历史事故的形态
+     * （"迁移对账通过、标记已写之后，新库变回 0"）。
+     *
+     * 所以整表清空**彻底去掉**：
+     * - 同名行改用"不删除的覆盖"（见下面的 `INSERT OR IGNORE` + `UPDATE` 两段式）——
+     *   它同时修掉了另一个更隐蔽的破坏源：`INSERT OR REPLACE` 在 SQLite 里是
+     *   **先 DELETE 再 INSERT**，而 `sessions` 的子表带 `ON DELETE CASCADE`，
+     *   于是"覆盖一个已存在的会话行"会**级联删掉该会话的全部消息**，
+     *   再靠后面的 messages 导入把旧库那份补回来 —— 新库里有、旧库里没有的消息
+     *   就此永久消失（这与上面第 23:47:45 那次"只删一个会话的 277 条"的形态一致）；
+     * - 目标端比源端多的行**保留**（不再"不该和源端混在一起"地被清掉）。
+     *   初始迁移时目标表本来就是空的，行为与从前完全一致。
+     */
     let mut report = serde_json::Map::new();
     let mut total = 0usize;
     for (table, columns, rows, mode) in &jobs {
-        let verb = if mode == "replace" { "INSERT OR REPLACE" } else { "INSERT" };
         let placeholders: Vec<String> = (1..=columns.len()).map(|i| format!("?{i}")).collect();
-        let sql = format!(
-            "{verb} INTO \"{table}\" ({}) VALUES ({})",
-            columns
-                .iter()
-                .map(|c| format!("\"{c}\""))
-                .collect::<Vec<_>>()
-                .join(", "),
+        let col_list = columns
+            .iter()
+            .map(|c| format!("\"{c}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let insert_sql = format!(
+            "INSERT OR IGNORE INTO \"{table}\" ({col_list}) VALUES ({})",
             placeholders.join(", ")
         );
-        let res: DbResult<usize> = (|| {
-            let real = engine.with_conn(|conn| real_columns(conn, table))?;
-            for c in columns {
-                if !real.contains(c) {
-                    return Err(DbError::invalid(
-                        "columns",
-                        format!("表 {table} 没有列 {c}"),
-                    ));
+        /**
+         * 覆盖已存在行时**不能**用 `INSERT OR REPLACE`（见上面的说明：它会先删行，
+         * 触发子表级联删除）。这里用"`INSERT OR IGNORE` → 未插入则 `UPDATE`"两段式：
+         * 先试插入，插入成功就完事；被主键挡下（0 行）才更新那些**非主键列**。
+         *
+         * 主键列从 `PRAGMA table_info` 取（按 pk 序号排），因此复合主键也正确。
+         */
+        let pk_cols = if mode == "replace" {
+            primary_key_columns(engine, table)?
+        } else {
+            Vec::new()
+        };
+        let set_cols: Vec<&String> = columns.iter().filter(|c| !pk_cols.contains(c)).collect();
+        let update_sql = if mode == "replace" && !pk_cols.is_empty() && !set_cols.is_empty() {
+            let sets = set_cols
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("\"{c}\" = ?{}", i + 1))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let wheres = pk_cols
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("\"{c}\" = ?{}", set_cols.len() + i + 1))
+                .collect::<Vec<_>>()
+                .join(" AND ");
+            Some(format!("UPDATE \"{table}\" SET {sets} WHERE {wheres}"))
+        } else {
+            None
+        };
+        // 主键列在 `columns` 里的下标（按 pk_cols 的顺序）
+        let pk_idx: Vec<usize> = pk_cols
+            .iter()
+            .map(|pk| columns.iter().position(|c| c == pk))
+            .collect::<Option<Vec<usize>>>()
+            .unwrap_or_default();
+
+        let res: DbResult<usize> = engine.import_write(|tx| {
+            let mut insert_stmt = tx.prepare_cached(&insert_sql).map_err(DbError::from)?;
+            let mut update_stmt = match &update_sql {
+                Some(sql) => Some(tx.prepare_cached(sql).map_err(DbError::from)?),
+                None => None,
+            };
+            let mut n = 0usize;
+            for vals in rows {
+                let inserted = insert_stmt
+                    .execute(params_from_iter(vals.iter()))
+                    .map_err(DbError::from)?;
+                // 0 行 = 主键已存在（`OR IGNORE` 挡下了）→ 改成"不删除的覆盖"
+                if inserted == 0 {
+                    if let Some(stmt) = update_stmt.as_mut() {
+                        if !pk_idx.is_empty() && pk_idx.len() == pk_cols.len() {
+                            let mut args: Vec<SqlValue> = set_cols
+                                .iter()
+                                .map(|c| {
+                                    let i = columns.iter().position(|x| x == *c).unwrap_or(0);
+                                    vals[i].clone()
+                                })
+                                .collect();
+                            for i in &pk_idx {
+                                args.push(vals[*i].clone());
+                            }
+                            stmt.execute(params_from_iter(args.iter())).map_err(DbError::from)?;
+                        }
+                    }
                 }
+                n += 1;
             }
-            engine.import_write(|conn| {
-                let mut stmt = conn.prepare_cached(&sql).map_err(DbError::from)?;
-                let mut n = 0usize;
-                for vals in rows {
-                    stmt.execute(params_from_iter(vals.iter())).map_err(DbError::from)?;
-                    n += 1;
-                }
-                Ok(n)
-            })
-        })();
+            Ok(n)
+        });
         match res {
             Ok(n) => {
                 total += n;
@@ -400,7 +482,7 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
                 report.insert(table.clone(), json!(prev + n as u64));
             }
             Err(e) => {
-                // 回滚整个事务：新库回到导入前的状态
+                // 回滚整个事务：新库回到导入前的状态（**绝不留半个库**）
                 let _ = engine.import_rollback();
                 return Err(DbError::new(
                     e.code,
@@ -410,7 +492,15 @@ pub fn import_all(engine: &Engine, payload: &Value) -> DbResult<Value> {
         }
     }
     engine.import_commit()?;
-    Ok(json!({ "ok": true, "tables": report, "total_rows": total }))
+
+    Ok(json!({
+        "ok": true,
+        "written": total,
+        "rows": total,
+        "total_rows": total,
+        "tables": report,
+        "count": jobs.len(),
+    }))
 }
 
 /// 开始一个**跨调用**的导入事务（CLI 分表导入时使用；一次 CLI 进程内也会用它）
@@ -1440,6 +1530,148 @@ mod tests {
         assert_eq!(err.code, ErrorCode::Other);
     }
 
+    // ========== 导入的**非破坏性**契约（第 11 轮，真机数据事故的根因）==========
+    //
+    // 背景（真机证据）：`migration.auto` 固定传 `replace: true`，而它原来的实现是
+    // **把每张目标表整表清空再重灌**。于是"启动迁移"和"自检恢复"这两条自动路径
+    // 每次都会先删掉用户数据 —— `storage_audit` 记下的两次删除（23:47:45Z 删一个会话
+    // 的 277 条；01:13:34Z 删 **821 条全部** + 2131 事件）就是它。
+    // 中间态一旦被打断就是真的丢数据，这正是历史事故的形态。
+    //
+    // 下面三条把"不许删"钉死：① 不能删目标端多出来的行；② 覆盖已存在行不能走
+    // `INSERT OR REPLACE`（它会先 DELETE，父表触发子表级联）；③ 同名行仍要被更新。
+
+    #[test]
+    fn import_does_not_delete_rows_missing_from_source() {
+        let (_d, engine) = eng("import-keep-extra");
+        // 目标端已有两行（模拟"用户在新库里继续产生数据"）
+        engine
+            .write_tx(|tx| {
+                for (k, v) in [("a", "1"), ("b", "2")] {
+                    tx.execute(
+                        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, 1)",
+                        params![k, v],
+                    )
+                    .map_err(DbError::from)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        // 源端（旧库）只有 a
+        import_all(
+            &engine,
+            &json!({
+                "replace": true,
+                "tables": [{
+                    "table": "settings",
+                    "columns": ["key", "value", "updated_at"],
+                    "rows": [["a", "9", 2]],
+                    "mode": "insert",
+                }],
+            }),
+        )
+        .unwrap();
+
+        let keys: Vec<String> = engine
+            .with_conn(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT key FROM settings ORDER BY key")
+                    .map_err(DbError::from)?;
+                let rows = stmt
+                    .query_map([], |r| r.get::<_, String>(0))
+                    .map_err(DbError::from)?;
+                let mut out = Vec::new();
+                for r in rows {
+                    out.push(r.map_err(DbError::from)?);
+                }
+                Ok(out)
+            })
+            .unwrap();
+        assert!(
+            keys.contains(&"b".to_string()),
+            "目标端多出来的行**绝不能**因为导入而消失（原来的整表清空会把它删掉）：{keys:?}"
+        );
+    }
+
+    #[test]
+    fn import_updating_parent_row_does_not_cascade_delete_children() {
+        let (_d, engine) = eng("import-no-cascade");
+        // 目标端：一个会话 s1 + 它的两条消息
+        crate::repo::sessions_upsert(&engine, &json!({ "id": "s1", "title": "旧标题" })).unwrap();
+        for id in ["m1", "m2"] {
+            seed_message(&engine, "s1", id, "内容");
+        }
+        let before: i64 = engine
+            .with_conn(|conn| {
+                conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+                    .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(before, 2);
+
+        // 源端（旧库）里同名会话仍在 —— 导入它会"覆盖"这一行
+        import_all(
+            &engine,
+            &json!({
+                "replace": true,
+                "tables": [{
+                    "table": "sessions",
+                    "columns": ["id", "project_id", "title", "created_at", "last_message_at", "message_count", "pinned"],
+                    "rows": [["s1", "", "旧标题", 1, 1, 2, 0]],
+                    "mode": "replace",
+                }],
+            }),
+        )
+        .unwrap();
+
+        let after: i64 = engine
+            .with_conn(|conn| {
+                conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+                    .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(
+            after, 2,
+            "覆盖已存在的会话行**不得**级联删掉它的消息 —— `INSERT OR REPLACE` 在 SQLite 里是 \
+             先 DELETE 再 INSERT，父表被替换时子表会被 ON DELETE CASCADE 带走（这正是真机上 \
+             '某个会话的消息凭空消失'的形态）"
+        );
+    }
+
+    #[test]
+    fn import_replace_mode_still_updates_existing_row_values() {
+        let (_d, engine) = eng("import-upsert");
+        engine
+            .write_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO settings (key, value, updated_at) VALUES ('k', 'old', 1)",
+                    [],
+                )
+                .map_err(DbError::from)?;
+                Ok(())
+            })
+            .unwrap();
+        import_all(
+            &engine,
+            &json!({
+                "tables": [{
+                    "table": "settings",
+                    "columns": ["key", "value", "updated_at"],
+                    "rows": [["k", "new", 2]],
+                    "mode": "replace",
+                }],
+            }),
+        )
+        .unwrap();
+        let value: String = engine
+            .with_conn(|conn| {
+                conn.query_row("SELECT value FROM settings WHERE key = 'k'", [], |r| r.get(0))
+                    .map_err(DbError::from)
+            })
+            .unwrap();
+        assert_eq!(value, "new", "同名行仍必须被更新（两段式的 UPDATE 段要生效）");
+    }
+
     #[test]
     fn fts_shadow_tables_are_excluded() {
         for t in importable_tables() {
@@ -1633,9 +1865,41 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         .ok_or_else(|| DbError::missing("legacy_path"))?
         .to_string();
     let dry_run = p.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
+    /** 目标库非空时是否仍允许迁移（默认**不允许**，见下面的守卫） */
+    let force = p.get("force").and_then(|x| x.as_bool()).unwrap_or(false);
 
     if !std::path::Path::new(&legacy_path).exists() {
         return Err(DbError::not_found(format!("旧库不存在：{legacy_path}")));
+    }
+
+    /*
+     * **守卫：目标库已有消息时拒绝自动迁移**（第 11 轮，真机数据事故的防线之二）。
+     *
+     * `migration.auto` 是唯一一条"整库重写"的命令，而它的判据全在渲染侧
+     * （标记在不在、新库是不是空的）。渲染侧任何一次"读失败被当成空"都会让它跑起来 ——
+     * 真机证据 `storage_audit`：2026-09-17T01:13:34Z 一次性删掉 3 个会话 + 821 条消息
+     * （全部）+ 883 tool_calls + 2131 事件，正好发生在应用自己拉起迁移/恢复的那一秒。
+     *
+     * 所以把"能不能跑"这件事**也放到引擎侧判一次**（纵深防御）：
+     * - 目标库 `messages` 有行 → 只有在调用方**显式** `force: true` 时才继续；
+     * - 首次迁移与自检恢复这两种合法场景，目标库本来就是空的，判据自然通过。
+     *
+     * 报错文案要说清"有多少行、为什么不搬"，而不是含糊的拒绝。
+     */
+    if !dry_run && !force {
+        let target_messages: i64 = engine.with_conn(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+                .map_err(DbError::from)
+        })?;
+        if target_messages > 0 {
+            return Err(DbError::new(
+                ErrorCode::Other,
+                format!(
+                    "新库里已有 {target_messages} 条消息，拒绝自动迁移（避免把旧库那份历史副本覆盖到更新的数据上）。\
+                     确实要以旧库为准时，显式传 force: true"
+                ),
+            ));
+        }
     }
 
     // 只读打开：绝不写旧库（回滚开关还要用它）
@@ -1755,7 +2019,8 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         }));
     }
 
-    // 单事务导入（`replace: true` 会先清空目标表：目标端的旧数据不该和源端混在一起）
+    // 单事务导入（**整表清空已彻底去掉**，见 `import_all` 里那段说明：
+    // `replace: true` 曾经让每一次自动迁移都先把新库清空再重灌，是历史上"数据变 0"的形态）
     let payload = json!({ "tables": jobs, "replace": true });
     let imported = import_all(engine, &payload)?;
     let _ = imported;
@@ -1763,6 +2028,8 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
     // **对账**：逐表比对行数与内容摘要（两端各自算）
     let mut mismatches: Vec<Value> = Vec::new();
     let mut reconciled: Vec<Value> = Vec::new();
+    /** 目标端比源端多的表（用户在新库里继续产生的数据，**刻意保留**） */
+    let mut kept_newer: Vec<Value> = Vec::new();
     for (table, src_rows, src_digest) in &source_rows {
         let after = engine.with_conn(|conn| {
             let exists: i64 = conn
@@ -1798,13 +2065,24 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
             }
             Ok((n, format!("{:016x}", hash as u64)))
         })?;
-        if after.0 != *src_rows || (after.1 != *src_digest && *src_rows > 0) {
+        /*
+         * 对账：源端每一行都必须到目标端（`after.0 < src_rows` = 真失败），
+         * 但**目标端多出来的行不算失败** —— 那是"新库里比旧库更新"的正常情形
+         * （用户在 rust 引擎下继续产生数据，而旧库那份是冻结的历史副本）。
+         *
+         * 这一条与"去掉整表清空"是配套的：从前靠清空把目标端裁到与源端一致，
+         * 代价是把用户更新的数据删掉；现在保留它们，并把数量如实报出来。
+         */
+        if after.0 < *src_rows || (after.0 == *src_rows && after.1 != *src_digest && *src_rows > 0) {
             mismatches.push(json!({
                 "table": table,
                 "source_rows": src_rows, "source_digest": src_digest,
                 "target_rows": after.0, "target_digest": after.1,
             }));
         } else {
+            if after.0 > *src_rows {
+                kept_newer.push(json!({ "table": table, "target_rows": after.0, "source_rows": src_rows }));
+            }
             reconciled.push(json!({ "table": table, "rows": src_rows, "digest": src_digest }));
         }
     }
@@ -1833,6 +2111,8 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         "tables": reconciled.len(),
         "rows": reconciled.iter().filter_map(|t| t.get("rows").and_then(|v| v.as_i64())).sum::<i64>(),
         "per_table": reconciled,
+        // 目标端比源端多的表：如实报出来（从前这个差异是靠"整表清空"抹平的）
+        "kept_newer": kept_newer,
         "skipped": skipped.iter().map(|(t, n)| json!({ "what": t, "rows": n })).collect::<Vec<_>>(),
         // BLOB 列被转成 `blobhex:` 文本搬运 —— 数量如实上报（静默改形是最坏的一种）
         "blob_columns_converted": blob_columns_total,

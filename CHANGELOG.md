@@ -2,6 +2,86 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.57] - 2026-09-17 — "数据无故被清空"结案：删除者就是迁移/恢复路径自己
+
+### 结案过程：审计触发器留下的两条硬证据
+
+这条悬案追了好几轮，渲染侧与 Rust 侧**八层仪器全部 0 命中**（端口三层 / domain-store
+五个写穿点 / write-audit / RustDataPort / tauriTransport / 镜像类 / 端口实例数 /
+`codem_db::dispatch`），而 SQLite 触发器每次都记下删除。本轮不再猜代码，改成
+**把审计记录按时间聚合**，两条证据立刻指向同一个方向：
+
+| 时间（UTC） | 被删内容 |
+| --- | --- |
+| 2026-09-16T23:47:45Z | sessions 2 行 + **某个会话的 277 条 messages** + 317 tool_calls + 566 events |
+| 2026-09-17T01:13:34Z | sessions 3 行 + **messages 821 条（全部）** + 883 tool_calls + 2131 events |
+
+第二条与"整表清空"完全吻合，而且与两件事**同秒**：`codem-db.bin-shm`
+（**旧库被打开**才会出现的文件）的 mtime、以及运行时日志的写入 —— 而进程启动于
+01:13:20Z。也就是说：**删除发生在应用自己拉起"迁移/恢复"的那一刻**。
+
+顺藤摸到一行代码：
+
+```rust
+// migrate.rs::auto_migrate
+let payload = json!({ "tables": jobs, "replace": true });   // ← replace: true
+
+// migrate.rs::import_all
+for table in IMPORT_ORDER.iter().rev() {
+    conn.execute(&format!("DELETE FROM \"{table}\""), [])   // ← 审计记下的就是这句
+}
+```
+
+### 完整因果链（含三个缺陷，不是一个）
+
+1. **自检判据把"读不到"当成"是 0"**：`const messages = (await realCount("messages")) ?? 0;`
+   —— 计数一次读失败（引擎刚打开、命令超时）就被当成"一条消息都没有"；
+2. 于是对一份**完好的数据库**执行"恢复" = `migration.auto`；
+3. `migration.auto` → `import_all { replace: true }` → **整库清空**（sessions / messages /
+   tool_calls / session_events 全删）→ 再从旧库那份**冻结的历史副本**重灌；
+4. 中间态（删完、没灌完）一旦被打断（崩溃 / 强杀 / 事务失败）→ 删除已落库、数据没回来，
+   **这才是历史上真实的"821 条变 0"**；
+5. **第二个破坏源（同一段代码）**：同名行用 `INSERT OR REPLACE`，而 SQLite 的 REPLACE
+   语义是"**先 DELETE 再 INSERT**" —— 父表 `sessions` 被替换时，子表按
+   `ON DELETE CASCADE` **连带删掉该会话的全部消息**，再靠后面的 messages 导入把旧库那份
+   补回来：**新库里有、旧库里没有的消息就此永久消失**（对应第一条审计记录）；
+6. **第三个触发点**：`bootstrap.ts` 读 `settings`（迁移标记所在处）失败时
+   `catch { /* 不阻塞 */ }` 直接**继续往下跑迁移** —— 三条守卫一条都没执行。
+
+三个缺陷是同一句话的三种形态：**把"读不到 / 不确定"当成"是空的"**。
+
+### 四道修法（每道都有测试钉住）
+
+1. **整表清空彻底去掉**：同名行改走"`INSERT OR IGNORE` → 未插入则 `UPDATE`"两段式
+   （不删除、不触发级联），目标端比源端多的行**一律保留**；主键列从 `PRAGMA table_info`
+   取，复合主键也正确；
+2. **对账改成单向**：源端每一行都必须到达目标（少行 = 真失败），
+   目标端多出来的行**不算失败**并单独报 `kept_newer`（从前是靠清空把差异抹平）；
+3. **引擎侧守卫（纵深防御）**：目标库 `messages` 有行时**拒绝** `migration.auto`，
+   除非显式传 `force: true` —— 即使调用方判错，也不可能重写整库；
+4. **两处"读不到 ≠ 是 0"**：`self-heal` 的计数读失败不再 `?? 0`（并加"0 必须复核一次"，
+   首次 0、复核非 0 → 判为读抖动、不恢复）；`bootstrap` 读不到标记与守卫数据时**不迁移**。
+
+### 新增测试
+
+- Rust：`import_does_not_delete_rows_missing_from_source`、
+  `import_updating_parent_row_does_not_cascade_delete_children`、
+  `import_replace_mode_still_updates_existing_row_values`；
+- TS：`self-heal-safety.test.ts`（SH-1..SH-5：读不到不恢复 / 0 要复核 / 真丢才恢复 /
+  水位不高不判定 / 旧库没内容只上报）、`migrate-guard.test.ts`（MG-1..MG-4）；
+- 测试基座：假端口补上 `data.command`（真实端口有它）—— 缺了它，"自检判据"这段
+  最关键的逻辑**在测试基座里从来没有被真正执行过**。
+
+### 量化
+
+| 指标 | 本批前 | 本批后 |
+| --- | --- | --- |
+| 基线（`CODEM_TEST_PORT=0`） | 5221 通过 / 0 失败 | **5230 通过 / 0 失败** |
+| 端口模式 | 74 失败 / 5147 通过 | **74 失败 / 5156 通过（失败集合未变，无新增）** |
+| Rust 测试 | 94 通过 | **97 通过 / 0 失败** |
+
+`tsc` 0 错误，七道审计门 exit 0。
+
 ## [1.16.56] - 2026-09-17 — 消息域补齐端口实现：一批"rust 模式下静默失效"的功能真的恢复了
 
 ### 起因：门控本身不是目的，它照出来的空洞才是

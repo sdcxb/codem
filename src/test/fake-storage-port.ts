@@ -79,6 +79,11 @@ export interface FakeStoragePortOptions {
    * "端口在、配置面还没预热"那条路径（`settings.ts` 的扩展域据此返回默认值）。
    */
   configWarmed?: boolean;
+  /**
+   * "旧库里有多少条消息" —— 只用于 `migration.auto` 的测试双语义
+   * （`self-heal` 的判据要求"旧库确有可恢复内容"才会恢复）。
+   */
+  legacyMessageRows?: number;
 }
 
 export interface FakeStoragePort extends StoragePort {
@@ -484,6 +489,50 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     },
     async execute(command: string, params?: Record<string, unknown>) {
       return { written: persist(command, params) };
+    },
+    /**
+     * **结构化命令**（与真实 `RustDataPort.command` 对应）。
+     *
+     * 假端口早先没有这个方法 —— 而产品代码里
+     * `self-heal.ts` / `bootstrap.ts` / `session-log-bridge.ts` 都用它读**结构化结果**
+     * （`crud.count` 的行数、`migration.auto` 的 per_table）。
+     * 缺了它，那些调用在测试里只会走"能力缺失 → 返回 null"的分支，
+     * 于是"自检判据"这条最关键的逻辑**在测试基座里从来没有被真正执行过**。
+     */
+    async command<T = Record<string, unknown>>(command: string, params?: Record<string, unknown>): Promise<T> {
+      writeLog.push({ command, params });
+      if (command === "crud.count") {
+        const name = String(params?.table ?? "");
+        return { count: table(name).length, table: name } as unknown as T;
+      }
+      /**
+       * `migration.auto`：测试双按"从旧库搬 N 条消息"的等价语义实现 ——
+       * `dry_run` 只报数（旧库探测），真跑则把 N 行写进 messages 表
+       * （真实侧是整库重灌；这里只需要"搬运后行数变了"这个可观测效果）。
+       */
+      if (command === "migration.auto") {
+        const legacyMessages = opts.legacyMessageRows ?? 0;
+        if (params?.dry_run === true) {
+          return { dry_run: true, per_table: [{ table: "messages", rows: legacyMessages }] } as unknown as T;
+        }
+        if (legacyMessages > 0) {
+          const target = table("messages");
+          for (let i = 0; i < legacyMessages; i++) {
+            const id = `legacy-${i}`;
+            if (!target.some((r) => r.id === id)) {
+              target.push({ id, session_id: "legacy-session", role: "user", content: "旧库内容", timestamp: i, hidden: 0 });
+            }
+          }
+        }
+        return {
+          migrated: true,
+          tables: 1,
+          rows: legacyMessages,
+          total_rows: legacyMessages,
+          per_table: [{ table: "messages", rows: legacyMessages }],
+        } as unknown as T;
+      }
+      throw new Error(`fake-port: 未实现的命令 ${command}（测试双不得比实现更宽松）`);
     },
   };
 
