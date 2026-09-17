@@ -155,6 +155,62 @@ function measureBubbleText(text: string): { width: number; height: number } {
 
 // ========== 组件 ==========
 
+/**
+ * P2-14: `pet-state-update` 的载荷来自主窗（跨 webview），**形状不可信**。
+ *
+ * 原来直接 `setState(prev => ({ ...prev, ...data }))` —— 一个缺 `animations`
+ * 的 definition（或 `animations` 不是数组）就会在 `PetSprite` 里
+ * `definition.animations.find(...)` 抛 `TypeError`；宠物窗没有错误边界，
+ * 结果是一块透明/空白、无法交互的死窗口。
+ *
+ * 这里在**入口**做形状校验：非对象载荷整份丢弃，`definition`/`spritesheetUrl`
+ * 形状不对就置空（组件已经有「无定义」的占位分支），已知字段逐个判型。
+ * 纯函数导出以便单测（见 src/test/renderer-leaks-b.test.ts）。
+ */
+export function sanitizePetStatePayload(data: unknown): Partial<PetWindowState> {
+  if (!data || typeof data !== "object") return {};
+  const raw = data as Record<string, unknown>;
+  const out: Partial<PetWindowState> = {};
+
+  if ("definition" in raw) {
+    const def = raw.definition as any;
+    // 必须有 slug + 非空 animations 数组，否则不认这份定义（宁可显示占位，也不崩）
+    if (def && typeof def === "object" && Array.isArray(def.animations) && def.animations.length > 0) {
+      out.definition = def as PetDefinition;
+    } else {
+      out.definition = null;
+    }
+  }
+  if ("spritesheetUrl" in raw) {
+    out.spritesheetUrl = typeof raw.spritesheetUrl === "string" && raw.spritesheetUrl
+      ? raw.spritesheetUrl
+      : null;
+  }
+  if ("petState" in raw) {
+    const ps = raw.petState;
+    if (typeof ps === "string" && ps in PET_STATE_TEXT) out.petState = ps as PetState;
+  }
+  if (typeof raw.scale === "number" && Number.isFinite(raw.scale)) {
+    out.scale = Math.max(0.05, Math.min(4, raw.scale));
+  }
+  if (typeof raw.opacity === "number" && Number.isFinite(raw.opacity)) {
+    out.opacity = Math.max(0, Math.min(1, raw.opacity));
+  }
+  if (Array.isArray(raw.installedPets)) {
+    out.installedPets = raw.installedPets.filter(
+      (p: any) => p && typeof p.slug === "string" && typeof p.name === "string",
+    );
+  }
+  if ("activeSlug" in raw) {
+    out.activeSlug = typeof raw.activeSlug === "string" ? raw.activeSlug : null;
+  }
+  if ("card" in raw) {
+    const card = raw.card as any;
+    out.card = card && typeof card === "object" && "visible" in card ? card : null;
+  }
+  return out;
+}
+
 export function PetWindowApp() {
   const [state, setState] = useState<PetWindowState>({
     definition: null,
@@ -182,7 +238,10 @@ export function PetWindowApp() {
   // ===== 事件监听 =====
   useEffect(() => {
     const unlistenState = tauriListen("pet-state-update", (data: any) => {
-      setState((prev) => ({ ...prev, ...data }));
+      // P2-14: 载荷形状校验（详见 sanitizePetStatePayload 的注释）
+      const patch = sanitizePetStatePayload(data);
+      if (Object.keys(patch).length === 0) return;
+      setState((prev) => ({ ...prev, ...patch }));
     });
     const unlistenClose = tauriListen("pet-close", () => {
       const win = winRef.current;
@@ -293,8 +352,12 @@ export function PetWindowApp() {
   const handleMouseLeave = useCallback(() => setIsHovering(false), []);
 
   // ===== 渲染 =====
-  if (!state.definition || !state.spritesheetUrl) {
-    return (
+  // P2-14: 除了「有没有定义」，还要判「定义是不是可用形状」。
+  // `PetSprite`（PetSprite.tsx:58 → pet-animation-utils.ts:18）会执行
+  // `definition.animations.find(...)` —— animations 缺失/非数组时直接抛错，
+  // 而宠物窗原来没有错误边界 → 整窗变空白死窗。这里降级为占位分支。
+  const definitionUsable = !!state.definition && Array.isArray((state.definition as any).animations);
+  if (!definitionUsable || !state.spritesheetUrl) {    return (
       <div
         style={{
           width: "100%",
@@ -399,7 +462,8 @@ export function PetWindowApp() {
         }}
       >
         <PetSprite
-          definition={state.definition}
+          // definitionUsable 已保证 definition 非空且 animations 是数组
+          definition={state.definition as PetDefinition}
           spritesheetUrl={state.spritesheetUrl}
           petState={state.petState}
           scale={state.scale}

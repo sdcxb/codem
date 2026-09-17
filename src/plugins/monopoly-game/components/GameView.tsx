@@ -43,6 +43,10 @@ export function GameView() {
   const phaserRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const engineRef = useRef<GameEngine | null>(null);
+  /** P2-16: 掷骰后自动移动的 interval 句柄（原来只存在于闭包里，卸载无法清除） */
+  const moveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** P2-16: 引擎事件回调（卸载时 engine.off 用） */
+  const engineListenerRef = useRef<((event: any) => void) | null>(null);
   const [hud, setHud] = useState<HUDState | null>(null);
   const [started, setStarted] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState("taiwan");
@@ -119,7 +123,9 @@ export function GameView() {
     }
 
     // 监听引擎事件更新 HUD
-    engine.on((event) => {
+    // P2-16: 回调提成具名函数并存进 ref —— 卸载时才能 engine.off 掉
+    // （GameEngine.off 在 engine/GameEngine.ts:136；原来注册后从不移除）
+    const onEngineEvent = (event: any) => {
       setHud(engine.getHUDState());
       // G34: 监听游戏结束事件
       if (event.type === "game_end" && event.data?.rankings) {
@@ -131,7 +137,9 @@ export function GameView() {
         setAirportFee(event.data.fee);
         setShowAirportPanel(true);
       }
-    });
+    };
+    engineListenerRef.current = onEngineEvent as any;
+    engine.on(onEngineEvent as any);
 
     const phaserGame = new Phaser.Game({
       type: Phaser.AUTO,
@@ -159,6 +167,20 @@ export function GameView() {
 
   useEffect(() => {
     return () => {
+      // P2-16: 掷骰后的自动移动 interval 必须在这里清掉。
+      // 原实现只 clearInterval 在闭包内部（阶段离开 moving/branch 时才清），
+      // 卸载（切走游戏页签）时整段闭包被 interval 钉住，每 250ms 继续驱动
+      // 已 destroy 的引擎、并对已卸载组件 setState。
+      if (moveTimerRef.current !== null) {
+        clearInterval(moveTimerRef.current);
+        moveTimerRef.current = null;
+      }
+      // P2-16: 引擎事件监听同样要摘掉
+      const engine = engineRef.current;
+      if (engine && engineListenerRef.current) {
+        try { engine.off(engineListenerRef.current as any); } catch { /* 引擎可能已销毁 */ }
+        engineListenerRef.current = null;
+      }
       if (gameRef.current) {
         gameRef.current.destroy(true);
         gameRef.current = null;
@@ -224,15 +246,24 @@ export function GameView() {
     if (engine.getPhase() !== "moving") return;
 
     // G2: 自动移动 — 支持 branch 阶段暂停后自动继续
-    const moveInterval = setInterval(() => {
-      const phase = engine.getPhase();
+    // P2-16: 句柄存进 ref（原来只在闭包内），卸载时由上面的清理 effect 清掉；
+    // 引擎已卸载/销毁时立刻自停，不再对已卸载组件 setState。
+    if (moveTimerRef.current !== null) clearInterval(moveTimerRef.current);
+    moveTimerRef.current = setInterval(() => {
+      const eng = engineRef.current;
+      if (!eng) {
+        if (moveTimerRef.current !== null) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+        return;
+      }
+      const phase = eng.getPhase();
       if (phase === "moving") {
-        engine.moveStep();
+        eng.moveStep();
       } else if (phase === "branch") {
         // 人类玩家分岔选择 — 等待弹窗点击后 chooseBranch 会设回 moving
         // 不清除 interval，继续等待
       } else {
-        clearInterval(moveInterval);
+        clearInterval(moveTimerRef.current!);
+        moveTimerRef.current = null;
       }
     }, 250);
   }, []);

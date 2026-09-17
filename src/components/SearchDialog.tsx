@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useProjectStore } from "../core/store";
 import { useLang, S } from "../core/i18n/lang";
@@ -34,13 +34,19 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const filteredProjects = projects.filter((p) =>
+  // P2-12: 同上，`filteredProjects` 也是渲染期新建的数组，必须一起稳定下来，
+  // 否则 `allItems` 的记忆化会被它每次新建的引用打穿。
+  const filteredProjects = useMemo(() => projects.filter((p) =>
     p.name.toLowerCase().includes(query.toLowerCase()) ||
     p.path.toLowerCase().includes(query.toLowerCase())
-  );
+  ), [projects, query]);
 
-  // P1: Search sessions across all projects
-  const filteredSessions = (() => {
+  // P2-12: 搜索索引不能每次渲染都重算。
+  // 原实现 `allItems` 是渲染期新建的字面量数组，而它又出现在 keydown effect 的
+  // 依赖里 → **每敲一个键都会移除/重加一次 window 监听器**，并且同步遍历
+  // 所有项目/全局会话做标题匹配（`listSessions` + `getProjectSessions`）。
+  // 这里把「查询 → 结果」的记忆化，让监听器只在真实依赖变化时重订阅。
+  const filteredSessions = useMemo(() => {
     if (!query.trim()) return [];
     const results: Array<{ sessionId: string; title: string; projectId: string; projectName: string }> = [];
     // Global sessions
@@ -60,26 +66,39 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
       }
     }
     return results.slice(0, 10);
-  })();
+  }, [query, projects, getProjectSessions, lang]);
 
-  // P1: All searchable items for keyboard navigation
-  const allItems = [
+  // P1: All searchable items for keyboard navigation（P2-12：记忆化，见上）
+  const allItems = useMemo(() => [
     ...filteredProjects.map(p => ({ type: "project" as const, id: p.id, label: p.name, data: p })),
     ...filteredSessions.map(s => ({ type: "session" as const, id: s.sessionId, label: s.title, data: s })),
     { type: "action" as const, id: "new-chat", label: lang === "zh" ? "新建对话" : "New Chat" },
     { type: "action" as const, id: "skills", label: lang === "zh" ? "前往技能" : "Go to Skills" },
     ...(onOpenSettings ? [{ type: "action" as const, id: "settings", label: lang === "zh" ? "设置" : "Settings" }] : []),
-  ];
+  ], [filteredProjects, filteredSessions, lang, onOpenSettings]);
+
+  // P2-12: keydown 监听器必须**只订阅一次**。
+  //
+  // 原实现的依赖是 `[allItems, selectedIndex, onClose]`：`allItems` 每次渲染都是新数组、
+  // `selectedIndex` 每按一次方向键就变 → 每次按键都要「移除 + 重新添加」一个 window 监听器，
+  // 且回调闭包里捕获的 `allItems`/`selectedIndex` 也随渲染不断变化。
+  //
+  // 这里把「最新的列表」与「最新的选中项」放进 ref，回调本身只依赖真正稳定的
+  // `onClose` 等 props → effect 不再随渲染/按键重订阅。
+  const allItemsRef = useRef(allItems);
+  allItemsRef.current = allItems;
+  const selectedIndexRef = useRef(selectedIndex);
+  selectedIndexRef.current = selectedIndex;
 
   // P1: Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") { onClose(); return; }
-      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, allItems.length - 1)); }
+      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, allItemsRef.current.length - 1)); }
       if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)); }
       if (e.key === "Enter") {
         e.preventDefault();
-        const item = allItems[selectedIndex];
+        const item = allItemsRef.current[selectedIndexRef.current];
         if (!item) return;
         if (item.type === "project") { openProject(item.id); onClose(); }
         else if (item.type === "session") {
@@ -95,7 +114,7 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [allItems, selectedIndex, onClose]);
+  }, [openProject, switchSession, onClose, onNewSession, onOpenSkills, onOpenSettings]);
 
   return createPortal(
     <div className="search-overlay" onClick={onClose}>

@@ -37,6 +37,8 @@ export interface EditorToolbarProps {
   onExportPDF: () => void;
   onExportPNG: () => void;
   onExportPNGLong: () => void;
+  /** P2-11: 逐页截图类导出进行中（禁用重复触发，避免两个循环互相争抢页码） */
+  exporting?: boolean;
   onPlayPresentation: () => void;
   onGenerateNotes: () => void;
   generatingNotes: boolean;
@@ -49,7 +51,7 @@ export function EditorToolbar({
   selectedCount, canUndo, canRedo, currentTheme,
   onThemeChange, onInsertText, onInsertShape, onInsertList, onInsertImage,
   onUndo, onRedo, onDelete, onDuplicate, onBringForward, onSendBackward, onAlign,
-  onExportHTML, onExportPPTX, onExportPDF, onExportPNG, onExportPNGLong,
+  onExportHTML, onExportPPTX, onExportPDF, onExportPNG, onExportPNGLong, exporting = false,
   onPlayPresentation, onGenerateNotes, generatingNotes,
   onSaveVersion, onShowVersions, versionCount,
 }: EditorToolbarProps) {
@@ -189,13 +191,16 @@ export function EditorToolbar({
             <button className="ppt-export-menu-item" onClick={() => { onExportPDF(); setShowExportMenu(false); }}>
               📄 PDF 文档
             </button>
-            <button className="ppt-export-menu-item" onClick={() => { onExportPNG(); setShowExportMenu(false); }}>
-              🖼️ PNG 批量图片 (ZIP)
+            <button className="ppt-export-menu-item" disabled={exporting} onClick={() => { onExportPNG(); setShowExportMenu(false); }}
+              style={{ opacity: exporting ? 0.6 : 1 }}>
+              {exporting ? '⏳ 导出中...' : '🖼️ PNG 批量图片 (ZIP)'}
             </button>
-            <button className="ppt-export-menu-item" onClick={() => { onExportPNGLong(); setShowExportMenu(false); }}>
+            <button className="ppt-export-menu-item" disabled={exporting} onClick={() => { onExportPNGLong(); setShowExportMenu(false); }}
+              style={{ opacity: exporting ? 0.6 : 1 }}>
               📜 PNG 长图
             </button>
-            <button className="ppt-export-menu-item" onClick={() => { onExportPPTX(); setShowExportMenu(false); }}>
+            <button className="ppt-export-menu-item" disabled={exporting} onClick={() => { onExportPPTX(); setShowExportMenu(false); }}
+              style={{ opacity: exporting ? 0.6 : 1 }}>
               📊 PPTX 文件
             </button>
           </div>

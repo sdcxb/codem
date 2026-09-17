@@ -33,6 +33,8 @@ import {
 import { tryGetCtx } from '../core/consumer'
 import { runtimePluginList } from '../core/provider/plugin-registry-provider'
 import { PluginMarketTab } from './plugin-market/PluginMarketTab'
+// P2-15: 初始化失败要经既有上报通道（并配 setToast 的可见提示），不再静默吞掉
+import { reportActionFailure } from '../core/storage/persist-failure'
 
 interface PluginManagerProps {
   onClose: () => void
@@ -425,10 +427,26 @@ export function PluginManager({ onClose }: PluginManagerProps) {
             initPluginManager(ctx, graph).then(mgr => {
               if (cancelled) return
               setManager(mgr)
-            }).catch(() => {})
+            }).catch(err => {
+              // P2-15: 原实现是 `.catch(() => {})` —— 失败完全静默，
+              // 面板会永久停在「正在加载...」，用户既看不到原因也无法重试。
+              // 同函数 444-448 与 449-457 两个分支都会 setToast，这里补齐一致行为。
+              if (cancelled) return
+              console.error('[PluginManager] fallback init failed:', err)
+              reportActionFailure('pluginManager.fallbackInit', err, '插件管理面板未能初始化')
+              setToast({ msg: '初始化失败: ' + (err?.message ?? String(err)), type: 'error' })
+            })
           }
           if (retryCount < 100) {
             retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
+          } else {
+            // P2-15: 重试次数耗尽后同样必须可见（否则界面上永远只有「正在加载...」）
+            reportActionFailure(
+              'pluginManager.initTimeout',
+              new Error('pluginRegistry service not registered after 100 retries'),
+              '插件注册表未装配，插件管理不可用',
+            )
+            setToast({ msg: '初始化失败: 插件注册表未装配（已停止重试）', type: 'error' })
           }
           return
         }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getHeartbeatManager,
   type HeartbeatConfig,
@@ -43,6 +43,34 @@ export function HeartbeatMonitor() {
   const [sessions, setSessions] = useState<SessionHeartbeatInfo[]>([]);
   const [events, setEvents] = useState<HeartbeatEvent[]>([]);
   const [saved, setSaved] = useState(false);
+  /**
+   * P2-13: 自定义请求头改为「原始文本 state + 校验提示」。
+   *
+   * 原实现是受控输入：`value={config.headers ? JSON.stringify(config.headers) : ""}`，
+   * `onChange` 里解析失败就 `catch {}` 不 setConfig → 输入框立刻被回滚成旧值。
+   * 后果是这个字段**无法用键盘填写**（打第一个字符 `{` 就解析失败被抹掉），
+   * 用户以为改过了再点「保存配置」，存进去的仍是旧值且毫无提示。
+   */
+  const [headersText, setHeadersText] = useState(() => {
+    const mgr = getHeartbeatManager().getGlobalConfig();
+    return mgr.headers ? JSON.stringify(mgr.headers) : "";
+  });
+  const [headersError, setHeadersError] = useState<string | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 卸载时清掉「已保存」提示的定时器（原实现裸 setTimeout，卸载后仍回调）
+  useEffect(() => () => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+  }, []);
+
+  // 配置里的 headers 被外部改掉时（保存成功回写 / 重新挂载）同步文本。
+  // 与当前文本**等价**时直接跳过 —— 否则用户输入 `{"b":1,"a":2}` 这种非规范化写法
+  // 会被 JSON.stringify 后的结果覆盖一次（虽然语义相同，但会打断正在进行的编辑）。
+  useEffect(() => {
+    const text = config.headers ? JSON.stringify(config.headers) : "";
+    setHeadersText((prev) => (prev === text ? prev : text));
+    setHeadersError(null);
+  }, [config.headers]);
 
   const refresh = () => {
     const mgr = getHeartbeatManager();
@@ -68,10 +96,52 @@ export function HeartbeatMonitor() {
     return () => clearInterval(interval);
   }, []);
 
+  /**
+   * P2-13: 把输入框里的 JSON 文本提交进 config。
+   * 合法 → 写入；非法 → **保留用户输入**并给出可见提示，不静默沿用旧值。
+   */
+  const commitHeadersText = (raw: string): boolean => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setHeadersError(null);
+      setConfig((c) => (c.headers === undefined ? c : { ...c, headers: undefined }));
+      return true;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        setHeadersError(zh ? "必须是 JSON 对象，例如 {\"Authorization\":\"Bearer xxx\"}" : "Must be a JSON object");
+        return false;
+      }
+      setHeadersError(null);
+      setConfig((c) => ({ ...c, headers: parsed as Record<string, string> }));
+      return true;
+    } catch (e: any) {
+      setHeadersError(
+        (zh ? "JSON 解析失败：" : "Invalid JSON: ") + (e?.message || String(e)) +
+        (zh ? "（已保留你的输入，保存时会以这段文本为准）" : ""),
+      );
+      return false;
+    }
+  };
+
   const handleSaveConfig = () => {
-    getHeartbeatManager().setGlobalConfig(config);
+    // P2-13: 保存前先把输入框里的文本落地 —— 否则用户"看起来改过了"再保存，
+    // 存进去的仍是旧 headers（静默沿用旧值）。
+    const ok = commitHeadersText(headersText);
+    if (!ok) {
+      setSaved(false);
+      return;
+    }
+    // commitHeadersText 里的 setConfig 是异步的，因此这里用函数式更新保证
+    // 保存到 manager 的是「刚解析出来的那份配置」而不是闭包里的旧 config。
+    setConfig((c) => {
+      getHeartbeatManager().setGlobalConfig(c);
+      return c;
+    });
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
   };
 
   const handleStopAll = () => {
@@ -194,14 +264,39 @@ export function HeartbeatMonitor() {
           </div>
           <div>
             <label style={labelStyle}>{zh ? "自定义请求头 (JSON)" : "Custom Headers (JSON)"}</label>
-            <input type="text" style={inputStyle} value={config.headers ? JSON.stringify(config.headers) : ""}
+            <input type="text" style={inputStyle} value={headersText}
+              aria-invalid={headersError ? true : undefined}
               onChange={e => {
+                // P2-13: 输入阶段只更新文本 + 校验提示，不回滚用户输入。
+                // 合法 JSON 立即提交；非法则保留原文，等 blur / 保存时再判一次。
+                const v = e.target.value;
+                setHeadersText(v);
+                const trimmed = v.trim();
+                if (!trimmed) { setHeadersError(null); return; }
                 try {
-                  const parsed = e.target.value.trim() ? JSON.parse(e.target.value) : undefined;
-                  setConfig({ ...config, headers: parsed });
-                } catch {}
+                  const parsed = JSON.parse(trimmed);
+                  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+                    setHeadersError(null);
+                    setConfig(c => ({ ...c, headers: parsed as Record<string, string> }));
+                  } else {
+                    setHeadersError(zh ? "必须是 JSON 对象" : "Must be a JSON object");
+                  }
+                } catch (err: any) {
+                  setHeadersError((zh ? "JSON 未完成/不合法：" : "Incomplete/invalid JSON: ") + (err?.message || String(err)));
+                }
               }}
+              onBlur={() => commitHeadersText(headersText)}
               placeholder='{"Authorization":"Bearer xxx"}' />
+            {headersError && (
+              <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 2 }}>
+                {headersError}
+              </div>
+            )}
+            {!headersError && (
+              <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 2 }}>
+                {zh ? "留空表示不发送自定义请求头；失焦或保存时校验 JSON" : "Leave empty for no custom headers; validated on blur/save"}
+              </div>
+            )}
           </div>
         </div>
 

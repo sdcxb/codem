@@ -172,9 +172,25 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
   useEffect(() => {
     const scroller = scrollElRef.current;
     if (!scroller) return;
-    const onScroll = () => requestAnimationFrame(calculatePositions);
+    // P2-10: 滚动回调里的 rAF 句柄必须保存 —— 原实现每帧新建一个 requestAnimationFrame，
+    // 卸载后仍然会执行（对已卸载组件 setState + 一堆 DOM 查询），且在快速滚动时
+    // 叠加多个待执行帧。这里合并为「最多一个待执行帧」，并在清理中取消。
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        calculatePositions();
+      });
+    };
     scroller.addEventListener("scroll", onScroll, { passive: true });
-    return () => scroller.removeEventListener("scroll", onScroll);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    };
   }, [calculatePositions, railRect]);
 
   const jumpTo = useCallback((messageId: string) => {

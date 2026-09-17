@@ -144,14 +144,30 @@ export function PPTEditor({ initialDeck, onDeckChange, onExportHTML, onExportPPT
   useLayoutEffect(() => {
     const el = canvasWrapperRef.current;
     if (!el) return;
+    /**
+     * P2-11: 0 尺寸时自调度 rAF 必须有**上限**并保存句柄。
+     * 原实现 `requestAnimationFrame(calc)` 递归无终止条件：面板折叠/隐藏时
+     * （`cw <= 0`）每帧一次强制布局读取，卸载后仍在跑（清理只 disconnect 了
+     * ResizeObserver，管不到 rAF），持续耗 CPU/电量。
+     */
+    let raf = 0;
+    let retries = 0;
+    const MAX_ZERO_SIZE_RETRIES = 30;
     const calc = () => {
+      raf = 0;
+      // 卸载后 rAF 已经 cancel，这里再兜一层：元素已脱离文档就不再做布局读取
+      if (!el.isConnected) return;
       const cw = el.clientWidth - 32; // padding 16*2
       const ch = el.clientHeight - 32;
       if (cw <= 0 || ch <= 0) {
-        // 容器还没布局完成，下一帧重试
-        requestAnimationFrame(calc);
+        // 容器还没布局完成，下一帧重试（有上限，避免无限自调度）
+        if (retries < MAX_ZERO_SIZE_RETRIES) {
+          retries += 1;
+          raf = requestAnimationFrame(calc);
+        }
         return;
       }
+      retries = 0;
       const ratio = deck.canvasWidth / deck.canvasHeight;
       let w = cw;
       let h = cw / ratio;
@@ -166,7 +182,11 @@ export function PPTEditor({ initialDeck, onDeckChange, onExportHTML, onExportPPT
     // 如果同步计算失败（cw=0），requestAnimationFrame 会重试
     const ro = new ResizeObserver(calc);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      ro.disconnect();
+    };
   }, [deck.canvasWidth, deck.canvasHeight, isPresenting]);
 
   // ====== 全局快捷键 (定义在 handleUndo/handleRedo/handleDuplicateSelected 之后) ======
@@ -512,14 +532,41 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
     if (onExportHTML) onExportHTML(html);
   }, [generateExportHTML, onExportHTML]);
 
+  // ====== PNG 批量导出 ======
+  /**
+   * P2-11: 逐页截图类导出（PNG / 长图 / PPTX）都在循环里驱动**共享**的
+   * `currentSlideIndex`，且每页 await 300ms。原实现没有 in-flight 守卫 ——
+   * 双击会起两个并发循环互相争抢页码，导出的 ZIP 里可能出现重复/缺失幻灯片。
+   * 这里用 ref 做同 tick 守卫（state 要等渲染才生效），并把它作为
+   * `exporting` 暴露给工具栏禁用按钮（可见，而不是静默丢弃第二次点击）。
+   */
+  const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
+
+  const beginExport = useCallback((): boolean => {
+    if (exportingRef.current) {
+      setChatMessages(prev => [...prev, { role: 'assistant', text: '⚠ 已有导出正在进行，请等它结束' }]);
+      return false;
+    }
+    exportingRef.current = true;
+    setExporting(true);
+    return true;
+  }, []);
+
+  const endExport = useCallback(() => {
+    exportingRef.current = false;
+    setExporting(false);
+  }, []);
+
   const handleExportPPTX = useCallback(async () => {
+    if (!beginExport()) return;
     // 真实 PPTX 导出：逐页截图，用 jszip 打包成 OOXML（图片型 PPTX），
     // 而不是把 HTML 改名成 .pptx（PowerPoint 打不开）。
-    const { default: html2canvas } = await import('html2canvas');
-    const { buildPptxFromImages } = await import('../../core/knowledge/ppt-export-pptx');
-
-    const images: { dataUrl: string; width: number; height: number }[] = [];
     try {
+      const { default: html2canvas } = await import('html2canvas');
+      const { buildPptxFromImages } = await import('../../core/knowledge/ppt-export-pptx');
+
+      const images: { dataUrl: string; width: number; height: number }[] = [];
       for (let i = 0; i < deck.slides.length; i++) {
         setCurrentSlideIndex(i);
         // 等待当前页切换完成渲染（与 PNG 导出同一节奏）
@@ -539,8 +586,9 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
     } finally {
       // 无论成功失败都把画布切回第一页（与 PNG 导出行为一致）
       setCurrentSlideIndex(0);
+      endExport();
     }
-  }, [deck, onExportPPTX]);
+  }, [deck, onExportPPTX, beginExport, endExport]);
 
   // ====== PDF 导出 ======
   const handleExportPDF = useCallback(() => {
@@ -560,81 +608,91 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
 
   // ====== PNG 批量导出 ======
   const handleExportPNG = useCallback(async () => {
-    // 使用 html2canvas 截取每张幻灯片
-    // 动态加载 html2canvas
-    const { default: html2canvas } = await import('html2canvas');
-    const JSZip = (await import('jszip')).default;
+    if (!beginExport()) return;
+    try {
+      // 使用 html2canvas 截取每张幻灯片
+      // 动态加载 html2canvas
+      const { default: html2canvas } = await import('html2canvas');
+      const JSZip = (await import('jszip')).default;
 
-    const zip = new JSZip();
-    const canvasArea = document.querySelector('.ppt-editor-canvas-area') as HTMLElement;
-    if (!canvasArea) return;
+      const zip = new JSZip();
+      const canvasArea = document.querySelector('.ppt-editor-canvas-area') as HTMLElement;
+      if (!canvasArea) return;
 
-    for (let i = 0; i < deck.slides.length; i++) {
-      setCurrentSlideIndex(i);
-      // 等待渲染
-      await new Promise(r => setTimeout(r, 300));
-      const canvasEl = document.querySelector('.ppt-slide-canvas') as HTMLElement;
-      if (canvasEl) {
-        const canvas = await html2canvas(canvasEl, { scale: 2, backgroundColor: deck.slides[i].background });
-        const dataUrl = canvas.toDataURL('image/png');
-        const base64 = dataUrl.split(',')[1];
-        zip.file(`slide-${String(i + 1).padStart(2, '0')}.png`, base64, { base64: true });
+      for (let i = 0; i < deck.slides.length; i++) {
+        setCurrentSlideIndex(i);
+        // 等待渲染
+        await new Promise(r => setTimeout(r, 300));
+        const canvasEl = document.querySelector('.ppt-slide-canvas') as HTMLElement;
+        if (canvasEl) {
+          const canvas = await html2canvas(canvasEl, { scale: 2, backgroundColor: deck.slides[i].background });
+          const dataUrl = canvas.toDataURL('image/png');
+          const base64 = dataUrl.split(',')[1];
+          zip.file(`slide-${String(i + 1).padStart(2, '0')}.png`, base64, { base64: true });
+        }
       }
-    }
 
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${deck.title || 'presentation'}-images.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setCurrentSlideIndex(0);
-  }, [deck]);
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${deck.title || 'presentation'}-images.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setCurrentSlideIndex(0);
+    } finally {
+      endExport();
+    }
+  }, [deck, beginExport, endExport]);
 
   // ====== PNG 长图导出 ======
   const handleExportPNGLong = useCallback(async () => {
-    const { default: html2canvas } = await import('html2canvas');
+    if (!beginExport()) return;
+    try {
+      const { default: html2canvas } = await import('html2canvas');
 
-    const canvases: HTMLCanvasElement[] = [];
-    const canvasArea = document.querySelector('.ppt-editor-canvas-area') as HTMLElement;
-    if (!canvasArea) return;
+      const canvases: HTMLCanvasElement[] = [];
+      const canvasArea = document.querySelector('.ppt-editor-canvas-area') as HTMLElement;
+      if (!canvasArea) return;
 
-    for (let i = 0; i < deck.slides.length; i++) {
-      setCurrentSlideIndex(i);
-      await new Promise(r => setTimeout(r, 300));
-      const canvasEl = document.querySelector('.ppt-slide-canvas') as HTMLElement;
-      if (canvasEl) {
-        const canvas = await html2canvas(canvasEl, { scale: 2, backgroundColor: deck.slides[i].background });
-        canvases.push(canvas);
+      for (let i = 0; i < deck.slides.length; i++) {
+        setCurrentSlideIndex(i);
+        await new Promise(r => setTimeout(r, 300));
+        const canvasEl = document.querySelector('.ppt-slide-canvas') as HTMLElement;
+        if (canvasEl) {
+          const canvas = await html2canvas(canvasEl, { scale: 2, backgroundColor: deck.slides[i].background });
+          canvases.push(canvas);
+        }
       }
-    }
 
-    // 拼接长图
-    const totalHeight = canvases.reduce((sum, c) => sum + c.height, 0);
-    const maxWidth = Math.max(...canvases.map(c => c.width));
-    const longCanvas = document.createElement('canvas');
-    longCanvas.width = maxWidth;
-    longCanvas.height = totalHeight;
-    const ctx = longCanvas.getContext('2d')!;
-    let y = 0;
-    for (const c of canvases) {
-      ctx.drawImage(c, 0, y);
-      y += c.height;
-    }
-
-    longCanvas.toBlob(blob => {
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${deck.title || 'presentation'}-long.png`;
-        a.click();
-        URL.revokeObjectURL(url);
+      // 拼接长图
+      const totalHeight = canvases.reduce((sum, c) => sum + c.height, 0);
+      const maxWidth = Math.max(...canvases.map(c => c.width));
+      const longCanvas = document.createElement('canvas');
+      longCanvas.width = maxWidth;
+      longCanvas.height = totalHeight;
+      const ctx = longCanvas.getContext('2d')!;
+      let y = 0;
+      for (const c of canvases) {
+        ctx.drawImage(c, 0, y);
+        y += c.height;
       }
-    }, 'image/png');
-    setCurrentSlideIndex(0);
-  }, [deck]);
+
+      longCanvas.toBlob(blob => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${deck.title || 'presentation'}-long.png`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      }, 'image/png');
+      setCurrentSlideIndex(0);
+    } finally {
+      endExport();
+    }
+  }, [deck, beginExport, endExport]);
 
   // ====== 放映模式 ======
   const handlePlayPresentation = useCallback(() => {
@@ -797,6 +855,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         onExportPDF={handleExportPDF}
         onExportPNG={handleExportPNG}
         onExportPNGLong={handleExportPNGLong}
+        exporting={exporting}
         onPlayPresentation={handlePlayPresentation}
         onGenerateNotes={handleGenerateNotes}
         generatingNotes={generatingNotes}

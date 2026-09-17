@@ -21,6 +21,7 @@ import {
   parseRepoUrl, getCiStatusSummary,
   PIPELINE_TEMPLATES, WorkflowRun, ProjectType, WorkflowFile,
 } from "../core/cicd";
+import { reportActionFailure } from "../core/storage/persist-failure";
 
 interface CicdPanelProps {
   onClose?: () => void;
@@ -87,12 +88,30 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
   const [generatedWorkflow, setGeneratedWorkflow] = useState<WorkflowFile | null>(null);
 
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  /**
+   * P2-8: 请求标识。`owner/repo` 在 `await` 期间可能已被用户改掉（切仓库 / 自动刷新
+   * 与手动刷新重叠），没有标识时**旧仓库的响应会覆盖新仓库的列表与错误横幅**。
+   * 每次 `loadRuns` 自增一次，回来时不是最新一次就直接丢弃（含 loading/error 写入）。
+   */
+  const runsSeqRef = useRef(0);
+  /** P2-8: 「重试 / 取消」是真实 POST，双击会重复触发工作流；用 ref 做同 tick 守卫 */
+  const actionBusyRef = useRef(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  /** P2-8: 展开详情里的 jobs 请求也要按 runId 丢弃陈旧响应 */
+  const jobsSeqRef = useRef(0);
 
   const loadRuns = useCallback(async () => {
     if (!owner || !repo) return;
+    const my = ++runsSeqRef.current;
+    const reqOwner = owner;
+    const reqRepo = repo;
     setLoading(true);
     setError("");
     const { runs, error } = await listWorkflowRuns(owner, repo, { perPage: 20 });
+    // 期间又发起了新的加载（切仓库 / 手动刷新 / 30s 自动刷新）→ 本次结果作废
+    if (my !== runsSeqRef.current) return;
+    // 请求期间 owner/repo 变了（新一次 loadRuns 必然已发生或即将发生）→ 不作数
+    if (reqOwner !== owner || reqRepo !== repo) return;
     setLoading(false);
     if (error) {
       setError(error);
@@ -121,6 +140,10 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
     setRuns([]);
     setExpandedRun(null);
     setRunJobs({});
+    // P2-8: 切仓库时让在途的 runs/jobs 响应与「重试/取消」结果全部作废
+    runsSeqRef.current += 1;
+    jobsSeqRef.current += 1;
+    setLoading(false);
   }, [repoInput, lang]);
 
   // Load runs when owner/repo changes
@@ -142,40 +165,67 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
   const toggleRunJobs = useCallback(async (runId: number) => {
     if (expandedRun === runId) {
       setExpandedRun(null);
+      // P2-8: 收起时让在途的 jobs 请求作废（避免陈旧响应写进已收起的行）
+      jobsSeqRef.current += 1;
       return;
     }
     setExpandedRun(runId);
     if (!runJobs[runId] && owner && repo) {
+      const my = ++jobsSeqRef.current;
       const { jobs } = await getWorkflowJobs(owner, repo, runId);
+      // 期间换了仓库 / 收起了这一行 / 展开了另一行 → 丢弃
+      if (my !== jobsSeqRef.current) return;
       setRunJobs(prev => ({ ...prev, [runId]: jobs }));
     }
   }, [expandedRun, runJobs, owner, repo]);
 
-  const handleRetry = useCallback(async (runId: number) => {
+  /**
+   * P2-8: 重试 / 取消共用的 in-flight 守卫。
+   * 双击（或两个按钮连点）会发出两次真实 POST —— 重复 rerun、误取消、白烧速率限制。
+   */
+  const runAction = useCallback(async (
+    kind: "retry" | "cancel",
+    runId: number,
+  ): Promise<void> => {
     if (!owner || !repo) return;
-    setActionMsg("");
-    const { success, error } = await retryWorkflowRun(owner, repo, runId);
-    if (success) {
-      setActionMsg(`✅ ${S.cicd.retry[lang]} OK`);
-      setTimeout(() => loadRuns(), 1500);
-    } else {
-      setActionMsg(`❌ ${error}`);
+    if (actionBusyRef.current) {
+      // 可见反馈：不静默吞掉第二次点击
+      setActionMsg(
+        lang === "zh"
+          ? "⚠ 上一个操作还在进行中，请稍候…"
+          : "⚠ Previous action still in flight, please wait…",
+      );
+      setTimeout(() => setActionMsg(""), 3000);
+      return;
     }
-    setTimeout(() => setActionMsg(""), 3000);
+    actionBusyRef.current = true;
+    setActionBusy(true);
+    setActionMsg("");
+    try {
+      const { success, error } = kind === "retry"
+        ? await retryWorkflowRun(owner, repo, runId)
+        : await cancelWorkflowRun(owner, repo, runId);
+      if (success) {
+        setActionMsg(`✅ ${(kind === "retry" ? S.cicd.retry : S.cicd.cancelRun)[lang]} OK`);
+        setTimeout(() => loadRuns(), 1500);
+      } else {
+        setActionMsg(`❌ ${error}`);
+        reportActionFailure(
+          `cicd.${kind}WorkflowRun`,
+          new Error(String(error || "unknown error")),
+          kind === "retry" ? "重试工作流未生效" : "取消工作流未生效",
+        );
+      }
+      setTimeout(() => setActionMsg(""), 3000);
+    } finally {
+      actionBusyRef.current = false;
+      setActionBusy(false);
+    }
   }, [owner, repo, lang, loadRuns]);
 
-  const handleCancel = useCallback(async (runId: number) => {
-    if (!owner || !repo) return;
-    setActionMsg("");
-    const { success, error } = await cancelWorkflowRun(owner, repo, runId);
-    if (success) {
-      setActionMsg(`✅ ${S.cicd.cancelRun[lang]} OK`);
-      setTimeout(() => loadRuns(), 1500);
-    } else {
-      setActionMsg(`❌ ${error}`);
-    }
-    setTimeout(() => setActionMsg(""), 3000);
-  }, [owner, repo, lang, loadRuns]);
+  const handleRetry = useCallback((runId: number) => { void runAction("retry", runId); }, [runAction]);
+
+  const handleCancel = useCallback((runId: number) => { void runAction("cancel", runId); }, [runAction]);
 
   const handleGenerate = useCallback(() => {
     const wf = generateWorkflow(projectType);
@@ -325,12 +375,12 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                       {/* Action buttons */}
                       <div className="cicd-run-actions">
                         {run.conclusion === "failure" && (
-                          <button onClick={() => handleRetry(run.id)} className="cicd-btn">
+                          <button onClick={() => handleRetry(run.id)} disabled={actionBusy} className="cicd-btn">
                             <RotateCcw size={12} /> {S.cicd.retry[lang]}
                           </button>
                         )}
                         {(run.status === "in_progress" || run.status === "queued") && (
-                          <button onClick={() => handleCancel(run.id)} className="cicd-btn">
+                          <button onClick={() => handleCancel(run.id)} disabled={actionBusy} className="cicd-btn">
                             <StopCircle size={12} /> {S.cicd.cancel[lang]}
                           </button>
                         )}

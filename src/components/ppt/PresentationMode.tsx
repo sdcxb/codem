@@ -45,38 +45,53 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
   const totalSlides = deck.slides.length;
   const currentSlide = deck.slides[currentIndex];
 
+  /**
+   * P2-10: 三种导航共用**一个** 300ms 定时器句柄。
+   * 原实现三处各自 `setTimeout` 且不存句柄：卸载后回调仍执行（对已卸载组件 setState），
+   * 快速导航（下一页 + Esc 退出）时 `animating` 可能残留为 true。
+   * 这里新导航先清旧定时器（幂等），卸载时在 effect 里再清一次。
+   */
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleNav = useCallback((apply: () => void) => {
+    if (navTimerRef.current !== null) clearTimeout(navTimerRef.current);
+    navTimerRef.current = setTimeout(() => {
+      navTimerRef.current = null;
+      apply();
+      setAnimating(false);
+    }, 300);
+  }, []);
+
+  useEffect(() => () => {
+    if (navTimerRef.current !== null) {
+      clearTimeout(navTimerRef.current);
+      navTimerRef.current = null;
+    }
+  }, []);
+
   const goNext = useCallback(() => {
     if (currentIndex < totalSlides - 1) {
       setDirection('next');
       setAnimating(true);
-      setTimeout(() => {
-        setCurrentIndex(prev => Math.min(totalSlides - 1, prev + 1));
-        setAnimating(false);
-      }, 300);
+      scheduleNav(() => setCurrentIndex(prev => Math.min(totalSlides - 1, prev + 1)));
     }
-  }, [currentIndex, totalSlides]);
+  }, [currentIndex, totalSlides, scheduleNav]);
 
   const goPrev = useCallback(() => {
     if (currentIndex > 0) {
       setDirection('prev');
       setAnimating(true);
-      setTimeout(() => {
-        setCurrentIndex(prev => Math.max(0, prev - 1));
-        setAnimating(false);
-      }, 300);
+      scheduleNav(() => setCurrentIndex(prev => Math.max(0, prev - 1)));
     }
-  }, [currentIndex]);
+  }, [currentIndex, scheduleNav]);
 
   const goTo = useCallback((index: number) => {
     if (index >= 0 && index < totalSlides && index !== currentIndex) {
       setDirection(index > currentIndex ? 'next' : 'prev');
       setAnimating(true);
-      setTimeout(() => {
-        setCurrentIndex(index);
-        setAnimating(false);
-      }, 300);
+      scheduleNav(() => setCurrentIndex(index));
     }
-  }, [currentIndex, totalSlides]);
+  }, [currentIndex, totalSlides, scheduleNav]);
 
   // 键盘控制
   useEffect(() => {

@@ -9,6 +9,8 @@ import { X, Send, MessageSquareText, LoaderCircle, Sparkles } from "lucide-react
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
+import { usePanelDrag } from "../hooks/usePanelDrag";
+// P2-11：拖拽监听器由 usePanelDrag 内部的 effect 负责清理；本文件只需要 bodyRef/abortRef
 import { collectSessionContext, buildSideMessages, extractStreamDelta, formatSideError, genTurnId, type SideSessionTurn } from "../core/side-session/side-session";
 import { getLLMEngine } from "../core/llm";
 
@@ -30,7 +32,6 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -42,24 +43,15 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // 拖拽（标题栏）
+  // 拖拽（标题栏）— P2-11：监听器由 dragging state 驱动的 effect 持有，
+  // 卸载与 pointercancel/失焦都能清理（原实现只在 pointerup 里移除，且卸载不处理）
+  const { dragging, startDrag } = usePanelDrag((p) => setPos(p));
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    const panel = (e.currentTarget as HTMLElement).parentElement;
+    const panel = (e.currentTarget as HTMLElement).parentElement as HTMLElement | null;
     if (!panel) return;
     const rect = panel.getBoundingClientRect();
-    dragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
-    const onMove = (ev: PointerEvent) => {
-      if (!dragRef.current) return;
-      setPos({ x: Math.max(0, ev.clientX - dragRef.current.dx), y: Math.max(0, ev.clientY - dragRef.current.dy) });
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, []);
+    startDrag(e, { left: rect.left, top: rect.top });
+  }, [startDrag]);
 
   const ask = useCallback(async () => {
     const q = question.trim();
@@ -136,7 +128,7 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
       {/* Header — draggable */}
       <div
         onPointerDown={handlePointerDown}
-        style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "grab", userSelect: "none", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: dragging ? "grabbing" : "grab", userSelect: "none", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}
       >
         <MessageSquareText size={14} style={{ color: "var(--accent)" }} />
         <strong style={{ fontSize: 'var(--fs-sm)', flex: 1 }}>{zh ? "临时会话" : "Side Session"}</strong>

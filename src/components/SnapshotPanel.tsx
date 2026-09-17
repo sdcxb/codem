@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getSnapshotService, type Snapshot } from "../core/snapshot/snapshot";
 import { DiffViewer } from "./DiffViewer";
 import { readFile } from "../core/file-api";
+import { reportActionFailure } from "../core/storage/persist-failure";
 import { Camera, Clock, RefreshCw, Search, Undo, Folder, ChevronDown, ChevronRight } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 
@@ -29,8 +30,12 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
+  /** P2-9(b)：同 tick 守卫（state 更新要等下一次渲染，双击/连点拦不住） */
+  const restoringRef = useRef<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMsg | null>(null);
+  /** P2-9(a)：读取失败时不许再显示「暂无快照」（否则失败被伪装成「没有数据」） */
+  const [readFailed, setReadFailed] = useState(false);
   // S4: Diff viewer state
   const [diffFile, setDiffFile] = useState<{ path: string; before: string; after: string } | null>(null);
 
@@ -38,17 +43,38 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
     loadSnapshots();
   }, [cwd]);
 
+  /**
+   * P2-9(a)：读取失败必须可见，且**不能同时**显示「暂无快照」。
+   * 原实现是空 `catch {}` —— 列表读不出来时界面与「真的没有快照」完全一致，
+   * 用户会以为快照丢了。这里不改控制流，但走可见通道，并用 readFailed 抑制空态文案。
+   */
   const loadSnapshots = async () => {
     setLoading(true);
     try {
       const service = getSnapshotService(cwd);
       const data = await service.getAll();
       setSnapshots(data);
-    } catch {}
+      setReadFailed(false);
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      setReadFailed(true);
+      setToast({ type: "error", text: `读取快照失败：${msg}（列表可能不是最新的）` });
+      reportActionFailure("snapshotPanel.getAll", e, "快照列表未能读取");
+    }
     setLoading(false);
   };
 
   const handleRestore = async (snapshotId: string) => {
+    // P2-9(b)：回滚守卫必须是**全局**的，不能按快照粒度。
+    // 原实现 `restoring === snapshotId` 只禁用被点的那一个按钮 —— 展开 A 点回滚、
+    // 展开 B 再点回滚会并发执行，两个 restore 交叉写/删同一 cwd，最终工作区
+    // 既不匹配 A 也不匹配 B。这里在同 tick 内也拦得住（state 依赖重渲染，ref 不依赖）。
+    if (restoringRef.current) {
+      setToast({ type: "error", text: "已有回滚正在进行，请等待它结束" });
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    restoringRef.current = snapshotId;
     setRestoring(snapshotId);
     try {
       const service = getSnapshotService(cwd);
@@ -69,6 +95,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
     } catch (e: any) {
       setToast({ type: "error", text: `回滚失败：${e?.message || "未知错误"}` });
     }
+    restoringRef.current = null;
     setRestoring(null);
     // 3秒后自动清除提示
     setTimeout(() => setToast(null), 3000);
@@ -119,8 +146,11 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
         {loading && snapshots.length === 0 && (
           <div className="snapshot-loading">加载中...</div>
         )}
-        {!loading && snapshots.length === 0 && (
+        {!loading && snapshots.length === 0 && !readFailed && (
           <div className="snapshot-empty">暂无快照</div>
+        )}
+        {!loading && snapshots.length === 0 && readFailed && (
+          <div className="snapshot-empty">快照列表读取失败，请查看上方提示后重试</div>
         )}
         {snapshots.map((snapshot) => (
           <div key={snapshot.id} className="snapshot-item">
@@ -182,7 +212,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
                   <button
                     className="snapshot-restore-btn"
                     onClick={() => handleRestore(snapshot.id)}
-                    disabled={restoring === snapshot.id}
+                    disabled={restoring !== null}
                   >
                     {restoring === snapshot.id ? <><Clock size={12} /> 恢复中...</> : <><Undo size={12} /> 回滚到此快照</>}
                   </button>
