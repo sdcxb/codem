@@ -189,14 +189,40 @@ export function GameView() {
   }, []);
 
   // 角色选择后，等 phaserRef 渲染到 DOM 再启动游戏
+  /**
+   * ## 第 45 轮修正：这条启动链原来是**死的**（"开始游戏"永远回不到游戏界面）
+   *
+   * 原实现：
+   * ```ts
+   * if (pendingStart && phaserRef.current && !gameRef.current) {
+   *   setPendingStart(null);                                  // ← 先摘标记
+   *   requestAnimationFrame(() => initGame(mapId, charId));   // ← 下一帧才初始化
+   * }
+   * ```
+   * 摘掉 `pendingStart` 会让 render 走进"开始界面"那一支（此时 `started` 仍是 false），
+   * 于是那个**只在 `pendingStart` 分支里渲染**的 `.phaser-container` **被卸载** →
+   * `phaserRef.current` 变回 `null` → 下一帧 `initGame` 一进门的守卫
+   * （`if (!phaserRef.current …) return`）直接 return：引擎没建、`started` 没置真、
+   * 界面停在开始页。而 `pendingStart` 已经清空，effect 不会再跑一次 —— 死路。
+   *
+   * 修法（顺序反过来）：**先把 `started` 置真**（render 立刻走"游戏内"那一支，
+   * 它自己带 `.phaser-container`，见下面的主 render），**再**在下一帧创建 Phaser 实例
+   * （此时 ref 必然是那个已挂载的容器），最后才摘标记。
+   *
+   * 为什么不能只把 `setPendingStart(null)` 挪到 rAF 里：那样 `started` 在 initGame 之前
+   * 仍是 false，render 依旧落在"开始界面"分支上，容器照样先被卸载 —— 问题不在清标记的时机，
+   * 而在**容器必须先存在于最终那一支 render 里**。
+   */
   useEffect(() => {
-    if (pendingStart && phaserRef.current && !gameRef.current) {
-      const { mapId, charId } = pendingStart;
+    if (!pendingStart) return;
+    if (!phaserRef.current || gameRef.current) return;
+    const { mapId, charId } = pendingStart;
+    const raf = requestAnimationFrame(() => {
+      initGame(mapId, charId);
       setPendingStart(null);
-      // 用 requestAnimationFrame 确保 DOM 已完成布局
-      requestAnimationFrame(() => initGame(mapId, charId));
-    }
-  }, [pendingStart]);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pendingStart, initGame]);
 
   // G2/G4: AI 回合自动执行
   const aiRef = useRef<AIPlayer | null>(null);
@@ -338,6 +364,14 @@ export function GameView() {
           onSelect={(charId) => {
             setHumanCharId(charId);
             setScreen('map_select');
+            /*
+             * ⚠️ **必须先 `setStarted(true)`**（第 45 轮修的那条死路，见下面 effect 的说明）：
+             * `started` 为真之后 render 才会走到"游戏内"那一支 —— 而**只有那一支**里才有
+             * 最终承载 Phaser 画布的 `.phaser-container`。原实现先摘标记、让 render 落回
+             * "开始界面"分支，容器被卸载 → 下一帧 `initGame` 的 ref 守卫直接 return
+             * （E2 的插桩原始输出：`[GV] initGame called, ref= false game= false`）。
+             */
+            setStarted(true);
             // 设置待启动标记，等 phaserRef 渲染后由 useEffect 触发 initGame
             setPendingStart({ mapId: selectedMapId, charId });
           }}

@@ -996,11 +996,16 @@ describe("RL-9 GameView 掷骰 interval 与引擎监听（P2-16）", () => {
    * 回调真正执行时 **`phaserRef.current` 已经是 null**（临时插桩输出：
    * `[GV] effect pendingStart= true ref= true` → `[GV] initGame called, ref= false`），
    * `initGame` 因此提前 return，界面回到地图选择页、`started` 永远为 false。
-   * 也就是说「游戏内界面（含「掷骰子」按钮）」当前不可达，无法从 UI 触发
-   * `handleRollDice`。这条另案记录，不在本任务的 P2-16 范围内。
    *
-   * 因此这里用「可观测计数器 + 陈旧回调守卫」判定 interval 是否真的被清掉：
-   * 把回调包一层，每次**真正执行**时累加计数。卸载后计数不再增长 ⇒ 定时器已清。
+   * ✅ **第 45 轮已修**（不在本任务范围内，由主会话处理）：那条启动链的死路已经打通
+   * —— 现在「确认选择」会先置 `started` 让**游戏内那一支**渲染出真正的画布容器，
+   * 再在下一帧创建 Phaser 实例。行为级回归在 `monopoly-start-chain.test.ts`
+   * （MSC-1 断言 `new Phaser.Game` 收到的 parent `isConnected === true`；MSC-2 断言
+   * 游戏内布局出现），改前两条都红。
+   *
+   * 但本文件这一组仍然用「可观测计数器 + 陈旧回调守卫」判定 interval 是否真的被清掉：
+   * 这个夹具只挂载 `GameView`（停在开始界面、不会走角色选择），所以计数器天然为 0 ——
+   * 它测的是**清理机制**，界面级回归已经交给上面那个文件。
    */
   async function mountCounter(): Promise<{ unmount: () => void; counter: { n: number } }> {
     globalThis.setInterval = ((fn: any, ms?: number) => realSetInterval(() => {
