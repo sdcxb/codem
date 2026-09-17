@@ -30,7 +30,6 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
 import { getStoragePort, setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
@@ -136,14 +135,27 @@ function makeMsg(overrides: Partial<Message> = {}): Message {
   };
 }
 
+/**
+ * 各 describe 共用的夹具（第 18 轮，L1）。
+ *
+ * 原来这里是 `try { await resetDatabase(); } catch { await initDatabase(); }`：
+ * 那是"旧库是唯一数据源"（A 态）时代的**清库**夹具。A 态与旧引擎入口都已删除
+ * （`setup.ts` 每个用例前注册一个**全新**的内存假端口，端口即唯一数据源；
+ * `resetDatabase` / `initDatabase` 在 rust 引擎下**直接抛错**，
+ * 留在 `catch` 里会让 beforeEach 自己炸掉），所以这一步整段删掉。
+ *
+ * 保留 `setupBase()`：它走的是**产品 API**（`createProject` / `createSession`），
+ * 现在把项目与会话落到端口上 —— 与真机同一条路。
+ */
+function baseFixture(): void {
+  localStorage.clear();
+  setupBase();
+}
+
 // ========== A. 消息 CRUD 与 DB 持久化 ==========
 
 describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
-    localStorage.clear();
-    setupBase();
-  });
+  beforeEach(baseFixture);
 
   // CHAIN-001
   it("CHAIN-001: createMessage 存储用户消息到 DB", () => {
@@ -343,11 +355,7 @@ describe("消息链路 — 消息 CRUD 与 DB 持久化", () => {
 // ========== B. messagesToLLMMessages 转换链路 ==========
 
 describe("消息链路 — messagesToLLMMessages 转换", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
-    localStorage.clear();
-    setupBase();
-  });
+  beforeEach(baseFixture);
 
   // CHAIN-016
   it("CHAIN-016: messagesToLLMMessages 正确转换 user 消息", () => {
@@ -476,11 +484,7 @@ describe("消息链路 — messagesToLLMMessages 转换", () => {
 // ========== C. Session CRUD 与消息关联 ==========
 
 describe("消息链路 — Session CRUD 与消息关联", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
-    localStorage.clear();
-    setupBase();
-  });
+  beforeEach(baseFixture);
 
   // CHAIN-036
   it("CHAIN-036: createSession 创建新会话", () => {
@@ -596,21 +600,29 @@ describe("消息链路 — Session CRUD 与消息关联", () => {
 // ========== E. 设置/快捷短语/草稿/反馈存储 ==========
 
 describe("消息链路 — 设置/快捷短语/草稿/反馈存储", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    /**
+     * 夹具（第 18 轮，L1）：**端口播种**，不再初始化旧库。
+     *
+     * 原来这一段是 5 条裸 SQL：清库用的
+     * `try { resetDatabase() } catch { initDatabase() }` + `INSERT INTO projects` +
+     * 4 条 `INSERT INTO sessions`（`sess-chain-test` / `sess-del` / `sess-A` / `sess-B`）。
+     * 它们的用途是"满足旧库的外键约束"。A 态已删 → 换成产品 API：
+     * `setupBase()` 建 `proj-chain-test` + `sess-chain-test`（与原来那两条 INSERT 逐字段等价），
+     * 另外三个会话按同样的字段用 `createSession` 补上（草稿类用例拿它们当 sessionId 用）。
+     */
     localStorage.clear();
-    // Create base project + session for FK constraints
-    const db = getDatabase();
-    db.run("INSERT INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
-      [PROJECT_ID, "链路测试", "D:/chain", Date.now(), Date.now()]);
-    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-      [SESSION_ID, PROJECT_ID, "链路测试会话", Date.now(), Date.now(), 0]);
-    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-      ["sess-del", PROJECT_ID, "删除测试", Date.now(), Date.now(), 0]);
-    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-      ["sess-A", PROJECT_ID, "会话A", Date.now(), Date.now(), 0]);
-    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-      ["sess-B", PROJECT_ID, "会话B", Date.now(), Date.now(), 0]);
+    setupBase(); // Create base project + session
+    for (const [id, title] of [
+      ["sess-del", "删除测试"],
+      ["sess-A", "会话A"],
+      ["sess-B", "会话B"],
+    ] as const) {
+      SessionStorage.createSession({
+        id, projectId: PROJECT_ID, title,
+        createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
+      });
+    }
   });
 
   // CHAIN-046

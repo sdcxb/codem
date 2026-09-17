@@ -27,7 +27,8 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import { useAppStore, type Message, type MessageAttachment } from "../store";
 import type { Session } from "../core/types";
 import { useLang, S } from "../core/i18n/lang";
@@ -37,8 +38,13 @@ import type { LoopEvent, ClarificationFormData } from "../core/llm/agentic-loop"
 // ========== A. P0 滚动/UX ==========
 
 describe("P0 滚动/UX — 组件导入与 Store 状态", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    /**
+     * 第 18 轮（L1）：原来的 `try { await resetDatabase(); } catch { await initDatabase(); }`
+     * 已删 —— 那是"旧库是唯一数据源"（A 态）时代的清库夹具，而 A 态与旧引擎入口
+     * 都不再存在（`setup.ts` 每例注册一个全新端口；`resetDatabase`/`initDatabase`
+     * 在 rust 引擎下**直接抛错**，留着它只会让这一行变成"抛了再抛"）。
+     */
     localStorage.clear();
     // Reset store state to avoid cross-test pollution
     useAppStore.setState({ messages: [], guidanceMessages: [], feedback: {}, activeSessions: new Set(), isStreaming: false, streamStartTime: null, llmStatus: "idle" });
@@ -512,22 +518,40 @@ describe("P2 体验提升 — 组件导入", () => {
 
   it("REG-FULL-089: savePromptDraft + loadPromptDrafts", async () => {
     const { savePromptDraft, loadPromptDrafts } = await import("../core/storage/prompt-draft");
-    const db = getDatabase();
-    db.run("INSERT INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
-      ["proj-r89", "p", "D:/p", Date.now(), Date.now()]);
-    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-      ["s1", "proj-r89", "s", Date.now(), Date.now(), 0]);
+    /**
+     * 第 18 轮（L1）：原来的夹具是两条裸 SQL
+     * （`INSERT INTO projects …` + `INSERT INTO sessions …`），存在的唯一理由是
+     * **满足旧库的外键约束**。改成端口播种：草稿的读写本来就走
+     * `domainWrite("prompt_drafts")` / `domainReadMany("prompt_drafts")`，
+     * 父行也必须落在端口上才与产品同一条路（断言对象与强度不变：草稿存得进、读得回）。
+     */
+    setStoragePort(
+      createFakeStoragePort({
+        seed: {
+          projects: [{ id: "proj-r89", name: "p", path: "D:/p", created_at: Date.now(), last_accessed_at: Date.now() }],
+          sessions: [
+            { id: "s1", project_id: "proj-r89", title: "s", created_at: Date.now(), last_message_at: Date.now(), message_count: 0 },
+          ],
+        },
+      }),
+    );
     const draftId = savePromptDraft("s1", "draft");
     expect(loadPromptDrafts("s1").find(d => d.id === draftId)).toBeDefined();
   });
 
   it("REG-FULL-090: deletePromptDraft 删除草稿", async () => {
     const { savePromptDraft, loadPromptDrafts, deletePromptDraft } = await import("../core/storage/prompt-draft");
-    const db = getDatabase();
-    db.run("INSERT INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
-      ["proj-r90", "p", "D:/p", Date.now(), Date.now()]);
-    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-      ["s90", "proj-r90", "s", Date.now(), Date.now(), 0]);
+    // 第 18 轮（L1）：同上，裸 SQL 夹具换成端口播种
+    setStoragePort(
+      createFakeStoragePort({
+        seed: {
+          projects: [{ id: "proj-r90", name: "p", path: "D:/p", created_at: Date.now(), last_accessed_at: Date.now() }],
+          sessions: [
+            { id: "s90", project_id: "proj-r90", title: "s", created_at: Date.now(), last_message_at: Date.now(), message_count: 0 },
+          ],
+        },
+      }),
+    );
     const draftId = savePromptDraft("s90", "del");
     deletePromptDraft(draftId);
     expect(loadPromptDrafts("s90").find(d => d.id === draftId)).toBeUndefined();
@@ -589,8 +613,8 @@ describe("P4 智能输入 — 组件导入", () => {
 // ========== F. Store/Types 扩展 ==========
 
 describe("Store/Types 扩展 — 新字段验证", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    // 第 18 轮（L1）：`try { await resetDatabase(); } catch { await initDatabase(); }` 已删（见 P0）
     localStorage.clear();
     useAppStore.setState({ messages: [], guidanceMessages: [], feedback: {} });
   });

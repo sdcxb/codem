@@ -62,16 +62,10 @@ function installFsStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import {
-  getDatabase,
-  initDatabase,
-  resetDatabaseFatalState,
-  resetSaveFailureState,
-  runDatabaseMaintenance,
-} from "../core/storage/database";
+import { runDatabaseMaintenance } from "../core/storage/database";
 import { createMessage, listMessages, listMessagesFromIndex, listMessagesMerged, clearSessionLogCache, trimIndexedMessages } from "../core/storage/message";
 import { appendSessionMessage, readSessionMessages, durableMessageIds, backfillSessionLog, flushSessionLogWrites, sessionLogPath, __resetJsonlCache } from "../core/storage/session-jsonl";
-import { getStoragePort, hasStoragePort, setStoragePort } from "../core/storage/port";
+import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import type { FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
@@ -83,19 +77,21 @@ function makeMessage(id: string, timestamp: number, content = `内容 ${id}`): M
 const SESSION = "sess-jsonl";
 
 /**
- * 当前用例里的内存假端口（B 态）；A 态（`CODEM_TEST_PORT=0`）为 null。
+ * 当前用例的内存假端口（**端口是唯一形态**，第 18 轮 / L1）。
  *
  * 这个文件里的维护类用例（SLOG-4/5/6/8）依赖"会话清单 + 消息索引"两处数据：
  * `trimIndexedMessages` / `backfillAllSessions` 的会话清单来自 `sessions` 域镜像，
- * 消息来自会话镜像。端口模式下产品**只写端口**，所以预置必须落在端口上 ——
+ * 消息来自会话镜像。产品**只读写端口**，所以预置必须落在端口上 ——
  * 原来把它们插进旧库，产品在端口里一个会话都看不到，于是裁剪/回填静默变成 0。
+ *
+ * ⚠️ 第 18 轮：A 态（`CODEM_TEST_PORT=0`：端口未注册、旧库是唯一数据源）已随 L4 删除，
+ * 所以这里不再有 `port === null` 的分支，也不再 `initDatabase()` / 清旧库表 ——
+ * `setup.ts` 每个用例前注册一个全新端口，下面的 `seedPort()` 只是把它换成"带 s1 父行"的那个。
  */
-let port: FakeStoragePort | null = null;
+let port: FakeStoragePort;
 
-/** B 态：注册一个带 `sessions` 父行的假端口（覆盖 setup.ts 注册的那个空端口）；A 态：no-op */
-function seedPort(): FakeStoragePort | null {
-  if (!hasStoragePort()) return null;
-  if (getStoragePort().kind !== "rust") return null;
+/** 注册一个带 `sessions` 父行的假端口（覆盖 setup.ts 注册的那个空端口） */
+function seedPort(): FakeStoragePort {
   const p = createFakeStoragePort({
     seed: {
       sessions: [
@@ -107,26 +103,14 @@ function seedPort(): FakeStoragePort | null {
   return p;
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   installFsStub();
   __resetJsonlCache();
   clearSessionLogCache();
-  resetSaveFailureState();
-  resetDatabaseFatalState();
-  // 先注册端口（B 态），再初始化/重置旧库 —— 与 setup.ts 的顺序约定一致
   port = seedPort();
-  await initDatabase();
-  const db = getDatabase();
-  db.run("DELETE FROM messages");
-  db.run("DELETE FROM attachments");
-  db.run(
-    "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES ('sess-jsonl','','t',0,0,0)",
-  );
 });
 
 afterEach(() => {
-  resetDatabaseFatalState();
-  resetSaveFailureState();
   delete (window as any).__TAURI__;
   __resetJsonlCache();
   clearSessionLogCache();
@@ -193,31 +177,25 @@ describe("追加日志（JSONL）", () => {
     /**
      * 给**最老的一条**挂附件：附件行不在日志里 → 即使它在裁剪窗口内也不许删。
      *
-     * 预置必须落在**产品真正读的那一侧**：B 态裁剪用 `domainReadMany("attachments")` 读端口，
-     * 只往旧库插 = 端口里没有这一行 = 裁剪会误删 m0（判据跟着一起失真）。
+     * 预置必须落在**产品真正读的那一侧**：裁剪用 `domainReadMany("attachments")` 读端口。
+     * 第 18 轮：A 态（往旧库插）已删，这里只剩端口这一条路。
      */
-    const attachmentRow = {
-      id: "a1",
-      session_id: SESSION,
-      message_id: "m0",
-      name: "x.txt",
-      type: "file",
-      content: "hi",
-      added_at: 0,
-      size: 2,
-    };
-    if (port) {
-      await port.data.execute("crud.upsert", {
-        table: "attachments",
-        primaryKey: "id",
-        rows: [attachmentRow],
-      });
-    } else {
-      getDatabase().run(
-        "INSERT INTO attachments (id, session_id, message_id, name, type, content, added_at, size) VALUES ('a1', ?, 'm0', 'x.txt', 'file', 'hi', 0, 2)",
-        [SESSION],
-      );
-    }
+    await port.data.execute("crud.upsert", {
+      table: "attachments",
+      primaryKey: "id",
+      rows: [
+        {
+          id: "a1",
+          session_id: SESSION,
+          message_id: "m0",
+          name: "x.txt",
+          type: "file",
+          content: "hi",
+          added_at: 0,
+          size: 2,
+        },
+      ],
+    });
 
     const result = await trimIndexedMessages({ keepPerSession: 3 });
 
@@ -257,29 +235,23 @@ describe("追加日志（JSONL）", () => {
   });
 
   it("SLOG-8: 维护会先回填、再裁剪，并把数字报出来", async () => {
-    getDatabase().run("DELETE FROM messages");
     /**
      * 直接写索引（绕过 createMessage）→ 模拟"只有索引、没有日志"的迁移场景。
      *
-     * 索引在 B 态就是**端口**（产品只写端口），所以预置走端口命令 `messages.upsert_index`；
-     * 往旧库插行的话，端口里那份索引是空的 → 回填 0 条、裁剪 0 条（数字全是假绿）。
+     * 索引就是**端口**（产品只写端口），所以预置走端口命令 `messages.upsert_index`。
+     * 第 18 轮：原来这里先 `getDatabase().run("DELETE FROM messages")` 清旧库索引 ——
+     * 那一步随 A 态一起删掉了（本用例的端口是 `beforeEach` 里新建的，本来就是空的）；
+     * 保留 `if (port)` 那种分支只会掩盖"端口里到底有没有这些行"。
      */
     for (let i = 0; i < 8; i++) {
-      if (port) {
-        await port.data.execute("messages.upsert_index", {
-          id: `k${i}`,
-          session_id: SESSION,
-          role: "user",
-          content: `内容 k${i}`,
-          timestamp: 500 + i,
-          status: "done",
-        });
-      } else {
-        getDatabase().run(
-          "INSERT INTO messages (id, session_id, role, content, timestamp, status) VALUES (?, ?, 'user', ?, ?, 'done')",
-          [`k${i}`, SESSION, `内容 k${i}`, 500 + i],
-        );
-      }
+      await port.data.execute("messages.upsert_index", {
+        id: `k${i}`,
+        session_id: SESSION,
+        role: "user",
+        content: `内容 k${i}`,
+        timestamp: 500 + i,
+        status: "done",
+      });
     }
     await flushSessionLogWrites();
     files.clear();

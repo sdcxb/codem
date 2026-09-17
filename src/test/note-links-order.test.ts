@@ -33,21 +33,23 @@ function installFsStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import { getDatabase, initDatabase, resetDatabaseFatalState, resetSaveFailureState } from "../core/storage/database";
 import { createNotebook, createNote, addNoteLink, getBacklinks, getNoteLinks } from "../core/knowledge/storage";
 import { syncNoteLinks } from "../core/knowledge/note-manager";
 
 let NB = "nb-links-test";
 
-beforeEach(async () => {
+/**
+ * 夹具（第 18 轮，L1）：**端口基座**，不再初始化旧库。
+ *
+ * 原来这里 `await initDatabase()` + 三条裸 `DELETE FROM note_links/notes/notebooks`：
+ * 那是"旧库是唯一数据源"（A 态）时代的清表夹具。A 态已删（`setup.ts` 每例注册一个
+ * **全新**的内存假端口，端口即唯一数据源），清表因此不再需要 —— 每例的端口都是空的。
+ *
+ * `createNotebook` / `createNote` 走 `domainWrite`（端口），所以"先建笔记本"这一步
+ * 依然必要，且现在落在端口镜像上（与产品同一条路）。
+ */
+beforeEach(() => {
   installFsStub();
-  resetSaveFailureState();
-  resetDatabaseFatalState();
-  await initDatabase();
-  const db = getDatabase();
-  db.run("DELETE FROM note_links");
-  db.run("DELETE FROM notes");
-  db.run("DELETE FROM notebooks");
   // createNote 会自己生成 id（忽略传入 id），并且 notebook_id 有外键约束 → 先建笔记本
   NB = createNotebook({ name: "链接测试笔记本" } as any).id;
 });

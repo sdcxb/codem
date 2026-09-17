@@ -32,61 +32,20 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportActionFailure: (_s: string, _e: unknown, note: string) => reported.push(note),
 }));
 /**
- * 假"旧库"（WASM）：**能真的用**，但记录访问次数与写入。
+ * ⚠️ L1 收尾：这里原来有一个**可用的假旧库**（`vi.mock("../core/storage/database")`：
+ * 内存版 `session_events` + `legacyAccess` 访问计数），用来断言"路由之后不再访问旧库"。
  *
- * 为什么不做成"一访问就抛"：加载窗口期内走旧库是**正确行为**（镜像还没加载完，
- * 两边必须待在同一处）。真正要断言的是"**路由之后**不再访问旧库"，
- * 所以这里要能工作，只是被计数。
+ * 它已经不再是证据，所以删掉：
+ *
+ * 1. `event-log.ts` 现在只 import `./port` 与 `./persist-failure`（它的注释里写着
+ *    "旧库写入已在 L4 收尾时删除"）—— 没有模块再 import `storage/database`，
+ *    那个 mock 永远不会被触发，`expect(legacyAccess).toBe(0)` 恒真；
+ * 2. `vi.mock` 指向的**模块会随引擎一起删除**：留着它，下一步删引擎时本文件会先红。
+ *
+ * 契约没有丢：下面每条用例仍然断言**端口侧的可观测效果**
+ * （`events.append` 真的发出、发件箱真的落库、seq 被真实水位修正、加载不丢窗口期事件），
+ * 那些是真的会咬的判据。
  */
-const legacyStore: Array<{ seq: number; session_id: string; event_type: string; payload: string; timestamp: number }> = [];
-let legacyAccess = 0;
-let legacySeq = 1000;
-
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    legacyAccess++;
-    return {
-      run(sql: string, params: unknown[] = []) {
-        if (/INSERT INTO session_events/i.test(sql)) {
-          legacyStore.push({
-            seq: ++legacySeq,
-            session_id: String(params[0]),
-            event_type: String(params[1]),
-            payload: String(params[2]),
-            timestamp: Number(params[3]),
-          });
-        } else if (/DELETE FROM session_events/i.test(sql)) {
-          const sid = String(params[0]);
-          for (let i = legacyStore.length - 1; i >= 0; i--) {
-            if (legacyStore[i].session_id === sid) legacyStore.splice(i, 1);
-          }
-        } else if (/BEGIN|COMMIT|ROLLBACK/i.test(sql)) {
-          /* 事务在假实现里是 no-op */
-        }
-      },
-      exec(sql: string, params: unknown[] = []) {
-        if (/last_insert_rowid/i.test(sql)) return [{ values: [[legacySeq]] }];
-        if (/MAX\(seq\)/i.test(sql)) {
-          const rows = legacyStore.filter((e) => e.session_id === String(params[0]));
-          return [{ values: [[rows.length ? Math.max(...rows.map((r) => r.seq)) : 0]] }];
-        }
-        if (/COUNT\(\*\)/i.test(sql)) {
-          const rows = legacyStore.filter((e) => e.session_id === String(params[0]));
-          return [{ values: [[rows.length]] }];
-        }
-        if (/FROM session_events/i.test(sql)) {
-          const sid = String(params[0]);
-          const rows = legacyStore.filter((e) => e.session_id === sid).sort((a, b) => a.seq - b.seq);
-          return [{ values: rows.map((r) => [r.seq, r.session_id, r.event_type, r.payload, r.timestamp]) }];
-        }
-        return [];
-      },
-    };
-  },
-  persistDatabase: () => {
-    legacyAccess++;
-  },
-}));
 
 interface StoredEvent {
   seq: number;
@@ -187,7 +146,6 @@ const settle = async (ms = 30) => {
 afterEach(() => {
   setStoragePort(null);
   reported.length = 0;
-  legacyAccess = 0;
   vi.restoreAllMocks();
 });
 
@@ -218,7 +176,6 @@ describe("只追加面 —— 路由规则（读与写必须在同一处）", ()
     const ev = log.append("s-new", "user_message", { x: 1 });
     await settle();
 
-    expect(legacyAccess, "B 态**不得**访问旧库（rust 下它刻意不存在）").toBe(0);
     expect(ev.seq, "占位 seq 必须是个正数（加载后会对账成真实水位）").toBeGreaterThan(0);
 
     // 加载完成后：窗口期写入的事件既在镜像里、也已落库，一条都不丢
@@ -227,7 +184,6 @@ describe("只追加面 —— 路由规则（读与写必须在同一处）", ()
     const after = log.readAll("s-new");
     expect(after.map((e) => e.payload)).toContainEqual({ x: 1 });
     expect(after[0].type).toBe("user_message");
-    expect(legacyAccess, "加载完成后同样不得访问旧库").toBe(0);
   });
 
   it("EV-2: ensureLoaded 之后 isLoaded 为真，且能读到库里已有的事件", async () => {
@@ -244,7 +200,6 @@ describe("只追加面 —— 路由规则（读与写必须在同一处）", ()
     expect(all[0].seq).toBe(5);
     expect(all[1].seq).toBe(9);
     expect(all[1].payload).toEqual({ b: 2 });
-    expect(legacyAccess, "已路由到镜像后不得访问旧库").toBe(0);
   });
 
   it("EV-3: 加载完成后 append 走镜像与发件箱，且立刻能从镜像读到", async () => {
@@ -256,7 +211,6 @@ describe("只追加面 —— 路由规则（读与写必须在同一处）", ()
     const after = log.readAll("s1");
     expect(after, "写入后必须立刻可读（同一处）").toHaveLength(1);
     expect(after[0].payload).toEqual({ text: "你好" });
-    expect(legacyAccess, "不得访问旧库").toBe(0);
 
     await settle();
     expect(t.calls.some((c) => c.command === "events.append"), "必须真的发起了落库").toBe(true);

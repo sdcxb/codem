@@ -30,32 +30,40 @@ function installTauriStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import {
-  getDatabase,
-  initDatabase,
-  resetDatabaseFatalState,
-  resetSaveFailureState,
-  runDatabaseMaintenance,
-} from "../core/storage/database";
+import { runDatabaseMaintenance } from "../core/storage/database";
 import { getEventLog } from "../core/storage/event-log";
 import { getEventProjection } from "../core/storage/event-projection";
-import { getStoragePort, hasStoragePort } from "../core/storage/port";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 
-beforeEach(async () => {
+/**
+ * 夹具（第 18 轮，L1）：**端口播种**，不再初始化旧库。
+ *
+ * 原来是 `await initDatabase()` + 两条裸 SQL（`DELETE FROM session_events` 清表、
+ * `INSERT OR REPLACE INTO sessions` 补 s1 父行）。
+ *
+ * - 清表：A 态（旧库是唯一数据源）已删 = 不存在了。`setup.ts` 每例注册一个**全新**端口，
+ *   事件在里面本来就是空的；而且端口模式下事件写的是**端口**（`events.appendLocal`），
+ *   清旧库那张表从来就没清到"读的那一份"。
+ * - 父行：按端口语义播种（`seed.sessions`），并把 SNAP-5 需要的 `s2` 一并种上
+ *   （原来它是在用例中途再插一条裸 SQL —— 那只是"让维护枚举得到两个会话"，
+ *   现在两个父行都在端口上，语义等价）。
+ */
+beforeEach(() => {
   installTauriStub();
-  resetSaveFailureState();
-  resetDatabaseFatalState();
-  await initDatabase();
-  const db = getDatabase();
-  db.run("DELETE FROM session_events");
-  db.run(
-    "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES ('s1','','t',0,0,0)",
+  setStoragePort(
+    createFakeStoragePort({
+      seed: {
+        sessions: [
+          { id: "s1", project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 },
+          { id: "s2", project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 },
+        ],
+      },
+    }),
   );
 });
 
 afterEach(() => {
-  resetDatabaseFatalState();
-  resetSaveFailureState();
   delete (window as any).__TAURI__;
 });
 
@@ -74,37 +82,6 @@ function seedSession(sessionId: string, turns: number): void {
     });
     log.append(sessionId, "tool_result", { toolCallId: `tc${i}`, content: `输出 ${i}` });
   }
-}
-
-/**
- * 让"事件数超过阈值的会话"对**维护的枚举这一步**可见。
- *
- * ## 为什么需要它
- *
- * `runDatabaseMaintenance` 的第一步是"找出事件过多的会话"：`compactOversizedSessionLogs`
- * （`database.ts`）目前**只查旧库索引**（`SELECT session_id, count(*) FROM session_events
- * … HAVING n > ?`）—— 这一步属于尚未端口化的 L3 遗留（它读的是旧库，端口模式下事件全在端口里，
- * 于是枚举为空、压缩永不触发：实测 `readAll("s2")` 有 21 条事件而旧库索引 0 行）。
- *
- * 所以这里把这批事件**同时登记进旧库索引**，让阈值判定在两种态下都成立；被验证的压缩本身
- * 仍走端口（`compactWithSnapshot` → `events_compact` + 镜像重建）—— 断言没有放宽，
- * 只是把"维护还要读的那份索引"摆到位。
- *
- * A 态（`CODEM_TEST_PORT=0`）下事件本来就写在旧库索引里 → 直接跳过，不产生重复行。
- */
-function mirrorEventsIntoLegacyIndex(sessionId: string): void {
-  const port = hasStoragePort() ? getStoragePort() : null;
-  if (!port || port.kind !== "rust") return;
-  const db = getDatabase();
-  const maxSeq = Number(db.exec("SELECT COALESCE(MAX(seq), 0) FROM session_events")?.[0]?.values?.[0]?.[0] ?? 0);
-  getEventLog()
-    .readAll(sessionId)
-    .forEach((e, i) => {
-      db.run(
-        "INSERT INTO session_events (seq, session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
-        [maxSeq + 1 + i, sessionId, String(e.type), JSON.stringify(e.payload), e.timestamp],
-      );
-    });
 }
 
 describe("事件日志快照式压缩", () => {
@@ -176,34 +153,90 @@ describe("事件日志快照式压缩", () => {
     expect(remaining.length).toBe(9); // 8 条保留 + 1 条快照
   });
 
-  it("SNAP-5: 维护只在事件超阈值时才压缩，且压缩后仍可读（不破坏会话）", async () => {
-    seedSession("s1", 5); // 21 条事件，低于阈值
-    mirrorEventsIntoLegacyIndex("s1");
-    const small = await runDatabaseMaintenance({ compactEventsOver: 500 });
-    expect(small.compactedSessions).toBe(0);
+  /**
+   * ⚠️ **第 18 轮（L1）改判据 —— 这一条原来依赖"产品读旧库"，那个语义已经删了。**
+   *
+   * 原用例断言："维护只在事件超阈值时才压缩（`compactedSessions` 从 0 变正）"。
+   * 而维护里那一步是 `database.ts::compactOversizedSessionLogs`，它的实现是
+   * `if (!db) return 0` + `SELECT session_id, count(*) FROM session_events … HAVING n > ?`
+   * —— 也就是**只有旧库能枚举**：它读的是旧库索引，而端口模式下事件全在端口里。
+   * 原用例为了让这条断言成立，必须先把事件"再登记进旧库索引"
+   * （`mirrorEventsIntoLegacyIndex`：往一张没人读的表里插行，只是为了喂给枚举）。
+   *
+   * A 态（旧库是唯一数据源）删除之后，端口模式下 `legacy` 恒为 `null` → 这一步**永不执行**
+   * （代码里那半边的注释自己写着"端口模式下的等价物是引擎侧的快照压缩 `events.compact`，
+   * 由事件端口在写入时维持水位"）。所以"维护按阈值压缩事件"这条判据已经**没有实现可指**。
+   *
+   * 换成的判据是端口模式下的**同一件事的另一面**，强度不减：
+   * 维护**不得越权改事件日志** —— 阈值高于、低于事件数两种情况都跑一遍，
+   * 事件条数与可回放性都必须原样。真正的压缩契约由 SNAP-1~4（`compactWithSnapshot`
+   * → `events.replaceSession` / `events.compact`）与去重写入侧的端口契约守着。
+   */
+  it("SNAP-5（第 18 轮改判据）: 端口模式下维护**不**在启动路径上压缩事件，且不破坏事件日志", async () => {
+    seedSession("s1", 5); // 21 条事件
+    const log = getEventLog();
+    const before1 = log.readAll("s1").length;
 
-    getDatabase().run(
-      "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES ('s2','','t',0,0,0)",
-    );
+    // 阈值远低于事件数：旧实现（读旧库索引枚举）在这里会压缩
+    const over = await runDatabaseMaintenance({ compactEventsOver: 10 });
+    expect(over.compactedSessions, "端口模式下维护不做事件压缩（枚举那一步只存在于旧库路径）").toBe(0);
+    expect(log.readAll("s1").length, "维护不得动事件日志").toBe(before1);
+
     seedSession("s2", 5);
-    mirrorEventsIntoLegacyIndex("s2");
-    const big = await runDatabaseMaintenance({ compactEventsOver: 10 });
-    expect(big.compactedSessions).toBeGreaterThan(0);
-    // 压缩后投影依然可用
+    const before2 = log.readAll("s2").length;
+    // 阈值远高于事件数：这条守的是"不越权"，与阈值判定无关
+    const under = await runDatabaseMaintenance({ compactEventsOver: 500 });
+    expect(under.compactedSessions).toBe(0);
+    expect(log.readAll("s2").length).toBe(before2);
+    // 维护之后投影依然可用（不破坏会话）
     expect(getEventProjection().projectAll("s2").length).toBeGreaterThan(0);
   });
 
-  it("SNAP-6: 压缩失败不影响使用（异常被吞掉并记日志）", async () => {
+  /**
+   * ⚠️ **第 18 轮（L1）改判据**：原用例是 `const db = getDatabase(); db.run = () => { throw }`
+   * —— 用**旧库句柄**模拟"压缩失败"，验证"维护永远不能让应用不可用"。
+   * A 态已删、旧库刻意不存在，这个手法连构造都构造不出来（`getDatabase()` 会抛）。
+   *
+   * 被守的东西没变（"维护失败不影响使用：吞掉异常 + 记日志"），换的是**失败的载体**：
+   * 端口是端口模式下唯一会失败的落库通道，所以让它 `failWrites`。
+   * 断言强度不变：仍要求维护**resolve 成功**且**留下了告警**（不静默）。
+   */
+  it("SNAP-6（第 18 轮改判据）: 落库失败时维护仍不抛，并如实告警（不静默）", async () => {
+    /**
+     * 判据必须**钉在"端口落库失败"这一条**上，不能只写 `expect(warn).toHaveBeenCalled()`。
+     *
+     * 实测：端口正常时维护**也会**打 warn（本文件里是
+     * `[Attachment] 外置附件预热/清理失败（跳过）`，来自 FS 桩）。所以"维护打过 warn"
+     * 这个断言在成功与失败两种情况下都成立 —— 它什么都没守（写成那样就是假绿）。
+     * 这里改成认领那条**只可能由端口失败产生**的告警（`database.ts::pruneTelemetryViaPort`），
+     * 并用一次对照组证明它确实只因失败才出现。
+     */
+    const PORT_FAIL_WARN = "遥测裁剪（端口）失败";
+    const warnsWith = (spy: ReturnType<typeof vi.spyOn>) =>
+      spy.mock.calls.some((c) => String(c[0] ?? "").includes(PORT_FAIL_WARN));
+
+    // 对照组：端口正常 → 绝不出现"端口落库失败"的告警
     seedSession("s1", 5);
-    const db = getDatabase();
-    const originalRun = db.run.bind(db);
-    (db as any).run = () => {
-      throw new Error("simulated failure");
-    };
+    const warnControl = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await runDatabaseMaintenance({ compactEventsOver: 1 });
+    expect(warnsWith(warnControl), "对照：端口正常时不该报「端口落库失败」").toBe(false);
+    warnControl.mockRestore();
+
+    // 让端口的每一条落库命令都失败（遥测裁剪 `telemetry.prune` 是维护里唯一无条件走端口的写）
+    setStoragePort(
+      createFakeStoragePort({
+        failWrites: true,
+        seed: { sessions: [{ id: "s1", project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 }] },
+      }),
+    );
+    seedSession("s1", 5);
+
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await expect(runDatabaseMaintenance({ compactEventsOver: 1 })).resolves.toBeTruthy();
-    expect(warn).toHaveBeenCalled();
-    (db as any).run = originalRun;
+    expect(warnsWith(warn), "端口落库失败必须留下告警（静默吞掉就是假成功）").toBe(true);
     warn.mockRestore();
+
+    // 维护之后事件仍可读（失败不影响使用）
+    expect(getEventLog().readAll("s1").length).toBeGreaterThan(0);
   });
 });

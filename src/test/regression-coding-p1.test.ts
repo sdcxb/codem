@@ -5,18 +5,38 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import { FileChangeStorage } from "../core/storage/file-change-storage";
 import { AgentProfileStorage } from "../core/storage/agent-profile-storage";
 import { NeedsYouQueue, getNeedsYouQueue } from "../core/llm/needs-you-queue";
 import { TranscriptCache } from "../core/storage/transcript-cache";
 import { isAutoCommitEnabled, setAutoCommitEnabled, onAutoCommitted } from "../core/environment/git-commit-service";
 
-function ensureSession(sessionId: string) {
-  const db = getDatabase();
-  if (db) {
-    db.run("INSERT OR IGNORE INTO sessions (id, project_id, title, created_at, last_message_at) VALUES (?, ?, ?, ?, ?)", [sessionId, "", "Test", Date.now(), Date.now()]);
-  }
+/**
+ * 会话行夹具（**端口语义**，L1 收尾）。
+ *
+ * 原来这里 `getDatabase().run("INSERT OR IGNORE INTO sessions …")` 往旧库塞父行以满足外键；
+ * 而 `FileChangeStorage` 早已走域端口，旧库在 rust 模式下刻意不加载。
+ * 现在把同一批会话行播种进端口 —— 断言（`listBySession` / `getById` / `parseChangedFiles`）
+ * 与强度完全不变，夹具换到了产品真正读写的那一侧。
+ */
+function installSessionPort(...sessionIds: string[]): void {
+  const now = Date.now();
+  setStoragePort(
+    createFakeStoragePort({
+      seed: {
+        sessions: sessionIds.map((id) => ({
+          id,
+          project_id: "",
+          title: "Test",
+          created_at: now,
+          last_message_at: now,
+          message_count: 0,
+        })),
+      },
+    }),
+  );
 }
 
 // Mock Tauri
@@ -37,10 +57,7 @@ function mockTauriInvoke(responses: Record<string, any>) {
 describe("P1-4: FileChangesList + DiffViewer 集成", () => {
   beforeEach(async () => {
     delete (window as any).__TAURI__;
-    await initDatabase();
-    ensureSession("diff-session");
-    ensureSession("revert-session");
-    ensureSession("empty-session");
+    installSessionPort("diff-session", "revert-session", "empty-session");
   });
 
   it("FileChangeStorage.listBySession 为空时 — UI 显示空状态", () => {
@@ -201,7 +218,8 @@ describe("P1-6: TranscriptCache — LLM 请求缓存", () => {
 describe("P1-7: AgentProfile — 子智能体身份持久化", () => {
   beforeEach(async () => {
     delete (window as any).__TAURI__;
-    await initDatabase();
+    // AgentProfileStorage 走域端口（agent_profiles 表）：每个用例一份干净端口，不再初始化旧引擎
+    installSessionPort();
   });
 
   it("create + getById — 写入并读取 Profile", () => {

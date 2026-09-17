@@ -22,6 +22,8 @@
  *   - llm/tools/note-operations.ts (create_note/edit_note/link_notes/delete_note)
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import * as fs from "fs";
+import * as path from "path";
 
 vi.mock("../core/file-api", () => ({
   executeCommand: vi.fn(),
@@ -35,36 +37,87 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
 import { setStoragePort } from "../core/storage/port";
-import { createFakeStoragePort } from "./fake-storage-port";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import {
   createNotebook, getNotebook, listNotebooks, deleteNotebook,
   addSource, listSources, getSource,
   createNote, getNote, listNotes, updateNote, deleteNote, addNoteLink,
+  getGraphData, getGraphEdgeById,
 } from "../core/knowledge/storage";
+import { getFlashcard, listFlashcards } from "../core/knowledge/flashcard-store";
 import { createDefaultToolRegistry } from "../core/llm/tools";
 
 const NOTEBOOK_ID = "nb-km-test";
 const NOTEBOOK_NAME = "知识管理测试笔记本";
 
-function setupNotebook(): void {
-  const db = getDatabase();
-  const now = Date.now();
-  db.run(
-    `INSERT INTO notebooks (id, name, description, summary, summary_status, source_count, chunk_count, group_id, created_at, updated_at)
-     VALUES (?, ?, ?, NULL, 'pending', 0, 0, NULL, ?, ?)`,
-    [NOTEBOOK_ID, NOTEBOOK_NAME, "测试用", now, now]
-  );
+// ========== 端口夹具（第 18 轮，L1） ==========
+//
+// 本文件原来的夹具是**裸 SQL 打旧库**（`INSERT INTO notebooks …` / `INSERT INTO flashcards …`）。
+// 旧库在 rust 模式下刻意不加载（`setup.ts` 也不再 `initDatabase()`），产品在端口模式下
+// 只读写**存储端口** —— 所以夹具改成"端口播种"，断言改用产品读接口。
+
+/** 引擎建库执行的 DDL（`codem-db` 侧）：表是否存在的真源 */
+const SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+);
+
+/** 该表是否在引擎 schema 里声明（等价于旧库那一次 `sqlite_master` 查询） */
+function schemaDeclaresTable(table: string): boolean {
+  return new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(`).test(SCHEMA_SQL);
 }
+
+/** 端口命令播种：等价于原来的 `INSERT INTO <表> (...) VALUES (...)` */
+async function seedRows(
+  target: FakeStoragePort,
+  table: string,
+  rows: Array<Record<string, unknown>>,
+): Promise<void> {
+  await target.data.execute("crud.upsert", { table, rows });
+}
+
+/** 笔记本预置行（线协议形状，与 `notebookToWire` 的列一一对应） */
+function notebookRow(id: string, name: string, now = Date.now()): Record<string, unknown> {
+  return {
+    id,
+    name,
+    description: "测试用",
+    summary: null,
+    summary_status: "pending",
+    source_count: 0,
+    chunk_count: 0,
+    group_id: null,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+/**
+ * 每个用例一个干净端口，并把笔记本预置进去。
+ *
+ * 为什么预置必须落在端口：`create_note` 工具第一件事就是 `getNotebook(notebookId)` 校验存在性，
+ * 而它读的是**域镜像**；`domainWrite` 也只写镜像 + 写穿。原来的 `setupNotebook()` 打的是旧库，
+ * 端口模式下镜像里根本没有这一行（KM-057 因此红过）—— 夹具的位置必须是产品真正读的那一侧。
+ */
+function setupNotebook(): FakeStoragePort {
+  const port = createFakeStoragePort({
+    seed: { notebooks: [notebookRow(NOTEBOOK_ID, NOTEBOOK_NAME)] },
+  });
+  setStoragePort(port);
+  return port;
+}
+
+/** 当前用例的端口（各 describe 的 `beforeEach` 里由 `setupNotebook()` 赋值） */
+let port: FakeStoragePort;
 
 // ========== A. 笔记 CRUD 与版本历史 ==========
 
 describe("知识管理 — 笔记 CRUD 与版本历史", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    // 第 18 轮（L1）：`resetDatabase()` / `initDatabase()` 已删（只为旧库存在的清理）
     localStorage.clear();
-    setupNotebook();
+    port = setupNotebook();
   });
 
   // KM-001
@@ -150,16 +203,14 @@ describe("知识管理 — 笔记 CRUD 与版本历史", () => {
   // KM-009
   it("KM-009: addNoteLink 创建笔记间链接", () => {
     /*
-     * 链接现在住在**端口**（域镜像）里：断言改成读端口表 `note_links`。
+     * 链接住在**端口**（域镜像）里：断言读端口表 `note_links`。
      *
      * 原来断言的是 `db.exec("SELECT * FROM note_links …")` —— 端口模式下产品写的是端口、
      * 旧库那侧一行都没有，于是 `result[0]` 是 undefined（用例红）。
-     * 本用例自己注册端口，是为了两种态（A 态 / 端口模式）下行为一致：
-     * A 态下 setup 注册的是 null，若不注册端口，写入会落到旧库、端口表读出来是空的。
+     * 端口由本文件的 `beforeEach`（`setupNotebook()`）注册，这里直接用它 ——
+     * 原来的注释还在说"若不注册端口，写入会落到旧库"，那是 A 态（端口未注册）的形态，
+     * 已随回滚开关退役（第 17/18 轮）：端口是唯一形态。
      */
-    const port = createFakeStoragePort();
-    setStoragePort(port);
-
     const noteA = createNote({ notebookId: NOTEBOOK_ID, title: "A", content: "c", contentType: "markdown" });
     const noteB = createNote({ notebookId: NOTEBOOK_ID, title: "B", content: "c", contentType: "markdown" });
     addNoteLink(noteA.id, noteB.id, "关联到B");
@@ -170,14 +221,9 @@ describe("知识管理 — 笔记 CRUD 与版本历史", () => {
   });
 
   // KM-010
-  it("KM-010: listNotes 空笔记本返回空数组", () => {
-    const db = getDatabase();
-    const now = Date.now();
-    db.run(
-      `INSERT INTO notebooks (id, name, description, summary, summary_status, source_count, chunk_count, group_id, created_at, updated_at)
-       VALUES (?, ?, NULL, NULL, 'pending', 0, 0, NULL, ?, ?)`,
-      ["nb-empty", "空", now, now]
-    );
+  it("KM-010: listNotes 空笔记本返回空数组", async () => {
+    // 原来这里 `INSERT INTO notebooks` 造了第二本空笔记本（旧库）；现在播进端口
+    await seedRows(port, "notebooks", [notebookRow("nb-empty", "空")]);
     expect(listNotes("nb-empty")).toEqual([]);
   });
 
@@ -214,14 +260,8 @@ describe("知识管理 — 笔记 CRUD 与版本历史", () => {
   });
 
   // KM-015
-  it("KM-015: 多笔记本笔记隔离", () => {
-    const db = getDatabase();
-    const now = Date.now();
-    db.run(
-      `INSERT INTO notebooks (id, name, description, summary, summary_status, source_count, chunk_count, group_id, created_at, updated_at)
-       VALUES (?, ?, NULL, NULL, 'pending', 0, 0, NULL, ?, ?)`,
-      ["nb-2", "笔记本2", now, now]
-    );
+  it("KM-015: 多笔记本笔记隔离", async () => {
+    await seedRows(port, "notebooks", [notebookRow("nb-2", "笔记本2")]);
     createNote({ notebookId: NOTEBOOK_ID, title: "NB1", content: "c", contentType: "markdown" });
     createNote({ notebookId: "nb-2", title: "NB2", content: "c", contentType: "markdown" });
     expect(listNotes(NOTEBOOK_ID).length).toBe(1);
@@ -232,17 +272,15 @@ describe("知识管理 — 笔记 CRUD 与版本历史", () => {
 // ========== B. 闪卡存储与复习调度 ==========
 
 describe("知识管理 — 闪卡存储", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
-    setupNotebook();
+    port = setupNotebook();
   });
 
   // KM-016
   it("KM-016: flashcards 表存在", () => {
-    const db = getDatabase();
-    const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='flashcards'");
-    expect(result[0].values.length).toBe(1);
+    // 原判据是旧库 `sqlite_master`；表的真源是引擎 schema（引擎建库执行的就是它）
+    expect(schemaDeclaresTable("flashcards"), "引擎 schema 必须声明 flashcards").toBe(true);
   });
 
   // KM-017
@@ -252,41 +290,58 @@ describe("知识管理 — 闪卡存储", () => {
   });
 
   // KM-018
-  it("KM-018: 闪卡可直接写入 DB", () => {
-    const db = getDatabase();
-    db.run(
-      "INSERT INTO flashcards (id, notebook_id, note_id, front, back, ease_factor, interval_days, next_review, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ["fc-1", NOTEBOOK_ID, null, "问题", "答案", 2.5, 0, Date.now(), Date.now(), Date.now()]
-    );
-    const result = db.exec("SELECT front, back FROM flashcards WHERE id = ?", ["fc-1"]);
-    expect(result[0].values[0][0]).toBe("问题");
-    expect(result[0].values[0][1]).toBe("答案");
+  it("KM-018: 闪卡可写入存储并读回", async () => {
+    /*
+     * 原来是 `INSERT INTO flashcards (id, notebook_id, …) VALUES (…)` + `SELECT front, back …`。
+     * 夹具换成**端口命令**（`crud.upsert`，与端口模式下产品写穿的命令同一条），
+     * 读断言换成**产品读接口** `getFlashcard` —— 读写两端都还在判据里，且落在产品真正用的数据源上。
+     */
+    const now = Date.now();
+    await seedRows(port, "flashcards", [
+      {
+        id: "fc-1", notebook_id: NOTEBOOK_ID, note_id: null, front: "问题", back: "答案",
+        tags: null, ease_factor: 2.5, interval_days: 0, repetitions: 0,
+        next_review: now, created_at: now, updated_at: now,
+      },
+    ]);
+
+    const loaded = getFlashcard("fc-1");
+    expect(loaded!.front).toBe("问题");
+    expect(loaded!.back).toBe("答案");
   });
 
   // KM-019
-  it("KM-019: 多张闪卡共存", () => {
-    const db = getDatabase();
-    for (let i = 0; i < 5; i++) {
-      db.run(
-        "INSERT INTO flashcards (id, notebook_id, note_id, front, back, ease_factor, interval_days, next_review, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [`fc-${i}`, NOTEBOOK_ID, null, `Q${i}`, `A${i}`, 2.5, i, Date.now(), Date.now(), Date.now()]
-      );
-    }
-    const result = db.exec("SELECT COUNT(*) FROM flashcards WHERE notebook_id = ?", [NOTEBOOK_ID]);
-    expect(result[0].values[0][0]).toBe(5);
+  it("KM-019: 多张闪卡共存", async () => {
+    const now = Date.now();
+    await seedRows(
+      port,
+      "flashcards",
+      Array.from({ length: 5 }, (_, i) => ({
+        id: `fc-${i}`, notebook_id: NOTEBOOK_ID, note_id: null, front: `Q${i}`, back: `A${i}`,
+        tags: null, ease_factor: 2.5, interval_days: i, repetitions: 0,
+        next_review: now, created_at: now, updated_at: now,
+      })),
+    );
+    // 原来断言的是 `SELECT COUNT(*) FROM flashcards WHERE notebook_id = ?`
+    expect(listFlashcards(NOTEBOOK_ID)).toHaveLength(5);
   });
 
   // KM-020
-  it("KM-020: 闪卡 difficulty 字段范围 0-5", () => {
-    const db = getDatabase();
-    for (const diff of [0, 1, 2, 3, 4, 5]) {
-      db.run(
-        "INSERT INTO flashcards (id, notebook_id, note_id, front, back, ease_factor, interval_days, next_review, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [`fc-d${diff}`, NOTEBOOK_ID, null, `Q${diff}`, `A${diff}`, 2.5, diff, Date.now(), Date.now(), Date.now()]
-      );
-    }
-    const result = db.exec("SELECT interval_days FROM flashcards WHERE notebook_id = ? ORDER BY interval_days", [NOTEBOOK_ID]);
-    const intervals = result[0].values.map((r: any[]) => r[0]);
+  it("KM-020: 闪卡 difficulty 字段范围 0-5", async () => {
+    const now = Date.now();
+    await seedRows(
+      port,
+      "flashcards",
+      [0, 1, 2, 3, 4, 5].map((d) => ({
+        id: `fc-d${d}`, notebook_id: NOTEBOOK_ID, note_id: null, front: `Q${d}`, back: `A${d}`,
+        tags: null, ease_factor: 2.5, interval_days: d, repetitions: 0,
+        next_review: now, created_at: now, updated_at: now,
+      })),
+    );
+    // 原来断言的是 `SELECT interval_days … ORDER BY interval_days` → [0,1,2,3,4,5]
+    const intervals = listFlashcards(NOTEBOOK_ID)
+      .map((c) => c.intervalDays)
+      .sort((a, b) => a - b);
     expect(intervals).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
@@ -296,24 +351,20 @@ describe("知识管理 — 闪卡存储", () => {
 // ========== C. 知识图谱 ==========
 
 describe("知识管理 — 知识图谱", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
-    setupNotebook();
+    port = setupNotebook();
   });
 
   // KM-026
   it("KM-026: graph_nodes 表存在", () => {
-    const db = getDatabase();
-    const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='graph_nodes'");
-    expect(result[0].values.length).toBe(1);
+    // 原判据是旧库 `sqlite_master`；表的真源是引擎 schema（引擎建库执行的就是它）
+    expect(schemaDeclaresTable("graph_nodes"), "引擎 schema 必须声明 graph_nodes").toBe(true);
   });
 
   // KM-027
   it("KM-027: graph_edges 表存在", () => {
-    const db = getDatabase();
-    const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='graph_edges'");
-    expect(result[0].values.length).toBe(1);
+    expect(schemaDeclaresTable("graph_edges"), "引擎 schema 必须声明 graph_edges").toBe(true);
   });
 
   // KM-028
@@ -323,33 +374,35 @@ describe("知识管理 — 知识图谱", () => {
   });
 
   // KM-029
-  it("KM-029: 图谱节点可直接写入", () => {
-    const db = getDatabase();
-    db.run(
-      "INSERT INTO graph_nodes (id, notebook_id, label, entity_type, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["gn-1", NOTEBOOK_ID, "React", "技术", "desc", Date.now()]
-    );
-    const result = db.exec("SELECT label FROM graph_nodes WHERE id = ?", ["gn-1"]);
-    expect(result[0].values[0][0]).toBe("React");
+  it("KM-029: 图谱节点可直接写入", async () => {
+    const now = Date.now();
+    await seedRows(port, "graph_nodes", [
+      {
+        id: "gn-1", notebook_id: NOTEBOOK_ID, label: "React", entity_type: "技术",
+        description: "desc", source_ids: null, chunk_ids: null, weight: 1.0, community_id: null,
+        created_at: now,
+      },
+    ]);
+    // 读断言走产品接口（原来是一次裸 SELECT）
+    const nodes = getGraphData(NOTEBOOK_ID).nodes;
+    expect(nodes.map((n) => n.label)).toContain("React");
   });
 
   // KM-030
-  it("KM-030: 图谱边可直接写入", () => {
-    const db = getDatabase();
-    db.run(
-      "INSERT INTO graph_nodes (id, notebook_id, label, entity_type, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["gn-src", NOTEBOOK_ID, "Node1", "技术", "desc", Date.now()]
-    );
-    db.run(
-      "INSERT INTO graph_nodes (id, notebook_id, label, entity_type, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["gn-tgt", NOTEBOOK_ID, "Node2", "技术", "desc", Date.now()]
-    );
-    db.run(
-      "INSERT INTO graph_edges (id, notebook_id, source_node_id, target_node_id, relation_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["ge-1", NOTEBOOK_ID, "gn-src", "gn-tgt", "depends_on", Date.now()]
-    );
-    const result = db.exec("SELECT relation_type FROM graph_edges WHERE id = ?", ["ge-1"]);
-    expect(result[0].values[0][0]).toBe("depends_on");
+  it("KM-030: 图谱边可直接写入", async () => {
+    const now = Date.now();
+    const node = (id: string, label: string) => ({
+      id, notebook_id: NOTEBOOK_ID, label, entity_type: "技术", description: "desc",
+      source_ids: null, chunk_ids: null, weight: 1.0, community_id: null, created_at: now,
+    });
+    await seedRows(port, "graph_nodes", [node("gn-src", "Node1"), node("gn-tgt", "Node2")]);
+    await seedRows(port, "graph_edges", [
+      {
+        id: "ge-1", notebook_id: NOTEBOOK_ID, source_node_id: "gn-src", target_node_id: "gn-tgt",
+        relation_type: "depends_on", weight: 1.0, created_at: now,
+      },
+    ]);
+    expect(getGraphEdgeById("ge-1")!.relationType).toBe("depends_on");
   });
 
   // KM-031 ~ KM-035 removed — were empty placeholders
@@ -358,10 +411,9 @@ describe("知识管理 — 知识图谱", () => {
 // ========== D. 导出/导入 ==========
 
 describe("知识管理 — 导出/导入", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
-    setupNotebook();
+    port = setupNotebook();
   });
 
   // KM-036
@@ -408,37 +460,16 @@ describe("知识管理 — 学习路径 + PPT", () => {
 describe("知识管理 — note-operations 工具执行", () => {
   let registry: ReturnType<typeof createDefaultToolRegistry>;
 
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
-    setupNotebook();
     /*
      * 笔记本预置进**端口**（`create_note` 工具第一件事就是 `getNotebook(notebookId)` 校验存在性，
-     * 而它读的是域镜像）。`setupNotebook()` 写的是旧库 —— 端口模式下镜像里没有这行，
+     * 而它读的是域镜像；`domainWrite` 也只写镜像 + 写穿）。第 18 轮后夹具的唯一位置就是端口 ——
+     * 原来这里额外 seed 一遍，是因为 `setupNotebook()` 写的是旧库、镜像里没有这行，
      * 工具于是返回 `Error: Notebook not found`（KM-057 红：title 回落到 'Create Note'）。
-     * 这里用假端口 seed 把笔记本预置好，两种态下 `getNotebook` 都从端口读到同一份数据。
+     * 现在 `setupNotebook()` 本身就是端口播种，这一份重复的 seed 随之删掉。
      */
-    const now = Date.now();
-    setStoragePort(
-      createFakeStoragePort({
-        seed: {
-          notebooks: [
-            {
-              id: NOTEBOOK_ID,
-              name: NOTEBOOK_NAME,
-              description: "测试用",
-              summary: null,
-              summary_status: "pending",
-              source_count: 0,
-              chunk_count: 0,
-              group_id: null,
-              created_at: now,
-              updated_at: now,
-            },
-          ],
-        },
-      }),
-    );
+    port = setupNotebook();
     registry = createDefaultToolRegistry();
   });
 

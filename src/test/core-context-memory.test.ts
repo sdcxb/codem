@@ -23,7 +23,12 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import * as fs from "fs";
+import * as path from "path";
+
+import { getStoragePort } from "../core/storage/port";
+import { MemoryService } from "../core/memory/memory";
+import type { FakeStoragePort } from "./fake-storage-port";
 import {
   ContextManager,
   type CompactionConfig,
@@ -32,6 +37,24 @@ import {
 import type { Message } from "../store";
 
 // ========== 辅助函数 ==========
+
+/**
+ * **存储 schema 的真源**（第 18 轮，L1）。
+ *
+ * 这里原来用 `getDatabase().exec("SELECT name FROM sqlite_master WHERE name='memory'")`
+ * 问旧引擎"表建出来没有"。旧库在 rust 模式下**刻意不加载**（`setup.ts` 也不再 `initDatabase()`），
+ * 而引擎建库执行的就是这份 `schema.sql`（`codem-db` 侧 `migrate.rs`）—— 所以判据换成读它：
+ * 断言的对象（"这张表在存储里存在"）与强度都没变，只是**真源从旧库的目录表搬到了 Rust 侧 schema**。
+ */
+const SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+);
+
+/** `schema.sql` 是否声明了这张表（等价于旧库那一次 `sqlite_master` 查询） */
+function schemaDeclaresTable(table: string): boolean {
+  return new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(`).test(SCHEMA_SQL);
+}
 
 function makeMessages(count: number, contentSize: number = 100): Message[] {
   const messages: Message[] = [];
@@ -52,8 +75,12 @@ function makeMessages(count: number, contentSize: number = 100): Message[] {
 describe("上下文压缩 — ContextManager 预算计算", () => {
   let cm: ContextManager;
 
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    /*
+     * 第 18 轮（L1）：这里原来的 `resetDatabase()` / `initDatabase()` 是**只为旧库存在**的清理。
+     * `setup.ts` 每个用例前都注册一个干净的内存端口（旧引擎刻意不加载），端口本身就是空的，
+     * 所以这一段没有存在的必要 —— 留着只会让"测试依赖旧引擎"这件事继续隐身。
+     */
     localStorage.clear();
     cm = new ContextManager();
   });
@@ -113,8 +140,12 @@ describe("上下文压缩 — ContextManager 预算计算", () => {
 describe("上下文压缩 — 压力等级", () => {
   let cm: ContextManager;
 
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    /*
+     * 第 18 轮（L1）：这里原来的 `resetDatabase()` / `initDatabase()` 是**只为旧库存在**的清理。
+     * `setup.ts` 每个用例前都注册一个干净的内存端口（旧引擎刻意不加载），端口本身就是空的，
+     * 所以这一段没有存在的必要 —— 留着只会让"测试依赖旧引擎"这件事继续隐身。
+     */
     localStorage.clear();
   });
 
@@ -147,8 +178,12 @@ describe("上下文压缩 — 压力等级", () => {
 });
 
 describe("上下文压缩 — 自定义配置", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    /*
+     * 第 18 轮（L1）：这里原来的 `resetDatabase()` / `initDatabase()` 是**只为旧库存在**的清理。
+     * `setup.ts` 每个用例前都注册一个干净的内存端口（旧引擎刻意不加载），端口本身就是空的，
+     * 所以这一段没有存在的必要 —— 留着只会让"测试依赖旧引擎"这件事继续隐身。
+     */
     localStorage.clear();
   });
 
@@ -211,64 +246,91 @@ describe("上下文压缩 — AgenticLoop 集成", () => {
 });
 
 describe("记忆系统 — Memory Service", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    /*
+     * 第 18 轮（L1）：这里原来的 `resetDatabase()` / `initDatabase()` 是**只为旧库存在**的清理。
+     * `setup.ts` 每个用例前都注册一个干净的内存端口（旧引擎刻意不加载），端口本身就是空的，
+     * 所以这一段没有存在的必要 —— 留着只会让"测试依赖旧引擎"这件事继续隐身。
+     */
     localStorage.clear();
   });
 
+  /** 当前用例的存储端口（`setup.ts` 每例注册一个内存假端口） */
+  function port(): FakeStoragePort {
+    return getStoragePort() as unknown as FakeStoragePort;
+  }
+
+  // CTXT-016
   it("CTXT-016: memory 表存在", () => {
-    const db = getDatabase();
-    const result = db.exec("SELECT name FROM sqlite_master WHERE name='memory'");
-    expect(result.length).toBeGreaterThan(0);
+    expect(schemaDeclaresTable("memory"), "memory 表必须由引擎 schema 建出").toBe(true);
   });
 
+  /**
+   * CTXT-017 ~ CTXT-020：**记忆存取走产品路径 + 端口**（第 18 轮，L1）。
+   *
+   * 原来这四条直接用裸 SQL 打旧库的 `memory` 表（`INSERT` / `SELECT` / `UPDATE` / `DELETE`）。
+   * 旧库在 rust 模式下刻意不存在，而且产品**根本不读写那张表** —— 记忆走的是
+   * `saveMemory` / `loadMemory`（配置面扩展域：内存镜像 + `memory.set` 写穿）。
+   * 判据因此换成端口语义，断言的对象（"记忆内容存得进、读得回"）与强度保持不变：
+   *   ① 写入必须**写穿到端口**（`memory.set`）—— 只改内存不算存下来；
+   *   ② 读取走**产品路径**：新建一个 `MemoryService` 从存储重新加载（等价于原来那次 SELECT）。
+   */
   it("CTXT-017: 写入和读取 memory", () => {
-    const db = getDatabase();
-    const now = Date.now();
-    db.run("INSERT INTO memory (id, content, updated_at) VALUES (?, ?, ?)", ["mem-1", "记忆内容", now]);
+    const svc = new MemoryService();
+    const entry = svc.add({ scope: "global", key: "k1", content: "记忆内容" });
 
-    const result = db.exec("SELECT content FROM memory WHERE id = ?", ["mem-1"]);
-    expect(result[0].values[0][0]).toBe("记忆内容");
+    expect(
+      port().__writes().some((w) => w.command === "memory.set"),
+      "记忆必须写穿到端口（只改内存不算存下来）",
+    ).toBe(true);
+
+    const reloaded = new MemoryService();
+    expect(reloaded.get(entry.id)!.content).toBe("记忆内容");
   });
 
+  // CTXT-018
   it("CTXT-018: 更新 memory", () => {
-    const db = getDatabase();
-    const now = Date.now();
-    db.run("INSERT INTO memory (id, content, updated_at) VALUES (?, ?, ?)", ["mem-2", "旧内容", now]);
-    db.run("UPDATE memory SET content = ?, updated_at = ? WHERE id = ?", ["新内容", Date.now(), "mem-2"]);
+    const svc = new MemoryService();
+    const entry = svc.add({ scope: "global", key: "k2", content: "旧内容" });
+    expect(svc.update(entry.id, { content: "新内容" })).toBe(true);
 
-    const result = db.exec("SELECT content FROM memory WHERE id = ?", ["mem-2"]);
-    expect(result[0].values[0][0]).toBe("新内容");
+    const reloaded = new MemoryService();
+    expect(reloaded.get(entry.id)!.content).toBe("新内容");
   });
 
+  // CTXT-019
   it("CTXT-019: 删除 memory", () => {
-    const db = getDatabase();
-    db.run("INSERT INTO memory (id, content, updated_at) VALUES (?, ?, ?)", ["mem-del", "内容", Date.now()]);
-    db.run("DELETE FROM memory WHERE id = ?", ["mem-del"]);
+    const svc = new MemoryService();
+    const entry = svc.add({ scope: "global", key: "k3", content: "内容" });
+    expect(svc.delete(entry.id)).toBe(true);
 
-    const result = db.exec("SELECT * FROM memory WHERE id = ?", ["mem-del"]);
-    expect(result.length === 0 || result[0].values.length === 0).toBe(true);
+    // 删除同样要落库：重载后不得复活（原来断言的是"旧库里查不到这行了"）
+    const reloaded = new MemoryService();
+    expect(reloaded.get(entry.id), "删除后重新加载不得再出现").toBeUndefined();
   });
 
+  // CTXT-020
   it("CTXT-020: memory 中文内容正确存储", () => {
-    const db = getDatabase();
     const content = "这是一段中文记忆 🧠";
-    db.run("INSERT INTO memory (id, content, updated_at) VALUES (?, ?, ?)", ["mem-cn", content, Date.now()]);
+    const svc = new MemoryService();
+    const entry = svc.add({ scope: "global", key: "k4", content });
 
-    const result = db.exec("SELECT content FROM memory WHERE id = ?", ["mem-cn"]);
-    expect(result[0].values[0][0]).toBe(content);
+    const reloaded = new MemoryService();
+    expect(reloaded.get(entry.id)!.content).toBe(content);
   });
 });
 
 describe("上下文压缩 — 恢复数据", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    /*
+     * 第 18 轮（L1）：这里原来的 `resetDatabase()` / `initDatabase()` 是**只为旧库存在**的清理。
+     * `setup.ts` 每个用例前都注册一个干净的内存端口（旧引擎刻意不加载），端口本身就是空的，
+     * 所以这一段没有存在的必要 —— 留着只会让"测试依赖旧引擎"这件事继续隐身。
+     */
     localStorage.clear();
   });
 
   it("CTXT-015: recovery_data 表存在", () => {
-    const db = getDatabase();
-    const result = db.exec("SELECT name FROM sqlite_master WHERE name='recovery_data'");
-    expect(result.length).toBeGreaterThan(0);
+    expect(schemaDeclaresTable("recovery_data"), "recovery_data 表必须由引擎 schema 建出").toBe(true);
   });
 });

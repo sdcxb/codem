@@ -15,12 +15,18 @@
  * | `rebuildSessionFts` | `isFts5Available()` 恒 false → 直接返回 | 新消息**永远搜不到** |
  *
  * 所以这里的断言只有两条主线：
- * 1. **B 态（端口在 rust）不得碰旧库** —— 用 `legacyQuery` 计数守住（0 次）；
- * 2. **写/删必须真的落到端口**（命令 + 参数形状），并且**权威日志/墓碑照写** ——
- *    少任何一条都会退化成"假成功"或"消息复活"。
+ * 1. **写/删必须真的落到端口**（命令 + 参数形状），且端口表**真的少了一行**；
+ * 2. **权威日志/墓碑照写** —— 少任何一条都会退化成"假成功"或"消息复活"。
  *
- * A 态（端口未注册 / wasm 回滚）的行为由 `message-index-cutover.test.ts` 的 MSG-4/5/9 守住：
- * 那几条断言"端口不在时必须回退旧库"，与本文件正好构成两态对照。
+ * ⚠️ L1 收尾：本文件原来还有一条"B 态不得碰旧库"的判据（`vi.mock("../core/storage/database")`
+ * + `legacyQuery` 计数，逐条断言 `toBe(0)`）。它已经**不再是证据**，所以删掉：
+ *
+ * - `message.ts` 现在只 import `./port` / `./session-jsonl` 等，全仓没有模块再 import
+ *   `storage/database` —— 那个 mock 永远不会被触发，计数恒为 0；
+ * - `vi.mock` 指向的模块本身会随引擎一起删除，留着它下一步删引擎时本文件会先红。
+ *
+ * 契约没有丢：下面每条用例都断言**端口侧的可观测效果**（`__writes()` 里真的有那条命令、
+ * `__table()` 里那一行真的没了），这些判据真的会咬，比恒真的"没碰旧库"强。
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -45,22 +51,6 @@ vi.mock("../core/storage/session-jsonl", () => ({
   flushSessionLogWrites: async () => {},
 }));
 
-/** 旧库不可达（B 态下它就是"刻意不存在"）：任何一次访问都会被计数 */
-let legacyQuery = 0;
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    legacyQuery++;
-    throw new Error("Database not initialized. Call initDatabase() first.");
-  },
-  tryGetDatabase: () => {
-    legacyQuery++;
-    return null;
-  },
-  persistDatabase: () => {},
-  isFts5Available: () => false,
-  isDatabaseFatal: () => false,
-  noteDatabaseError: () => true,
-}));
 vi.mock("../core/storage/write-guard", () => ({
   runGuarded: () => undefined,
 }));
@@ -76,7 +66,6 @@ afterEach(() => {
   setStoragePort(null);
   logAppends.length = 0;
   tombstones.length = 0;
-  legacyQuery = 0;
   durableIds = new Set();
   vi.restoreAllMocks();
 });
@@ -114,7 +103,6 @@ describe("写路径覆盖（rust 模式）", () => {
     expect(upsert, "编辑必须落到端口（否则重启后回退）").toBeTruthy();
     expect((upsert?.params as Record<string, unknown>)?.content).toBe("编辑后的正文");
     expect(logAppends.at(-1)?.content, "权威日志也要更新（它才是权威副本）").toBe("编辑后的正文");
-    expect(legacyQuery, "B 态不得碰旧库").toBe(0);
   });
 
   it("PC-2: deleteMessagesAfter 按镜像算候选 + 真删 + 留墓碑 + 清全文索引", async () => {
@@ -130,7 +118,6 @@ describe("写路径覆盖（rust 模式）", () => {
     expect(port.__table("messages").map((r) => r.id), "端口侧也要真的少一行").toEqual(["m1", "m2"]);
     expect(tombstones, "删了不写墓碑 = 下次从日志合并时复活").toEqual([{ sessionId: "s1", id: "m3" }]);
     expect(port.__writes().some((w) => w.command === "fts.remove"), "虚拟表没有级联，要显式清").toBe(true);
-    expect(legacyQuery, "B 态不得碰旧库").toBe(0);
   });
 
   it("PC-2b: deleteMessagesAfter(includeSelf) 把目标自身也算进去", async () => {
@@ -150,7 +137,6 @@ describe("写路径覆盖（rust 模式）", () => {
     const { deleteMessagesAfter } = await import("../core/storage/message");
 
     expect(deleteMessagesAfter("s1", "m1"), "本次没有删除任何行 → 如实返回 0").toBe(0);
-    expect(legacyQuery, "未就绪也不许退回旧库（那会造成读写分裂）").toBe(0);
 
     /**
      * ⚠️ 假端口的 `ensureLoaded` 是**同步就绪**的（内存里本来就有数据），
@@ -200,7 +186,6 @@ describe("读路径覆盖（rust 模式）", () => {
     expect(loadFeedback("m1"), "历史反馈必须读得到（否则界面每次显示未评价）").toBe("like");
     expect(loadFeedback("m2"), "非法值按未评价处理（表上也有 CHECK 兜底）").toBe(null);
     expect(loadFeedback("m404")).toBe(null);
-    expect(legacyQuery, "B 态不得碰旧库").toBe(0);
   });
 
   it("PC-6: rebuildSessionFts 在 rust 模式下走 fts.rebuild 并把日志 id 作为 keep_ids", async () => {
@@ -218,7 +203,6 @@ describe("读路径覆盖（rust 模式）", () => {
     expect(call?.params).toMatchObject({ session_id: "s1" });
     expect(Array.isArray((call?.params as Record<string, unknown>)?.keep_ids)).toBe(true);
     expect(out).toEqual({ removed: 0, added: 0 });
-    expect(legacyQuery, "B 态不得碰旧库").toBe(0);
   });
 });
 
@@ -245,7 +229,6 @@ describe("维护路径覆盖（rust 模式）", () => {
     expect(out.deletedMessages, "只裁日志里有的那条（m1）").toBe(1);
     const del = port.__writes().filter((w) => w.command === "messages.delete").at(-1);
     expect((del?.params as Record<string, unknown>)?.ids).toEqual(["m1"]);
-    expect(legacyQuery, "B 态不得碰旧库（原来在这里抛错 → 裁剪从未执行过）").toBe(0);
   });
 
   it("PC-8: 日志覆盖为空时一条都不裁（耐久性不变量优先于体积）", async () => {

@@ -12,7 +12,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { FileChangeStorage } from "../core/storage/file-change-storage";
 import { FileChangeTracker, onFileChangesTracked, type FileChangeResult } from "../core/environment/file-change-tracker";
-import { resetDatabase, initDatabase, getDatabase } from "../core/storage/database";
+import { getStoragePort, setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { createTerminalOpenTool, createTerminalSendTool, createTerminalReadTool, createTerminalSignalTool, createTerminalCloseTool, createTerminalListTool, resetTerminalManagerForTest } from "../core/llm/tools/terminal-tools";
 import { createJobTools } from "../core/llm/tools/job-tools";
 import { handleTerminalKeyEvent } from "../core/llm/tools/terminal-key-handler";
@@ -49,17 +50,47 @@ function mockTauriInvoke(responses: Record<string, any>) {
   return invoke;
 }
 
-function ensureSession(sessionId: string) {
-  const db = getDatabase();
-  if (db) {
-    db.run("INSERT OR IGNORE INTO sessions (id, project_id, title, created_at, last_message_at) VALUES (?, ?, ?, ?, ?)", [sessionId, "", "Test", Date.now(), Date.now()]);
-  }
+/**
+ * 会话行夹具（**端口语义**，L1 收尾）。
+ *
+ * 原来这里是 `getDatabase().run("INSERT OR IGNORE INTO sessions …")` —— 往旧库塞一行
+ * 以满足外键约束。旧库（sql.js）在 rust 模式下刻意不加载，`FileChangeStorage`
+ * 读写的是**端口**，所以往旧库写法有两重问题：
+ *   1. 那份行与产品真正读写的那一侧无关（夹具自娱自乐）；
+ *   2. 删引擎时这一行会连带炸掉整个文件。
+ *
+ * 现在把同一行播种进**端口**：断言对象（`listBySession` / `getById` / `updateStatus`）
+ * 与强度一字未改，只是夹具落到了产品真正会读的地方。
+ * 行形状按线协议（snake_case）—— 端口表存的就是线协议行。
+ */
+function sessionRow(id: string, title = "Test"): Record<string, unknown> {
+  const now = Date.now();
+  return { id, project_id: "", title, created_at: now, last_message_at: now, message_count: 0 };
+}
+
+/** 注册一个只含这些会话行的干净端口（每个用例一份，避免跨用例串味） */
+function installSessionPort(...sessionIds: string[]): FakeStoragePort {
+  const port = createFakeStoragePort({ seed: { sessions: sessionIds.map((id) => sessionRow(id)) } });
+  setStoragePort(port);
+  return port;
+}
+
+/** 用例中途补一行会话（原来那条 INSERT OR IGNORE 的等价物） */
+function ensureSession(sessionId: string): void {
+  const port = getStoragePort() as unknown as FakeStoragePort;
+  void port.data.execute("crud.upsert", {
+    table: "sessions",
+    mode: "replace",
+    primaryKey: "id",
+    rows: [sessionRow(sessionId)],
+  });
 }
 
 describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
   beforeEach(async () => {
     delete (window as any).__TAURI__;
-    await initDatabase();
+    // 本组用例只驱动 git 命令与 emit，不读写存储：不再需要（也不可能）初始化旧引擎
+    installSessionPort();
   });
 
   it("start() — 非 Git 工作区返回 false", async () => {
@@ -151,12 +182,8 @@ describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
 describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
   beforeEach(async () => {
     delete (window as any).__TAURI__;
-    await initDatabase();
-    // Insert a parent session record to satisfy FK constraint
-    const db = getDatabase();
-    if (db) {
-      db.run("INSERT OR IGNORE INTO sessions (id, project_id, title, created_at, last_message_at) VALUES (?, ?, ?, ?, ?)", ["session-1", "", "Test Session", Date.now(), Date.now()]);
-    }
+    // 夹具换端口：`FileChangeStorage` 的读写都走域端口，旧库在 rust 模式下刻意不存在
+    installSessionPort("session-1");
   });
 
   it("create + getById — 写入并读取记录", () => {

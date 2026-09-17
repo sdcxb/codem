@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 配置面切换契约测试（P3）：`getSetting`/`setSetting` 在两种引擎下的行为。
  *
  * ## 这里的风险不是"功能坏了"，而是"看起来没坏"
@@ -8,9 +8,8 @@
  * 用户只会觉得"升级之后设置丢了"。所以这里逐条钉住：
  *
  * 1. 端口是 rust 时：读走内存缓存（同步）、写走写穿队列；
- * 2. 端口未注册（默认/回滚）时：**完全维持原 WASM 行为**；
- * 3. 首次切换时把旧库配置搬过来，且**只搬一次**（否则用户清空的设置会被搬回来）；
- * 4. 端口未预热时读要如实回退 + 留痕，不能假装有值。
+ * 2. 端口未注册时：**不抛、如实给默认值**（旧库路径已随 L4 删除，见下方说明）；
+ * 3. 端口未预热时读要如实回退 + 留痕，不能假装有值。
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,22 +17,20 @@ import { setStoragePort } from "../core/storage/port";
 import { getSetting, getSettingJSON, removeSetting, setSetting } from "../core/storage/settings";
 
 /**
- * 旧库（WASM）被 mock 掉：**切到 Rust 之后就不该再碰它**。
+ * ⚠️ L1 收尾：这里原来有一个 `vi.mock("../core/storage/database")`，
+ * 用 `legacyReads` / `legacyWrites` 两个计数器守"rust 引擎下不得访问旧库"。
  *
- * 这一点很重要：如果实现里漏了一处直连 `getDatabase()`，这里的 mock 会立刻报错
- * （"不应该访问旧库"），而不是等到用户那里才发现"两个库各写一半"。
+ * 它已经**不再是证据**，所以删掉：
+ *
+ * 1. `settings.ts` 现在只 import `./port` 与 `./domain-store` —— 全仓没有任何模块
+ *    再 import `storage/database`，那个 mock 永远不会被触发，
+ *    `expect(legacyReads).toBe(0)` 因此恒真（`legacyWrites` 甚至从没被断言过）；
+ * 2. 更重要的是：`vi.mock` 指向的**模块本身会随引擎一起删除** ——
+ *    留着一个指向不存在模块的 mock，下一步删引擎时整个文件会直接报"模块找不到"。
+ *
+ * 契约没有丢：下面每条用例都断言**端口侧的可观测效果**
+ * （读到缓存值 / `set` 被调用一次 / 未预热回退默认值），这些是真的会咬的判据。
  */
-let legacyReads = 0;
-let legacyWrites = 0;
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    legacyReads++;
-    throw new Error("旧库（WASM）不应在 rust 引擎下被访问");
-  },
-  persistDatabase: () => {
-    legacyWrites++;
-  },
-}));
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
   reportActionFailure: () => {},
@@ -85,19 +82,16 @@ function fakeRustPort(initial: Record<string, string> = {}) {
 afterEach(() => {
   setStoragePort(null);
   vi.restoreAllMocks();
-  legacyReads = 0;
-  legacyWrites = 0;
 });
 
 describe("配置面切换 —— rust 引擎下", () => {
-  it("SET-1: 端口已注册且是 rust → 读走端口缓存（同步、不碰 WASM 库）", async () => {
+  it("SET-1: 端口已注册且是 rust → 读走端口缓存（同步、不碰旧库）", async () => {
     const { port, config } = fakeRustPort({ theme: "dark" });
     await config.warmup();
     setStoragePort(port);
 
         expect(getSetting("theme")).toBe("dark");
     expect(getSetting("不存在")).toBeNull();
-    expect(legacyReads, "rust 引擎下不得访问旧库").toBe(0);
   });
 
   it("SET-2: 写走端口（内存即时生效 + 记录一次 set 调用）", async () => {
@@ -142,14 +136,21 @@ describe("配置面切换 —— rust 引擎下", () => {
   });
 });
 
-describe("配置面切换 —— 未注册端口（默认/回滚）", () => {
-  it("SET-6: 端口未注册时走原 WASM 路径（回滚开关生效的前提）", async () => {
+describe("配置面切换 —— 未注册端口（默认/回滚已退役）", () => {
+  it("SET-6: 端口未注册时读路径不抛、如实给默认值（旧库路径已删）", async () => {
     setStoragePort(null);
-        // WASM 库不可用（测试环境是 "Browser mode"）→ 原实现返回 null，而不是抛
+    /*
+     * 这条用例原来叫"走原 WASM 路径（回滚开关生效的前提）"：那时端口未注册 =
+     * 回滚到旧库，`getSetting` 会去读 WASM 库，测试环境（Browser mode）读出 null。
+     *
+     * 回滚开关与旧库路径都已删除，现在端口未注册就是**没有配置源**：
+     * 正确行为是"不抛、给默认值"（旧实现会抛，把一次读变成整块界面崩）。
+     * 断言本身（返回 null 而不是抛）没变，变的是它现在守的语义 —— 更严格了。
+     */
     expect(getSetting("任意键")).toBeNull();
   });
 
-  it("SET-7: 端口是 wasm 时同样走原路径（不误用端口）", async () => {
+  it("SET-7: 端口是 wasm 时不误用端口（回滚形态在生产里已不可能出现）", async () => {
     const wasmPort = {
       kind: "wasm" as const,
       engine: {} as never,

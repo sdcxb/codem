@@ -33,21 +33,39 @@ function installFsStub(): void {
 
 import { planCompactionKeep, alignKeepToRoundBoundary } from "../core/llm/compaction-budget";
 import { estimateTokens } from "../core/llm/token-tracker";
-import { getDatabase, initDatabase, resetDatabaseFatalState, resetSaveFailureState } from "../core/storage/database";
 import {
   createMessage, listMessages, deleteMessagesByIds, deleteMessage, hydrateSessionLog, clearSessionLogCache, listVisibleMessages,
 } from "../core/storage/message";
 import { flushSessionLogWrites, readSessionMessages, appendSessionMessage, __resetJsonlCache } from "../core/storage/session-jsonl";
-import { getStoragePort, hasStoragePort } from "../core/storage/port";
-import type { FakeStoragePort } from "./fake-storage-port";
+import { setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
 
-/** B 态（端口在 rust）时产品使用的内存假端口；A 态（`CODEM_TEST_PORT=0`）为 null */
-function activePort(): FakeStoragePort | null {
-  if (!hasStoragePort()) return null;
-  const port = getStoragePort();
-  return port.kind === "rust" ? (port as unknown as FakeStoragePort) : null;
+/**
+ * 注册一个**干净的空端口**并（可选）播种会话行。
+ *
+ * L1 收尾：夹具从"旧库 + 裸 SQL"换成端口。这里返回端口本身，供用例复刻
+ * "老版本只改了索引"这类**引擎侧现场**（CB-11 用）。
+ */
+function installPort(sessionIds: string[] = []): FakeStoragePort {
+  const port = createFakeStoragePort({
+    seed: {
+      sessions: sessionIds.map((id) => ({
+        id,
+        project_id: "",
+        title: "t",
+        created_at: 0,
+        last_message_at: 0,
+        message_count: 0,
+      })),
+    },
+  });
+  setStoragePort(port);
+  return port;
 }
+
+/** 本用例的端口（`beforeEach` 里注册） */
+let seededPort: FakeStoragePort;
 
 /**
  * ⚠️ **每个用例用独立的会话 id**（第 84 轮）。
@@ -156,16 +174,20 @@ describe("压缩后的读路径（真机上压缩必须真的变小）", () => {
     installFsStub();
     __resetJsonlCache();
     clearSessionLogCache();
-    resetSaveFailureState();
-    resetDatabaseFatalState();
     // 每条用例一个会话 id：见 SESSION_BASE 处的说明（模块级隐藏集合会跨用例串味）
     SESSION = `${SESSION_BASE}-${++caseSeq}`;
-    await initDatabase();
-    getDatabase().run("DELETE FROM messages");
-    getDatabase().run(
-      "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?,'','t',0,0,0)",
-      [SESSION],
-    );
+    /**
+     * 夹具换端口（L1 收尾）。
+     *
+     * 原来是 `initDatabase()` + 两条裸 SQL：`DELETE FROM messages` 清表、
+     * `INSERT OR REPLACE INTO sessions` 建会话行。旧库（sql.js）在 rust 模式下刻意不加载，
+     * 而读路径（`listMessages` / `listVisibleMessages` / 压缩删除）读的是**端口** ——
+     * 往旧库清表等于"清了一份没人读的库"。
+     *
+     * 现在注册一个干净的空端口并播种会话行：**"清 messages"由"新端口天然是空的"承担**，
+     * 断言（条数、id 列表、软删除不复活）逐条不变。
+     */
+    seededPort = installPort([SESSION]);
   });
 
   afterEach(() => {
@@ -251,20 +273,17 @@ describe("压缩后的读路径（真机上压缩必须真的变小）", () => {
     for (let i = 0; i < 10; i++) createMessage(mk(`m${i}`, 1000 + i), SESSION);
     await flushSessionLogWrites();
     const softIds = Array.from({ length: 7 }, (_, i) => `m${i}`);
-    const port = activePort();
-    if (port) {
-      /**
-       * B 态：索引就是**端口**，所以"老版本只改索引"要用端口命令复刻 ——
-       * `messages.delete {soft:true}` 只把 `hidden` 置 1，**不写墓碑**。
-       *
-       * 刻意不调用产品的 `deleteMessagesByIds`：它会顺带记进程内的隐藏集合，
-       * 那就不是"日志里干干净净、只有索引知道"的现场了（本用例考的正是这一条）。
-       */
-      await port.data.execute("messages.delete", { ids: softIds, soft: true });
-    } else {
-      const db = getDatabase();
-      for (const id of softIds) db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [id]);
-    }
+    /**
+     * 索引就是**端口**，所以"老版本只改索引"要用端口命令复刻 ——
+     * `messages.delete {soft:true}` 只把 `hidden` 置 1，**不写墓碑**。
+     *
+     * 刻意不调用产品的 `deleteMessagesByIds`：它会顺带记进程内的隐藏集合，
+     * 那就不是"日志里干干净净、只有索引知道"的现场了（本用例考的正是这一条）。
+     *
+     * （原来的 A 态分支 `getDatabase().run("UPDATE messages SET hidden = 1 …")` 已随
+     * A 态删除：旧库在 rust 模式下刻意不加载，产品读的也从来不是它。）
+     */
+    await seededPort.data.execute("messages.delete", { ids: softIds, soft: true });
     clearSessionLogCache();
     __resetJsonlCache();
     await hydrateSessionLog(SESSION); // 日志里 10 条都在，且没有墓碑

@@ -4,6 +4,29 @@
  *
  * 背景：用户改造长会话（124+ 消息、大量工具结果）时，sql-asm.js 固定 21MB
  * 堆耗尽 → memory.fill 越界 → DB 损坏。修复：切换到 sql-asm-memory-growth.js。
+ *
+ * ---
+ *
+ * ## ⚠️ L1（删 sql.js）本批判定：**保留**（不删），点名交给"旧库夹具迁移"批次
+ *
+ * 理由（判据：删掉引擎之后，这些断言的行为由谁守）：
+ *
+ * | 断言 | 性质 | 谁守 / 怎么处置 |
+ * | --- | --- | --- |
+ * | `expect(() => persistDatabase()).not.toThrow()`、`await flushDatabase()` | **旧引擎**（整库导出 + WASM 堆） | 随 sql.js 消失：渲染进程里不再有 WASM 堆，也没有"整库导出"这个动作。迁移时**直接删掉这两行断言** |
+ * | `listMessages(sessionId)` 读回 400 条 | **产品行为**（大会话可读、不丢） | 等价覆盖在 `db-contract.test.ts` **C19**（250 条逐页读不重不漏、总数等于写入数）与 Rust `messages_list_pagination_is_exact`。夹具迁移时保留本条断言 |
+ * | 单条大工具结果在端口表 `tool_calls.result` 里逐字保留（130 KB / 5 MB） | **产品行为**（大 payload 不截断） | 契约等价：`db-contract.test.ts` **C11**（单条往返保真，≈500 KB 中文/emoji/换行逐字比对）+ Rust `message_roundtrip_including_unicode_and_large_content`（1 MiB 正文往返）。**量级差异留着**：见下面的建议 |
+ *
+ * **保留的实质理由**：这是**唯一**在 130 KB / 5 MB 量级上走**渲染侧**写入链
+ * （`createMessage` → 端口 `messages.upsert_index` → `tool_calls`）的用例，
+ * 而 rust 引擎对单次查询有**硬上限** `MAX_BYTES_PER_QUERY = 16 MiB`
+ * （`src-tauri/codem-db/src/engine.rs:23`，经 `capabilities.max_bytes_per_query` 暴露）。
+ * 5 MB 工具结果正好处在这个上限的同一量级 —— 这类"离上限多远"的问题值得留一条用例盯着，
+ * 不能因为"它是为 sql.js 堆写的"就连同数据保真一起丢掉。
+ *
+ * **迁移待办（下一批）**：删掉 `initDatabase/resetDatabase/persistDatabase/flushDatabase` 这些
+ * 生命周期调用与两条"不抛 trap"断言，让 `beforeEach` 只依赖端口；
+ * 并建议把大 payload 保真同时补进 `db-contract.test.ts`（对真 CLI，而不是只在假端口上）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase, resetDatabase, getDatabase, persistDatabase, flushDatabase } from "../core/storage/database";

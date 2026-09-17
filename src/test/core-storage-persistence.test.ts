@@ -2,18 +2,26 @@
  * 测试：存储/迁移/持久化 — STOR-001 ~ STOR-020
  *
  * 覆盖范围：
- *   1. 数据库初始化与重置
- *   2. 迁移机制
- *   3. Settings 存储
- *   4. 项目/会话 CRUD
- *   5. delegation_tasks 表
- *   6. 级联删除
- *   7. 编码兼容
- *   8. 并发写入
+ *   1. 存储 schema（表 / 索引 / 外键）与全局项目种子
+ *   2. Settings 存储
+ *   3. 项目/会话 CRUD
+ *   4. delegation_tasks 表
+ *   5. 级联删除
+ *   6. 编码兼容
+ *   7. 并发写入
+ *
+ * 第 18 轮（L1）：本文件原来用 `getDatabase()` 把旧库（sql.js）当**夹具与 schema 目录**用。
+ * 旧库在 rust 模式下刻意不加载（`setup.ts` 也不再 `initDatabase()`），所以：
+ *   - 数据夹具一律走**端口**（产品在 rust 模式下只读写端口）；
+ *   - schema 类断言（表 / 列 / 索引 / 外键 / 全局项目种子）指向**引擎侧真源**
+ *     （`src-tauri/codem-db/sql/schema.sql` + `src/schema.rs`），那才是引擎建库执行的东西。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import * as fs from "fs";
+import * as path from "path";
+
 import { getStoragePort, setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
 import { createRustEngineSemanticsPort } from "./rust-engine-semantics-port";
 import type { FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
@@ -34,6 +42,49 @@ import type { Message } from "../store";
 
 const PROJECT_ID = "proj-stor-test";
 const SESSION_ID = "sess-stor-test";
+
+// ========== 引擎侧 schema 真源（第 18 轮新增） ==========
+
+/** 引擎建库执行的 DDL（`codem-db` 侧 `schema.rs` 读的就是它） */
+const SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "../../src-tauri/codem-db/sql/schema.sql"),
+  "utf-8",
+);
+/** 引擎建库代码（建表之后种下全局项目的那一段） */
+const RUST_SCHEMA_RS = fs.readFileSync(
+  path.join(__dirname, "../../src-tauri/codem-db/src/schema.rs"),
+  "utf-8",
+);
+
+/** 该表是否在引擎 schema 里声明（等价于旧库那一次 `sqlite_master` 查询） */
+function schemaDeclaresTable(table: string): boolean {
+  return new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(`).test(SCHEMA_SQL);
+}
+
+/** 某张表的建表语句原文（等价于旧库 `SELECT sql FROM sqlite_master WHERE name=?`） */
+function createTableSql(table: string): string {
+  const m = SCHEMA_SQL.match(
+    new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(([\\s\\S]*?)\\n\\);`),
+  );
+  if (!m) throw new Error(`引擎 schema 里没有表 ${table}`);
+  return m[0];
+}
+
+/** 该表在引擎 schema 里声明的列名（等价于旧库 `PRAGMA table_info(t)` 的 name 列） */
+function schemaColumns(table: string): string[] {
+  return createTableSql(table)
+    .split("\n")
+    .slice(1) // 去掉 `CREATE TABLE … (`
+    .map((line) => line.trim().replace(/,$/, ""))
+    .filter((line) => line.length > 0 && !/^\)/.test(line))
+    .filter((line) => !/^(FOREIGN|PRIMARY|UNIQUE|CHECK|CONSTRAINT)\b/i.test(line))
+    .map((line) => line.split(/\s+/)[0]);
+}
+
+/** 该表上是否有索引（等价于旧库 `sqlite_master WHERE type='index' AND tbl_name=?`） */
+function schemaHasIndexOn(table: string): boolean {
+  return new RegExp(`CREATE INDEX[^;]*\\bON\\s+${table}\\s*\\(`).test(SCHEMA_SQL);
+}
 
 function setupBaseData(): void {
   ProjectStorage.createProject({
@@ -60,78 +111,81 @@ function makeDelegationTask(overrides: Partial<DelegationTask> = {}): Delegation
 }
 
 describe("存储 — 数据库初始化与 Schema", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
+    // 第 18 轮（L1）：`resetDatabase()` / `initDatabase()` 是**只为旧库存在**的清理，已删 ——
+    // `setup.ts` 每例注册一个干净的内存端口，端口本身就是空的。
     localStorage.clear();
   });
 
   // STOR-001
-  it("STOR-001: initDatabase 创建所有核心表", () => {
-    const db = getDatabase();
-    const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
-    const tableNames = tables.length > 0 ? tables[0].values.map((r: any[]) => r[0] as string) : [];
-
-    expect(tableNames).toContain("projects");
-    expect(tableNames).toContain("sessions");
-    expect(tableNames).toContain("messages");
-    expect(tableNames).toContain("tool_calls");
-    expect(tableNames).toContain("attachments");
-    expect(tableNames).toContain("settings");
-    expect(tableNames).toContain("delegation_tasks");
-    expect(tableNames).toContain("memory");
-    expect(tableNames).toContain("recovery_data");
-    expect(tableNames).toContain("cost_records");
+  it("STOR-001: 引擎 schema 声明了所有核心表", () => {
+    /*
+     * 原来是 `initDatabase()` 之后查旧库的 `sqlite_master`。
+     * 建库的活现在整个在引擎侧（`codem-db`），渲染进程不再自己建表 ——
+     * 所以判据换成"引擎建库用的那份 DDL 里有没有这些表"，对象与强度不变。
+     */
+    for (const table of [
+      "projects", "sessions", "messages", "tool_calls", "attachments",
+      "settings", "delegation_tasks", "memory", "recovery_data", "cost_records",
+    ]) {
+      expect(schemaDeclaresTable(table), `引擎 schema 必须声明表 ${table}`).toBe(true);
+    }
   });
 
   // STOR-002
-  it("STOR-002: resetDatabase 清空数据但保留结构", async () => {
+  it("STOR-002: 重置存储后数据清空、结构保留", () => {
     ProjectStorage.createProject({
       id: "temp-proj", name: "临时", path: "/tmp",
       createdAt: Date.now(), lastAccessedAt: Date.now(),
     });
     expect(ProjectStorage.getProject("temp-proj")).not.toBeNull();
 
-    // Reset should clear all data
-    await resetDatabase();
+    /*
+     * 第 18 轮：原来这段是 `await resetDatabase()` + `SELECT COUNT(*) FROM projects WHERE id='temp-proj'`，
+     * 而那个断言在端口模式下是**恒真的假绿** —— 项目行写进的是端口，旧库里从来没有过这一行，
+     * 所以"重置后旧库计数为 0"在重置前后都成立（判据守着一条已经没人走的路径）。
+     * `resetDatabase()` 本身是旧引擎专用入口（会删掉 codem-db.bin 迁移源，rust 模式下已拒绝），
+     * 渲染侧已无重置入口 —— 等价的重置语义是"数据面清零"。判据因此拆成端口语义的两条：
+     *   ① 数据确实没了（产品读不到那条项目）；
+     *   ② 结构没有跟着消失（引擎 schema 仍然声明这些表）。
+     */
+    setStoragePort(createFakeStoragePort());
 
-    const db = getDatabase();
-    const result = db.exec("SELECT COUNT(*) FROM projects WHERE id = 'temp-proj'");
-    expect(result[0].values[0][0]).toBe(0);
-
-    // But table structure should still exist
-    const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'");
-    expect(tables.length).toBeGreaterThan(0);
+    expect(ProjectStorage.getProject("temp-proj"), "重置后不得再读到旧数据").toBeNull();
+    expect(schemaDeclaresTable("projects"), "结构不随数据清空而消失").toBe(true);
+    expect(schemaDeclaresTable("messages"), "结构不随数据清空而消失").toBe(true);
   });
 
   // STOR-003
-  it("STOR-003: 全局 project (id='') 自动种子", () => {
-    const db = getDatabase();
-    const result = db.exec("SELECT id, name FROM projects WHERE id = ''");
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].values[0][0]).toBe("");
+  it("STOR-003: 全局 project (id='') 由引擎种子", () => {
+    /*
+     * 原来是 `SELECT id, name FROM projects WHERE id = ''`（旧库）。
+     * 种子行现在由引擎在建表后立刻种下（`codem-db/src/schema.rs`：`INSERT OR IGNORE INTO projects`
+     * 绑定 id=""），渲染侧不建库也不种这一行 —— 所以判据指向那段真实现。
+     * 断言的对象不变：**引擎初始化后必然存在 id='' 的全局项目**（否则全局会话撞外键）。
+     */
+    expect(
+      /INSERT OR IGNORE INTO projects[\s\S]{0,400}?params!\[\s*""\s*,/.test(RUST_SCHEMA_RS),
+      "引擎 schema.rs 必须种下 id='' 的全局项目（全局会话的外键依赖它）",
+    ).toBe(true);
   });
 
   // STOR-004
   it("STOR-004: messages 表索引存在", () => {
-    const db = getDatabase();
-    const indexes = db.exec("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='messages'");
-    const indexNames = indexes.length > 0 ? indexes[0].values.map((r: any[]) => r[0] as string) : [];
-    expect(indexNames.length).toBeGreaterThan(0);
+    expect(schemaHasIndexOn("messages"), "messages 必须有索引（会话消息查询不得全表扫）").toBe(true);
   });
 
   // STOR-005
   it("STOR-005: tool_calls 表外键关联 messages", () => {
-    const db = getDatabase();
-    // Verify FK exists by checking schema SQL
-    const schema = db.exec("SELECT sql FROM sqlite_master WHERE name='tool_calls'");
-    expect(schema[0].values[0][0]).toContain("FOREIGN KEY");
-    expect(schema[0].values[0][0]).toContain("message_id");
+    // 原来是查 `sqlite_master.sql` 里的建表语句；现在读同一份 DDL 的引擎侧真源
+    const sql = createTableSql("tool_calls");
+    expect(sql).toContain("FOREIGN KEY");
+    expect(sql).toContain("message_id");
   });
 });
 
 describe("存储 — Settings CRUD", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
   });
 
@@ -179,8 +233,7 @@ describe("存储 — Settings CRUD", () => {
 });
 
 describe("存储 — 项目 CRUD", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
   });
 
@@ -262,25 +315,21 @@ describe("存储 — 项目 CRUD", () => {
 });
 
 describe("存储 — delegation_tasks 表", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
     setupBaseData();
   });
 
   // STOR-013
   it("STOR-013: delegation_tasks 表存在且有正确列", () => {
-    const db = getDatabase();
-    const schema = db.exec("SELECT sql FROM sqlite_master WHERE name='delegation_tasks'");
-    expect(schema.length).toBeGreaterThan(0);
-    const sql = schema[0].values[0][0] as string;
-    expect(sql).toContain("id");
-    expect(sql).toContain("source_session_id");
-    expect(sql).toContain("target_session_id");
-    expect(sql).toContain("task");
-    expect(sql).toContain("status");
-    expect(sql).toContain("project_id");
-    expect(sql).toContain("created_at");
+    // 原来是查旧库 `sqlite_master.sql`（`SELECT sql FROM sqlite_master WHERE name='delegation_tasks'`）
+    expect(schemaDeclaresTable("delegation_tasks"), "引擎 schema 必须声明 delegation_tasks").toBe(true);
+    const columns = schemaColumns("delegation_tasks");
+    for (const column of [
+      "id", "source_session_id", "target_session_id", "task", "status", "project_id", "created_at",
+    ]) {
+      expect(columns, `delegation_tasks 必须有列 ${column}`).toContain(column);
+    }
   });
 
   // STOR-014
@@ -360,16 +409,16 @@ describe("存储 — delegation_tasks 表", () => {
   });
 
   it("STOR-020: getActiveDelegations 性能——不全表扫描（有索引）", () => {
-    const db = getDatabase();
-    const indexes = db.exec("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='delegation_tasks'");
-    // delegation_tasks should have at least one index
-    expect(indexes.length).toBeGreaterThan(0);
+    // 原来是查旧库 `sqlite_master` 里 delegation_tasks 上的索引
+    expect(
+      schemaHasIndexOn("delegation_tasks"),
+      "delegation_tasks 必须有索引（活跃委派查询不得全表扫）",
+    ).toBe(true);
   });
 });
 
 describe("存储 — 编码兼容", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
     setupBaseData();
   });
@@ -406,8 +455,7 @@ describe("存储 — 编码兼容", () => {
 });
 
 describe("存储 — 并发写入", () => {
-  beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
+  beforeEach(() => {
     localStorage.clear();
     setupBaseData();
   });

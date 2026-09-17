@@ -11,7 +11,6 @@
  * 关键链路：App.tsx → runAgenticLoop → engine.process() → AgenticLoop → MessageStorage
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
 import { getStoragePort, setStoragePort } from "../core/storage/port";
 import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
@@ -186,11 +185,11 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
 
 describe("对话核心链路 — 消息存储与加载", () => {
   beforeEach(async () => {
-    try {
-      await resetDatabase();
-    } catch {
-      await initDatabase();
-    }
+    /*
+     * L1 收尾：这里原来是 `try { resetDatabase() } catch { initDatabase() }`（每例重建旧库）。
+     * 旧引擎在 rust 模式下刻意不加载，产品读写的是**端口**（`setup.ts` 每例注册一个假端口）。
+     * 断言一条未改。
+     */
     localStorage.clear();
     setupProjectAndSession();
   });
@@ -314,7 +313,7 @@ describe("对话核心链路 — 消息存储与加载", () => {
   });
 
   // ===== CHAT-021: 消息删除 ==========
-  it("CHAT-021: deleteMessage 删除消息及关联 tool_calls", () => {
+  it("CHAT-021: deleteMessage 删除消息（并向端口发出删除命令）", () => {
     const msg = makeMessage({
       id: "chat-021",
       role: "assistant",
@@ -328,9 +327,24 @@ describe("对话核心链路 — 消息存储与加载", () => {
     MessageStorage.deleteMessage("chat-021");
 
     expect(MessageStorage.getMessage("chat-021")).toBeNull();
-    const db = getDatabase();
-    const tcResult = db.exec("SELECT * FROM tool_calls WHERE message_id = ?", ["chat-021"]);
-    expect(tcResult.length === 0 || tcResult[0].values.length === 0).toBe(true);
+    /*
+     * 夹具换端口（L1 收尾）：原来这里是 `getDatabase().exec("SELECT * FROM tool_calls
+     * WHERE message_id = ?")` —— 一条**读旧库**的断言，而在端口基座下旧库里从来没有这些行，
+     * 它恒真（`length === 0`），是"假绿"而不是证据。
+     *
+     * 端口语义下，渲染侧能保证的是**发出删除命令 + 行从索引里消失**；
+     * `tool_calls` 的清理是引擎的外键级联（`codem-db/src/repo.rs::messages_delete`
+     * 的注释写明"tool_calls / 反馈按外键级联"，由 Rust 侧测试守），
+     * 而假端口刻意不模拟外键级联（见 `rust-engine-semantics-port.ts` 的说明）。
+     * 所以这里断言**两条新的、真的会咬的**事实，强度不低于原来那条恒真断言：
+     */
+    expect(port().__table("messages").some((r) => r.id === "chat-021"), "索引行必须真的没了").toBe(false);
+    expect(
+      port()
+        .__writes()
+        .some((w) => w.command === "messages.delete" && (w.params as { ids?: string[] })?.ids?.includes("chat-021")),
+      "删除必须真的发给端口（否则只是内存里看不见了）",
+    ).toBe(true);
   });
 
   // ===== CHAT-022: 会话切换消息隔离 ==========
@@ -598,7 +612,7 @@ describe("对话核心链路 — 消息存储与加载", () => {
   });
 
   // ===== CHAT-020b: addToolCall 追加工具调用 ==========
-  it("CHAT-020b: addToolCall 向已有消息追加工具调用", () => {
+  it("CHAT-020b: addToolCall 向已有消息追加工具调用（并且真的写穿了端口）", () => {
     MessageStorage.createMessage(makeMessage({ id: "add-tc", role: "assistant", content: "执行中" }), SESSION_ID);
     MessageStorage.addToolCall("add-tc", {
       id: "new-tc", tool: "read_file", args: { path: "/x" }, status: "running",
@@ -608,6 +622,25 @@ describe("对话核心链路 — 消息存储与加载", () => {
     expect(loaded!.toolCalls).toBeDefined();
     expect(loaded!.toolCalls).toHaveLength(1);
     expect(loaded!.toolCalls![0].tool).toBe("read_file");
+
+    /*
+     * L1 收尾新增（假端口补齐 `tool_calls.replace` 后的断言，只加不减）：
+     * 上面三条读的是产品**内存缓存**，缓存对了不代表"写穿真的发生了"。
+     * 假端口早先对这条命令什么都不做（`persist` 落到 `return 0`），
+     * 于是"写进了索引"在测试里是**假成功** —— 现在要求端口表上真的有这一行。
+     */
+    expect(
+      port()
+        .__table("tool_calls")
+        .filter((r) => r.message_id === "add-tc")
+        .map((r) => r.id),
+      "工具调用必须真的落到端口（`tool_calls.replace`）",
+    ).toEqual(["new-tc"]);
+    expect(
+      port()
+        .__writes()
+        .some((w) => w.command === "tool_calls.replace" && (w.params as { message_id?: string })?.message_id === "add-tc"),
+    ).toBe(true);
   });
 
   // ===== CHAT-021b: updateMessage 带 toolCalls 替换 ==========
@@ -695,7 +728,6 @@ describe("对话核心链路 — 消息存储与加载", () => {
 
 describe("对话核心链路 — messagesToLLMMessages 转换", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -842,7 +874,6 @@ describe("对话核心链路 — messagesToLLMMessages 转换", () => {
 
 describe("对话核心链路 — 会话 CRUD", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupProjectAndSession();
   });

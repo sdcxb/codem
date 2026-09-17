@@ -54,40 +54,25 @@ function installFsStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import {
-  getDatabase,
-  initDatabase,
-  resetDatabaseFatalState,
-  resetSaveFailureState,
-  runDatabaseMaintenance,
-} from "../core/storage/database";
+import { runDatabaseMaintenance } from "../core/storage/database";
 import { createMessage, getAttachmentContent, clearSessionLogCache, rebuildSessionFts, listMessages } from "../core/storage/message";
 import { clearExternalContentCache, DEFAULT_EXTERNALIZE_THRESHOLD, FILE_CONTENT_PREFIX } from "../core/storage/attachment-files";
 import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
-import { setStoragePort, getStoragePort, hasStoragePort } from "../core/storage/port";
+import { setStoragePort, getStoragePort } from "../core/storage/port";
+import { createFakeStoragePort } from "./fake-storage-port";
+import type { FakeStoragePort } from "./fake-storage-port";
 
 /**
- * 读一条附件行：**端口优先**（第 14 轮之后附件写入已端口化），A 态回退旧库。
+ * 读一条附件行：**只读端口**（第 18 轮，L1）。
  *
- * 为什么必须这样读：B 态下 `createMessage` 的附件行走 `crud.upsert {table:"attachments"}`，
- * 旧库里没有这一行 —— 直接 `getDatabase().exec(...)` 会拿到 `undefined`（用例假红）。
+ * 原来这里是"端口优先、A 态回退旧库 `getDatabase().exec(...)`"。A 态（旧库是唯一数据源）
+ * 已随 L4 删除 —— `createMessage` 的附件行走 `crud.upsert {table:"attachments"}`，
+ * 旧库里**刻意没有**这一行（`setup.ts` 也不再初始化旧库），所以那条回退分支只剩
+ * "抛错 / 拿到空行"两种结局，留着它只会掩盖"端口里到底有没有这一行"。
  */
 function attachmentRow(id: string): Record<string, unknown> | undefined {
-  /**
-   * ⚠️ A 态下 `getStoragePort()` 是**抛错**的（"端口尚未注册"），不是返回 null ——
-   * 所以这里必须先判 `hasStoragePort()`，否则 A 态用例会整体红（实测踩到）。
-   */
-  if (hasStoragePort()) {
-    const port = getStoragePort() as unknown as {
-      __table?: (n: string) => Array<Record<string, unknown>>;
-    };
-    const fromPort = port?.__table?.("attachments")?.find((r) => String(r.id) === id);
-    if (fromPort) return fromPort;
-  }
-  const rows = getDatabase().exec("SELECT content, preview FROM attachments WHERE id = ?", [id]);
-  if (rows.length === 0 || rows[0].values.length === 0) return undefined;
-  const v = rows[0].values[0];
-  return { id, content: v[0], preview: v[1] };
+  const port = getStoragePort() as unknown as FakeStoragePort;
+  return port.__table("attachments").find((r) => String(r.id) === id);
 }
 import type { Message } from "../store";
 
@@ -105,26 +90,31 @@ function msgWithAttachment(id: string, attId: string, content: string, timestamp
   } as unknown as Message;
 }
 
-beforeEach(async () => {
+/**
+ * 夹具（第 18 轮，L1）：**端口播种**，不再初始化旧库。
+ *
+ * 原来是 `await initDatabase()` + 四条裸 SQL（三条 DELETE 清表 + 一条
+ * `INSERT OR REPLACE INTO sessions` 补外键父行）。A 态已删：
+ * `setup.ts` 每例注册一个**全新**的内存假端口，所以清表不需要了；
+ * 父行按端口语义**播种**（`seed.sessions`）—— 产品在 B 态只读写端口，
+ * 往旧库插父行不等于"端口里有这个会话"。
+ */
+beforeEach(() => {
   installFsStub();
   __resetJsonlCache();
   clearSessionLogCache();
   clearExternalContentCache();
-  resetSaveFailureState();
-  resetDatabaseFatalState();
-  await initDatabase();
-  const db = getDatabase();
-  db.run("DELETE FROM messages");
-  db.run("DELETE FROM attachments");
-  db.run("DELETE FROM session_fts");
-  db.run(
-    "INSERT OR REPLACE INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES ('sess-att','','t',0,0,0)",
-  );
+  const p = createFakeStoragePort({
+    seed: {
+      sessions: [
+        { id: SESSION, project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 },
+      ],
+    },
+  });
+  setStoragePort(p);
 });
 
 afterEach(() => {
-  resetDatabaseFatalState();
-  resetSaveFailureState();
   delete (window as any).__TAURI__;
   __resetJsonlCache();
   clearSessionLogCache();
@@ -217,7 +207,6 @@ describe("全文索引一致性（收尾项）", () => {
   });
 
   it("FTS-2(B 态): 端口在时对齐交给 Rust 侧（绝不静默什么都不做）", async () => {
-    const { createFakeStoragePort } = await import("./fake-storage-port");
     const port = createFakeStoragePort();
     setStoragePort(port);
     const { appendSessionMessage } = await import("../core/storage/session-jsonl");

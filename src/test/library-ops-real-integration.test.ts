@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { setGlobalSubagentRuntime } from "../core/subagent";
-import { flushDatabase } from "../core/storage/database";
+import { getStoragePort, hasStoragePort } from "../core/storage/port";
 import { loadDefaultDeps, collectSnapshotSync, type AdapterDeps } from "../plugins/library-ops/core/telemetry-adapter";
 
 const SESSION_ID = "sess-real-1";
@@ -108,10 +108,16 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
   // 并触发 500ms 防抖持久化；不清掉定时器就结束文件会触发
   // "Worker exited unexpectedly"（与 src/test/setup.ts 的 afterAll 同一处理思路）
   afterAll(async () => {
+    /*
+     * L1 收尾：这里原来是 `await flushDatabase()` —— **旧引擎**的"落盘队列排空"。
+     * 旧引擎（sql.js）已不在本进程（`initDatabase()` 在 rust 模式下直接抛），
+     * 端口侧的等价物是**只追加面队列排空**（`append.flush()`，见 port.ts 的
+     * "等待队列排空（退出前 / 测试用）"）。断言一条未改，只是把收尾动作换到了活着的那个面上。
+     */
     try {
-      await flushDatabase();
+      if (hasStoragePort()) await getStoragePort().append.flush();
     } catch {
-      /* 浏览器模式下无落盘，忽略 */
+      /* 端口没有只追加面（个别自定义测试双）→ 忽略：这一步只是收尾排空 */
     }
     await new Promise((r) => setTimeout(r, 200));
   });

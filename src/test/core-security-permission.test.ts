@@ -11,7 +11,6 @@
  *   - tools.ts: sandbox 检查 (checkSandbox)
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { getDatabase } from "../core/storage/database";
 
 // Mock agent registry
 vi.mock("../core/agent/agent", () => ({
@@ -487,9 +486,16 @@ describe("权限 — SQL 注入防护", () => {
   });
 
   it("SECU-024b: Session 标题含 SQL 注入字符串", async () => {
-    const { initDatabase } = await import("../core/storage/database");
-    try { await (await import("../core/storage/database")).resetDatabase(); } catch { await initDatabase(); }
-
+    /*
+     * L1 收尾（夹具换端口）：这里原来是
+     * `resetDatabase() / initDatabase()` + `getDatabase().exec("SELECT name FROM
+     * sqlite_master WHERE name='messages'")`（末句证明"表没被注入串删掉"）。
+     * 旧库在 rust 模式下刻意不加载 —— 那两句读的是一份**没人写的库**。
+     *
+     * 端口语义下同一件事就是"`messages` 域在注入串之后照常可写可读"：
+     * 写一条 → 读回来。断言对象（注入串完整存下来 + 存储没被搞坏）与强度都没有放宽，
+     * 后半句还从"表名还在"升级成了"真的能写能读"。
+     */
     const SessionStorage = await import("../core/storage/session");
     const ProjectStorage = await import("../core/storage/project");
     ProjectStorage.createProject({
@@ -506,9 +512,12 @@ describe("权限 — SQL 注入防护", () => {
     const loaded = SessionStorage.getSession("sqli-sess");
     expect(loaded!.title).toBe("'; DROP TABLE messages;--");
 
-    // messages table should still exist
-    const db = getDatabase();
-    const result = db.exec("SELECT name FROM sqlite_master WHERE name='messages'");
-    expect(result.length).toBeGreaterThan(0);
+    // 注入串之后 `messages` 域必须照常可写可读
+    const MessageStorage = await import("../core/storage/message");
+    MessageStorage.createMessage(
+      { id: "sqli-msg", role: "user", content: "注入之后的消息", timestamp: Date.now(), status: "done" } as never,
+      "sqli-sess",
+    );
+    expect(MessageStorage.getMessage("sqli-msg")?.content).toBe("注入之后的消息");
   });
 });

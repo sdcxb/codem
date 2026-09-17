@@ -3,7 +3,7 @@
  *
  * ## 为什么需要它
  *
- * 删掉 L3 回退分支（22 个模块、约 150 个 `getDatabase()`）的前置条件是：
+ * 删掉 L3 回退分支（22 个模块、约 150 处旧库句柄调用）的前置条件是：
  * **测试必须跑在端口上**，而不是跑在即将被删掉的旧引擎路径上。
  *
  * 否则会出现最坏的一种情况：测试全绿，但它们验证的是我们马上就要删掉的那条路，
@@ -19,6 +19,14 @@
  * - **不是** wire 契约的替身：Rust 侧真实契约由 `cargo test` 的契约测试 + 真机验证守住。
  * - **不是**"让测试变绿"的开关：写穿失败会真抛、镜像未加载会如实 `isLoaded=false`，
  *   所以路由层与上报层的 bug 照样暴露。
+ *
+ * ## 命令清单的边界（L1 收尾，第 19 轮）
+ *
+ * 这里实现的命令名**逐一对照** `src-tauri/codem-db/src/lib.rs` 的 `COMMANDS`
+ * （真引擎只认白名单里的名字，渲染侧发别的名字会拿到 `UNSUPPORTED`）。
+ * 本文件早先还实现过两条**引擎里根本不存在**的命令（`crud.replace_table` /
+ * `crud.delete_where`，是 `domain-store.ts` 的**审计标签**，没有任何调用点真的发它们）——
+ * 那等于"假端口接受真引擎会拒绝的命令"，已删除。
  */
 
 import type {
@@ -148,12 +156,6 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       tables.set(name, kept);
       return removed;
     }
-    if (command === "crud.replace_table") {
-      const name = String(params?.table ?? "");
-      const rows = (params?.rows as Row[] | undefined) ?? [];
-      tables.set(name, rows.map(cloneRow));
-      return rows.length;
-    }
     /**
      * 索引写命令：真实 Rust 侧是单事务复合命令（主行 + 两个 JSON 列 + 整批替换 tool_calls）。
      * 这里按同一语义落到内存表：`messages` 存主行，`tool_calls` 整批替换。
@@ -211,6 +213,36 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         preview: preview === undefined || preview === null ? target[idx].preview : preview,
       };
       return 1;
+    }
+    /**
+     * `tool_calls.replace`：**整批替换**某条消息的工具调用（真 Rust 实现见
+     * `codem-db/src/repo.rs::tool_calls_replace`，命令名在 `COMMANDS` 白名单里）。
+     *
+     * 为什么必须补齐（第 19 轮，L1 收尾）：
+     *
+     * 1. 产品的 `addToolCall` / `updateToolCall`（`message.ts`）走的就是它 ——
+     *    假端口早先对这条命令**什么都不做**（`persist` 落到末尾 `return 0`），
+     *    于是"工具调用写进了索引"在测试里是**假成功**：内存表里一行都没有；
+     * 2. 配套的读命令 `tool_calls.list`（见 `command()`）正是从这张表读的 ——
+     *    只补读不补写，假端口会自相矛盾（写完读不到），把产品路径引到"它坏了"的错觉上。
+     *
+     * 语义逐条对齐 Rust：目标消息**必须存在**（否则报 `not found`，绝不写孤儿行）；
+     * 先删该消息的全部旧行，再整批插入（`tool_calls: []` = 清空）。
+     */
+    if (command === "tool_calls.replace") {
+      const messageId = String(params?.message_id ?? "");
+      if (!messageId) throw new Error("fake-port: tool_calls.replace 缺少 message_id");
+      const calls = params?.tool_calls;
+      if (!Array.isArray(calls)) throw new Error("fake-port: tool_calls.replace 的 tool_calls 必须是数组");
+      if (!table("messages").some((r) => r.id === messageId)) {
+        throw new Error(`fake-port: messages 里没有 id=${messageId}（不能写入孤儿工具调用）`);
+      }
+      tables.set(
+        "tool_calls",
+        table("tool_calls").filter((r) => r.message_id !== messageId),
+      );
+      for (const c of calls as Row[]) table("tool_calls").push({ ...cloneRow(c), message_id: messageId });
+      return (calls as Row[]).length;
     }
     if (command === "messages.delete") {
       /*
@@ -284,13 +316,6 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         }
       }
       return flat.length;
-    }
-    if (command === "crud.delete_where") {
-      const name = String(params?.table ?? "");
-      const where = (params?.where as Record<string, unknown> | undefined) ?? {};
-      const before = table(name).length;
-      tables.set(name, table(name).filter((r) => !matches(r, where)));
-      return before - table(name).length;
     }
     return 0;
   }
@@ -546,6 +571,34 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
      * 于是"自检判据"这条最关键的逻辑**在测试基座里从来没有被真正执行过**。
      */
     async command<T = Record<string, unknown>>(command: string, params?: Record<string, unknown>): Promise<T> {
+      /**
+       * `tool_calls.list`：**读**命令（真实现见 `codem-db/src/repo.rs::tool_calls_list`）。
+       *
+       * 必须补它的理由（第 19 轮，L1 收尾的"最后一处噪音"）：产品的
+       * `warmToolCalls`（`message.ts`）用 `command`（而不是 `execute`）读工具调用 ——
+       * 因为 `execute` 会把结果压成 `{written}`，永远拿不到 `items`（第 14 轮踩过）。
+       * 而假端口早先对这条命令落到末尾的 `throw 未实现的命令` → 每次读工具调用都产出一批
+       * "未实现的命令 tool_calls.list" 噪音，且**预热恒失败**（缓存永远空）——
+       * 测试里看到的"读完读不到"是基座缺陷，不是产品行为。
+       *
+       * 返回形状与 Rust 逐字对齐：`{ items, has_more, next_cursor }`，items 按 `id ASC`
+       * 稳定排序（`repo.rs` 的 `ORDER BY id ASC`）。
+       *
+       * ⚠️ 这是**读**命令：刻意不写 `writeLog`（否则 `__writes()` 会混进读调用，
+       * 而它是"确实写穿了"的判据）。
+       */
+      if (command === "tool_calls.list") {
+        const messageId = String(params?.message_id ?? "");
+        const items = table("tool_calls")
+          .filter((r) => r.message_id === messageId)
+          .map(cloneRow)
+          .sort((a, b) => {
+            const ai = String(a.id ?? "");
+            const bi = String(b.id ?? "");
+            return ai < bi ? -1 : ai > bi ? 1 : 0;
+          });
+        return { items, has_more: false, next_cursor: null } as unknown as T;
+      }
       writeLog.push({ command, params });
       if (command === "crud.count") {
         const name = String(params?.table ?? "");
@@ -835,7 +888,14 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       },
       deleteEventsAsync: (sid: string) => {
         try {
-          persist("events.delete", { session_id: sid });
+          /**
+           * 落库标签用**真命令名** `events.delete_session`（`COMMANDS` 白名单里的那一个）。
+           *
+           * 早先这里写的是 `events.delete` —— 那个名字在真引擎里**不存在**
+           * （会得到 `UNSUPPORTED`）。`__writes()` 是"确实写穿了"的判据，
+           * 标签不能是假端口自己发明的名字，否则断言的是与真引擎无关的字符串。
+           */
+          persist("events.delete_session", { session_id: sid });
           tables.set(
             "session_events",
             table("session_events").filter((r) => r.session_id !== sid),

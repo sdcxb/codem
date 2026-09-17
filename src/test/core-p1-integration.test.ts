@@ -28,32 +28,56 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
-import { getStoragePort, hasStoragePort } from "../core/storage/port";
+import { getStoragePort } from "../core/storage/port";
 import { createDefaultToolRegistry, type ToolDef } from "../core/llm/tools";
 import type { ClarificationFormData } from "../core/llm/agentic-loop";
 import { loadTodoList, updateTodoStatus } from "../core/llm/tools/show-todo";
 import { useAppStore } from "../store";
 import { createMessage as _createMessage, updateMessageContent as _updateMessageContent, getMessage as _getMessage } from "../core/storage/message";
-import { getDatabase } from "../core/storage/database";
 import type { TodoItem } from "../core/llm/agentic-loop";
 
 const PROJECT_ID = "proj-p1-test";
 const SESSION_ID = "sess-p1-test";
 
+/** 端口上的域镜像写入口（迁移期扩展能力，`FakeStoragePort` 的接口没声明它） */
+type DomainWriter = {
+  domains?: { applyWrite(table: string, row: Record<string, unknown>, primaryKey?: string): void };
+};
+
+/**
+ * 预置工程 / 会话行（**端口语义**，L1 收尾）。
+ *
+ * 原来这里是 `getDatabase().run("INSERT INTO projects …")` + `sessions` —— 往旧库塞父行
+ * 以满足外键约束。而 `createMessage` / `updateMessageContent` 现在走**端口**
+ * （`messages.upsert_index`），旧库在 rust 模式下刻意不加载（`initDatabase()` 直接抛）。
+ * 所以这两行必须落到端口：断言对象与强度不变，只是夹具换了存储。
+ */
 function setupBase(): void {
-  const db = getDatabase();
-  db.run("INSERT INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
-    [PROJECT_ID, "P1测试", "D:/p1", Date.now(), Date.now()]);
-  db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
-    [SESSION_ID, PROJECT_ID, "P1测试会话", Date.now(), Date.now(), 0]);
+  const domains = (getStoragePort() as unknown as DomainWriter).domains;
+  const now = Date.now();
+  domains?.applyWrite("projects", {
+    id: PROJECT_ID,
+    name: "P1测试",
+    path: "D:/p1",
+    description: null,
+    pinned: 0,
+    created_at: now,
+    last_accessed_at: now,
+  });
+  domains?.applyWrite("sessions", {
+    id: SESSION_ID,
+    project_id: PROJECT_ID,
+    title: "P1测试会话",
+    created_at: now,
+    last_message_at: now,
+    message_count: 0,
+  });
 }
 
 // ========== A. ClarificationFormData 类型与事件 ==========
 
 describe("P1 集成 — ClarificationFormData 类型与事件", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -196,7 +220,6 @@ describe("P1 集成 — ClarificationFormData 类型与事件", () => {
 
 describe("P1 集成 — CorrectionResultPanel 数据结构", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -322,7 +345,6 @@ describe("P1 集成 — CorrectionResultPanel 数据结构", () => {
 
 describe("P1 集成 — PipelineNextStepDialog 上下文构建", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
@@ -434,41 +456,30 @@ describe("P1 集成 — PipelineNextStepDialog 上下文构建", () => {
 // ========== D. Todo 工具与 DB 持久化 ==========
 
 /**
- * `todo_lists` 的预置入口（P5 端口化的标准做法：数据必须放进**产品真正会读的那一侧**）。
+ * `todo_lists` 的预置入口（**端口语义**，L1 收尾）。
  *
- * `loadTodoList` / `updateTodoStatus` 现在走 `domainReadOne(TODO_TABLE)`：
- * - **B 态**（端口已注册，默认）：域镜像未就绪时也**不回退旧库**（旧库在 rust 模式下刻意不存在），
- *   所以用例往旧库 INSERT 只等于"写进一份没人读的库"，读回来必然是 null；
- * - **A 态**（`CODEM_TEST_PORT=0`，端口未注册）：旧库是唯一数据源，必须写旧库。
+ * `loadTodoList` / `updateTodoStatus` 走 `domainReadOne(TODO_TABLE)` —— 读的是**域镜像**，
+ * 也就是端口的表。早先这里有一条 A 态分支（端口未注册 → 往旧库 INSERT OR REPLACE）：
+ * 那条分支已随 A 态（旧库回退，L4）删除 —— `initDatabase()` 在 rust 模式下直接抛错，
+ * 而它写进去的是一份**没人读的库**（这正是本用例组当时读回 null 的原因）。
  *
- * 两态各写自己那一侧，同一套断言因此在两种形态下都成立 —— 而不是把断言放宽。
+ * 现在只往端口写：`applyWrite` 既落表、又把该表标记为就绪（`domainReadOne` 据此路由）。
+ * 同一 id 再写一次 = 覆盖（与 `INSERT OR REPLACE` 同义）。
  */
 function seedTodoList(id: string, todos: TodoItem[]): void {
   const now = Date.now();
-  const todosJson = JSON.stringify(todos);
-  const domains = hasStoragePort()
-    ? (getStoragePort() as unknown as { domains?: { applyWrite(table: string, row: Record<string, unknown>, primaryKey?: string): void } }).domains
-    : undefined;
-  if (domains) {
-    // 端口侧：写域镜像（`domainReadOne` 读的就是它）。同一 id 再写一次 = 覆盖。
-    domains.applyWrite("todo_lists", {
-      id,
-      session_id: SESSION_ID,
-      todos: todosJson,
-      created_at: now,
-      updated_at: now,
-    });
-    return;
-  }
-  getDatabase().run(
-    "INSERT OR REPLACE INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-    [id, SESSION_ID, todosJson, now, now]
-  );
+  const domains = (getStoragePort() as unknown as DomainWriter).domains;
+  domains?.applyWrite("todo_lists", {
+    id,
+    session_id: SESSION_ID,
+    todos: JSON.stringify(todos),
+    created_at: now,
+    updated_at: now,
+  });
 }
 
 describe("P1 集成 — Todo 工具与 DB 持久化", () => {
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     setupBase();
   });
@@ -581,7 +592,6 @@ describe("P1 集成 — note-operations 工具注册验证", () => {
   let registry: ReturnType<typeof createDefaultToolRegistry>;
 
   beforeEach(async () => {
-    try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
     registry = createDefaultToolRegistry();
   });

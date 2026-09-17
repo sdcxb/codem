@@ -4,7 +4,6 @@
  * 验证所有修改后，消息创建、读取、更新、删除的完整链路仍然正常。
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
 import { getStoragePort, setStoragePort } from "../core/storage/port";
 import { createRustEngineSemanticsPort } from "./rust-engine-semantics-port";
 import type { FakeStoragePort } from "./fake-storage-port";
@@ -66,11 +65,12 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
 
 describe("消息链路与存储完整性", () => {
   beforeEach(async () => {
-    try {
-      await resetDatabase();
-    } catch {
-      await initDatabase();
-    }
+    /*
+     * L1 收尾：这里原来是 `try { await resetDatabase() } catch { await initDatabase() }`
+     * （每例重建一次旧库）。旧引擎在 rust 模式下刻意不加载（`initDatabase()` 直接抛），
+     * 而产品读写的是**端口** —— 本文件的 `beforeEach` 钩子（文件顶部）每例注册一个
+     * 带真引擎语义的假端口，这就是唯一的存储基座。断言一条未改。
+     */
     localStorage.clear();
     setupProjectAndSession();
   });
@@ -244,11 +244,28 @@ describe("消息链路与存储完整性", () => {
     expect(currentPort().__table("messages")).toHaveLength(0);
   });
 
-  it("MSGC-015: delegation_tasks 表正常", () => {
-    const db = getDatabase();
-    // 表存在性检查
-    const result = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='delegation_tasks'");
-    expect(result.length).toBeGreaterThan(0);
+  it("MSGC-015: delegation_tasks 域可用（读写都落到端口）", async () => {
+    /*
+     * 原来这条查的是**旧库的 sqlite_master**：`SELECT name FROM sqlite_master
+     * WHERE type='table' AND name='delegation_tasks'` —— 那是**引擎 schema 自省**
+     * （DDL 住在引擎里，随引擎一起删；Rust 侧由 `codem-db` 的 schema 迁移与
+     * cargo test 守同一件事）。
+     *
+     * 端口语义下"这张表在"等于"这个域在存储层真的可写可读"：写一条 → 立刻读回。
+     * 判据没有放宽：原来只证明表存在，现在还要求写入真的落到端口表上。
+     */
+    const { createDelegationTask, getDelegationTask } = await import("../core/session/delegation-storage");
+    createDelegationTask({
+      id: "deleg-msgc-015",
+      sourceSessionId: SESSION_ID,
+      targetSessionId: "sess-msgc-015-target",
+      task: "表可用性探测",
+      status: "pending",
+      projectId: PROJECT_ID,
+      createdAt: Date.now(),
+    });
+    expect(getDelegationTask("deleg-msgc-015")?.task).toBe("表可用性探测");
+    expect(currentPort().__table("delegation_tasks").map((r) => r.id)).toContain("deleg-msgc-015");
   });
 
   it("MSGC-016: 200+ 消息查询不超时", () => {

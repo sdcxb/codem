@@ -46,11 +46,12 @@ function installFsStub(): void {
   (globalThis as any).__TAURI__ = (window as any).__TAURI__;
 }
 
-import { getDatabase, initDatabase, resetDatabaseFatalState, resetSaveFailureState } from "../core/storage/database";
 import { listMessages, clearSessionLogCache } from "../core/storage/message";
 import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
 import { createProject } from "../core/storage/project";
 import { createSession } from "../core/storage/session";
+import { getStoragePort } from "../core/storage/port";
+import type { FakeStoragePort } from "./fake-storage-port";
 import { executeSessionTurn } from "../core/session/executor";
 import { resetSessionMessageBus } from "../core/session/bus";
 import { resetDelegationOrchestrator } from "../core/session/orchestrator";
@@ -95,20 +96,22 @@ const SCRIPT: any[] = [
   { type: "end", result: { reason: "done" } },
 ];
 
-beforeEach(async () => {
+/**
+ * 夹具（第 18 轮，L1）：**端口基座**，不再初始化旧库。
+ *
+ * 原来这里 `await initDatabase()` + 四条裸 `DELETE FROM messages/tool_calls/sessions/projects`：
+ * 那是"旧库是唯一数据源"（A 态）时代的清表夹具。A 态已删 —— `setup.ts` 每个用例前
+ * 注册一个**全新**的内存假端口，端口即唯一数据源，所以"清表"这一步不再存在。
+ *
+ * `createProject` / `createSession` 这两个**产品 API**保留：它们现在走 `domainWrite`，
+ * 把父行播种到端口上（与真机同一条路），后台轮次落库正是落在同一份端口里。
+ */
+beforeEach(() => {
   installFsStub();
   __resetJsonlCache();
   clearSessionLogCache();
-  resetSaveFailureState();
-  resetDatabaseFatalState();
   resetSessionMessageBus();
   resetDelegationOrchestrator();
-  await initDatabase();
-  const db = getDatabase();
-  db.run("DELETE FROM messages");
-  db.run("DELETE FROM tool_calls");
-  db.run("DELETE FROM sessions");
-  db.run("DELETE FROM projects");
   createProject({
     id: PROJECT_ID, name: "后台执行测试", path: "D:\\proj",
     createdAt: Date.now(), lastAccessedAt: Date.now(),
@@ -170,10 +173,19 @@ describe("后台会话每轮消息的持久化", () => {
     await flushSessionLogWrites();
 
     const ids = new Set(listMessages(SESSION_ID).map((m) => m.id));
-    // 工具调用引用的消息必须存在（tool_calls.message_id 是外键语义）
-    const rows = getDatabase().exec("SELECT DISTINCT message_id FROM tool_calls");
-    for (const row of rows?.[0]?.values ?? []) {
-      expect(ids.has(String(row[0])), `tool_calls 挂在不存在/不可读的消息上: ${row[0]}`).toBe(true);
+    /**
+     * 工具调用引用的消息必须存在（tool_calls.message_id 是外键语义）。
+     *
+     * 第 18 轮：判据从"旧库 `SELECT DISTINCT message_id FROM tool_calls`"换成
+     * **端口的 tool_calls 表**（`messages.upsert_index` 的 `tool_calls` 整批替换落的那张表）。
+     * A 态（旧库是唯一数据源）已删，索引在 B 态就是端口 —— 读旧库只会读到空集，
+     * 断言会**静默变成永真**（假绿），这正是必须换判据的原因。强度不变：
+     * 仍是"每一条落库的 tool_call 都必须挂在一个能读回来的消息上"。
+     */
+    const toolCallRows = (getStoragePort() as unknown as FakeStoragePort).__table("tool_calls");
+    expect(toolCallRows.length, "端口上必须有工具调用行（否则这条断言是空洞的）").toBeGreaterThan(0);
+    for (const row of toolCallRows) {
+      expect(ids.has(String(row.message_id)), `tool_calls 挂在不存在/不可读的消息上: ${row.message_id}`).toBe(true);
     }
   });
 

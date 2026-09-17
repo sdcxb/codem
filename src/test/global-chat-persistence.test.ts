@@ -1,45 +1,76 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { initDatabase, getDatabase } from "../core/storage/database";
-import { getStoragePort, hasStoragePort } from "../core/storage/port";
+import { getStoragePort, setStoragePort } from "../core/storage/port";
+import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
 import type { Message } from "../store";
 
+/** 用例自己的干净端口（播种对象必须是"本用例的那一个"） */
+function installPort(seed: Record<string, Array<Record<string, unknown>>> = {}): FakeStoragePort {
+  const port = createFakeStoragePort({ seed });
+  setStoragePort(port);
+  return port;
+}
+
+function currentPort(): FakeStoragePort {
+  return getStoragePort() as unknown as FakeStoragePort;
+}
+
 /**
- * 按 id 读回 `sessions` 行的三个字段 —— 读**产品真正把会话写进去的那一侧**。
+ * 按 id 读回 `sessions` 行 —— 读**产品真正把会话写进去的那一侧**。
  *
- * - **B 态**（端口已注册，默认）：`createSession` 走 `domainWrite` → 端口的 `sessions` 表。
- *   旧库那份在 rust 模式下刻意不存在，所以原来那句 `db.exec("SELECT ... FROM sessions")`
- *   查的就成了一份没人写的库（这就是本用例失败的原因）；
- * - **A 态**（`CODEM_TEST_PORT=0`，端口未注册）：旧库是唯一数据源，仍按原样 SELECT。
- *
- * 两种形态下断言（id / project_id / title 逐字相等）都成立，判据没有放宽。
+ * 原来这里有一条 A 态分支：端口未注册时 `getDatabase().exec("SELECT … FROM sessions")`。
+ * A 态（旧库回退）在第 17 轮（L4）已删除，`initDatabase()` 在 rust 模式下直接抛错 ——
+ * 也就是说那条分支读的是一份**没有人写的库**（本用例组最初的失败原因正是它）。
+ * 现在只剩端口这一条路，判据（id / project_id / title 逐字相等）没有放宽。
  */
 function selectSessionRow(sessionId: string): Record<string, unknown> | undefined {
-  if (hasStoragePort()) {
-    const port = getStoragePort() as unknown as { __table(name: string): Array<Record<string, unknown>> };
-    return port.__table("sessions").find((r) => r.id === sessionId);
-  }
-  const result = getDatabase().exec("SELECT id, project_id, title FROM sessions WHERE id = ?", [sessionId]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  const [id, project_id, title] = result[0].values[0];
-  return { id, project_id, title };
+  return currentPort()
+    .__table("sessions")
+    .find((r) => r.id === sessionId);
+}
+
+/** 全局项目行（`id = ''`）：锁住 `projects` 表里那一行的形状 */
+function globalProjectRow(): Record<string, unknown> {
+  return {
+    id: "",
+    name: "全局对话",
+    path: "",
+    description: "Global chat (no project context)",
+    pinned: 0,
+    created_at: 1,
+    last_accessed_at: 1,
+  };
 }
 
 describe("全局对话持久化修复", () => {
   beforeEach(async () => {
     localStorage.clear();
-    await initDatabase();
+    installPort();
   });
 
-  it("initDatabase 自动种子全局 project (id='')", () => {
-    const db = getDatabase();
-    const result = db.exec("SELECT id, name FROM projects WHERE id = ''");
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].values.length).toBe(1);
-    expect(result[0].values[0][0]).toBe("");
-    expect(result[0].values[0][1]).toBe("全局对话");
+  /**
+   * 全局项目行（`id = ''`）的**播种**是引擎的活：旧实现是 `initDatabase()` 里的 SCHEMA 种子，
+   * 新架构里由 `codem-db` 的 schema/migrate 负责（Rust 侧自己的测试守它）。
+   *
+   * 渲染侧真正要守的是**这一行的可见性契约**（`project.ts` 的注释写着：
+   * 镜像路径必须保持 `id != ''` 这条过滤，否则"全局对话"会突然出现在项目列表里）。
+   * 所以这里把引擎会有的那一行播种进端口，再断言同一组事实：
+   * 行在、id 是 `''`、name 是"全局对话"，且**不出现在 `listProjects()` 里**。
+   */
+  it("全局 project (id='') 由引擎播种：端口读得到，且不进项目列表", () => {
+    installPort({ projects: [globalProjectRow()] });
+
+    const rows = currentPort().__table("projects").filter((r) => r.id === "");
+    expect(rows.length).toBe(1);
+    expect(rows[0].id).toBe("");
+    expect(rows[0].name).toBe("全局对话");
+
+    // 读路径（域端口）拿得到它 —— 全局会话因此不会撞外键
+    expect(ProjectStorage.getProject("")?.name).toBe("全局对话");
+    // 但它**不是**一个"项目"：列表里绝不能出现
+    expect(ProjectStorage.listProjects().some((p) => p.id === "")).toBe(false);
   });
 
   it("全局对话 session 能存进 DB（不再 FK 失败）", () => {

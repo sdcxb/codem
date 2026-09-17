@@ -21,9 +21,36 @@
  * AR-1/2：索引崩了，**消息照样进权威日志**（create / update 两条路径）
  * AR-3：索引崩了，**历史照样读得出来**（合并权威日志）
  * AR-4：日志在 → **索引可以从日志重建**（含工具调用）
- * AR-5：崩溃会留下"下次启动重建索引"的标记（且维护路径真的消费它）
+ * AR-5：崩溃会留下"下次启动重建索引"的标记（且维护路径真的消费它）—— ⚠️ **已随旧引擎退休，见下**
  * AR-6：`saveMessages` 只写变化过的消息（未变化的一次都不写）
- * AR-7：整库导出有硬上限，超限即"暂停整库落盘、只写权威日志"
+ * AR-7：整库导出有硬上限，超限即"暂停整库落盘、只写权威日志" —— ⚠️ **已随旧引擎退休，见下**
+ *
+ * ---
+ *
+ * ## ⚠️ L1（删 sql.js）本批的处置：只退休引擎那两条（AR-5 / AR-7）
+ *
+ * 本文件里的用例**大多数是产品契约**（"权威日志是权威副本"这条分层承诺），
+ * 它们只是拿旧库当**故障注入点 / 生命周期夹具**——所以按铁律只删引擎那部分：
+ *
+ * | 退休用例 | 为什么是引擎语义 | 覆盖移交给谁 |
+ * | --- | --- | --- |
+ * | **AR-5** 崩溃留标记 + 维护先重建再回填 | 标记的产生者就是旧引擎的致命闩锁（`noteDatabaseError` → `markIndexRebuildNeeded`，见 `database.ts::noteFatalDbError`）；断言里还有两条**源码契约**（`database.ts` 必须含 `await indexRebuildNeeded()` 且排在 `backfillAllSessions()` 之前），那段代码随引擎删除 | **风险随 sql.js 消失**：没有"引擎致命闩锁"就没有"下次启动要重建索引"这个标记的产生者。重建能力本身（消费侧）仍被守着：本文件 **AR-4**（只有日志也能重建索引，含工具调用）+ `maintenance-rust-mode.test.ts` **MR-1**（rust 模式下维护真的执行回填/重建，不许因为"旧库不存在"整段跳过） |
+ * | **AR-7** 整库导出有硬上限（`MAX_EXPORT_BYTES`、`wholeFileExportSuspended`） | 整库导出是 sql.js **唯一的落盘方式**，上限是为它设的；现在连导出这件事都不存在 | `db-contract.test.ts` **C7**（命令清单里**没有** `db.export` / `export` / `backup` / `sql.raw`，"渲染进程不再持有整库"是架构承诺）+ **C1**（`caps.no_whole_file_export === true`）；Rust 侧 `src-tauri/codem-db/src/lib.rs` 同样只声明 `no_whole_file_export: true`，`COMMANDS` 里没有任何导出命令 |
+ *
+ * ### 留下但**必须点名迁移**的用例（本批不动，交给"旧库夹具迁移"批次）
+ *
+ * AR-1 / AR-2 / AR-3 的**故障注入点是旧引擎**（`dbMod.noteDatabaseError(...)` 制造"索引致命"），
+ * 而它们断言的是产品行为（消息照样进权威日志、历史照样读得出来），所以**不能删**；
+ * 等夹具批次把注入点换成新口径（`setStoragePort(null)` / 端口写失败）时一起改：
+ *
+ * - AR-1（create 路径）在新口径下**已有近亲用例**：`message-index-cutover.test.ts` **MSG-4**
+ *   （端口未注册 → 权威日志仍然要写 + 如实上报）、**MSG-6**（索引写失败不抛、不影响权威日志）。
+ *   但它比那两条多一步：**真的把日志读回来**（`readSessionMessages` 里断言内容）——
+ *   MSG-4/6 把 `session-jsonl` 整个 mock 掉，只断言 append 被调用。所以本批保留，
+ *   迁移时若要合并，请把"读回来"这一步并入 MSG-4/6，别只留"append 被调用"。
+ * - AR-2（update 路径）与 AR-3（索引致命时读历史走日志合并）**没有**新口径等价用例 ——
+ *   迁移时优先补（AR-3 的近亲是 `session-jsonl-index.test.ts` **SLOG-6**：索引被裁后读路径仍合并日志）；
+ * - AR-4（自愈重建）与 AR-6（`saveMessages` 只写变化过的消息）与引擎无关，只依赖 `freshDb()` 这个夹具。
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -161,40 +188,18 @@ describe("索引可重建（自愈）", () => {
     expect(withTools?.toolCalls?.map((t: any) => t.tool)).toContain("write");
   });
 
-  it("AR-5（修复点）: 崩溃会留下重建标记，且启动维护会消费它", async () => {
-    const invoke = vi.fn(async (cmd: string, args?: any) => {
-      if (cmd === "get_app_data_dir") return "C:/appdata/";
-      if (cmd === "write_file") return (globalThis as any).__marker = args.content;
-      if (cmd === "path_exists") return !!(globalThis as any).__marker;
-      if (cmd === "read_file") return (globalThis as any).__marker;
-      if (cmd === "delete_file") return ((globalThis as any).__marker = undefined);
-      throw new Error(`unexpected ${cmd}`);
-    });
-    (window as any).__TAURI__ = { core: { invoke } };
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      dbMod.noteDatabaseError(new Error("RuntimeError: memory access out of bounds"));
-      // 标记写入是 fire-and-forget，等一拍
-      await new Promise((r) => setTimeout(r, 10));
-      const marker = await dbMod.indexRebuildNeeded();
-      expect(marker.needed).toBe(true);
-      expect(String(marker.reason)).toMatch(/memory access out of bounds/);
-
-      // 维护路径确实消费了这个标记（源码契约：先重建再回填）
-      const fs = require("fs");
-      const path = require("path");
-      const src = fs.readFileSync(path.join(__dirname, "../core/storage/database.ts"), "utf8");
-      const idx = src.indexOf("await indexRebuildNeeded()");
-      expect(idx).toBeGreaterThan(-1);
-      expect(src.slice(idx, idx + 600)).toContain("rebuildIndexFromSessionLogs");
-      expect(src.indexOf("await indexRebuildNeeded()")).toBeLessThan(src.indexOf("await bridge.backfillAllSessions()"));
-    } finally {
-      delete (window as any).__TAURI__;
-      delete (globalThis as any).__marker;
-      err.mockRestore();
-    }
-  });
+  /**
+   * ⚠️ **L1（删 sql.js）本批退休：AR-5 "崩溃留重建标记 + 维护先重建再回填"。**
+   *
+   * 它守的标记（`codem-index-rebuild-needed.json`）由**旧引擎的致命闩锁**写入
+   * （`database.ts::noteFatalDbError` → `markIndexRebuildNeeded`），断言里还有两条
+   * `database.ts` 的**源码契约**（`await indexRebuildNeeded()` 必须排在
+   * `backfillAllSessions()` 之前）—— 两者都随引擎删除。
+   *
+   * 覆盖移交：**该风险随 sql.js 消失**（没有"引擎致命闩锁"就没有标记的产生者）。
+   * 重建能力本身（消费侧）由本文件 **AR-4**（只有日志也能重建索引，含工具调用）与
+   * `maintenance-rust-mode.test.ts` **MR-1**（rust 模式下维护真的执行回填/重建）守。
+   */
 });
 
 describe("存储压力（越界最现实的触发点）", () => {
@@ -229,16 +234,18 @@ describe("存储压力（越界最现实的触发点）", () => {
     spy.mockRestore();
   });
 
-  it("AR-7（修复点）: 整库导出有硬上限，超限即暂停整库落盘（数据仍进权威日志）", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const src = fs.readFileSync(path.join(__dirname, "../core/storage/database.ts"), "utf8");
-    expect(src).toMatch(/const MAX_EXPORT_BYTES = \d+ \* 1024 \* 1024;/);
-    expect(src).toContain("if (data.length > MAX_EXPORT_BYTES)");
-    expect(src).toContain("database.wholeFileExportSuspended");
-    // 触发上限后：本次运行不再整库导出（索引由日志重建）
-    expect(typeof dbMod.isWholeFileExportSuspended).toBe("function");
-    expect(dbMod.isWholeFileExportSuspended()).toBe(false);
-    expect(src).toMatch(/暂停整库导出/);
-  });
+  /**
+   * ⚠️ **L1（删 sql.js）本批退休：AR-7 "整库导出有硬上限，超限即暂停整库落盘"。**
+   *
+   * 它断言的是 `database.ts` 的源码契约（`const MAX_EXPORT_BYTES = …`、
+   * `if (data.length > MAX_EXPORT_BYTES)`、`database.wholeFileExportSuspended`、
+   * `isWholeFileExportSuspended()`）—— 整库导出是 sql.js **唯一的落盘方式**，
+   * 这条上限是为它设的，导出本身没有了，上限也就没有载体。
+   *
+   * 覆盖移交：`db-contract.test.ts` **C7**（命令清单里没有 `db.export` / `export` / `backup` /
+   * `sql.raw`，"渲染进程不再持有整库"是架构承诺）与 **C1**（`caps.no_whole_file_export === true`），
+   * Rust 侧 `src-tauri/codem-db/src/lib.rs` 也只声明 `no_whole_file_export: true`、
+   * `COMMANDS` 里没有任何导出命令 —— 也就是"整库落盘"这条压力源在架构上不存在了，
+   * 而不是"有上限地存在"。
+   */
 });

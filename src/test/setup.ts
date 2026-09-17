@@ -51,11 +51,14 @@ beforeEach(async () => {
   localStorage.clear();
 });
 
-// vitest worker teardown 竞态规避：重度引擎日志测试（db-save-failure-alert /
-// refactor-prompt-to-data / llm-timeout-hardening / forked-agent 等）在文件结束
-// 瞬间仍有在途 console 输出 → threads 下触发 "Closing rpc while onUserConsoleLog
-// was pending" unhandled（0 failed 但 exit≠0）。给在途输出一个送达窗口再让
-// worker 收尾（保留控制台可见性，不关 console 收集）。
+// vitest worker teardown 竞态规避：重度日志测试（refactor-prompt-to-data /
+// llm-timeout-hardening / forked-agent 等）在文件结束瞬间仍有在途 console 输出 →
+// threads 下触发 "Closing rpc while onUserConsoleLog was pending" unhandled
+// （0 failed 但 exit≠0）。给在途输出一个送达窗口再让 worker 收尾
+// （保留控制台可见性，不关 console 收集）。
+//
+// 第 18 轮：清单里原有一个 `db-save-failure-alert`——那个文件测的是旧引擎的"保存失败可见性"，
+// 已随引擎退役（覆盖移交见 `db-fatal-cascade.test.ts` 的文件头台账：PF-1/PF-2/PF-4 + DBF-6）。
 afterAll(async () => {
   await new Promise((r) => setTimeout(r, 150));
 });
