@@ -621,7 +621,12 @@ describe("FWT-C2：不变量审计接到生产维护路径（FC §未做：生�
 
   it("FWT-C2b: 没有会话可查时 checked=0（'没跑'不许冒充'通过'）", async () => {
     const out = await auditInvariantsForSessions([]);
-    expect(out).toEqual({ checked: 0, violations: 0, samples: [] });
+    /**
+     * 第 47 轮：返回结构多了 `newViolations`（水位判定，见 `maintenance.ts` 的
+     * `INVARIANT_WATERMARK_KEY`）。"没跑"仍然是三件事实一起为零：
+     * 没检查、没缺口、**也没有新缺口**（0 会话时不该凭空报"新产生"）。
+     */
+    expect(out).toEqual({ checked: 0, violations: 0, newViolations: 0, samples: [] });
   });
 
   it("FWT-C2c: `runDatabaseMaintenance` 的汇总行里带着这次审计的结果（生产里没人读代码也看得见）", async () => {

@@ -32,6 +32,8 @@
 
 import { reportPersistFailure } from "./persist-failure";
 import * as SessionStorage from "./session";
+// 不变量审计的"上次水位"存在 settings（与其它偏好同一种介质，见 `readInvariantWatermark`）
+import { getSettingJSON, setSettingJSON } from "./settings";
 
 export interface MaintenanceResult {
   /** 旧引擎时代的库体积统计（现在由 `storage.compact` 的 before/after 承担，这里保持 0 兼容签名） */
@@ -117,6 +119,15 @@ export interface MaintenanceResult {
    * 在生产上唯一会被打印出来的地方。
    */
   invariantViolations: number;
+  /**
+   * 其中**本次新产生**的缺口条数（第 47 轮：水位判定真正落地）。
+   *
+   * `invariantViolations` 里绝大多数是迁移前的历史缺口（真机实测 777 条，长期不会消失），
+   * 所以那个数字**不能**直接当信号用。真正要看见的是"上次审计之后**多出来**的缺口" ——
+   * 那才意味着事件双写又断了一条路。与 `invariantViolations` 一样必须进汇总行，
+   * 否则"新产生 N 条"只在 `console.warn` 里出现一次，用户关了 devtools 就再也看不到。
+   */
+  invariantNewViolations: number;
   /** 违规样本（最多 5 条，形如 `sessionId/type`）—— 只报数字的话排查还得再跑一次 */
   invariantSamples: string[];
 }
@@ -740,6 +751,63 @@ function formatBytes(n: number): string {
 }
 
 /**
+ * 不变量审计的**上次水位**（settings 里的一个键）—— 用来把"历史缺口"与"本次新产生"分开。
+ *
+ * ## 为什么必须有水位（第 47 轮：这条本来是"写了名字没人填"的谎）
+ *
+ * 第 46 轮把 777 条历史缺口从"违规"改称"历史缺口"（信息级）是对的，但那一段同时写着
+ * "只有本次新产生的那部分（`newViolations`，下一轮用水位判定）才升级为告警" ——
+ * 而 `auditInvariantsForSessions` **从来没有返回过** `newViolations`，调用点也
+ * `?? 0` 兜底。后果：告警分支（`console.warn`）与失败上报**永远不会执行**，
+ * 这条不变量存在的意义（发现"事件双写又断了一条路"）等于零 —— 真出现新缺口时，
+ * 它只会被 777 这个常数淹没，用户和开发者都看不见。
+ *
+ * ## 水位怎么算（判据落在"缺口集合"上，不落在"函数被调用了"）
+ *
+ * 每个缺口有一个**稳定指纹**：`会话id / 违规类型 / 消息id（没有就用 seq）`。
+ * 本次审计的指纹集合与上次水位比较：
+ * - 水位里**没有**的指纹 = 本次新产生的缺口 → `console.warn` + `reportPersistFailure`；
+ * - 水位里有的 = 历史缺口 → 只进信息级汇总行。
+ *
+ * 三条边界（都用例守着）：
+ * 1. **第一次审计**（水位不存在）→ 全部算历史缺口（`newViolations = 0`），
+ *    同时把本次集合写成水位。否则升级版本后第一次启动会把几百条老缺口全报成"新缺陷"，
+ *    与第 46 轮修掉的那个假警报一模一样；
+ * 2. **水位只保留"本次仍然存在"的指纹**（不是无限累积）：缺口被修好、消息被删掉之后
+ *    指纹跟着消失；万一同样的缺口再次出现（同一 id 再次缺事件），它会被如实判为新产生；
+ * 3. **指纹里不放内容**：用户编辑一条历史消息的正文不该被算成"新缺口"（键是消息 id）。
+ */
+const INVARIANT_WATERMARK_KEY = "codem-invariant-watermark";
+
+/** 水位里存的东西（版本号留着以后换指纹口径时能识别旧数据） */
+interface InvariantWatermark {
+  v: 1;
+  at: number;
+  keys: string[];
+}
+
+/** 一个缺口的稳定指纹：会话 + 类型 + 消息/序号，不含内容 */
+function violationFingerprint(sessionId: string, v: { type: string; messageId?: string; seq?: number }): string {
+  const target = v.messageId ?? (v.seq !== undefined ? `seq:${v.seq}` : "-");
+  return `${sessionId}|${v.type}|${target}`;
+}
+
+/** 读水位。键不存在 / 解析失败 / 形状不对 → `null`（= 没有水位，**不是**空水位） */
+function readInvariantWatermark(): InvariantWatermark | null {
+  try {
+    const raw = getSettingJSON<InvariantWatermark | null>(INVARIANT_WATERMARK_KEY, null);
+    if (!raw || typeof raw !== "object" || !Array.isArray((raw as { keys?: unknown }).keys)) return null;
+    return {
+      v: 1,
+      at: Number((raw as { at?: unknown }).at ?? 0) || 0,
+      keys: (raw as { keys: unknown[] }).keys.map((k) => String(k)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 在生产路径上跑一次运行时不变量审计（第 45 轮功能上下文审计 §"未做" 的收口）。
  *
  * ## 为什么是这里，而不是"把 `agentic-loop.ts:831` 的门控拆掉"
@@ -766,12 +834,21 @@ function formatBytes(n: number): string {
  * - 端口没有 `command` 能力 / 会话列表为空 → `checked = 0`，**不假装通过**；
  * - 单个会话抛错不中断整轮（记 `checked` 为已尝试的那个数，跳过该会话并上报）；
  * - 违规**不抛**：它是一条"需要被看见"的数据事实，不是维护失败。
+ *
+ * ## 返回值里的 `newViolations`（第 47 轮：水位落地）
+ *
+ * 见 `INVARIANT_WATERMARK_KEY` 的长注释。这里只强调一个取舍：
+ * **水位在函数内部读写**（而不是让调用方传进来）—— 因为"上次水位"必须与"这次检查了哪些会话"
+ * 是同一份事实。调用方传水位的话，两处口径一旦分叉（比如换了会话集合），
+ * `newViolations` 就会变成噪声源，而这个字段的全部价值就是"信得过"。
  */
 export async function auditInvariantsForSessions(
   sessionIds: readonly string[],
-): Promise<{ checked: number; violations: number; samples: string[] }> {
-  const out = { checked: 0, violations: 0, samples: [] as string[] };
+): Promise<{ checked: number; violations: number; newViolations: number; samples: string[] }> {
+  const out = { checked: 0, violations: 0, newViolations: 0, samples: [] as string[] };
   if (sessionIds.length === 0) return out;
+  /** 本次仍然存在的缺口指纹（审计结束后写成新水位） */
+  const presentKeys = new Set<string>();
   try {
     // 动态 import：`runtime-invariants` 会拉进 `event-log` + `message`（体量不小），
     // 而维护是低频路径，不值得让它进启动包的静态图。
@@ -783,7 +860,8 @@ export async function auditInvariantsForSessions(
         out.checked += 1;
         if (res.violations.length > 0) {
           out.violations += res.violations.length;
-          for (const v of res.violations.slice(0, 3)) {
+          for (const v of res.violations) {
+            presentKeys.add(violationFingerprint(sid, v));
             if (out.samples.length < 5) out.samples.push(`${sid}/${v.type}`);
           }
         }
@@ -797,6 +875,42 @@ export async function auditInvariantsForSessions(
     }
   } catch (e) {
     reportPersistFailure("maintenance.invariantAudit", e, "运行时不变量审计未跑成（本次 checked=0）");
+  }
+
+  /**
+   * 与水位比对。⚠️ 顺序：**先比对、后写水位**（写水位是"这次已经报过了"的确认，
+   * 反过来的话本次新缺口会被自己刚写下的水印吃掉）。
+   */
+  const watermark = readInvariantWatermark();
+  if (watermark) {
+    for (const key of presentKeys) {
+      if (!watermark.keys.includes(key)) out.newViolations += 1;
+    }
+  }
+  /*
+   * 新水位 = **本次仍然存在的指纹**。水位只读得到（settings 读不到就是 null）时
+   * 不写 —— "读不到"不许被当成"空水位"（那会把下一轮的全部历史缺口判成新产生）。
+   */
+  if (out.checked > 0) {
+    setSettingJSON(INVARIANT_WATERMARK_KEY, {
+      v: 1,
+      at: Date.now(),
+      keys: [...presentKeys].sort(),
+    } satisfies InvariantWatermark);
+
+    /*
+     * 新产生的缺口才升级为**失败上报**（`console.warn` 由 `runDatabaseMaintenance`
+     * 打，避免同一件事在日志里出现两遍）。上报里带指纹样例 —— 否则"新产生 3 条"
+     * 对排查毫无用处（该去哪个会话看哪一条）。
+     */
+    if (out.newViolations > 0) {
+      const fresh = [...presentKeys].filter((k) => !(watermark?.keys.includes(k) ?? false));
+      reportPersistFailure(
+        "maintenance.invariantAudit.new",
+        new Error(`不变量审计：本次新产生 ${out.newViolations} 条缺口（历史缺口另有 ${out.violations - out.newViolations} 条）`),
+        `事件双写可能又断了一条路：${fresh.slice(0, 5).join("、")}${fresh.length > 5 ? ` 等 ${fresh.length} 条` : ""}`,
+      );
+    }
   }
   return out;
 }
@@ -817,15 +931,20 @@ export async function auditInvariantsForSessions(
  *
  * 所以现在如实分成两句话：历史缺口（迁移前数据，**不是缺陷**）与本次新产生的缺口
  * （`auditInvariantsForSessions` 用"上次审计水位"判定），后者才进失败上报。
+ *
+ * ⚠️ 第 47 轮：上面那句"用水位判定"在第 46 轮只是**愿望** ——
+ * `auditInvariantsForSessions` 从来没返回过 `newViolations`，于是这里 `?? 0`
+ * 恒为 0、告警分支永不执行。现在水位真的落地了（见 `INVARIANT_WATERMARK_KEY`），
+ * 这里也**不再**用 `?? 0` 兜底：字段是必填的，缺了就是编译错误，不许再退化成"永远报历史缺口"。
  */
 function formatInvariantAudit(outcome: {
   checked: number;
   violations: number;
-  newViolations?: number;
+  newViolations: number;
   samples: string[];
 }): string {
   if (outcome.checked === 0) return "不变量审计 跳过（没有可检查的会话）";
-  const fresh = outcome.newViolations ?? 0;
+  const fresh = outcome.newViolations;
   if (outcome.violations === 0) return `不变量审计 ${outcome.checked} 个会话 全部通过`;
   if (fresh === 0) {
     return (
@@ -953,6 +1072,7 @@ export async function runDatabaseMaintenance(
     recountFailedSessions: 0,
     invariantCheckedSessions: 0,
     invariantViolations: 0,
+    invariantNewViolations: 0,
     invariantSamples: [],
   };
 
@@ -1185,6 +1305,7 @@ export async function runDatabaseMaintenance(
      */
     result.invariantCheckedSessions = 0;
     result.invariantViolations = 0;
+    result.invariantNewViolations = 0;
     result.invariantSamples = [];
     try {
       const { domainReadMany } = await import("./domain-store");
@@ -1193,6 +1314,7 @@ export async function runDatabaseMaintenance(
       const audit = await auditInvariantsForSessions(ids);
       result.invariantCheckedSessions = audit.checked;
       result.invariantViolations = audit.violations;
+      result.invariantNewViolations = audit.newViolations;
       result.invariantSamples = audit.samples;
       if (audit.violations > 0) {
         /*
@@ -1202,18 +1324,21 @@ export async function runDatabaseMaintenance(
          * 所以迁移过来的历史会话必然"消息多于文本事件" —— 真机上这个数字是 **777**，
          * 每次启动都打印一次，用户会以为数据坏了；更糟的是真正的信号（**本版之后**新写出的
          * 消息缺事件）会被这个常数淹没。所以：默认按**历史缺口**打印（信息级），
-         * 只有"本次新产生"的那部分（`newViolations`，下一轮用水位判定）才升级为告警。
+         * 只有"本次新产生"的那部分（`newViolations`，由上次审计水位判定 —— 第 47 轮真的落地了）
+         * 才升级为告警。
          */
-        const fresh = (audit as { newViolations?: number }).newViolations ?? 0;
+        const fresh = audit.newViolations;
         const detail =
           `（检查 ${audit.checked} 个会话，样例：${audit.samples.join("、") || "无"}）` +
           `。若某个会话是**本版之后**新建的却出现在这里，那才是新缺陷`;
         if (fresh > 0) {
-          console.warn(`[Maintenance] 不变量**本次新产生** ${fresh} 条缺口${detail}`);
+          console.warn(
+            `[Maintenance] 不变量**本次新产生** ${fresh} 条缺口（历史缺口另有 ${audit.violations - fresh} 条）${detail}`,
+          );
         } else {
           console.log(
-            `[Maintenance] 不变量审计：历史缺口 ${audit.violations} 条（迁移前的助手消息本来就没有 ` +
-              `\`assistant_text\` 事件，不是本次新产生的缺陷）${detail}`,
+            `[Maintenance] 不变量审计：历史缺口 ${audit.violations} 条（均在上次审计水位之内 —— ` +
+              `迁移前的助手消息本来就没有 \`assistant_text\` 事件，不是本次新产生的缺陷）${detail}`,
           );
         }
       }
@@ -1253,6 +1378,7 @@ export async function runDatabaseMaintenance(
       formatInvariantAudit({
         checked: result.invariantCheckedSessions,
         violations: result.invariantViolations,
+        newViolations: result.invariantNewViolations,
         samples: result.invariantSamples,
       }),
   );
