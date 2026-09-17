@@ -64,6 +64,7 @@ import {
 import { createMessage, getAttachmentContent, clearSessionLogCache, rebuildSessionFts, listMessages } from "../core/storage/message";
 import { clearExternalContentCache, DEFAULT_EXTERNALIZE_THRESHOLD, FILE_CONTENT_PREFIX } from "../core/storage/attachment-files";
 import { flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
+import { setStoragePort } from "../core/storage/port";
 import type { Message } from "../store";
 
 const SESSION = "sess-att";
@@ -172,7 +173,16 @@ describe("附件外置", () => {
 });
 
 describe("全文索引一致性（收尾项）", () => {
-  it("FTS-1: 对齐后：孤儿行被删、被裁但仍可读的历史被补进索引", async () => {
+  it("FTS-1(A 态): 对齐后：孤儿行被删、被裁但仍可读的历史被补进索引", async () => {
+    /**
+     * ⚠️ 这条用例验证的是**旧库对齐逻辑**，因此必须显式进入 A 态（端口未注册）。
+     *
+     * 第 44 轮（B0）之后 `rebuildSessionFts` 按两态分流：端口在（rust）时交给 Rust 侧
+     * `fts.rebuild`。原因是 rust 模式下 `isFts5Available()` 恒为 false，旧实现直接
+     * 返回 {0,0} —— 也就是**索引永远不对齐、新消息永远搜不到**。
+     * A 态（旧库是唯一数据源）才是本用例的场景；B 态的契约见 FTS-2。
+     */
+    setStoragePort(null);
     const db = getDatabase();
     // 三条消息：m1 留在索引、m2 只存在于日志（模拟被裁）、m3 已被删除（孤儿）
     db.run(
@@ -197,5 +207,26 @@ describe("全文索引一致性（收尾项）", () => {
     expect(ids).toContain("m2");
     expect(ids).not.toContain("m3");
     expect(listMessages(SESSION).map((m) => m.id)).toContain("m2"); // 读者仍看得到
+  });
+
+  it("FTS-2(B 态): 端口在时对齐交给 Rust 侧（绝不静默什么都不做）", async () => {
+    const { createFakeStoragePort } = await import("./fake-storage-port");
+    const port = createFakeStoragePort();
+    setStoragePort(port);
+    const { appendSessionMessage } = await import("../core/storage/session-jsonl");
+    await appendSessionMessage(SESSION, { id: "keep-1", role: "user", content: "日志里有", timestamp: 9 } as Message);
+    await flushSessionLogWrites();
+    const { hydrateSessionLog } = await import("../core/storage/message");
+    await hydrateSessionLog(SESSION);
+
+    await rebuildSessionFts(SESSION);
+
+    const call = port.__writes().find((w) => w.command === "fts.rebuild");
+    expect(call, "B 态必须把对齐交给 Rust（否则新消息永远搜不到）").toBeTruthy();
+    expect(call?.params).toMatchObject({ session_id: SESSION });
+    expect(
+      (call?.params as Record<string, unknown>)?.keep_ids,
+      "日志里有、索引里没有的 id 必须作为 keep_ids 传过去（否则会被当孤儿删掉）",
+    ).toContain("keep-1");
   });
 });

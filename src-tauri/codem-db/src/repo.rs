@@ -970,15 +970,37 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
     if parsed.is_empty() {
         return Err(DbError::invalid("ids", "不能为空数组（删除是危险操作，必须显式给出目标）"));
     }
+    // `soft: true` = **隐藏**（`hidden = 1`），不删行。
+    //
+    // ## 为什么必须支持（真机缺陷修正）
+    //
+    // 渲染侧上下文压缩走的就是 `messages.delete { ids, soft: true }`
+    // （`message.ts` 的 `deleteMessagesByIds`），而这里**原来完全忽略 `soft`** ——
+    // 于是"隐藏"被实现成了**硬删除**。两者看着结果一样（都读不到），实际差别很大：
+    //
+    // - `hidden` 是会带外键级联的**行状态**：`messages.count` 的 hidden 计数、
+    //   `list` 的 `include_hidden` 都依赖它；硬删除把这些信息直接抹掉；
+    // - 硬删除会让"索引可由日志重建"这条不变量更难验证（重建时无法区分
+    //   "本来就没有"与"曾经有、被压缩隐藏了"）；
+    // - 测试双（`fake-storage-port`）按 `soft` 语义实现，而真实端口不实现 ——
+    //   **测试绿、真机行为不同**，这正是最危险的一类偏差（假端口注释里写着
+    //   "Rust 侧支持 soft: true"，而实际上一直不支持）。
+    //
+    // 现在两态齐备：`soft` 为真 → `UPDATE ... SET hidden = 1`；
+    // 缺省/为假 → 原来的硬删除（`DELETE FROM messages`，tool_calls / 反馈按外键级联）。
+    let soft = p.get("soft").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
-        let mut stmt = tx
-            .prepare_cached("DELETE FROM messages WHERE id = ?1")
-            .map_err(DbError::from)?;
+        let sql = if soft {
+            "UPDATE messages SET hidden = 1 WHERE id = ?1"
+        } else {
+            "DELETE FROM messages WHERE id = ?1"
+        };
+        let mut stmt = tx.prepare_cached(sql).map_err(DbError::from)?;
         let mut n = 0usize;
         for id in &parsed {
             n += stmt.execute(params![id]).map_err(DbError::from)?;
         }
-        Ok(json!({ "written": n, "requested": parsed.len() }))
+        Ok(json!({ "written": n, "requested": parsed.len(), "soft": soft }))
     })
 }
 

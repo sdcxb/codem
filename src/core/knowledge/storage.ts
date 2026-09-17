@@ -19,6 +19,8 @@ import {
   domainReadMany,
   domainReadOne,
   domainWrite,
+  shouldFallbackToLegacy,
+  writeShouldFallBackToLegacy,
 } from "../storage/domain-store";
 import type {
   Notebook,
@@ -377,7 +379,8 @@ export function createNotebook(input: CreateNotebookInput): Notebook {
   if (domainWrite(T_NOTEBOOKS, [notebookToWire(created)], { scope: "notebook.create", note: "笔记本未保存" })) {
     return created;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("notebook.create", "笔记本未保存")) return created;
+const db = getDatabase();
   db.run(
     `INSERT INTO notebooks (id, name, description, summary, summary_status, source_count, chunk_count, group_id, created_at, updated_at)
      VALUES (?, ?, ?, NULL, 'pending', 0, 0, ?, ?, ?)`,
@@ -391,7 +394,8 @@ export function createNotebook(input: CreateNotebookInput): Notebook {
 export function getNotebook(id: string): Notebook | null {
   const rust = domainReadOne(T_NOTEBOOKS, { id }, wireToNotebook);
   if (rust !== undefined) return rust;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
   const result = db.exec('SELECT * FROM notebooks WHERE id = ?', [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
   return rowToNotebook(result[0].values[0]);
@@ -400,7 +404,8 @@ export function getNotebook(id: string): Notebook | null {
 export function listNotebooks(): Notebook[] {
   const rust = domainReadMany(T_NOTEBOOKS, wireToNotebook);
   if (rust) return rust.sort((a, b) => b.updatedAt - a.updatedAt);
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec('SELECT * FROM notebooks ORDER BY updated_at DESC');
   if (result.length === 0) return [];
   return result[0].values.map(rowToNotebook);
@@ -414,7 +419,8 @@ export function listNotebooksByGroup(groupId: string | null): Notebook[] {
       .filter((nb) => (groupId === null ? nb.groupId === undefined : nb.groupId === groupId))
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = groupId === null
     ? db.exec('SELECT * FROM notebooks WHERE group_id IS NULL ORDER BY updated_at DESC')
     : db.exec('SELECT * FROM notebooks WHERE group_id = ? ORDER BY updated_at DESC', [groupId]);
@@ -456,7 +462,8 @@ export function updateNotebook(id: string, update: Partial<Pick<Notebook, 'name'
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("notebook.update", "笔记本未更新")) return;
+const db = getDatabase();
   const values: (string | number | null)[] = [];
   const columnOf: Record<string, string> = {
     name: 'name = ?',
@@ -488,7 +495,8 @@ export function updateNotebook(id: string, update: Partial<Pick<Notebook, 'name'
 
 export function deleteNotebook(id: string): void {
   if (domainDelete(T_NOTEBOOKS, { id }, { scope: "notebook.delete", note: "笔记本未删除" })) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("notebook.delete", "笔记本未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM notebooks WHERE id = ?', [id]);
   persistDatabase();
 }
@@ -511,7 +519,8 @@ export function refreshNotebookCounts(notebookId: string): void {
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("notebook.refreshCounts", "笔记本计数未刷新")) return;
+const db = getDatabase();
   db.run(
     'UPDATE notebooks SET source_count = ?, chunk_count = ?, updated_at = ? WHERE id = ?',
     [sourceCount, chunkCount, now, notebookId],
@@ -522,7 +531,8 @@ export function refreshNotebookCounts(notebookId: string): void {
 function getSourceCount(notebookId: string): number {
   const rust = domainReadMany(T_SOURCES, (r) => r, { notebook_id: notebookId });
   if (rust) return rust.length;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return 0;
+const db = getDatabase();
   const srcResult = db.exec(
     'SELECT COUNT(*) as cnt FROM notebook_sources WHERE notebook_id = ?',
     [notebookId],
@@ -567,7 +577,8 @@ export function addSource(input: AddSourceInput): NotebookSource {
   if (domainWrite(T_SOURCES, [sourceToWire(created)], { scope: "source.add", note: "来源未保存" })) {
     return created;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("source.add", "来源未保存")) return created;
+const db = getDatabase();
   db.run(
     `INSERT INTO notebook_sources (id, notebook_id, name, type, content, file_path, url, mime_type, size, status, chunk_count, error_message, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?)`,
@@ -592,7 +603,8 @@ export function addSource(input: AddSourceInput): NotebookSource {
 export function getSource(id: string): NotebookSource | null {
   const rust = domainReadOne(T_SOURCES, { id }, wireToSource);
   if (rust !== undefined) return rust;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
   const result = db.exec(
     'SELECT id, notebook_id, name, type, content, file_path, url, mime_type, size, status, chunk_count, error_message, summary, key_topics, created_at FROM notebook_sources WHERE id = ?',
     [id],
@@ -604,7 +616,8 @@ export function getSource(id: string): NotebookSource | null {
 export function listSources(notebookId: string): NotebookSource[] {
   const rust = domainReadMany(T_SOURCES, wireToSource, { notebook_id: notebookId });
   if (rust) return rust.sort((a, b) => a.createdAt - b.createdAt);
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT id, notebook_id, name, type, content, file_path, url, mime_type, size, status, chunk_count, error_message, summary, key_topics, created_at FROM notebook_sources WHERE notebook_id = ? ORDER BY created_at ASC',
     [notebookId],
@@ -646,7 +659,8 @@ export function updateSource(id: string, update: Partial<Pick<NotebookSource, 's
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("source.update", "来源未更新")) return;
+const db = getDatabase();
   const values: (string | number | null)[] = [];
   for (const f of fields) {
     if (f === 'status') values.push(update.status as string);
@@ -668,7 +682,8 @@ export function updateSource(id: string, update: Partial<Pick<NotebookSource, 's
 
 export function deleteSource(id: string): void {
   if (domainDelete(T_SOURCES, { id }, { scope: "source.delete", note: "来源未删除" })) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("source.delete", "来源未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM notebook_sources WHERE id = ?', [id]);
   persistDatabase();
 }
@@ -708,7 +723,8 @@ export function addChunk(chunk: Omit<NotebookChunk, 'id' | 'createdAt'>): Notebo
   if (domainWrite(T_CHUNKS, [chunkToWire(created)], { scope: "chunk.add", note: "文本块未保存", ...CHUNK_OPTS })) {
     return created;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("chunk.add", "文本块未保存")) return created;
+const db = getDatabase();
   const embeddingBlob = chunk.embedding ? embeddingToBase64(chunk.embedding) : null;
   db.run(
     `INSERT INTO notebook_chunks (id, source_id, notebook_id, content, chunk_index, embedding, token_count, created_at)
@@ -739,7 +755,8 @@ export function addChunksBulk(notebookId: string, sourceId: string, chunks: { co
   if (domainWrite(T_CHUNKS, rows, { scope: "chunk.addBulk", note: "文本块未批量保存", ...CHUNK_OPTS })) {
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("chunk.addBulk", "文本块未批量保存")) return;
+const db = getDatabase();
   for (const chunk of chunks) {
     const id = generateChunkId();
     const embeddingBlob = chunk.embedding ? embeddingToBase64(chunk.embedding) : null;
@@ -756,7 +773,8 @@ export function addChunksBulk(notebookId: string, sourceId: string, chunks: { co
 export function getChunks(notebookId: string): NotebookChunk[] {
   const rust = domainReadMany(T_CHUNKS, wireToChunk, { notebook_id: notebookId }, CHUNK_OPTS);
   if (rust) return rust.sort((a, b) => a.chunkIndex - b.chunkIndex);
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT id, source_id, notebook_id, content, chunk_index, embedding, token_count, created_at FROM notebook_chunks WHERE notebook_id = ? ORDER BY chunk_index ASC',
     [notebookId],
@@ -768,7 +786,8 @@ export function getChunks(notebookId: string): NotebookChunk[] {
 export function getChunkCount(notebookId: string): number {
   const rust = domainReadMany(T_CHUNKS, (r) => r, { notebook_id: notebookId }, CHUNK_OPTS);
   if (rust) return rust.length;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return 0;
+const db = getDatabase();
   const result = db.exec(
     'SELECT COUNT(*) FROM notebook_chunks WHERE notebook_id = ?',
     [notebookId],
@@ -785,7 +804,8 @@ export function deleteChunksBySource(sourceId: string): void {
     { scope: "chunk.deleteBySource", note: "文本块未删除", ...CHUNK_OPTS },
   );
   if (removed !== null) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("chunk.deleteBySource", "文本块未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM notebook_chunks WHERE source_id = ?', [sourceId]);
   persistDatabase();
 }
@@ -828,7 +848,8 @@ export function createNote(input: CreateNoteInput): Note {
   if (domainWrite(T_NOTES, [noteToWire(created)], { scope: "note.create", note: "笔记未保存" })) {
     return created;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("note.create", "笔记未保存")) return created;
+const db = getDatabase();
   const tagsJson = input.tags ? JSON.stringify(input.tags) : null;
   db.run(
     `INSERT INTO notes (id, notebook_id, source_id, title, content, content_type, tags, pin_order, created_at, updated_at)
@@ -843,7 +864,8 @@ export function createNote(input: CreateNoteInput): Note {
 export function getNote(id: string): Note | null {
   const rust = domainReadOne(T_NOTES, { id }, wireToNote);
   if (rust !== undefined) return rust;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
   const result = db.exec('SELECT * FROM notes WHERE id = ?', [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
   return rowToNote(result[0].values[0]);
@@ -852,7 +874,8 @@ export function getNote(id: string): Note | null {
 export function listNotes(notebookId: string): Note[] {
   const rust = domainReadMany(T_NOTES, wireToNote, { notebook_id: notebookId });
   if (rust) return rust.sort((a, b) => (b.pinOrder - a.pinOrder) || (b.updatedAt - a.updatedAt));
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT * FROM notes WHERE notebook_id = ? ORDER BY pin_order DESC, updated_at DESC',
     [notebookId],
@@ -895,7 +918,8 @@ export function updateNote(id: string, update: Partial<Pick<Note, 'title' | 'con
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("note.update", "笔记未更新")) return;
+const db = getDatabase();
   const values: (string | number | null)[] = [];
   for (const f of fields) {
     if (f === 'title') values.push(update.title as string);
@@ -918,7 +942,8 @@ export function updateNote(id: string, update: Partial<Pick<Note, 'title' | 'con
 
 export function deleteNote(id: string): void {
   if (domainDelete(T_NOTES, { id }, { scope: "note.delete", note: "笔记未删除" })) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("note.delete", "笔记未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM notes WHERE id = ?', [id]);
   persistDatabase();
 }
@@ -931,7 +956,8 @@ export function deleteNotesByNotebook(notebookId: string): void {
     { scope: "note.deleteByNotebook", note: "笔记本的笔记未删除" },
   );
   if (removed !== null) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("note.deleteByNotebook", "笔记未按笔记本删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM notes WHERE notebook_id = ?', [notebookId]);
   persistDatabase();
 }
@@ -1027,7 +1053,8 @@ export function addNoteLink(sourceNoteId: string, targetNoteId: string, linkText
     return false;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("noteLink.add", "笔记链接未保存")) return false;
+const db = getDatabase();
   db.run(
     'INSERT OR IGNORE INTO note_links (id, source_note_id, target_note_id, link_text, created_at) VALUES (?, ?, ?, ?, ?)',
     [id, sourceNoteId, targetNoteId, linkText ?? null, now],
@@ -1047,7 +1074,8 @@ export function getNoteLinks(noteId: string): NoteLink[] {
   if (rust) {
     return rust.filter((l) => l.sourceNoteId === noteId || l.targetNoteId === noteId);
   }
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT * FROM note_links WHERE source_note_id = ? OR target_note_id = ?',
     [noteId, noteId],
@@ -1059,7 +1087,8 @@ export function getNoteLinks(noteId: string): NoteLink[] {
 export function getBacklinks(noteId: string): NoteLink[] {
   const rust = domainReadMany(T_LINKS, wireToNoteLink, { target_note_id: noteId });
   if (rust) return rust;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT * FROM note_links WHERE target_note_id = ?',
     [noteId],
@@ -1115,7 +1144,8 @@ export function addGraphNode(
   if (domainWrite(T_NODES, [nodeToWire(created)], { scope: "graph.addNode", note: "图谱节点未保存" })) {
     return created;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.addNode", "图谱节点未保存")) return created;
+const db = getDatabase();
   db.run(
     `INSERT INTO graph_nodes (id, notebook_id, label, entity_type, description, source_ids, chunk_ids, weight, community_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
@@ -1133,7 +1163,8 @@ export function getGraphData(notebookId: string): GraphData {
     // 旧 SQL：nodes 按 weight DESC，edges 无 ORDER BY
     return { nodes: rustNodes.sort((a, b) => b.weight - a.weight), edges: rustEdges };
   }
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return { nodes: [], edges: [] };
+const db = getDatabase();
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
 
@@ -1212,7 +1243,8 @@ export function addGraphEdge(
     return written ? edge : null;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.addEdge", "图谱边未保存")) return null;
+const db = getDatabase();
   try {
     db.run(
       `INSERT OR IGNORE INTO graph_edges (id, notebook_id, source_node_id, target_node_id, relation_type, weight, created_at)
@@ -1240,7 +1272,8 @@ export function deleteGraphData(notebookId: string): void {
     { scope: "graph.deleteNodes", note: "图谱节点未删除" },
   );
   if (removedEdges !== null && removedNodes !== null) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.deleteData", "图谱数据未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM graph_edges WHERE notebook_id = ?', [notebookId]);
   db.run('DELETE FROM graph_nodes WHERE notebook_id = ?', [notebookId]);
   persistDatabase();
@@ -1257,7 +1290,8 @@ export function updateNodeCommunity(nodeId: string, communityId: number): void {
     });
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.updateCommunity", "节点社区未更新")) return;
+const db = getDatabase();
   runGuarded(db, 'UPDATE graph_nodes SET community_id = ? WHERE id = ?', [communityId, nodeId],
     { table: "graph_nodes", op: "update-community", id: nodeId, from: "updateNodeCommunity" });
   persistDatabase();
@@ -1305,7 +1339,8 @@ export function findOrCreateNode(
     return addGraphNode(notebookId, label, entityType, description, sourceId ? [sourceId] : [], chunkId ? [chunkId] : []);
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.findOrCreateNode", "节点未创建")) return addGraphNode(notebookId, label, entityType, description, sourceId ? [sourceId] : [], chunkId ? [chunkId] : []);
+const db = getDatabase();
   const result = db.exec(
     'SELECT id FROM graph_nodes WHERE notebook_id = ? AND label = ? LIMIT 1',
     [notebookId, label],
@@ -1368,7 +1403,8 @@ export function createGroup(input: CreateGroupInput): NotebookGroup {
   if (domainWrite(T_GROUPS, [groupToWire(created)], { scope: "group.create", note: "分组未保存" })) {
     return created;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("group.create", "笔记本分组未保存")) return created;
+const db = getDatabase();
   db.run(
     `INSERT INTO notebook_groups (id, name, parent_id, sort_order, created_at)
      VALUES (?, ?, ?, 0, ?)`,
@@ -1388,7 +1424,8 @@ export function listGroups(parentId?: string | null): NotebookGroup[] {
     // 旧 SQL：ORDER BY sort_order ASC, name ASC
     return filtered.sort((a, b) => (a.sortOrder - b.sortOrder) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = parentId === undefined
     ? db.exec('SELECT * FROM notebook_groups ORDER BY sort_order ASC, name ASC')
     : parentId === null
@@ -1427,7 +1464,8 @@ export function updateGroup(id: string, update: Partial<Pick<NotebookGroup, 'nam
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("group.update", "笔记本分组未更新")) return;
+const db = getDatabase();
   const values: (string | number | null)[] = [];
   for (const f of fields) {
     if (f === 'name') values.push(update.name as string);
@@ -1462,7 +1500,8 @@ export function deleteGroup(id: string): void {
   }
   if (handled) return;
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("group.delete", "笔记本分组未删除")) return;
+const db = getDatabase();
   // Move notebooks in this group to ungrouped
   db.run('UPDATE notebooks SET group_id = NULL WHERE group_id = ?', [id]);
   // Delete child groups (cascade)
@@ -1504,7 +1543,8 @@ export function saveNoteVersion(noteId: string, versionNote?: string): void {
   if (domainWrite(T_VERSIONS, [versionToWire(created)], { scope: "noteVersion.save", note: "笔记版本未保存" })) {
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("noteVersion.save", "笔记版本未保存")) return;
+const db = getDatabase();
   const tagsJson = note.tags ? JSON.stringify(note.tags) : null;
   db.run(
     `INSERT INTO note_versions (id, note_id, title, content, tags, version_note, created_at)
@@ -1517,7 +1557,8 @@ export function saveNoteVersion(noteId: string, versionNote?: string): void {
 export function listNoteVersions(noteId: string): NoteVersion[] {
   const rust = domainReadMany(T_VERSIONS, wireToVersion, { note_id: noteId });
   if (rust) return rust.sort((a, b) => b.createdAt - a.createdAt);
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const result = db.exec(
     'SELECT id, note_id, title, content, tags, version_note, created_at FROM note_versions WHERE note_id = ? ORDER BY created_at DESC',
     [noteId],
@@ -1529,7 +1570,8 @@ export function listNoteVersions(noteId: string): NoteVersion[] {
 export function getNoteVersion(versionId: string): NoteVersion | null {
   const rust = domainReadOne(T_VERSIONS, { id: versionId }, wireToVersion);
   if (rust !== undefined) return rust;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
   const result = db.exec(
     'SELECT id, note_id, title, content, tags, version_note, created_at FROM note_versions WHERE id = ?',
     [versionId],
@@ -1559,7 +1601,8 @@ export function restoreNoteVersion(versionId: string): void {
 
 export function deleteNoteVersion(versionId: string): void {
   if (domainDelete(T_VERSIONS, { id: versionId }, { scope: "noteVersion.delete", note: "笔记版本未删除" })) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("noteVersion.delete", "笔记版本未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM note_versions WHERE id = ?', [versionId]);
   persistDatabase();
 }
@@ -1604,7 +1647,8 @@ export function updateGraphNode(
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.updateNode", "图谱节点未更新")) return;
+const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
 
@@ -1637,7 +1681,8 @@ export function deleteGraphNode(nodeId: string): void {
   );
   const removedNode = domainDelete(T_NODES, { id: nodeId }, { scope: "graph.deleteNode", note: "节点未删除" });
   if (removedEdges !== null && removedNode) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.deleteNode", "图谱节点未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM graph_edges WHERE source_node_id = ? OR target_node_id = ?', [nodeId, nodeId]);
   db.run('DELETE FROM graph_nodes WHERE id = ?', [nodeId]);
   persistDatabase();
@@ -1645,7 +1690,8 @@ export function deleteGraphNode(nodeId: string): void {
 
 export function deleteGraphEdge(edgeId: string): void {
   if (domainDelete(T_EDGES, { id: edgeId }, { scope: "graph.deleteEdge", note: "图谱边未删除" })) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("graph.deleteEdge", "图谱边未删除")) return;
+const db = getDatabase();
   db.run('DELETE FROM graph_edges WHERE id = ?', [edgeId]);
   persistDatabase();
 }
@@ -1653,7 +1699,8 @@ export function deleteGraphEdge(edgeId: string): void {
 export function getGraphEdgeById(edgeId: string): GraphEdge | null {
   const rust = domainReadOne(T_EDGES, { id: edgeId }, wireToEdge);
   if (rust !== undefined) return rust;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
   const result = db.exec(
     'SELECT id, notebook_id, source_node_id, target_node_id, relation_type, weight, created_at FROM graph_edges WHERE id = ?',
     [edgeId],

@@ -1,7 +1,7 @@
 import { getDatabase, tryGetDatabase, persistDatabase } from "./database";
 import { reportPersistFailure } from "./persist-failure";
 import { getStoragePort, hasStoragePort } from "./port";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-store";
 
 // ========== Settings Storage (replaces localStorage) ==========
 //
@@ -94,7 +94,8 @@ export function getSetting(key: string): string | null {
     return cfg.get<string | null>(key, null);
   }
   try {
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return null;
+const db = getDatabase();
     const result = db.exec("SELECT value FROM settings WHERE key = ?", [key]);
     if (result.length > 0 && result[0].values.length > 0) {
       return result[0].values[0][0] as string;
@@ -111,7 +112,8 @@ export function setSetting(key: string, value: string): void {
     cfg.set(key, value);
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.setSetting", "设置未保存")) return;
+const db = getDatabase();
   const now = Date.now();
   db.run(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
@@ -126,7 +128,8 @@ export function removeSetting(key: string): void {
     cfg.remove(key);
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.removeSetting", "设置未删除")) return;
+const db = getDatabase();
   db.run("DELETE FROM settings WHERE key = ?", [key]);
   persistDatabase();
 }
@@ -197,7 +200,8 @@ export function saveQuickPhrase(phrase: QuickPhrase): void {
     );
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.saveQuickPhrase", "快捷短语未保存")) return;
+const db = getDatabase();
   const now = Date.now();
 
   db.run(
@@ -234,7 +238,8 @@ export function loadQuickPhrases(): QuickPhrase[] {
     }));
   }
   try {
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec(
       "SELECT id, title, content, category, usage_count, created_at, updated_at FROM quick_phrases ORDER BY usage_count DESC, updated_at DESC"
     );
@@ -266,7 +271,8 @@ export function deleteQuickPhrase(phraseId: string): void {
     return;
   }
   try {
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("settings.deleteQuickPhrase", "快捷短语未删除")) return;
+const db = getDatabase();
     db.run("DELETE FROM quick_phrases WHERE id = ?", [phraseId]);
     persistDatabase();
   } catch (e) { reportPersistFailure("storage.deleteQuickPhrase", e, "快捷短语未删除，重启后还会出现"); }
@@ -290,7 +296,8 @@ export function incrementQuickPhraseUsage(phraseId: string): void {
     return;
   }
   try {
-    const db = getDatabase();
+        if (!writeShouldFallBackToLegacy("settings.incrementQuickPhraseUsage", "快捷短语使用次数未更新")) return;
+const db = getDatabase();
     db.run(
       "UPDATE quick_phrases SET usage_count = usage_count + 1, updated_at = ? WHERE id = ?",
       [Date.now(), phraseId]
@@ -324,7 +331,8 @@ export function loadMcpServers(): McpServerConfig[] {
     }));
   }
   try {
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
     const result = db.exec("SELECT id, name, config, enabled FROM mcp_servers ORDER BY name");
     if (result.length === 0) return [];
     return result[0].values.map((row: any[]) => ({
@@ -349,7 +357,8 @@ export function saveMcpServer(id: string, name: string, config: string, enabled:
     writeThrough("mcp_servers.save", { id, name, config, enabled }, "storage.saveMcpServer", "MCP 服务器配置未保存");
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.saveMcpServer", "MCP 服务未保存")) return;
+const db = getDatabase();
   const now = Date.now();
   db.run(
     "INSERT OR REPLACE INTO mcp_servers (id, name, config, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -366,7 +375,8 @@ export function removeMcpServer(id: string): void {
     writeThrough("mcp_servers.remove", { id }, "storage.removeMcpServer", "MCP 服务器未删除");
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.removeMcpServer", "MCP 服务未删除")) return;
+const db = getDatabase();
   db.run("DELETE FROM mcp_servers WHERE id = ?", [id]);
   persistDatabase();
 }
@@ -379,7 +389,8 @@ export function loadMemory(): string {
     return dom.read<string>((s) => (s as { memory: string }).memory, "", "memory");
   }
   try {
-    const db = getDatabase();
+        if (!shouldFallbackToLegacy()) return "";
+const db = getDatabase();
     const result = db.exec("SELECT content FROM memory WHERE id = 'default'");
     if (result.length > 0 && result[0].values.length > 0) {
       return result[0].values[0][0] as string;
@@ -397,7 +408,8 @@ export function saveMemory(content: string): void {
     writeThrough("memory.set", { content }, "storage.saveMemory", "记忆内容未保存");
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.saveMemory", "记忆未保存")) return;
+const db = getDatabase();
   const now = Date.now();
   db.run(
     "INSERT OR REPLACE INTO memory (id, content, updated_at) VALUES ('default', ?, ?)",
@@ -440,7 +452,8 @@ export function saveRecoveryData(sessionId: string, data: string): void {
   })) {
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.saveRecoveryData", "崩溃恢复数据未保存")) return;
+const db = getDatabase();
   db.run(
     "INSERT OR REPLACE INTO recovery_data (session_id, data, updated_at) VALUES (?, ?, ?)",
     [sessionId, data, now]
@@ -455,7 +468,8 @@ export function removeRecoveryData(sessionId: string): void {
   })) {
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.removeRecoveryData", "崩溃恢复数据未删除")) return;
+const db = getDatabase();
   db.run("DELETE FROM recovery_data WHERE session_id = ?", [sessionId]);
   persistDatabase();
 }
@@ -503,7 +517,8 @@ export function addCostRecord(record: CostRecord): void {
   }], { scope: "settings.addCostRecord", note: "成本记录未保存" })) {
     return;
   }
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("settings.addCostRecord", "成本记录未保存")) return;
+const db = getDatabase();
   db.run(
     "INSERT INTO cost_records (id, session_id, model, provider, prompt_tokens, completion_tokens, cost, duration, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [record.id, record.sessionId, record.model, record.provider, record.promptTokens, record.completionTokens, record.cost, record.duration, record.timestamp]

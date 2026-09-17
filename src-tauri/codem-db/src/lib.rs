@@ -105,6 +105,8 @@ pub const COMMANDS: &[&str] = &[
     "fts.rebuild_all",
     "fts.delete_session",
     "fts.search",
+    "fts.upsert",
+    "fts.remove",
 ];
 
 /// 统一入口：命令名 + 结构化参数 → JSON 结果。
@@ -215,6 +217,8 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
     "fts.rebuild_all" => migrate::fts_rebuild_all(engine, params),
         "fts.delete_session" => migrate::fts_delete_session(engine, params),
         "fts.search" => migrate::fts_search(engine, params),
+        "fts.upsert" => migrate::fts_upsert(engine, params),
+        "fts.remove" => migrate::fts_remove(engine, params),
         other => Err(DbError::unsupported(format!(
             "未实现的仓储命令：{other}（迁移按 docs/ARCH-SQLITE-TO-RUST.md 的 P3 顺序补齐）"
         ))),

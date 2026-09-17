@@ -2,6 +2,84 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.56] - 2026-09-17 — 消息域补齐端口实现：一批"rust 模式下静默失效"的功能真的恢复了
+
+### 起因：门控本身不是目的，它照出来的空洞才是
+
+L3 整改（"端口没接手就回退旧库"的清单）这一批轮到 `message.ts`。把每个回退点改成
+**两态判据**之后，立刻暴露出一个此前看不见的事实：**一批函数只有旧库一条实现**。
+
+- **A 态** = 端口未注册（回滚到 wasm / 旧引擎测试基座）→ 旧库是唯一数据源，**必须回退**；
+- **B 态** = 端口在 rust、只是镜像没就绪 → **不许回退**（旧库在 rust 模式下刻意不加载）。
+
+而 rust 引擎下 `getDatabase()` 是**抛错**的。所以这些函数在真机上的行为是
+"抛错 → 被上层 `catch` → 打一行日志 → 用户以为操作成功了"。逐条对照：
+
+| 函数 | 真机形态 | 用户可见后果 |
+| --- | --- | --- |
+| `updateMessageContent` | 抛（调用点只 `console.error`） | **编辑并重发：编辑重启后回退到旧内容** |
+| `deleteMessagesAfter` | 抛 | **编辑并重发：被删掉的旧回复从权威日志整批复活** |
+| `deleteMessage` / `deleteMessagesBefore` | 抛 | 单条 / 区间删除不彻底（墓碑写不到） |
+| `appendToMessage` / `appendMessageContent` / `setMessageContent` / `setMessageReasoning` / `setMessageStatus` | 抛 | 流式正文与状态更新落不到索引与日志 |
+| `loadFeedback` | 抛（`getDatabase()` 写在 `try` **外面**） | 点历史消息的赞 / 踩直接报错 |
+| `trimIndexedMessages` | 抛（启动维护里） | **索引裁剪从未执行过** |
+| `rebuildSessionFts` | `isFts5Available()` 恒 false → 直接返回 | **新消息永远搜不到**（只能搜到迁移那一刻的老消息） |
+| `listAllAttachments` / `getAttachmentContent` | 抛 / 被 catch 成空 | 附件列表与正文在 rust 模式下不可用（**下一批**） |
+
+### 修法
+
+1. **写路径统一走已有端口命令**：`updateMessageContent` 等 5 个薄封装改为走
+   `updateMessage`（它本来就是"先写权威日志、再写索引，索引失败如实上报"），
+   于是编辑、流式追加、状态流转一次性回到正确链路；
+2. **删除路径端口优先**：`deleteMessagesAfter` / `deleteMessagesBefore` / `deleteMessage`
+   在候选集上从**会话镜像**算（同一份数据、同一套 timestamp 语义），删除走
+   `messages.delete`，并且**墓碑 / 日志镜像 / 全文索引**三件事一件不少；
+3. **镜像未就绪时等就绪再做**（一次性回调，不轮询）—— 与 `addNoteLink` 同一条规则：
+   写路径宁可等，也不许退回旧库（那是本进程内读写分裂）；
+4. **新增 Rust `fts.upsert` / `fts.remove`**：单条消息的全文索引维护（切分复用
+   `fts::tokenize` 的中文 bigram 规则）。`messages.upsert_index` 只管 `messages` 表，
+   而渲染侧原来那段"顺手插一行 FTS"是**旧库专属**的 —— 这就是"新消息搜不到"的根因。
+   另外 `rebuildSessionFts` 在 rust 模式下改为 `fts.rebuild`（带 `keep_ids`，
+   避免把"日志里有、索引里没有"的历史当孤儿删掉）；
+5. **`loadFeedback` 走通用域镜像**：`message_feedback` 是一张小表（只有被点过反馈的消息
+   才有行），正好符合域镜像的适用边界，于是同步读不再需要旧库；
+6. **`trimIndexedMessages` 端口化**：逐条对齐旧库路径的**耐久性不变量** ——
+   日志里没有的一律不删、带附件的消息不删、每个会话至少保留最新 N 条。
+
+### 顺带修掉两个更深的缺陷（都不在 L3 清单里）
+
+- **`messages.delete { soft: true }` 被 Rust 侧忽略**：上下文压缩要的是"隐藏"
+  （`hidden = 1`），实现却是**硬删除**。两者结果看着一样，但 `hidden` 是带外键级联的
+  行状态（`messages.count` 的 hidden 计数、`list` 的 `include_hidden` 都依赖它）。
+  更危险的是**假端口按 `soft` 语义实现了它**（写那段注释的人以为 Rust 侧支持）——
+  **测试绿、真机行为不同**，这正是最需要消灭的一类偏差。已在 `repo.rs` 补上两态 + 单测。
+- **`schema_report.tables` 在"全新库第一次打开"时少 1**：报表取在 `audit::install`
+  之前，而后者会建 `storage_audit` 表 → 同一个库每次打开报出的表数不同。
+  `engine_tests::schema_apply_is_idempotent` 因此**长期失败**（本轮用一份临时诊断测试
+  把两次打开的 `sqlite_master` 差集打出来才定位到）。已在 `Engine::open` 收口。
+
+### 测试基座的两处修正（否则门控会被误判成回归）
+
+- 假端口补上 `configDomain`（真实 `RustDataPort` 有它）。缺了它，`settings.ts` 的扩展域
+  在测试里根本走不到端口分支，门控会把 3 条快捷短语用例打红 —— 那是**基座偏差**，
+  不是产品行为；
+- `message-index-cutover` 的 MSG-9 原文断言"镜像未加载时应走旧库"，这正是本轮被推翻的
+  旧判据。已改写为**两态对照**：B 态不碰旧库 + A 态必须回退；
+  `attachment-externalization` 的 FTS-1 同理拆成 A 态 / B 态两条。
+
+### 量化（同一套脚本，两侧都测）
+
+| 指标 | 本批前 | 本批后 |
+| --- | --- | --- |
+| 基线（`CODEM_TEST_PORT=0`） | 5211 通过 / 0 失败 | **5221 通过 / 0 失败** |
+| 端口模式 | 91 失败 / 5120 通过 | **74 失败 / 5147 通过（−17，无新增失败）** |
+| Rust 测试 | 39 通过 | **94 通过 / 0 失败** |
+| L3 已门控 | 142 / 177 | **167 / 171** |
+| `tsc` / 七道审计门 | 0 错误 / 全绿 | 0 错误 / 全绿 |
+
+新增契约测试 `src/test/message-port-coverage.test.ts`（PC-1..PC-8）：写路径必须落到端口
+（命令 + 参数形状）、删了必须留墓碑、就绪后补做只能做一次、耐久性不变量不可放松。
+
 ## [1.16.55] - 2026-09-17 — 修 5 处"看着像防御、实际不会触发"的判空 + 一处 SQL 拼接
 
 ### 这一类缺陷为什么危险

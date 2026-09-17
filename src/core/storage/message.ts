@@ -15,10 +15,18 @@ import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
 import { safeJsonParse } from "../utils/safe-json";
 import { reportPersistFailure } from "./persist-failure";
-import { domainReadMany } from "./domain-store";
+import {
+  domainReadMany,
+  domainReadOne,
+  shouldFallbackToLegacy,
+  writeShouldFallBackToLegacy,
+} from "./domain-store";
 
 /** `attachments` 表名（P5 第 2 段：外置附件预热也走端口） */
 const ATTACHMENT_TABLE = "attachments";
+
+/** `message_feedback` 表名（P5 第 11 段：反馈读取走通用域镜像） */
+const FEEDBACK_TABLE = "message_feedback";
 
 export interface MessageRow {
   id: string;
@@ -159,6 +167,84 @@ export async function trimIndexedMessages(
 ): Promise<{ deletedMessages: number; skippedSessions: number }> {
   const keepPerSession = opts.keepPerSession ?? 500;
   const out = { deletedMessages: 0, skippedSessions: 0 };
+
+  /**
+   * **B 态（rust 引擎）走端口**（P5 第 11 段，真机缺陷修正）。
+   *
+   * 原实现第一行就是 `getDatabase()`（在 `try` 之外）—— rust 引擎下旧库刻意不加载，
+   * 于是整个维护步骤**直接抛错**：索引裁剪在真机上从来没有执行过
+   * （调用点 `database.ts` 的启动维护会打印"索引重建失败 / 保留标记"）。
+   *
+   * 现在的做法与旧库路径**逐条对齐**（同样的耐久性不变量，一个都不放松）：
+   * - 会话清单来自 `sessions` 域镜像（小表）；
+   * - 每个会话的消息来自**会话镜像**（已完整加载才用，被截断就不用 —— 与读路径同一条规则）；
+   * - `total <= keepPerSession` → 跳过；
+   * - 日志里没有的（`durable` 不含）→ 一律不删；
+   * - 带附件的消息 → 不删（附件行不在 JSONL 里，删消息会级联删附件）；
+   * - 删除走 `messages.delete`（**硬删除**，与旧库路径一致：日志才是权威副本）。
+   *
+   * 注意**不动全文索引**：被裁掉的消息在日志里还在、也仍然可搜（`fts.rebuild` 的
+   * `keep_ids` 就是为这件事留的）。
+   */
+  if (!shouldFallbackToLegacy()) {
+    const port = rustMessagePort();
+    if (!port?.messages) return out;
+
+    const { durableMessageIds, flushSessionLogWrites } = await import("./session-jsonl");
+    await flushSessionLogWrites();
+
+    const sessionRows = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
+    for (const row of sessionRows) {
+      const sessionId = String(row.id ?? "");
+      if (!sessionId) continue;
+      try {
+        port.messages.ensureLoaded(sessionId);
+        if (!port.messages.isLoaded(sessionId) || port.messages.isTruncated()) {
+          out.skippedSessions++;
+          continue;
+        }
+        const rows = port.messages.list(sessionId);
+        const visible = rows.filter((r) => !r.hidden);
+        if (visible.length <= keepPerSession) continue;
+
+        const durable = await durableMessageIds(sessionId);
+        if (durable.size === 0) {
+          out.skippedSessions++; // 老会话尚未回填 → 一律不动
+          continue;
+        }
+
+        // 与旧 SQL 的 `ORDER BY timestamp DESC LIMIT -1 OFFSET ?` 等价：保留最新 N 条
+        const sorted = [...visible].sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+        const candidates = sorted.slice(keepPerSession).map((r) => r.id);
+        if (candidates.length === 0) continue;
+
+        const attachmentRows =
+          domainReadMany<Record<string, unknown>>(ATTACHMENT_TABLE, (r) => r, { session_id: sessionId }) ?? [];
+        const withAttachments = new Set(
+          attachmentRows.map((r) => String(r.message_id ?? "")).filter((x) => x.length > 0),
+        );
+
+        const deletable = candidates.filter((id) => durable.has(id) && !withAttachments.has(id));
+        if (deletable.length === 0) {
+          out.skippedSessions++;
+          continue;
+        }
+        void port.data
+          .execute("messages.delete", { ids: deletable })
+          .catch((e) => reportPersistFailure("message.trimIndexedMessages", e, "索引裁剪的删除未落到查询索引"));
+        port.applyMessageDelete?.(sessionId, deletable);
+        out.deletedMessages += deletable.length;
+        console.log(
+          `[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（rust；均在 JSONL 中；附件消息已跳过）`,
+        );
+      } catch (e) {
+        console.warn(`[Index] 会话 ${sessionId} 裁剪失败（跳过）:`, e);
+        out.skippedSessions++;
+      }
+    }
+    return out;
+  }
+
   const db = getDatabase();
 
   let sessionIds: string[] = [];
@@ -380,10 +466,20 @@ function hiddenMessageIds(sessionId: string): Set<string> {
    */
   for (const id of localHiddenIds.get(sessionId) ?? []) out.add(id);
   if (out.size > 0) return out;
+  /**
+   * B 态（端口在 rust）：**不再碰旧库**。
+   *
+   * 旧库在 rust 模式下刻意不存在，这里原来靠 `tryGetDatabase()` 拿到 null 再返回空集 ——
+   * 结果一样，但"是否该读旧库"这件事没有被表达出来（那句 `tryGetDatabase()` 看起来
+   * 像一次正常的回退尝试）。两态门控把语义写清楚：B 态直接返回本进程的权威集合。
+   */
+  if (!shouldFallbackToLegacy()) return out;
   try {
     // P5 第 7 段：旧库在 rust 模式下**刻意不存在**，这里不能直接 .exec（会抛 null 解引用）
-  const legacyDbHidden = tryGetDatabase();
-  const rows = legacyDbHidden ? legacyDbHidden.exec("SELECT id FROM messages WHERE session_id = ? AND hidden = 1", [sessionId]) : [];
+    const legacyDbHidden = tryGetDatabase();
+    const rows = legacyDbHidden
+      ? legacyDbHidden.exec("SELECT id FROM messages WHERE session_id = ? AND hidden = 1", [sessionId])
+      : [];
     return new Set((rows?.[0]?.values ?? []).map((r: any[]) => String(r[0])));
   } catch {
     return new Set();
@@ -492,7 +588,13 @@ export function listMessagesFromIndex(sessionId: string, limit?: number): Messag
    * 返回空列表，交给 `listMessagesMerged` 用权威日志拼出完整历史。
    * 原来这里 `getDatabase()` 直接抛错 → 数据库一崩，连"读会话历史"都失败，
    * 明明日志里一切都还在。
+   *
+   * B 态（端口在 rust、该会话镜像未就绪/被截断）：**不碰旧库**，直接返回空列表。
+   * 原来会走到下面的 `getDatabase()` 并抛，被 catch 后同样是空列表 —— 但会顺带
+   * 打一行"索引暂不可用"的告警：在 B 态这是**误导性的噪音**（索引没坏，只是镜像
+   * 还在加载），而且会让"索引坏了"这个信号在日志里贬值。
    */
+  if (!shouldFallbackToLegacy()) return [];
   let db: any;
   try {
     db = getDatabase();
@@ -560,7 +662,8 @@ export function listVisibleMessages(sessionId: string): Message[] {
  * Also adds a default LIMIT of 200 to prevent unbounded result sets.
  */
 export function listAllAttachments(limit?: number): Array<MessageAttachment & { sessionId: string; messageId: string }> {
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return [];
+const db = getDatabase();
   const effectiveLimit = limit ?? 200;
   const limitClause = `LIMIT ${effectiveLimit}`;
   try {
@@ -618,7 +721,8 @@ function queueAttachmentExternalization(attachmentId: string, name: string, cont
   void (async () => {
     try {
       const { marker, preview } = await externalizeAttachmentContent(attachmentId, name, content);
-      const db = getDatabase();
+            if (!writeShouldFallBackToLegacy("message.attachmentExternalize", "附件未外置（正文保留内联，不影响使用）")) return;
+const db = getDatabase();
       runGuarded(
         db,
         "UPDATE attachments SET content = ?, preview = COALESCE(preview, ?) WHERE id = ?",
@@ -636,6 +740,38 @@ function queueAttachmentExternalization(attachmentId: string, name: string, cont
 }
 
 /**
+ * 把一条消息写进**端口侧**的全文索引（`fts.upsert`）。
+ *
+ * @returns true = 已交给端口（调用方不要再走旧库）
+ *
+ * 失败只上报、不抛：与"索引可由日志重建"的定位一致 —— 搜索暂时漏一条，
+ * 远好过让写消息的主流程失败。下一次 `rebuildSessionFts` 会把内容对齐回来。
+ */
+function indexFtsForMessageViaPort(sessionId: string, message: Message): boolean {
+  const port = rustMessagePort();
+  if (!port || shouldFallbackToLegacy()) return false;
+  void port.data
+    .execute("fts.upsert", {
+      session_id: sessionId,
+      message_id: message.id,
+      content: message.content ?? "",
+      role: message.role ?? "",
+      timestamp: message.timestamp ?? Date.now(),
+    })
+    .catch((e) => reportPersistFailure("message.fts.upsert", e, "全文索引未更新（该条消息暂时搜不到，会话对齐时会补上）"));
+  return true;
+}
+
+/** 从**端口侧**全文索引移除若干消息（删除/隐藏后调用，避免留下"命中却打不开"的孤儿行） */
+function removeFtsViaPort(sessionId: string, ids: string[]): void {
+  const port = rustMessagePort();
+  if (!port || shouldFallbackToLegacy() || ids.length === 0) return;
+  void port.data
+    .execute("fts.remove", { session_id: sessionId, ids })
+    .catch((e) => reportPersistFailure("message.fts.remove", e, "全文索引里的旧行未清除（搜索可能命中已删除的消息）"));
+}
+
+/**
  * 重建全文检索索引，使其与"读者能看到的消息"严格一致（第 80 波收尾项）。
  *
  * 背景：`session_fts` 是独立表、没有外键级联 —— 索引被裁剪（或消息被删除）之后，
@@ -648,8 +784,45 @@ function queueAttachmentExternalization(attachmentId: string, name: string, cont
  */
 export async function rebuildSessionFts(sessionId: string): Promise<{ removed: number; added: number }> {
   const out = { removed: 0, added: 0 };
+
+  /**
+   * **B 态（rust 引擎）走端口的 `fts.rebuild`**（P5 第 11 段，真机缺陷修正）。
+   *
+   * 原实现第一行就是 `isFts5Available()` —— 而那个标志只在**旧库初始化**时置真，
+   * rust 引擎下旧库刻意不加载 → 它恒为 false → 整个函数**直接返回 {0,0}**。
+   * 后果不是"少一次优化"，而是：**rust 模式下新写入的消息永远不进全文索引**
+   * （Rust 侧的 `messages.upsert_index` 只管 messages 表，FTS 由渲染侧负责对齐），
+   * 于是"搜索"只能搜到迁移那一刻的老消息。
+   *
+   * Rust 侧 `fts.rebuild` 的语义与这里完全对齐（删孤儿 / 补缺 / 内容不符就重写，
+   * 且用 `fts::tokenize` 做中文 bigram 切分）；日志里存在但索引里没有的 id 通过
+   * `keep_ids` 传过去，避免被当成孤儿删掉。
+   */
+  if (!shouldFallbackToLegacy()) {
+    const port = rustMessagePort();
+    if (!port) return out;
+    const keepIds = (cachedLogMessages.get(sessionId) ?? []).map((m) => m.id);
+    try {
+      const res = (await port.data.execute("fts.rebuild", {
+        session_id: sessionId,
+        keep_ids: keepIds,
+      })) as unknown as { removed?: number; added?: number; refreshed?: number };
+      out.removed = Number(res?.removed ?? 0);
+      out.added = Number(res?.added ?? 0) + Number(res?.refreshed ?? 0);
+      if (out.removed > 0 || out.added > 0) {
+        console.log(
+          `[FTS] 会话 ${sessionId} 索引对齐（rust）：删除孤儿 ${res?.removed ?? 0} 条、补齐 ${res?.added ?? 0} 条、重写 ${res?.refreshed ?? 0} 条`,
+        );
+      }
+    } catch (e) {
+      reportPersistFailure("message.rebuildSessionFts", e, "会话全文索引未对齐（搜索可能漏掉新消息）");
+    }
+    return out;
+  }
+
   if (!isFts5Available()) return out;
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return out;
+const db = getDatabase();
   try {
     const indexIds = new Set(
       db.exec("SELECT id FROM messages WHERE session_id = ?", [sessionId])?.[0]?.values?.map((r) => String(r[0])) ?? [],
@@ -695,7 +868,8 @@ export async function rebuildSessionFts(sessionId: string): Promise<{ removed: n
 }
 
 export function getAttachmentContent(id: string): string | undefined {
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return undefined;
+const db = getDatabase();
   try {
     const result = db.exec(
       `SELECT content FROM attachments WHERE id = ?`,
@@ -795,6 +969,13 @@ export function getMessage(id: string): Message | null {
     const fromLog = logMirrorMessage(logSessionId, id);
     if (fromLog) return fromLog;
   }
+
+  /**
+   * B 态（端口在 rust）：镜像与日志镜像都没命中 → 这条消息**在这个进程里读不到**，
+   * 而不是"去旧库再找找"。旧库在 rust 模式下刻意不存在，原来这里会抛一次
+   * （被下面 catch 住并打告警）—— 告警在 B 态是误导，且真正的答案是"没有"。
+   */
+  if (!shouldFallbackToLegacy()) return null;
 
   let db: any;
   try {
@@ -1189,9 +1370,21 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
 
 /** 消息 → SQLite 索引（createMessage 的索引侧；失败由调用方兜底） */
 function writeMessageIndex(message: Message, sessionId: string): void {
+  /**
+   * 全文索引（P1-7 / P5 第 11 段）**必须在这里分流，而不是塞在下面的旧库分支里**。
+   *
+   * 下面第一行就是"端口接手 → return"，如果把 FTS 那段留在旧库分支的末尾，
+   * rust 模式下它**永远不会执行** —— 那正是原来的缺陷（旧库专属的
+   * `if (isFts5Available())` 在 rust 模式下恒为 false，新消息永远搜不到）。
+   * 所以先按两态把索引这件事做掉：端口在 → `fts.upsert`（Rust 侧同一套 bigram 切分）；
+   * 端口不在 → 由下面旧库分支末尾那段插行（一个字节不变）。
+   */
+  const ftsViaPort = indexFtsForMessageViaPort(sessionId, message);
+
   // 迁移期分流：端口是 rust → 索引写走 Rust（**单事务**：主行 + JSON 列 + tool_calls 整体替换）
   if (writeIndexViaRust(message, sessionId, "create")) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("message.writeMessageIndex", "消息索引未写入")) return;
+const db = getDatabase();
   // Check if message already exists
   const existing = db.exec("SELECT id FROM messages WHERE id = ?", [message.id]);
   if (existing.length > 0 && existing[0].values.length > 0) {
@@ -1322,8 +1515,8 @@ function writeMessageIndex(message: Message, sessionId: string): void {
       }
     }
 
-    // Also index in FTS5 for session search (P1-7)
-    if (isFts5Available()) {
+    // 旧库全文索引（只有 A 态会走到这里：端口在时上面已经 `fts.upsert` 过了）
+    if (!ftsViaPort && isFts5Available() && shouldFallbackToLegacy()) {
       try {
         const db = getDatabase();
         db.run(
@@ -1355,10 +1548,13 @@ function writeMessageIndex(message: Message, sessionId: string): void {
 export function updateMessage(id: string, update: Partial<Message>): void {
   // ① 权威日志：先用现有快照 + 本次改动合成一条完整记录追加（同 id 后写者胜）
   const sessionId = currentSessionIdForMessage(id);
+  /** 本次用的"现存快照"：下面第 ③ 步（全文索引）复用同一份，不重复读一次 */
+  let snapshot: Message | null = null;
   if (sessionId) {
     const base = logMirrorMessage(sessionId, id) ?? (isDatabaseFatal() ? null : safeGetMessage(id));
     if (base) {
-      void appendSessionMessage(sessionId, { ...base, ...update, id, timestamp: base.timestamp ?? Date.now() } as Message);
+      snapshot = { ...base, ...update, id, timestamp: base.timestamp ?? Date.now() } as Message;
+      void appendSessionMessage(sessionId, snapshot);
     } else {
       void appendUpdatedMessageToLog(id);
     }
@@ -1374,6 +1570,18 @@ export function updateMessage(id: string, update: Partial<Message>): void {
     if (!noteDatabaseError(e)) {
       reportPersistFailure("message.updateMessage.index", e, "消息改动已写入权威日志，但查询索引更新失败（索引可由日志重建）");
     }
+  }
+
+  /**
+   * ③ 全文索引：**只有正文变了**才需要重写。
+   *
+   * 为什么只认 `content`：`session_fts.content` 存的就是正文（切分后）；
+   * 状态/推理/模型这些改动不影响可搜内容，而流式过程中
+   * `updateMessage(id, { reasoning })` 会被调用很多次 —— 每次都发一次 IPC
+   * 去重写索引纯属浪费（P5 第 11 段）。
+   */
+  if (sessionId && update.content !== undefined && snapshot) {
+    indexFtsForMessageViaPort(sessionId, snapshot);
   }
 }
 
@@ -1392,7 +1600,8 @@ function writeMessageUpdateIndex(id: string, update: Partial<Message>): void {
   const base = isDatabaseFatal() ? null : safeGetMessage(id);
   const sid = base ? currentSessionIdForMessage(id) : null;
   if (base && sid && writeIndexViaRust({ ...base, ...update, id } as Message, sid, "update")) return;
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("message.writeMessageUpdateIndex", "消息索引未更新")) return;
+const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
 
@@ -1472,11 +1681,51 @@ async function appendUpdatedMessageToLog(id: string): Promise<void> {
   }
 }
 
+/**
+ * 在已有正文后追加一段（流式路径的历史接口）。
+ *
+ * 旧实现是 SQL 级 `content = content || ?`，只有旧库一条路径 —— 在 rust 引擎下抛
+ * `Database not initialized`（与 `updateMessageContent` 同一个缺陷族）。
+ *
+ * 改成"先同步读回当前正文（镜像优先 / 日志镜像兜底），再整体 set"：
+ * - 语义与 `content || ?` 一致（拼接结果相同）；
+ * - 走 `updateMessage` → 权威日志先写、索引随后（端口优先），写不到行会被发现；
+ * - 读不到那一行时**如实上报**并放弃，而不是静默丢掉这段文本。
+ */
 export function appendToMessage(id: string, content: string): void {
-  const db = getDatabase();
-  runGuarded(db, "UPDATE messages SET content = content || ? WHERE id = ?", [content, id],
-    { table: "messages", op: "append-content", id, from: "appendMessageContent" });
-  persistDatabase();
+  const base = safeGetMessage(id);
+  if (!base) {
+    reportPersistFailure(
+      "message.appendToMessage",
+      new Error(`消息不存在或索引不可读：id=${id}`),
+      "追加上去的正文没有落地（消息读不回来）",
+    );
+    return;
+  }
+  updateMessage(id, { content: `${base.content ?? ""}${content}` });
+}
+
+/**
+ * 与 `appendToMessage` 同一实现（历史上是两个名字、两条路径）。
+ * `appendMessageContent` 是 agentic loop 侧的旧名字，保留为别名以免漏改调用点。
+ */
+export function appendMessageContent(id: string, text: string): void {
+  appendToMessage(id, text);
+}
+
+/** 整段覆盖正文（`updateMessageContent` 的旧别名，同一实现） */
+export function setMessageContent(id: string, content: string): void {
+  updateMessageContent(id, content);
+}
+
+/** 设置推理内容（同族缺陷：原来只有旧库一条路径） */
+export function setMessageReasoning(id: string, reasoning: string): void {
+  updateMessage(id, { reasoning });
+}
+
+/** 设置消息状态（同族缺陷：原来只有旧库一条路径） */
+export function setMessageStatus(id: string, status: string): void {
+  updateMessage(id, { status: status as Message["status"] });
 }
 
 /**
@@ -1518,7 +1767,8 @@ export function addToolCall(messageId: string, toolCall: ToolCall): void {
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("message.addToolCall", "工具调用未写入索引")) return;
+const db = getDatabase();
   db.run(
     "INSERT OR REPLACE INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
     [toolCall.id, messageId, toolCall.tool, JSON.stringify(toolCall.args), toolCall.result ?? null, toolCall.status, toolCall.metadata ? JSON.stringify(toolCall.metadata) : null]
@@ -1546,7 +1796,8 @@ export function updateToolCall(messageId: string, toolId: string, update: Partia
     return;
   }
 
-  const db = getDatabase();
+    if (!writeShouldFallBackToLegacy("message.updateToolCall", "工具调用结果未写入索引")) return;
+const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
 
@@ -1573,9 +1824,30 @@ export function updateToolCall(messageId: string, toolId: string, update: Partia
 }
 
 export function deleteMessage(id: string): void {
-  const db = getDatabase();
   // 先取会话 id（删掉之后就查不到了）：墓碑需要它
   const sessionId = currentSessionIdForMessage(id);
+  const port = rustMessagePort();
+  if (port) {
+    /**
+     * B 态（端口在、旧库刻意不存在）：删除走端口。
+     *
+     * 原来的实现第一行就是 `getDatabase()` —— 在 rust 引擎下直接抛，
+     * **墓碑那一行永远走不到**，于是"删除"在下一次从权威日志重建时复活。
+     * 顺序按删除链路的约定：索引（端口）→ 墓碑（日志）→ 内存镜像。
+     */
+    void port.data
+      .execute("messages.delete", { ids: [id] })
+      .catch((e) => reportPersistFailure("message.deleteMessage", e, "消息未从查询索引删除"));
+    if (sessionId) {
+      port.applyMessageDelete?.(sessionId, [id]);
+      removeFtsViaPort(sessionId, [id]);
+      appendTombstonesFor(sessionId, [id]);
+      dropFromLogMirror(sessionId, [id]);
+    }
+    return;
+  }
+  if (!writeShouldFallBackToLegacy("message.deleteMessage", "消息未删除")) return;
+  const db = getDatabase();
   db.run("DELETE FROM messages WHERE id = ?", [id]);
   persistDatabase();
   if (sessionId) void appendMessageTombstone(sessionId, id);
@@ -1631,6 +1903,43 @@ function appendTombstonesFor(sessionId: string, ids: string[]): void {
 
 /** Delete all messages before a given timestamp (exclusive) in a session */
 export function deleteMessagesBefore(sessionId: string, timestamp: number): number {
+  /**
+   * B 态（端口在）：候选 id 从**会话镜像**上算，删除走端口 —— 不碰刻意不存在的旧库。
+   * 旧实现第一行 `getDatabase()` 在 rust 引擎下直接抛，墓碑写不到 → 删掉的消息会复活。
+   *
+   * 镜像还没就绪时**等它就绪再做**（一次性回调，不轮询）—— 与 `addNoteLink` 同一条规则：
+   * 写路径宁可等，也不许退回旧库（那会造成本进程内读写分裂）。
+   */
+  const port = rustMessagePort();
+  if (port?.messages) {
+    /** @returns 删除条数；null = 镜像未就绪（调用方登记"就绪后重做"） */
+    const runWhenReady = (): number | null => {
+      if (!port.messages!.isLoaded(sessionId) || port.messages!.isTruncated()) return null;
+      const ids = port.messages!
+        .list(sessionId)
+        .filter((r) => Number(r.timestamp) < timestamp)
+        .map((r) => r.id);
+      if (ids.length === 0) return 0;
+      void port.data
+        .execute("messages.delete", { ids })
+        .catch((e) => reportPersistFailure("message.deleteMessagesBefore", e, "旧消息未从查询索引删除"));
+      port.applyMessageDelete?.(sessionId, ids);
+      removeFtsViaPort(sessionId, ids);
+      appendTombstonesFor(sessionId, ids);
+      dropFromLogMirror(sessionId, ids);
+      return ids.length;
+    };
+    const done = runWhenReady();
+    if (done !== null) return done;
+    port.messages.ensureLoaded(sessionId, () => {
+      const later = runWhenReady();
+      if (later !== null && later > 0) {
+        console.log(`[MessageStorage] 会话 ${sessionId} 镜像就绪后补做"按时间删旧消息"：${later} 条`);
+      }
+    });
+    return 0;
+  }
+  if (!writeShouldFallBackToLegacy("message.deleteMessagesBefore", "旧消息未删除")) return 0;
   const db = getDatabase();
   // First get the IDs of messages to delete (so we can clean up tool_calls)
   const result = db.exec(
@@ -1695,7 +2004,8 @@ export function deleteMessagesByIds(ids: string[]): number {
     for (const [sid, sids] of bySession) {
       for (const id of sids) rememberHidden(sid, id);
     }
-  } else {
+  } else if (shouldFallbackToLegacy()) {
+    // A 态（端口未注册 / wasm 回滚）：旧库是唯一数据源，维持原实现
     const db = getDatabase();
     for (const id of ids) {
       // 墓碑（hide）路径：0 行 = 这条消息根本不在索引里 —— 正是"假压缩"事故的观测点
@@ -1703,10 +2013,25 @@ export function deleteMessagesByIds(ids: string[]): number {
         { table: "messages", op: "hide", id, from: "deleteMessagesByIds" });
     }
     persistDatabase();
+  } else {
+    /**
+     * B 态且没有 `messages` 能力（测试双/能力缺失）：**不写旧库**。
+     *
+     * 这时隐藏没有落地，必须如实上报 —— 否则就退化成当初那个"压缩说移除了 840 条、
+     * 实际索引里一条都没变"的假成功。权威日志那一步（下面的墓碑）仍然照写：
+     * 日志才是权威，索引可在下次打开时按日志重建。
+     */
+    reportPersistFailure(
+      "message.deleteMessagesByIds",
+      new Error("端口已注册但没有 messages 能力"),
+      "消息未在查询索引里隐藏（本次只写了权威日志的墓碑）",
+    );
   }
   // 权威日志：逐条留墓碑（后写者胜：之后再写入同 id 即为重新出现）
   for (const [sid, sids] of bySession) {
     appendTombstonesFor(sid, sids);
+    // 全文索引：虚拟表没有级联，隐藏/删除后必须显式移除（否则搜索命中已删消息）
+    removeFtsViaPort(sid, sids);
     // 内存镜像同步剔除：否则本次进程内的 listMessages 仍会从镜像复活这些消息
     dropFromLogMirror(sid, sids);
   }
@@ -1741,6 +2066,12 @@ function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
     if (out.size > 0) return out;
     return out; // 端口在但查不到归属：不再退回旧库（旧库本来就不存在）
   }
+  /**
+   * B 态：端口在（rust）却没有 `messages` 能力（不应发生，但测试双可能如此）——
+   * 也**不许**退回旧库：查不到归属就返回空 Map（调用方据此跳过墓碑），
+   * 让"没写墓碑"成为一个可见的、可上报的事实，而不是悄悄写进旧库造成读写分裂。
+   */
+  if (!shouldFallbackToLegacy()) return out;
 
   const CHUNK = 200;
   for (let i = 0; i < ids.length; i += CHUNK) {
@@ -1776,7 +2107,8 @@ function dropFromLogMirror(sessionId: string, ids: string[]): void {
 export function getMessageCount(sessionId: string): number {
   const routed = rustMessageSource(sessionId);
   if (routed?.messages) return routed.messages.count(sessionId);
-  const db = getDatabase();
+    if (!shouldFallbackToLegacy()) return 0;
+const db = getDatabase();
   const result = db.exec("SELECT COUNT(*) FROM messages WHERE session_id = ?", [sessionId]);
   if (result.length === 0) return 0;
   return result[0].values[0][0] as number;
@@ -1830,7 +2162,9 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
       });
     return;
   }
-  const db = getDatabase();
+  if (!writeShouldFallBackToLegacy("message.saveFeedback", "反馈未保存")) return;
+    if (!writeShouldFallBackToLegacy("message.saveFeedback", "反馈未保存")) return;
+const db = getDatabase();
   // Delete existing feedback for this message
   try {
     db.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);
@@ -1851,12 +2185,39 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
   persistDatabase();
 }
 
-/** Load feedback for a specific message. Returns 'like', 'dislike', or null. */
+/**
+ * 读一条消息的反馈（`like` / `dislike` / `null`）。
+ *
+ * ## 第 11 段（P5）：修掉一个**真机可见的抛错**
+ *
+ * 原实现只有两条来源：本进程写过的缓存、以及旧库。rust 引擎下旧库刻意不加载，
+ * 而 `const db = getDatabase()` 在 `try` **外面** —— 于是"给历史消息点开反馈按钮"
+ * 会直接抛 `Database not initialized`（调用点：`store.ts` 的 `loadFeedback`、
+ * `FeedbackButtons.tsx` 的 effect）。
+ *
+ * 现在补上中间那一层：`message_feedback` 是一张小表（只有被点过反馈的消息才有行），
+ * 正好符合**通用域镜像**的适用边界，所以直接走 `domainReadOne`：
+ * - 端口接手（镜像已加载）→ 命中返回、未命中 null；
+ * - 端口在但镜像未就绪（B 态）→ 返回 null（**不碰旧库**），界面显示"未评价"；
+ * - A 态（端口未注册 / wasm 回滚）→ 维持原来的旧库读取，一个字节不变。
+ */
 export function loadFeedback(messageId: string): FeedbackType | null {
   // 本进程写过的优先（与写入落在同一处：都走 Rust）
   if (feedbackCache.has(messageId)) return feedbackCache.get(messageId) ?? null;
   // 数据库致命状态下直接返回（不再每次撞已崩的堆、也不再刷屏）
   if (isDatabaseFatal()) return null;
+
+  const rust = domainReadOne<{ feedback: string }>(
+    FEEDBACK_TABLE,
+    { message_id: messageId },
+    (row) => ({ feedback: String(row.feedback ?? "") }),
+  );
+  if (rust !== undefined) {
+    const value = rust?.feedback;
+    return value === "like" || value === "dislike" ? value : null;
+  }
+  if (!shouldFallbackToLegacy()) return null;
+
   const db = getDatabase();
   try {
     const result = db.exec("SELECT feedback FROM message_feedback WHERE message_id = ?", [messageId]);
@@ -1883,8 +2244,52 @@ export function deleteMessagesAfter(
   messageId: string,
   options?: { includeSelf?: boolean }
 ): number {
-  const db = getDatabase();
   const includeSelf = options?.includeSelf ?? false;
+
+  /**
+   * B 态（端口在）：候选 id 在**会话镜像**上算（同一份数据、同一套 timestamp 语义），
+   * 删除走端口。旧实现第一行 `getDatabase()` 在 rust 引擎下直接抛 ——
+   * 而调用点（`App.tsx` 的"编辑并重发"）只 `console.error`，于是：
+   * **被删掉的旧回复墓碑没写** → 下一次从权威日志合并时整批复活（用户现场形态）。
+   *
+   * 镜像未就绪时**等它就绪再做**（一次性回调）：宁可晚几百毫秒删、也不能退回旧库
+   * （B 态写旧库 = 本进程内读写分裂），更不能"删了就报成功"。
+   */
+  const port = rustMessagePort();
+  if (port?.messages) {
+    /** @returns 删除条数；null = 镜像未就绪（登记"就绪后重做"） */
+    const runWhenReady = (): number | null => {
+      if (!port.messages!.isLoaded(sessionId) || port.messages!.isTruncated()) return null;
+      const rows = port.messages!.list(sessionId);
+      const target = rows.find((r) => r.id === messageId);
+      if (!target) return 0;
+      const targetTs = Number(target.timestamp);
+      const ids = rows
+        .filter((r) => (includeSelf ? Number(r.timestamp) >= targetTs : Number(r.timestamp) > targetTs))
+        .map((r) => r.id);
+      if (ids.length === 0) return 0;
+      void port.data
+        .execute("messages.delete", { ids })
+        .catch((e) => reportPersistFailure("message.deleteMessagesAfter", e, "编辑重发时后续消息未从查询索引删除"));
+      port.applyMessageDelete?.(sessionId, ids);
+      removeFtsViaPort(sessionId, ids);
+      appendTombstonesFor(sessionId, ids);
+      dropFromLogMirror(sessionId, ids);
+      return ids.length;
+    };
+    const done = runWhenReady();
+    if (done !== null) return done;
+    port.messages.ensureLoaded(sessionId, () => {
+      const later = runWhenReady();
+      if (later !== null && later > 0) {
+        console.log(`[MessageStorage] 会话 ${sessionId} 镜像就绪后补做"删除后续消息"：${later} 条`);
+      }
+    });
+    return 0;
+  }
+
+  if (!writeShouldFallBackToLegacy("message.deleteMessagesAfter", "后续消息未删除")) return 0;
+  const db = getDatabase();
 
   // Get the timestamp of the target message
   const tsResult = db.exec(
@@ -1920,54 +2325,39 @@ export function deleteMessagesAfter(
    * **从权威日志里整批复活**（读路径以日志为准），而函数仍然返回"删了 N 条"。
    */
   appendTombstonesFor(sessionId, ids);
+  removeFtsViaPort(sessionId, ids);
   dropFromLogMirror(sessionId, ids);
   return ids.length;
 }
 
 /**
- * Update a user message's content (for inline edit).
- * This updates the content in-place without deleting the message.
+ * 更新用户消息正文（内联编辑用）。
+ *
+ * ## 为什么不再直接写旧库（P5 第 11 段，真机缺陷修正）
+ *
+ * 原实现只有旧库一条路径（`getDatabase()` + `UPDATE messages SET content`）。
+ * rust 引擎下旧库**刻意不加载** → `getDatabase()` 抛 `Database not initialized`，
+ * 而调用点（`App.tsx` 的"编辑并重发"）把它包在 `try/catch` 里只 `console.error` ——
+ * 于是形成了一个**静默的数据丢失**：
+ *
+ * - store（界面）改了内容 → 用户以为编辑成功；
+ * - **权威日志（JSONL）与索引都没有这次编辑** → 重启后内容回退到编辑前；
+ * - 同一路径上的 `deleteMessagesAfter` 也一起抛 → **墓碑没写** → 被删掉的旧回复
+ *   下次从日志合并时**整批复活**。
+ *
+ * 现在统一走 `updateMessage`：它本身就是"先写权威日志、再写索引（端口优先）"，
+ * 并且索引写失败会如实上报（`messages.update` 影响 0 行会被 Rust 侧拒收）。
  */
 export function updateMessageContent(messageId: string, content: string): void {
-  const db = getDatabase();
-  runGuarded(db, "UPDATE messages SET content = ? WHERE id = ?", [content, messageId],
-    { table: "messages", op: "set-content", id: messageId, from: "updateMessageContent" });
-  persistDatabase();
+  updateMessage(messageId, { content });
 }
 
 // ========== Agentic Loop Helper Functions ==========
-
-export function appendMessageContent(id: string, text: string): void {
-  const db = getDatabase();
-  runGuarded(db, "UPDATE messages SET content = content || ? WHERE id = ?", [text, id],
-    { table: "messages", op: "append-content", id, from: "appendToMessageContent" });
-  persistDatabase();
-}
-
-export function setMessageContent(id: string, content: string): void {
-  const db = getDatabase();
-  runGuarded(db, "UPDATE messages SET content = ? WHERE id = ?", [content, id],
-    { table: "messages", op: "set-content", id, from: "updateMessageFullContent" });
-  persistDatabase();
-}
-
-export function setMessageReasoning(id: string, reasoning: string): void {
-  const db = getDatabase();
-  try {
-    runGuarded(db, "UPDATE messages SET reasoning = ? WHERE id = ?", [reasoning, id],
-    { table: "messages", op: "set-reasoning", id, from: "updateMessageReasoning" });
-  } catch (e) {
-    reportPersistFailure("message.setMessageReasoning", e);
-  }
-  persistDatabase();
-}
-
-export function setMessageStatus(id: string, status: string): void {
-  const db = getDatabase();
-  runGuarded(db, "UPDATE messages SET status = ? WHERE id = ?", [status, id],
-    { table: "messages", op: "set-status", id, from: "updateMessageStatus" });
-  persistDatabase();
-}
+//
+// 第 11 段（P5）：`appendMessageContent` / `setMessageContent` / `setMessageReasoning` /
+// `setMessageStatus` 的**旧库唯一实现**已删除 —— 它们与 `appendToMessage` /
+// `updateMessageContent` 完全同义，现在统一在文件上方（定义在 `updateMessage` 之后）
+// 以别名形式给出，实现只有一份。保留别名是为了不动调用点（外部有按名字引用的地方）。
 
 // ========== Convert Message to LLM API format ==========
 

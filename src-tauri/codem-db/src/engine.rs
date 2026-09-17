@@ -92,7 +92,7 @@ impl Engine {
         // === 安全边界 ===
         authorizer::install(&conn);
 
-        let schema_report = schema::apply(&conn)?;
+        let mut schema_report = schema::apply(&conn)?;
 
         /*
          * 删除审计（第 31 轮事故）。
@@ -103,6 +103,20 @@ impl Engine {
          * 无论删除来自哪条路径都会留下记录。
          */
         crate::audit::install(&conn)?;
+
+        /*
+         * 报表必须在**全部打开步骤做完之后**取数（真机/CI 发现的缺陷）。
+         *
+         * `audit::install` 会建一张 `storage_audit` 表，而它是在 `schema::apply`
+         * **之后**执行的 —— 于是"全新库第一次打开"报出来的表数比"第二次打开"少 1：
+         * 第一次的报表取在审计表建好之前，第二次的报表取在它已存在之后。
+         *
+         * 后果不是功能坏掉，而是**诊断数字不可信**（同一个库每次打开报的表数不同，
+         * `engine_tests::schema_apply_is_idempotent` 正是被这条打红的）。
+         * 这类"报表与实际状态不一致"的问题必须在这里收口：报表是排查事故的依据，
+         * 一个会随打开次数漂移的数字比没有数字更糟。
+         */
+        schema_report.tables = schema::table_count(&conn)?;
 
         Ok(Self {
             path,

@@ -31,7 +31,12 @@ pub struct SchemaReport {
     pub fts_module: String,
 }
 
-fn table_count(conn: &Connection) -> DbResult<usize> {
+/// 库里的表/视图数量（不含 SQLite 内部表与 FTS 影子表之外的内建项）。
+///
+/// **公开**是刻意的：`Engine::open` 里 `audit::install` 会在 `schema::apply`
+/// 之后再加一张 `storage_audit` 表，报表必须在全部步骤结束后重新取一次数，
+/// 否则"全新库第一次打开"与"第二次打开"报出的表数会差 1（诊断数字漂移）。
+pub fn table_count(conn: &Connection) -> DbResult<usize> {
     let n: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'",

@@ -71,6 +71,14 @@ export interface FakeStoragePortOptions {
    * 也就是 B0-1 里的 **B 态**。它是"必须由端口接手、不能回退旧库"那条规则的反向用例载体。
    */
   neverReady?: string[];
+  /**
+   * 配置面扩展域是否已预热（默认 `true`）。
+   *
+   * 真实端口 `RustDataPort.configDomain` 在 `open()` 里 `warmup()` 一次，之后 `read()`
+   * 永远命中快照；未预热时 `read()` 返回 fallback 并留痕。设为 `false` 用来覆盖
+   * "端口在、配置面还没预热"那条路径（`settings.ts` 的扩展域据此返回默认值）。
+   */
+  configWarmed?: boolean;
 }
 
 export interface FakeStoragePort extends StoragePort {
@@ -532,6 +540,64 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     },
   };
 
+  // ===== 配置面扩展域（quick_phrases / mcp_servers / memory）=====
+  //
+  // 真实端口（`RustDataPort.configDomain`）在 `open()` 时 `warmup()` 一次，
+  // 之后 `read()` 永远从快照取值、`patch()` 只改快照（落库靠 `writeThrough` 的命令）。
+  //
+  // 这里等价映射到内存表：**read 直接按表拼快照**（而不是在 warmup 时拷贝一份），
+  // 这样"测试先往表里塞数据、再调 loadXxx"的既有写法仍然成立 ——
+  // 快照式拷贝会让那一类用例突然读不到东西（那是测试基座的偏差，不是产品行为）。
+  type ConfigSnapshotLike = { quickPhrases: Row[]; mcpServers: Row[]; memory: string };
+  let configDomainWarmed = opts.configWarmed ?? true;
+  const configSnapshots: Array<Partial<ConfigSnapshotLike>> = [];
+  const readConfigSnapshot = (): ConfigSnapshotLike => {
+    const fromPatches = Object.assign({}, ...configSnapshots) as Partial<ConfigSnapshotLike>;
+    return {
+      quickPhrases: (fromPatches.quickPhrases ?? table("quick_phrases")).map(cloneRow),
+      mcpServers: (fromPatches.mcpServers ?? table("mcp_servers")).map(cloneRow),
+      memory:
+        fromPatches.memory ??
+        String((table("memory").find((r) => r.id === "default") ?? {}).content ?? ""),
+    };
+  };
+  const configDomain = {
+    isWarmed: () => configDomainWarmed,
+    async warmup(): Promise<ConfigSnapshotLike> {
+      configDomainWarmed = true;
+      return readConfigSnapshot();
+    },
+    read<T>(pick: (s: ConfigSnapshotLike) => T, fallback: T, scope: string): T {
+      if (!configDomainWarmed) {
+        reportFakeFailure(scope, new Error("配置面尚未预热"));
+        return fallback;
+      }
+      try {
+        return pick(readConfigSnapshot());
+      } catch (e) {
+        reportFakeFailure(scope, e);
+        return fallback;
+      }
+    },
+    /** 与真实端口一致：只改镜像；落库由调用方的 `writeThrough` 负责 */
+    patch(patch: Partial<ConfigSnapshotLike>): void {
+      configSnapshots.push(patch);
+    },
+    stats() {
+      const s = readConfigSnapshot();
+      return {
+        warmed: configDomainWarmed,
+        quickPhrases: s.quickPhrases.length,
+        mcpServers: s.mcpServers.length,
+        memoryBytes: s.memory.length,
+        failures: writeFailures,
+      };
+    },
+    bumpFailure() {
+      writeFailures += 1;
+    },
+  };
+
   // ===== 引擎面 =====
   const health = (): StorageHealth =>
     ({ ok: true, tables: tables.size, engine: "rust", ftsModule: "fts5" }) as StorageHealth;
@@ -565,6 +631,7 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       domains,
       messages,
       events,
+      configDomain,
       applyMessageWrite: (row: Row) => messages.applyWrite(row),
       applyMessageDelete: (sid: string, ids: string[]) => messages.removeByIds(sid, ids),
       appendEventAsync: (sid: string, type: string, payload: string, timestamp: number, placeholderSeq: number) => {

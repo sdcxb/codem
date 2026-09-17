@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 消息索引写分流契约（P3 第 6 段）。
  *
  * ## 这一段与只追加面不同的地方
@@ -259,15 +259,32 @@ describe("消息读路径（P3 第 7 段）—— 读写必须同处，隐藏状
     expect(legacyQuery, "hidden 判定不得回落到旧库（那里状态已过时）").toBe(0);
   });
 
-  it("MSG-9: 未加载完的会话不路由（继续用旧库，读写同处）", async () => {
+  it("MSG-9: 未加载完的会话**不路由，也不回退旧库**（B 态两态判据）", async () => {
+    /**
+     * 这条契约在第 44 轮（B0-2）被**改写**过，原断言是"未加载完应走旧库"。
+     *
+     * 那个旧规则被证明是错的：端口已注册（rust）时旧库在真机上刻意不加载，
+     * "回退旧库"要么抛错、要么（在测试基座里）写到一份**不会被读路径看到**的库里 ——
+     * 也就是本进程内的读写分裂（`note-links-order.test.ts` 的 NL-2 抓到过同一形态）。
+     * 现在规则是：
+     *   - B 态（端口在 rust、镜像未就绪）→ 不碰旧库，返回**该域的合理空结果**；
+     *   - A 态（端口未注册 / wasm 回滚）→ 旧库是唯一数据源，必须回退。
+     * 两种态各自可测，删回退时才不必赌"端口总是就绪"。
+     */
     const { port } = portWithRows([
       { id: "a", session_id: "s2", role: "user", content: "一", timestamp: 1, status: "done", hidden: 0 },
     ]);
     setStoragePort(port);
     // 刻意不 warmup：s2 未加载
     const { listMessagesFromIndex } = await import("../core/storage/message");
+    const list = listMessagesFromIndex("s2");
+    expect(list, "B 态：镜像未就绪时给空，而不是半个集合").toEqual([]);
+    expect(legacyQuery, "B 态：索引读**不得**回退旧库（那里在 rust 模式下刻意不存在）").toBe(0);
+
+    // A 态对照：端口撤掉（等价于回滚开关切到 wasm）→ 必须回退旧库
+    setStoragePort(null);
     listMessagesFromIndex("s2");
-    expect(legacyQuery, "未加载完应走旧库（而不是返回空/半个集合）").toBeGreaterThan(0);
+    expect(legacyQuery, "A 态：端口不在时旧库是唯一数据源，必须读它").toBeGreaterThan(0);
   });
 
   it("MSG-10: 写入成功后镜像立刻可读（不必等下次加载）", async () => {

@@ -32,6 +32,8 @@ use serde_json::{json, Value};
 
 use crate::engine::Engine;
 use crate::error::{DbError, DbResult, ErrorCode};
+// `fts.upsert` 需要与仓储命令同一套可选整数解析（时间戳缺失时按 0 处理）
+use crate::repo::opt_i64;
 use crate::repo::{limit_of, opt_text, req_text};
 
 /// 允许导入的表 = **从 TS schema 生成**的业务表清单（`sql/tables.json`）。
@@ -746,6 +748,89 @@ pub fn fts_delete_session(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
+/// 单条消息写入/更新全文索引（**渲染侧每条消息写入后调用**）。
+///
+/// ## 为什么需要这条命令（真机缺陷修正）
+///
+/// `session_fts` 是虚拟表、没有触发器维护，渲染侧的 `createMessage` 里那段
+/// "顺手插一行 FTS" 是**旧库专属**的（`isFts5Available()`，rust 模式下恒为 false）。
+/// 而 `messages.upsert_index` 只管 `messages` 表。于是 rust 引擎下：
+///
+/// - 迁移那一刻的老消息**有**全文索引（`fts.rebuild_all`）；
+/// - 迁移之后**新写入的每条消息都进不去** —— 搜索永远搜不到近期内容。
+///
+/// 修复不能靠"每条消息都 rebuild 整个会话"（O(会话长度) 每写一条），
+/// 也不该在 SQL 触发器里做（中文切分要用 `fts::tokenize` 的 bigram 规则，
+/// SQL 层拿不到）——所以做成这条**单条命令**：切分 + 先删后插，与 `fts_rebuild`
+/// 里"写入索引行"的那段用同一套规则。
+///
+/// `content` 为空 → 只删不插（空正文没有任何可搜内容，留着空行只会制造
+/// "命中但正文是空"的假结果）。
+pub fn fts_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let message_id = req_text(p, "message_id")?;
+    let content = p.get("content").and_then(|x| x.as_str()).unwrap_or("");
+    let role = p
+        .get("role")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let timestamp = opt_i64(p, "timestamp")?.unwrap_or(0);
+
+    let tokenized = crate::fts::tokenize(content);
+    engine.write_tx(|tx| {
+        tx.execute(
+            "DELETE FROM session_fts WHERE session_id = ?1 AND message_id = ?2",
+            params![session_id, message_id],
+        )
+        .map_err(DbError::from)?;
+        if tokenized.is_empty() {
+            return Ok(json!({ "written": 0, "message_id": message_id, "empty": true }));
+        }
+        tx.execute(
+            "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![session_id, message_id, tokenized, role, timestamp],
+        )
+        .map_err(DbError::from)?;
+        Ok(json!({ "written": 1, "message_id": message_id }))
+    })
+}
+
+/// 从全文索引里移除若干消息（**消息删除/隐藏后调用** —— 虚拟表没有级联）。
+///
+/// 与 `fts_delete_session` 的区别是范围：这里是"按 id 删"，删除单条消息、
+/// 按时间范围清理、压缩隐藏都要用它。少了这一步，`session_fts` 会留下
+/// **命中却打不开的孤儿行**（真机实测过 112 条）。
+pub fn fts_remove(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let ids = p
+        .get("ids")
+        .and_then(|x| x.as_array())
+        .ok_or_else(|| DbError::missing("ids（字符串数组）"))?;
+    let parsed: Vec<String> = ids
+        .iter()
+        .map(|id| {
+            id.as_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| DbError::invalid("ids", "元素必须是字符串"))
+        })
+        .collect::<DbResult<Vec<_>>>()?;
+    if parsed.is_empty() {
+        return Err(DbError::invalid("ids", "不能为空数组（必须显式给出要移除的目标）"));
+    }
+    engine.write_tx(|tx| {
+        let mut stmt = tx
+            .prepare_cached("DELETE FROM session_fts WHERE session_id = ?1 AND message_id = ?2")
+            .map_err(DbError::from)?;
+        let mut n = 0usize;
+        for id in &parsed {
+            n += stmt.execute(params![session_id, id]).map_err(DbError::from)?;
+        }
+        Ok(json!({ "written": n, "requested": parsed.len(), "session_id": session_id }))
+    })
+}
+
 /// 全文检索（返回命中消息的 id / 角色 / 时间 / **正文**，供搜索界面用）
 ///
 /// ## 三个必须说明的点
@@ -1238,6 +1323,121 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::NotFound, "旧库不存在要如实报 NotFound");
+    }
+
+    // ========== 单条消息的全文索引维护（P5 第 11 段）==========
+    //
+    // 真机缺陷：rust 引擎下 `createMessage` 里那段"顺手插 FTS 一行"是旧库专属的
+    // （`isFts5Available()` 在 rust 模式下恒为 false），于是**迁移之后新写入的消息
+    // 永远进不了全文索引** —— 搜索只能搜到迁移那一刻的老消息。修复靠
+    // `fts.upsert` / `fts.remove` 这两条命令，所以这里把它们的行为钉住。
+
+    /// 在临时库里插一条 messages 行（外键/触发器都要满足，所以走真实 SQL）
+    fn seed_message(engine: &Engine, session_id: &str, id: &str, content: &str) {
+        // `messages.session_id` 有外键指向 sessions —— 先建会话行
+        // （`project_id` 缺省 = 全局项目，schema 阶段已经种下那一行）
+        crate::repo::sessions_upsert(engine, &json!({ "id": session_id })).unwrap();
+        engine
+            .write_tx(|tx| {
+                tx.execute(
+                    "INSERT OR REPLACE INTO messages (id, session_id, role, content, timestamp, status, hidden) \
+                     VALUES (?1, ?2, 'user', ?3, 1, 'done', 0)",
+                    params![id, session_id, content],
+                )
+                .map_err(DbError::from)?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// 直接数一个会话在 FTS 里的行数（绕过 search，验证的是"行在不在"）
+    fn fts_row_count(engine: &Engine, session_id: &str) -> i64 {
+        engine
+            .with_conn(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM session_fts WHERE session_id = ?1",
+                    params![session_id],
+                    |r| r.get(0),
+                )
+                .map_err(DbError::from)
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn fts_upsert_indexes_one_message_with_tokenized_content() {
+        let (_d, engine) = eng("fts-upsert");
+        seed_message(&engine, "s1", "m1", "存储迁移的可靠性");
+        let out = fts_upsert(
+            &engine,
+            &json!({
+                "session_id": "s1",
+                "message_id": "m1",
+                "content": "存储迁移的可靠性",
+                "role": "user",
+                "timestamp": 1
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["written"], 1);
+        assert_eq!(fts_row_count(&engine, "s1"), 1, "应该恰好一行");
+
+        // 中文必须能被搜到 —— 这正是不切分时永远命中不了的那条路径
+        let hits = fts_search(&engine, &json!({ "query": "存储迁移", "session_id": "s1" })).unwrap();
+        let items = hits["items"].as_array().cloned().unwrap_or_default();
+        assert!(
+            // 注意键名是 `message_id`（搜索结果的线协议形状），不是 `id`
+            items.iter().any(|i| i["message_id"] == "m1"),
+            "切分后的中文索引必须能命中：{hits}"
+        );
+    }
+
+    #[test]
+    fn fts_upsert_rewrites_instead_of_duplicating() {
+        let (_d, engine) = eng("fts-upsert-rewrite");
+        seed_message(&engine, "s1", "m1", "第一版内容");
+        fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "第一版内容" })).unwrap();
+        // 同一个 message_id 再写一次（消息更新）—— 必须是"重写"而不是"两行"
+        fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "第二版内容" })).unwrap();
+        assert_eq!(fts_row_count(&engine, "s1"), 1, "同一 message_id 只该有一行（否则搜索会重复命中）");
+
+        let old = fts_search(&engine, &json!({ "query": "第一版", "session_id": "s1" })).unwrap();
+        assert_eq!(old["items"].as_array().unwrap().len(), 0, "旧内容不该还能搜到");
+        let new = fts_search(&engine, &json!({ "query": "第二版", "session_id": "s1" })).unwrap();
+        assert_eq!(new["items"].as_array().unwrap().len(), 1, "新内容必须能搜到");
+    }
+
+    #[test]
+    fn fts_upsert_with_empty_content_removes_the_row() {
+        let (_d, engine) = eng("fts-upsert-empty");
+        seed_message(&engine, "s1", "m1", "有内容");
+        fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "有内容" })).unwrap();
+        assert_eq!(fts_row_count(&engine, "s1"), 1);
+        // 正文被清空 → 索引行也要消失（留着会造出"命中但正文为空"的假结果）
+        let out = fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": "m1", "content": "" })).unwrap();
+        assert_eq!(out["written"], 0);
+        assert_eq!(fts_row_count(&engine, "s1"), 0, "空正文不该留索引行");
+    }
+
+    #[test]
+    fn fts_remove_deletes_only_requested_ids() {
+        let (_d, engine) = eng("fts-remove");
+        for id in ["m1", "m2", "m3"] {
+            seed_message(&engine, "s1", id, "内容");
+            fts_upsert(&engine, &json!({ "session_id": "s1", "message_id": id, "content": "内容" })).unwrap();
+        }
+        assert_eq!(fts_row_count(&engine, "s1"), 3);
+        let out = fts_remove(&engine, &json!({ "session_id": "s1", "ids": ["m1", "m3"] })).unwrap();
+        assert_eq!(out["written"], 2);
+        assert_eq!(fts_row_count(&engine, "s1"), 1, "只该剩 m2");
+    }
+
+    #[test]
+    fn fts_remove_rejects_empty_ids() {
+        let (_d, engine) = eng("fts-remove-empty");
+        // 空数组 = 调用方没想清楚要删什么 → 必须报错，而不是"静默什么都没做"
+        let err = fts_remove(&engine, &json!({ "session_id": "s1", "ids": [] })).unwrap_err();
+        assert_eq!(err.code, ErrorCode::Other);
     }
 
     #[test]
