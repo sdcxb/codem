@@ -13,7 +13,7 @@
  * | FC-D2a~c | 分叉的项目归属取源会话；worktree 在**源项目的仓库**里建/删 | P1-D2 |
  * | FC-D3a/b | 分叉继承会话级模式字段；附件 id 换新（源消息的附件不被搬走） | P1-D3 |
  * | FC-D6a | 分叉不再复制事件日志 ⇒ 子会话事件与消息主键一致 | P2-D6 |
- * | FC-D4a~d | 压缩摘要标记的折叠与级联（自动/手动两种前缀） | P1-D4 |
+ * | FC-D4a~g | 压缩摘要标记的折叠、级联、以及**标记主键的唯一性**（同一毫秒/跨会话不许撞车） | P1-D4 |
  * | FC-D5a~c | 手动压缩挂并发闸门、写 `compaction` 事件、折叠旧标记 | P1-D5 |
  *
  * ## 判据为什么落在"假端口里的行内容"
@@ -829,6 +829,17 @@ describe("FC-D4：压缩摘要累积（P1-D4 / C13）", () => {
   it("FC-D4f: 连续两次压缩后可见标记仍只有一条（复核：报告说的'标记落在保留集里导致累积'在当前代码里不可复现）", async () => {
     const S = sid("d4f");
     seedSession(S);
+    /**
+     * ⚠️ **时间是可控制的输入，不是环境噪声**（这条用例原来偶发变红的机制就在这里）。
+     *
+     * 标记主键原先是 `compact-${Date.now()}`（毫秒粒度，而 `messages.id` 是**全局主键**）。
+     * 两次压缩的"写标记"落在同一毫秒时，新标记会写进**刚刚被软删的旧标记那一行**：
+     * 引擎对不传 `hidden` 的写入刻意保留 hidden（`repo.rs:1018-1031`），读路径又叠加
+     * `message.ts:616` 的 `localHiddenIds`（只增不减）—— 于是标记写成功却读不到，
+     * 可见标记**一条都不剩**。冻结时钟把"同一毫秒"从偶发（实测：同一进程里跑 30 次
+     * 两连压，11 次撞上）变成**必然发生**，这条用例因此从"偶尔抓到"变成"每次都抓"。
+     */
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const provider = { id: "stub", complete: async () => ({ content: "第一版摘要" }) };
     const loop = new AgenticLoop(provider as any, createDefaultToolRegistry(), {
       model: "stub",
@@ -859,6 +870,63 @@ describe("FC-D4：压缩摘要累积（P1-D4 / C13）", () => {
     const markers = listVisibleMessages(S).filter((m) => isCompactionMarker(m as any));
     expect(markers, "可见标记仍然只有一条").toHaveLength(1);
     expect(markers[0].content).toContain("[上下文已自动压缩]");
+    /**
+     * 主键唯一性：两次压缩必须写出**两个不同的**标记主键。时钟不前进时仍然成立 ——
+     * 这是"标记不会继承已软删行的 hidden"的根因判据（改前这里是同一个 id，见上面的说明）。
+     */
+    const markerRows = rowsOf("messages").filter(
+      (r) => r.session_id === S && String(r.id).startsWith("compact-"),
+    );
+    expect(
+      markerRows.map((r) => String(r.id)),
+      "两次压缩的标记主键必须不同（同一个 ms 前缀 + 进程内序号）",
+    ).toHaveLength(2);
+    expect(new Set(markerRows.map((r) => String(r.id))).size, "标记主键不许重复").toBe(2);
+    expect(
+      markerRows.filter((r) => Number(r.hidden ?? 0) === 0).map((r) => String(r.id)),
+      "两条标记行里恰好只有本次这条是可见的（另一条是上一次的旧标记，已软删）",
+    ).toEqual([markers[0].id]);
+    clock.mockRestore();
+  });
+
+  it("FC-D4g: 两个会话在同一毫秒压缩 —— 各自的摘要标记必须留在自己的会话里（主键是全局的）", async () => {
+    const A = sid("d4g-a");
+    const B = sid("d4g-b");
+    seedSession(A);
+    seedSession(B);
+    // 同一毫秒（改前两个会话会生成同一个主键 `compact-${ms}`）
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const provider = { id: "stub", complete: async () => ({ content: "摘要" }) };
+    const loop = new AgenticLoop(provider as any, createDefaultToolRegistry(), {
+      model: "stub",
+      securityMode: "full",
+      contextWindow: 128000,
+    });
+    for (const S of [A, B]) {
+      for (let i = 0; i < 30; i++) {
+        seedMessage(
+          { id: `${S}-m${i}`, role: i % 2 === 0 ? "user" : "assistant", content: `内容 ${i}`, timestamp: 10 + i, status: "done" },
+          S,
+        );
+      }
+    }
+    await (loop as any).doCompactMessages(A, () => ({ safe: true }));
+    await (loop as any).doCompactMessages(B, () => ({ safe: true }));
+
+    for (const S of [A, B]) {
+      const rows = rowsOf("messages").filter(
+        (r) => r.session_id === S && String(r.id).startsWith("compact-"),
+      );
+      expect(
+        rows.map((r) => String(r.id)),
+        "每个会话都必须有自己那一行标记（主键撞车时后写者按主键整行覆盖，前一个会话的行连同归属被抢走）",
+      ).toHaveLength(1);
+      expect(
+        listVisibleMessages(S).filter((m) => isCompactionMarker(m as any)),
+        "每个会话的标记都必须读得到（否则那个会话压缩后连摘要都没有）",
+      ).toHaveLength(1);
+    }
+    clock.mockRestore();
   });
 });
 

@@ -122,6 +122,52 @@ export function isCompactionMarker(message: { role?: string; content?: unknown }
   return COMPACTION_MARKER_PREFIXES.some((prefix) => content.startsWith(prefix));
 }
 
+/**
+ * 压缩摘要标记的**主键生成器**（自动 / 手动两条写路径共用）。
+ *
+ * ## 为什么不能是 `compact-${Date.now()}`（第 45 轮复核：偶发"摘要标记凭空消失"）
+ *
+ * `messages.id` 是**全局主键**（不是"会话内唯一"），而 `Date.now()` 只有毫秒粒度。
+ * 两次压缩的"写标记"这一步落在同一毫秒时就会共用主键，而这一步在标记写入前
+ * **一定**先软删了旧标记（`messagesToRemove` 覆盖它），于是：
+ *
+ * 1. **同一会话**：新标记写进"刚刚被软删的那一行"。而
+ *    - 引擎侧 `messages_upsert_index` 对**不传** `hidden` 的写入刻意保留库里已有的
+ *      hidden（`codem-db/src/repo.rs:1018-1031`，用例
+ *      `engine_tests.rs:1088 upsert_index_preserves_hidden_unless_explicitly_given`），
+ *      渲染侧 `writeIndexViaRust` 的 params 里也确实没有 `hidden`（`message.ts:1507-1519`）；
+ *    - 读路径还会叠加"本进程隐藏过"的 `localHiddenIds`（`message.ts:1294` 只增不减，
+ *      `message.ts:616` 无条件并进 hidden 集合）。
+ *    两个来源都还认为这个 id 是隐藏的 ⇒ **新摘要标记写成功却读不到**：
+ *    上下文里既没有摘要、也没有被摘要的原文，用户看到的是"压缩完，摘要没了"。
+ * 2. **不同会话**：后一个会话的标记按主键覆盖前一个会话那一行（`session_id` 是被提供的列），
+ *    于是前一个会话的摘要标记整行**归属被抢走** —— 实测（探针）：两个会话冻结在同一毫秒压缩，
+ *    最终 `messages` 表里只剩一条 `compact-…` 行，`session_id` 是后一个会话的。
+ *
+ * 所以主键必须带一个**进程内单调递增**的序号（毫秒前缀保留，便于排查/排序）：
+ * 同一毫秒内连续压缩多少次都不会撞车，且"时间不前进"时也不会撞。
+ *
+ * ## 边界（如实记下）
+ *
+ * 序号只在进程内单调；跨进程（两个实例连同一个库）仍靠毫秒前缀区分 —— 与仓库里
+ * 其它 id 生成器（`core/agent-teams/engine.ts:19` 的 `genId`）同一量级的保证，不更高。
+ */
+let compactionMarkerSeq = 0;
+
+/**
+ * 生成一个不会与本次进程内任何已生成值重复的压缩标记主键。
+ *
+ * @param scope `"auto"` = 自动压缩（`agentic-loop.ts` 的 `doCompactMessages`）；
+ *              `"manual"` = 手动压缩（`ContextMonitor.tsx` 的 `manualCompact`）。
+ *              前缀必须能被 `isCompactionMarker` 认出来（两者都是标记，只是来源不同）。
+ */
+export function nextCompactionMarkerId(scope: "auto" | "manual"): string {
+  compactionMarkerSeq += 1;
+  return scope === "manual"
+    ? `compact-manual-${Date.now()}-${compactionMarkerSeq}`
+    : `compact-${Date.now()}-${compactionMarkerSeq}`;
+}
+
 export interface CompactionBoundaryPlan {
   /** 折叠旧标记**之后**的保留条数（remove 集 = 前 total - keepCount 条） */
   keepCount: number;

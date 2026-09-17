@@ -4,7 +4,7 @@ import { getCostTracker } from "../core/llm/cost-tracker";
 import { listMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
-import { foldStaleCompactionMarkers } from "../core/llm/compaction-budget";
+import { foldStaleCompactionMarkers, nextCompactionMarkerId } from "../core/llm/compaction-budget";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
 
@@ -128,7 +128,13 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
 
   const removedIds = messagesToRemove.map(m => m.id);
   const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
-  const markerId = `compact-manual-${Date.now()}`;
+  /**
+   * 主键用共享生成器（自动路径同一套，理由见 `nextCompactionMarkerId`）：
+   * `messages.id` 是全局主键，`compact-manual-${Date.now()}` 在同一毫秒内会与
+   * 另一个会话的手动压缩撞车 —— 撞车时后写者按主键覆盖整行，前一个会话的摘要标记
+   * 连同归属一起被抢走。
+   */
+  const markerId = nextCompactionMarkerId("manual");
   const markerContent = `[上下文已手动压缩]\n\n以下是之前对话的摘要：\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`;
   const messagesBefore = messages.length;
   const messagesAfter = keepCount + 1;

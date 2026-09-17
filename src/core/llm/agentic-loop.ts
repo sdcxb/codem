@@ -23,7 +23,7 @@ import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guar
 import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
-import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker } from "./compaction-budget";
+import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId } from "./compaction-budget";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
@@ -3460,7 +3460,16 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const removedIds = messagesToRemove.map((m: any) => m.id);
     const markerContent = `[上下文已自动压缩]\n\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条（API-Round 边界对齐）。请基于以上摘要和后续消息继续工作。不要重复已摘要中记录为完成的工作。如需之前的文件内容或命令输出，请使用工具重新获取。`;
     const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
-    const markerId = `compact-${Date.now()}`;
+    /**
+     * ⚠️ 主键**必须**由 `nextCompactionMarkerId()` 生成，不能退回 `compact-${Date.now()}`。
+     *
+     * 标记写入前旧标记一定刚被软删（它永远在 `messagesToRemove` 里），所以"同一毫秒
+     * 两次压缩"会让新标记写进那行已隐藏的 id：引擎保留 `hidden=1`
+     * （`repo.rs:1018-1031`）、读路径又叠加 `localHiddenIds`（`message.ts:616`），
+     * 结果是**摘要标记写成功但读不到**（偶发形态：连压两次后可见标记 0 条）。
+     * 完整机制与跨会话形态见 `compaction-budget.ts` 的 `nextCompactionMarkerId`。
+     */
+    const markerId = nextCompactionMarkerId("auto");
     const messagesBefore = messages.length;
     const messagesAfter = keepCount + 1;
 
