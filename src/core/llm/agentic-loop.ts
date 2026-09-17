@@ -23,7 +23,7 @@ import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guar
 import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
-import { planCompactionKeep, alignKeepToRoundBoundary } from "./compaction-budget";
+import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker } from "./compaction-budget";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
@@ -3337,10 +3337,32 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       this.state.consecutiveCompactions = 3;
     }
 
-    const messagesToKeep = messages.slice(-keepCount);
-    const messagesToRemove = messages.slice(0, messages.length - keepCount);
+    let messagesToKeep = messages.slice(-keepCount);
+    let messagesToRemove = messages.slice(0, messages.length - keepCount);
 
     if (messagesToRemove.length === 0) return 0;
+
+    /**
+     * 第 45 轮（功能上下文审计 P1-D4 / C13）：**把保留集里的旧摘要标记折叠进待删集。**
+     *
+     * 原来只从"待删集"里找旧标记（见下面 `findIndex`）。而标记是一条普通可见 user 行，
+     * 一旦它落在保留集里（用户现场形态：一条大文件读取/大段粘贴就能把上下文顶到阈值，
+     * 于是"标记之后的消息条数"少于保留条数）：
+     *  - `existingSummary` 恒为空 → "摘要的摘要"在最常见的形态下失效，早期上下文直接丢；
+     *  - 旧标记永久留在上下文里（没有任何路径把它设为 hidden），与"压缩让上下文变小"相反。
+     *
+     * 折叠规则与理由见 `foldStaleCompactionMarkers`（纯函数，有用例守着）。
+     */
+    const folded = foldStaleCompactionMarkers(messages, keepCount);
+    if (folded.foldedMarkers > 0) {
+      console.log(
+        `[compactMessages] 折叠保留集里的旧摘要标记 ${folded.foldedMarkers} 条：保留 ${keepCount} → ${folded.keepCount} 条（否则摘要永远累积、级联永远失效）`,
+      );
+      keepCount = folded.keepCount;
+      messagesToKeep = messages.slice(-keepCount);
+      messagesToRemove = messages.slice(0, messages.length - keepCount);
+      if (messagesToRemove.length === 0) return 0;
+    }
 
     // Verify tool_use/tool_result pairing integrity in the keep set
     // If a tool_result in keep references a tool_use in remove, we need to
@@ -3356,15 +3378,18 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // Check if any kept message references a removed tool_use
     // (This is rare with proper boundary detection, but serves as a safety net)
 
-    // Check for existing compaction marker (cascading compaction)
-    // The marker has role "user" and starts with "[上下文已自动压缩]"
-    let existingSummary = "";
-    const oldMarkerIdx = messagesToRemove.findIndex(
-      (m: any) => m.role === "user" && (m.content || "").startsWith("[上下文已自动压缩]")
-    );
-    if (oldMarkerIdx >= 0) {
-      existingSummary = messagesToRemove[oldMarkerIdx].content || "";
-      console.log(`[compactMessages] Found existing compaction marker at index ${oldMarkerIdx}, will cascade`);
+    /**
+     * 级联摘要的输入：**待删集里最新的一条摘要标记**（折叠之后，保留集里的标记也在里面了）。
+     *
+     * 为什么取"最新"而不是原来那个 `findIndex`（第一条）：每次压缩写出的标记正文
+     * 是"上一次摘要 + 本次新增对话"的合并结果，所以**越靠后的标记越完整**；
+     * 取最旧的那条等于把后来几十轮的工作摘要丢掉。前缀判定用共享的
+     * `COMPACTION_MARKER_PREFIXES`（自动/手动两种标记都认 —— 原来只认自动那一种，
+     * 手动压缩写的 `[上下文已手动压缩]` 因此永远折叠不了）。
+     */
+    const existingSummary = folded.existingSummary;
+    if (existingSummary) {
+      console.log(`[compactMessages] Found existing compaction marker (cascade input, ${existingSummary.length} chars)`);
     }
 
     // Build conversation text for the LLM to summarize
@@ -3484,7 +3509,12 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     for (const msg of messages) {
       if (msg.role === "user") {
         const content = msg.content || "";
-        if (content.startsWith("[上下文已自动压缩]")) {
+        /**
+         * 摘要标记整体带进摘要输入（不做 500 字截断）：它是"已经压缩过一次"的完整结论，
+         * 截断会让级联摘要丢内容。两种前缀都认（自动 / 手动，见
+         * `compaction-budget.ts` 的 `COMPACTION_MARKER_PREFIXES`）。
+         */
+        if (isCompactionMarker(msg)) {
           // Include existing summary as-is for cascading
           parts.push(`[已有摘要]\n${content}`);
         } else if (content.trim()) {

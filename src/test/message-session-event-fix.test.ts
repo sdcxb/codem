@@ -726,7 +726,23 @@ describe("FIXB-8：硬删除必须声明 confirm_bulk（软删除不许带）", 
 });
 
 describe("FIXB-7：fork 必须写 parent_id（谱系功能的数据来源）", () => {
-  it("FIXB-7a: forkSession 建子会话、写 parent_id、并把事件日志复制过去", () => {
+  /**
+   * ## 第 45 轮修正：这条用例的"事件复制"断言反过来了
+   *
+   * 原来这里断言"子会话必须继承源会话的事件日志（fork 的语义）"，`toBe(2)`。
+   * 而功能上下文审计（`FEATURE-CONTEXT.md` 的 F8 / P2-D6）实测的形态是：
+   * 事件被**原样整段复制**（payload 里的 `messageId` / `toolCallId` 仍是源会话的 id），
+   * 而子会话的消息是新 id（`core/store.ts` 的复制循环）—— 两边主键**完全脱钩**：
+   * 投影会为这些孤儿 id 凭空造出 `content: ""` 的 assistant 行与 `tool-result-*` 行
+   * （`event-projection.ts:252–307`），`session_meta`（如 `feedback_record`）被抄过来后
+   * 子会话里还会凭空出现源会话的反馈条目（`feedback.ts:87` 按 session_id 过滤）。
+   *
+   * 现在 `SessionStorage.forkSession` **不再复制事件日志**（理由写在那个函数里）：
+   * 子会话的消息表是唯一来源，事件由消息自己的写入产生（`user_message` /
+   * `assistant_text`，见 `MessageStorage.appendMessageTextEvent`），主键必然一致。
+   * 所以这条用例改为守**新契约**（并顺带守住"源会话的事件没被动过"）。
+   */
+  it("FIXB-7a: forkSession 建子会话、写 parent_id；**不**复制源会话事件（主键一致由 FC-D6a 守）", () => {
     const port = createFakeStoragePort({
       seed: {
         sessions: [
@@ -755,7 +771,14 @@ describe("FIXB-7：fork 必须写 parent_id（谱系功能的数据来源）", (
     const childEvents = ((port as any).__table("session_events") as Array<Record<string, unknown>>).filter(
       (e) => e.session_id === "child",
     );
-    expect(childEvents.length, "子会话必须继承源会话的事件日志（fork 的语义）").toBe(2);
+    expect(
+      childEvents.length,
+      "子会话不该继承源会话的事件：payload 里的 messageId 是源会话的 id，抄过去就是一批指向不存在消息的孤儿事件",
+    ).toBe(0);
+    const srcEvents = ((port as any).__table("session_events") as Array<Record<string, unknown>>).filter(
+      (e) => e.session_id === "src",
+    );
+    expect(srcEvents.length, "源会话自己的事件必须原样不动").toBe(2);
   });
 
   it("FIXB-7b: 源会话不存在 → 返回 null（不造没有父的孤儿会话）", () => {

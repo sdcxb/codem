@@ -206,18 +206,62 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
    * 也就是说"完整谱系"这个能力从来没有数据。
    *
    * 现在把三份内联实现收敛到这里，并且：
-   * ① 会话行走 `SessionStorage.forkSession`（**带 `parent_id` 并继承事件日志**）；
+   * ① 会话行走 `SessionStorage.forkSession`（**带 `parent_id`**）；
    * ② 真的按 `messageIndex` 复制消息（原实现的参数语义）；
-   * ③ 消息 id 与工具调用 id 都重新生成（否则新会话里的 id 与源会话撞车）。
+   * ③ 消息 id、工具调用 id、**附件 id** 都重新生成（见下）。
+   *
+   * ## 第 45 轮修正一：项目归属按**源会话**解析（功能上下文审计 P1-D2）
+   *
+   * 原来 `projectId` 取 `get().currentProject`、worktree 也建在 `currentProject.path`。
+   * 而"被分叉的源会话"是**参数**（`sourceSessionId`）——同一 store 里
+   * `switchSession` 只改 `currentSession` 不改 `currentProject`，`openProject` 又会把
+   * `currentSession` 置 null，任何"跨项目调用点"（面板、命令、恢复路径）都会静默产出
+   * "挂在 A 项目下、内容是 B 项目对话"的会话，`parent_id` 还指向 B 项目的会话。
+   * 更糟的是 worktree：`createWorktreeSync(project.path, child.id)` 会在**错误的仓库**里
+   * `git worktree add`。
+   *
+   * 现在的规则：**源会话的项目是权威**（源会话 → 项目 → 路径），
+   * 解析不到源项目时才回落到当前项目（并如实记录），两者都没有就拒绝分叉并上报 ——
+   * 宁可"分叉失败（可见）"，也不要"在别人的仓库里建工作区（静默）"。
+   *
+   * ## 第 45 轮修正二：附件 id 必须换新（功能上下文审计 P1-D3）
+   *
+   * 附件的主键是 `attachments.message_id` + `attachments.id`，写入是
+   * `crud.upsert mode:"replace"`。原来复制消息时**没换附件 id** ——
+   * 同一次分叉会把那一行的 `message_id` 覆盖成子会话的新消息 id：
+   * **源会话那条消息的附件被搬走**（源消息点开附件是空的），子会话带着同一批附件。
+   * 现在整条消息的复制走 `MessageStorage.copyMessageToSession`（三者一起换新，
+   * 附件正文按新 id 重新落库，源附件行不动）。
    */
   forkSession: (sourceSessionId, messageIndex, title) => {
-    const project = get().currentProject;
-    const projectId = project?.id || "";
-    const newSessionId = generateId();
     const source = get().sessions.find((s) => s.id === sourceSessionId);
+    /**
+     * 源会话的**项目归属**（权威）：内存列表 → 持久层。
+     * `null` = 两级都解析不到（此时 `SessionStorage.forkSession` 也会返回 null，
+     * 下面会抛可见错误），只有这种情况才回落到"当前项目"。
+     */
+    let sourceProjectId: string | null = source ? (source.projectId ?? "") : null;
+    if (sourceProjectId === null) {
+      try {
+        const persisted = SessionStorage.getSession(sourceSessionId);
+        if (persisted) sourceProjectId = persisted.projectId ?? "";
+      } catch (e) { console.warn('[store.ts]', e) }
+    }
+    const projectId = sourceProjectId ?? (get().currentProject?.id || "");
+    /** 目标项目路径（worktree 的根）：内存列表 → 持久层；空路径（如笔记本虚拟项目）按"没有"处理 */
+    const projectPath = ((): string | undefined => {
+      if (!projectId) return undefined;
+      const inMemory = get().projects.find((p) => p.id === projectId);
+      if (inMemory?.path) return inMemory.path;
+      try {
+        return ProjectStorage.getProject(projectId)?.path || undefined;
+      } catch (e) { console.warn('[store.ts]', e); return undefined; }
+    })();
+    const newSessionId = generateId();
     /*
      * 会话行：走 forkSession 而不是 createSession —— 只有前者会写 `parent_id`
-     * 并让事件日志跟着继承（谱系与事件投影同时成立）。
+     * （谱系与"从这一条分叉"的语义同时成立）。事件日志**刻意不复制**：
+     * 见 `SessionStorage.forkSession` 的说明（复制事件 + 复制消息各做一半会让主键完全脱钩）。
      */
     const child = SessionStorage.forkSession(
       sourceSessionId,
@@ -229,18 +273,29 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // 会话行没落地就返回：复制消息只会造出"有消息、没有会话行"的孤儿（外键也会拒绝）
       throw new Error("分叉失败：源会话不存在或写入未被接受");
     }
-    // Inherit execution mode from project preference（与 createSession 同一条规则）
-    if (project?.path) {
+    // Inherit execution mode from **源会话所属项目**的偏好（与 createSession 同一条规则）
+    if (projectPath) {
       try {
-        child.executionMode = getProjectExecutionMode(project.path);
+        child.executionMode = getProjectExecutionMode(projectPath);
       } catch (e) { console.warn('[store.ts]', e) }
     }
-    if (child.executionMode === "git_worktree" && project?.path) {
-      try {
-        child.worktreePath = createWorktreeSync(project.path, child.id);
-      } catch (e) {
-        console.error("[forkSession] Failed to create worktree:", e);
+    if (child.executionMode === "git_worktree") {
+      if (!projectPath) {
+        /**
+         * 拿不到源项目路径就**不要建 worktree**：`createWorktreeSync` 需要项目根，
+         * 用当前项目的根去建 = 在错误的仓库里 `git worktree add`（审计点名的形态）。
+         * 如实降级为共享工作区并告警，而不是默默写坏另一个仓库。
+         */
+        console.warn("[forkSession] 解析不到源会话所属项目的路径，worktree 未创建（降级为共享工作区）");
         child.executionMode = "current_workspace";
+        child.worktreePath = undefined;
+      } else {
+        try {
+          child.worktreePath = createWorktreeSync(projectPath, child.id);
+        } catch (e) {
+          console.error("[forkSession] Failed to create worktree:", e);
+          child.executionMode = "current_workspace";
+        }
       }
     }
     try {
@@ -266,11 +321,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const forkTs = Date.now();
         for (const msg of sourceMessages.slice(0, endIdx)) {
           const suffix = `${forkTs}-${Math.random().toString(36).slice(2, 7)}`;
-          MessageStorage.createMessage({
-            ...msg,
-            id: `${msg.id}-fork-${suffix}`,
-            toolCalls: msg.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${suffix}` })),
-          }, child.id);
+          // 消息 id / 工具调用 id / 附件 id 一起换新（P1-D3），附件正文按新 id 落库
+          MessageStorage.copyMessageToSession(msg, child.id, suffix);
         }
       }
     } catch (e) { console.warn('[store.ts]', e) }
@@ -286,9 +338,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // Clean up worktree if this session had one
     const session = get().sessions.find(s => s.id === sessionId);
     if (session?.worktreePath && session.executionMode === "git_worktree") {
-      const projectPath = get().currentProject?.path;
+      /**
+       * worktree 的**根必须是"这个会话所属项目"**（第 45 轮功能上下文审计 I2/I19 同根）：
+       * 用 `currentProject.path` 去 `removeWorktreeSync` 时，只要被删的会话属于别的项目，
+       * 就会拿着错误的根去删（真机形态：命令落在别的仓库，或者整个清理静默失效）。
+       */
+      const sessionProject = get().projects.find((p) => p.id === session.projectId) ?? null;
+      const projectPath = sessionProject?.path
+        || (session.projectId && session.projectId === get().currentProject?.id ? get().currentProject?.path : undefined);
       if (projectPath) {
         removeWorktreeSync(projectPath, session.worktreePath);
+      } else {
+        console.warn(`[store.deleteSession] 解析不到会话 ${sessionId} 所属项目的路径，worktree 未清理: ${session.worktreePath}`);
       }
     }
     // Clean up the engine's per-session loop pool to free memory

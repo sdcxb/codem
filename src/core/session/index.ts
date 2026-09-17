@@ -48,6 +48,8 @@ export {
 export {
   executeSessionTurn,
   isSessionExecuting,
+  startSessionExecution,
+  endSessionExecution,
   cancelSessionExecution,
   processPendingDelegations,
   type ExecuteSessionTurnParams,

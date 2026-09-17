@@ -581,8 +581,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           skipped++;
           continue;
         }
-        // createMessage handles dedup internally: new messages get INSERT + event log append,
-        // existing messages get UPDATE only (no duplicate event).
+        /*
+         * `createMessage` 内部自己去重：新消息 INSERT，已有消息只 UPDATE。
+         *
+         * 第 45 轮修正：**事件的去重与"新/旧"无关** —— 事件写入在
+         * `MessageStorage.appendMessageTextEvent` 里按"会话+类型+消息 id + 正文指纹"判重
+         * （流式中间态一律不写）。所以这条注释不再声称"已有消息不会产生事件"：
+         * 正文被改写时**会**补一条（投影对同一 messageId 后写者胜）。
+         */
         MessageStorage.createMessage(msg, sessionId);
         seen.set(msg.id, fp);
         written++;

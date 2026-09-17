@@ -257,7 +257,7 @@ import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
 import { loadInstalledSkills } from "./core/skill/installer";
-import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting } from "./core/session";
+import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting, startSessionExecution, endSessionExecution } from "./core/session";
 import { getSession as getStoredSession } from "./core/storage/session";
 import { getProject as getStoredProject } from "./core/storage/project";
 // 大富翁小游戏 — 懒加载
@@ -396,7 +396,7 @@ function App() {
   const lang = useLang();
   // 窗口状态持久化（对标 dsh main-window-state）：恢复上次窗口尺寸/位置
   useWindowState();
-  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages } = useAppStore();
+  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages, loadedSessionId } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
 
 // P0-FIX: Sync global cwd for file-link resolution — without this, clicking
@@ -511,6 +511,26 @@ const [planApproval, setPlanApproval] = useState<{ plan: string; resolve: (resul
 const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
 const [activeNotebookName, setActiveNotebookName] = useState<string>('');
 const [notebookWorkspaceId, setNotebookWorkspaceId] = useState<string | null>(null);
+/**
+ * 「用户此刻在看的那个会话」（第 45 轮功能上下文审计 P0-I1）。
+ *
+ * ## 为什么需要它
+ *
+ * 所有"按当前会话"取值/写值的东西（待确认写入、权限请求、澄清表单、纠错结果、
+ * 流水线下一步、Prompt 变更、会话级自动保存）原来都直接读 project store 的
+ * `currentSession`。而笔记本回合（`handleNotebookSend`）原来会**临时把 `currentSession`
+ * 改写成笔记本会话**再在 `finally` 里还原 —— 窗口期内全 App 的"当前会话"语义被换掉，
+ * 包括用户自己切换会话的动作都会在结束那一刻被回滚。
+ *
+ * 现在不再改写全局状态，改为在这里**显式表达**"在屏的是谁"：
+ * - 笔记本模式/笔记本工作区开着（`activeNotebookId` 非空）→ 在屏的是**笔记本会话**，
+ *   它的 id 由消息列表的归属（`loadedSessionId`）如实给出（笔记本打开时 `loadMessages`
+ *   的就是它）；解析不到时才退回落差点的 `currentSession`；
+ * - 其它情况 → 主聊天的当前会话（与改之前完全一致）。
+ */
+const uiSessionId = activeNotebookId
+  ? (loadedSessionId ?? currentSession?.id ?? null)
+  : (currentSession?.id ?? null);
 const [notebookWorkspaceName, setNotebookWorkspaceName] = useState<string>('');
 // Citation viewer — opens SourceViewer when user clicks [Source: name] in chat
 const [citationViewer, setCitationViewer] = useState<{ sourceId: string; notebookId: string; chunkIndex?: number } | null>(null);
@@ -866,38 +886,38 @@ useEffect(() => {
   }>>(new Map());
   // Track per-session file change count and auto-approve state for batch review
   const [writeConfirmStats, setWriteConfirmStats] = useState<Map<string, { count: number; autoApprove: boolean }>>(new Map());
-  // Convenience accessor: get the pending write confirm for the current session
-  const pendingWriteConfirm = currentSession ? pendingWriteConfirms.get(currentSession.id) : null;
-  const writeConfirmStat = currentSession ? (writeConfirmStats.get(currentSession.id) || { count: 0, autoApprove: false }) : { count: 0, autoApprove: false };
+  // Convenience accessor: get the pending write confirm for the session on screen（见 `uiSessionId`）
+  const pendingWriteConfirm = uiSessionId ? pendingWriteConfirms.get(uiSessionId) : null;
+  const writeConfirmStat = uiSessionId ? (writeConfirmStats.get(uiSessionId) || { count: 0, autoApprove: false }) : { count: 0, autoApprove: false };
   const setPendingWriteConfirm = (val: any) => {
-    if (!val || !currentSession) { return; }
+    if (!val || !uiSessionId) { return; }
     setPendingWriteConfirms(prev => {
       const next = new Map(prev);
-      next.set(currentSession.id, val);
+      next.set(uiSessionId, val);
       return next;
     });
     // Increment count
     setWriteConfirmStats(prev => {
       const next = new Map(prev);
-      const cur = next.get(currentSession.id) || { count: 0, autoApprove: false };
-      next.set(currentSession.id, { ...cur, count: cur.count + 1 });
+      const cur = next.get(uiSessionId) || { count: 0, autoApprove: false };
+      next.set(uiSessionId, { ...cur, count: cur.count + 1 });
       return next;
     });
   };
   const clearPendingWriteConfirm = () => {
-    if (!currentSession) return;
+    if (!uiSessionId) return;
     setPendingWriteConfirms(prev => {
       const next = new Map(prev);
-      next.delete(currentSession.id);
+      next.delete(uiSessionId);
       return next;
     });
   };
   const setSessionAutoApprove = (autoApprove: boolean) => {
-    if (!currentSession) return;
+    if (!uiSessionId) return;
     setWriteConfirmStats(prev => {
       const next = new Map(prev);
-      const cur = next.get(currentSession.id) || { count: 0, autoApprove: false };
-      next.set(currentSession.id, { ...cur, autoApprove });
+      const cur = next.get(uiSessionId) || { count: 0, autoApprove: false };
+      next.set(uiSessionId, { ...cur, autoApprove });
       return next;
     });
   };
@@ -914,38 +934,38 @@ const [pendingInteractiveForms, setPendingInteractiveForms] = useState<Map<strin
 questions: InteractiveFormQuestion[];
 resolve: (answers: Record<string, unknown>) => void;
 }>>(new Map());
-const pendingInteractiveForm = currentSession ? pendingInteractiveForms.get(currentSession.id) : null;
+const pendingInteractiveForm = uiSessionId ? pendingInteractiveForms.get(uiSessionId) : null;
 const setPendingInteractiveForm = (val: any) => {
-  if (!val || !currentSession) return;
-  setPendingInteractiveForms(prev => { const next = new Map(prev); next.set(currentSession.id, val); return next; });
+  if (!val || !uiSessionId) return;
+  setPendingInteractiveForms(prev => { const next = new Map(prev); next.set(uiSessionId, val); return next; });
 };
 const clearPendingInteractiveForm = () => {
-if (!currentSession) return;
-setPendingInteractiveForms(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+if (!uiSessionId) return;
+setPendingInteractiveForms(prev => { const next = new Map(prev); next.delete(uiSessionId); return next; });
 };
 
 // P1: Per-session pending clarification forms (AI asks structured questions)
 const [pendingClarifications, setPendingClarifications] = useState<Map<string, { form: ClarificationFormData; resolve: (answers: string[]) => void }>>(new Map());
-const pendingClarification = currentSession ? pendingClarifications.get(currentSession.id) : null;
+const pendingClarification = uiSessionId ? pendingClarifications.get(uiSessionId) : null;
 const clearPendingClarification = () => {
-if (!currentSession) return;
-setPendingClarifications(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+if (!uiSessionId) return;
+setPendingClarifications(prev => { const next = new Map(prev); next.delete(uiSessionId); return next; });
 };
 
 // P1: Per-session pending correction results (fact-check comparison)
 const [pendingCorrections, setPendingCorrections] = useState<Map<string, { original: string; corrected: string; changes: string[] }>>(new Map());
-const pendingCorrection = currentSession ? pendingCorrections.get(currentSession.id) : null;
+const pendingCorrection = uiSessionId ? pendingCorrections.get(uiSessionId) : null;
 const clearPendingCorrection = () => {
-if (!currentSession) return;
-setPendingCorrections(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+if (!uiSessionId) return;
+setPendingCorrections(prev => { const next = new Map(prev); next.delete(uiSessionId); return next; });
 };
 
 // P1: Per-session pending pipeline next-step dialog
 const [pendingPipelineSteps, setPendingPipelineSteps] = useState<Map<string, { contextItems: any[] }>>(new Map());
-const pendingPipelineStep = currentSession ? pendingPipelineSteps.get(currentSession.id) : null;
+const pendingPipelineStep = uiSessionId ? pendingPipelineSteps.get(uiSessionId) : null;
 const clearPendingPipelineStep = () => {
-if (!currentSession) return;
-setPendingPipelineSteps(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+if (!uiSessionId) return;
+setPendingPipelineSteps(prev => { const next = new Map(prev); next.delete(uiSessionId); return next; });
 };
 
 // P2: QuickAccessCards — agent quick access
@@ -959,14 +979,14 @@ const [pendingPromptChangesMap, setPendingPromptChangesMap] = useState<Map<strin
 changes: PromptChange[];
 resolve: (result: { applied: boolean; message: string }) => void;
 }>>(new Map());
-const pendingPromptChanges = currentSession ? pendingPromptChangesMap.get(currentSession.id) : null;
+const pendingPromptChanges = uiSessionId ? pendingPromptChangesMap.get(uiSessionId) : null;
 const setPendingPromptChanges = (val: any) => {
-  if (!val || !currentSession) return;
-  setPendingPromptChangesMap(prev => { const next = new Map(prev); next.set(currentSession.id, val); return next; });
+  if (!val || !uiSessionId) return;
+  setPendingPromptChangesMap(prev => { const next = new Map(prev); next.set(uiSessionId, val); return next; });
 };
 const clearPendingPromptChanges = () => {
-  if (!currentSession) return;
-  setPendingPromptChangesMap(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+  if (!uiSessionId) return;
+  setPendingPromptChangesMap(prev => { const next = new Map(prev); next.delete(uiSessionId); return next; });
 };
 
 // Handle model change from chat header - sync with engine
@@ -1018,28 +1038,28 @@ const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
     resolve: (result: PermissionResult) => void;
   }>>(new Map());
-  // Convenience accessor: get the pending permission for the current session
-  const pendingPermission = currentSession ? pendingPermissions.get(currentSession.id) : null;
+  // Convenience accessor: get the pending permission for the session on screen（见 `uiSessionId`）
+  const pendingPermission = uiSessionId ? pendingPermissions.get(uiSessionId) : null;
   // Background permission: first pending permission from a non-current session (delegation system)
   const backgroundPermission = (() => {
     for (const [sid, val] of pendingPermissions) {
-      if (!currentSession || sid !== currentSession.id) return { sessionId: sid, ...val };
+      if (!uiSessionId || sid !== uiSessionId) return { sessionId: sid, ...val };
     }
     return null;
   })();
   const setPendingPermission = (val: any) => {
-    if (!val || !currentSession) { return; }
+    if (!val || !uiSessionId) { return; }
     setPendingPermissions(prev => {
       const next = new Map(prev);
-      next.set(currentSession.id, val);
+      next.set(uiSessionId, val);
       return next;
     });
   };
   const clearPendingPermission = () => {
-    if (!currentSession) return;
+    if (!uiSessionId) return;
     setPendingPermissions(prev => {
       const next = new Map(prev);
-      next.delete(currentSession.id);
+      next.delete(uiSessionId);
       return next;
     });
   };
@@ -1605,11 +1625,36 @@ flushStreamBuffer(); // flush all on unmount
         return;
       }
 
-      // 获取工作目录
-      const project = useProjectStore.getState().currentProject;
-      let cwd = project?.path || "D:\\mimo";
+      /**
+       * 工作目录按**目标会话自己所属项目**解析（第 45 轮功能上下文审计 P1-I3）。
+       *
+       * 原来这里是 `const project = currentProject; let cwd = project?.path`，
+       * 而同一文件另一条分支（目标会话不在当前项目列表里时的回退，见上面
+       * `cwdFallback` 的注释）**已经**按目标会话的项目解析了 —— 同文件两条规则不一致。
+       *
+       * 后果是实打实的"操作 A 却按 B 的策略执行"：
+       * ① 整个回合在错误的工作目录里跑（相对路径写进错的工作区、read/grep 命中错仓库）；
+       * ② `executor.ts:291` 用这个 cwd 取安全模式（项目级 > 全局），于是拿到**别的项目**的覆盖值。
+       *
+       * 顺序与那条分支统一：目标会话的 worktree > 目标会话所属项目 > 当前项目 > 兜底。
+       */
+      let cwd = "";
       if (session.worktreePath) {
         cwd = session.worktreePath;
+      } else if (session.projectId) {
+        const targetProject = useProjectStore.getState().projects.find((p) => p.id === session.projectId);
+        cwd = targetProject?.path || "";
+        if (!cwd) {
+          try {
+            cwd = getStoredProject(session.projectId)?.path || "";
+          } catch (e) {
+            console.warn(`[Delegation] 解析目标会话所属项目路径失败: ${session.projectId}`, e);
+          }
+        }
+      }
+      if (!cwd) cwd = useProjectStore.getState().currentProject?.path || "D:\\mimo";
+      if (cwd !== (useProjectStore.getState().currentProject?.path || "D:\\mimo")) {
+        console.log(`[Delegation] cwd 按目标会话所属项目解析：session=${targetSessionId} project=${session.projectId || "(无)"} cwd=${cwd}`);
       }
 
       const engine = engineRef.current; if (!engine) { failHonestly('LLM 引擎尚未就绪（engine not available），本次委派没有被启动。请稍后重新发起。'); return; }
@@ -2044,9 +2089,17 @@ flushStreamBuffer(); // flush all on unmount
 
   useEffect(() => {
     if (currentSession) {
-      // Save old messages to old session before switching
-      if (messagesSessionRef.current && messagesSessionRef.current !== currentSession.id && messages.length > 0) {
-        saveMessages(messagesSessionRef.current);
+      /**
+       * 切走之前把**上一份列表**落库（第 45 轮 P0-I1）。
+       *
+       * 判据从 `messagesSessionRef.current`（App 级 ref，只在"主聊天切换会话"时更新）
+       * 换成 `loadedSessionId`（**那份 messages 自己的归属**，与列表同一次 `set` 落定）。
+       * 笔记本工作区打开时 `messages` 属于笔记本会话，而 `messagesSessionRef` 还写着主会话
+       * —— 用 ref 判定就会把笔记本的列表写给主会话（被 `saveMessages` 的归属守卫拒绝 + 误报失败）。
+       */
+      const loaded = useAppStore.getState().loadedSessionId;
+      if (loaded && loaded !== currentSession.id && messages.length > 0) {
+        saveMessages(loaded);
       }
       messagesSessionRef.current = currentSession.id;
       loadMessages(currentSession.id);
@@ -2060,24 +2113,39 @@ flushStreamBuffer(); // flush all on unmount
   // Auto-save messages with debounce (every 2 seconds during streaming, immediately when done)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
+    /**
+     * ## 自动保存按"列表的归属"保存，而不是按 `currentSession`（第 45 轮 P0-I1）
+     *
+     * 这段原来要求 `messagesSessionRef.current === currentSession.id` 并用
+     * `currentSession.id` 落库 —— 也就是"用全局当前会话去认领这份列表"。
+     * 笔记本回合原来靠改写 `currentSession` 让这个判据恰好成立（于是笔记本的自动保存**
+     * 反而被跳过**：`messagesSessionRef` 还是主会话，条件不成立）；
+     * 一旦不再改写（本轮的修法），同一条判据就会把**笔记本的列表**当成主会话的列表去写
+     * → 被 `saveMessages` 的归属守卫拒绝并每 2 秒上报一次假失败。
+     *
+     * 正确口径只有一个：这份 `messages` 属于谁（`loadedSessionId`）就写给谁。
+     * 于是笔记本回合期间：自动保存写的是**笔记本会话**（原来是漏保存的）；
+     * 主聊天：与改之前完全一致；后台会话：依旧由 loop 的显式落库负责。
+     */
+    const owner = loadedSessionId;
+    if (owner && messages.length > 0) {
       if (isStreaming) {
         // Debounce during streaming
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => {
-          debugLog("autosave", `Debounce save: ${messages.length} messages to ${currentSession.id}`);
-          saveMessages(currentSession.id);
+          debugLog("autosave", `Debounce save: ${messages.length} messages to ${owner}`);
+          saveMessages(owner);
         }, 2000);
       } else {
         // Save immediately when not streaming
-        console.log(`[AutoSave] Immediate save: ${messages.length} messages to ${currentSession.id}`);
-        saveMessages(currentSession.id);
+        console.log(`[AutoSave] Immediate save: ${messages.length} messages to ${owner}`);
+        saveMessages(owner);
       }
     }
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [messages, isStreaming]);
+  }, [messages, isStreaming, loadedSessionId]);
 
   // Save messages before unmount or session switch
   useEffect(() => {
@@ -2091,25 +2159,40 @@ flushStreamBuffer(); // flush all on unmount
 // Keep handleSendRef updated for automation callbacks (defined after handleSend below)
 
 // ========== Send Message ==========
-  // ===== 笔记本内嵌对话回调 — 复用 runAgenticLoop =====
-  // 将笔记本的 session 临时设为 currentSession，使 runAgenticLoop 中的
-  // isViewingSession() 和 activeNotebookId 能正确工作
+  /**
+   * ===== 笔记本内嵌对话回调 — 复用 runAgenticLoop =====
+   *
+   * ## 第 45 轮修正（功能上下文审计 P0-I1）：**不再全局改写 `currentSession`**
+   *
+   * 原实现把笔记本会话 `setState` 成 project store 的 `currentSession`，跑完再还原，
+   * 理由是"让 `runAgenticLoop` 里的 `isViewingSession()` 与 `activeNotebookId` 生效"。
+   * 代价是**全 App 的"当前会话"语义在窗口期内被换掉**：
+   *  - `pendingWriteConfirm` / 权限 / 澄清 / 纠错 / 流水线 / Prompt 变更这些面板
+   *    全部按 `currentSession` 取值（见 `uiSessionId` 的说明）——虽然它们**写入**时用的
+   *    是会话自己的 id，但"显示谁的待确认项"被换成了笔记本会话；
+   *  - `App.tsx` 里按 `currentSession?.id` 触发的 effect 会跑一遍
+   *    （`loadMessages(笔记本会话)`、把 `messagesSessionRef` 改成笔记本会话）；
+   *  - `handleSend` / `handleRegenerate` / `handleEditAndRewind` 都在**调用时刻**读
+   *    `currentSession` —— 窗口期内用户在主输入框发消息会落进**笔记本会话**；
+   *  - `finally` 无条件还原快照：用户在窗口期内主动切走的会话会被**静默回滚**。
+   *
+   * 现在三件事各归其位（没有全局改写，也就没有"窗口期"）：
+   * ① **消息归属**：面板/权限按 `uiSessionId`（在屏的会话）取值；
+   * ② **UI 更新落到哪份列表**：`runAgenticLoop` 的 `isViewingSession()` 改成看
+   *    **消息列表的归属**（`loadedSessionId`）——笔记本打开时那份列表就是笔记本会话的，
+   *    所以流式文本照旧进笔记本界面；
+   * ③ **落库**：`persistLoopMessages()` 一直就是显式的 `saveMessages(session.id, explicit)`，
+   *    与 `currentSession` 无关（这也正是"后台会话"能正确落库的那条路）。
+   *
+   * 另外把笔记本 id **显式传进** `runAgenticLoop`：原来它读的是渲染闭包里的
+   * `activeNotebookId` 状态，而 `setActiveNotebookId` 是异步的 —— 第一次发送时闭包里
+   * 还是旧值（`null`），知识检索因此不会在本轮启用。显式传参没有这个时序问题。
+   */
   const handleNotebookSend = async (message: string, session: Session, nbId: string) => {
-    // 保存原始 session 以便恢复
-    const store = useProjectStore.getState();
-    const originalSession = store.currentSession;
-
-    // 临时切换到笔记本 session
-    useProjectStore.setState({ currentSession: session });
+    // 只记"当前打开的是哪个笔记本"（UI 横幅/引用点击用），**不动** `currentSession`
     setActiveNotebookId(nbId);
-
-    try {
-      // 调用主 agentic loop — 它内部会使用 activeNotebookId 启用知识检索
-      await runAgenticLoop(message, session);
-    } finally {
-      // 恢复原始 session 状态
-      useProjectStore.setState({ currentSession: originalSession });
-    }
+    // 调用主 agentic loop —— notebookId 由参数显式带入（见上）
+    await runAgenticLoop(message, session, undefined, { notebookId: nbId });
   };
 
   const handleNotebookCancel = (sessionId: string) => {
@@ -2476,8 +2559,50 @@ if (!session) {
    * This function handles provider setup, streaming, tool calls, and
    * all event processing from the LLM engine.
    */
-  const runAgenticLoop = async (message: string, session: Session, selectedSkills?: string[]) => {
+  /**
+   * 跑一轮 agentic loop（前台）。
+   *
+   * @param opts.notebookId 笔记本知识检索的会话级开关（**显式传参**，第 45 轮 P0-I1）：
+   *   笔记本回调传 `nbId`，其余路径沿用"当前打开的笔记本"状态。
+   *   为什么不只读状态：`setActiveNotebookId` 是异步的，而本函数是渲染闭包 ——
+   *   笔记本工作区里的**第一次**发送读到的仍是旧值（`null`），知识检索不会生效。
+   *
+   * ## P1-I2（第 45 轮功能上下文审计）：同一会话不允许并发两轮
+   *
+   * `AgenticLoop` 实例是**按会话池化复用**的，而 `run()` 的第一件事就是覆盖
+   * `abortController` / `state` / `currentSessionId`（`agentic-loop.ts:787–795`）。
+   * 前台（这里）与后台（`executeSessionTurn`：委派 / 微信桥 / 手机续聊）若同时进入同一会话，
+   * 两轮会互相清空 `readCache` / `writeCache`、共用 `msgCache` 与 `securityMode` ——
+   * 表现是"工具调用被判成重复而跳过""上下文少一段""停止停错会话"。
+   *
+   * 后台入口一直有守卫（`isSessionExecuting`）；**前台入口原来没有任何守卫**。
+   * 现在用同一个登记表（`startSessionExecution` / `endSessionExecution`，与
+   * `executeSessionTurn` 共用 `activeExecutions`）：两个方向互相可见。
+   * 整个函数体包在 `try/finally` 里 → **所有**早退路径（含"引擎没就绪""认证失败"）
+   * 都会注销登记，不会把这个会话永久卡成"正在执行中"。
+   */
+  const runAgenticLoop = async (
+    message: string,
+    session: Session,
+    selectedSkills?: string[],
+    opts?: { notebookId?: string },
+  ) => {
     if (!session) return;
+    if (isSessionExecuting(session.id)) {
+      console.warn(`[runAgenticLoop] 会话 ${session.id} 已在执行中 —— 前台回合被拒绝（同一会话不并发）`);
+      addMessage({
+        id: `busy-${Date.now()}`,
+        role: "system",
+        content: "[Error] 这个会话已有一轮正在执行中（可能是后台委派 / 微信桥 / 手机续聊）。请等它结束，或先点停止。",
+        timestamp: Date.now(),
+        status: "error",
+      });
+      return;
+    }
+    startSessionExecution(session.id);
+    try {
+    const notebookIdForLoop = opts?.notebookId ?? activeNotebookId;
+
 
     const mode = getMode();
     const engine = engineRef.current;
@@ -2675,8 +2800,23 @@ streamingSessionIdRef.current = session.id;
       saveMessages(session.id, [...loopMessages.values()]);
     };
 
-    // Helper: check if this session is currently being viewed (for UI updates)
+    // Helper: check if this session's messages are the ones currently loaded in the UI
+    /**
+     * ## 判据换成"消息列表的归属"（第 45 轮功能上下文审计 P0-I1）
+     *
+     * 原来是 `useProjectStore.getState().currentSession?.id === session.id`。这条判据
+     * 依赖"全局当前会话"这一个状态，而笔记本回合正是靠**改写它**才让流式文本进界面的
+     * （见 `handleNotebookSend` 的长注释）。现在不做那次改写了，判据改为问一个更直接的事实：
+     * **这份消息列表装的是不是这个会话的消息**（`loadedSessionId`，它与列表在同一次 `set`
+     * 里落定，见 `src/store.ts:334–342`）。
+     *
+     * - 笔记本工作区打开时，它自己 `loadMessages(笔记本会话)`（`NotebookWorkspace.tsx:364`）
+     *   → `loadedSessionId` 就是笔记本会话 → 本会话的流式更新照旧进界面 ✅；
+     * - 后台会话（用户已切走）→ 两个判据都不成立 → 只落库、不碰界面 ✅（与既有行为一致）；
+     * - 新建会话的开头一瞬（`loadMessages` 还没跑）→ 保留"当前会话"这一支兜底 ✅。
+     */
     const isViewingSession = () => {
+      if (useAppStore.getState().loadedSessionId === session.id) return true;
       const viewing = useProjectStore.getState().currentSession?.id;
       return viewing === session.id;
     };
@@ -2830,8 +2970,8 @@ abortControllersRef.current.set(session.id, sessionAbort);
             });
           });
         },
-        // F5: Notebook knowledge mode
-        ...(activeNotebookId ? { notebookId: activeNotebookId } : {}),
+        // F5: Notebook knowledge mode（显式传参优先 —— 见 runAgenticLoopInner 的说明）
+        ...(notebookIdForLoop ? { notebookId: notebookIdForLoop } : {}),
         // User-selected skills (injected with 🎯 marker in system prompt)
         ...(selectedSkills && selectedSkills.length > 0 ? { userSelectedSkills: selectedSkills } : {}),
       })) {
@@ -3414,6 +3554,10 @@ abortControllersRef.current.delete(session?.id || "");
         } catch (e) { console.warn("[Notify] Native notification failed:", e); }
       }
     }
+    } finally {
+      // 与入口的 startSessionExecution 成对：无论如何都要注销（见函数头 P1-I2 的说明）
+      endSessionExecution(session.id);
+    }
   };
 
   /**
@@ -3507,7 +3651,8 @@ abortControllersRef.current.delete(session?.id || "");
    * `Parent: (root)` / `Ancestors: []`，也就是"完整谱系"这个能力从来没有数据。
    *
    * 现在统一调 `useProjectStore.forkSession`：它会走 `SessionStorage.forkSession`
-   * （**写 parent_id + 继承事件日志**）并按 `messageIndex` 复制消息。
+   * （**写 parent_id**）、把项目归属解析成**源会话所属项目**、并按 `messageIndex` 复制消息
+   * （消息/工具调用/附件 id 三者都换新 —— 第 45 轮 P1-D2 / P1-D3）。
    * UI 这边只负责"分叉完把新会话的消息读进来"。
    */
   const handleFork = useCallback((messageIndex: number) => {
@@ -3562,8 +3707,13 @@ abortControllersRef.current.delete(session?.id || "");
      * "编辑并回退"产生的新会话与原会话是**明确的父子关系**，但这里原来只调了
      * `createSession`（不写 `parent_id`）—— 于是 `session_trace` 对新会话只报
      * `Parent: (root)` / `Ancestors: []`，"这个会话是从哪一条分出来的"这个事实永久丢失。
-     * `SessionStorage.forkSession` 是**唯一**会写 `parent_id` 的写点（并顺带让事件日志
-     * 继承源会话），所以这里补一次调用把关系钉住 —— 会话行走 upsert，重复写是幂等的。
+     * `SessionStorage.forkSession` 是**唯一**会写 `parent_id` 的写点，所以这里补一次调用
+     * 把关系钉住 —— 会话行走 upsert，重复写是幂等的。
+     *
+     * ⚠️ 第 45 轮（P2-D6 的加重形态）：`SessionStorage.forkSession` **不再复制事件日志**了。
+     * 原来它会整段复制，而这里只复制**前缀消息** —— 于是回退会话带着"源会话全量事件 +
+     * 仅前缀消息"，事件里描述的后半段对话在子会话里根本不存在（投影会凭空造出消息）。
+     * 现在事件只由消息自己的写入产生，这个不一致从根上消失。
      */
     try {
       SessionStorage.forkSession(session.id, newSession.id, newSession.projectId, newSession.title);
@@ -3571,15 +3721,18 @@ abortControllersRef.current.delete(session?.id || "");
       reportActionFailure("app.rewind.linkParent", e, "回退会话的谱系未写入");
     }
 
-    // 1. Copy prefix messages into the new session (fresh IDs).
+    /**
+     * 1. 复制前缀消息进新会话（**新 id**）。
+     *
+     * 走 `MessageStorage.copyMessageToSession`：消息 id / 工具调用 id / **附件 id**
+     * 三者一起换新（第 45 轮 P1-D3）。这里原来是本地 `clone()`，只换前两者 ——
+     * 附件 id 与源会话共用，会让源消息的附件**被改指到回退会话**。
+     */
     const ts = Date.now();
-    const clone = (m: Message) => ({
-      ...m,
-      id: `${m.id}-rw-${ts}-${Math.random().toString(36).substr(2, 5)}`,
-      toolCalls: m.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-rw-${ts}-${Math.random().toString(36).substr(2, 5)}` })),
-    });
     for (const m of prefix) {
-      try { MessageStorage.createMessage(clone(m), newSession.id); } catch (e) { console.warn("[Rewind] copy prefix failed:", e); }
+      try {
+        MessageStorage.copyMessageToSession(m, newSession.id, `rw-${ts}`);
+      } catch (e) { console.warn("[Rewind] copy prefix failed:", e); }
     }
     // 2. Write the edited message as the new user turn.
     try {
@@ -4415,9 +4568,14 @@ onClose={() => setCitationViewer(null)}
       )}
 
       {/* P1-8: Needs You — Agent proactively asks user a precise question */}
-      {currentSession && (
+      {/*
+        `uiSessionId` 而不是 `currentSession.id`（第 45 轮 P0-I1）：这张面板读的是
+        **会话级**的提问队列（`needs-you-queue`），归属必须与"在屏的会话"一致 ——
+        笔记本回合原来靠临时改写 currentSession 才让它指到笔记本会话，现在没有那次改写了。
+      */}
+      {uiSessionId && (
         <SlotBridge name="app.needs-you-panel" fallback={NeedsYouPanel}
-          sessionId={currentSession.id}
+          sessionId={uiSessionId}
           onAnswer={(itemId: string, answer: string) => {
             import("./core/llm/needs-you-queue").then(({ getNeedsYouQueue }) => {
               getNeedsYouQueue().answer(itemId, answer);

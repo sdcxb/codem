@@ -1121,6 +1121,69 @@ export function createMessage(message: Message, sessionId: string): void {
   }
 }
 
+/**
+ * 分叉时的**消息复制**：把源会话的一条消息复制进子会话。
+ *
+ * ## 为什么必须有这个函数（第 45 轮功能上下文审计 P1-D3）
+ *
+ * 分叉原来的实现（`core/store.ts` 里那几行）只给**消息 id** 与**工具调用 id** 换了新值，
+ * 附件 id 原样带过去。而附件的主键是 `attachments.message_id` + `attachments.id`，
+ * 写入走 `crud.upsert mode:"replace"` —— 于是同一次分叉会用**同一个附件 id**
+ * 把那一行的 `message_id` 覆盖成子会话的新消息 id：**源会话那条消息的附件被搬走**
+ * （源消息点开附件面板是空的，子会话带着源会话的同一批附件）。
+ *
+ * 所以：消息 id / 工具调用 id / **附件 id 三者一起换新**，附件正文按新 id 重新落库。
+ *
+ * ## 附件正文从哪来（不能只是 `att.content`）
+ *
+ * 读路径给消息补附件时（`attachmentsFromMirror`）**不投影正文**（正文可能几十 MB，
+ * 见那里的注释），所以 `att.content` 在真机常态下是 `undefined`。若直接把它写下去，
+ * 子会话会得到一条"有名字、点开没内容"的假附件。因此按"内联正文 → 域镜像那一行的
+ * content 列（内联正文或 `file:` 外置标记）→ 本进程同步缓存"的顺序解析；
+ * 三者都取不到时**跳过该附件并告警**（宁可不带，也不写一条空壳行）。
+ *
+ * @returns 子会话里这条消息的新 id（调用方通常不需要，测试与调用点用它做断言）
+ */
+export function copyMessageToSession(message: Message, targetSessionId: string, suffix: string): string {
+  const newId = `${message.id}-fork-${suffix}`;
+  let attachments: MessageAttachment[] | undefined;
+  if (message.attachments && message.attachments.length > 0) {
+    attachments = [];
+    for (const att of message.attachments) {
+      const content = attachmentContentForCopy(att);
+      if (content === undefined) {
+        console.warn(
+          `[fork] 附件 ${att.id}（${att.name}）正文取不到，未复制进子会话（源会话的附件不受影响）`,
+        );
+        continue;
+      }
+      attachments.push({ ...att, id: `${att.id}-fork-${suffix}`, content });
+    }
+  }
+  const copy: Message = {
+    ...message,
+    id: newId,
+    toolCalls: message.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${suffix}` })),
+    ...(attachments ? { attachments } : {}),
+  };
+  createMessage(copy, targetSessionId);
+  return newId;
+}
+
+/** 复制附件时解析正文（顺序与理由见 `copyMessageToSession`） */
+function attachmentContentForCopy(att: MessageAttachment): string | undefined {
+  if (typeof att.content === "string" && att.content.length > 0) return att.content;
+  const row = domainReadOne<{ content: string | null }>(
+    ATTACHMENT_TABLE,
+    { id: att.id },
+    (r) => ({ content: (r.content as string | null) ?? null }),
+  );
+  if (row?.content) return row.content;
+  const cached = attachmentContentCache.get(att.id);
+  if (cached) return cached;
+  return undefined;
+}
+
 // ========== 迁移期：索引写分流到 Rust（P3 第 6 段） ==========
 //
 // ## 为什么索引写要整体交给 Rust
@@ -1644,15 +1707,16 @@ function writeMessageIndex(message: Message, sessionId: string): void {
    * 如果这里也写一份，同一次工具调用会在事件表里留两行（投影按 id 去重所以语义无害，
    * 但那是纯粹的行数浪费）。**一个事实一个写入者**，所以这两种事件从这里移交给流水线。
    *
-   * ### 已知的边界（如实记下，别让下一个人以为它覆盖了更多）
+   * ### 助手正文的"定稿"由谁写（第 45 轮补齐）
    *
    * 主聊天的助手消息是**先建空壳、再流式更新**：`createMessage` 那一刻 `content` 还是空串，
-   * 所以这里不会写 `assistant_text`；而 `updateMessage`（流式增量）**没有**事件写入点 ——
-   * 也就是说**助手正文目前不进事件日志**。要闭合它需要一条"消息定稿"事件写入点
-   * （在 `updateMessage` 的 `status → done/error` 转变处），那要先确认消费方对
-   * `assistant_text` 的期望语义（见 `.preview-shot/_audit/FEATURE-CONTEXT.md` 的 E1/E17）。
+   * 中间态由 autosave/工具事件反复落库（`status` 仍是 `"streaming"`），最后一轮的落库
+   * 带的是 `status:"done"` 的**定稿正文**（`App.tsx` 的 `safeUpdateMessage(status:"done")`
+   * 之后紧跟 `persistLoopMessages()`）。所以"定稿写入点"**就是这里**：
+   * 由 `appendMessageTextEvent` 统一收口 —— 它挡住流式中间态、并按正文指纹去重
+   * （为什么不会把事件表写爆，见该函数的长注释）。
    */
-  appendMessageCreatedEvents(sessionId, message);
+  appendMessageTextEvent(sessionId, message);
 
   // 迁移期分流：端口是 rust → 索引写走 Rust（**单事务**：主行 + JSON 列 + tool_calls 整体替换）
   if (writeIndexViaRust(message, sessionId, "create")) return;
@@ -1667,32 +1731,102 @@ function writeMessageIndex(message: Message, sessionId: string): void {
   // 它在新架构下既无对象（旧库不加载）也无意义（端口写入是单事务落地的）。
 }
 /**
- * 消息创建时的**事件溯源双写**（`user_message` / `assistant_text`）。
+ * 已写入事件日志的**文本事件指纹**（第 45 轮功能上下文审计 P0-D0 的定稿写入点）。
  *
- * 为什么抽成函数：它必须在 `writeMessageIndex` 里**端口早退之前**执行（见那里的说明）。
- * 抽出来还能让"哪些事件由这里写"这件事只有一个落点 ——
- * `tool_call` / `tool_result` **刻意不在这里**，它们由 `tool-pipeline` 的
- * `EventLogFinalizeMiddleware` 专职写入（一个事实一个写入者）。
+ * 键：`sessionId \0 事件类型 \0 messageId`；值：`长度:内容哈希`。
  *
- * 边界（如实记下）：助手消息在主聊天里是"先建空壳、再流式更新"，所以创建这一刻
- * `content` 为空 → 这里不写 `assistant_text`；当前也**没有**定稿写入点，
- * 因此助手正文暂不进事件日志。
+ * 为什么需要指纹（而不是"每次写一次"）：`createMessage` 会被**反复**调用在同一条消息上
+ * （`saveMessages` 每次都把列表里变过的消息逐条写一遍；主聊天的助手消息在流式期间
+ * 每 2 秒一次 autosave、每次工具开始/结束各一次）。若不做去重，
+ * 事件表会按"落库次数"膨胀，而投影对同一个 messageId 是**后写者胜** ——
+ * 膨胀出来的行没有信息量，只会让 `session_event_search` 里同一条回复出现十几遍。
  */
-function appendMessageCreatedEvents(sessionId: string, message: Message): void {
+const writtenTextEventFingerprints = new Map<string, string>();
+
+/** 内容指纹（长度 + 字符码累加）：只需"同一份正文判等"，不必抗碰撞攻击 */
+function textEventFingerprint(content: string): string {
+  let sum = 0;
+  for (let i = 0; i < content.length; i++) sum = (sum + content.charCodeAt(i)) % 2147483647;
+  return `${content.length}:${sum}`;
+}
+
+/**
+ * 消息文本事件的**唯一写入点**（`user_message` / `assistant_text`）。
+ *
+ * ## 它为什么存在（P0-D0）
+ *
+ * 主聊天**只**走 `createMessage`（`store.saveMessages` → `MessageStorage.createMessage`，
+ * 见 `src/store.ts:586`），不走 `executor.ts`。而 `createMessage` 的"定稿正文"就是
+ * 这条消息的最终内容 —— 所以这条路径就是主聊天的事件写入点。
+ *
+ * ## 为什么"流式中间态"一律不写（不会把事件表写爆）
+ *
+ * 主聊天的助手消息是**先建空壳、再流式更新**：`App.tsx` 在 `text_delta` 时建一条
+ * `status:"streaming"` 的空壳，文本由 100ms 批量 flush 进内存列表，期间
+ * `persistLoopMessages()`（tool_start / tool_complete / 2 秒 autosave）会把**半截正文**
+ * 写一次库。那**不是**定稿 —— 这里用两道闸门挡住它：
+ * ① `status === "streaming"` 直接返回（流式期间一次都不写）；
+ * ② 非流式态再按"正文指纹"去重（同一份定稿正文只写一条事件；正文真的被改过
+ *    —— 例如纠错回写、编辑重发 —— 才补一条新事件）。
+ * 事件表因此是"每条消息 1~N 条（N=定稿正文被改写过的次数）"，与增量无关。
+ *
+ * ## 消费方对 `assistant_text` 的期望语义（已逐个确认）
+ *
+ * - `event-projection.applyAssistantText`（`event-projection.ts:213`）：按 `messageId`
+ *   **后写者胜**地更新正文 —— 所以"定稿写一条"正是它要的形态（多条也无害，但没必要）；
+ * - `runtime-invariants.checkVisibleRecordedInvariant`（`runtime-invariants.ts:62`）：
+ *   要求"消息存储里存在的消息在日志里有对应事件"，判定用的就是 `messageId`；
+ * - `time-context.findLastVisibleMessageTime`（`time-context.ts:106`）：取
+ *   `assistant_text` 的**时间戳**当"最后一次模型可见活动"；
+ * - `session-search`（`tools/session-search.ts:263`）：按 payload 文本搜索 —— 重复行会污染结果；
+ * - `surface-manager`（`surface-manager.ts:48`）：只数投影出来的条数。
+ *
+ * ## 边界（如实记下，别以为它覆盖了更多）
+ *
+ * - `tool_call` / `tool_result` **刻意不在这里**：它们由 `tool-pipeline` 的
+ *   `EventLogFinalizeMiddleware` 专职写入（一个事实一个写入者）；
+ * - 正文为空的助手消息（纯工具轮）不写 `assistant_text`：它的"事实"在
+ *   `tool_call` 事件里，写一条空正文只会让投影多出一条空 assistant 行。
+ */
+function appendMessageTextEvent(sessionId: string, message: Message): void {
+  if (message.role !== "user" && message.role !== "assistant") return;
+  const content = typeof message.content === "string" ? message.content : "";
+  if (!content) return;
+  // ① 流式中间态不是定稿（见上）
+  if (message.status === "streaming") return;
+
+  const type = message.role === "user" ? "user_message" : "assistant_text";
+  const key = `${sessionId}\u0000${type}\u0000${message.id}`;
+  const fingerprint = textEventFingerprint(content);
+  // ② 同一份定稿正文只写一条（正文被改写时才补写）
+  if (writtenTextEventFingerprints.get(key) === fingerprint) return;
+
   const eventLog = getEventLog();
-  if (message.role === "user") {
-    eventLog.append(sessionId, "user_message", {
-      messageId: message.id,
-      content: message.content,
-    });
+  const event =
+    type === "user_message"
+      ? eventLog.append(sessionId, "user_message", { messageId: message.id, content })
+      : eventLog.append(sessionId, "assistant_text", {
+          messageId: message.id,
+          content,
+          model: message.model,
+        });
+  /**
+   * **只在真的落库时记账**：端口没接手时 `append` 返回 `seq === 0` 的"未落库"事件
+   * （`event-log.ts:226`）。那种情况不能记指纹 —— 否则下一次同样的正文会被去重挡掉，
+   * 变成"事件永久缺失"。
+   */
+  if (event.seq !== 0) writtenTextEventFingerprints.set(key, fingerprint);
+}
+
+/** 测试/会话清理用：清掉文本事件指纹（不传则清全部） */
+export function __resetTextEventFingerprints(sessionId?: string): void {
+  if (!sessionId) {
+    writtenTextEventFingerprints.clear();
     return;
   }
-  if (message.role === "assistant" && message.content) {
-    eventLog.append(sessionId, "assistant_text", {
-      messageId: message.id,
-      content: message.content,
-      model: message.model,
-    });
+  const prefix = `${sessionId}\u0000`;
+  for (const key of Array.from(writtenTextEventFingerprints.keys())) {
+    if (key.startsWith(prefix)) writtenTextEventFingerprints.delete(key);
   }
 }
 
@@ -1738,6 +1872,22 @@ export function updateMessage(id: string, update: Partial<Message>): void {
    */
   if (sessionId && update.content !== undefined && snapshot) {
     indexFtsForMessageViaPort(sessionId, snapshot);
+  }
+
+  /**
+   * ④ 事件日志：**状态落到终态（done / error）的那一次就是"消息定稿"**
+   *    （第 45 轮功能上下文审计 P0-D0 的助手正文写入点）。
+   *
+   * 为什么放在 `status` 转变处而不是每次 `updateMessage`：流式增量会以极高频率调用本函数
+   * （`updateMessage(id, { content })` 每个 flush 一次）——若每次都写事件，事件表会按 token
+   * 增量膨胀。定稿只有一次（`status` 从 `streaming` 变成 `done`/`error`），
+   * 而且此刻 `snapshot` 里是**合并后的最终正文**。
+   *
+   * 与 `createMessage` 那条路共用同一道指纹去重（`appendMessageTextEvent`），
+   * 所以同一条消息无论走哪条路落定，事件都只有一条（正文被改写时才补写）。
+   */
+  if (sessionId && snapshot && (update.status === "done" || update.status === "error")) {
+    appendMessageTextEvent(sessionId, snapshot);
   }
 }
 

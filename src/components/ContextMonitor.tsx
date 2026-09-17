@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { getContextManager, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import { listMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
+import { getEventLog } from "../core/storage/event-log";
+import { setCompactionInProgress } from "../core/storage/compaction-state";
+import { foldStaleCompactionMarkers } from "../core/llm/compaction-budget";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
 
@@ -56,14 +59,40 @@ async function fetchDeepSeekBalance(apiKey: string, baseUrl: string): Promise<{ 
   throw new Error("No balance info");
 }
 
-/** 手动压缩上下文：删除旧消息并插入摘要标记 */
-function manualCompact(sessionId: string): { removed: number; kept: number } {
+/**
+ * 手动压缩上下文：删除旧消息并插入摘要标记。
+ *
+ * ## 第 45 轮（功能上下文审计 P1-D5）：补三件原来完全没有的事
+ *
+ * 1. **并发闸门**：加 `setCompactionInProgress(true/false)`。这个标志是"压缩正在改库"的
+ *    唯一告示牌 —— `store.saveMessages`（`src/store.ts:510`）与
+ *    `telemetry`（`core/telemetry/telemetry.ts:506`）都按它退让。自动压缩有它
+ *    （`agentic-loop.ts:3445`），手动压缩原来**没有**：压缩期间任何一次 UI 自动保存
+ *    都会继续把"面板截取的那份旧列表"重新写回库 —— 压缩被部分撤销（被软删的消息复活）。
+ * 2. **compaction 事件**：事件日志是投影/世代追踪的唯一输入，手动压缩原来一条都不写，
+ *    于是"这次压缩发生过"在事件侧不存在（`getActiveGenerations` 之类看不到它）。
+ * 3. **旧摘要标记折叠**：与自动路径共用 `foldStaleCompactionMarkers`
+ *    （手动压缩的标记前缀 `[上下文已手动压缩]` 原来连自动路径的扫描都匹配不到，
+ *    因此永远折叠不了、永远清不掉）。
+ *
+ * @returns 实际移除/保留的条数（面板展示用）
+ *
+ * 导出是为了让"手动压缩"这条数据路径可以被用例直接驱动
+ * （`src/test/feature-context-fixes.test.ts` 的 FC-D5* 就是对着它跑的）。
+ */
+export function manualCompact(sessionId: string): { removed: number; kept: number } {
   const allMessages = listMessages(sessionId);
   // Only consider visible messages for compaction
   const messages = allMessages.filter((m: any) => !(m as any).hidden);
   if (messages.length <= 2) return { removed: 0, kept: messages.length };
 
-  const keepCount = Math.min(20, messages.length);
+  const keepCountPlanned = Math.min(20, messages.length);
+  /**
+   * 折叠保留集里的旧摘要标记（见函数头第 3 点）：保留集要从"最后一个旧标记"之后开始，
+   * 否则手动压缩会把上一次的摘要块永久留在上下文里。
+   */
+  const folded = foldStaleCompactionMarkers(messages, keepCountPlanned);
+  const keepCount = folded.keepCount;
   const messagesToKeep = messages.slice(-keepCount);
   const messagesToRemove = messages.slice(0, messages.length - keepCount);
 
@@ -89,20 +118,52 @@ function manualCompact(sessionId: string): { removed: number; kept: number } {
   if (summary.length > 1000) {
     summary = summary.substring(0, 1000) + "\n...(更多历史已省略)";
   }
+  /**
+   * 上一次压缩的摘要必须**原样带进新摘要**（级联），否则手动压缩第二次开始就把
+   * 前一次的结论丢掉。折叠逻辑已经把它取出来了（`folded.existingSummary`）。
+   */
+  if (folded.existingSummary) {
+    summary = `以下是之前的摘要（继续保留）：\n${folded.existingSummary}\n\n本次新增历史：\n${summary}`;
+  }
 
-  // Delete old messages
   const removedIds = messagesToRemove.map(m => m.id);
-  deleteMessagesByIds(removedIds);
-
-  // Insert compaction marker
   const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
-  createMessage({
-    id: `compact-manual-${Date.now()}`,
-    role: "user",
-    content: `[上下文已手动压缩]\n\n以下是之前对话的摘要：\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`,
-    timestamp: markerTs - 1,
-    status: "done",
-  }, sessionId);
+  const markerId = `compact-manual-${Date.now()}`;
+  const markerContent = `[上下文已手动压缩]\n\n以下是之前对话的摘要：\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`;
+  const messagesBefore = messages.length;
+  const messagesAfter = keepCount + 1;
+
+  // 见函数头第 1 点：手动压缩也必须挂闸门（否则 UI 自动保存会把被软删的消息写回来）
+  setCompactionInProgress(true);
+  try {
+    // Delete old messages
+    deleteMessagesByIds(removedIds);
+
+    // Insert compaction marker
+    createMessage({
+      id: markerId,
+      role: "user",
+      content: markerContent,
+      timestamp: markerTs - 1,
+      status: "done",
+    }, sessionId);
+
+    // 见函数头第 2 点：事件日志里必须留下"这次压缩发生过"
+    try {
+      getEventLog().append(sessionId, "compaction", {
+        removedMessageIds: removedIds,
+        summary: markerContent,
+        messagesBefore,
+        messagesAfter,
+        trigger: "manual",
+      });
+    } catch (eventErr) {
+      // 与自动路径同一条约定：事件写失败不致命（消息侧已经落地），但必须留下痕迹
+      console.warn("[ContextMonitor] 手动压缩的事件写入失败（非致命）:", eventErr);
+    }
+  } finally {
+    setCompactionInProgress(false);
+  }
 
   return { removed: messagesToRemove.length, kept: keepCount };
 }

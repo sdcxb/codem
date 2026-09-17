@@ -61,8 +61,37 @@ export interface ExecuteSessionTurnResult {
 
 // ========== 活跃执行追踪 ==========
 
-/** 当前正在后台执行的会话集合 */
+/** 当前正在执行的会话集合（**前台回合与后台回合共用同一张表**，见下） */
 const activeExecutions = new Map<string, AbortController>();
+
+/**
+ * 前台回合的**执行登记**（第 45 轮功能上下文审计 P1-I2）。
+ *
+ * ## 为什么需要它
+ *
+ * `AgenticLoop` 实例按会话池化复用，`run()` 的第一件事就是覆盖
+ * `abortController` / `state` / `currentSessionId`（`agentic-loop.ts:787–795`）。
+ * 前台（`App.tsx` 的 `runAgenticLoop`）与后台（本文件的 `executeSessionTurn`：
+ * 委派 / 微信桥 / 手机续聊）若同时进入同一会话，两轮会互相清空 `readCache`/`writeCache`、
+ * 共用 `msgCache` 与 `securityMode` —— 表现为"工具调用被判重复而跳过""上下文少一段"。
+ *
+ * 后台路一直有 `isSessionExecuting` 守卫（`executeSessionTurn` 的入口），
+ * 前台路原来**没有**。这里让前台把自己的回合登记进**同一张表**，
+ * 于是 `isSessionExecuting` 对两个方向都成立、`executeSessionTurn` 也会拒绝与前台并发。
+ * `endSessionExecution` 必须与它成对（调用方用 `try/finally` 包住整个回合）。
+ *
+ * ⚠️ 登记表里存的 controller 只是"忙碌"标记：前台的中止仍然走
+ * `abortControllersRef` + `engineRef.current.abortSession(session.id)`（既有路径不变）。
+ */
+export function startSessionExecution(sessionId: string): void {
+  if (activeExecutions.has(sessionId)) return;
+  activeExecutions.set(sessionId, new AbortController());
+}
+
+/** 注销前台回合的登记（与 `startSessionExecution` 成对） */
+export function endSessionExecution(sessionId: string): void {
+  activeExecutions.delete(sessionId);
+}
 
 /**
  * 第 65 波：把一个循环事件折算成"吃了多少上下文"的粗略估计（字符数）。

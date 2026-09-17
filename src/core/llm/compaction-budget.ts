@@ -102,3 +102,97 @@ export function alignKeepToRoundBoundary(
   }
   return messages.length - boundary;
 }
+
+// ========== 压缩标记的折叠（第 45 轮：摘要累积 P1-D4） ==========
+
+/**
+ * 摘要标记的前缀。
+ *
+ * 自动压缩写 `[上下文已自动压缩]`（`agentic-loop.ts`），手动压缩写 `[上下文已手动压缩]`
+ * （`ContextMonitor.tsx`）。两条路径写的都是**普通可见 user 行**，所以"哪些行是摘要标记"
+ * 这件事必须由**一份共享判定**回答 —— 原来只有自动路径认第一种前缀，
+ * 手动标记因此永远折叠不了（也不会被任何清理路径看到）。
+ */
+export const COMPACTION_MARKER_PREFIXES = ["[上下文已自动压缩]", "[上下文已手动压缩]"] as const;
+
+/** 这一行是不是压缩摘要标记（role=user + 已知前缀） */
+export function isCompactionMarker(message: { role?: string; content?: unknown }): boolean {
+  if (!message || message.role !== "user") return false;
+  const content = typeof message.content === "string" ? message.content : "";
+  return COMPACTION_MARKER_PREFIXES.some((prefix) => content.startsWith(prefix));
+}
+
+export interface CompactionBoundaryPlan {
+  /** 折叠旧标记**之后**的保留条数（remove 集 = 前 total - keepCount 条） */
+  keepCount: number;
+  /** 从保留集里被折叠进待删集的旧标记条数（诊断/用例断言用） */
+  foldedMarkers: number;
+  /** 待删集里**最新**那条摘要标记的正文（用于级联摘要），没有则为空串 */
+  existingSummary: string;
+}
+
+/**
+ * 决定"删哪些、留哪些"，并把保留集里的**旧摘要标记**一并折叠进待删集。
+ *
+ * ## 为什么需要这一步（P1-D4 / C13：摘要累积）
+ *
+ * 摘要标记落到保留集里时会发生两件坏事（两件都是静默的）：
+ * 1. 级联摘要失效：找旧标记的搜索范围只有"待删集"，标记在保留集里 ⇒ 找不到 ⇒
+ *    `existingSummary` 为空 ⇒"摘要的摘要"在最常见的形态下不生效，早期上下文直接丢；
+ * 2. 标记永久留在上下文里：没有任何路径把它设为 hidden，于是上下文不断堆积
+ *    "请基于以上摘要继续工作"的块 —— 与"压缩让上下文变小"的目标正好相反。
+ *
+ * ## 为什么"折叠到最后一个标记"（而不是只删那一条）
+ *
+ * 待删集必须是一个**连续前缀**（`messages.slice(0, len - keepCount)`）：保留集是从尾部
+ * 起算的连续一段，中间挖洞会让"删哪些"不再可表达。所以保留集里最靠后的那个标记
+ * 之后才能留，它之前的（含标记自身）全部进待删集。
+ *
+ * 折叠后的保留集入口是"上一个保留集的起点"（标记写在它前面一条），
+ * 也就是当时已经对齐好的轮次边界；万一不是，再把入口**向后**推过 role=tool 的孤儿结果
+ * （向后推 = 多删，方向安全 —— 它的 tool_use 已经被删掉了）。
+ *
+ * @param messages 可见消息（已过滤 hidden），顺序即上下文顺序
+ * @param keepCount 期望保留条数（已按预算/轮次边界规划）
+ */
+export function foldStaleCompactionMarkers(
+  messages: Array<{ role?: string; content?: unknown }>,
+  keepCount: number,
+): CompactionBoundaryPlan {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { keepCount: 0, foldedMarkers: 0, existingSummary: "" };
+  }
+  let keep = Math.max(1, Math.min(keepCount, messages.length));
+
+  /**
+   * 找保留集里**最靠后**的标记：它是最新的一次压缩留下的，
+   * 而它带的摘要已经包含了它之前所有的摘要（每次压缩都是"摘要 + 新增对话"的合并结果）。
+   */
+  let foldedMarkers = 0;
+  let existingSummary = "";
+  const removeStart = messages.length - keep;
+  for (let i = messages.length - 1; i >= removeStart; i--) {
+    if (!isCompactionMarker(messages[i])) continue;
+    foldedMarkers = messages.slice(i).filter(isCompactionMarker).length;
+    existingSummary = String(messages[i].content ?? "");
+    keep = messages.length - (i + 1);
+    break;
+  }
+
+  // 没在保留集里找到标记：仍要从待删集里取"最新的一条标记"做级联摘要
+  if (foldedMarkers === 0) {
+    for (let i = messages.length - keep - 1; i >= 0; i--) {
+      if (isCompactionMarker(messages[i])) {
+        existingSummary = String(messages[i].content ?? "");
+        break;
+      }
+    }
+  }
+
+  // 折叠后的新入口若正好落在孤儿 tool 结果上，向后推（= 多删）到安全边界
+  let start = messages.length - keep;
+  while (start < messages.length && messages[start].role === "tool") start++;
+  keep = messages.length - start;
+
+  return { keepCount: keep, foldedMarkers, existingSummary };
+}

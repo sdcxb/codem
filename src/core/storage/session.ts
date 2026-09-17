@@ -1,4 +1,5 @@
-import { getEventLog } from "./event-log";
+// 第 45 轮：`getEventLog` 的 import 已随"fork 不再复制事件日志"一起删除
+// （原来这里唯一的用途就是 `getEventLog().forkSession(...)`，见下面 `parent_id` 写入处的说明）。
 import type { Session } from "../types";
 import { appendSessionTombstone } from "./session-jsonl";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
@@ -348,8 +349,7 @@ export function searchSessions(query: string): Session[] {
 }
 
 /**
- * R3-2.2: Fork 一个会话 —— 建一个子会话，`parent_id` 指向源会话，
- * 并把源会话的**事件日志整段复制**过去（新会话带着源会话的历史起步）。
+ * R3-2.2: Fork 一个会话 —— 建一个子会话，`parent_id` 指向源会话。
  *
  * ## 这个入口为什么必须存在（B-7：`parent_id` 全仓零调用者）
  *
@@ -359,22 +359,25 @@ export function searchSessions(query: string): Session[] {
  * `Parent: (root)` / `Ancestors: []`：数据模型有它、读侧有它，只有写侧没人用。
  *
  * 修法（本文件内能做的部分）：把这个入口修成"能被 UI 直接调用的最小入口"——
- * 确认它真的复制消息、真的写 `parent_id`、参数全都用到（原来 `title` 是可选的、
+ * 确认它真的写 `parent_id`、参数全都用到（原来 `title` 是可选的、
  * `projectId` 只写进子行），并把用法写清楚（见报告里给 `App.tsx` 的最小改法）。
  *
  * ## 契约（调用方需要知道的三件事）
  *
- * 1. **子会话的消息由事件日志复制而来**（`getEventLog().forkSession`），
- *    消息索引不在这里重建 —— UI 进入子会话时会按日志 hydrate，与正常会话一致；
- * 2. **源会话不存在 → 返回 `null`**（不造一个没有父的孤儿会话）；
- * 3. **落库失败 → 返回 `null` 并如实上报**，**不会**去复制事件日志
- *    （会话行都没落地就去写事件，只会造出"有事件、没有会话行"的孤儿数据）。
+ * 1. **子会话的会话级字段由源会话继承**（`model` / `executionMode` / `worktreePath` /
+ *    `worktreeBranch` / `correctionMode` / `deepThinkingMode` / `preserveExecutor`）——
+ *    第 45 轮修正：原来只继承 `model`，其余四列被 `sessionToWire` 显式写成 `null`，
+ *    于是"分叉后深度思考/纠错模式悄悄关了"（功能上下文审计 P1-D3）；
+ * 2. **子会话的消息由调用方复制**（`core/store.ts` 走 `MessageStorage.copyMessageToSession`）；
+ *    这里**不再复制事件日志**（第 45 轮修正，见下面 `parent_id` 写入处的说明）；
+ * 3. **源会话不存在 / 自 fork / 落库失败 → 返回 `null`**（不造没有父的孤儿会话，
+ *    也不在会话行没落地时写任何从属数据）。
  *
  * @param sourceSessionId 父会话
  * @param newSessionId 子会话的新 id（由调用方生成，便于 UI 立刻跳转）
  * @param projectId 子会话所属项目
  * @param title 子会话标题（缺省 `"<父标题> (fork)"`）
- * @returns 建好的子会话；源会话不存在或落库失败时为 `null`
+ * @returns 建好的子会话；源会话不存在、自 fork 或落库失败时为 `null`
  */
 export function forkSession(
   sourceSessionId: string,
@@ -397,6 +400,22 @@ export function forkSession(
     lastMessageAt: now,
     messageCount: source.messageCount,
     pinned: false,
+    /**
+     * 会话级模式字段**必须继承**（第 45 轮功能上下文审计 P1-D3）。
+     *
+     * `sessionToWire` 对这些列显式写 `?? null`（第 19 行附近的说明：显式写 null 才能清空列），
+     * 所以"这里不带"就等于"分叉把用户选过的模式全清掉"。用户可见的形态是
+     * "分叉后深度思考/纠错模式悄悄关了"，而没有任何提示。
+     *
+     * `worktreePath` 也一起继承：源会话在 worktree 里跑时，子会话继续用同一个工作区
+     * （由调用方按目标项目再决定是否新建 worktree，见 `core/store.ts` 的 forkSession）。
+     */
+    executionMode: source.executionMode,
+    worktreePath: source.worktreePath,
+    worktreeBranch: source.worktreeBranch,
+    correctionMode: source.correctionMode,
+    deepThinkingMode: source.deepThinkingMode,
+    preserveExecutor: source.preserveExecutor,
   };
 
   // Create the child session row with parent_id。
@@ -410,12 +429,27 @@ export function forkSession(
     )
   ) {
     /**
-     * 只有会话行**确实落地**之后才复制事件日志（顺序有语义）：
-     * `session_events.session_id` 有外键指向 `sessions(id)`，先复制事件会撞外键；
-     * 而"会话行在、事件复制失败"是可恢复的（重新 fork 或重建索引即可），
-     * 反过来"有事件没有会话行"就是纯孤儿数据。
+     * ## 为什么**不再**复制事件日志（第 45 轮功能上下文审计 P2-D6）
+     *
+     * 原来这里调 `getEventLog().forkSession(sourceSessionId, newSessionId)`，把源会话的
+     * `session_events` **整段原样复制**（引擎侧 `INSERT … SELECT` 连 payload 一起抄）。
+     * 而子会话的消息是**新 id**（`core/store.ts` 的复制循环给每条消息、每个工具调用换了 id）——
+     * 于是子会话的事件里 `payload.messageId` / `toolCallId` 全是**源会话**的 id，
+     * 一条都对不上子会话的消息表。投影会为这些孤儿 id 凭空造出 `content: ""` 的
+     * assistant 行与 `tool-result-*` 行（`event-projection.ts:252–307`），
+     * 而 `session_meta`（如 `feedback_record`）这类会话级事件被抄过来后，
+     * 子会话里会**凭空出现源会话的反馈条目**（`feedback.ts:87` 按 session_id 过滤）。
+     *
+     * "复制事件"和"复制消息"只能留一个（两者各做一半、主键还对不上，是比全不做更糟的状态）。
+     * 这里选**后者**：子会话的消息表是唯一来源，事件由**消息自己的写入**产生 ——
+     * `MessageStorage.createMessage` 会为每条复制过来的消息写 `user_message` /
+     * `assistant_text`（`appendMessageTextEvent`），id 天然是子会话的新 id，主键必然一致。
+     * 工具调用的事件由 `tool-pipeline` 在**真正执行**时写（一个事实一个写入者），
+     * 所以复制来的历史工具调用在子会话里没有对应事件 —— 这是刻意的取舍：
+     * 宁可"少一段历史工具事件"，也不要"一堆指向不存在消息的事件"。
+     *
+     * `parent_id` 与子会话行本身不受影响（谱系功能仍然成立）。
      */
-    getEventLog().forkSession(sourceSessionId, newSessionId);
     return child;
   }
 
