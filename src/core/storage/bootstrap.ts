@@ -111,6 +111,33 @@ export async function registerRustStoragePort(
     const health = await port.start();
     setStoragePort(port);
     /**
+     * **陈旧二进制守卫**（第 45 轮线协议审计 P2-8）。
+     *
+     * ## 这条守卫补的是什么
+     *
+     * `capabilities()`（`storage_capabilities`）在生产代码里**零消费者** —— 引擎能自省
+     * 自己实现了哪些命令，但渲染侧从不问。于是"装了一个旧的（或被部分替换过的）引擎二进制"
+     * 这件事没有任何运行时信号：渲染侧照常发命令，引擎逐条回 `UNSUPPORTED`，
+     * 表现为"某些功能莫名其妙不生效"，而不是"引擎版本不对"。
+     * `src-tauri/src/storage.rs` 的注释里记着这种事故**已经踩过两次**。
+     *
+     * 所以在这里问一次命令清单，并把"缺命令"变成一条**明确、可见、可诊断**的失败。
+     *
+     * ## 为什么只查一小组"长期存在"的命令
+     *
+     * 判据不是"重要"，而是"**任何一个健康的引擎都必然有**"：这一组从迁移完成起就在
+     * `COMMANDS` 里，缺任何一条都意味着这个二进制不是本版本引擎（而不是"功能没实现"）。
+     * 反过来，如果把新加的命令也塞进来，"老版本引擎"与"合法降级"就分不清了 ——
+     * 守卫会开始误报，而误报会让真正的信号贬值（这条纪律在本仓库反复出现过）。
+     *
+     * ## 为什么用"动作失败上报"而不是 `notifyStorageUnavailable`
+     *
+     * 后者会触发 App 的会话抢救链（把当前会话导成 JSON 并提示用户）—— 那是"引擎完全起不来"
+     * 的处置。命令缺失属于"引擎在、但版本不对"：上报 + 留痕就够，不该把用户的界面
+     * 推进抢救流程（过度反应同样是一种失真）。
+     */
+    void assertEngineSupportsCriticalCommands(transport, label);
+    /**
      * 诊断入口：在**应用自己的上下文里**跑一条仓储命令并打印结果。
      *
      * 为什么需要它：真机排查时"CLI 读得到、应用读不到"这种分歧最难查 ——
@@ -153,6 +180,63 @@ export async function registerRustStoragePort(
     const { notifyStorageUnavailable } = await import("./health");
     notifyStorageUnavailable("存储引擎未能启动（Rust 侧打开失败）", e instanceof Error ? e.message : e);
     return { kind: "failed", error: e };
+  }
+}
+
+/**
+ * **任何一个健康引擎都必然具备**的命令（陈旧二进制守卫的判据，见 `registerRustStoragePort`）。
+ *
+ * 刻意只收"迁移完成起就在 `COMMANDS` 里"的那几条：它们的缺失只可能意味着"这个二进制不是
+ * 本版本引擎"，而不是"某个功能还没实现"。把新命令也塞进来会让守卫开始误报。
+ */
+const CRITICAL_ENGINE_COMMANDS: readonly string[] = [
+  "settings.get_all",
+  "settings.set",
+  "events.append",
+  "messages.create",
+  "messages.upsert_index",
+  "messages.get",
+  "messages.list",
+  "messages.delete",
+  "messages.count",
+  "sessions.upsert",
+  "projects.upsert",
+  "crud.list",
+  "crud.upsert",
+  "crud.delete",
+  "crud.count",
+  "health",
+  "integrity_check",
+  "checkpoint",
+  "counts",
+];
+
+/**
+ * 问一次引擎的命令清单，把"缺命令"变成一条明确、可见、可诊断的失败。
+ *
+ * 读不到清单**本身**不算致命（老引擎可能不回 `commands`），但必须留痕 ——
+ * "校验不了"不能长得像"校验通过"。
+ */
+async function assertEngineSupportsCriticalCommands(
+  transport: StorageTransport | undefined,
+  label: string,
+): Promise<void> {
+  try {
+    const { rustCapabilities } = await import("./rust-port");
+    const caps = await rustCapabilities(transport);
+    const missing = CRITICAL_ENGINE_COMMANDS.filter((c) => !caps.commands.includes(c));
+    if (missing.length === 0) return;
+    reportActionFailure(
+      `${label}.capabilities`,
+      new Error(`存储引擎缺少 ${missing.length} 条必需命令：${missing.join(", ")}`),
+      "存储引擎与当前程序版本不匹配：请重新安装最新版本（相关功能会一直报 UNSUPPORTED）",
+    );
+  } catch (e) {
+    reportActionFailure(
+      `${label}.capabilities`,
+      e,
+      "未能读取存储引擎的命令清单（无法校验引擎版本是否匹配）",
+    );
   }
 }
 
