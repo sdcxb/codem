@@ -193,6 +193,13 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
    * 结构：sessionId → (messageId → 索引里的正文)。字段名与 Rust 侧 `session_fts` 对齐。
    */
   const ftsIndex = new Map<string, Map<string, string>>();
+  /**
+   * **已经真的写过引擎**的行键（`table\u0000pk`）—— `crud.upsert` 的 `insert` 模式据此判主键冲突。
+   *
+   * 为什么要单独记一份：假端口的域镜像与"引擎"是**同一张内存表**，所以"表里有这一行"
+   * 不能等价于"引擎里已经有这一行"（详见 `crud.upsert` 分支里那段说明）。
+   */
+  const writtenThrough = new Set<string>();
   const ftsOf = (sessionId: string): Map<string, string> => {
     let m = ftsIndex.get(sessionId);
     if (!m) {
@@ -224,6 +231,7 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       const target = table(name);
       for (const row of rows) {
         const idx = target.findIndex((r) => r[pk] === row[pk]);
+        const key = `${name}\u0000${String(row[pk])}`;
         /**
          * ⚠️ `mode !== "replace"` 是**裸 INSERT**，主键冲突必须**报错**（第 45 轮线协议审计 P2-1）。
          *
@@ -235,14 +243,28 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
          * **"重放同一批行"在测试里永远成功、在真机上必然报错**。这不是理论问题：
          * `telemetry.ts` 的 `directWrite()` 探测就是"把同一批行再写一遍来观察错误码"，
          * 它传的正是 `mode: "insert"` —— 真机上每一次成功写入之后的那次探测都会撞主键，
-         * 于是"写成功"被分类成"可重试失败"（详见该文件的注释与 `cost-limit-null` 之外的
-         * 遥测用例）。测试双比实现宽松，正是本仓库反复消灭的那类偏差。
+         * 于是"写成功"被分类成"可重试失败"（详见该文件注释与同类遥测用例）。
+         *
+         * ### 判据是"**这一行是否已经真的写过引擎**"，而不是"表里有没有这一行"
+         *
+         * 这是必须说清的一点：假端口的域镜像是**同一张内存表**（`applyWrite` 直接把行放进去），
+         * 所以"表里有这一行"可能只是镜像刚被更新，引擎那边其实还没有。
+         * 若拿"表里有"当冲突条件，任何 `domainWrite`（默认 `mode: "insert"`）在镜像更新之后
+         * 都会**假失败**（实测：每次 `session.fork` 都会打出
+         * `[PersistFailure] session.fork 写盘失败 … UNIQUE constraint failed: sessions.id`，
+         * 而行其实已经写进镜像了）。
+         *
+         * 所以这里只认 `writtenThrough`：**经 `crud.upsert` 成功写过一次**的行才算"引擎里已有"。
+         * 已知的简化：**seed 出来的行**（代表"引擎里本来就有"）不在这个集合里，初次 INSERT 不会撞 ——
+         * 这是留给基座的一条宽松处（收紧它会打红大量在旧模型下写成的用例），
+         * 写在这里是为了让下一个读代码的人知道边界在哪。
          */
-        if (idx >= 0 && !replace) {
+        if (idx >= 0 && !replace && writtenThrough.has(key)) {
           throw new StorageError("CONSTRAINT", `UNIQUE constraint failed: ${name}.${pk}`);
         }
         if (idx >= 0) target[idx] = replace ? cloneRow(row) : { ...target[idx], ...cloneRow(row) };
         else target.push(cloneRow(row));
+        writtenThrough.add(key);
       }
       return rows.length;
     }

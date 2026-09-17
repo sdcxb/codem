@@ -406,7 +406,19 @@ describe("A-5 `rustCapabilities` 必须按真实线协议（裸 Value）解析",
 
 describe("A-6 有界写重试（幂等写才重试，耗尽后仍如实失败）", () => {
   /** 造一个"前 N 次 BUSY、之后成功"的传输层 */
+  /**
+   * ## 第 45 轮修正：`retryable` 必须**与 code 自洽**（原来恒为 `true`）
+   *
+   * 这个夹具原来无论什么 `code` 都回 `retryable: true` —— 对 `BUSY` 是对的，对 `NOMEM`
+   * 就与引擎矛盾了（`error.rs` 里 NOMEM 不可重试）。在"渲染侧只按 `code` 重算"的旧实现下，
+   * 这个矛盾字段被丢掉、看不出来；第 45 轮把**引擎的 `retryable` 提升为权威**
+   * （见 `rust-port.ts::toStorageError` 的说明）之后，RETRY-4 立刻红了 ——
+   * 红的是**夹具的不自洽**，不是判据：一个真实的引擎绝不会说"NOMEM 可重试"。
+   *
+   * 所以这里按引擎的策略生成：只有 BUSY / LOCKED / IO / UNAVAILABLE 才是可重试的。
+   */
   function busyThenOk(failTimes: number, code = "BUSY") {
+    const retryable = ["BUSY", "LOCKED", "IO", "UNAVAILABLE"].includes(code);
     let attempts = 0;
     const transport: StorageTransport = {
       async invokeCommand<T>(): Promise<T> {
@@ -414,7 +426,7 @@ describe("A-6 有界写重试（幂等写才重试，耗尽后仍如实失败）
         if (attempts <= failTimes) {
           return {
             ok: false,
-            error: { code, message: "database is locked", retryable: true, hint: "稍后重试" },
+            error: { code, message: "database is locked", retryable, hint: "稍后重试" },
           } as T;
         }
         return { ok: true, result: { written: 1 } } as T;
