@@ -9,6 +9,26 @@ All notable changes to Codem will be documented in this file.
 > 每条都有"改前会红"的回归用例（`src/test/audit47-regressions.test.ts` +
 > `src/test/recovery-restore.test.ts`）。
 
+### 🔴 P1：真机复核时又抓到一个"恢复随机失效"的竞态（同一功能的第三处）
+
+1b. **记录端在恢复读到键之前就把键写成了 `null`。** 修完上面两条之后我在**打包版真机**上复核，
+   发现 `codem-last-session` 变成 `null`、而目标会话**好好地在库里**（`targetPresent: true`）。
+   日志给出了答案：记录端（随 `currentSession` 变化的 effect）与恢复端**在同一次 commit 里**跑，
+   而恢复端的第一次读是**异步**的（`await import(...)` 之后才读键）：
+   ```text
+   恢复端: 发起 async（尚未读到键）
+   记录端: currentSession === null → writeLastSessionId(null)   ← 键被清掉
+   恢复端: 真正读键 → null → 安静返回 no-key（什么都不做）
+   ```
+   这与"镜像未就绪被当成已删除"是**同一类缺陷**（把"还没有值"当成"用户没有上次会话"），
+   而且它解释了此前的怪现象：同一个功能**有时恢复成功、有时不成功** —— 差的就是两个 async 谁先跑完。
+   修法：启动期的"没有会话"是**瞬时状态**、不是用户的选择 —— 记录端先问
+   `shouldPreserveLastSessionKey()`（恢复未定论 → **不写 null**）；恢复一旦拿到结论
+   （成功 / 确实已删除 / 没有键）就解锁。`currentSession` **有值**时永远照写。
+   **真机实证**：同一套"写键 → 重启 → 查状态"的流程，修前 `lastSession = null`，
+   修后 `lastSession = "1788321681911-bzonm7mel"`、`lastProject` 也被正确回填成
+   `"1788268442101-mzvox72w5"`、界面打开"对话 2"。
+
 ### 🔴 P0：分叉会话复制了**完全错误的历史**
 
 1. **`useAppStore().messages` 只是"最后 10 条"的窗口，而 `onFork` 传的是窗口内下标。**

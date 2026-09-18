@@ -205,6 +205,45 @@ function readSessionState(sessionId: string): SessionReadState {
 }
 
 /**
+ * 「启动恢复还没定论」的窗口标记（第 47 轮补）。
+ *
+ * ## 它修的是什么（真机抓到的形态）
+ *
+ * 记录端（`App.tsx` 里随 `currentSession` 变化的 effect）与恢复端**在同一次 commit 里**
+ * 跑，而恢复端的第一次读是**异步**的。于是：
+ *
+ * ```text
+ * 恢复端: 发起 async（尚未读到键）
+ * 记录端: currentSession === null → writeLastSessionId(null)   ← 键被清掉
+ * 恢复端: 真正读键 → null → 安静返回 no-key（什么都不做）
+ * ```
+ *
+ * 用户可见后果：**"上次打开的会话"随机失效**（差的就是两个 async 谁先跑完），
+ * 而键一旦被清就是永久的（除非用户再手动点一次会话）。
+ * 这与"镜像未就绪被当成已删除"是同一类缺陷 —— 把"还没有值"当成"用户没有上次会话"。
+ *
+ * ## 判据放在这里而不是 App 里
+ *
+ * 因为它是**这条链路的契约**：`restoreLastOpenedSession` 会把它置为"已定论"，
+ * 记录端只负责问。放两处就会分叉。
+ */
+let restoreSettled = false;
+
+/**
+ * 记录端问：现在能不能把"上次会话"键写成 `null`？
+ *
+ * @returns `true` = **别写**，恢复还没拿到结论（写 null 会抹掉用户的上次会话）
+ */
+export function shouldPreserveLastSessionKey(): boolean {
+  return !restoreSettled;
+}
+
+/** 仅供测试：把"已定论"标记复位（模拟一次新的启动） */
+export function __resetRestoreSettledForTests(): void {
+  restoreSettled = false;
+}
+
+/**
  * 恢复"上次打开"的目标 —— **只返回校验过的目标**，由调用方决定怎么落到 store。
  *
  * ## 为什么要"校验目标仍存在"（这是 D-20 的核心，而不是附属条件）
@@ -241,7 +280,11 @@ export function resolveRestoreTarget(): {
       return null;
     }
   })();
-  if (!sessionId) return { project: null, session: null, reason: "no-key" };
+  if (!sessionId) {
+    // 没有键 = **明确的结论**（不是"还没读到"）→ 记录端从此可以照常写
+    restoreSettled = true;
+    return { project: null, session: null, reason: "no-key" };
+  }
 
   const read = readSessionState(sessionId);
 
@@ -255,6 +298,13 @@ export function resolveRestoreTarget(): {
       "[preferences] 会话镜像尚未就绪 → 本次不恢复也不清键（下次启动会再试一次；" +
         "把「读不到」当成「已删除」会永久抹掉用户的「上次打开的会话」）",
     );
+    /*
+     * ⚠️ `unavailable` 是**可重试**的，但记录端**仍然可以开始工作**：
+     * 键保住了（上面什么都没写），而"没有会话"这个瞬时状态不该阻止记录端
+     * 在用户真的打开一个会话时把它记下来（那条路走的是 `currentSession?.id` 有值那一支）。
+     * 真正要防的是"恢复还没读到键就把键写成 null"——那一步已经过去（`readSessionState` 跑完了）。
+     */
+    restoreSettled = true;
     return { project: null, session: null, reason: "storage-unavailable" };
   }
 
@@ -266,6 +316,7 @@ export function resolveRestoreTarget(): {
     } catch (e) {
       console.warn("[preferences] 清理 codem-last-session 失败:", e);
     }
+    restoreSettled = true;
     return { project: null, session: null, reason: "session-missing" };
   }
 
@@ -274,6 +325,7 @@ export function resolveRestoreTarget(): {
   const projectId = session.projectId ?? "";
   if (!projectId) {
     // 全局会话（没有项目）：合法形态，照常恢复会话
+    restoreSettled = true;
     return { project: null, session };
   }
   let project: Project | null = null;
@@ -294,6 +346,7 @@ export function resolveRestoreTarget(): {
     console.log(
       `[preferences] 上次会话所属项目 ${projectId.slice(0, 12)}… 读不到（已删除或镜像未就绪）→ 只恢复会话（不带项目）`,
     );
+    restoreSettled = true;
     return { project: null, session, reason: "project-missing" };
   }
   /**
@@ -315,6 +368,7 @@ export function resolveRestoreTarget(): {
         `（${projectId.slice(0, 12)}…）不一致 → 以会话的归属为准`,
     );
   }
+  restoreSettled = true;
   return { project, session };
 }
 

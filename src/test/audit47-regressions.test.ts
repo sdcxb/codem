@@ -152,8 +152,91 @@ describe("AUD47-2/3：事件镜像的占位与合并", () => {
 });
 
 // ==========================================================================
-// AUD47-4：forkSession 的写入必须是 upsert（回退路径先建行、再补谱系）
+// AUD47-5：记录端不许在"恢复还没读到键"之前把它写成 null
 // ==========================================================================
+
+describe("AUD47-5：记录端与恢复端的启动竞态", () => {
+  const settingRow = (key: string, value: unknown) => ({ key, value: JSON.stringify(value) });
+  const sessionRow = (id: string, projectId = "") => ({
+    id,
+    project_id: projectId,
+    title: id,
+    model: null,
+    created_at: 1,
+    last_message_at: 2,
+    message_count: 0,
+    pinned: 0,
+  });
+
+  it("恢复尚未定论时，记录端必须**保留**键（不许写 null）", async () => {
+    const prefs = await import("../core/session/preferences");
+    prefs.__resetRestoreSettledForTests();
+
+    /*
+     * 真机抓到的形态（1.16.70 复核）：
+     * 记录端与恢复端**在同一次 commit 里**跑，而恢复端的第一次读是**异步**的。
+     * 于是"记录端先跑、`currentSession` 还是 null"时会写 `writeLastSessionId(null)`，
+     * 等恢复端真正读键时已经读不到 → 安静返回 `no-key` → **用户的"上次会话"永久丢失**。
+     *
+     * 判据：恢复没定论之前，记录端应该问 `shouldPreserveLastSessionKey()` 并**跳过写**。
+     */
+    expect(
+      prefs.shouldPreserveLastSessionKey(),
+      "刚启动、恢复还没跑 → 必须保留",
+    ).toBe(true);
+
+    // 恢复跑完（这里用"没有键"这一支：最明确的结论）
+    prefs.resolveRestoreTarget();
+    expect(
+      prefs.shouldPreserveLastSessionKey(),
+      "恢复已有明确结论 → 记录端可以照常工作",
+    ).toBe(false);
+  });
+
+  it("定论之后**有会话**时照常记录（用户真的打开了一个会话）", async () => {
+    const prefs = await import("../core/session/preferences");
+    prefs.__resetRestoreSettledForTests();
+    const { createFakeStoragePort } = await import("./fake-storage-port");
+    const p = createFakeStoragePort({
+      seed: {
+        settings: [settingRow("codem-last-session", "s1")],
+        sessions: [sessionRow("s1")],
+      },
+    });
+    await p.config.warmup();
+    setStoragePort(p);
+
+    const target = prefs.resolveRestoreTarget();
+    expect(target.session?.id, "恢复真的拿到了目标").toBe("s1");
+    expect(prefs.shouldPreserveLastSessionKey(), "定论之后不再保留").toBe(false);
+
+    // 记录端照常写（切换会话的路径）
+    prefs.writeLastSessionId("s2");
+    expect(prefs.readLastSessionId()).toBe("s2");
+    setStoragePort(null);
+  });
+
+  it("镜像未就绪那一支同样是**定论**（键保住 + 记录端解锁，允许重试）", async () => {
+    const prefs = await import("../core/session/preferences");
+    prefs.__resetRestoreSettledForTests();
+    const { createFakeStoragePort } = await import("./fake-storage-port");
+    const p = createFakeStoragePort({
+      seed: { settings: [settingRow("codem-last-session", "s-unavail")] },
+      neverReady: ["sessions"],
+    });
+    await p.config.warmup();
+    setStoragePort(p);
+
+    const target = prefs.resolveRestoreTarget();
+    expect(target.reason).toBe("storage-unavailable");
+    // 键必须还在（这是 PREF-D20-14 守的那条）
+    const row = p.__table("settings").find((r) => r.key === "codem-last-session");
+    expect(String(row!.value), "读不到 ≠ 已删除：键必须保住").toBe(JSON.stringify("s-unavail"));
+    // 而记录端不该被永久锁住（`unavailable` 是可重试的）
+    expect(prefs.shouldPreserveLastSessionKey(), "已经读过一次了 → 不再阻塞记录端").toBe(false);
+    setStoragePort(null);
+  });
+});
 
 describe("AUD47-4：forkSession 必须 upsert（不许裸 INSERT）", () => {
   const sessionRow = (id: string, over: Row = {}): Row => ({

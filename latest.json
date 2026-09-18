@@ -1,11 +1,11 @@
 ﻿{
-    "version":  "1.16.69",
-    "notes":  "修掉『恢复上次会话』里一处会毁用户数据的缺陷（镜像未就绪被当成已删除 → 清掉用户的上次会话键）；水位判据有界化 + 去掉 O(n²)",
-    "pub_date":  "2026-09-18T05:55:57Z",
+    "version":  "1.16.70",
+    "notes":  "三份只读审计报出的真缺陷：分叉复制错历史（P0）、事件镜像假水位/丢事件、压缩可清空整个会话、parent_id 从未写入、损坏恢复丢失项目归属、日志压缩吞并发追加；另修掉真机抓到的恢复启动竞态",
+    "pub_date":  "2026-09-18T06:32:20Z",
     "platforms":  {
                       "windows":  {
-                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RoaEswek42Nkk2ekNpZng3blZiZjdIUHovUjkyVUFoaHdzeDBQRURvQ05sblJnUU9FNjVWWDFjblRmaURMYldHMi9KZTVqMjRNOTE4a0FXelBySXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzEwNzMyCWZpbGU6Q29kZW1fMS4xNi42OV94NjQtc2V0dXAuZXhlCnhxdE5pcGcxYWdvOGVMUGx0dnVzSGk3ZDUxanYxbXhuK1F3ZC9tUWxaMDhjME5VK0ZSNmg0RTU1TEppaDFNRHY2TzZ2R3JDclVlVjJsakp6bERza0N3PT0K",
-                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.69/Codem_1.16.69_x64-setup.exe"
+                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dPbnpkN2VOSnpKSXpGb2M4MVN1OUJZdDdjN1Z3cWRIWTdBUG5ocW5WRGZkYitQUVcvcElYSUZncWhpRkVpRk1yUmNkZy9vYnA3dHpaa3ErNEoza1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzEzMDA2CWZpbGU6Q29kZW1fMS4xNi43MF94NjQtc2V0dXAuZXhlCmhMVGk4VG9ralVWa3NtbWo3VFpubkZBSWxjMXVudlUvWHNtNVZFbWQveDJNamFEeWEzWHdQajJEUDNIQkxSSmdzdWFianMrM0wxNDU3ZENrSzdFa0RRPT0K",
+                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.70/Codem_1.16.70_x64-setup.exe"
                                   }
                   }
 }

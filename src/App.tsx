@@ -836,16 +836,53 @@ useEffect(() => {
    *   记的时候目标必然是存在的）。
    * - 写失败只记 `console.warn`：这是一个**便利性**偏好，不是数据 ——
    *   丢了只影响"下次打开落在哪个会话"，不该弹错误打扰用户。
+   *
+   * ## ⚠️ 第 47 轮补：**恢复还没落地之前，绝不许把键写成 null**
+   *
+   * 真机抓到的形态（1.16.70 复核时发现"键被清空、目标会话却好好地在库里"）：
+   * 这个 effect 与恢复 effect **在同一次 commit 里**跑，而恢复的第一次读是**异步**的
+   * （`await import(...)` 之后才 `readLastSessionId()`）。于是顺序是：
+   *
+   * ```text
+   * 恢复 effect: 发起 async（还没读到键）
+   * 记录 effect: 此刻 currentSession === null → writeLastSessionId(null) ← **键被清掉**
+   * 恢复 effect: 真正读键 → null → 返回 no-key（安静地什么都不做）
+   * ```
+   *
+   * 结果与"镜像未就绪被当成已删除"是**同一类缺陷**（把"还没有值"当成"用户没有上次会话"），
+   * 而且它解释了一个此前的怪现象：同一个功能有时恢复成功、有时不成功 ——
+   * 差的就是两个 async 谁先跑完。第 47 轮我在 `resolveRestoreTarget` 那边堵了
+   * "读不到 ≠ 已删除"，但**写侧**这条更早的路没堵。
+   *
+   * 修法：启动期的"没有会话"是一个**瞬时状态**，不是用户的选择 ——
+   * 所以先问恢复端"你要不要保留这个键"（`shouldPreserveLastSessionKey()`），
+   * 恢复一旦拿到结论（成功 / 确实已删除 / 没有键）就返回 false，记录端随后照常工作。
+   *
+   * 注意 `currentSession` **有值**时永远照写：那是用户真实打开了一个会话。
    */
   useEffect(() => {
     if (!dbReady) return;
+    if (currentSession?.id) {
+      // 用户确实打开着某个会话 → 直接记录（这是唯一无歧义的情形）
+      void (async () => {
+        try {
+          const { writeLastSessionId, writeLastProjectId } = await import("./core/session/preferences");
+          writeLastSessionId(currentSession.id);
+          writeLastProjectId(currentSession.projectId ?? currentProject?.id ?? null);
+        } catch (e) {
+          console.warn("[App] 记录'上次打开的会话'失败（只影响下次启动的落地位置）:", e);
+        }
+      })();
+      return;
+    }
     void (async () => {
       try {
-        const { writeLastSessionId, writeLastProjectId } = await import("./core/session/preferences");
-        writeLastSessionId(currentSession?.id ?? null);
-        // `currentSession` 有值时就以它自己的归属为准（会话可能被移动到别的项目）；
-        // 没有会话时记当前项目（`""` 表示"上次就是全局、没有项目"，是合法值）
-        writeLastProjectId(currentSession?.projectId ?? currentProject?.id ?? null);
+        const { shouldPreserveLastSessionKey, writeLastProjectId } = await import("./core/session/preferences");
+        if (shouldPreserveLastSessionKey()) {
+          // 启动恢复还没定论 → **不写 null**（写了就等于把用户的"上次会话"抹掉）
+          return;
+        }
+        writeLastProjectId(currentProject?.id ?? null);
       } catch (e) {
         console.warn("[App] 记录'上次打开的会话'失败（只影响下次启动的落地位置）:", e);
       }
