@@ -1,0 +1,11 @@
+﻿{
+    "version":  "1.16.68",
+    "notes":  "补上「上次打开的会话」+ 插件开关介质统一到 DB + 上下文面板口径对齐模型；并修掉刚引入的不变量水位假警报（并集口径，真机实测 118→0）",
+    "pub_date":  "2026-09-18T02:00:30Z",
+    "platforms":  {
+                      "windows":  {
+                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NmRHZ3NEg2WXFrcXpKRTlLVzNlMVU5OVhQcEd5SjZMZUlac3VWVEhHYW9NbFJXc1pNNUFHOUJOS0lIZEVkSitBNFhVbDM2MmxNK3JiRUhQQWJJNVE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5Njk2NzQ1CWZpbGU6Q29kZW1fMS4xNi42OF94NjQtc2V0dXAuZXhlCnJnSDk1SGFOMHF4U2ZxNi9Ub2VWaUpGWUQ0cWZ1SjZJUkhtbEtwYnk3SmE3Ni9YOTgrZUN2MjgrM1RMVWUyUDVmRUpSMy9HOVAwSktLQ0NHTTNMTUJ3PT0K",
+                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.68/Codem_1.16.68_x64-setup.exe"
+                                  }
+                  }
+}
