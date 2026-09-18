@@ -21,7 +21,11 @@ import type {
   ToolResultPayload,
   CompactionPayload,
 } from "./event-types";
+// 值导入（不是 type）：`validateReplay` 的类型判据要用它
+import { isValidEventType } from "./event-types";
 import { getEventLog } from "./event-log";
+// 载荷形状不合契约时如实上报（第 60 轮：不许静默容忍，也不许抛）
+import { reportPersistFailure } from "./persist-failure";
 
 // ========== Projection State ==========
 
@@ -309,13 +313,50 @@ export class EventProjection {
   private applyCompaction(state: ProjectionState, event: SessionEvent): void {
     const payload = event.payload as unknown as CompactionPayload;
 
+    /**
+     * ## 第 60 轮：**载荷形状不对时不许抛**（真机数据逼出来的）
+     *
+     * 真机取证：用第 60 轮刚接上的结构自检扫用户真实库，报出
+     *
+     * ```text
+     * 1788268497135-31x6vdt97: compaction at seq 2230 has invalid removedMessageIds
+     * ```
+     *
+     * 读那一行：`{"markerId":"compact-…-repair47","reason":"…","summary":"…"}`
+     * —— 它是**第 47 轮审计修复脚本**补写的一条汇总 marker（生产写入方
+     * `agentic-loop.ts:3417` 写的是规范的 `{removedMessageIds, summary, messagesBefore, messagesAfter}`），
+     * 也就是**历史遗留的另一种形状**。
+     *
+     * 而这里原来直接 `for (const id of payload.removedMessageIds)` ——
+     * 对 `undefined` 做 `for…of` 会 **TypeError**。这条投影路径接在
+     * `agentic-loop.ts:1279`（每轮拼 surface notice）、`surface-manager`、
+     * `validateReplay` 上，且**外面没有 try/catch**：
+     * 于是"库里有一条形状不认识的历史 compaction 行"就等于
+     * **那个会话一开口就抛**。用户库里正好有这么一条，这条修复是把潜在故障拆掉，
+     * 而不是把判据放宽 —— `validateReplay` 依然会如实报出这行不合契约。
+     *
+     * 判据用 `Array.isArray`（而不是 `?? []`）：`null` / 字符串 / 对象都拦得住，
+     * `?? []` 只挡 `undefined`/`null`。
+     */
+    const removed = Array.isArray(payload?.removedMessageIds) ? payload.removedMessageIds : [];
+    if (!Array.isArray(payload?.removedMessageIds)) {
+      reportPersistFailure(
+        "eventProjection.compaction",
+        new Error(`compaction 事件载荷缺少 removedMessageIds 数组（seq=${event.seq}）`),
+        "该条压缩事件的形状不合契约（历史遗留 / 修复脚本写过别的形状）：本次按「不删除任何消息」处理，" +
+          "以免投影整体抛错；存储自检会在维护里报出这一行",
+      );
+    }
+
     // Mark all removed messages
-    for (const id of payload.removedMessageIds) {
+    for (const id of removed) {
       state.removedMessageIds.add(id);
     }
 
     // Set the compaction summary
-    state.compactionSummary = payload.summary;
+    if (typeof payload?.summary === "string") {
+      state.compactionSummary = payload.summary;
+    }
 
     // Filter out removed messages from the current state
     state.messages = state.messages.filter(m => !state.removedMessageIds.has(m.id));
@@ -335,13 +376,35 @@ export class EventProjection {
   /**
    * R3-2.3: Validate that an event log replays without structural errors.
    *
-   * Checks:
+   * Checks (与实现逐条对齐 —— 原注释有三条对不上，见下面的修正):
    * - Every tool_result has a preceding tool_call with matching toolCallId
    * - No duplicate seq numbers
-   * - Compaction events don't reference non-existent messages
-   * - Event types are known
+   * - Compaction events carry a `removedMessageIds` array
+   * - Event types are known (authoritative set, see below)
    *
-   * @returns An array of validation errors (empty = valid)
+   * ## 第 60 轮的修正（三处，都是"注释比实现说得多"）
+   *
+   * 1. **类型判据改用权威集合**（原来是硬编码 switch，而且已经漂了）。
+   *    原实现列了一串 `case "user_message": case "assistant_text": …` 当"已知类型"，
+   *    而那份清单**缺 `session_snapshot`** —— 引擎把它字面写在
+   *    `repo.rs::events_compact` 的 INSERT 里（见 `event-types.ts` 的说明），
+   *    投影也真的 `case` 它。也就是说：这份校验只要被调用，就会把**合法快照**
+   *    报成 `Unknown event type "session_snapshot"` —— 一个"假报警机器"。
+   *    现在判据来自 `isValidEventType()`（内建集合 + 已注册自定义类型，唯一真源）；
+   *    它自己的漂移由 `event-type-set-consistency.test.ts` 守着
+   *    （解析 `event-types.ts` 的联合类型与内建集合，断言两者一致）。
+   *
+   * 2. **快照边界上的工具配对**：快照意味着"它之前的事件已被删除、状态固化在这条事件里"，
+   *    所以配对集合必须**按快照重建**（和 `applySnapshot` 重建 `toolCallIndex` 同一个道理）。
+   *    不重建的话，`tool_call` 在快照里、`tool_result` 在快照之后的**正常日志**
+   *    会被报成 `references unknown toolCallId` —— 又一处假报警。
+   *
+   * 3. **原注释说"Compaction events don't reference non-existent messages"，实现里没有这条**。
+   *    这里**不补**成错误判据，而是把话说准：`removedMessageIds` 里的 id
+   *    完全可能**在事件日志里从来找不到** —— 那正是压缩的语义（那些事件已被删掉），
+   *    加上维护删行留下的永久 seq 空洞（实测生产库 3112 条事件、364 个空洞）。
+   *    把它当错误就是把正常库判成坏库，所以只校验载荷形状。
+   *    （对照：`repo.rs::events_compact` 在**写入**侧才要求锚点事件真实存在。）
    */
   validateReplay(sessionId: string): string[] {
     const events = getEventLog().readAll(sessionId);
@@ -357,6 +420,25 @@ export class EventProjection {
       seenSeqs.add(event.seq);
 
       switch (event.type) {
+        case "session_snapshot": {
+          /*
+           * 快照 = "之前的事件已经没有了，状态在这条里"。配对待挂集合按快照重建
+           * （先清空再装载），与 `applySnapshot` 重建 `toolCallIndex` 的语义一致。
+           */
+          pendingToolCalls.clear();
+          const payload = event.payload as unknown as {
+            messages?: Array<{ tool_calls?: Array<{ id?: string }> }>;
+          };
+          if (Array.isArray(payload.messages)) {
+            for (const m of payload.messages) {
+              if (!Array.isArray(m?.tool_calls)) continue;
+              for (const tc of m.tool_calls) {
+                if (tc?.id) pendingToolCalls.add(tc.id);
+              }
+            }
+          }
+          break;
+        }
         case "tool_call": {
           const payload = event.payload as unknown as ToolCallPayload;
           pendingToolCalls.add(payload.toolCallId);
@@ -375,7 +457,7 @@ export class EventProjection {
         }
         case "compaction": {
           const payload = event.payload as unknown as CompactionPayload;
-          // Check that removedMessageIds is an array
+          // 只校验载荷形状（为什么不校验"引用的消息是否存在"见上面第 3 条）
           if (!Array.isArray(payload.removedMessageIds)) {
             errors.push(
               `compaction at seq ${event.seq} has invalid removedMessageIds`,
@@ -383,23 +465,15 @@ export class EventProjection {
           }
           break;
         }
-        case "user_message":
-        case "assistant_text":
-        case "assistant_reasoning":
-        case "turn_start":
-        case "turn_end":
-        case "memory_update":
-        case "session_meta":
-        case "permission_granted":
-        case "permission_denied":
-        case "error":
-        case "abort":
-          // Known types — no validation needed
-          break;
         default:
-          errors.push(
-            `Unknown event type "${event.type}" at seq ${event.seq}`,
-          );
+          /*
+           * 类型判据来自**权威集合**（内建 + 已注册自定义类型），不再维护第二份清单：
+           * 原来这里是一串硬编码 `case`，而且已经漂了 —— 缺 `session_snapshot`
+           * （引擎字面写入、投影也 `case` 的类型），于是会把合法快照报成未知类型。
+           */
+          if (!isValidEventType(String(event.type))) {
+            errors.push(`Unknown event type "${event.type}" at seq ${event.seq}`);
+          }
       }
     }
 
@@ -489,7 +563,10 @@ export class EventProjection {
       // Track compaction to mark superseded messages
       if (event.type === "compaction") {
         const payload = event.payload as unknown as CompactionPayload;
-        for (const id of payload.removedMessageIds) {
+        // 形状不对时按"没有删除任何消息"处理（理由见 `applyCompaction`：真机库里
+        // 存在历史遗留的 compaction 形状，抛错会让整个投影调用失败）
+        const removed = Array.isArray(payload?.removedMessageIds) ? payload.removedMessageIds : [];
+        for (const id of removed) {
           supersededMessages.add(id);
         }
       }

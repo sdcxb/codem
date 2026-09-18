@@ -1,5 +1,10 @@
 import { readFile as apiReadFile, writeFile as apiWriteFile, executeCommand, listDirectory } from "../file-api";
-import { getEventLog } from "../storage/event-log";
+/*
+ * ⚠️ 第 60 轮：这里原来 import 了 `getEventLog`（"会话级指令"那一层要读事件）。
+ * 那一层是一段**永远不可能命中**的死读，已删除，这个 import 也随之删掉 ——
+ * 留着它会让"这个模块依赖事件日志"这句话继续成立，而实际上它不再读事件
+ * （留一个没人用的依赖，正是下一轮审计要花时间排除的噪声）。
+ */
 
 // ========== F2.3: AGENTS.md Fallback Filenames ==========
 
@@ -196,28 +201,35 @@ export async function loadHierarchicalProjectInstructions(
     }
   }
 
-  // R3-2.4 Layer 4: Session-level instructions
-  // 对标 DSH context/agent-instructions 的会话层级
-  // 从事件日志中读取会话级 AGENTS.md 覆盖
-  try {
-    const events = getEventLog().readAll(""); // session-agnostic global event log
-    // Look for the latest session_meta action=instructions_override
-    for (let i = events.length - 1; i >= 0; i--) {
-      const evt = events[i];
-      if (evt.type === "session_meta" && (evt.payload as any)?.action === "instructions_override") {
-        const content = (evt.payload as any).content as string;
-        if (content && content.trim()) {
-          const bytes = new TextEncoder().encode(content).length;
-          if (totalBytes + bytes <= maxBytes) {
-            sections.push(`<!-- Session Instructions -->\n${content}`);
-            totalBytes += bytes;
-          }
-        }
-        break;
-      }
-    }
-  } catch (e) { console.warn('[files.ts]', e) }
-
+  /**
+   * ⚠️ 第 60 轮：这里原来还有一段 "R3-2.4 Layer 4: Session-level instructions"（v1.1.0
+   * 对标 DSH 时加的），**已删除** —— 它是一段**永远不可能命中**的读：
+   *
+   * ```ts
+   * const events = getEventLog().readAll(""); // session-agnostic global event log
+   * if (evt.type === "session_meta" && evt.payload?.action === "instructions_override") …
+   * ```
+   *
+   * 三个理由，任一条都足以判定它不会生效：
+   *
+   * 1. **读的是空会话 id**：事件镜像按会话 id 路由（`event-log.ts::readAll` →
+   *    `rustEventPort(sessionId)`），`readAll("")` 永远走"该域没有"这一支 → 返回空数组。
+   *    也就是说这个 `for` 循环从来没进过一次（本轮的用例 RV-11 把这条钉住了）。
+   * 2. **没有任何生产者**：全仓搜 `instructions_override` 只有这段读 + 一处注释，
+   *    git 历史里也从未有过写它的代码（`git log -S` 只命中"加了这段读"的那次提交）。
+   * 3. 即便把会话 id 换成真的，也**没有写入方**，等于把空循环搬到正确的 id 上。
+   *
+   * 处置：删掉（行为完全不变 —— 它从未向 `sections` 里放过任何东西），
+   * 并把 `maintenance.ts` 里把它当作"真实消费者"的那段论证一并改正。
+   *
+   * ⚠️ 注意**能力没有因此减少**："会话级指令"这条通道另外真实存在 ——
+   * `core/prompt/instruction-layers.ts::loadLayeredInstructionsSync(sessionInstructions)`
+   * 会拼出 `# Session Instructions` 段（由调用方传入会话指令文本），
+   * 并有 `functional-chain-closed-loop` / `dsh-integration-full` 两组用例守着。
+   * 也就是说这里删掉的不是一个功能，而是一条**与真实通道重名、且永远走不通**的旁路。
+   * 真要做"从存储里读会话级指令覆盖"，那需要先有写入侧的产品设计
+   * （在哪设置、存哪个键），那是一件独立的事。
+   */
   return sections.join("\n\n---\n\n");
 }
 

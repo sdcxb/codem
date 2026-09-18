@@ -18,6 +18,34 @@ export type SessionEventType =
   | "tool_call"          // A tool was invoked
   | "tool_result"        // A tool returned a result
   | "compaction"         // Context compaction occurred (summary replaces old messages)
+  /**
+   * 压缩**快照**（第 60 轮补进联合类型）。
+   *
+   * ## 这条类型字符串是**引擎钉死的线协议**，不是渲染侧的想象
+   *
+   * `src-tauri/codem-db/src/repo.rs::events_compact` 的 INSERT 里**字面写着**
+   * `event_type = 'session_snapshot'`（锚点校验通过后 `INSERT OR REPLACE` 到锚点 seq 上，
+   * 再删掉 cutoff 之前的非 meta 事件）。所以这个类型名一旦发出就无法改，
+   * 渲染侧也必须在"已知类型集合"里认它。
+   *
+   * ## 但要说清今天它从哪里来（第 60 轮核实后的准确说法）
+   *
+   * 写路径 `event-log.ts::compactWithSnapshot` → `events.compact` 存在，投影
+   * (`event-projection.ts::applySnapshot` / `case "session_snapshot"`) 也真的消费它；
+   * 然而 `compactWithSnapshot` **目前没有生产调用者**（全仓只有测试调用）——
+   * 启动维护刻意不做事件压缩，理由记在 `maintenance.ts::MaintenanceResult.prunedEvents`
+   * 的长注释里。真机实测也一致：生产库 3112 条事件里 `session_snapshot` **0 条**。
+   *
+   * 那为什么还必须把它算作合法类型？因为它此前**不在**下面的 `BUILTIN_EVENT_TYPES` 里：
+   * 于是 `isValidEventType("session_snapshot")` 返回 `false` ——
+   * 而 `validateReplay` 的类型判据正是走这个函数，
+   * 也就是"任何一条真实存在的快照事件都会被报成未知类型"（假报警），
+   * 且引擎侧那个字面量会与渲染侧的类型集合长期不一致。
+   * 这与 PortKind 里那个已不可达的 `"wasm"` 是同类问题：**类型在说谎**。
+   *
+   * 现在补上，并由 `event-type-set-consistency.test.ts` 守着"联合类型 ↔ 内建集合"不许再漂。
+   */
+  | "session_snapshot"
   | "turn_start"         // A new agentic turn began
   | "turn_end"           // An agentic turn completed
   | "memory_update"      // Memory was updated during the session
@@ -39,6 +67,10 @@ export type SessionEventType =
 const BUILTIN_EVENT_TYPES = new Set<SessionEventType>([
   "user_message", "assistant_text", "assistant_reasoning",
   "tool_call", "tool_result", "compaction",
+  // 第 60 轮补：引擎把它**字面写死**在 `repo.rs::events_compact` 的 INSERT 里，
+  // 投影也在 `case` 它 —— 不在集合里就等于 `isValidEventType` 对真实快照事件说"不合法"。
+  // （今天它没有生产写入者：维护刻意不压缩事件，实测生产库 0 条。见上面联合类型处的说明。）
+  "session_snapshot",
   "turn_start", "turn_end", "memory_update",
   "session_meta", "permission_granted", "permission_denied",
   "error", "abort",

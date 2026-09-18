@@ -252,7 +252,14 @@ pub fn events_append(engine: &Engine, p: &Value) -> DbResult<Value> {
 /// 批量追加事件（单事务，seq 连续分配）。
 ///
 /// 与逐条 `events.append` 的区别不只是性能：批量在一个事务里分配 seq，
-/// 因此这批事件的 seq 一定**连续** —— 渲染侧的回放逻辑靠连续性判断"有没有缺口"。
+/// 因此**这一批**事件的 seq 一定连续（中间不会被别的写入插进来）。
+///
+/// ⚠️ 第 60 轮修正：这里原来还有一句"渲染侧的回放逻辑靠连续性判断'有没有缺口'"——
+/// **是假的**，渲染侧没有任何地方用 seq 连续性做判断（全仓搜 `seq + 1` 只有
+/// `rust-port.ts` 的"下一页从哪读"，不是缺口检测）。而且这个判据本身也不可能成立：
+/// 压缩（`events_compact`）与维护删行都会留下**永久** seq 空洞，
+/// 实测生产库 3112 条事件、364 个空洞、seq 最大 3476 —— "连续"从来不是不变量。
+/// 真正要守的是**顺序单调**（seq 全表 AUTOINCREMENT，见上），不是连续。
 pub fn events_append_batch(engine: &Engine, p: &Value) -> DbResult<Value> {
     let session_id = req_text(p, "session_id")?;
     let events = p

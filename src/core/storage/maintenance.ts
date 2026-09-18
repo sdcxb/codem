@@ -31,6 +31,7 @@
  */
 
 import { reportActionFailure, reportPersistFailure } from "./persist-failure";
+import { getStoragePort } from "./port";
 import * as SessionStorage from "./session";
 // 不变量审计的"上次水位"存在 settings（与其它偏好同一种介质，见 `readInvariantWatermark`）
 import { getSettingJSON, setSettingJSON } from "./settings";
@@ -138,6 +139,24 @@ export interface MaintenanceResult {
   invariantNewViolations: number;
   /** 违规样本（最多 5 条，形如 `sessionId/type`）—— 只报数字的话排查还得再跑一次 */
   invariantSamples: string[];
+  /**
+   * 第 60 轮：**事件库结构异常**条数（重复 seq / 孤儿 `tool_result` / 未知事件类型 /
+   * `compaction` 载荷形状）。
+   *
+   * 为什么单独一个字段：它与上面的"可见但没记事件"是**两个方向**的问题 ——
+   * 那边是"消息有、事件缺"，这边是"事件自身不自洽"。而 `session_events` 是
+   * **唯一没有等价物**的存储，所以它的结构异常值得单独在汇总行里出现。
+   */
+  invariantStructuralErrors: number;
+  /**
+   * 第 60 轮：**读侧镜像没就绪、因此本次没检查**的会话数（消息或事件任一侧读不到都算）。
+   *
+   * 与 `invariantCheckedSessions` 是一对：`checked + unreadableSessions` 才是本次
+   * 参与审计的会话总数。分开报的理由见 `waitForSessionMirrors` ——
+   * "读不到"会让不变量把整个会话的消息都报成缺口（真机实测 934 vs 749），
+   * 也会让结构自检报 0 处异常却看起来"通过"。
+   */
+  invariantUnreadableSessions: number;
 }
 
 /**
@@ -957,6 +976,127 @@ function readInvariantWatermark(): InvariantWatermark | null {
 }
 
 /**
+ * 等这些会话的**读侧镜像**（消息 + 事件）真正就绪；返回 `会话 → 是否读得到`。
+ *
+ * ## 为什么必须有这一步（第 60 轮的真机取证）
+ *
+ * 两条判据读的分别是 `EventLog.readAll(sid)` 与 `MessageStorage.listMessages(sid)`，
+ * 两者都有同一条硬路由规则：**该会话的镜像没加载完 → 返回空数组/空列表**
+ * （见 `event-log.ts` 与 `message.ts::listMessagesFromIndex` 的"合理空结果"）。
+ * 而维护触发的这一次审计**往往就是第一次访问这些会话** —— `ensureLoaded` 是
+ * "触发加载、同步返回"，真实现走异步 IPC，于是紧接着的读**读到的是空**。
+ *
+ * 后果不是"少报"，是**多报**：把"事件读成空"理解成"这些消息都没有事件记录"，
+ * 于是把该会话的**每一条消息**都报成缺口。真机实测（同一份数据、两次维护相隔 36 秒）：
+ *
+ * | 那次维护 | 报出的历史缺口 | 与会话消息行数的关系 |
+ * | --- | --- | --- |
+ * | 事件镜像没加载完 | **934** | = 657 + 277（两个会话的**全部消息行**） |
+ * | 镜像已加载 | **749** | = 505 + 244（与 DB 真值逐条相等） |
+ *
+ * 顺带把第 47 轮那桩悬案解释了：当时追到的"水位漂移 777 / 757 / 671"并归因于
+ * "索引裁剪 / 隐藏状态让参与审计的集合摆动"，真正的变量是**审计那一刻镜像加载到哪一步**
+ * （并集水位只是把噪声压住了，没有修掉噪声源）。
+ *
+ * 两边**都要等**：第 60 轮的契约用例直接观察到，只等事件那一边时，消息那一侧仍在
+ * "未加载"的窗口里读成空，于是判据换个方向继续造假（`RECORDED_BUT_NOT_VISIBLE` × 2：
+ * 事件有、消息"没有"）。
+ *
+ * ## 就绪判据
+ *
+ * - 消息镜像：`isLoaded(sid)` 且**未被截断**（截断 = 集合不完整，与
+ *   `message.ts::isMessagesReadUnavailable` 同一条判据）；
+ * - 事件镜像：`isLoaded(sid)`（事件镜像没有截断这一态）；
+ * - 端口连镜像能力都没有 → 一律视为"就绪"：那种状态下两条判据本来就没有可判的东西，
+ *   在这里报错只会变成噪声。
+ *
+ * ## 代价与边界（如实写明）
+ *
+ * - **不增加 IPC 次数**：这些会话的 `ensureLoaded` 本来就会被本次审计触发，
+ *   这里只是**等**它完成；等待有上限（`budgetMs`，按会话均摊），维护不会被拖死。
+ * - 等不到（加载失败 / 超预算）→ 该会话**跳过**并计入 `unreadableSessions`：
+ *   "没检查"必须能看见，且**绝不能**折算成"没有缺口"。
+ */
+async function waitForSessionMirrors(
+  sessionIds: readonly string[],
+  budgetMs = 4000,
+): Promise<Map<string, boolean>> {
+  interface MirrorLike {
+    isLoaded?: (sid: string) => boolean;
+    isTruncated?: () => boolean;
+    ensureLoaded?: (sid: string, cb?: () => void) => void;
+  }
+  const out = new Map<string, boolean>();
+  const ids = [...new Set(sessionIds.filter((s) => typeof s === "string" && s.length > 0))];
+  const port = getStoragePort() as unknown as { messages?: MirrorLike; events?: MirrorLike } | null;
+  const mirrors: MirrorLike[] = [port?.messages, port?.events].filter(
+    (m): m is MirrorLike => !!m && typeof m.ensureLoaded === "function" && typeof m.isLoaded === "function",
+  );
+  if (mirrors.length === 0) {
+    for (const sid of ids) out.set(sid, true);
+    return out;
+  }
+  /** 该会话两侧镜像**都**读得到（截断的镜像不完整：读到的"少"不是真值） */
+  const readyOf = (sid: string): boolean =>
+    mirrors.every(
+      (m) =>
+        m.isLoaded!(sid) === true && !(typeof m.isTruncated === "function" && m.isTruncated()),
+    );
+  const deadline = Date.now() + budgetMs;
+  await Promise.all(
+    ids.map(
+      (sid) =>
+        new Promise<void>((resolve) => {
+          if (readyOf(sid)) {
+            out.set(sid, true);
+            return resolve();
+          }
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            // 以**最终状态**为准（回调触发不等于就绪一定为真）
+            out.set(sid, readyOf(sid));
+            resolve();
+          };
+          /**
+           * ⚠️ **先数、后触发**：`ensureLoaded` 可能是**同步回调**的（假端口、
+           * 以及"该会话刚被别的路径加载完"的真实现分支）。若一边触发一边计数，
+           * 第一个镜像的同步回调就会在**第二个镜像还没被触发**时把 `finish` 叫起来，
+           * 于是以"只就绪了一侧"的状态判定 → 每个会话都被判成未就绪（本用例抓到过）。
+           */
+          const notLoaded = mirrors.filter((m) => !m.isLoaded!(sid));
+          if (notLoaded.length === 0) {
+            finish();
+            return;
+          }
+          let waiting = notLoaded.length;
+          const timer = setTimeout(finish, Math.max(0, deadline - Date.now()));
+          for (const m of notLoaded) {
+            try {
+              m.ensureLoaded!(sid, () => {
+                waiting -= 1;
+                if (waiting <= 0) {
+                  clearTimeout(timer);
+                  finish();
+                }
+              });
+            } catch {
+              // 触发失败：不再等这一个，但**仍然要等其它镜像**（少等一个就会读成空）
+              waiting -= 1;
+            }
+          }
+          if (waiting <= 0) {
+            clearTimeout(timer);
+            finish();
+          }
+        }),
+    ),
+  );
+  return out;
+}
+
+/**
  * 在生产路径上跑一次运行时不变量审计（第 45 轮功能上下文审计 §"未做" 的收口）。
  *
  * ## 为什么是这里，而不是"把 `agentic-loop.ts:831` 的门控拆掉"
@@ -993,8 +1133,30 @@ function readInvariantWatermark(): InvariantWatermark | null {
  */
 export async function auditInvariantsForSessions(
   sessionIds: readonly string[],
-): Promise<{ checked: number; violations: number; newViolations: number; samples: string[] }> {
-  const out = { checked: 0, violations: 0, newViolations: 0, samples: [] as string[] };
+): Promise<{
+  checked: number;
+  violations: number;
+  newViolations: number;
+  samples: string[];
+  /** 第 60 轮：事件库**结构**异常数（重复 seq / 孤儿 tool_result / 未知类型 / compaction 载荷） */
+  structuralErrors: number;
+  /**
+   * 第 60 轮：**事件镜像没就绪、因此本次没检查**的会话数。
+   *
+   * 这个数字必须单独存在，理由见 `waitForEventMirrors` 的长注释：事件读不到时
+   * `readAll` 返回空数组，若把"读不到"当成"没有缺口/没有异常"，报出来的数字
+   * 就是"该会话的消息行总数"（真机实测 934 vs 749）。
+   */
+  unreadableSessions: number;
+}> {
+  const out = {
+    checked: 0,
+    violations: 0,
+    newViolations: 0,
+    samples: [] as string[],
+    structuralErrors: 0,
+    unreadableSessions: 0,
+  };
   if (sessionIds.length === 0) return out;
   /** 本次仍然存在的缺口指纹（审计结束后写成新水位） */
   const presentKeys = new Set<string>();
@@ -1002,8 +1164,58 @@ export async function auditInvariantsForSessions(
     // 动态 import：`runtime-invariants` 会拉进 `event-log` + `message`（体量不小），
     // 而维护是低频路径，不值得让它进启动包的静态图。
     const { runAllInvariants } = await import("../llm/runtime-invariants");
+    /**
+     * ## 第 60 轮：**先等读侧镜像就绪，再判定**（本轮最重要的修复）
+     *
+     * 这两条判据读的分别是 `getEventLog().readAll(sid)`（事件）与
+     * `MessageStorage.listMessages(sid)`（消息，最终落到 `listMessagesFromIndex`）。
+     * 两者都有同一条硬路由规则：**该会话的镜像没加载完 → 返回空数组/空列表**。
+     * 于是"读不到"与"没有数据"在返回值上**完全同形**。
+     *
+     * 真机取证（同一份数据、同一次会话、两次维护相隔 36 秒）：
+     *
+     * ```text
+     * 第 1 次（事件镜像没加载完）：历史缺口 934 条 = 657 + 277
+     * 第 2 次（镜像已加载）：      历史缺口 749 条 = 与 DB 真值逐条相等（505 + 244）
+     * ```
+     *
+     * 934 正好等于那两个会话的**消息行总数** —— 也就是"每个会话的事件都读成空，
+     * 于是每条消息都被判成『可见但没记录』"。这不是数据缺陷，是**测量缺陷**：
+     * 判据把自己读不到的东西报成了缺口。
+     *
+     * 它还有两个连带后果（都实测过）：
+     * 1. 第 47 轮追查的"水位漂移（777/757/671）"有了真正的解释 ——
+     *    那不是索引裁剪或隐藏状态导致的集合摆动，而是**审计那一刻镜像加载到哪一步**；
+     *    并集水位只是把这个噪声压住了，没有修掉噪声源。
+     * 2. 第 60 轮新接的结构自检同样瞎：镜像没加载时它读到空事件 →
+     *    报 0 处结构异常，而汇总行写的是"含事件库结构自检" —— 印出来的不是真的。
+     *
+     * 所以现在**先等**（这几个会话的加载本来就会被这次审计触发，等待不增加 IPC 次数），
+     * 等不到就**如实计入 `unreadableSessions` 并跳过该会话**：既不冒充"检查过"，
+     * 也不把"读不到"折算成缺口。
+     *
+     * ## 顺带说明：为什么"事件库结构自检"接在这个循环里（同一轮的接线）
+     *
+     * `session_events` 是**唯一没有等价物**的存储（消息有权威 JSONL、设置与归属有抢救）。
+     * 它此前的自检只有"消息可见但事件没记"（`runAllInvariants`），**不查事件自身的结构**：
+     * 重复 seq、`tool_result` 找不到对应的 `tool_call`、`compaction` 载荷形状不对、
+     * 未知事件类型 —— 而 `validateReplay` 正好查这些，却**全仓零调用**（死代码）。
+     * 接在这里的理由：同一个循环已经按会话读了事件（`runAllInvariants` 内部就读），
+     * 维护又是低频路径（每天几次）；接在别处（比如每条消息）会变成"每发一条消息
+     * 全量读一遍事件"，代价与收益不对称。
+     *
+     * 容错与上面同一条规则：单会话抛错 → 不计入 `checked` 并如实上报；
+     * 结构错误**不抛**（它是"需要被看见的数据事实"，不是维护失败），聚合成一次上报。
+     */
+    const { getEventProjection } = await import("./event-projection");
+    const ready = await waitForSessionMirrors(sessionIds);
+    const structuralErrors: string[] = [];
     for (const sid of sessionIds) {
       if (!sid) continue;
+      if (ready.get(sid) !== true) {
+        out.unreadableSessions += 1;
+        continue;
+      }
       try {
         const res = runAllInvariants(sid);
         out.checked += 1;
@@ -1014,6 +1226,22 @@ export async function auditInvariantsForSessions(
             if (out.samples.length < 5) out.samples.push(`${sid}/${v.type}`);
           }
         }
+        try {
+          const errs = getEventProjection().validateReplay(sid);
+          if (errs.length > 0) {
+            for (const e of errs) {
+              if (structuralErrors.length < 5) structuralErrors.push(`${sid}: ${e}`);
+            }
+            out.structuralErrors += errs.length;
+          }
+        } catch (e) {
+          // 结构自检本身失败不算"事件坏了"：如实记一条，继续
+          reportPersistFailure(
+            "maintenance.eventStructure",
+            e,
+            `会话 ${sid} 的事件结构自检未跑成（本次不判定该会话）`,
+          );
+        }
       } catch (e) {
         /*
          * 单会话失败**不算检查过**（`checked` 不加）：与对账段同一条规则 ——
@@ -1021,6 +1249,25 @@ export async function auditInvariantsForSessions(
          */
         reportPersistFailure("maintenance.invariantAudit", e, `会话 ${sid} 的不变量检查未跑成（未计入已检查数）`);
       }
+    }
+    if (out.unreadableSessions > 0) {
+      reportPersistFailure(
+        "maintenance.invariantAudit",
+        new Error(`会话读侧镜像未就绪 ${out.unreadableSessions} 个会话`),
+        `${out.unreadableSessions} 个会话本次**没有被检查**（不计入已检查数，也不计入缺口数）。` +
+          `理由：镜像没加载完时 readAll / listMessages 一律返回空 —— 把它当成"没有缺口"` +
+          `会报出「该会话的消息行总数」这种假数字（真机实测：同一份数据两次维护报 934 与 749，` +
+          `934 恰好等于那两个会话的消息行总数）`,
+      );
+    }
+    if (out.structuralErrors > 0) {
+      reportActionFailure(
+        "maintenance.eventStructure",
+        new Error(`事件库结构异常 ${out.structuralErrors} 处`),
+        "事件是**唯一没有等价物**的存储（消息有权威日志、设置/归属有抢救）：" +
+          `这些异常需要人工看一眼（样例：${structuralErrors.join("；")}）`,
+        { title: "存储自检：会话事件日志存在结构异常" },
+      );
     }
   } catch (e) {
     reportPersistFailure("maintenance.invariantAudit", e, "运行时不变量审计未跑成（本次 checked=0）");
@@ -1043,10 +1290,23 @@ export async function auditInvariantsForSessions(
    * ```
    *
    * 即：**水位里缺了 138 个"本次存在"的指纹**。而水位上一轮结束时正是用它自己的
-   * `presentKeys` 写的 —— 说明 **`presentKeys` 这个集合本身在两次维护之间会漂移**：
-   * 同一条"可见但无事件"的消息，会随**索引裁剪 / 隐藏状态**在"算缺口"与"不算缺口"
-   * 之间来回翻转（不变量读的是 `listMessages`，用户面视图，含"被索引裁剪但读路径
-   * 仍保留"的行；而裁剪每次维护都可能动它）。真机上实测到过 671 / 744 / 777 三种规模。
+   * `presentKeys` 写的 —— 说明 **`presentKeys` 这个集合本身在两次维护之间会漂移**。
+   * 当时实测到过 671 / 744 / 777 三种规模。
+   *
+   * ### ⚠️ 第 60 轮：**上面那个归因（索引裁剪 / 隐藏状态）已被更强的证据取代**
+   *
+   * 第 60 轮在同一份数据上连续抓到两次维护：**934 条**与 **749 条**（相隔 36 秒），
+   * 而 934 恰好等于那两个会话的**消息行总数**（657 + 277），749 与 DB 真值逐条相等。
+   * 也就是说：那次"漂移"的真正变量是**审计那一刻读侧镜像加载到哪一步** ——
+   * 事件镜像没就绪时 `readAll` 返回空数组，于是该会话的每条消息都被算成缺口。
+   * 索引裁剪 / 隐藏状态那条解释**没有被证据支持过**（当时只是"最像"的假设）。
+   *
+   * 修法在 `waitForSessionMirrors`：**先等镜像就绪再判定**；等不到就如实计
+   * `unreadableSessions` 并跳过该会话（"没检查"不再冒充"没有缺口"）。
+   *
+   * 并集水位**照旧保留**：它是判据层的第二道防线（面对真实的集合变化仍能压住噪声），
+   * 只是现在不再是唯一一道 —— 而且已知它当年压住的主要是**测量缺陷**而非数据缺陷。
+   * 代价照旧：已被修复的缺口会永久留在水位里（并集不删）。
    *
    * 后果：只要有一批消息翻转，下一次维护就会把**整批历史缺口**报成"本次新产生"
    * （现场报出 138 条，样例逐条比对**全部落在修复前的历史消息区间**里）。
@@ -1176,21 +1436,41 @@ function formatInvariantAudit(outcome: {
   violations: number;
   newViolations: number;
   samples: string[];
+  /** 第 60 轮：事件库结构异常数（必填，理由同上：缺字段就该是编译错误） */
+  structuralErrors: number;
+  /** 第 60 轮：读侧镜像没就绪、本次没检查的会话数（必填，同上） */
+  unreadableSessions: number;
 }): string {
-  if (outcome.checked === 0) return "不变量审计 跳过（没有可检查的会话）";
+  /**
+   * 第 60 轮：结构自检的数字**必须出现在汇总行里**，否则它只活在返回值里 ——
+   * 而"没被打印出来的检查"和"没跑"在真机日志上无法区分（这正是本项目反复吃过的亏：
+   * 第 46 轮那次 `newViolations` 恒为 0、告警分支永不执行）。
+   */
+  const structural = outcome.structuralErrors > 0 ? `；事件库结构异常 **${outcome.structuralErrors} 处**（见上一条上报）` : "";
+  /**
+   * 第 60 轮：**"没检查"必须与"检查了、没问题"长得不一样**。
+   *
+   * 读侧镜像没就绪的会话会被跳过（见 `waitForSessionMirrors`）：若这里不打印，
+   * 汇总行就会在"3 个会话全检查了、0 缺口"与"3 个里 2 个根本没读成"这两种情况之间
+   * 长得完全一样 —— 而那正是这个模块历史上反复吃过的亏。
+   */
+  const unread = outcome.unreadableSessions > 0 ? `；**${outcome.unreadableSessions} 个会话的读侧镜像未就绪 → 本次未检查**` : "";
+  if (outcome.checked === 0) return "不变量审计 跳过（没有可检查的会话）" + structural + unread;
   const fresh = outcome.newViolations;
-  if (outcome.violations === 0) return `不变量审计 ${outcome.checked} 个会话 全部通过`;
+  if (outcome.violations === 0) return `不变量审计 ${outcome.checked} 个会话 全部通过（含事件库结构自检）${structural}${unread}`;
   if (fresh === 0) {
     return (
       `不变量审计 ${outcome.checked} 个会话：**历史缺口 ${outcome.violations} 条**` +
       `（迁移前的助手消息本来就没有 \`assistant_text\` 事件，不是本次新产生的缺陷）` +
-      (outcome.samples.length > 0 ? `；样例：${outcome.samples.join("、")}` : "")
+      (outcome.samples.length > 0 ? `；样例：${outcome.samples.join("、")}` : "") +
+      structural + unread
     );
   }
   return (
     `不变量审计 **本次新产生 ${fresh} 条缺口**（历史缺口另有 ${outcome.violations - fresh} 条）` +
     `（检查 ${outcome.checked} 个会话）` +
-    (outcome.samples.length > 0 ? `：${outcome.samples.join("、")}` : "")
+    (outcome.samples.length > 0 ? `：${outcome.samples.join("、")}` : "") +
+    structural + unread
   );
 }
 
@@ -1245,17 +1525,18 @@ export async function runDatabaseMaintenance(
      * **接回之前必须先回答"压缩会不会删权威数据"，答案是：会。**（读代码 + 真引擎取证）
      *
      * `session_events` 里有**JSONL 里没有**的信息，所以它不是"可从权威日志重建的派生数据"：
-     * - `session_meta`（`selectPresetForSession` / `recordSessionFeedback` 写它）：
-     *   **本报告复核后只留下真实存在的消费者** —— `project/files.ts:204–207`
-     *   （`action === "instructions_override"`）真的读它，这些内容**不在消息表里**，
-     *   删了永久消失。
-     *   （第 45 轮功能上下文审计的修正：这段原来把 `getSessionPreset`
-     *   （`preset-discovery.ts:333`）与 `listSessionFeedback`（`feedback.ts:87`）
-     *   也列为消费者，但两者都**零生产调用者**（全仓只命中定义处与测试）。
-     *   用不存在的消费者论证"不能压缩"是**假论据** —— 论据换成真实的那一个，
-     *   结论不变。P2-D7 的处置见另案。）
+     * - `session_meta`：**第 60 轮复核后的准确说法是"今天没有任何生产读取者"** ——
+     *   写它的是 `selectPresetForSession`（零调用者）与 `recordSessionFeedback`
+     *   （`App.tsx:2635` 真的调）；读它的三个候选全部落空：
+     *   `getSessionPreset`（`preset-discovery.ts:333`）与 `listSessionFeedback`
+     *   （`feedback.ts:87`）**零生产调用者**，而 `project/files.ts` 那段
+     *   "会话级指令"读的是 `readAll("")`（**空会话 id 永远读不到事件**，且
+     *   `instructions_override` 从来没有写入方）→ **已在本轮删除**，见该文件里的说明。
+     *   （第 45 轮已撤回一次"用不存在的消费者论证不能压缩"；第 60 轮发现换上去的
+     *   那个消费者本身也是死读 —— 同一类错误犯了两遍，所以这里改成**如实说没消费者**。）
      * - `compaction` 事件（`CompactionPayload`：`removedMessageIds` / `summary`）：
      *   `event-projection` 的 `applyCompaction` 真的读它（把消息标记为被取代）；
+     *   `runtime-invariants` 也读它（`abort` / `compaction` 会改变它判定的口径）；
      *   `validateReplay` 也检查它。快照载荷里只固化了
      *   `{ messages, compactionSummary, removedMessageIds }`，**没有逐条的 compaction 事件**。
      *   （原注释此处还列了 `getActiveGenerations`：它是 `event-projection.ts:471` 的
@@ -1264,8 +1545,9 @@ export async function runDatabaseMaintenance(
      *   `checkToolCallPairingInvariant` 靠事件配对判断"有没有未完成的工具调用"，
      *   而快照只固化投影出的 `messages`（配对关系不是它的形状）。
      * - **时间上下文**：`time-context.ts::findLastVisibleMessageTime` 从
-     *   `user_message` / `assistant_text` / `tool_result` 事件取时间戳；
-     *   快照里这些事件消失后它只能回退到别的来源（信息量下降）。
+     *   `user_message` / `assistant_text` / `tool_result` 事件取时间戳（真的接在
+     *   `agentic-loop.ts:1267` 的每轮提示词拼装上）；快照里这些事件消失后它只能
+     *   回退到别的来源（信息量下降）。
      *
      * 而且压缩**本身是有损的**：快照的载荷是
      * `projectUpTo(events) → { messages }`（`event-log.ts::compactWithSnapshot`
@@ -1308,6 +1590,8 @@ export async function runDatabaseMaintenance(
     invariantCheckedSessions: 0,
     invariantViolations: 0,
     invariantNewViolations: 0,
+    invariantStructuralErrors: 0,
+    invariantUnreadableSessions: 0,
     invariantSamples: [],
   };
 
@@ -1602,6 +1886,8 @@ export async function runDatabaseMaintenance(
     result.invariantViolations = 0;
     result.invariantNewViolations = 0;
     result.invariantSamples = [];
+    result.invariantStructuralErrors = 0;
+    result.invariantUnreadableSessions = 0;
     try {
       const { domainReadMany } = await import("./domain-store");
       const rows = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
@@ -1611,6 +1897,8 @@ export async function runDatabaseMaintenance(
       result.invariantViolations = audit.violations;
       result.invariantNewViolations = audit.newViolations;
       result.invariantSamples = audit.samples;
+      result.invariantStructuralErrors = audit.structuralErrors;
+      result.invariantUnreadableSessions = audit.unreadableSessions;
       if (audit.violations > 0) {
         /*
          * ⚠️ **不要**把这里写成"违规"（第 46 轮真机实测的假警报）。
@@ -1675,6 +1963,10 @@ export async function runDatabaseMaintenance(
         violations: result.invariantViolations,
         newViolations: result.invariantNewViolations,
         samples: result.invariantSamples,
+        // 第 60 轮：结构自检的数字也进汇总行（否则它只活在返回值里，日志上"没跑"与"跑了没问题"分不开）
+        structuralErrors: result.invariantStructuralErrors,
+        // 第 60 轮：同理 —— "镜像没就绪所以没检查"必须与"检查了没问题"分得开
+        unreadableSessions: result.invariantUnreadableSessions,
       }),
   );
   return result;

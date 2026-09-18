@@ -269,9 +269,22 @@ describe("不变量水位：并集口径（漂移不许产生假警报）", () =
     await auditInvariantsForSessions([SESSION]);
     const before = readWatermark()!;
 
+    /*
+     * `structuralErrors` 与 `unreadableSessions` 是第 60 轮加进返回值的两件事实
+     * （事件库结构异常数 / 因事件镜像未就绪而**没检查**的会话数）。
+     * 这里**逐字列出**整个形状（而不是只断言其中几个字段）：这个对象就是"审计到底
+     * 发生了什么"的完整契约，多一个字段、少一个字段都要在这里留下痕迹。
+     */
     const out = await auditInvariantsForSessions([]);
 
-    expect(out).toEqual({ checked: 0, violations: 0, newViolations: 0, samples: [] });
+    expect(out).toEqual({
+      checked: 0,
+      violations: 0,
+      newViolations: 0,
+      structuralErrors: 0,
+      unreadableSessions: 0,
+      samples: [],
+    });
     expect(readWatermark()!.at, "没跑就不该留下『这次已经报过了』的痕迹").toBe(before.at);
   });
 

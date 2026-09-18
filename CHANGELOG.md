@@ -2,6 +2,123 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.89] - 2026-09-19 — **「历史缺口」这个数字一直在撒谎：同一份数据两次维护报 934 与 749，差距恰好是消息行数**
+
+> 这条闭合的是审计里那句「不变量审计的数字信不过」。它同时解释了一桩悬了三轮的公案。
+
+### 🔴 缺陷：维护审计把「读不到」当成了「没有」
+
+`auditInvariantsForSessions` 的两条判据分别读 `getEventLog().readAll(sid)`（事件）与
+`MessageStorage.listMessages(sid)`（消息）。两者都有同一条**硬路由规则**：
+**该会话的镜像没加载完 → 返回空数组/空列表**（`event-log.ts` / `message.ts` 里
+写着"端口没接手 → 该域的合理空结果"）。而维护触发的这次审计**往往就是第一次访问这些会话** ——
+`ensureLoaded` 是"触发加载、同步返回"，真实现走异步 IPC，于是紧接着的读**读到的是空**。
+
+后果不是"少报"，是**多报**：把"事件读成空"理解成"这些消息都没有事件记录"，
+于是把该会话的**每一条消息**都报成缺口。真机取证（同一份数据、两次维护相隔 36 秒）：
+
+| 那次维护 | 报出的历史缺口 | 与会话消息行数的关系 |
+| --- | --- | --- |
+| 事件镜像没加载完 | **934** | = 657 + 277（两个会话的**全部消息行**） |
+| 镜像已加载 | **749** | = 505 + 244（与 DB 真值逐条相等） |
+
+也就是说：第 47 轮追查并记在注释里的那桩"水位漂移 777 / 757 / 671"，真正的变量是
+**审计那一刻镜像加载到哪一步** —— 当时归因的"索引裁剪 / 隐藏状态让参与审计的集合摆动"
+**没有被证据支持过**（并集水位只是把这个噪声压住了，没有修掉噪声源）。注释已按新证据改正。
+
+**第 60 轮新接的"事件库结构自检"同样瞎**：镜像没加载时它读到空事件 →
+报 0 处结构异常，而汇总行写的是"含事件库结构自检" —— **印出来的不是真的**。
+
+### ✅ 修法：先等镜像就绪，再判定；等不到就如实说"没检查"
+
+- `waitForSessionMirrors`：对每个会话**同时**等消息与事件两侧镜像（`isLoaded` 且未被截断），
+  **不增加 IPC 次数**（这些 `ensureLoaded` 本来就会被本次审计触发，这里只是等），
+  等待有总预算（4 秒，按会话均摊），维护不会被拖死；
+- 等不到 → **跳过该会话**并计入新字段 `unreadableSessions`（"没检查"绝不折算成"没有缺口"），
+  同时经 `[PersistFailure]` 上报，写明后果；
+- 汇总行新增 `；**N 个会话的读侧镜像未就绪 → 本次未检查**` ——
+  "没检查"与"检查了没事"必须在日志上分得开（这个模块反复吃过的亏）。
+  等号另一侧同样成立：`checked + unreadableSessions` 才是本次参与审计的会话总数。
+
+⚠️ 第一版只等了事件那一侧，契约用例当场抓到它换个方向继续造假
+（消息读成空 → `RECORDED_BUT_NOT_VISIBLE` × 2：事件有、消息"没有"）—— 两侧都等。
+
+### 🔎 结构自检第一次真的读到事件，当场在用户库里抓到一条**会让投影抛错**的脏行
+
+打包版扫真实库，报出：
+
+```text
+1788268497135-31x6vdt97: compaction at seq 2230 has invalid removedMessageIds
+```
+
+读那一行：`{"markerId":"compact-…-repair47","reason":"…","summary":"…"}` ——
+**第 47 轮审计修复脚本**补写的汇总 marker（生产写入方 `agentic-loop.ts:3417`
+写的是规范的 `{removedMessageIds, summary, messagesBefore, messagesAfter}`）。
+
+而 `applyCompaction` 原来直接 `for (const id of payload.removedMessageIds)` ——
+对 `undefined` 做 `for…of` 会 **TypeError**。这条投影接在
+`agentic-loop.ts:1279`（**每轮**拼 surface notice）、`surface-manager`、`validateReplay` 上，
+且**外面没有 try/catch** ⇒ "库里有一条形状不认识的历史 compaction 行"就等于
+**那个会话一开口就抛**。修法：投影按"这条压缩不删除任何消息"处理（`summary` 仍照做）
++ `[PersistFailure]` 如实上报；**判据不放宽** —— 结构自检照旧报出这一行
+（`RV-13` 同时钉住"不抛"与"仍然要报"两件事）。
+
+⚠️ 这正是本轮修复的价值所在：在此之前这条自检**从未真正读过事件**，
+所以它既不会误报、也永远发现不了任何东西。
+
+### 🔴 同一根因的另外三处（都真的会走到用户眼前）
+
+1. **事件类型集合与实现不一致**：引擎把 `'session_snapshot'` **字面写死**在
+   `repo.rs::events_compact` 的 INSERT 里、投影也真的 `case` 它，但它此前**不在**
+   `SessionEventType` 联合类型与 `BUILTIN_EVENT_TYPES` 里 —— 于是
+   `isValidEventType("session_snapshot")` 返回 `false`。而 `validateReplay` 的"已知类型"
+   判据是一串**硬编码 `case`**，那份清单同样缺它 ⇒ 这份校验只要被调用，就会把
+   **合法快照报成未知类型**（更巧的是它此前**全仓零调用**，所以这个假报警一直没被人看见）。
+   现在判据改走 `isValidEventType()`（唯一真源），并由
+   `event-type-set-consistency.test.ts` 解析源码把"联合类型 ↔ 内建集合"钉在一起
+   （带三条齿：少一个成员要红、多一个成员要红、注释里的类型名不算成员）。
+2. **快照边界上的工具配对是错的**：快照意味着"它之前的事件已被删除、状态固化在这条里"，
+   所以待配对集合必须**按快照重建**（与 `applySnapshot` 重建 `toolCallIndex` 同一个道理）。
+   不重建的话：`tool_call` 在快照里、`tool_result` 在快照之后的**正常日志**
+   会被判成孤儿 —— 又一处假报警。
+3. **提示词里的"上次活动时间"写成 `unavailable`**：`findLastVisibleMessageTime` 在事件
+   读不到时把"空"当成"查不到时间"，而应用启动后**第一轮**提示词拼装往往就撞在这个窗口上 ——
+   模型看到的"上次活动时间"是 unavailable 而不是真实时长。现在**同步**回退到消息表的
+   最后时间戳（提示词拼装是同步的，任何"后台算好下次再用"的写法都救不了它要救的场景；
+   第一版正是那样写的，用例直接红）。两边都没有才允许 `unavailable`。
+
+### 🧹 顺手删掉一段"永远不可能命中"的死读（并改正它支撑过的论证）
+
+`project/files.ts` 里有一段 v1.1.0 加的 "Layer 4: 会话级指令"，读的是
+`getEventLog().readAll("")`，注释写着 "session-agnostic global event log"。但事件镜像
+**按会话 id 路由**，空会话 id 永远返回空数组 ⇒ 那个 `for` 循环**一次都没进过**；
+而且 `instructions_override` **从来没有写入方**（`git log -S` 只命中"加了这段读"的那次提交）。
+它更坏的一面是：`maintenance.ts` 里"不能压缩事件"的论证曾把它举为**真实存在的消费者**
+（"这些内容不在消息表里，删了永久消失"）—— 用一段不可能命中的读当论据，
+就是第 45 轮已经撤回过一次的**同一类假论据**。现在：删掉死读 + 论证改成
+**如实说"`session_meta` 今天没有任何生产读取者"**（写它的 `recordSessionFeedback` 有调用者、
+读它的三个候选全部落空）+ 用例 `RV-11` 钉住"为什么它不可能命中"、
+`RV-12` 加一条**源码判据**（生产代码里不许再出现 `readAll("")`，带齿）。
+⚠️ 能力没有减少：会话级指令由 `core/prompt/instruction-layers.ts` 真实提供
+（`loadLayeredInstructionsSync` 拼出 `# Session Instructions` 段，另有两组用例守着）。
+
+### 🧪 验证（本轮新增用例 4 组 19 条）
+
+- `replay-validation.test.ts`（13 条）：结构自检该报的报（未知类型 / 孤儿 `tool_result` /
+  重复 seq / `compaction` 载荷形状）、不该报的绝不报（合法快照、快照后的 `tool_result`、
+  引用已删消息的 `compaction`）、接进维护后数字出现在汇总行、`readAll("")` 的路由判据、
+  脏 `compaction` 行不许让投影抛错；
+- `invariant-audit-load-window.test.ts`（4 条）：**加载时机不许改变数字**（同步 vs 异步逐字相同）、
+  永远不就绪时不许冒充"检查过"、汇总行把两种状态分开写；
+- `event-type-set-consistency.test.ts`（7 条）：联合类型 ↔ 内建集合一致性（含 3 条齿）；
+- `time-context-fallback.test.ts`（3 条）：事件优先、事件读不到时回退、两边都没有才 unavailable。
+- **牙齿检查**：删掉 `waitForSessionMirrors` 的等待 → `RVL-W1/W2` 立刻红；
+  把判据改回硬编码类型清单 → `TYPE-*` 与 `RV-5` 红。
+
+**实测**：渲染侧 **326 文件 / 5756 通过 / 16 跳过 / 0 失败**；`tsc` 0；
+**10 道 audit 门禁** exit 0（写入点 55 处 / 88 处返回值全部处理 / 命令对齐 80 条）。
+真机（打包版）复核见本版发布说明。
+
 ## [1.16.88] - 2026-09-18 — **库损坏时，设置是唯一"没有任何等价物"的数据（另外两样都有人救）**
 
 > 这条闭合的是审计里那句「损坏库备份**无等价物**」。
