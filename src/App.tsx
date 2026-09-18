@@ -290,6 +290,8 @@ import { ThemeManager, useSkin } from "./core/theme";
 import { HubLayout } from "./components/HubLayout";
 import { DreamLayout } from "./components/DreamLayout";
 import { OnboardingTour } from "./components/OnboardingTour";
+// 第 47 轮补：写盘/操作失败的常驻提示（原来那条通道只在流式期间渲染）
+import { PersistFailureBanner } from "./components/PersistFailureBanner";
 // 第 47 轮（D-19）：`QuickAccessCards` 的 App 级死 UI 已删除（理由见原渲染点注释），
 // 该组件仍由 `ChatPanel.tsx` 通过 `chat-panel-quick-access` 槽位真实渲染，故组件本身保留。
 import { CorrectionResultPanel } from "./components/CorrectionResultPanel";
@@ -2143,11 +2145,12 @@ flushStreamBuffer(); // flush all on unmount
     listen("previous-run-unclean", () => {
       console.warn("[App] Previous run did not exit cleanly — checking recovery");
       // 不阻塞：仅提示用户可去"设置 → 会话恢复"查看
-      useAppStore.getState().addGuidanceMessage({
-        id: `crash-notice-${Date.now()}`,
+      // 第 47 轮补：这条"上次没正常退出"的通知原来塞进引导队列 → 空闲时不可见，
+      // 而它恰恰是"用户该去检查数据"的提醒。改走常驻提示通道。
+      useAppStore.getState().addPersistAlert({
+        area: "crash.previous-run-unclean",
+        kind: "action",
         message: "检测到上次 Codem 未正常退出（可能崩溃或被强制关闭）。若发现会话内容缺失，可前往 设置 → 会话恢复 查看已保存的快照。",
-        timestamp: Date.now(),
-        consumed: false,
       });
     }).then((un: () => void) => { unlistenCrash = un; });
 
@@ -2157,11 +2160,11 @@ flushStreamBuffer(); // flush all on unmount
     const rendererCrash = readRendererCrashRecord();
     if (rendererCrash) {
       clearRendererCrashRecord();
-      useAppStore.getState().addGuidanceMessage({
-        id: `renderer-crash-${rendererCrash.occurredAt}`,
+      // 第 47 轮补：同上，改走常驻提示通道（否则空闲时看不到）
+      useAppStore.getState().addPersistAlert({
+        area: "crash.renderer-recovered",
+        kind: "action",
         message: "检测到上次界面渲染异常，已自动恢复（会话数据均保留在本地数据库）。若此提示反复出现，可在设置中检查会话快照或尝试重置界面设置。",
-        timestamp: rendererCrash.occurredAt,
-        consumed: false,
       });
     }
 
@@ -2188,8 +2191,19 @@ flushStreamBuffer(); // flush all on unmount
       if (reportedPersistAreas.has(area)) return; // 同一区域只提示一次
       reportedPersistAreas.add(area);
       const isAction = detail?.kind === "action";
-      useAppStore.getState().addGuidanceMessage({
-        id: `persist-fail-${area}-${Date.now()}`,
+      /**
+       * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：改走**常驻提示通道**，不再塞进引导队列
+       *
+       * 原来这里是 `addGuidanceMessage(...)`，而那条队列在界面上唯一的渲染点带着
+       * `isSessionStreaming` 前置条件 → **用户空闲时（大多数写失败发生的时刻）
+       * 界面什么都不显示**；而流式期间它又被渲染成一条"待接收引导"，其主按钮会
+       * **中断正在生成的回复**（这条告警从来没进过引导队列，点下去只是打断回答）。
+       *
+       * 现在走 `addPersistAlert`：与流式状态无关、常驻可关闭、同区域累计次数。
+       */
+      useAppStore.getState().addPersistAlert({
+        area,
+        kind: isAction ? "action" : "persist",
         message: isAction
           ? `操作没有生效（${area}）：${detail?.message || "未知原因"}。` +
             `该功能本次不可用，请重试或检查日志` +
@@ -2198,8 +2212,6 @@ flushStreamBuffer(); // flush all on unmount
           : `数据保存失败（${area}）：${detail?.message || "未知原因"}。` +
             `这次改动目前只在内存里，重启应用后会丢失；请检查磁盘空间与数据库文件占用。` +
             (detail?.count && detail.count > 1 ? `（该区域已累计失败 ${detail.count} 次）` : ""),
-        timestamp: Date.now(),
-        consumed: false,
       });
     };
     let unlistenPersist: (() => void) | undefined;
@@ -2210,13 +2222,13 @@ flushStreamBuffer(); // flush all on unmount
     // 该会话只存在于内存，重启后整段对话会消失，必须当场提示而不是静默。
     const onSessionPersistFail = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as { sessionId?: string; error?: string } | undefined;
-      useAppStore.getState().addGuidanceMessage({
-        id: `session-persist-fail-${Date.now()}`,
+      // 第 47 轮补：同样走常驻提示通道（原来塞进引导队列 → 空闲时不可见）
+      useAppStore.getState().addPersistAlert({
+        area: "session.create",
+        kind: "persist",
         message:
           `新建的会话无法写入数据库：${detail?.error || "未知原因"}。` +
           `这段对话目前只存在于内存中，重启应用后会丢失；请先复制重要内容，并检查磁盘空间/数据库文件占用。`,
-        timestamp: Date.now(),
-        consumed: false,
       });
     };
     let unlistenSessionPersist: (() => void) | undefined;
@@ -2255,14 +2267,15 @@ flushStreamBuffer(); // flush all on unmount
       } catch (e) {
         console.warn("[Storage] 会话抢救写入失败:", e);
       }
-      useAppStore.getState().addGuidanceMessage({
-        id: `storage-down-${Date.now()}`,
+      // 第 47 轮补：这是最严重的一条告警（存储引擎没起来），原来塞进引导队列 →
+      // 空闲时**完全不可见**。改走常驻提示通道（与流式状态无关、必须被看到）。
+      useAppStore.getState().addPersistAlert({
+        area: "storage.unavailable",
+        kind: "persist",
         message:
           `存储引擎未启动，本次写入不会保存（原因：${detail?.reason || "未知"}）。` +
           (rescuePath ? `当前会话已抢救到：${rescuePath}。` : "") +
-          "请**关闭并重新打开应用**后重试；若反复出现，请把上面那份 rescue 文件发我。",
-        timestamp: Date.now(),
-        consumed: false,
+          "请关闭并重新打开应用后重试；若反复出现，请把上面那份 rescue 文件发我。",
       });
     };
     window.addEventListener(STORAGE_UNAVAILABLE_EVENT, onStorageUnavailable as EventListener);
@@ -5005,6 +5018,15 @@ onClose={() => setCitationViewer(null)}
           }}
         />
       )}
+
+      {/*
+        第 47 轮补（UI/UX 审计 P1）：失败/崩溃提示的**常驻出口**。
+
+        放在应用树的最外层（与流式状态无关）：写盘失败意味着"这次改动重启后会丢"，
+        而它绝大多数时候发生在用户**空闲**时 —— 原来那条通道（`guidanceMessages`）
+        只在流式期间渲染，于是空闲时界面什么都不显示，违反"失败必须可见"这条仓库级契约。
+      */}
+      <PersistFailureBanner />
 
       {/* P2: Onboarding tour for first-time users or replay from Help */}
       {(showOnboarding || showOnboardingReplay) && (

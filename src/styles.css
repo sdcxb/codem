@@ -1777,6 +1777,99 @@ user-select: none;
   background: var(--bg-hover);
 }
 
+/*
+ * 写盘/操作失败的常驻提示条（第 47 轮补，UI/UX 审计 P1）。
+ *
+ * 为什么不用 toast：写失败意味着"这次改动重启后会丢"，一闪而过不够；
+ * 它必须一直在那里直到用户看到并关掉。
+ * 全部使用既有令牌。
+ */
+.persist-alert-stack {
+  position: fixed;
+  top: var(--space-2);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(720px, calc(100vw - var(--space-8)));
+  pointer-events: none;
+}
+
+.persist-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface-content);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+}
+
+/* 数据没写进去 = 最严重（重启会丢）：用错误色 */
+.persist-alert.is-persist {
+  border-color: var(--error);
+}
+
+.persist-alert.is-persist .persist-alert-icon {
+  color: var(--error);
+}
+
+/* 这次操作没生效 = 警告级 */
+.persist-alert.is-action {
+  border-color: var(--warning);
+}
+
+.persist-alert.is-action .persist-alert-icon {
+  color: var(--warning);
+}
+
+.persist-alert-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-top: var(--space-1);
+}
+
+.persist-alert-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.persist-alert-text {
+  display: block;
+  word-break: break-word;
+}
+
+.persist-alert-count {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.persist-alert-close {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: var(--space-1);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.persist-alert-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .empty-state .logo {
   font-size: var(--icon-3xl);
   margin-bottom: var(--space-8);

@@ -129,6 +129,26 @@ export interface GuidanceMessage {
   consumed: boolean;
 }
 
+/**
+ * 写盘/操作失败的**常驻提示**（第 47 轮补）。
+ *
+ * ⚠️ 与 `GuidanceMessage` **刻意分开**：后者的语义是"用户对正在跑的回合的引导"，
+ * 只在流式期间渲染、且其按钮会**中断**正在生成的回复。
+ * 把"出错了"塞进那条队列，结果是**空闲时完全不可见**、流式时又长得像一个会打断回答的操作。
+ */
+export interface PersistAlert {
+  id: string;
+  /** 失败发生的区域（`reportPersistFailure` 的 `area`），用来去重与显示定位 */
+  area: string;
+  /** `persist` = 数据没写进去（重启会丢）；`action` = 这次操作没生效 */
+  kind: "persist" | "action";
+  /** 已经面向用户准备好的整句文案 */
+  message: string;
+  timestamp: number;
+  /** 同一区域累计失败次数（去重合并时递增） */
+  count: number;
+}
+
 /** Scroll position state for chat panel */
 export type ScrollPosition = "bottom" | "near-bottom" | "scrolled-up";
 
@@ -182,6 +202,30 @@ interface AppState {
   displayMode: "segmented" | "unified";
   /** Guidance messages sent during the current active run */
   guidanceMessages: GuidanceMessage[];
+  /**
+   * ## 写盘/操作失败的**常驻提示**（第 47 轮补，UI/UX 审计 P1）
+   *
+   * ## 为什么不能继续塞进 `guidanceMessages`
+   *
+   * `reportPersistFailure` 的可见出口原来只有一条：`App.tsx` 的 `onPersistFail` 把消息
+   * `addGuidanceMessage(...)`，而 `guidanceMessages` 在界面上**唯一**的渲染点带着
+   * `isSessionStreaming` 前置条件 —— 于是用户**空闲时**改会话标题失败、删项目失败、
+   * 保存权限规则失败，**界面什么都不显示**；而"失败必须可见"恰恰是仓库级契约
+   * （`persist-failure.ts` 与 `App.tsx` 的注释都写着这一条）。
+   *
+   * 更糟的是那条通道的语义是"**用户引导**"：它被渲染成一条待接收的引导条，
+   * 主按钮是"立刻引导" → `interruptForGuidance` → **中断正在生成的回复**，
+   * 而这条告警从来没进过引导队列，点下去只是把 AI 的回答打断、什么都不注入。
+   * 把"出错了"渲染成"引导"是范畴错误。
+   *
+   * 所以失败提示有自己的通道：**与流式状态无关、常驻可见、可关闭**，
+   * 且同一区域只保留一条（累计次数），避免磁盘满时刷屏。
+   */
+  persistAlerts: PersistAlert[];
+  /** 加一条失败提示（同一 `area` 只保留一条，累计 `count`） */
+  addPersistAlert: (alert: Omit<PersistAlert, "id" | "count" | "timestamp"> & { timestamp?: number }) => void;
+  /** 关掉一条失败提示 */
+  dismissPersistAlert: (id: string) => void;
   /** P0: Message feedback map (messageId -> 'like' | 'dislike') */
   feedback: FeedbackMap;
   /** P0: Whether the user has scrolled up from the bottom of the chat */
@@ -264,6 +308,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   llmStatus: "idle" as LLMStatus,
   displayMode: "unified" as "segmented" | "unified",
   guidanceMessages: [],
+  persistAlerts: [],
   feedback: {},
   scrollPosition: "bottom",
   hasUnreadMessages: false,
@@ -664,6 +709,40 @@ export const useAppStore = create<AppState>((set, get) => ({
     guidanceMessages: s.guidanceMessages.filter((g) => g.id !== id),
   })),
   clearGuidanceMessages: () => set({ guidanceMessages: [] }),
+
+  /**
+   * 加一条失败提示（第 47 轮补）。
+   *
+   * 去重规则：**同一 `area` 只保留一条**，重复失败只累加 `count`（磁盘满时不要刷屏）。
+   * 文案在调用方拼好（它才知道 `kind` 该怎么说），这里只负责"同区域合并 + 更新时间"。
+   */
+  addPersistAlert: (alert) => set((s) => {
+    const existing = s.persistAlerts.find((a) => a.area === alert.area);
+    if (existing) {
+      return {
+        persistAlerts: s.persistAlerts.map((a) =>
+          a.area === alert.area
+            ? { ...a, message: alert.message, kind: alert.kind, count: a.count + 1, timestamp: Date.now() }
+            : a,
+        ),
+      };
+    }
+    return {
+      persistAlerts: [
+        ...s.persistAlerts,
+        {
+          id: `alert-${alert.area}-${Date.now()}`,
+          area: alert.area,
+          kind: alert.kind,
+          message: alert.message,
+          timestamp: alert.timestamp ?? Date.now(),
+          count: 1,
+        },
+      ],
+    };
+  }),
+  /** 关掉一条失败提示（用户已经看到了） */
+  dismissPersistAlert: (id) => set((s) => ({ persistAlerts: s.persistAlerts.filter((a) => a.id !== id) })),
 
   setFeedback: (messageId, feedback, sessionId) => {
     /*
