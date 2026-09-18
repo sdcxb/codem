@@ -67,6 +67,23 @@ function makeRepoFixture(opts: { prodCommand: string; whitelist?: string[] }): s
     `export async function go(t: any) {\n${sites}\n  await call(t, "${opts.prodCommand}");\n}\n`,
     "utf8",
   );
+
+  /**
+   * 第 53 轮：错误码契约的检查也在同一个门禁里（`compareErrorCodes`），
+   * 所以夹具必须把它的两个输入文件也造出来 —— 否则夹具会因为"读不到源文件"
+   * 而失败，看起来像命令检查坏了（GATE-10 就是这么被撞红的）。
+   * 直接**拷贝真仓库的那两份**：夹具的目的是"命令名写错会被抓到"，
+   * 不是"重新实现错误码契约"。
+   */
+  fs.mkdirSync(path.join(tmp, "src", "core", "storage"), { recursive: true });
+  fs.copyFileSync(
+    path.join(ROOT, "src-tauri", "codem-db", "src", "error.rs"),
+    path.join(tmp, "src-tauri", "codem-db", "src", "error.rs"),
+  );
+  fs.copyFileSync(
+    path.join(ROOT, "src", "core", "storage", "port.ts"),
+    path.join(tmp, "src", "core", "storage", "port.ts"),
+  );
   return tmp;
 }
 
@@ -236,6 +253,46 @@ describe("扫描器自检（门禁本身必须会咬）", () => {
       expect(okResult.errors, "写对的时候不许误报").toEqual([]);
     } finally {
       fs.rmSync(okDir, { recursive: true, force: true });
+    }
+  });
+
+  it("GATE-11: 错误码契约（引擎 as_str / retryable / hint ↔ 渲染侧联合类型 / RETRYABLE）必须对齐", async () => {
+    const { cpScanner } = await loadScanners();
+
+    // ① 真仓库：两侧 10 个码、4 个可重试、hint 全覆盖
+    const real = cpScanner.compareErrorCodes({ root: ROOT });
+    expect(real.errors, `真仓库的错误码契约不该有分歧：${real.errors.join(" | ")}`).toEqual([]);
+    expect(real.summary.engineCodes.length, "金丝雀：解析器至少要抓到 5 个码").toBeGreaterThanOrEqual(5);
+    expect(real.summary.engineCodes, "两侧集合必须完全相同").toEqual(real.summary.rendererCodes);
+    expect(real.summary.engineRetryable, "可重试集合也必须相同").toEqual(real.summary.rendererRetryable);
+    expect(
+      real.summary.hintCovered,
+      "每个错误码都要有 hint（界面/日志的可执行建议）",
+    ).toBe(real.summary.engineCodes.length);
+
+    // ② 故意在渲染侧多声明一个引擎不会发的码 → 必须报出来
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-errcode-"));
+    try {
+      fs.mkdirSync(path.join(tmp, "src-tauri", "codem-db", "src"), { recursive: true });
+      fs.mkdirSync(path.join(tmp, "src", "core", "storage"), { recursive: true });
+      fs.copyFileSync(
+        path.join(ROOT, "src-tauri", "codem-db", "src", "error.rs"),
+        path.join(tmp, "src-tauri", "codem-db", "src", "error.rs"),
+      );
+      const portSrc = fs.readFileSync(path.join(ROOT, "src", "core", "storage", "port.ts"), "utf8");
+      fs.writeFileSync(
+        path.join(tmp, "src", "core", "storage", "port.ts"),
+        portSrc.replace('  | "OTHER";', '  | "OTHER"\n  | "TEAPOT";'),
+        "utf8",
+      );
+
+      const broken = cpScanner.compareErrorCodes({ root: tmp });
+      expect(
+        broken.errors.some((e: string) => e.includes("TEAPOT")),
+        "渲染侧声明了引擎永不发的码必须被报出来（否则错误码这个'值'会在映射处丢掉）",
+      ).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 

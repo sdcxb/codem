@@ -287,6 +287,20 @@ export function analyzeCommandParity({ root = process.cwd() } = {}) {
     ]),
   ].sort();
 
+  /**
+   * ## 第 53 轮：顺带把**错误码**的对齐也钉住（同一条链路的另一半）
+   *
+   * 命令名对齐了，错误码不对齐同样会静默失真：
+   * - 引擎返回一个渲染侧不认识的 code → 渲染侧映射成 `OTHER` → **错误码这个"值"丢了**；
+   * - 两侧的 `retryable` 规则不一致 → 要么"一直在重试引擎说别重试的失败"，
+   *   要么"引擎说可重试、渲染侧一次就放弃"。
+   *
+   * 当前**实测是对齐的**（10 个 code 逐一相同、4 个 retryable 相同、`hint` 也接到了
+   * `StorageError.detail`），但此前**没有任何东西守着它** —— 改一侧忘了另一侧不会红。
+   */
+  const errCodes = compareErrorCodes({ root: ROOT });
+  errors.push(...errCodes.errors);
+
   return {
     rustCommands,
     prodHits,
@@ -295,6 +309,115 @@ export function analyzeCommandParity({ root = process.cwd() } = {}) {
     testOnly,
     noProdCaller,
     errors,
+    errorCodes: errCodes.summary,
+  };
+}
+
+/**
+ * 错误码契约的对齐（第 53 轮）。见 `analyzeCommandParity` 里的调用点注释。
+ *
+ * 解析两侧源码的字面量，**不做语义推断**：`as_str()` 的字符串、`retryable()` 的
+ * `matches!` 列表、`hint()` 覆盖的变体、渲染侧的联合类型与 `RETRYABLE` 集合，全是字面量。
+ */
+export function compareErrorCodes({ root = process.cwd() } = {}) {
+  const errors = [];
+  const rustErr = readFileSync(join(root, "src-tauri/codem-db/src/error.rs"), "utf8");
+  const portSrc = readFileSync(join(root, "src/core/storage/port.ts"), "utf8");
+
+  // ---- 引擎侧：as_str() 的映射（变体名 → 线上字符串） ----
+  const asStrBlock = rustErr.match(/pub fn as_str\(self\)\s*->\s*&'static str\s*\{([\s\S]*?)\n\s*\}/);
+  const engineMap = new Map();
+  if (asStrBlock) {
+    for (const m of asStrBlock[1].matchAll(/ErrorCode::(\w+)\s*=>\s*"([A-Z_]+)"/g)) {
+      engineMap.set(m[1], m[2]);
+    }
+  }
+
+  // ---- 引擎侧：retryable() 的 matches! 列表 ----
+  const retryBlock = rustErr.match(/pub fn retryable\(self\)\s*->\s*bool\s*\{([\s\S]*?)\n\s*\}/);
+  const engineRetryable = new Set();
+  if (retryBlock) {
+    for (const m of retryBlock[1].matchAll(/ErrorCode::(\w+)/g)) engineRetryable.add(m[1]);
+  }
+
+  // ---- 引擎侧：hint() 覆盖了哪些变体 ----
+  const hintBlock = rustErr.match(/pub fn hint\(self\)\s*->\s*&'static str\s*\{([\s\S]*?)\n\s*\}/);
+  const engineHints = new Set();
+  if (hintBlock) {
+    for (const m of hintBlock[1].matchAll(/ErrorCode::(\w+)/g)) engineHints.add(m[1]);
+  }
+
+  // ---- 渲染侧：StorageErrorCode 联合类型 ----
+  const unionBlock = portSrc.match(/export type StorageErrorCode\s*=([\s\S]*?);/);
+  const rendererCodes = new Set();
+  if (unionBlock) {
+    for (const m of unionBlock[1].matchAll(/"([A-Z_]+)"/g)) rendererCodes.add(m[1]);
+  }
+
+  // ---- 渲染侧：RETRYABLE 集合 ----
+  const retrySet = portSrc.match(
+    /const RETRYABLE:\s*ReadonlySet<StorageErrorCode>\s*=\s*new Set<StorageErrorCode>\(\[([^\]]*)\]\)/,
+  );
+  const rendererRetryable = new Set();
+  if (retrySet) {
+    for (const m of retrySet[1].matchAll(/"([A-Z_]+)"/g)) rendererRetryable.add(m[1]);
+  }
+
+  // ---- 金丝雀：解析器失效不许伪装成"对齐"（第 48 轮那条教训） ----
+  if (engineMap.size < 5 || rendererCodes.size < 5 || !retryBlock || !retrySet) {
+    errors.push(
+      `错误码解析器可能失效（引擎 ${engineMap.size} 个 / 渲染侧 ${rendererCodes.size} 个 / ` +
+        `retryable 块 ${retryBlock ? "有" : "无"} / RETRYABLE 块 ${retrySet ? "有" : "无"}）—— 这种"绿"没有意义`,
+    );
+    return { errors, summary: { engine: engineMap.size, renderer: rendererCodes.size } };
+  }
+
+  // ---- 判据 1：字符串集合必须一致（两向都查） ----
+  const engineStrings = new Set(engineMap.values());
+  for (const s of engineStrings) {
+    if (!rendererCodes.has(s)) {
+      errors.push(
+        `引擎会发错误码 \`${s}\`，但渲染侧 StorageErrorCode 里没有它 → 会被静默映射成 OTHER（错误码丢失）`,
+      );
+    }
+  }
+  for (const s of rendererCodes) {
+    if (!engineStrings.has(s)) {
+      errors.push(`渲染侧声明了错误码 \`${s}\`，但引擎 as_str() 永远不会发它（两侧声明了对不上的值）`);
+    }
+  }
+
+  // ---- 判据 2：retryable 一致（把变体名换算成线上字符串再比） ----
+  const engineRetryableStrings = new Set(
+    [...engineRetryable].map((v) => engineMap.get(v) ?? `?${v}`),
+  );
+  for (const s of engineRetryableStrings) {
+    if (!rendererRetryable.has(s)) {
+      errors.push(`引擎认为 \`${s}\` 可重试，但渲染侧 RETRYABLE 里没有 → 引擎说可重试、渲染侧一次就放弃`);
+    }
+  }
+  for (const s of rendererRetryable) {
+    if (!engineRetryableStrings.has(s)) {
+      errors.push(`渲染侧把 \`${s}\` 当可重试，但引擎没把它算作可重试 → 可能在重试一个明确不该重试的失败`);
+    }
+  }
+
+  // ---- 判据 3：每个 code 都要有 hint（界面与日志的可执行建议） ----
+  for (const v of engineMap.keys()) {
+    if (!engineHints.has(v)) {
+      errors.push(`引擎错误码 \`${engineMap.get(v)}\` 没有 hint（界面与日志就拿不到可执行建议）`);
+    }
+  }
+
+  return {
+    errors,
+    summary: {
+      engineCodes: [...engineStrings].sort(),
+      rendererCodes: [...rendererCodes].sort(),
+      engineRetryable: [...engineRetryableStrings].sort(),
+      rendererRetryable: [...rendererRetryable].sort(),
+      hintCovered: engineHints.size,
+    },
   };
 }
 
@@ -304,7 +427,7 @@ const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.arg
 
 if (isMain) {
   const result = analyzeCommandParity();
-  const { rustCommands, prodHits, toolHits, rustHits, testOnly, noProdCaller, errors } = result;
+  const { rustCommands, prodHits, toolHits, rustHits, testOnly, noProdCaller, errors, errorCodes } = result;
   const jsonMode = process.argv.includes("--json");
   const listMode = process.argv.includes("--list");
 
@@ -348,6 +471,14 @@ if (isMain) {
       `渲染侧生产 ${prodHits.size} / 工具 ${toolHits.size} / Rust 生产 ${rustHits.size}；` +
       `无生产调用方 ${noProdCaller.length} 条（信息，见 --list）`,
   );
+  // 错误码契约也一并报出来（第 53 轮）：对齐**必须看得见**，否则"绿"可能只是没跑
+  if (errorCodes?.engineCodes) {
+    console.log(
+      `[error-parity] 错误码 ${errorCodes.engineCodes.length} 个两侧一致` +
+        `（引擎/渲染侧集合相同）；可重试 ${errorCodes.engineRetryable.length} 个一致：` +
+        `${errorCodes.engineRetryable.join(", ")}；hint 覆盖 ${errorCodes.hintCovered} 个`,
+    );
+  }
 
   if (errors.length > 0) {
     console.error(`\n[command-parity] ✗ ${errors.length} 处不一致：`);
