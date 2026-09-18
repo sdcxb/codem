@@ -595,11 +595,12 @@ dependencies = [
 
 [[package]]
 name = "codem"
-version = "1.16.86"
+version = "1.16.87"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
  "codem-db",
+ "dirs",
  "futures-util",
  "hostname",
  "open",

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.86",
-  "notes": "损坏恢复里「抢救到的项目没写回」以前是静默的（现在有可见上报，含数量与后果）；新增第 10 道审计门禁（跨表写入的返回值必须处理）与 4 条并发交错用例；补齐更新链路的下载/验签验证。",
-  "pub_date": "2026-09-18T15:48:40Z",
+  "version": "1.16.87",
+  "notes": "数据目录解析失败时应用会把库建到别处（这次进了仓库、差点被提交）：引擎现在与界面同源解析、绝不退回工作目录，并把",
+  "pub_date": "2026-09-18T16:18:50Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RnQnpMK2RjUkNmd3hqMXBOYkpWNHprZGRuaXQ4YmhTT0pOOThqQWYrQWwrejFYVFRCME1TaXMzOGloSHFZb0w0N3VmM3E0ZytLWElLV0ZLell2SXdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzQ2NTE2CWZpbGU6Q29kZW1fMS4xNi44Nl94NjQtc2V0dXAuZXhlCkxEUkhReFFzZ1Z6dDY1ZEtUd1RlS0VwSHVGVUJlc1k0TnFVbzhLSVpzWHkyNUVteDM4eEpoUE80SUt3bUhYaVBHeFkrcEErdVZWOE5WR2dIazJLWEFBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.86/Codem_1.16.86_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Y1TzVIMDZpQmRMY0RHenhidE4xd1Y1ZjE0aTh5b0NrVE9KTTFNckJ4Z3plRWpqV1BqYy9jYzg4YkdiUHF2Q29WS2Z5ZUdKdTNCTVhnL0VvQXcvaWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzQ4MzI1CWZpbGU6Q29kZW1fMS4xNi44N194NjQtc2V0dXAuZXhlClhtbGJybGJ6VktRREdpRUhnR3JCdkZqTGZmYU5UQXVBcGZ6bEg5eTJWcGlHZmVQNGdSNGx4NFZ6d1l6bmg2Qk8yTmVCendDbXlHNFdYQmR4WVo1NEN3PT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.87/Codem_1.16.87_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RnQnpMK2RjUkNmd3hqMXBOYkpWNHprZGRuaXQ4YmhTT0pOOThqQWYrQWwrejFYVFRCME1TaXMzOGloSHFZb0w0N3VmM3E0ZytLWElLV0ZLell2SXdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzQ2NTE2CWZpbGU6Q29kZW1fMS4xNi44Nl94NjQtc2V0dXAuZXhlCkxEUkhReFFzZ1Z6dDY1ZEtUd1RlS0VwSHVGVUJlc1k0TnFVbzhLSVpzWHkyNUVteDM4eEpoUE80SUt3bUhYaVBHeFkrcEErdVZWOE5WR2dIazJLWEFBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.86/Codem_1.16.86_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Y1TzVIMDZpQmRMY0RHenhidE4xd1Y1ZjE0aTh5b0NrVE9KTTFNckJ4Z3plRWpqV1BqYy9jYzg4YkdiUHF2Q29WS2Z5ZUdKdTNCTVhnL0VvQXcvaWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzQ4MzI1CWZpbGU6Q29kZW1fMS4xNi44N194NjQtc2V0dXAuZXhlClhtbGJybGJ6VktRREdpRUhnR3JCdkZqTGZmYU5UQXVBcGZ6bEg5eTJWcGlHZmVQNGdSNGx4NFZ6d1l6bmg2Qk8yTmVCendDbXlHNFdYQmR4WVo1NEN3PT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.87/Codem_1.16.87_x64-setup.exe"
     }
   }
 }

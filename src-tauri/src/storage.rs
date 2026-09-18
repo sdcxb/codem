@@ -85,6 +85,16 @@ pub struct StorageState {
     /// 渲染侧必须知道这件事（写"索引需要重建"标记 + 提示用户）：
     /// 悄悄恢复等于用户永远不知道自己丢过一次索引。
     recovered_from: Mutex<Option<String>>,
+    /**
+     * 库路径**是不是标准位置**（`%APPDATA%\com.codem.app`），以及若不是则为什么。
+     *
+     * 第 55 轮新增：非标准位置原来是"静默"的 —— 数据目录解析失败时应用会
+     * 在**工作目录**里建一个新库，用户看到的却是"另一个库"（真机事故：用户数据
+     * 落进仓库工作目录，差点被提交）。现在这两个字段由 `storage_health` 暴露，
+     * 界面/诊断能直接看到"这次的库不在标准位置，原因是 X"。
+     */
+    db_path_standard: bool,
+    db_path_reason: Option<String>,
 }
 
 impl StorageState {
@@ -93,6 +103,8 @@ impl StorageState {
             path,
             engine: Mutex::new(None),
             recovered_from: Mutex::new(None),
+            db_path_standard: true,
+            db_path_reason: None,
         }
     }
 
@@ -127,32 +139,158 @@ impl StorageState {
     }
 }
 
-/// 解析库文件路径：`%APPDATA%\com.codem.app\codem-db-rust.bin`
+/// 数据目录的解析结果：路径 + **它是怎么来的**。
+///
+/// 「怎么来的」必须一起返回，因为"库文件在哪"这件事**不能靠猜**：
+/// 第 55 轮真事故就是解析退到当前目录之后，用户数据落进了仓库工作目录，
+/// 而没有任何一处能说出"这次用的是非标准位置"。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedDbPath {
+    pub path: PathBuf,
+    /// `true` = 标准位置（`%APPDATA%\com.codem.app`）
+    pub standard: bool,
+    /// 非标准时必须能说清原因（写进日志 / 健康检查，别让它静默）
+    pub reason: Option<String>,
+}
+
+/// 解析库文件路径：**标准位置是** `%APPDATA%\com.codem.app\codem-db-rust.bin`
 ///
 /// 刻意**不依赖 `AppHandle`**：Tauri 的 `.manage(state)` 必须在 `.build()` 之前调用，
-/// 而 AppHandle 那时才存在。这里用与 Tauri `app_data_dir()` 相同的规则
-/// （Windows: `%APPDATA%\<identifier>`）自行解析，既消除了初始化顺序耦合，
-/// 又让 CLI / 测试 / 迁移工具能用同一套路径规则。
-pub fn resolve_db_path() -> PathBuf {
+/// 而 AppHandle 那时才存在。所以这里自行解析，但**必须与 Tauri 用同一条规则**。
+///
+/// ## 第 55 轮修正（两件事）
+///
+/// ### ① 优先用"已知文件夹"，而不是 `APPDATA` 环境变量
+///
+/// 原实现读 `std::env::var_os("APPDATA")`，而 Tauri 的 `app_data_dir()` 走的是
+/// Windows 的 `SHGetKnownFolderPath(FOLDERID_RoamingAppData)`（`dirs` crate 同款）。
+/// **两者不等价**：环境变量缺失（自定义环境启动、被清掉、被改）时，
+/// 渲染侧（走 Tauri）照样拿到真实的数据目录，而引擎（走环境变量）解析失败——
+/// **同一个事实两个来源**，真机后果就是"渲染侧把日志写进真目录、引擎把库建到别处"。
+/// 现在引擎也用 `dirs::data_dir()`，两边**按构造一致**。
+///
+/// ### ② 绝不再退回"当前目录里的裸文件名"
+///
+/// 原来的兜底是 `PathBuf::from(DB_FILE_NAME)`（相对路径 = 工作目录），理由是
+/// "宁可可用也不要存储层直接不可用"。真机后果（2026-09-18 实测）：`APPDATA` 缺失时
+/// 应用**静默**在 `C:\mimo-gui\`（仓库工作目录）建了一个**全新的库** ——
+/// 用户看到的是另一个库、数据写进任意目录（那次还差点被 `git add -A` 提交进公开仓库）、
+/// 两个库就此分叉而没有任何信号。
+///
+/// 现在的顺序（每一步都能说清"为什么是这里"，非标准一律告警 + 由 `storage_info` 暴露）：
+///
+/// 1. `CODEM_DB_PATH`（显式覆盖，**唯一**受支持的"把库放到别处"的方式）；
+/// 2. `dirs::data_dir()`（**与 Tauri 同源**：Windows = Roaming AppData）；
+/// 3. `XDG_DATA_HOME` / `HOME`（非 Windows 习惯）；
+/// 4. `%USERPROFILE%\.codem`（Windows 上连已知文件夹都取不到时的**私有**目录）；
+/// 5. 全都没有 → 工作目录下的 **`.codem-portable/`** 子目录（名字自带说明）＋ 大声告警。
+pub fn resolve_db_path() -> ResolvedDbPath {
+    resolve_db_path_from(
+        std::env::var_os("CODEM_DB_PATH"),
+        dirs::data_dir(),
+        std::env::var_os("XDG_DATA_HOME"),
+        std::env::var_os("HOME"),
+        std::env::var_os("USERPROFILE"),
+    )
+}
+
+/// 纯函数形态：把"各种候选来源"作为参数传进来，**每一档都可被单测覆盖**。
+///
+/// 抽出来的理由很直接：真机上的分支（已知文件夹取不到、环境变量全缺）在测试里造不出来，
+/// 而"造不出来的分支"恰恰是最容易写错、也最没人复核的那种。
+pub(crate) fn resolve_db_path_from(
+    explicit: Option<std::ffi::OsString>,
+    known_folder: Option<PathBuf>,
+    xdg: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+    userprofile: Option<std::ffi::OsString>,
+) -> ResolvedDbPath {
     let identifier = "com.codem.app";
-    let base = std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("XDG_DATA_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
-    match base {
-        Some(dir) => dir.join(identifier).join(DB_FILE_NAME),
-        // 极端情况（环境变量都缺失）：退回当前目录，宁可可用也不要"存储层直接不可用"
-        None => PathBuf::from(DB_FILE_NAME),
+    let non_empty = |v: Option<std::ffi::OsString>| -> Option<PathBuf> {
+        v.filter(|s| !s.is_empty()).map(PathBuf::from)
+    };
+
+    // ① 显式覆盖
+    if let Some(p) = non_empty(explicit) {
+        return ResolvedDbPath {
+            path: p,
+            standard: false,
+            reason: Some("由环境变量 CODEM_DB_PATH 指定".to_string()),
+        };
     }
+
+    // ② 与 Tauri 同源的已知文件夹（这是"标准位置"）
+    if let Some(base) = known_folder {
+        return ResolvedDbPath {
+            path: base.join(identifier).join(DB_FILE_NAME),
+            standard: true,
+            reason: None,
+        };
+    }
+
+    // ③ XDG / HOME（非 Windows 习惯）
+    if let Some(xdg) = non_empty(xdg) {
+        return ResolvedDbPath {
+            path: xdg.join(identifier).join(DB_FILE_NAME),
+            standard: false,
+            reason: Some("取不到系统数据目录，退回 XDG_DATA_HOME".to_string()),
+        };
+    }
+    if let Some(home) = non_empty(home) {
+        return ResolvedDbPath {
+            path: home.join(".local/share").join(identifier).join(DB_FILE_NAME),
+            standard: false,
+            reason: Some("取不到系统数据目录，退回 $HOME/.local/share".to_string()),
+        };
+    }
+
+    // ④ Windows 上连已知文件夹都取不到时的私有目录（**仍不在工作目录里**）
+    if let Some(profile) = non_empty(userprofile) {
+        return ResolvedDbPath {
+            path: profile.join(".codem").join(DB_FILE_NAME),
+            standard: false,
+            reason: Some("取不到系统数据目录，退回 %USERPROFILE%\\.codem（用户私有目录）".to_string()),
+        };
+    }
+
+    // ⑤ 最后兜底：**带名字的子目录**（不是裸相对文件名），并在下面统一告警
+    ResolvedDbPath {
+        path: PathBuf::from(".codem-portable").join(DB_FILE_NAME),
+        standard: false,
+        reason: Some(
+            "系统数据目录与 APPDATA / XDG_DATA_HOME / HOME / USERPROFILE 全部不可用：\
+             退回工作目录下的 .codem-portable/"
+                .to_string(),
+        ),
+    }
+}
+
+/// 解析并**把非标准位置说出来**（供 `init_state` 与诊断使用）
+pub fn resolve_db_path_warned() -> ResolvedDbPath {
+    let resolved = resolve_db_path();
+    if let Some(reason) = &resolved.reason {
+        eprintln!(
+            "[Storage] ⚠️ 库文件不在标准位置：{} —— 原因：{reason}。\
+             若这不是你想要的，请设置 CODEM_DB_PATH 指定库路径（或用标准环境启动，让 APPDATA 可用）。",
+            resolved.path.to_string_lossy()
+        );
+    }
+    resolved
 }
 
 /// Rust 引擎的库文件名。与 WASM 侧 `codem-db.bin` **刻意分开**：
 /// 迁移期两个引擎可并存对照、互不锁文件；数据搬迁由 P4 的迁移/对账工具负责。
 pub const DB_FILE_NAME: &str = "codem-db-rust.bin";
 
-/// 初始化存储态（在 `run()` 里构造并 `manage`）
+/// 初始化存储态（在 `run()` 里构造并 `manage`）。
+///
+/// 走 `resolve_db_path_warned()`：**非标准位置必须留下一行告警**（第 55 轮）。
 pub fn init_state() -> StorageState {
-    StorageState::new(resolve_db_path())
+    let resolved = resolve_db_path_warned();
+    let mut state = StorageState::new(resolved.path);
+    state.db_path_standard = resolved.standard;
+    state.db_path_reason = resolved.reason;
+    state
 }
 
 fn reply(result: Result<Value, DbError>) -> StorageReply {
@@ -285,6 +423,18 @@ pub fn storage_health(state: State<'_, StorageState>) -> StorageReply {
     };
     reply(engine.health().and_then(|h| {
         let mut v = serde_json::to_value(h).map_err(|e| DbError::other(e.to_string()))?;
+        // 第 55 轮：**库路径的来源**也要附着在 health 上（与下面的"损坏恢复"同理）。
+        //
+        // 渲染侧每次启动都调 `health`，所以"这次的库不在标准位置"会自动被看到。
+        // `db_path_standard` 只有 `init_state()` 走过 `resolve_db_path_warned()`
+        // 才会是 `false`；直接 `StorageState::new(路径)`（测试/工具）默认按标准处理。
+        if let Value::Object(ref mut map) = v {
+            map.insert("db_path".to_string(), Value::String(state.path().to_string_lossy().to_string()));
+            map.insert("db_path_standard".to_string(), Value::Bool(state.db_path_standard));
+            if let Some(reason) = &state.db_path_reason {
+                map.insert("db_path_reason".to_string(), Value::String(reason.clone()));
+            }
+        }
         /* 把"是否发生过损坏恢复"附在健康检查上（第 19 轮）。
          *
          * 为什么放在这里而不是单开一条命令：渲染侧**每次启动都会调 health**（端口预热的第一步），
@@ -390,12 +540,19 @@ pub fn storage_capabilities() -> Value {
 }
 
 /// 库文件路径 + 是否存在（迁移工具与诊断用）
+///
+/// 第 55 轮加了**路径来源**两个字段：`standard` 与 `reason`。
+/// 为什么必须暴露：数据目录解析失败时应用会在别处建库（旧实现是工作目录），
+/// 而"库在哪、为什么在那儿"如果只有 stderr 一行日志，界面与诊断面板都看不到 ——
+/// 用户看到的只是"我的历史不见了"。有了这两个字段，UI 才有办法把真相说出来。
 #[tauri::command]
 pub fn storage_info(state: State<'_, StorageState>) -> Value {
     json!({
         "engine": "rust",
         "path": state.path().to_string_lossy(),
         "exists": state.path().exists(),
+        "standard": state.db_path_standard,
+        "reason": state.db_path_reason,
     })
 }
 
@@ -410,6 +567,115 @@ mod tests {
         assert!(st.path().ends_with("codem-db-rust.bin"));
         // 惰性打开：构造后还没打开任何连接
         assert!(st.engine.lock().unwrap().is_none());
+    }
+
+    /// ## 第 55 轮：解析规则必须满足两条**能复现**的判据
+    ///
+    /// 用纯函数 `resolve_db_path_from` 把每一档都造出来（真机上造不出的分支，
+    /// 恰恰是最容易写错、最没人复核的那些）。
+    ///
+    /// ① **与 Tauri 同源**：有"已知文件夹"时就用它（真机事故的反面：
+    ///    `APPDATA` 环境变量在不在，都不该改变库的位置）；
+    /// ② **绝不退回"当前目录里的裸文件名"**：那是真事故的根因
+    ///    （数据落进仓库工作目录，差点被提交）。
+    #[test]
+    fn resolve_db_path_rules_are_reproducible() {
+        use std::ffi::OsString;
+
+        // ① 显式覆盖优先，且不依赖其它任何来源
+        let r = resolve_db_path_from(
+            Some(OsString::from(r"C:\explicit\db.bin")),
+            Some(PathBuf::from(r"C:\Users\t\AppData\Roaming")),
+            Some(OsString::from("/xdg")),
+            Some(OsString::from("/home/t")),
+            Some(OsString::from(r"C:\Users\t")),
+        );
+        assert_eq!(r.path, PathBuf::from(r"C:\explicit\db.bin"));
+        assert!(!r.standard, "显式覆盖不算标准位置");
+        assert!(r.reason.is_some(), "非标准位置必须能说清原因");
+
+        // ② 标准位置 = 已知文件夹（**与 Tauri `app_data_dir()` 同源**）
+        let r = resolve_db_path_from(None, Some(PathBuf::from(r"C:\Users\t\AppData\Roaming")), None, None, None);
+        assert_eq!(
+            r.path,
+            PathBuf::from(r"C:\Users\t\AppData\Roaming")
+                .join("com.codem.app")
+                .join(DB_FILE_NAME)
+        );
+        assert!(r.standard);
+        assert!(r.reason.is_none(), "标准位置不该有'原因'");
+
+        // ③ 空的环境变量**不算提供**（`Some("")` 与 `None` 同义）
+        let r = resolve_db_path_from(
+            Some(OsString::from("")),
+            Some(PathBuf::from(r"C:\Users\t\AppData\Roaming")),
+            Some(OsString::from("")),
+            None,
+            None,
+        );
+        assert!(r.standard, "空 CODEM_DB_PATH 不该被当成覆盖");
+
+        // ④ 已知文件夹取不到 → 逐级退回，但**每一级都不在工作目录里**
+        let r = resolve_db_path_from(None, None, Some(OsString::from("/xdg")), None, None);
+        assert_eq!(r.path, PathBuf::from("/xdg").join("com.codem.app").join(DB_FILE_NAME));
+        assert!(!r.standard && r.reason.is_some());
+
+        let r = resolve_db_path_from(None, None, None, Some(OsString::from("/home/t")), None);
+        assert_eq!(
+            r.path,
+            PathBuf::from("/home/t").join(".local/share").join("com.codem.app").join(DB_FILE_NAME)
+        );
+        assert!(r.reason.is_some());
+
+        let r = resolve_db_path_from(None, None, None, None, Some(OsString::from(r"C:\Users\t")));
+        assert_eq!(r.path, PathBuf::from(r"C:\Users\t").join(".codem").join(DB_FILE_NAME));
+        assert!(!r.path.is_relative(), "用户私有目录也必须是绝对路径");
+        assert!(r.reason.is_some());
+
+        // ⑤ **全部不可用** → 兜底也必须是"带名字的子目录"，绝不是裸文件名
+        let r = resolve_db_path_from(None, None, None, None, None);
+        assert!(
+            r.path.starts_with(".codem-portable"),
+            "最后的兜底必须是带名字的子目录（可辨认、可忽略），实际：{:?}",
+            r.path
+        );
+        assert_ne!(
+            r.path,
+            PathBuf::from(DB_FILE_NAME),
+            "绝不允许退回'当前目录里的裸文件名'（第 55 轮真事故的根因）"
+        );
+        assert!(r.reason.is_some(), "兜底档必须带原因（会被 eprintln 告警）");
+    }
+
+    /// 真机的那次事故：`APPDATA` 环境变量被清掉时，**库的位置不该变**。
+    ///
+    /// 这一条与上一条的区别：它真的去读环境变量与 `dirs::data_dir()`，
+    /// 所以它守的是"引擎与 Tauri 同源"这个**接线**（纯函数测不到接线）。
+    #[test]
+    fn db_path_does_not_depend_on_appdata_env_var() {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let saved_appdata = std::env::var_os("APPDATA");
+        let saved_explicit = std::env::var_os("CODEM_DB_PATH");
+        std::env::remove_var("CODEM_DB_PATH");
+
+        let with_appdata = resolve_db_path();
+        std::env::remove_var("APPDATA");
+        let without_appdata = resolve_db_path();
+
+        assert_eq!(
+            with_appdata.path, without_appdata.path,
+            "清掉 APPDATA 之后库的位置变了 —— 那正是真事故（数据落进工作目录）的形态"
+        );
+        assert!(!without_appdata.path.is_relative(), "库路径必须是绝对路径或带名字的子目录");
+
+        if let Some(v) = saved_appdata {
+            std::env::set_var("APPDATA", v);
+        }
+        if let Some(v) = saved_explicit {
+            std::env::set_var("CODEM_DB_PATH", v);
+        }
     }
 
     #[test]

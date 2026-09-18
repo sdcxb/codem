@@ -1,6 +1,6 @@
 [package]
 name = "codem"
-version = "1.16.86"
+version = "1.16.87"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"
@@ -17,6 +17,13 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
+# 第 55 轮：库文件路径要与 Tauri 的 `app_data_dir()` **同源**。
+#
+# `dirs::data_dir()` 在 Windows 上走 `SHGetKnownFolderPath(FOLDERID_RoamingAppData)`
+# （即 Tauri 用的那条规则），而**不是**读 `APPDATA` 环境变量 —— 环境变量缺失时两者会分叉：
+# 渲染侧（走 Tauri）照常写真实数据目录、引擎（走环境变量）却把库建到别处
+# （真机事故：库落进仓库工作目录，数据差点被提交）。同源之后这类分叉按构造不可能发生。
+dirs = "6"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"

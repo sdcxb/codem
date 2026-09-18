@@ -1076,6 +1076,168 @@ fn upsert_index_replaces_tool_calls_atomically() {
     assert_eq!(got["item"]["content"], json!("第二版"));
 }
 
+/// ## 第 55 轮：**`tool_calls` 的量级用例**（这是审计里点名的缺口）
+///
+/// 缺口原话：「`tool_calls` 大 payload 在真 CLI 契约中**无量级用例**」——
+/// 当时的证据只有一次性探针（我记得做过 500 个工具调用 / 1.05 MB 的钻取），
+/// 但**仓库里没有守着它的用例**：`engine_tests` 里关于 `tool_calls` 的三条
+/// （`upsert_index_replaces_tool_calls_atomically` / `_without_tool_calls_leaves_them_alone` /
+/// `tool_calls_replace_rejects_orphan`）用的都是**两三条、几十字节**的样例。
+///
+/// 工具调用的 payload 与消息正文不同：它是**结构化 JSON**（args / result 两段都可能是
+/// 几 MB 的补丁、grep 输出、网页正文），而且是**一次写几十上百条**。
+/// 所以量级要分三个维度都压一遍：
+///
+/// | 维度 | 本用例的量 |
+/// | --- | --- |
+/// | 单个工具调用的 args | **约 2 MiB**（UTF-8 中文 + 换行，逼出长度/编码类截断） |
+/// | 单个工具调用的 result | **约 2 MiB** |
+/// | 一条消息上的工具调用**条数** | **500** |
+///
+/// 判据：① 写进去的条数如实返回；② `tool_calls.list` 读回来**逐字节相等**（首尾各校验一遍，
+/// 中间抽样）；③ 含 emoji 的多字节内容不许被"字符数/字节数"混淆；④ 整批替换仍然原子。
+#[test]
+fn tool_calls_payload_scale_is_byte_exact() {
+    let (_d, e) = temp_engine("tool-scale");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+
+    // 约 2 MiB 的 args / result（中文 3 字节 + emoji 4 字节，确保不能被当成 ASCII 长度）
+    //
+    // ⚠️ 这里的重复次数我第一版算错了（`"参数内容🙂\n"` 是 17 字节，6 万次只有 1.02 MB，
+    // 断言当场红）。**量级用例的第一个坑就是"以为自己造够大了"**，所以下面既断长度、也留实测值。
+    let big_args: String = "参数内容🙂\n".repeat(130_000); // 17 B × 130k ≈ 2.21 MB
+    let big_result: String = "结果内容✅\n".repeat(130_000);
+    assert!(
+        big_args.len() > 2_000_000,
+        "args 应超过 2 MB，实际 {} 字节",
+        big_args.len()
+    );
+    assert!(
+        big_result.len() > 2_000_000,
+        "result 应超过 2 MB，实际 {} 字节",
+        big_result.len()
+    );
+
+    // 第一条：超大 args + 超大 result；其余 499 条：普通大小（模拟"一次写一批"）
+    let mut calls: Vec<serde_json::Value> = Vec::with_capacity(500);
+    calls.push(json!({
+        "id": "t0",
+        "tool": "apply_patch",
+        "args": { "patch": big_args },
+        "status": "done",
+        "result": big_result,
+    }));
+    for i in 1..500 {
+        calls.push(json!({
+            "id": format!("t{i}"),
+            "tool": "read_file",
+            "args": { "path": format!("src/file_{i}.ts") },
+            "status": "done",
+            "result": format!("第 {i} 个文件的正文"),
+        }));
+    }
+
+    let t_write = std::time::Instant::now();
+    let written = call(
+        &e,
+        "messages.upsert_index",
+        json!({
+            "id": "m1",
+            "session_id": "s1",
+            "role": "assistant",
+            "content": "带 500 个工具调用的回合",
+            "tool_calls": calls,
+        }),
+    );
+    let write_ms = t_write.elapsed().as_millis();
+    assert_eq!(written["tool_calls"], json!(500), "500 条必须一条不少地写进去");
+
+    // 读回来：条数 + 逐字节内容
+    let t_read = std::time::Instant::now();
+    let listed = call(&e, "tool_calls.list", json!({ "message_id": "m1" }));
+    let read_ms = t_read.elapsed().as_millis();
+    /*
+     * 把量级**打印出来**（`cargo test ... -- --nocapture` 可见）。
+     *
+     * 为什么值得打印：这条用例的意义就是"某个量级真的能过"，
+     * 而"能过"必须带上当时的数字才有复核价值（换了机器、换了实现，
+     * 数字变化本身就是信号）。审计里点名的缺口正是"**没有量级用例**"。
+     */
+    println!(
+        "[tool-scale] 500 条工具调用（其中 1 条约 {:.2} MB args + {:.2} MB result）\
+         写入 {} ms / 读回 {} ms",
+        big_args.len() as f64 / 1048576.0,
+        big_result.len() as f64 / 1048576.0,
+        write_ms,
+        read_ms
+    );
+    let items = listed["items"].as_array().expect("items 必须是数组");
+    assert_eq!(items.len(), 500, "读回来的条数必须与写入一致");
+
+    let big = items
+        .iter()
+        .find(|t| t["id"] == json!("t0"))
+        .expect("超大那条必须在");
+    /*
+     * ⚠️ 线协议形状（实测，不是猜的）：`tool_calls.list` 返回的 `args` 是
+     * **JSON 字符串**（`"{\"patch\":\"…\"}"`），不是对象 —— 渲染侧也是按字符串存的。
+     * 所以判据要**穿过这一层编码**去比：解回来再逐字节对，
+     * 否则测的就只是"字符串长度"，而"内容被转义坏掉"这种缺陷照样能过。
+     */
+    let args_str = big["args"].as_str().expect("args 必须是 JSON 字符串（线协议形状）");
+    let args_json: serde_json::Value =
+        serde_json::from_str(args_str).expect("args 必须是合法 JSON 字符串");
+    let result_str = big["result"].as_str().expect("result 必须是字符串");
+    assert_eq!(
+        args_json["patch"].as_str().expect("patch 必须是字符串").len(),
+        big_args.len(),
+        "2 MiB 的 args 必须逐字节相等（长度）"
+    );
+    assert_eq!(result_str.len(), big_result.len(), "2 MiB 的 result 必须逐字节相等（长度）");
+    assert_eq!(
+        args_json["patch"].as_str().unwrap(),
+        big_args.as_str(),
+        "内容也要相等（长度相同但内容被换掉/转义坏掉是最坏的那种'看起来对'）"
+    );
+    assert_eq!(result_str, big_result.as_str());
+
+    // 中间抽样：500 条里随便挑几条，确认不是只有首尾对
+    for idx in [1usize, 137, 498] {
+        let want_id = format!("t{idx}");
+        let got = items
+            .iter()
+            .find(|t| t["id"] == json!(want_id))
+            .unwrap_or_else(|| panic!("{want_id} 应当存在"));
+        let got_args: serde_json::Value =
+            serde_json::from_str(got["args"].as_str().expect("args 是 JSON 字符串")).unwrap();
+        assert_eq!(got_args["path"], json!(format!("src/file_{idx}.ts")));
+        assert_eq!(got["result"], json!(format!("第 {idx} 个文件的正文")));
+    }
+
+    // 原子性：这一版整体替换成 1 条，旧 500 条不能残留（含那条 2 MiB 的）
+    let replaced = call(
+        &e,
+        "messages.upsert_index",
+        json!({
+            "id": "m1",
+            "session_id": "s1",
+            "role": "assistant",
+            "content": "收尾",
+            "tool_calls": [{ "id": "t-last", "tool": "noop", "args": {}, "status": "done" }],
+        }),
+    );
+    assert_eq!(replaced["tool_calls"], json!(1));
+    let after = call(&e, "tool_calls.list", json!({ "message_id": "m1" }));
+    let after_items = after["items"].as_array().unwrap();
+    assert_eq!(after_items.len(), 1, "整体替换后旧工具调用不许残留（含大 payload 那条）");
+    assert_eq!(after_items[0]["id"], json!("t-last"));
+
+    // 会话级计数仍然自洽（大 payload 不该让维护性计数漂移）
+    let counts = call(&e, "counts", json!({}));
+    assert_eq!(counts["tool_calls"], json!(1), "写回后总工具调用数应为 1");
+    assert_eq!(counts["messages"], json!(1));
+}
+
 /// 不给 `tool_calls` 时**不得**动已有工具调用（"没提"不等于"清空"）
 #[test]
 fn upsert_index_without_tool_calls_leaves_them_alone() {

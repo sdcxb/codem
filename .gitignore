@@ -131,7 +131,9 @@ codem-db.bin-shm
 codem-db.bin.pre-*
 codem-db.bin.corrupt-*
 # 会话权威日志（JSONL）与运行时日志：同样是用户数据
-sessions/
+# ⚠️ 只锚定**仓库根**（`/sessions/`）：数据目录解析失败时引擎会把它们落在工作目录，
+# 而工作目录就是仓库根。锚定根目录可以避免误伤将来任何叫 `sessions/` 的源码目录。
+/sessions/
 codem-runtime-*.log
 
 
