@@ -3924,6 +3924,23 @@ background: var(--bg-secondary);
   font-size: var(--fs-md);
 }
 
+/* 「暂时读不到项目列表」的重试入口（第 47 轮补） */
+.project-retry-btn {
+  display: block;
+  margin: var(--space-3) auto 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.project-retry-btn:hover {
+  background: var(--bg-hover);
+}
+
 .project-item {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;

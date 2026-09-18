@@ -33,7 +33,7 @@ interface ProjectManagerProps {
 }
 
 export function ProjectManager({ onClose }: ProjectManagerProps) {
-  const { projects, createProject, openProject, deleteProject, setInstructions, setSkills, setMemories } = useProjectStore();
+  const { projects, projectsReadUnavailable, createProject, openProject, deleteProject, setInstructions, setSkills, setMemories } = useProjectStore();
   const [mode, setMode] = useState<"list" | "create" | "import" | "env" | "git-create" | "git-clone">("list");
   const [newName, setNewName] = useState("");
   const [newPath, setNewPath] = useState("");
@@ -326,7 +326,28 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
             </div>
 
             <div className="project-items">
-              {projects.length === 0 && (
+              {/*
+                第 47 轮补（UI/UX 审计 P1 第三处）：**"读不到"不是"没有项目"**。
+
+                原来只有 `projects.length === 0` 一个判据 → 冷启动或引擎起不来时
+                （`projects` 镜像还没接手，`listProjects()` 返回空）面板显示
+                「暂无项目，新建或导入一个」—— 用户会以为自己建过的项目全没了。
+                现在读不到时明确说"暂时读不到"并给重试入口（判据由 store 给出，
+                取"读路径是否可用"而不是"结果是不是空"）。
+              */}
+              {projects.length === 0 && projectsReadUnavailable && (
+                <div className="project-empty" data-testid="projects-unavailable">
+                  暂时读不到项目列表（存储引擎可能还在启动）。这不代表项目丢了，请稍后重试。
+                  <button
+                    type="button"
+                    className="project-retry-btn"
+                    onClick={() => useProjectStore.getState().loadFromDB()}
+                  >
+                    重新读取
+                  </button>
+                </div>
+              )}
+              {projects.length === 0 && !projectsReadUnavailable && (
                 <div className="project-empty">暂无项目，新建或导入一个</div>
               )}
               {projects.map((p) => (

@@ -569,14 +569,25 @@ setTimeout(() => setCopied(false), 2000);
           />
         ))}
 
-        {/* P1 #20: Error card for error messages */}
+        {/*
+          P1 #20: Error card for error messages
+          第 47 轮补（UI/UX 审计 P1）：这里原来写的是 `retryable` +
+          `onRetry={() => { /* retry handled by parent via onEditAndResend *\/ }}` ——
+          也就是**画了一个"可重试"的按钮，点了什么都不发生**。
+          注释说"由父组件通过 onEditAndResend 处理"，但 `onEditAndResend` 的语义是
+          "编辑并重发**用户消息**"，而这张卡片挂在**助手**的错误行上：
+          这条路径上根本不存在重试入口。
+
+          印一个按不动的按钮比不印更糟（用户会以为自己没点到）。这里改成**如实**：
+          不声称可重试，而是告诉用户怎么重来（重新发送上一条，或用助手消息上的
+          「重新生成」——那是由 ChatPanel 在回合级别提供的）。
+        */}
         {isError && !isUser && (
           <ErrorCard
             title={lang === "zh" ? "执行出错" : "Execution Error"}
             message={message.content || (lang === "zh" ? "未知错误" : "Unknown error")}
             details={message.reasoning || undefined}
-            retryable
-            onRetry={() => { /* retry handled by parent via onEditAndResend */ }}
+            retryable={false}
           />
         )}
 

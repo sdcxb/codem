@@ -9,6 +9,9 @@ import { FileChangesList } from "./FileChangesList";
 import { FileExplorer } from "./FileExplorer";
 import { CicdPanel } from "./CicdPanel";
 import { useProjectStore } from "../core/store";
+// 第 47 轮补：工作台面板的文件改动区块要读**真实数据**（原来是硬编码空数组）
+import { FileChangeStorage } from "../core/storage/file-change-storage";
+import { onFileChangesTracked } from "../core/environment/file-change-tracker";
 
 type SidebarTab = "git" | "workbench" | "files" | "changes" | "cicd";
 
@@ -48,6 +51,15 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>("git");
   const { currentProject, currentSession } = useProjectStore();
   const currentSessionId = currentSession?.id || "";
+  /**
+   * 第 47 轮补：工作台面板的真实状态与数据（原来三个值全是硬编码，
+   * 见下面渲染处的长注释）。`modifiedFiles` 读的是**本会话的逐轮文件改动**，
+   * 与 `FileChangesList` 同一份来源。
+   */
+  const [workbenchCollapsed, setWorkbenchCollapsed] = useState(false);
+  const [modifiedFiles, setModifiedFiles] = useState<
+    Array<{ path: string; additions: number; deletions: number }>
+  >([]);
   const disabledPlugins = useDisabledPlugins();
   const cicdEnabled = !disabledPlugins.includes('@codem/ui-misc');
 
@@ -65,6 +77,45 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
 
   // 如果当前 activeTab 被隐藏了，回退到 git
   const effectiveTab = tabs.some(t => t.id === activeTab) ? activeTab : "git";
+
+  /**
+   * 第 47 轮补：把本会话的逐轮文件改动取出来喂给工作台。
+   *
+   * 只在**切到工作台 tab 时**读（那是低频动作），并订阅 `onFileChangesTracked`
+   * 以便新回合改动后自动刷新 —— 与 `FileChangesList` 同一种做法。
+   */
+  useEffect(() => {
+    if (effectiveTab !== "workbench" || !currentSessionId) {
+      setModifiedFiles([]);
+      return;
+    }
+    const load = () => {
+      try {
+        const records = FileChangeStorage.listBySession(currentSessionId);
+        const byPath = new Map<string, { path: string; additions: number; deletions: number }>();
+        for (const rec of records) {
+          let files: Array<{ path: string; status: string }> = [];
+          try {
+            const parsed = rec.changed_files ? JSON.parse(rec.changed_files) : [];
+            if (Array.isArray(parsed)) files = parsed;
+          } catch {
+            /* 坏行跳过：一个坏记录不该让整块面板空掉 */
+          }
+          for (const f of files) {
+            // 同一文件在多轮里被改 → 合并（路径去重），不做数值上的真假推断
+            if (!byPath.has(f.path)) byPath.set(f.path, { path: f.path, additions: 0, deletions: 0 });
+          }
+        }
+        setModifiedFiles([...byPath.values()]);
+      } catch (e) {
+        console.warn("[PanelSidebar] 读取本会话文件改动失败（工作台文件区块留空）:", e);
+        setModifiedFiles([]);
+      }
+    };
+    load();
+    const unsub = onFileChangesTracked(load);
+    return unsub;
+  }, [effectiveTab, currentSessionId]);
 
   if (!open) return null;
 
@@ -113,11 +164,26 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
         {effectiveTab === "git" && <GitInfoPanel />}
         {effectiveTab === "workbench" && (
+          /*
+            第 47 轮补（UI/UX 审计 P1 的"死控件"那一类）：
+            这里原来传的是 `collapsed={false}` + `onToggle={() => {}}` +
+            `modifiedFiles={[]}` —— 三个硬编码值让工作台变成**一块永远折叠不了、
+            也永远没有内容的空面板**（`Workbench` 的内容完全来自这两个数组）。
+
+            修法：
+            - `collapsed` / `onToggle` 接**真实状态**（折叠按钮真的有反应）；
+            - `modifiedFiles` 接 `FileChangeStorage.listBySession(currentSessionId)`
+              的**真实数据**（那是本会话的逐轮文件改动，`FileChangesList` 读的同一份）。
+            - `activeTools` 暂时仍为空数组 —— 如实说明：本仓库目前**没有**"正在执行的工具"
+              的响应式数据源（`agentActivities` 的形态是 {step,total}，与此处的
+              `{name,status}` 不同，硬映射会造出一个看着像真的、其实是猜的列表）。
+              与其编一个，不如让它空着 —— 面板会因此不渲染该区块（不是显示假数据）。
+          */
           <Workbench
-            collapsed={false}
-            onToggle={() => {}}
+            collapsed={workbenchCollapsed}
+            onToggle={() => setWorkbenchCollapsed((v) => !v)}
             activeTools={[]}
-            modifiedFiles={[]}
+            modifiedFiles={modifiedFiles}
           />
         )}
         {effectiveTab === "files" && currentProject && (

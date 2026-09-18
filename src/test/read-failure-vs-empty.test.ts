@@ -196,3 +196,71 @@ describe("READFAIL：store 的 messagesReadUnavailable 三态", () => {
     ).toBe(true);
   });
 });
+
+// ==========================================================================
+// READFAIL：项目列表的第三处同形（loadFromDB → 「暂无项目」）
+// ==========================================================================
+
+describe("READFAIL：项目列表的三态（第三处同形）", () => {
+  async function stubProjectRead(unavailable: boolean) {
+    const projMod = await import("../core/storage/project");
+    vi.spyOn(projMod, "isProjectsReadUnavailable").mockReturnValue(unavailable);
+    return projMod;
+  }
+
+  it("READFAIL-9: 项目**确实为空**且读路径可用 → unavailable=false（「暂无项目」是对的）", async () => {
+    const { useProjectStore } = await import("../core/store");
+    const projMod = await stubProjectRead(false);
+    vi.spyOn(projMod, "listProjects").mockReturnValue([]);
+
+    useProjectStore.getState().loadFromDB();
+
+    expect(useProjectStore.getState().projects.length).toBe(0);
+    expect(
+      useProjectStore.getState().projectsReadUnavailable,
+      "读路径可用 + 空 = 用户确实没有项目 → 显示「暂无项目」正确",
+    ).toBe(false);
+  });
+
+  it("READFAIL-10: 读路径**不可用** → unavailable=true（必须说'暂时读不到'，不能说'你没有项目'）", async () => {
+    const { useProjectStore } = await import("../core/store");
+    const projMod = await stubProjectRead(true);
+    // 冷启动/引擎起不来时的形态：镜像还没接手 → listProjects() 返回空
+    vi.spyOn(projMod, "listProjects").mockReturnValue([]);
+
+    useProjectStore.getState().loadFromDB();
+
+    expect(useProjectStore.getState().projects.length).toBe(0);
+    expect(
+      useProjectStore.getState().projectsReadUnavailable,
+      "读路径不可用 → 必须说'暂时读不到'（否则用户会以为自己建过的项目全没了）",
+    ).toBe(true);
+  });
+
+  it("READFAIL-11: 列项目**抛错** → unavailable=true（抛错也是'读不到'，不是空列表）", async () => {
+    const { useProjectStore } = await import("../core/store");
+    await stubProjectRead(false);
+    const projMod = await import("../core/storage/project");
+    vi.spyOn(projMod, "listProjects").mockImplementation(() => {
+      throw new Error("引擎不可用");
+    });
+
+    useProjectStore.getState().loadFromDB();
+
+    expect(useProjectStore.getState().projectsReadUnavailable).toBe(true);
+    expect(useProjectStore.getState().dbReady, "dbReady 仍要为真，否则界面会一直卡在加载态").toBe(true);
+  });
+
+  it("READFAIL-12: 有项目 → unavailable=false（正常路径不许被改坏）", async () => {
+    const { useProjectStore } = await import("../core/store");
+    const projMod = await stubProjectRead(false);
+    vi.spyOn(projMod, "listProjects").mockReturnValue([
+      { id: "p1", name: "P", path: "C:/p", createdAt: 1, lastAccessedAt: 2 } as never,
+    ]);
+
+    useProjectStore.getState().loadFromDB();
+
+    expect(useProjectStore.getState().projects.length).toBe(1);
+    expect(useProjectStore.getState().projectsReadUnavailable).toBe(false);
+  });
+});

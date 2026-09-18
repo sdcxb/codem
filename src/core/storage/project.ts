@@ -20,7 +20,7 @@
  */
 
 import type { Project } from "../types";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, domainEnsureLoaded, domainPortRegistered, reportWriteNotAccepted } from "./domain-store";
 
 export interface ProjectRow {
   id: string;
@@ -96,6 +96,42 @@ export function listProjects(): Project[] {
   // 原来的 `tryGetDatabase() → if (!db) return []` 之所以要删：它把"没有旧库"
   // 当成一个**可能的**状态，而那个状态在新架构里不存在（旧库在 rust 模式下刻意不加载）。
   return [];
+}
+
+/**
+ * 这次列项目**有没有真的拿到数据**（第 47 轮补，UI/UX 审计 P1 的第三处同形）。
+ *
+ * ## 与"消息列表"那一处完全同源的问题
+ *
+ * `listProjects()` 返回空有两种完全不同的原因，而界面只看得到"空"：
+ * 1. 用户**确实没有项目** → 「暂无项目，新建或导入一个」是对的；
+ * 2. **读没有真的发生**（端口未注册 / projects 镜像还没接手）→ 显示「暂无项目」
+ *    是**错的**：冷启动或引擎起不来时，用户会以为自己建过的项目全没了。
+ *    （`App.tsx` 里那条 `[Store] projects 镜像在 6 秒内未就绪，项目列表可能为空` 的告警
+ *     正是这个窗口的物证。）
+ *
+ * 判据与 `listProjects` 的读路径同源：**问端口/镜像是否处于可用状态**，
+ * 而不是看"结果是不是空"。
+ */
+export function isProjectsReadUnavailable(): boolean {
+  let unavailable = false;
+  try {
+    if (!domainPortRegistered()) {
+      unavailable = true; // 端口没注册：这次读根本没有数据源
+    } else {
+      // 主动催一下加载；随后用 domainReadMany 的**三态**判据
+      domainEnsureLoaded(TABLE, () => {});
+      /* `domainReadMany` 的契约：`undefined` = **端口/镜像没接手**（读不到），
+       * 数组（哪怕是空数组）= 真的读到了。这正是我们要的区分，
+       * 而 `listProjects()` 把它压成了 `[]`（那是给"普通调用方"的方便语义）。 */
+      unavailable = domainReadMany(TABLE, wireToProject) === undefined;
+    }
+  } catch {
+    // 判据本身出错 → 按"读不到"处理（宁可多显示一句"读不到"，
+    // 也不要把"读不到"渲染成"你没有数据"）
+    unavailable = true;
+  }
+  return unavailable;
 }
 
 export function getProject(id: string): Project | null {

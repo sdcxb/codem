@@ -12722,6 +12722,17 @@
     "overflow": "hidden",
     "width": "560px"
   },
+  "project-retry-btn": {
+    "background": "none",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-xs)",
+    "color": "var(--text-primary)",
+    "cursor": "pointer",
+    "display": "block",
+    "font-size": "var(--fs-sm)",
+    "margin": "var(--space-3) auto 0",
+    "padding": "var(--space-2) var(--space-4)"
+  },
   "prompt-draft-picker": {
     "background": "var(--bg-secondary, #1a1a20)",
     "border": "1px solid var(--border-primary)",

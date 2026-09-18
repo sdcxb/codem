@@ -52,11 +52,30 @@ export const DecisionTray = memo(function DecisionTray({
     if (request) onApprove(request.id);
   }, [request, onApprove]);
 
+  /**
+   * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：这段"两步拒绝"以前是**死的**
+   *
+   * 组件里有 `showRejectInput` 状态、有那个"拒绝原因（可选）"输入框、
+   * 按钮文案还会随它切成「确认拒绝」—— 但全仓**只有 `setShowRejectInput(false)`**
+   * 一处赋值，从来没有人把它设成 `true`。于是：
+   * 输入框永不出现、按钮永远显示「拒绝」、`rejectReason` 永远是空串 ——
+   * 也就是说 `onReject(id, reason)` 的第二个参数**永远是 `undefined`**，
+   * 而下游（审批链路）拿不到任何拒绝理由。
+   * 形态与本仓库已修掉的"快速访问死 UI"、`aiBoundary` 死参数完全一样。
+   *
+   * 现在把它接上：第一次点「拒绝」→ 展开理由输入框（按钮变「确认拒绝」）；
+   * 第二次点 → 带着理由提交。
+   */
   const handleReject = useCallback(() => {
-    if (request) onReject(request.id, rejectReason || undefined);
+    if (!request) return;
+    if (!showRejectInput) {
+      setShowRejectInput(true);
+      return;
+    }
+    onReject(request.id, rejectReason || undefined);
     setRejectReason("");
     setShowRejectInput(false);
-  }, [request, onReject, rejectReason]);
+  }, [request, onReject, rejectReason, showRejectInput]);
 
   const handleClarify = useCallback(() => {
     if (request && request.type === "clarification") {

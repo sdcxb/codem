@@ -10,6 +10,14 @@ interface ProjectState {
   currentProject: Project | null;
   currentSession: Session | null;
   projects: Project[];
+  /**
+   * 第 47 轮补（UI/UX 审计 P1 第三处）：**"读不到项目"与"没有项目"是两件事**。
+   *
+   * `true` = 这次列项目**没有真的拿到数据**（端口未注册 / projects 镜像还没接手 / 读抛错）。
+   * 界面必须说"暂时读不到你的项目列表"，**绝不能**渲染成「暂无项目，新建或导入一个」——
+   * 冷启动或引擎起不来时，后者会让用户以为自己建过的项目全没了。
+   */
+  projectsReadUnavailable: boolean;
   sessions: Session[];
   skills: ProjectSkill[];
   memories: ProjectMemory[];
@@ -58,6 +66,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   currentProject: null,
   currentSession: null,
   projects: [],
+  projectsReadUnavailable: false,
   sessions: [],
   skills: [],
   memories: [],
@@ -69,11 +78,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const projects = ProjectStorage.listProjects();
       console.log("[Store] loadFromDB: found", projects.length, "projects");
-      set({ projects, dbReady: true });
+      /**
+       * 第 47 轮补（UI/UX 审计 P1 的第三处同形）：**"读不到"与"没有项目"必须分开**。
+       *
+       * `listProjects()` 返回空有两种原因，而界面只看得到"空"：
+       * ① 用户确实没有项目 → 「暂无项目，新建或导入一个」是对的；
+       * ② **读没有真的发生**（端口未注册 / projects 镜像还没接手）→ 显示「暂无项目」是**错的**：
+       *    冷启动或引擎起不来时，用户会以为自己建过的项目全没了。
+       *
+       * 判据取"读路径是否处于可用状态"（`isProjectsReadUnavailable`，与读路径同源），
+       * 而不是"结果是不是空" —— 后者分不出这两种。
+       */
+      set({
+        projects,
+        dbReady: true,
+        projectsReadUnavailable: projects.length === 0 && ProjectStorage.isProjectsReadUnavailable(),
+      });
       console.log("[Store] dbReady set to true, projects:", get().projects.length);
     } catch (e) {
       console.error("[Store] loadFromDB failed:", e);
-      set({ dbReady: true });
+      // 抛错同样是"读不到"，不是一个空的项目列表
+      set({ dbReady: true, projectsReadUnavailable: true });
     }
   },
 

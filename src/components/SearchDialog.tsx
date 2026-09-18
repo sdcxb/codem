@@ -92,6 +92,19 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
 
   // P1: Keyboard navigation
   useEffect(() => {
+    /**
+     * 第 47 轮补（UI/UX 审计 P1）：**印出来的快捷键必须真的能用**。
+     *
+     * 这个对话框在项目行上印着 `Ctrl+1`、`Ctrl+2`…，在操作行上印着 `Ctrl+N`（新建快速对话）
+     * 与 `Ctrl+S`（前往技能）—— 而这一段**只处理 Escape / 上下 / Enter**，
+     * 全仓也没有 `Ctrl+数字` 的绑定（`Ctrl+S` 在别处是"保存文件"、`Ctrl+N`/`Ctrl+,`
+     * 还会被 `app-shortcuts.ts` 的"可编辑控件内不抢"规则拒掉，而搜索框恰好是聚焦的）。
+     * 也就是说这些徽标在它们**唯一**出现的地方全部无效 —— 印一个按不动的键，
+     * 比不印更糟（用户会以为自己按错了）。
+     *
+     * 现在把它们接上：`Ctrl/Cmd+数字` 选中第 N 项；`Ctrl/Cmd+N` / `Ctrl/Cmd+S`
+     * 触发对应的操作行（按 `id` 找，不按位置写死）。
+     */
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") { onClose(); return; }
       if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, allItemsRef.current.length - 1)); }
@@ -110,6 +123,31 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
         else if (item.id === "new-chat") { onNewSession(); onClose(); }
         else if (item.id === "skills") { onOpenSkills(); onClose(); }
         else if (item.id === "settings") { onOpenSettings?.(); onClose(); }
+      }
+
+      // ---- 对话框自己印在界面上的快捷键（与上面的徽标一一对应）----
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const items = allItemsRef.current;
+
+      // Ctrl/Cmd + 数字：选中第 N 项（1 基）
+      if (/^[1-9]$/.test(e.key)) {
+        const idx = Number(e.key) - 1;
+        if (idx < items.length) {
+          e.preventDefault();
+          setSelectedIndex(idx);
+        }
+        return;
+      }
+
+      const lower = e.key.toLowerCase();
+      if (lower === "n") {
+        e.preventDefault();
+        onNewSession();
+        onClose();
+      } else if (lower === "s") {
+        e.preventDefault();
+        onOpenSkills();
+        onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);

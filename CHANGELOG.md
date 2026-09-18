@@ -35,11 +35,39 @@ All notable changes to Codem will be documented in this file.
 回归 6 条（`persist-alert-channel.test.ts`），其中 `ALERT-5` 是**正面判据**：
 断言渲染点**不带** `isStreaming` 之类的条件 —— 那正是缺陷的本体。
 
+### 🟠 "印出来的控件必须真的能用"（死控件清理，与已修的 D-19 同一类）
+
+4. **快速搜索对话框印着 `Ctrl+1…9` / `Ctrl+N` / `Ctrl+S`，而键盘处理器只认
+   Escape / 上下 / Enter。** 全仓也没有 `Ctrl+数字` 的绑定（`Ctrl+S` 在别处是"保存文件"，
+   `Ctrl+N`/`Ctrl+,` 还会被 `app-shortcuts.ts` 的"可编辑控件内不抢"规则拒掉，
+   而搜索框恰好是聚焦的）——**这些徽标在它们唯一出现的地方全部无效**。
+   印一个按不动的键比不印更糟（用户会以为自己按错了）。现在真的接上：
+   `Ctrl/Cmd+数字` 选中第 N 项、`Ctrl/Cmd+N` 新建对话、`Ctrl/Cmd+S` 前往技能。
+5. **`DecisionTray` 的"两步拒绝"是死的**：组件里有 `showRejectInput` 状态、
+   有"拒绝原因（可选）"输入框、按钮文案还会切成「确认拒绝」——
+   但全仓**只有 `setShowRejectInput(false)`**，从来没有人设成 `true`。
+   于是输入框永不出现，`rejectReason` 永远是空串，也就是
+   `onReject(id, reason)` 的第二个参数**永远是 `undefined`**（下游拿不到拒绝理由）。
+   现在接上：第一次点「拒绝」展开理由框，第二次带着理由提交。
+6. **错误卡片画了一个按不动的「重试」**：`MessageBubble` 传的是 `retryable` +
+   `onRetry={() => { /* 由父组件处理 */ }}` —— 而那行注释是错的：
+   `onEditAndResend` 的语义是"编辑并重发**用户**消息"，而这张卡片挂在**助手**错误行上，
+   这条路径上根本不存在重试入口。改成 `retryable={false}`（**如实**：不声称可重试），
+   而不是继续画一个点了没反应的按钮。
+7. **侧边栏工作台是块永远折叠不了、也永远没内容的空面板**：
+   `collapsed={false}` + `onToggle={() => {}}` + `modifiedFiles={[]}` 三个硬编码值，
+   而 `Workbench` 的内容完全来自那个数组。现在折叠接真实状态、
+   `modifiedFiles` 接 `FileChangeStorage.listBySession(currentSessionId)` 的真实数据
+   （与 `FileChangesList` 同一份来源）。
+   `activeTools` **仍为空并写明原因** —— 本仓库目前没有"正在执行的工具"的响应式数据源
+   （`agentActivities` 的形态是 `{step,total}`，与此处 `{name,status}` 不同），
+   硬映射会造出一个"看着像真的、其实是猜的"列表。与其编一个，不如让它空着。
+
 ### 量化与实测
 
 | 项 | 结果 |
 | --- | --- |
-| 渲染侧测试 | **307 文件 / 5638 通过 / 16 跳过 / 0 失败**（新增 6 条） |
+| 渲染侧测试 | **308 文件 / 5646 通过 / 16 跳过 / 0 失败**（新增 10 条：通道 6 + 死控件 4） |
 | Rust 测试 / 真 CLI 契约 | **140** / **28** |
 | `tsc --noEmit --incremental false` | 0 错误 |
 | 审计门禁 / UI 门禁 | 7 道 gate exit 0；`scan-ui` error 0 / warn 0；CSS 契约快照 +7 个类（diff 逐条核对只有我的） |
