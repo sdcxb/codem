@@ -1,11 +1,11 @@
 {
-  "version": "1.16.81",
-  "notes": "把完整性检查多久跑一次这条策略的判据从传闻换成实测：注释称 901ms@10k/4469ms@100k 且阻塞启动",
-  "pub_date": "2026-09-18T12:23:42Z",
+  "version": "1.16.82",
+  "notes": "审计「重试与超时」轴时发现：重试有、超时没有。引擎侧锁等待有界（busy_timeout=5000），但渲染侧 invokeCommand 一旦不 settle 就永远不回 —— 界面转圈到天荒地老，而所有机制（重试白名单、失败横幅、读不到三态、CORRUPT 标记）都建立在错误会被抛出来这个前提上。现在两个 IPC 出口都加 60 秒上界（实测最慢正常命令是数量级级别的余量），超时给明确不可重试的错误（超时不能证明命令没生效，自动重试对非幂等写就是插入两条）。",
+  "pub_date": "2026-09-18T12:38:44Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1piR0hSUEppNTJEYk5sZTZ5RzFMRGhORTNKRkJQQ0EycWZyUTVrWmRHeEFtMjJYSWZZWkphQXZHaFhiYnNsRWRZYkRSMzJHSUNHWkpwanNiVmVmWHdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzM0MTI5CWZpbGU6Q29kZW1fMS4xNi44MV94NjQtc2V0dXAuZXhlCnl0TkdQZ1ZrRnN0ZlYwbzk0SmhGUXJiQXh6OVRyc2RBTm1TS2k1L0NnOFhjb29CUGxBZnNUcjJ1bHZuVXQwc2F3ZjJRZ25XdlpzRGI4dm9UeHJmVEJRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.81/Codem_1.16.81_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZsM3hQSUEyaDYrYnJydkFPWlFJOGU4TERaOFNMUVJFL1gwMWlCRGtES0RmUEFtSGI2dWF3ZEt2OXZJQ2xRbkY5UDVPeTYvaHJibGppZXFhUm5ZZXdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzM0OTg1CWZpbGU6Q29kZW1fMS4xNi44Ml94NjQtc2V0dXAuZXhlCmhuNkpBaXpQZlhINjg5ckEydlhJNHVGOHd6MFM3a0hhbEJFWlJnQWpPcE9PQzNhOUVFcFRKTmVBZ3BsYlNYSnpGc2x4RDVKY2xRSnJ4ZmtPVE96Q0NRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.82/Codem_1.16.82_x64-setup.exe"
     }
   }
 }

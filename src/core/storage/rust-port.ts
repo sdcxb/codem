@@ -248,6 +248,52 @@ function noteCorruptOnce(err: StorageError, where: string): void {
 }
 
 /**
+ * 单次 IPC 的**上界等待时间**（第 51 轮补的挂死保护）。
+ *
+ * ## 为什么需要它
+ *
+ * 引擎侧有 `busy_timeout=5000`（锁等待有界），但**渲染侧此前完全没有超时** ——
+ * `invokeCommand` 返回的 promise 一旦不 settle（Tauri 命令卡在 `spawn_blocking` 里、
+ * 磁盘/杀软层面的 IO 挂住、通道异常），调用方的 `await` 就**永远不回**：
+ * 界面表现是"转圈转到天荒地老"，而所有既有机制（重试白名单、失败横幅、三态判据）
+ * 都建立在"错误**会**被抛出来"这个前提上。**"什么都不发生"不是一种用户能处理的状态。**
+ *
+ * ## 为什么定 60 秒（按实测选，不是拍的）
+ *
+ * 实测最慢的正常命令是 30 MB 会话的 `messages.list`（11 条 / 16.5 MB，一次 IPC），
+ * 以及 100k 行会话的索引分轮加载（每轮 5k 行、每轮都远小于 1 秒）。
+ * 60 秒是这些量级的**两个数量级以上**的余量 —— 它只会在**真挂死**时触发。
+ *
+ * ## 超时了为什么**不许**自动重试（`retryable: false` 是刻意的）
+ *
+ * 超时**不能证明**命令没生效：引擎那边可能已经写完、只是回包没回来。
+ * 自动重试对非幂等写（`messages.create` / `events.append`）就是**插入两条**。
+ * 所以这里给一个明确不可重试的错误，由调用方按它原有的通道如实上报
+ * —— 用户看到"这次没成功"，而不是被系统偷偷重做一遍。
+ */
+const IPC_TIMEOUT_MS = 60_000;
+
+/** 给一个 promise 加上界等待；超时抛 `UNAVAILABLE` 且**显式标不可重试**（见上） */
+function withIpcTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new StorageError(
+          "UNAVAILABLE",
+          `${label} 超过 ${IPC_TIMEOUT_MS / 1000} 秒没有返回（IPC 疑似挂死）`,
+          { retryable: false, detail: { timeoutMs: IPC_TIMEOUT_MS } },
+        ),
+      );
+    }, IPC_TIMEOUT_MS);
+  });
+  // `Promise.race` 已经给原 promise 挂了处理器，所以它之后若再 reject 也不会变成未处理拒绝
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  }) as Promise<T>;
+}
+
+/**
  * 发一条仓储命令并解包结果。
  *
  * **两种失败都必须变成 `StorageError`**：
@@ -256,6 +302,8 @@ function noteCorruptOnce(err: StorageError, where: string): void {
  *
  * 第 2 种早先被漏掉过：调用方本想 `catch (e) => e.code`，结果拿到的是原生 `Error`，
  * `code` 是 `undefined` —— 于是"错误是值"在渲染侧断了一截。契约测试 PORT-5 钉住这一点。
+ *
+ * 第 51 轮再加一条：**"永远不回"也要变成错误**（见 `IPC_TIMEOUT_MS`）。
  */
 async function call<T>(
   transport: StorageTransport,
@@ -264,7 +312,7 @@ async function call<T>(
 ): Promise<T> {
   let reply: unknown;
   try {
-    reply = await transport.invokeCommand<WireReply<T>>(command, params);
+    reply = await withIpcTimeout(transport.invokeCommand<WireReply<T>>(command, params), command);
   } catch (e) {
     const err = toStorageError(e, `${command} 的 IPC 调用失败`);
     noteCorruptOnce(err, command);
@@ -578,9 +626,12 @@ class RustDataPort implements StorageDataPort {
     // 单命令解包（那会把 batch 的进度信息丢掉）。
     let reply: unknown;
     try {
-      reply = await this.t.invokeBatch<
-        WireReply<{ count?: number; results?: Array<{ result?: { written?: number } }> }>
-      >(commands.map((c) => ({ command: c.command, params: c.params ?? {} })));
+      reply = await withIpcTimeout(
+        this.t.invokeBatch<
+          WireReply<{ count?: number; results?: Array<{ result?: { written?: number } }> }>
+        >(commands.map((c) => ({ command: c.command, params: c.params ?? {} }))),
+        "storage_batch",
+      );
     } catch (e) {
       throw toStorageError(e, "storage_batch 的 IPC 调用失败");
     }

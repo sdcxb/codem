@@ -23,8 +23,32 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportActionFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
 }));
 
+/**
+ * 把"在途的异步链"推完。
+ *
+ * ⚠️ **原来这里只数微任务**（`for (i<12) await Promise.resolve()`），第 51 轮被撞红了：
+ * 给 IPC 出口加挂死保护时每次调用多了一个 `.finally()`（多一个微任务），
+ * 于是"5001 行 / 每轮 1000 行"的镜像循环（约 6 轮）在 12 个微任务里**跑不完** ——
+ * `refused` 还是空的，DOM-8 判成"应记录被拒绝的表"失败。
+ *
+ * 那不是产品缺陷（生产代码是 `await` 整条链的），是**这个助手对tick 数敏感**：
+ * 用例不该依赖"某条异步链恰好只用 N 个微任务"。
+ * 现在改成**让出一个宏任务**（`setTimeout(0)`）—— 宏任务会把它之前排队的微任务**全部**排空，
+ * 因此与链的深度无关；再补几个微任务自旋兜住"回调里又排了新的微任务"的情形。
+ */
 const settle = async () => {
-  for (let i = 0; i < 12; i++) await Promise.resolve();
+  if (vi.isFakeTimers()) {
+    /*
+     * 假计时器下 `setTimeout` 不会自己走（会让用例卡到 5 秒超时）。
+     * `advanceTimersByTimeAsync(0)` 只跑 0ms 的定时器 —— 本文件的用例装了假计时器时
+     * 关心的是别的东西（下面的 300ms 之类），不会被我这一句误触发。
+     */
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    return;
+  }
+  for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+  for (let i = 0; i < 8; i++) await Promise.resolve();
 };
 
 /**
