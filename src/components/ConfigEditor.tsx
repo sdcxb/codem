@@ -29,6 +29,42 @@ import {
   saveUser,
 } from "../core/config/loader";
 
+/**
+ * 解析"当前正在编辑哪一层"，并给出该层的**身份**（第 47 轮补）。
+ *
+ * ## 为什么必须是纯函数
+ *
+ * 这里出过一次"写错文件"的缺陷：所有子目录按钮都 `setActiveLevel("subfolder")`，
+ * 而解析用 `find(l => l.level === activeLevel)`（第一个匹配）→ 点「B」读写的是 **A**。
+ * 这种缺陷**用读代码很难发现**（两处代码各自都"看起来对"），
+ * 但用用例一行就能钉住 —— 所以判定逻辑必须是可被直接驱动的纯函数。
+ *
+ * @param levels 全部层级（含每个 `.codem-sub` 子目录各一条）
+ * @param activeLevel 当前选中的**类别**（app / project / subfolder）
+ * @param activeSubfolder 当类别是 subfolder 时，选中的那条的 `basePath`（身份）
+ */
+export function resolveActiveLevel(
+  levels: HierarchicalConfig[],
+  activeLevel: ConfigLevel,
+  activeSubfolder: string | null,
+): HierarchicalConfig | undefined {
+  if (activeLevel === "subfolder") {
+    // ① 先按**身份**找（这才是修好的那一半）
+    const byIdentity = levels.find((l) => l.level === "subfolder" && l.basePath === activeSubfolder);
+    if (byIdentity) return byIdentity;
+    // ② 身份还没选（或选的子目录已消失）→ 回退到第一条子目录（保持旧行为，不是静默乱选）
+    const firstSub = levels.find((l) => l.level === "subfolder");
+    if (firstSub) return firstSub;
+  }
+  // ③ app / project：按类别找；找不到就退回 levels[0]（与旧实现一致）
+  return levels.find((l) => l.level === activeLevel) || levels[0];
+}
+
+/** 一条层级的**身份**：子目录用 `basePath`（类别名不够，会出现多个 subfolder），其余用类别名 */
+export function levelIdentity(l: { level: string; basePath: string }): string {
+  return l.level === "subfolder" ? `subfolder:${l.basePath}` : l.level;
+}
+
 interface ConfigEditorProps {
   appRoot: string;
   projectPath: string;
@@ -78,9 +114,29 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
     setLoading(false);
   };
 
+  /**
+   * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：子目录层级必须按**身份**选中，不能只看 `level` 名
+   *
+   * 原来所有子目录按钮都 `setActiveLevel("subfolder")`，而层级解析是
+   * `levels.find(l => l.level === activeLevel)` —— "第一个匹配"。于是项目下同时有
+   * `A\.codem-sub` 与 `B\.codem-sub` 时（`config/loader` 会为**每个**含 `.codem-sub`
+   * 的子目录各生成一条 subfolder 层级）：
+   *
+   * - 点「B」→ 编辑器载入的是 **A** 的内容；
+   * - 点保存 → 写进 **A** 的文件；
+   * - 而且四个按钮的高亮判定都是硬编码 `activeLevel === "subfolder"`，
+   *   所以**所有**子目录按钮同时高亮 —— 连"选错了"的视觉线索都没有。
+   *
+   * 修法：子目录额外记住**它的 `basePath`**（行身份）。解析逻辑抽成纯函数
+   * （`resolveActiveLevel`）以便被用例直接驱动 —— 这正是"写错文件"那类缺陷该被钉住的地方。
+   */
+  const [activeSubfolder, setActiveSubfolder] = useState<string | null>(null);
+
   useEffect(() => { loadConfig(); }, [appRoot, projectPath]);
 
-  const currentLevel = levels.find((l) => l.level === activeLevel) || levels[0];
+  const currentLevel = resolveActiveLevel(levels, activeLevel, activeSubfolder);
+  /** 当前层级的身份（用于按钮高亮判定：子目录必须按身份，不能按类别名） */
+  const activeIdentity = currentLevel ? levelIdentity(currentLevel) : null;
 
   useEffect(() => {
     if (!currentLevel) return;
@@ -138,7 +194,8 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 <button
                   key={lvl}
                   className={`config-level-btn ${activeLevel === lvl ? "active" : ""} ${!exists ? "missing" : ""}`}
-                  onClick={() => setActiveLevel(lvl)}
+                  /* 第 47 轮补：切到 app/project 时清掉子目录选择，避免 currentLevel 回退到某条子目录 */
+                  onClick={() => { setActiveLevel(lvl); setActiveSubfolder(null); }}
                 >
                   {lvl === "app" ? <Home size={14} /> : <FolderClosed size={14} />}
                   {lvl === "app" ? "全局" : "项目"}
@@ -149,8 +206,9 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
             {levels.filter((l) => l.level === "subfolder").map((l) => (
               <button
                 key={l.basePath}
-                className={`config-level-btn ${activeLevel === "subfolder" ? "active" : ""}`}
-                onClick={() => { setActiveLevel("subfolder"); }}
+                /* 第 47 轮补：高亮判定必须看**这一条的身份**，否则所有子目录按钮同时高亮 */
+                className={`config-level-btn ${activeIdentity === levelIdentity(l) ? "active" : ""}`}
+                onClick={() => { setActiveLevel("subfolder"); setActiveSubfolder(l.basePath); }}
               >
                 <FolderOpen size={14} />
                 {l.basePath.split("\\").pop()}

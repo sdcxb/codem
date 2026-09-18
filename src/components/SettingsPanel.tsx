@@ -17,6 +17,8 @@ import {
   type SettingsWriteReport,
 } from "../core/storage/settings";
 import { addCustomModel, removeCustomModel, customNamesFor } from "../core/llm/custom-models";
+// 第 47 轮补：失败上报通道（代码图谱开关写失败时**必须可见**，不再静默）
+import { reportActionFailure } from "../core/storage/persist-failure";
 import { mergeModelsWithCatalog, getMergedDynamicModels, catalogFor } from "../core/llm/model-catalog";
 import { MIMO_MODELS } from "../core/model-config";
 import { getCatalogHealthFor, describeCatalogHealth, subscribeCatalogHealth, orderModelsByHealth, catalogModelLabelSuffix } from "../core/llm/catalog-health";
@@ -2975,8 +2977,15 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
   const zh = lang === "zh";
   const [enabled, setEnabled] = useState(() => {
     try {
-      const { isCodeGraphEnabled } = require("../core/mcp/mcp");
-      return isCodeGraphEnabled();
+      /**
+       * ⚠️ 第 47 轮补：这里原来是 `require("../core/mcp/mcp")` —— 在 ESM 里必抛
+       * `ReferenceError`，被 `catch { return true; }` 吞掉，于是开关**永远显示 ON**
+       * （哪怕库里存着 false）。现在读**真正的设置键**（同步，首帧就有值，
+       * 不会先闪一下 ON 再改），组件的 effect 里再用 `isCodeGraphEnabled()` 校正一次。
+       */
+      const raw = getSetting("codem-codegraph-enabled");
+      // 缺省 ON（与既有产品语义一致：没设置过就是开启）
+      return raw === null ? true : raw === "true" || raw === "1";
     } catch { return true; }
   });
   const [status, setStatus] = useState<"checking" | "installed" | "not_installed">("checking");
@@ -2993,7 +3002,6 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
   const checkCli = useCallback(async () => {
     setStatus("checking");
     try {
-      const { getSetting } = require("../core/storage/settings");
       const launcher = getSetting("codem-codegraph-launcher");
       if (launcher) {
         const { invoke } = (window as any).__TAURI__.core;
@@ -3053,7 +3061,6 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
     try {
       const { invoke } = (window as any).__TAURI__.core;
       const res = await invoke("codegraph_install");
-      const { setSetting } = require("../core/storage/settings");
       setSetting("codem-codegraph-launcher", res.launcher);
       setInstallMsg(zh ? `✓ 安装完成：${res.launcher}` : `Installed: ${res.launcher}`);
       setStatus("installed");
@@ -3070,16 +3077,43 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
     void checkIndex();
   }, [checkCli, checkIndex]);
 
-  const handleToggle = (checked: boolean) => {
+  /**
+   * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：开关必须**真的**生效，且失败必须看得见
+   *
+   * 这一段原来用 `require("../core/mcp/mcp")` —— 而这是**浏览器 ESM** 组件
+   * （`index.html` 用 `<script type="module">`，构建产物里没有 `require` shim），
+   * 所以那四个 `require(...)` **一律抛 `ReferenceError`**，然后被**空 `catch {}`** 吞掉。
+   *
+   * 后果（用户可见的部分）：
+   * - 开关只翻转本地 state：`codem-codegraph-enabled`（真正的闸门）永不写入，
+   *   MCP 服务器不连也不断，事件永不派发；
+   * - 初始化那段 `catch { return true; }` 让开关**永远显示 ON**，
+   *   哪怕库里存着 `false` —— 用户以为"已经关掉了"；
+   * - 「重新检测」第一句就抛 → **所有机器**都显示"✗ codegraph CLI 未安装"；
+   * - 「一键安装」在真实安装成功之后抛 → 告诉用户"✗ 安装失败"。
+   *
+   * 修法：改成**动态 `import()`**（异步、可 await），并且**失败不再静默** ——
+   * 走既有的上报通道（`reportActionFailure`）+ 面板内可见提示。
+   * 为什么不用顶层静态 import：那段 MCP 依赖较重，而设置面板是启动路径的一部分，
+   * 不该为一个可选集成把它拖进首屏包。
+   */
+  const handleToggle = async (checked: boolean) => {
     setEnabled(checked);
     try {
-      const { setCodeGraphEnabled, disconnectCodeGraph, getMCPRegistry } = require("../core/mcp/mcp");
+      const { setCodeGraphEnabled, disconnectCodeGraph, getMCPRegistry } = await import("../core/mcp/mcp");
       setCodeGraphEnabled(checked);
       if (!checked) {
         disconnectCodeGraph(getMCPRegistry());
       }
       window.dispatchEvent(new CustomEvent("codem-codegraph-config-changed", { detail: { enabled: checked } }));
-    } catch {}
+      setInstallMsg("");
+    } catch (e) {
+      // 写失败不能假装成功：把开关拨回去 + 明确告诉用户
+      setEnabled(!checked);
+      const msg = e instanceof Error ? e.message : String(e);
+      setInstallMsg(zh ? `✗ 代码图谱开关未生效：${msg}` : `Toggle failed: ${msg}`);
+      reportActionFailure("settings.codegraph.toggle", e, "代码图谱开关未生效");
+    }
   };
 
   const handleInit = async () => {

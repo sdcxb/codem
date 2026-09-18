@@ -338,8 +338,24 @@ export function WechatSettings() {
             {access.allow.map((p) => (
               <div key={p} className="wx-list-row">
                 <span className="wx-list-peer">{p}</span>
-                <button onClick={() => act(async () => { ignorePeer(p); refreshAccess(); })} className="wx-mini-btn is-bad">
-                  {zh ? "移除" : "Remove"}
+                {/*
+                  ⚠️ 第 47 轮补（UI/UX 审计 P1）：这个按钮以前写的是「移除」，
+                  而它调的是 `ignorePeer` —— 那是**把对方从白名单删掉并追加进黑名单**
+                  （见 `wechat-bridge.ts::blockPeer`），此后该人发来的每条消息都被直接丢弃。
+                  同一个文件在"待批准"列表里对**同一个函数**标的是「拉黑」，两处说法互相矛盾。
+                  用户点「移除」以为只是"不再自动响应"，实际是把人**永久拉黑**（还得再去黑名单解除）。
+
+                  修法：标签改成与行为一致的「移除并拉黑」/「Remove & block」，
+                  并在按钮上写清后果（`title`）。**不改行为** —— 拉黑是这里唯一可用的原语，
+                  而"只是从白名单拿走、既不拉黑也不批准"需要改 `wechat-bridge` 的语义
+                  （那是另一块面积，且会改变陌生人消息的处置策略），本次只如实纠正标签。
+                */}
+                <button
+                  onClick={() => act(async () => { ignorePeer(p); refreshAccess(); })}
+                  className="wx-mini-btn is-bad"
+                  title={zh ? "从白名单移除并加入黑名单（此后不再接收他的消息）" : "Remove from allowlist and block (messages from this peer will be dropped)"}
+                >
+                  {zh ? "移除并拉黑" : "Remove & block"}
                 </button>
               </div>
             ))}

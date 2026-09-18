@@ -123,6 +123,37 @@ export function NoteEditor({
     refreshLinks();
   }, [refreshLinks]);
 
+  /**
+   * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：换了笔记必须**重置编辑缓冲**
+   *
+   * 上面那三个 `useState` 只在**首次挂载**时从 props 播种，而渲染处
+   * （`NotebookWorkspace` 的 `{showNoteEditor && editingNote && <NoteEditor note={editingNote} …/>}`）
+   * **没有 `key`** —— 从笔记 A 点反向链接跳到 B 时组件**不重挂载**，
+   * 标题/正文框里仍是 A 的文本，而 `handleSave` 用的是 `note.id`（**已经是 B**）：
+   * 一次「保存」就把 **B 的正文覆盖成 A 的内容**，`syncNoteLinks(B.id, …, A 的正文)`
+   * 还会把 A 的正文挂到 B 的链接图上。无提示、无撤销，连"版本对比"存的也是 A 的文本
+   * （`saveNoteVersion(B.id)` 存下的快照就是错的）。
+   *
+   * 为什么用"监听 `note.id` 变化重置"而不是给渲染处加 `key`：
+   * `key` 会连**整个编辑器状态**一起丢掉（视图模式、版本面板开关、滚动位置），
+   * 而这里要修的只是"缓冲属于哪一篇"。判据用 id 而不是内容：
+   * 用户在自己编辑过程中 props 里那篇的 `content` 会被外部更新（自动保存/别处编辑），
+   * 用内容当判据会把用户正在打的字冲掉。
+   */
+  const editingNoteIdRef = useRef(note.id);
+  useEffect(() => {
+    if (editingNoteIdRef.current === note.id) return;
+    editingNoteIdRef.current = note.id;
+    setTitle(note.title);
+    setContent(note.content);
+    setTags(note.tags || []);
+    setTagInput('');
+    // 链接面板跟着换到新笔记（`refreshLinks` 的依赖含 note.id，本来也会跑；
+    // 这里显式跟着重置，避免"缓冲换了、链接还是上一篇"的中间态）
+    setShowVersions(false);
+    setVersions([]);
+  }, [note.id, note.title, note.content, note.tags]);
+
   // 保存笔记
   const handleSave = useCallback(() => {
     // A17: Save a version snapshot before saving
