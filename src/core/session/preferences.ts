@@ -52,6 +52,20 @@ export const DISABLED_PLUGINS_KEY = "codem-disabled-plugins";
 /** 插件禁用列表的 localStorage 镜像键（旧读方仍在用，不要改） */
 export const DISABLED_PLUGINS_LS_KEY = "codem:disabled-plugins";
 /**
+ * 插件禁用列表的**写入时刻**（DB 侧，毫秒）。
+ *
+ * 第 48 轮新增。为什么"两份介质都写"还不够：两份写入不是原子的 ——
+ * `setSettingJSON` 是"内存即时生效 + 异步落库"，进程在落库前被杀掉，
+ * 盘上 DB 就是旧值而镜像已是新值。下一次启动时若按"DB 一律为准"，
+ * 用户刚关掉的插件会**静默地被重新打开**（这正是 D-22 想消灭的那类缺陷，
+ * 只是换了个触发条件）。有了这个戳，"哪一份更新"是**事实**而不是猜测。
+ *
+ * 旧数据没有这个键 → 读回 `null` → 判定按"DB 为准"（保守，与 47 轮行为一致）。
+ */
+export const DISABLED_PLUGINS_STAMP_KEY = "codem-disabled-plugins-at";
+/** 写入时刻的 localStorage 镜像键（旧读方不认识它，加了不影响兼容） */
+export const DISABLED_PLUGINS_LS_STAMP_KEY = "codem:disabled-plugins-at";
+/**
  * 首次运行默认禁用的插件。
  *
  * 与 `App.tsx` 原来的初值一致：游戏插件默认关（它是"彩蛋"级功能，不该在首次启动就占资源）。
@@ -74,12 +88,38 @@ function readDisabledPluginsMirror(): string[] | null {
 }
 
 /** 写 localStorage 镜像（旧读方：`PanelSidebar` / `ui-plugins/gating` / 插件管理器自身） */
-function writeDisabledPluginsMirror(list: readonly string[]): void {
+function writeDisabledPluginsMirror(list: readonly string[], at: number | null = null): void {
   try {
     localStorage.setItem(DISABLED_PLUGINS_LS_KEY, JSON.stringify(list));
+    // 戳只在明确知道"这份值是什么时刻写下的"时才更新（见 DISABLED_PLUGINS_STAMP_KEY 的说明）
+    if (typeof at === "number" && Number.isFinite(at)) {
+      localStorage.setItem(DISABLED_PLUGINS_LS_STAMP_KEY, String(at));
+    }
   } catch {
     // localStorage 不可用（隐私模式/配额满）不影响 DB 那一份 —— 但要说出来
     console.warn("[preferences] 插件禁用列表的 localStorage 镜像未写入（DB 那一份不受影响）");
+  }
+}
+
+/** 读 DB 侧的写入时刻；没有/形状不对 → `null`（"不知道"与"0"必须分得开） */
+function readDisabledPluginsStamp(): number | null {
+  try {
+    const v = getSettingJSON<unknown>(DISABLED_PLUGINS_STAMP_KEY, null);
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 读镜像侧的写入时刻；没有/坏掉 → `null` */
+function readDisabledPluginsMirrorStamp(): number | null {
+  try {
+    const raw = localStorage.getItem(DISABLED_PLUGINS_LS_STAMP_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
   }
 }
 
@@ -108,7 +148,9 @@ export function loadDisabledPlugins(): DisabledPluginsState {
   const fromDbRaw = getSettingJSON<unknown>(DISABLED_PLUGINS_KEY, null);
   if (Array.isArray(fromDbRaw)) {
     const list = fromDbRaw.map((v) => String(v));
-    writeDisabledPluginsMirror(list);
+    // 回写镜像时把 **DB 的写入时刻**一并带过去：镜像从此是"DB 在某时刻的副本"，
+    // 而不是一个没有出处的第二真相源（第 48 轮）。
+    writeDisabledPluginsMirror(list, readDisabledPluginsStamp());
     return { list, migrated: false, seeded: false };
   }
 
@@ -133,14 +175,142 @@ export function loadDisabledPlugins(): DisabledPluginsState {
  * 为什么不能只写 localStorage（改前就是）：那是 D-22 的缺陷本身 ——
  * 换 profile / 清缓存就丢，而同类偏好（`codem-sidebar-width`）已经在 DB 里。
  *
- * ⚠️ 真实写入方目前仍主要是 `PluginManagerService`（它直接写镜像）——
- * 那个文件不在本次改动的责任范围内（见报告"需要他人配合"）。所以这里除了"DB 侧写入"，
- * 还提供 `adoptDisabledPluginsMirror()` 让 App 在启动/状态变化时把镜像**收编**进 DB：
- * 镜像变成"DB 的副本"，而不是第二个真相源。
+ * ⚠️ 第 48 轮的更新：这条"写入方"注释原来写的是"真实写入方目前仍主要是
+ * `PluginManagerService`（它直接写镜像）—— 那个文件不在本次改动的责任范围内"。
+ * 那个缺口已经补上：`PluginManagerService` 的两个写入点（`saveDisabledList` /
+ * `saveDisabledListExplicit`）现在都走 `saveDisabledPlugins`，即"DB + 时间戳 + 镜像"一次写完。
+ * 生产代码里**不再有任何**直接写 `codem:disabled-plugins` 镜像的地方
+ * （用例 `PLUGIN-MEDIUM-*` 守着这一条）。`adoptDisabledPluginsMirror()` 保留为兜底：
+ * 万一将来又出现一个只写镜像的写入方，启动/状态变化时仍会把它收编进 DB。
  */
 export function saveDisabledPlugins(list: readonly string[]): void {
+  const at = Date.now();
+  /**
+   * 顺序是有意的：**先 DB 后镜像**。
+   *
+   * 两份写入不可能原子，所以必须让"先落地的那份"是权威那份 ——
+   * 万一在两次写入之间进程没了，盘上状态是"DB 新、镜像旧"，
+   * 而下一次启动的判定（`reconcileDisabledPluginsAtBoot`：无戳/DB 更新 → DB 胜）会正确地取 DB。
+   * 反过来的顺序会留下"镜像新、DB 旧"，那要靠戳来救（也能救，但少一条依赖总是更好）。
+   */
   setSettingJSON(DISABLED_PLUGINS_KEY, [...list]);
-  writeDisabledPluginsMirror(list);
+  setSettingJSON(DISABLED_PLUGINS_STAMP_KEY, at);
+  writeDisabledPluginsMirror(list, at);
+}
+
+/**
+ * 启动时的介质对账（第 48 轮）—— **应用侧启动路径应该调这个，而不是直接调 `loadDisabledPlugins`**。
+ *
+ * ## 它解决的缺陷（"刚关掉的插件重启后自己又开了"）
+ *
+ * `loadDisabledPlugins` 的契约是"DB 有值就以 DB 为准，并回写镜像"。这在
+ * "镜像只是旧格式残留"时是对的，但在**写入没落地**时是错的：
+ * 用户点了插件开关 → 新值进了 DB 的内存缓存（`setSettingJSON` 是内存即时生效 + 异步落库）
+ * 与 localStorage 镜像 → 进程在落库前被杀 → 盘上 DB 还是旧值。
+ * 下次启动按旧契约走：DB 旧值胜出，**镜像被旧值覆盖**，用户的开关静默消失。
+ *
+ * ## 判定规则（每一档都有用例）
+ *
+ * | DB 列表 | 镜像列表 | 判定 |
+ * | --- | --- | --- |
+ * | 无 | 无 | 首次运行 → `loadDisabledPlugins`（默认值，两边都写） |
+ * | 无 | 有 | 迁移镜像进 DB（与旧行为一致） |
+ * | 有 | 无 | DB 胜出，补写镜像 |
+ * | 有 | 有，且**内容相同** | 无需选择，顺手把镜像的戳对齐 DB |
+ * | 有 | 有，内容不同，**镜像戳 > DB 戳** | 镜像胜出 → 写回 DB（写入没落地，镜像才是最新事实） |
+ * | 有 | 有，内容不同，其余情况 | **DB 胜出** → 回写镜像（无戳的旧数据、镜像写入失败、戳相等） |
+ *
+ * 最后一档刻意保守：没有戳就按旧的"DB 为准"，绝不因为"镜像看起来不一样"就改写 DB。
+ *
+ * ## 分歧必须可见
+ *
+ * 前五档里"两边都有值且内容不同"意味着**有一次写入没有落地**。按项目纪律
+ * （"失败必须可见"）这里不走静默路径：除了 `console.warn`，还经
+ * `reportPersistFailure` 上报一次（界面上的保存失败横幅会显示）。
+ * 其余档位（首次运行 / 迁移 / 补齐镜像）是正常路径，静默。
+ */
+export interface DisabledPluginsReconcileResult extends DisabledPluginsState {
+  /** DB 与镜像内容不同、且以镜像为准（= 有一次 DB 写入没落地，用户的开关被镜像救回来了） */
+  adoptedFromMirror: boolean;
+  /** 发现过介质分歧（无论哪边胜出） */
+  diverged: boolean;
+}
+
+export function reconcileDisabledPluginsAtBoot(): DisabledPluginsReconcileResult {
+  const fromDbRaw = getSettingJSON<unknown>(DISABLED_PLUGINS_KEY, null);
+  const dbList = Array.isArray(fromDbRaw) ? fromDbRaw.map((v) => String(v)) : null;
+  const mirror = readDisabledPluginsMirror();
+
+  // 有一边"没有值" → 交给 loadDisabledPlugins 的三档判定（迁移 / 播种 / DB 为准）
+  if (dbList === null || mirror === null) {
+    return { ...loadDisabledPlugins(), adoptedFromMirror: false, diverged: false };
+  }
+
+  const identical =
+    dbList.length === mirror.length && dbList.every((v, i) => v === mirror[i]);
+  if (identical) {
+    // 无分歧：把镜像的戳对齐到 DB 的戳（老数据没戳时这就是补齐的时机）
+    writeDisabledPluginsMirror(dbList, readDisabledPluginsStamp());
+    return { list: dbList, migrated: false, seeded: false, adoptedFromMirror: false, diverged: false };
+  }
+
+  const dbStamp = readDisabledPluginsStamp();
+  const mirrorStamp = readDisabledPluginsMirrorStamp();
+  const mirrorIsNewer = mirrorStamp !== null && (dbStamp === null || mirrorStamp > dbStamp);
+
+  if (mirrorIsNewer) {
+    setSettingJSON(DISABLED_PLUGINS_KEY, mirror);
+    setSettingJSON(DISABLED_PLUGINS_STAMP_KEY, mirrorStamp);
+    /**
+     * 消息分两层：`message` 是**界面上给用户看的那一句**（`PersistFailureBanner` 只渲染
+     * `message`），`extra` 是给日志/取证看的原始两份值。两者不能互相顶替 ——
+     * 把 JSON 塞进 `message` 的话用户看到的是两串机器字符串，
+     * 而只写一句人话的话事后没法取证到底是哪两份值不一致。
+     */
+    /**
+     * 两句分工必须清楚，否则横幅会**自己重复一遍**（第二版真机核验就是这个样子：
+     * "已按较新的一份恢复，请确认插件开关状态" + "已按较新的一份恢复并写回数据库…"）。
+     * 现在 `message` 只说**发生了什么**，`consequence` 只说**结果与下一步**。
+     */
+    const userMessage = "插件开关的上一次改动没有写进数据库（两种介质的记录不一致）";
+    const detail =
+      `插件禁用列表的两种介质不一致：DB=${JSON.stringify(dbList)}（戳 ${dbStamp ?? "无"}），` +
+      `镜像=${JSON.stringify(mirror)}（戳 ${mirrorStamp}）。镜像更新，已按镜像恢复并回写 DB`;
+    console.warn(`[preferences] ${detail}`);
+    try {
+      /**
+       * `consequence` 覆盖了通道的通用后果那句。**必须覆盖**：
+       * 通用句说的是"改动只在内存里、重启会丢、去查磁盘空间"，而这一刻
+       * 值**已经恢复进 DB 了** —— 两句话同时出现在一条横幅上会自相矛盾
+       * （真机核验就是这么抓到的：横幅上"已按较新的一份恢复"与
+       * "重启应用后会丢失"并排印着）。这里改说真实情况：已经恢复好了，请核对一下开关。
+       */
+      reportPersistFailure(
+        "preferences.disabledPlugins.diverged",
+        new Error(userMessage),
+        detail,
+        { consequence: "已按较新的一份恢复并写回数据库，本次没有丢失；请核对插件开关是否符合预期。" },
+      );
+    } catch {
+      // 上报通道自身失败不影响对账结果
+    }
+    return { list: mirror, migrated: false, seeded: false, adoptedFromMirror: true, diverged: true };
+  }
+
+  // DB 胜出：把 DB 的值（与它的戳）写回镜像，让镜像重新成为"DB 的副本"
+  //
+  // 这一档只 warn、**不**上报到界面横幅。区别在哪：镜像胜出那一档意味着
+  // "用户刚做的选择只存在于一份介质里"，所以必须让用户看见；
+  // 而这一档 DB 是权威且内容完好 —— 用户没有任何东西被丢，
+  // 分歧只可能来自①升级前的旧数据（镜像里的历史残留）②镜像那次
+  // `localStorage` 写入失败（`writeDisabledPluginsMirror` 已经自己 warn 过）。
+  // 为一个"什么都没丢"的情况弹常驻错误横幅，会把真正需要用户注意的告警淹掉。
+  writeDisabledPluginsMirror(dbList, dbStamp);
+  console.warn(
+    `[preferences] 插件禁用列表的两种介质不一致：DB=${JSON.stringify(dbList)}（戳 ${dbStamp ?? "无"}），` +
+    `镜像=${JSON.stringify(mirror)}（戳 ${mirrorStamp ?? "无"}）。按 DB 为准（DB 权威），已回写镜像`,
+  );
+  return { list: dbList, migrated: false, seeded: false, adoptedFromMirror: false, diverged: true };
 }
 
 /**

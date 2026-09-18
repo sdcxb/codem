@@ -5,7 +5,7 @@
  * 管理插件的启用/禁用状态，处理依赖关系，与 Cordis Context 联动。
  *
  * 核心功能：
- * 1. 维护插件启用/禁用状态（持久化到 localStorage）
+ * 1. 维护插件启用/禁用状态（持久化：**DB 权威** + localStorage 镜像，走 `saveDisabledPlugins`）
  * 2. 关闭插件时检查依赖，返回级联关闭列表
  * 3. 启用插件时检查依赖，自动启用缺失的依赖
  * 4. 与 Cordis Context 联动（实际加载/卸载 Provider）
@@ -15,6 +15,7 @@ import { PluginDependencyGraph, type PluginMeta, type CascadeDisableResult, type
 import type { Context } from '../cordis/src/index.ts'
 import { builtinPlugins } from './index'
 import { getActiveFiber, unregisterActiveFiber } from './yaml-loader'
+import { saveDisabledPlugins as persistDisabledPlugins, reconcileDisabledPluginsAtBoot } from '../session/preferences'
 
 /** 插件状态 */
 export type PluginStatus = 'enabled' | 'disabled' | 'loading' | 'error'
@@ -112,13 +113,33 @@ export class PluginManagerService {
       }
     }
 
-    // 从 localStorage 恢复禁用列表
-    let disabledList = this.loadDisabledList()
-
-    // 首次运行：localStorage 无记录时，使用默认禁用列表
-    if (disabledList === null) {
-      disabledList = [...this.DEFAULT_DISABLED]
-      this.saveDisabledListExplicit(disabledList)
+    /**
+     * 恢复禁用列表 —— 第 48 轮起走**与 App 启动同一套对账**
+     * （`reconcileDisabledPluginsAtBoot`：DB 权威 + 时间戳判定哪一份更新）。
+     *
+     * 为什么不能继续只读 localStorage：面板里的开关状态来自这里，
+     * 而工具条/面板的显隐来自 App 的 `pluginDisabledList`（读 DB）。
+     * 两者各读一份介质时，只要两份不一致，就会出现"面板说已禁用、按钮还在"
+     * 这种自相矛盾的界面 —— 用户无从判断哪个是真的。
+     */
+    let disabledList: string[]
+    try {
+      const reconciled = reconcileDisabledPluginsAtBoot()
+      disabledList = reconciled.list
+      if (reconciled.seeded) {
+        console.log('[PluginManager] 首次运行：使用默认禁用列表', disabledList)
+      }
+      if (reconciled.diverged) {
+        console.warn(
+          '[PluginManager] 禁用列表的两种介质不一致，已按',
+          reconciled.adoptedFromMirror ? '镜像（更新的一份）' : 'DB（权威介质）',
+          '对齐',
+        )
+      }
+    } catch (e) {
+      console.warn('[PluginManager] 禁用列表对账失败，回落 localStorage 镜像:', e)
+      const fallback = this.loadDisabledList()
+      disabledList = fallback === null ? [...this.DEFAULT_DISABLED] : fallback
     }
 
     // 所有已注册插件默认为 enabled
@@ -405,7 +426,19 @@ export class PluginManagerService {
     }
   }
 
-  // ===== localStorage 持久化 =====
+  // ===== 持久化（第 48 轮：走共享写入器，DB 权威 + localStorage 镜像） =====
+  //
+  // 改前这里**只写 localStorage**（`localStorage.setItem('codem:disabled-plugins', …)`），
+  // DB 那一份只能靠 App 监听 `codem:plugin-state-changed` 后调
+  // `adoptDisabledPluginsMirror()` 补收编 —— 也就是说"用户点了开关"到"权威介质落地"
+  // 之间隔了一个事件循环 + 一次动态 import + 一次异步落库。
+  // 这中间的任何一个环节没走完（进程被杀 / 崩溃 / 端口未就绪），
+  // 下一次启动的 `loadDisabledPlugins` 就会拿 DB 的旧值**覆盖镜像**：
+  // 用户刚关掉的插件自己又开了，而且**界面上不会有任何提示**。
+  //
+  // 现在写入方只有一处：`saveDisabledPlugins`（DB 列表 + DB 时间戳 + 镜像 + 镜像时间戳）。
+  // 镜像从此是"DB 在某时刻的副本"，不再是第二个真相源；App 侧的收编监听保留着，
+  // 作为"还有别的镜像写入方"的兜底（收编时值已相同 → 不做无谓写）。
 
   private STORAGE_KEY = 'codem:disabled-plugins'
 
@@ -417,14 +450,17 @@ export class PluginManagerService {
     } catch { return null }
   }
 
-  /** 显式写入禁用列表到 localStorage（不依赖 states Map） */
+  /** 写入禁用列表：**DB（权威）+ 镜像**一次写完（第 48 轮 D-22 收口） */
+  private persistDisabledList(list: string[]): void {
+    persistDisabledPlugins(list)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('codem:plugin-state-changed'))
+    }
+  }
+
+  /** 显式写入禁用列表（不依赖 states Map） */
   private saveDisabledListExplicit(list: string[]): void {
-    try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list))
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('codem:plugin-state-changed'))
-      }
-    } catch {}
+    this.persistDisabledList(list)
   }
 
   private saveDisabledList(): void {
@@ -433,11 +469,7 @@ export class PluginManagerService {
     const disabled = [...this.states.entries()]
       .filter(([, s]) => s.status === 'disabled' || s.status === 'error')
       .map(([n]) => n)
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(disabled))
-    // 通知 App 层刷新插件按钮状态
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('codem:plugin-state-changed'))
-    }
+    this.persistDisabledList(disabled)
   }
 }
 

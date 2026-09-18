@@ -51,7 +51,7 @@ describe("插件市场 Tab", () => {
 
   it("MT-1: 无 manager 时目录可浏览且不出现安装按钮", () => {
     render(
-      <PluginMarketTab manager={null} zh notify={() => {}} onToggle={() => {}} />
+      <PluginMarketTab manager={null} stateVersion={0} zh notify={() => {}} onToggle={() => {}} />
     );
     expect(screen.getAllByText(/@deepseek-ai\/dsh-llm/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/@codem\/llm/).length).toBeGreaterThan(0);
@@ -62,7 +62,7 @@ describe("插件市场 Tab", () => {
 
   it("MT-2: bundled 卡片显示兼容徽标与等价插件", () => {
     const mgr = makeManagerMock() as any;
-    render(<PluginMarketTab manager={mgr} zh notify={() => {}} onToggle={() => {}} />);
+    render(<PluginMarketTab manager={mgr} stateVersion={0} zh notify={() => {}} onToggle={() => {}} />);
     expect(screen.getAllByText("内置等价").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/未启用/).length).toBeGreaterThan(0);
   });
@@ -70,7 +70,7 @@ describe("插件市场 Tab", () => {
   it("MT-3: 点击安装 → manager.enable(codemAnchor)", async () => {
     const mgr = makeManagerMock() as any;
     const notify = vi.fn();
-    render(<PluginMarketTab manager={mgr} zh notify={notify} onToggle={() => {}} />);
+    render(<PluginMarketTab manager={mgr} stateVersion={0} zh notify={notify} onToggle={() => {}} />);
     const buttons = screen.getAllByText("安装并启用");
     expect(buttons.length).toBeGreaterThan(0);
     fireEvent.click(buttons[0]);
@@ -84,7 +84,7 @@ describe("插件市场 Tab", () => {
     // 预启用一个非核心 anchored 插件（可安全卸载）
     await mgr.enable("@codem/tool-fs-search");
     const onToggle = vi.fn();
-    render(<PluginMarketTab manager={mgr} zh notify={() => {}} onToggle={onToggle} />);
+    render(<PluginMarketTab manager={mgr} stateVersion={0} zh notify={() => {}} onToggle={onToggle} />);
     const disableButtons = screen.getAllByText("禁用");
     expect(disableButtons.length).toBeGreaterThan(0);
     fireEvent.click(disableButtons[0]);
@@ -94,7 +94,7 @@ describe("插件市场 Tab", () => {
   it("MT-5: 核心内置锚点已启用时只读显示，不提供禁用卸载", async () => {
     const mgr = makeManagerMock() as any;
     await mgr.enable("@codem/llm");
-    render(<PluginMarketTab manager={mgr} zh notify={() => {}} onToggle={() => {}} />);
+    render(<PluginMarketTab manager={mgr} stateVersion={0} zh notify={() => {}} onToggle={() => {}} />);
     expect(screen.getAllByText("已启用（核心）").length).toBeGreaterThan(0);
     // 全列表此时不应出现任何"禁用"按钮（唯一 enabled 的是核心锚）
     expect(screen.queryByText("禁用")).toBeNull();
@@ -104,9 +104,41 @@ describe("插件市场 Tab", () => {
 
   it("MT-6: 安装中（loading）条目显示只读'启用中…'，无安装/禁用按钮", () => {
     const mgr = makeManagerMock({ "@codem/tool-fs-search": "loading" }) as any;
-    render(<PluginMarketTab manager={mgr} zh notify={() => {}} onToggle={() => {}} />);
+    render(<PluginMarketTab manager={mgr} stateVersion={0} zh notify={() => {}} onToggle={() => {}} />);
     expect(screen.getAllByText("启用中…").length).toBeGreaterThan(0);
     // loading 条目不提供"安装并启用"或"禁用"动作
     expect(screen.queryByText("禁用")).toBeNull();
+  });
+
+  /**
+   * MT-7（第 48 轮，真机发现的 P1 的**第二个复现点**）
+   *
+   * `pluginStates` 这个 memo 读的是 `manager.getPluginStates()`（实时状态），
+   * 而依赖原来只有 `[manager]` —— 一次开关切换不会让 `manager` 换引用，
+   * 于是市场页签的"已安装/未启用"标记永远停在打开弹窗那一刻。
+   *
+   * 这个用例是**正面判据**：`stateVersion` 变了就必须重算出新状态。
+   * 判据用"锚点行的启用文案"而不是"函数被调用了几次" ——
+   * 后者在依赖写错时照样为真（`getPluginStates` 会被 render 里的其它调用碰到）。
+   */
+  it("MT-7: stateVersion 变化必须让'已安装/启用'标记重算（否则市场页签永远停在打开那一刻）", async () => {
+    const mgr = makeManagerMock() as any;
+    const { rerender } = render(
+      <PluginMarketTab manager={mgr} stateVersion={0} zh notify={() => {}} onToggle={() => {}} />,
+    );
+
+    // 初始：非核心锚点未启用 → 有"安装并启用"按钮，没有"卸载/禁用"
+    expect(screen.getAllByText("安装并启用").length).toBeGreaterThan(0);
+
+    // 后台发生了变化（等价于用户在"已安装"页签里点了开关，父组件收到了 subscribe 回调）
+    await mgr.enable("@codem/tool-fs-search");
+    rerender(
+      <PluginMarketTab manager={mgr} stateVersion={1} zh notify={() => {}} onToggle={() => {}} />,
+    );
+
+    expect(
+      screen.getAllByText("禁用").length,
+      "stateVersion 变了就该重算：非核心锚点已启用 → 应出现「禁用」（卸载语义）",
+    ).toBeGreaterThan(0);
   });
 });

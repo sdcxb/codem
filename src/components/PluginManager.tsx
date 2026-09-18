@@ -370,7 +370,17 @@ export function PluginManager({ onClose }: PluginManagerProps) {
   const lang = useLang()
   const zh = lang === 'zh'
   const [manager, setManager] = useState<PluginManagerService | null>(null)
-  const [, setForceUpdate] = useState(0)
+  /**
+   * 订阅驱动的版本号（第 48 轮）。
+   *
+   * 原来这里是 `const [, setForceUpdate] = useState(0)` —— **只取 setter、丢掉值**，
+   * 于是"重渲染"发生了，但任何以 `useMemo` 缓存了插件状态的派生数据都不会重算
+   * （memo 看不到版本号变化）。插件卡片列表与插件市场页签的"已安装/启用"标记
+   * 都栽在这一点上：界面上的开关与真实状态长期不一致。
+   *
+   * 现在把值留下来，并作为那些 memo 的依赖（见 `plugins` 与 `PluginMarketTab`）。
+   */
+  const [stateVersion, setStateVersion] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState<string>('all')
   const [confirmRequest, setConfirmRequest] = useState<DisableConfirmationRequest | null>(null)
@@ -486,7 +496,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
   // 订阅状态变化
   useEffect(() => {
     if (!manager) return
-    const unsub = manager.subscribe(() => setForceUpdate(n => n + 1))
+    const unsub = manager.subscribe(() => setStateVersion(n => n + 1))
     return unsub
   }, [manager])
 
@@ -577,6 +587,23 @@ export function PluginManager({ onClose }: PluginManagerProps) {
   }, [])
 
   // 获取过滤后的插件列表
+  //
+  // ⚠️ 第 48 轮（真机发现的 P1）：`stateVersion` **必须**在依赖里。
+  //
+  // `manager.getPluginStates()` 每次调用都读**实时**状态，但它被包在一个 `useMemo` 里，
+  // 而 memo 的依赖原来是 `[manager, searchQuery, activeCategory]` —— 这三个在
+  // 一次开关切换之后**都不会变**。于是：
+  //   - 顶部的 `totalCount` / `enabledCount`（在 render 里直接算，没有 memo）**会**更新；
+  //   - 而卡片列表（`plugins`）**不会**重算，卡片上的开关与状态标签永远停在打开弹窗那一刻。
+  //
+  // 真机实测（打包版 1.16.76，插件管理面板）：点开关启用 `@codem/ui-game` 之后，
+  // 权威介质当场写对了（`codem-disabled-plugins` 由 `["@codem/ui-game"]` 变为 `[]`，
+  // 时间戳 `1789723668130` 与镜像一致），但卡片上的开关**仍然显示未启用**、
+  // `aria-label` 仍然是「enable plugin」。此时再点一次，会走到"关闭"分支并弹出
+  // 「确认关闭插件」对话框 —— 用户看到的是「点了没反应，再点却问我是不是要关闭」。
+  //
+  // `setStateVersion` 由 `manager.subscribe` 驱动（见下方订阅 effect），
+  // 所以每次状态/加载/失败变化都会让这个 memo 重算 —— 卡片与顶部计数从此同源同帧。
   const plugins = useMemo(() => {
     if (!manager) return []
     let list = manager.getPluginStates()
@@ -593,7 +620,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       list = list.filter(p => (p.category || 'core') === activeCategory)
     }
     return list
-  }, [manager, searchQuery, activeCategory])
+  }, [manager, searchQuery, activeCategory, stateVersion])
 
   // 统计数量
   const totalCount = manager?.getPluginStates().length || 0
@@ -631,6 +658,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       {tab === 'market' ? (
         <PluginMarketTab
           manager={manager}
+          stateVersion={stateVersion}
           zh={zh}
           onToggle={handleToggle}
           notify={(msg, type) => setToast({ msg, type })}

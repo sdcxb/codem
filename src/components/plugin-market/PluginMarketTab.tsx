@@ -23,6 +23,16 @@ import {
 
 interface Props {
   manager: PluginManagerService | null
+  /**
+   * 父组件的插件状态版本号（第 48 轮）。
+   *
+   * `pluginStates` 这个 memo 里读的是 `manager.getPluginStates()`（**实时**状态），
+   * 而依赖原来只有 `[manager]` —— 一次开关切换根本不会让 `manager` 换引用，
+   * 于是"已安装 / 已启用"标记永远停在打开弹窗的那一刻
+   * （与 `PluginManager` 卡片列表是同一个缺陷，真机上一起被抓到）。
+   * 依赖里带上版本号，父组件每次收到 `manager.subscribe` 回调都会让它重算。
+   */
+  stateVersion: number
   zh: boolean
   /** 切换插件（父组件统一处理级联确认与提示） */
   onToggle: (name: string) => void
@@ -48,7 +58,7 @@ function statusBadge(status: DshMarketStatus, zh: boolean): { text: string; colo
   }
 }
 
-export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
+export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }: Props) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [online, setOnline] = useState<NpmPluginHit[] | null>(null)
@@ -76,7 +86,9 @@ export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
   const pluginStates = useMemo(() => {
     if (!manager) return null
     return new Map(manager.getPluginStates().map(p => [p.name, p]))
-  }, [manager])
+    // stateVersion 见 Props 上的说明：不带上它，开关切了这里也不会重算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manager, stateVersion])
 
   const pluginState = useCallback((name?: string) => {
     if (!name || !pluginStates) return null

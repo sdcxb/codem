@@ -499,7 +499,19 @@ describe("PREF-WIRE：App / store 侧的真实接线（否则实现只是死代�
   it("PREF-WIRE-1: App.tsx 真的调用了恢复与插件介质统一（不是只写了模块）", () => {
     const app = readCode("src/App.tsx");
     expect(app, "启动恢复必须被调用").toContain("restoreLastOpenedSession");
-    expect(app, "插件禁用列表必须读 DB 权威值").toContain("loadDisabledPlugins");
+    /**
+     * 第 48 轮：这里的判据从 `loadDisabledPlugins` 换成 `reconcileDisabledPluginsAtBoot`。
+     *
+     * 要守的性质没变 —— "插件禁用列表以 DB 权威介质为准" —— 但入口变了：
+     * `loadDisabledPlugins` 的契约是"DB 有值就以 DB 为准"，那在"写入没落地"
+     * （进程在异步落库前被杀）时会**静默把用户的开关改回去**。
+     * 对账函数读的仍然是 DB（并且额外用写入时戳判断哪一份更新），
+     * 所以"读 DB 权威值"这条性质由它承接。用例见
+     * `plugin-toggle-medium.test.ts::PLUGIN-MEDIUM-2`。
+     */
+    expect(app, "插件禁用列表必须读 DB 权威值（第 48 轮起经对账函数）").toContain(
+      "reconcileDisabledPluginsAtBoot",
+    );
     expect(app, "插件开关变化必须收编进 DB").toContain("adoptDisabledPluginsMirror");
   });
 

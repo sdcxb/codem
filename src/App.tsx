@@ -302,7 +302,7 @@ import type { ClarificationFormData } from "./core/llm/agentic-loop";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
-import { reportActionFailure } from "./core/storage/persist-failure";
+import { composePersistAlertText, reportActionFailure } from "./core/storage/persist-failure";
 
 /**
  * 退出前的收尾：**排空在途写入 + checkpoint 存储端口**（第 44 轮补上的缺口）。
@@ -805,14 +805,26 @@ useEffect(() => {
        *
        * 首帧的同步初值来自镜像（见 `pluginDisabledList` 的声明处），这里补做：
        * 读 DB 权威值 + 把镜像里的历史值迁移进 DB。
+       *
+       * 第 48 轮：改调 `reconcileDisabledPluginsAtBoot`（而不是直接读 DB）。原因：
+       * "DB 一律为准"在**写入没落地**时是错的 —— 用户刚关掉一个插件、进程在
+       * 异步落库前被杀掉，盘上 DB 还是旧值，下一次启动就会把用户的开关
+       * **静默改回去**。对账函数用写入时间戳判定"哪一份更新"，
+       * 并且把"两种介质不一致"这件事经 `reportPersistFailure` 说出来（不回退成静默路径）。
        */
       void (async () => {
         try {
-          const { loadDisabledPlugins } = await import("./core/session/preferences");
-          const state = loadDisabledPlugins();
+          const { reconcileDisabledPluginsAtBoot } = await import("./core/session/preferences");
+          const state = reconcileDisabledPluginsAtBoot();
           setPluginDisabledList(state.list);
           if (state.migrated) {
             console.log("[App] 插件禁用列表的介质已从 localStorage 迁移到 DB（D-22）");
+          }
+          if (state.adoptedFromMirror) {
+            console.warn(
+              "[App] 上一次的插件开关写入没有落到 DB，已按较新的一份（localStorage 镜像）恢复；" +
+              "界面上的开关状态以本次显示为准",
+            );
           }
         } catch (e) {
           console.warn("[App] 读取插件禁用列表（DB）失败，继续用 localStorage 镜像:", e);
@@ -2185,12 +2197,11 @@ flushStreamBuffer(); // flush all on unmount
     const reportedPersistAreas = new Set<string>();
     const onPersistFail = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as
-        | { area?: string; message?: string; count?: number; kind?: "persist" | "action" }
+        | { area?: string; message?: string; count?: number; kind?: "persist" | "action"; consequence?: string }
         | undefined;
       const area = detail?.area || "unknown";
       if (reportedPersistAreas.has(area)) return; // 同一区域只提示一次
       reportedPersistAreas.add(area);
-      const isAction = detail?.kind === "action";
       /**
        * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：改走**常驻提示通道**，不再塞进引导队列
        *
@@ -2200,18 +2211,24 @@ flushStreamBuffer(); // flush all on unmount
        * **中断正在生成的回复**（这条告警从来没进过引导队列，点下去只是打断回答）。
        *
        * 现在走 `addPersistAlert`：与流式状态无关、常驻可关闭、同区域累计次数。
+       *
+       * ## 第 48 轮：文案拼装抽到 `composePersistAlertText`（纯函数）
+       *
+       * 原因见该函数的注释：原来这段拼装写在这里，于是"横幅上到底印了什么"
+       * 只能靠真机肉眼核验 —— 而真机核验抓到的正是**后果那句与真实情况矛盾**
+       * （插件开关的介质对账已经把值恢复进 DB 了，横幅却说"重启应用后会丢失"）。
+       * 抽出来之后文案本身可以被用例钉住。
        */
       useAppStore.getState().addPersistAlert({
         area,
-        kind: isAction ? "action" : "persist",
-        message: isAction
-          ? `操作没有生效（${area}）：${detail?.message || "未知原因"}。` +
-            `该功能本次不可用，请重试或检查日志` +
-            (detail?.count && detail.count > 1 ? `（已累计失败 ${detail.count} 次）` : "") +
-            `。`
-          : `数据保存失败（${area}）：${detail?.message || "未知原因"}。` +
-            `这次改动目前只在内存里，重启应用后会丢失；请检查磁盘空间与数据库文件占用。` +
-            (detail?.count && detail.count > 1 ? `（该区域已累计失败 ${detail.count} 次）` : ""),
+        kind: detail?.kind === "action" ? "action" : "persist",
+        message: composePersistAlertText({
+          area,
+          message: detail?.message || "未知原因",
+          count: detail?.count ?? 1,
+          kind: detail?.kind === "action" ? "action" : "persist",
+          ...(detail?.consequence ? { consequence: detail.consequence } : {}),
+        }),
       });
     };
     let unlistenPersist: (() => void) | undefined;

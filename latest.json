@@ -1,11 +1,11 @@
 {
-  "version": "1.16.75",
-  "notes": "「失败必须可见」这条契约终于落到界面上：写盘/操作失败不再只在流式期间显示（空闲时原来完全看不到），也不再被渲染成会中断 AI 回答的「引导条」；另清理了一批「印出来但按不动」的死控件",
-  "pub_date": "2026-09-18T09:15:28Z",
+  "version": "1.16.76",
+  "notes": "「刚关掉的插件重启后自己又开了」这条静默回退被堵住了：插件开关的写入方收成唯一一处（DB 列表+写入时刻+镜像+时刻一次写完），启动时用写入时刻判定哪一份更新（不再无条件以 DB 为准，那会在写入没落地时静默改回用户的选择），分歧经界面常驻横幅如实告知；顺带修掉真机上抓到的开关点了像没反应（卡片 useMemo 依赖漏了订阅版本号）与告警横幅自相矛盾的两句话。",
+  "pub_date": "2026-09-18T10:06:49Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2YrdXd1Wnd0WnZRazZ3OGkrM2t5UXJWZ0dMSzNDV0pRTTZBSGNnUktmczhTak45bFJONmlZWmRKNEwyZElhamR5QUhHdkNhT2dJb3BGdDVmd1VLQ3dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzIyODYzCWZpbGU6Q29kZW1fMS4xNi43NV94NjQtc2V0dXAuZXhlClR1dXpTS0VBTWtkMTQrRjZXTTN2UWRWZld1SGt6dDdZOU4wY3locUt6bE0xMmQ4M3hUYWlPNWQ4UUVIZGRSWEtlNUhZbzFsWXpRVHkvZW55NytLRkRnPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.75/Codem_1.16.75_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NFeUV2SytWRG9GVDY5dUh6RFhaVCttd0E1TFRKOTNRaWpwencvMkRpM3dkVmUvMFRnc3ZRYS9BMFE2Vlp1bS90a1ppOVJFYjZLRUxURGVIWGRHTWdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzI1MzQ5CWZpbGU6Q29kZW1fMS4xNi43Nl94NjQtc2V0dXAuZXhlCnkwQmVXRDJXeHBhM1VkbXFGQmQ0VmxYaGpJeDJScHZCdWhnOXR6WG5OV1p6dzVEaHhqSk5PMW9aRlF0Z0w5K2pYZzJTeGdsblhoTUlWOFh0Y2pOL0RRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.76/Codem_1.16.76_x64-setup.exe"
     }
   }
 }
