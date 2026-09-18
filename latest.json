@@ -1,11 +1,11 @@
-﻿{
-    "version":  "1.16.73",
-    "notes":  "工具禁用真的生效（定义层+执行层，安全侧开关不再说假话）；回滚变得可知情可撤销（影响面预览 + 确认框 + 回滚前自动快照 + 删除走回收站）",
-    "pub_date":  "2026-09-18T08:19:47Z",
-    "platforms":  {
-                      "windows":  {
-                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FtREhXY2IzRmhycmFHMDlhSWpuS1EwV00vS2toa0NpZHdxQW93ZlhxNFo4SDNTRHcvVU54WWxIS0thS2xPYWYvb25XK3lKN29qVVUxa3ZGUVllNHdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzE5NDM2CWZpbGU6Q29kZW1fMS4xNi43M194NjQtc2V0dXAuZXhlCnV5eXRzK1VjRHl1dHNhWEY2T3h3dTdjWkczRXM4NmF4UGhVNDJhU21oMkVDdHVGenZzWGlhMmFsWmR3aHdHcmRkMDdEOUhzNlRJWnA5SDBCSDR2K0JBPT0K",
-                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.73/Codem_1.16.73_x64-setup.exe"
-                                  }
-                  }
+{
+  "version": "1.16.74",
+  "notes": "把「读不到」与「你没有数据」分开：读消息失败不再渲染成「开始新对话」欢迎页（那是「对话被清空」的假象），快照面板的「读取失败」分支过去永远不可能渲染",
+  "pub_date": "2026-09-18T08:41:29Z",
+  "platforms": {
+    "windows": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RvditMdDhuZC8rd0RDdUphekRTZXIrMjdZaEhHTkRjREozbWQ1cUdxM08yZkNNRGttS2o1M3VGUFFqNEFGTGxmcUNrU3pYb2VPZnZmYWJBeG05OWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzIwNDkyCWZpbGU6Q29kZW1fMS4xNi43NF94NjQtc2V0dXAuZXhlCndVZG9yZ2N3VDdyZXl1ZHB6d2RWNysyMDF6Q1lyOGRtRkpvMy85VWFtQm9tT2xkaFJpeFBrcmtya1YwdEhqaHh5bit2dFVtODhxV0FVb1pNeVZ0SUFRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.74/Codem_1.16.74_x64-setup.exe"
+    }
+  }
 }
