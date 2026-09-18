@@ -108,6 +108,13 @@ Release notes 从 `CHANGELOG.md` 对应版本段落取。
 gh release view v$Version --repo sdcxb/codem   # 应有 5 个 asset
 ```
 
+> ⚠️ **发布后不要立刻用「检查更新」下结论**（第 61 轮实测）：`releases/latest/download/latest.json`
+> 这个入口走 GitHub 的 CDN，**传播有几秒到几分钟的滞后**。本轮刚发布 1.16.90 后，
+> 已装的 1.16.89 立刻 `updater.check()` 返回的是 **no update**（拿到的是上一版清单的缓存），
+> 45 秒后再查就正确返回 `1.16.90`。所以：
+> ①`verify-update-manifest.mjs --remote` 认的是**资产与签名的字节一致**（那个是即时的），
+> ②"更新器能不能发现新版本"要**隔一会儿再查一次**再下结论，别把它当成更新链路坏了。
+
 产物完整性检查：
 
 - `bundle\msi\Codem_<ver>_x64_en-US.msi` + `.msi.sig`
