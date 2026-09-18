@@ -521,4 +521,75 @@ describe("P1-11 useDraftPersistence 卸载/切换冲刷", () => {
       vi.useRealTimers();
     }
   });
+
+  it("RA-5f（第 54 轮）: 只是**路过**一个会话（一个字没敲、待满防抖窗口）→ 不许留下空草稿行", () => {
+    /**
+     * 真机实证的偏差：`settings` 里有 24 条 `composer-draft-*`，一部分的会话早就删了、
+     * 值全是空串 —— 成因就是防抖定时器**无条件**写。文件里的注释一直写着
+     * "遍历过的会话不该攒出无意义的行"，实现却是相反的。
+     */
+    vi.useFakeTimers();
+    try {
+      const { unmount } = renderHook(() => useDraftPersistence("sess-visit"));
+      act(() => {
+        vi.advanceTimersByTime(5000); // 远远超过 500ms 防抖窗口
+      });
+      expect(
+        getSetting("composer-draft-sess-visit"),
+        "没敲过字的会话不该有一行草稿（空串不是信息）",
+      ).toBeNull();
+      unmount();
+      expect(getSetting("composer-draft-sess-visit")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("RA-5g（第 54 轮）: 把输入框删空 → 那一行**被删掉**（不是留一条空串）", () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useDraftPersistence("sess-clear"));
+      act(() => {
+        result.current.setDraft("打了一半又想删掉");
+      });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(getSetting("composer-draft-sess-clear")).toBe("打了一半又想删掉");
+
+      act(() => {
+        result.current.setDraft("");
+      });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(
+        getSetting("composer-draft-sess-clear"),
+        "不变量：`composer-draft-<key>` 存在 ⇔ 有一份**非空**草稿",
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("RA-5h（第 54 轮）: `clearDraft`（发完消息）→ 行被删掉，之后重新挂载读回空草稿", () => {
+    vi.useFakeTimers();
+    try {
+      const first = renderHook(() => useDraftPersistence("sess-sent"));
+      act(() => {
+        first.result.current.setDraft("这条要发出去");
+      });
+      act(() => {
+        first.result.current.clearDraft();
+      });
+      expect(getSetting("composer-draft-sess-sent"), "发出去了就不该留草稿行").toBeNull();
+      first.unmount();
+
+      const second = renderHook(() => useDraftPersistence("sess-sent"));
+      expect(second.result.current.draft).toBe("");
+      second.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -59,6 +59,8 @@ function wireToSession(row: Record<string, unknown>): Session {
     correctionMode: (row.correction_mode as number) ?? undefined,
     deepThinkingMode: (row.deep_thinking_mode as number) ?? undefined,
     preserveExecutor: (row.preserve_executor as number) ?? undefined,
+  // 第 54 轮：谱系要**读回来**才谈得上"写侧不丢"（写侧见 `sessionToWire` 的 parent_id）
+  parentId: (row.parent_id as string | null) ?? null,
   };
 }
 
@@ -82,12 +84,43 @@ function sessionToWire(s: Session): Record<string, unknown> {
     /**
      * `sort_order` 必须一起写回（B-6）。
      *
-     * 这条路径是"读出整行 → 改几个字段 → 整体 replace 写回"（见 `updateSession` /
-     * `togglePinned` / `forkSession`）—— 而 Rust 侧的 upsert 是**按传入列**写的：
-     * 不带上这一列，`replace` 语义就会把用户的拖拽顺序**清成 NULL**。
-     * 显式写 `null` 也是一种表达（"这个会话没有排序键"），所以用 `?? null` 而不是省略键。
+     * 这条路径是"读出整行 → 改几个字段 → 整体写回"（见 `updateSession` /
+     * `togglePinned` / `forkSession`）。带上这一列的理由有两条，**都要写清楚是哪一条**：
+     *
+     * 1. **`mode: "insert"`（`domainWrite` 的默认，建行路径用它）**：引擎侧是裸 `INSERT INTO`，
+     *    落库的那一行**就是构造器给出的列** —— 漏掉哪列，那列就是 NULL。这是硬理由；
+     * 2. **读-改-写要能成立为"整行写回"这个不变量**：`replace` 在引擎里是"先 UPDATE 只写
+     *    本次提供的列，0 行才 INSERT"（`crud.rs:412-429`），所以**未提供的列其实保持原值**
+     *    —— 靠这一条并不能证明"漏列会清空"。但旧库导入那条路用的是真正的
+     *    `INSERT OR REPLACE`（`migrate.rs:290`），那里漏列就是静默清空；
+     *    构造器把整行写全，就不用去分辨调用点落在哪条路上。
+     *
+     * ⚠️ 本注释的初版写的是"不带上这一列，`replace` 语义就会把用户的拖拽顺序清成 NULL" ——
+     * 那是把 `replace` 当成了 `INSERT OR REPLACE`（**错**，见上面第 2 条；同一段注释里
+     * 前面刚写过"upsert 是按传入列写的"，自相矛盾）。第 54 轮自查时改正。
+     *
+     * 显式写 `null` 也是一种表达（"这个会话没有排序键"）：在 `replace` 路径上，
+     * **只有**显式 null 才能把一列清空（省略键 = 保持原值）。
      */
     sort_order: sessionSortOrder.get(s.id) ?? null,
+  /**
+   * `parent_id` 必须一起写回（第 54 轮）。
+   *
+   * 与 `sort_order` 同一个道理，但这一列**真的丢过一次**（有证据的那种）：
+   * 建行路径（`createSession` / `ensureSubagentSession`）走 `mode: "insert"`，
+   * 落库行 = 构造器给出的列 —— 而 `sessionToWire` 里原来**没有** `parent_id`，
+   * 于是"带 `parentId` 的实体"建出来的会话行里这一列永远是 NULL：
+   * 第 45 轮给子智能体补的 `sessions` 行就是这样，子会话在 `session_trace` 里
+   * 永远报 `Parent: (root)`、队长会话报 `Descendants: []`。
+   *
+   * 显式写 `null` 是合法表达（"根会话"），所以用 `?? null` 而不是省略键；
+   * 在 `replace` 路径上，这一列也是"显式 null 才能清空"。
+   *
+   * ⚠️ 本注释初版声称"改名 / 置顶 / 拖拽排序会把谱系清空" —— **错的**，
+   * 详见 `src/core/types.ts` 里 `parentId` 字段上的更正记录（连同那条结论的成因：
+   * 假端口比引擎更严格）。
+   */
+  parent_id: s.parentId ?? null,
   };
 }
 
@@ -433,6 +466,19 @@ export function forkSession(
     messageCount: source.messageCount,
     pinned: false,
     /**
+     * 谱系（第 54 轮）：分叉的**本体**就是"子会话指向源会话"。
+     *
+     * 原来这一列靠在写行时手工塞进去（`{ ...sessionToWire(child), parent_id: source }`），
+     * 于是"谁能写谱系"取决于每条路径各自记不记得塞 —— 漏一条（第 47 轮查出的回退路径）
+     * 就是静默丢谱系。现在它是 `Session` 的字段、由 `sessionToWire` 统一写，写侧只有一种形状。
+     *
+     * ⚠️ 本注释初版还写了"另外三条 replace 写入（改名 / 置顶 / 拖拽排序）都会把它清成 NULL"
+     * —— **错**：`replace` 在引擎里只写本次提供的列、未提供的列保持原值
+     * （`crud.rs:412-429` + 引擎用例 `crud_upsert_replace_does_not_cascade_delete_children`），
+     * 渲染侧镜像也是合并写（`rust-port.ts:2063`）。更正记录见 `src/core/types.ts` 的 `parentId`。
+     */
+    parentId: sourceSessionId,
+    /**
      * 会话级模式字段**必须继承**（第 45 轮功能上下文审计 P1-D3）。
      *
      * `sessionToWire` 对这些列显式写 `?? null`（第 19 行附近的说明：显式写 null 才能清空列），
@@ -451,8 +497,10 @@ export function forkSession(
   };
 
   // Create the child session row with parent_id。
-  // 走端口：`parent_id` 与 `sort_order` 都是 ALTER 加的列，整体 upsert 时**显式带上**
-  // （否则 fork 关系丢失 / 把用户拖拽出来的顺序清掉 —— 后者是 B-6 那一类"写了没人读"的近亲）。
+  // 走端口：`parent_id` 与 `sort_order` 都是 ALTER 加的列，整行写回时**显式带上**
+  // （`parent_id` 漏了就没有谱系；`sort_order` 漏了在这一列上倒不会丢 ——
+  //  `replace` 只写提供的列 —— 但构造器写全整行才谈得上"读写同一个形状"，
+  //  详见 `sessionToWire` 里那两段更正过的注释）。
   //
   /**
    * ## ⚠️ 第 47 轮补（功能上下文审计 P1）：必须显式 `mode: "replace"`
@@ -476,7 +524,7 @@ export function forkSession(
   if (
     domainWrite(
       SESSION_TABLE,
-      [{ ...sessionToWire(child), parent_id: sourceSessionId, sort_order: null }],
+      [{ ...sessionToWire(child), sort_order: null }],
       // `mode: "replace"` = 引擎侧"UPDATE 命中就更新、否则 INSERT"，重复写安全
       { scope: "session.fork", note: "fork 出的会话未保存", mode: "replace" },
     )

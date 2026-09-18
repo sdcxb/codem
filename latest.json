@@ -1,11 +1,11 @@
 {
-  "version": "1.16.83",
-  "notes": "真机钻取撞出的静默缺口：索引真的少了行、但库没坏也没人写标记时，什么都不会发生（实测某会话权威日志 657 个唯一 id、索引只有 545 行，差 112 行零信号）。现在维护里加了对账：发现落后就按会话从权威日志重建（幂等、只 upsert 不删行）并如实上报，横幅开头也说真话。",
-  "pub_date": "2026-09-18T13:27:17Z",
+  "version": "1.16.85",
+  "notes": "子智能体会话的谱系一直是 NULL（现在写进 parent_id）；同时撤回一条我先前的错误结论，并立了一道『行构造器必须覆盖整行』的审计门禁；输入草稿的空行不再堆积。",
+  "pub_date": "2026-09-18T14:26:20Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1krNHdVb3RYVVRIZFZ3aXYrVzB5R0ZRUU5ZMDkzMkdjOEk5OEt3eUU2RTluZ252QVloY3ZwOExlMFI0bXFSbWlMdWxlR1gzQ3I1U3FvRnhFNHlHY3dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzM3OTM4CWZpbGU6Q29kZW1fMS4xNi44M194NjQtc2V0dXAuZXhlCjBqTGZNVG9wUXRiWkFDLzZUZ2E2UzdPMjlrT2FEcFQzU3lSNWhYOGdzd3hoeXp0WVZJS3lZVHZJQkdyVE1Gb1dqQzh6eHdsdTZCejB3N281WE00eUFBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.83/Codem_1.16.83_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Q3dEFZVmU1cVVGYytPSVQ0aEV0OHp3clVDd2ZLSmc3Zis4bi9peHpFRXNZTTRqZDJLOGx5REIyeWZLeHo1SlFFNm5vQmpiWHp4eDY3OHB4YjIrZEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzQxMzQ0CWZpbGU6Q29kZW1fMS4xNi44NV94NjQtc2V0dXAuZXhlCmM2THFBVTNXSzloMVFaa3hIRC9YZTYwMlFReWdvQmxrOUh0UHlTckpMRXV4N2xXL1JHdFJtem9QU1o5TmRmMXpSQmd1TzY4NEducnlGWjJSZ0QxZEFRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.85/Codem_1.16.85_x64-setup.exe"
     }
   }
 }

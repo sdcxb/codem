@@ -268,6 +268,40 @@ describe("C-2 子智能体会话行补齐", () => {
     expect(child!.project_id, "必须与父会话同项目").toBe("p9");
   });
 
+  it("C2-1b: 子会话的 `parent_id` 指向父会话（第 54 轮：谱系是 spawn 时已知的事实）", async () => {
+    /**
+     * 第 45 轮给子会话补了 `sessions` 行，但**没写 `parent_id`** ——
+     * 于是子会话在谱系上仍然是"根"：真机对子会话跑 `session_trace` 报
+     * `Parent: (root)`，对队长会话跑报 `Descendants: []`。
+     *
+     * 这条用例同时守**写侧**与**读侧**：
+     * - 写侧：落库那行（假端口里的原始 wire 行）必须有 `parent_id`；
+     * - 读侧：`getSession()` 必须能把它读回来（`wireToSession` 的 `parentId`，
+     *   第 54 轮补 —— 只写不读的话"谱系没丢"这句话没有证据）。
+     */
+    port = createFakeStoragePort({
+      seed: {
+        sessions: [{ id: "parent-1", project_id: "p9", title: "父", created_at: 1, last_message_at: 1, message_count: 0 }],
+      },
+    });
+    setStoragePort(port as unknown as StoragePort);
+
+    const { ensureSubagentSession } = await import("../core/subagent/subagent-session");
+    const { getSession } = await import("../core/storage/session");
+    expect(ensureSubagentSession("sub-lineage", "parent-1")).toBe(true);
+
+    const row = port.__table("sessions").find((r) => r.id === "sub-lineage");
+    expect(row, "子会话行必须落地").toBeDefined();
+    expect(
+      row!.parent_id,
+      "落库行里必须写 parent_id（不写 = session_trace 永远报 Parent: (root)）",
+    ).toBe("parent-1");
+    expect(
+      getSession("sub-lineage")?.parentId,
+      "parent_id 必须读得回来（写侧与读侧是同一件事的两半）",
+    ).toBe("parent-1");
+  });
+
   it("C2-2: 父会话读不到时**不补行**（宁可不写，也不编一个错误的归属）", async () => {
     /**
      * 改前：全仓从未为子会话建 `sessions` 行（`grep createSession src/core/subagent` = 0），

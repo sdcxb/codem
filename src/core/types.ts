@@ -30,6 +30,32 @@ export interface Session {
   deepThinkingMode?: number;
   /** P1: Preserve executor mode flag */
   preserveExecutor?: number;
+  /**
+   * fork 谱系：本会话是从哪个会话分叉出来的（`null`/`undefined` = 根会话）。
+   *
+   * ## 为什么要进这个类型（第 54 轮）
+   *
+   * `sessions.parent_id` 是**迁移加的列**，读侧一直有消费者
+   * （`session-search.ts` 的 `session_trace` 工具会输出 `Parent: …` / `Ancestors: […]`），
+   * 而写侧原来只在 `forkSession` 里**手工往行里塞**这一个字段：
+   * `[{ ...sessionToWire(child), parent_id: sourceSessionId, sort_order: null }]`。
+   *
+   * 关键在于**建行那条路用的是 `mode: "insert"`**（`domainWrite` 的默认值）：引擎侧是裸
+   * `INSERT INTO`，落库的那一行**就是构造器给出的那些列**。于是构造器漏列在 insert 路径上是
+   * **静默 NULL** —— 实体里带着 `parentId` 也进不了库。第 45 轮给子智能体补 `sessions` 行时
+   * 就是这个形态：子会话行建出来了，但谱系是 NULL，`session_trace` 永远报 `Parent: (root)`。
+   *
+   * 现在它是 `Session` 的正常字段：构造器统一写它，写侧只有一种形状。
+   *
+   * ⚠️ **更正（同一轮的自查）**：本注释的初版写的是"`updateSession` / `togglePinned` /
+   * `reorderSessions` 走 `replace`，而 `replace` = `INSERT OR REPLACE`，所以改名会把
+   * `parent_id` 清成 NULL"。**这句话是错的**：`crud.rs:412-429` 里 `replace` 是
+   * "先 UPDATE 只写本次提供的列，0 行才 INSERT"，**未提供的列保持原值**（引擎用例
+   * `crud_upsert_replace_does_not_cascade_delete_children` 断言的就是这条），
+   * 渲染侧镜像也合并写（`rust-port.ts:2063`）。当时"会清空"的只有测试基座，
+   * 那是假端口比引擎更严格造出来的假象（已改，见 `fake-storage-port.ts`）。
+   */
+  parentId?: string | null;
 }
 
 export interface Attachment {

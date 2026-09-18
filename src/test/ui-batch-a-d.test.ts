@@ -1490,9 +1490,16 @@ expect(src).toContain("for (let i = effectiveIdx + 1");
       expect(storeSrc).not.toContain("sourceMessages.slice(0, messageIndex + 1)");
     });
 
-    it("分叉写 `parent_id`：走 SessionStorage.forkSession（唯一的谱系写点）", () => {
-      // 这条是第 44 轮新增的能力保证：fork 出来的会话必须能被 session_trace 追溯
-      expect(sessionSrc).toContain("parent_id: sourceSessionId");
+    it("分叉写 `parent_id`：fork 设实体字段 + 构造器写列（两半都要在）", () => {
+      // 第 44 轮的能力保证：fork 出来的会话必须能被 session_trace 追溯。
+      // 第 54 轮改了机制：`forkSession` 不再往行里手工塞 `parent_id`，而是设实体字段
+      // `parentId`、由 `sessionToWire` 统一写列 —— 所以这里守**两半**：
+      // 少任何一半，谱系都进不了库（行为断言在 `session-lineage-preserved.test.ts`）。
+      expect(sessionSrc, "fork 必须把父子关系设进实体字段").toContain("parentId: sourceSessionId");
+      expect(
+        sessionSrc,
+        "构造器必须真的把这一列写出来（insert 路径上漏列 = 静默 NULL）",
+      ).toContain("parent_id: s.parentId ?? null");
       expect(storeSrc, "store 的 fork 必须走 forkSession 而不是 createSession").toContain(
         "SessionStorage.forkSession(",
       );

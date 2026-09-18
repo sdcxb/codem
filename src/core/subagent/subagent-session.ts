@@ -31,6 +31,9 @@
  * 2. **失败如实上报，但绝不让子智能体启动失败**：补不上只是"这条轨迹入不了库"，
  *    子智能体本身照常跑（降级但可见）。
  * 3. **退出/清理时保留子会话行**（不删）。理由写在 `ensureSubagentSession` 的结尾。
+ * 4. **`parent_id` 必须指向父会话**（第 54 轮）：父子关系是 spawn 时已知的事实，
+ *    不写就等于让 `session_trace` 永远报 `Parent: (root)`（理由与反向依赖核查见下面
+ *    `createSession` 调用处的注释）。
  */
 
 import { getSession, createSession } from "../storage/session";
@@ -98,6 +101,24 @@ export function ensureSubagentSession(
       lastMessageAt: now,
       messageCount: 0,
       pinned: false,
+      /*
+       * ## 谱系（第 54 轮扩大排查）：子智能体会话的 `parent_id` 指向**父会话**
+       *
+       * `sessions.parent_id` 是 `session_trace`（`Parent: …` / `Ancestors: […]` /
+       * `Descendants: […]`）唯一的谱系来源，而全仓只有三处写它：分叉、编辑并回退、
+       * 以及这里。**这里原来没写** —— 于是子会话在第 45 轮补上 `sessions` 行之后
+       * 仍然是"谱系上的根"：真机对子会话跑 `session_trace` 报 `Parent: (root)`，
+       * 对队长会话跑则报 `Descendants: []`（子智能体明明就从它这里 spawn 的）。
+       *
+       * 父子关系在这里是**确定的**：`parentSessionId` 就是调用方 spawn 时给的父会话，
+       * 上面还刚用它取过 `project_id`（`parent` 读不到时不补行 → 不会写一个悬空父）。
+       * 所以这不是"猜一个归属"，而是把已经拿到手的事实写下来。
+       *
+       * 反向依赖为零（已核）：Rust 侧全仓**不读** `parent_id`（`grep parent_id src-tauri` = 0 命中），
+       * 它是渲染侧语义列；UI 侧也没有按 `parent_id` 折叠会话列表的渲染路径
+       * （`App.tsx:4737` 的 `task.parentId` 是子智能体任务的字段，来源不是这一列）。
+       */
+      parentId: parentSessionId,
     });
 
     /*

@@ -262,7 +262,26 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         if (idx >= 0 && !replace && writtenThrough.has(key)) {
           throw new StorageError("CONSTRAINT", `UNIQUE constraint failed: ${name}.${pk}`);
         }
-        if (idx >= 0) target[idx] = replace ? cloneRow(row) : { ...target[idx], ...cloneRow(row) };
+        /*
+         * ## 两种模式**都必须与引擎逐字对齐**（第 54 轮：这条差异造出过一个假缺陷）
+         *
+         * 真实现（`crud.rs:412-429`）：`mode: "replace"` **不是** `INSERT OR REPLACE`，
+         * 而是"先 `UPDATE` 只写本次提供的列，0 行才 `INSERT`" —— 所以
+         * **本次没提供的列保持原值**（引擎自己的用例就是这条判据：
+         * `crud.rs::crud_upsert_replace_does_not_cascade_delete_children`，
+         * 断言"只给 title 时 `project_id` 不能被清空"）。
+         * 渲染侧的内存镜像同语义（`rust-port.ts:2063`：`{ ...list[i], ...row }`）。
+         *
+         * 假端口原来把 `replace` 写成**整行替换**（`cloneRow(row)`）—— 比引擎**更狠**。
+         * 后果不是"更安全"，而是**凭空造出一个不存在的缺陷**：
+         * `sessionToWire` 少写 `parent_id` 时，只有假端口会把它清成 NULL，真机上
+         * 改名 / 置顶 / 排序都**不会**丢谱系。那一轮据此写了"改名会清空谱系"的结论、
+         * 用例与注释（第 54 轮自查发现并撤回）。
+         *
+         * 教训与"假端口不能比真实现更宽松"是同一条的两面：**也不能更严格**。
+         * 两边的差异只能来自"引擎有、假端口没有"的**真实机制**，不能来自解析实现时的想当然。
+         */
+        if (idx >= 0) target[idx] = { ...target[idx], ...cloneRow(row) };
         else target.push(cloneRow(row));
         writtenThrough.add(key);
       }

@@ -296,6 +296,109 @@ describe("扫描器自检（门禁本身必须会咬）", () => {
     }
   });
 
+  it("GATE-12: 行构造器必须覆盖表的所有列（insert 路径漏列 = 静默 NULL）", async () => {
+    /**
+     * 门禁：`tools/audit/check-row-builders.mjs`。
+     *
+     * 为什么它必须会咬：`domainWrite` 的默认 `mode` 是 `"insert"`（裸 `INSERT INTO`），
+     * 落库的那一行**就是构造器给出的那些列** —— 构造器漏一列，那一列永远是 NULL，
+     * 不报错、不告警。第 54 轮的真凭实据就是这条：`sessionToWire` 少了 `parent_id`，
+     * 于是"带 `parentId` 的实体"建出来的会话行里谱系永远是 NULL
+     * （`ensureSubagentSession` 的子会话在 `session_trace` 里永远报 `Parent: (root)`）。
+     */
+    const rb = await import(path.join(TOOLS, "check-row-builders.mjs") as any);
+
+    // ① 前提必须可执行验证：默认 mode 就是 insert（默认值一改，这条门禁的理由就变了）
+    const domainStoreSrc = fs.readFileSync(
+      path.join(ROOT, "src", "core", "storage", "domain-store.ts"),
+      "utf8",
+    );
+    expect(
+      domainStoreSrc,
+      "前提：`domainWrite` 的默认 mode 是 insert（裸 INSERT ⇒ 落库行 = 构造器给的列）",
+    ).toContain('opts.mode ?? "insert"');
+
+    // ② 真仓库：每个配对到的构造器都覆盖它那张表的列
+    const cols = rb.schemaColumns(
+      fs.readFileSync(path.join(ROOT, "src-tauri", "codem-db", "sql", "schema.sql"), "utf8"),
+      fs.readFileSync(path.join(ROOT, "src-tauri", "codem-db", "sql", "migrations.json"), "utf8"),
+    );
+    expect(
+      cols.sessions ?? [],
+      "列清单必须含迁移加的 parent_id（少了它这条门禁会漏报）",
+    ).toContain("parent_id");
+
+    const srcFiles: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of fs.readdirSync(dir)) {
+        if (name === "test" || name === "node_modules") continue;
+        const p = path.join(dir, name);
+        if (fs.statSync(p).isDirectory()) walk(p);
+        else if (/\.(ts|tsx)$/.test(name)) srcFiles.push(p);
+      }
+    };
+    walk(path.join(ROOT, "src"));
+
+    const builders = new Map<string, { keys: string[]; hasSpread: boolean }>();
+    const sites: Array<{ file: string; table: string; builder: string | null; kind: string }> = [];
+    for (const f of srcFiles) {
+      const text = fs.readFileSync(f, "utf8");
+      const rel = path.relative(ROOT, f).replace(/\\/g, "/");
+      sites.push(...rb.pairsFrom(text, rel, cols));
+      for (const m of text.matchAll(/(?:export\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)) {
+        if (!/To(Wire|Row|Record)$/.test(m[1])) continue;
+        const info = rb.returnedKeys(text, m.index);
+        if (info) builders.set(`${rel}:${m[1]}`, info);
+      }
+    }
+    const pairs = sites.filter((s) => s.kind === "builder");
+    const inline = sites.filter((s) => s.kind === "inline");
+    expect(
+      pairs.length,
+      "金丝雀：至少要配对到 40 处构造器写入（抽不到说明抽取器失效，'没有发现问题'这句话就没有证据）",
+    ).toBeGreaterThanOrEqual(40);
+    expect(
+      inline.length,
+      "内联行写入点（不判，但必须停在少数这一档 —— 全变成内联就说明提取器坏了）",
+    ).toBeLessThanOrEqual(20);
+
+    const findings: string[] = [];
+    for (const p of pairs) {
+      const b = builders.get(`${p.file}:${p.builder}`);
+      if (!b || b.hasSpread) continue;
+      const { missing, extra } = rb.compare(b.keys, cols[p.table] ?? []);
+      if (missing.length || extra.length) {
+        findings.push(`${p.file}:${p.builder} → ${p.table} 少列[${missing}] 多列[${extra}]`);
+      }
+    }
+    expect(findings, `行构造器必须写全整行：\n${findings.join("\n")}`).toEqual([]);
+
+    // ③ 会咬的正面判据：故意少一列 / 拼错一列，判据必须报出来
+    const demoCols = ["id", "title", "parent_id"];
+    expect(rb.compare(["id", "title"], demoCols).missing, "少列必须报").toEqual(["parent_id"]);
+    expect(rb.compare(["id", "title", "parent_id"], demoCols), "齐列不许误报").toEqual({
+      missing: [],
+      extra: [],
+    });
+    expect(rb.compare(["id", "titel", "parent_id"], demoCols).extra, "拼错列名必须报").toEqual(["titel"]);
+
+    // ④ 配对必须**紧跟** `[`：`[{ ...row }]` 不许被"搜"出行字面量里的 `JSON.stringify(` 假配对
+    const classify = rb.pairsFrom(
+      'const T_DEMO = "sessions";\n' +
+        'domainWrite(T_DEMO, [rowToWire(r)], {});\n' +
+        'domainWrite(T_DEMO, [{ ...localRow }], {});\n',
+      "synthetic.ts",
+      cols,
+    );
+    expect(classify[0].kind, "命名构造器要判").toBe("builder");
+    expect(classify[0].builder).toBe("rowToWire");
+    expect(
+      classify[1].kind,
+      "内联行要归到 inline（原来会假配对成 `stringify(…)`，指向一个不存在的构造器）",
+    ).toBe("inline");
+    expect(classify[1].builder, "内联行不该有构造器名").toBeNull();
+  });
+
   it("GATE-4: 故意写坏的样本必须被三个扫描器报出来", async () => {
     const { fsScanner, swScanner, gbScanner } = await loadScanners();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-audit-gate-"));

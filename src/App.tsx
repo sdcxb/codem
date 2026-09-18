@@ -3987,8 +3987,12 @@ abortControllersRef.current.delete(session?.id || "");
      * "编辑并回退"产生的新会话与原会话是**明确的父子关系**，但这里原来只调了
      * `createSession`（不写 `parent_id`）—— 于是 `session_trace` 对新会话只报
      * `Parent: (root)` / `Ancestors: []`，"这个会话是从哪一条分出来的"这个事实永久丢失。
-     * `SessionStorage.forkSession` 是**唯一**会写 `parent_id` 的写点，所以这里补一次调用
-     * 把关系钉住 —— 会话行走 upsert，重复写是幂等的。
+     * 那条路上**只有** `SessionStorage.forkSession` 会写 `parent_id`，所以这里补一次调用
+     * 把关系钉住 —— 行写的是 `mode: "replace"`（重复写安全，理由见那个函数里的第 47 轮说明）。
+     *
+     * ⚠️ 第 54 轮补充：现在 `sessionToWire` 自己也写 `parent_id` 了（建行路径是 `insert`，
+     * 构造器漏列 = 静默 NULL），所以"唯一写点"这句话已经过时 —— 但**这次调用仍然必须留**：
+     * `createSession` 建的行是"没有父"的，谱系是这次调用补上的。
      *
      * ⚠️ 第 45 轮（P2-D6 的加重形态）：`SessionStorage.forkSession` **不再复制事件日志**了。
      * 原来它会整段复制，而这里只复制**前缀消息** —— 于是回退会话带着"源会话全量事件 +

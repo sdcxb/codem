@@ -467,6 +467,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       } catch (e) {
         console.warn("[store.deleteSession] 清理'上次打开的会话'键失败（不影响删除本身）:", e);
       }
+      /**
+       * 第 54 轮：**这个会话的输入草稿也要一起清掉**（同一个理由：删掉的会话不该在
+       * `settings` 里留下一条永远读不到的行）。真机钻取实证过这种残留：
+       * `composer-draft-<已删除的会话 id>` 一直躺在库里（值还是空串）。
+       *
+       * ⚠️ 为什么放在这一段的**末尾、且让出一个宏任务**：删的若是"当前会话"，
+       * 输入框会在 React 提交那次 `set({currentSession: null})` 时卸载，
+       * 卸载的冲刷（`useDraftPersistence` 的 cleanup）此刻才把**旧 key** 的草稿写回去
+       * —— 先删后写就白删了。让出宏任务后冲刷已经落定，这次删除是最后动作。
+       * （冲刷只写非空草稿；用户没打完的字仍会被写回，那是刻意的：字不能丢。
+       *   但如果是空草稿，第 54 轮起 `persistDraft` 走的是 `removeSetting`，同样是删除。）
+       */
+      try {
+        await new Promise((r) => setTimeout(r, 0));
+        const { removeSetting } = await import("./storage/settings");
+        removeSetting(`composer-draft-${sessionId}`);
+      } catch (e) {
+        console.warn("[store.deleteSession] 清理会话草稿键失败（不影响删除本身）:", e);
+      }
     })();
   },
 
