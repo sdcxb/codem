@@ -274,4 +274,55 @@ describe("不变量水位：并集口径（漂移不许产生假警报）", () =
     expect(out).toEqual({ checked: 0, violations: 0, newViolations: 0, samples: [] });
     expect(readWatermark()!.at, "没跑就不该留下『这次已经报过了』的痕迹").toBe(before.at);
   });
+
+  it("WATERMARK-7: 水位保留**插入顺序**（超限时要靠它丢最旧的键，不能按字典序排）", async () => {
+    const { auditInvariantsForSessions } = await import("../core/storage/maintenance");
+
+    /*
+     * 故意让插入顺序与字典序**相反**：字典序会把 "aaa…" 排到最前，
+     * 而它其实是最后被记住的。若实现还在写回前 sort，这个断言就会红 ——
+     * 而"丢最旧"就会变成"丢字典序最小的"，那是完全不同的行为。
+     */
+    await installPort(() => {
+      seedSession();
+      seedGapMessage("zzz-oldest"); // 先出现 → 最早被记住
+    });
+    await auditInvariantsForSessions([SESSION]);
+
+    seedGapMessage("aaa-newest"); // 后出现 → 最晚被记住
+    await auditInvariantsForSessions([SESSION]);
+
+    const keys = readWatermark()!.keys;
+    expect(keys, "插入顺序必须原样保留（最旧在前）").toEqual([
+      fp("zzz-oldest"),
+      fp("aaa-newest"),
+    ]);
+    expect(keys, "按字典序排会把 aaa 放最前 —— 那样就分不出谁最旧了").not.toEqual(
+      [...keys].sort(),
+    );
+  });
+
+  it("WATERMARK-8: 水位**有界** —— 上限内正常并集，且不丢键", async () => {
+    const { auditInvariantsForSessions } = await import("../core/storage/maintenance");
+    const { __MAX_INVARIANT_WATERMARK_KEYS_FOR_TEST } = await import("../core/storage/maintenance");
+
+    // 上限是 20000：这里不真的造 2 万个缺口（太慢），只验证**上限存在且是个正数**，
+    // 以及"远小于上限时一个键都不丢"这条实际会走到的路径。
+    expect(
+      __MAX_INVARIANT_WATERMARK_KEYS_FOR_TEST,
+      "上限必须存在（并集只增不减，没有上限会让 settings 里的值无界增长）",
+    ).toBeGreaterThan(0);
+
+    await installPort(() => {
+      seedSession();
+      for (let i = 0; i < 12; i += 1) seedGapMessage(`cap-${i}`);
+    });
+    const out = await auditInvariantsForSessions([SESSION]);
+
+    expect(out.violations).toBe(12);
+    expect(
+      readWatermark()!.keys.length,
+      "远小于上限时不许丢任何键",
+    ).toBe(12);
+  });
 });

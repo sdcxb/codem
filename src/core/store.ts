@@ -117,6 +117,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const sessions = SessionStorage.listSessions(projectId);
       for (const s of sessions) SessionStorage.deleteSession(s.id, { confirmBulk: true });
+      /**
+       * 第 47 轮补（只读审计 P1-3）：**级联删掉的会话也必须从"上次打开的会话"里摘掉**。
+       *
+       * `forgetLastSessionIfDeleted` 原来只有 `deleteSession` 一个调用点，而这条级联路径
+       * 直接调 `SessionStorage.deleteSession` —— 于是"删项目"会留下一个指向已删除会话的键。
+       * 目前它没有炸是因为**碰巧**：删项目会把 `currentProject` 置 null，而记录端
+       * （App.tsx 的 recorder）随后把键写成 null，等于把整个指针清空。
+       * 那是"靠副作用掩盖"，不是设计：一旦级联不再动 `currentProject`（或写入被排队/丢单），
+       * 键就会存活，下次启动 `resolveRestoreTarget` 会去恢复一个**已被删除**的会话
+       * （一次启动的空壳）。
+       *
+       * 这里显式按会话清；`forgetLastSessionIfDeleted` 自己就是"id 匹配才清"，
+       * 所以级联删的是别人的会话时它是 no-op。`deleteProject` 是同步签名（返回 void），
+       * 所以走**异步动态 import + 不等待**：清键是收尾动作，不该阻塞删除本身。
+       */
+      const cascadeIds = sessions.map((s) => s.id);
+      void (async () => {
+        try {
+          const { forgetLastSessionIfDeleted } = await import("./session/preferences");
+          for (const id of cascadeIds) forgetLastSessionIfDeleted(id);
+        } catch (e) {
+          console.warn("[store.deleteProject] 清理'上次打开的会话'键失败（不影响删除本身）:", e);
+        }
+      })();
     } catch (e) { console.warn('[store.ts]', e) }
     set({
       projects: get().projects.filter((p) => p.id !== projectId),

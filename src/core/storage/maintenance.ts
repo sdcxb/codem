@@ -779,7 +779,24 @@ function formatBytes(n: number): string {
  */
 const INVARIANT_WATERMARK_KEY = "codem-invariant-watermark";
 
-/** 水位里存的东西（版本号留着以后换指纹口径时能识别旧数据） */
+/**
+ * 水位的键数上限（见写入处的「有界水位」段落）。
+ *
+ * 20000 键 ≈ 1.2 MB 的 settings 值 —— 相对这个库能逐字保真 5 MB 工具结果的能力很小，
+ * 而 20000 条历史缺口已远超"靠告警发现新缺陷"真正需要的量。超限丢**最旧**的键。
+ */
+const MAX_INVARIANT_WATERMARK_KEYS = 20_000;
+
+/** 仅测试用：把上限暴露出去，让用例能验证"上限存在"而不必真造 2 万个缺口 */
+export const __MAX_INVARIANT_WATERMARK_KEYS_FOR_TEST = MAX_INVARIANT_WATERMARK_KEYS;
+
+/**
+ * 水位里存的东西（版本号留着以后换指纹口径时能识别旧数据）
+ *
+ * ⚠️ `keys` 的**顺序有含义**：它是"首次被记住的先后"（插入顺序）。
+ * 有界水位超限时靠这个顺序丢**最旧**的键，所以**不要**再按字典序 sort 后再写回
+ * （第 47 轮补之前是 `[...set].sort()`；排序会把"最旧"这个信息抹掉）。
+ */
 interface InvariantWatermark {
   v: 1;
   at: number;
@@ -919,23 +936,56 @@ export async function auditInvariantsForSessions(
    * 时间与其创建时间），那是另一件事，不在本轮范围。
    */
   const watermark = readInvariantWatermark();
-  /** 并集水位的初值 = 上次水位（改成 Set 便于求并集） */
+  /**
+   * 并集水位的初值 = 上次水位。
+   *
+   * ⚠️ 用 `Set` 而不是 `Array.includes`：比对与并集都是**逐个键**做集合运算，
+   * 用数组就是 O(n²)（真机水位已 895 键，会话多起来会到万级；`includes` 在循环里
+   * 会让每次维护白烧几千万次字符串比较）。集合语义也正是这里要的东西。
+   */
   const nextWatermarkKeys = new Set<string>(watermark?.keys ?? []);
+  const previousKeys = new Set<string>(watermark?.keys ?? []);
   if (watermark) {
     for (const key of presentKeys) {
-      if (!watermark.keys.includes(key)) out.newViolations += 1;
+      if (!previousKeys.has(key)) out.newViolations += 1;
     }
   }
   // 并集：无论如何都把本次存在的指纹并进去（新会话/新消息的指纹因此被记住）
   for (const key of presentKeys) nextWatermarkKeys.add(key);
 
   /**
-   * 临时诊断留着到发布前（真机复核用）—— 它输出的正是判据的三个关键数字。
-   * 发布版保留它：一行、信息级、只在维护时出现，是"水位为什么不报警"的唯一现场依据。
+   * ## 有界水位（第 47 轮补）：并集**只增不减**，所以必须有个上限
+   *
+   * 并集口径买来了"漂移不产生假警报"，代价是水位只增不减 —— 而它存在
+   * `settings` 的一个键里（值会被整体序列化进库）。不设上限的话：
+   * - 一个长期使用、消息量大的库会把它推到几十万键（**每轮维护都要写回整份**）；
+   * - 真机现状 895 键 ≈ 一个会话 757 个历史缺口，可见增长是**线性于历史消息数**的。
+   *
+   * 上限取 20000：按"每条消息一个键、键长约 60 字符"算约 1.2 MB 的 settings 值，
+   * 相对这个库能逐字保真 5 MB 工具结果的能力是很小的一笔；而 20000 条历史缺口
+   * 已经远超"靠告警发现新缺陷"真正需要的量。
+   *
+   * 超限时**丢最旧的**（`keys` 数组的顺序是"首次被记住的先后"，见写入处的注释）：
+   * 那些是库里最老的历史缺口，早就不会再变；丢掉它们最坏的效果是**下一轮把少量
+   * 老缺口报一次"新产生"**（一次性噪声），而不是永久失效。
+   * 丢了多少要**打出来** —— 静默丢弃会让"水位为什么不报警"变成新的谜。
+   */
+  const droppedForCap = Math.max(0, nextWatermarkKeys.size - MAX_INVARIANT_WATERMARK_KEYS);
+  let finalWatermarkKeys = [...nextWatermarkKeys];
+  if (droppedForCap > 0) {
+    // Set 保持插入顺序 → 前面的就是最早被记住的
+    finalWatermarkKeys = finalWatermarkKeys.slice(droppedForCap);
+  }
+
+  /**
+   * 这一行是"水位为什么不报警"的**唯一现场依据**（信息级、每次维护一行）。
+   * 真机复核就是靠它拿到 `presentKeys=777 watermarkKeys=757 newViolations=138`
+   * 那组决定性数字的，所以刻意保留在发布版里。
    */
   console.log(
     `[不变量水位] 上次水位 ${watermark ? watermark.keys.length : 0} 键、本次存在 ${presentKeys.size} 个、` +
-      `本次新产生 ${out.newViolations} 个 → 新水位 ${nextWatermarkKeys.size} 键`,
+      `本次新产生 ${out.newViolations} 个 → 新水位 ${finalWatermarkKeys.length} 键` +
+      (droppedForCap > 0 ? `（超上限 ${MAX_INVARIANT_WATERMARK_KEYS}，丢弃最旧 ${droppedForCap} 键）` : ""),
   );
   /*
    * 新水位 = **上次水位 ∪ 本次存在的指纹**（并集，只增不减 —— 见上面的长注释）。
@@ -947,7 +997,7 @@ export async function auditInvariantsForSessions(
     setSettingJSON(INVARIANT_WATERMARK_KEY, {
       v: 1,
       at: Date.now(),
-      keys: [...nextWatermarkKeys].sort(),
+      keys: finalWatermarkKeys,
     } satisfies InvariantWatermark);
 
     /*

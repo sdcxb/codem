@@ -433,6 +433,62 @@ describe("PREF-D20：上次打开的会话 / 项目", () => {
     expect(() => { target = resolveRestoreTarget(); }, "启动路径上的恢复动作绝不允许抛出").not.toThrow();
     expect(target!.session).toBeNull();
   });
+
+  it("PREF-D20-14: 镜像未就绪 → **不清键**（'读不到'绝不能被当成'已删除'）", async () => {
+    const { resolveRestoreTarget, LAST_SESSION_KEY } = await import("../core/session/preferences");
+    /*
+     * 这一条守的是第 47 轮补修掉的**会毁数据**的缺陷。
+     *
+     * 改前：`SessionStorage.getSession` 把 `domainReadOne` 的 `undefined`（端口/镜像没接手）
+     * 与 `null`（确实没这行）都返回 `null`，而恢复逻辑把 `null` 一律当"已删除" →
+     * **清掉用户的上次会话键**；调用点又用一次性闸门，一次误判定终身。
+     *
+     * 现场就是"sessions 镜像还没接手"这个窗口（仓库里
+     * `loadFromDB: found 0 projects` → 就绪后 `found 1` 那个补丁是同一窗口的物证）。
+     * 这里用假端口的 `neverReady: ["sessions"]` 精确造出该形态：
+     * **settings 读得到**（所以能拿到键），而 **sessions 读不到**。
+     */
+    const { createFakeStoragePort } = await import("./fake-storage-port");
+    const p = createFakeStoragePort({
+      seed: { settings: [settingRow(LAST_SESSION_KEY, "s-not-loaded")] },
+      neverReady: ["sessions"],
+    });
+    await p.config.warmup();
+    setStoragePort(p);
+
+    const target = resolveRestoreTarget();
+
+    expect(target.session, "读不到就不该恢复").toBeNull();
+    expect(
+      target.reason,
+      "必须如实报 'storage-unavailable'（不是 'session-missing'）",
+    ).toBe("storage-unavailable");
+    /*
+     * 关键断言：**键必须还在**。注意这里读的是**本用例装的那个端口**（`p`），
+     * 不是模块级的 `port`（那个还指向上一个用例的端口 —— 断言会读到别人的数据）。
+     */
+    const row = p.__table("settings").find((r) => r.key === LAST_SESSION_KEY);
+    expect(row, "键那一行必须还在").toBeTruthy();
+    expect(
+      String(row!.value),
+      "清掉它就永久抹掉了用户的「上次打开的会话」（调用点是一次性闸门，清了不会自己回来）",
+    ).toBe(JSON.stringify("s-not-loaded"));
+    setStoragePort(null);
+  });
+
+  it("PREF-D20-15: 会话**确实**被删除 → 才清键（与上一条形成方向相反的对照）", async () => {
+    const { resolveRestoreTarget, LAST_SESSION_KEY } = await import("../core/session/preferences");
+    await installPort({
+      settings: [settingRow(LAST_SESSION_KEY, "s-deleted")],
+      sessions: [], // 表就绪、但确实没有这一行 → null（真·已删除）
+    });
+
+    const target = resolveRestoreTarget();
+
+    expect(target.session).toBeNull();
+    expect(target.reason, "这一支才是 'session-missing'").toBe("session-missing");
+    expect(rawSetting(LAST_SESSION_KEY), "确实已删除才清键").toBe(JSON.stringify(null));
+  });
 });
 
 // ==========================================================================
@@ -447,12 +503,26 @@ describe("PREF-WIRE：App / store 侧的真实接线（否则实现只是死代�
     expect(app, "插件开关变化必须收编进 DB").toContain("adoptDisabledPluginsMirror");
   });
 
-  it("PREF-WIRE-2: 恢复动作有一次性的 ref 闸门（effect 依赖含 currentProject?.path，否则自激）", () => {
+  it("PREF-WIRE-2: 恢复动作的闸门**只在拿到明确结论后才关上**（'读不到'必须可重试）", () => {
     const app = readCode("src/App.tsx");
-    expect(app, "必须有只恢复一次的 ref").toContain("restoredLastSessionRef");
-    // 该 ref 必须同时出现在判断与置位两侧
-    expect(app).toMatch(/if\s*\(!restoredLastSessionRef\.current\)/);
+    expect(app, "必须有收工的 ref").toContain("restoredLastSessionRef");
+    expect(app, "还必须有串联保护（恢复未落地时 effect 会因 currentProject 变化再跑）").toContain(
+      "restoreInFlightRef",
+    );
+    // 判断侧同时看两个 ref
+    expect(app).toMatch(/if\s*\(!restoredLastSessionRef\.current\s*&&\s*!restoreInFlightRef\.current\)/);
     expect(app).toMatch(/restoredLastSessionRef\.current\s*=\s*true/);
+    /**
+     * ⚠️ 这一条是本轮修掉的那个**会毁数据**的形状，必须钉住：
+     * 闸门**不许**写在尝试之前（那样一次误判定终身），而必须写在
+     * "拿到明确结论（reason !== 'storage-unavailable'）"之后。
+     */
+    expect(
+      app,
+      "必须先判断结论是否明确，再置位闸门（改前是尝试之前就置位，于是镜像未就绪会把键永久清掉）",
+    ).toMatch(/if\s*\(target\.reason\s*!==\s*"storage-unavailable"\)\s*\{[\s\S]{0,120}?restoredLastSessionRef\.current\s*=\s*true/);
+    // 必须是**有界**重试，不是无限轮询
+    expect(app, "重试必须有上限").toMatch(/STORAGE_UNAVAILABLE_RETRIES\s*=\s*\d+/);
     // 恢复动作自己会改 currentProject —— 而 effect 依赖含它，所以闸门是必需的
     expect(app, "effect 依赖里必须真的有 currentProject?.path").toMatch(/\}, \[dbReady, currentProject\?\.path\]\);/);
   });

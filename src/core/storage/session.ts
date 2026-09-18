@@ -188,6 +188,38 @@ export function getSession(id: string): Session | null {
   return null; // 第 17 轮（L4）：旧库回退已删 —— 镜像未就绪就是"查不到"（端口就绪后会重读）
 }
 
+/**
+ * 读一个会话，**保留三态**（第 47 轮补）。
+ *
+ * ## 为什么 `getSession` 的二态在这里不够（一个会毁数据的收敛）
+ *
+ * `domainReadOne` 本来就分得清两件事：
+ * - `undefined` = **端口/镜像没接手**（未注册 / 加载中 / 超上限被拒 / 从未请求）；
+ * - `null` = **确实没有这一行**（查到了，就是不存在）。
+ *
+ * 而 `getSession` 把两者都返回 `null`（见它上面那行注释，那个收敛对绝大多数调用方是对的：
+ * 读不到就是读不到）。但对「恢复上次打开的会话」这条路，把两者混起来是**有破坏性的**：
+ * 恢复逻辑会认定"会话已被删除"，然后**把用户的上次会话键清成 null**，
+ * 而调用点用了一次性闸门 —— **一次误判之后就再也不会重试**。
+ * 于是"镜像还没加载完"这一个瞬间，会永久抹掉用户的"上次打开的会话"。
+ *
+ * 这个窗口是真实存在的，仓库里已有物证：`App.tsx` 的启动补丁记录的
+ * `[Store] loadFromDB: found 0 projects` →（端口/镜像就绪后重读）`found 1` 就是同一个窗口。
+ *
+ * 所以这条路径不再用压平过的 `getSession`，而是显式问出状态。**判据仍然是
+ * "从库里读得回来"**，只是"读不到"不再被当成"不存在"。
+ */
+export type SessionReadState =
+  | { kind: "found"; session: Session }
+  | { kind: "missing" }
+  | { kind: "unavailable" };
+
+export function getSessionState(id: string): SessionReadState {
+  const rust = domainReadOne(SESSION_TABLE, { id }, wireToSession);
+  if (rust === undefined) return { kind: "unavailable" };
+  return rust === null ? { kind: "missing" } : { kind: "found", session: rust };
+}
+
 export function createSession(session: Session): void {
   if (domainWrite(SESSION_TABLE, [sessionToWire(session)], { scope: "session.create", note: "会话未保存" })) {
     return;

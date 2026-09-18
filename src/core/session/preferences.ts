@@ -30,6 +30,7 @@
 
 import * as ProjectStorage from "../storage/project";
 import * as SessionStorage from "../storage/session";
+import type { SessionReadState } from "../storage/session";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { reportPersistFailure } from "../storage/persist-failure";
 import type { Project, Session } from "../types";
@@ -188,6 +189,22 @@ export function writeLastProjectId(projectId: string | null): void {
 }
 
 /**
+ * 读会话并保留三态。`unavailable` = 端口/镜像还没接手 —— **不是**"已删除"。
+ *
+ * 三态的实现放在 `session.ts`（`getSessionState`），因为它需要 `wireToSession`
+ * 这个私有转换器；这里只是包一层 try/catch（启动路径上的恢复动作绝不允许抛出）。
+ */
+function readSessionState(sessionId: string): SessionReadState {
+  try {
+    return SessionStorage.getSessionState(sessionId);
+  } catch (e) {
+    // 读库抛错也归到"读不到"：**不是**"已删除"，所以同样不许清键
+    console.warn("[preferences] 校验上次会话时读库失败（按读不到处理，不清键）:", e);
+    return { kind: "unavailable" };
+  }
+}
+
+/**
  * 恢复"上次打开"的目标 —— **只返回校验过的目标**，由调用方决定怎么落到 store。
  *
  * ## 为什么要"校验目标仍存在"（这是 D-20 的核心，而不是附属条件）
@@ -204,6 +221,8 @@ export function writeLastProjectId(projectId: string | null): void {
  *   存的项目 id 与它会话的真实归属不一致时，以**会话的真实归属**为准
  *   （键可能落后于"会话被移动过"这种少见事实）；
  * - 什么都没有 → 返回 `null`，调用方保持"无会话"状态（**安静回落**，不打错误）。
+ * - ⚠️ **读不到 ≠ 已删除**（第 47 轮补）：镜像未就绪时**既不清键也不恢复**，
+ *   让调用方下次再试 —— 详见 `readSessionState` 的长注释。
  *
  * 读取与校验全部 try/catch 且**信息级**：这个函数在每次启动都会跑，
  * 任何"报错刷屏"都会变成用户每次开应用都看到一条红字。
@@ -212,7 +231,7 @@ export function resolveRestoreTarget(): {
   project: Project | null;
   session: Session | null;
   /** 诊断用：为什么没恢复（英文标识，便于在日志里搜索） */
-  reason?: "no-key" | "session-missing" | "project-missing";
+  reason?: "no-key" | "session-missing" | "project-missing" | "storage-unavailable";
 } {
   const sessionId = (() => {
     try {
@@ -224,14 +243,22 @@ export function resolveRestoreTarget(): {
   })();
   if (!sessionId) return { project: null, session: null, reason: "no-key" };
 
-  let session: Session | null = null;
-  try {
-    session = SessionStorage.getSession(sessionId);
-  } catch (e) {
-    console.warn("[preferences] 校验上次会话时读库失败（按不存在处理）:", e);
-    session = null;
+  const read = readSessionState(sessionId);
+
+  /**
+   * ⚠️ **这一支是第 47 轮补的关键**：镜像/端口还没接手时，`getSession` 同样返回 null，
+   * 但那是"读不到"，**绝不能**当成"已删除"去清键 —— 清了就再也回不来了
+   * （调用点是一次性闸门）。这里什么都不写，安静返回，等下一次启动/下一次尝试。
+   */
+  if (read.kind === "unavailable") {
+    console.log(
+      "[preferences] 会话镜像尚未就绪 → 本次不恢复也不清键（下次启动会再试一次；" +
+        "把「读不到」当成「已删除」会永久抹掉用户的「上次打开的会话」）",
+    );
+    return { project: null, session: null, reason: "storage-unavailable" };
   }
-  if (!session) {
+
+  if (read.kind === "missing") {
     // 会话已被删除：清键 + 信息级记录（**不是**错误，这是正常操作）
     console.log(`[preferences] 上次打开的会话 ${sessionId.slice(0, 12)}… 已不存在 → 从"无会话"状态启动`);
     try {
@@ -241,6 +268,8 @@ export function resolveRestoreTarget(): {
     }
     return { project: null, session: null, reason: "session-missing" };
   }
+
+  const session = read.session;
 
   const projectId = session.projectId ?? "";
   if (!projectId) {
@@ -256,17 +285,35 @@ export function resolveRestoreTarget(): {
   }
   if (!project) {
     /**
-     * 项目没了但会话还在（少见：会话行被单独搬过库）。会话仍然可用 ——
-     * 恢复它，只是不带项目上下文（与"全局会话"同一种形态）。
+     * 项目读不到。**注意：这里同样分不开"项目已删除"与"projects 镜像还没就绪"**
+     * （`ProjectStorage.getProject` 也是二态）。但这一支**不会毁数据** ——
+     * 它只决定"要不要带项目上下文"，会话本身照常恢复，键也不动。
+     * 所以这里不去为此再造一个三态读（那是另一个接口的面积），
+     * 只把日志写成**不撒谎**的措辞：不断言"已不存在"，只说"读不到，按不带项目恢复"。
      */
     console.log(
-      `[preferences] 上次会话所属项目 ${projectId.slice(0, 12)}… 已不存在 → 只恢复会话（不带项目）`,
+      `[preferences] 上次会话所属项目 ${projectId.slice(0, 12)}… 读不到（已删除或镜像未就绪）→ 只恢复会话（不带项目）`,
     );
     return { project: null, session, reason: "project-missing" };
   }
-  // 存的项目键与会话真实归属不一致时，以会话为准（不覆盖用户看到的那个会话）
-  if (readLastProjectId() !== projectId) {
-    console.log("[preferences] codem-last-project 与上次会话的归属不一致 → 以会话的归属为准");
+  /**
+   * ⚠️ 原来这里有一句 `if (readLastProjectId() !== projectId)` 就打印
+   * "codem-last-project 与上次会话的归属不一致 → 以会话的归属为准"。
+   *
+   * 它是一个**永远会误报的日志**：`readLastProjectId()` 只在建库/记录会话时才被写，
+   * 而**升级上来的用户**根本没有这个键 → 读到 `null !== projectId` → 每次启动都打一行
+   * "不一致"。而实际上什么都没不一致（`codem-last-project` 从来不参与恢复决策，
+   * 唯一"权威"就是会话那一行）。一行永远出现的假告警会训练人不看日志 ——
+   * 这与第 46/47 轮修掉的那两个假警报是同一类问题。
+   *
+   * 现在只在**键确实存在且确实不同**时才记（那才是真的"落后了"）。
+   */
+  const storedProjectId = readLastProjectId();
+  if (storedProjectId !== null && storedProjectId !== projectId) {
+    console.log(
+      `[preferences] codem-last-project（${storedProjectId.slice(0, 12)}…）与上次会话的归属` +
+        `（${projectId.slice(0, 12)}…）不一致 → 以会话的归属为准`,
+    );
   }
   return { project, session };
 }

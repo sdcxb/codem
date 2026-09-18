@@ -401,14 +401,17 @@ function App() {
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
 
   /**
-   * 第 47 轮（设置链路审计 D-20）：「上次打开的会话」只恢复**一次**。
+   * 第 47 轮（设置链路审计 D-20）：「上次打开的会话」恢复的**一次性闸门**与被占标志。
    *
-   * 下面的恢复逻辑挂在 `dbReady` 的 effect 里，而那个 effect 的依赖含
-   * `currentProject?.path`（它本来就是"切项目时重新同步安全模式"用的）。
-   * 恢复动作自己会把 `currentProject` 从 null 换成项目，从而**再次触发同一 effect** ——
-   * 没有这个一次性闸门，就是"恢复 → effect 再跑 → 再恢复"的自激。
+   * `restoredLastSessionRef`：拿到**明确结论**后才置位（恢复成功 / 会话确实已删除 /
+   * 没有键）。"读不到"（`storage-unavailable`）**不置位** —— 否则一次误判定终身。
+   *
+   * `restoreInFlightRef`：串联保护。effect 依赖含 `currentProject?.path`，而恢复动作
+   * 自己会改 `currentProject` —— 没有它就会出现"恢复尚未落地 → effect 再跑 → 又发起一次"
+   * 的并发重复恢复。
    */
   const restoredLastSessionRef = useRef(false);
+  const restoreInFlightRef = useRef(false);
 
 // P0-FIX: Sync global cwd for file-link resolution — without this, clicking
 // file links in markdown output resolves paths against the wrong base dir
@@ -718,30 +721,78 @@ useEffect(() => {
        * 2. **目标必须能在库里读回来**才恢复（会话可能已被删除、项目可能已级联删会话）；
        *    读不回来就安静回落到"无会话"，走 `console.log` 而不是 `console.error`
        *    （"上次的会话被删了"是完全正常的用户操作，不是故障）；
-       * 3. 只做一次（`restoredLastSessionRef`，理由见它的声明处）。
+       * 3. **只有"真的有结论"才收工**（`restoredLastSessionRef`）。
        *
        * 用户在恢复发生前就手动选了会话/项目时**不抢**：`currentSession` 已有值就跳过。
+       *
+       * ## ⚠️ 第 47 轮补：一次性闸门原来是**会毁数据**的（只读审计坐实）
+       *
+       * 第一版在这里把 `restoredLastSessionRef.current = true` 放在**尝试之前**，
+       * 于是一次尝试定终身。而"这次尝试"可能恰好落在 `sessions` 镜像尚未就绪的窗口里
+       * （`App.tsx` 里 `[Store] loadFromDB: found 0 projects` →（就绪后重读）`found 1`
+       * 那个补丁就是同一个窗口的物证）—— 那时 `getSession` 读不到，
+       * 恢复逻辑会认定"会话已被删除"并**把用户的上次会话键清成 null**，
+       * 而闸门已经关上，**再也不会重试**。功能失效之外还毁掉了用户的指针。
+       *
+       * 现在分两层：
+       * - **恢复端**：`resolveRestoreTarget` 区分三态，"读不到"（unavailable）
+       *   **既不清键也不恢复**（见 `session.ts::getSessionState`）；
+       * - **调用端**：只有拿到**明确结论**（恢复成功 / 会话确实已删除 / 没有键）
+       *   才置位闸门；`storage-unavailable` 视为**可重试**，
+       *   并且主动 `domainEnsureLoaded("sessions")` 让镜像加载完再试（有界重试，
+       *   不是无限轮询 —— 与"项目列表就绪后重读"那条补丁同一种做法）。
        */
-      if (!restoredLastSessionRef.current) {
-        restoredLastSessionRef.current = true;
-        if (!useProjectStore.getState().currentSession) {
-          void (async () => {
-            try {
-              const { restoreLastOpenedSession } = await import("./core/session/preferences");
-              restoreLastOpenedSession(
-                {
-                  setProjects: (p) => useProjectStore.getState().setProjects(p),
-                  setSessions: (s) => useProjectStore.getState().setSessions(s),
-                  setState: (partial) => useProjectStore.setState(partial),
-                },
-                "启动恢复",
-              );
-            } catch (e) {
-              // 恢复失败不许影响正常使用：应用停在"无会话"状态是可用形态
-              console.warn("[App] 恢复上次打开的会话失败（按无会话启动）:", e);
+      if (!restoredLastSessionRef.current && !restoreInFlightRef.current) {
+        restoreInFlightRef.current = true;
+        void (async () => {
+          const STORAGE_UNAVAILABLE_RETRIES = 12; // 12 × 250ms = 3 秒
+          try {
+            const { restoreLastOpenedSession, resolveRestoreTarget } = await import("./core/session/preferences");
+            const { domainEnsureLoaded } = await import("./core/storage/domain-store");
+
+            for (let attempt = 0; attempt <= STORAGE_UNAVAILABLE_RETRIES; attempt += 1) {
+              // 用户在恢复前手动选了会话 → 不抢，收工
+              if (useProjectStore.getState().currentSession) {
+                restoredLastSessionRef.current = true;
+                break;
+              }
+
+              const target = resolveRestoreTarget();
+
+              if (target.reason !== "storage-unavailable") {
+                // 有明确结论了（没有键 / 已删除 / 找到目标）→ 这是最后一次，闸门关上
+                restoredLastSessionRef.current = true;
+                restoreLastOpenedSession(
+                  {
+                    setProjects: (p) => useProjectStore.getState().setProjects(p),
+                    setSessions: (s) => useProjectStore.getState().setSessions(s),
+                    setState: (partial) => useProjectStore.setState(partial),
+                  },
+                  "启动恢复",
+                );
+                break;
+              }
+
+              // 读不到（镜像还没接手 / 超上限被拒）：**不清键**，等镜像就绪再试一次
+              if (attempt === STORAGE_UNAVAILABLE_RETRIES) {
+                console.log(
+                  "[App] 会话镜像在 3 秒内仍未就绪 → 本次不恢复（键保持不动，下次启动再试；" +
+                    "把「读不到」当成「已删除」会永久抹掉用户的「上次打开的会话」）",
+                );
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 250));
+              // 主动催一下：让 sessions 镜像开始/继续加载（`domainEnsureLoaded` 需要回调，
+              // 这里不为回调做事 —— 下一次循环会重新读一次状态）
+              domainEnsureLoaded("sessions", () => {});
             }
-          })();
-        }
+          } catch (e) {
+            // 恢复失败不许影响正常使用：应用停在"无会话"状态是可用形态
+            console.warn("[App] 恢复上次打开的会话失败（按无会话启动）:", e);
+          } finally {
+            restoreInFlightRef.current = false;
+          }
+        })();
       }
 
       /**
