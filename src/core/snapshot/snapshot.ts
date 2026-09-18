@@ -302,22 +302,45 @@ export class SnapshotService {
     return changes;
   }
 
+  /**
+   * 列出全部快照。
+   *
+   * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：**"读不到"必须抛出，不许返回空数组**
+   *
+   * 这里原来的 `catch { return [] }` 让"读不到"与"确实没有快照"变成同一件事，
+   * 于是调用方（`SnapshotPanel`）那个 `readFailed` 守卫**永远不可能为真**、
+   * 那个"快照列表读取失败，请重试"的分支**永不渲染** —— 用户看到的是「暂无快照」，
+   * 以为快照丢了，实际只是没读到。
+   *
+   * 更糟的是它被测试掩盖了：`renderer-leaks-b.test.ts` 把 `getAll` 打桩成 throw，
+   * 所以那条断言永远是绿的（**测试双比实现宽松**的经典形态，本仓库第 46/47 轮
+   * 已经因此栽过几次）。把打桩去掉、直接驱动真实实现，才看得见这个缺陷。
+   *
+   * 现在的语义：
+   * - **列目录失败**（引擎/目录读不出来）→ **抛出**，调用方据此显示"读取失败"；
+   * - **单个快照文件损坏** → 跳过并计数（一个坏文件不该让整张列表消失），
+   *   但要如实告警；
+   * - 目录存在但没有快照 → 返回 `[]`（这才是真的"暂无快照"）。
+   */
   async getAll(): Promise<Snapshot[]> {
-    try {
-      const entries = await apiList(this.snapshotDir);
-      const snapshots: Snapshot[] = [];
-      for (const entry of entries) {
-        if (entry.name.endsWith(".json")) {
-          try {
-            const data = await apiGet(entry.path);
-            snapshots.push(JSON.parse(data));
-          } catch (e) { console.warn('[snapshot.ts]', e) }
+    const entries = await apiList(this.snapshotDir); // 读不到就抛，交给调用方处置
+    const snapshots: Snapshot[] = [];
+    let skipped = 0;
+    for (const entry of entries) {
+      if (entry.name.endsWith(".json")) {
+        try {
+          const data = await apiGet(entry.path);
+          snapshots.push(JSON.parse(data));
+        } catch (e) {
+          skipped += 1;
+          console.warn(`[snapshot] 快照文件读取/解析失败，已跳过：${entry.path}`, e);
         }
       }
-      return snapshots.sort((a, b) => b.timestamp - a.timestamp);
-    } catch {
-      return [];
     }
+    if (skipped > 0) {
+      console.warn(`[snapshot] 本次列快照跳过了 ${skipped} 个损坏/读不到的文件（其余 ${snapshots.length} 个正常）`);
+    }
+    return snapshots.sort((a, b) => b.timestamp - a.timestamp);
   }
 
   /** 删除单个快照 */

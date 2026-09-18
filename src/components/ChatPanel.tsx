@@ -90,7 +90,7 @@ notebookId?: string;
 
 export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onEditAndRewind, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage } = useAppStore();
+  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
@@ -704,7 +704,45 @@ setStepTooltipLocked(false);
               )}
             </div>
           )}
-          {messages.length === 0 && (
+          {/*
+            ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：**"读不到历史"不能渲染成"开始新对话"**
+
+            原来只有 `messages.length === 0` 一个判据，于是"这次读没有真的拿到数据"
+            （端口未注册 / 镜像还没接手 / 读路径抛错）与"这个会话确实没有消息"
+            渲染成**同一个**欢迎页。用户看到"开始新对话"会以为**对话被清空了**，
+            接着输入的每句话都追加进这个他以为"空"的会话 —— 仓库自己记过一次真机事故：
+            一个**确实有 27 条消息**的会话点开是空白，且无任何报错。
+
+            现在分成两支：读不到 → 说明情况 + 给重试入口；真的空 → 原来的欢迎页。
+            判据由 store 给出（`messagesReadUnavailable`），它按"`listMessages` 会合并
+            权威 JSONL 日志，所以返回空只可能是'真没有'或'读没发生'"来判定。
+          */}
+          {messages.length === 0 && messagesReadUnavailable && (
+            <div className="empty-state" data-testid="messages-unavailable">
+              <div className="chat-unavailable-inner">
+                <p className="chat-unavailable-title">
+                  {lang === "zh" ? "暂时读不到这个会话的历史消息" : "Can't read this session's history right now"}
+                </p>
+                <p className="chat-unavailable-hint">
+                  {lang === "zh"
+                    ? "这不代表消息丢了 —— 历史正文保存在追加日志里。可能是存储引擎还在启动或暂时不可用。"
+                    : "Your messages are not lost — the authoritative log still has them. The storage engine may still be starting or temporarily unavailable."}
+                </p>
+                <button
+                  type="button"
+                  className="chat-unavailable-retry"
+                  onClick={() => {
+                    if (currentSessionId) {
+                      useAppStore.getState().loadMessages(currentSessionId);
+                    }
+                  }}
+                >
+                  {lang === "zh" ? "重新读取" : "Retry"}
+                </button>
+              </div>
+            </div>
+          )}
+          {messages.length === 0 && !messagesReadUnavailable && (
             <div className="empty-state">
               <NewChatPage
                 appName="Codem"

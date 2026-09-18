@@ -1733,6 +1733,50 @@ user-select: none;
   overflow: hidden;
 }
 
+/*
+ * 「暂时读不到历史」的最小形态（第 47 轮补，UI/UX 审计 P1）。
+ *
+ * 为什么不复用 `.empty-state` 的欢迎页：那是"你没有数据"的语义，
+ * 而这里要表达的是"数据在、但这次没读到"—— 两者混起来会让用户以为对话被清空了。
+ * 全部使用既有令牌（间距/圆角/字号/颜色），没有裸数字、不引入新令牌。
+ */
+.chat-unavailable-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 520px;
+  text-align: center;
+}
+
+.chat-unavailable-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.chat-unavailable-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.chat-unavailable-retry {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.chat-unavailable-retry:hover {
+  background: var(--bg-hover);
+}
+
 .empty-state .logo {
   font-size: var(--icon-3xl);
   margin-bottom: var(--space-8);

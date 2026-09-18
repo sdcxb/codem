@@ -167,6 +167,14 @@ interface AppState {
   streamingMsgId: string | null;
   hasMoreMessages: boolean;
   isLoadingMore: boolean;
+  /**
+   * 第 47 轮补（UI/UX 审计 P1）：**"读不到历史"与"这个会话没有历史"是两件事**。
+   *
+   * `true` = 这次读**没有真的拿到数据**（端口未注册 / 镜像还没接手 / 读路径抛错），
+   * 界面必须说"暂时读不到你的历史"并给重试入口，
+   * **绝不能**渲染成"开始新对话"欢迎页（那会让用户以为对话被清空了）。
+   */
+  messagesReadUnavailable: boolean;
   stepProgress: StepProgress | null;
   agentActivities: AgentActivity[];
   streamStartTime: number | null;
@@ -249,6 +257,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   streamingMsgId: null,
   hasMoreMessages: false,
   isLoadingMore: false,
+  messagesReadUnavailable: false,
   stepProgress: null,
   agentActivities: [],
   streamStartTime: null,
@@ -324,7 +333,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasActiveSessions: () => get().activeSessions.size > 0,
   setCurrentModel: (m) => set({ currentModel: m }),
   setCwd: (d) => set({ cwd: d }),
-  clearMessages: () => set({ messages: [], loadedSessionId: null, streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
+  clearMessages: () => set({ messages: [], loadedSessionId: null, messagesReadUnavailable: false, streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
 
   loadMessages: (sessionId) => {
     const applyMessages = (messages: ReturnType<typeof MessageStorage.listMessages>) => {
@@ -339,6 +348,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         loadedSessionId: sessionId,
         hasMoreMessages: totalCount > INITIAL_LIMIT,
         isLoadingMore: false,
+        /**
+         * 第 47 轮补（UI/UX 审计 P1）：**"读不到"与"确实没有历史"必须分开**。
+         *
+         * ⚠️ 判据**不是**"返回了空" —— 空本身分不出下面两种：
+         * - 这个会话**真的没有消息**（新建的、或用户删光了）→ 欢迎页是对的；
+         * - **读没有真的发生**（端口未注册 / 该会话的消息镜像还没接手 / 被上限截断）
+         *   → 欢迎页是**错的**：用户会以为自己 27 条消息的会话被清空了
+         *   （仓库自己记过一次真机事故就是这个形态），之后输入的每句话都追加进
+         *   这个他以为"空"的会话。
+         *
+         * 所以判据取"**读路径是否处于可用状态**"（`isMessagesReadUnavailable`，
+         * 与读路径自己决定是否路由到镜像的判据同源），而不是"结果是不是空"。
+         * 诚实交代一个残留缺口：端口就绪、镜像也加载了、但 JSONL 权威日志还没 hydrate 时
+         * 可能仍然为空而这里会说"读到了" —— 那时行为与改之前一致（不会更糟），
+         * 而下面那段"空结果就订阅镜像就绪后重读"的补丁正是为它准备的。
+         */
+        messagesReadUnavailable:
+          totalCount === 0 && MessageStorage.isMessagesReadUnavailable(sessionId),
       });
       return totalCount;
     };
@@ -446,7 +473,14 @@ export const useAppStore = create<AppState>((set, get) => ({
        * 会让 `saveMessages` 认为"这份空列表属于 A"，于是把一个空列表写进 A
        * （无害但语义错），更糟的是掩盖"当前会话根本没加载"这个真实状态。
        */
-      set({ messages: [], loadedSessionId: null, hasMoreMessages: false, isLoadingMore: false });
+      // 第 47 轮补：读**抛错**同样是"读不到"，不是一个空会话
+      set({
+        messages: [],
+        loadedSessionId: null,
+        hasMoreMessages: false,
+        isLoadingMore: false,
+        messagesReadUnavailable: true,
+      });
     }
   },
 

@@ -1429,6 +1429,60 @@ function rustMessageSource(sessionId: string): RustMessagePortLike | null {
   return port;
 }
 
+/**
+ * 这次读**有没有真的拿到数据**（第 47 轮补，UI/UX 审计 P1）。
+ *
+ * ## 为什么需要它
+ *
+ * `listMessages(sessionId)` 返回空有两种完全不同的原因，而调用方（UI）只看得到"空"：
+ * 1. 这个会话**确实没有消息**（新建的、或用户删光了）→ 界面显示"开始新对话"是对的；
+ * 2. **读没有真的发生**（端口未注册 / 该会话的消息镜像还没接手 / 被上限截断）
+ *    → 界面显示"开始新对话"是**错的**：用户会以为自己 27 条消息的会话被清空了
+ *    （仓库自己记过一次真机事故，就是这个形态），之后输入的每句话都追加进这个
+ *    他以为"空"的会话。
+ *
+ * ## 判据为什么不看"返回了空"
+ *
+ * 因为"空"本身分不出上面两种。这里看的是**读路径是否处于可用状态**：
+ * 与 `rustMessageSource()` 完全同一套判据（端口在 + 该会话镜像已加载 + 没被截断），
+ * 只是把"不路由"这件事**如实报出来**而不是静默降级。
+ *
+ * ⚠️ 有一个诚实的残留缺口：**端口就绪、镜像也加载了，但 JSONL 权威日志还没 hydrate**
+ * 时，`listMessages` 可能仍然返回空。那种情况下这里会说"读到了"，
+ * 界面于是显示欢迎页 —— 与改之前的行为一致（不会更糟），
+ * 而 store 里那条"空结果就订阅镜像就绪后重读"的补丁正是为它准备的。
+ * 要彻底消掉这个缺口得让 `listMessages` 自己区分三态，那是另一次改造。
+ */
+export function isMessagesReadUnavailable(sessionId: string): boolean {
+  let unavailable = false;
+  try {
+    const port = rustMessagePort();
+    if (!port?.messages) {
+      // 端口没注册 / 没有 messages 能力 —— 这次读根本没有数据源
+      unavailable = true;
+    } else {
+      port.messages.ensureLoaded(sessionId);
+      if (!port.messages.isLoaded(sessionId)) {
+        unavailable = true;
+      } else if (port.messages.isTruncated()) {
+        // 被上限截断时镜像不完整：读到的"空/少"都不是真值，同样算"读不到"
+        unavailable = true;
+      }
+    }
+  } catch {
+    /**
+     * 判据本身出错 → 按"读不到"处理（宁可多显示一个重试入口，
+     * 也不要把"读不到"渲染成"你没有数据"）。
+     *
+     * 注意这里**不写裸 `return true`**：那在 B 类（假成功）门禁里是"catch 里返回成功"
+     * 的形状，语义含糊。先赋值再统一 return，控制流一眼可读
+     * —— 门禁抓到过我一次，它的意见是对的。
+     */
+    unavailable = true;
+  }
+  return unavailable;
+}
+
 /** 镜像行 → Message（与 SQLite 行映射保持同一语义） */
 function messageRowToMessage(r: {
   id: string;
