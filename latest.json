@@ -1,11 +1,11 @@
 {
-  "version": "1.16.74",
-  "notes": "把「读不到」与「你没有数据」分开：读消息失败不再渲染成「开始新对话」欢迎页（那是「对话被清空」的假象），快照面板的「读取失败」分支过去永远不可能渲染",
-  "pub_date": "2026-09-18T08:41:29Z",
+  "version": "1.16.75",
+  "notes": "「失败必须可见」这条契约终于落到界面上：写盘/操作失败不再只在流式期间显示（空闲时原来完全看不到），且不再被渲染成会中断 AI 回答的「引导条」",
+  "pub_date": "2026-09-18T08:54:13Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RvditMdDhuZC8rd0RDdUphekRTZXIrMjdZaEhHTkRjREozbWQ1cUdxM08yZkNNRGttS2o1M3VGUFFqNEFGTGxmcUNrU3pYb2VPZnZmYWJBeG05OWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzIwNDkyCWZpbGU6Q29kZW1fMS4xNi43NF94NjQtc2V0dXAuZXhlCndVZG9yZ2N3VDdyZXl1ZHB6d2RWNysyMDF6Q1lyOGRtRkpvMy85VWFtQm9tT2xkaFJpeFBrcmtya1YwdEhqaHh5bit2dFVtODhxV0FVb1pNeVZ0SUFRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.74/Codem_1.16.74_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1ZKMW5pSzZKZmNxcEUrNkxIdEc2Ums4SWpIQ3l6VDc5NitGalM0RkUzbWFxQ3pnNFdRdU9YNE9kWEVDOEFJaERrazNGUXNUL3RVVm9nQWw1U29hR2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzIxNTEzCWZpbGU6Q29kZW1fMS4xNi43NV94NjQtc2V0dXAuZXhlCjZpQ3haeTdGelVWWldRN0dSZUdrMHpGYnNFeWVqanhuTUhvbnE2WE8xTExUZHFhOHM0RjRnWURLcjlmMEg1VW5xa0ZrSm1PLzVRSmZ5OTk0STZKZkN3PT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.75/Codem_1.16.75_x64-setup.exe"
     }
   }
 }
