@@ -1225,6 +1225,22 @@ flex-shrink: 0;
   padding: var(--space-1);
   font-size: var(--fs-2xs);
   opacity: 0.4;
+  /*
+   * 第 63 轮（真机 UI 走查）：这个按钮的**实际可点面积只有 16x19 px** ——
+   * 低于"最小目标尺寸"的通行下限（WCAG 2.5.8 要求 24x24 CSS px）。
+   * 图标本身小是对的（它是行内的次要动作），但**点击目标不该跟着变小**：
+   * 用伪元素把命中区扩到 ≥24x24，视觉与布局一个像素都不动。
+   * （同类：`::after` 只负责扩大命中，不参与绘制，所以不会被 hover 样式影响。）
+   */
+  position: relative;
+}
+
+.sidebar-session-pin::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  /* 只扩大命中区：不吃事件之外的任何东西 */
+  background: transparent;
 }
 
 .sidebar-session-pin:is(:hover, :focus-visible) {
@@ -16771,7 +16787,17 @@ color: var(--accent, #7c6cf0);
   cursor: pointer;
 }
 
-.mode-toggle-btn--compact { width: 18px; height: 18px; min-width: 18px; padding: 0; font-size: var(--fs-xs); }
+.mode-toggle-btn--compact { width: 18px; height: 18px; min-width: 18px; padding: 0; font-size: var(--fs-xs); position: relative; }
+/*
+ * 第 63 轮（真机 UI 走查）：18x18 的紧凑按钮（输入框左侧「＋」等）命中区偏小。
+ * 视觉尺寸保持不变（它旁边还有文字与图标，放大视觉会挤），只把**命中区**扩到 24x24。
+ */
+.mode-toggle-btn--compact::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  background: transparent;
+}
 .mode-toggle-btn.is-active { background: var(--accent); color: var(--text-on-accent); }
 .mode-toggle-btn--mic { color: var(--text-secondary); }
 .mode-toggle-btn.voice-rec-active { color: var(--error); }

@@ -449,7 +449,26 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           <span>{lang === 'zh' ? '知识笔记本' : 'Notebooks'}</span>
         </button>
         {onTaskCenter && (
-          <button className="sidebar-nav-item" onClick={onTaskCenter}>
+          /*
+           * ⚠️ 第 63 轮（真机 UI 走查抓到）：这里原来把**同一个未读数显示了两次** ——
+           * 图标上的红点徽章（下面那段 absolute span）**加上**行尾 `marginLeft: auto` 的红色数字。
+           * 于是未读为 1 时整行读出来是 `1任务管理1`（可访问名也成了这串），而**折叠态**的同一个
+           * 入口（`sidebar-rail-btn`）只画图标徽章 —— 同一个事实两处显示、两种画法。
+           *
+           * 现在只保留图标徽章（与折叠态一致），未读数通过 `aria-label` 说出来，
+           * 读屏与自动化都能读到"任务管理（N 条未读）"。
+           */
+          <button
+            className="sidebar-nav-item"
+            onClick={onTaskCenter}
+            aria-label={
+              inboxUnread > 0
+                ? lang === 'zh'
+                  ? `任务管理（${inboxUnread} 条未读）`
+                  : `Task Center (${inboxUnread} unread)`
+                : undefined
+            }
+          >
             <span className="sidebar-nav-icon" style={{ position: "relative" }}>
               <ClipboardList size={16} />
               {inboxUnread > 0 && (
@@ -459,15 +478,10 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                   background: "var(--error)", borderRadius: "var(--radius)",
                   minWidth: 14, height: 14, display: "flex",
                   alignItems: "center", justifyContent: "center", padding: "0 3px",
-                }}>{inboxUnread}</span>
+                }} aria-hidden="true">{inboxUnread}</span>
               )}
             </span>
             <span>{lang === 'zh' ? '任务管理' : 'Task Center'}</span>
-            {inboxUnread > 0 && (
-              <span style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', fontWeight: 700, color: "var(--error)" }}>
-                {inboxUnread}
-              </span>
-            )}
           </button>
         )}
 

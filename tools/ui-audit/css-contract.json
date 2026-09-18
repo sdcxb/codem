@@ -7964,6 +7964,7 @@
     "height": "18px",
     "min-width": "18px",
     "padding": "0",
+    "position": "relative",
     "width": "18px"
   },
   "mode-toggle-btn--mic": {
@@ -14523,7 +14524,8 @@
     "cursor": "pointer",
     "font-size": "var(--fs-2xs)",
     "opacity": "0.4",
-    "padding": "var(--space-1)"
+    "padding": "var(--space-1)",
+    "position": "relative"
   },
   "sidebar-session-rename": {
     "background": "none",

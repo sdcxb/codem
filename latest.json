@@ -1,15 +1,15 @@
 {
-  "version": "1.16.91",
-  "notes": "数据落点只有一个来源：库被指到别处（CODEM_DB_PATH / 便携模式）时，权威日志、外置附件、溢出文件、索引重建标记以前会留在原地，导致权威副本与被它支撑的索引不在同一份数据集里、隔离钻取会读写用户的真日志。现在渲染侧文件的落点唯一来源是引擎实际使用的库所在目录，并在启动时预热、非标准位置留醒目告警。顺带在真机上抓到两处真缺陷：①权威日志回填在消息镜像未就绪的窗口里静默 no-op（连续三次维护都是「日志回填 0 条」而日志目录从未建出来）；②Windows 上「目录本身不存在」是 os error 3 而不是 2，被误判成读失败。真机钻取：隔离目录建出两个 jsonl（回填 777 条），用户真实目录逐文件未变。",
-  "pub_date": "2026-09-18T19:14:17Z",
+  "version": "1.16.92",
+  "notes": "真机逐面板程序化走查（CDP + 真实鼠标事件 + 命中测试）抓到的三处界面问题：①消息悬浮工具条里「重新编辑 / 复制 / 朗读」三个按钮没有任何可访问名（相邻按钮全都有），读屏只能说\" 按钮\\；②侧边栏「任务管理」把同一个未读数显示了两遍（图标徽章",
+  "pub_date": "2026-09-18T19:32:36Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dmcEw3TnZwMklZQnhXZkpYK3pFeWJlVmdSeEk5SEFLelhSNFAzVWMxbjdVVXZTOEg0Y0F2V2lWN2l2SnRCRW1PenlKQjJvL2wxWVd5aFVVNmNoakF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU4NzUzCWZpbGU6Q29kZW1fMS4xNi45MV94NjQtc2V0dXAuZXhlCkVubXRzdG8walNyd3pYR0NMeHd1OEtEZ29XZmJjQWdENHE2UW43dkU3QUFCRk5ZZlZFRklXN29LdkdTbEpSNk40OGdoQlB6M0tJZjdPeU03Njd1aENRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.91/Codem_1.16.91_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1c0OTE2eTgwQWovTzhRcDE0Wlprd3RhREZJdy9LVmxRU0Q0cXc1emRFQ3liZHg1RXlubVc2RzRRTnFhb252c1NCVmFoUmZFRklKVWF2WEJCSlliVXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU5NzAwCWZpbGU6Q29kZW1fMS4xNi45Ml94NjQtc2V0dXAuZXhlCkJuWm1mSmxVY25iNEp6T1RvYi9ieWIrQnVtQ25QT0tSR0NIR2J2RzBUYXFxMVFTRnFjcThLMjcrS3hCeUE3ZHU2VnFGK1VJYVdYRTBtcUpYWU94OERBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.92/Codem_1.16.92_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dmcEw3TnZwMklZQnhXZkpYK3pFeWJlVmdSeEk5SEFLelhSNFAzVWMxbjdVVXZTOEg0Y0F2V2lWN2l2SnRCRW1PenlKQjJvL2wxWVd5aFVVNmNoakF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU4NzUzCWZpbGU6Q29kZW1fMS4xNi45MV94NjQtc2V0dXAuZXhlCkVubXRzdG8walNyd3pYR0NMeHd1OEtEZ29XZmJjQWdENHE2UW43dkU3QUFCRk5ZZlZFRklXN29LdkdTbEpSNk40OGdoQlB6M0tJZjdPeU03Njd1aENRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.91/Codem_1.16.91_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1c0OTE2eTgwQWovTzhRcDE0Wlprd3RhREZJdy9LVmxRU0Q0cXc1emRFQ3liZHg1RXlubVc2RzRRTnFhb252c1NCVmFoUmZFRklKVWF2WEJCSlliVXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU5NzAwCWZpbGU6Q29kZW1fMS4xNi45Ml94NjQtc2V0dXAuZXhlCkJuWm1mSmxVY25iNEp6T1RvYi9ieWIrQnVtQ25QT0tSR0NIR2J2RzBUYXFxMVFTRnFjcThLMjcrS3hCeUE3ZHU2VnFGK1VJYVdYRTBtcUpYWU94OERBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.92/Codem_1.16.92_x64-setup.exe"
     }
   }
 }

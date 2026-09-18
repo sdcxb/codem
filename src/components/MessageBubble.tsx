@@ -886,7 +886,13 @@ const opLabel = tc.tool === 'create_note'
             {isUser && canEdit && onReEdit && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button className="toolbar-btn" onClick={() => onReEdit(rawContent)}>
+                  {/*
+                    ⚠️ 第 63 轮（UI 走查抓到）：这一组工具栏按钮里，只有这三个**没有可访问名**
+                    （既无 `aria-label` 也无 `title`，里面只有一个 `<svg>`），而左右相邻的按钮都有。
+                    后果不是"看不见"而是"说不出来"：读屏软件只念"按钮"，键盘/自动化也拿不到名字
+                    —— 真机走查里它们就是那三个 `label: ""` 的条目。
+                  */}
+                  <button className="toolbar-btn" aria-label={S.bubble.reEdit[lang]} onClick={() => onReEdit(rawContent)}>
                     <PencilLine size={14} />
                   </button>
                 </TooltipTrigger>
@@ -895,7 +901,11 @@ const opLabel = tc.tool === 'create_note'
             )}
             <Tooltip>
               <TooltipTrigger asChild>
-                <button className="toolbar-btn" onClick={handleCopyMessage}>
+                <button
+                  className="toolbar-btn"
+                  aria-label={copied ? S.bubble.copied[lang] : S.bubble.copyMessage[lang]}
+                  onClick={handleCopyMessage}
+                >
                   {copied ? <Check size={14} /> : <Clipboard size={14} />}
                 </button>
               </TooltipTrigger>
@@ -922,6 +932,11 @@ const opLabel = tc.tool === 'create_note'
                 <TooltipTrigger asChild>
                   <button
                     className="toolbar-btn"
+                    aria-label={
+                      isSpeaking && ttsMessageId === message.id
+                        ? S.voice.stopReading[lang]
+                        : S.voice.readAloud[lang]
+                    }
                     onClick={handleReadAloud}
                     disabled={isTtsLoading}
                     style={isTtsLoading ? { opacity: 0.5 } : {}}
