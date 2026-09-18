@@ -53,7 +53,7 @@ export function NbChatPanel({
 }: NbChatPanelProps) {
   const lang = useLang();
   const isZh = lang === "zh";
-  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages } = useAppStore();
+  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, loadMoreReadUnavailable } = useAppStore();
   const { currentSession } = useProjectStore();
   const [showReasoning, setShowReasoning] = useState(true);
   const [quoteContext, setQuoteContext] = useState<string | null>(null);
@@ -143,7 +143,23 @@ export function NbChatPanel({
           </div>
         ) : (
           <>
-            {hasMoreMessages && (
+            {/*
+              第 48 轮：与 `ChatPanel` 同一条判据 —— 翻页"读不到"不许渲染成"没有更多"。
+              原来这里只有 `hasMoreMessages` 一个条件，而读失败会把它置 false，
+              于是"加载更多"这个入口直接消失，用户再没有重试的机会。
+            */}
+            {loadMoreReadUnavailable && (
+              <div className="nb-chat-load-more is-unavailable" data-testid="nb-load-more-unavailable">
+                <span>{isZh ? '暂时读不到更早的消息（这不代表没有历史）' : 'Can\'t read earlier messages right now (this doesn\'t mean there are none)'}</span>
+                <span
+                  className="nb-chat-load-more-retry"
+                  onClick={() => currentSessionId && !isLoadingMore && loadMoreMessages(currentSessionId)}
+                >
+                  {isLoadingMore ? (isZh ? '重试中…' : 'Retrying…') : (isZh ? '重试' : 'Retry')}
+                </span>
+              </div>
+            )}
+            {hasMoreMessages && !loadMoreReadUnavailable && (
               <div className="nb-chat-load-more">
                 {isLoadingMore ? (
                   <span>{isZh ? '加载中...' : 'Loading...'}</span>

@@ -1,11 +1,11 @@
 {
-  "version": "1.16.76",
-  "notes": "「刚关掉的插件重启后自己又开了」这条静默回退被堵住了：插件开关的写入方收成唯一一处（DB 列表+写入时刻+镜像+时刻一次写完），启动时用写入时刻判定哪一份更新（不再无条件以 DB 为准，那会在写入没落地时静默改回用户的选择），分歧经界面常驻横幅如实告知；顺带修掉真机上抓到的开关点了像没反应（卡片 useMemo 依赖漏了订阅版本号）与告警横幅自相矛盾的两句话。",
-  "pub_date": "2026-09-18T10:06:49Z",
+  "version": "1.16.77",
+  "notes": "一次失败的翻页不再被写成「没有更多历史」：那个标记同时控制提示条与滚动自动翻页，被置 false 之后用户不仅看不到更早的消息，连重试入口都会一起消失、界面上毫无提示 —— 一个真有 800 条历史的会话会被永久渲染成「就这么多」。现在按「读路径是否可用」判定（与首屏那条同源），读不到就保持可重试 + 说清楚 + 给重试按钮。",
+  "pub_date": "2026-09-18T10:46:05Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NFeUV2SytWRG9GVDY5dUh6RFhaVCttd0E1TFRKOTNRaWpwencvMkRpM3dkVmUvMFRnc3ZRYS9BMFE2Vlp1bS90a1ppOVJFYjZLRUxURGVIWGRHTWdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzI1MzQ5CWZpbGU6Q29kZW1fMS4xNi43Nl94NjQtc2V0dXAuZXhlCnkwQmVXRDJXeHBhM1VkbXFGQmQ0VmxYaGpJeDJScHZCdWhnOXR6WG5OV1p6dzVEaHhqSk5PMW9aRlF0Z0w5K2pYZzJTeGdsblhoTUlWOFh0Y2pOL0RRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.76/Codem_1.16.76_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FZNnJWY1I2bjBOcDRiZk5rRHVIa2VqNHg2RXFFS0lPZW1rem5CV3p6WUwwdWx2dnltOFhSRU1EVHppMk1laUh3TlJ6TjlwOWU2NHJzN21zWVNFbmcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzI3NTczCWZpbGU6Q29kZW1fMS4xNi43N194NjQtc2V0dXAuZXhlCk1aSVl5TkJTY0w5K1E2TUlnNldrMVVxMHFZcnFBc25CSUZubGV3dTJKVWhWNXBlS1lsdGwvYXJBa3MrYUdCWHRlK1AvNzJOUTJySGFMWWh0SXY5eEJ3PT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.77/Codem_1.16.77_x64-setup.exe"
     }
   }
 }

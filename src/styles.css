@@ -10640,6 +10640,62 @@ border-bottom: 1px solid var(--accent);
   border-bottom: 1px solid var(--border-secondary);
 }
 
+/*
+ * 第 48 轮：翻页"读不到"的提示条。
+ *
+ * 与普通那条（"↑ 滚动加载更多历史消息"）**必须长得不一样**：
+ * 普通那条是"还能往上翻"，这一条是"这次没读到、重试入口在这里"。
+ * 用警告色而不是错误色 —— 消息没丢（正文在追加日志里），
+ * 只是这一次读没有发生，严重程度与"写盘失败"不是一回事。
+ */
+.load-more-indicator.is-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--warning);
+  border-bottom-color: var(--border-primary);
+}
+
+.load-more-unavailable-text {
+  font-size: var(--fs-sm);
+}
+
+.load-more-retry {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.load-more-retry:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.load-more-retry:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.nb-chat-load-more.is-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--warning);
+  font-size: var(--fs-xs);
+}
+
+.nb-chat-load-more-retry {
+  cursor: pointer;
+  text-decoration: underline;
+  color: var(--text-secondary);
+}
+
 
 
 .load-more-btn:is(:hover, :focus-visible) {

@@ -4,7 +4,7 @@ import type { FeedbackType } from "./core/storage/message";
 import { putMessageFeedback } from "./core/llm/feedback";
 import { isCompactionInProgress } from "./core/storage/compaction-state";
 import { storageUnavailable } from "./core/storage/health";
-import { reportPersistFailure } from "./core/storage/persist-failure";
+import { reportActionFailure, reportPersistFailure } from "./core/storage/persist-failure";
 
 /** 第 90 波：致命状态只上报一次（否则 AutoSave 每几秒刷一条） */
 let warnedSaveMessagesFatal = false;
@@ -195,6 +195,21 @@ interface AppState {
    * **绝不能**渲染成"开始新对话"欢迎页（那会让用户以为对话被清空了）。
    */
   messagesReadUnavailable: boolean;
+  /**
+   * 第 48 轮：**"翻页读不到"不许被写成"没有更多历史"**。
+   *
+   * `loadMoreMessages` 原来只有一个结局：拿不到更早的消息就把 `hasMoreMessages`
+   * 置 false。于是"读失败"与"真的到开头了"合并成同一件事 ——
+   * 而且后果比 `messagesReadUnavailable` 更重：`hasMoreMessages=false` 会让
+   * **滚动到底的自动翻页与"加载更多"入口一起消失**，用户不仅看不到更早的消息，
+   * 而且**再没有任何重试的机会**，界面上一切正常、没有任何错误。
+   * 一个真有 800 条历史的会话被渲染成"就这么多"。
+   *
+   * `true` = 这次翻页没有真的读到数据（读路径不可用 / 抛错）。
+   * 界面必须说清"读不到更早的消息（这不代表没有）"并给重试入口；
+   * `hasMoreMessages` **保持为 true**，因为"读不到"不构成"没有"的证据。
+   */
+  loadMoreReadUnavailable: boolean;
   stepProgress: StepProgress | null;
   agentActivities: AgentActivity[];
   streamStartTime: number | null;
@@ -302,6 +317,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasMoreMessages: false,
   isLoadingMore: false,
   messagesReadUnavailable: false,
+  loadMoreReadUnavailable: false,
   stepProgress: null,
   agentActivities: [],
   streamStartTime: null,
@@ -378,7 +394,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasActiveSessions: () => get().activeSessions.size > 0,
   setCurrentModel: (m) => set({ currentModel: m }),
   setCwd: (d) => set({ cwd: d }),
-  clearMessages: () => set({ messages: [], loadedSessionId: null, messagesReadUnavailable: false, streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
+  clearMessages: () => set({ messages: [], loadedSessionId: null, messagesReadUnavailable: false, loadMoreReadUnavailable: false, streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
 
   loadMessages: (sessionId) => {
     const applyMessages = (messages: ReturnType<typeof MessageStorage.listMessages>) => {
@@ -393,6 +409,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         loadedSessionId: sessionId,
         hasMoreMessages: totalCount > INITIAL_LIMIT,
         isLoadingMore: false,
+        // 第 48 轮：首屏重读时把上一次翻页的"读不到"标记清掉 ——
+        // 它是**上一次读**的结论，跟着会话/这次读走，不许跨会话残留
+        // （否则切到别的会话还会顶着一行"更早的消息读不到"）。
+        loadMoreReadUnavailable: false,
         /**
          * 第 47 轮补（UI/UX 审计 P1）：**"读不到"与"确实没有历史"必须分开**。
          *
@@ -556,15 +576,42 @@ export const useAppStore = create<AppState>((set, get) => ({
           set({ isLoadingMore: false });
           return;
         }
+        /**
+         * ## 第 48 轮：翻页也必须分清「读不到」与「没有更多」
+         *
+         * 改前这里只有一条判据（`olderMessages.length === 0` → `hasMoreMessages: false`），
+         * 于是"读失败"与"真的到开头了"合并成同一件事。后果比首屏那次更重：
+         * `hasMoreMessages=false` 会**同时**关掉"滚动到底自动翻页"与"加载更多"入口
+         * （`ChatPanel` / `NbChatPanel` 都按它渲染），也就是说 ——
+         * 一次失败的读之后，用户**永远**拿不回更早的历史，而且没有任何提示、没有重试入口，
+         * 界面上看起来只是"这个会话本来就不长"。
+         *
+         * 判据与首屏同源（`isMessagesReadUnavailable`，见 `loadMessages` 的长注释），
+         * 而不是"返回了空"。**关键区别在写什么**：
+         * - 读不可用 → `hasMoreMessages` **保持 true**（"读不到"不是"没有"的证据），
+         *   置 `loadMoreReadUnavailable`，界面给出说明与重试入口；
+         * - 读可用但确实没有更早的 → 才是真的到开头了，`hasMoreMessages: false`。
+         */
         const allMessages = MessageStorage.listMessages(sessionId);
-        const currentOldestTimestamp = currentMessages[0].timestamp;
-        const olderMessages = allMessages.filter(m => m.timestamp < currentOldestTimestamp);
-        
-        if (olderMessages.length === 0) {
-          set({ hasMoreMessages: false, isLoadingMore: false });
+        const readUnavailable =
+          allMessages.length === 0 && MessageStorage.isMessagesReadUnavailable(sessionId);
+        if (readUnavailable) {
+          set({ isLoadingMore: false, loadMoreReadUnavailable: true });
+          reportActionFailure(
+            "store.loadMoreMessages",
+            new Error(`会话 ${sessionId} 的历史读路径不可用`),
+            "更早的消息这次没有读出来（这不代表没有历史）；可点「重试」或稍后再试",
+          );
           return;
         }
-        
+        const currentOldestTimestamp = currentMessages[0].timestamp;
+        const olderMessages = allMessages.filter(m => m.timestamp < currentOldestTimestamp);
+
+        if (olderMessages.length === 0) {
+          set({ hasMoreMessages: false, isLoadingMore: false, loadMoreReadUnavailable: false });
+          return;
+        }
+
         const newBatch = olderMessages.length > count 
           ? olderMessages.slice(olderMessages.length - count) 
           : olderMessages;
@@ -573,11 +620,18 @@ export const useAppStore = create<AppState>((set, get) => ({
           messages: [...newBatch, ...s.messages],
           hasMoreMessages: olderMessages.length > count,
           isLoadingMore: false,
+          loadMoreReadUnavailable: false,
         }));
       }, 300);
     } catch (e) {
-      console.error("[Store] loadMoreMessages failed:", e);
-      set({ isLoadingMore: false });
+      /**
+       * 抛错同样是"读不到"，不是"没有更多"：保持 `hasMoreMessages` 原值
+       * （让重试入口还在），并把失败上报到可见通道。
+       * 原来这里只有一行 `console.error` + 归位 `isLoadingMore` ——
+       * 用户看到的是"滚上去什么都没发生"。
+       */
+      set({ isLoadingMore: false, loadMoreReadUnavailable: true });
+      reportActionFailure("store.loadMoreMessages", e, "更早的消息没有读出来（这不代表没有历史）");
     }
   },
 

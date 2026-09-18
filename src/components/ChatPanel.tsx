@@ -90,7 +90,7 @@ notebookId?: string;
 
 export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onEditAndRewind, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable } = useAppStore();
+  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable, loadMoreReadUnavailable } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
@@ -695,7 +695,38 @@ setStepTooltipLocked(false);
             onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
           />
           <SelectionTooltip containerRef={messagesContainerRef} onQuote={(text) => setQuoteContext(text)} />
-          {hasMoreMessages && (
+          {/*
+            ## 第 48 轮：翻页读不到时**必须说出来**，而且不能关掉重试入口
+
+            上面那条（首屏"读不到"）修完之后，同一个缺陷在**翻页**这条路上还在：
+            `loadMoreMessages` 拿不到更早的消息就把 `hasMoreMessages` 置 false，
+            而那个标记同时控制着这条提示条与"滚动到底自动翻页"——
+            于是一次失败的读之后，用户**永远**拿不回更早的历史，没有任何提示、没有重试入口，
+            界面上看起来只是"这个会话本来就不长"。
+
+            现在按"读不到"如实渲染：`hasMoreMessages` 保持 true（读不到不是没有的证据），
+            这里给说明 + 重试按钮。重试就是再调一次翻页。
+          */}
+          {loadMoreReadUnavailable && (
+            <div className="load-more-indicator is-unavailable" data-testid="load-more-unavailable">
+              <span className="load-more-unavailable-text">
+                {lang === "zh"
+                  ? "暂时读不到更早的消息（这不代表没有历史）"
+                  : "Can't read earlier messages right now (this doesn't mean there are none)"}
+              </span>
+              <button
+                type="button"
+                className="load-more-retry"
+                onClick={() => currentSession?.id && loadMoreMessages(currentSession.id, 20)}
+                disabled={isLoadingMore}
+              >
+                {isLoadingMore
+                  ? (lang === "zh" ? "重试中…" : "Retrying…")
+                  : (lang === "zh" ? "重试" : "Retry")}
+              </button>
+            </div>
+          )}
+          {hasMoreMessages && !loadMoreReadUnavailable && (
             <div className="load-more-indicator">
               {isLoadingMore ? (
                 <span className="load-more-loading">{S.chat.loading[lang]}</span>
