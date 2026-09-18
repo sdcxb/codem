@@ -434,14 +434,18 @@ export const useAppStore = create<AppState>((set, get) => ({
          *
          * 所以判据取"**读路径是否处于可用状态**"（`isMessagesReadUnavailable`，
          * 与读路径自己决定是否路由到镜像的判据同源），而不是"结果是不是空"。
-         * 诚实交代一个残留缺口：端口就绪、镜像也加载了、但 JSONL 权威日志还没 hydrate 时
-         * 可能仍然为空而这里会说"读到了" —— 那时行为与改之前一致（不会更糟），
-         * 而下面那段"空结果就订阅镜像就绪后重读"的补丁正是为它准备的。
+         *
+         * 第 50 轮：这里原来诚实交代了一个残留缺口 —— "端口就绪、镜像也加载了、
+         * 但 JSONL 权威日志还没 hydrate 时可能仍然为空，而这里会说'读到了'"。
+         * 那个缺口现在**关掉了**：`sessionLogReadState` 把日志读取也分成三态，
+         * 见下面 `messagesLoading` 的注释。
          */
         messagesReadUnavailable:
           totalCount === 0 &&
           !MessageStorage.isMessagesReadPending(sessionId) &&
-          MessageStorage.isMessagesReadUnavailable(sessionId),
+          MessageStorage.sessionLogReadState(sessionId) !== "pending" &&
+          (MessageStorage.isMessagesReadUnavailable(sessionId) ||
+            MessageStorage.sessionLogReadState(sessionId) === "failed"),
         /**
          * 第 49 轮：**"还没到"与"读不到"分开渲染**。
          *
@@ -450,10 +454,21 @@ export const useAppStore = create<AppState>((set, get) => ({
          * （154ms 后消息就出来了）。每次启动对着一条真有 277 条的会话说一次"读不到"，
          * 用户会以为存储坏了；更糟的是"狼来了"喊多了，真正的"读不到"就没人信了。
          *
-         * 现在：镜像**在途** → `messagesLoading`（界面显示"正在读取历史消息…"）；
-         * 加载已定论但仍不可用 → `messagesReadUnavailable`（原有告警 + 重试入口）。
+         * ## 第 50 轮补上另一半：**权威日志也在"还没到"里**
+         *
+         * 上面那条只覆盖"**索引镜像**在途"。而 `listMessages` 合并的是**索引 + 权威日志**，
+         * 空结果还有第二个来源：**日志还没 hydrate**（`sessionLogReadState === "pending"`）。
+         * 那时若索引也刚好为空（被裁 / 崩溃丢掉写入 —— 日志是权威副本、索引只是可重建的
+         * 查询索引，这正是这套架构要救的场景），读出来就是 `[]`，
+         * 界面渲染**欢迎页**："开始新对话"—— 用户会以为自己那个有内容的会话被清空了。
+         *
+         * 现在两种"还没到"都算 `messagesLoading`，并在下面订阅它们就绪后重读；
+         * 只有"索引可用、日志已读过、结果确实为空"才是真的空会话（欢迎页）。
          */
-        messagesLoading: totalCount === 0 && MessageStorage.isMessagesReadPending(sessionId),
+        messagesLoading:
+          totalCount === 0 &&
+          (MessageStorage.isMessagesReadPending(sessionId) ||
+            MessageStorage.sessionLogReadState(sessionId) === "pending"),
       });
       return totalCount;
     };
@@ -552,6 +567,37 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch {
           /* 订阅失败保持空列表（与既有行为一致） */
         }
+
+        /**
+         * 第 50 轮：**权威日志也要有人去读**。
+         *
+         * 上面那条订阅只等"索引镜像就绪"。可是 `listMessages` 合并的是**索引 + 日志**，
+         * 而进会话时**没有任何生产代码**调用 `hydrateSessionLog` —— 日志只在
+         * 启动维护的回填里被 hydrate 过。于是"索引为空 + 日志还没读"这个组合下，
+         * 第一次读返回空、界面渲染**欢迎页**（"开始新对话"），
+         * 而那个会话的日志里可能满满都是消息（日志是权威副本，索引只是可重建的查询索引，
+         * 索引空了正是这套架构要救的场景）。
+         *
+         * 现在空结果就主动确保日志被读一次，读到了就重读；读不到则如实变成"读不到"
+         * （`sessionLogReadState === "failed"` → 下一帧 `messagesReadUnavailable`），
+         * 不会把"读失败"说成"没有消息"。
+         */
+        MessageStorage.ensureSessionLogHydrated(sessionId, () => {
+          const again = MessageStorage.listMessages(sessionId);
+          if (again.length > 0) {
+            applyIfStillLoaded(again);
+            console.log(`[Store] 权威日志就绪后重读：sessionId=${sessionId} → ${again.length} 条`);
+          } else {
+            /*
+             * 日志读过了、确实为空 → 这才是"真的空会话"。
+             * 必须把 `messagesLoading` 落下，否则界面会永远停在"正在读取历史消息…"，
+             * 那比欢迎页更糟（用户以为卡住了，而这个会话本来就是新的）。
+             */
+            if (get().loadedSessionId === sessionId) {
+              set({ messagesLoading: false });
+            }
+          }
+        });
       }
     } catch (e) {
       console.error("[Store] loadMessages failed:", e);

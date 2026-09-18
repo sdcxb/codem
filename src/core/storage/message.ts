@@ -688,12 +688,22 @@ function sessionIdFromLogMirror(messageId: string): string | null {
  * 把会话的追加日志读进内存镜像（进入会话时调用一次）。
  * 之后 listMessagesMerged 就能同步合并出被索引裁掉的历史。
  */
+/**
+ * 把会话的追加日志读进内存镜像（进入会话时调用一次）。
+ * 之后 listMessagesMerged 就能同步合并出被索引裁掉的历史。
+ *
+ * 成功（哪怕读到 0 条）→ 写进镜像，`sessionLogReadState` 变 `hydrated`；
+ * 失败 → 记进 `logReadFailures`（`failed`），**不写镜像**
+ * （写一个空数组等于把"读失败"谎报成"这个会话没有消息"）。
+ */
 export async function hydrateSessionLog(sessionId: string): Promise<number> {
   try {
     const { messages } = await readSessionMessages(sessionId);
     cachedLogMessages.set(sessionId, messages);
+    logReadFailures.delete(sessionId);
     return messages.length;
   } catch (e) {
+    logReadFailures.add(sessionId);
     console.warn("[SessionJSONL] 读取日志失败（回退到索引）:", e);
     return 0;
   }
@@ -703,6 +713,65 @@ export async function hydrateSessionLog(sessionId: string): Promise<number> {
 export function clearSessionLogCache(sessionId?: string): void {
   if (sessionId) cachedLogMessages.delete(sessionId);
   else cachedLogMessages.clear();
+}
+
+/**
+ * 该会话日志的读取状态（第 50 轮）—— **三态**，不是布尔。
+ *
+ * ## 为什么必须分三态
+ *
+ * `listMessages` 会合并"索引 + 权威日志"，当**两者都为空**时它返回 `[]` ——
+ * 这个 `[]` 在过去同时代表三件完全不同的事：
+ *
+ * 1. `hydrated` + 空 → 这个会话**确实没有消息**（新建的、或用户删光了）→ 欢迎页是对的；
+ * 2. `pending` → **日志还没读进来**（进会话的第一次读正好落在窗口内，或索引被裁/丢过）
+ *    → 显示欢迎页是**错的**：用户会以为对话被清空了（本仓库记过一次真机事故就是这个形态）；
+ * 3. `failed` → **读日志失败** → 同样不该说"没有"，而该说"读不到"并给重试。
+ *
+ * 判据来自 `cachedLogMessages`：`hydrateSessionLog` 成功时会 `set(sessionId, messages)`，
+ * **空数组也 set**（那是一次定论）；失败时不 set，并把会话记进 `logReadFailures`。
+ *
+ * ⚠️ 为什么"读失败"不能等同于"空"：日志是**权威副本**，索引只是可重建的查询索引。
+ * 索引空了（被裁 / 崩溃丢掉写入）而日志里有内容，正是这条架构要救的场景 ——
+ * 把"读不到"渲染成"没有"，等于把要救的东西当成不存在。
+ */
+export type SessionLogReadState = "hydrated" | "pending" | "failed";
+
+const logReadFailures = new Set<string>();
+/** 在途的 hydrate（同一会话只发一次，避免并发读同一份文件） */
+const hydrationInFlight = new Map<string, Promise<number>>();
+
+export function sessionLogReadState(sessionId: string): SessionLogReadState {
+  if (cachedLogMessages.has(sessionId)) return "hydrated";
+  if (logReadFailures.has(sessionId)) return "failed";
+  return "pending";
+}
+
+/**
+ * 确保该会话的日志被读过一次（进会话时 / 读到空结果时调用），完成后回调。
+ *
+ * 与直接调 `hydrateSessionLog` 的区别：**幂等且去重**（同一会话并发调用只发一次 IO），
+ * 并且把"失败"记成**定论**（`failed`）而不是让会话永远停在 `pending`
+ * —— 停在 pending 会让界面永远显示"正在读取…"，那比说"读不到"更糟。
+ */
+export function ensureSessionLogHydrated(sessionId: string, onLoaded?: () => void): void {
+  if (cachedLogMessages.has(sessionId) || logReadFailures.has(sessionId)) {
+    onLoaded?.();
+    return;
+  }
+  let job = hydrationInFlight.get(sessionId);
+  if (!job) {
+    job = hydrateSessionLog(sessionId).finally(() => {
+      hydrationInFlight.delete(sessionId);
+    });
+    hydrationInFlight.set(sessionId, job);
+  }
+  if (onLoaded) void job.then(() => onLoaded());
+}
+
+/** 测试隔离：清掉"日志读失败"标记（生产不需要复位它） */
+export function __resetSessionLogReadFailuresForTests(): void {
+  logReadFailures.clear();
 }
 
 /**

@@ -1,11 +1,11 @@
 {
-  "version": "1.16.79",
-  "notes": "「库损坏 → 索引重建」这条链路少了一半：错误码表写着 CORRUPT 走索引重建，但只有打开时头部损坏与12",
-  "pub_date": "2026-09-18T11:42:17Z",
+  "version": "1.16.80",
+  "notes": "索引空了、权威日志还在时界面说的是「开始新对话」：日志是权威副本、索引只是可重建的查询索引，所以索引空但日志有内容正是要救的场景，而一个空数组同时代表真没有/还在加载/日志还没读三件事。现在把日志读取也做成三态 + 空结果主动去读日志，读到就渲染、读过确实为空才落回欢迎页。",
+  "pub_date": "2026-09-18T11:58:48Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RtRHpYZmhNZ29HaWZZU0ZUMm4rRmhMU3ZXdHU2ZldjUVRUU1B0VGtKVjhJaWlrWUd4YlUwU2V4YXV6c1M5VHRISmpDTStuNmU3WXNjS1RzUHhLRFEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzMxNjczCWZpbGU6Q29kZW1fMS4xNi43OV94NjQtc2V0dXAuZXhlCjkrelU5UGNhNWcxaGkvczlsR0VicWNzOGxsYmN4NTJIcitTb1ZUdG83QnZOMDJLN2JzSjZUOHE2N3hNcVhXREdidU13ZmZYYVIyQzlld0F5K282cEJBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.79/Codem_1.16.79_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1gxcG4yYS9wSkZCdHp2c1NGQnl6SkVITGVia0FrNFkwbW1JQy96Y2NhWkt0YXUyc0FhbDV6QXkxZldzd2hBU3lHRkpMTkF0RHZHQ3hRVzgvNDVJc3dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzMyNTE1CWZpbGU6Q29kZW1fMS4xNi44MF94NjQtc2V0dXAuZXhlCkNRSVcvZFZnY09EY1U0b21UbUxobHoyRWcxU1k3QUw4a3FZZklkbWpPeGdKUEtUdUVjd3NQZDJENzFKYXhPUW9ZWHNvNlNhZU5IdmlLMUFmYi9nS0JnPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.80/Codem_1.16.80_x64-setup.exe"
     }
   }
 }

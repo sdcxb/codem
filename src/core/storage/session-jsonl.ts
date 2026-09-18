@@ -184,6 +184,18 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
  *
  * @returns messages 与 skippedLines（损坏行数，用于诊断"日志是否被截断过"）
  */
+/**
+ * 错误是否表示"文件不存在"（而不是"读失败"）。
+ *
+ * 判据见 `readSessionMessages` 的长注释：文件 API 是 Tauri 命令，错误以字符串回来。
+ * **判不出来的方向是安全的** —— 不确定就当成"读失败"抛出，宁可多报一次"读不到"，
+ * 也不把"读失败"说成"这个会话没有消息"。
+ */
+function isFileMissingError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return /os error 2\b/.test(msg) || /no such file/i.test(msg) || /not found/i.test(msg);
+}
+
 export async function readSessionMessages(
   sessionId: string,
 ): Promise<{ messages: JsonlMessageRecord[]; skippedLines: number }> {
@@ -191,8 +203,29 @@ export async function readSessionMessages(
   let raw: string;
   try {
     raw = await readFile(await sessionLogPath(sessionId));
-  } catch {
-    return result; // 还没有日志：正常（老会话尚未回填）
+  } catch (e) {
+    /**
+     * ## 第 50 轮：**"文件不存在"与"读失败"必须分开**（同一类缺陷的最后一层）
+     *
+     * 原来这里一律 `catch { return 空 }`，于是两种完全不同的情况合并成一个空结果：
+     * - **还没有日志**（新会话 / 老会话尚未回填）→ 空是**对的**；
+     * - **读取失败**（IPC 断了 / 权限 / 磁盘问题）→ 空是**谎话**：
+     *   日志是**权威副本**，读不到它却报"没有消息"，用户会以为对话被清空了
+     *   （这正是本仓库反复出现的那一类："读失败被渲染成没有数据"）。
+     *
+     * 现在只有"确实不存在"才返回空，其余**照原样抛出**，让上层如实报"读不到"
+     * （`hydrateSessionLog` 会把它记成 `session-log read failed`，
+     * 界面显示"暂时读不到…"+ 重试，而不是欢迎页）。
+     *
+     * 判据为什么按错误文本：文件 API 是 Tauri 命令，错误以字符串回来
+     * （Rust 侧 `std::fs::read` 的 `e.to_string()`，形如
+     * `系统找不到指定的文件。 (os error 2)` / `No such file or directory (os error 2)`）。
+     * 所以认三个信号：`os error 2`、`no such file`、`not found`。
+     * ⚠️ 这是**文本判据**，会随 Rust 侧错误格式变化而失效 —— 失效的方向是安全的
+     * （判不出来就当成"读失败"抛出，宁可多报一次"读不到"，也不把失败说成"没有"）。
+     */
+    if (isFileMissingError(e)) return result; // 还没有日志：正常（老会话尚未回填）
+    throw e;
   }
   const byId = new Map<string, JsonlMessageRecord>();
   const tombstones = new Set<string>();

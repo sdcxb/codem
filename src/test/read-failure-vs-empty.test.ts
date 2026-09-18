@@ -178,22 +178,52 @@ describe("READFAIL：store 的 messagesReadUnavailable 三态", () => {
     ).toBe(true);
   });
 
-  it("READFAIL-8: 读路径**不可用**（镜像没接手）→ 即使返回空也标 unavailable", async () => {
+  it("READFAIL-8: 读路径**不可用**（镜像没接手）→ 即使返回空也**不是**欢迎页", async () => {
     const { useAppStore } = await import("../store");
     const msgMod = await stubReadAvailability(true);
     /*
      * 这正是真机事故的形态：会话里**确实有 27 条消息**，但镜像还没接手 →
      * `listMessages` 返回空 → 改前渲染成"开始新对话"，用户以为对话被清空了。
+     *
+     * ## 第 50 轮把这条判据说清楚了
+     *
+     * 这一帧里同时有**两个**"还没到"：索引镜像没接手、权威日志也还没读
+     * （`sessionLogReadState === "pending"`）。所以状态是 `messagesLoading`
+     * 而不是 `messagesReadUnavailable` —— 两者都**不是**欢迎页，
+     * 这正是这条用例真正要守的东西（它原来只断言了其中一种形态）。
      */
     vi.spyOn(msgMod, "listMessages").mockReturnValue([]);
 
     useAppStore.getState().loadMessages("s-mirror-lagging");
 
-    expect(useAppStore.getState().messages.length).toBe(0);
+    const s = useAppStore.getState();
+    expect(s.messages.length).toBe(0);
     expect(
-      useAppStore.getState().messagesReadUnavailable,
-      "读路径不可用 → 必须说'读不到'（这条就是那次 27 条消息会话显示空白的形态）",
+      s.messagesReadUnavailable || s.messagesLoading,
+      "读不出消息时**绝不能**落到欢迎页（'开始新对话'）—— 必须是'读不到'或'正在读取'之一",
     ).toBe(true);
+  });
+
+  it("READFAIL-8b: 日志**已经读过**且镜像不可用 → 必须明确说'读不到'（不许停在加载态）", async () => {
+    const { useAppStore } = await import("../store");
+    const msgMod = await stubReadAvailability(true);
+    vi.spyOn(msgMod, "listMessages").mockReturnValue([]);
+    /*
+     * 让日志读取有**定论**：`sessionLogReadState` 变成 hydrated（这里直接调真的
+     * `hydrateSessionLog`，测试环境没有文件 → 读到 0 条，那是一次定论）。
+     * 于是"还没到"这个解释被排除 → 剩下唯一的解释就是"读不到"。
+     */
+    await msgMod.hydrateSessionLog("s-mirror-lagging-2");
+
+    useAppStore.getState().loadMessages("s-mirror-lagging-2");
+
+    const s = useAppStore.getState();
+    expect(s.messages.length).toBe(0);
+    expect(
+      s.messagesReadUnavailable,
+      "日志有了定论、镜像又不可用 → 只能报'读不到'（加载态会永远转下去）",
+    ).toBe(true);
+    expect(s.messagesLoading, "有定论就不该还在加载").toBe(false);
   });
 });
 
