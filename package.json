@@ -24,6 +24,7 @@
     "audit:schema-parity": "node tools/audit/gen-schema-sql.mjs --check",
     "audit:command-parity": "node tools/audit/check-command-parity.mjs",
     "audit:row-builders": "node tools/audit/check-row-builders.mjs",
+    "verify:update-manifest": "node tools/release/verify-update-manifest.mjs",
     "audit:coverage": "node tools/audit/storage-coverage.mjs --check",
     "audit:inventory": "node tools/audit/storage-inventory.mjs",
     "audit:inventory-md": "node tools/audit/storage-inventory.mjs --md",
