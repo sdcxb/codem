@@ -152,6 +152,98 @@ describe("AUD47-2/3：事件镜像的占位与合并", () => {
 });
 
 // ==========================================================================
+// AUD47-6：分叉下标的换算（P0 —— 窗口下标 ≠ 会话内绝对下标）
+// ==========================================================================
+
+describe("AUD47-6：分叉下标换算（P0 的核心算术）", () => {
+  const msg = (id: string, timestamp: number) => ({ id, timestamp });
+
+  /** 造一个 n 条消息的会话 */
+  const session = (n: number) => Array.from({ length: n }, (_, i) => msg(`m${i}`, 1000 + i));
+
+  it("100 条会话只装载了最后 10 条时，窗口下标 9 必须换算成 100（不是 10）", async () => {
+    const { resolveSessionAbsoluteIndex } = await import("../core/session/fork-index");
+    const all = session(100);
+    const window = all.slice(-10); // loadMessages 的形态：只有最后 10 条
+
+    const r = resolveSessionAbsoluteIndex("s1", 9, window, () => all);
+
+    /*
+     * 改前：`store.forkSession(sid, 9)` 直接拿 9 当绝对下标 → 从"第 9 条所在的这一轮"
+     * 往回切 = **会话开头那一小段**（约 10 条），而不是分叉点之前的 90 条。
+     * 用户拿到内容完全不对的新会话。
+     *
+     * 换算后的正确值：窗口首条（全量第 90 条）+ 窗口下标 9 = **99**
+     * （= 会话最后一条；`forkSession` 会复制 `[0, 99]` 这一整段）。
+     */
+    expect(
+      r.absoluteIndex,
+      "必须换算成 99（= 最后一条的绝对位置），改前这里会是 9（会话开头那一小段）",
+    ).toBe(99);
+    expect(r.offset, "被截断掉的历史条数").toBe(90);
+    expect(r.shifted, "确实发生了换算").toBe(true);
+  });
+
+  it("短会话（≤10 条）不受影响：偏移为 0、下标不变", async () => {
+    const { resolveSessionAbsoluteIndex } = await import("../core/session/fork-index");
+    const all = session(6);
+    const r = resolveSessionAbsoluteIndex("s1", 3, all, () => all);
+    expect(r.absoluteIndex, "窗口就是全部 → 下标不变（这也是它以前看起来正常的原因）").toBe(3);
+    expect(r.offset).toBe(0);
+    expect(r.shifted).toBe(false);
+  });
+
+  it("前插分页之后仍然算得对（窗口首条往前移了）", async () => {
+    const { resolveSessionAbsoluteIndex } = await import("../core/session/fork-index");
+    const all = session(100);
+    // 用户向上滚了一次：窗口变成"第 60 条到第 99 条"（40 条）
+    const window = all.slice(60);
+    expect(resolveSessionAbsoluteIndex("s1", 0, window, () => all).absoluteIndex).toBe(60);
+    expect(
+      resolveSessionAbsoluteIndex("s1", 39, window, () => all).absoluteIndex,
+      "窗口最后一条 = 会话最后一条 → 绝对下标 99（0 基的第 99 条，也是第 100 条的位置）",
+    ).toBe(99);
+  });
+
+  it("中途删过消息也按'比窗口首条更旧的还有几条'算（不靠总数减窗口长）", async () => {
+    const { resolveSessionAbsoluteIndex } = await import("../core/session/fork-index");
+    // 原始 100 条，删掉中间 20 条 → 现存 80 条；窗口是最后 10 条
+    const all = session(100).filter((m) => !(m.timestamp >= 1040 && m.timestamp < 1060));
+    expect(all.length).toBe(80);
+    const window = all.slice(-10);
+    const r = resolveSessionAbsoluteIndex("s1", 5, window, () => all);
+    expect(r.offset, "比窗口首条更旧的有 70 条").toBe(70);
+    expect(r.absoluteIndex).toBe(75);
+  });
+
+  it("读不到全量列表（端口未就绪）→ 保持原下标，**不猜**一个更大的数", async () => {
+    const { resolveSessionAbsoluteIndex } = await import("../core/session/fork-index");
+    const window = session(10);
+    const r = resolveSessionAbsoluteIndex("s1", 9, window, () => {
+      throw new Error("端口未注册");
+    });
+    expect(
+      r.absoluteIndex,
+      "猜大 = 多复制用户以为已经排除掉的内容；宁可保持旧行为",
+    ).toBe(9);
+    expect(r.shifted).toBe(false);
+  });
+
+  it("空窗口 / 全量为空 → 保持原下标（没有可用锚点）", async () => {
+    const { resolveSessionAbsoluteIndex } = await import("../core/session/fork-index");
+    expect(resolveSessionAbsoluteIndex("s1", 4, [], () => session(10)).absoluteIndex).toBe(4);
+    expect(resolveSessionAbsoluteIndex("s1", 4, session(10), () => []).absoluteIndex).toBe(4);
+  });
+
+  it("下标不许越过全量长度（夹取）", async () => {
+    const { resolveSessionAbsoluteIndex } = await import("../core/session/fork-index");
+    const all = session(20);
+    const r = resolveSessionAbsoluteIndex("s1", 999, all.slice(-10), () => all);
+    expect(r.absoluteIndex, "夹到全量长度").toBe(20);
+  });
+});
+
+// ==========================================================================
 // AUD47-5：记录端不许在"恢复还没读到键"之前把它写成 null
 // ==========================================================================
 

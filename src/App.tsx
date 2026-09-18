@@ -281,6 +281,8 @@ import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./core/s
 import { setLang, useLang, S } from "./core/i18n/lang";
 import { useWindowState } from "./hooks/useWindowState";
 import * as MessageStorage from "./core/storage/message";
+// 第 47 轮补 P0：窗口下标 → 会话绝对下标的换算（纯函数，见该文件的长注释）
+import { resolveSessionAbsoluteIndex as resolveForkIndex } from "./core/session/fork-index";
 import * as SessionStorage from "./core/storage/session";
 import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
 import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
@@ -3879,33 +3881,23 @@ abortControllersRef.current.delete(session?.id || "");
    * （而不是分叉点之前的 100 条）→ 用户拿到一个内容完全不对的新会话。
    * 静默、无报错、而且短会话（≤10 条）下完全正常 —— 这正是它一直没被发现的原因。
    *
-   * 换算是"数出窗口首条之前还有多少条历史"：它同时覆盖了
-   * ① `loadMessages` 的初始窗口截断、② `loadMoreMessages` 的前插分页
-   * （两种都会让"窗口下标"小于"绝对下标"）。
+   * 换算本身抽在 `core/session/fork-index.ts`（纯函数，有专门的用例守着）——
+   * 这里只负责把"窗口"和"读全量"两个依赖注进去。
    */
   const resolveSessionAbsoluteIndex = useCallback((sessionId: string, windowIndex: number): number => {
-    try {
-      const window = useAppStore.getState().messages;
-      const anchor = window[0];
-      if (!anchor) return Math.max(windowIndex, 0);
-      const all = MessageStorage.listMessages(sessionId);
-      let olderThanAnchor = 0;
-      for (const m of all) {
-        if (m.timestamp < anchor.timestamp) olderThanAnchor += 1;
-      }
-      const absolute = olderThanAnchor + Math.max(windowIndex, 0);
-      if (absolute !== windowIndex) {
-        console.log(
-          `[fork] 窗口下标 ${windowIndex} → 会话内绝对下标 ${absolute}` +
-            `（窗口首条之前还有 ${olderThanAnchor} 条历史未装载）`,
-        );
-      }
-      return absolute;
-    } catch (e) {
-      // 换算失败时**不改语义**：宁可保持旧的（可能偏小的）下标，也不猜一个更大的
-      console.warn("[fork] 下标换算失败（按窗口下标处理）:", e);
-      return Math.max(windowIndex, 0);
+    const result = resolveForkIndex(
+      sessionId,
+      windowIndex,
+      useAppStore.getState().messages,
+      (sid) => MessageStorage.listMessages(sid),
+    );
+    if (result.shifted) {
+      console.log(
+        `[fork] 窗口下标 ${windowIndex} → 会话内绝对下标 ${result.absoluteIndex}` +
+          `（窗口首条之前还有 ${result.offset} 条历史未装载）`,
+      );
     }
+    return result.absoluteIndex;
   }, []);
 
   const handleFork = useCallback((messageIndex: number) => {
