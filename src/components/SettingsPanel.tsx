@@ -874,7 +874,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       <div className="settings-panel" role="dialog" aria-modal="true" aria-label="设置" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h3>{S.settings.title[lang]}</h3>
-          <button className="settings-close" onClick={onClose}><X size={16} /></button>
+          {/* 第 74 轮：补可访问名 —— 真机普查实测这个 ✕ 是面板内 127 个按钮里**唯一无名**的那个
+              （读屏只念"按钮"；第 63 轮走查脚本也因此按名字找不到它、只能按位置兜底）。 */}
+          <button className="settings-close" aria-label={lang === "zh" ? "关闭设置" : "Close settings"} onClick={onClose}><X size={16} /></button>
         </div>
 
         <div className="settings-body">
