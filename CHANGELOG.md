@@ -117,7 +117,23 @@ All notable changes to Codem will be documented in this file.
 
 **实测**：渲染侧 **326 文件 / 5756 通过 / 16 跳过 / 0 失败**；`tsc` 0；
 **10 道 audit 门禁** exit 0（写入点 55 处 / 88 处返回值全部处理 / 命令对齐 80 条）。
-真机（打包版）复核见本版发布说明。
+
+**打包版真机复核（真实数据）**：
+
+| 项 | 结果 |
+| --- | --- |
+| 维护报出的历史缺口 | **749**（连续多次重载后的维护**全部相同**；修复前首次维护报 **934**） |
+| 与数据库真值 | 逐条一致（505 + 244） |
+| "未就绪"会话数 | **0**（3 个会话都在预算内等到了镜像） |
+| 事件库结构异常 | 修前 **1 处**（上面那条真数据脏行）→ **规范化该行后为 0**（`markerId`/`reason`/`summary` 一字未改） |
+| 更新链路 | 已装的 **1.11.0** 更新器 `check()` → `available: true, version: 1.16.89, currentVersion: 1.11.0` |
+| 安装后 | `%LOCALAPPDATA%\Codem\codem.exe` 文件版本 **1.16.89**；3 会话 / 934 消息 / 991 工具调用 / 3193 事件，`storage_info.standard = true`，界面正常 |
+
+⚠️ 顺带记一条**工具链**上的坑（已写进 `docs/ARCH-SQLITE-TO-RUST.md`）：改真实数据用的
+`codem-db-cli` 是"同一份源码的**另一个构建**"。本轮第一次改那条脏行时，用的是 9 月 17 日的旧
+CLI，`crud.upsert { mode: "replace" }` 走了裸 INSERT 分支并报
+`NOT NULL constraint failed: session_events.session_id` —— 重新构建后同一条命令
+正确走"先 UPDATE 再 INSERT"。**用它改用户数据之前先重新构建**。
 
 ## [1.16.88] - 2026-09-18 — **库损坏时，设置是唯一"没有任何等价物"的数据（另外两样都有人救）**
 

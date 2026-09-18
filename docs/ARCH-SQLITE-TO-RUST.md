@@ -67,6 +67,14 @@
 ### 2.3 Rust 侧做成「库 + CLI + Tauri 薄层」
 - `crates/codem-db`：**纯逻辑库**（连接管理、schema、迁移、所有仓储命令、authorizer、错误映射）。
 - `codem-db-cli`：同一库的**命令行入口**（`--db <path> <command> --json`）。
+  > ⚠️ **第 60 轮实测的坑：CLI 是"同一份源码的另一个构建"，不是同一份二进制。**
+  > 用**旧的** `target/debug/codem-db-cli.exe` 改真实数据时，它的行为可能与线上引擎不同：
+  > 现场是 `crud.upsert { mode: "replace" }` 走了**裸 INSERT** 分支
+  > （`NOT NULL constraint failed: session_events.session_id`），而新构建的同一条命令
+  > 正确走"先 UPDATE 再 INSERT"（`written: 1`）。也就是**同一个命令名、两种语义** ——
+  > 用它改用户数据之前，先 `cargo build -p codem-db --bin codem-db-cli` 重新构建，
+  > 并核对 `target/debug/codem-db-cli.exe` 的时间戳。
+  > （同一类"两个来源给同一事实"的缺陷，这个仓库已经抓过多次；这里记的是**工具链**上的那一例。）
 - Tauri command：只做「参数解码 → 调库 → 结果编码」，**没有业务逻辑**。
 - **理由（关键）**：vitest 跑在 Node 里，**无法直接调 Tauri IPC**。有了 CLI，契约测试可以
   **真的驱动生产实现**（`execFile` 调 CLI），而不是退化成"测试 WASM、生产 Rust"的双实现分歧
