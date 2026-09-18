@@ -13,7 +13,7 @@
  * inject: ['slots'] — 框架保证 ctx.get('slots') 可用后才执行。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { getEventLog } from '../storage/event-log'
+import { getEventLog, isSessionEventsReadable } from '../storage/event-log'
 import { TrajectoryPanel } from '../../components/TrajectoryPanel'
 
 interface TrajectoryStep {
@@ -88,6 +88,21 @@ class TrajectoryService {
   /** 返回会话轨迹：先落库，再从事件日志回放（含历史+本次运行）。 */
   getSessionTrajectory(sessionId: string): TrajectoryStep[] {
     this.flushSession(sessionId)
+    /**
+     * ## 第 61 轮：**读不到事件时不许返回空**（面板会说"没有轨迹"，而运行内的步骤就在内存里）
+     *
+     * `readAll(sid)` 在该会话的事件镜像没加载完时返回空数组（读路由的既定行为），
+     * 而原来那条路径**成功返回 `[]`** —— 比 `catch` 分支还糟：`catch` 至少会退回内存里的
+     * 本次运行步骤，正常路径反而把它们丢掉了。启动后第一次打开轨迹面板就是这个形态。
+     *
+     * 处置：**读不到 → 退回内存**（并保留 `catch` 的同一条退路）。
+     * 这里不改"事件是权威"的结论：能读到就仍然以事件日志为准（含历史 + 本次运行）。
+     * 本方法是**同步**的（面板直接渲染返回值），所以这里不能用 `whenSessionEventsLoaded`
+     * 去等 —— 等的版本属于"把面板改成异步"，那是产品改动，不在本轮范围。
+     */
+    if (!isSessionEventsReadable(sessionId)) {
+      return this.steps.get(sessionId) || []
+    }
     const out: TrajectoryStep[] = []
     try {
       for (const ev of getEventLog().readAll(sessionId)) {

@@ -100,11 +100,16 @@ export class SurfaceManager {
   }
 
   /**
-   * 检查会话是否有事件日志（是否已初始化）。
+   * ⚠️ 第 61 轮：这里原来有个 `hasEventLog(sessionId)` = `getEventLog().count(sessionId) > 0`，
+   * **已删除**（删除时的核查：全仓零调用者，只有它自己的定义）。
+   *
+   * 删它的理由不只是"没人用"，而是**名字承诺了一个它在加载窗口里给不出的事实**：
+   * `count` 走的是同一条读路由 —— 该会话的事件镜像没加载完时返回 0，
+   * 于是 `hasEventLog` 会对一个**有上千条事件**的会话回答 `false`。
+   * 真正需要这个判断的调用方要的是"读得到吗"（`isSessionEventsReadable`），
+   * 而不是"数了一下是 0" —— 留着这个布尔口子，下一个人就会踩同一颗雷
+   * （第 60 轮那个 934/749 就是这么来的）。
    */
-  hasEventLog(sessionId: string): boolean {
-    return getEventLog().count(sessionId) > 0;
-  }
 }
 
 // ========== Singleton ==========

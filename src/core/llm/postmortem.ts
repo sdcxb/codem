@@ -15,7 +15,7 @@
  * 报告存储在 `~/.codem/postmortem/` 目录下。
  */
 
-import { getEventLog } from "../storage/event-log";
+import { getEventLog, whenSessionEventsLoaded } from "../storage/event-log";
 
 // ========== Types ==========
 
@@ -28,6 +28,15 @@ export interface PostmortemReport {
   timestamp: number;
   /** 错误描述 */
   error: string;
+  /**
+   * 第 61 轮：**这份报告读事件时，事件镜像就绪了吗**。
+   *
+   * `false` 表示"当时的空/少不是事实，而是读不到" —— 报告里的 `totalEvents`、
+   * 工具统计、`possibleCauses` 都**不完整**，读报告的人必须知道这一点。
+   * （真机取证：这份报告是在**错误路径**上生成的，而错误往往就发生在启动后第一轮 ——
+   * 那正是事件镜像最可能还没加载完的时刻。）
+   */
+  eventsReadable: boolean;
   /** 事件日志摘要 */
   eventSummary: {
     totalEvents: number;
@@ -75,6 +84,24 @@ const inMemoryReports: PostmortemReport[] = [];
  */
 export async function generatePostmortem(sessionId: string, error: string): Promise<PostmortemReport> {
   const eventLog = getEventLog();
+  /**
+   * ## 第 61 轮：**先等事件镜像就绪**，否则这份报告会写下一个假的原因
+   *
+   * 这个函数在**错误路径**上被调用（`agentic-loop.ts:2229`），而错误往往发生在
+   * 启动后第一轮 —— 那正是该会话的事件镜像最可能还没加载完的时刻。此时
+   * `readAll` 返回空数组，原来会被读成：
+   *
+   * ```text
+   * No events in session log — session may not have started properly
+   * totalEvents: 0
+   * ```
+   *
+   * 两句都不是真的（事件在库里），而且这份报告**会落盘**
+   * （`~/.codem/postmortem/<id>.json`）—— 假结论被持久化，事后排查时会被当成事实。
+   * 本函数是 async，等得起：先等就绪，等不到就把 `eventsReadable: false` 写进报告，
+   * 并明确写出"统计不完整"，而不是编一个原因。
+   */
+  const eventsReadable = await whenSessionEventsLoaded(sessionId);
   const events = eventLog.readAll(sessionId);
 
   // 事件摘要
@@ -108,7 +135,20 @@ export async function generatePostmortem(sessionId: string, error: string): Prom
 
   // 可能的原因分析
   const possibleCauses: string[] = [];
-  if (events.length === 0) {
+  /**
+   * ⚠️ 第 61 轮：**"读不到"与"没有事件"必须说成两句话**。
+   *
+   * 原来只有一句 `events.length === 0` → "session may not have started properly"，
+   * 而镜像未就绪时那句话是假的（见函数头）。现在：
+   * - 读不到 → 如实说"事件日志读不到，本次统计不完整"（不猜原因）；
+   * - 读得到且真的没有事件 → 才说"会话可能没有正常启动"。
+   */
+  if (!eventsReadable) {
+    possibleCauses.push(
+      "Event log was NOT readable when this report was generated (event index not loaded yet) — " +
+        "event/tool statistics below are INCOMPLETE and MUST NOT be read as 'there were no events'",
+    );
+  } else if (events.length === 0) {
     possibleCauses.push("No events in session log — session may not have started properly");
   }
   if (failedCalls > 0) {
@@ -139,6 +179,7 @@ export async function generatePostmortem(sessionId: string, error: string): Prom
     sessionId,
     timestamp: Date.now(),
     error,
+    eventsReadable,
     eventSummary: {
       totalEvents: events.length,
       lastEvents,

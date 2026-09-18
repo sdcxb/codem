@@ -687,6 +687,92 @@ export function getEventLog(): EventLog {
   return EventLog.getInstance();
 }
 
+// ========== 第 61 轮：把「读不到」与「没有事件」分开（消费方共用的两个判据）==========
+//
+// ## 为什么需要它们（第 60/61 轮的真机取证）
+//
+// `EventLog.readAll(sid)` 有一条硬路由规则：**该会话的事件镜像没加载完 → 返回空数组**。
+// 于是"读不到"与"确实没有事件"在返回值上**完全同形**，而读事件的生产消费方此前
+// 一律把空数组当成事实：
+//
+// - 维护里的不变量审计：把空当成"没有缺口" ⇒ 反过来把**每条消息**都报成缺口
+//   （真机实测：同一份数据两次维护报 **934** 与 **749**，934 恰好等于会话的消息行总数）；
+// - `session_event_search`（**模型可见**的工具）：把空当成"没有匹配" ⇒
+//   对模型说"这个会话里没有匹配的事件"；
+// - `generatePostmortem`（错误路径上生成的**落盘报告**）：把空当成
+//   "session may not have started properly"，并把 `totalEvents` 写成 0；
+// - `uiTrajectory.getSessionTrajectory`：把空当成"没有轨迹" ⇒ 面板空着。
+//
+// 两个判据就是这条区分的最小公共面：一个**同步问**、一个**异步等**。
+// 消费方按自己的能力选（同步读的 UI 用前者；async 的工具/报告用后者）。
+
+/**
+ * 该会话的事件**此刻读得到吗**。
+ *
+ * - `true`：镜像已就绪 → `readAll` 返回的就是真值（空 = 确实没有事件）；
+ * - `false`：**不知道**（镜像没加载完 / 正在加载 / 加载失败）→ `readAll` 的空数组
+ *   不代表"没有事件"，调用方**不许**据此下结论。
+ *
+ * 端口连事件通道都没有（未注册）时返回 `true`：那种状态下两条读路径同样为空，
+ * 在这里报"读不到"只会变成噪声（与维护里 `waitForSessionMirrors` 同一条判据）。
+ */
+export function isSessionEventsReadable(sessionId: string): boolean {
+  const port = hasStoragePort()
+    ? (getStoragePort() as unknown as { events?: { isLoaded?: (s: string) => boolean } })
+    : null;
+  const events = port?.events;
+  if (!events || typeof events.isLoaded !== "function") return true;
+  try {
+    return events.isLoaded(sessionId) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 等该会话的事件镜像就绪（**异步读路径专用**）。
+ *
+ * 返回 `true` = 等到了（或本来就读得到）；`false` = 超时/加载失败 ⇒ **仍然读不到**，
+ * 调用方必须如实说明"读不到"，不许把它渲染成"没有数据"。
+ *
+ * 等待是**触发**加载（`ensureLoaded` 本来就该被读路径触发），不是新增加载；
+ * 上限 `timeoutMs` 保证调用方不会被拖死。
+ */
+export function whenSessionEventsLoaded(sessionId: string, timeoutMs = 4000): Promise<boolean> {
+  const port = hasStoragePort()
+    ? (getStoragePort() as unknown as {
+        events?: { isLoaded?: (s: string) => boolean; ensureLoaded?: (s: string, cb?: () => void) => void };
+      })
+    : null;
+  const events = port?.events;
+  if (!events?.ensureLoaded || typeof events.isLoaded !== "function") return Promise.resolve(true);
+  if (events.isLoaded(sessionId) === true) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      let ok = false;
+      try {
+        ok = events.isLoaded!(sessionId) === true;
+      } catch {
+        ok = false;
+      }
+      resolve(ok);
+    };
+    const timer = setTimeout(finish, Math.max(0, timeoutMs));
+    try {
+      events.ensureLoaded!(sessionId, () => {
+        clearTimeout(timer);
+        finish();
+      });
+    } catch {
+      clearTimeout(timer);
+      finish();
+    }
+  });
+}
+
 // R3-3.8 的「可替换持久化提供者」在 P5 第 2 段被删除。
 //
 // 原实现（configurePersistenceProvider / getActivePersistenceProvider +

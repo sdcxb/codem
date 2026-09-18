@@ -1,15 +1,15 @@
 {
-  "version": "1.16.89",
-  "notes": "修复「历史缺口」这个数字一直在撒谎：同一份数据两次维护报 934 与 749（差距恰好等于消息行数）。根因是维护审计把「读侧镜像还没加载完」当成了「没有缺口」；现在先等镜像就绪再判定，等不到就如实说「未检查」。同一根因另外三处一起修：事件类型集合与引擎字面量不一致（合法快照会被报成未知类型）、快照边界上的工具配对假报警、提示词里的「上次活动时间」被写成 unavailable。结构自检第一次真正读到事件，就在真实库里抓到一条会让投影抛错的脏 compaction 行。",
-  "pub_date": "2026-09-18T17:50:26Z",
+  "version": "1.16.90",
+  "notes": "同一根因的其余四个消费方收口：事件镜像没加载完时 readAll 返回空数组，而四个生产消费方把'读不到'当成了'没有' —— ①查会话事件的工具对模型说「没有匹配」（而这个工具的典型用法就是查别的会话，那些会话镜像基本不会已加载，所以这句话几乎总是假的）；②读单条事件的工具说「seq 不存在」；③错误路径上落盘的复盘报告写「会话可能没正常启动」且 totalEvents=0（假结论被持久化）；④轨迹面板返回空数组说「没有轨迹」，而本次运行的步骤就在内存里。现在：两个工具与复盘报告都先等镜像就绪、等不到就如实说读不到（报告新增 eventsReadable 字段），轨迹面板读不到就退回内存；另删掉一个会答错的布尔口子 hasEventLog。新增 13 条成对用例；渲染侧 327 文件 / 5769 通过 / 0 失败。",
+  "pub_date": "2026-09-18T18:20:40Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2V4VlpHSy90dHpXU25PdHZOSHRmYmF3LzVaSHozN3pFK000cTU1cnIvb2hMSmVGNWRtK0xKOVpVVTU4SVI4TDBscmdJekx3WGRQOVgxRHgwRlBqNnc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUzNzkzCWZpbGU6Q29kZW1fMS4xNi44OV94NjQtc2V0dXAuZXhlClFXL0EvWHJuaHFrc0JXTGlKT2hBL1B3eHg1TmtlcVZvRFkvVXRNaFJiZTdueldYQU5ZRVRSZUx4eElObUxVa3JyRVFUaVgrb25mTzloZFpMU2N5eUN3PT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.89/Codem_1.16.89_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lOOUFjbU5wWUlNNHB6MUFKd0h3aGphMTVHVkVndkxSVmZkR2M5eEY4R1hkTi90SGJoOTRENndDM1pLVGh2REpxeFlCRUd2MDQ4N0FEa3pFYXFuSmc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU1NjMzCWZpbGU6Q29kZW1fMS4xNi45MF94NjQtc2V0dXAuZXhlCmF0RWgxaTNKY2dObjkyNHh3Zkcvb3dsN2wrSWVkMmMrZHRBVzdaYWI5TU5YdHdVNjIwNmhYOTNDUmYxT0Z4eUZkMit6QmtlMUNhL25sZExNTTN0MERnPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.90/Codem_1.16.90_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2V4VlpHSy90dHpXU25PdHZOSHRmYmF3LzVaSHozN3pFK000cTU1cnIvb2hMSmVGNWRtK0xKOVpVVTU4SVI4TDBscmdJekx3WGRQOVgxRHgwRlBqNnc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUzNzkzCWZpbGU6Q29kZW1fMS4xNi44OV94NjQtc2V0dXAuZXhlClFXL0EvWHJuaHFrc0JXTGlKT2hBL1B3eHg1TmtlcVZvRFkvVXRNaFJiZTdueldYQU5ZRVRSZUx4eElObUxVa3JyRVFUaVgrb25mTzloZFpMU2N5eUN3PT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.89/Codem_1.16.89_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lOOUFjbU5wWUlNNHB6MUFKd0h3aGphMTVHVkVndkxSVmZkR2M5eEY4R1hkTi90SGJoOTRENndDM1pLVGh2REpxeFlCRUd2MDQ4N0FEa3pFYXFuSmc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU1NjMzCWZpbGU6Q29kZW1fMS4xNi45MF94NjQtc2V0dXAuZXhlCmF0RWgxaTNKY2dObjkyNHh3Zkcvb3dsN2wrSWVkMmMrZHRBVzdaYWI5TU5YdHdVNjIwNmhYOTNDUmYxT0Z4eUZkMit6QmtlMUNhL25sZExNTTN0MERnPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.90/Codem_1.16.90_x64-setup.exe"
     }
   }
 }

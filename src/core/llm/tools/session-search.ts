@@ -259,7 +259,34 @@ Use this to find specific actions or messages within a known session.`,
       const limit = Math.min(args.limit as number || 20, 100);
 
       try {
-        const { getEventLog } = await import("../../storage/event-log");
+        const { getEventLog, whenSessionEventsLoaded } = await import("../../storage/event-log");
+        /**
+         * ## 第 61 轮：**先等事件镜像就绪，再下结论**（这个工具的判据此前会撒谎）
+         *
+         * `readAll(sid)` 在该会话的镜像没加载完时返回空数组，而这里原来把空当成
+         * "没有匹配"，于是对模型说：
+         *
+         * ```text
+         * No events found matching "…" in session <id>.
+         * ```
+         *
+         * 而事件其实在库里 —— 对**非当前会话**（工具最常见的用法：查别的会话）
+         * 镜像基本不可能已经加载，所以这条"没有匹配"几乎总是假的。
+         * 这是模型可见面的失真，与第 60 轮那个 934/749 是同一个根因。
+         *
+         * 处置：本工具是 async，等得起 —— 先等就绪；等不到就**如实说读不到**
+         * （而不是"没有匹配"）。
+         */
+        const readable = await whenSessionEventsLoaded(sessionId);
+        if (!readable) {
+          return {
+            title: "session_event_search",
+            output:
+              `Error: 会话 ${sessionId} 的事件日志此刻读不到（事件索引尚未加载完成）。` +
+              `这不是"没有匹配"—— 请不要据此判断该会话没有相关记录；稍后重试。`,
+            isError: true,
+          };
+        }
         const events = getEventLog().readAll(sessionId);
 
         const matching = events.filter((evt) => {
@@ -271,6 +298,7 @@ Use this to find specific actions or messages within a known session.`,
         if (matching.length === 0) {
           return {
             title: "session_event_search",
+            // 走到这里 = 镜像**已就绪**（上面等过了）⇒ "没有匹配"是**真话**
             output: `No events found matching "${query}" in session ${sessionId}.`,
           };
         }
@@ -431,13 +459,30 @@ Use this to inspect a specific event in detail, including its surrounding contex
       const after = Math.min(args.after as number || 0, 10);
 
       try {
-        const { getEventLog } = await import("../../storage/event-log");
+        const { getEventLog, whenSessionEventsLoaded } = await import("../../storage/event-log");
+        /**
+         * 第 61 轮：与 `session_event_search` 同一个根因、同一条处置 ——
+         * 镜像没加载完时 `readRange` 返回空，而原来会把它说成
+         * `Event seq=N not found in session X.`（**假话**：那条事件在库里）。
+         * 这个工具是 async，等得起：先等就绪，等不到就如实说读不到。
+         */
+        const readable = await whenSessionEventsLoaded(sessionId);
+        if (!readable) {
+          return {
+            title: "session_event_read",
+            output:
+              `Error: 会话 ${sessionId} 的事件日志此刻读不到（事件索引尚未加载完成）。` +
+              `这不是"seq=${seq} 不存在"—— 请不要据此判断该事件没有记录；稍后重试。`,
+            isError: true,
+          };
+        }
         const log = getEventLog();
         const events = log.readRange(sessionId, seq - before, seq + after);
 
         if (events.length === 0) {
           return {
             title: "session_event_read",
+            // 走到这里 = 镜像已就绪 ⇒ "没有这条事件"是**真话**
             output: `Event seq=${seq} not found in session ${sessionId}.`,
           };
         }
