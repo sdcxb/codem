@@ -960,7 +960,7 @@ const opLabel = tc.tool === 'create_note'
             {contentCollapsed && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button className="toolbar-btn" onClick={() => setContentCollapsed(false)}>
+                  <button className="toolbar-btn" aria-label={S.bubble.expand[lang]} onClick={() => setContentCollapsed(false)}>
                     <BookOpen size={14} />
                   </button>
                 </TooltipTrigger>
@@ -970,7 +970,7 @@ const opLabel = tc.tool === 'create_note'
             {!contentCollapsed && (contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD || displayContent.length > COLLAPSE_CHARS) && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button className="toolbar-btn" onClick={() => setContentCollapsed(true)}>
+                  <button className="toolbar-btn" aria-label={S.bubble.collapse[lang]} onClick={() => setContentCollapsed(true)}>
                     <BookX size={14} />
                   </button>
                 </TooltipTrigger>
