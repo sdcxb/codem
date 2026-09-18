@@ -3829,18 +3829,62 @@ abortControllersRef.current.delete(session?.id || "");
    * （消息/工具调用/附件 id 三者都换新 —— 第 45 轮 P1-D2 / P1-D3）。
    * UI 这边只负责"分叉完把新会话的消息读进来"。
    */
+  /**
+   * ## 第 47 轮补（功能上下文审计 **P0**）：把"窗口内下标"换算成"会话内绝对下标"
+   *
+   * `useAppStore().messages` **不是整个会话的历史**：`loadMessages` 只装载**最后 10 条**
+   * （`src/store.ts` 的 `INITIAL_LIMIT`），向上滚动时才按批**前插**更旧的。
+   * 而 `ChatPanel` 传给 `onFork` 的 `origIndex` 是**这份窗口里的下标**。
+   *
+   * `store.forkSession(id, messageIndex)` 拿这个数当**绝对下标**去
+   * `MessageStorage.listMessages()`（全量会话）里切片。于是真机形态是：
+   * 一个 100 条的会话里点最后一轮的分叉 → 窗口下标 9 → **复制了会话开头那 10 条**
+   * （而不是分叉点之前的 100 条）→ 用户拿到一个内容完全不对的新会话。
+   * 静默、无报错、而且短会话（≤10 条）下完全正常 —— 这正是它一直没被发现的原因。
+   *
+   * 换算是"数出窗口首条之前还有多少条历史"：它同时覆盖了
+   * ① `loadMessages` 的初始窗口截断、② `loadMoreMessages` 的前插分页
+   * （两种都会让"窗口下标"小于"绝对下标"）。
+   */
+  const resolveSessionAbsoluteIndex = useCallback((sessionId: string, windowIndex: number): number => {
+    try {
+      const window = useAppStore.getState().messages;
+      const anchor = window[0];
+      if (!anchor) return Math.max(windowIndex, 0);
+      const all = MessageStorage.listMessages(sessionId);
+      let olderThanAnchor = 0;
+      for (const m of all) {
+        if (m.timestamp < anchor.timestamp) olderThanAnchor += 1;
+      }
+      const absolute = olderThanAnchor + Math.max(windowIndex, 0);
+      if (absolute !== windowIndex) {
+        console.log(
+          `[fork] 窗口下标 ${windowIndex} → 会话内绝对下标 ${absolute}` +
+            `（窗口首条之前还有 ${olderThanAnchor} 条历史未装载）`,
+        );
+      }
+      return absolute;
+    } catch (e) {
+      // 换算失败时**不改语义**：宁可保持旧的（可能偏小的）下标，也不猜一个更大的
+      console.warn("[fork] 下标换算失败（按窗口下标处理）:", e);
+      return Math.max(windowIndex, 0);
+    }
+  }, []);
+
   const handleFork = useCallback((messageIndex: number) => {
     const store = useProjectStore.getState();
     const source = store.currentSession;
     if (!source) return;
     try {
-      const child = store.forkSession(source.id, messageIndex, 'Fork: ' + source.title);
+      // 第 47 轮补 P0：UI 给的是**窗口下标**，forkSession 要的是**绝对下标**
+      const absoluteIndex = resolveSessionAbsoluteIndex(source.id, messageIndex);
+      const child = store.forkSession(source.id, absoluteIndex, 'Fork: ' + source.title);
       loadMessages(child.id);
     } catch (e) {
       // 分叉失败必须可见：静默失败会让用户以为"新会话建好了"而实际什么都没有
       reportActionFailure("app.forkSession", e, "分叉会话创建失败");
     }
-  }, [loadMessages]);
+  }, [loadMessages, resolveSessionAbsoluteIndex]);
 
   /**
    * P0 (对标 dsh-message-rewind / Trae "编辑并回退"):

@@ -336,7 +336,31 @@ class RustEnginePort implements StorageEnginePort {
       recoveryNotified = true;
       const backup = typeof raw.recovered_from === "string" ? raw.recovered_from : "(未知备份路径)";
       console.error(`[Storage] 库文件损坏：已备份坏文件并重建空库（备份：${backup}）`);
+      const salvaged = raw.recovered_projects;
       void (async () => {
+        /*
+         * 第 47 轮补：**先把抢救出来的项目 / 会话归属写回，再写重建标记**。
+         *
+         * 顺序不能反：重建标记会让维护去跑 `rebuildIndexFromSessionLogs()`，而那条路
+         * 需要从 `sessions` 表读"每个会话属于哪个项目" —— 空库里它是空的，于是所有
+         * 复活的会话都会落到"全局项目"。引擎在恢复时已把归属从坏文件备份里抄了出来
+         * （`health.recovered_projects`），这里就是把它落回去的那一刻。
+         *
+         * 失败**不阻塞**恢复：归属救不回来只是"落到全局项目"（与修之前的行为一致），
+         * 而消息仍会从权威日志重建。
+         */
+        try {
+          const { restoreRecoveredProjects } = await import("./recovery-restore");
+          const restored = await restoreRecoveredProjects(salvaged);
+          if (restored.projects > 0 || restored.sessions > 0) {
+            console.log(
+              `[Storage] 损坏恢复：已还原 ${restored.projects} 个项目、${restored.sessions} 个会话的项目归属` +
+                (restored.skipped > 0 ? `（${restored.skipped} 个未写回）` : ""),
+            );
+          }
+        } catch (e) {
+          console.warn("[Storage] 还原抢救出来的项目归属失败（会话会落到全局项目）:", e);
+        }
         try {
           const { markIndexRebuildNeeded } = await import("./maintenance");
           await markIndexRebuildNeeded(`存储库损坏后重建（备份：${backup}）`);
@@ -883,6 +907,27 @@ export interface MirrorEvent {
   type: string;
   payload: string;
   timestamp: number;
+  /**
+   * 第 47 轮补（通信链路审计 P1）：这一条是**本地追加**的事件。
+   *
+   * ## 为什么必须有这个标记，而不能靠"seq 很大"来判断
+   *
+   * 原来的合并判据是 `e.seq > placeholderBase - 1_000_000 && e.seq > maxReal`。
+   * 而 `reconcile` 会把占位**就地改写成引擎回传的真实 seq** —— 一旦那一步在
+   * `loadSession` 的合并**之前**完成，这条事件就不再"看起来像占位"了，
+   * 于是它既不在刚读到的分页里（分页是在它 INSERT 之前发出的），也被过滤掉：
+   * **一条已经落库的事件在本进程内永久从镜像里消失**（`readAll` 读的就是镜像）。
+   *
+   * 语义是"**这一条来自本地追加**"，与"有没有落库"是**两件独立的事**：
+   * - `pending`：本地追加 → 合并时必须保留（分页一定不包含它）；
+   * - `settled`：引擎已回传真实 seq → 只有这样才算"落库了"。
+   *
+   * ⚠️ 我第一版把两者合成一个标记，结果 `reconcile` 清掉标记之后合并立刻把事件丢了
+   * —— 用例当场抓到。两个事实就应该是两个字段。
+   */
+  pending?: boolean;
+  /** 引擎已回传真实 seq（= 确认落库）。未确认的条目不许当水位用 */
+  settled?: boolean;
 }
 
 class RustEventMirror {
@@ -980,11 +1025,44 @@ class RustEventMirror {
       if (!page?.has_more || items.length === 0) break;
       fromSeq = items[items.length - 1].seq + 1;
     }
-    // 合并：保留本地刚追加但还没被库覆盖的占位事件（否则会丢刚写的事件）
+    /*
+     * 合并：把本地**还没确认落库**的事件并进来。
+     *
+     * 第 47 轮补（通信链路审计 P1）：原来的判据是
+     * `e.seq > placeholderBase - 1_000_000 && e.seq > maxReal` —— 而 `reconcile`
+     * 会把占位改写成真实 seq，于是"已经落库、但分页是在它之前发出的"那条事件
+     * **两个条件都不满足**，被静默丢掉（本进程内再也读不到它）。
+     * 现在按**显式标记** `pending` 判定，并按 seq 去重防重复。
+     */
+    this.__mergeForTests(sessionId, list);
+  }
+
+  /**
+   * 把"从库里读到的分页"与"本地未落库的事件"合并进镜像。
+   *
+   * 抽成独立方法有两个理由：① `loadSession` 那一步是**纯内存时序**逻辑，
+   * 而它修掉的缺陷只在这里能观察到，独立出来才能用测试直接驱动；
+   * ② 合并规则只有一份（`pending` 标记 + seq 去重 + 按 seq 排序）。
+   */
+  __mergeForTests(sessionId: string, list: MirrorEvent[]): void {
     const local = this.bySession.get(sessionId) ?? [];
-    const maxReal = list.length ? list[list.length - 1].seq : 0;
-    const pendingLocal = local.filter((e) => e.seq > this.placeholderBase - 1_000_000 && e.seq > maxReal);
-    this.bySession.set(sessionId, [...list, ...pendingLocal]);
+    /**
+     * ⚠️ 从库里读回来的条目**必须标记 `settled`**：它们的存在本身就是"已落库"的证据。
+     * 不标的话它们会被算成"未落库"（`pendingPlaceholderCount` 数错），
+     * 而 `latestSeq` 会拒绝把它们当水位 —— 那等于"明明有真实事件却说没有"。
+     */
+    const fromDb = list.map((e) => ({ ...e, settled: true as const }));
+    const seen = new Set(fromDb.map((e) => e.seq));
+    const merged = [...fromDb, ...local.filter((e) => e.pending && !seen.has(e.seq))];
+    // 占位 seq 极大，排序会把"还没落库的"放到最后 —— 与它们的真实时序一致
+    merged.sort((a, b) => a.seq - b.seq);
+    this.bySession.set(sessionId, merged);
+  }
+
+  /** **仅测试用**：造一条"已落库"的事件（等价于 追加 → reconcile 的那一步） */
+  __seedPersistedForTests(sessionId: string, seq: number): void {
+    const e = this.appendLocal(sessionId, "seeded", "{}", 0);
+    this.reconcile(sessionId, e.seq, seq);
   }
 
   /** 启动预热：对给定会话批量触发加载（后台进行，不阻塞启动） */
@@ -1025,10 +1103,41 @@ class RustEventMirror {
     return (this.bySession.get(sessionId) ?? []).filter((e) => e.seq >= fromSeq && e.seq <= toSeq);
   }
 
-  /** 镜像内的最大 seq（对齐判断与诊断用） */
+  /**
+   * 镜像内的最大 seq（对齐判断与诊断用）。
+   *
+   * ## ⚠️ 第 47 轮补（通信链路审计 P1）：**必须排除未落库的占位**
+   *
+   * 占位 seq 取自 `placeholderBase = MAX_SAFE_INTEGER - 1_000_000`（见 `appendLocal`），
+   * 是一个**故意巨大**的数。而 `appendLocal` 是"先放进镜像、再排队落库"——
+   * 一旦那次 IPC **失败**（引擎忙 / 桥出错），占位就**永远不会被 reconcile**，
+   * 也没有任何代码把它从镜像里摘掉。
+   *
+   * 原实现直接返回"数组最后一项的 seq"，于是：
+   * - `latestSeq()` 返回 9.007e15 这个假水位；
+   * - 增量投影（`readFrom(lastPushedSeq + 1)`）**此后再也读不到任何真实事件**；
+   * - `events.compact` 会拿这个假锚点去问引擎，引擎答"锚点事件不存在"（NOT_FOUND），
+   *   而镜像那边已经改过了 → 镜像与库在这一进程内永久分叉。
+   *
+   * 判据用**显式标记** `settled`（引擎已回传真实 seq），而不是"seq 很大"：
+   * 占位 seq 取自 `placeholderBase = MAX_SAFE_INTEGER - 1_000_000`，而 `appendLocal` 算的是
+   * `Math.max(last + 1, this.placeholderBase++)` —— **第一条占位正好等于 `placeholderBase`**，
+   * 用 `seq >= placeholderBase` 之类的数值判据会漏掉它（这个 off-by-one 我在写这一版时
+   * 真的踩到了：用例里的第一条占位没被数出来）。标记不依赖数值，也就不会再错。
+   */
   latestSeq(sessionId: string): number {
     const list = this.bySession.get(sessionId) ?? [];
-    return list.length ? list[list.length - 1].seq : 0;
+    let max = 0;
+    for (const e of list) {
+      if (!e.settled) continue; // 还没确认落库：不是水位
+      if (e.seq > max) max = e.seq;
+    }
+    return max;
+  }
+
+  /** 镜像里**还没确认落库**的条数（诊断用：>0 说明有追加没成功） */
+  pendingPlaceholderCount(sessionId: string): number {
+    return (this.bySession.get(sessionId) ?? []).filter((e) => !e.settled).length;
   }
 
   count(sessionId: string): number {
@@ -1044,18 +1153,43 @@ class RustEventMirror {
     const list = this.bySession.get(sessionId) ?? [];
     const last = list.length ? list[list.length - 1].seq : 0;
     const placeholder = Math.max(last + 1, this.placeholderBase++);
-    const evt: MirrorEvent = { seq: placeholder, sessionId, type, payload, timestamp };
+    /*
+     * `pending: true` = "这一条来自本地追加"（合并时必须保留，见 `MirrorEvent.pending`）；
+     * `settled: false` = "还没确认落库"（不许当水位，见 `latestSeq`）。
+     * 两个事实、两个字段 —— 合成一个就会在 reconcile 之后丢掉事件（用例抓到的）。
+     */
+    const evt: MirrorEvent = {
+      seq: placeholder,
+      sessionId,
+      type,
+      payload,
+      timestamp,
+      pending: true,
+      settled: false,
+    };
     list.push(evt);
     this.bySession.set(sessionId, list);
     return evt;
   }
 
-  /** 用引擎回传的真实 seq 修正镜像里的占位 */
+  /**
+   * 用引擎回传的真实 seq 修正镜像里的占位，并标记**已确认落库**。
+   *
+   * 两件事分开做（第 47 轮补）：
+   * - `seq` 改成真实值 —— 让镜像里的顺序与库一致；
+   * - `settled = true` —— 只有确认落库的条目才允许当水位（`latestSeq`）。
+   *
+   * `pending` **保持不动**：它的语义是"这一条来自本地追加"，而分页一定不包含它
+   * （分页在该 INSERT 之前发出），所以合并时必须继续保留 —— 见 `MirrorEvent.pending`。
+   */
   reconcile(sessionId: string, placeholderSeq: number, realSeq: number): void {
     const list = this.bySession.get(sessionId);
     if (!list) return;
-    const found = list.find((e) => e.seq === placeholderSeq);
-    if (found) found.seq = realSeq;
+    const found = list.find((e) => e.seq === placeholderSeq && e.pending);
+    if (found) {
+      found.seq = realSeq;
+      found.settled = true;
+    }
   }
 
   /** 排队一次写（不阻塞调用方） */
@@ -2093,5 +2227,49 @@ export async function rustCapabilities(
     commands: Array.isArray(raw.commands) ? (raw.commands as string[]) : [],
     max_rows_per_query: typeof raw.max_rows_per_query === "number" ? raw.max_rows_per_query : 0,
     no_whole_file_export: Boolean(raw.no_whole_file_export),
+  };
+}
+
+/**
+ * **仅测试用**：事件镜像的契约桥（第 47 轮补）。
+ *
+ * 为什么需要它：`RustEventMirror` 是模块私有的，而本轮修的两个缺陷
+ * （"未落库的占位被当成水位"与"加载合并丢掉刚 reconcile 的事件"）**只在这个类里**
+ * 能观察到 —— 走整条 `RustStoragePort` 需要真 IPC，而这些是**纯内存时序**问题。
+ *
+ * 这个桥**只暴露被断言的行为**，不暴露内部字段：
+ * - `seedReal` 造一条已落库事件；
+ * - `appendLocal` / `reconcile` 复现"追加 → 落库确认"的真实调用序列；
+ * - `mergeLoaded` 复现 `loadSession` 的合并那一步；
+ * - `latestSeq` / `pendingPlaceholderCount` / `seqs` 是断言出口。
+ */
+export function __eventMirrorForTests(): {
+  seedReal(sessionId: string, seq: number): void;
+  appendLocal(sessionId: string, type: string, payload: string, timestamp: number): { seq: number };
+  reconcile(sessionId: string, placeholderSeq: number, realSeq: number): void;
+  mergeLoaded(sessionId: string, seqs: number[]): void;
+  latestSeq(sessionId: string): number;
+  pendingPlaceholderCount(sessionId: string): number;
+  seqs(sessionId: string): number[];
+} {
+  const mirror = new RustEventMirror(
+    {} as StorageTransport,
+    () => {},
+  );
+  return {
+    seedReal: (sessionId, seq) => mirror.__seedPersistedForTests(sessionId, seq),
+    appendLocal(sessionId, type, payload, timestamp) {
+      const e = mirror.appendLocal(sessionId, type, payload, timestamp);
+      return { seq: e.seq };
+    },
+    reconcile: (sessionId, placeholderSeq, realSeq) => mirror.reconcile(sessionId, placeholderSeq, realSeq),
+    mergeLoaded(sessionId, seqs) {
+      // 复现 `loadSession` 的合并那一步（分页结果 → merge）
+      const loaded = seqs.map((seq) => ({ seq, sessionId, type: "fromDb", payload: "{}", timestamp: 0 }));
+      mirror.__mergeForTests(sessionId, loaded);
+    },
+    latestSeq: (sessionId) => mirror.latestSeq(sessionId),
+    pendingPlaceholderCount: (sessionId) => mirror.pendingPlaceholderCount(sessionId),
+    seqs: (sessionId) => mirror.readAll(sessionId).map((e) => e.seq),
   };
 }

@@ -293,11 +293,58 @@ pub fn storage_health(state: State<'_, StorageState>) -> StorageReply {
         if let Some(backup) = state.recovered_from() {
             if let Value::Object(ref mut map) = v {
                 map.insert("recovered".to_string(), Value::Bool(true));
-                map.insert("recovered_from".to_string(), Value::String(backup));
+                map.insert("recovered_from".to_string(), Value::String(backup.clone()));
+                /*
+                 * 第 47 轮补：附上**从损坏库抢救出来的项目 / 会话归属**。
+                 *
+                 * 为什么必须由引擎这边给：损坏恢复之后新库里 `sessions` 表是空的，
+                 * 而渲染侧重建索引时要知道"每个会话属于哪个项目"（否则所有复活的
+                 * 会话都落到"全局项目"）。这个映射只存在于那份坏文件的备份里。
+                 *
+                 * 为什么走 health 而**不新增一条命令**：渲染侧启动时一定会调 health，
+                 * 附着上去就不会有人忘；而且新增命令要同步改渲染侧的命令清单与
+                 * 双向对齐门禁，为一个只在"库损坏过"时才非空的字段加一条永久契约不划算。
+                 *
+                 * 读一次就缓存（`health` 会被反复调用，而抢救文件在进程内不会变）。
+                 */
+                if let Some(salvaged) = recovered_projects_cached(&backup) {
+                    map.insert("recovered_projects".to_string(), salvaged);
+                }
             }
         }
         Ok(v)
     }))
+}
+
+/// 读一次"损坏抢救"旁路文件并缓存。
+///
+/// 文件由引擎在 `open_with_recovery` 里写成（`<db>.recovered-projects.json`），
+/// 形状：`{ "projects": [...], "sessions": [{"id","project_id"}, ...] }`。
+///
+/// 读不到 / 解析不了 → `None`：**这不是错误**（库损坏到读不出 `sessions` 表时就没有这个文件，
+/// 或者它被用户删了）。渲染侧会走原来的路径（落到全局项目 + `withoutProject` 告警），
+/// 也就是说这条路径**只可能把归属救回来，不可能让恢复变坏**。
+fn recovered_projects_cached(backup: &str) -> Option<Value> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Option<Value>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let path = format!("{backup}.recovered-projects.json");
+            // 备选路径：引擎写的是"**库**路径 + .recovered-projects.json"，
+            // 而这里的 backup 是"**备份**路径"，两者不同 —— 两个都试
+            let candidates = [path, format!("{}.recovered-projects.json", backup.replace(".corrupt-", ""))];
+            for p in candidates {
+                let Ok(text) = std::fs::read_to_string(&p) else {
+                    continue;
+                };
+                let Ok(parsed) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                return Some(parsed);
+            }
+            None
+        })
+        .clone()
 }
 
 /// 完整性检查（迁移对账 / 损坏后判断是否重建索引）

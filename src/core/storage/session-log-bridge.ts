@@ -311,8 +311,22 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
           timestamp: rec.timestamp ?? Date.now(),
           model: (rec as { model?: string | null }).model ?? null,
           status: (rec as { status?: string }).status ?? "done",
-          // 压缩状态必须还原（否则被压缩的消息会复活）
-          hidden: (rec as { hidden?: number }).hidden ?? 0,
+          /*
+           * 压缩状态必须还原（否则被压缩的消息会复活）。
+           *
+           * ⚠️ 第 47 轮补（数据面审计 P1-1）：这里原来读的是 `(rec as {hidden?}).hidden ?? 0`
+           * —— 而**日志从来没有写过 `hidden`**（`JsonlMessageRecord` 的白名单里没有它）。
+           * 于是这一行恒等于 0，注释里那句"必须还原"是一句**做不到的承诺**：
+           * 索引重建之后（`hidden=1` 的行被当新行插入）所有被压缩的消息原地复活，
+           * 用户列表凭空多出几百条旧消息、模型上下文跟着涨回去。
+           * 现在写侧把非 0 的 `hidden` 记进日志、这里读回来，重建路径按它落库。
+           *
+           * ⚠️ 刻意**不**在这里传 `trimmed`：引擎的 `MessageFields` 里没有这个字段，
+           * 送了也不会被读 —— 传一个"没人读的参数"会让下一个人以为它生效了。
+           * 新插入行的 `trimmed` 由 SQL 默认 0（"新行不可能曾经被裁过"），
+           * 已存在行则由引擎保持原值（见 `repo.rs` 里那段长注释）。
+           */
+          hidden: Number((rec as { hidden?: number }).hidden ?? 0) || 0,
           parent_message_id: (rec as { parentMessageId?: string | null }).parentMessageId ?? null,
           metadata: (rec as { metadata?: unknown }).metadata ?? null,
           tool_calls: (rec as { toolCalls?: unknown[] }).toolCalls ?? null,

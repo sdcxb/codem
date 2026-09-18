@@ -453,11 +453,32 @@ export function forkSession(
   // Create the child session row with parent_id。
   // 走端口：`parent_id` 与 `sort_order` 都是 ALTER 加的列，整体 upsert 时**显式带上**
   // （否则 fork 关系丢失 / 把用户拖拽出来的顺序清掉 —— 后者是 B-6 那一类"写了没人读"的近亲）。
+  //
+  /**
+   * ## ⚠️ 第 47 轮补（功能上下文审计 P1）：必须显式 `mode: "replace"`
+   *
+   * `domainWrite` 的缺省 mode 是 **`"insert"`**（`domain-store.ts` 的
+   * `const mode = opts.mode ?? "insert"`），而引擎侧只有 `mode === "replace"` 才走
+   * "先 UPDATE、0 行才 INSERT" 那条路（`crud.rs`）；`"insert"` 就是一条**裸 INSERT**。
+   *
+   * 于是"编辑并回退"这条路**从来没写进过 `parent_id`**：调用方
+   * （`App.tsx::handleEditAndRewind`）先 `createSession()`（已经 INSERT 了那一行），
+   * 再调这里 → 裸 INSERT 撞主键 → 整笔写失败 → 谱系丢失。
+   *
+   * 更糟的是它以**假成功**的形式呈现：`persistWriteThrough` 会先把行应用到本地镜像，
+   * 失败只走旁路上报，而 `domainWrite` 照样返回 `true` —— 于是 `session_trace`
+   * （读的正是镜像）在整个进程内都报得出父子关系，**重启之后又变回 `Parent: (root)`**。
+   * 调用点那句注释"会话行走 upsert，重复写是幂等的"是**错的**。
+   *
+   * 分叉路径（`core/store.ts::forkSession`）之所以没踩到，是因为它先 fork 再写别的字段；
+   * 而回退路径是"先建行、再补谱系"。显式 `replace` 让两条路都成立（且幂等）。
+   */
   if (
     domainWrite(
       SESSION_TABLE,
       [{ ...sessionToWire(child), parent_id: sourceSessionId, sort_order: null }],
-      { scope: "session.fork", note: "fork 出的会话未保存" },
+      // `mode: "replace"` = 引擎侧"UPDATE 命中就更新、否则 INSERT"，重复写安全
+      { scope: "session.fork", note: "fork 出的会话未保存", mode: "replace" },
     )
   ) {
     /**

@@ -60,6 +60,164 @@ pub struct Engine {
     import_written: Mutex<usize>,
 }
 
+/// 从**损坏的旧库**里抢救"项目 / 会话归属"，写成旁路文件。
+///
+/// ## 为什么必须抢救（第 47 轮补：一个"零缺口"清单上的真缺口）
+///
+/// 损坏恢复的链路是：`open_with_recovery` 把坏文件**改名**成 `<db>.corrupt-<ts>`，
+/// 然后建一个**全新空库**；渲染侧拿到 `health.recovered` → 写"索引需要重建"标记 →
+/// 维护时 `rebuildIndexFromSessionLogs()` 从**权威 JSONL 日志**把索引重建回来。
+///
+/// 消息正文、`hidden`、`parent_message_id`、`metadata`、工具调用都能从日志还原 ——
+/// **但 `project_id` 不能**：日志记的是"消息"，不是"会话归属"
+/// （`session-log-bridge.ts` 里那段注释写得很清楚：`sessions[].project_id` 只能从
+/// `sessions` 域镜像取）。而重建发生在**空库**上，`sessions` 表当时是空的
+/// → `projectOf` 取不到任何东西 → **所有被复活的会话 `project_id` 落成 `""`**。
+///
+/// `""` 在引擎里是"**全局项目**"的缺省语义，于是真机形态会是：
+/// 用户的会话全部掉进"全局对话"，而他**明明有项目**。这不是"少了一点元数据"，
+/// 是**归属错误**；仓库里那句告警自己就写着"这个数字应当长期为 0"。
+///
+/// 抢救的唯一来源就是那份坏文件的备份（"备份不能省"的理由之一，见
+/// `open_with_recovery` 的注释）。读得到的部分（哪怕只有 `sessions` 表）就够救归属。
+///
+/// ## 为什么写成**旁路文件**而不是直接写进新库
+///
+/// 抢救时机在 `open()` 里，那时**渲染侧还没开始重建**，而重建（`messages.rebuild_index`）
+/// 自己会 upsert `sessions` 行。两条路都写 `sessions` 会变成"两个写入者"，
+/// 且引擎侧不知道哪些会话该有行（消息清单在渲染侧）。旁路文件是**一次性、只读的输入**：
+/// 渲染侧重建时读它补 `projectOf`，读完即用，不产生第二个真相源。
+///
+/// ## 失败处置（关键：**绝不影响恢复本身**）
+///
+/// 坏文件"坏"到读不出 `sessions` 是完全可能的（头部损坏、页级损坏）。所以：
+/// 整个函数**返回结果而不抛错**，任何一步失败都返回 `0` 并让调用方继续完成恢复
+/// —— 恢复的主要价值是"应用还能用 + 消息从日志回来"，归属抢救是**加分项**。
+/// 抢救不到时渲染侧仍会走原来的路径（落到全局项目 + `withoutProject` 计数 + 告警），
+/// 也就是说**这一步只可能变好，不可能把恢复弄坏**。
+fn salvage_projects_from_corrupt(backup: &Path, db_path: &Path) -> usize {
+    // 只读打开：绝不动那份备份（它可能是用户唯一的物证）
+    let src = match Connection::open_with_flags(
+        backup,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    ) {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+    // 坏库上不加锁、不等锁：读不出来就放弃（busy_timeout 太长会拖住应用启动）
+    let _ = src.busy_timeout(Duration::from_millis(500));
+
+    let mut projects: Vec<(String, String, String, Option<String>, i64, i64, i64, i64)> = Vec::new();
+    {
+        // `projects` 可能与 `sessions` 一样受损；任一表读不出就整体放弃（宁可什么都不做）
+        let mut stmt = match src.prepare(
+            "SELECT id, name, path, description, pinned, created_at, last_accessed_at FROM projects",
+        ) {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, i64>(4).unwrap_or(0),
+                r.get::<_, i64>(5).unwrap_or(0),
+                r.get::<_, i64>(6).unwrap_or(0),
+                // 保留位：给未来的列留出位置（当前恒 0，但列结构先固定下来）
+                0i64,
+            ))
+        });
+        let rows = match rows {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+        for row in rows.flatten() {
+            projects.push(row);
+        }
+    }
+
+    let mut sessions: Vec<(String, String)> = Vec::new();
+    {
+        let mut stmt = match src.prepare("SELECT id, project_id FROM sessions") {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1).unwrap_or_default()))
+        });
+        let rows = match rows {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+        for row in rows.flatten() {
+            sessions.push(row);
+        }
+    }
+
+    if sessions.is_empty() {
+        return 0;
+    }
+    drop(src);
+
+    // 只写**能从坏库里读出来的**那些行。用旁路文件承载，引擎不碰新库。
+    let mut out = String::from("{\n  \"projects\": [\n");
+    for (i, (id, name, path, desc, pinned, created, accessed, _)) in projects.iter().enumerate() {
+        let comma = if i + 1 == projects.len() { "" } else { "," };
+        out.push_str(&format!(
+            "    {{\"id\":{},\"name\":{},\"path\":{},\"description\":{},\"pinned\":{},\"created_at\":{},\"last_accessed_at\":{}}}{comma}\n",
+            json_str(id),
+            json_str(name),
+            json_str(path),
+            desc.as_deref().map(json_str).unwrap_or_else(|| "null".to_string()),
+            pinned,
+            created,
+            accessed,
+        ));
+    }
+    out.push_str("  ],\n  \"sessions\": [\n");
+    for (i, (id, project_id)) in sessions.iter().enumerate() {
+        let comma = if i + 1 == sessions.len() { "" } else { "," };
+        out.push_str(&format!(
+            "    {{\"id\":{},\"project_id\":{}}}{comma}\n",
+            json_str(id),
+            json_str(project_id),
+        ));
+    }
+    out.push_str("  ]\n}\n");
+
+    let sidecar = salvage_sidecar_path(db_path);
+    if std::fs::write(&sidecar, out).is_err() {
+        return 0; // 写不进去 = 抢救不到（渲染侧会按原路径走并如实告警）
+    }
+    sessions.len()
+}
+
+/// 抢救文件的路径：与库同目录的 `<db>.recovered-projects.json`
+fn salvage_sidecar_path(db_path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.recovered-projects.json", db_path.display()))
+}
+
+/// 把字符串转成 JSON 字面量（只处理转义，不做别的事 —— 值全部来自数据库里的 TEXT）
+fn json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// 把损坏的库文件改名备份（`<name>.corrupt-<ts>`），并返回备份路径。
 ///
 /// 细节：
@@ -134,6 +292,21 @@ impl Engine {
             Ok(engine) => Ok((engine, None)),
             Err(e) if e.code == ErrorCode::Corrupt => {
                 let backup = backup_corrupt_file(&path)?;
+                /*
+                 * 第 47 轮补：在**建新库之前**抢救"项目 / 会话归属"。
+                 *
+                 * 时机很关键：这一步只读那份刚改名的备份，产出一个旁路文件；
+                 * 渲染侧重建索引时读它补 `project_id`（否则所有复活的会话都落到
+                 * "全局项目"）。**失败不影响恢复** —— 见函数注释。
+                 */
+                let salvaged = salvage_projects_from_corrupt(&backup, &path);
+                if salvaged > 0 {
+                    // 信息级：这是一件"抢救到了"的**好事**，不是错误
+                    eprintln!(
+                        "[codem-db] 损坏恢复：已从备份抢救 {salvaged} 个会话的项目归属 → {}",
+                        salvage_sidecar_path(&path).display()
+                    );
+                }
                 // 重建：坏文件已经改名走了，这里拿到的一定是全新库
                 let engine = Self::open_inner(&path)?;
                 Ok((engine, Some(backup)))

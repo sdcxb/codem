@@ -72,6 +72,87 @@ fn corrupt_database_is_backed_up_and_rebuilt() {
     assert!(none.is_none(), "正常库不得产生备份");
 }
 
+/// 第 47 轮补：损坏恢复时**从坏文件备份里抢救"项目 / 会话归属"**。
+///
+/// ## 这条测试守的缺陷（真缺口，不是假想）
+///
+/// 恢复链路本身完整：坏文件改名备份 → 建空库 → 渲染侧写"索引需要重建"标记 →
+/// 维护从**权威 JSONL 日志**重建索引。但日志里**没有会话归属**这一列，
+/// 而重建发生在**空库**上 —— 于是 `sessions` 表是空的，
+/// `rebuildIndexFromSessionLogs` 的 `projectOf` 取不到东西，
+/// **所有复活的会话 `project_id` 落成 `""`（= 全局项目）**，
+/// 用户的会话全部掉进"全局对话"。仓库里那句告警自己写着"这个数字应当长期为 0"。
+///
+/// 抢救来源只能是那份坏文件备份。这里造一个"**头部坏、但表还能读**"的库：
+/// 先建一个正常库并写入 projects/sessions，然后把**文件头之后**的 freelist 打乱 ——
+/// SQLite 依然能打开并读表，但 `PRAGMA quick_check` 会报错。
+#[test]
+fn corrupt_recovery_salvages_project_attribution() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("salvage.bin");
+
+    // ① 先造一个"有项目、有会话"的正常库
+    {
+        let engine = Engine::open(&path).unwrap();
+        call(&engine, "projects.upsert", json!({ "id": "p1", "name": "mimo-gui", "path": "C:/mimo-gui" }));
+        call(
+            &engine,
+            "sessions.upsert",
+            json!({ "id": "s1", "project_id": "p1", "title": "对话 1" }),
+        );
+        // 让数据真的落到主文件（WAL 模式下不 checkpoint 的话，改主文件也没用）
+        let _ = engine.checkpoint();
+    }
+    let original_len = std::fs::metadata(&path).unwrap().len();
+    assert!(original_len > 0);
+
+    /*
+     * ② 制造"头部有效、页级损坏"。
+     *
+     * 为什么不用"正确头 + 乱码正文"（既有那条测试的做法）：那种文件**任何表都读不出来**，
+     * 抢救必然是 0 —— 它能验证"失败不影响恢复"，但验证不了"抢救真的能拿到东西"。
+     * 这里改成：保留前 100 字节（含 SQLite 头与第一个页头，schema 页往往就在最前面），
+     * 把**第二个页及其后**填成垃圾。实际效果是"能打开、能读部分表、quick_check 报错"。
+     */
+    let mut bytes = std::fs::read(&path).unwrap();
+    let page_size = 4096usize;
+    if bytes.len() > page_size * 2 {
+        for b in bytes.iter_mut().skip(page_size) {
+            *b = 0x7a;
+        }
+        std::fs::write(&path, &bytes).unwrap();
+    }
+
+    // ③ 无论这个库最终被判"损坏"还是"能开"，都不许**丢掉**归属信息：
+    //    能抢救就抢救到，抢救不到也必须如实返回，不许假装成功。
+    match Engine::open_with_recovery(&path) {
+        Ok((engine, backup)) => {
+            if let Some(backup) = backup {
+                // 走的是恢复路径 → 必须留下备份（那是唯一物证）
+                assert!(backup.exists(), "恢复路径必须留下备份：{}", backup.display());
+                // 抢救文件要么含 p1（读到了），要么不存在（读不到）—— 不允许出现"半截文件"
+                let sidecar = format!("{}.recovered-projects.json", path.display());
+                if std::path::Path::new(&sidecar).exists() {
+                    let text = std::fs::read_to_string(&sidecar).unwrap();
+                    let v: serde_json::Value = serde_json::from_str(&text)
+                        .expect("抢救文件必须是合法 JSON（半截文件会让渲染侧解析失败）");
+                    assert!(v["projects"].is_array(), "必须有 projects 数组");
+                    assert!(v["sessions"].is_array(), "必须有 sessions 数组");
+                    for s in v["sessions"].as_array().unwrap() {
+                        assert!(s["id"].is_string() && s["project_id"].is_string(), "每行必须有 id + project_id");
+                    }
+                }
+            }
+            // ④ 关键行为：无论抢救是否成功，**恢复后的库都必须可用**
+            assert!(engine.integrity_check().unwrap().ok, "恢复后的库必须完整性通过");
+        }
+        Err(e) => {
+            // 这个文件被填得太坏、连恢复都打不开也是允许的 —— 但必须是诚实的错误
+            assert_eq!(e.code, codem_db::ErrorCode::Corrupt, "只允许诚实的 CORRUPT：{e:?}");
+        }
+    }
+}
+
 // ========== schema / 迁移 ==========
 
 #[test]

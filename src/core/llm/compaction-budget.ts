@@ -250,6 +250,31 @@ export function foldStaleCompactionMarkers(
     }
   }
 
+  /**
+   * ## ⚠️ 第 47 轮补（功能上下文审计 P1）：`keepCount` **绝不能是 0**
+   *
+   * 缺陷形态（真会被 `slice(-0)` 放大成灾难）：标记正好是**最后一条**消息时
+   * 上面那段循环取到 `i === messages.length - 1`，于是
+   * `keep = messages.length - (i + 1) === 0`。而调用方写的是
+   * `messagesToKeep = messages.slice(-keepCount)` —— **JS 里 `slice(-0) === slice(0)`**，
+   * 于是"保留 0 条"实际变成"**保留全部**"，而
+   * `messagesToRemove = messages.slice(0, len - 0)` 变成"**删掉全部**"：
+   * 一次压缩把整个会话的可见历史全隐藏掉，只留一条有损摘要，且没有反悔路径。
+   *
+   * 触发前提窄但不荒唐：标记的判据是"user 行且正文以 `[上下文已自动压缩]` 开头"
+   * （`isCompactionMarker`），所以**用户把摘要正文粘回对话**就会造出这个状态。
+   *
+   * 这里把下限钉在 1（保留标记本身）：压缩的语义是"删掉标记**之前**的内容"，
+   * 标记必须留着，否则摘要本身也被删掉、以后没法级联。
+   */
+  if (keep <= 0 && messages.length > 0) {
+    keep = 1;
+    console.warn(
+      "[compaction] 保留数为 0（标记正好是最后一条）→ 收敛为 1：保留摘要本身，" +
+        "否则 slice(-0) 会把整段历史都算进待删集（一次压缩清空会话）",
+    );
+  }
+
   // 折叠后的新入口若正好落在孤儿 tool 结果上，向后推（= 多删）到安全边界
   let start = messages.length - keep;
   while (start < messages.length && messages[start].role === "tool") start++;

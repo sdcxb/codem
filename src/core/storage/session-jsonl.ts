@@ -49,6 +49,22 @@ export interface JsonlMessageRecord {
    */
   retrievedSources?: unknown;
   /**
+   * ## 压缩状态（第 47 轮补，数据面审计 P1-1）
+   *
+   * `hidden` = "被上下文压缩隐藏"、`trimmed` = "被索引裁剪隐藏"（两者语义不同，
+   * 见 `message.ts` 里 `trimmed` 列的长注释）。
+   *
+   * **为什么必须进权威日志**：这两列原来只存在于索引里。索引一旦重建
+   * （裁剪 / 损坏恢复 → `open_with_recovery` 建空库 → 从日志重建），
+   * 重建路径按 `?? 0` 落库 → **所有被压缩掉的消息原地复活**：
+   * 用户列表凭空多出几百条旧消息，模型上下文跟着涨回去
+   * （正是本项目打过的那场"压缩 840 条、token 一点没降"的仗）。
+   *
+   * 只写**非 0** 值（0 / 未定义都不写），读侧一律 `?? 0` —— 日志格式不变。
+   */
+  hidden?: number;
+  trimmed?: number;
+  /**
    * 墓碑标记（第 78 波自查发现的问题）：删除必须**追加一条墓碑**，否则
    * "日志是权威、索引可重建"会立刻变成"删过的消息下次读取又回来了"。
    */
@@ -100,6 +116,18 @@ export async function flushSessionLogWrites(): Promise<void> {
 export function appendSessionMessage(sessionId: string, message: Message): Promise<void> {
   const task = (async () => {
     try {
+      /**
+       * ## 第 47 轮补：追加前先等在途的**日志改写**（压缩）落定
+       *
+       * `compactSessionLog` 现在是"读 → 写 .tmp → rename 覆盖"，它运行期间到达的追加
+       * 若直接写进原文件，就会被紧随其后的 rename **覆盖掉**（消息从权威日志里消失）。
+       * 压缩把自己登记进了 `pendingAppends`，所以这里等一次就能避开那个窗口。
+       *
+       * ⚠️ **不在** `flushSessionLogWrites()` 里做这件事（那会造成死锁：压缩自己也在等它，
+       * 而这些追加又在等压缩）。`flushSessionLogWrites` 的语义保持"等齐**先前**的写"。
+       */
+      if (pendingAppends.size > 0) await Promise.allSettled([...pendingAppends]);
+
       const record: JsonlMessageRecord = {
         v: LINE_VERSION,
         id: message.id,
@@ -120,6 +148,25 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
          * （`MessageBubble` 的引用块跟着消失，用户看到的是"引用来源没了"）。
          */
         ...((message as any).retrievedSources ? { retrievedSources: (message as any).retrievedSources } : {}),
+        /**
+         * ## 第 47 轮补（数据面审计 P1-1）：**压缩状态必须进权威日志**
+         *
+         * 缺陷形态：`hidden` / `trimmed` 只存在于索引里，日志没有它们。
+         * 于是"索引可从日志重建"这条不变量在这两列上**不成立** —— 重建之后
+         * （裁剪后的 `hidden=1` 变成 `?? 0` = 可见）**所有被压缩掉的消息原地复活**：
+         * 用户列表里凭空多出几百条旧消息，模型上下文跟着涨回去
+         * （正是本项目打过的那场"压缩 840 条、token 一点没降"的仗）。
+         *
+         * 触发路径是真实的、而且和损坏恢复是同一条：
+         * 库文件损坏 → `open_with_recovery` 建**空库** → 写"索引需要重建"标记 →
+         * 维护从日志重建 → 每一行都是新 INSERT（`hidden` 取不到"库里的原值"，
+         * 因为库里根本没有那一行）→ 全部按 `hidden = 0` 落库。
+         *
+         * 所以这两列必须由**权威副本**承载。只写非 0 值（`hidden=0` / `trimmed` 不写）
+         * 是为了让日志体积与既有格式尽量不变 —— 读侧一律 `?? 0`，语义等价。
+         */
+        ...(Number((message as any).hidden ?? 0) ? { hidden: Number((message as any).hidden) } : {}),
+        ...(Number((message as any).trimmed ?? 0) ? { trimmed: Number((message as any).trimmed) } : {}),
       };
       // Rust 侧 append_file 会补一个换行 —— 正好是 JSONL 需要的行分隔
       await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
@@ -388,44 +435,91 @@ export async function compactSessionLog(
   sessionId: string,
 ): Promise<{ compacted: boolean; linesBefore: number; linesAfter: number }> {
   const out = { compacted: false, linesBefore: 0, linesAfter: 0 };
-  try {
-    await flushSessionLogWrites();
-    const path = await sessionLogPath(sessionId);
-    let raw: string;
+  /**
+   * ## 第 47 轮补：压缩**自己也要登记进"在途写"集合**，否则它会吃掉并发追加
+   *
+   * 原来的写法只做到"**开始前**等齐在途追加（`flushSessionLogWrites`）"，
+   * 而压缩的读→写→改名跨越了两次 IPC await —— 这期间到达的追加写**不在**它等的集合里：
+   *
+   * ```text
+   * 压缩: flush() 完成 ──► 读日志(await) ──► 写 .tmp(await) ──► rename 覆盖原文件
+   * 追加:                          └─► appendFile 落进原文件 ──┘ ← 被 rename 覆盖，**永久丢失**
+   * ```
+   *
+   * 触发时机很现实：维护是**应用完全可交互时**在后台跑的（`App.tsx` 的 `dbReady` 里那段
+   * 浮空 async），而它会遍历所有行数 ≥200 的会话日志去压缩。用户恰好在那一刻发消息，
+   * 那条消息就从**权威日志**里消失了（索引里还在，所以看不出问题 —— 直到索引被重建）。
+   * 这正是本项目最在意的那类缺陷：**权威副本被"保护它的代码"弄丢**。
+   *
+   * 修法（最小且可验证）：
+   * 1. 把这次压缩登记进 `pendingAppends`（名字没改，语义是"在途的日志写"）——
+   *    那样**后到的**追加写会在 `appendSessionMessage` 里先等它（见那边的注释），
+   *    于是"读→改名"这段窗口里不会再有新追加落进被覆盖的文件；
+   * 2. 读到内容之后**再查一次**在途写：万一有追加在我们开始等之前就插进来了，
+   *    这次压缩直接放弃（宁可不省空间，也不能丢一条消息）。
+   */
+  let self: Promise<unknown> | null = null;
+  /** 压缩自己也在 `pendingAppends` 里（为了挡住后到的追加），查"别人"时要排掉自己 */
+  const othersPending = () => [...pendingAppends].some((p) => p !== self);
+
+  const task = (async () => {
     try {
-      raw = await readFile(path);
-    } catch {
+      await flushSessionLogWrites();
+      const path = await sessionLogPath(sessionId);
+      let raw: string;
+      try {
+        raw = await readFile(path);
+      } catch {
+        return out;
+      }
+      /**
+       * 读完之后再查一次：这段时间里若有**别人的**追加写登记进来，它写的是我们手里
+       * 这份 raw 之后的内容，而 rename 会把它的成果覆盖掉 —— 所以放弃这次压缩。
+       *
+       * ⚠️ 必须排掉自己（`othersPending`）：压缩为了挡住后到的追加，会把自己也登记进
+       * `pendingAppends`（见函数尾）。若这里查的是裸 `pendingAppends.size`，它永远 > 0，
+       * 压缩就**永远不会执行** —— 这个自锁是我第一版写出来的，`SLOG-10` 当场抓到。
+       */
+      if (othersPending()) {
+        console.log(
+          `[SessionJSONL] 会话 ${sessionId} 日志压缩推迟：读到内容后仍有别的追加在途（宁可不压，也不丢消息）`,
+        );
+        return out;
+      }
+      const lines = raw.split("\n").filter((l) => l.trim());
+      out.linesBefore = lines.length;
+      if (lines.length < MIN_LOG_LINES_TO_COMPACT) return out;
+
+      const lastById = new Map<string, string>();
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line) as JsonlMessageRecord;
+          if (parsed && typeof parsed.id === "string") lastById.set(parsed.id, line);
+        } catch {
+          /* 坏行在压缩时被丢弃（它本来也读不出来） */
+        }
+      }
+      out.linesAfter = lastById.size;
+      // 安全性检查：压缩只应减少"被取代的旧行"，不能少于唯一 id 数
+      if (out.linesAfter === 0 || out.linesAfter >= lines.length) return out;
+
+      const tmp = `${path}.tmp`;
+      await writeFile(tmp, [...lastById.values()].join("\n") + "\n");
+      await renameFile(tmp, path);
+      out.compacted = true;
+      console.log(
+        `[SessionJSONL] 会话 ${sessionId} 日志压缩：${out.linesBefore} 行 → ${out.linesAfter} 行（后写者胜语义不变）`,
+      );
+      return out;
+    } catch (e) {
+      console.warn("[SessionJSONL] 日志压缩失败（保留原文件）:", e);
       return out;
     }
-    const lines = raw.split("\n").filter((l) => l.trim());
-    out.linesBefore = lines.length;
-    if (lines.length < MIN_LOG_LINES_TO_COMPACT) return out;
-
-    const lastById = new Map<string, string>();
-    for (const line of lines) {
-      try {
-        const parsed = JSON.parse(line) as JsonlMessageRecord;
-        if (parsed && typeof parsed.id === "string") lastById.set(parsed.id, line);
-      } catch {
-        /* 坏行在压缩时被丢弃（它本来也读不出来） */
-      }
-    }
-    out.linesAfter = lastById.size;
-    // 安全性检查：压缩只应减少"被取代的旧行"，不能少于唯一 id 数
-    if (out.linesAfter === 0 || out.linesAfter >= lines.length) return out;
-
-    const tmp = `${path}.tmp`;
-    await writeFile(tmp, [...lastById.values()].join("\n") + "\n");
-    await renameFile(tmp, path);
-    out.compacted = true;
-    console.log(
-      `[SessionJSONL] 会话 ${sessionId} 日志压缩：${out.linesBefore} 行 → ${out.linesAfter} 行（后写者胜语义不变）`,
-    );
-    return out;
-  } catch (e) {
-    console.warn("[SessionJSONL] 日志压缩失败（保留原文件）:", e);
-    return out;
-  }
+  })();
+  self = task;
+  pendingAppends.add(task as unknown as Promise<void>);
+  void task.finally(() => pendingAppends.delete(task as unknown as Promise<void>));
+  return task;
 }
 
 /** 行数低于这个值不值得压缩 */
