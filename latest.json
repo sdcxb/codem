@@ -1,15 +1,15 @@
 {
-  "version": "1.16.94",
-  "notes": "设置面板的关闭按钮补上可访问名（真机普查里它是面板内 127 个按钮中唯一无名的那个）。",
-  "pub_date": "2026-09-18T19:53:01Z",
+  "version": "1.16.95",
+  "notes": "深层面板的关闭按钮补上可访问名（三个面板）；文字链接按钮 lo-link-btn 命中区 24x15 扩到 >=24；/feedback 文案不再暗示已起作用（读侧零调用者）。真机复量：插件管理面板内无名按钮 1→0、关闭按钮可按名字找到。",
+  "pub_date": "2026-09-18T22:24:18Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Q2d0RIMWFxeGhOMDlIZWwzSGtIWUlZU21lYjRGQVZzWjBEckFmV0xSczROd3IzSWxNRTZWTGpCMHpIT1k5Nm4yUHhDanNaVForSEc3VXJDWVZncUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzYxMTE5CWZpbGU6Q29kZW1fMS4xNi45NF94NjQtc2V0dXAuZXhlCklRZ0FvS0ZsVDN0c3JaSmZhbkErTzV6MlRlQWM5YktJME1CeUtaNi9CYnpVT0QwOGpoUU9iODJjNktYV3FwOWNqK3JzSUJ3U2NQQW1MeTRGTVhBMURRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.94/Codem_1.16.94_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F0aXNsb0UrdUdMa1JwRjJLUmErQ29MaUxhcHN5ZkE3bkgraURXZ05ZR0ZuQnJ0aC9YUS9sa1lrb3ZjSFdYbjhoUTI3SXZpS0c0SE9xcWxVcmtNMWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzcwMTQ4CWZpbGU6Q29kZW1fMS4xNi45NV94NjQtc2V0dXAuZXhlCk8vY1dEOHVGM0RQa0psR1dLd3dVaUMxOGZyR0lFdVJrNGVyU2lkVFM0TWIrR3JUUkVjOWRrcDdBY3p3cFpEVTBCUWMyYlFGYk9EcWlDQVR6bWk1ckFBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.95/Codem_1.16.95_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Q2d0RIMWFxeGhOMDlIZWwzSGtIWUlZU21lYjRGQVZzWjBEckFmV0xSczROd3IzSWxNRTZWTGpCMHpIT1k5Nm4yUHhDanNaVForSEc3VXJDWVZncUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzYxMTE5CWZpbGU6Q29kZW1fMS4xNi45NF94NjQtc2V0dXAuZXhlCklRZ0FvS0ZsVDN0c3JaSmZhbkErTzV6MlRlQWM5YktJME1CeUtaNi9CYnpVT0QwOGpoUU9iODJjNktYV3FwOWNqK3JzSUJ3U2NQQW1MeTRGTVhBMURRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.94/Codem_1.16.94_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F0aXNsb0UrdUdMa1JwRjJLUmErQ29MaUxhcHN5ZkE3bkgraURXZ05ZR0ZuQnJ0aC9YUS9sa1lrb3ZjSFdYbjhoUTI3SXZpS0c0SE9xcWxVcmtNMWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzcwMTQ4CWZpbGU6Q29kZW1fMS4xNi45NV94NjQtc2V0dXAuZXhlCk8vY1dEOHVGM0RQa0psR1dLd3dVaUMxOGZyR0lFdVJrNGVyU2lkVFM0TWIrR3JUUkVjOWRrcDdBY3p3cFpEVTBCUWMyYlFGYk9EcWlDQVR6bWk1ckFBPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.95/Codem_1.16.95_x64-setup.exe"
     }
   }
 }

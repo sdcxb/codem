@@ -432,6 +432,19 @@
   cursor: pointer;
   padding: 0;
 }
+
+/* 第 61 轮（真机 UI 走查）：命中区只有 24x15，低于 WCAG 2.5.8 的 24x24。
+   文字链接的视觉尺寸本来就小，但点击目标不该跟着变小 —— 伪元素向外扩 5px，
+   视觉与布局一个像素都不动（与第 63 轮 sidebar-session-pin 同一手法）。 */
+.lo-link-btn { position: relative; }
+
+.lo-link-btn::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  background: transparent;
+}
+
 .lo-link-btn:is(:hover, :focus-visible) { color: var(--accent-hover); text-decoration: underline; }
 .lo-btn {
   padding: var(--space-2) var(--space-6);

@@ -165,7 +165,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           <AgentIcon size={20} className="skill-manager-icon-svg" />
           <span>{zh ? "智能体定义管理" : "Agent Management"}</span>
         </div>
-        <button className="skill-manager-close" onClick={onClose}>
+        <button className="skill-manager-close" aria-label={zh ? "关闭面板" : "Close panel"} onClick={onClose}>
           <CloseIcon size={16} />
         </button>
       </div>

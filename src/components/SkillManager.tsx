@@ -595,7 +595,8 @@ return true;
           <SkillsIcon size={20} className="skill-manager-icon-svg" />
           <span>技能管理</span>
         </div>
-        <button className="skill-manager-close" onClick={onClose}>
+        {/* 第 61 轮：补可访问名（该组件没有 zh 变量，用中英并列的固定文案，避免引错未定义变量） */}
+        <button className="skill-manager-close" aria-label="关闭面板 / Close panel" onClick={onClose}>
           <CloseIcon size={16} />
         </button>
       </div>

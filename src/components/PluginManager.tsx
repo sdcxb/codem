@@ -636,7 +636,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           <Badge variant="muted">{totalCount}</Badge>
           <Badge variant="success">{enabledCount} 启用</Badge>
         </div>
-        <button className="skill-manager-close" onClick={onClose}>
+        <button className="skill-manager-close" aria-label={zh ? "关闭面板" : "Close panel"} onClick={onClose}>
           <ActionIcons.close size={16} />
         </button>
       </div>

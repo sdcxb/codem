@@ -2637,7 +2637,8 @@ if (!session) {
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
-          content: `✅ 反馈已记录到会话 ${session.id.substring(0, 8)}... 的事件日志中。`,
+          content: `✅ 反馈已留档到会话 ${session.id.substring(0, 8)}... 的事件日志（session_meta / feedback_record）。` +
+                  `当前没有任何自动流程读取它 —— 它只是留档，不会影响模型行为或后续自动处理。`,
           timestamp: Date.now(),
           status: "done",
         });
