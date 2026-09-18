@@ -18,7 +18,7 @@
  * 只有当一条消息**确实已经在 JSONL 里**，才允许把它从索引里删掉 —— 这就是"索引可重建"的前提。
  */
 
-import { getAppDataDir, appendFile, readFile, listDirectory, writeFile, deleteFile, renameFile } from "../file-api";
+import { appendFile, readFile, listDirectory, writeFile, deleteFile, renameFile } from "../file-api";
 import type { Message } from "../../store";
 
 /** 单行格式版本：将来改字段时按版本兼容读取 */
@@ -75,7 +75,18 @@ let cachedDir: string | null = null;
 
 async function sessionsDir(): Promise<string> {
   if (cachedDir) return cachedDir;
-  const base = await getAppDataDir();
+  /**
+   * ## 第 62 轮：目录来源改成"**引擎实际使用的库所在目录**"
+   *
+   * 这里是**权威副本**的落点（`<base>/sessions/<sid>.jsonl`），而它支撑的是 SQLite 里的
+   * 消息索引 —— 两者**必须属于同一份数据集**，否则"从日志重建索引"会在另一份数据上跑。
+   * 在此之前这个 base 只认 `getAppDataDir()`，而库路径由引擎解析（支持 `CODEM_DB_PATH`
+   * 与兜底目录）⇒ 库被指到别处时，日志与索引就分家了（便携模式把库拷走、日志留在本机；
+   * 隔离钻取会读写用户的真日志）。现在统一问 `resolveDataRoot()`。
+   */
+  const { resolveDataRoot } = await import("./data-root");
+  const info = await resolveDataRoot();
+  const base = info.root;
   const sep = base.includes("/") && !base.includes("\\") ? "/" : "\\";
   cachedDir = `${base}sessions${sep}`;
   return cachedDir;
@@ -190,10 +201,36 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
  * 判据见 `readSessionMessages` 的长注释：文件 API 是 Tauri 命令，错误以字符串回来。
  * **判不出来的方向是安全的** —— 不确定就当成"读失败"抛出，宁可多报一次"读不到"，
  * 也不把"读失败"说成"这个会话没有消息"。
+ *
+ * ## 第 62 轮补：**`os error 3` 也必须算"不存在"**（这是真机抓到的）
+ *
+ * 磁盘上的"没有这个文件"在 Windows 上有**两种**系统错误码，取决于**父目录在不在**：
+ *
+ * | 情形 | Win32 | 消息文本 |
+ * | --- | --- | --- |
+ * | 目录在、文件不在 | `ERROR_FILE_NOT_FOUND` = **2** | 系统找不到指定的文件。 (os error 2) |
+ * | **目录本身就不在** | `ERROR_PATH_NOT_FOUND` = **3** | 系统找不到指定的路径。 (os error 3) |
+ *
+ * 原来只认 2 与两个英文短语 ⇒ 在**全新的数据根目录**（便携模式 / `CODEM_DB_PATH` 隔离 /
+ * 库被指到别处）上，"还没有日志目录"会被判成**读失败**并向上抛。
+ * 真机取证（隔离实例）：维护里每个会话都打
+ * `[SessionLog] 会话 … 回填失败（跳过）: 系统找不到指定的路径。 (os error 3)`
+ * ⇒ **权威日志一个文件都建不出来**（"库坏了从日志重建"这条后路一直是空的），
+ * 而维护汇总只显示 `日志回填 0 条`。
+ *
+ * 所以把 3 也算进来。"缺失"的方向仍然是安全的：真正的读失败（权限 / IPC 断）错误码不同，
+ * 依旧照原样抛出。
  */
 function isFileMissingError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e ?? "");
-  return /os error 2\b/.test(msg) || /no such file/i.test(msg) || /not found/i.test(msg);
+  return (
+    /os error [23]\b/.test(msg) ||
+    /no such file/i.test(msg) ||
+    /not found/i.test(msg) ||
+    // Windows 中文/其它语言的"找不到路径"提示（错误码缺失时兜底）
+    /找不到指定的路径/.test(msg) ||
+    /cannot find the path/i.test(msg)
+  );
 }
 
 export async function readSessionMessages(

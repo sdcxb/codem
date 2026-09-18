@@ -14,7 +14,7 @@
  *   - 写盘**原子**（先 `.tmp` 再 rename），失败则回退内联（宁可库大一点，也不能丢附件）。
  */
 
-import { getAppDataDir, writeFile, renameFile, readFile, listDirectory, deleteFile } from "../file-api";
+import { writeFile, renameFile, readFile, listDirectory, deleteFile } from "../file-api";
 
 /** 超过这个字节数的附件内容外置（UTF-16 字符串按字符数近似即可） */
 export const DEFAULT_EXTERNALIZE_THRESHOLD = 64 * 1024;
@@ -33,7 +33,13 @@ export function externalPathOf(content: string): string {
 }
 
 async function attachmentsDir(): Promise<string> {
-  const base = await getAppDataDir();
+  /**
+   * 第 62 轮：附件正文外置的落点跟着**引擎实际使用的库目录**走（见 `data-root.ts`）。
+   * 外置正文是消息正文的一部分（`file:` 标记指向它），索引与它必须同属一份数据集 ——
+   * 否则把库拷到别处（便携模式）之后，消息索引指向的附件正文留在原机器上。
+   */
+  const { resolveDataRoot } = await import("./data-root");
+  const base = (await resolveDataRoot()).root;
   const sep = base.includes("/") && !base.includes("\\") ? "/" : "\\";
   return `${base}attachments${sep}`;
 }

@@ -21,7 +21,7 @@
  *   - 溢出文件写盘是**原子**的（先写 .tmp 再改名，与 DSH `dsh-atomic-write` 同策略）。
  */
 
-import { getAppDataDir, writeFile, renameFile, listDirectory, deleteFile } from "../file-api";
+import { writeFile, renameFile, listDirectory, deleteFile } from "../file-api";
 
 /** 默认内联上限（字节）：超过就溢出到文件。只拦真正的大块。 */
 export const DEFAULT_MAX_INLINE_BYTES = 64 * 1024;
@@ -117,7 +117,8 @@ export async function retainToolResult(
   }
 
   const { preview, omittedBytes } = headTailPreview(text, previewBudget);
-  const baseDir = await getAppDataDir();
+  // 第 62 轮：溢出文件与库同属一份数据集 —— 目录跟着引擎实际使用的库走（见 data-root.ts）
+  const baseDir = (await (await import("./data-root")).resolveDataRoot()).root;
   const sep = baseDir.includes("/") && !baseDir.includes("\\") ? "/" : "\\";
   const rawCallId = String(opts.callId ?? Date.now());
   const safeName = `${(opts.toolName || "tool").replace(/[^\w.-]+/g, "_")}-${rawCallId.replace(/[^\w.-]+/g, "_")}-${Date.now()}.txt`;
@@ -160,7 +161,8 @@ export async function pruneSpillFiles(
   const cutoff = now - keepDays * 24 * 60 * 60 * 1000;
   const result = { deletedFiles: 0 };
 
-  const baseDir = await getAppDataDir();
+  // 第 62 轮：溢出文件与库同属一份数据集 —— 目录跟着引擎实际使用的库走（见 data-root.ts）
+  const baseDir = (await (await import("./data-root")).resolveDataRoot()).root;
   let sessions: Awaited<ReturnType<typeof listDirectory>> = [];
   try {
     sessions = await listDirectory(`${baseDir}spill`);

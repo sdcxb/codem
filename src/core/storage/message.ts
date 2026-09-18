@@ -178,6 +178,53 @@ async function waitForSessionMirror(
 }
 
 /**
+ * 等这些会话的**消息镜像**就绪，返回**读不到**的会话集合（第 62 轮）。
+ *
+ * ## 为什么单独抽出来（而不是让每个调用方自己写一遍）
+ *
+ * "镜像未就绪 → 读成空 → 当成没有数据"这个坑在本仓库出现过多次，每一次的后果不同：
+ * 索引裁剪**整条从不生效**（第 44 轮）、不变量审计把**每条消息都报成缺口**
+ * （第 60 轮，真机 934 vs 749）、**权威日志回填静默 no-op**（第 62 轮，见下）。
+ * 三处的修法是同一条：**先等就绪，等不到就如实说"没跑"**。
+ * 所以这里把等待逻辑收成一个共用入口，避免第三、第四次各写一版。
+ *
+ * `backfillAllSessions` 的现场（第 62 轮真机取证）：`CODEM_DB_PATH` 隔离启动一个
+ * 从旧库迁移过来的库 → 索引里有消息、日志目录还不存在 → 连续三次维护都打
+ * `日志回填 0 条`，而**权威日志一个文件都没建出来** —— 因为 `listMessages` 在
+ * 镜像未就绪的窗口里返回空数组，回填循环 `continue` 掉了。日志是这套架构的**权威副本**，
+ * 它没被建出来意味着"崩溃重建"这条后路在那次启动里是空的，而日志上看起来一切正常。
+ *
+ * @returns 仍然读不到的会话 id 集合（调用方必须把它计入"本次没跑"，不许当成"没有数据"）
+ */
+export async function waitForMessageMirrors(
+  sessionIds: readonly string[],
+  budgetMs = TRIM_MIRROR_WAIT_TOTAL_MS,
+): Promise<Set<string>> {
+  const unreadable = new Set<string>();
+  const ids = [...new Set(sessionIds.filter((s) => typeof s === "string" && s.length > 0))];
+  if (ids.length === 0) return unreadable;
+  const port = rustMessagePort();
+  if (!port?.messages) {
+    // 端口没有 messages 能力（未注册 / 未就绪）：**不在这里造错**，交给调用方按"没有数据源"处置
+    return unreadable;
+  }
+  // 并发发起全部加载，再按**一个共享的截止时间**逐个确认（N 个坏会话只付一次超时）
+  const deadline = Date.now() + budgetMs;
+  for (const sid of ids) {
+    try {
+      port.messages.ensureLoaded(sid);
+    } catch {
+      /* 触发失败：下面按未就绪处理 */
+    }
+  }
+  for (const sid of ids) {
+    const readiness = await waitForSessionMirror(port, sid, remainingWaitMs(deadline));
+    if (readiness !== "ready") unreadable.add(sid);
+  }
+  return unreadable;
+}
+
+/**
  * 有界裁剪 SQLite 索引 —— **只有确实已在 JSONL 里持久化的消息才允许删**（第 78 波）。
  *
  * 这是"SQLite 只是可重建索引"的落地：权威日志是 append-only JSONL，索引可以随体积增长被裁剪，

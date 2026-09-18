@@ -49,6 +49,15 @@ export interface MaintenanceResult {
   compactedSessions: number;
   /** 本次回填进追加日志的消息数（第 78 波） */
   backfilledMessages: number;
+  /**
+   * 第 62 轮：因**消息镜像没就绪**而本次**没有回填**的会话数。
+   *
+   * 与 `backfilledMessages` 是一对：`0 条` 与 `N 个会话根本没跑` 在日志上必须分得开。
+   * 真机取证：`CODEM_DB_PATH` 隔离启动（索引 800+ 条、日志目录不存在）时，
+   * 连续三次维护都打 `日志回填 0 条`，而**权威日志一个文件都没建出来** ——
+   * 也就是说"崩溃后从日志重建"这条后路在那次启动里是空的，日志却显示一切正常。
+   */
+  backfillSkippedUnreadable: number;
   /** 本次**从权威日志重建进索引**的消息数（第 91 波：崩溃自愈） */
   rebuiltIndexMessages: number;
   /**
@@ -225,7 +234,12 @@ export async function indexRebuildNeeded(): Promise<{ needed: boolean; reason?: 
   try {
     const { invoke } = (window as any).__TAURI__?.core || {};
     if (!invoke) return { needed: false };
-    const dir = await invoke("get_app_data_dir");
+    /**
+     * 第 62 轮：标记文件与库**同属一份数据集** —— 目录跟着引擎实际使用的库走。
+     * 用 `get_app_data_dir` 的话，`CODEM_DB_PATH`（便携 / 隔离钻取）下会出现
+     * "库在 A、标记写在 B"，而标记的作用正是"库的索引要从日志重建"。
+     */
+    const dir = (await (await import("./data-root")).resolveDataRoot()).root;
     const path = `${dir}${INDEX_REBUILD_MARKER}`;
     const exists = await invoke("path_exists", { path });
     if (!exists) return { needed: false };
@@ -247,7 +261,12 @@ export async function clearIndexRebuildMarker(): Promise<void> {
   try {
     const { invoke } = (window as any).__TAURI__?.core || {};
     if (!invoke) return;
-    const dir = await invoke("get_app_data_dir");
+    /**
+     * 第 62 轮：标记文件与库**同属一份数据集** —— 目录跟着引擎实际使用的库走。
+     * 用 `get_app_data_dir` 的话，`CODEM_DB_PATH`（便携 / 隔离钻取）下会出现
+     * "库在 A、标记写在 B"，而标记的作用正是"库的索引要从日志重建"。
+     */
+    const dir = (await (await import("./data-root")).resolveDataRoot()).root;
     await invoke("delete_file", { path: `${dir}${INDEX_REBUILD_MARKER}` });
   } catch {
     /* 删不掉也无害：重建是幂等的 */
@@ -272,7 +291,12 @@ export async function markIndexRebuildNeeded(reason: string): Promise<boolean> {
   try {
     const { invoke } = (window as any).__TAURI__?.core || {};
     if (!invoke) return false;
-    const dir = await invoke("get_app_data_dir");
+    /**
+     * 第 62 轮：标记文件与库**同属一份数据集** —— 目录跟着引擎实际使用的库走。
+     * 用 `get_app_data_dir` 的话，`CODEM_DB_PATH`（便携 / 隔离钻取）下会出现
+     * "库在 A、标记写在 B"，而标记的作用正是"库的索引要从日志重建"。
+     */
+    const dir = (await (await import("./data-root")).resolveDataRoot()).root;
     await invoke("write_file", {
       path: `${dir}${INDEX_REBUILD_MARKER}`,
       content: JSON.stringify({ reason, at: new Date().toISOString() }),
@@ -1570,6 +1594,7 @@ export async function runDatabaseMaintenance(
     /** 见上面 `prunedEvents` 的长注释：事件压缩不在启动维护里做，所以恒为 0 */
     compactedSessions: 0,
     backfilledMessages: 0,
+    backfillSkippedUnreadable: 0,
     rebuiltIndexMessages: 0,
     repairedBehindMessages: 0,
     skippedDeletedSessions: 0,
@@ -1681,7 +1706,14 @@ export async function runDatabaseMaintenance(
         console.warn("[Maintenance] 索引与日志的对账未完成（不影响使用）:", e);
       }
 
-      result.backfilledMessages = await bridge.backfillAllSessions();
+      /**
+       * 第 62 轮：回填的返回值从"一个数"变成"**两件事**"（回填了多少 / 因镜像没就绪而没跑几个会话）。
+       * 理由与索引裁剪的 `skippedNotLoaded` 完全同一条：把"没跑"混进"0 条"，
+       * 日志上就分不出"确实没有可回填的"与"整条步骤静默没做"。
+       */
+      const backfill = await bridge.backfillAllSessions();
+      result.backfilledMessages = backfill.backfilled;
+      result.backfillSkippedUnreadable = backfill.skippedUnreadable;
 
       if (keepIndexedMessages > 0) {
         const trimmed = await bridge.trimIndexedMessages({ keepPerSession: keepIndexedMessages });
@@ -1709,8 +1741,13 @@ export async function runDatabaseMaintenance(
           );
         }
       }
-      if (result.backfilledMessages > 0) {
-        console.log(`[Maintenance] 追加日志：回填 ${result.backfilledMessages} 条历史`);
+      if (result.backfilledMessages > 0 || result.backfillSkippedUnreadable > 0) {
+        console.log(
+          `[Maintenance] 追加日志：回填 ${result.backfilledMessages} 条历史` +
+            (result.backfillSkippedUnreadable > 0
+              ? `（**${result.backfillSkippedUnreadable} 个会话的消息镜像未就绪 → 本次未回填**）`
+              : ""),
+        );
       }
 
       const attachments = await bridge.hydrateAllAttachments();
@@ -1952,7 +1989,11 @@ export async function runDatabaseMaintenance(
       (result.rebuildWithoutProject > 0
         ? `（其中 ${result.rebuildWithoutProject} 个没取到项目归属 → 落到全局项目）`
         : "") +
-      `、日志回填 ${result.backfilledMessages} 条、` +
+      `、日志回填 ${result.backfilledMessages} 条` +
+      (result.backfillSkippedUnreadable > 0
+        ? `（${result.backfillSkippedUnreadable} 个会话镜像未就绪未回填）`
+        : "") +
+      `、` +
       `索引裁剪 ${result.trimmedIndexMessages} 条、附件预热 ${result.warmedAttachments} 个、孤儿清理 ${result.prunedAttachmentOrphans} 个、` +
       `日志压缩 ${result.compactedLogSessions} 个会话、${formatTelemetryPrune(telemetryPrune)}、` +
       formatAuditPrune(auditPrune, result) +

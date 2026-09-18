@@ -21,7 +21,7 @@
 
 import { getStoragePort, hasStoragePort, setStoragePort, type StoragePort } from "./port";
 import { RustStoragePort, type StorageTransport } from "./rust-port";
-import { reportActionFailure } from "./persist-failure";
+import { reportActionFailure, reportPersistFailure } from "./persist-failure";
 import { domainEnsureLoaded } from "./domain-store";
 
 /**
@@ -156,6 +156,48 @@ export async function registerRustStoragePort(
       if (probe.command) return await probe.command(command, params);
       return await port.data.execute(command, params);
     };
+    /**
+     * ## 第 62 轮：**尽早把"数据根目录"解析一次**（预热 `resolveDataRoot()`）
+     *
+     * 数据根目录 = 引擎**实际使用**的那份库文件所在目录（见 `data-root.ts`），
+     * 权威日志 / 附件正文 / 溢出文件 / 索引重建标记都按它落盘 —— 与库必须同属一份数据集。
+     *
+     * 为什么要预热而不是留给第一次用到时懒解析：
+     * 1. **热路径**：第一次写会话日志会连带等一次 `storage_info` IPC；预热把它挪出用户路径；
+     * 2. **确定性**：数据根目录在整个进程里是常量，应当在"存储已就绪"这个明确时刻定下来，
+     *    而不是由"谁先用到"决定（越晚解析，越多代码在"根目录还没定"的窗口里跑）。
+     *    实测这一条是**真的会咬**：单测里 CHAT-016 的追加写在飞行中时 CHAT-017 换掉了
+     *    `__TAURI__` 桩，于是那条日志落进了新桩的内存文件系统 —— 解析越晚，窗口越宽。
+     *    （生产里 `__TAURI__` 不会中途换，所以那是夹具问题；但它精确地说明了"越晚解析越危险"。）
+     *
+     * 失败**不抛**：这里的失败语义是"数据根目录解析不出来"，由存储层各自的写路径如实上报
+     * （各自都会 catch 并报 `[PersistFailure]`），启动流程不该因此中断。
+     */
+    void import("./data-root")
+      .then(({ resolveDataRoot }) => resolveDataRoot())
+      .then((info) => {
+        /**
+         * 非标准位置**必须留下痕迹**（与引擎侧同一条纪律：库不在标准位置时 eprintln 告警）。
+         * 否则"数据写到了别处"只能靠翻代码才知道 —— 第 55 轮那次事故就是没人能说出为什么。
+         */
+        if (info.origin === "app-data-dir") {
+          console.warn(
+            `[Storage] 数据根目录回退到应用数据目录（${info.fallbackWhy ?? "原因未知"}）：${info.root}`,
+          );
+        } else if (info.standard === false) {
+          console.warn(
+            `[Storage] ⚠️ 数据根目录不是标准位置：${info.root}（原因：${info.reason ?? "未说明"}）` +
+              `—— 权威日志 / 附件 / 溢出文件都跟着它走`,
+          );
+        }
+      })
+      .catch((e) => {
+        reportPersistFailure(
+          "storage.dataRoot",
+          e,
+          "数据根目录解析失败：本次没有可信的数据落点（拒绝退回相对路径），文件类数据（权威日志 / 附件 / 溢出）将无法落盘",
+        );
+      });
     return {
       kind: "registered",
       engine: "rust",

@@ -118,7 +118,7 @@ function installForeignKeyCascade(p: FakeStoragePort): void {
  * 与真机行为（进会话时会 `hydrateSessionLog`）不一致。
  * 同一个桩在 `silent-write-guard.test.ts` 里也是这么用的。
  */
-function installSessionLogStub(): void {
+async function installSessionLogStub(): Promise<void> {
   const files = new Map<string, string>();
   const stub = {
     core: {
@@ -139,6 +139,21 @@ function installSessionLogStub(): void {
       },
     },
   };
+  /**
+   * ⚠️ 第 62 轮：**装桩前先等在途的日志追加落定**。
+   *
+   * 形态：会话日志的追加是 fire-and-forget（`appendSessionMessage` 不 await），
+   * 而测试之间会**整体换掉 `__TAURI__` 桩** —— 生产里绝不会发生（`__TAURI__` 是启动时
+   * 注入、运行期不变）。实测踩到：CHAT-016 建了一条消息（此时没有桩，写本该失败），
+   * 紧接着 CHAT-017 装了新桩（新的内存文件系统）→ 仍在飞行的那条追加**落进了新桩**，
+   * 于是 CHAT-017 读到 4 条消息，断言红。
+   *
+   * 也就是说：这是**夹具在"写在飞行中"时换了运行时**，不是产品缺陷。
+   * 处置是换之前把在途写排空（`flushSessionLogWrites()` 就是为此存在的），
+   * 而不是让产品去迁就夹具 —— 第一版我差点把"解析得更早一点"当成修复，
+   * 那只是把窗口收窄，窗口依然存在。
+   */
+  await flushSessionLogWrites();
   (window as any).__TAURI__ = stub;
   (globalThis as any).__TAURI__ = stub;
   __resetJsonlCache();
@@ -228,7 +243,7 @@ describe("对话核心链路 — 消息存储与加载", () => {
      * 而 `listMessages` = 索引 ∪ 权威日志、**合并后按 timestamp 升序**（`listMessagesMerged`）。
      * 后者才是这条断言在真机上的依据 —— 所以先把权威日志打通再读（见 installSessionLogStub）。
      */
-    installSessionLogStub();
+    await installSessionLogStub();
     try {
       const ts = Date.now();
       MessageStorage.createMessage(makeMessage({ id: "m2", content: "第二条", timestamp: ts + 200 }), SESSION_ID);
@@ -489,7 +504,7 @@ describe("对话核心链路 — 消息存储与加载", () => {
      * （`listMessagesMerged` 的合并会带上日志记录里的 toolCalls）。
      * 真机上进会话时就会 `hydrateSessionLog`，所以这里照做 —— 否则测的是"测试环境没有文件通道"。
      */
-    installSessionLogStub();
+    await installSessionLogStub();
     try {
       useFreshPort();
       setupProjectAndSession();

@@ -36,7 +36,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { resetPersistFailures } from "../core/storage/persist-failure";
 import { __resetSaveFingerprints, useAppStore, type Message } from "../store";
-import { isMessagesReadPending, isMessagesReadUnavailable } from "../core/storage/message";
+import { ensureSessionLogHydrated, isMessagesReadPending, isMessagesReadUnavailable } from "../core/storage/message";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 
 const SESSION = "sess-boot-state";
@@ -104,8 +104,20 @@ describe("BOOT：启动那一瞬间的三态（加载中 / 读不到 / 读到了
     expect(after.messagesReadUnavailable).toBe(false);
   });
 
-  it("BOOT-2: 端口不在 → 仍然是「读不到」（不许把真告警一起弄丢）", () => {
+  it("BOOT-2: 端口不在 → 仍然是「读不到」（不许把真告警一起弄丢）", async () => {
     setStoragePort(null);
+    /**
+     * ## 第 62 轮：**先把"日志读取"这条腿变成定论，再断言**
+     *
+     * `loadMessages` 判"读不到"要同时看两件事：消息索引可用吗、**权威日志读过吗**
+     * （`sessionLogReadState !== "pending"`）。而日志读取是**异步**的：
+     * 它跑完之前状态是 `pending` —— 那是 BOOT-1 的形态（"加载中"，正确地不报警）。
+     *
+     * 于是这条用例的结论会取决于"上一个用例那次 hydration 有没有跑完"：
+     * 实测**全量跑时偶发红、单跑必绿**（拉长 hydration 链上的一个 await 就能让它复现）。
+     * 那是夹具的时序，不是产品的行为 —— 所以这里显式把这条腿等到定论（没有数据源 ⇒ failed）。
+     */
+    await new Promise<void>((resolve) => ensureSessionLogHydrated(SESSION, () => resolve()));
 
     useAppStore.getState().loadMessages(SESSION);
 

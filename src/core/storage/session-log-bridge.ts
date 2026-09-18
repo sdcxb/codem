@@ -7,7 +7,7 @@
  * **动态 import**，循环就断开了（与 `event-log` 的处理方式一致）。
  */
 
-import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts } from "./message";
+import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts, waitForMessageMirrors } from "./message";
 import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSessionLog } from "./session-jsonl";
 import { hydrateAttachmentsForSession } from "./attachment-files";
 import { getStoragePort, hasStoragePort } from "./port";
@@ -114,9 +114,25 @@ export async function hydrateAllAttachments(): Promise<{ warmed: number; orphans
  * 迁移语义：从这一版起，追加日志是权威存储；SQLite 退化为可重建的查询索引。
  * 老会话第一次跑维护时会被回填一次，之后只有新消息会追加。
  *
- * @returns 本次回填的消息总数
+ * ## 第 62 轮：**先等消息镜像就绪**（真机取证：这条步骤曾在启动窗口里静默 no-op）
+ *
+ * 现场：用 `CODEM_DB_PATH` 隔离启动一个"从旧库迁移过来"的库（索引里 800+ 条消息、
+ * 日志目录还不存在），连续三次维护都打 `日志回填 0 条`，而**权威日志一个文件都没建出来**。
+ * 机制与第 44 轮那次"索引裁剪整条从不生效"完全相同：`listMessages` 在该会话的
+ * 消息镜像未加载完时返回**空数组**，于是 `messages.length === 0 → continue`，
+ * 回填"跑了但什么都没做"，而返回值 0 在日志上与"确实没有可回填的"长得一模一样。
+ *
+ * 代价不只是少回填一次：**追加日志是这套架构的权威副本** ——
+ * 它没被建出来，"库坏了从日志重建"这条后路在那次启动里就是空的。
+ *
+ * 所以现在：先等就绪（`waitForMessageMirrors`，与裁剪共用同一条等待与预算），
+ * 等不到的会话**单独计数**并如实上报（`skippedUnreadable`），不再混进"0 条"。
+ *
+ * @returns `backfilled` = 本次回填的消息数；`skippedUnreadable` = 因镜像没就绪而**没回填**的会话数
  */
-export async function backfillAllSessions(): Promise<number> {
+export async function backfillAllSessions(
+  opts: { mirrorWaitMs?: number } = {},
+): Promise<{ backfilled: number; skippedUnreadable: number }> {
   // 第 17 轮（L4）：原来的 `await initDatabase()` 已删 —— 它的唯一作用是"确保旧库存在"，
   // 而新架构下旧库刻意不加载（那次调用只会把 sql.js 拖进渲染进程）。
   let sessionIds: string[] = [];
@@ -135,11 +151,17 @@ export async function backfillAllSessions(): Promise<number> {
     // 第 17 轮（L4）：旧库回退（`SELECT DISTINCT session_id FROM messages`）已删 ——
     // 镜像未就绪时如实跳过，下次维护重试（静默"回填 0 条"才是要避免的那种假正常）。
     console.warn("[SessionLog] sessions 域镜像未就绪，本次跳过回填（下次维护会重试）");
-    return 0;
+    return { backfilled: 0, skippedUnreadable: 0 };
   }
 
+  const unreadable = await waitForMessageMirrors(sessionIds, opts.mirrorWaitMs ?? 5000);
   let total = 0;
+  let skippedUnreadable = 0;
   for (const sessionId of sessionIds) {
+    if (unreadable.has(sessionId)) {
+      skippedUnreadable += 1;
+      continue;
+    }
     try {
       const messages = listMessages(sessionId);
       if (messages.length === 0) continue;
@@ -152,7 +174,16 @@ export async function backfillAllSessions(): Promise<number> {
       console.warn(`[SessionLog] 会话 ${sessionId} 回填失败（跳过）:`, e);
     }
   }
-  return total;
+  if (skippedUnreadable > 0) {
+    reportPersistFailure(
+      "sessionLog.backfill",
+      new Error(`消息镜像未就绪 ${skippedUnreadable} 个会话`),
+      `${skippedUnreadable} 个会话本次**没有回填**（不计入"回填 0 条"）。` +
+        `镜像没加载完时 listMessages 返回空数组 —— 当成"没有可回填的"会让` +
+        `**权威日志一个文件都建不出来**（真机实测：隔离启动的三次维护全是"回填 0 条"，日志目录始终是空的）`,
+    );
+  }
+  return { backfilled: total, skippedUnreadable };
 }
 
 /** 已存在日志文件的会话数（诊断用） */
