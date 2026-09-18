@@ -2197,7 +2197,7 @@ flushStreamBuffer(); // flush all on unmount
     const reportedPersistAreas = new Set<string>();
     const onPersistFail = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as
-        | { area?: string; message?: string; count?: number; kind?: "persist" | "action"; consequence?: string }
+        | { area?: string; message?: string; count?: number; kind?: "persist" | "action"; consequence?: string; title?: string }
         | undefined;
       const area = detail?.area || "unknown";
       if (reportedPersistAreas.has(area)) return; // 同一区域只提示一次
@@ -2228,6 +2228,9 @@ flushStreamBuffer(); // flush all on unmount
           count: detail?.count ?? 1,
           kind: detail?.kind === "action" ? "action" : "persist",
           ...(detail?.consequence ? { consequence: detail.consequence } : {}),
+          // 第 52 轮：标题也能被上报方覆盖（有些被上报的事既不是"保存失败"也不是
+          // "操作没生效"，而是"自检发现并已修好" —— 开头那句假，整条就不可信）
+          ...(detail?.title ? { title: detail.title } : {}),
         }),
       });
     };

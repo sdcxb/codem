@@ -54,15 +54,23 @@ export interface PersistFailureOptions {
    * 例如"写入没落地但已按较新的一份恢复"就不成立。
    */
   consequence?: string;
+  /**
+   * 覆盖开头那句**标题**（第 52 轮）。
+   *
+   * 只在"两种 kind 的前缀都不成立"时才传：典型是维护自检发现并**已经修好**的不一致
+   * —— 那不是"操作没有生效"，也不是"数据保存失败"。开头假 = 整条不可信。
+   */
+  title?: string;
 }
 
-/** 窗口事件的 detail 形状（`consequence` 见上） */
+/** 窗口事件的 detail 形状（`consequence` / `title` 见上） */
 export interface PersistFailureDetail {
   area: string;
   message: string;
   count: number;
   kind: "persist" | "action";
   consequence?: string;
+  title?: string;
 }
 
 const failures = new Map<string, PersistFailureEntry>();
@@ -102,6 +110,7 @@ export function reportFailure(
 
   const detail: PersistFailureDetail = { area, message, count: entry.count, kind };
   if (options?.consequence) detail.consequence = options.consequence;
+  if (options?.title) detail.title = options.title;
 
   console.error(
     `[PersistFailure] ${area} ${kind === "persist" ? "写盘失败" : "操作失败"}（第 ${entry.count} 次）：${message}` +
@@ -161,16 +170,27 @@ export function reportActionFailure(
 export function composePersistAlertText(detail: PersistFailureDetail): string {
   const isAction = detail.kind === "action";
   const reason = detail.message || "未知原因";
+  /**
+   * 第 52 轮：`title` 可以**替换开头那句**。
+   *
+   * 为什么还需要它：`kind` 只有两种前缀（"数据保存失败" / "操作没有生效"），
+   * 而有些被上报的事情**两者都不成立** —— 典型是维护里的对账发现
+   * "索引落后于权威日志"：那不是用户的操作没生效，也不是数据保存失败，
+   * 而是**自检发现了不一致并已经修好**。真机上那条横幅当时印的是
+   * "操作没有生效（maintenance.indexBehindLog）：…" —— 一句话开头就是假的，
+   * 而后半句（"已逐会话重建，补回 3 行"）才是真的。**开头假 = 整条不可信。**
+   */
+  const head = detail.title ? detail.title : isAction ? `操作没有生效（${detail.area}）` : `数据保存失败（${detail.area}）`;
   if (isAction) {
     return (
-      `操作没有生效（${detail.area}）：${reason}。` +
+      `${head}：${reason}。` +
       (detail.consequence ?? "该功能本次不可用，请重试或检查日志") +
       (detail.count > 1 ? `（已累计失败 ${detail.count} 次）` : "") +
       `。`
     );
   }
   return (
-    `数据保存失败（${detail.area}）：${reason}。` +
+    `${head}：${reason}。` +
     (detail.consequence ??
       "这次改动目前只在内存里，重启应用后会丢失；请检查磁盘空间与数据库文件占用。") +
     (detail.count > 1 ? `（该区域已累计失败 ${detail.count} 次）` : "")

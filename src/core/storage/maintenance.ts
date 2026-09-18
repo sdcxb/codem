@@ -30,7 +30,7 @@
  * 这不是日志洁癖 —— 真机上"维护看起来在跑但其实什么都没做"在这个模块里发生过多次。
  */
 
-import { reportPersistFailure } from "./persist-failure";
+import { reportActionFailure, reportPersistFailure } from "./persist-failure";
 import * as SessionStorage from "./session";
 // 不变量审计的"上次水位"存在 settings（与其它偏好同一种介质，见 `readInvariantWatermark`）
 import { getSettingJSON, setSettingJSON } from "./settings";
@@ -50,6 +50,14 @@ export interface MaintenanceResult {
   backfilledMessages: number;
   /** 本次**从权威日志重建进索引**的消息数（第 91 波：崩溃自愈） */
   rebuiltIndexMessages: number;
+  /**
+   * 本次因**索引落后于权威日志**而补回的行数（第 52 轮）。
+   *
+   * 与 `rebuiltIndexMessages` 分开报：那个是"检测到重建标记之后的整体重建"，
+   * 这个是"**没人写标记、但对账自己发现了落后**"的局部修复。
+   * 两者触发条件完全不同 —— 混在一起就看不出"系统自己发现过一次丢行"。
+   */
+  repairedBehindMessages: number;
   /**
    * 本次重建时因**会话墓碑**跳过的会话数（B-1）。
    *
@@ -607,6 +615,78 @@ export interface IntegrityCheckOutcome {
   status: "ok" | "failed" | "skipped";
   detail?: string;
   reason?: string;
+}
+
+/**
+ * 找出"**索引落后于权威日志**"的会话（第 52 轮）。
+ *
+ * 与"库损坏"是两件事：这里库是好的、`quick_check` 也 ok，只是索引**少了行**。
+ * 修复触发器此前只有两个（完整性检查失败、引擎恢复时写的标记），于是
+ * "索引真的少了行、但没坏也没标记"就成了静默缺口 —— 真机实证：某会话日志有 657 个
+ * 唯一 id、索引只有 545 行，差 112 行，没有任何信号。
+ *
+ * 判据与"为什么这个方向只能是丢行"：见 `runDatabaseMaintenance` 里的长注释。
+ * 要点：只比**日志已 hydrate** 的会话；口径对 `messages.count.total`（含 hidden，
+ * 因为裁剪是软删除、行留在库里）；跳过有会话墓碑的（用户删掉的会话）。
+ */
+async function detectSessionsBehindLog(): Promise<
+  Array<{ sessionId: string; indexRows: number; logIds: number }>
+> {
+  const { hasStoragePort, getStoragePort } = await import("./port");
+  if (!hasStoragePort()) return [];
+
+  const [{ listSessionLogs, isSessionDeleted }, msgMod] = await Promise.all([
+    import("./session-jsonl"),
+    import("./message"),
+  ]);
+
+  let sessionIds: string[] = [];
+  try {
+    sessionIds = await listSessionLogs();
+  } catch (e) {
+    console.warn("[Maintenance] 列会话日志失败（本次不做索引/日志对账）:", e);
+    return [];
+  }
+
+  const behind: Array<{ sessionId: string; indexRows: number; logIds: number }> = [];
+  for (const sessionId of sessionIds) {
+    try {
+      /**
+       * ⚠️ 这里**必须自己去把日志读一遍**，不能等别人先 hydrate。
+       *
+       * 第一版是"只比已 hydrate 的会话"，看着保守，实际会在**最该发现问题的形态**上瞎掉：
+       * **索引为空**的会话（正是"索引丢光了"那种）在回填里会走
+       * `if (messages.length === 0) continue` —— 回填直接跳过它、也就不会 hydrate 它，
+       * 于是对账永远看不到它、永远不告警。
+       * （这是我在真机夹具上撞出来的：日志 3 条 / 索引 0 行，第一版检测不到。）
+       *
+       * `ensureSessionLogHydrated` 幂等去重（同一会话每进程只读一次），
+       * 所以这里的"主动读"不会放大成本。
+       */
+      if (msgMod.sessionLogReadState(sessionId) === "pending") {
+        await new Promise<void>((resolve) => msgMod.ensureSessionLogHydrated(sessionId, () => resolve()));
+      }
+      // ① 读过之后仍不是 hydrated（= 读失败）：没有可信集合，跳过（不许瞎猜）
+      if (msgMod.sessionLogReadState(sessionId) !== "hydrated") continue;
+      // ② 用户删掉的会话：日志留墓碑是设计使然（`isSessionDeleted`），不参与比较
+      if (await isSessionDeleted(sessionId)) continue;
+      // ③ 日志里的活消息数（`null` = 不知道，**不许**当成 0）
+      const logIds = msgMod.logLiveMessageCount(sessionId);
+      if (logIds === null || logIds === 0) continue;
+      // ④ 引擎报的该会话总行数（含 hidden）
+      const counted = await structuredCommand<{ total?: number; count?: number }>(
+        getStoragePort(),
+        "messages.count",
+        { session_id: sessionId },
+      );
+      const indexRows = typeof counted?.total === "number" ? counted.total : counted?.count;
+      if (typeof indexRows !== "number") continue;
+      if (indexRows < logIds) behind.push({ sessionId, indexRows, logIds });
+    } catch (e) {
+      console.warn(`[Maintenance] 会话 ${sessionId} 的索引/日志对账失败（跳过该会话）:`, e);
+    }
+  }
+  return behind;
 }
 
 /**
@@ -1209,6 +1289,7 @@ export async function runDatabaseMaintenance(
     compactedSessions: 0,
     backfilledMessages: 0,
     rebuiltIndexMessages: 0,
+    repairedBehindMessages: 0,
     skippedDeletedSessions: 0,
     rebuildWithoutProject: 0,
     trimmedIndexMessages: 0,
@@ -1255,6 +1336,65 @@ export async function runDatabaseMaintenance(
         }
       } catch (e) {
         console.warn("[Maintenance] 索引重建失败（保留标记，下次再试）:", e);
+      }
+
+      /**
+       * ## 第 52 轮：**"索引落后于权威日志"必须有主动判据**（不再只等标记）
+       *
+       * 这套架构的约定是"JSONL 是权威副本、SQLite 索引可重建"，而**修复的触发器**
+       * 此前只有两个：完整性检查失败、引擎恢复时写的标记。于是出现了一个静默缺口：
+       * **索引真的少了行、但库没坏、也没人写标记** → 什么都不会发生。
+       *
+       * 真机实证（第 52 轮钻取）：一个会话的权威日志有 **657** 个唯一 id，
+       * 而索引里只有 **545** 行 —— 差 **112 行**，且没有任何信号。跑一次"从日志重建"
+       * 之后索引变成 657（与日志逐条一致），说明这 112 行确实是索引丢了、不是日志多了。
+       *
+       * ### 为什么"索引行数 < 日志唯一 id 数"只能是丢行，不是设计使然
+       *
+       * - **裁剪**（`trimIndexedMessages`）走的是**软删除 + 裁剪标记**，行**留在库里**
+       *   （否则 `message_feedback` 的外键目标会消失），所以 `messages.count.total` **不会**因此变小；
+       * - 正常方向的落后是"索引**多**、日志少"（老会话的日志还没回填），那个方向**不告警**；
+       * - 反向（日志多、索引少）只可能来自"索引写入丢了/被外力删了"。
+       *
+       * ### 做法
+       *
+       * 只对**日志已 hydrate** 的会话比较（没 hydrate 就没有可信的日志集合，比了是瞎猜）；
+       * 发现落后就**当场按会话重建**（`rebuildIndexFromSessionLogs(sessionId)`，
+       * 第 52 轮的钻取已经端到端验证过它幂等、且**只 upsert 不删行**），
+       * 并如实上报 —— 这是一次"发现并修复了静默丢行"，用户与排查者都该看到。
+       */
+      try {
+        const behind = await detectSessionsBehindLog();
+        if (behind.length > 0) {
+          const detail = behind
+            .map((b) => `${b.sessionId}(索引 ${b.indexRows} < 日志 ${b.logIds})`)
+            .join("、");
+          console.warn(`[Maintenance] 检测到索引落后于权威日志：${detail} —— 逐会话重建`);
+          let repaired = 0;
+          for (const b of behind) {
+            try {
+              const r = await bridge.rebuildIndexFromSessionLogs(b.sessionId);
+              repaired += r.messages;
+            } catch (e) {
+              console.warn(`[Maintenance] 会话 ${b.sessionId} 的重建失败（下次维护再试）:`, e);
+            }
+          }
+          result.repairedBehindMessages = repaired;
+          reportActionFailure(
+            "maintenance.indexBehindLog",
+            // 只带**数字事实**（哪个会话、差多少）：结论已经写在 title / consequence 里，
+            // 重复一遍就成了"横幅自己说两遍同一件事"（第 48 轮同类文案缺陷的教训）
+            new Error(detail),
+            "已按权威日志补回索引行（不影响消息本身）",
+            {
+              // 开头那句必须是真的：这不是"用户的操作没生效"，而是自检发现并修好了不一致
+              title: "存储自检：索引落后于权威日志，已自动补回",
+              consequence: `已逐会话从权威日志重建索引（补回 ${repaired} 行）；消息正文从未受影响`,
+            },
+          );
+        }
+      } catch (e) {
+        console.warn("[Maintenance] 索引与日志的对账未完成（不影响使用）:", e);
       }
 
       result.backfilledMessages = await bridge.backfillAllSessions();

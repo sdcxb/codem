@@ -775,6 +775,23 @@ export function __resetSessionLogReadFailuresForTests(): void {
 }
 
 /**
+ * 权威日志里**活着的消息条数**（未 hydrate → `null`，即"不知道"而不是 0）。
+ *
+ * 用途（第 52 轮）：维护里对账"索引是否落后于权威日志"。
+ * 为什么必须区分 `null` 与 `0`：`0` 是"这个会话日志里确实没有消息"（正常），
+ * `null` 是"日志还没读、我不知道"—— 把后者当成 0 会让对账得出"索引比日志多"的
+ * 假结论，从而**永远发现不了真正落后的会话**。
+ *
+ * 口径对齐 `messages.count.total`：**含 hidden**（压缩/裁剪是软删除，行留在库里），
+ * 因此这里数的是 `readSessionMessages` 去重、去墓碑之后留下的全部记录。
+ */
+export function logLiveMessageCount(sessionId: string): number | null {
+  const cached = cachedLogMessages.get(sessionId);
+  if (!cached) return null;
+  return cached.length;
+}
+
+/**
  * 读取会话历史 —— **索引 + 追加日志合并**（第 79 波审计修正）。
  *
  * 审计发现（严重）：上一波实现了"索引可被有界裁剪"+"日志是权威"，但**读路径没接上**：
