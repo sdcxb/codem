@@ -674,7 +674,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
             placeholder={zh ? '搜索插件...' : 'Search plugins...'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="skill-search-input"
+            className="skill-search-input" aria-label="搜索插件 / Search plugins"
           />
         </div>
       </div>

@@ -163,7 +163,8 @@ export function McpManager({ onClose }: McpManagerProps) {
           <ServerIcon size={20} className="mcp-manager-icon-svg" />
           <span>MCP 服务器管理</span>
         </div>
-        <button className="mcp-manager-close" onClick={onClose}>
+        {/* 第 61 轮：补可访问名（真机普查：该面板内唯一无名按钮就是它，且面板内没有任何"关闭/close"名字的按钮） */}
+        <button className="mcp-manager-close" aria-label="关闭面板 / Close panel" onClick={onClose}>
           <CloseIcon size={16} />
         </button>
       </div>

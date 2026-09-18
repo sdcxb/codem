@@ -633,7 +633,7 @@ return true;
                 placeholder="搜索技能..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="skill-search-input"
+                className="skill-search-input" aria-label="搜索技能 / Search skills"
               />
             </div>
             <button
@@ -720,6 +720,9 @@ return true;
                         )}
                       </div>
                       <Switch
+                        // 第 61 轮：开关同样需要可访问名 —— 真机普查里"技能"面板 11 个无名控件全是它
+                        // （`switch-root` 会把 props 透传给 Radix Root，所以这里给一行就覆盖所有行）。
+                        aria-label={`${skill.enabled !== false ? "停用" : "启用"}技能：${skill.displayName || skill.name} / Toggle skill: ${skill.displayName || skill.name}`}
                         checked={skill.enabled !== false}
                         onCheckedChange={(checked) => handleToggleEnabled(skill.name, checked)}
                         disabled={skill.source === "builtin"}
@@ -929,7 +932,7 @@ return true;
                 placeholder="搜索市场技能..."
                 value={marketSearchQuery}
                 onChange={(e) => setMarketSearchQuery(e.target.value)}
-                className="skill-search-input"
+                className="skill-search-input" aria-label="搜索市场 / Search marketplace"
               />
             </div>
             <button
