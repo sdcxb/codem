@@ -1,11 +1,11 @@
 {
-  "version": "1.16.77",
-  "notes": "一次失败的翻页不再被写成「没有更多历史」：那个标记同时控制提示条与滚动自动翻页，被置 false 之后用户不仅看不到更早的消息，连重试入口都会一起消失、界面上毫无提示 —— 一个真有 800 条历史的会话会被永久渲染成「就这么多」。现在按「读路径是否可用」判定（与首屏那条同源），读不到就保持可重试 + 说清楚 + 给重试按钮。",
-  "pub_date": "2026-09-18T10:46:05Z",
+  "version": "1.16.78",
+  "notes": "真机时间线抓到的一处假警报：启动后 225~379ms 界面会说「暂时读不到这个会话的历史消息」，而那条会话实际有 277 条、154ms 后消息就出来了。原因是「镜像还没加载完」与「读不到」共用一个判据。现在把「在途」这一态从端口带到界面：显示「正在读取历史消息…」，只有加载已定论且仍不可用才是告警 + 重试。",
+  "pub_date": "2026-09-18T10:57:26Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FZNnJWY1I2bjBOcDRiZk5rRHVIa2VqNHg2RXFFS0lPZW1rem5CV3p6WUwwdWx2dnltOFhSRU1EVHppMk1laUh3TlJ6TjlwOWU2NHJzN21zWVNFbmcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzI3NTczCWZpbGU6Q29kZW1fMS4xNi43N194NjQtc2V0dXAuZXhlCk1aSVl5TkJTY0w5K1E2TUlnNldrMVVxMHFZcnFBc25CSUZubGV3dTJKVWhWNXBlS1lsdGwvYXJBa3MrYUdCWHRlK1AvNzJOUTJySGFMWWh0SXY5eEJ3PT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.77/Codem_1.16.77_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1czdklRV1g5enpzb0QrVDBucWZOcUMrZ3dUNm40WEMxYXNUdnpPMUlGYlZ4dHNjMTQva05xNGVMYWxHakdHS01YL2FHOWFGZVBvek9aTzhkNzlVQ3c4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzI4OTU4CWZpbGU6Q29kZW1fMS4xNi43OF94NjQtc2V0dXAuZXhlClVDcS9vQmhNMDJUQlI2VVlGRGNaOEVlZHhGeUhYWTFURi9qS1B2MGN3RXNPTlhVYytCaHhQNXFCN0tXaDY1bWVNT084YUl4SlF3a21QS0VVUS9RK0N3PT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.78/Codem_1.16.78_x64-setup.exe"
     }
   }
 }

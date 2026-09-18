@@ -196,6 +196,14 @@ interface AppState {
    */
   messagesReadUnavailable: boolean;
   /**
+   * 第 49 轮：**"还没到"**（镜像在途）—— 与上面的"读不到"互斥。
+   *
+   * `true` = 这次读返回空，但消息镜像**正在加载**（惰性加载的正常过程）。
+   * 界面显示"正在读取历史消息…"，**不能**显示"暂时读不到"
+   * （那是在报告一个不存在的故障），也**不能**显示欢迎页。
+   */
+  messagesLoading: boolean;
+  /**
    * 第 48 轮：**"翻页读不到"不许被写成"没有更多历史"**。
    *
    * `loadMoreMessages` 原来只有一个结局：拿不到更早的消息就把 `hasMoreMessages`
@@ -317,6 +325,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasMoreMessages: false,
   isLoadingMore: false,
   messagesReadUnavailable: false,
+  messagesLoading: false,
   loadMoreReadUnavailable: false,
   stepProgress: null,
   agentActivities: [],
@@ -394,7 +403,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasActiveSessions: () => get().activeSessions.size > 0,
   setCurrentModel: (m) => set({ currentModel: m }),
   setCwd: (d) => set({ cwd: d }),
-  clearMessages: () => set({ messages: [], loadedSessionId: null, messagesReadUnavailable: false, loadMoreReadUnavailable: false, streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
+  clearMessages: () => set({ messages: [], loadedSessionId: null, messagesReadUnavailable: false, messagesLoading: false, loadMoreReadUnavailable: false, streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
 
   loadMessages: (sessionId) => {
     const applyMessages = (messages: ReturnType<typeof MessageStorage.listMessages>) => {
@@ -430,7 +439,21 @@ export const useAppStore = create<AppState>((set, get) => ({
          * 而下面那段"空结果就订阅镜像就绪后重读"的补丁正是为它准备的。
          */
         messagesReadUnavailable:
-          totalCount === 0 && MessageStorage.isMessagesReadUnavailable(sessionId),
+          totalCount === 0 &&
+          !MessageStorage.isMessagesReadPending(sessionId) &&
+          MessageStorage.isMessagesReadUnavailable(sessionId),
+        /**
+         * 第 49 轮：**"还没到"与"读不到"分开渲染**。
+         *
+         * 真机实测（打包版，277 条消息的会话）：启动后第 225~379ms 界面渲染的是
+         * 「暂时读不到这个会话的历史消息」—— 而那一刻只是启动时按会话惰性加载的正常过程
+         * （154ms 后消息就出来了）。每次启动对着一条真有 277 条的会话说一次"读不到"，
+         * 用户会以为存储坏了；更糟的是"狼来了"喊多了，真正的"读不到"就没人信了。
+         *
+         * 现在：镜像**在途** → `messagesLoading`（界面显示"正在读取历史消息…"）；
+         * 加载已定论但仍不可用 → `messagesReadUnavailable`（原有告警 + 重试入口）。
+         */
+        messagesLoading: totalCount === 0 && MessageStorage.isMessagesReadPending(sessionId),
       });
       return totalCount;
     };
@@ -539,11 +562,13 @@ export const useAppStore = create<AppState>((set, get) => ({
        * （无害但语义错），更糟的是掩盖"当前会话根本没加载"这个真实状态。
        */
       // 第 47 轮补：读**抛错**同样是"读不到"，不是一个空会话
+      // 第 49 轮：加载中标记一并清掉（这是"读失败"的定论，不是"还没到"）
       set({
         messages: [],
         loadedSessionId: null,
         hasMoreMessages: false,
         isLoadingMore: false,
+        messagesLoading: false,
         messagesReadUnavailable: true,
       });
     }

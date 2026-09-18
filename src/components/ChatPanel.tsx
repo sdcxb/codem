@@ -90,7 +90,7 @@ notebookId?: string;
 
 export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onEditAndRewind, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable, loadMoreReadUnavailable } = useAppStore();
+  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage, messagesReadUnavailable, messagesLoading, loadMoreReadUnavailable } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
@@ -748,6 +748,31 @@ setStepTooltipLocked(false);
             判据由 store 给出（`messagesReadUnavailable`），它按"`listMessages` 会合并
             权威 JSONL 日志，所以返回空只可能是'真没有'或'读没发生'"来判定。
           */}
+          {/*
+            ## 第 49 轮：**"还没到"不许被渲染成"读不到"**
+
+            真机实测（打包版，277 条消息的会话）：启动后第 225~379ms，界面渲染的是下面
+            这支「暂时读不到这个会话的历史消息」—— 而那一刻只是启动时按会话**惰性加载**
+            的正常过程（154ms 后消息就出来了）。每次启动对着一条真有 277 条的会话说一次
+            "读不到"，用户会以为存储坏了；而"狼来了"喊多了，真正的"读不到"就没人信了。
+
+            所以先判 `messagesLoading`（镜像在途）→ 显示"正在读取历史消息…"，
+            只有加载**已定论且仍不可用**才走下面那支告警 + 重试。
+          */}
+          {messages.length === 0 && messagesLoading && !messagesReadUnavailable && (
+            <div className="empty-state" data-testid="messages-loading">
+              <div className="chat-unavailable-inner">
+                <p className="chat-unavailable-title">
+                  {lang === "zh" ? "正在读取历史消息…" : "Loading message history…"}
+                </p>
+                <p className="chat-unavailable-hint">
+                  {lang === "zh"
+                    ? "这个会话的消息索引正在按会话加载，通常一瞬间就好。"
+                    : "This session's message index is loading on demand — usually instant."}
+                </p>
+              </div>
+            </div>
+          )}
           {messages.length === 0 && messagesReadUnavailable && (
             <div className="empty-state" data-testid="messages-unavailable">
               <div className="chat-unavailable-inner">
@@ -773,7 +798,8 @@ setStepTooltipLocked(false);
               </div>
             </div>
           )}
-          {messages.length === 0 && !messagesReadUnavailable && (
+          {/* 欢迎页只在"读到了、确实空"时出现：加载中与读不到都不算（第 48/49 轮） */}
+          {messages.length === 0 && !messagesReadUnavailable && !messagesLoading && (
             <div className="empty-state">
               <NewChatPage
                 appName="Codem"

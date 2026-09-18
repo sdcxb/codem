@@ -550,6 +550,15 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     const rowsFor = (sid: string): Row[] => table(scope).filter((r) => r[sessionColumn] === sid);
     return {
       isLoaded: (sid: string) => loaded.has(sid),
+      /**
+       * 「**还没到**」这一态（第 49 轮补的保真度）。
+       *
+       * 真端口 `RustMessageMirror` 有 `isLoading`（内部 `loading` Map），
+       * 被测代码用它把"加载中"与"读不到"分开 —— 假端口不暴露它的话，
+       * 那个分支在测试里永远走不到（`isMessagesReadPending` 会退化成恒 false），
+       * 于是"启动时误报读不到"这个缺陷在 CI 里不可见。
+       */
+      isLoading: (sid: string) => loadingSessions.has(sid),
       isTruncated: () => truncated,
       /**
        * 会话镜像的加载 —— **必须与域镜像一样尊重 `asyncLoad`**（第 44 轮补的保真度缺口）。

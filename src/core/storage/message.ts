@@ -1236,6 +1236,14 @@ type RustMessagePortLike = {
   };
   messages?: {
     isLoaded(sessionId: string): boolean;
+    /**
+     * 镜像**正在加载中**（第 49 轮）。
+     *
+     * 声明成可选：真实端口与内存端口都有，但极简假端口可能没有 ——
+     * 缺省时按"不是在途"处理（退化成旧行为：分不清"还没到"与"读不到"，
+     * 与改之前一致，不会更糟）。
+     */
+    isLoading?(sessionId: string): boolean;
     isTruncated(): boolean;
     ensureLoaded(sessionId: string, onLoaded?: () => void): void;
     list(sessionId: string): Array<{
@@ -1463,7 +1471,20 @@ export function isMessagesReadUnavailable(sessionId: string): boolean {
     } else {
       port.messages.ensureLoaded(sessionId);
       if (!port.messages.isLoaded(sessionId)) {
-        unavailable = true;
+        /**
+         * ## 第 49 轮：**"还没到"不是"读不到"**
+         *
+         * `ensureLoaded` 是**触发**加载（按会话惰性），所以"刚触发、任务在途"
+         * 与"触发过但没成功"在这一刻都表现为 `isLoaded === false`。
+         * 前者应当渲染成"加载中"，后者才是"暂时读不到"。
+         *
+         * 真机实测（打包版，277 条消息的会话）：启动后第 225~379ms 界面渲染的是
+         * 「暂时读不到这个会话的历史消息」—— 那只是惰性加载的正常过程
+         * （154ms 后消息就出来了）。每次启动对着一条 277 条的会话说一次"读不到"，
+         * 用户会以为存储坏了；而"喊狼来了"喊多了，真正的"读不到"就没人信了。
+         */
+        const pending = typeof port.messages.isLoading === "function" && port.messages.isLoading(sessionId);
+        if (!pending) unavailable = true;
       } else if (port.messages.isTruncated()) {
         // 被上限截断时镜像不完整：读到的"空/少"都不是真值，同样算"读不到"
         unavailable = true;
@@ -1481,6 +1502,27 @@ export function isMessagesReadUnavailable(sessionId: string): boolean {
     unavailable = true;
   }
   return unavailable;
+}
+
+/**
+ * 该会话的消息**正在加载中**（第 49 轮）—— "还没到"，不是"读不到"。
+ *
+ * 与 `isMessagesReadUnavailable` 是**互斥**的两态：
+ * 调用方（`store.loadMessages`）据此渲染"加载中"而不是告警。
+ * 极简假端口没有 `isLoading` 能力时返回 false（那些端口本来就是同步的、
+ * 不存在"在途"这一态）。
+ */
+export function isMessagesReadPending(sessionId: string): boolean {
+  let pending = false;
+  try {
+    const port = rustMessagePort();
+    if (port?.messages && typeof port.messages.isLoading === "function") {
+      pending = !port.messages.isLoaded(sessionId) && port.messages.isLoading(sessionId);
+    }
+  } catch {
+    pending = false;
+  }
+  return pending;
 }
 
 /** 镜像行 → Message（与 SQLite 行映射保持同一语义） */
