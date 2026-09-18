@@ -1,11 +1,11 @@
 ﻿{
-    "version":  "1.16.70",
-    "notes":  "三份只读审计报出的真缺陷：分叉复制错历史（P0）、事件镜像假水位/丢事件、压缩可清空整个会话、parent_id 从未写入、损坏恢复丢失项目归属、日志压缩吞并发追加；另修掉真机抓到的恢复启动竞态",
-    "pub_date":  "2026-09-18T06:32:20Z",
+    "version":  "1.16.72",
+    "notes":  "UI/UX 语义审计：笔记编辑缓冲不跟着换（保存会覆盖目标笔记）、分层配置子目录按身份选中（否则写错文件）、代码图谱整段设置因 ESM 里用 require 而全失效、微信白名单「移除」标签改为与行为一致",
+    "pub_date":  "2026-09-18T06:59:47Z",
     "platforms":  {
                       "windows":  {
-                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dPbnpkN2VOSnpKSXpGb2M4MVN1OUJZdDdjN1Z3cWRIWTdBUG5ocW5WRGZkYitQUVcvcElYSUZncWhpRkVpRk1yUmNkZy9vYnA3dHpaa3ErNEoza1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzEzMDA2CWZpbGU6Q29kZW1fMS4xNi43MF94NjQtc2V0dXAuZXhlCmhMVGk4VG9ralVWa3NtbWo3VFpubkZBSWxjMXVudlUvWHNtNVZFbWQveDJNamFEeWEzWHdQajJEUDNIQkxSSmdzdWFianMrM0wxNDU3ZENrSzdFa0RRPT0K",
-                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.70/Codem_1.16.70_x64-setup.exe"
+                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RqWjZiRWRNWTlncmFJV2s4OWU4cnhnUDFndHF1UElPY2t5VVdYL1hVcWdIQlo4NmZRMDJTNEg3UENWb2tYQm9DdkF0bkptZmtGQ2tRRDNIdlZVcXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzE0NjU5CWZpbGU6Q29kZW1fMS4xNi43Ml94NjQtc2V0dXAuZXhlCmJZL2FvS1plZWw5dGE2WVBqSmYwWkQ3ZFlQb0owK2NiYXlxODdQc0hpb3VUcEZtMWlUM3JQclNldURLY3k0a0IxeUduTEd3Q0RFY3FrcUpWaU1HTUNRPT0K",
+                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.72/Codem_1.16.72_x64-setup.exe"
                                   }
                   }
 }
