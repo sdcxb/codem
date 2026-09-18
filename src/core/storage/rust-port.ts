@@ -491,6 +491,26 @@ class RustEnginePort implements StorageEnginePort {
         } catch (e) {
           console.warn("[Storage] 还原抢救出来的项目归属失败（会话会落到全局项目）:", e);
         }
+        /**
+         * 第 57 轮：**设置**也要从那份备份里救回来（否则永久丢失）。
+         *
+         * 为什么必须在这一步：库损坏 → 引擎建了一份**全新空库**，而设置（模型/provider
+         * 选择、安全模式、主题、语言、插件禁用清单…）**不在会话 JSONL 里** ——
+         * 消息有权威日志、归属有上面的抢救，只有设置**一个等价物都没有**。
+         * 那份坏文件里它们通常是读得出来的（引擎已抄进旁路文件）。
+         *
+         * 策略（哪些写、哪些**绝对不写**）在 `recovery-restore.ts::BLOCKED_RESTORE_KEYS`
+         * 上逐条写着理由 —— 这里只负责调用与记账。
+         */
+        try {
+          const { restoreRecoveredSettings } = await import("./recovery-restore");
+          const s = restoreRecoveredSettings(salvaged);
+          if (s.failed > 0) {
+            console.warn(`[Storage] 损坏恢复：${s.failed} 条设置未能写回（其余已按策略处理）`);
+          }
+        } catch (e) {
+          console.warn("[Storage] 还原抢救出来的设置失败（用户偏好需要重新设置）:", e);
+        }
         try {
           const { markIndexRebuildNeeded } = await import("./maintenance");
           await markIndexRebuildNeeded(`存储库损坏后重建（备份：${backup}）`);

@@ -40,6 +40,7 @@
  */
 
 import { reportPersistFailure } from "./persist-failure";
+import { getSetting, setSetting } from "./settings";
 
 /** `health.recovered_projects` 的形状（由 Rust `storage_health` 提供） */
 export interface RecoveredProjectsPayload {
@@ -53,6 +54,8 @@ export interface RecoveredProjectsPayload {
     last_accessed_at?: unknown;
   }>;
   sessions?: Array<{ id?: unknown; project_id?: unknown }>;
+  /** 第 57 轮：抢救出来的 `settings` 行（引擎侧「如实抄出来」，**写不写由这里决定**） */
+  settings?: Array<{ key?: unknown; value?: unknown; updated_at?: unknown }>;
 }
 
 export interface RestoreRecoveredResult {
@@ -65,7 +68,98 @@ export interface RestoreRecoveredResult {
 }
 
 /**
- * 把抢救出来的行还原进索引。
+ * ## 第 57 轮：哪些 `settings` 键**绝对不许**从损坏库继承回来（每条都要有理由）
+ *
+ * 背景：库损坏后引擎会把能读出来的 `settings` 抄进旁路文件（见
+ * `engine.rs::salvage_projects_from_corrupt` 的注释 —— 那是审计里
+ * 「损坏库备份**无等价物**」的真身：消息有权威日志、归属有抢救，**只有设置什么都没有**）。
+ *
+ * 但"能读出来"不等于"该写回去"：这几个键描述的是**那份旧索引的派生状态**，
+ * 把它们带到一份**全新的空库**上，会让新库的自我修复机制做出错误判断。
+ */
+export const BLOCKED_RESTORE_KEYS: ReadonlyArray<{ key: string; why: string }> = [
+  {
+    key: "codem-storage-content-watermark",
+    why:
+      "自愈水位：它记的是上一次的 messages/sessions 行数。新库此刻**是空的**" +
+      "（消息要从权威日志重建），而自愈的判据是「上次有很多、现在 0 条 ⇒ 疑似丢失」⇒ " +
+      "跑 `migration.auto`。而那条命令是 **replace 语义的整库重写**（会先用旧库那份**陈旧**内容" +
+      "覆盖新库）—— 恢复水位等于在新库上**主动武装一条破坏性路径**。不恢复时没有基线，" +
+      "自愈只会记录新水位，什么都不做（这才是正确的沉默）。",
+  },
+  {
+    key: "codem-fts-bigram-rebuilt",
+    why:
+      "FTS 重建标记：新库的全文索引是空的，继承「已经重建过」会让重建被跳过 —— " +
+      "中文搜索从此搜不到东西，而且是静默的。",
+  },
+  {
+    key: "codem-storage-integrity-checked-at",
+    why:
+      "完整性检查时间戳：它给检查上了最长 12 小时的节流。而这时我们**刚从一个坏文件里爬出来**，" +
+      "磁盘/文件系统可能还有问题 —— 新库应当尽快做一次自检，而不是被旧时间戳推迟半天。",
+  },
+];
+
+/**
+ * 把抢救出来的 `settings` **按策略**写回（第 57 轮）。
+ *
+ * ## 三条硬规则
+ *
+ * 1. **只补缺失**：新库里已经有这个键就**不动**（哪怕值不同）。
+ *    理由：启动早期渲染侧会主动写一些设置（上次打开的会话、模型/provider 同步、安全模式…），
+ *    那些是"这一版真正想要的当前状态"，而抢救来的是**旧库那一刻**的快照 ——
+ *    覆盖等于让用户看到设置自己跳回去；
+ * 2. **黑名单不许继承**（见 `BLOCKED_RESTORE_KEYS`，每条都有理由）；
+ * 3. **如实计数**：写入成功 / 因为已有而跳过 / 因为黑名单而拒绝，三类分别报数 ——
+ *    "抢救到了 12 条设置"这种话必须能被拆开验证。
+ *
+ * 失败处置：单条写失败只计数并上报，**不影响**恢复本身（消息仍从日志重建）。
+ */
+export function restoreRecoveredSettings(payload: unknown): {
+  restored: number;
+  keptExisting: number;
+  blocked: number;
+  failed: number;
+  blockedKeys: string[];
+} {
+  const out = { restored: 0, keptExisting: 0, blocked: 0, failed: 0, blockedKeys: [] as string[] };
+  const p = payload as RecoveredProjectsPayload | null | undefined;
+  const rows = Array.isArray(p?.settings) ? p!.settings! : [];
+  if (rows.length === 0) return out;
+
+  const blocked = new Set(BLOCKED_RESTORE_KEYS.map((b) => b.key));
+  for (const row of rows) {
+    const key = typeof row?.key === "string" ? row.key : "";
+    if (!key) continue;
+    if (blocked.has(key)) {
+      out.blocked += 1;
+      out.blockedKeys.push(key);
+      continue;
+    }
+    const value = typeof row?.value === "string" ? row.value : "";
+    try {
+      if (getSetting(key) !== null) {
+        out.keptExisting += 1;
+        continue;
+      }
+      setSetting(key, value);
+      out.restored += 1;
+    } catch (e) {
+      out.failed += 1;
+      reportPersistFailure("storage.recoveryRestore.setting", e, `设置 ${key} 未从损坏库恢复`);
+    }
+  }
+  if (out.restored > 0 || out.blocked > 0) {
+    console.log(
+      `[Storage] 损坏恢复：设置已恢复 ${out.restored} 条` +
+        `（已有而保留 ${out.keptExisting} 条；按策略拒绝 ${out.blocked} 条：${out.blockedKeys.join(", ") || "无"}）`,
+    );
+  }
+  return out;
+}
+
+/** 把抢救出来的行还原进索引。
  *
  * @param payload `health.recovered_projects`（缺省/形状不对 → 什么都不做）
  * @returns 写回的行数（供调用方记日志与上报）

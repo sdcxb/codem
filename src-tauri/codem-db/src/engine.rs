@@ -60,7 +60,7 @@ pub struct Engine {
     import_written: Mutex<usize>,
 }
 
-/// 从**损坏的旧库**里抢救"项目 / 会话归属"，写成旁路文件。
+/// 从**损坏的旧库**里抢救"项目 / 会话归属 / **设置**"，写成旁路文件。
 ///
 /// ## 为什么必须抢救（第 47 轮补：一个"零缺口"清单上的真缺口）
 ///
@@ -81,12 +81,29 @@ pub struct Engine {
 /// 抢救的唯一来源就是那份坏文件的备份（"备份不能省"的理由之一，见
 /// `open_with_recovery` 的注释）。读得到的部分（哪怕只有 `sessions` 表）就够救归属。
 ///
+/// ## 第 57 轮补：**`settings` 也必须抢救**（同一个缺口的另一半）
+///
+/// 上一段列出的"能从日志还原"清单里**没有 `settings`**：会话 JSONL 记的是消息，
+/// 而设置（模型/provider 选择、安全模式、主题、语言、各类水位与标记、插件禁用清单…）
+/// **只存在于索引库里**。于是"库损坏 → 建新库"这条路上，用户的全部偏好设置
+/// 连同那份坏文件一起被搁置 —— 而坏文件里它们**通常是读得出来的**。
+/// 这就是审计里那条「损坏库备份**无等价物**」的真身：
+/// 消息有等价物（权威日志）、归属有等价物（本函数）、**设置一个都没有**。
+///
+/// 所以这里把 `settings` 一起抄进旁路文件（形状见下面的写文件段），
+/// 由渲染侧按**一份显式策略**决定哪些能往回写 ——
+/// 策略里最关键的三条"**不许继承**"写在渲染侧 `recovery-restore.ts`
+/// 的 `BLOCKED_RESTORE_KEYS` 上（内容水位会武装自愈的破坏性路径、
+/// 完整性检查时间戳会让新库推迟自检、FTS 重建标记会让新库跳过重建）。
+///
 /// ## 为什么写成**旁路文件**而不是直接写进新库
 ///
 /// 抢救时机在 `open()` 里，那时**渲染侧还没开始重建**，而重建（`messages.rebuild_index`）
 /// 自己会 upsert `sessions` 行。两条路都写 `sessions` 会变成"两个写入者"，
 /// 且引擎侧不知道哪些会话该有行（消息清单在渲染侧）。旁路文件是**一次性、只读的输入**：
 /// 渲染侧重建时读它补 `projectOf`，读完即用，不产生第二个真相源。
+/// `settings` 走同一条路还有个额外好处：**删掉旁路文件就等于"不要这次抢救"**，
+/// 不需要去新库里回滚任何东西。
 ///
 /// ## 失败处置（关键：**绝不影响恢复本身**）
 ///
@@ -95,6 +112,11 @@ pub struct Engine {
 /// —— 恢复的主要价值是"应用还能用 + 消息从日志回来"，归属抢救是**加分项**。
 /// 抢救不到时渲染侧仍会走原来的路径（落到全局项目 + `withoutProject` 计数 + 告警），
 /// 也就是说**这一步只可能变好，不可能把恢复弄坏**。
+///
+/// ⚠️ 第 57 轮同时把"**`sessions` 读不出来就整体放弃**"这个闸门去掉了：
+/// 原来 `if sessions.is_empty() { return 0 }` 会让"只有 settings 读得出来"的坏库
+/// **连设置也救不回来** —— 而设置与 `sessions` 的可读性完全独立（不同页、不同表）。
+/// 现在三张表各自尽力，谁能读出来就救谁（返回条数，写文件的条件是"有任意一项"）。
 fn salvage_projects_from_corrupt(backup: &Path, db_path: &Path) -> usize {
     // 只读打开：绝不动那份备份（它可能是用户唯一的物证）
     let src = match Connection::open_with_flags(
@@ -156,10 +178,31 @@ fn salvage_projects_from_corrupt(backup: &Path, db_path: &Path) -> usize {
         }
     }
 
-    if sessions.is_empty() {
-        return 0;
+    /*
+     * `settings`：**独立尽力**（第 57 轮）。
+     *
+     * 读不出来就是 0 条（`Err(_) => Vec::new()`），**不影响**上面两张表的抢救 ——
+     * 这正是"某张表的损坏不该连累其它表"的落点。
+     */
+    let mut settings: Vec<(String, String, i64)> = Vec::new();
+    if let Ok(mut stmt) = src.prepare("SELECT key, value, updated_at FROM settings") {
+        if let Ok(rows) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1).unwrap_or_default(),
+                r.get::<_, i64>(2).unwrap_or(0),
+            ))
+        }) {
+            for row in rows.flatten() {
+                settings.push(row);
+            }
+        }
     }
+
     drop(src);
+    if projects.is_empty() && sessions.is_empty() && settings.is_empty() {
+        return 0; // 什么都读不出来：不留空文件（渲染侧按"没有抢救数据"处理）
+    }
 
     // 只写**能从坏库里读出来的**那些行。用旁路文件承载，引擎不碰新库。
     let mut out = String::from("{\n  \"projects\": [\n");
@@ -185,13 +228,23 @@ fn salvage_projects_from_corrupt(backup: &Path, db_path: &Path) -> usize {
             json_str(project_id),
         ));
     }
+    out.push_str("  ],\n  \"settings\": [\n");
+    for (i, (key, value, updated_at)) in settings.iter().enumerate() {
+        let comma = if i + 1 == settings.len() { "" } else { "," };
+        out.push_str(&format!(
+            "    {{\"key\":{},\"value\":{},\"updated_at\":{}}}{comma}\n",
+            json_str(key),
+            json_str(value),
+            updated_at,
+        ));
+    }
     out.push_str("  ]\n}\n");
 
     let sidecar = salvage_sidecar_path(db_path);
     if std::fs::write(&sidecar, out).is_err() {
         return 0; // 写不进去 = 抢救不到（渲染侧会按原路径走并如实告警）
     }
-    sessions.len()
+    sessions.len() + settings.len()
 }
 
 /// 抢救文件的路径：与库同目录的 `<db>.recovered-projects.json`
@@ -652,5 +705,113 @@ impl Engine {
     /// 是否有进行中的导入事务（诊断用）
     pub fn import_in_progress(&self) -> bool {
         self.import_open.lock().map(|g| *g).unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod salvage_tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    /// 造一个"正常库"，用于验证抢救**读取**逻辑（不制造损坏）。
+    ///
+    /// ## 为什么这里不造损坏（分工说明）
+    ///
+    /// 恢复链路有三段：① `open_inner` 判 CORRUPT → ② `backup_corrupt_file` 改名 →
+    /// ③ `salvage_projects_from_corrupt` 读备份写旁路文件。
+    /// `engine_tests::corrupt_recovery_salvages_project_attribution` 覆盖的是"①→② 会发生、
+    /// 且恢复后库可用"，而它**允许旁路文件不存在**（坏到读不出任何表时本就该没有）
+    /// —— 所以它钉不住"抢救到底抄了哪些表"。
+    /// 本模块直接对 ③ 下手：喂一个**能读的文件**，逐项断言旁路文件的内容。
+    /// 两段合起来才是完整链路（③ 在真机上的触发条件由 ① 保证）。
+    fn seed_db(path: &std::path::Path) {
+        let engine = Engine::open(path).unwrap();
+        engine
+            .write_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO projects (id, name, path, description, pinned, created_at, last_accessed_at) \
+                     VALUES ('p1','mimo-gui','C:/mimo-gui',NULL,0,1,1)",
+                    [],
+                )
+                .map_err(DbError::from)?;
+                tx.execute(
+                    "INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count, pinned) \
+                     VALUES ('s1','p1','对话 1',1,1,0,0)",
+                    [],
+                )
+                .map_err(DbError::from)?;
+                for (k, v) in [
+                    ("codem-language", "zh"),
+                    ("codem-theme", "dark"),
+                    // 这条**必须**被抄进旁路文件：它是"不许继承"的键之一，
+                    // 但"读出来"和"写回去"是两件事 —— 策略在渲染侧，
+                    // 引擎侧只负责**如实抄出来**（渲染侧才有"该不该写回"的知识）。
+                    ("codem-storage-content-watermark", "{\"at\":1,\"messages\":821}"),
+                ] {
+                    tx.execute(
+                        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, 1)",
+                        rusqlite::params![k, v],
+                    )
+                    .map_err(DbError::from)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        let _ = engine.checkpoint();
+    }
+
+    #[test]
+    fn salvage_sidecar_carries_settings_and_ownership() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("codem-db-rust.bin");
+        seed_db(&live);
+
+        // 直接把"活库"当成备份喂进去（读取逻辑与真备份完全同一条路径）
+        let n = salvage_projects_from_corrupt(&live, &live);
+        assert!(n >= 4, "应当救出 2 项归属 + 3 条设置，实际 {n}");
+
+        let sidecar = salvage_sidecar_path(&live);
+        let text = std::fs::read_to_string(&sidecar).expect("旁路文件必须写出来");
+        let v: Value = serde_json::from_str(&text).expect("必须是合法 JSON（半截文件会让渲染侧解析失败）");
+
+        // ⚠️ 项目行**不止 1 条**：schema 阶段会种一行 `id = ""` 的"全局项目"
+        // （`sessions.project_id` 缺省就是 `""`，靠这一行满足外键）。
+        // 第一版断言 `len() == 1` 就是这么红的 —— 判据要盯"我们那条在不在"，
+        // 而不是"总数等于几"（总数由 schema 决定，不是本函数的行为）。
+        let projects = v["projects"].as_array().unwrap();
+        assert!(
+            projects.iter().any(|p| p["id"] == json!("p1") && p["name"] == json!("mimo-gui")),
+            "项目必须逐字带出：{projects:?}"
+        );
+        assert_eq!(v["sessions"].as_array().unwrap().len(), 1);
+        assert!(
+            v["sessions"].as_array().unwrap()[0]["project_id"] == json!("p1"),
+            "会话归属必须带出：{:?}",
+            v["sessions"]
+        );
+        let settings = v["settings"].as_array().expect("必须有 settings 数组（第 57 轮新增）");
+        assert_eq!(settings.len(), 3, "三条设置都要抄出来：{settings:?}");
+        assert!(
+            settings.iter().any(|s| s["key"] == json!("codem-language") && s["value"] == json!("zh")),
+            "键值必须逐字带出：{settings:?}"
+        );
+        assert!(
+            settings.iter().any(|s| s["key"] == json!("codem-storage-content-watermark")),
+            "「不许继承」的键也要**读出来**（读与写是两件事，策略在渲染侧）"
+        );
+    }
+
+    #[test]
+    fn salvage_returns_zero_and_writes_nothing_for_unreadable_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("codem-db-rust.bin");
+        std::fs::write(&live, vec![0x41u8; 8192]).unwrap();
+
+        let n = salvage_projects_from_corrupt(&live, &live);
+        assert_eq!(n, 0, "读不出来的文件不许报成'抢救到了'");
+        assert!(
+            !salvage_sidecar_path(&live).exists(),
+            "读不出任何东西时**不许留空文件** —— 空文件会让渲染侧以为'抢救过但没有内容'"
+        );
     }
 }

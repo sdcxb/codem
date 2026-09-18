@@ -469,11 +469,17 @@ pub fn storage_health(state: State<'_, StorageState>) -> StorageReply {
 /// 读一次"损坏抢救"旁路文件并缓存。
 ///
 /// 文件由引擎在 `open_with_recovery` 里写成（`<db>.recovered-projects.json`），
-/// 形状：`{ "projects": [...], "sessions": [{"id","project_id"}, ...] }`。
+/// 形状：`{ "projects": [...], "sessions": [{"id","project_id"}], "settings": [{"key","value","updated_at"}] }`。
 ///
-/// 读不到 / 解析不了 → `None`：**这不是错误**（库损坏到读不出 `sessions` 表时就没有这个文件，
+/// ⭐ 第 57 轮加了 `settings` 一节（审计里「损坏库备份**无等价物**」的闭合动作）：
+/// 消息有权威日志、归属有 `projects`/`sessions` 这两节，而**设置原本一个等价物都没有** ——
+/// 库损坏建新库之后，用户的偏好就永久没了。**写不写回由渲染侧的策略决定**
+/// （`recovery-restore.ts::BLOCKED_RESTORE_KEYS` 逐条写着哪些不许继承），
+/// 引擎这边只负责"如实抄出来"。
+///
+/// 读不到 / 解析不了 → `None`：**这不是错误**（库损坏到读不出这些表时就没有这个文件，
 /// 或者它被用户删了）。渲染侧会走原来的路径（落到全局项目 + `withoutProject` 告警），
-/// 也就是说这条路径**只可能把归属救回来，不可能让恢复变坏**。
+/// 也就是说这条路径**只可能把归属与设置救回来，不可能让恢复变坏**。
 fn recovered_projects_cached(backup: &str) -> Option<Value> {
     use std::sync::OnceLock;
     static CACHE: OnceLock<Option<Value>> = OnceLock::new();
