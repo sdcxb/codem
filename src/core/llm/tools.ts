@@ -12,6 +12,68 @@ let _ctx: Context | null = null;
 /** R4: 设置 Cordis Context — 传入后工具通过 ctx.get() 消费服务 */
 export function setToolContext(ctx: Context) { _ctx = ctx }
 
+// ========== 工具禁用（第 47 轮补：让「工具管理」的开关真的生效） ==========
+
+/**
+ * 「工具管理」面板写入的禁用列表键。
+ *
+ * ⚠️ 第 47 轮补之前这个键**全仓没有任何读取方**：面板写着"禁用的工具不会出现在
+ * LLM 的可用工具列表中"，而模型侧的工具集构建完全不过滤 —— 用户把 `bash` 关掉，
+ * 界面上看着关了（重启后也还是关的，设置确实落库了），**但模型照样能调用它**。
+ * 安全侧的开关说假话，比没有这个开关更糟：用户会据此放松警惕。
+ */
+const DISABLED_TOOLS_KEY = "codem-disabled-tools";
+
+/**
+ * 禁用列表的进程内缓存。
+ *
+ * 为什么缓存：`getAll()` / `execute()` 都在**每次工具调用**的热路径上，
+ * 而读设置要过端口（再序列化一次 JSON）。缓存由 `ToolManager` 面板的写入路径失效。
+ */
+let disabledToolIdsCache: Set<string> | null = null;
+
+/** 读禁用列表（带缓存）。读不到就按"什么都没禁用"处理 —— 与旧行为一致，不会凭空禁用工具 */
+function disabledToolIds(): Set<string> {
+  if (disabledToolIdsCache) return disabledToolIdsCache;
+  let list: string[] = [];
+  try {
+    const raw = getSetting(DISABLED_TOOLS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) list = parsed.map((v) => String(v));
+  } catch {
+    list = [];
+  }
+  disabledToolIdsCache = new Set(list);
+  return disabledToolIdsCache;
+}
+
+/** 这个工具是否被用户禁用（定义层与执行层共用同一个判据） */
+export function isToolDisabled(toolId: string): boolean {
+  let disabled = false;
+  try {
+    disabled = disabledToolIds().has(toolId);
+  } catch {
+    /**
+     * 判据本身出错时**不放行**：安全侧的开关宁可多拦一次
+     * （模型会看到明确的拒绝原因，用户也能在「工具管理」里看到它是禁用状态），
+     * 也不能在判据坏掉时静默放行。
+     */
+    console.warn("[tools] 禁用列表判据出错，本次按「已禁用」处理（安全侧宁可多拦）");
+    disabled = true;
+  }
+  return disabled;
+}
+
+/**
+ * 让禁用列表缓存失效（`ToolManager` 面板切换开关后必须调用）。
+ *
+ * 没有这一步，用户关掉一个工具之后**当前进程内仍然能调用它** ——
+ * 那正是"开关说要生效、实际没生效"的同一类缺陷。
+ */
+export function invalidateDisabledToolsCache(): void {
+  disabledToolIdsCache = null;
+}
+
 /** R4: 获取 Cordis Context */
 export function getToolContext(): Context | null { return _ctx }
 
@@ -463,7 +525,7 @@ export class ToolRegistry {
   }
 
   getAll(): ToolDef[] {
-    return Array.from(this.tools.values());
+    return Array.from(this.tools.values()).filter((t) => !isToolDisabled(t.id));
   }
 
   getDefinitions(): ToolDefinition[] {
@@ -535,6 +597,35 @@ export class ToolRegistry {
     args: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolCallResult> {
+    /**
+     * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：**禁用必须真的是禁用**
+     *
+     * 「工具管理」面板写着"禁用的工具不会出现在 LLM 的可用工具列表中"，
+     * 而 `codem-disabled-tools` 这个键**全仓没有任何读取方** —— 用户把 `bash`
+     * 关掉、行变灰、重启后还是关的（设置真的落库了），但发给模型的工具列表
+     * 完全不过滤：**他以为收回了权限，实际一点没变**。安全侧的开关说假话尤其危险。
+     *
+     * 修法分两层（缺一不可）：
+     * 1. **定义层**（`getAll` / `getCoreDefinitions` / `getDeferredDefinitions`）——
+     *    直接不把禁用的工具报给模型，模型根本看不到它；
+     * 2. **执行层**（这里）—— 拦下任何绕过定义层的调用（历史会话里残留的 tool_call、
+     *    委派子会话、插件直接调 `execute`）。只做第 1 层的话，
+     *    "禁用"仍然只是"看不见"，不是"调不到"。
+     *
+     * 返回的是**明确的错误结果**（不是抛异常、也不是静默成功）：模型能看到自己被拒，
+     * 用户能在工具卡片上看到原因。
+     */
+    if (isToolDisabled(toolName)) {
+      const reason = `工具「${toolName}」已在「工具管理」中被禁用，本次调用被拒绝`;
+      return {
+        id: toolCallId,
+        name: toolName,
+        input: args,
+        output: `Error: ${reason}`,
+        status: "error",
+        error: reason,
+      };
+    }
     // 用虚方法 get()（而非 this.tools）以便 ScopedToolRegistry 的 overlay 生效
     const tool = this.get(toolName);
     if (!tool) {
@@ -607,6 +698,11 @@ class ScopedToolRegistry extends ToolRegistry {
   }
 
   get(id: string): ToolDef | undefined {
+    // 第 47 轮补：子作用域的 `get` 同样要过禁用判据 —— `execute` 走的正是 `get`，
+    // 只过滤 `getAll` 的话"禁用"仍只是"看不见"，不是"调不到"。
+    // （`ToolRegistry.execute` 本身也有一次判据，两处都留着：
+    //   一处防"看得见"，一处防"调得到"，任一被绕过都还有另一道。）
+    if (isToolDisabled(id)) return undefined;
     if (this.overlay.has(id)) return this.overlay.get(id);
     if (this.removed.has(id)) return undefined;
     return this.parent.get(id);
@@ -616,6 +712,9 @@ class ScopedToolRegistry extends ToolRegistry {
     const result: ToolDef[] = [];
     const seen: Set<string> = new Set();
     for (const [id, tool] of this.overlay) {
+      // 第 47 轮补：overlay（子作用域自注册的工具）也必须过禁用判据 ——
+      // 只过滤父作用域的话，子智能体注册的同名/专属工具会绕过用户的开关
+      if (isToolDisabled(id)) continue;
       result.push(tool);
       seen.add(id);
     }

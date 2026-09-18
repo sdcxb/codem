@@ -256,6 +256,8 @@ const snapshotMock = vi.hoisted(() => ({
   getAll: null as null | (() => Promise<any[]>),
   restore: null as null | ((id: string) => Promise<any[]>),
   restoreCalls: [] as string[],
+  /** 第 47 轮补：回滚前会先把"将覆盖/将删除"报给用户确认，测试替身也要提供它 */
+  preview: null as null | ((id: string) => Promise<any>),
 }));
 
 vi.mock("../core/snapshot/snapshot", () => ({
@@ -263,6 +265,16 @@ vi.mock("../core/snapshot/snapshot", () => ({
     getAll: async () => {
       if (snapshotMock.getAll) return snapshotMock.getAll();
       return [];
+    },
+    /**
+     * 第 47 轮补：`SnapshotPanel` 在回滚前会先 `preview()` 拿影响面
+     * （只读，不写任何东西），再用确认框把具体数字给用户看。
+     * 替身必须提供它 —— 否则面板会在"算影响面"这一步就失败并直接返回，
+     * `restore` 永远不会被调用（这正是这条用例最初变红的原因）。
+     */
+    preview: async (id: string) => {
+      if (snapshotMock.preview) return snapshotMock.preview(id);
+      return { willModify: [], willDelete: [], total: 0 };
     },
     restore: async (id: string) => {
       snapshotMock.restoreCalls.push(id);
@@ -286,10 +298,31 @@ function snapshotFixture(id: string) {
 }
 
 describe("RL-2 SnapshotPanel 读取失败可见 + 回滚全局守卫（P2-9）", () => {
+  /** 第 47 轮补：回滚前的确认框替身（jsdom 没实现 `window.confirm`） */
+  let confirmStub: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     snapshotMock.getAll = null;
     snapshotMock.restore = null;
+    snapshotMock.preview = null;
     snapshotMock.restoreCalls.length = 0;
+    /**
+     * 第 47 轮补：回滚前多了一道"把影响面给用户确认"的确认框
+     * （`window.confirm`）。jsdom 里没有实现，默认返回 `undefined` = 取消 ——
+     * 不 stub 的话回滚根本不会执行，RL-2b 会以"restore 没被调用"的形式变红。
+     * 这里返回 `true`（用户点了确定）以保持该用例原本要验的东西不变：
+     * **回滚在途时按钮自锁 + 守卫是全局的**。
+     *
+     * 注意用**直接赋值**而不是 `vi.spyOn(window, "confirm")`：
+     * jsdom 的 `window.confirm` 在部分环境下不可 spy（会抛"cannot spy on"），
+     * 而这里只需要一个可控的替身。
+     */
+    confirmStub = vi.fn(() => true);
+    (window as unknown as { confirm: unknown }).confirm = confirmStub;
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { confirm?: unknown }).confirm;
   });
 
   it("RL-2a: 列表读取失败要显示失败原因，而不是伪装成「暂无快照」", async () => {
@@ -302,6 +335,31 @@ describe("RL-2 SnapshotPanel 读取失败可见 + 回滚全局守卫（P2-9）",
     expect(body).toContain("db locked");
     expect(body).not.toMatch(/暂无快照/);
     expect(getPersistFailures().some((f) => f.area === "snapshotPanel.getAll")).toBe(true);
+  });
+
+  /**
+   * 第 47 轮补（UI/UX 审计 P0）：回滚是**破坏性**的（覆盖文件 + 删除快照之后新建的文件），
+   * 所以"用户点取消就什么都不许发生"是本轮加的那道防线的核心 —— 用例必须守着它。
+   */
+  it("RL-2c: 用户在确认框点「取消」→ 绝不能发生任何回滚", async () => {
+    confirmStub.mockReturnValue(false);
+    const one = [snapshotFixture("cccc3333")];
+    snapshotMock.getAll = async () => one;
+    snapshotMock.restore = async () => [];
+
+    const mounted = render(createElement(SnapshotPanel, { cwd: "C:/repo", onClose: () => {} }));
+    await settle();
+    fireEvent.click(mounted.container.querySelector(".snapshot-item-header")!);
+    await settle();
+
+    fireEvent.click(mounted.container.querySelector(".snapshot-restore-btn") as HTMLButtonElement);
+    await settle();
+
+    expect(
+      snapshotMock.restoreCalls,
+      "取消之后 restore 一次都不许被调用（这条守的是「破坏性操作必须知情」）",
+    ).toEqual([]);
+    expect(window.confirm, "确认框本身要被弹出过（否则等于没有这道防线）").toHaveBeenCalled();
   });
 
   it("RL-2b: 回滚在途时按钮自锁，且守卫是全局的（另一个快照也点不动）", async () => {

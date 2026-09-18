@@ -83,6 +83,16 @@ export function ToolManager({ onClose }: ToolManagerProps) {
       newDisabled = [...disabled, toolId];
     }
     setSettingJSON("codem-disabled-tools", newDisabled);
+    /**
+     * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：写完必须**让工具侧的缓存失效**
+     *
+     * 模型侧的工具集构建（`tools.ts`）在每次工具调用的热路径上，所以那边对禁用列表
+     * 做了进程内缓存。少了这一步，用户关掉一个工具之后**当前进程内仍然能调用它**
+     * —— 那正是"开关说要生效、实际没生效"的同一类缺陷（这一次是安全侧的）。
+     */
+    void import("../core/llm/tools")
+      .then((m) => m.invalidateDisabledToolsCache())
+      .catch((e) => console.warn("[ToolManager] 让禁用列表缓存失效失败（重启后仍会生效）:", e));
 
     setTools((prev) =>
       prev.map((t) => (t.tool.id === toolId ? { ...t, enabled } : t)),

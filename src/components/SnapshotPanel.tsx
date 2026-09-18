@@ -64,6 +64,23 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
     setLoading(false);
   };
 
+  /**
+   * ## ⚠️ 第 47 轮补（UI/UX 审计 P0）：回滚**必须**先让用户看到真实影响并确认
+   *
+   * 原实现是"单击即执行"：覆盖快照里记过的文件、**永久删除**快照之后新建的文件，
+   * 没有确认、没有撤销、也没留回滚前的快照。仓库对**更轻**的操作都有确认
+   * （删会话走 `ConfirmDialog`、删项目有回收站选项、清遥测有自绘确认、恢复面板有两处
+   * `confirm`），只有这两个真正动用户工作区文件的入口没有。
+   *
+   * 现在分两步：
+   * 1. `service.preview(snapshotId)` 先算出"将覆盖哪些、将删除哪些"（**不写任何东西**）；
+   * 2. 用 `window.confirm` 把**具体数字与文件名**说清 —— 用户是在知情下点的。
+   *    （用 `window.confirm` 而不是自绘对话框：这条路径要能被 `dsh-integration` 之外的
+   *     任何宿主环境驱动，且 webview 的原生确认框不会与浮层层级打架。）
+   *
+   * 至于"可撤销"：`service.restore()` 内部会在动手前自动存一份**回滚前快照**，
+   * 所以这次回滚本身是可逆的 —— 那句提示一并写进确认框，让用户知道有后悔药。
+   */
   const handleRestore = async (snapshotId: string) => {
     // P2-9(b)：回滚守卫必须是**全局**的，不能按快照粒度。
     // 原实现 `restoring === snapshotId` 只禁用被点的那一个按钮 —— 展开 A 点回滚、
@@ -74,10 +91,41 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
       setTimeout(() => setToast(null), 3000);
       return;
     }
+
+    // ① 先算影响面（只读，不写任何东西）
+    const service = getSnapshotService(cwd);
+    let preview: { willModify: string[]; willDelete: string[]; total: number };
+    try {
+      preview = await service.preview(snapshotId);
+    } catch (e: any) {
+      setToast({ type: "error", text: `无法读取快照内容，回滚未执行：${e?.message || "未知错误"}` });
+      setTimeout(() => setToast(null), 4000);
+      return;
+    }
+
+    // ② 让用户在**知情**下确认
+    const fileList = (paths: string[], limit = 5) =>
+      paths
+        .slice(0, limit)
+        .map((p) => `  · ${p.split(/[\\/]/).pop()}`)
+        .join("\n") + (paths.length > limit ? `\n  · …还有 ${paths.length - limit} 个` : "");
+    const lines = [
+      "回滚会改写你的工作区文件：",
+      preview.willModify.length > 0 ? `\n将覆盖 ${preview.willModify.length} 个文件：\n${fileList(preview.willModify)}` : "",
+      preview.willDelete.length > 0
+        ? `\n将删除 ${preview.willDelete.length} 个文件（快照之后新建的，会进回收站）：\n${fileList(preview.willDelete)}`
+        : "",
+      preview.willModify.length === 0 && preview.willDelete.length === 0
+        ? "\n（当前工作区与快照一致，没有文件需要改动）"
+        : "",
+      "\n\n回滚前会自动存一份快照，所以这次回滚可以再退回。",
+      "\n确定继续吗？",
+    ];
+    if (!window.confirm(lines.filter(Boolean).join("\n"))) return;
+
     restoringRef.current = snapshotId;
     setRestoring(snapshotId);
     try {
-      const service = getSnapshotService(cwd);
       const changes = await service.restore(snapshotId);
       onRestore?.(snapshotId);
       await loadSnapshots();

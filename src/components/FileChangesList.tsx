@@ -36,7 +36,39 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
     return unsub;
   }, [loadRecords]);
 
+  /**
+   * ## ⚠️ 第 47 轮补（UI/UX 审计 P0）：单轮变更回滚也要先确认
+   *
+   * `FileChangeTracker.revert` 做的是"反向打补丁 + `Remove-Item -Force` 删掉本轮新建的文件"
+   * —— 同样是**动用户工作区文件**，而这里原来是单击即执行、没有确认也没有撤销。
+   * 与 `SnapshotPanel` 那条入口一起补齐（仓库里更轻的操作都有确认，只有这两处没有）。
+   *
+   * 确认框里把**文件清单**说清：用户是在知道"要动哪几个文件"的前提下点的。
+   */
   const handleRevert = async (record: TurnFileChangeRecord) => {
+    // `changed_files` 是 JSON 文本列（`[{path, status, …}]`）—— 解析失败就退回只报条数的文案
+    let files: Array<{ path: string; status: string }> = [];
+    try {
+      const parsed = record.changed_files ? JSON.parse(record.changed_files) : [];
+      if (Array.isArray(parsed)) files = parsed;
+    } catch (e) {
+      console.warn("[FileChangesList] changed_files 解析失败（回滚确认框只报条数）:", e);
+    }
+    const fileList =
+      files
+        .slice(0, 8)
+        .map((f) => `  · ${f.status} ${f.path.split(/[\\/]/).pop()}`)
+        .join("\n") + (files.length > 8 ? `\n  · …还有 ${files.length - 8} 个` : "");
+    const msg =
+      `回滚这一轮的改动会改写你的工作区文件：\n\n` +
+      (files.length > 0
+        ? `将反向应用 ${files.length} 个文件的改动` +
+          (files.some((f) => f.status === "A") ? `（其中新增的文件会被删除）` : "") +
+          `：\n${fileList}\n\n`
+        : `将反向应用这一轮记录的全部改动。\n\n`) +
+      `这一步没有自动快照，确定继续吗？`;
+    if (!window.confirm(msg)) return;
+
     const ok = await FileChangeTracker.revert(record.id, workspace);
     if (ok) {
       loadRecords();
