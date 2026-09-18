@@ -2310,9 +2310,34 @@ export class RustStoragePort implements StoragePort {
     this.events.enqueue(job, "events.compact", "事件压缩未写入索引（下次启动会重新读取）");
   }
 
-  /** 供事件日志使用：删除会话事件 */
+  /**
+   * 供事件日志使用：删除会话事件。
+   *
+   * ## ⚠️ 第 55 轮：必须显式 `confirm_bulk` —— 不带它真引擎会**拒绝**
+   *
+   * 引擎侧这条命令装了批量删除闸门（`repo.rs::events_delete_session`，
+   * 与 `crud.delete` / `sessions.delete` 共用同一份判据：受保护表单次删除超过 50 行必须显式确认）。
+   * 真机实测（临时库、60 条事件）：
+   *
+   * ```text
+   * events.delete_session { session_id: "s1" }
+   *   → {"code":"OTHER","message":"参数 confirm_bulk 不合法：拒绝级联删除：
+   *      删除会话 s1 的全部事件 会连带删除 60 行（上限 50）…"}
+   * ```
+   *
+   * 原来这里不带这个参数，于是**任何事件数超过 50 的会话**都会走到"被拒绝"这一支；
+   * 而调用方（`event-log.ts::deleteAllForSession`）会先把**内存镜像**清空 ——
+   * 于是进程内"事件没了"、库里其实一条没少，下次加载又读回来（读写分叉的那类形态）。
+   *
+   * 传 `confirm_bulk: true` 是对的：删一个会话的全部事件**必然**超过上限，
+   * 而调用语境就是明确的破坏性操作（删除会话），与 `SessionStorage.deleteSession`
+   * 传 `confirmBulk: true` 同一个理由。
+   */
   deleteEventsAsync(sessionId: string): void {
-    const job = call(this.transport, "events.delete_session", { session_id: sessionId }).then(() => undefined);
+    const job = call(this.transport, "events.delete_session", {
+      session_id: sessionId,
+      confirm_bulk: true,
+    }).then(() => undefined);
     this.events.enqueue(job, "events.delete_session", "事件未删除（重启后会重新出现）");
   }
 }

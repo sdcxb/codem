@@ -566,8 +566,28 @@ export class EventLog {
   }
 
   /**
-   * Delete all events for a session (used when session is deleted).
-   * This is the ONLY deletion path — individual events are never deleted.
+   * 删除某会话的全部事件。
+   *
+   * ## ⚠️ 第 55 轮更正了这里的两句不实说法
+   *
+   * 原文：*"Delete all events for a session (used when session is deleted).
+   * This is the ONLY deletion path — individual events are never deleted."*
+   * 以及下面那句*"权威侧的 `deleteEventsAsync` 已经写穿，下一次加载就不会再读到它们"*。
+   * 实测结论：
+   *
+   * 1. **真正在删除会话时清掉事件的是数据库的外键级联**，不是这里 ——
+   *    真机（临时库）实测：`sessions.delete { id, confirm_bulk: true }`
+   *    → `{"affected_rows": 71, "written": 1}`（1 个会话 + 70 条事件），删完 `session_events = 0`；
+   * 2. 本函数**当前没有任何生产调用点**（全仓 grep 只有定义与注释）——
+   *    所以"这是删除会话时的唯一清理路径"这句是**假的**；
+   * 3. "已经写穿"也**不成立**：引擎侧那条命令带批量删除闸门，
+   *    事件数 > 50 时不带 `confirm_bulk` 会被**拒绝**（第 55 轮实测，见 `rust-port.ts` 里的引文），
+   *    而这里先把内存镜像清空了 —— 于是进程内"读不到事件"、库里一条没少，
+   *    重启后又读回来。**只有真写穿时**"下次加载读不到"这句话才成立。
+   *
+   * 保留这个函数（不删）的理由：它是"想清空某会话事件但**不删会话行**"时唯一可用的入口，
+   * 而且现在已经能真的写穿（`confirm_bulk`）。**没有生产调用点**这件事写在注释里，
+   * 免得下一个人以为事件清理靠它。
    */
   deleteAllForSession(sessionId: string): void {
     /**
@@ -586,8 +606,10 @@ export class EventLog {
     /**
      * **端口彻底没接手 → 如实上报"会话事件未删除"。**
      *
-     * ⚠️ 这里**不能静默 return**：`deleteAllForSession` 是删除会话时的唯一事件清理路径，
-     * 静默返回会让调用方以为"事件已经清掉了"（B 类假成功）。
+     * ⚠️ 这里**不能静默 return**：静默返回会让调用方以为"事件已经清掉了"（B 类假成功）。
+     * （第 55 轮更正：这里原来写的是"`deleteAllForSession` 是删除会话时的唯一事件清理路径"——
+     *  不实，见函数头：删除会话时真正的清理者是外键级联，且本函数当前没有生产调用点。
+     *  但"不许静默"这条要求与调用点在哪无关，所以保留。）
      * 旧库的 `DELETE FROM session_events` + `persistDatabase()` 已在 L4 收尾时删除。
      */
     reportPersistFailure(

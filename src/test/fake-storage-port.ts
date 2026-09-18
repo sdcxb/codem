@@ -1718,6 +1718,14 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
            * 早先这里写的是 `events.delete` —— 那个名字在真引擎里**不存在**
            * （会得到 `UNSUPPORTED`）。`__writes()` 是"确实写穿了"的判据，
            * 标签不能是假端口自己发明的名字，否则断言的是与真引擎无关的字符串。
+           *
+           * ⚠️ **这里刻意不复刻引擎的批量删除闸门**（>50 行要 `confirm_bulk`）：
+           * 本方法在假端口里是"整个 `RustEventsPort.deleteEventsAsync` 的替身"，
+           * 而"传不传 `confirm_bulk`"这件事发生在**被替掉的那段生产代码里** ——
+           * 假端口看不到参数，也就无法据此判定。想守那条契约只能在**真端口 + 记录型
+           * transport** 上断言（见 `rust-port-event-delete.test.ts`），
+           * 或者去引擎侧（已有 Rust 用例 `events_delete_session_respects_the_cascade_gate`）。
+           * 在这里假装复刻，只会得到一条**永远为真**的断言（第 55 轮试过这个写法）。
            */
           persist("events.delete_session", { session_id: sid });
           tables.set(

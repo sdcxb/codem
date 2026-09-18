@@ -106,3 +106,32 @@ notebook-section.txt
 # 视觉预览 / DOM 审计产物（tools/preview 的源码保留，产物忽略）
 .preview-shot/
 
+# ============================================================================
+# 运行时数据库与备份 —— **必须忽略**（第 55 轮真事故）
+# ============================================================================
+# 为什么必须有这一条：从仓库目录启动应用时，引擎的库文件就落在**工作目录**里
+# （`codem-db-rust.bin` + `-wal` / `-shm`）。这些文件里是**用户的真实数据**：
+# 全部对话正文、事件、附件元数据。
+#
+# 真事故（2026-09-18）：一次 `git add -A` 把 `codem-db-rust.bin` / `-wal` / `-shm`
+# 一起提交了；推送时被 GitHub 的 push protection 拦下 —— 因为库里某条**消息正文**
+# 含有一个长得像 GitHub OAuth token 的字符串（用户自己贴进对话的），
+# 于是"提交用户数据库"差点变成"把用户的凭据发到公开仓库"。
+# 拦下是运气好（push protection），不是设计使然；这条规则才是设计。
+#
+# 教训：**数据目录可能等于工作目录**。凡是"用户数据落到磁盘上的产物"都要在这里点名。
+codem-db-rust.bin
+codem-db-rust.bin-wal
+codem-db-rust.bin-shm
+codem-db-rust.bin.corrupt-*
+codem-db-rust.bin.pre-*
+codem-db.bin
+codem-db.bin-wal
+codem-db.bin-shm
+codem-db.bin.pre-*
+codem-db.bin.corrupt-*
+# 会话权威日志（JSONL）与运行时日志：同样是用户数据
+sessions/
+codem-runtime-*.log
+
+
