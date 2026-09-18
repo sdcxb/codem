@@ -1,15 +1,15 @@
 {
-  "version": "1.16.92",
-  "notes": "真机逐面板程序化走查（CDP + 真实鼠标事件 + 命中测试）抓到的三处界面问题：①消息悬浮工具条里「重新编辑 / 复制 / 朗读」三个按钮没有任何可访问名（相邻按钮全都有），读屏只能说\" 按钮\\；②侧边栏「任务管理」把同一个未读数显示了两遍（图标徽章",
-  "pub_date": "2026-09-18T19:32:36Z",
+  "version": "1.16.93",
+  "notes": "补上消息工具条最后两个没有可访问名的按钮（展开/折叠正文）—— 它们互斥显示，所以上一轮走查清单漏掉了。实测工具条无名按钮 0 个。",
+  "pub_date": "2026-09-18T19:41:01Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1c0OTE2eTgwQWovTzhRcDE0Wlprd3RhREZJdy9LVmxRU0Q0cXc1emRFQ3liZHg1RXlubVc2RzRRTnFhb252c1NCVmFoUmZFRklKVWF2WEJCSlliVXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU5NzAwCWZpbGU6Q29kZW1fMS4xNi45Ml94NjQtc2V0dXAuZXhlCkJuWm1mSmxVY25iNEp6T1RvYi9ieWIrQnVtQ25QT0tSR0NIR2J2RzBUYXFxMVFTRnFjcThLMjcrS3hCeUE3ZHU2VnFGK1VJYVdYRTBtcUpYWU94OERBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.92/Codem_1.16.92_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZtTEF3NVJuNXdOc0R6Y0VzdDZmTWJndVRKdkxGaUVtOGZxVmt6eFl6aExEbGhVT3dmN1g4eUVSV0FEVG9zUXhCRHdKRWE5cWhFYzhuUjd0ejdNS0EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzYwNDE0CWZpbGU6Q29kZW1fMS4xNi45M194NjQtc2V0dXAuZXhlCmxjNGc1TzR2Z2pMbUNJTkxoWlAybWd3RWN2d0lBdXFiaFFTUHN3ZGJHdUY5aE9LRitsTXRhb3FDUUtvb0xLT3R5cHdEWmRsbm5MUEpKSGlqTFlUbkJ3PT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.93/Codem_1.16.93_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1c0OTE2eTgwQWovTzhRcDE0Wlprd3RhREZJdy9LVmxRU0Q0cXc1emRFQ3liZHg1RXlubVc2RzRRTnFhb252c1NCVmFoUmZFRklKVWF2WEJCSlliVXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzU5NzAwCWZpbGU6Q29kZW1fMS4xNi45Ml94NjQtc2V0dXAuZXhlCkJuWm1mSmxVY25iNEp6T1RvYi9ieWIrQnVtQ25QT0tSR0NIR2J2RzBUYXFxMVFTRnFjcThLMjcrS3hCeUE3ZHU2VnFGK1VJYVdYRTBtcUpYWU94OERBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.92/Codem_1.16.92_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZtTEF3NVJuNXdOc0R6Y0VzdDZmTWJndVRKdkxGaUVtOGZxVmt6eFl6aExEbGhVT3dmN1g4eUVSV0FEVG9zUXhCRHdKRWE5cWhFYzhuUjd0ejdNS0EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzYwNDE0CWZpbGU6Q29kZW1fMS4xNi45M194NjQtc2V0dXAuZXhlCmxjNGc1TzR2Z2pMbUNJTkxoWlAybWd3RWN2d0lBdXFiaFFTUHN3ZGJHdUY5aE9LRitsTXRhb3FDUUtvb0xLT3R5cHdEWmRsbm5MUEpKSGlqTFlUbkJ3PT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.93/Codem_1.16.93_x64-setup.exe"
     }
   }
 }
