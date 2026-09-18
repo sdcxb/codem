@@ -142,18 +142,44 @@ export interface MaintenanceResult {
 export const AUDIT_RETENTION_DAYS = 7;
 
 /**
- * 完整性检查的节流窗口（第 45 轮，12 小时）。
+ * 完整性检查的节流窗口（第 45 轮定的 12 小时 → 第 51 轮按实测改成 **1 小时**）。
  *
- * ## 为什么必须节流、为什么是这个粒度
+ * ## 旧注释里的两个说法都必须更正（都核过）
  *
- * `PRAGMA quick_check` 真机成本实测：**901 ms @ 10k 行 / 4,469 ms @ 100k 行** ——
- * 每次启动都跑一次等于给启动加一秒到四秒半；而"数据页损坏"这种事**不需要 12 小时内发现两次**
- * （发现之后的动作是"写重建标记 → 下次索引重建"，那本身是分钟级的事）。
+ * 1. **成本数字差了一个数量级。** 原文写 "quick_check 真机实测：901 ms @ 10k 行 /
+ *    4,469 ms @ 100k 行"。第 51 轮用同一套 harness（同一个 CLI 调用方式，
+ *    并且**同时量 `health` 作为"进程启动 + 开库"的基线**，只把差值算作检查成本）
+ *    在**自己造的库**上扫了一遍规模：
  *
- * 12 小时的选择理由：它让"同一天多次启动"只跑一次，且**跨天必然跑一次** ——
- * 既覆盖"一天内至少检查一次"，也不会因为用户频繁重启而反复付那 4.5 秒。
+ *    | 规模 | 库大小 | `health`（基线） | `integrity_check` | 检查净成本 |
+ *    | --- | --- | --- | --- | --- |
+ *    | 10,000 行 | 14.1 MB | 29.5 ms | 61.7 ms | **32 ms** |
+ *    | 100,000 行 | 137.2 MB | 30.5 ms | 355.4 ms | **325 ms** |
+ *
+ *    用户真实库（16.24 MB / 822 消息 / 2,647 事件 / 61k 审计行）另测：CLI 直跑
+ *    **75–77 ms**（三次一致）；应用内一次维护含检查 **346–425 ms**、被跳过 **221 ms**。
+ *    规模趋势与旧数字同形（行数 ×10 → 成本约 ×10），但**绝对值小一个数量级**。
+ *
+ * 2. **"不能放在首屏路径上"这句话是错的。** 启动维护在 `App.tsx` 里是
+ *    `void (async () => { … await runDatabaseMaintenance() … })()` —— **后台任务**，
+ *    首屏不等它。所以那次检查**根本不延迟启动**，只占一点后台 CPU/磁盘 IO。
+ *
+ * ## 现在的策略（按实测定）
+ *
+ * - 小/中库（< 256 MB）：**1 小时**窗口。实测成本 32–325 ms，且不阻塞首屏；
+ *   把"数据页损坏但查询仍能正常返回"这种**没有别的信号**的损坏的发现延迟
+ *   从 ≤12 小时压到 ≤1 小时。
+ * - 大库（≥ 256 MB）：**保持 12 小时**。我没在 256 MB 以上量过，按未实测的规模
+ *   放宽节流是拿用户机器赌博 —— 保守留着，等有真机数据再改。
  */
-export const INTEGRITY_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
+export const INTEGRITY_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
+/** 大库的节流窗口（见上：256 MB 以上没有实测数据，保守沿用 12 小时） */
+export const INTEGRITY_CHECK_INTERVAL_LARGE_DB_MS = 12 * 60 * 60 * 1000;
+
+/** "大库"的判据（`engine.health().sizeBytes`） */
+export const INTEGRITY_CHECK_LARGE_DB_BYTES = 256 * 1024 * 1024;
+
 
 /** 上次完整性检查的时间戳存在 settings 里（`settings` 是"几行数据、读起来最便宜"的配置面） */
 export const INTEGRITY_CHECK_MARKER_KEY = "codem-storage-integrity-checked-at";
@@ -592,11 +618,15 @@ export interface IntegrityCheckOutcome {
  * 备份并重建），而渲染侧的 `integrityCheck` 生产零调用 —— 也就是说：
  * 数据页坏了，**没有任何人会知道**，用户只会看到某个查询开始报错或结果不对。
  *
- * ## 为什么必须节流（真机成本）
+ * ## 为什么必须节流（真机成本，第 51 轮按实测量过）
  *
- * `quick_check` 真机实测：**901 ms @10k 行 / 4,469 ms @100k 行**。所以：
- * - **不能放在首屏路径上**：维护本身就是 `App.tsx` 启动时 await 的一步，
- *   这一条直接加了 1–4.5 秒；这里靠"12 小时内不重复跑"把成本摊到每天一次；
+ * 实测（同 harness，`health` 作为基线只算差值）：**32 ms @10k 行 / 325 ms @100k 行**，
+ * 用户真实库 76 ms。原文写的 "901 ms @10k / 4,469 ms @100k" 与
+ * "维护是 App.tsx 启动时 await 的一步、这一条直接加 1–4.5 秒" **都与实测不符**
+ * （维护是 `void (async …)` 后台任务，首屏不等它）—— 更正见上面窗口常量的注释。
+ * 所以节流现在按库大小分档（小/中库 1 小时、大库 12 小时），
+ * 而不是为了省那几毫秒把发现延迟拉到 12 小时：
+ *
  * - **节流状态存 settings**（`INTEGRITY_CHECK_MARKER_KEY`），不是内存变量：
  *   内存变量在"用户一天开十次应用"时形同没有节流（每次都是新进程）。
  *
@@ -638,17 +668,39 @@ export async function verifyIntegrityThrottled(
   } catch (e) {
     console.warn("[Maintenance] 读完整性检查时间戳失败（本次照常检查）:", e);
   }
-  if (lastAt !== null && now - lastAt < INTEGRITY_CHECK_INTERVAL_MS) {
-    const waitH = ((INTEGRITY_CHECK_INTERVAL_MS - (now - lastAt)) / 3_600_000).toFixed(1);
+  /**
+   * 窗口按**库大小**选（第 51 轮）：小/中库 1 小时、大库 12 小时。
+   *
+   * 读大小走 `engine.health()`（一次很便宜的调用，返回值里有 `sizeBytes`）。
+   * **读不到大小不当作"大库"**：那会退化成"永远走 12 小时窗口"，
+   * 而默认更保守的那一侧在成本上毫无必要（实测最大的量级也只有几百毫秒，
+   * 且不阻塞首屏）—— 所以读不到就按小库处理，并在理由里如实说明。
+   */
+  let dbSizeBytes: number | null = null;
+  try {
+    const h = await port.engine.health();
+    if (typeof h?.sizeBytes === "number" && Number.isFinite(h.sizeBytes)) dbSizeBytes = h.sizeBytes;
+  } catch (e) {
+    console.warn("[Maintenance] 读库大小失败（本次按小库窗口判定）:", e);
+  }
+  const isLargeDb = dbSizeBytes !== null && dbSizeBytes >= INTEGRITY_CHECK_LARGE_DB_BYTES;
+  const windowMs = isLargeDb ? INTEGRITY_CHECK_INTERVAL_LARGE_DB_MS : INTEGRITY_CHECK_INTERVAL_MS;
+
+  if (lastAt !== null && now - lastAt < windowMs) {
+    const waitH = ((windowMs - (now - lastAt)) / 3_600_000).toFixed(1);
     return {
       status: "skipped",
-      reason: `距上次检查 ${((now - lastAt) / 3_600_000).toFixed(1)} 小时（${
-        INTEGRITY_CHECK_INTERVAL_MS / 3_600_000
-      } 小时内不重复跑，还需 ${waitH} 小时）`,
+      reason:
+        `距上次检查 ${((now - lastAt) / 3_600_000).toFixed(1)} 小时（${
+          windowMs / 3_600_000
+        } 小时内不重复跑，还需 ${waitH} 小时；` +
+        `库大小 ${
+          dbSizeBytes === null ? "读不到，按小库窗口" : `${(dbSizeBytes / 1048576).toFixed(1)} MB`
+        }）`,
     };
   }
 
-  /** 先写时间戳再检查：宁可"这次失败了下一次 12 小时后才重试"，也不要每次启动都付 4.5 秒 */
+  /** 先写时间戳再检查：宁可"这次失败了下一次窗口到了才重试"，也不要在失败时反复重跑 */
   try {
     await port.data.execute("settings.set", {
       key: INTEGRITY_CHECK_MARKER_KEY,
@@ -1297,7 +1349,8 @@ export async function runDatabaseMaintenance(
      *
      * 放在**最后**：它是只读的（`PRAGMA quick_check`），失败时的动作是写重建标记，
      * 而那件事应当发生在"本次维护的数据动作都做完之后"。
-     * 12 小时节流把 901 ms–4,469 ms 的成本摊到每天一次，见 `verifyIntegrityThrottled`。
+     * 节流按库大小分档（小/中库 1 小时、大库 12 小时），实测成本 32–325 ms
+     * —— 具体数字与"维护是后台任务"这两个更正见上面窗口常量的注释。
      */
     const integrityResult = await verifyIntegrityThrottled();
     integrity = integrityResult;

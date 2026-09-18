@@ -1,11 +1,11 @@
 {
-  "version": "1.16.80",
-  "notes": "索引空了、权威日志还在时界面说的是「开始新对话」：日志是权威副本、索引只是可重建的查询索引，所以索引空但日志有内容正是要救的场景，而一个空数组同时代表真没有/还在加载/日志还没读三件事。现在把日志读取也做成三态 + 空结果主动去读日志，读到就渲染、读过确实为空才落回欢迎页。",
-  "pub_date": "2026-09-18T11:58:48Z",
+  "version": "1.16.81",
+  "notes": "把完整性检查多久跑一次这条策略的判据从传闻换成实测：注释称 901ms@10k/4469ms@100k 且阻塞启动",
+  "pub_date": "2026-09-18T12:23:42Z",
   "platforms": {
     "windows": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1gxcG4yYS9wSkZCdHp2c1NGQnl6SkVITGVia0FrNFkwbW1JQy96Y2NhWkt0YXUyc0FhbDV6QXkxZldzd2hBU3lHRkpMTkF0RHZHQ3hRVzgvNDVJc3dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzMyNTE1CWZpbGU6Q29kZW1fMS4xNi44MF94NjQtc2V0dXAuZXhlCkNRSVcvZFZnY09EY1U0b21UbUxobHoyRWcxU1k3QUw4a3FZZklkbWpPeGdKUEtUdUVjd3NQZDJENzFKYXhPUW9ZWHNvNlNhZU5IdmlLMUFmYi9nS0JnPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.80/Codem_1.16.80_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1piR0hSUEppNTJEYk5sZTZ5RzFMRGhORTNKRkJQQ0EycWZyUTVrWmRHeEFtMjJYSWZZWkphQXZHaFhiYnNsRWRZYkRSMzJHSUNHWkpwanNiVmVmWHdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzM0MTI5CWZpbGU6Q29kZW1fMS4xNi44MV94NjQtc2V0dXAuZXhlCnl0TkdQZ1ZrRnN0ZlYwbzk0SmhGUXJiQXh6OVRyc2RBTm1TS2k1L0NnOFhjb29CUGxBZnNUcjJ1bHZuVXQwc2F3ZjJRZ25XdlpzRGI4dm9UeHJmVEJRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.81/Codem_1.16.81_x64-setup.exe"
     }
   }
 }
