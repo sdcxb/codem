@@ -399,6 +399,34 @@ describe("扫描器自检（门禁本身必须会咬）", () => {
     expect(classify[1].builder, "内联行不该有构造器名").toBeNull();
   });
 
+  it("GATE-13: 域写入的返回值必须被处理（跨表写入的 `false` = 静默丢弃）", async () => {
+    /**
+     * 门禁：`tools/audit/check-write-return.mjs`。
+     *
+     * 真凭实据（第 55 轮）：`recovery-restore.ts` 的项目写回点原来只看 true 分支，
+     * 而那个写入点**确实可能没被接手** —— 它写 `projects`，判"能不能写"的依据却来自
+     * `sessions` 的读，两张表的就绪状态互相独立。于是"抢救到的项目一行都没写回去"
+     * 既不上报也不记录（后果：会话全部落到全局项目）。
+     *
+     * 判据的关键是那条**真实现给出的保证**：同一函数里先成功读过同一张表（或
+     * `domainPort(T)` 非空）⇒ 镜像已就绪 ⇒ 写必然被接手 ⇒ `false` 不可达。
+     * canary 三态：跨表不处理必须报、同表先读后写不许报、带上报不许报。
+     */
+    const wr = await import(path.join(TOOLS, "check-write-return.mjs") as any);
+    const real = wr.scanWriteReturns(ROOT);
+    expect(
+      real.sites,
+      "金丝雀：真仓库至少要抽到 45 个域写入点（抽不到说明抽取器失效）",
+    ).toBeGreaterThanOrEqual(45);
+    expect(real.skippedSameTable, "金丝雀：至少要认出 20 处'同表先读后写'（否则判据等于没生效）").toBeGreaterThanOrEqual(
+      20,
+    );
+    expect(
+      real.findings.map((f: { file: string; line: number }) => `${f.file}:${f.line}`),
+      `未处理返回值的写入点：\n${real.findings.map((f: any) => `${f.file}:${f.line} ${f.text}`).join("\n")}`,
+    ).toEqual([]);
+  });
+
   it("GATE-4: 故意写坏的样本必须被三个扫描器报出来", async () => {
     const { fsScanner, swScanner, gbScanner } = await loadScanners();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-audit-gate-"));

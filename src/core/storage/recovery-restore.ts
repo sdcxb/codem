@@ -82,7 +82,7 @@ export async function restoreRecoveredProjects(
   if (projectRows.length === 0 && sessionRows.length === 0) return out;
 
   try {
-    const { domainWrite } = await import("./domain-store");
+    const { domainWrite, reportWriteNotAccepted } = await import("./domain-store");
 
     /*
      * ① 先项目（`sessions.project_id` 的外键目标）。缺 name/path 的行**照样写** ——
@@ -107,11 +107,43 @@ export async function restoreRecoveredProjects(
       .filter((x): x is NonNullable<typeof x> => x !== null);
 
     if (projectWire.length > 0) {
-      const ok = domainWrite("projects", projectWire, {
+      /**
+       * ## 第 55 轮：**这里原来是一个静默丢弃点**
+       *
+       * `domainWrite` 的返回值语义是"**端口有没有接手这次写**"（`domain-store.ts:711-721`）：
+       * `true` = 镜像已就绪当场写穿（失败会自己上报）或正在加载已入队；
+       * `false` = 没接手（端口未注册 / 该表**永不就绪**：超上限被拒或加载失败）。
+       *
+       * 原实现只写 `if (ok) out.projects = …`，**false 分支什么都不做** ——
+       * 于是"抢救出来的项目一行都没写回去"这件事既不上报、也不记录：
+       * 后果（下面 `note` 里写着的那句"会话归属会因此落到全局项目"）
+       * 只存在于源码里，用户与排查者都看不到。
+       *
+       * ⚠️ 为什么这里**确实可达**（不是理论问题）：这个写入点操作的是 `projects` 表，
+       * 而上面判"能不能写"用的是 `sessions` 的读结果 —— **两张表的就绪状态互相独立**。
+       * `projects` 的镜像"永不就绪"（真机形态：`crud.list` 被拒或加载失败）时，
+       * `sessions` 那边照样读得到，于是流程会一路走到这里并静默丢掉全部项目行。
+       *
+       * 修法沿用本仓库既有的两行形态（见 `createSession` / `updateSession`）：
+       * 没接手就 `reportWriteNotAccepted(scope, note)` —— 上报 + 不回退。
+       */
+      const accepted = domainWrite("projects", projectWire, {
         scope: "storage.recoveryRestore.projects",
         note: "抢救出来的项目未写回（会话归属会因此落到全局项目）",
       });
-      if (ok) out.projects = projectWire.length;
+      if (accepted) out.projects = projectWire.length;
+      else {
+        reportWriteNotAccepted(
+          "storage.recoveryRestore.projects",
+          `抢救出来的 ${projectWire.length} 个项目未写回`,
+          {
+            // 说清**后果**（这一句才是用户看得见的那条提示的内容）
+            consequence:
+              `抢救出来的 ${projectWire.length} 个项目没写回索引：这些会话会落到「全局项目」而不是原来的项目` +
+              `（历史消息不受影响，它们由会话日志重建）`,
+          },
+        );
+      }
     }
 
     /*
@@ -147,6 +179,20 @@ export async function restoreRecoveredProjects(
       });
       if (ok) out.sessions += 1;
       else out.skipped += 1;
+    }
+    /**
+     * 第 55 轮：逐条会话写入的拒绝也要**能被看到**（原来只累加 `out.skipped`，
+     * 而调用方只在"有成功行"时才打日志 —— 全是失败时一行日志都没有）。
+     *
+     * 这一条在真机上**不可达**（能读到 `sessions` 镜像就说明它已就绪，
+     * 同一张表的写入必然被接手），所以它是一条防御性上报；写成**聚合成一条**，
+     * 避免 N 条失败刷屏。
+     */
+    if (out.skipped > 0) {
+      reportWriteNotAccepted(
+        "storage.recoveryRestore.sessionProject",
+        `${out.skipped} 个会话的归属未写回（这些会话会落到全局项目）`,
+      );
     }
   } catch (e) {
     reportPersistFailure(

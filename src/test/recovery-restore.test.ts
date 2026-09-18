@@ -196,4 +196,67 @@ describe("损坏恢复：抢救出来的项目归属必须还原（REC）", () =
     expect(row?.name).toBe("");
     expect(result.sessions, "归属因此得以写回").toBe(1);
   });
+
+  it("REC-6（第 55 轮）: `projects` 端口接不了这次写 → **必须如实上报**，不许静默丢掉抢救到的项目", async () => {
+    /**
+     * 缺陷（原实现）：`if (ok) out.projects = …` 的 **false 分支什么都不做** ——
+     * "抢救出来的项目一行都没写回"这件事既不上报也不记录，
+     * 那句写好的后果说明（"会话归属会因此落到全局项目"）只存在于源码里。
+     *
+     * 为什么**确实可达**：这个写入点操作 `projects`，而"能不能写"的判断依据来自
+     * `sessions` 的读 —— 两张表的就绪状态互相独立（这里就是 sessions 正常、projects 永不就绪）。
+     *
+     * 有牙的判据：断言**失败登记里有这一条**（把 `reportWriteNotAccepted` 去掉即变红）。
+     */
+    const { restoreRecoveredProjects } = await import("../core/storage/recovery-restore");
+    const { getPersistFailures, resetPersistFailures, setPersistFailureListener } = await import(
+      "../core/storage/persist-failure"
+    );
+    resetPersistFailures();
+    /** 用户可见的那条提示就是从 listener 拿到的 detail —— 直接对着它断言 */
+    const details: Array<{ area: string; message: string; consequence?: string }> = [];
+    setPersistFailureListener((d) => details.push(d));
+
+    /**
+     * `sessions` 正常（读得到），`projects` **永不就绪** —— 复刻真机上
+     * "`projects` 的 `crud.list` 被拒/加载失败，而 sessions 那边一切正常"的形态。
+     */
+    const p = createFakeStoragePort({
+      seed: { projects: [], sessions: [sessionRow("s1", "")] },
+      neverReady: ["projects"],
+    });
+    await p.config.warmup();
+    setStoragePort(p);
+    p.domains.ensureLoaded("sessions");
+
+    let result: Awaited<ReturnType<typeof restoreRecoveredProjects>> | null = null;
+    await expect(
+      (async () => {
+        result = await restoreRecoveredProjects({
+          projects: [projectRow("p1", "mimo-gui")],
+          sessions: [{ id: "s1", project_id: "p1" }],
+        });
+      })(),
+      "端口接不了这次写**不是异常**：它必须照常返回（恢复流程不能被它打断）",
+    ).resolves.toBeUndefined();
+
+    expect(result!.projects, "没接手 ⇒ 行数就是 0（不许自欺地报成写成功）").toBe(0);
+    const failure = getPersistFailures().find((f) => f.area === "storage.recoveryRestore.projects");
+    expect(
+      failure,
+      "必须有一条可见的上报：抢救到的项目没写回去（否则用户只看到会话莫名落到全局项目）",
+    ).toBeTruthy();
+    /** 上报文案要说清**数量与后果**，不能只是一句"未接手" */
+    const detail = details.find((d) => d.area === "storage.recoveryRestore.projects")!;
+    expect(detail, "上报必须经过 listener（用户可见的那条提示）").toBeTruthy();
+    expect(detail.message, "原因句来自 reportWriteNotAccepted（未接手）").toContain("未接手");
+    expect(
+      detail.consequence,
+      "后果句要带上数量与去向（有几个项目、会话会落到哪儿）",
+    ).toContain("1 个项目");
+    expect(detail.consequence, "并说清后果：会话会落到全局项目").toContain("全局项目");
+
+    setPersistFailureListener(null);
+    setStoragePort(null);
+  });
 });

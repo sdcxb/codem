@@ -26,7 +26,7 @@
  */
 
 import { getStoragePort, hasStoragePort } from "./port";
-import { reportPersistFailure } from "./persist-failure";
+import { reportPersistFailure, type PersistFailureOptions } from "./persist-failure";
 import { recordWrite } from "./write-audit";
 
 /** 域镜像端口（`RustDomainMirror` 的能力子集；不直接依赖 rust-port 以免循环引用） */
@@ -618,11 +618,27 @@ export function writeShouldFallBackToLegacy(scope: string, note: string): boolea
  * 全部站点换完之后，`shouldFallbackToLegacy()` 与 `writeShouldFallBackToLegacy()`
  * 就只剩"回滚开关已退役"这一个答案了 —— 那是 L4 真正结束的标志。
  */
-export function reportWriteNotAccepted(scope: string, note: string): void {
+export function reportWriteNotAccepted(
+  scope: string,
+  note: string,
+  /**
+   * 第 55 轮新增（可选）：覆盖界面上那句"后果/建议"。
+   *
+   * 为什么需要：`note` 只进 **console**（`reportFailure` 的 `extra` 参数），
+   * 而用户可见的那条提示（listener / `codem:persist-failed` 事件）只拿到
+   * `{ area, message, count, kind }` —— 于是"这次没写回去会导致什么"这句最关键的信息
+   * **到不了用户眼前**，界面只会显示通用的"该功能本次没有生效 / 重启后可能丢失"。
+   *
+   * 需要说清后果的调用点（例如损坏恢复里"救援到的项目没写回 → 会话会落到全局项目"）
+   * 必须传它 —— 否则就又回到"上报了，但说的是别的事"。
+   */
+  options?: PersistFailureOptions,
+): void {
   reportPersistFailure(
     scope,
     new Error("端口已注册但该域镜像未接手（未就绪 / 未镜像 / 被逐出）"),
     note,
+    options,
   );
 }
 

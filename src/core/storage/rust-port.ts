@@ -472,11 +472,21 @@ class RustEnginePort implements StorageEnginePort {
         try {
           const { restoreRecoveredProjects } = await import("./recovery-restore");
           const restored = await restoreRecoveredProjects(salvaged);
-          if (restored.projects > 0 || restored.sessions > 0) {
-            console.log(
+          /**
+           * 第 55 轮：**"全是失败"也要有一行日志**。
+           *
+           * 原来的判据是 `projects > 0 || sessions > 0` —— 于是"一行都没还原"
+           * （最坏的那种）恰好落在条件之外，日志一行都不打（上报通道另说，
+           * 见 `recovery-restore.ts` 里 `reportWriteNotAccepted` 的那段说明）。
+           * 现在把 `skipped` 也算进来，并且这种情况用 warn（不是 log）。
+           */
+          const allFailed = restored.projects === 0 && restored.sessions === 0 && restored.skipped > 0;
+          if (restored.projects > 0 || restored.sessions > 0 || restored.skipped > 0) {
+            const line =
               `[Storage] 损坏恢复：已还原 ${restored.projects} 个项目、${restored.sessions} 个会话的项目归属` +
-                (restored.skipped > 0 ? `（${restored.skipped} 个未写回）` : ""),
-            );
+              (restored.skipped > 0 ? `（${restored.skipped} 个未写回）` : "");
+            if (allFailed) console.warn(`${line} —— 归属一个都没写回，这些会话会落到全局项目`);
+            else console.log(line);
           }
         } catch (e) {
           console.warn("[Storage] 还原抢救出来的项目归属失败（会话会落到全局项目）:", e);
