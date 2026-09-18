@@ -27,7 +27,47 @@ async function loadScanners() {
   const swScanner = await import(path.join(TOOLS, "scan-silent-write.mjs") as any);
   const gbScanner = await import(path.join(TOOLS, "scan-guard-bypass.mjs") as any);
   const sbScanner = await import(path.join(TOOLS, "scan-storage-boundary.mjs") as any);
-  return { fsScanner, swScanner, gbScanner, sbScanner };
+  const cpScanner = await import(path.join(TOOLS, "check-command-parity.mjs") as any);
+  return { fsScanner, swScanner, gbScanner, sbScanner, cpScanner };
+}
+
+/**
+ * 造一个最小的仓库夹具：只要门禁读的三样东西 ——
+ * Rust 白名单、一份生产源码（可注入一条命令）、一个 `src/` 目录。
+ *
+ * 这样就能在**不改动真仓库**的前提下证明门禁会咬。
+ */
+function makeRepoFixture(opts: { prodCommand: string; whitelist?: string[] }): string {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-cmd-parity-"));
+  const libDir = path.join(tmp, "src-tauri", "codem-db", "src");
+  fs.mkdirSync(libDir, { recursive: true });
+
+  /**
+   * 夹具必须有**足够多的真实发送点**（≥ 20）与**足够大的白名单**（≥ 50）——
+   * 否则门禁的两条"金丝雀"会先响。它们响得对：夹具太小就分不清
+   * "没有不一致"与"根本没抽到东西"（第一版夹具只发了 4 条、白名单 28 条，
+   * 就是被这两条金丝雀拦下的）。
+   */
+  const filler = Array.from({ length: 60 }, (_, i) => `probe${i}.run`);
+  const cmds = opts.whitelist ?? ["settings.set", "messages.list", "crud.upsert", ...filler];
+  fs.writeFileSync(
+    path.join(libDir, "lib.rs"),
+    `pub const COMMANDS: &[&str] = &[\n${cmds.map((c) => `    "${c}",`).join("\n")}\n];\n`,
+    "utf8",
+  );
+
+  const prodDir = path.join(tmp, "src", "core");
+  fs.mkdirSync(prodDir, { recursive: true });
+  const sites = cmds
+    .filter((c) => c.includes(".") && c !== opts.prodCommand)
+    .map((c) => `  await call(t, "${c}");`)
+    .join("\n");
+  fs.writeFileSync(
+    path.join(prodDir, "probe.ts"),
+    `export async function go(t: any) {\n${sites}\n  await call(t, "${opts.prodCommand}");\n}\n`,
+    "utf8",
+  );
+  return tmp;
 }
 
 describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
@@ -165,6 +205,40 @@ describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
 });
 
 describe("扫描器自检（门禁本身必须会咬）", () => {
+  it("GATE-10: 渲染侧发出引擎不认识的命令 → 通信链路门禁必须报出来", async () => {
+    const { cpScanner } = await loadScanners();
+
+    // ① 真仓库：渲染侧没有发出任何白名单外的命令
+    const real = cpScanner.analyzeCommandParity({ root: ROOT });
+    expect(real.errors, `真仓库不该有通信链路不一致：${real.errors.join(" | ")}`).toEqual([]);
+    expect(
+      real.prodHits.size,
+      "金丝雀：渲染侧应抽到 ≥ 20 条命令（抽不到说明抽取器失效，'绿'没有意义）",
+    ).toBeGreaterThanOrEqual(20);
+    expect(real.rustCommands.length).toBeGreaterThanOrEqual(50);
+
+    // ② 故意把命令名拼错 → 必须报出来（这条是"门禁会咬"的正面判据）
+    const typoDir = makeRepoFixture({ prodCommand: "messages.lst" });
+    try {
+      const typoResult = cpScanner.analyzeCommandParity({ root: typoDir });
+      expect(
+        typoResult.errors.some((e: string) => e.includes("messages.lst")),
+        "拼错的命令名必须被报出来（否则这个门禁只是装饰）",
+      ).toBe(true);
+    } finally {
+      fs.rmSync(typoDir, { recursive: true, force: true });
+    }
+
+    // ③ 反向对照：同样的夹具，命令名写对 → 不该报
+    const okDir = makeRepoFixture({ prodCommand: "messages.list" });
+    try {
+      const okResult = cpScanner.analyzeCommandParity({ root: okDir });
+      expect(okResult.errors, "写对的时候不许误报").toEqual([]);
+    } finally {
+      fs.rmSync(okDir, { recursive: true, force: true });
+    }
+  });
+
   it("GATE-4: 故意写坏的样本必须被三个扫描器报出来", async () => {
     const { fsScanner, swScanner, gbScanner } = await loadScanners();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-audit-gate-"));

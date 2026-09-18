@@ -163,6 +163,32 @@ authorizer 单测证明 `ATTACH` 被拒；错误码映射单测。
 | B 假成功 | `tools/audit/scan-false-success.mjs` | 已上线（0 违规） |
 | C 守卫被绕过 | `tools/audit/scan-guard-bypass.mjs` | 已上线（0 违规） |
 | **D 存储边界** | `tools/audit/scan-storage-boundary.mjs` | **本轮新增（报告模式 → 逐阶段收紧）** |
+| 未路由 DB | `tools/audit/scan-unrouted-db.mjs` | 已上线（0 违规） |
+| 列级 schema 一致 | `tools/audit/gen-schema-sql.mjs --check` | 已上线（0 违规） |
+| 仓储覆盖率 | `tools/audit/storage-coverage.mjs --check` | 已上线（≥ 10% 阈值） |
+| **通信链路（第 48 轮新增）** | `tools/audit/check-command-parity.mjs` | **已上线（渲染侧 0 未知命令）** |
+
+### 通信链路门禁（第 48 轮）
+
+存储链路是两种语言写的，两段之间唯一的契约是**命令名字符串**，没有任何编译期检查：
+
+```
+渲染侧 JS ──(命令名字符串)──> Tauri invoke ──> Rust dispatch(COMMANDS 白名单) ──> SQLite
+```
+
+- **强制方向**：渲染侧生产代码不许发出 `COMMANDS` 白名单里没有的命令。
+  拼错一个字母（`messages.lst`）→ 引擎回 `UNSUPPORTED` → 调用方的"回落"分支把失败吃掉
+  → **功能静默不生效**，而编译、类型检查、既有门禁全都不会响。实测状态：**0 处**。
+- **信息方向**（`--list` / `--json`，**不计入失败**）：白名单里没有生产调用方的命令
+  （实测 37 条）。它们不是缺陷：引擎是独立产物，自带 CLI（`invoke <command>`）与迁移链路
+  （`import.*` / `digest.*` / `legacy.read_table` 归工具那一档），
+  而渲染侧读写会话/项目/消息已切到表驱动面（`crud.*` + 表名），
+  领域专用命令（`sessions.upsert` / `messages.create`）因此没有渲染侧调用点。
+- **金丝雀**：生产命中数 < 20 或白名单解析 < 50 条就**按失败处理**。
+  理由是本文件第一版踩过的坑 —— 一个自毁 bug 让抽取器命中 0 条，
+  脚本却报了 77 条"死命令"；没有下限的话，"抽取器坏了"会伪装成"全部对齐"。
+- **门禁自检**：`audit-gates.test.ts::GATE-10` 三态 ——
+  真仓库无违规、故意拼错的夹具**必须被报出来**、写对的夹具**不许误报**。
 
 D 类规则的最终形态（分阶段收紧，未豁免即失败）：
 1. 渲染侧不得 `import "sql.js"` / 引用 `sql-wasm`；
