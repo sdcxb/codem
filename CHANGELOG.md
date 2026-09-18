@@ -10,6 +10,9 @@ All notable changes to Codem will be documented in this file.
 | --- | --- | --- |
 | **1.16.96** | 三处 `.skill-search-input`（插件/技能/市场搜索框）补 `aria-label` —— placeholder 不是可访问名 | 技能面板 unnamed **12 → 11**（剩下的是开关） |
 | **1.16.97** | `.mcp-manager-close` 补 `aria-label`（MCP 面板唯一的无名按钮，且该面板内没有任何"关闭/close"名字的按钮） | MCP 面板 unnamed **1 → 0** |
+
+> ⚠️ 交付口径（不夸大）：**对外发布的 Release 是 1.16.95 与 1.16.98**；1.16.96 / 1.16.97 是同一战役的中间包（本地构建 + 真机复量后即被下一个包取代），**没有单独发 Release**。
+
 | **1.16.98** | 技能行的 `Switch` 补 `aria-label`（`switch-root` 透传 props，一行覆盖所有行） | 技能面板 unnamed **11 → 0** |
 
 **四个深层面板的最终读数（已安装的 v1.16.98，真机）**：技能 **20 个控件 / 无名 0**、智能体 **9 / 0**、MCP **5 / 0**；四个面板（+ 设置面板）的关闭按钮**全部可按名字找到**（`{name:"关闭面板"}` / `{name:"关闭面板 / Close panel"}`）—— 走查脚本从此能正常关面板，"读数继承上一个面板"这个仪器缺陷随之消失。
