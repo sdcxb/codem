@@ -70,7 +70,13 @@
  * | `compact-resurrect-repro.test.ts` **REPRO-1/2** | 压缩软删除（`hidden=1`）必须真的在读路径生效，且不被追加日志合并复活 | 同族 **`compaction-budget.test.ts` CB-7**（建 40 条 → 软删 35 条 → `listMessages` / `listVisibleMessages` 都必须只剩 5 条，与 REPRO-1/2 同形状且更严）、**CB-8**（清镜像/清缓存模拟重启后仍不复活）、**CB-9**（软删除的 id 保持隐藏，陈旧写入拉不回来）、**CB-11**（老版本"只改索引不写墓碑"的现场也不复活）+ `session-jsonl-index.test.ts` **SLOG-9**（删除留墓碑） |
  *
  * 本批**保留但点名要迁移**：`repro-large-session-db.test.ts`（产品行为：大会话 + 大工具结果保真，
- * 文件头有逐条判定）、`authority-first-storage.test.ts` 的 AR-1~AR-4/AR-6（文件头有逐条判定）。
+ * 文件头有逐条判定）、`authority-first-storage.test.ts` 的 **AR-1b/AR-2b/AR-3b/AR-4/AR-6**
+ * （文件头有逐条判定与**退休台账**）。
+ *
+ * ⚠️ 第 58 轮更正：这里原来写的是"AR-1~AR-4/AR-6" —— 而 `AR-1/AR-2/AR-3` 这三条
+ * **已随旧引擎退休**（第 18 轮退役、第 19 轮以 `-b` 变体补齐，见那份文件的台账），
+ * `AR-5/AR-7` 同样退休。照旧编号写会让排查的人去找三个不存在的用例 ——
+ * 这正是审计里「覆盖移交**未逐条对齐**」的同类形态。现在按**真实存在的编号**点名。
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
