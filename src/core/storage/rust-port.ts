@@ -22,8 +22,10 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { reportPersistFailure } from "./persist-failure";
 import {
   StorageError,
+  hasStoragePort,
   type Page,
   type PageRequest,
   type StorageAppendPort,
@@ -173,8 +175,76 @@ function unwrap<T>(reply: WireReply<T>, label: string): T {
   if (!reply || typeof reply.ok !== "boolean") {
     throw new StorageError("OTHER", `${label}：IPC 返回了无法识别的响应`);
   }
-  if (!reply.ok) throw toStorageError(reply.error, `${label} 失败`);
+  if (!reply.ok) {
+    const err = toStorageError(reply.error, `${label} 失败`);
+    // 引擎回 `CORRUPT` → 立刻留"索引需要重建"标记（见 noteCorruptOnce 的长注释：
+    // 这条链路原来只有"打开时头部损坏"与"12 小时节流的完整性检查"两个生产者）
+    noteCorruptOnce(err, label);
+    throw err;
+  }
   return reply.result as T;
+}
+
+/**
+ * 命令漏斗里**唯一**的失败出口（第 49 轮补上 `CORRUPT` 这一支）。
+ *
+ * ## 为什么必须有这一支
+ *
+ * `port.ts` 的错误码表上写着 `"CORRUPT" // 库损坏（走索引重建）`，
+ * 但**实现里没有这条链路**：全仓 `markIndexRebuildNeeded` 的调用点只有两个 ——
+ * ①引擎在**打开**时发现头部损坏并重建（`health()` 报 `recovered`）、
+ * ②12 小时节流的完整性检查判定失败。
+ *
+ * 于是一条普通命令在**数据页**损坏上报 `CORRUPT` 时，界面上只会看到那一次操作失败，
+ * 而"索引需要重建"这个标记**不会被写** —— 自愈要等到下一次完整性检查，
+ * 也就是最长 **12 小时**（真机日志里那句"距上次检查 7.7 小时…还需 4.3 小时"就是这个形态）。
+ * 这期间引擎会继续用一份**不可信的索引**回答查询。
+ *
+ * ## 做法与边界
+ *
+ * - 挂在漏斗上（所有仓储命令都经过 `call` / 批量路径），所以任何一条命令报损坏都会触发；
+ * - **只在端口已经注册之后才动手**（`hasStoragePort()`）：启动引导阶段的探测失败不该走这里 ——
+ *   那时引擎根本打不开（`registerRustStoragePort` 会自己上报"没有可用存储"并且**不注册端口**），
+ *   再补一条"已留索引重建标记"既重复又误导（没有端口就没有维护，标记永远没人消费）；
+ * - **每个进程只做一次**（闸门 `corruptNoted`）：损坏是库级状态，第一条报出来的命令
+ *   已经足够说明问题；不加闸门会在"读循环里每条命令都失败"时写出成百上千次标记；
+ * - 标记写入是**异步**的（`markIndexRebuildNeeded` 走文件 IPC），这里 `void` 掉不阻塞；
+ *   写失败它自己会 warn，不影响本次错误照常抛给调用方；
+ * - **不从这条路径做任何"自动修复"**：重建是下次维护的事（消费侧已经实现），
+ *   在这里顺手重建会让一条读命令变成分钟级的全库 upsert。
+ */
+let corruptNoted = false;
+
+/**
+ * 测试隔离：复位"已因损坏留过重建标记"闩锁。
+ *
+ * 与 `__resetRecoveryNotifiedForTests` 同一种做法 —— 这两个闩锁都是**进程级**的
+ * （生产语义就是"每进程一次"），用例之间不复位就会互相污染：
+ * 第一个用例把它置真之后，后面的用例永远看不到上报（本轮就踩到了，
+ * `CORRUPT-2` 因此拿到 0 条而上报其实是好的）。
+ */
+export function __resetCorruptNotedForTests(): void {
+  corruptNoted = false;
+}
+
+function noteCorruptOnce(err: StorageError, where: string): void {
+  if (corruptNoted || err.code !== "CORRUPT") return;
+  if (!hasStoragePort()) return; // 引导阶段的失败由 bootstrap 自己如实上报，见上
+  corruptNoted = true;
+  void (async () => {
+    try {
+      const { markIndexRebuildNeeded } = await import("./maintenance");
+      await markIndexRebuildNeeded(`命令 ${where} 报存储库损坏：${err.message}`);
+    } catch (e) {
+      console.warn("[StoragePort] 写「索引需要重建」标记失败（不影响本次错误上报）:", e);
+    }
+  })();
+  reportPersistFailure(
+    "storage.corrupt",
+    err,
+    `存储库报损坏（${where}）：已留「索引需要重建」标记，` +
+      `下次维护会从权威日志（JSONL）重建索引；期间请勿继续写入`,
+  );
 }
 
 /**
@@ -196,7 +266,9 @@ async function call<T>(
   try {
     reply = await transport.invokeCommand<WireReply<T>>(command, params);
   } catch (e) {
-    throw toStorageError(e, `${command} 的 IPC 调用失败`);
+    const err = toStorageError(e, `${command} 的 IPC 调用失败`);
+    noteCorruptOnce(err, command);
+    throw err;
   }
   return unwrap(reply as WireReply<T>, command);
 }
