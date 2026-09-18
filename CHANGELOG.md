@@ -2,11 +2,44 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [1.16.85] - 2026-09-18 — **输入草稿的"空行"不再堆积（真机钻取顺手查出来的）**
+## [1.16.85] - 2026-09-18 — **输入草稿的"空行"不再堆积 + 「检查更新」一直是坏的（真机钻取顺手查出来的）**
 
 > 做上面那条谱系修复的真机钻取时，顺带对比了钻取前后的 `settings` 行数：
 > 56 → 56，但**多出来的那一条**是 `composer-draft-<刚被删掉的会话>`。
-> 顺着它查下去，发现是一个持续很久的小泄漏。
+> 顺着它查下去，发现是一个持续很久的小泄漏；而发布后用应用自己的更新器做端到端确认时，
+> 又撞出了第二条 —— 更严重的那条。
+
+### 🔴 修复：「检查更新」从来没成功过（更新清单的平台键写成了 Tauri v1 的写法）
+
+发布之后我用打包版里应用**自己的**更新器做确认：
+
+```
+await __TAURI__.updater.check()
+→ None of the fallback platforms `["windows-x86_64"]` were found in the response `platforms` object
+```
+
+根因在源码里一目了然：`latest.json` 一直写的是 **`platforms.windows`**（Tauri **v1** 的写法），
+而 v2 的更新器是按 `{os}-{arch}-{installer}` / `{os}-{arch}` 找键的
+（`tauri-plugin-updater-2.10.1/src/updater.rs:578-597`；`updater_os()` 返 `"windows"`、
+`updater_arch()` 返 `"x86_64"`，同文件 1324-1351）：
+
+```text
+targets.push(format!("{os}-{arch}-{installer}"));   // windows-x86_64-nsis（装了 NSIS 包时先找它）
+targets.push(format!("{os}-{arch}"));               // windows-x86_64（兜底）
+```
+
+两个候选键都找不到 → `Err(TargetsNotFound)`。**也就是说过去所有版本之间从没走通过自动更新**，
+用户每次都是手动装包（界面上是诚实的「更新失败: …」，所以不是假成功，但功能一直是坏的）。
+
+修法：生成器同时写 `windows-x86_64-nsis` 与 `windows-x86_64`（同一个包、同一份签名），
+并且**明确不留** v1 的 `windows` 键（它在这条链路上永远不会被读到，只会让下一个人以为"键写全了"）。
+新增 `VERSION-5` 测试把"键必须是 v2 写法、两把都要有、签名与 URL 都在、URL 指向本版本产物"
+变成机器约束（**牙齿检查**：把键改回 v1 写法 → 立刻红）。修正后的清单已重新上传到本版本的 release。
+
+⚠️ **诚实交代**：修正后本机验证端点时 GitHub 正不可达（`无法连接到远程服务器`，本轮反复出现），
+所以「下载 + 验签 + 装包」这一段**本轮没跑成**；已确认的是资产上传成功（退出码 0）、
+清单与本地生成器输出一致、以及报错形态与键名一一对应。下一轮第一件事就是把
+`check()` → `downloadAndInstall()` 在这台机器上跑通。
 
 ### 🔴 修复：`composer-draft-*` 会为"只是路过"的会话留下空行
 
@@ -35,8 +68,14 @@ All notable changes to Codem will be documented in this file.
 ### 🧪 测试
 
 `renderer-robustness-a.test.tsx` 新增 3 条：`RA-5f` 路过不留行、`RA-5g` 删空即删行、
-`RA-5h` 发出后不留行。**牙齿检查**：把定时器的判据去掉 → `RA-5f` 红；
-把"空串即删行"去掉 → `RA-5g`/`RA-5h` 红（三条各自守一条机制）。
+`RA-5h` 发出后不留行；`version-consistency.test.ts` 新增 `VERSION-5`（更新清单的平台键）。
+**牙齿检查**：去掉定时器判据 → `RA-5f` 红；去掉"空串即删行" → `RA-5g`/`RA-5h` 红；
+把清单键改回 v1 写法 → `VERSION-5` 红（各自守一条机制）。
+
+### 📋 真机钻取记录
+
+见 `.preview-shot/_audit/DRILLS-round54.md`（引擎语义 5 步 / 行构造器门禁实测 /
+打包版谱系端到端 5 步 / 草稿行为 / 更新器链路）。
 
 ## [1.16.84] - 2026-09-18 — **子智能体的会话谱系一直是 NULL；另有一条我先前的结论被自己撤回**
 

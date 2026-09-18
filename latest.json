@@ -1,9 +1,13 @@
 {
   "version": "1.16.85",
-  "notes": "子智能体会话的谱系一直是 NULL（现在写进 parent_id）；同时撤回一条我先前的错误结论，并立了一道『行构造器必须覆盖整行』的审计门禁；输入草稿的空行不再堆积。",
-  "pub_date": "2026-09-18T14:26:20Z",
+  "notes": "子智能体会话的谱系一直是 NULL（现在写进 parent_id）；同时撤回一条我先前的错误结论，并立了一道『行构造器必须覆盖整行』的审计门禁；输入草稿的空行不再堆积；修复「检查更新」一直是坏的（清单平台键写成 v1 的 windows，更新器只认 windows-x86_64）。",
+  "pub_date": "2026-09-18T14:44:18Z",
   "platforms": {
-    "windows": {
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Q3dEFZVmU1cVVGYytPSVQ0aEV0OHp3clVDd2ZLSmc3Zis4bi9peHpFRXNZTTRqZDJLOGx5REIyeWZLeHo1SlFFNm5vQmpiWHp4eDY3OHB4YjIrZEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzQxMzQ0CWZpbGU6Q29kZW1fMS4xNi44NV94NjQtc2V0dXAuZXhlCmM2THFBVTNXSzloMVFaa3hIRC9YZTYwMlFReWdvQmxrOUh0UHlTckpMRXV4N2xXL1JHdFJtem9QU1o5TmRmMXpSQmd1TzY4NEducnlGWjJSZ0QxZEFRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.85/Codem_1.16.85_x64-setup.exe"
+    },
+    "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Q3dEFZVmU1cVVGYytPSVQ0aEV0OHp3clVDd2ZLSmc3Zis4bi9peHpFRXNZTTRqZDJLOGx5REIyeWZLeHo1SlFFNm5vQmpiWHp4eDY3OHB4YjIrZEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzQxMzQ0CWZpbGU6Q29kZW1fMS4xNi44NV94NjQtc2V0dXAuZXhlCmM2THFBVTNXSzloMVFaa3hIRC9YZTYwMlFReWdvQmxrOUh0UHlTckpMRXV4N2xXL1JHdFJtem9QU1o5TmRmMXpSQmd1TzY4NEducnlGWjJSZ0QxZEFRPT0K",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.85/Codem_1.16.85_x64-setup.exe"
     }
