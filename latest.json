@@ -1,11 +1,11 @@
 ﻿{
-    "version":  "1.16.72",
-    "notes":  "UI/UX 语义审计：笔记编辑缓冲不跟着换（保存会覆盖目标笔记）、分层配置子目录按身份选中（否则写错文件）、代码图谱整段设置因 ESM 里用 require 而全失效、微信白名单「移除」标签改为与行为一致",
-    "pub_date":  "2026-09-18T06:59:47Z",
+    "version":  "1.16.73",
+    "notes":  "工具禁用真的生效（定义层+执行层，安全侧开关不再说假话）；回滚变得可知情可撤销（影响面预览 + 确认框 + 回滚前自动快照 + 删除走回收站）",
+    "pub_date":  "2026-09-18T08:19:47Z",
     "platforms":  {
                       "windows":  {
-                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RqWjZiRWRNWTlncmFJV2s4OWU4cnhnUDFndHF1UElPY2t5VVdYL1hVcWdIQlo4NmZRMDJTNEg3UENWb2tYQm9DdkF0bkptZmtGQ2tRRDNIdlZVcXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzE0NjU5CWZpbGU6Q29kZW1fMS4xNi43Ml94NjQtc2V0dXAuZXhlCmJZL2FvS1plZWw5dGE2WVBqSmYwWkQ3ZFlQb0owK2NiYXlxODdQc0hpb3VUcEZtMWlUM3JQclNldURLY3k0a0IxeUduTEd3Q0RFY3FrcUpWaU1HTUNRPT0K",
-                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.72/Codem_1.16.72_x64-setup.exe"
+                                      "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FtREhXY2IzRmhycmFHMDlhSWpuS1EwV00vS2toa0NpZHdxQW93ZlhxNFo4SDNTRHcvVU54WWxIS0thS2xPYWYvb25XK3lKN29qVVUxa3ZGUVllNHdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzE5NDM2CWZpbGU6Q29kZW1fMS4xNi43M194NjQtc2V0dXAuZXhlCnV5eXRzK1VjRHl1dHNhWEY2T3h3dTdjWkczRXM4NmF4UGhVNDJhU21oMkVDdHVGenZzWGlhMmFsWmR3aHdHcmRkMDdEOUhzNlRJWnA5SDBCSDR2K0JBPT0K",
+                                      "url":  "https://github.com/sdcxb/codem/releases/download/v1.16.73/Codem_1.16.73_x64-setup.exe"
                                   }
                   }
 }
