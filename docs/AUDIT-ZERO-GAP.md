@@ -82,8 +82,9 @@ node .preview-shot/cdp.mjs "@.preview-shot/probe-health-11689.js"
 | 1.16.103 | 真机复量抓到的两处界面缺陷：更新提示被重渲染抹掉（改 React state）；小按钮命中区 24×18 → 26×24 | 更新按钮 `T+1.6s` 显示"未发现更新（当前 v1.16.103）…"且**不再消失**；`.market-skill-link-btn` 172 个 **minH 24 / minW 26、两两重叠 0**、可见的 2 个命中测试 **2/2** |
 | 1.16.104 | 数据目录台账（第 62 轮清单最后一项） | 真机：首次 `generation=1 / source=standard / targetState=existing`；重启后 mtime **未变**（未重写）+ 日志"数据目录未变化（第 1 代）" |
 | 1.16.105 | 旧库凭据清洗（按用户选择"先备份再清洗"）+ 普查不再把密文说成"明文凭据" | 旧库 `sk-×4`+`gho_×3` **7 → 0**（等长替换、长度 11,137,024 不变、`integrity=ok`、逐表行数不变）；备份里仍 4+3；真机维护日志变为 `27 个设置项，未命中**明文**凭据形状；另有 1 处**已加密保存**（codem-settings，不是明文）` |
+| 1.16.106 | 清理遗留脚手架（按用户"旧的遗留物就清理"）：删 27 个文件 + 修掉恢复面板"多层"这处假话 | `capabilities/**` 25 文件 + `multi-layer(.ts/-index.ts)` 删除；删前三确认（目录外零 import 说明符 / `provider/` 无反向依赖 / 动态 import 与配置无引用）；删后 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**（vitest 退出码 0）、`tsc` 0、10 道门禁 exit 0（未接线扫描 825 文件）；真机 1.16.106：面板标题「会话恢复」、页面再无 "多层/Multi-layer"、无异常 |
 
-**基线（1.16.104）**：渲染侧 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**；`tsc` 0；10 道 audit 门禁 exit 0；
+**基线（1.16.106）**：渲染侧 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**（vitest 退出码 0）；`tsc` 0；10 道 audit 门禁 exit 0；
 额外审计工具 `check-hot-tables` / `wasm-removal-readiness`（L1–L4 全 0）/ `l1-legacy-engine-dependents` 均 exit 0；
 引擎侧 `src-tauri` 53 条 / `codem-db` 85 + 54 条。
 
