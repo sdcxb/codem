@@ -538,6 +538,18 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
   const [showPetMarket, setShowPetMarket] = useState(false);
+  /**
+   * 「检查更新」的进度/结果文案（第 62 轮）。
+   *
+   * ⚠️ 原来这段文字是**用 `btn.textContent = …` 直接改 DOM** 的 —— 真机复量发现：
+   * 点下去之后只要组件因为**任何**原因重渲染一次，React 就会按 JSX 把按钮文字写回
+   * "检查更新"，那句"发现新版本 x.y.z / 未发现更新 / 更新失败: …"用户**根本看不到**
+   * （控制台里 `[updater] 未安装更新：none` 打了，界面上却什么都没有）。
+   * 这是一类典型的"印出来的不是真的"：状态在 DOM 里、不在 React 里。
+   * 所以文案改成 state，由 React 渲染。
+   */
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
 
   // D2: 设置分组搜索元数据（id → [中文名, 英文名, 别名...]）
   const SETTINGS_TAB_INDEX: Array<[string, string[]]> = [
@@ -2011,11 +2023,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       <button
         id="check-update-btn"
         className="sp-btn sp-btn--primary sp-btn--spaced"
+        disabled={updateBusy}
         onClick={async () => {
-          const btn = document.getElementById("check-update-btn") as HTMLButtonElement;
-          if (!btn) return;
-          btn.disabled = true;
-          btn.textContent = lang === "zh" ? "检查中..." : "Checking...";
+          /**
+           * 文案一律走 state（第 62 轮真机复量：原来改 `textContent`，任何重渲染都会把它抹掉）。
+           * 这里不再碰 DOM：`disabled` 与文字都由 React 渲染。
+           */
+          setUpdateBusy(true);
+          setUpdateMsg(lang === "zh" ? "检查中…" : "Checking…");
           try {
             const { check } = await import("@tauri-apps/plugin-updater");
             const { relaunch } = await import("@tauri-apps/plugin-process");
@@ -2031,14 +2046,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
              */
             const decision = decideUpdate(APP_VERSION, update?.available ? update.version : null);
             if (decision.kind === "update" && update) {
-              btn.textContent = lang === "zh" ? decision.message.zh : decision.message.en;
+              setUpdateMsg(lang === "zh" ? decision.message.zh : decision.message.en);
               await update.downloadAndInstall();
-              btn.textContent = lang === "zh" ? "安装完成，即将重启..." : "Installed, relaunching...";
+              setUpdateMsg(lang === "zh" ? "安装完成，即将重启…" : "Installed, relaunching…");
               await relaunch();
             } else {
               console.warn(`[updater] 未安装更新：${decision.kind}（清单版本 ${decision.offered ?? "无"}）`);
-              btn.textContent = lang === "zh" ? decision.message.zh : decision.message.en;
-              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
+              setUpdateMsg(lang === "zh" ? decision.message.zh : decision.message.en);
+              setUpdateBusy(false);
             }
           } catch (err: any) {
             const rawMsg = typeof err === "string" ? err
@@ -2048,7 +2063,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             // If the remote release JSON is missing, offer a direct GitHub link instead
             const isNoRelease = rawMsg.includes("Could not fetch") || rawMsg.includes("release JSON");
             if (isNoRelease) {
-              btn.textContent = lang === "zh" ? "自动更新不可用，正在打开下载页..." : "Auto-update unavailable, opening download page...";
+              setUpdateMsg(lang === "zh" ? "自动更新不可用，正在打开下载页…" : "Auto-update unavailable, opening download page…");
               try {
                 const { invoke } = (window as any).__TAURI__?.core ?? {};
                 if (invoke) {
@@ -2059,16 +2074,16 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               } catch {
                 window.open("https://github.com/sdcxb/codem/releases", "_blank");
               }
-              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
+              setUpdateBusy(false);
             } else {
               const errMsg = rawMsg || (lang === "zh" ? "未知错误（请检查网络连接或稍后重试）" : "Unknown error (check network or retry)");
-              btn.textContent = lang === "zh" ? `更新失败: ${errMsg}` : `Update failed: ${errMsg}`;
-              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
+              setUpdateMsg(lang === "zh" ? `更新失败: ${errMsg}` : `Update failed: ${errMsg}`);
+              setUpdateBusy(false);
             }
           }
         }}
       >
-        {lang === "zh" ? "检查更新" : "Check for Updates"}
+        {updateMsg ?? (lang === "zh" ? "检查更新" : "Check for Updates")}
       </button>
     </div>
   </div>

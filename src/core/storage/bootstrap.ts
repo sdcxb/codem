@@ -175,7 +175,7 @@ export async function registerRustStoragePort(
      */
     void import("./data-root")
       .then(({ resolveDataRoot }) => resolveDataRoot())
-      .then((info) => {
+      .then(async (info) => {
         /**
          * 非标准位置**必须留下痕迹**（与引擎侧同一条纪律：库不在标准位置时 eprintln 告警）。
          * 否则"数据写到了别处"只能靠翻代码才知道 —— 第 55 轮那次事故就是没人能说出为什么。
@@ -188,6 +188,39 @@ export async function registerRustStoragePort(
           console.warn(
             `[Storage] ⚠️ 数据根目录不是标准位置：${info.root}（原因：${info.reason ?? "未说明"}）` +
               `—— 权威日志 / 附件 / 溢出文件都跟着它走`,
+          );
+        }
+
+        /**
+         * ## 第 62 轮：数据目录**台账**（对标 `dsh-desktop` 的 `desktop-data-directory.ts`）
+         *
+         * 为什么值得单独记一笔：库路径可以被 `CODEM_DB_PATH` 指到别处，而"用户换了数据目录
+         * （新目录是空的）"与"用户的数据真的没了"在界面上**长得一模一样**（都是"没有会话、
+         * 没有项目"）。台账把"当前在哪、上一处在哪、第几代、新目录当时是空是满"变成可查事实。
+         *
+         * 三条纪律（详见 `data-home-ledger.ts` 文件头）：**只记账、绝不复制**；
+         * 台账放在**标准数据目录**（不是 active 目录，否则一切换就"重置"）；
+         * 目录没变时**不重写**（mtime 就是"上次变化的时间"）。
+         *
+         * 失败**不抛**：台账是诊断设施，写不成也不能挡住启动 —— 但**必须留痕**（不许静默）。
+         */
+        try {
+          const { recordActiveDataHome, describeDataHome } = await import("./data-home-ledger");
+          const { getAppDataDir } = await import("../file-api");
+          const standardDir = await getAppDataDir();
+          if (!standardDir) throw new Error("拿不到标准数据目录");
+          const outcome = await recordActiveDataHome(standardDir, info);
+          if (outcome.ledgerUnreadable || !outcome.written && outcome.changed) {
+            console.warn(`[Storage] ${describeDataHome(outcome)}`);
+          } else if (outcome.changed) {
+            console.warn(`[Storage] ${describeDataHome(outcome)}`);
+          } else {
+            console.log(`[Storage] ${describeDataHome(outcome)}`);
+          }
+        } catch (e) {
+          console.warn(
+            "[Storage] 数据目录台账不可用（不影响使用，但\"这次数据目录是哪来的\"会缺一条记录）:",
+            e,
           );
         }
       })
