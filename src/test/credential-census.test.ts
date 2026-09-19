@@ -67,4 +67,40 @@ describe("CENSUS：设置里的凭据普查", () => {
     const out = censusCredentialSettings(rows);
     expect(out.total, "5 行都该命中；只命中第一行说明 lastIndex 没重置").toBe(5);
   });
+
+  it("CENSUS-5: **已加密**的字段不许被报成明文凭据（真机复量抓到的假话）", () => {
+    /**
+     * 真机现象（1.16.104，封存已生效）：维护日志打出
+     * 「设置里存在**明文存放的**密钥 1 处：codem-settings(field×1)」，
+     * 而那一刻磁盘上是 `"apiKeySealed": "dsh1:…"` —— 键名判据把 `apiKeySealed`
+     * 当成 `apiKey` 命中了（子串），于是"明文"这两个字是假的。
+     */
+    const sealed = JSON.stringify({
+      providers: [{ id: "deepseek", apiKeySealed: "dsh1:" + "ab".repeat(60) }],
+    });
+    const out = censusCredentialSettings([{ key: "codem-settings", value: sealed }]);
+    expect(out.total, "密文不是明文凭据 ⇒ 不许进明文告警").toBe(0);
+    expect(out.hits).toEqual([]);
+    expect(out.sealedTotal, "但必须**如实说清**有几处已加密").toBe(1);
+    expect(out.sealedKeys).toEqual(["codem-settings"]);
+
+    // 对照组：同一形状但值是明文 ⇒ 必须命中（别把这条修成"永远不报"）
+    const plain = JSON.stringify({ providers: [{ id: "deepseek", apiKey: "sk-abcdefghijklmnopqrstuvwx" }] });
+    const out2 = censusCredentialSettings([{ key: "codem-settings", value: plain }]);
+    expect(out2.total).toBeGreaterThan(0);
+    expect(out2.sealedTotal).toBe(0);
+
+    // 两者并存（真机上真实出现过）：明文那处要报，已加密那处只计数不告警
+    const both = JSON.stringify({
+      providers: [
+        { id: "deepseek", apiKey: "sk-abcdefghijklmnopqrstuvwx", apiKeySealed: "dsh1:" + "cd".repeat(60) },
+      ],
+    });
+    const out3 = censusCredentialSettings([{ key: "codem-settings", value: both }]);
+    expect(out3.total, "明文那一处必须仍然报出来").toBeGreaterThan(0);
+    expect(out3.sealedTotal).toBe(1);
+    // 序列化后不许出现任何值
+    expect(JSON.stringify(out3)).not.toContain("sk-abcdefghijklmnopqrstuvwx");
+    expect(JSON.stringify(out3)).not.toContain("cdcdcd");
+  });
 });

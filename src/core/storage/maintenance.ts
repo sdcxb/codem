@@ -1779,20 +1779,30 @@ export async function runDatabaseMaintenance(
           value: typeof value === "string" ? value : "",
         }));
         const census = censusCredentialSettings(rows);
+        /** 已加密的那些单独说一句（**不许**混进"明文凭据"的告警里 —— 那是假话） */
+        const sealedNote =
+          census.sealedTotal > 0
+            ? `；另有 ${census.sealedTotal} 处**已加密保存**（${census.sealedKeys.join("、")}，不是明文）`
+            : "";
         if (census.scanned === 0) {
           console.warn("[Maintenance] 凭据普查**未跑成**（一条设置都没读到）—— 不判定为'未命中'");
         } else if (census.total > 0) {
           const keys = census.hits.map((h) => `${h.key}(${h.kind}×${h.count})`).join("、");
-          console.log(`[Maintenance] 凭据普查：${census.scanned} 个设置项里命中 ${census.total} 处（${keys}）—— 只报位置与数量，不打印值`);
+          console.log(
+            `[Maintenance] 凭据普查：${census.scanned} 个设置项里**明文**命中 ${census.total} 处（${keys}）${sealedNote}` +
+              "—— 只报位置与数量，不打印值",
+          );
           reportActionFailure(
             "maintenance.credentialCensus",
             new Error(`设置里存在疑似凭据 ${census.total} 处`),
             "这些是**明文存放的密钥/令牌**（本机存储的既有设计）。若该机器或其备份可能外流，建议轮换；" +
-              `位置：${keys}（值从不打印）`,
+              `位置：${keys}（值从不打印）${sealedNote}`,
             { title: "安全提示：设置里存在明文凭据" },
           );
         } else {
-          console.log(`[Maintenance] 凭据普查：${census.scanned} 个设置项，未命中凭据形状`);
+          console.log(
+            `[Maintenance] 凭据普查：${census.scanned} 个设置项，未命中**明文**凭据形状${sealedNote}`,
+          );
         }
       } catch (e) {
         console.warn("[Maintenance] 凭据普查跳过:", e);
