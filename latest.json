@@ -1,15 +1,15 @@
 {
-  "version": "1.16.107",
-  "notes": "清理第 2 包：删掉 7 个从未被渲染的 UI 组件及其专属死样式/死令牌（UI 门禁 20+6 条告警归零）",
-  "pub_date": "2026-09-19T15:58:05Z",
+  "version": "1.16.108",
+  "notes": "清理第 3 包：8 个孤儿模块（技能子系统/槽位渲染器/游戏插件/顶层 types），并排查了 import.meta.glob 与构建入口两类误删风险",
+  "pub_date": "2026-09-19T16:08:39Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hzbVRkZkYvTE1YeXlaU3ROLzlhcnNhQkZsR1IxYWFyRjVISm1KTHEzbzYwZUhtSFRYbUExbUpyVHdpNFVEMkVBVDlPV1N5UUNpQ2QzSW45Z0hnb3dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODMzNDQzCWZpbGU6Q29kZW1fMS4xNi4xMDdfeDY0LXNldHVwLmV4ZQo0NU9DMGpGTUdENS9aZVVjQ0dIdHFiYTBYbGJCTmg0QXVidHdMakgxdVhrdWY3L2loRDhBUXpKa1Z2NW5wQnpVQlF3Yy96WFZoZDFhS09QWEhKc3hEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.107/Codem_1.16.107_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hwWHhHYUZaWXBWOUxLZDJCMDZ5dzAvL2tMU3A2N1pQTFd4ekd2TUZVYThuUmNyMUwzOU5lK05VT0lYR252djRLL0w5OEhWUVNqbEVlVmNXM2ZkdlFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODM0MDMwCWZpbGU6Q29kZW1fMS4xNi4xMDhfeDY0LXNldHVwLmV4ZQpXc3A0T0xnaS9PQnZqTUZmOWpmcFFKby9YdEZtMGRJMDVLc2hRSS9reDhVL3pOSjlrb3dlVnlWcHVnbmlpdHNjWVYyZy9Ca0F6M3pFQ1dxb3IwNytCZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.108/Codem_1.16.108_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hzbVRkZkYvTE1YeXlaU3ROLzlhcnNhQkZsR1IxYWFyRjVISm1KTHEzbzYwZUhtSFRYbUExbUpyVHdpNFVEMkVBVDlPV1N5UUNpQ2QzSW45Z0hnb3dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODMzNDQzCWZpbGU6Q29kZW1fMS4xNi4xMDdfeDY0LXNldHVwLmV4ZQo0NU9DMGpGTUdENS9aZVVjQ0dIdHFiYTBYbGJCTmg0QXVidHdMakgxdVhrdWY3L2loRDhBUXpKa1Z2NW5wQnpVQlF3Yy96WFZoZDFhS09QWEhKc3hEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.107/Codem_1.16.107_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hwWHhHYUZaWXBWOUxLZDJCMDZ5dzAvL2tMU3A2N1pQTFd4ekd2TUZVYThuUmNyMUwzOU5lK05VT0lYR252djRLL0w5OEhWUVNqbEVlVmNXM2ZkdlFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODM0MDMwCWZpbGU6Q29kZW1fMS4xNi4xMDhfeDY0LXNldHVwLmV4ZQpXc3A0T0xnaS9PQnZqTUZmOWpmcFFKby9YdEZtMGRJMDVLc2hRSS9reDhVL3pOSjlrb3dlVnlWcHVnbmlpdHNjWVYyZy9Ca0F6M3pFQ1dxb3IwNytCZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.108/Codem_1.16.108_x64-setup.exe"
     }
   }
 }

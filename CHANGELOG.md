@@ -2,6 +2,32 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.108] - 2026-09-19 — 清理第 3 包：8 个孤儿模块（含技能子系统与游戏插件里的死文件）
+
+> 同一条"每类一包 + 真机冒烟"节奏。这一包删的是**核心与插件内部的孤儿模块**（不是 UI 组件）。
+
+- **删除 8 个文件**，每个都过了三重取证（导出名全仓搜 + 文件名/路径搜 + 动态加载模式排查）：
+  | 文件 | 取证结论 |
+  | --- | --- |
+  | `src/types.ts` | 只有一个导出 `CliEvent`，全仓 0 处引用（也不是 ambient/全局声明，就是普通 export） |
+  | `core/skill/agent-declaration.ts` | 4 个导出名，全仓 0 处出现 |
+  | `core/skill/file-skill-provider.ts` | 0 处引用（连文件名都没在任何地方出现） |
+  | `core/skill/bundled-scripts.ts` | 唯一"疑似命中"是 `environment-runner.ts` 里**同名但不同源**的 `ScriptRunResult` 类型声明，不是 import |
+  | `core/slots/SlotRenderer.tsx` | 8 处提及全在**它自己文件内部**；生产侧无人 import（槽位的实际渲染走 `SlotBridge`/`SlotListBridge`） |
+  | `core/ui-plugins/ui-market/plugin-market.tsx` | 20 处同名命中全是**别的模块**（`core/plugin-market/dsh-market-catalog`、`components/plugin-market/PluginMarketTab`） |
+  | `plugins/monopoly-game/components/DicePanel.tsx` | 0 处引用 |
+  | `plugins/monopoly-game/store.ts` | 0 处引用（棋盘/场景走 canvas 自己的状态） |
+- **特别排查了"看起来零引用、其实被动态加载"的两种机制**（这是本包最容易误删的地方）：
+  1. `import.meta.glob` / `require.context`：全仓只有 `core/knowledge/ppt-skill-registry.ts` 用（针对 ppt 技能模块），**不覆盖**本包任何一个候选；
+  2. 构建入口：`vite.config.ts` 的 `input` 里有 `pet: resolve(__dirname, "pet.html")`，而 `pet.html` 用 `/src/pet-main.tsx` ——
+     所以 **`pet-main.tsx` 保留**（knip 把它报成"未使用文件"是**误报**，本包把它从待清理清单里划掉）。
+  另：`skill-creator/scripts/*`（技能运行期调用）与 `stubs/*`（构建期别名）继续保留，理由同上一包的分类。
+- **实测**：渲染侧 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**；`tsc` 0；10 道 audit 门禁 exit 0
+  （未接线扫描 **810** 个生产文件）；UI 一致性门禁 **error 0 / warn 0**。
+  ⚠️ 其中一次的 `vitest` 退出码为 1，但 0 失败 —— 打开日志确认是 `setup.ts` 里已记录的**已知 teardown 竞态**
+  （`subagent-turn-valves.test.ts` 的 `Closing rpc while "onUserConsoleLog" was pending`）；
+  单跑该文件与重跑全量都得到退出码 0，所以如实记为**偶发**，不是本包引入的失败。
+
 ## [1.16.107] - 2026-09-19 — 清理第 2 包：7 个从未被渲染的 UI 组件 + 它们专属的死样式与死令牌
 
 > 承接 1.16.106（同一条"每类一包 + 真机冒烟"的节奏）。
