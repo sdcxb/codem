@@ -5,12 +5,19 @@
 
 ## 0. 结论先行
 
-> **状态更新（1.16.106）**：下面第 2 节的**两个簇已按你的判断清理完毕**（"旧的遗留物、以后不再走了"）——
-> `src/core/capabilities/**` **25 个文件**与 `core/recovery/multi-layer.ts` + `multi-layer-index.ts`
-> 共 **27 个文件已删除**，并顺带修掉一处界面假话（恢复面板标题"多层会话恢复"→"会话恢复"）。
-> 删前做了三条确认（目录外零 import 说明符 / `provider/` 无反向依赖 / 动态 import 与配置无引用），
-> 删后 `tsc` 0、336 文件 5830 通过、10 道门禁 exit 0（未接线扫描 825 文件）。
-> 详见 `CHANGELOG.md` 的 1.16.106 条目。第 2 节的文字保留为**当时的判断依据**（历史记录，不改写）。
+> **状态更新（1.16.106 → 1.16.109，四个包全部执行完毕）**
+>
+> | 包 | 删了什么 | 结果 |
+> | --- | --- | --- |
+> | 1.16.106 | `src/core/capabilities/**` 25 个文件 + `core/recovery/multi-layer(.ts/-index.ts)`（共 **27**） | 架构迁移的脚手架与无人调用的旧恢复实现；顺带把恢复面板"多层会话恢复"标题改成与真实机制一致 |
+> | 1.16.107 | **7** 个从未被渲染的 UI 组件（`ActivityTimeline`、`SkillAuditDialog`、`ui/overlay-kit`、`rich-content/{FullscreenViewer,HtmlPreviewView,JsonFormatView,MathFormulaView}`）+ 它们的专属 CSS 类与 **6** 个死令牌 | UI 门禁从 `css-class-unused` 20 条 + `css-var-unused` 6 条归零 |
+> | 1.16.108 | **8** 个孤儿模块（`src/types.ts`、`core/skill/{agent-declaration,file-skill-provider,bundled-scripts}.ts`、`core/slots/SlotRenderer.tsx`、`core/ui-plugins/ui-market/plugin-market.tsx`、`plugins/monopoly-game/{components/DicePanel.tsx,store.ts}`） | 并**排除**了两类误删风险：`import.meta.glob`（只有 ppt-skill-registry 用）与构建入口（`pet-main.tsx` 保留） |
+> | 1.16.109 | `ConversationComposer.tsx` / `ConversationSession.tsx` + **7** 条挂在"没有出口的槽位"上的重复注册 | 查清"功能一件没少"（同一批组件都有 `app.*` 的活注册/直接 import），所以**不需要产品决策** |
+>
+> 现在 knip 的"未使用文件"从 **76** 降到 **32**，其中 **22** 个是 `index.ts` 桶文件、
+> **5** 个是技能运行期脚本、**4** 个是构建期 stub、**1** 个是 `pet-main.tsx`（Vite 入口）、
+> **1** 个是 `core/slots/declarations.ts`（全局类型增强，无需 import 也生效）——
+> **全部都是已判定的误报类别，没有真死代码了**。
 
 - knip 报 **76 个未使用文件**（另有 1 项 `Unlisted`/`tasklist` 噪声）。
 - **不能按 knip 的字面结论删除**：其中 32 个是 `index.ts` 桶文件、12 个是**全局类型增强**文件
