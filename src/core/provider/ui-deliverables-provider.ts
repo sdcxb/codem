@@ -64,15 +64,15 @@ export const uiDeliverablesProvider: Plugin = Object.assign(
     const slots = ctx.get('slots')
     const unreg = slots.register({ name: 'app.deliverable-files', id: 'r8-deliverablefiles', priority: 5 }, DeliverableFiles)
 
-    // 使用 slots.inject 声明消费依赖：conversation.session 存在时注册
-    const injectUnreg = slots.inject('conversation.session', () =>
-      slots.register({ name: 'conversation.session', id: 'r8-deliverablefiles-sub', priority: 3 }, DeliverableFiles)
-    )
+    /**
+     * 第 62 轮（清理第 4 包）：删掉 `conversation.session` 那条 `-sub` 注册 ——
+     * 它的唯一出口在 `components/ConversationSession.tsx`（从未被渲染）；
+     * 真正在用的是上面 `app.deliverable-files`（`ChatPanel` 里挂载）。
+     */
 
     return () => {
       if (dispose) dispose()
       unreg()
-      injectUnreg()
     }
   },
   { inject: ['slots'] }

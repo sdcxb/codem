@@ -41,10 +41,11 @@ export const uiGoalProvider: Plugin = Object.assign(
     const slots = ctx.get('slots')
     const unreg = slots.register({ name: 'app.goal-bar', id: 'r8-goalbar', priority: 5 }, GoalBar)
 
-    // 使用 slots.inject 声明消费依赖：conversation.composer.dock 存在时注册
-    const injectUnreg = slots.inject('conversation.composer.dock', () =>
-      slots.register({ name: 'conversation.composer.dock', id: 'r8-goalbar-sub', priority: 5 }, GoalBar)
-    )
+    /**
+     * 第 62 轮（清理第 4 包）：删掉 `conversation.composer.dock` 那条 `-sub` 注册 ——
+     * 它的唯一出口在 `components/ConversationComposer.tsx`（从未被渲染）；
+     * 真正在用的是上面 `app.goal-bar`（`InputArea` 里挂载）。
+     */
 
     const disp = ctx.provide('uiGoal', s)
 
@@ -52,7 +53,6 @@ export const uiGoalProvider: Plugin = Object.assign(
     return () => {
       if (disp) disp()
       unreg()
-      injectUnreg()
     }
   },
   { inject: ['slots'] }

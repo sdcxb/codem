@@ -144,16 +144,17 @@ export const uiTrajectoryProvider: Plugin = Object.assign(
     const slots = ctx.get('slots')
     const unreg = slots.register({ name: 'app.trajectory-panel', id: 'r8-trajectorypanel', priority: 5 }, TrajectoryPanel)
 
-    // 使用 slots.inject 声明消费依赖：conversation.session 存在时注册
-    const injectUnreg = slots.inject('conversation.session', () =>
-      slots.register({ name: 'conversation.session', id: 'r8-trajectorypanel-sub', priority: 2 }, TrajectoryPanel)
-    )
+    /**
+     * 第 62 轮（清理第 4 包）：删掉 `conversation.session` 那条 `-sub` 注册 ——
+     * 全仓复核后：`conversation.session` 这个槽位**没有任何出口**
+     * （挂载点只存在于从未被渲染的 `components/ConversationSession.tsx`），
+     * 真正在用的是上面 `app.trajectory-panel`。
+     */
 
     return () => {
       if (dispose) dispose()
       service.dispose()
       unreg()
-      injectUnreg()
     }
   },
   { inject: ['slots'] }

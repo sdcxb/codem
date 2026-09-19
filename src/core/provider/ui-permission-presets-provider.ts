@@ -114,10 +114,12 @@ export const uiPermissionPresetsProvider: Plugin = Object.assign(
     const slots = ctx.get('slots')
     const unreg = slots.register({ name: 'app.permission-preset-selector', id: 'r8-permissionpreset', priority: 5 }, PermissionPresetSelector)
 
-    // 使用 slots.inject 声明消费依赖：conversation.composer.bar 存在时注册
-    const injectUnreg = slots.inject('conversation.composer.bar', () =>
-      slots.register({ name: 'conversation.composer.bar', id: 'r8-permissionpreset-sub', priority: 5 }, PermissionPresetSelector)
-    )
+    /**
+     * 第 62 轮（清理第 4 包）：删掉 `conversation.composer.bar` 那条 `-sub` 注册 ——
+     * 它的唯一出口在 `components/ConversationComposer.tsx`，而那个组件**从未被任何界面渲染**。
+     * 真正在用的出口是上一行注册的 `app.permission-preset-selector`（`InputArea` 里挂载）。
+     * 注册一个没有出口的槽位 = "假装有 UI"，所以删掉。
+     */
 
     return () => {
       if (typeof window !== 'undefined') {
@@ -126,7 +128,6 @@ export const uiPermissionPresetsProvider: Plugin = Object.assign(
       listeners.clear()
       if (dispose) dispose()
       unreg()
-      injectUnreg()
     }
   },
   { inject: ['slots'] }

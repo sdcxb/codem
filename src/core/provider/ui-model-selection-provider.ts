@@ -106,19 +106,21 @@ export const uiModelSelectionProvider: Plugin = Object.assign(
       subscribe: (listener: any) => service.subscribe(listener),
     })
 
-    // 第 45 轮 D-15：这里**不再注册 `app.model-selector`** —— 那个 slot 全仓没有出口
-    // （`git grep "<SlotBridge name=\"app.model-selector\""` 零命中），注册只是在假装有 UI。
-    // 有出口的 `conversation.composer.bar` 保留注册（SlotListBridge 会渲染，组件已能空 props 渲染）。
+    /**
+     * 第 62 轮（清理第 4 包）：这里原来还有一条 `conversation.composer.bar` 的注册
+     * （`slots.inject` + `register('…-sub')`），注释说"那个 slot 有出口"。
+     *
+     * 真机与全仓复核后的事实：**它的唯一出口在 `components/ConversationComposer.tsx`，
+     * 而那个组件从未被任何界面渲染**（无人 import）⇒ 这条注册从来没有渲染过。
+     * 而模型选择器的**实际**渲染出口是 `app.model-selector` 一族里真正被宿主挂载的那个
+     * （`InputArea` 里的 `app.*` 系列），本文件上面对它的处置（D-15）已经清理过一轮。
+     * 现在把这条"指向不存在出口"的注册也删掉 —— 注册了却永远不渲染，就是"假装有 UI"。
+     */
     const slots = ctx.get('slots')
-
-    // 使用 slots.inject 声明消费依赖：conversation.composer.bar 存在时注册
-    const injectUnreg = slots.inject('conversation.composer.bar', () =>
-      slots.register({ name: 'conversation.composer.bar', id: 'r8-modelselector-sub', priority: 5 }, ModelSelector)
-    )
+    void slots
 
     return () => {
       if (dispose) dispose()
-      injectUnreg()
     }
   },
   { inject: ['slots', 'modelProfile'] }

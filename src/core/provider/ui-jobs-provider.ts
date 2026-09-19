@@ -49,10 +49,11 @@ export const uiJobsProvider: Plugin = Object.assign(
     const slots = ctx.get('slots')
     const unreg = slots.register({ name: 'app.jobs-badge', id: 'r8-jobsbadge', priority: 5 }, JobsBadge)
 
-    // 使用 slots.inject 声明消费依赖：conversation.session.header.actions 存在时注册
-    const injectUnreg = slots.inject('conversation.session.header.actions', () =>
-      slots.register({ name: 'conversation.session.header.actions', id: 'r8-jobsbadge-sub', priority: 5 }, JobsBadge)
-    )
+    /**
+     * 第 62 轮（清理第 4 包）：删掉 `conversation.session.header.actions` 那条 `-sub` 注册 ——
+     * 它的唯一出口在 `components/ConversationSession.tsx`（从未被渲染）；
+     * 真正在用的是上面 `app.jobs-badge`（`ChatPanel` 头部挂载）。
+     */
 
     const disp = ctx.provide('uiJobs', s)
 
@@ -60,7 +61,6 @@ export const uiJobsProvider: Plugin = Object.assign(
     return () => {
       if (disp) disp()
       unreg()
-      injectUnreg()
     }
   },
   { inject: ['slots'] }

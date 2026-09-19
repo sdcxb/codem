@@ -2,6 +2,32 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.109] - 2026-09-19 — 清理第 4 包：两条"注册了却永远不渲染"的插槽宿主（功能一件没少）
+
+> 同一条"每类一包 + 真机冒烟"节奏。这一包把我上一轮列为"需要你拍板"的那件事**查清并解决了** ——
+> 结论是：**不需要拍板，删掉不会少任何功能**。
+
+- **删掉两个组件**：`components/ConversationComposer.tsx`（51 行）、`components/ConversationSession.tsx`（49 行）。
+  它们本身只是两个薄薄的插槽宿主（各渲染 1–2 个 `<SlotListBridge>`），**从未被任何界面渲染**（无人 import）。
+- **为什么删了不会少功能（这一轮真正查清的事）**：那 6 个 provider 对同一批组件做了**双份注册**：
+  | provider | 活着的注册（有宿主） | 之前那条（宿主从未渲染） |
+  | --- | --- | --- |
+  | `ui-model-selection` | （组件由 `InputArea.tsx` **直接 import 渲染**） | `conversation.composer.bar` |
+  | `ui-permission-presets` | `app.permission-preset-selector`（`InputArea` 挂载） | `conversation.composer.bar` |
+  | `ui-plan` | `app.plan-mode-chip` / `app.plan-approval-card`（`InputArea` 挂载） | `conversation.composer.bar` |
+  | `ui-goal` | `app.goal-bar`（`InputArea` 挂载） | `conversation.composer.dock` |
+  | `ui-jobs` | `app.jobs-badge`（`ChatPanel` 挂载） | `conversation.session.header.actions` |
+  | `ui-deliverables` | `app.deliverable-files`（`ChatPanel` 挂载） | `conversation.session` |
+  | `ui-trajectory` | `app.trajectory-panel` | `conversation.session`（该槽位**全仓无任何出口**） |
+  也就是说这些 UI（模型选择、权限预设、计划模式标记、目标条、任务徽标、交付物列表）**今天都在正常显示**，
+  走的是 `app.*` 那一套；被删的只是同一批组件挂在"没有出口的槽位"上的**重复注册**——
+  那正是"注册了却永远不渲染 = 假装有 UI"。
+- **顺带删掉 7 条 `-sub` 注册**（上表右列），并各自留下注明"为什么删"的注释（引用删掉的原因，不是删完就走）。
+  槽位**声明**（`ui-conversation/index.ts` 里那几个名字）保留：它们是该 UI 插件的公开词汇表，留着无害。
+- **实测**：渲染侧 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**（`vitest` 退出码 0）；`tsc` 0；
+  10 道 audit 门禁 exit 0（未接线扫描 **808** 个生产文件）；UI 一致性门禁 error 0 / warn 0。
+  真机（已安装 1.16.109）冒烟见下一条。
+
 ## [1.16.108] - 2026-09-19 — 清理第 3 包：8 个孤儿模块（含技能子系统与游戏插件里的死文件）
 
 > 同一条"每类一包 + 真机冒烟"节奏。这一包删的是**核心与插件内部的孤儿模块**（不是 UI 组件）。

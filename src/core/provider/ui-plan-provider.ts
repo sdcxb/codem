@@ -30,11 +30,11 @@ export const uiPlanProvider: Plugin = Object.assign(
       slots.register({ name: 'app.plan-approval-card', id: 'r8-planapprovalcard', priority: 5 }, PlanApprovalCard),
     ]
 
-    // 使用 slots.inject 声明消费依赖：
-    // 只有 conversation.composer.bar 子 slot 存在时才注册（对标 DSH 模式）
-    const injectUnreg = slots.inject('conversation.composer.bar', () =>
-      slots.register({ name: 'conversation.composer.bar', id: 'r8-planmodechip-sub', priority: 5 }, PlanModeChip)
-    )
+    /**
+     * 第 62 轮（清理第 4 包）：删掉 `conversation.composer.bar` 那条 `-sub` 注册 ——
+     * 它的唯一出口在 `components/ConversationComposer.tsx`，而那个组件从未被渲染；
+     * 真正在用的是上面 `app.plan-mode-chip`（`InputArea` 里挂载）。
+     */
 
     const disp = ctx.provide('uiPlan', s)
 
@@ -42,7 +42,6 @@ export const uiPlanProvider: Plugin = Object.assign(
     return () => {
       if (disp) disp()
       for (const u of unregs) { try { u() } catch (_e) { /* ignore */ } }
-      injectUnreg()
     }
   },
   { inject: ['slots'] }
