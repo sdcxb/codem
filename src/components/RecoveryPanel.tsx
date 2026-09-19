@@ -126,7 +126,14 @@ export function RecoveryPanel() {
     <div className="recovery-panel">
       <div>
         <div className="recovery-title">
-          🔄 {zh ? "多层会话恢复" : "Multi-layer Session Recovery"}
+          {/**
+           * 第 62 轮改：原标题是「多层会话恢复 / Multi-layer Session Recovery」——
+           * 而"多层"（内存 + 本地 + 文件 JSONL 三层同步，`core/recovery/multi-layer.ts`）
+           * 的实现**没有任何生产调用者**，真正支撑这个面板的是单层的 `core/recovery/recovery.ts`。
+           * 也就是说标题在描述一个不存在的机制（本仓库反复处理的"印出来不是真的"）。
+           * 那两个遗留实现已按"遗留物清理"删除，标题改为与实际机制一致。
+           */}
+          🔄 {zh ? "会话恢复" : "Session Recovery"}
         </div>
         <div className="recovery-subtitle">
           {zh ? "自动保存会话状态，崩溃后可恢复。数据持久化到 SQLite。" : "Auto-saves session state for crash recovery. Data persisted to SQLite."}

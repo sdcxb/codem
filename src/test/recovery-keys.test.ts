@@ -2,9 +2,15 @@
  * 测试 12：Recovery 数据 — codem-recovery 前缀
  *
  * 改动影响：
- *   - recovery.ts 从 "mimo-recovery" 改为 "codem-recovery"
- *   - multi-layer.ts 从 "mimo-recovery" 改为 "codem-recovery"
+ *   - `recovery.ts` 从 "mimo-recovery" 改为 "codem-recovery"
  *   - 如果有误，会话恢复功能无法读取之前保存的恢复数据
+ *
+ * ⚠️ 第 62 轮更正：本文件原来还有一条「multi-layer 使用 codem-recovery 前缀」的用例，
+ * 钉的是 `core/recovery/multi-layer.ts` 的 `-state` / `-sessions` 两个键名 ——
+ * 而那个模块**没有任何生产调用者**（界面上的"多层会话恢复"标题其实由 `recovery.ts` 支撑，
+ * 它是单层的），已按"遗留物清理"删除。既然没有实现再用那两个键名，
+ * 继续断言它们就只是"测试在测一个不存在的约定"，所以那一并删掉；
+ * 下面保留的是**活模块**（`recovery.ts`）的真实键名。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 
@@ -30,24 +36,6 @@ describe("Recovery 数据 — codem-recovery 前缀", () => {
     // 旧 key 应无数据
     const oldData = getSettingJSON<any>("mimo-recovery", null);
     expect(oldData).toBeNull();
-  });
-
-  it("recovery multi-layer 使用 codem-recovery 前缀", () => {
-    // multi-layer.ts 使用 storagePrefix 拼接 "-state" 和 "-sessions"
-    setSetting("codem-recovery-state", JSON.stringify({ currentSessionId: "sess-1" }));
-    setSetting("codem-recovery-sessions", JSON.stringify({ "sess-1": { id: "sess-1", title: "Test" } }));
-
-    const state = getSettingJSON<any>("codem-recovery-state", null);
-    expect(state).not.toBeNull();
-    expect(state.currentSessionId).toBe("sess-1");
-
-    const sessions = getSettingJSON<any>("codem-recovery-sessions", null);
-    expect(sessions).not.toBeNull();
-    expect(sessions["sess-1"].title).toBe("Test");
-
-    // 旧前缀不应有数据
-    expect(getSettingJSON<any>("mimo-recovery-state", null)).toBeNull();
-    expect(getSettingJSON<any>("mimo-recovery-sessions", null)).toBeNull();
   });
 
   it("recovery.ts DEFAULT_CONFIG.storagePrefix 为 codem-recovery", async () => {

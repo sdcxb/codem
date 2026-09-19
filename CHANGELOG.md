@@ -2,6 +2,35 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.106] - 2026-09-19 — 清理遗留脚手架：删掉 27 个再也走不到的旧文件（含一处界面在说假话）
+
+> 依据你的判断："如果是旧的遗留物、以后不再走了，那就清理了"。**先查清来历，再删。**
+
+- **删掉 `src/core/capabilities/**`（25 个文件 / 1814 行）**。它不是"做了一半的功能"，
+  而是 **2026-08-15 那次架构迁移（`61d2223`：Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams）
+  的脚手架**：
+  - 迁移第二步（P2-2/R3 去重）把**实现全搬到了 `src/core/provider/`**（约 180 个 provider 文件，
+    由 `src/core/plugin-loader/builtin-registry.ts` 逐条注册 —— 那套是**活的**），
+    原目录被降级为"接口定义 + `@deprecated` 转发壳"（`fs/local.ts` 里就写着
+    `export { fsProvider } from '../../provider/fs-provider.ts'` 并标注 deprecated）；
+    TypeScript 接口不需要被 import 也能生效，新代码又按注释直接 import `provider/` ⇒ 这个壳无人引用。
+  - **删前做的确认（三条，都可复核）**：①全仓搜 `capabilities/` 作为 import 说明符 —— 目录外**零命中**；
+    ②`provider/` **没有**反向依赖它（删掉不会打断 live 层）；③动态 import / 别名 / 配置里也没有引用。
+  - 保留不动的：`src/core/consumer/**`（**是活的**：`MessageBubble`/`PluginManager`/`TrajectoryPanel`/`agentic-loop` 都在用）、
+    `src/core/provider/**`（canonical 实现）、`src-tauri/capabilities/*.json`（Tauri 的权限配置，**同名但两回事**）。
+- **删掉 `core/recovery/multi-layer.ts` + `multi-layer-index.ts`**：来自**初始提交**（2026-06-27）的
+  "内存/本地/文件三层 + 定期同步"恢复实现，**没有任何生产调用者**；今天支撑恢复面板的是
+  单层的 `core/recovery/recovery.ts`（268 行，里面没有"层"的概念）。
+- 🔴 **顺带修掉一处「界面在说假话」**：恢复面板的标题一直是「**多层**会话恢复 /
+  Multi-layer Session Recovery」，而它背后的机制是单层的（多层那套从没被调用）——
+  标题已改为「会话恢复 / Session Recovery」，与真实机制一致。
+- **测试**：`recovery-keys.test.ts` 里那条"multi-layer 使用 `codem-recovery` 前缀"的用例删掉
+  （它钉的是 `-state`/`-sessions` 两个**没有任何实现再用**的键名 —— 测试在测一个不存在的约定），
+  保留活模块的真实键名断言（2 条）。
+- **实测**：渲染侧 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**（`vitest` 退出码 0）；
+  `tsc` 0；10 道 audit 门禁 exit 0，其中"未接线生产模块"扫描 **825 个文件**通过。
+  真机（已安装 1.16.106）：正常启动、恢复面板标题为「会话恢复」、控制台无新增错误。
+
 ## [1.16.105] - 2026-09-19 — 旧库凭据清洗（按你的选择：先备份再清洗）+ 普查不再把密文说成"明文凭据"
 
 > 承接第 62 轮。这一版只有两件事，都是**如实性**的收口。

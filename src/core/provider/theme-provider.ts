@@ -6,8 +6,11 @@
  * 旧实现（`@ts-nocheck` 掩盖）暴露了 `getCurrent/setTheme/listThemes/registerTheme/onThemeChange`
  * 五个方法，而 `ThemeManager` 上**一个都不存在**（它只有
  * `init/getSkin/getDreamConfig/setSkin/updateDreamConfig/setDreamBackground/onChange/getAvailableSkins`）。
- * 类型侧却按 `capabilities/index.ts:212-221` 的 `ThemeService` 声明，于是任何
+ * 类型侧却按旧 `capabilities/index.ts:212-221` 的 `ThemeService` 声明，于是任何
  * `ctx.get('theme').setTheme(...)` 都是运行期 `TypeError`。
+ * （第 62 轮：`src/core/capabilities/**` 整个目录已作为**遗留脚手架**删除 ——
+ * 真正的实现一直在 `src/core/provider/`，那个目录只是接口定义 + `@deprecated` 转发壳，
+ * 所以上面引用的行号已成历史，保留此句只为记录当初的教训。）
  *
  * 现在按**真实存在的 API** 暴露，并给出 `listThemes/registerTheme` 两个名字的**单实现别名**
  * （皮肤列表 = 主题列表；`registerTheme` 在这个模型下无法注册外部皮肤 —— 它是
