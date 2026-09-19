@@ -2,6 +2,33 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.107] - 2026-09-19 — 清理第 2 包：7 个从未被渲染的 UI 组件 + 它们专属的死样式与死令牌
+
+> 承接 1.16.106（同一条"每类一包 + 真机冒烟"的节奏）。
+
+- **删除 7 个从未被任何界面渲染的组件**（判定依据不是 knip，而是**逐文件取证**：
+  把每个文件的导出名拿到全仓搜——命中的全是**注释**与**文档**，没有任何 import）：
+  `components/ActivityTimeline.tsx`、`components/SkillAuditDialog.tsx`、`components/ui/overlay-kit.tsx`、
+  `components/rich-content/{FullscreenViewer,HtmlPreviewView,JsonFormatView,MathFormulaView}.tsx`。
+  - 逐条核过的"疑似引用"都不是引用：`App.tsx` 里那句是**注释**（"ActivityTimeline 需要 items prop"）、
+    `run-status-tracker.ts` 的是**另一个函数** `buildActivityTimeline()`（数据仍在用）、
+    `ui-model-selection-provider.ts` 那句是**注释**里举的例子。
+  - **保留**同一目录里活着的：`RichContent.tsx`、`CodeBlockView`、`ImagePreviewView`、`MermaidCanvasView`、
+    `TableScrollView`、`ContentFrame`。
+- **顺带清掉它们专属的 CSS**（不做的话门禁会立刻报出来）：`codem-ui.css` 里
+  JSON 格式化 / HTML 预览 / 数学公式 / Activity Timeline 的类块，`styles.css` 里的 `.activity-timeline` 与
+  `.activity-dot*` + `pulse-dot`，以及 4 个主题块（基础明/暗 + `skin-hub` + `skin-dream`）里的
+  **6 个死令牌**（`--tool-card-bg/border/hover`、`--tool-status-running/done/error`，全项目 0 处 `var()` 引用）。
+  - ⚠️ 清理中**差点误删活的样式**：同一区域的 `.activity-item`（`AgentDetail.tsx` 在用）与
+    `.activity-time`（`Workbench.tsx` 在用）被我一并删掉过一次，**同一步就发现并原样恢复**——
+    这也说明"按类名批量删 CSS"必须逐个查引用，不能按前缀整段删。
+- **顺带修掉两处会变成悬空引用的注释**：`styles.css` 里"Fullscreen viewer close button"那行（组件已删、
+  样式仍被三个视图使用）、`App.tsx` 里那段解释"为什么某些 slot 不放 SlotBridge"的注释。
+  以及删掉 `tools/ui-audit/scan-ui.mjs` 里针对 `HtmlPreviewView.tsx` 的**豁免条目**（避免白名单长草）。
+- **实测**：UI 一致性门禁 **error 0 / warn 0**（清理前被打出 `css-class-unused` 20 条 + `css-var-unused` 6 条）；
+  渲染侧 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**（`vitest` 退出码 0）；`tsc` 0；
+  10 道 audit 门禁 exit 0（未接线扫描 818 个生产文件）；CSS 契约快照按门禁要求同步更新（2763 → 2747 个类）。
+
 ## [1.16.106] - 2026-09-19 — 清理遗留脚手架：删掉 27 个再也走不到的旧文件（含一处界面在说假话）
 
 > 依据你的判断："如果是旧的遗留物、以后不再走了，那就清理了"。**先查清来历，再删。**

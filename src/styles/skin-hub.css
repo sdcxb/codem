@@ -720,12 +720,7 @@
   --run-bar-presenting: var(--hub-text-success, #4ade80);
   --run-bar-error: #f85149;
 
-  --tool-card-bg: rgba(28, 28, 30, 0.60);
-  --tool-card-border: rgba(42, 42, 42, 0.80);
-  --tool-card-hover: rgba(42, 42, 42, 0.70);
-  --tool-status-running: #58a6ff;
-  --tool-status-done: var(--hub-text-success, #4ade80);
-  --tool-status-error: #f85149;
+  /* 第 62 轮删除：--tool-card-* / --tool-status-*（唯一引用点是被删的 ActivityTimeline 样式，0 处 var() 引用） */
 
   --composer-bg: rgba(21, 21, 21, 0.85);
   --composer-border: rgba(42, 42, 42, 0.80);

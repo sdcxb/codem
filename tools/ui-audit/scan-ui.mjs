@@ -79,11 +79,11 @@ const ALLOWLIST = [
     why: "PPT 工作区全屏视图与演示舞台（投影输出）：是整屏「工作台/舞台」而不是应用内浮层，套 modal-overlay 的遮罩与 Esc 行为会与演示交互冲突",
     rules: ["modal-shell-bespoke"],
   },
-  {
-    re: /^src\/components\/rich-content\/HtmlPreviewView\.tsx$/,
-    why: "HTML 预览：字体栈是**被预览内容**的默认样式（不是宿主 UI 的字体），要跟随用户内容",
-    rules: ["font-stack-raw"],
-  },
+  /*
+   * 第 62 轮：原有一条针对 `src/components/rich-content/HtmlPreviewView.tsx` 的豁免
+   * （"HTML 预览的字体栈要跟随用户内容"）。该组件**从未被任何界面渲染**（无人 import），
+   * 已作为遗留物删除 ⇒ 豁免条目一并移除（避免白名单长草 —— 与设置键那份门禁同一条纪律）。
+   */
   {
     re: /^src\/core\/skills\/skill-creator\/scripts\//,
     why: "技能脚手架脚本：生成的是独立 HTML 审阅页（脱离宿主渲染，读不到宿主 CSS 变量）",

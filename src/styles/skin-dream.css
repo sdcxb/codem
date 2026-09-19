@@ -731,9 +731,7 @@ backdrop-filter: none !important;
   --message-actions-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.92));
 
   --run-bar-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.85));
-  --tool-card-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.50));
-  --tool-card-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  --tool-card-hover: rgba(232, 140, 154, 0.08);
+  /* 第 62 轮删除：--tool-card-*（唯一引用点是被删的 ActivityTimeline 样式） */
 
   --composer-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.72));
   --composer-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
@@ -776,8 +774,7 @@ backdrop-filter: none !important;
   --message-actions-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.92));
 
   --run-bar-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.85));
-  --tool-card-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.50));
-  --tool-card-hover: rgba(232, 140, 154, 0.06);
+  /* 第 62 轮删除：--tool-card-*（唯一引用点是被删的 ActivityTimeline 样式） */
 
   --composer-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.72));
   --rich-code-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.85));

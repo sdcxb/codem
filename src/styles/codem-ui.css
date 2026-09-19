@@ -56,13 +56,10 @@
   --run-bar-presenting: var(--success, #3fb950);
   --run-bar-error: var(--error, #f85149);
 
-  /* 工具调用令牌 */
-  --tool-card-bg: rgba(28, 33, 40, 0.60);
-  --tool-card-border: rgba(255, 255, 255, 0.08);
-  --tool-card-hover: rgba(40, 46, 54, 0.70);
-  --tool-status-running: var(--info, #58a6ff);
-  --tool-status-done: var(--success, #3fb950);
-  --tool-status-error: var(--error, #f85149);
+  /* 第 62 轮删除：这里原来还有 6 个"工具调用令牌"——
+     `--tool-card-bg/border/hover`、`--tool-status-running/done/error`。
+     它们的唯一引用点是被删掉的 `ActivityTimeline.tsx` 那套样式（全项目现在 0 处 `var()` 引用，
+     已由 UI 一致性门禁的 `css-var-unused` 规则证实），留着就是"死令牌"。 */
 
   /* Composer 令牌 */
   --composer-bg: rgba(22, 27, 34, 0.80);
@@ -121,9 +118,6 @@
   --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 
   --run-bar-bg: rgba(234, 238, 242, 0.90);
-  --tool-card-bg: rgba(234, 238, 242, 0.60);
-  --tool-card-border: rgba(208, 215, 222, 0.60);
-  --tool-card-hover: rgba(208, 215, 222, 0.70);
 
   --composer-bg: rgba(255, 255, 255, 0.80);
   --composer-border: rgba(208, 215, 222, 0.60);
@@ -510,33 +504,9 @@
   background: var(--surface-1);
 }
 
-/* JSON format body */
-.json-format-body {
-  margin: 0;
-  padding: var(--space-6) var(--space-7);
-  font-family: var(--font-mono);
-  font-size: var(--fs-base);
-  line-height: 1.6;
-  overflow-x: auto;
-  color: var(--text-secondary);
-}
-.json-format-view.invalid .content-frame-badge {
-  color: var(--error);
-}
-
-/* HTML preview iframe */
-.html-preview-iframe {
-  width: 100%;
-  min-height: 120px;
-  border: none;
-  background: var(--surface-content);
-}
-
-/* Math formula body */
-.math-formula-body {
-  padding: var(--space-6) var(--space-7);
-  overflow-x: auto;
-}
+/* 第 62 轮删除：JSON 格式化视图 / HTML 预览 / 数学公式视图的专属样式 ——
+   对应三个组件从未被任何界面渲染，已作为遗留物删除；留着这些类就是"死样式"
+   （UI 一致性门禁的 css-class-unused 规则会把它们报出来）。 */
 
 /* Mermaid canvas body */
 .mermaid-canvas-body {
@@ -677,12 +647,8 @@
   text-align: center;
 }
 
-/* Math formula view */
-.math-formula-view {
-  margin: 0.5em 0;
-  overflow-x: auto;
-  padding: var(--space-2) 0;
-}
+/* 第 62 轮删除：数学公式视图 / JSON 格式化视图 / HTML 预览视图的包裹样式
+   （三个组件已作为遗留物删除）。下面 `.image-preview-view` 是**活的**（ImagePreviewView.tsx），保留。 */
 
 /* Image preview view */
 .image-preview-view {
@@ -702,20 +668,6 @@
   height: auto;
   display: block;
 }
-
-/* JSON format view */
-.json-format-view {
-  margin: 0.75em 0;
-}
-
-/* HTML preview view */
-.html-preview-view {
-  margin: 0.75em 0;
-  border: 1px solid var(--rich-code-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
 
 /* Fullscreen viewer */
 
@@ -900,85 +852,11 @@
   to { transform: rotate(360deg); }
 }
 
-/* Activity Timeline */
-.activity-timeline {
-  margin: var(--space-4) 0;
-  border: 1px solid var(--tool-card-border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.activity-timeline-header {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-3) var(--space-5);
-  background: var(--tool-card-bg);
-  border: none;
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  transition: var(--transition-color);
-}
-.activity-timeline-header:is(:hover, :focus-visible) {
-  background: var(--tool-card-hover);
-}
-.activity-timeline-body {
-  padding: var(--space-2) 0;
-}
-.activity-timeline-text {
-  padding: var(--space-3) var(--space-5);
-  font-size: var(--fs-base);
-  color: var(--text-secondary);
-}
-.activity-timeline-tool {
-  border-top: 1px solid var(--tool-card-border);
-}
-.activity-timeline-tool-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  transition: var(--transition-color);
-}
-.activity-timeline-tool-header:is(:hover, :focus-visible) {
-  background: var(--surface-1);
-}
-.activity-timeline-tool-name {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-.activity-timeline-tool-status.status-running { color: var(--tool-status-running); }
-.activity-timeline-tool-status.status-done { color: var(--tool-status-done); }
-.activity-timeline-tool-status.status-error { color: var(--tool-status-error); }
-.activity-timeline-tool-duration {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.activity-timeline-tool-detail {
-  padding: var(--space-4) var(--space-6);
-  background: var(--rich-code-bg);
-  border-top: 1px solid var(--tool-card-border);
-}
-.activity-timeline-detail-label {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  display: block;
-  margin-bottom: var(--space-2);
-}
-.activity-timeline-tool-args pre,
-.activity-timeline-tool-result pre {
-  margin: 0;
-  padding: var(--space-4);
-  font-size: var(--fs-sm);
-  font-family: var(--font-mono);
-  overflow-x: auto;
-  background: transparent;
-  color: var(--text-secondary);
-}
+/* 第 62 轮删除：Activity Timeline 的整套样式 ——
+   `components/ActivityTimeline.tsx` 从未被任何界面渲染（无人 import），已作为遗留物删除。
+   活动时间线的**数据**仍由 `core/llm/run-status-tracker.ts::buildActivityTimeline()` 产出，
+   但它的呈现走别的路径（本段样式只服务那个已删组件）。 */
+
 
 /* ========== 7. Tool Call Card / Group — Pill Style (aligned with wecode) ========== */
 
@@ -3205,13 +3083,8 @@ background: var(--bg-secondary);
   --run-bar-presenting: var(--hub-text-success, #4ade80);
   --run-bar-error: #f85149;
 
-  /* Tool card tokens */
-  --tool-card-bg: rgba(28, 28, 30, 0.60);
-  --tool-card-border: rgba(42, 42, 42, 0.80);
-  --tool-card-hover: rgba(42, 42, 42, 0.70);
-  --tool-status-running: #58a6ff;
-  --tool-status-done: var(--hub-text-success, #4ade80);
-  --tool-status-error: #f85149;
+  /* 第 62 轮删除：`Tool card tokens`（--tool-card-* / --tool-status-*）——
+     唯一引用点是被删掉的 ActivityTimeline 样式，全项目 0 处 var() 引用 */
 
   /* Composer tokens */
   --composer-bg: rgba(21, 21, 21, 0.85);

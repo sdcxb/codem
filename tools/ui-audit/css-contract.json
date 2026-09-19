@@ -20,69 +20,6 @@
     "margin-left": "auto",
     "opacity": "0.7"
   },
-  "activity-timeline": {
-    "border": "1px solid var(--tool-card-border)",
-    "border-radius": "var(--radius)",
-    "display": "flex",
-    "flex-direction": "column",
-    "gap": "var(--space-1)",
-    "margin": "var(--space-4) 0",
-    "overflow": "hidden",
-    "padding": "var(--space-4)"
-  },
-  "activity-timeline-body": {
-    "padding": "var(--space-2) 0"
-  },
-  "activity-timeline-detail-label": {
-    "color": "var(--text-muted)",
-    "display": "block",
-    "font-size": "var(--fs-sm)",
-    "margin-bottom": "var(--space-2)"
-  },
-  "activity-timeline-header": {
-    "align-items": "center",
-    "background": "var(--tool-card-bg)",
-    "border": "none",
-    "color": "var(--text-secondary)",
-    "cursor": "pointer",
-    "display": "grid",
-    "font-size": "var(--fs-sm)",
-    "gap": "var(--space-3)",
-    "grid-template-columns": "max-content minmax(0, 1fr) max-content",
-    "padding": "var(--space-3) var(--space-5)",
-    "transition": "var(--transition-color)",
-    "width": "100%"
-  },
-  "activity-timeline-text": {
-    "color": "var(--text-secondary)",
-    "font-size": "var(--fs-base)",
-    "padding": "var(--space-3) var(--space-5)"
-  },
-  "activity-timeline-tool": {
-    "border-top": "1px solid var(--tool-card-border)"
-  },
-  "activity-timeline-tool-detail": {
-    "background": "var(--rich-code-bg)",
-    "border-top": "1px solid var(--tool-card-border)",
-    "padding": "var(--space-4) var(--space-6)"
-  },
-  "activity-timeline-tool-duration": {
-    "color": "var(--text-muted)",
-    "font-variant-numeric": "tabular-nums"
-  },
-  "activity-timeline-tool-header": {
-    "align-items": "center",
-    "cursor": "pointer",
-    "display": "flex",
-    "font-size": "var(--fs-sm)",
-    "gap": "var(--space-3)",
-    "padding": "var(--space-3) var(--space-5)",
-    "transition": "var(--transition-color)"
-  },
-  "activity-timeline-tool-name": {
-    "color": "var(--text-primary)",
-    "font-weight": "500"
-  },
   "activity-turn": {
     "color": "var(--text-secondary)",
     "font-weight": "500"
@@ -5034,18 +4971,6 @@
     "color": "var(--text-muted)",
     "font-size": "var(--fs-sm)"
   },
-  "html-preview-iframe": {
-    "background": "var(--surface-content)",
-    "border": "none",
-    "min-height": "120px",
-    "width": "100%"
-  },
-  "html-preview-view": {
-    "border": "1px solid var(--rich-code-border)",
-    "border-radius": "var(--radius-md)",
-    "margin": "0.75em 0",
-    "overflow": "hidden"
-  },
   "icon-2xl": {
     "display": "inline-block",
     "flex-shrink": "0",
@@ -5930,18 +5855,6 @@
     "gap": "var(--space-4)",
     "margin-bottom": "var(--space-6)"
   },
-  "json-format-body": {
-    "color": "var(--text-secondary)",
-    "font-family": "var(--font-mono)",
-    "font-size": "var(--fs-base)",
-    "line-height": "1.6",
-    "margin": "0",
-    "overflow-x": "auto",
-    "padding": "var(--space-6) var(--space-7)"
-  },
-  "json-format-view": {
-    "margin": "0.75em 0"
-  },
   "kg-action-btn": {
     "align-items": "center",
     "border-radius": "var(--radius)",
@@ -6707,15 +6620,6 @@
   },
   "market-skill-tag": {
     "border-radius": "var(--radius-full)"
-  },
-  "math-formula-body": {
-    "overflow-x": "auto",
-    "padding": "var(--space-6) var(--space-7)"
-  },
-  "math-formula-view": {
-    "margin": "0.5em 0",
-    "overflow-x": "auto",
-    "padding": "var(--space-2) 0"
   },
   "mcp-action-btn": {
     "align-items": "center",

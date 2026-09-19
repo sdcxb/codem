@@ -11869,7 +11869,9 @@ border-color: var(--text-muted);
   color: var(--text-primary);
 }
 
-/* Fullscreen viewer close button (CodeBlock, Mermaid, Image, FullscreenViewer) */
+/* Fullscreen viewer close button (CodeBlock, Mermaid, Image)
+   注：第 62 轮把从未被渲染的 `rich-content/FullscreenViewer.tsx` 删掉了，
+   这个关闭按钮样式仍由上面三个视图使用，所以保留。 */
 .content-fullscreen-close:is(:hover, :focus-visible) {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -15015,14 +15017,10 @@ color: var(--accent, #7c6cf0);
   border-bottom-color: var(--accent);
 }
 
-/* ========== P2: Activity Timeline ========== */
-.activity-timeline {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-4);
-}
-
+/* 第 62 轮删除：`P2: Activity Timeline` 那一段里的 `.activity-timeline` 与
+   `.activity-dot*` + `pulse-dot`（只服务 `components/ActivityTimeline.tsx`，
+   而那个组件从未被任何界面渲染，已作为遗留物删除）。
+   下面两条是**活的**，原位保留：`.activity-item`（AgentDetail.tsx）、`.activity-time`（Workbench.tsx）。 */
 .activity-item {
   display: flex;
   align-items: flex-start;
@@ -15036,18 +15034,6 @@ color: var(--accent, #7c6cf0);
 
 .activity-item:is(:hover, :focus-visible) {
   background: var(--bg-hover);
-}
-
-
-
-.activity-dot.success { background: var(--security-full, #4ade80); }
-.activity-dot.error { background: var(--error); }
-.activity-dot.warning { background: var(--warning, #f59e0b); }
-.activity-dot.active { background: var(--accent); animation: pulse-dot 1.5s infinite; }
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 
 .activity-time {
@@ -17646,10 +17632,12 @@ li {
 /* 7. 逐组件减动效（第 29 波；第 40 波改成**显式清单**）：
      全局兜底只是把动画"加速到 0.01ms"，对循环动画不够 —— 它们应当完全停下。
      此前这里用类名模式匹配（`[class*="-spin"]`、`[class*="-pulse"]`），于是**天然漏网**：
-     `.spinning`、`.thinking-text`、`.activity-dot.active`、`.session-running-dot`、
+     `.spinning`、`.thinking-text`、`.session-running-dot`、
      `.boot-splash-logo-icon.pulsing`、`.ppt-studio-orb`、`.lo-icon-btn.is-busy`
      这些类名里都不含 `-spin` / `-pulse`。第 40 波用脚本把全项目 **60 条 infinite 动画**
-     逐条列出来核对，改成显式清单 —— 可读、可数，也不会随改名静默失效。 */
+     逐条列出来核对，改成显式清单 —— 可读、可数，也不会随改名静默失效。
+     （第 62 轮：清单里原有的 `.activity-dot.active` 已移除 —— 那个类随
+      `components/ActivityTimeline.tsx` 一起作为遗留物删掉了，留着就是"指向不存在选择器的规则"。） */
 @media (prefers-reduced-motion: reduce) {
   /* 旋转类：加载/进行中 */
   .spin,
@@ -17676,7 +17664,6 @@ li {
   .load-more-loading,
   .subagent-status.running,
   .scroll-to-bottom-btn.has-unread,
-  .activity-dot.active,
   .mode-toggle-btn.voice-rec-active,
   .connection-lost-dot,
   .connection-banner-dot,
