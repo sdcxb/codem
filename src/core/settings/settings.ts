@@ -176,6 +176,55 @@ export const POLICY_SETTING_KEY = "codem-policy";
  * 现在：来源内的键**只按来源取**（`getFromSource`），`policy` 从 DB 的
  * `codem-policy` 键装载（`applyPolicyFromDb`），装载失败的原因记进 `loadError`（不再静默）。
  */
+
+/**
+ * 导出设置时的**凭据脱敏**（第 62 轮，见 `docs/CREDENTIALS-PLAN.md` 的阶段 0）。
+ *
+ * 判据两条，**只替换 + 计数，从不打印值**：
+ * 1. **键名**像凭据（`apiKey`/`api_key`/`token`/`secret`/`password`/`authorization`）→ 值换占位符；
+ * 2. **值形状**像凭据（`sk-` / `gho_` / `ghp_` / `AKIA`）→ 换占位符。
+ *
+ * 为什么两条都要：只看键名会漏掉"被塞进别的字段里的密钥"（本仓库真发生过：一个 GitHub token
+ * 形状的值出现在 reasoning / tool 结果 / 事件载荷里）；只看值形状会漏掉"形状不像但确实是密钥"
+ * 的自定义 provider（比如自建网关的短 token）。
+ */
+const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?key|apikey|token|secret|password|passwd|authorization|auth[-_]?token)$/i;
+const CREDENTIAL_VALUE_RES: RegExp[] = [
+  /sk-[A-Za-z0-9_-]{16,}/g,
+  /gho_[A-Za-z0-9]{16,}/g,
+  /ghp_[A-Za-z0-9]{16,}/g,
+  /AKIA[0-9A-Z]{16}/g,
+];
+
+export function redactCredentialShapes<T>(value: T): { value: T; redacted: number } {
+  let redacted = 0;
+  const walk = (node: unknown, keyName: string | null): unknown => {
+    if (typeof node === "string") {
+      let text = node;
+      for (const re of CREDENTIAL_VALUE_RES) {
+        text = text.replace(re, () => {
+          redacted += 1;
+          return "<redacted:credential-shape>";
+        });
+      }
+      if (keyName && CREDENTIAL_KEY_RE.test(keyName) && node.trim().length > 0 && text === node) {
+        redacted += 1;
+        return "<redacted:credential-field>";
+      }
+      return text;
+    }
+    if (Array.isArray(node)) return node.map((item) => walk(item, keyName));
+    if (node && typeof node === "object") {
+      const next: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) next[k] = walk(v, k);
+      return next;
+    }
+    return node;
+  };
+  const value2 = walk(value, null) as T;
+  return { value: value2, redacted };
+}
+
 export class SettingsManager {
   private sources: Map<SettingsSource, SettingsSourceConfig> = new Map();
   private cache: Map<string, SettingsValue> = new Map();
@@ -530,11 +579,24 @@ export class SettingsManager {
     await this.loadAll();
     this.applyPolicyFromDb();
 
+    /**
+     * 第 62 轮：**导出前先脱敏**（见 `docs/CREDENTIALS-PLAN.md` 阶段 0）。
+     *
+     * 导出是"把设置写到用户能随手分享的文件里"这条路径 —— 原样返回等于**把密钥交给导出文件**。
+     * 脱敏只替换 + 计数，从不打印值；导出结果里仍能看到"这里原本有一个凭据字段"，
+     * 所以恢复配置的人知道要重新填，而不是以为"这个字段本来就不存在"。
+     */
     const result: Record<string, unknown> = {};
+    let redactedTotal = 0;
     for (const [source, config] of this.sources) {
       if (config.enabled) {
-        result[source] = config.data ?? {};
+        const { value, redacted } = redactCredentialShapes(config.data ?? {});
+        redactedTotal += redacted;
+        result[source] = value;
       }
+    }
+    if (redactedTotal > 0) {
+      console.log(`[Settings] 导出已脱敏：${redactedTotal} 处凭据字段/形状被替换为占位符（值从不打印）`);
     }
     return result;
   }

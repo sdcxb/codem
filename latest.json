@@ -1,15 +1,15 @@
 {
-  "version": "1.16.98",
-  "notes": "深层面板可访问名收口（1.16.96/97/98）：搜索框 placeholder 不是可访问名、MCP 面板关闭按钮无名、技能行的开关无名，三包逐个修掉。真机复量：技能/智能体/MCP 三个面板内无名控件全部归零，四个面板关闭按钮都能按名字找到。",
-  "pub_date": "2026-09-18T23:14:22Z",
+  "version": "1.16.99",
+  "notes": "导出设置不再带走密钥：新增凭据脱敏（键名像凭据或值形状像 sk-/gho_/AKIA 都替换为占位符，只替换+计数、从不打印值），保留字段位置便于重填。含对照组的 4 条契约用例。",
+  "pub_date": "2026-09-19T02:36:49Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JweEhrYk9vUjg3RWtxaTlBdk9mc1BPSW1aNGtLOHNXYmgxRUdzYTczaVZKOEQxanh6S0RVaTNjOGZrUDJJb2hpVjk4SW4xNWlKN0VIZGdVUjVUaUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzczMTkxCWZpbGU6Q29kZW1fMS4xNi45OF94NjQtc2V0dXAuZXhlCll3blo5MUpZVW5DakZPRzBic25IRDdzZUFodktBMkJJR2VjSHNuaU5Hd1pjRkhFWnhUYWhwREdCNkduM21jc3Z5L2dMOXBHK0piQkhCcXhVYTIrdkRBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.98/Codem_1.16.98_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F2bzB1bW9Zcm5HV0ZoOTEvVjIzUlRzMGIxa0JCMUs1SzlzWWpRd2pRcW9ZdVZQMDZlRk82cHFHdEJRL2QxZEs5ZkpOZTI1VThMK1UyUEVtSEEzcFFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5Nzg1MzI2CWZpbGU6Q29kZW1fMS4xNi45OV94NjQtc2V0dXAuZXhlCjR6QUo4UTY3TUJlZFlHRTY4emtlUUZMdEZuRTBDWXpRTStGTTJEY3Z0cUpUb0N5VEJ4c3hKZFVheHBzOVVTWmV1MEk4OUtsb1dCL0FVLzR2KzdNakFRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.99/Codem_1.16.99_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JweEhrYk9vUjg3RWtxaTlBdk9mc1BPSW1aNGtLOHNXYmgxRUdzYTczaVZKOEQxanh6S0RVaTNjOGZrUDJJb2hpVjk4SW4xNWlKN0VIZGdVUjVUaUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzczMTkxCWZpbGU6Q29kZW1fMS4xNi45OF94NjQtc2V0dXAuZXhlCll3blo5MUpZVW5DakZPRzBic25IRDdzZUFodktBMkJJR2VjSHNuaU5Hd1pjRkhFWnhUYWhwREdCNkduM21jc3Z5L2dMOXBHK0piQkhCcXhVYTIrdkRBPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.98/Codem_1.16.98_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F2bzB1bW9Zcm5HV0ZoOTEvVjIzUlRzMGIxa0JCMUs1SzlzWWpRd2pRcW9ZdVZQMDZlRk82cHFHdEJRL2QxZEs5ZkpOZTI1VThMK1UyUEVtSEEzcFFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5Nzg1MzI2CWZpbGU6Q29kZW1fMS4xNi45OV94NjQtc2V0dXAuZXhlCjR6QUo4UTY3TUJlZFlHRTY4emtlUUZMdEZuRTBDWXpRTStGTTJEY3Z0cUpUb0N5VEJ4c3hKZFVheHBzOVVTWmV1MEk4OUtsb1dCL0FVLzR2KzdNakFRPT0K",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.99/Codem_1.16.99_x64-setup.exe"
     }
   }
 }

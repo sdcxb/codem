@@ -11,7 +11,7 @@
 | API key **明文**存在 `codem-settings` 这个设置项里（`providers[].apiKey`） | 真机普查：`codem-settings.providers[3].apiKey`（DeepSeek，`sk-` 形状，长 35） |
 | 读取方**很多**，且都是**同步**读设置 | `ContextMonitor.tsx:42-46`（余额查询直接用 `p.apiKey`）、`ModelProfilePanel.tsx:77`、`MultimodalPanel.tsx:86/98`（TTS/多模态选 provider）、`CorrectionModelConfig.tsx:66/90`、`MessageBubble.tsx:274`、`App.tsx` 的 `configureEngine` |
 | **设置可以被导出**，导出会带走密钥 | `settings.ts:529 exportSettings()` + `LayeredSettingsPanel.tsx:104`（界面上的导出按钮） |
-| 还有**第二份明文副本**：`localStorage` | `store.ts:134 localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))` |
+| ~~还有**第二份明文副本**：`localStorage`~~ ⚠️ **这条我写错了，已核实并更正** | 我最初引的是 `src/plugins/library-ops/store.ts:134` —— 复查后确认那是**library-ops 面板自己的 UI 状态**（场景图 id/缩放等），**不含 API key**；`src/core/settings` 与 `src/core/storage` 里**没有任何**把设置镜像进 localStorage 的写入点（`InputArea.tsx:1213-1215` 的注释还明确写着 `setItem("codem-settings")` **0 次**、权威副本在 DB）⇒ **不存在这份副本**（结论：这一条从清单里划掉） |
 | Rust 侧**没有任何**加密/凭据依赖 | `src-tauri/Cargo.toml`：只有 `dirs / tauri-plugin-{shell,dialog,fs,notification,updater,process} / serde / tokio / reqwest / zip / futures-util / uuid` |
 | 旧库与备份里可能还有旧值 | 真机计数：`codem-db.bin` 里 4 处 `sk-` 形状（1.11.0 时代快照） |
 
@@ -84,3 +84,19 @@
   ⇒ **"用系统后端封存 + 不可用时显式不可用"** 正是上面阶段 1 的形态；
 - `dsh-plugin-desktop/src/desktop-data-directory.ts`：数据目录用 `{activeHome, previousHome, generation}` 记账、**切换不复制旧 Home**、状态文件 `0600`/目录 `0700`
   ⇒ 与本方案"阶段 2 + 数据目录账本"配套（密钥不在数据目录里随包搬走，而是与**本机/本账户**绑定）。
+
+
+## 8. 执行状态（滚动更新）
+
+| 阶段 | 状态 | 证据 |
+| --- | --- | --- |
+| 阶段 0-a：**导出脱敏** | ✅ **已完成**（1.16.99） | `export-credential-redaction.test.ts` 4 条（含对照组）；`exportSettings()` 已接 `redactCredentialShapes()` |
+| 阶段 0-b：**导出结果的真机核对**（导出文件里 `sk-` 形状 = 0） | ⏳ **未做成** | 打包版设置面板里找不到导出入口（只有"关闭设置/保存设置"），导出按钮在**插件面板**内；下一轮先找到入口再核对 |
+| 阶段 0-c：维护期凭据普查（只报表/键名+数量） | ⏳ 未做 | 计划见第 3 节 |
+| 阶段 0-d：旧库/备份/WAL 的残留计数清单 | ⏳ 未做（脚本已存在：`.preview-shot/survey-credential-paths.mjs`） | 真机实测过：新库 `gho_×3 sk-×1`、旧库 `gho_×3 sk-×4`、两个 WAL 为 0 |
+| 阶段 1：DPAPI 封存 + 启动解封缓存 | ⏳ 未做（需新增依赖，见风险节） | — |
+| 阶段 2：密钥移入系统凭据库 | ⏳ 未做（可选） | — |
+
+> ⚠️ 另有一条**已更正**的记录：本方案初稿把 `src/plugins/library-ops/store.ts:134` 当成"设置被镜像进 localStorage"的证据，
+> 复查后确认那是该插件自己的 UI 状态、**不含 API key**，且 `src/core` 下没有任何把设置写进 localStorage 的地方
+> （`InputArea.tsx:1213-1215` 注释明确写着 `setItem("codem-settings")` 0 次）⇒ 该条已从清单划掉。
