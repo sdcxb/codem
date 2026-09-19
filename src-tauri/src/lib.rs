@@ -24,6 +24,8 @@ mod phone;
 // ========== 存储引擎（Rust 原生 SQLite）==========
 // 迁移期定位：渲染侧通过 `storage_invoke` 走类型化仓储命令（不接受 SQL），
 // 引擎本体在 src-tauri/codem-db（独立 crate，可被 CLI 与 vitest 契约测试直接驱动）。
+mod secret;
+use crate::secret::{secret_backend_available, secret_seal, secret_unseal};
 mod storage;
 
 // ========== PTY Manager ==========
@@ -2547,7 +2549,10 @@ let app = tauri::Builder::default()
             mcp_processes: TokioMutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
-            send_message,
+            secret_backend_available,
+    secret_seal,
+    secret_unseal,
+    send_message,
             get_providers,
             add_provider,
             remove_provider,
