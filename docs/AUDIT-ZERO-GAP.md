@@ -70,3 +70,36 @@ node .preview-shot/cdp.mjs "@.preview-shot/probe-health-11689.js"
 | `drill-data-root-r62.mjs` | 隔离钻取：数据根目录 / 真实目录是否被改动 |
 | `ui-walk-r63.mjs`、`ui-walk-r63-verify.js` | 真机逐面板走查 / 修复后逐项复量 |
 | `cmp-dbs.mjs`、`verify-round47.js` | 旧库与新库逐 id 比对、水位复核 |
+
+## 5. 第 62 轮（1.16.101 → 1.16.104）的收口记录
+
+出包 4 个（**每个都装了、跑了、真机量过**）：
+
+| 版本 | 这一版关掉的缺口 | 关键实测数字 |
+| --- | --- | --- |
+| 1.16.101 | 维护期凭据普查（0-c）：改用引擎 `settings.get_all`；`scanned===0` 必须说"未跑成" | 真机 `27 个设置项里命中 2 处` |
+| 1.16.102 | 凭据封存（阶段 1）+ **写回闸门** + 字节级残留回收 + 明文回退（此前只有读点、没有写入方） | 库文件 `sk-` **1→0**、WAL `sk-` **27→0**、库 19.51 MB → 18.01 MB；CLI 直读 `apiKey=False / apiKeySealed=True`；渲染侧读到的密钥调 DeepSeek 余额 **HTTP 200 / is_available=true** |
+| 1.16.103 | 真机复量抓到的两处界面缺陷：更新提示被重渲染抹掉（改 React state）；小按钮命中区 24×18 → 26×24 | 更新按钮 `T+1.6s` 显示"未发现更新（当前 v1.16.103）…"且**不再消失**；`.market-skill-link-btn` 172 个 **minH 24 / minW 26、两两重叠 0**、可见的 2 个命中测试 **2/2** |
+| 1.16.104 | 数据目录台账（第 62 轮清单最后一项） | 真机：首次 `generation=1 / source=standard / targetState=existing`；重启后 mtime **未变**（未重写）+ 日志"数据目录未变化（第 1 代）" |
+
+**基线（1.16.104）**：渲染侧 **336 文件 / 5830 通过 / 16 跳过 / 0 失败**；`tsc` 0；10 道 audit 门禁 exit 0；
+额外审计工具 `check-hot-tables` / `wasm-removal-readiness`（L1–L4 全 0）/ `l1-legacy-engine-dependents` 均 exit 0；
+引擎侧 `src-tauri` 53 条 / `codem-db` 85 + 54 条。
+
+### 5.1 尚未处理 / 需用户决定
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| 旧库 `codem-db.bin` 里的 `sk-×4`（历史明文）+ `gho_×3` | **未处理（等你决定）** | 它是**只读遗留文件**；删或清洗属破坏性操作。新库与两个 WAL 已实测 `sk-` = 0 |
+| 新库里剩下的 3 处 `gho_` | **已定位、判定为会话数据** | 上下文是 `protocol=https host=github.com username=sdcxb password=gho_…`（`git credential fill` 的输出被记进工具结果）；**不是** provider 的 API key（封存管的是"设置里的密钥"） |
+| knip 报的"未使用文件"（33 个 index 桶 + 46 个非桶） | **已分诊、未清理** | 一批是**误报**：全局类型增强文件（无需被 import 也生效）、Vite 入口（`pet-main.tsx`）、技能自带脚本（运行期调用）、`stubs/*`（构建期别名）。**不能按 knip 的字面结论直接删**，要逐类判断 |
+| `.lo-link-btn` 命中区复量 | **仍未复量** | 该面板里元素计数为 0，需在 library-ops 面板那一轮补读数 |
+
+### 5.2 一次"差点变成假修复"的记录（方法教训）
+
+knip 把 `core/slots/declarations.ts` 与 `core/ui-plugins/slots.ts` 报成未使用文件，两份文件顶部都有 `// @ts-nocheck`，
+而注释写着"让插件在编译期就知道有哪些可用的槽位" —— 看上去是**假能力**（`@ts-nocheck` 把声明合并废掉）。
+按规矩先做 A/B：写探针（`SlotMap["definitely.not.a.slot"]` 必须报错、`"app.layout" extends keyof SlotMap` 必须为真），
+**带/不带 `@ts-nocheck` 各跑一次 `tsc`** —— 两次都报错：`@ts-nocheck` 只抑制**本文件内**的错误报告，
+**不影响声明合并**。那句注释是**对的**，差点被我"修"掉一个不存在的问题。
+（教训：**类型系统层面的结论也要用探针双向量一次**，不能只看代码形状就下判断。）
