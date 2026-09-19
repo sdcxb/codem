@@ -94,8 +94,28 @@
 | 阶段 0-b：**导出结果的真机核对**（导出文件里 `sk-` 形状 = 0） | ⏳ **未做成** | 打包版设置面板里找不到导出入口（只有"关闭设置/保存设置"），导出按钮在**插件面板**内；下一轮先找到入口再核对 |
 | 阶段 0-c：维护期凭据普查（只报表/键名+数量） | ✅ **已完成**（1.16.100 → 修缺陷 → 1.16.101） | 真机复量：27 个设置项命中 2 处（codem-settings 的 shape 与 field）；测试见 credential-census.test.ts（含「返回值不许含密钥文本」）。⚠️ 1.16.100 曾因用域镜像读设置而打出「0 个设置项，未命中」，被 1.16.101 修掉，教训写进代码注释 |
 | 阶段 0-d：旧库/备份/WAL 的残留计数清单 | ⏳ 未做（脚本已存在：`.preview-shot/survey-credential-paths.mjs`） | 真机实测过：新库 `gho_×3 sk-×1`、旧库 `gho_×3 sk-×4`、两个 WAL 为 0 |
-| 阶段 1：DPAPI 封存 + 启动解封缓存 | ⏳ 未做（需新增依赖，见风险节） | — |
+| 阶段 1：DPAPI 封存 + 启动解封缓存 | ✅ **代码、单测、真机验证都完成**（1.16.102） | `src-tauri/src/secret.rs`（裸 FFI `CryptProtectData`/`CryptUnprotectData`，5 条 Rust 用例含**真往返**与"两次封存不同"）；`secret-cache.ts`/`secret-store.ts`；`settings.ts` 唯一水合点；`ensureSecretsHydrated()` 单飞 + `configureEngine` 前的 await；界面开关在「设置 → 安全」。渲染侧 SEAL-1…14 + WGUARD-0…6 + 渲染测试 2 条 |
+| 阶段 1 的**写回闸门**（真机首跑抓到的缺陷） | ✅ 1.16.102 | 全项目 14 处「读整份（水合⇒明文）→ 改一个字段 → 整份写回」会把明文重新写回磁盘 ⇒ 真机上出现 `apiKey` 与 `apiKeySealed` **并存**。修在唯一写收口 `secret-write-guard.ts`：同密钥同步换回密文、新密钥先落盘再异步补封存、用户选明文/后端不可用不动、损坏库恢复的裸写也过闸门；并把已存在的脏行收拾掉 |
+| 阶段 1 的残留回收（字节级） | ✅ 1.16.102 | 真机字节级计数：`codem-db-rust.bin` sk- **1→0**、`-wal` sk- **27→0**（库 19.51 MB → 18.01 MB）。做法：封存成功后 `checkpoint`（折 WAL 并截断）→ `storage.compact{force}`（整库重写）→ 再 `checkpoint`。⚠️ **不声称**逐页擦除：引擎没有 `secure_delete`（`authorizer.rs` 拒绝它的写），SSD 磨损均衡/快照层仍可能留物理残留 |
+| 阶段 1 的回退（第 4 节要求"可回退"） | ✅ **本版才真正存在** | 🔴 此前 `codem-secrets-plaintext` **只有读点、没有写入方** ⇒ `skippedByChoice` 分支永不可达、界面上没有任何入口，"可回退"只是方案里的一句话；被门禁 SKEY-2 报出后补上写入方（勾选框）+ 动作 `revertSealedKeysToPlaintext`（SEAL-8/9） |
 | 阶段 2：密钥移入系统凭据库 | ⏳ 未做（可选） | — |
+
+### 阶段 1 的验证口径（如实）
+
+- **对照测量（改造前，已安装 1.16.101）**：`codem-settings` 27 个设置键；
+  `providers[deepseek].apiKey` = 明文 `sk-` 形状（长 35）；`sealedCount = 0`；整串 JSON 命中 `sk-` 形状。
+- **改造后（已安装 1.16.102 真机复量）**：
+  - 启动日志：`清理了 1 个 provider 的重复明文` + `已回收旧明文的字节残留（WAL 折叠 + 整库重写）`；
+  - **CLI 直读库文件**（不经渲染侧）：`has apiKey=False  has apiKeySealed=True（长 529）`，整串 JSON 不再命中 `sk-` 形状；
+  - 字节级：`codem-db-rust.bin` sk- **1→0**、`-wal` sk- **27→0**、库 **19.51 MB → 18.01 MB**；
+  - 密钥**真的能用**：渲染侧读到的密钥调 DeepSeek `/user/balance` → **HTTP 200、is_available=true、有余额信息**；
+  - 界面「设置 → 安全 → API 密钥存储」：勾选框未勾选（默认加密）、状态行「已用系统加密保存（1 个 provider）」。
+- **未在本机做过的（不许当成已做）**：
+  1. **跨 Windows 账户解封失败**的现场复现（只能靠单测 `SEAL-7/9`；要真机复现需另建本地账户）；
+  2. 回退开关的**真机往返**（勾上→解回明文→再关掉→重新封存）：本机只验证了开关**存在且默认关闭**，
+     往返行为由 `SEAL-8/9` 与 `WGUARD-3/5` 覆盖；
+  3. `codem-db.bin`（**旧库，只读遗留**）里仍有 `sk-×4 / gho_×3`，旧 WAL 为 0 ——
+     那是历史数据文件，**没有用户同意不动它**（删/清洗遗留库属于破坏性操作，需用户决定）。
 
 > ⚠️ 另有一条**已更正**的记录：本方案初稿把 `src/plugins/library-ops/store.ts:134` 当成"设置被镜像进 localStorage"的证据，
 > 复查后确认那是该插件自己的 UI 状态、**不含 API key**，且 `src/core` 下没有任何把设置写进 localStorage 的地方

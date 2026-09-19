@@ -303,6 +303,7 @@ import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
 import { composePersistAlertText, reportActionFailure } from "./core/storage/persist-failure";
+import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaintextResidue } from "./core/storage/secret-store";
 
 /**
  * 退出前的收尾：**排空在途写入 + checkpoint 存储端口**（第 44 轮补上的缺口）。
@@ -710,6 +711,73 @@ useEffect(() => {
       } catch (e) {
         console.warn("[dbReady] Failed to sync securityMode from settings:", e);
       }
+
+      /**
+       * ## 第 62 轮：凭据封存（方案 `docs/CREDENTIALS-PLAN.md` 阶段 1 的接线点）
+       *
+       * 顺序**不能反**：先把磁盘上的密文解进内存（`ensureSecretsHydrated`，与
+       * `configureEngine` 共用同一个单飞 promise），再把明文换成密文。
+       * 反过来的话，写回之后内存里还没有明文，紧接着的读点会读到
+       * "provider 有 id 但没有 key" —— 界面显示已配置、请求却没有 key。
+       *
+       * 上报纪律（本仓库的"不许静默"）：
+       * - 后端不可用 / 封存失败 / 解不开，**一律打出来**并说清"这次改了什么、没改什么"；
+       * - 正常路径（本来就没有明文可迁移）一行日志都不打，避免日志噪音被当成异常。
+       */
+      void (async () => {
+        try {
+          const hydrated = await ensureSecretsHydrated();
+          if (hydrated.failed > 0) {
+            console.warn(
+              `[secrets] ${hydrated.failed} 个 provider 的密钥解不开（密文已保留，未被删除）——` +
+                "多半是换了 Windows 账户或换了机器，需要重新填写 API Key",
+            );
+          }
+          const migrated = await migrateProviderKeysToSealed();
+          if (migrated.cleanedDuplicate > 0) {
+            console.log(
+              `[secrets] 清理了 ${migrated.cleanedDuplicate} 个 provider 的重复明文` +
+                "（明文与密文并存是旧行为留下的脏行：读改写把水合后的明文写回了磁盘）",
+            );
+          }
+          if (migrated.sealed > 0 || migrated.cleanedDuplicate > 0) {
+            if (migrated.sealed > 0) {
+              console.log(`[secrets] 已把 ${migrated.sealed} 个 provider 的密钥改为系统加密保存（settings 里不再有明文）`);
+            }
+            /**
+             * 行级封存成功 ≠ 磁盘上没有明文：被替换掉的那份还可能躺在 WAL 的旧帧与
+             * 主库的**空闲页**里（真机字节级计数实测过）。这一步把它们回收掉，
+             * 只在"本次真的封存过"时跑（一台机器一辈子一次），并**如实报做没做成**。
+             */
+            const residue = await reclaimSealedPlaintextResidue();
+            if (residue.attempted && residue.vacuumed) {
+              console.log("[secrets] 已回收旧明文的字节残留（WAL 折叠 + 整库重写）");
+            } else {
+              console.warn(
+                `[secrets] 旧明文可能仍残留在库文件的空闲页 / WAL 里（${residue.reason ?? "原因未知"}）` +
+                  "—— 行级封存已生效，字节级残留未被回收",
+              );
+            }
+          }
+          if (migrated.failed > 0) {
+            console.warn(
+              `[secrets] 封存失败：${migrated.failed} 个 provider 保持明文。` +
+                "出于安全，**一个失败就整体不动**（避免一半明文一半密文）：本次未改动任何密钥，下次启动会重试",
+            );
+          }
+          if (migrated.skippedUnavailable > 0) {
+            console.warn(
+              `[secrets] 这台机器没有可用的系统加密（DPAPI），${migrated.skippedUnavailable} 个 provider 的密钥只能保持明文；` +
+                "你可以在「设置 → 安全」里看到这条状态",
+            );
+          }
+          if (migrated.skippedByChoice > 0) {
+            console.log(`[secrets] 你显式选择了明文保存（codem-secrets-plaintext）：${migrated.skippedByChoice} 个 provider 未封存`);
+          }
+        } catch (e) {
+          console.warn("[secrets] 凭据封存流程出错（密钥未被改动）:", e);
+        }
+      })();
 
       /**
        * ## 第 47 轮（设置链路审计 D-20）：恢复「上次打开的会话 / 项目」
@@ -1993,11 +2061,23 @@ flushStreamBuffer(); // flush all on unmount
       // engine 还不可用 — engineRef useEffect 会在获取后调用 configureEngine
       return;
     }
-    const saved = getSettingJSON<any>("codem-settings", null);
-    if (!saved) {
+    if (!getSettingJSON<any>("codem-settings", null)) {
       // DB 尚未就绪 — dbReady useEffect 会在 DB 初始化后调用 configureEngine
       return;
     }
+    /**
+     * 第 62 轮：**解封必须先跑完，再读这份 settings**。
+     *
+     * 磁盘上封存过的 provider 只有 `apiKeySealed`，明文在内存缓存里；直接往下走，
+     * 下面 `saved.providers[].apiKey` 全是 undefined ⇒ `setProviderConfig` 不带 key
+     * ⇒ 用户看到"界面显示已配置、请求却没有 key"。所以这里等一次单飞 promise
+     * （已经跑完就是 0 成本），然后**重新读一遍**（拿到水合后的值）。
+     * 这个 await 放在"settings 读得出来"判断**之后**：解封若在 DB 就绪前跑，
+     * 会读到空 settings 却把水合标记打上，密文就永远不会被解封了。
+     */
+    await ensureSecretsHydrated();
+    const saved = getSettingJSON<any>("codem-settings", null);
+    if (!saved) return;
 
     if (saved) {
       const settings = saved;

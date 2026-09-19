@@ -102,6 +102,21 @@ export interface FakeStoragePortOptions {
    */
   configWarmed?: boolean;
   /**
+   * **设置面（`settings` 表）是否已预热**（默认 `true`）。
+   *
+   * 为什么默认是 `true`，以及为什么必须能设成 `false`（第 62 轮补的保真度缺口）：
+   *
+   * - 真端口的不变量是"**注册那一刻设置面已经预热完毕**"——`port.ts:280-284` 写明
+   *   `RustStoragePort.start()` 先 `await config.warmup()` 再 `setStoragePort(port)`，
+   *   所以"端口在"等价于"设置读得到"（默认 true 与生产同形）；
+   * - 但假端口的 `config.get` 早先**根本不看 `configWarmed`**，直接查内存表 ——
+   *   比实现**宽松**。于是"端口在、设置面还没预热"这个状态（此时真端口会返回兜底值
+   *   并留痕，而**不是**"这个键不存在"）在测试里**造不出来**，
+   *   而"把读失败当成没有数据"正是本仓库反复踩的那类缺陷。
+   *   凭据解封的水合判据必须能挡住这个状态，所以这里补上开关（`credential-seal.test.ts` SEAL-12）。
+   */
+  settingsWarmed?: boolean;
+  /**
    * "旧库里有多少条消息" —— 只用于 `migration.auto` 的测试双语义
    * （`self-heal` 的判据要求"旧库确有可恢复内容"才会恢复）。
    */
@@ -800,7 +815,14 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
 
   // ===== 配置面（同步读 + 写穿）=====
   const configMemory = new Map<string, unknown>();
-  let configWarmed = false;
+  /**
+   * 默认 `true`，且就地加载一次种子行 —— 与真端口注册时的不变量同形
+   * （`port.ts:280-284`：先 `await config.warmup()`，再 `setStoragePort(port)`）。
+   */
+  let configWarmed = opts.settingsWarmed ?? true;
+  if (configWarmed) {
+    for (const row of table("settings")) configMemory.set(String(row.key), row.value);
+  }
   let pendingWrites = 0;
   let configFailures = 0;
 
@@ -812,6 +834,14 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       return configMemory.size;
     },
     get<T>(key: string, fallback: T): T {
+      /**
+       * 未预热 ⇒ 返回兜底**并留痕**，绝不假装"这个键不存在"。
+       * 与实现一致（`rust-port.ts:762-771` 的 `UNAVAILABLE: 配置面尚未预热`）。
+       */
+      if (!configWarmed) {
+        configFailures += 1;
+        return fallback;
+      }
       if (!configMemory.has(key)) return fallback;
       return configMemory.get(key) as T;
     },
@@ -1269,6 +1299,17 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         if (idx >= 0) target[idx] = { ...target[idx], value };
         else target.push({ key, value });
         return { written: 1, key } as unknown as T;
+      }
+      /**
+       * `checkpoint`：真引擎 `lib.rs:222` → `engine.checkpoint()` =
+       * `PRAGMA wal_checkpoint(TRUNCATE)`（成功不返回内容，失败才报错）。
+       *
+       * 为什么补它（第 62 轮）：凭据封存之后要回收"旧明文的字节残留"，第一步就是折 WAL；
+       * 假端口原来落到末尾的 `未实现的命令 checkpoint`，于是这条路径在测试里
+       * **只能测到失败分支**（与下面四条是同一个教训）。
+       */
+      if (command === "checkpoint") {
+        return undefined as unknown as T;
       }
       if (command === "audit.prune") {
         const before = Number((params as { before?: unknown } | undefined)?.before ?? NaN);

@@ -17,6 +17,7 @@
  * | `replace` 只写提供的列，未提供的列**保持原值** | `crud.rs:412-429` + 引擎用例 `crud_upsert_replace_does_not_cascade_delete_children` | FID-1 |
  * | `insert` 是裸 INSERT：**同一行写第二次撞主键** | `crud.rs:518-527` | FID-2 |
  * | `insert` 建的新行 = **构造器给出的列**（漏列即 NULL） | 同上（`crud.rs` 的 `INSERT INTO … VALUES`） | FID-3 |
+ * | 设置面**未预热**时 `get` 返回兜底值（不是"键不存在"） | `rust-port.ts:762-771`（`UNAVAILABLE: 配置面尚未预热`） | FID-4 |
  *
  * FID-3 还是行构造器门禁（`tools/audit/check-row-builders.mjs`）的**前提**：
  * 那条门禁说"构造器漏列在 insert 路径上是静默 NULL"，这个前提必须能在渲染侧被执行验证，
@@ -100,5 +101,25 @@ describe("FID：假端口 = 引擎语义（双向都不许偏）", () => {
       "构造器没给 parent_id ⇒ 这一列就是 NULL（实体里带没带都进不了库）—— " +
         "`ensureSubagentSession` 丢谱系走的就是这条路",
     ).toBeNull();
+  });
+
+  it("FID-4: 设置面未预热 ⇒ `get` 返回兜底值并留痕（不许当成「这个键不存在」）", () => {
+    const cold = createFakeStoragePort({
+      seed: { settings: [{ key: "codem-settings", value: '{"providers":[{"id":"deepseek"}]}' }] },
+      settingsWarmed: false,
+    });
+
+    expect(cold.config.get("codem-settings", null), "未预热就该拿兜底值（与实现一致）").toBeNull();
+    expect(cold.config.stats().warmed, "顺序也要能查出来").toBe(false);
+    expect(
+      cold.config.stats().failures,
+      "必须留痕：返回兜底值的原因是 UNAVAILABLE，不是「没有这个键」",
+    ).toBeGreaterThan(0);
+
+    // 预热之后同一份数据要读得到（这一条是 SEAL-12 的前提）
+    return cold.config.warmup().then(() => {
+      expect(cold.config.get("codem-settings", null)).toContain("deepseek");
+      expect(cold.config.stats().warmed).toBe(true);
+    });
   });
 });

@@ -41,6 +41,7 @@
 
 import { reportPersistFailure } from "./persist-failure";
 import { getSetting, setSetting } from "./settings";
+import { gateSettingsRawWrite } from "./secret-write-guard";
 
 /** `health.recovered_projects` 的形状（由 Rust `storage_health` 提供） */
 export interface RecoveredProjectsPayload {
@@ -143,7 +144,12 @@ export function restoreRecoveredSettings(payload: unknown): {
         out.keptExisting += 1;
         continue;
       }
-      setSetting(key, value);
+      /**
+       * 第 62 轮：这里走的是**裸写**，而恢复的原文来自旧库/损坏库 ——
+       * 很可能带着明文 `apiKey`。不设防的话，"从损坏库恢复"等于把明文密钥请回来（静默地）。
+       * `gateSettingsRawWrite` 只对 `codem-settings` 生效（其余键原样返回）。
+       */
+      setSetting(key, gateSettingsRawWrite(key, value));
       out.restored += 1;
     } catch (e) {
       out.failed += 1;

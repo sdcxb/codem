@@ -28,6 +28,7 @@ import { getPermissionManager, type PermissionRule, type PermissionAction } from
 import { SECURITY_MODES, getGlobalSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 import { MultimodalPanel } from "./MultimodalPanel";
 import { VoiceSettingsPanel } from "./VoiceSettingsPanel";
+import { SecretStorageSetting } from "./SecretStorageSetting"; // 第 62 轮：凭据封存开关
 import { OllamaSettingsPanel } from "./OllamaSettingsPanel";
 import { getNotebookConfig } from "../core/knowledge";
 import { SkinSelector } from "./SkinSelector";
@@ -1308,6 +1309,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             />
           </div>
 
+          {/* 第 62 轮：凭据封存（方案 docs/CREDENTIALS-PLAN.md）。组件单独一个文件，便于单独测。 */}
+          <SecretStorageSetting lang={lang} />
+
           <div className="setting-group">
             <label>{S.settings.closeBehavior[lang]}</label>
             <select
@@ -2015,15 +2019,26 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           try {
             const { check } = await import("@tauri-apps/plugin-updater");
             const { relaunch } = await import("@tauri-apps/plugin-process");
+            const { decideUpdate } = await import("../core/update/check-update");
             const update = await check();
-            if (update && update.available) {
-              btn.textContent = lang === "zh" ? `发现新版本 ${update.version}，下载中...` : `New version ${update.version} found, downloading...`;
+            /**
+             * 第 62 轮：**不许无条件说"已是最新版本"**。
+             *
+             * 拿不到更新有两种原因，而界面原来只看得到一种：①真的没有更新；
+             * ②**清单没读到**（网络问题，或刚发布会话里实测过的 **CDN 传播延迟**）。
+             * 判定与措辞都交给纯函数 `decideUpdate`（有单测），这里只负责显示与动作：
+             * 只有"清单版本确实高于本机"才安装；**清单版本更旧**（缓存的旧清单）明确拒绝并说明。
+             */
+            const decision = decideUpdate(APP_VERSION, update?.available ? update.version : null);
+            if (decision.kind === "update" && update) {
+              btn.textContent = lang === "zh" ? decision.message.zh : decision.message.en;
               await update.downloadAndInstall();
               btn.textContent = lang === "zh" ? "安装完成，即将重启..." : "Installed, relaunching...";
               await relaunch();
             } else {
-              btn.textContent = lang === "zh" ? "已是最新版本" : "Up to date";
-              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 2000);
+              console.warn(`[updater] 未安装更新：${decision.kind}（清单版本 ${decision.offered ?? "无"}）`);
+              btn.textContent = lang === "zh" ? decision.message.zh : decision.message.en;
+              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
             }
           } catch (err: any) {
             const rawMsg = typeof err === "string" ? err

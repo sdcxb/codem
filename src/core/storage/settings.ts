@@ -1,4 +1,6 @@
 import { getPersistFailures, reportPersistFailure } from "./persist-failure";
+import { cachedSealedKey } from "./secret-cache";
+import { gateSettingsWrite } from "./secret-write-guard";
 import { getStoragePort, hasStoragePort } from "./port";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
@@ -124,14 +126,63 @@ export function removeSetting(key: string): void {
 export function getSettingJSON<T>(key: string, defaultValue: T): T {
   const raw = getSetting(key);
   if (raw === null) return defaultValue;
+  let parsed: T;
   try {
-    return JSON.parse(raw) as T;
+    parsed = JSON.parse(raw) as T;
   } catch {
     return defaultValue;
   }
+  /**
+   * ## 第 62 轮：`codem-settings` 的**凭据水合**（唯一水合点，显式规则）
+   *
+   * 生产代码里直接读这个键的地方有 **18 处**（见 `secret-cache.ts` 的说明）且全是同步读；
+   * 密钥封存（`docs/CREDENTIALS-PLAN.md` 阶段 1）之后，磁盘上只有密文 —— 若让每个读点
+   * 自己解封，**漏掉的那一处**就会表现成"界面显示已配置、请求却没有 key"（静默失真）。
+   *
+   * 所以规则写在这里、只对这一个键生效：读出来的 `providers[].apiKey`
+   * **是内存里解封好的明文**（有密文时），磁盘内容**不被改动**。
+   * 代价（如实写）：这个键有了"会水合"的额外语义 —— 由 `credential-seal.test.ts` 守着
+   * "只对这个键生效、其它键一个字都不许动"。
+   */
+  if (key === "codem-settings") {
+    return hydrateProvidersFromSealCache(parsed);
+  }
+  return parsed;
+}
+
+/** 把 provider 的密文换成内存里的明文（同步；缓存没命中就原样返回，**不猜**） */
+function hydrateProvidersFromSealCache<T>(value: T): T {
+  if (!value || typeof value !== "object") return value;
+  const providers = (value as { providers?: Array<Record<string, unknown>> }).providers;
+  if (!Array.isArray(providers)) return value;
+  const next = providers.map((p) => {
+    const id = String((p as { id?: unknown })?.id ?? "");
+    const plain = id ? cachedSealedKey(id) : undefined;
+    return plain ? { ...p, apiKey: plain } : p;
+  });
+  return { ...(value as Record<string, unknown>), providers: next } as T;
 }
 
 export function setSettingJSON(key: string, value: unknown): void {
+  /**
+   * ## 第 62 轮：`codem-settings` 的**写回闸门**（读语义与写语义必须对称）
+   *
+   * 读这个键时会把 `providers[].apiKey` 水合成明文（为了 18 个同步读点，见上面 `getSettingJSON`）。
+   * 而全项目有 **14 处**「读整份 → 改一个字段 → 整份写回」的读改写（`App.tsx` 3 处、
+   * `SettingsPanel.tsx` 11 处）—— 那些写回会**把明文重新写到磁盘上**，
+   * 也就是"改一下模型名 = 撤销凭据封存"。真机复量坐实过：
+   * 封存成功、残留也回收了，可库里 `apiKey`（明文 35 字符）与 `apiKeySealed` **同时存在**。
+   *
+   * 修法放在**唯一写收口**这里，而不是去改那 14 个调用点（改一处、下一个新增设置项又会踩进来）：
+   * 同步地把"还是原来那把密钥"的明文换回**它自己那份密文**（缓存里有，零 IPC）；
+   * 新填/改过的密钥先照原样落盘（**绝不丢用户输入**），再异步补封存。
+   *
+   * 规则与边界见 `secret-write-guard.ts` 的文件头（含"没有注册钩子时什么都不改"）。
+   */
+  if (key === "codem-settings") {
+    setSetting(key, gateSettingsWrite(key, value));
+    return;
+  }
   setSetting(key, JSON.stringify(value));
 }
 
