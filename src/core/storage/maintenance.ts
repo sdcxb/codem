@@ -1750,6 +1750,53 @@ export async function runDatabaseMaintenance(
         );
       }
 
+      /**
+       * 第 62 轮：**凭据普查**（见 docs/CREDENTIALS-PLAN.md 阶段 0-c）。
+       *
+       * 密钥本来就该在 settings 里（明文落盘是既有设计），问题是用户不知道有它。
+       * 只报**键名 + 命中数量，从不打印值**；命中就经既有上报通道让用户看见。
+       *
+       * ⚠️ 两个坑都踩过并在此写死（1.16.100 真机抓到）：
+       * ① 不能用 `domainReadMany("settings")` —— 维护跑到这里时**该域镜像还没就绪**，
+       *    会拿到空数组（真机日志：`凭据普查：0 个设置项，未命中`，而 key 明明在库里）；
+       *    改用引擎命令 `settings.get_all`（bootstrap 预热用的就是它，不经镜像、不必等就绪）。
+       * ② `scanned === 0` 必须说成「**没跑成**」而不是「未命中」—— 否则'读不到'又变成'一切正常'。
+       */
+      try {
+        const { censusCredentialSettings } = await import("./credential-census");
+        const { getStoragePort } = await import("./port");
+        const probe = getStoragePort() as unknown as {
+          data?: {
+            command?: <T>(c: string, p?: Record<string, unknown>) => Promise<T>;
+            execute?: (c: string, p?: Record<string, unknown>) => Promise<unknown>;
+          };
+        } | null;
+        const all = probe?.data?.command
+          ? await probe.data.command<Record<string, string | null>>("settings.get_all", {})
+          : ((await probe?.data?.execute?.("settings.get_all", {})) as Record<string, string | null> | undefined);
+        const rows = Object.entries(all ?? {}).map(([key, value]) => ({
+          key,
+          value: typeof value === "string" ? value : "",
+        }));
+        const census = censusCredentialSettings(rows);
+        if (census.scanned === 0) {
+          console.warn("[Maintenance] 凭据普查**未跑成**（一条设置都没读到）—— 不判定为'未命中'");
+        } else if (census.total > 0) {
+          const keys = census.hits.map((h) => `${h.key}(${h.kind}×${h.count})`).join("、");
+          console.log(`[Maintenance] 凭据普查：${census.scanned} 个设置项里命中 ${census.total} 处（${keys}）—— 只报位置与数量，不打印值`);
+          reportActionFailure(
+            "maintenance.credentialCensus",
+            new Error(`设置里存在疑似凭据 ${census.total} 处`),
+            "这些是**明文存放的密钥/令牌**（本机存储的既有设计）。若该机器或其备份可能外流，建议轮换；" +
+              `位置：${keys}（值从不打印）`,
+            { title: "安全提示：设置里存在明文凭据" },
+          );
+        } else {
+          console.log(`[Maintenance] 凭据普查：${census.scanned} 个设置项，未命中凭据形状`);
+        }
+      } catch (e) {
+        console.warn("[Maintenance] 凭据普查跳过:", e);
+      }
       const attachments = await bridge.hydrateAllAttachments();
       result.warmedAttachments = attachments.warmed;
       result.prunedAttachmentOrphans = attachments.orphansRemoved;

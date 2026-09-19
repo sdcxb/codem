@@ -1,15 +1,15 @@
 {
-  "version": "1.16.99",
-  "notes": "导出设置不再带走密钥：新增凭据脱敏（键名像凭据或值形状像 sk-/gho_/AKIA 都替换为占位符，只替换+计数、从不打印值），保留字段位置便于重填。含对照组的 4 条契约用例。",
-  "pub_date": "2026-09-19T02:36:49Z",
+  "version": "1.16.101",
+  "notes": "凭据普查进维护：只报设置项键名与命中数量、从不打印值，命中即提示存在明文凭据建议轮换。真机复量：27 个设置项命中 2 处（codem-settings 的 shape 与 field）。同时修掉中间包 1.16.100 里我自己引入的同类缺陷（用未就绪的域镜像读设置 ⇒ 打出'0 个设置项，未命中'）。",
+  "pub_date": "2026-09-19T04:14:26Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F2bzB1bW9Zcm5HV0ZoOTEvVjIzUlRzMGIxa0JCMUs1SzlzWWpRd2pRcW9ZdVZQMDZlRk82cHFHdEJRL2QxZEs5ZkpOZTI1VThMK1UyUEVtSEEzcFFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5Nzg1MzI2CWZpbGU6Q29kZW1fMS4xNi45OV94NjQtc2V0dXAuZXhlCjR6QUo4UTY3TUJlZFlHRTY4emtlUUZMdEZuRTBDWXpRTStGTTJEY3Z0cUpUb0N5VEJ4c3hKZFVheHBzOVVTWmV1MEk4OUtsb1dCL0FVLzR2KzdNakFRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.99/Codem_1.16.99_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1U5Rm1id2w4WTIwRENEU09IeS93MDBSelBJdDI1Uy9KL0puaTNXdVQzdm5wTTFFc3MxV3NQZ241TUtvUDB1aTA1cjZmaW9Kd2FhZTBJRXpWclVPVVFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzkxMTk2CWZpbGU6Q29kZW1fMS4xNi4xMDFfeDY0LXNldHVwLmV4ZQprRG1sTGNDVmRjRzVYWElZRmF5aVc3VFpid2ZvNDEzLzVXck5IbTFRYUFjb2pWR0Rpekk4aFJRMDNEMjRJWG5FMWZRajN4Rk5ZREg5ZDNlOXNWNU1BUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.101/Codem_1.16.101_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F2bzB1bW9Zcm5HV0ZoOTEvVjIzUlRzMGIxa0JCMUs1SzlzWWpRd2pRcW9ZdVZQMDZlRk82cHFHdEJRL2QxZEs5ZkpOZTI1VThMK1UyUEVtSEEzcFFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5Nzg1MzI2CWZpbGU6Q29kZW1fMS4xNi45OV94NjQtc2V0dXAuZXhlCjR6QUo4UTY3TUJlZFlHRTY4emtlUUZMdEZuRTBDWXpRTStGTTJEY3Z0cUpUb0N5VEJ4c3hKZFVheHBzOVVTWmV1MEk4OUtsb1dCL0FVLzR2KzdNakFRPT0K",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.99/Codem_1.16.99_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1U5Rm1id2w4WTIwRENEU09IeS93MDBSelBJdDI1Uy9KL0puaTNXdVQzdm5wTTFFc3MxV3NQZ241TUtvUDB1aTA1cjZmaW9Kd2FhZTBJRXpWclVPVVFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzkxMTk2CWZpbGU6Q29kZW1fMS4xNi4xMDFfeDY0LXNldHVwLmV4ZQprRG1sTGNDVmRjRzVYWElZRmF5aVc3VFpid2ZvNDEzLzVXck5IbTFRYUFjb2pWR0Rpekk4aFJRMDNEMjRJWG5FMWZRajN4Rk5ZREg5ZDNlOXNWNU1BUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.101/Codem_1.16.101_x64-setup.exe"
     }
   }
 }

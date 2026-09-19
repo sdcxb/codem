@@ -188,8 +188,8 @@ export const POLICY_SETTING_KEY = "codem-policy";
  * 形状的值出现在 reasoning / tool 结果 / 事件载荷里）；只看值形状会漏掉"形状不像但确实是密钥"
  * 的自定义 provider（比如自建网关的短 token）。
  */
-const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?key|apikey|token|secret|password|passwd|authorization|auth[-_]?token)$/i;
-const CREDENTIAL_VALUE_RES: RegExp[] = [
+export const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?key|apikey|token|secret|password|passwd|authorization|auth[-_]?token)$/i;
+export const CREDENTIAL_VALUE_RES: RegExp[] = [
   /sk-[A-Za-z0-9_-]{16,}/g,
   /gho_[A-Za-z0-9]{16,}/g,
   /ghp_[A-Za-z0-9]{16,}/g,
