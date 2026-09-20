@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { PixelLibraryScene } from "../plugins/library-ops/components/library/PixelLibraryScene";
 import { LibraryPanel } from "../plugins/library-ops/components/monitor/LibraryPanel";
 import { advancePixelScene, createPixelSceneState, stepPixelMovement } from "../plugins/library-ops/core/pixel-scene";
-import { PIXEL_ROOMS } from "../plugins/library-ops/data/pixel-art";
+import { PIXEL_ROOMS, ZONE_TO_ROOM } from "../plugins/library-ops/data/pixel-art";
 import { LIBRARY_MAP, resolveZoneId } from "../plugins/library-ops/data/library-map";
 import { generateLook } from "../plugins/library-ops/data/characters";
 import { useLibraryOps } from "../plugins/library-ops/store";
@@ -324,6 +324,64 @@ describe("LO-HITAREA 像素房间命中归属", () => {
     expect(selected()).toEqual(["memory"]);
     await selectZone(null);
     expect(selected()).toEqual([]);
+    unmount();
+  });
+
+  /**
+   * LO-HITAREA-10（行为判据·装饰性房间）：**没有岗位的房间不许可点**。
+   *
+   * ## 真机背景（1.16.114 装机版复量抓到的缺陷）
+   *
+   * `PIXEL_ROOMS` 有 **12** 间房，`ZONE_TO_ROOM` 只有 **10** 个岗位 ——
+   * `alarm`（报警台）与 `schedule`（调度台）是上游地图里有、本插件**不承载岗位**的房间。
+   * 原实现里 12 间房一律 `onClick={() => onSelectZone?.(zoneOfRoom(room.id))}`，
+   * 而 `zoneOfRoom` 对未知房间回退成**房间 id 本身** ⇒ 点「报警台」把 `selectedZoneId`
+   * 设成不存在的 `"alarm"`，再经 `roomOfZone("alarm")` 的未知回退 gateway
+   * 高亮成「前台 · 调度台」—— 真机表现就是**点报警台、亮前台**；
+   * 同时它们带着 `role="button" + tabIndex=0 + cursor:pointer`，看起来可点。
+   *
+   * 判据（行为层，happy-dom 能真测）：
+   *  ① 有岗位的房间：`data-has-zone="1"` + `role=button`，点了 store 里就是**它那个岗位**；
+   *  ② 没有岗位的房间：没有 `role`、没有 `tabIndex`、点了 store **什么都不该变**；
+   *  ③ 控制组：先确认"确实存在没有岗位的房间"（否则本用例测了个空）。
+   */
+  it("LO-HITAREA-10（行为判据）：装饰性房间（报警台/调度台）不可点，也不许注入不存在的岗位 id", async () => {
+    const zoneRoomIds = new Set(Object.values(ZONE_TO_ROOM));
+    const decorRooms = PIXEL_ROOMS.filter((r) => !zoneRoomIds.has(r.id));
+    // ③ 控制组：这条判据必须真的有对象（环境变了要立刻知道）
+    expect(decorRooms.map((r) => r.id).sort(), "本用例的前提是存在没有岗位的房间").toEqual(["alarm", "schedule"]);
+    expect(zoneRoomIds.size, "有岗位的房间数").toBe(10);
+
+    const { container, unmount } = render(<LibraryPanel snapshot={snapshot(NOW + 100_000)} zh />);
+    act(() => {
+      useLibraryOps.getState().selectZone(null);
+    });
+
+    for (const r of decorRooms) {
+      const el = container.querySelector(`.lo-pixel-room[data-room-id="${r.id}"]`) as HTMLElement;
+      expect(el, `${r.id} 必须渲染`).toBeTruthy();
+      expect(el.dataset.hasZone, `${r.id} 没有岗位，必须标成 is-decor`).toBe("0");
+      expect(el.className).toContain("is-decor");
+      expect(el.getAttribute("role"), "没有行为的房间不该有 button 语义").toBeNull();
+      expect(el.tabIndex, "没有行为的房间不该进 Tab 序").toBe(-1);
+      await act(async () => {
+        fireEvent.click(el);
+      });
+      expect(useLibraryOps.getState().selectedZoneId, `点 ${r.id} 不该选中任何岗位（改动前会选中 "alarm"）`).toBeNull();
+      expect(container.querySelectorAll(".lo-pixel-room.is-selected").length, "也不该高亮任何房间").toBe(0);
+    }
+
+    // ① 反向守卫：有岗位的房间仍然必须可点、且点谁选谁（别把修法做成"全部关掉"）
+    for (const roomId of ["gateway", "task_queues", "memory", "break_room"]) {
+      const el = container.querySelector(`.lo-pixel-room[data-room-id="${roomId}"]`) as HTMLElement;
+      expect(el.dataset.hasZone, `${roomId} 有岗位`).toBe("1");
+      expect(el.getAttribute("role")).toBe("button");
+      await act(async () => {
+        fireEvent.click(el);
+      });
+      const expectedZone = Object.entries(ZONE_TO_ROOM).find(([, rid]) => rid === roomId)![0];
+      expect(useLibraryOps.getState().selectedZoneId, `点 ${roomId} 应选中 ${expectedZone}`).toBe(expectedZone);
+    }
     unmount();
   });
 

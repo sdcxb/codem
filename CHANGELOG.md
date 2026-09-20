@@ -2,6 +2,168 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.114] - 2026-09-20 — 技能市场"源可达、返回为空"的**第 4 条分支** + 概览页房间热区接线 + 装饰性房间"点了亮错地方"
+
+> 承接 1.16.113。这一版**大部分来自复量过程本身**：为回答"前端闸门 8 路是否过严"做了 8 轮真机复量，
+> 结论是**不改闸门**（数据不足支持改动），但复量过程抓出了**六个**真缺陷 ——
+> 四个在产品/工具代码里（技能市场第 4 条假话分支、概览页漏接线、装饰性房间点错、入库的发布工具写出更新器读不到的清单），
+> 两个在**测量工具**里。六个都已修，各带突变证明或真机前后对照。
+
+### 🔴 缺陷一：同一个假话的**第 4 条分支** —— 冷却早退只 `skipped++`、不记账
+
+- **形态**（真机复量 R4/R5，同毫秒逐字复现，**两个源各一条**）：
+  ```
+  [log] [SkillMarket] 源 "anthropic-skills" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽…
+  [log] Source "GitHub Agent Skills" 本次没有可展示的技能（源可达、返回为空）   ← 假话
+  ```
+- **根因**：`githubRateLimitedAt` 是**进程级**时间戳（未认证配额按 **IP** 计，多个 github-* 源共用同一份 60/h），
+  而 `fetchGitHubSearchSkills` 里的冷却判断是在**某个源自己的**仓库循环里。源 A 撞光配额后，
+  源 B 的每个仓库都在 `githubRateLimitCoolingDown()` 里被 `skipped++` ⇒ **B 一个请求都没发**，
+  它的降级账本上一笔都没有 ⇒ `mergeSourceResult` 照旧打出「源可达、返回为空」。
+  前三轮修的是 BUSY / 403 限流 / 非限流非 200，**这一条的入口在"我们压根没试"上**。
+- **修法**（`skill-market-client.ts`）：冷却早退分支改为走 `noteGithubRateLimit(source.id, repo.full_name, source.name)`
+  —— 它内部先 `noteSourceDegrade(sourceName, "rate_limited")` 记账、再按源去重打印**这个源自己的**真话。
+  冷却判据**故意保持全局**（"不再打扰 API"这个决定是对的：B 再打也只会拿到一串 403），
+  **错的是不记账**。同时把文案从"该源本次只拿到部分结果"改成"该源本次结果不完整"——
+  被整源跳过的形态可能是 **0 个仓库完成**，说"拿到了部分结果"会被读成"拿到了几条"。
+- **回归用例 `③n`（含突变证明）**：两个 github-search 源同轮刷新，A 先撞限流、B 整源被冷却跳过。
+  去掉了这笔记账后，用例当场报出假话原文
+  `Source "Cool B" 本次没有可展示的技能（源可达、返回为空）` ⇒ **判据不是摆设**。
+  用例同时钉住"B 必须是 0 个仓库完成的形态"（否则测的是别的分支，等于测了个空）。
+
+### 🔴 缺陷二：概览页「场景实况」的房间热区**仍然没人接线**（第 2 次同一漏接线）
+
+- 1.16.113 修好了 `LibraryPanel`（任务中心 → 子智能体 → 场景）的 `onSelectZone`，但
+  `OverviewPanel`（任务中心 → 概览）的「场景实况」大卡**只传了 `onSelectActor`** —— 同一处漏接线在另一个面板原样复现。
+  两个场景组件的 `onSelectZone` 是**可选 prop**，漏传时 TypeScript 不报错，
+  而房间/岗位热区带着 `role="button" + tabIndex=0 + cursor:pointer` ⇒ **又是一个"看起来能点、实际不响应"的控件**
+  （概览页里那是唯一能直接点角色的入口）。
+- **修法**：`OverviewPanel` 从 store 取 `selectZone` 并传给两个场景组件；
+  新增 `library-ops-scene-wiring.test.ts`（4 例）把它变成**结构性判据**：
+  插件目录里凡出现 `<PixelLibraryScene` / `<LibraryScene` 的地方，该处 JSX 必须传 `onSelectZone`（且必须传 `onSelectActor`）。
+  - **含控制组**（必须先扫到 2 个文件 4 个调用点），避免"扫到 0 处 → 全部通过"的假绿；
+  - **含突变证明**：删掉概览页那一行 `onSelectZone` 后，用例报出**恰好 1 处**缺失。
+  - 判据分层如实标注：静态扫描证明"接线在了"，**"点了真的选中"只能由装机版真机脚本证明**（见下）。
+
+### 🔴 缺陷三：**装饰性房间**看起能点、点下去**亮的是别的房间**（1.16.113 的修复把它暴露出来了）
+
+- `PIXEL_ROOMS` 有 **12** 间房，`ZONE_TO_ROOM` 只有 **10** 个岗位 —— `alarm`（报警台）与
+  `schedule`（调度台）是上游地图里有、本插件**不承载任何岗位**的房间。
+  原实现里 12 间房一律 `onClick={() => onSelectZone?.(zoneOfRoom(room.id))}`，
+  而 `zoneOfRoom` 对未知房间**回退成房间 id 本身** ⇒ 点「报警台」把 `selectedZoneId`
+  设成 `"alarm"` 这个**不存在的岗位**，再经 `roomOfZone("alarm")` 的**未知回退 gateway**
+  高亮成「前台 · 调度台」。真机表现（1.16.114 首个构建，接线与指针捕获都已修好之后）：
+  **点报警台 → 前台亮起**（子智能体面板 `alarm→gateway`、`schedule→gateway`；概览 `alarm→task_queues`）。
+  它同时带着 `role="button" + tabIndex=0 + cursor:pointer` —— 又一个"看起来能点"的控件。
+- **为什么 1.16.113 没暴露**：那一版 `.lo-scene` 在 `pointerdown` 就取指针捕获，房间的 `onClick`
+  **一次都没触发过**（本轮真机前后对照：1.16.113 的概览 7 个可测房间、子智能体 9 个可测房间，
+  **点完没一个被选中**）。换句话说"点房间没反应"把"点房间亮错地方"盖住了整整一版。
+- **修法**：判据从"房间画出来了没有"改成"**这间房到底有没有岗位**"——
+  `zoneOfRoomOrNull()` 对装饰性房间返回 `null`，此类房间**不接 onClick、不给 button 语义、
+  不进 Tab 序**，并加 `.lo-pixel-room.is-decor { cursor: default }`；房间上新增
+  `data-has-zone="1|0"` 供复量脚本直接读（也是本次"同一把尺子量两版"的关键）。
+- **回归用例 `LO-HITAREA-10`（含突变证明）**：装饰性房间必须 `data-has-zone="0"`、无 `role`、`tabIndex=-1`、
+  点击后 `selectedZoneId` **仍为 null**；同时反向守卫"有岗位的房间仍然可点、点谁选谁"（别把修法做成全关掉）。
+  把 `zoneOfRoomOrNull` 改回旧的回退行为后，用例当场报红：
+  `alarm 没有岗位，必须标成 is-decor: expected '1' to be '0'`。
+
+### 🟡 缺陷四、五：**测量工具**自己的两个失真（不改它们，复量结论就是错的）
+
+1. **`verify-market-rootfix.mjs` 的跨源合并虚增**：`normalize()` 为合并"同句不同仓库名"会把
+   `"源名"` 一起抹掉 ⇒ `Source "A" …` 与 `Source "B" …` 归一化成**同一个 key**，
+   读数显示成一条 `n: 2` —— 复核时会被读成"同一条告警重复了两次"（那是**另一个结论**：去重失效）。
+   现每个分组长出 `sources` / `nDistinctRaw` / `mergedAcrossSources`，并新增
+   **真正的重复判据** `warnDuplicatesPerSource`（按"源 + **逐字原文**"分组：跨源合并不算重复、
+   按仓库的正常输出也不算重复）。带 9 条自测（`_agg-selftest.mjs`），自测不过就拒绝给结论。
+   **本版真机读数正好撞上这个形态**：一条 `n: 5` 的分组，`nDistinctRaw: 5`、
+   `sources: [Anthropic Skills, GitHub Agent Skills, GitHub SKILL.md Repos, ClawHub.ai, Skills.sh]`
+   —— 五个源各一条，**不是**重复（`warnDuplicatesPerSource: []` 才是"无重复"的判据）。
+2. **`sourceCompletionMs` 曾恒为空对象**（同一脚本）：`noisy()` 只放 warning/error/exception 通过，
+   而"某源取完"这类日志全是 `log` ⇒ 被整批滤掉。已修为窗口含全部事件、只在计数处显式过滤噪声
+   （真机读数里"明细有 1135ms、汇总却是 `{}`"这处自相矛盾就是它暴露的）。
+
+### 🔴 缺陷六：**入库的发布工具**生成的清单，更新器读不到（"一个错的工具 + 一份对的产物"）
+
+- 仓库里有两份"生成 `latest.json`"的东西：**被跟踪的** `tools/release/make-latest-json.mjs`
+  写的是 **`platforms.windows`**（Tauri **v1** 的写法），而发布时实际用的是
+  `.preview-shot/_audit/` 下一个**没入库**的脚本（写对了 v2 的 `windows-x86_64-nsis` / `windows-x86_64`）。
+- v2 更新器只找 `{os}-{arch}-{installer}` 与 `{os}-{arch}`
+  （`tauri-plugin-updater-2.10.1/src/updater.rs:578-597`），所以照**入库的那个工具**跑一次，
+  「检查更新」就会报 `None of the fallback platforms [...] were found` —— 而且**静默**：
+  产物看起来完全正常、签名也在。既有的 VERSION-5 用例只校验**产物**
+  （`latest.json` 的键对不对），对"生成器写错"完全无感。
+- **修法**：把构造逻辑收口成唯一一份 `tools/release/latest-json.mjs`
+  （`buildLatestManifest` / `validateLatestManifest` 纯函数），CLI 只做 I/O + 自检 + 回读；
+  同时对齐两处偏差：旧工具写到 `src-tauri/target/release/latest.json`，而**入库的产物在仓库根**。
+- **新增 `update-manifest-generator.test.ts`（6 例，测的是生成器本身）**：
+  ① 键必须是 v2 的两个、不许有 v1 的 `windows`；② 自检必须**能报出**错清单
+  （少键 / 混 v1 键 / 空签名 / URL 版本不符 / 版本不符 / 带 `v` 前缀），否则自检就是个摆设；
+  ③ **真的跑一遍 CLI**（临时签名 + 临时输出）断言产物是 v2 键且**无 BOM**
+  （PS 5.1 的 `-Encoding UTF8` 会写 BOM，`serde_json` 不认识 ⇒ 更新链路整个失效，线上真出过）；
+  ④ 缺签名文件必须非 0 退出、**拒绝产出一份没签名的清单**；
+  ⑤ **反向守卫**：`tools/` 下不许再出现第二份把 `windows` 当平台键的构造逻辑；
+  ⑥ 入库的 `latest.json` 必须与 `package.json` 同版本且键齐全（把"产物与生成器对齐"变成机器约束）。
+
+### ✅ 闸门容量研究：**不改**（前端 8 / Rust 12 都保持）—— 结论与证据
+
+- 8 轮真机复量（20s/45s 窗口，配额状态逐轮标注）：**BUSY 拒绝 8 轮全 0 ⇒ 没有任何数字支持动 Rust 的 12**；
+  唯一稳定越 12s 的源是 ClawHub.ai（8/8 轮），而它是**串行分页**——绕开应用直接量到它的**无闸门下界 20393ms**
+  （单页 2.1–7.4s × 4），**改闸门救不了它**；GitHub 系源只有 2/8 轮越线。
+- 受控 A/B（进程内，同一台机器）：容量 8→12 得 **1.606×**、16→2.01×、24→2.69× —— 这**反驳**了"8 是硬件上限"，
+  8 是刻意留的余量（32 核）。但放宽前端会吃掉留给两个**不经过前端闸门**的调用方的 4 条余量
+  （`extractor.ts:139`、`pet-market-client.ts:52`，它们直接调 `http_get`，只靠这道余量挡 BUSY）；
+  只放宽 Rust 12 则完全无效（前端根本不会提交第 9 路）。
+- 因此**刻意不加**"容量常量与注释一致"的用例：那会把"数据不足、不该改"反过来固化成定论。
+- **仍然缺的观测**（如实记录）：闸门占用率/排队深度**没有可观测出口**（当前只能由"无 BUSY"间接推断）。
+
+### 实测与口径（本版）
+
+#### ① 房间热区与"点房间真的选中岗位"——**同一个脚本、两次装机版**（`.preview-shot/audit-loroom3-01-installed.mjs`）
+
+判据：真鼠标事件（`Input.dispatchMouseEvent`，**不是** `element.click()`）+ 每次点击前在**本房间的
+可点区域内**找一个"确实落在自己身上"的坐标、点击后**立刻复核**该坐标还属不属于这间房
+（场景是动的：角色精灵会走进条带，中心点经常被精灵合法占用）；量法沿用 1.16.112/113 的
+`elementFromPoint` + 82 点网格 + 有效可见矩形，**两版逐字同一套**。
+
+| 面板 | 1.16.113（装着的上一版） | 1.16.114（本版） |
+| --- | --- | --- |
+| 概览「场景实况」 | 可测 7/12 个有岗位房间，**点完 0 个被选中**（`memory→null` … `break_room→null`） | **10/10 点谁亮谁**（`gateway→gateway`、`task_queues(热区)→task_queues`、`break_room→break_room` …） |
+| 子智能体 → 场景 | 可测 9/12 个有岗位房间，**点完 0 个被选中** | **10/10 点谁亮谁** |
+| 装饰性房间（报警台/调度台） | 点不中（同一根因掩盖，**读不出**这条缺陷） | **2/2 点了什么都不选中**（强判据：点击前确实"无选中"） |
+| 12 间房可见面积占比 | — | **12/12 = 1.0**，`clipped=0`（1.16.113 的 `fitView` 修复目标达成） |
+
+- `attemptsTotal` = 12/面板（每间房一次点击就过，没有靠重试凑数）；不可测的房间一律标
+  `not-measured` 并附原因（`1 次尝试都没…`这种假缺陷不写进结论）。
+- ⚠️ **口径如实**：1.16.113 那一列的"可测 7/12、9/12"是因为旧版把房间热区藏在指针捕获后面，
+  部分房间的候选点全程落在角色精灵上 —— **测不到就是测不到**，不当缺陷也不当通过。
+- ⚠️ 装饰性房间那条缺陷的**预修读数**（`alarm→gateway`）来自 1.16.114 的**首个构建**，
+  该轮 JSON 已被后续复量覆盖，数字取自当轮控制台输出；本版的"修后"读数则是完整留档的 JSON。
+  判据本身由 `LO-HITAREA-10` 钉住（含突变证明），不依赖那份一次性读数。
+
+#### ② 技能市场刷新（装机版，30s 窗口，`.preview-shot/out-market-116114.json`）
+
+- `warning 5 / error 0 / exception 0`；5 条 warning **全部**是各源自己的 12s 超时，**每源恰好 1 条**
+  （`timeoutWarnDistinctBySource` 五源各 1、`warnDuplicatesPerSource: []` —— 用修好的仪器量出来的"无重复"）。
+- `busyWarnCount: 0`、`httpBusyRejections: 0` ⇒ 前端 8 路闸门没有把请求挡回去；`busyLiePairs: []`
+  ⇒ **没有**"请求没发出去却说源可达"的假话。
+- `sourceCompletionMs` 这次**有值**（`Trees 3278ms`、`SkillHub 5400ms`、`Skills.sh HTML 16801ms`），
+  证明仪器缺陷已修（旧版这里恒为 `{}`）。
+- 刷新后界面：**932 张技能卡**、错误横幅为空。
+
+#### ③ 记忆面板几何（装机版，**不注入任何 CSS**，`.preview-shot/audit-memory-layout-32-installed.mjs`）
+
+- 头部 **53px**（改动前被折成 2×3 时是 123.67px）；按钮组 **327.02×28**、**单行**；
+  `display: flex` / `flex-wrap: nowrap` —— 直接读自**本次加载的样式表**（`loadedRule` 字段），不是注入结果。
+- 6 个按钮：**0 处重叠、0 个命中测试落空、0 个越出容器**。
+
+#### ④ 冷启动与其它
+
+- 冷启动 console 普查（`--boot`）：互异 **138** 条，**warning / error / exception = 0**；工作集 **75 MB**。
+- 基线：`tsc` **0 错误**；全量 **350 文件 / 5925 通过 / 16 跳过 / 0 失败**（exit 0）；10 道审计门禁 exit 0
+  （未接线扫描 810 文件、写入点 88 处未处理返回值 0 处）；UI 门禁 **12/12**；CSS 契约快照无变化（新增的状态类不进契约）；
+  `cargo test --lib` **58 passed**、引擎 `codem-db` **88 + 2 + 2 passed**。
+- ⚠️ **未做目视核对**（本会话模型不能读图）：房间取景、记忆面板布局都只有程序判据（几何 / 命中栈 / 计算样式）。
+
 ## [1.16.113] - 2026-09-19 — 像素场景"房间点不中"（一个根因）+ 顺带挖出两处**死交互**
 
 > 起因：上一轮真机普查量到任务中心里有 16 处 `lo-pixel-room` 房间热区"中心点被别的元素接走"。

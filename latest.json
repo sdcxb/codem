@@ -1,15 +1,15 @@
 {
-  "version": "1.16.113",
-  "notes": "像素场景房间点不中（角色层容器吞命中）+ 两处死交互修复；启动 warning 归零；技能市场假话归零",
-  "pub_date": "2026-09-20T06:36:01Z",
+  "version": "1.16.114",
+  "notes": "技能市场第 4 条假话分支（冷却早退不记账）+ 概览房间热区接线 + 装饰性房间点了亮错地方；启动 warning 仍为 0",
+  "pub_date": "2026-09-20T08:31:17Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZGQnF6eEtPRmdzeGJkcXk4dmJCbU9GNVZkSTZpSHFzWlpUK0Z0TmZrT204SWdmZkZWdDAwbG5tZE1oSzl2Q1FyRWxiOGc1ck5EZHVZbUpHSHQrbEFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODg1OTYzCWZpbGU6Q29kZW1fMS4xNi4xMTNfeDY0LXNldHVwLmV4ZQozekFsYlpNMWhuQlNMVVBtcnFpSXg1WFlOM2NldTZ2aHgzUWNJQTU5YTlPQ09CTm9iekhIcVVMbG5CV3QySWZ1RVI1UUxwZyt3TnhYcTJjb0MzOEREQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.113/Codem_1.16.113_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NSL2R2ZUIxY3BwNkpXalZYSVdNYU40bjgwNVUwM0FiUlhQTno2Q0tMcWRmalhxb21ROGQzVHNSUW5aV1VaRmpUNVFKSmFsaG5ZaC9rZWN4Ykt2UmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODkwNjk2CWZpbGU6Q29kZW1fMS4xNi4xMTRfeDY0LXNldHVwLmV4ZQpUSnVHVTUrYjRNUXl3VnJMWTBQV0RXWTNZVzJEQ1FFVUZGSlB5ZWhUOEYvUjNIaktFZ0lWR0d4VHAvS3ZKM1E3aHMzQlVNMVd6b0RDTkpsSUVheDFDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.114/Codem_1.16.114_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZGQnF6eEtPRmdzeGJkcXk4dmJCbU9GNVZkSTZpSHFzWlpUK0Z0TmZrT204SWdmZkZWdDAwbG5tZE1oSzl2Q1FyRWxiOGc1ck5EZHVZbUpHSHQrbEFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODg1OTYzCWZpbGU6Q29kZW1fMS4xNi4xMTNfeDY0LXNldHVwLmV4ZQozekFsYlpNMWhuQlNMVVBtcnFpSXg1WFlOM2NldTZ2aHgzUWNJQTU5YTlPQ09CTm9iekhIcVVMbG5CV3QySWZ1RVI1UUxwZyt3TnhYcTJjb0MzOEREQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.113/Codem_1.16.113_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NSL2R2ZUIxY3BwNkpXalZYSVdNYU40bjgwNVUwM0FiUlhQTno2Q0tMcWRmalhxb21ROGQzVHNSUW5aV1VaRmpUNVFKSmFsaG5ZaC9rZWN4Ykt2UmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODkwNjk2CWZpbGU6Q29kZW1fMS4xNi4xMTRfeDY0LXNldHVwLmV4ZQpUSnVHVTUrYjRNUXl3VnJMWTBQV0RXWTNZVzJEQ1FFVUZGSlB5ZWhUOEYvUjNIaktFZ0lWR0d4VHAvS3ZKM1E3aHMzQlVNMVd6b0RDTkpsSUVheDFDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.114/Codem_1.16.114_x64-setup.exe"
     }
   }
 }

@@ -580,6 +580,60 @@ describe("技能市场取数收口（改动后行为）", () => {
     expect(res.skills).toEqual([]);
   });
 
+  /**
+   * ③n **冷却早退分支**（第 4 条假话分支，真机 1.16.113 复量 R4/R5 抓到）。
+   *
+   * ## 形态（这条必须是**两个源**，一个源测不出来）
+   *
+   * 未认证配额按 IP 计，多个 github-* 源共用同一份 60 次/小时；
+   * 源 A 撞光配额后，源 B 的每个仓库都在 `githubRateLimitCoolingDown()` 里被 `skipped++`，
+   * **一个请求都没发** —— 改动前这一笔不记账，于是 B 照旧打出
+   * `Source "B" 本次没有可展示的技能（源可达、返回为空）`。
+   *
+   * ## 为什么用 `setTimeout` 把 B 的搜索请求押后（而不是靠 map 顺序）
+   *
+   * `listMarketSkills` 是 `activeSources.map(...)` 并发起的：谁先跑到"取仓库树"这一步
+   * 取决于微任务交错。这里给 B 的第一步（search 请求）挂一个 20ms 的假定时器，
+   * A 的整条路径（全是同步返回的假 http_get）会在推进假时间的那一刻之前跑完，
+   * 于是"A 先撞限流、B 再进冷却"这个顺序是**确定的**，不是碰运气。
+   */
+  it("③n 同一轮里 A 撞限流后 B 整源被冷却跳过 → B 不许说自己「源可达、返回为空」", async () => {
+    const searchOf = (q: string) =>
+      ok({ items: [...Array(3).keys()].map((i) => ({ full_name: `o/${q}${i}`, name: `${q}${i}`, default_branch: "main" })) });
+
+    installFakeTauri(async (url) => {
+      if (/search\/repositories/.test(url)) {
+        if (/q=B/.test(url)) {
+          // B 的第一步押后，保证 A 先撞光配额（顺序确定，见用例注释）
+          await new Promise((r) => setTimeout(r, 20));
+          return searchOf("b");
+        }
+        return searchOf("a");
+      }
+      if (/git\/trees/.test(url)) return rateLimited403(); // A 的第一次树请求就撞光配额
+      return { status: 404, body: "", headers: {} };
+    });
+
+    const srcA: MarketSource = { id: "cool-a", name: "Cool A", type: "github-search", url: "https://api.github.com/search/repositories?q=A", enabled: true };
+    const srcB: MarketSource = { id: "cool-b", name: "Cool B", type: "github-search", url: "https://api.github.com/search/repositories?q=B", enabled: true };
+
+    const p = listMarketSkills([srcA, srcB]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await p;
+
+    // 前提：B 确实**一个 GitHub 请求都没发**（否则本用例测的不是冷却早退那条分支）
+    expect(
+      logs().filter((t) => /GitHub 搜索源 "Cool B"：0 个仓库完成/.test(t)).length,
+      "B 必须是被整源跳过的形态（0 个完成），否则本用例测了个空",
+    ).toBe(1);
+
+    expect(emptyClaims(), "B 一个请求都没发，绝不能说「源可达、返回为空」（第 4 条假话分支）").toEqual([]);
+    // 每个源都要有**自己的**真话：A 亲眼看的是 403，B 是被共享配额冷却跳过，两者都点名到源
+    expect(logs().filter((t) => /源 "cool-a" 依赖的 GitHub API/.test(t)).length, "A 要有一条").toBe(1);
+    expect(logs().filter((t) => /源 "cool-b" 依赖的 GitHub API/.test(t)).length, "B 也必须有一条（不许静默）").toBe(1);
+    expect(res.skills).toEqual([]);
+  });
+
   it("③b 一个源降级、另一个源成功 → 结果里只留成功的那个源", async () => {
     installFakeTauri((url) => {
       if (/\/repos\/anthropics\/skills$/.test(url)) return ok({ default_branch: "main", full_name: "anthropics/skills", updated_at: "x" });

@@ -643,12 +643,18 @@ export function PixelLibraryScene({
           const split = !!hit?.split;
           const hitPos = split ? logicToDisplay({ x: hit!.hit[0], y: hit!.hit[1] }) : null;
           const hitSize = split ? logicToDisplay({ x: hit!.hit[2], y: hit!.hit[3] }) : null;
+          /**
+           * 这间房**有没有岗位**（见 `zoneOfRoomOrNull` 的注释）：
+           * 装饰性房间（alarm / schedule）不接点击、不给 button 语义、不显示可点光标。
+           */
+          const zone = editingLayout ? null : zoneOfRoomOrNull(room.id);
+          const interactive = !!zone;
           return (
             <div
               key={room.id}
               className={`lo-pixel-room${active ? " is-selected" : ""}${editingLayout ? " is-editing" : ""}${
                 draggingThis ? " is-dragging" : ""
-              }${split ? " is-hit-split" : ""}`}
+              }${split ? " is-hit-split" : ""}${interactive ? "" : " is-decor"}`}
               style={{
                 left: p.x,
                 top: p.y,
@@ -656,19 +662,26 @@ export function PixelLibraryScene({
                 height: size.y,
                 ["--lo-zone-token" as string]: `var(${room.token})`,
               }}
-              role={editingLayout ? "presentation" : "button"}
-              tabIndex={editingLayout ? -1 : 0}
+              role={editingLayout ? "presentation" : interactive ? "button" : undefined}
+              tabIndex={editingLayout || !interactive ? undefined : 0}
               aria-label={`${room.label} —— ${room.labelEn}`}
-              title={editingLayout ? `${room.label}：拖动移动，右下角小方块改大小` : `${room.label}（上游分区 ${room.id}）`}
+              title={
+                editingLayout
+                  ? `${room.label}：拖动移动，右下角小方块改大小`
+                  : interactive
+                    ? `${room.label}（上游分区 ${room.id}）`
+                    : `${room.label}（上游分区 ${room.id}，本插件无对应岗位）`
+              }
               data-room-id={room.id}
+              data-has-zone={interactive ? "1" : "0"}
               data-hit-band={split ? `${hit!.hit[1]},${hit!.hit[3]}` : undefined}
-              onClick={editingLayout ? undefined : () => onSelectZone?.(zoneOfRoom(room.id))}
+              onClick={interactive ? () => onSelectZone?.(zone!) : undefined}
               onPointerDown={editingLayout ? (e) => startRoomDrag(e, eff, "move") : undefined}
               onKeyDown={(e) => {
-                if (editingLayout) return;
+                if (!interactive) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onSelectZone?.(zoneOfRoom(room.id));
+                  onSelectZone?.(zone!);
                 }
               }}
             >
@@ -849,8 +862,31 @@ export function PixelLibraryScene({
 
 /** 房间 id → 本插件岗位 id（反向映射，多个岗位同房间时取第一个） */
 function zoneOfRoom(roomId: string): string {
+  return zoneOfRoomOrNull(roomId) ?? roomId;
+}
+
+/**
+ * 房间 id → 岗位 id；**装饰性房间返回 `null`**。
+ *
+ * ## 为什么需要"没有岗位的房间"这个概念（真机 1.16.114 复量抓到的缺陷）
+ *
+ * `PIXEL_ROOMS` 有 **12** 间房，而 `ZONE_TO_ROOM` 只有 **10** 个岗位
+ * ——`alarm`（报警台）与 `schedule`（调度台）是上游地图里的**装饰性房间**（画出来、有行走节点，
+ * 但不承载任何岗位）。
+ *
+ * 原实现里所有房间一律 `onClick={() => onSelectZone?.(zoneOfRoom(room.id))}`，
+ * 而 `zoneOfRoom` 对未知房间回退成**房间 id 本身** ⇒ 点「报警台」会把
+ * `selectedZoneId` 设成 `"alarm"` 这个**根本不存在的岗位**，
+ * 再经 `roomOfZone("alarm")` 的**未知回退 gateway** 高亮成「前台 · 调度台」——
+ * 于是真机上表现为：**点报警台，亮的是前台**（命中归属与选中态都"对了"，但亮错了地方）。
+ * 同时 `role="button" + tabIndex=0 + cursor:pointer` 让一个没有行为的房间看起来可点。
+ *
+ * 所以判据不是"房间是不是画出来了"，而是"**这间房到底有没有岗位**"：
+ * 有岗位才给可点击的能力与样式，没有就不给。
+ */
+function zoneOfRoomOrNull(roomId: string): string | null {
   const hit = Object.entries(ZONE_TO_ROOM).find(([, r]) => r === roomId);
-  return hit ? hit[0] : roomId;
+  return hit ? hit[0] : null;
 }
 
 function truncate(text: string, max: number): string {

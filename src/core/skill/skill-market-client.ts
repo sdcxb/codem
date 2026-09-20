@@ -379,6 +379,11 @@ function isRetryableHttpError(err: unknown): boolean {
  *    [log]     [SkillMarket] 源 "anthropic-skills" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽…
  *    [warning] [SkillMarket] Failed to fetch repo info for anthropic-skills: 403（…配额耗尽…）
  *    [log]     Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）   ← 假话
+ *
+ * ③（1.16.113 闸门容量复量 R4/R5）**冷却早退分支**（第 4 条分支，两个源各一条）：
+ *    [log] [SkillMarket] 源 "A" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽…   ← A 撞了限流
+ *    [log] Source "B" 本次没有可展示的技能（源可达、返回为空）                      ← 假话
+ *    —— B 一个请求都没发（全局冷却把它整源跳过），账本上却什么都没有。
  * ```
  *
  * 第一轮我只把 `BUSY` 记了账，于是**限流那条分支照旧说假话**。
@@ -1036,13 +1041,29 @@ const githubRateLimitNoted = new Map<string, number>();
 /** 上一次撞到 GitHub 限流的时刻（0 = 本次刷新内没撞过）。用于"同一个源内部不要再打了"。 */
 let githubRateLimitedAt = 0;
 
-/** 距离上次撞限流是否还在冷却期内。 */
+/**
+ * 距离上次撞限流是否还在冷却期内。
+ *
+ * ⚠️ 这个时间戳是**进程级**的，而唯一的调用点在**某个源**的仓库循环里 ——
+ * 作用域不匹配正是第 4 条「源可达、返回为空」假话分支的成因（见调用点注释）。
+ * 判据**故意保持全局**：未认证配额按 IP 计，多个 github-* 源共用同一份 60 次/小时，
+ * A 撞光了配额，B 再打也只会拿到一串 403（真机 R4/R5 读数：B 是"0 个仓库完成、
+ * 30 个因限流被跳过"）。所以"不再打扰 API"这个决定是对的，**错的是不记账**。
+ */
 function githubRateLimitCoolingDown(): boolean {
   return githubRateLimitedAt > 0 && Date.now() - githubRateLimitedAt < RATE_LIMIT_COOLDOWN_MS;
 }
 
 /**
  * 记一次限流。
+ *
+ * 两个调用形态都要走这里（**这是收口的全部意义**）：
+ *  1. **亲眼看见**限流：某次请求真的拿回 403 + 剩余量为 0（Trees API / repo info）；
+ *  2. **被冷却早退**：上一个 github-* 源已经把共享配额撞光，本源整源被跳过
+ *     （`fetchGitHubSearchSkills` 的 `githubRateLimitCoolingDown()` 分支）。
+ *     第 2 种改动前只 `skipped++` 不记账，于是本源在账本上"什么都没发生"，
+ *     照旧打出「源可达、返回为空」—— 真机 1.16.113 复量 R4/R5 抓到的就是它。
+ *
  * @param sourceId 撞限流的市场源 id（用于"每源只说一次"，不是每仓库一次）
  * @param scope 说明里带上具体范围（仓库名/源名），便于复核
  * @param sourceName 源的**显示名**，用于把这一笔记进降级账本
@@ -1058,7 +1079,10 @@ function noteGithubRateLimit(sourceId: string, scope: string, sourceName: string
   if (githubRateLimitNoted.has(sourceId)) return;
   githubRateLimitNoted.set(sourceId, Date.now());
   info(
-    `源 "${sourceId}" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽 —— 该源本次只拿到部分结果；` +
+    // 措辞用"结果不完整"而不是"只拿到部分结果"：本函数的两个触发形态里，
+    // 「被冷却整源跳过」那一种可能**一个仓库都没完成**（真机 R4/R5：`0 个仓库完成、30 个被跳过`），
+    // 说"拿到了部分结果"会被读成"拿到了几条"。精确条数由各源的"完成/跳过"行给出。
+    `源 "${sourceId}" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽 —— 该源本次结果不完整；` +
     `在 设置 → Git 偏好 里配好 GitHub Token 可把配额提到 5000 次/小时（触发点：${scope}）`,
   );
 }
@@ -1408,8 +1432,23 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
         let installType: "zip" | "dir" = "zip";
         let dirPath: string | undefined;
 
-        // 已经确认在冷却期内限流 → 不再打扰 API，直接把本仓库记为"跳过"
+        // 已经确认在冷却期内限流 → 不再打扰 API，直接把本仓库记为"跳过"。
+        //
+        // ## 这里必须**按源记账**（1.16.113 复量 R4/R5 抓到的第 4 条假话分支）
+        //
+        // `githubRateLimitedAt` 是**进程级**的时间戳（未认证配额按 IP 计，
+        // 三个 github-* 源共用同一份 60 次/小时），而冷却早退是**按源**发生的：
+        // 源 A 撞了限流 → 全局时间戳被设上 → 源 B 的每个仓库都在这里 `skipped++`，
+        // B **一个请求都没发**，它的账本上却一笔都没有 →
+        // `mergeSourceResult` 照原样打出 `Source "B" 本次没有可展示的技能（源可达、返回为空）`
+        // （R4/R5 同毫秒逐字复现，两个源各一条）。
+        //
+        // 修法：这一笔也要落到**本源**的账上，并且让本源**有自己的真话**——
+        // 走 `noteGithubRateLimit`（它内部 `noteSourceDegrade` 记账 + 每源一条日志去重），
+        // 于是 B 也能在日志里读到"你这次为什么是空的"。共享配额这件事本身是真的，
+        // 说出来的话就不是假的；说不出来才是假的。
         if (githubRateLimitCoolingDown()) {
+          noteGithubRateLimit(source.id, repo.full_name, source.name);
           skipped++;
           return null;
         }

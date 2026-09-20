@@ -48,6 +48,17 @@ function openTaskCenterTab(tab: string): void {
 export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }: OverviewPanelProps) {
   const settings = useLibraryOps((s) => s.settings);
   const selectActor = useLibraryOps((s) => s.selectActor);
+  /**
+   * 概览页的场景卡同样要接**岗位选择**。
+   *
+   * 为什么（这是与 LibraryPanel 同一类的漏接线）：两个场景组件的 `onSelectZone` 是可选 prop，
+   * 改动前概览页只传了 `onSelectActor`，于是房间里那些 `role="button"` + `tabIndex` +
+   * `cursor:pointer` 的热区**点了没有任何反应** —— 一个看起来能点、实际不响应的控件。
+   * 「场景实况」卡是用户在概览页**唯一**能直接点角色的入口，漏了它这一整块就只剩装饰。
+   * 真机 1.16.113 的复量已经把房间命中归属修好（房间确实收到了点击），
+   * 所以这里缺的只是"把点击接到 store 上"这一步。
+   */
+  const selectZone = useLibraryOps((s) => s.selectZone);
   const requestView = useLibraryOps((s) => s.requestView);
   const initialPixelScene = useMemo(() => useLibraryOps.getState().pixelScene, []);
   const initialIsoScene = useMemo(() => useLibraryOps.getState().isoScene, []);
@@ -301,6 +312,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                 speed={settings.speed}
                 maxActors={settings.maxActors}
                 onSelectActor={selectActor}
+                onSelectZone={selectZone}
               />
             ) : (
               <LibraryScene
@@ -312,6 +324,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                 speed={settings.speed}
                 maxActors={settings.maxActors}
                 onSelectActor={selectActor}
+                onSelectZone={selectZone}
               />
             )}
           </div>

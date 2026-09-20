@@ -914,6 +914,12 @@
  * 每块都包含自己的锚点 ⇒ "点谁的名字附近就选谁"。 */
 .lo-pixel-room.is-hit-split { pointer-events: none; }
 .lo-pixel-room__hit { position: absolute; pointer-events: auto; }
+/* 装饰性房间（上游地图里有、本插件没有对应岗位：alarm 报警台 / schedule 调度台）：
+ * 不接点击、不给 button 语义 —— 光标也不该是手型。
+ * 真机 1.16.114 复量抓到：它们原先都带 `cursor: pointer` + `role="button"`，
+ * 点下去却把 `selectedZoneId` 设成一个**不存在的岗位** `"alarm"`，
+ * 再经 `roomOfZone` 的未知回退把高亮打到「前台 · 调度台」上（点报警台，亮前台）。 */
+.lo-pixel-room.is-decor { cursor: default; }
 /* 对位模式：房间框可拖动 / 缩放 */
 .lo-scene.is-editing-layout .lo-pixel-room {
   cursor: move;
