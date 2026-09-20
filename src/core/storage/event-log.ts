@@ -37,23 +37,19 @@ import { reportPersistFailure } from "./persist-failure";
  * 解法：窗口期内的 append 记在这里，加载完成后补写进 Rust 库（发件箱）
  * 并放进镜像，于是**两处最终一致**，一条都不丢。
  *
- * ⚠️ **L4 收尾后它已没有生产者**（保留，不删）：唯一调用点原来在 `append` 的
- * **旧库写入分支**里（那里有一条真实 seq 要补进镜像）。那条分支删除后，窗口期
- * append 一律走 `appendViaMirror()`：占位 seq 由 `RustEventMirror.loadSession`
- * 原样保留（`pendingLocal`）并在落库后 `reconcile` 成真实水位，
- * 所以**不存在事件丢失**，这段缓冲成为冗余。
+ * ⚠️ **L4 收尾后它已没有生产者**：唯一调用点原来在 `append` 的**旧库写入分支**里
+ * （那里有一条真实 seq 要补进镜像）。那条分支删除后，窗口期 append 一律走
+ * `appendViaMirror()`：占位 seq 由 `RustEventMirror.loadSession` 原样保留
+ * （`pendingLocal`）并在落库后 `reconcile` 成真实水位，所以**不存在事件丢失**。
  *
- * 之所以保留而不是删掉：它属于**端口侧（B 态）的补偿机制**，不是旧库回退分支；
- * 删除它要连带改 `rustEventPort()` 的回调，超出"只删 A 态"的范围（记入 L4 报告）。
+ * ## 第 62 轮：已删除（原来是"保留但无生产者"）
+ *
+ * 上一版的注释写着"保留，不删"（理由是"属于端口侧补偿机制，删它要连带改回调"）。
+ * 但**一个没有任何生产者的缓冲 + 一段永远不会执行的补写回调**留在读路径里，
+ * 正是本仓库反复清理的那种"看起来在工作、其实永远空转"的代码
+ * （稳定性审计也把它列为死代码）。本轮按"遗留物就清理"处理：连同它的写入函数与回调一起删掉，
+ * `ensureLoaded` 仍然照常触发惰性加载（那是 `ensureLoaded` 自身的副作用，与这个回调无关）。
  */
-const pendingDuringLoad = new Map<string, Array<{ type: string; payload: string; timestamp: number; seq: number }>>();
-
-/** 记一条"窗口期事件"（⚠️ L4 后无调用点，见 `pendingDuringLoad` 的注释） */
-function notePendingDuringLoad(sessionId: string, type: string, payload: string, timestamp: number, seq: number): void {
-  const list = pendingDuringLoad.get(sessionId) ?? [];
-  list.push({ type, payload, timestamp, seq });
-  pendingDuringLoad.set(sessionId, list);
-}
 
 type RustEventPortLike = {
   events: {
@@ -89,16 +85,9 @@ function rustEventPort(sessionId?: string): RustEventPortLike | null {
   const candidate = getStoragePort() as unknown as RustEventPortLike;
   if (!candidate.events?.ensureLoaded) return null;
   if (sessionId === undefined) return candidate;
-  // 加载中或未加载 → 注册补写回调，并在加载完成后把窗口期事件补进 Rust 库与镜像
-  candidate.events.ensureLoaded(sessionId, () => {
-    const buffered = pendingDuringLoad.get(sessionId);
-    if (!buffered || buffered.length === 0) return;
-    pendingDuringLoad.delete(sessionId);
-    for (const b of buffered) {
-      const local = candidate.events.appendLocal(sessionId, b.type, b.payload, b.timestamp);
-      candidate.appendEventAsync(sessionId, b.type, b.payload, b.timestamp, local.seq);
-    }
-  });
+  // 触发一次惰性加载（同步返回，后台进行）——加载完成后**不再有"补写窗口期事件"这件事**：
+  // 那条缓冲已随本轮清理删除（见文件头），窗口期 append 走镜像的 pendingLocal 机制。
+  candidate.events.ensureLoaded(sessionId);
   return candidate.events.isLoaded(sessionId) ? candidate : null;
 }
 

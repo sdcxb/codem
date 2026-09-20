@@ -272,7 +272,12 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
               </button>
             </>
           )}
-          <button className="memory-manager-close" onClick={onClose}><CloseIcon size={16} /></button>
+          {/* 纯图标按钮 ⇒ 必须有可访问名（只加属性，不动布局与样式） */}
+          <button
+            className="memory-manager-close"
+            aria-label="关闭记忆管理 / Close memory manager"
+            onClick={onClose}
+          ><CloseIcon size={16} /></button>
         </div>
       </div>
 
@@ -366,7 +371,11 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               placeholder="搜索记忆..."
             />
-            <button onClick={handleSearch}><SearchIcon size={16} /></button>
+            {/* 纯图标按钮 ⇒ 必须有可访问名（只加属性，不动布局与样式） */}
+            <button
+              aria-label="搜索记忆 / Search memory"
+              onClick={handleSearch}
+            ><SearchIcon size={16} /></button>
           </div>
 
           <div className="memory-filters">

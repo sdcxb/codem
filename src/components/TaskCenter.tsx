@@ -163,8 +163,11 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
               {zh ? "任务管理" : "Task Center"}
             </span>
           </div>
+          {/* 纯图标按钮：走查量到"按可访问名找不到关闭按钮"（键盘/读屏用户没有出口）⇒ 补名。
+              这个按钮同时是 library-ops 看板/场景/设置三个子视图的唯一关闭出口。只加属性不动布局。 */}
           <button
             onClick={onClose}
+            aria-label={zh ? "关闭任务中心" : "Close task center"}
             style={{
               background: "none",
               border: "none",

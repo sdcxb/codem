@@ -1328,16 +1328,43 @@ async fn get_system_info() -> Result<serde_json::Value, String> {
     }))
 }
 
+/// 读取 MiMo 账号凭据 `~/.local/share/mimocode/auth.json`。
+///
+/// ## 返回形状（调用方按 `exists` 判态，不要按"有没有抛错"判）
+///
+/// - `{ "exists": false }` —— **没登录过 MiMo 账号**：该文件只有 `mimo_login`（原生 OAuth
+///   回调成功后）才会创建，所以"文件不存在"是**正常态**，不是故障。前端据此走"未登录 ⇒
+///   用设置里的 API Key"这条路，**不报错**。这里**只**把 `ErrorKind::NotFound`
+///   （真不存在）当正常态；权限不足（`PermissionDenied`）等一律走下面的 `Err`。
+/// - `{ "exists": true, ...auth.json 原文 }` —— 读到了，内容由调用方解析。
+/// - `Err(String)` —— **真失败**：目录/文件读不动（权限、路径异常）或 JSON 坏了。
+///   这两种都不是"没登录"，必须保持 error 级。
 #[tauri::command]
 async fn mimo_read_auth() -> Result<serde_json::Value, String> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "Cannot determine home directory")?;
     let auth_path = std::path::Path::new(&home).join(".local").join("share").join("mimocode").join("auth.json");
-    let content = std::fs::read_to_string(&auth_path)
-        .map_err(|e| format!("Cannot read {}: {}", auth_path.display(), e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Invalid JSON in auth.json: {}", e))
+    let content = match std::fs::read_to_string(&auth_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // 正常态：没登录过 MiMo 账号（auth.json 由登录流程写入，从未登录就不存在）
+            return Ok(serde_json::json!({ "exists": false }));
+        }
+        Err(e) => return Err(format!("Cannot read {}: {}", auth_path.display(), e)),
+    };
+    let parsed: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid JSON in auth.json: {}", e))?;
+    // 把"读到了"这件事显式标出来，前端不必靠"结构里有没有字段"猜
+    match parsed {
+        serde_json::Value::Object(mut map) => {
+            map.insert("exists".to_string(), serde_json::Value::Bool(true));
+            Ok(serde_json::Value::Object(map))
+        }
+        // 合法 JSON 但不是对象（例如 `null` / 数组）：老实现会原样返回，调用方取不到
+        // `xiaomi.key` 一样当作"未登录"。这里保持同样的可观测形状，只补 `exists`。
+        other => Ok(serde_json::json!({ "exists": true, "value": other })),
+    }
 }
 
 #[tauri::command]

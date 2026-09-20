@@ -110,6 +110,9 @@ export const ToggleEntry = memo(function ToggleEntry({
         onClick={() => onChange(!value)}
         role="switch"
         aria-checked={value}
+        /* 走查量到"有 aria-checked 却没有可访问名"（读屏只念得出开关状态、念不出它管什么）
+           ⇒ 用条目自身的 label 当可访问名。只加属性，不动布局与样式。 */
+        aria-label={label}
       />
     </ConfigEntry>
   );

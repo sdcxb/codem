@@ -100,7 +100,12 @@ export function UsageStats({ onClose }: UsageStatsProps) {
           <span className="usage-stats-icon"><UsageIcon size={16} /></span>
           <span>用量统计</span>
         </div>
-        <button className="usage-stats-close" onClick={onClose}><CloseIcon size={16} /></button>
+        {/* 纯图标按钮 ⇒ 必须有可访问名（只加属性，不动布局与样式） */}
+        <button
+          className="usage-stats-close"
+          aria-label="关闭用量统计 / Close usage stats"
+          onClick={onClose}
+        ><CloseIcon size={16} /></button>
       </div>
 
       <div className="usage-tabs">

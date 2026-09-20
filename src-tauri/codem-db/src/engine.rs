@@ -35,6 +35,18 @@ pub struct Health {
     pub tables: usize,
     pub fts_module: String,
     pub last_error_code: Option<String>,
+    /// **打开前发现 `-wal` 文件头损坏、已把它保留成备份**时的备份路径
+    /// （`<库>.corrupt-wal-<毫秒时间戳>`；与 `recovered_from` 同一种"留下物证"的处置）。
+    ///
+    /// 为什么必须报出来：SQLite 遇到坏 WAL 头的处置是"忽略并删除这个 WAL"，
+    /// 那些**尚未 checkpoint 的写入会无声消失** —— 引擎不在打开前留证据，
+    /// 调用方看到的就是一个 `ok:true`，而磁盘上少了几个 MB 的数据、且没有任何备份。
+    pub wal_backup_from: Option<String>,
+    /// 打开前的 WAL 检查**没能完成**时的如实说明（读取失败 / 备份失败等）。
+    ///
+    /// 这类失败**不许让打开失败**（库本身可能完全正常），但也**不许沉默**：
+    /// 沉默会让调用方以为"这次的 WAL 检查通过了"，而实际它是没做。
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -58,6 +70,10 @@ pub struct Engine {
     import_open: Mutex<bool>,
     /// 导入事务里累计写入的行数（`import_commit` 回报给调用方）
     import_written: Mutex<usize>,
+    /// 打开前检查发现 `-wal` 头损坏时，保留下来的那份 WAL 的备份路径
+    wal_backup_from: Option<PathBuf>,
+    /// 打开前检查**没能完成**时的说明（读取失败 / 备份失败；不影响打开，但必须报出去）
+    preopen_warning: Option<String>,
 }
 
 /// 从**损坏的旧库**里抢救"项目 / 会话归属 / **设置**"，写成旁路文件。
@@ -271,6 +287,167 @@ fn json_str(s: &str) -> String {
     out
 }
 
+/// 打开前检查的产物：**保留下来的**坏 WAL 备份路径，外加一条必须报出去的说明。
+///
+/// `backup` / `warning` **互斥**：要么留住了物证，要么如实说"这次没做成"。
+#[derive(Debug, Default)]
+struct PreopenWalCheck {
+    backup: Option<PathBuf>,
+    warning: Option<String>,
+}
+
+/// 把 WAL 文件头损坏这件事变成**磁盘上的物证 + 一条回报**（第 92 轮补的真机缺陷）。
+///
+/// ## 这条检查守的是什么（真机实测，不是推测）
+///
+/// 用副本做注入测试：把 `-wal` 的**头 4 KB** 覆写成 0（主库完好）之后打开引擎 ——
+/// 引擎**不报损坏、不备份、返回 `ok:true`**，而 SQLite 随后把那个 WAL **删掉了**。
+/// SQLite 的行为本身没错（WAL 头无效 ⇒ 这个日志不可用 ⇒ 忽略并删除），
+/// 错的是**引擎在打开前没有留证据**：那份 WAL 里可能还有几个 MB 尚未 checkpoint 的写入，
+/// 就这么无声消失、且**没有任何备份**。对照实验：主库文件头坏掉时引擎会正确地
+/// 改名成 `<库>.corrupt-<ts>` 再重建（`open_with_recovery`）—— 同样是"数据不可用"，
+/// 两种形态的处置一个留物证、一个不留，这就是缺口。
+///
+/// ## 为什么必须**在打开之前**
+///
+/// 打开连接（`Connection::open_with_flags`）之后 SQLite 会在校验阶段把坏 WAL 删掉/截断
+/// —— 那时再检查，能检查的东西已经不在了。所以本函数在任何连接建立之前跑。
+///
+/// ## 判据只有一条：SQLite WAL 的 magic
+///
+/// WAL 头前 4 字节是 magic，SQLite 在磁盘上**按大端**读写它：
+/// `WAL_MAGIC`（`0x377f0682`，小端主机）与 `WAL_MAGIC | 1`（`0x377f0683`，大端主机）。
+/// 也就是说文件里的前 4 字节是 `37 7f 06 82` 或 `37 7f 06 83`。
+///
+/// ⚠️ 这里踩过一次真实的坑（第一版把字节序写反了：按 `from_le_bytes` 去比这两个常量，
+/// 于是**把正常 WAL 判成了坏 WAL**）。是测试里"正常 WAL 不许产生备份"那条打红的，
+/// 而它给出的现场很直白：`读到的头是 37 7f 06 82`。
+/// 所以判据写成"**按大端解出的 u32** 等于这两个常量"，并且再兜一条小端（同一份代码在
+/// 大端机器上把常量写出来会是 `82 06 7f 37`）——两种都认，不靠"猜主机字节序"。
+///
+/// **不匹配就一定有内容风险**：本函数不试图读 WAL 内容，也不修它 ——
+/// 只把这份文件**原样**留住，让"里面有没有还能救的写入"这个问题留给用户/工具，
+/// 而不是由引擎替用户决定"丢掉它"。
+///
+/// ## 处置边界（不许做的事）
+///
+/// - `-wal` 不存在 或 **长度为 0** ⇒ 什么都没发生（`Default`）：空 WAL 没有任何内容可丢，
+///   报事件只会制造噪声（每次干净关闭之后都是这个形态）。
+/// - magic 匹配 ⇒ **立刻返回**，不碰文件、不做别的改动（正常 WAL 的行为必须一字不变）。
+/// - 备份失败 ⇒ `warning`（**不让打开失败**：主库可能是好的，拒绝打开等于把可用数据也锁上）。
+fn check_wal_before_open(db_path: &Path) -> PreopenWalCheck {
+    let mut out = PreopenWalCheck::default();
+    // SQLite 的 WAL 文件名 = 主库路径 + "-wal"
+    let wal = PathBuf::from(format!("{}-wal", db_path.display()));
+    let Ok(meta) = std::fs::metadata(&wal) else {
+        return out; // 没有 WAL：正常形态（没有未 checkpoint 的写入）
+    };
+    if meta.len() == 0 {
+        return out; // 空 WAL：没有内容可丢
+    }
+
+    let mut head = [0u8; 4];
+    {
+        use std::io::Read;
+        let mut file = match std::fs::File::open(&wal) {
+            Ok(f) => f,
+            Err(e) => {
+                // 读不出来（被占用/权限）⇒ 读不了就不假装检查过了
+                out.warning = Some(format!(
+                    "打开前的 WAL 检查没能读取 {} 的前 4 字节（{}）：这个 WAL 是否可用未知，未做任何处置",
+                    wal.display(),
+                    e
+                ));
+                return out;
+            }
+        };
+        if let Err(e) = file.read_exact(&mut head) {
+            out.warning = Some(format!(
+                "打开前的 WAL 检查读 {} 的前 4 字节失败（{}）：文件非空却读不到头，未做任何处置",
+                wal.display(),
+                e
+            ));
+            return out;
+        }
+    }
+
+    // SQLite 在 WAL 头里按**大端**写这个 magic（`WAL_MAGIC` / `WAL_MAGIC|1`）：
+    // 磁盘上的前 4 字节是 `37 7f 06 82` 或 `37 7f 06 83`。
+    // 再兜一条小端（大端主机把同一对常量写出来就是 `82 06 7f 37`）—— 两种都认，
+    // 不靠"猜主机字节序"。⚠️ 第一版只按小端比，把**正常 WAL 判成了坏 WAL**（见函数注释）。
+    let be = u32::from_be_bytes(head);
+    let le = u32::from_le_bytes(head);
+    if matches!(be, 0x377f_0682 | 0x377f_0683) || matches!(le, 0x377f_0682 | 0x377f_0683) {
+        return out; // 正常 WAL：行为完全不变
+    }
+
+    eprintln!(
+        "[codem-db] 打开前的 WAL 检查：{} 的前 4 字节不是 SQLite WAL magic（读到 {}，应为 0x377f0682/0x377f0683 之一）\
+         —— SQLite 会忽略并删除这个 WAL，先把它保留成备份再继续",
+        wal.display(),
+        head.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
+    );
+
+    // 原样保留（改名优先，失败退回复制），与既有 `<库>.corrupt-<ts>` 是同一种处置
+    match preserve_wal_file(&wal, db_path) {
+        Ok(backup) => {
+            eprintln!(
+                "[codem-db] 已保留损坏的 WAL：{} → {}（内容未被改写；其中的写入是否还能抢救由人工决定）",
+                wal.display(),
+                backup.display()
+            );
+            out.backup = Some(backup);
+        }
+        Err(e) => {
+            out.warning = Some(format!("WAL 头损坏但保留备份失败：{}", e.message));
+        }
+    }
+    out
+}
+
+/// 保留一份头部损坏的 WAL：改名成 `<库>.corrupt-wal-<ts>`。
+///
+/// ⚠️ 命名与既有 `.corrupt-*` 一致（同目录、同时间戳口径），但**必须区别于**主库备份的
+/// `<库>.corrupt-<ts>`：两份备份的"能救什么"完全不同（后者是主库，前者是 WAL），
+/// 名字混在一起会让排查者分不清哪个是哪一份。
+fn preserve_wal_file(wal: &Path, db_path: &Path) -> DbResult<PathBuf> {
+    let target = PathBuf::from(format!(
+        "{}.corrupt-wal-{}",
+        db_path.display(),
+        backup_timestamp()
+    ));
+    // 改名与复制都失败时如实报错（由调用方转成 `warning`，不让打开失败）
+    move_as_backup(wal, &target)
+}
+
+/// 备份文件时间戳（毫秒）：既有 `<库>.corrupt-<ts>` 与 `<库>.corrupt-wal-<ts>` 共用同一口径。
+fn backup_timestamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+/// 把 `from` 搬到 `target`：改名优先，失败退回**复制 + 删源**。返回实际用到的备份路径。
+///
+/// 抽出来是因为它原来只长在 `backup_corrupt_file` 里，而"保留损坏的 WAL"需要**逐字相同**的处置
+/// （同一份纪律不该有两份实现：一处改了、另一处没跟上，正是这个仓库反复抓到的漂移）。
+fn move_as_backup(from: &Path, target: &Path) -> DbResult<PathBuf> {
+    // 改名优先：备份与被备份是同一份内容，复制既慢又占双份空间
+    if std::fs::rename(from, target).is_ok() {
+        return Ok(target.to_path_buf());
+    }
+    // 改名失败（Windows 上文件被占用是常见原因）→ 退回复制
+    std::fs::copy(from, target).map_err(|e| {
+        DbError::new(
+            ErrorCode::Io,
+            format!("备份失败（{} → {}）：{e}", from.display(), target.display()),
+        )
+    })?;
+    let _ = std::fs::remove_file(from);
+    Ok(target.to_path_buf())
+}
+
 /// 把损坏的库文件改名备份（`<name>.corrupt-<ts>`），并返回备份路径。
 ///
 /// 细节：
@@ -280,37 +457,30 @@ fn json_str(s: &str) -> String {
 ///   `-wal`/`-shm`，新库打开时可能又把它当成自己的日志读进去 —— 那就是"重建了还是坏的"。
 /// - 改名失败（被占用/权限）→ 退回 `copy`，仍失败则如实报 IO 错误，**不假装成功**。
 fn backup_corrupt_file(path: &Path) -> DbResult<PathBuf> {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let backup = PathBuf::from(format!("{}.corrupt-{stamp}", path.display()));
-
-    let mut moved_any = false;
+    let stamp = backup_timestamp();
+    let mut backup: Option<PathBuf> = None;
     for suffix in ["", "-wal", "-shm"] {
         let from = PathBuf::from(format!("{}{suffix}", path.display()));
         if !from.exists() {
             continue;
         }
-        let to = PathBuf::from(format!("{}{suffix}", backup.display()));
-        if std::fs::rename(&from, &to).is_ok() {
-            moved_any = true;
-            continue;
+        // 三份文件共用**同一个时间戳**（否则 `-wal`/`-shm` 会各自带上不同的毫秒数，
+        // 排查时看不出它们是同一次恢复搬走的）
+        let target = PathBuf::from(format!("{}.corrupt-{stamp}{suffix}", path.display()));
+        let moved = move_as_backup(&from, &target)?;
+        // 主文件那一份才是"备份路径"（`-wal`/`-shm` 跟着它一起搬走）
+        if suffix.is_empty() {
+            backup = Some(moved);
         }
-        // 改名失败（Windows 上文件被占用是常见原因）→ 退回复制
-        std::fs::copy(&from, &to)
-            .map_err(|e| DbError::new(ErrorCode::Io, format!("备份损坏库失败（{}）：{e}", from.display())))?;
-        let _ = std::fs::remove_file(&from);
-        moved_any = true;
     }
 
-    if !moved_any {
-        return Err(DbError::new(
+    match backup {
+        Some(b) => Ok(b),
+        None => Err(DbError::new(
             ErrorCode::Io,
             format!("库被判损坏但文件不存在，无法备份：{}", path.display()),
-        ));
+        )),
     }
-    Ok(backup)
 }
 
 impl Engine {
@@ -376,6 +546,19 @@ impl Engine {
                     .map_err(|e| DbError::new(ErrorCode::Io, format!("创建目录失败：{e}")))?;
             }
         }
+
+        /*
+         * === 打开**之前**的 WAL 检查（第 92 轮补的真机缺陷）===
+         *
+         * 位置是这条修复的全部要点：**必须在 `Connection::open_with_flags` 之前**。
+         * 一旦连接建立，SQLite 在校验阶段就会把"头部无效的 WAL"忽略并删除 ——
+         * 那时再检查，能留证据的东西已经不在了（真机实测：4.1 MB 未 checkpoint 的写入
+         * 无声消失，且没有任何备份）。
+         *
+         * 检查失败/备份失败**不让打开失败**（主库可能是好的），
+         * 但会如实记进 `preopen_warning` 并由 `health` 报出去 —— 不许沉默。
+         */
+        let wal_check = check_wal_before_open(&path);
 
         let conn = Connection::open_with_flags(
             &path,
@@ -456,6 +639,8 @@ impl Engine {
             schema_report,
             import_open: Mutex::new(false),
             import_written: Mutex::new(0),
+            wal_backup_from: wal_check.backup,
+            preopen_warning: wal_check.warning,
         })
     }
 
@@ -572,6 +757,14 @@ impl Engine {
                     .lock()
                     .ok()
                     .and_then(|g| g.clone()),
+                // 打开前那一次检查的**事实**（只在真发生时才非空）：
+                // 调用方读 health 就能看到"这次的 WAL 头是坏的、物证保存在哪里"，
+                // 不需要记得额外问一句（那种设计一定会有人忘）。
+                wal_backup_from: self
+                    .wal_backup_from
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string()),
+                warning: self.preopen_warning.clone(),
             })
         })
     }

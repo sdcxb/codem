@@ -128,7 +128,12 @@ export function ToolManager({ onClose }: ToolManagerProps) {
           <span className="usage-stats-icon"><Wrench size={16} /></span>
           <span>工具管理</span>
         </div>
-        <button className="usage-stats-close" onClick={onClose}><CloseIcon size={14} /></button>
+        {/* 纯图标按钮 ⇒ 必须有可访问名（本仓库既有做法：面板关闭按钮补 aria-label，只加属性不动布局） */}
+        <button
+          className="usage-stats-close"
+          aria-label="关闭工具管理 / Close tool manager"
+          onClick={onClose}
+        ><CloseIcon size={14} /></button>
       </div>
 
       {/* 搜索框 */}
@@ -218,6 +223,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                 <button
                   onClick={() => toggleTool(tool.id, !enabled)}
                   title={enabled ? "点击禁用" : "点击启用"}
+                  aria-label={`${enabled ? "点击禁用" : "点击启用"}「${tool.id}」`}
                   style={{
                     width: "36px", height: "20px", borderRadius: "var(--radius-md)",
                     border: enabled ? "none" : "1px solid var(--border-primary)",
@@ -237,6 +243,8 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                 {/* Expand button */}
                 <button
                   onClick={() => setExpandedTool(isExpanded ? null : tool.id)}
+                  title={isExpanded ? "收起详情" : "展开详情"}
+                  aria-label={`${isExpanded ? "收起详情" : "展开详情"}「${tool.id}」`}
                   style={{
                     background: "none", border: "none", color: "var(--text-muted)",
                     cursor: "pointer", fontSize: 'var(--fs-sm)', padding: "2px 4px",

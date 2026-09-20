@@ -2172,9 +2172,14 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             {zh ? "在窗口右下角显示宠物，它会响应 Agent 的工作状态" : "Show a pet in the bottom-right corner that reacts to Agent activity"}
           </div>
         </div>
+        {/* 纯图标开关：走查量到"无任何可访问名"（`.sp-toggle` 内只有一个 knob）⇒ 补名。
+            只加属性（不动类名/内联样式），语义与 `.toggle-entry` 开关保持一致。 */}
         <button
           onClick={() => setEnabled(!enabled)}
           className={`sp-toggle ${enabled ? "is-on" : ""}`}
+          role="switch"
+          aria-checked={enabled}
+          aria-label={zh ? "启用桌面宠物" : "Enable Desktop Pet"}
         >
           <span className="sp-toggle-knob" />
         </button>

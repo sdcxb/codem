@@ -25,7 +25,29 @@ export interface AgentMessage {
 
 const queues = new Map<string, AgentMessage[]>(); // keyed by toAgent
 const sequenceCounter = new Map<string, number>();
+/**
+ * messageId → 回复正文。
+ *
+ * ⚠️ 第 62 轮（稳定性审计实测）：这里原来是**无上界**的 —— 每次 `send({messageType:"reply"})`
+ * 都塞一整段回复正文进来，**从不删除**，于是"agent 之间来回对话越多、常驻内存越大"。
+ * 审计里它属于"无上界内存结构"清单（`src/core/llm` 共 9 个）。
+ * 现在给一个**条数上界 + 先进先出逐出**：回复在同一个回合内就会被读走
+ * （`agentic-loop.ts` 的 `wait_for_subagent` 路径），超出窗口的老回复被逐出后
+ * `getReply()` 返回 `null`（调用方本来就要处理"还没回复"这一态）。
+ */
 const consumedReplies = new Map<string, string>(); // messageId → response body
+/** 保留的回复条数上界（正文可能很大，所以按条数而不是字节数控制，简单且可预测） */
+const MAX_CONSUMED_REPLIES = 200;
+
+function rememberReply(messageId: string, body: string): void {
+  consumedReplies.set(messageId, body);
+  // Map 的迭代顺序 = 插入顺序 ⇒ 删最早的键就是 FIFO
+  while (consumedReplies.size > MAX_CONSUMED_REPLIES) {
+    const oldest = consumedReplies.keys().next();
+    if (oldest.done) break;
+    consumedReplies.delete(oldest.value);
+  }
+}
 
 type MessageListener = (message: AgentMessage) => void;
 const listeners = new Set<MessageListener>();
@@ -78,7 +100,8 @@ export const AgentMessageQueue = {
 
     // If this is a reply, store the response body for the waiting sender
     if (params.messageType === "reply" && params.replyToId) {
-      consumedReplies.set(params.replyToId, params.body);
+      // 走有上界的写入（见 `rememberReply` 的说明：这里原来是无上界的常驻内存）
+      rememberReply(params.replyToId, params.body);
     }
 
     let queue = queues.get(params.toAgent);

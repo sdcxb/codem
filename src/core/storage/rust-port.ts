@@ -103,6 +103,9 @@ function toStorageError(e: unknown, fallbackMessage: string): StorageError {
  */
 let recoveryNotified = false;
 
+/** 第 62 轮：同理，"坏 WAL 被保留"这件事也只报一次 */
+let walIncidentNotified = false;
+
 /** 测试隔离：复位"已通知损坏恢复"闩锁 */
 export function __resetRecoveryNotifiedForTests(): void {
   recoveryNotified = false;
@@ -452,6 +455,26 @@ class RustEnginePort implements StorageEnginePort {
      *
      * ⚠️ 只做一次（health 会被反复调用），用模块级闩锁。
      */
+    /**
+     * ## 第 62 轮补：**坏 WAL 被保留**这件事也要传到用户面前（不许只在引擎 stderr 里）
+     *
+     * 稳定性审计实测：只坏 `-wal` 头 4 KB（主库完好）时，SQLite 会**忽略并删除**那个 WAL ——
+     * 那几 MB 尚未 checkpoint 的写入会无声消失。引擎侧已修成"打开前先留物证"：
+     * 保留成 `<库>.corrupt-wal-<毫秒>` 并通过 `health.wal_backup_from` 报出。
+     * 但渲染侧原来**不读这个字段** ⇒ 用户永远看不到"有一次 WAL 被判废并保住了"。
+     * 这里按既有 `recovered` 的同一条纪律如实报出（一次性闩锁，`health` 会被反复调用）。
+     */
+    if (typeof raw.wal_backup_from === "string" && raw.wal_backup_from && !walIncidentNotified) {
+      walIncidentNotified = true;
+      console.error(
+        `[Storage] ⚠️ 发现一个无法重放的 WAL（预写日志头已损坏）：已原样保留为 ${raw.wal_backup_from}，` +
+          "主库未受影响；其中尚未落库的写入**没有自动恢复**，需要时由人工从该备份研判",
+      );
+      if (typeof raw.warning === "string" && raw.warning) {
+        console.warn(`[Storage] 引擎在打开前的检查里另有告警：${raw.warning}`);
+      }
+    }
+
     if (raw.recovered === true && !recoveryNotified) {
       recoveryNotified = true;
       const backup = typeof raw.recovered_from === "string" ? raw.recovered_from : "(未知备份路径)";

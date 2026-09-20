@@ -1,15 +1,15 @@
 {
-  "version": "1.16.109",
-  "notes": "清理第 4 包：删掉两条'注册了却永远不渲染'的插槽宿主与 7 条无出口注册（功能一件没少）",
-  "pub_date": "2026-09-19T16:18:36Z",
+  "version": "1.16.110",
+  "notes": "四路深度审计 + 修掉 WAL 静默丢失与内存无上界；真机走查的 16 个无名控件与 4 个关闭按钮补名、MiMoAuth 误报归零",
+  "pub_date": "2026-09-20T00:22:25Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lWYmY1UEZLZ0djZUJsc0x4UklqUmFFS0tkWmlMVEdrWWhpN2VjM3ZRcGgrVHkra212OVU2ZWpndEY1RmFQOUl6Q2VVQ3FBRXJzYm50NUNwQmxsdHdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODM0NjA0CWZpbGU6Q29kZW1fMS4xNi4xMDlfeDY0LXNldHVwLmV4ZQpjRGU0a2M5a2s5U2ZrRzBlRTJlZjZsMGlMQkpXOUM4dkVxd0NRZ3dZekREMzR6WVM2Y3hWdUxXNHRTRnpWYnlwUEswR0h0cWJocndUaUhNaTFrL1lCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.109/Codem_1.16.109_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZaOTVFVDhEdTVkeDVnd3BLeFZtTEVlci9EMG9OMUlXbXVTUDF6L3V2bnU0dUNEcWE2L1JqMi8xVlhnL1BNYjlDQk1waFkveVJkNi85S0cyQmJ4YXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODYzNjQ4CWZpbGU6Q29kZW1fMS4xNi4xMTBfeDY0LXNldHVwLmV4ZQppTnZjNk9xaEcraFZ0NzJTRkZRbXVlNmV5MEdJb0Fqb1V6YlFFL1VnSjg5ZXZKUmcwS3luYTQ0QzFjVGlWWnhaMVNrajFHTjFkeFZXMUNxZ3hVUFlDUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.110/Codem_1.16.110_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lWYmY1UEZLZ0djZUJsc0x4UklqUmFFS0tkWmlMVEdrWWhpN2VjM3ZRcGgrVHkra212OVU2ZWpndEY1RmFQOUl6Q2VVQ3FBRXJzYm50NUNwQmxsdHdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODM0NjA0CWZpbGU6Q29kZW1fMS4xNi4xMDlfeDY0LXNldHVwLmV4ZQpjRGU0a2M5a2s5U2ZrRzBlRTJlZjZsMGlMQkpXOUM4dkVxd0NRZ3dZekREMzR6WVM2Y3hWdUxXNHRTRnpWYnlwUEswR0h0cWJocndUaUhNaTFrL1lCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.109/Codem_1.16.109_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZaOTVFVDhEdTVkeDVnd3BLeFZtTEVlci9EMG9OMUlXbXVTUDF6L3V2bnU0dUNEcWE2L1JqMi8xVlhnL1BNYjlDQk1waFkveVJkNi85S0cyQmJ4YXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODYzNjQ4CWZpbGU6Q29kZW1fMS4xNi4xMTBfeDY0LXNldHVwLmV4ZQppTnZjNk9xaEcraFZ0NzJTRkZRbXVlNmV5MEdJb0Fqb1V6YlFFL1VnSjg5ZXZKUmcwS3luYTQ0QzFjVGlWWnhaMVNrajFHTjFkeFZXMUNxZ3hVUFlDUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.110/Codem_1.16.110_x64-setup.exe"
     }
   }
 }

@@ -2,6 +2,61 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.110] - 2026-09-19 — 四路深度审计（性能/稳定性/UI 走查/功能上下文）+ 修掉两处真缺陷
+
+> 你要求"完全做完"。这一版是**四路审计当轮可修的部分**：修了 **WAL 静默丢失**与**内存无上界**，
+> 补齐真机走查量出的界面缺陷，其余**逐条列成待办**（不假装已修）。四份审计报告已入库：
+> `docs/audit-perf.md`、`docs/audit-stability.md`、`docs/audit-ui-walk.md`、`docs/audit-feature-context.md`（原始读数与复现命令都在文内）。
+
+### 🔴 修掉的真缺陷（都有真机/副本证据）
+
+- **坏 WAL 被静默丢弃（唯一"数据少掉且无痕迹"的形态）**：稳定性审计用 `codem-db-cli` 对**真库副本**注入发现 ——
+  只坏 `-wal` 头 4 KB（主库完好）时，SQLite 的行为是**忽略并删除**该 WAL，引擎却返回 `ok:true`、不留备份
+  ⇒ 那 **4,136,512 B** 尚未 checkpoint 的写入无声消失。
+  修法：**打开前先验 WAL magic**（`0x377f0682/0x377f0683`，大端为主、小端兜底），不匹配就**原样保留**成
+  `<库>.corrupt-wal-<毫秒>` 并如实报出（`health.wal_backup_from` + stderr）；magic 正常 ⇒ **行为一字不变**。
+  真库副本端到端：4,136,512 B **一字不少地保住**、事件被报出；对照组（WAL 完好）无备份、正常重放。
+  ⚠️ **作者自查并改掉的二次缺陷**：第一版把 magic 字节序写反（按文档直觉用 `from_le_bytes`），
+  被"正常 WAL 不许产生备份"那条测试当场打红 —— 否则会把**正常 WAL 整批判成坏 WAL**，比原缺陷更严重。
+  渲染侧同时接上：`rust-port.ts` 现在会读这两个字段并**报到用户面前**（否则只存在于引擎 stderr）。
+- **`AgentMessageQueue` 的回复缓存无上界**：`consumedReplies`（messageId → 整段回复正文）**从不删除**，
+  "agent 之间对话越多、常驻内存越大"。改成**条数上界 200 + FIFO 逐出**，新增
+  `agent-message-queue-bounds.test.ts`（上界以内一个字不许丢 / 超界后"最新的在、最老的被逐出"）。
+- **`event-log.ts` 里那处"无生产者的缓冲"**：注释写着"保留，不删"，但它连写入函数都没有调用点，
+  那段补写回调**永远不会执行** ⇒ 连同缓冲与写入函数删除（`ensureLoaded` 的惰性加载不受影响）。
+
+### ✅ 真机走查量出的界面缺陷（32 面板 / 712 按钮的普查）
+
+- **16 个无名控件**（按面板求和；最差是设置·工具页 7 个）逐个补 `aria-label`：`usage-stats-close`、
+  工具页 6 个"展开详情"纯图标按钮（真机脚本复量确认了它们的归属）、6 个 `36×20「点击禁用」`开关（补成含工具名）、
+  语音 `toggle-entry`、宠物 `sp-toggle`（并补 `role="switch"`/`aria-checked`）、记忆管理关闭与搜索按钮。
+  **只加属性，未动布局/类名/CSS。**
+- **4 个面板"按可访问名找不到关闭按钮"**（任务中心、记忆管理、library-ops 看板/场景/设置）：
+  任务中心那个空 class 纯图标关闭按钮补名（它与 library-ops 三个子视图共用同一出口 ⇒ 一处覆盖 4 行）；
+  新增 `ui-accessible-names.test.tsx`（7 例，含"按名字找到后点击 ⇒ onClose 被调用 1 次"）。
+- **`[MiMoAuth] Failed to load auth.json … os error 3` 不再当错误**：查清"本机没登录 MiMo 账号 ⇒ 该文件不存在"
+  是**正规形态**（只有 `mimo_login` 成功才写它；未登录时走设置里的 API Key，是 provider 注册表写明的配置）。
+  于是**改代码而不只是改措辞**：Rust `mimo_read_auth` 把 `ErrorKind::NotFound` 变成 `{"exists": false}`
+  （权限不足/JSON 坏仍 `Err`），TS 侧走正常路径日志（**不静默**，明说"走设置里的 API key"），真故障仍报 error；
+  新增 `mimo-auth-missing-file.test.ts` 5 例（含"权限不足必须仍是 error"）。
+
+### 📋 已量到但**本轮未修**（逐条待办，不许当成已完成）
+
+| 项 | 数字 | 为什么没在轮内动 |
+| --- | --- | --- |
+| 命中区 < 24×24 的可交互元素 | **49 个**（最集中：设置·工具 13、Git 4、语音 4、library-ops 设置 7） | 改尺寸会动布局，需按面板逐个判断 + 复量；工具页那 6 个"无名且过小"的只修了无名 |
+| `RustEventMirror.bySession` 无预算/无 LRU | 事件 payload 全文常驻；**消息镜像有 `totalBudgetRows=20_000`，事件镜像没有** | 上加界会改读路径语义（回放/投影依赖整份可用），要先设计再动 |
+| `message.ts cachedLogMessages` | 每个访问过会话的**全部消息正文**常驻，`clearSessionLogCache` **生产代码无调用者** | 需要一个真实的清理时机（切会话？空闲？），属产品决策 |
+| 启动体验 | 首屏前 **0 处 await**；阻塞"看到主界面"的 **17 处**；`prefetchDomainMirrors` 最坏固定 **2.5 s**，而遮罩在整条初始化末尾才关 | 那个 await 是**故意的**（面板同步读，镜像没就绪会显示空列表 = 本仓库反复修的塌陷）⇒ 要动的是**遮罩关闭时机**，需先有实测耗时 |
+| 安装包/产物 | 安装包 **40.39 MB**（NSIS）；`dist` **82.93 MB**；ORT wasm 22.48 + ONNX 模型 21.91 + 中文字体 7.07 = **62%** | 属产品取舍（本地 embedding/字体随包），不是缺陷 |
+| 功能上下文缺口 | **24 条**（fork 2 / compaction 6 / 事件投影 7 / feedback 4 / presets 5） | 含 `/compact` 声明式死链、`session_meta` 只写不读、压缩后隐藏消息无读取入口、10 处"能力已实现但零生产调用者"等；逐条证据在 `docs/audit-feature-context.md` |
+
+### 实测
+
+渲染侧 **339 文件 / 5844 通过 / 16 跳过 / 0 失败**（`vitest` 退出码 0）；`tsc` 0；
+10 道 audit 门禁 exit 0（未接线扫描 808 个生产文件）；UI 门禁 error 0 / warn 0；
+引擎 `codem-db` **54 + 88 + 2 + 2 全过、0 失败**（含 3 条新 WAL 用例与负对照）。
+
 ## [1.16.109] - 2026-09-19 — 清理第 4 包：两条"注册了却永远不渲染"的插槽宿主（功能一件没少）
 
 > 同一条"每类一包 + 真机冒烟"节奏。这一包把我上一轮列为"需要你拍板"的那件事**查清并解决了** ——

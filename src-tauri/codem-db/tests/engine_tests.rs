@@ -153,6 +153,350 @@ fn corrupt_recovery_salvages_project_attribution() {
     }
 }
 
+// ========== 打开前的 WAL 检查：坏 WAL 头不许静默消失（第 92 轮真机缺陷） ==========
+
+/// 真 WAL 在磁盘上的前 4 字节（SQLite 按**大端**写 magic）：
+/// `WAL_MAGIC = 0x377f0682`（小端主机）或 `WAL_MAGIC|1 = 0x377f0683`（大端主机）。
+///
+/// ⚠️ 这一条是**实测锚点**，不是抄文档：第一版实现把字节序写反了
+/// （按 `from_le_bytes` 去比这两个常量），于是"正常 WAL"被整批判成坏 WAL ——
+/// 打红它的正是下面第 ② 条测试，现场给出的字节就是 `37 7f 06 82`。
+const WAL_MAGIC_BYTES_LE_HOST: [u8; 4] = [0x37, 0x7f, 0x06, 0x82];
+const WAL_MAGIC_BYTES_BE_HOST: [u8; 4] = [0x37, 0x7f, 0x06, 0x83];
+
+/// 造一个"主库有已提交数据 + `-wal` 里有**尚未 checkpoint 的写入**"的库，并把它整份复制到 `dst/`。
+///
+/// 返回 `(副本路径, 副本 WAL 的字节)`。
+///
+/// ## 为什么要"复制整库"，而不是直接生成一个 WAL 文件
+///
+/// 实测（不是推测）：**SQLite 在最后一个连接关闭时会把 WAL 并回主库并删掉它** ——
+/// 所以 `Engine::open` → 写 → drop 之后，磁盘上**不会留下任何 `-wal`**，
+/// 直白写法连"非空 WAL"这个前置条件都造不出来（第一版就是这么红的）。
+///
+/// 这里改用真机注入测试用的同一手法：**趁写入还没 checkpoint，把主库与 `-wal`/`-shm`
+/// 一起复制走**。复制之后那份库上没有任何连接，正是真机上"崩溃/强杀之后剩下的现场"，
+/// 也正是 `check_wal_before_open`（打开前检查）要面对的形态。
+///
+/// ## 造出来的副本里有什么
+///
+/// - `dst/<name>.bin`：已提交的 `projects` 行 + schema（在主库里）；
+/// - `dst/<name>.bin-wal`：**非空**、magic 合法，里面是 `UNCHECKPOINTED_PROJECT` 那一次写
+///   （尚未并回主库）。于是"WAL 被忽略并删除 ⇒ 这次写入无声消失"是可断言的。
+fn seed_db_with_uncheckpointed_wal(
+    dir: &std::path::Path,
+    name: &str,
+) -> (std::path::PathBuf, Vec<u8>) {
+    let src = dir.join(format!("{name}-src"));
+    let dst = dir.join(format!("{name}-dst"));
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&dst).unwrap();
+    let live = src.join(format!("{name}.bin"));
+
+    // ① 建库 + 一行**已提交**的数据，并 checkpoint（让主库本身有内容，而不是空库）
+    {
+        let engine = Engine::open(&live).unwrap();
+        call(&engine, "projects.upsert", json!({ "id": "p-committed", "name": "已 checkpoint" }));
+        engine.checkpoint().unwrap();
+    }
+
+    // ② 另一个连接写一行并提交，**但不 checkpoint** —— 它只存在于 WAL 里
+    let writer = rusqlite::Connection::open(&live).unwrap();
+    writer
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE;\
+             INSERT INTO projects (id, name, path, pinned, created_at, last_accessed_at) \
+             VALUES ('{UNCHECKPOINTED_PROJECT}', '只在 WAL 里', '', 0, 1, 1);\
+             COMMIT;"
+        ))
+        .expect("在 WAL 里写入未 checkpoint 的数据");
+
+    /*
+     * ③ 趁 WAL 还在，把整份库复制走（主库 + -wal + -shm 必须一起，缺一份就可能是半截状态）。
+     *
+     * ⚠️ 顺序同样是实测出来的：**复制必须发生在 `writer` 关闭之前**。
+     * 这份 WAL 之所以存在，靠的就是"还有一个连接开着"；
+     * 一旦 `writer` 被 drop（或离开作用域），SQLite 会在关闭时 checkpoint 并**删掉** `-wal`
+     * —— 第二版就是先 drop 后复制，于是副本里根本没有 WAL，前置条件当场变红。
+     */
+    let copy = dst.join(format!("{name}.bin"));
+    std::fs::copy(&live, &copy).unwrap();
+    for suffix in ["-wal", "-shm"] {
+        let from = std::path::PathBuf::from(format!("{}{suffix}", live.display()));
+        if from.exists() {
+            std::fs::copy(&from, std::path::PathBuf::from(format!("{}{suffix}", copy.display())))
+                .unwrap();
+        }
+    }
+    drop(writer);
+
+    let wal = std::path::PathBuf::from(format!("{}-wal", copy.display()));
+    assert!(
+        wal.exists() && std::fs::metadata(&wal).unwrap().len() > 0,
+        "前置条件：副本必须带上一份非空 -wal（否则这条测试测的不是「坏 WAL 头」）：{}",
+        wal.display()
+    );
+    let wal_bytes = std::fs::read(&wal).unwrap();
+    assert!(
+        wal_bytes.starts_with(&WAL_MAGIC_BYTES_LE_HOST)
+            || wal_bytes.starts_with(&WAL_MAGIC_BYTES_BE_HOST),
+        "前置条件：这份 WAL 必须是 SQLite 自己写出来的（magic 对得上），而不是测试手搓的假文件：{:02x?}",
+        &wal_bytes[..4]
+    );
+    (copy, wal_bytes)
+}
+
+/// 只存在于 `-wal` 里的那行：WAL 被忽略 ⇒ 它就该读不出来（"无声消失"的可断言形态）。
+const UNCHECKPOINTED_PROJECT: &str = "p-only-in-wal";
+
+/// 把 WAL 的前 4 字节（magic）覆写成 0 —— 真机注入测试用的正是这个位置。
+fn break_wal_magic(wal: &std::path::Path) {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut f = std::fs::OpenOptions::new().write(true).open(wal).unwrap();
+    f.seek(SeekFrom::Start(0)).unwrap();
+    f.write_all(&[0u8; 4]).unwrap();
+    f.flush().unwrap();
+}
+
+/// 目录里所有 `<库>.corrupt-wal-*` 备份（按既有 `.corrupt-*` 的命名口径找）。
+///
+/// 刻意按 `corrupt-wal-` 前缀过滤：`<库>.corrupt-<ts>` 是**主库**备份，
+/// 两种备份的判据必须分开（混在一起会让"没备份 WAL"这种失败看起来是绿的）。
+fn wal_backups(db: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let dir = db.parent().unwrap();
+    let prefix = format!(
+        "{}.corrupt-wal-",
+        db.file_name().unwrap().to_string_lossy()
+    );
+    let mut out: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().starts_with(&prefix))
+                .unwrap_or(false)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// ① `-wal` 头损坏（主库完好）⇒ **先留下备份**，并把这次事件报出来。
+///
+/// ## 真机缺陷的形态（这条测试就是它的回归守卫）
+///
+/// 对真实库的副本做注入：把 `-wal` 的头 4 KB 覆写成 0 —— 引擎**不报损坏、不备份、返回 ok:true**，
+/// SQLite 随后把这个 WAL **删掉**，那几个 MB 尚未 checkpoint 的写入**无声消失、且没有任何备份**。
+/// 对照：主库文件头坏掉时引擎会正确改名成 `<库>.corrupt-<ts>` 再重建（见本文件第一条测试）。
+/// 同一种"数据不可用"，一个留物证一个不留 —— 就是缺口。
+///
+/// 这里钉三件事：**备份真的在磁盘上**、**备份一个字节都没被截断**、**这次事件被报出来**。
+#[test]
+fn broken_wal_header_is_preserved_and_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, wal_before) = seed_db_with_uncheckpointed_wal(dir.path(), "bad-wal");
+    let wal = std::path::PathBuf::from(format!("{}-wal", db.display()));
+    break_wal_magic(&wal);
+
+    let engine = Engine::open(&db).expect("主库完好时，坏 WAL 头不该让打开失败");
+    let h = engine.health().unwrap();
+
+    // ① 备份存在，且**一个字节都没被截断**
+    let backups = wal_backups(&db);
+    assert_eq!(
+        backups.len(),
+        1,
+        "必须且只留一份 .corrupt-wal-* 备份（否则那几个 MB 的写入就是无声消失）：{backups:?}"
+    );
+    let kept = &backups[0];
+    /*
+     * ⚠️ 判据是"**不少于**"，不是"逐字节相等"（第一版写的是相等，那是个**假判据**）。
+     *
+     * 复制手法保证的是"复制那一刻的字节"；而 `Engine::open` 之后 SQLite 可能改写这个
+     * WAL（重放帧 / 处理半截状态），于是原文件在备份那一刻**可能已经和复制来的字节不同**。
+     * 真正要守的性质只有一条：**备份不许把文件截断**（"变小"才意味着有字节被丢掉）。
+     * 拿"相等"去卡，会在一个完全正常的备份上变红。
+     */
+    let kept_len = std::fs::metadata(kept).unwrap().len();
+    assert!(
+        kept_len >= wal_before.len() as u64,
+        "备份不许比原 WAL 短（那意味着有字节被丢掉）：备份 {kept_len} B < 原 WAL {} B —— {}",
+        wal_before.len(),
+        kept.display()
+    );
+    // 备份的前 4 字节就是**被覆写后的**那 4 个 0（原样保留物证，不许"修好"再存）
+    assert_eq!(
+        std::fs::read(kept).unwrap()[..4],
+        [0u8; 4],
+        "备份必须原样保留坏掉的文件头（修过的副本不再是物证）"
+    );
+
+    // ② 这次事件被**如实报出来**（否则调用方看到的就是一个骗人的 ok:true）
+    assert_eq!(
+        h.wal_backup_from.as_deref(),
+        Some(kept.to_string_lossy().as_ref()),
+        "health 必须给出保留下来的 WAL 备份路径：{h:?}"
+    );
+    assert!(
+        h.warning.is_none(),
+        "这次是「正常地留住了物证」，不该同时报一条失败说明：{h:?}"
+    );
+
+    /*
+     * ③ 那份**坏** WAL 已经不在了 —— 检查在打开前就把它搬走，
+     *    所以 SQLite 根本没有机会"忽略并删除"它。
+     *
+     * ⚠️ 判据不能写成"这个路径不存在"（假判据）：SQLite 打开库之后会**重建一个新的空 WAL**
+     * （实测现场：`copy.bin-wal` 长度 0），于是拿"路径不存在"去卡会在一个完全正常的
+     * 备份上变红。真正的不变量是"**留在原地的那个 WAL 不再是那份坏数据**"：
+     * 要么不存在，要么是空的（重建出来的）。
+     */
+    if wal.exists() {
+        assert_eq!(
+            std::fs::metadata(&wal).unwrap().len(),
+            0,
+            "原路径上要么没有 WAL、要么是 SQLite 重建的空 WAL；\
+             非空就说明坏数据还留在原地（那正是原缺陷的形态）"
+        );
+    }
+
+    // ④ 主库本身没被这次检查碰坏：schema 在、能读能写
+    assert!(engine.integrity_check().unwrap().ok, "主库必须依然完整");
+    assert!(
+        call(&engine, "projects.list", json!({}))["items"].is_array(),
+        "主库必须可读"
+    );
+    /*
+     * ⑤ 被毁掉的那次写入**确实读不出来了** —— 这是本条测试的现场还原：
+     *    SQLite 忽略坏 WAL ⇒ 只存在于 WAL 里的那行消失。这条断言把"这个测试到底在守什么"
+     *    钉死：如果不是这个形态（比如写入其实已经在主库里），本测试就退化成空跑。
+     *    备份是**唯一**还能把这份写入找回来的东西 —— 这正是"必须留物证"的理由。
+     */
+    let listed = call(&engine, "projects.list", json!({}));
+    assert!(
+        !listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == json!(UNCHECKPOINTED_PROJECT)),
+        "前置条件还原失败：只存在于 WAL 的那行不该出现在主库里：{listed}"
+    );
+    assert!(
+        call(&engine, "projects.list", json!({}))["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == json!("p-committed")),
+        "已 checkpoint 的那行必须还在（坏的是 WAL，不是主库）"
+    );
+}
+
+/// ② 正常 WAL（合法 magic）⇒ **不产生任何备份**，行为与改动前一致。
+///
+/// ## 为什么这条是必须的（而不是"顺手多测一条"）
+///
+/// 打开前检查读的是 WAL 的**前 4 字节**。判据写错（比如少认一种字节序、偏移取错、
+/// 把页大小当成 magic）就会把**完全正常的库**判成"坏 WAL" ——
+/// 后果是所有数据被搬进 `.corrupt-wal-*`、库看起来"空了一半"，比原缺陷更严重。
+/// 所以这里用**真正的（由 SQLite 写出来的）WAL**，断言"一个备份都不许出现"，
+/// 并且 WAL 里的写入照常读得出来、主库照常完整。
+#[test]
+fn healthy_wal_produces_no_backup_and_keeps_behaving() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, wal_before) = seed_db_with_uncheckpointed_wal(dir.path(), "good-wal");
+    let wal = std::path::PathBuf::from(format!("{}-wal", db.display()));
+
+    /*
+     * magic 判据的**实测锚点**（这条不是抄文档，是被打红出来的）：
+     * SQLite 在 WAL 头里按**大端**写 magic，磁盘上就是 `37 7f 06 82`（= `0x377f0682`）。
+     * 第一版实现按小端去比这两个常量，于是**正常 WAL 被整批判成坏 WAL** ——
+     * 打红这条测试的现场给出的字节正是 `37 7f 06 82`。
+     * 另一种合法 magic 只差最后 1 字节的低位（`37 7f 06 83`），实现里两个都认。
+     */
+    assert_eq!(
+        &wal_before[..4],
+        &WAL_MAGIC_BYTES_LE_HOST,
+        "前置条件：必须是 SQLite 自己写出来的 WAL（magic 与判据常量对得上）"
+    );
+
+    let engine = Engine::open(&db).expect("正常 WAL 必须照常打开");
+    assert!(
+        wal_backups(&db).is_empty(),
+        "正常 WAL **一个备份都不许产生**：{:?}",
+        wal_backups(&db)
+    );
+    let h = engine.health().unwrap();
+    assert!(h.wal_backup_from.is_none(), "正常库不得报 WAL 备份事件：{h:?}");
+    assert!(h.warning.is_none(), "正常库不得报检查失败：{h:?}");
+    assert!(
+        wal.exists(),
+        "正常 WAL 必须原样留在原地（检查是纯只读的）"
+    );
+
+    // 行为与改动前一致：未 checkpoint 的写入照常从 WAL 读出来
+    let listed = call(&engine, "projects.list", json!({}));
+    assert!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == json!(UNCHECKPOINTED_PROJECT)),
+        "正常 WAL 里的未 checkpoint 写入必须照常读出来（行为不许变）：{listed}"
+    );
+    assert!(engine.integrity_check().unwrap().ok);
+}
+
+/// ③ 对照组：`-wal` 长度为 0 / 不存在 ⇒ **不备份、不报事件**。
+///
+/// 空 WAL 是"干净关闭"之后的常见形态（没有内容可丢），不存在的 WAL 更是常态。
+/// 这两种情况如果也去备份，每次启动都会在用户目录里堆一个空文件、
+/// 并让 health 每次都喊"出事了" —— 噪声会把真正的坏 WAL 事件淹掉。
+#[test]
+fn empty_or_absent_wal_is_not_reported() {
+    let dir = tempfile::tempdir().unwrap();
+
+    // 对照组 A：`-wal` 存在但长度为 0
+    let zero = dir.path().join("zero-wal.bin");
+    Engine::open(&zero).unwrap();
+    let wal = std::path::PathBuf::from(format!("{}-wal", zero.display()));
+    let _ = std::fs::remove_file(&wal);
+    std::fs::write(&wal, b"").unwrap();
+    assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0, "前置条件：长度为 0");
+
+    let engine = Engine::open(&zero).unwrap();
+    let h = engine.health().unwrap();
+    assert!(
+        wal_backups(&zero).is_empty(),
+        "空 WAL 不许产生备份：{:?}",
+        wal_backups(&zero)
+    );
+    assert!(h.wal_backup_from.is_none(), "空 WAL 不许报备份事件：{h:?}");
+    assert!(h.warning.is_none(), "空 WAL 不许报检查失败：{h:?}");
+
+    // 对照组 B：`-wal` 压根不存在
+    let absent = dir.path().join("no-wal.bin");
+    {
+        let engine = Engine::open(&absent).unwrap();
+        let _ = engine.checkpoint(); // checkpoint 会截断 WAL；再确认一次文件确实不在
+    }
+    let absent_wal = std::path::PathBuf::from(format!("{}-wal", absent.display()));
+    assert!(
+        !absent_wal.exists() || std::fs::metadata(&absent_wal).unwrap().len() == 0,
+        "前置条件：这里应当没有非空 WAL"
+    );
+
+    let engine = Engine::open(&absent).unwrap();
+    let h = engine.health().unwrap();
+    assert!(
+        wal_backups(&absent).is_empty(),
+        "没有 WAL 时不许产生备份：{:?}",
+        wal_backups(&absent)
+    );
+    assert!(h.wal_backup_from.is_none(), "没有 WAL 时不许报事件：{h:?}");
+    assert!(h.warning.is_none(), "没有 WAL 时不该报检查失败：{h:?}");
+}
+
 // ========== schema / 迁移 ==========
 
 #[test]
