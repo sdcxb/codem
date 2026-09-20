@@ -551,7 +551,24 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       // 安全插件直接关闭
       const result = await manager.disable(name)
       if (result.success) {
-        setToast({ msg: `已关闭 ${name}`, type: 'success' })
+        /**
+         * 第 63 轮：**"状态改了"不等于"卸载了"**。
+         *
+         * 真机读数（`.preview-shot/out-pluginmanager-warning.txt`）：`@codem/ui-game`
+         * 这类插件的 fiber 既不在 manager 手里、也不在 YAML 装配登记表里，
+         * `doDisable` 两处 dispose 都落空 —— 此时状态确实变成 disabled、界面入口也隐藏了，
+         * 但插件代码会一直跑到重启。原实现一律弹「已关闭 X」（success 绿色），
+         * 那是一句与事实相反的承诺。现在按 `unloadedList` 如实分两种说法。
+         */
+        const unloadedAll = (result.unloadedList?.length ?? 0) >= result.disabledList.length
+        if (unloadedAll) {
+          setToast({ msg: `已关闭 ${name}`, type: 'success' })
+        } else {
+          setToast({
+            msg: `已关闭 ${name}（已禁用，界面入口已隐藏；该插件本次未装载，或没有可卸载句柄，重启后彻底不加载）`,
+            type: 'warning',
+          })
+        }
       } else if (result.error) {
         setToast({ msg: result.error, type: 'error' })
       }
@@ -576,7 +593,14 @@ export function PluginManager({ onClose }: PluginManagerProps) {
     const result = await manager.disable(confirmRequest.targetPlugin)
     setConfirmRequest(null)
     if (result.success) {
-      setToast({ msg: `已关闭 ${result.disabledList.length} 个插件（含级联依赖）`, type: 'success' })
+      // 与单插件开关同一口径：只改了状态、没真卸载时必须说清（不许许愿"已关闭"）
+      const unloadedAll = (result.unloadedList?.length ?? 0) >= result.disabledList.length
+      setToast({
+        msg: unloadedAll
+          ? `已关闭 ${result.disabledList.length} 个插件（含级联依赖）`
+          : `已关闭 ${result.disabledList.length} 个插件（含级联依赖）—— 其中 ${result.disabledList.length - (result.unloadedList?.length ?? 0)} 个未装载/无可卸载句柄，重启后彻底不加载`,
+        type: unloadedAll ? 'success' : 'warning',
+      })
     } else if (result.error) {
       setToast({ msg: result.error, type: 'error' })
     }

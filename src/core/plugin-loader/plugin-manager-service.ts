@@ -270,6 +270,15 @@ export class PluginManagerService {
     disabledList: string[]
     needsConfirmation: boolean
     cascadeList?: CascadeDisableResult
+    /**
+     * 其中**真的卸载掉了**的那些（第 63 轮新增，可选字段）。
+     *
+     * 为什么必须把它交给 UI：`disabledList` 只说明"状态改成 disabled 了"，
+     * 不说明"卸载了"。面板原来无条件弹「已关闭 X」—— 对没有可卸载句柄的插件，
+     * 那是一句**与事实相反的承诺**（插件会一直跑到重启）。有了这个字段，
+     * 面板才能在"只改了状态、没卸载"时说清"需要重启"。
+     */
+    unloadedList?: string[]
     error?: string
   }> {
     const meta = this.graph.get(name)
@@ -309,14 +318,16 @@ export class PluginManagerService {
 
     // 执行级联关闭
     const disabledList: string[] = []
+    const unloadedList: string[] = []
     for (const pluginName of cascade.toDisable) {
-      await this.doDisable(pluginName)
+      const outcome = await this.doDisable(pluginName)
       disabledList.push(pluginName)
+      if (outcome.unloaded) unloadedList.push(pluginName)
     }
 
     this.saveDisabledList()
     this.notifyListeners()
-    return { success: true, disabledList, needsConfirmation: cascade.needsConfirmation }
+    return { success: true, disabledList, unloadedList, needsConfirmation: cascade.needsConfirmation }
   }
 
   /**
