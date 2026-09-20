@@ -1,15 +1,15 @@
 {
-  "version": "1.16.112",
-  "notes": "根因改造：http_get 共享 client + 并发闸门（BUSY 如实分类与退避）+ 记忆面板按钮挤压修复 + 启动 warning 归零",
-  "pub_date": "2026-09-20T05:41:24Z",
+  "version": "1.16.113",
+  "notes": "像素场景房间点不中（角色层容器吞命中）+ 两处死交互修复；启动 warning 归零；技能市场假话归零",
+  "pub_date": "2026-09-20T06:36:01Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FFbHVXYUVmR1ZWQkR2VDk5OWlUWWttVXBCWnNrelNNRXlLVEpmQWxnU2tENHlmRENKQW1RWjI1MUlBbHJQUytZRDdBODVDR1l5ajVDYXcwdWNCWXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODgyODIwCWZpbGU6Q29kZW1fMS4xNi4xMTJfeDY0LXNldHVwLmV4ZQpEYmhnTk41ZFZ5aWFvYnFZRU9zUGJiNjhLQ1FDNUNIeHVUSWNIMUZHdTNscGN4TENWN3JLRDFtQk0wcmpmQkg5V0ZQZlRnUit0TjU4MW9QNXB4bmtBdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.112/Codem_1.16.112_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZGQnF6eEtPRmdzeGJkcXk4dmJCbU9GNVZkSTZpSHFzWlpUK0Z0TmZrT204SWdmZkZWdDAwbG5tZE1oSzl2Q1FyRWxiOGc1ck5EZHVZbUpHSHQrbEFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODg1OTYzCWZpbGU6Q29kZW1fMS4xNi4xMTNfeDY0LXNldHVwLmV4ZQozekFsYlpNMWhuQlNMVVBtcnFpSXg1WFlOM2NldTZ2aHgzUWNJQTU5YTlPQ09CTm9iekhIcVVMbG5CV3QySWZ1RVI1UUxwZyt3TnhYcTJjb0MzOEREQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.113/Codem_1.16.113_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FFbHVXYUVmR1ZWQkR2VDk5OWlUWWttVXBCWnNrelNNRXlLVEpmQWxnU2tENHlmRENKQW1RWjI1MUlBbHJQUytZRDdBODVDR1l5ajVDYXcwdWNCWXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODgyODIwCWZpbGU6Q29kZW1fMS4xNi4xMTJfeDY0LXNldHVwLmV4ZQpEYmhnTk41ZFZ5aWFvYnFZRU9zUGJiNjhLQ1FDNUNIeHVUSWNIMUZHdTNscGN4TENWN3JLRDFtQk0wcmpmQkg5V0ZQZlRnUit0TjU4MW9QNXB4bmtBdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.112/Codem_1.16.112_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZGQnF6eEtPRmdzeGJkcXk4dmJCbU9GNVZkSTZpSHFzWlpUK0Z0TmZrT204SWdmZkZWdDAwbG5tZE1oSzl2Q1FyRWxiOGc1ck5EZHVZbUpHSHQrbEFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODg1OTYzCWZpbGU6Q29kZW1fMS4xNi4xMTNfeDY0LXNldHVwLmV4ZQozekFsYlpNMWhuQlNMVVBtcnFpSXg1WFlOM2NldTZ2aHgzUWNJQTU5YTlPQ09CTm9iekhIcVVMbG5CV3QySWZ1RVI1UUxwZyt3TnhYcTJjb0MzOEREQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.113/Codem_1.16.113_x64-setup.exe"
     }
   }
 }
