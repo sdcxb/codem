@@ -1534,6 +1534,36 @@ Rust 后端 (lib.rs):
 
 ## 七、启动与测试
 
+### 7.0 发布说明规范（Release Notes）
+
+**每个版本都必须发布 Release** —— 更新器读的是
+`https://github.com/sdcxb/codem/releases/latest/download/latest.json`，
+而 `latest.json` 是**最新那个 Release 的资产**。所以"不发布中间版本"做不到，
+能做也必须做的是：**Release 说明写成面向用户的功能说明，而不是开发过程回执。**
+
+写 Release 说明时的硬性要求：
+
+1. **主语是产品，不是开发过程**。禁止出现「我自己引入又修掉的假警报」「撤回我先前的错误结论」
+   「第 N 波」这类只对开发者有意义的内容 —— Release 页是用户看的第一份文档。
+2. **写"改了什么、对用户意味着什么"**，不写"我怎么发现的"。过程与证据留在 CHANGELOG 与
+   `docs/audit-*.md`（那是给维护者的）。
+3. **标题格式**：`Codem vX.Y.Z — <一句话功能/主题>`（不用 emoji、不用口语化感叹）。
+4. **正文结构**：一句话定位 → 主要变更（按模块或按用户可感知的变化分组）→ 验证（用真实读数）
+   → 说明（升级注意 / 兼容性 / 已知待办，如有）。
+5. **数字必须与实测一致**（宁可少写一个数字，不写没量过的）；已知未修的问题写在「已知待办」，
+   不隐瞒也不夸大。
+
+发布后可用 `node tools/release/prune-releases.mjs`（默认干跑）核对 GitHub Releases 页是否只剩
+`tools/release/keep-releases.txt` 里的核心版本；`--apply` 才真删，**默认保留 git tag**，
+且硬编码拒绝删除 Latest（它挂着 `latest.json`）。
+
+> 历史清理记录（2026-09-20）：Releases 页原有 174 个版本，绝大多数说明是开发回执；
+> 已按上述标准保留 **11 个里程碑版本**（v1.16.114 / 1.16.110 / 1.16.64 / 1.16.44 / 1.16.43 /
+> 1.16.28 / 1.16.0 / 1.12.0 / 1.0.0 / 0.98.0 / 0.88.0），删除其余 **163 个 Release**（删除记录
+> `.preview-shot/release-delete-log.txt`，失败 0；154 个 git tag 全部保留），并为这 11 个版本重写了
+> 正式说明。删除后已复核：Latest 仍为 v1.16.114、5 个资产齐全、生产端点
+> `releases/latest/download/latest.json` 仍返回 200 且版本/平台键正确。
+
 ```bash
 # 开发
 npm run tauri dev          # 启动 Tauri 开发模式（Vite + Rust 热更新）
