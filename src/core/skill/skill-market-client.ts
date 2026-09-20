@@ -288,6 +288,59 @@ async function mapLimit<T, R>(
 }
 
 /**
+ * 本轮刷新里**已经就"超时"报过账**的源（源名 → 记账时刻）。
+ *
+ * ## 这条修的是什么（真机 1.16.112 读数）
+ *
+ * 真机量到 `Source "ClawHub.ai" … 超过 12000ms` **×2**、`Source "SkillHub" … 超过 12000ms` **×2**。
+ * 注意：限流那条路径（`noteGithubRateLimit`）**已经**做到了"每源一条"，
+ * 唯独**超时这条路径没有去重** —— 于是同一个源在同一轮刷新里被报了两遍。
+ *
+ * ## 为什么会出现两遍（不是"日志写重了"，是真的取了两遍）
+ *
+ * `listMarketSkills()`（列表页）与 `searchMarketSkillsOnline()`（搜索页）各自会
+ * **重新取一遍所有源**，而且各自**独立**套一层 `withSourceTimeout`。两者共用同一套收口
+ * （`mergeSourceResult`），但超时告警是在 `withSourceTimeout` 里就地打的 ——
+ * 于是同一轮刷新里同一个源超时两次，就写两条**内容逐字相同**的 warning。
+ * 从用户视角这是"同一件事说两遍"，从排障视角这是"重复计数"（会让人以为两个源都挂了）。
+ *
+ * ## 去重口径：**同轮 + 同源 + 只一条 warning**（不吞真问题）
+ *
+ * - 去重键是**源名**，与告警文本里引用的那个名字严格同源，避免"日志说 A、去重按 id"这种对不上；
+ * - 每个源**仍然保留自己的 `timedOut` 语义**（返回值不变），所以界面上的降级行为、
+ *   `degraded` 判定、`onSourceLoaded` 不回调这些**都不受影响** —— 被去掉的只有重复文本；
+ * - 跨轮清零，见 `resetGithubRateLimitState()` 的"轮次合并"规则。
+ */
+const sourceTimeoutWarned = new Set<string>();
+
+/**
+ * "同一轮刷新"的合并窗口。
+ *
+ * ## 为什么需要它（这是本轮前端侧真正的取舍点）
+ *
+ * **调用点没有传递轮次标识**：`listMarketSkills` 与 `searchMarketSkillsOnline` 是
+ * 两个独立入口，各自在开头调 `resetGithubRateLimitState()`。如果复位是"每次调用都清"，
+ * 那么**第二次调用会把第一次刚记下的去重账本抹掉**，重复告警原样复现 —— 去重等于没写。
+ *
+ * 所以把"两个复位点落在 3 秒内"**合并成同一轮**：
+ * - 这与真机现象窗口吻合：用户点一次"检查更新"，列表取数（含 12s 超时）与
+ *   搜索取数是**同一次用户动作**触发的，两者的起始间隔在秒级；
+ * - 3 秒足够覆盖"列表 → 搜索"的间隔（搜索侧本身还有 600ms 防抖），
+ *   又远短于"用户再点一次刷新"的自然间隔；
+ * - 代价（**如实说明**）：如果用户在 3 秒内改了搜索词、或在刷新未结束时又点一次刷新，
+ *   同一个源的超时会只报一条。这被接受 —— 那本来就是"同一件事的一段连续观测"，
+ *   少报一条重复比多报一条重复更准。
+ *
+ * 更严的口径需要一个**显式的轮次令牌**（例如由 SkillManager 生成并透传 `roundId`），
+ * 但那要改 `src/components/**`（本轮明确不许动），所以这里用时间窗口近似，
+ * 并把边界写在这里而不是藏进实现。
+ */
+const ROUND_COALESCE_MS = 3_000;
+
+/** 上一次"开新轮"的时刻。0 = 还没开过轮（首次调用一定要开）。 */
+let roundOpenedAt = 0;
+
+/**
  * `withSourceTimeout` 的返回值：`timedOut` 用来区分"真的撞了上限"与"源本来就没东西"，
  * 让日志能说准（改前那条 `timed out after 12000ms` 恰恰两个都不准）。
  */
@@ -322,10 +375,20 @@ async function withSourceTimeout<T>(
   const guard = new Promise<SourceFetchOutcome<T>>((resolve) => {
     timer = setTimeout(() => {
       if (settled) return; // 兜底：正常路径下定时器已被清掉，这里不该发生
-      console.warn(
-        `[SkillMarket] Source "${sourceName}" 超过 ${timeLimitMs}ms 仍未取完 —— 本次先跳过该源（已保留上一次的结果）。` +
-        `该源的请求仍在后台跑完，不会取消。`,
-      );
+      /**
+       * 同一轮刷新内每个源只报一次（真机 1.16.112：同一个源被报了两遍）。
+       *
+       * 列表页与搜索页共用这套收口、却各自独立套一层超时，是重复的来源。
+       * 这里按**源名**去重；去重只影响"这条文本打不打"，`timedOut` 一律照常返回 ——
+       * 也就是说第二个调用方该降级还是降级，只是不再重复喊同一句话。
+       */
+      if (!sourceTimeoutWarned.has(sourceName)) {
+        sourceTimeoutWarned.add(sourceName);
+        console.warn(
+          `[SkillMarket] Source "${sourceName}" 超过 ${timeLimitMs}ms 仍未取完 —— 本次先跳过该源（已保留上一次的结果）。` +
+          `该源的请求仍在后台跑完，不会取消。`,
+        );
+      }
       resolve({ value: [] as unknown as T, timedOut: true });
     }, timeLimitMs);
   });
@@ -639,10 +702,30 @@ function noteGithubRateLimit(sourceId: string, scope: string): void {
   );
 }
 
-/** 每轮刷新重新开始限流判定：上一轮的结论不该跨刷新永久生效。 */
+/**
+ * 每轮刷新重新开始限流判定：上一轮的结论不该跨刷新永久生效。
+ *
+ * 同一个复位点也清掉"超时已报账"的集合（`sourceTimeoutWarned`，定义在
+ * `withSourceTimeout` 上方）—— 两者共用**同一条轮次边界**：一轮刷新 = 一次复位。
+ * 刻意不各留一个 `reset*`：两处复位点迟早会分叉，那时"限流说每源一次、
+ * 超时说每轮一次"就会变成两种口径，而它们本该是同一条纪律。
+ *
+ * ## 轮次合并（`ROUND_COALESCE_MS`）：**回调点不带轮次标识**的补偿
+ *
+ * 这个函数被 `listMarketSkills()` 与 `searchMarketSkillsOnline()` **各自**在开头调用，
+ * 而它们是同一次用户动作（点"检查更新" / 触发搜索）里的两次调用。
+ * 如果每次都真的清，"后一次调用"会把"前一次刚记下的超时账本"抹掉，重复告警原样复现。
+ *
+ * 所以这里加了时间判定：**距上一次开轮不足 `ROUND_COALESCE_MS` 就视为同一轮，不清**。
+ * 判据与代价见 `ROUND_COALESCE_MS` 的注释（含"3 秒内的两次刷新会被当成一轮"这个已知取舍）。
+ */
 function resetGithubRateLimitState(): void {
+  const now = Date.now();
+  if (roundOpenedAt > 0 && now - roundOpenedAt < ROUND_COALESCE_MS) return;
+  roundOpenedAt = now;
   githubRateLimitedAt = 0;
   githubRateLimitNoted.clear();
+  sourceTimeoutWarned.clear();
 }
 
 /**

@@ -2309,6 +2309,168 @@ pub struct HttpResponse {
     pub headers: std::collections::HashMap<String, String>,
 }
 
+/// 技能市场一次刷新里同时**在飞**的 `http_get` 上限。
+///
+/// ## 为什么是 12
+///
+/// 这不是"顺手挑的整数"，而是从真机读数倒推出来的：
+///
+/// 1. **UI 侧的并发上限（`SOURCE_FETCH_CONCURRENCY = 8`）只管单个源的内部扇出**，
+///    源与源之间仍然是 `Promise.all` 全并行 —— 真机 7 个源同开，峰值可达 7×8=56 路在飞；
+///    如果同时还有在线搜索在跑，还要再翻一倍。12 = 8 + 4，刚好"一个源打满自己的
+///    8 路，外加 4 路给别的源/搜索做交叉周转"，不至于让某个源独占整池把别人饿死。
+/// 2. **同一个主机（`api.github.com`）的目标并发本来就不该高于 8~12**：
+///    匿名配额是 60 次/小时，请求发得再快也只是更快地把配额打光（真机 1 秒打光 133 个请求）。
+///    并发闸门的目的是**削峰与限流**，不是提高吞吐。
+/// 3. 12 路在实测里足够快（8 路并发 30 个仓库 ≈ 1.4s，见 `.preview-shot/out-http-throughput.txt`），
+///    而 `SOURCE_TIMEOUT_MS = 12s` 是源级上限 —— 12 路下 133 个请求也不会靠排队把自己排超时。
+///
+/// ## 为什么超限是**立即返回 `BUSY`** 而不是排队等待
+///
+/// 排队等待会把"前端 12s 源超时"变成唯一出路：133 个请求排在 12 路后面，
+/// 队尾必然超过 12s，于是前端照旧报"源超时"——**根因没修，只是把 403 换成了排队**。
+/// 立即回一个**明确的可重试错误**（`code: "BUSY"`）让前端在毫秒级就知道"这次太挤了"，
+/// 而不是白等 12 秒。前端按 `code` 就能分流（错误体形状见 `busy_error`）。
+const HTTP_GET_MAX_IN_FLIGHT: usize = 12;
+
+/// 共享客户端与并发闸门的 static（建库理由见下）。
+///
+/// ## 为什么是共享客户端（这一轮的根因）
+///
+/// 改动前 `http_get` **每次调用都 `reqwest::Client::builder()...build()`**。
+/// `reqwest::Client` 内部持有连接池，**新建一个 Client 就等于新建一个空池**，
+/// 于是每次请求都重新做一遍 DNS + TCP + TLS 握手，且上一个请求刚建立的连接
+/// 因为随 Client 一起被丢掉而**从未被复用**（连接池的意义归零）。
+/// 真机读数：一次"检查更新"发出 133 个 `http_get`（api.github.com 54 / raw.githubusercontent.com 69），
+/// 全部打在同一个主机上却各自握手 —— 这既是耗时来源，也是"1 秒打光 60 次/小时配额"的放大器。
+///
+/// ## 为什么用 `std::sync::OnceLock` 而不是 `once_cell` / `lazy_static`
+///
+/// `src-tauri/Cargo.toml` 里**没有** `once_cell` / `lazy_static`（已核对），
+/// 而 `std::sync::OnceLock` 自 Rust 1.70 起就有，正是为此设计的。
+/// 本仓库既有惯用法也是它（`storage.rs:485` 的 `static CACHE: OnceLock<...>`），
+/// 而且本轮的要求是"不新增依赖"—— 那就用标准库，不为一个 static 拖进一个 crate。
+///
+/// ## 为什么闸门用 `tokio::sync::Semaphore`
+///
+/// `Semaphore::try_acquire` 是**同步**判定、不需要 await 就能知道"满没满"，
+/// 于是"超限"可以在建立请求之前立刻返回，不会先占住一次等待。
+/// `tokio` 已经以 `features = ["full"]` 在依赖里，同样是零新增依赖。
+///
+/// ## 前端**当前**怎么处置这个 `BUSY`（如实说明，不过度承诺）
+///
+/// 本轮前端只做了一处改动（同轮同源超时告警去重），**没有**为 `BUSY` 新增专门的退避通道。
+/// 所以现在的实际行为是：`BUSY` 会被前端当成一次普通的 `http_get` 拒绝
+/// （`catch` 里记一条日志、该源本次降级），**不会**重发 —— 也就是说它不会变成
+/// "静默失败"，但也不是"自动重试"。
+/// 之所以够用：闸门是**削峰**用的，被拒的那次请求本来就不该重发（重发只会再次被拒）；
+/// 真正需要重试的场景是下一轮刷新，而下一轮自然会在闸门腾出许可后正常发出。
+/// 如果以后确实要"按 BUSY 退避重发"，接进 `noteGithubRateLimit` 那条既有冷却通道即可。
+///
+/// 进程内**唯一**的 `http_get` 客户端（`Ok` 是建好的客户端、`Err` 是构建失败的原因），
+/// 以及进程内**唯一**的并发闸门。
+///
+/// ## 为什么这里**不用** `.expect()` 直接炸掉（这一点是刻意选的）
+///
+/// `reqwest::ClientBuilder::build()` 在本配置下确实不可能失败（参数全是常量），
+/// 但"不可能失败"和"必须 panic"是两件事：改动前这里是
+/// `.map_err(|e| e.to_string())?` —— 失败会变成一条**正常返回给前端的错误**。
+/// 保留那条路径，等于把改动前的错误行为也一并保留；而 `.expect()` 会把一次
+/// 构建失败升级成**整个进程 panic**（在 Tauri 命令里就是一次硬崩）。
+/// 为了少写两行就让"构建失败"从"可报错"变成"崩应用"，不划算。
+///
+/// 类型是 `Result<Client, String>` 而不是 `Client`，正是为了让失败**可表示**：
+/// `OnceLock` 只负责"只建一次"，成不成功由里面的 `Result` 说。
+static HTTP_GET_CLIENT: std::sync::OnceLock<Result<reqwest::Client, String>> = std::sync::OnceLock::new();
+static HTTP_GET_GATE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+
+/// 建一次共享客户端（只会被执行一次）。参数与理由见 `http_get` 的调用点注释。
+fn build_shared_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent("Codem/1.0 (Skill Market)")
+        // 见下文：保留改动前的 15s 作为**默认**，逐次行为与旧实现完全一致。
+        .timeout(std::time::Duration::from_secs(15))
+        // ── 连接池参数：每一个值的来历 ──────────────────────────────────────
+        //
+        // `pool_max_idle_per_host` = HTTP_GET_MAX_IN_FLIGHT(12)。
+        //   与并发闸门**取同一个数**是刻意的：闸门最多允许 12 路在飞，池子就该能留住
+        //   这 12 条连接。取小了会在下一轮刷新时被迫重新握手；取大了只是多占空闲 socket。
+        //   为什么这个数比默认值重要：reqwest 默认"每主机不限空闲连接数"，
+        //   在一次 133 请求的刷新之后会留下一堆没人再用的 socket 白占资源；
+        //   12 与闸门同源，天然对齐，不猜。
+        .pool_max_idle_per_host(HTTP_GET_MAX_IN_FLIGHT)
+        // `pool_idle_timeout` = 90s。两次"检查更新"的间隔通常远大于几秒，
+        //   90s 让同一轮刷新内以及相邻两轮之间的连接**都能被复用**；
+        //   而 GitHub 的负载均衡会主动掐掉长时间空闲的连接，留太久也留不住。
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        // `tcp_keepalive` = 30s。连接被复用之后，最大的新风险是**另一半已经悄悄断了**
+        //   （NAT/代理/负载均衡超时回收），此时复用会撞上一个半开连接。30s 让操作系统
+        //   探测这个连接；不设的话要等系统默认（Windows 约 2 小时）—— 那等于每次复用
+        //   都可能白等一次 15s 超时。
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        // `http2_keep_alive_interval` = 20s：GitHub 走 HTTP/2，在**没有流的时候**
+        //   60s 就会断开空闲连接；20s 的 ping 让连接活过刷新之间的间隙。
+        .http2_keep_alive_interval(std::time::Duration::from_secs(20))
+        // `tcp_nodelay`：JSON 都很小，Nagle 会把小包攒起来等 ACK，
+        //   在"30 个仓库并发取 Trees"这种小请求密集的场景里等于白送延迟。
+        .tcp_nodelay(true)
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// 取（并在首次调用时建好）进程内唯一的 `http_get` 客户端。
+///
+/// ## 超时放在哪一层：**client 默认 15s + 每请求可覆盖**（这是本轮的选型）
+///
+/// 选的是"**client 侧保留 15s 默认、请求侧用 `RequestBuilder::timeout()` 覆盖**"这一种，
+/// 而不是把 15s 写死在每个调用点。理由：
+/// - **契约兼容**：改动前 client 的 `.timeout(15s)` 对 `http_get` 的每一次调用都生效，
+///   所以把 15s 留作 client 默认，就是**把旧行为逐字保留**（不传 timeout 的调用点行为不变）；
+/// - **单一 client 需要单一默认值**：共享 client 只能有一份默认超时，而 `http_get`
+///   与 `http_post`(30s) / `http_download`(60s) 的上限本来就不同 —— 那几个命令仍各有自己的
+///   client，所以这里只谈 `http_get` 这一个共享 client 的默认值；
+/// - **可覆盖**：以后有"web 抓取要 30s"这类需求，调用点写
+///   `client.get(url).timeout(Duration::from_secs(30))` 即可（reqwest 的请求级 timeout
+///   优先于 client 级），不必再动这个 static。这也正是"超时属于**请求**这一层"的正确归属：
+///   同一个连接池里不同的请求本来就可以有不同的时间预算。
+fn shared_http_client() -> Result<&'static reqwest::Client, String> {
+    HTTP_GET_CLIENT
+        .get_or_init(build_shared_http_client)
+        .as_ref()
+        .map_err(|e| e.clone())
+}
+
+/// 并发闸门的**纯函数落点**：拿不到许可就返回 `Err`，**不等待**。
+///
+/// 单独抽出来是为了能被单元测试直接钉住 —— 真机路径要占满 12 路在飞才能触发，
+/// 而"测试里造不出这种竞争"是不写测试的常见借口，这里把它变成一个可测的纯逻辑。
+fn acquire_http_permit(
+    gate: &tokio::sync::Semaphore,
+) -> Result<tokio::sync::SemaphorePermit<'_>, String> {
+    gate.try_acquire().map_err(|_| busy_error())
+}
+
+/// 超并发上限时的**明确错误**（不是静默失败、也不是伪装成网络错误）。
+///
+/// 为什么错误体是一个 JSON 字符串而不是裸文本：本仓库的错误契约就是
+/// `{code, message, retryable, hint}`（见 `storage.rs` 顶部："只给一个字符串，
+/// 渲染侧只能靠正则猜，等于把'错误是值'又退回'错误是文本'"）。
+/// `http_get` 的 `Err` 通道类型仍然是 `String`（**签名与返回形状逐字未变**），
+/// 只是这个 String 里装的是同一个自描述结构 —— 于是前端能按 `code` 复用既有退避通道，
+/// 而既有调用点（web 抓取、figma 抓取、pet 市场）拿到它只会当成一条普通错误消息，
+/// 行为不外溢。
+fn busy_error() -> String {
+    serde_json::json!({
+        "code": "BUSY",
+        "message": format!(
+            "并发请求已达上限（{HTTP_GET_MAX_IN_FLIGHT} 路在飞），本次请求未被发出",
+        ),
+        "retryable": true,
+        "hint": "稍后重试；前端应退避，而不是立刻重发",
+    })
+    .to_string()
+}
+
 /// Performs an HTTP GET request through the Rust side (bypasses CSP restrictions).
 /// Used by the skill market to fetch repository listings and skill metadata.
 #[tauri::command]
@@ -2316,11 +2478,15 @@ async fn http_get(
     url: String,
     headers: Option<std::collections::HashMap<String, String>>,
 ) -> Result<HttpResponse, String> {
-    let client = reqwest::Client::builder()
-        .user_agent("Codem/1.0 (Skill Market)")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
+    // 先取客户端：**在占用并发许可之前**就把"客户端建不起来"这种错误报出去 ——
+    // 否则一次构建失败会先白占一个许可（虽然只是短暂占用，但没有理由这么做）。
+    let client = shared_http_client()?;
+
+    // 有界并发：`_permit` 在函数返回（含提前 return / ? 传播）时随作用域一起归还，
+    // 所以"在飞"的计数与"活着"的请求严格一一对应，不会泄漏许可。
+    let _permit = acquire_http_permit(
+        HTTP_GET_GATE.get_or_init(|| tokio::sync::Semaphore::new(HTTP_GET_MAX_IN_FLIGHT)),
+    )?;
 
     let mut req = client.get(&url);
     if let Some(h) = headers {
@@ -2855,6 +3021,115 @@ path_exists,
             _ => {}
         }
     });
+}
+
+/// `http_get` 根因改造的回归（第 63 轮续：共享客户端 + 并发闸门）。
+///
+/// ## 为什么这些用例不"发真请求"
+///
+/// 要真触发"12 路占满"得让 13 个请求同时卡在网络里，那既依赖外网也依赖时序，
+/// 是典型的 flaky 测试源。所以这里把**可判定的部分**钉死：
+///  - 闸门的容量与"满了必拒"这个**纯逻辑**（`acquire_http_permit` 直接喂一个 Semaphore）；
+///  - 拒绝时的错误体形状（前端按 `code` 分流的依据，必须逐字稳定）；
+///  - 共享客户端是**同一实例**（根因：连接池复用），用 `ptr::eq` 断言；
+///  - 契约形状未变（`HttpResponse` 的字段名与 JSON 键逐个核对）。
+#[cfg(test)]
+mod http_gate_tests {
+    use super::*;
+
+    #[test]
+    fn gate_admits_exactly_capacity_then_refuses() {
+        let gate = tokio::sync::Semaphore::new(HTTP_GET_MAX_IN_FLIGHT);
+
+        let mut held = Vec::new();
+        for i in 0..HTTP_GET_MAX_IN_FLIGHT {
+            held.push(
+                acquire_http_permit(&gate)
+                    .unwrap_or_else(|e| panic!("第 {i} 个许可应当拿到，实际被拒：{e}")),
+            );
+        }
+
+        let refused = acquire_http_permit(&gate)
+            .expect_err("占满之后第 N+1 个请求必须被明确拒绝，而不是排队或静默失败");
+        assert!(
+            refused.contains("\"code\":\"BUSY\""),
+            "拒绝必须是带错误码的明确错误，实际：{refused}"
+        );
+
+        // 归还一个许可 → 立刻又能拿到（闸门不是"一次拒绝就永久坏掉"）。
+        // 这里必须**绑定**而不是 `let _ =`：真实路径里许可会被一直持有到请求结束
+        // （`_permit` 在 `http_get` 的函数作用域里），绑定才是同一语义。
+        held.pop();
+        let reacquired = acquire_http_permit(&gate).expect("归还许可之后应当能再次拿到");
+        assert!(
+            reacquired.num_permits() == 1,
+            "重新拿到的应当是 1 个许可，实际 {}",
+            reacquired.num_permits()
+        );
+    }
+
+    /// 前端靠 `code`/`retryable` 分流，所以错误体必须**自描述且可解析**。
+    #[test]
+    fn busy_error_is_self_describing_and_retryable() {
+        let payload: serde_json::Value =
+            serde_json::from_str(&busy_error()).expect("BUSY 错误体必须是合法 JSON");
+
+        assert_eq!(payload["code"], "BUSY");
+        assert_eq!(payload["retryable"], true, "BUSY 必须可重试，否则前端只能白等超时");
+        assert!(
+            payload["hint"].as_str().is_some_and(|h| !h.is_empty()),
+            "兜底档必须带处置建议（见 storage.rs 的 StorageErrorPayload 口径）"
+        );
+        assert!(
+            payload["message"]
+                .as_str()
+                .is_some_and(|m| m.contains(&HTTP_GET_MAX_IN_FLIGHT.to_string())),
+            "消息里要说清上限是多少，日志才可复核"
+        );
+    }
+
+    /// 根因回归：**共享客户端必须是同一个实例**，否则连接池复用无从谈起。
+    ///
+    /// 这条守的是"不要把 `Client::builder()` 写回函数体里"——改动前它就在那里。
+    #[test]
+    fn shared_client_is_one_instance_across_calls() {
+        let a = shared_http_client().expect("共享客户端应当能建起来") as *const reqwest::Client;
+        let b = shared_http_client().expect("第二次取也应当成功") as *const reqwest::Client;
+        assert!(
+            std::ptr::eq(a, b),
+            "http_get 必须复用同一个 reqwest::Client（连接池在它内部），否则每次调用都要重新握手"
+        );
+    }
+
+    /// 客户端的构建失败必须是**可返回的错误**，而不是 panic。
+    ///
+    /// `build_shared_http_client()` 在现配置下不会失败，所以这里只能守"签名允许失败"
+    /// 这件事本身（返回 `Result`）—— 那条错误路径正是改动前 `.map_err(...)?` 的形态。
+    #[test]
+    fn client_build_is_a_result_not_a_panic() {
+        let built: Result<reqwest::Client, String> = build_shared_http_client();
+        assert!(built.is_ok(), "本配置下应当构建成功；失败时也必须以 Err 返回而不是 panic");
+    }
+
+    /// 契约形状：`http_get` 的返回 JSON 键名**逐字未变**（web 抓取 / figma 抓取共用）。
+    #[test]
+    fn http_response_json_shape_is_unchanged() {
+        let resp = HttpResponse {
+            status: 200,
+            body: "{}".to_string(),
+            headers: std::collections::HashMap::new(),
+        };
+        let v = serde_json::to_value(&resp).expect("序列化 HttpResponse");
+        let obj = v.as_object().expect("HttpResponse 必须是 JSON 对象");
+        let mut keys: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["body", "headers", "status"],
+            "http_get 的返回形状是对外契约，不许变"
+        );
+        assert_eq!(obj["status"], 200);
+    }
 }
 
 #[cfg(test)]

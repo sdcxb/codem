@@ -7935,11 +7935,21 @@ color: var(--text-on-accent);
 }
 
 /* F1.1: Memory Edit Form */
+/* 用户报「记忆面板的按钮都挤到右上角」的根因在这一条：
+   第 36-37 波的 grid 原语批量替换把容器也改成了 `repeat(2, max-content)` ——
+   两列网格是给**叶子节点**（图标 + 文字）用的，套到**按钮组容器**上就变了味：
+   这个组现在有 6 个孩子（+ 新增 / JSON / MD / 导入 / 整合 / 关闭），
+   只有 2 条列轨道 ⇒ 自动排布折成 3 行；而 grid 容器的固有宽度只等于两条轨道的和，
+   于是整组缩成一个 126×99 的小方块挂在标题栏右端（占面板宽度 13%），
+   连标题栏也被它撑到 124px 高（标题本身只有 21px）。
+   按钮行必须**一行放完** ⇒ 与 codem-ui.css 第 50 波 `.panel-sidebar-tabs` 同款修法：不换行的 flex。 */
 .memory-manager-actions {
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-4);
+  min-width: 0;
 }
 
 /* Unified memory action button */
