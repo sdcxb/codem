@@ -1,15 +1,15 @@
 {
-  "version": "1.16.111",
-  "notes": "按'bug 与 warning 双归零'闸门收口：MCP 服务器目录不再锁死（Esc/按名关闭）、技能市场假超时与请求风暴修复、启动 warning 归零",
-  "pub_date": "2026-09-20T04:11:54Z",
+  "version": "1.16.112",
+  "notes": "根因改造：http_get 共享 client + 并发闸门（BUSY 如实分类与退避）+ 记忆面板按钮挤压修复 + 启动 warning 归零",
+  "pub_date": "2026-09-20T05:41:24Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZHd1hMRVY2blIrYnRuWHVnWTRkaEJyVUlhdlJBMVZHUk5CbUc4Y1BPQ1c3eFJrWkM2dytLYlRWV0ZwcklpdlBibGlWVjQ2aGJ4OFdZZThRRllWa0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODc3MzkwCWZpbGU6Q29kZW1fMS4xNi4xMTFfeDY0LXNldHVwLmV4ZQpEemhMME1jRGtrK2JqdGdlZkMzOUI5R1FkbWRjR3I5SWtTTkp5TGxuZjA4WmZZWVRiVVpJTmZMMDJqU0FOaG4rZ1hDeWVLeVNzMmp5WGpLK0RaNXRBdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.111/Codem_1.16.111_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FFbHVXYUVmR1ZWQkR2VDk5OWlUWWttVXBCWnNrelNNRXlLVEpmQWxnU2tENHlmRENKQW1RWjI1MUlBbHJQUytZRDdBODVDR1l5ajVDYXcwdWNCWXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODgyODIwCWZpbGU6Q29kZW1fMS4xNi4xMTJfeDY0LXNldHVwLmV4ZQpEYmhnTk41ZFZ5aWFvYnFZRU9zUGJiNjhLQ1FDNUNIeHVUSWNIMUZHdTNscGN4TENWN3JLRDFtQk0wcmpmQkg5V0ZQZlRnUit0TjU4MW9QNXB4bmtBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.112/Codem_1.16.112_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZHd1hMRVY2blIrYnRuWHVnWTRkaEJyVUlhdlJBMVZHUk5CbUc4Y1BPQ1c3eFJrWkM2dytLYlRWV0ZwcklpdlBibGlWVjQ2aGJ4OFdZZThRRllWa0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODc3MzkwCWZpbGU6Q29kZW1fMS4xNi4xMTFfeDY0LXNldHVwLmV4ZQpEemhMME1jRGtrK2JqdGdlZkMzOUI5R1FkbWRjR3I5SWtTTkp5TGxuZjA4WmZZWVRiVVpJTmZMMDJqU0FOaG4rZ1hDeWVLeVNzMmp5WGpLK0RaNXRBdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.111/Codem_1.16.111_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FFbHVXYUVmR1ZWQkR2VDk5OWlUWWttVXBCWnNrelNNRXlLVEpmQWxnU2tENHlmRENKQW1RWjI1MUlBbHJQUytZRDdBODVDR1l5ajVDYXcwdWNCWXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODgyODIwCWZpbGU6Q29kZW1fMS4xNi4xMTJfeDY0LXNldHVwLmV4ZQpEYmhnTk41ZFZ5aWFvYnFZRU9zUGJiNjhLQ1FDNUNIeHVUSWNIMUZHdTNscGN4TENWN3JLRDFtQk0wcmpmQkg5V0ZQZlRnUit0TjU4MW9QNXB4bmtBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.112/Codem_1.16.112_x64-setup.exe"
     }
   }
 }
