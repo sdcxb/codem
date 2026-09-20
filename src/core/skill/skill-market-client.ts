@@ -364,28 +364,88 @@ function isRetryableHttpError(err: unknown): boolean {
 }
 
 /**
- * 本轮刷新里"被闸门拒过的源"（源名 → 次数）。
+ * ## 本轮刷新里"每个源为什么没能给出结果"的**唯一账本**
  *
- * ## 为什么需要它（这是"假话"的修复点）
+ * ### 为什么必须有一个账本（这是连着修掉的**两轮**假话）
  *
- * 真机 1.16.112 打出的是这一对**互相矛盾**的输出：
+ * 真机先后抓到的是**同一类**假话，只是走了两条不同分支：
+ *
  * ```
- * [error] Error fetching repo skills for anthropic-skills: {"code":"BUSY",…}
- * [log]   Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）
- * ```
- * 第二行是**假话**：请求根本没发出去（`"本次请求未被发出"`），
- * 源可达性压根没被验证过。根因是取数函数的 `try/catch` 把异常就地吞掉、
- * `return []` —— 于是"取数失败"和"源真的空"在返回值上**不可区分**。
+ * ①（1.16.112 第一次复量）BUSY 分支：
+ *    [error] Error fetching repo skills for anthropic-skills: {"code":"BUSY",…"本次请求未被发出"}
+ *    [log]   Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）   ← 假话
  *
- * 去重口径与限流那条一致（`noteGithubRateLimit`）：**每源一条**，跨轮在
- * `resetGithubRateLimitState()` 里清。
+ * ②（1.16.112 重建版复量）限流分支：
+ *    [log]     [SkillMarket] 源 "anthropic-skills" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽…
+ *    [warning] [SkillMarket] Failed to fetch repo info for anthropic-skills: 403（…配额耗尽…）
+ *    [log]     Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）   ← 假话
+ * ```
+ *
+ * 第一轮我只把 `BUSY` 记了账，于是**限流那条分支照旧说假话**。
+ * 根因是同一个：那句文案是**在"结果为空"这个事实上下判断**的，
+ * 而"空"既可能是"源真的空"，也可能是"我们根本没成功访问"——
+ * **返回值上这两者不可区分**（各适配器的 `try/catch` 一律 `return []`）。
+ *
+ * 所以这一轮把判据收口成：**`源可达、返回为空` 只有一个前提才允许打印 ——
+ * 该源本轮确实成功访问过、且返回的列表确实是空。**
+ * 实现方式是"**先查账，再决定文案**"：所有失败路径都往这个账本里记一笔，
+ * 只有"成功且为空"才不记 —— 没记账才允许说"源可达"。
+ *
+ * 优先级 `busy > rate_limited > failed > timeout`：取**最先发生的**那一笔为准
+ * （先发生的通常是最根本的原因，例如"配额耗尽"先于"随后超时"）。
  */
+type SourceDegradeReason = "busy" | "rate_limited" | "failed" | "timeout";
+
+/** 源名 → 本轮该源的降级原因（**存在即代表"本轮没能证明源可达"**）。 */
+const sourceDegradeReason = new Map<string, SourceDegradeReason>();
+
+/** 源名 → 本轮被闸门拒过的次数（只用于 `noteSourceBusy` 的"每源一条"日志去重与计数）。 */
 const sourceBusyCount = new Map<string, number>();
+
+/** 越靠前优先级越高（先发生的原因通常更根本）。 */
+const DEGRADE_PRIORITY: readonly SourceDegradeReason[] = ["busy", "rate_limited", "failed", "timeout"];
+
+/**
+ * 记一笔降级。
+ *
+ * `busy` / `rate_limited` / `failed` 三类**各自已经有一条自己的真话**
+ * （分别由 `noteSourceBusy`、`noteGithubRateLimit`、调用点的 `console.error` 打出），
+ * 所以这里**不重复打日志**，只负责记账 —— 记账的唯一用途就是**拦住那句假话**。
+ * `timeout` 除外：那一笔由 `mergeSourceResult` 自己记，因为超时是它判定的。
+ */
+function noteSourceDegrade(sourceName: string, reason: SourceDegradeReason): void {
+  const existing = sourceDegradeReason.get(sourceName);
+  if (existing !== undefined && DEGRADE_PRIORITY.indexOf(existing) <= DEGRADE_PRIORITY.indexOf(reason)) {
+    return; // 已有同等或更高优先级的理由，保留先发生的那个
+  }
+  sourceDegradeReason.set(sourceName, reason);
+}
+
+/** 本轮该源是否降级过（以及为什么）。`undefined` = 没有任何失败迹象。 */
+function sourceDegradeOf(sourceName: string): SourceDegradeReason | undefined {
+  return sourceDegradeReason.get(sourceName);
+}
+
+/**
+ * 把一次取数异常**按类型记账**（顺手保留既有的 `console.error`，不吞）。
+ *
+ * 抽成一个函数是为了让三个适配器的 `catch` 用**同一套判据**，
+ * 而不是各写一遍 `if (isBusyHttpError(...))` —— 上次就是"只覆盖了 BUSY 这一类"
+ * 才漏掉限流分支的。
+ */
+function noteSourceFailure(sourceName: string, err: unknown, context: string, sourceId?: string): void {
+  if (isBusyHttpError(err)) {
+    noteSourceBusy(sourceName, sourceId ?? sourceName, context);
+    return;
+  }
+  noteSourceDegrade(sourceName, "failed");
+}
 
 /** 记一次 BUSY（按源归并计数，且每源只打一条 warning —— 与限流同一纪律）。 */
 function noteSourceBusy(sourceName: string, sourceId: string, attemptContext: string): void {
   const n = (sourceBusyCount.get(sourceName) ?? 0) + 1;
   sourceBusyCount.set(sourceName, n);
+  noteSourceDegrade(sourceName, "busy");
   if (n === 1) {
     console.warn(
       `[SkillMarket] 源 "${sourceName}"（${sourceId}）本次**并发受限**（http_get 并发闸门已满）——` +
@@ -394,9 +454,19 @@ function noteSourceBusy(sourceName: string, sourceId: string, attemptContext: st
   }
 }
 
-/** 某个源本轮是否被闸门拒过（用于**阻止**"源可达、返回为空"这句假话）。 */
-function sourceHitBusy(sourceName: string): boolean {
-  return (sourceBusyCount.get(sourceName) ?? 0) > 0;
+/**
+ * 把"HTTP 状态不是 200"这一类失败记进账本。
+ *
+ * 为什么要一个通用入口：各适配器里"非 200 → 记一条 console.warn → `return []`"
+ * 的写法散在十几处（GitHub / ClawHub / Skills.sh / SkillHub 都有），
+ * 每一处都是同一句假话的潜在出口。统一走这里，才不会又漏掉一条分支 ——
+ * **上面两轮假话就是这么漏出来的**（先漏 BUSY，再漏 403 限流）。
+ *
+ * 判据与 `isRateLimitedResponse` 保持一致：只有"403 且限流余量为 0"才算限流，
+ * 其余非 200 一律按 `failed` 记（403 权限、404、5xx 都是"没能拿到结果"）。
+ */
+function noteSourceStatusFailure(sourceName: string, status: number, headers?: Record<string, string>): void {
+  noteSourceDegrade(sourceName, isRateLimitedResponse({ status, body: "", headers: headers ?? {} }) ? "rate_limited" : "failed");
 }
 
 /**
@@ -702,30 +772,36 @@ async function mergeSourceResult(
   }
   if (outcome.timedOut) {
     // 超时的 warning 已经在 withSourceTimeout 里打过了 —— 一条事实只留一条日志
+    noteSourceDegrade(sourceName, "timeout");
     return { skills: [], degraded: true, failed: false };
   }
   if (outcome.value.length === 0) {
     /**
-     * ## 先排除"这句是假话"的情况（真机 1.16.112 的原始缺陷）
+     * ## 这句 `源可达、返回为空` 只有一个前提才允许打印（这是**两轮**假话的收口点）
      *
-     * 真机打出来的是一对互相矛盾的输出：
-     * ```
-     * [error] Error fetching repo skills for anthropic-skills: {"code":"BUSY",…"本次请求未被发出"}
-     * [log]   Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）
-     * ```
-     * 第二行**恰恰说反了**：请求根本没发出去，源可达性从未被验证。
+     * 前置条件：**该源本轮没有任何降级记账** —— 也就是说它确实被成功访问过、
+     * 返回的列表确实是空的。
      *
-     * 为什么会这样：源的 `try/catch` 把 BUSY 异常就地吞掉并 `return []`，
-     * 于是"取数失败"与"源真的空"在返回值上**不可区分**，这里只能按后者写。
-     * 现在 `httpGet` 会把 BUSY 记进 `sourceBusyCount`（按源），这里据此**拒绝说假话**。
+     * 为什么必须"先查账、再决定文案"，而不是继续在"结果为空"这个事实上下判断：
+     * 因为"空"有两种来源，而**返回值上它们完全一样**（各适配器一律 `try/catch → return []`）：
+     *   - 源真的空（内置技能没启用 / 排行榜为空）→ 这句话是**真话**，必须照打；
+     *   - 我们根本没成功访问（BUSY / 404 / 403 限流 / 5xx）→ 这句话是**假话**。
+     *
+     * 真机先后抓到同一类假话走了**两条不同分支**：
+     * ```
+     * ① BUSY 分支（1.16.112 第一次复量）
+     *    [error] Error fetching repo skills for anthropic-skills: {"code":"BUSY",…"本次请求未被发出"}
+     *    [log]   Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）
+     * ② 限流分支（1.16.112 重建版复量）—— 上一轮只给 BUSY 记了账，于是这条照旧说假话
+     *    [log]     [SkillMarket] 源 "anthropic-skills" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽…
+     *    [warning] [SkillMarket] Failed to fetch repo info for anthropic-skills: 403（…配额耗尽…）
+     *    [log]     Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）
+     * ```
+     * 所以这一轮把**所有**失败类型（busy / rate_limited / failed / timeout）都记进同一个账本，
+     * 只要账上有笔，就**一律不说这句**，改为各自的真话（各自的日志已经在记账那一侧打过了）。
      */
-    if (sourceHitBusy(sourceName)) {
-      /**
-       * 并发受限：本次**什么都没证实**。不能说"源可达"，也不能说"源是空的"。
-       * 与超时/限流同一档：保留上一次的结果（`degraded=true`），
-       * 但不进 `errors` —— 它既不是源的故障、也不是用户的配置问题，
-       * 而是一次**可重试的拥塞**，warning 已经由 `noteSourceBusy` 打过（每源一条）。
-       */
+    const reason = sourceDegradeOf(sourceName);
+    if (reason !== undefined) {
       return { skills: [], degraded: true, failed: false };
     }
     /**
@@ -734,6 +810,9 @@ async function mergeSourceResult(
      * 判据：这**不是失败** —— 请求都回来了、状态码都看过，只是该源当前确实没有可展示的技能
      * （比如内置技能一个都没启用、第三方排行榜为空）。照实写一条 info：空结果必须可见，
      * 但它不该伪装成故障。`degraded` 保持 false：空结果确实是这个源现在的真实状态。
+     *
+     * ⚠️ 不许为了让日志干净而删掉这句 —— 那会把"源真的空"也变成一种失真
+     * （用户会以为是我们没测出来）。真·空结果必须仍然能读到这句话。
      */
     info(`Source "${sourceName}" 本次没有可展示的技能（源可达、返回为空）`);
   }
@@ -966,9 +1045,16 @@ function githubRateLimitCoolingDown(): boolean {
  * 记一次限流。
  * @param sourceId 撞限流的市场源 id（用于"每源只说一次"，不是每仓库一次）
  * @param scope 说明里带上具体范围（仓库名/源名），便于复核
+ * @param sourceName 源的**显示名**，用于把这一笔记进降级账本
+ *        （账本按显示名索引，与 `mergeSourceResult` 的查询键一致）。
+ *        **必填**：漏传就等于限流不计账，那句"源可达、返回为空"的假话会立刻回来
+ *        —— 真机 1.16.112 重建版的复量抓到的正是这个分支。
  */
-function noteGithubRateLimit(sourceId: string, scope: string): void {
+function noteGithubRateLimit(sourceId: string, scope: string, sourceName: string): void {
   githubRateLimitedAt = Date.now();
+  // **先记账、再去重打印**：记账不能受"每源只说一次"的日志去重影响 ——
+  // 否则第二个撞限流的源会既不打印、也不记账，继续被当成"源可达、返回为空"。
+  noteSourceDegrade(sourceName, "rate_limited");
   if (githubRateLimitNoted.has(sourceId)) return;
   githubRateLimitNoted.set(sourceId, Date.now());
   info(
@@ -1001,9 +1087,11 @@ function resetGithubRateLimitState(): void {
   githubRateLimitedAt = 0;
   githubRateLimitNoted.clear();
   sourceTimeoutWarned.clear();
-  // 同理清掉"本轮被闸门拒过的源"：上一轮的拥塞结论不该跨轮生效
-  // （否则**上一轮**的 BUSY 会把**这一轮**的空结果也误标成"并发受限"）。
+  // 清掉"本轮降级账本"：上一轮的失败结论不该跨轮生效。
+  // 这条**必须清**，否则上一轮某个源失败过，这一轮它真的空了也永远说不出
+  // "源可达、返回为空"—— 那就把修法变成了另一种失真（把真话也堵掉）。
   sourceBusyCount.clear();
+  sourceDegradeReason.clear();
 }
 
 /**
@@ -1101,7 +1189,10 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
       // 403 是"配额耗尽"还是"仓库不可用"必须分开说：前者用户能自己解决（配 Token），
       // 后者只能等源恢复。改动前两者都只打一个 403，用户无从判断该做什么。
       const limited = isRateLimitedResponse(repoResp);
-      if (limited) noteGithubRateLimit(source.id, source.name);
+      if (limited) noteGithubRateLimit(source.id, source.name, source.name);
+      // 非限流的非 200（403 权限 / 404 / 5xx）同样"没能拿到结果"，必须记账 ——
+      // 否则空数组会走"源可达、返回为空"（同一个假话的第三条分支）。
+      if (!limited) noteSourceStatusFailure(source.name, repoResp.status, repoResp.headers);
       console.warn(
         `[SkillMarket] Failed to fetch repo info for ${source.id}: ${repoResp.status}` +
         (limited ? "（GitHub 未认证配额耗尽，配置 GitHub Token 可恢复）" : ""),
@@ -1115,11 +1206,14 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
     // 使用 Trees API 一次性获取仓库完整文件树
     const treeResult = await fetchRepoTreeCached(repoFullName, defaultBranch);
     if (treeResult.rateLimited) {
-      noteGithubRateLimit(source.id, repoFullName);
+      noteGithubRateLimit(source.id, repoFullName, source.name);
       return skills; // 限流时不做 Contents API 兜底：那只会再打一串同样 403 的请求
     }
     const tree = treeResult.tree;
     if (!tree) {
+      // Trees API 没拿到树 → 退化成 Contents API 兜底。这是**部分降级**：
+      // 兜底本身可能失败，而失败会走下面 `return await ...Legacy` 的记账。
+      // 这里不预先记 `failed`，因为兜底**可能成功**（成功就不该说它降级）。
       console.warn(`[SkillMarket] Trees API failed for ${repoFullName}, falling back to Contents API`);
       return await fetchGitHubRepoSkillsLegacy(source, repoInfo);
     }
@@ -1171,19 +1265,14 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
     }
   } catch (err) {
     /**
-     * **BUSY 必须被单独认出来，不能混进普通失败。**
+     * **所有**失败都要记账（不只 BUSY）。
      *
-     * 真机 1.16.112 的缺陷就是在这里丢掉了"这其实是并发受限"这个事实：
-     * 异常被就地吞掉、`return []`，随后 `mergeSourceResult` 把空数组
-     * 解释成"源可达、返回为空"——一句与事实相反的结论。
-     *
-     * 这里不再只打一条 `console.error` 了事，而是：
-     *  1. 记进 `sourceBusyCount`（按源，供 `mergeSourceResult` 拒绝说假话）；
-     *  2. `console.error` 保留 —— 它仍然是**真问题**（请求没发出去），不许静默。
+     * 上一轮只记了 `BUSY`，于是限流分支（GitHub 配额 403）照旧说出
+     * "源可达、返回为空"这句假话 —— 真机第二次复量抓到的就是它。
+     * 现在统一走 `noteSourceFailure`：BUSY → `busy`，其它 → `failed`，
+     * 而限流在 `noteGithubRateLimit` 里已经记了 `rate_limited`（优先级更高，不会被覆盖）。
      */
-    if (isBusyHttpError(err)) {
-      noteSourceBusy(source.name, source.id, "fetchGitHubRepoSkills");
-    }
+    noteSourceFailure(source.name, err, "fetchGitHubRepoSkills", source.id);
     console.error(`[SkillMarket] Error fetching repo skills for ${source.id}:`, err);
   }
 
@@ -1208,7 +1297,10 @@ async function fetchGitHubRepoSkillsLegacy(source: MarketSource, repoInfo: any):
     ? `https://api.github.com/repos/${repoFullName}/contents/${source.subdir}?ref=${defaultBranch}`
     : `https://api.github.com/repos/${repoFullName}/contents/?ref=${defaultBranch}`;
   const contentsResp = await httpGet(contentsPath, githubApiHeaders());
-  if (contentsResp.status !== 200) return skills;
+  if (contentsResp.status !== 200) {
+    noteSourceStatusFailure(source.name, contentsResp.status, contentsResp.headers);
+    return skills;
+  }
   const rootContents = JSON.parse(contentsResp.body);
   if (!Array.isArray(rootContents)) return skills;
 
@@ -1283,7 +1375,10 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
     const resp = await httpGet(source.url, githubApiHeaders());
     if (resp.status !== 200) {
       const limited = isRateLimitedResponse(resp);
-      if (limited) noteGithubRateLimit(source.id, source.name);
+      if (limited) noteGithubRateLimit(source.id, source.name, source.name);
+      // 非限流的非 200（403 权限 / 404 / 5xx）同样是"没能拿到结果"，必须记账，
+      // 否则下面的空数组会走"源可达、返回为空"——同一个假话的第三条分支。
+      if (!limited) noteSourceStatusFailure(source.name, resp.status, resp.headers);
       console.warn(
         `[SkillMarket] GitHub search failed for ${source.id}: ${resp.status}` +
         (limited ? "（GitHub 未认证配额耗尽，配置 GitHub Token 可恢复）" : ""),
@@ -1321,7 +1416,7 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
 
         const treeResult = await fetchRepoTreeCached(repo.full_name, branch);
         if (treeResult.rateLimited) {
-          noteGithubRateLimit(source.id, repo.full_name);
+          noteGithubRateLimit(source.id, repo.full_name, source.name);
           skipped++;
           return null;
         }
@@ -1407,9 +1502,8 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
       info(`GitHub 搜索源 "${source.name}"：${skills.length} 个仓库完成，${skipped} 个因 API 限流被跳过（改配 GitHub Token 可避免）`);
     }
   } catch (err) {
-    // BUSY 同样要单独认出来（理由同 fetchGitHubRepoSkills）：否则空数组会被
-    // mergeSourceResult 解释成"源可达、返回为空"——一句与事实相反的结论。
-    if (isBusyHttpError(err)) noteSourceBusy(source.name, source.id, "fetchGitHubSearchSkills");
+    // 同上：全部失败类型都记账（BUSY → busy，其它 → failed，限流已由 noteGithubRateLimit 记过）
+    noteSourceFailure(source.name, err, "fetchGitHubSearchSkills", source.id);
     console.error(`[SkillMarket] Error fetching search skills for ${source.id}:`, err);
   }
 
@@ -1482,6 +1576,7 @@ async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> 
 
       const resp = await httpGet(`${baseUrl}/api/v1/skills?${params.toString()}`, headers);
       if (resp.status !== 200) {
+        noteSourceStatusFailure(source.name, resp.status, resp.headers);
         console.warn(`[SkillMarket] ClawHub API failed (page ${pageNum}): ${resp.status}`);
         break;
       }
@@ -1521,9 +1616,9 @@ async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> 
       pageNum++;
     }
   } catch (err) {
-    // 同上：ClawHub 是分页串行取的，被闸门拒掉一页会让整源变成"空"——
-    // 必须记成"并发受限"，不能让它伪装成"源可达、返回为空"。
-    if (isBusyHttpError(err)) noteSourceBusy(source.name, source.id, "fetchClawHubSkills");
+    // 同上：ClawHub 是分页串行取的，任一页失败都会让整源变成"空"——
+    // 必须记账，不能让它伪装成"源可达、返回为空"。
+    noteSourceFailure(source.name, err, "fetchClawHubSkills", source.id);
     console.error(`[SkillMarket] Error fetching ClawHub skills:`, err);
   }
 
@@ -1614,6 +1709,7 @@ async function fetchSkillsShViaAPI(source: MarketSource, baseUrl: string): Promi
         return skills; // 返回已获取的（可能为空）
       }
       if (resp.status !== 200) {
+        noteSourceStatusFailure(source.name, resp.status, resp.headers);
         console.warn(`[SkillMarket] Skills.sh API failed (page ${page}): ${resp.status}`);
         return skills;
       }
@@ -1683,6 +1779,7 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
           "Accept": "text/html",
         });
         if (resp.status !== 200) {
+          noteSourceStatusFailure(source.name, resp.status, resp.headers);
           console.warn(`[SkillMarket] Skills.sh HTML scrape failed for ${view.label}: ${resp.status}`);
           continue;
         }
@@ -1883,6 +1980,7 @@ async function fetchSkillHubEndpoint(
   try {
     const resp = await httpGet(url, headers);
     if (resp.status !== 200) {
+      noteSourceStatusFailure(source.name, resp.status, resp.headers);
       console.warn(`[SkillMarket] SkillHub endpoint failed: ${resp.status} for ${url}`);
       return 0;
     }
@@ -2942,6 +3040,7 @@ async function fetchSkillHubSearch(source: MarketSource, query: string): Promise
 
       const resp = await httpGet(`${baseUrl}/api/skills?${params.toString()}`, headers);
       if (resp.status !== 200) {
+        noteSourceStatusFailure(source.name, resp.status, resp.headers);
         console.warn(`[SkillMarket] SkillHub search failed (page ${page}): ${resp.status}`);
         break;
       }

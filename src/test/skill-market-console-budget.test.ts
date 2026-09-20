@@ -116,6 +116,20 @@ const throwBusy = (): never => {
   throw busyHttpError();
 };
 
+/** GitHub 配额耗尽的 403（`isRateLimitedResponse` 判定的形态：403 + 剩余量为 0）。 */
+const rateLimited403 = () => ({
+  status: 403,
+  body: "API rate limit exceeded",
+  headers: { "x-ratelimit-remaining": "0" },
+});
+
+/** 非限流的非 200（403 权限 / 404 / 5xx 都归这一类）。 */
+const forbidden403 = () => ({ status: 403, body: "forbidden", headers: {} });
+
+/** 「源可达、返回为空」这句**只允许在真·空结果时出现**的那句话。 */
+const EMPTY_CLAIM = /源可达、返回为空/;
+const emptyClaims = () => logs().filter((t) => EMPTY_CLAIM.test(t));
+
 /**
  * 把"源超时"那条 12s 定时器推到开火（单次大跳跃，确定性口径）。
  *
@@ -445,6 +459,125 @@ describe("技能市场取数收口（改动后行为）", () => {
     expect(fanOutStarted, `必须真的走到扇出阶段，否则本用例测的是单请求路径。实际请求：${JSON.stringify(calls)}`).toBe(true);
     expect(maxInFlight, "同时在飞不得超过闸门容量（超量提交正是 BUSY 的根因）").toBeLessThanOrEqual(2);
     expect(maxInFlight, "容量为 2 时应当真的用满 2 路（否则闸门把并发压得过死）").toBe(2);
+  });
+
+  // ==========================================================================
+  // 「源可达、返回为空」这句**只允许在真·空结果时出现**
+  //
+  // 真机先后抓到**同一类假话走了两条分支**（BUSY 一次、403 限流一次）。
+  // 这几条用例把三条失败分支与"真·空结果"分别钉死 ——
+  // 特别是**必须保留真·空结果那句**，否则修法本身就变成了另一种失真。
+  // ==========================================================================
+
+  /**
+   * ③i **403 限流**（真机 1.16.112 重建版抓到的那条）：
+   * 配额耗尽的源绝不许说自己"源可达、返回为空"。
+   */
+  it("③i 403 限流 → 绝不打「源可达、返回为空」（真机重建版抓到的假话）", async () => {
+    installFakeTauri(() => rateLimited403());
+    const src = uniqueRepoSrc(11); // 独立仓库名：避开模块级树缓存
+
+    const p = listMarketSkills([src]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await p;
+
+    expect(emptyClaims(), "配额已耗尽却报「源可达、返回为空」——这就是那条假话").toEqual([]);
+    // 真话必须仍然可见（说清是配额、并且给出可操作建议）
+    expect(logs().filter((t) => /配额/.test(t)).length, "限流必须有它自己的真话").toBe(1);
+    expect(warns().filter((t) => /Failed to fetch repo info/.test(t)).length, "失败本身也要可见").toBe(1);
+    expect(res.skills).toEqual([]);
+  });
+
+  /**
+   * ③j **非限流的非 200**（403 权限 / 404 / 5xx）：同样不许说"源可达、返回为空"。
+   * 这条与 ③i 分开，是因为它走的是另一条判据（`!limited` 分支）。
+   */
+  it("③j 非限流的 403 → 也不许打「源可达、返回为空」", async () => {
+    installFakeTauri(() => forbidden403());
+    const src = uniqueRepoSrc(12);
+
+    const p = listMarketSkills([src]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await p;
+
+    expect(emptyClaims(), "403（非限流）同样没能拿到结果，不能说源可达").toEqual([]);
+    expect(warns().filter((t) => /Failed to fetch repo info/.test(t)).length).toBe(1);
+    expect(res.skills).toEqual([]);
+  });
+
+  /**
+   * ③k **源抛错**（异常路径）：不许说"源可达、返回为空"。
+   */
+  it("③k 源抛错 → 不许打「源可达、返回为空」", async () => {
+    installFakeTauri(() => {
+      throw new Error("boom: 网络层直接炸了"); // 非 JSON 信封 → 普通失败
+    });
+    const src = uniqueRepoSrc(13);
+
+    const p = listMarketSkills([src]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await p;
+
+    expect(emptyClaims(), "取数抛错不能说源可达").toEqual([]);
+    expect(errSpy.mock.calls.map((c: any[]) => String(c[0])).some((t: string) => /Error fetching repo skills/.test(t)), "失败必须可见").toBe(true);
+    expect(res.skills).toEqual([]);
+  });
+
+  /**
+   * ③l **真·空结果必须保留那句话**（反向守卫）。
+   *
+   * 这条是**防"把修法做成另一种失真"**：如果为了消掉假话就把
+   * 「源可达、返回为空」整句删掉/永久静音，那么"源真的空"也会变得不可见，
+   * 用户会以为是我们没测出来。所以真·空结果**必须**仍然能读到这句。
+   *
+   * 场景：仓库可访问、Trees API 正常返回，但树里**一个 SKILL.md 都没有**。
+   */
+  it("③l 真·空结果（访问成功且列表确为空）→ 必须保留「源可达、返回为空」", async () => {
+    installFakeTauri((url) => {
+      if (url.endsWith("/empty-14")) return ok({ default_branch: "main", full_name: "codem-test/empty-14", updated_at: "x" });
+      if (/git\/trees/.test(url)) return ok({ sha: "s", tree: [] }); // 树是空的 → 真的没有技能
+      return { status: 404, body: "", headers: {} };
+    });
+    const src: MarketSource = {
+      id: "empty-probe-14",
+      name: "Empty Probe 14",
+      type: "github-repo",
+      url: "https://api.github.com/repos/codem-test/empty-14",
+      enabled: true,
+    };
+
+    const p = listMarketSkills([src]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await p;
+
+    expect(emptyClaims().length, "源真的可达且为空 —— 这句话是**真话**，必须保留（不许把修法做成永久静音）").toBe(1);
+    expect(res.skills, "空结果仍是成功（degraded=false），不算降级").toEqual([]);
+    expect(res.errors).toEqual([]);
+  });
+
+  /**
+   * ③m **失败之后仍然不许说假话**：同一轮里失败过的源，即使随后拿到空数组，
+   * 也一律不再走"源可达、返回为空"（这正是"先查账再决定文案"的核心）。
+   */
+  it("③m 同一轮内三类失败各自的真话都能读到，且都不落进「源可达、返回为空」", async () => {
+    installFakeTauri((url) => {
+      if (/busy-15/.test(url)) throwBusy(); // ① BUSY
+      if (/rate-16/.test(url)) return rateLimited403(); // ② 403 限流
+      return forbidden403(); // ③ 其它非 200
+    });
+    const busySrc: MarketSource = { id: "d-busy", name: "D Busy", type: "github-repo", url: "https://api.github.com/repos/codem-test/busy-15", enabled: true };
+    const rateSrc: MarketSource = { id: "d-rate", name: "D Rate", type: "github-repo", url: "https://api.github.com/repos/codem-test/rate-16", enabled: true };
+    const otherSrc: MarketSource = { id: "d-other", name: "D Other", type: "github-repo", url: "https://api.github.com/repos/codem-test/other-17", enabled: true };
+
+    const p = listMarketSkills([busySrc, rateSrc, otherSrc]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await p;
+
+    expect(emptyClaims(), "三类失败都不得落进「源可达、返回为空」").toEqual([]);
+    expect(warns().filter((t) => /并发受限/.test(t)).length, "① 并发受限一条").toBe(1);
+    expect(logs().filter((t) => /配额/.test(t)).length, "② 配额受限一条").toBe(1);
+    expect(warns().filter((t) => /Failed to fetch repo info/.test(t)).length, "③ 普通失败两条（限流那条也走这里）").toBe(2);
+    expect(res.skills).toEqual([]);
   });
 
   it("③b 一个源降级、另一个源成功 → 结果里只留成功的那个源", async () => {
