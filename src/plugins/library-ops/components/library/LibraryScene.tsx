@@ -18,6 +18,7 @@ import type { LibraryActor, LibrarySnapshot, SceneState } from "../../types";
 import { ACTIVITY_META } from "../../types";
 import { LIBRARY_MAP } from "../../data/library-map";
 import { advanceScene, bubbleVisible, createSceneState, sceneStats, stepActorMovement } from "../../core/scene-engine";
+import { ISO_SCENE_SCALE, clampManualScale, fitViewFor } from "../../core/scene-view";
 import { prefersReducedMotion } from "../../../../hooks/useReducedMotion";
 import { CharacterActor } from "./CharacterActor";
 import { SceneFurniture } from "./SceneFurniture";
@@ -35,8 +36,11 @@ import {
 import { useLibraryOps } from "../../store";
 
 const GRID = gridLines();
-const MIN_SCALE = 0.3;
-const MAX_SCALE = 3;
+/**
+ * 缩放档位：**手动缩放的下限（0.3）与「适应窗口」的下限是两件事** ——
+ * 概览卡片里的宿主只有约 481×191，整幅画塞进去需要 ≈0.178（详见 `core/scene-view.ts` 文件头）。
+ */
+const SCALE = ISO_SCENE_SCALE;
 
 interface View {
   scale: number;
@@ -123,7 +127,7 @@ export function LibraryScene({
     };
     viewAnim.current = requestAnimationFrame(step);
   }, []);
-  const panRef = useRef<{ x: number; y: number; tx: number; ty: number; active: boolean } | null>(null);
+  const panRef = useRef<{ x: number; y: number; tx: number; ty: number; active: boolean; captured: boolean } | null>(null);
 
   speedRef.current = speed;
 
@@ -162,11 +166,9 @@ export function LibraryScene({
     }
     const el = wrapRef.current;
     if (!el) return;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    if (!w || !h) return;
-    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(w / CANVAS_W, h / CANVAS_H) * 0.98));
-    setView({ scale, tx: (w - CANVAS_W * scale) / 2, ty: (h - CANVAS_H * scale) / 2 });
+    const next = fitViewFor({ w: el.clientWidth, h: el.clientHeight }, { w: CANVAS_W, h: CANVAS_H }, SCALE, 0.98);
+    if (!next) return;
+    setView(next);
   }, []);
 
   // 容器尺寸变化：首次自适应，之后保持用户的缩放/平移（只把中心点固定住）
@@ -206,7 +208,7 @@ export function LibraryScene({
       const py = e.clientY - rect.top;
       setView((v) => {
         const factor = Math.exp(-e.deltaY * 0.0015);
-        const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, v.scale * factor));
+        const scale = clampManualScale(v.scale, v.scale * factor, SCALE);
         const k = scale / v.scale;
         return { scale, tx: px - (px - v.tx) * k, ty: py - (py - v.ty) * k };
       });
@@ -215,14 +217,19 @@ export function LibraryScene({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
-  // 拖拽平移
+  /**
+   * 拖拽平移（与像素场景同一处修正）：指针捕获**推迟到真正开始拖拽的那一刻**。
+   * 原实现在 pointerdown 里就 `setPointerCapture`，于是同一次手势的 pointerup/mouseup/click
+   * 全被改派到 `.lo-scene`，`.lo-zone` / 房间热区上的 React onClick 永远不触发
+   * （真机事件链：pointerdown→room → gotpointercapture→.lo-scene → click→.lo-scene）。
+   * 现在：只点不拖不取捕获（click 落到真实目标上），按下后移动超阈值才取（拖出场景外继续跟手）。
+   */
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
       if (target.closest(".lo-actor-wrap") || target.closest(".lo-scene__hud")) return;
-      panRef.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, active: true };
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      panRef.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, active: true, captured: false };
     },
     [view.tx, view.ty],
   );
@@ -233,12 +240,23 @@ export function LibraryScene({
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
     if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+    if (!p.captured) {
+      p.captured = true;
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    }
     setView((v) => ({ ...v, tx: p.tx + dx, ty: p.ty + dy }));
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (panRef.current) panRef.current.active = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    const p = panRef.current;
+    const el = e.currentTarget as HTMLElement;
+    if (p) {
+      p.active = false;
+      if (p.captured) {
+        p.captured = false;
+        if (!el.hasPointerCapture || el.hasPointerCapture(e.pointerId)) el.releasePointerCapture?.(e.pointerId);
+      }
+    }
   }, []);
 
   // 快照 → 场景推进
@@ -316,7 +334,7 @@ export function LibraryScene({
     const w = el.clientWidth;
     const h = el.clientHeight;
     setView((v) => {
-      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, v.scale * factor));
+      const scale = clampManualScale(v.scale, v.scale * factor, SCALE);
       const k = scale / v.scale;
       const cx = w / 2;
       const cy = h / 2;

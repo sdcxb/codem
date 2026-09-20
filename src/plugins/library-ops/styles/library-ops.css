@@ -906,6 +906,14 @@
   border-style: solid;
 }
 .lo-pixel-room:focus-visible { outline: 2px solid var(--lo-zone-token); outline-offset: 2px; }
+/* 同一块 bounds 上承载多个岗位时（gateway 前台·调度台 / task_queues 借还台·交付，两者 bounds 逐像素相同）：
+ * 房间框仍是**完整视觉**（位置/大小/标签一个像素都不动），命中改由内层条带承载 ——
+ * 外层关掉命中（否则 DOM 靠后的那个会把整块吃掉，另一个岗位在自己的区域里永远点不到），
+ * 内层用 `pointer-events: auto` 重新接管（祖先 none 不挡后代自取，与 `.lo-pixel-actor .lo-sprite` 同一手法）。
+ * 条带几何来自 `core/room-hit-area.ts`：按各岗位的标签锚点把矩形切成互不重叠的两块，
+ * 每块都包含自己的锚点 ⇒ "点谁的名字附近就选谁"。 */
+.lo-pixel-room.is-hit-split { pointer-events: none; }
+.lo-pixel-room__hit { position: absolute; pointer-events: auto; }
 /* 对位模式：房间框可拖动 / 缩放 */
 .lo-scene.is-editing-layout .lo-pixel-room {
   cursor: move;

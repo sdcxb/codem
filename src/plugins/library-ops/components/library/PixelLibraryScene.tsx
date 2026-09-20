@@ -54,11 +54,17 @@ import {
   type PixelSceneState,
 } from "../../core/pixel-scene";
 import { isIdentityAdjust, sceneAdjustTransform } from "../../core/scene-image";
+import { PIXEL_SCENE_SCALE, clampManualScale, fitViewFor } from "../../core/scene-view";
+import { resolveRoomHitAreas } from "../../core/room-hit-area";
 import { LoIcon } from "../icons";
 import { useLibraryOps } from "../../store";
 
-const MIN_SCALE = 0.3;
-const MAX_SCALE = 3.2;
+/**
+ * 缩放档位。**手动缩放的下限（0.3）与「适应窗口」的下限（0.05）在这里是分开的** ——
+ * 概览卡片里的宿主只有约 481×191，把 1920×1072 的画布塞进去需要 ≈0.178，
+ * 再用手动下限去挡，就会出现"按了适应窗口却还是被裁掉一大半"（详见 `core/scene-view.ts` 文件头）。
+ */
+const SCALE = PIXEL_SCENE_SCALE;
 /** 显示画布尺寸（= 上游 displaySize） */
 const CANVAS_W = CLAW_SCENE.displayWidth;
 const CANVAS_H = CLAW_SCENE.displayHeight;
@@ -156,7 +162,7 @@ export function PixelLibraryScene({
   const actorEls = useRef(new Map<string, HTMLDivElement>());
   const viewRef = useRef<View>({ scale: 0.5, tx: 0, ty: 0 });
   const viewAnim = useRef<number | null>(null);
-  const panRef = useRef<{ x: number; y: number; tx: number; ty: number; active: boolean } | null>(null);
+  const panRef = useRef<{ x: number; y: number; tx: number; ty: number; active: boolean; captured: boolean } | null>(null);
 
   const [view, setView] = useState<View>({ scale: 0.5, tx: 0, ty: 0 });
   const [signature, setSignature] = useState("");
@@ -180,6 +186,16 @@ export function PixelLibraryScene({
   /** 房间 / 路网（已应用对位覆盖） */
   const rooms = useMemo(() => pixelRooms(), [layoutOverrides, sceneImageId]);
   const guideNodes = useMemo(() => walkNodes(), [layoutOverrides, sceneImageId]);
+  /**
+   * 命中矩形（视觉不动，命中与视觉解耦）。
+   * gateway(前台·调度台) 与 task_queues(借还台·交付) 的 bounds 完全相同 ⇒ 逐像素重合的两个热区里
+   * 只有 DOM 靠后的那个能命中（前者 82 点采样命中自己 = 0），这里按标签锚点把它们切成互不重叠的条带。
+   * 对位模式下不切分：那时房间框是"拖动/缩放"的对象，必须整块可拖。
+   */
+  const hitAreas = useMemo(
+    () => resolveRoomHitAreas(rooms.map((r) => ({ id: r.id, bounds: r.bounds, labelAnchor: r.labelAnchor }))),
+    [rooms],
+  );
 
   /** 当前生效的图片图层（内置预设可能多层，自定义只有一层） */
   const layers = useMemo<Array<{ src: string; pixelated: boolean }>>(() => {
@@ -313,11 +329,9 @@ export function PixelLibraryScene({
     }
     const el = wrapRef.current;
     if (!el) return;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    if (!w || !h) return;
-    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(w / CANVAS_W, h / CANVAS_H) * 0.99));
-    setView({ scale, tx: (w - CANVAS_W * scale) / 2, ty: (h - CANVAS_H * scale) / 2 });
+    const next = fitViewFor({ w: el.clientWidth, h: el.clientHeight }, { w: CANVAS_W, h: CANVAS_H }, SCALE, 0.99);
+    if (!next) return;
+    setView(next);
   }, []);
 
   const animateTo = useCallback((target: View, duration = 340) => {
@@ -378,7 +392,7 @@ export function PixelLibraryScene({
       const py = e.clientY - rect.top;
       setView((v) => {
         const factor = Math.exp(-e.deltaY * 0.0015);
-        const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, v.scale * factor));
+        const scale = clampManualScale(v.scale, v.scale * factor, SCALE);
         const k = scale / v.scale;
         return { scale, tx: px - (px - v.tx) * k, ty: py - (py - v.ty) * k };
       });
@@ -387,13 +401,24 @@ export function PixelLibraryScene({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /**
+   * 拖拽平移。
+   *
+   * ⚠️ 指针捕获**推迟到真正开始拖拽的那一刻**（见 onPointerMove）。原实现在 pointerdown 里就
+   * `setPointerCapture`，于是同一次手势里的 pointerup/mouseup/click 全被**改派到 `.lo-scene`**，
+   * 房间热区上的 React onClick 永远不触发 —— 真机事件链实测（1.16.113，任务中心 → 子智能体 → 场景）：
+   *   pointerdown→`div.lo-pixel-room[task_queues]` → gotpointercapture→`div.lo-scene`
+   *   → pointerup/mouseup→`div.lo-scene` → **click→`div.lo-scene`**（点击结果：`selectedZoneId` 空）
+   * 对照：点精灵（`.lo-actor-wrap` 在下面被豁免、不取捕获）→ click→`div.lo-sprite` → 角色被选中。
+   * 现在"点一下不移动"不该取捕获（让 click 落到房间/角色等真实目标上），
+   * "按下后移动超过阈值"才取捕获（拖出场景外也能继续平移；这一次手势自然选不中任何东西）。
+   */
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
       if (target.closest(".lo-actor-wrap") || target.closest(".lo-scene__hud")) return;
-      panRef.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, active: true };
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      panRef.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, active: true, captured: false };
     },
     [view.tx, view.ty],
   );
@@ -404,12 +429,23 @@ export function PixelLibraryScene({
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
     if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+    if (!p.captured) {
+      p.captured = true;
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    }
     setView((v) => ({ ...v, tx: p.tx + dx, ty: p.ty + dy }));
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (panRef.current) panRef.current.active = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    const p = panRef.current;
+    const el = e.currentTarget as HTMLElement;
+    if (p) {
+      p.active = false;
+      if (p.captured) {
+        p.captured = false;
+        if (!el.hasPointerCapture || el.hasPointerCapture(e.pointerId)) el.releasePointerCapture?.(e.pointerId);
+      }
+    }
   }, []);
 
   // 快照 → 场景推进
@@ -500,7 +536,7 @@ export function PixelLibraryScene({
     const w = el.clientWidth;
     const h = el.clientHeight;
     setView((v) => {
-      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, v.scale * factor));
+      const scale = clampManualScale(v.scale, v.scale * factor, SCALE);
       const k = scale / v.scale;
       return { scale, tx: w / 2 - (w / 2 - v.tx) * k, ty: h / 2 - (h / 2 - v.ty) * k };
     });
@@ -587,18 +623,32 @@ export function PixelLibraryScene({
                 work: pv.work ?? room.work,
               }
             : room;
-          const active = selectedZoneId ? roomOfZone(room.id) === room.id : false;
+          /**
+           * 高亮归属：**取"选中岗位所在房间"**。
+           * 原实现写的是 `roomOfZone(room.id)`（把房间 id 当岗位 id 传），而 `roomOfZone` 对未知 id
+           * 回退 gateway ⇒ 只有在渲染 gateway 那一间时才有 `"gateway" === "gateway"`，
+           * 于是**选中任何岗位都只高亮 gateway**（真机实测：选中「借还台 · 交付」时
+           * `.lo-pixel-room.is-selected` 仍是 `gateway` —— 见 audit-loroom2-after.json 的 clicks）。
+           * 现在按 `zone → room` 映射判断，房间承载多个岗位时（gateway/task_queues）两者的选中
+           * 会落在同一个框上（视觉语言里房间框只有一种令牌色，区分岗位靠侧栏/详情卡）。
+           */
+          const active = selectedZoneId ? roomOfZone(selectedZoneId) === room.id : false;
           const [bx, by, bw, bh] = eff.bounds;
           const p = logicToDisplay({ x: bx, y: by });
           const size = logicToDisplay({ x: bw, y: bh });
           const anchor = logicToDisplay(eff.labelAnchor);
           const draggingThis = layoutDrag?.kind === "room" && layoutDrag.id === room.id;
+          // 命中条带（只在与别的岗位共用同一块 bounds 时存在）：外层房间框关掉命中，由这一层接管
+          const hit = editingLayout ? undefined : hitAreas.get(room.id);
+          const split = !!hit?.split;
+          const hitPos = split ? logicToDisplay({ x: hit!.hit[0], y: hit!.hit[1] }) : null;
+          const hitSize = split ? logicToDisplay({ x: hit!.hit[2], y: hit!.hit[3] }) : null;
           return (
             <div
               key={room.id}
               className={`lo-pixel-room${active ? " is-selected" : ""}${editingLayout ? " is-editing" : ""}${
                 draggingThis ? " is-dragging" : ""
-              }`}
+              }${split ? " is-hit-split" : ""}`}
               style={{
                 left: p.x,
                 top: p.y,
@@ -611,6 +661,7 @@ export function PixelLibraryScene({
               aria-label={`${room.label} —— ${room.labelEn}`}
               title={editingLayout ? `${room.label}：拖动移动，右下角小方块改大小` : `${room.label}（上游分区 ${room.id}）`}
               data-room-id={room.id}
+              data-hit-band={split ? `${hit!.hit[1]},${hit!.hit[3]}` : undefined}
               onClick={editingLayout ? undefined : () => onSelectZone?.(zoneOfRoom(room.id))}
               onPointerDown={editingLayout ? (e) => startRoomDrag(e, eff, "move") : undefined}
               onKeyDown={(e) => {
@@ -621,6 +672,18 @@ export function PixelLibraryScene({
                 }
               }}
             >
+              {split && hitPos && hitSize && (
+                <span
+                  className="lo-pixel-room__hit"
+                  aria-hidden="true"
+                  style={{
+                    left: hitPos.x - p.x,
+                    top: hitPos.y - p.y,
+                    width: hitSize.x,
+                    height: hitSize.y,
+                  }}
+                />
+              )}
               {showZoneLabels && (
                 <span className="lo-pixel-room__label" style={{ left: anchor.x - p.x, top: anchor.y - p.y }}>
                   {room.label}

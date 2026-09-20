@@ -205,4 +205,174 @@ describe("LO-HITAREA 像素房间命中归属", () => {
     expect(useLibraryOps.getState().selectedZoneId).toBe("front-desk");
     unmount();
   });
+
+  it("LO-HITAREA-5（弱判据·声明）：同 bounds 的两个岗位热区靠「外层关命中 + 内层条带接管」分开", () => {
+    // 外层关掉命中（否则 DOM 靠后的那个把整块吃掉），内层重新打开（祖先 none 不挡后代自取）
+    const split = declsOf(".lo-pixel-room.is-hit-split");
+    expect(split, "样式表里必须能找到 .lo-pixel-room.is-hit-split 规则").toBeTruthy();
+    expect(split!.join(";")).toContain("pointer-events: none");
+
+    const hit = declsOf(".lo-pixel-room__hit");
+    expect(hit, "样式表里必须能找到 .lo-pixel-room__hit 规则").toBeTruthy();
+    expect(hit!.join(";")).toContain("pointer-events: auto");
+    expect(hit!.join(";")).toContain("position: absolute");
+
+    // 反向守卫：① 房间框自身的规则不许声明 pointer-events（否则会盖过 .is-hit-split 的 none）；
+    // ② 全项目里"给 lo-pixel-room 重新打开命中"的规则**只有** __hit 这一条。
+    expect((declsOf(".lo-pixel-room") ?? []).join(";")).not.toContain("pointer-events");
+    const reopen = [...cssText.matchAll(/\.lo-pixel-room[^{]*\{[^}]*pointer-events:\s*(?:auto|all)/g)].map((m) =>
+      m[0].split("{")[0].trim(),
+    );
+    expect(reopen).toEqual([".lo-pixel-room__hit"]);
+  });
+
+  it("LO-HITAREA-6（结构判据）：共用 bounds 的两间各自渲染出**互不重叠**的命中条带，且都接到岗位选择", async () => {
+    const zones: string[] = [];
+    const { container, unmount } = render(
+      <PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={settled()} onSelectZone={(id) => zones.push(id)} />,
+    );
+    const room = (id: string) => container.querySelector(`.lo-pixel-room[data-room-id="${id}"]`) as HTMLElement;
+    const gw = room("gateway");
+    const tq = room("task_queues");
+    expect(gw && tq, "两间都必须渲染").toBeTruthy();
+    expect(gw.className).toContain("is-hit-split");
+    expect(tq.className).toContain("is-hit-split");
+    // 视觉（房间框本身）不变：两间的 bounds 仍然逐像素相同 → 内联 left/top/width/height 一致
+    expect([gw.style.left, gw.style.top, gw.style.width, gw.style.height]).toEqual([
+      tq.style.left,
+      tq.style.top,
+      tq.style.width,
+      tq.style.height,
+    ]);
+
+    const gh = gw.querySelector(".lo-pixel-room__hit") as HTMLElement;
+    const th = tq.querySelector(".lo-pixel-room__hit") as HTMLElement;
+    expect(gh && th, "两间各有一个命中条带子层").toBeTruthy();
+    // 条带在房间内的位置：gateway 占上半（top 偏移 0），task_queues 从分界线开始（>0）
+    expect(parseFloat(gh.style.top)).toBeCloseTo(0, 6);
+    expect(parseFloat(th.style.top)).toBeGreaterThan(0);
+    // 两块拼回整块房间高度（happy-dom 不做布局，这里只能比"模型给的几何"；
+    // style 值经 logicToDisplay 换算后被序列化成字符串，容差按 1e-3 给）
+    expect(parseFloat(gh.style.height) + parseFloat(th.style.height)).toBeCloseTo(parseFloat(gw.style.height), 2);
+    // data-hit-band = 条带在逻辑坐标里的 [y, h]，供真机脚本核对注入/DOM 与源码一致
+    // （原框 y=320 h=300，分界线取两锚点 400/434 的中点 417 → 上条 97、下条 203）
+    expect(gw.dataset.hitBand).toBe("320,97");
+    expect(tq.dataset.hitBand).toBe("417,203");
+
+    // 点条带 → 冒泡到房间自己的 onClick → 选中**各自的**岗位（改前 gateway 这条永远走不到）
+    await act(async () => {
+      fireEvent.click(th);
+    });
+    expect(zones).toEqual(["checkout"]);
+    await act(async () => {
+      fireEvent.click(gh);
+    });
+    expect(zones).toEqual(["checkout", "front-desk"]);
+
+    // 点整块房间（DOM 直接派发，与真机无关）仍然是"这间自己的岗位"—— 既有行为不回退
+    await act(async () => {
+      fireEvent.click(tq);
+    });
+    expect(zones).toEqual(["checkout", "front-desk", "checkout"]);
+    unmount();
+  });
+
+  it("LO-HITAREA-7（结构判据）：对位模式下不切分（房间框要整块可拖）", async () => {
+    const { container, unmount } = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={settled()} />);
+    await act(async () => {
+      useLibraryOps.getState().setEditingLayout(true);
+    });
+    expect(container.querySelectorAll(".lo-pixel-room__hit").length).toBe(0);
+    for (const el of container.querySelectorAll(".lo-pixel-room")) expect(el.className).not.toContain("is-hit-split");
+    await act(async () => {
+      useLibraryOps.getState().setEditingLayout(false);
+    });
+    expect(container.querySelectorAll(".lo-pixel-room__hit").length).toBe(2); // 只有共用 bounds 的那两间
+    unmount();
+  });
+
+  /**
+   * LO-HITAREA-8（行为判据·指针捕获时机）：真机上"点房间没反应"的直接机制是
+   * `.lo-scene` 在 **pointerdown 里就 setPointerCapture**，于是同一次手势的 pointerup/mouseup/click
+   * 被改派到 `.lo-scene`（真机事件链：pointerdown→room → gotpointercapture→.lo-scene → click→.lo-scene）。
+   * 这条在 happy-dom 里**测不到"改派"本身**（它不做真实命中/捕获重定向），只能测到
+   * "只在真正开始拖拽（移动 > 2px）时才取捕获"这个**结构性时机**；
+   * 真机上的命中归属与点击结果由 `.preview-shot/audit-loroom2-00-clickpath.mjs` 承担。
+   */
+  /**
+   * LO-HITAREA-9（行为判据·高亮归属）：选中岗位后，场景里高亮的必须是**该岗位所属的房间**。
+   * 原实现是 `roomOfZone(room.id)`（把房间 id 当岗位 id 传），`roomOfZone` 未知回退 gateway ⇒
+   * 只有渲染 gateway 那一间时才自等，于是"选中任何岗位都只高亮 gateway"。
+   * 真机实测（1.16.113，任务中心 → 子智能体 → 场景，点 task_queues 条带选中「借还台 · 交付」后）：
+   * `.lo-pixel-room.is-selected` = `gateway`，而侧栏选中项是「借还台 · 交付」—— 见
+   * `.preview-shot/audit-loroom2-after.json` 的 `clicks.patchedTaskQueuesBand`。
+   */
+  it("LO-HITAREA-9（行为判据）：高亮跟着选中岗位走，不再永远落在 gateway 上", async () => {
+    const { container, unmount } = render(
+      <PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={settled()} onSelectZone={() => {}} />,
+    );
+    const selected = () => [...container.querySelectorAll(".lo-pixel-room.is-selected")].map((e) => e.dataset.roomId);
+    const selectZone = (id: string | null) =>
+      act(async () => {
+        useLibraryOps.getState().selectZone(id);
+      });
+    await selectZone("checkout");
+    expect(selected()).toEqual(["task_queues"]);
+    await selectZone("front-desk");
+    expect(selected()).toEqual(["gateway"]);
+    await selectZone("reading-hall");
+    expect(selected()).toEqual(["memory"]);
+    await selectZone(null);
+    expect(selected()).toEqual([]);
+    unmount();
+  });
+
+  it("LO-HITAREA-8（弱判据·时机）：pointerdown 不再取指针捕获，移动超阈值才取、松手释放", async () => {
+    const { container, unmount } = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={settled()} />);
+    const scene = container.querySelector(".lo-scene") as HTMLElement;
+    const captures: number[] = [];
+    const releases: number[] = [];
+    const origSet = Element.prototype.setPointerCapture;
+    const origHas = Element.prototype.hasPointerCapture;
+    const origRel = Element.prototype.releasePointerCapture;
+    Element.prototype.setPointerCapture = function (id: number) {
+      captures.push(id);
+    };
+    Element.prototype.hasPointerCapture = function () {
+      return true;
+    };
+    Element.prototype.releasePointerCapture = function (id: number) {
+      releases.push(id);
+    };
+    try {
+      await act(async () => {
+        fireEvent.pointerDown(scene, { button: 0, pointerId: 7, clientX: 100, clientY: 100 });
+      });
+      expect(captures, "只按不拖不该取捕获（否则 click 会被改派到 .lo-scene）").toEqual([]);
+      await act(async () => {
+        fireEvent.pointerMove(scene, { pointerId: 7, clientX: 101, clientY: 101 }); // 仍在 2px 阈值内
+      });
+      expect(captures, "2px 阈值内的抖动不算拖拽").toEqual([]);
+      await act(async () => {
+        fireEvent.pointerMove(scene, { pointerId: 7, clientX: 120, clientY: 130 });
+      });
+      expect(captures, "开始拖拽才取捕获（拖出场景外仍跟手）").toEqual([7]);
+      await act(async () => {
+        fireEvent.pointerUp(scene, { pointerId: 7, clientX: 120, clientY: 130 });
+      });
+      expect(releases, "松手释放捕获").toEqual([7]);
+      // 捕获后不再重复取
+      await act(async () => {
+        fireEvent.pointerDown(scene, { button: 0, pointerId: 9, clientX: 10, clientY: 10 });
+        fireEvent.pointerMove(scene, { pointerId: 9, clientX: 40, clientY: 40 });
+        fireEvent.pointerMove(scene, { pointerId: 9, clientX: 60, clientY: 60 });
+      });
+      expect(captures).toEqual([7, 9]);
+    } finally {
+      Element.prototype.setPointerCapture = origSet;
+      Element.prototype.hasPointerCapture = origHas;
+      Element.prototype.releasePointerCapture = origRel;
+    }
+    unmount();
+  });
 });
