@@ -3,14 +3,31 @@
  *
  * Design (对标 DeepSeek Harness event-sourcing):
  * - Events are appended to SQLite session_events table
- * - Never deleted or updated (immutable log)
- * - Source of truth for session state
- * - Projection functions derive messages from events
+ * - Never updated in place（唯一删事件的路径是本文件的 `compactWithSnapshot`，
+ *   而它**没有生产调用者**，见该方法自己的说明）
+ * - **不是** session state 的真相之源 —— 消息的权威是 JSONL（见下）
+ * - **不是** session state 的真相之源 —— 消息的权威是 JSONL（见下）
+ * - Projection functions derive messages from events, 但投影**不进 LLM 上下文**
  *
- * Dual-write transition:
- * - Phase 1: Both old CRUD (message.ts) and event log are written
- * - Phase 2: buildMessages() reads from event projection
- * - Phase 3: Old CRUD removed
+ * ## 第 84 波（功能上下文审计 P5）：改掉"Source of truth"这条假陈述
+ *
+ * 这里原来写的是 "- Source of truth for session state" 与下面的
+ * "Phase 2: buildMessages() reads from event projection" —— **两句都与实现相反**：
+ *
+ * - **消息的权威是 `messages` 表，其权威副本是 JSONL 追加日志**（SQLite 索引可重建）：
+ *   `session-jsonl.ts:10-19`；读侧 `agentic-loop.ts:2853-2862`（`buildMessages()` 读
+ *   `listMessages()`，注释原文 "DB CRUD is the single source of truth for LLM messages.
+ *   The event log … is used for telemetry and audit only, **NOT** for message projection"）。
+ * - **"Phase 2" 从未发生**，而且已被明确否决：`agentic-loop.ts:31` 的墓碑写着
+ *   `// deriveMessagesFromEvents removed`。三阶段迁移里只有 Phase 1（双写）落地，
+ *   Phase 3（删旧 CRUD）也没走这条路，而是"JSONL 做权威 + SQLite 做可重建索引"。
+ * - 事件自身**确实是**自身事件的权威（append-only，且 `maintenance.ts:1223` 写明
+ *   `session_events` 是"唯一没有等价物"的存储）—— 但那是"事件不可重建"，
+ *   不是"事件是会话状态的真相"。两件事不要混。
+ *
+ * 准确的说法：**事件日志是 telemetry/audit 与派生读的来源，不是消息的权威。**
+ * 投影今天活着的消费者只有 `projectSurface`（进系统提示词一行状态）与
+ * `validateReplay`（维护自检），详见 `event-projection.ts` 模块头。
  */
 
 import { getStoragePort, hasStoragePort } from "./port";
@@ -308,6 +325,17 @@ export class EventLog {
    * 否则快照会排到"要保留的尾部事件"之后，而 `applySnapshot` 是**替换**语义 ——
    * 回放时那批尾部事件会先被应用、再被快照覆盖掉，等于把刚发生的对话弄丢。
    * 用 `INSERT OR REPLACE` 占位后：回放顺序仍是 [……, 快照@anchor, 尾部事件……] ✓
+   *
+   * ## 第 84 波：**零生产调用者**（本文件里**唯一的删事件路径**）
+   *
+   * 这是整个事件日志里唯一会**删事件**的方法，而它今天**没有任何生产调用者**：
+   * 启动维护刻意不接（`maintenance.ts` 里 `prunedEvents`/`compactedSessions`
+   * 恒为 0 的长注释就是这条决定），全仓调用点只有
+   * `snapshot-compaction.test.ts` 与 `dsh-integration-full.test.ts`。
+   * 于是它是一个**高危但只靠注释守着**的能力：一旦被接上，旧事件就没了，
+   * 而 `session_events` 是"唯一没有等价物、不可重建"的存储（`maintenance.ts:1223`）。
+   * 要接它，先把 `maintenance.ts` 那段论据逐条复核一遍（尤其"快照载荷只固化了投影，
+   * 而 `runtime-invariants` 等消费方读的是**事件**"这一条）。
    *
    * @param projectUpTo 用"截至锚点的事件"计算快照载荷（保持 storage 层不反向依赖 projection）
    * @returns 删除的事件数与快照 seq

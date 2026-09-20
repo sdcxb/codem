@@ -2176,6 +2176,16 @@ body.resizing-columns * {
   position: relative;
   width: 40px;
   height: 22px;
+  /*
+   * 第 76 轮（真机逐面板走查）：「语音」页的开关真机量到 **40x22**（低于 WCAG 2.5.8
+   * 的 24x24 下限）。宽 40px 本来就够，缺的是 2px 高度 ⇒ 加 `min-height: 24px`，
+   * knob（`::after`，18x18）的纵向偏移由 2px 调到 3px，**在 24px 里仍是垂直居中**，
+   * 视觉一致；横向偏移（2px / translateX(18px)）完全不动。
+   *
+   * 布局影响：宿主 `.config-entry-control` 真机为 40x28，开关在其中垂直居中 ⇒
+   * 22→24px 仍在同一行盒内（还剩 2px 余量），不会把行撑高、也不会碰到相邻控件。
+   */
+  min-height: 24px;
   border: none;
   background: var(--surface-2);
   border-radius: var(--radius-full);
@@ -2188,7 +2198,7 @@ body.resizing-columns * {
 .toggle-entry::after {
   content: '';
   position: absolute;
-  top: 2px;
+  top: 3px;
   left: 2px;
   width: 18px;
   height: 18px;

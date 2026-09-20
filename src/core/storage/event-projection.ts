@@ -7,8 +7,26 @@
  * - Handles compaction: when a compaction event is encountered,
  *   old messages are replaced with the summary
  *
- * The projection produces an array of LLMMessage objects suitable
- * for passing to the LLM API.
+ * ## 第 84 波（功能上下文审计 P1/P2/P5）：这个模块**不是**消息的权威，也不供 LLM 使用
+ *
+ * 原头注释只写了"events → LLM messages，可以喂给 LLM API"，读者会据此以为
+ * 「投影 = 模型看到的上下文」。**实现相反**：
+ * - **消息权威**是 `messages` 表 + 其权威副本 JSONL 追加日志
+ *   （`agentic-loop.ts:2853-2862`：`buildMessages()` 读的是
+ *   `getMessageStorage().listMessages()`，注释原文 "DB CRUD is the single source of
+ *   truth for LLM messages … NOT for message projection"；`session-jsonl.ts:10-19`
+ *   说明 JSONL 才是权威、SQLite 只是可重建索引）。
+ * - **事件日志**（`session_events`）供 telemetry / audit，另加本文件的**派生读**。
+ *
+ * 本模块今天真正活着的生产消费者只有两条，且都不承载消息权威：
+ * 1. `projectSurface()` ← `surface-manager.ts:48` ← `agentic-loop.ts:1277-1285`
+ *    （只取一行"上下文状态"进系统提示词，不用它拼消息）；
+ * 2. `validateReplay()` ← `maintenance.ts:1254`（会话级结构自检）。
+ *
+ * 其余能力（`projectAll` / `projectIncremental` / `getActiveGenerations` /
+ * `replaceGeneration` / 导出函数 `deriveMessagesFromEvents`）**零生产调用者**，
+ * 只被测试驱动；逐条状态写在各方法自己的注释上。删/留的取舍登记在
+ * `docs/AUDIT-ZERO-GAP.md` 第 3 节。
  */
 
 import type { LLMMessage, LLMMessageRole, ContentBlock } from "../llm/types";
@@ -44,10 +62,33 @@ interface ProjectionState {
 
 // ========== Projection Implementation ==========
 
+/**
+ * ## 第 84 波登记：本类里的**零生产调用者**能力（功能上下文审计 P1/P2/P3/P4）
+ *
+ * 判定口径（沿用 `docs/DEAD-CODE-TRIAGE.md`）：生产调用者 = `src/` 下非
+ * `src/test/`、非 `*.test.ts(x)` 的调用点。全仓 grep 的结论如下（复核命令见
+ * `docs/AUDIT-ZERO-GAP.md` 第 3 节新增行）：
+ *
+ * | 能力 | 定义（行号取自第 84 波收尾时的文件状态） | 生产调用者 | 谁在驱动它 | 保留 / 该删 |
+ * | --- | --- | --- | --- | --- |
+ * | `projectAll` | 本文件 `:93` | **零**（导出壳 `deriveMessagesFromEvents` 也零调用者） | `event-sourcing.test.ts:168,193,221,241,266`、`dsh-integration-full.test.ts:593`、`extended-test-methods.test.ts:402`、`functional-chain-closed-loop.test.ts:88,123` | 保留（`projectSurface` 与它是同一套 `applyEvent` 语义，删了等于让活路径失去对照样例；且它是最省事的"投影等价性"参照物） |
+ * | `projectIncremental` | 本文件 `:111` | **零** | `event-sourcing.test.ts:249,277` | 保留（唯一可能的消费者 `buildMessages()` 早已改用**消息表指纹缓存**做增量，`agentic-loop.ts:2864-2932`——增量投影这条路在生产里被另一套机制取代了。**但删它会连带删掉"压缩必须全量重建"这条语义的唯一表达**，而那条语义与 `applyCompaction` 同源，所以留；谁要接增量投影，先读 `agentic-loop.ts:2864-2932` 确认不是重复造轮子） |
+ * | `getActiveGenerations` | 本文件 `:614` | **零** | `replay-validation.test.ts:307`（**只断言"不抛"**，不断言任何世代语义） | 保留但**不算活能力**：它是 R3-3.2"世代追踪 + 压缩取代"设计的一半，另一半 `replaceGeneration` 也没人用；`maintenance.ts` 里那段"事件表不能压缩"的论据也如实写明它零调用者 |
+ * | `replaceGeneration` | 本文件 `:701` | **零**（连测试都没有） | 无 | **见方法上的红字**：它是只读投影模块里唯一带**写副作用**的方法 |
+ *
+ * 结论一句话：**本类今天只有一个活消费者 `projectSurface`**（+ 供维护自检的
+ * `validateReplay`）。上表四项都是"实现完整、看起来在用、实际零生产调用者"，
+ * 因此在这里显式登记，避免下一个人以为 `buildMessages()` 还在走投影。
+ */
 export class EventProjection {
   /**
    * Project all events for a session into LLM messages.
    * This is the full projection — reads all events from the log.
+   *
+   * 第 84 波：**零生产调用者**（类头登记表第 1 行）。它的唯一导出壳
+   * `deriveMessagesFromEvents` 也是零调用者 —— 而那个壳上原来写着
+   * "primary function used by buildMessages()"，是实现侧的假陈述（已改）。
+   * 今天只有测试驱动它，**不要**据此认为 `buildMessages()` 走投影。
    */
   projectAll(sessionId: string): LLMMessage[] {
     const events = getEventLog().readAll(sessionId);
@@ -60,6 +101,12 @@ export class EventProjection {
    *
    * Note: Compaction events invalidate the previous state, so
    * incremental projection after a compaction requires a full rebuild.
+   *
+   * 第 84 波：**零生产调用者**（类头登记表第 2 行）。
+   * "Used for incremental projection after the initial build" 这句曾经指的是
+   * `buildMessages()` 的增量投影；那条路**已不存在** —— `buildMessages()` 现在用
+   * 消息表指纹缓存做增量（`agentic-loop.ts:2864-2932`），与事件无关。
+   * 今天只有 `event-sourcing.test.ts` 驱动它。保留理由见类头登记表。
    */
   projectIncremental(
     sessionId: string,
@@ -164,6 +211,17 @@ export class EventProjection {
       case "abort":
         // These event types don't produce messages in the projection
         // They are metadata events used for replay, telemetry, etc.
+        //
+        // 第 84 波（审计 P6）：`session_meta` 落在这一串 `break` 里 =
+        // **在投影这条读路上被读到但什么都不产生**。它今天是一条"只写不读"的通道：
+        // - 生产写方只有 `feedback.ts::recordSessionFeedback`（由 App 的 `/feedback` 调用）；
+        // - 另一个写方 `preset-discovery.ts::selectPresetForSession` 零调用者；
+        // - 两个真正的读函数 `listSessionFeedback`（`feedback.ts`）与
+        //   `getSessionPreset`（`preset-discovery.ts`）都**零生产调用者**；
+        // - `maintenance.ts` 里那段"事件表不能压缩"的论据已如实写着
+        //   "今天没有任何生产读取者"，`docs/AUDIT-ZERO-GAP.md` 第 3 节也挂着这一项。
+        // 所以这里不是"待实现的投影分支"，而是"今天没有消费者的载荷"：
+        // 谁要给会话级 meta 加语义，先定写入侧的产品设计，再动这里。
         break;
     }
   }
@@ -532,6 +590,12 @@ export class EventProjection {
   }
 
   // ========== R3-3.2: Generation Tracking + replaceGeneration ==========
+  //
+  // 第 84 波：这一整段（`getActiveGenerations` + `replaceGeneration`）是
+  // **零生产调用者**的"半成品设计"（类头登记表第 3、4 行）。两者互相配合才成立：
+  // 一个负责读世代、一个负责把某世代标记为被取代，而**没有任何生产代码**
+  // 调其中任何一个。要不要接、接到哪条产品路径上（"重新生成回答"？"编辑并回退"？）
+  // 是**产品决策**，本轮不动行为，只登记。
 
   /**
    * R3-3.2: Track "generations" — each assistant message is a generation.
@@ -541,6 +605,11 @@ export class EventProjection {
    * its events remain in the log but are marked as superseded.
    *
    * This method returns the current active generation's seq range.
+   *
+   * 第 84 波：**零生产调用者**。唯一调用点是 `replay-validation.test.ts`，
+   * 而且它只断言"形状不合契约的 compaction 行不会让它抛" —— **没有任何用例
+   * 断言过世代语义本身**（startSeq/endSeq/isSuperseded 取值的正确性无判据）。
+   * 所以它今天既不是活能力，也不是被测试钉住的能力。
    */
   getActiveGenerations(sessionId: string): Array<{
     messageId: string;
@@ -604,6 +673,30 @@ export class EventProjection {
    *
    * This doesn't delete events from the log (append-only), but marks the
    * generation as no longer active in the surface projection.
+   *
+   * ## ⚠️ 第 84 波：零调用者（连测试都没有），而且它是**只读模块里的写路径**
+   *
+   * 三条都要说清，否则下一个人一定会踩：
+   *
+   * 1. **一个生产调用者都没有，也零测试**：全仓 grep `replaceGeneration`
+   *    只命中这个定义；`replay-validation.test.ts` 只碰了它的邻居
+   *    `getActiveGenerations`。所以下面这几行**从未被执行过**。
+   * 2. **它是写路径**：本模块其余部分是纯派生读（`projectAll` / `projectSurface` /
+   *    `validateReplay` 都不写任何东西），只有这里 `append` 一条 `compaction` 事件。
+   * 3. **直接调用它会毁数据一致性**：它只写了事件、**没有**做真实压缩那四件事 ——
+   *    没有软删消息（`agentic-loop.ts:3404` 的 `deleteMessagesByIds` → `message.ts` 里
+   *    `UPDATE messages SET hidden = 1`）、没有插摘要标记消息（`agentic-loop.ts:3407-3413`）、
+   *    没有并发闸门（`compaction-state.ts` 的 `setCompactionInProgress`，
+   *    真实路径见 `agentic-loop.ts:3401-3428`）、也不校验边界是否落在整轮上
+   *    （`agentic-loop.ts:3191` 的 `alignKeepToRoundBoundary`）。
+   *    结果是：投影侧永久把这条消息当"已删"（`applyCompaction` 把它记进
+   *    `removedMessageIds`），而消息表里那一行**仍然可见** —— 投影与真实可见集
+   *    **永久劈开**，且 `validateReplay` 不会报错（那正是压缩的语义）。
+   *
+   * 处置（本轮）：**不删、不改行为，只登记**。真正该做的是让"替换某代回答"这条
+   * 产品路径复用 `agentic-loop.ts:3169-3429` 的压缩实现（软删 + 标记 + 闸门 +
+   * 事件一起做），而不是在这里单独发一条事件 —— 那是**产品决策**，不在本轮范围。
+   * 在它被接上之前，看到这个函数的人请先读上面第 3 条。
    */
   replaceGeneration(
     sessionId: string,
@@ -634,7 +727,31 @@ export function getEventProjection(): EventProjection {
 
 /**
  * Derive LLM messages from the event log for a session.
- * This is the primary function used by buildMessages() in agentic-loop.
+ *
+ * ## ⚠️ 第 84 波（功能上下文审计 P1）：这个函数**零生产调用者**，与 `buildMessages()` 无关
+ *
+ * 这里原来写着 "This is the primary function used by buildMessages() in agentic-loop."
+ * —— 那是**假陈述**（上游说有人用、下游说不用了）。逐条对照实现：
+ *
+ * - `agentic-loop.ts` 侧：**导入行已被删除**，只留一行墓碑
+ *   `// deriveMessagesFromEvents removed — DB CRUD is the single source of truth for
+ *   LLM messages`；`buildMessages()` 读的是消息表
+ *   （`agentic-loop.ts:2853-2862`：`getMessageStorage().listMessages()`，注释原文
+ *   "DB CRUD is the single source of truth for LLM messages. The event log … is used for
+ *   telemetry and audit only, **NOT** for message projection"）。
+ * - 全仓 grep `deriveMessagesFromEvents`：**只有这个定义**，加 `agentic-loop.ts` 里那行
+ *   墓碑注释。生产调用者 0，测试调用者 0。
+ * - 唯一会经过这个壳的路径是测试直接调 `getEventProjection().projectAll(...)`
+ *   （`event-sourcing.test.ts` / `dsh-integration-full.test.ts` /
+ *   `extended-test-methods.test.ts` / `functional-chain-closed-loop.test.ts`），
+ *   也就是**纯粹被测试驱动的导出**。
+ * - 另有一处**追认**：`scripts/verify-package-invariants.ts` 把本导出列进
+ *   `core/storage` 的期望导出清单，等于给这条已经不存在的引用关系加了第二处背书；
+ *   那边是"导出还在不在"的契约，不代表有人在用，两件事不要混。
+ *
+ * 于是这个函数今天的真实地位是：**投影能力的测试入口 / 手工诊断入口**，
+ * 不是模型上下文的来源。保留它是因为类头登记表里那些测试需要它；
+ * 谁来用它拼消息，请先读 `agentic-loop.ts:2853-2862`。
  */
 export function deriveMessagesFromEvents(sessionId: string): LLMMessage[] {
   return getEventProjection().projectAll(sessionId);

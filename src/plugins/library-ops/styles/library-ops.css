@@ -95,6 +95,18 @@
   border-radius: var(--radius-sm, 6px);
   cursor: pointer;
   transition: background var(--duration-fast), color var(--duration-fast);
+  /*
+   * 第 76 轮（真机逐面板走查）：`.lo-icon-btn` 真机量到 **40x22**（「实时事件」「立即刷新」，
+   * 在 library-ops 看板/场景/设置三个子面板里各出现一次），低于 WCAG 2.5.8 的 24x24 下限。
+   * 宽度本来就够（40px），缺的只是高度 ⇒ 只补 `min-height: 24px`，图标仍居中、
+   * 背景/圆角/配色都不动。
+   *
+   * 布局影响：宿主是 `.lo-task__bar`（`grid` + `repeat(auto-fill, minmax(40px, max-content))`，
+   * 行间距 `var(--space-6)` = 12px）。每个按钮独占一个网格单元，单元最小宽度 40px，
+   * 按钮横向不会因此变宽 ⇒ 不新增换行；纵向 +2px 只让工具条长 2px，
+   * 与相邻单元仍有 12px 间隙，**不存在压到邻居的情况**。
+   */
+  min-height: 24px;
 }
 .lo-icon-btn:is(:hover, :focus-visible) { background: var(--bg-hover); color: var(--text-primary); }
 .lo-icon-btn.is-busy { animation: lo-spin 0.7s linear infinite; }
@@ -430,18 +442,33 @@
   color: var(--accent);
   font-size: var(--fs-xs);
   cursor: pointer;
-  padding: 0;
+  /*
+   * 第 76 轮（真机逐面板走查）：真机量到 `.lo-link-btn` 的实体只有 **33x15**
+   * （「全部 →」「场景 →」，任务中心 3 处），低于 WCAG 2.5.8 的 24x24 下限。
+   *
+   * 第 61 轮曾经只用伪元素外扩 5px，本轮复量证明**不够**：
+   *   ① 伪元素只扩大命中面、不改 rect，走查脚本量到的还是 33x15；
+   *   ② 它所在的行（`.lo-card__head` 的 actions 单元、`.lo-fields` 的 grid 行）
+   *      真机只有 18–20px 高，向上/下扩 5px 会越出行、盖到相邻说明文字上
+   *      ——"点 A 触发 B" 比命中区小更糟。
+   * 所以给控件本身补内边距：纵向 3px、横向 4px（`space-3` / `space-2`）。
+   * 背景透明、字号字重配色都不变，视觉上只是行内留白多一点。
+   * rect 由 33x15 变成 ≈41x22，**仍在同一行盒内**，不与相邻控件重叠。
+   */
+  padding: var(--space-3) var(--space-2);
+  line-height: 1.4;
+  position: relative;
 }
 
-/* 第 61 轮（真机 UI 走查）：命中区只有 24x15，低于 WCAG 2.5.8 的 24x24。
-   文字链接的视觉尺寸本来就小，但点击目标不该跟着变小 —— 伪元素向外扩 5px，
-   视觉与布局一个像素都不动（与第 63 轮 sidebar-session-pin 同一手法）。 */
-.lo-link-btn { position: relative; }
-
+/*
+ * 命中面再外扩：横向 2px（同一行盒内、控件自带 padding 之后仍有富余），
+ * 纵向收窄到 1px（行盒只有 18–20px，再往外就越界压到相邻文字）。
+ * 与第 63 轮 `sidebar-session-pin::after` 同一手法：只扩大命中区、不参与绘制。
+ */
 .lo-link-btn::after {
   content: "";
   position: absolute;
-  inset: -5px;
+  inset: -1px -2px;
   background: transparent;
 }
 
@@ -471,7 +498,18 @@
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm, 6px);
   font-size: var(--fs-xs);
-  padding: var(--space-1) var(--space-3);
+  /*
+   * 第 76 轮（真机逐面板走查）：library-ops「设置」页的采样间隔下拉真机量到 **53x19**，
+   * 低于 WCAG 2.5.8 的 24x24 下限。它住在 `.lo-field`（grid + `align-items: center`），
+   * 行高由内容决定。
+   * 真机注入复量：只把纵向内边距从 `space-1`(2px) 提到 `space-2`(4px) 只到 **53x23**
+   * —— 原生 `<select>` 的固有行盒取整会吃掉 1px，所以**同时**给一个真实下限
+   * `min-height: 24px`（两者都留，内边距负责视觉呼吸、min-height 负责达标）。
+   * 字色/边框/圆角/字号都不动。相邻的 `.lo-range`（120px 宽）与字段标签在
+   * 同一 grid 行的不同单元里，**不会被盖住**（真机 elementFromPoint 抽查确认）。
+   */
+  padding: var(--space-2) var(--space-3);
+  min-height: 24px;
 }
 
 /* ===== 字段 / KPI ===== */

@@ -151,9 +151,10 @@ function traceDestructiveIpc(command: string, params?: Record<string, unknown>):
       .split("\n")
       .slice(2, 12)
       .map((l) => l.trim());
-    console.warn(
-      `[IpcTrace] ${command} params=${JSON.stringify(params ?? {}).slice(0, 200)}\n` + stack.join("\n"),
-    );
+    // 与 `RustDataPort.traceDestructive` 同一口径：compact 是维护自己的空间回收（不是删除），降到 log
+    const line = `[IpcTrace] ${command} params=${JSON.stringify(params ?? {}).slice(0, 200)}\n` + stack.join("\n");
+    if (/compact/i.test(command)) console.log(line);
+    else console.warn(line);
   } catch {
     /* 留痕失败绝不影响功能 */
   }
@@ -627,6 +628,14 @@ class RustDataPort implements StorageDataPort {
    *
    * 只记**破坏性命令**（delete / replace_table / compact），避免正常读写刷屏；
    * 记录里带调用栈，正文一律不记。
+   *
+   * ## 第 62 轮（真机走查的 console 普查）：**日志级别按"是不是异常"分开**
+   *
+   * 原来这一层一律用 `console.warn`。但 `storage.compact` 是**维护自己每轮启动都会调**的
+   * 空间回收，成功时也在 `warn` ⇒ 每次启动固定刷 3 条 warning（`[StorageTrace] …` 与
+   * `[IpcTrace] …`），把"警告"这个词贬值了（用户按"0 warning"验收时它们全是噪声）。
+   * 现在的口径：`delete` / `replace_table` 这类**可能删数据**的照旧 `warn`（要显眼）；
+   * `compact`（整库重写，语义是回收而非删除）降到 `log` —— **留痕不变**，级别如实。
    */
   private traceDestructive(command: string, params?: Record<string, unknown>): void {
     if (!/delete|replace_table|compact/i.test(command)) return;
@@ -637,10 +646,15 @@ class RustDataPort implements StorageDataPort {
         .map((l) => l.trim());
       const table = params?.table ?? params?.stream ?? "";
       const where = params?.where ?? params?.id ?? params?.ids ?? params?.session_id ?? "";
-      console.warn(
+      /**
+       * 级别按"是不是可能删数据"分：`compact` 是维护自己调的空间回收（不是删除），
+       * 成功路径也在 `warn` 会让每次启动固定刷 3 条噪声 ⇒ 降到 `log`（留痕不变）。
+       */
+      const line =
         `[StorageTrace] ${command} table=${String(table)} target=${JSON.stringify(where).slice(0, 160)}\n` +
-          stack.join("\n"),
-      );
+        stack.join("\n");
+      if (/compact/i.test(command)) console.log(line);
+      else console.warn(line);
     } catch {
       /* 留痕失败绝不影响功能 */
     }
@@ -1124,15 +1138,132 @@ class RustEventMirror {
   /** 单会话加载上限（防极端情况下无限拉取） */
   private readonly maxBatch = 5000;
   private readonly maxRounds = 40;
+  /**
+   * **跨会话**的总行数预算 —— 与 `RustMessageMirror.totalBudgetRows` **同一套机制、同一个默认值**。
+   *
+   * ## 为什么必须补这一条（稳定性审计第 ④ 节的两条内存风险之一）
+   *
+   * 在此之前这个镜像**没有任何预算、也没有逐出**：会话一旦加载过就永久驻留，
+   * 连同事件的 `payload` 全文。而它是**会自己长大**的 —— 增长不是"用户点了多少会话"
+   * 决定的，而是"进程读过多少会话"决定的：
+   *
+   * - `EventLog.readAll/readFrom/readRange/getLatestSeq/count` 的每一条都会经
+   *   `rustEventPort(sessionId)` → `ensureLoaded(sessionId)`（`event-log.ts:90`），
+   *   于是任何按会话扫描的读者都会把它扫过的会话**全部**装进镜像；
+   * - 生产上真的有一个这样的读者：启动维护的运行时不变式审计
+   *   （`maintenance.ts` 的 `runRuntimeInvariantAudit`）**按全部会话**循环，
+   *   并且会先 `waitForSessionMirrors` 等两侧镜像就绪 —— 也就是**故意**等它们全加载完。
+   *
+   * 于是"库里有多少会话"就等于"镜像里有多少份事件语料"。真机（本机生产库，
+   * 见 `session_events` 实测：2 个会话 / 3655 条事件 / payload 合计 4.62 MB）现在还小，
+   * 但 `tool_result` 的 payload 单条实测可达 **818,118 B** —— 这个结构的量级由语料决定，不由会话数决定。
+   *
+   * ## 与消息镜像的**不对称**是这条风险的核心
+   *
+   * 消息镜像（`RustMessageMirror`）早就有 `totalBudgetRows = 20_000` + LRU 逐出，
+   * 事件镜像没有。同一个进程里两份"按会话加载的正文镜像"，只有一份有上界 ——
+   * 这种不对称会被审计一眼看穿（审计原文：**消息镜像有预算、事件镜像没有**）。
+   * 所以这里不发明第三套机制：**同样的行数口径、同样的默认值、同样的"整会话逐出 + LRU"**。
+   *
+   * ## 逐出后读语义**不变**（这是本机制的硬约束）
+   *
+   * `isLoaded` 是"路由到镜像的唯一依据"，回放/投影/维护都依赖"某会话的事件是完整的"。
+   * 所以逐出必须让 `isLoaded` **回到 false**（连同 `bySession` 整份删掉），
+   * 使该会话退化成"**还没加载**"这一既有状态：读走 `ensureLoaded` 重新分页拉全量，
+   * 下一次读到的仍是**完整集合**。**绝不会**出现"读到一半的事件"——
+   * 这正是消息镜像 `enforceBudget` 注释里那条"逐出不会造成读写分裂"的同一条理由。
+   */
+  private readonly totalBudgetRows: number;
+  /** 访问序（Map 的迭代顺序即插入序）：命中时删除再插入 = 移到末尾 = 最新使用 */
+  private lru = new Map<string, true>();
+  private evictions = 0;
 
   constructor(
     private readonly t: StorageTransport,
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
-  ) {}
+    totalBudgetRows = 20_000,
+  ) {
+    this.totalBudgetRows = totalBudgetRows;
+  }
 
   /** 该会话的事件是否已经完整加载（**路由到镜像的唯一依据**） */
   isLoaded(sessionId: string): boolean {
     return this.loaded.has(sessionId);
+  }
+
+  private touch(sessionId: string): void {
+    if (!this.loaded.has(sessionId)) return;
+    this.lru.delete(sessionId);
+    this.lru.set(sessionId, true);
+  }
+
+  /**
+   * 超出总预算时逐出最久未使用的**整份会话**镜像（**不动正在加载的会话**）。
+   *
+   * 只逐出到刚好低于预算：逐出动作本身不该引发抖动（与消息镜像同一取舍）。
+   *
+   * ## ⚠️ 这里比消息镜像多一条拒绝条件，理由是本文件自己的 P1 教训
+   *
+   * **带"本地追加但还没确认落库"（`pending && !settled`）的会话一律不许逐出。**
+   *
+   * `MirrorEvent.pending` 的注释记着那个缺陷：`reconcile` 会把占位 seq 改写成真实 seq，
+   * 而分页是在 INSERT **之前**发出的 —— 一旦那条事件既不在刚读到的分页里、
+   * 又被合并规则过滤掉，它就会**在本进程内永久消失**。合并规则之所以还兜得住，
+   * 靠的正是"本地那份 `pending` 副本还在 `bySession` 里"。
+   * 逐出等于把这唯一一份副本删掉：若那次落库 IPC 失败（引擎忙 / 桥出错），
+   * 事件就**从镜像里彻底没了**（库里也没有），而 `pendingPlaceholderCount`
+   * 这个"有追加没成功"的诊断信号也一起消失 —— 静默丢数据，正是最不能接受的一类。
+   *
+   * 代价（如实写明）：这类会话在预算里"占位不可回收"。这是**有意的**——
+   * 一个永远 reconcile 不上的会话说明它的写路径本来就有问题，
+   * 那时**保住**它的证据比省这点内存重要。等到 `reconcile` 把它标记成 `settled`，
+   * 它下一次就会被正常逐出。
+   *
+   * ## ⚠️ 第 63 轮修掉的一个真洞：**批量加载时这个函数原来等于没跑**
+   *
+   * 原来的调用点在 `ensureLoaded` 的 `.then()` 里，而 `loading.delete(sessionId)`
+   * 在 `.finally()` 里 —— `.then` 先于 `.finally`。于是"批量加载"这种形态
+   * （`waitForSessionMirrors(sessionIds)`：一口气把全部会话的加载都发出去）下，
+   * 所有会话的 `.then` 都挤在同一轮微任务里跑，而那一刻**每一个** `sessionId`
+   * 都还在 `this.loading` 里 → 下面那个 `loading.has(...)` 守卫把**所有**候选都跳过 →
+   * 一条都没逐出。而"批量加载"恰恰就是本镜像唯一会失控的那条生产路径
+   * （启动维护按全部会话扫一遍），也就是说：**预算在最需要它的形态上不生效**。
+   * 修法是把强制点挪到 `.finally()`（`loading` 已经清掉之后），
+   * 并用下面那条"尾巴永不逐出"的规则防止"加载完立刻逐出自己"。
+   */
+  private enforceBudget(): void {
+    let rows = 0;
+    for (const l of this.bySession.values()) rows += l.length;
+    if (rows <= this.totalBudgetRows) return;
+    const oldestFirst = [...this.lru.keys()];
+    /**
+     * **尾巴（最近使用的那一个）永不逐出**，两条理由都必须成立：
+     *
+     * ① 它可能就是**正在被读**的会话：读路径每一条都要经 `ensureLoaded` → `touch`
+     *    （`event-log.ts:90`），所以"最近使用"在这个镜像里就等于"正在被读"。
+     *    逐出它 = 把"正在读"变成"读不到"，正是本仓库反复修的塌陷；
+     * ② **单会话超过整个预算时必须能停手**：否则它刚加载完就逐出自己 →
+     *    调用方重新加载 → 又立刻逐出自己 —— 无休止的重新加载（真机观感是"打开大会话就卡死"）。
+     *    代价如实写明：**一个会话的体量可以单独超过预算**，此时驻留会超预算，
+     *    这是有意的（宁可超，不可抖动）。消息镜像的 MEM-3 是同一条取舍。
+     */
+    for (const sessionId of oldestFirst.slice(0, Math.max(0, oldestFirst.length - 1))) {
+      if (rows <= this.totalBudgetRows) break;
+      if (this.loading.has(sessionId)) continue;
+      const dropped = this.bySession.get(sessionId);
+      if (!dropped) continue;
+      if (dropped.some((e) => e.pending && !e.settled)) continue;
+      this.bySession.delete(sessionId);
+      this.loaded.delete(sessionId);
+      this.lru.delete(sessionId);
+      rows -= dropped.length;
+      this.evictions++;
+      this.onFailure(
+        "events.evict",
+        new Error(`事件镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）`),
+        "已释放最久未使用的会话事件镜像（内存预算），下次读取该会话会重新加载",
+      );
+    }
   }
 
   /** 全局是否已就绪（至少加载过一个会话 / 或明确标记过） */
@@ -1158,6 +1289,13 @@ class RustEventMirror {
    */
   ensureLoaded(sessionId: string, onLoaded?: () => void): void {
     if (this.loaded.has(sessionId)) {
+      /*
+       * 命中即"最近使用"：读路径每一条都要经过这里（`event-log.ts:90` 的
+       * `rustEventPort`），所以 LRU 自动表达了"哪个会话正在被读"——
+       * 正在被读的会话永远不会是最久未使用的那个，也就不会被逐出。
+       * （与消息镜像 `RustMessageMirror.ensureLoaded` 的 touch 完全同款。）
+       */
+      this.touch(sessionId);
       onLoaded?.();
       return;
     }
@@ -1171,6 +1309,7 @@ class RustEventMirror {
       .then(() => {
         this.loaded.add(sessionId);
         this.warmedFlag = true;
+        this.lru.set(sessionId, true);
       })
       .catch((e) => {
         this.failures++;
@@ -1178,6 +1317,13 @@ class RustEventMirror {
       })
       .finally(() => {
         this.loading.delete(sessionId);
+        /*
+         * 强制点放在 `.finally`（= `loading` 已清掉之后），**不能放在上面的 `.then` 里**：
+         * `.then` 早于 `.finally`，于是批量加载时"每一个会话都还在 loading 里"，
+         * `enforceBudget` 的 `loading` 守卫会把所有候选跳过 —— 预算等于没跑。
+         * 详见 `enforceBudget` 的注释（第 63 轮修的真洞）。
+         */
+        this.enforceBudget();
       });
     this.loading.set(sessionId, job);
     if (onLoaded) {
@@ -1389,7 +1535,17 @@ class RustEventMirror {
     }
   }
 
-  stats(): { warmed: boolean; sessions: number; events: number; pendingWrites: number; failures: number } {
+  stats(): {
+    warmed: boolean;
+    sessions: number;
+    events: number;
+    pendingWrites: number;
+    failures: number;
+    /** 已经发生的整会话逐出次数（证"驻留真的有界"的出口，与消息镜像同款） */
+    evictions: number;
+    /** 当前预算（行数口径，与 `RustMessageMirror.stats().budgetRows` 同一口径） */
+    budgetRows: number;
+  } {
     let events = 0;
     for (const list of this.bySession.values()) events += list.length;
     return {
@@ -1398,10 +1554,19 @@ class RustEventMirror {
       events,
       pendingWrites: this.pendingWrites,
       failures: this.failures,
+      evictions: this.evictions,
+      budgetRows: this.totalBudgetRows,
     };
   }
 
-  /** 删除整个会话的事件（供 compact/fork 后的镜像维护） */
+  /**
+   * 删除整个会话的事件（供 compact/fork 后的镜像维护）
+   *
+   * 第 63 轮补一句边界：这个入口**不进 LRU、也不触发预算强制** ——
+   * 它只被两条路调用（压缩后用快照替换、`deleteAllForSession` 清空），
+   * 两条都是**缩小**而不是放大，所以不需要在这里再跑一次逐出；
+   * 若将来出现"往未加载会话灌入大份事件"的新调用点，那时必须把 `enforceBudget()` 一起接上。
+   */
   replaceSession(sessionId: string, events: MirrorEvent[]): void {
     this.bySession.set(sessionId, [...events].sort((a, b) => a.seq - b.seq));
   }
@@ -1572,12 +1737,23 @@ class RustMessageMirror {
    * 超出总预算时逐出最久未使用的会话镜像（**不动正在加载的会话**）。
    *
    * 只逐出到刚好低于预算：逐出动作本身不该引发抖动。
+   *
+   * 第 63 轮两处修正（与 `RustEventMirror.enforceBudget` **逐条同款**，
+   * 理由与真洞的现场都在那里写全了，这里只留指针，不再复制一份说明）：
+   *
+   * 1. 强制点从 `.then()` 挪到 `.finally()` —— `.then` 里 `this.loading` 还装着
+   *    **同批全部**会话，`loading` 守卫会把所有候选跳过，于是"批量加载"
+   *    （`waitForSessionMirrors` 正是这么加载的）下这个预算**一条都不逐出**；
+   * 2. **尾巴（最近使用的那一个）永不逐出** —— 它是"正在被读的会话"
+   *    （读路径每条都经 `ensureLoaded` → `touch`），
+   *    而且是"单会话超过整个预算时不至于自己逐出自己、来回重新加载"的那道闸。
    */
   private enforceBudget(): void {
     let rows = 0;
     for (const l of this.bySession.values()) rows += l.length;
     if (rows <= this.totalBudgetRows) return;
-    for (const sessionId of [...this.lru.keys()]) {
+    const oldestFirst = [...this.lru.keys()];
+    for (const sessionId of oldestFirst.slice(0, Math.max(0, oldestFirst.length - 1))) {
       if (rows <= this.totalBudgetRows) break;
       if (this.loading.has(sessionId)) continue;
       const dropped = this.bySession.get(sessionId);
@@ -1614,7 +1790,6 @@ class RustMessageMirror {
       .then(() => {
         this.loaded.add(sessionId);
         this.lru.set(sessionId, true);
-        this.enforceBudget();
       })
       .catch((e) => {
         this.failures++;
@@ -1622,6 +1797,8 @@ class RustMessageMirror {
       })
       .finally(() => {
         this.loading.delete(sessionId);
+        // 强制点必须在 loading 清掉之后（见 `enforceBudget` 的第 1 条修正）
+        this.enforceBudget();
       });
     this.loading.set(sessionId, job);
     if (onLoaded) void job.then(() => { if (this.loaded.has(sessionId)) onLoaded(); });
@@ -2192,7 +2369,7 @@ export class RustStoragePort implements StoragePort {
   constructor(
     transport: StorageTransport = tauriTransport,
     onFailure: (stream: string, e: unknown, note: string) => void = () => {},
-    opts: { messageMirrorBudgetRows?: number } = {},
+    opts: { messageMirrorBudgetRows?: number; eventMirrorBudgetRows?: number } = {},
   ) {
     this.reportFailure = onFailure;
     this.transport = transport;
@@ -2211,7 +2388,7 @@ export class RustStoragePort implements StoragePort {
     this.config = new RustConfigPort(transport, onFailure);
     this.append = new RustAppendPort(transport, onFailure);
     this.configDomain = new RustConfigDomainCache(transport, onFailure);
-    this.events = new RustEventMirror(transport, onFailure);
+    this.events = new RustEventMirror(transport, onFailure, opts.eventMirrorBudgetRows);
     // 预算可注入：契约测试要用小预算来验证"驻留真的有界"（否则得造两万条消息）
     this.messages = new RustMessageMirror(transport, onFailure, opts.messageMirrorBudgetRows);
     this.domains = new RustDomainMirror(transport, onFailure);
@@ -2459,8 +2636,14 @@ export async function rustCapabilities(
  * - `appendLocal` / `reconcile` 复现"追加 → 落库确认"的真实调用序列；
  * - `mergeLoaded` 复现 `loadSession` 的合并那一步；
  * - `latestSeq` / `pendingPlaceholderCount` / `seqs` 是断言出口。
+ *
+ * 第 63 轮补：接受一个**可注入的预算**（`budgetRows`），用途与
+ * `RustMessageMirror` 的 `messageMirrorBudgetRows` 完全一样 ——
+ * 不然要验证"事件镜像驻留有界"就得真造两万条事件。
+ * 同时补 `isLoaded` / `stats` 两个出口：预算契约的可观测判据就是
+ * "超预算 ⇒ 最久未使用的会话 `isLoaded` 回到 false"。
  */
-export function __eventMirrorForTests(): {
+export function __eventMirrorForTests(budgetRows?: number): {
   seedReal(sessionId: string, seq: number): void;
   appendLocal(sessionId: string, type: string, payload: string, timestamp: number): { seq: number };
   reconcile(sessionId: string, placeholderSeq: number, realSeq: number): void;
@@ -2468,10 +2651,13 @@ export function __eventMirrorForTests(): {
   latestSeq(sessionId: string): number;
   pendingPlaceholderCount(sessionId: string): number;
   seqs(sessionId: string): number[];
+  isLoaded(sessionId: string): boolean;
+  stats(): { sessions: number; events: number; evictions: number; budgetRows: number };
 } {
   const mirror = new RustEventMirror(
     {} as StorageTransport,
     () => {},
+    budgetRows,
   );
   return {
     seedReal: (sessionId, seq) => mirror.__seedPersistedForTests(sessionId, seq),
@@ -2488,5 +2674,10 @@ export function __eventMirrorForTests(): {
     latestSeq: (sessionId) => mirror.latestSeq(sessionId),
     pendingPlaceholderCount: (sessionId) => mirror.pendingPlaceholderCount(sessionId),
     seqs: (sessionId) => mirror.readAll(sessionId).map((e) => e.seq),
+    isLoaded: (sessionId) => mirror.isLoaded(sessionId),
+    stats: () => {
+      const s = mirror.stats();
+      return { sessions: s.sessions, events: s.events, evictions: s.evictions, budgetRows: s.budgetRows };
+    },
   };
 }

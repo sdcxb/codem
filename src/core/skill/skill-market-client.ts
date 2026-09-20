@@ -220,6 +220,188 @@ async function httpDownload(url: string, destPath: string, headers?: Record<stri
   return tauriInvoke("http_download", { url, destPath, headers });
 }
 
+// ========== 日志与并发纪律（第 63 轮：技能市场 console 归零） ==========
+
+/**
+ * ## 这一轮怎么区分"正常路径日志"与"真问题告警"
+ *
+ * 验收口径是"打开技能市场不许再有 warning"，但**不允许靠删日志/降级掩盖真缺陷**。
+ * 判据只有一条：**这条日志说的是"预期内的降级路径"，还是"我们自己的功能坏了"？**
+ *
+ * - 预期内（Skills.sh REST API 在桌面端必然 401 → 我们**已经实现** HTML 兜底且兜底成功）
+ *   → 降到 `console.log`（用这个 `info()`），但**必须把原因 + 后续动作写进文本**（不许静默）；
+ * - 真问题（源真的撞到 12s 上限、源真的抛错、GitHub 配额耗尽、请求风暴）
+ *   → **保持 `console.warn` / `console.error`，并且本轮是把这些真问题本身修掉**
+ *     （并发收口 / 限流识别 / 定时器收口），不是把它们说轻。
+ *
+ * 所以：级别降低的每一处都附了"为什么这是正常形态"的判据（见各处行内注释）；
+ * 而所有真问题告警在改后**依然会响** —— 只是不再每仓库刷一条、也不再假报。
+ */
+function info(message: string): void {
+  console.log(`[SkillMarket] ${message}`);
+}
+
+/** 单个市场源的取数超时上限（毫秒）。必须短于 Rust 端 http_get 的 15s 单请求超时。 */
+const SOURCE_TIMEOUT_MS = 12_000;
+
+/**
+ * 单个源内部的**并发上限**。
+ *
+ * 真机读数（改动前基线，见 `.preview-shot/out-skillmarket-ipc2.txt`）：
+ * 一次"检查更新"会发出 **133 个 http_get**，其中 `GitHub Agent Skills` 一个源
+ * 就在同一毫秒里并发扇出 30 个 Trees API 请求 + 后续 30 个 raw 请求，
+ * 把 GitHub 未认证配额（60 次/小时）在 1 秒内打光 —— 接下来全是 403，
+ * 失败后还会逐仓库退化成 Contents API 的**串行**请求，于是整源必然撞 12s 上限。
+ *
+ * 所以并发上限不是"让日志好看"，而是**修掉请求风暴本身**：
+ * 8 路并发下同样 30 个仓库的实测耗时 ≈ 1.4s（见 `out-http-throughput.txt` 的 twentyGithubSame）。
+ */
+const SOURCE_FETCH_CONCURRENCY = 8;
+
+/** GitHub 未认证配额是 60 次/小时；限流后短时间内再打只会继续 403，所以记一个短冷却。 */
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * 有界并发的 `map`（保序）。
+ *
+ * 为什么不用 `Promise.all(items.map(...))`：那是**无界**并发，30 个仓库 = 30 路
+ * TCP+TLS 同时打同一个主机（Rust 端每次 `http_get` 都新建一个 reqwest Client，
+ * 没有连接复用），局域网/代理一抖动就集体超时，而且必然先把配额打光。
+ */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const width = Math.max(1, Math.min(limit, items.length));
+  const runners = Array.from({ length: width }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+/**
+ * `withSourceTimeout` 的返回值：`timedOut` 用来区分"真的撞了上限"与"源本来就没东西"，
+ * 让日志能说准（改前那条 `timed out after 12000ms` 恰恰两个都不准）。
+ */
+interface SourceFetchOutcome<T> {
+  value: T;
+  timedOut: boolean;
+}
+
+/**
+ * 取数超时的**统一收口**：定时器一定会被清掉。
+ *
+ * 改动前的写法是裸 `Promise.race([work, new Promise(r => setTimeout(() => {
+ *   console.warn('timed out'); r([]); }, 12000))])` —— 胜负一分出，
+ * 输的那个 `setTimeout` **没有人清**。真机直接量到（`.preview-shot/out-timer-leak.txt`）：
+ * 7 个 12000ms 定时器 `clearedCount: 0`，全部在点击后 13.3s 原样开火，
+ * 其中包含 `Codem 内置技能`（同步返回，0ms 就赢了）和已经把技能结果打完日志的源
+ * （`ClawHub: fetched 296 skills`）—— 也就是说：
+ *
+ *   **"某个源 timed out after 12000ms" 这条日志，当时并不代表那个源真的超时了。**
+ *
+ * 那既是假警报（把正常源说成超时），也是真问题（漏掉的定时器会在用户早就看到结果之后
+ * 再写一条误导日志）。这里把定时器在源完成时清掉，并且只在**源确实还没结束**时才报超时。
+ */
+async function withSourceTimeout<T>(
+  sourceName: string,
+  timeLimitMs: number,
+  work: Promise<T>,
+): Promise<SourceFetchOutcome<T>> {
+  let settled = false;
+  const tracked = work.then((v) => { settled = true; return v; }, (e) => { settled = true; throw e; });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<SourceFetchOutcome<T>>((resolve) => {
+    timer = setTimeout(() => {
+      if (settled) return; // 兜底：正常路径下定时器已被清掉，这里不该发生
+      console.warn(
+        `[SkillMarket] Source "${sourceName}" 超过 ${timeLimitMs}ms 仍未取完 —— 本次先跳过该源（已保留上一次的结果）。` +
+        `该源的请求仍在后台跑完，不会取消。`,
+      );
+      resolve({ value: [] as unknown as T, timedOut: true });
+    }, timeLimitMs);
+  });
+  try {
+    return await Promise.race([
+      tracked.then((value) => ({ value, timedOut: false }) as SourceFetchOutcome<T>),
+      guard,
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/** 单源取数结果：`degraded` = 本次没能拿到（调用方不得把它计入结果），`failed` = 真失败（要进 errors）。 */
+interface SourceMergeResult {
+  skills: MarketSkill[];
+  /** 本次没拿到 → 调用方不应把它计入 `result.skills`（否则会顶掉界面上该源的旧数据） */
+  degraded: boolean;
+  /**
+   * 真失败（源自己抛错，例如 Trees API 挂了）。
+   *
+   * 与"超时"分开的判据：超时是**我们自己设的 12s 上限**触发的、且后台仍在把请求跑完
+   * （真机读数：`ClawHub: fetched 296 skills` 就打在超时日志之后 5.5s），
+   * 它应当走日志 + 界面上温和的"未更新"提示，**不该**变成 `errors` ——
+   * 那是 SkillManager 顶部那条红色的"部分源加载失败"横幅，会误导用户以为功能坏了。
+   * 而源自己抛错是它真的没干成，必须可见。
+   */
+  failed: boolean;
+}
+
+/**
+ * 取数降级的统一收口：超时 / 抛错都**不让界面变空**，并且说清降级原因（不静默）。
+ *
+ * 为什么必须把"降级"与"成功但为空"分开（这是本轮修掉的第二个真缺陷）：
+ * 调用方 SkillManager 是这样合并的 ——
+ *
+ * ```ts
+ * const sourceIdsInResult = new Set(result.skills.map((s) => s.sourceId));
+ * const preserved = prev.filter((s) => !sourceIdsInResult.has(s.sourceId));
+ * ```
+ *
+ * 也就是说：**只要某个源的 id 出现在 `result.skills` 里，它的旧数据就会被丢掉**。
+ * 改动前超时/失败会 `push(...[])`（等于什么都不 push）但同时 `onSourceLoaded(id, [])`
+ * 把界面清空；如果只是照抄"空数组也算结果"，一次超时刷新就会让该市场整片技能消失。
+ * 所以这里返回 `degraded=true`，由调用方**不把它计入结果**，旧数据才能被保留下来。
+ */
+async function mergeSourceResult(
+  sourceName: string,
+  timeLimitMs: number,
+  work: Promise<MarketSkill[]>,
+): Promise<SourceMergeResult> {
+  let outcome: SourceFetchOutcome<MarketSkill[]>;
+  try {
+    outcome = await withSourceTimeout(sourceName, timeLimitMs, work);
+  } catch (err: any) {
+    // 源自己抛错（例如 GitHub Trees API 失败）：说清是哪一步炸的，不吞
+    info(`Source "${sourceName}" 取数失败：${err?.message || String(err)}`);
+    return { skills: [], degraded: true, failed: true };
+  }
+  if (outcome.timedOut) {
+    // 超时的 warning 已经在 withSourceTimeout 里打过了 —— 一条事实只留一条日志
+    return { skills: [], degraded: true, failed: false };
+  }
+  if (outcome.value.length === 0) {
+    /**
+     * 正常完成了但一条都没有。
+     *
+     * 判据：这**不是失败** —— 请求都回来了、状态码都看过，只是该源当前确实没有可展示的技能
+     * （比如内置技能一个都没启用、第三方排行榜为空）。照实写一条 info：空结果必须可见，
+     * 但它不该伪装成故障。`degraded` 保持 false：空结果确实是这个源现在的真实状态。
+     */
+    info(`Source "${sourceName}" 本次没有可展示的技能（源可达、返回为空）`);
+  }
+  return { skills: outcome.value, degraded: false, failed: false };
+}
+
 // ========== GitHub API Helpers ==========
 
 /** GitHub API 请求头（包含 Accept header + 用户配置的 Token 认证） */
@@ -331,10 +513,68 @@ interface RepoTree {
  *
  * 认证策略：先匿名（60 次/小时），403 限流时切换到 token 认证。
  */
-async function fetchRepoTree(
-  ownerRepo: string,
-  ref?: string,
-): Promise<RepoTree | null> {
+
+/** 从响应头里按**大小写不敏感**的方式取限流余量。 */
+function rateLimitRemaining(resp: HttpResponse): string | undefined {
+  for (const [k, v] of Object.entries(resp.headers || {})) {
+    if (k.toLowerCase() === "x-ratelimit-remaining") return v;
+  }
+  return undefined;
+}
+
+/**
+ * 这次响应是不是"配额已耗尽"的 403。
+ *
+ * 为什么要单独判定：GitHub 对**不存在的分支**也回 403，对**配额耗尽**也回 403。
+ * 前者换 branch 重试、或者退化成 Contents API 兜底是有意义的（能拿到东西）；
+ * 后者继续打只会把剩余配额和 12 秒窗口一起烧光 —— 两个调用方一个会**换分支重试**、
+ * 一个会**退化成逐目录串行请求**，都是纯粹的浪费。
+ */
+function isRateLimitedResponse(resp: HttpResponse): boolean {
+  if (resp.status !== 403) return false;
+  const remaining = rateLimitRemaining(resp);
+  if (remaining === "0") return true;
+  // 没有限流头时不敢断言是限流（可能是 403 权限/分支不存在），交给调用方按普通失败处理。
+  return false;
+}
+
+/** 带限流缓存的仓库树缓存项 */
+interface RepoTreeCacheEntry {
+  tree: RepoTree | null;
+  rateLimited: boolean;
+}
+
+/**
+ * 同一个仓库的 Trees 请求复用规则。
+ *
+ * 判据（代码级，非推测）：`anthropic-skills`（github-repo）与两个 github-search 源
+ * 会命中同一批仓库，改动前 `fetchRepoTree` 没有任何缓存 —— 真机读数里 `api.github.com`
+ * 一次刷新被打了 54 次，其中大量是同一仓库的重复 Trees 请求。在 60 次/小时的匿名配额下，
+ * 重复请求就是把"能用"变成"403"的直接原因。
+ *
+ * 两种结论的复用期**故意不同**：
+ *  - 成功（拿到了树）：仓库树基本只随 push 变化，缓存 30 分钟，省下的是真实配额；
+ *  - 失败/限流：只缓存 60 秒 —— 够挡住"同一秒里两个源问同一个仓库"的重复，
+ *    又不至于让"配额已经恢复"或"分支名变了"这件事被一个长冷却期掩盖住
+ *    （安装路径 `installSkillFromGitHubDir` 也走这里，绝不能让它被长冷却骗到）。
+ */
+const REPO_TREE_TTL_MS = 30 * 60 * 1000;
+const REPO_TREE_FAILURE_TTL_MS = 60 * 1000;
+const repoTreeCache = new Map<string, { at: number; entry: RepoTreeCacheEntry }>();
+
+async function fetchRepoTreeCached(ownerRepo: string, ref?: string): Promise<RepoTreeCacheEntry> {
+  const key = `${ownerRepo}@${ref || "HEAD"}`;
+  const hit = repoTreeCache.get(key);
+  if (hit) {
+    const ttl = hit.entry.tree ? REPO_TREE_TTL_MS : REPO_TREE_FAILURE_TTL_MS;
+    if (Date.now() - hit.at < ttl) return hit.entry;
+  }
+  const entry = await fetchRepoTreeInternal(ownerRepo, ref);
+  repoTreeCache.set(key, { at: Date.now(), entry });
+  return entry;
+}
+
+async function fetchRepoTreeInternal(ownerRepo: string, ref?: string): Promise<RepoTreeCacheEntry> {
   const branches = ref ? [ref] : ["HEAD", "main", "master"];
 
   for (const branch of branches) {
@@ -345,21 +585,64 @@ async function fetchRepoTree(
       if (resp.status === 200) {
         const data = JSON.parse(resp.body);
         if (data.tree && Array.isArray(data.tree)) {
-          return { sha: data.sha, branch, tree: data.tree };
+          return { tree: { sha: data.sha, branch, tree: data.tree }, rateLimited: false };
         }
       }
 
-      // 403 + x-ratelimit-remaining: 0 → 限流，跳出尝试 token
-      if (resp.status === 403 && resp.headers?.["x-ratelimit-remaining"] === "0") {
-        console.warn(`[SkillMarket] GitHub Trees API rate limited for ${ownerRepo}`);
-        break; // 限流了，不再尝试其他分支
+      // 403 + 配额耗尽 → 换分支/换兜底都没意义（同样会 403），直接带着"限流"标记出去
+      if (isRateLimitedResponse(resp)) {
+        return { tree: null, rateLimited: true };
       }
     } catch {
       // 继续尝试下一个分支
     }
   }
 
-  return null;
+  return { tree: null, rateLimited: false };
+}
+
+/** 向后兼容的薄封装：只关心"有没有树"的调用方（如安装路径）继续用它。 */
+async function fetchRepoTree(ownerRepo: string, ref?: string): Promise<RepoTree | null> {
+  const { tree } = await fetchRepoTreeCached(ownerRepo, ref);
+  return tree;
+}
+
+/**
+ * 已就"GitHub 限流"这件事记过账的源（源 id → 记账时刻）。
+ *
+ * 为什么要按源记账：一次刷新里 `anthropic-skills` 与两个 github-search 源各自都会撞限流，
+ * 三个源都值得在 UI 上被单独解释一次（"这个源这次为什么是空的"），
+ * 但**同一个源内部**绝不能像改动前那样每仓库刷一条（真机基线：一次刷新 35 条）。
+ */
+const githubRateLimitNoted = new Map<string, number>();
+
+/** 上一次撞到 GitHub 限流的时刻（0 = 本次刷新内没撞过）。用于"同一个源内部不要再打了"。 */
+let githubRateLimitedAt = 0;
+
+/** 距离上次撞限流是否还在冷却期内。 */
+function githubRateLimitCoolingDown(): boolean {
+  return githubRateLimitedAt > 0 && Date.now() - githubRateLimitedAt < RATE_LIMIT_COOLDOWN_MS;
+}
+
+/**
+ * 记一次限流。
+ * @param sourceId 撞限流的市场源 id（用于"每源只说一次"，不是每仓库一次）
+ * @param scope 说明里带上具体范围（仓库名/源名），便于复核
+ */
+function noteGithubRateLimit(sourceId: string, scope: string): void {
+  githubRateLimitedAt = Date.now();
+  if (githubRateLimitNoted.has(sourceId)) return;
+  githubRateLimitNoted.set(sourceId, Date.now());
+  info(
+    `源 "${sourceId}" 依赖的 GitHub API 未认证配额（60 次/小时）已耗尽 —— 该源本次只拿到部分结果；` +
+    `在 设置 → Git 偏好 里配好 GitHub Token 可把配额提到 5000 次/小时（触发点：${scope}）`,
+  );
+}
+
+/** 每轮刷新重新开始限流判定：上一轮的结论不该跨刷新永久生效。 */
+function resetGithubRateLimitState(): void {
+  githubRateLimitedAt = 0;
+  githubRateLimitNoted.clear();
 }
 
 /**
@@ -454,7 +737,14 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
     // 获取仓库信息
     const repoResp = await httpGet(source.url, githubApiHeaders());
     if (repoResp.status !== 200) {
-      console.warn(`[SkillMarket] Failed to fetch repo info for ${source.id}: ${repoResp.status}`);
+      // 403 是"配额耗尽"还是"仓库不可用"必须分开说：前者用户能自己解决（配 Token），
+      // 后者只能等源恢复。改动前两者都只打一个 403，用户无从判断该做什么。
+      const limited = isRateLimitedResponse(repoResp);
+      if (limited) noteGithubRateLimit(source.id, source.name);
+      console.warn(
+        `[SkillMarket] Failed to fetch repo info for ${source.id}: ${repoResp.status}` +
+        (limited ? "（GitHub 未认证配额耗尽，配置 GitHub Token 可恢复）" : ""),
+      );
       return skills;
     }
     const repoInfo = JSON.parse(repoResp.body);
@@ -462,7 +752,12 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
     const repoFullName = repoInfo.full_name;
 
     // 使用 Trees API 一次性获取仓库完整文件树
-    const tree = await fetchRepoTree(repoFullName, defaultBranch);
+    const treeResult = await fetchRepoTreeCached(repoFullName, defaultBranch);
+    if (treeResult.rateLimited) {
+      noteGithubRateLimit(source.id, repoFullName);
+      return skills; // 限流时不做 Contents API 兜底：那只会再打一串同样 403 的请求
+    }
+    const tree = treeResult.tree;
     if (!tree) {
       console.warn(`[SkillMarket] Trees API failed for ${repoFullName}, falling back to Contents API`);
       return await fetchGitHubRepoSkillsLegacy(source, repoInfo);
@@ -475,46 +770,43 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
       return skills;
     }
 
-    console.log(`[SkillMarket] Trees API found ${skillMdPaths.length} SKILL.md files in ${repoFullName}`);
+    info(`Trees API found ${skillMdPaths.length} SKILL.md files in ${repoFullName}`);
 
-    // 并行获取每个 SKILL.md 的内容
-    const results = await Promise.allSettled(
-      skillMdPaths.map(async (skillMdPath) => {
-        const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${tree.branch}/${skillMdPath}`;
-        const mdResp = await httpGet(rawUrl);
-        if (mdResp.status !== 200) return null;
+    // 取每个 SKILL.md 的内容：**有界并发**（改动前是 19~30 路无界 Promise.allSettled，
+    // 真机读数里这一个源会把 20+ 个 raw 请求插进同一毫秒）
+    const results = await mapLimit(skillMdPaths, SOURCE_FETCH_CONCURRENCY, async (skillMdPath) => {
+      const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${tree.branch}/${skillMdPath}`;
+      const mdResp = await httpGet(rawUrl);
+      if (mdResp.status !== 200) return null;
 
-        const skillDef = parseSkillMarkdown(mdResp.body, skillMdPath);
-        if (!skillDef) return null;
+      const skillDef = parseSkillMarkdown(mdResp.body, skillMdPath);
+      if (!skillDef) return null;
 
-        const slug = getSkillSlugFromPath(skillMdPath);
-        const dirPath = getSkillDirFromPath(skillMdPath);
+      const slug = getSkillSlugFromPath(skillMdPath);
+      const dirPath = getSkillDirFromPath(skillMdPath);
 
-        return {
-          id: `${source.id}:${slug}`,
-          name: skillDef.name || slug,
-          displayName: skillDef.displayName || skillDef.name || slug,
-          description: skillDef.description || "",
-          author: skillDef.author || repoFullName.split("/")[0],
-          version: skillDef.version,
-          tags: skillDef.tags,
-          sourceId: source.id,
-          sourceName: source.name,
-          downloadUrl: `https://api.github.com/repos/${repoFullName}/zipball/${defaultBranch}`,
-          repoUrl: `https://github.com/${repoFullName}/tree/${defaultBranch}/${dirPath}`,
-          lastUpdated: repoInfo.updated_at,
-          installType: "dir" as const,
-          dirPath,
-          repoFullName,
-          branch: defaultBranch,
-        } satisfies MarketSkill;
-      }),
-    );
+      return {
+        id: `${source.id}:${slug}`,
+        name: skillDef.name || slug,
+        displayName: skillDef.displayName || skillDef.name || slug,
+        description: skillDef.description || "",
+        author: skillDef.author || repoFullName.split("/")[0],
+        version: skillDef.version,
+        tags: skillDef.tags,
+        sourceId: source.id,
+        sourceName: source.name,
+        downloadUrl: `https://api.github.com/repos/${repoFullName}/zipball/${defaultBranch}`,
+        repoUrl: `https://github.com/${repoFullName}/tree/${defaultBranch}/${dirPath}`,
+        lastUpdated: repoInfo.updated_at,
+        installType: "dir" as const,
+        dirPath,
+        repoFullName,
+        branch: defaultBranch,
+      } satisfies MarketSkill;
+    });
 
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value) {
-        skills.push(result.value);
-      }
+    for (const value of results) {
+      if (value) skills.push(value);
     }
   } catch (err) {
     console.error(`[SkillMarket] Error fetching repo skills for ${source.id}:`, err);
@@ -526,6 +818,11 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
 /**
  * Legacy fallback：使用 Contents API 逐层遍历获取仓库技能列表。
  * 仅在 Trees API 失败时使用。
+ *
+ * 第 63 轮：这里原来是 `for (const dir of dirs) { await httpGet(...) }` ——
+ * **串行**打 N 个 raw 请求（N = 仓库根目录数，真机读数里单个仓库就能到几十个）。
+ * 它只在 Trees API 彻底失败时才走，在"GitHub 限流"的现场恰恰是最容易被触发的路径，
+ * 于是"串行 N 请求 × 每个最多 15s"必然撞上 12s 的源上限。改成有界并发。
  */
 async function fetchGitHubRepoSkillsLegacy(source: MarketSource, repoInfo: any): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
@@ -545,17 +842,17 @@ async function fetchGitHubRepoSkillsLegacy(source: MarketSource, repoInfo: any):
     ? `https://raw.githubusercontent.com/${repoFullName}/${defaultBranch}/${source.subdir}`
     : `https://raw.githubusercontent.com/${repoFullName}/${defaultBranch}`;
 
-  for (const dir of dirs) {
+  const parsed = await mapLimit(dirs as any[], SOURCE_FETCH_CONCURRENCY, async (dir: any) => {
     try {
       const skillMdUrl = `${skillMdBase}/${dir.name}/SKILL.md`;
       const mdResp = await httpGet(skillMdUrl);
-      if (mdResp.status !== 200) continue;
+      if (mdResp.status !== 200) return null;
       const skillPath = source.subdir
         ? `${source.subdir}/${dir.name}/SKILL.md`
         : `${dir.name}/SKILL.md`;
       const skillDef = parseSkillMarkdown(mdResp.body, skillPath);
-      if (!skillDef) continue;
-      skills.push({
+      if (!skillDef) return null;
+      return {
         id: `${source.id}:${dir.name}`,
         name: skillDef.name || dir.name,
         displayName: skillDef.displayName || skillDef.name || dir.name,
@@ -568,14 +865,19 @@ async function fetchGitHubRepoSkillsLegacy(source: MarketSource, repoInfo: any):
         downloadUrl: `https://api.github.com/repos/${repoFullName}/zipball/${defaultBranch}`,
         repoUrl: dir.html_url || `https://github.com/${repoFullName}/tree/${defaultBranch}/${source.subdir ? source.subdir + "/" : ""}${dir.name}`,
         lastUpdated: repoInfo.updated_at,
-        installType: "dir",
+        installType: "dir" as const,
         dirPath: source.subdir ? `${source.subdir}/${dir.name}` : dir.name,
         repoFullName,
         branch: defaultBranch,
-      });
+      } satisfies MarketSkill;
     } catch (err) {
       console.warn(`[SkillMarket] Legacy: Failed for ${dir.name}:`, err);
+      return null;
     }
+  });
+
+  for (const value of parsed) {
+    if (value) skills.push(value);
   }
   return skills;
 }
@@ -584,6 +886,20 @@ async function fetchGitHubRepoSkillsLegacy(source: MarketSource, repoInfo: any):
  * 从 GitHub 搜索型源获取技能列表。
  * 搜索结果中的每个仓库被视为一个技能。
  * 使用 Trees API 搜索每个仓库中的 SKILL.md（支持任意目录结构）。
+ *
+ * ## 第 63 轮：这个函数是"12 秒超时"的主要来源，改的是**并发纪律**而不是日志
+ *
+ * 改动前：`Promise.allSettled(items.map(...))` —— 30 个仓库**同时**打 Trees API，
+ * 每个仓库失败还会再打一次 Contents API（Contents 分支内部是逐目录串行）。
+ * 真机读数：`api.github.com` 一次刷新 54 个请求、`raw.githubusercontent.com` 69 个，
+ * 1 秒内 30 个 Trees 请求并发发出，随后 20+ 个返回 403（配额 60 次/小时已打光），
+ * 于是"搜索型源"整源卡死到 12s 上限、一条技能都拿不到。
+ *
+ * 改后：
+ *  - 并发上限 8（同批 30 个请求实测 1.4s 全返回）
+ *  - 撞到限流就**停止继续打**，并且不再退化成 Contents 兜底（那只会继续 403）
+ *  - 同一仓库的 Trees 请求在一次刷新内复用（`fetchRepoTreeCached`）
+ *  - 结果如实告诉用户被跳过了多少仓库（不假装完整）
  */
 async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
@@ -591,19 +907,25 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
   try {
     const resp = await httpGet(source.url, githubApiHeaders());
     if (resp.status !== 200) {
-      console.warn(`[SkillMarket] GitHub search failed for ${source.id}: ${resp.status}`);
-      if (resp.status === 403 && resp.headers["x-ratelimit-remaining"] === "0") {
-        console.warn(`[SkillMarket] GitHub API rate limit exceeded for ${source.id}`);
-      }
+      const limited = isRateLimitedResponse(resp);
+      if (limited) noteGithubRateLimit(source.id, source.name);
+      console.warn(
+        `[SkillMarket] GitHub search failed for ${source.id}: ${resp.status}` +
+        (limited ? "（GitHub 未认证配额耗尽，配置 GitHub Token 可恢复）" : ""),
+      );
       return skills;
     }
 
     const data = JSON.parse(resp.body);
     if (!data.items || !Array.isArray(data.items)) return skills;
 
-    // 并行处理每个仓库：先用 Trees API 搜索 SKILL.md，找到则用 dir 类型
-    const repoSkills = await Promise.allSettled(
-      data.items.map(async (repo: any) => {
+    let skipped = 0;
+
+    // 有界并发处理每个仓库：先用 Trees API 搜索 SKILL.md，找到则用 dir 类型
+    const repoSkills = await mapLimit(
+      data.items as any[],
+      SOURCE_FETCH_CONCURRENCY,
+      async (repo: any): Promise<MarketSkill | null> => {
         let description = repo.description || "";
         let displayName = repo.name;
         let author = repo.owner?.login || "";
@@ -616,7 +938,19 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
         let installType: "zip" | "dir" = "zip";
         let dirPath: string | undefined;
 
-        const tree = await fetchRepoTree(repo.full_name, branch);
+        // 已经确认在冷却期内限流 → 不再打扰 API，直接把本仓库记为"跳过"
+        if (githubRateLimitCoolingDown()) {
+          skipped++;
+          return null;
+        }
+
+        const treeResult = await fetchRepoTreeCached(repo.full_name, branch);
+        if (treeResult.rateLimited) {
+          noteGithubRateLimit(source.id, repo.full_name);
+          skipped++;
+          return null;
+        }
+        const tree = treeResult.tree;
         if (tree) {
           const skillMdPaths = findSkillMdPathsInTree(tree);
           if (skillMdPaths.length > 0) {
@@ -686,13 +1020,16 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
           repoFullName: repo.full_name,
           branch,
         } satisfies MarketSkill;
-      }),
+      },
     );
 
-    for (const result of repoSkills) {
-      if (result.status === "fulfilled") {
-        skills.push(result.value);
-      }
+    for (const value of repoSkills) {
+      if (value) skills.push(value);
+    }
+
+    if (skipped > 0) {
+      // 降级必须写在界面上也看得见的信息级日志里：用户要知道"少的是被限流跳过的，不是不存在"
+      info(`GitHub 搜索源 "${source.name}"：${skills.length} 个仓库完成，${skipped} 个因 API 限流被跳过（改配 GitHub Token 可避免）`);
     }
   } catch (err) {
     console.error(`[SkillMarket] Error fetching search skills for ${source.id}:`, err);
@@ -839,7 +1176,7 @@ async function fetchSkillsShSkills(source: MarketSource): Promise<MarketSkill[]>
   }
 
   // 策略 2：fallback 到网页版 HTML 爬取
-  console.log("[SkillMarket] Skills.sh API failed or returned 0, falling back to HTML scrape");
+  info("Skills.sh API 未返回条目（401 需要 Vercel OIDC Token / 或匿名不可用）—— 改走网页版抓取");
   return await fetchSkillsShViaHTML(source, baseUrl);
 }
 
@@ -869,7 +1206,30 @@ async function fetchSkillsShViaAPI(source: MarketSource, baseUrl: string): Promi
         headers,
       );
       if (resp.status === 401) {
-        console.warn("[SkillMarket] Skills.sh API requires Vercel OIDC token authentication");
+        /**
+         * ## 为什么这条从 `console.warn` 降成 `console.log`（判据，不是"为了让日志干净"）
+         *
+         * 1. **这是设计内的正常形态，不是失败**：Skills.sh 的 `/api/v1/skills` 只认 Vercel OIDC
+         *    Token，而 OIDC Token 是 Vercel 在它自己的构建/部署运行时里签发的**短时凭证**——
+         *    桌面应用既没有 Vercel 项目上下文，也没有签发方，**本机不可能拿到**（我这台机器上
+         *    没有 Vercel 相关环境变量，`codem-market-sources` 也没有任何配置项能填它：
+         *    全仓库只有 `MarketSource.apiToken` 这一个字段，且没有任何 UI/设置写入它）。
+         * 2. **路径已闭环**：401 之后我们**立刻**走 HTML 兜底，而且兜底是成功的
+         *    ——真机读数 `Skills.sh HTML: scraped 432 skills`（首次基线 475 条）。
+         *    也就是说这条 401 不代表"功能坏了"，而代表"探测到了一个用不上的端点，然后换路成功"。
+         * 3. 反过来，如果用户**自己配了** `source.apiToken` 却仍 401，那就是真问题（凭据无效），
+         *    这种情况**保留 warning**，不放水。
+         *
+         * 文本里照样写清原因与后续动作（不静默）：见下面两条 info 日志。
+         */
+        if (source.apiToken) {
+          console.warn("[SkillMarket] Skills.sh 已配置 apiToken 但仍返回 401 —— 该 Token 无效或已过期，本次改走网页兜底");
+        } else {
+          info(
+            "Skills.sh REST API 需要 Vercel OIDC Token（桌面端无法获取，属正常形态）—— " +
+            "本次改走网页版抓取（这是设计好的兜底路径，功能不受影响）",
+          );
+        }
         return skills; // 返回已获取的（可能为空）
       }
       if (resp.status !== 200) {
@@ -1396,7 +1756,9 @@ export interface MarketSearchResult {
 /**
  * 从所有启用的市场源获取技能列表。
  * @param sources 可选，默认使用 getMarketSources()
- * @param onSourceLoaded 每个源加载完成时的回调（用于渐进式 UI 更新）
+ * @param onSourceLoaded 每个源加载完成时的回调（用于渐进式 UI 更新）。
+ *        **注意**：只在"这个源确实取数成功"时回调 —— 超时/失败时**不回调**，
+ *        让调用方保留界面上该源的旧数据（改动前用 `[]` 回调，等于把整片技能清空）。
  */
 export async function listMarketSkills(
   sources?: MarketSource[],
@@ -1410,48 +1772,13 @@ export async function listMarketSkills(
   const registry = getSkillRegistry();
   const installedNames = new Set(registry.getAll().map((s) => s.name));
 
-  // 并行加载所有源（每个源 12 秒超时保护）
-  const LIST_SOURCE_TIMEOUT_MS = 12_000;
+  resetGithubRateLimitState();
+
+  // 并行加载所有源（每个源都有超时保护，见 withSourceTimeout）
   const promises = activeSources.map(async (source) => {
     try {
-      let skills: MarketSkill[] = [];
-      const sourcePromise = (async () => {
-        switch (source.type) {
-        case "github-repo":
-          skills = await fetchGitHubRepoSkills(source);
-          break;
-        case "github-search":
-          skills = await fetchGitHubSearchSkills(source);
-          break;
-        case "builtin":
-          skills = await fetchBuiltinSkills(source);
-          break;
-        case "clawhub-api":
-          skills = await fetchClawHubSkills(source);
-          break;
-        case "skills-sh-api":
-          skills = await fetchSkillsShSkills(source);
-          break;
-        case "skillhub-api":
-          skills = await fetchSkillHubAPISkills(source);
-          break;
-        case "cli":
-          skills = await fetchCLISkills(source);
-          break;
-      }
-        return skills;
-      })();
-
-      // 超时保护：单个源超过 12 秒则返回空结果
-      skills = await Promise.race([
-        sourcePromise,
-        new Promise<MarketSkill[]>((resolve) =>
-          setTimeout(() => {
-            console.warn(`[SkillMarket] Source "${source.name}" timed out after ${LIST_SOURCE_TIMEOUT_MS}ms`);
-            resolve([]);
-          }, LIST_SOURCE_TIMEOUT_MS)
-        ),
-      ]);
+      const merged = await mergeSourceResult(source.name, SOURCE_TIMEOUT_MS, fetchSkillsFromSource(source));
+      const { skills } = merged;
 
       // 标记已安装状态
       for (const skill of skills) {
@@ -1460,15 +1787,38 @@ export async function listMarketSkills(
         }
       }
 
+      /**
+       * 降级的源**不计入结果**。
+       *
+       * 判据：调用方（SkillManager）按 `result.skills` 里的 sourceId 决定"替换哪些源的旧数据"
+       * （见那里 `sourceIdsInResult` 的注释）。把一个空数组的源塞进结果，等于告诉 UI
+       * "这个源现在就是 0 条"，于是它会把该市场已有的技能整片丢掉 ——
+       * 用户看到的是"点了一次检查更新，某个市场消失了"。降级只该降级，不该变成删除。
+       *
+       * 只有**源自己抛错**才算 `errors`（那是真的没干成，界面顶部需要可见提示）；
+       * 12s 超时是我们自己的上限触发的、后台仍在把请求跑完，只写日志，不报红。
+       */
+      if (merged.degraded) {
+        if (merged.failed) {
+          errors.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            error: `取数失败 —— 已保留上一次的结果`,
+          });
+        }
+        return;
+      }
+
       allSkills.push(...skills);
-      onSourceLoaded?.(source.id, skills);
+      // 只有取到东西才回调：空结果回调会把界面上该源的旧数据清掉
+      if (skills.length > 0) onSourceLoaded?.(source.id, skills);
     } catch (err: any) {
       errors.push({
         sourceId: source.id,
         sourceName: source.name,
         error: err.message || String(err),
       });
-      onSourceLoaded?.(source.id, []);
+      // 这里**不**用 `onSourceLoaded(source.id, [])`：失败不是"这个源没有技能"
     }
   });
 
@@ -2084,52 +2434,44 @@ export async function searchMarketSkillsOnline(
 
   const q = query.toLowerCase().trim();
 
-  // 为每个源设置超时，避免单个慢源卡住全部搜索
-  const SOURCE_TIMEOUT_MS = 12_000; // 12 秒超时（略短于 Rust 端 15s http_get 超时）
+  resetGithubRateLimitState();
+
+  // 超时上限统一走模块级常量 SOURCE_TIMEOUT_MS（12s，略短于 Rust 端 15s http_get 超时）
 
   const promises = activeSources.map(async (source) => {
     try {
       let skills: MarketSkill[] = [];
 
-      // 为单个源设置超时
-      const sourcePromise = (async () => {
+      // 为单个源设置超时（与 listMarketSkills 同一套收口：定时器一定被清、超时才报超时）
+      const sourceWork = (async () => {
         // 对于 SkillHub，利用其服务端搜索 API
         if (source.type === "skillhub-api") {
-          skills = await fetchSkillHubSearch(source, q);
-        } else {
-          // 其他源：全量拉取后在本地过滤
-          skills = await fetchSkillsFromSource(source);
-          // 本地过滤
-          if (q) {
-            skills = skills.filter((s) => {
-              const tags = Array.isArray(s.tags) ? s.tags : [];
-              const name = String(s.name || "");
-              const displayName = String(s.displayName || "");
-              const description = String(s.description || "");
-              const author = s.author ? String(s.author) : "";
-              return (
-                name.toLowerCase().includes(q) ||
-                displayName.toLowerCase().includes(q) ||
-                description.toLowerCase().includes(q) ||
-                author.toLowerCase().includes(q) ||
-                tags.some((t) => String(t).toLowerCase().includes(q))
-              );
-            });
-          }
+          return await fetchSkillHubSearch(source, q);
         }
-        return skills;
+        // 其他源：全量拉取后在本地过滤
+        let fetched = await fetchSkillsFromSource(source);
+        if (q) {
+          fetched = fetched.filter((s) => {
+            const tags = Array.isArray(s.tags) ? s.tags : [];
+            const name = String(s.name || "");
+            const displayName = String(s.displayName || "");
+            const description = String(s.description || "");
+            const author = s.author ? String(s.author) : "";
+            return (
+              name.toLowerCase().includes(q) ||
+              displayName.toLowerCase().includes(q) ||
+              description.toLowerCase().includes(q) ||
+              author.toLowerCase().includes(q) ||
+              tags.some((t) => String(t).toLowerCase().includes(q))
+            );
+          });
+        }
+        return fetched;
       })();
 
-      // 超时保护：如果单个源超过 20 秒，返回空结果
-      skills = await Promise.race([
-        sourcePromise,
-        new Promise<MarketSkill[]>((resolve) =>
-          setTimeout(() => {
-            console.warn(`[SkillMarket] Source "${source.name}" timed out after ${SOURCE_TIMEOUT_MS}ms`);
-            resolve([]);
-          }, SOURCE_TIMEOUT_MS)
-        ),
-      ]);
+      // 在 sourceWork 之上做超时 + 失败收口
+      const merged = await mergeSourceResult(source.name, SOURCE_TIMEOUT_MS, sourceWork);
+      skills = merged.skills;
 
       // 标记已安装状态
       for (const skill of skills) {
@@ -2138,15 +2480,27 @@ export async function searchMarketSkillsOnline(
         }
       }
 
+      // 降级：不计入结果；只有源自己抛错才进 errors（超时只留日志，不报红）
+      if (merged.degraded) {
+        if (merged.failed) {
+          errors.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            error: `取数失败 —— 已保留上一次的结果`,
+          });
+        }
+        return;
+      }
+
       allSkills.push(...skills);
-      onSourceLoaded?.(source.id, skills);
+      if (skills.length > 0) onSourceLoaded?.(source.id, skills);
     } catch (err: any) {
       errors.push({
         sourceId: source.id,
         sourceName: source.name,
         error: err.message || String(err),
       });
-      onSourceLoaded?.(source.id, []);
+      // 失败不回调空数组（避免把界面上该源的旧结果清空）
     }
   });
 

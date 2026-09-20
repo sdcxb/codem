@@ -139,7 +139,12 @@ const KNOWN_PLUGINS = [
     // ===== P1-7.9: 上下文/压缩插件 =====
     { name: '@codem/compaction-basic', version: '1.0.0', description: 'Compaction Basic Provider — 基础压缩策略，摘要式上下文裁剪', provides: ['compactionBasic'], inject: ['compaction'], keywords: ['compaction', 'basic', 'summarize'], category: 'provider', tags: ['provider'], hot: true, icon: '✂️', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后基础压缩策略不可用' },
     { name: '@codem/compaction-tool-result-pruner', version: '1.0.0', description: 'Compaction Tool Result Pruner Provider — 工具结果裁剪，长输出截断和摘要', provides: ['compactionToolResultPruner'], inject: ['compaction'], keywords: ['compaction', 'pruner', 'tool-result'], category: 'provider', tags: ['provider'], hot: true, icon: '🔨', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后工具结果裁剪不可用' },
-    { name: '@codem/command-compact', version: '1.0.0', description: 'Command Compact Provider — /compact 命令，手动触发上下文压缩', provides: ['commandCompact'], inject: ['compaction', 'commands'], keywords: ['command', 'compact', 'manual'], category: 'provider', tags: ['provider', 'tool'], hot: true, icon: '⌘', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 /compact 命令不可用' },
+    // 第 84 波（功能上下文审计 C1）：原文案承诺"关闭后 /compact 命令不可用"，
+    // 而 `/compact` **是一条声明式死链** —— App 的命令分发里没有这个分支，
+    // `isCompactCommand` / `registerHandler` 全仓零调用，用户敲 `/compact` 只会被当成
+    // 普通消息发给模型。所以文案改成如实描述"该命令当前未接线"（**不新增功能**）。
+    // 产品里真正可用的手动压缩入口是上下文面板的压缩按钮（`ContextMonitor`）。
+    { name: '@codem/command-compact', version: '1.0.0', description: 'Command Compact Provider — /compact 命令的服务壳（当前未接线，见下）', provides: ['commandCompact'], inject: ['compaction', 'commands'], keywords: ['command', 'compact', 'manual'], category: 'provider', tags: ['provider', 'tool'], hot: true, icon: '⌘', author: 'Codem Team', riskLevel: 'safe', riskDescription: '该命令当前未接线：/compact 没有接入 App 的命令分发，输入它会被当作普通消息发给模型；手动压缩请用上下文面板的压缩按钮。关闭本插件对现有行为无影响' },
 
     // ===== P1-7.10: 目标/计划/工作流插件 =====
     { name: '@codem/goal-round-driver', version: '1.0.0', description: 'Goal Round Driver Provider — 目标轮次驱动器，Agent 目标管理和迭代推进', provides: ['goalRoundDriver'], inject: [], keywords: ['goal', 'round', 'driver'], category: 'provider', tags: ['provider', 'agent'], hot: true, icon: '🎯', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后目标驱动器不可用' },

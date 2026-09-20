@@ -60,30 +60,59 @@ const MAX_NOTE_BYTES = 4096;
 // ========== Session-Level Feedback ==========
 
 /**
- * 记录会话级反馈 — 追加 feedback/record 事件到事件日志。
+ * 记录会话级反馈 — 追加 `session_meta{action:"feedback_record"}` 事件到事件日志。
  *
  * 这是 log-only 事件：不进入模型上下文投影。
  * 对标 DSH `recordFeedback(session, text)`。
  *
+ * ## 第 84 波（功能上下文审计 B2）：返回值让"到底写没写进去"可查
+ *
+ * 原来返回 `void`，且**完全不看 `append` 的返回值** —— 于是"事件没落库"
+ * 与"写成功"对调用方长得一模一样，App 那一侧就无条件打了 ✅（假成功）。
+ *
+ * 为什么必须看返回值：`EventLog.append` 在端口未接手/未就绪时**不抛**，
+ * 而是上报失败并返回一条 **`seq === 0`** 的"未落库事件"（`event-log.ts:193-233`，
+ * 见那里 `seq=0` 的说明）。所以判据只能是 seq，不能指望捕获异常。
+ *
+ * ⚠️ 关于 `session_meta` 这条通道的现状（同一轮登记，写入点）：
+ * **它只写不读**。全仓生产写方只有本函数；另一个写方
+ * `preset-discovery.ts::selectPresetForSession` 零调用者；两个读函数
+ * `listSessionFeedback`（本文件）与 `getSessionPreset` 都零生产调用者；
+ * 投影里 `case "session_meta"` 是 no-op（`event-projection.ts`）。
+ * 登记在 `docs/AUDIT-ZERO-GAP.md` 第 3 节。
+ *
  * @param sessionId 目标会话
  * @param text 反馈文本（trim 后不能为空）
+ * @returns `{ seq, persisted }`：`persisted === false` 表示事件**没有**进持久日志
+ *          （`seq === 0`），调用方必须如实告知用户，不许显示成功
  * @throws TypeError 当文本为空
  */
-export function recordSessionFeedback(sessionId: string, text: string): void {
+export function recordSessionFeedback(
+  sessionId: string,
+  text: string,
+): { seq: number; persisted: boolean } {
   const normalized = text.trim();
   if (normalized.length === 0) {
     throw new TypeError("feedback text must not be empty");
   }
 
-  getEventLog().append(sessionId, "session_meta", {
+  const event = getEventLog().append(sessionId, "session_meta", {
     action: "feedback_record",
     text: normalized,
   });
+
+  // 判据是 seq：`append` 不抛，失败时返回 seq=0（见上面说明与 `event-log.ts` 的注释）
+  return { seq: event.seq, persisted: event.seq > 0 };
 }
 
 /**
  * 读取会话的所有反馈记录。
  * 从事件日志中过滤 session_meta + action=feedback_record 事件。
+ *
+ * 第 84 波：**零生产调用者**（功能上下文审计 B1）。
+ * 调用点只有 `dsh-integration-full.test.ts` 与 `functional-chain-closed-loop.test.ts`
+ * —— 也就是说 `/feedback` 写进去的东西，今天在**产品里没有任何读路径**
+ * （没有面板、没有导出、没有喂给模型）。App 的回执文案已如实说明这一点。
  */
 export function listSessionFeedback(sessionId: string): SessionFeedbackEntry[] {
   const events = getEventLog().readAll(sessionId);

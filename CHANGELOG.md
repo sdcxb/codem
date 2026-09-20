@@ -2,6 +2,66 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.111] - 2026-09-19 — 按"bug 与 warning 双归零"闸门收口：MCP 关不掉、警告级别、市场请求风暴
+
+> 你定的规矩是"**修到 0 bug 和 0 warning 之前不发布**"。这一版就是把审计+走查查出来的东西修到那条线。
+> ⚠️ **本版发布前必须先在安装版上复量**（启动 warning 是否为 0、MCP 能否关掉、命中区 `small=`），
+> 复量不通过就不发 —— 下面的"实测"只写**已经量到的**，没量到的一律标注。
+
+### 🔴 bug：MCP「服务器目录」把应用锁死（真机实测 10 次关闭全失败）
+
+- **根因不是关闭按钮自身，而是层级关系**：`.titlebar` 是 `z-index: 9999`（`--z-context-menu-top`），
+  模态层只有 `1300`（`--z-modal`）⇒ 整条标题栏（含窗口最小化/最大化/**关闭**三键，占 `x∈[1154,1200] y∈[4,40]`）
+  永远盖在模态之上；而面板关闭按钮恰好在 `24×27@(1160,12)` ⇒ **点它会直接关掉整个窗口**（比"关不掉"更糟）。
+- **修法三处**：① `.mcp-marketplace` 加 `padding-top: var(--chrome-height)` + `box-sizing: border-box`（**纵向让开**标题栏；
+  实测「横向挪」16/24/32/40/48/56 逐档都命中 titlebar ⇒ 无效；用 `top` 代替会把面板高度 727→683 并砍 44px 内容）；
+  ② 关闭按钮补可访问名 `关闭服务器目录 / Close server catalog`（与管理的「关闭面板」刻意不重名）；
+  ③ **Esc 关闭**（写法与 `ConfirmDialog`/`ImageGallery`/`SearchDialog` 对齐，没发明第三套）。
+- **实测（改前 vs 注入本轮 CSS 后）**：`elementFromPoint(中心)` 由 `titlebar-btn-close` → **`mcp-marketplace-close`**，
+  `closest()` 等于自己，**误命中窗口关闭键 true→false**，四向 ±4px 全命中。
+- 新增 `mcp-marketplace-lock.test.tsx`（9 例：按名可达/点击回调/Esc 生效/非 Esc 不误关/卸载摘监听/CSS 层叠契约），
+  **突变检查**：删掉 `aria-label` ⇒ 3 条红，恢复 ⇒ 9 条过。
+
+### 🟡 warning：技能市场那 8 条 ── 其中大部分是**我们自己造的假警报**（查清并修掉）
+
+- **假警报**：`Source "X" timed out after 12000ms` 的定时器**没人清**（真机把 `setTimeout/clearTimeout` 包起来量到
+  **7 个 12000ms 定时器 `clearedCount: 0`**）⇒ 连**同步返回、0ms 就赢了竞速**的「Codem 内置技能」也报超时；
+  `ClawHub: fetched 296 skills` 甚至打在它自己的超时告警**之后 5.5s**。改为 `withSourceTimeout` 收口（源完成即清定时器，
+  只有真没结束才报），并把降级/失败源**从 `result.skills` 里排除**——顺带修掉一个自查发现的 bug：
+  原来超时会让 `onSourceLoaded(id, [])` 使**该市场的旧技能在界面上整片消失**（降级不该等于删除）。
+- **真问题（一并修）**：一次刷新发出 **133 个 `http_get`**（无界扇出），把 GitHub 未认证配额（60 次/小时）**1 秒打光**，
+  随后 403 又退化成串行 Contents 兜底继续烧配额 ⇒ 加 `mapLimit`（并发 8）、限流识别（**大小写不敏感**，
+  原来读 `x-ratelimit-remaining` 而 GitHub 回的是 `X-RateLimit-Remaining`）、树缓存（成功 30min / 失败 60s）、限流后短路。
+- **正常形态**：`Skills.sh API requires Vercel OIDC token authentication` 降为正常路径日志（桌面端**没有 OIDC 签发方**，
+  且 401 后 HTML 兜底成功 —— 真机读数 `Skills.sh HTML: scraped 432 skills`）；但用户**自己配了** `apiToken` 仍 401 时**保留 warning**。
+  **没有删任何日志**，也没有为消警告关掉任何源（7 个默认源全部照旧）。
+- 新增 `skill-market-console-budget.test.ts`（6 例）。**过程中的自我纠正**：第一版把 `console` 整体替换成 no-op，
+  导致 `EnvironmentTeardownError: Closing rpc while "onUserConsoleLog" was pending`（全量 0 失败但退出码 1）；
+  对照实验定位到是自己的新测试造成的，改成"只监听不替换"后干净退出。
+
+### 🟡 warning：启动时那 2 条 `storage.compact` trace（级别用错）
+
+`[StorageTrace]/[IpcTrace] storage.compact` 是**维护每轮启动都会调的空间回收**（成功也在 `warn`）⇒
+按"是否可能删数据"分级：`delete`/`replace_table` 照旧 `warn`，`compact` 降到 `log`（**留痕不变**）。
+
+### ✅ console 普查（我自己跑的，冷启动 + 设置全页签）
+
+互异日志 **135 条**，其中 warning/error/exception 只有 **2 条**（就是上面那两条 `storage.compact`，各 ×2），
+**error 0 / exception 0**；对照一条已生效的修复：`[MiMoAuth] 本机没有 auth.json（未登录 MiMo 账号），这是正常形态…` 现在是 **log**（修前是 error）。CDP 就绪 **280ms**。
+
+### 实测与待复量
+
+- `tsc` 0 错误；全量 **344 文件 / 5871 通过 / 16 跳过 / 0 失败**（退出码 0）；UI 门禁与 CSS 完整性门禁全绿。
+- ✅ **安装版 1.16.111 真机复量（已做）**：
+  ①**冷启动 + 设置全页签 console：`warning/error/exception = 0`**（互异日志 141 条全靠 `log`；对照改动前是 2 条 `storage.compact` warning 各 ×2）；
+  ②**MCP 服务器目录三条全过**：关闭按钮可访问名 = `关闭服务器目录 / Close server catalog`；命中测试 `elementFromPoint(中心)` 落在**自己**身上（rect `[1160,56,24,27]`，改前是 `titlebar-btn-close`）；**按 Esc 关闭成功**（`still open after Esc: false`）；
+  ③启动 **CDP 445ms、工作集 73.1MB**。
+- ⏳ **仍未在安装版复量（如实列出）**：①技能市场**改动后**的 warning 数 —— 该面板有 30 分钟缓存、且本机 GitHub 未认证配额已耗尽（60 次/小时），当前窗口内无法强制复现那次刷新；已由 6 条契约测试固定"假超时结构上不可能再出现、Vercel 那条降为正常日志"；
+  ②命中区逐面板 `small=` 的安装版读数（改动方用"注入本轮规则 + 同一份 `__measure`"量过：工具 13→1、Git 4→1、任务中心 3→0、library-ops 看板 2→0、技能/插件管理 1→0）；
+  ③`[PluginManager] Disabled … @codem/ui-game` 这条的确切原文（源码里那两处已经是 `console.log`，但没能在本轮抓到对应文本，**不声称已归零**）。
+- **已知未做（不在本版）**：Rust `http_get` 每次新建 `reqwest::Client`、无连接复用与并发闸门（`src-tauri/src/lib.rs:2319`）
+  —— 前端已用并发上限兜住，根治要动 `src-tauri`。
+
 ## [1.16.110] - 2026-09-19 — 四路深度审计（性能/稳定性/UI 走查/功能上下文）+ 修掉两处真缺陷
 
 > 你要求"完全做完"。这一版是**四路审计当轮可修的部分**：修了 **WAL 静默丢失**与**内存无上界**，

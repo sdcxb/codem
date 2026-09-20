@@ -25,11 +25,24 @@ import type { Message } from "../store";
  * 顺带把"fork 到底有没有把工具调用复制过去"钉在**存储层**上：端口那张表里
  * 有没有新消息 id 的行，是这件事唯一可信的判据。
  *
- * ⚠️ 这条用例在端口模式下仍红，且**是产品缺口不是测试问题**：`App.tsx` 的 fork 只用
- * `MessageStorage.listMessages`（同步），而端口模式下同步读路径拿不到 tool_calls ——
- * `writeIndexViaRust` 不填 `toolCallCache`（与 `message.ts` 注释里"upsert_index 也维护缓存"
- * 不符），镜像行不含这一列，异步预热只在 `getMessage` 里触发。于是 fork 复制的是
- * `msg.toolCalls === undefined`：**真机上 fork 出来的消息会丢掉工具调用**。
+ * ## 第 84 波（功能上下文审计 F3）：这里原来写着"这条用例在端口模式下仍红、真机 fork 会丢工具调用"
+ *
+ * **那句话已经过期，而且是假陈述**（本项目口径：过期注释 = 假陈述）。现在是绿的，实测：
+ *
+ * ```text
+ * npx vitest run src/test/fork.test.ts src/test/encoding-toolcalls.test.ts
+ *  ✓ src/test/encoding-toolcalls.test.ts (6 tests) 167ms
+ *  ✓ src/test/fork.test.ts (10 tests) 183ms
+ *  Test Files  2 passed (2)   Tests  16 passed (16)   （vitest 退出码 0）
+ * ```
+ *
+ * 机制侧的依据（原注释说"同步读路径拿不到 tool_calls"，但实现已经补上了）：
+ * `listMessagesMerged` 会用 `toolCallCache` 给缺 `toolCalls` 的消息**回填**
+ * （`message.ts:548-562` 的 `withToolCalls`，注释正好写明"工具调用从缓存补上
+ * （与 `getMessage` 同一来源）"，且这一步刻意放在**所有返回路径之前**）。
+ * 所以下面 `toolCallsOf()` 在端口模式下能从端口表读到 fork 出来的新行，
+ * 断言 `forkedCalls[0].tool === "read_file"` 成立。
+ * 这条注释若再变红，请先跑上面那条命令，再判断是产品缺口还是注释又过期了。
  */
 function toolCallsOf(messageId: string): Array<{ id: string; tool: string; args: Record<string, unknown> }> {
   if (hasStoragePort()) {

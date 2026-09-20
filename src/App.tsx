@@ -2713,12 +2713,21 @@ if (!session) {
       }
       try {
         const { recordSessionFeedback } = await import("./core/llm/feedback");
-        recordSessionFeedback(session.id, feedbackText);
+        // 第 84 波（审计 B2）：把"到底写没写进去"如实反映到提示上。
+        // `recordSessionFeedback` 现在返回 { seq, persisted }；事件日志在端口未接手/未就绪时
+        // **不抛**，而是返回 seq=0 的"未落库事件"（见 `event-log.ts` 的 append）。
+        // 所以这里必须看 persisted，不能只靠 try/catch —— 原来那样会在事件根本没落库时
+        // 照样打 ✅，属于本项目明令禁止的"假成功"。
+        const written = recordSessionFeedback(session.id, feedbackText);
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
-          content: `✅ 反馈已留档到会话 ${session.id.substring(0, 8)}... 的事件日志（session_meta / feedback_record）。` +
-                  `当前没有任何自动流程读取它 —— 它只是留档，不会影响模型行为或后续自动处理。`,
+          content: written.persisted
+            ? `✅ 反馈已留档到会话 ${session.id.substring(0, 8)}... 的事件日志（session_meta / feedback_record，seq ${written.seq}）。` +
+              `当前没有任何自动流程读取它 —— 它只是留档，不会影响模型行为或后续自动处理。`
+            : `⚠️ 反馈**没有**写进事件日志：事件通道当前不可用（未落库，seq=0）。` +
+              `文本没有被保存到会话 ${session.id.substring(0, 8)}... —— 请稍后重试；` +
+              `若持续失败，见界面上的持久化失败提示（事件未写入：端口侧事件通道不可用）。`,
           timestamp: Date.now(),
           status: "done",
         });

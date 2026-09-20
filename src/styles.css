@@ -6344,6 +6344,36 @@ color: var(--text-on-accent);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /**
+   * 第 76 轮（真机实测"点进服务器目录就锁死"）—— 这条是修复的核心一笔。
+   *
+   * 现场读数（`.preview-shot/audit-walk-mcp-lock.json`）：关闭按钮
+   * `.mcp-marketplace-close` 落在 `24x27@1160,12`，中心点 `(1172,26)`；
+   * 而 `document.elementFromPoint(1172,26)` 返回的是
+   * `BUTTON.titlebar-btn.titlebar-btn-close`（rect `1154,4,46,36`）。
+   * 原因不是按钮自己的层级，是 **titlebar 与模态层的 z-index 关系**：
+   *   - `.titlebar`（`styles.css:447`）`position: relative; z-index: var(--z-context-menu-top)` = **9999**
+   *   - `.modal-overlay`（`styles.css:4430`）`z-index: var(--z-modal)` = **1300**
+   * 9999 > 1300 ⇒ titlebar 整条（含系统窗口的最小化/最大化/关闭三个按钮）永远盖在模态层之上，
+   * 而"关闭"按钮恰好占据 `x ∈ [1154,1200]`、`y ∈ [4,40]` —— 面板的关闭按钮就在这个带里。
+   * 真机注入验证：**只横向挪开没用**（padding-right 试了 16/24/32/40/48/56 五档，
+   * `elementFromPoint` 依次返回 `titlebar-btn-close` / `titlebar-btn`，没有一个命中自己），
+   * 因为那条带子是**整条 titlebar 横向铺满**的。
+   *
+   * 所以正确的做法是**纵向让开**，与仓库既有的"模态避开标题栏"保持同一手法
+   * （参考 `.modal-overlay.notebook-modal-overlay { top: 36px }`）。
+   * 这里用 `padding-top` 而不是 `top`：`inset: 0` 不动，面板本体仍铺满视口
+   * （遮罩语义不变），只是内容整体下移一个 titlebar 的高度。
+   * 真机注入复量：按钮移到 `24x27@1160,56`，`elementFromPoint(1172,70)`
+   * 返回 `BUTTON.mcp-marketplace-close`（= 自己），四向 ±3px 也全部命中自己，
+   * 且不再落在 `titlebar-btn-close` 上（不会再误关窗口）。
+   *
+   * 为什么不用 `top: var(--chrome-height)`：`position: fixed` 元素同时给 `top`/`bottom`
+   * 会被拉伸重算高度，真机量到面板高度从 727 掉到 683、`.mcp-marketplace-grid` 少 44px；
+   * `padding-top` 没有这个问题（面板仍是 `1200x727`，网格 529px 高，与改前一致）。
+   */
+  padding-top: var(--chrome-height);
+  box-sizing: border-box;
 }
 
 .mcp-marketplace-header {
@@ -6784,7 +6814,15 @@ color: var(--text-on-accent);
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
+  /*
+   * 第 76 轮：纵向内边距 6px → 4px，与下面 `.skill-search-input` 的 24px 下限**配套**。
+   * 原因（真机复量）：只提输入框到 24px 会让整盒从 29px 长到 38px，把「插件管理」
+   * 列表整体下推 9px —— 实测有 6 个交互控件被 `.plugin-mgr-footnote` 盖住
+   * （中心点 elementFromPoint 落到脚注上），那是"修一个坏一个"。
+   * 输入框 24 + 盒内边距 8 = 32px 盒高（+边框 2 = 34px），只比原来的 29px 高 5px；
+   * 真机复量确认 6 个被盖控件全部恢复可达，且输入框高度仍是 24px（达到 24x24 下限）。
+   */
+  padding: var(--space-2) var(--space-5);
   background: var(--bg-tertiary, #2a2a3e);
   border: 1px solid var(--border-primary, #333);
   border-radius: var(--radius);
@@ -6807,6 +6845,17 @@ color: var(--text-on-accent);
   color: var(--text-primary, #fff);
   font-size: var(--fs-base);
   outline: none;
+  /*
+   * 第 76 轮（真机逐面板走查）：真机量到它的**高度只有 15px**（技能管理 776x15、
+   * 插件管理 884x15）—— 输入框本身没有设高，高度就是 13px 字号的行盒。
+   * 垂直居中由宿主 `.skill-search-box` 的 `align-items: center` 负责，
+   * 所以这里只是给它一个 24px 的真实下限，图标/文字的视觉位置不变。
+   *
+   * 布局影响：宿主 `.skill-search-box` 的纵向内边距已同步从 6px 调到 4px
+   * （见该规则的注释），所以整盒只从 29px 长到 34px；「技能管理」中余量充足，
+   * 「插件管理」真机复量确认原本会被 `.plugin-mgr-footnote` 盖住的 6 个控件全部恢复可达。
+   */
+  min-height: 24px;
 }
 
 .skill-search-input::placeholder {
@@ -8438,6 +8487,32 @@ border-bottom: 1px solid var(--accent);
 .git-env-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); }
 .git-env-toggle-label { font-size: var(--fs-base); font-weight: 500; cursor: pointer; }
 .git-env-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+/*
+ * 第 76 轮（真机逐面板走查）：「Git」页 3 个 `.git-env-checkbox` 量到 **18x18**，
+ * 低于 WCAG 2.5.8 的 24x24 下限。与走查报告里那些"被 <label> 撑开、不必改"的
+ * checkbox 不同，这 3 个**没有**被 `<label>` 包裹（它们是 `<input>` + 同级
+ * `<label htmlFor=…>`，真机 `closest('label') === null`），旁边那行文字本身
+ * 只有 20px 高 —— 所以既要给控件本身一个真实下限，又要让整行 24px 都算命中。
+ *
+ * 做法：控件自身用 `min-width/min-height: 24px`（原生 checkbox 的勾选方块会跟着变到
+ * 24px，这是"真的需要改尺寸"的那一类，不是伪元素能糊过去的）。`box-sizing: border-box`
+ * 保证 24px 含边框，不再随主题/缩放漂移。
+ *
+ * **不做伪元素外扩**：横向外扩会盖住紧邻的 `<label>`（那是另一个有效命中层，点它也
+ * 一样能切换控件，"盖住"只算重复命中、不算抢事件），但纵向外扩会顶到上/下一条设置，
+ * 得不偿失 —— 这里尺寸已经达标，外扩没有收益。
+ *
+ * 布局影响：两个 `.git-env-field--inline` 行真机为 548x20（grid gap 8px），
+ * `.git-env-toggle-row` 为 522x41（flex，align-items:center）。24px 的控件会让
+ * `--inline` 行从 20px 长到 24px（各 +4px），`.setting-group` 是普通纵向流，
+ * 只是把下方内容整体下推 8px；**不会覆盖任何相邻控件**（父元素内可交互兄弟数 = 0）。
+ */
+.git-env-checkbox {
+  box-sizing: border-box;
+  min-width: 24px;
+  min-height: 24px;
+}
+
 .git-env-save-btn { padding: var(--space-3) var(--space-8); font-size: var(--fs-sm); }
 
 .git-env-ops-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
@@ -10198,6 +10273,25 @@ border-bottom: 1px solid var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
+  /*
+   * 第 76 轮（真机逐面板走查）：真机量到它的命中区只有 **22x22**
+   * （14px 的 svg + 两侧各 4px padding），低于 WCAG 2.5.8 的 24x24 下限。
+   * 它在「工具」和「用量统计」两页各出现一次，是两页里唯一的无名小图标按钮。
+   *
+   * 依既有做法（`.sidebar-session-pin::after`、`.market-skill-link-btn::after`）
+   * 用不吃事件的伪元素外扩**命中区**，视觉与布局一个像素都不动。
+   * 外扩量取 -5px（纵向）/ -2px（横向）：真机 elementFromPoint 抽查确认
+   * 中心点 ±2/±4/±5px 四向都仍落在自己身上，且 header 内没有相邻可交互控件
+   * （父元素 `.usage-stats-header` 内可交互兄弟数 = 0），不存在"外扩压到邻居"的风险。
+   */
+  position: relative;
+}
+
+.usage-stats-close::after {
+  content: "";
+  position: absolute;
+  inset: -5px -2px;
+  background: transparent;
 }
 
 .usage-stats-close:is(:hover, :focus-visible) {

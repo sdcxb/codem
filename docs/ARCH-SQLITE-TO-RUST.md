@@ -72,7 +72,7 @@
   > 现场是 `crud.upsert { mode: "replace" }` 走了**裸 INSERT** 分支
   > （`NOT NULL constraint failed: session_events.session_id`），而新构建的同一条命令
   > 正确走"先 UPDATE 再 INSERT"（`written: 1`）。也就是**同一个命令名、两种语义** ——
-  > 用它改用户数据之前，先 `cargo build -p codem-db --bin codem-db-cli` 重新构建，
+  > 用它改用户数据之前，先 `cargo build --manifest-path codem-db\Cargo.toml --bin codem-db-cli` 重新构建，
   > 并核对 `target/debug/codem-db-cli.exe` 的时间戳。
   > （同一类"两个来源给同一事实"的缺陷，这个仓库已经抓过多次；这里记的是**工具链**上的那一例。）
 - Tauri command：只做「参数解码 → 调库 → 结果编码」，**没有业务逻辑**。

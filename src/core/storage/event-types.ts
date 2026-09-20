@@ -2,9 +2,25 @@
  * Event Sourcing — Session Event Types
  *
  * Design (对标 DeepSeek Harness event-sourcing):
- * - Append-only event log: events are never deleted or updated
- * - Events are the source of truth; messages are derived projections
- * - Supports replay, fork, and projection
+ * - Append-only log: events are never updated in place（唯一删事件的路径是
+ *   `event-log.ts::compactWithSnapshot`，而它**没有生产调用者** —— 见该文件与本文件
+ *   `session_snapshot` 处的说明）
+ * - **消息才是权威，事件不是**（第 84 波改正，原话是反的）
+ * - 支持 replay / projection / 结构自检
+ *
+ * ## 第 84 波（功能上下文审计 P5）：把"谁是谁的权威"写准
+ *
+ * 这里原来写的是 "Events are the source of truth; messages are derived projections"
+ * —— **与实现相反**，而且这句话会直接误导读者判断"日志丢了能不能重建"：
+ *
+ * | 东西 | 谁是权威 | 证据 |
+ * | --- | --- | --- |
+ * | 消息 | `messages` 表，其权威副本是 **JSONL 追加日志**（SQLite 索引可重建） | `session-jsonl.ts:10-19`（"会话的权威存储是 append-only JSONL，SQLite 只是可重建的查询索引"）；读侧 `agentic-loop.ts:2853-2862` |
+ * | 事件 | `session_events` **自身**（append-only，且**没有任何等价物、不可重建**） | `maintenance.ts:1223`（"`session_events` 是**唯一没有等价物**的存储"） |
+ * | 投影 | 纯**派生读**（不写权威）；只供 telemetry / audit 与维护自检 | `event-projection.ts` 模块头（已改正） |
+ *
+ * 所以正确的不变量是：**消息可由 JSONL 重建，事件不能由任何东西重建**。
+ * 本文件只负责**事件的类型集合**，不为消息的权威性背书。
  *
  * Each event captures a discrete state transition in the conversation lifecycle.
  */

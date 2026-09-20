@@ -695,7 +695,26 @@ async function detectSessionsBehindLog(): Promise<
   for (const sessionId of sessionIds) {
     try {
       /**
-       * ⚠️ 这里**必须自己去把日志读一遍**，不能等别人先 hydrate。
+       * ① 用户删掉的会话：日志留墓碑是设计使然（`isSessionDeleted`），不参与比较 ——
+       * 而且**没有任何合法读者**（会话行已删、这个 id 不会再被用户面读路径读），
+       * 所以顺手把它已经驻留的日志正文镜像释放掉（第 63 轮，见
+       * `message.ts::releaseSessionLogCache` 的"为什么这个时机是安全的"）。
+       *
+       * 这一步治的是"**上一个进程里**删掉的会话"：`session.ts::deleteSession` 的释放
+       * 只覆盖本进程内的删除，而这些会话的日志文件还在磁盘上、墓碑也在，
+       * `listSessionLogs()` 照样把它们列出来 —— 于是下面那句"主动读一遍日志"
+       * 会把它们的正文**读进内存**（读的是日志文件，不看会话表），
+       * 而它们永远不会被任何东西用到，是纯驻留。
+       *
+       * 判据放在 hydrate **之前**（原来在之后）：顺序换过来只是省掉"为一次不会用到
+       * 的对账去读全文"，不影响任何报告口径 —— 两条路都是 `continue`、都不计数。
+       */
+      if (await isSessionDeleted(sessionId)) {
+        msgMod.releaseSessionLogCache(sessionId, "会话已删除（日志留墓碑）");
+        continue;
+      }
+      /**
+       * ② 这里**必须自己去把日志读一遍**，不能等别人先 hydrate。
        *
        * 第一版是"只比已 hydrate 的会话"，看着保守，实际会在**最该发现问题的形态**上瞎掉：
        * **索引为空**的会话（正是"索引丢光了"那种）在回填里会走
@@ -709,14 +728,12 @@ async function detectSessionsBehindLog(): Promise<
       if (msgMod.sessionLogReadState(sessionId) === "pending") {
         await new Promise<void>((resolve) => msgMod.ensureSessionLogHydrated(sessionId, () => resolve()));
       }
-      // ① 读过之后仍不是 hydrated（= 读失败）：没有可信集合，跳过（不许瞎猜）
+      // ③ 读过之后仍不是 hydrated（= 读失败）：没有可信集合，跳过（不许瞎猜）
       if (msgMod.sessionLogReadState(sessionId) !== "hydrated") continue;
-      // ② 用户删掉的会话：日志留墓碑是设计使然（`isSessionDeleted`），不参与比较
-      if (await isSessionDeleted(sessionId)) continue;
-      // ③ 日志里的活消息数（`null` = 不知道，**不许**当成 0）
+      // ④ 日志里的活消息数（`null` = 不知道，**不许**当成 0）
       const logIds = msgMod.logLiveMessageCount(sessionId);
       if (logIds === null || logIds === 0) continue;
-      // ④ 引擎报的该会话总行数（含 hidden）
+      // ⑤ 引擎报的该会话总行数（含 hidden）
       const counted = await structuredCommand<{ total?: number; count?: number }>(
         getStoragePort(),
         "messages.count",
@@ -1000,6 +1017,94 @@ function readInvariantWatermark(): InvariantWatermark | null {
 }
 
 /**
+ * 读侧镜像的最小接口（`RustMessageMirror` / `RustEventMirror` 都满足）。
+ *
+ * 第 63 轮：从 `waitForSessionMirrors` 的**函数内局部接口**提到模块级 ——
+ * 因为"重新确认就绪"（见 `recheckMirrorsReady`）也需要同一份形状，
+ * 两处各写一份迟早会漂移（这正是本仓库反复记录的那类"同一规则两份实现"）。
+ */
+interface MirrorLike {
+  isLoaded?: (sid: string) => boolean;
+  isTruncated?: () => boolean;
+  ensureLoaded?: (sid: string, cb?: () => void) => void;
+}
+
+/** 取可用的读侧镜像（消息 + 事件）；没有任何镜像能力时返回空数组 */
+function sessionMirrors(): MirrorLike[] {
+  const port = getStoragePort() as unknown as { messages?: MirrorLike; events?: MirrorLike } | null;
+  return [port?.messages, port?.events].filter(
+    (m): m is MirrorLike => !!m && typeof m.ensureLoaded === "function" && typeof m.isLoaded === "function",
+  );
+}
+
+/** 该会话两侧镜像**此刻**是否都已加载（**不触发加载、不等待**） */
+function mirrorsReadyNow(mirrors: MirrorLike[], sid: string): boolean {
+  return mirrors.every(
+    (m) => m.isLoaded!(sid) === true && !(typeof m.isTruncated === "function" && m.isTruncated()),
+  );
+}
+
+/**
+ * 单个会话的"**重新**确认就绪"（第 63 轮）。
+ *
+ * ## 为什么需要它：批量就绪快照会**过期**
+ *
+ * `waitForSessionMirrors(sessionIds)` 是批量等的，返回的是**那一刻**的快照。
+ * 而两侧镜像都有内存预算（消息镜像 20000 行、第 63 轮给事件镜像补上了同一条），
+ * 批量加载会把先加载完的会话按 LRU 逐出 —— 于是"头上判为就绪"的会话
+ * 轮到它读的时候可能已经不在镜像里，`readAll(sid)` 返回空数组，
+ * 判据随即把"读不到"算成"这些消息都没有事件记录"（真机形态：934 = 657 + 277 的假缺口）。
+ *
+ * ⚠️ 更糟的是：这条竞态**不是罕见的边角**。第 63 轮修掉"强制点没生效"之后，
+ * 批量加载在所有会话都被发出去的同一条微任务链上**必然**发生逐出，
+ * 于是"头上就绪、轮到时已被逐出"是**常规形态**，不是例外。
+ *
+ * ## 处置（与头上那次等就绪**同一条规则**，不发明新的）
+ *
+ * - 此刻就绪 → 直接用（零额外等待 —— 没超预算的机器走的一直是这条）；
+ * - 此刻不就绪 → 重新等一次：`ensureLoaded` 会重新分页拉全量，
+ *   读到的仍是**完整集合**（`isLoaded` 为真才放行）；
+ * - 等不到（读失败 / 超预算）→ **如实计入 `unreadableSessions` 并跳过**。
+ *
+ * ## 等待是有界的（两层都要有，缺一层就会被拖死）
+ *
+ * - **单会话**：头上就绪过的（= 被逐出 → 重新加载本来就快）给 `MIRROR_RECHECK_PER_SESSION_MS`；
+ *   头上就没就绪的（= 可能加载慢或本来就失败）只给 `MIRROR_RECHECK_COLD_SESSION_MS`，
+ *   免得每个会话都白等一整个窗口；
+ * - **整轮共享** `MIRROR_RECHECK_TOTAL_MS`：用尽之后不再等，剩下的会话一律计入
+ *   "未检查"。这条与 `waitForSessionMirrors` 的 `budgetMs`（"维护不会被拖死"）
+ *   是同一条原则：**宁可不检查，也不许报假缺口，更不许把维护挂住**。
+ *
+ * 代价如实写明：语料量超过镜像预算的机器，维护会为被逐出的会话多付一次加载成本
+ * （与头上那次批量加载同量级）。还有一笔**必须一起说清**的代价：批量等就绪那一趟
+ * （`waitForSessionMirrors` 的 4000ms 共享上限）在"途中发生逐出"的机器上会**等到它的上限**——
+ * 因为镜像的就绪回调带着 `loaded.has(sid)` 判据（`rust-port.ts`），
+ * 被逐出的会话不会再触发那个回调。也就是说：这一改动让"语料超预算"的机器
+ * 在维护里最多多等一次 4000ms。**换到的是"逐出不会被算成数据缺口"**，
+ * 而假缺口会写进只增不减的水位（见 `invariant-watermark` 的用例），代价更高。
+ */
+const MIRROR_RECHECK_PER_SESSION_MS = 2500;
+const MIRROR_RECHECK_COLD_SESSION_MS = 800;
+const MIRROR_RECHECK_TOTAL_MS = 8000;
+
+async function recheckMirrorsReady(
+  sid: string,
+  readyAtGate: boolean,
+  deadline: number,
+): Promise<boolean> {
+  const mirrors = sessionMirrors();
+  if (mirrors.length === 0) return true;
+  if (mirrorsReadyNow(mirrors, sid)) return true;
+  const budgetMs = Math.min(
+    readyAtGate ? MIRROR_RECHECK_PER_SESSION_MS : MIRROR_RECHECK_COLD_SESSION_MS,
+    deadline - Date.now(),
+  );
+  if (budgetMs <= 0) return false;
+  const again = await waitForSessionMirrors([sid], budgetMs);
+  return again.get(sid) === true;
+}
+
+/**
  * 等这些会话的**读侧镜像**（消息 + 事件）真正就绪；返回 `会话 → 是否读得到`。
  *
  * ## 为什么必须有这一步（第 60 轮的真机取证）
@@ -1045,27 +1150,15 @@ async function waitForSessionMirrors(
   sessionIds: readonly string[],
   budgetMs = 4000,
 ): Promise<Map<string, boolean>> {
-  interface MirrorLike {
-    isLoaded?: (sid: string) => boolean;
-    isTruncated?: () => boolean;
-    ensureLoaded?: (sid: string, cb?: () => void) => void;
-  }
   const out = new Map<string, boolean>();
   const ids = [...new Set(sessionIds.filter((s) => typeof s === "string" && s.length > 0))];
-  const port = getStoragePort() as unknown as { messages?: MirrorLike; events?: MirrorLike } | null;
-  const mirrors: MirrorLike[] = [port?.messages, port?.events].filter(
-    (m): m is MirrorLike => !!m && typeof m.ensureLoaded === "function" && typeof m.isLoaded === "function",
-  );
+  const mirrors = sessionMirrors();
   if (mirrors.length === 0) {
     for (const sid of ids) out.set(sid, true);
     return out;
   }
   /** 该会话两侧镜像**都**读得到（截断的镜像不完整：读到的"少"不是真值） */
-  const readyOf = (sid: string): boolean =>
-    mirrors.every(
-      (m) =>
-        m.isLoaded!(sid) === true && !(typeof m.isTruncated === "function" && m.isTruncated()),
-    );
+  const readyOf = (sid: string): boolean => mirrorsReadyNow(mirrors, sid);
   const deadline = Date.now() + budgetMs;
   await Promise.all(
     ids.map(
@@ -1233,10 +1326,39 @@ export async function auditInvariantsForSessions(
      */
     const { getEventProjection } = await import("./event-projection");
     const ready = await waitForSessionMirrors(sessionIds);
+    /**
+     * 整轮共享的"重新就绪"预算（见 `recheckMirrorsReady` 的注释）：
+     * 用尽之后剩下的会话一律计入 `unreadableSessions`，不再等待 ——
+     * 与 `waitForSessionMirrors` 的 `budgetMs` 是同一条原则：维护不许被拖死，
+     * 但也绝不把"读不到"折算成缺口。
+     */
+    const recheckDeadline = Date.now() + MIRROR_RECHECK_TOTAL_MS;
     const structuralErrors: string[] = [];
     for (const sid of sessionIds) {
       if (!sid) continue;
-      if (ready.get(sid) !== true) {
+      /**
+       * ## ⚠️ 本次会话读之前**必须重新确认一次**就绪，不能只用开头那张快照（第 63 轮）
+       *
+       * 开头那次 `waitForSessionMirrors(sessionIds)` 是**批量**等全部会话就绪的。
+       * 而两侧镜像现在**都有内存预算**（`RustMessageMirror.totalBudgetRows = 20000`，
+       * 第 63 轮给 `RustEventMirror` 补上了同样的一条）：批量加载途中，
+       * 先加载完的会话会按 LRU 被逐出 —— 于是"开头判为就绪"的那个会话，
+       * 轮到它读的时候**可能已经不在镜像里了**。那一刻 `readAll(sid)` 返回空数组，
+       * 判据就会把"读不到"算成"这些消息都没有事件记录"：**正是上面用真机数据记下的那场误报**
+       * （934 = 657 + 277，两次维护相隔 36 秒报出两个不同的假缺口）。
+       *
+       * 逐出本身**不是缺陷**（它是内存预算的正常代价，而且逐出后 `isLoaded` 明确回到 false，
+       * 读语义仍是"要么完整、要么重新加载"）；**把逐出当成"没有数据"才是**。
+       * 所以这里的处置与开头完全一致：重新等一次就绪（会重新分页拉全量），
+       * 等不到就**如实计入 `unreadableSessions` 并跳过** —— 既不冒充"检查过"，
+       * 也不把"读不到"折算成缺口。
+       *
+       * ⚠️ 不拿"头上就绪过"当**放行**条件（只在 `recheckMirrorsReady` 里用它决定
+       * 给多长的等待窗口）：批量加载的逐出发生在同一条微任务链上，
+       * "头上就绪、轮到时已被逐出"是常规形态而不是意外，
+       * 拿过期快照当放行条件正是要修的那个缺陷。
+       */
+      if (!(await recheckMirrorsReady(sid, ready.get(sid) === true, recheckDeadline))) {
         out.unreadableSessions += 1;
         continue;
       }
@@ -1560,11 +1682,21 @@ export async function runDatabaseMaintenance(
      *   那个消费者本身也是死读 —— 同一类错误犯了两遍，所以这里改成**如实说没消费者**。）
      * - `compaction` 事件（`CompactionPayload`：`removedMessageIds` / `summary`）：
      *   `event-projection` 的 `applyCompaction` 真的读它（把消息标记为被取代）；
-     *   `runtime-invariants` 也读它（`abort` / `compaction` 会改变它判定的口径）；
      *   `validateReplay` 也检查它。快照载荷里只固化了
      *   `{ messages, compactionSummary, removedMessageIds }`，**没有逐条的 compaction 事件**。
-     *   （原注释此处还列了 `getActiveGenerations`：它是 `event-projection.ts:471` 的
-     *   定义，同样**零生产调用者** —— 一并按"只列真实消费者"处理。）
+     *   （第 84 波改正：原注释在这里写着 "`runtime-invariants` 也读它（`abort` / `compaction`
+     *   会改变它判定的口径）" —— **实现里没有这条读**。`runtime-invariants.ts` 全文**没有**
+     *   `compaction` / `abort` 字样，它只按 `user_message` / `assistant_text` /
+     *   `assistant_reasoning` / `tool_call` / `tool_result` 过滤事件，机制上不会读
+     *   compaction 的载荷。**但这条论据的结论仍然成立**，只是理由是**间接误报**：
+     *   旧事件被快照删掉之后，仍可见的那些老消息在事件侧再没有对应事件，
+     *   于是 `checkVisibleRecordedInvariant` 会把它们报成
+     *   `VISIBLE_BUT_NOT_RECORDED`（`runtime-invariants.ts:129-141`）——
+     *   是"事件没了导致误报"，不是"它会读 compaction"。)
+     *   （原注释此处还列了 `getActiveGenerations`：它是 `event-projection.ts` 里
+     *   `EventProjection.getActiveGenerations` 的定义，同样**零生产调用者** ——
+     *   一并按"只列真实消费者"处理；其零调用者状态已登记在该方法注释与
+     *   `docs/AUDIT-ZERO-GAP.md` 第 3 节。）
      * - `tool_call` / `tool_result` 的配对：`runtime-invariants` 的
      *   `checkToolCallPairingInvariant` 靠事件配对判断"有没有未完成的工具调用"，
      *   而快照只固化投影出的 `messages`（配对关系不是它的形状）。

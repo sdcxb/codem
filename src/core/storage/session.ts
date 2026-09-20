@@ -2,6 +2,7 @@
 // （原来这里唯一的用途就是 `getEventLog().forkSession(...)`，见下面 `parent_id` 写入处的说明）。
 import type { Session } from "../types";
 import { appendSessionTombstone } from "./session-jsonl";
+import { releaseSessionLogCache } from "./message";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
 /**
@@ -375,6 +376,25 @@ export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}):
       confirmBulk: opts.confirmBulk,
     })
   ) {
+    /*
+     * ## 第 63 轮：删除成功后**释放该会话的日志正文镜像**（内存预算的唯一生产时机）
+     *
+     * 为什么必须是"删除成功之后"：`deleteSession` 失败时那会话还在，
+     * "它可能被读"这个前提没有消失 —— 那时释放只会制造一次"非空但不完整"的读
+     * （被索引裁剪的历史只在日志那一侧，见 `message.ts::cachedLogMessages` 的实测数字：
+     * 本机真库某个会话 657 行里有 157 行只读得到于日志），
+     * 而 `store.loadMessages` 只在结果**为空**时才重新 hydrate，界面上不会有任何提示。
+     *
+     * 为什么这个时机安全：会话行已删（外键级联删掉消息行），
+     * 这个 id 再也不会被任何用户面读路径合法地读 —— 于是"清理会不会打断正在被 UI 读的会话"
+     * 这个问题**不需要回答**（存储层也答不了：它没有"当前会话"的概念）。
+     * 反过来，不释放会让这份镜像继续供 `listMessages` 读出**一段已经不存在的历史**
+     * （日志文件按设计不动、只留会话墓碑）。
+     *
+     * 覆盖范围：UI 删除（`core/store.ts::deleteSession`）与"删项目"级联
+     * （`core/store.ts:144` 的循环）都走这个函数，所以两条路都在。
+     */
+    releaseSessionLogCache(id, "会话已删除");
     return;
   }
   // 第 17 轮（L4）：旧库回退（`DELETE FROM sessions` + persistDatabase）已删 → 如实上报。

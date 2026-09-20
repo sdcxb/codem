@@ -700,7 +700,82 @@ function hiddenMessageIds(sessionId: string): Set<string> {
  * 一起删掉了 —— 少一套需要维护、且只在特定生命周期内成立的中间状态。
  */
 
-/** 会话日志的内存镜像（由 hydrateSessionLog 填充） */
+/**
+ * 会话日志的内存镜像（由 hydrateSessionLog 填充）。
+ *
+ * ## ⚠️ 第 63 轮：这是"审计点名的第二条无上界结构"，但**它不能按预算逐出**
+ *
+ * 稳定性审计第 ④ 节把它与 `RustEventMirror` 并列（`message.ts:704`）：每个被访问过的
+ * 会话的**全部消息正文**常驻，而清理入口 `clearSessionLogCache` 在生产代码里没有调用者。
+ * 现状与本轮结论：
+ *
+ * ### 为什么它会长到很大（谁把日志灌进来的，以及真机上的量级）
+ *
+ * 不是"用户点开多少会话"，而是"**进程里有谁按会话扫过一遍**"：
+ * `maintenance.ts` 的 `detectSessionsBehindLog` 为了让"索引落后于权威日志"能被发现，
+ * 会**主动把每个会话的日志读一遍**（`ensureSessionLogHydrated`，见那里的长注释）；
+ * `session-log-bridge.ts` 重建索引时也是按批 `hydrateSessionLog`。
+ * 于是一次启动维护就把**全部会话的正文**留在了这个 Map 里。
+ *
+ * 这个 Map 存的就是 `readSessionMessages()` 的解析结果，所以它的量级**直接**等于
+ * `%APPDATA%\com.codem.app\sessions\*.jsonl` 的规模。本机真机库只读实测（第 63 轮）：
+ *
+ * | 项 | 实测 |
+ * | --- | --- |
+ * | 日志文件数 / 总字节 | **6 个 / 7,491,983 B（7.14 MiB）** |
+ * | 其中仍在库里的两个会话 | 2,793,371 B + 1,741,168 B = **4,534,539 B** |
+ * | 其中**会话行已不存在**（日志里有 `__session_deleted__` 墓碑）的两个 | 1,478,481 B × 2 = **2,956,962 B** |
+ *
+ * 也就是说：**本机此刻就有 2.96 MB 的"已删除会话正文"会被启动维护重新读进内存**
+ * 而永远不会被任何读者用到（`listSessionLogs()` 列的是磁盘文件，不看会话表）。
+ * 这正是下面那个清扫点存在的理由 —— 它不是理论风险，是这台机器上正在发生的量。
+ *
+ * ### 为什么本轮**不给它加预算/LRU**（这条是量过之后才敢下的结论）
+ *
+ * `listMessages`（= `listMessagesMerged`）是**同步**读，它把"索引视图 + 日志镜像"合并起来，
+ * 而被索引裁剪掉的历史（`hidden = 1, trimmed = 1`）**只存在于日志那一侧**
+ * （`listMessagesFromIndex` 是 `WHERE hidden = 0` 的索引视图，见本文件第 404-414 行的对照表）。
+ * 真机库实测（只读统计）：会话 `1788268497135-31x6vdt97` 共 657 行，其中
+ * **157 行是 `hidden = 1, trimmed = 1`** —— 也就是**索引视图只有 500 行**，
+ * 另外 24% 的用户历史只有"日志合并"这一条路读得到。
+ * 于是"按预算逐出某个会话的日志镜像"意味着：
+ *
+ * 1. 该会话的读者**立刻少看到 157 条**（且不是"读不到"而是"读到了更少的集合"——
+ *    这正是本仓库反复修的"塌陷"，只是不再报错、更难发现）；
+ * 2. **没有任何东西会把它补回来**：`store.loadMessages` 只在合并结果**为空**时才去
+ *    `ensureSessionLogHydrated`（`store.ts:513` 起的那一整段都在 `if (totalCount === 0)` 里），
+ *    而 UI 的"正在读取历史…/暂时读不到"也只在 `messages.length === 0` 时渲染
+ *    （`ChatPanel.tsx:762/802`）。非空但变少的读，界面上**完全没有任何信号**。
+ *
+ * 还有两条同方向的证据：
+ *
+ * 3. 逐出**无法保证不碰"正在被 UI 读的会话"**：存储层没有任何"当前会话"的概念
+ *    （全仓 grep：storage 里没有 current session 键；`store.ts` 把它存在 React state 里），
+ *    而 `listMessages` 还被 fork / 父会话 / 不在场会话的维护路径调用
+ *    （`core/store.ts:364`、`core/llm/index.ts:1722`、`runtime-invariants.ts:116`…），
+ *    所以"最近被读的会话"这个信号**不等于**"UI 正在看的会话"；
+ * 4. fork 这类路径会把读到的结果**写进新会话的日志**：一次"少 157 条"的读会被**固化**下来，
+ *    比显示层少几条严重得多。
+ *
+ * 结论：**预算/逐出需要先把"非空但不完整"这一态表达出来**（例如让
+ * `listMessages` 的调用方能区分三态并触发重新 hydrate，那是 `store.ts` 的改动，
+ * 不在本轮所有权内）。在没有那一步之前，硬加预算就是用"静默少历史"换内存 —— 不划算。
+ * （对照：事件镜像那一侧本轮的预算之所以能加，是因为它的 `isLoaded` 让"未加载"这一态
+ * 本来就被表达出来，且每个读它的消费者都按"未加载不路由"处理。）
+ *
+ * ### 本轮做了什么（真实生产时机 + 只释放**可证明没有读者**的会话）
+ *
+ * `releaseSessionLogCache()`：只在该会话**已被删除**（会话行删掉、日志留下墓碑，
+ * 即"这个 id 再也不会被任何用户面读路径合法地读"）时释放。
+ * 两个调用点都是生产路径：`session.ts::deleteSession`（删除成功之后）与
+ * `maintenance.ts::detectSessionsBehindLog`（对磁盘上有日志但已带墓碑的会话做一次清扫）。
+ *
+ * 顺带修掉一个一直存在的小缺陷：删除会话后**日志文件一个字节没动**（设计如此，见
+ * `deleteSessionLog` 的注释），于是"已删除的会话"在本进程里还能通过这份内存镜像
+ * 被 `listMessages` 读出一整段历史；释放之后读回 0 条才是事实。
+ * （若之后又有一次迟到的 hydrate 把日志读回来，它仍会重新驻留 —— 读路径不按
+ * **会话**墓碑过滤日志；本函数只负责"删除后不再常驻"，不改变日志文件本身。）
+ */
 const cachedLogMessages = new Map<string, Awaited<ReturnType<typeof readSessionMessages>>["messages"]>();
 
 /** 第 91 波：索引不可用只提示一次（数据库致命时否则每次读都刷一行） */
@@ -744,8 +819,19 @@ function sessionIdFromLogMirror(messageId: string): string | null {
  * （写一个空数组等于把"读失败"谎报成"这个会话没有消息"）。
  */
 export async function hydrateSessionLog(sessionId: string): Promise<number> {
+  /**
+   * 开始读之前记下"释放世代"：写回之前再比一次（见 `releaseSessionLogCache`）。
+   * 这次读取期间若发生过释放，它读回来的正文**已经过期** —— 丢弃写入，
+   * 于是"释放瞬间正好在途的那次 hydrate"不会把刚释放的正文又写回来。
+   * 返回值照常给条数（调用方不受影响）。
+   */
+  const epochAtStart = logReleaseEpoch.get(sessionId) ?? 0;
   try {
     const { messages } = await readSessionMessages(sessionId);
+    if ((logReleaseEpoch.get(sessionId) ?? 0) !== epochAtStart) {
+      logReadFailures.delete(sessionId);
+      return messages.length;
+    }
     cachedLogMessages.set(sessionId, messages);
     logReadFailures.delete(sessionId);
     return messages.length;
@@ -756,11 +842,86 @@ export async function hydrateSessionLog(sessionId: string): Promise<number> {
   }
 }
 
-/** 测试/会话关闭时清理镜像 */
+/** 测试/会话关闭时清理镜像（生产路径请用 `releaseSessionLogCache`，它会做安全判据与留痕） */
 export function clearSessionLogCache(sessionId?: string): void {
   if (sessionId) cachedLogMessages.delete(sessionId);
   else cachedLogMessages.clear();
 }
+
+/**
+ * **释放某会话的日志镜像（生产入口）** —— 第 63 轮给 `cachedLogMessages` 的清理时机。
+ *
+ * ## 为什么只在这个时机释放（"为什么这个时机是安全的"）
+ *
+ * 调用点只有两个，都满足同一条判据：**该会话已被删除，因此不存在任何"正在读它"的读者**
+ * （会话行已删、级联删掉消息行，`sessions` 里已经没有这个 id）。
+ * 具体：
+ *
+ * - `session.ts::deleteSession` —— 在 `domainDelete` **确认成功之后**才调用。
+ *   失败时**不释放**：那会话还在，"可能会被读"的前提没有消失，
+ *   释放只会白白制造一次"非空但不完整"的读（见上面 `cachedLogMessages` 的长注释）。
+ * - `maintenance.ts::detectSessionsBehindLog` —— 对磁盘上有日志、但**已带会话墓碑**的会话清扫一次
+ *   （覆盖"上一个进程里删掉的那些会话"：它们不可能再被本进程的 UI 读到）。
+ *
+ * ## 与"绝对不许碰"的那条规则的关系
+ *
+ * 需求原话是"不能清掉正在被 UI 读的会话"。本函数**只处理已删除的会话**，
+ * 把"是否正在被读"这个问题**变成了不需要回答的问题** —— 这比"猜哪个会话正在被读"可靠：
+ * 存储层根本没有"当前会话"这个概念（`store.ts` 把它存在 React state 里），
+ * 而 `listMessages` 还会被 fork / 维护 / 父会话路径调用，所以
+ * "最近被读的会话"这个信号并不等于"UI 正在看的会话"。
+ *
+ * ## 返回值与留痕
+ *
+ * 返回"是否真的释放了一份驻留"（`false` = 本来就没驻留）。
+ * 释放量走 `console.log`（低频、可对账），**不**走 `reportPersistFailure`
+ * —— 这是一次正常的内存回收，不是失败。
+ */
+export function releaseSessionLogCache(sessionId: string, reason: string): boolean {
+  if (!sessionId) return false;
+  const held = cachedLogMessages.get(sessionId);
+  const had = cachedLogMessages.delete(sessionId);
+  // "读失败"标记一起清：会话都删了，这个 id 的读取状态没有意义，
+  // 留着会让 `sessionLogReadState` 对一个不存在的会话报 `failed`。
+  logReadFailures.delete(sessionId);
+  /**
+   * 压住**在那次释放的同时还在途的那一次 hydrate**（否则释放等于白做）。
+   *
+   * 释放是同步的，而 hydrate 是异步的：`detectSessionsBehindLog` 之类的读者完全可能
+   * "已经发起读取、还没 set"就被删除打断 —— 它 set 回来，这份镜像当场复活。
+   * 所以这里给会话记一个**释放世代**（自增），`hydrateSessionLog` 开始读之前记下当时的世代、
+   * 写回之前再比一次：**只要期间发生过释放，就丢弃这一次写入**。
+   *
+   * 为什么用"世代"而不是"一次性标记"：标记会被**下一次** hydrate 吃掉，
+   * 于是"删除之后又被正常读了一次"会因为那个标记而写不进去
+   * （`sessionLogReadState` 永远停在 `pending` → 界面永远"正在读取历史…"）。
+   * 世代只说一件事：**这次读取跨越了一次释放**，所以它的结果已经过期。
+   *
+   * 有界：只留最近 `RELEASED_LOG_SESSIONS_MAX` 个键。被挤掉的键等价于"世代回到 0"，
+   * 它能影响的最坏情况是"一次文件读取期间发生了 64 次以上释放"（实际不可能），
+   * 后果只是"那一次写入没被压住" —— 会在下一次维护清扫里被再次释放。
+   */
+  logReleaseEpoch.delete(sessionId);
+  logReleaseEpoch.set(sessionId, ++logReleaseCounter);
+  if (logReleaseEpoch.size > RELEASED_LOG_SESSIONS_MAX) {
+    const oldest = logReleaseEpoch.keys().next().value;
+    if (oldest !== undefined) logReleaseEpoch.delete(oldest);
+  }
+  if (had) {
+    console.log(
+      `[SessionJSONL] 释放会话日志镜像 sessionId=${sessionId}（${held?.length ?? 0} 条，${reason}）—— 内存回收，非失败`,
+    );
+  }
+  return had;
+}
+
+/**
+ * 会话的"释放世代"（见 `releaseSessionLogCache` 里"压住在途的那一次 hydrate"）。
+ * 有界：只保留最近若干次释放；比较用的是"期间有没有变过"，所以挤掉旧键不会造成误压。
+ */
+const logReleaseEpoch = new Map<string, number>();
+let logReleaseCounter = 0;
+const RELEASED_LOG_SESSIONS_MAX = 64;
 
 /**
  * 该会话日志的读取状态（第 50 轮）—— **三态**，不是布尔。

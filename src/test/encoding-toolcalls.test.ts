@@ -39,12 +39,22 @@ type ToolCallLike = {
  *
  * 两态读各自那一侧，断言（中文/emoji 逐字相等）在两种形态下都成立。
  *
- * ⚠️ 已知产品缺口（本文件最后那条 fork 用例因此仍红）：端口模式下**同步**读路径拿不到
- * tool_calls —— `writeIndexViaRust` 不填 `toolCallCache`（与 `message.ts` 里
- * "缓存由写路径 addToolCall / updateToolCall / upsert_index 负责维护"的注释不符），
- * 镜像行也不含这一列，异步预热（`tool_calls.list`）只在 `getMessage` 里触发、且 `listMessages`
- * 那条路（fork 用的就是它）从不触发。所以本文件的编码断言读端口表（存储边界），
- * 而"fork 复制后还在不在"只能由那条 fork 用例来钉。
+ * ## 第 84 波（功能上下文审计 F3）：下面这段"已知产品缺口 / fork 用例仍红"的说法已过期
+ *
+ * 原注释写的是"端口模式下**同步**读路径拿不到 tool_calls …'fork 复制后还在不在'
+ * 只能由那条 fork 用例来钉（而那条仍红）"。**现在两个文件全是绿的**，实测：
+ *
+ * ```text
+ * npx vitest run src/test/fork.test.ts src/test/encoding-toolcalls.test.ts
+ *  ✓ src/test/encoding-toolcalls.test.ts (6 tests) 167ms
+ *  ✓ src/test/fork.test.ts (10 tests) 183ms
+ *  Test Files  2 passed (2)   Tests  16 passed (16)   （vitest 退出码 0）
+ * ```
+ *
+ * 机制侧：`listMessagesMerged` 现在会用 `toolCallCache` 回填缺失的 `toolCalls`
+ * （`message.ts:548-562` 的 `withToolCalls`，刻意放在所有返回路径之前），
+ * 所以同步读路径（fork 走的就是它）拿得到工具调用，`fork.test.ts` 里
+ * "fork 包含 tool_calls 的消息"是通过的。断言保持原样（读端口表是存储边界上最可信的判据）。
  */
 function toolCallsOf(messageId: string): ToolCallLike[] {
   if (hasStoragePort()) {

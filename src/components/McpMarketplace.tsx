@@ -121,6 +121,36 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
   const InstallIcon = ActionIcons.add;
   const UninstallIcon = ActionIcons.delete;
 
+  /**
+   * ## 第 76 轮（真机实测用户可见缺陷）：这个面板曾经**关不掉**
+   *
+   * 真机取证（`.preview-shot/audit-walk-mcp-lock.{log,json}`）：
+   * - 面板 `.mcp-marketplace` 是 `position: fixed; inset: 0` 的全屏层，**遮住了整块
+   *   `.modal-overlay`** ⇒ 网格采样 540 个点、`elementFromPoint` **0 个点命中遮罩自身**，
+   *   "点背景关闭"这条路不存在；
+   * - 唯一的关闭按钮钉在右上角（`24×27@1160,12`），正好压在 titlebar 的系统窗口按钮带
+   *   上面；titlebar 的 `z-index: 9999` 远高于 `.modal-overlay` 的 1300，所以
+   *   `elementFromPoint(1172, 26)` 返回的是 `BUTTON.titlebar-btn-close` —— 点它既关不掉
+   *   面板，还会**直接关掉整个窗口**（更糟：用户点"关闭"结果进程退出）；
+   * - 面板自己没有 Esc 处理，且焦点不进入面板 ⇒ 键盘也没有出口。
+   * 结论：用户点进「服务器目录」后只能重载页面。
+   *
+   * 修复（三层，任一层可用即不锁死）：
+   *   ① Esc 关闭 —— 与仓库既有 modal 同一套写法（`ConfirmDialog.tsx:16` /
+   *      `ImageGallery.tsx:40` 都是 `keydown` 监听 `Escape` 后调用 `onClose`，不发明第三套）；
+   *   ② 关闭按钮补可访问名（读屏 + 走查脚本按名可达）；
+   *   ③ 按钮的几何位置由 CSS 让开 titlebar（见 `styles.css` 的 `.mcp-marketplace`
+   *      `padding-top: var(--chrome-height)`）—— 真机注入复量：中心点 `elementFromPoint`
+   *      由 `BUTTON.titlebar-btn-close` 变为 `BUTTON.mcp-marketplace-close`（命中自己）。
+   */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="mcp-marketplace">
       {/* Header */}
@@ -129,7 +159,12 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
           <span className="mcp-marketplace-title-icon">🏪</span>
           <span>MCP 服务器目录</span>
         </div>
-        <button className="mcp-marketplace-close" onClick={onClose}>
+        {/* 纯图标按钮 ⇒ 必须有可访问名（与 `.mcp-manager-close` / `.usage-stats-close` 同一做法） */}
+        <button
+          className="mcp-marketplace-close"
+          aria-label="关闭服务器目录 / Close server catalog"
+          onClick={onClose}
+        >
           <CloseIcon size={16} />
         </button>
       </div>

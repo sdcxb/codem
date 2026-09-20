@@ -389,15 +389,29 @@ export class PluginManagerService {
      * 也不在 YAML 装配的登记表里 —— 那时两处 dispose 都落空、什么都没卸载，
      * 原来却无条件打印 "Disabled (unloaded)" 并让 UI 弹「已关闭」，
      * 插件下一轮照样加载、面板照样渲染。现在如实区分两种情况。
+     *
+     * ## 第 63 轮（console 作业）：把"两种"再分成**三种**，并且不许断言没有证据的事
+     *
+     * 真机读数（改动前，`.preview-shot/out-pluginmanager-warning.txt`）：
+     * 冷启动 20s 窗口里**没有**这条日志；`@codem/ui-game` 在
+     * `codem:disabled-plugins`（镜像与 DB 都是 `["@codem/ui-game"]`）里是禁用的，
+     * 而**整个启动期的日志里没有一行 `Loaded provider: ui-game`**
+     * ——因为 `App.tsx:154` 明确写了"不调用 `loader.load()`"，
+     * 所以 `builtinPlugins` 里的 `@codem/ui-game`（`builtin-registry.ts:520`）
+     * 这次进程里**根本没有被装载**（`this.fibers` / `getActiveFiber` 双双为空就是它的直接结果）。
+     *
+     * 可旧文案却写死了「该插件的代码/服务仍在本次进程内运行」——
+     * 那是一个**没有证据、而且与读数相反的断言**（对该插件它就是错的）。
+     * 一个会撒谎的警示比没有警示更糟：它会让人去追一个不存在的"仍在运行"。
+     *
+     * 所以现在三态分开、各自只说证据支持的话：
+     *  - 卸载成功 → info（正常路径）；
+     *  - 被装载过但没有可卸载句柄（真·假禁用）→ warn，如实说"没有句柄、请重启"；
+     *  - 本次进程里从未装载过（本插件启动时的实际形态）→ info，
+     *    如实说"没有卸载对象，因此不需要重启"。
      */
-    if (unloaded) {
-      console.log(`[PluginManager] Disabled (unloaded): ${name}`)
-    } else {
-      console.warn(
-        `[PluginManager] Disabled (状态已置 disabled，但**没有找到可卸载的实例**): ${name}` +
-          ` —— 该插件的代码/服务仍在本次进程内运行，重启后不再加载。`,
-      )
-    }
+    const everLoaded = this.fibers.has(name) || Boolean(getActiveFiber(name))
+    reportDisableOutcome(name, { unloaded, everLoaded })
     return { unloaded }
   }
 
@@ -515,3 +529,70 @@ export async function initPluginManager(ctx: Context, graph: PluginDependencyGra
   _pluginManagerCtxReady = true
   return mgr
 }
+
+/**
+ * ## 禁用结果的**唯一**报账口径（第 63 轮从 `doDisable` 里抽出来的纯函数）
+ *
+ * 抽出来的直接好处：三种形态都能被单独验证，不必靠"读源码里有没有某个字符串"来防回归
+ * （本仓库已有多处那种写法，它挡不住文案被改成别的假话）。
+ *
+ * 三态，各自只说**证据支持**的话：
+ *
+ * | 形态 | 判据 | 级别 | 文本要点 |
+ * |---|---|---|---|
+ * | 卸载成功 | `dispose()` 跑完 | `log` | `unloaded`（正常路径） |
+ * | 装载过但没有可卸载句柄 | `everLoaded && !unloaded` | **`warn`** | 真·假禁用：没有句柄，重启才干净 |
+ * | 本次进程从未装载 | `!everLoaded && !unloaded` | `log` | 没有卸载对象，禁用已生效、无需重启 |
+ *
+ * 为什么要分出第三态（真机读数，`.preview-shot/out-pluginmanager-warning.txt`）：
+ * ① 冷启动 20s 窗口内**没有**这条日志（它不是启动期无条件打印的）；
+ * ② `@codem/ui-game` 在 `codem:disabled-plugins`（localStorage 镜像与 DB 权威**都是**
+ *    `["@codem/ui-game"]`）里是禁用的；
+ * ③ 整个启动期日志里**没有一行 `Loaded provider: ui-game`** —— `App.tsx:154` 明确
+ *    "不调用 `loader.load()`"，`builtinPlugins` 里的 `@codem/ui-game`
+ *    （`builtin-registry.ts:520`）本次进程里根本没被装载。
+ *
+ * 而旧文案写死「该插件的代码/服务仍在本次进程内运行」——
+ * 对这类从未装载的插件，那是一句**与读数相反的断言**。
+ * 会撒谎的警示比没有警示更糟：它会让人去追一个并不存在的"仍在运行"。
+ * 注意：本函数只改**说话的准确性**，不改任何行为 ——
+ * "禁用后是否真的卸载"这个能力缺口单独记在下面 KNOWN GAP。
+ */
+export function reportDisableOutcome(
+  name: string,
+  state: { unloaded: boolean; everLoaded: boolean },
+): void {
+  if (state.unloaded) {
+    console.log(`[PluginManager] Disabled (unloaded): ${name}`)
+  } else if (state.everLoaded) {
+    console.warn(
+      `[PluginManager] Disabled (状态已置 disabled，但**没有找到可卸载的实例**): ${name}` +
+        ` —— 该插件在本次进程里被装载过，但没有可用的卸载句柄，其代码/服务会继续运行到重启为止。`,
+    )
+  } else {
+    console.log(
+      `[PluginManager] Disabled (never-loaded): ${name}` +
+        ` —— 本次进程内从未装载该插件（没有卸载对象），禁用已生效，无需重启。`,
+    )
+  }
+}
+
+/**
+ * ## KNOWN GAP（本轮**未**修，需要单独排期；写在这里是为了下一个人不用重新趟一遍）
+ *
+ * `doDisable` 只能卸载两种 fiber：`this.fibers`（manager 自己 `ctx.plugin` 的）
+ * 与 YAML 装配登记的 `activeFibers`（`yaml-loader.ts`）。
+ * 而现有装载路径**不是统一的**：
+ *
+ * - `yaml-loader.loadFromEntries` / `loadFromYaml` → 登记（`:308` / `:495`）✅
+ * - `PluginLoader.load()` → 建了 fiber **但不登记**（`plugin-loader/index.ts:169`）❌
+ *   （当前 `App.tsx:154` 明确不调用它，所以这条暂时不暴露）
+ * - `ui-plugins/index.ts:94/140` 的 `ctx.plugin(...)` → 不登记 ❌
+ *
+ * 也就是说：**一旦某条路径真把这些插装载起来**（例如将来恢复 `loader.load()`，
+ * 或把 `builtinPlugins` 接进某个装载器），用户点"关闭"就会走进 `everLoaded=true`
+ * 那一条：状态改了、fiber 却找不到，插件会一直跑到重启 —— 那才是这条 warn 真正该报的形态。
+ * 根治办法是把三条路径统一登记（`registerActiveFiber`），
+ * 但那会改动启动装配链（207 个插件），不在本轮"技能市场/插件面板 console"的范围内。
+ */
+

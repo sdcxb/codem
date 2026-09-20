@@ -4689,8 +4689,11 @@
   },
   "git-env-checkbox": {
     "accent-color": "var(--accent)",
+    "box-sizing": "border-box",
     "cursor": "pointer",
     "height": "18px",
+    "min-height": "24px",
+    "min-width": "24px",
     "width": "18px"
   },
   "git-env-desc": {
@@ -6895,10 +6898,12 @@
   },
   "mcp-marketplace": {
     "background": "var(--bg-primary)",
+    "box-sizing": "border-box",
     "display": "flex",
     "flex-direction": "column",
     "inset": "0",
     "overflow": "hidden",
+    "padding-top": "var(--chrome-height)",
     "position": "fixed",
     "z-index": "var(--z-dropdown)"
   },
@@ -14929,7 +14934,7 @@
     "display": "flex",
     "flex": "1",
     "gap": "var(--space-3)",
-    "padding": "var(--space-3) var(--space-5)",
+    "padding": "var(--space-2) var(--space-5)",
     "transition": "border-color var(--duration-fast)"
   },
   "skill-search-icon": {
@@ -14942,6 +14947,7 @@
     "color": "var(--text-primary, #fff)",
     "flex": "1",
     "font-size": "var(--fs-base)",
+    "min-height": "24px",
     "outline": "none"
   },
   "skill-tab-btn": {
@@ -17530,6 +17536,7 @@
     "border-radius": "var(--radius-full)",
     "cursor": "pointer",
     "height": "22px",
+    "min-height": "24px",
     "position": "relative",
     "transition": "background var(--duration-fast) var(--ease-out)",
     "width": "40px"
@@ -18400,7 +18407,8 @@
     "cursor": "pointer",
     "display": "flex",
     "justify-content": "center",
-    "padding": "var(--space-2)"
+    "padding": "var(--space-2)",
+    "position": "relative"
   },
   "usage-stats-header": {
     "align-items": "center",

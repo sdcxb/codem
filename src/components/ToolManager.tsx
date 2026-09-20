@@ -220,12 +220,19 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                   </div>
                 </div>
                 {/* Enable/Disable toggle */}
+                {/*
+                 * 第 76 轮（真机逐面板走查）：这个开关量到 **36x20**（「工具」页 6 个），
+                 * 低于 WCAG 2.5.8 的 24x24 下限。它整行的尺寸全部来自这份内联样式
+                 * （没有对应类名），所以修在这里而不是 CSS —— 只提 `minHeight` 到 24px，
+                 * 宽度、圆角、配色、knob 都不动：所属 flex 行（`.usage-content` 里的工具卡）
+                 * 真机实测每张卡高 65px，24px 开关放得下，**不会把行撑高、也不会挤到相邻控件**。
+                 */}
                 <button
                   onClick={() => toggleTool(tool.id, !enabled)}
                   title={enabled ? "点击禁用" : "点击启用"}
                   aria-label={`${enabled ? "点击禁用" : "点击启用"}「${tool.id}」`}
                   style={{
-                    width: "36px", height: "20px", borderRadius: "var(--radius-md)",
+                    width: "36px", height: "20px", minHeight: "24px", borderRadius: "var(--radius-md)",
                     border: enabled ? "none" : "1px solid var(--border-primary)",
                     background: enabled ? "var(--accent)" : "var(--bg-hover)",
                     cursor: "pointer", position: "relative", flexShrink: 0,
@@ -241,6 +248,11 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                   }} />
                 </button>
                 {/* Expand button */}
+                {/*
+                 * 第 76 轮：展开按钮量到 **20x19**（「工具」页 6 个，内含 12px 的 chevron）。
+                 * 同样全部走内联样式；提高 `minWidth`/`minHeight` 到 24px 即可达标 ——
+                 * 图标仍居中、所在行高度由左侧工具名/描述决定（真机 65px），不会挤到相邻控件。
+                 */}
                 <button
                   onClick={() => setExpandedTool(isExpanded ? null : tool.id)}
                   title={isExpanded ? "收起详情" : "展开详情"}
@@ -248,6 +260,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                   style={{
                     background: "none", border: "none", color: "var(--text-muted)",
                     cursor: "pointer", fontSize: 'var(--fs-sm)', padding: "2px 4px",
+                    minWidth: "24px", minHeight: "24px",
                   }}
                 >
                   {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
