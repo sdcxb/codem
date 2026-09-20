@@ -210,14 +210,266 @@ async function tauriInvoke(command: string, args?: Record<string, unknown>): Pro
   return invoke(command, args);
 }
 
-/** 通过 Rust 层发起 HTTP GET 请求（绕过 CSP） */
-async function httpGet(url: string, headers?: Record<string, string>): Promise<HttpResponse> {
-  return tauriInvoke("http_get", { url, headers });
-}
-
 /** 通过 Rust 层下载文件到本地路径 */
 async function httpDownload(url: string, destPath: string, headers?: Record<string, string>): Promise<string> {
   return tauriInvoke("http_download", { url, destPath, headers });
+}
+
+// ========== 并发闸门与 BUSY（第 63 轮续：真机 1.16.112 复量暴露的"假话"） ==========
+
+/**
+ * 前端侧的**总准入闸门**：同时在飞的 `http_get` 不超过这个数。
+ *
+ * ## 为什么需要它（真机读数直接指出的）
+ *
+ * Rust 侧 `http_get` 有一道 12 路的并发闸门（`HTTP_GET_MAX_IN_FLIGHT`），超限立刻回
+ * `{code:"BUSY", retryable:true}`。但前端的并发纪律是**每个源内部** 8 路
+ * （`SOURCE_FETCH_CONCURRENCY`），源与源之间是 `Promise.all` **全并行** ——
+ * 7 个源同开就是 ~56 路同时提交，其中 44 路必然被闸门当场拒掉。
+ *
+ * 真机（1.16.112 安装版）因此看到：
+ * ```
+ * [error] Error fetching repo skills for anthropic-skills: {"code":"BUSY",…}
+ * ```
+ * 也就是说：**Rust 侧的闸门做对了它该做的事，是前端把 56 路一起塞了过去。**
+ * 闸门的正确落点是"准入"，而准入是**调用方**的责任 —— 让后端不断拒绝再重试，
+ * 不如从一开始就不超量提交。
+ *
+ * ## 为什么是 8 而不是 12（刻意留 4 条余量）
+ *
+ * Rust 闸门容量是 12。前端若也占满 12，其它 `http_get` 调用方
+ * （web 抓取、figma 抓取、宠物市场）就会被市场挤成 BUSY —— 那是把"市场的并发问题"
+ * 转嫁成"别人的失败"。留 4 条给别的调用方：市场最多占 8 条，
+ * **别的功能永远有至少 4 条可用**，而市场自己 8 路并发在实测里已经够快
+ * （`.preview-shot/out-http-throughput.txt`：8 路并发 30 个仓库 ≈ 1.4s）。
+ */
+const HTTP_GET_FRONTEND_MAX_IN_FLIGHT = 8;
+
+/** 前端闸门的排队实现（FIFO：先来先服务，且**不丢请求** —— 与后端的"拒绝"语义相反）。 */
+class HttpAdmissionQueue {
+  private limit: number;
+  private inFlight = 0;
+  private waiters: Array<() => void> = [];
+
+  constructor(limit: number) {
+    this.limit = limit;
+  }
+
+  /** 仅供测试：换一个容量（并丢弃仍在排队的等待者，避免旧轮次污染新容量下的判定）。 */
+  setLimitForTests(limit: number): void {
+    this.limit = Math.max(1, limit);
+    const pending = this.waiters.splice(0);
+    for (const w of pending) w();
+  }
+
+  async acquire(): Promise<void> {
+    if (this.inFlight < this.limit) {
+      this.inFlight++;
+      return;
+    }
+    await new Promise<void>((resolve) => this.waiters.push(resolve));
+    this.inFlight++;
+  }
+
+  release(): void {
+    this.inFlight = Math.max(0, this.inFlight - 1);
+    const next = this.waiters.shift();
+    if (next) next();
+  }
+
+  get stats() {
+    return { inFlight: this.inFlight, queued: this.waiters.length, limit: this.limit };
+  }
+}
+
+const httpAdmission = new HttpAdmissionQueue(HTTP_GET_FRONTEND_MAX_IN_FLIGHT);
+
+/**
+ * BUSY 的**退避参数**（每一个值都从"这一轮刷新必须在 12s 内结束"倒推）。
+ *
+ * 判据链：
+ * - 前端的源级上限是 `SOURCE_TIMEOUT_MS = 12s`，**退避总时长必须远小于它**，
+ *   否则"重试成功"也会被源超时判为降级 —— 那就等于没重试。
+ * - 最坏情况：3 次尝试、2 次退避，每次 ≤ `BUSY_BACKOFF_MAX_MS`。
+ *   取 `250~600ms` 抖动 ⇒ 2 × 600ms = 1.2s，不到 12s 的 10%。**留了大量余量**。
+ * - 为什么要**抖动**（jitter）：被拒的请求是**同一毫秒**一起被拒的（同一批 56 路），
+ *   固定延时会让它们在同一毫秒一起回来、再次撞闸门（惊群）。抖动把它们摊开。
+ * - 为什么要 2 次而不是 0 次：`BUSY` 是**明确可重试**的错误
+ *   （`retryable: true`），一次都不试就是把可恢复的失败说成最终失败。
+ * - 为什么不是 5 次：前端闸门（上面那道）已经让超量提交基本消失，
+ *   所以走到这里的是"别的调用方也在挤"这种罕见情况；重试太多只会拖长本轮刷新。
+ */
+const BUSY_BACKOFF_MIN_MS = 250;
+const BUSY_BACKOFF_MAX_MS = 600;
+const BUSY_MAX_ATTEMPTS = 3; // = 首次 + 2 次重试
+
+/** 退避时长（含抖动）。`Math.min` 是**显式的**上界保证，不依赖 `Math.random()` 的实现细节。 */
+function busyBackoffMs(): number {
+  const span = BUSY_BACKOFF_MAX_MS - BUSY_BACKOFF_MIN_MS;
+  return Math.min(BUSY_BACKOFF_MAX_MS, BUSY_BACKOFF_MIN_MS + Math.floor(Math.random() * (span + 1)));
+}
+
+/**
+ * `http_get` 的错误信封（Rust 侧 `busy_error()` 的对应读取端）。
+ *
+ * 为什么要 `JSON.parse` 容错而不是直接 `err.message.includes("BUSY")`：
+ * 匹配裸文本会把"正文里恰好出现 BUSY 字样的普通网络错误"也误判成闸门拒绝，
+ * 而这个仓库的判据一贯是"**错误是值，不是文本**"（见 `storage.rs` 顶部）。
+ * 解析失败（网络层错误、TLS 错误、非 JSON）一律当作**普通失败**，不猜。
+ */
+interface HttpErrorEnvelope {
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+  hint?: string;
+}
+
+/** 判断一次 `http_get` 拒绝是不是"并发闸门拒绝"。 */
+function parseHttpErrorEnvelope(err: unknown): HttpErrorEnvelope | null {
+  const raw = err instanceof Error ? err.message : typeof err === "string" ? err : null;
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{")) return null; // 非 JSON → 不是我们的信封，不猜
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" ? (parsed as HttpErrorEnvelope) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 判断一次 `http_get` 拒绝是不是"并发闸门拒绝"。
+ *
+ * 认**两种**形态：
+ *  1. Rust 侧原样抛来的 JSON 信封（`code === "BUSY"`）；
+ *  2. 本模块重试耗尽后自己抛的 `HttpBusyError`（`code` 是类字段，没有 JSON 信封）。
+ *
+ * 第 2 条是**实测补的**：第一版只认信封，于是 `fetchGitHubRepoSkills` 的
+ * `catch` 里 `isBusyHttpError(HttpBusyError)` 判成了 false ——
+ * 自己抛的类型自己认不出来，`noteSourceBusy` 没被记上，
+ * "源可达、返回为空"那句假话照旧打了出来（用例当场抓红）。
+ */
+function isBusyHttpError(err: unknown): boolean {
+  if ((err as { code?: unknown } | null)?.code === "BUSY") return true;
+  return parseHttpErrorEnvelope(err)?.code === "BUSY";
+}
+
+/** 可重试的错误：`BUSY`（以及未来任何显式声明 `retryable: true` 的信封）。 */
+function isRetryableHttpError(err: unknown): boolean {
+  if ((err as { retryable?: unknown } | null)?.retryable === true) return true;
+  const env = parseHttpErrorEnvelope(err);
+  if (!env) return false;
+  return env.code === "BUSY" || env.retryable === true;
+}
+
+/**
+ * 本轮刷新里"被闸门拒过的源"（源名 → 次数）。
+ *
+ * ## 为什么需要它（这是"假话"的修复点）
+ *
+ * 真机 1.16.112 打出的是这一对**互相矛盾**的输出：
+ * ```
+ * [error] Error fetching repo skills for anthropic-skills: {"code":"BUSY",…}
+ * [log]   Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）
+ * ```
+ * 第二行是**假话**：请求根本没发出去（`"本次请求未被发出"`），
+ * 源可达性压根没被验证过。根因是取数函数的 `try/catch` 把异常就地吞掉、
+ * `return []` —— 于是"取数失败"和"源真的空"在返回值上**不可区分**。
+ *
+ * 去重口径与限流那条一致（`noteGithubRateLimit`）：**每源一条**，跨轮在
+ * `resetGithubRateLimitState()` 里清。
+ */
+const sourceBusyCount = new Map<string, number>();
+
+/** 记一次 BUSY（按源归并计数，且每源只打一条 warning —— 与限流同一纪律）。 */
+function noteSourceBusy(sourceName: string, sourceId: string, attemptContext: string): void {
+  const n = (sourceBusyCount.get(sourceName) ?? 0) + 1;
+  sourceBusyCount.set(sourceName, n);
+  if (n === 1) {
+    console.warn(
+      `[SkillMarket] 源 "${sourceName}"（${sourceId}）本次**并发受限**（http_get 并发闸门已满）——` +
+      `部分请求未被发出，该源本次结果不完整（已保留上一次的结果，稍后重试即可）。触发点：${attemptContext}`,
+    );
+  }
+}
+
+/** 某个源本轮是否被闸门拒过（用于**阻止**"源可达、返回为空"这句假话）。 */
+function sourceHitBusy(sourceName: string): boolean {
+  return (sourceBusyCount.get(sourceName) ?? 0) > 0;
+}
+
+/**
+ * 通过 Rust 层发起 HTTP GET 请求（绕过 CSP）。
+ *
+ * ## 三层职责（顺序即优先级）
+ *
+ * 1. **前端准入闸门**：真正的修复 —— 不超量提交，让后端闸门基本不触发；
+ * 2. **BUSY 退避重试**：`BUSY` 是显式可重试错误，退避后重试成功就走正常路径；
+ * 3. **失败如实抛错**：重试仍失败时**抛出**（而不是返回空），
+ *    由调用方按"并发受限"分类 —— 绝不再被当成"源可达但为空"。
+ */
+async function httpGet(url: string, headers?: Record<string, string>): Promise<HttpResponse> {
+  await httpAdmission.acquire();
+  try {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= BUSY_MAX_ATTEMPTS; attempt++) {
+      try {
+        return await tauriInvoke("http_get", { url, headers });
+      } catch (err) {
+        lastErr = err;
+        // 非可重试错误（网络失败、CSP、非 JSON 信封）立刻抛出：重试只会白等。
+        if (!isRetryableHttpError(err)) throw err;
+        // 最后一次也失败了 → 退出循环，走下面的分类抛出
+        if (attempt < BUSY_MAX_ATTEMPTS) {
+          // 退避后把请求送回队尾（公平通道：不与仍在飞的其他请求抢许可）
+          await new Promise((r) => setTimeout(r, busyBackoffMs()));
+        }
+      }
+    }
+    if (isBusyHttpError(lastErr)) throw new HttpBusyError(url, BUSY_MAX_ATTEMPTS, lastErr);
+    throw lastErr;
+  } finally {
+    httpAdmission.release();
+  }
+}
+
+/**
+ * 重试耗尽后仍被闸门拒绝时抛出的**类型化错误**。
+ *
+ * 为什么要一个专门的类而不是继续用字符串：调用方需要**结构化地**区分
+ * "并发受限"与"源真的失败"，才能各自说对话（这条判据与 `storage.rs` 顶部
+ * "只给一个字符串，渲染侧只能靠正则猜"完全一致）。
+ */
+class HttpBusyError extends Error {
+  readonly code = "BUSY";
+  readonly retryable = true;
+
+  constructor(
+    readonly url: string,
+    readonly attempts: number,
+    cause?: unknown,
+  ) {
+    const detail = parseHttpErrorEnvelope(cause)?.message ?? "并发请求已达上限";
+    super(`http_get 并发受限（已重试 ${attempts} 次）：${detail} —— ${url}`);
+    this.name = "HttpBusyError";
+  }
+}
+
+/** 仅供测试：重置前端闸门与 BUSY 记账（避免用例之间互相污染）。 */
+export function __resetHttpGateForTests(): void {
+  sourceBusyCount.clear();
+  httpAdmission.setLimitForTests(HTTP_GET_FRONTEND_MAX_IN_FLIGHT);
+}
+
+/** 仅供测试：读前端闸门当前状态（在飞 / 排队 / 容量）。 */
+export function __httpGateStatsForTests(): { inFlight: number; queued: number; limit: number } {
+  return httpAdmission.stats;
+}
+
+/** 仅供测试：把闸门容量换成一个很小的值，以便在不去真机的情况下造出 BUSY。 */
+export function __setHttpGateLimitForTests(limit: number): void {
+  httpAdmission.setLimitForTests(limit);
 }
 
 // ========== 日志与并发纪律（第 63 轮：技能市场 console 归零） ==========
@@ -453,6 +705,29 @@ async function mergeSourceResult(
     return { skills: [], degraded: true, failed: false };
   }
   if (outcome.value.length === 0) {
+    /**
+     * ## 先排除"这句是假话"的情况（真机 1.16.112 的原始缺陷）
+     *
+     * 真机打出来的是一对互相矛盾的输出：
+     * ```
+     * [error] Error fetching repo skills for anthropic-skills: {"code":"BUSY",…"本次请求未被发出"}
+     * [log]   Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）
+     * ```
+     * 第二行**恰恰说反了**：请求根本没发出去，源可达性从未被验证。
+     *
+     * 为什么会这样：源的 `try/catch` 把 BUSY 异常就地吞掉并 `return []`，
+     * 于是"取数失败"与"源真的空"在返回值上**不可区分**，这里只能按后者写。
+     * 现在 `httpGet` 会把 BUSY 记进 `sourceBusyCount`（按源），这里据此**拒绝说假话**。
+     */
+    if (sourceHitBusy(sourceName)) {
+      /**
+       * 并发受限：本次**什么都没证实**。不能说"源可达"，也不能说"源是空的"。
+       * 与超时/限流同一档：保留上一次的结果（`degraded=true`），
+       * 但不进 `errors` —— 它既不是源的故障、也不是用户的配置问题，
+       * 而是一次**可重试的拥塞**，warning 已经由 `noteSourceBusy` 打过（每源一条）。
+       */
+      return { skills: [], degraded: true, failed: false };
+    }
     /**
      * 正常完成了但一条都没有。
      *
@@ -726,6 +1001,9 @@ function resetGithubRateLimitState(): void {
   githubRateLimitedAt = 0;
   githubRateLimitNoted.clear();
   sourceTimeoutWarned.clear();
+  // 同理清掉"本轮被闸门拒过的源"：上一轮的拥塞结论不该跨轮生效
+  // （否则**上一轮**的 BUSY 会把**这一轮**的空结果也误标成"并发受限"）。
+  sourceBusyCount.clear();
 }
 
 /**
@@ -892,6 +1170,20 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
       if (value) skills.push(value);
     }
   } catch (err) {
+    /**
+     * **BUSY 必须被单独认出来，不能混进普通失败。**
+     *
+     * 真机 1.16.112 的缺陷就是在这里丢掉了"这其实是并发受限"这个事实：
+     * 异常被就地吞掉、`return []`，随后 `mergeSourceResult` 把空数组
+     * 解释成"源可达、返回为空"——一句与事实相反的结论。
+     *
+     * 这里不再只打一条 `console.error` 了事，而是：
+     *  1. 记进 `sourceBusyCount`（按源，供 `mergeSourceResult` 拒绝说假话）；
+     *  2. `console.error` 保留 —— 它仍然是**真问题**（请求没发出去），不许静默。
+     */
+    if (isBusyHttpError(err)) {
+      noteSourceBusy(source.name, source.id, "fetchGitHubRepoSkills");
+    }
     console.error(`[SkillMarket] Error fetching repo skills for ${source.id}:`, err);
   }
 
@@ -1115,6 +1407,9 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
       info(`GitHub 搜索源 "${source.name}"：${skills.length} 个仓库完成，${skipped} 个因 API 限流被跳过（改配 GitHub Token 可避免）`);
     }
   } catch (err) {
+    // BUSY 同样要单独认出来（理由同 fetchGitHubRepoSkills）：否则空数组会被
+    // mergeSourceResult 解释成"源可达、返回为空"——一句与事实相反的结论。
+    if (isBusyHttpError(err)) noteSourceBusy(source.name, source.id, "fetchGitHubSearchSkills");
     console.error(`[SkillMarket] Error fetching search skills for ${source.id}:`, err);
   }
 
@@ -1226,6 +1521,9 @@ async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> 
       pageNum++;
     }
   } catch (err) {
+    // 同上：ClawHub 是分页串行取的，被闸门拒掉一页会让整源变成"空"——
+    // 必须记成"并发受限"，不能让它伪装成"源可达、返回为空"。
+    if (isBusyHttpError(err)) noteSourceBusy(source.name, source.id, "fetchClawHubSkills");
     console.error(`[SkillMarket] Error fetching ClawHub skills:`, err);
   }
 

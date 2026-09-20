@@ -41,7 +41,13 @@ vi.mock("../core/file-api", () => ({
   deletePath: vi.fn(),
 }));
 
-import { listMarketSkills, searchMarketSkillsOnline, type MarketSource } from "../core/skill/skill-market-client";
+import {
+  listMarketSkills,
+  searchMarketSkillsOnline,
+  __resetHttpGateForTests,
+  __setHttpGateLimitForTests,
+  type MarketSource,
+} from "../core/skill/skill-market-client";
 
 function installFakeTauri(handler: (url: string) => any) {
   const calls: string[] = [];
@@ -83,6 +89,34 @@ const ok = (body: any) => ({ status: 200, body: typeof body === "string" ? body 
 const rateLimited = () => ({ status: 403, body: "rate limited", headers: { "x-ratelimit-remaining": "0" } });
 
 /**
+ * Rust 侧 `http_get` 并发闸门拒绝时的**真实错误体**（逐字取自 `lib.rs::busy_error()`）。
+ *
+ * 为什么测试要用**逐字**的真实形状而不是 `new Error("BUSY")`：
+ * 前端是靠 `JSON.parse(err.message).code === "BUSY"` 判定的，测试若用简化文本，
+ * 就测不到"信封解析"这一步 —— 而真机上打出来的恰恰就是这个 JSON 字符串。
+ *
+ * ⚠️ **必须 `throw` 它，不能 `return` 它**（第一版就踩了这个坑，值得记下来）：
+ * `installFakeTauri` 里的 `invoke` 是 `async` 函数，**`return` 一个 Error 对象会被
+ * `Promise.resolve` 包成"成功"**，于是适配器把一个 Error 当成 `HttpResponse` 收下
+ * （`status === undefined` → 走 `status !== 200` 分支 → 返回空数组）。
+ * 真机上 Tauri 的 invoke 在命令 `Err` 时是**拒绝** promise 的，所以测试也必须扔。
+ */
+const busyHttpError = () =>
+  new Error(
+    JSON.stringify({
+      code: "BUSY",
+      hint: "稍后重试；前端应退避，而不是立刻重发",
+      message: "并发请求已达上限（12 路在飞），本次请求未被发出",
+      retryable: true,
+    }),
+  );
+
+/** 模拟 Tauri invoke 在命令返回 `Err` 时**拒绝** promise（而不是 resolve 一个 Error）。 */
+const throwBusy = (): never => {
+  throw busyHttpError();
+};
+
+/**
  * 把"源超时"那条 12s 定时器推到开火（单次大跳跃，确定性口径）。
  *
  * 配合上面的 `hangForever`：源挂在 `tauriInvoke` 上、没有动态 import，
@@ -101,12 +135,42 @@ const repoSrc: MarketSource = { id: "anthropic-skills", name: "Anthropic Skills"
 const searchSrc: MarketSource = { id: "github-agent-skills", name: "GitHub Agent Skills", type: "github-search", url: "https://api.github.com/search/repositories?q=x", enabled: true };
 const cliSrc: MarketSource = { id: "skillhub-cli", name: "SkillHub CLI", type: "cli", url: "", enabled: true, cliCommand: "skillhub" };
 
+/**
+ * 造一个**没被别的用例碰过**的 github-repo 源。
+ *
+ * ## 为什么必须换仓库名（这条是实测踩出来的，不是洁癖）
+ *
+ * `skill-market-client.ts` 里有一个**模块级**的仓库树缓存
+ * （`const repoTreeCache = new Map(...)`，按 `owner/repo@branch` 键）。
+ * 它跨用例存活，而本文件里 `repoSrc` 被多个用例共用 ——
+ * 于是新写的用例一旦复用 `repoSrc`，`fetchRepoGitHubRepoSkills` 会**直接命中缓存**：
+ * `httpGet` 一次都不发，被 mock 的 BUSY 永远没机会发生，
+ * 用例就去断言"没有假话"——**测了个空**（第一版就是这么假绿的：`httpGet` 无调用）。
+ *
+ * 每个 BUSY 用例用一个独立仓库名，才能保证请求真的走出去。
+ */
+const uniqueRepoSrc = (n: number): MarketSource => ({
+  id: `busy-probe-${n}`,
+  name: `Busy Probe ${n}`,
+  type: "github-repo",
+  url: `https://api.github.com/repos/codem-test/busy-${n}`,
+  enabled: true,
+});
+
 let warnSpy: any, logSpy: any, errSpy: any;
 const warns = () => warnSpy.mock.calls.map((c: any[]) => String(c[0]));
 const logs = () => logSpy.mock.calls.map((c: any[]) => String(c[0]));
 
 beforeEach(() => {
   vi.useFakeTimers();
+  /**
+   * 每个用例开头复位**前端准入闸门**与 BUSY 记账。
+   *
+   * 为什么必须复位：闸门是模块级单例，而本文件里有好几个用例把"永远挂着的请求"
+   * 留在飞（`hangForever`）—— 不复位的话这些残留会占满许可，后续用例全部排队等待、
+   * 表现为莫名其妙的超时（用例之间互相污染）。这条是实测踩出来的。
+   */
+  __resetHttpGateForTests();
   /**
    * 注意：这里**只监听、不替换实现**（不传 mockImplementation）。
    *
@@ -247,6 +311,140 @@ describe("技能市场取数收口（改动后行为）", () => {
     await secondRun;
 
     expect(timeoutWarns(), "新的一轮必须能再次报出来（去重只在一轮内生效）").toBe(2);
+  });
+
+  /**
+   * ③f 真机 1.16.112 的**"假话"缺陷**：BUSY 被当成普通失败，于是打出
+   * `Source "Anthropic Skills" 本次没有可展示的技能（源可达、返回为空）`
+   * —— 而 `BUSY` 的含义恰恰是 `"本次请求未被发出"`（源可达性压根没验证过）。
+   *
+   * 这条钉两件事：
+   *  1. BUSY 必须被认出来，并且按**「并发受限、稍后重试」**如实分类（保留上一次的结果）；
+   *  2. **绝不允许**出现"源可达、返回为空"这句与事实相反的结论。
+   */
+  it("③f BUSY 必须如实分类为「并发受限」—— 不许打「源可达、返回为空」这句假话", async () => {
+    const calls = installFakeTauri(() => throwBusy()); // 永远被闸门拒（重试 2 次后仍拒）
+    const src = uniqueRepoSrc(1); // 独立仓库名：避开模块级树缓存，否则 httpGet 不会被调用
+
+    const p = listMarketSkills([src]);
+    await vi.advanceTimersByTimeAsync(60_000); // 让退避重试全部走完
+    const res = await p;
+
+    expect(calls.length, "请求必须真的发出过（否则本用例测了个空）").toBeGreaterThanOrEqual(1);
+
+    expect(
+      logs().filter((t) => /源可达、返回为空/.test(t)),
+      "请求根本没发出去，绝不能说「源可达、返回为空」（真机 1.16.112 就是这么说的）",
+    ).toEqual([]);
+
+    const busyWarns = warns().filter((t) => /并发受限/.test(t));
+    expect(busyWarns.length, "并发受限必须**可见**（每源一条），不许静默").toBe(1);
+    expect(busyWarns[0], "文案要说清请求没发出去、并且可重试").toMatch(/并发闸门已满|并发受限/);
+    expect(busyWarns[0]).toMatch(/保留上一次的结果/);
+    expect(busyWarns[0]).toMatch(/稍后重试/);
+
+    expect(res.skills, "并发受限 → 不计入结果（否则界面会把该源旧数据当成 0 条）").toEqual([]);
+    expect(res.errors, "并发受限是拥塞、不是源故障，不进顶部红色横幅").toEqual([]);
+  });
+
+  /**
+   * ③g BUSY 是**明确可重试**的（`retryable: true`）：退避后重试成功，必须走正常路径
+   * —— 既不该报并发受限，也不该把已经拿到的技能丢掉。
+   */
+  it("③g BUSY 退避后重试成功 → 走正常路径拿到技能", async () => {
+    const src = uniqueRepoSrc(2); // 独立仓库名：避开模块级树缓存
+    let busyFirst = true;
+    installFakeTauri((url) => {
+      if (busyFirst) {
+        busyFirst = false; // 只有第一次被拒，之后一律正常
+        throw busyHttpError(); // 必须 throw（见 busyHttpError 的注释）
+      }
+      if (url.endsWith("/busy-2")) {
+        return ok({ default_branch: "main", full_name: "codem-test/busy-2", updated_at: "x" });
+      }
+      if (/git\/trees/.test(url)) return ok({ sha: "s", tree: [{ path: "skills/pdf/SKILL.md", type: "blob", sha: "x" }] });
+      if (/raw\.githubusercontent\.com/.test(url)) return ok(SKILL_MD);
+      return { status: 404, body: "", headers: {} };
+    });
+
+    const p = listMarketSkills([src]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await p;
+
+    expect(res.skills.length, "重试成功 → 必须走正常路径拿到技能").toBe(1);
+    expect(res.skills[0].sourceId).toBe(src.id);
+    expect(warns().filter((t) => /并发受限/.test(t)), "重试成功了就不该报并发受限").toEqual([]);
+    expect(logs().filter((t) => /源可达、返回为空/.test(t)), "更不该说源是空的").toEqual([]);
+  });
+
+  /**
+   * ③h **闸门过严的根因复核**：这道前端准入闸门的验收点是
+   * "**同时在飞的 `http_get` 不超过容量**"（而不是"少发请求"）。
+   *
+   * 真机的形态是 7 源 × 8 并发 ≈ 56 路一次性提交，把 Rust 侧 12 路闸门打爆。
+   * 这条用一个很小的容量（2）把同一个形态压缩到可测规模：8 个请求 → 在飞峰值必须 ≤ 2。
+   */
+  it("③h 前端准入闸门：在飞的 http_get 不超过容量（真机形态 56 路 → 被压到容量内）", async () => {
+    /**
+     * ## 为什么要在这里**重载模块**（`vi.resetModules()` + 动态 import）
+     *
+     * `skill-market-client.ts` 里有**模块级**的仓库树缓存 `repoTreeCache`，
+     * 它跨用例存活。前几个用例已经把若干 `owner/repo@branch` 键写进去，
+     * 于是本用例即使换仓库名也会命中缓存、**一个请求都不发**
+     * （实测：`calls === []`，用例报"测的是单请求路径"）。
+     *
+     * 用一个全新的模块实例，缓存自然是空的 —— 这样这条闸门用例的判定
+     * 不再依赖"前面用例碰巧没污染缓存"，也不再依赖用例顺序。
+     */
+    vi.resetModules();
+    const fresh = await import("../core/skill/skill-market-client");
+    fresh.__resetHttpGateForTests();
+
+    const src: MarketSource = {
+      id: "gate-probe",
+      name: "Gate Probe",
+      type: "github-repo",
+      url: "https://api.github.com/repos/codem-test/gate",
+      enabled: true,
+    };
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let fanOutStarted = false; // 只有进入"扇出阶段"才开始记峰值
+    const calls = installFakeTauri(async (url) => {
+      // **测量口径**：一个源的前两步（repo 信息 + Trees API）各只有 1 个请求，
+      // 真正的扇出在第三步（N 个 SKILL.md 并发取）。若从第一个请求就开始记，
+      // 测到的永远是 1 —— 真机上就是这么写的，第一版断言因此假红。
+      if (/git\/trees/.test(url) || /\/gate$/.test(url)) {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        if (/git\/trees/.test(url)) {
+          return ok({
+            sha: "s",
+            tree: [...Array(8).keys()].map((i) => ({ path: `skills/s${i}/SKILL.md`, type: "blob", sha: `x${i}` })),
+          });
+        }
+        return ok({ default_branch: "main", full_name: "codem-test/gate", updated_at: "x" });
+      }
+      // 扇出阶段：8 个 SKILL.md 请求，全部记账
+      fanOutStarted = true;
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return ok(SKILL_MD);
+    });
+    fresh.__setHttpGateLimitForTests(2);
+
+    const p = fresh.listMarketSkills([src]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await p;
+
+    expect(fanOutStarted, `必须真的走到扇出阶段，否则本用例测的是单请求路径。实际请求：${JSON.stringify(calls)}`).toBe(true);
+    expect(maxInFlight, "同时在飞不得超过闸门容量（超量提交正是 BUSY 的根因）").toBeLessThanOrEqual(2);
+    expect(maxInFlight, "容量为 2 时应当真的用满 2 路（否则闸门把并发压得过死）").toBe(2);
   });
 
   it("③b 一个源降级、另一个源成功 → 结果里只留成功的那个源", async () => {
