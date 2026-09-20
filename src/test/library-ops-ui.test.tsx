@@ -389,19 +389,28 @@ describe("LO-UI 监控面板", () => {
 
   it("LO-UI-11: 场景视图点击岗位 → 详情卡显示岗位职责与在岗角色", async () => {
     await mountSceneView();
-    // 像素场景里的房间可点击（12 个）
-    const room = document.querySelector(".lo-pixel-room") as HTMLElement;
+    // 像素场景里的房间可点击（12 个）—— 点击房间=选中该房间对应的岗位，
+    // 详情卡直接切到「岗位」信息（本用例以前把"点房间"当无操作，故紧接着点列表项；
+    // 现在房间热区真的接到了岗位选择，所以这里按真实语义断言）。
+    const room = document.querySelector('.lo-pixel-room[data-room-id="gateway"]') as HTMLElement;
     expect(room).toBeTruthy();
     await act(async () => {
       fireEvent.click(room);
     });
-    // 岗位分布列表项也可点击
-    const zoneRow = document.querySelector(".lo-zones__item") as HTMLElement;
-    await act(async () => {
-      fireEvent.click(zoneRow);
-    });
     expect(document.querySelector(".lo-zone-occupants")).toBeTruthy();
     expect(screen.getByText(/取消选中岗位/)).toBeTruthy();
+    // 岗位分布列表项也可点击：换一条 → 详情卡跟着换；再点同一条 = 取消选中
+    const rows = [...document.querySelectorAll(".lo-zones__item")] as HTMLElement[];
+    const other = rows.find((r) => !r.className.includes("is-selected"))!;
+    expect(other).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(other);
+    });
+    expect(document.querySelector(".lo-zone-occupants")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(other);
+    });
+    expect(screen.getByText(/点击场景中的角色或岗位查看详情/)).toBeTruthy();
   });
 
   it("LO-UI-12: 场景 HUD 提供缩放按钮，且画布使用平移+缩放变换", async () => {

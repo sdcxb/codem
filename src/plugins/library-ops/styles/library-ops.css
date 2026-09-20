@@ -978,7 +978,11 @@
     0 0 6px color-mix(in srgb, var(--bg-primary) 80%, transparent);
   pointer-events: none;
 }
-.lo-pixel-actors { position: absolute; inset: 0; }
+/* 角色层只是**定位容器**（整块画布大小）：它没有任何背景、也没有自己的点击行为
+ * （真正的 onClick 在 .lo-pixel-actor 上），却把下面所有 `.lo-pixel-room` 热区整块吃掉 ——
+ * 真机实测（1.16.112，任务中心 → 子智能体 → 场景）：12 个房间 × 82 点网格采样，
+ * 「命中自己」占比全是 0，全部落在这一层上。所以容器本身不接收命中。 */
+.lo-pixel-actors { position: absolute; inset: 0; pointer-events: none; }
 /* 朝向（镜像）放在外层，动效放在内层，二者互不干扰 */
 .lo-sprite-wrap {
   position: absolute;
@@ -988,6 +992,12 @@
   transform-origin: 50% 100%;
   pointer-events: none;
 }
+/* 角色本身**仍然是可点对象**（设计如此：`.lo-pixel-actor` 上有 onClick → 选中该智能体），
+ * 但 `.lo-actor-wrap` 是 0×0 的锚点、名牌/气泡都是纯装饰（pointer-events: none），
+ * 于是这条 onClick 在真机上是**死代码** —— 点角色没有任何反应。
+ * 让精灵本体自己接管命中：祖先设 none 不会挡住后代用 auto 重新接管，
+ * 命中区只有精灵方块（不是整块画布），房间在其之外的部分照常可点。 */
+.lo-pixel-actor .lo-sprite { pointer-events: auto; }
 .lo-sprite {
   position: absolute;
   left: 0;

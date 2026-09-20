@@ -59,6 +59,11 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
             speed={settings.speed}
             maxActors={settings.maxActors}
             onSelectActor={selectActor}
+            /* 房间热区必须接上岗位选择：本面板的空态文案就是「点击场景中的角色或岗位查看详情」，
+               而两个场景组件的 onSelectZone 一直是可选的 —— 之前谁都没传，
+               于是 role="button" + tabIndex + cursor:pointer 的房间/岗位热区点了没有任何反应
+               （真机 1.16.112 实测：房间里命中归属修好后，点击仍然不选中任何岗位）。 */
+            onSelectZone={selectZone}
           />
         ) : (
           <LibraryScene
@@ -70,6 +75,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
             speed={settings.speed}
             maxActors={settings.maxActors}
             onSelectActor={selectActor}
+            onSelectZone={selectZone}
           />
         )}
       </div>
