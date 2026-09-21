@@ -225,6 +225,12 @@
      与参考实现的 9%（白底 1.201）几乎逐位一致；改动前的 12% 是 1.269，偏重。 */
   --border-primary: rgb(31 31 30 / 9%);
   --border-secondary: rgb(31 31 30 / 5%);
+  /* `--border-separator`（第 67 轮，用户在对照页里选定的方案 L2）：**结构分隔线**专用的一档。
+     用途：回复过程的时间轴竖线、「问答回合」分隔线、滚动加载提示线 ——
+     它们表达"分节"，不是"控件边界"，所以不跟 `--border-primary`（9%）同档，统一压到 **7%**。
+     ⚠️ 口径说明：`.qa-turn-footer` / `.load-more-indicator` 原先用的是 `--border-secondary`（5%），
+     统一到 7% 后比原来**略明显一点** —— 这是"整屏只有一种分隔线浓度"的代价，已如实记在 CHANGELOG。 */
+  --border-separator: rgb(31 31 30 / 7%);
   /* 主色：从 #6b5ce7 略微加深到 #6555e0。
      原值落在**内嵌块**（`--bg-tertiary` #f2f2f0）上只有 **4.35:1**，而它被用在
      「展开 ▼」「文件名链接」这类 12–14px 小字上；加深后：内容面 5.34 / 内嵌块 4.77 /
@@ -363,6 +369,8 @@
   --text-muted: #888888;
   --border-primary: rgba(255, 255, 255, 0.10);
   --border-secondary: rgba(255, 255, 255, 0.06);
+  /* 与亮色档同名同源：结构分隔线一档（亮 7% ↔ 暗 8% 白） */
+  --border-separator: rgba(255, 255, 255, 0.08);
   --accent: #7c6cf0;
   --accent-hover: #8b7df5;
   --accent-muted: rgba(124, 108, 240, 0.20);
@@ -1733,13 +1741,15 @@ width: 100%;
   gap: var(--space-2);
   padding: var(--space-1) 0 var(--space-3);
   margin-bottom: var(--space-7);
-  border-bottom: 1px solid var(--border-secondary);
+  /* 第 67 轮（用户选定 L2）：结构分隔线统一走 `--border-separator`（7%）。
+     原先是 `--border-secondary`（5%）—— 统一后比原来略明显一点，换取整屏只有一种分隔线浓度。 */
+  border-bottom: 1px solid var(--border-separator);
 }
 
-/* 暗色模式：步骤间分割线稍微调亮，便于区分 */
-[data-theme="dark"] .qa-turn-footer {
-  border-bottom-color: rgba(255, 255, 255, 0.10);
-}
+/* 暗色档的分隔线由 `--border-separator` 两档各自解析给出。
+   （原先这里写死了一条 10% 白的覆盖，与令牌分叉 —— 第 67 轮删掉该覆盖。）
+   ⚠️ 注释里不写色值字面量：`tools/ui-audit/scan-ui.mjs` 的 `color-hardcoded-css`
+   会逐字面量判定"CSS 里的硬编码颜色"，**规则旁的注释也算**（只有令牌块内部豁免）。 */
 
 /* Buttons hidden by default, shown on hover */
 .qa-turn-footer .qa-turn-btn {
@@ -2268,8 +2278,32 @@ vertical-align: text-bottom;
 }
 
 /* ========== Tool Calls — inline, no outer border (aligned with wecode) ========== */
+/**
+ * 回复过程条目（工具调用）—— 第 67 轮按**用户在对照页选定的 S2 方案**改为"时间轴"。
+ *
+ * ## 为什么改（用户原话："聊天回复过程条目间线条的流线型"）
+ *
+ * 原先每条工具调用都是 `border-top: 1px solid var(--border-primary)` —— 一叠**全宽硬线**，
+ * 视觉上像表格行（一条回复里常有 5–10 条）。选定方案：**去掉所有横线，
+ * 改一条两端渐隐的竖向引导线**，过程读起来像一条时间轴。
+ *
+ * ⚠️ 布局零位移：竖线放在容器左内边距区（`left: var(--space-1)`），
+ * 而条目文字本来就缩进 `var(--space-6)`，所以只多一条装饰线，几何一个像素都不动。
+ */
 .tool-calls {
-margin-top: var(--space-4);
+  margin-top: var(--space-4);
+  position: relative;
+}
+
+.tool-calls::before {
+  content: "";
+  position: absolute;
+  left: var(--space-1);
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  /* 两端渐隐：线不从硬边开始/结束，这是"流线型"的关键一步 */
+  background: linear-gradient(180deg, transparent, var(--border-separator) 12%, var(--border-separator) 88%, transparent);
 }
 
 .tool-toggle {
@@ -2295,7 +2329,9 @@ margin-top: var(--space-4);
   align-items: center;
   padding: var(--space-3) var(--space-6);
   font-size: var(--fs-sm);
-  border-top: 1px solid var(--border-primary);
+  /* S2（用户选定）：条目之间的横线去掉 —— 结构交给 `.tool-calls::before` 那条渐隐时间轴。
+     刻意保留这条声明而不是删掉属性：日后要回退成横线，把它改回 1px 即可。 */
+  border-top: 0;
   flex-wrap: wrap;
 }
 
@@ -10848,7 +10884,8 @@ border-bottom: 1px solid var(--accent);
   top: 0;
   z-index: 10;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-secondary);
+  /* 第 67 轮（用户选定 L2）：结构分隔线统一走 `--border-separator`（7%） */
+  border-bottom: 1px solid var(--border-separator);
 }
 
 /*

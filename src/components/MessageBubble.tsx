@@ -42,7 +42,7 @@ function UserAvatar() {
     return (
       <div className="user-msg-avatar" style={{
         width: 32, height: 32, borderRadius: "50%", overflow: "hidden",
-        flexShrink: 0, border: "2px solid var(--border-primary)",
+        flexShrink: 0, border: "1px solid var(--border-primary)",
       }}>
         <img src={avatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </div>
@@ -51,7 +51,7 @@ function UserAvatar() {
   return (
     <div className="user-msg-avatar" style={{
       width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-      background: "var(--bg-tertiary)", border: "2px solid var(--border-primary)",
+      background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
       <User size={16} style={{ color: "var(--text-muted)" }} />

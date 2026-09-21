@@ -6445,7 +6445,7 @@
   },
   "load-more-indicator": {
     "background": "var(--bg-primary)",
-    "border-bottom": "1px solid var(--border-secondary)",
+    "border-bottom": "1px solid var(--border-separator)",
     "color": "var(--text-muted)",
     "font-size": "var(--fs-sm)",
     "padding": "var(--space-4) var(--space-6)",
@@ -12804,7 +12804,7 @@
   },
   "qa-turn-footer": {
     "align-items": "center",
-    "border-bottom": "1px solid var(--border-secondary)",
+    "border-bottom": "1px solid var(--border-separator)",
     "display": "grid",
     "gap": "var(--space-2)",
     "grid-template-columns": "repeat(3, max-content)",
@@ -17601,7 +17601,8 @@
     "vertical-align": "top"
   },
   "tool-calls": {
-    "margin-top": "var(--space-4)"
+    "margin-top": "var(--space-4)",
+    "position": "relative"
   },
   "tool-card": {
     "border": "1px solid var(--border-primary)",
@@ -17813,7 +17814,7 @@
   },
   "tool-item": {
     "align-items": "center",
-    "border-top": "1px solid var(--border-primary)",
+    "border-top": "0",
     "display": "flex",
     "flex-wrap": "wrap",
     "font-size": "var(--fs-sm)",
