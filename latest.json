@@ -1,15 +1,15 @@
 {
-  "version": "1.16.115",
-  "notes": "亮色模式重做：面阶梯反转（内容面纯白）、线条统一 9%、冷暖调色板合并、图标与徽标改用语义色（安全图标对比度 2.22→5.08）",
-  "pub_date": "2026-09-21T01:56:54Z",
+  "version": "1.16.117",
+  "notes": "v1.16.117 — 亮色线条精修；会话日志超过 50 MB 不再读不出来、日志压缩恢复执行；事件结构自检的几千条假警报归零",
+  "pub_date": "2026-09-21T10:02:05Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxbWxtSEZ2alJTVWdpSDhDU3N4bUVNc1NjU01ndEk0ZFlTdkM1cU5aS0RwV2pncThVdTFnblFjRU5xcm9MVzVZemQ0ZG1JdHBjN2RPVnVLckl6V0FvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTU1NDM5CWZpbGU6Q29kZW1fMS4xNi4xMTVfeDY0LXNldHVwLmV4ZQpiK3ExOTZoWllKZkJFVVRNRWJ2Y29MVkxDTm0vQ2lHRjA2NVpCeDUxSVpVQjMvaForZXJiN2c0Uk1nWHYyeWZHODMva05aOGJ0dTNhVXJEelhGSElDdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.115/Codem_1.16.115_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hNNUtCaHlCY0dibk9OTll5NlhlMEVWOGc1ZUZENXErMnhHZm5PNmY5ME1TQ2ZtRUZBdU15dFVaNEU4RWw3OEp0MVZnRnJXdVFJeHZ4cEFzNWk4QlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTgyMjE1CWZpbGU6Q29kZW1fMS4xNi4xMTdfeDY0LXNldHVwLmV4ZQpEbGhQRFdvTkJUMzUwcWZENjlFVFpnT24wd3ZJa0ZXK2ZlVHExcjFPMDZkV1ByWTkvL05ZTFZ6blhrSlVjK1dWNnVDUlNDYUxmWUNlcnJUZksxYzNEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.117/Codem_1.16.117_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxbWxtSEZ2alJTVWdpSDhDU3N4bUVNc1NjU01ndEk0ZFlTdkM1cU5aS0RwV2pncThVdTFnblFjRU5xcm9MVzVZemQ0ZG1JdHBjN2RPVnVLckl6V0FvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTU1NDM5CWZpbGU6Q29kZW1fMS4xNi4xMTVfeDY0LXNldHVwLmV4ZQpiK3ExOTZoWllKZkJFVVRNRWJ2Y29MVkxDTm0vQ2lHRjA2NVpCeDUxSVpVQjMvaForZXJiN2c0Uk1nWHYyeWZHODMva05aOGJ0dTNhVXJEelhGSElDdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.115/Codem_1.16.115_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hNNUtCaHlCY0dibk9OTll5NlhlMEVWOGc1ZUZENXErMnhHZm5PNmY5ME1TQ2ZtRUZBdU15dFVaNEU4RWw3OEp0MVZnRnJXdVFJeHZ4cEFzNWk4QlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTgyMjE1CWZpbGU6Q29kZW1fMS4xNi4xMTdfeDY0LXNldHVwLmV4ZQpEbGhQRFdvTkJUMzUwcWZENjlFVFpnT24wd3ZJa0ZXK2ZlVHExcjFPMDZkV1ByWTkvL05ZTFZ6blhrSlVjK1dWNnVDUlNDYUxmWUNlcnJUZksxYzNEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.117/Codem_1.16.117_x64-setup.exe"
     }
   }
 }
