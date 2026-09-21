@@ -131,8 +131,8 @@
 }
 
 .ppt-toolbar-btn.active {
-  background: var(--accent, #7c6cf0);
-  color: var(--text-on-accent, #fff);
+  background: var(--state-selected-bg);
+  color: var(--text-primary);
 }
 
 .ppt-toolbar-btn:disabled {
@@ -216,7 +216,7 @@
 }
 
 .ppt-thumbnail-item.active {
-  border-color: var(--accent, #7c6cf0);
+  border-color: var(--state-selected-border);
 }
 
 .ppt-thumbnail-number {
@@ -269,7 +269,7 @@
 .ppt-thumbnail-add:is(:hover, :focus-visible) {
   background: var(--bg-hover, #3a3a4c);
   color: var(--text-primary, #fff);
-  border-color: var(--accent, #7c6cf0);
+  border-color: var(--state-hover-border);
 }
 
 /* --- 属性面板 --- */
@@ -387,9 +387,9 @@
 }
 
 .ppt-property-btn.active {
-  background: var(--accent, #7c6cf0);
-  color: var(--text-on-accent, #fff);
-  border-color: var(--accent, #7c6cf0);
+  background: var(--state-selected-bg);
+  color: var(--text-primary);
+  border-color: var(--state-selected-border);
 }
 
 .ppt-property-empty {

@@ -208,29 +208,140 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
   });
 
   /**
-   * LIGHT-UI-6 用户气泡：两档必须**同源**（同一个令牌），且不得再用 `--bg-tertiary`。
-   * 三套皮肤（默认/hub/dream）都要给色，否则某个皮肤下气泡会掉回默认档或直接没有边框。
+   * LIGHT-UI-6 用户气泡：**中性浅底 + 无边框 + 无投影**，圆角收到 10px。
+   *
+   * 真机证据（`.preview-shot/audit-visual-detail-01.mjs`，1.16.115 装机版）：
+   * **平行双线 21 对里有 20 对**由气泡的品牌色边框引起 —— 气泡底边与相邻
+   * `button.toolbar-btn` 上边相距 **1px**、与 `span.collapse-btn` 底边相距 **0px**，
+   * 两条不同颜色的 1px 线贴在一起（品牌紫 16% vs 中性 9%）。
+   * 这就是"气泡边框线条看着毛"的成因，也是用户点名的第一处。
    */
-  it("LIGHT-UI-6：用户气泡走 --message-bubble-user(+border)，两档与三套皮肤都给色", () => {
+  it("LIGHT-UI-6：用户气泡是中性的「无边框浅底」（不许再用品牌色边框）", () => {
     const rule = /\.user\s+\.message-content\s*\{([^}]*)\}/.exec(styles)?.[1] ?? "";
     expect(rule, "找不到 `.user .message-content` 规则").toBeTruthy();
-    expect(rule, "用户气泡必须用 --message-bubble-user（第 65 轮：改动前用 --bg-tertiary，是一块深灰）").toMatch(/background:\s*var\(--message-bubble-user\)/);
-    expect(rule, "用户气泡边框必须走 --message-bubble-user-border").toMatch(/border:\s*1px solid var\(--message-bubble-user-border\)/);
-    expect(rule, "用户气泡不得再退回 --bg-tertiary").not.toMatch(/background:\s*var\(--bg-tertiary\)/);
+    expect(rule, "气泡底色必须走中性的 --state-selected-bg").toMatch(/background:\s*var\(--state-selected-bg\)/);
+    expect(rule, "气泡不许有边框（真机：它与相邻工具条边框叠成两条平行线）").toMatch(/border:\s*none/);
+    expect(rule, "气泡不许有投影（浅底自己就够分层）").toMatch(/box-shadow:\s*none/);
+    expect(rule, "气泡圆角收到 --radius-md（参考实现常用 8/10px）").toMatch(/border-radius:\s*var\(--radius-md\)/);
+    expect(rule, "气泡不得使用品牌色").not.toMatch(/--accent|message-bubble/);
+  });
 
-    // 两档主题各自给色（同名令牌，不同取值）
-    const darkBlock = /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
-    expect(token(lightBlock, "--message-bubble-user"), "亮色档缺气泡色").toBeTruthy();
-    expect(token(darkBlock, "--message-bubble-user"), "暗色档缺气泡色").toBeTruthy();
-    expect(token(lightBlock, "--message-bubble-user"), "两档气泡色不该完全相同（否则等于没做主题区分）")
-      .not.toBe(token(darkBlock, "--message-bubble-user"));
+  /**
+   * LIGHT-UI-10 状态表达**不许用品牌色**（填充或边框），只允许中性。
+   *
+   * 这是本轮的**核心对标结论**：参考实现选中态品牌填充 1 处 / 中性 85 处、品牌色边框 2 处、
+   * hover 里品牌色 3 处；我们改动前分别是 **69 / 11 / 44 / 116**。
+   * 用户看到的"左侧栏里紫色的框"就是这么来的：`.sidebar-tool-row` 常驻 8% 紫底、
+   * `.sidebar-tool-item.active` 18% 紫底、`.sidebar-project.active` 紫底，
+   * 四个 22×22 图标按钮 hover 时整块变紫 + 紫边框 + 白字。
+   *
+   * 判据：**状态选择器**（`.active/.selected/.is-active/.is-selected/[aria-*]/:hover`）的规则体里，
+   * 出现 `background: var(--accent…)` 或边框用 `var(--accent…)` 即违规；
+   * 白名单 = 品牌色语义正确的那些（主操作按钮、进度/图表填充、开关、危险色、焦点环、加载态、徽标）。
+   */
+  it("LIGHT-UI-10：状态选择器不许用品牌色填充或边框（只允许中性状态令牌）", () => {
+    const STATE = /(\.active\b|\.selected\b|\.is-active\b|\.is-selected\b|\[aria-selected=|\[aria-expanded=|:hover)/;
+    const KEEP = [
+      /* ⚠️ **不许写 `/bar-/` 或 `/-bar\b/`**：它们会匹配 `sideBAR-…`
+         （`.sidebar-tool-row` / `.sidebar-project` / `.sidebar-session`…），
+         于是**整个左侧栏**被放过 —— 本轮前两遍迁移脚本就是这么漏掉"左侧栏紫色框"的，
+         直到真机复量仍量到紫底才发现。要放行的是"数值条"，用具体词根。 */
+      /progress/, /\bfill\b/, /chart|usage|meter|gauge|score/, /heatmap/, /token-activity-cell/, /level-\d/,
+      /toggle-entry/, /checkmark/, /input:checked/, /danger/, /error/, /warning/, /success/,
+      /focus-visible/, /focus\b/, /logo/, /blob-/, /backdrop/, /caret/, /spinner/, /pulse/,
+      /loading/, /skeleton/, /indicator/, /resize-handle/, /recover/, /dot/,
+      /badge/, /pill/, /tag\b/, /chip/, /mention/, /highlight/, /selection/,
+      /* 主操作按钮（静止态即品牌色填充）与**页签下划线指示器**：品牌色在这两处是语义正确的 */
+      /--primary|\.primary\b/, /tab\b|-tab/,
+    ];
+    const files: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = join(dir, n);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.css$/.test(n) && !/skin-(hub|dream)/.test(p)) files.push(p);
+      }
+    })(join(ROOT, "src"));
 
-    // 三套皮肤
-    for (const skin of ["src/styles/skin-hub.css", "src/styles/skin-dream.css"]) {
-      const s = read(skin);
-      expect(s, `${skin} 缺 --message-bubble-user`).toMatch(/--message-bubble-user\s*:/);
-      expect(s, `${skin} 缺 --message-bubble-user-border（否则该皮肤下气泡没有边框）`).toMatch(/--message-bubble-user-border\s*:/);
+    /** 取"状态选择器"去掉状态部分后的基选择器（用于判断它是不是主操作按钮） */
+    const baseOf = (sel: string) =>
+      sel
+        .replace(/:hover|:focus-visible|:focus|:not\([^)]*\)|\[aria-[^\]]*\]/g, "")
+        .replace(/\.(active|selected|is-active|is-selected)\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const bad: string[] = [];
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      const rules = [...src.matchAll(/([^\n{}]+)\{([^{}]*)\}/g)];
+      for (const m of rules) {
+        const sel = m[1].trim();
+        const body = m[2];
+        if (!STATE.test(sel)) continue;
+        if (KEEP.some((k) => k.test(sel))) continue;
+        /**
+         * **主操作按钮**的 hover 允许继续用品牌色：判据是"它的**静止态**本来就是品牌色填充"。
+         * 这样门禁不必维护一张按钮名字清单（`.snapshot-restore-btn` / `.mcp-server-btn.connect`
+         * 这类名字无法穷举），而是按**语义**判定：静止就是品牌色的按钮，hover 加深品牌色是对的。
+         */
+        const base = baseOf(sel);
+        const isPrimary =
+          base.length > 0 &&
+          rules.some((r2) => {
+            const s2 = r2[1].trim();
+            if (s2 !== base) return false;
+            return /background(?:-color)?:\s*var\(--accent\)/.test(r2[2]);
+          });
+        if (isPrimary) continue;
+
+        const rel = f.replace(ROOT, "").replace(/\\/g, "/");
+        if (/background(?:-color)?:\s*var\(--accent/.test(body)) bad.push(`${rel} :: ${sel.slice(0, 60)} —— 品牌色填充`);
+        if (/border[^:;{}]*:\s*[^;]*var\(--accent/.test(body)) bad.push(`${rel} :: ${sel.slice(0, 60)} —— 品牌色边框`);
+      }
     }
+    expect(bad, `状态表达必须中性（品牌色只留给主操作/进度/焦点环）—— "紫色框"的来源：\n  - ${bad.join("\n  - ")}`).toEqual([]);
+  });
+
+  /**
+   * LIGHT-UI-11 实线边框粗细只允许 1px。
+   *
+   * 真机台账：非 1px 的线 8 段**全在同一个 32px 头像上**（2px 边框）；静态普查另有 51 处。
+   * 现在收敛：`2px/1.5px + 中性色` → 1px、`2px/3px + 品牌色` → 1px 中性、
+   * `border-left: 3px + 状态色` → 2px（保留语义色，只是不再是最粗的线）。
+   *
+   * 例外都是**"环/挖空"，不是"线"**：spinner 的转圈环、徽标用背景色描一圈把自己从底上"切"出来
+   * —— 它们必须是 2px 才有意义；皮肤（hub/dream）与内嵌游戏有自己的美术方向，不在本门禁范围。
+   */
+  it("LIGHT-UI-11：实线边框粗细只允许 1px（环/挖空与游戏皮肤例外）", () => {
+    const files: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = join(dir, n);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.css$/.test(n) && !/skin-(hub|dream)|monopoly-game/.test(p)) files.push(p);
+      }
+    })(join(ROOT, "src"));
+    const RING = /spinner|progress|ring|badge|avatar|swatch|thumb|checkmark|dot\b/;
+    const bad: string[] = [];
+    for (const f of files) {
+      const lines = readFileSync(f, "utf8").split(/\r?\n/);
+      let sel = "";
+      lines.forEach((line, i) => {
+        const open = /^([^\n{}]+)\{/.exec(line.trim());
+        if (open) sel = open[1].trim();
+        const m = /border(?:-(?:top|right|bottom|left))?:\s*([0-9.]+)px\s+solid\s+([^;{}]+)/.exec(line);
+        if (!m) return;
+        const w = parseFloat(m[1]);
+        const color = m[2].trim();
+        if (w === 1) return;
+        if (/transparent$/.test(color)) return;                 // 占位边框：防 hover 抖动，视觉上不存在
+        if (w === 2 && /^border-left:/.test(line.trim())) return; // 状态条：语义色左线，2px 上限
+        if (RING.test(sel)) return;                              // 环 / 挖空，不是"线"
+        bad.push(`${f.replace(ROOT, "").replace(/\\/g, "/")}:${i + 1}  ${sel}  ${line.trim().slice(0, 50)}`);
+      });
+    }
+    expect(bad, `边框粗细不统一（满屏 1px 里出现 2px/3px 就是"这一处特别粗"）：\n  - ${bad.join("\n  - ")}`).toEqual([]);
   });
 
   /**

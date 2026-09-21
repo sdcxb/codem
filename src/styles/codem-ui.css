@@ -263,9 +263,9 @@
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 .paragraph-action-btn:is(:hover, :focus-visible) {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
+  background: var(--state-hover-bg);
+  color: var(--text-primary);
+  border-color: var(--state-hover-border);
 }
 .rich-content-link {
   color: var(--rich-link-color);
@@ -294,7 +294,7 @@
 .rich-content-quote {
   margin: 0.75em 0;
   padding: 0.5em 1em;
-  border-left: 3px solid var(--accent);
+  border-left: 1px solid var(--border-primary);
   background: var(--surface-1);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--text-secondary);
@@ -751,6 +751,15 @@
 }
 
 /* ========== 5. Message Actions Bar ========== */
+/**
+ * 消息操作条（悬浮在消息角上的小条）
+ *
+ * 第 66 轮：**去掉边框**。真机台账（`.preview-shot/audit-visual-detail-01.mjs`）显示它原先是
+ * `1px solid var(--glass-border)`（合成后 6% 中性），而它悬浮的位置**紧贴用户气泡下边缘**
+ * （相距 1px）—— 屏幕上于是有两条平行细线：气泡边（品牌色 16%）+ 工具条边（中性 6%），
+ * 颜色还不同。这是"气泡边框线条看着毛"的第二个来源。
+ * 去掉边框后靠**白底 + 轻投影**分层（与参考实现"用极轻投影替代边框"是同一手法）。
+ */
 .message-actions-bar {
   display: flex;
   align-items: center;
@@ -759,7 +768,7 @@
   background: var(--message-actions-bg);
   backdrop-filter: blur(var(--glass-blur-subtle));
   -webkit-backdrop-filter: blur(var(--glass-blur-subtle));
-  border: 1px solid var(--glass-border);
+  border: none;
   border-radius: var(--radius);
   box-shadow: var(--message-actions-shadow);
   opacity: 0;
@@ -788,7 +797,7 @@
   color: var(--text-primary);
 }
 .message-action-btn.active {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 .message-action-btn.active[data-feedback="down"] {
   color: var(--error);
@@ -1194,7 +1203,7 @@
 }
 .decision-tray-btn.reject:is(:hover, :focus-visible) {
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-primary);
 }
 .decision-tray-btn.submit {
   background: var(--accent);
@@ -1236,9 +1245,9 @@
   background: var(--surface-hover);
 }
 .decision-tray-option.selected {
-  background: var(--accent-muted);
-  border-color: var(--accent-strong);
-  color: var(--accent-strong);
+  background: var(--state-selected-bg);
+  border-color: var(--state-selected-border);
+  color: var(--text-primary);
 }
 .decision-tray-answer-input {
   width: 100%;
@@ -1286,8 +1295,8 @@
   color: var(--text-secondary);
 }
 .security-mode-btn:is(:hover, :focus-visible) {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--state-hover-border);
+  color: var(--text-primary);
   background: var(--accent-soft, rgba(124,58,237,0.08));
 }
 [data-theme="dark"] .security-mode-btn {
@@ -1297,7 +1306,7 @@
 }
 [data-theme="dark"] .security-mode-btn:is(:hover, :focus-visible) {
   background: var(--accent-soft, rgba(124,58,237,0.15));
-  color: var(--accent, #c4b5fd);
+  color: var(--text-primary);
 }
 /* 当前安全模式颜色反馈 — 选中（当前生效）模式一眼可见：
    ask=请求批准(蓝) / auto=替我审批(紫) / full=完全访问(绿) */
@@ -1329,8 +1338,8 @@
   color: var(--text-primary);
 }
 .composer-dropdown-item.selected {
-  background: var(--accent-muted);
-  color: var(--accent-strong);
+  background: var(--state-selected-bg);
+  color: var(--text-primary);
 }
 
 /* Composer attachment tray */
@@ -1339,7 +1348,7 @@
 
 .composer-attachment-remove:is(:hover, :focus-visible) {
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-primary);
 }
 
 /* Composer drag overlay */
@@ -1363,8 +1372,8 @@
   white-space: nowrap;
 }
 .execution-mode-toggle.active {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-primary);
+  background: var(--state-selected-bg);
 }
 .execution-mode-toggle:disabled {
   cursor: not-allowed;
@@ -1380,7 +1389,7 @@
   color: var(--text-primary);
 }
 .native-title-bar-btn.active {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 
@@ -1417,7 +1426,7 @@
 }
 .native-title-bar-window-btn.close:is(:hover, :focus-visible) {
   background: var(--titlebar-btn-close-hover);
-  color: var(--text-on-accent);
+  color: var(--text-primary);
 }
 
 /* ========== 11. Right Rail ========== */
@@ -1744,7 +1753,7 @@ body.resizing-columns * {
 }
 .git-branch-new-btn:is(:hover, :focus-visible) {
   background: var(--surface-hover);
-  color: var(--accent);
+  color: var(--text-primary);
 }
 .git-branch-create {
   display: flex;
@@ -1958,7 +1967,7 @@ body.resizing-columns * {
   color: var(--text-primary);
 }
 .space-switcher-item.active {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 .space-switcher-item-name {
   flex: 1;
@@ -1990,7 +1999,7 @@ body.resizing-columns * {
 }
 .space-switcher-new-btn:is(:hover, :focus-visible) {
   background: var(--surface-hover);
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 /* ========== 18. Enhanced Sidebar Rail Mode ========== */
@@ -2025,8 +2034,8 @@ body.resizing-columns * {
   color: var(--text-primary);
 }
 .sidebar-rail-btn.active {
-  background: var(--accent-muted);
-  color: var(--accent-strong);
+  background: var(--state-selected-bg);
+  color: var(--text-primary);
 }
 .sidebar-rail-divider {
   width: 24px;
@@ -2152,8 +2161,8 @@ body.resizing-columns * {
   color: var(--text-primary);
 }
 .settings-nav-item.active {
-  background: var(--accent-muted);
-  color: var(--accent-strong);
+  background: var(--state-selected-bg);
+  color: var(--text-primary);
   font-weight: 500;
 }
 .settings-nav-section-label {
@@ -2473,8 +2482,8 @@ body.resizing-columns * {
   background: var(--surface-hover) !important;
 }
 .settings-sidebar-item.active {
-  background: var(--accent-muted) !important;
-  color: var(--accent) !important;
+  background: var(--state-selected-bg) !important;
+  color: var(--text-primary) !important;
   font-weight: 500;
 }
 .settings-content {
@@ -2687,7 +2696,7 @@ box-shadow: var(--elevation-1);
   transition: border-color var(--duration-normal);
 }
 .inline-diff-review:is(:hover, :focus-visible) {
-  border-color: var(--accent);
+  border-color: var(--state-hover-border);
 }
 .inline-diff-header {
   display: grid;
@@ -3030,7 +3039,7 @@ background: var(--bg-secondary);
 }
 .inline-diff-btn.reject:is(:hover, :focus-visible) {
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-primary);
   border-color: var(--error);
 }
 .inline-diff-btn.accept-all {
@@ -3104,8 +3113,6 @@ background: var(--bg-secondary);
    * 第 65 轮：与默认皮肤同一处理 —— 删掉零引用的 `--message-bubble-assistant/system`，
    * 用户气泡统一走 `--message-bubble-user`(+border)（在这里就是 Hub 的橙色浅底），
    * 于是「同一个 `.user .message-content` 规则、三套皮肤各自给色」，不再有死令牌。 */
-  --message-bubble-user: rgba(255, 107, 0, 0.10);
-  --message-bubble-user-border: rgba(255, 107, 0, 0.22);
   --message-actions-bg: rgba(28, 28, 30, 0.95);
   --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.40);
 
@@ -3190,7 +3197,7 @@ background: var(--bg-secondary);
   border-right: 1px solid var(--border-secondary);
 }
 .inline-diff-new-num {
-  border-right: 2px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);
 }
 
 /* ==========================================================================

@@ -53,7 +53,7 @@
   cursor: pointer;
   transition: var(--transition-color);
 }
-.squads-new-btn:is(:hover, :focus-visible) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.squads-new-btn:is(:hover, :focus-visible) { background: var(--accent-hover); border-color: var(--state-hover-border); }
 
 .tc-empty {
   padding: var(--space-11) var(--space-9);
@@ -412,7 +412,7 @@
   cursor: pointer;
   transition: var(--transition-color);
 }
-.issue-detail-picker-item:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.issue-detail-picker-item:is(:hover, :focus-visible) { background: var(--state-hover-bg); }
 .issue-detail-picker-item > svg { color: var(--accent); }
 .issue-detail-picker-name { font-weight: 600; }
 .issue-detail-picker-meta { font-size: var(--fs-xs); color: var(--text-muted); }
@@ -428,7 +428,7 @@
 .issue-detail-comment-list { display: flex; flex-direction: column; gap: var(--space-3); }
 .issue-detail-comment {
   padding: var(--space-4) var(--space-6);
-  border-left: 2px solid var(--accent);
+  border-left: 1px solid var(--border-primary);
   border-radius: var(--radius);
   background: var(--bg-tertiary);
   font-size: var(--fs-sm);
