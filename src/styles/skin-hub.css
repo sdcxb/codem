@@ -39,7 +39,6 @@
   --error: #f85149;
   --info: #58a6ff;
   --user-bg: rgba(255, 107, 0, 0.12);
-  --assistant-bg: transparent;
   --system-bg: #121212;
   --tooltip-bg: #1c1c1e;
   --tooltip-text: #e0e0e0;
@@ -701,16 +700,14 @@
 
   --surface-1: rgba(28, 28, 30, 0.50);
   --surface-2: rgba(40, 40, 42, 0.60);
-  --surface-3: rgba(50, 50, 52, 0.70);
   --surface-hover: rgba(42, 42, 42, 0.80);
 
   --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(255, 255, 255, 0.03);
   --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
   --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
 
-  --message-bubble-assistant: rgba(28, 28, 30, 0.60);
-  --message-bubble-user: rgba(255, 107, 0, 0.08);
-  --message-bubble-system: rgba(18, 18, 18, 0.70);
+  --message-bubble-user: rgba(255, 107, 0, 0.10);
+  --message-bubble-user-border: rgba(255, 107, 0, 0.22);
   --message-actions-bg: rgba(28, 28, 30, 0.95);
   --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.40);
 

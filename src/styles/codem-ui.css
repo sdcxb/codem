@@ -34,7 +34,6 @@
   /* 表面层级 */
   --surface-1: rgba(33, 38, 45, 0.50);
   --surface-2: rgba(40, 46, 54, 0.60);
-  --surface-3: rgba(48, 54, 61, 0.70);
   --surface-hover: rgba(56, 62, 70, 0.80);
 
   /* 阴影层级 */
@@ -42,10 +41,13 @@
   --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
 
-  /* 消息流令牌 */
-  --message-bubble-assistant: rgba(22, 27, 34, 0.60);
-  --message-bubble-user: rgba(124, 108, 240, 0.15);
-  --message-bubble-system: rgba(28, 33, 40, 0.70);
+  /* 消息流令牌
+   *
+   * 第 65 轮：删掉三个**零引用**的死令牌 `--message-bubble-user/assistant/system`
+   * （全项目 0 处 `var()`；用户气泡早已改成直接写死行内色）。
+   * `--message-bubble-user` 现在只在 `styles.css` 的两档主题块里定义一次 ——
+   * 这里再定义一份会让"导入顺序靠后的文件"悄悄胜出（本文件在 main.tsx 里晚于 styles.css 导入），
+   * 那就是又一个"两个真相来源"。 */
   --message-actions-bg: rgba(33, 38, 45, 0.90);
   --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 
@@ -96,47 +98,66 @@
 
 /* Light theme glass tokens */
 [data-theme="light"] {
+  /**
+   * ## 第 65 轮：这一块整套从"GitHub 冷灰"改成"暖中性"
+   *
+   * 改动前这里用的是 GitHub 系的**冷**蓝灰（246/248/250、208/215/222、234/238/242、
+   * 186/196/204、170/180/188 这一族）与**纯黑** alpha 边框，
+   * 而 `styles.css` 的亮色档是**暖**中性（31/31/30 那一族）。装机版实测：代码块底与代码头是冷的、
+   * 用户消息与侧栏是暖的、边框里同时存在冷蓝灰与纯黑两种 —— 也就是
+   * **同一屏里出现了两种白点**，这是"看着不精致"最直接的一条。
+   *
+   * 现在把冷灰与纯黑统一到与 `styles.css` 同一色相的暖中性（等价明度换算）：
+   *   冷白 246/248/250 → 暖白 246/246/244
+   *   冷底 234/238/242 → 暖底 238/238/235
+   *   冷边 208/215/222 → 与全局边框同源的 31/31/30（11%）
+   *   纯黑 alpha     → 31/31/30 同 alpha
+   *
+   * 暗色档本来就是冷灰（与 `styles.css` 暗色档一致），**保持原样不动**
+   * —— 用户明确说暗色已经好看，这一轮不动它。
+   *
+   * ⚠️ 这段注释刻意写在令牌块**内部**：`tools/ui-audit/scan-ui.mjs` 的
+   * `color-hardcoded-css` 会逐字面量判定"CSS 里的硬编码颜色"，
+   * 只有令牌定义块内部才允许出现原始色值；写在块外会被它当成硬编码拦截
+   * （第一次就是把这段写在块外，门禁直接报了 10 处）。
+   */
   --glass-bg: rgba(255, 255, 255, 0.72);
   --glass-bg-strong: rgba(255, 255, 255, 0.88);
   --glass-bg-subtle: rgba(255, 255, 255, 0.48);
-  --glass-border: rgba(0, 0, 0, 0.06);
-  --glass-border-strong: rgba(0, 0, 0, 0.10);
+  --glass-border: rgb(31 31 30 / 6%);
+  --glass-border-strong: rgb(31 31 30 / 10%);
 
-  --surface-1: rgba(234, 238, 242, 0.50);
-  --surface-2: rgba(208, 215, 222, 0.60);
-  --surface-3: rgba(186, 196, 204, 0.70);
-  --surface-hover: rgba(170, 180, 188, 0.80);
+  --surface-1: rgba(240, 240, 237, 0.50);
+  --surface-2: rgb(31 31 30 / 11%);
+  --surface-hover: rgb(31 31 30 / 26%);
 
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.03);
-  --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
-  --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --elevation-1: 0 1px 2px rgb(31 31 30 / 6%), 0 0 0 1px rgb(31 31 30 / 3%);
+  --elevation-3: 0 8px 24px rgb(31 31 30 / 12%), 0 0 0 1px rgb(31 31 30 / 5%);
+  --elevation-4: 0 16px 48px rgb(31 31 30 / 18%), 0 0 0 1px rgb(31 31 30 / 6%);
 
-  --message-bubble-assistant: rgba(246, 248, 250, 0.80);
-  --message-bubble-user: rgba(107, 92, 231, 0.10);
-  --message-bubble-system: rgba(234, 238, 242, 0.80);
   --message-actions-bg: rgba(255, 255, 255, 0.95);
-  --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+  --message-actions-shadow: 0 2px 8px rgb(31 31 30 / 10%);
 
-  --run-bar-bg: rgba(234, 238, 242, 0.90);
+  --run-bar-bg: rgba(238, 238, 235, 0.90);
 
   --composer-bg: rgba(255, 255, 255, 0.80);
-  --composer-border: rgba(208, 215, 222, 0.60);
+  --composer-border: rgb(31 31 30 / 11%);
 
   --titlebar-bg: rgba(255, 255, 255, 0.80);
-  --titlebar-btn-hover: rgba(208, 215, 222, 0.50);
+  --titlebar-btn-hover: rgb(31 31 30 / 8%);
   --titlebar-tab-active: rgba(107, 92, 231, 0.12);
-  --titlebar-tab-hover: rgba(208, 215, 222, 0.40);
+  --titlebar-tab-hover: rgb(31 31 30 / 6%);
 
-  --right-rail-bg: rgba(246, 248, 250, 0.60);
+  --right-rail-bg: rgba(246, 246, 244, 0.60);
   --right-rail-tab-active: rgba(107, 92, 231, 0.10);
-  --right-rail-tab-hover: rgba(208, 215, 222, 0.40);
+  --right-rail-tab-hover: rgb(31 31 30 / 6%);
 
-  --rich-code-bg: rgba(246, 248, 250, 0.90);
-  --rich-code-header-bg: rgba(234, 238, 242, 0.80);
-  --rich-code-border: rgba(208, 215, 222, 0.60);
-  --rich-table-bg: rgba(246, 248, 250, 0.40);
-  --rich-table-header-bg: rgba(234, 238, 242, 0.60);
-  --rich-table-border: rgba(208, 215, 222, 0.40);
+  --rich-code-bg: rgba(246, 246, 244, 0.90);
+  --rich-code-header-bg: rgba(238, 238, 235, 0.80);
+  --rich-code-border: rgb(31 31 30 / 9%);
+  --rich-table-bg: rgba(246, 246, 244, 0.40);
+  --rich-table-header-bg: rgba(238, 238, 235, 0.60);
+  --rich-table-border: rgb(31 31 30 / 6%);
   --rich-link-color: var(--accent, #6b5ce7);
 }
 
@@ -1216,8 +1237,8 @@
 }
 .decision-tray-option.selected {
   background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 .decision-tray-answer-input {
   width: 100%;
@@ -1309,7 +1330,7 @@
 }
 .composer-dropdown-item.selected {
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* Composer attachment tray */
@@ -2005,7 +2026,7 @@ body.resizing-columns * {
 }
 .sidebar-rail-btn.active {
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .sidebar-rail-divider {
   width: 24px;
@@ -2132,7 +2153,7 @@ body.resizing-columns * {
 }
 .settings-nav-item.active {
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 500;
 }
 .settings-nav-section-label {
@@ -2539,8 +2560,8 @@ select:focus-visible,
 }
 .right-sidebar-tab.active {
   background: var(--accent-muted);
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 .right-sidebar-resize-handle {
   position: absolute;
@@ -3071,7 +3092,6 @@ background: var(--bg-secondary);
   /* Surface tokens */
   --surface-1: rgba(28, 28, 30, 0.50);
   --surface-2: rgba(40, 40, 42, 0.60);
-  --surface-3: rgba(50, 50, 52, 0.70);
   --surface-hover: rgba(42, 42, 42, 0.80);
 
   /* Elevation tokens */
@@ -3079,10 +3099,13 @@ background: var(--bg-secondary);
   --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
   --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
 
-  /* Message tokens */
-  --message-bubble-assistant: rgba(28, 28, 30, 0.60);
-  --message-bubble-user: rgba(255, 107, 0, 0.08);
-  --message-bubble-system: rgba(18, 18, 18, 0.70);
+  /* Message tokens
+   *
+   * 第 65 轮：与默认皮肤同一处理 —— 删掉零引用的 `--message-bubble-assistant/system`，
+   * 用户气泡统一走 `--message-bubble-user`(+border)（在这里就是 Hub 的橙色浅底），
+   * 于是「同一个 `.user .message-content` 规则、三套皮肤各自给色」，不再有死令牌。 */
+  --message-bubble-user: rgba(255, 107, 0, 0.10);
+  --message-bubble-user-border: rgba(255, 107, 0, 0.22);
   --message-actions-bg: rgba(28, 28, 30, 0.95);
   --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.40);
 

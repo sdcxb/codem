@@ -125,7 +125,7 @@ describe("批次 A: CSS 变量完整性", () => {
     } else {
       style.textContent = `
         [data-theme="light"] {
-          --accent: #6b5ce7;
+          --accent: #6555e0;
           --accent-hover: #5a4bd1;
           --user-bg: rgba(107, 92, 231, 0.90);
           --radius: 0.5rem;
@@ -147,9 +147,15 @@ describe("批次 A: CSS 变量完整性", () => {
     expect(accent).not.toBe("#2f81f7"); // 不再是旧的 GitHub 蓝
   });
 
-  it("light 主题 --accent 为紫色系 #6b5ce7（不再是蓝色 #0969da）", () => {
+  it("light 主题 --accent 为紫色系 #6555e0（不再是蓝色 #0969da）", () => {
     const accent = getCSSVar("--accent", "light");
-    expect(accent).toBe("#6b5ce7");
+    // ⚠️ 这里断言的是本文件**自己注入的 fixture**（见 getCSSVar 里的 style.textContent），
+    // 不是 src/styles.css 的真实取值 —— 真实的亮色档取值由
+    // `light-theme-contrast.test.ts`（LIGHT-UI 系列，直接读源码算对比度）与
+    // `tools/ui-audit/css-contract.json`（生效取值快照）守着。
+    // 第 65 轮把真实主色从 #6b5ce7 加深到 #6555e0（原值在内嵌块上只有 4.35:1），
+    // 这里同步 fixture，免得它继续记录一个已经不存在的"事实"。
+    expect(accent).toBe("#6555e0");
     expect(accent).not.toBe("#0969da"); // 不再是旧的 GitHub 蓝
   });
 

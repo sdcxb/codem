@@ -1330,7 +1330,7 @@ function SourceCard({
     source.type === 'url' ? 'URL' :
     isZh ? '文本' : 'Text';
 
-  const statusColor = source.status === 'indexed' ? 'var(--success, #22c55e)' :
+  const statusColor = source.status === 'indexed' ? 'var(--success)' :
     source.status === 'processing' ? 'var(--warning, #eab308)' :
     source.status === 'failed' ? 'var(--error)' :
     'var(--text-muted)';

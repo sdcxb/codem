@@ -123,7 +123,7 @@ export function VoiceSettingsPanel() {
         <div style={{
           padding: 8,
           fontSize: 'var(--fs-sm)',
-          color: "var(--warning, #f59e0b)",
+          color: "var(--warning)",
           marginLeft: 8,
           lineHeight: 1.5,
         }}>
@@ -164,7 +164,7 @@ export function VoiceSettingsPanel() {
         <div style={{
           padding: 8,
           fontSize: 'var(--fs-sm)',
-          color: "var(--warning, #f59e0b)",
+          color: "var(--warning)",
           marginLeft: 8,
         }}>
           {zh ? "⚠ 云端 TTS 尚未配置，将回退使用浏览器内置 TTS。" : "⚠ Cloud TTS not configured, will fall back to browser TTS."}

@@ -764,7 +764,7 @@
 
 
 .nb-question-card:is(:hover, :focus-visible) {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-muted);
   transform: translateX(2px);
 }
@@ -897,7 +897,7 @@
   padding: 0 var(--space-2);
   border-radius: 2px;
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 500;
 }
 
@@ -2389,7 +2389,7 @@ top: 36px;
 }
 
 .nb-backlink-item:is(:hover, :focus-visible) {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   color: var(--text-primary);
   background: var(--accent-muted);
 }

@@ -191,21 +191,52 @@
 :root,
 [data-theme="light"] {
   color-scheme: light;
-  /* 面：暖中性阶梯（画布 → 卡片 → 内嵌 → 悬停） */
-  --bg-primary: #fcfcfb;
-  --bg-secondary: #f5f5f3;
-  --bg-tertiary: #ededea;
-  --bg-hover: #e3e3df;
-  /* 文字：暖灰三档（对比度：#1f1f1e 对 #fcfcfb ≈ 16:1，次级 ≈ 6.6:1，弱级 ≈ 3.4:1） */
+  /**
+   * 面：**白色内容面 → 浅灰面板 → 更浅的内嵌块**（第 65 轮，对齐参考实现的抬升方向）
+   *
+   * ## 改动前是什么样、为什么像"色卡拼贴"
+   *
+   * 改动前的阶梯是"画布最亮、越靠内容越暗"：画布 `#fcfcfb`（lum 0.973）
+   * → 面板 `#f5f5f3`（0.912）→ 内嵌块/用户消息 `#ededea`（0.845）。
+   * 装机版实测（`.preview-shot/audit-light-ui-02-conversation.json`）：
+   * 用户消息是一块 **dLum −0.128** 的深灰大块贴在近白底上，加上 12% 边框与阴影，
+   * 整屏就是"近白底 + 若干灰块"——这正是"像原型"的观感来源。
+   *
+   * 暗色档**本来就是相反方向**（`--bg-primary` 最暗 → `--bg-secondary` 更亮 → `--bg-tertiary` 更亮），
+   * 所以暗色好看、亮色别扭：两档的"面往哪个方向走"不一致。现在亮色也改成
+   * **内容面最亮（纯白）→ 面板次之 → 内嵌块再次之**，两档方向一致。
+   *
+   * ⚠️ 语义**没有反转**：`--bg-primary` 依旧是"主内容面"（只是从近白变成纯白），
+   * 所以 `.sidebar-tool-item.active { background: var(--bg-primary) }` 这类
+   * "用主内容面表示抬升"的写法仍然成立（白 > 侧栏灰）。
+   */
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafaf9;
+  --bg-tertiary: #f2f2f0;
+  --bg-hover: #eeeeec;
+  /* 文字：暖灰三档（对比度按白底/内嵌块各算过：正文 16.5/14.7、次级 7.4/6.6、弱级 5.3/4.7）
+     弱级从 #8a8880 提到 #6e6c66 —— 改动前它在白底只有 3.46:1、落在内嵌灰块上只有 3.03:1，
+     而它被大量用在 10–12px 的时间/计数/分组标签上（低于 4.5:1 的可读线）。 */
   --text-primary: #1f1f1e;
-  --text-secondary: #5d5c58;
-  --text-muted: #8a8880;
-  /* 线：一律用"文字色 + alpha"，这样深浅两档的线色相自动一致 */
-  --border-primary: rgb(31 31 30 / 12%);
-  --border-secondary: rgb(31 31 30 / 7%);
-  --accent: #6b5ce7;
+  --text-secondary: #57564f;
+  --text-muted: #6e6c66;
+  /* 线：一律用"文字色 + alpha"，这样深浅两档的线色相自动一致。
+     强度 12% → 9%：合成在白底上是 #ebebeb、对比度 **1.194**，
+     与参考实现的 9%（白底 1.201）几乎逐位一致；改动前的 12% 是 1.269，偏重。 */
+  --border-primary: rgb(31 31 30 / 9%);
+  --border-secondary: rgb(31 31 30 / 5%);
+  /* 主色：从 #6b5ce7 略微加深到 #6555e0。
+     原值落在**内嵌块**（`--bg-tertiary` #f2f2f0）上只有 **4.35:1**，而它被用在
+     「展开 ▼」「文件名链接」这类 12–14px 小字上；加深后：内容面 5.34 / 内嵌块 4.77 /
+     白字落在它上面 5.34 —— 三项都过线（门禁 LIGHT-UI-3 会守住）。 */
+  --accent: #6555e0;
   --accent-hover: #5a4bd1;
   --accent-muted: rgba(107, 92, 231, 0.15);
+  /* `--accent-strong`：**落在品牌色浅底上的**品牌色文字（如模型徽标）。
+     直接用 `--accent` 不够：装机版实测徽标文字在 15% 浅底 chip 上只有 4.22:1，
+     而那个 chip 还常常叠在用户气泡（本身也是品牌色浅底）上 —— 双层浅底下只剩 3.94。
+     加深到 #5b46cf 后：chip 上 4.80、白底 6.52（门禁 LIGHT-UI-3 会守这一条）。 */
+  --accent-strong: #5b46cf;
   --text-on-accent: #ffffff;
   /* 输入光标颜色：跟"可见文字"同色。
      第 59 波修复（用户报「默认皮肤暗色下，对话编辑区打字时紫光标在深底上看不清」）：
@@ -213,10 +244,14 @@
      而正文文字是 11.55:1 —— 一根 1px 的闪烁竖线按品牌色渲染，实际可见度只有文字的三分之一。
      定义为「引用 --text-primary」而不是直接抄色值：两档主题各自解析，皮肤也可覆盖 --caret-color。 */
   --caret-color: var(--text-primary);
-  --success: #1a7f37;
-  --warning: #9a6700;
+  /* 语义状态色：改动前 warning #9a6700 落在**内嵌块**（#f2f2f0）上只有 4.34:1、
+     success #1a7f37 是 4.53（贴线）。统一压深一档：
+     warning #8a5c00（内嵌块 5.19 / 白底 5.81）、success #17702f（5.52 / 6.19）、
+     error #cf222e 保持（4.78 / 5.36 已过线）。门禁 LIGHT-UI-3 会守住这两条下限。 */
+  --success: #17702f;
+  --warning: #8a5c00;
   --error: #cf222e;
-  --info: #6b5ce7;
+  --info: #6555e0;
   /* 分类色板（浅色主题）：与深色主题刻意取不同的明度，保证在浅底上仍可区分 */
   --chart-cat-1: #0969da;
   --chart-cat-2: #bf8700;
@@ -224,13 +259,24 @@
   --chart-cat-4: #1a7f37;
   --chart-cat-5: #8250df;
   --chart-cat-6: #0550ae;
-  --user-bg: rgba(107, 92, 231, 1);
-  --assistant-bg: #f5f5f3;
-  --system-bg: #ededea;
-  --code-bg: #f5f5f3;
-  --sidebar-bg: #f7f7f5;
-  --input-bg: rgba(255, 255, 255, 1);
-  --scrollbar-track: rgb(245 245 243 / 80%);
+  /* 消息气泡：**用户气泡走品牌色浅底**（第 65 轮接线）。
+     改动前 `.user .message-content` 用的是 `--bg-tertiary`（一块比画布暗 0.13 的深灰），
+     而暗色档同一处用的是 `rgba(124,108,240,0.15)` 品牌色浅底 —— 两档说的不是一回事，
+     亮色下就成了一块突兀的灰。这里改成与暗色同源的浅底 + 同色淡边。
+     ⚠️ `--user-bg` **保留**（它不是死令牌）：`SideSessionPanel.tsx:155` 用的是
+     `color-mix(in srgb, var(--user-bg, #2a3140) 60%, transparent)` —— **带兜底的**写法，
+     用 `var(--user-bg)` 字面量统计会漏掉它（第 65 轮差点因此删掉它，
+     被 `drop-dead-tokens.mjs` 的"删前再验一次引用"守卫拦下）。
+     分工：`--user-bg` = 用户的**实色**（侧栏副会话面板调淡后当气泡底）；
+     `--message-bubble-user` = 主对话气泡的**浅底**（本身已是低 alpha，不能再调淡）。 */
+  --user-bg: #6b5ce7;
+  --message-bubble-user: rgba(107, 92, 231, 0.08);
+  --message-bubble-user-border: rgba(107, 92, 231, 0.16);
+  --system-bg: #f2f2f0;
+  --code-bg: #f6f6f4;
+  --sidebar-bg: #f4f4f2;
+  --input-bg: #ffffff;
+  --scrollbar-track: rgb(242 242 240 / 80%);
   --scrollbar-thumb: rgb(31 31 30 / 16%);
   /* Shadows：浅色下要比暗色轻得多，否则像"发霉的边缘" */
   --shadow-sm: 0 1px 2px rgb(31 31 30 / 6%);
@@ -251,10 +297,17 @@
   /* Semantic status hovers */
   --error-hover: #cf222e;
   --success-hover: #1a7f37;
-  /* Security mode semantic colors */
-  --security-ask: #3b82f6;
-  --security-auto: #8b5cf6;
-  --security-full: #22c55e;
+  /* Security mode semantic colors
+   *
+   * 第 65 轮修正：改动前这三档直接用了 Tailwind 的 500 号饱和色
+   * （`#3b82f6 / #8b5cf6 / #22c55e`），在近白底上的对比度只有
+   * **3.68 / 4.23 / 2.28** —— 装机版实测安全模式按钮的图标与文字「完全访问」
+   * 对比度就是 **2.22**（12px 小字 + 纯绿图标，几乎看不清）。
+   * 换成 600 号深色档后三档都过 4.5:1（≈6.3 / 6.8 / 5.1），
+   * 且与 `--success/--info` 同一族（不再出现"功能色一套、安全色另一套"）。 */
+  --security-ask: #2563eb;
+  --security-auto: #7c3aed;
+  --security-full: #1a7f37;
   /* Tooltip：浅色界面里刻意用深底提示（可读性优先，也是平台惯例） */
   --tooltip-bg: rgb(38 37 35 / 96%);
   --tooltip-text: #f7f7f5;
@@ -313,6 +366,9 @@
   --accent: #7c6cf0;
   --accent-hover: #8b7df5;
   --accent-muted: rgba(124, 108, 240, 0.20);
+  /* 暗色档同一令牌：落在 20% 品牌浅底 chip 上时，`--accent` 只有 3.21:1，
+     需要**更亮**的一档（#a99bff：chip 上 5.37 / 画布上 8.06）。 */
+  --accent-strong: #a99bff;
   --text-on-accent: #ffffff;
   --success: #3fb950;
   --warning: #d29922;
@@ -324,8 +380,11 @@
   --chart-cat-4: #3fb950;
   --chart-cat-5: #bc8cff;
   --chart-cat-6: #7ee787;
+  /* 消息气泡：与亮色档**同名同源**（品牌色浅底 + 同色淡边）；
+     `--user-bg` 与亮色档一样保留（侧栏副会话面板要用实色）。 */
   --user-bg: rgba(124, 108, 240, 1);
-  --assistant-bg: transparent;
+  --message-bubble-user: rgba(124, 108, 240, 0.15);
+  --message-bubble-user-border: rgba(124, 108, 240, 0.25);
   --system-bg: rgba(33, 36, 36, 1);
   --code-bg: rgba(22, 27, 34, 1);
   --sidebar-bg: rgba(26, 28, 28, 1);
@@ -1120,7 +1179,7 @@ flex-shrink: 0;
   border-color: var(--glass-border-strong, var(--border-primary));
 }
 .sidebar-add-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover, rgba(0,0,0,0.04));
+  background: var(--surface-hover);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -1556,7 +1615,7 @@ font-size: var(--fs-base);
   font-size: var(--fs-2xs);
   padding: var(--space-1) var(--space-4);
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
   border-radius: var(--radius-md);
   font-weight: 500;
 }
@@ -1602,7 +1661,7 @@ font-size: var(--fs-base);
 
 .model-option.active {
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .model-option-name {
@@ -1708,9 +1767,9 @@ margin-right: auto;
 padding: var(--space-1) var(--space-5);
 font-size: var(--fs-sm);
 font-weight: 500;
-color: var(--accent, #6366f1);
-background: color-mix(in srgb, var(--accent, #6366f1) 12%, transparent);
-border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 25%, transparent);
+color: var(--accent);
+background: color-mix(in srgb, var(--accent) 12%, transparent);
+border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
 border-radius: var(--radius-md);
 user-select: none;
 }
@@ -1990,19 +2049,31 @@ margin-top: var(--space-1);
 }
 
 /* User message: compact bubble with large radius + subtle surface bg (like ChatGPT/wecode) */
+/**
+ * 用户消息气泡：**两档同源**（品牌色浅底 + 同色淡边）。
+ *
+ * 第 65 轮改动前：亮色档是 `background: var(--bg-tertiary)`（比画布暗 0.13 的深灰块 +
+ * 12% 边框 + 阴影），暗色档是品牌色 15% 浅底。同一处两档说两件事，
+ * 亮色下那块灰就是"色块感"的主体（装机版实测 dLum −0.128）。
+ * 现在统一到 `--message-bubble-user` / `--message-bubble-user-border`，
+ * 并把阴影换成极轻的一层（气泡靠浅底与细边分层，不靠投影）。
+ *
+ * ⚠️ 这里不写具体色值：`tools/ui-audit/scan-ui.mjs` 的 `color-hardcoded-css`
+ * 会逐字面量判定"CSS 里的硬编码颜色"，**规则旁的注释也算**（只有令牌块内部豁免）。
+ */
 .user .message-content {
   padding: var(--space-5) var(--space-8);
   border-radius: var(--radius-lg);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
+  background: var(--message-bubble-user);
+  border: 1px solid var(--message-bubble-user-border);
   box-shadow: 0 1px 2px var(--shadow-color-soft);
   color: var(--text-primary);
 }
 
 /* Bug3 fix: 暗色模式下用户气泡增强对比度，使用 accent 色调背景与 AI 消息区分 */
+/* 暗色档只在**阴影**上不同（浅底气泡在暗色下需要稍重的投影才"浮"得起来）；
+   底色与边框已由 `--message-bubble-user*` 两档各自解析，不再在这里重复写死。 */
 [data-theme="dark"] .user .message-content {
-  background: rgba(124, 108, 240, 0.15);
-  border: 1px solid rgba(124, 108, 240, 0.25);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
@@ -2407,7 +2478,7 @@ z-index: 50;
   gap: var(--space-3);
   padding: var(--space-5) var(--space-7) var(--space-1);
   position: relative;
-  border-top: 1px solid var(--border-primary, rgba(0,0,0,0.06));
+  border-top: 1px solid var(--border-primary);
 }
 
 /* P-UI: action 行 — 左侧工具 + 右侧发送 */
@@ -2484,7 +2555,7 @@ z-index: 50;
 
 .mode-toggle-btn:is(:hover, :focus-visible) {
   border-color: var(--glass-border-strong, var(--border-primary));
-  background: var(--surface-hover, rgba(0,0,0,0.04));
+  background: var(--surface-hover);
 }
 
 .mode-toggle-btn.plan {
@@ -3903,7 +3974,7 @@ background: var(--bg-secondary);
 }
 
 .project-action-btn:is(:hover, :focus-visible) {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-muted);
 }
 
@@ -4271,7 +4342,7 @@ transition: var(--transition-color);
 }
 
 .mode-btn.active {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-muted);
 }
 
@@ -4344,8 +4415,8 @@ color: var(--text-primary);
 
 .identity-option.selected {
   background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 .identity-emoji-grid {
@@ -4375,7 +4446,7 @@ color: var(--text-primary);
 }
 
 .identity-emoji.selected {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-muted);
 }
 
@@ -4709,8 +4780,8 @@ color: var(--text-primary);
 
 .bootstrap-option.selected {
   background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 .bootstrap-emoji-grid {
@@ -4741,7 +4812,7 @@ color: var(--text-primary);
 }
 
 .bootstrap-emoji.selected {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-muted);
 }
 
@@ -4865,7 +4936,7 @@ color: var(--text-primary);
 
 .agent-toggle.active {
 background: var(--accent-muted);
-border-color: var(--accent);
+border-color: var(--accent-strong);
 color: var(--text-primary);
 }
 
@@ -5229,7 +5300,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
   padding: 1px var(--space-3);
   border-radius: var(--radius-md);
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
   margin-right: var(--space-3);
 }
 
@@ -6028,7 +6099,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .mcp-manager-icon-svg {
-  color: var(--accent, #6366f1);
+  color: var(--accent);
 }
 
 .mcp-manager-close {
@@ -6085,7 +6156,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--text-secondary, #aaa);
 }
 .mcp-server-btn.edit:is(:hover, :focus-visible) {
-  color: var(--accent, #6366f1);
+  color: var(--accent);
 }
 
 .mcp-json-input {
@@ -6102,7 +6173,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
   outline: none;
 }
 .mcp-json-input:focus {
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent);
 }
 
 .mcp-json-error {
@@ -6781,7 +6852,7 @@ color: var(--text-on-accent);
 }
 
 .skill-manager-icon-svg {
-  color: var(--accent, #6366f1);
+  color: var(--accent);
 }
 
 .skill-manager-close {
@@ -6830,7 +6901,7 @@ color: var(--text-on-accent);
 }
 
 .skill-search-box:focus-within {
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent);
 }
 
 .skill-search-icon {
@@ -6867,7 +6938,7 @@ color: var(--text-on-accent);
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-7);
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius);
@@ -6895,9 +6966,9 @@ color: var(--text-on-accent);
 }
 
 .skill-drop-zone.dragging {
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 5%, transparent);
-  color: var(--accent, #6366f1);
+  color: var(--accent);
 }
 
 /* Install Progress */
@@ -7199,8 +7270,8 @@ color: var(--text-on-accent);
 
 .skill-filter-btn.active {
   background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 .skill-filter-count {
@@ -7348,7 +7419,7 @@ color: var(--text-on-accent);
 
 .skill-detail-tag.tool {
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .skill-detail-prompt {
@@ -7761,8 +7832,8 @@ color: var(--text-on-accent);
 
 .memory-filter-btn.active {
   background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 .memory-content {
@@ -9027,7 +9098,7 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-sm);
   cursor: pointer;
 }
-.cicd-template-btn.is-active { border-color: var(--accent); background: var(--accent-muted); }
+.cicd-template-btn.is-active { border-color: var(--accent-strong); background: var(--accent-muted); }
 .cicd-workflow-actions { display: flex; gap: var(--space-3); margin-bottom: var(--space-4); }
 .cicd-workflow-path { align-self: center; font-size: var(--fs-sm); color: var(--text-muted); }
 .cicd-yaml {
@@ -9270,7 +9341,7 @@ border-bottom: 1px solid var(--accent);
   cursor: pointer;
   white-space: nowrap;
 }
-.perf-tab-btn.is-active { border-color: var(--accent); background: var(--accent-muted); font-weight: 600; }
+.perf-tab-btn.is-active { border-color: var(--accent-strong); background: var(--accent-muted); font-weight: 600; }
 
 /* ==========================================================================
  * 多模态设置面板（MultimodalPanel）：第 20 波
@@ -10332,8 +10403,8 @@ border-bottom: 1px solid var(--accent);
 
 .usage-tab.active {
   background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 .usage-content {
@@ -10909,7 +10980,7 @@ border-bottom: 1px solid var(--accent);
 .diff-view-mode-toggle { display: flex; gap: var(--space-1); background: var(--bg-primary); border-radius: var(--radius-sm); padding: var(--space-1); }
 .diff-mode-btn { padding: var(--space-2) var(--space-5); font-size: 12px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-xs); transition: var(--transition-color); }
 .diff-mode-btn:is(:hover, :focus-visible) { color: var(--text-primary); background: var(--bg-hover); }
-.diff-mode-btn.active { background: var(--accent-muted); color: var(--accent); }
+.diff-mode-btn.active { background: var(--accent-muted); color: var(--accent-strong); }
 .diff-accept-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-accept-btn:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--success) 35%, transparent); }
 .diff-reject-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
@@ -11686,7 +11757,7 @@ border-color: var(--text-muted);
   flex-shrink: 0;
 }
 .switch-root[data-state="checked"] {
-  background: var(--accent, #6366f1);
+  background: var(--accent);
 }
 .switch-root:disabled {
   opacity: 0.5;
@@ -11881,7 +11952,7 @@ border-color: var(--text-muted);
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent, #6366f1), var(--accent-hover));
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   border-radius: var(--radius);
   transition: width var(--duration-slow) var(--ease-out);
   display: flex;
@@ -12805,7 +12876,7 @@ line-height: 1.3;
 /* 梦幻皮肤配置面板 */
 
 .dream-config-panel {
-  background: var(--bg-secondary, rgba(246, 248, 250, 0.04));
+  background: var(--bg-secondary);
   border-radius: var(--radius-md);
   padding: var(--space-6);
 }
@@ -13114,14 +13185,14 @@ html.pet-window-mode body,
   line-height: 1.6;
   color: var(--text-primary, #e0e0e0);
   background: var(--bg-primary, #0f0f10);
-  border: 1px solid var(--accent, #6366f1);
+  border: 1px solid var(--accent);
   border-radius: var(--radius);
   resize: none;
   outline: none;
   transition: border-color var(--duration-fast) ease;
 }
 .inline-edit-textarea:focus {
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .inline-edit-actions {
@@ -13139,7 +13210,7 @@ html.pet-window-mode body,
   transition: var(--transition-color);
 }
 .inline-edit-btn.save {
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   color: var(--text-on-accent);
 }
 .inline-edit-btn.save:hover:not(:disabled) {
@@ -13226,7 +13297,7 @@ html.pet-window-mode body,
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   opacity: 0.35;
   cursor: pointer;
   pointer-events: auto;
@@ -13245,11 +13316,11 @@ html.pet-window-mode body,
 }
 .scrollbar-marker.active {
   opacity: 1;
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   width: 8px;
   height: 8px;
   left: 1px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .scrollbar-marker.pinned {
   width: 8px;
@@ -13281,7 +13352,7 @@ html.pet-window-mode body,
 .scrollbar-marker-preview-role {
   font-size: var(--fs-2xs);
   font-weight: 600;
-  color: var(--accent, #6366f1);
+  color: var(--accent);
   margin-bottom: var(--space-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -13328,12 +13399,12 @@ html.pet-window-mode body,
 }
 .scroll-to-bottom-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover, #25252b);
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px var(--shadow-color);
 }
 .scroll-to-bottom-btn.has-unread {
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent);
   animation: pulse-attention 1.5s ease-in-out infinite;
 }
 .scroll-to-bottom-btn.streaming {
@@ -13413,7 +13484,7 @@ html.pet-window-mode body,
 
 /* ========== P1 #6: Unread message badge ========== */
 .session-unread-badge {
-  background: var(--error, #ef4444);
+  background: var(--error);
   color: var(--text-on-accent);
   font-size: var(--fs-xs);
   font-weight: 700;
@@ -13442,7 +13513,7 @@ html.pet-window-mode body,
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   color: var(--text-on-accent);
   display: flex;
   align-items: center;
@@ -13488,7 +13559,7 @@ html.pet-window-mode body,
 }
 .right-sidebar-resize-handle:is(:hover, :focus-visible),
 .right-sidebar-resize-handle.active {
-  background: var(--accent, #6366f1);
+  background: var(--accent);
 }
 
 /* ========== P1 #20: ErrorCard ========== */
@@ -13563,7 +13634,7 @@ html.pet-window-mode body,
 }
 .error-card-copied {
   font-size: var(--fs-xs);
-  color: var(--success, #22c55e);
+  color: var(--success);
   margin-top: var(--space-2);
 }
 
@@ -15459,7 +15530,7 @@ color: var(--accent, #7c6cf0);
   font-weight: 500;
 }
 .browser-go-btn:is(:hover, :focus-visible) {
-  background: var(--accent-hover, #6366f1);
+  background: var(--accent-hover);
 }
 
 .right-sidebar-browser iframe {
@@ -15824,8 +15895,8 @@ color: var(--accent, #7c6cf0);
 .config-tab.active,
 .correction-tab.active {
   background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 /* 主按钮：唯一实心填充的例外（§3 主按钮 = accent 底 + --text-on-accent 字） */
@@ -16229,7 +16300,7 @@ color: var(--accent, #7c6cf0);
 }
 .regenerate-option.selected {
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .regenerate-model-name {
   overflow: hidden;
@@ -16279,7 +16350,7 @@ color: var(--accent, #7c6cf0);
 }
 .titlebar-tab.active {
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .titlebar-tab > button {
   background: none;

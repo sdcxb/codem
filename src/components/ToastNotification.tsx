@@ -50,11 +50,19 @@ const iconMap = {
   info: <CommonIcons.info size={16} />,
 };
 
+/**
+ * 通知图标色：**一律走语义令牌**（第 65 轮）。
+ *
+ * 改动前 `error` 写死 Tailwind 的 `#ef4444`（白底对比度 3.76、浅灰底 3.36），
+ * `info` 兜底写死 `#7c6cf0` —— 而项目里 `--error` / `--info` 早就按浅底调过
+ * （`#cf222e` 白底 5.36 / `#6b5ce7` 白底 4.87）。写死的结果就是
+ * "同一个错误提示，在暗色下用令牌色、在亮色下用饱和色"。
+ */
 const colorMap = {
-  success: "var(--security-full, #4ade80)",
-  error: "#ef4444",
-  warning: "var(--warning, #f59e0b)",
-  info: "var(--accent, #7c6cf0)",
+  success: "var(--success)",
+  error: "var(--error)",
+  warning: "var(--warning)",
+  info: "var(--info)",
 };
 
 export function ToastContainer() {

@@ -722,12 +722,10 @@ backdrop-filter: none !important;
 
   --surface-1: rgba(255, 255, 255, 0.30);
   --surface-2: rgba(255, 255, 255, 0.40);
-  --surface-3: rgba(255, 255, 255, 0.50);
   --surface-hover: rgba(232, 140, 154, 0.12);
 
-  --message-bubble-assistant: var(--dream-bg-card, rgba(255, 255, 255, 0.60));
   --message-bubble-user: rgba(232, 140, 154, 0.10);
-  --message-bubble-system: var(--dream-bg-panel, rgba(255, 255, 255, 0.70));
+  --message-bubble-user-border: rgba(232, 140, 154, 0.24);
   --message-actions-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.92));
 
   --run-bar-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.85));
@@ -765,12 +763,10 @@ backdrop-filter: none !important;
 
   --surface-1: rgba(30, 30, 46, 0.30);
   --surface-2: rgba(30, 30, 46, 0.40);
-  --surface-3: rgba(30, 30, 46, 0.50);
   --surface-hover: rgba(232, 140, 154, 0.10);
 
-  --message-bubble-assistant: var(--dream-bg-card, rgba(30, 30, 46, 0.60));
   --message-bubble-user: rgba(232, 140, 154, 0.08);
-  --message-bubble-system: var(--dream-bg-panel, rgba(30, 30, 46, 0.70));
+  --message-bubble-user-border: rgba(232, 140, 154, 0.20);
   --message-actions-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.92));
 
   --run-bar-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.85));

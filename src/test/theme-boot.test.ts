@@ -201,10 +201,13 @@ describe("首屏底色真实渲染契约（第 60 波，需要浏览器）", () 
 
   it.skipIf(!BROWSER)("THEME-BOOT-8: 镜像为浅色 / 缺失时，首帧是浅色（默认档）", () => {
     expect(light!.dataTheme).toBe("light");
-    expect(light!.htmlBackground).toBe("rgb(252, 252, 251)");
-    expect(light!.splashBackground).toBe("rgb(252, 252, 251)");
+    // 第 65 轮：亮色档内容面由近白 #fcfcfb 改为**纯白**（抬升方向反转的第一步），
+    // 所以首帧底色随之变成 rgb(255, 255, 255)。这条断言仍然在守同一件事：
+    // 首帧底色必须与主题一致（不能先画一帧相反的颜色）。
+    expect(light!.htmlBackground).toBe("rgb(255, 255, 255)");
+    expect(light!.splashBackground).toBe("rgb(255, 255, 255)");
     // 没有镜像时不设属性，由 CSS :root 兜默认档 —— 底色同样是浅色
     expect(none!.dataTheme).toBeNull();
-    expect(none!.htmlBackground).toBe("rgb(252, 252, 251)");
+    expect(none!.htmlBackground).toBe("rgb(255, 255, 255)");
   }, 30_000);
 });

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.114",
-  "notes": "技能市场第 4 条假话分支（冷却早退不记账）+ 概览房间热区接线 + 装饰性房间点了亮错地方；启动 warning 仍为 0",
-  "pub_date": "2026-09-20T08:31:17Z",
+  "version": "1.16.115",
+  "notes": "亮色模式重做：面阶梯反转（内容面纯白）、线条统一 9%、冷暖调色板合并、图标与徽标改用语义色（安全图标对比度 2.22→5.08）",
+  "pub_date": "2026-09-21T01:56:54Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NSL2R2ZUIxY3BwNkpXalZYSVdNYU40bjgwNVUwM0FiUlhQTno2Q0tMcWRmalhxb21ROGQzVHNSUW5aV1VaRmpUNVFKSmFsaG5ZaC9rZWN4Ykt2UmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODkwNjk2CWZpbGU6Q29kZW1fMS4xNi4xMTRfeDY0LXNldHVwLmV4ZQpUSnVHVTUrYjRNUXl3VnJMWTBQV0RXWTNZVzJEQ1FFVUZGSlB5ZWhUOEYvUjNIaktFZ0lWR0d4VHAvS3ZKM1E3aHMzQlVNMVd6b0RDTkpsSUVheDFDQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.114/Codem_1.16.114_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxbWxtSEZ2alJTVWdpSDhDU3N4bUVNc1NjU01ndEk0ZFlTdkM1cU5aS0RwV2pncThVdTFnblFjRU5xcm9MVzVZemQ0ZG1JdHBjN2RPVnVLckl6V0FvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTU1NDM5CWZpbGU6Q29kZW1fMS4xNi4xMTVfeDY0LXNldHVwLmV4ZQpiK3ExOTZoWllKZkJFVVRNRWJ2Y29MVkxDTm0vQ2lHRjA2NVpCeDUxSVpVQjMvaForZXJiN2c0Uk1nWHYyeWZHODMva05aOGJ0dTNhVXJEelhGSElDdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.115/Codem_1.16.115_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NSL2R2ZUIxY3BwNkpXalZYSVdNYU40bjgwNVUwM0FiUlhQTno2Q0tMcWRmalhxb21ROGQzVHNSUW5aV1VaRmpUNVFKSmFsaG5ZaC9rZWN4Ykt2UmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODkwNjk2CWZpbGU6Q29kZW1fMS4xNi4xMTRfeDY0LXNldHVwLmV4ZQpUSnVHVTUrYjRNUXl3VnJMWTBQV0RXWTNZVzJEQ1FFVUZGSlB5ZWhUOEYvUjNIaktFZ0lWR0d4VHAvS3ZKM1E3aHMzQlVNMVd6b0RDTkpsSUVheDFDQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.114/Codem_1.16.114_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxbWxtSEZ2alJTVWdpSDhDU3N4bUVNc1NjU01ndEk0ZFlTdkM1cU5aS0RwV2pncThVdTFnblFjRU5xcm9MVzVZemQ0ZG1JdHBjN2RPVnVLckl6V0FvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTU1NDM5CWZpbGU6Q29kZW1fMS4xNi4xMTVfeDY0LXNldHVwLmV4ZQpiK3ExOTZoWllKZkJFVVRNRWJ2Y29MVkxDTm0vQ2lHRjA2NVpCeDUxSVpVQjMvaForZXJiN2c0Uk1nWHYyeWZHODMva05aOGJ0dTNhVXJEelhGSElDdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.115/Codem_1.16.115_x64-setup.exe"
     }
   }
 }

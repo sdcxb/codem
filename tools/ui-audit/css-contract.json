@@ -288,7 +288,7 @@
   "agent-item-badge": {
     "background": "var(--accent-muted)",
     "border-radius": "var(--radius-md)",
-    "color": "var(--accent)",
+    "color": "var(--accent-strong)",
     "font-size": "var(--fs-xs)",
     "margin-right": "var(--space-3)",
     "padding": "1px var(--space-3)"
@@ -3608,7 +3608,7 @@
     "width": "100%"
   },
   "dream-config-panel": {
-    "background": "var(--bg-secondary, rgba(246, 248, 250, 0.04))",
+    "background": "var(--bg-secondary)",
     "border-radius": "var(--radius-md)",
     "padding": "var(--space-6)"
   },
@@ -3712,7 +3712,7 @@
     "padding": "1px var(--space-3)"
   },
   "error-card-copied": {
-    "color": "var(--success, #22c55e)",
+    "color": "var(--success)",
     "font-size": "var(--fs-xs)",
     "margin-top": "var(--space-2)"
   },
@@ -5449,7 +5449,7 @@
   },
   "inline-edit-textarea": {
     "background": "var(--bg-primary, #0f0f10)",
-    "border": "1px solid var(--accent, #6366f1)",
+    "border": "1px solid var(--accent)",
     "border-radius": "var(--radius)",
     "color": "var(--text-primary, #e0e0e0)",
     "font-family": "inherit",
@@ -5620,7 +5620,7 @@
   },
   "input-textarea-row": {
     "align-items": "flex-end",
-    "border-top": "1px solid var(--border-primary, rgba(0,0,0,0.06))",
+    "border-top": "1px solid var(--border-primary)",
     "display": "flex",
     "gap": "var(--space-3)",
     "padding": "var(--space-5) var(--space-7) var(--space-1)",
@@ -6886,7 +6886,7 @@
     "font-size": "var(--fs-lg)"
   },
   "mcp-manager-icon-svg": {
-    "color": "var(--accent, #6366f1)"
+    "color": "var(--accent)"
   },
   "mcp-manager-title": {
     "align-items": "center",
@@ -7891,7 +7891,7 @@
   "model-badge": {
     "background": "var(--accent-muted)",
     "border-radius": "var(--radius-full)",
-    "color": "var(--accent)",
+    "color": "var(--accent-strong)",
     "font-size": "var(--fs-2xs)",
     "font-weight": "500",
     "padding": "var(--space-1) var(--space-4)"
@@ -8943,7 +8943,7 @@
   "nb-note-source-tag": {
     "background": "var(--accent-muted)",
     "border-radius": "2px",
-    "color": "var(--accent)",
+    "color": "var(--accent-strong)",
     "font-weight": "500",
     "padding": "0 var(--space-2)"
   },
@@ -12530,7 +12530,7 @@
   },
   "progress-fill": {
     "align-items": "center",
-    "background": "linear-gradient(90deg, var(--accent, #6366f1), var(--accent-hover))",
+    "background": "linear-gradient(90deg, var(--accent), var(--accent-hover))",
     "border-radius": "var(--radius)",
     "display": "flex",
     "height": "100%",
@@ -13526,7 +13526,7 @@
     "z-index": "10"
   },
   "scrollbar-marker": {
-    "background": "var(--accent, #6366f1)",
+    "background": "var(--accent)",
     "border-radius": "50%",
     "box-sizing": "border-box",
     "cursor": "pointer",
@@ -13554,7 +13554,7 @@
     "z-index": "var(--z-floating)"
   },
   "scrollbar-marker-preview-role": {
-    "color": "var(--accent, #6366f1)",
+    "color": "var(--accent)",
     "font-size": "var(--fs-2xs)",
     "font-weight": "600",
     "letter-spacing": "0.04em",
@@ -13938,7 +13938,7 @@
   },
   "session-unread-badge": {
     "align-items": "center",
-    "background": "var(--error, #ef4444)",
+    "background": "var(--error)",
     "border-radius": "var(--radius-full)",
     "color": "var(--text-on-accent)",
     "display": "flex",
@@ -14520,7 +14520,7 @@
   },
   "sidebar-user-avatar": {
     "align-items": "center",
-    "background": "var(--accent, #6366f1)",
+    "background": "var(--accent)",
     "border-radius": "50%",
     "color": "var(--text-on-accent)",
     "display": "flex",
@@ -14846,7 +14846,7 @@
     "font-size": "var(--fs-lg)"
   },
   "skill-manager-icon-svg": {
-    "color": "var(--accent, #6366f1)"
+    "color": "var(--accent)"
   },
   "skill-manager-tabs": {
     "border-bottom": "1px solid var(--border-primary)",
@@ -14970,7 +14970,7 @@
   },
   "skill-upload-btn": {
     "align-items": "center",
-    "background": "var(--accent, #6366f1)",
+    "background": "var(--accent)",
     "border": "none",
     "border-radius": "var(--radius)",
     "color": "var(--text-on-accent)",
@@ -16800,10 +16800,10 @@
   },
   "task-complete-badge": {
     "align-items": "center",
-    "background": "color-mix(in srgb, var(--accent, #6366f1) 12%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--accent, #6366f1) 25%, transparent)",
+    "background": "color-mix(in srgb, var(--accent) 12%, transparent)",
+    "border": "1px solid color-mix(in srgb, var(--accent) 25%, transparent)",
     "border-radius": "var(--radius-md)",
-    "color": "var(--accent, #6366f1)",
+    "color": "var(--accent)",
     "display": "inline-flex",
     "font-size": "var(--fs-sm)",
     "font-weight": "500",

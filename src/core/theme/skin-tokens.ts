@@ -49,7 +49,13 @@ export const CORE_SKIN_TOKENS = [
   '--border-primary', '--border-secondary',
   '--accent', '--accent-hover', '--accent-muted', '--text-on-accent',
   '--success', '--warning', '--error', '--info',
-  '--user-bg', '--assistant-bg', '--system-bg', '--code-bg',
+  /* 第 65 轮：`--assistant-bg` 从契约里移除 —— 它全项目 0 处 `var()` 引用（死令牌），
+     而 `.user .message-content` 真正需要的那个令牌（品牌色浅底 + 同色淡边）此前
+     **定义了却没人消费**，于是亮色档的用户气泡退化成一块深灰（"色块感"的主体）。
+     现在登记的是**真的被消费**的那两个：三套皮肤都必须给色，
+     否则某个皮肤下气泡会没有底色 / 边框（LIGHT-UI-6 也守这一条）。 */
+  '--user-bg', '--system-bg', '--code-bg',
+  '--message-bubble-user', '--message-bubble-user-border',
   '--sidebar-bg', '--input-bg',
   '--scrollbar-track', '--scrollbar-thumb',
   '--tooltip-bg', '--tooltip-text', '--tooltip-border',

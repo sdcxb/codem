@@ -53,9 +53,15 @@ function formatTime(timestamp: number): string {
   return `${Math.floor(diff / 3600000)}小时前`;
 }
 
-/** 团队成员状态 → 颜色点（与 AgentTeamsPanel 一致） */
+/**
+ * 团队成员状态 → 颜色点（与 AgentTeamsPanel 一致）
+ *
+ * 第 65 轮：改动前写死 Tailwind 的 `#10b981`（空闲）/`#f59e0b`（工作中）——
+ * 白底对比度只有 **2.54 / 2.15**，在亮色主题里几乎看不见这两个状态点。
+ * 现在走语义令牌（`--success` 白底 5.08 / `--warning` 4.87），两档主题各自解析。
+ */
 const MEMBER_DOT: Record<string, string> = {
-  idle: "#10b981", working: "#f59e0b", absent: "#8b8b8b", removed: "#6b7280",
+  idle: "var(--success)", working: "var(--warning)", absent: "var(--text-muted)", removed: "var(--text-secondary)",
 };
 const MEMBER_LABEL: Record<string, string> = {
   idle: "空闲", working: "工作中", absent: "离线", removed: "已移除",

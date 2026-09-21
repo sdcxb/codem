@@ -679,8 +679,8 @@ setTimeout(() => setCopied(false), 2000);
                   transition: 'all 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--accent, #6366f1)';
-                  e.currentTarget.style.color = 'var(--accent, #6366f1)';
+                  e.currentTarget.style.borderColor = 'var(--accent)';
+                  e.currentTarget.style.color = 'var(--accent)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.borderColor = 'var(--border-primary)';

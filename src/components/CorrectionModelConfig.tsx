@@ -231,7 +231,7 @@ export function CorrectionModelConfig() {
         >
           {zh ? "清除配置（回退主模型）" : "Clear (use main model)"}
         </button>
-        {flash && <span style={{ fontSize: "var(--fs-sm)", color: "var(--success, #22c55e)" }}>{flash}</span>}
+        {flash && <span style={{ fontSize: "var(--fs-sm)", color: "var(--success)" }}>{flash}</span>}
       </div>
 
       {error && (
