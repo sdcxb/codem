@@ -763,13 +763,6 @@
 
 
 
-.nb-question-card:is(:hover, :focus-visible) {
-  border-color: var(--accent-strong);
-  background: var(--accent-muted);
-  transform: translateX(2px);
-}
-
-
 
 /* ========== Chat Empty State ========== */
 .nb-chat-empty {
@@ -798,13 +791,6 @@
 /* ========== Chat CTA ========== */
 
 
-
-
-.nb-start-chat-btn:is(:hover, :focus-visible) {
-  background: var(--accent-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--accent-muted);
-}
 
 
 
@@ -1311,13 +1297,6 @@ top: 36px;
   position: relative;
   overflow: hidden;
 }
-
-.kg-canvas {
-  width: 100%;
-  height: 100%;
-  cursor: default;
-}
-
 .kg-sidebar {
   width: 300px;
   padding: var(--space-8);

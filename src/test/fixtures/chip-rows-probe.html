@@ -85,7 +85,12 @@
   <!-- ③ 其它同类标签墙（本波一起修的） -->
   <div class="mcp-server-tools" data-case="mcp-tools"><span class="mcp-tools-label">工具:</span><span class="badge">read_file</span><span class="badge">write_file</span><span class="badge">list_directory</span></div>
   <div class="mcp-catalog-tags" data-case="mcp-catalog"><span class="badge">需要 API Key</span><span class="badge">stdio</span></div>
-  <div class="skill-detail-tags" data-case="skill-tags"><span class="skill-detail-tag">数据分析</span><span class="skill-detail-tag tool">工具</span></div>
+  <!-- ⚠️ 第 67 轮修正：这里原本写的是 `<span class="skill-detail-tag">` —— 那个类是**我编的**，
+       真实组件（`SkillManager.tsx` 的「别名 / 标签 / 工具」三处）渲染的是 `<Badge>`，
+       也就是 `<span class="badge badge-default|info|muted|success">`。
+       探针测的必须是**界面真的会渲染的标记**，否则测的是一个不存在的结构（同类教训：第 67 轮把
+       "过程条目线条"改到了没有任何组件渲染的 `.tool-item` 上）。 -->
+  <div class="skill-detail-tags" data-case="skill-tags"><span class="badge badge-default">数据分析</span><span class="badge badge-info">工具</span></div>
   <div class="memory-detail-tags" data-case="memory-tags"><span class="memory-detail-tag">项目偏好</span><span class="memory-detail-tag">长期记忆</span></div>
   <div class="wx-status-row" data-case="wx-status"><span class="wx-state-badge is-connected">已连接</span><span class="wx-status-meta">Bot 123456 · 剩余 30 天</span></div>
   <div class="wx-actions" data-case="wx-actions"><button class="wx-btn">断开</button><button class="wx-btn">重新登录</button></div>

@@ -225,12 +225,11 @@
      与参考实现的 9%（白底 1.201）几乎逐位一致；改动前的 12% 是 1.269，偏重。 */
   --border-primary: rgb(31 31 30 / 9%);
   --border-secondary: rgb(31 31 30 / 5%);
-  /* `--border-separator`（第 67 轮，用户在对照页里选定的方案 L2）：**结构分隔线**专用的一档。
-     用途：回复过程的时间轴竖线、「问答回合」分隔线、滚动加载提示线 ——
-     它们表达"分节"，不是"控件边界"，所以不跟 `--border-primary`（9%）同档，统一压到 **7%**。
-     ⚠️ 口径说明：`.qa-turn-footer` / `.load-more-indicator` 原先用的是 `--border-secondary`（5%），
-     统一到 7% 后比原来**略明显一点** —— 这是"整屏只有一种分隔线浓度"的代价，已如实记在 CHANGELOG。 */
-  --border-separator: rgb(31 31 30 / 7%);
+  /* `--border-separator`（第 67 轮，用户在对照页里选定方案 L2 后按反馈下调）：
+     **结构分隔线**专用的一档 —— 工具卡片头/行之间的线、"问答回合"分隔线、滚动加载提示线。
+     它们是"分节"而不是"控件边界"，所以不与 `--border-primary`（9%）同档，取 **5%**。
+     （初版按 7% 落地，用户看到实际效果后要求降到 5% —— 这里就是那一处。） */
+  --border-separator: rgb(31 31 30 / 5%);
   /* 主色：从 #6b5ce7 略微加深到 #6555e0。
      原值落在**内嵌块**（`--bg-tertiary` #f2f2f0）上只有 **4.35:1**，而它被用在
      「展开 ▼」「文件名链接」这类 12–14px 小字上；加深后：内容面 5.34 / 内嵌块 4.77 /
@@ -370,7 +369,7 @@
   --border-primary: rgba(255, 255, 255, 0.10);
   --border-secondary: rgba(255, 255, 255, 0.06);
   /* 与亮色档同名同源：结构分隔线一档（亮 7% ↔ 暗 8% 白） */
-  --border-separator: rgba(255, 255, 255, 0.08);
+  --border-separator: rgba(255, 255, 255, 0.06);
   --accent: #7c6cf0;
   --accent-hover: #8b7df5;
   --accent-muted: rgba(124, 108, 240, 0.20);
@@ -845,16 +844,6 @@ overflow: hidden;
 .flashcard-item-delete:is(:hover, :focus-visible) { color: var(--error); }
 .flashcard-item-meta { display: flex; gap: var(--space-3); margin-top: var(--space-2); font-size: var(--fs-xs); opacity: 0.5; }
 .flashcard-due { color: var(--warning); }
-
-.panel-left {
-  width: 260px;
-  border-right: 1px solid var(--border-primary);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--sidebar-bg);
-}
-
 .panel-right {
   flex: 1;
   display: flex;
@@ -1106,13 +1095,6 @@ flex-shrink: 0;
 
 
 
-
-.sidebar-projects-add:is(:hover, :focus-visible) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent);
-}
-
 .sidebar-empty {
   padding: var(--space-8);
   text-align: center;
@@ -1319,17 +1301,6 @@ flex-shrink: 0;
 }
 
 
-
-.sidebar-project-header:is(:hover, :focus-visible) .sidebar-project-new {
-  opacity: 1;
-}
-
-.sidebar-project-new:is(:hover, :focus-visible) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent);
-}
-
 .sidebar-sessions {
   padding-left: var(--space-9);
 }
@@ -1402,11 +1373,6 @@ font-size: var(--fs-base);
 .sidebar-session:is(:hover, :focus-visible) .sidebar-session-delete {
   opacity: 1;
 }
-
-.sidebar-session-rename:is(:hover, :focus-visible) {
-  color: var(--accent);
-}
-
 .sidebar-session-delete:is(:hover, :focus-visible) {
   color: var(--error);
 }
@@ -1567,18 +1533,6 @@ font-size: var(--fs-base);
 .project-open-btn:is(:hover, :focus-visible),
 .new-chat-btn:is(:hover, :focus-visible),
 .sidebar-config-btn:is(:hover, :focus-visible),
-.settings-btn:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  border-color: var(--border-primary);
-}
-
-
-
-.new-chat-btn:is(:hover, :focus-visible) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
 /* ========== Chat Panel ========== */
 .chat-panel {
   flex: 1;
@@ -1687,12 +1641,6 @@ font-size: var(--fs-base);
   background: var(--success);
   color: var(--text-on-accent);
 }
-
-.model-option-tag.paid {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-}
-
 .model-picker-hint {
   padding: var(--space-4) var(--space-6);
   font-size: var(--fs-2xs);
@@ -1741,8 +1689,10 @@ width: 100%;
   gap: var(--space-2);
   padding: var(--space-1) 0 var(--space-3);
   margin-bottom: var(--space-7);
-  /* 第 67 轮（用户选定 L2）：结构分隔线统一走 `--border-separator`（7%）。
-     原先是 `--border-secondary`（5%）—— 统一后比原来略明显一点，换取整屏只有一种分隔线浓度。 */
+  /* 第 67 轮（用户选定 L2）：结构分隔线统一走 `--border-separator`（亮 5% / 暗 6% 白）。
+     ⚠️ 口径说明：这一处**早先是** `--border-secondary`（5%），中途统一到 7% 时比原来更明显，
+     用户看到实际效果后要求降回来 —— 现在令牌本身取 5%，所以这里回到了原来的浓度，
+     整屏也仍然只有"一种分隔线浓度"。 */
   border-bottom: 1px solid var(--border-separator);
 }
 
@@ -1954,12 +1904,6 @@ user-select: none;
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-
-.empty-state .logo {
-  font-size: var(--icon-3xl);
-  margin-bottom: var(--space-8);
-}
-
 .empty-state h2 {
   font-size: var(--fs-2xl);
   margin-bottom: var(--space-4);
@@ -2245,17 +2189,6 @@ background: color-mix(in srgb, var(--accent) 10%, transparent);
 [data-theme="dark"] .reasoning-toggle:is(:hover, :focus-visible) {
 background: rgba(192, 132, 252, 0.1);
 }
-
-.reasoning-toggle .reasoning-icon {
-width: 14px;
-height: 14px;
-flex-shrink: 0;
-}
-
-.reasoning-toggle .reasoning-icon.streaming {
-animation: reasoning-pulse 1.5s ease-in-out infinite;
-}
-
 @keyframes reasoning-pulse {
 0%, 100% { opacity: 0.5; }
 50% { opacity: 1; }
@@ -2279,31 +2212,15 @@ vertical-align: text-bottom;
 
 /* ========== Tool Calls — inline, no outer border (aligned with wecode) ========== */
 /**
- * 回复过程条目（工具调用）—— 第 67 轮按**用户在对照页选定的 S2 方案**改为"时间轴"。
- *
- * ## 为什么改（用户原话："聊天回复过程条目间线条的流线型"）
- *
- * 原先每条工具调用都是 `border-top: 1px solid var(--border-primary)` —— 一叠**全宽硬线**，
- * 视觉上像表格行（一条回复里常有 5–10 条）。选定方案：**去掉所有横线，
- * 改一条两端渐隐的竖向引导线**，过程读起来像一条时间轴。
- *
- * ⚠️ 布局零位移：竖线放在容器左内边距区（`left: var(--space-1)`），
- * 而条目文字本来就缩进 `var(--space-6)`，所以只多一条装饰线，几何一个像素都不动。
+ * ⚠️ 第 67 轮自我更正：这里曾经放过一条"时间轴竖线"（`.tool-calls::before`），
+ * 那是我把"过程条目"误当成 `.tool-item` 的结果 —— **没有组件渲染 `.tool-item`**，
+ * 真实条目是 `ToolCallGroup` → `ToolCallCard` 渲染的 `.tool-card`
+ * （定义在 `src/styles/codem-ui.css`：一条工具调用一张带边框的圆角卡片，内联换行排列）。
+ * 因此竖线既没有对应的横线可替代、也不适合"换行胶囊"这种几何，已撤掉；
+ * "过程条目线条"的处理落在**真正画线**的 `.tool-card-head` / `.tool-card-row` / `.tool-io-section--bordered` 上。
  */
 .tool-calls {
   margin-top: var(--space-4);
-  position: relative;
-}
-
-.tool-calls::before {
-  content: "";
-  position: absolute;
-  left: var(--space-1);
-  top: 6px;
-  bottom: 6px;
-  width: 1px;
-  /* 两端渐隐：线不从硬边开始/结束，这是"流线型"的关键一步 */
-  background: linear-gradient(180deg, transparent, var(--border-separator) 12%, var(--border-separator) 88%, transparent);
 }
 
 .tool-toggle {
@@ -2323,25 +2240,18 @@ vertical-align: text-bottom;
 
 
 
-.tool-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-3) var(--space-6);
-  font-size: var(--fs-sm);
-  /* S2（用户选定）：条目之间的横线去掉 —— 结构交给 `.tool-calls::before` 那条渐隐时间轴。
-     刻意保留这条声明而不是删掉属性：日后要回退成横线，把它改回 1px 即可。 */
-  border-top: 0;
-  flex-wrap: wrap;
-}
-
-.tool-item.running {
-  background: var(--accent-muted);
-}
-
-.tool-item.done {
-  background: var(--success)10;
-}
+/**
+ * ⚠️ 第 67 轮：这里删掉了 `.tool-item` / `.tool-item.running` / `.tool-item.done` 三条规则。
+ *
+ * 它们是**死代码**：全项目没有任何 TSX 渲染 `tool-item` 这个类
+ * （TSX 里出现的 `tool-item` 全是 `sidebar-tool-item` / `agent-tool-item` 的**子串** ——
+ * 所以 `tools/ui-audit/scan-ui.mjs` 的 `css-class-unused` 也看不到它，
+ * 这类"子串假绿"与第 66 轮 keep 清单里的 `/bar-/` 匹配 `sideBAR-` 是同一类问题）。
+ * 真实的过程条目是 `.tool-card`（见 `src/styles/codem-ui.css`），
+ * 我第一版把"过程条目线条"改在这里，所以**在界面上完全看不到效果**。
+ * 顺带记一条：`.tool-item.done` 原本写的是 `background: var(--success)10` ——
+ * 这是**无效声明**（`var()` 后面接数字没有意义），浏览器会整条丢掉，等于写了没用。
+ */
 
 .tool-name {
   font-family: var(--font-mono);
@@ -4516,12 +4426,6 @@ color: var(--text-primary);
 
 
 
-.floating-explorer-close:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-
 
 /* ========== Modal File Editor ========== */
 .modal-overlay {
@@ -5507,21 +5411,6 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 
 
 
-.timeline-dot.created {
-  background: var(--text-muted);
-}
-
-.timeline-dot.started {
-  background: var(--accent);
-}
-
-.timeline-dot.completed {
-  background: var(--success);
-}
-
-
-
-
 
 .agent-result {
   padding: var(--space-6);
@@ -6129,11 +6018,6 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
   font-size: var(--fs-md);
   font-weight: 600;
 }
-
-.mcp-manager-icon {
-  font-size: var(--fs-lg);
-}
-
 .mcp-manager-icon-svg {
   color: var(--accent);
 }
@@ -6882,11 +6766,6 @@ color: var(--text-on-accent);
   font-size: var(--fs-md);
   font-weight: 600;
 }
-
-.skill-manager-icon {
-  font-size: var(--fs-lg);
-}
-
 .skill-manager-icon-svg {
   color: var(--accent);
 }
@@ -7369,13 +7248,6 @@ color: var(--text-on-accent);
   font-size: var(--fs-base);
   font-weight: var(--weight-medium);
 }
-
-.skill-item-source {
-  font-size: var(--fs-xs);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-xs);
-}
-
 .skill-item-desc {
   font-size: var(--fs-2xs);
   color: var(--text-muted);
@@ -7444,20 +7316,6 @@ color: var(--text-on-accent);
   align-items: center;
   gap: var(--space-2);
 }
-
-.skill-detail-tag {
-  font-size: var(--fs-2xs);
-  padding: var(--space-1) var(--space-4);
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-xs);
-  white-space: nowrap;
-}
-
-.skill-detail-tag.tool {
-  background: var(--accent-muted);
-  color: var(--accent-strong);
-}
-
 .skill-detail-prompt {
   padding: var(--space-6);
   background: var(--code-bg);
@@ -10855,26 +10713,7 @@ border-bottom: 1px solid var(--accent);
   font-family: var(--font-mono);
 }
 
-/* ========== Pin Button ========== */
-.pin-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: var(--space-1);
-  font-size: var(--fs-sm);
-  opacity: 0.5;
-  transition: opacity var(--duration-normal);
-}
-
-.pin-btn:is(:hover, :focus-visible) {
-  opacity: 1;
-}
-
-.pin-btn.pinned {
-  opacity: 1;
-}
-
-/* ========== Load More Indicator ========== */
+/* ========== Pin Button ========== *//* ========== Load More Indicator ========== */
 .load-more-indicator {
   text-align: center;
   padding: var(--space-4) var(--space-6);
@@ -10884,7 +10723,7 @@ border-bottom: 1px solid var(--accent);
   top: 0;
   z-index: 10;
   background: var(--bg-primary);
-  /* 第 67 轮（用户选定 L2）：结构分隔线统一走 `--border-separator`（7%） */
+  /* 第 67 轮（用户选定 L2）：结构分隔线统一走 `--border-separator`（亮 5% / 暗 6% 白） */
   border-bottom: 1px solid var(--border-separator);
 }
 
@@ -10944,12 +10783,6 @@ border-bottom: 1px solid var(--accent);
   color: var(--text-secondary);
 }
 
-
-
-.load-more-btn:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
 
 .load-more-loading {
   display: inline-flex;
@@ -11365,11 +11198,6 @@ min-height: 36px;
 
 
 
-.project-indicator:is(:hover, :focus-visible) {
-  border-color: var(--accent);
-}
-
-
 
 /* Bottom bar dropdown menus */
 /* 外观统一走 .popover-shell；这里只留几何与层级 */
@@ -11620,34 +11448,7 @@ border-color: var(--text-muted);
 }
 
 /* #9: Collapse toggle */
-
-.sidebar-collapse-btn:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-/* #9: Collapsed sidebar */
-.sidebar-collapsed {
-  width: 48px !important;
-  min-width: 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-4) 0;
-  gap: var(--space-4);
-}
-
-.sidebar-collapse-toggle:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-
-.sidebar-nav-icon-btn:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-}
-
-/* #9: Session time grouping */
+/* #9: Collapsed sidebar *//* #9: Session time grouping */
 .sidebar-session-group-label {
   font-size: var(--fs-2xs);
   font-weight: var(--weight-medium);
@@ -11752,23 +11553,7 @@ border-color: var(--text-muted);
   background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.14), transparent);
 }
 
-/* ========== Unified Mode Reasoning (collapsed by default) ========== */
-.unified-mode .reasoning-block {
-  margin-top: var(--space-4);
-}
-.unified-mode .reasoning-content {
-  max-height: 300px;
-  overflow-y: auto;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-sm);
-  padding: var(--space-4) var(--space-6);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* ========== Unified Mode Tool Calls (collapsed by default) ========== */
+/* ========== Unified Mode Reasoning (collapsed by default) ========== *//* ========== Unified Mode Tool Calls (collapsed by default) ========== */
 .unified-mode .tool-calls {
   margin-top: var(--space-4);
 }
@@ -13513,12 +13298,6 @@ html.pet-window-mode body,
 
 .message-content p:is(:hover, :focus-visible) .message-paragraph-actions,
 
-
-.message-paragraph-action-btn:is(:hover, :focus-visible) {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
 /* ========== P1 #6: Unread message badge ========== */
 .session-unread-badge {
   background: var(--error);
@@ -13576,12 +13355,6 @@ html.pet-window-mode body,
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
-
-.sidebar-user-settings:is(:hover, :focus-visible) {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
 /* ========== P2 #33: Right sidebar resize handle ========== */
 .right-sidebar-resize-handle {
   position: absolute;
@@ -14002,22 +13775,6 @@ html.pet-window-mode body,
 
 /* ========== P3 #42: Workspace tabs ========== */
 
-
-.workspace-tab:is(:hover, :focus-visible) {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-.workspace-tab.active {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border-primary);
-}
-
-.workspace-tab-close:is(:hover, :focus-visible) {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
 /* ========== P2 #38: framer-motion animation wrappers ========== */
 
 
@@ -14035,11 +13792,6 @@ html.pet-window-mode body,
 .workbench-split-pane.workbench {
   flex: 0.4;
 }
-
-.workbench-split-divider:is(:hover, :focus-visible) {
-  background: var(--accent);
-}
-
 
 /* ========== P1: CorrectionModeToggle ========== */
 .correction-mode-toggle {
@@ -14774,12 +14526,6 @@ color: var(--accent, #7c6cf0);
   background: var(--bg-secondary, #1a1a20);
   border-radius: var(--radius-md);
 }
-
-.generate-mode-btn.active {
-  background: var(--accent, #7c6cf0);
-  color: var(--text-on-accent);
-}
-
 /* ========== P3: ResolutionSelector ========== */
 .resolution-selector {
   display: grid;
@@ -14787,12 +14533,6 @@ color: var(--accent, #7c6cf0);
   gap: var(--space-2);
   align-items: center;
 }
-
-.resolution-option.active {
-  border-color: var(--accent, #7c6cf0);
-  color: var(--accent, #7c6cf0);
-}
-
 /* ========== P4: ContextBadgeList ========== */
 .context-badge-list {
   display: flex;
@@ -15058,13 +14798,6 @@ color: var(--accent, #7c6cf0);
   gap: var(--space-2);
   padding: var(--space-3) 0;
 }
-
-.source-selector-item.active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-color: var(--accent, #7c6cf0);
-  color: var(--accent, #7c6cf0);
-}
-
 /* ========== D-5: Accessibility — Transparency + Hover Gating ==========
    注：第 40 波把这里原本的全局 `prefers-reduced-motion` 兜底块删了 —— 它和第 30 波在文件末尾
    写的那块**逐字重复**（`*` 上的 duration/iteration/scroll-behavior 完全一样），
@@ -15229,26 +14962,21 @@ color: var(--accent, #7c6cf0);
   border-bottom-color: var(--accent);
 }
 
-/* 第 62 轮删除：`P2: Activity Timeline` 那一段里的 `.activity-timeline` 与
-   `.activity-dot*` + `pulse-dot`（只服务 `components/ActivityTimeline.tsx`，
-   而那个组件从未被任何界面渲染，已作为遗留物删除）。
-   下面两条是**活的**，原位保留：`.activity-item`（AgentDetail.tsx）、`.activity-time`（Workbench.tsx）。 */
-.activity-item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  transition: background var(--duration-fast);
-}
-
-.activity-item:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-}
-
-.activity-time {
+/**
+ * 第 62 轮删除：`P2: Activity Timeline` 那一段里的 `.activity-timeline` 与
+ * `.activity-dot*` + `pulse-dot`（只服务 `components/ActivityTimeline.tsx`，
+ * 而那个组件从未被任何界面渲染，已作为遗留物删除）。
+ *
+ * ⚠️ 第 62 轮当时的记录写的是"下面两条是**活的**，原位保留：`.activity-item`（AgentDetail.tsx）、
+ * `.activity-time`（Workbench.tsx）"—— **前半句是错的，第 67 轮查清并纠正**：
+ *   · `.activity-item` **全项目没有组件渲染**。`AgentDetail.tsx` 渲染的是
+ *     `subagent-activity-item`，而当时的检索工具用**子串**匹配，`subagent-activity-item`
+ *     里包含 `activity-item` 于是被判成"有人在用" —— 一次**假救活**。
+ *     `scan-ui.mjs` 的 `css-class-unused` 修掉子串匹配后，这两条规则（`.activity-item`
+ *     与它的 `:is(:hover, :focus-visible)`）当场被报出来，第 67 轮已按全仓取证删除。
+ *   · `.activity-time` 是**真的活的**（`Workbench.tsx` 里就是整词 `className="activity-time"`），
+ *     原位保留。它和上面那条规则长得几乎一样，只有逐词核对才分得清。
+ */.activity-time {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   margin-left: auto;
@@ -15296,25 +15024,6 @@ color: var(--accent, #7c6cf0);
 .mac-btn-maximize { background: var(--mac-btn-maximize); }
 
 /* ========== P3: Workspace Tabs ========== */
-
-
-.workspace-tab:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.workspace-tab.active {
-  background: var(--bg-secondary);
-  border-color: var(--border-primary);
-  color: var(--text-primary);
-}
-
-
-
-.workspace-tab-close:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
-  opacity: 1 !important;
-}
 
 /* ============================================
    P3 #46 + P2 #25: Mobile Responsive Design
@@ -18177,12 +17886,7 @@ textarea {
   border-radius: var(--radius-sm);
 }
 
-/* 9) 活跃项：子智能体活动项里有 spinner 时整行提亮（AgentDetail） */
-.subagent-activity-item:has(.spinner) {
-  color: var(--text-primary);
-}
-
-/* ==========================================================================
+/* 9) 活跃项：子智能体活动项里有 spinner 时整行提亮（AgentDetail） *//* ==========================================================================
  * 第 39 波：焦点可见性收口
  *
  * 这轮把"焦点"当独立课题查了一遍，结论值得记下来：

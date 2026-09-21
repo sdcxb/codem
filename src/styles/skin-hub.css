@@ -721,17 +721,10 @@
 
   --composer-bg: rgba(21, 21, 21, 0.85);
   --composer-border: rgba(42, 42, 42, 0.80);
-  --composer-tool-btn-hover: rgba(42, 42, 42, 0.50);
-  --composer-send-hover: var(--hub-color-primary-hover, #e56000);
 
   --titlebar-bg: rgba(10, 10, 10, 0.85);
-  --titlebar-btn-hover: rgba(42, 42, 42, 0.50);
-  --titlebar-tab-active: rgba(255, 107, 0, 0.12);
-  --titlebar-tab-hover: rgba(42, 42, 42, 0.40);
 
   --right-rail-bg: rgba(18, 18, 18, 0.60);
-  --right-rail-tab-active: rgba(255, 107, 0, 0.10);
-  --right-rail-tab-hover: rgba(42, 42, 42, 0.40);
 
   --rich-code-bg: rgba(5, 5, 5, 0.92);
   --rich-code-header-bg: rgba(28, 28, 30, 0.80);

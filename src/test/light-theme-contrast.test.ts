@@ -119,6 +119,76 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
   });
 
   /**
+   * LIGHT-UI-2b 结构分隔线：`--border-separator` 必须**比主线条弱**、又不能弱到看不见；
+   * 而且消费它的规则必须落在**界面真的会渲染的类**上。
+   *
+   * ## 为什么加这一条（第 67 轮的真缺陷）
+   *
+   * 用户看到对照页后说"把 `--border-separator` 降到 5%" —— 令牌值本身好守，
+   * 但同一轮里我犯的错是**改错了地方**：把"回复过程条目之间的线"改到了 `.tool-item` 上，
+   * 而全项目**没有任何组件渲染这个类**（TSX 里的 `tool-item` 全是 `sidebar-tool-item` /
+   * `agent-tool-item` 的子串）。于是"改完了"，界面上一个像素都没动。
+   *
+   * 所以这条断言分两半：
+   *   ① 数值：分隔线弱于主线条、强于"完全看不见"，且亮/暗两档都定义了；
+   *   ② **资格**：画过程条目线条的那几个类名，必须在 `.tsx/.ts` 里以**标识符整词**出现。
+   *      ②才是真正防复发的那一半 —— 它让"给一个不存在的类写样式"当场变红。
+   */
+  it("LIGHT-UI-2b：结构分隔线弱于主线条且看得见，且只画在真的会被渲染的类上", () => {
+    const darkBlock = /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
+    const lp = color(token(lightBlock, "--bg-primary"), "--bg-primary");
+    const sepLight = color(token(lightBlock, "--border-separator"), "--border-separator");
+    const sepDark = color(token(darkBlock, "--border-separator"), "--border-separator");
+    const b1 = contrast(over(color(token(lightBlock, "--border-primary"), "--border-primary"), lp), lp);
+    const b2 = contrast(over(color(token(lightBlock, "--border-secondary"), "--border-secondary"), lp), lp);
+    const sep = contrast(over(sepLight, lp), lp);
+
+    expect(sep, `分隔线（${sep.toFixed(3)}）必须弱于主线条（${b1.toFixed(3)}）—— 它是"分节"不是"控件边界"`).toBeLessThan(b1);
+    // 上界钉住用户的那次决定：分隔线**不得强于 5% 那次级线**（7% 时是 1.146，用户看到实际效果后要求降到 5%）
+    expect(sep, `分隔线（${sep.toFixed(3)}）比次级线（${b2.toFixed(3)}）还重 —— 用户第 67 轮明确要求降到 5% 那一档`).toBeLessThanOrEqual(b2 + 1e-9);
+    expect(sep, `分隔线只有 ${sep.toFixed(3)}，等于看不见了（5% 约 1.104）`).toBeGreaterThanOrEqual(1.05);
+    expect(sepDark[3], "暗色档分隔线必须有可见的 alpha").toBeGreaterThan(0.03);
+
+    // ② 资格：过程条目线条的规则必须落在真实渲染的类上
+    //
+    // ⚠️ 语料**必须排除测试目录**：否则下面这份类名清单会把自己写进语料，
+    // `rendered.has("随便乱写的名字")` 恒为真 —— 变异测试（把清单里换成 `tool-card-headZZZ`）
+    // 当场证明过：不排除时断言永远绿，等于什么都没守。
+    const tsCorpus = (function walk(dir: string, acc: string[] = []): string[] {
+      for (const n of readdirSync(dir)) {
+        const p = join(dir, n);
+        if (statSync(p).isDirectory()) {
+          if (n === "test" || n === "__snapshots__") continue;
+          walk(p, acc);
+        } else if (/\.tsx?$/.test(n) && !/\.test\.tsx?$/.test(n)) acc.push(readFileSync(p, "utf8"));
+      }
+      return acc;
+    })(join(ROOT, "src")).join("\n");
+    const rendered = new Set(tsCorpus.match(/[A-Za-z_][\w-]*/g) ?? []);
+
+    // 这几条是"过程条目/卡内行/详情段"真正会被渲染的类（`ToolCallCard.tsx` / `ToolCallGroup.tsx`）
+    const decoratingClasses = ["tool-card-head", "tool-card-row", "tool-io-section--bordered", "tool-pill-detail-section"];
+    const missing = decoratingClasses.filter((c) => !rendered.has(c));
+    expect(
+      missing,
+      `这些类名在 .tsx/.ts 里根本不是"整词"（多半是某个更长类名的子串），给它们写样式等于没写：${missing.join(", ")}`,
+    ).toEqual([]);
+
+    // 线条必须改由"两端渐隐"的伪元素画，而不是全宽硬边框。
+    // ⚠️ 先挖掉注释：这些规则上方的注释里**写着**改动前的旧声明（`border-bottom: 1px solid var(--border-primary)`），
+    // 不挖掉就会拿注释当证据（第一次跑这条断言就是这么红的 —— 注释里的旧写法被当成了违规）。
+    const codemUi = readFileSync(join(ROOT, "src", "styles", "codem-ui.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+    for (const sel of [".tool-card-head:not(:last-child)::after", ".tool-card-row:not(:last-child)::after"]) {
+      const body = new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(codemUi)?.[1] ?? "";
+      expect(body, `${sel} 不见了 —— 过程条目线条又退回全宽硬边框了`).toBeTruthy();
+      expect(body, `${sel} 必须用 var(--border-separator) 的渐隐渐变`).toMatch(/linear-gradient\([^)]*var\(--border-separator\)/);
+    }
+    const hardBorder = /\.tool-card-(head|row)\s*\{[^}]*border-bottom:\s*1px solid var\(--border-primary\)/.exec(codemUi);
+    expect(hardBorder, "`.tool-card-head`/`.tool-card-row` 又出现全宽 9% 硬线（会和卡片外框叠成两条平行线）").toBeNull();
+  });
+
+  /**
    * LIGHT-UI-3 对比度下限：正文/次级/弱级文字、以及**全部功能色**都要在内容面与内嵌块上达标。
    * 这条直接拦住两类真缺陷：`#22c55e` 安全色（2.22）与 `#8a8880` 弱文字落进灰块（3.03）。
    */

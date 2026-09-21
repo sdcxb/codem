@@ -600,8 +600,6 @@
 
 /* ===== 总览布局 ===== */
 
-
-.lo-card--health .lo-card__body { display: flex; align-items: center; }
 .lo-health { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-7); width: 100%; }
 
 

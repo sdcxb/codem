@@ -1038,10 +1038,94 @@ function readClassCorpus() {
  * - **减动效 / 减透明媒体块整块跳过**：那是无障碍安全网 —— 第 44 波第一刀就误删过
  *   library-ops 的减动效规则，当场被 `motion-uncovered` 抓住（教训：清理脚本也要认得出"安全网"）。
  */
+/**
+ * 按**顶层**逗号切分选择器列表（第 67 轮修正）。
+ *
+ * 为什么需要：`selText.split(",")` 会把 `:is(a, b)` / `:where(a, b)` / `:not(...)` 里的逗号
+ * 也当成选择器分隔符，切出 `'.pin-btn:is(:hover'` + `' :focus-visible)'` 两段 ——
+ * 第二段里**一个 `.` 都没有**，于是 `classes.length === 0` 直接判"这段不构成死类名"，
+ * `allUnused` 恒为 false，**整条规则被静默跳过**。
+ * 实测代价：`.pin-btn:is(:hover, :focus-visible)` / `.activity-item:is(:hover, :focus-visible)`
+ * 两条死规则因此长期不被看见（与"子串当整词"是同一批缺陷：**解析器把语法看错了**）。
+ * 现在只按括号外的逗号切分。
+ */
+function splitTopLevelCommas(text) {
+  const out = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of text) {
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
+/**
+ * 单个选择器分支（不含顶层逗号）**永远匹配不到任何元素**时，返回导致它不可能匹配的死类名；
+ * 否则返回空数组。
+ *
+ * 三种连接关系分开处理（这是规则第三次修正，前两版都不对）：
+ *   · **与**：`.a.b` / `.a .b` / `.a:has(.b)` —— 任一必选类名查无此词 ⇒ 永不匹配；
+ *   · **或**：`:is(.a, .b)` / `:where(...)` —— 必须**每个候选都不成立**才永不匹配；
+ *     候选里没有类名（如 `:is(p, .sp-note)` 里的 `p`）时视为**成立**，整组按活处理；
+ *   · **否定**：`:not(.a)` —— 里面的类名死掉不影响匹配（条件只会更容易满足），整段先剔除。
+ *
+ * 为什么值得写这么细：`.setting-group > :is(p, .sp-note, .sp-hint, …)` 这条里只有 `sp-plot`
+ * 查无此词，换成"任一死就报"就会把整条**活的**规则判死 —— 而清理脚本是按"整条规则永不匹配"
+ * 来删的，判定一错就会删掉活样式。规则必须比清理脚本更严格。
+ */
+function unmatchableClasses(sel, isDead) {
+  const s = sel.replace(/:not\((?:[^()]|\([^()]*\))*\)/g, " ");
+  const groups = [];
+  const rest = s.replace(/:(?:is|where)\(((?:[^()]|\([^()]*\))*)\)/g, (_all, inner) => {
+    groups.push(inner);
+    return " ";
+  });
+  // 与关系：任一必选类死 ⇒ 不可能匹配
+  const deadRequired = [...rest.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((x) => x[1]).filter(isDead);
+  if (deadRequired.length) return [...new Set(deadRequired)];
+  // 或组：某一组的全部候选都不成立 ⇒ 不可能匹配
+  const out = [];
+  for (const inner of groups) {
+    const alts = splitTopLevelCommas(inner);
+    const allDead = [];
+    let anyLive = false;
+    for (const alt of alts) {
+      const cs = [...alt.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((x) => x[1]);
+      if (cs.length && cs.every(isDead)) allDead.push(...cs);
+      else { anyLive = true; break; }
+    }
+    if (!anyLive && allDead.length) out.push(...allDead);
+  }
+  return [...new Set(out)];
+}
+
 function scanUnusedClasses(cssFiles) {
   // 语料见 readClassCorpus()：包含测试目录，且不受例外表影响 ——
   // "哪些文件会被当违规扫描"与"哪些文件里的类名算被使用"是两件事。
   const corpus = readClassCorpus();
+  // ★ 第 67 轮修正：类名"是否被使用"的判定从**子串包含**改为**标识符整词匹配**。
+  //
+  // 起因是一次真实漏检：`.tool-item` 在 TSX 里根本不存在，但 `sidebar-tool-item` /
+  // `agent-tool-item` 让 `corpus.includes("tool-item")` 恒为真 —— 规则长期**假绿**，
+  // 我据此把"回复过程条目线条"改到了一个**没有任何组件渲染**的类上，界面上零变化
+  // （用户当场反馈"没看到"，详见 CHANGELOG 1.16.117）。
+  // 这与第 66 轮 keep 清单里 `/bar-/` 误配 `sideBAR-` 是同一类缺陷：**前缀/子串匹配当成整词**。
+  //
+  // 现在把语料切成"标识符整词集合"（`[A-Za-z_][\w-]*`，与 CSS 类名字符集一致）：
+  // `sidebar-tool-item` 只会产出 `sidebar-tool-item` 这一个词，不再顶替 `tool-item`。
+  //
+  // 残留局限（如实记，不假装完备）：若类名只出现在**字符串形式的 CSS 文本**里
+  // （例如测试断言 `expect(css).toContain(".tool-item")`），仍会被算作"在用" ——
+  // 词法层面无法与真实用法区分，这类"测试自证"只能靠人工评审。
+  const corpusTokens = new Set(corpus.match(/[A-Za-z_][\w-]*/g) ?? []);
   const dynamicCache = new Map();
   const maybeDynamic = (cls) => {
     if (dynamicCache.has(cls)) return dynamicCache.get(cls);
@@ -1079,15 +1163,26 @@ function scanUnusedClasses(cssFiles) {
     for (const m of clean.matchAll(/(^|\n)([^\n{}]+)\{([^{}]*)\}/g)) {
       const selText = m[2].trim();
       if (/^@/.test(selText) || /\[/.test(selText) || isProtected(m.index)) continue;
-      const sels = selText.split(",").map((x) => x.trim()).filter(Boolean);
-      const allUnused = sels.every((sel) => {
-        const classes = [...sel.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((x) => x[1]);
-        if (!classes.length) return false;
-        return classes.every((c) => !corpus.includes(c) && !maybeDynamic(c));
-      });
-      if (!allUnused) continue;
+      const sels = splitTopLevelCommas(selText);
+      // 判定"这条规则是否永远匹配不到任何元素"：**每个顶层分支**都要不满足才成立
+      // （`.deadA, .liveB {}` 里 `.liveB` 仍然生效，删整条规则就会删掉活样式）。
+      // 单个分支的判定要区分两种连接关系（第 67 轮修正 ③）：
+      //   · **与**（`.a.b`、后代 `.a .b`）：任一类名查无此词 ⇒ 永不匹配；
+      //   · **或**（`:is(.a, .b)` / `:where(...)`）：要**所有**候选都查无此词才永不匹配；
+      //   · `:not(...)` 是否定条件：里面的类名死掉**不影响**匹配，整段先剔除。
+      // 前两版分别是"所有类名都死才报"（`.pin-btn.pinned` 隐身）与"任一类名死就报"
+      // （`.setting-group > :is(p, .sp-note, …)` 被误判 —— 那里面 `p` 与另外几个类都还活着）。
+      const deadClasses = [];
+      let ruleUnmatchable = true;
+      for (const sel of sels) {
+        const dead = unmatchableClasses(sel, (c) => !corpusTokens.has(c) && !maybeDynamic(c));
+        if (!dead.length) { ruleUnmatchable = false; break; }
+        deadClasses.push(...dead);
+      }
+      if (!ruleUnmatchable) continue;
       const line = src.slice(0, m.index).split("\n").length;
-      add("css-class-unused", rel, line, selText.replace(/\s+/g, " ").slice(0, 80), "CSS 定义了但 TSX/TS 里从未使用");
+      const uniq = [...new Set(deadClasses)];
+      add("css-class-unused", rel, line, selText.replace(/\s+/g, " ").slice(0, 80), `CSS 定义了但 TSX/TS 里从未使用：${uniq.join(" / ")}`);
     }
   }
 }

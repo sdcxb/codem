@@ -1,4 +1,4 @@
-﻿# UI 设计系统与一致性门禁（UI-DESIGN-SYSTEM）
+# UI 设计系统与一致性门禁（UI-DESIGN-SYSTEM）
 
 > 基准参考：**frakio-work**（`MadsGao/frakio-work`，纯 CSS + CSS 变量，无 Tailwind）。
 > 本文件是**唯一真相源**：所有页面/子页面/弹窗/浮层/插件面板都必须按这里的令牌与组件语言实现。
@@ -100,7 +100,17 @@
 
 - 文本：`--text-primary` / `--text-secondary` / `--text-muted` / `--text-on-accent`
 - 面：`--bg-primary`（页面/卡片底）、`--bg-secondary`、`--bg-tertiary`、`--bg-hover`
-- 线：`--border-primary`（10% alpha）、`--border-secondary`（6%）
+- 线：**三档，各有分工（第 67 轮按实现更正，此前这里写的是 10% / 6%，与代码不符）** ——
+  · `--border-primary` **9%**（`rgb(31 31 30 / 9%)`，白底对比度 **1.194**）：**控件边界**（卡片/输入框/按钮的实线边框）。
+  · `--border-secondary` **5%**（1.102）：次级边界、需要更弱的边。
+  · `--border-separator` **5%**（1.102；暗色 6% 白）：**结构分隔线**专用 —— 回合分隔线
+    （`.qa-turn-footer`）、滚动加载提示线、以及**工具卡片内的"过程条目线条"**
+    （`.tool-card-head` / `.tool-card-row` / `.tool-io-section--bordered`，用
+    `:not(:last-child)::after` 画**两端渐隐、左右内缩**的 1px 发丝线，不是全宽硬边框）。
+  · 另有 `--glass-border`（6%）：浮层玻璃片（`.message-actions-bar` 这类带模糊与投影的悬浮条）专用，
+    不是结构线，**不属于上面三档**。
+  ⚠️ 口径：判据以 `src/styles.css` 的实现与 `light-theme-contrast.test.ts` 的 `LIGHT-UI-2b` 为准
+  （该用例会在"分隔线比次级线还重"时直接报红）。
 - 强调/状态：`--accent` / `--accent-hover` / `--accent-muted`、`--success` / `--warning` / `--error` / `--info`
 - **分类色板**：`--chart-cat-1..6` —— 只用于「类别」着色（知识图谱的实体类型、图表的多序列），
   **不是状态色**。单列一套的理由：语义色只有 5 个，且浅色主题里 `--info` 与 `--accent` 同值，

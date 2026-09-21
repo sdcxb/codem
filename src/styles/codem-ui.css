@@ -66,20 +66,21 @@
   /* Composer 令牌 */
   --composer-bg: rgba(22, 27, 34, 0.80);
   --composer-border: rgba(255, 255, 255, 0.08);
-  --composer-tool-btn-hover: rgba(48, 54, 61, 0.50);
-  --composer-send-hover: var(--accent-hover, #8b7df5);
+  /* 第 67 轮删除：`--composer-tool-btn-hover` / `--composer-send-hover`。
+     它们的唯一消费方是 `.composer-tool-btn*` / `.composer-send-btn*` 那批规则 ——
+     那条规则本身就**永远匹配不到元素**（TSX 里没有这些类名），本轮按证据一并删除，
+     删完后 `css-var-unused` 立刻把它们报了出来（令牌的唯一消费方没了）。 */
 
   /* 标题栏令牌 */
   --titlebar-bg: rgba(22, 27, 34, 0.80);
-  --titlebar-btn-hover: rgba(255, 255, 255, 0.08);
-  --titlebar-btn-close-hover: #e81123;
-  --titlebar-tab-active: rgba(124, 108, 240, 0.15);
-  --titlebar-tab-hover: rgba(255, 255, 255, 0.06);
+  /* 第 67 轮删除：`--titlebar-btn-hover` / `--titlebar-btn-close-hover` /
+     `--titlebar-tab-active` / `--titlebar-tab-hover` —— 消费方是 `.native-title-bar-*`
+     那批永不匹配的规则（应用现在用的是自绘标题栏 `.titlebar-*`）。 */
 
   /* 右侧栏令牌 */
   --right-rail-bg: rgba(26, 28, 28, 0.60);
-  --right-rail-tab-active: rgba(124, 108, 240, 0.12);
-  --right-rail-tab-hover: rgba(255, 255, 255, 0.06);
+  /* 第 67 轮删除：`--right-rail-tab-active` / `--right-rail-tab-hover` ——
+     消费方是 `.right-rail-tab*`，而应用渲染的是 `.right-sidebar-*`。 */
 
   /* 富内容令牌 */
   --rich-code-bg: rgba(22, 27, 34, 0.90);
@@ -144,13 +145,8 @@
   --composer-border: rgb(31 31 30 / 11%);
 
   --titlebar-bg: rgba(255, 255, 255, 0.80);
-  --titlebar-btn-hover: rgb(31 31 30 / 8%);
-  --titlebar-tab-active: rgba(107, 92, 231, 0.12);
-  --titlebar-tab-hover: rgb(31 31 30 / 6%);
 
   --right-rail-bg: rgba(246, 246, 244, 0.60);
-  --right-rail-tab-active: rgba(107, 92, 231, 0.10);
-  --right-rail-tab-hover: rgb(31 31 30 / 6%);
 
   --rich-code-bg: rgba(246, 246, 244, 0.90);
   --rich-code-header-bg: rgba(238, 238, 235, 0.80);
@@ -582,28 +578,6 @@
 
 
 
-
-.code-block-action-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.code-block-body.collapsed {
-  max-height: 180px;
-}
-.code-block-body.collapsed::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 48px;
-  background: linear-gradient(to bottom, transparent, var(--rich-code-bg));
-  pointer-events: none;
-}
-
-
-
 /* Table scroll view */
 .table-scroll-view {
   margin: 0.75em 0;
@@ -637,13 +611,7 @@
 }
 .table-scroll-view tr:is(:hover, :focus-visible) td {
   background: var(--surface-1);
-}
-.table-fallback {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-/* Mermaid canvas view */
+}/* Mermaid canvas view */
 .mermaid-canvas-view {
   margin: 0.75em 0;
   text-align: center;
@@ -695,11 +663,6 @@
 @keyframes fullscreen-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-
-
-.fullscreen-viewer-close:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--text-on-accent) 20%, transparent);
 }
 
 /* P0-2: 流式纯文本降级样式 —— 流式期间零解析零高亮 */
@@ -992,9 +955,18 @@
 .tool-pill-detail-section {
   padding: var(--space-4) var(--space-6);
 }
-.tool-pill-detail-section + .tool-pill-detail-section {
-  border-top: 1px solid var(--border-secondary);
-}
+/**
+ * ⚠️ 第 67 轮：这里原本有一条 `.tool-pill-detail-section + .tool-pill-detail-section { border-top: … }`
+ * （"详情段之间"的分隔线），我一度把它也算进"过程条目线条"，改成两端渐隐的 `::before`。
+ * **但它永远匹配不到元素**：`.tool-pill-detail-section` 只由 `WebSearchResultCard` 渲染
+ * （`ToolCallCard.tsx` 的两条 return 分支各一处），而 `WebSearchResultCard` 永远是**一块**，
+ * 一个 `.tool-pill-detail` 里不可能出现**相邻的两个 section** ⇒ 相邻选择器恒不成立。
+ *
+ * 所以这条规则（以及我加在它上面的 `::before`）**都已删除**：留着的唯一效果是让人以为
+ * "详情段之间有分隔线"，而实际渲染里根本没有。这是本轮第四次遇到"看起来生效、其实匹配不到"——
+ * 前三次分别是不存在的类名（`.tool-item`）、子串假绿（`sidebar-tool-item`）、Orphan 的 `:is()` 悬停规则。
+ * 判定方式：把组件里渲染 `tool-pill-detail-section` 的地方全查一遍（grep 只有 2 处、同一个组件、同一分支）。
+ */
 .tool-pill-detail-label {
   font-size: var(--fs-sm);
   color: var(--text-muted);
@@ -1260,24 +1232,9 @@
 }
 
 
-.composer.drag-active .composer-inner {
-  border-color: var(--accent);
-  border-style: dashed;
-}
 
 
 
-
-
-
-
-.composer-tool-btn:is(:hover, :focus-visible) {
-  background: var(--composer-tool-btn-hover);
-  color: var(--text-primary);
-}
-.composer-tool-btn.security-ask { color: var(--security-ask); }
-.composer-tool-btn.security-auto { color: var(--security-auto); }
-.composer-tool-btn.security-full { color: var(--security-full); }
 
 /* Bug10: 安全策略按钮 — 深色模式下使用紫色边框样式，避免白色底色 */
 .security-mode-btn {
@@ -1309,38 +1266,10 @@
 [data-theme="dark"] .security-mode-btn.security-full { color: var(--security-full); }
 
 
-
-.composer-send-btn:is(:hover, :focus-visible) {
-  background: var(--composer-send-hover);
-}
-
-.composer-send-btn.stop {
-  background: var(--error);
-}
-.composer-send-btn.stop:is(:hover, :focus-visible) {
-  background: var(--error-hover);
-}
-
 /* Composer dropdowns */
-
-
-.composer-dropdown-item:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-.composer-dropdown-item.selected {
-  background: var(--accent-muted);
-  color: var(--accent-strong);
-}
 
 /* Composer attachment tray */
 
-
-
-.composer-attachment-remove:is(:hover, :focus-visible) {
-  background: var(--error);
-  color: var(--text-on-accent);
-}
 
 /* Composer drag overlay */
 
@@ -1374,23 +1303,6 @@
 
 
 
-
-.native-title-bar-btn:is(:hover, :focus-visible) {
-  background: var(--titlebar-btn-hover);
-  color: var(--text-primary);
-}
-.native-title-bar-btn.active {
-  color: var(--accent);
-}
-
-
-
-.native-title-bar-tab:is(:hover, :focus-visible) {
-  background: var(--titlebar-tab-hover);
-}
-.native-title-bar-tab.active {
-  background: var(--titlebar-tab-active);
-}
 .native-title-bar-tab button[role="tab"] {
   border: none;
   background: transparent;
@@ -1403,22 +1315,6 @@
   color: var(--text-primary);
 }
 
-
-.native-title-bar-tab-close:is(:hover, :focus-visible) {
-  background: var(--error);
-  color: var(--text-on-accent);
-}
-
-
-
-.native-title-bar-window-btn:is(:hover, :focus-visible) {
-  background: var(--titlebar-btn-hover);
-  color: var(--text-primary);
-}
-.native-title-bar-window-btn.close:is(:hover, :focus-visible) {
-  background: var(--titlebar-btn-close-hover);
-  color: var(--text-on-accent);
-}
 
 /* ========== 11. Right Rail ========== */
 .right-rail {
@@ -1433,13 +1329,6 @@
 }
 
 
-
-.right-rail-tab:is(:hover, :focus-visible) {
-  background: var(--right-rail-tab-hover);
-}
-.right-rail-tab.active {
-  background: var(--right-rail-tab-active);
-}
 .right-rail-tab button[role="tab"] {
   display: flex;
   align-items: center;
@@ -1452,18 +1341,6 @@
   padding: var(--space-1) var(--space-2);
 }
 .right-rail-tab.active button[role="tab"] {
-  color: var(--text-primary);
-}
-
-
-.right-rail-tab-close:is(:hover, :focus-visible) {
-  background: var(--error);
-  color: var(--text-on-accent);
-}
-
-
-.right-rail-add-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
@@ -1490,11 +1367,7 @@
 
 /* ========== 12. Pane Resize Handle ========== */
 
-.pane-resize-handle:is(:hover, :focus-visible),
-.pane-resize-handle.active {
-  background: var(--accent-muted);
-}
-body.resizing-columns {
+.pane-resize-handle:is(:hover, :focus-visible),body.resizing-columns {
   cursor: col-resize;
   user-select: none;
   -webkit-user-select: none;
@@ -2517,9 +2390,6 @@ select:focus-visible,
 
 
 
-.hub-task-item:is(:hover, :focus-visible) {
-  border-color: var(--glass-border-strong, var(--border-primary));
-}
 
 
 
@@ -2529,19 +2399,6 @@ select:focus-visible,
 
 
 
-
-.hub-recent-item:is(:hover, :focus-visible) {
-  border-color: var(--glass-border-strong, var(--border-primary)) !important;
-  background: var(--surface-hover, var(--bg-hover)) !important;
-}
-
-
-
-
-.hub-onboarding-item:is(:hover, :focus-visible) {
-  border-color: var(--accent) !important;
-  background: var(--accent-muted) !important;
-}
 .right-sidebar-tabs {
   display: flex;
   flex-wrap: nowrap;
@@ -2575,11 +2432,6 @@ select:focus-visible,
 .right-sidebar-resize-handle.active {
   background: var(--accent);
 }
-
-.hub-sidebar-toggle:is(:hover, :focus-visible) {
-  color: var(--text-primary);
-}
-
 /* ========== 17. Dream skin: hide WorkspaceBackdrop ========== */
 /* DreamLayout provides its own background layer, so WorkspaceBackdrop
    must be hidden to avoid covering it with a solid dark background. */
@@ -3122,20 +2974,12 @@ background: var(--bg-secondary);
   /* Composer tokens */
   --composer-bg: rgba(21, 21, 21, 0.85);
   --composer-border: rgba(42, 42, 42, 0.80);
-  --composer-tool-btn-hover: rgba(42, 42, 42, 0.50);
-  --composer-send-hover: var(--hub-color-primary-hover, #e56000);
 
   /* Titlebar tokens */
   --titlebar-bg: rgba(10, 10, 10, 0.85);
-  --titlebar-btn-hover: rgba(42, 42, 42, 0.50);
-  --titlebar-btn-close-hover: #e81123;
-  --titlebar-tab-active: rgba(255, 107, 0, 0.12);
-  --titlebar-tab-hover: rgba(42, 42, 42, 0.40);
 
   /* Right rail tokens */
   --right-rail-bg: rgba(18, 18, 18, 0.60);
-  --right-rail-tab-active: rgba(255, 107, 0, 0.10);
-  --right-rail-tab-hover: rgba(42, 42, 42, 0.40);
 
   /* Rich content tokens */
   --rich-code-bg: rgba(5, 5, 5, 0.92);
@@ -3213,17 +3057,51 @@ background: var(--bg-secondary);
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--border-primary);
+  /* 第 67 轮（用户选定 S2 的"流线型"处理，落在**真正画线**的类上）：
+     原来是 `border-bottom: 1px solid var(--border-primary)` —— 一条**全宽 9% 硬线**，
+     它下面紧挨着卡片内容，而卡片自身还有一圈外框，同一条边上于是出现"卡片边框 + 头部横线"两条平行线。
+     现在：头部不再画全宽硬线，改由 `::after` 画一条**两端渐隐、左右内缩**的发丝线（5%）。 */
+  position: relative;
   background: var(--bg-tertiary);
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-secondary);
 }
+
+/**
+ * ⚠️ 必须是 `:not(:last-child)`：`TerminalBlock` 里头部后面**只有**「有输出时」才跟 `<pre>`，
+ * 而 `model.output` 为空（命令正在跑 / 命令本身没有输出）时头部就是卡片里最后一个子元素 ——
+ * 那时若还画一条底部发丝线，它就贴在卡片自己的下边框上，又变回两条平行线。
+ * 这一条正是"改动必须回到真实结构里核对"的教训（第 67 轮）。
+ */
+.tool-card-head:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-separator) 12%, var(--border-separator) 88%, transparent);
+}
 .tool-card-head--accent { color: var(--accent); }
 .tool-card-head-icon { flex-shrink: 0; color: var(--text-muted); }
 
-.tool-card-row { border-bottom: 1px solid var(--border-primary); }
-.tool-card-row:last-child { border-bottom: none; }
+/**
+ * `.tool-card-row` / `.tool-io-section--bordered`：同一张卡片内**多条命令/结果行之间**的线。
+ * 第 67 轮同 S2 处理：全宽 9% 硬线 → **两端渐隐、左右内缩**的发丝线（5%）。
+ * 这两处是"过程条目之间线条"最直观的地方（展开的工具卡里一行一条横线）。
+ * 同样带 `:not(:last-child)`：最后一行不留线，线只画在"行与行之间"。
+ */
+.tool-card-row { position: relative; }
+.tool-card-row:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-separator) 12%, var(--border-separator) 88%, transparent);
+}
 
 .tool-card-command {
   flex: 1;
@@ -3349,7 +3227,8 @@ background: var(--bg-secondary);
 }
 .tool-io-card--stacked { margin-top: var(--space-2); }
 .tool-io-section { display: flex; gap: var(--space-4); }
-.tool-io-section--bordered { border-bottom: 1px solid var(--border-primary); }
+.tool-io-section--bordered { position: relative; }
+.tool-io-section--bordered::after { content: ""; position: absolute; left: var(--space-2); right: var(--space-2); bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--border-separator) 12%, var(--border-separator) 88%, transparent); }
 .tool-io-label {
   flex-shrink: 0;
   min-width: 28px;

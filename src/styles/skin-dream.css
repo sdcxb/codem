@@ -733,16 +733,10 @@ backdrop-filter: none !important;
 
   --composer-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.72));
   --composer-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  --composer-send-hover: var(--dream-accent, #d97a88);
 
   --titlebar-bg: transparent;
-  --titlebar-btn-hover: rgba(232, 140, 154, 0.12);
-  --titlebar-tab-active: rgba(232, 140, 154, 0.15);
-  --titlebar-tab-hover: rgba(232, 140, 154, 0.08);
 
   --right-rail-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.60));
-  --right-rail-tab-active: rgba(232, 140, 154, 0.12);
-  --right-rail-tab-hover: rgba(232, 140, 154, 0.08);
 
   --rich-code-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.85));
   --rich-code-header-bg: rgba(255, 255, 255, 0.60);
