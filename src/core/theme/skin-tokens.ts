@@ -55,10 +55,7 @@ export const CORE_SKIN_TOKENS = [
      现在登记的是**真的被消费**的那两个：三套皮肤都必须给色，
      否则某个皮肤下气泡会没有底色 / 边框（LIGHT-UI-6 也守这一条）。 */
   '--user-bg', '--system-bg', '--code-bg',
-  /* 第 66 轮：气泡改成**中性浅底无边框**（真机台账：气泡的品牌色边框与相邻工具栏边框
-     重合成了两条平行线），--message-bubble-user* 随之删除、不再登记；
-     状态表达改为中性令牌，登记 --state-* 系列。 */
-  '--state-hover-bg', '--state-hover-border', '--state-selected-bg', '--state-selected-border',
+  '--message-bubble-user', '--message-bubble-user-border',
   '--sidebar-bg', '--input-bg',
   '--scrollbar-track', '--scrollbar-thumb',
   '--tooltip-bg', '--tooltip-text', '--tooltip-border',

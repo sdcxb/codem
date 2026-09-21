@@ -109,7 +109,7 @@ describe("LO-ICON 图标体系与版面", () => {
     expect(css).toContain("@container lo (max-height:");
     expect(css).not.toMatch(/grid-template-columns:\s*236px/);
     // 卡片视觉与宿主一致（10px 圆角 + bg-secondary + border-primary）
-    expect(css).toMatch(/\.lo-card\s*\{[^}]*border-radius:\s*var\(--radius-md\)/s);
+    expect(css).toMatch(/\.lo-card\s*\{[^}]*border-radius:\s*var\(--radius-md, 10px\)/s);
     expect(css).toMatch(/\.lo-card\s*\{[^}]*background:\s*var\(--bg-secondary\)/s);
   });
 });

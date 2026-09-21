@@ -33,14 +33,7 @@ import { StatsLine } from "./StatsLine";
 import { TurnStatus } from "./TurnStatus";
 import { ReasoningRow } from "./ReasoningRow";
 
-/**
- * User avatar component — reads avatar from settings, shows circle on user messages
- *
- * 第 66 轮：边框 **2px → 1px**。真机台账（`.preview-shot/audit-visual-detail-01.mjs`）里
- * **全部 8 段非 1px 的线都是这个 32px 头像的 2px 边框** —— 一个 32px 的圆配 2px 描边，
- * 在满屏 1px 细线里就是"这一处特别粗"。同时图标色从 `--text-muted`（在浅灰底上 4.7:1）
- * 提到 `--text-secondary`（6.3:1），头像里的用户图标不再发灰。
- */
+/** User avatar component — reads avatar from settings, shows circle on user messages */
 function UserAvatar() {
   const userConfig = getSettingJSON<UserConfig>("codem-user", { name: "", callBy: "", pronouns: "", timezone: "", notes: "", context: "", raw: "", avatar: "" });
   const avatar = userConfig.avatar;
@@ -49,7 +42,7 @@ function UserAvatar() {
     return (
       <div className="user-msg-avatar" style={{
         width: 32, height: 32, borderRadius: "50%", overflow: "hidden",
-        flexShrink: 0, border: "1px solid var(--border-primary)",
+        flexShrink: 0, border: "2px solid var(--border-primary)",
       }}>
         <img src={avatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </div>
@@ -58,10 +51,10 @@ function UserAvatar() {
   return (
     <div className="user-msg-avatar" style={{
       width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-      background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
+      background: "var(--bg-tertiary)", border: "2px solid var(--border-primary)",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      <User size={16} style={{ color: "var(--text-secondary)" }} />
+      <User size={16} style={{ color: "var(--text-muted)" }} />
     </div>
   );
 }

@@ -102,7 +102,7 @@
 
 .nb-studio-btn:hover:not(:disabled) {
   background: var(--bg-tertiary);
-  border-color: var(--state-hover-border);
+  border-color: var(--accent);
 }
 
 .nb-studio-btn:disabled {
@@ -406,9 +406,9 @@
 }
 
 .nb-add-btn:hover:not(:disabled) {
-  background: var(--state-hover-bg);
-  color: var(--text-primary);
-  border-color: var(--state-hover-border);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
 }
 
 .nb-add-btn:disabled {
@@ -442,12 +442,12 @@
 }
 
 .nb-source-card:is(:hover, :focus-visible) .nb-source-name {
-  color: var(--text-primary);
+  color: var(--accent);
 }
 
 .nb-source-card.selected {
   background: transparent;
-  border-left: 1px solid transparent;
+  border-left: 2px solid var(--accent);
 }
 
 .nb-source-card.disabled {
@@ -515,7 +515,7 @@
 .nb-checkmark {
   width: 14px;
   height: 14px;
-  border: 1px solid var(--text-muted);
+  border: 1.5px solid var(--text-muted);
   border-radius: var(--radius-sm);
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   display: flex;
@@ -764,8 +764,8 @@
 
 
 .nb-question-card:is(:hover, :focus-visible) {
-  border-color: var(--state-hover-border);
-  background: var(--state-hover-bg);
+  border-color: var(--accent-strong);
+  background: var(--accent-muted);
   transform: translateX(2px);
 }
 
@@ -1008,9 +1008,9 @@ top: 36px;
 }
 
 .nb-type-tab.active {
-  background: var(--state-selected-bg);
-  border-color: var(--state-selected-border);
-  color: var(--text-primary);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
 }
 
 .nb-dialog-input {
@@ -1077,7 +1077,7 @@ top: 36px;
 }
 
 .nb-file-btn:is(:hover, :focus-visible) {
-  border-color: var(--state-hover-border);
+  border-color: var(--accent);
 }
 
 .nb-file-path {
@@ -1205,8 +1205,8 @@ top: 36px;
 }
 
 .nb-view-tab.active {
-  color: var(--text-primary);
-  border-color: var(--state-selected-border);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 /* ========== Studio Divider ========== */
@@ -1462,7 +1462,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-primary);
+  border: 1.5px solid var(--border-primary);
   border-radius: var(--radius-full);
   background: radial-gradient(circle at 35% 35%, currentColor, color-mix(in srgb, currentColor 80%, transparent));
   font-size: var(--kg-node-font, var(--fs-md));
@@ -1700,11 +1700,11 @@ top: 36px;
   cursor: pointer;
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
-.ppt-studio-filter:is(:hover, :focus-visible) { border-color: var(--state-hover-border); color: var(--text-primary); }
+.ppt-studio-filter:is(:hover, :focus-visible) { border-color: var(--accent); color: var(--text-primary); }
 .ppt-studio-filter.is-active {
-  border-color: var(--state-selected-border);
-  background: var(--state-selected-bg);
-  color: var(--text-primary);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 .ppt-studio-style-grid {
@@ -1715,14 +1715,14 @@ top: 36px;
 }
 .ppt-studio-style-card {
   overflow: hidden;
-  border: 1px solid var(--border-primary);
+  border: 2px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: var(--bg-tertiary);
   cursor: pointer;
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
-.ppt-studio-style-card:is(:hover, :focus-visible) { border-color: var(--state-hover-border); }
-.ppt-studio-style-card.is-active { border-color: var(--state-selected-border); }
+.ppt-studio-style-card:is(:hover, :focus-visible) { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ppt-studio-style-card.is-active { border-color: var(--accent); }
 .ppt-studio-style-preview {
   position: relative;
   display: flex;
@@ -1759,15 +1759,15 @@ top: 36px;
 }
 .ppt-studio-canvas-card {
   padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border-primary);
+  border: 2px solid var(--border-primary);
   border-radius: var(--radius);
   background: var(--bg-tertiary);
   text-align: center;
   cursor: pointer;
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
-.ppt-studio-canvas-card:is(:hover, :focus-visible) { border-color: var(--state-hover-border); }
-.ppt-studio-canvas-card.is-active { border-color: var(--state-selected-border); }
+.ppt-studio-canvas-card:is(:hover, :focus-visible) { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ppt-studio-canvas-card.is-active { border-color: var(--accent); }
 .ppt-studio-canvas-icon { margin-bottom: var(--space-2); font-size: var(--fs-2xl); }
 .ppt-studio-canvas-name { color: var(--text-primary); font-size: var(--fs-sm); font-weight: 600; }
 .ppt-studio-canvas-desc { margin-top: var(--space-1); color: var(--text-muted); font-size: var(--fs-xs); }
@@ -2104,8 +2104,8 @@ top: 36px;
 }
 
 .nb-mode-btn.active {
-  background: var(--state-selected-bg);
-  color: var(--text-primary);
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 .nb-editor-close {
@@ -2277,7 +2277,7 @@ top: 36px;
 }
 
 .nb-md-preview blockquote {
-  border-left: 1px solid var(--border-primary);
+  border-left: 3px solid var(--accent);
   padding-left: var(--space-8);
   margin: var(--space-6) 0;
   color: var(--text-secondary);
@@ -2600,8 +2600,8 @@ top: 36px;
 }
 
 .nb-study-path-item:is(:hover, :focus-visible) {
-  border-color: var(--state-hover-border);
-  background: var(--state-hover-bg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 .nb-study-path-num {
@@ -2802,7 +2802,7 @@ top: 36px;
 .nb-dialog-actions { display: flex; align-items: center; gap: var(--space-2); }
 .nb-studio-footer-hint { margin-right: auto; font-size: var(--fs-xs); color: var(--text-muted); }
 
-.nb-note-card.is-pinned { border-left: 1px solid var(--border-primary); }
+.nb-note-card.is-pinned { border-left: 2px solid var(--accent); }
 .nb-note-pin-icon { color: var(--accent); }
 .nb-note-pin-btn { opacity: 0.4; }
 .nb-note-pin-btn.is-pinned { opacity: 1; }

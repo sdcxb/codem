@@ -601,7 +601,7 @@
     "background": "var(--bg-primary, #1e1e2e)",
     "border": "1px solid var(--border-primary, #333)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 20px 60px var(--shadow-color)",
     "left": "50%",
     "max-width": "420px",
     "padding": "var(--space-10)",
@@ -1013,7 +1013,7 @@
   "bootstrap-emoji": {
     "align-items": "center",
     "background": "var(--bg-tertiary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
     "cursor": "pointer",
     "display": "flex",
@@ -2168,7 +2168,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-lg)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "display": "flex",
     "flex-direction": "column",
     "max-height": "85vh",
@@ -2341,7 +2341,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "padding": "var(--space-10)",
     "transform-origin": "center",
     "width": "380px"
@@ -3283,7 +3283,7 @@
     "transition": "var(--transition-color)"
   },
   "diff-new-num": {
-    "border-right": "1px solid var(--border-primary)",
+    "border-right": "2px solid var(--border-primary)",
     "min-width": "45px",
     "width": "45px"
   },
@@ -3778,7 +3778,7 @@
     "width": "auto"
   },
   "fade-in-element": {
-    "@starting-style {\n    opacity": "0",
+    "@starting-style {\r\n    opacity": "0",
     "opacity": "1",
     "transform": "translateY(-8px)",
     "transition": "opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out)"
@@ -3881,7 +3881,7 @@
     "background": "var(--bg-primary, #1a1a20)",
     "border": "1px solid var(--border-primary, #2a2a30)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 20px 60px var(--shadow-color)",
     "display": "flex",
     "flex-direction": "column",
     "height": "90vh",
@@ -5046,7 +5046,7 @@
   "identity-emoji": {
     "align-items": "center",
     "background": "var(--bg-tertiary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius)",
     "cursor": "pointer",
     "display": "flex",
@@ -5300,7 +5300,7 @@
     "padding": "1px var(--space-3)"
   },
   "inline-diff-new-num": {
-    "border-right": "1px solid var(--border-primary)"
+    "border-right": "2px solid var(--border-primary)"
   },
   "inline-diff-old-num": {
     "border-right": "1px solid var(--border-secondary)"
@@ -5692,7 +5692,7 @@
   },
   "issue-detail-comment": {
     "background": "var(--bg-tertiary)",
-    "border-left": "1px solid var(--border-primary)",
+    "border-left": "2px solid var(--accent)",
     "border-radius": "var(--radius)",
     "font-size": "var(--fs-sm)",
     "padding": "var(--space-4) var(--space-6)"
@@ -6112,7 +6112,7 @@
   "kg-node-circle": {
     "align-items": "center",
     "background": "radial-gradient(circle at 35% 35%, currentColor, color-mix(in srgb, currentColor 80%, transparent))",
-    "border": "1px solid var(--border-primary)",
+    "border": "1.5px solid var(--border-primary)",
     "border-radius": "var(--radius-full)",
     "display": "flex",
     "font-size": "var(--kg-node-font, var(--fs-md))",
@@ -7502,7 +7502,7 @@
     "align-items": "center",
     "backdrop-filter": "blur(var(--glass-blur-subtle))",
     "background": "var(--message-actions-bg)",
-    "border": "none",
+    "border": "1px solid var(--glass-border)",
     "border-radius": "var(--radius)",
     "box-shadow": "var(--message-actions-shadow)",
     "display": "flex",
@@ -7770,7 +7770,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "display": "flex",
     "flex-direction": "column",
     "height": "80vh",
@@ -7806,7 +7806,7 @@
   "mode-btn": {
     "align-items": "center",
     "background": "var(--bg-tertiary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius)",
     "color": "var(--text-primary)",
     "cursor": "pointer",
@@ -7916,7 +7916,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius)",
-    "box-shadow": "var(--shadow-md)",
+    "box-shadow": "0 4px 16px var(--shadow-color)",
     "left": "0",
     "margin-top": "var(--space-2)",
     "min-width": "160px",
@@ -8109,7 +8109,7 @@
   },
   "mp-profile-btn": {
     "background": "var(--bg-secondary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius)",
     "color": "var(--text-primary)",
     "cursor": "pointer",
@@ -8401,7 +8401,7 @@
   },
   "nb-checkmark": {
     "align-items": "center",
-    "border": "1px solid var(--text-muted)",
+    "border": "1.5px solid var(--text-muted)",
     "border-radius": "var(--radius-sm)",
     "display": "flex",
     "height": "14px",
@@ -10325,7 +10325,7 @@
   },
   "notebook-summary-section": {
     "background": "var(--bg-tertiary)",
-    "border-left": "1px solid var(--border-primary)",
+    "border-left": "3px solid var(--accent)",
     "border-radius": "var(--radius)",
     "display": "flex",
     "flex-direction": "column",
@@ -10884,7 +10884,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "overflow": "hidden",
     "width": "420px"
   },
@@ -12057,7 +12057,7 @@
   },
   "ppt-studio-canvas-card": {
     "background": "var(--bg-tertiary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius)",
     "cursor": "pointer",
     "padding": "var(--space-5) var(--space-6)",
@@ -12345,7 +12345,7 @@
   },
   "ppt-studio-style-card": {
     "background": "var(--bg-tertiary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
     "cursor": "pointer",
     "overflow": "hidden",
@@ -12550,7 +12550,7 @@
   "project-action-btn": {
     "align-items": "center",
     "background": "var(--bg-tertiary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
     "color": "var(--text-primary)",
     "cursor": "pointer",
@@ -12648,7 +12648,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-lg)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "max-height": "85vh",
     "max-width": "95vw",
     "overflow": "hidden",
@@ -12910,7 +12910,7 @@
     "align-items": "flex-start",
     "background": "var(--accent-soft, rgba(124, 108, 240, 0.08))",
     "border": "1px solid color-mix(in srgb, var(--accent, #7c6cf0) 20%, transparent)",
-    "border-left": "1px solid var(--border-primary)",
+    "border-left": "3px solid var(--accent, #7c6cf0)",
     "border-radius": "var(--radius-md)",
     "display": "flex",
     "gap": "var(--space-4)",
@@ -13293,7 +13293,7 @@
   },
   "rich-content-quote": {
     "background": "var(--surface-1)",
-    "border-left": "1px solid var(--border-primary)",
+    "border-left": "3px solid var(--accent)",
     "border-radius": "0 var(--radius-sm) var(--radius-sm) 0",
     "color": "var(--text-secondary)",
     "margin": "0.75em 0",
@@ -13503,7 +13503,7 @@
     "background": "var(--bg-secondary, #1a1a20)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-full)",
-    "box-shadow": "var(--shadow-md)",
+    "box-shadow": "0 2px 8px var(--shadow-color)",
     "color": "var(--text-primary, #e0e0e0)",
     "cursor": "pointer",
     "display": "flex",
@@ -13543,7 +13543,7 @@
     "background": "var(--dropdown-bg, #1f2430)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 24px var(--shadow-color)",
     "max-height": "120px",
     "overflow": "hidden",
     "padding": "var(--space-4) var(--space-5)",
@@ -13592,7 +13592,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "display": "flex",
     "flex-direction": "column",
     "max-height": "400px",
@@ -14058,7 +14058,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-lg)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "max-height": "85vh",
     "max-width": "95vw",
     "overflow": "hidden",
@@ -14149,7 +14149,7 @@
     "background": "var(--dropdown-bg)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-lg)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 16px 48px var(--shadow-color)",
     "display": "flex",
     "flex-direction": "column",
     "height": "480px",
@@ -14385,11 +14385,11 @@
     "transition": "opacity var(--duration-fast)"
   },
   "sidebar-session-context-menu": {
-    "@starting-style {\n    opacity": "0",
+    "@starting-style {\r\n    opacity": "0",
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius)",
-    "box-shadow": "var(--shadow-md)",
+    "box-shadow": "0 4px 16px var(--shadow-color)",
     "min-width": "160px",
     "opacity": "1",
     "padding": "var(--space-2) 0",
@@ -14501,8 +14501,9 @@
     "white-space": "nowrap"
   },
   "sidebar-tool-row": {
-    "background": "transparent",
+    "background": "color-mix(in srgb, var(--accent, #7c6cf0) 8%, transparent)",
     "border-radius": "var(--radius-md)",
+    "box-shadow": "inset 0 1px 3px var(--shadow-color-soft)",
     "display": "flex",
     "gap": "var(--space-1)",
     "margin": "var(--space-2) 0",
@@ -14985,7 +14986,7 @@
   "skin-card": {
     "align-items": "center",
     "background": "var(--bg-secondary, #161b22)",
-    "border": "1px solid var(--border-primary, #30363d)",
+    "border": "2px solid var(--border-primary, #30363d)",
     "border-radius": "var(--radius-md)",
     "cursor": "pointer",
     "display": "flex",
@@ -15372,7 +15373,7 @@
   "sp-avatar": {
     "align-items": "center",
     "background": "var(--bg-tertiary)",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius-full)",
     "display": "flex",
     "flex-shrink": "0",
@@ -16491,7 +16492,7 @@
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-md)",
     "bottom": "calc(100% + 6px)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 24px var(--shadow-color)",
     "left": "50%",
     "max-width": "360px",
     "min-width": "240px",
@@ -16686,7 +16687,7 @@
   },
   "subagent-activity-spinner": {
     "animation": "subagent-spin 0.8s linear infinite",
-    "border": "1px solid var(--border-primary)",
+    "border": "1.5px solid var(--border-primary)",
     "border-radius": "50%",
     "border-top-color": "var(--accent)",
     "display": "inline-block",
@@ -16709,7 +16710,7 @@
   },
   "subagent-elapsed-spinner": {
     "animation": "subagent-spin 0.8s linear infinite",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "50%",
     "border-top-color": "var(--accent)",
     "display": "inline-block",
@@ -16750,7 +16751,7 @@
   "switch-thumb": {
     "background": "var(--surface-content)",
     "border-radius": "50%",
-    "box-shadow": "var(--shadow-sm)",
+    "box-shadow": "0 1px 3px var(--shadow-color)",
     "display": "block",
     "height": "16px",
     "transform": "translateX(2px)",
@@ -16787,7 +16788,7 @@
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-lg)",
-    "box-shadow": "var(--shadow-popover)",
+    "box-shadow": "0 8px 32px var(--shadow-color)",
     "display": "flex",
     "flex-direction": "column",
     "font-family": "inherit",
@@ -17467,7 +17468,7 @@
     "animation": "toast-slide-in 0.3s ease-out",
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
-    "border-left": "1px solid var(--border-primary)",
+    "border-left": "3px solid var(--accent)",
     "border-radius": "var(--radius)",
     "box-shadow": "var(--shadow-raise-2), inset 0 1px 0 var(--highlight-top)",
     "color": "var(--text-primary)",
@@ -18015,7 +18016,7 @@
     "background": "var(--bg-secondary, #1a1a20)",
     "border": "1px solid var(--accent, #7c6cf0)",
     "border-radius": "var(--radius-md)",
-    "box-shadow": "var(--shadow-md)",
+    "box-shadow": "0 4px 24px var(--shadow-color)",
     "max-width": "320px",
     "padding": "var(--space-8)",
     "position": "absolute",
@@ -18317,7 +18318,7 @@
   },
   "usage-record": {
     "background": "var(--bg-tertiary)",
-    "border-left": "2px solid var(--success)",
+    "border-left": "3px solid var(--success)",
     "border-radius": "var(--radius-sm)",
     "padding": "var(--space-5) var(--space-6)"
   },
@@ -18470,7 +18471,7 @@
   },
   "user-avatar-preview": {
     "align-items": "center",
-    "border": "1px solid var(--border-primary)",
+    "border": "2px solid var(--border-primary)",
     "border-radius": "var(--radius-full)",
     "display": "flex",
     "flex-shrink": "0",
