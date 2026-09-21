@@ -159,6 +159,7 @@ function emitToBus(event: SessionEvent): void {
     });
 }
 import type { SessionEvent, SessionEventType } from "./event-types";
+import { isValidEventType } from "./event-types";
 
 // ========== Schema ==========
 
@@ -175,6 +176,55 @@ CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_
 `;
 
 // ========== Event Log Implementation ==========
+
+/**
+ * 写入侧守卫：**事件类型名必须在权威集合里**（第 68 轮补）。
+ *
+ * ## 为什么要有它（真机取证）
+ *
+ * `ui-trajectory-provider.ts` 一直在写 `trajectory_step`、`loop-stop-log.ts` 一直在写
+ * `loop_stopped`，两个名字都不在 `event-types.ts` 的权威集合里 —— 写进去时没人拦，
+ * 直到维护的结构自检把它们**逐条**报成 `Unknown event type`：真机一次维护报
+ * **7360 处结构异常**，还带着"该功能本次没有生效"的措辞。事件是**唯一没有等价物**的存储，
+ * 它的自检被这种噪声淹没，等于没有自检。
+ *
+ * ## 处置：**只拦不丢、在源头如实上报**
+ *
+ * - **不抛**：写入侧抛错会让上游"因为一个类型名没登记"丢掉一条真实事件（更坏的结果）；
+ * - **不自动登记**：这一条是刻意选的。自动登记等于"凡是被写过的类型都合法" ——
+ *   那结构自检就再也检不出类型漂移了（判据被自己抹平，正是本项目最忌讳的
+ *   "印出来的不是真的"）。所以**权威集合说了算**，写进来的野类型照样会被自检报出来；
+ * - **同一个名字只报一次**（热路径不刷屏）：把"这里有个没登记的类型"这件事
+ *   在**产生它的地方**说清楚，而不是等维护时一次吐几千条。
+ *
+ * 静态能查的（字面量、同文件常量）由 `src/test/event-type-write-sites.test.ts` 在提交前拦住；
+ * 这里兜的是**运行期才知道的类型名**（插件从配置/市场读出来的名字）。
+ */
+const warnedUnknownEventTypes = new Set<string>();
+
+function guardEventType(type: SessionEventType | string): void {
+  const name = String(type);
+  if (isValidEventType(name)) return;
+  if (warnedUnknownEventTypes.has(name)) return;
+  warnedUnknownEventTypes.add(name);
+  /**
+   * ⚠️ 上报的 area **带上类型名**：`persist-failure` 的失败表是按 **area** 去重的，
+   * 用同一个 area 会让"两种野类型"合成一条、而且只留下**第一个**名字
+   * （第一版就是这样：第二个名字在界面上根本看不见）。
+   */
+  reportPersistFailure(
+    `eventLog.unknownType.${name}`,
+    new Error(`未注册的事件类型：${name}`),
+    `事件**照样写入**（不丢数据），但这个名字不在权威集合里 ⇒ 维护的"事件库结构自检"` +
+      `会把它的**每一条**都算成结构异常（真机实测 7360 条，把真问题淹了）。` +
+      `请把它加进 src/core/storage/event-types.ts 的 BUILTIN_EVENT_TYPES，或在写入方 registerCustomEventType()。`,
+  );
+}
+
+/** 测试用：清掉"已上报过的未注册类型"记忆 */
+export function __resetUnknownEventTypeWarnings(): void {
+  warnedUnknownEventTypes.clear();
+}
 
 export class EventLog {
   private static instance: EventLog | null = null;
@@ -195,6 +245,7 @@ export class EventLog {
     type: SessionEventType | string,
     payload: Record<string, unknown>,
   ): SessionEvent {
+    guardEventType(type);
     // 路由到镜像的**唯一条件**：该会话的事件已完整加载（见 rustEventPort 注释）。
     // 未加载完 → 由下面的 `rustEventPortAny()` 接手（占位 seq 会被加载逻辑保留）。
     const routed = rustEventPort(sessionId);
@@ -272,6 +323,7 @@ export class EventLog {
     sessionId: string,
     events: Array<{ type: SessionEventType | string; payload: Record<string, unknown> }>,
   ): SessionEvent[] {
+    for (const evt of events) guardEventType(evt.type);
     // 与 append 同样的分流：该会话已加载完 → 走镜像 + 批量发件箱（单事务、seq 连续）
     const routed = rustEventPort(sessionId) ?? rustEventPortAny();
     if (routed) {

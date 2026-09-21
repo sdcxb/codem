@@ -24,6 +24,7 @@ function installFsStub(): void {
         if (cmd === "get_app_data_dir") return "C:\\appdata\\";
         if (cmd === "write_file") { files.set(args.path, args.content); return undefined; }
         if (cmd === "append_file") { files.set(args.path, (files.get(args.path) ?? "") + args.content + "\n"); return undefined; }
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           if (!files.has(args.path)) throw new Error("no such file");
           return files.get(args.path);
@@ -75,6 +76,7 @@ function attachmentRow(id: string): Record<string, unknown> | undefined {
   return port.__table("attachments").find((r) => String(r.id) === id);
 }
 import type { Message } from "../store";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 const SESSION = "sess-att";
 

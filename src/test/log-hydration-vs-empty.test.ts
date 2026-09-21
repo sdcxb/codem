@@ -33,6 +33,7 @@ import { setStoragePort } from "../core/storage/port";
 import { resetPersistFailures } from "../core/storage/persist-failure";
 import { __resetSaveFingerprints, useAppStore } from "../store";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 const SESSION = "sess-log-lagging";
 const APP_DIR = "C:/fake-appdata/";
@@ -48,6 +49,13 @@ function installFakeFs(seedJsonl: string | null, opts: { readFails?: boolean } =
     core: {
       invoke: async (cmd: string, args?: Record<string, unknown>) => {
         if (cmd === "get_app_data_dir") return APP_DIR;
+        if (cmd === "read_text_window") {
+          // ⚠️ 第 68 轮：会话日志改走**分窗**读取（`readTextWindow`），
+          // 所以"读失败"必须注入在这里 —— 注入到 `read_file` 上会变成一条
+          // **测不到东西**的用例（读日志的路径已经不走整读了）。
+          if (opts.readFails) throw new Error("IPC 读文件失败");
+          return textWindowSlice(files, args);
+        }
         if (cmd === "read_file") {
           if (opts.readFails) throw new Error("IPC 读文件失败");
           const p = String(args?.path);

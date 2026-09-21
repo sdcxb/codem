@@ -20,6 +20,7 @@ function installFsStub(): void {
         if (cmd === "get_app_data_dir") return "C:\\appdata\\";
         if (cmd === "write_file") { files.set(args.path, args.content); return undefined; }
         if (cmd === "append_file") { files.set(args.path, (files.get(args.path) ?? "") + args.content + "\n"); return undefined; }
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") { if (!files.has(args.path)) throw new Error("no such file"); return files.get(args.path); }
         if (cmd === "list_directory") return [];
         if (cmd === "delete_file") { files.delete(args.path); return undefined; }
@@ -40,6 +41,7 @@ import { flushSessionLogWrites, readSessionMessages, appendSessionMessage, __res
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 /**
  * 注册一个**干净的空端口**并（可选）播种会话行。

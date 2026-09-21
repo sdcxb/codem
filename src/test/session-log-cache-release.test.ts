@@ -44,6 +44,7 @@ import { setStoragePort } from "../core/storage/port";
 import { resetPersistFailures } from "../core/storage/persist-failure";
 import { useAppStore } from "../store";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 const A = "sess-log-release-a";
 const B = "sess-log-release-b";
@@ -58,6 +59,7 @@ function installFakeFs() {
     core: {
       invoke: async (cmd: string, args?: Record<string, unknown>) => {
         if (cmd === "get_app_data_dir") return APP_DIR;
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           const p = String(args?.path);
           if (!files.has(p)) throw new Error(`not found: ${p}`);

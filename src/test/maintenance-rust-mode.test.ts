@@ -49,6 +49,7 @@ function installFsStub(): void {
           files.set(args.path, (files.get(args.path) ?? "") + args.content + "\n");
           return undefined;
         }
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           if (!files.has(args.path)) throw new Error("no such file");
           return files.get(args.path);
@@ -90,6 +91,7 @@ import { hasStoragePort, setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import type { FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 const SESSION = "sess-maint";
 

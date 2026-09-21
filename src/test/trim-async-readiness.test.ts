@@ -31,6 +31,7 @@ import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
 import { appendSessionMessage, flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
 import type { Message } from "../store";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 const PROJECT = "p-trim-async";
 const SESSION = "s-trim-async";
@@ -51,6 +52,7 @@ function installFsStub(): void {
           files.set(args.path, (files.get(args.path) ?? "") + args.content + "\n");
           return undefined;
         }
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           if (!files.has(args.path)) throw new Error("no such file");
           return files.get(args.path);

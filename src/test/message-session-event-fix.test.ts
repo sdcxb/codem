@@ -36,6 +36,7 @@ function installFsStub(): void {
           files.set(args.path, (files.get(args.path) ?? "") + args.content + "\n");
           return undefined;
         }
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           if (!files.has(args.path)) throw new Error("no such file");
           return files.get(args.path);
@@ -94,6 +95,7 @@ import {
 import { rebuildIndexFromSessionLogs } from "../core/storage/session-log-bridge";
 import { reportPersistFailure, getPersistFailures, resetPersistFailures } from "../core/storage/persist-failure";
 import type { Message } from "../store";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 function makeMessage(id: string, timestamp: number, content = `内容 ${id}`): Message {
   return { id, role: "user", content, timestamp } as Message;

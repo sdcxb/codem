@@ -51,7 +51,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // 虚拟文件系统：JSONL 日志走 file-api（appendFile/readFile/…）
-vi.mock("../core/file-api", () => {
+//
+// ⚠️ 第 68 轮：会话日志的读路径改成**分窗** `readTextWindow`（整读有 50 MB 护栏，
+// 真机见过 600 MB 的日志），所以这个 mock 也必须提供它 —— 切片逻辑用共享桩，
+// 避免每个测试文件各抄一份（抄歪的方向是"测试绿、产品红"）。
+vi.mock("../core/file-api", async () => {
+  const { textWindowSlice } = await import("./helpers/tauri-fs-stub");
   const files = new Map<string, string>();
   return {
     __files: files,
@@ -62,6 +67,9 @@ vi.mock("../core/file-api", () => {
       if (!files.has(p)) throw new Error(`ENOENT: ${p}`);
       return files.get(p)!;
     }),
+    readTextWindow: vi.fn(async (p: string, offset = 0, maxBytes?: number) =>
+      textWindowSlice(files, { path: p, offset, maxBytes }),
+    ),
     writeFile: vi.fn(async (p: string, c: string) => {
       files.set(p, c);
     }),

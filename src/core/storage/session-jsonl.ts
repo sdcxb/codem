@@ -18,11 +18,20 @@
  * 只有当一条消息**确实已经在 JSONL 里**，才允许把它从索引里删掉 —— 这就是"索引可重建"的前提。
  */
 
-import { appendFile, readFile, listDirectory, writeFile, deleteFile, renameFile } from "../file-api";
+import { appendFile, readTextWindow, listDirectory, writeFile, deleteFile, renameFile } from "../file-api";
+import { reportPersistFailure } from "./persist-failure";
 import type { Message } from "../../store";
 
 /** 单行格式版本：将来改字段时按版本兼容读取 */
 const LINE_VERSION = 1;
+
+/**
+ * 读日志时的单次窗口字节数（8 MB，与 Rust 侧上限一致）。
+ *
+ * 600 MB 的日志 = 75 次 IPC，每次拿到的是**可回收**的临时字符串；
+ * 相比"一次 600 MB"或"直接报错读不到"，这是唯一既安全又可行的形态。
+ */
+const LOG_READ_WINDOW_BYTES = 8 * 1024 * 1024;
 
 export interface JsonlMessageRecord {
   v: number;
@@ -109,13 +118,50 @@ export function __resetJsonlCache(): void {
  * 追加写是 fire-and-forget（写日志失败不能打断对话），但**耐久性检查必须看到最新日志**：
  * 否则裁剪索引时可能读到旧内容，导致"该裁的没裁"（无害）或时序上的误判。
  * `flushSessionLogWrites()` 用在需要确定性的地方（裁剪索引前、退出前）。
+ *
+ * ## ⚠️ 第 68 轮：从"一个全局集合"改成**按会话**（真机取证的一个真缺陷）
+ *
+ * 原来只有一个全局 `Set<Promise>`，而日志压缩的"读到内容后还有没有别的写在途"
+ * （`othersPending`）判的就是这个集合 —— 于是**别的会话**（或自动保存）只要有一次追加在途，
+ * 本次压缩就放弃。真机实测（本机 1.16.117 冷启动，8 个会话日志）：
+ * ```text
+ * [SessionJSONL] 会话 <每个会话> 日志压缩推迟：读到内容后仍有别的追加在途（宁可不压，也不丢消息）
+ * [Maintenance] 维护完成：… 日志压缩 0 个会话 …
+ * ```
+ * **每一次维护、每一个会话**都在推迟 ⇒ 压缩事实上从未执行过。
+ * 而压缩是权威日志**唯一**的体积控制手段 —— 这就是"会话日志能长到 600 MB"的上游原因。
+ *
+ * 现在按会话分桶：压缩只关心**自己这个会话**有没有在途追加（那才是会与 rename 打架的那一类），
+ * `flushSessionLogWrites()` 的语义不变（等齐**所有**在途写，裁剪索引前用它）。
  */
-const pendingAppends = new Set<Promise<void>>();
+const pendingAppendsBySession = new Map<string, Set<Promise<void>>>();
+
+function trackPendingAppend(sessionId: string, task: Promise<void>): void {
+  let set = pendingAppendsBySession.get(sessionId);
+  if (!set) {
+    set = new Set();
+    pendingAppendsBySession.set(sessionId, set);
+  }
+  set.add(task);
+  void task.finally(() => {
+    set!.delete(task);
+    if (set!.size === 0) pendingAppendsBySession.delete(sessionId);
+  });
+}
+
+/** 某会话在途的追加写条数（诊断用：压缩推迟时要能说清"还有几个"） */
+export function pendingAppendCount(sessionId?: string): number {
+  if (sessionId !== undefined) return pendingAppendsBySession.get(sessionId)?.size ?? 0;
+  let n = 0;
+  for (const set of pendingAppendsBySession.values()) n += set.size;
+  return n;
+}
 
 /** 等待所有在途的追加写落盘 */
 export async function flushSessionLogWrites(): Promise<void> {
-  if (pendingAppends.size === 0) return;
-  await Promise.allSettled([...pendingAppends]);
+  const all = [...pendingAppendsBySession.values()].flatMap((s) => [...s]);
+  if (all.length === 0) return;
+  await Promise.allSettled(all);
 }
 
 /**
@@ -136,8 +182,12 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
        *
        * ⚠️ **不在** `flushSessionLogWrites()` 里做这件事（那会造成死锁：压缩自己也在等它，
        * 而这些追加又在等压缩）。`flushSessionLogWrites` 的语义保持"等齐**先前**的写"。
+       *
+       * 第 68 轮：改等**本会话**的在途写即可（原来等的是全局集合；压缩在别的会话有写时
+       * 会一直退让 —— 那正是"压缩从未执行"的上游原因，见 `pendingAppendsBySession` 的注释）。
        */
-      if (pendingAppends.size > 0) await Promise.allSettled([...pendingAppends]);
+      const mine = pendingAppendsBySession.get(sessionId);
+      if (mine && mine.size > 0) await Promise.allSettled([...mine]);
 
       const record: JsonlMessageRecord = {
         v: LINE_VERSION,
@@ -185,9 +235,68 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
       console.warn("[SessionJSONL] 追加消息失败（SQLite 索引仍在）:", e);
     }
   })();
-  pendingAppends.add(task);
-  void task.finally(() => pendingAppends.delete(task));
+  trackPendingAppend(sessionId, task);
   return task;
+}
+
+/**
+ * 逐行消费一份会话日志 —— **分窗读取**，整份文件永远不一次性进 JS 堆。
+ *
+ * ## 为什么必须这样读（第 68 轮的真机取证）
+ *
+ * 会话的权威副本是 `sessions/<id>.jsonl` **追加日志**，它随对话增长。真机见过
+ * **单个会话日志 600 MB**。而读日志的三条路径原来都走 `readFile`（整读），
+ * 它有一条 50 MB 的护栏（那条护栏本身是对的：600 MB 一次性进 JS 堆不该做），于是：
+ *
+ * | 路径 | 超限后的行为 | 后果 |
+ * | --- | --- | --- |
+ * | `hydrateSessionLog` | 打日志"读取日志失败（回退到索引）" | 该会话的权威副本永久离线 |
+ * | `backfillAllSessions` | 打"回填失败（跳过）" | 新会话的权威日志建不出来 |
+ * | `compactSessionLog` | **裸 catch → 直接 return"没压"** | **唯一能给它瘦身的机制静默失效** |
+ *
+ * 第三条是最要命的：维护汇总打印 `日志压缩 0 个会话`，看起来像"没有需要压缩的"，
+ * 实际是"根本读不出来" —— 于是日志永远不会变小、永远读不出来（自锁）。
+ *
+ * ## 语义
+ *
+ * - **行对齐**：Rust 侧每次返回完整行，`nextOffset` 落在行首 ⇒ 不会切出半行 JSON；
+ * - `cb` 返回 `false` 表示"够了，别再读了"（`isSessionDeleted` 找到墓碑就停）；
+ * - 读失败**照原样抛出**（调用方决定怎么如实上报），不吞成"没有数据"。
+ *
+ * @returns 读到的行数（`stopped` = 是否被回调提前叫停）
+ */
+export async function forEachLogLine(
+  path: string,
+  cb: (line: string) => boolean | void,
+): Promise<{ lines: number; stopped: boolean }> {
+  let offset = 0;
+  let lines = 0;
+  for (;;) {
+    const w = await readTextWindow(path, offset, LOG_READ_WINDOW_BYTES);
+    if (w.text) {
+      // 窗口只含完整行；`text` 以 "\n" 结尾时 split 会产生一个尾部空串（跳过它）。
+      // 文件末尾未换行的最后一行**不带** "\n"，split 后是正常元素，会被保留。
+      const parts = w.text.split("\n");
+      const last = parts.length - 1;
+      for (let i = 0; i < parts.length; i++) {
+        if (i === last && parts[i] === "") continue;
+        lines++;
+        if (cb(parts[i]) === false) return { lines, stopped: true };
+      }
+    }
+    offset = w.nextOffset;
+    if (w.eof) break;
+    if (!w.text && !w.eof) {
+      /*
+       * 既没读到内容、又没到末尾：说明 `nextOffset` 没有前进。
+       * 继续循环会变成死循环（把主线程卡死），所以**明确抛出**而不是硬转。
+       */
+      throw new Error(
+        `E_WINDOW_NO_PROGRESS: read_text_window 在 offset=${offset} 处既未读到内容也未到末尾`,
+      );
+    }
+  }
+  return { lines, stopped: false };
 }
 
 /**
@@ -237,9 +346,36 @@ export async function readSessionMessages(
   sessionId: string,
 ): Promise<{ messages: JsonlMessageRecord[]; skippedLines: number }> {
   const result: { messages: JsonlMessageRecord[]; skippedLines: number } = { messages: [], skippedLines: 0 };
-  let raw: string;
+  const path = await sessionLogPath(sessionId);
+  const byId = new Map<string, JsonlMessageRecord>();
+  const tombstones = new Set<string>();
   try {
-    raw = await readFile(await sessionLogPath(sessionId));
+    /*
+     * 第 68 轮：整读 → **分窗逐行**。
+     *
+     * 原来这里 `raw = await readFile(path)`：一份日志一旦超过 50 MB（真机见过 600 MB），
+     * 它就恒抛 `E_FILE_TOO_LARGE` —— 于是这个会话的权威副本永久读不到
+     * （上层"回退到索引"、回填跳过、压缩静默失效，详见 `forEachLogLine` 的注释）。
+     * 现在按 8 MB 窗口循环消费，语义（后写者胜 / 墓碑 / 坏行计数）一字未改。
+     */
+    await forEachLogLine(path, (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        const parsed = JSON.parse(trimmed) as JsonlMessageRecord;
+        if (!parsed || typeof parsed.id !== "string") throw new Error("bad record");
+        if (parsed.deleted) {
+          // 墓碑：后写者胜的语义在"删除"上同样成立 —— 删除之后再写入就是重新出现
+          tombstones.add(parsed.id);
+          byId.delete(parsed.id);
+          return;
+        }
+        tombstones.delete(parsed.id);
+        byId.set(parsed.id, parsed);
+      } catch {
+        result.skippedLines++;
+      }
+    });
   } catch (e) {
     /**
      * ## 第 50 轮：**"文件不存在"与"读失败"必须分开**（同一类缺陷的最后一层）
@@ -263,26 +399,6 @@ export async function readSessionMessages(
      */
     if (isFileMissingError(e)) return result; // 还没有日志：正常（老会话尚未回填）
     throw e;
-  }
-  const byId = new Map<string, JsonlMessageRecord>();
-  const tombstones = new Set<string>();
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed) as JsonlMessageRecord;
-      if (!parsed || typeof parsed.id !== "string") throw new Error("bad record");
-      if (parsed.deleted) {
-        // 墓碑：后写者胜的语义在"删除"上同样成立 —— 删除之后再写入就是重新出现
-        tombstones.add(parsed.id);
-        byId.delete(parsed.id);
-        continue;
-      }
-      tombstones.delete(parsed.id);
-      byId.set(parsed.id, parsed);
-    } catch {
-      result.skippedLines++;
-    }
   }
   result.messages = [...byId.values()]
     .filter((m) => !tombstones.has(m.id))
@@ -320,8 +436,7 @@ export async function appendMessageTombstone(sessionId: string, messageId: strin
    * 墓碑走 `appendFile` 但没登记在途状态 —— 于是"删了消息立刻 flush 再读日志"会读到旧内容，
    * 压缩后的耐久性检查（以及退出时的落盘确定性）都跟着不可靠。
    */
-  pendingAppends.add(task);
-  void task.finally(() => pendingAppends.delete(task));
+  trackPendingAppend(sessionId, task);
   return task;
 }
 
@@ -408,8 +523,7 @@ export async function appendSessionTombstone(sessionId: string): Promise<void> {
     }
   })();
   // 与消息墓碑一致：登记在途，`flushSessionLogWrites()` 才等得到它（第 83 波的教训）
-  pendingAppends.add(task);
-  void task.finally(() => pendingAppends.delete(task));
+  trackPendingAppend(sessionId, task);
   return task;
 }
 
@@ -440,22 +554,27 @@ export function isSessionTombstone(record: { id?: unknown; deleted?: unknown }):
  * @returns true = 日志里有会话墓碑
  */
 export async function isSessionDeleted(sessionId: string): Promise<boolean> {
-  let raw: string;
+  let found = false;
   try {
-    raw = await readFile(await sessionLogPath(sessionId));
+    const path = await sessionLogPath(sessionId);
+    // 分窗逐行（第 68 轮同 `readSessionMessages`）：找到墓碑**立刻停**，不读完整份日志
+    await forEachLogLine(path, (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        if (isSessionTombstone(JSON.parse(trimmed))) {
+          found = true;
+          return false; // 提前收敛
+        }
+      } catch {
+        /* 坏行跳过：坏行不该被当成墓碑（宁可多复活一个会话，也不要因为一行坏数据把活会话判死） */
+      }
+      return;
+    });
   } catch {
     return false; // 没有日志文件 = 没有墓碑（老会话）
   }
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      if (isSessionTombstone(JSON.parse(trimmed))) return true;
-    } catch {
-      /* 坏行跳过：坏行不该被当成墓碑（宁可多复活一个会话，也不要因为一行坏数据把活会话判死） */
-    }
-  }
-  return false;
+  return found;
 }
 
 /**
@@ -529,49 +648,88 @@ export async function compactSessionLog(
    *    这次压缩直接放弃（宁可不省空间，也不能丢一条消息）。
    */
   let self: Promise<unknown> | null = null;
-  /** 压缩自己也在 `pendingAppends` 里（为了挡住后到的追加），查"别人"时要排掉自己 */
-  const othersPending = () => [...pendingAppends].some((p) => p !== self);
+  /**
+   * 压缩自己也在在途表里（为了挡住后到的追加），查"别人"时要排掉自己。
+   *
+   * ⚠️ 第 68 轮：判据从"**全局**还有没有别的写在途"收窄成"**本会话**还有没有别的写在途"。
+   * 前者会让压缩在"任何会话/自动保存有一次追加在途"时全部退让 —— 真机实测就是每个会话
+   * 每次维护都在推迟（维护汇总永远 `日志压缩 0 个会话`），而压缩是日志**唯一**的体积控制手段。
+   * 后者才是真正会与 rename 打架的那一类（同一个文件）。
+   */
+  const othersPending = () => {
+    const mine = pendingAppendsBySession.get(sessionId);
+    if (!mine) return false;
+    return [...mine].some((p) => p !== self);
+  };
 
   const task = (async () => {
     try {
       await flushSessionLogWrites();
       const path = await sessionLogPath(sessionId);
-      let raw: string;
+      /**
+       * ## 第 68 轮：这里原来是 `try { raw = await readFile(path) } catch { return out }`
+       *
+       * 那条**裸 catch** 是本轮真机抓到的自锁：一份 600 MB 的会话日志在 `readFile` 的
+       * 50 MB 护栏上恒抛错 → 直接 `return out`（"没压"）→ 维护汇总打印
+       * `日志压缩 0 个会话`，**看起来像"没有需要压缩的"**，实际是"根本读不出来"。
+       * 而压缩正是唯一能让日志变小、从而重新可读的机制 ⇒ 日志永远变小不了、永远读不出来。
+       *
+       * 现在：**分窗逐行**读（`forEachLogLine`，8 MB 一窗，整份文件不进 JS 堆），
+       * 并且读失败**如实上报**（`reportPersistFailure`）——不再是"静默没压"。
+       */
+      const lastById = new Map<string, string>();
+      let linesBefore = 0;
       try {
-        raw = await readFile(path);
-      } catch {
+        await forEachLogLine(path, (line) => {
+          if (!line.trim()) return;
+          linesBefore++;
+          try {
+            const parsed = JSON.parse(line) as JsonlMessageRecord;
+            if (parsed && typeof parsed.id === "string") lastById.set(parsed.id, line);
+          } catch {
+            /* 坏行在压缩时被丢弃（它本来也读不出来） */
+          }
+        });
+      } catch (e) {
+        /*
+         * 读不出来**不是"没什么可压"**：如实报，并说明后果（这份日志会一直是这个体积）。
+         * `isFileMissingError`：还没有日志属于正常（无处可压），不报。
+         */
+        if (!isFileMissingError(e)) {
+          reportPersistFailure(
+            "sessionLog.compact",
+            e,
+            `会话 ${sessionId} 的日志**没有压缩**（读不出来）。日志是权威副本，` +
+              `而压缩是它唯一的体积控制手段 ⇒ 它会一直是这个体积（不会被误删，但也不会变小）。`,
+          );
+        }
         return out;
       }
       /**
-       * 读完之后再查一次：这段时间里若有**别人的**追加写登记进来，它写的是我们手里
-       * 这份 raw 之后的内容，而 rename 会把它的成果覆盖掉 —— 所以放弃这次压缩。
+       * 读完之后再查一次：这段时间里若有**本会话的**追加写登记进来，它写的是我们手里
+       * 这份内容之后的部分，而 rename 会把它的成果覆盖掉 —— 所以放弃这次压缩。
        *
        * ⚠️ 必须排掉自己（`othersPending`）：压缩为了挡住后到的追加，会把自己也登记进
-       * `pendingAppends`（见函数尾）。若这里查的是裸 `pendingAppends.size`，它永远 > 0，
+       * 在途表（见函数尾）。若这里查的是裸集合大小，它永远 > 0，
        * 压缩就**永远不会执行** —— 这个自锁是我第一版写出来的，`SLOG-10` 当场抓到。
+       *
+       * ⚠️ 第 68 轮再修一次（方向不同）：判据**只认本会话**。原来认全局，
+       * 于是"别的会话有一次自动保存在途"就能让本会话的压缩永远退让。
+       * 真机取证见 `pendingAppendsBySession` 的注释：8 个会话、每次维护全部推迟。
        */
       if (othersPending()) {
         console.log(
-          `[SessionJSONL] 会话 ${sessionId} 日志压缩推迟：读到内容后仍有别的追加在途（宁可不压，也不丢消息）`,
+          `[SessionJSONL] 会话 ${sessionId} 日志压缩推迟：读到内容后本会话仍有 ` +
+            `${pendingAppendCount(sessionId) - 1} 条追加在途（宁可不压，也不丢消息）`,
         );
         return out;
       }
-      const lines = raw.split("\n").filter((l) => l.trim());
-      out.linesBefore = lines.length;
-      if (lines.length < MIN_LOG_LINES_TO_COMPACT) return out;
+      out.linesBefore = linesBefore;
+      if (linesBefore < MIN_LOG_LINES_TO_COMPACT) return out;
 
-      const lastById = new Map<string, string>();
-      for (const line of lines) {
-        try {
-          const parsed = JSON.parse(line) as JsonlMessageRecord;
-          if (parsed && typeof parsed.id === "string") lastById.set(parsed.id, line);
-        } catch {
-          /* 坏行在压缩时被丢弃（它本来也读不出来） */
-        }
-      }
       out.linesAfter = lastById.size;
       // 安全性检查：压缩只应减少"被取代的旧行"，不能少于唯一 id 数
-      if (out.linesAfter === 0 || out.linesAfter >= lines.length) return out;
+      if (out.linesAfter === 0 || out.linesAfter >= linesBefore) return out;
 
       const tmp = `${path}.tmp`;
       await writeFile(tmp, [...lastById.values()].join("\n") + "\n");
@@ -587,8 +745,7 @@ export async function compactSessionLog(
     }
   })();
   self = task;
-  pendingAppends.add(task as unknown as Promise<void>);
-  void task.finally(() => pendingAppends.delete(task as unknown as Promise<void>));
+  trackPendingAppend(sessionId, task as unknown as Promise<void>);
   return task;
 }
 

@@ -33,6 +33,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { getPersistFailures, resetPersistFailures } from "../core/storage/persist-failure";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 const SESSION = "sess-behind";
 const APP_DIR = "C:/fake-appdata/";
@@ -51,6 +52,7 @@ function installFakeFs(seed: string | null) {
     core: {
       invoke: async (cmd: string, args?: Record<string, unknown>) => {
         if (cmd === "get_app_data_dir") return APP_DIR;
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           const p = String(args?.path);
           if (!files.has(p)) throw new Error(`not found: ${p}`);
@@ -211,10 +213,11 @@ describe("BEHIND：索引落后于权威日志必须被发现并修回", () => {
 
   it("BEHIND-3b: 日志**读失败** → 不告警（拿不到可信集合时不许瞎猜）", async () => {
     installFakeFs([jsonlLine("m1", "一", 1)].join("\n"));
-    // 让 read_file 抛一个"不是文件不存在"的错误 → 日志状态变 failed
+    // 让**分窗读取**抛一个"不是文件不存在"的错误 → 日志状态变 failed
+    // （⚠️ 第 68 轮：读日志已不走整读 `read_file`；注入到那边这条用例就测不到东西了）
     const origInvoke = (window as any).__TAURI__.core.invoke;
     (window as any).__TAURI__.core.invoke = async (cmd: string, args?: Record<string, unknown>) => {
-      if (cmd === "read_file" && String(args?.path).includes(SESSION)) throw new Error("IPC 读文件失败");
+      if (cmd === "read_text_window" && String(args?.path).includes(SESSION)) throw new Error("IPC 读文件失败");
       return origInvoke(cmd, args);
     };
     await installPort({ indexRows: 0 });

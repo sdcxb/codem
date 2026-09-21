@@ -19,6 +19,7 @@ import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
 import { getSetting, setSetting, removeSetting, getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import type { Message } from "../store";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 // ========== 测试常量 ==========
 const PROJECT_ID = "proj-chat-test";
@@ -129,6 +130,7 @@ async function installSessionLogStub(): Promise<void> {
           files.set(args.path as string, (files.get(args.path as string) ?? "") + (args.content as string) + "\n");
           return undefined;
         }
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           if (!files.has(args.path as string)) throw new Error("no such file");
           return files.get(args.path as string);

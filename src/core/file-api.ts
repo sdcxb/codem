@@ -25,6 +25,51 @@ export async function readFile(path: string): Promise<string> {
   return tauriInvoke("read_file", { path });
 }
 
+/**
+ * 整读失败的**机器可读判据**：Rust 侧超限时返回以 `E_FILE_TOO_LARGE:` 开头的错误。
+ *
+ * 为什么要有稳定前缀：会话的权威副本（`sessions/<id>.jsonl`）会随对话长到几百 MB，
+ * 而整读日志的调用方需要**判断"该切分窗读取了"还是"真的读不到"** ——
+ * 靠错误文本里有没有 "File is large" 这种自然语言判据太脆（改一个词就静默失效），
+ * 所以 Rust 侧改成一个稳定的错误码前缀（见 `src-tauri/src/lib.rs::read_file`）。
+ */
+export const ERR_FILE_TOO_LARGE = "E_FILE_TOO_LARGE:";
+
+/** 这个错误是不是"文件太大、整读被护栏挡住"（⇒ 应当改走分窗读取） */
+export function isFileTooLargeError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return msg.includes(ERR_FILE_TOO_LARGE);
+}
+
+/** 分窗读取的返回体（对应 Rust `read_text_window`） */
+export interface TextWindow {
+  /** 本次返回的文本，**只含完整行**（除文件末尾未换行的最后一行） */
+  text: string;
+  /** 下一次调用应传的 offset（总是指向行首） */
+  nextOffset: number;
+  /** 是否已到文件末尾 */
+  eof: boolean;
+  /** 文件总字节数 */
+  size: number;
+}
+
+/**
+ * 分窗读取文本文件（Rust `read_text_window`，**行对齐**）。
+ *
+ * 用途：读**可能极大**的文本文件（本项目的权威会话日志）。`readFile` 有 50 MB 上限，
+ * 那是给"整读源文件"用的护栏；600 MB 的日志既不该一次性进 JS 堆，也不该变成"读不到"。
+ *
+ * @param offset   起始字节位置（必须是行首：用上一次返回的 `nextOffset`）
+ * @param maxBytes 单次窗口上限（Rust 侧夹到 64 KB ~ 8 MB）
+ */
+export async function readTextWindow(
+  path: string,
+  offset = 0,
+  maxBytes?: number,
+): Promise<TextWindow> {
+  return tauriInvoke("read_text_window", { path, offset, maxBytes });
+}
+
 /** Result of a paginated file read via read_file_lines. */
 export interface ReadFileLinesResult {
   /** The numbered text (lines with "N: " prefix, joined by \n). */

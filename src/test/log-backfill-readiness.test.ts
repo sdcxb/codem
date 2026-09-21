@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
+import { textWindowSlice } from "./helpers/tauri-fs-stub";
 
 const SID = "backfill-session";
 
@@ -47,6 +48,7 @@ function installTauri(): { files: Map<string, string> } {
           files.set(args.path as string, (files.get(args.path as string) ?? "") + (args.content as string) + "\n");
           return undefined;
         }
+        if (cmd === "read_text_window") return textWindowSlice(files, args);
         if (cmd === "read_file") {
           if (!files.has(args.path as string)) throw new Error("no such file");
           return files.get(args.path as string);
@@ -199,6 +201,7 @@ describe("BF：权威日志回填必须先等消息镜像就绪", () => {
             files.set(args.path as string, (files.get(args.path as string) ?? "") + (args.content as string) + "\n");
             return undefined;
           }
+          if (cmd === "read_text_window") return textWindowSlice(files, args);
           if (cmd === "read_file") {
             if (!files.has(args.path as string)) throw new Error("系统找不到指定的路径。 (os error 3)");
             return files.get(args.path as string);

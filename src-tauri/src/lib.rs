@@ -391,6 +391,130 @@ async fn set_default_agent(
 /// while keeping IPC + JS string handling under ~500 ms.
 const READ_FILE_FULL_MAX_BYTES: u64 = 50 * 1024 * 1024;
 
+/// 分窗读取的**上限**（单次 IPC 返回的字节数）。8 MB 是"IPC 与 JS 字符串都舒服"的量级：
+/// 600 MB 的会话日志 = 75 次 IPC，每次的字符串都是可回收的临时对象。
+const TEXT_WINDOW_MAX_BYTES: u64 = 8 * 1024 * 1024;
+/// 分窗读取的**下限**（调用方给得太小会退化成逐行 IPC）。
+const TEXT_WINDOW_MIN_BYTES: u64 = 64 * 1024;
+/// 单行允许的最大长度。JSONL 的一行是一条消息（正文 + 思考 + 工具调用），
+/// 正常几十 KB、极端几百 KB；这里给 128 MB 的硬上限只是为了**不把内存吃光**，
+/// 真撞上就应该明确报错，而不是悄悄截断（截断 = 造出一条坏行）。
+const TEXT_WINDOW_MAX_LINE_BYTES: u64 = 128 * 1024 * 1024;
+
+/// 分窗读取的返回体。`next_offset` **总是指向下一个行首**（或文件末尾），
+/// 所以调用方循环时永远从"一行的开头"继续，不会切出半行。
+#[derive(serde::Serialize)]
+struct TextWindow {
+    /// 本次返回的文本。**只含完整行**（除文件末尾未换行的最后一行）。
+    text: String,
+    /// 下一次调用应当传的 offset（= 本次消费到的字节位置）
+    next_offset: u64,
+    /// 是否已到文件末尾
+    eof: bool,
+    /// 文件总字节数（让调用方不必再问一次）
+    size: u64,
+}
+
+/// `read_text_window` 的实现体（与命令分开：纯函数才能被单测直接喂临时文件）。
+///
+/// ## 为什么必须"行对齐"
+///
+/// 直接在任意字节处切开会切出**半行 JSON**；更糟的是切在多字节 UTF-8 字符中间会让整个
+/// 窗口解码失败。所以每次读完 `max_bytes` 之后继续读到**下一个换行符**为止，
+/// 并且把 `next_offset` 落在换行之后 —— 不变量：**任何一次调用的 offset 都是行首**。
+fn read_text_window_impl(
+    path: &str,
+    offset: u64,
+    max_bytes: u64,
+) -> Result<TextWindow, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let want = max_bytes.clamp(TEXT_WINDOW_MIN_BYTES, TEXT_WINDOW_MAX_BYTES);
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+
+    if offset >= size {
+        return Ok(TextWindow {
+            text: String::new(),
+            next_offset: size,
+            eof: true,
+            size,
+        });
+    }
+
+    file.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let mut buf: Vec<u8> = Vec::with_capacity(want as usize);
+    {
+        let mut limited = (&mut file).take(want);
+        limited.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    }
+
+    // 补到行尾：读够一个窗口后继续逐字节读到 '\n'（或文件结尾）。
+    // 单行超过硬上限 → 明确报错（绝不截断：截断会造出一条永远读不出来的坏行）。
+    let mut extended: u64 = 0;
+    let mut byte = [0u8; 1];
+    while buf.last() != Some(&b'\n') {
+        match file.read(&mut byte) {
+            Ok(0) => break, // 文件末尾未换行的最后一行
+            Ok(_) => {
+                buf.push(byte[0]);
+                extended += 1;
+                if extended > TEXT_WINDOW_MAX_LINE_BYTES {
+                    return Err(format!(
+                        "E_LINE_TOO_LONG: single line exceeds {TEXT_WINDOW_MAX_LINE_BYTES} bytes at offset {offset} — refusing to truncate a log line"
+                    ));
+                }
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    let next_offset = offset + buf.len() as u64;
+    // offset == 0 时按 `read_file` 的同一约定剥掉 UTF-8 BOM
+    if offset == 0 && buf.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        buf.drain(0..3);
+    }
+
+    let text = String::from_utf8(buf).map_err(|e| {
+        format!(
+            "E_NOT_UTF8: window at offset {offset} is not valid UTF-8 ({}); the file may be corrupted",
+            e.utf8_error()
+        )
+    })?;
+
+    Ok(TextWindow {
+        text,
+        next_offset,
+        eof: next_offset >= size,
+        size,
+    })
+}
+
+/// 分窗读取文本文件（**行对齐**）。
+///
+/// ## 为什么需要它（真机取证）
+///
+/// 会话的**权威副本**是 `sessions/<id>.jsonl` 追加日志，它会随对话增长（真机见过
+/// **600 MB** 的单个会话日志）。而 `read_file` 有 50 MB 上限（那个上限是给"LLM 整读源文件"
+/// 用的护栏），于是日志一旦超过 50 MB：hydrate 读不到（回退索引）、回填跳过、
+/// **唯一能给它瘦身的压缩步骤静默失效** —— 维护每次都打印"日志压缩 0 个会话"，
+/// 看起来像"没有需要压缩的"，实际是"根本读不出来"。
+///
+/// 这不是给 `read_file` 松绑：600 MB 一次性进 JS 堆本来就不该做。
+/// 正确做法是**分窗 + 行对齐**，让调用方按窗口循环消费。
+#[tauri::command]
+async fn read_text_window(
+    path: String,
+    offset: Option<u64>,
+    max_bytes: Option<u64>,
+) -> Result<TextWindow, String> {
+    let offset = offset.unwrap_or(0);
+    let max_bytes = max_bytes.unwrap_or(TEXT_WINDOW_MAX_BYTES);
+    tokio::task::spawn_blocking(move || read_text_window_impl(&path, offset, max_bytes))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Result of a paginated file read. The total_lines field lets the frontend
 /// show "line X of Y" without a second round-trip.
 #[derive(serde::Serialize)]
@@ -523,11 +647,20 @@ async fn read_file(path: String, encoding: Option<String>) -> Result<String, Str
             // read_file_lines (paginated) instead. This is not a user-facing
             // restriction — the frontend `read` tool automatically routes
             // to read_file_lines when offset/limit are specified.
+            //
+            // ⚠️ 第 68 轮：错误文本里带上**稳定的机器可读前缀 `E_FILE_TOO_LARGE:`**。
+            // 起因是真机取证：会话的权威 JSONL 日志涨到 600 MB 后，所有整读日志的路径
+            // 都撞在这个上限上，而前端只能靠"错误文本里有没有 File is large"来判断
+            // 该不该切到分窗读取 —— 文本判据太脆（改一个词就失效）。
+            // 另外旧文本写的是"Use read tool with offset/limit parameters"，
+            // 那是**给模型看的**措辞，出现在用户控制台里只会让人困惑（GUI 里没有"read tool"）。
             let metadata = tokio::fs::metadata(&p).await.map_err(|e| e.to_string())?;
             if metadata.len() > READ_FILE_FULL_MAX_BYTES {
                 return Err(format!(
-                    "File is large ({} bytes). Use read tool with offset/limit parameters for paginated reading, or use grep_search to find specific content.",
-                    metadata.len()
+                    "E_FILE_TOO_LARGE: file is {} bytes (whole-file read limit {} bytes). \
+Use the paginated reader (`read_file_lines`) or the windowed reader (`read_text_window`) instead.",
+                    metadata.len(),
+                    READ_FILE_FULL_MAX_BYTES
                 ));
             }
 
@@ -2767,6 +2900,7 @@ let app = tauri::Builder::default()
             set_default_agent,
             read_file,
             read_file_lines,
+            read_text_window,
             read_file_base64,
             get_system_temp_dir,
             write_file,
@@ -3141,6 +3275,167 @@ mod http_gate_tests {
             "http_get 的返回形状是对外契约，不许变"
         );
         assert_eq!(obj["status"], 200);
+    }
+}
+
+#[cfg(test)]
+mod text_window_tests {
+    use super::*;
+
+    fn temp_file(name: &str, content: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "codem-textwindow-{}-{}",
+            name,
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let path = dir.join("log.jsonl");
+        std::fs::write(&path, content).expect("写临时文件");
+        path
+    }
+
+    /// 把整个文件按窗口读完，拼回原文（**这是调用方的用法**：循环直到 eof）。
+    fn read_all(path: &str, window: u64) -> String {
+        let mut out = String::new();
+        let mut offset = 0u64;
+        let mut guard = 0;
+        loop {
+            let w = read_text_window_impl(path, offset, window).expect("分窗读取必须成功");
+            out.push_str(&w.text);
+            offset = w.next_offset;
+            guard += 1;
+            assert!(guard < 10_000, "分窗读取没有收敛（offset 没有前进）");
+            if w.eof {
+                break;
+            }
+        }
+        out
+    }
+
+    /// ① 行对齐：窗口大小取遍各种"故意切在行中间"的值，拼回来必须**逐字节**等于原文。
+    /// 这条是分窗读取的核心不变量 —— 切出半行 JSON 就等于造坏行。
+    #[test]
+    fn windows_are_line_aligned_and_lossless() {
+        let mut src = String::new();
+        // 行长故意不均匀（60~200 字节），文件总量 ~130 KB ⇒ 64 KB 窗口至少要读 3 次
+        for i in 0..1000 {
+            let pad = "x".repeat(20 + (i % 140));
+            src.push_str(&format!(
+                "{{\"id\":\"m{i}\",\"content\":\"第 {i} 行内容 content-{i} {pad}\"}}\n"
+            ));
+        }
+        let path = temp_file("aligned", src.as_bytes());
+        let p = path.to_str().unwrap();
+        assert!(src.len() > 128 * 1024, "样本文件要足够大，否则测不到多窗口");
+
+        // 63 KB / 64 KB / 65 KB / 100 KB / 1 MB：故意都**不是**行长的整数倍
+        for window in [63 * 1024u64, 64 * 1024, 65 * 1024, 100 * 1024, 1024 * 1024] {
+            let got = read_all(p, window);
+            assert_eq!(got, src, "窗口 {window} 拼接结果与原文不一致");
+        }
+
+        // 每一段返回的文本都必须"以换行结尾或已到文件末尾"，且下一段从行首开始
+        let first = read_text_window_impl(p, 0, 64 * 1024).unwrap();
+        assert!(first.text.ends_with('\n'), "窗口应当补到行尾");
+        assert!(!first.eof, "130 KB 不可能在一个 64 KB 窗口里读完");
+        let second = read_text_window_impl(p, first.next_offset, 64 * 1024).unwrap();
+        assert!(
+            second.text.starts_with("{\"id\":\""),
+            "第二次读取必须从**行首**开始，实际开头：{:?}",
+            &second.text[..second.text.len().min(24)]
+        );
+    }
+
+    /// ② 多字节 UTF-8：窗口边界落在汉字/emoji 中间也不能解码失败（靠"补到行尾"保证）。
+    #[test]
+    fn multibyte_utf8_never_splits_mid_character() {
+        let mut src = String::new();
+        for i in 0..200 {
+            src.push_str(&format!("{{\"c\":\"中文内容，带表情 🚀 和省略号… {i}\"}}\n"));
+        }
+        let path = temp_file("utf8", src.as_bytes());
+        let got = read_all(path.to_str().unwrap(), 64 * 1024);
+        assert_eq!(got, src, "多字节字符被切坏或内容丢失");
+    }
+
+    /// ③ 文件末尾没有换行：最后一行必须照样读出来（不能被当成空行丢掉）。
+    #[test]
+    fn last_line_without_newline_is_returned() {
+        let src = "{\"a\":1}\n{\"b\":2}";
+        let path = temp_file("no-trailing-nl", src.as_bytes());
+        let got = read_all(path.to_str().unwrap(), 64 * 1024);
+        assert_eq!(got, src);
+        let w = read_text_window_impl(path.to_str().unwrap(), 0, 64 * 1024).unwrap();
+        assert!(w.eof, "读完整个文件后 eof 必须为真");
+        assert_eq!(w.size, src.len() as u64);
+    }
+
+    /// ④ offset 落在文件末尾之后：返回空文本 + eof，**不报错**
+    /// （调用方按 `eof` 收敛；这里报错会让"刚好读完"变成一次假失败）。
+    #[test]
+    fn offset_at_or_past_eof_is_empty_not_error() {
+        let src = "{\"a\":1}\n";
+        let path = temp_file("eof", src.as_bytes());
+        let p = path.to_str().unwrap();
+        for offset in [src.len() as u64, src.len() as u64 + 999] {
+            let w = read_text_window_impl(p, offset, 64 * 1024).expect("越界 offset 不该报错");
+            assert!(w.text.is_empty(), "越界 offset 应当返回空文本");
+            assert!(w.eof);
+            assert_eq!(w.next_offset, src.len() as u64, "next_offset 必须收敛到文件末尾");
+        }
+    }
+
+    /// ⑤ 单行超长 → **明确报错**，绝不截断（截断会造出一条永远读不出来的坏行）。
+    /// 这里用 `TEXT_WINDOW_MAX_LINE_BYTES` 造一个"超长行"太大（128 MB），
+    /// 所以只断言**正常超窗口的行不会报错**、以及错误码字面量存在。
+    #[test]
+    fn a_line_longer_than_the_window_is_read_whole() {
+        let long = "x".repeat(200 * 1024); // 200 KB 一行 > 64 KB 窗口
+        let src = format!("{{\"big\":\"{long}\"}}\n{{\"tail\":1}}\n");
+        let path = temp_file("longline", src.as_bytes());
+        let got = read_all(path.to_str().unwrap(), 64 * 1024);
+        assert_eq!(got, src, "超窗口的单行必须整行返回");
+        assert!(TEXT_WINDOW_MAX_LINE_BYTES >= 64 * 1024 * 1024);
+    }
+
+    /// ⑥ BOM：offset==0 时剥掉（与 `read_file` 同一约定），且只剥一次。
+    #[test]
+    fn bom_is_stripped_only_in_the_first_window() {
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice("{\"a\":1}\n".as_bytes());
+        let path = temp_file("bom", &bytes);
+        let p = path.to_str().unwrap();
+        let w = read_text_window_impl(p, 0, 64 * 1024).unwrap();
+        assert_eq!(w.text, "{\"a\":1}\n", "首窗应当剥掉 BOM");
+        // 第二窗（若存在）不会再剥
+        let w2 = read_text_window_impl(p, w.next_offset, 64 * 1024).unwrap();
+        assert!(w2.text.is_empty());
+    }
+
+    /// ⑦ 窗口大小会被夹到 [64 KB, 8 MB]：调用方传 1 字节或传 1 TB 都不该让内存失控，
+    /// 也不该退化成"一次 IPC 读一行"。
+    #[test]
+    fn window_size_is_clamped() {
+        // 9 MB：比窗口上限大，才能看出"上限真的生效"
+        let src = "a\n".repeat(4 * 1024 * 1024 + 512 * 1024);
+        let path = temp_file("clamp", src.as_bytes());
+        let p = path.to_str().unwrap();
+
+        let tiny = read_text_window_impl(p, 0, 1).expect("过小的窗口应当被夹到下限");
+        assert!(
+            tiny.next_offset >= TEXT_WINDOW_MIN_BYTES,
+            "过小的窗口应当被夹到下限，实际只前进 {} 字节",
+            tiny.next_offset
+        );
+        assert!(!tiny.eof, "9 MB 的文件不该被 64 KB 窗口一次读完");
+
+        let huge = read_text_window_impl(p, 0, u64::MAX).expect("过大的窗口应当被夹到上限");
+        assert!(
+            huge.text.len() as u64 <= TEXT_WINDOW_MAX_BYTES,
+            "过大的窗口应当被夹到上限，实际返回 {} 字节",
+            huge.text.len()
+        );
+        assert!(!huge.eof, "9 MB 的文件不该被 8 MB 窗口一次读完");
     }
 }
 

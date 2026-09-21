@@ -70,6 +70,38 @@ export type SessionEventType =
   | "permission_denied"  // User denied permission for a tool
   | "error"              // An error occurred
   | "abort"              // Session was aborted
+  /**
+   * 执行轨迹的一步（第 68 轮补进权威集合）。
+   *
+   * ## 为什么必须在这里（真机取证）
+   *
+   * `core/provider/ui-trajectory-provider.ts` 用 `TRAJECTORY_EVENT_TYPE = 'trajectory_step'`
+   * 把轨迹步骤批量写进 `session_events`，而这个名字**既不在内建集合里、也没人注册**。
+   * 后果是真机控制台上：
+   * ```text
+   * [PersistFailure] maintenance.eventStructure 操作失败：事件库结构异常 7360 处
+   * （样例：…: Unknown event type "trajectory_step" at seq 2643；…）
+   * ```
+   * 7360 条"结构异常"全部是**假报警** —— 事件是**唯一没有等价物**的存储，
+   * 它的自检本来是最需要可信的信号，被这个噪声淹掉之后等于没有。
+   * 而且这个"功能本次没有生效"的措辞还会误导用户以为自检没跑（实际跑了、报的是假问题）。
+   *
+   * ## 为什么当内建，而不是让插件自己注册
+   *
+   * 与 `session_snapshot` 同理：**写入方是一等公民代码**（不是第三方扩展点），
+   * 而校验器可能在任何时刻被调用（维护、审计、回放）。把合法性挂在"插件加载顺序"上，
+   * 就等于让"结构自检"的结果依赖于时序 —— 那是不可复现的判据。
+   * 插件自定义类型仍走 `registerCustomEventType()`（第三方扩展点不变）。
+   * 由 `event-type-write-sites.test.ts` 守着"写事件的地方用的类型名必须在集合里"。
+   */
+  | "trajectory_step"
+  /**
+   * 循环被停止（第 68 轮补进权威集合）。
+   *
+   * 写入方 `core/llm/loop-stop-log.ts`（"为什么这一轮停下了"的诊断日志），
+   * 同一个门禁扫出来的第二个未注册类型 —— 它同样一直在被结构自检报成"未知事件类型"。
+   */
+  | "loop_stopped"
   ;
 
 // ========== R3-3.1: Runtime Event Type Registry ==========
@@ -90,6 +122,9 @@ const BUILTIN_EVENT_TYPES = new Set<SessionEventType>([
   "turn_start", "turn_end", "memory_update",
   "session_meta", "permission_granted", "permission_denied",
   "error", "abort",
+  // 第 68 轮补：两个**一等公民代码一直在写、却不在集合里**的类型。
+  // 真机后果 = 7360 条假报警把结构自检变成噪声机（详见上面联合类型处的长注释）。
+  "trajectory_step", "loop_stopped",
 ]);
 
 /** Registered custom event types */
