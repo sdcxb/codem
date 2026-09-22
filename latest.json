@@ -1,15 +1,15 @@
 {
-  "version": "1.16.118",
-  "notes": "v1.16.118 — 回复里的分节线精修（两端渐隐、走分隔线档）；例行空间回收的留痕不再带调用栈",
-  "pub_date": "2026-09-22T04:13:24Z",
+  "version": "1.16.119",
+  "notes": "v1.16.119 — 回复分节线：平时只留白，鼠标移上去才淡入（5% + 内缩 24px + 两端渐隐）",
+  "pub_date": "2026-09-22T06:19:16Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Y1L3dLazRncWV5SnRENG1kWlBIQ1N2R2xkNkVNMkFnc0IvM3ZzY2t0TmxGMWE2djF1U1g1ZE5FQXhFbVRXcm5kdDJIZmpaMERkZGYwUitMUkFnakEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDUwMzAwCWZpbGU6Q29kZW1fMS4xNi4xMThfeDY0LXNldHVwLmV4ZQp4a2hPdnJrek5UMnU1WmhxYWNqOVQ5TnR3SGFWdEc4TmlwWGx6cUlISmFJazFuN1c3VlhCMFpHOG9WUWYybUczS0duUjljT0ZFSXVuN1kzV1hNdEhBUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.118/Codem_1.16.118_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1drc2pGcXVialZ2UWJJK3BSS3NleUE3RGpscWNGSm5YbEd5OEVaZ1dweWhhdDFpTDZiQzJBclhxRjJUazY5cndPUTNvUXV4dFRDeVJwMEZRdGRPMFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDU3NjQzCWZpbGU6Q29kZW1fMS4xNi4xMTlfeDY0LXNldHVwLmV4ZQoyNDZvMkRvcTEzeENQOHpKb1ZvTUliNVVDQWJBVHZxKzRlbWV6TmlVemFJQldVSnlFa3JaSm9CWmpuK2tIVzl3OXI3L2tyeXloZHBaekFRbmRtVCtEdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.119/Codem_1.16.119_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Y1L3dLazRncWV5SnRENG1kWlBIQ1N2R2xkNkVNMkFnc0IvM3ZzY2t0TmxGMWE2djF1U1g1ZE5FQXhFbVRXcm5kdDJIZmpaMERkZGYwUitMUkFnakEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDUwMzAwCWZpbGU6Q29kZW1fMS4xNi4xMThfeDY0LXNldHVwLmV4ZQp4a2hPdnJrek5UMnU1WmhxYWNqOVQ5TnR3SGFWdEc4TmlwWGx6cUlISmFJazFuN1c3VlhCMFpHOG9WUWYybUczS0duUjljT0ZFSXVuN1kzV1hNdEhBUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.118/Codem_1.16.118_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1drc2pGcXVialZ2UWJJK3BSS3NleUE3RGpscWNGSm5YbEd5OEVaZ1dweWhhdDFpTDZiQzJBclhxRjJUazY5cndPUTNvUXV4dFRDeVJwMEZRdGRPMFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDU3NjQzCWZpbGU6Q29kZW1fMS4xNi4xMTlfeDY0LXNldHVwLmV4ZQoyNDZvMkRvcTEzeENQOHpKb1ZvTUliNVVDQWJBVHZxKzRlbWV6TmlVemFJQldVSnlFa3JaSm9CWmpuK2tIVzl3OXI3L2tyeXloZHBaekFRbmRtVCtEdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.119/Codem_1.16.119_x64-setup.exe"
     }
   }
 }

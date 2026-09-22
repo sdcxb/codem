@@ -189,30 +189,52 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
   });
 
   /**
-   * LIGHT-UI-2c 回复里的**分节线**（Markdown `<hr>`，用户第 69 轮："这条线太粗糙了要精修"）。
+   * LIGHT-UI-2c 回复里的**分节线**（Markdown `<hr>`）—— 用户第 69 轮在对照页里**逐状态选定**的形态：
    *
-   * 装机版量到的改前形态：`background: var(--border-primary)`（9%，控件边框那一档）、
-   * 宽 = 整个正文列 758px、左右内缩 0（从内容左边缘顶到右边缘）、
-   * 暗色档另有一条手写的 16% 白覆盖（亮色档的约 1.8 倍，且绕过令牌）。
+   * - **鼠标不在回复上（平时）**：候选 D —— **不要线，只留留白**；
+   * - **鼠标移到回复上**：候选 C —— 5% 浓度 + 左右各内缩 24px + 两端各渐隐 8%。
    *
-   * 这条断言守三件事：① 浓度走**结构分隔线**那一档，不许退回控件边框档；
-   * ② 必须是**两端渐隐**的渐变（不是全宽硬边）；③ 不许再有暗色档的硬编码覆盖。
+   * 改前（真机量到）：`background: var(--border-primary)`（控件边框档 9%）、宽 = 整个正文列
+   * （758px，左右内缩 0，两端硬切）、暗色档另有手写 16% 白覆盖（亮色的约 1.8 倍）。
+   *
+   * 这条断言守四件事：
+   * ① 平时**不画线**（`background: none`），线只在悬停态；
+   * ② 悬停那条线走**结构分隔线档** + 两端渐隐（不是控件边框档、不是全宽硬边）；
+   * ③ **悬停态不许动几何**（这条最关键：两态间距若不同，一屏十几条线会让内容上下跳）——
+   *    悬停规则只许改 `opacity`，内缩必须画在伪元素上；
+   * ④ 不许再有暗色档的硬编码覆盖。
    */
-  it("LIGHT-UI-2c：回复分节线（.rich-content-hr）走分隔线档 + 两端渐隐，且不再有暗色硬编码覆盖", () => {
+  it("LIGHT-UI-2c：分节线平时留白、悬停才长线（分隔线档 + 两端渐隐），且悬停不改几何", () => {
     const code = codemUi.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
-    const body = /\.rich-content-hr\s*\{([^}]*)\}/.exec(code)?.[1] ?? "";
-    expect(body, "找不到 `.rich-content-hr` 规则").toBeTruthy();
 
+    // ① 平时：不画线，只留白
+    const base = /\.rich-content-hr\s*\{([^}]*)\}/.exec(code)?.[1] ?? "";
+    expect(base, "找不到 `.rich-content-hr` 规则").toBeTruthy();
+    expect(base, "平时（鼠标不在回复上）不该画线 —— 用户选定的是候选 D：只留留白").toMatch(/background:\s*none/);
+    expect(base, "分节线高度应当是 1px（更粗就是更粗糙）").toMatch(/height:\s*1px/);
+    expect(base, "两态间距必须恒定（这里给的是候选 D 的 2em）").toMatch(/margin:\s*2em 0/);
+
+    // ② 悬停那条线：分隔线档 + 两端渐隐 + 内缩画在伪元素上
+    const line = /\.rich-content-hr::after\s*\{([^}]*)\}/.exec(code)?.[1] ?? "";
+    expect(line, "找不到 `.rich-content-hr::after`（悬停那条线应当画在伪元素上）").toBeTruthy();
     expect(
-      body,
-      "分节线必须用 var(--border-separator)（结构分隔线那一档）—— 改前用的是控件边框档（--border-primary），比它重一倍",
+      line,
+      "悬停线必须用 var(--border-separator)（结构分隔线档）—— 改前用的是控件边框档（--border-primary），比它重一倍",
     ).toMatch(/var\(--border-separator\)/);
-    expect(
-      body,
-      "分节线必须是**两端渐隐**的渐变；全宽硬边就是用户说的『粗糙』（真机：宽 758px、左右内缩 0）",
-    ).toMatch(/linear-gradient\(/);
-    expect(body, "分节线不许退回全宽硬边（flat 的 --border-primary 背景）").not.toMatch(/background:\s*var\(--border-primary\)/);
-    expect(body, "分节线高度应当是 1px（更粗就是更粗糙）").toMatch(/height:\s*1px/);
+    expect(line, "悬停线必须是**两端渐隐**的渐变；全宽硬边就是用户说的『粗糙』").toMatch(/linear-gradient\(/);
+    expect(line, "悬停线的左右内缩必须画在伪元素上（left/right），不是改 <hr> 的 margin").toMatch(/left:\s*24px/);
+    expect(line, "悬停线默认不可见（靠 opacity 切换，才能淡入）").toMatch(/opacity:\s*0/);
+
+    // ③ 悬停规则只许改透明度：改几何 = 悬停时内容跳
+    const hover = /\.rich-content:is\(:hover,\s*:focus-within\)\s*\.rich-content-hr::after\s*\{([^}]*)\}/.exec(code)?.[1] ?? "";
+    expect(hover, "找不到悬停规则 `.rich-content:is(:hover, :focus-within) .rich-content-hr::after`").toBeTruthy();
+    expect(hover, "悬停规则必须让线可见（opacity: 1）").toMatch(/opacity:\s*1/);
+    for (const prop of ["margin", "padding", "height", "width", "left", "right", "top", "bottom"]) {
+      expect(
+        new RegExp(`(^|;)\\s*${prop}\\s*:`).test(hover),
+        `悬停规则里出现了几何属性 \`${prop}\` —— 悬停会改布局（两态间距不同 ⇒ 一屏十几条线会让内容上下跳）`,
+      ).toBe(false);
+    }
 
     expect(
       /\[data-theme="dark"\]\s*\.rich-content-hr/.test(code),
