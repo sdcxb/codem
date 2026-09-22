@@ -1,15 +1,15 @@
 {
-  "version": "1.16.117",
-  "notes": "v1.16.117 — 亮色线条精修；会话日志超过 50 MB 不再读不出来、日志压缩恢复执行；事件结构自检的几千条假警报归零",
-  "pub_date": "2026-09-21T10:02:05Z",
+  "version": "1.16.118",
+  "notes": "v1.16.118 — 回复里的分节线精修（两端渐隐、走分隔线档）；例行空间回收的留痕不再带调用栈",
+  "pub_date": "2026-09-22T04:13:24Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hNNUtCaHlCY0dibk9OTll5NlhlMEVWOGc1ZUZENXErMnhHZm5PNmY5ME1TQ2ZtRUZBdU15dFVaNEU4RWw3OEp0MVZnRnJXdVFJeHZ4cEFzNWk4QlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTgyMjE1CWZpbGU6Q29kZW1fMS4xNi4xMTdfeDY0LXNldHVwLmV4ZQpEbGhQRFdvTkJUMzUwcWZENjlFVFpnT24wd3ZJa0ZXK2ZlVHExcjFPMDZkV1ByWTkvL05ZTFZ6blhrSlVjK1dWNnVDUlNDYUxmWUNlcnJUZksxYzNEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.117/Codem_1.16.117_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Y1L3dLazRncWV5SnRENG1kWlBIQ1N2R2xkNkVNMkFnc0IvM3ZzY2t0TmxGMWE2djF1U1g1ZE5FQXhFbVRXcm5kdDJIZmpaMERkZGYwUitMUkFnakEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDUwMzAwCWZpbGU6Q29kZW1fMS4xNi4xMThfeDY0LXNldHVwLmV4ZQp4a2hPdnJrek5UMnU1WmhxYWNqOVQ5TnR3SGFWdEc4TmlwWGx6cUlISmFJazFuN1c3VlhCMFpHOG9WUWYybUczS0duUjljT0ZFSXVuN1kzV1hNdEhBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.118/Codem_1.16.118_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hNNUtCaHlCY0dibk9OTll5NlhlMEVWOGc1ZUZENXErMnhHZm5PNmY5ME1TQ2ZtRUZBdU15dFVaNEU4RWw3OEp0MVZnRnJXdVFJeHZ4cEFzNWk4QlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5OTgyMjE1CWZpbGU6Q29kZW1fMS4xNi4xMTdfeDY0LXNldHVwLmV4ZQpEbGhQRFdvTkJUMzUwcWZENjlFVFpnT24wd3ZJa0ZXK2ZlVHExcjFPMDZkV1ByWTkvL05ZTFZ6blhrSlVjK1dWNnVDUlNDYUxmWUNlcnJUZksxYzNEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.117/Codem_1.16.117_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Y1L3dLazRncWV5SnRENG1kWlBIQ1N2R2xkNkVNMkFnc0IvM3ZzY2t0TmxGMWE2djF1U1g1ZE5FQXhFbVRXcm5kdDJIZmpaMERkZGYwUitMUkFnakEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDUwMzAwCWZpbGU6Q29kZW1fMS4xNi4xMThfeDY0LXNldHVwLmV4ZQp4a2hPdnJrek5UMnU1WmhxYWNqOVQ5TnR3SGFWdEc4TmlwWGx6cUlISmFJazFuN1c3VlhCMFpHOG9WUWYybUczS0duUjljT0ZFSXVuN1kzV1hNdEhBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.118/Codem_1.16.118_x64-setup.exe"
     }
   }
 }

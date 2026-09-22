@@ -23,6 +23,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { reportPersistFailure } from "./persist-failure";
+import { isDebugEnabled } from "../debug";
 import {
   StorageError,
   hasStoragePort,
@@ -143,18 +144,39 @@ export type StorageTransport = {
  * 都必须经过这里。所以它是唯一无法绕过的位置 —— 也是"再插一个更靠外的桩"这件事的终点。
  *
  * 只记破坏性命令（delete / replace_table / compact），附调用栈；正文一律不记。
+ *
+ * ⚠️ 第 69 轮：调用栈的取舍收口在 `formatDestructiveTrace`（**例行命令不再打栈**）——
+ * 用户贴的启动控制台里 4 条 `storage.compact` 各带 8 行栈，看着像报错。
  */
-function traceDestructiveIpc(command: string, params?: Record<string, unknown>): void {
-  if (!/delete|replace_table|compact/i.test(command)) return;
-  try {
+export function formatDestructiveTrace(
+  prefix: string,
+  command: string,
+  detail: string,
+): { text: string; routine: boolean } {
+  const routine = /compact/i.test(command);
+  let text = `[${prefix}] ${command} ${detail}`;
+  if (!routine || isDebugEnabled("storage-trace")) {
     const stack = (new Error().stack ?? "")
       .split("\n")
       .slice(2, 12)
-      .map((l) => l.trim());
+      .map((l) => l.trim())
+      .join("\n");
+    text += `\n${stack}`;
+  }
+  return { text, routine };
+}
+
+function traceDestructiveIpc(command: string, params?: Record<string, unknown>): void {
+  if (!/delete|replace_table|compact/i.test(command)) return;
+  try {
+    const { text, routine } = formatDestructiveTrace(
+      "IpcTrace",
+      command,
+      `params=${JSON.stringify(params ?? {}).slice(0, 200)}`,
+    );
     // 与 `RustDataPort.traceDestructive` 同一口径：compact 是维护自己的空间回收（不是删除），降到 log
-    const line = `[IpcTrace] ${command} params=${JSON.stringify(params ?? {}).slice(0, 200)}\n` + stack.join("\n");
-    if (/compact/i.test(command)) console.log(line);
-    else console.warn(line);
+    if (routine) console.log(text);
+    else console.warn(text);
   } catch {
     /* 留痕失败绝不影响功能 */
   }
@@ -636,25 +658,24 @@ class RustDataPort implements StorageDataPort {
    * `[IpcTrace] …`），把"警告"这个词贬值了（用户按"0 warning"验收时它们全是噪声）。
    * 现在的口径：`delete` / `replace_table` 这类**可能删数据**的照旧 `warn`（要显眼）；
    * `compact`（整库重写，语义是回收而非删除）降到 `log` —— **留痕不变**，级别如实。
+   *
+   * ## 第 69 轮：**例行命令的调用栈去掉**（用户贴的启动日志里 4 条 compact 各带 8 行栈）
+   *
+   * 取舍与开关见 `formatDestructiveTrace`：例行命令只留一行，要看栈就开
+   * `localStorage['codem-debug'] = 'storage-trace'`（或 `window.__CODEM_DEBUG__`）。
    */
   private traceDestructive(command: string, params?: Record<string, unknown>): void {
     if (!/delete|replace_table|compact/i.test(command)) return;
     try {
-      const stack = (new Error().stack ?? "")
-        .split("\n")
-        .slice(2, 10)
-        .map((l) => l.trim());
       const table = params?.table ?? params?.stream ?? "";
       const where = params?.where ?? params?.id ?? params?.ids ?? params?.session_id ?? "";
-      /**
-       * 级别按"是不是可能删数据"分：`compact` 是维护自己调的空间回收（不是删除），
-       * 成功路径也在 `warn` 会让每次启动固定刷 3 条噪声 ⇒ 降到 `log`（留痕不变）。
-       */
-      const line =
-        `[StorageTrace] ${command} table=${String(table)} target=${JSON.stringify(where).slice(0, 160)}\n` +
-        stack.join("\n");
-      if (/compact/i.test(command)) console.log(line);
-      else console.warn(line);
+      const { text, routine } = formatDestructiveTrace(
+        "StorageTrace",
+        command,
+        `table=${String(table)} target=${JSON.stringify(where).slice(0, 160)}`,
+      );
+      if (routine) console.log(text);
+      else console.warn(text);
     } catch {
       /* 留痕失败绝不影响功能 */
     }

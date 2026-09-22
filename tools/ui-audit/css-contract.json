@@ -13232,7 +13232,7 @@
     "word-break": "break-word"
   },
   "rich-content-hr": {
-    "background": "var(--border-primary)",
+    "background": "linear-gradient( 90deg, transparent 0%, var(--border-separator) 10%, var(--border-separator) 90%, transparent 100% )",
     "border": "none",
     "height": "1px",
     "margin": "1.5em 0"

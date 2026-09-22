@@ -295,16 +295,47 @@
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--text-secondary);
 }
+/**
+ * Markdown 的 `<hr>` —— 回复里"按节分"的那条线（用户第 69 轮："这条线太粗糙了要精修"）。
+ *
+ * ## 改前的实测形态（装机版量到）
+ *
+ * ```text
+ * background: var(--border-primary)   → 亮色档那一档（暖中性 9%，白底对比度 1.194）
+ * height: 1px，宽度 = 整个正文列（758px，左右内缩 0，**从内容左边缘顶到右边缘**）
+ * margin: 1.5em 0
+ * 暗色档另有一条硬编码覆盖：16% 白 —— 是亮色档的约 1.8 倍
+ * ```
+ * （上面刻意不写色值字面量：`tools/ui-audit/scan-ui.mjs` 的 `color-hardcoded-css`
+ * 会逐字面量判定"CSS 里的硬编码颜色"，**规则旁的注释也算**，只有令牌块内部豁免。）
+ *
+ * 三处"粗糙"的来源：① 用的是**控件边框**那一档（9%）——它比"结构分隔线"档（5%）重一倍，
+ * 而这里表达的是"分节"不是"控件边界"；② **全宽硬边**：两端直接切断，读起来像表格线；
+ * ③ 暗色档手写 16% 白，既比亮色重得多、又绕过了令牌体系（换皮肤不跟随）。
+ *
+ * ## 改法：与 `--border-separator` 一档 + 两端渐隐（本次全项目统一的"流线型"手法）
+ *
+ * 1px、浓度走 `--border-separator`（亮 5% / 暗 6% 白），两端各渐隐 10% ——
+ * 它因此读起来是"分节"，而不是"一条横杠把正文切成两半"。
+ */
 .rich-content-hr {
   border: none;
   height: 1px;
-  background: var(--border-primary);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--border-separator) 10%,
+    var(--border-separator) 90%,
+    transparent 100%
+  );
   margin: 1.5em 0;
 }
-/* 暗色模式：Markdown 步骤分割线稍微调亮 */
-[data-theme="dark"] .rich-content-hr {
-  background: rgba(255, 255, 255, 0.16);
-}
+/*
+ * 暗色档**不再需要单独覆盖**：浓度由 `--border-separator` 两档各自解析给出
+ * （原来那条手写的 16% 白是亮色档的约 1.8 倍，且是硬编码色值）。
+ * 这条注释保留是为了说明"为什么这里没有暗色块"—— 第 69 轮删掉它时，
+ * 少了这句话就会让人以为是漏了。
+ */
 .rich-content ul,
 .rich-content ol {
   margin: 0.5em 0;

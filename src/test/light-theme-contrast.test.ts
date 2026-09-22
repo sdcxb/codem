@@ -189,6 +189,38 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
   });
 
   /**
+   * LIGHT-UI-2c 回复里的**分节线**（Markdown `<hr>`，用户第 69 轮："这条线太粗糙了要精修"）。
+   *
+   * 装机版量到的改前形态：`background: var(--border-primary)`（9%，控件边框那一档）、
+   * 宽 = 整个正文列 758px、左右内缩 0（从内容左边缘顶到右边缘）、
+   * 暗色档另有一条手写的 16% 白覆盖（亮色档的约 1.8 倍，且绕过令牌）。
+   *
+   * 这条断言守三件事：① 浓度走**结构分隔线**那一档，不许退回控件边框档；
+   * ② 必须是**两端渐隐**的渐变（不是全宽硬边）；③ 不许再有暗色档的硬编码覆盖。
+   */
+  it("LIGHT-UI-2c：回复分节线（.rich-content-hr）走分隔线档 + 两端渐隐，且不再有暗色硬编码覆盖", () => {
+    const code = codemUi.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+    const body = /\.rich-content-hr\s*\{([^}]*)\}/.exec(code)?.[1] ?? "";
+    expect(body, "找不到 `.rich-content-hr` 规则").toBeTruthy();
+
+    expect(
+      body,
+      "分节线必须用 var(--border-separator)（结构分隔线那一档）—— 改前用的是控件边框档（--border-primary），比它重一倍",
+    ).toMatch(/var\(--border-separator\)/);
+    expect(
+      body,
+      "分节线必须是**两端渐隐**的渐变；全宽硬边就是用户说的『粗糙』（真机：宽 758px、左右内缩 0）",
+    ).toMatch(/linear-gradient\(/);
+    expect(body, "分节线不许退回全宽硬边（flat 的 --border-primary 背景）").not.toMatch(/background:\s*var\(--border-primary\)/);
+    expect(body, "分节线高度应当是 1px（更粗就是更粗糙）").toMatch(/height:\s*1px/);
+
+    expect(
+      /\[data-theme="dark"\]\s*\.rich-content-hr/.test(code),
+      "暗色档的 `.rich-content-hr` 覆盖又回来了 —— 那条覆盖是手写的 16% 白（亮色档的约 1.8 倍），浓度应当交给令牌两档各自解析",
+    ).toBe(false);
+  });
+
+  /**
    * LIGHT-UI-3 对比度下限：正文/次级/弱级文字、以及**全部功能色**都要在内容面与内嵌块上达标。
    * 这条直接拦住两类真缺陷：`#22c55e` 安全色（2.22）与 `#8a8880` 弱文字落进灰块（3.03）。
    */
