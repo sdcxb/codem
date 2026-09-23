@@ -58,7 +58,9 @@ All notable changes to Codem will be documented in this file.
 
 - `inbox-visibility.test.tsx` 扩到 **13 条**；**突变验证 11 处全部被抓**
   （`.preview-shot/mutate-inbox-visibility.mjs`，本轮新增 M10 概览卡自写口径、M11 反馈表不预取）；
-- `tsc` 0；全量 **360 文件 / 6001 通过 / 16 跳过 / 0 失败**；
+- `tsc` 0；全量 **360 文件 / 6001 通过 / 16 跳过 / 0 失败**；UI 门禁 821 文件 error 0 / warn 0；
+  远端清单 `--remote` **7/7**；更新链路端到端：装 **1.16.122** → 应用内 设置 → 帮助 → 检查更新
+  （真实鼠标）→「发现新版本 1.16.123，下载中…」→ 自动安装重启 → exe 版本 = **1.16.123**；
 - 审计工具（下轮可直接复用）：`audit-boundary-patterns.mjs`（四类形态枚举）、
   `audit-ctor-reads.mjs`（构造函数里读存储）、`probe-panels-vs-db.mjs`（界面 vs 库对照）。
 
