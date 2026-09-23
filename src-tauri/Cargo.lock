@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "codem"
-version = "1.16.120"
+version = "1.16.121"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -623,6 +623,7 @@ dependencies = [
  "tokio-util",
  "url",
  "uuid",
+ "webview2-com",
  "window-vibrancy",
  "windows",
  "x25519-dalek",

@@ -13,6 +13,9 @@ use tokio::sync::{oneshot, Mutex as TokioMutex};
 // 运行时事件文件日志（对标 dsh log-files.ts）：按日 + 轮转 + 上限 + 脱敏。
 // 打包版无控制台，常规事件落盘供用户/开发者诊断。
 mod runtime_log;
+// 渲染进程崩溃取证（第 71 轮）：WebView2 `ProcessFailed` → 运行时日志 +
+// 前端心跳（含进程树内存）+ 退出原因区分。见 crash_evidence.rs 顶部的事故注释。
+mod crash_evidence;
 // ========== 微信 ClawBot 桥（iLink）==========
 // 传输层（登录/长轮询/收发/配额），引擎集成在 TS 侧。
 mod ilink;
@@ -2331,6 +2334,9 @@ async fn show_from_tray(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn quit_app(app: AppHandle, pty_map: State<'_, PtyMap>) -> Result<(), String> {
     runtime_log::append_line("INFO", "quit_app invoked — cleaning up");
+    // 记下"这次退出是前端请求的" —— 事后靠它把「用户点的退出」与
+    // 「谁都没请求、进程却要结束」（系统关机 / 外部结束）区分开（见 crash_evidence.rs）。
+    crash_evidence::mark_frontend_quit_requested();
     // 清理所有 PTY 会话：kill 子进程，避免退出后 cmd.exe 等残留（对标 dsh
     // 进程树纪律 — Windows 上进程退出不会自动杀孙进程）。
     if let Ok(mut map) = pty_map.lock() {
@@ -2887,6 +2893,9 @@ let app = tauri::Builder::default()
             mcp_processes: TokioMutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
+            crash_evidence::log_renderer_event,
+            crash_evidence::log_renderer_heartbeat,
+            crash_evidence::take_renderer_crash_marker,
             secret_backend_available,
     secret_seal,
     secret_unseal,
@@ -2998,6 +3007,12 @@ path_exists,
                 let _ = app.emit("previous-run-unclean", ());
             }
             write_active_run_marker(app.handle());
+
+            // ===== 渲染进程崩溃取证 =====
+            // 真机事故：主对话里 agent 调 wait_for_delegation 后页面白屏（WebView2 渲染进程死了），
+            // 而当时**一点痕迹都没留下**（没有 crash log、没有事件日志、Crashpad 也是空的）。
+            // 这里把 ProcessFailed 事件接到运行时日志上；心跳由前端定时发（见 renderer-evidence.ts）。
+            crash_evidence::install_process_failed_logging(app.handle());
 
             // Apply window vibrancy (frosted glass effect)
             #[cfg(target_os = "windows")]
@@ -3161,8 +3176,35 @@ path_exists,
             tauri::RunEvent::ExitRequested { .. } => {
                 // 真正退出（用户 quit / tray quit / quit_app）—— 清理崩溃标记，
                 // 使下次启动能区分"干净退出"与"崩溃"。
-                runtime_log::append_line("INFO", "process exiting (ExitRequested)");
+                //
+                // ⚠️ 第 71 轮：**把"谁要求退出的"一起记下来**。此前这里只有一行
+                // "process exiting"，于是"用户点的退出"与"没人请求、系统要关机 /
+                // 外部结束进程"在日志里长得一模一样 —— 真机上两者都表现为
+                // "应用突然没了"，事后完全分不清是崩溃还是被结束。
+                // 前端请求过退出 → 用户路径；没请求过 → 外部/系统路径。
+                runtime_log::append_line(
+                    "INFO",
+                    &format!(
+                        "process exiting (ExitRequested) frontend_quit_requested={}",
+                        crash_evidence::frontend_quit_requested()
+                    ),
+                );
                 clear_active_run_marker(app_handle);
+            }
+            tauri::RunEvent::Exit => {
+                // 事件循环已经结束（进程即将消失）。这一行是"走到最后一步"的证据：
+                // 它存在 ⇒ 退出是**受控**的；它缺失但下次启动报 unclean ⇒ 进程是被强杀/崩掉的。
+                runtime_log::append_line("INFO", "process exit (RunEvent::Exit)");
+            }
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: WinEvent::Destroyed,
+                ..
+            } => {
+                runtime_log::append_line(
+                    "WARN",
+                    &format!("window destroyed label={label}（渲染进程没了或窗口被关）"),
+                );
             }
             _ => {}
         }

@@ -1,6 +1,6 @@
 [package]
 name = "codem"
-version = "1.16.120"
+version = "1.16.121"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"
@@ -52,7 +52,18 @@ url = "2"
 codem-db = { path = "codem-db" }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+# `Win32_System_Diagnostics_ToolHelp` / `_Threading` / `_ProcessStatus`：
+# 崩溃取证要按 pid 走进程树、读每个 WebView2 子进程的工作集（见 src/crash_evidence.rs）。
+windows = { version = "0.61", features = [
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Threading",
+  "Win32_System_ProcessStatus",
+] }
+# 版本与 tauri 2.11 自己的 webview2-com 依赖保持一致（同一个 COM 接口版本，
+# 否则 `ICoreWebView2Controller` 之类会变成两个不兼容的类型）。
+webview2-com = "0.38"
 
 [dependencies.tokio-util]
 version = "0.7"

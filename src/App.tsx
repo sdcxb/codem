@@ -304,6 +304,7 @@ import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
 import { composePersistAlertText, reportActionFailure } from "./core/storage/persist-failure";
 import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaintextResidue } from "./core/storage/secret-store";
+import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
 
 /**
  * 退出前的收尾：**排空在途写入 + checkpoint 存储端口**（第 44 轮补上的缺口）。
@@ -2197,6 +2198,30 @@ flushStreamBuffer(); // flush all on unmount
 
   // Handle window close request from Rust (tray icon support)
   useEffect(() => {
+    /**
+     * 渲染侧崩溃取证（第 71 轮）：真机上出现过"页面白屏 / 显示页面已崩溃"，
+     * 而当时**一点痕迹都没留下**（详情见 `core/diagnostics/renderer-evidence.ts` 顶部）。
+     * 这里装上心跳 + 全局异常 + 卸载留痕；Rust 侧另有 `ProcessFailed` 监听。
+     * 幂等，且在没有 Tauri 宿主时静默跳过。
+     */
+    installRendererEvidence();
+
+    /**
+     * 上次**渲染进程崩溃**（WebView2 层面，不是 React 错误边界）的提示。
+     *
+     * 真机事故：页面白屏、Rust 侧自动重载恢复 —— 但**用户完全不知情**，
+     * 只看到"卡了一下"或"闪了一下"，于是这种崩溃既不会被反馈、也就永远查不清。
+     * 现在 Rust 侧在 ProcessFailed 时落一个一次性标记，这里读出来弹常驻提示（读完即删）。
+     */
+    void reportRendererCrashIfAny((message, record) => {
+      useAppStore.getState().addPersistAlert({
+        area: "crash.renderer-process",
+        kind: "action",
+        message,
+      });
+      console.warn("[renderer-evidence] 上次渲染进程崩溃：", record);
+    });
+
     const { listen } = (window as any).__TAURI__?.event || {};
     if (!listen) return;
 
