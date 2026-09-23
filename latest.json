@@ -1,15 +1,15 @@
 {
-  "version": "1.16.122",
-  "notes": "任务管理三处'看不到'修好了：收件箱不再空着（全局通知与徽标同一口径）、委派任务不再被项目边界挡住、重启后委派历史能补回来",
-  "pub_date": "2026-09-23T08:25:10Z",
+  "version": "1.16.123",
+  "notes": "同类审计：概览与委派页签口径统一（同一屏不再两个答案）＋ 历史消息赞/踩预取；另附审计报告（含 3 处如实报告的待办）",
+  "pub_date": "2026-09-23T09:59:53Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pwZ1hqMldZc0crUStqajZQZjdkRHVZb3ZUeVFOZy9CV0dFY1hkT0xVTWkrRjF5TnNsNHg5VXhTS0pXdVlobWtiRUNNSE1GcldLRUpXL3hqNlNLTndzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTUxODI5CWZpbGU6Q29kZW1fMS4xNi4xMjJfeDY0LXNldHVwLmV4ZQpTUWpkdG9mTU9wTGpvUVBsTUZTOWIySW1tV0diRXFyME9Yb1JZeTYxbFROQW12TDVXSTh6d2sxTWJXZjZDSWloMGkzSHU2eVNpbEpEUy9NUWplRXFBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.122/Codem_1.16.122_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hIS09wWVoxdDlYV0FIbVZiblVuNHhzRytLc21ZMDhucytJd0xWejBwME1UNFhsTGZFc21odlN1emN0TVdTTlJZRUhiRWNPNmhUY3pTTlNpb2l0dndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTU3NDU5CWZpbGU6Q29kZW1fMS4xNi4xMjNfeDY0LXNldHVwLmV4ZQpjd2FjSFNRdFltM3czQi9CVFRkQXA2TFZ5MHJwSjkrUDhydnJlenNBNmxLS1dBdWNBR2Q4ZjRIVVNQcjRucUgwRVFLaXdNTnJncVpxR213K2Zld01DZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.123/Codem_1.16.123_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pwZ1hqMldZc0crUStqajZQZjdkRHVZb3ZUeVFOZy9CV0dFY1hkT0xVTWkrRjF5TnNsNHg5VXhTS0pXdVlobWtiRUNNSE1GcldLRUpXL3hqNlNLTndzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTUxODI5CWZpbGU6Q29kZW1fMS4xNi4xMjJfeDY0LXNldHVwLmV4ZQpTUWpkdG9mTU9wTGpvUVBsTUZTOWIySW1tV0diRXFyME9Yb1JZeTYxbFROQW12TDVXSTh6d2sxTWJXZjZDSWloMGkzSHU2eVNpbEpEUy9NUWplRXFBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.122/Codem_1.16.122_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hIS09wWVoxdDlYV0FIbVZiblVuNHhzRytLc21ZMDhucytJd0xWejBwME1UNFhsTGZFc21odlN1emN0TVdTTlJZRUhiRWNPNmhUY3pTTlNpb2l0dndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTU3NDU5CWZpbGU6Q29kZW1fMS4xNi4xMjNfeDY0LXNldHVwLmV4ZQpjd2FjSFNRdFltM3czQi9CVFRkQXA2TFZ5MHJwSjkrUDhydnJlenNBNmxLS1dBdWNBR2Q4ZjRIVVNQcjRucUgwRVFLaXdNTnJncVpxR213K2Zld01DZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.123/Codem_1.16.123_x64-setup.exe"
     }
   }
 }

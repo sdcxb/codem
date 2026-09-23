@@ -12,6 +12,7 @@ import type { DelegationTask, DelegationState } from "../../core/session";
 import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
 import { useCurrentProjectId } from "./use-current-project";
+import { scopeDelegations } from "./delegation-scope";
 
 const STATUS_CONFIG: Record<DelegationState, { label: string; labelEn: string; color: string; Icon: typeof CheckCircle2 }> = {
   pending: { label: "等待中", labelEn: "Pending", color: "var(--text-muted)", Icon: Timer },
@@ -56,15 +57,12 @@ export function DelegationTab() {
      * 用户现场就是这一类：交接出去的 4 个任务全部 `project_id = ""`，
      * 于是"委派页签里自己的任务一条都看不到"。
      *
-     * 现在的口径与收件箱一致：
-     *   - 没有项目 → 只列**全局委派**（`!task.projectId`）；
-     *   - 有项目 → 列该项目的 **+ 全局委派**。
-     * 跨项目串数据这条（P2-12）没变：别的项目的任务仍然列不出来。
+     * ⚠️ 现在口径收在 `scopeDelegations`（**唯一实现**）：修这一处时概览页签的同一张卡
+     * 还留着旧写法，真机上立刻表现为"概览 0 条、委派页签 5 条"——
+     * **同一个事实在多处显示、每处各写一遍口径，改一处就必然对不上**。
      */
     const all = orch.getAllDelegations();
-    const scoped = projectId
-      ? all.filter((t) => !t.projectId || t.projectId === projectId)
-      : all.filter((t) => !t.projectId);
+    const scoped = scopeDelegations(all, projectId);
 
     setTasks(scoped);
     // 统计口径必须与列表一致：原先直接用 orch.getStats()（全库、跨项目），

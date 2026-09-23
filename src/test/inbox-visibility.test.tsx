@@ -294,4 +294,90 @@ describe("收件箱可见性：无项目时全局通知必须看得见（用户�
       "漏掉 delegation_tasks ⇒ 委派页签与编排器的历史恢复都读不到（真机实测过）",
     ).toContain("delegation_tasks");
   });
+
+  /**
+   * ## 第 72 轮审计：**同一事实多处显示，必须同口径**
+   *
+   * 真机实测（1.16.122）：概览页签「委派任务」卡 `0 运行中 / 0 已完成`，
+   * 而委派页签同一时刻列出 `5 总计 / 3 已完成 / 2 失败` —— 同一屏两个答案。
+   * 根因是"同一个过滤条件被各写一遍"：上一轮只改了委派页签那一处。
+   *
+   * 现在口径收进 `scopeDelegations`（唯一实现），这条用例逐个作用域核对它，
+   * 并且**同时渲染两个面板**比对它们自己算出来的数字 —— 只测 helper 是不够的，
+   * 那测不到"某个面板绕过 helper 自己写了一遍"。
+   */
+  it("DELEG-4: 作用域口径（唯一实现）—— 无项目只看全局；有项目看本项目 + 全局", async () => {
+    const { scopeDelegations } = await import("../components/task-center/delegation-scope");
+    const tasks = [
+      { id: "g", projectId: "" },        // 全局（从全局会话发起的交接）
+      { id: "gu", projectId: undefined }, // 全局（字段缺失）
+      { id: "a", projectId: PROJECT_A },
+      { id: "b", projectId: PROJECT_B },
+    ];
+    expect(scopeDelegations(tasks, null).map((t) => t.id)).toEqual(["g", "gu"]);
+    expect(scopeDelegations(tasks, PROJECT_A).map((t) => t.id)).toEqual(["g", "gu", "a"]);
+    expect(scopeDelegations(tasks, PROJECT_B).map((t) => t.id)).toEqual(["g", "gu", "b"]);
+  });
+
+  it("DELEG-5: 概览卡与委派页签在**无项目**时必须给同一组数字（真机曾不一致）", async () => {
+    const { getDelegationOrchestrator } = await import("../core/session/orchestrator");
+    const orch = getDelegationOrchestrator();
+    const seed = [
+      { id: "d1", sourceSessionId: "s1", targetSessionId: "s2", task: "全局任务 1", status: "completed", projectId: "", createdAt: 3 },
+      { id: "d2", sourceSessionId: "s1", targetSessionId: "s2", task: "全局任务 2", status: "failed", projectId: "", createdAt: 2 },
+      { id: "d3", sourceSessionId: "s1", targetSessionId: "s3", task: "别的项目的任务", status: "running", projectId: PROJECT_B, createdAt: 1 },
+    ];
+    vi.spyOn(orch, "getAllDelegations").mockReturnValue(seed as any);
+    await setProject(null);
+
+    const { OverviewTab } = await import("../components/task-center/OverviewTab");
+    const { DelegationTab } = await import("../components/task-center/DelegationTab");
+
+    const overview = render(<OverviewTab onNavigate={() => {}} />);
+    const overviewText = overview.container.textContent || "";
+    const delegation = render(<DelegationTab />);
+    const delegationText = delegation.container.textContent || "";
+
+    for (const [what, text] of [["概览", overviewText], ["委派页签", delegationText]] as const) {
+      expect(text, `${what}：无项目时要看到全局的 2 条`).toContain("2");
+      expect(text, `${what}：别的项目的任务不许出现在任何地方（P2-12）`).not.toContain("别的项目的任务");
+    }
+    /*
+     * 逐项比对两处自己算出来的数字。
+     *
+     * ⚠️ 取值必须**落在委派卡内部**：概览页上「已完成」这个词在 Issues 卡里也有
+     * （`0 进行中 0 待审查 0 已完成`），第一版直接对整页文本做正则，抓到的是 Issues 卡的 0 ——
+     * 于是"两处不一致"变成了我自己造的假警报。判据要落到正确的容器上才算数。
+     */
+    const cardText = (() => {
+      // 取"同时含标题与统计"的**最小**容器：只含 `委派任务` 的那个 div 是标题本身，
+      // 里面没有数字（第一版就是这么抓的，断言直接变成 null）。
+      const divs = Array.from(overview.container.querySelectorAll("div"))
+        .filter((d) => {
+          const t = d.textContent || "";
+          return t.includes("委派任务") && t.includes("已完成");
+        })
+        .sort((a, b) => (a.textContent || "").length - (b.textContent || "").length);
+      return divs[0]?.textContent || "";
+    })();
+    expect(cardText, "找不到概览页的「委派任务」卡片").not.toBe("");
+
+    const num = (text: string, label: string) => new RegExp(`(\\d+)\\s*${label}`).exec(text)?.[1] ?? null;
+    for (const label of ["运行中", "已完成"]) {
+      const a = num(cardText, label);
+      const b = num(delegationText, label);
+      expect(a, `概览卡的委派卡应当显示「${label}」`).not.toBeNull();
+      expect(b, `委派页签应当显示「${label}」`).not.toBeNull();
+      expect(a, `「${label}」两处必须相等（真机上曾出现 0 vs 3）`).toBe(b);
+    }
+  });
+
+  it("DELEG-6: 首屏会读的小表必须在预取清单里（message_feedback = 历史消息的赞/踩）", async () => {
+    const { HOT_DOMAIN_TABLES } = await import("../core/storage/bootstrap");
+    expect(
+      HOT_DOMAIN_TABLES,
+      "每条消息渲染时 FeedbackButtons 都会读 message_feedback（同步接口、每条只读一次）；" +
+        "不预取 ⇒ 打开会话时历史赞/踩显示成未评价，且不会再重读",
+    ).toContain("message_feedback");
+  });
 });

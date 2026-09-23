@@ -17,6 +17,7 @@ import { useLang } from "../../core/i18n/lang";
 import { SlotBridge } from "../../core/slots/SlotBridge";
 import { TASK_CENTER_OVERVIEW_SLOT, type TaskCenterTab } from "../TaskCenter";
 import { getCurrentProjectId } from "./use-current-project";
+import { scopeDelegations } from "./delegation-scope";
 
 interface OverviewTabProps {
   onNavigate: (tab: TaskCenterTab) => void;
@@ -52,11 +53,16 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
   const loadData = useCallback(() => {
     const projectId = getCurrentProjectId();
 
-    // Delegation stats（与「委派」页签严格同口径：无项目 → 0 条，有项目 → 按项目过滤，P1-6）
+    /**
+     * Delegation stats —— **与「委派」页签同一处实现**（`scopeDelegations`）。
+     *
+     * ⚠️ 第 72 轮审计（真机实测）：这里原来自己写了一遍 `projectId ? filter(...) : []`，
+     * 于是无项目时概览卡显示 `0 运行中 / 0 已完成`，而委派页签同时列出
+     * `5 总计 / 3 已完成 / 2 失败` —— 同一个事实，同一屏，两个答案。
+     * 修法不是"把这处也改对"，而是**把口径收成唯一实现**，让两处不可能再分叉。
+     */
     const orch = getDelegationOrchestrator();
-    const allTasks = projectId
-      ? orch.getAllDelegations().filter((t) => !t.projectId || t.projectId === projectId)
-      : [];
+    const allTasks = scopeDelegations(orch.getAllDelegations(), projectId);
     setDelegationStats({
       total: allTasks.length,
       running: allTasks.filter((t) => t.status === "running").length,

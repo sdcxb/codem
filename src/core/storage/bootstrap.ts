@@ -346,6 +346,22 @@ export const HOT_DOMAIN_TABLES: readonly string[] = [
   "notes",
   "mcp_servers",
   "quick_phrases",
+  /*
+   * ⚠️ 第 72 轮审计补：**读侧**也要预取 —— 判据是"首屏会不会读它"，不是"表重不重要"。
+   *
+   * `message_feedback`：每条消息渲染时 `FeedbackButtons` 都会读一次（`loadFeedback` →
+   * `domainReadOne`），而那是**同步**接口且每条消息只读一次（effect 依赖 message.id）。
+   * 镜像没预取 ⇒ 第一次渲染读到 null（界面显示"未评价"）⇒ 之后**没有人再为这条消息重读**，
+   * 于是"给历史消息点过的赞/踩"在打开会话时显示不出来。表极小（只有点过反馈的消息才有行）。
+   *
+   * 其余同样不在清单里的表（`todo_lists` / `issue_comments` / `cost_records` /
+   * `note_links` / `note_versions` / `graph_nodes` / `graph_edges` /
+   * `notebook_sources` / `notebook_chunks` / `telemetry_events`）**故意不预取**：
+   * 它们的读发生在"打开某个具体对象之后"（打开 Issue / 笔记 / 笔记本 / 图谱），不是首屏；
+   * 而 `notebook_chunks` 这类每行带 embedding 的表预取反而会顶爆启动内存。
+   * 这些表真正需要的是"就绪后重读"（见 `docs/audit-2026-09-23-boundary-class.md`）。
+   */
+  "message_feedback",
 ];
 
 /**
