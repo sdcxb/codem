@@ -86,7 +86,12 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
     });
 
     // Inbox stats
-    setInboxUnread(projectId ? getInboxManager().getUnreadCount(projectId) : 0);
+    /*
+     * ⚠️ 第 72 轮：原来是 `projectId ? getUnreadCount(projectId) : 0` —— 无项目时这张卡读 0，
+     * 而侧栏徽标读的是"不带边界"的全局未读（用户现场：徽标 4、概览卡 0、收件箱空，
+     * 三个地方三个答案）。现在统一口径：无项目 = 全局未读（`null`），有项目 = 本项目 + 全局。
+     */
+    setInboxUnread(getInboxManager().getUnreadCount(projectId ?? null));
 
     // Build activity timeline from delegation tasks + automation history
     const allActivities: ActivityEntry[] = [];

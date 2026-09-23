@@ -38,6 +38,23 @@ const TABLE = "inbox";
 /** 通知保留期：只增不减会让数据库持续膨胀（自动化触发器每次触发都插一行） */
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * 这一行的 `project_id` 算不算"全局通知"？
+ *
+ * 三种写法都要算（第 72 轮真机核对时三种都见到了）：
+ *   - `null`：列可空，正常写入路径（`projectId ?? null`）落的就是它；
+ *   - `undefined`：端口镜像里字段缺失时读出来就是 undefined；
+ *   - `""`：`??` **不会**把空串换成 null（空串不是 null），所以调用方传
+ *     `projectId: ""` 时会原样落库 —— 委派那条链路上 `projectId` 正是空串
+ *     （全局会话没有项目）。
+ *
+ * 只认 `null` 的写法会让 `""` 的行变成"既不属于任何项目、又不算全局"的幽灵行：
+ * 徽标数得到（不带边界），列表里永远看不到（被当成"别的项目"过滤掉）。
+ */
+function isGlobalProjectId(pid: string | null | undefined): boolean {
+  return pid === null || pid === undefined || pid === "";
+}
+
 /** 线协议行就是 snake_case，直接用（字段显式列出，避免多余列混进返回值） */
 function wireToInbox(row: Record<string, unknown>): InboxRow {
   return {
@@ -121,12 +138,37 @@ export const InboxStorage = {
    * `archive()` 是这个域 UI 上唯一的移除入口，而读取永远过滤归档
    * → 误点一次"归档"就等于永久删除（行还在库里，但看不到、数不到、无恢复入口）。
    * 现在加 `includeArchived`（**默认行为不变**：仍然只列未归档）。
+   *
+   * ## 第 72 轮：`projectId` 三态（用户报的"徽标有 4 条、收件箱空的"就是这个）
+   *
+   * 真机现场：任务交接（委派）完成后侧栏徽标显示「任务管理（4 条未读）」，
+   * 点进收件箱**一条都没有**，界面还写着"尚未选择项目，通知按项目聚合"。
+   * 查库确认：那 4 条通知的 `project_id` 是 **NULL（全局通知）**，
+   * 而界面层在"没有当前项目"时**直接清空列表**（`InboxTab` 的早退分支）——
+   * 于是同一个事实在徽标（不带过滤 → 数到 4）和列表（无项目 → 0 条）上完全相反。
+   *
+   * 现在把边界写成**显式三态**，不再用"假值"表达三件不同的事：
+   *   - `undefined`：**不设边界**，返回所有项目的通知（徽标的口径，保持不变）；
+   *   - `null`：**只返回全局通知**（`project_id IS NULL`）—— "没打开项目"时的正确口径；
+   *   - 字符串：该项目的通知 **+ 全局通知**（全局通知与项目无关，任何项目下都该看得见）。
    */
-  listAll(filters?: { projectId?: string; unreadOnly?: boolean; category?: InboxCategory; includeArchived?: boolean }): InboxRow[] {
+  listAll(filters?: {
+    projectId?: string | null;
+    unreadOnly?: boolean;
+    category?: InboxCategory;
+    includeArchived?: boolean;
+  }): InboxRow[] {
     const rust = domainReadMany(TABLE, wireToInbox, filters?.includeArchived ? undefined : { archived: 0 });
     if (rust) {
+      const pid = filters?.projectId;
       const filtered = rust.filter((r) => {
-        if (filters?.projectId && r.project_id !== filters.projectId && r.project_id !== null) return false;
+        if (pid === undefined) {
+          // 不设边界
+        } else if (pid === null) {
+          if (!isGlobalProjectId(r.project_id)) return false; // 只要全局通知
+        } else if (r.project_id !== pid && !isGlobalProjectId(r.project_id)) {
+          return false; // 本项目 + 全局
+        }
         if (filters?.unreadOnly && r.read !== 0) return false;
         if (filters?.category && r.category !== filters.category) return false;
         return true;
@@ -159,12 +201,21 @@ export const InboxStorage = {
     );
   },
 
-  markAllRead(projectId?: string): void {
+  /**
+   * 全部已读。`projectId` 与 `listAll` **同一套三态语义**。
+   *
+   * ⚠️ 第 72 轮修正：原来写的是 `!projectId || row.project_id === projectId || row.project_id === null`，
+   * 传 `null`（"没打开项目"）时 `!projectId` 为真 ⇒ **会把别的项目的通知也一并标成已读** ——
+   * 用户在无项目状态下点一次"全部已读"，别的项目的未读就静默消失了。
+   */
+  markAllRead(projectId?: string | null): void {
     const rust = domainReadMany(TABLE, wireToInbox, { read: 0 });
     if (rust) {
-      const targets = rust.filter(
-        (row) => !projectId || row.project_id === projectId || row.project_id === null,
-      );
+      const targets = rust.filter((row) => {
+        if (projectId === undefined) return true; // 不设边界（调用方要清全部）
+        if (projectId === null) return isGlobalProjectId(row.project_id); // 只清全局
+        return row.project_id === projectId || isGlobalProjectId(row.project_id);
+      });
       if (targets.length === 0) return;
       domainWrite(TABLE, targets.map((row) => inboxToWire({ ...row, read: 1 })), {
         mode: "replace",
@@ -242,12 +293,18 @@ export const InboxStorage = {
     });
   },
 
-  getUnreadCount(projectId?: string): number {
+  /**
+   * 未读数。`projectId` 与 `listAll` **同一套三态语义**（见那里的长注释）——
+   * 两者必须口径一致，否则又会出现"徽标 4 条、列表 0 条"这种自相矛盾的界面。
+   */
+  getUnreadCount(projectId?: string | null): number {
     const rust = domainReadMany(TABLE, wireToInbox, { read: 0, archived: 0 });
     if (rust) {
-      return rust.filter(
-        (r) => !projectId || r.project_id === projectId || r.project_id === null,
-      ).length;
+      return rust.filter((r) => {
+        if (projectId === undefined) return true; // 不设边界（侧栏徽标的口径）
+        if (projectId === null) return isGlobalProjectId(r.project_id); // 只看全局
+        return r.project_id === projectId || isGlobalProjectId(r.project_id);
+      }).length;
     }
     // **旧库回退已删除**（L4 第 18 轮）：端口没接手时返回该域的合理空结果（0 条未读）
     return 0;

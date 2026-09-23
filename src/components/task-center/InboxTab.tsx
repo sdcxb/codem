@@ -68,19 +68,27 @@ export function InboxTab() {
   const loadItems = useCallback(() => {
     const mgr = getInboxManager();
     const pid = getCurrentProjectId();
-    // 无项目时不查库：否则会把其他项目的通知也列出来（P2-12）
-    if (!pid) {
-      setItems([]);
-      setTotalUnread(0);
-      return;
-    }
+    /**
+     * ⚠️ 第 72 轮（用户报的真机 bug）：这里原来是
+     * ```ts
+     * if (!pid) { setItems([]); setTotalUnread(0); return; }   // 无项目 → 清空
+     * ```
+     * 后果：**侧栏徽标显示「任务管理（4 条未读）」，点进收件箱一条都没有**，
+     * 还写着"尚未选择项目，通知按项目聚合"。查库确认那 4 条是 `project_id = NULL`
+     * 的**全局通知**（委派完成/失败、自动化、定时提醒都属于这类，与项目无关）——
+     * 徽标（不带边界）数到 4，列表（无项目直接清空）显示 0，同一个事实两个答案。
+     *
+     * 现在：**没有项目时按"只要全局通知"查**（`projectId: null`），
+     * 而不是"什么都不显示"。P2-12 的承诺不变 —— **别的项目**的通知仍然不显示。
+     */
+    const boundary = pid ?? null;
     setItems(mgr.list({
-      projectId: pid,
+      projectId: boundary,
       category: filter === "all" ? undefined : filter,
       includeArchived: showArchived,
     }));
-    // 徽标显示「项目整体未读」，不随筛选变化（P2-11）
-    setTotalUnread(mgr.getUnreadCount(pid));
+    // 徽标显示「项目整体未读」，不随筛选变化（P2-11）；口径与侧栏徽标一致（无项目时=全局未读）
+    setTotalUnread(mgr.getUnreadCount(boundary));
     // projectId 进依赖：面板打开期间切项目必须重查，否则会显示上一个项目的通知
   }, [filter, projectId, showArchived]);
 
@@ -91,10 +99,13 @@ export function InboxTab() {
     return () => { unsub(); };
   }, [loadItems]);
 
+  /**
+   * 全部已读。原来 `if (!pid) return;` —— 无项目时按钮点了**什么都不发生**
+   * （而徽标明明显示有未读，用户会以为按钮坏了）。现在按同一套边界口径清：
+   * 无项目 → 只清全局通知；有项目 → 清本项目 + 全局。
+   */
   const handleMarkAllRead = () => {
-    const pid = getCurrentProjectId();
-    if (!pid) return;
-    getInboxManager().markAllRead(pid);
+    getInboxManager().markAllRead(getCurrentProjectId() ?? null);
     loadItems();
   };
 
@@ -222,9 +233,17 @@ export function InboxTab() {
       {/* Items */}
       {items.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
+          {/*
+            ⚠️ 第 72 轮：原文案在"无项目"时只说"尚未选择项目，通知按项目聚合"，
+            而当时列表被**整个清空** —— 于是"徽标有 4 条未读、这里一条没有"看起来像数据丢了。
+            现在无项目时列表里本来就会显示**全局通知**，所以文案要如实说清
+            "你现在看到的是哪一类"，而不是暗示"没有通知"。
+          */}
           {projectId
             ? (zh ? "暂无通知" : "No notifications")
-            : (zh ? "尚未选择项目，通知按项目聚合。" : "No project selected — notifications are project-scoped.")}
+            : (zh
+                ? "尚未选择项目 —— 这里显示的是全局通知（委派完成/失败、自动化、定时提醒等）；项目内的通知请先打开对应项目。"
+                : "No project selected — showing global notifications only (delegation, automation, reminders). Open a project to see its notifications.")}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>

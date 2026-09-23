@@ -69,8 +69,16 @@ class InboxManagerClass {
    * `archive()` 只写 `archived = 1`，而这个读路径**恒传** `archived: 0`，
    * 界面上的"归档"按钮因此等价于永久删除（提示"归档"却再也找不回来）。
    * 现在给出显式开关（**默认行为一个字没变**：仍然只列未归档）。
+   *
+   * `projectId`（第 72 轮）：**三态**，语义见 `InboxStorage.listAll` 的长注释 ——
+   * `undefined` 不设边界 / `null` 只要全局通知 / 字符串 = 该项目 + 全局。
    */
-  list(filters?: { projectId?: string; unreadOnly?: boolean; category?: InboxCategory; includeArchived?: boolean }): InboxItem[] {
+  list(filters?: {
+    projectId?: string | null;
+    unreadOnly?: boolean;
+    category?: InboxCategory;
+    includeArchived?: boolean;
+  }): InboxItem[] {
     return InboxStorage.listAll(filters).map(rowToItem);
   }
 
@@ -79,7 +87,7 @@ class InboxManagerClass {
     this.notify();
   }
 
-  markAllRead(projectId?: string): void {
+  markAllRead(projectId?: string | null): void {
     InboxStorage.markAllRead(projectId);
     this.notify();
   }
@@ -99,7 +107,8 @@ class InboxManagerClass {
     return ok;
   }
 
-  getUnreadCount(projectId?: string): number {
+  /** 未读数。`projectId` 三态语义与 `list` 一致（否则徽标与列表会各说各话）。 */
+  getUnreadCount(projectId?: string | null): number {
     return InboxStorage.getUnreadCount(projectId);
   }
 

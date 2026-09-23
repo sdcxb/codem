@@ -49,6 +49,17 @@ export interface DelegateParams {
 
 export type DelegationListener = (task: DelegationTask) => void;
 
+/**
+ * 还没补到过历史时的重试间隔。
+ *
+ * 取 250ms 而不是 1s：镜像加载是**异步**的，而"第一次读"往往就发生在加载窗口里 ——
+ * 重试间隔越短，用户越不容易看到"页签空着"的中间态；同时它也只是个**下限**，
+ * 高频调用方（页签 1s 轮询、遥测适配器）不会被放大成风暴。
+ */
+const HYDRATE_RETRY_INTERVAL_MS = 250;
+/** 已经补到过之后降到低频（每 30 秒兜一次，抓"别处新建的历史"） */
+const HYDRATE_IDLE_INTERVAL_MS = 30_000;
+
 // ========== Orchestrator ==========
 
 export class DelegationOrchestrator {
@@ -59,10 +70,17 @@ export class DelegationOrchestrator {
   private listeners: Set<DelegationListener> = new Set();
   /** 依赖图：sessionId → 它正在等待的 targetSessionIds */
   private dependencyGraph: Map<string, Set<string>> = new Map();
+  /** 上一次向存储补历史的时刻（0 = 还没补过） */
+  private lastHydrateAt = 0;
+  /** 是否已经成功补到过历史（决定重试频率，见 `maybeHydrateFromStorage`） */
+  private hydratedOnce = false;
+  /** 已上报过"被中断"的任务（避免每次补齐都往库里再写一遍失败） */
+  private interruptedReported: Set<string> = new Set();
 
   constructor(config?: Partial<DelegationConfig>) {
     this.config = { ...DEFAULT_DELEGATION_CONFIG, ...config };
-    // 从 DB 恢复未完成的任务到内存
+    // 从 DB 恢复未完成的任务到内存（**只是第一次尝试**；端口可能还没就绪，
+    // 所以读路径上还有一层可重试的补齐，见 getAllDelegations/maybeHydrateFromStorage）
     this.restoreFromDB();
   }
 
@@ -350,8 +368,23 @@ export class DelegationOrchestrator {
    * 获取全部委派任务（按创建时间倒序）。
    * 供「委派」页签按项目过滤展示：原先页签只能靠 source/target 会话反查，
    * 会漏掉源会话已删除的委派任务（P1-6）。
+   *
+   * ## 第 72 轮：读之前先**补齐历史**（这就是"重启后委派页签空着"的病根）
+   *
+   * 真机实测：库里 `delegation_tasks` 有 5 条（4 条今天的交接 + 1 条历史），
+   * 而「委派」页签显示 `0 总计 / 0 已完成` —— 页签读的是**内存**里的 `this.tasks`，
+   * 而内存里那份只在**构造函数里补过一次**（`restoreFromDB`）。
+   *
+   * 那一次为什么什么都没补到？`delegation_tasks` 的域镜像**不在预取清单里**
+   * （`HOT_DOMAIN_TABLES`，已一并补上），而 `domainReadMany` 对"镜像没就绪"的表
+   * 返回 `undefined` → `getRecentDelegations()` 吞成 `[]` → 构造函数开在端口就绪之前，
+   * 于是历史**一条都没恢复**，而且**没有任何人会再试一次**（页签 1 秒轮询的也是内存）。
+   *
+   * 现在把补齐做成**可重试、幂等**的：每次读之前按节流窗口试着补一次，
+   * 镜像一就绪（哪怕晚几秒）历史就会自己出现，不再依赖"构造函数那一刻恰好就绪"。
    */
   getAllDelegations(): DelegationTask[] {
+    this.maybeHydrateFromStorage();
     return Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
   }
 
@@ -553,11 +586,24 @@ export class DelegationOrchestrator {
    * 在构造函数中调用，确保应用重启后能继续追踪 pending/running 的委派。
    */
   private restoreFromDB(): void {
+    this.hydrateFromStorage();
+  }
+
+  /**
+   * 从存储补齐内存里的委派任务（**幂等、可重试**）。
+   *
+   * @returns 这次新补进来多少条（供日志与测试断言）
+   */
+  hydrateFromStorage(): { activeRestored: number; historyRestored: number; interrupted: number } {
+    const out = { activeRestored: 0, historyRestored: 0, interrupted: 0 };
     try {
       const active = getActiveDelegations();
       for (const task of active) {
-        this.tasks.set(task.id, task);
-        this.addDependency(task.sourceSessionId, task.targetSessionId);
+        if (!this.tasks.has(task.id)) {
+          this.tasks.set(task.id, task);
+          this.addDependency(task.sourceSessionId, task.targetSessionId);
+          out.activeRestored++;
+        }
 
         /**
          * 第 83 波（审计修正）：重启后**曾经在跑**的任务不能只打一行 warn 就放着。
@@ -570,12 +616,20 @@ export class DelegationOrchestrator {
          *
          * 进程重启 ⇒ 那个后台回合不可能还在跑，事实就是"被中断"。这里如实落库为失败，
          * 并把原因写清楚，让父会话立刻拿到结论（而不是干等）。
+         *
+         * ⚠️ 本进程里创建的任务一定在内存里，所以"**在库里 running/pending、却不在内存里**"
+         * 只可能是上一个进程留下的 —— 判据成立。`interruptedReported` 保证只落库一次。
          */
-        if (task.status === "running" || task.status === "pending") {
+        if (
+          (task.status === "running" || task.status === "pending") &&
+          !this.interruptedReported.has(task.id)
+        ) {
+          this.interruptedReported.add(task.id);
           const reason = `委派任务在应用重启时被中断（原状态：${task.status}）—— 目标会话 ${task.targetSessionId} 的这一轮已经不可能继续。请重新发起委派，或改为直接在该会话里继续。`;
           console.warn(`[DelegationOrchestrator] ${task.id} was ${task.status} during shutdown → 标记为失败（重启后不会自己继续）`);
           try {
             this.failTask(task.id, reason);
+            out.interrupted++;
           } catch (e) {
             console.warn(`[DelegationOrchestrator] 标记中断任务失败（${task.id}）:`, e);
           }
@@ -584,17 +638,43 @@ export class DelegationOrchestrator {
 
       // 历史记录（completed/failed/cancelled）也恢复到内存：只重建未完成任务的依赖图，
       // 但「委派」页签与概览需要看到历史与统计（原先这里是个空循环 → 重启后历史全丢）。
-      const activeIds = new Set(active.map((t) => t.id));
       for (const task of getRecentDelegations(200)) {
-        if (!activeIds.has(task.id)) this.tasks.set(task.id, task);
+        if (!this.tasks.has(task.id)) {
+          this.tasks.set(task.id, task);
+          out.historyRestored++;
+        }
       }
 
-      if (active.length > 0) {
-        console.log(`[DelegationOrchestrator] Restored ${active.length} active delegation(s) from DB`);
+      if (out.activeRestored > 0) {
+        console.log(`[DelegationOrchestrator] Restored ${out.activeRestored} active delegation(s) from DB`);
+      }
+      // 只有真的读到东西才算"补过了" —— 端口没就绪时这里全是 0，下一轮还要再试（见 maybeHydrateFromStorage）
+      if (out.activeRestored > 0 || out.historyRestored > 0 || active.length > 0) {
+        this.hydratedOnce = true;
       }
     } catch (e) {
-      console.error("[DelegationOrchestrator] restoreFromDB failed:", e);
+      console.error("[DelegationOrchestrator] hydrateFromStorage failed:", e);
     }
+    return out;
+  }
+
+  /**
+   * 读路径上的**节流补齐**。
+   *
+   * 为什么需要"可重试"而不是"构造时补一次"：构造函数可能与存储端口就绪**赛跑**
+   * （真机实测：`delegation_tasks` 5 条历史，页签显示 0 总计）。
+   * 端口还没就绪时 `domainReadMany` 返回 `undefined`，存储层按契约吞成 `[]` ——
+   * 后果是"空"与"没读到"在调用方看起来一模一样，而**没有任何人会再试一次**。
+   *
+   * 于是：读之前按窗口（默认 1 秒，与页签轮询同频）试着补一次；一旦补到东西就置
+   * `hydratedOnce` 并**降到低频**（30 秒），避免每次读都去扫一遍 200 行。
+   */
+  private maybeHydrateFromStorage(): void {
+    const now = Date.now();
+    const interval = this.hydratedOnce ? HYDRATE_IDLE_INTERVAL_MS : HYDRATE_RETRY_INTERVAL_MS;
+    if (now - this.lastHydrateAt < interval) return;
+    this.lastHydrateAt = now;
+    this.hydrateFromStorage();
   }
 
   /** 清理已完成的任务（从内存和 DB） */

@@ -329,6 +329,11 @@ export const HOT_DOMAIN_TABLES: readonly string[] = [
   "notebook_groups",
   "goals",
   "inbox",
+  // ⚠️ 第 72 轮补：**委派任务漏了这张表**，而漏它的后果正是清单注释里说的那件事 ——
+  // 「委派」页签读的是编排器内存，内存只在构造时从这张表补一次；镜像没预取 ⇒
+  // `domainReadMany` 返回 undefined ⇒ 存储层吞成 `[]` ⇒ "重启后委派页签空着"
+  // （真机实测：库里 5 条任务，页签 `0 总计`）。
+  "delegation_tasks",
   "issues",
   "squads",
   "squad_members",

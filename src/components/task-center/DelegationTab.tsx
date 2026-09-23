@@ -48,10 +48,23 @@ export function DelegationTab() {
 
   const loadTasks = useCallback(() => {
     const orch = getDelegationOrchestrator();
-    // 无项目 → 列表与统计都为空（委派任务带 projectId，跨项目展示会串数据，P2-12）
+    /**
+     * ## 第 72 轮：与收件箱同一个 bug 家族
+     *
+     * 原来写的是 `projectId ? filter(...) : []` —— **没有打开项目时整个委派页签是空的**，
+     * 而"全局委派"（从全局会话发起的交接，`task.projectId` 是**空串**）恰恰不属于任何项目。
+     * 用户现场就是这一类：交接出去的 4 个任务全部 `project_id = ""`，
+     * 于是"委派页签里自己的任务一条都看不到"。
+     *
+     * 现在的口径与收件箱一致：
+     *   - 没有项目 → 只列**全局委派**（`!task.projectId`）；
+     *   - 有项目 → 列该项目的 **+ 全局委派**。
+     * 跨项目串数据这条（P2-12）没变：别的项目的任务仍然列不出来。
+     */
+    const all = orch.getAllDelegations();
     const scoped = projectId
-      ? orch.getAllDelegations().filter((t) => !t.projectId || t.projectId === projectId)
-      : [];
+      ? all.filter((t) => !t.projectId || t.projectId === projectId)
+      : all.filter((t) => !t.projectId);
 
     setTasks(scoped);
     // 统计口径必须与列表一致：原先直接用 orch.getStats()（全库、跨项目），
@@ -128,7 +141,10 @@ export function DelegationTab() {
               {zh ? " 工具来委派任务到其他会话。" : " tool to delegate tasks."}
             </>
           ) : (
-            zh ? "尚未选择项目，委派任务按项目隔离。" : "No project selected — delegations are project-scoped."
+            // 与收件箱同一口径：无项目时这里列的是**全局委派**，不是"什么都没有"
+            zh
+              ? "尚未选择项目 —— 这里显示的是从全局会话发起的委派；项目内的委派请先打开对应项目。"
+              : "No project selected — showing delegations started from global sessions. Open a project to see its delegations."
           )}
         </div>
       ) : (
