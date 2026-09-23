@@ -2,6 +2,102 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.120] - 2026-09-23 — 用户报的两条控制台红字：`UNIQUE constraint failed`（同一行并发写）+ `saveText failed`（溢出策略在打包版里从未生效过）——两条都是"同一件事有两份实现/两条写路，只有一条是对的"
+
+> 用户贴的控制台（一次会话里反复出现）：
+> ```text
+> 数据保存失败（telemetry.flush）：UNIQUE constraint failed: telemetry_events.id
+> 数据保存失败（delegation.createDelegationTask）：UNIQUE constraint failed: delegation_tasks.id
+> [DelegationOrchestrator] startTask: task … is already running
+> [spill-policy] saveText failed for bash: (void 0) is not a function; keeping inline content
+> ```
+> 前两条不是"数据坏了"，而是**同一行的两次写抢在了一起**（下面有复现与突变验证）；
+> 第三条是**溢出策略在打包版里从来没成功过一次**（Node `fs` 在渲染进程里是空壳）。
+> 修完这两类，根子上的共同点很有意思：**同一件事存在两条路，其中一条是死的**。
+
+### 🔴 一、`UNIQUE constraint failed: <表>.id` —— 同一行的写必须按调用顺序落库
+
+- **先说清楚不是怎么回事**：报错的两行数据**都在库里**（`createDelegationTask` 写的是任务创建，
+  `telemetry.flush` 写的是统计事件），用户看到的是"数据保存失败"，实际数据完好 —— 这类**假失败**
+  比真失败更坏：它让人以为丢数据，还每次都弹红字。
+- **根因**（已复现）：引擎的写有两种语义 —— `mode:"insert"` 是**裸 INSERT**（主键冲突就报
+  `UNIQUE constraint failed`），`mode:"replace"` 是**先 UPDATE 再 INSERT**（幂等）。而同一行的两次写
+  在渲染进程里是**并发发出去**的：
+  - 委派任务：`delegate()` 先 `createDelegationTask`（insert），紧接着 `startTask` 就
+    `updateDelegationTaskStatus`（replace）—— 后者先落地时，前者的裸 INSERT 必然撞主键；
+  - 统计：写穿（write-through）用 insert，而 `trackShard` 那边用 replace 探针 —— 同一行同样会撞。
+- **修法**：在渲染进程的写入口给 **同一 (表, 主键)** 的引擎写**按调用顺序串起来**
+  （`domain-store.ts` 的 `serializeEngineWrite`：**第一条同步发出**——否则会破坏"写完立刻可见"的既有契约
+  —— 仅当同一键上已有在途写时才排队）；同时把统计的写穿语义改成 `mode:"replace"`（幂等）。
+- **突变验证**（`.preview-shot/mutate-write-order.mjs`）：把串行化去掉 → **原样复现用户贴的那句**
+  `数据保存失败（delegation.createDelegationTask）：UNIQUE constraint failed: delegation_tasks.id`；
+  门禁 `write-order-race.test.ts` 5 条（含"延迟引擎桩"下 insert/replace 抢行、真实
+  `createDelegationTask`+`updateDelegationTaskStatus` 路径、统计 replace 幂等、不同行**不**被串行化）。
+  ⚠️ 过程中的一次**回归**也记下来：一开始让**所有**引擎写都推迟一个微任务，结果两条依赖"同一 tick 可见"
+  的既有门禁（`STOR-015`、`Y3-1`，用的是"镜像+引擎同表"的假端口）立刻红 —— 所以最终形态是
+  "首条同步、后续排队"，并给测试加了 `__awaitPendingWrites()`。
+
+### 🔴 二、溢出（spill）只有一份实现：`saveText failed … (void 0) is not a function`
+
+- **真机现场**：只要工具输出变大就一条这样的日志。`(void 0) is not a function` 是
+  `llm/spill-store.ts` 里的 `fs.mkdtempSync(...)` —— 渲染进程的 `fs`/`os`/`path` 被
+  `vite.config.ts` 映射到 `src/stubs/*` 的**空壳**（`writeFile` 什么都不做，`mkdtempSync` 根本不存在）。
+  ⇒ **主 agent 循环这条溢出策略在打包版里从未成功过一次**，大输出一直原地留在上下文里。
+- **更根本的问题**：项目里其实**有两套溢出现** —— `core/storage/spill.ts`（`retainToolResult`，
+  被 `session/executor.ts` 用着、被 `pruneSpillFiles` 按文件名回收）一直是好的，只有中间件这条路
+  走的是那套走不通的实现。所以最终的修法不是"把坏的那套写好"，而是**删掉重复实现**：
+  `SpillPolicyMiddleware` 现在**只做决策**（WHEN 溢出：上限、跳过 read、跳过错误结果、best-effort 降级），
+  写盘/预览/说明全部委托 `retainToolResult`；`src/core/llm/spill-store.ts` **已删除**。
+- 顺带修掉两个同源隐患：预览与说明不再用 `Buffer`（渲染进程里不是原生对象），改用统一的
+  `utf8Length`；溢出文件落点与保留期清理（`pruneSpillFiles`）**同一目录、同一命名约定**。
+- **门禁与突变验证**：新增 `spill-policy-delegation.test.ts`（6 条，**不 mock 存储** —— 用文件 API 的
+  调用参数反查"写下去的确实是全文、原子写、模型拿到的定位符确实指向那个文件、说明行里的省略字节数
+  与实际一致"），`architecture-changes.test.tsx` 的溢出段重写为**唯一实现守卫**。
+  **5 处突变全部被抓**（预算不扣上限 → POLICY-2 红；预算给 0 说明行不诚实 → POLICY-2 红；不跳过 read →
+  POLICY-3 红；装不下却不再降级 → POLICY-6 红；让 `llm/spill-store.ts` 复活 → 唯一实现守卫红）。
+
+### 🔵 三、`startTask: … is already running` 不再是红字
+
+`delegate()` 的 `autoStart` 与执行器都会给任务标"运行中"，**第二次标注是正常路径**（同一个任务被两条
+正常入口各自标一次），此前它按 `console.warn` 打印，看起来像故障。现在正常运行路径降级为 debug 日志，
+**终态任务的二次标注仍然 warn**（那才是真异常）。
+
+### 🔴 四、真机核对时发现的第三个缺陷：**工具调用的 id 一路是空的**
+
+这一条是**在做上面的真机核对时才量出来的**，不是猜的：驱动一个真实回合让 `bash` 产出 40000 字节输出，
+溢出文件确实落盘了（40022 字节），但文件名是
+
+```text
+C:\Users\<用户>\AppData\Roaming\com.codem.app\spill\<会话>\bash--1790131192728.txt
+                                                                    ↑↑ 调用 id 是空的
+```
+
+- **根因**：`agentic-loop.ts` 里那个工具处理器返回的 `ToolCallResult.id` **一直是空串**
+  （`id: ""` 是字面量，全仓 6 处），而处理器签名 `(name, args, ctx)` 里根本没有调用 id ——
+  管线之外任何读 `result.id` 的地方拿到的都是空。受影响的不止文件名：
+  `EventLogFinalizeMiddleware` 写事件日志时也读它，于是 `tool_call` / `tool_result`
+  两类事件的 **`toolCallId` 全是空串**（事件日志正是"执行轨迹 / 事后复盘"的数据源，
+  空 id 等于这些记录回指不到具体调用）。
+- **修法**：不动处理器签名，改由 `streaming-executor` 在**每次调用管线时注入**
+  `ctx.toolCallId = tc.id`（`ToolExecutorContext` 新增可选字段），读取方一律
+  `result.id || ctx.toolCallId`（处理器将来补上 id 时自动优先用它）。
+  溢出文件名同时加了防御：调用 id 缺失时**不留悬空连字符**，且仍然满足保留期清理的
+  文件名判据（`-<毫秒>.txt`）。
+- **门禁**：新增 `tool-call-identity.test.ts` 6 条（走**真实** `StreamingToolExecutorImpl`
+  验证 ctx 确实拿到了 id、事件日志写下的 `toolCallId` 不再是空串、`result.id` 优先、
+  两处都空时如实写空串不编造、溢出文件名用真实 id、缺 id 时文件名仍被清理器认得出），
+  另 **4 处突变全部被抓**（退回只读 `result.id` ×2、执行器不注入、文件名留悬空连字符）。
+
+### 门禁与实测
+
+- `tsc` 0；**358 文件 / 5976 通过 / 16 跳过**；UI 门禁 819 个文件 **error 0 / warn 0**；
+  CSS 契约 2734 个类**无变化**。全量里唯一红项是 `UPD-MANIFEST-6`（`latest.json` 还没指向
+  1.16.120）—— 这是"版本号已升、还没发布"的设计内红项，发布后转绿（本轮会连同
+  `verify-update-manifest --remote` 一起复核）。
+- 装机版核对（1.16.120）：冷启动静置 + 一个真实 agent 回合（bash 40000 字节输出 + 一次真实委派），
+  三类红字 **0 条**，统计 flush 有正控（事件数确实在涨）；溢出文件 40022 字节落盘、
+  说明行字节数逐字节可核（32256 保留 + 7766 省略 = 40022）。
+
 ## [1.16.119] - 2026-09-21 — 分节线按用户逐状态选定的形态落地：**平时只留白，鼠标移上去才长线**
 
 > 承接 1.16.118（同一处线条）。用户在对照页里**分状态**给了答案：

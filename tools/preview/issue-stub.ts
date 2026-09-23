@@ -3,7 +3,7 @@
  *
  * 目的：让 `tools/preview` 能渲染**真实的**宿主 `IssueBoard`（看板子视图），
  * 把「看板内容与实时事件流互相遮挡」这类版面缺陷纳入自动审计。
- * 真 `core/issue/issue` 会一路依赖到 node 内建模块（spill-store / sql.js），
+ * 真 `core/issue/issue` 会一路依赖到宿主模块（sql.js 等），
  * 浏览器预览构建不了；版面只取决于组件结构 + 样式，所以这里只替换数据源。
  */
 

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.119",
-  "notes": "v1.16.119 — 回复分节线：平时只留白，鼠标移上去才淡入（5% + 内缩 24px + 两端渐隐）",
-  "pub_date": "2026-09-22T06:19:16Z",
+  "version": "1.16.120",
+  "notes": "修复控制台两类红字：同一行并发写导致的 UNIQUE constraint 假失败（统计/委派）＋ 溢出策略在打包版里从未生效过（已合并为唯一实现）；另修好溢出文件名与事件日志里丢失的工具调用 id",
+  "pub_date": "2026-09-23T03:00:27Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1drc2pGcXVialZ2UWJJK3BSS3NleUE3RGpscWNGSm5YbEd5OEVaZ1dweWhhdDFpTDZiQzJBclhxRjJUazY5cndPUTNvUXV4dFRDeVJwMEZRdGRPMFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDU3NjQzCWZpbGU6Q29kZW1fMS4xNi4xMTlfeDY0LXNldHVwLmV4ZQoyNDZvMkRvcTEzeENQOHpKb1ZvTUliNVVDQWJBVHZxKzRlbWV6TmlVemFJQldVSnlFa3JaSm9CWmpuK2tIVzl3OXI3L2tyeXloZHBaekFRbmRtVCtEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.119/Codem_1.16.119_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FwY3hlNkRDanh1VkR5dlNjSDBPd3dtTVRLUDB4V3VIR2sxbDcxT2d5ZzBGNkR6NHhPM1VKRHNDb2ZiamdhVnBYWDNnOEtWWVMvQUtZQ0dkODNpWGdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTMyMTAzCWZpbGU6Q29kZW1fMS4xNi4xMjBfeDY0LXNldHVwLmV4ZQoydFl2bkRQNGZGT0pJa2JGaTFoZnFibGJHcEM1LzAxemZlUkpjdHBkUVU5ZTVSTHNZR1ZFYVQycVpRYnlsaStCdWErVVhXRVJ4VTUxT0RlU1h1OWlDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.120/Codem_1.16.120_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1drc2pGcXVialZ2UWJJK3BSS3NleUE3RGpscWNGSm5YbEd5OEVaZ1dweWhhdDFpTDZiQzJBclhxRjJUazY5cndPUTNvUXV4dFRDeVJwMEZRdGRPMFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDU3NjQzCWZpbGU6Q29kZW1fMS4xNi4xMTlfeDY0LXNldHVwLmV4ZQoyNDZvMkRvcTEzeENQOHpKb1ZvTUliNVVDQWJBVHZxKzRlbWV6TmlVemFJQldVSnlFa3JaSm9CWmpuK2tIVzl3OXI3L2tyeXloZHBaekFRbmRtVCtEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.119/Codem_1.16.119_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FwY3hlNkRDanh1VkR5dlNjSDBPd3dtTVRLUDB4V3VIR2sxbDcxT2d5ZzBGNkR6NHhPM1VKRHNDb2ZiamdhVnBYWDNnOEtWWVMvQUtZQ0dkODNpWGdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTMyMTAzCWZpbGU6Q29kZW1fMS4xNi4xMjBfeDY0LXNldHVwLmV4ZQoydFl2bkRQNGZGT0pJa2JGaTFoZnFibGJHcEM1LzAxemZlUkpjdHBkUVU5ZTVSTHNZR1ZFYVQycVpRYnlsaStCdWErVVhXRVJ4VTUxT0RlU1h1OWlDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.120/Codem_1.16.120_x64-setup.exe"
     }
   }
 }

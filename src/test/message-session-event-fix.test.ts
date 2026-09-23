@@ -71,6 +71,7 @@ function installFsStub(): void {
 }
 
 import { setStoragePort } from "../core/storage/port";
+import { __awaitPendingWrites } from "../core/storage/domain-store";
 import { createFakeStoragePort } from "./fake-storage-port";
 import {
   appendSessionMessage,
@@ -693,6 +694,12 @@ describe("FIXB-8：硬删除必须声明 confirm_bulk（软删除不许带）", 
     const p2 = makePort();
     setStoragePort(p2);
     deleteSession(SESSION);
+    /*
+     * 第 71 轮：`domain-store` 现在把**同一行的写按调用顺序串行**（为了修用户真机上那条
+     * `UNIQUE constraint failed` 假失败），于是"删除"可能排在同行的前一次写之后一个微任务
+     * —— 断言前先等写穿落地。产品侧读的是镜像（同步更新），这里只是断言的时序假设变了。
+     */
+    await __awaitPendingWrites();
     const withoutConfirm = p2.__writes().filter((w) => w.command === "crud.delete");
     expect(withoutConfirm.length).toBe(1);
     expect(

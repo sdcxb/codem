@@ -325,6 +325,109 @@ function deferWrite(item: Omit<DeferredWrite, "seq" | "at">): boolean {
 }
 
 /**
+ * **同一个键的写穿必须按调用顺序抵达引擎**（第 71 轮；真机两条假报错的根因）。
+ *
+ * ## 现场（用户在做跨会话委派时贴出的控制台）
+ *
+ * ```text
+ * 数据保存失败（telemetry.flush）：UNIQUE constraint failed: telemetry_events.id
+ * 数据保存失败（delegation.createDelegationTask）：UNIQUE constraint failed: delegation_tasks.id
+ * ```
+ *
+ * 两处的形态完全相同：**同一行的两次写并发在飞，后发先至**。
+ * 引擎侧 `crud.upsert` 的默认模式是**裸 `INSERT`**（只有 `mode: "replace"` 才走
+ * "先 UPDATE、没有再 INSERT"，见 `crud.rs`），于是：
+ *
+ * ```text
+ * ① createDelegationTask(task)          → INSERT（在飞）
+ * ② startTask → updateDelegationTaskStatus(..., "replace")  → UPDATE 0 行 → INSERT
+ *        ── ② 先落库：行已存在
+ *        ── ① 才落库：撞 UNIQUE constraint failed   ← 假失败（行其实就在那儿，数据没丢）
+ * ```
+ *
+ * `telemetry.flush` 是同一条链的另一半：`domainWrite` 的写穿（insert）与
+ * `trackShard` 的探测（replace，用来观察错误码）**是同一批行的两次写**，
+ * 谁先到都可能 —— 探测赢了，写穿就撞主键，用户看到"数据保存失败"。
+ * （`telemetry.ts` 里那段长注释记的是"探测必须用 replace"，那只修了探测这一侧；
+ * 写穿那一侧仍是 insert，于是反向的竞态还在。）
+ *
+ * ## 修法：**按 (表, 主键) 串行化引擎写**，不改任何语义
+ *
+ * 镜像（`applyWriteMany`）本来就是同步按调用顺序应用的，只有**引擎那一路**是
+ * "发出去了就不管顺序" —— 所以这里把引擎调用按 key 挂到一条 Promise 链上：
+ * 同一行的写在引擎侧**严格按调用顺序**执行，跨行/跨表互不阻塞。
+ *
+ * 失败**不打断链**（后一个写照常执行），链尾清理干净（不留内存）。
+ * 这不是"新增一层重试"：**重试**会把非幂等写变成两行，这里只调**顺序**。
+ */
+const writeChains = new Map<string, Promise<unknown>>();
+
+/** 拿这次写涉及的行键（`表\u0000主键值`）；拿不到主键就整表一条链（保守） */
+function writeKeys(table: string, resolved: Record<string, unknown>): string[] {
+  const rows = resolved.rows as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(rows) && rows.length > 0) {
+    const keys = rows
+      .map((r) => (r && typeof r === "object" && r.id !== undefined ? `${table}\u0000${String(r.id)}` : null))
+      .filter((k): k is string => k !== null);
+    if (keys.length === rows.length) return [...new Set(keys)];
+  }
+  return [`${table}\u0000*`];
+}
+
+/** 把一次引擎写挂到它那几行的链尾（同一行严格按调用顺序，不同行互不等待） */
+function serializeEngineWrite(key: string, run: () => Promise<unknown>): void {
+  const prev = writeChains.get(key);
+  let issued: Promise<unknown>;
+  if (prev) {
+    // 该行**还有写在途** → 排队等它先到（这就是修竞态的那一步）
+    issued = prev.then(run, run);
+  } else {
+    /*
+     * 无在途写 → **当场发出**。这一条不是优化而是**语义保持**：
+     * 写穿原本就是同步发出的（"先改镜像、再发命令"），而假端口里引擎与镜像是
+     * **同一张表**，于是大量既有用例在 `domainWrite(...)` 之后**同步**断言引擎侧结果
+     * （`STOR-015` 就是：删除项目后立刻断言子表已空）。
+     * 把无在途的情形也推迟一个微任务，那些用例会集体变红 —— 而它们红得**没有道理**
+     * （产品里镜像与引擎是两份存储，同步断言只看镜像）。
+     */
+    try {
+      issued = run();
+    } catch {
+      issued = Promise.resolve();
+    }
+  }
+  const tail = issued.catch(() => {});
+  writeChains.set(key, tail);
+  void tail.finally(() => {
+    // 只有当自己仍是链尾时才清理（否则会把后来者挂上的链删掉）
+    if (writeChains.get(key) === tail) writeChains.delete(key);
+  });
+}
+
+/** 测试用：清空写序链（每个用例之间互不影响） */
+export function __resetWriteChains(): void {
+  writeChains.clear();
+}
+
+/**
+ * 测试用：等所有在途的引擎写落地。
+ *
+ * 为什么需要它：写序链会让"同一行的第二次写"**排队到前一次之后**，
+ * 于是"写完立刻同步断言引擎收到了什么"这种断言会看到空数组。
+ * 与其在每个用例里塞 `await new Promise(r => setTimeout(r, 0))`，
+ * 不如给一个语义明确的等待点（生产代码不需要它 —— 它读的是镜像，镜像本来就是同步更新的）。
+ */
+export async function __awaitPendingWrites(): Promise<void> {
+  // 链可能在等待期间被追加，循环到稳定为止（上限防御死循环）
+  for (let i = 0; i < 50; i++) {
+    const pending = [...writeChains.values()];
+    if (pending.length === 0) return;
+    await Promise.allSettled(pending);
+    if (writeChains.size === 0) return;
+  }
+}
+
+/**
  * **重放的那一刻**才求值：这次排队到底要写穿什么。
  *
  * ## 为什么必须推迟到这里（X-1）
@@ -496,13 +599,23 @@ function persistWriteThrough(
   if (ids && ids.length > 0) {
     const key = String(resolved._key ?? "id");
     for (const id of ids) {
-      void port.data
-        .execute(cmd, { table, where: { [key]: id } })
-        .catch((e) => reportPersistFailure(scope, e, note));
+      const params = { table, where: { [key]: id } };
+      serializeEngineWrite(`${table}\u0000${id}`, () =>
+        port.data.execute(cmd, params).catch((e) => reportPersistFailure(scope, e, note)),
+      );
     }
     return;
   }
-  void port.data.execute(cmd, resolved).catch((e) => reportPersistFailure(scope, e, note));
+  /*
+   * 按 (表, 主键) 串行 —— 同一行的两次写必须**按调用顺序**抵达引擎，
+   * 否则非幂等的 `insert` 会撞主键、报出"数据保存失败"（用户真机那条）。
+   * 不同行 / 不同表各走各的链，互不等待。理由见 `serializeEngineWrite` 的注释。
+   */
+  for (const key of writeKeys(table, resolved)) {
+    serializeEngineWrite(key, () =>
+      port.data.execute(cmd, resolved).catch((e) => reportPersistFailure(scope, e, note)),
+    );
+  }
 }
 
 /**

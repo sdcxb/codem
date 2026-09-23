@@ -23,6 +23,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { setStoragePort } from "../core/storage/port";
+import { __awaitPendingWrites } from "../core/storage/domain-store";
 import * as SessionStorage from "../core/storage/session";
 
 const PROJECT = "p-count";
@@ -55,9 +56,10 @@ beforeEach(() => {
 });
 
 describe("会话更新的列归属（engine-owned message_count 不许被镜像覆盖）", () => {
-  it("SC-1: 只改标题时，写穿命令里**不得出现** `message_count`（引擎的值保持不动）", () => {
+  it("SC-1: 只改标题时，写穿命令里**不得出现** `message_count`（引擎的值保持不动）", async () => {
     const port = seed();
     SessionStorage.updateSession(SESSION, { title: "新标题" });
+    await __awaitPendingWrites(); // 第 71 轮：写序链会让同行的第二次写排队，断言前先等落地
 
     const row = upsertRow(port);
     expect(row.title, "标题必须被写").toBe("新标题");
@@ -70,17 +72,19 @@ describe("会话更新的列归属（engine-owned message_count 不许被镜像�
     expect(row.project_id).toBe(PROJECT);
   });
 
-  it("SC-2: 显式给 messageCount 时**必须照写**（对账/笔记本路径靠它）", () => {
+  it("SC-2: 显式给 messageCount 时**必须照写**（对账/笔记本路径靠它）", async () => {
     const port = seed();
     SessionStorage.updateSession(SESSION, { messageCount: 7 });
+    await __awaitPendingWrites();
 
     const row = upsertRow(port);
     expect(row.message_count, "显式给出的计数必须写穿（`maintenance.ts` 的对账与笔记本都走这条）").toBe(7);
   });
 
-  it("SC-3: 同时改标题与计数 → 两列都写（不能因为 P1-2 的守卫把显式值吞掉）", () => {
+  it("SC-3: 同时改标题与计数 → 两列都写（不能因为 P1-2 的守卫把显式值吞掉）", async () => {
     const port = seed();
     SessionStorage.updateSession(SESSION, { title: "带计数", messageCount: 3 });
+    await __awaitPendingWrites();
 
     const row = upsertRow(port);
     expect(row.title).toBe("带计数");

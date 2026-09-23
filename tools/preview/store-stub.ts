@@ -2,7 +2,7 @@
  * 预览构建用的项目 store 桩。
  *
  * 真 `core/store.ts` 会经 `storage/project`、`storage/session`、`environment`
- * 一路拉进 sql.js 与 node 内建模块（spill-store），浏览器预览构建不了。
+ * 一路拉进 sql.js 等宿主依赖（浏览器预览构建不了）。
  * 看板子视图只需要「当前项目 id」，这里给一个静态 store 即可。
  */
 

@@ -596,8 +596,22 @@ class TelemetryCollector {
          * 而是把"本片的事件"交给 `trackShard()` 去结账。
          *
          * ⚠️ 不要在这里写 `this.events = []`：那正是本缺陷（静默丢弃）的成因。
+         *
+         * ## ⚠️ 第 71 轮：这里必须用 `mode: "replace"`（用户真机那条假报错）
+         *
+         * 同一批行会被写**两次**：这里是"写穿"，`trackShard` 的探测是另一次
+         * （探测用 replace 是为了能重复写同一批行去观察错误码，见 `directWrite()` 的注释）。
+         * 写穿原来是默认的 `insert` —— 引擎侧那是**裸 INSERT**，于是**探测先落库**时
+         * 写穿就撞主键，用户看到：
+         * ```text
+         * 数据保存失败（telemetry.flush）：UNIQUE constraint failed: telemetry_events.id
+         * ```
+         * 行其实就在库里、数据一个字没丢 —— 这是一次**假失败**。
+         * 同一条事件的 payload 在 id 确定后不再变化，所以 `replace`（先 UPDATE、没有再 INSERT）
+         * 语义完全正确：重复写只是把同样的值再写一遍。
          */
         const accepted = domainWrite(TABLE, rows, {
+          mode: "replace",
           scope: "telemetry.flush",
           note: `${rows.length} 条遥测事件未能写入（遥测不影响功能）`,
           ...TELEMETRY_OPTS,

@@ -1,6 +1,6 @@
 /**
  * 预览用适配层桩 —— 只在视觉预览构建里替换真实的 telemetry-adapter，
- * 避免把宿主模块（sql.js / spill-store 的 node 内建依赖等）拉进浏览器构建。
+ * 避免把宿主模块（sql.js / Tauri IPC 适配层等）拉进浏览器构建。
  */
 
 export function toolToActivity(_tool: string): string {

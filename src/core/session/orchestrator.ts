@@ -25,6 +25,7 @@ import {
   DEFAULT_DELEGATION_CONFIG,
 } from "./types";
 import { getInboxManager } from "../inbox/inbox";
+import { debugLog } from "../debug";
 import {
   createDelegationTask,
   updateDelegationTaskStatus,
@@ -150,6 +151,24 @@ export class DelegationOrchestrator {
       return;
     }
     if (task.status !== "pending") {
+      /**
+       * ## 第 71 轮：`running` 是**正常路径**，不该 warn
+       *
+       * 真机日志（用户做跨会话委派时）：
+       * ```text
+       * [DelegationOrchestrator] Delegation created: del-…
+       * [DelegationOrchestrator] Task del-… started          ← delegate() 里的 autoStart
+       * [DelegationOrchestrator] startTask: task del-… is already running   ← executor 接手时再标一次
+       * ```
+       * 也就是说**每次委派都会打一条**"already running"，看着像异常，其实是同一条任务
+       * 被两处按设计各标记一次（`delegate()` 的 autoStart + 目标会话 executor 接手）。
+       * 现在只有**终态**（completed / failed / cancelled）再标记才算异常 —— 那意味着
+       * "一个已经结束的任务又被启动"，值得一条告警；`running` 走 debug 通道。
+       */
+      if (task.status === "running") {
+        debugLog("delegation", `startTask: task ${taskId} 已在运行（重复标记，正常路径）`);
+        return;
+      }
       console.warn(`[DelegationOrchestrator] startTask: task ${taskId} is already ${task.status}`);
       return;
     }

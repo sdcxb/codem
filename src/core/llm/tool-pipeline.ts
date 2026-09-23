@@ -721,8 +721,17 @@ export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
       const { getEventLog } = await import("../storage/event-log");
       const eventLog = getEventLog();
 
+      /**
+       * ⚠️ **不能只写 `result.id`**（第 71 轮真机实测）：工具处理器返回的结果里
+       * `id` 一直是空串（`agentic-loop.ts` 里的 `id: ""` 是字面量），于是事件日志里
+       * 每条 `tool_call` / `tool_result` 的 `toolCallId` 都是空 —— 事件日志是
+       * "执行轨迹 / 事后复盘"的数据源，空 id 让这些记录没法回指到具体调用。
+       * 调用 id 由 `streaming-executor` 按次注入 ctx（见 `ToolExecutorContext.toolCallId`）。
+       */
+      const toolCallId = result.id || ctx.toolCallId || "";
+
       eventLog.append(ctx.sessionId, "tool_call", {
-        toolCallId: result.id,
+        toolCallId,
         messageId: ctx.messageId,
         tool: toolName,
         args,
@@ -730,7 +739,7 @@ export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
       });
 
       eventLog.append(ctx.sessionId, "tool_result", {
-        toolCallId: result.id,
+        toolCallId,
         messageId: ctx.messageId,
         result: result.output,
         error: result.error,

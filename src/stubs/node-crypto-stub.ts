@@ -22,7 +22,7 @@ export function createHash(algorithm: string) {
     digest(encoding?: string): string {
       // Node.js createHash().digest() is synchronous.
       // Browser stub: return a hex string using a synchronous FNV-1a hash.
-      // This is non-cryptographic but sufficient for spill-store session directory naming.
+      // This is non-cryptographic but sufficient for non-security uses (会话/溢出目录命名等).
       const totalLength = data.reduce((sum, d) => sum + d.length, 0);
       const merged = new Uint8Array(totalLength);
       let offset = 0;

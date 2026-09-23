@@ -19,6 +19,16 @@
  *   - 预算按 **字节**（UTF-8），默认 64 KB 以上才溢出（只拦真正的大块，不打扰常规结果）；
  *   - 预览 = 前半 + 后半，省略部分给出明确说明与全文路径；
  *   - 溢出文件写盘是**原子**的（先写 .tmp 再改名，与 DSH `dsh-atomic-write` 同策略）。
+ *
+ * ## ⚠️ 为什么这里不碰 Node 的 `fs` / `os` / `path`（第 71 轮补充）
+ *
+ * 渲染进程里的这三个模块都被 `vite.config.ts` 映射到 `src/stubs/*`，而那些桩是**空壳**：
+ * `writeFile` 什么都不做，`mkdtempSync` 之类**根本不存在**。于是打包版里任何走 Node fs 的
+ * 落盘不是静默失败，就是写出一个**指向不存在文件**的定位符 —— 后者比诚实失败更糟
+ * （模型按定位符去读会读空，而那正是本机制存在的理由）。真机上就是这么暴露的：
+ * `[spill-policy] saveText failed for bash: (void 0) is not a function`。
+ *
+ * 所以溢出写盘一律走 `../file-api`（Tauri IPC），与库、附件同属**一份数据集、同一套原语**。
  */
 
 import { writeFile, renameFile, listDirectory, deleteFile } from "../file-api";
@@ -120,8 +130,18 @@ export async function retainToolResult(
   // 第 62 轮：溢出文件与库同属一份数据集 —— 目录跟着引擎实际使用的库走（见 data-root.ts）
   const baseDir = (await (await import("./data-root")).resolveDataRoot()).root;
   const sep = baseDir.includes("/") && !baseDir.includes("\\") ? "/" : "\\";
-  const rawCallId = String(opts.callId ?? Date.now());
-  const safeName = `${(opts.toolName || "tool").replace(/[^\w.-]+/g, "_")}-${rawCallId.replace(/[^\w.-]+/g, "_")}-${Date.now()}.txt`;
+  /**
+   * 文件名 = `<工具>-<调用 id>-<写入时刻毫秒>.txt`，与 `pruneSpillFiles()` 的判据
+   * （`/-(\d{10,})\.txt$/`，靠文件名里的时刻判保留期）严格一致。
+   *
+   * 调用 id 缺失时**不留下悬空的连字符**（真机实测过 `bash--1758… .txt` 这种名字：
+   * 成因是工具处理器返回的 `result.id` 为空串，见 `ToolExecutorContext.toolCallId`）。
+   * 注意 `callId` 为空串时 `??` 不会兜底（空串不是 null/undefined），所以这里显式判空。
+   */
+  const rawCallId = String(opts.callId ?? "").trim();
+  const callSeg = rawCallId ? `-${rawCallId.replace(/[^\w.-]+/g, "_")}` : "";
+  const toolSeg = (opts.toolName || "tool").replace(/[^\w.-]+/g, "_");
+  const safeName = `${toolSeg}${callSeg}-${Date.now()}.txt`;
   const locator = `${spillDir(baseDir, opts.sessionId || "")}${sep}${safeName}`;
 
   // 原子写：先 .tmp 再改名 —— 半截文件会把"全文在这里"变成一句假话

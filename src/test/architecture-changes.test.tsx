@@ -4,7 +4,7 @@
  * 覆盖项：
  * 1. safeJsonParse 安全解析
  * 2. loopPool LRU 淘汰
- * 3. SpillStore 异步 I/O
+ * 3. 溢出（spill）只有一份实现 + 走统一文件 API
  * 4. SlotBridge 级联降级错误边界
  * 5. service-types Context 类型声明
  * 6. 双轨制消除（getCtxService 不回退单例）
@@ -84,16 +84,62 @@ describe('架构变更: loopPool LRU 淘汰', () => {
 })
 
 // ============================================================
-// 3. SpillStore 异步 I/O
+// 3. 溢出（spill）只有**一份**实现 —— 走应用的统一文件 API（第 71 轮更正）
 // ============================================================
-describe('架构变更: SpillStore 异步 I/O', () => {
-  it('saveText 使用 fs.promises 而非 sync', async () => {
+describe('架构变更: 溢出存储只有一份实现', () => {
+  /**
+   * ⚠️ 这组断言在**第 71 轮被改写两次**，过程值得记下来，因为它是"数据不是印象"的例子：
+   *
+   * 1) 最初钉的是 `llm/spill-store.ts` 的 `saveText` "用 `fs.promises.*`，不用 sync 版"。
+   * 2) 但渲染进程里的 `fs` 被 `vite.config.ts` 映射到 `src/stubs/node-fs-stub.ts` —— 一个
+   *    **空壳**：`writeFile` 什么都不做，`mkdtempSync` **根本不存在**。真机上每次大输出都打
+   *    `[spill-policy] saveText failed for bash: (void 0) is not a function`
+   *    —— 主 agent 循环的溢出策略在打包版里**从未成功过一次**。
+   * 3) 第 71 轮把 `llm/spill-store.ts` 改成走统一文件 API 之后才发现真正的病根不是"哪套写法"，
+   *    而是**同一件事有两份实现**：`core/storage/spill.ts` 那套一直好好的
+   *    （`session/executor.ts` 在用、`pruneSpillFiles` 按它的文件名回收），只有中间件这条
+   *    路用的是死的第 71 轮之前那套。所以最终做法是**删掉重复实现**：中间件只做决策
+   *    （WHEN 溢出），机制全部交给 `core/storage/spill.ts`。
+   *
+   * 于是现在的契约有三条：唯一实现、不碰 Node fs、决策方必须委托。
+   */
+  it('只有一份溢出实现：llm/spill-store.ts 不得复活', async () => {
     const src = await vi.importActual('fs')
-    const code = src.readFileSync('src/core/llm/spill-store.ts', 'utf8')
-    expect(code).toContain('fs.promises.mkdir')
-    expect(code).toContain('fs.promises.writeFile')
-    expect(code).not.toContain('fs.mkdirSync')
-    expect(code).not.toContain('fs.writeFileSync')
+    expect(
+      src.existsSync('src/core/llm/spill-store.ts'),
+      '溢出存储只能有 core/storage/spill.ts 一份；再出现第二份就是"只有一份是活的"那类缺陷的复发',
+    ).toBe(false)
+    expect(src.existsSync('src/core/storage/spill.ts'), '唯一实现必须存在').toBe(true)
+  })
+
+  it('唯一实现走统一文件 API（不碰 Node fs）', async () => {
+    const src = await vi.importActual('fs')
+    const raw = src.readFileSync('src/core/storage/spill.ts', 'utf8')
+    // 判据落在**代码**上：注释里会解释"为什么不用 Node fs"，那是文档不是实现
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+    expect(code, '必须通过应用的统一文件 API 写盘').toContain('from "../file-api"')
+    expect(code, '落点必须在数据根目录下的 spill/（保留期清理认账的同一处）').toContain('resolveDataRoot')
+    // 反向守卫：Node fs / os 的痕迹一个都不许留（它们在打包版里是空壳）
+    expect(code, '不许再用 Node fs').not.toMatch(/from ["'](node:)?fs["']/)
+    expect(code, '不许再用 Node os').not.toMatch(/from ["'](node:)?os["']/)
+    expect(code, '不许再用 fs.promises（打包版里是空壳）').not.toContain('fs.promises')
+    expect(code, '不许再用同步 fs').not.toContain('fs.mkdirSync')
+    expect(code, '不许再用 mkdtempSync（桩里没有这个函数，真机那条报错就是它）').not.toContain('mkdtempSync')
+    expect(raw, '注释里要留下"为什么不用 Node fs"的说明（否则下一个人会改回去）').toContain('打包版')
+  })
+
+  it('决策方（spill-policy）必须委托给唯一实现，不许自带预览/通知', async () => {
+    const src = await vi.importActual('fs')
+    const raw = src.readFileSync('src/core/llm/spill-policy.ts', 'utf8')
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+    expect(code, '必须委托给 core/storage/spill.ts 的 retainToolResult').toContain('retainToolResult')
+    expect(code, '必须从 core/storage/spill 导入（不是某个 llm/ 下的私有实现）').toMatch(/from "\.\.\/storage\/spill"/)
+    // 反向守卫：不许再自建预览/通知（这正是被删掉的那份重复机制）
+    expect(code, '不许自建 head/tail 预览').not.toContain('buildHeadTailPreview')
+    expect(code, '不许自建通知行').not.toContain('buildSpillNotice')
+    expect(code, '不许再用 Buffer（渲染进程里不是原生对象）').not.toContain('Buffer.byteLength')
+    // 正向上限不变式：替换文本前必须还有一道硬检查
+    expect(code, '替换前必须保持"绝不超过 maxInlineBytes"的硬检查').toContain('exceeds maxInlineBytes')
   })
 })
 

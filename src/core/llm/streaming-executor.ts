@@ -137,6 +137,24 @@ export interface ToolExecutorContext {
   cwd: string;
   messages: LLMMessage[];
   abort: AbortSignal;
+  /**
+   * 当前这次工具调用的 id（provider 给的 `tool_calls[].id`，如 `call_00_DJaAV…`）。
+   *
+   * ## 为什么必须把它放进 ctx（第 71 轮真机实测才发现）
+   *
+   * 工具处理器（`agentic-loop.ts` 里那个 `async (name, args, ctx) => …`）返回的
+   * `ToolCallResult.id` **一直是空串**（那些 `id: ""` 是字面量，全仓 6 处）。
+   * 于是所有**在处理器之外**读取 `result.id` 的地方拿到的都是空：
+   * - `EventLogFinalizeMiddleware` 写进事件日志的 `tool_call` / `tool_result` 事件
+   *   **`toolCallId` 全是空串**（事件日志正是"执行轨迹/事后复盘"的数据源，
+   *   空 id 等于这些记录没法回指到具体调用）；
+   * - 溢出（spill）文件名变成 `bash--<毫秒>.txt`（真机实测到的就是这个名字）。
+   *
+   * 处理器签名 `(name, args, ctx)` 里本来就没有调用 id，所以这里按**每次调用**注入：
+   * `executeBatch` / `executeSingle` 调管线时传 `toolCallId: tc.id`。
+   * 读取方一律用 `result.id || ctx.toolCallId`（前者优先：将来处理器补上 id 就自动生效）。
+   */
+  toolCallId?: string;
   metadata(input: { title?: string; metadata?: Record<string, any> }): void;
 }
 
@@ -223,7 +241,7 @@ export class StreamingToolExecutorImpl {
             // P0-2: Route through ToolPipeline if initialized (5-layer waterfall)
             const pipeline = getToolPipeline();
             const pipelineResult = pipeline.execute(
-              tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }, toolHandler,
+              tc.name, tc.input, { ...ctx, abort: tc.abortController.signal, toolCallId: tc.id }, toolHandler,
             );
 
             const result = await Promise.race([
@@ -347,7 +365,7 @@ export class StreamingToolExecutorImpl {
       // all tools go through the 5-layer waterfall, including EventLog finalize.
       const pipeline = getToolPipeline();
       const pipelineResult = pipeline.execute(
-        tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }, toolHandler,
+        tc.name, tc.input, { ...ctx, abort: tc.abortController.signal, toolCallId: tc.id }, toolHandler,
       );
 
       const result = await Promise.race([
