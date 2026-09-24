@@ -850,7 +850,7 @@ function NotebookCard({
             </div>
           )}
         </div>
-        <button
+        <button aria-label="删除该笔记本" title="删除该笔记本"
           className="notebook-card-delete"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
         >
@@ -917,7 +917,7 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
           )}
         </div>
       </div>
-      <button className="notebook-source-delete" onClick={onDelete}>
+      <button aria-label="删除该来源" title="删除该来源" className="notebook-source-delete" onClick={onDelete}>
         <Trash2 size={14} />
       </button>
     </div>

@@ -456,7 +456,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                     <option value="deny">{zh ? "禁止" : "Deny"}</option>
                     <option value="ask">{zh ? "询问" : "Ask"}</option>
                   </select>
-                  <button onClick={() => {
+                  <button aria-label="移除此权限" title="移除此权限" onClick={() => {
                     const perms = (editing.permissions || []).filter((_, idx) => idx !== i);
                     setEditing({ ...editing, permissions: perms });
                   }} className="agent-perm-remove"><CloseIcon size={14} /></button>

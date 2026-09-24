@@ -71,7 +71,7 @@ export const Workbench = memo(function Workbench({
     <div className="workbench">
       <div className="workbench-header">
         <span>{S.workbench.title[lang]}</span>
-        <button className="workbench-toggle" onClick={onToggle}><CloseIcon size={16} /></button>
+        <button aria-label="收起工作台" title="收起工作台" className="workbench-toggle" onClick={onToggle}><CloseIcon size={16} /></button>
       </div>
 
       {/* View tabs */}

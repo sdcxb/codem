@@ -1364,7 +1364,7 @@ function SourceCard({
         <span className="nb-source-icon">{icon}</span>
         <span className="nb-source-name">{source.name}</span>
         <span className="nb-source-status-dot" style={{ background: statusColor }} title={source.status} />
-        <button className="nb-source-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+        <button aria-label="删除该来源" title="删除该来源" className="nb-source-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
           <Trash2 className="icon-2xs" />
         </button>
       </div>

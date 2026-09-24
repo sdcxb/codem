@@ -2,6 +2,53 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.132] - 2026-09-24 — 又修 10 处图标按钮 + **更正上一版的数字**（扫描器还有第三类误报：会渲染文字的表达式）
+
+> 这一轮继续 O-4，但重点其实是一次**自我更正**：上一版报的"真实 195 处"是**虚高的**。
+
+### 🔴 一、更正：扫描器还有第三类误报（把"会渲染出文字的表达式"当成"没有文字"）
+
+上一版的判定是"去掉标签与 `{…}` 之后若没有文字，就算只有图标"。
+可是 `{isZh ? '选择文件' : 'Choose File'}`、`{S.cicd.refresh[lang]}`、
+`{zh ? "返回列表" : "Back to list"}` 这类表达式**是会渲染出文字的** —— 它们被当成了"只有图标"，
+于是一批**本来就有可见文字**的按钮被报成"无名图标按钮"。
+
+修正后的判定：**表达式里的字符串字面量也算文字**（只有 `{icon}`/`{count}` 这种没有字面量的才算"不可判定"）。
+
+| 口径 | 数字 |
+| --- | ---: |
+| 上一版报的（含误报） | 195 → 修完 39 处后 156 |
+| **修正扫描器后**（去掉 95 处误报） | ≈100 → 修完 39 处后 **61** |
+| 本轮再修 10 处语义明确的之后 | **51** |
+
+也就是说：**修掉的 39 处是真的**（关闭按钮与折叠侧栏），但「还剩 156」是虚的，真实是 61。
+
+### 🟡 二、本轮又修了 10 处（逐个看过上下文才起名，不做机械映射）
+
+| 文件 | 按钮 | 名字 |
+| --- | --- | --- |
+| AgentManager | `agent-perm-remove` | 移除此权限 |
+| FlashcardViewer | `flashcard-item-delete` | 删除这张卡片 |
+| GitBranchSelector | `git-branch-create-btn` | 新建分支 |
+| InputArea | `quote-context-clear` | 清除引用 |
+| InputArea | `attachment-remove` | 移除附件 |
+| McpMarketplace | `mcp-search-clear` | 清空搜索 |
+| NotebookManager | `notebook-card-delete` | 删除该笔记本 |
+| NotebookManager | `notebook-source-delete` | 删除该来源 |
+| NotebookWorkspace | `nb-source-delete` | 删除该来源 |
+| Workbench | `workbench-toggle` | 收起工作台 |
+
+工具：`.preview-shot/fix-icon-labels-batch2.mjs`（**显式映射表**：文件+行号+期望 class 三者都对上才改；
+不做"按类名批量贴标签"—— 那会出现"读屏念关闭、屏幕写着取消"这种更糟的错）。
+
+### 判据
+
+棘轮基线 **156 → 51**（icon-button-a11y.test.ts），并在注释里写明这次更正的来龙去脉。
+
+### 实测
+
+全量 372 文件 / 6072 通过 / 0 失败；`tsc` 0；审计 `node .preview-shot/audit-icon-buttons.mjs` 现为 **51 处**。
+
 ## [1.16.131] - 2026-09-24 — **确认框在真机上一直弹不出来的真正根因**：注入的 `window.confirm` 指向一个**不存在的命令**（不是权限没配）
 
 > 第 84 轮走查（152 个入口）只报出 **1 条**控制台错误，而那一条把前面的结论掀翻了：

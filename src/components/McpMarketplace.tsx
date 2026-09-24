@@ -180,7 +180,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
           className="mcp-search-input"
         />
         {query && (
-          <button className="mcp-search-clear" onClick={() => setQuery("")}>
+          <button aria-label="清空搜索" title="清空搜索" className="mcp-search-clear" onClick={() => setQuery("")}>
             <CloseIcon size={14} />
           </button>
         )}

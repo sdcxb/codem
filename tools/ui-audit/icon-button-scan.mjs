@@ -80,13 +80,35 @@ export function classNameOf(tag) {
   return /className=(?:"([^"]*)"|\{`([^`]*)`\}|\{"([^"]*)"\})/.exec(tag)?.slice(1).find(Boolean) ?? "";
 }
 
-/** 按钮内容：只有图标、且没有可见文字？（动态表达式一律判 false = 不报） */
+/**
+ * 按钮内容：只有图标、且没有可见文字？（**含字符串字面量的表达式算文字**）
+ *
+ * ⚠️ 第 85 轮修正的**第三类误报**：第一版把 `{…}` 一律当"没有文字"，
+ * 于是 `{isZh ? '选择文件' : 'Choose File'}`、`{S.cicd.refresh[lang]}`、
+ * `{zh ? "返回列表" : "Back to list"}` 这类**会渲染出文字**的表达式被当成"只有图标" ⇒
+ * 把一堆**本来就有可见文字**的按钮报成"无名图标按钮"（第 84 轮的 156 里含这一批）。
+ *
+ * 现在的判定：
+ * - 标签外的字面文字 → 有文字；
+ * - `{…}` 表达式里的**字符串字面量** → 也算文字（`{icon}`、`{count}` 这类没有字面量的才算"不可判定"）；
+ * - 不可判定 + 有图标 ⇒ 报（宁可漏报，也不误报）。
+ */
+export function bodyHasVisibleText(body) {
+  const outside = body.replace(/<[^>]+>/g, "").replace(/\{[^}]*\}/g, "").trim();
+  if (outside.length > 0) return true;
+  for (const expr of body.matchAll(/\{[^}]*\}/g)) {
+    for (const lit of expr[0].matchAll(/['"`]([^'"`]{1,80})['"`]/g)) {
+      if (lit[1].trim().length > 0) return true;
+    }
+  }
+  return false;
+}
+
 export function isIconOnlyBody(code, from) {
   const end = code.indexOf("</button>", from);
   if (end < 0) return false;
   const body = code.slice(from, end);
-  const text = body.replace(/<[^>]+>/g, "").replace(/\{[^}]*\}/g, "").trim();
-  if (text.length > 0) return false;
+  if (bodyHasVisibleText(body)) return false;
   return /<svg\b/.test(body) || /<[A-Z][A-Za-z0-9_]*(\s*\/>|\b)/.test(body);
 }
 

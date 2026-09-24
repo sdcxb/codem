@@ -247,7 +247,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                         <p className="flashcard-item-front">{card.front}</p>
                         <p className="flashcard-item-back">{card.back}</p>
                       </div>
-                      <button onClick={() => { deleteFlashcard(card.id); refresh(); }} className="flashcard-item-delete">
+                      <button aria-label="删除这张卡片" title="删除这张卡片" onClick={() => { deleteFlashcard(card.id); refresh(); }} className="flashcard-item-delete">
                         <Trash2 size={12} />
                       </button>
                     </div>

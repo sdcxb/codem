@@ -248,7 +248,7 @@ export const GitBranchSelector = memo(function GitBranchSelector({
                   if (e.key === "Escape") setShowCreateInput(false);
                 }}
               />
-              <button
+              <button aria-label="新建分支" title="新建分支"
                 className="git-branch-create-btn"
                 onClick={handleCreateBranch}
                 disabled={!newBranchName.trim() || loading}

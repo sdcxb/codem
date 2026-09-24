@@ -42,13 +42,13 @@ const ROOT = process.cwd();
 /**
  * 棘轮基线：**修完 39 处之后**的实测值（第 84 轮）。
  *
- * - 修的是：**全部图标关闭按钮（31 处）** + **折叠侧栏的图标条（8 处）**；
+ * - 第 84 轮修的是：**全部图标关闭按钮（31 处）** + **折叠侧栏的图标条（8 处）**；`n * - 第 85 轮又修了 10 处语义明确的（删除/移除/清空/新建分支/收起工作台…），并且**修正了扫描器的第三类误报**：`n *   `{isZh ? "选择文件" : "Choose File"}` 这类**会渲染出文字**的表达式原来被当成"没有文字" ⇒ 156 里有 95 处是误报（详见 CHANGELOG 1.16.132 的更正）；
  * - 剩下的是需要**逐个看语义**才能起名的（每个组件的图标按钮含义不同，机械补名字就是造假），
  *   已登记在 `docs/GAP-LIST.md` 的 O-4 里，清单用
  *   `node .preview-shot/audit-icon-buttons.mjs` 随时可打印；
  * - **只许降不许升**：新写的图标按钮忘了名字会让这条红。
  */
-const NAMELESS_ICON_BUTTON_BASELINE = 156;
+const NAMELESS_ICON_BUTTON_BASELINE = 51;
 
 describe("图标按钮的可访问名（第 84 轮）", () => {
   const findings = scanNamelessIconButtons(ROOT);

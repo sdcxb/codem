@@ -1184,7 +1184,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               <span className="quote-context-text">{quoteContext.length > 120 ? quoteContext.substring(0, 120) + "..." : quoteContext}</span>
             </div>
           </div>
-          <button className="quote-context-clear" onClick={() => onClearQuote?.()}><X size={14} /></button>
+          <button aria-label="清除引用" title="清除引用" className="quote-context-clear" onClick={() => onClearQuote?.()}><X size={14} /></button>
         </div>
       )}
 
@@ -1202,7 +1202,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               ) : null}
               <span className="attachment-name">{att.name}</span>
               {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
-              <button className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={12} /></button>
+              <button aria-label="移除附件" title="移除附件" className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={12} /></button>
             </div>
           ))}
           {pendingAttachments.some((a) => a.type === "image") && (() => {
