@@ -413,11 +413,16 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
       }
       return out;
     } catch (e) {
-      // 端口重建失败：如实上报，然后**回退旧路径**再试一次（用户的数据没丢，别让自愈失效）
+      /*
+       * 第 104 轮：这句 `extra` 原来写着「**已回退旧路径重试**」—— 但那段回退**第 17 轮就删了**
+       * （见下面 425 行起的注释：旧库在 B 态刻意不存在，回退只会把真实失败原因换成一个无关异常）。
+       * 也就是说提示条一直在告诉用户"我们重试过了"，而实际上没有。改成事实：
+       * 本次重建没有完成，交给下一次维护重试。
+       */
       reportPersistFailure(
         "sessionLog.rebuildIndex",
         e,
-        "Rust 侧索引重建失败，已回退旧路径重试",
+        "Rust 侧索引重建失败：本次重建**没有完成**（旧路径回退已在第 17 轮删除），下一次维护会再试",
       );
     }
   }

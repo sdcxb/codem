@@ -28,16 +28,18 @@ const REGISTRY = join(ROOT, "tools", "audit", "report-site-classification.json")
 /**
  * pending 棘轮（只许降不许升）。
  *
- * 第 90 轮基线 **123**（从 217 起步：先登记全部现状，再把读过的 94 处落成 triaged）。
- * **第 100 轮 → 86**：分诊了 37 处（inbox 8 / squad 8 / flashcard 6 / issue 5 /
- * knowledge storage 6 / show-todo 2 / file-change-tracker 2 / 以及它们同族的其余站点），
- * 其中 **8 处改了通道** —— 都是"**读侧事件被塞进 persist 通道**"那类：
- * 提示条会印「写盘失败……本次改动只存在于内存，重启后可能丢失」，而实际上什么都没写、也没有改动被丢。
+ * 第 90 轮基线 **123**（从 217 起步：先登记全部现状，再把读过的 94 处落成 triaged）；
+ * 第 100 轮 → 86（37 处，含 8 处读侧通道修正）；
+ * **第 104 轮 → 0**：剩下 86 处全部逐处分诊完（48 个文件），其中 3 处改了通道 ——
+ * `todo.updateStatus` 的「列表不存在」「todos 是坏 JSON」⇒ action（勾选没生效、什么都没写），
+ * `eventProjection.compaction` ⇒ advisory（投影**没有失败**：它降级处理并继续跑完，属发现）。
  * 逐处理由写在 `tools/audit/report-site-classification.json` 的 `reason` 里
- * （工具：`.preview-shot/_triage-report-sites-r100.mjs`，干跑/`--apply`）。
- * 每轮分诊一批就把这个数字改小；**改大必须有理由**（例如新增了一块功能带来的新站点）。
+ * （工具：`.preview-shot/_triage-report-sites-r104.mjs`，干跑 / `--apply`）。
+ *
+ * **基线上限为 0 意味着**：以后任何新出现的上报点都必须**当场分诊**才能合入
+ * （新站点会被 `scan-report-sites --check` 拦下要求登记，登记成 pending 就会被这条棘轮拦下）。
  */
-const PENDING_BASELINE = 86;
+const PENDING_BASELINE = 0;
 
 interface Site {
   site: string;

@@ -260,7 +260,13 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
      * 原实现把两者都写成 `return`，所以用户根本不知道勾选为什么没生效。
      */
     if (rustCurrent === null) {
-      reportPersistFailure(
+      /*
+       * 第 104 轮分诊：这是**业务失败**（列表已经不在库里 ⇒ 用户的勾选没生效），
+       * 走 action 而不是 persist —— persist 的默认后果句是「本次改动只存在于内存，重启后可能丢失」，
+       * 而这里**什么都没写**（连目标行都没有）。同文件下面那条"条目不在列表里"本来就是 action，
+       * 两条终于一致了。
+       */
+      reportActionFailure(
         "todo.updateStatus",
         new Error(`待办列表 ${todoId} 不存在`),
         `勾选未生效：这条待办列表已经不在库里（可能随会话一起被删除）`,
@@ -269,8 +275,10 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
     }
     const todos = parseTodos(rustCurrent.todos);
     if (!todos) {
-      // 坏 JSON：待办行在、但内容解析不出来 —— 这是**数据**问题，必须可见
-      reportPersistFailure(
+      // 坏 JSON：待办行在、但内容解析不出来 —— 这是**数据**问题，必须可见。
+      // 第 104 轮分诊：同样是"勾选没生效"（且刻意没有覆盖写）⇒ action。损坏这件事写在 message/extra 里，
+      // 不会因为换成 action 通道就消失。
+      reportActionFailure(
         "todo.updateStatus",
         new Error(`待办列表 ${todoId} 的 todos 字段不是合法 JSON 数组`),
         `勾选未生效：待办内容已损坏（没有覆盖写，避免把坏数据写回去）`,

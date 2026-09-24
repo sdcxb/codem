@@ -3,105 +3,121 @@
  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
  "_counts": {
   "total": 217,
-  "triaged": 131,
-  "pending": 86
+  "triaged": 217,
+  "pending": 0
  },
  "sites": [
   {
    "site": "src/App.tsx::app.forkSession::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "分叉会话创建失败 ⇒ action（会话没建起来，功能没生效）。",
+   "round": 104
   },
   {
    "site": "src/App.tsx::app.rewind.linkParent::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "回退会话的谱系没写入 ⇒ action（回退动作没生效）。",
+   "round": 104
   },
   {
    "site": "src/App.tsx::app.rewind.reconcileMessageCount::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "回退后的消息计数没重算 ⇒ action（计数没更新，不是写盘失败）。",
+   "round": 104
   },
   {
    "site": "src/App.tsx::store.saveMessages::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "消息写盘失败 ⇒ persist（这是最典型的落盘失败：聊天记录会丢）。",
+   "round": 104
   },
   {
    "site": "src/components/AppErrorBoundary.tsx::appErrorBoundary.resetUiPreferences::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "崩溃后恢复界面设置没做完 ⇒ action（部分偏好仍是旧值）。",
+   "round": 104
   },
   {
    "site": "src/components/CicdPanel.tsx::<动态>::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "CI/CD 工作流重试/取消**没生效**（`cicd.${kind}WorkflowRun`）⇒ action：动作失败，不是写盘。（本处：<动态>，第 213 行）",
+   "round": 104
   },
   {
    "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "手动压缩没生效 ⇒ action（旧消息与摘要标记没有全部写完）。",
+   "round": 104
   },
   {
    "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact.write::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "压缩写盘失败 ⇒ persist（刻意与上面那条分开：这条是真写盘失败）。",
+   "round": 104
   },
   {
    "site": "src/components/ModelProfilePanel.tsx::modelProfile.updateSlot::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "档案槽位没更新（档案不存在或内置档案不可改）⇒ action。",
+   "round": 104
   },
   {
    "site": "src/components/PluginManager.tsx::<动态>::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "插件管理面板初始化失败/插件注册服务超时未注册 ⇒ action：面板功能不可用。（本处：<动态>，第 446 行）",
+   "round": 104
   },
   {
    "site": "src/components/PluginManager.tsx::<动态>::#2",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "插件管理面板初始化失败/插件注册服务超时未注册 ⇒ action：面板功能不可用。（本处：<动态>，第 454 行）",
+   "round": 104
   },
   {
    "site": "src/components/RecoveryPanel.tsx::<动态>::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "恢复面板里两个上报出口（scope/error/note 由参数传入）：persist 出口用于「恢复结果没写盘」、action 出口用于「恢复动作没生效」 —— 两者都是真失败，各自留原通道。（本处是转发出入口，不是具体调用点。）（本处：<动态>，第 32 行）",
+   "round": 104
   },
   {
    "site": "src/components/RecoveryPanel.tsx::<动态>::#2",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "恢复面板里两个上报出口（scope/error/note 由参数传入）：persist 出口用于「恢复结果没写盘」、action 出口用于「恢复动作没生效」 —— 两者都是真失败，各自留原通道。（本处是转发出入口，不是具体调用点。）（本处：<动态>，第 33 行）",
+   "round": 104
   },
   {
    "site": "src/components/SettingsPanel.tsx::settings.codegraph.toggle::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "代码图谱开关没生效 ⇒ action。",
+   "round": 104
   },
   {
    "site": "src/components/SnapshotPanel.tsx::snapshotPanel.getAll::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "快照列表**读不出来** ⇒ action（读取失败 ⇒ 功能本次不可用；不是写盘）。",
+   "round": 104
   },
   {
    "site": "src/core/agent/agent.ts::agentRegistry.loadPresets::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "自定义智能体预设没加载 ⇒ action（列表里看不到自定义智能体）。",
+   "round": 104
   },
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#1",
@@ -113,8 +129,9 @@
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#2",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "变更记录不存在 ⇒ action（回滚没执行；与第 100 轮改过的另外两处一致）。",
+   "round": 104
   },
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#3",
@@ -126,32 +143,37 @@
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#4",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "记录的 patch 为空 ⇒ action（回滚没执行：没有内容可回滚）。",
+   "round": 104
   },
   {
    "site": "src/core/environment/worktree-manager.ts::worktree.hasUncommittedChanges::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "git status 没跑通 ⇒ action（无法确认是否有未提交修改，不能当成「工作区干净」）。",
+   "round": 104
   },
   {
    "site": "src/core/environment/worktree-manager.ts::worktree.setExecutionMode::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "执行模式没写入 ⇒ persist（重启后回到旧模式 = 落盘失败）。",
+   "round": 104
   },
   {
    "site": "src/core/goal/goal.ts::goal.create::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "目标未保存（域镜像未接手）⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/goal/goal.ts::goal.update::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "目标未更新（域镜像未接手）⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.archive::#1",
@@ -289,14 +311,16 @@
   {
    "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "旧出链未清除（域镜像未接手）⇒ persist（链接会重复显示）。",
+   "round": 104
   },
   {
    "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#2",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "旧出链未清除（写入报错）⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/knowledge/storage.ts::chunk.onDemand::#1",
@@ -343,38 +367,44 @@
   {
    "site": "src/core/llm/cost-tracker.ts::costTracker.setLimits::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "成本上限没保存 ⇒ persist（重启回到旧值）。",
+   "round": 104
   },
   {
    "site": "src/core/llm/feedback.ts::feedback.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "反馈删除没落盘（镜像未就绪 / 端口未注册）⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/llm/index.ts::delegationTools.agentTeams::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "agent-teams 工具没注册 ⇒ action（模型无法建队派活）。",
+   "round": 104
   },
   {
    "site": "src/core/llm/index.ts::delegationTools.computerUse::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "computer-use 工具没注册 ⇒ action（模型无法读屏/操作桌面）。",
+   "round": 104
   },
   {
    "site": "src/core/llm/index.ts::llmEngine.subagentRuntimeInit::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "子智能体/委派能力本次不可用 ⇒ action。",
+   "round": 104
   },
   {
    "site": "src/core/llm/model-profile.ts::modelProfile.save::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "模型档案写盘失败 ⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.load::#1",
@@ -385,21 +415,24 @@
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#1",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "业务失败：待办列表**已经不在库里**（可能随会话被删）⇒ 用户的勾选没生效。走 action。刻意不是 persist：这里什么都没写（连目标行都没有），而 persist 的默认后果句是「本次改动只存在于内存」；也不是 advisory：这是一次真实的动作失败，不是「发现」。",
+   "round": 104
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#2",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "todos 字段是坏 JSON ⇒ **勾选没生效**（代码刻意不覆盖写，避免把坏数据写回去）⇒ action。数据损坏这件事写在 message 与 extra 里，不会因为换通道而消失；不选 advisory 是因为用户的操作确实失败了（advisory 的语气是「不影响本次使用」）。",
+   "round": 104
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#3",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "勾选的条目**不在列表里**（界面显示的是旧快照）⇒ action：本来就是 action，确认。",
+   "round": 104
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#4",
@@ -411,110 +444,128 @@
   {
    "site": "src/core/mcp/mcp.ts::mcp.saveConfigs::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "MCP 配置写盘失败 ⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/mcp/mcp.ts::mcp.setCodeGraphEnabled::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "代码图谱开关写盘失败 ⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/permission/permission.ts::permission.saveCustomRules::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "自定义权限规则写盘失败 ⇒ persist（重启后规则丢失，安全相关）。",
+   "round": 104
   },
   {
    "site": "src/core/provider/agent-teams-service.ts::agentTeams.persist::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "团队状态没持久化 ⇒ persist（重启后团队与任务看板消失 —— 消息里就是这么说的）。",
+   "round": 104
   },
   {
    "site": "src/core/provider/session-recovery-provider.ts::sessionRecovery.clearSnapshot::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "恢复快照没清除 ⇒ persist（下次恢复会提示旧内容）。",
+   "round": 104
   },
   {
    "site": "src/core/recovery/recovery.ts::recovery.save::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "恢复状态写盘失败 ⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/retry/retry.ts::retry.setConfig::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "重试配置没保存 ⇒ persist（重启回默认值）。",
+   "round": 104
   },
   {
    "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "读沙箱设置失败但沿用上次成功的值 ⇒ action（读失败；提示里如实说明仍按上次值生效）。",
+   "round": 104
   },
   {
    "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#2",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "读沙箱设置失败且没有历史值 ⇒ action（本次按关闭处理，提示里如实说明开关不代表生效状态）。",
+   "round": 104
   },
   {
    "site": "src/core/session/delegation-storage.ts::delegation.clearCompletedDelegations::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.clearCompletedDelegations，第 242 行）",
+   "round": 104
   },
   {
    "site": "src/core/session/delegation-storage.ts::delegation.createDelegationTask::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.createDelegationTask，第 90 行）",
+   "round": 104
   },
   {
    "site": "src/core/session/delegation-storage.ts::delegation.deleteDelegationTask::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.deleteDelegationTask，第 219 行）",
+   "round": 104
   },
   {
    "site": "src/core/session/preferences.ts::preferences.disabledPlugins.diverged::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "禁用插件列表在两侧不一致（已给 consequence）⇒ persist：写回不一致状态属落盘问题。",
+   "round": 104
   },
   {
    "site": "src/core/session/preferences.ts::preferences.forgetLastSession::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "上次会话键没清理 ⇒ persist（磁盘上的状态没被清掉：下次启动仍可能指向已删会话）。",
+   "round": 104
   },
   {
    "site": "src/core/session/session-read-state.ts::session.markRead::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "已读水位没保存 ⇒ persist（重启后可能多一个未读徽标）。",
+   "round": 104
   },
   {
    "site": "src/core/settings/settings.ts::settings.saveFile::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "设置写文件失败（带 path）⇒ persist：同上。（本处：settings.saveFile，第 563 行）",
+   "round": 104
   },
   {
    "site": "src/core/slots/SlotBridge.tsx::<动态>::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "插件组件/降级组件**崩溃** ⇒ action：对应界面区域已回退到降级组件，功能本次不可用。（本处：<动态>，第 40 行）",
+   "round": 104
   },
   {
    "site": "src/core/slots/SlotBridge.tsx::<动态>::#2",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "插件组件/降级组件**崩溃** ⇒ action：对应界面区域已回退到降级组件，功能本次不可用。（本处：<动态>，第 173 行）",
+   "round": 104
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.addMember::#1",
@@ -575,44 +626,51 @@
   {
    "site": "src/core/storage/account.ts::account.activate::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.activate，第 183 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/account.ts::account.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.delete，第 154 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/account.ts::account.save::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.save，第 123 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/account.ts::account.update::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.update，第 144 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/agent-profile-storage.ts::agentProfile.create::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.create，第 70 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/agent-profile-storage.ts::agentProfile.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.delete，第 125 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/agent-profile-storage.ts::agentProfile.update::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.update，第 115 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/bootstrap.ts::<动态>::#1",
@@ -829,21 +887,24 @@
   },
   {
    "site": "src/core/storage/event-projection.ts::eventProjection.compaction::#1",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "**投影没有失败**：这条 compaction 事件形状不合契约时，投影按「不删除任何消息」降级处理并继续跑完，存储自检会在维护里报出这一行 ⇒ 属「发现」，走 advisory。原来走 persist，提示条会印「写盘失败……本次改动只存在于内存」——与事实相反。",
+   "round": 104
   },
   {
    "site": "src/core/storage/file-change-storage.ts::fileChange.create::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "文件变更记录的写入/按会话删除没落盘（域镜像未接手）⇒ persist：回滚能力依赖它，丢了就回滚不了。（本处：fileChange.create，第 83 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/file-change-storage.ts::fileChange.deleteBySession::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "文件变更记录的写入/按会话删除没落盘（域镜像未接手）⇒ persist：回滚能力依赖它，丢了就回滚不了。（本处：fileChange.deleteBySession，第 149 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/maintenance.ts::maintenance.auditPrune::#1",
@@ -1084,38 +1145,44 @@
   {
    "site": "src/core/storage/prompt-draft.ts::promptDraft.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "提示词草稿的保存/删除没落盘（查询索引不可用）⇒ persist：草稿会丢。（本处：promptDraft.delete，第 149 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/prompt-draft.ts::promptDraft.save::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "提示词草稿的保存/删除没落盘（查询索引不可用）⇒ persist：草稿会丢。（本处：promptDraft.save，第 115 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore，第 298 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore.setting::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore.setting，第 156 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/rust-port.ts::storage.corrupt::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "引擎报存储库损坏、命令失败 ⇒ persist：这次操作确实失败了、数据有丢失风险，提示里要求「期间请勿继续写入」。刻意不选 advisory —— advisory 的语气是「不影响本次使用」，与这里相反。",
+   "round": 104
   },
   {
    "site": "src/core/storage/rust-port.ts::storage.recovered::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "库损坏后已重建空库（坏文件已备份）⇒ action：查询索引丢了、需要从日志重建，功能受影响。同样刻意不选 advisory，理由同上。",
+   "round": 104
   },
   {
    "site": "src/core/storage/self-heal.ts::storage.selfHeal::#1",
@@ -1148,44 +1215,51 @@
   {
    "site": "src/core/storage/session-jsonl.ts::sessionLog.compact::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "日志压缩没做成（读不出来）⇒ persist：权威副本的**磁盘状态**没有改善（体积一直是这样），属持久状态问题；不是 action（压缩不是一个「动作没生效」就结束的功能点），也不是 advisory（这条是失败，不是发现）。",
+   "round": 104
   },
   {
    "site": "src/core/storage/session-log-bridge.ts::sessionLog.backfill::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "N 个会话本次**没有回填**权威日志（镜像没加载完时 listMessages 返回空数组）⇒ persist：权威日志没建出来，属真落盘缺失。",
+   "round": 104
   },
   {
    "site": "src/core/storage/session-log-bridge.ts::sessionLog.rebuildIndex::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "索引重建失败 ⇒ persist（本次重建没完成）。⚠️ 本轮**修掉了这条 extra 里的假话**：原写「已回退旧路径重试」，而回退第 17 轮就删了。",
+   "round": 104
   },
   {
    "site": "src/core/storage/settings.ts::<动态>::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "设置写文件失败 ⇒ persist：设置只在内存里，重启即回旧值。（本处：<动态>，第 94 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/sync-engine.ts::syncEngine.autoSync::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "自动同步写盘失败 ⇒ persist。",
+   "round": 104
   },
   {
    "site": "src/core/storage/v2-session.ts::v2Session.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "v2 会话的保存/删除没落盘（会话域端口未接手）⇒ persist：会话数据会丢。（本处：v2Session.delete，第 79 行）",
+   "round": 104
   },
   {
    "site": "src/core/storage/v2-session.ts::v2Session.save::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "v2 会话的保存/删除没落盘（会话域端口未接手）⇒ persist：会话数据会丢。（本处：v2Session.save，第 73 行）",
+   "round": 104
   },
   {
    "site": "src/core/store.ts::store.createProject::#1",
@@ -1260,20 +1334,23 @@
   {
    "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 77 行）",
+   "round": 104
   },
   {
    "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#2",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 132 行）",
+   "round": 104
   },
   {
    "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#3",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 142 行）",
+   "round": 104
   },
   {
    "site": "src/core/telemetry/telemetry.ts::<动态>::#1",
@@ -1320,56 +1397,65 @@
   {
    "site": "src/core/ui-plugins/index.ts::uiPlugins.load::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "UI 插件没加载 ⇒ action（对应界面区域缺失）。",
+   "round": 104
   },
   {
    "site": "src/core/ui/native-dialog.ts::<动态>::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 176 行）",
+   "round": 104
   },
   {
    "site": "src/core/ui/native-dialog.ts::<动态>::#2",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 189 行）",
+   "round": 104
   },
   {
    "site": "src/core/ui/native-dialog.ts::<动态>::#3",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 223 行）",
+   "round": 104
   },
   {
    "site": "src/core/ui/native-dialog.ts::<动态>::#4",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 232 行）",
+   "round": 104
   },
   {
    "site": "src/core/ui/native-dialog.ts::<动态>::#5",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 241 行）",
+   "round": 104
   },
   {
    "site": "src/hooks/useWindowState.ts::useWindowState.restore::#1",
    "kind": "action",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "窗口尺寸/位置没恢复 ⇒ action（窗口状态没生效；不涉及写盘）。",
+   "round": 104
   },
   {
    "site": "src/plugins/library-ops/store.ts::libraryOps.persistLayoutOverrides::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "插件面板的设置/布局调整没落盘 ⇒ persist：用户的布局调整重启即丢。（本处：libraryOps.persistLayoutOverrides，第 164 行）",
+   "round": 104
   },
   {
    "site": "src/plugins/library-ops/store.ts::libraryOps.persistSettings::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "插件面板的设置/布局调整没落盘 ⇒ persist：用户的布局调整重启即丢。（本处：libraryOps.persistSettings，第 136 行）",
+   "round": 104
   },
   {
    "site": "src/store.ts::store.loadMoreMessages::#1",

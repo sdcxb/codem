@@ -43,7 +43,7 @@ import type {
 import { isValidEventType } from "./event-types";
 import { getEventLog } from "./event-log";
 // 载荷形状不合契约时如实上报（第 60 轮：不许静默容忍，也不许抛）
-import { reportPersistFailure } from "./persist-failure";
+import { reportAdvisory, reportPersistFailure } from "./persist-failure";
 
 // ========== Projection State ==========
 
@@ -398,11 +398,20 @@ export class EventProjection {
      */
     const removed = Array.isArray(payload?.removedMessageIds) ? payload.removedMessageIds : [];
     if (!Array.isArray(payload?.removedMessageIds)) {
-      reportPersistFailure(
+      /*
+       * 第 104 轮分诊：这里原来走 `reportPersistFailure`（= 提示条印「写盘失败……本次改动只存在于内存」），
+       * 而事实恰好相反 —— **投影没有失败**：它按"不删除任何消息"降级处理、函数继续跑完，
+       * 存储自检会在维护里报出这一行。所以这是一条**发现**（数据形状不合契约），不是写盘失败。
+       */
+      reportAdvisory(
         "eventProjection.compaction",
-        new Error(`compaction 事件载荷缺少 removedMessageIds 数组（seq=${event.seq}）`),
-        "该条压缩事件的形状不合契约（历史遗留 / 修复脚本写过别的形状）：本次按「不删除任何消息」处理，" +
-          "以免投影整体抛错；存储自检会在维护里报出这一行",
+        `compaction 事件载荷缺少 removedMessageIds 数组（seq=${event.seq}）`,
+        {
+          title: "压缩事件的形状不合契约",
+          nextStep:
+            "本次按「不删除任何消息」处理以免投影整体抛错（历史遗留 / 修复脚本写过别的形状）；存储自检会在维护里报出这一行",
+          sample: "eventProjection.replay",
+        },
       );
     }
 
