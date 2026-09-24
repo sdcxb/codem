@@ -139,3 +139,26 @@ export function createProbeGuard({ name = "probe" } = {}) {
     },
   };
 }
+
+/**
+ * 点击前的**命中自检**（第 140 轮）。要防的是同一类假缺陷：
+ *   · 第 118/122 轮：走查把"插件方块被菜单栏压住"记成真控件被挡（overlayArtifact 老坑）；
+ *   · 第 136–139 轮：「连接手机」点了"只关掉设置、什么都没发生" —— 最后一量才发现
+ *     `elementFromPoint(该项中心)` 的最上层元素是 `.settings-overlay` 容器，**根本没点到那一项**。
+ * 共同根因：**点了，但没点到它**。所以点击前先自检：目标点上最上层的元素必须是目标本身（或它的祖先）。
+ *
+ * 用法（在页面里求值，返回 {top, hit}）：
+ *   await evaluate(hitTestExpression(x, y, "连接手机"));
+ * hit === false ⇒ **不要点**，把它记成「不可点（命中自检未过）」，而不是记成"点了没反应"。
+ */
+export function hitTestExpression(x, y, nameContains = "") {
+  const needle = JSON.stringify(String(nameContains));
+  return `(() => {
+    const t = document.elementFromPoint(${x}, ${y});
+    if (!t) return { top: null, hit: false };
+    const nameOf = (el) => ((el.getAttribute('aria-label') || el.title || el.textContent || '').trim());
+    const top = t.tagName + '.' + String(t.className || '').slice(0, 40);
+    const hit = nameOf(t).includes(${needle}) || !!t.closest('button,[role=button],[role=tab],[role=menuitem],[tabindex]');
+    return { top, hit };
+  })()`;
+}
