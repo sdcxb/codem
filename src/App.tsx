@@ -304,6 +304,7 @@ import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
 import { composePersistAlertText, reportActionFailure } from "./core/storage/persist-failure";
 import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaintextResidue } from "./core/storage/secret-store";
+import { reportCredentialStartupIssues } from "./core/storage/credential-startup-report";
 import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
 import { alertDialog } from "./core/ui/native-dialog";
 
@@ -742,6 +743,8 @@ useEffect(() => {
                 "（明文与密文并存是旧行为留下的脏行：读改写把水合后的明文写回了磁盘）",
             );
           }
+          /** 残留回收的结果：下面要和其它三件事一起交给「可见性」模块 */
+          let residue: { attempted: boolean; vacuumed: boolean; reason?: string } | undefined;
           if (migrated.sealed > 0 || migrated.cleanedDuplicate > 0) {
             if (migrated.sealed > 0) {
               console.log(`[secrets] 已把 ${migrated.sealed} 个 provider 的密钥改为系统加密保存（settings 里不再有明文）`);
@@ -751,7 +754,7 @@ useEffect(() => {
              * 主库的**空闲页**里（真机字节级计数实测过）。这一步把它们回收掉，
              * 只在"本次真的封存过"时跑（一台机器一辈子一次），并**如实报做没做成**。
              */
-            const residue = await reclaimSealedPlaintextResidue();
+            residue = await reclaimSealedPlaintextResidue();
             if (residue.attempted && residue.vacuumed) {
               console.log("[secrets] 已回收旧明文的字节残留（WAL 折叠 + 整库重写）");
             } else {
@@ -776,6 +779,17 @@ useEffect(() => {
           if (migrated.skippedByChoice > 0) {
             console.log(`[secrets] 你显式选择了明文保存（codem-secrets-plaintext）：${migrated.skippedByChoice} 个 provider 未封存`);
           }
+          /**
+           * ## 第 89 轮：这段状态**必须让用户看得见**（不只是控制台）
+           *
+           * 第 88 轮的隔离钻取把"密钥解不开"这一幕真的跑出来了（副本库 + `CODEM_DB_PATH`
+           * 启动装机版），结果是：**界面上一条提示都没有** —— 用户唯一能看到的地方是
+           * **主动**打开「设置 → 安全」。而那一幕的事实是"这些 provider 现在用不了"。
+           *
+           * 决策逻辑抽到 `reportCredentialStartupIssues`（可单测、四种语气各归各位），
+           * 这里只负责把三个结果递进去；一切正常时**一行上报都不产生**（不打扰用户）。
+           */
+          reportCredentialStartupIssues({ hydrated, migrated, ...(residue ? { residue } : {}) });
         } catch (e) {
           console.warn("[secrets] 凭据封存流程出错（密钥未被改动）:", e);
         }
