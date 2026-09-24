@@ -2,6 +2,58 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.127] - 2026-09-24 — 更新下载**有界重试** + 错误可读（关闭 GAP-LIST 的 O-9）
+
+> 上一轮实测：本机点「检查更新」，按钮从 `发现新版本…下载中…` 变成
+> **`更新失败: error decoding response body`** —— 而同一条网络下独立 `curl` 下同一个 40MB 包，
+> 第一次在 **27MB** 处 `exit 56`，加 `--retry 3 --retry-all-errors` 才下全、sha256 与清单一致。
+> 也就是说：**包没问题，是网络会把长下载掐断**；而应用这一侧"一次失败就放弃 + 把 reqwest 原文印给用户"。
+
+### 🔴 一、有界重试（只对可恢复的错误，最多 3 次，退避 800→1600ms）
+
+新增 `src/core/update/update-retry.ts`：
+
+- `isRetryableUpdateError()` 用**白名单**判可恢复（`error decoding response body`（真机那一句）/
+  `error sending request` / `connection` / `reset by peer` / `unexpected eof` / `timed out` / `502/503/504` …），
+  **先判不可重试组**（`signature` / `verif` / `public key` / `checksum` / `permission` / `403` / `404` / `malformed` …）；
+- **默认不重试不认识的错误** —— 宁可少试一次，也不把"我不认识的问题"当成网络抖动反复下 40MB；
+- **签名/校验类错误一次就抛**：重试没有意义，还会把"发布坏了/可能被改"稀释成"网络不好，请重试"；
+- 上界硬性夹到 5（传 999 也只能 5 次），退避 `800ms → 1600ms → 3200ms`；
+- 次数用尽后**抛出最后一次的原始错误**（不包装：包装会丢掉 `isRetryable` 需要的原始特征）。
+
+### 🔴 二、错误可读（原因 + 下一步，并且**保留原文**）
+
+`describeUpdateError()` 把真机那句翻成
+「网络把安装包下载掐断了（传输未完成）—— 请重试；若反复失败，可到 GitHub Release 手动下载（原始信息：error decoding response body）」；
+签名类明说**「重试没有用」**并请用户反馈原文；不认识的错误不编原因，但一定带原文。
+
+界面侧：下载期间显示 **「下载中断，正在重试（第 n/3 次，等了 Ns）…」**（用户看得见它在重试，
+不需要自己反复点按钮）；失败时显示上面那句可读文案。
+
+### 判据与突变
+
+门禁 `src/test/update-download-retry.test.ts` **7 条**（真机形态"第 1 次失败第 2 次成功"、
+上界、退避序列、签名类只试一次、**混合串的优先级**、措辞保留原文、组件接线）
++ **6 处突变全被抓**（`.preview-shot/mutate-update-retry.mjs`）。
+⚠️ 两处**判据本身的缺陷**是突变验证逼出来的，已修并记在用例注释里：
+① 只测纯签名串 ⇒ "删除签名排除"照样绿（**当时根本没在判优先级**，现在补了"同时含签名与网络特征"的混合串）；
+② 组件接线只判"文本里出现过" ⇒ 改成 `if (false) await downloadWithRetry(...)` 照样绿（现在锚在**行首的 `await`** 上）。
+
+### 📦 发布后补记（仓库侧，**不进安装包**）
+
+1. **第一次写就把 knip 棘轮踩响了**：`update-retry.ts` 里的 `DownloadAttemptInfo` 一开始写成
+   `export interface`，而它只出现在 `DownloadRetryOptions.onAttempt` 的签名里 ——
+   knip 当场报 **`types 222 → 223 涨了`**。按仓库纪律收窄成模块内类型（"没人引用的导出就别导出"，
+   留着只会逼人放宽棘轮）。这是**棘轮按设计工作**的一个实例：它拦住了一次"顺手多导出一个类型"。
+2. **修掉一条"测试全过但命令失败"的假红**：全量跑时偶发
+   `EnvironmentTeardownError: [vitest-worker]: Closing rpc while "onUserConsoleLog" was pending`
+   （报在 `feature-context-fixes.test.ts`）。**所有用例仍然全过**，但它让 `vitest run` 退出码变成 1
+   ⇒ `npm run verify` 与 CI 的"绿"就不成立了。根因在 vitest"拦截 console 再经 RPC 转发"这条链路：
+   worker 关闭时日志还在飞。处置：`vitest.config.ts` 加 `disableConsoleIntercept: true`
+   （日志直接输出，这条链路不存在了）；**真正的**未处理错误依旧让退出码非 0 —— 判据没有被放宽。
+   代价如实写：未被 spy 掉的 console 输出会直接打到终端（不再按用例分组）。
+   改后全量：**369 文件 / 6059 通过 / 16 跳过 / 0 失败 / 退出码 0**。
+
 ## [1.16.126] - 2026-09-24 — 走查第二阶段：右侧面板补上（此前一个都没量到）+ **上下文面板自相矛盾**（21% 却"即将满"）+ 长跑稳定性有了门禁
 > 目标里还没落地的两条：①「UI/UX 补全剩余面板的真机逐面板走查」——上一轮按容器找入口，
 > 而 `.right-rail` / `.panel-sidebar` 当时**根本不存在**，报告里那两行就是"容器不在"，

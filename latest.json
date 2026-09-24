@@ -1,15 +1,15 @@
 {
-  "version": "1.16.126",
-  "notes": "上下文面板不再自相矛盾（21% 不再显示「即将满」）+ 右侧面板补真机走查 + 长跑内存/句柄门禁。详见 CHANGELOG [1.16.126]。",
-  "pub_date": "2026-09-24T06:05:19Z",
+  "version": "1.16.127",
+  "notes": "更新下载有界重试（最多 3 次、退避 800→1600ms）+ 错误可读（原因/下一步/保留原文）；签名类错误一次就抛。详见 CHANGELOG [1.16.127]。",
+  "pub_date": "2026-09-24T06:38:04Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lVQ3hra0tjTEhXWlpjaGl1NmRxNHYwLzBBTGp3T09nWlgvNUQ3cFZXY1ZkRXBjSmEwNHJFQzRVSzA2RU1xVVJkQlR1SEovZ2xTYXI2eGp0U3R6TlE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjI5OTE0CWZpbGU6Q29kZW1fMS4xNi4xMjZfeDY0LXNldHVwLmV4ZQpKdlNXL1lJM0dxeXliT1E2Qm5GNzhUTVZQd2c1QlBwMXhkRUp2NWVHK2hOMklVdllwVXJDQXFYSjRqZ1kxQjhKMGZZTmJHRGpFUE9DYVU0dUwvckJBUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.126/Codem_1.16.126_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lydk1wVGJLWWJucHB6bHhyOE9VODRnT2ZuNmRRRGhZdnJRaG5FbkZrcXMyOVk1dmdQWVRRU0tldkg0eVpsYU9vdkFuc21KQ2w0QkpUaEt2dTZUWXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjMxODYwCWZpbGU6Q29kZW1fMS4xNi4xMjdfeDY0LXNldHVwLmV4ZQo5Q1JzRVVpL082OWZYZWo4RHEyMkg0YnB2NkMySXo1ODJtOVNGYS94MFJHMENvU1RaM2wrR0hjZ2xRZGtvZHlFdWh3QS8xRy9naUVSMjMyK1pVeWtCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.127/Codem_1.16.127_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lVQ3hra0tjTEhXWlpjaGl1NmRxNHYwLzBBTGp3T09nWlgvNUQ3cFZXY1ZkRXBjSmEwNHJFQzRVSzA2RU1xVVJkQlR1SEovZ2xTYXI2eGp0U3R6TlE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjI5OTE0CWZpbGU6Q29kZW1fMS4xNi4xMjZfeDY0LXNldHVwLmV4ZQpKdlNXL1lJM0dxeXliT1E2Qm5GNzhUTVZQd2c1QlBwMXhkRUp2NWVHK2hOMklVdllwVXJDQXFYSjRqZ1kxQjhKMGZZTmJHRGpFUE9DYVU0dUwvckJBUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.126/Codem_1.16.126_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lydk1wVGJLWWJucHB6bHhyOE9VODRnT2ZuNmRRRGhZdnJRaG5FbkZrcXMyOVk1dmdQWVRRU0tldkg0eVpsYU9vdkFuc21KQ2w0QkpUaEt2dTZUWXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjMxODYwCWZpbGU6Q29kZW1fMS4xNi4xMjdfeDY0LXNldHVwLmV4ZQo5Q1JzRVVpL082OWZYZWo4RHEyMkg0YnB2NkMySXo1ODJtOVNGYS94MFJHMENvU1RaM2wrR0hjZ2xRZGtvZHlFdWh3QS8xRy9naUVSMjMyK1pVeWtCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.127/Codem_1.16.127_x64-setup.exe"
     }
   }
 }

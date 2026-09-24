@@ -7,6 +7,25 @@ export default defineConfig({
     environment: "happy-dom",
     globals: true,
     setupFiles: ["./src/test/setup.ts", "./src/test/setup-dom.ts"],
+    /*
+     * ⚠️ 第 82 轮：`disableConsoleIntercept` 是**为一条真实存在的 teardown 竞态**加的，不是"忽略错误"。
+     *
+     * 现象：全量跑（369 文件）时偶发一条 unhandled error ——
+     * `EnvironmentTeardownError: [vitest-worker]: Closing rpc while "onUserConsoleLog" was pending`
+     * （报出来的文件是 `feature-context-fixes.test.ts`）。**所有用例仍然全过**，
+     * 但它让 `vitest run` 退出码变成 1 ⇒ `npm run verify` 与 CI 的"绿"就不成立了
+     * （"测试全过但命令失败"是最容易被人忽略过去的一种假绿/假红）。
+     *
+     * 它来自 vitest **拦截 console 再通过 RPC 转发给主进程**这条链路：
+     * worker 正在关闭时，某条日志还在飞 ⇒ RPC 被关掉 ⇒ unhandled rejection。
+     * 关掉拦截之后日志直接输出，这条链路根本不存在，竞态也就没有发生的余地；
+     * 而**真正的**未处理错误（未捕获异常、未处理 rejection）依旧会让退出码非 0 ——
+     * 判据没有被放宽。用例里 `vi.spyOn(console, "…")` 依然照常拦截（那是用例自己的 spy，与此无关）。
+     *
+     * 代价（如实写）：测试期间各用例**没有被 spy 掉**的 console 输出会直接打到终端
+     * （不再按用例分组显示 `stdout | <用例名>`）。换来的是"全过就是退出码 0"这条底线。
+     */
+    disableConsoleIntercept: true,
     include: ["src/test/**/*.test.ts", "src/test/**/*.test.tsx"],
     // 并发上限：默认按逻辑核数（本机 32）铺满 worker，每个 worker 都要初始化
     // sql.js / transformers 等重依赖，实测会偶发 "Worker exited unexpectedly"

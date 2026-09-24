@@ -2037,6 +2037,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             const { check } = await import("@tauri-apps/plugin-updater");
             const { relaunch } = await import("@tauri-apps/plugin-process");
             const { decideUpdate } = await import("../core/update/check-update");
+            const { downloadWithRetry, describeUpdateError } = await import("../core/update/update-retry");
             const update = await check();
             /**
              * 第 62 轮：**不许无条件说"已是最新版本"**。
@@ -2049,7 +2050,26 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             const decision = decideUpdate(APP_VERSION, update?.available ? update.version : null);
             if (decision.kind === "update" && update) {
               setUpdateMsg(lang === "zh" ? decision.message.zh : decision.message.en);
-              await update.downloadAndInstall();
+              /**
+               * 第 82 轮：**有界重试**（O-9）。真机现场：这台机器的网络会把 40MB 安装包掐断
+               * （独立 curl 第一次在 27MB 处 exit 56），而应用一次失败就放弃、还把
+               * `error decoding response body` 原样印给用户。现在：
+               * - 可恢复的传输类错误最多重试 3 次（退避 800→1600ms），界面显示"第 n/N 次尝试"；
+               * - **签名/校验类错误一次就抛**（重试没有意义，还会把严重问题稀释成"网络不好"）；
+               * - 次数用尽后由 `describeUpdateError` 翻成"发生了什么 + 下一步"，并保留原文。
+               */
+              await downloadWithRetry(() => update.downloadAndInstall(), {
+                attempts: 3,
+                baseDelayMs: 800,
+                onAttempt: ({ attempt, total, waitedMs }) => {
+                  if (attempt === 1) return; // 第一次沿用上面那句"正在下载"
+                  setUpdateMsg(
+                    lang === "zh"
+                      ? `下载中断，正在重试（第 ${attempt}/${total} 次${waitedMs ? `，等了 ${Math.round(waitedMs / 1000)}s` : ""}）…`
+                      : `Download interrupted, retrying (attempt ${attempt}/${total}${waitedMs ? `, waited ${Math.round(waitedMs / 1000)}s` : ""})…`,
+                  );
+                },
+              });
               setUpdateMsg(lang === "zh" ? "安装完成，即将重启…" : "Installed, relaunching…");
               await relaunch();
             } else {
@@ -2078,8 +2098,15 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               }
               setUpdateBusy(false);
             } else {
-              const errMsg = rawMsg || (lang === "zh" ? "未知错误（请检查网络连接或稍后重试）" : "Unknown error (check network or retry)");
-              setUpdateMsg(lang === "zh" ? `更新失败: ${errMsg}` : `Update failed: ${errMsg}`);
+              /*
+               * 第 82 轮：错误措辞收口到 `describeUpdateError`（纯函数、有单测）。
+               * 改前是 `更新失败: ${rawMsg}` —— 用户看到的是 `error decoding response body`
+               * 这种 reqwest 原文，既读不出原因也读不出下一步。
+               */
+              const { describeUpdateError } = await import("../core/update/update-retry");
+              setUpdateMsg(
+                lang === "zh" ? `更新失败：${describeUpdateError(err, "zh")}` : `Update failed: ${describeUpdateError(err, "en")}`,
+              );
               setUpdateBusy(false);
             }
           }

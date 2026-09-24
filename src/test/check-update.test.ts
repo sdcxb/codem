@@ -84,7 +84,15 @@ describe("UPD：检查更新的判定与措辞", () => {
     const src = readFileSync(join(ROOT, "src", "components", "SettingsPanel.tsx"), "utf8");
     const start = src.indexOf('id="check-update-btn"');
     expect(start, "找不到检查更新按钮（选择器变了？）").toBeGreaterThan(0);
-    const block = src.slice(start, start + 4000);
+    /*
+     * ⚠️ 这个窗口是"从按钮定义往后截一刀"的启发式判据，所以第 82 轮把 4000 放宽到 9000：
+     * 那轮给下载加了**有界重试**（O-9），onClick 里多了注释与 `onAttempt` 回调，
+     * 整个处理函数超过了 4000 字符 ⇒ `setUpdateMsg` 落到窗口外，用例变红（**是判据的锅，不是代码坏了**）。
+     * 为了不让"放宽窗口"变成"放宽判据"，同时加一条**覆盖性断言**：
+     * 窗口必须包含流程末尾的 `relaunch()`，否则说明这一刀没截到整个 onClick。
+     */
+    const block = src.slice(start, start + 9000);
+    expect(block, "窗口必须覆盖整个 onClick（截到流程末尾才算数）").toContain("relaunch()");
     expect(block.includes("btn.textContent"), "检查更新按钮里不许再直接改 textContent").toBe(false);
     expect(block.includes("updateMsg"), "文案必须来自 state").toBe(true);
     expect(block.includes("disabled={updateBusy}"), "禁用态也必须走 state").toBe(true);
