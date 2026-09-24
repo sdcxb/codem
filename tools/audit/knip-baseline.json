@@ -3,9 +3,9 @@
   "recordedAt": "2026-09-24",
   "command": "npx knip --reporter json --no-exit-code",
   "previous": {
-    "duplicates": 11,
-    "exports": 280,
-    "types": 193
+    "exports": 113,
+    "types": 82,
+    "duplicates": 11
   },
   "mustBeZero": [
     "files",
@@ -23,8 +23,8 @@
     "namespaceMembers"
   ],
   "counts": {
-    "exports": 113,
-    "types": 82,
+    "exports": 103,
+    "types": 68,
     "duplicates": 11
   }
 }

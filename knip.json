@@ -1,6 +1,44 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["src/main.tsx", "src/pet-main.tsx"],
+  /*
+   * 第 112 轮：21 个模块门面 barrel 从 `ignore` **改成 `entry`**。
+   *
+   * 为什么改：`ignore` 是最钝的刀 —— 文件从 knip 眼里**整个消失**，连它的 `import` 语句都不算数，
+   * 于是被它 re-export 的符号全成了"没人用"（实测：45 条 knip 条目唯一的引用者就是这些 barrel）。
+   * `entry` 才是它真实的身份：模块自己的**导出面**（文件存在就是给人 import 的）。
+   *
+   * 代价与补救（都是量过的，不是猜的）：实验 A（只从 ignore 拿掉）跑出来 **20 个 barrel 变成"未使用文件"**
+   * ⇒ 它们的真相是"**当前无人 import**"，而这件事**不该由 knip 记账**，该由可达性门禁记账：
+   * `tools/audit/reachability-allowlist.json` 里 19 条 `barrel` 类别白名单就是它。
+   * 两道闸由 `tools/audit/knip-gate.mjs` 的 **KNIP-ENTRY-BARREL** 交叉钉住（entry 里的 barrel 必须在可达性白名单里写明不可达，反之亦然）。
+   *
+   * 实测收益：exports 113→103、types 82→68（−24），**新增 0 条**；文件类条目仍是 5 条（与改前同）。
+   */
+  "entry": [
+    "src/main.tsx",
+    "src/pet-main.tsx",
+    "src/core/agent/index.ts",
+    "src/core/context/index.ts",
+    "src/core/heartbeat/index.ts",
+    "src/core/icons/index.ts",
+    "src/core/inbox/index.ts",
+    "src/core/issue/index.ts",
+    "src/core/mcp/index.ts",
+    "src/core/memory/index.ts",
+    "src/core/permission/index.ts",
+    "src/core/pet/index.ts",
+    "src/core/plugin-market/index.ts",
+    "src/core/prompt/index.ts",
+    "src/core/provider/index.ts",
+    "src/core/recovery/index.ts",
+    "src/core/retry/index.ts",
+    "src/core/settings/index.ts",
+    "src/core/skill/index.ts",
+    "src/core/snapshot/index.ts",
+    "src/core/storage/index.ts",
+    "src/plugins/library-ops/index.ts",
+    "src/plugins/monopoly-game/index.ts"
+  ],
   "project": ["src/**/*.ts", "src/**/*.tsx"],
   "ignore": [
     /*
@@ -31,29 +69,7 @@
      */
     "src/core/cordis/**",
     "src/components/ui/**",
-    "src/plugins/monopoly-game/**",
-
-    "src/core/agent/index.ts",
-    "src/core/context/index.ts",
-    "src/core/heartbeat/index.ts",
-    "src/core/icons/index.ts",
-    "src/core/inbox/index.ts",
-    "src/core/issue/index.ts",
-    "src/core/mcp/index.ts",
-    "src/core/memory/index.ts",
-    "src/core/permission/index.ts",
-    "src/core/pet/index.ts",
-    "src/core/plugin-market/index.ts",
-    "src/core/prompt/index.ts",
-    "src/core/provider/index.ts",
-    "src/core/recovery/index.ts",
-    "src/core/retry/index.ts",
-    "src/core/settings/index.ts",
-    "src/core/skill/index.ts",
-    "src/core/snapshot/index.ts",
-    "src/core/storage/index.ts",
-    "src/plugins/library-ops/index.ts",
-    "src/plugins/monopoly-game/index.ts"
+    "src/plugins/monopoly-game/**"
   ],
   "ignoreDependencies": [
     "@tauri-apps/plugin-dialog",

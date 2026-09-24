@@ -26,6 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
@@ -105,9 +106,38 @@ for (const key of RATCHET) {
   }
 }
 
+/*
+ * KNIP-ENTRY-BARREL（第 112 轮）：**knip 的 entry 门面 ↔ 可达性白名单，两侧必须严格相等**。
+ *
+ * 起因是一次实验（结果写进了 `knip.json` 的注释）：21 个模块门面 barrel 原来在 knip 的 `ignore` 里，
+ * 而 `ignore` 是最钝的刀 —— 文件整个从 knip 眼里消失，连它的 `import` 都不算数，
+ * 于是被它 re-export 的 45 个符号全被报成"没人用"。改成 `entry` 后**实测 −24 条、新增 0 条**。
+ *
+ * 但 `entry` 会把另一件事藏起来：这 21 个 barrel **目前没有任何人 import**
+ * （实验 A 只从 ignore 拿掉：**20 个立刻变成"未使用文件"**）。
+ * 这件事**不该由 knip 记账**，该由可达性门禁记账 —— 它们本来就在
+ * `reachability-allowlist.json` 里逐条登记着"为什么不可达"。
+ * 所以这里把两侧钉成一条判据：**谁知道它们不可达，谁就必须写在两处**，缺一边就红。
+ *
+ * （特例已消除：`src/plugins/monopoly-game/index.ts` 同时被 `src/plugins/monopoly-game/**` 通配 ignore 覆盖
+ *  —— 那是整目录搬进来的独立插件，这一条 entry 因此是空操作；保留它是为了让两侧集合**严格相等**，
+ *  门禁里不留任何例外分支。空操作本身无害，已实测 counts 不变。）
+ */
+const cfgPath = path.join(ROOT, "knip.json");
+const knipCfg = ts.parseConfigFileTextToJson(cfgPath, fs.readFileSync(cfgPath, "utf8"));
+if (knipCfg.error) problems.push(`knip.json 解析失败：${JSON.stringify(knipCfg.error)}`);
+const entryBarrels = (knipCfg.config?.entry ?? []).filter((e) => e.endsWith("/index.ts"));
+const allowKeys = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, "reachability-allowlist.json"), "utf8")).entries ?? {});
+const allowBarrels = allowKeys.filter((k) => k.endsWith("/index.ts"));
+const onlyEntry = entryBarrels.filter((f) => !allowBarrels.includes(f));
+const onlyAllow = allowBarrels.filter((f) => !entryBarrels.includes(f));
+if (onlyEntry.length) problems.push(`knip entry 里的模块门面没在可达性白名单里登记（谁替它记账？）：${onlyEntry.join(", ")}`);
+if (onlyAllow.length) problems.push(`可达性白名单里的门面没登记成 knip entry（knip 会把它整个藏起来）：${onlyAllow.join(", ")}`);
+
 console.log("\nknip 棘轮对账：");
 console.log(`  必须为 0：${MUST_BE_ZERO.map((k) => `${k}=${counts[k] ?? 0}`).join("  ")}`);
 console.log(`  棘轮：${RATCHET.map((k) => `${k}=${counts[k] ?? 0}/${baseline.counts[k] ?? 0}`).join("  ")}`);
+console.log(`  门面交叉对账：knip entry=${entryBarrels.length} / 可达性白名单=${allowBarrels.length}（两侧必须相等）`);
 
 if (problems.length) {
   console.log("\n❌ knip 发现增长 / 出现了本应为 0 的类别：");
