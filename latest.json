@@ -1,15 +1,15 @@
 {
-  "version": "1.16.148",
-  "notes": "Codem v1.16.148 - 宠物窗的崩溃兜底接上了：以前宠物窗渲染出错就是一块透明的死窗口（没文字、没按钮，用户连'重新加载'都点不到，主窗控制台也看不到错误）—— 现在会显示诊断文本 + '重新加载宠物界面'按钮，连点三次会给下一步提示。另外更正了审计文档里一处我写错的结论（cicd/pipeline 其实是可达的）。完整清单见 CHANGELOG。",
-  "pub_date": "2026-09-24T18:28:57Z",
+  "version": "1.16.149",
+  "notes": "首轮对话的工具表不再可能缺件（六批「延后注册」的工具改成可等待）；覆盖率偶发假红查清并根除（24.13% → 稳定 62.06%）；出包前全量 398 文件 / 6241 通过 / 0 失败。",
+  "pub_date": "2026-09-24T20:11:12Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NtbDBTOERjTDhnWExnTldKVnJRaHVOYWJIUGtreksyNmJoYlZCOXFSOGZrNVNXL3o5SDVLcHllczZHV3N6eDNjaGg0Y2I3cjRrbFVYK2J4L2pOaEFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjc0NTAyCWZpbGU6Q29kZW1fMS4xNi4xNDhfeDY0LXNldHVwLmV4ZQpCN0Fod0xnY2dwc2pGZ29tbXVKazFOZnIwYXFqbnNiZjltZUpwc2JvN0hwbExHZDIrZGM5TmF6QlF5NXJKVWhPVm9xUEY3MndwQVBUcW5yVXdhZXNBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.148/Codem_1.16.148_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2IyN2NFQWJXWkJWY3hTZzZocTl1WUtOVXo0WS9VTHJLcVZSZGxaQVdlS0NBZWtzc0Z0S3NQSHNDdFhXWkxJV0xwcCtwUnQ3VE1YMDIzSzljRVpyN3dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjgwNjQ2CWZpbGU6Q29kZW1fMS4xNi4xNDlfeDY0LXNldHVwLmV4ZQpjcUtnTk1PRWwxZFNVbFFGRDliS3Y2WHdEK0o4MGhxTTVjdDVNWjZoa2xyNjhjR2V6VUVLbCtYUERxWkJTbm1tRkRyMFJtcHNaTFczRzIvaS83UzRBZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.149/Codem_1.16.149_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NtbDBTOERjTDhnWExnTldKVnJRaHVOYWJIUGtreksyNmJoYlZCOXFSOGZrNVNXL3o5SDVLcHllczZHV3N6eDNjaGg0Y2I3cjRrbFVYK2J4L2pOaEFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjc0NTAyCWZpbGU6Q29kZW1fMS4xNi4xNDhfeDY0LXNldHVwLmV4ZQpCN0Fod0xnY2dwc2pGZ29tbXVKazFOZnIwYXFqbnNiZjltZUpwc2JvN0hwbExHZDIrZGM5TmF6QlF5NXJKVWhPVm9xUEY3MndwQVBUcW5yVXdhZXNBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.148/Codem_1.16.148_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2IyN2NFQWJXWkJWY3hTZzZocTl1WUtOVXo0WS9VTHJLcVZSZGxaQVdlS0NBZWtzc0Z0S3NQSHNDdFhXWkxJV0xwcCtwUnQ3VE1YMDIzSzljRVpyN3dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjgwNjQ2CWZpbGU6Q29kZW1fMS4xNi4xNDlfeDY0LXNldHVwLmV4ZQpjcUtnTk1PRWwxZFNVbFFGRDliS3Y2WHdEK0o4MGhxTTVjdDVNWjZoa2xyNjhjR2V6VUVLbCtYUERxWkJTbm1tRkRyMFJtcHNaTFczRzIvaS83UzRBZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.149/Codem_1.16.149_x64-setup.exe"
     }
   }
 }
