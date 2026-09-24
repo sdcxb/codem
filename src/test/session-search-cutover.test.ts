@@ -20,6 +20,7 @@ import { setStoragePort } from "../core/storage/port";
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
   reportActionFailure: () => {},
+  reportAdvisory: () => {},
 }));
 
 function rustPortWith(rows: Array<Record<string, unknown>>, opts: { fail?: boolean } = {}) {

@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "1.16.136",
+  "version": "1.16.137",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,8 +17,9 @@
     "test:snapshot": "vitest run --config vitest.snapshot.config.ts",
     "audit:false-success": "node tools/audit/scan-false-success.mjs",
     "audit:fail-open": "node tools/audit/scan-fail-open-guards.mjs --check",
+    "audit:report-sites": "node tools/audit/scan-report-sites.mjs --check",
     "audit:silent-write": "node tools/audit/scan-silent-write.mjs",
-    "audit": "npm run audit:silent-write && npm run audit:false-success && npm run audit:guard-bypass && npm run audit:fail-open && npm run audit:storage-boundary && npm run audit:unrouted-db && npm run audit:schema-parity && npm run audit:coverage && npm run audit:command-parity && npm run audit:row-builders && npm run audit:write-return",
+    "audit": "npm run audit:silent-write && npm run audit:false-success && npm run audit:guard-bypass && npm run audit:fail-open && npm run audit:report-sites && npm run audit:storage-boundary && npm run audit:unrouted-db && npm run audit:schema-parity && npm run audit:coverage && npm run audit:command-parity && npm run audit:row-builders && npm run audit:write-return",
     "audit:unrouted-db": "node tools/audit/scan-unrouted-db.mjs --check",
     "audit:guard-bypass": "node tools/audit/scan-guard-bypass.mjs",
     "audit:storage-boundary": "node tools/audit/scan-storage-boundary.mjs",

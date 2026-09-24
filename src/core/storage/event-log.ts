@@ -31,7 +31,7 @@
  */
 
 import { getStoragePort, hasStoragePort } from "./port";
-import { reportPersistFailure } from "./persist-failure";
+import { reportAdvisory, reportPersistFailure } from "./persist-failure";
 
 // ========== 迁移期：事件镜像分流（P3 第 4 段） ==========
 //
@@ -211,14 +211,21 @@ function guardEventType(type: SessionEventType | string): void {
    * ⚠️ 上报的 area **带上类型名**：`persist-failure` 的失败表是按 **area** 去重的，
    * 用同一个 area 会让"两种野类型"合成一条、而且只留下**第一个**名字
    * （第一版就是这样：第二个名字在界面上根本看不见）。
+   *
+   * ## 第 90 轮：这是**发现**，不是「数据保存失败」⇒ 走 advisory
+   *
+   * 事实是「事件**照样写入**（不丢数据）」，而它原来借 persist 通道，横幅开头会是
+   * 「数据保存失败（eventLog.unknownType.X）」、后缀还会补一句
+   * 「这次改动目前只在内存里，重启应用后会丢失」—— **两句都不成立**：
+   * 用户会以为消息丢了，实际只是"类型名没登记、维护时会算成结构异常"。
    */
-  reportPersistFailure(
-    `eventLog.unknownType.${name}`,
-    new Error(`未注册的事件类型：${name}`),
-    `事件**照样写入**（不丢数据），但这个名字不在权威集合里 ⇒ 维护的"事件库结构自检"` +
-      `会把它的**每一条**都算成结构异常（真机实测 7360 条，把真问题淹了）。` +
-      `请把它加进 src/core/storage/event-types.ts 的 BUILTIN_EVENT_TYPES，或在写入方 registerCustomEventType()。`,
-  );
+  reportAdvisory(`eventLog.unknownType.${name}`, `未注册的事件类型：${name}`, {
+    title: "事件类型未登记：数据照样写入，但维护会把它算成结构异常",
+    nextStep:
+      "请把它加进 src/core/storage/event-types.ts 的 BUILTIN_EVENT_TYPES，或在写入方调用 registerCustomEventType()；" +
+      "在此之前维护的「事件库结构自检」会把它的**每一条**都算成结构异常（真机实测 7360 条，会把真问题淹掉）。",
+    sample: "事件已写入，未丢失；名字不在权威集合里",
+  });
 }
 
 /** 测试用：清掉"已上报过的未注册类型"记忆 */

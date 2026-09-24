@@ -32,6 +32,7 @@ const failures: string[] = [];
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
   reportActionFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
+  reportAdvisory: (_s, finding, _o) => failures.push(typeof finding === "string" ? finding : String(finding)),
 }));
 // 旧库不可用（rust 模式下不该用它）；需要时由测试自己设置
 let legacyQuery = 0;

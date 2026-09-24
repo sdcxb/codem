@@ -38,6 +38,9 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportActionFailure: (_scope: string, _e: unknown, note: string) => {
     reported.push(note);
   },
+  reportAdvisory: (_s, finding, _o) => {
+    reported.push(typeof finding === "string" ? finding : String(finding));
+  },
 }));
 
 /** 假 Rust 端口：configDomain 用真实现（RustConfigDomainCache），transport 用假的 */

@@ -1,0 +1,1397 @@
+{
+ "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
+ "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
+ "_counts": {
+  "total": 217,
+  "triaged": 94,
+  "pending": 123
+ },
+ "sites": [
+  {
+   "site": "src/App.tsx::app.forkSession::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/App.tsx::app.rewind.linkParent::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/App.tsx::app.rewind.reconcileMessageCount::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/App.tsx::store.saveMessages::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/AppErrorBoundary.tsx::appErrorBoundary.resetUiPreferences::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/CicdPanel.tsx::<动态>::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact.write::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/ModelProfilePanel.tsx::modelProfile.updateSlot::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/PluginManager.tsx::<动态>::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/PluginManager.tsx::<动态>::#2",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/RecoveryPanel.tsx::<动态>::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/RecoveryPanel.tsx::<动态>::#2",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/SettingsPanel.tsx::settings.codegraph.toggle::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/components/SnapshotPanel.tsx::snapshotPanel.getAll::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/agent/agent.ts::agentRegistry.loadPresets::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#2",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#3",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#4",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/environment/worktree-manager.ts::worktree.hasUncommittedChanges::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/environment/worktree-manager.ts::worktree.setExecutionMode::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/goal/goal.ts::goal.create::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/goal/goal.ts::goal.update::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.archive::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.create::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.deleteOlderThan::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.markAllRead::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.markRead::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.sweep::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/inbox/inbox-storage.ts::inbox.unarchive::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/issue/issue-storage.ts::issue.addComment::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/issue/issue-storage.ts::issue.create::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/issue/issue-storage.ts::issue.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/issue/issue-storage.ts::issue.deleteComment::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/issue/issue-storage.ts::issue.update::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/flashcard-store.ts::flashcard.create::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/flashcard-store.ts::flashcard.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/flashcard-store.ts::flashcard.deleteByNotebook::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#2",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/flashcard-store.ts::flashcard.update::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#2",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#2",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#3",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/storage.ts::notebook.refreshCounts::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/storage.ts::noteVersion.restore::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/knowledge/storage.ts::noteVersion.save::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/cost-tracker.ts::costTracker.setLimits::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/feedback.ts::feedback.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/index.ts::delegationTools.agentTeams::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/index.ts::delegationTools.computerUse::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/index.ts::llmEngine.subagentRuntimeInit::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/model-profile.ts::modelProfile.save::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/tools/show-todo.ts::todo.load::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#2",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#3",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#4",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/mcp/mcp.ts::mcp.saveConfigs::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/mcp/mcp.ts::mcp.setCodeGraphEnabled::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/permission/permission.ts::permission.saveCustomRules::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/provider/agent-teams-service.ts::agentTeams.persist::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/provider/session-recovery-provider.ts::sessionRecovery.clearSnapshot::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/recovery/recovery.ts::recovery.save::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/retry/retry.ts::retry.setConfig::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#2",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/session/delegation-storage.ts::delegation.clearCompletedDelegations::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/session/delegation-storage.ts::delegation.createDelegationTask::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/session/delegation-storage.ts::delegation.deleteDelegationTask::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/session/preferences.ts::preferences.disabledPlugins.diverged::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/session/preferences.ts::preferences.forgetLastSession::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/session/session-read-state.ts::session.markRead::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/settings/settings.ts::settings.saveFile::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/slots/SlotBridge.tsx::<动态>::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/slots/SlotBridge.tsx::<动态>::#2",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.addMember::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.archive::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.create::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.removeMember::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.unarchive::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.update::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/squad/squad-storage.ts::squad.updateMemberRole::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/account.ts::account.activate::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/account.ts::account.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/account.ts::account.save::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/account.ts::account.update::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/agent-profile-storage.ts::agentProfile.create::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/agent-profile-storage.ts::agentProfile.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/agent-profile-storage.ts::agentProfile.update::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::<动态>::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "启动期的流读失败 ⇒ 该步骤没跑成",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::<动态>::#2",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "Rust 存储引擎未能启动 ⇒ 本进程无可用存储",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::<动态>::#3",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "引擎缺少必需命令 ⇒ 版本不匹配（动作没生效）",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::<动态>::#4",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "读不到引擎命令清单 ⇒ 无法校验（没跑成）",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::<动态>::#5",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "搜索索引重建未完成（下次启动重试）",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::<动态>::#6",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "**发现 + 自愈**：新库关键表为空但旧库有数据 ⇒ 正在从旧库重建一次（第 90 轮从 action 改成 advisory：事实不是「操作没生效」，而是对账发现了不一致并且马上修）",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::<动态>::#7",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "旧数据自动迁移未完成（旧库未动，下次重试）",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::storage.dataRoot::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "数据根目录解析失败 ⇒ 没有可信落点（写盘失败的前置）",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/bootstrap.ts::storage.shutdown::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "存储收尾未完成（数据仍在 WAL，下次启动继续）",
+   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+  },
+  {
+   "site": "src/core/storage/credential-startup-report.ts::secrets.migrate::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "明文**没被封存**（安全动作未生效，仍是明文）⇒ 真失败"
+  },
+  {
+   "site": "src/core/storage/credential-startup-report.ts::secrets.noBackend::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "本机**没有**可用的系统加密 ⇒ 提醒（环境事实，不是失败）"
+  },
+  {
+   "site": "src/core/storage/credential-startup-report.ts::secrets.residue::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "行级封存生效、**字节级残留**没回收 ⇒ 提醒（要人判断的风险）"
+  },
+  {
+   "site": "src/core/storage/credential-startup-report.ts::secrets.unseal::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "密钥**解不开** ⇒ 真失败：这些 provider 现在用不了（O-16 / C-22 的修复点）"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "表在窗口期内未就绪 ⇒ 本次写放弃（写没落地）",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#10",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "整表替换失败（重建阶段）⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "域写队列已满 ⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#3",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "域写重放时端口已不在 ⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#4",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "域写重放失败 ⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#5",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "域写重放失败 ⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#6",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口已注册但域镜像未接手 ⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#7",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口已注册但域镜像未接手（带 options）⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#8",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "批量写里某一行失败 ⇒ 该行写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/domain-store.ts::<动态>::#9",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "批量写整批失败 ⇒ 写没落地",
+   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::<动态>::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "**发现**：事件类型未登记（事件照样写入、不丢数据）（第 90 轮从 persist 改成 advisory：修前横幅会说「数据保存失败…重启应用后会丢失」，两句都是假的）",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::eventLog.append::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未接手 ⇒ 事件未写入（写盘失败）",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::eventLog.appendBatch::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未接手 ⇒ 批量事件未写入",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::eventLog.compact::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "锚点之上有非 session_meta 事件 ⇒ 压缩无法同时保一致（未执行）",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::eventLog.compact::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未接手 ⇒ 压缩未落库",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::eventLog.deleteAllForSession::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未接手 ⇒ 会话事件未删除",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::eventLog.forkSession::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未接手 ⇒ 源会话事件读不到（fork 未生效）",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-log.ts::eventLog.forkSession::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未接手 ⇒ fork 未生效",
+   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+  },
+  {
+   "site": "src/core/storage/event-projection.ts::eventProjection.compaction::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/file-change-storage.ts::fileChange.create::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/file-change-storage.ts::fileChange.deleteBySession::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.auditPrune::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "审计裁剪**没跑成** ⇒ 真失败，已补 title「维护：审计裁剪未跑成」"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.credentialCensus::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "凭据普查的**发现**（普查跑成了，报的是结果）⇒ advisory；修前借 action 语气，横幅会说「该功能本次不可用，请重试」而那是假建议（C-21）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.eventStructure::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "**这个会话**的结构自检没跑成（本次不判定该会话）⇒ 真失败：没检查不等于没问题（与 #2 是两个语义，别混）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.eventStructure::#2",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "事件库结构异常 N 处的**发现**（自检跑成了，报的是存量异常）⇒ advisory；第 68/88 两轮都踩过同一坑（C-21）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.indexBehindLog::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "索引落后于日志并**已自动补回**（自检发现 + 已修）⇒ advisory；不该说成「操作没生效」（C-21）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.integrityCheck::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "完整性检查**没跑成**（已留重建标记）⇒ 真失败，已补 title「维护：完整性检查未跑成」（修前控制台印「写盘失败」是假的）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "**这个会话**的不变量检查没跑成 ⇒ 真失败（未计入已检查数）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "读侧镜像未就绪 ⇒ 真失败（这些会话本次**没有被检查**，不能当成没有缺口）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#3",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "运行时不变量审计未跑成（checked=0）⇒ 真失败：不做任何结论"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit.new::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "自检发现**本次新产生缺口**（自检跑成了）⇒ advisory；修前走 persist，控制台印「写盘失败…本次改动只存在于内存」两句都不成立（C-21）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.storageCompact::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "空间回收**没跑成** ⇒ 真失败，已补 title「维护：空间回收未跑成」"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "遥测裁剪**没跑成** ⇒ 真失败（维护动作未生效），已补真实 title「维护：遥测裁剪未跑成」"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune.mirror::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "镜像未同步 ⇒ 真失败（界面那份数据落后），已补 title「维护：遥测镜像未同步」"
+  },
+  {
+   "site": "src/core/storage/message.ts::<动态>::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "消息已写日志、查询索引未更新 ⇒ 索引写失败",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::<动态>::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "索引写失败（note 说明具体哪一步）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::<动态>::#3",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "索引写失败（note 说明具体哪一步）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.addToolCall::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "工具调用未写查询索引 ⇒ 索引写失败",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.appendToMessage::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "消息不存在或索引不可读 ⇒ 追加上去的正文没落地",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.attachmentContent::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "附件正文未取到 ⇒ 本次读失败（下次会再试）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.attachmentExternalize::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "附件外置标记未写回 ⇒ 写没落地（正文保留内联）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.attachmentIndex::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "附件未写查询索引 ⇒ 索引写失败",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.createMessage.index::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "权威日志已写、查询索引未更新 ⇒ 索引写失败",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.deleteMessagesByIds::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "缺 messages 能力 ⇒ 未在索引里隐藏（只写了墓碑）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.fts.remove::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "全文索引旧行未清除 ⇒ 可能命中已删消息",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.fts.upsert::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "全文索引未更新 ⇒ 该条暂时搜不到",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.rebuildSessionFts::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "会话 FTS 未对齐 ⇒ 搜索可能漏新消息",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.reconcileMessageCount::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "索引真值读不到 ⇒ 计数未重算（没跑成）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.reconcileMessageCount::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "会话行在镜像里读不到 ⇒ 计数未重算（没跑成）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.sessionIdsForMessages::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "缺 messages 能力 ⇒ 无法判定消息归属（本次跳过）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.toolCalls.warm::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "工具调用未能从索引预热 ⇒ 本次回退旧路径（功能降级）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.trimIndexedMessages::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "sessions 域镜像未就绪 ⇒ 索引裁剪整体跳过（没跑成）",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.updateMessage.index::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "改动已写日志、查询索引未更新 ⇒ 索引写失败",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/message.ts::message.updateToolCall::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "工具调用结果未写查询索引 ⇒ 索引写失败",
+   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+  },
+  {
+   "site": "src/core/storage/persist-failure.ts::<动态>::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "**通道自身的转发定义**（reportPersistFailure 转发到 reportFailure 的 persist 分支），不是业务调用点 ⇒ persist"
+  },
+  {
+   "site": "src/core/storage/persist-failure.ts::<动态>::#2",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "**通道自身的转发定义**（reportActionFailure 转发到 action 分支），不是业务调用点 ⇒ action"
+  },
+  {
+   "site": "src/core/storage/persist-failure.ts::<动态>::#3",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "**通道自身的转发定义**（reportAdvisory 转发到 advisory 分支），不是业务调用点 ⇒ advisory"
+  },
+  {
+   "site": "src/core/storage/prompt-draft.ts::promptDraft.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/prompt-draft.ts::promptDraft.save::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore.setting::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/rust-port.ts::storage.corrupt::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/rust-port.ts::storage.recovered::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "水位记录读不到 ⇒ 本次自检不判定（也不覆盖水位）",
+   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+  },
+  {
+   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#2",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "已恢复但复核读取失败 ⇒ 保持原水位，下次重试",
+   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+  },
+  {
+   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#3",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "已执行旧库恢复、但复核读取失败 ⇒ 无法确认结果（保持原水位，下次重试）——**没跑成**，不能当「恢复成功」",
+   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+  },
+  {
+   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#4",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "旧库恢复执行了但复核仍是 0 条消息 ⇒ 恢复**没生效**（这是真失败，不是发现）",
+   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+  },
+  {
+   "site": "src/core/storage/session-jsonl.ts::sessionLog.compact::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/session-log-bridge.ts::sessionLog.backfill::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/session-log-bridge.ts::sessionLog.rebuildIndex::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/settings.ts::<动态>::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/sync-engine.ts::syncEngine.autoSync::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/v2-session.ts::v2Session.delete::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/storage/v2-session.ts::v2Session.save::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/store.ts::store.createProject::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "建项目写盘失败",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.createWorktree::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "建 worktree 失败 ⇒ 已回退主工作区（动作没生效）",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.deleteProject::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "删项目写盘失败",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.fallbackExecutionMode::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "回落执行模式写盘失败",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.forkSession.messageCount::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "分叉会话的消息计数未写入 ⇒ 写没落地",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.forkSession.reconcile::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "分叉后的计数未复核 ⇒ 复核没跑成",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.persistWorktreePath::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "worktree 路径未保存 ⇒ 写没落地",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.removeWorktree::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "清理 worktree 失败 ⇒ 磁盘残留（动作没生效）",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.updateProject::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "改项目写盘失败",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/store.ts::store.updateSession::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "改会话写盘失败",
+   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+  },
+  {
+   "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#2",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#3",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/telemetry/telemetry.ts::<动态>::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "遥测写失败（note 说明哪一步）",
+   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+  },
+  {
+   "site": "src/core/telemetry/telemetry.ts::telemetry.clearAll::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "域镜像未就绪 ⇒ 没有清空任何行（没跑成）",
+   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+  },
+  {
+   "site": "src/core/telemetry/telemetry.ts::telemetry.clearAll::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "删除时端口失去就绪 ⇒ 没有清空任何行（没跑成）",
+   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+  },
+  {
+   "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "违反外键约束被剔除（数据问题，不再重试）⇒ 这些事件没落地",
+   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+  },
+  {
+   "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未注册 ⇒ 事件未写入",
+   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+  },
+  {
+   "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#3",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "端口未接手 ⇒ 事件未写入（内存保留重试）",
+   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+  },
+  {
+   "site": "src/core/ui-plugins/index.ts::uiPlugins.load::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/ui/native-dialog.ts::<动态>::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/ui/native-dialog.ts::<动态>::#2",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/ui/native-dialog.ts::<动态>::#3",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/ui/native-dialog.ts::<动态>::#4",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/core/ui/native-dialog.ts::<动态>::#5",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/hooks/useWindowState.ts::useWindowState.restore::#1",
+   "kind": "action",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 action；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/plugins/library-ops/store.ts::libraryOps.persistLayoutOverrides::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/plugins/library-ops/store.ts::libraryOps.persistSettings::#1",
+   "kind": "persist",
+   "status": "pending",
+   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+  },
+  {
+   "site": "src/store.ts::store.loadMoreMessages::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "历史读路径不可用 ⇒ 更早的消息没读出来（不代表没有历史）",
+   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  },
+  {
+   "site": "src/store.ts::store.loadMoreMessages::#2",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "读更早消息抛错 ⇒ 同上，本次读失败",
+   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  },
+  {
+   "site": "src/store.ts::store.saveMessages::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "本进程没有可用存储 ⇒ 本次运行内不再尝试写入",
+   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  },
+  {
+   "site": "src/store.ts::store.saveMessages::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "消息归属不一致 ⇒ 已拒绝写入（保护动作）",
+   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  },
+  {
+   "site": "src/store.ts::store.saveMessages::#3",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "消息未能保存 ⇒ 写盘失败",
+   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  },
+  {
+   "site": "src/store.ts::store.setFeedback::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "反馈写未被接受 ⇒ 未保存",
+   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  },
+  {
+   "site": "src/store.ts::store.setFeedback::#2",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "反馈写入抛错 ⇒ 未保存",
+   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  }
+ ],
+ "_families": {
+  "src/core/storage/domain-store.ts": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**",
+  "src/core/storage/message.ts": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败",
+  "src/core/store.ts": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）",
+  "src/store.ts": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）",
+  "src/core/storage/bootstrap.ts": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现",
+  "src/core/storage/event-log.ts": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现",
+  "src/core/telemetry/telemetry.ts": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）",
+  "src/core/storage/self-heal.ts": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+ }
+}

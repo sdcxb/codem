@@ -34,6 +34,7 @@ import { RustStoragePort } from "../core/storage/rust-port";
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
   reportActionFailure: () => {},
+  reportAdvisory: () => {},
 }));
 vi.mock("../core/storage/session-jsonl", () => ({
   appendSessionMessage: async () => {},

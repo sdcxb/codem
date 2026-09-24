@@ -27,6 +27,7 @@ const failures: string[] = [];
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
   reportActionFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
+  reportAdvisory: (_s, finding, _o) => failures.push(typeof finding === "string" ? finding : String(finding)),
 }));
 
 /** `legacyDbPath()` 走 `get_app_data_dir`，所以给它一个最简 Tauri 桩 */

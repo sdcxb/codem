@@ -217,6 +217,26 @@ export function reportAdvisory(
 }
 
 /**
+ * 折叠**重复的句末标点**（第 90 轮）。
+ *
+ * 现场：装机版 1.16.136 的隔离钻取里，提示条印出来的原文末尾是
+ * 「…「设置 → 安全」里有同一处状态与入口**。。**」——
+ * 原因是模板固定拼一个「。」，而调用方给的 `reason` / `consequence` 自己**已经以句号结尾**。
+ * 这不是孤例：**任何**以句末标点收尾的 reason 都会这样（本仓库的中文文案大多这么写）。
+ *
+ * 边界（刻意保守，写在判据里）：
+ * - 只折叠**同一句末标点连续重复**（`。。` `；；` `！！` `？？` `，，`），以及中英混排的 `。。.`；
+ * - **不动**省略号 `……`（它是刻意的）与单点句号；
+ * - 不做跨标点归并（`。；` 这种"两种都出现"的情况保留原样 —— 那可能是有意的写法）。
+ */
+export function collapseDuplicatePunctuation(text: string): string {
+  return text
+    .replace(/([。；！？，、])\1+/g, "$1") // 中文句末/句中标点连续重复
+    .replace(/。\.+/g, "。") // 「。。.」这类中英混排残留
+    .replace(/\.{3,}/g, "…"); // 三个以上的点收敛成省略号（保留…与……两种写法）
+}
+
+/**
  * 把一条上报拼成**界面上显示的那一句话**（纯函数，便于用例直接断言文案）。
  *
  * 第 48 轮从 `App.tsx` 里抽出来：原来这段拼装写在事件监听器里，
@@ -224,6 +244,10 @@ export function reportAdvisory(
  * **印出来的后果与真实情况矛盾**（"已按较新的一份恢复"+"重启应用后会丢失"）。
  * 抽成纯函数之后，文案本身成了可回归的契约
  * （见 `plugin-toggle-medium.test.ts::PLUGIN-MEDIUM-13`）。
+ *
+ * ⚠️ 第 90 轮：**出口统一过一遍标点折叠**（`collapseDuplicatePunctuation`）——
+ * 拼装是"标题 + reason + 后果 + 次数后缀"四段拼的，每段都可能自带句末标点，
+ * 在拼缝处必然出现重复（真机原文 `…入口。。`）。与其在四段各自防，不如在**唯一出口**收口。
  */
 export function composePersistAlertText(detail: PersistFailureDetail): string {
   const isAction = detail.kind === "action";
@@ -252,25 +276,25 @@ export function composePersistAlertText(detail: PersistFailureDetail): string {
   if (isAdvisory) {
     // 提醒：没有"失败"，所以既不写后果也不写重试建议；给了 nextStep 就印建议本身。
     // 次数后缀也换说法 —— "已累计失败 N 次"对发现类消息是假的（它没失败）。
-    return (
+    return collapseDuplicatePunctuation(
       `${head}：${reason}。` +
-      (detail.consequence ?? "") +
-      (detail.count > 1 ? `（本次维护过程中同类提示 ${detail.count} 次）` : "")
+        (detail.consequence ?? "") +
+        (detail.count > 1 ? `（本次维护过程中同类提示 ${detail.count} 次）` : ""),
     );
   }
   if (isAction) {
-    return (
+    return collapseDuplicatePunctuation(
       `${head}：${reason}。` +
-      (detail.consequence ?? "该功能本次不可用，请重试或检查日志") +
-      (detail.count > 1 ? `（已累计失败 ${detail.count} 次）` : "") +
-      `。`
+        (detail.consequence ?? "该功能本次不可用，请重试或检查日志") +
+        (detail.count > 1 ? `（已累计失败 ${detail.count} 次）` : "") +
+        `。`,
     );
   }
-  return (
+  return collapseDuplicatePunctuation(
     `${head}：${reason}。` +
-    (detail.consequence ??
-      "这次改动目前只在内存里，重启应用后会丢失；请检查磁盘空间与数据库文件占用。") +
-    (detail.count > 1 ? `（该区域已累计失败 ${detail.count} 次）` : "")
+      (detail.consequence ??
+        "这次改动目前只在内存里，重启应用后会丢失；请检查磁盘空间与数据库文件占用。") +
+      (detail.count > 1 ? `（该区域已累计失败 ${detail.count} 次）` : ""),
   );
 }
 

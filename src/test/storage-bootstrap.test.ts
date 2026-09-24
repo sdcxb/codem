@@ -35,6 +35,9 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (scope: string, error: unknown, note: string) => {
     reported.push({ scope, note, error });
   },
+  reportAdvisory: (_s, finding, _o) => {
+    reported.push(typeof finding === "string" ? finding : String(finding));
+  },
 }));
 
 function makeTransport(overrides: Partial<StorageTransport> = {}): StorageTransport {

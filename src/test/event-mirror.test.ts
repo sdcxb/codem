@@ -30,6 +30,7 @@ const reported: string[] = [];
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (_s: string, _e: unknown, note: string) => reported.push(note),
   reportActionFailure: (_s: string, _e: unknown, note: string) => reported.push(note),
+  reportAdvisory: (_s, finding, _o) => reported.push(typeof finding === "string" ? finding : String(finding)),
 }));
 /**
  * 内存版 `session_events` + `legacyAccess` 访问计数），用来断言"路由之后不再访问旧库"。

@@ -36,6 +36,7 @@ const LEGACY_PATH = "C:\\appdata\\codem-db.bin";
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
   reportActionFailure: () => {},
+  reportAdvisory: () => {},
 }));
 
 function rustPortWith(initial: Record<string, string> = {}) {

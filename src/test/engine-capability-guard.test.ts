@@ -29,6 +29,9 @@ vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (scope: string, error: unknown, note: string) => {
     reported.push({ scope, note, error });
   },
+  reportAdvisory: (_s, finding, _o) => {
+    reported.push(typeof finding === "string" ? finding : String(finding));
+  },
 }));
 
 /** 健康的引擎命令清单（与真机 `commands` 输出同形，取其中长期存在的那一小组） */

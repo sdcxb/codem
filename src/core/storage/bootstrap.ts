@@ -21,7 +21,7 @@
 
 import { getStoragePort, hasStoragePort, setStoragePort, type StoragePort } from "./port";
 import { RustStoragePort, type StorageTransport } from "./rust-port";
-import { reportActionFailure, reportPersistFailure } from "./persist-failure";
+import { reportActionFailure, reportAdvisory, reportPersistFailure } from "./persist-failure";
 import { domainEnsureLoaded } from "./domain-store";
 
 /**
@@ -713,18 +713,28 @@ export async function migrateFromLegacyDb(
        *
        * 所以这里加一道**对账自愈**：标记存在、但新库的关键表为空而旧库非空 →
        * 判定为"数据不完整"，允许重跑一次迁移（`replace: true` 幂等，内容是旧库那份权威副本）。
-       * 判据刻意保守：只在"新库为空 + 旧库非空"时触发，绝不覆盖任何非空数据。
+       * 判据刻意保守：只在「新库为空 + 旧库非空」时触发，绝不覆盖任何非空数据。
        */
       const stillEmpty = await newDbCoreTablesEmpty(port);
       const legacyHas = await legacyDbHasContent(port, legacyPath);
       if (!(stillEmpty && legacyHas)) {
         return { kind: "skipped", reason: "已有迁移标记" };
       }
-      reportActionFailure(
-        label,
-        new Error("新库关键表为空但旧库有数据"),
-        "检测到查询索引不完整（消息/会话为空，而旧库有数据）—— 正在从旧库重建一次",
-      );
+      /**
+       * 第 90 轮：这是**发现 + 自愈动作**，不是"操作没有生效" ⇒ 走 advisory。
+       *
+       * 原来借 `reportActionFailure`，横幅开头会是「操作没有生效（…）」——
+       * 而事实恰好相反：对账**发现了**"新库关键表为空但旧库有数据"，
+       * 并且**马上要从旧库重建一次**。用失败语气会让用户以为"恢复失败了"，
+       * 而这条恰恰是"正在自愈"的通知（与 `maintenance.indexBehindLog` 同一类）。
+       */
+      reportAdvisory(label, "新库关键表为空但旧库有数据", {
+        title: "存储自检：查询索引不完整，正在从旧库重建一次",
+        nextStep:
+          "检测到消息/会话查询索引为空，而旧库那份**有数据**（迁移标记挡不住这种情况，真机事故见过）——" +
+          "本次会重跑一次旧库迁移（幂等，只在「新库为空 + 旧库非空」时触发，绝不覆盖非空数据）。",
+        sample: "判据：stillEmpty && legacyHas（保守触发）",
+      });
     }
   } catch (e) {
     /**

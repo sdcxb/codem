@@ -33,6 +33,9 @@ import { getSetting, getSettingJSON, removeSetting, setSetting } from "../core/s
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
   reportActionFailure: () => {},
+  // 第 90 轮：通道新增的第三种语气也必须 mock —— 漏一个就会让被测代码抛
+  // TypeError，而那个异常会被生产代码的 catch 吞掉（换成"看起来像守卫判错"的假象）
+  reportAdvisory: () => {},
 }));
 
 /** 假端口：只实现配置面需要的东西，并记录调用 */

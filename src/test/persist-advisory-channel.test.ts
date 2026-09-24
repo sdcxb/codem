@@ -35,6 +35,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  collapseDuplicatePunctuation,
   composePersistAlertText,
   getPersistFailures,
   reportAdvisory,
@@ -187,6 +188,47 @@ describe("「发现 ≠ 失败」通道（第 88 轮）", () => {
         "（真机取证：完整性检查没跑成印成「写盘失败」；裁剪/回收/自检没跑成同理）：\n  " +
         missing.join("\n  "),
     ).toEqual([]);
+  });
+
+  it("ADV-8 贴出来的那句话不许出现重复句末标点（真机原文「…入口。。」）", () => {
+    /**
+     * 现场：装机版 1.16.136 的钻取里，提示条末尾印成「…有同一处状态与入口**。。**」。
+     * 原因是拼装是"标题 + reason + 后果 + 次数后缀"四段拼的，每段都可能自带句末标点。
+     */
+    const cases = [
+      composePersistAlertText({
+        area: "secrets.unseal",
+        message: "1 个 provider 的密钥解不开（密文已保留，未被删除）",
+        count: 1,
+        kind: "action",
+        title: "凭据：本机解不开已保存的密钥",
+        consequence: "这些 provider 现在用不了。请重新填写它们的 API Key。「设置 → 安全」里有同一处状态与入口。",
+      }),
+      composePersistAlertText({
+        area: "x",
+        message: "两处重复句号。",
+        count: 3,
+        kind: "persist",
+        consequence: "后果也带句号。",
+      }),
+      composePersistAlertText({
+        area: "y",
+        message: "提醒也带句号。",
+        count: 2,
+        kind: "advisory",
+        consequence: "建议同样带句号。",
+      }),
+    ];
+    for (const text of cases) {
+      expect(text, `出现了重复句末标点：${text}`).not.toMatch(/。。|；；|！！|？？|，，|\.\./);
+    }
+    // 反向对照：省略号是**刻意**的，不许被折叠掉（否则会把用户的"……"改没）
+    expect(collapseDuplicatePunctuation("正在处理……请稍候。")).toContain("……");
+    // 单个句号、问号照旧
+    expect(collapseDuplicatePunctuation("只有一句。")).toBe("只有一句。");
+    expect(collapseDuplicatePunctuation("真的吗？")).toBe("真的吗？");
+    // 中英混排的残留也收敛
+    expect(collapseDuplicatePunctuation("结束。。.")).toBe("结束。");
   });
 
   it("ADV-5 结构：advisory 必须一路透传到界面（store 类型 + App 监听器两处）", () => {

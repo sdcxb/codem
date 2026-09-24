@@ -25,6 +25,7 @@ const failures: string[] = [];
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
   reportActionFailure: (_s: string, _e: unknown, note: string) => failures.push(note),
+  reportAdvisory: (_s, finding, _o) => failures.push(typeof finding === "string" ? finding : String(finding)),
 }));
 vi.mock("../core/storage/session-jsonl", () => ({
   appendSessionMessage: async () => {},
