@@ -1,6 +1,23 @@
 /**
  * Remote Sync Engine — 基于 seq 的增量同步框架。
  *
+ * ## ⚠️ 未接线（第 109/110 轮审计结论 —— 这段状态有门禁盯着，别悄悄改）
+ *
+ * @unwired 未接线：本模块/本组件当前没有任何生产调用方（判据见 tools/audit/reachability-scan.mjs 与白名单）
+ * 判据是可达性审计（`tools/audit/reachability-scan.mjs`：从入口 `src/main.tsx` / `src/pet-main.tsx`
+ * 做模块解析 + BFS），本文件不在可达集合里；白名单
+ * `tools/audit/reachability-allowlist.json` 里登记的类别是「**未接线（已定性）**」，
+ * 并且 `src/test/reachability-gate.test.ts::REACH-5` 会核对「白名单说未接线的条目，
+ * 文件里必须有这个 `@unwired` 标记」（免得代码与审计各自漂移）。
+ *
+ * 说清楚现状，而不是让人猜：
+ *  - 实现与用例**都是完整的**（`src/test/sync-engine.test.ts` 覆盖 push/pull、LWW、游标推进）；
+ *  - 但 **0 个生产调用方**、UI 里也没有「同步」入口 ⇒ 用户拿不到这个能力；
+ *  - 处置只有两条路：**接上**（需要产品决策：远程后端配置界面 + 触发时机 + 认证），
+ *    或者**删掉**（500 行从不执行的实现会随时间腐坏）。在那之前，本注释就是它的状态说明。
+ *
+ * ---
+ *
  * 设计原理：
  * - 事件日志（session_events 表）是同步的基本单位
  * - 每个事件有单调递增的 seq 号，用于增量同步

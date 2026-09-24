@@ -26,6 +26,7 @@
  * 用例（快、进 verify 的全量跑）+ CLI（串行、进 `npm run audit`）。
  */
 import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
 import path from 'node:path'
 import { scanReachability, readAllowlist, checkAgainstAllowlist } from '../../tools/audit/reachability-scan.mjs'
 
@@ -67,5 +68,22 @@ describe('可达性门禁：写了但没接线的代码必须被拦住（第 109
     // 两个"未接线"条目必须**明说**未接线（它们是 O-22 里待判的那两处）
     const unwired = entries.filter(([, reason]) => reason.includes('未接线')).map(([f]) => f)
     expect(unwired.sort()).toEqual(['src/components/RegenerateModelPopover.tsx', 'src/core/storage/sync-engine.ts'])
+  })
+
+  it('REACH-5: 白名单说"未接线"的文件，代码里必须有 @unwired 标记（代码与审计不许各自漂移）', () => {
+    const allowlist = readAllowlist(ROOT)
+    const unwired = Object.entries(allowlist.entries ?? {}).filter(([, reason]) => reason.includes('未接线'))
+    expect(unwired.length, '这条判据要有对象，否则它会恒真').toBeGreaterThan(0)
+    const missing = []
+    for (const [file] of unwired) {
+      const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
+      // 必须是**独立的一行标记**（* @unwired …），不是正文里顺口提到的那一次 —— 否则把标记删了也测不出来（变异 M1/M2 就是这么抓出来的）
+      if (!/^\s*\*\s*@unwired\b/m.test(text)) missing.push(file)
+    }
+    expect(
+      missing,
+      '这些文件在白名单里被标成"未接线"，但文件里没有 @unwired 标记 —— 读代码的人会以为它在跑；' +
+        '标记里要写清：0 个生产调用方、判据工具、以及"接上还是删掉"这两条路',
+    ).toEqual([])
   })
 })
