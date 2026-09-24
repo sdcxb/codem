@@ -57,6 +57,13 @@ docs/*.docx
 !docs/STORAGE-COVERAGE.md
 !docs/DB-SCALE-BENCH.json
 !docs/TODO.md
+# 第 72/81 轮创建的两份**必须进仓库**的文档：
+#   · GAP-LIST.md  —— 唯一"当前缺口清单"，门禁 `docs-current-gap-list.test.ts` 要求它存在；
+#   · ui-walk-round72.md —— UI/UX 真机走查报告（GAP-LIST 与 CHANGELOG 都指向它）。
+# 少了白名单，这两份会被 `docs/*.md` 吞掉：本机能跑、别人 clone 下来门禁直接失败，
+# 而"清单在仓库里"这句话也就不成立了（这正是第 81 轮 `git ls-files` 查出来的）。
+!docs/GAP-LIST.md
+!docs/ui-walk-round72.md
 !docs/AlimamaFangYuanTiVF-Thin.ttf
 !docs/26720-1.png
 !docs/26720-2.png

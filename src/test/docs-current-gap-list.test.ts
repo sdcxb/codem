@@ -31,6 +31,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { spawnSync } from "node:child_process";
 
 const ROOT = process.cwd();
 const DOCS = path.join(ROOT, "docs");
@@ -94,6 +95,34 @@ describe("当前缺口清单只有一份（第 72 轮审计）", () => {
     // 具体的两处旧话术（当时把历史文档当成了当前）
     expect(guide, "`TODO.md` 不许再被描述成『✅ 最新』").not.toMatch(/\*\*TODO\.md\*\*[^\n]*✅ 最新/);
     expect(guide, "推荐阅读里不许再说『TODO.md — 了解当前待办』").not.toContain("了解当前待办");
+  });
+
+  it("DOCS-6: 两份关键文档必须**真的在仓库里**（不许被 .gitignore 吞掉）", () => {
+    /*
+     * 第 81 轮实查出来的坑：`.gitignore` 里有一条 `docs/*.md`（只放行少数几份），
+     * 于是新建的 `docs/GAP-LIST.md` 与 `docs/ui-walk-round72.md` **根本没进仓库** ——
+     * 本机跑得好好的（文件在磁盘上），而别人 clone 下来：
+     *   · DOCS-1 会因为"当前清单不存在"直接失败；
+     *   · CHANGELOG / GAP-LIST 里"报告见 docs/ui-walk-round72.md"这句话指向一个不存在的文件。
+     * 所以这里用 `git check-ignore` 直接问 git：这两份是不是被忽略了。
+     */
+    const files = ["docs/GAP-LIST.md", "docs/ui-walk-round72.md"];
+    for (const f of files) {
+      expect(fs.existsSync(path.join(ROOT, f)), `${f} 必须存在于工作区`).toBe(true);
+      /*
+       * `git check-ignore -q <path>`：**退出码 0 = 被忽略**，1 = 没被忽略。
+       * ⚠️ 不要用 stdout 判断：带 `-v` 时 git 会把"最后匹配到的规则"也打出来，
+       * 包括 `!` 取反规则（第一版就是这么写的，于是把"已放行"误判成"被忽略"）。
+       */
+      const probe = spawnSync("git", ["check-ignore", "-q", f], { cwd: ROOT, encoding: "utf8" });
+      expect(
+        probe.status,
+        `${f} 被 .gitignore 忽略了（要加 \`!docs/…\` 白名单，否则门禁在别人机器上直接失败）`,
+      ).toBe(1);
+    }
+    // 反向对照：确认这个判据真的在判（`.preview-shot/` 是刻意忽略的目录，必须被判为忽略 ⇒ 退出码 0）
+    const control = spawnSync("git", ["check-ignore", "-q", ".preview-shot/"], { cwd: ROOT, encoding: "utf8" });
+    expect(control.status, "对照项：.preview-shot/ 是刻意忽略的，必须被判为忽略（退出码 0）").toBe(0);
   });
 
   it("DOCS-5: 加横幅的工具与本文件的规则不许漂（两边正则一致）", () => {
