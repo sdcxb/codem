@@ -17,10 +17,28 @@ import { Buffer } from "./stubs/buffer-polyfill";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { PetWindowApp } from "./components/PetWindowApp";
+import { PetErrorBoundary } from "./components/PetErrorBoundary";
 import "./styles/pet-window.css";
 
+/*
+ * 第 108 轮：**把宠物窗自己的错误边界接上**。
+ *
+ * 现场：`PetErrorBoundary` 是第 44 轮（P2-14）专门为这个独立入口写的（自包含、不 import
+ * 任何主窗模块，连样式都走内联），文件头把"为什么不能复用主窗的 AppErrorBoundary"讲得很清楚 ——
+ * 但**它从来没有被接线**：本文件一直直接渲染 `<PetWindowApp />`。
+ * 后果正是它要防的那个：宠物窗渲染期一抛异常，整个窗口就是一块**透明的死窗口**
+ * （没有文字、没有按钮，用户连"重新加载"都点不到）。
+ *
+ * 这一处由第 106/107 轮的可达性普查查出来（`PetErrorBoundary.tsx` 只被测试 import、
+ * 生产代码 0 引用），属于"已实现但没接线"里最该马上接的一类：修复成本一行，收益是
+ * 崩溃时能看到诊断文本 + 「重新加载宠物界面」按钮。
+ *
+ * 边界在 App 内层：StrictMode 保持在外，这样边界的 class 组件行为仍受严格模式检查。
+ */
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <PetWindowApp />
+    <PetErrorBoundary>
+      <PetWindowApp />
+    </PetErrorBoundary>
   </React.StrictMode>
 );
