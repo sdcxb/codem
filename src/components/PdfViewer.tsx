@@ -229,7 +229,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               <FileText size={16} style={{ color: 'var(--accent)' }} />
               <span>PDF Viewer</span>
             </h3>
-            <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
+            <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
           </div>
           <div style={{ padding: '40px', textAlign: 'center' }}>
             <p style={{ color: 'var(--error)', fontSize: 'var(--fs-md)' }}>{error}</p>
@@ -254,7 +254,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               {currentPage} / {numPages}
             </span>
           </div>
-          <button className="nb-dialog-close" onClick={onClose}>
+          <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={onClose}>
             <CloseIcon size={16} />
           </button>
         </div>

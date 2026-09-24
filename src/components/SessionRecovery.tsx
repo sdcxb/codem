@@ -77,7 +77,7 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
           <span className="session-recovery-icon"><RotateCcw size={16} /></span>
           <span>会话恢复</span>
         </div>
-        <button className="session-recovery-close" onClick={onClose}><CloseIcon size={14} /></button>
+        <button aria-label="关闭" title="关闭" className="session-recovery-close" onClick={onClose}><CloseIcon size={14} /></button>
       </div>
 
       {summary && (

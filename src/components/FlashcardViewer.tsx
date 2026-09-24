@@ -123,7 +123,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                 {currentIdx + 1} / {dueCards.length}
               </span>
             </h3>
-            <button className="nb-dialog-close" onClick={() => setMode('list')}>
+            <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={() => setMode('list')}>
               <CloseIcon size={16} />
             </button>
           </div>
@@ -183,7 +183,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
         <div className="nb-dialog flashcard-dialog--create" onClick={(e) => e.stopPropagation()}>
           <div className="nb-dialog-header">
             <h3 className="nb-dialog-title"><Plus size={16} />{isZh ? '创建闪卡' : 'Create Flashcard'}</h3>
-            <button className="nb-dialog-close" onClick={() => setMode('list')}><CloseIcon size={16} /></button>
+            <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={() => setMode('list')}><CloseIcon size={16} /></button>
           </div>
           <div className="flashcard-form">
             <div>
@@ -214,7 +214,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
             {isZh ? (noteId ? '笔记闪卡' : '闪卡') : (noteId ? 'Note Flashcards' : 'Flashcards')}
             <span className="nb-count-badge">{cards.length}</span>
           </h3>
-          <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
+          <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
         </div>
         <div className="flashcard-toolbar">
           <button className="nb-studio-btn flashcard-tool-btn" onClick={handleStartReview} disabled={cards.length === 0}>

@@ -88,7 +88,7 @@ export function ToastContainer() {
             {iconMap[toast.type]}
           </span>
           <span className="toast-message">{toast.message}</span>
-          <button className="toast-close" onClick={() => handleDismiss(toast.id)}>
+          <button aria-label="关闭" title="关闭" className="toast-close" onClick={() => handleDismiss(toast.id)}>
             <ActionIcons.close size={14} />
           </button>
         </div>

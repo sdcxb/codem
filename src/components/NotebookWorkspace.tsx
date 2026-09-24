@@ -1117,7 +1117,7 @@ notebookId={notebookId}
                 <Route className="icon-md" />
                 {isZh ? '引导式学习路径' : 'Guided Study Path'}
               </h3>
-              <button className="nb-dialog-close" onClick={() => setShowStudyPath(false)}>
+              <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={() => setShowStudyPath(false)}>
                 <X className="icon-md" />
               </button>
             </div>
@@ -1231,7 +1231,7 @@ notebookId={notebookId}
                 >
                   <Columns className="icon-sm" />
                 </button>
-                <button className="nb-dialog-close" onClick={() => setStudioPreview(null)}>
+                <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={() => setStudioPreview(null)}>
                   <X className="icon-md" />
                 </button>
               </div>

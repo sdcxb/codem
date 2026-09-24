@@ -363,7 +363,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       <div className="sidebar-rail">
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-rail-btn" onClick={onToggleSidebar}>
+            <button aria-label={S.sidebar.expandSidebar[lang]} className="sidebar-rail-btn" onClick={onToggleSidebar}>
               <PanelLeftClose size={16} />
             </button>
           </TooltipTrigger>
@@ -372,7 +372,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         <div className="sidebar-rail-divider" />
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-rail-btn" onClick={() => { clearMessages(); if (currentProject) createSession(); }}>
+            <button aria-label={S.sidebar.newChat[lang]} className="sidebar-rail-btn" onClick={() => { clearMessages(); if (currentProject) createSession(); }}>
               <PencilLine size={16} />
             </button>
           </TooltipTrigger>
@@ -380,7 +380,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-rail-btn" onClick={() => setShowSearch(true)}>
+            <button aria-label={S.sidebar.search[lang]} className="sidebar-rail-btn" onClick={() => setShowSearch(true)}>
               <Search size={16} />
             </button>
           </TooltipTrigger>
@@ -388,7 +388,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-rail-btn" onClick={onNotebooks}>
+            <button aria-label={lang === 'zh' ? '知识笔记本' : 'Notebooks'} className="sidebar-rail-btn" onClick={onNotebooks}>
               <BookOpen size={16} />
             </button>
           </TooltipTrigger>
@@ -416,7 +416,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         <div className="sidebar-rail-divider" />
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-rail-btn" onClick={onMcp}>
+            <button aria-label={S.sidebar.mcp[lang]} className="sidebar-rail-btn" onClick={onMcp}>
               <Plug size={16} />
             </button>
           </TooltipTrigger>
@@ -424,7 +424,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-rail-btn" onClick={onSkills}>
+            <button aria-label={S.sidebar.skills[lang]} className="sidebar-rail-btn" onClick={onSkills}>
               <BookMarked size={16} />
             </button>
           </TooltipTrigger>
@@ -432,7 +432,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-rail-btn" onClick={onMemory}>
+            <button aria-label={S.sidebar.memory[lang]} className="sidebar-rail-btn" onClick={onMemory}>
               <Brain size={16} />
             </button>
           </TooltipTrigger>
@@ -441,7 +441,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         {onPlugins && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="sidebar-rail-btn" onClick={onPlugins}>
+              <button aria-label={S.sidebar.pluginManager[lang]} className="sidebar-rail-btn" onClick={onPlugins}>
                 <Puzzle size={16} />
               </button>
             </TooltipTrigger>

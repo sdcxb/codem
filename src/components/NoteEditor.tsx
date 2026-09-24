@@ -368,7 +368,7 @@ export function NoteEditor({
                 <Eye className="icon-sm" />
               </button>
             </div>
-            <button className="nb-editor-close" onClick={onCancel}>
+            <button aria-label="关闭" title="关闭" className="nb-editor-close" onClick={onCancel}>
               <X className="icon-md" />
             </button>
           </div>
@@ -623,7 +623,7 @@ export function NoteEditor({
                 {isZh ? '版本历史' : 'Version History'}
                 <span className="nb-count-badge">{versions.length}</span>
               </h3>
-              <button className="nb-dialog-close" onClick={() => setShowVersions(false)}>
+              <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={() => setShowVersions(false)}>
                 <X className="icon-md" />
               </button>
             </div>

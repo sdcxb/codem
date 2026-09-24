@@ -122,7 +122,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
           <span className="agent-panel-icon"><AgentIcon size={20} /></span>
           <span>{zh ? "智能体与团队工作列表" : "Agents & Teams"}</span>
         </div>
-        <button className="agent-panel-close" onClick={onClose}><CloseIcon size={16} /></button>
+        <button aria-label="关闭" title="关闭" className="agent-panel-close" onClick={onClose}><CloseIcon size={16} /></button>
       </div>
 
       <div className="agent-panel-stats">

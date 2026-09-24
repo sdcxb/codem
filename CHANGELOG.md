@@ -2,6 +2,101 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.131] - 2026-09-24 — **确认框在真机上一直弹不出来的真正根因**：注入的 `window.confirm` 指向一个**不存在的命令**（不是权限没配）
+
+> 第 84 轮走查（152 个入口）只报出 **1 条**控制台错误，而那一条把前面的结论掀翻了：
+> 装机版点「切换执行模式」仍然报 `Command plugin:dialog|confirm not allowed by ACL` ——
+> 可我在 1.16.125 就加了 `dialog:allow-confirm`（解析出来的能力清单里确实有它，41 条权限之一）。
+
+### 🔴 根因（读依赖源码逐字核对）
+
+`tauri-plugin-dialog` **2.7.2** 注入的 init 脚本（`src/init-iife.js`）逐字是：
+
+```js
+window.alert   = function(i){ n("plugin:dialog|message",{message:i.toString()}) }
+window.confirm = async function(i){ return await n("plugin:dialog|confirm",{message:i.toString()}) }
+```
+
+而**同一个 crate 只注册了三个命令**（`src/lib.rs` 的
+`generate_handler![commands::open, commands::save, commands::message]`）——
+**`plugin:dialog|confirm` 根本不存在**，所以 ACL 怎么配都不会允许。
+（`permissions/confirm.toml` 自己写着：`allow-confirm` 是 **DEPRECATED**，"now an alias to `allow-message`"。）
+
+也就是说：1.16.125 那次改动把"**不问就做**"变成了"**安全地拒绝**"（fail-closed + 横幅提示），
+但**弹框本身从来没能弹出来** —— 13 处不可逆动作实际上变成了"点了就报不可用"，用户无法确认。
+
+### ✅ 修法：真机走插件自己的 JS API
+
+`@tauri-apps/plugin-dialog` 的 `confirm()` 实现是
+`messageCommand(msg, { buttons: 'OkCancel' }) === 'Ok'` —— 它打的是**已注册**的
+`plugin:dialog|message`。这正是该走的路径（`confirm.toml` 的别名也印证了这一点）。
+
+`native-dialog.ts` 现在的优先级：
+
+| 顺序 | 路径 | 场景 |
+| --- | --- | --- |
+| ① | **插件 JS API**（`confirm(msg,{kind:'warning',okLabel:'确定',cancelLabel:'取消'})`） | 真机（`__TAURI__` 在） |
+| ② | `window.confirm`（同步布尔 / thenable） | 普通浏览器、happy-dom、组件用例 |
+| ③ | 都没有 / 都失败 ⇒ **fail-closed + 上报** | 真机上两条都不通时的兜底（与 1.16.125 的安全取向一致） |
+
+①失败**不立刻放弃**：留到②再试一次 —— 这样"插件不可用但环境里有可用 confirm"的组件用例照常能问出来；
+真机上两条都不通时，上报里会同时体现"两条路都试过"。
+
+### 判据
+
+门禁 `native-confirm-dialog.test.ts` 由 9 条增到 **11 条**：
+新增 **NC-8**（真机走插件 JS API：原样传话、按钮文案是「确定」、插件抛错时回退、两条都不通时 fail-closed 且带原始错误）
+与 **NC-9**（`alertDialog` 同样优先走插件 JS API）。
+
+### 实测
+
+全量 **372 文件 / 6072 通过 / 16 跳过 / 0 失败 / 退出码 0**；`tsc` 0。
+
+> ⚠️ 一条**仪器后果**要记下：确认框真的能弹之后，走查里点「切换执行模式」会**弹出系统模态框**
+> （CDP 点不到、会挡住后续点击）⇒ 走查脚本需要把这一类"会弹确认框的入口"排除，或改为只观察日志。
+> 这也是 O-3 里"最后一公里"的真实含义：修好之后必须由**用户**（或人工介入）完成那一次点击确认。
+
+## [1.16.130] - 2026-09-24 — 图标按钮的可访问名：修掉全部 31 个"图标关闭按钮" + 折叠侧栏 8 个 + **扫描器自己的漏报**（真实规模从"55"修正为"195"）
+
+> 这一轮把 O-4（走查的可访问性那一类）继续往下做：先把**走查**用修好之后的度量重跑（152 个入口），
+> 再补一条**静态**规则去全仓扫（走查只看得到它点到过的状态）。
+
+### 🔴 一、走查重跑的读数（度量修好之后）
+
+152 个入口、**控制台报错 0**；"无名按钮"从 23 个面板降到 **8 个面板**，
+逐个看 HTML 只有三处：`.settings-close`（ProjectManager 那一处没名字）、
+`.notebook-close-btn`、`.session-recovery-close` —— 全是**纯图标关闭按钮**。
+
+### 🔴 二、静态扫描：真实规模远大于三处（而且**第一版扫描器自己在漏报**）
+
+补了规则「<button> 里只有图标、且没有 aria-label / aria-labelledby / title ⇒ 报」，
+然后踩了两个坑（都写进注释与用例）：
+
+1. 拿**整个属性区**测 `/close/i` ⇒ `onClick={onClose}` 也算 close，一次匹配 41 个按钮
+   （其中有些是写着"取消"的文字按钮，贴 `aria-label="关闭"` 会**覆盖它的名字**）⇒ 只看 `className` 值 + 要求内容是图标；
+2. 属性区用非贪婪正则 `<button\b([\s\S]*?)>` 截取，而 `onClick={() => …}` 里的 `=>` 带 `>` ⇒
+   正则在箭头函数处截断 ⇒ 属性不完整、内容错位 ⇒ **大量漏报**：当时报 55 处，按正确的字符扫描是 **195 处**。
+
+### ✅ 三、修了什么
+
+| 类别 | 处数 | 做法 |
+| --- | ---: | --- |
+| **图标关闭按钮** | **31** | `aria-label="关闭" title="关闭"`（只动"只有图标"的那些；有文字的一律不碰） |
+| **折叠侧栏图标条** | **8** | 名字取**紧邻的 `<TooltipContent>` 表达式**（Tooltip 不能替代可访问名：读屏不念 tooltip、键盘用户看不到 hover） |
+| 其余无名图标按钮 | 156 → 待办 | 每个组件的含义不同，机械补名字就是造假 ⇒ 登记进 O-4，清单随时可打印 |
+
+### 判据
+
+门禁 `src/test/icon-button-a11y.test.ts` **4 条**：
+A11Y-ICON-1（关闭类严格 = 0）、A11Y-ICON-2（折叠侧栏严格 = 0）、
+**A11Y-ICON-3（其余只许降不许升的棘轮，基线 156）**、
+A11Y-ICON-4（**给扫描器自己**的反向对照：带 `onClick={() => …}` 的按钮必须被扫到 —— 第一版就在这里漏报）。
+规则与审计脚本共用**唯一实现** `tools/ui-audit/icon-button-scan.mjs`（写两遍必然漂）。
+
+### 实测
+
+全量 **372 文件 / 6070 通过 / 16 跳过 / 0 失败 / 退出码 0**；`tsc` 0。
+
 ## [1.16.129] - 2026-09-24 — 走查的可访问性那一类：**皮肤卡片键盘完全用不了**（真缺陷）+ 头像预设名字不可区分 + 走查度量误报修正
 
 > 这一轮把走查里"无名按钮 / 小命中区"那一类里**确实是缺陷**的部分挑出来修，同时**纠正一条我自己的误报**。

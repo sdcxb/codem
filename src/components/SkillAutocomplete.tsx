@@ -40,7 +40,7 @@ export const SkillAutocomplete = memo(function SkillAutocomplete({
         <div className="skill-autocomplete">
           <div className="skill-header">
             <span>{S.skills.title[lang]}</span>
-            <button
+            <button aria-label="关闭" title="关闭"
               className="skill-close"
               onClick={() => setVisible(false)}
             >

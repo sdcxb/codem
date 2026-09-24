@@ -186,7 +186,7 @@ export function SourceViewer({
               </div>
             )}
           </div>
-          <button className="nb-dialog-close" onClick={onClose}>
+          <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={onClose}>
             <CloseIcon size={16} />
           </button>
         </div>

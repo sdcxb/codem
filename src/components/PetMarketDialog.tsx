@@ -234,7 +234,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
               </span>
             )}
           </div>
-          <button
+          <button aria-label="关闭" title="关闭"
             onClick={onClose}
             className="petm-close"
           >

@@ -150,7 +150,7 @@ export function DiffViewer({ filePath, before, after, onAccept, onReject, onCust
             </button>
           )}
           {onClose && (
-            <button className="diff-close-btn" onClick={onClose}><CloseIcon size={16} /></button>
+            <button aria-label="关闭" title="关闭" className="diff-close-btn" onClick={onClose}><CloseIcon size={16} /></button>
           )}
         </div>
       </div>

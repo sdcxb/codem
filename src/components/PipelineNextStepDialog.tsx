@@ -55,7 +55,7 @@ export const PipelineNextStepDialog = memo(function PipelineNextStepDialog({
       <div className="pipeline-dialog">
         <div className="pipeline-header">
           <h3>{S.pipeline.title[lang]}</h3>
-          <button className="pipeline-close" onClick={onDismiss}><CloseIcon size={16} /></button>
+          <button aria-label="关闭" title="关闭" className="pipeline-close" onClick={onDismiss}><CloseIcon size={16} /></button>
         </div>
 
         <div className="pipeline-content">

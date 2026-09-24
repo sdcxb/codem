@@ -181,7 +181,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
           <Camera size={16} style={{ color: 'var(--accent)' }} />
           <span>文件快照</span>
         </div>
-        <button className="snapshot-panel-close" onClick={onClose}><CloseIcon size={14} /></button>
+        <button aria-label="关闭" title="关闭" className="snapshot-panel-close" onClick={onClose}><CloseIcon size={14} /></button>
       </div>
 
       {toast && (

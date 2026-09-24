@@ -152,7 +152,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               <FileText size={16} style={{ color: 'var(--accent)' }} />
               <span>Word Document Viewer</span>
             </h3>
-            <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
+            <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
           </div>
           <div style={{ padding: '40px', textAlign: 'center' }}>
             <AlertCircle size={32} style={{ color: 'var(--error)', margin: '0 auto 12px' }} />
@@ -201,7 +201,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               <Copy size={12} />
               {isZh ? '复制' : 'Copy'}
             </button>
-            <button className="nb-dialog-close" onClick={onClose}>
+            <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={onClose}>
               <CloseIcon size={16} />
             </button>
           </div>

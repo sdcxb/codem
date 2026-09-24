@@ -1585,7 +1585,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               <div className="input-float-anchor input-float-panel" style={{ zIndex: "var(--z-chrome)" }}>
                 <GenerateModeSelector mode={generateMode} onModeChange={setGenerateMode} />
                 <ResolutionSelector resolution={resolution} onResolutionChange={setResolution} />
-                <button
+                <button aria-label="关闭" title="关闭"
                   onClick={() => { setShowMultimodal(false); setGenerateMode("text"); }}
                   className="input-float-panel-close"
                 >

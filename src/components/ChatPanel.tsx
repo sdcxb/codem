@@ -722,7 +722,7 @@ setStepTooltipLocked(false);
                 }}
                 className="chat-search-input"
               />
-              <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="chat-search-close"><X size={16} /></button>
+              <button aria-label="关闭" title="关闭" onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="chat-search-close"><X size={16} /></button>
             </div>
             {searchQuery.trim() && (
               <div className="chat-search-count">

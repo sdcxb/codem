@@ -197,6 +197,60 @@ describe("原生确认框：必须真的问、答案必须真的等（第 72 轮
     expect(f[0].lastMessage).toContain("ACL");
   });
 
+  it("NC-8: 真机必须走**插件 JS API**（`plugin:dialog|confirm` 这个命令根本不存在）", async () => {
+    /*
+     * 第 84 轮发现的根因（读依赖源码逐字核对）：
+     * `tauri-plugin-dialog` 2.7.2 注入的 init 脚本把 `window.confirm` 指向
+     * `plugin:dialog|confirm`，而**同一个 crate 只注册了 open/save/message 三个命令** ——
+     * 那个命令不存在，所以 ACL 怎么配都不允许（`permissions/confirm.toml` 自己写着
+     * `allow-confirm` 是 DEPRECATED、"now an alias to allow-message"）。
+     * 结论：真机上必须走插件 JS API（它打的是**已注册**的 `plugin:dialog|message`）。
+     */
+    const calls: Array<{ message: string; okLabel: string }> = [];
+    const yes = await confirmDialog("确定要继续吗？", {
+      pluginConfirm: async (message, opts) => {
+        calls.push({ message, okLabel: opts.okLabel });
+        return true;
+      },
+    });
+    expect(yes, "插件返回 true 必须是 true").toBe(true);
+    expect(calls, "必须把用户的话原样交给插件").toHaveLength(1);
+    expect(calls[0].message).toBe("确定要继续吗？");
+    expect(calls[0].okLabel, "要有明确的按钮文案（不能是英文默认 Ok/Cancel）").toBe("确定");
+
+    const no = await confirmDialog("要删除吗？", { pluginConfirm: async () => false });
+    expect(no).toBe(false);
+
+    // 插件路径抛错 ⇒ 若环境里还有可用的 confirm，仍然要问出来（否则组件用例全废）
+    const viaFallback = await confirmDialog("回退路径", {
+      pluginConfirm: async () => { throw new Error("plugin:dialog|message not allowed by ACL"); },
+      confirm: () => true,
+    });
+    expect(viaFallback, "插件不可用时应回退到同步 confirm（有的话）").toBe(true);
+
+    // 两条路都不行 ⇒ fail-closed + 上报（错误信息里要能看出两条路都试过）
+    resetPersistFailures();
+    const both = await confirmDialog("两条都不可用", {
+      pluginConfirm: async () => { throw new Error("plugin 路径失败"); },
+      confirm: () => { throw new Error("Command plugin:dialog|confirm not allowed by ACL"); },
+    });
+    expect(both).toBe(false);
+    const f = getPersistFailures();
+    expect(f.map((x) => x.area)).toContain(DIALOG_FAILURE_AREAS.confirm);
+    expect(f[0].lastMessage, "要带原始错误").toContain("ACL");
+  });
+
+  it("NC-9: `alertDialog` 同样优先走插件 JS API", async () => {
+    const seen: string[] = [];
+    await alertDialog("保存成功", { pluginMessage: async (m) => { seen.push(m); } });
+    expect(seen).toEqual(["保存成功"]);
+    expect(getPersistFailures(), "成功不该上报").toHaveLength(0);
+
+    resetPersistFailures();
+    await alertDialog("提示", { pluginMessage: async () => { throw new Error("plugin:dialog|message 失败"); } });
+    expect(getPersistFailures().map((x) => x.area)).toContain(DIALOG_FAILURE_AREAS.alert);
+  });
+
   it("NC-5: 能力清单必须**显式**放行 dialog 的 confirm / message / ask", () => {
     const cap = JSON.parse(fs.readFileSync(path.join(ROOT, "src-tauri", "capabilities", "default.json"), "utf8"));
     const perms: string[] = cap.permissions ?? [];

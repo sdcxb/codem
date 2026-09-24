@@ -380,7 +380,7 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
             <span className="terminal-tab-label">
               {`终端 ${i + 1}`}
             </span>
-            <button
+            <button aria-label="关闭" title="关闭"
               className="terminal-tab-close"
               onClick={(e) => {
                 e.stopPropagation();

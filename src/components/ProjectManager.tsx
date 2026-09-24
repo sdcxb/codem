@@ -307,7 +307,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
       <div className="project-manager" role="dialog" aria-modal="true" aria-label="项目管理" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h3><Folder size={16} className="icon-inline" /> 项目管理</h3>
-          <button className="settings-close" onClick={onClose}><ActionIcons.close size={16} /></button>
+          <button aria-label="关闭" title="关闭" className="settings-close" onClick={onClose}><ActionIcons.close size={16} /></button>
         </div>
 
         {mode === "list" && (
