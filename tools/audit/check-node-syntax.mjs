@@ -38,6 +38,19 @@ const tracked = execFileSync("git", ["ls-files"], { encoding: "utf8", maxBuffer:
   .filter((s) => s.startsWith("tools/") || s.startsWith("scripts/"))
   .filter((s) => fs.existsSync(path.join(ROOT, s)));
 
+/*
+ * 第 127 轮补：**还包括"已写但还没提交"的 tools/scripts 脚本**。
+ * 起因很直白：这一轮我在 `tools/audit/check-gaplist.mjs` 里又写了一次 ASCII 双引号（第 6 次），
+ * 而它当时还没被 git 跟踪 ⇒ 门禁看不见它。**要提交的东西必须在提交前就被检查**。
+ */
+for (const f of execFileSync("git", ["ls-files", "--others", "--exclude-standard"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+  .split("\n")
+  .map((s) => s.trim())
+  .filter((s) => s && EXTS.some((e) => s.endsWith(e)))
+  .filter((s) => s.startsWith("tools/") || s.startsWith("scripts/"))) {
+  if (!tracked.includes(f)) tracked.push(f);
+}
+
 const scratchDir = path.join(ROOT, ".preview-shot");
 const scratch = fs.existsSync(scratchDir)
   ? fs

@@ -19,7 +19,7 @@
     "audit:fail-open": "node tools/audit/scan-fail-open-guards.mjs --check",
     "audit:report-sites": "node tools/audit/scan-report-sites.mjs --check",
     "audit:silent-write": "node tools/audit/scan-silent-write.mjs",
-    "audit": "npm run audit:silent-write && npm run audit:false-success && npm run audit:guard-bypass && npm run audit:fail-open && npm run audit:report-sites && npm run audit:storage-boundary && npm run audit:unrouted-db && npm run audit:schema-parity && npm run audit:coverage && npm run audit:command-parity && npm run audit:row-builders && npm run audit:write-return && npm run audit:regex-unicode && npm run audit:reachability && npm run audit:probe-guard && npm run audit:node-syntax",
+    "audit": "npm run audit:silent-write && npm run audit:false-success && npm run audit:guard-bypass && npm run audit:fail-open && npm run audit:report-sites && npm run audit:storage-boundary && npm run audit:unrouted-db && npm run audit:schema-parity && npm run audit:coverage && npm run audit:command-parity && npm run audit:row-builders && npm run audit:write-return && npm run audit:regex-unicode && npm run audit:reachability && npm run audit:probe-guard && npm run audit:node-syntax && npm run audit:gaplist",
     "audit:unrouted-db": "node tools/audit/scan-unrouted-db.mjs --check",
     "audit:guard-bypass": "node tools/audit/scan-guard-bypass.mjs",
     "audit:storage-boundary": "node tools/audit/scan-storage-boundary.mjs",
@@ -51,7 +51,8 @@
     "migrate:bite": "npm run db:build && node tools/migrate/bite-reconcile.mjs",
     "verify": "vitest run --coverage && node tools/audit/coverage-baseline.mjs --check && node tools/audit/coverage-per-file.mjs --check && node tools/audit/knip-gate.mjs && npx jscpd",
     "audit:probe-guard": "node tools/audit/probe-guard.selftest.mjs",
-    "audit:node-syntax": "node tools/audit/check-node-syntax.mjs"
+    "audit:node-syntax": "node tools/audit/check-node-syntax.mjs",
+    "audit:gaplist": "node tools/audit/check-gaplist.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
