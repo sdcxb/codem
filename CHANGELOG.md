@@ -2,6 +2,46 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.140] - 2026-09-24 — 附件正文被「读回来再写回去」**抹成 NULL**（静默数据丢失；这是 1.16.139 那条修复的下一层）
+
+> 1.16.139 修完"点开附件看不到正文"之后，我在真机上**又追了一层**：
+> 附件条看得见、正文取不到 —— 于是直接查库，发现那一行的 `content` 竟然是 **NULL**（`preview` 还在）。
+> 也就是说：不是"读不到"，而是**正文被应用自己抹掉了**。
+
+### 复现（在副本库上做到确定性）
+
+```text
+场景 A（旧行为：行里带 content 键）   写入后 content="正文-A" → 读路径写回后 content=null      🔴 复现
+场景 B（修法：行里不带 content 键）   写入后 content="file:C:\\tmp\\b.txt" → 写回后原样保留  ✅
+```
+
+工具：`.preview-shot/repro-attachment-content-wipe.mjs`（只写副本库，真库只读）。
+
+### 根因
+
+`writeAttachmentsViaPort`（启动期的消息索引重建 / 回填 / 消息更新都会走到它）把 `content` 一起 upsert，
+而**读路径上的消息按设计不带正文**（`attachmentsFromMirror` 只投影元数据，正文可能几十 MB）
+⇒ `content: undefined` 被写成 NULL。**外置附件更严重**：它的 `content` 是 `file:<路径>` 标记，
+被抹掉之后那个文件就再也找不回来了（用户看到的是「附件还在、点开永远读不到」）。
+
+### 修法
+
+与引擎语义对齐：`crud.upsert(mode:"replace")` 是**"未提供的列保持原值"**
+（`crud.rs` 的两段式 UPDATE，第 13 轮就写明了），所以**没有正文就干脆不提供 `content` / `preview` 两列**。
+这与「读不到 ≠ 可以覆盖」是同一条纪律（对照 `secret-write-guard` 对 provider key 的做法）。
+
+### 判据
+
+`src/test/attachment-content-keep.test.ts` **3 条**：ATT-KEEP-1（内存里没有正文 ⇒ 行里不许出现
+`content`/`preview` 键）、ATT-KEEP-2（反向对照：有正文必须照常写入，别修成「永远不写正文」）、
+ATT-KEEP-3（结构 + 引擎前提：`replace` 必须是「先 UPDATE、没有再 INSERT」）。
+
+### 实测
+
+- 全量 **382 文件 / 6118 通过 / 16 跳过 / 0 失败**；`tsc` 0；`npm run audit` **12 项全绿**；
+- 同一轮还修好了「点开附件看不到正文」（1.16.139）：现在点开走 `getAttachmentContent` + 有界重试，
+  读不到会**如实提示**「再点一次可重试」（已装机版实测：提示确实按时出现）。
+
 ## [1.16.139] - 2026-09-24 — 附件**点开能看到正文**了（O-2 关闭）；此前重启之后点开永远是空的
 
 > 这一版来自一次**隔离钻取**：给副本库塞一条真附件、复制权威日志、用 `CODEM_DB_PATH`

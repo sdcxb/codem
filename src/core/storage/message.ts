@@ -2033,6 +2033,23 @@ function writeAttachmentsViaPort(message: Message, sessionId: string): boolean {
   const now = Date.now();
   const rows = atts.map((att) => {
     const stored = externalizeIfLargeSync(att);
+    /**
+     * ## 第 92 轮：**没有正文时绝不许把正文列写进去**（真机抓到的静默数据丢失）
+     *
+     * 现场（隔离钻取，装机版 1.16.139）：给一条消息挂上真附件（`content` 有值），
+     * 应用重启后界面上**附件条还在**（元数据来自域镜像），但**点开取不到正文**；
+     * 直接查库发现那一行的 `content` 变成了 **NULL**，而 `preview` 还在。
+     *
+     * 根因就是这里：**读路径上的消息不带正文**（`attachmentsFromMirror` 按设计只投影元数据，
+     * 正文可能几十 MB）—— 而"读回来再写回去"时（启动期的消息索引重建 / 回填 / 更新都会走到这里）
+     * 会把 `content: undefined` 一起 upsert 进去，把磁盘上那份正文**抹成 NULL**。
+     * 外置附件更惨：`content` 是 `file:<路径>` 标记，抹掉之后那个文件就再也找不回来了。
+     *
+     * 修法与引擎语义对齐：`crud.upsert(mode:"replace")` 是**"未提供的列保持原值"**
+     * （`crud.rs` 的两段式 UPDATE），所以**没有正文就干脆不提供这两列**。
+     * 这与"读不到 ≠ 可以覆盖"是同一条纪律（对照 `secret-write-guard` 对 provider key 的做法）。
+     */
+    const hasContent = typeof stored.content === "string" && stored.content.length > 0;
     return {
       id: att.id,
       session_id: sessionId,
@@ -2040,8 +2057,7 @@ function writeAttachmentsViaPort(message: Message, sessionId: string): boolean {
       name: att.name,
       type: att.type,
       path: (att as { path?: string }).path ?? null,
-      content: stored.content,
-      preview: stored.preview,
+      ...(hasContent ? { content: stored.content, preview: stored.preview } : {}),
       sandbox_path: att.sandboxPath ?? null,
       mime_type: att.mimeType ?? null,
       size: att.size ?? null,

@@ -59,6 +59,8 @@
 | O-16 | ~~启动时「密钥解不开」只有控制台 warn，没有用户可见面~~ **已关闭（第 89 轮）** | 见下面「已关闭」里的 C-22：钻取把它确认成缺口，本轮修好并在装机版上量到提示条 | — |
 | O-17 | **还有「发现类」消息没走 advisory？**（第 88 轮只搬了维护侧的四个站点） | 已搬的四个见 C-21；**尚未逐处分诊**的是维护之外的自检/普查类上报（例如 `reconciliation.*`、`plugin.*diverged`、事件结构自检在**其它调用点**的形态）。本轮只做了「维护文件内 13 个上报点」的分诊（工具 `node .preview-shot/_triage-report-sites.mjs [文件...]`，输出 area + 是否已给 title），维护外的站点还没过一遍 ✅ **已闸门化（第 90 轮）**：`tools/audit/scan-report-sites.mjs` + 登记表 `report-site-classification.json`，`npm run audit:report-sites` 三条判据（新站点必登记 / kind 必须一致 / 登记不许过期），登记表分 triaged / pending 两档，**pending 棘轮只许降不许升**（本轮 217 → 待分诊 123，已分诊 94）。**剩余工作**：继续逐轮把 pending 烧到 0。本轮（第 90 轮）进度：已分诊 **94**、待分诊 **123**（217 起步）；待分诊的棘轮基线写在 `report-site-classification.test.ts` 的 `PENDING_BASELINE`，每轮改小。原来的方法仍适用：把调用点列出来，逐处判「发现 / 失败」，把发现类搬去 `reportAdvisory`；然后加一条结构判据（新出现的失败上报必须给 `title`，判据已在 ADV-7 里对维护文件生效，可推广到全仓） |
 | O-18 | ~~提示条文案会出现重复标点~~ **已关闭（第 90 轮）** | 见下面「已关闭」里的 C-23：在拼装的唯一出口折叠重复句末标点，判据含「省略号不许被折叠」的反向对照 | — |
+| O-19 | **附件正文的「真机端到端」还差最后一格**（元数据命中已过，正文那一格待复验） | 第 92 轮在装机版上量到：① 附件条**看得见**（`[message-attachments] live-attachment.txt 61 B`）；② 点开时新代码**确实在跑**（控制台 `[getAttachmentContent] … 正文尚未预热，已触发预取`）；③ 有界重试到第 4 次后**如实显示**「正文暂时读不到（已触发预取，再点一次可重试）」。但**正文始终没出现** —— 追下去发现是 C-27（正文被读改写抹成 NULL）。修完 C-27 后需要在装机版上重跑一次 `verify-attachment-content-live.mjs`，确认「点开就能看到正文」 | 在装机版上重跑 `.preview-shot/verify-attachment-content-live.mjs`：挂附件 → 重启 → 点开 ⇒ 控制台无 `尚未预热`、界面出现正文（含指纹） |
+
 
 
 ## 三、本轮**已关闭**的项（附判据）
@@ -98,6 +100,8 @@
 | C-25 | **更新器重试与可读错误**（O-13 的真机端到端） | 1.16.127 修的「有界重试 + 可读错误」在此前 **6 次**真机升级里都没被触发过（每次都下载干净）。第 91 轮 1.16.137 → 1.16.138 的升级**真的被掐断三次**：按钮依次显示 `下载中断，正在重试（第 2/3 次，等了 1s）…`、`（第 3/3 次，等了 2s）…`，控制台两次 `[updater] 下载第 1/3 次失败（可重试）：error decoding response body`，最后给出**可读失败**：原因（网络把安装包掐断） + 下一步（重试或去 Release 手动下载） + **保留原文**。再点一次即成功升级。**这条缺口彻底关闭**（真机端到端，不是只靠门禁与突变） |
 
 | C-26 | **附件点开看不到正文**（O-2 的结论，且比原判断更严重） | 原判断是「真机没有附件数据（`attachments` 0 行）⇒ 量不到」。第 92 轮改用**钻取**：复制库 + **复制权威日志**（第一次只复制库，侧栏「暂无对话」—— 会话/消息的权威副本是 `<dataRoot>/sessions/*.jsonl`，这个坑记在工具注释里）+ `CODEM_DB_PATH` 启动**装机版**，把一条真附件挂到「当前可见消息」上。结果：**元数据看得见**（`[message-attachments] live-attachment.txt 61 B`，name/size 都在），**点开是空的且没有任何提示** —— 根因是 `MessageBubble` 只读 `att.content`，而读路径上的消息按设计不带正文（`attachmentsFromMirror` 一律留空、按需取）⇒ 只有「刚上传那一刻」能看正文。修法：点开走 `getAttachmentContent(id)` + **有界重试**（4 次、退避 400/800/1200/1600ms、卸载清理定时器），读不到如实提示「再点一次可重试」。判据 `attachment-content-read.test.ts` 4 条。工具：`verify-attachment-visible-live.mjs`（挂附件→重启→量界面）、`_attachment-content-probe.mjs`（点开量正文） |
+
+| C-27 | **附件正文被「读回来再写回去」抹成 NULL**（静默数据丢失，1.16.139 修复的下一层） | 现场：附件条看得见但正文取不到 ⇒ 查库发现 `content` 是 **NULL**（`preview` 还在）。副本库确定性复现：带 `content` 键写回 ⇒ 变 null；不带该键 ⇒ 原值保留。根因：`writeAttachmentsViaPort`（启动期消息索引重建/回填/更新都走它）把 `content` 一起 upsert，而读路径上的消息按设计不带正文（`attachmentsFromMirror` 只投影元数据）⇒ `undefined` 被写成 NULL；**外置附件更严重**（`file:<路径>` 标记被抹掉后文件再也找不回）。修法：与引擎 `replace = 未提供的列保持原值` 对齐 —— 没有正文就不提供 `content`/`preview` 两列。判据 `attachment-content-keep.test.ts` 3 条；工具 `repro-attachment-content-wipe.mjs`（只写副本） |
 
 > 编号说明：本表**没有 C-17**（早期跳号的历史遗留）。不重排编号，以免与已发布的 CHANGELOG / 文档里对 C-x 的引用错位。
 
