@@ -39,7 +39,7 @@ const ENTRY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DETAIL_MAX = 240;
 
 /** 变更广播（设置面板据此重绘标注；与 codem:db-save-failed 等同一套 window 事件风格） */
-export const CATALOG_HEALTH_EVENT = "codem:catalog-health-changed";
+const CATALOG_HEALTH_EVENT = "codem:catalog-health-changed";
 
 export interface CatalogHealthEntry {
   /** ok = 最近一次调用成功；rejected = 服务器明确拒绝了这个模型名 */
@@ -50,7 +50,7 @@ export interface CatalogHealthEntry {
   detail?: string;
 }
 
-export type CatalogHealthMap = Record<string, Record<string, CatalogHealthEntry>>;
+type CatalogHealthMap = Record<string, Record<string, CatalogHealthEntry>>;
 
 let cache: CatalogHealthMap | null = null;
 

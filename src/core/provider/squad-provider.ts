@@ -19,7 +19,7 @@ import type { Plugin } from '../cordis/src/index.ts'
 import { getSquadManager } from '../squad/squad.ts'
 
 /** 创建 Squad Provider 插件，可指定服务名（默认 'squad'） */
-export function createSquadProvider(serviceName: string = 'squad'): Plugin {
+function createSquadProvider(serviceName: string = 'squad'): Plugin {
   return (ctx: any) => {
     const manager = getSquadManager()
 

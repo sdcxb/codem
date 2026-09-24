@@ -32,13 +32,13 @@ export interface SeamServiceDefinition<T> {
   createProvider(config?: Record<string, unknown>): T;
 }
 
-export interface SeamProvider {
+interface SeamProvider {
   readonly id: string;
   /** Test if this provider is available/functional */
   isAvailable(): boolean;
 }
 
-export interface SeamConsumer {
+interface SeamConsumer {
   readonly seamName: string;
 }
 
@@ -134,7 +134,7 @@ export interface ShellSeam extends SeamProvider {
   execute(command: string, cwd: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string; exitCode: number }>;
 }
 
-export const ShellSeamDefinition: SeamServiceDefinition<ShellSeam> = {
+const ShellSeamDefinition: SeamServiceDefinition<ShellSeam> = {
   name: "shell",
   createProvider() {
     throw new Error("Use registerProvider to register a ShellSeam");
@@ -165,13 +165,13 @@ export const LLMSeamDefinition: SeamServiceDefinition<LLMSeam> = {
 
 // ========== Subagent Seam ==========
 
-export interface SubagentSeam extends SeamProvider {
+interface SubagentSeam extends SeamProvider {
   spawn(parentSessionId: string, agentId: string, prompt: string, cwd: string, abort?: AbortSignal): Promise<{ id: string; name: string }>;
   getTask(taskId: string): any;
   waitForTask(taskId: string, abort?: AbortSignal): Promise<{ success: boolean; result?: string; error?: string }>;
 }
 
-export const SubagentSeamDefinition: SeamServiceDefinition<SubagentSeam> = {
+const SubagentSeamDefinition: SeamServiceDefinition<SubagentSeam> = {
   name: "subagent",
   createProvider() {
     throw new Error("Use registerProvider to register a SubagentSeam");
@@ -180,12 +180,12 @@ export const SubagentSeamDefinition: SeamServiceDefinition<SubagentSeam> = {
 
 // ========== Web Seam ==========
 
-export interface WebSeam extends SeamProvider {
+interface WebSeam extends SeamProvider {
   search(query: string): Promise<Array<{ title: string; url: string; snippet: string }>>;
   fetch(url: string): Promise<string>;
 }
 
-export const WebSeamDefinition: SeamServiceDefinition<WebSeam> = {
+const WebSeamDefinition: SeamServiceDefinition<WebSeam> = {
   name: "web",
   createProvider() {
     throw new Error("Use registerProvider to register a WebSeam");

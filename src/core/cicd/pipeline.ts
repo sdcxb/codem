@@ -360,7 +360,7 @@ jobs:
 /**
  * 获取仓库的 GitHub Actions workflow 列表。
  */
-export async function listWorkflows(owner: string, repo: string): Promise<{
+async function listWorkflows(owner: string, repo: string): Promise<{
   workflows: Array<{ id: number; name: string; path: string; state: string; created_at: string; updated_at: string }>;
   error?: string;
 }> {

@@ -13,7 +13,7 @@
 
 // ========== Types ==========
 
-export type BashCommandClassification = "readonly" | "write" | "dangerous";
+type BashCommandClassification = "readonly" | "write" | "dangerous";
 
 export interface BashAnalysisResult {
   classification: BashCommandClassification;

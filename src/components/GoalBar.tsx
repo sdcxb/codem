@@ -14,7 +14,7 @@ import { useState, useCallback } from 'react'
 import { Target, Pause, Play, Edit2, Trash2, X, Check } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
 
-export interface GoalSnapshot {
+interface GoalSnapshot {
   id: string
   objective: string
   phase: 'active' | 'paused' | 'blocked' | 'complete'

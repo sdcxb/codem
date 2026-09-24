@@ -5,7 +5,7 @@
  * 注入 CSS 变量定义默认配色方案。
  * 可独立加载/卸载/热替换 — 第三方可替换为自定义皮肤。
  */
-export function applySkinDefault() {
+function applySkinDefault() {
   const root = document.documentElement
 
   const defaultVars = {

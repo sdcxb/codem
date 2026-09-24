@@ -16,7 +16,7 @@ import { getSettingJSON } from '../storage/settings';
 
 // ========== 功能能力定义 ==========
 
-export type FeatureCapability =
+type FeatureCapability =
   | 'text-generation'     // 文本生成（摘要、FAQ、Studio 内容等）
   | 'tool-calling'        // 工具调用（create_note, search_notebook 等）
   | 'vision'              // 视觉理解（图片识别、OCR 等）
@@ -25,7 +25,7 @@ export type FeatureCapability =
   | 'embedding'           // 向量嵌入（语义搜索）
   | 'streaming';          // 流式输出
 
-export interface CapabilityCheckResult {
+interface CapabilityCheckResult {
   /** 功能是否可用 */
   available: boolean;
   /** 使用的模型来源: 'slot' (场景模板配置) | 'fallback' (回退到 chat) | 'default' (引擎默认) | 'none' (不可用) */
@@ -172,7 +172,7 @@ function getProfileManager() {
  * 3. 如果 slot 无配置，回退到 chat slot → 引擎默认
  * 4. 检测模型是否支持所需能力
  */
-export function checkFeatureCapability(capability: FeatureCapability): CapabilityCheckResult {
+function checkFeatureCapability(capability: FeatureCapability): CapabilityCheckResult {
   const pm = getProfileManager();
   const slot = CAPABILITY_TO_SLOT[capability];
 
@@ -308,7 +308,7 @@ function getCapabilityLabel(cap: FeatureCapability, zh: boolean): string {
 /**
  * 获取功能所需能力的描述（用于 UI 提示）
  */
-export function getFeatureRequirements(feature: string): { zh: string; en: string; capabilities: FeatureCapability[] } {
+function getFeatureRequirements(feature: string): { zh: string; en: string; capabilities: FeatureCapability[] } {
   const requirements: Record<string, { zh: string; en: string; capabilities: FeatureCapability[] }> = {
     'notebook-summary': {
       zh: '笔记本摘要生成需要文本生成能力',

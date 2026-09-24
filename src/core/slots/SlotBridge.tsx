@@ -486,7 +486,7 @@ function useSlotEntriesSafe(slots: any, key: string): readonly StoredEntry[] {
  * 插件被禁用时不装配 provider → 这里返回 false → 宿主 UI 完全回到原样
  * （例如任务管理的「图书馆」页签只在 ui-library-ops 启用时出现）。
  */
-export function useSlotHasEntries(name: string): boolean {
+function useSlotHasEntries(name: string): boolean {
   const ctxReady = useCtxReady()
   const ctx = tryGetCtx()
   const slots = ctx?.get('slots') ?? null

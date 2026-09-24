@@ -113,7 +113,7 @@ export function getHeaderHistory(sessionId: string): HeaderChange[] {
 /**
  * 获取缓存命中统计。
  */
-export function getCacheStats(sessionId: string): {
+function getCacheStats(sessionId: string): {
   totalRequests: number;
   cacheHits: number;
   cacheMisses: number;

@@ -38,7 +38,7 @@ export interface LayoutOverride {
 export const EMPTY_LAYOUT: LayoutOverride = { rooms: {}, nodes: {}, updatedAt: 0 };
 
 /** 坐标合法区间（防御非法持久化值 / 拖拽越界） */
-export const LAYOUT_LIMITS = {
+const LAYOUT_LIMITS = {
   x: { min: -400, max: 2400 },
   y: { min: -400, max: 1400 },
   /** 房间最小边长 */
@@ -66,7 +66,7 @@ function clampNum(v: unknown, min: number, max: number): number | null {
 }
 
 /** 收敛房间覆盖项（非法值直接丢弃该字段） */
-export function normalizeRoomOverride(input: RoomOverride | null | undefined): RoomOverride {
+function normalizeRoomOverride(input: RoomOverride | null | undefined): RoomOverride {
   const out: RoomOverride = {};
   if (!input) return out;
   const b = input.bounds;
@@ -137,7 +137,7 @@ export function setLayoutOverride(override: LayoutOverride | null): void {
 }
 
 /** 当前生效的覆盖层 */
-export function getLayoutOverride(): LayoutOverride {
+function getLayoutOverride(): LayoutOverride {
   return active;
 }
 

@@ -37,7 +37,7 @@ import { writeFile, renameFile, listDirectory, deleteFile } from "../file-api";
 export const DEFAULT_MAX_INLINE_BYTES = 64 * 1024;
 
 /** 预览预算：默认给 8 KB（前后各一半）——足够模型判断"这是什么、结尾发生了什么"。 */
-export const DEFAULT_PREVIEW_BYTES = 8 * 1024;
+const DEFAULT_PREVIEW_BYTES = 8 * 1024;
 
 const encoder = new TextEncoder();
 
@@ -158,7 +158,7 @@ export async function retainToolResult(
 }
 
 /** 默认保留天数。溢出文件是"可再读的副本"，过期即可清理。 */
-export const DEFAULT_SPILL_KEEP_DAYS = 14;
+const DEFAULT_SPILL_KEEP_DAYS = 14;
 
 /**
  * 清理过期的溢出文件。

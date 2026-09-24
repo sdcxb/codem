@@ -9,7 +9,7 @@
  */
 
 /** Default timeout for external HTTP requests (ms). */
-export const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
 
 /** fetch 带超时：超时抛 AbortError（调用方按需 catch）。 */
 export async function fetchWithTimeout(

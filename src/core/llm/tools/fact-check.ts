@@ -35,7 +35,7 @@ export interface CorrectionModelConfig {
 }
 
 /** 模型来源：dedicated=用户配置的专属纠偏模型；main=回退主模型 */
-export type ModelSource = "dedicated" | "main";
+type ModelSource = "dedicated" | "main";
 
 /** 一次核查请求实际使用的模型目标（含解析后的凭证/地址） */
 export interface ModelTarget {
@@ -46,7 +46,7 @@ export interface ModelTarget {
   source: ModelSource;
 }
 
-export interface FactCheckResult {
+interface FactCheckResult {
   original: string;
   corrected: string;
   changes: string[];

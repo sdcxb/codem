@@ -20,8 +20,8 @@ import { LIBRARY_MAP, mapBounds } from "../../data/library-map";
 
 export const TILE_W = LIBRARY_MAP.tileWidth;
 export const TILE_H = LIBRARY_MAP.tileHeight;
-export const HALF_W = TILE_W / 2;
-export const HALF_H = TILE_H / 2;
+const HALF_W = TILE_W / 2;
+const HALF_H = TILE_H / 2;
 
 const BOUNDS = mapBounds();
 export const OFFSET_X = -BOUNDS.minX;

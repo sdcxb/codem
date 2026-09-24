@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
 
-export type TurnStatusKind = 'error' | 'max-tokens' | 'retry'
+type TurnStatusKind = 'error' | 'max-tokens' | 'retry'
 
 export interface TurnStatusProps {
   kind: TurnStatusKind

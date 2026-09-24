@@ -17,7 +17,7 @@
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
 import { domainReadMany } from "../../storage/domain-store";
 
-export interface SessionSearchResult {
+interface SessionSearchResult {
   sessionId: string;
   messageId: string;
   role: string;

@@ -124,7 +124,7 @@ export function useCtxReady(): boolean {
  * 当 fiber 尚未 ACTIVE 时，ctx.get() 返回 undefined。
  * 此函数会重试几次，给 fiber 时间完成激活。
  */
-export async function getServiceAsync<T = any>(name: string): Promise<T | null> {
+async function getServiceAsync<T = any>(name: string): Promise<T | null> {
   if (!_activeCtx) {
     console.warn(`[Consumer] Context not set when requesting service "${name}"`)
     return null
@@ -140,7 +140,7 @@ export async function getServiceAsync<T = any>(name: string): Promise<T | null> 
 /**
  * 同步获取 Cordis 服务，失败时返回 null 并发出警告。
  */
-export function getServiceSync<T = any>(name: string): T | null {
+function getServiceSync<T = any>(name: string): T | null {
   if (!_activeCtx) return null
   try {
     return (_activeCtx.get(name) as T) ?? null
@@ -195,7 +195,7 @@ export function defineTool<TInput = any, TOutput = any>(
  * 工具以 Cordis 插件形式注册，拥有完整的生命周期管理。
  * 当插件卸载时，工具自动注销。
  */
-export function defineToolPlugin(
+function defineToolPlugin(
   tools: ToolDefinition[]
 ): import('../cordis/src/index.ts').Plugin {
   return (ctx: Context) => {
@@ -242,7 +242,7 @@ export async function callTool(name: string, input: any): Promise<any> {
 /**
  * 通过 Cordis Context 获取当前会话。
  */
-export function getCurrentSession(): any {
+function getCurrentSession(): any {
   const ctx = useCtx()
   const session = ctx.get('session')
   if (!session) throw new Error('Session service not available')
@@ -279,7 +279,7 @@ export function checkPermission(action: string, resource?: any): boolean {
 /**
  * 通过 Cordis Context 记录到内存。
  */
-export function addToMemory(entry: any): void {
+function addToMemory(entry: any): void {
   const ctx = useCtx()
   const memory = ctx.get('memory')
   if (!memory) return

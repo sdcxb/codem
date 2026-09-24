@@ -21,7 +21,7 @@
 
 import { CREDENTIAL_KEY_RE, CREDENTIAL_VALUE_RES } from "../settings/settings";
 
-export interface CredentialCensusHit {
+interface CredentialCensusHit {
   /** 设置项**键名**（这本身就是"去哪改"的信息，不是秘密） */
   key: string;
   /**

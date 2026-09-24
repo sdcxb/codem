@@ -35,7 +35,7 @@
  * 这里管的是"清单回显"这一层：**版本号必须与判定一致**，不一致就不许装、不许说很新。
  */
 
-export type UpdateDecisionKind = "update" | "none" | "anomaly" | "unknown";
+type UpdateDecisionKind = "update" | "none" | "anomaly" | "unknown";
 
 export interface UpdateDecision {
   kind: UpdateDecisionKind;

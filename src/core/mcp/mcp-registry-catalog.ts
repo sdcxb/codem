@@ -61,7 +61,7 @@ export type MCPCategory =
 // ========== Preset Registry ==========
 
 /** 预设 MCP 服务器列表 */
-export const MCP_CATALOG: MCPRegistryEntry[] = [
+const MCP_CATALOG: MCPRegistryEntry[] = [
   // === Filesystem ===
   {
     id: "filesystem",

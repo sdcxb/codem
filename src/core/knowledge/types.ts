@@ -250,7 +250,7 @@ import type { V2SlideDeck, PPTTheme } from './ppt-types';
 export type { V2SlideDeck as SlideDeck, PPTTheme };
 
 /** PPT 笔记内容类型 */
-export type SlideContentType = 'ppt';
+type SlideContentType = 'ppt';
 
 /** 旧格式兼容类型 */
 export interface Slide {

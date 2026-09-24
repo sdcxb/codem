@@ -425,7 +425,7 @@ export interface HistorySummaryCaps {
   totalChars: number;
 }
 
-export const DEFAULT_HISTORY_SUMMARY_CAPS: HistorySummaryCaps = {
+const DEFAULT_HISTORY_SUMMARY_CAPS: HistorySummaryCaps = {
   userChars: 2000,
   assistantChars: 1500,
   toolChars: 400,

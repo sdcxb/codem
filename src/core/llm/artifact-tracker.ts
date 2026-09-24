@@ -42,7 +42,7 @@ export type ArtifactVerdict =
   | "failed";            // 结果看起来是失败 → 不算
 
 /** 默认允许"同一条可能写的命令"在没有任何可证明写操作前被算作交付物的次数 */
-export const DEFAULT_SPECULATIVE_ARTIFACT_ALLOWANCE = 3;
+const DEFAULT_SPECULATIVE_ARTIFACT_ALLOWANCE = 3;
 
 export class ArtifactTracker {
   private readonly allowance: number;

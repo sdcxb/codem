@@ -44,7 +44,7 @@ import { getSetting, setSetting } from "./settings";
 import { gateSettingsRawWrite } from "./secret-write-guard";
 
 /** `health.recovered_projects` 的形状（由 Rust `storage_health` 提供） */
-export interface RecoveredProjectsPayload {
+interface RecoveredProjectsPayload {
   projects?: Array<{
     id?: unknown;
     name?: unknown;

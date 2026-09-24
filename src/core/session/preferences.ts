@@ -64,7 +64,7 @@ export const DISABLED_PLUGINS_LS_KEY = "codem:disabled-plugins";
  */
 export const DISABLED_PLUGINS_STAMP_KEY = "codem-disabled-plugins-at";
 /** 写入时刻的 localStorage 镜像键（旧读方不认识它，加了不影响兼容） */
-export const DISABLED_PLUGINS_LS_STAMP_KEY = "codem:disabled-plugins-at";
+const DISABLED_PLUGINS_LS_STAMP_KEY = "codem:disabled-plugins-at";
 /**
  * 首次运行默认禁用的插件。
  *

@@ -47,7 +47,7 @@ export interface AutomationConfig {
   history?: TriggerHistoryEntry[];
 }
 
-export interface TriggerHistoryEntry {
+interface TriggerHistoryEntry {
   triggerId: string;
   triggerName: string;
   timestamp: number;
@@ -73,7 +73,7 @@ export function setAutomationConfig(config: AutomationConfig): void {
 }
 
 /** Add a trigger history entry (keeps last MAX_HISTORY) */
-export function addTriggerHistory(entry: TriggerHistoryEntry): void {
+function addTriggerHistory(entry: TriggerHistoryEntry): void {
   const config = getAutomationConfig();
   if (!config.history) config.history = [];
   config.history.unshift(entry);
@@ -95,7 +95,7 @@ export function removeTrigger(id: string): void {
   setAutomationConfig(config);
 }
 
-export function updateTrigger(id: string, update: Partial<AutomationTrigger>): void {
+function updateTrigger(id: string, update: Partial<AutomationTrigger>): void {
   const config = getAutomationConfig();
   config.triggers = config.triggers.map(t => t.id === id ? { ...t, ...update } : t);
   setAutomationConfig(config);
@@ -393,7 +393,7 @@ class IssueStatusEngine {
   }
 }
 
-export const issueStatusEngine = new IssueStatusEngine();
+const issueStatusEngine = new IssueStatusEngine();
 
 /** Public API: called by IssueManager when issue status changes */
 export function notifyIssueStatusChange(issueId: string, newStatus: string, projectId: string | null): void {

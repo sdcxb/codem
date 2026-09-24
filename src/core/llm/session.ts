@@ -59,18 +59,18 @@ export interface ToolPart {
   metadata?: Record<string, any>;
 }
 
-export interface FilePart {
+interface FilePart {
   type: "file";
   path: string;
   action: "read" | "write" | "edit";
 }
 
-export interface StepStartPart {
+interface StepStartPart {
   type: "step_start";
   name: string;
 }
 
-export interface StepFinishPart {
+interface StepFinishPart {
   type: "step_finish";
   name: string;
   duration: number;

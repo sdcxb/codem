@@ -538,7 +538,7 @@ export function __resetHttpGateForTests(): void {
 }
 
 /** 仅供测试：读前端闸门当前状态（在飞 / 排队 / 容量）。 */
-export function __httpGateStatsForTests(): { inFlight: number; queued: number; limit: number } {
+function __httpGateStatsForTests(): { inFlight: number; queued: number; limit: number } {
   return httpAdmission.stats;
 }
 
@@ -3149,7 +3149,7 @@ async function fetchSkillHubSearch(source: MarketSource, query: string): Promise
  * @param onProgress 进度回调
  * @returns 审计结果 + 文件数据，或 null（下载失败时）
  */
-export async function preAuditSkill(
+async function preAuditSkill(
   skill: MarketSkill,
   onProgress?: InstallProgressCallback,
 ): Promise<{ audit: SkillAuditResult; files: Map<string, string>; skillMdPath: string } | null> {

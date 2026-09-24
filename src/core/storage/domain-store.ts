@@ -543,7 +543,7 @@ function serializeEngineWrite(key: string, run: () => Promise<unknown>): void {
 }
 
 /** 测试用：清空写序链（每个用例之间互不影响） */
-export function __resetWriteChains(): void {
+function __resetWriteChains(): void {
   writeChains.clear();
 }
 
@@ -1424,7 +1424,7 @@ export function domainDeleteWhere(
  * return domainOr(() => legacyRead(), (port) => port.domains.all(...));
  * ```
  */
-export function domainOr<T>(table: string, rustRead: (port: DomainMirrorPort) => T, legacyRead: () => T): T {
+function domainOr<T>(table: string, rustRead: (port: DomainMirrorPort) => T, legacyRead: () => T): T {
   const port = domainPort(table);
   return port ? rustRead(port) : legacyRead();
 }

@@ -370,7 +370,7 @@ export function getOllamaProvider(): OllamaProvider {
 // ========== Settings Helper ==========
 
 /** 获取 Ollama 配置信息 */
-export function getOllamaConfig(): {
+function getOllamaConfig(): {
   baseUrl: string;
   autoDetect: boolean;
 } {

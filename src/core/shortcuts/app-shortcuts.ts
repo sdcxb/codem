@@ -22,7 +22,7 @@
  *   由操作系统处理，也不注册）。
  */
 
-export interface ShortcutModifiers {
+interface ShortcutModifiers {
   ctrl?: boolean;
   meta?: boolean;
   shift?: boolean;
@@ -60,7 +60,7 @@ export function isMacPlatform(): boolean {
 }
 
 /** 平台的"主修饰键"（macOS = ⌘/Meta，其它 = Ctrl/Control） */
-export function primaryModifier(mac = isMacPlatform()): { ctrl: boolean; meta: boolean; symbol: string; aria: string } {
+function primaryModifier(mac = isMacPlatform()): { ctrl: boolean; meta: boolean; symbol: string; aria: string } {
   return mac
     ? { ctrl: false, meta: true, symbol: "⌘", aria: "Meta" }
     : { ctrl: true, meta: false, symbol: "Ctrl+", aria: "Control" };
@@ -99,7 +99,7 @@ export function buildAppShortcuts(mac = isMacPlatform()): ShortcutSpec[] {
 }
 
 /** 按 id 取一条（找不到返回 undefined） */
-export function getShortcut(id: string, mac = isMacPlatform()): ShortcutSpec | undefined {
+function getShortcut(id: string, mac = isMacPlatform()): ShortcutSpec | undefined {
   return buildAppShortcuts(mac).find((s) => s.id === id);
 }
 
@@ -114,7 +114,7 @@ export function shortcutAria(id: string, mac = isMacPlatform()): string | undefi
 }
 
 /** 事件目标是不是"可编辑控件"（在里面抢字母键会毁掉正常输入） */
-export function isEditableTarget(target: EventTarget | null): boolean {
+function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el || typeof el !== "object") return false;
   const tag = el.tagName?.toUpperCase?.() ?? "";

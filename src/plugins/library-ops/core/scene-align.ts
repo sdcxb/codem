@@ -22,7 +22,7 @@ export const ALIGN_GRID_W = 96;
 export const ALIGN_GRID_H = 54;
 
 /** 搜索范围 */
-export const ALIGN_SEARCH = {
+const ALIGN_SEARCH = {
   /** 缩放范围（相对铺满画布） */
   scaleMin: 0.86,
   scaleMax: 1.14,

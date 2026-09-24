@@ -108,7 +108,7 @@ let recoveryNotified = false;
 let walIncidentNotified = false;
 
 /** 测试隔离：复位"已通知损坏恢复"闩锁 */
-export function __resetRecoveryNotifiedForTests(): void {
+function __resetRecoveryNotifiedForTests(): void {
   recoveryNotified = false;
 }
 
@@ -1000,13 +1000,13 @@ class RustAppendPort implements StorageAppendPort {
 // **不进这个缓存** —— 它们属于数据面，必须走分页读。把大表塞进内存镜像
 // 就等于把"语料住在渲染进程"这个根因请回来（port.ts 硬约束 4）。
 
-export interface ConfigSnapshot {
+interface ConfigSnapshot {
   quickPhrases: QuickPhraseRow[];
   mcpServers: McpServerRow[];
   memory: string;
 }
 
-export interface QuickPhraseRow {
+interface QuickPhraseRow {
   id: string;
   title: string;
   content: string;
@@ -1016,7 +1016,7 @@ export interface QuickPhraseRow {
   updated_at: number;
 }
 
-export interface McpServerRow {
+interface McpServerRow {
   id: string;
   name: string;
   config: string;

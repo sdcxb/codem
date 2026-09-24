@@ -259,7 +259,7 @@ export function walkEdges(): Array<[string, string]> {
  * 落在房间矩形之外（数据不一致），直接使用会让角色站到走廊或隔壁房间；
  * 这里按 28px 边距把锚点夹回矩形内。
  */
-export function workAnchor(room: PixelRoom): { x: number; y: number; radius: number } {
+function workAnchor(room: PixelRoom): { x: number; y: number; radius: number } {
   const [bx, by, bw, bh] = room.bounds;
   const margin = 28;
   const x = Math.min(Math.max(room.work.x, bx + margin), bx + bw - margin);
@@ -419,7 +419,7 @@ export function resolveSprite(variant: SpriteVariant, action: SpriteAction): { v
 }
 
 /** 资源 URL */
-export function spriteUrl(variant: SpriteVariant, action: SpriteAction): string {
+function spriteUrl(variant: SpriteVariant, action: SpriteAction): string {
   return `${ASSET_BASE}/claw-library/${resolveSprite(variant, action).sheet.path}`;
 }
 
@@ -512,7 +512,7 @@ export const VARIANT_LABELS: Record<SpriteVariant, string> = {
 };
 
 /** 岗位 → 默认角色变体（让不同岗位尽量用不同角色） */
-export const ZONE_VARIANT: Record<string, SpriteVariant> = {
+const ZONE_VARIANT: Record<string, SpriteVariant> = {
   "front-desk": "cat",
   "reading-hall": "capy",
   "catalog-room": "cat",
@@ -535,6 +535,6 @@ export function pickVariant(actorId: string, zoneId: string): SpriteVariant {
 }
 
 /** 本插件的岗位定义（用于像素场景的图例与配色） */
-export function zoneTokenOf(zone: LibraryZone): string {
+function zoneTokenOf(zone: LibraryZone): string {
   return zone.token;
 }

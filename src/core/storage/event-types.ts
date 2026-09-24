@@ -222,12 +222,12 @@ export interface CompactionPayload {
   messagesAfter: number;
 }
 
-export interface TurnStartPayload {
+interface TurnStartPayload {
   iteration: number;
   assistantMessageId: string;
 }
 
-export interface TurnEndPayload {
+interface TurnEndPayload {
   iteration: number;
   assistantMessageId: string;
   usage: {
@@ -239,13 +239,13 @@ export interface TurnEndPayload {
   finishReason: string;
 }
 
-export interface MemoryUpdatePayload {
+interface MemoryUpdatePayload {
   memoryId: string;
   content: string;
   action: "add" | "update" | "delete";
 }
 
-export interface SessionMetaPayload {
+interface SessionMetaPayload {
   title?: string;
   model?: string;
   executionMode?: string;
@@ -253,7 +253,7 @@ export interface SessionMetaPayload {
   worktreeBranch?: string;
 }
 
-export interface ErrorPayload {
+interface ErrorPayload {
   message: string;
   code?: string;
   toolCallId?: string;
@@ -276,23 +276,23 @@ export interface SessionEvent {
 
 // ========== Type Guard Helpers ==========
 
-export function isUserMessage(e: SessionEvent): e is SessionEvent & { payload: UserMessagePayload } {
+function isUserMessage(e: SessionEvent): e is SessionEvent & { payload: UserMessagePayload } {
   return e.type === "user_message";
 }
 
-export function isAssistantText(e: SessionEvent): e is SessionEvent & { payload: AssistantTextPayload } {
+function isAssistantText(e: SessionEvent): e is SessionEvent & { payload: AssistantTextPayload } {
   return e.type === "assistant_text";
 }
 
-export function isToolCall(e: SessionEvent): e is SessionEvent & { payload: ToolCallPayload } {
+function isToolCall(e: SessionEvent): e is SessionEvent & { payload: ToolCallPayload } {
   return e.type === "tool_call";
 }
 
-export function isToolResult(e: SessionEvent): e is SessionEvent & { payload: ToolResultPayload } {
+function isToolResult(e: SessionEvent): e is SessionEvent & { payload: ToolResultPayload } {
   return e.type === "tool_result";
 }
 
-export function isCompaction(e: SessionEvent): e is SessionEvent & { payload: CompactionPayload } {
+function isCompaction(e: SessionEvent): e is SessionEvent & { payload: CompactionPayload } {
   return e.type === "compaction";
 }
 

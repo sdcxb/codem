@@ -15,7 +15,7 @@ import type { ReactNode } from 'react'
 import { Service, Context } from '../cordis/src/index.ts'
 
 /** Slot cardinality: single occupant, ordered list, key-dispatched, or chain. */
-export type SlotKind = 'single' | 'list' | 'keyed' | 'chain'
+type SlotKind = 'single' | 'list' | 'keyed' | 'chain'
 
 /** Slot data context: global or session-bound. */
 export type SlotScope = 'root' | 'session' | 'session-maybe'
@@ -53,11 +53,11 @@ export type EntryKeyOf<K extends keyof SlotMap & string> =
     : string
 
 /** Owner-supplied props for a slot key. */
-export type OwnerOf<K extends keyof SlotMap & string> =
+type OwnerOf<K extends keyof SlotMap & string> =
   SlotMap[K] extends { owner: infer O extends object } ? O : object
 
 /** renderSlot dispatch options. */
-export interface RenderOpts<EntryKey extends string = string> {
+interface RenderOpts<EntryKey extends string = string> {
   entryKey?: EntryKey
   only?: string
   fallback?: ReactNode
@@ -83,7 +83,7 @@ export interface StoredEntry {
 }
 
 /** JSON-safe live occupant. */
-export interface LiveSlotOccupant {
+interface LiveSlotOccupant {
   registrant?: string
   key?: string
   id?: string
@@ -105,7 +105,7 @@ export interface LiveSlotNode {
 const NO_ENTRIES: readonly StoredEntry[] = Object.freeze([])
 
 /** Resolve a possibly-thunked list label. */
-export function resolveSlotLabel(label: SlotLabel | undefined): string | undefined {
+function resolveSlotLabel(label: SlotLabel | undefined): string | undefined {
   return typeof label === 'function' ? label() : label
 }
 

@@ -74,7 +74,7 @@ export function getActiveFiber(name: string): any {
  *
  * 不依赖 js-yaml，在浏览器环境中可直接运行。
  */
-export function parseCodemYaml(content: string): YamlPluginEntry[] {
+function parseCodemYaml(content: string): YamlPluginEntry[] {
   const entries: YamlPluginEntry[] = []
   // 规范化换行符：Windows \r\n -> \n，单独的 \r -> \n
   const normalized = content.replace(/\r\n?/g, '\n')
@@ -178,7 +178,7 @@ export function parseCodemYaml(content: string): YamlPluginEntry[] {
  * - platform == 'win32'
  * - platform != 'win32'
  */
-export function evaluateWhen(when: string | undefined): boolean {
+function evaluateWhen(when: string | undefined): boolean {
   if (!when) return true
 
   const platform = typeof process !== 'undefined'

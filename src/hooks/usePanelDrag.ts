@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
 
-export interface DragOrigin {
+interface DragOrigin {
   /** 面板左上角 x（px） */
   left: number;
   /** 面板左上角 y（px） */

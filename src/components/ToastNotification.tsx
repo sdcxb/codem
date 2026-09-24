@@ -38,7 +38,7 @@ export function showToast(type: ToastType, message: string, duration = 4000) {
   return id;
 }
 
-export function dismissToast(id: string) {
+function dismissToast(id: string) {
   currentToasts = currentToasts.filter(t => t.id !== id);
   notify();
 }

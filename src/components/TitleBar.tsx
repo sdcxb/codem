@@ -25,7 +25,7 @@ import { getProjectExecutionMode, setProjectExecutionMode, hasUncommittedChanges
 import type { ExecutionMode } from "../core/environment";
 import { alertDialog, confirmDialog } from "../core/ui/native-dialog";
 
-export interface WorkspaceTab {
+interface WorkspaceTab {
   id: string;
   title: string;
   active: boolean;

@@ -30,7 +30,7 @@ import { useProjectStore } from "../store";
 const handoverRejections = new Map<string, number>();
 
 /** 测试用：重置拒绝计数 */
-export function resetHandoverRejections(): void {
+function resetHandoverRejections(): void {
   handoverRejections.clear();
 }
 

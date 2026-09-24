@@ -156,7 +156,7 @@ export function deletePromptDraft(draftId: string): void {
 /**
  * Compare two prompt drafts and return diff
  */
-export function comparePromptDrafts(
+function comparePromptDrafts(
   draftId1: string,
   draftId2: string
 ): { draft1: PromptDraft; draft2: PromptDraft; diff: string } {

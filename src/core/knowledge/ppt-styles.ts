@@ -719,7 +719,7 @@ export function getStyleById(id: string): PPTStyle | undefined {
   return undefined;
 }
 
-export function getStylesByCategory(category: StyleCategory): PPTStyle[] {
+function getStylesByCategory(category: StyleCategory): PPTStyle[] {
   return PPT_STYLES.filter(s => s.category === category);
 }
 

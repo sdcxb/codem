@@ -142,7 +142,7 @@ export function findSafeCompactionBoundary(
 // ========== R3-3.4: Crash Repair ==========
 
 /** 崩溃修复检测到的工具状态 */
-export type ToolCrashStatus = "TOOL_NOT_STARTED" | "TOOL_OUTCOME_UNKNOWN" | "TOOL_COMPLETE";
+type ToolCrashStatus = "TOOL_NOT_STARTED" | "TOOL_OUTCOME_UNKNOWN" | "TOOL_COMPLETE";
 
 /** 崩溃修复结果 */
 export interface CrashRepairResult {

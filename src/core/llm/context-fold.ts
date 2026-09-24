@@ -82,7 +82,7 @@ export function isFoldMessage(msg: any): boolean {
 export const TOOL_RESULT_PRUNE_THRESHOLD = 8192;
 export const TOOL_RESULT_HEAD_CHARS = 4096;
 export const TOOL_RESULT_TAIL_CHARS = 1024;
-export const TOOL_RESULT_PRUNE_MARKER =
+const TOOL_RESULT_PRUNE_MARKER =
   "\n\n[... 工具结果中段已裁剪；如需完整内容请重新执行该工具或用 offset/分页读取 ...]\n\n";
 
 /** 单条超长工具结果 → head + marker + tail。未超阈值原样返回。 */

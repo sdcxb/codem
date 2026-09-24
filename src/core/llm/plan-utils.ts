@@ -20,7 +20,7 @@ export interface StepPlan {
 /** 计划总步数上限（防无限膨胀）。 */
 export const MAX_PLAN_STEPS = 12;
 /** 单个步骤标题最大长度。 */
-export const MAX_STEP_TITLE_LENGTH = 80;
+const MAX_STEP_TITLE_LENGTH = 80;
 
 /** 模型通过 update_plan 工具提交的计划更新操作。index 省略时按当前进行中的步骤解析。 */
 export type PlanUpdateOp =

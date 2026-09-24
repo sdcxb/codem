@@ -14,7 +14,7 @@ export const ZVEC_REL_DIR = "zvec-grep";
 export const ZVEC_MCP_SERVER = "zvec_grep";
 
 /** 元数据文件（记录安装来源/版本/时间/所选 node） */
-export const ZVEC_META_FILE = "install-meta.json";
+const ZVEC_META_FILE = "install-meta.json";
 
 /** zg 最低 node 版本 */
 export const ZVEC_MIN_NODE_MAJOR = 22;
@@ -33,7 +33,7 @@ export const ZVEC_MIN_NODE_MAJOR = 22;
 const ENV: Record<string, string | undefined> =
   typeof process !== "undefined" && process.env ? (process.env as Record<string, string | undefined>) : {};
 
-export const ZVEC_RELEASE_BASE =
+const ZVEC_RELEASE_BASE =
   ENV.ZVEC_GREP_RELEASE_BASE ||
   "https://github.com/sdcxb/codem/releases/download/v1.11.2";
 
@@ -55,7 +55,7 @@ export const NODE_MIRROR_DIST = "https://npmmirror.com/mirrors/node";
 export const NODE_FALLBACK_VERSION = "24.19.0";
 
 /** nodejs.org 版本索引（兼容旧引用） */
-export const NODE_INDEX_URL = `${NODE_OFFICIAL_DIST}/index.json`;
+const NODE_INDEX_URL = `${NODE_OFFICIAL_DIST}/index.json`;
 
 /** 可切换的 embedding 模型目录（v1 显示用；下载走 zg 自身/模型包） */
 export interface ZvecModelInfo {

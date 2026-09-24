@@ -232,7 +232,7 @@ export interface TestLayerResult {
   durationMs: number;
 }
 
-export class TestLayerReporter {
+class TestLayerReporter {
   private results: TestLayerResult[] = [];
 
   record(result: TestLayerResult): void {

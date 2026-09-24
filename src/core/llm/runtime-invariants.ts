@@ -16,7 +16,7 @@ import * as MessageStorage from "../storage/message";
 
 // ========== Invariant Checking ==========
 
-export interface InvariantViolation {
+interface InvariantViolation {
   type: string;
   message: string;
   sessionId?: string;

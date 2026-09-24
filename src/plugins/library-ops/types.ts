@@ -233,7 +233,7 @@ export interface LibraryMap {
   decor: LibraryDecor[];
 }
 
-export type DecorKind =
+type DecorKind =
   | "bookshelf"
   | "table"
   | "plant"
@@ -380,7 +380,7 @@ export interface TeamMemberSummary {
 
 export type TeamTaskStatus = "pending" | "claimed" | "in_progress" | "completed" | "failed" | "cancelled";
 
-export interface TeamTaskSummary {
+interface TeamTaskSummary {
   id: string;
   subject: string;
   status: TeamTaskStatus;
@@ -615,7 +615,7 @@ export const KIND_META: Record<ActorKind, { zh: string; en: string; icon: LoIcon
 };
 
 /** 任务状态元数据 */
-export const TASK_STATUS_META: Record<TeamTaskStatus, { zh: string; en: string; token: string }> = {
+const TASK_STATUS_META: Record<TeamTaskStatus, { zh: string; en: string; token: string }> = {
   pending: { zh: "待领取", en: "Pending", token: "--text-muted" },
   claimed: { zh: "已领取", en: "Claimed", token: "--info" },
   in_progress: { zh: "执行中", en: "In progress", token: "--warning" },

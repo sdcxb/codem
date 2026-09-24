@@ -97,7 +97,7 @@ export interface ProjectInstructions {
   rules: ProjectRule[];
 }
 
-export interface ProjectRule {
+interface ProjectRule {
   name: string;
   content: string;
   paths?: string[];

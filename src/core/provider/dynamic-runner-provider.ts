@@ -138,7 +138,7 @@ export const dynamicRunnerProvider: Plugin = (ctx: any) => {
   return compositeDispose
 }
 
-export class HostCordisRunner {
+class HostCordisRunner {
   private dynamicPlugins = new Map<string, any>()
 
   constructor(private ctx: any) {}

@@ -95,7 +95,7 @@ export function recentWrites(opts: { limit?: number; onlyDeletes?: boolean } = {
 }
 
 /** 删除类写操作的条数（诊断：事故后"到底有没有渲染侧发起删除"） */
-export function deleteWriteCount(): number {
+function deleteWriteCount(): number {
   return buffer.filter((r) => r.command.includes("delete")).length;
 }
 

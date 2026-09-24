@@ -22,7 +22,7 @@ export type HookEventType =
 
 // ========== Hook Definition ==========
 
-export interface HookCondition {
+interface HookCondition {
   /** Tool name pattern (supports glob: "Bash(git *)" or just "bash") */
   tool?: string;
   /** If condition — only fire when this evaluates to true */

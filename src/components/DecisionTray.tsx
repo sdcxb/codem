@@ -17,7 +17,7 @@ export interface ApprovalRequest {
   args?: string;
 }
 
-export interface ClarificationRequest {
+interface ClarificationRequest {
   type: "clarification";
   id: string;
   questions: Array<{
@@ -28,7 +28,7 @@ export interface ClarificationRequest {
   }>;
 }
 
-export type DecisionRequest = ApprovalRequest | ClarificationRequest;
+type DecisionRequest = ApprovalRequest | ClarificationRequest;
 
 interface DecisionTrayProps {
   request: DecisionRequest | null;

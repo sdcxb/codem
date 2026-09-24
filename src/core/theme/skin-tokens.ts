@@ -34,10 +34,10 @@
  */
 
 /** 主题令牌前缀（颜色/背景/边框/文字等随皮肤切换的令牌） */
-export const THEME_TOKEN_PREFIX = '--'
+const THEME_TOKEN_PREFIX = '--'
 
 /** 语义状态令牌（插件 UI 状态表达必须使用，禁止自造色值） */
-export const SEMANTIC_TOKENS = [
+const SEMANTIC_TOKENS = [
   '--success', '--success-hover', '--warning', '--error', '--error-hover', '--info',
   '--security-ask', '--security-auto', '--security-full',
 ] as const
@@ -63,7 +63,7 @@ export const CORE_SKIN_TOKENS = [
 ] as const
 
 /** 结构令牌（字号/圆角/阴影/动效，不随皮肤切换但受同一设计体系约束） */
-export const STRUCTURAL_TOKENS = [
+const STRUCTURAL_TOKENS = [
   '--fs-xs', '--fs-sm', '--fs-base', '--fs-md', '--fs-lg', '--fs-xl', '--fs-2xl', '--fs-3xl',
   '--radius-sm', '--radius', '--radius-md', '--radius-lg', '--radius-full',
   '--shadow-sm', '--shadow-md', '--shadow-lg', '--shadow-popover',

@@ -34,7 +34,7 @@ const PROJECT_ROOT_MARKERS = [
  * F2.2: Detect project root by walking up from a directory looking for markers.
  * Returns the first directory containing a known marker, or the input directory if none found.
  */
-export async function detectProjectRoot(startDir: string): Promise<string> {
+async function detectProjectRoot(startDir: string): Promise<string> {
   const parts = startDir.replace(/\\/g, "/").split("/").filter(Boolean);
   let current = startDir;
 
@@ -269,7 +269,7 @@ export async function loadProjectMemory(projectPath: string): Promise<Array<{ na
   }
 }
 
-export async function saveProjectInstructions(projectPath: string, content: string): Promise<void> {
+async function saveProjectInstructions(projectPath: string, content: string): Promise<void> {
   await apiWriteFile(`${projectPath}\\AGENTS.md`, content);
 }
 
@@ -579,10 +579,10 @@ function buildAgentsMdFromAnalysis(a: ProjectAnalysis): string {
   return lines.join("\n");
 }
 
-export async function saveProjectSkill(projectPath: string, skillName: string, content: string): Promise<void> {
+async function saveProjectSkill(projectPath: string, skillName: string, content: string): Promise<void> {
   await apiWriteFile(`${projectPath}\\.codem\\skills\\${skillName}\\SKILL.md`, content);
 }
 
-export async function saveProjectMemory(projectPath: string, fileName: string, content: string): Promise<void> {
+async function saveProjectMemory(projectPath: string, fileName: string, content: string): Promise<void> {
   await apiWriteFile(`${projectPath}\\.codem\\memory\\${fileName}`, content);
 }

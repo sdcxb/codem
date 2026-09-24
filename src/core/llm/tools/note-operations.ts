@@ -106,7 +106,7 @@ export function createCreateNoteTool(): ToolDef {
 }
 
 /** 编辑笔记工具 */
-export function createEditNoteTool(): ToolDef {
+function createEditNoteTool(): ToolDef {
   return {
     id: 'edit_note',
     guidance: "Use edit_note to modify the content of an existing note in the notebook.",
@@ -207,7 +207,7 @@ export function createEditNoteTool(): ToolDef {
 }
 
 /** 链接笔记工具 */
-export function createLinkNotesTool(): ToolDef {
+function createLinkNotesTool(): ToolDef {
   return {
     id: 'link_notes',
     guidance: "Use link_notes to create a cross-reference link between two notes in the notebook.",
@@ -292,7 +292,7 @@ export function createLinkNotesTool(): ToolDef {
 }
 
 /** 删除笔记工具 */
-export function createDeleteNoteTool(): ToolDef {
+function createDeleteNoteTool(): ToolDef {
   return {
     id: 'delete_note',
     guidance: "Use delete_note to remove a note from the notebook.",

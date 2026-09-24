@@ -30,7 +30,7 @@ function isAbsolutePath(p: string): boolean {
  * Resolve a workspace-relative path into an absolute path, aligned with DSH's
  * resolveWorkspacePath.  If the path is already absolute, return it unchanged.
  */
-export function resolveWorkspacePath(cwd: string | undefined, path: string): string {
+function resolveWorkspacePath(cwd: string | undefined, path: string): string {
   if (isAbsolutePath(path)) return path;
   if (cwd === undefined || cwd === "") return path;
   const base = cwd.replace(/[/\\]+$/, "");
@@ -42,7 +42,7 @@ export function resolveWorkspacePath(cwd: string | undefined, path: string): str
  * Resolve a raw href (which may be file:// URL or percent-encoded) into
  * an absolute local file path. Exported for the context menu.
  */
-export async function resolveFilePath(rawHref: string): Promise<string> {
+async function resolveFilePath(rawHref: string): Promise<string> {
   let href = rawHref;
   if (href.startsWith("file://")) {
     href = href.replace(/^file:\/\/\/?/, "");

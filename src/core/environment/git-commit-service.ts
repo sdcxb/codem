@@ -73,7 +73,7 @@ async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; st
  * Uses a simple heuristic: summarize changed files + additions/deletions.
  * If an LLM engine is provided, uses it for a richer message.
  */
-export async function generateCommitMessage(
+async function generateCommitMessage(
   workspace: string,
   llmEngine?: { complete: (prompt: string, systemPrompt?: string) => Promise<string> },
 ): Promise<string> {

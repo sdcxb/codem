@@ -67,7 +67,7 @@ export interface DelegationTask {
   waitedMs?: number;
 }
 
-export interface DelegationProgress {
+interface DelegationProgress {
   /** 已完成的工具调用次数 */
   toolCalls: number;
   /** 子会话最新的文本片段（截断，用于判断它在干什么） */

@@ -175,7 +175,7 @@ export interface MaintenanceResult {
  * 而其中 99.98% 来自同一批全库重灌事件。7 天是"排查事故仍然够用"与"表不再无界增长"
  * 之间的折中：真机事故排查的取证窗口从来是小时级，7 天已经远超需要。
  */
-export const AUDIT_RETENTION_DAYS = 7;
+const AUDIT_RETENTION_DAYS = 7;
 
 /**
  * 完整性检查的节流窗口（第 45 轮定的 12 小时 → 第 51 轮按实测改成 **1 小时**）。
@@ -208,17 +208,17 @@ export const AUDIT_RETENTION_DAYS = 7;
  * - 大库（≥ 256 MB）：**保持 12 小时**。我没在 256 MB 以上量过，按未实测的规模
  *   放宽节流是拿用户机器赌博 —— 保守留着，等有真机数据再改。
  */
-export const INTEGRITY_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const INTEGRITY_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /** 大库的节流窗口（见上：256 MB 以上没有实测数据，保守沿用 12 小时） */
-export const INTEGRITY_CHECK_INTERVAL_LARGE_DB_MS = 12 * 60 * 60 * 1000;
+const INTEGRITY_CHECK_INTERVAL_LARGE_DB_MS = 12 * 60 * 60 * 1000;
 
 /** "大库"的判据（`engine.health().sizeBytes`） */
-export const INTEGRITY_CHECK_LARGE_DB_BYTES = 256 * 1024 * 1024;
+const INTEGRITY_CHECK_LARGE_DB_BYTES = 256 * 1024 * 1024;
 
 
 /** 上次完整性检查的时间戳存在 settings 里（`settings` 是"几行数据、读起来最便宜"的配置面） */
-export const INTEGRITY_CHECK_MARKER_KEY = "codem-storage-integrity-checked-at";
+const INTEGRITY_CHECK_MARKER_KEY = "codem-storage-integrity-checked-at";
 
 /** 索引重建标记文件（写文件走 IPC，与数据库无关） */
 export const INDEX_REBUILD_MARKER = "codem-index-rebuild-needed.json";
@@ -257,7 +257,7 @@ export async function indexRebuildNeeded(): Promise<{ needed: boolean; reason?: 
 }
 
 /** 清除重建标记（重建成功后调用） */
-export async function clearIndexRebuildMarker(): Promise<void> {
+async function clearIndexRebuildMarker(): Promise<void> {
   try {
     const { invoke } = (window as any).__TAURI__?.core || {};
     if (!invoke) return;
@@ -339,7 +339,7 @@ const TELEMETRY_TABLE = "telemetry_events";
  * 而遥测这一步是唯一没做到的地方（真机排查时最需要它：库只涨不降时，
  * 判断"裁剪没跑"还是"跑了但没东西可删"决定了下一步查哪里）。
  */
-export type TelemetryPruneOutcome =
+type TelemetryPruneOutcome =
   | { status: "pruned"; rows: number; remaining?: number }
   | { status: "noop"; reason: string }
   | { status: "failed"; reason: string };
@@ -482,7 +482,7 @@ function structuredCommand<T>(
  * `storage_audit` 原来**无界增长**（真机 11.8 小时 61,416 行、库内最大的表、
  * 占活数据 35.6%），而引擎侧的 `audit.prune` 一直零生产调用者 —— 典型"有能力没人用"。
  */
-export interface AuditPruneOutcome {
+interface AuditPruneOutcome {
   status: "pruned" | "noop" | "failed";
   /** 本次裁掉的行数 */
   rows: number;
@@ -513,7 +513,7 @@ export interface AuditPruneOutcome {
  * @param before 毫秒水位线（`at < before` 的行被删）。缺了水位线引擎直接报错 ——
  *   这与 `telemetry.prune` 同一条原则：**删除必须有明确条件**。
  */
-export async function pruneAuditViaPort(before: number): Promise<AuditPruneOutcome> {
+async function pruneAuditViaPort(before: number): Promise<AuditPruneOutcome> {
   const { hasStoragePort, getStoragePort } = await import("./port");
   if (!hasStoragePort()) {
     return { status: "noop", rows: 0, reason: "端口未注册（本次维护没有可用的存储）" };
@@ -558,7 +558,7 @@ export async function pruneAuditViaPort(before: number): Promise<AuditPruneOutco
 }
 
 /** `audit.stats` 的读数（第 45 轮：这是"审计表在涨"能被看见的**唯一**途径） */
-export interface AuditStatsOutcome {
+interface AuditStatsOutcome {
   read: boolean;
   count?: number;
   oldest?: number | null;
@@ -573,7 +573,7 @@ export interface AuditStatsOutcome {
  * 时才返回数字，而且**失败时什么都没有**；而"审计表现在多大"是排查时要看的独立事实
  * （哪怕裁剪失败了也要知道它多大）。两者都报，原因不同。
  */
-export async function auditStatsViaPort(): Promise<AuditStatsOutcome> {
+async function auditStatsViaPort(): Promise<AuditStatsOutcome> {
   const { hasStoragePort, getStoragePort } = await import("./port");
   if (!hasStoragePort()) return { read: false, reason: "端口未注册" };
   try {
@@ -594,7 +594,7 @@ export async function auditStatsViaPort(): Promise<AuditStatsOutcome> {
 }
 
 /** `storage.compact` 的结果（第 45 轮接线） */
-export interface StorageCompactOutcome {
+interface StorageCompactOutcome {
   status: "compacted" | "noop" | "failed";
   /** 真正回收的字节数（只有 `status === "compacted"` 时有意义） */
   reclaimedBytes: number;

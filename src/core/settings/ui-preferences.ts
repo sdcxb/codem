@@ -68,7 +68,7 @@ export const UI_PREFERENCE_KEYS: readonly string[] = [
  * - `codem-window-state`：窗口尺寸/位置（`useWindowState`，下一次 resize 会重新写入）；
  * - `codem-theme-cache`：首屏主题预测镜像（下一次 `applyThemeAttribute` 会重新写入）。
  */
-export const UI_PREFERENCE_LOCAL_KEYS: readonly string[] = ["codem-window-state", "codem-theme-cache"];
+const UI_PREFERENCE_LOCAL_KEYS: readonly string[] = ["codem-window-state", "codem-theme-cache"];
 
 export interface UiPreferencesResetResult {
   /** 确实存在过、并被删掉的 DB 键 */

@@ -8,7 +8,7 @@
  */
 import type { Plugin } from '../cordis/src/index.ts'
 
-export interface CommandEntry {
+interface CommandEntry {
   name: string
   description?: string
   category?: string

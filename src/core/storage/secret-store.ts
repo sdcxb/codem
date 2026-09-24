@@ -48,7 +48,7 @@ export const PLAINTEXT_FALLBACK_KEY = "codem-secrets-plaintext";
 export const SEALED_FIELD = "apiKeySealed";
 const SETTINGS_KEY = "codem-settings";
 
-export interface ProviderLike {
+interface ProviderLike {
   id?: string;
   apiKey?: string;
   apiKeySealed?: string;
@@ -138,7 +138,7 @@ export async function isSealAvailable(): Promise<boolean> {
 }
 
 /** 用户是否显式要求走明文（回退开关；渲染侧读不到环境变量，所以用设置项） */
-export function plaintextFallbackEnabled(): boolean {
+function plaintextFallbackEnabled(): boolean {
   try {
     return getSettingJSON<boolean>(PLAINTEXT_FALLBACK_KEY, false) === true;
   } catch {
@@ -589,7 +589,7 @@ export function secretStorageStatus(): SecretStorageStatus {
   };
 }
 
-export type RevertReason = "nothing" | "disabled" | "backend-missing" | "unreadable";
+type RevertReason = "nothing" | "disabled" | "backend-missing" | "unreadable";
 
 export interface RevertOutcome {
   /** 成功解回明文的 provider 数（失败时恒为 0 —— 要么全成要么不动） */

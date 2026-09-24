@@ -13,7 +13,7 @@ import { executeCommand } from "../../file-api";
 
 // ========== Types ==========
 
-export interface BackgroundJob {
+interface BackgroundJob {
   id: string;
   command: string;
   cwd: string;

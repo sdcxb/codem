@@ -28,13 +28,13 @@ import { computePixelRoute, roomSlot } from "./pixel-path";
 /** 行走速度（逻辑像素 / 秒） */
 export const PIXEL_WALK_SPEED = 128;
 /** 入场淡入时长（ms） */
-export const PIXEL_APPEAR_MS = 420;
+const PIXEL_APPEAR_MS = 420;
 /** 退场淡出时长（ms） */
-export const PIXEL_FADE_MS = 520;
+const PIXEL_FADE_MS = 520;
 /** 「完成」动作保持时长（ms） */
-export const PIXEL_DONE_HOLD_MS = 4000;
+const PIXEL_DONE_HOLD_MS = 4000;
 /** 气泡展示时长（ms） */
-export const PIXEL_BUBBLE_MS = 3200;
+const PIXEL_BUBBLE_MS = 3200;
 
 export interface PixelActor {
   id: string;
@@ -82,7 +82,7 @@ export function createPixelSceneState(now = Date.now()): PixelSceneState {
 }
 
 /** 需要渲染的演员（含正在退场），按 y 排序（y 越大越靠前，符合俯视遮挡） */
-export function orderedPixelActors(state: PixelSceneState): PixelActor[] {
+function orderedPixelActors(state: PixelSceneState): PixelActor[] {
   return Object.values(state.actors).sort((a, b) => {
     if (a.y !== b.y) return a.y - b.y;
     return a.id.localeCompare(b.id);
@@ -118,7 +118,7 @@ export function pixelSceneStats(state: PixelSceneState): {
 }
 
 /** 动作选择：行走优先；`done` 只保持一段时间 */
-export function desiredPixelAction(actor: LibraryActor, at: number, prev?: PixelActor): SpriteAction {
+function desiredPixelAction(actor: LibraryActor, at: number, prev?: PixelActor): SpriteAction {
   if (actor.activity === "done") {
     if (prev === undefined) return "coffee";
     return at - prev.actionSince < PIXEL_DONE_HOLD_MS ? "coffee" : "stand_front";

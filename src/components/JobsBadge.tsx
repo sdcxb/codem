@@ -17,7 +17,7 @@ import { ChevronDown, LoaderCircle, CheckCircle2, XCircle, Clock } from 'lucide-
 import { useLang } from '../core/i18n/lang'
 
 /** 任务状态 */
-export type JobStatus = 'running' | 'completed' | 'failed' | 'cancelled'
+type JobStatus = 'running' | 'completed' | 'failed' | 'cancelled'
 
 /** 任务视图 */
 export interface JobView {

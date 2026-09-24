@@ -57,16 +57,16 @@ agentDefinition?: AgentDefinition | null;
 // ========== Constants ==========
 
 /** 组合文件名 — 对标 DSH */
-export const COMPOSITION_FILE = "agent.cordis.yml";
+const COMPOSITION_FILE = "agent.cordis.yml";
 
 /** 元数据文件名 */
-export const METADATA_FILE = "metadata.yml";
+const METADATA_FILE = "metadata.yml";
 
 /** preset id 正则 — 对标 DSH PRESET_ID */
 const PRESET_ID = /^[a-z0-9][a-z0-9_-]*$/;
 
 /** 用户预设目录 — 对标 DSH USER_PRESET_DIR */
-export const USER_PRESET_DIR = ".agent-presets";
+const USER_PRESET_DIR = ".agent-presets";
 
 // ========== YAML Parsing (simplified) ==========
 

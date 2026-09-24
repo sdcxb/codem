@@ -161,4 +161,4 @@ export function LoIcon({ name, size = 14, className, label, strokeWidth = 2 }: L
 }
 
 /** 供 `Card` 等组件使用的类型（图标名或直接给一个 React 节点） */
-export type LoIconProp = LoIconName;
+type LoIconProp = LoIconName;

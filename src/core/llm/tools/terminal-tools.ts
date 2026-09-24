@@ -32,7 +32,7 @@ const MAX_VIEWPORT_CHARS = 262144;
 
 // ========== 会话模型 ==========
 
-export interface TerminalSessionView {
+interface TerminalSessionView {
   sessionId: string;
   name?: string;
   type: string;
@@ -678,7 +678,7 @@ export function resetTerminalManagerForTest(): void {
   getTerminalManager().resetForTest();
 }
 
-export const _terminalManager = {
+const _terminalManager = {
   get manager(): TerminalManager {
     return getTerminalManager();
   },

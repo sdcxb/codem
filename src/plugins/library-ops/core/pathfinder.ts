@@ -14,7 +14,7 @@ import type { LibraryDecor, LibraryMap, TileCoord } from "../types";
 import { LIBRARY_MAP } from "../data/library-map";
 
 /** 阻挡通行的装饰类型 */
-export const BLOCKING_DECOR: ReadonlySet<LibraryDecor["kind"]> = new Set([
+const BLOCKING_DECOR: ReadonlySet<LibraryDecor["kind"]> = new Set([
   "bookshelf",
   "table",
   "terminal",

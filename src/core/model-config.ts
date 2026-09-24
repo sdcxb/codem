@@ -22,7 +22,7 @@ export const MIMO_MODELS: ModelOption[] = [
 ];
 
 /** 各 API provider 支持的模型列表 */
-export const API_MODELS: Record<string, ModelOption[]> = {
+const API_MODELS: Record<string, ModelOption[]> = {
   openai: [
     { id: "gpt-4o", name: "GPT-4o" },
     { id: "gpt-4o-mini", name: "GPT-4o Mini" },

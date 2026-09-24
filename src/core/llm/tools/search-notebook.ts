@@ -14,7 +14,7 @@ import { retrieve } from "../../knowledge/retriever";
 import { getNotebook, ChunkIndexUnavailableError } from "../../knowledge/storage";
 
 /** 检索结果中的来源元数据 */
-export interface CitationSource {
+interface CitationSource {
   index: number;       // 1-based 编号
   sourceId: string;
   sourceName: string;

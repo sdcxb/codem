@@ -22,7 +22,7 @@
 import type { Project } from "../types";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, domainEnsureLoaded, domainPortRegistered, reportWriteNotAccepted } from "./domain-store";
 
-export interface ProjectRow {
+interface ProjectRow {
   id: string;
   name: string;
   path: string;

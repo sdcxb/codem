@@ -20,7 +20,7 @@ import {
 } from '../../core/knowledge/ppt-styles';
 import { isImageGenAvailable as checkImageGen } from '../../core/knowledge/ppt-image';
 
-export interface PPTAdapterProps {
+interface PPTAdapterProps {
   notebookId: string;
   initialContent?: string;
   title: string;

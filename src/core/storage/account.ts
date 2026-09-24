@@ -56,7 +56,7 @@ export interface Account {
   updatedAt: number;
 }
 
-export interface AccountRow {
+interface AccountRow {
   id: string;
   email: string;
   url: string;

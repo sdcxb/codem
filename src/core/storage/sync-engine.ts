@@ -44,10 +44,10 @@ import { reportPersistFailure } from "./persist-failure";
 // ========== Types ==========
 
 /** 远程后端类型 */
-export type RemoteBackendType = "supabase" | "rest-api" | "none";
+type RemoteBackendType = "supabase" | "rest-api" | "none";
 
 /** 同步方向 */
-export type SyncDirection = "push" | "pull" | "both";
+type SyncDirection = "push" | "pull" | "both";
 
 /** 同步配置 */
 export interface SyncConfig {
@@ -72,7 +72,7 @@ export interface SyncConfig {
 }
 
 /** 同步状态 */
-export interface SyncState {
+interface SyncState {
   /** 本地已 push 的最大 seq */
   lastPushedSeq: number;
   /** 远程已 pull 的最大 seq */
@@ -86,7 +86,7 @@ export interface SyncState {
 }
 
 /** 远程事件条目 */
-export interface RemoteEvent {
+interface RemoteEvent {
   /** 远程 seq 号（远程数据库自增） */
   remoteSeq: number;
   /** 本地 seq 号 */
@@ -104,7 +104,7 @@ export interface RemoteEvent {
 }
 
 /** 同步结果 */
-export interface SyncResult {
+interface SyncResult {
   pushed: number;
   pulled: number;
   conflicts: number;
@@ -142,7 +142,7 @@ export function setSyncConfig(config: SyncConfig): void {
 }
 
 /** 获取同步状态 */
-export function getSyncState(): SyncState {
+function getSyncState(): SyncState {
   const saved = getSettingJSON<SyncState>(SYNC_STATE_KEY, {
     lastPushedSeq: 0,
     lastPulledSeq: 0,
@@ -172,7 +172,7 @@ export function getDeviceId(): string {
 
 // ========== Sync Engine ==========
 
-export class SyncEngine {
+class SyncEngine {
   private static instance: SyncEngine | null = null;
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null;
   private syncing = false;
@@ -513,14 +513,14 @@ export class SyncEngine {
 
 // ========== Singleton Access ==========
 
-export function getSyncEngine(): SyncEngine {
+function getSyncEngine(): SyncEngine {
   return SyncEngine.getInstance();
 }
 
 // ========== Utility ==========
 
 /** 获取同步摘要信息（用于 UI 展示） */
-export function getSyncSummary(): {
+function getSyncSummary(): {
   config: SyncConfig;
   state: SyncState;
   deviceId: string;

@@ -18,14 +18,14 @@ export type { SceneImageAdjust };
 export const SCENE_IMAGE_MAX_BYTES = 32 * 1024 * 1024;
 
 /** 最小尺寸（再小就没法铺满画布了） */
-export const SCENE_IMAGE_MIN_WIDTH = 640;
-export const SCENE_IMAGE_MIN_HEIGHT = 360;
+const SCENE_IMAGE_MIN_WIDTH = 640;
+const SCENE_IMAGE_MIN_HEIGHT = 360;
 
 /** `<input type="file">` 的 accept 属性 */
 export const SCENE_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/avif,image/gif,image/bmp";
 
 /** 允许的 MIME 类型（浏览器偶尔给空 type，此时按扩展名兜底） */
-export const SCENE_IMAGE_TYPES = [
+const SCENE_IMAGE_TYPES = [
   "image/png",
   "image/jpeg",
   "image/jpg",
@@ -39,13 +39,13 @@ export const SCENE_IMAGE_TYPES = [
 const EXT_TYPES = ["png", "jpg", "jpeg", "webp", "avif", "gif", "bmp"];
 
 /** 目标比例（显示画布 1920×1072 ≈ 16:9） */
-export const SCENE_TARGET_RATIO = 1920 / 1072;
+const SCENE_TARGET_RATIO = 1920 / 1072;
 
 /** 比例偏差超过这个比例就提醒用户（会被拉伸） */
-export const SCENE_ASPECT_TOLERANCE = 0.08;
+const SCENE_ASPECT_TOLERANCE = 0.08;
 
 /** 场景图片元信息（上传后展示） */
-export interface SceneImageInfo {
+interface SceneImageInfo {
   name: string;
   type: string;
   size: number;

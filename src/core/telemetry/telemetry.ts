@@ -15,7 +15,7 @@ import { StorageError, getStoragePort, hasStoragePort } from "../storage/port";
 
 // ========== Types ==========
 
-export interface TelemetryEvent {
+interface TelemetryEvent {
   id: string;
   sessionId: string;
   name: string;

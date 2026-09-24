@@ -31,7 +31,7 @@ export interface OutputSchema {
 }
 
 /** 输出渲染函数 — 将工具返回的值转换为 content blocks */
-export type OutputRender = (
+type OutputRender = (
   args: Record<string, unknown>,
   value: unknown,
 ) => Array<{ type: "text"; text: string }>;
@@ -130,7 +130,7 @@ export function registerOutputContract(toolName: string, contract: OutputContrac
 /**
  * 获取工具的输出契约。
  */
-export function getOutputContract(toolName: string): OutputContract | undefined {
+function getOutputContract(toolName: string): OutputContract | undefined {
   return outputContracts.get(toolName);
 }
 
@@ -173,6 +173,6 @@ export function renderToolOutput(
 /**
  * 清除所有注册的输出契约。
  */
-export function clearOutputContracts(): void {
+function clearOutputContracts(): void {
   outputContracts.clear();
 }

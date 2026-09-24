@@ -147,7 +147,7 @@ export function errorSignatureOf(errorMessage: string, componentStack: string): 
  * 单独抽成纯函数：恢复卡片要能"把详情交出去"（贴进 issue / 交给同事），
  * 而这一步不能再依赖 localStorage 或剪贴板 API 是否可用。
  */
-export function buildCrashDetailText(state: {
+function buildCrashDetailText(state: {
   errorMessage: string;
   componentStack: string;
   crashId: string;

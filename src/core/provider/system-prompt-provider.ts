@@ -23,7 +23,7 @@ const VARIABLE_NAME = /^[a-z][a-z0-9_]*$/
 const GROUP_AT = /^\{\{([^{}]*)\}\}/
 
 /** 一段提示词 */
-export interface PromptSection {
+interface PromptSection {
   name: string
   order: number
   text: string | ((ctx: any) => string)
@@ -31,14 +31,14 @@ export interface PromptSection {
 }
 
 /** 动态上下文 */
-export interface PromptContext {
+interface PromptContext {
   name: string
   order: number
   text: string | ((ctx: any) => string)
 }
 
 /** 组装结果 */
-export interface PromptAssembly {
+interface PromptAssembly {
   sections: { name: string; text: string }[]
   contexts: { name: string; text: string }[]
   variables: Record<string, string | undefined>
@@ -48,7 +48,7 @@ export interface PromptAssembly {
  * 渲染组装结果为字符串 — 参考 DSH renderPrompt()
  * 支持 {{variable}} 插值，严格校验。
  */
-export function renderPrompt(assembly: PromptAssembly): string {
+function renderPrompt(assembly: PromptAssembly): string {
   return assembly.sections
     .map(section => interpolate(section, assembly.variables, 'section'))
     .filter(text => text.length > 0)

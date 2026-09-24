@@ -12,7 +12,7 @@
 import { useState, useCallback } from 'react'
 import { tryGetCtx, useCtxReady } from '../../consumer/index.ts'
 
-export function CordisPanel() {
+function CordisPanel() {
   const ctxReady = useCtxReady()
   const ctx = tryGetCtx()
   const [plugins, setPlugins] = useState<any[]>([])

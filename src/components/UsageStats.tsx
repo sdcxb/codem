@@ -28,7 +28,7 @@ type CostLimits = ReturnType<typeof getCostTracker.prototype.getLimits>;
 type LimitDraft = { [K in keyof CostLimits]?: CostLimits[K] | null };
 
 /** 输入框文本 → 限额值：空串 = 不限（null 哨兵）；非法输入也按"不限"处理（消费方按真值判断） */
-export function parseLimitInput(raw: string): number | null {
+function parseLimitInput(raw: string): number | null {
   const trimmed = (raw ?? "").trim();
   if (trimmed === "") return null;
   const n = Number.parseFloat(trimmed);

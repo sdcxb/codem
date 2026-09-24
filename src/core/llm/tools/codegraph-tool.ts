@@ -19,18 +19,18 @@ import { getMCPRegistry } from "../../mcp/mcp";
 import type { MCPTool } from "../../mcp/mcp";
 
 /** codegraph MCP server 名（与 mcp.ts CODEGRAPH_SERVER_NAME 一致） */
-export const CODEGRAPH_SERVER = "codegraph";
+const CODEGRAPH_SERVER = "codegraph";
 
 /** codegraph 工具名前缀（codegraph_explore / codegraph_search …） */
 const CODEGRAPH_TOOL_PREFIX = "codegraph_";
 
 /** 判断一个 MCP 工具是否属于 codegraph（server 名或工具名前缀） */
-export function isCodeGraphMcpTool(tool: { server: string; name: string }): boolean {
+function isCodeGraphMcpTool(tool: { server: string; name: string }): boolean {
   return tool.server === CODEGRAPH_SERVER || tool.name.startsWith(CODEGRAPH_TOOL_PREFIX);
 }
 
 /** 把 MCP 工具名规整为 ToolDef id（原名，如 codegraph_explore） */
-export function codeGraphToolId(name: string): string {
+function codeGraphToolId(name: string): string {
   return name;
 }
 

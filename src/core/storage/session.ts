@@ -125,7 +125,7 @@ function sessionToWire(s: Session): Record<string, unknown> {
   };
 }
 
-export interface SessionRow {
+interface SessionRow {
   id: string;
   project_id: string;
   title: string;
@@ -421,7 +421,7 @@ export function togglePinned(id: string): boolean {
   return false;
 }
 
-export function searchSessions(query: string): Session[] {
+function searchSessions(query: string): Session[] {
   const rust = domainReadMany(SESSION_TABLE, wireToSession);
   if (rust) {
     const q = query.toLowerCase();

@@ -28,7 +28,7 @@ export function isExternalContent(content: string | null | undefined): boolean {
 }
 
 /** 从标记里取出文件路径 */
-export function externalPathOf(content: string): string {
+function externalPathOf(content: string): string {
   return content.slice(FILE_CONTENT_PREFIX.length);
 }
 
@@ -70,7 +70,7 @@ export async function externalizeAttachmentContent(
 }
 
 /** 读取外置附件内容（标记 → 文件内容） */
-export async function readExternalAttachment(path: string): Promise<string | undefined> {
+async function readExternalAttachment(path: string): Promise<string | undefined> {
   try {
     return await readFile(path);
   } catch (e) {
@@ -180,7 +180,7 @@ export async function hydrateAttachmentsForSession(
 }
 
 /** 缓存大小（诊断） */
-export function externalContentCacheSize(): number {
+function externalContentCacheSize(): number {
   return externalContentCache.size;
 }
 

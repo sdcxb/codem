@@ -232,7 +232,7 @@ let cachedProjectInstructions: { cwd: string; entry: InstructionEntry } | null =
  * 带缓存的项目指令加载。
  * 当 cwd 不变时直接返回缓存。
  */
-export async function loadProjectInstructionsCached(cwd: string): Promise<InstructionEntry | null> {
+async function loadProjectInstructionsCached(cwd: string): Promise<InstructionEntry | null> {
   if (cachedProjectInstructions && cachedProjectInstructions.cwd === cwd) {
     return cachedProjectInstructions.entry;
   }

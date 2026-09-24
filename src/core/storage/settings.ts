@@ -510,7 +510,7 @@ export function saveRecoveryData(sessionId: string, data: string): void {
     return;
 }
 
-export function removeRecoveryData(sessionId: string): void {
+function removeRecoveryData(sessionId: string): void {
   if (domainDelete(RECOVERY_TABLE, { session_id: sessionId }, {
     scope: "settings.removeRecoveryData",
     note: "崩溃恢复数据未删除",
@@ -544,7 +544,7 @@ export function removeRecoveryData(sessionId: string): void {
 //
 // `CostRecord` 类型保留：`cost-tracker.ts` 的记录形状与它一致，是将来落库的接口草案。
 
-export interface CostRecord {
+interface CostRecord {
   id: string;
   sessionId: string;
   model: string;

@@ -14,13 +14,13 @@ import { type LucideIcon } from "lucide-react";
 
 // ========== SettingsNav ==========
 
-export interface SettingsNavItem {
+interface SettingsNavItem {
   id: string;
   label: string;
   icon?: LucideIcon;
 }
 
-export interface SettingsNavSection {
+interface SettingsNavSection {
   label?: string;
   items: SettingsNavItem[];
 }

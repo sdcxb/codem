@@ -39,13 +39,13 @@ import { resolveZoneId } from "../data/library-map";
 
 // ========== 依赖契约（结构类型，避免硬依赖宿主模块） ==========
 
-export interface ProjectLike {
+interface ProjectLike {
   id: string;
   name: string;
   path: string;
 }
 
-export interface SessionLike {
+interface SessionLike {
   id: string;
   projectId: string;
   title: string;
@@ -91,7 +91,7 @@ export interface ProjectStateLike {
   currentSession: SessionLike | null;
 }
 
-export interface TeamMemberLike {
+interface TeamMemberLike {
   id: string;
   name: string;
   role?: string;
@@ -100,7 +100,7 @@ export interface TeamMemberLike {
   provider?: string;
 }
 
-export interface TeamTaskLike {
+interface TeamTaskLike {
   id: string;
   subject: string;
   status: string;
@@ -144,14 +144,14 @@ export interface CostStatsLike {
   totalOutputTokens: number;
 }
 
-export interface SquadLike {
+interface SquadLike {
   id: string;
   name: string;
   members: Array<{ memberName: string; roleDescription: string | null }>;
 }
 
 /** 跨会话委派任务（只读，用于把「被委派的会话」也画成角色） */
-export interface DelegationLike {
+interface DelegationLike {
   id: string;
   sourceSessionId: string;
   targetSessionId: string;
@@ -160,13 +160,13 @@ export interface DelegationLike {
   projectId?: string;
 }
 
-export interface AgentDefLike {
+interface AgentDefLike {
   id: string;
   name: string;
   description?: string;
 }
 
-export interface TelemetryEventLike {
+interface TelemetryEventLike {
   sessionId: string;
   name: string;
   timestamp: number;

@@ -101,7 +101,7 @@ export const CAPTAIN_ONLY_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /** 全部 agent_teams 工具（用于工具表注入提示） */
-export const AGENT_TEAMS_TOOL_IDS: ReadonlyArray<string> = [
+const AGENT_TEAMS_TOOL_IDS: ReadonlyArray<string> = [
   "agent_teams_create",
   "agent_teams_add_member",
   "agent_teams_remove_member",

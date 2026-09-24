@@ -678,7 +678,7 @@ export class HookPostExecuteMiddleware implements PostExecuteMiddleware {
  * Validates tool output against declared OutputContract schema (if declared).
  * Non-declared tools pass through unchanged (backward compatible).
  */
-export class OutputContractValidationMiddleware implements FinalizeMiddleware {
+class OutputContractValidationMiddleware implements FinalizeMiddleware {
   name = "output-contract";
 
   async execute(

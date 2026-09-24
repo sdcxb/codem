@@ -24,7 +24,7 @@
  *   · 认不出来的命令一律按「其它」处理（只参与精确指纹），**宁可漏判也不误杀**。
  */
 
-export type GuardAction = "allow" | "warn" | "suppress" | "stop";
+type GuardAction = "allow" | "warn" | "suppress" | "stop";
 export type GuardKind = "no-gain" | "no-gain-signature" | "enumerate";
 
 export interface GuardDecision {

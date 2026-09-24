@@ -19,7 +19,7 @@ export interface SkillLookupOptions {
 }
 
 /** Skill invocation controls — determines visibility to model and user. */
-export interface SkillInvocationPolicy {
+interface SkillInvocationPolicy {
   /** Whether model-facing catalogs and loaders include this skill. */
   readonly modelInvocable: boolean;
   /** Whether human-facing command catalogs and loaders include this skill. */
@@ -27,7 +27,7 @@ export interface SkillInvocationPolicy {
 }
 
 /** Optional provider-specific base for resolving relative resources. */
-export type SkillResourceBase =
+type SkillResourceBase =
   | { readonly kind: "directory"; readonly path: string }
   | { readonly kind: "url"; readonly url: string }
   | { readonly kind: "opaque"; readonly description: string };

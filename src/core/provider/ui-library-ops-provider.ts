@@ -31,7 +31,7 @@ export const LIBRARY_TASK_SLOT = 'task-center.board'
 /** 任务管理「子智能体」页签的扩展 slot（与 TaskCenter.tsx 的 TASK_CENTER_SUBAGENTS_SLOT 一致） */
 export const LIBRARY_SUBAGENTS_SLOT = 'task-center.subagents'
 /** 任务管理「概览」页签的扩展 slot（用量：KPI/健康度/活动分布/token 与成本） */
-export const LIBRARY_OVERVIEW_SLOT = 'task-center.overview'
+const LIBRARY_OVERVIEW_SLOT = 'task-center.overview'
 
 /** 打开场景视图（等价于打开任务管理并切到「子智能体 → 场景」页签） */
 export function openLibraryView() {

@@ -141,7 +141,7 @@ export function applyStoredUiFont(): number {
 /** 两个"可能只是默认值"的字号档（当前基准 13 / 旧版本默认 14）——只有它们不算"显式选择" */
 const DEFAULT_LIKE_PX: readonly number[] = [FONT_BASE_PX, LEGACY_DEFAULT_FONT_PX];
 
-export function migrateLegacyFontKey(): { migrated: boolean; px: number } | null {
+function migrateLegacyFontKey(): { migrated: boolean; px: number } | null {
   let legacyRaw: string | null = null;
   try {
     legacyRaw = getSetting(LEGACY_FONT_KEY);

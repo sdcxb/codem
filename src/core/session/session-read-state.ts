@@ -36,9 +36,9 @@ import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "../stora
 import { reportPersistFailure } from "../storage/persist-failure";
 
 /** settings 里的键（唯一来源；测试与迁移都引用它） */
-export const SESSION_READ_WATERMARK_KEY = "codem-session-read-watermarks";
+const SESSION_READ_WATERMARK_KEY = "codem-session-read-watermarks";
 /** "历史会话已按'此刻已读'初始化过"的一次性标记 */
-export const SESSION_READ_MIGRATED_KEY = "codem-session-read-initialized";
+const SESSION_READ_MIGRATED_KEY = "codem-session-read-initialized";
 
 /** sessionId → 已读到的消息条数 */
 export type ReadWatermarks = Record<string, number>;

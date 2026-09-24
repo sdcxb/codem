@@ -18,13 +18,13 @@ import { buildWalkGrid, findPath, isWalkable, nearestWalkable, type WalkGrid } f
 /** 行走速度（瓦片 / 秒） */
 export const WALK_TILES_PER_SEC = 2.4;
 /** 入场淡入时长（ms） */
-export const APPEAR_MS = 420;
+const APPEAR_MS = 420;
 /** 退场淡出时长（ms） */
-export const FADE_OUT_MS = 520;
+const FADE_OUT_MS = 520;
 /** 「完成」高亮持续时间（ms） */
 export const DONE_HOLD_MS = 4000;
 /** 气泡最短展示时长（ms） */
-export const BUBBLE_MS = 3200;
+const BUBBLE_MS = 3200;
 
 const gridCache = new WeakMap<object, WalkGrid>();
 function walkGrid(): WalkGrid {

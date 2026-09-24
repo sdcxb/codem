@@ -19,7 +19,7 @@ export interface LoginResult {
  *   成功后）才会写，所以"文件不存在"是**正常态**，不是故障。
  * - `{ exists: true, xiaomi: {...} }` —— 读到了凭据。
  */
-export interface AuthJsonFile {
+interface AuthJsonFile {
   exists?: boolean;
   xiaomi?: {
     key?: string;

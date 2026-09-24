@@ -85,7 +85,7 @@ export function hhmmOf(at: number): string {
 }
 
 /** 成员状态 → 双语标签 + 令牌 */
-export function memberStatusMeta(status: string): { token: string; zh: string; en: string } {
+function memberStatusMeta(status: string): { token: string; zh: string; en: string } {
   switch (status) {
     case "working":
       return { token: "--warning", zh: "工作中", en: "working" };

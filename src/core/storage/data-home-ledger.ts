@@ -38,7 +38,7 @@ const LEDGER_FILE = "data-home.json";
 export const LEDGER_VERSION = 1;
 
 /** 这一次的 active 目录是**怎么来的** */
-export type DataHomeSource = "standard" | "app-data-dir-fallback";
+type DataHomeSource = "standard" | "app-data-dir-fallback";
 
 export interface DataHomeLedger {
   version: number;

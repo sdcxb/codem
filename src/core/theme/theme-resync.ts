@@ -69,6 +69,6 @@ export function setupThemeSkinResync(): () => void {
 }
 
 /** 测试用：重置幂等标记 */
-export function __resetThemeSkinResyncForTests(): void {
+function __resetThemeSkinResyncForTests(): void {
   registered = false;
 }

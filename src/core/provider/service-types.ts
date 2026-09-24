@@ -123,7 +123,7 @@ export interface SlotsService {
 // ============================================================
 //  Attachments
 // ============================================================
-export interface AttachmentsService {
+interface AttachmentsService {
   _active: boolean
   store(content: string | Uint8Array): Promise<string>
   retrieve(hash: string): Promise<string | Uint8Array | null>
@@ -132,7 +132,7 @@ export interface AttachmentsService {
 // ============================================================
 //  Schedule
 // ============================================================
-export interface ScheduleService {
+interface ScheduleService {
   _active: boolean
   add(reminder: { time: number; message: string }): string
   remove(id: string): void
@@ -141,7 +141,7 @@ export interface ScheduleService {
 // ============================================================
 //  Context Info
 // ============================================================
-export interface ContextInfoService {
+interface ContextInfoService {
   _active: boolean
   collect(): { cwd: string; platform: string; [key: string]: any }
 }
@@ -149,7 +149,7 @@ export interface ContextInfoService {
 // ============================================================
 //  Commands
 // ============================================================
-export interface CommandsService {
+interface CommandsService {
   _active: boolean
   register(id: string, handler: () => void): void
   unregister(id: string): void
@@ -160,7 +160,7 @@ export interface CommandsService {
 // ============================================================
 //  Repeat Tool Reminder
 // ============================================================
-export interface RepeatToolReminderService {
+interface RepeatToolReminderService {
   _active: boolean
   record(sessionId: string, toolName: string, args: string): void
   check(sessionId: string): { isRepeat: boolean; message?: string }
@@ -169,7 +169,7 @@ export interface RepeatToolReminderService {
 // ============================================================
 //  Timeout Guard
 // ============================================================
-export interface TimeoutGuardService {
+interface TimeoutGuardService {
   _active: boolean
   wrap<T>(promise: Promise<T>, ms: number): Promise<T>
 }
@@ -177,7 +177,7 @@ export interface TimeoutGuardService {
 // ============================================================
 //  Invariants Guard
 // ============================================================
-export interface InvariantsGuardService {
+interface InvariantsGuardService {
   _active: boolean
   check(state: any): { passed: boolean; violations: string[] }
 }

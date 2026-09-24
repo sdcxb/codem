@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
-export interface AppMenuAction {
+interface AppMenuAction {
   id: string;
   label: string;
   /** 快捷键提示（仅展示；真实绑定在 `core/shortcuts/app-shortcuts.ts`） */

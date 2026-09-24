@@ -282,7 +282,7 @@ function renderResourceHint(skill: SkillDefinition): string[] {
  * 渲染一个已加载的技能为 <skill_content> 格式（DSH-aligned）。
  * 模型看到统一的结构化包装，不管技能是从工具调用还是 /skill-name 手势加载的。
  */
-export function renderSkillContent(skill: SkillDefinition): string {
+function renderSkillContent(skill: SkillDefinition): string {
   const resourceHint = renderResourceHint(skill);
   return [
     `<skill_content name="${escapeAttr(skill.name)}">`,
@@ -387,7 +387,7 @@ export async function buildCatalogMessage(sessionId: string): Promise<string> {
 /**
  * 清除会话的 catalog 历史（会话结束时调用）。
  */
-export function clearCatalogHistory(sessionId: string): void {
+function clearCatalogHistory(sessionId: string): void {
   catalogHistory.delete(sessionId);
 }
 
@@ -403,7 +403,7 @@ const SKILL_GESTURE = /(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g;
  * 从用户消息中提取 /skill-name 手势。
  * 返回去重后的技能名列表（未验证，仅提取候选）。
  */
-export function extractSkillGestures(message: string): string[] {
+function extractSkillGestures(message: string): string[] {
   const names: string[] = [];
   for (const match of message.matchAll(SKILL_GESTURE)) {
     const name = match[2];

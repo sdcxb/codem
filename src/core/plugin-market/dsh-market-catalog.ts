@@ -17,7 +17,7 @@
  */
 
 export type DshMarketStatus = 'bundled' | 'adaptable' | 'unsupported'
-export type DshMarketCategory = 'capability' | 'tool' | 'ui' | 'infra'
+type DshMarketCategory = 'capability' | 'tool' | 'ui' | 'infra'
 
 export interface DshMarketEntry {
   /** dsh 官方包名 */

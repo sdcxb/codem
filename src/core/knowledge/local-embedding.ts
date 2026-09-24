@@ -32,7 +32,7 @@
 
 // ========== 类型定义 ==========
 
-export interface LocalEmbeddingConfig {
+interface LocalEmbeddingConfig {
   /** 模型 ID（HuggingFace Hub 上的标识） */
   modelId: string;
   /** 是否已初始化 */
@@ -80,7 +80,7 @@ let currentModelId: string = '';
 
 // ========== 状态管理 ==========
 
-export function onStatusChange(callback: (status: LocalEmbeddingStatus) => void): void {
+function onStatusChange(callback: (status: LocalEmbeddingStatus) => void): void {
   statusCallback = callback;
 }
 
@@ -402,14 +402,14 @@ export async function generateLocalEmbeddings(texts: string[]): Promise<number[]
 /**
  * 检查本地模型是否可用（已加载或正在加载）。
  */
-export function isLocalEmbeddingAvailable(): boolean {
+function isLocalEmbeddingAvailable(): boolean {
   return pipeline !== null;
 }
 
 /**
  * 获取本地 embedding 的维度（根据当前模型）。
  */
-export function getLocalEmbeddingDim(): number {
+function getLocalEmbeddingDim(): number {
   const model = AVAILABLE_LOCAL_MODELS.find((m) => m.id === currentModelId);
   return model?.dim || 384;
 }
@@ -417,7 +417,7 @@ export function getLocalEmbeddingDim(): number {
 /**
  * 卸载模型，释放内存。
  */
-export function disposeLocalEmbedding(): void {
+function disposeLocalEmbedding(): void {
   pipeline = null;
   loadingPromise = null;
   currentModelId = '';
@@ -426,7 +426,7 @@ export function disposeLocalEmbedding(): void {
 
 // ========== 默认配置 ==========
 
-export const LOCAL_EMBEDDING_DEFAULTS: LocalEmbeddingConfig = {
+const LOCAL_EMBEDDING_DEFAULTS: LocalEmbeddingConfig = {
   modelId: 'Xenova/all-MiniLM-L6-v2',
   initialized: false,
 };
@@ -534,6 +534,6 @@ export function recommendModelByDomain(domain: ModelDomain): string {
 /**
  * 获取当前已加载的模型 ID。
  */
-export function getLoadedModelId(): string {
+function getLoadedModelId(): string {
   return currentModelId;
 }

@@ -81,6 +81,6 @@ export function resetWarnOnce(): void {
 }
 
 /** 已告警过的 key 数量（诊断/测试用） */
-export function warnedKeyCount(): number {
+function warnedKeyCount(): number {
   return warnedKeys.size;
 }

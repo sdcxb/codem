@@ -27,9 +27,9 @@ import type { SkillDefinition } from "./skill";
 
 // ========== Types ==========
 
-export type AuditLevel = "safe" | "warning" | "danger";
+type AuditLevel = "safe" | "warning" | "danger";
 
-export interface AuditFinding {
+interface AuditFinding {
   level: AuditLevel;
   category: string;
   message: string;
@@ -354,7 +354,7 @@ const MAX_LOG_ENTRIES = 200;
 /**
  * 获取安装审计日志。
  */
-export function getInstallAuditLog(): InstallAuditEntry[] {
+function getInstallAuditLog(): InstallAuditEntry[] {
   return getSettingJSON<InstallAuditEntry[]>(AUDIT_LOG_KEY, []);
 }
 
@@ -374,7 +374,7 @@ export function addInstallAuditEntry(entry: InstallAuditEntry): void {
 /**
  * 清除安装审计日志。
  */
-export function clearInstallAuditLog(): void {
+function clearInstallAuditLog(): void {
   setSettingJSON(AUDIT_LOG_KEY, []);
 }
 

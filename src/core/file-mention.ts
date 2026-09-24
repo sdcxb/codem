@@ -84,7 +84,7 @@ function collectFiles(
 /**
  * Async load a specific directory's children for deeper @mention results.
  */
-export async function loadChildrenForMention(dirPath: string): Promise<FileMentionItem[]> {
+async function loadChildrenForMention(dirPath: string): Promise<FileMentionItem[]> {
   try {
     const { invoke } = (window as any).__TAURI__.core;
     const entries = await invoke("list_directory", { path: dirPath });

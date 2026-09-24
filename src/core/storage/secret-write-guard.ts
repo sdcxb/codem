@@ -44,7 +44,7 @@
 import { cachedSealedBlob, cachedSealedKey } from "./secret-cache";
 
 export const SETTINGS_KEY = "codem-settings";
-export const PLAINTEXT_FIELD = "apiKey";
+const PLAINTEXT_FIELD = "apiKey";
 export const SEALED_FIELD = "apiKeySealed";
 
 /** 闸门必须知道的两件事，由 `secret-store.ts` 注册（避免循环依赖） */
@@ -85,7 +85,7 @@ export async function __awaitCredentialResealForTests(): Promise<void> {
 const pending = new Set<string>();
 let sealing: Promise<void> | null = null;
 
-export interface PreparedSettingsWrite<T> {
+interface PreparedSettingsWrite<T> {
   /** 真正要落盘的值 */
   value: T;
   /** 被换回密文的 provider 数（>0 = 这次写回本来会泄露明文） */
@@ -99,7 +99,7 @@ export interface PreparedSettingsWrite<T> {
  *
  * 非对象 / 没有 providers 时原样返回（**不许**因为形状意外就把值改坏）。
  */
-export function prepareSettingsWrite<T>(value: T): PreparedSettingsWrite<T> {
+function prepareSettingsWrite<T>(value: T): PreparedSettingsWrite<T> {
   if (!hooks || !hooks.allowed()) return { value, resealed: 0, pendingSeal: [] };
   if (!value || typeof value !== "object") return { value, resealed: 0, pendingSeal: [] };
   const providers = (value as { providers?: unknown }).providers;
@@ -140,7 +140,7 @@ export function prepareSettingsWrite<T>(value: T): PreparedSettingsWrite<T> {
  * 单飞的理由：设置面板连续保存多个字段时会有多次写入，若每次都排一个补封存，
  * 就会出现"后一次读到的是前一次已封存的值"这种自相竞争的写。
  */
-export function scheduleCredentialReseal(providerIds: string[]): void {
+function scheduleCredentialReseal(providerIds: string[]): void {
   if (!hooks || !hooks.allowed()) return;
   for (const id of providerIds) pending.add(id);
   if (sealing !== null) return;

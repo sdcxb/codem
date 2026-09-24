@@ -20,7 +20,7 @@ export interface ContentBlock {
 }
 
 /** dsh 工具 schema */
-export interface ToolSchema {
+interface ToolSchema {
   name: string
   description: string
   inputSchema: {
@@ -56,7 +56,7 @@ export interface StreamChunk {
 }
 
 /** dsh LLM 失败 */
-export interface LlmFailure {
+interface LlmFailure {
   readonly message: string
   readonly code: string
   readonly status?: number
@@ -65,20 +65,20 @@ export interface LlmFailure {
 }
 
 /** dsh Provider 信息 */
-export interface LlmProviderInfo {
+interface LlmProviderInfo {
   id: string
   label: string
 }
 
 /** dsh 模型信息 */
-export interface LlmModelInfo {
+interface LlmModelInfo {
   id: string
   provider: string
   label?: string
 }
 
 /** dsh Shell 执行结果 */
-export interface ShellExecResult {
+interface ShellExecResult {
   stdout: string
   stderr: string
   exitCode: number
@@ -86,7 +86,7 @@ export interface ShellExecResult {
 }
 
 /** dsh Shell 执行规格 */
-export interface ShellExecSpec {
+interface ShellExecSpec {
   command: string
   workdir: string
   timeoutMs: number

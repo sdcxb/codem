@@ -67,7 +67,7 @@ export function notifyStorageUnavailable(reason: string, detail?: unknown): void
 }
 
 /** 测试隔离：复位"已通知"闩锁 */
-export function resetStorageUnavailableNotified(): void {
+function resetStorageUnavailableNotified(): void {
   unavailableNotified = false;
 }
 

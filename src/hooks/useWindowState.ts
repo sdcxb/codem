@@ -82,11 +82,11 @@ function saveState(state: WindowState): void {
  * 单独导出是为了让回归测试能断言"交给 Tauri 的到底是什么形状"
  * （裸对象 → `{"undefined":{…}}`；这两个类 → `{"Physical":{…}}`）。
  */
-export function toPhysicalSize(saved: Pick<WindowState, "width" | "height">): PhysicalSize {
+function toPhysicalSize(saved: Pick<WindowState, "width" | "height">): PhysicalSize {
   return new PhysicalSize(saved.width, saved.height);
 }
 
-export function toPhysicalPosition(saved: Pick<WindowState, "x" | "y">): PhysicalPosition {
+function toPhysicalPosition(saved: Pick<WindowState, "x" | "y">): PhysicalPosition {
   return new PhysicalPosition(saved.x, saved.y);
 }
 
@@ -96,7 +96,7 @@ export function toPhysicalPosition(saved: Pick<WindowState, "x" | "y">): Physica
  * 失败**不吞**：抛给调用方（调用方负责留痕），因为"静默吞掉"正是这条缺陷
  * 藏了这么久的原因（用户只看到"窗口大小记不住"）。
  */
-export async function restoreWindowState(win: WindowLike, saved: WindowState): Promise<void> {
+async function restoreWindowState(win: WindowLike, saved: WindowState): Promise<void> {
   if (saved.maximized) {
     await win.maximize();
     return;
@@ -107,7 +107,7 @@ export async function restoreWindowState(win: WindowLike, saved: WindowState): P
 }
 
 /** `restoreWindowState` 需要的最小窗口能力（真实实现是 Tauri 的 `getCurrentWindow()`） */
-export interface WindowLike {
+interface WindowLike {
   maximize(): Promise<void>;
   setSize(size: unknown): Promise<void>;
   setPosition(position: unknown): Promise<void>;

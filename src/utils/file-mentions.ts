@@ -13,7 +13,7 @@
  * resolve 返回 { open, label, title } 表示该 token 是一个可打开的文件；
  * 返回 undefined 表示该 token 不是已知文件，保持普通 code 样式。
  */
-export interface FileMention {
+interface FileMention {
   /** 点击时的回调（打开文件管理器或编辑器） */
   open: () => void;
   /** 无障碍标签，如 "打开 src/index.ts" */
@@ -42,7 +42,7 @@ function onlyPathWithBasename(paths: readonly string[], value: string): string |
  * 从工具调用列表中提取本轮创建/修改的文件路径。
  * 覆盖 write, edit, multi_edit, str_replace 等写操作工具。
  */
-export function extractProducedPaths(toolCalls: readonly { tool: string; args: Record<string, unknown>; status: string }[]): string[] {
+function extractProducedPaths(toolCalls: readonly { tool: string; args: Record<string, unknown>; status: string }[]): string[] {
   const paths: string[] = [];
   const seen = new Set<string>();
 

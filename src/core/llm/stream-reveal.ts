@@ -8,9 +8,9 @@
  */
 
 /** 动画时间参数（毫秒） */
-export const STREAM_ANIMATION_MS = 300;
-export const STREAM_MIN_COMMIT_MS = 120;
-export const STREAM_MAX_LAG_MS = 800;
+const STREAM_ANIMATION_MS = 300;
+const STREAM_MIN_COMMIT_MS = 120;
+const STREAM_MAX_LAG_MS = 800;
 
 /** 不需要流式动画的标签 */
 const EXCLUDED_TAGS = new Set([
@@ -48,7 +48,7 @@ export function splitGraphemes(text: string): string[] {
 /**
  * 检测 Markdown 代码围栏是否未闭合
  */
-export function hasUnclosedFence(content: string): boolean {
+function hasUnclosedFence(content: string): boolean {
   let fence = "";
   for (const line of String(content || "").split(/\r?\n/)) {
     const match = line.match(/^\s*(`{3,}|~{3,})/);
@@ -68,7 +68,7 @@ export function hasUnclosedFence(content: string): boolean {
  * 将流式 Markdown 内容分块
  * 按代码围栏和空行分块，避免渲染不完整的代码块
  */
-export function chunkStreamingMarkdown(content: string, streaming = false): string[] {
+function chunkStreamingMarkdown(content: string, streaming = false): string[] {
   if (!streaming) return [content];
   const lines = content.match(/.*(?:\n|$)/g)?.filter(Boolean) || [content];
   const chunks: string[] = [];
@@ -101,7 +101,7 @@ export function chunkStreamingMarkdown(content: string, streaming = false): stri
 /**
  * 流式揭示状态追踪
  */
-export interface StreamRevealState {
+interface StreamRevealState {
   /** 上次提交的文本长度 */
   lastCommittedLength: number;
   /** 待揭示的字素数 */
@@ -113,7 +113,7 @@ export interface StreamRevealState {
 }
 
 /** 创建初始状态 */
-export function createStreamRevealState(): StreamRevealState {
+function createStreamRevealState(): StreamRevealState {
   return {
     lastCommittedLength: 0,
     pendingGraphemes: 0,
@@ -128,7 +128,7 @@ export function createStreamRevealState(): StreamRevealState {
  * @param state 状态对象（会被就地修改）
  * @returns 需要揭示的字素数，以及是否应该立即提交
  */
-export function streamRevealTransition(
+function streamRevealTransition(
   fullText: string,
   state: StreamRevealState,
   now: number = Date.now()

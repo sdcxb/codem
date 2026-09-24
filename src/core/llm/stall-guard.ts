@@ -57,7 +57,7 @@ export const DEFAULT_STALL_LIMITS: StallLimits = {
   label: "本次会话",
 };
 
-export type StallAction = "none" | "ask" | "stop";
+type StallAction = "none" | "ask" | "stop";
 
 export interface StallDecision {
   action: StallAction;

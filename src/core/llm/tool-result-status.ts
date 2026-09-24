@@ -77,7 +77,7 @@ export function classifyToolResult(
 }
 
 /** 便捷函数：把判定结果套用到（可变的）ToolCallResult 上 */
-export function applyToolResultStatus(
+function applyToolResultStatus(
   result: ToolCallResult,
   output: unknown,
   explicit?: boolean,
