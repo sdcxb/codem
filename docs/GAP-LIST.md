@@ -17,10 +17,10 @@
 
 | 项 | 值 | 怎么核对的 |
 | --- | --- | --- |
-| 装机版（用户手里那份） | **1.16.136** | 真机启动后读 `version`。**127→…→136 九次都是更新器自己升的**（最近三次：132→133、133→134、134→135）（按钮 `检查更新 → 检查中… → 发现新版本 x，下载中…` 然后应用重启、版本变化）；1.16.126 那次因网络掐断用构建产物直装 |
-| GitHub Latest | v1.16.136 | `node tools/release/verify-update-manifest.mjs --remote` **7/7** |
-| 仓库 `latest.json` | 1.16.136 | 同上 |
-| 本轮版本 | 1.16.136 | — |
+| 装机版（用户手里那份） | **1.16.137** | 真机启动后读 `version`。**127→…→137 十次都是更新器自己升的**（最近三次：132→133、133→134、134→135）（按钮 `检查更新 → 检查中… → 发现新版本 x，下载中…` 然后应用重启、版本变化）；1.16.126 那次因网络掐断用构建产物直装 |
+| GitHub Latest | v1.16.137 | `node tools/release/verify-update-manifest.mjs --remote` **7/7** |
+| 仓库 `latest.json` | 1.16.137 | 同上 |
+| 本轮版本 | 1.16.137 | — |
 | **确认框真的会弹**（第 84 轮修的根因，装机版实测） | 在 1.16.131 点需要确认的入口（标题栏「切换执行模式」）：控制台 **error 0**（改前必现 `Command plugin:dialog|confirm not allowed by ACL`）；枚举顶层窗口看到 **Win32 对话框窗口**（类名 `#32770`、标题 Codem）出现，且**主窗口被 disable**（模态的典型形态）；向该窗口 PostMessage 一个回车后它消失、主窗口恢复 enabled | `.preview-shot/verify-confirm-dialog-real.mjs`（点击 + 控制台增量）、`.preview-shot/_list-windows.mjs`（窗口枚举）、`.preview-shot/_dismiss-native-dialog.mjs`（P/Invoke 关框） |
 | **皮肤/头像可访问性**（第 83 轮修的，装机版复核） | 皮肤卡片 **3/3 是 `<button type=button>`、3/3 可聚焦、3/3 带 `aria-pressed`、恰好 1 个选中、名字互不相同**（皮肤：默认/Hub/梦幻）、网格 `role=group`；头像预设 **50/50 各有互不相同的 `aria-label`（预设头像 1…50）、50/50 带 `aria-pressed`**、装饰图 `alt` 为空；用修好后的度量重数：**interactives 50 / unnamed 0** | `.preview-shot/verify-a11y-skin-avatar.mjs` |
 | **更新下载重试**（第 82 轮修的缺陷） | 装机版点「检查更新」→ `检查中…` → `未发现更新（当前 v1.16.127）—— 更新清单已读到，里面没有更高的版本；若刚发布，CDN 可能还没同步`；控制台 error **0**（1 条 warning 是"未安装更新：none"的正常留痕）。**重试路径的真机端到端**要等下一次有可升级版本（见 O-13） | `.preview-shot/_observe-update-flow.mjs`（逐次记录按钮文案变化 + 控制台增量） |
@@ -29,7 +29,8 @@
 | **「发现 ≠ 失败」在装机版上实测**（第 88 轮修的缺陷） | 隔离钻取（副本库 + `CODEM_DB_PATH`）跑在装机版 **1.16.135** 上：控制台 **error 0**，自检发现走 `[Advisory] maintenance.invariantAudit.new：…`（改前是 `[PersistFailure] … 写盘失败（第 1 次）… —— 本次改动只存在于内存，重启后可能丢失。`）；界面上那条提示条的类名是 **`persist-alert is-advisory`**，文案为「存储自检：本次新发现记录与界面不一致：…。自检跑成了（这是它报出的结果）；这些缺口**不影响本次使用**…」—— **不再出现**「该功能本次不可用，请重试或检查日志」（改前那句是假建议：再跑一次还是同样的发现）。同时**凭据普查不再误报**（`dsh1:` + base64 的密文现在算密文，改前被说成「明文凭据」并弹出横幅） | `.preview-shot/drill-sealed-unreadable.mjs`（准备/启动/还原）+ `.preview-shot/_drill-observe.mjs`（读提示条与 `.persist-alert` 类名） |
 | **钻取没有写进真库**（越界自证） | 只看 sha256 不够：正常使用（WAL 折叠/维护）本来就会改主库。所以用**决定性判据**：钻取往副本里写的那段假密文（`dsh1:`+base64 的指纹）在真库主库 / WAL / SHM 里**一次都不出现**，而同一指纹在副本库里**在**（阳性对照）。真库里 `dsh1:` 出现 3 次（主库）+ 55 次（WAL）= 真凭据仍在 | `node .preview-shot/audit-drill-touched-real-db.mjs`（只读文件字节，不经引擎打开，避免改变 WAL） |
 | **凭据「解不开」的提示条**（第 89 轮修的缺口，装机版实测） | 同一钻取跑在装机版 **1.16.136** 上：界面出现 `persist-alert is-action` 提示条 ——「凭据：本机解不开已保存的密钥：1 个 provider 的密钥解不开（密文已保留，未被删除）。这些 provider 现在**用不了**（界面显示已配置、请求却没有密钥）。请在这台机器上重新填写它们的 API Key；「设置 → 安全」里有同一处状态与入口。」（**改前：界面上一条提示都没有**）；控制台对应 `[PersistFailure] secrets.unseal 凭据：本机解不开已保存的密钥（第 n 次）：…`（⚠️ 这里 error **2** 条是**正确**的：这条失败被两个调用点各报一次，通道按 area 累计次数 —— 与「静默」是两回事）。**正常库**上启动：零提示、error/warning/exception **0**（「一切正常零上报」在真机上成立） | `.preview-shot/drill-sealed-unreadable.mjs` + `.preview-shot/_drill-observe.mjs`（读 `.persist-alert` 与类名）、`.preview-shot/verify-sandbox-fix-shipped.mjs`（正常库启动读数） |
-| **门禁全绿（第 89 轮实测）** | `npm run verify` 退出码 **0**（覆盖率棘轮 + 基线对账 + knip 棘轮 + jscpd），**378 文件 / 6100 通过 / 16 跳过 / 0 失败**；`npm run audit` **11 道 exit 0** | 直接跑这两条命令看退出码 |
+| **提示条文案不再有重复句号**（第 90 轮修的缺陷，装机版实测） | 同一钻取跑在装机版 **1.16.137** 上，提示条原文末尾是「…请在这台机器上重新填写它们的 API Key；「设置 → 安全」里有同一处状态与入口**。**」—— **单个句号**（改前 1.16.136 是「入口**。。**」，真机原文）；两条提示的语气也各自正确：`persist-alert is-action`（解不开 ⇒ 失败）+ `persist-alert is-advisory`（自检发现 ⇒ 提醒）。**正常库**上启动：零提示、error/warning/exception **0** | `.preview-shot/drill-sealed-unreadable.mjs` + `.preview-shot/_drill-observe.mjs`（读 `.persist-alert` 的类名与文本） |
+| **门禁全绿（第 90 轮实测）** | `npm run verify` 退出码 **0**（覆盖率棘轮 + 基线对账 + knip 棘轮 + jscpd），**380 文件 / 6109 通过 / 16 跳过 / 0 失败**；`npm run audit` **12 道 exit 0**（第 90 轮新增 `audit:report-sites`） | 直接跑这两条命令看退出码 |
 | **knip 棘轮本轮抓到一次回归（已修）** | 第 89 轮新增模块时把 5 个只在内部使用的类型写成了 `export interface` ⇒ 棘轮如实报 **types 222 → 225**（`npm run verify` 因此退出码 1）。处置：改回模块内私有（**纯类型改动、零行为变化**），棘轮回到 **222/222**、verify 退出码 0。这是棘轮按设计工作的记录：**「未使用的导出」涨了就会红** | `node tools/audit/knip-gate.mjs`（输出里直接给「涨了：222 → 225」与样例文件） |
 | **上下文面板口径自洽**（第 81 轮修的缺陷，装机版复核） | 同一会话同一组数字：改前 `21% ⇒ 压力等级 临界 + 🔴 即将满`；改后 **`21% ⇒ 压力等级 正常`、无告警条** | `node .preview-shot/verify-context-pair.mjs`（读的是**界面上真实渲染的文字**，并按 0.5/0.7/0.9 反推应有等级） |
 | 迁移演练（在**副本**上跑） | 16 表 / 3990 行导入，逐表摘要全对；`--verify` 全部一致（新库 3991 行）；旧库 sha256 未变 | `node tools/migrate/storage-migrate.mjs --apply --src <副本> --dst <副本>` 然后 `--verify` |
@@ -54,7 +55,7 @@
 | O-9 | ~~更新器下载失败时没有任何重试与可诊断信息~~ **已关闭（第 82 轮）** | 见下面"已关闭"里的 C-11：有界重试 + 可读错误已落地并配门禁/突变 | — |
 | O-10 | **走查/探针会改用户状态** | 本轮探针点「切换执行模式」把 mimo-gui 的执行模式从"本地处理"改成了"新工作树"（`codem-project-execution-modes = {"C:\\mimo-gui":"git_worktree"}`）。已还原：关应用 → 用引擎 CLI 直写设置为 `current_workspace` → 重启后标题栏显示「本地处理」（工具 `.preview-shot/_exec-mode-setting.mjs`，含只读回读核对）。**教训**：探针要"点会改状态的东西"时，先记下原值 | 给走查脚本加"改动前记录原值"的小工具（本轮已把还原路径写成脚本） |
 | O-16 | ~~启动时「密钥解不开」只有控制台 warn，没有用户可见面~~ **已关闭（第 89 轮）** | 见下面「已关闭」里的 C-22：钻取把它确认成缺口，本轮修好并在装机版上量到提示条 | — |
-| O-17 | **还有「发现类」消息没走 advisory？**（第 88 轮只搬了维护侧的四个站点） | 已搬的四个见 C-21；**尚未逐处分诊**的是维护之外的自检/普查类上报（例如 `reconciliation.*`、`plugin.*diverged`、事件结构自检在**其它调用点**的形态）。本轮只做了「维护文件内 13 个上报点」的分诊（工具 `node .preview-shot/_triage-report-sites.mjs [文件...]`，输出 area + 是否已给 title），维护外的站点还没过一遍 ✅ **已闸门化（第 90 轮）**：`tools/audit/scan-report-sites.mjs` + 登记表 `report-site-classification.json`，`npm run audit:report-sites` 三条判据（新站点必登记 / kind 必须一致 / 登记不许过期），登记表分 triaged / pending 两档，**pending 棘轮只许降不许升**（本轮 217 → 待分诊 123，已分诊 94）。**剩余工作**：继续逐轮把 pending 烧到 0。原来的方法仍适用：把调用点列出来，逐处判「发现 / 失败」，把发现类搬去 `reportAdvisory`；然后加一条结构判据（新出现的失败上报必须给 `title`，判据已在 ADV-7 里对维护文件生效，可推广到全仓） |
+| O-17 | **还有「发现类」消息没走 advisory？**（第 88 轮只搬了维护侧的四个站点） | 已搬的四个见 C-21；**尚未逐处分诊**的是维护之外的自检/普查类上报（例如 `reconciliation.*`、`plugin.*diverged`、事件结构自检在**其它调用点**的形态）。本轮只做了「维护文件内 13 个上报点」的分诊（工具 `node .preview-shot/_triage-report-sites.mjs [文件...]`，输出 area + 是否已给 title），维护外的站点还没过一遍 ✅ **已闸门化（第 90 轮）**：`tools/audit/scan-report-sites.mjs` + 登记表 `report-site-classification.json`，`npm run audit:report-sites` 三条判据（新站点必登记 / kind 必须一致 / 登记不许过期），登记表分 triaged / pending 两档，**pending 棘轮只许降不许升**（本轮 217 → 待分诊 123，已分诊 94）。**剩余工作**：继续逐轮把 pending 烧到 0。本轮（第 90 轮）进度：已分诊 **94**、待分诊 **123**（217 起步）；待分诊的棘轮基线写在 `report-site-classification.test.ts` 的 `PENDING_BASELINE`，每轮改小。原来的方法仍适用：把调用点列出来，逐处判「发现 / 失败」，把发现类搬去 `reportAdvisory`；然后加一条结构判据（新出现的失败上报必须给 `title`，判据已在 ADV-7 里对维护文件生效，可推广到全仓） |
 | O-18 | ~~提示条文案会出现重复标点~~ **已关闭（第 90 轮）** | 见下面「已关闭」里的 C-23：在拼装的唯一出口折叠重复句末标点，判据含「省略号不许被折叠」的反向对照 | — |
 
 
