@@ -14512,30 +14512,6 @@
     "color": "var(--text-muted)",
     "font-size": "var(--fs-xs)"
   },
-  "skill-autocomplete": {
-    "background": "var(--bg-secondary, #1a1a20)",
-    "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius-md)",
-    "bottom": "100%",
-    "box-shadow": "0 -4px 12px var(--shadow-color)",
-    "left": "0",
-    "max-height": "280px",
-    "min-width": "240px",
-    "overflow-y": "auto",
-    "position": "absolute",
-    "z-index": "var(--z-chrome)"
-  },
-  "skill-close": {
-    "align-items": "center",
-    "background": "none",
-    "border": "none",
-    "border-radius": "var(--radius-xs)",
-    "color": "var(--text-muted, #6b6b7b)",
-    "cursor": "pointer",
-    "display": "flex",
-    "justify-content": "center",
-    "padding": "var(--space-1)"
-  },
   "skill-content": {
     "display": "flex",
     "flex": "1",
@@ -14558,11 +14534,6 @@
     "align-items": "center",
     "display": "flex",
     "gap": "var(--space-3)"
-  },
-  "skill-desc": {
-    "color": "var(--text-muted, #6b6b7b)",
-    "font-size": "var(--fs-2xs)",
-    "margin-top": "var(--space-1)"
   },
   "skill-detail": {
     "flex": "1",
@@ -14665,15 +14636,6 @@
     "border-radius": "var(--radius-full)",
     "font-size": "var(--fs-xs)",
     "padding": "1px var(--space-3)"
-  },
-  "skill-header": {
-    "align-items": "center",
-    "border-bottom": "1px solid var(--border-primary)",
-    "color": "var(--text-muted, #6b6b7b)",
-    "display": "flex",
-    "font-size": "var(--fs-2xs)",
-    "justify-content": "space-between",
-    "padding": "var(--space-3) var(--space-5)"
   },
   "skill-install-error": {
     "align-items": "center",
@@ -14817,11 +14779,6 @@
     "gap": "var(--space-6)",
     "justify-content": "center",
     "padding": "var(--space-14) var(--space-8)"
-  },
-  "skill-name": {
-    "color": "var(--text-primary, #e0e0e8)",
-    "font-size": "var(--fs-sm)",
-    "font-weight": "500"
   },
   "skill-option": {
     "align-items": "flex-start",

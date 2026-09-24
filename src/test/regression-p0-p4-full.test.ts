@@ -280,9 +280,18 @@ describe("P1 高级Agent — 组件导入与工具注册", () => {
     const mod = await import("../components/TodoListDisplay");
     expect(mod.TodoListDisplay).toBeDefined();
   });
-  it("REG-FULL-036: GuidanceBlock 组件可导入", async () => {
-    const mod = await import("../components/GuidanceBlock");
-    expect(mod.GuidanceBlock).toBeDefined();
+  /*
+   * REG-FULL-036 / 042 / 133 原来断言这三个组件"可导入"。第 106/107 轮的可达性普查
+   * （`.preview-shot/_reachability-scan.mjs`，自检通过）查明：
+   *  - `GuidanceBlock`：**没有任何地方渲染**，而 ChatPanel 里已有一条更完整的引导展示
+   *    （`.guidance-messages-bar`，带「已接收/待接收」徽标与「立即引导」动作）⇒ 是被取代的旧实现；
+   *  - `CapabilityGuard`：能力检测本身是活的（`FlashcardViewer` / `NotebookWorkspace` 直接调
+   *    `checkFeatureAvailability`），只有这个"通用包裹组件"没人用；
+   *  - `SkillAutocomplete`：`/` 技能补全从来没接过；输入框里活的是 `MentionAutocomplete`（@ 提及）。
+   * 三者都**不在产物里**（tree-shaken）。⇒ 已删除；判据改成"不许复活"，而不是把断言删掉。
+   */
+  it("REG-FULL-036: 已被取代的 GuidanceBlock 不许复活（活着的是 ChatPanel 的 guidance-messages-bar）", () => {
+    expect(existsSync(join(__dirname, "..", "components", "GuidanceBlock.tsx"))).toBe(false);
   });
   it("REG-FULL-037: StreamingWaitIndicator 组件可导入", async () => {
     const mod = await import("../components/StreamingWaitIndicator");
@@ -304,9 +313,8 @@ describe("P1 高级Agent — 组件导入与工具注册", () => {
     const mod = await import("../components/InlineMessageEdit");
     expect(mod.InlineMessageEdit).toBeDefined();
   });
-  it("REG-FULL-042: CapabilityGuard 组件可导入", async () => {
-    const mod = await import("../components/CapabilityGuard");
-    expect(mod.CapabilityGuard).toBeDefined();
+  it("REG-FULL-042: 没人用的 CapabilityGuard 不许复活（能力检测本身仍活：checkFeatureAvailability 被两处直接调用）", () => {
+    expect(existsSync(join(__dirname, "..", "components", "CapabilityGuard.tsx"))).toBe(false);
   });
 
   it("REG-FULL-043: model-config 模块可导入", async () => {
@@ -605,9 +613,8 @@ describe("P4 智能输入 — 组件导入", () => {
     const mod = await import("../components/MentionAutocomplete");
     expect(mod.MentionAutocomplete).toBeDefined();
   });
-  it("REG-FULL-133: SkillAutocomplete 组件可导入", async () => {
-    const mod = await import("../components/SkillAutocomplete");
-    expect(mod.SkillAutocomplete).toBeDefined();
+  it("REG-FULL-133: 从未接线的 SkillAutocomplete 不许复活（输入框里活的是 MentionAutocomplete）", () => {
+    expect(existsSync(join(__dirname, "..", "components", "SkillAutocomplete.tsx"))).toBe(false);
   });
   it("REG-FULL-134: SourceSelector 组件可导入", async () => {
     const mod = await import("../components/SourceSelector");

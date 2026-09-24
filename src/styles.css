@@ -14773,53 +14773,13 @@ color: var(--accent, #7c6cf0);
   line-height: 1.4;
 }
 
-/* ========== P4: SkillAutocomplete ========== */
-.skill-autocomplete {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  min-width: 240px;
-  max-height: 280px;
-  overflow-y: auto;
-  background: var(--bg-secondary, #1a1a20);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  z-index: var(--z-chrome);
-  box-shadow: 0 -4px 12px var(--shadow-color);
-}
-.skill-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--border-primary);
-  font-size: var(--fs-2xs);
-  color: var(--text-muted, #6b6b7b);
-}
-.skill-close {
-  background: none;
-  border: none;
-  color: var(--text-muted, #6b6b7b);
-  cursor: pointer;
-  padding: var(--space-1);
-  border-radius: var(--radius-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.skill-item:is(:hover, :focus-visible) {
-  background: var(--bg-tertiary, #25252b);
-}
-.skill-name {
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  color: var(--text-primary, #e0e0e8);
-}
-.skill-desc {
-  font-size: var(--fs-2xs);
-  color: var(--text-muted, #6b6b7b);
-  margin-top: var(--space-1);
-}
+/*
+ * 第 107 轮：这里原来有一整块 `SkillAutocomplete` 的样式（`.skill-autocomplete` / `.skill-header`
+ * / `.skill-close` / `.skill-desc`，另外两条 `.skill-item` / `.skill-name` 被别的界面在用所以留着）。
+ * 那个组件**从来没有接过线**（可达性普查：0 个生产调用方；产物里也早已 tree-shaken），
+ * 组件已删除 ⇒ **它的 CSS 也一起删**（UI 一致性门禁的 `css-class-unused` 正是这么报出来的：
+ * "CSS 里定义了但 TSX/TS 从未使用"）。
+ */
 
 /* ========== P4: SourceSelector ========== */
 .source-selector {

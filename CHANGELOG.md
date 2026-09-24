@@ -2,6 +2,47 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [未发布] 第 107 轮 - 2026-09-25 — 把「未接线组件」查到底：3 个是**被取代的旧实现**（连 CSS 一起删），1 个是真的没接线；不可达文件 43 → 40
+
+> **不出包**（装机版仍是 1.16.147）：删掉的三个组件**都不在产物里**（逐个在 `dist` 里查过，均 tree-shaken），
+> 删它们不改变用户拿到的行为。
+
+### ① 上一轮留下的 4 个"未接线界面组件"，逐个查到底
+
+| 组件 | 结论 | 判据（不是猜的） |
+| --- | --- | --- |
+| `GuidanceBlock.tsx` | **被取代的旧实现 ⇒ 删除** | `ChatPanel.tsx:1357` 已有一条**更完整**的引导展示（`.guidance-messages-bar`，带「已接收/待接收」徽标与「立即引导」动作），`GuidanceBlock` 一个渲染点都没有 |
+| `SkillAutocomplete.tsx` | **从未接过线 ⇒ 删除** | `/` 技能补全不存在任何宿主；输入框里活的是 `MentionAutocomplete`（@ 提及） |
+| `CapabilityGuard.tsx` | **没人用的通用包裹 ⇒ 删除** | **能力检测本身是活的**（`FlashcardViewer` / `NotebookWorkspace` 直接调 `checkFeatureAvailability`），只有这个"包裹组件"零调用方 |
+| `RegenerateModelPopover.tsx` | **真的没接线 ⇒ 保留并记录** | `onRegenerate` 是活的（`App.tsx` / `ChatPanel` / `ConversationRoot`），但**没有**"重新生成时选模型"的宿主 ⇒ 这是**未接线的增强**，不是死代码 |
+
+三个删除项都按上一轮定下的判据先查了三件事：**有没有活着的等价实现**（有）、**有没有测试引用**
+（`regression-p0-p4-full.test.ts` 里各有"组件可导入"一条）、**在不在产物里**（不在）。
+测试断言据此改成 **"不许复活"**（REG-FULL-036/042/133），而不是把断言删掉。
+
+### ② 组件删了，它的 **CSS 也必须走**（UI 一致性门禁抓出来的）
+
+删组件后 `npm run verify` 立刻红在 `ui-consistency`：`css-class-unused` 报 4 条 ——
+`.skill-autocomplete` / `.skill-header` / `.skill-close` / `.skill-desc` 在 `styles.css` 里定义了
+而 TSX 里再没人用（**"死代码"这条规则就这么工作的**）。已连同那一段注释一起删除
+（`.skill-item` / `.skill-name` 被别的界面在用，**保留**）。
+CSS 快照随之刷新（`node tools/ui-audit/css-contract.mjs --write`，2731 个类），
+`css-integrity` 的 CSS-INTEGRITY-7 恢复绿。
+
+### ③ 量化
+
+| 指标 | 前 | 后 |
+| --- | ---: | ---: |
+| 可达性普查：不可达生产文件 | 43 | **40**（孤儿 35 → 32） |
+| knip 未用导出 / 未用类型 | 282 / 194 | **280 / 193**（已 `--update` 收紧） |
+| UI 一致性：`css-class-unused` | 0（删除组件后一度 4） | **0** |
+| 全量用例 | 394 文件 / 6215 通过 | **394 文件 / 6215 通过 / 0 失败** |
+
+### ④ 实测
+
+`tsc` **0**；`npm run verify` 退出码 **0**（阈值对账 ✅、按文件地板 307 个文件、knip 棘轮 280/193、
+jscpd 167 clones）；`npm run audit` **13 道 exit 0**；可达性普查自检通过。
+
 ## [未发布] 第 106 轮 - 2026-09-25 — 做出一份**可信的「未接线模块」普查**（自检通过）；据此删掉一处冗余包装；43 个不可达文件逐类落地
 
 > **本轮不出包**（装机版仍是 1.16.147）：删掉的是一处已被 tree-shake 的冗余包装（`dist` 里查无此名），
