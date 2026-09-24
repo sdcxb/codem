@@ -23,7 +23,7 @@ import { useAppStore } from "../store";
 import { getLang } from "../core/i18n/lang";
 import { getProjectExecutionMode, setProjectExecutionMode, hasUncommittedChanges, isGitRepo } from "../core/environment";
 import type { ExecutionMode } from "../core/environment";
-import { confirmDialog } from "../core/ui/native-dialog";
+import { alertDialog, confirmDialog } from "../core/ui/native-dialog";
 
 export interface WorkspaceTab {
   id: string;
@@ -185,7 +185,7 @@ export function TitleBar({
     if (!projectPath || isStreaming) return;
     const next: ExecutionMode = executionMode === "git_worktree" ? "current_workspace" : "git_worktree";
     if (next === "git_worktree" && !isGitProject) {
-      alert(zh ? "需要 Git 仓库项目才能使用工作树模式" : "Git repository required for worktree mode");
+      void alertDialog(zh ? "需要 Git 仓库项目才能使用工作树模式" : "Git repository required for worktree mode");
       return;
     }
     try {

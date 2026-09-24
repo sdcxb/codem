@@ -8,6 +8,7 @@
 import { memo, useState } from "react";
 import { useLang, S } from "../core/i18n/lang";
 import type { ClarificationFormData } from "../core/llm/agentic-loop";
+import { alertDialog } from "../core/ui/native-dialog";
 
 interface ClarificationFormProps {
   /** Form data from AI */
@@ -28,7 +29,7 @@ export const ClarificationForm = memo(function ClarificationForm({
 
   const handleSubmit = () => {
     if (form.required && !answers[form.formId]) {
-      alert(S.clarification.required[lang]);
+      void alertDialog(S.clarification.required[lang]);
       return;
     }
     onSubmit(answers);

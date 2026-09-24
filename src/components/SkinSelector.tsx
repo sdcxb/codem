@@ -49,17 +49,28 @@ export function SkinSelector() {
   return (
     <div className="setting-group">
       <label>{lang === "zh" ? "皮肤" : "Skin"}</label>
-      <div className="skin-selector-grid">
+      <div className="skin-selector-grid" role="group" aria-label={lang === "zh" ? "皮肤" : "Skin"}>
+        {/*
+         * ⚠️ 第 83 轮（UI/UX 走查的可访问性那一类）：这里原来是 `<div className="skin-card" onClick=…>` ——
+         * **不可聚焦、没有 role、键盘完全用不了**（Tab 跳不过去、Enter/Space 没反应），
+         * 读屏也不会把它念成一个可选控件。皮肤是用户能感知的功能，键盘用户却选不了。
+         * 改成真正的 `<button type="button">`：语义、焦点、Enter/Space 全部由浏览器给出，
+         * `aria-pressed` 表达"当前选中"（原来只有 `active` 这个视觉类名）。
+         * 门禁：`ui-a11y-skin-avatar.test.ts` 的 A11Y-1/A11Y-3。
+         */}
         {skins.map((s) => (
-          <div
+          <button
             key={s.id}
+            type="button"
             className={`skin-card ${skin === s.id ? "active" : ""}`}
+            aria-pressed={skin === s.id}
+            aria-label={lang === "zh" ? `皮肤：${s.name}` : `Skin: ${s.name}`}
             onClick={() => handleSkinChange(s.id)}
           >
             <div className={`skin-preview skin-preview-${s.id}`} />
             <div className="skin-card-name">{s.name}</div>
             <div className="skin-card-desc">{s.description}</div>
-          </div>
+          </button>
         ))}
       </div>
 

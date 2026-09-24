@@ -7,6 +7,7 @@
 import { memo, useState } from "react";
 import { useLang, S } from "../core/i18n/lang";
 import { ActionIcons } from "../core/icons/icon-map";
+import { alertDialog } from "../core/ui/native-dialog";
 
 interface PipelineContextItem {
   id: string;
@@ -43,7 +44,7 @@ export const PipelineNextStepDialog = memo(function PipelineNextStepDialog({
 
   const handleSubmit = () => {
     if (selectedIds.length === 0 && !customPrompt.trim()) {
-      alert(S.pipeline.selectRequired[lang]);
+      void alertDialog(S.pipeline.selectRequired[lang]);
       return;
     }
     onSubmit(selectedIds, customPrompt.trim(), mode);

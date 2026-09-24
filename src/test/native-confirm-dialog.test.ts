@@ -51,6 +51,12 @@ function prodSources(): { rel: string; code: string }[] {
       const rel = `${dir}/${e.name}`;
       if (e.isDirectory()) {
         if (rel === "src/test" || e.name === "node_modules") continue;
+        /*
+         * ⚠️ 技能自带脚本（`src/core/skills/skill-creator/scripts/*.ts`）**不在渲染进程里跑**
+         * （由技能在运行期执行，环境不保证有 WebView/window），所以既不扫它、也不迁它 ——
+         * 把它算进这条门禁会逼着人给一个"其实不该用 dialog 的地方"套上 dialog。
+         */
+        if (rel === "src/core/skills/skill-creator/scripts") continue;
         stack.push(rel);
       } else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) {
         out.push({ rel, code: stripComments(fs.readFileSync(path.join(ROOT, rel), "utf8")) });
@@ -153,6 +159,42 @@ describe("原生确认框：必须真的问、答案必须真的等（第 72 轮
 
     await alertDialog("提示内容", { alert: () => Promise.reject(new Error("Command plugin:dialog|message not allowed by ACL")) });
     expect(getPersistFailures().map((f) => f.area)).toContain(DIALOG_FAILURE_AREAS.alert);
+  });
+
+  it("NC-6: 生产源码里也没有裸 `alert(`（提示失败必须可见，不许悄悄消失）", () => {
+    /*
+     * 第 83 轮（O-5）：`window.alert` 同样被 dialog 插件换成 `plugin:dialog|message`，
+     * 而它**返回 void** —— 弹不出来时没有上报、用户什么都看不到（"点了没反应"）。
+     * 修法与 confirm 同源：统一走 `alertDialog()`（失败进上报通道）。
+     * 判据与 NC-1 同形状：**只扫调用**（`alert:` 这种键、`AlertDialog` 这种标识符不算）。
+     */
+    const offenders: string[] = [];
+    for (const { rel, code } of prodSources()) {
+      if (rel === HELPER) continue;
+      for (const re of [/window\.alert\s*\(/, /(?<![\w.$])alert\s*\(/]) {
+        const m = re.exec(code);
+        if (m) offenders.push(`${rel}: …${code.slice(Math.max(0, m.index - 40), m.index + 40).replace(/\s+/g, " ")}…`);
+      }
+    }
+    expect(
+      offenders,
+      `这些地方还在直接用 alert（dialog 插件下失败时无人知晓）：\n  - ${offenders.join("\n  - ")}\n` +
+        `修法：import { alertDialog } from "../core/ui/native-dialog"; 然后 \`void alertDialog(msg);\``,
+    ).toEqual([]);
+    // 反向对照：判据真的在判（把一行裸 alert 放进去必须能识别出来）
+    expect(/(?<![\w.$])alert\s*\(/.test("  alert('x');")).toBe(true);
+    expect(/(?<![\w.$])alert\s*\(/.test("  void alertDialog('x');"), "alertDialog 不该被误判成裸 alert").toBe(false);
+  });
+
+  it("NC-7: `alertDialog` 在「弹不出来」时走上报通道（这就是迁移的意义）", async () => {
+    // 成功：不上报
+    await alertDialog("提示", { alert: () => undefined });
+    expect(getPersistFailures(), "成功的提示不该上报").toHaveLength(0);
+    // 失败（真机形态：ACL 拒了 message）：必须上报，且说明"这条提示没有弹出来"
+    await alertDialog("提示", { alert: () => { throw new Error("Command plugin:dialog|message not allowed by ACL"); } });
+    const f = getPersistFailures();
+    expect(f.map((x) => x.area)).toContain(DIALOG_FAILURE_AREAS.alert);
+    expect(f[0].lastMessage).toContain("ACL");
   });
 
   it("NC-5: 能力清单必须**显式**放行 dialog 的 confirm / message / ask", () => {

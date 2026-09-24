@@ -20,6 +20,7 @@ import {
 } from '../core/knowledge/flashcard-store';
 import { generateFlashcards } from '../core/knowledge';
 import { useLang } from '../core/i18n/lang';
+import { alertDialog } from "../core/ui/native-dialog";
 
 interface FlashcardViewerProps {
   notebookId: string;
@@ -89,7 +90,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
     const { checkFeatureAvailability } = await import('../core/llm/capability-detector');
     const capCheck = checkFeatureAvailability('ai-flashcards');
     if (!capCheck.available) {
-      alert(isZh ? capCheck.warnings[0]?.zh : capCheck.warnings[0]?.en);
+      void alertDialog(isZh ? capCheck.warnings[0]?.zh : capCheck.warnings[0]?.en);
       return;
     }
 

@@ -2,6 +2,67 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.129] - 2026-09-24 — 走查的可访问性那一类：**皮肤卡片键盘完全用不了**（真缺陷）+ 头像预设名字不可区分 + 走查度量误报修正
+
+> 这一轮把走查里"无名按钮 / 小命中区"那一类里**确实是缺陷**的部分挑出来修，同时**纠正一条我自己的误报**。
+
+### 🔴 一、皮肤卡片是带 onClick 的 `<div>`：不可聚焦、键盘完全用不了（真缺陷）
+
+`SkinSelector` 原来是 `<div className="skin-card" onClick={…}>` ——
+没有 `role`、没有 `tabIndex`、没有键盘处理：**Tab 跳不过去、Enter/Space 没反应**，
+读屏也不会把它念成一个可选控件。皮肤是用户能感知的功能，键盘用户却选不了。
+修法：改成真正的 `<button type="button">`（语义 + 焦点 + Enter/Space 全部由浏览器给出），
+并用 `aria-pressed` 表达"当前选中"（原来只有 `active` 这个视觉类名）。
+顺带给皮肤网格加 `role="group"` + 可访问名。
+
+### 🟡 二、头像预设按钮：不是"没名字"，而是"50 个名字全一样"（**纠正误报**）
+
+走查原来报「头像预设 50 个无名按钮」。回读 DOM 后发现：它们的名字来自子元素
+`<img alt="preset">`，而走查的度量只看 `textContent`（为空）⇒ **误报**。
+但"50 个按钮的可访问名**全都是同一个无意义的 `preset`**"仍然是真问题（读屏无法区分）。
+修法：每个按钮给 `aria-label={预设头像 N}` + `aria-pressed`，装饰性图片的 `alt` 留空；
+**度量侧也修了**（`audit-walk-lib.mjs::__name` 现在按 aria-label → aria-labelledby →
+title → 后代 `img[alt]` → textContent 的顺序取名），否则下次还会误报同一件事。
+
+### 判据
+
+门禁 `src/test/ui-a11y-skin-avatar.test.ts` **3 条**：
+A11Y-1/2（皮肤卡片必须是 `<button>`，且带 `aria-pressed` 与可区分名字）、
+A11Y-3（头像预设每个按钮自己的 `aria-label`，不许再用共用 `alt="preset"`）、
+A11Y-4（度量必须认得出"名字来自后代图片 alt"）。每条都带**反向对照**（旧写法必须能被识别）。
+
+### 实测
+
+全量 **370 文件 / 6063 通过 / 16 跳过 / 0 失败 / 退出码 0**。
+
+## [1.16.128] - 2026-09-24 — 提示框统一收口：15 处裸 `alert()` 迁到 `alertDialog()`（关闭 GAP-LIST 的 O-5）
+
+> 与 1.16.125 修的 `confirm` 同源：Tauri 的 dialog 插件把 `window.alert` 换成了
+> `plugin:dialog|message`（真机取证：`function(i){n("plugin:dialog|message",{message:i.toString()})}`）。
+> 它**返回 void** —— 弹不出来时**没有任何上报**，用户看到的就是"点了没反应"，
+> 而控制台里只留一条 unhandled rejection，谁也不认识。
+
+### 迁移
+
+9 个文件、**15 处**裸 `alert(...)` → `void alertDialog(...)`（失败进上报通道，横幅可见）：
+`App.tsx`(2)、`ClarificationForm`(1)、`FlashcardViewer`(1)、`MemoryManager`(3)、
+`NotebookManager`(2)、`NotebookWorkspace`(3)、`PipelineNextStepDialog`(1)、
+`SettingsPanel`(1)、`TitleBar`(1)。
+**刻意不迁**：`src/core/skills/skill-creator/scripts/*.ts` —— 那是技能自带的脚本
+（运行环境不保证有 WebView/window），套 dialog 语义反而是错的；这条边界写进了门禁的注释里。
+
+### 判据
+
+- **NC-6**（新）：生产源码里**不许再出现裸 `alert(`**（只扫调用：`alert:` 这种键、
+  `AlertDialog` 这种标识符不算），判据与 NC-1（confirm）同形状；
+- **NC-7**（新）：`alertDialog` 在"弹不出来"（真机形态：ACL 拒了 message）时**必须上报**，
+  且上报里带上原文；
+- 这两条由现有脚本 **8 处突变全被抓**（新增 M7 裸 `alert` 复活、M8 `alertDialog` 失败不上报）。
+
+### 实测
+
+全量 **369 文件 / 6061 通过 / 16 跳过 / 0 失败 / 退出码 0**。
+
 ## [1.16.127] - 2026-09-24 — 更新下载**有界重试** + 错误可读（关闭 GAP-LIST 的 O-9）
 
 > 上一轮实测：本机点「检查更新」，按钮从 `发现新版本…下载中…` 变成

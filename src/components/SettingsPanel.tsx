@@ -107,7 +107,7 @@ import {
   Plus,
 } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
-import { confirmDialog } from "../core/ui/native-dialog";
+import { alertDialog, confirmDialog } from "../core/ui/native-dialog";
 
 interface ProviderKey {
   id: string;
@@ -1538,7 +1538,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   const file = e.target.files?.[0];
                   if (!file) return;
                   if (file.size > 2 * 1024 * 1024) {
-                    alert(lang === "zh" ? "头像大小不能超过 2MB" : "Avatar must be under 2MB");
+                    void alertDialog(lang === "zh" ? "头像大小不能超过 2MB" : "Avatar must be under 2MB");
                     return;
                   }
                   const reader = new FileReader();
@@ -1549,14 +1549,23 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 }}
               />
             </div>
-            <div className="preset-avatar-grid">
-              {PRESET_AVATARS.map((url) => (
+            <div className="preset-avatar-grid" role="group" aria-label={lang === "zh" ? "预设头像" : "Preset avatars"}>
+              {PRESET_AVATARS.map((url, i) => (
                 <button
                   key={url}
+                  type="button"
+                  /*
+                   * 第 83 轮：这些按钮原来唯一的"名字"来自子元素 `<img alt="preset">` ——
+                   * 50 个按钮的可访问名**全都是同一个无意义的 "preset"**（读屏念出来无法区分）。
+                   * 现在给每个按钮一个能区分的名字 + `aria-pressed` 表达选中态。
+                   */
+                  aria-label={lang === "zh" ? `预设头像 ${i + 1}` : `Preset avatar ${i + 1}`}
+                  aria-pressed={userConfig.avatar === url}
+                  title={lang === "zh" ? `预设头像 ${i + 1}` : `Preset avatar ${i + 1}`}
                   onClick={() => setUserConfig({ ...userConfig, avatar: url })}
                   className={`sp-avatar--sm sp-avatar ${userConfig.avatar === url ? "is-active" : ""}`}
                 >
-                  <img src={url} alt="preset" className="sp-avatar-img" />
+                  <img src={url} alt="" className="sp-avatar-img" />
                 </button>
               ))}
             </div>

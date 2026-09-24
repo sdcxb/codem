@@ -305,6 +305,7 @@ import { debugLog } from "./core/debug";
 import { composePersistAlertText, reportActionFailure } from "./core/storage/persist-failure";
 import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaintextResidue } from "./core/storage/secret-store";
 import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
+import { alertDialog } from "./core/ui/native-dialog";
 
 /**
  * 退出前的收尾：**排空在途写入 + checkpoint 存储端口**（第 44 轮补上的缺口）。
@@ -2817,14 +2818,14 @@ if (!session) {
     // Find the last AI message
     const lastAIMessage = [...messages].reverse().find(m => m.role === 'assistant' && m.content.trim());
     if (!lastAIMessage) {
-      alert(lang === 'zh' ? '没有可保存的 AI 回复' : 'No AI response to save');
+      void alertDialog(lang === 'zh' ? '没有可保存的 AI 回复' : 'No AI response to save');
       return;
     }
     const title = lang === 'zh'
       ? `AI回复 ${new Date().toLocaleString('zh-CN')}`
       : `AI Response ${new Date().toLocaleString('en-US')}`;
     createNote({ notebookId: activeNotebookId, title, content: lastAIMessage.content });
-    alert(lang === 'zh' ? '已保存为笔记' : 'Saved as note');
+    void alertDialog(lang === 'zh' ? '已保存为笔记' : 'Saved as note');
   };
 
   // B4: Handle citation click — find source by name and open SourceViewer

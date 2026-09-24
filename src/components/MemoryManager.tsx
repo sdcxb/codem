@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { getMemoryService, type MemoryEntry, type MemoryScope, type MemorySearchResult } from "../core/memory/memory";
 import { getLLMEngine } from "../core/llm";
+import { alertDialog } from "../core/ui/native-dialog";
 
 interface MemoryManagerProps {
   onClose: () => void;
@@ -209,9 +210,9 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
       const count = service.importFromJSON(jsonStr, false);
       const importError = service.getLastPersistError();
       if (importError) {
-        alert(`导入 ${count} 条记忆到内存，但**写入数据库失败**：${importError}\n重启后这些记忆会丢失。`);
+        void alertDialog(`导入 ${count} 条记忆到内存，但**写入数据库失败**：${importError}\n重启后这些记忆会丢失。`);
       } else {
-        alert(count > 0 ? `成功导入 ${count} 条记忆` : "未导入任何记忆（可能所有记忆已存在）");
+        void alertDialog(count > 0 ? `成功导入 ${count} 条记忆` : "未导入任何记忆（可能所有记忆已存在）");
       }
       loadEntries();
     };
@@ -264,7 +265,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
                 onClick={() => {
                   const result = getLLMEngine().consolidateMemories();
                   const msg = `整合完成：合并 ${result.duplicatesMerged} 条重复，清理 ${result.staleRemoved} 条过期，裁剪 ${result.capacityTrimmed} 条超额`;
-                  alert(msg);
+                  void alertDialog(msg);
                   window.location.reload();
                 }}
               >

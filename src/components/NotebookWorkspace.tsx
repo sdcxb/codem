@@ -60,6 +60,7 @@ import { useSkin } from '../core/theme';
 import { KnowledgeGraphView } from './KnowledgeGraphView';
 import PPTAdapter from './ppt/PPTAdapter';
 import { useDomainReady } from '../hooks/use-domain-ready';
+import { alertDialog } from "../core/ui/native-dialog";
 
 interface NotebookWorkspaceProps {
   notebookId: string;
@@ -221,7 +222,7 @@ export function NotebookWorkspace({
     const { checkFeatureAvailability } = await import('../core/llm/capability-detector');
     const capCheck = checkFeatureAvailability('studio-content');
     if (!capCheck.available) {
-      alert(isZh ? capCheck.warnings[0]?.zh : capCheck.warnings[0]?.en);
+      void alertDialog(isZh ? capCheck.warnings[0]?.zh : capCheck.warnings[0]?.en);
       return;
     }
 
@@ -235,7 +236,7 @@ export function NotebookWorkspace({
       setStudioPreviewMode('preview');
     } catch (e) {
       console.error('Studio generation failed:', e);
-      alert(isZh ? `生成失败: ${e instanceof Error ? e.message : '未知错误'}` : `Generation failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      void alertDialog(isZh ? `生成失败: ${e instanceof Error ? e.message : '未知错误'}` : `Generation failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     } finally {
       setStudioGenerating(false);
     }
@@ -537,7 +538,7 @@ export function NotebookWorkspace({
       if (updated) setNotebook(updated);
     } catch (e) {
       console.error('Reindex failed:', e);
-      alert(isZh ? `重新索引失败: ${e instanceof Error ? e.message : '未知错误'}` : `Reindex failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      void alertDialog(isZh ? `重新索引失败: ${e instanceof Error ? e.message : '未知错误'}` : `Reindex failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     } finally {
       setIndexing(false);
       setIndexProgress(null);

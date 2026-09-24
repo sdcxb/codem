@@ -34,6 +34,7 @@ import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import { useAppStore } from '../store';
 import { useLang, S } from '../core/i18n/lang';
+import { alertDialog } from "../core/ui/native-dialog";
 
 interface NotebookManagerProps {
   onClose: () => void;
@@ -137,13 +138,13 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       setImporting(true);
       const result = await importNotebookFromFile(filePath);
       refreshNotebooks();
-      alert(lang === 'zh'
+      void alertDialog(lang === 'zh'
         ? `导入完成: ${result.sourcesCreated} 个来源, ${result.notesCreated} 个笔记${result.errors.length ? ', ' + result.errors.length + ' 个错误' : ''}`
         : `Import complete: ${result.sourcesCreated} sources, ${result.notesCreated} notes${result.errors.length ? ', ' + result.errors.length + ' errors' : ''}`
       );
     } catch (e) {
       console.error('Import failed:', e);
-      alert(lang === 'zh' ? `导入失败: ${e instanceof Error ? e.message : '未知错误'}` : `Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      void alertDialog(lang === 'zh' ? `导入失败: ${e instanceof Error ? e.message : '未知错误'}` : `Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     } finally {
       setImporting(false);
     }
