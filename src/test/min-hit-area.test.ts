@@ -50,4 +50,15 @@ describe("命中区下限（第 94 轮）", () => {
     expect(SRC, 'archive 按钮不许再写 padding:"2px"').not.toMatch(/handleArchive[\s\S]{0,200}?padding:\s*"2px"/);
     expect(SRC, 'unarchive 按钮不许再写 padding:"2px"').not.toMatch(/handleUnarchive[\s\S]{0,200}?padding:\s*"2px"/);
   });
+
+  it("MH-4 设置里的滑块要有 24px 命中带（第 96 轮：走查量到 16px 高、间隔仅 6px）", () => {
+    const styles = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    /**
+     * 现场：外观页的字号/字重滑块原生 **16px** 高，与最近目标只隔 **6px** ⇒
+     * 既不满足 24×24，也不满足 WCAG 2.5.8 的"间距例外"（要求 ≥24）。
+     */
+    expect(styles, "滑块必须有 24px 命中带").toMatch(
+      /\.sp-range-full,\s*\n\s*input\[type="range"\]\.sp-flex-fill\s*\{[^}]*min-height:\s*24px[^}]*\}/,
+    );
+  });
 });

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.142",
-  "notes": "Codem v1.16.142 - 又修一批难点到的控件（自动化触发器开关、显示/隐藏 API Key、两个 22x22 关闭按钮）到 24x24 下限，并给那个读屏念不出名字的开关补上名字。完整清单见 CHANGELOG。",
-  "pub_date": "2026-09-24T13:32:02Z",
+  "version": "1.16.143",
+  "notes": "Codem v1.16.143 - 设置里的字号/字重滑块补上 24px 命中带（原来 16px 高、与邻居只隔 6px，难点也难拖）；另外给覆盖率加了按文件的地板（309 个文件）并把「三套皮肤对比度」变成真门禁。完整清单见 CHANGELOG。",
+  "pub_date": "2026-09-24T14:02:49Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JoSzhRcW1Sd1pWWTY2T3pIZ25paUp4N3g0dW1WSStWRTNVK1JqbW9QdlVGMWhWR2VEWXo0NEQvK1VOdExwa0VZdVIrVFNnR3dmUlBaSExHU2xadXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjU2NzIxCWZpbGU6Q29kZW1fMS4xNi4xNDJfeDY0LXNldHVwLmV4ZQo3NzVuWDUrVFh3bHkrcEl2S2RWdUZ5RERzVUhXOUx5V3p4N0hCUjBkSU1JMjBsaE1nckJ6N1hsUERMKzZDQkF3YWt0aDk0QkVyQ3k5MGYxSitXNDJDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.142/Codem_1.16.142_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Z6b3V6cHN5V09OQ1MyZCswb09Fd1VDTXMvSC9wUVc0T0psOXZUOGR5ZWt1RXppaE9MeGIrRENFWW5FUmsrZ1FMNlVtOVBGSDBpOWFtZzRHUDRNOGdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjU4NTY5CWZpbGU6Q29kZW1fMS4xNi4xNDNfeDY0LXNldHVwLmV4ZQpXdnRsQUhJZFh0WTBMVEdZdHp1eisxOTBJYjhnQTc4WnQ3T0VkL3BKd0VQR1IxWktkeldJS0pIVmdFcE41Z29TNzVyQ0p3eG8zT0cxWHA1L3dVYTRDdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.143/Codem_1.16.143_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JoSzhRcW1Sd1pWWTY2T3pIZ25paUp4N3g0dW1WSStWRTNVK1JqbW9QdlVGMWhWR2VEWXo0NEQvK1VOdExwa0VZdVIrVFNnR3dmUlBaSExHU2xadXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjU2NzIxCWZpbGU6Q29kZW1fMS4xNi4xNDJfeDY0LXNldHVwLmV4ZQo3NzVuWDUrVFh3bHkrcEl2S2RWdUZ5RERzVUhXOUx5V3p4N0hCUjBkSU1JMjBsaE1nckJ6N1hsUERMKzZDQkF3YWt0aDk0QkVyQ3k5MGYxSitXNDJDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.142/Codem_1.16.142_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Z6b3V6cHN5V09OQ1MyZCswb09Fd1VDTXMvSC9wUVc0T0psOXZUOGR5ZWt1RXppaE9MeGIrRENFWW5FUmsrZ1FMNlVtOVBGSDBpOWFtZzRHUDRNOGdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjU4NTY5CWZpbGU6Q29kZW1fMS4xNi4xNDNfeDY0LXNldHVwLmV4ZQpXdnRsQUhJZFh0WTBMVEdZdHp1eisxOTBJYjhnQTc4WnQ3T0VkL3BKd0VQR1IxWktkeldJS0pIVmdFcE41Z29TNzVyQ0p3eG8zT0cxWHA1L3dVYTRDdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.143/Codem_1.16.143_x64-setup.exe"
     }
   }
 }

@@ -1,0 +1,1862 @@
+{
+ "_note": "按文件的覆盖率地板（第 96 轮，O-6）。规则：地板 = 实测 × 0.8 向下取整（≥20 行的文件才建）；`--write` 时**只降不许升**（实测变高不抬高地板）。判据见 tools/audit/coverage-per-file.mjs --check 与 src/test/coverage-per-file.test.ts。",
+ "_ratio": 0.8,
+ "_minLines": 20,
+ "_count": 309,
+ "floors": {
+  "src/core/debug.ts": {
+   "lines": 70,
+   "statements": 63,
+   "functions": 62,
+   "branches": 51
+  },
+  "src/core/file-api.ts": {
+   "lines": 31,
+   "statements": 30,
+   "functions": 44,
+   "branches": 17
+  },
+  "src/core/file-mention.ts": {
+   "lines": 8,
+   "statements": 7,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/model-config.ts": {
+   "lines": 5,
+   "statements": 4,
+   "functions": 16,
+   "branches": 1
+  },
+  "src/core/nav-pins.ts": {
+   "lines": 64,
+   "statements": 60,
+   "functions": 56,
+   "branches": 66
+  },
+  "src/core/store.ts": {
+   "lines": 36,
+   "statements": 31,
+   "functions": 23,
+   "branches": 30
+  },
+  "src/core/ui-font.ts": {
+   "lines": 73,
+   "statements": 72,
+   "functions": 80,
+   "branches": 74
+  },
+  "src/core/agent/agent.ts": {
+   "lines": 69,
+   "statements": 67,
+   "functions": 61,
+   "branches": 42
+  },
+  "src/core/agent/preset-discovery.ts": {
+   "lines": 16,
+   "statements": 15,
+   "functions": 20,
+   "branches": 4
+  },
+  "src/core/agent-teams/engine.ts": {
+   "lines": 78,
+   "statements": 74,
+   "functions": 80,
+   "branches": 66
+  },
+  "src/core/agent-teams/tools.ts": {
+   "lines": 20,
+   "statements": 18,
+   "functions": 35,
+   "branches": 13
+  },
+  "src/core/auth/mimo.ts": {
+   "lines": 49,
+   "statements": 50,
+   "functions": 40,
+   "branches": 36
+  },
+  "src/core/automation/automation-manager.ts": {
+   "lines": 37,
+   "statements": 33,
+   "functions": 42,
+   "branches": 17
+  },
+  "src/core/cicd/pipeline.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/computer-use/computer-use.ts": {
+   "lines": 30,
+   "statements": 29,
+   "functions": 41,
+   "branches": 20
+  },
+  "src/core/config/loader.ts": {
+   "lines": 3,
+   "statements": 4,
+   "functions": 7,
+   "branches": 4
+  },
+  "src/core/consumer/index.ts": {
+   "lines": 34,
+   "statements": 29,
+   "functions": 38,
+   "branches": 20
+  },
+  "src/core/context/context.ts": {
+   "lines": 27,
+   "statements": 29,
+   "functions": 37,
+   "branches": 30
+  },
+  "src/core/cordis/cosmokit/src/string.ts": {
+   "lines": 12,
+   "statements": 12,
+   "functions": 7,
+   "branches": 5
+  },
+  "src/core/cordis/cosmokit/src/time.ts": {
+   "lines": 31,
+   "statements": 29,
+   "functions": 14,
+   "branches": 4
+  },
+  "src/core/cordis/cosmokit/src/types.ts": {
+   "lines": 12,
+   "statements": 9,
+   "functions": 3,
+   "branches": 2
+  },
+  "src/core/cordis/src/context.ts": {
+   "lines": 57,
+   "statements": 57,
+   "functions": 40,
+   "branches": 32
+  },
+  "src/core/cordis/src/events.ts": {
+   "lines": 56,
+   "statements": 51,
+   "functions": 52,
+   "branches": 49
+  },
+  "src/core/cordis/src/fiber.ts": {
+   "lines": 51,
+   "statements": 49,
+   "functions": 45,
+   "branches": 44
+  },
+  "src/core/cordis/src/logger.ts": {
+   "lines": 20,
+   "statements": 19,
+   "functions": 20,
+   "branches": 2
+  },
+  "src/core/cordis/src/reflect.ts": {
+   "lines": 46,
+   "statements": 43,
+   "functions": 50,
+   "branches": 32
+  },
+  "src/core/cordis/src/registry.ts": {
+   "lines": 43,
+   "statements": 42,
+   "functions": 36,
+   "branches": 26
+  },
+  "src/core/cordis/src/service.ts": {
+   "lines": 33,
+   "statements": 30,
+   "functions": 32,
+   "branches": 5
+  },
+  "src/core/cordis/src/utils.ts": {
+   "lines": 56,
+   "statements": 52,
+   "functions": 58,
+   "branches": 49
+  },
+  "src/core/diagnostics/renderer-evidence.ts": {
+   "lines": 78,
+   "statements": 76,
+   "functions": 71,
+   "branches": 60
+  },
+  "src/core/dsh-compat/index.ts": {
+   "lines": 37,
+   "statements": 36,
+   "functions": 28,
+   "branches": 16
+  },
+  "src/core/environment/environment-runner.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 66
+  },
+  "src/core/environment/file-change-tracker.ts": {
+   "lines": 56,
+   "statements": 54,
+   "functions": 50,
+   "branches": 42
+  },
+  "src/core/environment/git-commit-service.ts": {
+   "lines": 16,
+   "statements": 17,
+   "functions": 36,
+   "branches": 10
+  },
+  "src/core/environment/worktree-manager.ts": {
+   "lines": 66,
+   "statements": 64,
+   "functions": 76,
+   "branches": 49
+  },
+  "src/core/goal/goal.ts": {
+   "lines": 66,
+   "statements": 67,
+   "functions": 80,
+   "branches": 58
+  },
+  "src/core/heartbeat/heartbeat.ts": {
+   "lines": 49,
+   "statements": 49,
+   "functions": 51,
+   "branches": 29
+  },
+  "src/core/hooks/hook-manager.ts": {
+   "lines": 59,
+   "statements": 59,
+   "functions": 64,
+   "branches": 49
+  },
+  "src/core/hooks/hook-types.ts": {
+   "lines": 80,
+   "statements": 76,
+   "functions": 80,
+   "branches": 68
+  },
+  "src/core/i18n/lang.ts": {
+   "lines": 72,
+   "statements": 69,
+   "functions": 57,
+   "branches": 64
+  },
+  "src/core/inbox/inbox-storage.ts": {
+   "lines": 65,
+   "statements": 65,
+   "functions": 80,
+   "branches": 66
+  },
+  "src/core/inbox/inbox.ts": {
+   "lines": 55,
+   "statements": 56,
+   "functions": 61,
+   "branches": 66
+  },
+  "src/core/issue/issue-storage.ts": {
+   "lines": 62,
+   "statements": 62,
+   "functions": 70,
+   "branches": 65
+  },
+  "src/core/issue/issue-tools.ts": {
+   "lines": 52,
+   "statements": 52,
+   "functions": 70,
+   "branches": 22
+  },
+  "src/core/issue/issue.ts": {
+   "lines": 26,
+   "statements": 24,
+   "functions": 46,
+   "branches": 21
+  },
+  "src/core/knowledge/chunker.ts": {
+   "lines": 80,
+   "statements": 76,
+   "functions": 80,
+   "branches": 64
+  },
+  "src/core/knowledge/exporter.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/extractor.ts": {
+   "lines": 21,
+   "statements": 21,
+   "functions": 44,
+   "branches": 14
+  },
+  "src/core/knowledge/flashcard-store.ts": {
+   "lines": 58,
+   "statements": 54,
+   "functions": 58,
+   "branches": 42
+  },
+  "src/core/knowledge/graph-extractor.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/importer.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/indexer.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/local-embedding.ts": {
+   "lines": 19,
+   "statements": 17,
+   "functions": 16,
+   "branches": 10
+  },
+  "src/core/knowledge/note-manager.ts": {
+   "lines": 50,
+   "statements": 48,
+   "functions": 40,
+   "branches": 33
+  },
+  "src/core/knowledge/pdf-extractor.ts": {
+   "lines": 11,
+   "statements": 9,
+   "functions": 35,
+   "branches": 4
+  },
+  "src/core/knowledge/ppt-export-pptx.ts": {
+   "lines": 74,
+   "statements": 72,
+   "functions": 80,
+   "branches": 49
+  },
+  "src/core/knowledge/ppt-generator.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/ppt-image.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/ppt-notes.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/ppt-skill-registry.ts": {
+   "lines": 5,
+   "statements": 4,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/ppt-styles.ts": {
+   "lines": 41,
+   "statements": 35,
+   "functions": 12,
+   "branches": 21
+  },
+  "src/core/knowledge/ppt-types.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/pptx-importer.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/retriever.ts": {
+   "lines": 5,
+   "statements": 5,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/knowledge/storage.ts": {
+   "lines": 59,
+   "statements": 57,
+   "functions": 68,
+   "branches": 48
+  },
+  "src/core/knowledge/study-path.ts": {
+   "lines": 1,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/llm/agent-message-queue.ts": {
+   "lines": 78,
+   "statements": 74,
+   "functions": 73,
+   "branches": 68
+  },
+  "src/core/llm/agentic-loop.ts": {
+   "lines": 46,
+   "statements": 45,
+   "functions": 53,
+   "branches": 39
+  },
+  "src/core/llm/artifact-tracker.ts": {
+   "lines": 70,
+   "statements": 68,
+   "functions": 64,
+   "branches": 65
+  },
+  "src/core/llm/attachment-formatter.ts": {
+   "lines": 76,
+   "statements": 75,
+   "functions": 73,
+   "branches": 66
+  },
+  "src/core/llm/attachment-sync.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 80
+  },
+  "src/core/llm/cache-percent.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 80
+  },
+  "src/core/llm/capability-detector.ts": {
+   "lines": 4,
+   "statements": 4,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/llm/catalog-health.ts": {
+   "lines": 79,
+   "statements": 73,
+   "functions": 73,
+   "branches": 67
+  },
+  "src/core/llm/compaction-budget.ts": {
+   "lines": 52,
+   "statements": 47,
+   "functions": 58,
+   "branches": 35
+  },
+  "src/core/llm/compaction-control.ts": {
+   "lines": 73,
+   "statements": 73,
+   "functions": 80,
+   "branches": 70
+  },
+  "src/core/llm/context-fold.ts": {
+   "lines": 74,
+   "statements": 71,
+   "functions": 70,
+   "branches": 64
+  },
+  "src/core/llm/cost-tracker.ts": {
+   "lines": 54,
+   "statements": 51,
+   "functions": 62,
+   "branches": 40
+  },
+  "src/core/llm/custom-models.ts": {
+   "lines": 77,
+   "statements": 78,
+   "functions": 80,
+   "branches": 74
+  },
+  "src/core/llm/dynamic-plugin-tools.ts": {
+   "lines": 37,
+   "statements": 37,
+   "functions": 73,
+   "branches": 25
+  },
+  "src/core/llm/event-system-strict.ts": {
+   "lines": 71,
+   "statements": 72,
+   "functions": 80,
+   "branches": 73
+  },
+  "src/core/llm/feedback.ts": {
+   "lines": 72,
+   "statements": 71,
+   "functions": 75,
+   "branches": 61
+  },
+  "src/core/llm/guidance-queue.ts": {
+   "lines": 61,
+   "statements": 61,
+   "functions": 58,
+   "branches": 67
+  },
+  "src/core/llm/idle-tracker.ts": {
+   "lines": 45,
+   "statements": 42,
+   "functions": 48,
+   "branches": 38
+  },
+  "src/core/llm/index.ts": {
+   "lines": 37,
+   "statements": 36,
+   "functions": 26,
+   "branches": 31
+  },
+  "src/core/llm/loop-guard.ts": {
+   "lines": 78,
+   "statements": 77,
+   "functions": 76,
+   "branches": 69
+  },
+  "src/core/llm/micro-compact.ts": {
+   "lines": 70,
+   "statements": 58,
+   "functions": 64,
+   "branches": 57
+  },
+  "src/core/llm/model-catalog.ts": {
+   "lines": 77,
+   "statements": 73,
+   "functions": 80,
+   "branches": 64
+  },
+  "src/core/llm/model-output-limit.ts": {
+   "lines": 78,
+   "statements": 77,
+   "functions": 80,
+   "branches": 73
+  },
+  "src/core/llm/model-profile.ts": {
+   "lines": 61,
+   "statements": 59,
+   "functions": 66,
+   "branches": 51
+  },
+  "src/core/llm/multimodal.ts": {
+   "lines": 62,
+   "statements": 60,
+   "functions": 70,
+   "branches": 59
+  },
+  "src/core/llm/needs-you-queue.ts": {
+   "lines": 68,
+   "statements": 64,
+   "functions": 64,
+   "branches": 60
+  },
+  "src/core/llm/ollama-provider.ts": {
+   "lines": 25,
+   "statements": 24,
+   "functions": 20,
+   "branches": 18
+  },
+  "src/core/llm/output-contract.ts": {
+   "lines": 52,
+   "statements": 51,
+   "functions": 57,
+   "branches": 48
+  },
+  "src/core/llm/output-parser.ts": {
+   "lines": 13,
+   "statements": 12,
+   "functions": 7,
+   "branches": 5
+  },
+  "src/core/llm/plan-utils.ts": {
+   "lines": 77,
+   "statements": 77,
+   "functions": 80,
+   "branches": 72
+  },
+  "src/core/llm/postmortem.ts": {
+   "lines": 65,
+   "statements": 62,
+   "functions": 55,
+   "branches": 54
+  },
+  "src/core/llm/processor.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/llm/provider.ts": {
+   "lines": 50,
+   "statements": 47,
+   "functions": 48,
+   "branches": 38
+  },
+  "src/core/llm/repeat-tool-reminder.ts": {
+   "lines": 63,
+   "statements": 61,
+   "functions": 60,
+   "branches": 55
+  },
+  "src/core/llm/replay-adapter.ts": {
+   "lines": 76,
+   "statements": 75,
+   "functions": 67,
+   "branches": 63
+  },
+  "src/core/llm/request-header.ts": {
+   "lines": 70,
+   "statements": 67,
+   "functions": 64,
+   "branches": 65
+  },
+  "src/core/llm/run-status-tracker.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/llm/runtime-invariants.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 72
+  },
+  "src/core/llm/session.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/llm/spill-policy.ts": {
+   "lines": 71,
+   "statements": 69,
+   "functions": 80,
+   "branches": 64
+  },
+  "src/core/llm/stall-guard.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 80
+  },
+  "src/core/llm/stream-reveal.ts": {
+   "lines": 21,
+   "statements": 20,
+   "functions": 34,
+   "branches": 16
+  },
+  "src/core/llm/streaming-executor.ts": {
+   "lines": 63,
+   "statements": 63,
+   "functions": 66,
+   "branches": 43
+  },
+  "src/core/llm/test-layers.ts": {
+   "lines": 19,
+   "statements": 17,
+   "functions": 20,
+   "branches": 11
+  },
+  "src/core/llm/time-context.ts": {
+   "lines": 66,
+   "statements": 66,
+   "functions": 80,
+   "branches": 52
+  },
+  "src/core/llm/token-tracker.ts": {
+   "lines": 72,
+   "statements": 72,
+   "functions": 65,
+   "branches": 67
+  },
+  "src/core/llm/tool-pipeline.ts": {
+   "lines": 72,
+   "statements": 70,
+   "functions": 76,
+   "branches": 54
+  },
+  "src/core/llm/tool-renderer.ts": {
+   "lines": 15,
+   "statements": 14,
+   "functions": 19,
+   "branches": 7
+  },
+  "src/core/llm/tool-result-storage.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 70
+  },
+  "src/core/llm/tools.ts": {
+   "lines": 56,
+   "statements": 54,
+   "functions": 60,
+   "branches": 44
+  },
+  "src/core/llm/vision-proxy.ts": {
+   "lines": 73,
+   "statements": 70,
+   "functions": 72,
+   "branches": 64
+  },
+  "src/core/llm/workflow-engine.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 10,
+   "branches": 0
+  },
+  "src/core/llm/tools/ask-clarification.ts": {
+   "lines": 52,
+   "statements": 52,
+   "functions": 80,
+   "branches": 43
+  },
+  "src/core/llm/tools/browser-automate.ts": {
+   "lines": 3,
+   "statements": 2,
+   "functions": 13,
+   "branches": 0
+  },
+  "src/core/llm/tools/codegraph-tool.ts": {
+   "lines": 64,
+   "statements": 65,
+   "functions": 68,
+   "branches": 42
+  },
+  "src/core/llm/tools/exit-plan-mode.ts": {
+   "lines": 76,
+   "statements": 76,
+   "functions": 80,
+   "branches": 64
+  },
+  "src/core/llm/tools/fact-check.ts": {
+   "lines": 19,
+   "statements": 19,
+   "functions": 30,
+   "branches": 20
+  },
+  "src/core/llm/tools/figma-fetch.ts": {
+   "lines": 2,
+   "statements": 1,
+   "functions": 5,
+   "branches": 0
+  },
+  "src/core/llm/tools/generate-ppt.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 11,
+   "branches": 0
+  },
+  "src/core/llm/tools/github-tool.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 4,
+   "branches": 0
+  },
+  "src/core/llm/tools/goal-tools.ts": {
+   "lines": 3,
+   "statements": 2,
+   "functions": 16,
+   "branches": 0
+  },
+  "src/core/llm/tools/job-manager.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/llm/tools/job-tools.ts": {
+   "lines": 37,
+   "statements": 37,
+   "functions": 53,
+   "branches": 21
+  },
+  "src/core/llm/tools/load-skill.ts": {
+   "lines": 43,
+   "statements": 43,
+   "functions": 57,
+   "branches": 30
+  },
+  "src/core/llm/tools/lsp-tool.ts": {
+   "lines": 62,
+   "statements": 63,
+   "functions": 74,
+   "branches": 47
+  },
+  "src/core/llm/tools/note-operations.ts": {
+   "lines": 64,
+   "statements": 64,
+   "functions": 80,
+   "branches": 54
+  },
+  "src/core/llm/tools/read-attachment.ts": {
+   "lines": 69,
+   "statements": 69,
+   "functions": 80,
+   "branches": 62
+  },
+  "src/core/llm/tools/run-code.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 2,
+   "branches": 0
+  },
+  "src/core/llm/tools/search-notebook.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 20,
+   "branches": 0
+  },
+  "src/core/llm/tools/session-search.ts": {
+   "lines": 53,
+   "statements": 51,
+   "functions": 54,
+   "branches": 37
+  },
+  "src/core/llm/tools/show-todo.ts": {
+   "lines": 68,
+   "statements": 69,
+   "functions": 80,
+   "branches": 56
+  },
+  "src/core/llm/tools/subagent-tools.ts": {
+   "lines": 17,
+   "statements": 17,
+   "functions": 36,
+   "branches": 21
+  },
+  "src/core/llm/tools/terminal-tools.ts": {
+   "lines": 66,
+   "statements": 65,
+   "functions": 70,
+   "branches": 44
+  },
+  "src/core/llm/tools/tool-search.ts": {
+   "lines": 69,
+   "statements": 69,
+   "functions": 80,
+   "branches": 60
+  },
+  "src/core/llm/tools/web-search.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 5,
+   "branches": 0
+  },
+  "src/core/llm/tools/zvec-tool.ts": {
+   "lines": 16,
+   "statements": 15,
+   "functions": 13,
+   "branches": 5
+  },
+  "src/core/mcp/mcp-registry-catalog.ts": {
+   "lines": 75,
+   "statements": 74,
+   "functions": 74,
+   "branches": 57
+  },
+  "src/core/mcp/mcp.ts": {
+   "lines": 55,
+   "statements": 54,
+   "functions": 62,
+   "branches": 36
+  },
+  "src/core/memory/memory.ts": {
+   "lines": 18,
+   "statements": 17,
+   "functions": 20,
+   "branches": 11
+  },
+  "src/core/permission/bash-analyzer.ts": {
+   "lines": 78,
+   "statements": 76,
+   "functions": 80,
+   "branches": 72
+  },
+  "src/core/permission/permission.ts": {
+   "lines": 72,
+   "statements": 72,
+   "functions": 64,
+   "branches": 76
+  },
+  "src/core/permission/security-mode.ts": {
+   "lines": 77,
+   "statements": 78,
+   "functions": 80,
+   "branches": 80
+  },
+  "src/core/persona/persona.ts": {
+   "lines": 73,
+   "statements": 71,
+   "functions": 80,
+   "branches": 59
+  },
+  "src/core/pet/pet-manager.ts": {
+   "lines": 26,
+   "statements": 27,
+   "functions": 28,
+   "branches": 42
+  },
+  "src/core/pet/pet-market-client.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/pet/pet-store.ts": {
+   "lines": 41,
+   "statements": 40,
+   "functions": 30,
+   "branches": 40
+  },
+  "src/core/phone-link/phone-link.ts": {
+   "lines": 15,
+   "statements": 17,
+   "functions": 20,
+   "branches": 13
+  },
+  "src/core/plugin-loader/builtin-registry.ts": {
+   "lines": 80,
+   "statements": 39,
+   "functions": 1,
+   "branches": 80
+  },
+  "src/core/plugin-loader/dependency-graph.ts": {
+   "lines": 67,
+   "statements": 62,
+   "functions": 80,
+   "branches": 39
+  },
+  "src/core/plugin-loader/index.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 10,
+   "branches": 0
+  },
+  "src/core/plugin-loader/plugin-manager-service.ts": {
+   "lines": 61,
+   "statements": 60,
+   "functions": 50,
+   "branches": 47
+  },
+  "src/core/plugin-loader/yaml-loader.ts": {
+   "lines": 17,
+   "statements": 16,
+   "functions": 40,
+   "branches": 7
+  },
+  "src/core/plugin-market/index.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/project/files.ts": {
+   "lines": 58,
+   "statements": 57,
+   "functions": 30,
+   "branches": 55
+  },
+  "src/core/prompt/instruction-layers.ts": {
+   "lines": 15,
+   "statements": 15,
+   "functions": 24,
+   "branches": 17
+  },
+  "src/core/prompt/prompt.ts": {
+   "lines": 72,
+   "statements": 71,
+   "functions": 48,
+   "branches": 56
+  },
+  "src/core/provider/acp-provider.ts": {
+   "lines": 2,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/agent-loop-provider.ts": {
+   "lines": 31,
+   "statements": 27,
+   "functions": 32,
+   "branches": 12
+  },
+  "src/core/provider/agent-teams-service.ts": {
+   "lines": 64,
+   "statements": 60,
+   "functions": 60,
+   "branches": 52
+  },
+  "src/core/provider/attachments-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/bundle-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/cli-provider.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 3,
+   "branches": 0
+  },
+  "src/core/provider/code-runtime-worker-thread-provider.ts": {
+   "lines": 14,
+   "statements": 13,
+   "functions": 10,
+   "branches": 10
+  },
+  "src/core/provider/commands-provider.ts": {
+   "lines": 3,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/compaction-basic-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/compaction-tool-result-pruner-provider.ts": {
+   "lines": 3,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/context-info-provider.ts": {
+   "lines": 64,
+   "statements": 62,
+   "functions": 53,
+   "branches": 60
+  },
+  "src/core/provider/credentials-provider.ts": {
+   "lines": 44,
+   "statements": 41,
+   "functions": 50,
+   "branches": 36
+  },
+  "src/core/provider/dynamic-runner-provider.ts": {
+   "lines": 1,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/fs-provider.ts": {
+   "lines": 3,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/goal-round-driver-provider.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/guard-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/host-plugin-inventory-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/host-provider.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/host-webserver-provider.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/index.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/invariants-guard-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/llm-provider.ts": {
+   "lines": 23,
+   "statements": 21,
+   "functions": 33,
+   "branches": 13
+  },
+  "src/core/provider/permissions-provider.ts": {
+   "lines": 70,
+   "statements": 69,
+   "functions": 72,
+   "branches": 52
+  },
+  "src/core/provider/plan-mode-provider.ts": {
+   "lines": 2,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/plans-provider.ts": {
+   "lines": 2,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/plugin-registry-provider.ts": {
+   "lines": 48,
+   "statements": 49,
+   "functions": 7,
+   "branches": 36
+  },
+  "src/core/provider/preset-provider.ts": {
+   "lines": 42,
+   "statements": 41,
+   "functions": 40,
+   "branches": 29
+  },
+  "src/core/provider/remote-client-provider.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/repeat-tool-reminder-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/sandbox-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/schedule-provider.ts": {
+   "lines": 34,
+   "statements": 30,
+   "functions": 18,
+   "branches": 21
+  },
+  "src/core/provider/scope-provider.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/sdk-protocol-provider.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/session-checkpoint-provider.ts": {
+   "lines": 48,
+   "statements": 46,
+   "functions": 30,
+   "branches": 30
+  },
+  "src/core/provider/session-recovery-provider.ts": {
+   "lines": 1,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/session-stats-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/subagent-fork-in-process-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/subagent-spawn-in-process-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/subprocess-provider.ts": {
+   "lines": 3,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/system-prompt-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/time-context-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/timeout-guard-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/token-meter-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/tool-subagent-control-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/tools-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/typert-generator-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/typert-loader-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/typert-protocol-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/typert-registry-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/ui-agent-preset-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/ui-deliverables-provider.ts": {
+   "lines": 2,
+   "statements": 1,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/ui-directory-picker-provider.ts": {
+   "lines": 2,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/ui-input-trigger-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/ui-jobs-provider.ts": {
+   "lines": 59,
+   "statements": 54,
+   "functions": 45,
+   "branches": 26
+  },
+  "src/core/provider/ui-library-ops-provider.ts": {
+   "lines": 71,
+   "statements": 68,
+   "functions": 50,
+   "branches": 44
+  },
+  "src/core/provider/ui-model-selection-provider.ts": {
+   "lines": 19,
+   "statements": 16,
+   "functions": 4,
+   "branches": 26
+  },
+  "src/core/provider/ui-permission-presets-provider.ts": {
+   "lines": 65,
+   "statements": 62,
+   "functions": 73,
+   "branches": 40
+  },
+  "src/core/provider/ui-pet-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/ui-settings-models-provider.ts": {
+   "lines": 54,
+   "statements": 47,
+   "functions": 57,
+   "branches": 36
+  },
+  "src/core/provider/ui-skill-panel-provider.ts": {
+   "lines": 3,
+   "statements": 2,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/provider/ui-trajectory-provider.ts": {
+   "lines": 60,
+   "statements": 49,
+   "functions": 32,
+   "branches": 43
+  },
+  "src/core/provider/web-search-mimo-provider.ts": {
+   "lines": 3,
+   "statements": 3,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/recovery/recovery.ts": {
+   "lines": 66,
+   "statements": 65,
+   "functions": 72,
+   "branches": 40
+  },
+  "src/core/retry/retry.ts": {
+   "lines": 51,
+   "statements": 51,
+   "functions": 64,
+   "branches": 35
+  },
+  "src/core/sandbox/sandbox-acl.ts": {
+   "lines": 74,
+   "statements": 74,
+   "functions": 71,
+   "branches": 70
+  },
+  "src/core/seam/local-fs-provider.ts": {
+   "lines": 64,
+   "statements": 66,
+   "functions": 72,
+   "branches": 43
+  },
+  "src/core/seam/types.ts": {
+   "lines": 69,
+   "statements": 69,
+   "functions": 49,
+   "branches": 80
+  },
+  "src/core/session/bus.ts": {
+   "lines": 65,
+   "statements": 65,
+   "functions": 58,
+   "branches": 56
+  },
+  "src/core/session/delegation-storage.ts": {
+   "lines": 49,
+   "statements": 53,
+   "functions": 72,
+   "branches": 55
+  },
+  "src/core/session/executor.ts": {
+   "lines": 52,
+   "statements": 51,
+   "functions": 51,
+   "branches": 31
+  },
+  "src/core/session/handover.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 75
+  },
+  "src/core/session/idle-watchdog.ts": {
+   "lines": 80,
+   "statements": 77,
+   "functions": 80,
+   "branches": 73
+  },
+  "src/core/session/orchestrator.ts": {
+   "lines": 62,
+   "statements": 61,
+   "functions": 52,
+   "branches": 50
+  },
+  "src/core/session/preferences.ts": {
+   "lines": 73,
+   "statements": 73,
+   "functions": 80,
+   "branches": 72
+  },
+  "src/core/session/session-read-state.ts": {
+   "lines": 71,
+   "statements": 71,
+   "functions": 80,
+   "branches": 70
+  },
+  "src/core/session/tools.ts": {
+   "lines": 47,
+   "statements": 46,
+   "functions": 52,
+   "branches": 25
+  },
+  "src/core/settings/settings.ts": {
+   "lines": 58,
+   "statements": 57,
+   "functions": 62,
+   "branches": 51
+  },
+  "src/core/settings/ui-preferences.ts": {
+   "lines": 71,
+   "statements": 71,
+   "functions": 80,
+   "branches": 72
+  },
+  "src/core/shortcuts/app-shortcuts.ts": {
+   "lines": 57,
+   "statements": 50,
+   "functions": 40,
+   "branches": 45
+  },
+  "src/core/skill/installer.ts": {
+   "lines": 41,
+   "statements": 39,
+   "functions": 44,
+   "branches": 25
+  },
+  "src/core/skill/registry.ts": {
+   "lines": 14,
+   "statements": 14,
+   "functions": 26,
+   "branches": 11
+  },
+  "src/core/skill/sandbox.ts": {
+   "lines": 73,
+   "statements": 73,
+   "functions": 61,
+   "branches": 68
+  },
+  "src/core/skill/skill-delete-diag.ts": {
+   "lines": 76,
+   "statements": 75,
+   "functions": 80,
+   "branches": 66
+  },
+  "src/core/skill/skill-market-client.ts": {
+   "lines": 25,
+   "statements": 25,
+   "functions": 49,
+   "branches": 14
+  },
+  "src/core/skill/skill.ts": {
+   "lines": 53,
+   "statements": 51,
+   "functions": 50,
+   "branches": 52
+  },
+  "src/core/skill/providers/interactive-form-provider.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/skill/providers/prompt-optimization-provider.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/skills/skill-creator/scripts/aggregate-benchmark.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/skills/skill-creator/scripts/generate-review.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/skills/skill-creator/scripts/package-skill.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/skills/skill-creator/scripts/quick-validate.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/skills/skill-creator/scripts/run-eval.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/slots/SlotBridge.tsx": {
+   "lines": 62,
+   "statements": 59,
+   "functions": 62,
+   "branches": 43
+  },
+  "src/core/slots/declare-slots.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/slots/index.ts": {
+   "lines": 37,
+   "statements": 34,
+   "functions": 35,
+   "branches": 20
+  },
+  "src/core/snapshot/snapshot.ts": {
+   "lines": 61,
+   "statements": 61,
+   "functions": 69,
+   "branches": 46
+  },
+  "src/core/squad/squad-storage.ts": {
+   "lines": 61,
+   "statements": 61,
+   "functions": 75,
+   "branches": 55
+  },
+  "src/core/squad/squad-tools.ts": {
+   "lines": 54,
+   "statements": 54,
+   "functions": 57,
+   "branches": 33
+  },
+  "src/core/squad/squad.ts": {
+   "lines": 60,
+   "statements": 60,
+   "functions": 56,
+   "branches": 55
+  },
+  "src/core/storage/account.ts": {
+   "lines": 67,
+   "statements": 70,
+   "functions": 80,
+   "branches": 60
+  },
+  "src/core/storage/agent-profile-storage.ts": {
+   "lines": 65,
+   "statements": 62,
+   "functions": 80,
+   "branches": 56
+  },
+  "src/core/storage/attachment-files.ts": {
+   "lines": 74,
+   "statements": 72,
+   "functions": 74,
+   "branches": 61
+  },
+  "src/core/storage/bootstrap.ts": {
+   "lines": 56,
+   "statements": 54,
+   "functions": 57,
+   "branches": 42
+  },
+  "src/core/storage/credential-census.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 76
+  },
+  "src/core/storage/data-home-ledger.ts": {
+   "lines": 77,
+   "statements": 73,
+   "functions": 80,
+   "branches": 58
+  },
+  "src/core/storage/data-root.ts": {
+   "lines": 80,
+   "statements": 77,
+   "functions": 80,
+   "branches": 69
+  },
+  "src/core/storage/domain-store.ts": {
+   "lines": 76,
+   "statements": 73,
+   "functions": 72,
+   "branches": 67
+  },
+  "src/core/storage/event-log.ts": {
+   "lines": 59,
+   "statements": 58,
+   "functions": 71,
+   "branches": 50
+  },
+  "src/core/storage/event-projection.ts": {
+   "lines": 72,
+   "statements": 68,
+   "functions": 68,
+   "branches": 54
+  },
+  "src/core/storage/file-change-storage.ts": {
+   "lines": 62,
+   "statements": 62,
+   "functions": 80,
+   "branches": 45
+  },
+  "src/core/storage/maintenance.ts": {
+   "lines": 69,
+   "statements": 67,
+   "functions": 70,
+   "branches": 60
+  },
+  "src/core/storage/message.ts": {
+   "lines": 67,
+   "statements": 65,
+   "functions": 70,
+   "branches": 55
+  },
+  "src/core/storage/migration.ts": {
+   "lines": 61,
+   "statements": 61,
+   "functions": 40,
+   "branches": 44
+  },
+  "src/core/storage/persist-failure.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 67
+  },
+  "src/core/storage/port.ts": {
+   "lines": 77,
+   "statements": 77,
+   "functions": 80,
+   "branches": 80
+  },
+  "src/core/storage/project.ts": {
+   "lines": 53,
+   "statements": 55,
+   "functions": 60,
+   "branches": 57
+  },
+  "src/core/storage/prompt-draft.ts": {
+   "lines": 38,
+   "statements": 38,
+   "functions": 70,
+   "branches": 27
+  },
+  "src/core/storage/recovery-restore.ts": {
+   "lines": 73,
+   "statements": 72,
+   "functions": 80,
+   "branches": 63
+  },
+  "src/core/storage/rust-port.ts": {
+   "lines": 64,
+   "statements": 63,
+   "functions": 61,
+   "branches": 55
+  },
+  "src/core/storage/secret-cache.ts": {
+   "lines": 80,
+   "statements": 74,
+   "functions": 80,
+   "branches": 51
+  },
+  "src/core/storage/secret-store.ts": {
+   "lines": 70,
+   "statements": 65,
+   "functions": 68,
+   "branches": 53
+  },
+  "src/core/storage/secret-write-guard.ts": {
+   "lines": 78,
+   "statements": 69,
+   "functions": 65,
+   "branches": 65
+  },
+  "src/core/storage/self-heal.ts": {
+   "lines": 67,
+   "statements": 65,
+   "functions": 72,
+   "branches": 54
+  },
+  "src/core/storage/session-jsonl.ts": {
+   "lines": 76,
+   "statements": 73,
+   "functions": 77,
+   "branches": 65
+  },
+  "src/core/storage/session-log-bridge.ts": {
+   "lines": 67,
+   "statements": 66,
+   "functions": 70,
+   "branches": 61
+  },
+  "src/core/storage/session.ts": {
+   "lines": 63,
+   "statements": 65,
+   "functions": 60,
+   "branches": 57
+  },
+  "src/core/storage/settings.ts": {
+   "lines": 66,
+   "statements": 64,
+   "functions": 67,
+   "branches": 56
+  },
+  "src/core/storage/spill.ts": {
+   "lines": 77,
+   "statements": 73,
+   "functions": 80,
+   "branches": 66
+  },
+  "src/core/storage/sync-engine.ts": {
+   "lines": 9,
+   "statements": 9,
+   "functions": 14,
+   "branches": 10
+  },
+  "src/core/storage/transcript-cache.ts": {
+   "lines": 73,
+   "statements": 73,
+   "functions": 80,
+   "branches": 60
+  },
+  "src/core/storage/v2-session.ts": {
+   "lines": 56,
+   "statements": 52,
+   "functions": 66,
+   "branches": 40
+  },
+  "src/core/storage/write-audit.ts": {
+   "lines": 72,
+   "statements": 60,
+   "functions": 60,
+   "branches": 51
+  },
+  "src/core/subagent/runtime.ts": {
+   "lines": 47,
+   "statements": 44,
+   "functions": 43,
+   "branches": 23
+  },
+  "src/core/subagent/spawn-in-process-provider.ts": {
+   "lines": 10,
+   "statements": 10,
+   "functions": 13,
+   "branches": 0
+  },
+  "src/core/subagent/subagent.ts": {
+   "lines": 67,
+   "statements": 61,
+   "functions": 53,
+   "branches": 54
+  },
+  "src/core/telemetry/telemetry.ts": {
+   "lines": 45,
+   "statements": 43,
+   "functions": 36,
+   "branches": 40
+  },
+  "src/core/theme/contrast-checker.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 0
+  },
+  "src/core/theme/theme-default.ts": {
+   "lines": 73,
+   "statements": 71,
+   "functions": 80,
+   "branches": 66
+  },
+  "src/core/theme/theme-extractor.ts": {
+   "lines": 75,
+   "statements": 73,
+   "functions": 72,
+   "branches": 66
+  },
+  "src/core/theme/theme-manager.ts": {
+   "lines": 62,
+   "statements": 62,
+   "functions": 60,
+   "branches": 40
+  },
+  "src/core/ui/native-dialog.ts": {
+   "lines": 73,
+   "statements": 73,
+   "functions": 70,
+   "branches": 73
+  },
+  "src/core/ui-plugins/ui-panels/index.ts": {
+   "lines": 0,
+   "statements": 0,
+   "functions": 0,
+   "branches": 80
+  },
+  "src/core/update/check-update.ts": {
+   "lines": 80,
+   "statements": 80,
+   "functions": 80,
+   "branches": 80
+  },
+  "src/core/update/update-retry.ts": {
+   "lines": 70,
+   "statements": 67,
+   "functions": 64,
+   "branches": 55
+  },
+  "src/core/wechat-bridge/wechat-bridge.ts": {
+   "lines": 15,
+   "statements": 15,
+   "functions": 21,
+   "branches": 11
+  },
+  "src/core/zvec-grep/runtime.ts": {
+   "lines": 80,
+   "statements": 77,
+   "functions": 80,
+   "branches": 70
+  },
+  "src/core/zvec-grep/service.ts": {
+   "lines": 16,
+   "statements": 16,
+   "functions": 14,
+   "branches": 17
+  }
+ }
+}

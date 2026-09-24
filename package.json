@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "1.16.142",
+  "version": "1.16.143",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -30,6 +30,8 @@
     "verify:update-manifest": "node tools/release/verify-update-manifest.mjs",
     "audit:coverage": "node tools/audit/storage-coverage.mjs --check",
     "audit:coverage-baseline": "node tools/audit/coverage-baseline.mjs --check",
+    "audit:coverage-per-file": "node tools/audit/coverage-per-file.mjs --check",
+    "audit:coverage-files": "node tools/audit/coverage-per-file.mjs",
     "audit:knip": "node tools/audit/knip-gate.mjs",
     "audit:inventory": "node tools/audit/storage-inventory.mjs",
     "audit:inventory-md": "node tools/audit/storage-inventory.mjs --md",
@@ -45,7 +47,7 @@
     "migrate:verify": "npm run db:build && node tools/migrate/storage-migrate.mjs --verify",
     "migrate:rollback-hint": "node tools/migrate/storage-migrate.mjs --rollback-hint",
     "migrate:bite": "npm run db:build && node tools/migrate/bite-reconcile.mjs",
-    "verify": "vitest run --coverage && node tools/audit/coverage-baseline.mjs --check && node tools/audit/knip-gate.mjs && npx jscpd"
+    "verify": "vitest run --coverage && node tools/audit/coverage-baseline.mjs --check && node tools/audit/coverage-per-file.mjs --check && node tools/audit/knip-gate.mjs && npx jscpd"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",

@@ -2,6 +2,66 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.143] - 2026-09-24 — 覆盖率有了**按文件的地板**（309 个文件）；顺手把「三套皮肤对比度」这个**写了却从没被用过**的能力变成门禁；设置滑块补 24px 命中带
+
+### ① 按文件覆盖率地板（O-6 关闭）
+
+原来的棘轮只有**全局 + 按目录**（全局 lines 52 / storage 81 / llm 60 …），它挡不住最危险的一种退化：
+**某个文件掉到 0，而总量被别的文件补回来** —— 数字看着没事，那个模块其实已经没人测了。
+
+新增 `tools/audit/coverage-per-file.mjs`（已接进 `npm run verify`）：
+
+- 逐个 `src/**` 文件读实测值，地板 = **实测 × 0.8 向下取整**（≥20 行的文件才建，太小的抖动大）；
+- `--write` 时**只降不许升**（实测变高不抬高地板，免得一次偶然的好成绩变成硬要求）；
+- 判据：① 已建地板的文件不得低于地板；② **新文件 0 覆盖且 ≥50 行必须被拦住**（不许大块零测试代码悄悄进来）；③ 地板表里已消失的文件会被提示清理。
+
+**实测**：地板表覆盖 **309 个文件**；`npm run verify` 里的 `coverage-per-file --check` ⇒ **309 个文件都在地板之上**。
+门禁 `coverage-per-file.test.ts` **5 条**（含两处变异 + 一处反向对照：30 行的小文件不该被拦）。
+
+### ② 覆盖率盘点：**13 个 ≥50 行的生产文件是 0 覆盖**（新开 O-21，附数字）
+
+同一轮把「哪些文件没有测试」量清楚了（`node .preview-shot/_coverage-inventory.mjs`）：
+
+| 范围 | 数量 | 规模 |
+| --- | ---: | ---: |
+| ≥50 行的生产文件 | 182 个 | — |
+| **行覆盖 0%** | **13 个** | **1251 行 / 1352 条语句** |
+| 行覆盖 <20% | 29 个 | 2589 行 |
+
+零覆盖里最大的几个：`knowledge/ppt-generator.ts`（263 行）、`knowledge/graph-extractor.ts`（116）、
+`llm/processor.ts`（93）、`knowledge/importer.ts`（91）、`slots/declare-slots.ts`（89）、`llm/session.ts`（81）、
+`knowledge/exporter.ts`（66）、`llm/run-status-tracker.ts`（50）、`theme/contrast-checker.ts`（50）。
+按目录看：`knowledge` 4 个 / 536 行、`skills` 4 个 / 352 行、`llm` 3 个 / 224 行。
+**如实标注**：这一条本轮只做到「量清楚 + 建地板」，补测试是接下来几轮的事（O-21 有清单）。
+
+### ③ `contrast-checker` 从「写了没人用」变成**真门禁**
+
+盘点时发现 `src/core/theme/contrast-checker.ts`（139 行，WCAG 2.1 对比度计算，文件头写着「用于验证三套皮肤」）
+**行覆盖 0%、且没有任何调用方** —— 只在 `theme/index.ts` 被 re-export。
+
+新增 `skin-contrast.test.ts`：直接读 `src/styles.css` 里三套主题的变量，用**被测实现**算对比度并卡线。实测：
+
+| 配对 | dark | light | 要求 |
+| --- | ---: | ---: | --- |
+| `--text-primary` on `--bg-primary` | 12.95:1 | 16.50:1 | ≥ 7.0（AAA） |
+| `--text-primary` on `--bg-secondary` | 11.55:1 | 15.79:1 | ≥ 7.0（AAA） |
+| `--text-secondary` on `--bg-primary` | 8.85:1 | 7.37:1 | ≥ 7.0（AAA） |
+| `--text-secondary` on `--bg-secondary` | 7.89:1 | 7.06:1 | ≥ 7.0（AAA） |
+| `--text-muted` on `--bg-primary` | 5.42:1 | 5.25:1 | ≥ 4.5（AA） |
+
+`hub` / `dream` 皮肤**不覆盖**文字与底色变量（实测 0 个）⇒ 它们继承 dark/light 的值，所以这门禁同样锁住这两套皮肤；
+一旦将来覆盖了，CT-3 会要求为这套皮肤**单独**加判据（避免出现「皮肤没人管」的盲区）。
+
+### ④ 设置里的滑块补 24px 命中带（O-20 收口）
+
+走查量到外观页的字号/字重滑块只有 **16px** 高，而它与最近目标只隔 **6px** ⇒ 既不满足 24×24、也不满足
+WCAG 2.5.8 的「间距例外」（要求 ≥24）。给 `.sp-range-full` / `input[type=range].sp-flex-fill` 加 `min-height: 24px`
+（轨道与滑块外观不变，只放大可点/可拖范围），并在 `min-hit-area.test.ts` 加 **MH-4** 钉住。
+
+### 实测
+
+- 全量 **386 文件 / 6133 通过 / 16 跳过 / 0 失败**；`tsc` 0；
+  `npm run verify` 退出码 **0**（覆盖率棘轮 + **按文件地板** + knip 棘轮 + jscpd）；`npm run audit` **12 项全绿**。
 ## [1.16.142] - 2026-09-24 — 又一批「难点到的控件」+ 一个**读屏念不出名字**的开关；顺带把两个扫描器共用的 JSX 底层抽成一份
 
 ### ① 自动化触发器那个开关：既没名字、又难点到

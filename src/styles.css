@@ -17111,6 +17111,17 @@ color: var(--accent, #7c6cf0);
   color: var(--text-muted);
 }
 .sp-range-full { width: 100%; }
+/*
+ * 第 96 轮：设置里的**滑块**给一条 24px 的命中带。
+ *
+ * 现场（装机版走查）：外观页的字号/字重滑块原生只有 **16px** 高，而它上下的其它目标
+ * 只隔 **6px** ⇒ 既不满足 24×24，也不满足 WCAG 2.5.8 的"间距例外"（要求 ≥24）。
+ * 轨道与滑块外观不变，只是**可点/可拖的范围**变高（`input[type=range]` 的点按判定按元素盒算）。
+ */
+.sp-range-full,
+input[type="range"].sp-flex-fill {
+  min-height: 24px;
+}
 .sp-title--md { font-weight: 600; font-size: var(--fs-md); color: var(--text-primary); }
 .sp-title--sm { font-weight: 600; font-size: var(--fs-base); color: var(--text-primary); }
 .sp-title--lead { margin-bottom: var(--space-4); }
