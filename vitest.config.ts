@@ -72,16 +72,17 @@ export default defineConfig({
        */
       thresholds: {
         /*
-         * 第 99 轮上调全局 lines 52 → 55：本轮把 `knowledge/exporter|importer`（第 98 轮）与
-         * `knowledge/pptx-importer`（第 99 轮）拉进测试后，全局行覆盖从 53.67% 涨到 **56.02%**，
-         * 而棘轮的判据是「阈值必须落在 [floor(实测)-3, 实测] 里」——
-         * 52 已经比 `floor(56.02)-1=55` 低 3 个点，等于形同没有，所以按棘轮升到 55。
-         * （`npm run verify` 里的 `coverage-baseline.mjs --check` 就是这么把它抓出来的。）
+         * 第 99 轮上调全局 lines 52 → 55（知识库导入/导出/pptx 进测试后实测 56.02%）；
+         * **第 103 轮再按棘轮上调 branches 42 → 45、statements 50 → 53**：
+         * 本轮把 `knowledge/graph-extractor.ts` 与 `knowledge/ppt-generator.ts` 拉进测试后
+         * （这两条是零覆盖清单里最后两个），实测 branches 46.61% / statements 54.51%，
+         * `coverage-baseline --check` 如实报出"42/50 比实测低太多 ⇒ 形同没有"。
+         * 棘轮不会自己收紧 —— 每次覆盖率真涨了，都要有人把阈值抬到实测之下、棘轮之内。
          */
         lines: 55,
         functions: 46,
-        branches: 42,
-        statements: 50,
+        branches: 45,
+        statements: 53,
         "src/core/storage/**": { lines: 81, functions: 82, branches: 68, statements: 79 },
         "src/core/llm/**": { lines: 60, functions: 61, branches: 49, statements: 58 },
         "src/core/session/**": { lines: 74, functions: 78, branches: 54, statements: 74 },
