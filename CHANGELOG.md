@@ -2,6 +2,47 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.134] - 2026-09-24 — 顺着第 86 轮那个洞**系统扫一遍**：15 处「检查失败 ⇒ 返回否定值」，其中**沙箱开关**那处是安全 fail-open（已修），并把它变成**闸门**
+
+> 第 86 轮修的是「问不到 ≠ 干净」。这一轮把同一形态**系统扫一遍**：
+> 新增 `tools/audit/scan-fail-open-guards.mjs` —— 找函数名像检查（`has*`/`is*`/`can*`/`should*`/`check*`/`verify*`/`needs*`/`allow*`）
+> 而 `catch` 里 `return false/null/[]/0` 的地方。
+
+### 扫描结果：15 处，逐个看下来只有 1 处是「安全开关 + fail-open」
+
+| 分类 | 处数 | 结论 |
+| --- | ---: | --- |
+| 能力探测（`isGitRepo` / `isFile` / `isCLIInstalled` / `hasGithubToken` / `isCodeGraphInstalled` …） | 12 | 失败 ⇒ 「没有这个能力」，功能降级、不掩盖问题 = **保守方向**，不是缺口 |
+| 读取型（`isSessionEventsReadable` / `isAbortError` / `isAuthFileMissing` …） | 2 | 失败 ⇒ 「读不到 / 不是」，调用方据此如实报错，方向正确 |
+| 🔴 **安全开关**：`isSandboxAclEnabled` | **1** | **失败 ⇒ false ⇒ 用户明确打开的沙箱静默失效**，而设置面板上的开关**仍显示「已开启」** |
+
+### 🔴 修法（`src/core/sandbox/sandbox-acl.ts`）
+
+原来是 `catch { console.warn(…); return false; }`。现在：
+
+- **记住上次成功读到的值**（`lastKnownSandboxEnabled`），读失败时**沿用**它 ——
+  一次读取失败不许把「用户开着沙箱」降级成「沙箱关着」；
+- 读失败一律走**上报通道**（`sandbox.readSetting`，横幅可见），不再只在控制台留一句 warn；
+- 从没读到过就失败 ⇒ 仍按产品默认（关闭），但上报文案如实说明「界面上的开关不代表本次实际生效状态」。
+
+### 从「扫一遍」升级成**闸门**（只许删、不许新增）
+
+扫描器的结论依赖人判，所以把那 14 处无害的**定性结果落成白名单**
+`tools/audit/fail-open-guard-allowlist.json`（每条带 `direction` 与理由），新增 `npm run audit:fail-open` 并接进 `npm run audit`：
+
+- 新出现一处未定性的 fail-open ⇒ **audit 失败**（逼你先定性：修它，还是写清为什么无害）；
+- 白名单里有代码里已不存在的条目 ⇒ **audit 失败**（防白名单变成没人管的忽略名单）。
+
+### 判据（自证 + 变异证明）
+
+- `src/test/fail-open-guard-gate.test.ts` **5 条**：FOG-1（真实仓库闸门通过）、FOG-2（白名单与真实命中**逐个对齐**，且每条都有理由与方向）、
+  FOG-3（变异：假树里塞一处新 fail-open ⇒ 必须红）、FOG-4（变异：白名单过期 ⇒ 必须红）、
+  FOG-5（**沙箱那处不许回退**：扫描器不得再列出它，且源码里必须有「沿用上次的值」+「走上报通道」）；
+- `node .preview-shot/mutate-fail-open-gate.mjs`：6/6 —— 在**真实仓库**上把问题塞回去，确认闸门变红，再原样还原（含把沙箱改回 `catch { return false }` ⇒ 扫描器重新命中 + FOG-5 变红）。
+
+### 实测
+
+全量 374 文件 / 6079 通过 / 16 跳过 / 0 失败（另加本轮 5 条）；`tsc` 0；`npm run audit` 11 项全绿。
 ## [1.16.133] - 2026-09-24 — **「问不到」不再被当成「干净」**：切换执行模式的防丢改动闸门原来有两层 fail-open
 
 > 起点是第 85 轮走查里的一条观察：点「切换执行模式」时工作区**明明是脏的**，

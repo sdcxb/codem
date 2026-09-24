@@ -71,6 +71,8 @@
 
 | C-16 | **确认框在真机上一直弹不出来**（真正的根因：注入的 `window.confirm` 指向不存在的命令） | 读依赖源码逐字核对：`tauri-plugin-dialog` 2.7.2 的 `src/init-iife.js` 把 `window.confirm` 指向 `plugin:dialog|confirm`，而同一 crate 的 `src/lib.rs` 只注册 `open`/`save`/`message` ⇒ **那个命令不存在**（`permissions/confirm.toml` 自己写着 `allow-confirm` 是 DEPRECATED、「now an alias to allow-message」）。1.16.125 的改动只把"不问就做"变成"安全地拒绝"，**弹框从未弹出来过**。修法：真机走插件 JS API（`@tauri-apps/plugin-dialog` 的 `confirm()`，打的是已注册的 `plugin:dialog|message`），优先级 = ①插件 JS API ②`window.confirm` 同步布尔 ③都失败则 fail-closed + 上报；①失败会回退到②。门禁 9→**11 条**（NC-8/NC-9）。**装机版实测**：控制台 error 0 + `#32770` 对话框窗口出现 + 主窗口被 disable；PostMessage 回车后恢复 |
 
+| C-18 | **沙箱开关的 fail-open**（同一形态系统扫描出来的唯一安全项） | `isSandboxAclEnabled` 原来 `catch { console.warn; return false }`：用户打开的沙箱在一次读失败后**静默失效**，设置面板开关**仍显示已开启**。修法：记住上次成功读到的值 + 失败沿用 + 走上报通道（`sandbox.readSetting`）+ 无历史值时按默认关闭并如实说明。**扫描工具**：`node tools/audit/scan-fail-open-guards.mjs`（15 处线索 → 12 能力探测 / 2 读取型 / **1 安全项**）；**闸门**：该 14 处已定性入白名单，`npm run audit` 新增 `audit:fail-open`（新增未定性 ⇒ 红、白名单过期 ⇒ 红），门禁 `fail-open-guard-gate.test.ts` 5 条 + 变异自证 6/6 |
+
 ## 四、**判定为"不是缺口"**的（附理由，避免反复被重新提起）
 
 | 项 | 结论与理由 |

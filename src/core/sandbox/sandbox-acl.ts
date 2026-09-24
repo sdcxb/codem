@@ -21,6 +21,7 @@
 // ========== Glob → Regex（第 84 波修正） ==========
 
 import { getSetting, setSetting, removeSetting } from "../storage/settings";
+import { reportActionFailure } from "../storage/persist-failure";
 
 /**
  * 沙箱模式的设置键 —— **必须与设置面板里的开关一致**
@@ -32,14 +33,52 @@ import { getSetting, setSetting, removeSetting } from "../storage/settings";
  */
 export const SANDBOX_SETTING_KEY = "codem-sandbox-enabled";
 
-/** 沙箱模式是否开启（默认关闭；读不到设置时按关闭处理，与面板默认一致） */
+/**
+ * 上一次**成功读到**的沙箱开关值（第 87 轮）。
+ *
+ * 为什么要有它：这是个**安全开关**，而 `getSetting` 读失败时原来的写法是"按关闭处理" ——
+ * 也就是**用户明确打开的沙箱，在一次读失败之后会静默失效**（界面上的开关还显示"已开启"）。
+ * 这与第 86 轮修的那个洞（`hasUncommittedChanges` 失败被当成"工作区干净"）是同一类：
+ * **问不到 ≠ 用户关掉了**。
+ *
+ * 现在：读失败时优先沿用**上次成功读到的值**（sticky），并把这次失败**走上报通道**
+ * （横幅可见），而不是只在控制台留一句 warn。没有任何历史值时仍按产品默认（关闭）处理，
+ * 但同样如实上报 —— 用户至少知道"这个开关这次没被确认"。
+ */
+let lastKnownSandboxEnabled: boolean | null = null;
+
+/**
+ * 沙箱模式是否开启（默认关闭；与面板默认一致）。
+ *
+ * ⚠️ 读失败时**不再静默**：优先返回上次成功读到的值（有的话），并上报；
+ * 没有历史值时返回 false，同样上报 —— 让"这次没能确认"变成用户可见的事实。
+ */
 export function isSandboxAclEnabled(): boolean {
   try {
-    return getSetting(SANDBOX_SETTING_KEY) === "true";
+    const enabled = getSetting(SANDBOX_SETTING_KEY) === "true";
+    lastKnownSandboxEnabled = enabled;
+    return enabled;
   } catch (e) {
-    console.warn("[Sandbox] 读取沙箱设置失败，按关闭处理：", e);
+    if (lastKnownSandboxEnabled !== null) {
+      reportActionFailure(
+        "sandbox.readSetting",
+        e,
+        `读取沙箱设置失败，已沿用上次成功读到的值（${lastKnownSandboxEnabled ? "开启" : "关闭"}）`,
+      );
+      return lastKnownSandboxEnabled;
+    }
+    reportActionFailure(
+      "sandbox.readSetting",
+      e,
+      "读取沙箱设置失败，且没有历史值 —— 本次按「关闭」处理（界面上的开关不代表本次实际生效状态）",
+    );
     return false;
   }
+}
+
+/** 用例用：清掉"上次成功读到"的记忆，避免用例之间互相影响 */
+export function __resetSandboxSettingCache(): void {
+  lastKnownSandboxEnabled = null;
 }
 
 /**

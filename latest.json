@@ -1,15 +1,15 @@
 {
-  "version": "1.16.133",
-  "notes": "「问不到」不再被当成「干净」：切换执行模式的防丢改动闸门原来有两层 fail-open（git 检查失败被当成工作区干净）。详见 CHANGELOG [1.16.133]。",
-  "pub_date": "2026-09-24T08:48:50Z",
+  "version": "1.16.134",
+  "notes": "Codem v1.16.134 - 沙箱开关不再被一次读取失败静默关掉（用户打开的保护不会被悄悄降级，面板也不再显示与实际不符的已开启）；同一形态 fail-open 全库扫描 15 处并落成白名单闸门（新增未定性即审计失败）。完整清单与实测数字见 CHANGELOG。",
+  "pub_date": "2026-09-24T09:05:47Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3ZEE0ZTYyU21tYkM1YzRGRDROS1U5dVljWGdSUkxrU2lIc0ZBbXVhUWdaZGFaWWVaVXRTcTVZR3JlK3FxSEFjN3crbVF1aDU1ZStaSGRzMkJHU2dRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjM5NzE5CWZpbGU6Q29kZW1fMS4xNi4xMzNfeDY0LXNldHVwLmV4ZQpqZTZYZjlwUnJLRkZOc0xnRFJkeUxnK3ErcFJQZXRTTEhIMDUzSEpDdWl5bmJDZXZJbjY0Y0NvMTU2VVc0YkhsNmVaR1FSSDl3UGFxU0hlcWlwbEFEZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.133/Codem_1.16.133_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FPcjhiNTYvaEYwTHBhc3dGdWlMUHhqUkVaejJKRDcwTDNTaXM0QTQvbHpZNUQzMU4vSE5rWi91bnFwNHhBQytyQThmaUhPdDNUN2RnR0tNbVlFRFFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjQwNzM3CWZpbGU6Q29kZW1fMS4xNi4xMzRfeDY0LXNldHVwLmV4ZQpIdUhUTDBpRDVPUWQ1enJwamxDNStYZzRmTTIzZ0xXT2Zjb3dyWCs0aS9OL2Q4M2tTbVliRVo0MlR5YldKbGZmQ1lqNWFjd2RSQUNnU29BN0t4NlFBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.134/Codem_1.16.134_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3ZEE0ZTYyU21tYkM1YzRGRDROS1U5dVljWGdSUkxrU2lIc0ZBbXVhUWdaZGFaWWVaVXRTcTVZR3JlK3FxSEFjN3crbVF1aDU1ZStaSGRzMkJHU2dRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjM5NzE5CWZpbGU6Q29kZW1fMS4xNi4xMzNfeDY0LXNldHVwLmV4ZQpqZTZYZjlwUnJLRkZOc0xnRFJkeUxnK3ErcFJQZXRTTEhIMDUzSEpDdWl5bmJDZXZJbjY0Y0NvMTU2VVc0YkhsNmVaR1FSSDl3UGFxU0hlcWlwbEFEZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.133/Codem_1.16.133_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FPcjhiNTYvaEYwTHBhc3dGdWlMUHhqUkVaejJKRDcwTDNTaXM0QTQvbHpZNUQzMU4vSE5rWi91bnFwNHhBQytyQThmaUhPdDNUN2RnR0tNbVlFRFFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjQwNzM3CWZpbGU6Q29kZW1fMS4xNi4xMzRfeDY0LXNldHVwLmV4ZQpIdUhUTDBpRDVPUWQ1enJwamxDNStYZzRmTTIzZ0xXT2Zjb3dyWCs0aS9OL2Q4M2tTbVliRVo0MlR5YldKbGZmQ1lqNWFjd2RSQUNnU29BN0t4NlFBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.134/Codem_1.16.134_x64-setup.exe"
     }
   }
 }

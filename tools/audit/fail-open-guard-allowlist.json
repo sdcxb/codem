@@ -1,0 +1,76 @@
+{
+  "_note": "「检查失败 ⇒ 返回否定值」的**已定性**清单（第 87 轮逐个看过一遍）。规则：只许删、不许新增 —— 新增一处就会让 `npm run audit` 失败，逼着人先定性再决定要不要写进来。定性方向见 direction：conservative = 失败⇒「没有这个能力」，后果是不提供某功能（安全方向）；read-error = 失败⇒「读不到」，调用方会如实报错。",
+  "_how_to_add": "真出现新的、且确实无害的一处时：把 rel::函数名 加到 allowed，并写清 reason。若它是**安全开关**（失败会导致本该拦住的放行、或用户开着的保护静默失效），不要加白名单 —— 去修它（参考 C-18 沙箱开关）。",
+  "allowed": [
+    {
+      "site": "src/core/agent/preset-discovery.ts::isFile",
+      "direction": "conservative",
+      "reason": "判断预设目录里某个文件是否存在；读失败⇒当作不存在，后果是少列一个预设，不涉及放行。"
+    },
+    {
+      "site": "src/core/auth/mimo.ts::isAuthFileMissing",
+      "direction": "read-error",
+      "reason": "凭据文件探测；返回 null 表示「问不出来」，调用方据此提示重新登录，不是把「有凭据」降级成「没凭据」。"
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::isGitRepo",
+      "direction": "conservative",
+      "reason": "文件改动追踪的 git 探测；失败⇒不启用 git 相关的比对，功能降级、不掩盖改动。"
+    },
+    {
+      "site": "src/core/environment/worktree-manager.ts::isGitRepo",
+      "direction": "conservative",
+      "reason": "worktree 能力探测；失败⇒不提供 worktree 操作。注意：真正的防丢闸门是同文件 hasUncommittedChanges（第 86 轮已改成 boolean|null，不再 fail-open）。"
+    },
+    {
+      "site": "src/core/llm/tool-pipeline.ts::isAbortError",
+      "direction": "read-error",
+      "reason": "错误分类器；判不出是取消⇒按普通错误处理（会照常上报），偏严格方向。"
+    },
+    {
+      "site": "src/core/mcp/mcp.ts::hasCodeGraphIndex",
+      "direction": "conservative",
+      "reason": "代码图谱索引探测；失败⇒当作没有索引，走非图谱路径。"
+    },
+    {
+      "site": "src/core/mcp/mcp.ts::isCodeGraphInstalled",
+      "direction": "conservative",
+      "reason": "同上，探测 MCP 工具是否安装；失败⇒不注册该工具。"
+    },
+    {
+      "site": "src/core/permission/security-mode.ts::isAutoApprovable",
+      "direction": "conservative",
+      "reason": "自动放行判定；判不出⇒不放行（需要用户确认）。这是**安全方向**的否定值，不能反向改。"
+    },
+    {
+      "site": "src/core/skill/skill-market-client.ts::hasGithubToken",
+      "direction": "conservative",
+      "reason": "GitHub 令牌探测；失败⇒当作没有，走匿名/提示登录，不静默提权。"
+    },
+    {
+      "site": "src/core/skill/skill-market-client.ts::isCLIInstalled",
+      "direction": "conservative",
+      "reason": "外部 CLI 探测；失败⇒当作未安装并提示安装命令。"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::isSessionEventsReadable",
+      "direction": "read-error",
+      "reason": "会话事件可读性探测；失败⇒false，调用方（修复/诊断）会把它当作损坏路径去尝试补救，方向正确。"
+    },
+    {
+      "site": "src/core/storage/secret-store.ts::isSealAvailable",
+      "direction": "conservative",
+      "reason": "加密可用性探测；失败⇒当作不可用，回落到明文/提示，不假装加密成功。"
+    },
+    {
+      "site": "src/core/storage/session-jsonl.ts::isSessionDeleted",
+      "direction": "conservative",
+      "reason": "墓碑文件探测；失败⇒当作未删除，于是按「还在」处理（更保守：不会误删用户数据）。"
+    },
+    {
+      "site": "src/plugins/library-ops/core/scene-image-db.ts::isSceneImageDbAvailable",
+      "direction": "conservative",
+      "reason": "场景图片库可用性探测；失败⇒不启用该功能。"
+    }
+  ]
+}
