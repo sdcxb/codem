@@ -72,19 +72,43 @@ if (failures.length) {
 }
 
 const scratchBad = [];
-const scanScratch = process.argv.includes("--scratch") || strictScratch;
-if (!scanScratch) {
-  console.log(`\n（未跟踪的一次性脚本 ${scratch.length} 个：**未扫**。它们有一千多个，逐个 node --check 会把门禁拖到几分钟；要看加 --scratch）`);
-} else {
+const scanAll = process.argv.includes("--scratch") || strictScratch;
+/*
+ * 第 125 轮：**默认要查"最近改过的一次性脚本"**。
+ *
+ * 起因：同一个坑（中文串里写 ASCII 双引号 ⇒ 字符串截断 ⇒ 脚本没跑）我踩到第 5 次，
+ * 而每次坏的**都是刚写的临时脚本** —— 第 119 轮的门禁只查 git 跟踪的 `tools/**`，正好漏在这。
+ * 但"全扫 1000+ 个"又会把门禁拖到几分钟（第一版就是这么超时的）。
+ * 所以按**修改时间**划范围：**最近 24 小时内动过的一次性脚本必须语法正确**（通常只有几个～几十个，秒级）。
+ * 更早的按不支持（`--scratch` 全扫但只提示，`--strict-scratch` 全扫且要拦）。
+ */
+const FRESH_HOURS = Number((process.argv.find((a) => a.startsWith("--fresh-hours=")) ?? "--fresh-hours=24").split("=")[1]);
+const cutoff = Date.now() - FRESH_HOURS * 3600 * 1000;
+const fresh = scratch.filter((f) => {
+  try {
+    return fs.statSync(path.join(ROOT, f)).mtimeMs >= cutoff;
+  } catch {
+    return false;
+  }
+});
+const freshBad = [];
+for (const f of fresh) {
+  const err = check(f);
+  if (err) freshBad.push({ file: f, err });
+}
+console.log(`\n（最近 ${FRESH_HOURS} 小时动过的一次性脚本 ${fresh.length} 个：${freshBad.length === 0 ? "全部解析通过 ✅" : `${freshBad.length} 个语法错 ❌`}；一次性脚本共 ${scratch.length} 个，全扫加 --scratch，全扫且要拦加 --strict-scratch）`);
+for (const f of freshBad) console.log(`   ${f.file}\n      ${f.err}`);
+
+if (scanAll) {
   for (const f of scratch) {
     const err = check(f);
     if (err) scratchBad.push({ file: f, err });
   }
-  console.log(`\n（附带）未跟踪的一次性脚本 ${scratch.length} 个：${scratchBad.length === 0 ? "全部解析通过" : `${scratchBad.length} 个语法错`}`);
+  console.log(`（全量扫：${scratch.length} 个里有 ${scratchBad.length} 个语法错）`);
   for (const f of scratchBad) console.log(`   ${f.file}\n      ${f.err}`);
 }
 
-if (failures.length || (strictScratch && scratchBad.length)) {
+if (failures.length || freshBad.length || (strictScratch && scratchBad.length)) {
   console.log("\n（「脚本没跑成」和「脚本跑出 0 条」长得一样 —— 所以能跑必须是判据）");
   process.exit(1);
 }
