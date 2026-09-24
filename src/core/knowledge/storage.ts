@@ -21,7 +21,7 @@ import {
   reportWriteNotAccepted,
 } from "../storage/domain-store";
 import { getStoragePort, hasStoragePort } from "../storage/port";
-import { reportPersistFailure } from "../storage/persist-failure";
+import { reportActionFailure, reportAdvisory, reportPersistFailure } from "../storage/persist-failure";
 import type {
   Notebook,
   NotebookSource,
@@ -343,11 +343,21 @@ function warmChunksByNotebook(notebookId: string): Promise<void> {
       }
       const converted = rows.map(wireToChunk);
       if (converted.length > CHUNK_CACHE_MAX_PER_NOTEBOOK) {
-        // 单 notebook 就超过缓存预算：不缓存（避免"按需读"变成偷偷的整表常驻），如实上报
-        reportPersistFailure(
+        /*
+         * 单 notebook 就超过缓存预算：不缓存（避免"按需读"变成偷偷的整表常驻），如实上报。
+         *
+         * 第 100 轮分诊：这是一条**容量发现**，不是"失败" —— 读**成功了**（N 块都读到了），
+         * 只是按预算不缓存。原来走 persist 通道，提示条会印
+         * 「写盘失败……本次改动只存在于内存，重启后可能丢失」——**三句全是假的**
+         * （没有写、没有改动、也没有丢东西）。改成 advisory（发现 = 陈述事实）。
+         */
+        reportAdvisory(
           "chunk.onDemand",
-          new Error(`笔记本 ${notebookId} 的文本块超过缓存上限 ${CHUNK_CACHE_MAX_PER_NOTEBOOK} 行`),
-          `本次读到 ${converted.length} 块但未缓存；检索请缩小到具体来源`,
+          `笔记本 ${notebookId} 的文本块 ${converted.length} 块超过缓存上限 ${CHUNK_CACHE_MAX_PER_NOTEBOOK} 行，本次未缓存`,
+          {
+            title: "知识库文本块超出缓存预算",
+            nextStep: "这是容量上限而不是读取失败：检索时请缩小到具体来源，或减少该笔记本的来源数量",
+          },
         );
         return;
       }
@@ -359,7 +369,11 @@ function warmChunksByNotebook(notebookId: string): Promise<void> {
        * 下一次读照样抛"索引未就绪"，而没有任何痕迹指向"端口换了"。
        */
       if (currentPort() !== portAtStart) {
-        reportPersistFailure(
+        /*
+         * 第 100 轮分诊：读侧失败原来走 persist 通道 ⇒ 提示条印「写盘失败……本次改动只存在于内存」，
+         * 而这里**什么都没写**、也没有任何改动被丢。改成 action（功能本次没生效）。
+         */
+        reportActionFailure(
           "chunk.onDemand",
           new Error("存储端口在按需读期间被更换"),
           `笔记本 ${notebookId} 的本次按需读作废（结果不属于当前端口，已丢弃；下一次读会重新拉）`,
@@ -368,7 +382,7 @@ function warmChunksByNotebook(notebookId: string): Promise<void> {
       }
       bucket.set(notebookId, converted);
     } catch (e) {
-      reportPersistFailure("chunk.onDemand", e, `笔记本 ${notebookId} 的文本块未按需读到（下次读会再试一次）`);
+      reportActionFailure("chunk.onDemand", e, `笔记本 ${notebookId} 的文本块未按需读到（下次读会再试一次）`);
     } finally {
       chunkWarmInFlight.delete(warmKey);
     }
@@ -849,7 +863,12 @@ export function refreshNotebookCounts(notebookId: string): void {
    * 写一半会让"计数与实际不符"变成更难查的形态。
    */
   if (sourceCount === null || chunkCount === null) {
-    reportPersistFailure(
+    /*
+     * 第 100 轮分诊：这是**读侧**失败（计数读不到 ⇒ 本次不刷新），不是"写盘失败"。
+     * 原通道的默认后果句是「本次改动只存在于内存，重启后可能丢失」——这里恰恰相反：
+     * **什么都没写**、旧值原样保留。改成 action（刷新功能本次没生效）。
+     */
+    reportActionFailure(
       "notebook.refreshCounts",
       new Error("计数读不到（该域镜像未接手或按需读不可用）"),
       `笔记本 ${notebookId} 的计数未刷新（**没有**写回 0 —— 旧值保留）`,

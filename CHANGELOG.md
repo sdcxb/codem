@@ -2,6 +2,53 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.146] - 2026-09-24 — 读侧失败不再印成「写盘失败……本次改动只存在于内存」（8 处通道漂移修好）；上报点分诊 123 → 86
+
+### ① 真缺陷：**读**失败被套进**写盘**通道，提示条印的是假话
+
+分诊「上报点」时（O-17）发现 8 处把**读侧事件**送进了 `persist` 通道。`persist` 的默认语气是
+「**写盘失败**……**本次改动只存在于内存，重启后可能丢失**」，而这 8 处的现场是：
+
+| 站点 | 实际发生了什么 | 原通道印出来的 | 现在 |
+| --- | --- | --- | --- |
+| `chunk.onDemand`（端口在按需读期间被换） | 本次按需读作废，什么都没写 | 「写盘失败……改动只在内存」 | **action**「操作失败」 |
+| `chunk.onDemand`（文本块未按需读到） | 读失败，下次会重试 | 同上 | **action** |
+| `chunk.onDemand`（块数超过缓存预算） | 读**成功了**，只是按预算不缓存 | 同上（三句全是假的） | **advisory**「知识库文本块超出缓存预算」+ 建议 |
+| `notebook.refreshCounts`（计数读不到） | 本次不刷新，**旧值原样保留** | 「改动只在内存」（恰好相反） | **action** |
+| `todo.load`（镜像未接手） | 读不到待办列表 | 同上 | **action** |
+| `todo.updateStatus`（勾选时读不到列表） | 用户的勾选**没生效** | 同上 | **action** |
+| `fileChange.revert`（端口未注册 / 补丁取不到） | 回滚这个动作没执行 | 同上 | **action** |
+
+判据还是那一条：**印出来的必须是真的**（与第 88 轮把「发现」从失败通道里分出来同一类问题）。
+分诊与改动的逐处理由写在 `tools/audit/report-site-classification.json` 的 `reason` 里
+（脚本 `.preview-shot/_triage-report-sites-r100.mjs`，干跑 / `--apply`）。
+
+### ② 上报点分诊：pending **123 → 86**（本批 37 处，含上面 8 处改通道）
+
+判据（写在登记表 `_how_to_triage` 里）：真失败 ⇒ persist（写盘）/ action（功能没生效）；
+自检、普查、对账、自愈的**发现** ⇒ advisory。本批看完的家族：
+`inbox-storage`（8）、`squad-storage`（8）、`flashcard-store`（6）、`issue-storage`（5）、
+`knowledge/storage`（6）、`show-todo`（2 改通道）、`file-change-tracker`（2 改通道）。
+写路径家族**保持 persist**，理由写明「为什么不是 action/advisory」（改动只在内存、重启即丢 = 落盘失败）。
+`report-site-classification.test.ts` 的 `PENDING_BASELINE` 同步 **123 → 86**。
+
+### ③ 门禁与变异
+
+- `node tools/audit/scan-report-sites.mjs --check`：217 处全部已登记，**未分诊 0、漂移 0、过期 0**；
+- 变异自证 **8/8**（`.preview-shot/mutate-report-channels-r100.mjs`）：把 4 处通道退回 persist、
+  把登记改回 pending、把登记 kind 改成与实际不符 —— 每一种都被漂移门禁或棘轮抓住。
+
+### ④ 覆盖率与门禁总账
+
+**实测**：全量 **392 文件 / 6192 通过 / 16 跳过 / 0 失败**；`tsc` **0**；`npm run verify` 退出码 **0**
+（阈值对账 ✅「都在实测之下、棘轮之内」；按文件地板 **309 个文件**；knip 无增长；jscpd **169 clones**）；
+`npm run audit` **13 道 exit 0**。
+
+**真机**：装机版由更新器从 1.16.145 升到 **1.16.146**；安装包内 `assets/main-*.js` 里能取到新文案
+`知识库文本块超出缓存预算`（标志物只证明这段代码打进去了）——
+**如实标注**：这几条提示的**触发条件在真机上造不出来**（要"读失败/端口被换/超出缓存预算"），
+所以语气是否正确由上面那套门禁 + 8/8 变异守着，不是真机点出来的。
+
 ## [1.16.145] - 2026-09-24 — 导入 PPTX 的两个「空壳」缺陷：真实 deck 一个字都读不到、图片永远丢；`.pptx` 走查这一格终于量到了
 
 ### ① 真缺陷：真实演示文稿导入后**一个字都没有**（占位符几何继承自版式）

@@ -425,7 +425,8 @@ export class FileChangeTracker {
        * 所以这里再问一次"端口在不在"，把**未就绪**与**不存在**分开报。
        */
       if (!hasStoragePort()) {
-        reportPersistFailure(
+        // 第 100 轮分诊：**回滚这个动作没执行**（读不到记录），不是"写盘失败" ⇒ action。
+        reportActionFailure(
           "fileChange.revert",
           new Error("端口未注册（本进程没有可用存储）"),
           `回滚未执行：读不到变更记录 ${artifactId}，请稍后重试`,
@@ -450,7 +451,8 @@ export class FileChangeTracker {
       if (fetched.status === "ok") {
         patch = fetched.patch;
       } else if (fetched.status === "unavailable") {
-        reportPersistFailure("fileChange.revert", fetched.error, `回滚未执行：补丁正文本次取不到，请稍后重试`);
+        // 第 100 轮分诊：同样是"回滚动作没执行"（补丁正文取不到）⇒ action。
+        reportActionFailure("fileChange.revert", fetched.error, `回滚未执行：补丁正文本次取不到，请稍后重试`);
         return false;
       }
       // fetched.status === "absent" → 落到下面统一的"记录在但补丁缺失"处理

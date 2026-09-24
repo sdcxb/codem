@@ -3,8 +3,8 @@
  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
  "_counts": {
   "total": 217,
-  "triaged": 94,
-  "pending": 123
+  "triaged": 131,
+  "pending": 86
  },
  "sites": [
   {
@@ -105,9 +105,10 @@
   },
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#1",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "回滚这个动作没执行（端口没接手、读不到变更记录）⇒ action。不是 persist：没有写入发生。",
+   "round": 100
   },
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#2",
@@ -117,9 +118,10 @@
   },
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#3",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "回滚这个动作没执行（补丁正文本次取不到）⇒ action。同一文件里 #2（记录不存在）本来就是 action，三处语义一致了。",
+   "round": 100
   },
   {
    "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#4",
@@ -154,116 +156,135 @@
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.archive::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.archive，第 247 行）",
+   "round": 100
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.create::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.create，第 125 行）",
+   "round": 100
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.delete，第 257 行）",
+   "round": 100
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.deleteOlderThan::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.deleteOlderThan，第 322 行）",
+   "round": 100
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.markAllRead::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.markAllRead，第 228 行）",
+   "round": 100
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.markRead::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.markRead，第 197 行）",
+   "round": 100
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.sweep::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.sweep，第 111 行）",
+   "round": 100
   },
   {
    "site": "src/core/inbox/inbox-storage.ts::inbox.unarchive::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.unarchive，第 279 行）",
+   "round": 100
   },
   {
    "site": "src/core/issue/issue-storage.ts::issue.addComment::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.addComment，第 251 行）",
+   "round": 100
   },
   {
    "site": "src/core/issue/issue-storage.ts::issue.create::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.create，第 134 行）",
+   "round": 100
   },
   {
    "site": "src/core/issue/issue-storage.ts::issue.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.delete，第 215 行）",
+   "round": 100
   },
   {
    "site": "src/core/issue/issue-storage.ts::issue.deleteComment::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.deleteComment，第 269 行）",
+   "round": 100
   },
   {
    "site": "src/core/issue/issue-storage.ts::issue.update::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.update，第 204 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/flashcard-store.ts::flashcard.create::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.create，第 125 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/flashcard-store.ts::flashcard.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.delete，第 225 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/flashcard-store.ts::flashcard.deleteByNotebook::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.deleteByNotebook，第 241 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.review，第 269 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#2",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.review，第 330 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/flashcard-store.ts::flashcard.update::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.update，第 215 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#1",
@@ -279,39 +300,45 @@
   },
   {
    "site": "src/core/knowledge/storage.ts::chunk.onDemand::#1",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "容量发现：读**成功**了（N 块都读到了），只是按缓存预算不缓存 ⇒ 走 advisory。不是 persist（没有任何写盘动作）、也不是 action（功能没失败，是「这块笔记本超出预算」这个事实）。",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/storage.ts::chunk.onDemand::#2",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "读侧失败：端口在 await 期间被换掉 ⇒ 本次按需读作废。走 action（功能本次没生效）。原通道 persist 会印「写盘失败……本次改动只存在于内存」，而这里什么都没写、也没改动被丢。",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/storage.ts::chunk.onDemand::#3",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "读侧失败：文本块未按需读到（catch 分支）⇒ action（功能本次没生效）。没有写盘动作，故不是 persist。",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/storage.ts::notebook.refreshCounts::#1",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "读侧失败：计数读不到 ⇒ 本次不刷新。走 action。刻意不是 persist —— 代码注释写明「**没有**写回 0（旧值保留）」，而 persist 的默认后果句是「本次改动只存在于内存」，与实际恰好相反。",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/storage.ts::noteVersion.restore::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：笔记版本快照的保存/回滚没落盘（域镜像未接手或未就绪）⇒ persist。这两个是 `noteVersion.save` / `noteVersion.restore`（本文件里读侧的 `chunk.onDemand` 与 `notebook.refreshCounts` 已按上面的理由单独改成 advisory / action）。（本处：noteVersion.restore，第 1787 行）",
+   "round": 100
   },
   {
    "site": "src/core/knowledge/storage.ts::noteVersion.save::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：笔记版本快照的保存/回滚没落盘（域镜像未接手或未就绪）⇒ persist。这两个是 `noteVersion.save` / `noteVersion.restore`（本文件里读侧的 `chunk.onDemand` 与 `notebook.refreshCounts` 已按上面的理由单独改成 advisory / action）。（本处：noteVersion.save，第 1731 行）",
+   "round": 100
   },
   {
    "site": "src/core/llm/cost-tracker.ts::costTracker.setLimits::#1",
@@ -351,9 +378,10 @@
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.load::#1",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "读不到待办列表（两态里的 B 态）⇒ action。不是 persist：没有写盘；也不是 advisory：调用方需要据此提示「稍后重试」，它确实是一次功能缺失。",
+   "round": 100
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#1",
@@ -375,9 +403,10 @@
   },
   {
    "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#4",
-   "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "kind": "action",
+   "status": "triaged",
+   "reason": "用户的勾选**没生效** ⇒ action。不是 persist：这里连目标行都没读到（不是写失败）；C-5 的现场就是它静默无效，所以必须留在失败通道里。",
+   "round": 100
   },
   {
    "site": "src/core/mcp/mcp.ts::mcp.saveConfigs::#1",
@@ -490,50 +519,58 @@
   {
    "site": "src/core/squad/squad-storage.ts::squad.addMember::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.addMember，第 281 行）",
+   "round": 100
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.archive::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.archive，第 208 行）",
+   "round": 100
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.create::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.create，第 107 行）",
+   "round": 100
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.delete::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.delete，第 218 行）",
+   "round": 100
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.removeMember::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.removeMember，第 299 行）",
+   "round": 100
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.unarchive::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.unarchive，第 248 行）",
+   "round": 100
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.update::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.update，第 189 行）",
+   "round": 100
   },
   {
    "site": "src/core/squad/squad-storage.ts::squad.updateMemberRole::#1",
    "kind": "persist",
-   "status": "pending",
-   "reason": "待逐处分诊（现在实际走 persist；需要判断它是「失败」还是「发现」）"
+   "status": "triaged",
+   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.updateMemberRole，第 318 行）",
+   "round": 100
   },
   {
    "site": "src/core/storage/account.ts::account.activate::#1",

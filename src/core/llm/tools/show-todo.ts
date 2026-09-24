@@ -189,7 +189,9 @@ export function loadTodoList(todoId: string): TodoItem[] | null {
    * 但**不能静默**：C-5 的现场就是"勾选全部无效且无任何提示"。
    * 这里补上上报，让"这个进程此刻读不到待办列表"可见（调用方据此提示"稍后重试"）。
    */
-  reportPersistFailure(
+  // 第 100 轮分诊：这是**读**不到（不是写不成）⇒ 走 action 通道；
+  // persist 通道的默认后果句「本次改动只存在于内存，重启后可能丢失」在这里是假话（什么都没改）。
+  reportActionFailure(
     "todo.load",
     new Error("端口已注册但 todo_lists 镜像未接手（未就绪 / 未镜像）"),
     `待办列表 ${todoId} 本次读不到 —— 这**不是**"该待办不存在"，请稍后重试`,
@@ -294,7 +296,8 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
 
   // 两态：B 态不碰旧库（该域由端口负责，镜像未就绪时本次变更不落地）——
   // 但**必须如实上报**，否则就是"勾选静默无效"（C-5 的现场）。
-  reportPersistFailure(
+  // 第 100 轮分诊：用户的勾选**没生效** ⇒ action（不是"写盘失败"：这里连目标行都没读到）。
+  reportActionFailure(
     "todo.updateStatus",
     new Error("端口已注册但 todo_lists 镜像未接手（未就绪 / 未镜像）"),
     `勾选未生效：本次读不到待办列表 ${todoId}，请稍后重试`,
