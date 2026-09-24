@@ -34,6 +34,7 @@ const RUNS = Number(argOf("--runs", "3"));
 const SETTLE = Number(argOf("--settle", "25"));
 const BASELINE = argOf("--baseline", "tools/bench/coldstart-baseline.json");
 const WRITE = args.includes("--write-baseline");
+const GC = !args.includes("--no-gc"); // 第 126 轮：读之前强制一次 GC（默认开；要对比"不 GC 的口径"加 --no-gc）
 const EXE = `${process.env.LOCALAPPDATA}\\Codem\\codem.exe`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
@@ -78,11 +79,29 @@ async function oneRun(runIndex) {
     await cs(200);
   }
   await cs(SETTLE * 1000);
+  /*
+   * 第 126 轮：**读之前先强制一次 GC**。
+   * 第 124 轮量到同一个构建的 JS 堆离散 49–73MB（历史区间 41–109）—— 这个数字由"还没回收的垃圾"主导，
+   * 而启动阶段正是垃圾最多的时候 ⇒ 不 GC 就在量垃圾，不是在量占用。
+   * 默认开；要对比"不 GC 的口径"加 --no-gc。
+   */
+  let gcOk = null;
+  if (GC) {
+    try {
+      await cdp.send("HeapProfiler.enable", {});
+      await cdp.send("HeapProfiler.collectGarbage", {});
+      gcOk = true;
+      await cs(400);
+    } catch (e) {
+      gcOk = false;
+      console.log(`  （第 ${runIndex} 轮：强制 GC 失败，读数仍是"含垃圾"口径：${String(e).slice(0, 80)}）`);
+    }
+  }
   const during = sliceSince(m);
   const jsHeapMB = await evaluate(`(performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null)`);
   const domNodes = await evaluate(`document.querySelectorAll('*').length`);
   await cdp.close?.();
-  return { run: runIndex, spawnToTargetMs, spawnToReadyMs, jsHeapMB, domNodes, console: { error: during.error ?? 0, warning: during.warning ?? 0, exception: during.exception ?? 0 } };
+  return { run: runIndex, spawnToTargetMs, spawnToReadyMs, jsHeapMB, domNodes, gc: gcOk, console: { error: during.error ?? 0, warning: during.warning ?? 0, exception: during.exception ?? 0 } };
 }
 
 const runs = [];
