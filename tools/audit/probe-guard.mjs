@@ -36,6 +36,20 @@ export const DENY_RULES = [
       ),
   },
   {
+    id: "data-write",
+    /*
+     * 第 121 轮的**实证事故**：走查点了设置里的「运行登录测试」——
+     * 它建了一行 `accounts`（`test-1790281722602`）又删掉，只在控制台留下一行
+     * `[WriteAudit] crud.delete table=accounts`（第 118 轮走查读数里唯一的 warning，已核实）。
+     * 当时护栏**没拦住**：它的文案里没有"删除/清空"这类破坏性动词。
+     * ⇒ 补这一类：**会写用户数据的入口**。
+     * 同时配了**结果侧**判据 `tools/audit/fingerprint-userdata.mjs`（走查前后比主库/WAL 的 sha256）——
+     * 名单不可能穷尽，**想到的写入口靠名单，没想到的靠指纹**。
+     */
+    why: "会写用户数据（第 121 轮实证：点「运行登录测试」建/删了一行 accounts；走查前后请再用 fingerprint-userdata 比对指纹）",
+    test: (c) => /运行登录测试|登录测试|测试连接|保存设置|保存并刷新|添加模型|刷新模型列表|导入|导出|上传|同步|清空缓存|重建索引/i.test(String(c.label ?? "")),
+  },
+  {
     id: "destructive",
     why: "破坏性动作（删除/清空/重置/卸载/停止/回滚）会改用户数据，走查不许碰",
     test: (c) => /删除|移除|清空|重置|回退|回滚|卸载|停止|取消委派|恢复默认|Delete|Remove|Clear|Reset|Rollback|Uninstall|Stop/i.test(String(c.label ?? "")),

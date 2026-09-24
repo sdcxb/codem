@@ -46,6 +46,11 @@ check(
 check("PG-2a", "面板自己的「关闭」必须放行（反向对照）", allows({ label: "关闭", inTitlebar: false, scope: ".settings-overlay" }));
 check("PG-2b", "面板里的「还原」按钮（非窗口）放行", allows({ label: "还原默认缩放", inTitlebar: false, scope: ".ppt-toolbar" }));
 check("PG-3a", "「删除项目」必须拒", denies({ label: "删除项目" }));
+check("PG-13a", "「运行登录测试」必须拒（第 121 轮实证它写库：建/删一行 accounts）", denies({ label: "运行登录测试" }));
+check("PG-13b", "「保存设置」必须拒（写用户设置）", denies({ label: "保存设置" }));
+check("PG-13c", "「刷新模型列表」/「导入」/「上传」必须拒", denies({ label: "刷新模型列表" }) && denies({ label: "导入" }) && denies({ label: "上传" }));
+check("PG-13d", "拒了要能说清为什么（写出第 121 轮那次实证）", classifyClick({ label: "运行登录测试" }).why.includes("第 121 轮"));
+check("PG-13e", "反向对照：只读入口不许被这条规则误伤", allows({ label: "查看登录状态" }) && allows({ label: "模型列表" }) && allows({ label: "设置" }));
 check("PG-3b", "「清空对话」必须拒", denies({ label: "清空对话" }));
 check("PG-4a", "「切换执行模式」必须拒（第 10 轮事故）", denies({ label: "切换执行模式" }));
 check("PG-4b", "「切换主题」必须拒", denies({ label: "切换主题" }));
