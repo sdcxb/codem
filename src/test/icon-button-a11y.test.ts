@@ -40,15 +40,22 @@ import {
 const ROOT = process.cwd();
 
 /**
- * 棘轮基线：**修完 39 处之后**的实测值（第 84 轮）。
+ * 棘轮基线：**第 91 轮的实测值 0**。
  *
- * - 第 84 轮修的是：**全部图标关闭按钮（31 处）** + **折叠侧栏的图标条（8 处）**；`n * - 第 85 轮又修了 10 处语义明确的（删除/移除/清空/新建分支/收起工作台…），并且**修正了扫描器的第三类误报**：`n *   `{isZh ? "选择文件" : "Choose File"}` 这类**会渲染出文字**的表达式原来被当成"没有文字" ⇒ 156 里有 95 处是误报（详见 CHANGELOG 1.16.132 的更正）；
- * - 剩下的是需要**逐个看语义**才能起名的（每个组件的图标按钮含义不同，机械补名字就是造假），
- *   已登记在 `docs/GAP-LIST.md` 的 O-4 里，清单用
- *   `node .preview-shot/audit-icon-buttons.mjs` 随时可打印；
- * - **只许降不许升**：新写的图标按钮忘了名字会让这条红。
+ * 历史（每一档都是「修掉一批 + 必要时更正工具」）：
+ * - 第 84 轮：修完 39 处（图标关闭按钮 31 + 折叠侧栏 8）后基线 **156**；
+ * - 第 85 轮：又修 10 处，并**更正第三类误报** —— `{isZh ? "选择文件" : "Choose File"}` 这类
+ *   **会渲染出文字**的表达式原来被当成「没有文字」⇒ 156 里含 95 处误报；
+ * - 第 86 轮：基线 **51**（修完 10 处之后）；
+ * - 第 91 轮（本轮）：把 O-4 剩下的全部修完，并**更正第四类误报** ——
+ *   ① `{item.title}` / `{S.ollama.save[lang]}` 这类**非字面量表达式**同样会渲染文字；
+ *   ② `{a === b ? <><Clock size={12}/> 恢复中...</> : …}` 这类**嵌套花括号**里的字面量
+ *      被 `/\{[^}]*\}/g` 在第一个 `}` 处截断而扫不到。
+ *   两类合计 **39 处误报**（报 51，真问题 12）—— 给这些「本来就有可见文字」的按钮加 `aria-label`
+ *   会**盖掉**读屏要念的文字，是负优化，所以那 39 处一律不动、只修真的 12 处。
+ *   现在**基线 = 0**：新写的图标按钮没有可访问名会直接红。
  */
-const NAMELESS_ICON_BUTTON_BASELINE = 51;
+const NAMELESS_ICON_BUTTON_BASELINE = 0;
 
 describe("图标按钮的可访问名（第 84 轮）", () => {
   const findings = scanNamelessIconButtons(ROOT);
@@ -102,5 +109,39 @@ describe("图标按钮的可访问名（第 84 轮）", () => {
     const textBtn = `<button className="x-close" onClick={() => f()}>\n  取消\n</button>`;
     const t2 = buttonTags(textBtn);
     expect(isIconOnlyBody(textBtn, t2[0].end), "有可见文字的按钮不许被判成图标按钮").toBe(false);
+  });
+  it("A11Y-ICON-5: **非字面量表达式**会渲染文字 ⇒ 不许被当成「只有图标」（第 91 轮更正的误报）", () => {
+    /*
+     * 现场：NewChatPage 的建议卡片按钮内容是「图标 + {item.title} + {item.desc}」，
+     * 它**明明有可见文字**（只是文字来自变量），旧判据只看字面量 ⇒ 被报成无名图标按钮。
+     * 这类按钮加 aria-label 会**盖掉**读屏本来要念的文字，属于负优化。
+     */
+    const withVar = `<button className="new-chat-suggestion" onClick={() => pick(item.prompt)}>
+  <Icon size={20} className="new-chat-suggestion-icon" />
+  <div className="new-chat-suggestion-body">
+    <span className="new-chat-suggestion-title">{item.title}</span>
+  </div>
+</button>`;
+    const t1 = buttonTags(withVar);
+    expect(isIconOnlyBody(withVar, t1[0].end), "文字来自变量（{item.title}）也算有文字 ⇒ 不许报").toBe(false);
+
+    // 反向：表达式整体是 JSX（播放/暂停那种）且没有字面量 ⇒ 仍然要报
+    const iconSwitch = `<button onClick={togglePlay}><Check size={14} />{playing ? <Pause size={16} /> : <Play size={16} />}</button>`;
+    const t2 = buttonTags(iconSwitch);
+    expect(isIconOnlyBody(iconSwitch, t2[0].end), "整段都是 JSX 图标 ⇒ 只有图标，必须报").toBe(true);
+  });
+
+  it("A11Y-ICON-6: 嵌套花括号里的字面量也是文字（第 91 轮更正的误报）", () => {
+    /*
+     * 现场：SessionRecovery / SnapshotPanel 的按钮内容是
+     * 「{recovering === id ? <><Clock size={12} /> 恢复中...</> : <><Undo size={12} /> 恢复此会话</>}」，
+     * 里面有两个可见文字，但 /\{[^}]*\}/g 会在 size={12} 的 } 处截断，
+     * 于是外层表达式根本没被扫到 ⇒ 误报成「无名图标按钮」。
+     */
+    const ternary = `<button className="session-recover-btn" onClick={() => handleRecover(id)}>
+  {recovering === id ? <><Clock size={12} /> 恢复中...</> : <><Undo size={12} /> 恢复此会话</>}
+</button>`;
+    const t1 = buttonTags(ternary);
+    expect(isIconOnlyBody(ternary, t1[0].end), "嵌套花括号里的字面量必须算文字 ⇒ 不许报").toBe(false);
   });
 });

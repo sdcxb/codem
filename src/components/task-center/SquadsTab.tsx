@@ -226,6 +226,8 @@ export function SquadsTab() {
                     )}
                     {m.id !== squad.members[0]?.id && (
                       <button
+          aria-label="移除该成员"
+                        title="移除该成员"
                         onClick={() => handleRemoveMember(m.id, squad.id)}
                         className="squads-member-remove"
                       >

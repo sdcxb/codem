@@ -1491,7 +1491,9 @@ function NoteCard({
         >
           <Pin className="icon-2xs" />
         </button>
-        <button className="nb-note-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+        <button
+          aria-label="删除该笔记"
+          title="删除该笔记" className="nb-note-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
           <Trash2 className="icon-2xs" />
         </button>
       </div>

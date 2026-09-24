@@ -1031,6 +1031,8 @@ function SessionItem({
           title={session.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
         >{session.pinned ? <Pin size={12} style={{ color: "var(--accent)" }} /> : <Pin size={12} />}</button>
         <button
+          aria-label="删除该会话"
+          title="删除该会话"
           className="sidebar-session-delete"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
         ><ActionIcons.close size={12} /></button>

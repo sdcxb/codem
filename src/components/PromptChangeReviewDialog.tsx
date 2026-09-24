@@ -65,6 +65,8 @@ onClick={(e) => e.stopPropagation()}
             提示词修改审核 ({changes.length} 项变更)
           </h2>
           <button
+          aria-label="关闭"
+            title="关闭"
             onClick={onCancel}
             style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #888)" }}
           >

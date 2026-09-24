@@ -106,6 +106,8 @@ return createPortal(
             {isSingleQuestion ? questions[0].question : "请回答以下问题"}
           </h2>
           <button
+          aria-label="关闭"
+            title="关闭"
             onClick={onCancel}
             style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #888)" }}
           >

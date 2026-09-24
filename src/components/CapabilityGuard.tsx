@@ -69,6 +69,8 @@ export function CapabilityGuard({ feature, children, fallbackRender = true, onUn
             <AlertTriangle size={12} style={{ color: 'var(--warning)', marginTop: 2, flexShrink: 0 }} />
             <span style={{ flex: 1 }}>{isZh ? w.zh : w.en}</span>
             <button
+          aria-label={isZh ? "关闭提示" : "Dismiss"}
+              title={isZh ? "关闭提示" : "Dismiss"}
               onClick={() => setDismissed(true)}
               style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, flexShrink: 0 }}
             >

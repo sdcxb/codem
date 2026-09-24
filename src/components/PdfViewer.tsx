@@ -268,6 +268,8 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
           gap: '8px',
         }}>
           <button
+          aria-label={isZh ? "上一页" : "Previous page"}
+            title={isZh ? "上一页" : "Previous page"}
             onClick={goPrev}
             disabled={currentPage <= 1}
             style={{
@@ -282,6 +284,8 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             {currentPage} / {numPages}
           </span>
           <button
+          aria-label={isZh ? "下一页" : "Next page"}
+            title={isZh ? "下一页" : "Next page"}
             onClick={goNext}
             disabled={currentPage >= numPages}
             style={{
@@ -294,6 +298,8 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
           </button>
           <div style={{ width: '1px', height: '16px', background: 'var(--border-primary)' }} />
           <button
+            aria-label={isZh ? "缩小" : "Zoom out"}
+            title={isZh ? "缩小" : "Zoom out"}
             onClick={() => setScale(Math.max(0.5, scale - 0.2))}
             style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
@@ -303,6 +309,8 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             {Math.round(scale * 100)}%
           </span>
           <button
+            aria-label={isZh ? "放大" : "Zoom in"}
+            title={isZh ? "放大" : "Zoom in"}
             onClick={() => setScale(Math.min(3, scale + 0.2))}
             style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >

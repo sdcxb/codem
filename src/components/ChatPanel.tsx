@@ -1097,7 +1097,9 @@ canEdit={!isSessionStreaming}
                 {onFork && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button className="qa-turn-btn" onClick={() => onFork(origIndex)}>
+                      <button
+          aria-label={S.bubble.fork[lang]}
+                        title={S.bubble.fork[lang]} className="qa-turn-btn" onClick={() => onFork(origIndex)}>
                         <GitFork size={14} />
                       </button>
                     </TooltipTrigger>
@@ -1107,7 +1109,9 @@ canEdit={!isSessionStreaming}
                 {onRegenerate && isTurnWithResponse && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button className="qa-turn-btn" onClick={() => onRegenerate(origIndex)}>
+                      <button
+          aria-label={S.bubble.regenerate[lang]}
+                        title={S.bubble.regenerate[lang]} className="qa-turn-btn" onClick={() => onRegenerate(origIndex)}>
                         <RotateCcw size={14} />
                       </button>
                     </TooltipTrigger>

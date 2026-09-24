@@ -114,6 +114,8 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
           }}
         />
         <button
+          aria-label={zh ? "保存目标" : "Save goal"}
+          title={zh ? "保存目标" : "Save goal"}
           onClick={handleEdit}
           disabled={pending || draft.trim() === ''}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--success)' }}
@@ -121,6 +123,8 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
           <Check size={14} />
         </button>
         <button
+          aria-label={zh ? "取消编辑" : "Cancel"}
+          title={zh ? "取消编辑" : "Cancel"}
           onClick={() => setEditing(false)}
           disabled={pending}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}

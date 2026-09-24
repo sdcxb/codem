@@ -84,6 +84,8 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
       {/* Progress bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <button
+          aria-label={playing ? "暂停" : "播放"}
+          title={playing ? "暂停" : "播放"}
           onClick={togglePlay}
           style={{
             width: 36, height: 36, borderRadius: "50%",

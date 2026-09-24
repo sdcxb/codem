@@ -906,7 +906,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   onChange={(e) => setSettingsSearch(e.target.value)}
                   className="sp-search-input"
                 />
-                {settingsSearch && <button onClick={() => setSettingsSearch("")} className="sp-btn--icon sp-btn"><X size={12} /></button>}
+                {settingsSearch && <button
+          aria-label={lang === "zh" ? "清空搜索" : "Clear search"}
+                    title={lang === "zh" ? "清空搜索" : "Clear search"} onClick={() => setSettingsSearch("")} className="sp-btn--icon sp-btn"><X size={12} /></button>}
               </div>
               {settingsSearch.trim() && (
                 <div className="sp-search-status">
