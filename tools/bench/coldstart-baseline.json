@@ -1,0 +1,65 @@
+{
+  "version": "1.16.149",
+  "runs": 3,
+  "settleSeconds": 25,
+  "measuredAt": "2026-09-24T21:49:40.685Z",
+  "median": {
+    "spawnToTargetMs": 455,
+    "spawnToReadyMs": 942,
+    "jsHeapMB": 73,
+    "domNodes": 628
+  },
+  "spread": {
+    "jsHeapMB": [
+      49,
+      73
+    ],
+    "spawnToReadyMs": [
+      939,
+      960
+    ]
+  },
+  "consoleTotals": {
+    "error": 0,
+    "warning": 0,
+    "exception": 0
+  },
+  "runsDetail": [
+    {
+      "run": 1,
+      "spawnToTargetMs": 327,
+      "spawnToReadyMs": 960,
+      "jsHeapMB": 73,
+      "domNodes": 628,
+      "console": {
+        "error": 0,
+        "warning": 0,
+        "exception": 0
+      }
+    },
+    {
+      "run": 2,
+      "spawnToTargetMs": 468,
+      "spawnToReadyMs": 942,
+      "jsHeapMB": 49,
+      "domNodes": 628,
+      "console": {
+        "error": 0,
+        "warning": 0,
+        "exception": 0
+      }
+    },
+    {
+      "run": 3,
+      "spawnToTargetMs": 455,
+      "spawnToReadyMs": 939,
+      "jsHeapMB": 73,
+      "domNodes": 628,
+      "console": {
+        "error": 0,
+        "warning": 0,
+        "exception": 0
+      }
+    }
+  ]
+}
