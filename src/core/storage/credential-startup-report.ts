@@ -33,7 +33,7 @@
 import { reportActionFailure, reportAdvisory } from "./persist-failure";
 
 /** `ensureSecretsHydrated()` 的结果里本模块用到的部分 */
-export interface HydrateLike {
+interface HydrateLike {
   unsealed: number;
   failed: number;
   backend: boolean;
@@ -41,7 +41,7 @@ export interface HydrateLike {
 }
 
 /** `migrateProviderKeysToSealed()` 的结果里本模块用到的部分 */
-export interface MigrateLike {
+interface MigrateLike {
   sealed: number;
   failed: number;
   skippedUnavailable: number;
@@ -50,19 +50,19 @@ export interface MigrateLike {
 }
 
 /** `reclaimSealedPlaintextResidue()` 的结果里本模块用到的部分 */
-export interface ResidueLike {
+interface ResidueLike {
   attempted: boolean;
   vacuumed: boolean;
   reason?: string;
 }
 
-export interface CredentialStartupInput {
+interface CredentialStartupInput {
   hydrated: HydrateLike;
   migrated: MigrateLike;
   residue?: ResidueLike;
 }
 
-export interface CredentialStartupReport {
+interface CredentialStartupReport {
   /** 走了"失败"通道的区域（用户的 key/保护真的没生效） */
   failures: string[];
   /** 走了"提醒"通道的区域（需要知道，但不是失败） */
