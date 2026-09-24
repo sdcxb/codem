@@ -20,6 +20,10 @@ import { ScrollbarMarkers } from "./ScrollbarMarkers";
 import { listPinnedIds, togglePin, subscribePins } from "../core/nav-pins";
 import { ScrollToBottomIndicator } from "./ScrollToBottomIndicator";
 import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollState";
+import { markSessionRead } from "../core/session/session-read-state";
+import { getSession as getStoredSession } from "../core/storage/session";
+import { latestTodoListForSession } from "../core/llm/tools/show-todo";
+import { useDomainReady } from "../hooks/use-domain-ready";
 // Lucide icons — replacing all emoji icons with professional vector icons
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
@@ -118,6 +122,65 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   // P0: Scroll state tracking
   useScrollState(messagesContainerRef, [messages.length]);
   useUnreadMessagesTracker(messages.length, isStreaming);
+
+  /**
+   * 第 72 轮审计：**正在看的会话 = 已读**（侧栏未读徽标的写入点）。
+   *
+   * 侧栏那个徽标原来是死代码（读一个从没人写的 `session.unreadCount`）。现在它按
+   * "已读水位"算，而水位必须有人推进 —— 就是这个 effect：只要你在这个会话里，
+   * 水位就跟着消息条数走（未读恒为 0）；你切走之后它才会重新累积。
+   *
+   * 条数取三者**最大**：库里刚读到的计数（权威）、store 里的计数、界面上已加载的条数 ——
+   * 取最大是为了绝不把真实条数估小（估小会凭空多出未读徽标）。
+   */
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const mark = () => {
+      let fresh: number | undefined;
+      try { fresh = getStoredSession(activeSessionId)?.messageCount; } catch { fresh = undefined; }
+      markSessionRead(
+        activeSessionId,
+        Math.max(Number(fresh ?? 0), Number(currentSession?.messageCount ?? 0), messages.length),
+      );
+    };
+    mark();
+    /*
+     * 5 秒兜一次：`message_count` 由消息写入路径维护，最后一条消息落库可能**晚于**这次 effect
+     * 的触发时刻（真机核对时就是这样：水位停在 4、库里已是 5 ⇒ 正在看的会话反而挂着 1 条未读）。
+     * `markSessionRead` 只前进、不写重复值 ⇒ 这个轮询不会造成写风暴。
+     */
+    const timer = setInterval(mark, 5000);
+    return () => clearInterval(timer);
+  }, [activeSessionId, messages.length, currentSession?.messageCount]);
+
+  /**
+   * 第 72 轮审计：把聊天里的待办面板接上**真实数据**。
+   *
+   * 这个面板（`TodoListDisplay`）原来是**死代码**：`activeTodoId` / `activeTodos`
+   * 全仓没有任何 setter 调用点，渲染条件恒假 ⇒ 永不出现；而 `show_todo` 工具一直在往
+   * `todo_lists` 写数据（本机库里就有两条）—— "库里有、界面上永远看不到"。
+   *
+   * 现在：切会话 / 消息变化（工具在回合里写）时取**该会话最近一份**待办清单；
+   * 读不到（镜像未就绪）时**保持原状**并等"就绪后重读"，绝不把它当成"没有待办"清空界面。
+   */
+  const reloadTodoList = useCallback(() => {
+    if (!activeSessionId) {
+      setActiveTodoId(null);
+      setActiveTodos([]);
+      return;
+    }
+    const found = latestTodoListForSession(activeSessionId);
+    if (found.status === "unavailable") return; // 保持原状，等就绪后重读
+    setActiveTodoId(found.list?.id ?? null);
+    setActiveTodos(found.list?.todos ?? []);
+  }, [activeSessionId, messages.length]);
+
+  useEffect(() => {
+    reloadTodoList();
+  }, [reloadTodoList]);
+
+  // `todo_lists` 故意不在首屏预取清单里（行数会随 show_todo 次数增长）⇒ 读侧自己补一次
+  useDomainReady("todo_lists", reloadTodoList);
 
   // Measure chat-body bounds and set CSS vars for floating panel positioning
   useEffect(() => {

@@ -41,6 +41,7 @@ import { getGraphData, updateGraphNode, deleteGraphNode, deleteGraphEdge } from 
 import type { GraphData, GraphNode, GraphEdge, EntityType } from '../core/knowledge';
 import { useLang } from '../core/i18n/lang';
 import { createPortal } from 'react-dom';
+import { useDomainReady } from '../hooks/use-domain-ready';
 
 // ========== Types ==========
 
@@ -316,6 +317,14 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
+
+  /*
+   * 第 72 轮审计：图谱两张表（`graph_nodes` / `graph_edges`）**故意不预取**（每行都可能很大，
+   * 预取会顶爆启动内存），所以它们必然是"打开笔记本之后才加载"—— 而这正是镜像窗口最容易
+   * 命中的时刻：加载没完成时这里读到空，界面显示"没有节点"，而**没有人会再读一次**。
+   * 挂上"就绪后重读"即可。
+   */
+  useDomainReady(['graph_nodes', 'graph_edges'], () => { void loadGraph(); });
 
   // Highlight/dim based on search and selection
   useEffect(() => {

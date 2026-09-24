@@ -70,6 +70,51 @@ export interface DomainMirrorPort {
 export interface DomainReadOpts {
   /** 覆盖该表的镜像行数上限（超过则该表放弃镜像、回退旧路径） */
   maxRows?: number;
+  /**
+   * **镜像就绪后回调一次**（第 72 轮审计补：读侧的"就绪后重读"通道）。
+   *
+   * ## 为什么读侧必须有这条通道
+   *
+   * 写侧早就有对称的机制（`deferWrite`：写落在"还没就绪"上就排队，就绪后按序重放，
+   * 见 A-1"首触必丢"）。读侧一直**没有**：`domainReadMany/One` 在镜像未就绪时返回
+   * `undefined`，而绝大多数调用方把它按契约吞成 `[]` —— 于是"**没读到**"与"**确实是空**"
+   * 在调用方看起来一模一样，且**没有任何人会再试一次**。
+   *
+   * 后果分两种，本仓库两种都踩过：
+   * - **每次调用现读**的调用方会自愈（下一次读就拿到了）；
+   * - **读一次就缓存 / 只读一次**的调用方会**永久空** ——
+   *   真机事故一：委派页签（编排器构造时读一次 ⇒ 重启后历史永远空）；
+   *   真机事故二：历史消息的赞/踩（每条消息只读一次 ⇒ 显示"未评价"）。
+   *
+   * 这条通道只做一件事：**只对"本次读的时候还没就绪"的表，在它真正就绪时回调一次**。
+   * 已经就绪的表**不回调**（否则每次读都回调 → 调用方重读 → 再回调，成环）。
+   */
+  onReady?: () => void;
+}
+
+/**
+ * "该表就绪后回调一次"的待发集合（按表分组，避免同一张表的多次读各挂一个回调）。
+ *
+ * 去重的必要性：一次读路径里 `domainMirror()` 可能被调用多次（例如
+ * `listAll` 里先 `domainReadMany` 再 `domainDeleteWhere`），而**加载中的表**每次调用
+ * 都会向 `ensureLoaded` 注册一个回调。若不去重，一次加载完成会回调多次，
+ * 调用方就会重复重读多次（不是错，但会把"一次就绪"放大成 N 次重读）。
+ */
+const readyCallbacks = new Map<string, Set<() => void>>();
+
+/** 就绪时把该表攒下的回调一次性取走并执行（取走 = 清空，确保只回调一轮） */
+function drainReadyCallbacks(table: string): void {
+  const pending = readyCallbacks.get(table);
+  if (!pending) return;
+  readyCallbacks.delete(table);
+  for (const cb of pending) {
+    try {
+      cb();
+    } catch (e) {
+      // 回调是调用方的东西，它抛错不能影响别的回调，也不能影响存储层
+      console.warn(`[domain-store] onReady 回调抛错（表 ${table}）:`, e);
+    }
+  }
 }
 
 /**
@@ -78,6 +123,74 @@ export interface DomainReadOpts {
  * 这是 `domainPort` 的"下层"：写路径需要拿到端口对象本身才能把写**排队**
  * （见 `deferWrite`），而它恰恰是在"未就绪"的时候才需要端口。
  */
+/**
+ * "这张表就绪后回调一次" —— 读路径给 UI 用的公开入口（第 72 轮审计新增）。
+ *
+ * 用法（面板里"打开对象后才读"的数据）：
+ * ```ts
+ * useEffect(() => {
+ *   const load = () => setItems(listComments(issueId));
+ *   load();                                           // 先读一次（已就绪时这次就拿全了）
+ *   return onceDomainReady("issue_comments", load);    // 没就绪 ⇒ 就绪后再读一次
+ * }, [issueId]);
+ * ```
+ *
+ * 语义（三条都要记清，否则很容易写出环）：
+ * 1. **已经就绪 → 不回调**，直接返回空退订。调用方刚那次读已经拿到数据；
+ *    若这里也回调，就成了"读 → 回调 → 再读 → 再回调"的循环；
+ * 2. **没就绪 → 登记回调**（顺带触发加载），就绪时**恰好一次**；返回退订函数，
+ *    组件卸载必须调用（否则闭包会留在集合里 —— 下一条就是为此设的上限）；
+ * 3. 同一张表最多留 `MAX_READY_CALLBACKS_PER_TABLE` 个待发回调；超了**丢新的并如实打一行警告**
+ *    （不静默）。正常写法（卸载时退订）永远碰不到这个上限。
+ */
+export function onceDomainReady(
+  table: string,
+  cb: () => void,
+  opts: DomainReadOpts = {},
+): () => void {
+  const noop = () => {};
+  if (!hasStoragePort()) return noop;
+  const port = getStoragePort() as unknown as DomainMirrorPort;
+  if (!port.domains?.isReady || !port.domains?.ensureLoaded) return noop;
+  if (port.domains.isReady(table)) return noop; // 规则 1：已就绪不回调
+
+  /*
+   * ⚠️ 登记**只有一处**：交给 `domainMirror(table, { onReady })`（它内部做上限检查、
+   * 触发加载、并在就绪时统一 drain）。
+   *
+   * 第一版这里还自己 `set.add(cb)` 了一次，靠 Set 的元素去重才没变成"一次就绪回调两次"。
+   * 那是"同一件事两处登记"的形态 —— 任何一处被改坏，另一处都会让它看起来仍然正常
+   * （突变验证正是这么发现的：把 domainMirror 里的登记去掉，READY-1 依然绿）。
+   */
+  domainMirror(table, { ...opts, onReady: cb });
+  return () => {
+    readyCallbacks.get(table)?.delete(cb);
+  };
+}
+
+/** 同一张表待发回调的上限（防"忘记退订"把闭包攒成泄漏） */
+const MAX_READY_CALLBACKS_PER_TABLE = 32;
+/** 已经就上限告警过的表（同一张表只喊一次，不刷屏） */
+const warnedReadyOverflow = new Set<string>();
+
+/** 测试用：清空"就绪后回调"与告警记忆（避免用例之间互相影响） */
+export function __resetReadyCallbacks(): void {
+  readyCallbacks.clear();
+  warnedReadyOverflow.clear();
+}
+
+/**
+ * 测试用：某张表当前**攒着多少个待发回调**。
+ *
+ * 为什么需要它：`onceDomainReady` 返回的退订函数是"卸载时必须调用"的契约，
+ * 而"忘了退订"在只回调一次的场景下**没有任何可观察后果**（表早就就绪，回调不会再触发）——
+ * 于是它静默通过所有用例，只在长跑里慢慢攒成泄漏。有了这个计数，"退订"才能被断言
+ * （见 domain-ready-reread.test.tsx 的 READY-3 / READY-6）。
+ */
+export function __pendingReadyCallbackCount(table: string): number {
+  return readyCallbacks.get(table)?.size ?? 0;
+}
+
 function domainMirror(table: string, opts: DomainReadOpts = {}): DomainMirrorPort | null {
   // 判据只有"端口在不在"：`kind` 已是常量 `"rust"`（唯一实现），再加一次 `kind` 判断
   // 就是恒不成立的分支 —— 第 19 轮已删。
@@ -85,7 +198,14 @@ function domainMirror(table: string, opts: DomainReadOpts = {}): DomainMirrorPor
   const candidate = getStoragePort() as unknown as DomainMirrorPort;
   if (!candidate.domains?.ensureLoaded) return null;
   /*
-   * 把"该表刚刚就绪"这件事接住 —— 这是写队列重放的**主路径**。
+   * 这次调用之前该表**是否已经就绪** —— 必须在 `ensureLoaded` 之前取，
+   * 因为 `ensureLoaded` 对"已加载"的表会**同步回调**（见 rust-port 的实现）。
+   * 只有"读的时候还没就绪"才需要安排"就绪后重读"；已经就绪的表再回调就会成环。
+   */
+  const wasReady = candidate.domains.isReady(table);
+  /*
+   * 把"该表刚刚就绪"这件事接住 —— 这是写队列重放的**主路径**，
+   * 也是读侧"就绪后重读"（`opts.onReady`）的唯一触发点。
    *
    * 为什么不能只靠 `if (isReady) replayDeferred()`（下一行）：加载是异步的，
    * 而这次调用只负责**发起**加载，函数返回时表还没就绪 —— 那一刻队列里有东西，
@@ -94,8 +214,26 @@ function domainMirror(table: string, opts: DomainReadOpts = {}): DomainMirrorPor
    * 兜底的那次判断仍然保留：万一回调因为实现细节没被触发（例如某天换了端口实现），
    * 下一次访问也能把队列清掉（`replayDeferred` 以摘走条目开头，重复调用安全）。
    */
+  if (!wasReady && opts.onReady) {
+    const set = readyCallbacks.get(table) ?? new Set<() => void>();
+    if (set.size >= MAX_READY_CALLBACKS_PER_TABLE) {
+      // 满额：丢新的并**如实告警一次**（不静默）—— 正常写法（卸载时退订）碰不到这条
+      if (!warnedReadyOverflow.has(table)) {
+        warnedReadyOverflow.add(table);
+        console.warn(
+          `[domain-store] 表 ${table} 的"就绪后重读"回调已攒到 ${set.size} 个（上限 ${MAX_READY_CALLBACKS_PER_TABLE}），` +
+            `本次不再登记 —— 调用方应当在使用处（如 useEffect 清理）退订`,
+        );
+      }
+    } else {
+      set.add(opts.onReady);
+      readyCallbacks.set(table, set);
+    }
+  }
   candidate.domains.ensureLoaded(table, () => {
     if (candidate.domains.isReady(table)) replayDeferred(table);
+    // 读侧：只对"当初没就绪"的表回调（去重集合保证一轮只回调一次）
+    if (candidate.domains.isReady(table)) drainReadyCallbacks(table);
   }, opts.maxRows);
   if (candidate.domains.isReady(table)) replayDeferred(table);
   return candidate;

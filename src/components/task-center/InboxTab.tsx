@@ -14,6 +14,7 @@ import { Inbox as InboxIcon, CheckCheck, Archive, ArchiveRestore, ClipboardList,
 import { getInboxManager, type InboxItem, type InboxCategory } from "../../core/inbox/inbox";
 import { useLang } from "../../core/i18n/lang";
 import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project";
+import { useDomainReady } from "../../hooks/use-domain-ready";
 
 const CATEGORY_CONFIG: Record<InboxCategory, { Icon: typeof InboxIcon; color: string }> = {
   issue: { Icon: ClipboardList, color: "var(--accent)" },
@@ -98,6 +99,12 @@ export function InboxTab() {
     const unsub = mgr.onInboxChange(() => loadItems());
     return () => { unsub(); };
   }, [loadItems]);
+
+  /*
+   * 第 72 轮审计：这张表的读发生在"打开面板那一次"。它虽然已进首屏预取清单，
+   * 仍可能落在加载窗口里（面板挂载早于就绪）—— 补上"就绪后重读"，与编排器那处的修法同源。
+   */
+  useDomainReady("inbox", loadItems);
 
   /**
    * 全部已读。原来 `if (!pid) return;` —— 无项目时按钮点了**什么都不发生**

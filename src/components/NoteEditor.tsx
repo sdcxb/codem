@@ -37,6 +37,7 @@ import {
 } from '../core/knowledge';
 import type { Note, NoteLink, NoteVersion } from '../core/knowledge';
 import { ActionIcons } from "../core/icons/icon-map";
+import { useDomainReady } from "../hooks/use-domain-ready";
 
 // Mermaid 代码块渲染组件 (复用 MessageBubble 中的渲染逻辑)
 const MermaidBlock = ({ chart }: { chart: string }) => {
@@ -122,6 +123,13 @@ export function NoteEditor({
   useEffect(() => {
     refreshLinks();
   }, [refreshLinks]);
+
+  /*
+   * 第 72 轮审计：反向链接/版本来自 `note_links` / `note_versions`，两张表都不在首屏预取清单里
+   * （它们的读本来就发生在"打开某条笔记之后"）。镜像窗口命中时这里读到空，
+   * 界面显示"无反向链接"，而没有人会再读一次 —— 挂上"就绪后重读"。
+   */
+  useDomainReady(["notes", "note_links", "note_versions"], refreshLinks);
 
   /**
    * ## ⚠️ 第 47 轮补（UI/UX 审计 P1）：换了笔记必须**重置编辑缓冲**

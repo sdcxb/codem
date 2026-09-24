@@ -15,6 +15,7 @@ import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { getDelegationOrchestrator } from "../core/session";
 import { getInboxManager } from "../core/inbox/inbox";
+import { ensureReadStateInitialized, computeUnreadBySession, markSessionRead } from "../core/session/session-read-state";
 import { ActionIcons } from "../core/icons/icon-map";
 
 interface SidebarProps {
@@ -40,6 +41,15 @@ interface SidebarProps {
 
 export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onPlugins, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onCicd, onPerf, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   const [inboxUnread, setInboxUnread] = useState(0);
+  /**
+   * 每个会话的未读条数（第 72 轮审计补上的**真实数据源**）。
+   *
+   * 这个徽标原来是**死代码**：它读 `session.unreadCount`，而全仓没有任何地方写那个字段
+   * （`sessions` 表也没这一列、Rust 侧更没有）⇒ 徽标永远不会显示。
+   * 现在从"已读水位"算：`未读 = 该会话现在的消息条数 − 你上次看它时的条数`
+   * （见 `core/session/session-read-state.ts`）。
+   */
+  const [sessionUnread, setSessionUnread] = useState<Record<string, number>>({});
 
   // Track inbox unread count
   useEffect(() => {
@@ -148,6 +158,36 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   useEffect(() => {
     loadAllSessions();
   }, [projects.length, currentSession?.id, currentProject?.id]);
+
+  /**
+   * 会话未读：① 首次运行做**一次性迁移**（把此刻已存在的会话标记为已读 —— 否则历史会话，
+   * 例如本机 657 条的那个，升级后会立刻顶一个 657 的徽标）；② 按"已读水位"算未读。
+   *
+   * ⚠️ 真机核对抓到的两条（都在这里修掉）：
+   * 1. **必须先刷新会话列表**再算未读：`allSessions` 是"上次加载时"的快照，
+   *    而消息条数是会变的（委派出去的子会话在后台产出）—— 只按快照算，
+   *    徽标会一直用旧条数，表现成"明明有新消息却不显示"（第一次真机核对就是这样：0 个徽标）；
+   * 2. 轮询与收件箱徽标同频（5 秒），刷新走同一个 `loadAllSessions()`（镜像内的同步读，很便宜）。
+   */
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const all = (Object.values(allSessions).flat() as Array<{ id?: string; messageCount?: number }>)
+          .map((s) => ({ id: String(s?.id ?? ""), messageCount: s?.messageCount }));
+        ensureReadStateInitialized(all);
+        setSessionUnread(computeUnreadBySession(all));
+      } catch (e) {
+        console.warn("[Sidebar] 未读水位计算失败（不影响会话列表）:", e);
+      }
+    };
+    refresh();
+    const interval = setInterval(() => {
+      // 先取新的条数（loadAllSessions 会 setState → 本 effect 重跑 → 再用新快照算一遍）
+      try { loadAllSessions(); } catch { /* 读不到就按旧快照算，不影响别的功能 */ }
+      refresh();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [allSessions]);
 
   // Apply saved font family/weight on mount (theme is handled by TitleBar)
   useEffect(() => {
@@ -540,6 +580,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                   <SessionItem
                     key={s.id}
                     session={s}
+                    unread={sessionUnread[s.id] || 0}
                     isActive={currentSession?.id === s.id && !currentProject}
                     lang={lang}
                     onClick={() => handleSessionClick("__global__", s.id)}
@@ -564,6 +605,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                   <SessionItem
                     key={s.id}
                     session={s}
+                    unread={sessionUnread[s.id] || 0}
                     isActive={currentSession?.id === s.id && !currentProject}
                     lang={lang}
                     onClick={() => handleSessionClick("__global__", s.id)}
@@ -754,6 +796,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                                 <SessionItem
                                   key={s.id}
                                   session={s}
+                                  unread={sessionUnread[s.id] || 0}
                                   isActive={currentSession?.id === s.id}
                                   lang={lang}
                                   onClick={() => handleSessionClick(project.id, s.id)}
@@ -778,6 +821,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                                 <SessionItem
                                   key={s.id}
                                   session={s}
+                                  unread={sessionUnread[s.id] || 0}
                                   isActive={currentSession?.id === s.id}
                                   lang={lang}
                                   onClick={() => handleSessionClick(project.id, s.id)}
@@ -902,6 +946,7 @@ function SessionItem({
   isEditing, editValue, onEditChange, onEditCommit, onEditCancel,
   onRename, onCopyId, onDelete, onPin,
   onDragStart, onDragOver, onDrop,
+  unread = 0,
 }: {
   session: any;
   isActive: boolean;
@@ -920,6 +965,8 @@ function SessionItem({
   onDragStart?: (e: React.DragEvent) => void;
   onDragOver?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
+  /** 未读条数（由"已读水位"算出，见 session-read-state.ts） */
+  unread?: number;
 }) {
   // Check if this session is currently running an agentic loop
   const isActiveSession = useAppStore(s => s.activeSessions.has(session.id));
@@ -953,11 +1000,16 @@ function SessionItem({
       onDrop={onDrop}
     >
       {isActiveSession && <span className="session-running-dot" title={lang === "zh" ? "运行中" : "Running"} />}
-      {/* P1 #6: Unread message badge */}
+      {/*
+        P1 #6: 会话未读徽标。
+        ⚠️ 第 72 轮审计：这里原来读 `session.unreadCount` —— 那个字段**全仓没有任何写入点**
+        （`sessions` 表也没有这一列），于是这个徽标**永远不会显示**（死代码）。
+        现在改读由"已读水位"算出来的未读数（`session-read-state.ts`），并在会话被打开 /
+        正在查看时持续推进水位（见 App 侧的 markSessionRead）。
+      */}
       {(() => {
-        const unread = (session.unreadCount as number) || 0;
         if (unread <= 0) return null;
-        return <span className="session-unread-badge" title={lang === 'zh' ? `${unread} 条未读` : `${unread} unread`}>{unread > 99 ? '99+' : unread}</span>;
+        return <span className="session-unread-badge" title={lang === 'zh' ? `${unread} 条新消息` : `${unread} new`}>{unread > 99 ? '99+' : unread}</span>;
       })()}
       {session.executionMode === "git_worktree" && (
         <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}><GitBranch size={12} /></span>

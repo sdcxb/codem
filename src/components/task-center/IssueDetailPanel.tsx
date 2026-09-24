@@ -15,6 +15,7 @@ import { getSquadManager } from "../../core/squad/squad";
 import type { IssueStatus } from "../../core/issue/issue-storage";
 import { useLang } from "../../core/i18n/lang";
 import { issueStatusMeta, ISSUE_STATUSES } from "./issue-status-meta";
+import { useDomainReady } from "../../hooks/use-domain-ready";
 
 interface IssueDetailPanelProps {
   issue: IssueWithComments;
@@ -42,6 +43,14 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
     if (updated) setCurrentIssue(updated);
     onRefresh();
   }, [issue.id, onRefresh]);
+
+  /*
+   * 第 72 轮审计：活动（评论）来自 `issue_comments`，而这张表**不在首屏预取清单里** ——
+   * 镜像晚就绪时上面那次读只会拿到空，而本面板只在"issue 变化 / 自己改动后"才重读，
+   * 于是**首开一个 Issue 会显示"暂无评论"**（真缺陷形态：库里有的看不到）。
+   * 这里挂上"就绪后重读"，镜像一就绪评论就自己出现。
+   */
+  useDomainReady(["issues", "issue_comments"], refresh);
 
   const handleStatusChange = (newStatus: IssueStatus) => {
     // 点「当前状态」不算变更：否则 IssueManager 会写一条假的状态变更评论 + 收件箱通知

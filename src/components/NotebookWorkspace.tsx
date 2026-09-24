@@ -59,6 +59,7 @@ import { useLang } from '../core/i18n/lang';
 import { useSkin } from '../core/theme';
 import { KnowledgeGraphView } from './KnowledgeGraphView';
 import PPTAdapter from './ppt/PPTAdapter';
+import { useDomainReady } from '../hooks/use-domain-ready';
 
 interface NotebookWorkspaceProps {
   notebookId: string;
@@ -320,6 +321,17 @@ export function NotebookWorkspace({
       setLoadingQuestions(false);
     }).catch(() => setLoadingQuestions(false));
   }, [refreshAll, notebookId]);
+
+  /*
+   * 第 72 轮审计：笔记本的来源/区块/笔记这几张表**故意不预取**（`notebook_chunks` 每行带
+   * embedding，预取会顶爆启动内存），所以它们的读必然发生在"打开某个笔记本之后" ——
+   * 这正是镜像窗口最容易命中的时刻：加载没完成时这里读到空，界面显示"还没有来源"，
+   * 而**没有人会再读一次**。就绪后重读一次即可。
+   */
+  useDomainReady(
+    ["notebooks", "notebook_sources", "notebook_chunks", "notes"],
+    refreshAll,
+  );
 
   // ===== 监听外部工具创建笔记的事件（如 generate_ppt 工具） =====
   useEffect(() => {

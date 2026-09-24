@@ -13,6 +13,7 @@ import { useLang } from "../../core/i18n/lang";
 import { IssueCard } from "./IssueCard";
 import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project";
 import { ISSUE_STATUS_META } from "./issue-status-meta";
+import { useDomainReady } from "../../hooks/use-domain-ready";
 
 /** 所有 IssueStatus 都必须有一列（列顺序/颜色/标签来自唯一的 issue-status-meta 表） */
 const COLUMNS = ISSUE_STATUS_META.map((m) => ({
@@ -46,6 +47,9 @@ export function IssueBoard() {
       unsub();
     };
   }, [loadIssues]);
+
+  // 第 72 轮审计：镜像晚就绪时自己补一次（否则"读一次就再也不重读"= 看板永久空）
+  useDomainReady("issues", loadIssues);
 
   const handleDragStart = (e: React.DragEvent, issueId: string) => {
     setDraggedId(issueId);

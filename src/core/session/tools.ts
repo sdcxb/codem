@@ -339,13 +339,52 @@ export function createListSessionsTool(): ToolDef {
     async execute(_args, ctx) {
       const zh = getLang() === "zh";
 
-      // 从 store 获取当前项目的所有会话
-      const sessions = useProjectStore.getState().sessions;
+      /**
+       * ## 第 72 轮审计：把**全局会话**也列出来，并标出作用域
+       *
+       * 原来只读 `useProjectStore.getState().sessions`（= 当前作用域：某个项目，
+       * 或者"没有项目"时的全局列表）。于是从**全局会话**发起委派时，agent 看不到任何
+       * 项目里的会话；在项目里时，又看不到全局会话 —— 而 `delegate_to_session` 是允许
+       * 跨这些作用域的（它只要求目标会话存在）。真机核对时我就撞上过：
+       * agent 只能靠人把目标会话 id 手打给它。
+       *
+       * 现在：当前作用域的会话 + **另一侧作用域的会话**，每条标 `scope=`，并在表头说明
+       * 目标可以是任意一条（只要它存在）。去重按 id（同一会话不会列两次）。
+       */
+      const store = useProjectStore.getState();
+      const scoped = store.sessions;
+      const currentProjectId = store.currentProject?.id ?? "";
+      let other: Array<{ id: string; title: string; messageCount: number; scope: string }> = [];
+      try {
+        // 另一侧作用域：有当前项目 ⇒ 补全局会话；没有项目 ⇒ 补每个项目里的会话
+        if (currentProjectId) {
+          other = SessionStorage.listSessions("").map((s: any) => ({ ...s, scope: zh ? "全局" : "global" }));
+        } else {
+          for (const p of store.projects ?? []) {
+            const list = store.getProjectSessions(p.id) ?? [];
+            other.push(...list.map((s: any) => ({ ...s, scope: p.name || p.id })));
+          }
+        }
+      } catch (e) {
+        // 补不出另一侧不算失败：至少把当前作用域的会话如实列出来
+        console.warn("[list_sessions] 读取另一侧作用域的会话失败（只列当前作用域）:", e);
+        other = [];
+      }
 
-      if (sessions.length === 0) {
+      const seen = new Set<string>();
+      const rows = [
+        ...scoped.map((s: any) => ({ s, scope: currentProjectId ? (store.currentProject?.name || currentProjectId) : (zh ? "全局" : "global") })),
+        ...other.map((s: any) => ({ s, scope: s.scope })),
+      ].filter(({ s }) => {
+        if (!s?.id || seen.has(s.id)) return false;
+        seen.add(s.id);
+        return true;
+      });
+
+      if (rows.length === 0) {
         return {
           title: "list_sessions",
-          output: zh ? "当前项目没有会话。" : "No sessions in the current project.",
+          output: zh ? "没有任何会话可列（当前作用域与全局都是空的）。" : "No sessions to list (current scope and global are both empty).",
         };
       }
 
@@ -359,7 +398,7 @@ export function createListSessionsTool(): ToolDef {
        */
       const isExecuting = isSessionExecuting;
 
-      const lines = sessions.map((s) => {
+      const lines = rows.map(({ s, scope }) => {
         const delegations = orchestrator.getDelegationsByTarget(s.id);
         const pendingCount = delegations.filter((d) => d.status === "pending" || d.status === "running").length;
         const status = isExecuting(s.id)
@@ -368,12 +407,15 @@ export function createListSessionsTool(): ToolDef {
             ? (zh ? `委派中(${pendingCount})` : `delegated(${pendingCount})`)
             : (zh ? "空闲" : "idle");
 
-        return `  ${s.id} | ${s.title} | ${status} | ${s.messageCount} msgs`;
+        return `  ${s.id} | ${s.title} | ${status} | ${s.messageCount ?? 0} msgs | scope=${scope}`;
       });
 
+      const scopes = new Set(rows.map((r) => r.scope));
       const header = zh
-        ? `会话列表 (${sessions.length} 个):\n  ID | 标题 | 状态 | 消息数`
-        : `Sessions (${sessions.length}):\n  ID | Title | Status | Messages`;
+        ? `会话列表 (${rows.length} 个，覆盖作用域 ${scopes.size} 个):\n  ID | 标题 | 状态 | 消息数 | 作用域\n` +
+          `（委派目标可以是其中**任意一条**：跨作用域允许，只要该会话存在。）`
+        : `Sessions (${rows.length}, ${scopes.size} scope(s)):\n  ID | Title | Status | Messages | Scope\n` +
+          `(Any of these can be a delegation target — cross-scope is allowed as long as the session exists.)`;
 
       return {
         title: "list_sessions",

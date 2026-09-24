@@ -7,7 +7,7 @@
 
 import type { ToolDef, ToolExecuteResult, ToolContext } from "../tools";
 import type { TodoItem } from "../agentic-loop";
-import { domainReadOne, domainWrite, reportWriteNotAccepted } from "../../storage/domain-store";
+import { domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "../../storage/domain-store";
 import { reportActionFailure, reportPersistFailure } from "../../storage/persist-failure";
 
 /**
@@ -195,6 +195,43 @@ export function loadTodoList(todoId: string): TodoItem[] | null {
     `待办列表 ${todoId} 本次读不到 —— 这**不是**"该待办不存在"，请稍后重试`,
   );
   return null;
+}
+
+/**
+ * 某会话**最近一份**待办清单（第 72 轮审计新增）。
+ *
+ * ## 为什么需要它
+ *
+ * 审计发现聊天里的待办面板（`TodoListDisplay`）是**死代码**：它由 `ChatPanel` 的
+ * `activeTodoId` / `activeTodos` 驱动，而那两个 state **全仓没有任何 setter 调用点**
+ * ⇒ 渲染条件 `activeTodoId && activeTodos.length > 0` 恒假 ⇒ 组件永不出现。
+ * 而 `show_todo` 工具明明一直在往 `todo_lists` 写数据（本机库里就有两条）——
+ * 也就是说"库里有、界面上永远看不到"，与本次审计的其它几处同一类。
+ *
+ * ## 返回值的三态（沿用本文件 C-5 的纪律：不许把"读不到"说成"没有"）
+ *
+ * - `{ status: "ok", list: {...} }` —— 读到了，这是最近一份；
+ * - `{ status: "ok", list: null }`  —— 确实没有待办清单（该会话从没用过 `show_todo`）；
+ * - `{ status: "unavailable" }`     —— **这次读不到**（镜像未就绪/未接手）⇒ 调用方应当
+ *   保持原状并等"就绪后重读"，**绝不能**当成"没有待办"把界面清空。
+ */
+export type TodoLookup =
+  | { status: "ok"; list: { id: string; todos: TodoItem[]; createdAt: number } | null }
+  | { status: "unavailable" };
+
+export function latestTodoListForSession(sessionId: string): TodoLookup {
+  if (!sessionId) return { status: "ok", list: null };
+  const rust = domainReadMany(TODO_TABLE, wireToTodoRow, { session_id: sessionId });
+  if (rust === undefined) return { status: "unavailable" };
+  if (rust.length === 0) return { status: "ok", list: null };
+  // 最近一份：created_at 最大的那条（同一会话多次 show_todo 会留下多行）
+  const newest = rust.reduce((a, b) => (b.created_at > a.created_at ? b : a));
+  return {
+    status: "ok",
+    // `parseTodos` 对坏 JSON 返回 null（行坏了不等于"没有待办"）—— 这里如实落成空数组，
+    // 由上层决定怎么表达；不编造条目。
+    list: { id: newest.id, todos: parseTodos(newest.todos) ?? [], createdAt: newest.created_at },
+  };
 }
 
 /**

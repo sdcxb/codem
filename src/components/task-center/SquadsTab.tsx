@@ -13,6 +13,7 @@ import { getSquadManager, type SquadWithMembers } from "../../core/squad";
 import { getAgentRegistry, type AgentDefinition } from "../../core/agent/agent";
 import { useLang } from "../../core/i18n/lang";
 import { useCurrentProjectId } from "./use-current-project";
+import { useDomainReady } from "../../hooks/use-domain-ready";
 
 export function SquadsTab() {
   const lang = useLang();
@@ -46,6 +47,9 @@ export function SquadsTab() {
     const unsub = mgr.onSquadChange(() => loadSquads());
     return () => { unsub(); };
   }, [loadSquads]);
+
+  // 第 72 轮审计：镜像晚就绪时自己补一次（团队/成员两张表都不在首屏预取清单里）
+  useDomainReady(["squads", "squad_members"], loadSquads);
 
   const handleCreate = () => {
     if (!editing || !editing.name || !editing.leaderAgentId) return;

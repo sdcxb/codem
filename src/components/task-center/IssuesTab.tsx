@@ -14,6 +14,7 @@ import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project"
 import { ISSUE_STATUS_FILTERS } from "./issue-status-meta";
 import { IssueCard } from "./IssueCard";
 import { IssueDetailPanel } from "./IssueDetailPanel";
+import { useDomainReady } from "../../hooks/use-domain-ready";
 
 const STATUS_FILTERS = ISSUE_STATUS_FILTERS;
 
@@ -49,6 +50,9 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
     const unsub = mgr.onIssueChange(() => loadIssues());
     return () => { unsub(); };
   }, [loadIssues]);
+
+  // 第 72 轮审计：镜像晚就绪时也要自己补一次（读一次就再也不重读 = 永久空，真机踩过两次）
+  useDomainReady(["issues", "issue_comments"], loadIssues);
 
   // 收件箱点击穿透：请求聚焦的 Issue 直接打开详情（并清掉可能挡住它的状态筛选）
   useEffect(() => {
