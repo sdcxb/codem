@@ -691,12 +691,18 @@ describe("对话核心链路 — 消息存储与加载", () => {
 
   // ===== CHAT-022b: 附件存储 ==========
   /**
-   * ⚠️ 已知产品缺陷（B 态，本批未修 —— 属产品代码那条线）：
-   * `createMessage` 在端口模式下 **一条附件都不落**（`writeMessageIndex` 走
-   * `writeIndexViaRust` 之后直接 return，附件那段旧库 INSERT 在 1450 行、永不执行；
-   * 端口也没有对应的附件写命令），而读路径同样不返回附件
-   * （`getMessage` / `listMessages` 在 B 态都不读 `attachments` 域）。
-   * 断言保持不动 —— 这是"写进了端口但读路径没走端口"的真实缺陷，不该改测试迁就。
+   * ⚠️ 第 72 轮审计**更正**（原文写着一个已经修掉的缺陷，会误导下一个人）：
+   *
+   * 原文："已知产品缺陷（B 态，本批未修）：`createMessage` 在端口模式下**一条附件都不落**…
+   * 端口也没有对应的附件写命令；读路径同样不返回附件…断言保持不动"。
+   *
+   * 现在的事实（读代码 + 本用例断言）：
+   * - **写**：`writeAttachmentsViaPort()`（`message.ts`）在端口模式下把附件行
+   *   `crud.upsert`（`mode:"replace"`）写进 `attachments` 表；
+   * - **读**：`withMirrorAttachments()` → `attachmentsFromMirror()`（`domainReadMany("attachments")`）
+   *   把附件补回消息，正文按需走 `attachments.content`；
+   * - 所以这条用例是**真的在验产品行为**，不是给缺陷背书 —— 下面加了"端口里确实有这一行"的断言，
+   *   把"写进端口"这一步也钉住（原先只断言读回来的结果，写路径坏了也看不出来）。
    */
   it("CHAT-022b: 消息附件完整存储和加载", () => {
     const msg = makeMessage({
@@ -713,6 +719,12 @@ describe("对话核心链路 — 消息存储与加载", () => {
     });
     MessageStorage.createMessage(msg, SESSION_ID);
 
+    // 写路径：端口里必须真的有这一行（否则"读得到"只可能是内存巧合）
+    const rows = port().__table("attachments").filter((r: any) => r.message_id === "att-test");
+    expect(rows.length, "附件必须写进端口（第 72 轮补的断言：原来只验读、写坏了看不出来）").toBe(1);
+    expect(rows[0].name).toBe("test.md");
+    expect(rows[0].content, "正文也要落（外置时 content 是定位标记，这里没外置）").toBe("# 标题\n内容");
+
     const loaded = MessageStorage.getMessage("att-test");
     expect(loaded!.attachments).toBeDefined();
     expect(loaded!.attachments).toHaveLength(1);
@@ -722,7 +734,7 @@ describe("对话核心链路 — 消息存储与加载", () => {
   });
 
   // ===== CHAT-023b: 多附件 ==========
-  /** ⚠️ 同 CHAT-022b：B 态附件既不落端口也不由读路径返回（产品缺陷，断言保持不动） */
+  /** ⚠️ 同 CHAT-022b：原注释描述的缺陷已修（写走 `writeAttachmentsViaPort`、读走 `withMirrorAttachments`） */
   it("CHAT-023b: 一条消息多附件存储", () => {
     MessageStorage.createMessage(makeMessage({
       id: "multi-att",
@@ -732,6 +744,11 @@ describe("对话核心链路 — 消息存储与加载", () => {
         { id: "a3", name: "img.png", type: "image", preview: "data:image/png;base64,..." },
       ],
     }), SESSION_ID);
+
+    expect(
+      port().__table("attachments").filter((r: any) => r.message_id === "multi-att").length,
+      "三条附件都必须写进端口",
+    ).toBe(3);
 
     const loaded = MessageStorage.getMessage("multi-att");
     expect(loaded!.attachments).toHaveLength(3);

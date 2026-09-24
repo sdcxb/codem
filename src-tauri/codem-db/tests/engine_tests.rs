@@ -938,33 +938,103 @@ fn wal_checkpoint_then_integrity_still_ok() {
 
 // ========== 数据面补充：反馈 / 附件 / 全文索引（P3 第 8 段） ==========
 
+/// 第 72 轮审计：`feedback.set` / `feedback.get` / `feedback.delete` 三条**专用命令已删除**。
+///
+/// 删除理由（可核对）：
+/// 1. 渲染侧零调用者 —— 读走域镜像、写走域写（都是通用仓储命令）；
+/// 2. `feedback.set` 是"先按 message_id 整行 DELETE 再 INSERT **5 列**"，
+///    而域写是 **9 列**超集：两条并存时 5 列那条会把 `note` / `version` /
+///    `created_at` / `updated_at` 抹成 NULL（真机 CLI 前后对比实测过）。
+///
+/// 这一条守住"删掉专用命令**没有留下功能缺口**"：这张表照样写得进、
+/// 按条件读得回、覆盖不产生第二行、删得掉，且表上的约束一条没松。
 #[test]
-fn feedback_set_clear_and_validate() {
+fn message_feedback_goes_through_generic_crud() {
     let (_d, e) = temp_engine("fb");
     call(&e, "sessions.upsert", json!({ "id": "s1" }));
     call(&e, "messages.create", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "x" }));
 
-    // 无反馈时 get 返回 item:null（渲染侧按 null 处理）
-    let none = call(&e, "feedback.get", json!({ "message_id": "m1" }));
-    assert!(none["item"].is_null());
+    // 未评价 = 表里没有行（不是"有一行 neutral"）
+    assert_eq!(call(&e, "crud.count", json!({ "table": "message_feedback" }))["count"], json!(0));
+    let none = call(&e, "crud.list", json!({ "table": "message_feedback", "where": { "message_id": "m1" } }));
+    assert_eq!(none["items"].as_array().unwrap().len(), 0);
 
-    call(&e, "feedback.set", json!({ "message_id": "m1", "session_id": "s1", "feedback": "like" }));
-    assert_eq!(call(&e, "feedback.get", json!({ "message_id": "m1" }))["item"]["feedback"], json!("like"));
+    // 域写形状：9 列（含 note / version / created_at / updated_at）
+    let up = call(
+        &e,
+        "crud.upsert",
+        json!({ "table": "message_feedback", "rows": [{
+            "id": "fb-m1", "message_id": "m1", "session_id": "s1", "feedback": "like",
+            "timestamp": 10, "note": "有用", "version": "v1", "created_at": 10, "updated_at": 10
+        }], "mode": "replace" }),
+    );
+    assert_eq!(up["written"], json!(1));
 
-    // 改成 dislike：必须是替换而不是新增（一条消息最多一个反馈）
-    call(&e, "feedback.set", json!({ "message_id": "m1", "session_id": "s1", "feedback": "dislike" }));
-    assert_eq!(call(&e, "feedback.get", json!({ "message_id": "m1" }))["item"]["feedback"], json!("dislike"));
-    let counts = call(&e, "counts", json!({ "tables": ["message_feedback"] }));
-    assert_eq!(counts["message_feedback"], json!(1), "覆盖不该产生第二行");
+    let listed = call(&e, "crud.list", json!({ "table": "message_feedback", "where": { "message_id": "m1" } }));
+    let items = listed["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["feedback"], json!("like"));
+    assert_eq!(items[0]["note"], json!("有用"), "9 列写必须留住 note（这正是删掉 5 列窄写的理由）");
+    assert_eq!(items[0]["version"], json!("v1"));
 
-    // feedback=null → 取消（渲染侧 saveFeedback(id,sid,null) 的语义）
-    let cleared = call(&e, "feedback.set", json!({ "message_id": "m1", "session_id": "s1", "feedback": null }));
-    assert_eq!(cleared["cleared"], json!(true));
-    assert!(call(&e, "feedback.get", json!({ "message_id": "m1" }))["item"].is_null());
+    // 改评：覆盖语义 —— 一条消息最多一个反馈
+    call(
+        &e,
+        "crud.upsert",
+        json!({ "table": "message_feedback", "rows": [{
+            "id": "fb-m1", "message_id": "m1", "session_id": "s1", "feedback": "dislike",
+            "timestamp": 11, "note": "改主意了", "version": "v2", "created_at": 10, "updated_at": 11
+        }], "mode": "replace" }),
+    );
+    assert_eq!(
+        call(&e, "crud.count", json!({ "table": "message_feedback" }))["count"],
+        json!(1),
+        "覆盖不该产生第二行"
+    );
+    let after = call(&e, "crud.list", json!({ "table": "message_feedback", "where": { "message_id": "m1" } }));
+    assert_eq!(after["items"][0]["feedback"], json!("dislike"));
+    assert_eq!(after["items"][0]["note"], json!("改主意了"));
+    assert_eq!(after["items"][0]["created_at"], json!(10), "覆盖不该抹掉 created_at");
 
-    // 非法值必须报错（表上有 CHECK 约束，但我们要在写入前就给出清晰错误）
-    let err = dispatch(&e, "feedback.set", &json!({ "message_id": "m1", "session_id": "s1", "feedback": "meh" })).unwrap_err();
-    assert!(format!("{err}").contains("like"), "应指出允许值：{err}");
+    // 取消 = 删掉那一行
+    let del = call(&e, "crud.delete", json!({ "table": "message_feedback", "where": { "id": "fb-m1" } }));
+    assert_eq!(del["written"], json!(1));
+    assert_eq!(call(&e, "crud.count", json!({ "table": "message_feedback" }))["count"], json!(0));
+
+    // 约束一条没松：非法评级必须被拒（表上的 CHECK），并且**不许留下半行**
+    let err = dispatch(
+        &e,
+        "crud.upsert",
+        &json!({ "table": "message_feedback", "rows": [{
+            "id": "fb-bad", "message_id": "m1", "session_id": "s1", "feedback": "meh",
+            "timestamp": 12, "created_at": 12, "updated_at": 12
+        }], "mode": "replace" }),
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err}").to_lowercase().contains("check"),
+        "非法评级必须被 CHECK 拒绝（说明约束还在）：{err}"
+    );
+    assert_eq!(
+        call(&e, "crud.count", json!({ "table": "message_feedback" }))["count"],
+        json!(0),
+        "被拒的写不许留下半行"
+    );
+
+    // 外键也还在：父消息不存在时写不进去
+    let fk = dispatch(
+        &e,
+        "crud.upsert",
+        &json!({ "table": "message_feedback", "rows": [{
+            "id": "fb-orphan", "message_id": "m-not-exist", "session_id": "s1", "feedback": "like",
+            "timestamp": 13, "created_at": 13, "updated_at": 13
+        }], "mode": "replace" }),
+    )
+    .unwrap_err();
+    assert!(
+        format!("{fk}").to_lowercase().contains("foreign key"),
+        "外键必须仍然生效（这正是当年'裁剪硬删导致反馈写不进去'的成因）：{fk}"
+    );
 }
 
 #[test]

@@ -30,6 +30,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { PresentationMode } from './PresentationMode';
 import './ppt-editor.css';
 import { ActionIcons } from "../../core/icons/icon-map";
+import { confirmDialog } from "../../core/ui/native-dialog";
 
 // ========== 命令接口 (Undo/Redo) ==========
 
@@ -707,7 +708,8 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
     // 检查是否已有演讲稿
     const hasNotes = deck.slides.some(s => s.notes && s.notes.trim());
     if (hasNotes) {
-      const choice = window.confirm(
+      // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用（返回 Promise，恒为真）
+      const choice = await confirmDialog(
         '当前幻灯片已包含演讲稿。\n\n点击「确定」重新生成（将覆盖现有演讲稿），\n点击「取消」查看现有演讲稿。'
       );
       if (!choice) {
@@ -745,10 +747,11 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
     setVersions(prev => [...prev, version]);
   }, [deck, versions.length]);
 
-  const handleRestoreVersion = useCallback((versionId: string) => {
+  const handleRestoreVersion = useCallback(async (versionId: string) => {
     const version = versions.find(v => v.id === versionId);
     if (!version) return;
-    if (!window.confirm(`恢复到版本 "${version.name}"？当前未保存的更改将丢失。`)) return;
+    // ⚠️ 必须 `await`：dialog 插件的 `window.confirm` 返回 Promise（恒为真），见 native-dialog.ts
+    if (!(await confirmDialog(`恢复到版本 "${version.name}"？当前未保存的更改将丢失。`))) return;
     setDeck(JSON.parse(JSON.stringify(version.deck)));
     setShowVersionPanel(false);
   }, [versions]);

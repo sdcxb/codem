@@ -330,54 +330,13 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       return removed;
     }
     /**
-     * `feedback.set`（轻量路径，见 `config.rs::feedback_set`）。
+     * ⚠️ 第 72 轮审计：`feedback.set` 的处理器**已删除**，因为那条引擎命令本身已经删除
+     * （渲染侧零调用者 + 5 列窄写会抹掉 `note` / `version`）。
      *
-     * ## 为什么必须实现它（第 44 轮：测试双不能比实现宽松）
-     *
-     * 真实现是"**先按 message_id 整行 DELETE，再 INSERT 这 5 列**"
-     * （`message_id / session_id / feedback / timestamp` + 主键）。
-     * 也就是说：**它会抹掉它不认识的那四列**（`note` / `version` / `created_at` / `updated_at`）。
-     *
-     * 真 CLI 实测的后果：先用 9 列域写写入 note/version，再来一次 5 列的 `feedback.set`，
-     * 读回来 `note` / `version` / `created_at` / `updated_at` **全变成 NULL**。
-     * 而假端口原来对这条命令什么都不做（落到末尾 `return 0`），于是
-     * "一次点击把备注与版本号抹掉"这个真实缺陷**在测试基座里完全看不见**。
-     *
-     * 现在按真实现逐条对齐，包括它最不讨人喜欢的那一面：
-     * - 先删该 message_id 的所有行，再插一行 5 列（四列写 NULL）；
-     * - `feedback` 只允许 `like` / `dislike`；`null`/`undefined`/空串 = 取消（只删不插）。
-     *   真引擎对非法值直接报错（`参数 feedback 不合法：只允许 like / dislike（或 null 取消）`），
-     *   这里同样报错 —— 否则"写了个库里存不进去的值"在测试里会被静默放过。
+     * 保留它 = 假端口会继续"支持"一条真引擎不认识的命令 —— 测试双比实现**更宽**，
+     * 正是本仓库明令禁止的方向（会让"写了却读不到"这类缺陷在测试基座里看不见）。
+     * 现在 `message_feedback` 与其它域一样只走 `crud.upsert` / `crud.delete`。
      */
-    if (command === "feedback.set") {
-      const messageId = String(params?.message_id ?? "");
-      if (!messageId) throw new Error("fake-port: feedback.set 缺少 message_id");
-      const feedback = params?.feedback;
-      const target = table("message_feedback");
-      tables.set(
-        "message_feedback",
-        target.filter((r) => r.message_id !== messageId),
-      );
-      if (feedback === null || feedback === undefined || feedback === "") return 0; // 取消反馈
-      if (feedback !== "like" && feedback !== "dislike") {
-        throw new Error(
-          `fake-port: feedback.set 只允许 like / dislike（或 null 取消），收到 ${String(feedback)}`,
-        );
-      }
-      table("message_feedback").push({
-        id: `fb-${messageId}`,
-        message_id: messageId,
-        session_id: String(params?.session_id ?? ""),
-        feedback,
-        timestamp: Number(params?.timestamp ?? Date.now()),
-        // 真实现不写这四列 → NULL（这正是"5 列路径会抹掉它们"的机制）
-        note: null,
-        version: null,
-        created_at: null,
-        updated_at: null,
-      });
-      return 1;
-    }
     /**
      * 索引写命令：真实 Rust 侧是单事务复合命令（主行 + 两个 JSON 列 + 整批替换 tool_calls）。
      * 这里按同一语义落到内存表：`messages` 存主行，`tool_calls` 整批替换。

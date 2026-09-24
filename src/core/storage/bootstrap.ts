@@ -362,6 +362,15 @@ export const HOT_DOMAIN_TABLES: readonly string[] = [
    * 这些表真正需要的是"就绪后重读"（见 `docs/audit-2026-09-23-boundary-class.md`）。
    */
   "message_feedback",
+  /*
+   * ⚠️ 第 72 轮审计补（**与 message_feedback 完全同类**）：`attachments` 也没预取，
+   * 而消息列表里**每条消息都可能带附件**（`MessageBubble` 直接渲染 `message.attachments`，
+   * 数据来自 `withMirrorAttachments` → `domainReadMany("attachments")`）⇒ 镜像没就绪时读到
+   * `undefined`，那条消息就**渲染成没有附件**；而消息列表往往只读一次（翻页/切会话才重读），
+   * 于是"有附件却看不见"。该表在域镜像里**只投影元数据列**（正文走 `attachments.content`
+   * 单独取，见 rust-port），预取成本很小。
+   */
+  "attachments",
 ];
 
 /**

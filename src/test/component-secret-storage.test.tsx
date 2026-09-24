@@ -16,6 +16,7 @@ import { SecretStorageSetting } from "../components/SecretStorageSetting";
 import { getSetting } from "../core/storage/settings";
 import { __resetSecretStoreForTests, PLAINTEXT_FALLBACK_KEY, SEALED_FIELD } from "../core/storage/secret-store";
 import { setSetting } from "../core/storage/settings";
+import { getPersistFailures } from "../core/storage/persist-failure";
 
 const SK = "sk-render-abcdefghijklmnopqrst";
 const SETTINGS = "codem-settings";
@@ -45,8 +46,13 @@ const readRaw = () => JSON.parse(getSetting(SETTINGS) ?? "{}");
 /**
  * 装一个 `window.confirm` 桩。
  * ⚠️ happy-dom 里 `window.confirm` **不存在**（`vi.spyOn` 会报 "Received undefined"），
- * 所以必须**赋值**而不是 spy —— 这本身也顺带说明了被测组件为什么要把
- * "没有 confirm 就当已确认"写成一个显式分支：不能假设宿主一定提供它。
+ * 所以必须**赋值**而不是 spy。
+ *
+ * ⚠️ 第 72 轮更正：这段注释原来写的是"被测组件为什么要把『没有 confirm 就当已确认』
+ * 写成一个显式分支" —— 那条分支**已经删掉了**：真机形态是 Tauri 的 dialog 插件把
+ * `window.confirm` 换成了**异步插件调用**（返回 Promise，恒为真），
+ * 于是"没有 confirm 就当同意"在生产里等价于"一点就开、用户根本没被问过"。
+ * 现在组件统一走 `confirmDialog`：**只有明确的 true 才算同意**，拿不到答案 = 不开（fail-closed）。
  */
 function stubConfirm(answer: boolean) {
   const fn = vi.fn(() => answer);
@@ -105,5 +111,30 @@ describe("SecretStorageSetting — 明文回退开关（真渲染）", () => {
     expect(getSetting(PLAINTEXT_FALLBACK_KEY), "拒绝之后不许留下开关").toBeNull();
     expect(calls).not.toContain("secret_unseal");
     expect(readRaw().providers[0][SEALED_FIELD], "密文必须原样保留").toBeTruthy();
+  });
+
+  /**
+   * 第 72 轮新增：**没有确认框 ≠ 用户同意**。
+   *
+   * 旧实现是 fail-open（`typeof window.confirm !== "function" || window.confirm(...)`），
+   * 而真机上 `window.confirm` 被换成返回 Promise 的插件调用 ⇒ 这个式子**永远成立**，
+   * 也就是"一点就把明文保存打开了"。现在只有明确的 `true` 才算同意。
+   */
+  it("环境里没有确认框 ⇒ 一个字都不改（不许把「问不到」当成「用户同意」）", async () => {
+    const { calls } = installTauri();
+    writeSealedSettings(SK);
+    delete (window as any).confirm; // 刻意不提供确认框
+
+    render(<SecretStorageSetting lang="zh" />);
+    fireEvent.click(screen.getByLabelText("以明文保存 API 密钥"));
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(getSetting(PLAINTEXT_FALLBACK_KEY), "问不到确认 ⇒ 不许打开明文保存").toBeNull();
+    expect(calls).not.toContain("secret_unseal");
+    expect(readRaw().providers[0][SEALED_FIELD], "密文必须原样保留").toBeTruthy();
+    expect(
+      getPersistFailures().map((f) => f.area),
+      "而且要在横幅上如实上报（不能点了没反应）",
+    ).toContain("ui.confirmDialog");
   });
 });

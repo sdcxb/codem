@@ -47,7 +47,6 @@ import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port
 import { getPersistFailures, resetPersistFailures } from "../core/storage/persist-failure";
 import {
   reconcileSessionMessageCountById,
-  saveFeedback,
   loadFeedback,
   createMessage,
   __resetTextEventFingerprints,
@@ -670,25 +669,35 @@ describe("FWT-C2：不变量审计接到生产维护路径（FC §未做：生�
 });
 
 // ======================================================================
-// FC P2-D9：遗留 feedbackCache 与域写路径的口径
+// 反馈：**唯一写路径**（第 72 轮审计删掉了遗留的 feedbackCache / saveFeedback）
 // ======================================================================
 
-describe("FWT-D9：域写之后 `loadFeedback` 必须读到新值（P2-D9）", () => {
-  it("FWT-D9a: `saveFeedback` 写过之后再走域写改评 → 读到的是**域里的新值**", async () => {
+describe("FWT-D9：反馈只有一条写路径，`loadFeedback` 读的就是域镜像（原 P2-D9）", () => {
+  /**
+   * 域镜像接手 `message_feedback` 是异步的：`domainReadOne` 返回 `undefined` 就是
+   * "还没接手"的唯一判据，此时 `putMessageFeedback` 会**如实回绝**（不是写了个看不见的副本）。
+   * 所以这里重试到它接手为止 —— 重试本身也是判据：一直不接手就是失败。
+   */
+  async function putUntilAccepted(S: string, id: string, rating: "like" | "dislike") {
+    let out = putMessageFeedback(S, id, rating);
+    await vi.waitFor(() => {
+      out = putMessageFeedback(S, id, rating);
+      expect(out.ok, `反馈写入始终未被镜像接手：${out.ok ? "" : out.error}`).toBe(true);
+    });
+    return out;
+  }
+
+  it("FWT-D9a: 改评之后 `loadFeedback` 读到的是**新值**（不再被写穿缓存钉住）", async () => {
     const S = sid("d9a");
     seedSession(S);
     seedMessageRow(S, "fx", "assistant", { content: "回复内容" });
 
-    // 1) 遗留路径先把缓存填上（它写引擎的 feedback.set，不写域镜像）
-    saveFeedback("fx", S, "like");
+    await putUntilAccepted(S, "fx", "like");
     expect(loadFeedback("fx")).toBe("like");
 
-    // 2) 真实 UI 路径改评（域写 crud.upsert）
-    const put = putMessageFeedback(S, "fx", "dislike");
-    expect(put.ok).toBe(true);
-    await vi.waitFor(() => {
-      expect(loadFeedback("fx"), "改评之后必须读到 dislike（改前缓存永远返回 like）").toBe("dislike");
-    });
+    // 改评（同一条域写路径，第二次调用）
+    await putUntilAccepted(S, "fx", "dislike");
+    expect(loadFeedback("fx"), "改评之后必须读到 dislike（改前缓存永远返回 like）").toBe("dislike");
   });
 
   it("FWT-D9b: 取消反馈（域删）之后读到 `null`，不再'取消了却还显示已赞'", async () => {
@@ -696,14 +705,12 @@ describe("FWT-D9：域写之后 `loadFeedback` 必须读到新值（P2-D9）", (
     seedSession(S);
     seedMessageRow(S, "fy", "assistant", { content: "回复内容" });
 
-    saveFeedback("fy", S, "like");
+    await putUntilAccepted(S, "fy", "like");
     expect(loadFeedback("fy")).toBe("like");
 
     const del = deleteMessageFeedback("fy");
     expect(del.ok).toBe(true);
-    await vi.waitFor(() => {
-      expect(loadFeedback("fy"), "取消之后必须是未评价（改前缓存把它钉在 like）").toBeNull();
-    });
+    expect(loadFeedback("fy"), "取消之后必须是未评价（改前缓存把它钉在 like）").toBeNull();
   });
 
   it("FWT-D9c: 域写走的是**同一张表**（写与读同处，不是第二个真相）", async () => {
@@ -712,11 +719,9 @@ describe("FWT-D9：域写之后 `loadFeedback` 必须读到新值（P2-D9）", (
     seedMessageRow(S, "fz", "assistant", { content: "回复内容" });
 
     createMessage({ id: "fz2", role: "assistant", content: "另一条", timestamp: 99, status: "done" }, S);
-    putMessageFeedback(S, "fz", "like");
-    await vi.waitFor(() => {
-      const row = rowsOf("message_feedback").find((r) => r.message_id === "fz");
-      expect(row, "域写真的落到 message_feedback 表").toBeTruthy();
-      expect(row!.session_id).toBe(S);
-    });
+    await putUntilAccepted(S, "fz", "like");
+    const row = rowsOf("message_feedback").find((r) => r.message_id === "fz");
+    expect(row, "域写真的落到 message_feedback 表").toBeTruthy();
+    expect(row!.session_id).toBe(S);
   });
 });

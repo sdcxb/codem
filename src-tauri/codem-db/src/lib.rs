@@ -86,9 +86,9 @@ pub const COMMANDS: &[&str] = &[
     "crud.delete",
     "crud.count",
     // ===== 数据面补充（P3 第 8 段）=====
-    "feedback.set",
-    "feedback.get",
-    "feedback.delete",
+    // 第 72 轮审计：`feedback.set` / `feedback.get` / `feedback.delete` 已删除
+    // （渲染侧零调用者 + 5 列窄写在域写之外形成第二条写路径），
+    // `message_feedback` 现在只走上面的通用仓储命令 `crud.*`。
     "attachments.list",
     "attachments.update",
     "attachments.content",
@@ -208,9 +208,6 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "crud.delete" => crud::crud_delete(engine, params),
         "crud.count" => crud::crud_count(engine, params),
         // ===== 数据面补充（P3 第 8 段）=====
-        "feedback.set" => config::feedback_set(engine, params),
-        "feedback.get" => config::feedback_get(engine, params),
-        "feedback.delete" => config::feedback_delete(engine, params),
         "attachments.list" => config::attachments_list(engine, params),
         "attachments.update" => config::attachments_update(engine, params),
         "attachments.content" => config::attachments_content(engine, params),

@@ -182,6 +182,22 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   // `todo_lists` 故意不在首屏预取清单里（行数会随 show_todo 次数增长）⇒ 读侧自己补一次
   useDomainReady("todo_lists", reloadTodoList);
 
+  /*
+   * 第 72 轮审计：附件域（`attachments`）就绪后，把**已加载消息**的附件补上。
+   *
+   * 与 `message_feedback` 同一成因：附件来自 `attachments` 域的镜像，镜像没就绪时
+   * `withMirrorAttachments` 原样返回 ⇒ 那条消息**看起来没有附件**；而消息列表只读一次
+   * （翻页/切会话才重读）⇒ "有附件却看不见"会一直持续。
+   * （那一轮的另一半修法是把 `attachments` 加进首屏预取清单；这里补读侧重读，两道都要有。）
+   */
+  useDomainReady("attachments", () => {
+    try {
+      useAppStore.getState().refreshMessageAttachments();
+    } catch (e) {
+      console.warn("[ChatPanel] 附件补读失败（消息本身不受影响）:", e);
+    }
+  });
+
   // Measure chat-body bounds and set CSS vars for floating panel positioning
   useEffect(() => {
     const updateBounds = () => {

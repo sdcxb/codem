@@ -137,3 +137,7 @@ codem-db.bin.corrupt-*
 codem-runtime-*.log
 
 
+
+# 覆盖率与重复率报告（npm run verify 的产物，体积大且每次重新生成）
+/coverage/
+/jscpd-report/

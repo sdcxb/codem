@@ -19,6 +19,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { redactSecrets } from "../core/utils/redact";
 import { reportActionFailure, resetPersistFailures } from "../core/storage/persist-failure";
 import { resetUiPreferencesToDefaults } from "../core/settings/ui-preferences";
+import { confirmDialog } from "../core/ui/native-dialog";
 
 /** localStorage 键：最近一次渲染崩溃证据（App 启动时消费并清除）。 */
 export const RENDERER_CRASH_KEY = "codem-renderer-crash";
@@ -313,15 +314,18 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
    * 边界（写清楚，别让下一个人以为它清了一切）：**安全策略、身份/用户配置、API Key/provider/模型、
    * 会话与项目数据一律不动** —— 那些不是"界面设置"，清掉等于毁用户数据。文案与实现逐项对齐。
    */
-  handleResetReload(): void {
+  async handleResetReload(): Promise<void> {
     const confirmText =
       "将恢复**界面设置**为默认值（主题 / 皮肤 / 语言 / 字号 / 字体 / 显示模式 / 关闭行为 / 侧栏宽度），" +
       "并清除本地界面缓存后重新加载。\n\n" +
       "不会动：安全策略、模型与 API Key、会话与项目数据。\n\n确定继续？";
-    if (typeof window !== "undefined" && typeof window.confirm === "function") {
-      const ok = window.confirm(confirmText);
-      if (!ok) return;
-    }
+    /*
+     * 第 72 轮：这里原来是"没有 confirm 就当同意"（fail-open）。
+     * 而真实形态更糟 —— Tauri 的 dialog 插件把 `window.confirm` 换成了**异步插件调用**，
+     * 返回值是 Promise（恒为真）⇒ 确认框根本没弹就把界面设置清了。
+     * 现在统一走 `confirmDialog`：拿不到答案 = 不执行（fail-closed + 如实上报）。
+     */
+    if (!(await confirmDialog(confirmText))) return;
     /*
      * 数据库里的界面偏好 —— 与设置页的「♻️ 恢复默认界面设置」共用同一个实现
      * （一个入口一个语义；两处各写一份必然会漂）。

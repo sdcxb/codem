@@ -781,6 +781,16 @@ MSG-9（未加载不路由）· MSG-10（写入后立刻可读）全部通过。
 非法值在写入前就报错）、`attachments.list`（**不返回 content** ——
 大附件正文必须按需取，否则一次读爆内存）、`attachments.update`（COALESCE：只给正文不动预览）。
 
+> ⚠️ **第 72 轮审计更新（本条为后续事实，上面那段是历史记录）**：
+> `feedback.set` / `feedback.get` / `feedback.delete` 三条专用命令**已从引擎删除**
+> （`src-tauri/codem-db/src/lib.rs` 的 `COMMANDS`、派发分支、`config.rs` 的实现三处都不留）。
+> 理由是两条可核对的事实：① 渲染侧零调用者（读走域镜像、写走域写）；
+> ② `feedback.set` 是"先按 message_id 整行 DELETE 再 INSERT **5 列**"，
+> 与 9 列的域写并存时会把 `note` / `version` / `created_at` / `updated_at` 抹成 NULL
+> （真机 CLI 前后对比实测）。`message_feedback` 现在只走通用仓储命令
+> `crud.list` / `crud.upsert` / `crud.delete`，表上的 `CHECK` 与两条外键原样保留
+> （引擎用例 `message_feedback_goes_through_generic_crud` 守着）。
+
 **验证**：Rust 63 项（含 CJK 检索、重建幂等、附件不返回正文、反馈覆盖与取消）·
 tsc 0 错 · 六道 audit 门禁全绿 · **覆盖率 18.6% → 25.58%**。
 

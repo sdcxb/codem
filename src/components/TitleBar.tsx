@@ -23,6 +23,7 @@ import { useAppStore } from "../store";
 import { getLang } from "../core/i18n/lang";
 import { getProjectExecutionMode, setProjectExecutionMode, hasUncommittedChanges, isGitRepo } from "../core/environment";
 import type { ExecutionMode } from "../core/environment";
+import { confirmDialog } from "../core/ui/native-dialog";
 
 export interface WorkspaceTab {
   id: string;
@@ -190,9 +191,11 @@ export function TitleBar({
     try {
       const dirty = await hasUncommittedChanges(projectPath);
       if (dirty) {
-        if (!confirm(zh
+        // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用（返回 Promise，恒为真）。
+        // 真机实测：旧写法下"有未提交修改"的询问根本没弹、模式却已经切过去了。
+        if (!(await confirmDialog(zh
           ? "当前工作区有未提交的修改。切换模式可能导致修改丢失。确认切换？"
-          : "The current workspace has uncommitted changes. Switching modes may cause loss. Continue?")) {
+          : "The current workspace has uncommitted changes. Switching modes may cause loss. Continue?"))) {
           return;
         }
       }

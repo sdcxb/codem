@@ -2,6 +2,111 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.125] - 2026-09-24 — 按"执行四项建议 + 真机面板走查"收口：**确认框根本没弹、不可逆动作照做**（走查抓到的真机缺陷）+ 反馈唯一写路径（引擎侧也删）+ 覆盖率棘轮 + 唯一缺口清单 + knip 棘轮
+
+> 用户："按照你的建议执行。" 本轮把上一轮报告里的四项建议（A 覆盖率工具链 / B 附件读路径 /
+> C 陈旧注释更正 / D 唯一缺口清单 + 历史横幅）全部落地，并额外做完了 E（反馈写路径残余）。
+> 走查用**真机装机版**跑了 **100 个入口**（应用外壳 19 + 设置页签 56 + 任务中心页签 25），
+> 报告 `docs/ui-walk-round72.md`。全量：**367 文件 / 6046 通过 / 16 跳过 / 0 失败**；
+> 覆盖率棘轮实测 行 53.67% / 分支 43.97% / 函数 47.34% / 语句 51.27%；
+> 迁移与门禁：Rust 引擎 **146 条全过**。
+
+### 🔴 一、走查抓到的真机缺陷：确认框根本没弹，不可逆的动作照做
+
+走查点到标题栏「切换执行模式」时控制台出现
+`[Unhandled Rejection] Command plugin:dialog|confirm not allowed by ACL`，**而模式已经切过去了**。
+只读取证（`.preview-shot/_probe-confirm-acl.mjs`）读到 `window.confirm` 的真身：
+
+```js
+async function(i){return await n("plugin:dialog|confirm",{message:i.toString()})}
+```
+
+两个根因叠在一起：① **Tauri 的 dialog 插件把 `window.confirm` 换成了异步插件调用** ⇒
+`if (!confirm(msg)) return;` 里的返回值是 **Promise（恒为真）** ⇒ 判断永远为"继续"；
+② `capabilities/default.json` 只写了 `dialog:default`，实测它**不含** confirm ⇒ 调用被 ACL 拒。
+
+影响面清点 **13 处**（删项目 / 清恢复数据 / 删工作树 / 回滚快照 / 回滚文件改动 / 卸载 zvec /
+删智能体 / 删 Profile / 恢复 PPT 版本 / 覆盖演讲稿 / 切换执行模式 / 游戏投降 / 重置界面设置），
+每一处都是不可逆动作。修法：新增 `src/core/ui/native-dialog.ts`（`confirmDialog` / `alertDialog`，
+对"同步布尔"与"thenable"两种世界都给对答案，**拿不到答案一律按取消**并上报）+
+13 处全部改成 `await confirmDialog(...)` + 能力清单显式放行 dialog 的 confirm/message/ask。
+门禁 `native-confirm-dialog.test.ts` 7 条，**6 处突变全部被抓**
+（`.preview-shot/mutate-native-dialog.mjs`：退回裸 confirm / 丢 await / fail-open / 不等 thenable / 摘权限 / alert 静默）。
+⚠️ 诚实标注：修好后点那个按钮会弹**系统模态框**（CDP 点不到），所以"弹框真的弹出来了"这一步
+**没有**在装机版上端到端量过 —— 不假装量过。
+
+### 🔴 二、反馈的**第二条写路径**彻底消失（连引擎侧的专用命令一起删）
+
+`MessageStorage.saveFeedback`（引擎 `feedback.set`，**5 列**、不写域镜像）是"写了却读不到"的
+第二条真相，而它的最后意义只是给一份**把旧值钉住**的写穿缓存当唯一写入者。处置：
+
+- 渲染侧删掉 `saveFeedback` / `feedbackCache` / `invalidateFeedbackCache`，读路径只读域镜像；
+- **引擎侧**删掉 `feedback.set` / `feedback.get` / `feedback.delete` 三条专用命令
+  （命令清单 + 派发分支 + `config.rs` 实现三处都不留；`feedback.get`/`delete` 早在接线盘点里就是 DEAD），
+  `message_feedback` 只走通用 `crud.list/upsert/delete`；
+- 引擎用例改写为 `message_feedback_goes_through_generic_crud`（9 列写、覆盖不产生第二行、
+  取消=删行、`CHECK` 与外键仍然生效）；
+- 门禁 `feedback-single-write-path.test.ts` 6 条（含**全生产源码树扫描**与**引擎命令清单**两处结构判据），
+  **7 处突变全部被抓**（`.preview-shot/mutate-feedback-single-write.mjs`）。
+
+### 🔴 三、覆盖率阈值**从来没有生效过** —— 现在先量后定成了棘轮
+
+`@vitest/coverage-v8` 根本没装，`npm run test:coverage` 直接 `MISSING DEPENDENCY` 退出，
+也就是说"功能轴探到原子函数"这条**一直没有度量**。现在：装上 provider；
+新增 `tools/audit/coverage-baseline.mjs`（打印实测 / `--check` 对账 / `--md` 写基线）；
+阈值按实测减 1 个百分点写死（全局 行 52 / 函数 46 / 分支 42 / 语句 50，另按目录设地板：
+存储 81、LLM 60、会话 74、诊断 96），并接进 `npm run verify`。
+⚠️ 第一版拿"行覆盖率"顶替"语句覆盖率"，第一次真跑就红（实测语句 51.27% vs 行 53.66%）——
+这正是必须有对账工具的理由，`--check` 现在四个指标一个都不放过。
+
+### 🔴 四、`npm run verify` 里的 knip **一直是红的** ⇒ 红久了就没人跑
+
+knip 报 32 个"未使用文件" + 348 未用导出 + 222 未用类型 + 13 组重复导出，其中文件那一类
+第 62 轮就**逐类分诊**过（桶文件 / 全局类型增强 / 构建期 stub / 技能脚本 / Vite 入口），
+但**决定从来没写进配置**。现在：分诊结论写进 `knip.json` 的 `ignore`（逐条列，不用通配），
+于是"未使用文件"的期望值就是 **0（再出现一个就是真发现）**；其余没分诊过的做**棘轮**
+（`tools/audit/knip-gate.mjs` + `knip-baseline.json`，只许降不许升），接进 `verify`。
+顺带修掉 `knip.json` 里两个真错：入口写成 `src/pet.tsx`（真实入口是 `pet-main.tsx`）、
+`tasklist` 未登记为二进制。
+
+### 🟡 五、"当前缺口"从此只有一份清单
+
+`docs/` 下 40 份计划/缺口类历史文档全部加上「历史文档（不再维护）」横幅并指回
+新建的 `docs/GAP-LIST.md`（未关闭项 / 已关闭项附判据 / 判定为"不是缺口"的附理由）；
+`PROJECT-GUIDE.md` 的文档索引不再把 `TODO.md` 说成"✅ 最新 / 了解当前待办"
+（实测那个文件里的"还没做"有相当一部分早就做完了）。
+门禁 `docs-current-gap-list.test.ts` 5 条，**5 处突变全部被抓**。
+
+### 🟡 六、走查还发现的三类现象（逐条列样本，未含糊带过）
+
+小命中区（收件箱 `INPUT 13×13`、对话 `paragraph-action-btn 22×22` 等 28 个面板有读数）、
+无名按钮（人设/皮肤头像候选 `button.sp-avatar--sm` 共 40–50 个，读屏与键盘都拿不到名字）、
+被遮挡控件（71 个面板有读数，多数是 sticky 头导致的正常形态）。
+三类都**没有**当场改 CSS —— 报告里写清了"要看哪个样本、怎么定性"，并登记进 `GAP-LIST.md`。
+
+### 🛠 仪器坑（都已写进代码注释）
+
+① **权限弹窗是独立 page target**（`edge://permission-request-dialog/`）：旧判据"取第一个非 DevTools 的
+page"会连到它身上，量出 `.sidebar = null` 却报成"入口找不到"（假缺陷）—— 现在按 URL 认应用；
+② **页签不是 `<button>`**（`[role=tab]`），旧点击池太窄 ⇒ 60 多个页签一律"入口没找到"；
+③ 页签列表第一个是「关闭设置」，照单全点会把面板关掉，后面全部报"找不到"。
+
+### ✅ 装机版核对（1.16.125，真机）
+
+- **更新器把自己升上去了**：从 1.16.124 走真实的"检查更新 → 下载 → 安装 → 重启"，
+  重启后 `%LOCALAPPDATA%\Codem\codem.exe` 与安装包都是 **1.16.125**；
+  远端清单 `--remote` **7/7**（含"远端资产 sha256 与本地产物一致"）。
+  ⚠️ 第一次点检查更新时报 `更新失败: error decoding response body` —— 查下来是**本机网络把 40MB 安装包掐断了**
+  （我的独立 `curl` 第一次也在 27MB 处 `exit 56`，加 `--retry 3 --retry-all-errors` 才下全、sha256 对上）；
+  第二次点击即成功。**结论：这不是应用缺陷，但"失败时没有重试、错误信息不可读"是缺口**，已登记进 `docs/GAP-LIST.md`（O-9）。
+- 冷启动 25 秒观测：控制台 **error 0 / exception 0**（1 条 `[Engine] CLI mode: no account found` 属预期）、
+  JS 堆 **42MB**、DOM **617** 节点；`window.confirm` 仍是 dialog 插件的 shim（说明修的是我们这一侧）。
+- **迁移演练（在副本上跑，不动真数据）**：`--apply` 导入 **16 表 / 3990 行**、逐表摘要全对、
+  FTS 重建 777 条；`--verify` 全部一致（新库 3991 行）；旧库 sha256 未变。
+- ⚠️ 一条如实记录：取证脚本点「切换执行模式」把 mimo-gui 的执行模式改成了"新工作树"，
+  **已用引擎 CLI 直写设置还原**并在重启后核对标题栏回到「本地处理」
+  （工具 `.preview-shot/_exec-mode-setting.mjs`；为什么不点 UI 改回去见走查报告第 3 节第 4 条）。
+
 ## [1.16.124] - 2026-09-23 — 按审计报告的建议把剩余问题**全部解决**：读侧"就绪后重读"通道 + 两处死界面补上真实数据源 + agent 能发现跨作用域会话
 
 > 用户："按照您的报告建议，把问题都解决。" 报告里如实报告的三项（＋ 一项同族的 agent 侧）

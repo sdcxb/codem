@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["src/main.tsx", "src/pet.tsx"],
+  "entry": ["src/main.tsx", "src/pet-main.tsx"],
   "project": ["src/**/*.ts", "src/**/*.tsx"],
   "ignore": [
     "src/test/**",
@@ -8,7 +8,33 @@
     "src/**/*.test.tsx",
     "src/vite-env.d.ts",
     ".deepseek-harness-ref/**",
-    "src-tauri/**"
+    "src-tauri/**",
+
+    "src/core/skills/skill-creator/scripts/*.ts",
+    "src/stubs/*.ts",
+    "src/core/slots/declarations.ts",
+
+    "src/core/agent/index.ts",
+    "src/core/context/index.ts",
+    "src/core/heartbeat/index.ts",
+    "src/core/icons/index.ts",
+    "src/core/inbox/index.ts",
+    "src/core/issue/index.ts",
+    "src/core/mcp/index.ts",
+    "src/core/memory/index.ts",
+    "src/core/permission/index.ts",
+    "src/core/pet/index.ts",
+    "src/core/plugin-market/index.ts",
+    "src/core/prompt/index.ts",
+    "src/core/provider/index.ts",
+    "src/core/recovery/index.ts",
+    "src/core/retry/index.ts",
+    "src/core/settings/index.ts",
+    "src/core/skill/index.ts",
+    "src/core/snapshot/index.ts",
+    "src/core/storage/index.ts",
+    "src/plugins/library-ops/index.ts",
+    "src/plugins/monopoly-game/index.ts"
   ],
   "ignoreDependencies": [
     "@tauri-apps/plugin-dialog",
@@ -17,5 +43,6 @@
     "@tauri-apps/plugin-updater",
     "png-to-ico",
     "sharp"
-  ]
+  ],
+  "ignoreBinaries": ["tasklist"]
 }

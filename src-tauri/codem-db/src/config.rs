@@ -223,71 +223,20 @@ pub fn config_warmup(engine: &Engine, _p: &Value) -> DbResult<Value> {
 
 // ========== 消息反馈（message_feedback） ==========
 //
-// 渲染侧语义：一条消息最多一个反馈（like/dislike）。`saveFeedback(id, sid, null)` 是**取消**，
-// 所以这里用"先删后插"而不是 upsert —— 与渲染侧 `DELETE` + `INSERT` 完全一致。
-// 表上有 `CHECK (feedback IN ('like','dislike'))`，非法值由数据库拒绝（比静默写入好）。
-
-pub fn feedback_set(engine: &Engine, p: &Value) -> DbResult<Value> {
-    let message_id = req_text(p, "message_id")?;
-    let session_id = req_text(p, "session_id")?;
-    let feedback = opt_text(p, "feedback")?;
-    let ts = opt_i64(p, "timestamp")?.unwrap_or_else(now_ms);
-    engine.write_tx(|tx| {
-        // 先删（取消 + 覆盖两种情形都覆盖）
-        tx.execute(
-            "DELETE FROM message_feedback WHERE message_id = ?1",
-            params![message_id],
-        )
-        .map_err(DbError::from)?;
-        match feedback.as_deref() {
-            None | Some("") => Ok(json!({ "written": 0, "cleared": true })),
-            Some(kind) => {
-                if kind != "like" && kind != "dislike" {
-                    return Err(DbError::invalid(
-                        "feedback",
-                        format!("只允许 like / dislike（或 null 取消），收到 {kind}"),
-                    ));
-                }
-                let id = format!("fb-{message_id}");
-                tx.execute(
-                    "INSERT INTO message_feedback (id, message_id, session_id, feedback, timestamp) \
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![id, message_id, session_id, kind, ts],
-                )
-                .map_err(DbError::from)?;
-                Ok(json!({ "written": 1, "feedback": kind }))
-            }
-        }
-    })
-}
-
-pub fn feedback_get(engine: &Engine, p: &Value) -> DbResult<Value> {
-    let message_id = req_text(p, "message_id")?;
-    engine.with_conn(|conn| {
-        let kind: Option<String> = conn
-            .query_row(
-                "SELECT feedback FROM message_feedback WHERE message_id = ?1",
-                params![message_id],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(DbError::from)?;
-        Ok(json!({ "item": kind.map(|k| json!({ "feedback": k })) }))
-    })
-}
-
-pub fn feedback_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
-    let message_id = req_text(p, "message_id")?;
-    engine.write_tx(|tx| {
-        let n = tx
-            .execute(
-                "DELETE FROM message_feedback WHERE message_id = ?1",
-                params![message_id],
-            )
-            .map_err(DbError::from)?;
-        Ok(json!({ "written": n }))
-    })
-}
+// 第 72 轮审计：这里原来有三条专用命令 `feedback.set` / `feedback.get` / `feedback.delete`。
+// 全部**已删除**，理由是两条可核对的事实：
+//
+// 1. **渲染侧零调用者**：读走域镜像（`crud.list` 同源），写走域写（`crud.upsert` /
+//    `crud.delete`）—— 这三条命令没有任何人调（`feedback.get`/`feedback.delete`
+//    早在第 44 轮的接线盘点里就被标成 DEAD，`feedback.set` 的最后一个调用者
+//    `MessageStorage.saveFeedback` 也在本轮删除）；
+// 2. **它是第二条写路径，且列集合更窄**：`feedback.set` 是"先按 message_id 整行 DELETE
+//    再 INSERT **5 列**"，而域写是 **9 列**超集 —— 两条同时存在时，5 列那条会把
+//    `note` / `version` / `created_at` / `updated_at` 抹成 NULL（真机 CLI 前后对比实测过）。
+//
+// 现在这张表只走**通用仓储命令**（表定义驱动，见 `crud.rs`），与渲染侧同源。
+// 表上的 `CHECK (feedback IN ('like','dislike'))` 与两条外键原样保留 ——
+// 删除专用命令**没有**放松任何约束（引擎侧用例 `message_feedback_goes_through_generic_crud` 守着）。
 
 // ========== 附件（attachments） ==========
 //

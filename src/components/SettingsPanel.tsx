@@ -107,6 +107,7 @@ import {
   Plus,
 } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
+import { confirmDialog } from "../core/ui/native-dialog";
 
 interface ProviderKey {
   id: string;
@@ -1391,11 +1392,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <div className="sp-row">
               <button
                 className="sp-btn"
-                onClick={() => {
+                onClick={async () => {
                   const confirmText = lang === "zh"
                     ? "将把界面偏好恢复为默认值（主题、皮肤、语言、字号、字体、字重、关闭行为、显示模式、侧栏宽度、窗口尺寸/位置）。会话与项目数据不受影响。确定继续？"
                     : "Reset UI preferences to defaults (theme, skin, language, font size, family, weight, close behavior, display mode, sidebar width, window geometry)? Chats and projects are untouched.";
-                  if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(confirmText)) return;
+                  // ⚠️ 必须 `await`：dialog 插件的 `window.confirm` 返回 Promise（恒为真），见 native-dialog.ts
+                  if (!(await confirmDialog(confirmText))) return;
                   const result = resetUiPreferencesToDefaults();
                   setFontFamily(readStoredUiFontFamily());
                   setFontWeight(getSetting("codem-font-weight") || "400");
@@ -2607,7 +2609,8 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
   const handleDelete = async (wt: WorktreeInfo) => {
     if (!currentProject?.path) return;
     if (wt.hasUncommitted) {
-      if (!confirm(zh ? `工作树 ${wt.sessionId} 有未提交修改，确认删除？` : `Worktree ${wt.sessionId} has uncommitted changes. Delete anyway?`)) {
+      // ⚠️ 必须 `await`：dialog 插件的 `window.confirm` 返回 Promise（恒为真），见 native-dialog.ts
+      if (!(await confirmDialog(zh ? `工作树 ${wt.sessionId} 有未提交修改，确认删除？` : `Worktree ${wt.sessionId} has uncommitted changes. Delete anyway?`))) {
         return;
       }
     }
@@ -2898,8 +2901,9 @@ function AgentProfileSection({ lang }: { lang: Language }) {
     refresh();
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm(zh ? "确认删除此 Profile？" : "Delete this profile?")) {
+  const handleDelete = async (id: string) => {
+    // ⚠️ 必须 `await`：dialog 插件的 `window.confirm` 返回 Promise（恒为真），见 native-dialog.ts
+    if (await confirmDialog(zh ? "确认删除此 Profile？" : "Delete this profile?")) {
       AgentProfileStorage.delete(id);
       refresh();
     }

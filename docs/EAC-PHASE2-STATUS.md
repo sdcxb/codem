@@ -1,5 +1,17 @@
 # EAC 对标 第②③④项 — 实施记录（Phase 2 前半）
 
+> ⚠️ **历史文档（不再维护）** —— 这是某一轮的记录，**不是当前的缺口清单**。
+>
+> 当前缺口与状态**只有一份**：[`docs/GAP-LIST.md`](./GAP-LIST.md)（第 72 轮起维护）。
+> 本文里的"待办 / 未实现 / 缺口 / 未完成"类结论都是**按当时的事实**写下的，
+> 之后可能已经完成、已经改口径、或者已经被别的做法取代 ——
+> 引用本文之前，请在 `GAP-LIST.md` 与**代码**里各复核一次。
+>
+> 保留本文的理由：它是那一轮的取证记录（当时的数字、现场形态、判断依据），
+> 删掉就等于把"我们当时为什么这么做"一起删掉。
+
+
+
 > 对标仓库：github.com/zouyuxuan122/DSH-Desktop-EAC（dsh 桌面发行版）。
 > 四项顺序按工作量递增：④宠物状态卡（✅）→ ③computer-use（✅）→ ②微信 ClawBot 桥（✅）→ ①手机连接（⏳ 待评估 HTTP 地基）。
 > 深度调研报告在 `.eac-analysis/`（gitignore 不入库）：`dafeiyu-report.md` / `computer-user-report.md` / `wechat-ilink-report.md` / `phone-openclaw-report.md`。

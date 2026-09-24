@@ -86,7 +86,6 @@ import {
   listMessages,
   listMessagesMerged,
   trimIndexedMessages,
-  saveFeedback,
   deleteMessagesByIds,
   deleteMessage,
   deleteMessagesBefore,
@@ -94,6 +93,7 @@ import {
   hydrateSessionLog,
 } from "../core/storage/message";
 import { rebuildIndexFromSessionLogs } from "../core/storage/session-log-bridge";
+import { putMessageFeedback } from "../core/llm/feedback";
 import { reportPersistFailure, getPersistFailures, resetPersistFailures } from "../core/storage/persist-failure";
 import type { Message } from "../store";
 import { textWindowSlice } from "./helpers/tauri-fs-stub";
@@ -367,7 +367,7 @@ describe("FIXB-4：索引裁剪必须是软删除（否则被裁消息的反馈�
     expect(visible).toEqual(expect.arrayContaining(["m3", "m4"]));
   });
 
-  it("FIXB-4b: 对被裁消息写反馈**不再失败**（`feedback.set` 必须落到端口）", async () => {
+  it("FIXB-4b: 对被裁消息写反馈**不再失败**（反馈域写必须落到端口）", async () => {
     const port = createFakeStoragePort({
       seed: {
         sessions: [{ id: SESSION, project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 }],
@@ -382,28 +382,37 @@ describe("FIXB-4：索引裁剪必须是软删除（否则被裁消息的反馈�
     await trimIndexedMessages({ keepPerSession: 1 });
 
     /**
-     * 真机上的失败形态是 `FOREIGN KEY constraint failed`（Rust 侧 `feedback.set`
-     * 往 `message_feedback` 插行，而 `message_id` 的外键指向 `messages(id)`；
-     * 硬删之后目标行不存在）。假端口没有外键，所以**在假端口下只能断言"行还在"**
-     * —— 那正是真机外键得以成立的前提（见 FIXB-4a）。
+     * 真机上的失败形态是 `FOREIGN KEY constraint failed`（往 `message_feedback` 插行，
+     * 而 `message_id` 的外键指向 `messages(id)`；硬删之后目标行不存在）。
+     * 假端口没有外键，所以**在假端口下只能断言"行还在"** —— 那正是真机外键得以成立的前提
+     * （见 FIXB-4a）。
      *
-     * 这一条守的是**另一半**：反馈写入必须真的走到 `feedback.set`，
-     * 而不是被某个读路径的异常吞掉（真机那条路径上一旦抛，`saveFeedback` 只上报不抛）。
+     * 这一条守的是**另一半**：反馈写入必须真的走到端口上的域写，
+     * 而不是被某个读路径的异常吞掉。
+     *
+     * 第 72 轮审计：原来这里判的是引擎的 `feedback.set`（5 列轻量命令，且**不写域镜像**）。
+     * 那条写路径已整体删除，现在只有域写 `crud.upsert` 一条 —— 判据随之换到它上面，
+     * 并且**改用上报通道判失败**（`getPersistFailures`），不再靠 console 文本匹配：
+     * 域写的失败由 `reportPersistFailure` 记在 `feedback.put` 这个 area 上。
      */
-    const failures: string[] = [];
-    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
-      failures.push(args.map(String).join(" "));
+    resetPersistFailures();
+    let put = putMessageFeedback(SESSION, "m0", "like");
+    await vi.waitFor(() => {
+      put = putMessageFeedback(SESSION, "m0", "like");
+      expect(put.ok, `反馈写入始终未成功：${put.ok ? "" : put.error}`).toBe(true);
     });
-    saveFeedback("m0", SESSION, "like");
-    await Promise.resolve();
-    spy.mockRestore();
 
-    const writes = (port as any).__writes().map((w: any) => w.command);
-    expect(writes, "反馈必须写穿到 feedback.set").toContain("feedback.set");
+    const writes = (port as any).__writes().filter((w: any) => w.command === "crud.upsert");
+    const wroteFeedback = writes.some(
+      (w: any) =>
+        w.params?.table === "message_feedback" &&
+        (w.params?.rows ?? []).some((r: any) => r.message_id === "m0" && r.feedback === "like"),
+    );
+    expect(wroteFeedback, "反馈必须写穿到端口（否则重启后丢失）").toBe(true);
     expect(
-      failures.join(" "),
+      getPersistFailures().map((f) => f.area),
       "反馈写入不该上报失败（真机上这一条曾经是 FOREIGN KEY constraint failed）",
-    ).not.toContain("message.saveFeedback");
+    ).not.toContain("feedback.put");
   });
 });
 

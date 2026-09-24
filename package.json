@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "1.16.124",
+  "version": "1.16.125",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,6 +27,8 @@
     "audit:write-return": "node tools/audit/check-write-return.mjs",
     "verify:update-manifest": "node tools/release/verify-update-manifest.mjs",
     "audit:coverage": "node tools/audit/storage-coverage.mjs --check",
+    "audit:coverage-baseline": "node tools/audit/coverage-baseline.mjs --check",
+    "audit:knip": "node tools/audit/knip-gate.mjs",
     "audit:inventory": "node tools/audit/storage-inventory.mjs",
     "audit:inventory-md": "node tools/audit/storage-inventory.mjs --md",
     "audit:json": "node tools/audit/scan-silent-write.mjs --json && node tools/audit/scan-false-success.mjs --json && node tools/audit/scan-guard-bypass.mjs --json && node tools/audit/scan-storage-boundary.mjs --json",
@@ -41,7 +43,7 @@
     "migrate:verify": "npm run db:build && node tools/migrate/storage-migrate.mjs --verify",
     "migrate:rollback-hint": "node tools/migrate/storage-migrate.mjs --rollback-hint",
     "migrate:bite": "npm run db:build && node tools/migrate/bite-reconcile.mjs",
-    "verify": "vitest run --coverage && npx knip && npx jscpd"
+    "verify": "vitest run --coverage && node tools/audit/coverage-baseline.mjs --check && node tools/audit/knip-gate.mjs && npx jscpd"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
@@ -95,8 +97,11 @@
     "@types/react-dom": "^18.3.1",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.10",
     "happy-dom": "^20.10.6",
+    "jscpd": "^5.3.2",
     "jsdom": "^29.1.1",
+    "knip": "^6.38.0",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.35.2",
     "typescript": "^5.6.3",

@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { removeSetting, setSettingJSON } from "../core/storage/settings";
+import { confirmDialog } from "../core/ui/native-dialog";
 import {
   isSealAvailable,
   migrateProviderKeysToSealed,
@@ -68,16 +69,20 @@ export function SecretStorageSetting({ lang }: SecretStorageSettingProps) {
     async (next: boolean) => {
       if (busy) return;
       if (next) {
-        const ok =
-          typeof window === "undefined" ||
-          typeof window.confirm !== "function" ||
-          window.confirm(
-            zh
-              ? "开启后，API 密钥会以明文保存在本地数据库里（不再使用 Windows 加密）。\n\n" +
-                  "已加密的密钥会被解回明文——这一步不可撤销（可以再关掉重新加密）。\n\n确定要开启吗？"
-              : "When enabled, API keys are stored as plaintext in the local database (no Windows encryption).\n\n" +
-                  "Already-sealed keys will be decrypted back to plaintext. Continue?",
-          );
+        /*
+         * 第 72 轮：原来是 fail-open —— `typeof window.confirm !== "function" || window.confirm(...)`，
+         * 也就是"没有确认框就当用户同意"，直接把明文保存打开。
+         * 而 Tauri 的 dialog 插件把 `window.confirm` 换成了异步调用（返回 Promise，恒为真），
+         * 所以这个式子在生产里**永远成立**：开关一点就开、用户根本没被问过。
+         * 现在统一走 `confirmDialog`：只有明确的 `true` 才算同意（拿不到答案 = 不开）。
+         */
+        const ok = await confirmDialog(
+          zh
+            ? "开启后，API 密钥会以明文保存在本地数据库里（不再使用 Windows 加密）。\n\n" +
+                "已加密的密钥会被解回明文——这一步不可撤销（可以再关掉重新加密）。\n\n确定要开启吗？"
+            : "When enabled, API keys are stored as plaintext in the local database (no Windows encryption).\n\n" +
+                "Already-sealed keys will be decrypted back to plaintext. Continue?",
+        );
         if (!ok) return;
 
         setBusy(true);

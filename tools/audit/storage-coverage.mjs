@@ -326,10 +326,15 @@ export const IMPLEMENTED = {
   "accounts.delete": ["crud.delete"],
 
   // ===== P3 第 8 段：反馈 / 附件 / 全文索引 =====
-  "message_feedback.select": ["feedback.get"],
-  "message_feedback.insert": ["feedback.set"],
-  "message_feedback.alter": ["feedback.set"],
-  "message_feedback.delete": ["feedback.delete"],
+  //
+  // 第 72 轮审计：`message_feedback` 的四条映射原来指向专用命令
+  // `feedback.get/set/set/delete`，那三条命令**已从引擎删除**（渲染侧零调用者 +
+  // 5 列窄写与 9 列域写并存会抹掉 note/version）。这张表现在只走通用仓储命令 ——
+  // 与 `accounts` / `prompt_drafts` 同形状（也就是"域镜像"那一类）。
+  "message_feedback.select": ["crud.list"],
+  "message_feedback.insert": ["crud.upsert"],
+  "message_feedback.alter": ["crud.upsert"],
+  "message_feedback.delete": ["crud.delete"],
   "attachments.select": ["attachments.list"],
   "attachments.update": ["attachments.update"],
   "session_fts.select": ["fts.search"],

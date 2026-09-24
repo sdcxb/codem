@@ -44,6 +44,7 @@ import * as ProjectStorage from "../core/storage/project";
 import { setSetting, getSetting, saveQuickPhrase, loadQuickPhrases } from "../core/storage/settings";
 import { getStoragePort } from "../core/storage/port";
 import { createShowTodoTool, loadTodoList } from "../core/llm/tools/show-todo";
+import { putMessageFeedback } from "../core/llm/feedback";
 import type { ToolContext } from "../core/llm/tools";
 import type { FakeStoragePort } from "./fake-storage-port";
 import type { Message } from "../store";
@@ -564,26 +565,37 @@ describe("新增 DB 表对已有存储无副作用", () => {
   });
 
   // IMPACT-049
-  it("IMPACT-049: message_feedback 表可写入和读取", () => {
+  it("IMPACT-049: message_feedback 表可写入和读取", async () => {
     /**
      * 同 IMPACT-048：原来那两行裸 SQL 打的是旧库，端口模式下会撞
      * `FOREIGN KEY constraint failed`（父行在端口里、旧库里没有）。
-     * 现在走产品的反馈接口 `saveFeedback` / `loadFeedback`（写端口 `feedback.set` + 反馈缓存），
-     * 两端都断言"写得进、读得回"。
+     * 现在走产品的反馈接口：**写**是 `putMessageFeedback`（域写 `crud.upsert`）、
+     * **读**是 `loadFeedback`（域镜像），两端都断言"写得进、读得回"。
      *
      * （第 18 轮：原来还有一条 A 态分支读旧库的 `message_feedback`，已随 A 态退役删除。）
+     * （第 72 轮审计：当时这里写的是 `MessageStorage.saveFeedback` —— 引擎的
+     *  `feedback.set`，**5 列、且不写域镜像**。那条写路径已整体删除：写进去、镜像里没有，
+     *  读路径读镜像时就是"写了却读不到"。所以现在只能用域写这一条。）
      */
     MessageStorage.createMessage(makeMsg({ id: "msg-fb-db-test" }), SESSION_ID);
-    MessageStorage.saveFeedback("msg-fb-db-test", SESSION_ID, "like");
+
+    // 镜像接手 `message_feedback` 是异步的（域读返回 `undefined` = 还没接手）→ 等它接手再判
+    let put = putMessageFeedback(SESSION_ID, "msg-fb-db-test", "like");
+    await vi.waitFor(() => {
+      put = putMessageFeedback(SESSION_ID, "msg-fb-db-test", "like");
+      expect(put.ok, `反馈写入不应失败：${put.ok ? "" : put.error}`).toBe(true);
+    });
     expect(MessageStorage.loadFeedback("msg-fb-db-test")).toBe("like");
 
     const written = port()
       .__writes()
       .some(
         (w) =>
-          w.command === "feedback.set" &&
-          (w.params as Record<string, unknown> | undefined)?.message_id === "msg-fb-db-test" &&
-          (w.params as Record<string, unknown> | undefined)?.feedback === "like",
+          w.command === "crud.upsert" &&
+          (w.params as Record<string, unknown> | undefined)?.table === "message_feedback" &&
+          ((w.params as { rows?: Record<string, unknown>[] }).rows ?? []).some(
+            (r) => r.message_id === "msg-fb-db-test" && r.feedback === "like",
+          ),
       );
     expect(written, "反馈必须写穿到端口（否则重启后丢失）").toBe(true);
   });

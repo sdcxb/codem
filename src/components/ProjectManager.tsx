@@ -6,6 +6,7 @@ import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import type { EnvironmentConfig, GitConfig } from "../core/settings/settings";
 import { Folder, FolderOpen, Link as LinkIcon, Download, Server, Lock, Globe } from "lucide-react";
 import { ActionIcons, StatusIcons } from "../core/icons/icon-map";
+import { confirmDialog } from "../core/ui/native-dialog";
 
 const isTauri = () => !!(window as any).__TAURI__;
 
@@ -258,8 +259,9 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
     onClose();
   };
 
-  const handleDelete = (projectId: string) => {
-    if (!confirm("确定删除此项目？")) return;
+  const handleDelete = async (projectId: string) => {
+    // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用，返回值是 Promise（恒为真）
+    if (!(await confirmDialog("确定删除此项目？"))) return;
     deleteProject(projectId);
   };
 

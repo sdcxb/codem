@@ -11,6 +11,7 @@ import type { GameBoardMap, GameConfig, HUDState, PlayerState } from "../types";
 import { PlayerCards } from "./PlayerCards";
 import { GameLog } from "./GameLog";
 import { ActionBar } from "./ActionBar";
+import { confirmDialog } from "../../../core/ui/native-dialog";
 import { CardPanel } from "./CardPanel";
 import { ToolPanel } from "./ToolPanel";
 import { ShopPanel } from "./ShopPanel";
@@ -331,8 +332,9 @@ export function GameView() {
   }, []);
 
   // G34: 投降
-  const handleSurrender = useCallback(() => {
-    if (window.confirm('确定要投降吗？投降后所有地产将被没收。')) {
+  const handleSurrender = useCallback(async () => {
+    // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用（返回 Promise，恒为真），见 native-dialog.ts
+    if (await confirmDialog('确定要投降吗？投降后所有地产将被没收。')) {
       engineRef.current?.surrender();
     }
   }, []);

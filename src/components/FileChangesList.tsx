@@ -14,6 +14,7 @@ import { FileChangeStorage, type TurnFileChangeRecord, type ChangedFile } from "
 import { FileChangeTracker } from "../core/environment/file-change-tracker";
 import { onFileChangesTracked } from "../core/environment/file-change-tracker";
 import { DiffViewer } from "./DiffViewer";
+import { confirmDialog } from "../core/ui/native-dialog";
 
 interface FileChangesListProps {
   sessionId: string;
@@ -67,7 +68,8 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
           `：\n${fileList}\n\n`
         : `将反向应用这一轮记录的全部改动。\n\n`) +
       `这一步没有自动快照，确定继续吗？`;
-    if (!window.confirm(msg)) return;
+    // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用，返回值是 Promise（恒为真）
+    if (!(await confirmDialog(msg))) return;
 
     const ok = await FileChangeTracker.revert(record.id, workspace);
     if (ok) {

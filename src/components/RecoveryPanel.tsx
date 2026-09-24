@@ -5,6 +5,7 @@ import {
 } from "../core/recovery/recovery";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
 import { useLang } from "../core/i18n/lang";
+import { confirmDialog } from "../core/ui/native-dialog";
 import { ActionIcons } from "../core/icons/icon-map";
 
 export function RecoveryPanel() {
@@ -70,8 +71,9 @@ export function RecoveryPanel() {
     }
   };
 
-  const handleClear = () => {
-    if (!confirm(zh ? "确认清除所有恢复数据？此操作不可撤销。" : "Clear all recovery data? This cannot be undone.")) return;
+  const handleClear = async () => {
+    // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用，返回值是 Promise（恒为真）
+    if (!(await confirmDialog(zh ? "确认清除所有恢复数据？此操作不可撤销。" : "Clear all recovery data? This cannot be undone."))) return;
     try {
       getSessionRecoveryService().clear();
       // 只有真的没抛错才允许把界面当成"已清空"（refresh 之后列表自然变空）
@@ -103,8 +105,9 @@ export function RecoveryPanel() {
     }
   };
 
-  const handleDeleteSession = (id: string) => {
-    if (!confirm(zh ? "删除此会话的恢复数据？" : "Delete this session's recovery data?")) return;
+  const handleDeleteSession = async (id: string) => {
+    // 同上：这里也是"不可撤销的删除"，确认框的答案必须真的等到
+    if (!(await confirmDialog(zh ? "删除此会话的恢复数据？" : "Delete this session's recovery data?"))) return;
     try {
       getSessionRecoveryService().deleteSession(id);
       if (selectedSessionId === id) setSelectedSessionId(null);

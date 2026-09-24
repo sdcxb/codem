@@ -650,28 +650,20 @@ describe("C-4 消息反馈", () => {
     expect(fb.getMessageFeedback("m1")).toBeNull();
   });
 
-  it("C4-5: 域写（9 列）与轻量路径（5 列）的**列集合**关系：域写是超集", async () => {
+  it("C4-5: 域写的**列集合**是 9 列超集（note/version/created_at/updated_at 都在）", async () => {
     /**
-     * ## 这条用例守什么、**不**守什么（请连同"需要他人配合"一起读）
+     * ## 第 72 轮审计：这条用例的"残余风险"已经消失
      *
-     * 守：**域写自己**写出来的是 9 列超集（note/version/created_at/updated_at 都在），
-     * 也就是"统一到一个写者"时应当保留的那一份数据完整语义。
+     * 改前这里记着一件真实的危险：`store.ts` 曾**同时**发两条写 ——
+     * `MessageStorage.saveFeedback`（引擎 `feedback.set`，**5 列**、先删后插）与
+     * `putMessageFeedback`（域写 **9 列**）。真 CLI 实测："先 9 列、后 5 列"会把
+     * `note` / `version` / `created_at` / `updated_at` 抹成 NULL，
+     * 当时只是**碰巧**因为调用顺序（先 5 列、后 9 列）结果才对 —— 没有任何东西守着顺序。
      *
-     * **不**守（重要）：`store.ts` 里 `saveFeedback`（5 列，先删后插）与
-     * `putMessageFeedback`（9 列）的**执行顺序**。真 CLI 实测那个顺序问题是真的：
-     * ```
-     * ① 写 9 列 → {note:"备注一", version:"v1", created_at:50, updated_at:100}
-     * ② feedback.set（5 列）→ {note:null, version:null, created_at:null, updated_at:null}
-     * ```
-     * 也就是说"先 9 列、后 5 列"会把 note/version **抹掉**。
-     * 当前 `store.ts` 是"先 5 列、后 9 列"，所以最终结果恰好是对的 ——
-     * 但这个正确性**依赖调用顺序**，没有任何东西守着它。
-     *
-     * 为什么这条用例没有直接验证那个顺序：假端口（`src/test/fake-storage-port.ts`）
-     * 目前对 `feedback.set` 命令**什么都不做**（落到末尾 `return 0`），
-     * 所以"5 列写抹掉 4 列"这个真机行为在测试基座里**看不见**。
-     * 那个文件在本次修复期间**正被另一位工作者编辑**（任务书划定的所有权边界），
-     * 因此我**不改它** —— 需要补的实现与最小改法写在报告的"需要他人配合"里。
+     * 现在：那条 5 列窄写（渲染侧的 `saveFeedback` 与**引擎侧的 `feedback.set`**）
+     * 已经**整体删除**，`message_feedback` 只有"域写"这一条路径。
+     * 于是"顺序决定数据完整性"这个隐患从根上没有了 —— 这条用例退化成
+     * 单纯钉住域写的列集合（仍然要有：它是"域写是唯一样子"的判据）。
      */
     port = createFakeStoragePort({ seed: seedForFeedback() });
     setStoragePort(port as unknown as StoragePort);
@@ -679,7 +671,7 @@ describe("C-4 消息反馈", () => {
 
     fb.putMessageFeedback("s1", "m1", "like", "备注一");
     const row = port.__table("message_feedback")[0];
-    // 9 列超集：轻量路径（feedback.set）只会写其中 5 列
+    // 9 列：写入方只有域写一条，所以这九列每次都由同一个地方给全
     expect(Object.keys(row).sort()).toEqual(
       ["created_at", "feedback", "id", "message_id", "note", "session_id", "timestamp", "updated_at", "version"].sort(),
     );

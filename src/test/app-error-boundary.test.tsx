@@ -123,7 +123,7 @@ describe("AppErrorBoundary — 渲染崩溃恢复边界", () => {
     expect(got!.message).toBe("m");
   });
 
-  it("REC-R6: 重置按钮先确认、仅清 codem-* 键；取消时不清除", () => {
+  it("REC-R6: 重置按钮先确认、仅清 codem-* 键；取消时不清除", async () => {
     const confirmSpy = vi.fn(() => false);
     const reloadSpy = vi.fn(() => {});
     (window as any).confirm = confirmSpy;
@@ -136,18 +136,31 @@ describe("AppErrorBoundary — 渲染崩溃恢复边界", () => {
     localStorage.setItem("codem-window-state", "{}");
     localStorage.setItem("other-key", "keep-me");
 
+    /*
+     * ⚠️ 第 72 轮：这个处理函数变成了 **async**（`await confirmDialog(...)`）——
+     * 因为真机里 Tauri 的 dialog 插件把 `window.confirm` 换成了返回 Promise 的插件调用，
+     * 不 await 就会把 Promise 当布尔用（"不问就执行"）。
+     * 于是点击之后要让微任务跑完再断言（`fireEvent` 本身是同步的）。
+     */
+    const flush = async () => {
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    };
+
     render(
       <AppErrorBoundary>
         <BoomChild message="boom R6" />
       </AppErrorBoundary>
     );
     fireEvent.click(screen.getByTestId("crash-reset"));
+    await flush();
     // 取消确认 → 什么都不做
+    expect(confirmSpy, "必须真的问了（而不是跳过询问直接执行）").toHaveBeenCalled();
     expect(localStorage.getItem("codem-close-behavior")).toBe("tray");
     expect(reloadSpy).not.toHaveBeenCalled();
 
     confirmSpy.mockImplementation(() => true);
     fireEvent.click(screen.getByTestId("crash-reset"));
+    await flush();
     expect(localStorage.getItem("codem-close-behavior")).toBeNull();
     expect(localStorage.getItem("codem-window-state")).toBeNull();
     expect(localStorage.getItem("other-key")).toBe("keep-me");

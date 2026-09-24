@@ -10,6 +10,7 @@ import {
 import type { TaskSlot } from "../core/llm/model-profile";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
+import { confirmDialog } from "../core/ui/native-dialog";
 
 /**
  * AgentManager — 智能体定义管理（列表 + 详情 + 编辑表单）。
@@ -145,8 +146,9 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
     refresh();
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm(zh ? "确认删除此智能体？" : "Delete this agent?")) return;
+  const handleDelete = async (id: string) => {
+    // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用，返回值是 Promise（恒为真）
+    if (!(await confirmDialog(zh ? "确认删除此智能体？" : "Delete this agent?"))) return;
     getAgentRegistry().unregister(id);
     if (selectedId === id) setSelectedId(null);
     refresh();

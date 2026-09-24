@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useLang } from "../../core/i18n/lang";
+import { confirmDialog } from "../../core/ui/native-dialog";
 import { useProjectStore } from "../../core/store";
 import {
   getRuntimeStatus,
@@ -109,8 +110,9 @@ export function ZvecGrepMarketCard() {
     );
   };
 
-  const handleUninstall = () => {
-    if (!confirm(zh ? "卸载将删除运行时与模型并移除 MCP 注册。继续？" : "Uninstall removes runtime, models and the MCP entry. Continue?")) return;
+  const handleUninstall = async () => {
+    // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用，返回值是 Promise（恒为真）
+    if (!(await confirmDialog(zh ? "卸载将删除运行时与模型并移除 MCP 注册。继续？" : "Uninstall removes runtime, models and the MCP entry. Continue?"))) return;
     run(() => uninstall(), zh ? "已卸载" : "Uninstalled");
   };
 

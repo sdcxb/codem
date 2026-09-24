@@ -18,7 +18,6 @@
  */
 
 import { getEventLog } from "../storage/event-log";
-import { invalidateFeedbackCache } from "../storage/message";
 import { domainDelete, domainPortRegistered, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
 import { reportPersistFailure } from "../storage/persist-failure";
 
@@ -350,15 +349,16 @@ export function putMessageFeedback(
         { mode: "replace", scope: "feedback.put", note: "消息反馈未保存" },
       );
       /**
-       * **P2-D9**：域写之后必须让 `message.ts` 的 `feedbackCache` 失效。
+       * **第 72 轮审计**：这里原来还有一次 `invalidateFeedbackCache(messageId)`。
        *
-       * 那个缓存是 `loadFeedback`（同步接口）的写穿缓存，唯一写入者是遗留的
-       * `saveFeedback`。只要它里面有这条消息的值，`loadFeedback` 就**永远**返回它 ——
-       * 而这里刚刚把库里改成了别的评级（或取消了）。
-       * 失效必须在**这里**发生：缓存键是 message id，与 session 无关，
-       * 而"域写发生在哪"只有本模块知道。
+       * 那是第 45 轮 P2-D9 的"打补丁"：`message.ts` 里曾有一份写穿缓存，
+       * 唯一写入者是遗留路径 `saveFeedback`（`feedback.set`），
+       * 而 UI 的真实写路径是**本函数**（域写）—— 于是"谁写谁不失效"。
+       *
+       * 那一整条遗留路径（缓存 + `saveFeedback` + `feedback.set`）现在已经**删除**，
+       * `loadFeedback` 只读域镜像，而域写**先改镜像再写穿** —— 写完立刻读得到，
+       * 不需要任何人来通知谁失效。所以这一行连同缓存一起没有了。
        */
-      invalidateFeedbackCache(messageId);
     };
     if (existingRow && existingRow.id !== `fb-${messageId}`) {
       // 历史行用了别的 id（例如 message.ts 的轻量路径写的 `fb-...`）：
@@ -524,12 +524,9 @@ export function deleteMessageFeedback(
 
   // ④：确实有行 → 删。删除写穿的失败由 `domainDelete` 上报，不静默。
   domainDelete(TABLE, { id: row.id }, { scope: "feedback.delete", note: "消息反馈未删除" });
-  /**
-   * **P2-D9**：删除也是"换人写"——`message.ts` 的 `feedbackCache` 若还留着一条旧评级，
-   * `loadFeedback` 会**永远**返回它，于是"用户点了取消、界面却仍然显示已点赞"
-   * 这个形态会一直存在（缓存没有别的失效点）。与 `putMessageFeedback` 同一个理由。
-   */
-  invalidateFeedbackCache(messageId);
+  // 第 72 轮：这里原来还要 `invalidateFeedbackCache`（P2-D9 的补丁）。
+  // 那份缓存自身已删除（见 `putMessageFeedback` 里的说明），删除路径现在同样
+  // 只依赖域镜像：`domainDelete` 先改镜像，`loadFeedback` 立刻读到"没有行"。
   return { ok: true, absent: true };
 }
 /**

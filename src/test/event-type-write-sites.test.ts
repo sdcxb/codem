@@ -187,6 +187,11 @@ describe("EVENT-TYPE-WRITES 写事件时用的类型名必须在权威集合里"
   it("EVENT-TYPE-WRITES-3（反向守卫）：门禁必须认得出『同一个文件里的常量』这种写法", () => {
     // 真机那个漏检就是这种写法：`type: TRAJECTORY_EVENT_TYPE`。
     // 这一条用一个**临时文件**验证解析能力（否则门禁会在同一个坑上再摔一次）。
+    //
+    // ⚠️ 超时给到 60s（与 -1 同）：这里 `resetProgramCache()` 之后要**重扫整棵产品源码树**
+    // （821 个文件）。带 `--coverage` 跑时（v8 插桩让编译/解析明显变慢）这个扫描
+    // 会超过默认的 5s —— 第 72 轮实测过一次 `Test timed out in 5000ms`。
+    // 这是**度量开销**，不是断言放宽：树扫不完照样红（-1 里"一个写入点都没找到"那条判据还在）。
     const rel = "src/__etw_probe__.ts";
     const abs = join(ROOT, rel);
     const body = `import { getEventLog } from "./core/storage/event-log";\nconst PROBE_EVENT_TYPE = "etw_probe_bogus";\nexport function __probe(sid: string): void {\n  getEventLog().append(sid, PROBE_EVENT_TYPE, {});\n}\n`;
@@ -200,7 +205,7 @@ describe("EVENT-TYPE-WRITES 写事件时用的类型名必须在权威集合里"
     } finally {
       require("node:fs").unlinkSync(abs);
     }
-  });
+  }, 60_000);
 
   it("EVENT-TYPE-WRITES-4（反向守卫）：`formData.append(...)` 这类同名调用**不许**被当成事件写入", () => {
     // 第一版就是按方法名匹配的：报了 3 条假违规（FormData 的 file/model/response_format）。

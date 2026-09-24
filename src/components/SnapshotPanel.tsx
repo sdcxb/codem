@@ -3,6 +3,7 @@ import { getSnapshotService, type Snapshot } from "../core/snapshot/snapshot";
 import { DiffViewer } from "./DiffViewer";
 import { readFile } from "../core/file-api";
 import { reportActionFailure } from "../core/storage/persist-failure";
+import { confirmDialog } from "../core/ui/native-dialog";
 import { Camera, Clock, RefreshCw, Search, Undo, Folder, ChevronDown, ChevronRight } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 
@@ -121,7 +122,12 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
       "\n\n回滚前会自动存一份快照，所以这次回滚可以再退回。",
       "\n确定继续吗？",
     ];
-    if (!window.confirm(lines.filter(Boolean).join("\n"))) return;
+    /*
+     * ⚠️ 必须 `await`：Tauri 的 dialog 插件把 `window.confirm` 换成了**异步插件调用**，
+     * 旧写法 `if (!window.confirm(msg)) return;` 拿到的返回值是 **Promise（恒为真）**，
+     * 于是"确认框根本没弹、回滚却照做"（第 72 轮真机走查实测）。
+     */
+    if (!(await confirmDialog(lines.filter(Boolean).join("\n")))) return;
 
     restoringRef.current = snapshotId;
     setRestoring(snapshotId);

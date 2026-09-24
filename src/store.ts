@@ -306,6 +306,11 @@ interface AppState {
   setFeedback: (messageId: string, feedback: FeedbackType | null, sessionId?: string) => void;
   /** P0: Load feedback for a message from DB */
   loadFeedback: (messageId: string) => void;
+  /**
+   * 给已加载的消息补上镜像里的附件（第 72 轮审计：附件域就绪后重读一次）。
+   * @returns 补了几条消息
+   */
+  refreshMessageAttachments: () => number;
   /** P0: Remove messages after a given message (for inline edit) */
   removeMessagesAfter: (messageId: string, includeSelf?: boolean) => void;
   /** P0: Update scroll position state */
@@ -888,6 +893,10 @@ export const useAppStore = create<AppState>((set, get) => ({
      * - `neutral` 由 `putMessageFeedback` 归一成**删除那一行**（取消反馈的正确语义）；
      * - `ifVersion` 不传 = **不校验版本**（`feedback.ts` 的 `checkVersion` 已按此实现）；
      * - 失败**如实上报**，不再吞。
+     *
+     * 第 72 轮审计：上面说的 ① 那条路径（连同 `message.ts` 里的写穿缓存）已经
+     * **整体删除**，不再是"这里不发它"而是"它不存在了" —— 所以现在不可能有人
+     * 再从别处把它请回来（守门用例见 `src/test/feedback-single-write-path.test.ts`）。
      */
     if (sessionId) {
       try {
@@ -928,6 +937,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.warn("[loadFeedback] Failed:", e);
     }
+  },
+
+  /**
+   * 给**已加载的消息**补上附件（第 72 轮审计新增）。
+   *
+   * ## 为什么需要它
+   *
+   * 附件来自 `attachments` 域的镜像（`withMirrorAttachments` → `domainReadMany("attachments")`），
+   * 而镜像没就绪时那个读返回 `undefined` ⇒ `withMirrorAttachments` 原样返回 ⇒ 消息**看起来没有附件**。
+   * 消息列表偏偏是"读一次就摆在那儿"的（翻页/切会话才重读），于是"有附件却看不见"会一直持续 ——
+   * 与 `message_feedback`（历史赞/踩显示成未评价）是**同一个成因**。
+   *
+   * 所以补一个"就绪后重读"的收口动作：把已加载的每条消息按 id 重新取一次（`getMessage` 会带上
+   * 镜像附件），**只在真的多出附件时才更新**（避免无意义的整表替换与重渲染）。
+   *
+   * @returns 本次补了几条消息的附件（供日志/用例断言）
+   */
+  refreshMessageAttachments: () => {
+    let patched = 0;
+    set((s) => {
+      let changed = false;
+      const messages = s.messages.map((m) => {
+        const already = m.attachments?.length ?? 0;
+        let fresh: typeof m | null = null;
+        try {
+          fresh = MessageStorage.getMessage(m.id) as typeof m | null;
+        } catch {
+          fresh = null;
+        }
+        const gained = fresh?.attachments?.length ?? 0;
+        if (fresh && gained > already) {
+          changed = true;
+          patched++;
+          return { ...m, attachments: fresh.attachments };
+        }
+        return m;
+      });
+      return changed ? { messages } : s;
+    });
+    return patched;
   },
 
   removeMessagesAfter: (messageId, includeSelf) => {

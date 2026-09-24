@@ -394,9 +394,11 @@ const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) =
      * 1. 裁剪把索引行硬删了；
      * 2. `listMessagesMerged` 又把"只在 JSONL 里的消息"**合回 UI**（这正是设计意图 ——
      *    被裁掉的历史仍然读得到），所以用户看得到、点得动那条消息；
-     * 3. 点"点赞" → `saveFeedback` → `feedback.set` → **`FOREIGN KEY constraint failed`**。
-     *    真 CLI 实测（见报告）：先 `messages.delete {ids}` 再 `feedback.set` 必失败。
-     * 用户的观感更糟：图标先亮了（`feedbackCache` 是**先内存后落库**），重启之后消失。
+     * 3. 点"点赞" → 反馈写入 → **`FOREIGN KEY constraint failed`**。
+     *    真 CLI 实测（见报告）：先 `messages.delete {ids}` 再写反馈必失败。
+     * 用户的观感更糟：图标先亮了（当时的实现是**先内存后落库**），重启之后消失。
+     *    （第 72 轮审计：当年的 `saveFeedback`/`feedback.set` 写路径已删除，现在只有
+     *    域写 `putMessageFeedback` 一条；外键依赖对它同样成立，软删除的结论不变。）
      *
      * 修法就是让裁剪走 `soft: true`（Rust 侧 `messages_delete` 的真实现是
      * `UPDATE messages SET hidden = 1`，行留着 → 外键目标还在 → 反馈写得进去）。
@@ -2985,94 +2987,30 @@ export interface FeedbackRecord {
   timestamp: number;
 }
 
-/** Save or update feedback for a message. Passing null removes the feedback. */
 /**
- * 反馈的内存缓存（P3 第 9 段）。
+ * 反馈的读路径（`like` / `dislike` / `null`）。
  *
- * ## 为什么用"写穿缓存"而不是整表加载
+ * ## 第 72 轮审计：**第二条写路径已删除**（连同那份内存缓存）
  *
- * `loadFeedback` 是**同步**接口，而 Rust 是异步 IPC。反馈表很小（一条消息最多一行），
- * 但没有"按会话"的天然边界 —— 一条消息的反馈可能在任何会话里被查询。
- * 整表加载会引入一个不必要的启动读；而**只缓存本进程写过的**就足够：
+ * 这里原来有一对东西：`feedbackCache`（写穿缓存）与 `saveFeedback`（走引擎的 `feedback.set`
+ * 五列命令）。审计确认的事实：
  *
- * - 写入走 Rust（权威），并同步进缓存 → 本进程内的读立即可见；
- * - 缓存里没有的（历史反馈）→ 继续读旧库（那里是迁移前的数据，且读与写都在同一处）。
+ * 1. `saveFeedback` 的**生产调用者为 0**（只有测试与注释提到它）——
+ *    它是一条"镜像看不见的写"：写进引擎、而读路径读的是域镜像，于是
+ *    **写进去了却读不到**（第 45 轮 P2-D9 就记下了这个残余）；
+ * 2. 那份缓存本来是为了"同步接口 + 异步 IPC"，而现在域镜像的读**本身就是同步的**
+ *    （`domainReadOne` 直接读内存镜像），域写也**先改镜像再写穿** ——
+ *    所以缓存带来的"刚写完读不到"问题早就不存在了，它唯一的作用变成了
+ *    "把旧值钉住"（P2-D9 的现场：取消点赞之后界面仍显示已赞）。
  *
- * 这条规则与只追加面/消息镜像同源：**只有当读与写落在同一处时才切换**。
- * 旧库那份反馈值虽然会随时间变旧，但"没写过的消息"的反馈本来就没被本进程改动过。
- */
-const feedbackCache = new Map<string, FeedbackType | null>();
-
-/**
- * 反馈**写路径换人**之后的缓存失效钩子（第 45 轮功能上下文审计 **P2-D9**）。
- *
- * ## 原来坏在哪（可复现的现场形态）
- *
- * `feedbackCache` 的唯一写入者是下面的 `saveFeedback`（`feedback.set`），
- * 而 UI 上的真实写路径是 `core/llm/feedback.ts` 的 `putMessageFeedback` /
- * `deleteMessageFeedback`（走**域写** `crud.upsert` / `crud.delete`）——
- * 它们**不碰**这个缓存。于是读路径 `loadFeedback` 第一行就 `if (feedbackCache.has(id)) return …`：
- *
- * 1. 任何一次 `saveFeedback`（遗留路径、测试夹具、未来的插件）把值塞进缓存；
- * 2. 之后用户点赞 → 改踩 → 取消（走域写，库里已经是新值 / 已经没有行）；
- * 3. 而 `loadFeedback` **永远**返回缓存里那一次的值 —— 取消之后界面仍显示有点赞。
- *
- * 缓存从来没有失效点，所以这不是"概率性问题"，是"一旦进缓存就再也出不来"。
- *
- * ## 修法与"为什么不直接删掉缓存"
- *
- * `loadFeedback` 是**同步**接口而 IPC 是异步的，缓存是它唯一的同步来源；
- * 删掉缓存 = "刚写完读不到"（原注释里的第 11 段缺陷）。
- * 所以保留缓存，但把**失效点补上**：两个域写路径在写成功后调用本函数。
- *
- * ## 换人之后这里返回什么（⚠️ 如实记下的残余缺陷）
- *
- * `saveFeedback` 走的是引擎的 `feedback.set`（5 列），**不写域镜像**；
- * 而 `loadFeedback` 的镜像是启动时读进来的那份 —— 也就是说
- * **写进去了、镜像里没有**（下次读镜像还是旧值 / 没有行）。
- * 彻底修法是让 `saveFeedback` 自己走域写；但它的三个调用点里两个是测试，
- * 一个是 `store.ts:639` 的**注释**（生产调用者 0），改它的收益与风险不成比例。
- * 所以这里把这件事变成**可见**的：调它的人都从 doc 里看得见"镜像不会同步"。
- */
-export function invalidateFeedbackCache(messageId: string): void {
-  feedbackCache.delete(messageId);
-}
-
-/** 反馈写入是否走 Rust（端口可用时的分流判据） */
-function rustFeedbackPort(): RustMessagePortLike | null {
-  const port = rustMessagePort();
-  return port?.data ? port : null;
-}
-
-export function saveFeedback(messageId: string, sessionId: string, feedback: FeedbackType | null): void {
-  const port = rustFeedbackPort();
-  if (port) {
-    /*
-     * 先内存后落库：本进程内读立即可见，落库失败如实上报。
-     *
-     * ⚠️ P2-D9 的残余（见 `invalidateFeedbackCache` 的说明）：这条命令**不写域镜像**，
-     * 而 `loadFeedback` 的镜像是启动时那一份 —— 所以本函数写过的值，
-     * 在**同一进程内**靠这个缓存可见，跨进程/镜像重载后读到的仍是镜像里的旧值。
-     * 生产调用者为 0（UI 走 `feedback.ts` 的域写），所以这里只记事实、不改行为。
-     */
-    feedbackCache.set(messageId, feedback);
-    void port.data
-      .execute("feedback.set", { message_id: messageId, session_id: sessionId, feedback })
-      .catch((e) => {
-        reportPersistFailure("message.saveFeedback", e, "反馈未保存，重启后会丢失");
-      });
-    return;
-  }
-  reportWriteNotAccepted("message.saveFeedback", "反馈未保存");
-  return;
-}
-
-/**
- * 读一条消息的反馈（`like` / `dislike` / `null`）。
+ * 于是按本仓库的通行做法**删掉重复实现**，只留一条写路径
+ * （`core/llm/feedback.ts` 的 `putMessageFeedback` / `deleteMessageFeedback`，走域写）
+ * 和一条读路径（下面这个函数，直接读镜像）。"镜像里没有的那份写"从根上没有了。
  *
  * ## 第 11 段（P5）：修掉一个**真机可见的抛错**
  *
- * 原实现只有两条来源：本进程写过的缓存、以及旧库。rust 引擎下旧库刻意不加载，
+ * 原实现只有两条来源：本进程写过的缓存、以及旧库（缓存已在上面那段审计里删除，
+ * 现在读路径只有"域镜像"这一个来源）。rust 引擎下旧库刻意不加载，
  * 而 `const db = getDatabase()` 在 `try` **外面** —— 于是"给历史消息点开反馈按钮"
  * 会直接抛 `Database not initialized`（调用点：`store.ts` 的 `loadFeedback`、
  * `FeedbackButtons.tsx` 的 effect）。
@@ -3085,8 +3023,6 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
  *   （第 19 轮：A 态原来还有"wasm 回滚"这第二种形态，已随旧引擎删除。）
  */
 export function loadFeedback(messageId: string): FeedbackType | null {
-  // 本进程写过的优先（与写入落在同一处：都走 Rust）
-  if (feedbackCache.has(messageId)) return feedbackCache.get(messageId) ?? null;
   // 没有可用存储时直接返回"未评价"（不再每次去撞不存在的端口、也不再刷屏）
   if (storageUnavailable()) return null;
 
