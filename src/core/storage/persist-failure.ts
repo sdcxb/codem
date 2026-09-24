@@ -41,8 +41,8 @@ export interface PersistFailureEntry {
   count: number;
   lastMessage: string;
   lastAt: number;
-  /** persist = 落盘失败（重启会丢）；action = 动作失败（功能没生效） */
-  kind: "persist" | "action";
+  /** persist = 落盘失败（重启会丢）；action = 动作失败（功能没生效）；advisory = 发现/提醒（没有东西失败） */
+  kind: "persist" | "action" | "advisory";
 }
 
 /** 上报时可选的补充信息 */
@@ -68,7 +68,7 @@ export interface PersistFailureDetail {
   area: string;
   message: string;
   count: number;
-  kind: "persist" | "action";
+  kind: "persist" | "action" | "advisory";
   consequence?: string;
   title?: string;
 }
@@ -94,7 +94,7 @@ export function reportFailure(
   area: string,
   error: unknown,
   extra?: string,
-  kind: "persist" | "action" = "persist",
+  kind: "persist" | "action" | "advisory" = "persist",
   options?: PersistFailureOptions,
 ): PersistFailureEntry {
   const message = error instanceof Error ? error.message : String(error ?? "unknown error");
@@ -112,15 +112,40 @@ export function reportFailure(
   if (options?.consequence) detail.consequence = options.consequence;
   if (options?.title) detail.title = options.title;
 
-  console.error(
-    `[PersistFailure] ${area} ${kind === "persist" ? "写盘失败" : "操作失败"}（第 ${entry.count} 次）：${message}` +
-      (extra ? `（${extra}）` : "") +
-      (options?.consequence
-        ? ` —— ${options.consequence}`
-        : kind === "persist"
-          ? " —— 本次改动只存在于内存，重启后可能丢失。"
-          : " —— 该功能本次没有生效。"),
-  );
+  /**
+   * 控制台那一行也要**说真话**：`advisory`（发现/提醒）不是失败，
+   * 所以既不该打 `error`，也不该印「写盘失败 / 操作失败」。
+   * （第 88 轮实测抓到：一条"发现明文凭据 1 处"的**安全提醒**，
+   *  在控制台里长成 `[PersistFailure] … 操作失败（第 1 次）` —— 读日志的人会以为普查坏了。）
+   */
+  if (kind === "advisory") {
+    console.warn(
+      `[Advisory] ${area}：${message}` +
+        (extra ? `（${extra}）` : "") +
+        (options?.consequence ? ` —— ${options.consequence}` : ""),
+    );
+  } else {
+    /**
+     * 第 88 轮：**控制台那段也要是真的**。
+     *
+     * `persist` 的默认标签是「写盘失败」，可这只是"两种默认里比较像的那个" ——
+     * 维护里的裁剪没跑成、完整性检查没跑成、空间回收没跑成，**没有任何写盘动作失败**；
+     * 真机取证就是这么印的：`[PersistFailure] maintenance.integrityCheck 写盘失败（第 1 次）：…`
+     * 而消息正文写的是"完整性检查失败"。
+     * 调用方给了 `title`（它本来就是"开头那句真实的话"）时就用它当控制台标签，
+     * 否则保持原样（既有调用点行为不变）。
+     */
+    const label = options?.title ?? (kind === "persist" ? "写盘失败" : "操作失败");
+    console.error(
+      `[PersistFailure] ${area} ${label}（第 ${entry.count} 次）：${message}` +
+        (extra ? `（${extra}）` : "") +
+        (options?.consequence
+          ? ` —— ${options.consequence}`
+          : kind === "persist"
+            ? " —— 本次改动只存在于内存，重启后可能丢失。"
+            : " —— 该功能本次没有生效。"),
+    );
+  }
 
   try {
     listener?.(detail);
@@ -159,6 +184,39 @@ export function reportActionFailure(
 }
 
 /**
+ * **提醒/发现**上报（第 88 轮）：既不是"写盘失败"，也不是"操作没生效"，
+ * 而是"我们查到了某件事，你要知道"。
+ *
+ * ## 为什么必须单独一条通道（真机实测的现场）
+ *
+ * 凭据普查发现"设置里有疑似明文凭据"、自检发现"本次新产生 N 条双写缺口" ——
+ * 这些都是**功能正常跑完**之后的**发现**。它们原来借用失败通道，于是界面上印出：
+ *
+ * - 横幅：`安全提示：设置里存在明文凭据：设置里存在疑似凭据 1 处。该功能本次不可用，请重试或检查日志。`
+ *   —— **"请重试"是假建议**（再跑一次还是同样的发现），"不可用"是假陈述（功能刚跑成功了）；
+ * - 控制台：`[PersistFailure] maintenance.credentialCensus 操作失败（第 1 次）`、
+ *   `[PersistFailure] maintenance.invariantAudit.new 写盘失败（第 1 次）`
+ *   —— 后者更是把"审计发现"印成了"写盘失败"。
+ *
+ * 判据就一条：**印出来的必须是真的**。发现类消息需要一个不假装失败的语气，
+ * 而"发现"的严重程度也不该被失败通道的措辞稀释掉（用户会以为重试一下就好）。
+ *
+ * @param area 区域标识（例如 `maintenance.credentialCensus`）
+ * @param finding 发现了什么（**陈述事实**，不要写成错误消息）
+ * @param options `title` 覆盖标题；`nextStep` 写"建议怎么做"（会印在横幅上）；`sample` 是给日志的样例/位置
+ */
+export function reportAdvisory(
+  area: string,
+  finding: string,
+  options?: { title?: string; nextStep?: string; sample?: string },
+): PersistFailureEntry {
+  return reportFailure(area, new Error(finding), options?.sample, "advisory", {
+    ...(options?.title ? { title: options.title } : {}),
+    ...(options?.nextStep ? { consequence: options.nextStep } : {}),
+  });
+}
+
+/**
  * 把一条上报拼成**界面上显示的那一句话**（纯函数，便于用例直接断言文案）。
  *
  * 第 48 轮从 `App.tsx` 里抽出来：原来这段拼装写在事件监听器里，
@@ -169,6 +227,7 @@ export function reportActionFailure(
  */
 export function composePersistAlertText(detail: PersistFailureDetail): string {
   const isAction = detail.kind === "action";
+  const isAdvisory = detail.kind === "advisory";
   const reason = detail.message || "未知原因";
   /**
    * 第 52 轮：`title` 可以**替换开头那句**。
@@ -179,8 +238,26 @@ export function composePersistAlertText(detail: PersistFailureDetail): string {
    * 而是**自检发现了不一致并已经修好**。真机上那条横幅当时印的是
    * "操作没有生效（maintenance.indexBehindLog）：…" —— 一句话开头就是假的，
    * 而后半句（"已逐会话重建，补回 3 行"）才是真的。**开头假 = 整条不可信。**
+   *
+   * 第 88 轮：这一类被正式立成第三个 kind（`advisory`）—— 不再靠调用方各自传 title 打补丁，
+   * 且**后缀也不再借用失败语气**（"请重试"这类假建议在提醒里不该出现）。
    */
-  const head = detail.title ? detail.title : isAction ? `操作没有生效（${detail.area}）` : `数据保存失败（${detail.area}）`;
+  const head = detail.title
+    ? detail.title
+    : isAdvisory
+      ? `提醒（${detail.area}）`
+      : isAction
+        ? `操作没有生效（${detail.area}）`
+        : `数据保存失败（${detail.area}）`;
+  if (isAdvisory) {
+    // 提醒：没有"失败"，所以既不写后果也不写重试建议；给了 nextStep 就印建议本身。
+    // 次数后缀也换说法 —— "已累计失败 N 次"对发现类消息是假的（它没失败）。
+    return (
+      `${head}：${reason}。` +
+      (detail.consequence ?? "") +
+      (detail.count > 1 ? `（本次维护过程中同类提示 ${detail.count} 次）` : "")
+    );
+  }
   if (isAction) {
     return (
       `${head}：${reason}。` +

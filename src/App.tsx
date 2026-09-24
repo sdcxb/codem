@@ -2303,7 +2303,7 @@ flushStreamBuffer(); // flush all on unmount
     const reportedPersistAreas = new Set<string>();
     const onPersistFail = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as
-        | { area?: string; message?: string; count?: number; kind?: "persist" | "action"; consequence?: string; title?: string }
+        | { area?: string; message?: string; count?: number; kind?: "persist" | "action" | "advisory"; consequence?: string; title?: string }
         | undefined;
       const area = detail?.area || "unknown";
       if (reportedPersistAreas.has(area)) return; // 同一区域只提示一次
@@ -2327,12 +2327,14 @@ flushStreamBuffer(); // flush all on unmount
        */
       useAppStore.getState().addPersistAlert({
         area,
-        kind: detail?.kind === "action" ? "action" : "persist",
+        // 第 88 轮：`advisory` 必须原样透传 —— 原来这里把任何非 action 都折成 persist，
+        // 于是"自检发现"在界面上被渲染成"数据保存失败"（失败色的横幅 + 失败语气）。
+        kind: detail?.kind === "action" ? "action" : detail?.kind === "advisory" ? "advisory" : "persist",
         message: composePersistAlertText({
           area,
           message: detail?.message || "未知原因",
           count: detail?.count ?? 1,
-          kind: detail?.kind === "action" ? "action" : "persist",
+          kind: detail?.kind === "action" ? "action" : detail?.kind === "advisory" ? "advisory" : "persist",
           ...(detail?.consequence ? { consequence: detail.consequence } : {}),
           // 第 52 轮：标题也能被上报方覆盖（有些被上报的事既不是"保存失败"也不是
           // "操作没生效"，而是"自检发现并已修好" —— 开头那句假，整条就不可信）

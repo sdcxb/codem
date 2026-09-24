@@ -103,4 +103,33 @@ describe("CENSUS：设置里的凭据普查", () => {
     expect(JSON.stringify(out3)).not.toContain("sk-abcdefghijklmnopqrstuvwx");
     expect(JSON.stringify(out3)).not.toContain("cdcdcd");
   });
+
+  it("CENSUS-6: **别的编码/别的机器写的密文**也不许被说成明文（第 88 轮隔离钻取抓到）", () => {
+    /**
+     * 现场：隔离钻取（副本库 + `CODEM_DB_PATH` 启动装机版 1.16.134）里，
+     * 我把密文换成 `dsh1:` + **base64**（不是十六进制），于是维护打出
+     * 「设置里存在**明文**存放的密钥 1 处」，界面上那条**安全提示横幅**也跟着说"明文凭据"
+     * —— 而那个值明明是**密文**（解不开，但不是明文）。
+     * 判据（`looksSealed`）原来只认十六进制 ⇒ 换成 base64 就漏判。
+     */
+    const b64Sealed = "dsh1:" + Buffer.from("not-a-real-dpapi-blob-" + "x".repeat(64)).toString("base64");
+    const out = censusCredentialSettings([
+      { key: "codem-settings", value: JSON.stringify({ providers: [{ id: "deepseek", apiKeySealed: b64Sealed }] }) },
+    ]);
+    expect(out.total, "base64 载体的密文同样不是明文").toBe(0);
+    expect(out.sealedTotal).toBe(1);
+
+    // 反向对照：`dsh1:` 后面只有几个字符 —— 那不像密文，宁可当明文提醒（保守方向）
+    const stub = censusCredentialSettings([
+      { key: "codem-settings", value: JSON.stringify({ providers: [{ id: "deepseek", apiKeySealed: "dsh1:abc" }] }) },
+    ]);
+    expect(stub.total, "太短的载荷不算密文（保守：仍然提醒）").toBeGreaterThan(0);
+
+    // 反向对照：正常十六进制密文（既有 CENSUS-5 的口径不许被这次放宽改坏）
+    const hex = censusCredentialSettings([
+      { key: "codem-settings", value: JSON.stringify({ providers: [{ id: "deepseek", apiKeySealed: "dsh1:" + "ab".repeat(60) }] }) },
+    ]);
+    expect(hex.total).toBe(0);
+    expect(hex.sealedTotal).toBe(1);
+  });
 });

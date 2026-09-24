@@ -140,8 +140,11 @@ export interface PersistAlert {
   id: string;
   /** 失败发生的区域（`reportPersistFailure` 的 `area`），用来去重与显示定位 */
   area: string;
-  /** `persist` = 数据没写进去（重启会丢）；`action` = 这次操作没生效 */
-  kind: "persist" | "action";
+  /**
+   * `persist` = 数据没写进去（重启会丢）；`action` = 这次操作没生效；
+   * `advisory` = 自检/普查的**发现**（第 88 轮）—— 没有东西失败，别用失败语气渲染
+   */
+  kind: "persist" | "action" | "advisory";
   /** 已经面向用户准备好的整句文案 */
   message: string;
   timestamp: number;

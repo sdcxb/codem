@@ -1864,6 +1864,20 @@ user-select: none;
   color: var(--warning);
 }
 
+/*
+ * 自检/普查的**发现**（第 88 轮）= 提示级：既不是写失败也不是操作没生效。
+ * 刻意用与上面两种不同的颜色，让"要你看一眼"与"出事了"在视觉上分得开
+ * （原来它借 action 的语气渲染，横幅上写着"该功能本次不可用，请重试"——
+ *  而功能明明跑成功了，"重试"还是假建议）。
+ */
+.persist-alert.is-advisory {
+  border-color: var(--accent);
+}
+
+.persist-alert.is-advisory .persist-alert-icon {
+  color: var(--accent);
+}
+
 .persist-alert-icon {
   display: flex;
   align-items: center;

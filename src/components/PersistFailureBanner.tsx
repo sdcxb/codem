@@ -25,7 +25,7 @@
  *   `action`（这次操作没生效）用警告色 —— 两者的严重程度不一样，不该长得一样。
  */
 
-import { AlertTriangle, X, Save } from "lucide-react";
+import { AlertTriangle, ShieldAlert, X, Save } from "lucide-react";
 import { useAppStore } from "../store";
 import { useLang } from "../core/i18n/lang";
 
@@ -42,17 +42,27 @@ export function PersistFailureBanner() {
       {alerts.map((a) => (
         <div
           key={a.id}
-          className={`persist-alert ${a.kind === "persist" ? "is-persist" : "is-action"}`}
+          className={`persist-alert ${a.kind === "persist" ? "is-persist" : a.kind === "advisory" ? "is-advisory" : "is-action"}`}
           data-testid={`persist-alert-${a.area}`}
         >
           <span className="persist-alert-icon" aria-hidden="true">
-            {a.kind === "persist" ? <Save size={16} /> : <AlertTriangle size={16} />}
+            {a.kind === "persist" ? <Save size={16} /> : a.kind === "advisory" ? <ShieldAlert size={16} /> : <AlertTriangle size={16} />}
           </span>
           <div className="persist-alert-body">
             <span className="persist-alert-text">{a.message}</span>
             {a.count > 1 && (
+              /**
+               * 第 88 轮：**发现类**不能说"已累计失败 N 次" —— 它没有失败。
+               * 这句话原来对所有 kind 都印"失败"，对 advisory 是假的。
+               */
               <span className="persist-alert-count">
-                {zh ? `（已累计失败 ${a.count} 次）` : `(failed ${a.count} times)`}
+                {a.kind === "advisory"
+                  ? zh
+                    ? `（本次维护中同类提示 ${a.count} 次）`
+                    : `(raised ${a.count}×)`
+                  : zh
+                    ? `（已累计失败 ${a.count} 次）`
+                    : `(failed ${a.count} times)`}
               </span>
             )}
           </div>

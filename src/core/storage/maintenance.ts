@@ -30,7 +30,7 @@
  * 这不是日志洁癖 —— 真机上"维护看起来在跑但其实什么都没做"在这个模块里发生过多次。
  */
 
-import { reportActionFailure, reportPersistFailure } from "./persist-failure";
+import { reportActionFailure, reportAdvisory, reportPersistFailure } from "./persist-failure";
 import { getStoragePort } from "./port";
 import * as SessionStorage from "./session";
 // 不变量审计的"上次水位"存在 settings（与其它偏好同一种介质，见 `readInvariantWatermark`）
@@ -367,6 +367,11 @@ export async function pruneTelemetryViaPort(before: number): Promise<TelemetryPr
       "maintenance.telemetryPrune",
       e,
       `遥测裁剪失败（水位线 ${new Date(before).toISOString()}）：本次没有裁掉任何数据`,
+      {
+        // 第 88 轮：这不是写盘失败，是一次**维护动作**没跑成 —— 开头那句必须是真的
+        title: "维护：遥测裁剪未跑成",
+        consequence: "本次没有裁掉任何遥测行（它们会继续留在库里）；不影响你的会话与设置。",
+      },
     );
     return { status: "failed", reason: e instanceof Error ? e.message : String(e) };
   }
@@ -420,6 +425,12 @@ export async function pruneTelemetryViaPort(before: number): Promise<TelemetryPr
       "maintenance.telemetryPrune.mirror",
       e,
       "引擎侧已裁剪，但遥测镜像未同步（性能面板仍会显示已删事件，重启后一致）",
+      {
+        // 第 88 轮：数据没丢，是**界面那份镜像**没跟上
+        title: "维护：遥测镜像未同步",
+        consequence:
+          "库里的数据已经裁掉了，只是界面上的性能面板暂时还显示已删事件；重启后两边一致（不会改坏数据）。",
+      },
     );
   }
 
@@ -536,6 +547,11 @@ export async function pruneAuditViaPort(before: number): Promise<AuditPruneOutco
       "maintenance.auditPrune",
       e,
       `审计裁剪失败（水位线 ${new Date(before).toISOString()}）：storage_audit 本次没有被裁剪`,
+      {
+        // 第 88 轮：维护动作没跑成，不是写盘失败
+        title: "维护：审计裁剪未跑成",
+        consequence: "storage_audit 本次没有被裁剪（旧审计行会继续留着，不影响任何功能）。",
+      },
     );
     return { status: "failed", rows: 0, reason: e instanceof Error ? e.message : String(e) };
   }
@@ -648,6 +664,11 @@ export async function compactStorageViaPort(): Promise<StorageCompactOutcome> {
       "maintenance.storageCompact",
       e,
       "空间回收失败：本次没有回收任何空闲页（库会继续持有它们，下次维护会再试）",
+      {
+        // 第 88 轮：维护动作没跑成，不是写盘失败
+        title: "维护：空间回收未跑成",
+        consequence: "本次没有回收任何空闲页，库文件会继续持有它们（不影响数据与使用）。",
+      },
     );
     return { status: "failed", reclaimedBytes: 0, reason: e instanceof Error ? e.message : String(e) };
   }
@@ -866,6 +887,14 @@ export async function verifyIntegrityThrottled(
       new Error(detail),
       "完整性检查失败：已留「索引需要重建」标记（下次维护会从权威日志重建索引）；" +
         "数据页损坏时引擎不会自动恢复，需要人工确认库文件",
+      {
+        // 第 88 轮：真机取证里这行印的是「写盘失败（第 1 次）」，
+        // 而同一句消息正文写着「完整性检查失败」—— 开头那句是假的
+        title: "维护：完整性检查未跑成",
+        consequence:
+          "已留「索引需要重建」标记（下次维护会从权威日志重建索引）；" +
+          "若确是数据页损坏，引擎不会自动恢复，需要人工确认库文件。",
+      },
     );
     return { status: "failed", detail };
   } catch (e) {
@@ -1386,6 +1415,11 @@ export async function auditInvariantsForSessions(
             "maintenance.eventStructure",
             e,
             `会话 ${sid} 的事件结构自检未跑成（本次不判定该会话）`,
+            {
+              // 第 88 轮：没跑成就是失败，但**不是写盘失败**（原来印的是「写盘失败」）
+              title: "自检：这个会话的事件结构没检查",
+              consequence: "这个会话本次**没有被检查**（不计入已检查数，也不计入缺口数）——别把「没检查」当成「没问题」。",
+            },
           );
         }
       } catch (e) {
@@ -1393,7 +1427,10 @@ export async function auditInvariantsForSessions(
          * 单会话失败**不算检查过**（`checked` 不加）：与对账段同一条规则 ——
          * 不加的话"跑了 3 个"里会混进"3 个里 1 个抛了"，而汇总行看不出区别。
          */
-        reportPersistFailure("maintenance.invariantAudit", e, `会话 ${sid} 的不变量检查未跑成（未计入已检查数）`);
+        reportPersistFailure("maintenance.invariantAudit", e, `会话 ${sid} 的不变量检查未跑成（未计入已检查数）`, {
+          title: "自检：这个会话的不变量没检查",
+          consequence: "这个会话本次**没有被检查**（未计入已检查数）——「没检查」不等于「没问题」。",
+        });
       }
     }
     if (out.unreadableSessions > 0) {
@@ -1404,35 +1441,37 @@ export async function auditInvariantsForSessions(
           `理由：镜像没加载完时 readAll / listMessages 一律返回空 —— 把它当成"没有缺口"` +
           `会报出「该会话的消息行总数」这种假数字（真机实测：同一份数据两次维护报 934 与 749，` +
           `934 恰好等于那两个会话的消息行总数）`,
-      );
-    }
-    if (out.structuralErrors > 0) {
-      reportActionFailure(
-        "maintenance.eventStructure",
-        new Error(`事件库结构异常 ${out.structuralErrors} 处`),
-        "事件是**唯一没有等价物**的存储（消息有权威日志、设置/归属有抢救）：" +
-          `这些异常需要人工看一眼（样例：${structuralErrors.join("；")}）`,
         {
-          title: "存储自检：会话事件日志存在结构异常",
-          /**
-           * ⚠️ 第 68 轮：**必须显式给 consequence**，否则控制台会用默认那句
-           * 「该功能本次没有生效」—— 而这里的事实恰好相反：**自检跑成了**，
-           * 这些是它**报出来的**发现。真机取证（用户控制台）：
-           * ```text
-           * [PersistFailure] maintenance.eventStructure 操作失败（第 1 次）：事件库结构异常 7360 处（…）
-           *   —— 该功能本次没有生效。
-           * ```
-           * 那句话会让用户以为"自检没运行"，从而**不再相信这个数字**；
-           * 而事件是唯一没有等价物的存储，它的自检恰恰是最该被相信的那一个。
-           */
-          consequence:
-            "自检**本身跑成了**（这是它报出的结果，不是没运行）；这些是**存量**异常，" +
-            "不会自己消失，需要人工看一眼（见样例与 docs 里的排查方法）。",
+          title: "自检：有会话没被检查（读侧镜像未就绪）",
+          consequence: "这些会话本次没有被检查（不计入缺口数）——「读不到」不许被当成「没有缺口」。",
         },
       );
     }
+    if (out.structuralErrors > 0) {
+      /**
+       * 第 88 轮：结构异常是**自检的发现**（自检本身跑成了），不是失败 ⇒ 走 advisory。
+       *
+       * 第 68 轮已经在这里踩过一次同类坑：原来借 `reportActionFailure` 时，
+       * 控制台默认补的那句是「该功能本次没有生效」，恰好与事实相反
+       * （真机取证：`[PersistFailure] maintenance.eventStructure 操作失败（第 1 次）：事件库结构异常 7360 处（…）—— 该功能本次没有生效。`），
+       * 当时靠手工传 `title` + `consequence` 绕开。现在这一类有了正经的 kind，
+       * 前缀与后缀都不会再假装失败。
+       */
+      reportAdvisory("maintenance.eventStructure", `事件库结构异常 ${out.structuralErrors} 处`, {
+        title: "存储自检：会话事件日志存在结构异常",
+        nextStep:
+          "自检**本身跑成了**（这是它报出的结果，不是没运行）；这些是**存量**异常，" +
+          "不会自己消失，需要人工看一眼（见样例与 docs 里的排查方法）。",
+        sample:
+          "事件是**唯一没有等价物**的存储（消息有权威日志、设置/归属有抢救）：" +
+          `这些异常需要人工看一眼（样例：${structuralErrors.join("；")}）`,
+      });
+    }
   } catch (e) {
-    reportPersistFailure("maintenance.invariantAudit", e, "运行时不变量审计未跑成（本次 checked=0）");
+    reportPersistFailure("maintenance.invariantAudit", e, "运行时不变量审计未跑成（本次 checked=0）", {
+      title: "自检：不变量审计未跑成",
+      consequence: "本次 checked=0，不做任何结论（「没检查」不等于「没问题」）。",
+    });
   }
 
   /**
@@ -1561,10 +1600,27 @@ export async function auditInvariantsForSessions(
      */
     if (out.newViolations > 0) {
       const fresh = [...presentKeys].filter((k) => !(watermark?.keys.includes(k) ?? false));
-      reportPersistFailure(
+      /**
+       * 第 88 轮：这是**自检的发现**，不是写盘失败 —— 走 advisory。
+       *
+       * 改前的真机取证（隔离钻取跑在装机版 1.16.134 上）：
+       * ```text
+       * [PersistFailure] maintenance.invariantAudit.new 写盘失败（第 1 次）：不变量审计：本次新产生 39 条缺口（…）
+       *   —— 本次改动只存在于内存，重启后可能丢失。
+       * ```
+       * 三句话里有两句是假的：没有任何写盘动作失败了，也没有"改动只存在于内存"。
+       * 这会把一个**要人看一眼的对账结论**说成"磁盘坏了"，反而让用户不当回事。
+       */
+      reportAdvisory(
         "maintenance.invariantAudit.new",
-        new Error(`不变量审计：本次新产生 ${out.newViolations} 条缺口（历史缺口另有 ${out.violations - out.newViolations} 条）`),
-        `事件双写可能又断了一条路：${fresh.slice(0, 5).join("、")}${fresh.length > 5 ? ` 等 ${fresh.length} 条` : ""}`,
+        `不变量审计：本次新产生 ${out.newViolations} 条缺口（历史缺口另有 ${out.violations - out.newViolations} 条）`,
+        {
+          title: "存储自检：本次新发现记录与界面不一致",
+          nextStep:
+            "自检跑成了（这是它报出的结果）；这些缺口**不影响本次使用**，但意味着事件双写可能又断了一条路，" +
+            "需要看一眼样例对应的会话。",
+          sample: `样例：${fresh.slice(0, 5).join("、")}${fresh.length > 5 ? ` 等 ${fresh.length} 条` : ""}`,
+        },
       );
     }
   }
@@ -1837,18 +1893,18 @@ export async function runDatabaseMaintenance(
             }
           }
           result.repairedBehindMessages = repaired;
-          reportActionFailure(
-            "maintenance.indexBehindLog",
-            // 只带**数字事实**（哪个会话、差多少）：结论已经写在 title / consequence 里，
-            // 重复一遍就成了"横幅自己说两遍同一件事"（第 48 轮同类文案缺陷的教训）
-            new Error(detail),
-            "已按权威日志补回索引行（不影响消息本身）",
-            {
-              // 开头那句必须是真的：这不是"用户的操作没生效"，而是自检发现并修好了不一致
-              title: "存储自检：索引落后于权威日志，已自动补回",
-              consequence: `已逐会话从权威日志重建索引（补回 ${repaired} 行）；消息正文从未受影响`,
-            },
-          );
+          /**
+           * 第 88 轮：改用 `reportAdvisory`（**发现并已修好**，不是失败）。
+           *
+           * 原来借 `reportActionFailure` + 手工 `title`/`consequence` 把两句都盖掉 ——
+           * 界面上勉强说对了，但**控制台那一行仍然是** `[PersistFailure] … 操作失败（第 1 次）`
+           * （横幅能靠 title 救，日志的前缀救不了）。现在这一类有了正经的 kind。
+           */
+          reportAdvisory("maintenance.indexBehindLog", detail, {
+            title: "存储自检：索引落后于权威日志，已自动补回",
+            nextStep: `已逐会话从权威日志重建索引（补回 ${repaired} 行）；消息正文从未受影响。`,
+            sample: "已按权威日志补回索引行（不影响消息本身）",
+          });
         }
       } catch (e) {
         console.warn("[Maintenance] 索引与日志的对账未完成（不影响使用）:", e);
@@ -1940,13 +1996,21 @@ export async function runDatabaseMaintenance(
             `[Maintenance] 凭据普查：${census.scanned} 个设置项里**明文**命中 ${census.total} 处（${keys}）${sealedNote}` +
               "—— 只报位置与数量，不打印值",
           );
-          reportActionFailure(
-            "maintenance.credentialCensus",
-            new Error(`设置里存在疑似凭据 ${census.total} 处`),
-            "这些是**明文存放的密钥/令牌**（本机存储的既有设计）。若该机器或其备份可能外流，建议轮换；" +
-              `位置：${keys}（值从不打印）${sealedNote}`,
-            { title: "安全提示：设置里存在明文凭据" },
-          );
+          reportAdvisory("maintenance.credentialCensus", `设置里存在疑似凭据 ${census.total} 处`, {
+            /**
+             * 第 88 轮改（**印出来的必须是真的**）：
+             * ① 标题原来是「设置里存在**明文**凭据」，但判据只能证明"键名像凭据 + 值不是本产品的封存格式"
+             *    —— 那可能是明文，也可能是**别的形式/别的机器写的密文**（隔离钻取里就出现了后者）。
+             *    所以标题如实改成「疑似」；正文再说清它为什么值得看一眼。
+             * ② 走 advisory（原来借 `reportActionFailure`）：它的后缀是「该功能本次不可用，请重试或检查日志」
+             *    —— 而普查**刚刚跑成功了**，"请重试"更是假建议（再跑一次还是同样的发现）。
+             */
+            title: "安全提示：发现疑似明文凭据",
+            nextStep:
+              "这些是**明文存放的密钥/令牌**（本机存储的既有设计）。" +
+              "若该机器或其备份可能外流，建议轮换；值从不打印。",
+            sample: `位置：${keys}（值从不打印）${sealedNote}`,
+          });
         } else {
           console.log(
             `[Maintenance] 凭据普查：${census.scanned} 个设置项，未命中**明文**凭据形状${sealedNote}`,

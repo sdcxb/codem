@@ -46,9 +46,23 @@ export interface CredentialCensusResult {
   sealedKeys: string[];
 }
 
-/** 值是不是**本产品的封存格式**（`src-tauri/src/secret.rs` 写的 `dsh1:<hex>`） */
+/**
+ * 值是不是**本产品的封存格式**（`src-tauri/src/secret.rs` 写的 `dsh1:<hex>`）。
+ *
+ * ## 第 88 轮放宽（隔离钻取实测抓到的假话）
+ *
+ * 原来只认 `dsh1:` + **纯十六进制**。于是当值是 `dsh1:` 开头但载荷**不是十六进制**时
+ * （另一个版本写的、被手工改坏的、或换机器后重新编码的密文），这里判 false ⇒
+ * 那个值会掉进"明文凭据"的告警里，界面上就印出「设置里存在**明文**存放的密钥」——
+ * 而它明明是**密文**（解不开，但不是明文）。**印出来的必须是真的**：
+ * 所以判据改成「`dsh1:` 前缀 + 足够长的载荷（十六进制或 base64/base64url）」，
+ * 也就是"本产品的密文形状（含其它编码）"，一律**不算明文**。
+ *
+ * 载荷长度下限 16 是刻意保守的：`dsh1:` 后面只有三五个字符的东西不像密文，
+ * 那种情况仍然按明文处理（宁可多提醒一次，也不放过真的明文）。
+ */
 function looksSealed(value: string): boolean {
-  return /^dsh1:[0-9a-fA-F]{16,}$/.test(value.trim());
+  return /^dsh1:[A-Za-z0-9+/=_-]{16,}$/.test(value.trim());
 }
 
 /**
