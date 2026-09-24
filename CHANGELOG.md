@@ -2,6 +2,63 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [未发布] 第 105 轮 - 2026-09-25 — O-8 分诊第一批：把「搬进来的代码」按目录登记（knip **342/218 → 282/194**）；两次**测量自我纠错**都写进来
+
+> **本轮不出包**（装机版仍是 1.16.147）：改的是审计配置与度量口径，没有产品行为改动。
+
+### ① 把「外部/搬进来的代码」按目录登记为不属于我们的 API 面（−84 条）
+
+knip 报的 560 条"未使用导出/类型"里混着两类完全不同的东西。逐条"删掉没用的导出"
+对**搬进来的代码**是错的（等于改别人的库、给自己造维护债），正确处置是**按目录登记**：
+
+| 目录 | 条数 | 判据（为什么算外部代码） |
+| --- | ---: | --- |
+| `src/core/cordis/**` | 56 | 从 DSH 搬来的插件框架（文件头就是上游原文），有自己完整的公开 API |
+| `src/components/ui/**` | 15 | shadcn 风格的组件原语：每个文件导出一整套子组件（`CardHeader`/`DialogOverlay`…），我们只用其中一部分 |
+| `src/plugins/monopoly-game/**` | 13 | 自带入口与 API 的独立插件（`index.ts` 就是它的出口） |
+
+**实测**：`knip` **exports 342 → 282 / types 218 → 194**（合计 −84，与上表逐条数一致），
+`duplicates 13 → 11`；棘轮已 `--update` 收紧到 282/194/11/0。
+验证方式不是"看数字变了"，而是**点名核对**：`components/ui`、`cordis`、`monopoly-game` 三类
+在 `knip` 输出里**不再出现**（`ui-cordis`、`dynamic-runner-provider` 这类**同名字符串**不受影响）。
+
+### ② 一次**失败的实验**（如实记录）：把测试当 entry 消不掉"只有测试在用"的假阳性
+
+动机：`src/test/**` 在 `ignore` 里，于是"只有测试在用"的导出会被算成"未使用"。
+试法：把 `src/test/**/*.test.{ts,tsx}` 加进 `entry`、同时从 `ignore` 里去掉（第一版两者都写，
+等于白改 —— knip 的 ignore 对 entry 也生效）。**结果：一条都没消掉** ——
+`getTask`（`agent-teams-restart.test.ts:100` 明明 import 了）、`parseTaskResult`、
+`__resetThemeSkinResyncForTests` 照样被报"未使用"。结论：**knip 不把 entry 的导入算作使用方**。
+已回退，并在 `knip.json` 里写明"试过、无效、为什么"，避免下次有人再试一遍。
+
+### ③ 一次**测量自我纠错**：110 → 37
+
+第一版统计"被测试用着"的条数时，用 `\b名字\b` 在测试全文里搜 —— 把**注释与路径字符串**也算命中
+（`persist-failure-reporting.test.ts` 里提了一句 `sync-engine.ts` 这个路径，就让 `SyncEngine`
+被误判成"测试在用"）。改成**只认 import 语句里的具名导入**后，真实数字是 **37**（不是 110）。
+按目录看主要在 `theme/index.ts`（16）、`zvec-grep/index.ts`（5）、`environment/index.ts`（4）——
+多数是**只给测试用的 barrel re-export**，属口径问题，不是死代码。
+
+### ④ 新发现（记入 GAP-LIST 的 O-22）：**已实现、有测试、但生产代码一次都没接线**的模块
+
+判据是"生产代码里的 import 语句"（排除 `src/test/**` 与 `*.test.ts*`，按模块路径精确匹配）：
+
+- `src/core/storage/sync-engine.ts` —— 0 个生产 import（`SyncEngine` / `getSyncEngine` / `getSyncSummary`）
+- `src/core/cicd/pipeline.ts` —— 0 个生产 import（`listWorkflows` 等）
+
+两处都**有测试**，也就是说功能是写完并被测试过的，只是没有任何界面/流程调用它 ⇒ **用户看不到**。
+顺带一条工具结论：`knip` 自己的"Unused files"是**空**的（它没把这类抓出来），所以这一类要靠
+**路径级的 import 普查**来发现 —— 我的第一版普查脚本按"名字片段"匹配，既漏（`dsh-compat`
+明明被 `plugin-loader/builtin-registry.ts` import 了却报 0）又错，已改成路径精确匹配；
+**但它的输出还没做成可信的"未接线清单"**（basename 级解析还没做），这条写在 O-22 的待办里，
+不假装已经量全。
+
+### ⑤ 实测
+
+全文 **394 文件 / 6215 通过 / 16 跳过 / 0 失败**；`tsc` **0**；`npm run verify` 退出码 **0**
+（阈值对账 ✅、按文件地板 307 个文件、**knip 棘轮 282/194**、jscpd 167 clones）；
+`npm run audit` **13 道 exit 0**。
+
 ## [1.16.147] - 2026-09-25 — 上报点分诊**清零**（217/217）：3 处通道修正 + 一处「我们重试过了」的假话；新站点以后必须当场分诊
 
 ### ① `todo.updateStatus` 的两条分支：从「写盘失败」改成「操作失败」

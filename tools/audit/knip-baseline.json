@@ -4,8 +4,8 @@
   "command": "npx knip --reporter json --no-exit-code",
   "previous": {
     "duplicates": 13,
-    "exports": 348,
-    "types": 222,
+    "exports": 342,
+    "types": 218,
     "namespaceMembers": 1
   },
   "mustBeZero": [
@@ -24,9 +24,8 @@
     "namespaceMembers"
   ],
   "counts": {
-    "duplicates": 13,
-    "exports": 342,
-    "types": 218,
-    "namespaceMembers": 1
+    "duplicates": 11,
+    "exports": 282,
+    "types": 194
   }
 }

@@ -3,6 +3,14 @@
   "entry": ["src/main.tsx", "src/pet-main.tsx"],
   "project": ["src/**/*.ts", "src/**/*.tsx"],
   "ignore": [
+    /*
+     * `src/test/**` 整个忽略（与第 90 轮起一致）。
+     *
+     * ⚠️ 第 105 轮试过反过来做 —— 把测试也当 entry（想消掉"只有测试在用"的假阳性），
+     * **实测一条都没消掉**：knip 不把 entry 的导入算作"使用方"（`getTask` / `parseTaskResult`
+     * 这些测试里明明 import 了，照样被报"未使用"）。所以已回退，不再留一个不起作用的配置。
+     * 那一类（37 条，用 import 级匹配量出来的）作为**已知口径类别**记在 `docs/GAP-LIST.md` 的 O-8 里。
+     */
     "src/test/**",
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
@@ -13,6 +21,17 @@
     "src/core/skills/skill-creator/scripts/*.ts",
     "src/stubs/*.ts",
     "src/core/slots/declarations.ts",
+
+    /*
+     * 第 105 轮：**外部/搬进来的代码**按目录登记（它们有自己完整的 API 面，我们只用其中一部分）。
+     * 逐条"删掉没用的导出"等于改别人的库 —— 那不是清理死代码，是给自己造维护债。
+     * 判据：①`src/core/cordis/**` 是从 DSH 搬来的插件框架（文件头就是上游原文）；
+     * ②`src/components/ui/**` 是 shadcn 风格的组件原语（每个文件导出一整套子组件）；
+     * ③`src/plugins/monopoly-game/**` 是自带入口与 API 的独立插件（`index.ts` 就是它的出口）。
+     */
+    "src/core/cordis/**",
+    "src/components/ui/**",
+    "src/plugins/monopoly-game/**",
 
     "src/core/agent/index.ts",
     "src/core/context/index.ts",
