@@ -21,7 +21,7 @@ import { buildAppShortcuts, isMacPlatform, matchesShortcut, shortcutAria, shortc
 import { useProjectStore } from "../core/store";
 import { useAppStore } from "../store";
 import { getLang } from "../core/i18n/lang";
-import { getProjectExecutionMode, setProjectExecutionMode, hasUncommittedChanges, isGitRepo } from "../core/environment";
+import { getProjectExecutionMode, setProjectExecutionMode, hasUncommittedChanges, isGitRepo, decideWorktreeDirtyGuard } from "../core/environment";
 import type { ExecutionMode } from "../core/environment";
 import { alertDialog, confirmDialog } from "../core/ui/native-dialog";
 
@@ -188,18 +188,33 @@ export function TitleBar({
       void alertDialog(zh ? "需要 Git 仓库项目才能使用工作树模式" : "Git repository required for worktree mode");
       return;
     }
-    try {
-      const dirty = await hasUncommittedChanges(projectPath);
-      if (dirty) {
-        // ⚠️ 必须 `await`：dialog 插件把 `window.confirm` 换成了异步调用（返回 Promise，恒为真）。
-        // 真机实测：旧写法下"有未提交修改"的询问根本没弹、模式却已经切过去了。
-        if (!(await confirmDialog(zh
-          ? "当前工作区有未提交的修改。切换模式可能导致修改丢失。确认切换？"
-          : "The current workspace has uncommitted changes. Switching modes may cause loss. Continue?"))) {
-          return;
-        }
-      }
-    } catch { /* 检查失败则继续 */ }
+    /*
+     * 第 86 轮：**删掉两层 fail-open**。
+     *
+     * 改前有两处会把"问不到"当成"干净"直接放行：
+     * ① `hasUncommittedChanges` 的 `catch { return false }`（检查失败 ⇒ 汇报成"没有改动"）；
+     * ② 这里又包了一层 `catch { /* 检查失败则继续 *\/ }`。
+     * 真机形态（第 85 轮走查）：工作区明明是脏的，点「切换执行模式」**没弹确认框、模式直接切走**。
+     *
+     * 现在：`dirty` 是三态（`null` = 问不到），并由纯函数 `decideWorktreeDirtyGuard` 决定 ——
+     * **只有"确认干净"才直接切**，`null` 与 `true` 都要先问。
+     */
+    const dirty = await hasUncommittedChanges(projectPath);
+    if (decideWorktreeDirtyGuard(dirty) === "ask") {
+      // ⚠️ 必须 `await`：dialog 插件下 `window.confirm` 是异步的（见 native-dialog.ts），
+      // 而且真机上它指向的命令根本不存在 —— 统一走 `confirmDialog`（插件 JS API 优先）。
+      const unsure = dirty === null;
+      const ok = await confirmDialog(
+        unsure
+          ? zh
+            ? "无法确认当前工作区有没有未提交的修改（git status 没跑通）。切换模式可能丢失未提交的修改，仍要切换吗？"
+            : "Could not determine whether the workspace has uncommitted changes (git status failed). Switching may lose uncommitted work. Continue?"
+          : zh
+            ? "当前工作区有未提交的修改。切换模式可能导致修改丢失。确认切换？"
+            : "The current workspace has uncommitted changes. Switching modes may cause loss. Continue?",
+      );
+      if (!ok) return;
+    }
     setProjectExecutionMode(projectPath, next);
     setExecutionMode(next);
     // 通知 InputArea 等其他组件同步（如需要）

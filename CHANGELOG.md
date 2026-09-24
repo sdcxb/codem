@@ -2,6 +2,38 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.133] - 2026-09-24 — **「问不到」不再被当成「干净」**：切换执行模式的防丢改动闸门原来有两层 fail-open
+
+> 起点是第 85 轮走查里的一条观察：点「切换执行模式」时工作区**明明是脏的**，
+> 却**没有弹确认框、模式直接切走了**（第 84 轮同一探针是弹了的）。翻代码找到两层 fail-open。
+
+### 🔴 两层 fail-open（叠起来就是「提醒静默消失」）
+
+1. `worktree-manager.ts::hasUncommittedChanges`：`catch { return false }` ——
+   git 检查失败被汇报成「**工作区是干净的**」；
+2. `TitleBar.tsx`：又包了一层 `catch { /* 检查失败则继续 */ }` —— 抛错也照切。
+
+而这道闸门存在的唯一理由就是**防止用户在脏工作区上切模式丢改动**。
+
+### ✅ 修法
+
+- `hasUncommittedChanges` 改成**三态**：`true` / `false` / **`null`（问不到）**，
+  `null` 走**上报通道**（横幅可见：`worktree.hasUncommittedChanges`），不再冒充「干净」；
+- 新增纯函数 `decideWorktreeDirtyGuard(dirty)`：**只有 `false` 才直接切**，`true` 与 `null` 都要先问；
+  `null` 的问句如实说明「无法确认有没有未提交的修改」；
+- `TitleBar` 删掉那层 catch，改用判据函数；工作树列表里的 `hasUncommitted` 对 `null` 按**有改动**处理
+  （不把不确定说成干净）。
+
+### 判据
+
+门禁 `src/test/worktree-dirty-guard.test.ts` **4 条**：WG-1（`null` 必须 ask）、
+WG-2（git 失败返回 `null` 并上报）、WG-3（两处 fail-open 都必须消失；判据**限定在函数体内**——
+文件里 `isGitRepo` 也有 `catch { return false }`，那是另一回事，第一版对整份文件断言会指错地方）、
+WG-4（反向对照：老写法必须能被识别）。**4 处突变全被抓**（`.preview-shot/mutate-worktree-guard.mjs`）。
+
+### 实测
+
+全量 372 文件 / 6076 通过 / 0 失败；`tsc` 0。
 ## [1.16.132] - 2026-09-24 — 又修 10 处图标按钮 + **更正上一版的数字**（扫描器还有第三类误报：会渲染文字的表达式）
 
 > 这一轮继续 O-4，但重点其实是一次**自我更正**：上一版报的"真实 195 处"是**虚高的**。

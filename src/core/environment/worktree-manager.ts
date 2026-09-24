@@ -23,7 +23,7 @@
 
 import { executeCommand, exists } from "../file-api";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
-import { reportPersistFailure } from "../storage/persist-failure";
+import { reportActionFailure, reportPersistFailure } from "../storage/persist-failure";
 
 // Platform detection for cross-platform path handling
 const isWindows = typeof navigator !== "undefined" && navigator.userAgent.includes("Win");
@@ -142,16 +142,51 @@ export async function listBranches(path: string): Promise<string[]> {
   }
 }
 
-export async function hasUncommittedChanges(path: string): Promise<boolean> {
+/**
+ * 工作区有没有未提交的修改。
+ *
+ * ## 第 86 轮：这里从一个**静默假答案**改成了三态
+ *
+ * 改前：
+ * ```ts
+ * try { … return result.stdout.trim().length > 0; } catch { return false; }
+ * ```
+ * —— `catch` 里返回 **false**，也就是"检查失败"被汇报成"**工作区是干净的**"。
+ * 而调用方（`TitleBar` 的切换执行模式）拿这个值决定"要不要提醒用户可能丢改动"：
+ * 于是**只要 git 调用失败，那道防丢改动的提醒就静默不出现**，模式照切。
+ * 真机观察：第 85 轮走查点「切换执行模式」时工作区明明是脏的，却没有弹确认框、
+ * 模式直接切走了（第 84 轮同一探针是弹了的）—— 两个失败层叠在一起就是这个形态。
+ *
+ * 现在：**检查失败返回 `null`（不知道）**，并且走上报通道让它在界面上可见；
+ * 调用方必须显式处理 `null`（见 `decideWorktreeDirtyGuard`），不许把它当成"干净"。
+ */
+export async function hasUncommittedChanges(path: string): Promise<boolean | null> {
   try {
     const result = await executeCommand(
       `git -C '${psQuote(path)}' status --porcelain`,
       path
     );
     return result.stdout.trim().length > 0;
-  } catch {
-    return false;
+  } catch (e) {
+    reportActionFailure(
+      "worktree.hasUncommittedChanges",
+      e,
+      `无法确认「${path}」是否有未提交的修改（git status 没跑通）—— 不能当作"工作区是干净的"`,
+    );
+    return null;
   }
+}
+
+/**
+ * 「切换执行模式」这道防丢改动闸门的判据（**纯函数，便于用例钉住**）。
+ *
+ * - `false`（**确认干净**）→ `proceed`：可以直接切；
+ * - `true`（确认有改动）/ `null`（**问不到**）→ `ask`：必须先问用户。
+ *
+ * ⚠️ `null` 必须走 `ask`：这正是第 86 轮修的那个洞 —— 原来"问不到"被当成"干净"直接放行。
+ */
+export function decideWorktreeDirtyGuard(dirty: boolean | null): "proceed" | "ask" {
+  return dirty === false ? "proceed" : "ask";
 }
 
 // ========== Worktree Lifecycle ==========
@@ -288,7 +323,8 @@ export async function scanWorktrees(
         path: dir,
         branch,
         createdAt,
-        hasUncommitted: dirty,
+        // 三态：`null` = 问不到。对外仍用布尔（"不确定"按**有**处理，避免把不确定说成干净）
+      hasUncommitted: dirty !== false,
       });
     }
 

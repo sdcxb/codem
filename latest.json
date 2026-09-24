@@ -1,15 +1,15 @@
 {
-  "version": "1.16.132",
-  "notes": "又修 10 处图标按钮的可访问名；并更正上一版的数字（扫描器把会渲染文字的表达式当成没有文字，156 含 95 处误报 ⇒ 真实 61，现 51）。详见 CHANGELOG [1.16.132]。",
-  "pub_date": "2026-09-24T08:26:59Z",
+  "version": "1.16.133",
+  "notes": "「问不到」不再被当成「干净」：切换执行模式的防丢改动闸门原来有两层 fail-open（git 检查失败被当成工作区干净）。详见 CHANGELOG [1.16.133]。",
+  "pub_date": "2026-09-24T08:48:50Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lvZGxES1NTQmxXdFp4UXZYZzh6SFZPejhUQ0xWZGswYkthL1NFUFBDMGZPSDlPY2tFVGExdkw5WGd3b2djb05MUEdlbCtXb0NNTE9tOGc5WTlZZWdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjM4NDA5CWZpbGU6Q29kZW1fMS4xNi4xMzJfeDY0LXNldHVwLmV4ZQp1bUNnRGw4M1d6SkpRQ2tqKzRtbzlTaUc2dnVmZnhRcTByUVp3YmF0ZGZwZnVsWHBKUElCeXl0NjJUY2FZaHBPNmZBYWd2SjBHWkI2WjZJbXdPaHJBdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.132/Codem_1.16.132_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3ZEE0ZTYyU21tYkM1YzRGRDROS1U5dVljWGdSUkxrU2lIc0ZBbXVhUWdaZGFaWWVaVXRTcTVZR3JlK3FxSEFjN3crbVF1aDU1ZStaSGRzMkJHU2dRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjM5NzE5CWZpbGU6Q29kZW1fMS4xNi4xMzNfeDY0LXNldHVwLmV4ZQpqZTZYZjlwUnJLRkZOc0xnRFJkeUxnK3ErcFJQZXRTTEhIMDUzSEpDdWl5bmJDZXZJbjY0Y0NvMTU2VVc0YkhsNmVaR1FSSDl3UGFxU0hlcWlwbEFEZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.133/Codem_1.16.133_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lvZGxES1NTQmxXdFp4UXZYZzh6SFZPejhUQ0xWZGswYkthL1NFUFBDMGZPSDlPY2tFVGExdkw5WGd3b2djb05MUEdlbCtXb0NNTE9tOGc5WTlZZWdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjM4NDA5CWZpbGU6Q29kZW1fMS4xNi4xMzJfeDY0LXNldHVwLmV4ZQp1bUNnRGw4M1d6SkpRQ2tqKzRtbzlTaUc2dnVmZnhRcTByUVp3YmF0ZGZwZnVsWHBKUElCeXl0NjJUY2FZaHBPNmZBYWd2SjBHWkI2WjZJbXdPaHJBdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.132/Codem_1.16.132_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3ZEE0ZTYyU21tYkM1YzRGRDROS1U5dVljWGdSUkxrU2lIc0ZBbXVhUWdaZGFaWWVaVXRTcTVZR3JlK3FxSEFjN3crbVF1aDU1ZStaSGRzMkJHU2dRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjM5NzE5CWZpbGU6Q29kZW1fMS4xNi4xMzNfeDY0LXNldHVwLmV4ZQpqZTZYZjlwUnJLRkZOc0xnRFJkeUxnK3ErcFJQZXRTTEhIMDUzSEpDdWl5bmJDZXZJbjY0Y0NvMTU2VVc0YkhsNmVaR1FSSDl3UGFxU0hlcWlwbEFEZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.133/Codem_1.16.133_x64-setup.exe"
     }
   }
 }

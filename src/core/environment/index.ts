@@ -11,6 +11,7 @@ export {
   createWorktree,
   removeWorktree,
   scanWorktrees,
+  decideWorktreeDirtyGuard,
   hasUncommittedChanges,
   getCurrentBranch,
   listBranches,
