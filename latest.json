@@ -1,15 +1,15 @@
 {
-  "version": "1.16.144",
-  "notes": "Codem v1.16.144 - 修「知识笔记本 → 导入 Markdown」的两个真缺陷：导入后每条笔记标题都会多一个替换字符（emoji 前缀用无 u 的字符类剥，只吃掉代理对的一半），以及笔记正文里自带的 ## / ### 标题会把正文切碎甚至整段丢掉。同时给「导出→导入」补了往返门禁（17 条 + 9 处变异）和一条正则 Unicode 门禁（npm run audit 第 13 道）。完整清单与实测数字见 CHANGELOG。",
-  "pub_date": "2026-09-24T15:32:39Z",
+  "version": "1.16.145",
+  "notes": "Codem v1.16.145 - 修「导入 PPTX」两个让真实演示文稿变成空壳的缺陷：占位符几何继承自版式导致标题/正文一个字都读不到（装机版实测每页元素 0），以及图片填充查错命名空间（a:blipFill vs p:blipFill）导致图片永远丢。新增 python-pptx 第三方 deck 夹具 + 9 条导入门禁（变异 7/7）。完整清单见 CHANGELOG。",
+  "pub_date": "2026-09-24T16:17:08Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JVRTNwU3orSTRkRmdxRVB4b2NHV3Z1cjkrdU1MZGRPRWt1N2NHTHltVnQ3YjhYZ2xmaTFpbHRiVjJXaVRQQnZheWFPdmdXc1BHU0NCdmxUWG9LMkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjYzOTUxCWZpbGU6Q29kZW1fMS4xNi4xNDRfeDY0LXNldHVwLmV4ZQpYNjJ2SDViRFN1VmIvdnRzYXpGekQzRS9Sbk51a1pIQ0lLUTRIWXdjOENmbE9uZllrdUVpUElvWXJSVDhFLzVDbkNaVVZJYW0rSGxTWDlTZHd5VndBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.144/Codem_1.16.144_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1g5aW5hdUNIbkd2SG5KUFdyTTR4ZHpnY3AvbmIrbElkT2ppWThVUW5NNkdndm0xaHFzaUJKOXBkb2M1dzFFaStvQ1lzczBjbnJ0djRrbjZCZEYrVWdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjY2NTk2CWZpbGU6Q29kZW1fMS4xNi4xNDVfeDY0LXNldHVwLmV4ZQpiUTBMYXg4MmpyNjhyNTBBb1JNZDV5TDJLcXhDRDUwc2VNenhLc041MzBkVU1UTll4VmJhZ0VLOXhweXVMV1EyNUVERXIxN01RVkhUQUk5ZUpTWDFDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.145/Codem_1.16.145_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JVRTNwU3orSTRkRmdxRVB4b2NHV3Z1cjkrdU1MZGRPRWt1N2NHTHltVnQ3YjhYZ2xmaTFpbHRiVjJXaVRQQnZheWFPdmdXc1BHU0NCdmxUWG9LMkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjYzOTUxCWZpbGU6Q29kZW1fMS4xNi4xNDRfeDY0LXNldHVwLmV4ZQpYNjJ2SDViRFN1VmIvdnRzYXpGekQzRS9Sbk51a1pIQ0lLUTRIWXdjOENmbE9uZllrdUVpUElvWXJSVDhFLzVDbkNaVVZJYW0rSGxTWDlTZHd5VndBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.144/Codem_1.16.144_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1g5aW5hdUNIbkd2SG5KUFdyTTR4ZHpnY3AvbmIrbElkT2ppWThVUW5NNkdndm0xaHFzaUJKOXBkb2M1dzFFaStvQ1lzczBjbnJ0djRrbjZCZEYrVWdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjY2NTk2CWZpbGU6Q29kZW1fMS4xNi4xNDVfeDY0LXNldHVwLmV4ZQpiUTBMYXg4MmpyNjhyNTBBb1JNZDV5TDJLcXhDRDUwc2VNenhLc041MzBkVU1UTll4VmJhZ0VLOXhweXVMV1EyNUVERXIxN01RVkhUQUk5ZUpTWDFDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.145/Codem_1.16.145_x64-setup.exe"
     }
   }
 }

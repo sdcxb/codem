@@ -194,6 +194,36 @@ function emuToPercent(emu: number, totalEmu: number): number {
 }
 
 /**
+ * 占位符的默认版面（当形状自己没有 `<a:xfrm>` 时用）。
+ *
+ * ## 第 99 轮修的真缺陷
+ *
+ * 原来这里写着 `if (!off || !ext) return null;` —— **没有显式几何就直接整块丢掉**。
+ * 而真实 PPTX 里，**占位符的几何几乎总是继承自 slideLayout**：PowerPoint 与 python-pptx
+ * 写出来的标题/正文占位符都是 `<p:spPr/>`（空的），位置尺寸在版式里。
+ * 于是导入一份真实 deck 的结果是：**一页都读不到文字**（不报错、只是空白），
+ * 而"导入成功"这句话还是成立的 —— 典型的"看着能用、其实是空的"。
+ *
+ * 实测证据：`src/test/fixtures/pptx/third-party-deck.pptx`（python-pptx 1.0.2 生成）的
+ * `ppt/slides/slide2.xml` 里两个 `p:sp` 都是 `<p:spPr/>`，正文三条要点全在 `<a:t>` 里。
+ *
+ * 处置：缺几何时按占位符类型给一个**能用的默认版面**（标题在上、正文占中下），文字照常提取；
+ * 真正精确的版式解析（去 slideLayout 里取几何）留作后续，边界写在这里而不是假装已解决。
+ */
+function defaultBoxFor(sp: Element): { x: number; y: number; width: number; height: number } {
+  const ph = sp.getElementsByTagName('p:ph')[0];
+  const type = ph?.getAttribute('type') || '';
+  if (type === 'title' || type === 'ctrTitle') {
+    return { x: 5, y: 4, width: 90, height: 14 };
+  }
+  if (type === 'subTitle') {
+    return { x: 10, y: 22, width: 80, height: 12 };
+  }
+  // 正文 / 内容占位符（含 idx=… 的）
+  return { x: 5, y: 22, width: 90, height: 60 };
+}
+
+/**
  * 解析形状元素
  */
 function parseShape(
@@ -203,16 +233,22 @@ function parseShape(
   zIndex: number,
   accentColor: string,
 ): SlideElement | null {
-  // 获取位置和尺寸
+  // 获取位置和尺寸（缺失时按占位符默认版面兜底，见 defaultBoxFor 的说明）
   const off = sp.getElementsByTagName('a:off')[0];
   const ext = sp.getElementsByTagName('a:ext')[0];
 
-  if (!off || !ext) return null;
-
-  const x = emuToPercent(parseInt(off.getAttribute('x') || '0'), slideWidthEmu);
-  const y = emuToPercent(parseInt(off.getAttribute('y') || '0'), slideHeightEmu);
-  const width = emuToPercent(parseInt(ext.getAttribute('cx') || '0'), slideWidthEmu);
-  const height = emuToPercent(parseInt(ext.getAttribute('cy') || '0'), slideHeightEmu);
+  let x: number;
+  let y: number;
+  let width: number;
+  let height: number;
+  if (off && ext) {
+    x = emuToPercent(parseInt(off.getAttribute('x') || '0'), slideWidthEmu);
+    y = emuToPercent(parseInt(off.getAttribute('y') || '0'), slideHeightEmu);
+    width = emuToPercent(parseInt(ext.getAttribute('cx') || '0'), slideWidthEmu);
+    height = emuToPercent(parseInt(ext.getAttribute('cy') || '0'), slideHeightEmu);
+  } else {
+    ({ x, y, width, height } = defaultBoxFor(sp));
+  }
 
   // 提取文本
   const textRuns = sp.getElementsByTagName('a:r');
@@ -319,7 +355,13 @@ function parsePicture(
   const height = emuToPercent(parseInt(ext.getAttribute('cy') || '0'), slideHeightEmu);
 
   // 获取图片引用
-  const blipFill = pic.getElementsByTagName('a:blipFill')[0];
+  //
+  // 第 99 轮修的真缺陷：这里原来查的是 `a:blipFill`，而真实 PPTX 里图片的填充元素是
+  // **`p:blipFill`**（presentationml 命名空间；`a:` 是 drawingml，图片的 `a:blip` 才是 `a:`）。
+  // 结果：**任何真实 deck 的图片都导入不进来**（`a:blipFill` 恒为空 ⇒ `return null`），
+  // 与"占位符几何缺失就整块丢掉"是同一类问题（安静地少东西）。
+  // 实测证据：`src/test/fixtures/pptx/third-party-deck.pptx` 的 slide4.xml 里是 `<p:blipFill><a:blip r:embed="rId2"/>`。
+  const blipFill = pic.getElementsByTagName('p:blipFill')[0] ?? pic.getElementsByTagName('a:blipFill')[0];
   const blip = blipFill?.getElementsByTagName('a:blip')[0];
   if (!blip) return null;
 

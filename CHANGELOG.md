@@ -2,6 +2,84 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.145] - 2026-09-24 — 导入 PPTX 的两个「空壳」缺陷：真实 deck 一个字都读不到、图片永远丢；`.pptx` 走查这一格终于量到了
+
+### ① 真缺陷：真实演示文稿导入后**一个字都没有**（占位符几何继承自版式）
+
+`pptx-importer.ts` 里写着「拿不到 `<a:off>`/`<a:ext>` 就 `return null`」。而真实 PPTX 里
+**占位符的几何几乎总是继承自 slideLayout**：PowerPoint 与 python-pptx 写出来的标题/正文占位符
+都是空的 `<p:spPr/>`，位置尺寸在版式里。于是导入一份真实 deck 的结果是：
+
+- 幻灯片数量对、画布尺寸对（缩略图 5 张、`画布: 1280×720`）；
+- **但每页元素数是 0、一个字都看不到**，而且不报错、界面照样说"导入完成"。
+
+**装机版 1.16.144 实测原文**：`幻灯片 1 / 5  主题: Imported Theme  画布: 1280×720  **元素: 0**`，
+编辑器里搜不到 deck 的任何文字。修法：缺几何时按占位符类型给一个**能用的默认版面**
+（标题在上、正文占中下），文字照常提取；精确的"去 slideLayout 取几何"留作后续，边界写在代码注释里。
+
+### ② 真缺陷：图片永远导入不进来（查错了命名空间）
+
+图片的填充元素在真实文件里是 **`p:blipFill`**（presentationml），而代码查的是 `a:blipFill`
+（drawingml；只有 `a:blip` 属于 `a:`）⇒ 恒为空 ⇒ `return null` ⇒ **图片一律丢弃**。
+实测证据：夹具 `slide4.xml` 里是 `<p:blipFill><a:blip r:embed="rId2"/>`。已改成先查 `p:blipFill`（保留 `a:blipFill` 兜底）。
+
+### ③ `.pptx` 走查的空白格：先核实"没有 deck"这个前提，再自造一份第三方 deck
+
+O-12 ① 挂了很久，理由是"本机没有可打开的演示文稿"。本轮把这个前提**量了**：
+本机找到的三份 deck（python-pptx 的 `default.pptx`、slidep 的 `blank.pptx`、OneDrive 里那份）
+**都是空模板**（0~1 页、无文本、0 媒体）⇒ 拿它们量不出覆盖面。
+
+于是自造夹具 `src/test/fixtures/pptx/third-party-deck.pptx`：**python-pptx 1.0.2** 生成
+（第三方写入器、标准 OOXML、PowerPoint 能打开；生成脚本 `tools/fixtures/make-pptx-fixture.py`，**未做任何改写**），
+5 页、每页放**不同形态**的元素：标题页 / 项目符号 / 表格 / 图片 / 演讲者备注。
+
+### ④ 新门禁（9 条 + 变异 7/7）
+
+`src/test/pptx-import-fixture.test.ts`：页数与 zip 里**真实存在**的 `slideN.xml` 数交叉核对、
+画布 EMU→px = 1280×720、标题取自 `docProps/core.xml`、正文三条要点逐字对、
+图片解出来的**前 4 字节是 PNG 魔数**（不只信 `data:image/` 前缀）、坐标是百分比、
+坏输入必须抛可读错误；**表格与演讲者备注当前读不到这件事也写成断言**（将来实现了会红，
+逼人把断言改成正向，而不是让限制漂着）。变异自证 `7/7`：把"缺几何就丢"放回去、图片查回 `a:blipFill`、
+去掉 jsdom 声明、序号写死、标题写死 —— 每条都被抓。
+
+### ⑤ 测试环境的一个坑：这个文件必须用 jsdom（不是产品问题，实测判定）
+
+happy-dom（项目默认环境）有两条限制，都会让真实 PPTX 量不出来：
+
+1. **带前缀的属性会丢** —— `<p:sldId r:id="rId2"/>` 解析后只剩 `id`，`getAttribute('r:id')` 返回 `null`。
+   真实 PPTX 全靠 `r:id` 关联幻灯片 ⇒ 在 happy-dom 里必然报 `No slides found in PPTX`；
+2. **不认单引号的 XML 声明** —— python-pptx 写的是 `<?xml version='1.0' ...?>`（XML 规范允许），happy-dom 直接给 `PARSERERROR`。
+
+**判定过程**（不是猜）：在**运行中的装机版（真实 Chromium）**里跑同一段解析 —— 两种声明、带前缀属性**都正常**
+（`.preview-shot/_probe-xml-decl-quotes.mjs`，exit 0）⇒ 这是**测试环境的毛病**。
+所以换用符合规范的 **jsdom**（仓库已装 jsdom 29），而不是改产品去迁就测试。
+全仓只有 `pptx-importer.ts` 用 `DOMParser` 解 XML，切换只影响这一个文件。
+
+### ⑥ 覆盖率棘轮按规则上调：全局 lines 52 → 55
+
+本轮把 `knowledge/pptx-importer.ts` 拉进测试后，全局行覆盖从 53.67% 涨到 **56.02%**，
+`coverage-baseline --check` 立刻报「52 比实测低太多（应 ≥ 55）⇒ 形同没有」——
+棘轮按设计工作，已上调到 55。
+
+### ⑦ 真机 before/after（同一钻取，装机版实测）
+
+入口是 `<input type="file" class="ppt-studio-hidden-input">` + CDP `DOM.setFileInputFiles`，
+**不用碰自动化不了的原生"打开"对话框**；全程只动副本数据根（真库主库 sha256 前后一致、夹具指纹在真库 0 命中）。
+
+| 页（夹具） | 1.16.144（修复前） | 1.16.145（修复后） |
+| --- | --- | --- |
+| 第 1 页 标题页 | 元素 **0**、无文字 | 元素 **2**、标题可见 |
+| 第 2 页 项目符号 | 元素 **0**、无文字 | 元素 2、**「第一条要点」「第三条要点」都读到** |
+| 第 3 页 表格页 | 元素 0 | 元素 1（标题）；**表格文字仍读不到**（`p:graphicFrame`，已知限制） |
+| 第 4 页 图片页 | 元素 0 | 元素 2、**1 张 data:image 真的渲染出来** |
+| 第 5 页 备注页 | 元素 0 | 元素 1（标题）；**演讲者备注仍不导入**（已知限制） |
+| 缩略图 / 画布 | 5 / 1280×720 | 5 / 1280×720 |
+| 控制台 | error 0 | error 0 / warning 3（数据根切换等预期提示） |
+
+**实测（本轮收尾）**：全量 **392 文件 / 6192 通过 / 16 跳过 / 0 失败**；`tsc` **0**；
+`npm run verify` 退出码 **0**（按文件地板 309 个文件；jscpd **169 clones**）；`npm run audit` **13 道 exit 0**；
+零覆盖文件 **4 个 / 553 行**（O-21）。
+
 ## [1.16.144] - 2026-09-24 — 导入 Markdown 会把每条笔记标题弄脏（多一个「替换字符」）、正文里的 `## `/`### ` 还会被吃掉；顺手补了「知识笔记本导出→导入」的往返门禁与一条正则 Unicode 门禁
 
 ### ① 真缺陷：导入笔记本时**每条笔记标题都被弄脏**（U+FFFD）

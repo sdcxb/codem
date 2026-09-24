@@ -71,7 +71,14 @@ export default defineConfig({
        * `tools/audit/coverage-baseline.md` 的"这张表不说明什么"里，不假装已经解决。
        */
       thresholds: {
-        lines: 52,
+        /*
+         * 第 99 轮上调全局 lines 52 → 55：本轮把 `knowledge/exporter|importer`（第 98 轮）与
+         * `knowledge/pptx-importer`（第 99 轮）拉进测试后，全局行覆盖从 53.67% 涨到 **56.02%**，
+         * 而棘轮的判据是「阈值必须落在 [floor(实测)-3, 实测] 里」——
+         * 52 已经比 `floor(56.02)-1=55` 低 3 个点，等于形同没有，所以按棘轮升到 55。
+         * （`npm run verify` 里的 `coverage-baseline.mjs --check` 就是这么把它抓出来的。）
+         */
+        lines: 55,
         functions: 46,
         branches: 42,
         statements: 50,
