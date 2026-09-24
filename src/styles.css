@@ -2825,6 +2825,14 @@ display: block;
   word-break: break-all;
 }
 
+/*
+ * 「正文还在读 / 读不到」的提示（第 92 轮）：与正文块同形，但用次要文字色，
+ * 一眼能看出"这不是正文"（修前的行为是**什么都不显示** —— 一个永远空的框）。
+ */
+.attachment-preview--pending {
+  color: var(--text-secondary);
+}
+
 /* ========== File Explorer ========== */
 
 

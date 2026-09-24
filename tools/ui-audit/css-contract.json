@@ -745,6 +745,9 @@
     "white-space": "pre-wrap",
     "word-break": "break-all"
   },
+  "attachment-preview--pending": {
+    "color": "var(--text-secondary)"
+  },
   "audio-player": {
     "display": "flex",
     "flex-direction": "column",

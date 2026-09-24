@@ -24,6 +24,7 @@ import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
 import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff, Trash2 } from "lucide-react";
 import { getSettingJSON } from "../core/storage/settings";
+import { getAttachmentContent } from "../core/storage/message";
 import type { UserConfig } from "../core/types";
 import { MessageActions } from "./MessageActions";
 import { ErrorCard } from "./ErrorCard";
@@ -227,6 +228,24 @@ const lang = useLang();
   const [expanded, setExpanded] = useState(isStreaming ? true : (displayMode === "unified"));
   const [toolsExpanded, setToolsExpanded] = useState(displayMode !== "unified");
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
+  /**
+   * ## 附件正文的**读取路径**（第 92 轮修的真缺陷）
+   *
+   * 现场（隔离钻取，装机版 1.16.138 实测）：给一条消息挂上真附件后，界面上**能看到**
+   * 「文件名 + 大小」（元数据走域镜像），但**点开是空的** ——
+   * 因为这里原来只读 `att.content`，而**读路径**上的消息（重启后 / 从镜像读）
+   * 按设计**不带正文**（`attachmentsFromMirror`：正文可能几十 MB，一律留空、按需取）。
+   *
+   * 于是"点开附件能看到正文"这件事，只在**刚上传那一刻**（正文还在内存缓存里）成立；
+   * 重启之后点开永远是空的，而且**没有任何提示**说她为什么是空的。
+   *
+   * 现在：点开时走 `getAttachmentContent(id)`（同步缓存 → 命中即显示；未命中会触发一次
+   * 异步预取），并用**有界重试**（4 次、退避 400/800/1200/1600ms）等预取落地；
+   * 一直读不到就**如实说**"暂时读不到、再点一次可重试"，不再给一个永远空的框。
+   */
+  const [attachmentText, setAttachmentText] = useState<Record<string, string | undefined>>({});
+  const [attachmentHint, setAttachmentHint] = useState<Record<string, string | undefined>>({});
+  const [pendingAttachment, setPendingAttachment] = useState<{ id: string; tries: number } | null>(null);
   const [showFilesConfirm, setShowFilesConfirm] = useState(false);
   const [contentCollapsed, setContentCollapsed] = useState(false);
 const [copied, setCopied] = useState(false);
@@ -236,6 +255,36 @@ const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
 const [galleryIndex, setGalleryIndex] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * 附件正文的**有界重试**：`getAttachmentContent` 是同步的（未命中就返回 undefined
+   * 并触发一次异步预取），所以这里按 400/800/1200/1600ms 退避重试 4 次；
+   * 定时器在依赖变化/卸载时**必须清掉**（不然消息列表滚动/卸载会留下野定时器）。
+   */
+  useEffect(() => {
+    if (!pendingAttachment) return;
+    const { id, tries } = pendingAttachment;
+    if (tries >= 4) {
+      setAttachmentHint((prev) => ({
+        ...prev,
+        [id]: getLang() === "zh"
+          ? "正文暂时读不到（已触发预取，再点一次可重试）"
+          : "Content not available yet (prefetch triggered — click again to retry)",
+      }));
+      setPendingAttachment(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const text = getAttachmentContent(id);
+      if (text !== undefined) {
+        setAttachmentText((prev) => ({ ...prev, [id]: text }));
+        setAttachmentHint((prev) => ({ ...prev, [id]: undefined }));
+        setPendingAttachment(null);
+      } else {
+        setPendingAttachment({ id, tries: tries + 1 });
+      }
+    }, 400 * (tries + 1));
+    return () => clearTimeout(timer);
+  }, [pendingAttachment]);
   // P3-26: TTS — text-to-speech for message content
   const { isSpeaking, isSupported: ttsSupported, speak: ttsSpeak, cancel: ttsCancel } = useSpeechSynthesis();
   const [isTtsLoading, setIsTtsLoading] = useState(false);
@@ -523,7 +572,28 @@ setTimeout(() => setCopied(false), 2000);
         {message.attachments && message.attachments.length > 0 && (
           <div className="message-attachments">
             {message.attachments.map((att) => (
-              <div key={att.id} className="message-attachment" onClick={() => setShowAttachment(showAttachment === att.id ? null : att.id)}>
+              <div
+                key={att.id}
+                className="message-attachment"
+                onClick={() => {
+                  const closing = showAttachment === att.id;
+                  setShowAttachment(closing ? null : att.id);
+                  if (closing) return;
+                  /**
+                   * 展开时**按需取正文**（见上面那段注释）：内存里有（刚上传）直接用；
+                   * 没有就走 `getAttachmentContent` + 有界重试 —— 读路径上的消息正文不在镜像里。
+                   */
+                  if (att.content || att.type === "image") return;
+                  if (attachmentText[att.id] !== undefined) return;
+                  const cached = getAttachmentContent(att.id);
+                  if (cached !== undefined) {
+                    setAttachmentText((prev) => ({ ...prev, [att.id]: cached }));
+                    setAttachmentHint((prev) => ({ ...prev, [att.id]: undefined }));
+                  } else {
+                    setPendingAttachment({ id: att.id, tries: 0 });
+                  }
+                }}
+              >
                 {att.type === "image" && att.content ? (
                   <img
                     src={att.content}
@@ -543,8 +613,21 @@ setTimeout(() => setCopied(false), 2000);
                     {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
                   </div>
                 )}
-                {showAttachment === att.id && att.content && att.type !== "image" && (
-                  <pre className="attachment-preview">{att.content}</pre>
+                {showAttachment === att.id && att.type !== "image" && (
+                  <>
+                    {(attachmentText[att.id] ?? att.content) ? (
+                      <pre className="attachment-preview">{attachmentText[att.id] ?? att.content}</pre>
+                    ) : (
+                      /**
+                       * 读不到就**如实说**（而不是给一个永远空的框）：
+                       * 读路径上的正文不在镜像里，第一次点开可能还在预取；说清"再点一次"。
+                       */
+                      <div className="attachment-preview attachment-preview--pending">
+                        {attachmentHint[att.id] ??
+                          (getLang() === "zh" ? "正在读取正文…" : "Loading content…")}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ))}
