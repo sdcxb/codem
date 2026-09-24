@@ -13,7 +13,7 @@ import { executeCode } from "./tools/run-code";
 
 // ========== Workflow SDK ==========
 
-export interface WorkflowSDK {
+interface WorkflowSDK {
   /** Spawn a sub-agent for a subtask */
   spawn(agentId: string, prompt: string): Promise<string>;
   /** Wait for a sub-agent to complete */

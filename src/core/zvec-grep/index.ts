@@ -7,15 +7,5 @@
  */
 
 export * from "./types";
-export {
-  getRuntimeStatus,
-  installOnline,
-  installFromZip,
-  uninstall,
-  rebuildIndex,
-  listPresentModels,
-  type IndexResult,
-  type ZvecMeta,
-} from "./service";
-export { buildZvecPaths, zgCliPathOf, resolveNodeExe, parseNodeVersion, pickNodeWinZipUrl } from "./runtime";
-export { downloadFileExt, extractZip, getAppDataBaseDir } from "./artifacts";
+export { getRuntimeStatus, installOnline, installFromZip, uninstall, rebuildIndex, listPresentModels, type IndexResult } from "./service";
+export { zgCliPathOf, parseNodeVersion, pickNodeWinZipUrl } from "./runtime";

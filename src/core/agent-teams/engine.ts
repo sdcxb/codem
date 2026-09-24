@@ -353,4 +353,3 @@ export function snapshot(team: AgentTeam): TeamSnapshot {
   };
 }
 
-export { TASK_TERMINAL, TASK_TRANSITIONS, canTransition } from "./types";

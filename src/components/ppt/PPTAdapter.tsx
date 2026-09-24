@@ -42,7 +42,7 @@ const STAGES = [
   { key: 'imaging',   label: 'AI 配图',     icon: '🖼️' },
 ];
 
-export function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGenerate = false, sourceIds, onSave, onBack }: PPTAdapterProps) {
+function PPTAdapter({ notebookId, initialContent, title: initialTitle, autoGenerate = false, sourceIds, onSave, onBack }: PPTAdapterProps) {
   const [deck, setDeck] = useState<V2SlideDeck | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -15,7 +15,7 @@
 import type { LibraryZone, SceneImageId, SceneStyle } from "../types";
 import { applyNodeOverride, applyRoomOverride } from "./layout-override";
 
-export type { SceneImageId, SceneStyle };
+export type { SceneImageId };
 
 /** 资源根路径（public/ 下的目录，Vite 原样拷贝到 dist） */
 export const ASSET_BASE = "/library-ops";
