@@ -70,8 +70,9 @@ All notable changes to Codem will be documented in this file.
 
 - 新增/扩充：`domain-ready-reread.test.tsx`（7）、`session-unread-badge.test.ts`（8）、
   `audit-followups-todo-and-list.test.ts`（6）；**16 处突变全部被抓**；
-- `tsc` 0；全量 **363 文件 / 6019 通过 / 16 跳过**（另 3 项为"版本号已升、还没发布"的设计内红项）；
-  UI 门禁 823 文件 error 0 / warn 0。
+- `tsc` 0；全量（发布后复核）**363 文件 / 6022 通过 / 16 跳过 / 0 失败**；UI 门禁 823 文件 error 0 / warn 0；
+  远端清单 `--remote` **7/7**；更新链路端到端：装 **1.16.123** → 应用内 设置 → 帮助 → 检查更新（真实鼠标）
+  →「发现新版本 1.16.124，下载中…」→ 自动安装重启 → exe 版本 = **1.16.124**。
 
 ## [1.16.123] - 2026-09-23 — 顺着 1.16.122 做的一次同类审计：又找出 5 处，修掉 2 处、如实报告 3 处
 
