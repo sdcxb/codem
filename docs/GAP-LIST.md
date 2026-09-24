@@ -17,16 +17,18 @@
 
 | 项 | 值 | 怎么核对的 |
 | --- | --- | --- |
-| 装机版（用户手里那份） | **1.16.134** | 真机启动后读 `version`。**127→128、128→129、129→130、130→131、131→132、132→133、133→134 七次都是更新器自己升的**（按钮 `检查更新 → 检查中… → 发现新版本 x，下载中…` 然后应用重启、版本变化）；1.16.126 那次因网络掐断用构建产物直装 |
-| GitHub Latest | v1.16.134 | `node tools/release/verify-update-manifest.mjs --remote` **7/7** |
-| 仓库 `latest.json` | 1.16.134 | 同上 |
-| 本轮版本 | 1.16.134 | — |
+| 装机版（用户手里那份） | **1.16.135** | 真机启动后读 `version`。**127→…→135 八次都是更新器自己升的**（最近三次：132→133、133→134、134→135）（按钮 `检查更新 → 检查中… → 发现新版本 x，下载中…` 然后应用重启、版本变化）；1.16.126 那次因网络掐断用构建产物直装 |
+| GitHub Latest | v1.16.135 | `node tools/release/verify-update-manifest.mjs --remote` **7/7** |
+| 仓库 `latest.json` | 1.16.135 | 同上 |
+| 本轮版本 | 1.16.135 | — |
 | **确认框真的会弹**（第 84 轮修的根因，装机版实测） | 在 1.16.131 点需要确认的入口（标题栏「切换执行模式」）：控制台 **error 0**（改前必现 `Command plugin:dialog|confirm not allowed by ACL`）；枚举顶层窗口看到 **Win32 对话框窗口**（类名 `#32770`、标题 Codem）出现，且**主窗口被 disable**（模态的典型形态）；向该窗口 PostMessage 一个回车后它消失、主窗口恢复 enabled | `.preview-shot/verify-confirm-dialog-real.mjs`（点击 + 控制台增量）、`.preview-shot/_list-windows.mjs`（窗口枚举）、`.preview-shot/_dismiss-native-dialog.mjs`（P/Invoke 关框） |
 | **皮肤/头像可访问性**（第 83 轮修的，装机版复核） | 皮肤卡片 **3/3 是 `<button type=button>`、3/3 可聚焦、3/3 带 `aria-pressed`、恰好 1 个选中、名字互不相同**（皮肤：默认/Hub/梦幻）、网格 `role=group`；头像预设 **50/50 各有互不相同的 `aria-label`（预设头像 1…50）、50/50 带 `aria-pressed`**、装饰图 `alt` 为空；用修好后的度量重数：**interactives 50 / unnamed 0** | `.preview-shot/verify-a11y-skin-avatar.mjs` |
 | **更新下载重试**（第 82 轮修的缺陷） | 装机版点「检查更新」→ `检查中…` → `未发现更新（当前 v1.16.127）—— 更新清单已读到，里面没有更高的版本；若刚发布，CDN 可能还没同步`；控制台 error **0**（1 条 warning 是"未安装更新：none"的正常留痕）。**重试路径的真机端到端**要等下一次有可升级版本（见 O-13） | `.preview-shot/_observe-update-flow.mjs`（逐次记录按钮文案变化 + 控制台增量） |
 | **修复确实进了装机包** | `dist/assets/main-*.js` 含 `下载中断，正在重试` 与 `update-retry`，且**安装包构建时间（14:37:38）晚于 dist（14:34:48）** ⇒ 打进包的是含修复的前端产物 | 时间戳判据 + `Select-String dist\assets\main-*.js` |
 | **沙箱开关 fail-open 修复确实在装机版里**（第 87 轮修的缺陷） | 装机版 **1.16.134**（版本号来自 `%LOCALAPPDATA%\Codem\codem.exe` 的 ProductVersion，由更新器自己从 1.16.133 升上来）。在这份**正在运行**的应用里取回它实际加载的 `assets/main-*.js`，四项标志物全在：`读取沙箱设置失败，已沿用上次成功读到的值`、`界面上的开关不代表本次实际生效状态`、`sandbox.readSetting`、`codem-sandbox-enabled`；启动后控制台 **error 0 / warning 0 / exception 0**。⚠️ 标志物只能证明**这段代码打进去了**；「读失败时沿用上次值」这个**行为**由门禁 `sandbox-fail-open.test.ts`（SBX-1…4）+ 扫描器变异自证守着（真机上无法制造一次「设置读取失败」） | `.preview-shot/verify-sandbox-fix-shipped.mjs`（用字符串字面量当标志物 —— 生产构建会重命名标识符，用局部变量名会永远找不到） |
-| **门禁全绿（第 87 轮实测）** | `npm run verify` 退出码 **0**（覆盖率棘轮 + 基线对账 + knip 棘轮 + jscpd），**376 文件 / 6087 通过 / 16 跳过 / 0 失败**；`npm run audit` **11 道 exit 0**（第 87 轮新增 `audit:fail-open`） | 直接跑这两条命令看退出码 |
+| **「发现 ≠ 失败」在装机版上实测**（第 88 轮修的缺陷） | 隔离钻取（副本库 + `CODEM_DB_PATH`）跑在装机版 **1.16.135** 上：控制台 **error 0**，自检发现走 `[Advisory] maintenance.invariantAudit.new：…`（改前是 `[PersistFailure] … 写盘失败（第 1 次）… —— 本次改动只存在于内存，重启后可能丢失。`）；界面上那条提示条的类名是 **`persist-alert is-advisory`**，文案为「存储自检：本次新发现记录与界面不一致：…。自检跑成了（这是它报出的结果）；这些缺口**不影响本次使用**…」—— **不再出现**「该功能本次不可用，请重试或检查日志」（改前那句是假建议：再跑一次还是同样的发现）。同时**凭据普查不再误报**（`dsh1:` + base64 的密文现在算密文，改前被说成「明文凭据」并弹出横幅） | `.preview-shot/drill-sealed-unreadable.mjs`（准备/启动/还原）+ `.preview-shot/_drill-observe.mjs`（读提示条与 `.persist-alert` 类名） |
+| **钻取没有写进真库**（越界自证） | 只看 sha256 不够：正常使用（WAL 折叠/维护）本来就会改主库。所以用**决定性判据**：钻取往副本里写的那段假密文（`dsh1:`+base64 的指纹）在真库主库 / WAL / SHM 里**一次都不出现**，而同一指纹在副本库里**在**（阳性对照）。真库里 `dsh1:` 出现 3 次（主库）+ 55 次（WAL）= 真凭据仍在 | `node .preview-shot/audit-drill-touched-real-db.mjs`（只读文件字节，不经引擎打开，避免改变 WAL） |
+| **门禁全绿（第 88 轮实测）** | `npm run verify` 退出码 **0**（覆盖率棘轮 + 基线对账 + knip 棘轮 + jscpd），**377 文件 / 6095 通过 / 16 跳过 / 0 失败**；`npm run audit` **11 道 exit 0** | 直接跑这两条命令看退出码 |
 | **上下文面板口径自洽**（第 81 轮修的缺陷，装机版复核） | 同一会话同一组数字：改前 `21% ⇒ 压力等级 临界 + 🔴 即将满`；改后 **`21% ⇒ 压力等级 正常`、无告警条** | `node .preview-shot/verify-context-pair.mjs`（读的是**界面上真实渲染的文字**，并按 0.5/0.7/0.9 反推应有等级） |
 | 迁移演练（在**副本**上跑） | 16 表 / 3990 行导入，逐表摘要全对；`--verify` 全部一致（新库 3991 行）；旧库 sha256 未变 | `node tools/migrate/storage-migrate.mjs --apply --src <副本> --dst <副本>` 然后 `--verify` |
 | 冷启动读数（装机版 1.16.125） | JS 堆 **42MB** / DOM **617** 节点 / 25 秒内控制台 error 0、exception 0（1 条 `[Engine] CLI mode: no account found` 属预期） | `.preview-shot/_verify-1125.mjs` |
