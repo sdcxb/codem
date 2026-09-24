@@ -2,6 +2,54 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [未发布] 第 102 轮 - 2026-09-24 — 删掉一对**孤儿实现**（`llm/processor.ts` 的 `Processor` + 它唯一的使用者 `SessionManager`）；零覆盖文件 4 → 2，knip 收紧到 342/218
+
+> **本轮不出包**（装机版仍是 1.16.146）。判据是量出来的，不是"感觉没影响"：
+> `dist` 里**搜不到** `Processor` 的任何特征串（`"Already processing"` 等）⇒ 这份实现早就被
+> tree-shake 掉了，删不删都不改变产物；它也没有任何生产调用方（全仓 `new Processor(` **0 处**）。
+
+### ① 死代码：一份 270 行的孤儿 agentic loop + 它唯一的依赖
+
+`src/core/llm/processor.ts` 里有一个 `Processor` 类（`process()` 生成器：流式增量、工具调用、
+usage 累加、maxToolCalls 上限、abort 处理），看起来很像"正在跑的那条循环"。事实是：
+
+- 全仓**没有** `new Processor(`，也没有按路径动态 import、没有 barrel 再导出；
+- 它唯一的"引用"是 `subagent.ts` 第一行 `import type { ProcessorEvent } from "../llm/processor"`，
+  而**那个类型在该文件里从未被使用**；
+- 真正在跑的是 `core/llm/agentic-loop.ts`（初始提交就有）+ `core/storage/session.ts` + `core/store.ts`。
+
+更关键的是它拖着一个**同类孤儿**：`core/llm/session.ts` 的 `SessionManager` 类，
+其全部调用点只有 `Processor` 自己。`session.ts` 里**还活着的**是那批类型
+（`MessageV2` / `Part` / `Session` …，被 `context.ts`、`memory.ts`、`recovery.ts`、
+`SessionRecovery.tsx`、`v2-session.ts` 等 6 处 `import type` 用着）。
+
+处置（本轮）：
+
+| 动作 | 位置 | 结果 |
+| --- | --- | --- |
+| 删除孤儿实现 | `src/core/llm/processor.ts` | **-270 行** |
+| 删除其唯一依赖 | `src/core/llm/session.ts` 的 `SessionManager` 类 + 只服务于它的 3 个 import | **-205 行**，只留类型 |
+| 删除死 import | `src/core/subagent/subagent.ts` 第一行（`ProcessorEvent`） | 顺带把"knip 以为有人用它"这层伪装去掉 |
+| 更新判据 | `tool-args-truncation.test.ts::ARGS-6`：原来有一条对 `processor.ts` 的字符串断言 ⇒ 改成**"这个孤儿不许复活"**（`existsSync` 为假），ARGS-6 真正要守的"不许写死 4096"三条判据原样保留 | 8 条全过 |
+
+### ② 量化收益（都是实测）
+
+| 指标 | 前 | 后 |
+| --- | --- | --- |
+| 行覆盖 0% 的 ≥50 行生产文件（O-21） | 4 个 / 553 行 | **2 个 / 379 行**（只剩 `knowledge/ppt-generator.ts` 263、`knowledge/graph-extractor.ts` 116） |
+| knip 未用导出 / 未用类型 | 348 / 222 | **342 / 218**（已 `--update` 把棘轮收紧；棘轮不会自己收紧，工具会提示"请跑 --update"） |
+| jscpd 克隆 | 169 | **167** |
+| 按文件覆盖率地板条目 | 309 | **307**（其中一个条目指向已删除的文件，工具会提示清理） |
+| 全量用例 | 392 文件 / 6192 通过 | **392 文件 / 6192 通过 / 0 失败**（删代码没删掉任何一条断言） |
+
+**实测（本轮收尾）**：`tsc` **0**；`npm run verify` 退出码 **0**（阈值对账 ✅、按文件地板 307 个文件、
+knip 无增长、jscpd 167 clones）；`npm run audit` **13 道 exit 0**。
+
+**如实标注**：这不是"删掉一个坏的实现"（`Processor` 本身读起来是完整可用的），
+而是"删掉一份**没人跑的并行实现**" —— 留着它的代价已经在发生：
+`ARGS-6` 那条测试**一直在对一个没人执行的代码做断言**，而"这份实现到底还有没有人跑"
+这个问题在 knip 的"未使用导出"列表里被一行死 import 掩盖着。
+
 ## [1.16.146] - 2026-09-24 — 读侧失败不再印成「写盘失败……本次改动只存在于内存」（8 处通道漂移修好）；上报点分诊 123 → 86
 
 ### ① 真缺陷：**读**失败被套进**写盘**通道，提示条印的是假话

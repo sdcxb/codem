@@ -1,4 +1,9 @@
-import type { ProcessorEvent } from "../llm/processor";
+/*
+ * 第 102 轮：这里原本有一句 `import type { ProcessorEvent } from "../llm/processor";`
+ * —— 它**从未被使用**，而它指向的文件（`llm/processor.ts` 的 `Processor` 类）本身也是死代码，
+ * 已一并删除。留着这行 import 的后果不只是"多一行"：它让 knip 把那个文件当成"有人用"，
+ * 于是"这份孤儿实现到底还有没有人跑"这件事被掩盖了。
+ */
 import { getLang } from "../i18n/lang";
 
 // ========== Sub-agent Types ==========

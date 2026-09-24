@@ -1,5 +1,20 @@
-import type { LLMMessage, ContentBlock } from "./types";
-import { loadV2Sessions, saveV2Session, deleteV2Session } from "../storage/v2-session";
+/**
+ * Message V2 / Session 的**类型定义**（唯一存活的部分）。
+ *
+ * ## 第 102 轮：这里原本还有一个 `SessionManager` 类，已删除
+ *
+ * 审计发现它**只剩一个调用方**，而那个调用方本身也是死代码（`src/core/llm/processor.ts` 的
+ * `Processor` 类，全仓没有 `new Processor(`；产物里也被 tree-shake 掉了）。
+ * 真正在跑的是 `core/llm/agentic-loop.ts` + `core/storage/session.ts` + `core/store.ts`。
+ *
+ * 处置：连带 `Processor` 一起删（`SessionManager` 的 load/save/deleteV2Session 三段
+ * 只服务于它），**只保留类型** —— 这些类型是全仓在用的（`context.ts`、`memory.ts`、
+ * `recovery.ts`、`SessionRecovery.tsx`、`v2-session.ts` 都 import type 它们）。
+ *
+ * 顺带删掉的还有两处"只为了另一边存在"的痕迹：`subagent.ts` 里那句从未被使用的
+ * `import type { ProcessorEvent }`，以及 `tool-args-truncation.test.ts::ARGS-6` 里
+ * 对 `processor.ts` 的字符串断言（判据本身保留，只去掉已不存在的那一条）。
+ */
 
 // ========== Message V2 ==========
 export interface MessageV2 {
@@ -76,200 +91,4 @@ export interface Session {
     completionTokens: number;
     cost: number;
   };
-}
-
-// ========== Session Manager ==========
-
-export class SessionManager {
-  private sessions: Map<string, Session> = new Map();
-  private currentSessionId: string | null = null;
-
-  constructor() {
-    this.load();
-  }
-
-  private load() {
-    this.sessions = loadV2Sessions();
-  }
-
-  /** Reload sessions from database (call after DB init) */
-  reload() {
-    this.load();
-  }
-
-  private save(session: Session) {
-    saveV2Session(session);
-    // Don't sync to messages table - let useAppStore handle persistence
-  }
-
-  createSession(projectId: string, model: string): Session {
-    const session: Session = {
-      id: `ses-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      projectId,
-      title: `对话 ${this.sessions.size + 1}`,
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      model,
-      totalUsage: { promptTokens: 0, completionTokens: 0, cost: 0 },
-    };
-    this.sessions.set(session.id, session);
-    this.currentSessionId = session.id;
-    this.save(session);
-    return session;
-  }
-
-  getOrCreateSession(id: string, projectId: string, model: string): Session {
-    let session = this.sessions.get(id);
-    if (!session) {
-      session = {
-        id,
-        projectId,
-        title: `对话 ${this.sessions.size + 1}`,
-        messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        model,
-        totalUsage: { promptTokens: 0, completionTokens: 0, cost: 0 },
-      };
-      this.sessions.set(session.id, session);
-      this.save(session);
-    }
-    return session;
-  }
-
-  getSession(id: string): Session | undefined {
-    return this.sessions.get(id);
-  }
-
-  getCurrentSession(): Session | undefined {
-    return this.currentSessionId ? this.sessions.get(this.currentSessionId) : undefined;
-  }
-
-  setCurrentSession(id: string) {
-    this.currentSessionId = id;
-  }
-
-  getSessionsForProject(projectId: string): Session[] {
-    return Array.from(this.sessions.values())
-      .filter((s) => s.projectId === projectId)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-  }
-
-  addMessage(sessionId: string, message: MessageV2) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.messages.push(message);
-    session.updatedAt = Date.now();
-    this.save(session);
-  }
-
-  updateMessage(sessionId: string, messageId: string, updater: (msg: MessageV2) => MessageV2) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    const idx = session.messages.findIndex((m) => m.id === messageId);
-    if (idx === -1) return;
-    session.messages[idx] = updater(session.messages[idx]);
-    session.updatedAt = Date.now();
-    this.save(session);
-  }
-
-  deleteSession(id: string) {
-    this.sessions.delete(id);
-    if (this.currentSessionId === id) {
-      this.currentSessionId = null;
-    }
-    deleteV2Session(id);
-  }
-
-  renameSession(id: string, title: string) {
-    const session = this.sessions.get(id);
-    if (!session) return;
-    session.title = title;
-    this.save(session);
-  }
-
-  /** Convert MessageV2 to LLM API message format */
-  toAPIMessages(messages: MessageV2[]): LLMMessage[] {
-    const result: LLMMessage[] = [];
-
-    for (const msg of messages) {
-      if (msg.role === "user") {
-        const textParts = msg.parts.filter((p) => p.type === "text") as TextPart[];
-        result.push({
-          id: msg.id,
-          role: "user",
-          content: textParts.map((p) => p.content).join("\n") || "(empty)",
-        });
-      } else if (msg.role === "assistant") {
-        const textContent: string[] = [];
-        const toolParts: any[] = [];
-
-        for (const part of msg.parts) {
-          if (part.type === "text") {
-            textContent.push(part.content);
-          } else if (part.type === "reasoning") {
-            textContent.push(`[Thinking: ${part.content}]`);
-          } else if (part.type === "tool") {
-            toolParts.push(part);
-          }
-        }
-
-        // Only add tool_calls if ALL tool parts have results
-        const completedTools = toolParts.filter((p) => p.status === "completed" || p.status === "error");
-        const hasCompleteTools = toolParts.length > 0 && completedTools.length === toolParts.length;
-
-        // Add assistant message
-        if (textContent.length > 0 || toolParts.length > 0) {
-          const assistantMsg: any = {
-            id: msg.id,
-            role: "assistant",
-            content: textContent.join("\n") || "",
-          };
-          if (hasCompleteTools) {
-            assistantMsg.tool_calls = completedTools.map((part) => ({
-              id: part.id,
-              type: "function",
-              function: {
-                name: part.name,
-                arguments: JSON.stringify(part.input || {}),
-              },
-            }));
-          }
-          result.push(assistantMsg);
-        }
-
-        // Add tool results only if we added tool_calls
-        if (hasCompleteTools) {
-          for (const part of completedTools) {
-            result.push({
-              id: `${msg.id}-tool-${part.id}`,
-              role: "tool",
-              content: part.output || part.error || "(no output)",
-              toolCallId: part.id,
-            });
-          }
-        }
-      }
-    }
-
-    // Final safety: remove orphan tool messages
-    const cleaned: LLMMessage[] = [];
-    let lastAssistantWithToolCalls = false;
-    for (const msg of result) {
-      if (msg.role === "assistant") {
-        lastAssistantWithToolCalls = !!(msg as any).tool_calls;
-        cleaned.push(msg);
-      } else if (msg.role === "tool") {
-        if (lastAssistantWithToolCalls) {
-          cleaned.push(msg);
-        }
-      } else {
-        lastAssistantWithToolCalls = false;
-        cleaned.push(msg);
-      }
-    }
-
-    return cleaned;
-  }
 }

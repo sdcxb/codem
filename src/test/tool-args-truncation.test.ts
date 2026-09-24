@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 工具参数截断守卫契约（第 66 波）。
  *
  * 真实事故（用户控制台日志）：
@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildUnparsableArgsError, isContentBearingTool, CONTENT_BEARING_TOOLS } from "../core/llm/tool-args-guard";
 
@@ -85,8 +85,13 @@ describe("工具参数截断守卫（第 66 波）", () => {
     expect(index, "创建循环时按模型解析").toMatch(/resolveMaxOutputTokens\(\{/);
     const limits = read("src/core/llm/model-output-limit.ts");
     expect(limits).toMatch(/DEFAULT_MAX_OUTPUT_TOKENS\s*=\s*8192/);
-    const processor = read("src/core/llm/processor.ts");
-    expect(processor, "processor 不应再写死 4096").not.toMatch(/maxTokens:\s*this\.config\.maxTokens \?\? 4096/);
+    /*
+     * 第 102 轮：原来这里还有一条对 `src/core/llm/processor.ts` 的字符串断言
+     * （"processor 不应再写死 4096"）。那个文件已作为**孤儿实现**删除 ——
+     * 全仓没有 `new Processor(`，产物里也被 tree-shake 掉了；真正在跑的是 `agentic-loop.ts`。
+     * 判据本身（不许写死 4096）由上面三条继续守着，删掉的只是"对一个已经不存在的东西的断言"。
+     */
+    expect(existsSync(join(ROOT, "src/core/llm/processor.ts")), "孤儿实现 processor.ts 不应复活").toBe(false);
   });
 
   it("ARGS-7: write 支持 append 分块写入，且 content 不是字符串时直接报错（不覆盖文件）", () => {

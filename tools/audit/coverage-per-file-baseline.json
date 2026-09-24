@@ -2,7 +2,7 @@
  "_note": "按文件的覆盖率地板（第 96 轮，O-6）。规则：地板 = 实测 × 0.8 向下取整（≥20 行的文件才建）；`--write` 时**只降不许升**（实测变高不抬高地板）。判据见 tools/audit/coverage-per-file.mjs --check 与 src/test/coverage-per-file.test.ts。",
  "_ratio": 0.8,
  "_minLines": 20,
- "_count": 309,
+ "_count": 307,
  "floors": {
   "src/core/debug.ts": {
    "lines": 70,
@@ -586,12 +586,6 @@
    "functions": 55,
    "branches": 54
   },
-  "src/core/llm/processor.ts": {
-   "lines": 0,
-   "statements": 0,
-   "functions": 0,
-   "branches": 0
-  },
   "src/core/llm/provider.ts": {
    "lines": 50,
    "statements": 47,
@@ -627,12 +621,6 @@
    "statements": 80,
    "functions": 80,
    "branches": 72
-  },
-  "src/core/llm/session.ts": {
-   "lines": 0,
-   "statements": 0,
-   "functions": 0,
-   "branches": 0
   },
   "src/core/llm/spill-policy.ts": {
    "lines": 71,
