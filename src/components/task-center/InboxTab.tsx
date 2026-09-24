@@ -33,6 +33,27 @@ function formatTime(timestamp: number, zh: boolean): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
+/**
+ * 图标按钮的**最小命中区**（第 94 轮）。
+ *
+ * 走查量出来的现场：收件箱每行的「归档」按钮是 `padding:2px` + 12px 图标 = **16×19**，
+ * 「显示已归档」那个复选框是 **13×13**（它外面那层 label 只有 20px 高，撑不到 24）。
+ * 都低于 WCAG 2.5.8 的 24×24 最小目标尺寸，鼠标/触控都难命中 —— 而「归档」是这条通知**唯一的移除入口**
+ * （误点还得靠「恢复」救回来，所以它更不能难点）。
+ *
+ * 这里统一给一个 24×24 的下限 + 居中对齐（图标仍按原尺寸画，只是**可点范围**变大）。
+ */
+const ICON_HIT = {
+  minWidth: 24,
+  minHeight: 24,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+} as const;
+
+/** 「显示已归档」那一行的最小高度：让 label（真正的命中区）也够 24 */
+const LABEL_HIT = { minHeight: 24, paddingTop: 2, paddingBottom: 2 } as const;
+
 /** 点击穿透目标：通知 → 任务管理页签（+ 可选 Issue 聚焦） */
 function inboxTarget(item: InboxItem): { tab: string; issueId?: string } | null {
   if (item.issueId) return { tab: "issues", issueId: item.issueId };
@@ -196,6 +217,8 @@ export function InboxTab() {
           style={{
             display: "flex", alignItems: "center", gap: 4, fontSize: "var(--fs-sm)",
             color: "var(--text-secondary)", cursor: "pointer",
+            // 第 94 轮：命中区下限 24（原来 label 只有 20px 高，里面的复选框 13×13）
+            ...LABEL_HIT,
           }}
           title={zh ? "已归档的通知默认不显示，但一直还在库里" : "Archived items are hidden but still in the database"}
         >
@@ -306,7 +329,7 @@ export function InboxTab() {
                   // 已归档的条目只给"恢复" —— 归档是唯一的移除入口，误点必须能撤销
                   <button
                     onClick={(e) => { e.stopPropagation(); handleUnarchive(item.id); }}
-                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, ...ICON_HIT }}
                     title={zh ? "恢复（取消归档）" : "Restore (unarchive)"}
                   >
                     <ArchiveRestore size={12} />
@@ -314,7 +337,7 @@ export function InboxTab() {
                 ) : (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleArchive(item.id); }}
-                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, ...ICON_HIT }}
                     title={zh ? "归档（可在「显示已归档」里恢复）" : "Archive (restore via “Show archived”)"}
                   >
                     <Archive size={12} />

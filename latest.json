@@ -1,15 +1,15 @@
 {
-  "version": "1.16.140",
-  "notes": "Codem v1.16.140 - 修一个静默数据丢失：附件正文会被「读回来再写回去」抹成 NULL（外置附件的 file: 标记也一样，抹掉后文件就找不回来了）。现在写入侧与引擎语义对齐，没有正文就不覆盖正文列。完整清单见 CHANGELOG。",
-  "pub_date": "2026-09-24T11:59:38Z",
+  "version": "1.16.141",
+  "notes": "Codem v1.16.141 - 任务中心收件箱里两个「难点到的控件」修好了：归档按钮从 16×19 提到 24×24 下限、「显示已归档」的复选框那一行也够 24（WCAG 最小目标尺寸）。另外把走查度量更正了：以前报的「被遮挡控件」全是仪器造成的，真缺陷为 0。完整清单见 CHANGELOG。",
+  "pub_date": "2026-09-24T12:52:17Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hISHpkSGZZV0ZpYUJ6MS9lUU5DTlNjc2VGa0F2MDNZeGJscS9kY3ZONVNwOTMwZFdtUDFlOUVyUmFNZDh0YVZqeGlTNzlnNE5aQit5TTE4SUNDakE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjUxMTc4CWZpbGU6Q29kZW1fMS4xNi4xNDBfeDY0LXNldHVwLmV4ZQp1NUsvOE8xa2Y4cDJtY2ZQTXhyb3ozcEl0dlNqaituOXQ2N3B6LytGZzF3RGNoQmtCUmw3RU5JdWNBbmFRM3dPL3J3UjV5UlQyK2dEYXNFcUEwZkZCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.140/Codem_1.16.140_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pQNm1FbEl6MjdCdlJIZjVWOG9hU1dJcmxuQzB1YzlwQ1hmUTRrVzY1cGJXdUJvVUV2VWFXMHJ4OHpsSjFUWUVMUUdMaGtYZEpNQlR1dFVGaU4ydEFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjU0MzM3CWZpbGU6Q29kZW1fMS4xNi4xNDFfeDY0LXNldHVwLmV4ZQo2bzV0ay9SM1BvSVUwWno5MXNhcm5HeEN1SVIyakozckdnbW04alpUL0tCUUNSZmM3cyt4alJvSnR3ZGtPamdua2U1UTlXVGFaclhySHB5ZmlnQkZDdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.141/Codem_1.16.141_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hISHpkSGZZV0ZpYUJ6MS9lUU5DTlNjc2VGa0F2MDNZeGJscS9kY3ZONVNwOTMwZFdtUDFlOUVyUmFNZDh0YVZqeGlTNzlnNE5aQit5TTE4SUNDakE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjUxMTc4CWZpbGU6Q29kZW1fMS4xNi4xNDBfeDY0LXNldHVwLmV4ZQp1NUsvOE8xa2Y4cDJtY2ZQTXhyb3ozcEl0dlNqaituOXQ2N3B6LytGZzF3RGNoQmtCUmw3RU5JdWNBbmFRM3dPL3J3UjV5UlQyK2dEYXNFcUEwZkZCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.140/Codem_1.16.140_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pQNm1FbEl6MjdCdlJIZjVWOG9hU1dJcmxuQzB1YzlwQ1hmUTRrVzY1cGJXdUJvVUV2VWFXMHJ4OHpsSjFUWUVMUUdMaGtYZEpNQlR1dFVGaU4ydEFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMjU0MzM3CWZpbGU6Q29kZW1fMS4xNi4xNDFfeDY0LXNldHVwLmV4ZQo2bzV0ay9SM1BvSVUwWno5MXNhcm5HeEN1SVIyakozckdnbW04alpUL0tCUUNSZmM3cyt4alJvSnR3ZGtPamdua2U1UTlXVGFaclhySHB5ZmlnQkZDdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.141/Codem_1.16.141_x64-setup.exe"
     }
   }
 }
