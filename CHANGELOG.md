@@ -2,6 +2,53 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [未发布] 第 106 轮 - 2026-09-25 — 做出一份**可信的「未接线模块」普查**（自检通过）；据此删掉一处冗余包装；43 个不可达文件逐类落地
+
+> **本轮不出包**（装机版仍是 1.16.147）：删掉的是一处已被 tree-shake 的冗余包装（`dist` 里查无此名），
+> 其余是审计工具与结论，没有产品行为改动。
+
+### ① 工具：从"字符串匹配"换成**模块解析 + 可达性**（`.preview-shot/_reachability-scan.mjs`）
+
+第 105 轮的普查按"名字片段"找零 import 的模块，**既漏又错**（`dsh-compat` 明明被
+`plugin-loader/builtin-registry.ts` import 却报 0；`MessageBubble.tsx` 这种显然在用的也被报成"零 import"，
+因为相对导入写的是 `./MessageBubble`，前缀对不上）。这一版做的是正经的可达性分析：
+
+1. 把 `from "…"` / `import("…")` 的说明符**按 Vite/Node 规则解析到具体文件**（补 `.ts`/`.tsx`/`/index.ts`，剥 `?raw`）；
+2. 从入口 `src/main.tsx` / `src/pet-main.tsx` 做 BFS；
+3. 字面量动态 import 算边；**非字面量**动态 import 记为该文件的"动态目标"，不当死代码；
+4. **自带两条已知答案的对照**：`components/MessageBubble.tsx` 必须可达、`core/storage/sync-engine.ts`
+   必须不可达 —— 对照不过就打印"本次分析不可信"并以非零码退出。
+
+**实测**：生产文件 **815** 个，可达 **772**，不可达 **43**（"仅测试可达/有动态命中" 8 + 孤儿 35）；自检 **通过**。
+
+### ② 据此删掉一处**冗余包装**：`core/llm/model-resolver.ts`
+
+它是 `LLMEngine.getConfiguredProvider(slot)` 的薄包装，而后者**内部已经做了**同一件事
+（`resolveSlot(slot)` 走 ModelProfile 配置 + 回退默认，`core/llm/index.ts:1482`）。
+全仓 **0 个生产调用方**，`dist` 里也查不到它的特征串（早被 tree-shake）。
+处置：删除（-57 行），并把 `regression-p0-p4-full.test.ts::REG-FULL-045` 从"模块可导入"
+改成 **"这个冗余包装不许复活"**（判据不是删掉，而是钉住）。
+
+### ③ 43 个不可达文件逐类落地（记入 GAP-LIST 的 O-22）
+
+| 类别 | 数量 | 处置 |
+| --- | ---: | --- |
+| `core/*/index.ts` 这类 **barrel 转出口** | 14 | 早知道（`knip.json` 里就是逐条登记的），不属于"假装有功能" |
+| **skill-creator 脚本**（`run-eval`/`quick-validate`/`aggregate-benchmark`/`generate-review`/`package-skill`/`is-main`） | 6 | 第 97 轮已定性：**仓库工具、不在装机包里**，有测试守着 |
+| **`components/ui/**` 里没被用到的原语**（`dropdown-menu`、`popover`） | 2 | 已按"外部/生成式代码"登记（第 105 轮） |
+| `slots/declarations.ts`、`stubs`、`pet-main` 相关 | 3 | 已登记或运行时按路径引用 |
+| **真·未接线的界面组件** | 4 | `CapabilityGuard.tsx`（模型能力提示）、`GuidanceBlock.tsx`（引导消息展示）、`RegenerateModelPopover.tsx`（按模型重新生成）、`SkillAutocomplete.tsx`（`/` 技能补全）—— 都写完了、**没有任何地方渲染** |
+| 其它（`PetErrorBoundary`、`theme/skin-tokens`、`llm/*` 零散） | 其余 | 记在 O-22，逐条待判 |
+
+**如实标注**：那 4 个界面组件**本轮没有动代码**。删它们等于替产品做决定（这些是很可能想要的入口），
+接它们又需要产品决策与面板走查 —— 所以按 O-22 的判据记录为"未接线"，等下一轮按"接上或如实标注"二选一。
+
+### ④ 实测
+
+全量 **394 文件 / 6215 通过 / 16 跳过 / 0 失败**；`tsc` **0**；`npm run verify` 退出码 **0**
+（阈值对账 ✅、按文件地板 307 个文件、knip 棘轮 282/194、jscpd 167 clones）；
+`npm run audit` **13 道 exit 0**。
+
 ## [未发布] 第 105 轮 - 2026-09-25 — O-8 分诊第一批：把「搬进来的代码」按目录登记（knip **342/218 → 282/194**）；两次**测量自我纠错**都写进来
 
 > **本轮不出包**（装机版仍是 1.16.147）：改的是审计配置与度量口径，没有产品行为改动。

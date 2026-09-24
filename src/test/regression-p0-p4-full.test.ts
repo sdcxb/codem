@@ -12,7 +12,7 @@
  *   H. i18n 新增翻译键 (REG-FULL-186 ~ REG-FULL-200)
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
 vi.mock("../core/file-api", () => ({
@@ -317,9 +317,15 @@ describe("P1 高级Agent — 组件导入与工具注册", () => {
     const mod = await import("../core/llm/capability-detector");
     expect(mod).toBeDefined();
   });
-  it("REG-FULL-045: model-resolver 模块可导入", async () => {
-    const mod = await import("../core/llm/model-resolver");
-    expect(mod).toBeDefined();
+  /*
+   * REG-FULL-045 原来断言 `../core/llm/model-resolver` 能导入（"模块可导入"这类判据）。
+   * 第 106 轮的可达性普查（`.preview-shot/_reachability-scan.mjs`，自检通过）查出：
+   * 那个模块是 `LLMEngine.getConfiguredProvider(slot)` 的**冗余包装**（后者内部就做了
+   * ModelProfile 的 slot 解析与回退），全仓 0 个生产调用方，产物里也早被 tree-shake。
+   * ⇒ 已删除。这里改成断言"它不会再回来"，而不是把断言删掉了事。
+   */
+  it("REG-FULL-045: 已被删除的冗余包装 model-resolver 不许复活", () => {
+    expect(existsSync(join(__dirname, "..", "..", "src", "core", "llm", "model-resolver.ts"))).toBe(false);
   });
   it("REG-FULL-046: output-parser 模块可导入", async () => {
     const mod = await import("../core/llm/output-parser");
