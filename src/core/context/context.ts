@@ -1,6 +1,59 @@
 import type { MessageV2 } from "../llm/session";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
+// ========== 压力等级（**唯一一份阈值**）==========
+
+/**
+ * 压力等级的阈值（占用率 → 等级 0..3）。
+ *
+ * ## 为什么单独抽出来（第 72 轮真机走查抓到的问题）
+ *
+ * 上下文面板上**同时**显示两样东西：占用率（`23,678 / 115,200 tokens 21%`）与
+ * 「压力等级」。真机实测两者**互相矛盾**：屏幕上写着 21%，紧跟着却是
+ * 「压力等级：临界」+「🔴 上下文即将满！请立即压缩或开启新对话」。
+ *
+ * 根因是**同一件事被两套口径各算一遍**：
+ * - 占用率用的是"模型这次真的会收到多少"（可见消息 → 裁剪陈旧工具结果 →
+ *   按优先级选进"真实窗口 × 0.9"的预算，`summarizeModelContext`）；
+ * - 压力等级却调用 `getPressureLevelFromMessages(可见消息)`，
+ *   它自己另算一遍 `available = maxContextWindow − systemPrompt − outputReserve`
+ *   且**不做裁剪与优先级选择** —— 分子分母都不同。
+ *
+ * 这与第 71 轮"概览卡与委派页签同一事实两个答案"是**同一个病**：口径不能写两遍。
+ * 所以这里把阈值收成唯一实现，并新增 `summarizeDisplayPressure`：
+ * **面板上那两个数字必须从同一对分子/分母导出**。
+ */
+export const PRESSURE_THRESHOLDS = [0.5, 0.7, 0.9] as const;
+
+/** 占用率 → 压力等级（0 正常 / 1 中等 / 2 较高 / 3 临界）。
+ *
+ * 退化输入的取向（用例 `CMP-1` 钉住）：
+ * - `NaN` / 负数 / `-Infinity` → **0**（"算不出来"不等于"快满了"，不许虚报告警）；
+ * - `+Infinity` → **3**（used 远大于 available 是真的满）。
+ */
+export function pressureLevelForRatio(ratio: number): number {
+  if (Number.isNaN(ratio) || ratio <= 0) return 0;
+  if (ratio < PRESSURE_THRESHOLDS[0]) return 0;
+  if (ratio < PRESSURE_THRESHOLDS[1]) return 1;
+  if (ratio < PRESSURE_THRESHOLDS[2]) return 2;
+  return 3;
+}
+
+/**
+ * 面板显示用的一对数字：**百分比与压力等级必须自洽**。
+ *
+ * 这是"同一事实只有一份口径"的落点：调用方（`ContextMonitor`）传进来的
+ * `used` / `available` 就是它**画进度条用的那两个数**，等级由同一个比值导出，
+ * 于是"21% 却显示临界"这类矛盾从构造上不可能再出现。
+ */
+export function summarizeDisplayPressure(
+  used: number,
+  available: number,
+): { ratio: number; percent: number; level: number } {
+  const ratio = available > 0 && Number.isFinite(used) ? used / available : 0;
+  return { ratio, percent: Math.round(Math.max(0, ratio) * 100), level: pressureLevelForRatio(ratio) };
+}
+
 // ========== Token Budget ==========
 export interface TokenBudget {
   /** Total context window size */
@@ -78,11 +131,7 @@ export class ContextManager {
   /** Get pressure level from simple Messages (0-3) */
   getPressureLevelFromMessages(messages: { content?: string; reasoning?: string; toolCalls?: Array<{ args?: any; result?: string }> }[]): number {
     const budget = this.calculateBudgetFromMessages(messages);
-    const usageRatio = budget.used / budget.available;
-    if (usageRatio < 0.5) return 0;
-    if (usageRatio < 0.7) return 1;
-    if (usageRatio < 0.9) return 2;
-    return 3;
+    return pressureLevelForRatio(budget.available > 0 ? budget.used / budget.available : 0);
   }
 
   /** Calculate token budget for current messages */

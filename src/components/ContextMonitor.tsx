@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getContextManager, type TokenBudget, type CompactionConfig } from "../core/context/context";
+import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import { listVisibleMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
 import { getEventLog } from "../core/storage/event-log";
@@ -190,7 +190,12 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
 
 export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [budget, setBudget] = useState<TokenBudget>(DEFAULT_BUDGET);
-  const [pressure, setPressure] = useState(0);
+  /*
+   * ⚠️ 第 72 轮：这里原来还有一个 `pressure` state（由 `setPressure(...)` 写两次）。
+   * 它和进度条用的 `budget` 是**两套口径**，于是真机上出现"21% 却显示临界"的自相矛盾。
+   * 现在压力等级在渲染时由 `summarizeDisplayPressure(budget.used, budget.available)`
+   * 现场导出 —— 与进度条同一对数字，state 也就没必要存在了。
+   */
   const [todayCost, setTodayCost] = useState(0);
   const [messageCount, setMessageCount] = useState(0);
   const [balances, setBalances] = useState<ProviderBalance[]>([]);
@@ -225,7 +230,6 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
 
         if (!sessionId) {
           setBudget(DEFAULT_BUDGET);
-          setPressure(0);
           setMessageCount(0);
           return;
         }
@@ -262,8 +266,13 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           contextWindow,
         );
         /**
-         * `calculateBudgetFromMessages` / `getPressureLevelFromMessages` 仍然用**同一份可见列表**
-         * 计算（它们读的是"消息集合"，不是"库里有多少行"）—— 口径与上面一致。
+         * `calculateBudgetFromMessages` 仍然用**同一份可见列表**计算（它读的是"消息集合"，
+         * 不是"库里有多少行"）—— 只是它的 `used/available` 会被下面的模型侧口径覆盖。
+         *
+         * 第 72 轮：这里原来还有一次 `setPressure(getPressureLevelFromMessages(visible))`，
+         * 它算的是**另一套**分子分母（不裁剪陈旧工具结果、不按优先级选择、分母也不一样），
+         * 于是"进度条 21% + 压力等级 临界"同时出现在屏幕上。现在压力等级在渲染时由
+         * `summarizeDisplayPressure(budget.used, budget.available)` 导出，这里不再需要它。
          */
         const contextManager = getContextManager();
         const b = contextManager.calculateBudgetFromMessages(visible as any[]);
@@ -273,7 +282,6 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           available: budgetTokens,
           remaining: Math.max(0, budgetTokens - usedTokens),
         });
-        setPressure(contextManager.getPressureLevelFromMessages(visible as any[]));
       } catch (e) {
         console.error("[ContextMonitor] update failed:", e);
       }
@@ -336,7 +344,20 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
 
   if (!visible) return null;
 
-  const usagePercent = budget.available > 0 ? Math.round((budget.used / budget.available) * 100) : 0;
+  /*
+   * ⚠️ 第 72 轮：**进度条与压力等级必须来自同一对分子/分母**。
+   *
+   * 改前：进度条用 `budget.used / budget.available`（模型侧口径：可见 → 裁剪陈旧工具结果 →
+   * 按优先级选进"真实窗口 × 0.9"），而压力等级是另一个 `pressure` state，
+   * 走 `getPressureLevelFromMessages(visible)`（另一套分母、且不裁剪不选择）。
+   * 真机实测的后果：面板上同时写着 `23,678 / 115,200 tokens 21%` 与
+   * 「压力等级：临界」+「🔴 上下文即将满」—— 用户看到的是自相矛盾的两个结论。
+   * 现在两者都由 `summarizeDisplayPressure` 从**同一对数字**导出，
+   * 这种矛盾在构造上不可能再出现（门禁 `context-monitor-pressure.test.ts`）。
+   */
+  const display = summarizeDisplayPressure(budget.used, budget.available);
+  const usagePercent = display.percent;
+  const pressure = display.level;
   const pressureColor = pressure === 0 ? "var(--success)"
     : pressure === 1 ? "var(--info)"
     : pressure === 2 ? "var(--warning)"
@@ -379,7 +400,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       );
       const b = contextManager.calculateBudgetFromMessages(visible as any[]);
       setBudget({ ...b, used: usedTokens, available: budgetTokens, remaining: Math.max(0, budgetTokens - usedTokens) });
-      setPressure(contextManager.getPressureLevelFromMessages(visible as any[]));
+      // 第 72 轮：不再单独 setPressure —— 压力等级由渲染时的 summarizeDisplayPressure 导出
     } catch (e) {
       // 失败必须可见：既有上报通道（kind=action：这次压缩没生效）+ 组件内提示
       const detail = e instanceof Error ? e.message : String(e);
