@@ -258,6 +258,30 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     });
   }
 
+  /**
+   * 第 115 轮（O-25）：等到「延后注册」的六批工具**真正进表**。
+   *
+   * 背景：这些模块是用 `import(spec).then(注册)` 注册的 —— **fire-and-forget，没有任何等待点**。
+   * 后果（第 114 轮量到的直接证据）：`src/core/agent-teams/tools.ts` 的函数覆盖率会在
+   * **24.13% / 62.06%** 之间跳，取决于那次动态 import 有没有在测试结束前跑完；
+   * 放到真机上就是"引擎刚建好就发第一条消息时，这六批工具可能还没进工具表"。
+   *
+   * 实现说明（为什么"再 import 一次"就够）：ES 模块注册表对同一个说明符返回**同一个 promise**，
+   * 而我们的 `.then` 排在原来的注册回调**之后** ⇒ 我们这个 promise resolve 时，
+   * 那些注册回调一定已经跑过（成功、失败都算落定，所以用 `allSettled`）。
+   * 这样不必去改六条链的写法，也不会漏掉任何一种失败分支。
+   */
+  async whenToolsReady(): Promise<void> {
+    await Promise.allSettled([
+      import("./tools/subagent-tools"),
+      import("../session"),
+      import("../squad/squad-tools"),
+      import("../issue/issue-tools"),
+      import("../agent-teams/tools"),
+      import("../computer-use/computer-use"),
+    ]);
+  }
+
   /** Register cross-session delegation tools (delegate_to_session, wait_for_delegation, etc.) */
   private setupDelegationTools() {
     import("../session").then(({
@@ -895,6 +919,12 @@ Report earlier as well whenever a partial finding changes what that agent should
       reasoningEffort?: "low" | "medium" | "high" | "ultra";
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
+    /*
+     * 第 115 轮（O-25）：先等「延后注册」的六批工具落定，再开始构建请求。
+     * 否则第一轮对话的工具表可能缺项（squad / issue / agent-teams / computer-use 全是
+     * fire-and-forget 的动态 import）。已 resolve 时这里只是一个 microtask 的开销。
+     */
+    await this.whenToolsReady()
     // 直接使用 getAgenticLoop — getAgenticLoop 内部已有 ctx.get('agentLoop') 委托逻辑
     // （防止无限递归）
     let loop: AgenticLoop
