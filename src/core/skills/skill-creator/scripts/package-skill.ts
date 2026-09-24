@@ -5,19 +5,24 @@
  * containing all files (excluding node_modules and .git).
  *
  * Usage:
+ *   node package-skill.ts <path-to-skill-folder> [output.zip]   (Node ≥ 22.18)
  *   npx tsx package-skill.ts <path-to-skill-folder> [output.zip]
+ *
+ * 第 97 轮：本文件原来**无条件**在模块顶层调 `main()`（import 即执行），且兄弟 import 没有
+ * `.ts` 后缀 ⇒ 原生 `node` 跑不起来。现在同样走 `is-main.ts` 的入口判定。
  *
  * IP 声明：本脚本为 Codem 项目原创。
  */
 
 import * as fs from "fs";
 import * as path from "path";
-import { validateSkill } from "./quick-validate";
+import { isMainModule } from "./is-main.ts";
+import { validateSkill } from "./quick-validate.ts";
 
 async function main() {
   const skillDir = process.argv[2];
   if (!skillDir) {
-    console.error("Usage: npx tsx package-skill.ts <path-to-skill-folder> [output.zip]");
+    console.error("Usage: node package-skill.ts <path-to-skill-folder> [output.zip]");
     process.exit(1);
   }
 
@@ -81,7 +86,9 @@ async function main() {
   console.log(`\n✅ Skill packaged: ${outputPath} (${sizeKB} KB)`);
 }
 
-main().catch((err) => {
-  console.error(`Error: ${err.message}`);
-  process.exit(1);
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  });
+}

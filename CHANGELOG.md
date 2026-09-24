@@ -2,6 +2,118 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [未发布] 第 97 轮 - 2026-09-24 — 清掉一段「死且坏」的活动时间线；slot 声明与 skill-creator 脚本补上真门禁；顺手修好 5 个**从来没跑起来过**的技能脚本
+
+> **本轮不出包**（装机版仍是 1.16.143）。判据不是"感觉没有用户可见变更"，而是量出来的：
+> 本轮唯一改到的运行时代码是**删掉一个全仓无引用的死函数**（零行为变化），其余改动落在
+> 测试、仓库工具与技能仓内工具上 —— 且 `dist/` 里**一个字符串都没有**技能脚本的痕迹
+> （`Get-ChildItem dist -Recurse | Select-String 'quick-validate|run-eval.ts|aggregate-benchmark'` ⇒ none），
+> `src-tauri/tauri.conf.json` 也没有 `resources` 条目 ⇒ 这些脚本**不在装机包内**。
+> 因此它们坏了不影响用户，修好了也不该占用一个版本号。**下一轮有用户可见修复时再一起出包。**
+
+### ① 删除「死且坏」的 `buildActivityTimeline`（零行为变化）
+
+`src/core/llm/run-status-tracker.ts` 里有一整块活动时间线渲染逻辑（`buildActivityTimeline` +
+`ActivityItem` / `ActivityGroup` 两个类型），**全仓没有任何调用方**，而且**本身就是坏的**：
+
+- 它读的字段在 `RunStatus` 上不存在（`status.activities` / `status.groups` 一类），
+  一旦真被接上就是 `undefined.map` ⇒ 直接抛；
+- 界面上真正在用的活动时间线是另一条路（`App.tsx` 的 run bar 直接读 `createRunStatus` 的字段）。
+
+处置：删掉函数与两个类型（**-77 行**），并把两处**指着它**的陈旧注释改成当前事实
+（`src/App.tsx` 约 5224 行、`src/styles/codem-ui.css` 约 900 行）。`run-status-tracker.ts`
+现在只剩活着的那批纯函数。
+
+### ② `run-status-tracker` 从 0 覆盖变成有门禁（RUN-1…6）
+
+新增 `src/test/run-status-tracker.test.ts`（6 条）：`createRunStatus` 的初值、`phaseLabel`/`phaseIcon`
+的四相映射、`formatRunDuration` 的**边界**（999 ⇒ 「刚刚」、1000 ⇒ 「1秒」、60000 ⇒ 「1分0秒」、
+3600000 ⇒ 「1时0分」）、`getRunElapsed`、以及 `shouldShowRunBar` 的语义
+（`completed` 只在 `startedAt !== null` 时成立 —— 这是"跑完了但没记开始时间就不该显示"的那条判据）。
+
+### ③ slot 声明从「一长串字符串」变成**真门禁**（SLOT-1…5，变异 8/8）
+
+`src/core/slots/declare-slots.ts`（85 个槽位声明）此前 0 覆盖。它不是文档而是**承重结构**：
+
+- `SlotCore.register()` 对**未声明**的槽位直接 `throw`（`slots/index.ts:168`）；
+- `SlotCore.entriesOfSlot()` 对**没有 spec** 的 key 返回空（`slots/index.ts:269`）。
+
+新增 `src/test/declare-slots.test.ts`：用**真实 `SlotCore`** 跑声明，再拿源码里的
+`<SlotBridge>` / `<SlotListBridge>` 出口逐一对账（**出口 ⊆ 声明**），并锁住第 45 轮清理过的
+死声明 `app.model-selector` 不回归。判据里两处必须踩过的坑都写进了注释：
+
+1. **注释里原样写着反例** —— `declare-slots.ts` 与 `ui-model-selection-provider.ts` 的说明文字里就
+   写着 `<SlotBridge name="app.model-selector">`，不剥注释会报**假阳性**（第一版正是如此）；
+2. `name={TASK_CENTER_SUBAGENTS_SLOT}` 这类**常量出口**必须解析（否则门禁漏掉三个真实出口）。
+
+变异自证 `8/8`（`.preview-shot/mutate-declare-slots.mjs`：删声明 / 改 owner / 关掉剥注释 /
+让扫描器扫空 / 死声明复活 / 常量指向不存在的槽位）。
+
+### ④ 内置 `skill-creator` 的 5 个 CLI 脚本**从来没跑起来过**（已修，仓库工具）
+
+实测（本轮第一次真的去跑它们）：**5 个脚本全部第一步就崩**。
+
+```
+$ npx tsx src/core/skills/skill-creator/scripts/run-eval.ts --skill ...
+ReferenceError: require is not defined in ES module scope, you can use import instead
+    at .../run-eval.ts:164
+```
+
+根因：入口判定写的是 CJS 的 `if (require.main === module)`，而仓库根 `package.json`
+是 `"type": "module"`；`package-skill.ts` 更直接 —— 模块顶层**无条件** `main()`（import 即执行）。
+`pnpm/tsc` 都不会报这个错（`@types/node` 声明了全局 `require`），只有**真的运行**才会暴露。
+
+修法：新增 `scripts/is-main.ts`（`isMainModule(import.meta.url)`，Windows 路径大小写不敏感），
+5 个脚本统一走它；兄弟 import 补 `.ts` 后缀（`allowImportingTsExtensions: true`），
+于是 `node <script>.ts`（Node ≥ 22.18 原生跑 TS）与 `npx tsx` **两种方式都能跑**；
+用法串也从 `npx tsx …` 改成 `node …`（少一个网络依赖）。
+
+新增 `src/test/skill-creator-scripts.test.ts`（18 条），其中三条是**纯函数测试抓不到**的那一层：
+
+- **CLI-1**：真的 `spawn` 子进程跑 `quick-validate.ts` / `package-skill.ts`（校验合法技能目录 ⇒
+  退出码 0 + 印 ✅；打包 ⇒ 产出真 zip，头两字节 `PK`），并断言 5 个脚本**无参数时印用法且 exit 1**；
+- **CLI-2**：静态门禁 —— 全仓 `src/**` 不再有 `require.main === module`（剥注释后再判），
+  且该目录每个脚本都走 `isMainModule(import.meta.url)` + 相对 import 带 `.ts` 后缀；
+- **CLI-3**：`await import(script)` 时 CLI 体**一行都不执行**（入口判定不是摆设）。
+
+纯函数侧同时把 4 个脚本从 0 覆盖拉到有覆盖：`validateSkill`（合法/缺 SKILL.md/缺 name+description+
+空正文/只是 warning 四态）、`loadEvals`/`getEvalCase`/`validateSkillStructure`/`saveEvalMetadata`/
+`saveTiming`/`saveMetrics`、`packageSkill`（**断言 zip 里真的排除了 `node_modules` 与 `.git`**）、
+`aggregateBenchmark`（两组配置的通过率/耗时/token 与「+50% 提升」说明）、`generateReviewHtml`
+（自包含 HTML 含技能名/提示词/两侧输出）。变异自证 `8/8`
+（`.preview-shot/mutate-skill-creator-scripts.mjs`：退回 CJS 写法 / 入口判定恒 false /
+去掉 `.ts` 后缀 / 判定恒 true / 校验器恒 valid / 提升判定阈值改掉）。
+
+`SKILL.md` 也补了一节对照表说明这 6 个脚本的用法 —— **并明确写出它们不在装机包里**
+（在仓库里开发技能时才用），避免再造一个"看着能用、其实路径不存在"的坑。
+
+### ⑤ 重复实现清理：`buttonTags` 归到共用底层（行为等价已差分证明）
+
+第 95 轮抽出 `tools/ui-audit/jsx-scan.mjs` 时只改了 labeled-inputs 扫描器，
+`icon-button-scan.mjs` 里**仍留着一份**自己的字符遍历（jscpd 一直在报
+`icon-button-scan.mjs ↔ jsx-scan.mjs` 克隆）。本轮改为复用 `findTags`。
+
+**等价性不是靠"测试还是绿的"证明的**（扫描结果本来就是 0 处，0 对 0 恒等）：
+`.preview-shot/_diff-button-tags.mjs` 把**旧实现内联回来**，对 217 个生产 tsx 文件逐一比对
+`{start,end,tag}` 三元组序列 —— **937 个 button 标签、不一致文件 0**，并用
+`onClick={() => …}`（`=>` 陷阱）做反向对照。jscpd 克隆数 **171 → 170**。
+
+### ⑥ 覆盖率盘点：零覆盖 **13 → 6 个文件**（1251 → 710 行）
+
+| 范围 | 第 96 轮 | 第 97 轮 |
+| --- | ---: | ---: |
+| ≥50 行的生产文件 | 182 个 | 181 个（`run-status-tracker.ts` 删短后不足 50 行） |
+| **行覆盖 0%** | **13 个 / 1251 行 / 1352 语句** | **6 个 / 710 行 / 759 语句** |
+| 行覆盖 <20% | 29 个 / 2589 行 | 30 个 / 2658 行 |
+
+本轮清掉的 7 个：`slots/declare-slots.ts`、`llm/run-status-tracker.ts`、
+`theme/contrast-checker.ts`（第 96 轮已修）与 skill-creator 的 4 个脚本（另加新文件 `is-main.ts`）。
+剩下的 6 个是 `knowledge`（4 个 / 536 行）与 `llm`（2 个 / 174 行），清单在 GAP-LIST 的 O-21。
+
+**实测（本轮收尾）**：全量 **389 文件 / 6162 通过 / 16 跳过 / 0 失败**；`tsc` **0**；
+`npm run verify` 退出码 **0**（覆盖率棘轮 + **按文件地板 309 个文件** + knip 棘轮 + jscpd **170 clones**）；
+`npm run audit` **12 道 exit 0**。
+
 ## [1.16.143] - 2026-09-24 — 覆盖率有了**按文件的地板**（309 个文件）；顺手把「三套皮肤对比度」这个**写了却从没被用过**的能力变成门禁；设置滑块补 24px 命中带
 
 ### ① 按文件覆盖率地板（O-6 关闭）

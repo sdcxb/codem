@@ -897,8 +897,8 @@
 
 /* 第 62 轮删除：Activity Timeline 的整套样式 ——
    `components/ActivityTimeline.tsx` 从未被任何界面渲染（无人 import），已作为遗留物删除。
-   活动时间线的**数据**仍由 `core/llm/run-status-tracker.ts::buildActivityTimeline()` 产出，
-   但它的呈现走别的路径（本段样式只服务那个已删组件）。 */
+   第 97 轮补：它当年的数据源 `core/llm/run-status-tracker.ts::buildActivityTimeline()` 也删了
+   （同样无消费方，且实现是半成品）。本段样式与那个函数都已不存在，保留此注只为历史可溯。 */
 
 
 /* ========== 7. Tool Call Card / Group — Pill Style (aligned with wecode) ========== */

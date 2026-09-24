@@ -6,13 +6,18 @@
  * and token usage for each configuration (with_skill vs without_skill).
  *
  * Usage:
+ *   node aggregate-benchmark.ts <workspace>/iteration-N --skill-name <name>   (Node ≥ 22.18)
  *   npx tsx aggregate-benchmark.ts <workspace>/iteration-N --skill-name <name>
+ *
+ * 第 97 轮：入口判定原来写成 `require.main === module`（CJS 写法，在 `"type": "module"` 下必崩），
+ * 现在统一走 `is-main.ts`。
  *
  * IP 声明：本脚本为 Codem 项目原创，参考了通用 benchmark 聚合模式。
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import { isMainModule } from "./is-main.ts";
 
 interface GradingResult {
   expectations: Array<{ text: string; passed: boolean; evidence: string }>;
@@ -272,10 +277,10 @@ export function benchmarkToMarkdown(benchmark: Benchmark): string {
 
 // ========== CLI Entry Point ==========
 
-if (require.main === module) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.length < 1) {
-    console.error("Usage: npx tsx aggregate-benchmark.ts <workspace>/iteration-N --skill-name <name>");
+    console.error("Usage: node aggregate-benchmark.ts <workspace>/iteration-N --skill-name <name>");
     process.exit(1);
   }
 

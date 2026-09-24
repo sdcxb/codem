@@ -5,14 +5,19 @@
  * produces a self-contained HTML file for the user to review results.
  *
  * Usage:
+ *   node generate-review.ts <workspace>/iteration-N --skill-name <name> [--static <output.html>]   (Node ≥ 22.18)
  *   npx tsx generate-review.ts <workspace>/iteration-N --skill-name <name> [--static <output.html>]
+ *
+ * 第 97 轮：入口判定原来写成 `require.main === module`（CJS 写法，在 `"type": "module"` 下必崩），
+ * 现在统一走 `is-main.ts`。
  *
  * IP 声明：本脚本为 Codem 项目原创，参考了通用 eval viewer 模式。
  */
 
 import * as fs from "fs";
 import * as path from "path";
-import { aggregateBenchmark, benchmarkToMarkdown } from "./aggregate-benchmark";
+import { isMainModule } from "./is-main.ts";
+import { aggregateBenchmark, benchmarkToMarkdown } from "./aggregate-benchmark.ts";
 
 interface ReviewData {
   skillName: string;
@@ -219,10 +224,10 @@ export function generateReviewHtml(data: ReviewData): string {
 
 // ========== CLI Entry Point ==========
 
-if (require.main === module) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.length < 1) {
-    console.error("Usage: npx tsx generate-review.ts <workspace>/iteration-N --skill-name <name> [--static <output.html>]");
+    console.error("Usage: node generate-review.ts <workspace>/iteration-N --skill-name <name> [--static <output.html>]");
     process.exit(1);
   }
 

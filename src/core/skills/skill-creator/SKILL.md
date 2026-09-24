@@ -241,3 +241,29 @@ When the skill is complete, package it as a .zip file:
 - Include SKILL.md and all bundled resources
 - Validate the structure
 - Present to user for installation
+
+## Bundled Scripts (repo tooling — run these from the repository checkout)
+
+These deterministic helper scripts live **inside the Codem repository**
+(`src/core/skills/skill-creator/scripts/`). They are **not** copied into the user's skills
+directory and are **not** part of the installed app bundle — they are developer tooling for
+building and benchmarking skills while working in this repo.
+Run them with `node <script>.ts` (Node ≥ 22.18 strips TypeScript natively) or
+`npx tsx <script>.ts` on older Node.
+
+| Step | Command | What it does |
+|------|---------|--------------|
+| Validate | `node scripts/quick-validate.ts <path-to-skill>` | Checks SKILL.md frontmatter (`name`/`description`), non-empty prompt body, bundled resources, size. Exit 1 when invalid. |
+| Prepare an eval | `node scripts/run-eval.ts --skill <path-to-skill> --eval-id <id> --output <dir>` | Reads `evals/evals.json`, writes `eval-<id>/eval_metadata.json` and creates the `outputs/` dir. |
+| Grade / record | write `eval-<id>/<config>/grading.json` + `timing.json` per `references/schemas.md` (`<config>` = `with_skill` \| `without_skill`) | This is what the aggregator reads. |
+| Aggregate | `node scripts/aggregate-benchmark.ts <workspace>/iteration-N --skill-name <name>` | Produces `benchmark.json` + `benchmark.md` (pass rate with/without the skill, timing, tokens, non-discriminating assertions). |
+| Review page | `node scripts/generate-review.ts <workspace>/iteration-N --skill-name <name> [--static <out.html>]` | Self-contained HTML review page for human sign-off. |
+| Package | `node scripts/package-skill.ts <path-to-skill> [output.zip]` | Validates first, then zips the skill (skips `node_modules` / `.git`). |
+
+> Fixed in v1.16.144 (repo tooling, not a shipped-app behavior): every entry point used to guard
+> with `require.main === module` (CJS) inside a `"type": "module"` package, so **each script died
+> immediately** with `ReferenceError: require is not defined in ES module scope`. They now share
+> `scripts/is-main.ts` (`isMainModule(import.meta.url)`), and `src/test/skill-creator-scripts.test.ts`
+> spawns real processes so this cannot silently rot again.
+
+

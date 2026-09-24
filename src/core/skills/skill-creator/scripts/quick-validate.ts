@@ -8,13 +8,18 @@
  * - No obvious issues (missing references, oversized files)
  *
  * Usage:
- *   npx tsx quick-validate.ts <path-to-skill>
+ *   node quick-validate.ts <path-to-skill>       (Node ≥ 22.18)
+ *   npx tsx quick-validate.ts <path-to-skill>    (旧 Node)
+ *
+ * 第 97 轮：入口判定原来写成 `require.main === module`（CJS 写法，在 `"type": "module"` 下必崩），
+ * 现在统一走 `is-main.ts`。
  *
  * IP 声明：本脚本为 Codem 项目原创。
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import { isMainModule } from "./is-main.ts";
 
 interface ValidationResult {
   valid: boolean;
@@ -181,10 +186,10 @@ export function validateSkill(skillDir: string): ValidationResult {
 
 // ========== CLI Entry Point ==========
 
-if (require.main === module) {
+if (isMainModule(import.meta.url)) {
   const skillDir = process.argv[2];
   if (!skillDir) {
-    console.error("Usage: npx tsx quick-validate.ts <path-to-skill>");
+    console.error("Usage: node quick-validate.ts <path-to-skill>  (或 npx tsx quick-validate.ts <path-to-skill>)");
     process.exit(1);
   }
 

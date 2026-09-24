@@ -5,13 +5,19 @@
  * This is a standalone script that can be executed via `npx tsx` or compiled.
  *
  * Usage:
- *   npx tsx run-eval.ts --skill <path> --eval-id <id> --output <dir>
+ *   node run-eval.ts --skill <path> --eval-id <id> --output <dir>      (Node ≥ 22.18)
+ *   npx tsx run-eval.ts --skill <path> --eval-id <id> --output <dir>   (旧 Node / 不想依赖原生 TS)
+ *
+ * 第 97 轮：入口判定原来写成 `require.main === module`（CJS 写法），而仓库是
+ * `"type": "module"` ⇒ 一运行就 `ReferenceError: require is not defined`。
+ * 现在统一走 `is-main.ts`（见该文件头部的实测记录）。
  *
  * IP 声明：本脚本为 Codem 项目原创，参考了通用 eval 框架模式。
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import { isMainModule } from "./is-main.ts";
 
 interface EvalCase {
   id: number;
@@ -161,14 +167,14 @@ export async function packageSkill(skillDir: string, outputPath: string): Promis
 
 // ========== CLI Entry Point ==========
 
-if (require.main === module) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const skillIdx = args.indexOf("--skill");
   const evalIdx = args.indexOf("--eval-id");
   const outputIdx = args.indexOf("--output");
 
   if (skillIdx === -1 || evalIdx === -1 || outputIdx === -1) {
-    console.error("Usage: npx tsx run-eval.ts --skill <path> --eval-id <id> --output <dir>");
+    console.error("Usage: node run-eval.ts --skill <path> --eval-id <id> --output <dir>");
     process.exit(1);
   }
 

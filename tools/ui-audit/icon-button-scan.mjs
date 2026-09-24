@@ -29,6 +29,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { findTags } from "./jsx-scan.mjs";
 
 /** 生产源码树（排除测试与技能自带脚本） */
 export function prodTsx(root) {
@@ -50,29 +51,16 @@ export function prodTsx(root) {
   return out.sort();
 }
 
-/** 找 `<button` 开始标签的边界（跳过引号与花括号里的 `>`） */
+/**
+ * 找 `<button` 开始标签的边界。
+ *
+ * 第 97 轮：这里原先**自己抄了一份**字符遍历（跳过引号、跟踪花括号）。第 95 轮把这段逻辑
+ * 抽成共用底层 `jsx-scan.mjs` 时只改了 labeled-inputs 扫描器，漏了这个文件 —— jscpd 因此一直
+ * 报 `icon-button-scan.mjs ↔ jsx-scan.mjs` 克隆。现在直接复用 `findTags`。
+ * 行为不变，只是多返回一个 `line` 字段（本扫描器用 slices 自己算行号，不受影响）。
+ */
 export function buttonTags(code) {
-  const out = [];
-  const re = /<button\b/g;
-  let m;
-  while ((m = re.exec(code))) {
-    let i = m.index + m[0].length;
-    let quote = null;
-    let brace = 0;
-    for (; i < code.length; i++) {
-      const c = code[i];
-      if (quote) {
-        if (c === quote && code[i - 1] !== "\\") quote = null;
-        continue;
-      }
-      if (c === '"' || c === "'" || c === "`") { quote = c; continue; }
-      if (c === "{") { brace++; continue; }
-      if (c === "}") { brace--; continue; }
-      if (c === ">" && brace === 0) break;
-    }
-    out.push({ start: m.index, end: i + 1, tag: code.slice(m.index, i + 1) });
-  }
-  return out;
+  return findTags(code, "button");
 }
 
 /** 取 className 的字面量值（模板串与花括号字符串都能取；动态拼接取不到就返回 ""） */

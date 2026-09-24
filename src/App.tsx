@@ -5222,8 +5222,11 @@ onClose={() => setCitationViewer(null)}
           活动时间线（原 ActivityTimeline 组件）需要 items prop，
           二者均通过各自的条件渲染路径使用，不能放在无 props 的 SlotBridge 中。
           ⚠️ 第 62 轮：`components/ActivityTimeline.tsx` 本身**从未被任何界面渲染**（无人 import），
-          已作为遗留物删除；活动时间线的数据由 `core/llm/run-status-tracker.ts` 的
-          `buildActivityTimeline()` 产出、由**别的**呈现路径消费。此处注释保留历史原因，不再指向那个组件。 */}
+          已作为遗留物删除。
+          ⚠️ 第 97 轮：它当年的数据源 `run-status-tracker.ts::buildActivityTimeline()` 也一并删掉了 ——
+          那个函数**同样没有任何消费方**（全仓只剩注释在提它），而且实现是半成品
+          （自身注释写着"简化"：`slice(cursor, cursor)` 恒为空、`cursor` 从不前进，
+          内容会被整段误挂到末尾的 "text-tail" 组）。此处保留历史原因，不再指向任何已删除的东西。 */}
 
 </div>
 </TooltipProvider>

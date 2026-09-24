@@ -93,77 +93,17 @@ export function shouldShowRunBar(status: RunStatus): boolean {
   return status.isRunning || status.phase === "error" || (status.phase === "completed" && status.startedAt !== null);
 }
 
-/**
- * 活动时间线构建器
- * 将评论文本与工具调用组按偏移量排序
+/*
+ * ## 第 97 轮：删掉 `buildActivityTimeline()`（连同 ActivityItem / ActivityGroup）
+ *
+ * 它原来是"活动时间线"的数据来源，但**没有任何消费方**：全仓 grep 只剩两处**注释**在提它
+ * （`App.tsx` 说"由别的呈现路径消费"、`codem-ui.css` 说"数据仍由它产出"），
+ * `项目功能树-全量.md` 也记着「当前无消费方（TrajectoryPanel 自绘轨迹）」。
+ *
+ * 而且它的实现是个**半成品**（源码里自己写着"简化"）：
+ * `const commentary = content.slice(cursor, cursor)` 恒为空串、`cursor = cursor` 从不前进，
+ * 于是内容会被整段塞进末尾的 "text-tail" 组 —— 谁真去调它，拿到的就是**错的归属**。
+ *
+ * 留着它有实际风险（不查调用方就调用 ⇒ 界面上的文本挂错位置），所以按本仓库"死代码要定性"的纪律删掉；
+ * 两处提到它的注释也已同步改掉（注释指向不存在的东西，与代码说谎是同一类问题）。
  */
-
-export interface ActivityItem {
-  id: string;
-  type: "tool" | "text";
-  content: string;
-  toolName?: string;
-  toolStatus?: "running" | "done" | "error";
-  startedAt?: number;
-  duration?: number;
-}
-
-export interface ActivityGroup {
-  items: ActivityItem[];
-  commentary: string;
-  hasFollowingText: boolean;
-}
-
-/**
- * 从消息内容中提取活动时间线
- */
-export function buildActivityTimeline(
-  content: string,
-  toolCalls: Array<{ id: string; name: string; status: string; startedAt?: number; duration?: number; result?: string }> = []
-): ActivityGroup[] {
-  if (!content && toolCalls.length === 0) return [];
-
-  // 简化实现：按工具调用位置分割文本
-  const groups: ActivityGroup[] = [];
-  let cursor = 0;
-
-  // 如果没有工具调用，返回单一文本组
-  if (toolCalls.length === 0) {
-    return [{
-      items: [{ id: "text-0", type: "text", content }],
-      commentary: content,
-      hasFollowingText: false,
-    }];
-  }
-
-  // 按工具调用顺序分割
-  for (let i = 0; i < toolCalls.length; i++) {
-    const tool = toolCalls[i];
-    const commentary = content.slice(cursor, cursor); // 简化：工具调用前的文本
-    groups.push({
-      items: [{
-        id: tool.id,
-        type: "tool",
-        content: tool.result || "",
-        toolName: tool.name,
-        toolStatus: tool.status as any,
-        startedAt: tool.startedAt,
-        duration: tool.duration,
-      }],
-      commentary,
-      hasFollowingText: i < toolCalls.length - 1,
-    });
-    cursor = cursor; // 简化
-  }
-
-  // 尾部文本
-  if (cursor < content.length) {
-    groups.push({
-      items: [{ id: "text-tail", type: "text", content: content.slice(cursor) }],
-      commentary: content.slice(cursor),
-      hasFollowingText: false,
-    });
-  }
-
-  return groups;
-}
