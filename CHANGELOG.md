@@ -3,7 +3,6 @@
 All notable changes to Codem will be documented in this file.
 
 ## [1.16.126] - 2026-09-24 — 走查第二阶段：右侧面板补上（此前一个都没量到）+ **上下文面板自相矛盾**（21% 却"即将满"）+ 长跑稳定性有了门禁
-
 > 目标里还没落地的两条：①「UI/UX 补全剩余面板的真机逐面板走查」——上一轮按容器找入口，
 > 而 `.right-rail` / `.panel-sidebar` 当时**根本不存在**，报告里那两行就是"容器不在"，
 > 也就是说右侧面板**一个都没量到**；②「长跑内存与句柄不涨的门禁」——之前只有一次性读数。
@@ -70,6 +69,20 @@ All notable changes to Codem will be documented in this file.
   ④ **探针差点拖错东西**：`[draggable="true"]` 抓到的是**侧栏会话行**（放开会调 `reorderSessions`），
   事后核查**没有造成改动**（三个会话 `sort_order` 全为 0，工具 `.preview-shot/_session-order.mjs`）；
   现在拖拽探针只允许拖"看板容器内部的卡片"，找不到就如实报"没测到"。
+
+### 📦 发布后补记（只改 .gitignore / 文档 / 用例，**不进安装包**）
+
+- **两份关键文档没进仓库**：用 `git ls-files docs` 查出 `docs/GAP-LIST.md` 与
+  `docs/ui-walk-round72.md` **未被跟踪**（`.gitignore` 里的 `docs/*.md` 把它们吞了）——
+  本机磁盘上有、仓库里没有。后果两条：① CHANGELOG / GAP-LIST 里"报告见
+  `docs/ui-walk-round72.md`"指向一个不存在的文件；② 别人 clone 下来，
+  门禁 `docs-current-gap-list.test.ts` 的 DOCS-1（"当前清单必须存在"）会**直接失败**。
+- 修法：补 `!docs/GAP-LIST.md` / `!docs/ui-walk-round72.md` 白名单 + 新增 **DOCS-6** 判据
+  （用 `git check-ignore -q` 的**退出码**：0 = 被忽略、1 = 没被忽略；
+  ⚠️ 不能用 `-v` 的 stdout 判断 —— 它会把 `!` 取反规则也打出来，第一版因此把"已放行"误判成"被忽略"）。
+  反向对照用刻意忽略的 `.preview-shot/`（必须判为忽略）。
+- 另附"模拟 clone"检查（`.preview-shot/_gate-fresh-clone.mjs`）：clone 后 27 份顶层 docs、
+  其中 7 份名字像"计划/缺口"，**全部带横幅并链回 GAP-LIST.md** ⇒ 门禁在 clone 条件下同样通过。
 
 ## [1.16.125] - 2026-09-24 — 按"执行四项建议 + 真机面板走查"收口：**确认框根本没弹、不可逆动作照做**（走查抓到的真机缺陷）+ 反馈唯一写路径（引擎侧也删）+ 覆盖率棘轮 + 唯一缺口清单 + knip 棘轮
 
