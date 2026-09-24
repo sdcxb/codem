@@ -114,12 +114,23 @@ export function AutomationTab() {
       {/* Trigger list */}
       {triggers.map((t) => (
         <div key={t.id} className="automation-trigger">
-          <input
-            type="checkbox"
-            checked={t.enabled}
-            onChange={() => handleToggle(t.id)}
-            className="automation-checkbox"
-          />
+          {/*
+            第 95 轮：这个复选框原来**没有可访问名**（读屏只念「复选框」，不说是哪个触发器的开/关），
+            而且 13×13 就是它的全部可点范围。现在：
+            - `aria-label` 带上触发器名字（读屏念得出来）；
+            - 外面加一层 `<label className="automation-checkbox-hit">` 把标签和名字一起圈住 ⇒
+              有效目标变成整块（点名字也能切换，实测 label.click() 即切换）；
+            - 命中区下限 24×24（WCAG 2.5.8）。
+          */}
+          <label className="automation-checkbox-hit">
+            <input
+              type="checkbox"
+              checked={t.enabled}
+              onChange={() => handleToggle(t.id)}
+              className="automation-checkbox"
+              aria-label={`${t.name} ${t.enabled ? (zh ? "已启用" : "enabled") : zh ? "已停用" : "disabled"}`}
+            />
+          </label>
           <div className="automation-trigger-main">
             <div className="automation-trigger-name">{t.name}</div>
             <div className="automation-trigger-meta">

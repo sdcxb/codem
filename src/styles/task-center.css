@@ -240,6 +240,19 @@
   font-size: var(--fs-sm);
 }
 .automation-checkbox { width: 16px; height: 16px; accent-color: var(--accent); }
+/*
+ * 第 95 轮：复选框外面加一层 label 当**命中区**（16×16 的原生控件点起来太小，
+ * WCAG 2.5.8 要求目标 ≥24×24）。点这一层里任意位置都能切换（已用 label.click() 实测确认），
+ * 读屏的可访问名来自 input 上的 aria-label（带触发器名字与当前开关状态）。
+ */
+.automation-checkbox-hit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  cursor: pointer;
+}
 .automation-trigger-main { flex: 1; min-width: 0; }
 .automation-trigger-name { font-weight: 600; color: var(--text-primary); }
 .automation-trigger-meta {

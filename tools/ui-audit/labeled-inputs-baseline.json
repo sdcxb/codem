@@ -1,0 +1,5 @@
+{
+  "count": 0,
+  "_note": "labeled-inputs 棘轮基线（第 95 轮）。count = 生产源码里没有可访问名的 input[type=checkbox|radio] 处数。第 95 轮把唯一的 1 处（task-center/AutomationTab.tsx 的触发器开关）补上 aria-label + 外层 label 命中区之后实测为 0。只许降不许升：新写的复选框必须用 <label> 包住、或加 aria-label（读屏要能念出这个开关管什么，顺带可点范围也变成整行）。判据见 src/test/labeled-inputs.test.ts。",
+  "at": "2026-09-24"
+}

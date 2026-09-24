@@ -4342,6 +4342,8 @@ color: var(--text-primary);
 
 .api-key-toggle {
   width: 36px;
+  /* 第 95 轮：高度下限 24（原来只有 19，低于 WCAG 2.5.8 的最小目标尺寸） */
+  min-height: 24px;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
@@ -10064,6 +10066,9 @@ border-bottom: 1px solid var(--accent);
   color: var(--text-secondary);
   cursor: pointer;
   padding: var(--space-2);
+  /* 第 95 轮：命中区下限 24×24（原来 22×22，差 2px） */
+  min-width: 24px;
+  min-height: 24px;
   border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
@@ -10266,6 +10271,9 @@ border-bottom: 1px solid var(--accent);
   color: var(--text-secondary);
   cursor: pointer;
   padding: var(--space-2);
+  /* 第 95 轮：命中区下限 24×24（原来 22×22，差 2px） */
+  min-width: 24px;
+  min-height: 24px;
   border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
