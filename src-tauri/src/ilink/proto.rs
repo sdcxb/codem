@@ -27,6 +27,13 @@ pub const APP_ID: &str = "bot";
 pub const SESSION_TTL_MS: i64 = 23 * 3600 * 1000;
 /// getupdates 单次客户端超时：服务端 hold ≤35s，客户端给 38s 余量。
 pub const POLL_TIMEOUT: Duration = Duration::from_millis(38_000);
+/// **探活**用的 getupdates 超时（第 154 轮，O-27 收尾）。
+///
+/// 为什么比 `POLL_TIMEOUT` 短得多：探活发生在**扫码登录流程里**（`binded_redirect`
+/// 分支），不能为了确认一张旧 token 而把登录界面卡 38 秒。
+/// 代价是"没有排队消息时它必然超时" —— 这**不是失败**：服务端 hold 住请求本身就说明
+/// 凭据被受理了（判据见 `login.rs::probe_session`）。
+pub const PROBE_TIMEOUT: Duration = Duration::from_millis(6_000);
 /// get_qrcode_status 长轮询客户端超时（服务端 hold 35s）。
 pub const QR_TIMEOUT: Duration = Duration::from_millis(35_000);
 /// QR 过期/配对码封禁后最多自动刷新次数【官方 login-qr.ts】。

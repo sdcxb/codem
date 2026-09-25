@@ -12,7 +12,10 @@
 // ============================================================
 
 use crate::ilink::poll;
-use crate::ilink::proto::{self, WechatSession, DEFAULT_BASE_URL, MAX_QR_REFRESH, QR_TIMEOUT};
+use crate::ilink::proto::{
+    self, WechatSession, BOT_AGENT, CHANNEL_VERSION, DEFAULT_BASE_URL, MAX_QR_REFRESH,
+    PROBE_TIMEOUT, QR_TIMEOUT,
+};
 use crate::ilink::store;
 use crate::ilink::{data_dir, now_ms, LinkState, LOGIN_TOTAL_TIMEOUT_MS};
 use std::sync::Arc;
@@ -98,6 +101,72 @@ async fn fetch_qr(
             g.last_error = Some("get_bot_qrcode 请求失败，将重试".into());
             Err(())
         }
+    }
+}
+
+/**
+ * 会话探活结果（第 154 轮，O-27 收尾）。
+ *
+ * 三态是刻意的：**"探活没做成" 与 "会话失效" 必须分得开**
+ * （把网络不通说成"凭据失效"，用户会白扫一次码；反过来说成"已连接"，
+ * 用户就回到改前那种"显示连着、消息一条都进不来"的状态）。
+ */
+enum ProbeOutcome {
+    /// 服务端受理了这次 getupdates（拿到响应，或被 hold 到本地超时）⇒ 凭据可用。
+    Alive,
+    /// 明确的失效信号（HTTP 401/403、errcode -14）⇒ 必须重新扫码。
+    Dead(String),
+    /// 判断不了（网络错、响应形状不认识）⇒ 既不判活也不判死。
+    Unknown(String),
+}
+
+/**
+ * 恢复旧会话前的**探活**：拿本地会话的发一条 getupdates 出去，看服务端认不认。
+ *
+ * 判据与 `poll::poll_loop` **完全一致**（一个事实一套判据，避免两处漂移）：
+ * - `Ok(v)` 且 `errcode == -14` ⇒ `Dead`；
+ * - `Ok(v)` 其它情况 ⇒ `Alive`（`ret != 0` 在轮询里也只是退避重试，不是"失效"）；
+ * - `Err(Timeout)` ⇒ `Alive`（长轮询被服务端 hold 住是本协议的**正常控制流**，
+ *   它恰恰证明请求被受理了 —— 用短超时探活的全部意义就在这里）；
+ * - `Err(HttpStatus(401|403))` ⇒ `Dead`；
+ * - 其余（`Network` / `Invalid` / 其它 HTTP 码）⇒ `Unknown`。
+ *
+ * ⚠️ 探活**刻意不推进游标、也不分发消息**：游标只有轮询循环才写盘，
+ * 所以探活期间服务端重发的消息会在下一次 getupdates 里原样取到（不会丢）。
+ */
+async fn probe_session(s: &WechatSession) -> ProbeOutcome {
+    let body = serde_json::json!({
+        "get_updates_buf": s.cursor,
+        "base_info": {
+            "channel_version": CHANNEL_VERSION,
+            "bot_agent": BOT_AGENT,
+        }
+    });
+    let base = s.effective_base();
+    match proto::post_json(
+        &base,
+        "/ilink/bot/getupdates",
+        &[],
+        body,
+        Some(&s.token),
+        PROBE_TIMEOUT,
+    )
+    .await
+    {
+        Ok(v) => {
+            if v.get("errcode").and_then(|c| c.as_i64()) == Some(-14) {
+                return ProbeOutcome::Dead("session_timeout(-14)".to_string());
+            }
+            ProbeOutcome::Alive
+        }
+        Err(proto::ApiError::Timeout) => ProbeOutcome::Alive,
+        Err(proto::ApiError::HttpStatus(401, _)) => {
+            ProbeOutcome::Dead("HTTP 401".to_string())
+        }
+        Err(proto::ApiError::HttpStatus(403, _)) => {
+            ProbeOutcome::Dead("HTTP 403".to_string())
+        }
+        Err(e) => ProbeOutcome::Unknown(format!("{}", e)),
     }
 }
 
@@ -274,23 +343,78 @@ pub async fn login_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
                 // 继续轮询（新 base 生效）。
             }
             Some("binded_redirect") => {
-                // 本地 token 命中已绑定 → 恢复旧会话（若有且未过期）。
+                /*
+                 * 本地 token 命中已绑定 → 恢复旧会话（若有且未过期）。
+                 *
+                 * ## 第 154 轮（O-27 收尾）：恢复前**先探活**
+                 *
+                 * `binded_redirect` 的语义只是"服务端认为这个 local_token 绑定过"，
+                 * 它**不保证那张 token 现在还能用**（服务端 24h 到期、用户在手机上解绑、
+                 * 配额/风控失效都会让它死掉）。改前这里直接 `state = Connected` +
+                 * `spawn_poll` —— 于是界面显示"已连接"，而轮询每轮 401/403 或被服务端判
+                 * `-14 session timeout`，用户看到的是"扫码没反应"。
+                 */
                 let sess = { st.inner.lock().await.session.clone() };
                 if let Some(s) = sess {
-                    if s.is_fresh(now_ms()) {
-                        let new_epoch = super::bump_epoch(&st).await;
-                        {
-                            let mut g = st.inner.lock().await;
-                            g.state = LinkState::Connected;
-                            g.session = Some(s);
-                            g.last_error = None;
-                        }
-                        let _ = super::emit_state(&app, &st).await;
-                        poll::spawn_poll(app.clone(), st.clone(), new_epoch);
+                    if !s.is_fresh(now_ms()) {
+                        // 本地 23h 判活已经过期：与 poll_loop 同一判据，直接判失效
+                        // （改前这里只是 sleep 1 秒再转一圈，直到 8 分钟登录总超时）
+                        super::expire_session(&app, &st, "旧会话已超过 23 小时有效期，请重新扫码").await;
                         return;
                     }
+                    match probe_session(&s).await {
+                        ProbeOutcome::Alive => {
+                            crate::runtime_log::append_line(
+                                "INFO",
+                                "[ilink] binded_redirect：旧会话探活通过（一次 getupdates 被服务端受理）→ 恢复轮询",
+                            );
+                            let new_epoch = super::bump_epoch(&st).await;
+                            {
+                                let mut g = st.inner.lock().await;
+                                g.state = LinkState::Connected;
+                                g.session = Some(s);
+                                g.last_error = None;
+                            }
+                            let _ = super::emit_state(&app, &st).await;
+                            poll::spawn_poll(app.clone(), st.clone(), new_epoch);
+                            return;
+                        }
+                        ProbeOutcome::Dead(why) => {
+                            // 凭据已死：**不许**再标 connected（它就是前两轮"扫了没反应"的真凶）
+                            crate::runtime_log::append_line(
+                                "WARN",
+                                &format!(
+                                    "[ilink] binded_redirect：旧会话探活失败（{}）→ 需要重新扫码",
+                                    why
+                                ),
+                            );
+                            super::expire_session(
+                                &app,
+                                &st,
+                                &format!("旧会话已失效（{}），请重新扫码", why),
+                            )
+                            .await;
+                            return;
+                        }
+                        ProbeOutcome::Unknown(why) => {
+                            /*
+                             * **"探活没做成" ≠ "会话失效"**（本仓库反复踩的那一类）：
+                             * 网络不通时既不许冒充"已连接"，也不许把可能还活着的会话清掉。
+                             * 保持现状 + 如实写进 last_error，下一轮状态轮询会再探一次
+                             * （登录总超时 480s 兜底，不会无限转）。
+                             */
+                            {
+                                let mut g = st.inner.lock().await;
+                                g.last_error =
+                                    Some(format!("旧会话探活未成功（{}），正在重试…", why));
+                            }
+                            let _ = super::emit_state(&app, &st).await;
+                            sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                    }
+                } else {
+                    sleep(std::time::Duration::from_secs(1)).await;
                 }
-                sleep(std::time::Duration::from_secs(1)).await;
             }
             _ => {
                 let mut g = st.inner.lock().await;
