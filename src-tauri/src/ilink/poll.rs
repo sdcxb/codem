@@ -107,7 +107,17 @@ async fn poll_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
                     }
                 }
                 let updates: UpdatesResponse =
-                    serde_json::from_value(v).unwrap_or_default();
+                    match serde_json::from_value(v.clone()) {
+                    Ok(u) => u,
+                    Err(e) => {
+                        {
+                            let mut g = st.inner.lock().await;
+                            g.last_poll_error = Some(format!("响应解析失败: {}", e));
+                        }
+                        crate::runtime_log::append_line("WARN", &format!("[ilink] 响应解析失败（消息会被静默丢掉）: {}", e));
+                        UpdatesResponse::default()
+                    }
+                };
 
                 // ret 非 0 或 errcode -14 → 会话异常
                 let ret = updates.ret;

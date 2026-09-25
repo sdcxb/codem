@@ -150,8 +150,7 @@ pub struct UpdatesResponse {
 /// 入站消息（message_type==1 用户消息才处理；2 是自身回声忽略）。
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct WeixinMessage {
-    #[serde(default)]
-    pub message_id: Option<String>,
+    #[serde(default, deserialize_with = "de_opt_string_or_number")]pub message_id: Option<String>,
     #[serde(default)]
     pub from_user_id: Option<String>,
     #[serde(default)]
@@ -471,4 +470,19 @@ mod tests {
         };
         assert!(!stale.is_fresh(now));
     }
+}
+
+/// 第 153 轮（O-27 真凶）：服务端 message_id 是**数字**，而结构体声明成 String ⇒ serde 报错
+/// ⇒ poll 里 unwrap_or_default() 把整批消息**静默丢掉**（实测：原始响应有 msgs，应用记 0 条）。
+fn de_opt_string_or_number<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(match v {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(s)) => Some(s),
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        Some(other) => Some(other.to_string()),
+    })
 }
