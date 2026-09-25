@@ -186,24 +186,51 @@ export function scanTree(root) {
   const findings = [];
   let regexCount = 0;
   let classCount = 0;
+  /**
+   * 扫到一半**消失**的文件（第 154 轮实测的偶发假红）。
+   *
+   * 现场：全量跑（并行 worker）时这条门禁红了，报
+   * `ENOENT: no such file or directory, open 'C:\mimo-gui\src\__etw_probe__.ts'`。
+   * 那个文件不是产品源码，而是 `src/test/event-type-write-sites.test.ts` 的
+   * EVENT-TYPE-WRITES-3 **临时写出来验证解析能力**的探针文件（用完 `finally` 删掉）——
+   * 它在 `src/` 下，于是与"扫整棵 src 树"的这条门禁撞上了：枚举到它时还在、读它时已经删掉。
+   *
+   * 处置：**枚举后被删掉的文件跳过并计数**（它已经不是文件了，没有任何东西可扫），
+   * 但要把跳过数**打出来** —— 静默跳过会让"为什么少扫了一个文件"变成新的谜。
+   * 判据没有被放宽：真源码文件不会自己消失，findings 的规则一个字没动。
+   */
+  const vanished = [];
   for (const file of files) {
     const rel = path.relative(root, file).replace(/\\/g, "/");
-    const r = scanSource(fs.readFileSync(file, "utf8"), rel);
+    let text;
+    try {
+      text = fs.readFileSync(file, "utf8");
+    } catch (e) {
+      if (e && e.code === "ENOENT") {
+        vanished.push(rel);
+        continue;
+      }
+      throw e;
+    }
+    const r = scanSource(text, rel);
     regexCount += r.regexCount;
     classCount += r.classCount;
     findings.push(...r.findings);
   }
-  return { files: files.length, regexCount, classCount, findings };
+  return { files: files.length - vanished.length, regexCount, classCount, findings, vanished };
 }
 
 const isCli = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 
 if (isCli) {
-  const { files, regexCount, classCount, findings } = scanTree(ROOT);
+  const { files, regexCount, classCount, findings, vanished } = scanTree(ROOT);
   if (JSON_OUT) {
-    console.log(JSON.stringify({ files, regexCount, classCount, findings }, null, 1));
+    console.log(JSON.stringify({ files, regexCount, classCount, findings, vanished }, null, 1));
   } else {
     console.log(`扫了 ${files} 个文件 / ${regexCount} 个正则字面量 / ${classCount} 个字符类`);
+    if (vanished.length > 0) {
+      console.log(`（扫描期间被删掉、已跳过 ${vanished.length} 个：${vanished.slice(0, 5).join("、")} —— 并发用例的临时文件）`);
+    }
     console.log(`非 BMP 字符类且无 u/v 标志：${findings.length} 处`);
     for (const f of findings) {
       console.log(`  🔴 ${f.file}:${f.line}  ${f.cp} ${JSON.stringify(f.ch)}  正则=${f.regex}`);

@@ -32,8 +32,9 @@
  * 由 `event-log.ts::append/appendBatch` 的写入侧守卫兜底（未注册 → 自动登记 + 如实上报）。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { readFileSync, readdirSync, statSync, writeFileSync, unlinkSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
+import { tmpdir } from "node:os";
 import ts from "typescript";
 import { isValidEventType, listCustomEventTypes } from "../core/storage/event-types";
 import { __resetUnknownEventTypeWarnings } from "../core/storage/event-log";
@@ -95,13 +96,32 @@ function getChecker(): ts.TypeChecker {
 }
 
 function collectWriteSites(): { sites: Site[]; scannedFiles: number } {
-  const program = getProgram();
-  const checker = getChecker();
+  return collectSitesFrom(getProgram(), getChecker(), (rel) => rel.startsWith("src/") && !rel.startsWith("src/test/") && !/\.d\.ts$/.test(rel));
+}
+
+/**
+ * 在一棵给定的 Program 上跑"事件写入点"访客（`relative` 用来给每个文件算显示名）。
+ *
+ * 抽出来是为了 **EVENT-TYPE-WRITES-3**：那条反向守卫要验证"同一个文件里的常量"能不能被解析成字面量，
+ * 而原来它**往 `src/` 里临时写一个探针文件、扫完再删**（`src/__etw_probe__.ts`）。
+ *
+ * ⚠️ 第 154 轮：那个写法在并行 worker 下会**弄红别人的门禁**（实测两次）——
+ * `regex-unicode-safety` 报 `ENOENT … src/__etw_probe__.ts`、`declare-slots` 也报过一次同类错误：
+ * 它们都在"遍历 `src/` 树 → 逐个读文件"，而探针文件在**它们的枚举与读取之间**被删掉了。
+ * 根因不是那些门禁太脆，而是**探针文件落在了被全仓扫描的源码树里**。
+ * 现在改成：探针与它的最小依赖放进**临时目录**（`mkdtempSync`），程序也只在这份临时树上建 ——
+ * **仓库源码树里一个字节都不写**（第 154 轮的修法；容错那条仍留在扫描器里兜底）。
+ */
+function collectSitesFrom(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  accept: (rel: string) => boolean,
+): { sites: Site[]; scannedFiles: number } {
   const sites: Site[] = [];
   let scannedFiles = 0;
   for (const sf of program.getSourceFiles()) {
     const rel = relative(ROOT, sf.fileName).replace(/\\/g, "/");
-    if (!rel.startsWith("src/") || rel.startsWith("src/test/") || /\.d\.ts$/.test(rel)) continue;
+    if (!accept(rel)) continue;
     scannedFiles++;
     const consts = constStringTable(sf);
 
@@ -186,24 +206,53 @@ describe("EVENT-TYPE-WRITES 写事件时用的类型名必须在权威集合里"
 
   it("EVENT-TYPE-WRITES-3（反向守卫）：门禁必须认得出『同一个文件里的常量』这种写法", () => {
     // 真机那个漏检就是这种写法：`type: TRAJECTORY_EVENT_TYPE`。
-    // 这一条用一个**临时文件**验证解析能力（否则门禁会在同一个坑上再摔一次）。
+    // 这一条用一棵**临时树**验证解析能力（否则门禁会在同一个坑上再摔一次）。
     //
-    // ⚠️ 超时给到 60s（与 -1 同）：这里 `resetProgramCache()` 之后要**重扫整棵产品源码树**
-    // （821 个文件）。带 `--coverage` 跑时（v8 插桩让编译/解析明显变慢）这个扫描
-    // 会超过默认的 5s —— 第 72 轮实测过一次 `Test timed out in 5000ms`。
-    // 这是**度量开销**，不是断言放宽：树扫不完照样红（-1 里"一个写入点都没找到"那条判据还在）。
-    const rel = "src/__etw_probe__.ts";
-    const abs = join(ROOT, rel);
-    const body = `import { getEventLog } from "./core/storage/event-log";\nconst PROBE_EVENT_TYPE = "etw_probe_bogus";\nexport function __probe(sid: string): void {\n  getEventLog().append(sid, PROBE_EVENT_TYPE, {});\n}\n`;
-    require("node:fs").writeFileSync(abs, body, "utf8");
-    resetProgramCache();
+    // ⚠️ 第 154 轮：临时文件**必须建在仓库外**。原来它写在 `src/__etw_probe__.ts`，
+    // 而全仓有几十个门禁/用例在"遍历 src 树 → 逐个读文件"：探针文件在它们的
+    // 枚举与读取之间被删掉 ⇒ 实测两次把别的门禁弄红（`ENOENT … src/__etw_probe__.ts`，
+    // 见 `regex-unicode-safety` 与 `declare-slots`）。现在临时树里放两件东西：
+    // 探针文件 + 一个**最小** `core/storage/event-log.ts` 桩（类型判据认的是它的路径后缀），
+    // 于是"同文件常量"这条规则照样被真正走一遍，而仓库源码树里一个字节都不写。
+    const tmpDir = mkdtempSync(join(tmpdir(), "etw-probe-"));
+    const stubDir = join(tmpDir, "core", "storage");
+    mkdirSync(stubDir, { recursive: true });
+    writeFileSync(
+      join(stubDir, "event-log.ts"),
+      `export class EventLog {\n` +
+        `  append(sessionId: string, type: string, payload: Record<string, unknown>): void {}\n` +
+        `  appendBatch(sessionId: string, events: Array<{ type: string }>): void {}\n` +
+        `}\n` +
+        `export function getEventLog(): EventLog { return new EventLog(); }\n`,
+      "utf8",
+    );
+    const probePath = join(tmpDir, "__probe__.ts");
+    writeFileSync(
+      probePath,
+      `import { getEventLog } from "./core/storage/event-log";\n` +
+        `const PROBE_EVENT_TYPE = "etw_probe_bogus";\n` +
+        `export function __probe(sid: string): void {\n` +
+        `  getEventLog().append(sid, PROBE_EVENT_TYPE, {});\n` +
+        `}\n`,
+      "utf8",
+    );
     try {
-      const { sites } = collectWriteSites();
+      const program = ts.createProgram([probePath, join(stubDir, "event-log.ts")], {
+        target: ts.ScriptTarget.ESNext,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        strict: false,
+        noEmit: true,
+        skipLibCheck: true,
+        types: [],
+      });
+      // 布尔判据：只要探针文件被扫到、且类型名被解析成字面量，这条守卫就成立
+      const { sites } = collectSitesFrom(program, program.getTypeChecker(), (rel) => !rel.endsWith(".d.ts"));
       const probe = sites.filter((s) => s.typeName === "etw_probe_bogus");
       expect(probe.length, "同文件常量写法必须被解析成字面量（真机的漏检点）").toBeGreaterThan(0);
       expect(probe[0].via).toContain("常量");
     } finally {
-      require("node:fs").unlinkSync(abs);
+      rmSync(tmpDir, { recursive: true, force: true });
     }
   }, 60_000);
 
