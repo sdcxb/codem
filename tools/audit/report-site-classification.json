@@ -2,11 +2,18 @@
  "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
  "_counts": {
-  "total": 217,
-  "triaged": 217,
+  "total": 218,
+  "triaged": 218,
   "pending": 0
  },
  "sites": [
+  {
+   "site": "src/core/session/executor.ts::executor.settleEmptyAssistant::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "收尾的空助手行没进事件日志 ⇒ persist（不是「发现」、也不是「动作没生效」：这一行只存在于消息存储里，而事件日志是投影重建的数据源，重建时它会消失）。第 154 轮 O-28 顺带把原来那句吞掉异常的 console.warn 换成了这个上报点。",
+   "round": 154
+  },
   {
    "site": "src/App.tsx::app.forkSession::#1",
    "kind": "action",

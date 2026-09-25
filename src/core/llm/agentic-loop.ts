@@ -184,6 +184,42 @@ export interface LoopConfig {
 
   /** (F5) Active notebook ID — when set, enables notebook knowledge mode */
   notebookId?: string;
+
+  /**
+   * 本轮助手消息 id 的**落库方**（第 154 轮，O-28）。
+   *
+   * ## 为什么必须有这个回调（真机取证：微信回合的 3 条"看得见但没入日志"）
+   *
+   * 助手消息的**行 id 是落库方生成的**：界面路径在 `App.tsx` 生成
+   * （`assistant-${Date.now()}[-迭代号]`），后台路径（委派 / 微信桥 / 手机续聊）
+   * 在 `executor.ts` 生成 —— 两侧都写进 `messages` 表，也都会写进
+   * `tool_calls.message_id`。
+   *
+   * 而引擎里一直有**自己的一套 id**（本文件 run() 开头的 `msg-${Date.now()+1}`，
+   * 以及每轮末的 `msg-${…+iteration+100}`），它只喂给 `ToolContext.messageId`。
+   * 于是 `EventLogFinalizeMiddleware` 写下的 `tool_call` / `tool_result` 事件里，
+   * `messageId` 是引擎自造的 `msg-…` —— **在 `messages` 表里根本不存在这一行**。
+   *
+   * 真机现场（1.16.152，`wx-…-im-wechat` 会话，副本库实测）：
+   * ```text
+   * messages 行            tool_calls.message_id     事件里的 messageId
+   * assistant-1790319154162  assistant-1790319154162  msg-1790319153390   ← 对不上
+   * assistant-1790319155690-2 assistant-1790319155690-2 msg-1790319155791 ← 对不上
+   * assistant-1790319157180-3 assistant-1790319157180-3 msg-1790319157282 ← 对不上
+   * ```
+   * 后果有两层：① 纯工具轮的助手行（正文为空，**设计上**不写 `assistant_text`，
+   * 靠工具事件记账）在维护自检里被判 `VISIBLE_BUT_NOT_RECORDED`（真机报"本次新产生 3 条"）；
+   * ② 更要紧的是**投影重建**：`event-projection.applyToolCall` 找不到那个 id 就
+   * **凭空建一条 `msg-…` 的助手行**，真实行反而消失 —— 事件日志与消息存储从此对不上。
+   *
+   * ## 契约
+   *
+   * - 回调应返回**当前这一轮助手消息在消息存储里的真实 id**；落库方还没建行时
+   *   **按需建行**并返回其 id（executor 侧的 `ensureAssistantMessage()` 就是这个语义）；
+   * - 返回空串 / 未接线 / 抛错 → 退回落库方缺省行为（引擎自造的 `msg-…`）；
+   * - 每个迭代**只问一次**（构建工具上下文时），所以落库方可以放心地在这里建行。
+   */
+  resolveAssistantMessageId?: (sessionId: string) => string | undefined;
 }
 
 /**
@@ -1386,7 +1422,9 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         warnOnce('svc:fileChangeTracker', '[AgenticLoop] Service "fileChangeTracker" not available from ctx, creating standalone instance');
       }
       this.fileChangeTracker = new FileChangeTracker(
-        cwd, sessionId, assistantMsgId, this.state.iteration,
+        // 同一套口径（O-28）：这一轮的改动记在**消息存储里那一行**的 id 上，
+        // 与 tool_calls / 事件日志一致；落库方没接线时才用引擎自造的 id。
+        cwd, sessionId, this.resolveMessageIdForTools(sessionId, assistantMsgId), this.state.iteration,
       );
       await this.fileChangeTracker.start();
       for await (const event of this.executeIteration(
@@ -1906,6 +1944,33 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       result.items.map((s) => s.title),
     );
     return { ok: true, message: result.message };
+  }
+
+  /**
+   * 取"本轮助手消息在**消息存储**里的真实 id"（第 154 轮，O-28）。
+   *
+   * `fallback` 是引擎自造的 `msg-…`：只在落库方没接线 / 返回空串 / 抛错时使用
+   * （子智能体与用例走的还是这条缺省路，行为与改前一致）。
+   *
+   * 为什么在**问的时候**才取、而不是在 run() 开头取一次：这个 id 由落库方在
+   * "看到本轮 `start` 事件"时才生成（见 executor.ts / App.tsx），工具执行发生在
+   * `start` 之后，所以此刻问到的就是本轮的真身。落库方若还没建行，
+   * 它的回调会按需建行并返回 id（executor 的 `ensureAssistantMessage()`）。
+   */
+  private resolveMessageIdForTools(sessionId: string, fallback: string): string {
+    const fn = this.config.resolveAssistantMessageId;
+    if (!fn) return fallback;
+    try {
+      const id = fn(sessionId);
+      return typeof id === "string" && id.length > 0 ? id : fallback;
+    } catch (e) {
+      /**
+       * 落库方抛错**不许**拖垮回合：这里退回引擎自己的 id（回合照常跑完），
+       * 但必须留痕 —— 静默退回正是"事件日志里的 id 又对不上"的复发形态。
+       */
+      console.warn("[AgenticLoop] resolveAssistantMessageId 回调抛错，本次退回引擎自造 id（事件里的 messageId 可能与消息行对不上）:", e);
+      return fallback;
+    }
   }
 
   private async *executeIteration(
@@ -2436,9 +2501,19 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     let cacheHitCount = 0;
           // Notify UI that we've transitioned from LLM streaming to tool execution
       yield { type: "llm_status", status: "executing_tools" };
+      /**
+       * ⚠️ 第 154 轮（O-28）：这里的 `messageId` **必须是消息存储里那一行的真实 id**。
+       *
+       * 它会被 `EventLogFinalizeMiddleware` 写进 `tool_call` / `tool_result` 事件的载荷，
+       * 而消费方（`runtime-invariants` 的"可见即已记录"、`event-projection.applyToolCall`）
+       * 都拿它去 `messages` 表里找那一行。用引擎自造的 `msg-…` 会**找不到**
+       * ⇒ 维护自检报缺口、投影重建凭空多出一条 `msg-…` 助手行。
+       * 真机取证与完整推理写在 `AgenticLoopConfig.resolveAssistantMessageId` 的注释里。
+       */
+      const toolMessageId = this.resolveMessageIdForTools(sessionId, assistantMsgId);
       const toolCtx: ToolContext = {
         sessionId,
-        messageId: assistantMsgId,
+        messageId: toolMessageId,
         cwd,
         // P1-6: Don't use ctx.abort — let each tool have its own abortController
         abort: undefined as any,

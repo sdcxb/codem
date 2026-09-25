@@ -917,6 +917,12 @@ Report earlier as well whenever a partial finding changes what that agent should
       userSelectedSkills?: string[];
       // Deep thinking: reasoning effort level (overrides agent default)
       reasoningEffort?: "low" | "medium" | "high" | "ultra";
+      /**
+       * 本轮助手消息 id 的**落库方**（第 154 轮，O-28）。返回消息存储里那一行的真实 id；
+       * 没建行时按需建行（executor 的 `ensureAssistantMessage()` 就是这个语义）。
+       * 不传 → 引擎自造 `msg-…`，事件里的 `messageId` 会与消息行对不上（见 agentic-loop 的注释）。
+       */
+      resolveAssistantMessageId?: (sessionId: string) => string | undefined;
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
     /*
@@ -929,6 +935,16 @@ Report earlier as well whenever a partial finding changes what that agent should
     // （防止无限递归）
     let loop: AgenticLoop
     loop = this.getAgenticLoop(agentId, sessionId)
+    /**
+     * 第 154 轮（O-28）：助手消息 id 的落库方回调，**必须无条件写**（包括写 `undefined`）。
+     *
+     * 为什么不能像上面几项那样 `if (options?.x)`：`AgenticLoop` 实例是**按会话池化复用**的
+     * （`getAgenticLoop`），上一轮装进去的回调闭包捕获的是**上一轮的局部变量**
+     * （`currentAssistantMsgId` / `assistantMsgId`）—— 这一轮若没传就"继承"上一个闭包，
+     * 工具事件会挂到**上一轮**的消息行上，比改前更糟。
+     * 显式写 `undefined` 覆盖掉它，语义是"这一轮没有落库方 → 退回引擎自造 id"。
+     */
+    loop.updateConfig({ resolveAssistantMessageId: options?.resolveAssistantMessageId });
     if (options?.onPermissionRequest) {
       loop.updateConfig({ onPermissionRequest: options.onPermissionRequest });
     }

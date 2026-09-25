@@ -120,6 +120,31 @@ export function checkVisibleRecordedInvariant(
     for (const msg of messages as Array<{ id: string; role?: string; content?: string | null }>) {
       const msgId = String(msg.id);
       if (projectedMessageIds.has(msgId)) continue;
+      /**
+       * ## 第三条口径收窄：`system` 行**不在**这条判据的范围内（第 154 轮，装机版复核时发现）
+       *
+       * 为什么必须收窄：对系统提示行来说"有事件记录"是**永远做不到**的事 ——
+       * 不是漏写，而是三条路径一致地不把它当一等公民：
+       * 1. 写侧（`message.ts::appendMessageTextEvent`，`user_message` / `assistant_text` 的**唯一**
+       *    写入点）第一行就是 `if (message.role !== "user" && message.role !== "assistant") return;`；
+       * 2. 重建侧（`event-log.ts::migrateMessagesToEvents`，唯一的"消息 → 事件"映射）同样只搬
+       *    `user` / `assistant` 两类行，`system` 行整类跳过；
+       * 3. 投影侧（`event-projection.ts`）的 `apply*` 只会产出 `user` / `assistant` / `tool`
+       *    三种角色的行 —— 事件日志里**没有任何事件类型**能投影出一条 `system` 行。
+       *
+       * 于是"系统行必须有事件"这条要求会**每一条系统行都报一次违规**，永远为真（≠ 有缺陷）：
+       * 真机取证（1.16.153，副本库只读打开）：库里 `system` 行 3 条、**3 条全被判违规**，
+       * 而其中一条是当天的委派回合失败时 executor 写的 `err-1790320962593-3axyi`
+       * （"Agentic 循环异常终止: too_many_errors" 的提示行）—— 维护自检当场报
+       * 「本次新产生 1 条缺口」，样例正是它。这正是第 45 轮修掉过的那类"口径差"：
+       * 判据恒红 ⇒ 真违规被淹没在噪声里（当时收窄的是"无正文的助手行"）。
+       *
+       * **收窄只限 `system`**：有正文的 `user` / `assistant` 行仍然必须有事件，
+       * 无正文的 `assistant` 行仍然必须有工具事件（另两条口径不变，反向对照见
+       * `feature-wire-tail-fixes.test.ts` 的 FWT-C1b/C1d 与
+       * `o28-assistant-event-wiring.test.ts` 的 O28-6）。
+       */
+      if (msg.role === "system") continue;
       /*
        * 口径收窄（见函数头）：无正文的助手消息**合法地**没有文本事件 ——
        * 它的事实是工具事件。**只有当那条工具事件也在**时才跳过；

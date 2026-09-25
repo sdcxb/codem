@@ -3279,6 +3279,15 @@ abortControllersRef.current.set(session.id, sessionAbort);
 
       let lastEvent: any = undefined;
       for await (const event of engine.process(session.id, message, cwd, undefined, {
+        /**
+         * 第 154 轮（O-28）：把界面路径这一轮的助手消息**真实 id** 交给引擎。
+         *
+         * 工具事件（`tool_call` / `tool_result`）的 `messageId` 由引擎写，消费方
+         * （维护自检的"可见即已记录"、事件投影）拿它去 `messages` 表里找那一行 ——
+         * 引擎自造的 `msg-…` 表里没有 ⇒ 维护自检报缺口、投影重建凭空多出一行。
+         * 后台路径（executor）同样接了这一个回调，两侧口径一致。
+         */
+        resolveAssistantMessageId: () => assistantMsgId,
         onPermissionRequest: (request) => {
           return new Promise((resolve) => {
             // Per-session: set permission for this specific session

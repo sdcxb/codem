@@ -16,6 +16,7 @@
 import type { LLMEngine } from "../llm";
 import type { LoopEvent } from "../llm/agentic-loop";
 import * as MessageStorage from "../storage/message";
+import { reportPersistFailure } from "../storage/persist-failure";
 import { retainToolResult } from "../storage/spill";
 import * as SessionStorage from "../storage/session";
 import { getSessionMessageBus } from "./bus";
@@ -306,14 +307,17 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       timestamp: Date.now(),
       status: "done",
     }, sessionId);
-
-    // C5: EventLog dual-write — user message
-    try {
-      getEventLog().append(sessionId, "user_message", {
-        messageId: userMsgId,
-        content: prefix + message,
-      });
-    } catch (e) { console.warn('[executor.ts]', e) }
+    /**
+     * ⚠️ 第 154 轮（O-28）：这里原来还有一次**显式的** `getEventLog().append(sessionId, "user_message", …)`。
+     *
+     * 它是历史遗留（C5 事件双写时代），而 `user_message` / `assistant_text` 早已有
+     * **唯一写入点**：`MessageStorage.appendMessageTextEvent`（由 `createMessage` /
+     * `updateMessage` 的定稿分支调用，按正文指纹去重，见 message.ts 的长注释）。
+     * 两处都写 ⇒ 真机副本库里每条用户消息 / 每条有正文的助手回复都留下**两条**事件
+     * （实测：`wx-…-im-wechat` 会话 `seq=8951/8952` 两条 `user_message`、
+     * `seq=8971/8972` 两条 `assistant_text`）。重复行没有信息量，只会污染
+     * `session-event-search` 的结果 —— 一个事实一个写入者。
+     */
 
     // 委派/后台任务同样遵循用户选择的安全模式（项目级 > 全局 > 默认 ask），
     // 不再硬编码 "auto" —— 否则用户在 UI 选择"完全访问"后委派任务仍被权限层拦截。
@@ -347,6 +351,18 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     };
 
     for await (const event of engine.process(sessionId, message, cwd, undefined, {
+      /**
+       * 第 154 轮（O-28）：把"本轮助手消息的**真实行 id**"交给引擎。
+       *
+       * 为什么必须给：工具事件（`tool_call` / `tool_result`）的 `messageId` 由引擎写，
+       * 而消费方（维护自检、事件投影）拿它去 `messages` 表里找那一行。引擎自造的
+       * `msg-…` 在表里**没有这一行** ⇒ 微信回合的三个纯工具轮助手行被判
+       * `VISIBLE_BUT_NOT_RECORDED`（真机 1.16.152 报"本次新产生 3 条"）。
+       *
+       * `ensureAssistantMessage()` 正是"拿到本轮的 id，没有行就建行"的语义：
+       * 模型一句话不说直接调工具时，它在这里建行（与被删掉的 tool_start 兜底同源）。
+       */
+      resolveAssistantMessageId: () => ensureAssistantMessage(),
       onPermissionRequest: onPermissionRequest || ((_req) => {
         // 默认策略：后台执行时若用户模式为 full 则放行；否则自动拒绝需要权限的操作
         if (effectiveSecurityMode === "full") {
@@ -505,21 +521,64 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       }
     }
 
-    // Finalize 最后的 assistant message
+    /**
+     * 收尾：把最后一条助手消息定稿（第 154 轮 O-28 修正）。
+     *
+     * ## 改前这里有**两次**写，而第二次是多余的
+     *
+     * 原来：① `updateMessage(…, {status:"done", content})`；② 紧接着再**显式** append
+     * 一条 `assistant_text`。① 走的就是**唯一写入点** `MessageStorage.appendMessageTextEvent`
+     * （`updateMessage` 的"状态落到终态"分支），它按正文指纹去重、已经写了同一条事件 ——
+     * 于是真机副本库里每条有正文的回复都留下**两条** `assistant_text`
+     * （实测 `wx-…-im-wechat` 会话 `seq=8971/8972`；用户/助手两侧各两条）。
+     * 而 ② 外面那句 `catch (e) { console.warn('[executor.ts]', e) }` 会把写入失败
+     * 吞成控制台里的一行字 —— O-28 排查时它一度是最可疑的一环（实测：三条缺口与它无关，
+     * 真因是工具事件挂的 messageId 不是消息行的 id，见 `engine.process` 上的说明）。
+     *
+     * ## 为什么还保留"空正文"那一次写入（**只在这一种形态下**）
+     *
+     * 唯一写入点**刻意**不给空正文的助手行写 `assistant_text`（纯工具轮的事实记在
+     * `tool_call` / `tool_result` 事件里，口径见 FWT-C1a）。但有一个角落它盖不住：
+     * **空正文、且一个工具都没调**的收尾行（模型只吐了 reasoning 就结束、或达到迭代上限）
+     * —— 这种行在事件日志里一条记录都没有，投影重建时**会凭空消失**，
+     * 正是 `runtime-invariants` 判 `VISIBLE_BUT_NOT_RECORDED` 的那一类（FWT-C1c）。
+     * 所以只有它补一条空 `assistant_text` 把自己钉住；有工具调用的空行由工具事件记账，不补。
+     */
     if (currentAssistantMsgId) {
       MessageStorage.updateMessage(currentAssistantMsgId, {
         status: "done",
         content: assistantContent,
         reasoning: reasoningContent || undefined,
       });
-      // C5: EventLog dual-write — assistant text
-      try {
-        const { getEventLog } = await import("../storage/event-log");
-        getEventLog().append(sessionId, "assistant_text", {
-          messageId: currentAssistantMsgId,
-          content: assistantContent,
-        });
-      } catch (e) { console.warn('[executor.ts]', e) }
+      if (!assistantContent) {
+        try {
+          const settled = MessageStorage.getMessage(currentAssistantMsgId);
+          if (settled && (settled.toolCalls?.length ?? 0) === 0) {
+            const ev = getEventLog().append(sessionId, "assistant_text", {
+              messageId: currentAssistantMsgId,
+              content: "",
+            });
+            /**
+             * `append` 在"端口没接手"时**不抛**，而是返回一条 `seq === 0` 的未落库事件
+             * （event-log.ts:226 的既定契约）—— 所以"没抛"不等于"写进去了"，
+             * 这里必须按 `seq` 判，并把失败按原话上报（别再退回 console.warn。
+             */
+            if (ev.seq === 0) throw new Error("事件未落库（seq=0，端口未接手）");
+          }
+        } catch (e) {
+          reportPersistFailure(
+            "executor.settleEmptyAssistant",
+            e,
+            `会话 ${sessionId} 的空助手行 ${currentAssistantMsgId} 在事件日志里没有记录`,
+            {
+              title: "存储：收尾的空助手行没进事件日志",
+              consequence:
+                "这一行**只存在于消息存储里**：事件日志是投影重建的数据源，重建时它会消失" +
+                "（运行时不变量的 VISIBLE_BUT_NOT_RECORDED 判的就是这种形态）。",
+            },
+          );
+        }
+      }
     }
 
     // 如果用户正在查看这个会话，刷新消息列表
