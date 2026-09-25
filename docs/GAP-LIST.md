@@ -63,6 +63,8 @@
 | 冷启动读数（装机版 1.16.125） | JS 堆 **42MB** / DOM **617** 节点 / 25 秒内控制台 error 0、exception 0（1 条 `[Engine] CLI mode: no account found` 属预期） | `.preview-shot/_verify-1125.mjs` |
 | **长跑门禁**（第 81 轮新增，已跑通） | 8 分钟 / 19 次采样 / **114 次面板切换**：堆 41→42MB、DOM 844 恒定、句柄 362→364、进程树 1266→1282MB（24 个 msedgewebview2）—— **无越界、无单调增长、且确有负载** | `node .preview-shot/stability-longrun.mjs --minutes 8 --interval 20`（判据与样本都在脚本里） |
 
+> 接手前先读 **`docs/HANDOFF.md`**（2026-09-25 交接单：机器/仓库状态、微信 iLink 协议要点与请求头、未关闭项的下一步、发布流程、纪律清单）。
+
 ## 二、当前**未关闭**的项
 
 | # | 项 | 现状（事实 + 数字） | 关闭它的条件 |
