@@ -64,20 +64,48 @@ async fn poll_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
             }
         });
         let base = session.effective_base();
-        let outcome = tokio::select! {
-            r = proto::post_json(
-                &base,
-                "/ilink/bot/getupdates",
-                &[],
-                body,
-                Some(&session.token),
-                POLL_TIMEOUT,
-            ) => r,
-            _ = st.poke.notified() => continue, // epoch 换代 → 顶部检查退出
-        };
+        {
+            let p = { st.inner.lock().await.polls };
+            if p <= 5 {
+                crate::runtime_log::append_line(
+                    "INFO",
+                    &format!(
+                        "[ilink] poll#{} 发起 getupdates（base={} cursor 前 16 位={}）",
+                        p,
+                        base,
+                        session.cursor.chars().take(16).collect::<String>()
+                    ),
+                );
+            }
+        }
+        /*
+         * 第 152 轮（O-27）：**去掉 poke 分支**。
+         * 原来这里是 tokio::select!{ 请求 , poke → continue }：poke 一到就 continue，
+         * **请求会被整轮跳过**；而 1.5 次/秒的空转速率正好等于循环末尾的 sleep(500ms)。
+         * 换代（logout/重登）由循环顶部检查 epoch 处理，长轮询自身有 38 秒超时，不会卡死。
+         */
+        let outcome = proto::post_json(
+            &base,
+            "/ilink/bot/getupdates",
+            &[],
+            body,
+            Some(&session.token),
+            POLL_TIMEOUT,
+        )
+        .await;
 
         match outcome {
             Ok(v) => {
+                {
+                    let p = { st.inner.lock().await.polls };
+                    if p <= 5 {
+                        let raw = serde_json::to_string(&v).unwrap_or_default();
+                        crate::runtime_log::append_line(
+                            "INFO",
+                            &format!("[ilink] poll#{} 原始响应: {}", p, raw.chars().take(300).collect::<String>()),
+                        );
+                    }
+                }
                 let updates: UpdatesResponse =
                     serde_json::from_value(v).unwrap_or_default();
 
@@ -123,6 +151,12 @@ async fn poll_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
 
                 // ---- 逐条分发 ----
                 let n_msgs = updates.msgs.as_ref().map(|m| m.len()).unwrap_or(0);
+                {
+                    let p = { st.inner.lock().await.polls };
+                    if n_msgs == 0 && p <= 20 {
+                        crate::runtime_log::append_line("INFO", &format!("[ilink] poll#{} 响应里 0 条消息", p));
+                    }
+                }
                 {
                     let mut g = st.inner.lock().await;
                     g.last_poll_error = None;
