@@ -123,6 +123,11 @@ pub struct IlinkState {
 }
 
 pub struct IlinkInner {
+    /// 第 151 轮（O-27）：轮询可观测性 —— 此前这条链路完全静默，出问题只能靠外部抓包
+    pub polls: u64,
+    pub last_poll_at: Option<u64>,
+    pub last_poll_error: Option<String>,
+    pub last_poll_msgs: u64,
     pub state: LinkState,
     pub qrcode: Option<String>,
     pub qrcode_url: Option<String>,
@@ -157,6 +162,10 @@ impl Default for IlinkInner {
             last_inbound_at: None,
             last_outbound_at: None,
             inbound_count: 0,
+            polls: 0,
+            last_poll_at: None,
+            last_poll_error: None,
+            last_poll_msgs: 0,
             outbound_count: 0,
             contexts: HashMap::new(),
             quota: HashMap::new(),
@@ -226,6 +235,10 @@ pub async fn emit_state(app: &AppHandle, st: &Arc<IlinkState>) -> Result<(), Str
         "last_inbound_at": g.last_inbound_at,
         "last_outbound_at": g.last_outbound_at,
         "inbound_count": g.inbound_count,
+        "polls": g.polls,
+        "last_poll_at": g.last_poll_at,
+        "last_poll_error": g.last_poll_error,
+        "last_poll_msgs": g.last_poll_msgs,
         "outbound_count": g.outbound_count,
         "peer_count": g.contexts.len(),
     });
@@ -311,6 +324,10 @@ pub async fn ilink_status(
         "last_inbound_at": g.last_inbound_at,
         "last_outbound_at": g.last_outbound_at,
         "inbound_count": g.inbound_count,
+        "polls": g.polls,
+        "last_poll_at": g.last_poll_at,
+        "last_poll_error": g.last_poll_error,
+        "last_poll_msgs": g.last_poll_msgs,
         "outbound_count": g.outbound_count,
         "peer_count": g.contexts.len(),
         "quota": g.quota.iter().map(|(k, q)| {
@@ -515,6 +532,61 @@ pub async fn ilink_send_text(
     }
 
     Ok(serde_json::json!({ "sent_chunks": sent, "total_chunks": chunks.len() }))
+}
+
+// ---- 轮询看门狗（第 151 轮 O-27）：会话有效却没在取数据 ⇒ 换代重拉 ----
+/// 每 30 秒检查一次：状态是 connected、有会话，但 **120 秒内没有任何一次成功轮询**
+/// （`last_poll_error` 非空或 `polls` 不涨）⇒ 换代并重新 spawn_poll。
+/// 起因：现场实测"绑定成功、服务端有排队消息，91 秒内应用一次都没去取"，而这条链路零日志无从定位；
+/// 与其猜，不如让它**自愈**，同时把过程记下来。
+pub fn spawn_watchdog(app: AppHandle, st: Arc<IlinkState>) {
+    tauri::async_runtime::spawn(async move {
+        let mut last_seen_polls: u64 = u64::MAX;
+        let mut stalled_rounds: u32 = 0;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            let (connected, has_session, polls, last_err, last_msgs) = {
+                let g = st.inner.lock().await;
+                (
+                    matches!(g.state, LinkState::Connected),
+                    g.session.is_some(),
+                    g.polls,
+                    g.last_poll_error.clone(),
+                    g.last_poll_msgs,
+                )
+            };
+            if !connected || !has_session {
+                last_seen_polls = polls;
+                stalled_rounds = 0;
+                continue;
+            }
+            if polls != last_seen_polls {
+                // 轮询在动：只要"有成功过"（或至少在推进）就继续观察
+                last_seen_polls = polls;
+                stalled_rounds = 0;
+                continue;
+            }
+            stalled_rounds += 1;
+            crate::runtime_log::append_line(
+                "WARN",
+                &format!(
+                    "[ilink] 看门狗：30 秒内轮询计数未推进（polls={} last_msgs={} last_err={:?}）第 {} 次",
+                    polls, last_msgs, last_err, stalled_rounds
+                ),
+            );
+            if stalled_rounds >= 4 {
+                // 120 秒没有任何推进 ⇒ 判定轮询已死，换代重拉
+                let epoch = {
+                    let mut g = st.inner.lock().await;
+                    g.epoch += 1;
+                    g.epoch
+                };
+                crate::runtime_log::append_line("WARN", &format!("[ilink] 看门狗：判定轮询停滞，重新拉起（epoch={}）", epoch));
+                poll::spawn_poll(app.clone(), st.clone(), epoch);
+                stalled_rounds = 0;
+            }
+        }
+    });
 }
 
 // ---- 启动恢复（setup 里调用）：有未过期会话 → 自动续连 ----

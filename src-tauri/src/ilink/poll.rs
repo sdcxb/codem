@@ -34,6 +34,13 @@ async fn poll_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
             return;
         }
 
+        // 第 151 轮（O-27）：每轮都记账，让"到底有没有在轮询"变成可读数字
+        {
+            let mut g = st.inner.lock().await;
+            g.polls += 1;
+            g.last_poll_at = Some(now_ms() as u64);
+        }
+
         // ---- 会话快照（不持锁跨 await）----
         let session: WechatSession = {
             let g = st.inner.lock().await;
@@ -115,6 +122,18 @@ async fn poll_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
                 }
 
                 // ---- 逐条分发 ----
+                let n_msgs = updates.msgs.as_ref().map(|m| m.len()).unwrap_or(0);
+                {
+                    let mut g = st.inner.lock().await;
+                    g.last_poll_error = None;
+                    g.last_poll_msgs = n_msgs as u64;
+                }
+                if n_msgs > 0 {
+                    crate::runtime_log::append_line(
+                        "INFO",
+                        &format!("[ilink] 取到 {} 条入站消息（polls={}）", n_msgs, { st.inner.lock().await.polls }),
+                    );
+                }
                 if let Some(msgs) = &updates.msgs {
                     for m in msgs {
                         dispatch_inbound(&app, &st, m).await;
@@ -126,15 +145,22 @@ async fn poll_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
                 sleep(Duration::from_millis(500)).await;
             }
             Err(ApiError::Timeout) => {
-                // 长轮询超时 = 正常控制流，立即续下一轮。
+                // 长轮询超时 = 正常控制流，立即续下一轮（但也要留痕，否则"没在轮询"看不出来）
+                let mut g = st.inner.lock().await;
+                g.last_poll_error = Some("timeout(38s 长轮询超时，属正常)".into());
             }
             Err(ApiError::HttpStatus(401, _)) | Err(ApiError::HttpStatus(403, _)) => {
                 // 会话失效 → 必须停循环进重扫，绝不静默当成功【§7.3】。
                 expire_session(&app, &st, "auth_failed").await;
                 return;
             }
-            Err(_) => {
-                // 其它网络错误：2s → 30s 退避。
+            Err(e) => {
+                // 其它网络错误：2s → 30s 退避。第 151 轮：必须留痕（此前完全静默）
+                {
+                    let mut g = st.inner.lock().await;
+                    g.last_poll_error = Some(format!("轮询失败: {}", e));
+                }
+                crate::runtime_log::append_line("WARN", &format!("[ilink] 轮询失败（退避重试）: {}", e));
                 backoff_ms = next_backoff(&mut backoff_ms);
                 sleep(Duration::from_millis(backoff_ms)).await;
             }

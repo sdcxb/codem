@@ -3142,9 +3142,12 @@ path_exists,
             // ===== 微信 ClawBot 桥：启动恢复（有未过期会话 → 自动续连）=====
             {
                 let ilink_app = app.handle().clone();
+                let ilink_app2 = app.handle().clone();
                 let ilink_st = ilink_state.clone();
+                let ilink_st2 = ilink_st.clone();
                 tauri::async_runtime::spawn(async move {
                     ilink::restore_on_startup(ilink_app, ilink_st).await;
+                ilink::spawn_watchdog(ilink_app2.clone(), ilink_st2);
                 });
             }
 
