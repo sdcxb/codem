@@ -7,7 +7,7 @@
  * 样例三条全部落在微信会话上：
  *
  * ```text
- * wx-o9cq800rnwz_m6wTerwa6mnqvMds-im-wechat|VISIBLE_BUT_NOT_RECORDED|assistant-1790319154162
+ * wx-demo-peer-im-wechat|VISIBLE_BUT_NOT_RECORDED|assistant-1790319154162
  * …|-2   …|-3
  * ```
  *
@@ -160,7 +160,7 @@ function seedRawMessage(sessionId: string, id: string, role: string, content: st
 
 const PROJECT_ID = "proj-o28";
 /** 与真机上出事的那个会话同名 —— 缺口样例里的会话 id 就是它 */
-const SESSION_ID = "wx-o9cq800rnwz_m6wTerwa6mnqvMds-im-wechat";
+const SESSION_ID = "wx-demo-peer-im-wechat";
 const CWD = "C:\\o28";
 
 /** 事件脚本驱动的 mock provider（每次 stream() 消费一个脚本） */
