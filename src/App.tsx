@@ -456,7 +456,6 @@ const [showPluginManager, setShowPluginManager] = useState(false);
   const [showMemoryManager, setShowMemoryManager] = useState(false);
   const [showNotebookManager, setShowNotebookManager] = useState(false);
   const [showGitHubClone, setShowGitHubClone] = useState(false);
-const [showCicdPanel, setShowCicdPanel] = useState(false);
 const [showPerfDashboard, setShowPerfDashboard] = useState(false);
 // 插件启用状态 — 控制按钮/面板的显示与隐藏
 //
