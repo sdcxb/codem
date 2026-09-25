@@ -1,15 +1,15 @@
 {
-  "version": "1.16.152",
-  "notes": "修微信桥真正的病根：message_id 在服务端是数字而结构体按字符串解析 ⇒ 整批消息反序列化失败后被静默丢弃（表现为绑定成功却一条都收不到）。已兼容字符串/数字，且解析失败不再静默。",
-  "pub_date": "2026-09-25T06:51:40Z",
+  "version": "1.16.154",
+  "notes": "O-28 装机版复核当场量出的第三条口径差：system 行永远没有事件 ⇒ 维护自检「本次新产生」恒非 0；本轮把不变量口径收窄到 user/assistant 两类行（只放宽 system，反向对照与变异 6/6 钉住边界）。",
+  "pub_date": "2026-09-25T07:31:38Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1UzaVA0WXJuYjhMdHp0cGltWTk2a2w5VzRKS2dWRGVjMXd4b3dlUFByRExHT1VlQUo5OHdjcnI4Z1I3REJVRXBleVB0S0VYUlR3TjR4b0VheGcxY1F3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMzE5MDg1CWZpbGU6Q29kZW1fMS4xNi4xNTJfeDY0LXNldHVwLmV4ZQpVRTIxZFRoSi9ORUpYV1kvcHYrWXVJZWwxV2M1OXhDUmp6VmhyZnI2NTAwNjNnUG80NWp1Z3d0d1VLbUZJWUVXYjAzbVFyQlFDeFYwWit4NWVlYjhCZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.152/Codem_1.16.152_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I2T2tIK1o1RWVoQ0VBbVdMem0wS0JsdS91YXJDejlrd0NGank4L05OSyt3NWZiWlg5Zy84SjdoRzJhbkRROUY4MUEyRlMvTEppaVpKRTQ4cVkwM2dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMzIxNDk1CWZpbGU6Q29kZW1fMS4xNi4xNTRfeDY0LXNldHVwLmV4ZQoybFJaV1hIMFZ6Z09INU1scTNQdVRod1YrbkwvNFNHVjR4b1lyczhLUXZ0Z0d2VVVuRUh3WUsweW00UDRwZWd2ZjRxUGJQT3VsQXVSaTBjRXdOemZEZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.154/Codem_1.16.154_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1UzaVA0WXJuYjhMdHp0cGltWTk2a2w5VzRKS2dWRGVjMXd4b3dlUFByRExHT1VlQUo5OHdjcnI4Z1I3REJVRXBleVB0S0VYUlR3TjR4b0VheGcxY1F3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMzE5MDg1CWZpbGU6Q29kZW1fMS4xNi4xNTJfeDY0LXNldHVwLmV4ZQpVRTIxZFRoSi9ORUpYV1kvcHYrWXVJZWwxV2M1OXhDUmp6VmhyZnI2NTAwNjNnUG80NWp1Z3d0d1VLbUZJWUVXYjAzbVFyQlFDeFYwWit4NWVlYjhCZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.152/Codem_1.16.152_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I2T2tIK1o1RWVoQ0VBbVdMem0wS0JsdS91YXJDejlrd0NGank4L05OSyt3NWZiWlg5Zy84SjdoRzJhbkRROUY4MUEyRlMvTEppaVpKRTQ4cVkwM2dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMzIxNDk1CWZpbGU6Q29kZW1fMS4xNi4xNTRfeDY0LXNldHVwLmV4ZQoybFJaV1hIMFZ6Z09INU1scTNQdVRod1YrbkwvNFNHVjR4b1lyczhLUXZ0Z0d2VVVuRUh3WUsweW00UDRwZWd2ZjRxUGJQT3VsQXVSaTBjRXdOemZEZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.154/Codem_1.16.154_x64-setup.exe"
     }
   }
 }

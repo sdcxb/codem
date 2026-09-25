@@ -2,6 +2,180 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.154] - 2026-09-25 — O-28 装机版复核**当场量出来的第三条口径差**：`system` 行永远没有事件 ⇒ 维护自检「本次新产生」恒非 0
+
+> 1.16.153 修的是 O-28 的真因（工具事件挂错 messageId），在装机版上复核时又量出一条**相邻但不同**的缺陷，
+> 它让「自检本次新产生 = 0」这条验收判据**永远达不成** —— 本轮把它一并修掉并重新出包。
+
+### ① 复核怎么做、量到了什么
+
+在装好的 **1.16.153** 上（真机、真回合）：
+
+1. 让主聊天跑一次会调工具的回合（`read C:\mimo-gui\package.json`）⇒ 库里出现**空正文的纯工具轮助手行**
+   `assistant-1790320878315`，而它的 `tool_call` / `tool_result` 事件的 `messageId` **正是这一行的 id**
+   （改前这里是 `msg-…`）。同一会话里 `user_message` **1 条**、`assistant_text` **1 条**（改前各 2 条）。
+2. 再跑一次**委派**回合（走的正是 O-28 出事的那条 `executeSessionTurn` 路径，只是不经过微信）：
+   目标会话里出现 3 条空正文纯工具轮助手行（`assistant-1790320959252` / `-2` / `-3`，
+   各有 1~2 次工具调用），**每一条的工具事件 messageId 都与行 id 一致**。
+3. 重载页面让启动维护重跑 ⇒ `[不变量水位] 上次水位 1101 键、本次存在 707 个、本次新产生 1 个`，
+   样例：`1790320875202-hwcrjkdyl|VISIBLE_BUT_NOT_RECORDED|err-1790320962593-3axyi`。
+
+第 3 步那条**不是** O-28 的形态：`err-…` 是**系统提示行**（委派回合失败时 executor 写的
+「Agentic 循环异常终止: too_many_errors」）。而系统行**按设计永远不会有事件**：
+
+- 写侧 `message.ts::appendMessageTextEvent`（文本事件的**唯一**写入点）第一行就
+  `if (role !== "user" && role !== "assistant") return;`；
+- 重建侧 `event-log.ts::migrateMessagesToEvents`（唯一的"消息 → 事件"映射）同样只搬 user/assistant；
+- 投影侧 `event-projection.ts` 只会产出 user / assistant / tool 三种角色的行 ——
+  **没有任何事件类型能投影出一条 `system` 行**。
+
+也就是说"系统行必须有事件"是**不可能满足**的要求：真机副本库里 `system` 行共 **3 条、3 条全被判违规**
+（另两条是更早的 `tool-error-…`）。这正是第 45 轮修掉过的那类「口径差」（当时收窄的是"无正文的助手行"）：
+判据恒红 ⇒ 真违规被淹没在噪声里。
+
+### ② 修法：把口径收窄到写侧/重建侧/投影侧都覆盖得了的两类行（**只放宽 `system`**）
+
+`runtime-invariants.ts::checkVisibleRecordedInvariant` 在遍历消息行时，`system` 行直接跳过；
+`user` / `assistant` 的判据一条不动（有正文必须有事件；无正文的助手行必须有工具事件）。
+边界由用例双向钉住：**O28-6a**（system 行无事件不算违规）+ **O28-6b**（user/assistant 行
+无事件仍然一条都不放过），并有**两个方向的变异**证明它不是"把闸门调松"：
+M5 去掉那行跳过 ⇒ O28-6a 红；M6 放宽到**所有角色** ⇒ O28-6b 红。
+
+### ③ 判据与实测
+
+- `src/test/o28-assistant-event-wiring.test.ts` 共 **7 条**（真 `LLMEngine` + 真工具流水线 + 脚本化 provider）。
+- 变异自证 **6/6**（`.preview-shot/mutate-o28-messageid.mjs`：M1 引擎不问落库方 ⇒ O28-1+O28-2 红、
+  M2 显式双写复活 ⇒ O28-3 红、M3 回调被继承 ⇒ O28-4 红、M4 空行兜底被删 ⇒ O28-5 红、
+  M5 system 口径没收窄 ⇒ O28-6a 红、M6 放宽过头 ⇒ O28-6b 红；每轮跑完逐字节还原并回绿）。
+- 只读探针：`.preview-shot/_probe-o28-events.mjs`（指定会话的两侧事实）、
+  `.preview-shot/_probe-o28-roles.mjs`（按角色统计"库里有哪些行、事件侧一次都没出现"）。
+
+### ④ 顺带记下的另一个发现（**本轮不修，如实入清单**）
+
+复核时看到：重载页面后，**当前会话**最近的消息会被再落库一次，而 `appendMessageTextEvent` 的
+指纹去重表是**进程内内存态**（页面一重载就空了）⇒ 同一条正文会再写一条事件
+（真机取证：`seq=9001/9002` 与 `seq=8991/8995` 同 id 同内容重复）。它**不影响**"可见即已记录"
+（同一个 messageId），只是事件表里的重复行会让 `session_event_search` 出现重复结果。
+修它要动"指纹的持久化口径"（例如改成回查事件表），是另一件事 —— 已记进缺口清单（O-29）。
+
+### ⑤ 1.16.154 的装机版复核读数（判据是用户要的那一条：**自检本次新产生 = 0**）
+
+装好 1.16.154 之后在真机上做：
+
+| 步骤 | 读数 |
+| --- | --- |
+| 启动维护（基线） | `[不变量水位] 上次水位 1102 键、本次存在 704 个、本次新产生 0 个`；`历史缺口 704 条`。**注意 704 这个数就是口径修好的算术证据**：修前那一轮是 707（706 + 当天新增的 1 条 `err-…`），707 − 3（库里 3 条 `system` 行）= 704 |
+| 跑一次真回合（主聊天，会调工具） | 新会话里产出 **4 条空正文纯工具轮助手行**（`assistant-1790321577682` / `-3` / `-4` / `-5`），`tool_call`/`tool_result` 事件的 `messageId` **逐条都对得上行 id**（`seq=9058/9059`、`9066/9067`、`9068/9069`、`9074/9075`、`9079/9080`）；有正文的两条各只有 **1 条** `assistant_text` |
+| 再跑一次委派回合（走 `executeSessionTurn`） | 目标会话注入 `user_message` 1 条、事件齐；委派方回合正常收尾 |
+| **重载页面让启动维护重跑** | `[不变量水位] 上次水位 1102 键、本次存在 704 个、本次新产生 0 个 → 新水位 1102 键`（`检查 8 个会话`），**没有** `[Advisory] maintenance.invariantAudit.new` 这一行 |
+
+**如实标注**：①这两轮复核走的是**主聊天 + 委派**两条路（同一套 `executeSessionTurn` 代码），
+**没有**再让用户从手机发微信消息；微信链路本身的端到端读数沿用 1.16.152 那次。
+②这轮复核**不是只读钻取** —— 它**故意**跑了真回合，所以 `fingerprint-userdata --compare`
+如实报"主库/WAL/会话日志都变了"（新增 2 个会话文件），变的原因就是复核本身；
+本轮所有只读探针（`_probe-o28-events.mjs` / `_probe-o28-roles.mjs` / `_probe-setting.mjs`）
+打开的**都是副本库**（`%TEMP%\o28-db-copy*`）。
+③复核途中 `npm run verify` 抓到**偶发假红**（连续两轮各一次）：`regex-unicode-safety` 与 `declare-slots`
+都报过 `ENOENT … C:\mimo-gui\src\__etw_probe__.ts`。**根因不在那两条门禁**：那个文件是
+`event-type-write-sites.test.ts` 的 EVENT-TYPE-WRITES-3 临时写出来验证"同文件常量解析"的探针，
+**用完即删、却落在被全仓几十个门禁遍历的 `src/` 树里** —— 别的 worker 枚举到它、读它时它已经被删了。
+修法两件：①**根因移除** —— 探针与它需要的最小 `event-log.ts` 桩改放进 `mkdtempSync` 的**临时目录**，
+程序也只在那棵临时树上建，**仓库源码树里一个字节都不写**（那条守卫的判据一字未动：仍然是"同文件常量必须被解析成字面量"）；
+②**兜底** —— `tools/audit/scan-regex-unicode.mjs` 对"枚举后被删掉"的文件改成**跳过并计数打印**
+（静默跳过会让"为什么少扫了一个文件"变成新的谜）。复跑那三条互相干扰的用例与全量都回绿。
+
+## [1.16.153] - 2026-09-25 — O-28 真因：**工具事件里的 `messageId` 是引擎自造的 `msg-…`，而消息行的 id 是落库方生成的**（两套 id 从来没对上过）；顺带补上 O-27 最后一处探活加固
+
+> 关闭的是 `docs/GAP-LIST.md` 的 **O-28**（微信回合的助手回复「看得见但没入事件日志」，维护自检当场报「本次新产生 3 条缺口」），
+> 并把 **O-27** 剩下的那处 `binded_redirect` 加固做掉。
+
+### ① 病根不是「没写 assistant_text」，而是**三行空正文助手行的工具事件挂错了 id**
+
+第 153 轮把范围缩到 `executor.ts` 的那个双写点，怀疑四种可能。本轮用**副本库**（主库+WAL+SHM 复制后只读打开，
+真库一个字节没碰）把两侧事实摆出来 —— 结论是那三种"没写 `assistant_text`"的猜测**全不成立**：
+
+| 轮 | `messages` 表的行 | `tool_calls.message_id` | 事件里 `tool_call.messageId` |
+| --- | --- | --- | --- |
+| 1 | `assistant-1790319154162`（**正文为空**） | `assistant-1790319154162` | `msg-1790319153390` ❌ |
+| 2 | `assistant-1790319155690-2`（**正文为空**） | `assistant-1790319155690-2` | `msg-1790319155791` ❌ |
+| 3 | `assistant-1790319157180-3`（**正文为空**） | `assistant-1790319157180-3` | `msg-1790319157282` ❌ |
+| 4 | `assistant-1790319158892-4`（312 字） | — | — （它有一条 `assistant_text` ✅） |
+
+那三行是**纯工具轮**的助手行 —— 正文为空、按设计**不写** `assistant_text`（它的事实记在工具事件里，
+口径见 FWT-C1a），所以它们被判 `VISIBLE_BUT_NOT_RECORDED` **和 `assistant_text` 一点关系都没有**：
+
+- 助手消息**行的 id 是落库方生成的**（界面路径 `App.tsx`、后台路径 `executor.ts`，都写 `messages` 表与 `tool_calls.message_id`）；
+- 而 `AgenticLoop` 一直有**自己的一套 id**（`msg-${Date.now()+1}`、每轮末 `msg-${…+iteration+100}`），只喂给 `ToolContext.messageId`；
+- `EventLogFinalizeMiddleware` 就把这个 `msg-…` 写进了 `tool_call` / `tool_result` 的载荷 —— **`messages` 表里根本没有这一行**。
+
+危害不止"自检报数"：`event-projection.applyToolCall` 找不到那个 id 会**凭空建一条 `msg-…` 的助手行**，
+真实行在投影里反而消失（事件日志与消息存储从此对不上）。
+
+### ② 修法：助手消息 id 的**单一来源**交给落库方（`resolveAssistantMessageId`）
+
+- `AgenticLoopConfig` / `LLMEngine.process(options)` 新增 `resolveAssistantMessageId(sessionId)` 回调；
+  引擎在建工具上下文（与 file-change tracker）时问一次落库方"这一轮的行 id 是什么"，
+  拿不到才退回引擎自造 id（子智能体与既有用例行为不变）。
+- `executor.ts` 传 `() => ensureAssistantMessage()`（正是"拿到本轮 id、没建行就建行"的语义）；
+  `App.tsx` 传 `() => assistantMsgId`。两侧口径一致。
+- ⚠️ `process()` 里这个回调**无条件写**（含写 `undefined`）：`AgenticLoop` 是**按会话池化复用**的，
+  上一轮装进去的闭包捕获的是上一轮的局部变量 —— 条件写会让"没接线的回合"继承上一轮的 id，
+  比改前更糟。这条由用例 O28-4 钉住。
+
+### ③ 同一处「双写点」：一个事实只留一个写入者
+
+`executor.ts` 收尾时原来**显式再 append** 一条 `assistant_text`（外加一句把失败吞成控制台一行的
+`catch (e) { console.warn(...) }`），而 `updateMessage` 的定稿分支已经通过**唯一写入点**
+`appendMessageTextEvent` 写过了 —— 真机副本库里每条用户消息、每条有正文的回复都留下**两条**事件
+（实测同一会话 `seq=8951/8952` 两条 `user_message`、`seq=8971/8972` 两条 `assistant_text`）。
+现在：删掉冗余的那次写，**只在一种形态下**补一条空 `assistant_text` ——
+「空正文**且一个工具都没调**」的收尾行（模型只吐 reasoning 就结束）：这种行在事件日志里一条记录都没有，
+投影重建时会凭空消失（FWT-C1c）；有工具调用的空行由工具事件记账，不补。
+写入失败不再吞：`seq === 0`（端口没接手，`append` 的既定契约）与抛错都走
+`reportPersistFailure("executor.settleEmptyAssistant", …)`（新上报点已当场分诊登记）。
+
+### ④ 判据与自证
+
+- 新用例 `src/test/o28-assistant-event-wiring.test.ts` **5 条**（真 `LLMEngine` + 真工具流水线 + 脚本化 provider，
+  会话 id 就叫真机上出事的那个）：工具事件的 `messageId` 必须能在 `messages` 表里查到 / 纯工具轮不再被判缺口 /
+  不许出现重复的 `user_message`·`assistant_text` / 落库方回调不许被上一轮继承 / 空正文且无工具调用的收尾行仍被钉住。
+- **变异自证 4/4**（`.preview-shot/mutate-o28-messageid.mjs`，跑真 vitest 读 JSON 报告里的失败用例名，
+  还原后逐字节比对 + 回绿）：M1 引擎不问落库方 ⇒ O28-1+O28-2 红；M2 显式双写复活 ⇒ O28-3 红；
+  M3 回调被继承 ⇒ O28-4 红；M4 空行兜底被删 ⇒ O28-5 红。
+- 只读探针 `.preview-shot/_probe-o28-events.mjs`（副本库上打印两侧事实）留在仓库里，供复现。
+
+### ⑤ 顺带：O-27 最后一处加固（`binded_redirect` 恢复前先探活）
+
+`src-tauri/src/ilink/login.rs`：`binded_redirect` 的语义只是"服务端认为这张 local_token 绑定过"，
+**不保证它现在还能用**（服务端 24h 到期、手机上解绑都会让它死掉），而改前这里直接 `state = Connected` +
+`spawn_poll` —— 界面显示"已连接"、轮询每轮 401/403 或被判 `-14`，用户看到的就是"扫了没反应"。
+现在恢复前先探一次 `getupdates`（`PROBE_TIMEOUT = 6s`），判据与 `poll_loop` **完全一致**：
+`-14` / HTTP 401 / 403 ⇒ `Dead`（置 `Expired` + 「请重新扫码」，**不再冒充已连接**）；
+收到响应或**被服务端 hold 到本地超时** ⇒ `Alive`（长轮询被 hold 住正是"请求被受理"）；
+网络不通等 ⇒ `Unknown` ——**既不判活也不判死**（"探活没做成" ≠ "会话失效"），如实写进 `last_error` 下一轮再探。
+探活刻意不推进游标、不分发消息 ⇒ 排队中的消息会在下一次 `getupdates` 里原样取到。
+
+### ⑥ 交接时就存在的两处红（本轮一并修掉，如实记录）
+
+- `npm run audit` 当时**不是绿的**：语法门禁报 `.preview-shot/_gap-o27.cjs`（上一轮的一次性脚本）
+  `SyntaxError: Unexpected identifier '扫了没反应'` —— 又是"中文串里写 ASCII 双引号"那个坑（已修好）。
+- `npm run verify` 当时**也不是绿的**：`version-consistency` 两条 —— CHANGELOG 顶部与
+  `docs/PROJECT-GUIDE.md` 的已发布版本表都停在 1.16.149，而 `package.json` 已经是 1.16.152
+  （1.16.150/151/152 三次发布只留了 git 提交与 GAP-LIST，没进 CHANGELOG）。本轮补齐本节与下面三条补记。
+
+### 补记：1.16.150 / 1.16.151 / 1.16.152（当时只留了 git 提交与 GAP-LIST，这里按提交记录补一行）
+
+- **v1.16.150** — 微信桥轮询**装眼睛 + 看门狗自愈**：`IlinkInner` 加 `polls`/`last_poll_at`/`last_poll_error`/`last_poll_msgs`
+  并在 `emit_state` 与 `ilink_status` 暴露；每轮记账、取到消息与失败分别落运行时日志、38s 超时也留痕；
+  新增 `spawn_watchdog`（`connected` + 有会话但 120 秒轮询计数不推进 ⇒ 换代重拉）。
+- **v1.16.151** — 去掉 `poll` 里**会吞掉请求**的 `poke` 分支（原 `select!` 一响就 `continue` ⇒ 整轮请求被跳过）；
+  前 5 轮打印「请求已发出」与「原始响应体」（截断 300 字）、前 20 轮打印「响应里 0 条消息」
+  ⇒ 从此能分辨"请求没发"与"发了但服务端回空"。
+- **v1.16.152** — O-27 真凶：`message_id` 实测是**数字**而结构体声明成 `String` ⇒ 整批 `WeixinMessage`
+  反序列化失败 ⇒ `poll` 里 `unwrap_or_default()` 把消息**静默丢掉**（原始响应里有 `msgs`、应用记 0 条）。
+  改为兼容字符串/数字 + 解析失败改为记账落日志。装机版实测 `inbound_count=3` / `outbound_count=3` / 游标推进，
+  用户在手机微信里确认收到回复。
+
 ## [未发布] 第 126 轮 - 2026-09-25 — 内存读数**先把仪器做稳**：读之前强制 GC，离散度从 1.5 倍收到 0
 
 > **不出包**（装机版仍是 1.16.149）：本轮只改基准工具，产品代码零改动。
