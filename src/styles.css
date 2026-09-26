@@ -1588,9 +1588,11 @@ flex-shrink: 0;
 
 .sidebar-project-btn {
   opacity: 0;
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
+  /* 第 168 轮：22 → **24×24**（WCAG 2.5.8 的下限）。第 166 轮把同一族的 .sidebar-section-btn
+     提到 24 时漏了这一族 —— 装机实测它们仍是 22×22。行高 30px，24 的盒子放得下。 */
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1829,6 +1831,18 @@ font-size: var(--fs-base);
   padding: var(--space-1);
   font-size: var(--fs-2xs);
   transition: opacity var(--duration-press) var(--ease-out);
+  /* 第 168 轮：与 .sidebar-session-pin 同一个盒子（16×18.7px）—— 第 63 轮给 pin 补了命中区扩圈、
+     把**同一行里的删除按钮漏掉了**。装机实测：pin 达标、delete 是 16px。这里照抄同一套写法。 */
+  position: relative;
+}
+
+.sidebar-session-rename::after,
+.sidebar-session-delete::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  /* 只扩大命中区，不参与绘制（视觉与布局一个像素都不动） */
+  background: transparent;
 }
 
 .sidebar-session:is(:hover, :focus-visible) .sidebar-session-rename,
@@ -17284,7 +17298,9 @@ color: var(--accent, #7c6cf0);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
+  /* 第 168 轮：宽 18 → **24**（WCAG 2.5.8）。它与左侧发送键**紧邻**（grid gap: 0），
+     所以不能用伪元素向外扩圈 —— 那会盖住相邻按钮、把点击偷过来；只能把盒子加宽。 */
+  width: 24px;
   height: 32px;
   padding: 0;
   border: none;

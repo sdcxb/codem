@@ -30,6 +30,8 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   scanNamelessIconButtons,
   buttonTags,
@@ -143,5 +145,63 @@ describe("图标按钮的可访问名（第 84 轮）", () => {
 </button>`;
     const t1 = buttonTags(ternary);
     expect(isIconOnlyBody(ternary, t1[0].end), "嵌套花括号里的字面量必须算文字 ⇒ 不许报").toBe(false);
+  });
+
+  /**
+   * A11Y-ICON-7：**小图标按钮的有效命中区必须 ≥24×24**（第 168 轮，装机实测驱动）。
+   *
+   * 现场：装机版按「**有效命中区**」量（把 `::after` 的负 inset 扩圈算进去）——
+   * 侧栏/顶栏/输入区/消息工具条 60 个可点目标里 **8 个不达标**：
+   *   · `.sidebar-session-delete` 16×18.7 ×4 —— 而同一行、同样盒子尺寸的 `.sidebar-session-pin`
+   *     早在第 63 轮就补了扩圈（`::after { inset: -4px }`），**删除按钮被漏掉了**；
+   *   · `.sidebar-project-btn` 22×22 ×3 —— 第 166 轮把同族的 `.sidebar-section-btn` 提到 24 时漏了这一族；
+   *   · `.send-more-btn` 18×32 —— 宽 18 < 24（与发送键紧邻，不能向外扩圈，只能加宽盒子）。
+   *
+   * 判据：这些**行内次要动作按钮**必须满足「盒子两轴都 ≥24px」**或**「有伪元素负 inset 扩圈」。
+   * 满足其一即可 —— 强迫所有按钮都长到 24px 会把行内密度毁掉，而扩圈是零视觉变化的等效手段。
+   * 变异：删掉任一条 `::after`、或把 `.sidebar-project-btn` 宽度改回 22px，都必须红。
+   */
+  it("A11Y-ICON-7：行内小图标按钮必须靠盒子或伪元素扩圈达到 24×24", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const ruleBody = (sel: string) =>
+      new RegExp(`(^|\\n)\\s*${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`, "s").exec(css)?.[2] ?? "";
+    /** 伪元素是否向外扩圈（`inset: -Npx`，或四边都是负值） */
+    const hasExpansion = (sel: string) => {
+      for (const pseudo of ["::after", "::before"]) {
+        const body = ruleBody(`${sel}${pseudo}`);
+        if (!body) continue;
+        if (/inset:\s*-[\d.]+px/.test(body)) return true;
+        const neg = ["top", "right", "bottom", "left"].filter((p) => new RegExp(`${p}:\\s*-[\\d.]+px`).test(body));
+        if (neg.length === 4) return true;
+      }
+      return false;
+    };
+    /** 盒子两轴都 ≥24（width/min-width × height/min-height 里取最大的那个） */
+    const boxAtLeast24 = (sel: string) => {
+      const body = ruleBody(sel);
+      const nums = (re: RegExp) => [...body.matchAll(re)].map((m) => Number(m[1]));
+      const w = Math.max(0, ...nums(/(?:^|;)\s*(?:width|min-width):\s*([\d.]+)px/g));
+      const h = Math.max(0, ...nums(/(?:^|;)\s*(?:height|min-height):\s*([\d.]+)px/g));
+      return w >= 24 && h >= 24;
+    };
+
+    const targets = [
+      ".sidebar-session-pin", ".sidebar-session-delete", ".sidebar-session-rename",
+      ".sidebar-project-btn", ".send-more-btn", ".sidebar-section-btn",
+    ];
+    const scanned: string[] = [];
+    const bad: string[] = [];
+    for (const sel of targets) {
+      if (!ruleBody(sel)) continue; // 类不存在就跳过（不假装通过）
+      scanned.push(sel);
+      if (boxAtLeast24(sel) || hasExpansion(sel)) continue;
+      bad.push(sel);
+    }
+    expect(scanned.length, "一个目标类都没扫到 ⇒ 判据失效（选择器写错了？）").toBeGreaterThanOrEqual(5);
+    expect(bad,
+      "这些按钮的有效命中区小于 24×24（WCAG 2.5.8）：" + bad.join(" / ")
+      + " —— 要么把盒子做到 24（width/height 或 min-width/min-height），"
+      + "要么照 .sidebar-session-pin 的写法加伪元素扩圈（视觉零变化）",
+    ).toEqual([]);
   });
 });

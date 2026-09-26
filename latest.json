@@ -1,15 +1,15 @@
 {
-  "version": "1.16.168",
-  "notes": "运行时审计抓到的真缺陷：会话行被限高容器压矮（源码 30px、装机渲染 28px）—— Sidebar.tsx 的 maxHeight 144 是按 32px 行距反推的魔数，而容器是 flex 列、行默认 flex-shrink: 1 ⇒ 内容超限时被压矮而不是滚动，会话越多压得越狠。修法：行高提成 --sidebar-row-h 令牌 + 定高行补 flex-shrink: 0 + 上限由令牌算出；新增门禁 RHYTHM-2，变异 12/12 全红。同时给出运行时全面审计数字：控制台 0 error/0 warn、长任务 0 个、开关设置 10 次 DOM 增量 0、后端 bench:mem 峰值 139MB。",
-  "pub_date": "2026-09-26T13:22:59Z",
+  "version": "1.16.169",
+  "notes": "P2-2 命中区：装机实测 60 个可点目标里 8 个低于 24×24（WCAG 2.5.8）—— .sidebar-session-delete 16×18.7（第 63 轮给同排的钉子补了扩圈、把删除漏了）、.sidebar-project-btn 22×22、.send-more-btn 18×32。修法：删除键照抄 pin 的 ::after 扩圈（视觉零变化）、项目按钮盒子 22→24、分段发送键 18→24。新增门禁 A11Y-ICON-7（盒子 ≥24 或伪元素扩圈，二者其一），变异 14/14 全红。",
+  "pub_date": "2026-09-26T13:30:06Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pIdWxubG9OWmZnTnNOSVQweWhqeGxOM0lLZWhWSFptSmFSNmliMHZiUXJ1NVZ4Mm4xZGlHK3BCVjBGaFZzQ25TQXNRY1FxUktsQTBwWW1EN0w3RGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDI4OTc2CWZpbGU6Q29kZW1fMS4xNi4xNjhfeDY0LXNldHVwLmV4ZQpySnA1cEFSNWREZTZwT3FnN1hGS0MxekFkems5VXJFTUYxK24xdG95eEZyL2Fuc3ZWSUlLMFRHU3VlZjc4aFFodVpjVHlCejQ3YlpoZVNKemJkNEZBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.168/Codem_1.16.168_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hWN3VxTjFzR0g2UGVVa0RuWnc0QS9VLzliL2FMQTdvMkUySk5WZU9yQ0dFYzBGay85bnJvcDlKUUhvNjY0ZHMxMncxTEIrRnFtamJuVStVK2NDY2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDI5NDAzCWZpbGU6Q29kZW1fMS4xNi4xNjlfeDY0LXNldHVwLmV4ZQp3SWM4bVViOGEvZVdaTTluQWY4aHgyMlZCaklwZFJRSHZJZDR5MkVpWXlSM090UXcrZmcxcnRnVHVPTHVURlk3UnJiNXlwaVZobEZJa3VMVlpLRzJCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.169/Codem_1.16.169_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pIdWxubG9OWmZnTnNOSVQweWhqeGxOM0lLZWhWSFptSmFSNmliMHZiUXJ1NVZ4Mm4xZGlHK3BCVjBGaFZzQ25TQXNRY1FxUktsQTBwWW1EN0w3RGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDI4OTc2CWZpbGU6Q29kZW1fMS4xNi4xNjhfeDY0LXNldHVwLmV4ZQpySnA1cEFSNWREZTZwT3FnN1hGS0MxekFkems5VXJFTUYxK24xdG95eEZyL2Fuc3ZWSUlLMFRHU3VlZjc4aFFodVpjVHlCejQ3YlpoZVNKemJkNEZBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.168/Codem_1.16.168_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hWN3VxTjFzR0g2UGVVa0RuWnc0QS9VLzliL2FMQTdvMkUySk5WZU9yQ0dFYzBGay85bnJvcDlKUUhvNjY0ZHMxMncxTEIrRnFtamJuVStVK2NDY2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDI5NDAzCWZpbGU6Q29kZW1fMS4xNi4xNjlfeDY0LXNldHVwLmV4ZQp3SWM4bVViOGEvZVdaTTluQWY4aHgyMlZCaklwZFJRSHZJZDR5MkVpWXlSM090UXcrZmcxcnRnVHVPTHVURlk3UnJiNXlwaVZobEZJa3VMVlpLRzJCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.169/Codem_1.16.169_x64-setup.exe"
     }
   }
 }

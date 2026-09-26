@@ -13734,7 +13734,7 @@
     "height": "32px",
     "justify-content": "center",
     "padding": "0",
-    "width": "18px"
+    "width": "24px"
   },
   "session-delete-btn": {
     "background": "none",
@@ -14211,13 +14211,13 @@
     "cursor": "pointer",
     "display": "flex",
     "font-size": "var(--fs-sm)",
-    "height": "22px",
+    "height": "24px",
     "justify-content": "center",
     "margin-left": "var(--space-1)",
-    "min-width": "22px",
+    "min-width": "24px",
     "opacity": "0",
     "transition": "var(--transition-color)",
-    "width": "22px"
+    "width": "24px"
   },
   "sidebar-project-header": {
     "align-items": "center",
@@ -14382,6 +14382,7 @@
     "font-size": "var(--fs-2xs)",
     "opacity": "0",
     "padding": "var(--space-1)",
+    "position": "relative",
     "transition": "opacity var(--duration-press) var(--ease-out)"
   },
   "sidebar-session-edit-input": {
@@ -14427,6 +14428,7 @@
     "font-size": "var(--fs-2xs)",
     "opacity": "0",
     "padding": "var(--space-1)",
+    "position": "relative",
     "transition": "opacity var(--duration-press) var(--ease-out)"
   },
   "sidebar-session-title": {
