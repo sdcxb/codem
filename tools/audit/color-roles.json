@@ -1,6 +1,6 @@
 {
  "_note": "颜色用量注册表（第 161 轮，audit 第 20 道）。键是 `角色|表面`；未登记的配对会被 --check 拦下。unresolvedBudget 只许降。",
- "_measuredAt": "2026-09-26T09:41:04.624Z",
+ "_measuredAt": "2026-09-26T12:17:25.612Z",
  "unresolvedBudget": 49,
  "pairs": {
   "--accent-strong|--accent-muted": {
@@ -103,6 +103,9 @@
    "registeredAt": "2026-09-26"
   },
   "--text-primary|--rich-table-header-bg": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--row-hover": {
    "registeredAt": "2026-09-26"
   },
   "--text-primary|--surface-1": {

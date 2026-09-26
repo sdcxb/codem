@@ -422,6 +422,122 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
       expect(v, `${label} 的 --accent-muted 必须派生自 var(--accent)，实际：${v}`).toMatch(/^color-mix\(in srgb,\s*var\(--accent\)\s+[\d.]+%,\s*transparent\)$/);
     }
   });
+
+  /**
+   * SHELL-1：**内容必须是"一块浮在 chrome 上的圆角纸面"**（第 166 轮 P0-0）。
+   *
+   * 为什么立这条：对标文档 §13 实测出这一条比"行高"更能解释"看着廉价" ——
+   * 对方的内容区是"圆角 24px（左侧两角）+ 左缘阴影"的纸面，浮在整壳一层玻璃之上；
+   * 我们此前 `.app` / `.app-content` / `.main-area` / `.chat-panel` **全部圆角 0、阴影 none、零间距**：
+   * 四块齐边矩形拼在一起。而**这一条跟"改什么颜色"无关** ⇒ 前五轮改令牌不可能带来观感变化。
+   *
+   * 判据（三条都是"层次成立"的必要条件）：
+   *   ① 内容面必须有**左侧两角**圆角（右侧贴窗口，圆右角会切出窗口底色）；
+   *   ② 内容面必须有非 none 阴影，且影子要有墨色输入（不是 `--shadow-raise-*` 那种通用档乱用）；
+   *   ③ 壳（`.app`）的底色必须与内容面**不同** —— 否则圆角切出来还是同色，等于没做层次。
+   *
+   * 变异：去掉 `box-shadow` / 把半径改回 0 / 把 `.app` 改回 `--bg-primary`，三条各自会红。
+   */
+  it("SHELL-1：内容面必须是「左侧两角圆角 + 左缘阴影」，且壳体色与内容面不同（P0-0）", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const ruleOf = (sel: string) =>
+      new RegExp(`(^|\\n)\\s*${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
+
+    const main = ruleOf(".main-area");
+    expect(main, "找不到 `.main-area` 规则").not.toBe("");
+    expect(
+      /border-radius:\s*var\(--surface-sheet-radius\)\s+0\s+0\s+var\(--surface-sheet-radius\)/.test(main),
+      `内容面必须只圆**左侧两角**（用 --surface-sheet-radius），实际：${/border-radius:[^;]*/.exec(main)?.[0] ?? "（无）"}`,
+    ).toBe(true);
+    expect(
+      /box-shadow:\s*var\(--shadow-sheet\)/.test(main),
+      "内容面必须有左缘阴影（没有阴影就没有'浮起来'）",
+    ).toBe(true);
+
+    /* ③ 壳体与内容面必须是**不同**的面：`.app` 的底色不能等于内容面的 `--bg-primary` */
+    const app = ruleOf(".app");
+    expect(
+      /background-color:\s*var\(--chrome-surface\)/.test(app),
+      `壳（.app）必须用 --chrome-surface（比内容面暗一档），实际：${/background-color:[^;]*/.exec(app)?.[0] ?? "（无）"}`,
+    ).toBe(true);
+
+    /* 阴影与纸面半径必须在令牌块里有定义，且阴影带墨色（两档自动反向） */
+    expect(css, "缺 --shadow-sheet 定义").toMatch(/--shadow-sheet:\s*-?\d+px[^;]*var\(--text-base\)/);
+    expect(css, "缺 --surface-sheet-radius 定义").toMatch(/--surface-sheet-radius:\s*24px/);
+
+    /* 侧栏与内容之间的分界必须是"墨色 hairline"（5% 的旧值在近白面上约等于不存在） */
+    const sidebar = ruleOf(".sidebar");
+    expect(sidebar, "侧栏右边界必须走 --hairline-ink（墨色派生，暗色档才看得见）").toMatch(/border-right:\s*1px solid var\(--hairline-ink\)/);
+  });
+
+  /**
+   * RHYTHM-1：**侧栏的行节奏必须是一个常量**（第 166 轮 P0-2）。
+   *
+   * 判据来源（对标文档 §3）：对方侧栏所有行都是 **30px 一个常量**、分组标题 24px、
+   * 行内边距 `0 8px`、列表外层 `2px 6px`、行间距 `2px`；
+   * 我们此前是 **7 种行高**（22 / 26 / 28.33 / 31.5 / 38 / 40.33 / 59.06，三个是小数）、
+   * **4 种相邻行间距**（0/4/8/16）、三套容器内边距 —— 像素侧"行距"在 4 个带宽里只有 1/4 能检出周期。
+   *
+   * 变异：把任一行的 `height: 30px` 改回 38px / 改回 `min-height` ⇒ 红。
+   */
+  it("RHYTHM-1：侧栏行高只能是 {30px}、分组标题 24px、行内边距 0 8px、容器外层 2px 6px、行间距 2px", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const ruleOf = (sel: string) =>
+      new RegExp(`(^|\\n)\\s*${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
+
+    const rows = [".sidebar-nav-item", ".sidebar-session", ".sidebar-project-header"];
+    for (const sel of rows) {
+      const body = ruleOf(sel);
+      expect(body, `找不到 ${sel}`).not.toBe("");
+      const h = /(?:^|;)\s*height:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
+      expect(h, `${sel} 的行高必须是 30px（侧栏只有一个行高常量），实际：${h || "（未声明）"}`).toBe("30px");
+      expect(h, `${sel} 不能用 min-height 代替固定行高（那会让内容把行撑高、节奏再次散掉）`).toBe("30px");
+      const pad = /(?:^|;)\s*padding:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
+      expect(pad, `${sel} 的行内边距必须是 "0 var(--space-2)"，实际：${pad || "（未声明）"}`).toBe("0 var(--space-2)");
+    }
+
+    const header = ruleOf(".sidebar-section-header");
+    expect(/(?:^|;)\s*height:\s*24px/.test(header), "分组标题行高必须是 24px（对方 token 值）").toBe(true);
+
+    /* ⚠️ 断言"生效的 px 值"而不是"写法"：仓库有 error 级门禁 `spacing-raw` 要求间距走 `var(--space-*)`，
+       所以这里先解析令牌再比数值 —— 否则门禁会逼着我们把令牌改回裸 px（口径打架）。
+       ⚠️ 刻度定义在**后面那个补刻度的 `:root` 块**（`第六十波` 补的），不是第一个 `:root` ——
+       所以这里扫**全文**的所有 `--space-N: Xpx;` 声明，而不是只读第一个块（第一版就读错块、解析到 0 个）。 */
+    const spaceTokens = new Map<string, number>();
+    for (const m of cssNoComments.matchAll(/--space-([\w-]+)\s*:\s*(\d+(?:\.\d+)?)px;/g)) spaceTokens.set(`--space-${m[1]}`, Number(m[2]));
+    expect(spaceTokens.size, "没解析到 --space-* 刻度").toBeGreaterThan(4);
+    const px = (expr: string): number[] =>
+      expr
+        .trim()
+        .split(/\s+/)
+        .map((part) => {
+          const tok = /^var\((--space-[\w-]+)\)$/.exec(part);
+          if (tok) {
+            const v = spaceTokens.get(tok[1]);
+            expect(v, `令牌 ${tok[1]} 没有定义`).toBeTypeOf("number");
+            return v!;
+          }
+          const lit = /^(\d+(?:\.\d+)?)px$/.exec(part);
+          expect(lit, `无法解析的间距写法：${part}（应该走 var(--space-*)）`).toBeTruthy();
+          return Number(lit![1]);
+        });
+
+    for (const [sel, want] of [[".sidebar-nav", [2, 6]], [".sidebar-projects", [2, 6]], [".sidebar-section", [2, 6]]] as const) {
+      const pad = /(?:^|;)\s*padding:\s*([^;]+)/.exec(ruleOf(sel))?.[1]?.trim() ?? "";
+      expect(pad, `${sel} 缺少 padding`).not.toBe("");
+      expect(px(pad), `${sel} 的容器外层内边距必须生效为 ${want.join("/")}px（三套内边距会让左边缘文字起点各不相同），实际写法：${pad}`).toEqual([...want]);
+    }
+
+    const navGap = /(?:^|;)\s*gap:\s*([^;]+)/.exec(ruleOf(".sidebar-nav"))?.[1]?.trim() ?? "";
+    expect(px(navGap), `行间距必须生效为 2px（对方 calc(space-1/2)），实际：${navGap}`).toEqual([2]);
+
+    /* 反例守卫：侧栏里不许再出现这几个"历史小数行高" */
+    for (const bad of ["40.33px", "31.5px", "28.33px", "59.06px"]) {
+      expect(cssNoComments.includes(bad), `侧栏里又出现了历史小数行高 ${bad}（节奏常量被破坏）`).toBe(false);
+    }
+  });
 });
 
 /**

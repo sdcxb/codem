@@ -818,7 +818,54 @@ describe("NATIVE 系统材质档（第 158 轮）", () => {
     const filters = [...nativeSidebarRule.matchAll(/-?w?-?e?-?b?-?k?-?i?-?t?-?\s*-?backdrop-filter:\s*([^;]+);/g)].map((m) => m[1].trim());
     expect(filters.length, "材质档的侧栏必须显式关掉 CSS 模糊（系统已经糊过桌面了）").toBeGreaterThan(0);
     expect(filters.filter((v) => v !== "none"), `材质档的侧栏里出现了非 none 的 backdrop-filter：${filters.join(" / ")}（系统糊过了，这层是白花性能）`).toEqual([]);
-    expect(nativeBlock, "侧栏控件必须改成给材质上色（18% overlay），不能再盖不透明块").toMatch(/color-mix\(in srgb,\s*var\(--sidebar-bg\) 18%,\s*transparent\)/);
+    /* ===== 第 166 轮 P0-1：**改判据**（有实测依据，不是为了改绿）=====
+       原来这里钉的是「材质档必须给侧栏控件铺 18% 的 --sidebar-bg 覆盖」。
+       第 166 轮用真实指针 + 截图像素实测证明**那条覆盖是坏的**：
+         · 语义上：`color-mix(in srgb, var(--sidebar-bg) 18%, transparent)` 是拿**侧栏自己的颜色**叠它自己，
+           而材质档的侧栏本来就是"88% 的同一个颜色" ⇒ 合成差 ≈ 0.001 级；实测 hover 前后**背景 0% 面积变化**
+           （对照：导航项 hover 是 **97%** 面积变化）。
+         · 优先级上：那条选择器 (0,3,1) 压过 `.sidebar-session.active` (0,2,0)
+           ⇒ 鼠标一碰到当前会话，紫色选中底就被顶掉（选中"一碰就没"）。
+       新判据守三件事，每一件都能被变异打红：
+         ① 材质档**不得**再为"行状态"写档位专属的 background 覆盖（口径只能有一处）；
+         ② 三条行类的 hover 必须走 `--row-hover`（墨色派生，两档自动反向）且带 `:not(.active)`；
+         ③ 全站禁止"同色低 α 覆盖"写法（表面色 × α ≤ 35% 混 transparent）。 */
+    const tierRowOverride = /html\[data-native-material="sidebar"\][^{]*\.sidebar-(session|tool-item|nav-item|project-header|tool-row)[^{]*\{[^}]*background\s*:/g;
+    expect(
+      (nativeBlock.match(tierRowOverride) ?? []).map((s) => s.slice(0, 70)),
+      "材质档里又出现了「行状态」的档位专属 background 覆盖 —— 这正是 hover 隐形 / 选中被顶掉的根因，口径必须只有一处",
+    ).toEqual([]);
+
+    for (const row of ["sidebar-nav-item", "sidebar-session", "sidebar-project-header"]) {
+      expect(
+        styles,
+        `.${row} 的 hover 必须用 --row-hover（墨色遮罩、两档反向；同色低 α 在材质档里实测不可见）`,
+      ).toMatch(new RegExp(`\\.${row}[^{]*:hover[^{]*\\{[^}]*background:\\s*var\\(--row-hover\\)`));
+    }
+    /* 有"选中态"的两类行：hover 必须**显式**排除选中 —— 否则又变成"靠源码顺序/优先级侥幸" */
+    const hoverExcludesActive: Array<[string, RegExp]> = [
+      ["sidebar-session", /\.sidebar-session:not\(\.active\)[^{]*:hover/],
+      ["sidebar-project-header", /\.sidebar-project:not\(\.active\)[^{]*\.sidebar-project-header[^{]*:hover/],
+    ];
+    for (const [row, re] of hoverExcludesActive) {
+      expect(
+        styles,
+        `.${row} 的 hover 规则必须显式写 :not(.active)：选中态优先于悬停，不能依赖源码书写顺序或优先级计算`,
+      ).toMatch(re);
+    }
+
+    /* ③ 全站反模式扫描：`color-mix(in srgb, var(--<表面色>) N%, transparent)` 且 N ≤ 35。
+       白名单是"墨色/品牌色/状态色"——它们**不是**所叠表面的同色，所以是正确做法（`--text-base` 等）。
+       ⚠️ 扫描前必须**去掉注释**：我们自己就在注释里写着这个反模式当反面教材（第 156 行与 18715 行），
+       不剥注释会把"讲解"当成"违规"（这类假红本项目踩过多次）。 */
+    const cssNoComments = styles.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const SAME_SURFACE = /color-mix\(\s*in srgb\s*,\s*var\((--[a-z-]*(?:sidebar-bg|bg-primary|bg-secondary|bg-tertiary|chrome-surface|panel-bg|dropdown-bg))\)\s+(\d+(?:\.\d+)?)%\s*,\s*transparent\s*\)/gi;
+    const offenders: string[] = [];
+    for (const m of cssNoComments.matchAll(SAME_SURFACE)) if (Number(m[2]) <= 35) offenders.push(m[0]);
+    expect(
+      offenders,
+      `出现了"同色低 α 覆盖"（表面色 ≤35% 混 transparent）—— 这类写法在玻璃/材质面上实测等于没有反馈：\n  - ${offenders.slice(0, 5).join("\n  - ")}`,
+    ).toEqual([]);
     /* 标题栏同样要关掉自己那层模糊（系统糊过了；再糊一层会让材质发浑） */
     const nativeTitlebar = /html\[data-native-material="sidebar"\] \.titlebar\s*\{([^}]*)\}/.exec(nativeBlock)?.[1] ?? "";
     expect(nativeTitlebar, "找不到材质档的 .titlebar 规则").not.toBe("");

@@ -149,6 +149,23 @@
   /* 按下反馈：整体下沉 1px（比只改颜色更"有手感"，且不触发重排） */
   --press-shift: 1px;
   --focus-ring: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+  /* ===== 第 166 轮 P0：外壳层次 + 行状态（一律**墨色派生**，两档自动反向）=====
+     为什么都用 `--text-base` 混：
+       · 亮色档墨色近黑 ⇒ 叠上去**变暗**；暗色档墨色近白 ⇒ 叠上去**变亮** —— 两档都是"远离底色"。
+     为什么不能用"同色低 α"（这正是 1.16.164 那个 bug 的根因）：
+     `color-mix(in srgb, var(--sidebar-bg) 18%, transparent)` 是**拿侧栏自己的颜色**去叠它自己，
+     合成结果与底色差 ≈ 0.001 级 —— 实测 hover 前后**像素 0% 面积变化**，视觉上等于没有反馈。
+     行状态三档（hover 6% / 按下 10% / 选中用 accent-muted）：口径与 `--surface-pressed` 一致。 */
+  --row-hover: color-mix(in srgb, var(--text-base) 6%, transparent);
+  --row-pressed: color-mix(in srgb, var(--text-base) 10%, transparent);
+  /* 内容纸面：第 166 轮 P0-0 —— 内容区做成"浮在 chrome 上的圆角纸面"（对方 token 就是 24px）。
+     ⚠️ 半径只能取**一个明确的档**，不要现编：这里取 24px 与对方 `layout-split-view-content-panel-radius` 同值。 */
+  --surface-sheet-radius: 24px;
+  --chrome-surface: var(--bg-secondary);
+  /* 左缘阴影：把纸面与外壳分开。亮色档 8% 墨色就够；暗色档**必须单独加强**（见 [data-theme="dark"]），
+     否则 8% 的黑在暗底上等于没有（D3 那一轮的同一个教训）。 */
+  --shadow-sheet: -4px 0 12px -6px color-mix(in srgb, var(--text-base) 8%, transparent);
+  --hairline-ink: color-mix(in srgb, var(--text-base) 8%, transparent);
   /* ===== 玻璃/浮层效果令牌（第 156 轮，对标 OpenBitFun 的 `_surface-recipes.scss` 与 `sidebar-glass`）=====
      对方的产品外壳用一组**配方**做半透明：侧栏 = `color-mix(chrome 90%, transparent)` + `blur(12px) saturate(1.2)`
      + 内高光；浮层 = `surface-raised 94%` + 同一档模糊；并且都有**降级路径**
@@ -759,8 +776,15 @@ button:not(:disabled):not(.press-layer-host):active,
 /* D-4: Popover/dropdown transform-origin — scale from trigger, not center */
 .context-menu,
 .dropdown-menu,
-.popover,
-
+.popover {
+  /* 第 166 轮 P0-3：这里原来是一个**悬空逗号**（第 762 行 `.popover,` 后面直接跟注释再跟下一组选择器），
+     于是 `:is()` 之外的这三条选择器与下面的模态组**合并成一条规则**，一起拿到 `transform-origin: center`
+     —— 与注释声明的 D-4 意图**正好相反**：浮层应当"从触发点缩放"，模态才居中缩放。
+     实测后果：所有手写浮层的入场都是从中心放大，贴着触发点"长出来"的精致感全丢（且 JSX 里没有兜底）。
+     现在拆成两组：浮层组用**可被 JS 覆盖**的自定义属性（没设时退化为 center，行为与修复前一致，不会更差），
+     模态组保持 center。 */
+  transform-origin: var(--popover-origin, center);
+}
 
 /* D-4: Modals are exempt — they appear centered, keep transform-origin: center */
 .modal,
@@ -805,7 +829,11 @@ body {
      层级关系：`.app` 自己的 background 画在**子元素之下** ⇒ 透明的标题栏会透出场景、
      不透明的 `.main-area`（内容面）正常盖住它、半透明的侧栏则把它**模糊后**透出来。
      内容面保持实色 ⇒ 正文对比度不受场景影响（场景只影响外壳，且被门禁按最坏值卡住）。 */
-  background-color: var(--bg-primary);
+  /* 第 166 轮 P0-0：壳底从"和内容面同色"改成**次级面** —— 内容区是一块浮起来的白纸面（见 `.main-area`），
+     壳（标题栏 + 侧栏所在的那层）必须比纸面**暗一档**，纸面的圆角与左缘阴影才看得出来。
+     在此之前 `.app` 与 `.main-area` 都是 `--bg-primary`（纯白）⇒ 圆角切出来也是白的，等于没做层次；
+     实测侧栏/内容亮度差只有 0.0172（对方 0.0328）。 */
+  background-color: var(--chrome-surface);
   background-image: var(--scene-layer);
 }
 
@@ -1069,6 +1097,15 @@ overflow: hidden;
   display: flex;
   min-width: 0;
   background: var(--bg-primary);
+  /* 第 166 轮 P0-0：**内容 = 浮在 chrome 上的圆角纸面**（对方 `WorkspaceBody.scss:135-153` 同构）。
+     三件套：左侧两角圆角 + 左缘阴影 + 与外壳的亮度差（外壳见 `.app` 的 `--chrome-surface`）。
+     ⚠️ 只圆左侧两角：右侧贴窗口边，圆右角会切出窗口底色。 */
+  border-radius: var(--surface-sheet-radius) 0 0 var(--surface-sheet-radius);
+  box-shadow: var(--shadow-sheet);
+  /* 纸面之上的内容由内层自己裁剪（纸面本身不裁，否则阴影会被裁掉）。
+     不写 z-index：`.main-area` 在 DOM 里排在侧栏之后，同级层叠里后者本就画在上面，
+     阴影自然压在侧栏上 —— 多写一个 `z-index: 1` 只会给写死值棘轮添一笔（这条已经踩过一次）。 */
+  position: relative;
 }
 
 /* ==========================================================================
@@ -1263,10 +1300,10 @@ overflow: hidden;
 position: relative;
 width: 260px;
 background: var(--sidebar-bg);
-/* 第 156 轮：右边线从 `--border-primary`（9%）降到 `--border-separator`（5%）——
-   对方亮色的侧栏 hairline 就是 5%（`color-mix(content-on-light 5%, transparent)`），
-   9% 的硬边会让"外壳 → 内容面"的过渡显得生硬（这一档同时保留给控件边界用）。 */
-border-right: 1px solid var(--border-separator);
+/* 第 166 轮 P0-0：右边界从 5% 的 `--border-separator` 改成**墨色 8% hairline** ——
+   实测 5% 黑在近白面上约等于不存在（侧栏与内容之间"没有分界"，是"看着廉价"的一条）。
+   墨色派生 ⇒ 亮色档是暗线、暗色档是亮线，两档都对（同色线在暗色档会消失）。 */
+border-right: 1px solid var(--hairline-ink);
 display: flex;
 flex-direction: column;
 flex-shrink: 0;
@@ -1293,50 +1330,79 @@ flex-shrink: 0;
 
 
 /* ========== Sidebar Nav ========== */
+/* 第 166 轮 P0-2：容器内边距统一 **6px 外层 + 行内 8px**（对方 `layout-navigation-panel-surface-padding` = 8px、
+   列表 `padding: 2px 6px`）；行间 gap 统一 2px（对方 `calc(space-1/2)`）。
+   此前是 4/12 + 12/16 + 8/12 三套，左边缘上三排文字起点各不相同。 */
 .sidebar-nav {
-padding: var(--space-2) var(--space-6);
-flex-shrink: 0;
+  padding: var(--space-1) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-shrink: 0;
 }
 
+/* 第 166 轮 P0-2：行高统一 **30px 常量**（对方 `layout-navigation-panel-item-height` = 30px）。
+   此前侧栏里有 7 种行高（22 / 26 / 28.33 / 31.5 / 38 / 40.33 / 59.06，三个还是小数）——
+   实测"行距"在 4 个带宽里只有 1/4 能检出周期，扫视时读不出"一条一条"。 */
 .sidebar-nav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-2);
   width: 100%;
-  padding: var(--space-5) var(--space-6);
+  height: 30px;
+  padding: 0 var(--space-2);
   background: none;
   border: none;
-  color: var(--text-primary);
-  border-radius: var(--radius);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: var(--fs-md);
+  font-size: var(--fs-base);
   text-align: left;
-  transition: background var(--duration-fast) ease;
+  /* 第 166 轮 P0-1：过渡换成 `--transition-color`（color + background-color + border-color，.15s + 标准曲线）——
+     原来只有 `background var(--duration-fast) ease`：**文字色不跟着动**、且用的是默认 `ease`（不是我们自己的曲线）。 */
+  transition: var(--transition-color), var(--transition-transform);
 }
 
+/* 行状态：hover / 键盘焦点用**墨色 6% 遮罩**（两档自动反向），并同时提升文字色。
+   这两件事一起做才是"看得见"：实测此前 hover 只改背景、文字/图标/字重三项全不变。 */
 .sidebar-nav-item:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
+  background: var(--row-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-nav-item:active {
+  background: var(--row-pressed);
+  transform: translateY(1px);
 }
 
 /* Segmented control for MCP / Skills / Memory — accent-adaptive */
+/* 第 166 轮 P0-1：这一簇原来**常驻** 8% 紫底 + 内阴影（永远像"选中"），而且**没有任何 hover 规则**
+   （实测 hover 前后背景 0% 面积变化）。现在底色收掉、交给行状态。 */
 .sidebar-tool-row {
   display: flex;
-  gap: var(--space-1);
-  margin: var(--space-2) 0;
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent, #7c6cf0) 8%, transparent);
-  box-shadow: inset 0 1px 3px var(--shadow-color-soft);
+  gap: 1px;
+  margin: 0;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: none;
+}
+
+.sidebar-tool-row:is(:hover, :focus-within) {
+  background: var(--row-hover);
 }
 
 .sidebar-tool-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   flex: 1;
-  padding: var(--space-4) var(--space-1);
+  /* 第 166 轮 P0-2：原来是**竖排**（图标在上文字在下）⇒ 单行 51px、整簇 59px，把侧栏节奏打断了。
+     现在改成行内 chip：**26px 高**（外面 2px padding ⇒ 整簇正好 30px）。 */
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
   background: transparent;
   border: none;
   border-radius: var(--radius);
@@ -1402,7 +1468,7 @@ flex-shrink: 0;
 
 /* ========== Sidebar Projects ========== */
 .sidebar-projects {
-  padding: 0 var(--space-6);
+  padding: var(--space-1) var(--space-3);
 }
 
 
@@ -1422,20 +1488,34 @@ flex-shrink: 0;
 .sidebar-project-header {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-4);
-  min-height: 32px;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--duration-press);
+  color: var(--text-secondary);
+  transition: var(--transition-color), var(--transition-transform);
 }
 
-.sidebar-project-header:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
+/* hover 明确排除"选中态的父级"：`.sidebar-project.active > .sidebar-project-header` 的 (0,3,0) 本来能压过
+   (0,2,0)，但那是**靠优先级算出来的**、不是写明的 —— 谁给 hover 加一个类就翻车。这里直接写 `:not(.active)`。 */
+.sidebar-project:not(.active) > .sidebar-project-header:is(:hover, :focus-visible) {
+  background: var(--row-hover);
+  color: var(--text-primary);
 }
 
+.sidebar-project-header:active {
+  background: var(--row-pressed);
+  transform: translateY(1px);
+}
+
+/* 选中态必须**盖过** hover：第 166 轮 P0-1 的核心修复。
+   原来材质档那条 `html[data-native-material="sidebar"] .sidebar-session:is(:hover,…)` 是 (0,3,1)，
+   而 `.sidebar-session.active` 是 (0,2,0) ⇒ 鼠标一碰到当前会话，紫底就被顶掉（选中"一碰就没"）。
+   现在统一：`.active` 写在 hover 之后，且 hover 规则一律带 `:not(.active)` —— 不再依赖源码顺序侥幸。 */
 .sidebar-project.active > .sidebar-project-header {
   background: var(--accent-muted);
+  color: var(--text-primary);
 }
 
 .sidebar-project-arrow {
@@ -1617,7 +1697,7 @@ flex-shrink: 0;
 
 
 .sidebar-sessions {
-  padding-left: var(--space-9);
+  padding-left: var(--space-3);
 }
 
 .sidebar-session-empty {
@@ -1626,23 +1706,37 @@ flex-shrink: 0;
   color: var(--text-muted);
 }
 
+/* 第 166 轮 P0-2：会话行同样收到 **30px / 行内 8px / 圆角 6px / 字号 13px**。
+   实测原来它是 31.5px（小数）、内边距 6/8、字号 13 —— 与导航项的 40.33/10/12/14 各一套尺子。 */
 .sidebar-session {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--fs-base);
-  transition: background var(--duration-press);
+  color: var(--text-secondary);
+  transition: var(--transition-color), var(--transition-transform);
 }
 
-.sidebar-session:is(:hover, :focus-visible) {
-  background: var(--bg-hover);
+.sidebar-session:not(.active):is(:hover, :focus-visible) {
+  background: var(--row-hover);
+  color: var(--text-primary);
 }
 
+.sidebar-session:active {
+  background: var(--row-pressed);
+  transform: translateY(1px);
+}
+
+/* 选中：底色用品牌浅底，并把文字一起提到主色（此前只换底色 ⇒ 与 hover 分不出来）。
+   ⚠️ 这里**不**写图标色：会话行渲染里没有图标元素（只有标题 + 运行时小圆点 + 尾部动作），
+   上一版写的 `.sidebar-session-icon` 是死规则（被 `css-class-unused` 抓到并删除）。 */
 .sidebar-session.active {
   background: var(--accent-muted);
+  color: var(--text-primary);
 }
 
 .sidebar-session-title {
@@ -1780,19 +1874,24 @@ font-size: var(--fs-base);
 
 
 
+/* 第 166 轮 P0-2：分组容器同样收到 **6px 外层**（对齐对方的 `surface-padding`），
+   此前是 12/16 —— 于是"导航项 / 会话行 / 项目行"三排文字在左边缘上起点各不相同。 */
 .sidebar-section {
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-1) var(--space-3);
 }
 
 .sidebar-section:last-of-type {
-  padding-bottom: var(--space-8);
+  padding-bottom: var(--space-3);
 }
 
+/* 第 166 轮 P0-2：分组标题行高 **24px**（对方 `layout-navigation-panel-heading-height` = 24px）。
+   标题文字本身早已是 `.text-overline` 角色（大写 + 字距），这里只统一几何。 */
 .sidebar-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-4);
+  height: 24px;
+  margin-bottom: var(--space-1);
 }
 
 .sidebar-section-header span {
@@ -1804,8 +1903,9 @@ font-size: var(--fs-base);
 }
 
 .sidebar-section-btn {
-  width: 22px;
-  height: 22px;
+  /* 第 166 轮 P2-2 提前做掉：22 → **24×24**（WCAG 2.5.8 的下限），图标字号不变。 */
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11788,13 +11888,25 @@ border-color: var(--text-muted);
 /* #9: Resizable sidebar */
 .sidebar-resize-handle {
   position: absolute;
-  right: -2px;
+  right: -3px;
   top: 0;
   bottom: 0;
-  width: 4px;
+  /* 第 166 轮 P0-0：命中区 4 → **6px**（对方 `$_resize-target-width: 6px`，且"居中压在边界上"）并把
+     反馈画出来 —— 此前是一条**完全透明**的 4px 条：拖动时没有任何视觉提示（实测零反馈）。 */
+  width: 6px;
   cursor: col-resize;
   z-index: 10;
-  transition: background var(--duration-fast) ease;
+  transition: var(--transition-color);
+}
+
+.sidebar-resize-handle:is(:hover, :active) {
+  background: var(--accent-border);
+}
+
+/* 拖到哪、纸面的左缘就在哪：hover/拖拽时把纸面那条**圆角边**描出来（对方 `scene-surface::after` 同构）。
+   用 `:has()` 从把手反向选中纸面 —— 反馈画在"共享的那条边界"上，而不是给整块画个框。 */
+.app-content:has(.sidebar-resize-handle:is(:hover, :active)) .main-area {
+  box-shadow: var(--shadow-sheet), inset 2px 0 0 var(--accent-border);
 }
 .sidebar-resize-handle:is(:hover, :focus-visible),
 .sidebar-resize-handle.active {
@@ -11806,7 +11918,8 @@ border-color: var(--text-muted);
 .sidebar-session-group-label {
   /* 第 155 轮 P0-3：字号/字重/行高/字距/大写/颜色六项已并入上面的 `.text-overline` 角色
      （同一个声明块，单一来源），这里只留布局相关的两项。 */
-  padding: var(--space-4) var(--space-6) var(--space-2) var(--space-6);
+  /* 第 166 轮 P0-2：内边距从 8/12/4/12 收到 **6/8/2/8**，与行的 8px 对齐（左边缘一条线）。 */
+  padding: var(--space-3) var(--space-4) var(--space-1) var(--space-4);
   user-select: none;
 }
 
@@ -13673,9 +13786,10 @@ html.pet-window-mode body,
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-6);
-  border-top: 1px solid var(--border-primary);
+  gap: var(--space-1);
+  /* 第 166 轮 P0-2：底部区从 8/12 收到 **4/6**（与列表外层 6px 对齐），分隔线换**墨色 hairline**（5% 太淡）。 */
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--hairline-ink);
   flex-shrink: 0;
 }
 .sidebar-user-avatar {
@@ -18611,11 +18725,13 @@ html[data-native-material="sidebar"] .titlebar {
   backdrop-filter: none;
 }
 /* 侧栏里的控件：**给共享材质上色**，而不是再盖一块不透明面板（对方的 `sidebar-overlay($surface, 18%)`）。
-   否则一块块实色行会把玻璃切成碎片，看起来又变回"实色 + 灰块"。 */
-html[data-native-material="sidebar"] .sidebar-session:is(:hover, :focus-visible),
-html[data-native-material="sidebar"] .sidebar-tool-item:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--sidebar-bg) 18%, transparent);
-}
+   ⚠️ 第 166 轮 P0-1 **删掉了这里原来的那条覆盖**：
+     `background: color-mix(in srgb, var(--sidebar-bg) 18%, transparent)` ——
+     它是"拿侧栏自己的颜色去叠它自己"，在同一档 88% 近白玻璃上合成差 ≈ 0.001 ⇒ 实测 hover 前后
+     **背景 0% 面积变化**（一个像素都没变）；同时它的优先级 (0,3,1) 压过 `.sidebar-session.active` (0,2,0)，
+     于是**鼠标一碰到当前会话，紫色选中底就被顶掉**（选中"一碰就没"）。
+   现在行状态统一由基线的 `--row-hover` / `--row-pressed` 负责（墨色派生、两档反向、且带 `:not(.active)`），
+   材质档与非材质档**行为完全一致** —— 口径只有一处，不再有"某一档里 hover 是隐形的"这种分叉。 */
 /* 降级与高对比：材质档也必须回到不透明（与 ①②③④ 同一组条件） */
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   html[data-native-material="sidebar"] .app {

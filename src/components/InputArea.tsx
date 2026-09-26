@@ -1244,6 +1244,10 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 bottom: slashMenuPos.bottom,
                 width: slashMenuPos.width,
                 zIndex: "var(--z-top)",
+                /* 第 166 轮 P0-3：这个浮层是**贴着输入框往上长**的 ⇒ 缩放原点必须在底边中点，
+                   而不是中心（`src/styles.css` 的 D-4 组读这个自定义属性）。
+                   此前那条 CSS 因为一个悬空逗号把浮层并进了模态组，原点一直是 center。 */
+                ["--popover-origin" as string]: "bottom center",
               }}
             >
               <SlotBridge
@@ -1374,6 +1378,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                     style={{
                       left: plusMenuPos.left, bottom: plusMenuPos.bottom,
                       minWidth: 200, zIndex: "var(--z-top)",
+                      /* 第 166 轮 P0-3：这个浮层贴着输入框**往上**长 ⇒ 缩放原点在底边中点
+                         （原点由 src/styles.css 的 D-4 组读取；此前那条规则因悬空逗号把浮层并进了模态组，一直是 center）。 */
+                      ["--popover-origin" as string]: "bottom center",
                     }}
                   >
                     <button className="more-action-item"
@@ -1442,6 +1449,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                     style={{
                       left: skillPickerPos.left, bottom: skillPickerPos.bottom,
                       minWidth: 220, zIndex: "var(--z-top)",
+                      /* 第 166 轮 P0-3：这个浮层贴着输入框**往上**长 ⇒ 缩放原点在底边中点
+                         （原点由 src/styles.css 的 D-4 组读取；此前那条规则因悬空逗号把浮层并进了模态组，一直是 center）。 */
+                      ["--popover-origin" as string]: "bottom center",
                     }}
                   >
                     <div className="input-popover-title">

@@ -2,6 +2,82 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.166] - 2026-09-26 — P0：把「层次 / 状态 / 节奏」做出来（前五轮改令牌看不到效果的那三件事）
+
+> 依据 `docs/SIDEBAR-AUDIT-OPENBITFUN.md`（渲染/状态级审计）。P0 的三条 + 一条真缺陷：
+> ① 外壳层次 ② 侧栏状态层 ③ 行节奏 ④ `styles.css:762` 的悬空逗号。
+
+### ① 内容做成「浮在 chrome 上的圆角纸面」（P0-0）
+
+- ``.main-area``：**左侧两角圆角 24px**（令牌 `--surface-sheet-radius`，与对方
+  `layout-split-view-content-panel-radius` 同值）+ **左缘阴影** `--shadow-sheet`；
+- `.app` 的壳底从「和内容面同色」改成 `--chrome-surface`（次级面）——**壳体与纸面必须不是同一个颜色**，
+  否则圆角切出来还是同色、等于没做层次（这正是此前「改了令牌没观感变化」的机制）；
+- 侧栏右边界从 5% 的 `--border-separator` 换成**墨色 8% hairline**（`--hairline-ink`）：5% 黑在近白面上约等于不存在；
+- 拖拽把手 4px → **6px**（对方同值）并**画出反馈**：把手 hover/按下时有品牌色，且通过 `:has()` 把纸面那条**圆角边**描出来 ——
+  此前是一条完全透明的 4px 条，拖动时零反馈。
+
+### ② 修状态层（P0-1：这是「摸着是死的」的根因）
+
+实测（真实指针 + 截图像素）证明 1.16.164 加的那条覆盖**是坏的**：
+`html[data-native-material="sidebar"] .sidebar-session:is(:hover,:focus-visible) { background: color-mix(in srgb, var(--sidebar-bg) 18%, transparent) }`
+—— 它是**拿侧栏自己的颜色去叠它自己**（材质档的侧栏本来就是 88% 的同一个颜色），
+合成差 ≈ 0.001 级 ⇒ **hover 前后背景 0% 面积变化**（对照：导航项 97%）；
+而且它 `(0,3,1)` 压过 `.sidebar-session.active` `(0,2,0)` ⇒ **鼠标一碰到当前会话，紫色选中底就被顶掉**。
+
+处置：
+- 新增 `--row-hover`(墨色 6%) / `--row-pressed`(墨色 10%)：**墨色派生 ⇒ 亮色档变暗、暗色档变亮**，两档都对；
+- **删掉那条档位专属覆盖**，行状态口径只有一处 ⇒ 材质档与非材质档行为完全一致；
+- hover 一律带 `:not(.active)`（选中优先于悬停，**不再依赖源码书写顺序/优先级侥幸**）；
+- 补**按下态**（`translateY(1px)` + `--row-pressed`）——此前全侧栏 `:active` 规则 **0 条**；
+- 行默认文字色 `--text-primary` → **`--text-secondary`**，hover/选中升回主色（此前一上来就是主色 ⇒ 状态没有可表达的余地）；
+- 过渡从 `background var(--duration-fast) ease` 换成 **`var(--transition-color)` + `var(--transition-transform)`**
+  （color/background/border 都动、用我们自己的标准曲线，而不是浏览器默认 `ease`）；
+- 工具簇去掉**常驻** 8% 紫底 + 内阴影（它此前永远像「选中」），并补上 hover。
+
+### ③ 统一行节奏（P0-2：一个 30px 常量）
+
+| 元素 | 改前 | 改后 |
+| --- | --- | --- |
+| 导航项 / 会话行 / 项目行 行高 | 40.33 / 31.5 / 38 px（三个小数） | **30px**（对方 `layout-navigation-panel-item-height`） |
+| 分组标题 | 22px | **24px**（对方 token） |
+| 行内边距 | 10/12、6/8、8/8 | 统一 **`0 var(--space-2)`** |
+| 容器外层 | 4/12、12/16、8/12 | 统一 **`var(--space-1) var(--space-3)`**（=2/6px） |
+| 行间距 | 0/4/8/16 四种 | **`var(--space-1)`**（=2px） |
+| 圆角 | 8 / 10 / 6 混用 | 统一 `var(--radius-sm)` |
+| 工具簇 | 竖排 59px | 行内 chip，整簇 30px |
+
+### ④ 修 `styles.css:762` 的悬空逗号（P0-3，一行改动）
+
+``.context-menu,` / `.dropdown-menu,` / `.popover,`` 末尾多一个逗号，
+导致这三条选择器与下面的模态组**合并成一条规则**、一起拿到 `transform-origin: center` ——
+与注释声明的 D-4 意图（浮层从触发点缩放）**完全相反**，且 JSX 里没有兜底 ⇒ **所有手写浮层都从中心放大**。
+现在拆成两组，浮层组读 `var(--popover-origin, center)`，并给输入区的斜杠菜单 / 加号菜单 / 技能面板
+设上 `bottom center`（它们都是贴着输入框往上长的）。
+
+### ⑤ 门禁与变异自证
+
+- 新增 **SHELL-1**（纸面必须有左侧两角圆角 + 左缘阴影 + 壳体色不同）与 **RHYTHM-1**（行高 ⊆ {30px}、
+  容器外层 2/6px、行间距 2px、且不许再出现历史小数行高）；**改写 NATIVE-2** 的判据：
+  原来它钉的正是那条坏覆盖，现在改为守「材质档不得有档位专属行状态覆盖 / hover 必须走 `--row-hover` 并带 `:not(.active)` /
+  全站禁止同色低 α 覆盖」；
+- 新增变异脚本 `mutate-p0-gates.mjs`：**7 条全红 + 还原回绿**（去阴影 / 圆角归零 / 壳体同色 / 行高回 38 /
+  内边距回三套 / 把同色低 α 覆盖加回来 / 去掉 `:not(.active)`）；
+- `RHYTHM-1` 断言的是**生效 px 值**（先解析 `var(--space-*)` 再比数值），这样 `spacing-raw` 门禁要求走令牌
+  与本门禁不打架（第一版写死 `2px 6px` 就被逼出过一次口径冲突）。
+
+### ⑥ 顺带修掉的（都是审计里发现的真问题，不是新加的功能）
+
+- 侧栏 `.sidebar-tool-row` 常驻紫底 + inset 阴影（永远像选中）、分组按钮 22×22 → **24×24**（WCAG 2.5.8 下限）、
+- 删掉两条**死规则**（`.sidebar-session-icon`：会话行渲染里根本没有图标元素，被 `css-class-unused` 抓到）；
+- 删掉未消费的 `--row-hover-strong`（被 `css-var-unused` 抓到）；
+- 颜色用量注册表新增 `--text-primary|--row-hover` 一对（`CR-6` 要求新配对必须登记）。
+
+### ⑦ 实测
+
+`npm run verify` **exit 0**（403 文件 / 6315 通过 / 16 跳过）、`npm run audit` **exit 0**、
+`node tools/ui-audit/scan-ui.mjs` **error 0 / warn 0**（新增的裸间距先被它抓出来、已全部令牌化）；
+P0 变异 **7/7 全红 + 还原回绿**。
 ## [1.16.165] - 2026-09-26 — P2-1 的另一半：`data-contrast="high"` 此前只把玻璃关掉，文字/边框/焦点环**一个像素都没变**
 
 > 这一条是"盘点每一项到底有没有做完"时翻出来的：对标清单上 P2-1 写的是

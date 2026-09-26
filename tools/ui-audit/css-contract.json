@@ -625,7 +625,7 @@
     "width": "36px"
   },
   "app": {
-    "background-color": "var(--bg-primary)",
+    "background-color": "var(--chrome-surface)",
     "background-image": "var(--scene-layer)",
     "display": "flex",
     "flex-direction": "column",
@@ -2627,7 +2627,7 @@
   "context-menu": {
     "-webkit-backdrop-filter": "blur(12px) saturate(140%)",
     "backdrop-filter": "blur(12px) saturate(140%)",
-    "transform-origin": "center"
+    "transform-origin": "var(--popover-origin, center)"
   },
   "context-menu-overlay": {
     "background": "transparent",
@@ -3617,7 +3617,7 @@
   "dropdown-menu": {
     "-webkit-backdrop-filter": "blur(12px) saturate(140%)",
     "backdrop-filter": "blur(12px) saturate(140%)",
-    "transform-origin": "center"
+    "transform-origin": "var(--popover-origin, center)"
   },
   "dropdown-menu-content": {
     "-webkit-backdrop-filter": "blur(var(--glass-blur)) saturate(var(--glass-saturate))",
@@ -6485,9 +6485,12 @@
   },
   "main-area": {
     "background": "var(--bg-primary)",
+    "border-radius": "var(--surface-sheet-radius) 0 0 var(--surface-sheet-radius)",
+    "box-shadow": "var(--shadow-sheet)",
     "display": "flex",
     "flex": "1",
-    "min-width": "0"
+    "min-width": "0",
+    "position": "relative"
   },
   "markdown-body": {
     "line-break": "strict",
@@ -11671,7 +11674,7 @@
   "popover": {
     "-webkit-backdrop-filter": "blur(12px) saturate(140%)",
     "backdrop-filter": "blur(12px) saturate(140%)",
-    "transform-origin": "center"
+    "transform-origin": "var(--popover-origin, center)"
   },
   "popover-content": {
     "-webkit-backdrop-filter": "blur(var(--glass-blur)) saturate(var(--glass-saturate))",
@@ -14125,7 +14128,7 @@
   },
   "sidebar": {
     "background": "var(--sidebar-bg)",
-    "border-right": "1px solid var(--border-separator)",
+    "border-right": "1px solid var(--hairline-ink)",
     "display": "flex",
     "flex-direction": "column",
     "flex-shrink": "0",
@@ -14161,8 +14164,11 @@
     "padding": "var(--space-2) var(--space-4)"
   },
   "sidebar-nav": {
+    "display": "flex",
+    "flex-direction": "column",
     "flex-shrink": "0",
-    "padding": "var(--space-2) var(--space-6)"
+    "gap": "var(--space-1)",
+    "padding": "var(--space-1) var(--space-3)"
   },
   "sidebar-nav-icon": {
     "font-size": "var(--fs-lg)",
@@ -14173,15 +14179,16 @@
     "align-items": "center",
     "background": "none",
     "border": "none",
-    "border-radius": "var(--radius)",
-    "color": "var(--text-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
     "cursor": "pointer",
     "display": "flex",
-    "font-size": "var(--fs-md)",
-    "gap": "var(--space-6)",
-    "padding": "var(--space-5) var(--space-6)",
+    "font-size": "var(--fs-base)",
+    "gap": "var(--space-2)",
+    "height": "30px",
+    "padding": "0 var(--space-2)",
     "text-align": "left",
-    "transition": "background var(--duration-fast) ease",
+    "transition": "var(--transition-color), var(--transition-transform)",
     "width": "100%"
   },
   "sidebar-project": {
@@ -14212,12 +14219,13 @@
   "sidebar-project-header": {
     "align-items": "center",
     "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
     "cursor": "pointer",
     "display": "flex",
-    "gap": "var(--space-3)",
-    "min-height": "32px",
-    "padding": "var(--space-4) var(--space-4)",
-    "transition": "background var(--duration-press)"
+    "gap": "var(--space-2)",
+    "height": "30px",
+    "padding": "0 var(--space-2)",
+    "transition": "var(--transition-color), var(--transition-transform)"
   },
   "sidebar-project-icon": {
     "font-size": "var(--fs-md)"
@@ -14242,7 +14250,7 @@
     "white-space": "nowrap"
   },
   "sidebar-projects": {
-    "padding": "0 var(--space-6)"
+    "padding": "var(--space-1) var(--space-3)"
   },
   "sidebar-projects-section": {
     "display": "flex",
@@ -14291,14 +14299,14 @@
     "bottom": "0",
     "cursor": "col-resize",
     "position": "absolute",
-    "right": "-2px",
+    "right": "-3px",
     "top": "0",
-    "transition": "background var(--duration-fast) ease",
-    "width": "4px",
+    "transition": "var(--transition-color)",
+    "width": "6px",
     "z-index": "10"
   },
   "sidebar-section": {
-    "padding": "var(--space-6) var(--space-8)"
+    "padding": "var(--space-1) var(--space-3)"
   },
   "sidebar-section-btn": {
     "align-items": "center",
@@ -14309,26 +14317,29 @@
     "cursor": "pointer",
     "display": "flex",
     "font-size": "var(--fs-md)",
-    "height": "22px",
+    "height": "24px",
     "justify-content": "center",
     "transition": "var(--transition-color)",
-    "width": "22px"
+    "width": "24px"
   },
   "sidebar-section-header": {
     "align-items": "center",
     "display": "flex",
+    "height": "24px",
     "justify-content": "space-between",
-    "margin-bottom": "var(--space-4)"
+    "margin-bottom": "var(--space-1)"
   },
   "sidebar-session": {
     "align-items": "center",
     "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
     "cursor": "pointer",
     "display": "flex",
     "font-size": "var(--fs-base)",
-    "gap": "var(--space-3)",
-    "padding": "var(--space-3) var(--space-4)",
-    "transition": "background var(--duration-press)"
+    "gap": "var(--space-2)",
+    "height": "30px",
+    "padding": "0 var(--space-2)",
+    "transition": "var(--transition-color), var(--transition-transform)"
   },
   "sidebar-session-actions": {
     "align-items": "center",
@@ -14383,7 +14394,7 @@
     "font-weight": "var(--weight-medium)",
     "letter-spacing": "var(--ls-wide)",
     "line-height": "var(--lh-ui)",
-    "padding": "var(--space-4) var(--space-6) var(--space-2) var(--space-6)",
+    "padding": "var(--space-3) var(--space-4) var(--space-1) var(--space-4)",
     "text-transform": "uppercase",
     "user-select": "none"
   },
@@ -14414,7 +14425,7 @@
     "white-space": "nowrap"
   },
   "sidebar-sessions": {
-    "padding-left": "var(--space-9)"
+    "padding-left": "var(--space-3)"
   },
   "sidebar-toggle": {
     "background": "none",
@@ -14434,12 +14445,13 @@
     "cursor": "pointer",
     "display": "flex",
     "flex": "1",
-    "flex-direction": "column",
+    "flex-direction": "row",
     "font-size": "var(--fs-sm)",
-    "gap": "var(--space-1)",
+    "gap": "var(--space-2)",
+    "height": "26px",
     "justify-content": "center",
     "line-height": "var(--lh-tight)",
-    "padding": "var(--space-4) var(--space-1)",
+    "padding": "0 var(--space-2)",
     "position": "relative",
     "text-align": "center",
     "transition": "var(--transition-color)"
@@ -14456,22 +14468,21 @@
     "white-space": "nowrap"
   },
   "sidebar-tool-row": {
-    "background": "color-mix(in srgb, var(--accent, #7c6cf0) 8%, transparent)",
-    "border-radius": "var(--radius-md)",
-    "box-shadow": "inset 0 1px 3px var(--shadow-color-soft)",
+    "background": "none",
+    "border-radius": "var(--radius-sm)",
     "display": "flex",
-    "gap": "var(--space-1)",
-    "margin": "var(--space-2) 0",
-    "padding": "var(--space-2)"
+    "gap": "1px",
+    "margin": "0",
+    "padding": "var(--space-1)"
   },
   "sidebar-user-area": {
     "align-items": "center",
-    "border-top": "1px solid var(--border-primary)",
+    "border-top": "1px solid var(--hairline-ink)",
     "display": "grid",
     "flex-shrink": "0",
-    "gap": "var(--space-4)",
+    "gap": "var(--space-1)",
     "grid-template-columns": "max-content minmax(0, 1fr) max-content",
-    "padding": "var(--space-4) var(--space-6)"
+    "padding": "var(--space-1) var(--space-3)"
   },
   "sidebar-user-avatar": {
     "align-items": "center",

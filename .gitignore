@@ -104,7 +104,7 @@ notebook-section.txt
 # 结论直接决定 UI 路线的下一步，需要进仓库（否则只在本机存在，别人 clone 看不到）。
 !docs/SIDEBAR-AUDIT-OPENBITFUN.md
 # UI 优化方案（第 166 轮）：P0/P1/P2 三批、每项带可机证验收指标与门禁要求。
-!docs/UI-OPTIMIZATION-PLAN.md
+!docs/UI-OPTIMIZATION-SPEC.md
 !docs/TASK-CENTER-MAP.md
 !docs/UI-DESIGN-SYSTEM.md
 !docs/ASSET-LICENSES.md
