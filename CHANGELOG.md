@@ -2,6 +2,72 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.156] - 2026-09-26 — 玻璃材质（侧栏/弹出菜单）+ 按下态分档 + 禁用态与品牌色浅底收敛
+
+> 用户这一轮的输入是一句观感判断加一个问题：**"接着做完吧，我看上去它的背景（尤其是左侧栏和弹出菜单）
+> 是不是有那种透明过渡或者渐变的效果？"**
+> 先把问题用源码答了（是**玻璃材质**，不是渐变），再按对标文档把材质、按下态、禁用态与品牌色阶梯一起做完。
+
+### ① 侧栏与弹出菜单：半透明 + 背景模糊（不是渐变）
+
+- **取证**（对方 `shared/styles/_surface-recipes.scss`）：侧栏 `sidebar-glass` = `color-mix(chrome 90%, transparent)`
+  + `backdrop-filter: blur(12px) saturate(1.2)` + 顶边内高光 `inset 0 1px rgba(255,255,255,.08)`；
+  浮层 `floating` = `surface-raised 94%` + **同一档**模糊；全仓 `linear-gradient` **只出现在卡片装饰、
+  场景背景与 thinking 蒙版**上，侧栏/菜单/对话框的规则里一条渐变都没有。
+- **我们的实情**：只有 `.popover-shell` 写了 `blur(12px)`，而底色是 **98% 不透明**（模糊几乎等于没生效）；
+  侧栏是纯实色 `--sidebar-bg`，`.model-picker` 用的是实色 `--bg-secondary`。
+- **现在**：侧栏在 `@supports` 里换成 90% 玻璃 + `var(--blur-medium)` + 内高光（浅色侧栏底从 `#f4f4f2`
+  提到 `#f8f8f7`，内嵌块 `--bg-tertiary` `#f2f2f0` → `#f4f4f2`）；`.app-menu-surface` / `.slash-command-menu` /
+  `.popover-shell` / `.model-picker` 四处**基础规则**就是 94% 玻璃 + 令牌模糊；**5 条规则 9 处**裸 `blur()`
+  全部令牌化，并删掉零消费方的 `--blur-base`。
+- **三条降级**（与对方同组条件）：`prefers-reduced-transparency: reduce`、`prefers-contrast: more`、
+  `[data-contrast="high"]` 一律回到不透明面 + 去掉模糊；不透明度下限（侧栏 ≥90%、浮层 ≥94%）与
+  "回退面必须真的不透明"由 **LIGHT-UI-10 / DARK-UI-6** 钉住（判据在**去掉注释后**的源码里找 ——
+  注释里也提到这些条件，只在原文 grep 会被自己的注释骗过，这条是变异 M5 逼出来的）。
+
+### ② 按下态与悬停态分成两个台阶
+
+- `.press-layer-host:active` 原来用的是**悬停**档底色 ⇒ 按下去和悬停看起来一模一样。
+- 新增 `--surface-pressed`：浅色 10% 黑、**暗色 14% 白**。暗色这个数是**算出来的**：按下态是半透明的，
+  必须先合成到它压着的面上再比 —— 实测**最小成立 α = 13%**（10% 时在画布上合成出比悬停 `#2a2d2d`
+  更暗的颜色，方向反了，等于"按了个洞"）。门禁 **LIGHT-UI-11 / DARK-UI-7** 在深/浅两档 × 三种面上都验方向。
+
+### ③ 禁用态不透明度：六个数收敛成一个令牌
+
+- 改动前"禁用态变淡"这一件事有 **0.3 / 0.4 / 0.45 / 0.5 / 0.55 / 0.6 六个数**（`styles.css` 31 处 +
+  `codem-ui.css` 4 处）⇒ 同一个界面里两个禁用按钮的灰都不一样。现在统一 `var(--opacity-disabled)` = 0.5。
+- 新门禁 **令牌卫生 H5**：禁用族选择器（`:disabled` / `.disabled` / `[disabled]` / `aria-disabled`）上写裸数值就红；
+  `:hover:not(:disabled)`（可用时的悬停微调）**不误伤**；另外还守"有人在用这个令牌但它没被定义"。
+
+### ④ 品牌色浅底/描边阶梯（D5）
+
+- 改动前全项目 **64 处**手写 `color-mix(in srgb, var(--accent) N%, transparent)`、一共发明了 **20 种百分比**
+  （4%…85%）。现在四档令牌：`--accent-surface` 8% / `--accent-surface-strong` 15% / `--accent-border` 30% /
+  `--accent-border-strong` 45%（**全部派生自 `var(--accent)`**，所以皮肤改一个 `--accent`，四档浅底跟着走）。
+- **28 处等值迁移**（令牌展开后是同一条 `color-mix` ⇒ 零视觉变化）；剩余 43 处由**新的棘轮族 `accent-tint`** 盯着只许降。
+
+### ⑤ 顺带修掉一个棘轮口径问题（不是为了让自己变绿）
+
+- 棘轮把 `box-shadow: none` 这种**取消**也算成"写死了一个阴影"，于是玻璃降级块必须写的
+  `box-shadow: none` 反而把棘轮推高 2 处 —— "正确做法被判违规"。
+- 现在 `none`/`inherit`/`initial`/`unset`/`revert` 单独计入 `keyword`（报告里可见）而不进 `raw`；
+  `bold`（真实字重 700）、`auto`、`normal` 照旧算写死。按新口径重读并**收紧** 5 个族基线
+  （box-shadow 31→29、animation/transition 61→56、font-size 45→42、font-weight 317→315、border-radius 43→42）。
+
+### 门禁与自证
+
+- 新增 **11 条**契约：LIGHT-UI-10 / LIGHT-UI-11 / DARK-UI-6 / DARK-UI-7、令牌卫生 **H5**、DIS-1…4、LIT-2b / LIT-6 / LIT-7。
+- 变异自证：`node .preview-shot/mutate-glass-gates.mjs` **9/9 红**、`node .preview-shot/mutate-style-gates.mjs` **10/10 红**
+  （含"侧栏透明度调过头""暗色按下态抄浅色档""漏写降级条件""禁用态写死 0.5""阶梯令牌被写死 rgba"），两条都会逐字节还原并确认回绿。
+- `npm run verify` 400 文件 / 6278 通过；`npm run audit` 全绿；`src/test/ui-batch-a-d.test.ts` 等既有契约未动。
+
+### 仍未做（如实列，见 `docs/SKIN-BENCHMARK-OPENBITFUN.md` §9.4）
+
+- P1-2 文字令牌 alpha 化（含 `--accent-muted` 仍是写死 rgba、不跟皮肤）、P1-3 阴影阶梯统一
+  （`--shadow-lg` 的品牌紫被既有用例 `ui-batch-a-d.test.ts` 明确钉住，改它要连产品决策一起推翻）、
+  P2-1 密度档、P2-2/D8 身份色、P2-3 皮肤数据化（hub 51 / dream 72 个裸颜色字面量）、P2-4 颜色用量注册表、
+  D1 暗色主文字亮度（用户明确说当前暗色好看 ⇒ 只记录不动手）、D3 暗色阴影强度（需人眼确认）。
+
 ## [1.16.155] - 2026-09-26 — 皮肤对标 OpenBitFun 的 P0 四条全部落地（圆角真 bug / 边框阶梯 / 行高字距令牌 + 排版角色 / 写死值棘轮）+ 暗色档首次有不变量门禁
 
 > 承接上一轮的对标分析（`docs/SKIN-BENCHMARK-OPENBITFUN.md`，取对方 `main@ded818312a39`）。

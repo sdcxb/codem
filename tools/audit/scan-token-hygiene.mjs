@@ -17,6 +17,7 @@
  * | H2 | 几何刻度（radius 家族 / space 家族）**要么不定义、要么整套定义** | 皮肤只改一半会让阶梯断裂（半套覆盖最难查） |
  * | H3 | 刻度必须**非递减**（xs ≤ sm ≤ radius ≤ md ≤ lg ≤ xl） | 第 34 波踩过"xs 比 sm 还大"的命名反转 |
  * | H4 | 几何令牌的值必须是**长度/数字**（px/rem/单位less），别名只能是 `var()` | 防止把颜色/百分比误写进几何刻度 |
+ * | H5 | **禁用态**的不透明度必须写 `var(--opacity-disabled)`，不许写裸数值 | 同一件事曾有 0.3/0.4/0.45/0.5/0.55/0.6 **六个数**（第 156 轮 P1-4 收敛为 1 个） |
  *
  * ## 边界（如实写）
  *
@@ -55,6 +56,38 @@ export const SCALE_FAMILIES = {
 };
 
 const isGeometry = (name) => GEOMETRY_PREFIXES.some((p) => name.startsWith(p));
+
+/** 禁用态选择器：` :disabled` / `.disabled` / `[disabled]` / `aria-disabled` / `.is-disabled`。
+ *  ⚠️ 先把 `:not(...)` 整段摘掉再判 —— 否则 `:hover:not(:disabled)`（**可用**时的悬停微调，
+ *  不是禁用态）会被误判，那种地方写 `opacity: 0.9` 是正确的。 */
+const DISABLED_SELECTOR = /:disabled|\.disabled\b|\[disabled\]|aria-disabled|\.is-disabled/;
+const isDisabledSelector = (selector) => DISABLED_SELECTOR.test(selector.replace(/:not\([^)]*\)/g, ""));
+
+/** H5：禁用态不透明度 —— 收集所有"禁用族选择器上写裸数值 opacity"的位置 */
+export function collectDisabledOpacity(css, file) {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const out = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(clean))) {
+    const selector = m[1].trim().replace(/\s+/g, " ");
+    if (!isDisabledSelector(selector)) continue;
+    const body = m[2];
+    const bodyStart = m.index + m[0].indexOf("{");
+    for (const t of body.matchAll(/opacity\s*:\s*([^;]+);/g)) {
+      const value = t[1].trim();
+      if (value === "var(--opacity-disabled)") continue;
+      const line = clean.slice(0, bodyStart + t.index).split("\n").length;
+      out.push({
+        rule: "H5",
+        file,
+        lines: [line],
+        message: `禁用态（\`${selector}\`）的不透明度写成 \`${value}\` —— 必须用 \`var(--opacity-disabled)\`（同一个概念只能有一个数）`,
+      });
+    }
+  }
+  return out;
+}
 
 /** 归一化作用域名：`:root` / `:root, [data-theme=…]` → "default"；`[data-skin="hub"]` → 它自己 */
 export function scopeOf(selector) {
@@ -171,6 +204,19 @@ export function scanTokenHygiene({ files }) {
     }
   }
 
+  /* H5：禁用态不透明度（第 156 轮 P1-4）。顺带保证令牌本身真的定义了 ——
+     否则大家都写 `var(--opacity-disabled)` 而令牌被删掉时，禁用态会整片失效（opacity 回落到初始值 1） */
+  for (const f of files) problems.push(...collectDisabledOpacity(f.css, f.path));
+  const usesToken = files.some((f) => /var\(--opacity-disabled\)/.test(f.css));
+  if (usesToken && !defs.some((d) => d.name === "--opacity-disabled")) {
+    problems.push({
+      rule: "H5",
+      file: files[0]?.path ?? "?",
+      lines: [0],
+      message: "有地方在用 `var(--opacity-disabled)`，但没有任何作用域定义它 —— 禁用态会整片退化成不透明",
+    });
+  }
+
   return { defs, problems };
 }
 
@@ -192,7 +238,7 @@ if (isCli) {
     console.log(`令牌卫生：扫了 ${files.length} 个文件、几何/刻度令牌定义 ${geometry.length} 条`);
     console.log(`按作用域：${[...new Set(defs.map((d) => d.scope))].join(", ")}`);
     if (problems.length === 0) {
-      console.log("H1 重复定义 0、H2 刻度成套 ✅、H3 单调 ✅、H4 类型 ✅");
+      console.log("H1 重复定义 0、H2 刻度成套 ✅、H3 单调 ✅、H4 类型 ✅、H5 禁用态不透明度走令牌 ✅");
     } else {
       for (const p of problems) console.log(`  🔴 [${p.rule}] ${p.file}:${p.lines.join(",")}  ${p.message}`);
     }

@@ -449,3 +449,62 @@ node .preview-shot/_palette-stats.mjs .preview-shot/_shot-light-154.png
 | D7 | **高对比档** | 对方有 `high-contrast-dark`（5.7 KB 令牌）；我们没有 | 加 `[data-contrast="high"]` 覆盖块（约 10 个令牌） | 低（纯新增，不影响默认档） |
 | D8 | **暗色专属身份色** | 对方暗色沿用同一套 `identity.*`（粉/紫/蓝/琥珀…），我们有 `--chart-cat-*` 但没"身份"语义 | 加 `--identity-*`（助手/模式/工具族）并在注释里写明"不表状态" | 低 |
 
+---
+
+## 9. 第二轮落地（1.16.156）：玻璃/浮层材质 + 按下态 + 禁用态 + 品牌色阶梯
+
+用户这一轮的输入是一句观感判断 + 一个问题：
+
+> "接着做完吧，我看上去它的背景（**尤其是左侧栏和弹出菜单**）是不是有那种透明过渡或者渐变的效果？"
+
+### 9.1 先回答那个问题：是**半透明 + 模糊**，不是渐变（源码级取证）
+
+| 问 | 答（对方源码 `shared/styles/_surface-recipes.scss`，`main@ded818312a39`） |
+| --- | --- |
+| 侧栏背景 | `@mixin sidebar-glass`：先给**不透明** `--color-surface-chrome`，`@supports` 里换成 `color-mix(chrome 90%, transparent)` + `backdrop-filter: var(--effect-blur-medium)` + `box-shadow: var(--shadow-inner-highlight)` |
+| 弹出菜单 | `@mixin floating`：`surface-raised 94%` + **同一档**模糊（`blur(12px) saturate(1.2)`） |
+| 有没有渐变 | **没有**。`linear-gradient` 全仓只出现在卡片装饰（`cardGradients`）、场景背景与 thinking 蒙版上；侧栏/菜单/对话框的规则里**一条渐变都没有** |
+| 那"过渡感"从哪来 | ① 半透明底 ⇒ 背后的内容隐约透出；② `saturate(1.2)` ⇒ 透出来的颜色更艳；③ 顶边 1px 内高光 `inset 0 1px rgba(255,255,255,.08)` ⇒ 像一块有厚度的玻璃；④ 三档模糊（4/8/12）按浮层大小配 |
+| 降级 | `prefers-reduced-transparency: reduce`、`prefers-contrast: more`、`[data-contrast='high']` 三种情况一律回到不透明 + 去掉模糊 |
+
+**结论：它是"玻璃"（材质），不是"渐变"（颜色）。** 我们之前只有 `.popover-shell` 一处写了 `blur(12px)`，
+而底色是 **98% 不透明** —— 模糊几乎等于没生效；侧栏则是纯实色 `--sidebar-bg`，一点玻璃都没有。
+
+### 9.2 这一轮改了什么（每条都有判据）
+
+| 项 | 改之前 | 改之后 | 判据（机器守） |
+| --- | --- | --- | --- |
+| 侧栏玻璃 | 纯实色（`--sidebar-bg`），无模糊 | `@supports` 里 90% + `var(--blur-medium)`（= `blur(12px) saturate(1.2)`）+ 顶边内高光；浅色侧栏底 `#f4f4f2`→`#f8f8f7` | LIGHT-UI-10 / DARK-UI-6（不透明度下限 90%/94% + 回退面必须不透明 + 三条降级条件必须在**去注释后**的源码里真的存在） |
+| 浮层玻璃 | `--dropdown-bg` 98% 不透明；`.model-picker` 用的是实色 `--bg-secondary` | `--dropdown-bg` = 94% 玻璃；`.app-menu-surface` / `.slash-command-menu` / `.popover-shell` / `.model-picker` 四处**基础规则**里就是玻璃 + 令牌模糊（不再各写 `blur(12px)`） | 同上 + `css-contract` 快照（取值变了要显式 `--write`） |
+| 模糊字面量 | **5 条规则、9 处声明**裸写 `blur(12px)` / `blur(4px)`（`.app-menu-surface` / `.popover-shell` / `.slash-command-menu` / `.petm-overlay` / `.file-editor-floating-overlay`） | 全部走 `--blur-subtle` / `--blur-medium`；**删掉**没人用的 `--blur-base`（照抄三档会变成"体系很全"的假象） | `css-var-unused`（零消费方当场红） |
+| 按下态 | `.press-layer-host:active` 用的是**悬停**档底色 ⇒ 按下去和悬停一样 | 新增 `--surface-pressed`（浅色 10% 黑 / 暗色 **14% 白**），按下比悬停再远画布一步 | LIGHT-UI-11 / DARK-UI-7：按下是半透明的，**必须先合成到三种面上**再比；暗色最小成立 α 是 **13%**（10% 时在画布上比悬停还暗 ⇒ 方向反了） |
+| 禁用态不透明度 | **0.3/0.4/0.45/0.5/0.55/0.6 六个数**（styles.css 31 处 + codem-ui.css 4 处） | 全部 `var(--opacity-disabled)` = 0.5 | 令牌卫生新增 **H5**（禁用族选择器上写裸数值就红；`:hover:not(:disabled)` 不误伤）+ DIS-1…4 |
+| 品牌色浅底/描边 | **64 处**手写 `color-mix(… var(--accent) N%, transparent)`，一共 **20 种百分比** | 四档令牌（`--accent-surface` 8% / `-strong` 15% / `--accent-border` 30% / `-strong` 45%，全部派生自 `var(--accent)`），**28 处等值迁移**（零视觉变化）；剩余 43 处由**新棘轮族 `accent-tint`** 盯着只许降 | LIT-6（阶梯必须存在且不许写死 rgba）+ LIT-7 + 棘轮 `accent-tint` |
+| 高对比档 | 无 | `[data-contrast="high"]`：外壳/浮层回实色 + 去掉模糊 + 侧栏描边提到 `--border-primary` | 与玻璃降级同一组断言（D7 落地） |
+
+**顺带做的口径修正（如实记，且**不是为了让自己变绿**）**：棘轮把 `box-shadow: none` 这种**取消**也算成"写死了一个阴影"——
+玻璃降级块必须写 `box-shadow: none`，于是"正确做法"反而把棘轮推高 2 处。
+现在 `none`/`inherit`/`initial`/`unset`/`revert` 单独计入 `keyword`（报告里可见）、不再进 `raw`；
+`bold`（真实字重 700）、`auto`、`normal` 照旧算写死。按新口径重读并**收紧**了 5 个族的基线
+（box-shadow 31→29、animation/transition 61→56、font-size 45→42、font-weight 317→315、border-radius 43→42）。
+
+### 9.3 变异自证（门禁"能报错"的证据）
+
+- `node .preview-shot/mutate-glass-gates.mjs`：**9/9 红**（含"侧栏透明度调过头""暗色按下态抄浅色档=10%""漏写降级条件"）；
+- `node .preview-shot/mutate-style-gates.mjs`：**10/10 红**（含 H5 两条：写死 0.5、令牌被删；`accent-tint` 自编 37%；阶梯令牌被写死）；
+- 两条脚本都会在末尾**逐字节还原**并确认回绿。
+
+### 9.4 还没做的（如实列，别把"没做"说成"做了"）
+
+| 项 | 现状 | 为什么这一轮没做 |
+| --- | --- | --- |
+| P1-2 文字令牌 alpha 化 | `--text-secondary/muted` 仍是实色；`--accent-muted` 仍是**写死 rgba**（不跟皮肤的 `--accent`） | 文字改 alpha 后，对比度门禁必须按"合成到各个面"重算（现在的 LIGHT-UI-3 是拿实色比的），是一次独立的门禁改造 |
+| P1-3 阴影阶梯统一 | 只把 `.model-picker` 并进了 `--shadow-raise-3`；两套阶梯仍并存 | `--shadow-lg`（品牌紫）被 `src/test/ui-batch-a-d.test.ts` 明确钉住（"阴影最大档使用主色调阴影"）—— 改它要连那条产品决策一起推翻，不能悄悄改 |
+| P2-2 / D8 身份色 | 仍只有 `--chart-cat-*` | 需要产品决策（"助手/用户/四种模式/工具族"配色表） |
+| P2-3 皮肤数据化 | hub 51 / dream 72 个裸颜色字面量仍在 | 结构性改造（皮肤 → 令牌对象 → 运行时注入），工时最大的一项 |
+| D1 暗色主文字亮度 | 仍 `#d4d4d4`（11.55，参考 13.87） | **用户明确说过当前暗色好看** ⇒ 只记录不动手 |
+| D3 暗色阴影强度 | 未调整 | 需要人眼确认（0.9 这种强阴影在纯黑底上会把"浮起"变成"贴黑块"） |
+| P2-1 密度档 `[data-density]` | 未做 | 只加令牌块没人消费会被 `css-var-unused` 拦下 ⇒ 得先有设置入口（产品决策） |
+| P2-4 三道外观审计 | 排版/动效两条已由棘轮族覆盖（`font-size`/`line-height`/`letter-spacing`/`animation-transition`）；**颜色用量注册表**未做 | 需要一张"角色 × 表面"的注册表（他们用 JSON + 每应用基线） |
+
+

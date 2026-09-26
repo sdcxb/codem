@@ -149,6 +149,39 @@
   /* 按下反馈：整体下沉 1px（比只改颜色更"有手感"，且不触发重排） */
   --press-shift: 1px;
   --focus-ring: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+  /* ===== 玻璃/浮层效果令牌（第 156 轮，对标 OpenBitFun 的 `_surface-recipes.scss` 与 `sidebar-glass`）=====
+     对方的产品外壳用一组**配方**做半透明：侧栏 = `color-mix(chrome 90%, transparent)` + `blur(12px) saturate(1.2)`
+     + 内高光；浮层 = `surface-raised 94%` + 同一档模糊；并且都有**降级路径**
+     （`prefers-reduced-transparency: reduce` / `prefers-contrast: more` / `[data-contrast=high]` ⇒ 回到不透明）。
+     我们此前只有 `.popover-shell` 一处写了 `blur(12px)`，而底色是 `98%` 不透明 —— **模糊等于没生效**。
+     现在把"模糊档"与"玻璃面"都做成令牌，并在同一个地方统一消费（见文件末尾"玻璃表面"一节）。 */
+  --blur-subtle: blur(4px) saturate(1.02);   /* 遮罩/小面积（浮层遮罩、提示条） */
+  --blur-medium: blur(12px) saturate(1.2);   /* 浮层与外壳（对方 sidebar/floating 用的就是这一档） */
+  /* ⚠️ 这里原来还定义了一个 `--blur-base: blur(8px)`（"中等浮层"那一档）—— **零消费方**
+     （我们真实的模糊只有两种：4px 的遮罩与 12px 的浮层），被 `css-var-unused` / LIGHT-UI-5 拦下，已删。
+     参考实现有三档是因为它有 4/8/12 三种真实用途；照抄档位而没有人用，只会变成"看起来体系很全"的假象。 */
+  /* 内高光：暗色里"顶边亮 1px"是最有效的立体信号（对方 `shadow.innerHighlight` = 白 8%，hover 升到 24%）。
+     ⚠️ 只定义**一档**：对方那个 24% 的 hover 档在我们这里没有对应消费方（侧栏项的悬停已经有
+     `--bg-hover` 整块变色，再加内高光是两重反馈）—— 照抄档位会被 `css-var-unused` 拦下，故不定义。 */
+  --shadow-inner-highlight: inset 0 1px 0 rgb(255 255 255 / 8%);
+  /* 禁用态的不透明度：此前 100 处写死 0.4/0.5/0.55 三种值（同一件事三个数） */
+  --opacity-disabled: 0.5;
+  /* ===== 品牌色的**浅底/描边阶梯**（第 156 轮 D5，对标 OpenBitFun 的 accent 分层）=====
+     对方的 accent 有四档浅底（5/9/15%）+ 两档描边（25/40%）；我们此前是"一个紫"，
+     全项目 **64 处** 各自现写 `color-mix(in srgb, var(--accent) N%, transparent)`，
+     一共发明了 **20 种百分比**（4/5/8/10/12/13/14/15/18/20/25/28/30/32/40/45/50/60/75/85）——
+     于是"同一个品牌色"在不同组件里深浅不一，而每加一个组件就多一个数。
+     现在收敛成四档（值取的是**实测出现最多**的那几个，所以迁移是逐字符等值替换、零视觉变化）：
+       8%  `--accent-surface`         浅底（hover 行、选中的 chip 底）
+      15%  `--accent-surface-strong`  更实的浅底（当前选中项）
+      30%  `--accent-border`         描边
+      45%  `--accent-border-strong`  强调描边 / 焦点相关
+     ⚠️ 全部写成 `var(--accent)` 的派生（**不是**写死的 rgba）：这样皮肤只要改 `--accent`，
+     四档浅底跟着走 —— 顺带修掉 `--accent-muted` 那种"写死 rgba、不跟皮肤"的老毛病（本轮不动它，见文档）。 */
+  --accent-surface: color-mix(in srgb, var(--accent) 8%, transparent);
+  --accent-surface-strong: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 30%, transparent);
+  --accent-border-strong: color-mix(in srgb, var(--accent) 45%, transparent);
   /* 控件高度尺度（第 31 波）：文档 §2.4 早就定了档位，但此前所有控件都是 padding 撑出来的，
      同一行里两个控件能差 1–6px —— 这是"没对齐"的根因。现在统一写高度。 */
   --control-xs: 26px;    /* 密集内联：标签页、迷你按钮、chip */
@@ -240,7 +273,10 @@
    */
   --bg-primary: #ffffff;
   --bg-secondary: #fafaf9;
-  --bg-tertiary: #f2f2f0;
+  /* 第 156 轮：内嵌块从 `#f2f2f0` 提到 `#f4f4f2`（对标 OpenBitFun 的 `tertiary = #f7f7f7`）。
+     提亮幅度受 **LIGHT-UI-1** 约束：内嵌块与内容面的亮度差必须 ≥0.04（"还得看得出来"），
+     `#f4f4f2` 的差是 **0.046**（原来 0.064，对方的 #f7f7f7 只有 0.028 ⇒ 那条门禁比对方更严，保留）。 */
+  --bg-tertiary: #f4f4f2;
   --bg-hover: #eeeeec;
   /* 文字：暖灰三档（对比度按白底/内嵌块各算过：正文 16.5/14.7、次级 7.4/6.6、弱级 5.3/4.7）
      弱级从 #8a8880 提到 #6e6c66 —— 改动前它在白底只有 3.46:1、落在内嵌灰块上只有 3.03:1，
@@ -321,7 +357,7 @@
   --message-bubble-user-border: rgba(107, 92, 231, 0.16);
   --system-bg: #f2f2f0;
   --code-bg: #f6f6f4;
-  --sidebar-bg: #f4f4f2;
+  --sidebar-bg: #f8f8f7;
   --input-bg: #ffffff;
   --scrollbar-track: rgb(242 242 240 / 80%);
   --scrollbar-thumb: rgb(31 31 30 / 16%);
@@ -359,9 +395,21 @@
   --tooltip-bg: rgb(38 37 35 / 96%);
   --tooltip-text: #f7f7f5;
   --tooltip-border: rgb(31 31 30 / 20%);
-  /* Dropdown */
-  --dropdown-bg: rgb(252 252 251 / 98%);
+  /* Dropdown / 浮层（第 156 轮改为**玻璃**：94% 不透明 + 中号模糊，见文件末尾"玻璃表面"一节） */
+  --surface-glass-raised: color-mix(in srgb, #ffffff 94%, transparent);
+  --dropdown-bg: var(--surface-glass-raised);
   --dropdown-hover: rgb(31 31 30 / 7%);
+  /* 外壳/侧栏的玻璃面：90% 不透明（对方 `sidebar-glass` 用的是 90% + blur(12px) + 内高光） */
+  --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 90%, transparent);
+  /* 玻璃的**不透明回退面**：`prefers-reduced-transparency` / `prefers-contrast` / `[data-contrast=high]`
+     三种情况一律用它（对方 `_surface-recipes.scss` 的第一行就是"先给不透明底"）。 */
+  --surface-opaque-raised: #ffffff;
+  /* 按下态：**半透明着色**而不是换一个实色面 —— 这样压在玻璃上时模糊仍然透得出来
+     （对方的 `sidebar-overlay($surface, 18%)` 就是这个思路："控件给共享材质上色，而不是再盖一块面板"）。
+     取值口径：按下必须比悬停（`--bg-hover`）**再远画布一步**。浅色画布是白的 ⇒ 按下更暗，
+     实测最小成立 α = **8%**（压在 `--bg-primary` 上 `#ededed` L 0.8475 < 悬停 `#eeeeec` 0.8538），
+     取 **10%** 留余量。暗色档**方向相反**（更亮）且最小成立 α 是 13% ⇒ 那边是 14%，**两档不同值**。 */
+  --surface-pressed: rgb(31 31 30 / 10%);
   /* Overlay / backdrop（浅色主题遮罩略轻，保持内容可辨） */
   --overlay-backdrop: rgb(31 31 30 / 32%);
   --overlay-backdrop-strong: rgb(31 31 30 / 50%);
@@ -470,8 +518,22 @@
   --tooltip-bg: rgba(33, 36, 36, 0.98);
   --tooltip-text: #d4d4d4;
   --tooltip-border: rgba(255, 255, 255, 0.10);
-  --dropdown-bg: rgba(26, 28, 28, 0.98);
+  /* 浮层/外壳玻璃（第 156 轮，与亮色档同名同源）：暗色档的浮层底本就是 #1a1c1c，
+     94% + blur(12px) 后在内容上能看出"磨砂"（对方 dark 的 `surface.raised` = #1c1c1f，同一手法）。 */
+  --surface-glass-raised: color-mix(in srgb, rgba(26, 28, 28, 1) 94%, transparent);
+  --dropdown-bg: var(--surface-glass-raised);
   --dropdown-hover: rgba(255, 255, 255, 0.08);
+  --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 90%, transparent);
+  --surface-opaque-raised: rgba(26, 28, 28, 1);
+  /* 按下态（与亮色档同名同源）：**白色 14%**，不是 10%。
+     这条不是审美取值而是**算出来的**：按下态是半透明的，合成后的亮度取决于它压着哪个面，
+     而"按下必须比悬停再远一步"这条不变量在暗色档要满足 **最暗的那个面**（画布 `#0e0f0f`）。
+     实测（探针 `.preview-shot/_pressed-alpha-search.mjs`）：
+       α=10% → 画布上合成 `#262727`（L 0.0201）**比悬停 `#2a2d2d` 的 0.0256 更暗** ⇒ 方向反了；
+       α=13% 是**最小成立值**（`#2d2e2e`，L 0.0273），取 **14%**（`#303131`，L 0.0300）留一点余量。
+     亮色档的对应结论是"α ≥ 8%"（黑压白），取 10% 已够 —— 两档不是同一个数，因为**方向相反**。
+     这条不变量有门禁：`src/test/light-theme-contrast.test.ts` 的 LIGHT-UI-11 / DARK-UI-7。 */
+  --surface-pressed: rgba(255, 255, 255, 0.14);
   --overlay-backdrop: rgba(0, 0, 0, 0.5);
   --overlay-backdrop-strong: rgba(0, 0, 0, 0.72);
 }
@@ -502,9 +564,14 @@ button:not(:disabled):not(.press-layer-host):active,
   transition: transform var(--duration-press) var(--ease-out);
 }
 
-/* 浮层宿主的按压反馈：不给 transform（保住浮层层叠），改用背景色。 */
+/* 浮层宿主的按压反馈：不给 transform（保住浮层层叠），改用背景色。
+ * 第 156 轮：底色从 `--bg-hover`（**悬停**档的实色面）换成 `--surface-pressed`
+ * —— 悬停与按下必须是**两个台阶**，否则按下去和悬停一模一样，用户拿不到"点到了"的反馈。
+ * 合成后的实测**亮度**（探针 `.preview-shot/_pressed-step.mjs`，按下是半透明的所以必须先合成）：
+ *   浅色压在内容面上 L=0.812 < 悬停 0.854 ⇒ 更"陷进去"；暗色压在画布上 L=0.030 > 悬停 0.026 ⇒ 更"浮起来"。
+ * 用半透明着色而不是另一个实色面：压在玻璃外壳上时模糊仍然透得出来。 */
 .press-layer-host:active {
-  background: var(--bg-hover);
+  background: var(--surface-pressed);
 }
 
 /* D-4: Popover/dropdown transform-origin — scale from trigger, not center */
@@ -696,8 +763,8 @@ justify-content: flex-start;
   border-radius: var(--radius-md);
   background: var(--dropdown-bg);
   box-shadow: var(--shadow-raise-3);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: var(--blur-medium);
+  -webkit-backdrop-filter: var(--blur-medium);
 }
 
 .app-menu-item {
@@ -1009,7 +1076,10 @@ overflow: hidden;
 position: relative;
 width: 260px;
 background: var(--sidebar-bg);
-border-right: 1px solid var(--border-primary);
+/* 第 156 轮：右边线从 `--border-primary`（9%）降到 `--border-separator`（5%）——
+   对方亮色的侧栏 hairline 就是 5%（`color-mix(content-on-light 5%, transparent)`），
+   9% 的硬边会让"外壳 → 内容面"的过渡显得生硬（这一档同时保留给控件边界用）。 */
+border-right: 1px solid var(--border-separator);
 display: flex;
 flex-direction: column;
 flex-shrink: 0;
@@ -1656,13 +1726,18 @@ font-size: var(--fs-base);
   top: 100%;
   left: 0;
   margin-top: var(--space-2);
-  background: var(--bg-secondary);
+  /* 第 156 轮：从 `--bg-secondary` 换成 `--dropdown-bg`（= 94% 玻璃面）+ 中号模糊
+     —— 它就是一个下拉菜单，走和 `.popover-shell` / `.slash-command-menu` 同一套浮层配方；
+     改动前它是"实色面板"，在白色内容面上看着像贴上去的，玻璃后才真的浮起来。 */
+  background: var(--dropdown-bg);
+  backdrop-filter: var(--blur-medium);
+  -webkit-backdrop-filter: var(--blur-medium);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
   padding: var(--space-2);
   min-width: 160px;
   z-index: var(--z-modal);
-  box-shadow: 0 4px 16px var(--shadow-color);
+  box-shadow: var(--shadow-raise-3);
 }
 
 .model-option {
@@ -2714,7 +2789,7 @@ z-index: 50;
 }
 
 .message-input:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
 }
 
 .send-btn {
@@ -2822,7 +2897,7 @@ display: block;
 }
 
 .upload-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -3132,7 +3207,7 @@ color: var(--accent);
 }
 
 .file-editor-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -3152,7 +3227,7 @@ position: fixed;
 inset: 0;
 z-index: var(--z-context-menu-top);
 background: var(--overlay-backdrop);
-backdrop-filter: blur(4px);
+backdrop-filter: var(--blur-subtle);
 display: flex;
 align-items: center;
 justify-content: center;
@@ -3365,7 +3440,7 @@ min-height: 0;
 }
 
 .file-editor-btn.save-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--opacity-disabled);
 }
 
 .file-editor-loading {
@@ -3696,7 +3771,7 @@ min-height: 0;
 }
 
 .revert-btn:disabled {
-  opacity: 0.3;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -3867,7 +3942,7 @@ min-height: 0;
 }
 
 .needs-you-submit:disabled {
-  opacity: 0.4;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -5146,7 +5221,7 @@ pointer-events: auto;
 .step-tooltip-badge {
   font-size: var(--fs-xs);
 color: var(--accent);
-background: color-mix(in srgb, var(--accent) 15%, transparent);
+background: var(--accent-surface-strong);
   padding: 1px var(--space-3);
   border-radius: var(--radius);
   font-weight: var(--weight-medium);
@@ -5884,7 +5959,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .snapshot-refresh-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -6043,7 +6118,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .snapshot-restore-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -6254,7 +6329,7 @@ color: var(--text-on-accent);
 }
 
 .mcp-form-btn.confirm:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -6382,7 +6457,7 @@ color: var(--text-on-accent);
 }
 
 .mcp-server-btn.connect:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -6667,7 +6742,7 @@ color: var(--text-on-accent);
   opacity: 0.9;
 }
 .mcp-catalog-btn.install:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 .mcp-catalog-btn.uninstall {
@@ -7039,7 +7114,7 @@ color: var(--text-on-accent);
 }
 
 .skill-item.disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
 }
 
 .skill-item-meta {
@@ -7088,7 +7163,7 @@ color: var(--text-on-accent);
 }
 
 .skill-detail-btn.publish:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -7172,7 +7247,7 @@ color: var(--text-on-accent);
 }
 
 .publish-market-item:disabled {
-  opacity: 0.4;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -7488,7 +7563,7 @@ color: var(--text-on-accent);
 
 .market-skill-card.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+  box-shadow: 0 0 0 2px var(--accent-surface-strong);
 }
 
 .market-skill-card.installed {
@@ -7634,7 +7709,7 @@ color: var(--text-on-accent);
 }
 
 .market-skill-install-btn:disabled {
-  opacity: 0.6;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -8274,7 +8349,7 @@ color: var(--text-on-accent);
 }
 
 .context-compact-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -8698,7 +8773,7 @@ border-bottom: 1px solid var(--accent);
   white-space: nowrap;
 }
 .wx-btn:hover:not(:disabled) { border-color: var(--accent); }
-.wx-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wx-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 .wx-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); font-weight: 600; }
 .wx-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
 .wx-btn--start { justify-self: start; }
@@ -8991,7 +9066,7 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-sm);
   cursor: pointer;
 }
-.cicd-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cicd-refresh-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 .cicd-empty { padding: var(--space-10); text-align: center; color: var(--text-muted); }
 
 .cicd-runs { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -9504,7 +9579,7 @@ border-bottom: 1px solid var(--accent);
   border-color: color-mix(in srgb, var(--warning) 30%, transparent);
 }
 .plugin-mgr-box.is-accent {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent-surface);
   border-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .plugin-mgr-box-title { margin-bottom: var(--space-1); font-weight: 600; }
@@ -9649,7 +9724,7 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-sm);
   cursor: pointer;
 }
-.tj-filter-item.is-active { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); }
+.tj-filter-item.is-active { background: var(--accent-surface); color: var(--accent); }
 
 .tj-stats {
   display: flex;
@@ -9860,7 +9935,7 @@ border-bottom: 1px solid var(--accent);
  * ========================================================================== */
 .petm-panel { width: 80%; max-width: 720px; height: 70%; max-height: 600px; }
 /* 宠物市场原本在内联样式里给自己的遮罩加了 4px 虚化；统一外壳不带虚化，这里按需补回 */
-.petm-overlay { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.petm-overlay { backdrop-filter: var(--blur-subtle); -webkit-backdrop-filter: var(--blur-subtle); }
 .petm-header {
   display: flex;
   align-items: center;
@@ -10592,7 +10667,7 @@ border-bottom: 1px solid var(--accent);
 }
 
 .session-recover-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -10850,7 +10925,7 @@ border-bottom: 1px solid var(--accent);
 
 .load-more-retry:disabled {
   cursor: default;
-  opacity: 0.6;
+  opacity: var(--opacity-disabled);
 }
 
 .nb-chat-load-more.is-unavailable {
@@ -10999,7 +11074,7 @@ border-bottom: 1px solid var(--accent);
 .diff-custom-actions { display: flex; gap: var(--space-4); }
 .diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--info) 20%, transparent); color: var(--accent); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-submit-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--info) 35%, transparent); }
-.diff-custom-submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.diff-custom-submit-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 .diff-custom-cancel-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-cancel-btn:is(:hover, :focus-visible) { color: var(--text-primary); }
 
@@ -11120,8 +11195,8 @@ border-bottom: 1px solid var(--accent);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
   box-shadow: var(--shadow-popover);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: var(--blur-medium);
+  -webkit-backdrop-filter: var(--blur-medium);
   max-height: 260px;
   overflow-y: auto;
   z-index: var(--z-top);
@@ -11252,7 +11327,7 @@ min-height: 36px;
    ② active 态给一层 accent 淡底 —— 原来只有描边变色，面板打开时不够显眼。 */
 .input-control-item[aria-pressed="true"],
 .input-control-item.active {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-color: var(--accent-border-strong);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
 }
@@ -11261,7 +11336,7 @@ min-height: 36px;
    视觉上要"看起来就是不能点"：降透明度 + 禁止光标 + **取消悬停反馈**（否则鼠标划过还会亮，
    用户会以为能点）。规则必须排在 :hover 之后，同特异度才由顺序决定胜负。 */
 .input-control-item:disabled {
-  opacity: 0.45;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 .input-control-item:disabled:is(:hover, :focus-visible) {
@@ -11554,7 +11629,7 @@ border-color: var(--text-muted);
 
 /* #10: Disabled state hint */
 .message-input:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -11664,7 +11739,7 @@ border-color: var(--text-muted);
   background: var(--accent);
 }
 .switch-root:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 .switch-thumb {
@@ -12005,7 +12080,7 @@ border-color: var(--text-muted);
   opacity: 0.9;
 }
 .notebook-create-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -12303,7 +12378,7 @@ border-color: var(--text-muted);
   background: var(--bg-hover);
 }
 .notebook-add-source-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -12562,7 +12637,7 @@ border-color: var(--text-muted);
   opacity: 0.9;
 }
 .notebook-btn-confirm:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -12619,7 +12694,7 @@ transition: background var(--duration-fast), color var(--duration-fast);
 }
 
 .notebook-mode-save:is(:hover, :focus-visible) {
-background: color-mix(in srgb, var(--accent) 15%, transparent);
+background: var(--accent-surface-strong);
 }
 
 /* ========== Citation Links (P1-2) ========== */
@@ -13028,7 +13103,7 @@ html.pet-window-mode body,
 
 .guidance-action-primary {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border: 1px solid var(--accent-border);
   color: var(--accent, #7c6cf0);
 }
 
@@ -13097,7 +13172,7 @@ html.pet-window-mode body,
 }
 .inline-edit-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+  box-shadow: 0 0 0 2px var(--accent-surface-strong);
 }
 .inline-edit-actions {
   display: grid;
@@ -13121,7 +13196,7 @@ html.pet-window-mode body,
   filter: brightness(1.15);
 }
 .inline-edit-btn.save:disabled {
-  opacity: 0.4;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 .inline-edit-btn.cancel {
@@ -13173,8 +13248,8 @@ html.pet-window-mode body,
   background: var(--bg-hover, #1e1e24);
 }
 .feedback-btn.active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--accent-surface-strong);
+  border-color: var(--accent-border);
 }
 .feedback-btn.like.active {
   background: color-mix(in srgb, var(--success) 15%, transparent);
@@ -13224,7 +13299,7 @@ html.pet-window-mode body,
   width: 8px;
   height: 8px;
   left: 1px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 0 0 2px var(--accent-border);
 }
 .scrollbar-marker.pinned {
   width: 8px;
@@ -13890,7 +13965,7 @@ html.pet-window-mode body,
   transition: var(--transition-color);
 }
 .correction-mode-toggle.enabled {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: var(--accent-surface-strong);
   border-color: var(--accent, #7c6cf0);
   color: var(--accent, #7c6cf0);
 }
@@ -13971,7 +14046,7 @@ html.pet-window-mode body,
 
 /* ========== P1: GuidanceBlock ========== */
 .guidance-block {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent-surface);
   border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: var(--radius-md);
   margin: var(--space-2) var(--space-6);
@@ -14637,7 +14712,7 @@ color: var(--accent, #7c6cf0);
   font-size: var(--fs-2xs);
   color: var(--text-secondary, #a0a0a8);
 }
-.context-badge.type-notebook { border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.context-badge.type-notebook { border: 1px solid var(--accent-border); }
 .context-badge.type-file { border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
 .context-badge.type-url { border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); }
 
@@ -15334,7 +15409,7 @@ color: var(--accent, #7c6cf0);
 .mode-toggle-btn.voice-rec-active { background: color-mix(in srgb, var(--error) 15%, transparent) !important; border-color: var(--error) !important; animation: voice-rec-pulse 1.5s ease-in-out infinite; }
 @keyframes voice-rec-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--error) 40%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
 .voice-settings .config-entry { margin-bottom: var(--space-6); }
-.voice-settings select:disabled, .voice-settings input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
+.voice-settings select:disabled, .voice-settings input[type=range]:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* ========== SlotBridge Loading Fallback ========== */
@@ -15650,8 +15725,8 @@ color: var(--accent, #7c6cf0);
   background: var(--dropdown-bg);
   border-radius: var(--radius-md);
   box-shadow: 0 0 0 1px var(--border-primary), var(--shadow-raise-3);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: var(--blur-medium);
+  -webkit-backdrop-filter: var(--blur-medium);
   animation: popover-slide-in var(--duration-fast) var(--ease-out);
 }
 
@@ -16225,7 +16300,7 @@ color: var(--accent, #7c6cf0);
   border-style: solid;
   border-color: var(--accent);
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent-surface);
 }
 
 .titlebar-tab-close:is(:hover, :focus-visible) {
@@ -16923,7 +16998,7 @@ color: var(--accent, #7c6cf0);
   height: var(--control-dense);
 }
 .sp-btn:is(:hover, :focus-visible) { background: var(--bg-hover); }
-.sp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.sp-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 .sp-btn--secondary { background: var(--bg-secondary); }
 .sp-btn--ghost { background: transparent; }
 .sp-btn--primary { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
@@ -17191,7 +17266,7 @@ input[type="range"].sp-flex-fill {
 }
 .sp-pet-row.is-active {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: var(--accent-surface-strong);
 }
 .sp-rule-row {
   display: grid;
@@ -17298,7 +17373,7 @@ input[type="range"].sp-flex-fill {
   padding: var(--space-4) var(--space-6);
   border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent-surface);
   color: var(--text-secondary);
   font-size: var(--fs-xs);
 }
@@ -17339,7 +17414,7 @@ input[type="range"].sp-flex-fill {
 }
 .turn-status-row.turn-retry {
   border-color: color-mix(in srgb, var(--accent) 20%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent-surface);
 }
 
 .tool-collapse-toggle {
@@ -17915,13 +17990,13 @@ textarea {
 .mode-option:has(input:checked),
 .pm-radio:has(input:checked) {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent-surface);
 }
 
 /* 3) 设置卡片里任何一个开关被打开 → 卡片给出描边（SettingsPanel 的 .sp-card 内含 .sp-check，
       已用 verify-has 核对） */
 .sp-card:has(.sp-check input:checked) {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-color: var(--accent-border-strong);
 }
 
 /* 4) 完成态：待办勾选后整行淡化 + 删除线（TodoListDisplay） */
@@ -17934,7 +18009,7 @@ textarea {
       此前只有控件本身变淡，"这行为什么点不动"要靠猜。McpManager / 设置组 */
 .mcp-form-row:has(:disabled),
 .setting-group:has(:disabled) {
-  opacity: 0.55;
+  opacity: var(--opacity-disabled);
 }
 
 /* 6) 已安装的市场卡片不再"邀请点击"：安装按钮禁用后取消悬停抬升
@@ -18184,4 +18259,97 @@ td,
   [contenteditable="true"]
 ):focus:not(:disabled):not([readonly]) {
   border-color: var(--field-border-focus);
+}
+
+/* ==========================================================================
+ * 玻璃表面（第 156 轮，对标 OpenBitFun 的 `_surface-recipes.scss` / `sidebar-glass`）
+ *
+ * ## 对方是怎么做的（读源码看到的，不是猜的）
+ *
+ * ```scss
+ * @mixin sidebar-glass {                      // 侧栏
+ *   background: var(--color-surface-chrome);  // ① 先给**不透明**底
+ *   @supports (backdrop-filter: blur(1px)) {  // ② 支持才改成玻璃
+ *     background: color-mix(in srgb, var(--color-surface-chrome) 90%, transparent);
+ *     backdrop-filter: var(--effect-blur-medium);      // = blur(12px) saturate(1.2)
+ *     box-shadow: var(--shadow-inner-highlight);       // 顶边内高光
+ *   }
+ *   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { …回到不透明… }
+ *   :root[data-contrast='high'] & { …回到不透明… }
+ * }
+ * ```
+ * 浮层同构（`floating` 配方）：`surface-raised 94%` + 同一档模糊 + 同样的三条降级。
+ * 我们的差距很具体：**只有 `.popover-shell` 写了 `blur(12px)`，而它的底色是 `98%` 不透明** ——
+ * 模糊几乎等于没生效；侧栏则完全没有玻璃（纯实色 `--sidebar-bg`）。
+ *
+ * ## 我们的落地（三条铁律）
+ *
+ * 1. **先不透明**：基础规则里就是实色（`--sidebar-bg` / `--dropdown-bg` 的 fallback），
+ *    玻璃只在 `@supports` 里覆盖 —— 不支持 `backdrop-filter` 的运行时看到的仍是能看的不透明面；
+ * 2. **降级齐全**：`prefers-reduced-transparency: reduce`、`prefers-contrast: more`、
+ *    `[data-contrast="high"]` 三种情况一律回到不透明 + 去掉模糊（对方就是这么做的）；
+ * 3. **不透明度不许太低**：玻璃面 ≥90%（侧栏）/ ≥94%（浮层）—— 低于这个数，文字对比度会随
+ *    背后的内容变化而不可控（`LIGHT-UI-10` / `DARK-UI-6` 会把这两条钉住）。
+ * ========================================================================== */
+
+/* ① 侧栏（外壳）：90% + 中号模糊 + 顶边内高光 */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar {
+    background: var(--surface-glass-chrome);
+    -webkit-backdrop-filter: var(--blur-medium);
+    backdrop-filter: var(--blur-medium);
+    box-shadow: var(--shadow-inner-highlight);
+  }
+}
+
+/* ② 浮层（下拉 / 菜单 / 自绘 picker）：**不在这一节里写** —— 它们的玻璃走各自的**基础规则**
+   （`.popover-shell` / `.slash-command-menu` / `.app-menu-surface` / `.model-picker` 都是
+   `background: var(--dropdown-bg)` + `backdrop-filter: var(--blur-medium)`，模糊量也已令牌化）。
+   为什么不做成"基础实色 + @supports 里翻玻璃"：`--dropdown-bg` 是 21 处消费的既有令牌，
+   把它拆成两档要动 21 个调用点，而 94% 不透明即使在没有 `backdrop-filter` 的运行时
+   与实色也几乎无差别（差别全在模糊上，而模糊不被支持时会被直接忽略）——
+   风险与收益不成比例。**只有侧栏值得那套 @supports 升级**：它从"完全实色"到"玻璃"是质变。
+   ⚠️ 选择器只列**TSX 里真的渲染**的类：写没被渲染的类会被 `css-class-unused` 当场抓出来
+   （第 155 轮我自己在那上面栽过一次）。 */
+
+/* ③ 降级：不要透明、不要模糊 —— 与对方同一组条件（`prefers-reduced-transparency` / `prefers-contrast`）
+   ⚠️ 与文件中部 D-5 那条旧规则（`@media (prefers-reduced-transparency: reduce)`）的关系：
+   那条**也**命中 `.model-picker`，且带 `!important`、把底色写成 `--bg-secondary` ——
+   两者都要求"不透明 + 无模糊"，所以**不变量成立、不冲突**（`--bg-secondary` 本来就是实色）。
+   如实标注：在"减弱透明"开启时 `.model-picker` 的实际底色来自 D-5 那条（`--bg-secondary`），
+   不是这里的 `--surface-opaque-raised`；两者只差 1 个色阶（浅色档里都是近白实色），
+   为不动这段已经跑通的无障碍规则，这里保留现状。 */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .sidebar {
+    background: var(--sidebar-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  .popover-shell,
+  .slash-command-menu,
+  .app-menu-surface,
+  .model-picker {
+    background: var(--surface-opaque-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ④ 高对比档（同时是 D7 的落地）：外壳与浮层一律实色、边框更实
+   —— 这一档由设置/系统偏好写入 `data-contrast="high"`；**玻璃的降级必须在这里也成立**。 */
+[data-contrast="high"] .sidebar {
+  background: var(--sidebar-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  border-right-color: var(--border-primary);
+}
+[data-contrast="high"] .popover-shell,
+[data-contrast="high"] .slash-command-menu,
+[data-contrast="high"] .app-menu-surface,
+[data-contrast="high"] .model-picker {
+  background: var(--surface-opaque-raised);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }

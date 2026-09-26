@@ -58,6 +58,27 @@ export const PLAIN_FAMILIES = {
 const strip = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[\w-]+\s*:\s*[^;]+;/g, "");
 
 /**
+ * **取消/继承类关键字 ≠ 写死值**（第 156 轮口径修正，与"字号 917"那次同类）。
+ *
+ * 起因是具体的一件事：玻璃表面的降级块需要 `box-shadow: none`（把 `@supports` 里加的内高光撤掉），
+ * 而按老口径它算"写死了一个阴影"⇒ 正确做法反被判成违规、棘轮被推高 2 处。
+ * `none`/`inherit`/`initial`/`unset`/`revert` 都不携带任何设计取值：
+ * 门禁要守的是"高度/字号/线宽**用了令牌没有**"，不是"这个属性有没有被还原"。
+ *
+ * ⚠️ 明确**不**放进这个白名单的：`bold`（那是真实字重 700）、`auto`、`normal`、`transparent` ——
+ * 它们是取值，照旧算写死（`font-weight: bold` 该走 `--weight-*`）。
+ * 这些不计入 raw，但单独统计进 `keyword`，报告里列出来（可见性不降）。
+ *
+ * ## 第十族：`accent-tint`（品牌色手写混色，第 156 轮 D5）
+ *
+ * 判据与其它九族不同：它数的是 `color-mix(in srgb, var(--accent…) N%, …)` 里的 **N** ——
+ * 也就是"绕过 --accent-surface/-border 阶梯、自己现编一个百分比"的次数。
+ * 这类值里没有 hex，颜色族看不见它；而它正是"同一个品牌色在不同组件里深浅不一"的来源。
+ * 它同样进棘轮（raw 只许降），基线里已有该族。
+ */
+const NON_VALUE_KEYWORDS = /^(none|inherit|initial|unset|revert)$/i;
+
+/**
  * 扫描一批文件。`files` 形如 `[{ path, css }]`（便于用例注入夹具）。
  * 返回 { files, totals, perFile }
  */
@@ -65,7 +86,7 @@ export function scanStyleLiterals({ files }) {
   const totals = {};
   const perFile = {};
   const bump = (bag, family, kind) => {
-    bag[family] = bag[family] ?? { raw: 0, fallback: 0 };
+    bag[family] = bag[family] ?? { raw: 0, fallback: 0, keyword: 0 };
     bag[family][kind]++;
   };
 
@@ -88,6 +109,8 @@ export function scanStyleLiterals({ files }) {
         if (!re.test(prop)) continue;
         if (hasVar) {
           if (isFallback) bump(bag, family, "fallback");
+        } else if (NON_VALUE_KEYWORDS.test(value)) {
+          bump(bag, family, "keyword");
         } else {
           bump(bag, family, "raw");
         }
@@ -96,12 +119,19 @@ export function scanStyleLiterals({ files }) {
         if (!hasVar && COLOR_LITERAL.test(value)) bump(bag, "color", "raw");
         else if (isFallback && COLOR_LITERAL.test(value)) bump(bag, "color", "fallback");
       }
+      /* 品牌色**手写混色**（第 156 轮 D5）：`color-mix(in srgb, var(--accent…) N%, …)` 里
+         那 N 个百分比是"绕过阶梯现编一档"。它躲过了颜色族（值里没有 hex），但正是 D5 说的那个毛病：
+         实测曾经有 **20 种百分比**、64 处。收敛成四档令牌后，剩下的每一处都由这一族盯着，只许降。 */
+      if (/color-mix\(in srgb,/i.test(value) && /var\(--accent[\w-]*(?:,[^)]*)?\)\s*[\d.]+%/i.test(value)) {
+        bump(bag, "accent-tint", "raw");
+      }
     }
     perFile[f.path] = bag;
     for (const [family, c] of Object.entries(bag)) {
-      totals[family] = totals[family] ?? { raw: 0, fallback: 0 };
+      totals[family] = totals[family] ?? { raw: 0, fallback: 0, keyword: 0 };
       totals[family].raw += c.raw;
       totals[family].fallback += c.fallback;
+      totals[family].keyword += c.keyword;
     }
   }
   return { files: files.map((f) => f.path), totals, perFile };
@@ -137,13 +167,14 @@ if (isCli) {
   const baseline = readBaseline();
   const families = [...new Set([...Object.keys(totals), ...Object.keys(baseline?.raw ?? {})])].sort();
 
-  console.log("家族".padEnd(22) + "写死".padStart(7) + "基线".padStart(7) + "兜底".padStart(7) + "  说明");
+  console.log("家族".padEnd(22) + "写死".padStart(7) + "基线".padStart(7) + "兜底".padStart(7) + "关键字".padStart(8) + "  说明");
   for (const fam of families) {
     const raw = totals[fam]?.raw ?? 0;
     const base = baseline?.raw?.[fam];
     const fb = totals[fam]?.fallback ?? 0;
+    const kw = totals[fam]?.keyword ?? 0;
     const mark = base === undefined ? "（新族）" : raw > base ? `🔴 超 ${raw - base}` : raw < base ? `✅ 可收紧 ${base - raw}` : "✅";
-    console.log(fam.padEnd(22) + String(raw).padStart(7) + String(base ?? "-").padStart(7) + String(fb).padStart(7) + "  " + mark);
+    console.log(fam.padEnd(22) + String(raw).padStart(7) + String(base ?? "-").padStart(7) + String(fb).padStart(7) + String(kw).padStart(8) + "  " + mark);
   }
   console.log("\n逐文件（写死数）：");
   for (const [f, bag] of Object.entries(perFile)) {

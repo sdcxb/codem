@@ -1787,7 +1787,7 @@ top: 36px;
   font-weight: 600;
   cursor: pointer;
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
-  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 4px 20px var(--accent-border);
 }
 .ppt-studio-generate-btn:is(:hover, :focus-visible) { filter: brightness(1.06); }
 

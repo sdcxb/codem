@@ -1235,7 +1235,7 @@
   background: var(--accent-hover);
 }
 .decision-tray-btn.submit:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 .decision-tray-question {
@@ -1443,7 +1443,7 @@ body.resizing-columns * {
   pointer-events: none;
   background: radial-gradient(
     ellipse at top left,
-    color-mix(in srgb, var(--accent) 8%, transparent),
+    var(--accent-surface),
     transparent 50%
   ),
   radial-gradient(
@@ -1489,7 +1489,7 @@ body.resizing-columns * {
   height: 50vw;
   top: -10%;
   left: -5%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, transparent), transparent 70%);
+  background: radial-gradient(circle, var(--accent-border-strong), transparent 70%);
 }
 .workspace-backdrop .blob-2 {
   width: 45vw;
@@ -1589,7 +1589,7 @@ body.resizing-columns * {
 .git-branch-btn.dirty { color: var(--warning); }
 .git-branch-btn.clean { color: var(--success); }
 .git-branch-btn.compact { padding: var(--space-2); }
-.git-branch-btn:disabled { opacity: 0.5; cursor: default; }
+.git-branch-btn:disabled { opacity: var(--opacity-disabled); cursor: default; }
 .git-branch-name {
   max-width: 120px;
   overflow: hidden;
@@ -1708,7 +1708,7 @@ body.resizing-columns * {
   cursor: pointer;
 }
 .git-branch-create-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
@@ -2891,7 +2891,7 @@ background: var(--bg-tertiary);
   font-weight: 500;
 }
 .inline-diff-custom-submit:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 .inline-diff-custom-cancel {
@@ -3072,7 +3072,7 @@ background: var(--bg-secondary);
 
 /* 流式中的代码块：用 accent 淡边标记"还在生成"，不改底色（§2.3 不做实心强调） */
 .code-block-streaming {
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: var(--accent-border);
 }
 .code-block-streaming.streaming {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);

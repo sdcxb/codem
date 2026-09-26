@@ -1,15 +1,15 @@
 {
-  "version": "1.16.155",
-  "notes": "皮肤对标 OpenBitFun：P0 四条落地（修 --radius-xs 被重复定义的真 bug、边框补三档+输入态、行高字距令牌化+排版角色、写死值棘轮门禁）+ 暗色档新增六条不变量并修掉弱文字与边框两处实测缺口。",
-  "pub_date": "2026-09-26T06:17:26Z",
+  "version": "1.16.156",
+  "notes": "玻璃材质（侧栏/弹出菜单）+ 按下态分档 + 禁用态与品牌色浅底收敛",
+  "pub_date": "2026-09-26T07:38:19Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZpOVV6UGh0TnMxWDJFRDh0SWVTWjU3cVNNcitLMGlkanA5NmFxTWNjMGpuU3htbStiM1FsVE9XMmZRVStVakFJMk1XRmFNaTNVcUZtcEs3MjZwbkEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDAzNDM4CWZpbGU6Q29kZW1fMS4xNi4xNTVfeDY0LXNldHVwLmV4ZQp4UnRidzhaMmV4a3FEZXA5bXI0OHFHUzIzcUwxcFBJR3ZnVVFMZ2tWNkkvMkdEbndERUh3NXlQdGRVVG02RlgrTUJrWXhiRHdmR1JkSkQxN3loeHBEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.155/Codem_1.16.155_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1UvUU5kOXJ3ZTJnT2hIdDBkTnVaNXI1UFBkSGdTVWlva2xmaEt5NXpzdlBIZnA2YjJTcHhHazV4YXl1NWQrTTZRNHJQRnBEK3h0RENBZ3Bma3hrOWdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDA4MDg4CWZpbGU6Q29kZW1fMS4xNi4xNTZfeDY0LXNldHVwLmV4ZQpDZUhSMjFyeE1BU0hMSktNRzNnUjk2a2h1U1gwaU1vd29XTDFPSmRQUVFtUUpvQ1lsYnAxQU5uQXp0dk5MNGpVbFp3SFMrREh6ZWpSd0x6aDBSVlFEUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.156/Codem_1.16.156_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZpOVV6UGh0TnMxWDJFRDh0SWVTWjU3cVNNcitLMGlkanA5NmFxTWNjMGpuU3htbStiM1FsVE9XMmZRVStVakFJMk1XRmFNaTNVcUZtcEs3MjZwbkEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDAzNDM4CWZpbGU6Q29kZW1fMS4xNi4xNTVfeDY0LXNldHVwLmV4ZQp4UnRidzhaMmV4a3FEZXA5bXI0OHFHUzIzcUwxcFBJR3ZnVVFMZ2tWNkkvMkdEbndERUh3NXlQdGRVVG02RlgrTUJrWXhiRHdmR1JkSkQxN3loeHBEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.155/Codem_1.16.155_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1UvUU5kOXJ3ZTJnT2hIdDBkTnVaNXI1UFBkSGdTVWlva2xmaEt5NXpzdlBIZnA2YjJTcHhHazV4YXl1NWQrTTZRNHJQRnBEK3h0RENBZ3Bma3hrOWdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDA4MDg4CWZpbGU6Q29kZW1fMS4xNi4xNTZfeDY0LXNldHVwLmV4ZQpDZUhSMjFyeE1BU0hMSktNRzNnUjk2a2h1U1gwaU1vd29XTDFPSmRQUVFtUUpvQ1lsYnAxQU5uQXp0dk5MNGpVbFp3SFMrREh6ZWpSd0x6aDBSVlFEUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.156/Codem_1.16.156_x64-setup.exe"
     }
   }
 }

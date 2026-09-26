@@ -78,6 +78,27 @@ const color = (v: string | null, name: string) => {
   return c!;
 };
 
+/**
+ * 解析 `color-mix(in srgb, <颜色|var(--令牌)> N%, transparent)` —— 玻璃面用的就是这一种写法。
+ * 只支持本项目真实用到的形式（底色 + 百分比 + transparent），别的形式一律**报错而不是猜**
+ * —— 猜出来的数字等于没测。
+ */
+const mixWithTransparent = (
+  v: string | null,
+  name: string,
+  block: string,
+): { base: [number, number, number, number]; alpha: number } => {
+  const raw = need(v, name);
+  const m = /^color-mix\(\s*in srgb\s*,\s*(.+?)\s+([\d.]+)%\s*,\s*transparent\s*\)$/i.exec(raw.trim());
+  expect(m, `${name} 应是 color-mix(in srgb, <色> N%, transparent) 写法，实际：${raw}`).toBeTruthy();
+  let baseRaw = m![1].trim();
+  const asVar = /^var\((--[\w-]+)\)$/.exec(baseRaw);
+  if (asVar) baseRaw = need(token(block, asVar[1]), `${name} 引用的 ${asVar[1]}`);
+  const base = parseColor(baseRaw);
+  expect(base, `${name} 的底色应可解析：${baseRaw}`).toBeTruthy();
+  return { base: base!, alpha: Number(m![2]) / 100 };
+};
+
 describe("LIGHT-UI 亮色模式观感不变式", () => {
   it("LIGHT-UI-0（前提）：解析到了亮色档令牌块，且能读出关键令牌", () => {
     expect(lightBlock.length, "styles.css 的亮色档块没解析到").toBeGreaterThan(200);
@@ -463,6 +484,70 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
     const muted = contrast(color(token(lightBlock, "--text-muted"), "--text-muted"), bg);
     expect(muted, `弱文字 ${muted.toFixed(2)}:1 低于 4.5（参考实现只到 3.56，但它没有我们这么多 10px 小字）`).toBeGreaterThanOrEqual(4.5);
   });
+
+  /**
+   * LIGHT-UI-10：**玻璃面的不透明度下限** —— 侧栏 ≥90%、浮层 ≥94%，且必须有不透明回退面。
+   *
+   * 来源（第 156 轮对标 `GCWing/OpenBitFun` 的 `_surface-recipes.scss`）：对方玻璃配方是
+   * `sidebar-glass`（外壳 90% + blur(12px)）与 `floating`（浮层 94% + blur(12px)），
+   * 并且第一行永远是**先给不透明底**、再由 `@supports` 覆盖成玻璃。
+   *
+   * 为什么这条必须有门禁：玻璃的"好看"是模糊给的，而**可读性是底色不透明度给的** ——
+   * 低于这两个数，压着侧栏/菜单的文字对比度就会随背后的内容（图片、代码块）变化而不可控，
+   * 而"背后恰好有深色内容"这件事在真实会话里天天发生。这条守的是"别为了更好看把透明度调过头"。
+   */
+  it("LIGHT-UI-10：玻璃面不透明度不低于下限（侧栏 ≥90%、浮层 ≥94%），且有不透明回退面", () => {
+    const chrome = mixWithTransparent(token(lightBlock, "--surface-glass-chrome"), "--surface-glass-chrome", lightBlock);
+    const raised = mixWithTransparent(token(lightBlock, "--surface-glass-raised"), "--surface-glass-raised", lightBlock);
+    expect(chrome.alpha, `侧栏玻璃 ${(chrome.alpha * 100).toFixed(0)}%（参考实现 sidebar-glass 是 90%）`).toBeGreaterThanOrEqual(0.9);
+    expect(raised.alpha, `浮层玻璃 ${(raised.alpha * 100).toFixed(0)}%（参考实现 floating 是 94%）`).toBeGreaterThanOrEqual(0.94);
+    /* 回退面必须**真的不透明**：`prefers-reduced-transparency` / `prefers-contrast: more` /
+       `[data-contrast="high"]` 三种情况都落到它身上（styles.css 末尾"玻璃表面"一节）。 */
+    const opaque = color(token(lightBlock, "--surface-opaque-raised"), "--surface-opaque-raised");
+    expect(opaque[3], `回退面必须不透明，实际 alpha=${opaque[3]}`).toBe(1);
+    /* 口径与写入点对齐：`--dropdown-bg` 必须**就是**玻璃值，否则"定义了玻璃但浮层没用上"。 */
+    expect(need(token(lightBlock, "--dropdown-bg"), "--dropdown-bg"), "--dropdown-bg 应指向 --surface-glass-raised").toBe("var(--surface-glass-raised)");
+    /* 三种降级条件必须在 CSS 里真的写了 —— 而且**要在去掉注释后的源码里找**：
+       注释里也提到了这些条件（就是本节的长注释），只在原文里 grep 会被自己的注释骗过。
+       （这一点是变异自证 M5 逼出来的：M5 删掉 @media 那一行时，原文 grep 仍然命中注释 ⇒ 门禁不变红。） */
+    const cssNoComments = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+    /* ⚠️ 文件里**不止一个** `prefers-reduced-transparency` 块（D-5 那条旧规则也命中 `.model-picker`），
+       所以按内容挑：玻璃的回退块一定用到 `--surface-opaque-raised` 这个"不透明回退面"令牌。 */
+    const reducedBlocks = cssNoComments.match(/@media[^{]*prefers-reduced-transparency:\s*reduce[^{]*\{[\s\S]*?\n\}/g) ?? [];
+    const reduced = reducedBlocks.find((b) => b.includes("--surface-opaque-raised")) ?? "";
+    expect(reduced, "找不到玻璃降级块（判据：@media prefers-reduced-transparency 里必须回落到 --surface-opaque-raised）").toBeTruthy();
+    expect(reduced, "同一组降级里应同时覆盖 prefers-contrast: more").toMatch(/prefers-contrast:\s*more/);
+    expect(reduced, "降级块里侧栏必须回到不透明底").toMatch(/\.sidebar\s*\{[^}]*background:\s*var\(--sidebar-bg\)/);
+    expect(reduced, "降级块里浮层必须回到不透明面").toMatch(/background:\s*var\(--surface-opaque-raised\)/);
+    expect(reduced, "降级块里必须去掉模糊（否则是「不透明但仍然糊」）").toMatch(/backdrop-filter:\s*none/);
+    const highContrast = /\[data-contrast="high"\]\s*\.sidebar\s*\{[^}]*\}/.exec(cssNoComments)?.[0] ?? "";
+    expect(highContrast, '缺少 [data-contrast="high"] .sidebar 降级').toBeTruthy();
+    expect(highContrast, "高对比档的侧栏也必须去掉模糊").toMatch(/backdrop-filter:\s*none/);
+  });
+
+  /**
+   * LIGHT-UI-11：**按下态必须比悬停态再远画布一步**（浅色：更暗）。
+   *
+   * 这一条是**实测抓出来的**：第 156 轮把 `.press-layer-host:active` 的底色从悬停档换成
+   * `--surface-pressed` 时，我先按"10% 黑压白"取值 —— 而按下态是**半透明**的，
+   * 合成结果取决于它压着哪个面。探针扫 α 得到：浅色档最小成立值是 **8%**（压 `#ffffff` 时
+   * `#ededed` 0.8475 < 悬停 `#eeeeec` 0.8538），取 10% 有余量；
+   * **暗色档方向相反且最小成立值是 13%**（10% 时在画布上合成 `#262727`，比悬停 `#2a2d2d` 还暗 ⇒ 方向反了）。
+   * 所以两档不能是同一个数，这条门禁就是钉住"别把暗色抄浅色"。
+   */
+  it("LIGHT-UI-11：按下态比悬停态更暗（三个面上都成立），且差别看得出来", () => {
+    const hover = color(token(lightBlock, "--bg-hover"), "--bg-hover");
+    const pressed = color(token(lightBlock, "--surface-pressed"), "--surface-pressed");
+    const fails: string[] = [];
+    for (const name of ["--bg-primary", "--bg-secondary", "--bg-tertiary"]) {
+      const surface = color(token(lightBlock, name), name);
+      const composite = over(pressed, surface);
+      const r = contrast(hover, composite);
+      if (lum(composite) >= lum(hover)) fails.push(`${name} 上合成后 L=${lum(composite).toFixed(4)} 不比悬停 ${lum(hover).toFixed(4)} 暗`);
+      else if (r < 1.03) fails.push(`${name} 上只差 ${r.toFixed(3)}（<1.03，按下去看不出来）`);
+    }
+    expect(fails, `按下态在以下面不成立（按下必须比悬停更"陷进去"）：\n  - ${fails.join("\n  - ")}`).toEqual([]);
+  });
 });
 
 /**
@@ -563,5 +648,35 @@ describe("DARK-UI 暗色模式观感不变式", () => {
     const chip = over(color(token(darkBlock, "--accent-muted"), "--accent-muted"), base);
     const strong = contrast(over(color(token(darkBlock, "--accent-strong"), "--accent-strong"), chip), chip);
     expect(strong, `暗色 --accent-strong 在品牌浅底上只有 ${strong.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  /** DARK-UI-6：与 LIGHT-UI-10 同标准 —— 玻璃不透明度下限不因主题而放宽。 */
+  it("DARK-UI-6：暗色玻璃面同样不低于下限（侧栏 ≥90%、浮层 ≥94%），回退面不透明", () => {
+    const chrome = mixWithTransparent(token(darkBlock, "--surface-glass-chrome"), "--surface-glass-chrome", darkBlock);
+    const raised = mixWithTransparent(token(darkBlock, "--surface-glass-raised"), "--surface-glass-raised", darkBlock);
+    expect(chrome.alpha, `暗色侧栏玻璃 ${(chrome.alpha * 100).toFixed(0)}%`).toBeGreaterThanOrEqual(0.9);
+    expect(raised.alpha, `暗色浮层玻璃 ${(raised.alpha * 100).toFixed(0)}%`).toBeGreaterThanOrEqual(0.94);
+    expect(color(token(darkBlock, "--surface-opaque-raised"), "--surface-opaque-raised")[3]).toBe(1);
+    expect(need(token(darkBlock, "--dropdown-bg"), "--dropdown-bg")).toBe("var(--surface-glass-raised)");
+  });
+
+  /** DARK-UI-7：按下态的方向在暗色档**是反的**（朝画布的反方向 = 更亮），且下限也不同（14%，不是 10%）。 */
+  it("DARK-UI-7：暗色按下态比悬停态更亮（三个面上都成立），且 α 不小于实测的 13%", () => {
+    const hover = color(token(darkBlock, "--bg-hover"), "--bg-hover");
+    const pressedRaw = need(token(darkBlock, "--surface-pressed"), "--surface-pressed");
+    const pressed = color(pressedRaw, "--surface-pressed");
+    /* 暗色按下态必须是**白**的低 alpha 叠加：如果哪天有人把浅色档的 `rgb(31 31 30 / 10%)` 抄过来，
+       暗底上按下去会比不按还暗（等于"按了个洞"）—— 这里先按色相拦一道。 */
+    expect(pressedRaw, "暗色按下态应是白色 alpha 叠加（抄浅色档会导致按下去变暗）").toMatch(/rgba\(\s*255\s*,\s*255\s*,\s*255/);
+    const fails: string[] = [];
+    for (const name of ["--bg-primary", "--bg-secondary", "--bg-tertiary"]) {
+      const surface = color(token(darkBlock, name), name);
+      const composite = over(pressed, surface);
+      const r = contrast(hover, composite);
+      if (lum(composite) <= lum(hover)) fails.push(`${name} 上合成后 L=${lum(composite).toFixed(4)} 不比悬停 ${lum(hover).toFixed(4)} 亮`);
+      else if (r < 1.03) fails.push(`${name} 上只差 ${r.toFixed(3)}（<1.03，按下去看不出来）`);
+    }
+    expect(fails, `暗色按下态在以下面不成立：\n  - ${fails.join("\n  - ")}`).toEqual([]);
+    expect(pressed[3], `暗色按下态 α=${pressed[3]} 低于实测最小成立值 13%（会退化成"比悬停还暗"）`).toBeGreaterThanOrEqual(0.13);
   });
 });

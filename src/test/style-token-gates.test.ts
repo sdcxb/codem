@@ -116,8 +116,29 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
 .d { box-shadow: none; }
 `);
     expect(totals["border-radius"]?.raw, "颜色族分支曾经把它们 `continue` 掉了，少报 20+6 处").toBe(1);
-    expect(totals["box-shadow"]?.raw).toBe(2);
+    expect(totals["box-shadow"]?.raw, "只有 .c 是写死的高度值").toBe(1);
     expect(totals.color?.raw, "box-shadow 里的颜色同时算进颜色族").toBe(1);
+  });
+
+  /**
+   * LIT-2b：**取消/继承类关键字不算写死**（第 156 轮口径修正，与"字号 917"那次同类）。
+   *
+   * 起因：玻璃表面的降级块必须写 `box-shadow: none`（撤掉 `@supports` 里加的内高光），
+   * 老口径把它算成"写死了一个阴影" ⇒ **正确做法反而把棘轮推高 2 处**。
+   * 白名单只放 `none`/`inherit`/`initial`/`unset`/`revert`；
+   * `bold`（真实字重 700）、`auto`、`normal` 照旧算写死。
+   */
+  it("LIT-2b：`none`/`inherit` 等取消继承关键字进 `keyword` 而不进 `raw`；`bold` 仍算写死", () => {
+    const { totals } = scanLiterals(`
+.a { box-shadow: none; }
+.b { box-shadow: inherit; }
+.c { font-weight: bold; }
+.d { transition: none; }
+`);
+    expect(totals["box-shadow"]?.raw, "只有 .c 那类真实取值才算写死；这里 box-shadow 两条都不是").toBe(0);
+    expect(totals["box-shadow"]?.keyword, "取消/继承要单独可见，不能悄悄消失").toBe(2);
+    expect(totals["font-weight"]?.raw, "bold 是真实字重，必须继续算写死").toBe(1);
+    expect(totals["animation/transition"]?.keyword).toBe(1);
   });
 
   it("LIT-3：默认档的裸颜色字面量必须仍然极少（P0 之后 ≤ 10，防漂移）", () => {
@@ -138,5 +159,85 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
     const { totals } = scanStyleLiterals({ files: loadLiteralFiles(ROOT) });
     const { over } = evaluateRatchet(totals, baseline);
     expect(over, `这些族的写死值涨了：${over.join(", ")}`).toEqual([]);
+  });
+
+  /**
+   * LIT-6 / LIT-7：品牌色浅底/描边阶梯（D5）。
+   * 背景：全项目曾有 **64 处**手写 `color-mix(in srgb, var(--accent) N%, transparent)`、
+   * 一共发明了 **20 种百分比**（4%…85%）——"同一个品牌色在不同组件里深浅不一"。
+   */
+  it("LIT-6：四档品牌色浅底/描边令牌存在，且都是 `var(--accent)` 的派生（写死 rgba 就不跟皮肤）", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    const ladder: Array<[string, string]> = [
+      ["--accent-surface", "8"],
+      ["--accent-surface-strong", "15"],
+      ["--accent-border", "30"],
+      ["--accent-border-strong", "45"],
+    ];
+    for (const [name, pct] of ladder) {
+      expect(css, `缺少 ${name}（浅底/描边阶梯四档之一）`).toContain(`${name}: color-mix(in srgb, var(--accent) ${pct}%, transparent);`);
+      const literal = new RegExp(`${name}\\s*:\\s*(#|rgba?\\()`);
+      expect(literal.test(css), `${name} 写成了颜色字面量 —— 皮肤改 --accent 时它不会跟着走`).toBe(false);
+    }
+  });
+
+  it("LIT-7：`accent-tint` 族进棘轮（手写品牌色混色只许降），用令牌则不计", () => {
+    const { totals } = scanLiterals(`.a { background: color-mix(in srgb, var(--accent) 37%, transparent); }`);
+    expect(totals["accent-tint"]?.raw, "自编的 37% 必须被数出来").toBe(1);
+    const { totals: viaToken } = scanLiterals(`
+.b { background: var(--accent-surface); }
+.c { border-color: var(--accent-border-strong); }
+`);
+    expect(viaToken["accent-tint"]?.raw ?? 0, "走令牌的不算").toBe(0);
+  });
+});
+
+/**
+ * DIS —— **禁用态不透明度**门禁（第 156 轮 P1-4，令牌卫生 H5）。
+ *
+ * 为什么要有：改动前"禁用态变淡"这一件事在项目里有 **0.3 / 0.4 / 0.45 / 0.5 / 0.55 / 0.6 六个数**
+ * （styles.css 31 处 + codem-ui.css 4 处），同一个界面里两个禁用按钮的灰都不一样。
+ * 收敛到 `--opacity-disabled` 之后必须有门禁守着，否则下一波改动又会各写各的。
+ */
+describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
+  const h5 = (css: string) => scanTokens(css).problems.filter((p: { rule: string }) => p.rule === "H5");
+
+  it("DIS-1：禁用族选择器上写裸数值 → 红（`:disabled` / `.disabled` / `.is-disabled` / `[disabled]`）", () => {
+    const found = h5(`
+:root { --opacity-disabled: 0.5; }
+.a:disabled { opacity: 0.5; }
+.b.disabled { opacity: 0.4; }
+.c.is-disabled { opacity: 0.55; }
+.d[disabled] { opacity: 0.6; }
+`);
+    expect(found.length, "四个都是禁用态，都应报").toBe(4);
+    expect(found.map((p: { message: string }) => /var\(--opacity-disabled\)/.test(p.message)).every(Boolean), "报错信息要指出正确写法").toBe(true);
+  });
+
+  it("DIS-2：走令牌不算；`:hover:not(:disabled)` 上的 opacity **不算**禁用态（别误伤）", () => {
+    const found = h5(`
+:root { --opacity-disabled: 0.5; }
+.a:disabled { opacity: var(--opacity-disabled); }
+/* 可用时的悬停微调，写 0.9 是正确的 —— 它不是禁用态 */
+.b:hover:not(:disabled) { opacity: 0.9; }
+.c:not(:disabled):active { opacity: 0.8; }
+`);
+    expect(found, `不该报，却报了：${JSON.stringify(found.map((p: { message: string }) => p.message))}`).toEqual([]);
+  });
+
+  it("DIS-3：写了 `var(--opacity-disabled)` 却没有任何作用域定义它 → 红（禁用态会整片退化成不透明）", () => {
+    const found = h5(`
+.a:disabled { opacity: var(--opacity-disabled); }
+`);
+    expect(found.length).toBe(1);
+    expect(found[0].message).toMatch(/没有任何作用域定义/);
+  });
+
+  it("DIS-4（正向对照）：本仓库两个 sheet 上 0 处裸数值，且令牌只定义一次", () => {
+    const problems = scanTokenHygiene({ files: loadTokenFiles(ROOT) }).problems.filter((p: { rule: string }) => p.rule === "H5");
+    expect(problems, `还有裸数值：\n${problems.map((p: { file: string; lines: number[]; message: string }) => `  - ${p.file}:${p.lines.join(",")} ${p.message}`).join("\n")}`).toEqual([]);
+    const defs = scanTokenHygiene({ files: loadTokenFiles(ROOT) }).defs.filter((d: { name: string }) => d.name === "--opacity-disabled");
+    expect(defs.length, "`--opacity-disabled` 应只有一处定义（默认档）").toBe(1);
+    expect(defs[0].value, "禁用态取值：众数 0.5（收敛前的六个值都归到它）").toBe("0.5");
   });
 });
