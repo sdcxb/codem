@@ -100,6 +100,9 @@ notebook-section.txt
 # Library Ops plugin docs（交付物，随插件一起发布）
 !docs/LIBRARY-OPS-PLUGIN.md
 !docs/LIBRARY-OPS-AUDIT.md
+# 侧栏外观对标审计（第 166 轮）：与前几轮的「令牌对比」不同，这份量的是渲染结果与交互状态；
+# 结论直接决定 UI 路线的下一步，需要进仓库（否则只在本机存在，别人 clone 看不到）。
+!docs/SIDEBAR-AUDIT-OPENBITFUN.md
 !docs/TASK-CENTER-MAP.md
 !docs/UI-DESIGN-SYSTEM.md
 !docs/ASSET-LICENSES.md
