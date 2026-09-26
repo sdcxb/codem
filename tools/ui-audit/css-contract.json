@@ -6426,12 +6426,9 @@
   },
   "main-area": {
     "background": "var(--bg-primary)",
-    "border-radius": "var(--surface-sheet-radius) 0 0 var(--surface-sheet-radius)",
-    "box-shadow": "var(--shadow-sheet)",
     "display": "flex",
     "flex": "1",
-    "min-width": "0",
-    "position": "relative"
+    "min-width": "0"
   },
   "markdown-body": {
     "line-break": "strict",

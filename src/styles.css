@@ -407,7 +407,7 @@
   --text-base: #1f1f1e;
   --text-ramp-paper: #fffbe2;
   --text-primary: var(--text-base);
-  --text-secondary: color-mix(in srgb, var(--text-base) 86%, var(--text-ramp-paper));
+  --text-secondary: color-mix(in srgb, var(--text-base) 84%, var(--text-ramp-paper));
   --text-muted: color-mix(in srgb, var(--text-base) 78%, var(--text-ramp-paper));
   /* 线：一律用"文字色 + alpha"，这样深浅两档的线色相自动一致。
      强度 12% → 9%：合成在白底上是 #ebebeb、对比度 **1.194**，
@@ -910,10 +910,11 @@ body {
      层级关系：`.app` 自己的 background 画在**子元素之下** ⇒ 透明的标题栏会透出场景、
      不透明的 `.main-area`（内容面）正常盖住它、半透明的侧栏则把它**模糊后**透出来。
      内容面保持实色 ⇒ 正文对比度不受场景影响（场景只影响外壳，且被门禁按最坏值卡住）。 */
-  /* 第 166 轮 P0-0：壳底从"和内容面同色"改成**次级面** —— 内容区是一块浮起来的白纸面（见 `.main-area`），
-     壳（标题栏 + 侧栏所在的那层）必须比纸面**暗一档**，纸面的圆角与左缘阴影才看得出来。
-     在此之前 `.app` 与 `.main-area` 都是 `--bg-primary`（纯白）⇒ 圆角切出来也是白的，等于没做层次；
-     实测侧栏/内容亮度差只有 0.0172（对方 0.0328）。 */
+  /* ⚠️ 第 183 轮：这里**保留** P0-0 的 `--chrome-surface`（次级面），只撤了纸面的圆角与阴影。
+     理由：用户点名的是"外边栏那条阴影"，而这条底色本身不产生脏边 ——
+     它承担的是"外壳比内容面暗一档"（实测亮度差 0.0172，对方 0.0328），撤了会让整壳变纯白。
+     但它当初的**动机**（"纸面圆角要切得出来"）确实随圆角一起消失了，所以这里如实记一笔：
+     这一档现在是"外壳与内容面的层次"，不再服务于纸面。若嫌它多余，改回 var(--bg-primary) 即可。 */
   background-color: var(--chrome-surface);
   background-image: var(--scene-layer);
 }
@@ -1173,20 +1174,21 @@ display: flex;
 overflow: hidden;
 }
 
+/* 第 183 轮：**撤掉 P0-0 的「圆角纸面」**（用户实测否决）。
+   P0-0 给这里加了「左侧两角圆角 + 左缘阴影 + position: relative」三件套
+   （依据是对标文档 §13 的 `WorkspaceBody.scss`）。但本机 `.app` 在系统材质档是
+   **transparent**（见文件末尾材质档那一节）⇒ 那条 `-4px 0 12px -6px` 的纸面阴影
+   **没有任何东西接收它**，直接糊在 88% 的玻璃上：实测内容面左缘外侧 10px 内逐级变暗
+   （`_probe-183-sidebar-pixels.mjs`：#f8f8fa → #f7f7f9 → … → #f3f3f5 → 1px 分界 → 内容面 #ffffff）。
+   用户原话：「主对话区域的外边栏怎么加了阴影？丑的很，改回咱们原来的样式。」
+   ⇒ 三条一起撤（v1.16.165 的原版就是**齐边矩形 + 无阴影**，与 `.app-content` 平接）。
+   ⚠️ 门禁 SHELL-1 的口径同步撤回（它钉的正是这三条），变异脚本的对应条目也一并换掉 ——
+   否则门禁绿着、观感仍然错，就是把错误固化成规范（第 182 轮已经吃过一次这个亏）。 */
 .main-area {
   flex: 1;
   display: flex;
   min-width: 0;
   background: var(--bg-primary);
-  /* 第 166 轮 P0-0：**内容 = 浮在 chrome 上的圆角纸面**（对方 `WorkspaceBody.scss:135-153` 同构）。
-     三件套：左侧两角圆角 + 左缘阴影 + 与外壳的亮度差（外壳见 `.app` 的 `--chrome-surface`）。
-     ⚠️ 只圆左侧两角：右侧贴窗口边，圆右角会切出窗口底色。 */
-  border-radius: var(--surface-sheet-radius) 0 0 var(--surface-sheet-radius);
-  box-shadow: var(--shadow-sheet);
-  /* 纸面之上的内容由内层自己裁剪（纸面本身不裁，否则阴影会被裁掉）。
-     不写 z-index：`.main-area` 在 DOM 里排在侧栏之后，同级层叠里后者本就画在上面，
-     阴影自然压在侧栏上 —— 多写一个 `z-index: 1` 只会给写死值棘轮添一笔（这条已经踩过一次）。 */
-  position: relative;
 }
 
 /* ==========================================================================
@@ -2926,7 +2928,7 @@ z-index: 50;
 
 .input-card-container:focus-within {
   border-color: var(--text-primary);
-  box-shadow: var(--shadow-raise-3), 0 0 0 3px var(--accent-surface);
+  box-shadow: var(--shadow-raise-3), 0 0 0 1px var(--accent-border);
 }
 
 /* P-UI: A3 失焦折叠（对标 meow-smooth）— 多行草稿失焦后收成单行胶囊 */
@@ -11929,8 +11931,14 @@ border-color: var(--text-muted);
 }
 
 /* 拖到哪、纸面的左缘就在哪：hover/拖拽时把纸面那条**圆角边**描出来（对方 `scene-surface::after` 同构）。
-   用 `:has()` 从把手反向选中纸面 —— 反馈画在"共享的那条边界"上，而不是给整块画个框。 */
+   用 `:has()` 从把手反向选中纸面 —— 反馈画在"共享的那条边界"上，而不是给整块画个框。
+
+   ⚠️ 第 183 轮：**"圆角纸面"从这里之后只存在于拖动反馈里**。此前这条是"静态阴影 + 拖动时再叠一层"，
+   静态那一层已在 `.main-area` 撤掉（用户实测否决）；这里保留圆角 + 阴影 + 强调描边三件套，
+   因为拖动时"纸面被拎起来"正是对方 `scene-surface::after` 想表达的阶段性反馈 ——
+   也只有在这一刻，那条左缘阴影背后才有真实的"层次"含义。 */
 .app-content:has(.sidebar-resize-handle:is(:hover, :active)) .main-area {
+  border-radius: var(--surface-sheet-radius) 0 0 var(--surface-sheet-radius);
   box-shadow: var(--shadow-sheet), inset 2px 0 0 var(--accent-border);
 }
 .sidebar-resize-handle:is(:hover, :focus-visible),

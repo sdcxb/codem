@@ -321,6 +321,82 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
   });
 
   /**
+   * LIT-13：**三档文字必须真的分得开**（第 183 轮补的，因为 LIT-10 漏掉了一种真实犯错方式）。
+   *
+   * 来历（不是假设，是我这一轮真犯的错）：把 `--text-secondary` 从 86% 改到 **78%** ——
+   * 而 `--text-muted` **本来就是 78%** ⇒ 次要文字与弱化文字变成**逐字节相同的颜色**，
+   * "层级看不出来"这个病反而被加重了。**当时所有门禁都是绿的**：
+   *   · `LIT-10` 只要求"是从 `--text-base` 派生的 `color-mix(...N%...)`" —— 78 与 86 都匹配；
+   *   · `LIGHT-UI-3` 只要求"每档 ≥4.5:1" —— 两个值都过。
+   * 也就是说"层级"这件事**只被守住了存在性，没被守住可分性**。
+   *
+   * 判据（三档各自解析成实际合成色后）：
+   *   ① 三档**两两不同**（塌成一档是最坏的形态：它看起来"没坏"，但层级消失了）；
+   *   ② 亮度必须**单调**且方向正确——⚠️ 两档**方向相反**：
+   *      亮色档是"墨色混向纸色" ⇒ primary 最暗（primary < secondary < muted）；
+   *      暗色档是"亮色混向暗纸" ⇒ primary 最亮（primary > secondary > muted）。
+   *      第一版只按亮色档写，暗色档当场红（`{primary:0.658, secondary:0.437, muted:0.291}`）——
+   *      这正是"把某一档的极性当成全局"的老毛病，所以方向按档取。
+   *   ③ 相邻两档的亮度差 ≥ **0.02**（低于这个数就属于"技术上不同、看上去一样"）。
+   *
+   * 变异：把 `--text-secondary` 的百分比改成与 `--text-muted` 相同 ⇒ 红。
+   */
+  it("LIT-13：三档文字必须两两不同、亮度单调、相邻档差 ≥0.02（不能让层级塌掉）", () => {
+    const styles = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    const scopes: Array<[string, RegExp, 1 | -1]> = [
+      ["默认/亮色", /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/, 1],
+      ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/, -1],
+    ];
+    const hex2rgb = (h: string) => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) });
+    const lum = (c: { r: number; g: number; b: number }) => {
+      const f = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+      return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+    };
+
+    for (const [label, re, dir] of scopes) {
+      const block = re.exec(styles)?.[1] ?? "";
+      expect(block.length, `${label} 块没解析到`).toBeGreaterThan(100);
+      const baseHex = /--text-base:\s*(#[0-9a-f]{6})/i.exec(block)?.[1];
+      const paperHex = /--text-ramp-paper:\s*(#[0-9a-f]{6})/i.exec(block)?.[1];
+      expect(baseHex, `${label} 解析不到 --text-base`).toBeTruthy();
+      expect(paperHex, `${label} 解析不到 --text-ramp-paper`).toBeTruthy();
+      const base = hex2rgb(baseHex!);
+      const paper = hex2rgb(paperHex!);
+      const pct = (tok: string) => {
+        const v = token(block, tok) ?? "";
+        const m = /var\(--text-base\)\s+(\d+(?:\.\d+)?)%/.exec(v);
+        /* `--text-primary` 是裸的 var(--text-base) ⇒ 100% */
+        return v.trim() === "var(--text-base)" ? 100 : m ? Number(m[1]) : NaN;
+      };
+      const mix = (p: number) => ({ r: base.r * (p / 100) + paper.r * (1 - p / 100), g: base.g * (p / 100) + paper.g * (1 - p / 100), b: base.b * (p / 100) + paper.b * (1 - p / 100) });
+
+      const P = pct("--text-primary"), S = pct("--text-secondary"), M = pct("--text-muted");
+      for (const [n, v] of [["--text-primary", P], ["--text-secondary", S], ["--text-muted", M]] as const) {
+        expect(Number.isNaN(v), `${label} 的 ${n} 解析不出百分比（写法变了？）`).toBe(false);
+      }
+      /* ① 百分比两两不同（合成后也一样，因为混合是单调的） */
+      expect(
+        new Set([P, S, M]).size,
+        `${label} 三档文字塌成一档：primary=${P}% secondary=${S}% muted=${M}% —— 有两个是**同一个值**，层级会消失`,
+      ).toBe(3);
+      /* ② 亮度顺序：方向按档取（亮色档 primary 最暗，暗色档 primary 最亮） */
+      const L = { primary: lum(mix(P)), secondary: lum(mix(S)), muted: lum(mix(M)) };
+      const ordered = dir === 1
+        ? L.primary < L.secondary && L.secondary < L.muted
+        : L.primary > L.secondary && L.secondary > L.muted;
+      expect(
+        ordered,
+        `${label} 三档亮度顺序不对（应为 primary ${dir === 1 ? "<" : ">"} secondary ${dir === 1 ? "<" : ">"} muted）：${JSON.stringify(L)}`,
+      ).toBe(true);
+      /* ③ 相邻档差（取方向无关的差值绝对值） */
+      const d1 = (L.secondary - L.primary) * dir;
+      const d2 = (L.muted - L.secondary) * dir;
+      expect(d1, `${label} 主→次档差只有 ${d1.toFixed(4)}（<0.02 ⇒ 看上去是同一档）`).toBeGreaterThanOrEqual(0.02);
+      expect(d2, `${label} 次→弱档差只有 ${d2.toFixed(4)}（<0.02 ⇒ 看上去是同一档）`).toBeGreaterThanOrEqual(0.02);
+    }
+  });
+
+  /**
    * LIT-12：**面的角色**收口（第 162 轮 P1-1 的第一半）。
    *
    * 背景：对标实现是"灰工作区 + 白卡"，我们是"画布与卡片同色"（卡片都用 `--bg-primary`）。
@@ -488,21 +564,38 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
   });
 
   /**
-   * SHELL-1：**内容必须是"一块浮在 chrome 上的圆角纸面"**（第 166 轮 P0-0）。
+   * SHELL-1：**内容面必须是「齐边矩形 + 无阴影」**（第 166 轮 P0-0 立、**第 183 轮撤回**）。
    *
-   * 为什么立这条：对标文档 §13 实测出这一条比"行高"更能解释"看着廉价" ——
-   * 对方的内容区是"圆角 24px（左侧两角）+ 左缘阴影"的纸面，浮在整壳一层玻璃之上；
-   * 我们此前 `.app` / `.app-content` / `.main-area` / `.chat-panel` **全部圆角 0、阴影 none、零间距**：
-   * 四块齐边矩形拼在一起。而**这一条跟"改什么颜色"无关** ⇒ 前五轮改令牌不可能带来观感变化。
+   * ## ⚠️ 这条门禁的口径被用户实测否决过一次，两次的依据都留在这里
    *
-   * 判据（三条都是"层次成立"的必要条件）：
-   *   ① 内容面必须有**左侧两角**圆角（右侧贴窗口，圆右角会切出窗口底色）；
-   *   ② 内容面必须有非 none 阴影，且影子要有墨色输入（不是 `--shadow-raise-*` 那种通用档乱用）；
-   *   ③ 壳（`.app`）的底色必须与内容面**不同** —— 否则圆角切出来还是同色，等于没做层次。
+   * **第 166 轮立的依据**：对标文档 §13 —— 对方的内容区是"圆角 24px（左侧两角）+ 左缘阴影"的纸面，
+   * 浮在整壳一层玻璃之上；我们此前四块齐边矩形拼在一起，「看着廉价」。
    *
-   * 变异：去掉 `box-shadow` / 把半径改回 0 / 把 `.app` 改回 `--bg-primary`，三条各自会红。
+   * **第 183 轮撤回的依据**（用户原话：「主对话区域的外边栏怎么加了阴影？丑的很，
+   * 改回咱们原来的样式」）：那条纸面阴影要成立，前提是**外壳有底色去接收它**；
+   * 而本机 `.app` 在系统材质档是 **transparent**（见文件末尾材质档那一节）——
+   * 阴影于是直接糊在 88% 的玻璃上，`_probe-183-sidebar-pixels.mjs` 实测内容面左缘外侧
+   * **10px 内逐级变暗**（#f8f8fa → #f7f7f9 → … → #f3f3f5 → 1px 分界 → 内容面 #ffffff）：
+   * 不是"纸面浮起来"，而是"边上脏了一条"。`_diff-165-origin.mjs`（`git show v1.16.165`）确认
+   * 原版 `.main-area` **既无 `border-radius` 也无 `box-shadow`、也没有 `position`**。
+   *
+   * **判据现在改成**：
+   *   ① `.main-area` **不得**写 `border-radius` / `box-shadow` / `position`（"齐边矩形"是原版）；
+   *   ② "纸面"这套视觉**只允许存在于侧栏拖拽反馈里**（`.app-content:has(.sidebar-resize-handle…)`）
+   *      —— 那一刻背后才有真实的层次含义，而且 `--shadow-sheet` / `--surface-sheet-radius`
+   *      两枚令牌因此仍有消费方（否则会被 LIGHT-UI-5 / scan-ui 当死令牌）；
+   *   ③ `.app` 的 `--chrome-surface` **保留**（第 183 轮只撤纸面、不动外壳底色）——
+   *      它当初的动机是"圆角要切得出层次"，动机虽已消失，但它本身不产生脏边，
+   *      且承担着"外壳比内容面暗一档"（实测亮度差 0.0172 vs 对方 0.0328）。这里只断言它**仍在**，
+   *      不断言它必须是什么 —— 观感取舍留给用户。
+   *
+   * **教训**：这条判据当初把"对标实现的取值"当成"我们该有的取值"。
+   * 与 RHYTHM-1 同一类错误 —— 门禁守得住"取值相等"，守不住"这个取值在我们这儿成不成立"。
+   *
+   * 变异：给 `.main-area` 加回 `box-shadow` / 加回 `border-radius` / 加回 `position`，
+   * 或把拖拽反馈里的纸面删掉，各自会红。
    */
-  it("SHELL-1：内容面必须是「左侧两角圆角 + 左缘阴影」，且壳体色与内容面不同（P0-0）", () => {
+  it("SHELL-1：内容面必须是「齐边矩形 + 无阴影」（P0-0 的圆角纸面已在第 183 轮撤回）", () => {
     const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
     const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
     const ruleOf = (sel: string) =>
@@ -510,29 +603,85 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
 
     const main = ruleOf(".main-area");
     expect(main, "找不到 `.main-area` 规则").not.toBe("");
-    expect(
-      /border-radius:\s*var\(--surface-sheet-radius\)\s+0\s+0\s+var\(--surface-sheet-radius\)/.test(main),
-      `内容面必须只圆**左侧两角**（用 --surface-sheet-radius），实际：${/border-radius:[^;]*/.exec(main)?.[0] ?? "（无）"}`,
-    ).toBe(true);
-    expect(
-      /box-shadow:\s*var\(--shadow-sheet\)/.test(main),
-      "内容面必须有左缘阴影（没有阴影就没有'浮起来'）",
-    ).toBe(true);
+    /* ① 齐边矩形：三条都要**不在** */
+    for (const [decl, re] of [
+      ["border-radius", /(?:^|;)\s*(?<![\w-])border-radius:/],
+      ["box-shadow", /(?:^|;)\s*(?<![\w-])box-shadow:/],
+      ["position", /(?:^|;)\s*(?<![\w-])position:/],
+    ] as const) {
+      expect(
+        re.test(main),
+        `.main-area 不许写 ${decl} —— v1.16.165 原版是**齐边矩形 + 无阴影**（第 183 轮用户实测否决了 ` +
+          `P0-0 的圆角纸面：外壳在材质档是透明的，那条阴影没有接收方，只会把左缘糊脏）。实际规则体：${main.trim().slice(0, 120)}`,
+      ).toBe(false);
+    }
 
-    /* ③ 壳体与内容面必须是**不同**的面：`.app` 的底色不能等于内容面的 `--bg-primary` */
-    const app = ruleOf(".app");
-    expect(
-      /background-color:\s*var\(--chrome-surface\)/.test(app),
-      `壳（.app）必须用 --chrome-surface（比内容面暗一档），实际：${/background-color:[^;]*/.exec(app)?.[0] ?? "（无）"}`,
-    ).toBe(true);
-
-    /* 阴影与纸面半径必须在令牌块里有定义，且阴影带墨色（两档自动反向） */
+    /* ③ "纸面"只允许在侧栏拖拽反馈里出现（两枚令牌因此仍有消费方） */
+    const dragSheet = /\.app-content:has\(\.sidebar-resize-handle:is\(:hover, :active\)\)\s*\.main-area\s*\{([^}]*)\}/.exec(cssNoComments)?.[1] ?? "";
+    expect(dragSheet, "找不到侧栏拖拽反馈规则（`--shadow-sheet` / `--surface-sheet-radius` 会变成死令牌）").not.toBe("");
+    expect(/box-shadow:\s*var\(--shadow-sheet\)/.test(dragSheet), "拖拽反馈里要保留纸面阴影（那一刻才真有层次）").toBe(true);
     expect(css, "缺 --shadow-sheet 定义").toMatch(/--shadow-sheet:\s*-?\d+px[^;]*var\(--text-base\)/);
     expect(css, "缺 --surface-sheet-radius 定义").toMatch(/--surface-sheet-radius:\s*24px/);
+
+    /* ③ 外壳底色保留（见头注释：第 183 轮只撤纸面，不动外壳）：只要求它**在**，不要求它是什么 */
+    const app = ruleOf(".app");
+    expect(
+      /(?:^|;)\s*background-color:/.test(app),
+      "`.app` 必须显式给自己的底色（否则材质档降级路径会拿到透明壳）",
+    ).toBe(true);
 
     /* 侧栏与内容之间的分界必须是"墨色 hairline"（5% 的旧值在近白面上约等于不存在） */
     const sidebar = ruleOf(".sidebar");
     expect(sidebar, "侧栏右边界必须走 --hairline-ink（墨色派生，暗色档才看得见）").toMatch(/border-right:\s*1px solid var\(--hairline-ink\)/);
+  });
+
+  /**
+   * SHELL-2：**输入卡聚焦时的紫色外扩环不许超过 1px**（第 183 轮，用户点名）。
+   *
+   * 用户原话：「主对话区域编辑输入的时候，出现的紫色框太粗了，调细它。」
+   *
+   * 实测那条"太粗"的来源是**两层叠着**：
+   *   · 全局 `input/textarea/[contenteditable]:focus-visible` 的内嵌环（`--focus-ring-width` = 2px）；
+   *   · `.input-card-container:focus-within` 里 P1-2 加的 `box-shadow: …, 0 0 0 3px var(--accent-surface)`。
+   * 两层相加 ≈ 5px 的紫圈。原版（`_diff-165-origin.mjs` 对照 `v1.16.165`）这一条是 `box-shadow: none`。
+   *
+   * 判据：`.input-card-container:focus-within` 的 box-shadow 里，
+   * **长度在 4–6 个值的 `0 0 0 Npx`（外扩环）那一项**的 N **必须 ≤ 1**。
+   * ⚠️ 只认"恰好 4 个长度值"的项：`--shadow-raise-3` 是 `0 2px 4px 0, 0 4px 12px 0`（两个偏移+模糊，
+   * 不是环），把它当成环来限制就会误伤。
+   *
+   * 变异：把环改回 `0 0 0 3px` ⇒ 红。
+   */
+  it("SHELL-2：输入卡聚焦环不许超过 1px（第 183 轮：用户实测 3px 太粗）", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const body = new RegExp(`(^|\\n)\\s*\\.input-card-container:focus-within\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
+    expect(body, "找不到 .input-card-container:focus-within").not.toBe("");
+
+    const shadow = /(?:^|;)\s*box-shadow:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
+    expect(shadow, "聚焦态必须有可见反馈（不是要求它消失，只是要求细）").not.toBe("");
+
+    /* ⚠️ 必须**先解析令牌**：写的是 `0 0 0 1px var(--accent-border)`，
+       而 `--shadow-raise-3` 也是 `var(...)`（它展开成 `0 2px 4px 0, 0 4px 12px 0` 两层）。
+       不解析就无法区分"环"与"投影档"，第一版直接匹配 px 就漏掉了整条（rings=0）。
+       最后一条 `0 0 0 Npx <色/令牌>` 正好是环的写法，取它的第 4 个长度值。 */
+    const RING = /(?:^|\s)0 0 0 (\d+(?:\.\d+)?)px\s+\S+\s*$/;
+    const rings: number[] = [];
+    for (const layer of shadow.split(/,(?![^(]*\))/)) {
+      const m = RING.exec(layer.trim());
+      if (!m) continue;
+      /* 环色必须是品牌色派生的令牌（不许写死 rgba） */
+      expect(layer, `外扩环的色要走 var(--accent-border)（不许写死 rgba），实际该层：${layer.trim()}`).toMatch(/var\(--accent-border\)/);
+      rings.push(Number(m[1]));
+    }
+    expect(
+      rings.length,
+      `聚焦态应当有**恰好一圈**外扩环（写成 \`0 0 0 Npx var(--accent-border)\`），实际 box-shadow：${shadow}`,
+    ).toBe(1);
+    expect(
+      rings[0],
+      `输入卡的紫色外扩环是 ${rings[0]}px —— 用户实测 3px「太粗」，上限 1px（实际 box-shadow：${shadow}）`,
+    ).toBeLessThanOrEqual(1);
   });
 
   /**

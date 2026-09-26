@@ -1,15 +1,15 @@
 {
-  "version": "1.16.182",
-  "notes": "侧栏与输入框恢复 v1.16.165 原版观感：容器内边距回到三套原值、三行行高改回内容撑开（项目头 min-height 32px）、MCP/技能/记忆/智能体工具条恢复竖排、输入框恢复方角无描边无底色、亮色档文字提深；RHYTHM-1/2 判据随口径撤回，死令牌清理，变异 51/51。",
-  "pub_date": "2026-09-26T23:31:22Z",
+  "version": "1.16.183",
+  "notes": "撤掉主对话区域的纸面阴影并回到齐边矩形（外壳在材质档透明，阴影没有接收方只会把左缘糊脏）、输入编辑时的紫色外扩环 3px→1px、左栏次要文字 86%→84% 对齐 OpenBitFun 的层级比例（侧栏底 #f8f8f9 与对方 neutral.70 逐字节相同）；SHELL-1 口径撤回 + 新增 SHELL-2/LIT-13，变异 55/55。",
+  "pub_date": "2026-09-26T23:54:53Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VtcC9zTE9acm8zc3JBaWVqNEoxRzlENk50YktlbmpYbEJYL3JISitTRzFyQ0VuWHJOcXRoeFV6R1BoYkJRbjArVnVxSk54RGVWNllYR2M5dnk3TmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDY1NDc1CWZpbGU6Q29kZW1fMS4xNi4xODJfeDY0LXNldHVwLmV4ZQpQancxZEZ4VTN3QVJlNWswT3VSbXdNNGVSQVBoWVY1Q0pzTGVleFFNWkoxUG1NUmsvdXFucWJueXRES3Z4aHRnZHJobzhFandZSEtkMi9PU2ZhK0tCQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.182/Codem_1.16.182_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JEUDhMY1FKZXpweVJ2a1o4b1pIT3lWbERPT2tCWktRdjZ3OTUyQUwveGlsMjlVOW4zMjJ4M0NQNkpacktyK3BLSHVvZzYzT0pCOEtoVDhLdFp2bnc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDY2ODkxCWZpbGU6Q29kZW1fMS4xNi4xODNfeDY0LXNldHVwLmV4ZQpkTnNKRCtGZzJIZ01mbWhXaGU1K3ZrZ1ZLSFdYWWltendxeHRPT0V0YUh4MUNYbXJxNXNtTTcrTUZkdm9lVVJZMlJGcGtlenBla0lnUlpWVmcwM1NCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.183/Codem_1.16.183_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VtcC9zTE9acm8zc3JBaWVqNEoxRzlENk50YktlbmpYbEJYL3JISitTRzFyQ0VuWHJOcXRoeFV6R1BoYkJRbjArVnVxSk54RGVWNllYR2M5dnk3TmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDY1NDc1CWZpbGU6Q29kZW1fMS4xNi4xODJfeDY0LXNldHVwLmV4ZQpQancxZEZ4VTN3QVJlNWswT3VSbXdNNGVSQVBoWVY1Q0pzTGVleFFNWkoxUG1NUmsvdXFucWJueXRES3Z4aHRnZHJobzhFandZSEtkMi9PU2ZhK0tCQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.182/Codem_1.16.182_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JEUDhMY1FKZXpweVJ2a1o4b1pIT3lWbERPT2tCWktRdjZ3OTUyQUwveGlsMjlVOW4zMjJ4M0NQNkpacktyK3BLSHVvZzYzT0pCOEtoVDhLdFp2bnc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDY2ODkxCWZpbGU6Q29kZW1fMS4xNi4xODNfeDY0LXNldHVwLmV4ZQpkTnNKRCtGZzJIZ01mbWhXaGU1K3ZrZ1ZLSFdYWWltendxeHRPT0V0YUh4MUNYbXJxNXNtTTcrTUZkdm9lVVJZMlJGcGtlenBla0lnUlpWVmcwM1NCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.183/Codem_1.16.183_x64-setup.exe"
     }
   }
 }

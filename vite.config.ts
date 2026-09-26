@@ -37,6 +37,16 @@ export default defineConfig({
         "**/.preview-shot/**",
         "**/tools/preview/dist/**",
         "**/dist/**",
+        /*
+         * 第 182 轮实测补的两条：跑 `npm run verify` 会生成
+         * `coverage/lcov-report/**`（上千个 html）与 `jscpd-report/**`，
+         * 而它们**不在**忽略名单里 ⇒ Vite 逐文件触发整页 reload
+         * （日志里一次几百行 `page reload coverage/…`），
+         * 最终把 dev 窗口拖死：`target\debug\codem.exe (exit code 0xffffffff)`。
+         * 也就是说「开发窗口开着时跑一次 verify」会把窗口搞没 —— 这条忽略是修这个的。
+         */
+        "**/coverage/**",
+        "**/jscpd-report/**",
       ],
     },
   },
