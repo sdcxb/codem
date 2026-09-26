@@ -4,7 +4,7 @@
  */
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { useLang } from "../core/i18n/lang";
 import { useProjectStore } from "../core/store";
 import { getSettingJSON } from "../core/storage/settings";
@@ -240,7 +240,5 @@ return createPortal(
           </div>
         )}
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }

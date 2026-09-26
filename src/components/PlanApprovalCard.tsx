@@ -6,7 +6,7 @@
  */
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { ClipboardList } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
@@ -122,7 +122,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
     </div>
   );
 
-  return createPortal(card, document.body);
+  return createPortal(card);
 }
 
 const btnStyle: React.CSSProperties = {

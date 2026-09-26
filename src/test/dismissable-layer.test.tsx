@@ -268,3 +268,107 @@ describe("OVERLAY-1：浮层关闭的唯一实现", () => {
     expect(total, `Escape 相关行数 ${total} 超过基线 ${BASELINE}（新写的浮层请走 useDismissableLayer）`).toBeLessThanOrEqual(BASELINE);
   });
 });
+
+/**
+ * PORTAL-1：**浮层的挂载入口只有一个**（第 180 轮 P2-6 收口）。
+ *
+ * ## 依据（方案实测）
+ *
+ * `createPortal` 手写 **48 处 / 21 个生产文件**，每个文件自己 `import { createPortal } from "react-dom"`
+ * 再自己决定往哪儿挂（实测量过：**21 处全是 `document.body`**，只有 `SelectionTooltip`
+ * 用 `containerRef.current || document.body`）。代价有三条，都不是"代码不好看"：
+ * ① 容器策略散在 21 个文件里 —— 改一次要动 21 处；
+ * ② 门禁**无法回答**"新浮层有没有走共享层"，因为共享层根本不存在；
+ * ③ 无 DOM 环境要各自判断，而今天没人判断（只是碰巧都在浏览器里跑）。
+ *
+ * ## 判据
+ *
+ * ① 共享入口 `src/components/ui/portal.ts` 存在，且**只有它**从 `react-dom` 取 `createPortal`；
+ * ② 它必须默认 `document.body`、且在没有 `document` 时**安全返回 null**（不是抛错）；
+ * ③ 生产文件里**不再有**"把 `document.body` 当容器实参显式传"的调用（那是冗余，默认值就是它）；
+ * ④ 自定义宿主仍然允许（`SelectionTooltip` 那种），但必须从共享入口传 `container`。
+ *
+ * 变异：把某个文件的 import 改回 `react-dom` / 把 `document.body` 塞回某个调用 ⇒ 必红。
+ */
+describe("PORTAL-1：浮层挂载入口的唯一实现", () => {
+  const ROOT = process.cwd();
+  const SRC = path.join(ROOT, "src");
+  const SHARED = "src/components/ui/portal.ts";
+
+  function walk(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir)) {
+      if (name === "node_modules" || name === "test") continue;
+      const full = path.join(dir, name);
+      if (statSync(full).isDirectory()) walk(full, out);
+      else if (/\.tsx?$/.test(name) && !/\.test\./.test(name)) out.push(full);
+    }
+    return out;
+  }
+  const rel = (f: string) => path.relative(ROOT, f).replace(/\\/g, "/");
+
+  it("PORTAL-1a：共享入口存在，且只有它从 react-dom 拿 createPortal", () => {
+    const sharedPath = path.join(ROOT, SHARED);
+    expect(existsSync(sharedPath), `找不到共享入口 ${SHARED}`).toBe(true);
+    const src = readFileSync(sharedPath, "utf8");
+    expect(/createPortal\s+as\s+reactCreatePortal/.test(src),
+      "共享入口必须从 react-dom 取 createPortal（并起个别名，避免与自己同名）").toBe(true);
+    /* 默认宿主 */
+    expect(/container\s*\?\?\s*document\.body/.test(src),
+      "共享入口必须默认挂到 document.body（今天 21 处全是它）").toBe(true);
+    /* 无 DOM 时安全返回 null —— 与 React 自己会抛错不同，这是本仓库的选择，要有断言钉住 */
+    expect(/typeof document\s*===\s*["']undefined["']\s*\)\s*return null/.test(src),
+      "共享入口在无 document 时必须安全返回 null（而不是让整页崩掉）").toBe(true);
+
+    const offenders: string[] = [];
+    for (const full of walk(SRC)) {
+      const r = rel(full);
+      if (r === SHARED) continue;
+      const text = readFileSync(full, "utf8");
+      /* 只看**代码**：注释里提到 react-dom 是允许的（本文件的文档块就提到了） */
+      const code = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/\/\/[^\n]*/g, " ");
+      if (/import\s*\{[^}]*createPortal[^}]*\}\s*from\s*["']react-dom["']/.test(code)) {
+        offenders.push(`${r}（请改成 from "${path.relative(path.dirname(full), path.join(ROOT, "src/components/ui/portal")).replace(/\\/g, "/")}"）`);
+      }
+    }
+    expect(offenders,
+      "这些文件又直接从 react-dom 取 createPortal 了（浮层必须走共享入口）：\n  - " + offenders.join("\n  - "),
+    ).toEqual([]);
+  });
+
+  it("PORTAL-1b：不再把 document.body 当容器实参显式传（默认值就是它）", () => {
+    const offenders: string[] = [];
+    for (const full of walk(SRC)) {
+      const r = rel(full);
+      if (r === SHARED) continue;
+      const code = readFileSync(full, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+        .replace(/\/\/[^\n]*/g, " ");
+      /* 口径：`createPortal(` … `, document.body)` 的**最后一个实参恰好是 document.body**。
+         用字符扫描找配对括号（正则数括号必然数错：JSX 里 `onClick={() => x()}` 很常见）。 */
+      let idx = 0;
+      while ((idx = code.indexOf("createPortal(", idx)) >= 0) {
+        const open = idx + "createPortal".length;
+        let depth = 0, end = -1;
+        for (let i = open; i < code.length; i++) {
+          const c = code[i];
+          if (c === "(" || c === "[" || c === "{") depth++;
+          else if (c === ")" || c === "]" || c === "}") { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end < 0) break;
+        const body = code.slice(open + 1, end);
+        let d2 = 0, lastComma = -1;
+        for (let i = 0; i < body.length; i++) {
+          const c = body[i];
+          if (c === "(" || c === "[" || c === "{") d2++;
+          else if (c === ")" || c === "]" || c === "}") d2--;
+          else if (c === "," && d2 === 0) lastComma = i;
+        }
+        if (lastComma >= 0 && body.slice(lastComma + 1).trim() === "document.body") {
+          offenders.push(`${r}（createPortal 的容器实参是 document.body —— 删掉它，默认就是）`);
+        }
+        idx = end;
+      }
+    }
+    expect(offenders, offenders.length ? "这些调用还显式传了 document.body：\n  - " + offenders.join("\n  - ") : "").toEqual([]);
+  });
+});

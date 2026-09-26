@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { useLang, S } from "../core/i18n/lang";
 
 interface CloseConfirmDialogProps {
@@ -88,7 +88,5 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
           {S.closeConfirm.remember[lang]}
         </label>
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }

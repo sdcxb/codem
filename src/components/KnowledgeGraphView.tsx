@@ -40,7 +40,7 @@ import { Loader2, Search, Share2, Download, Edit3, Trash2 } from 'lucide-react';
 import { getGraphData, updateGraphNode, deleteGraphNode, deleteGraphEdge } from '../core/knowledge';
 import type { GraphData, GraphNode, GraphEdge, EntityType } from '../core/knowledge';
 import { useLang } from '../core/i18n/lang';
-import { createPortal } from 'react-dom';
+import { createPortal } from "./ui/portal";
 import { useDomainReady } from '../hooks/use-domain-ready';
 
 // ========== Types ==========
@@ -716,9 +716,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                   {isZh ? '删除连线' : 'Delete Edge'}
                 </button>
               )}
-            </div>,
-            document.body
-          )}
+            </div>)}
         </>
       )}
     </div>

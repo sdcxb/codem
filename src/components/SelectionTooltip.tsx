@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { useLang, S } from "../core/i18n/lang";
 import { MessageSquare } from "lucide-react";
 

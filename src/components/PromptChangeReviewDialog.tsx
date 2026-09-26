@@ -8,7 +8,7 @@
  */
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { FileText } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import type { PromptChange } from "../core/llm/tools";
@@ -271,7 +271,5 @@ onClick={(e) => e.stopPropagation()}
           </div>
         </div>
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }

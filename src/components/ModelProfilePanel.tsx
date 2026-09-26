@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { useLang } from "../core/i18n/lang";
 import {
   getModelProfileManager,
@@ -350,9 +350,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
           </button>
         </div>
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }
 
 // ========== Sub-components ==========

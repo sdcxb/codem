@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { Check, Star, HelpCircle } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import type { InteractiveFormQuestion } from "../core/llm/tools";
@@ -316,7 +316,5 @@ return createPortal(
           </button>
         </div>
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }

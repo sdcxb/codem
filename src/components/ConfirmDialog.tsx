@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 
 interface ConfirmDialogProps {
   title: string;
@@ -37,7 +37,5 @@ export function ConfirmDialog({ title, message, confirmLabel = "确定", cancelL
           <button className="confirm-btn danger" onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }

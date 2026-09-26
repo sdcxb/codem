@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { useProjectStore } from "../core/store";
 import { createProjectFiles, loadProjectInstructions, loadProjectSkills, loadProjectMemory } from "../core/project/files";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";

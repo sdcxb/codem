@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./components/ui/portal";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
 if (typeof window !== 'undefined') {
@@ -5064,9 +5064,7 @@ onClose={() => setCitationViewer(null)}
                 {lang === "zh" ? "取消" : "Cancel"}
               </button>
             </div>
-          </div>,
-          document.body
-        );
+          </div>);
       })()}
 
       {showCloseConfirm && (

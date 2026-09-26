@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { SlotBridge } from "../core/slots/SlotBridge";
@@ -282,5 +282,5 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     </div>
   );
 
-  return createPortal(panel, document.body);
+  return createPortal(panel);
 }

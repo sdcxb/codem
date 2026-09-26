@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { ActionIcons, StatusIcons, CommonIcons } from "../core/icons/icon-map";
 
 export type ToastType = "success" | "error" | "warning" | "info";
@@ -93,7 +93,5 @@ export function ToastContainer() {
           </button>
         </div>
       ))}
-    </div>,
-    document.body
-  );
+    </div>);
 }

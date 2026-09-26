@@ -1,7 +1,7 @@
 import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
@@ -787,9 +787,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                             <Trash2 size={14} className="pm-menu-icon" />
                             <span>{S.sidebar.removeProject[lang]}</span>
                           </button>
-                        </div>,
-                        document.body
-                      )}
+                        </div>)}
                     </div>
                   </div>
                   {isExpanded && (

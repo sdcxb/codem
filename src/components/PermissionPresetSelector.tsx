@@ -11,7 +11,7 @@
  */
 
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal } from "./ui/portal";
 import { Shield, Zap, Rocket, ChevronDown, Check } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
 import {
@@ -188,9 +188,7 @@ export function PermissionPresetSelector({
                 </button>
               )
             })}
-          </div>,
-          document.body
-        )}
+          </div>)}
       </div>
     )
   }

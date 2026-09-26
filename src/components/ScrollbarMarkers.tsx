@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import type { Message } from "../store";
 
 interface ScrollbarMarkersProps {
@@ -267,5 +267,5 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
     </div>
   );
 
-  return createPortal(rail, document.body);
+  return createPortal(rail);
 });

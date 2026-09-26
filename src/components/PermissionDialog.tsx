@@ -1,4 +1,4 @@
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import type { PermissionRequest } from "../core/permission/permission";
 
 interface PermissionDialogProps {
@@ -130,7 +130,5 @@ return createPortal(
           </button>
         </div>
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { MessageAttachment } from "../store";
@@ -1265,9 +1265,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 }}
                 onClose={() => setSlashFilter(null)}
               />
-            </div>,
-            document.body
-          )}
+            </div>)}
 
           {/* SlotListBridge 消费 conversation.input slot — 允许插件注入输入区组件 */}
           <SlotListBridge name="conversation.input" />
@@ -1431,9 +1429,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                       </>);
                     })()}
                   </div>
-                </>,
-                document.body
-              )}
+                </>)}
             </div>
 
             {/* Hidden file upload input — SlotBridge 消费 app.attachment slot */}
@@ -1480,9 +1476,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                       ));
                     })()}
                   </div>
-                </>,
-                document.body
-              )}
+                </>)}
             </div>
 
             {/* Collaboration mode — SlotBridge 消费 app.plan-mode-chip */}

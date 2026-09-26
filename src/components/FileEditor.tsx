@@ -17,7 +17,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Skeleton } from "./ui/Skeleton";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { Save, FileText, Image as ImageIcon, FileX, Eye, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink, Sheet, Music, Video, FileCode, Maximize2, Minimize2 } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 
@@ -985,9 +985,7 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
               )}
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>)}
     </div>
   );
 }

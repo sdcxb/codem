@@ -2,6 +2,52 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.180] - 2026-09-26 — P2-6 收口：浮层挂载入口收成一个（21 个文件不再各自 import react-dom）
+
+> 方案里 P2-6 的另一半。Escape 那半在 1.16.173/174 已经收了（14 → 0，剩下 16 行是注释与模板串），
+> 这一轮收的是**挂载**那一半。
+
+### 实测（改前）
+
+`createPortal` 手写 **43 处 / 21 个生产文件**，每个文件各自
+`import { createPortal } from "react-dom"` 再各自决定往哪儿挂 —— 逐个数过容器实参：
+**21 处全是 `document.body`**，只有 `SelectionTooltip` 是 `containerRef.current || document.body`。
+
+代价不是"代码不好看"，是三条具体的：
+
+1. **容器策略散在 21 个文件里** —— 改一次（例如挂到应用根、或按皮肤换宿主）要动 21 处；
+2. **门禁无法回答"新浮层有没有走共享层"** —— 因为共享层根本不存在；
+3. **无 DOM 环境要各自判断**，而今天没人判断（只是碰巧都跑在浏览器里）。
+
+### 处置
+
+新增 `src/components/ui/portal.ts` —— 浮层的**唯一挂载入口**：
+
+- 从 `react-dom` 取 `createPortal`（**全项目只此一处**，门禁 PORTAL-1a 守）；
+- 容器默认 `document.body`（21 处显式传参全部删掉，默认值就是它）；
+- 需要别的宿主时显式传 `container`（今天只有 `SelectionTooltip` 一处保留）；
+- **没有 `document` 时安全返回 `null`** —— 与 React 自己的 `createPortal` 会抛错不同，
+  "渲染不出来"比"整页崩掉"更可接受；这条由断言钉住。
+
+21 个文件的导入改为从这个入口拿，**21 处冗余的 `document.body` 实参全部删除**，1 处自定义宿主保留。
+
+### 门禁与证据
+
+- **PORTAL-1a**：共享入口存在 / 只有它从 `react-dom` 拿 `createPortal` / 必须默认 `document.body` /
+  必须防无 DOM；扫描时**先剥注释**（文档块里提到 `react-dom` 是允许的）；
+- **PORTAL-1b**：生产文件里不许再有"最后一个实参恰好是 `document.body`"的调用 ——
+  用**字符扫描配对括号**（正则数括号必然数错：JSX 里 `onClick={() => x()}` 很常见，
+  本仓库踩过"箭头函数的 `>` 把标签匹配截断"的同类坑）；
+- 变异 **46/46 红 + 还原逐字节回绿**（本轮新增 3 条：改回 react-dom / 塞回 document.body /
+  删掉无 DOM 守卫）；
+- `verify` 407 文件 / 6355 通过；`audit` 20 道 exit 0；`scan-ui` error 0 / warn 0。
+
+### 如实标注：这一轮**没有**做的部分
+
+方案里 P2-6 还提到「浮层契约」（`Portal.module.css` 不得出现 z-index/transform/filter/backdrop-filter）。
+今天的层级由各浮层自己的 class 管（`--z-*` 令牌 + 局部层叠）—— 把 21 个浮层的层级统一重排是
+**观感级改动**，需要单独的读数与截图对照，不该混在"收口入口"里做。
+
 ## [1.16.179] - 2026-09-26 — P2-1 收口：24 处空态内边距收进共享族（棘轮 **24 → 1**）
 
 > 方案里 P2-1 的最后一批。做完之后顺手数了一遍"名字像空态"的类，发现棘轮**一直没看见**

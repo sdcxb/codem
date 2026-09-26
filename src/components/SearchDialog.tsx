@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { useProjectStore } from "../core/store";
 import { useLang, S } from "../core/i18n/lang";
 import { Search, Pin, Folder, PencilLine, BookMarked, Settings, MessageSquare, GitBranch } from "lucide-react";
@@ -230,7 +230,5 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
           </div>
         </div>
       </div>
-    </div>,
-    document.body
-  );
+    </div>);
 }

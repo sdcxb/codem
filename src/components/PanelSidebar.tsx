@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
+import { createPortal } from "./ui/portal";
 import { GitBranch, FolderOpen, ListChecks, Wrench, Activity } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
@@ -203,5 +203,5 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
     </div>
   );
 
-  return createPortal(panelContent, document.body);
+  return createPortal(panelContent);
 }
