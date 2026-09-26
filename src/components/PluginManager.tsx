@@ -12,6 +12,8 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+/* 第 181 轮审计整改：长列表分片渲染（一次渲染 208 张卡 = 6095 个节点） */
+import { IncrementalList } from './ui/IncrementalList'
 import { Lock } from 'lucide-react'
 import { PanelIcons, ActionIcons, StatusIcons, CommonIcons, McpIcons } from '../core/icons/icon-map'
 import { useLang } from '../core/i18n/lang'
@@ -731,14 +733,27 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         })}
       </div>
 
-      {/* 插件网格 */}
-      <div className="skill-market-grid">
-        {plugins.length === 0 ? (
+      {/* 插件网格
+          第 181 轮审计整改：原来这里是 `plugins.map(...)` —— 207 个内置插件 + 1 个扩展
+          **一次性造 208 张卡**，实测 6095 个 DOM 节点（含 1952 个内联 SVG 图标），
+          而干净状态的整个应用只有 620 个节点。改走分片渲染：首屏 40 张，滚动/按钮追加。 */}
+      {plugins.length === 0 ? (
+        <div className="skill-market-grid">
           <div className="empty-hint">
             {manager ? (zh ? '没有找到匹配的插件' : 'No matching plugins') : (zh ? '正在加载...' : 'Loading...')}
           </div>
-        ) : (
-          plugins.map(plugin => (
+        </div>
+      ) : (
+        <IncrementalList
+          className="skill-market-grid"
+          items={plugins}
+          resetKey={`${activeCategory}|${searchQuery}|${tab}`}
+          initial={40}
+          step={40}
+          moreLabel={(rest, next) =>
+            zh ? `再显示 ${next} 个插件（还有 ${rest} 个）` : `Show ${next} more plugins (${rest} left)`
+          }
+          renderItem={(plugin) => (
             <PluginCard
               key={plugin.name}
               plugin={plugin}
@@ -755,9 +770,9 @@ export function PluginManager({ onClose }: PluginManagerProps) {
               isSelected={selectedPlugin === plugin.name}
               onSelect={() => setSelectedPlugin(selectedPlugin === plugin.name ? null : plugin.name)}
             />
-          ))
-        )}
-      </div>
+          )}
+        />
+      )}
 
       {/* 核心插件说明 */}
       <div className="plugin-mgr-footnote">

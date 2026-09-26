@@ -10,6 +10,8 @@ import {
 import type { TaskSlot } from "../core/llm/model-profile";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
+/* 第 181 轮审计整改：长列表分片渲染（与插件管理同型） */
+import { IncrementalList } from "./ui/IncrementalList";
 import { confirmDialog } from "../core/ui/native-dialog";
 
 /**
@@ -187,8 +189,17 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
       {/* Agent list + detail/edit form (scrollable) */}
       <div className="agent-list">
-        <div className="skill-market-grid agent-grid">
-        {agents.map(agent => {
+        {/* 第 181 轮审计整改：与插件管理同型（`.skill-market-grid` 下一页 map 出全部卡片），
+            统一走分片渲染 —— 今天内置智能体只有十几个，但口径要一致，
+            否则"以后谁往注册表里加 200 个"就又是一次 6000 节点的惊喜。 */}
+        <IncrementalList
+          className="skill-market-grid agent-grid"
+          items={agents}
+          resetKey={selectedId ?? ""}
+          initial={40}
+          step={40}
+          moreLabel={(rest, next) => (zh ? `再显示 ${next} 个智能体（还有 ${rest} 个）` : `Show ${next} more agents (${rest} left)`)}
+          renderItem={(agent) => {
           const builtin = getAgentRegistry().isBuiltin(agent.id);
           const active = selectedId === agent.id && !editing;
           return (
@@ -232,8 +243,8 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           );
-        })}
-      </div>
+          }}
+        />
 
       {/* Detail view (read-only, when not editing) */}
       {!editing && selected && (

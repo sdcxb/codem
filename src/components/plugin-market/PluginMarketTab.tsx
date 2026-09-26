@@ -12,6 +12,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { PanelIcons, ActionIcons, StatusIcons, CommonIcons } from '../../core/icons/icon-map'
 import { Badge } from '../ui/badge'
 import { ZvecGrepMarketCard } from '../zvec/ZvecGrepMarketCard'
+/* 第 181 轮审计整改：长列表分片渲染（与插件管理同型） */
+import { IncrementalList } from '../ui/IncrementalList'
 import type { PluginManagerService } from '../../core/plugin-loader/plugin-manager-service'
 import {
   DSH_MARKET_CATALOG,
@@ -186,9 +188,22 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
         <ZvecGrepMarketCard />
       </div>
 
-      {/* 目录网格（flex 填满剩余高度滚动，适配小弹窗/窗口） */}
-      <div className="skill-market-grid" style={{ overflowY: 'auto', flex: 1, minHeight: 80, maxHeight: 'calc(100vh - 300px)' }}>
-        {filtered.map(entry => {
+      {/* 目录网格（flex 填满剩余高度滚动，适配小弹窗/窗口）
+          第 181 轮审计整改：与插件管理同型，改走分片渲染（首屏 40 项）。 */}
+      {filtered.length === 0 ? (
+        <div className="skill-market-grid" style={{ overflowY: 'auto', flex: 1, minHeight: 80, maxHeight: 'calc(100vh - 300px)' }}>
+          <div className="empty-hint">{zh ? '没有匹配的 dsh 插件' : 'No matching dsh plugins'}</div>
+        </div>
+      ) : (
+      <IncrementalList
+        className="skill-market-grid"
+        style={{ overflowY: 'auto', flex: 1, minHeight: 80, maxHeight: 'calc(100vh - 300px)' }}
+        items={filtered}
+        resetKey={query}
+        initial={40}
+        step={40}
+        moreLabel={(rest, next) => (zh ? `再显示 ${next} 个插件（还有 ${rest} 个）` : `Show ${next} more plugins (${rest} left)`)}
+        renderItem={(entry) => {
           const st = statusBadge(entry.status, zh)
           const state = pluginState(entry.codemAnchor)
           const isEnabled = state?.status === 'enabled'
@@ -264,11 +279,9 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
               </div>
             </div>
           )
-        })}
-        {filtered.length === 0 && (
-          <div className="empty-hint">{zh ? '没有匹配的 dsh 插件' : 'No matching dsh plugins'}</div>
-        )}
-      </div>
+        }}
+      />
+      )}
 
       {/* 在线检索结果（真实生态包：一律标注需移植） */}
       {online !== null && online.length > 0 && (

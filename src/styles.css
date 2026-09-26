@@ -16190,6 +16190,33 @@ color: var(--accent, #7c6cf0);
 .empty-hint > p { margin: 0; }
 
 
+/* ==========================================================================
+ * 分片渲染的哨兵与「再显示 N 项」按钮（第 181 轮全面审计整改）
+ *
+ * 见 `src/components/ui/IncrementalList.tsx`：长列表不许一次性全渲染
+ * （实测插件管理一次造 208 张卡 = 6095 个节点，而整个应用干净状态只有 620 个）。
+ * 哨兵**跨整行**：它在网格里不该占掉一个卡片格；按钮必须**可聚焦** ——
+ * 键盘用户要有显式入口，而且网格万一没形成滚动容器时它是唯一能拿到剩余项的路。
+ * ========================================================================== */
+.incremental-sentinel {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-6);
+}
+.incremental-more-btn {
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.incremental-more-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+
 /* 装饰性/占位图标（空态、未激活状态） */
 .icon-dim { opacity: var(--icon-dim-opacity); }
 /* 仅用于屏幕阅读器的文本（a11y 标准工具类） */

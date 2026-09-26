@@ -1,15 +1,15 @@
 {
-  "version": "1.16.180",
-  "notes": "P2-6 收口：浮层挂载入口收成一个（新增 src/components/ui/portal.ts，21 个文件不再各自 import react-dom，21 处冗余的 document.body 容器实参全部删除，新增 PORTAL-1a/1b 门禁）。",
-  "pub_date": "2026-09-26T16:25:19Z",
+  "version": "1.16.181",
+  "notes": "全面审计第 1 轮：插件管理一次造 6095 个 DOM 节点（占全页 90%）→ 新增共享分片渲染原语 IncrementalList 并覆盖 4 处同型网格；门禁 IL-1..IL-8，变异 50/50。",
+  "pub_date": "2026-09-26T16:59:48Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Y2SXBXOGZlZ1NOUWJhU2NLMzhLMkZyVGpnK0ozZ1A1U0MxbCtMd3RqZzF6Wlk3ZWNUbUt0U05IV1dxajJjMEFIamJsbzBNdDNxc2o5N2pMa0JDOEFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM5OTEzCWZpbGU6Q29kZW1fMS4xNi4xODBfeDY0LXNldHVwLmV4ZQpOcTRQOU00MEU3VFhzUkpDNWtTVUx0QXRFUHAwMy9LdnhYQkM3OWhseVo4SUhmeEV1WE9Rdk5FWlVac1JRWFRIUmN2N0VhMVFOMkdDZDRQMWw2dzFBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.180/Codem_1.16.180_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZXWkkrQ1ExODF2N0dpbThSQS80TDR0c0FmczVCeFR3ellsTTBXRFlQb240aHpmbzlQY3VReTVDVzE2SWJvL3ZMNnIwWDJXMGVkdFFSandiOFVnNEFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDQxOTc2CWZpbGU6Q29kZW1fMS4xNi4xODFfeDY0LXNldHVwLmV4ZQorZkhOUytKaERSWkhPbmVFREVVSUZ6RC9HMkZwK2tESlVGTDlFaWlzWUNiVWlnTFJ6Y1RkeUpYTlhodXpnMno1cDJLNGJTbjYrZE5NRjcrNHVYcmVBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.181/Codem_1.16.181_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Y2SXBXOGZlZ1NOUWJhU2NLMzhLMkZyVGpnK0ozZ1A1U0MxbCtMd3RqZzF6Wlk3ZWNUbUt0U05IV1dxajJjMEFIamJsbzBNdDNxc2o5N2pMa0JDOEFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM5OTEzCWZpbGU6Q29kZW1fMS4xNi4xODBfeDY0LXNldHVwLmV4ZQpOcTRQOU00MEU3VFhzUkpDNWtTVUx0QXRFUHAwMy9LdnhYQkM3OWhseVo4SUhmeEV1WE9Rdk5FWlVac1JRWFRIUmN2N0VhMVFOMkdDZDRQMWw2dzFBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.180/Codem_1.16.180_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZXWkkrQ1ExODF2N0dpbThSQS80TDR0c0FmczVCeFR3ellsTTBXRFlQb240aHpmbzlQY3VReTVDVzE2SWJvL3ZMNnIwWDJXMGVkdFFSandiOFVnNEFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDQxOTc2CWZpbGU6Q29kZW1fMS4xNi4xODFfeDY0LXNldHVwLmV4ZQorZkhOUytKaERSWkhPbmVFREVVSUZ6RC9HMkZwK2tESlVGTDlFaWlzWUNiVWlnTFJ6Y1RkeUpYTlhodXpnMno1cDJLNGJTbjYrZE5NRjcrNHVYcmVBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.181/Codem_1.16.181_x64-setup.exe"
     }
   }
 }

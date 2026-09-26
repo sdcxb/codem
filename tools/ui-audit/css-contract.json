@@ -5082,6 +5082,22 @@
     "overflow": "hidden",
     "transition": "var(--transition-opacity)"
   },
+  "incremental-more-btn": {
+    "background": "none",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-sm)",
+    "padding": "var(--space-3) var(--space-6)"
+  },
+  "incremental-sentinel": {
+    "align-items": "center",
+    "display": "flex",
+    "grid-column": "1 / -1",
+    "justify-content": "center",
+    "padding": "var(--space-6)"
+  },
   "inline-diff-actions": {
     "align-items": "center",
     "background": "var(--bg-secondary)",

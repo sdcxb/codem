@@ -19,6 +19,8 @@ import {
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import { PanelIcons, ActionIcons, SkillSourceIcons, StatusIcons, CommonIcons, MarketIcons } from "../core/icons/icon-map";
 import { Switch } from "./ui/switch";
+/* 第 181 轮审计整改：长列表分片渲染（与插件管理同型） */
+import { IncrementalList } from "./ui/IncrementalList";
 import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
 import { Progress } from "./ui/progress";
@@ -992,19 +994,30 @@ return true;
             ))}
           </div>
 
-          {/* Market Skills Grid */}
-          <div className="skill-market-grid">
-            {filteredMarketSkills.length === 0 && !marketLoading && !onlineSearching && (
-              <div className="empty-hint">
-                {marketSearchQuery ? "未找到匹配的技能" : "暂无市场技能，点击检查更新重试"}
-              </div>
-            )}
-            {filteredMarketSkills.length === 0 && onlineSearching && (
-              <div className="empty-hint">
-                正在联网搜索 "{marketSearchQuery}"...
-              </div>
-            )}
-            {filteredMarketSkills.map((skill) => (
+          {/* Market Skills Grid
+              第 181 轮审计整改：与插件管理同一个问题（一次性 map 出全部卡片），改走分片渲染。 */}
+          {filteredMarketSkills.length === 0 ? (
+            <div className="skill-market-grid">
+              {!marketLoading && !onlineSearching && (
+                <div className="empty-hint">
+                  {marketSearchQuery ? "未找到匹配的技能" : "暂无市场技能，点击检查更新重试"}
+                </div>
+              )}
+              {onlineSearching && (
+                <div className="empty-hint">
+                  正在联网搜索 "{marketSearchQuery}"...
+                </div>
+              )}
+            </div>
+          ) : (
+            <IncrementalList
+              className="skill-market-grid"
+              items={filteredMarketSkills}
+              resetKey={`${marketSearchQuery}|${marketSourceFilter}`}
+              initial={40}
+              step={40}
+              moreLabel={(rest, next) => `再显示 ${next} 个技能（还有 ${rest} 个）`}
+              renderItem={(skill) => (
               <div
                 key={skill.id}
                 className={`market-skill-card ${skill.installed ? "installed" : ""} ${selectedMarketSkill?.id === skill.id ? "selected" : ""}`}
@@ -1072,8 +1085,9 @@ return true;
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+              )}
+            />
+          )}
 
           {/* Market Skill Detail Dialog */}
           <Dialog open={!!selectedMarketSkill} onOpenChange={(open) => !open && setSelectedMarketSkill(null)}>
