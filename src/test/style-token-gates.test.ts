@@ -28,6 +28,66 @@ const token = (block: string, name: string): string | null => {
   while ((m = re.exec(block))) last = m[1].trim();
   return last;
 };
+
+/**
+ * 皮肤文件的"可扫描区间"（SKIN-1 / SKIN-2 两个门禁**共用同一套口径**）。
+ *
+ * 口径只能有一处实现 —— 两个门禁各写一份正则，迟早会不一样，而"两套口径"正是这个仓库反复踩的坑
+ * （第 163 轮就出过一次：装机版复核脚本自己另写了一个含 `transparent` 的宽松正则，报了 29 处假红）。
+ *
+ * 返回：
+ * - `raw` 原文；`inComment(i)` 该偏移是否在注释里（注释里解释颜色是文档，不是取值）；
+ * - `varSpans` `var(...)` 的区间（`var(--x, #fff)` 的兜底是正当写法）；
+ * - `blockStart/blockEnd` 顶部**令牌块**的区间（块内是"数据"，不算规则体）；
+ * - `lineOf(i)` 偏移 → 行号（⚠️ 必须按 `\n` 的真实位置算：这个文件是 **CRLF**，
+ *   第一版用"每行长度 + 1"累加，130 行后偏了约 130 字符，于是令牌块内的字面量被当成规则体里的，报了 4 处假红）。
+ */
+const skinScan = (rel: string) => {
+  const raw = readFileSync(path.join(ROOT, rel), "utf8");
+  const commentSpans: Array<[number, number]> = [...raw.matchAll(/\/\*[\s\S]*?\*\//g)].map((m) => [m.index, m.index + m[0].length]);
+  const inComment = (i: number) => commentSpans.some(([a, b]) => i >= a && i < b);
+  /* 令牌块 = 第一个顶层块（块体里有 `--x: y;`） */
+  const cleanLines = raw.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).split(/\r?\n/);
+  let start = -1;
+  let depth = 0;
+  let end = -1;
+  for (let i = 0; i < cleanLines.length; i++) {
+    if (start < 0 && cleanLines[i].includes("{")) {
+      start = i;
+      depth = 0;
+    }
+    if (start < 0) continue;
+    for (const ch of cleanLines[i]) {
+      if (ch === "{") depth++;
+      else if (ch === "}") depth--;
+    }
+    if (depth === 0 && i > start) {
+      if (/^\s*--[\w-]+\s*:/m.test(cleanLines.slice(start, i + 1).join("\n"))) {
+        end = i;
+        break;
+      }
+      start = -1;
+    }
+  }
+  const lineStarts: number[] = [0];
+  for (let i = 0; i < raw.length; i++) if (raw[i] === "\n") lineStarts.push(i + 1);
+  const blockStart = start >= 0 ? (lineStarts[start] ?? 0) : Number.MAX_SAFE_INTEGER;
+  const blockEnd = start >= 0 ? (lineStarts[end] ?? raw.length) + (raw.split(/\r?\n/)[end]?.length ?? 0) : Number.MAX_SAFE_INTEGER;
+  const varSpans: Array<[number, number]> = [...raw.matchAll(/var\([^)]*\)/g)].map((m) => [m.index, m.index + m[0].length]);
+  const lineOf = (i: number) => raw.slice(0, i).split("\n").length;
+  const inTokenBlock = (i: number) => i >= blockStart && i < blockEnd;
+  const inVar = (i: number) => varSpans.some(([a, b]) => i >= a && i < b);
+  return { raw, inComment, varSpans, blockStart, blockEnd, inTokenBlock, inVar, lineOf, found: start >= 0 && end > start };
+};
+
+/** CSS Color 4 的命名色（第 164 轮 SKIN-2 用）。`transparent`/`currentColor` **不在**这张表里：
+ *  压缩器对它们**逐字保留**（装机版那份 CSS 实测：`background:transparent` 原样留着），
+ *  而命名色会被改写成 `#fff` 这类颜色字面量。 */
+const CSS_NAMED_COLORS = new Set(
+  `aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen`
+    .split(" ")
+    .filter(Boolean),
+);
 const scanTokens = (css, file = "fixture.css") => scanTokenHygiene({ files: [{ path: file, css }] });
 const scanLiterals = (css, file = "fixture.css") => scanStyleLiterals({ files: [{ path: file, css }] });
 const todos = (css) => new Set(SCALE_FAMILIES.radius);
@@ -302,50 +362,51 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
    */
   it("SKIN-1：两套皮肤的规则体里不许出现颜色字面量（必须收进顶部令牌块）", () => {
     for (const rel of ["src/styles/skin-hub.css", "src/styles/skin-dream.css"]) {
-      const raw = readFileSync(path.join(ROOT, rel), "utf8");
-      const commentSpans: Array<[number, number]> = [...raw.matchAll(/\/\*[\s\S]*?\*\//g)].map((m) => [m.index, m.index + m[0].length]);
-      const inComment = (i: number) => commentSpans.some(([a, b]) => i >= a && i < b);
-      /* 令牌块 = 第一个顶层块（块体里有 `--x: y;`） */
-      const cleanLines = raw.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).split(/\r?\n/);
-      let start = -1;
-      let depth = 0;
-      let end = -1;
-      for (let i = 0; i < cleanLines.length; i++) {
-        if (start < 0 && cleanLines[i].includes("{")) {
-          start = i;
-          depth = 0;
-        }
-        if (start < 0) continue;
-        for (const ch of cleanLines[i]) {
-          if (ch === "{") depth++;
-          else if (ch === "}") depth--;
-        }
-        if (depth === 0 && i > start) {
-          if (/^\s*--[\w-]+\s*:/m.test(cleanLines.slice(start, i + 1).join("\n"))) {
-            end = i;
-            break;
-          }
-          start = -1;
-        }
-      }
-      expect(start >= 0 && end > start, `${rel} 找不到令牌块（皮肤文件必须把颜色定义集中在顶部令牌块里）`).toBe(true);
-      /* ⚠️ 行首偏移必须按 `\n` 的真实位置算 —— 第一版用"每行长度 + 1"累加，
-         而这个文件是 **CRLF**（每行实际占 2 个换行字符）⇒ 累加值比真实偏移小、越往后偏得越多
-         （130 行后偏了约 130 字符），于是**令牌块内的字面量被当成规则体里的**、报了 4 处假红。 */
-      const lineStarts: number[] = [0];
-      for (let i = 0; i < raw.length; i++) if (raw[i] === "\n") lineStarts.push(i + 1);
-      const blockStart = lineStarts[start] ?? 0;
-      const blockEnd = (lineStarts[end] ?? raw.length) + (raw.split(/\r?\n/)[end]?.length ?? 0);
-      const varSpans: Array<[number, number]> = [...raw.matchAll(/var\([^)]*\)/g)].map((m) => [m.index, m.index + m[0].length]);
+      const s = skinScan(rel);
+      expect(s.found, `${rel} 找不到令牌块（皮肤文件必须把颜色定义集中在顶部令牌块里）`).toBe(true);
       const stray: string[] = [];
-      for (const m of raw.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)) {
+      for (const m of s.raw.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)) {
         const i = m.index!;
-        if (inComment(i)) continue; // 注释里解释颜色是文档，不是取值
-        if (i >= blockStart && i < blockEnd) continue; // 令牌块内是"数据"
-        if (varSpans.some(([a, b]) => i >= a && i < b)) continue; // `var(--x, #fff)` 的兜底是正当写法
-        stray.push(`${rel}:${raw.slice(0, i).split("\n").length}  ${m[0]}`);
+        if (s.inComment(i)) continue; // 注释里解释颜色是文档，不是取值
+        if (s.inTokenBlock(i)) continue; // 令牌块内是"数据"
+        if (s.inVar(i)) continue; // `var(--x, #fff)` 的兜底是正当写法
+        stray.push(`${rel}:${s.lineOf(i)}  ${m[0]}`);
       }
       expect(stray, `${rel} 的规则体里还有颜色字面量（应收进顶部令牌块）：\n  - ${stray.slice(0, 8).join("\n  - ")}`).toEqual([]);
+    }
+  });
+
+  /**
+   * SKIN-2：皮肤规则体里不许用**命名色**（`white` / `black` / `red` …）（第 164 轮）。
+   *
+   * 为什么 SKIN-1 不够：SKIN-1 的口径是 `hex` 与 `rgb()/rgba()`（和全项目的算写死值口径一致），
+   * 而 `color: white` 两种都不匹配 ⇒ 源码门禁全绿。**但压缩器会把命名色改写成 `#fff`**：
+   * 装机版那份 CSS（`dist/assets/main-*.css`）里，Dream 皮肤的规则体里实测有 **2 处** `#fff`
+   * —— 判据"skin-*.css 里只剩令牌块（颜色字面量 0）"在**产物**这一层被破了，而源码门禁看不见。
+   *
+   * 这个门禁就是把"源码口径"和"产物口径"对齐：命名色一律走令牌。
+   * `transparent` / `currentColor` 明确豁免 —— 压缩器对它们逐字保留（产物里 `background:transparent`
+   * 原样在），它们也不携带任何设计取值。
+   *
+   * 变异自证：`SKIN2-命名色 white` 会红。
+   */
+  it("SKIN-2：皮肤规则体里不许出现命名色（压缩器会把它改写成颜色字面量，绕过 SKIN-1）", () => {
+    for (const rel of ["src/styles/skin-hub.css", "src/styles/skin-dream.css"]) {
+      const s = skinScan(rel);
+      expect(s.found, `${rel} 找不到令牌块`).toBe(true);
+      const stray: string[] = [];
+      /* 只看**声明的值**（选择器里的 `.hub-task-icon-blue` 这类类名不算颜色） */
+      for (const d of s.raw.matchAll(/(^|[;{])\s*(--[\w-]+|[a-z-]+)\s*:\s*([^;{}]+)/g)) {
+        const valueAt = d.index! + d[0].length - d[3].length;
+        if (s.inComment(d.index!)) continue;
+        if (s.inTokenBlock(valueAt)) continue;
+        if (s.inVar(valueAt)) continue; // 值里只要走 var()（含兜底）就不算
+        for (const w of d[3].matchAll(/[a-zA-Z]{3,}/g)) {
+          if (!CSS_NAMED_COLORS.has(w[0].toLowerCase())) continue;
+          stray.push(`${rel}:${s.lineOf(valueAt + w.index!)}  ${d[2]}: ${d[3].trim()}  （命名色 \`${w[0]}\`）`);
+        }
+      }
+      expect(stray, `${rel} 的规则体里还有命名色（压缩器会改写成颜色字面量、绕过 SKIN-1；请改用令牌）：\n  - ${stray.slice(0, 8).join("\n  - ")}`).toEqual([]);
     }
   });
 

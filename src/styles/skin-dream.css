@@ -452,7 +452,10 @@ backdrop-filter: none !important;
 [data-skin="dream"] .btn-send,
 [data-skin="dream"] .send-button {
   background: var(--dream-accent, #e88c9a) !important;
-  color: white !important;
+  /* 第 164 轮 SKIN-2：原来是关键字 `white`。源码门禁（SKIN-1 只认 hex/rgb()/rgba()）看不见它，
+     但**压缩器会把命名色改写成 `#fff`** ⇒ 装机版那份 CSS 里就成了颜色字面量（实测抓到 2 处）。
+     改用同值的令牌（--dream-c7 = #ffffff），源码与产物两个口径就都是 0 了。 */
+  color: var(--dream-c7) !important;
   border: none;
   border-radius: 50%;
   box-shadow: 0 4px 8px var(--dream-c27);
@@ -1025,7 +1028,7 @@ backdrop-filter: none !important;
 /* 批准按钮：Dream 柔和绿色 */
 [data-skin="dream"] .inline-diff-btn.accept {
   background: var(--dream-c77);
-  color: white;
+  color: var(--dream-c7); /* 同上：`white` 会被压缩器改写成 #fff（第 164 轮 SKIN-2） */
   border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-btn.accept:is(:hover, :focus-visible) {
