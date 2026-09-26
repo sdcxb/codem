@@ -720,19 +720,81 @@ hover 的缺陷**两档都有** ⇒ 修那一条覆盖就等于同时修好两�
   **两个皮肤的 `:active` 规则都是 0 条** ⇒ 基线按压反馈（`styles.css:743-757`）在皮肤下**失效**；
   两皮肤还都写 `border-radius: 0 !important` 把气泡/输入框直角化，滚动条宽度 hub 6px / dream 4px（同一元素两套几何）。
 
-### 23.7 对方侧对照（子代理源码审计小结；详细表格待补）
+### 23.7 对方侧对照（子代理源码审计；下列均为解析后的确定值）
 
-| 维度 | OpenBitFun | 我们 |
+#### 弹层：他们有中心化协调器，我们没有
+
+| 能力 | OpenBitFun | 我们 |
 | --- | --- | --- |
-| 内容态组件 | 有 `Empty` / `Spinner` / `Alert` / `StatusPill` 等设计系统组件（**无骨架屏组件、无 Toast/Drawer 组件**） | **无共享组件**（空态 63 个类名） |
-| 浮层收口 | 有中心化 `OverlayCoordinator`（焦点/inert/Escape 一处收口）+ `layer-*` 16 档层级 | 有 Radix 层但**采用率≈0**；Escape 复制 14 份 |
-| 图标 | 5 档尺寸阶梯（`lg` 默认 24px）、描边 **1.6**、20 槽几何表、4 个契约测试 | 尺寸字面量 841 次 vs 语义类名 77 次；`.icon-lg` 是死令牌 |
-| 焦点环 | 2px / offset 2px / #6a6a6a | 2px 强调色 ✅ 同级 |
-| 命中区 token | 有 token（**但只有 1 个消费点** —— 他们自己的死令牌味道） | 无 token、无强制；活体 41 个 <24px |
-| 减少动效 | `prefers-reduced-motion` 覆盖 **169 个文件**；`duration.base`(220ms) **故意不归零**（Dialog/MobileSheet 自带 1ms 兜底） | **15 个文件**；缺口也在这 |
-| 窄窗 | **不会自动收起**（唯一触发是拖动 6px 分隔条越过 152px）；18 个不同 `max-width` 值 / 99 处 | **700px 自动收起**、5 个断点 / 68 条规则 ⇒ **这一项我们更好** |
-| 多语言 | 3 语言 × 10337 键 = **31011** 条文案 + 4 个截断守护测试 | 只有中文；无长度守护 |
+| 收口点 | `OverlayCoordinator.ts`（**447 行**）：焦点陷阱 / 初始焦点 / 焦点归还 / 背景 `inert`+`aria-hidden` / Escape 只由最顶层消费 / 指针外关闭 / 滚动锁 | Radix 层存在但**采用率≈0**；Escape 逻辑**复制 14 份**；无焦点陷阱工具 |
+| z-index 分配 | Portal 宿主固定 `layer.overlayHost`=300，层内**按打开顺序 `index+1`** | 静态 16 档令牌 + **35 处字面量**（`z=10` 12 次） |
+| 契约测试 | Dialog/Combobox/MenuPopover **必须**用 `useDismissibleLayer`、**不得**自己绑 `mousedown`；产品侧扫描**裸 `createPortal` 必须为空数组**；`Portal.module.css` 不得出现 z-index/transform/filter/backdrop-filter | 无对应约束 |
+| Dialog | 圆角 **28px**、视口 gutter **24px**、遮罩 20%（亮）/ 56%（暗）+ `blur(20px)`、宽 420/560/600/800/960、进出 **220ms**（进 `.23,1,.32,1` / 出 `.3,0,1,1`）、位移 `translateY(4px) scale(.98)`、退出保留 **180ms**、footer 高 **68px** | 圆角 `--radius-lg`、阴影 `--shadow-popover`；`.modal-editor` 仍是**字面阴影**；进出是 `0.15s/0.2s ease-out` **字面量** |
+| Menu | 圆角 **16px**、宽 220（下限 160）、**行高 30px**、行圆角 8px、行间距 **2px**、**进 140ms / 出 100ms**、`transform-origin: top left` | 圆角 `--radius`、`--elevation-3`、动画走令牌但**原点被 §17 那个悬空逗号改成 center** |
+| Tooltip | 圆角 **6px**、padding **6/10**、最大 **280px**、延迟 **450/400/300ms**、箭头 8px | 圆角 `--radius-sm`、`--shadow-md`、最大 240px；无延迟常量 |
+| Toast | 圆角 **12px**、宽 `min(300px, 100vw−24px)`、**最多 3 条**、默认 **3000ms**、进 180ms / 出 120ms | 宽 280–400px、动画**字面 `0.3s ease-out`**、无条数/时长常量 |
 
+#### 内容态：他们有组件 + 契约，我们是 63 个类名
+
+| 项 | OpenBitFun | 我们 |
+| --- | --- | --- |
+| 空态 | `Empty` 组件：padding **32/16**、gap **10px**、媒体 **24/32/40**（默认 32）、描述 **42ch**、标题 13/1.2、描述 13/1.5、全用 `content-muted`；契约测试**禁止**给 media/title 写 `opacity`、禁止标题用 `content-primary` | **71 条规则 / 63 个类名**、无共享组件；`ErrorCard` 只服务 1 个文件 |
+| 加载 | `Spinner`（3×3 矩阵、**720ms** 循环、9 格 **0/100/200/300/400ms** 错峰）+ `LoadingState`（gap 8、label 11/1.55）；reduced-motion → `animation:none` + `opacity:.75` | 5 处手写 border 转圈（12/14px），**无 reduced-motion 处理**、无错峰 |
+| 骨架屏 | 组件**未找到**，只有产品局部 `GallerySkeleton`（shimmer **1.2s linear infinite**、卡片高 140px） | **0 条** |
+| 错误 | `Alert`：4 档 tone、padding 12/16、圆角 8、1px 状态边、surface 10% / border 30%（**与我们的状态四角色同口径**）、`role=alert` + error 时 `aria-live=assertive` | 只有 retry 按钮（16 条），无 Alert 组件 |
+| 离线/重连 | 组件**未找到**（仅产品级 `PeerConnectionStatus`，`role=status` + `aria-live=polite`）；预算 **180s** / 重试 **10s** / 单次 **30s** | 只有 `connection-lost-banner`，动画全字面量、散在三套命名 |
+
+#### 截断：他们有原语 + 契约，我们逐条手写
+
+| 指标 | OpenBitFun | 我们 |
+| --- | --- | --- |
+| 首选机制 | **`OverflowText` 用了 399 处**：静止 **fade 16px**、交互 **marquee**（时长 `max(2400ms, 距离/36px·s⁻¹)`）、溢出自动弹 Tooltip 并挂 `aria-describedby`、多行 `line-clamp`（**标准 + `-webkit-` 双写**）、RTL 分支 | **无原语**；省略号 89 处逐条手写；多行 10 处**只有 `-webkit-`**、无标准回退 |
+| CSS 省略号 | **9 处 / 6 文件** | **89 处 / 5 文件** |
+| 未截断的 `overflow:hidden` | —（契约测试守 10 组组件） | **148 条**（约 58 条疑似文本容器） |
+| 守护测试 | `text-clipping.test.mjs`：10 组必查项——必须有 `overflow:hidden`、**必须不声明 `text-overflow`**（原语独占）、不得写死 block-size、TSX 必须含 `<OverflowText` | **无** |
+
+#### 图标：他们 997 处调用只用 5 档，我们 841 次写死像素
+
+| 指标 | OpenBitFun | 我们 |
+| --- | --- | --- |
+| 尺寸阶梯 | `2xs 8 / xs 12 / sm 14 / md 16 / lg 24`（**默认 lg=24**），全部由 `Icon` 组件映射 | 11 档 `--icon-*` 令牌基本没被用：841 次字面 `size={N}` vs 77 次语义类名 |
+| 实际取值 | **5 个 distinct**（sm 549 / lg 175 / xs 166 / md 103 / 2xs 22），与类型联合完全一致；仅 1 处越界 `size={13}` | 14(368) / 12(249) / 16(224) / 10(41) / 20(24) / 32(17)… |
+| 描边 | 令牌 **1.6**，**作为 SVG 属性传入**；另有全局归一化把 `svg.lucide[stroke-width=2]` 压到 1.6 | CSS 已统一到 1.75，但 JSX 仍有 10 余种字面 `strokeWidth` |
+| 槽位 | `IconButton` size→按钮/图标：xs **22/14**、sm **32/14**、standard **30/16**、md **40/16**、lg **48/24**；**20 组槽位几何断言**、19 文件 23 个标记点 | 无槽位概念 |
+| 契约方向 | 断言**令牌映射**（`data-size=lg` + `stroke-width=var(...)`）+ 资产 SHA-256 指纹 + mask/lucide 互斥 | 断言**字面量**（`size={10}`）—— 方向相反 |
+
+#### 键盘/无障碍：焦点环同级，播报差一个数量级
+
+| 指标 | OpenBitFun | 我们 |
+| --- | --- | --- |
+| 焦点环 | `focus.width 2 / offset 2 / ring #6a6a6a` 全套令牌；`:focus-visible` **181 处 / 80 文件** | 2px 强调色**同级** ✅；`:focus-visible` **449 条规则** ✅ |
+| `aria-live` | **43** | **3** |
+| `aria-describedby` / `aria-labelledby` | **31 / 37** | **0 / 0** |
+| `aria-label` / `role` | 1221 / 709 | 183 / 81 |
+| 命中区 token | `hitTarget 40px`（compact 36 / touch 48）—— 但**全仓只有 1 处 CSS 消费** | 无 token、无强制；活体 **41/111** 个 <24px |
+| 减少动效 | 归零 **5 个**时长令牌（fast/normal/content-swap/slow/loop），**故意不归零** instant(80)/base(220)/lazy(1s)，Dialog/MobileSheet 自带 `1ms` 兜底；覆盖 **169 个文件** | 覆盖 **15 个文件** |
+
+#### 响应式：**这一项我们更好**
+
+| 指标 | OpenBitFun | 我们 |
+| --- | --- | --- |
+| 自动收起 | **没有**（唯一触发是拖动 6px 分隔条越过 **152px**；默认展开；手动快捷键切换） | **700px 视口自动收起为 0**，无横向滚动 ✅ |
+| 断点规模 | **18 个不同 px 值 / 99 处 / 88 文件**（768px 独占 29 次）+ 71 处容器查询 | **5 个值 / 68 条规则**（占 leaf 规则 1.3%） |
+| 断点令牌化 | 无 | 无 —— **两边都缺** |
+| 折叠态几何 | 宽 0 + 浮条 **76px × 45px**（76px 未令牌化） | 宽 0（无浮条） |
+| 窄窗弹层 | Dialog **无宽度断点**（圆角恒 28px、不切全屏）；MobileSheet 两个断点（≥700 浮起 + 四角 20px；≤359 收紧 padding） | 未做窄窗适配 |
+
+#### i18n：他们有 3 语言 + 策略文档 + 4 个守护测试
+
+| 指标 | OpenBitFun | 我们 |
+| --- | --- | --- |
+| 语言 | **3**（zh-CN 默认 / en-US 回退 / zh-TW），40 文件/语言、**10 337 叶子键/语言**、合计 **31 011** 条 | 只有中文 |
+| 截断策略 | 写进 README：单行标签**必须**用 `OverflowText`，禁止局部 `text-overflow`、禁止预先截短；外层盒至少 `1lh` | 无策略 |
+| 长度上限 | 工作区名 **80** / 搜索词 **512** / ACP 档案 **320** | 无 |
+| 长度守护测试 | 4 个（静态契约 + 计数），**但没有「某语言不得比英文长 N%」的测试**（他们的缺口） | 无 |
+
+> **同时要记住「他们也有坑」**：他们同样**没有** Skeleton 组件、**没有**离线/重连组件、**hit-target 令牌只有 1 处消费**、**导航不会自动收起**、**18 个断点值硬编码**、**每语言长度无守护**。
+> 对标不是「他们全对我们全错」：本轮被证实的差距集中在 **外壳层次 / 侧栏与面板几何与状态 / 内容态组件化 / 浮层收口 / 图标尺寸纪律 / 读屏播报** 这六处。
 ## 附：测量方法（脚本都在 `.preview-shot/`，可复跑）
 
 | 脚本 | 量什么 |
