@@ -72,10 +72,20 @@ const need = (v: string | null, name: string): string => {
   expect(v, `亮色档里应定义 ${name}`).toBeTruthy();
   return v!;
 };
-const color = (v: string | null, name: string) => {
-  const c = parseColor(need(v, name));
-  expect(c, `${name} 应是可解析的颜色：${v}`).toBeTruthy();
-  return c!;
+/**
+ * 取一个令牌的颜色。
+ *
+ * `block` 是**可选**的：给了它就能解析 `color-mix()` / `var()` 这类**派生**令牌
+ * （第 159 轮 P1-2 之后，文字三档与 `--accent-muted` 都是派生出来的）。
+ * ⚠️ 派生令牌**必须**传 block：不给的话只能在两个主题块里瞎猜，而猜错会静默测到另一个主题的值
+ * （那比报错更糟）。所以这里的原则是：解析不了就报错，让人来显式指定 block。
+ */
+const color = (v: string | null, name: string, block?: string) => {
+  const raw = need(v, name);
+  const direct = parseColor(raw);
+  if (direct) return direct;
+  expect(block, `${name} 是派生令牌（color-mix/var），调用点必须传 block 才能解析：${raw}`).toBeTruthy();
+  return resolveColor(block!, raw);
 };
 
 /**
@@ -124,7 +134,7 @@ const worstGlassCase = (block: string, theme: string) => {
       const scene = over([veil.base[0], veil.base[1], veil.base[2], veil.alpha], base);
       const composite = over([glass.base[0], glass.base[1], glass.base[2], glass.alpha], scene);
       for (const [label, tok, floor] of texts) {
-        const r = contrast(color(token(block, tok), tok), composite);
+        const r = contrast(color(token(block, tok), tok, block), composite);
         if (r < floor) {
           failures.push(`${theme} ${label}在「场景 ${tok} 之上」只有 ${r.toFixed(2)}:1（需 ≥${floor}）`);
         }
@@ -141,6 +151,37 @@ const colorFollowingAlias = (block: string, name: string, depth = 0): [number, n
   const alias = /^var\((--[\w-]+)\)$/.exec(raw.trim());
   if (alias && depth < 4) return colorFollowingAlias(block, alias[1], depth + 1);
   return color(raw, name);
+};
+
+/**
+ * **把令牌解析成颜色，支持 `color-mix`**（第 159 轮 P1-2 新增）。
+ *
+ * 起因：文字三档改成"从 `--text-base` 派生"（`color-mix(in srgb, var(--text-base) 75%, var(--text-ramp-paper))`）后，
+ * 原来的 `parseColor` 直接解析失败 —— 门禁会报"应是可解析的颜色"，**那等于把解耦这条路堵死**。
+ * 所以这里补一个递归解析器：`var(--x)` 继续查、`color-mix(in srgb, A p%, B)` 按 sRGB 线性混合算。
+ * 只支持本项目真实用到的两种写法，别的**报错而不是猜**（猜出来的数字等于没测）。
+ */
+const resolveColor = (block: string, value: string, depth = 0): [number, number, number, number] => {
+  const v = String(value).trim();
+  if (depth > 6) throw new Error(`颜色解析层数过深（可能有循环引用）：${value}`);
+  const alias = /^var\((--[\w-]+)\)$/.exec(v);
+  if (alias) return resolveColor(block, need(token(block, alias[1]), alias[1]), depth + 1);
+  const mix = /^color-mix\(in srgb,\s*(.+?)\s+([\d.]+)%\s*,\s*(.+?)\)$/.exec(v);
+  if (mix) {
+    const a = resolveColor(block, mix[1].trim(), depth + 1);
+    const b = resolveColor(block, mix[3].trim(), depth + 1);
+    const w = Number(mix[2]) / 100;
+    /* 与浏览器一致：先做 premultiplied 线性混合，再还原 alpha */
+    const alpha = a[3] * w + b[3] * (1 - w);
+    const ch = [0, 1, 2].map((i) => (a[i] * a[3] * w + b[i] * b[3] * (1 - w)) / (alpha || 1));
+    return [ch[0], ch[1], ch[2], alpha];
+  }
+  const plain = parseColor(v);
+  if (plain) return plain;
+  /* `transparent` 是合法的颜色操作数（`color-mix(… , transparent)` 遍地都是）——
+     第一版没认它，于是 `--accent-muted` 这类派生令牌的解析直接报错。 */
+  if (/^transparent$/i.test(v)) return [0, 0, 0, 0] as [number, number, number, number];
+  throw new Error(`无法解析的颜色：${v}`);
 };
 
 describe("LIGHT-UI 亮色模式观感不变式", () => {
@@ -366,8 +407,14 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
     ];
     const fails: string[] = [];
     for (const [name, min] of checks) {
-      const c = parseColor(token(lightBlock, name) ?? "");
-      if (!c) { fails.push(`${name} 解析失败`); continue; }
+      /* 第 159 轮起文字是派生令牌（color-mix）⇒ 必须传 block 才能解析 */
+      let c: [number, number, number, number];
+      try {
+        c = color(token(lightBlock, name), name, lightBlock);
+      } catch (e) {
+        fails.push(`${name} 解析失败：${(e as Error).message}`);
+        continue;
+      }
       for (const [sname, s] of surfaces) {
         const r = contrast(over(c, s), s);
         if (r < min) fails.push(`${name} 在${sname}上只有 ${r.toFixed(2)}:1（要求 ≥${min}）`);
@@ -504,12 +551,17 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
     ];
     const fails: string[] = [];
     for (const [label, block, mutedName, baseName] of cases) {
-      const strong = parseColor(token(block, "--accent-strong") ?? "");
-      const muted = parseColor(token(block, mutedName) ?? "");
-      const base = parseColor(token(block, baseName) ?? "");
-      if (!strong || !muted || !base) { fails.push(`${label}：令牌解析失败`); continue; }
-      const chip = over(muted, base);
-      const r = contrast(over(strong, chip), chip);
+      let strongC: [number, number, number, number], mutedC: [number, number, number, number], baseC: [number, number, number, number];
+      try {
+        strongC = color(token(block, "--accent-strong"), "--accent-strong", block);
+        mutedC = color(token(block, mutedName), mutedName, block);
+        baseC = color(token(block, baseName), baseName, block);
+      } catch (e) {
+        fails.push(`${label}：令牌解析失败（${(e as Error).message}）`);
+        continue;
+      }
+      const chip = over(mutedC, baseC);
+      const r = contrast(over(strongC, chip), chip);
       if (r < 4.5) fails.push(`${label}：--accent-strong 在品牌浅底上只有 ${r.toFixed(2)}:1`);
     }
     expect(fails, fails.join("；")).toEqual([]);
@@ -525,7 +577,7 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
     const border = contrast(over(color(token(lightBlock, "--border-primary"), "--border-primary"), bg), bg);
     expect(border, `主线条 ${border.toFixed(3)} 与参考实现的 1.201 差得太远`).toBeGreaterThanOrEqual(1.15);
     expect(border).toBeLessThanOrEqual(1.28);
-    const muted = contrast(color(token(lightBlock, "--text-muted"), "--text-muted"), bg);
+    const muted = contrast(color(token(lightBlock, "--text-muted"), "--text-muted", lightBlock), bg);
     expect(muted, `弱文字 ${muted.toFixed(2)}:1 低于 4.5（参考实现只到 3.56，但它没有我们这么多 10px 小字）`).toBeGreaterThanOrEqual(4.5);
   });
 
@@ -628,7 +680,7 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
       const m = /color-mix\(in srgb,\s*var\(--([\w-]+)\)\s*([\d.]+)%,\s*var\(--([\w-]+)\)\)/.exec(content ?? "");
       expect(m, `--${s}-content 应是从状态色往 --text-primary 压深的 color-mix：${content}`).toBeTruthy();
       const status = color(token(lightBlock, `--${m![1]}`), `--${m![1]}`);
-      const ink = color(token(lightBlock, `--${m![3]}`), `--${m![3]}`);
+      const ink = color(token(lightBlock, `--${m![3]}`), `--${m![3]}`, lightBlock);
       const pct = Number(m![2]) / 100;
       const fg = status.slice(0, 3).map((v, i) => v * pct + ink[i] * (1 - pct)).concat(1);
       const base = color(token(lightBlock, "--bg-primary"), "--bg-primary");
@@ -774,7 +826,7 @@ describe("DARK-UI 暗色模式观感不变式", () => {
    * ② 弱文字在**四个面**上都要过 4.5（含最亮的悬停面）——这条就是本轮那条缺口的守卫。
    */
   it("DARK-UI-2：弱文字（--text-muted）在四个面上都 ≥4.5:1（含悬停面）", () => {
-    const muted = color(token(darkBlock, "--text-muted"), "--text-muted");
+    const muted = color(token(darkBlock, "--text-muted"), "--text-muted", darkBlock);
     const fails: string[] = [];
     for (const [name, bg] of Object.entries(surfaces())) {
       const r = contrast(muted, bg);
@@ -785,8 +837,8 @@ describe("DARK-UI 暗色模式观感不变式", () => {
 
   it("DARK-UI-3：主/次文字在内容面上有足够对比（主 ≥10、次 ≥6）", () => {
     const s = surfaces();
-    const p = contrast(color(token(darkBlock, "--text-primary"), "--text-primary"), s.secondary);
-    const sec = contrast(color(token(darkBlock, "--text-secondary"), "--text-secondary"), s.secondary);
+    const p = contrast(color(token(darkBlock, "--text-primary"), "--text-primary", darkBlock), s.secondary);
+    const sec = contrast(color(token(darkBlock, "--text-secondary"), "--text-secondary", darkBlock), s.secondary);
     expect(p, `暗色主文字在内容面上只有 ${p.toFixed(2)}:1`).toBeGreaterThanOrEqual(10);
     expect(sec, `暗色次文字在内容面上只有 ${sec.toFixed(2)}:1`).toBeGreaterThanOrEqual(6);
     /* 上下都要管：主文字过亮（>17）在暗色下有眩光争议，钉住上限免得被"越亮越好"推着走 */
@@ -811,7 +863,7 @@ describe("DARK-UI 暗色模式观感不变式", () => {
 
   it("DARK-UI-5：暗色 accent-strong 在品牌浅底 chip 上 ≥4.5:1（与亮色同标准）", () => {
     const base = color(token(darkBlock, "--bg-primary"), "--bg-primary");
-    const chip = over(color(token(darkBlock, "--accent-muted"), "--accent-muted"), base);
+    const chip = over(color(token(darkBlock, "--accent-muted"), "--accent-muted", darkBlock), base);
     const strong = contrast(over(color(token(darkBlock, "--accent-strong"), "--accent-strong"), chip), chip);
     expect(strong, `暗色 --accent-strong 在品牌浅底上只有 ${strong.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
   });

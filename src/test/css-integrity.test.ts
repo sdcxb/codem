@@ -304,7 +304,16 @@ describe("CSS 结构完整性（第 52 波）", () => {
       return (hi + 0.05) / (lo + 0.05);
     };
     for (const [name, block] of [["暗色", dark], ["浅色", light]] as const) {
-      const caret = parse(token(block, "--text-primary") ?? token(light, "--text-primary"));
+      /* 第 159 轮 P1-2：`--text-primary` 现在是 `var(--text-base)` 的别名（三档文字派生自墨色）
+         ⇒ 这里要**跟着别名解析一层**。否则读到的是 `var(--text-base)` 这种非颜色值，
+         断言会以"解析失败"炸掉 —— 那不是缺陷，是测试口径没跟上令牌解耦。 */
+      const followAlias = (b: string, n: string, depth = 0): string | undefined => {
+        const v = token(b, n);
+        if (!v || depth > 4) return v;
+        const alias = /^var\((--[\w-]+)\)$/.exec(v.trim());
+        return alias ? followAlias(b, alias[1], depth + 1) : v;
+      };
+      const caret = parse(followAlias(block, "--text-primary") ?? followAlias(light, "--text-primary"));
       const bg = parse(token(block, "--bg-primary"));
       expect(caret && bg, `${name}主题应能解析 --text-primary 与 --bg-primary`).toBeTruthy();
       const ratio = contrast(caret!, bg!);

@@ -27,10 +27,16 @@
   --code-bg: #050505;
   --accent: #ff6b00;
   --accent-hover: #e56000;
-  --accent-muted: rgba(255, 107, 0, 0.15);
-  --text-primary: #e0e0e0;
-  --text-secondary: #888888;
-  --text-muted: #666666;
+  /* 与 --accent（#ff6b00）同源：派生之后 Hub 的橙色浅底会自动跟随品牌色（本行等价、逐通道差 0） */
+  --accent-muted: color-mix(in srgb, var(--accent) 15%, transparent);
+  /* 第 159 轮 P1-2：与默认主题同一口径 —— 文字三档**派生自墨色**，皮肤只给一个值。
+     取值是反解出来的（Hub 的三档是纯灰、共线，可精确表示）：
+       墨色 `#e0e0e0` + 纸色（画布）`#0a0a0a`，比例 59% / 43% ⇒ 重现原 `#888888` / `#666666`（差 ≤1/255）。 */
+  --text-base: #e0e0e0;
+  --text-ramp-paper: #0a0a0a;
+  --text-primary: var(--text-base);
+  --text-secondary: color-mix(in srgb, var(--text-base) 59%, var(--text-ramp-paper));
+  --text-muted: color-mix(in srgb, var(--text-base) 43%, var(--text-ramp-paper));
   --text-on-accent: #ffffff;
   --border-primary: #2a2a2a;
   --border-secondary: #1c1c1e;

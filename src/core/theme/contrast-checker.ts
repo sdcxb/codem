@@ -54,6 +54,48 @@ export function parseColor(color: string): { r: number; g: number; b: number } |
   return null;
 }
 
+/**
+ * **解析"派生令牌"**（`var(--x)` / `color-mix(...)`）—— 第 159 轮 P1-2 新增。
+ *
+ * 起因很具体：文字三档改成从 `--text-base` 派生之后（`color-mix(in srgb, var(--text-base) 75%, …)`），
+ * 这个检查器立刻解析不出来（它只认 hex/rgb），`skin-contrast.test.ts` 当场红。
+ * 也就是说：**令牌一解耦，对比度门禁就瞎了** —— 这不是"测试要改"，而是检查器缺能力。
+ *
+ * 口径：只能解析它**明确支持**的两种写法（`var()` 查 `vars` 表、`color-mix(in srgb, A p%, B)`），
+ * 其余一律返回 null（**不做猜测**：猜出来的对比度等于没测）。
+ *
+ * @param color 颜色值或派生表达式
+ * @param vars  变量表（`{ "--text-base": "#1f1f1e", … }`），解析 `var()` 用
+ */
+export function parseColorValue(color: string, vars?: Record<string, string>, depth = 0): { r: number; g: number; b: number } | null {
+  if (!color) return null;
+  if (depth > 8) return null; // 防循环引用
+  const v = color.trim();
+
+  const alias = /^var\((--[\w-]+)(?:,\s*(.+))?\)$/.exec(v);
+  if (alias) {
+    const found = vars?.[alias[1]];
+    if (found !== undefined) return parseColorValue(found, vars, depth + 1);
+    return alias[2] !== undefined ? parseColorValue(alias[2], vars, depth + 1) : null;
+  }
+
+  const mix = /^color-mix\(in srgb,\s*(.+?)\s+([\d.]+)%\s*,\s*(.+?)\)$/i.exec(v);
+  if (mix) {
+    const a = parseColorValue(mix[1], vars, depth + 1);
+    const b = parseColorValue(mix[3], vars, depth + 1);
+    if (!a || !b) return null;
+    const w = Number(mix[2]) / 100;
+    return {
+      r: Math.round(a.r * w + b.r * (1 - w)),
+      g: Math.round(a.g * w + b.g * (1 - w)),
+      b: Math.round(a.b * w + b.b * (1 - w)),
+    };
+  }
+
+  if (/^transparent$/i.test(v)) return { r: 0, g: 0, b: 0 };
+  return parseColor(v);
+}
+
 /** 计算单个通道的线性值（sRGB → linear） */
 function channelLinear(c: number): number {
   const s = c / 255;
@@ -64,8 +106,8 @@ function channelLinear(c: number): number {
  * 计算相对亮度（relative luminance）
  * 返回 0–1 的值，0 = 最暗，1 = 最亮
  */
-export function relativeLuminance(color: string): number | null {
-  const rgb = parseColor(color);
+export function relativeLuminance(color: string, vars?: Record<string, string>): number | null {
+  const rgb = parseColorValue(color, vars);
   if (!rgb) return null;
   const rl = 0.2126 * channelLinear(rgb.r) + 0.7152 * channelLinear(rgb.g) + 0.0722 * channelLinear(rgb.b);
   return rl;
@@ -75,9 +117,9 @@ export function relativeLuminance(color: string): number | null {
  * 计算两个颜色之间的 WCAG 对比度比率
  * 返回 1–21 的值（1 = 无对比，21 = 最大对比）
  */
-export function contrastRatio(fg: string, bg: string): number | null {
-  const l1 = relativeLuminance(fg);
-  const l2 = relativeLuminance(bg);
+export function contrastRatio(fg: string, bg: string, vars?: Record<string, string>): number | null {
+  const l1 = relativeLuminance(fg, vars);
+  const l2 = relativeLuminance(bg, vars);
   if (l1 === null || l2 === null) return null;
   const lighter = Math.max(l1, l2);
   const darker = Math.min(l1, l2);
@@ -100,10 +142,11 @@ export interface ContrastResult {
 }
 
 /**
- * 判定对比度是否满足 WCAG 标准
+ * 判定对比度是否满足 WCAG 标准。
+ * `vars` 可选：给了它就能解析 `var()` / `color-mix()` 这类**派生令牌**（第 159 轮 P1-2）。
  */
-export function evaluateContrast(fg: string, bg: string): ContrastResult | null {
-  const ratio = contrastRatio(fg, bg);
+export function evaluateContrast(fg: string, bg: string, vars?: Record<string, string>): ContrastResult | null {
+  const ratio = contrastRatio(fg, bg, vars);
   if (ratio === null) return null;
 
   const passesAA = ratio >= 4.5;

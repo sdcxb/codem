@@ -55,6 +55,18 @@ import { WechatSettings } from "./WechatSettings";
 import { PhoneLinkSettings } from "./PhoneLinkSettings";
 import { applyUiFontScale, applyStoredUiFont, applyUiFontFamily, applyStoredUiFontFamily, readStoredUiFontFamily, FONT_BASE_PX } from "../core/ui-font";
 import { resetUiPreferencesToDefaults } from "../core/settings/ui-preferences";
+import {
+  applyContrastAttribute,
+  applyDensityAttribute,
+  isContrastMode,
+  isDensityMode,
+  readCachedContrast,
+  readCachedDensity,
+  CONTRAST_SETTING_KEY,
+  DENSITY_SETTING_KEY,
+  type ContrastMode,
+  type DensityMode,
+} from "../core/theme/appearance-modes";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
 import { setSandboxAclEnabled, isSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
@@ -251,6 +263,13 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const lang = useLang();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   /**
+   * 第 159 轮（P2-1）：高对比 + 密度两档的**界面状态**。
+   * 初始值取"启动期有效值"的镜像部分（与 `index.html` 内联脚本、`main.tsx` 用的是同一套语义），
+   * DB 就绪后由下面的 effect 用 `resolveEffective*` 校正。
+   */
+  const [contrastMode, setContrastMode] = useState<ContrastMode>(() => readCachedContrast());
+  const [densityMode, setDensityMode] = useState<DensityMode>(() => readCachedDensity());
+  /**
    * 第 87 波：沙箱开关必须有自己的 state —— 原来直接读 `getSetting(...)`，
    * 勾选后调用 set/removeSetting 却不触发重渲染，界面上的勾选状态要等面板重开才更新。
    */
@@ -322,6 +341,23 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
     // 此前这里直接应用 parsed.fontSize（默认 14），而启动路径读的是旧扁平键 → 打开设置就跳字。
     const appliedPx = applyStoredUiFont();
     setSettings((prev) => ({ ...prev, fontSize: appliedPx }));
+
+    // 第 159 轮（P2-1）：DB 是这两档的真相源 —— 打开设置时用 DB 值校正界面状态与 DOM
+    // （镜像可能落后，例如上一次退出前改过但没写进镜像）。写库只在用户改的时候发生。
+    try {
+      const dbContrast = getSetting(CONTRAST_SETTING_KEY);
+      const dbDensity = getSetting(DENSITY_SETTING_KEY);
+      if (isContrastMode(dbContrast)) {
+        setContrastMode(dbContrast);
+        applyContrastAttribute(dbContrast);
+      }
+      if (isDensityMode(dbDensity)) {
+        setDensityMode(dbDensity);
+        applyDensityAttribute(dbDensity);
+      }
+    } catch (e) {
+      console.warn("[SettingsPanel] load appearance modes:", e);
+    }
 
     // Load dynamically fetched models from DB cache
     try {
@@ -1254,6 +1290,44 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               }}
             />
             <span>{settings.fontSize}px</span>
+          </div>
+
+          <div className="setting-group">
+            <label>{lang === "zh" ? "对比度" : "Contrast"}</label>
+            <select
+              value={contrastMode}
+              onChange={(e) => {
+                const next = e.target.value as ContrastMode;
+                if (!isContrastMode(next)) return;
+                setContrastMode(next);
+                // 第 159 轮：**这一行就是那个缺口补上的地方** —— 在这之前 `[data-contrast="high"]`
+                // 的 CSS 写了、全项目却没有任何写入方（用户永远看不到高对比档）。
+                applyContrastAttribute(next);
+                setSetting(CONTRAST_SETTING_KEY, next);
+                window.dispatchEvent(new Event("codem-settings-changed"));
+              }}
+            >
+              <option value="normal">{lang === "zh" ? "标准" : "Standard"}</option>
+              <option value="high">{lang === "zh" ? "高对比（文字更黑、边框更实）" : "High contrast"}</option>
+            </select>
+          </div>
+
+          <div className="setting-group">
+            <label>{lang === "zh" ? "界面密度" : "Density"}</label>
+            <select
+              value={densityMode}
+              onChange={(e) => {
+                const next = e.target.value as DensityMode;
+                if (!isDensityMode(next)) return;
+                setDensityMode(next);
+                applyDensityAttribute(next);
+                setSetting(DENSITY_SETTING_KEY, next);
+                window.dispatchEvent(new Event("codem-settings-changed"));
+              }}
+            >
+              <option value="comfortable">{lang === "zh" ? "舒适（默认）" : "Comfortable"}</option>
+              <option value="compact">{lang === "zh" ? "紧凑（控件更矮、留白更少）" : "Compact"}</option>
+            </select>
           </div>
 
           <div className="setting-group">

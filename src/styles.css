@@ -210,6 +210,19 @@
   --control-std: 38px;   /* 标准：表单控件、主按钮 */
   --control-form: 44px;  /* 宽松：大表单、发送按钮 */
 
+  /* ===== 密度档（第 159 轮 P2-1，对标 OpenBitFun 的 `density-compact.tokens.json`）=====
+     ⚠️ 这一档以前**只有规划没有实现**：`[data-contrast="high"]` 那条同理 —— CSS 写了、规则也在，
+     但**全项目没有任何地方设置 `data-density` / `data-contrast`** ⇒ 用户永远看不到，门禁也抓不到
+     （CSS 侧断言全绿）。第 159 轮补上写入方（`src/core/theme/appearance-modes.ts` + 设置页两个下拉 +
+     `index.html` 首屏镜像）。
+     取值口径（**必须机器可判**）：每一档都比舒适档矮、但**不得低于 24px**（项目的命中区下限，
+     见 `src/test/labeled-inputs.test.ts` 的第 95 轮约定）——紧凑是"更密"，不是"更难点"。 */
+  --control-xs-compact: 24px;
+  --control-dense-compact: 26px;
+  --control-md-compact: 30px;
+  --control-std-compact: 34px;
+  --control-form-compact: 40px;
+
   /* 应用外壳高度（第 41 波）：参考实现的窗口工具条是 50px（含标签条），
      我们此前是 36px —— 36px 里塞 26px 控件只剩 5px 余量，视觉上"贴边"。
      44px 让 30px 的控件上下各留 7px，和 mac 窗口的比例接近。 */
@@ -301,9 +314,22 @@
   /* 文字：暖灰三档（对比度按白底/内嵌块各算过：正文 16.5/14.7、次级 7.4/6.6、弱级 5.3/4.7）
      弱级从 #8a8880 提到 #6e6c66 —— 改动前它在白底只有 3.46:1、落在内嵌灰块上只有 3.03:1，
      而它被大量用在 10–12px 的时间/计数/分组标签上（低于 4.5:1 的可读线）。 */
-  --text-primary: #1f1f1e;
-  --text-secondary: #57564f;
-  --text-muted: #6e6c66;
+  /* ===== 文字：**一条色阶**，三档派生自同一个墨色（第 159 轮 P1-2）=====
+     改动前：三档文字是这个主题里**手工挑的三个值**，而每套皮肤也得手工再挑三个
+     （`skin-hub.css` 就是 `#e0e0e0` / `#888888` / `#666666`）—— 这是"皮肤一多就失控"的根源：
+     换个墨色要重配三处，还得自己保证三档关系正确。
+     现在三档**派生自 `--text-base`**（墨色）+ `--text-ramp-paper`（混向它的"纸色"）：
+       · 皮肤只给 `--text-base` 与两个比例，三档关系天然成立；
+       · 门禁可以判"是不是派生出来的"（`style-token-gates.test.ts` 的 LIT-10/LIT-11）。
+     ⚠️ 浅色档的"纸"是**暖纸** `#fffbe2` 而不是纯白 —— 本主题的文字色相是暖中性
+     （`#57564f` 的 b 比 r 低 8 个色阶），"近黑 + 纯白"的线性混合只会给出中性灰。
+     这组取值下派生结果与原手工值**逐通道差 ≤3/255**（`#57564f`→`#57574f`、`#6e6c66`→`#6e6c62`）——
+     即解耦之后观感不变（查出来的，不是估的）。 */
+  --text-base: #1f1f1e;
+  --text-ramp-paper: #fffbe2;
+  --text-primary: var(--text-base);
+  --text-secondary: color-mix(in srgb, var(--text-base) 75%, var(--text-ramp-paper));
+  --text-muted: color-mix(in srgb, var(--text-base) 65%, var(--text-ramp-paper));
   /* 线：一律用"文字色 + alpha"，这样深浅两档的线色相自动一致。
      强度 12% → 9%：合成在白底上是 #ebebeb、对比度 **1.194**，
      与参考实现的 9%（白底 1.201）几乎逐位一致；改动前的 12% 是 1.269，偏重。 */
@@ -334,7 +360,7 @@
      白字落在它上面 5.34 —— 三项都过线（门禁 LIGHT-UI-3 会守住）。 */
   --accent: #6555e0;
   --accent-hover: #5a4bd1;
-  --accent-muted: rgba(107, 92, 231, 0.15);
+  --accent-muted: color-mix(in srgb, var(--accent) 15%, transparent);
   /* `--accent-strong`：**落在品牌色浅底上的**品牌色文字（如模型徽标）。
      直接用 `--accent` 不够：装机版实测徽标文字在 15% 浅底 chip 上只有 4.22:1，
      而那个 chip 还常常叠在用户气泡（本身也是品牌色浅底）上 —— 双层浅底下只剩 3.94。
@@ -539,15 +565,20 @@
   --bg-secondary: rgba(26, 28, 28, 1);
   --bg-tertiary: rgba(33, 36, 36, 1);
   --bg-hover: rgba(42, 45, 45, 1);
-  --text-primary: #d4d4d4;
-  --text-secondary: #b0b0b0;
+  /* 暗色档同一条口径（见亮色档注释）：墨色 `#d4d4d4` 是唯一真相源，三档由它派生。
+     暗色下"纸"就是画布 `#0e0f0f`（往它混 = 压暗）；比例取 82% / 67% 时
+     派生结果与原手工值 `#b0b0b0` / `#939393` **逐通道差 ≤1/255**。 */
+  --text-base: #d4d4d4;
+  --text-ramp-paper: #0e0f0f;
+  --text-primary: var(--text-base);
+  --text-secondary: color-mix(in srgb, var(--text-base) 82%, var(--text-ramp-paper));
   /* 第 155 轮（暗色对标 OpenBitFun）：`--text-muted` 从 `#888888` 提到 **`#939393`**。
      原因是实测出来的**可访问性缺口**：`#888888` 在 `--bg-hover`（`#2a2d2d`，悬停行）上只有
      **3.92:1**，低于 4.5 —— 而"悬停时读的元信息"（时间戳/计数/路径）正好大量落在这一档。
      `#939393` 反解：bg-hover 上 **4.52**、bg-tertiary 5.09、bg-secondary 5.57、bg-primary 6.25。
      （对照：对方 dark `content.muted = #858585`，在它的 panel `#1c1c1f` 上是 4.61 —— 它没有我们这么亮的悬停面。）
      门禁 DARK-UI-1 会守住"四个面上都 ≥ 4.5"。 */
-  --text-muted: #939393;
+  --text-muted: color-mix(in srgb, var(--text-base) 67%, var(--text-ramp-paper));
   --border-primary: rgba(255, 255, 255, 0.14);
   --border-secondary: rgba(255, 255, 255, 0.08);
   /* 与亮色档同名同源：结构分隔线一档（亮 5% ↔ 暗 8% 白） */
@@ -562,7 +593,7 @@
   --field-border-focus: var(--border-strong);
   --accent: #7c6cf0;
   --accent-hover: #8b7df5;
-  --accent-muted: rgba(124, 108, 240, 0.20);
+  --accent-muted: color-mix(in srgb, var(--accent) 20%, transparent);
   /* 暗色档同一令牌：落在 20% 品牌浅底 chip 上时，`--accent` 只有 3.21:1，
      需要**更亮**的一档（#a99bff：chip 上 5.37 / 画布上 8.06）。 */
   --accent-strong: #a99bff;
@@ -18550,4 +18581,18 @@ html[data-native-material="sidebar"][data-contrast="high"] .app {
 }
 html[data-native-material="sidebar"][data-contrast="high"] .sidebar {
   background: var(--sidebar-bg);
+}
+
+/* ========== ⑥ 密度档（第 159 轮 P2-1）==========
+ * 口径：**只覆盖控件高度**（`--control-*`），不覆盖 `--space-*` —— 间距是被"布局意图"消费的
+ * （分组、留白、栅格），整片缩放会让组件之间的层级关系失真；而控件高度是"同一件事的档位"，
+ * 覆盖它是安全的、也是用户能一眼看到的"更紧凑"。
+ * 下限：每一档都 ≥24px（项目的命中区下限，见 `src/test/labeled-inputs.test.ts`）。
+ * 组件的 CSS 一行都不用改 —— 它们本来就消费 `--control-*`（这正是令牌化的价值）。 */
+[data-density="compact"] {
+  --control-xs: var(--control-xs-compact);
+  --control-dense: var(--control-dense-compact);
+  --control-md: var(--control-md-compact);
+  --control-std: var(--control-std-compact);
+  --control-form: var(--control-form-compact);
 }

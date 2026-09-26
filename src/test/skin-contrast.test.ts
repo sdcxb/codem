@@ -98,7 +98,9 @@ describe("三套皮肤的对比度门禁（第 96 轮）", () => {
       for (const [fg, bg, min, grade] of PAIRS) {
         const f = vars[`--${fg}`];
         const b = vars[`--${bg}`];
-        const r = evaluateContrast(f, b);
+        /* 第 159 轮 P1-2：文字三档现在是**派生令牌**（`color-mix` 自 `--text-base`）⇒
+           必须把这一档的变量表一起传进去，检查器才解析得出来（见 `parseColorValue` 的口径）。 */
+        const r = evaluateContrast(f, b, vars);
         expect(r, `${name}: ${f} / ${b} 解析失败`).toBeTruthy();
         expect(
           r!.ratio,

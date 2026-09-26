@@ -115,7 +115,15 @@ export function createTask(team: AgentTeam, input: {
   return { team, task };
 }
 
-export function getTask(team: AgentTeam, id: string): TeamTask {
+/**
+ * 按 id 取任务（**仅供本模块内部使用**）。
+ *
+ * 第 159 轮：knip 棘轮报"未使用导出 +1"，样例就是这个函数 —— 它只在本文件里被调（153/181/213/…），
+ * 没有任何外部模块 import 它。**门禁是对的**：一个只在本文件用的函数不该占着导出面
+ * （导出面越大，别人越容易绕过 `claimTask`/`updateTask` 这些带守恒检查的入口直接改任务状态）。
+ * 所以去掉 `export`，而不是把它写进 ignore。
+ */
+function getTask(team: AgentTeam, id: string): TeamTask {
   const t = team.tasks.find((x) => x.id === id);
   if (!t) throw new Error(`task "${id}" not found`);
   return t;

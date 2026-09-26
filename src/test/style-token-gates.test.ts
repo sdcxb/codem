@@ -20,6 +20,14 @@ import { scanTokenHygiene, loadDefaultFiles as loadTokenFiles, SCALE_FAMILIES } 
 import { scanStyleLiterals, loadDefaultFiles as loadLiteralFiles, evaluateRatchet, readBaseline } from "../../tools/audit/scan-style-literals.mjs";
 
 const ROOT = path.resolve(__dirname, "..", "..");
+/** 取某个作用域块里的**最后一个**令牌声明（与 CSS 的层叠一致：后写覆盖先写） */
+const token = (block: string, name: string): string | null => {
+  const re = new RegExp(`--${name.slice(2)}\\s*:\\s*([^;]+);`, "g");
+  let m: RegExpExecArray | null;
+  let last: string | null = null;
+  while ((m = re.exec(block))) last = m[1].trim();
+  return last;
+};
 const scanTokens = (css, file = "fixture.css") => scanTokenHygiene({ files: [{ path: file, css }] });
 const scanLiterals = (css, file = "fixture.css") => scanStyleLiterals({ files: [{ path: file, css }] });
 const todos = (css) => new Set(SCALE_FAMILIES.radius);
@@ -218,6 +226,52 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
 .d { color: var(--success-content); }
 `);
     expect(viaToken["status-tint"]?.raw ?? 0, "走令牌的不算").toBe(0);
+  });
+
+  /**
+   * LIT-10 / LIT-11：**文字与品牌浅底必须解耦**（第 159 轮 P1-2）。
+   *
+   * 背景：改动前三档文字是每个主题/皮肤**各手工挑三个值**（默认主题 `#1f1f1e`/`#57564f`/`#6e6c66`，
+   * hub 皮肤 `#e0e0e0`/`#888888`/`#666666`）—— 换个墨色要重配三处，还得自己保证三档关系正确；
+   * `--accent-muted` 更是写死的 rgba（浅色档那个字面量甚至不是它自己的 accent），
+   * 于是"皮肤改了 `--accent`，浅底 chip 不跟着变"。
+   * 现在三档派生自 `--text-base`、浅底派生自 `--accent`，**门禁盯住"是不是派生"**。
+   */
+  it("LIT-10：三档文字在每个作用域都必须派生自 --text-base（而不是各写一个字面量）", () => {
+    /* ⚠️ 这个文件里的 CSS 是**就地读**的（没有模块级 `styles` 常量）—— 第一版照抄了别的测试文件，
+       报 "styles is not defined"。两套 CSS 要一起搜：默认主题在 styles.css、hub 皮肤在 skin-hub.css。 */
+    const stylesText =
+      readFileSync(path.join(ROOT, "src/styles.css"), "utf8") + readFileSync(path.join(ROOT, "src/styles/skin-hub.css"), "utf8");
+    const scopes: Array<[string, RegExp]> = [
+      ["默认/亮色", /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/],
+      ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/],
+      ["hub 皮肤", /\[data-skin="hub"\]\s*\{([\s\S]*?)\n\}/],
+    ];
+    for (const [label, re] of scopes) {
+      const block = re.exec(stylesText)?.[1] ?? "";
+      expect(block.length, `${label} 块没解析到`).toBeGreaterThan(100);
+      expect(token(block, "--text-base"), `${label} 缺 --text-base（墨色唯一真相源）`).toBeTruthy();
+      expect(token(block, "--text-ramp-paper"), `${label} 缺 --text-ramp-paper（混向的纸色）`).toBeTruthy();
+      expect(token(block, "--text-primary"), `${label} 的 --text-primary 应是 var(--text-base)`).toBe("var(--text-base)");
+      for (const step of ["--text-secondary", "--text-muted"]) {
+        const v = token(block, step) ?? "";
+        expect(v, `${label} 的 ${step} 必须是从 --text-base 派生的 color-mix，实际：${v}`).toMatch(/^color-mix\(in srgb,\s*var\(--text-base\)\s+[\d.]+%,\s*var\(--text-ramp-paper\)\)$/);
+      }
+    }
+  });
+
+  it("LIT-11：品牌浅底（--accent-muted）必须派生自 --accent（皮肤换品牌色时浅底要跟着走）", () => {
+    const allCss = readFileSync(path.join(ROOT, "src/styles.css"), "utf8") + readFileSync(path.join(ROOT, "src/styles/skin-hub.css"), "utf8");
+    const scopes: Array<[string, RegExp]> = [
+      ["默认/亮色", /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/],
+      ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/],
+      ["hub 皮肤", /\[data-skin="hub"\]\s*\{([\s\S]*?)\n\}/],
+    ];
+    for (const [label, re] of scopes) {
+      const block = re.exec(allCss)?.[1] ?? "";
+      const v = token(block, "--accent-muted") ?? "";
+      expect(v, `${label} 的 --accent-muted 必须派生自 var(--accent)，实际：${v}`).toMatch(/^color-mix\(in srgb,\s*var\(--accent\)\s+[\d.]+%,\s*transparent\)$/);
+    }
   });
 });
 

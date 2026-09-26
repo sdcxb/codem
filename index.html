@@ -10,10 +10,19 @@
       // 这里同步读一份 localStorage 镜像，在**首屏渲染前**把 data-theme 设好，
       // 于是"默认浅色"与"用户选了暗色"两个方向都不再闪一下。
       // 读不到镜像时不设属性 —— CSS 的 :root 本身就是默认档（浅色暖中性）。
+      //
+      // 第 159 轮（P2-1）：**高对比 + 密度** 两档也在这里设。
+      // 起因是一条真实缺口：`[data-contrast="high"]` 与密度档的 CSS 早就写了，
+      // 但全项目**没有任何地方设置这两个属性** ⇒ 规则是死的、用户永远看不到，而门禁也抓不到
+      // （CSS 侧断言全绿）。语义与主题一致：DB（就绪后）→ 这里的镜像（首屏预测）→ 默认档。
       (function () {
         try {
           var t = localStorage.getItem("codem-theme-cache");
           if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+          var c = localStorage.getItem("codem-contrast-cache");
+          if (c === "high" || c === "normal") document.documentElement.setAttribute("data-contrast", c);
+          var d = localStorage.getItem("codem-density-cache");
+          if (d === "compact" || d === "comfortable") document.documentElement.setAttribute("data-density", d);
         } catch (e) {
           /* localStorage 不可用：退化为 CSS 默认档，不影响功能 */
         }
