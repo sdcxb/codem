@@ -296,6 +296,73 @@ function isCompaction(e: SessionEvent): e is SessionEvent & { payload: Compactio
   return e.type === "compaction";
 }
 
+// ========== 完全重复的文本事件（O-29 / O-31 共用判据） ==========
+
+/**
+ * 只有这两种事件会被"完全重复"判据收敛。
+ *
+ * 为什么**只有**它们：`user_message` / `assistant_text` 不携带被别的行引用的 id。
+ * `tool_call` / `tool_result` 靠 `toolCallId` 互相引用 —— 删掉较早的 `tool_call`
+ * 会让配对的 `tool_result` 变成孤儿（`event-projection` 的结构检查会报
+ * `references unknown toolCallId`）。所以哪怕载荷逐字节相同也**一概不动**。
+ * 引擎侧 `events.dedup_text` 用的是同一份范围，改这里就必须同时改那边。
+ */
+export const DEDUPABLE_TEXT_EVENT_TYPES = ["user_message", "assistant_text"] as const;
+
+/** 该事件是否属于"可去重的文本事件" */
+export function isDedupableTextEvent(event: SessionEvent): boolean {
+  return (DEDUPABLE_TEXT_EVENT_TYPES as readonly string[]).includes(event.type);
+}
+
+/**
+ * 完全重复的判据：**同会话** + 同类型 + 载荷**逐字节**相同（不是"看起来像"）。
+ *
+ * `sessionId` 必须在键里：本函数是纯函数，"输入只有单个会话的事件"是**调用方**的约定
+ * （`session_event_search` 只传一个会话的 `readAll` 结果）。把会话放进键里，
+ * 万一有人把跨会话的数组丢进来，也只会**收敛不足**（少删几条），不会把
+ * "两个会话里各自合法的那条正文"合并掉 —— 方向选对了，踩错也踩不坏。
+ */
+function exactDuplicateKey(event: SessionEvent): string {
+  return `${event.sessionId}\u0000${event.type}\u0000${JSON.stringify(event.payload ?? null)}`;
+}
+
+/**
+ * 把**完全重复**的文本事件收敛成一条：每组只保留 **`seq` 最小**的那条。
+ *
+ * ## 为什么是"最小"而不是"最新"（这条不能凭直觉定）
+ *
+ * `event-projection.ts` 的两条语义决定了它：
+ * - `applyUserMessage`：`if (state.messages.some(m => m.id === payload.messageId)) return;`
+ *   —— **首次写入胜出**，且该消息在派生列表里的**位置**由首次那条的 `seq` 决定；
+ * - `applyAssistantText`：位置同样由**首次**那条决定（`push`），只有正文是后写覆盖。
+ *
+ * 本函数只收敛**载荷逐字节相同**的事件，所以正文保留哪条都一样；会被改变的是**位置**。
+ * 保留 `seq` 最小者，"收敛前回放"与"收敛后回放"才会产出同一个消息序列
+ * （`event-dedup.test.ts` 的 `DEDUP-3` 就钉这件事）。保留最新会把消息整体往后挪。
+ *
+ * ## 用途
+ *
+ * **读路兜底**：库里可能仍有 1.16.175 及更早版本留下的历史重复行
+ * （真机实测：某会话 4842 条文本事件里只有 64 条不同）。维护命令
+ * `events.dedup_text` 负责把存量删掉，而这个纯函数保证**在任何情况下**
+ * 模型可见的搜索面都不会因为重复行给出重复命中 —— 即使维护还没跑、或将来又出了新的重复来源。
+ *
+ * 输入顺序被保留（只做删除，不重排）。
+ */
+export function collapseExactDuplicateTextEvents(events: SessionEvent[]): SessionEvent[] {
+  const keepSeq = new Map<string, number>();
+  for (const e of events) {
+    if (!isDedupableTextEvent(e)) continue;
+    const key = exactDuplicateKey(e);
+    const prev = keepSeq.get(key);
+    if (prev === undefined || e.seq < prev) keepSeq.set(key, e.seq);
+  }
+  return events.filter((e) => {
+    if (!isDedupableTextEvent(e)) return true;
+    return keepSeq.get(exactDuplicateKey(e)) === e.seq;
+  });
+}
+
 // ========== R3-4.4: Type Safety Re-exports ==========
 // Re-export assertNever + Branded types from type-safety module
 // so they are available from the core types entry point.

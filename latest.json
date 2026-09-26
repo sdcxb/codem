@@ -1,15 +1,15 @@
 {
-  "version": "1.16.177",
-  "notes": "P2-2 收尾：26 个对话框补上语义。实测 role=dialog 4 → 25、role=alertdialog 1 → 4、aria-modal 4 → 28、对话框本体语义不全 18/26 → 0/26 —— 改前读屏把绝大多数对话框当成「一个普通 div 里多了一堆东西」：既不知道打开了对话框，也念不出名字。处置：对话框本体（.modal-editor/.modal-panel/.confirm-dialog/.search-dialog/.task-center-panel/.nb-dialog/.petm-panel/.plugin-mgr-dialog/.chat-search-panel）补 role=dialog（确认类用 alertdialog）+ aria-modal + 可访问名；遮罩不加（语义属于里面的盒子）；名字全部取自组件自己的可见标题（ConfirmDialog 用 title 变量、闪卡用 isZh 三元），不编造文案。新增门禁 A11Y-DLG-1（三者齐全 + 扫描到的本体不得少于 20 个防空集通过），变异 35/35 全红。口径踩了两次：把遮罩算进来 ⇒ 永远报 31 处；用前缀匹配 nb-dialog ⇒ 把 -overlay/-header/-title/-close 全算成对话框，报出 77 个盒子、58 处缺语义。最终口径 = className token 精确匹配 + 遮罩不算 + 语义窗口 ±6/8 行。另记一个施工 bug：App.tsx 那批属性第一版被重复插了一遍，多出来的那份变成 div 的文字子节点，而 tsc 照样通过（裸文本是合法 JSX 子节点），只有逐行看 diff 才发现。",
-  "pub_date": "2026-09-26T15:30:44Z",
+  "version": "1.16.178",
+  "notes": "修 O-31：清理历史遗留的重复文本事件（真机 6069 -> 0），会话内搜索不再出现重复命中。新增引擎命令 events.dedup_text（默认干跑、保留最早的记录、删除留审计痕迹）+ 启动维护一次性去重 + 读路兜底。投影回放逐条不变。",
+  "pub_date": "2026-09-26T15:47:50Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VqMlNpdUNJYjR5Z051bEpibDB6RWl4amdELzZKbFYxTy9obWFmaXF5M2tmVTh0ZE5qNkthNlRyZlJEWWN2TUpNaW1xdWE1cHM4VnBzaUdmaGVDZndBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM2NjM2CWZpbGU6Q29kZW1fMS4xNi4xNzdfeDY0LXNldHVwLmV4ZQpVZnB5Ly9UTE9xdE56YS9peDY1QjVKM2ErdDdvdGZJVUdBd3hMa0RwZmtXZ3BjQU1TZmVqNmVrUXU2NFZ1UDNXWjMwUTNUaVh5eGJ2cVAxZHFLMTNEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.177/Codem_1.16.177_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FHK09IRUJnUURDOW03YXp6QWwydmUxTURjSWJxaUtaUjMyaU1KcUNDRXdsSjV1bmtZTXowSGZ2SytCMG04Q01VLzduVTFiOU8wR1ladUw4ZlBTeFFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM3NjY2CWZpbGU6Q29kZW1fMS4xNi4xNzhfeDY0LXNldHVwLmV4ZQpVTWVmOFAzazFBRFp5Zy9zNE5pRkdZR1QzVWFoaFZYMVNvQTFGVTNJOGJGRW1lcmt6SDNsN0J0NU93T0FxTUoyNC9iUm8zTW9VV1JKa005U1FXcmZBZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.178/Codem_1.16.178_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VqMlNpdUNJYjR5Z051bEpibDB6RWl4amdELzZKbFYxTy9obWFmaXF5M2tmVTh0ZE5qNkthNlRyZlJEWWN2TUpNaW1xdWE1cHM4VnBzaUdmaGVDZndBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM2NjM2CWZpbGU6Q29kZW1fMS4xNi4xNzdfeDY0LXNldHVwLmV4ZQpVZnB5Ly9UTE9xdE56YS9peDY1QjVKM2ErdDdvdGZJVUdBd3hMa0RwZmtXZ3BjQU1TZmVqNmVrUXU2NFZ1UDNXWjMwUTNUaVh5eGJ2cVAxZHFLMTNEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.177/Codem_1.16.177_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FHK09IRUJnUURDOW03YXp6QWwydmUxTURjSWJxaUtaUjMyaU1KcUNDRXdsSjV1bmtZTXowSGZ2SytCMG04Q01VLzduVTFiOU8wR1ladUw4ZlBTeFFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM3NjY2CWZpbGU6Q29kZW1fMS4xNi4xNzhfeDY0LXNldHVwLmV4ZQpVTWVmOFAzazFBRFp5Zy9zNE5pRkdZR1QzVWFoaFZYMVNvQTFGVTNJOGJGRW1lcmt6SDNsN0J0NU93T0FxTUoyNC9iUm8zTW9VV1JKa005U1FXcmZBZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.178/Codem_1.16.178_x64-setup.exe"
     }
   }
 }

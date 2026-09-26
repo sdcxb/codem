@@ -1731,6 +1731,183 @@ mod event_tests {
         assert_eq!(err.code, crate::ErrorCode::NotFound);
     }
 
+    /// 追加一条文本事件（`payload` 逐字节可控 —— 去重的判据就是"逐字节相同"）
+    fn append_text(e: &Engine, sid: &str, ty: &str, mid: &str, body: &str) -> i64 {
+        let r = call(
+            e,
+            "events.append",
+            json!({ "session_id": sid, "event_type": ty, "payload": { "messageId": mid, "content": body } }),
+        );
+        r["seq"].as_i64().unwrap()
+    }
+
+    /// O-31 的核心判据：**同一份正文写三遍 → 去重后只剩一条，且剩下的是 seq 最小的那条**
+    /// （不是最新的那条 —— 见 `events_dedup_text` 的文档：投影的位置由首次写入决定）。
+    #[test]
+    fn dedup_text_keeps_only_the_first_copy() {
+        let (_d, e) = eng("evdedup1");
+        seed_session(&e, "s1");
+        let s1 = append_text(&e, "s1", "user_message", "u1", "同一份正文");
+        let _s2 = append_text(&e, "s1", "user_message", "u1", "同一份正文");
+        let _s3 = append_text(&e, "s1", "user_message", "u1", "同一份正文");
+
+        // 干跑：只报账、一行不删
+        let dry = call(&e, "events.dedup_text", json!({ "session_id": "s1" }));
+        assert_eq!(dry["applied"], json!(false));
+        assert_eq!(dry["before_rows"], json!(3));
+        assert_eq!(dry["distinct_groups"], json!(1));
+        assert_eq!(dry["removable"], json!(2));
+        assert_eq!(dry["removed"], json!(0));
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s1" }))["count"],
+            json!(3),
+            "干跑不得动库"
+        );
+
+        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        assert_eq!(r["applied"], json!(true));
+        assert_eq!(r["removed"], json!(2));
+        assert_eq!(r["after_rows"], json!(1));
+        let after = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+        let items = after["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["seq"].as_i64().unwrap(), s1, "必须保留 seq 最小的那条");
+    }
+
+    /// **内容不同就不许删**：同一个 `messageId` 但正文被改写过的行是合法历史。
+    #[test]
+    fn dedup_text_never_removes_different_content() {
+        let (_d, e) = eng("evdedup2");
+        seed_session(&e, "s1");
+        append_text(&e, "s1", "user_message", "u1", "第一版正文");
+        append_text(&e, "s1", "user_message", "u1", "改写后的正文");
+        append_text(&e, "s1", "user_message", "u1", "第一版正文");
+        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        assert_eq!(r["before_rows"], json!(3));
+        assert_eq!(r["distinct_groups"], json!(2), "两版正文是两个组");
+        assert_eq!(r["removed"], json!(1), "只删『第一版正文』的重复那份");
+        assert_eq!(r["after_rows"], json!(2));
+    }
+
+    /// **类型范围**：只有 `user_message` / `assistant_text` 会被去重。
+    /// `tool_call` / `tool_result` 靠 `toolCallId` 互相引用，删较早的那条会让配对断裂，
+    /// 所以哪怕载荷逐字节相同也**一行都不动**（用例把它钉死，防止有人"顺手扩大范围"）。
+    #[test]
+    fn dedup_text_leaves_tool_events_alone() {
+        let (_d, e) = eng("evdedup3");
+        seed_session(&e, "s1");
+        for _ in 0..3 {
+            call(
+                &e,
+                "events.append",
+                json!({ "session_id": "s1", "event_type": "tool_call", "payload": { "toolCallId": "tc1", "name": "shell" } }),
+            );
+        }
+        for _ in 0..3 {
+            call(
+                &e,
+                "events.append",
+                json!({ "session_id": "s1", "event_type": "tool_result", "payload": { "toolCallId": "tc1", "content": "ok" } }),
+            );
+        }
+        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        assert_eq!(r["before_rows"], json!(0), "工具事件不在统计范围内");
+        assert_eq!(r["removed"], json!(0));
+        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(6));
+    }
+
+    /// **作用域陷阱**（`events_dedup_text` 的注释里点名的那个）：
+    /// 只去重会话 A 时，别的会话的文本事件**一条都不能少**。
+    /// 若外层 DELETE 忘了加 `session_id` 过滤，这里会整片消失。
+    #[test]
+    fn dedup_text_scoped_to_one_session_keeps_others() {
+        let (_d, e) = eng("evdedup4");
+        seed_session(&e, "s1");
+        seed_session(&e, "s2");
+        for _ in 0..3 {
+            append_text(&e, "s1", "user_message", "u1", "会话一的正文");
+            append_text(&e, "s2", "user_message", "u9", "会话二的正文");
+        }
+        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        assert_eq!(r["removed"], json!(2), "只该删会话一的那两份");
+        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(1));
+        assert_eq!(
+            call(&e, "events.count", json!({ "session_id": "s2" }))["count"],
+            json!(3),
+            "会话二的文本事件不得被牵连（作用域必须与子查询完全一致）"
+        );
+    }
+
+    /// 全库去重（不传 `session_id`）：两个会话各自收敛，互不影响。
+    #[test]
+    fn dedup_text_without_scope_covers_all_sessions() {
+        let (_d, e) = eng("evdedup5");
+        seed_session(&e, "s1");
+        seed_session(&e, "s2");
+        for _ in 0..2 {
+            append_text(&e, "s1", "assistant_text", "a1", "回复一");
+            append_text(&e, "s2", "assistant_text", "a2", "回复二");
+        }
+        let r = call(&e, "events.dedup_text", json!({ "apply": true }));
+        assert_eq!(r["before_rows"], json!(4));
+        assert_eq!(r["removed"], json!(2));
+        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(1));
+        assert_eq!(call(&e, "events.count", json!({ "session_id": "s2" }))["count"], json!(1));
+    }
+
+    /// 幂等：连着跑两次，第二次必须"无事可做"（`removable: 0`、`removed: 0`）。
+    /// 维护路径会被重复调用（每次启动都可能跑），非幂等就会出事。
+    #[test]
+    fn dedup_text_is_idempotent() {
+        let (_d, e) = eng("evdedup6");
+        seed_session(&e, "s1");
+        for _ in 0..4 {
+            append_text(&e, "s1", "assistant_text", "a1", "同一条回复");
+        }
+        let first = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        assert_eq!(first["removed"], json!(3));
+        let second = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        assert_eq!(second["removable"], json!(0));
+        assert_eq!(second["removed"], json!(0));
+        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(1));
+    }
+
+    /// 非文本事件（`session_meta` / `turn_start` …）不受影响，且有样例能看出"重的是什么"。
+    #[test]
+    fn dedup_text_reports_samples_and_spares_other_types() {
+        let (_d, e) = eng("evdedup7");
+        seed_session(&e, "s1");
+        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "session_meta", "payload": { "k": 1 } }));
+        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "turn_start", "payload": { "t": 1 } }));
+        for _ in 0..5 {
+            append_text(&e, "s1", "assistant_text", "a1", "被写了五遍的回复");
+        }
+        let r = call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let samples = r["samples"].as_array().unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0]["copies"], json!(5));
+        assert_eq!(samples[0]["event_type"], json!("assistant_text"));
+        assert_eq!(call(&e, "events.count", json!({ "session_id": "s1" }))["count"], json!(3), "meta + turn_start + 1 条文本");
+    }
+
+    /// 删除必须**留痕**：`storage_audit` 里查得到这次删了哪张表、哪个会话、什么时候。
+    #[test]
+    fn dedup_text_writes_audit_trail() {
+        let (_d, e) = eng("evdedup8");
+        seed_session(&e, "s1");
+        for _ in 0..3 {
+            append_text(&e, "s1", "user_message", "u1", "审计要看得见");
+        }
+        call(&e, "events.dedup_text", json!({ "session_id": "s1", "apply": true }));
+        let recent = call(&e, "audit.recent", json!({ "limit": 20 }));
+        let rows = recent["items"].as_array().expect("audit.recent 应返回 items");
+        let hit = rows
+            .iter()
+            .filter(|r| r["table_name"] == json!("session_events") && r["op"] == json!("DELETE"))
+            .count();
+        assert_eq!(hit, 2, "删两行就该留两条痕，实际 {hit}（rows={rows:?}）");
+    }
+
     #[test]
     fn fork_copies_events_to_another_session() {
         let (_d, e) = eng("evfork");

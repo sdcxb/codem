@@ -2,8 +2,8 @@
  "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
  "_counts": {
-  "total": 218,
-  "triaged": 218,
+  "total": 219,
+  "triaged": 219,
   "pending": 0
  },
  "sites": [
@@ -942,6 +942,12 @@
    "kind": "advisory",
    "status": "triaged",
    "reason": "索引落后于日志并**已自动补回**（自检发现 + 已修）⇒ advisory；不该说成「操作没生效」（C-21）"
+  },
+  {
+   "site": "src/core/storage/maintenance.ts::maintenance.eventsDedupText::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "清理历史重复文本事件的**发现**（去重跑成了，报的是结果：删了多少、删前有多少条不同）⇒ advisory；与 indexBehindLog 同形（发现 + 已修），说成「操作失败」是假话（C-21）。注意这一条只在 removed>0 时才会发出 —— 没有重复就不报（静默的成功不打扰用户）"
   },
   {
    "site": "src/core/storage/maintenance.ts::maintenance.integrityCheck::#1",

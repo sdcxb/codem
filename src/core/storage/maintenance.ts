@@ -166,6 +166,14 @@ export interface MaintenanceResult {
    * 也会让结构自检报 0 处异常却看起来"通过"。
    */
   invariantUnreadableSessions: number;
+  /**
+   * O-31：本次**清掉的完全重复文本事件**行数（0 = 没有可清的，或这一步没跑到）。
+   *
+   * 为什么要进汇总行：这是一个会**真的删库行**的维护步骤。删了多少必须让人看得见 ——
+   * 否则"事件表怎么小了"永远查不出来（`storage_audit` 里有逐行痕，但那要另跑命令去读）。
+   * 全过程的判据见 `dedupDuplicateTextEvents` 与引擎侧 `repo::events_dedup_text`。
+   */
+  dedupTextEvents: number;
 }
 
 /**
@@ -306,6 +314,165 @@ export async function markIndexRebuildNeeded(reason: string): Promise<boolean> {
   } catch (e) {
     console.warn("[Maintenance] 写索引重建标记失败（不影响主流程）:", e);
     return false;
+  }
+}
+
+/**
+ * `events.dedup_text` 的结果（O-31）。
+ *
+ * ## 这一步在修什么
+ *
+ * 1.16.175 及更早的版本里，页面**每次重载**都会把当前会话的消息再落库一遍
+ * （`appendMessageTextEvent` 的指纹表当时是进程内内存态，重载即清空）。
+ * 真机实测（2026-09，用户库副本）：`session_events` 共 8425 行、其中文本事件 6327 行，
+ * **只有 253 条是不同的** —— 6073 行是完全重复，最大重数 **218 次**。
+ *
+ * 1.16.176 修好了"不再新增"（判据换成持久判据），但**已经写进去的还在**。
+ * 影响如实标注：投影按 `messageId` 去重 ⇒ **不影响模型看到的正文**，也不影响不变量审计；
+ * 影响的是 `session_event_search` 会搜出重复命中（第 45 轮记过"重复行没有信息量，
+ * 只会污染搜索结果"）与事件表体积（大会话的事件镜像要多加载 70 倍的行）。
+ *
+ * ## 为什么是"一次性"的（marker）而不是每次都跑
+ *
+ * 判据（载荷逐字节相同）只能靠一次 `GROUP BY` 算出来，这一趟在 8 千行上是毫秒级、
+ * 在几十万行上就是几百 MB 的排序 —— 而**它要解决的问题已经被 1.16.176 从源头掐掉了**，
+ * 不存在"每次启动都得再清一遍"的必要。所以按 `settings` 面的一次性标记做，
+ * 与完整性检查的时间戳是同一个模式（`INTEGRITY_CHECK_MARKER_KEY`）。
+ *
+ * 标记**只在成功之后**写：失败（端口没能力 / 引擎报错）时下次启动要能重试。
+ * 而成功之后哪怕 `removed: 0` 也写 —— 那正是"这个库本来就没有重复"的结论，
+ * 不该每次启动都重新验一遍。
+ *
+ * ## 删掉的行不会从内存镜像里消失 —— 无害，且理由要说清
+ *
+ * 镜像里那条重复事件在本次会话仍然读得到。它是**载荷逐字节相同**的一份副本，所以：
+ * 投影侧本来就被 `applyUserMessage` 的 `messageId` 守卫挡掉、`session_event_search`
+ * 侧被 `collapseExactDuplicateTextEvents` 收敛掉、不变量审计不数重复正文 ——
+ * **没有任何可观测行为依赖"镜像里那份副本已经不在了"**。下次启动加载镜像时读到的是清过的表。
+ * （所以刻意**不做**逐出镜像：逐出"正在被读"的会话正是本仓库反复修的塌陷。）
+ *
+ * ⚠️ **刻意不 `export`**（第 178 轮实测）：它是 `dedupDuplicateTextEvents` 的返回类型，
+ * 全项目只有本文件用得到。写成 `export interface` 会让 knip 的"未使用导出"棘轮
+ * 如实涨 1（`types 59 → 60`，`verify` 因此退出码 1）—— 与第 89 轮那 5 个类型完全同款。
+ * 将来真有第二个消费方，再从函数返回值上推导，而不是把它当公共类型导出。
+ */
+interface DedupTextEventsOutcome {
+  /** `noop` = 本次没走到；`skipped` = 标记说已经做过；`cleaned` = 做了（含"本来就没有"）；`failed` = 没做成 */
+  status: "noop" | "skipped" | "cleaned" | "failed";
+  /** 删掉的行数 */
+  removed: number;
+  /** 删除前的文本事件行数 */
+  beforeRows: number;
+  /** 删除后残留的文本事件行数 */
+  afterRows: number;
+  /** 不同载荷的组数（= 删除后应有的行数） */
+  distinctGroups: number;
+  reason?: string;
+}
+
+/** 文本事件去重的一次性标记（`settings` 面） */
+const EVENTS_DEDUP_MARKER_KEY = "codem-events-dedup-text-at";
+
+/**
+ * 把 1.16.175 及更早版本留下的**完全重复**的文本事件清一次（O-31）。
+ *
+ * 判据、为什么保留 `seq` 最小、为什么只碰 `user_message` / `assistant_text`：
+ * 都写在引擎侧 `repo::events_dedup_text` 的文档里 —— 与读路兜底
+ * `collapseExactDuplicateTextEvents` 共用同一份口径（保留最小 `seq`）。
+ */
+export async function dedupDuplicateTextEvents(): Promise<DedupTextEventsOutcome> {
+  const mk = (status: DedupTextEventsOutcome["status"], reason?: string): DedupTextEventsOutcome => ({
+    status,
+    removed: 0,
+    beforeRows: 0,
+    afterRows: 0,
+    distinctGroups: 0,
+    reason,
+  });
+
+  const { hasStoragePort, getStoragePort } = await import("./port");
+  if (!hasStoragePort()) return mk("skipped", "端口未注册");
+  const port = getStoragePort();
+
+  /** 标记读失败**不当作"已经做过"**：那会让这一步被永久跳过（看起来在跑，其实没跑） */
+  try {
+    const page = await port.data.query<{ key: string; value: string }>("crud.list", {
+      table: "settings",
+      limit: 2000,
+    });
+    if ((page.items ?? []).some((s) => s.key === EVENTS_DEDUP_MARKER_KEY)) {
+      return mk("skipped", "本库已经做过文本事件去重（一次性维护）");
+    }
+  } catch (e) {
+    console.warn("[Maintenance] 读文本事件去重标记失败（本次照常执行）:", e);
+  }
+
+  try {
+    const r = await structuredCommand<{
+      applied?: boolean;
+      before_rows?: number;
+      after_rows?: number;
+      distinct_groups?: number;
+      removed?: number;
+    }>(port, "events.dedup_text", { apply: true });
+
+    /**
+     * `applied !== true` 说明引擎**没有真的删**（它默认干跑）。
+     * 这时**不能写标记** —— 写了就等于把"没做过"记成"做过了"，
+     * 而这一步的全部价值就是"存量清干净"。所以按失败处理并如实留痕。
+     */
+    if (r?.applied !== true) {
+      const reason = "引擎返回 applied=false（去重没有真的执行）";
+      console.warn(`[Maintenance] 文本事件去重未执行：${reason}`);
+      return mk("failed", reason);
+    }
+
+    const out: DedupTextEventsOutcome = {
+      status: "cleaned",
+      removed: r.removed ?? 0,
+      beforeRows: r.before_rows ?? 0,
+      afterRows: r.after_rows ?? 0,
+      distinctGroups: r.distinct_groups ?? 0,
+    };
+
+    try {
+      await port.data.execute("settings.set", {
+        key: EVENTS_DEDUP_MARKER_KEY,
+        value: String(Date.now()),
+      });
+    } catch (e) {
+      /** 标记写不上只是"下次会重跑一遍"（幂等），不当失败 */
+      console.warn("[Maintenance] 写文本事件去重标记失败（下次启动会重跑，幂等无害）:", e);
+    }
+
+    if (out.removed > 0) {
+      /**
+       * 这是**发现并已修好**（不是失败）：照 `maintenance.indexBehindLog` 的先例用 advisory。
+       * 用户该知道自己的库被清过、以及"正文从未受影响"。
+       */
+      console.log(
+        `[Maintenance] 文本事件去重：清理 ${out.removed} 条完全重复的事件` +
+          `（删除前 ${out.beforeRows} 行 / 不同正文 ${out.distinctGroups} 条 / 删除后 ${out.afterRows} 行）`,
+      );
+      reportAdvisory(
+        "maintenance.eventsDedupText",
+        `清理了 ${out.removed} 条完全重复的文本事件（删除前 ${out.beforeRows} 行里只有 ${out.distinctGroups} 条是不同的）`,
+        {
+          title: "存储自检：清理了历史遗留的重复事件记录",
+          nextStep:
+            `1.16.175 及更早的版本会在页面每次重载时把当前会话的消息再记一遍，` +
+            `于是同一条正文在事件表里留下很多份。已收敛为一条（保留最早的那条）。` +
+            `消息正文从未受影响，这次清理只是让会话内搜索不再出现重复命中。`,
+          sample: "已清理历史重复事件（不影响消息本身）",
+        },
+      );
+    } else {
+      console.log(`[Maintenance] 文本事件去重：本库没有重复（文本事件 ${out.beforeRows} 行、全部互不相同）`);
+    }
+    return out;
+  } catch (e) {
+    console.warn("[Maintenance] 文本事件去重失败（不影响使用，下次维护再试）:", e);
+    return mk("failed", e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -1728,6 +1895,15 @@ export async function runDatabaseMaintenance(
   let compact: StorageCompactOutcome = { status: "noop", reclaimedBytes: 0, reason: "本次维护未走到空间回收" };
   /** 完整性检查结果（第 45 轮） */
   let integrity: IntegrityCheckOutcome = { status: "skipped", reason: "本次维护未走到完整性检查" };
+  /** 文本事件去重结果（O-31） */
+  let dedupText: DedupTextEventsOutcome = {
+    status: "noop",
+    removed: 0,
+    beforeRows: 0,
+    afterRows: 0,
+    distinctGroups: 0,
+    reason: "本次维护未走到文本事件去重",
+  };
 
   const result: MaintenanceResult = {
     sizeBefore: 0,
@@ -1813,6 +1989,7 @@ export async function runDatabaseMaintenance(
     compactPerformed: false,
     compactedBytes: 0,
     integrity: "skipped",
+    dedupTextEvents: 0,
     recountedSessions: 0,
     recountCheckedSessions: 0,
     recountFailedSessions: 0,
@@ -2177,6 +2354,27 @@ export async function runDatabaseMaintenance(
     }
 
     /**
+     * ## 文本事件去重（O-31）
+     *
+     * 清掉 1.16.175 及更早版本"每次重载重写一遍"留下的**完全重复**文本事件。
+     * 判据、为什么保留 `seq` 最小、为什么只碰文本事件：见 `dedupDuplicateTextEvents`
+     * 与引擎侧 `repo::events_dedup_text`。
+     *
+     * ⚠️ **位置有语义**：放在不变量审计**之前**。
+     * 审计要读事件表（`checkVisibleRecordedInvariant` 按 `messageId` 比对、结构自检数
+     * 重复 `seq`），先去重再审计才能让汇总行里的读数与"库里现在实际是什么"一致；
+     * 反过来写的话，这一次的汇总行描述的是一个马上就要被改掉的库。
+     * （去重**不影响**审计结论 —— 投影本来就按 `messageId` 去重，删掉的都是同 `messageId`
+     * 同正文的副本；所以这条顺序只关乎"读数自洽"，不是"审计准不准"。）
+     */
+    try {
+      dedupText = await dedupDuplicateTextEvents();
+      result.dedupTextEvents = dedupText.removed;
+    } catch (e) {
+      console.warn("[Maintenance] 文本事件去重失败（跳过）:", e);
+    }
+
+    /**
      * ## 运行时不变量审计（第 45 轮功能上下文审计 §"未做" 的收口）
      *
      * 见 `auditInvariantsForSessions` 的长注释：`runtime-invariants` 原来只在
@@ -2266,6 +2464,8 @@ export async function runDatabaseMaintenance(
       `索引裁剪 ${result.trimmedIndexMessages} 条、附件预热 ${result.warmedAttachments} 个、孤儿清理 ${result.prunedAttachmentOrphans} 个、` +
       `日志压缩 ${result.compactedLogSessions} 个会话、${formatTelemetryPrune(telemetryPrune)}、` +
       formatAuditPrune(auditPrune, result) +
+      // O-31：这是一个会真的删库行的步骤，删了多少必须进汇总行（否则"事件表怎么小了"永远查不出来）
+      `、文本事件去重 ${result.dedupTextEvents} 条${dedupText.status === "skipped" ? "（本库已做过）" : ""}` +
       `、${formatCompact(compact)}、${formatIntegrity(integrity)}、` +
       // 第 45 轮：这条不变量原来在生产上**无人断言**，现在它每次维护都会在这里报一次
       formatInvariantAudit({

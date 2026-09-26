@@ -513,6 +513,177 @@ pub fn events_compact(
     })
 }
 
+/// 文本事件去重：把**载荷逐字节相同**的 `user_message` / `assistant_text` 收敛成一条。
+///
+/// ## 为什么需要它（O-31）
+///
+/// 1.16.175 及更早的版本里，页面每次重载都会把当前会话的消息**再落库一遍**
+/// （`appendMessageTextEvent` 的指纹表是进程内内存态，重载即清空）。
+/// 真机实测（2026-09，用户库副本）：`session_events` 共 8425 行，其中文本事件 6327 行，
+/// **只有 253 条是不同的**（6073 行是完全重复，最大重数 218 次）。
+/// 1.16.176 修好了"不再新增"，但**已经写进去的还在**。
+///
+/// ## 判据：为什么保留 `MIN(seq)` 而不是"最新一条"
+///
+/// `event-projection.ts` 的两条语义共同决定了这一点：
+/// - `applyUserMessage`：`if (state.messages.some(m => m.id === payload.messageId)) return;`
+///   —— **首次写入胜出**，且该消息在派生列表里的**位置**由首次那条的 seq 决定；
+/// - `applyAssistantText`：位置同样由**首次**那条决定（`push`），只有正文是后写覆盖。
+///
+/// 本命令只删**载荷逐字节相同**的行，所以正文保留哪条都一样；真正会被改变的是**位置**。
+/// 保留 `MIN(seq)` 才能让"删前回放"与"删后回放"产出**同一个消息序列**。
+/// 若按"保留最新"删，消息会被整体往后挪 —— 那是静默的回放等价性破坏
+/// （`events_dedup_text_keeps_replay_equivalent` 就是钉这件事的用例）。
+///
+/// ## 安全性（判据必须写在签名旁边，否则就是"一条没有判据的删除路径"）
+///
+/// - **类型范围刻意只有两种文本事件**：它们不携带被别的行引用的 id。
+///   `tool_call` / `tool_result` 靠 `toolCallId` 互相引用，**不在范围内** ——
+///   删掉较早的 `tool_call` 会让 `tool_result` 变成孤儿（`event-projection` 的结构检查会报）。
+/// - 判据是**载荷逐字节相同**（`d.payload = session_events.payload`），不是"正文像"。
+///   正文被改写过（同一 `messageId`、不同正文）的行**一条都不会被删**：
+///   真机读数里这种行是 **0** 条，但那不等于可以顺手删掉 —— 它是正文被改写的合法历史。
+/// - `apply` 默认 **false**（干跑）：调用方必须显式说要删才动库。
+/// - 走 `measure_delete_impact` 如实报账；`enforce_limit: true` 时复用与 `crud.delete`
+///   同一份规模闸门（口径与 `events.compact` 一致：维护路径默认放行，但规模永远可见）。
+/// - 删除会被 `audit::install` 的 `AFTER DELETE` 触发器记进 `storage_audit`
+///   （`audit.recent` 查得到"哪张表、哪个会话、什么时候"）。
+pub fn events_dedup_text(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = opt_text(p, "session_id")?;
+    let apply = p.get("apply").and_then(|x| x.as_bool()).unwrap_or(false);
+    let enforce_limit = p.get("enforce_limit").and_then(|x| x.as_bool()).unwrap_or(false);
+    let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
+
+    /*
+     * 作用域片段在两条 SQL 里必须**完全一致**。
+     *
+     * 这里有一个很容易写出来的灾难：若只给子查询加 `session_id` 过滤、外层 DELETE 不加，
+     * 那么"只去重会话 A"会删光**其它所有会话**的文本事件 —— 因为别的会话的 seq
+     * 永远不会出现在"会话 A 的 MIN(seq) 集合"里，于是全部命中 `NOT IN`。
+     * 用例 `events_dedup_text_scoped_to_one_session_keeps_others` 钉的就是这一条。
+     */
+    const TEXT_TYPES: &str = "event_type IN ('user_message','assistant_text')";
+    let (scope, scoped): (String, bool) = match &session_id {
+        Some(_) => (format!(" AND session_id = ?1"), true),
+        None => (String::new(), false),
+    };
+
+    engine.write_tx(|tx| {
+        /* ---- 事前读数：总行数 / 不同载荷组数 / 可删行数 / 样例 ---- */
+        let count_sql = format!(
+            "SELECT COALESCE(SUM(c),0), COUNT(*) FROM (
+                 SELECT COUNT(*) AS c FROM session_events
+                 WHERE {TEXT_TYPES}{scope}
+                 GROUP BY session_id, event_type, payload
+             )"
+        );
+        let (before_rows, groups): (i64, i64) = if scoped {
+            tx.query_row(&count_sql, params![session_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        } else {
+            tx.query_row(&count_sql, [], |r| Ok((r.get(0)?, r.get(1)?)))
+        }
+        .map_err(DbError::from)?;
+
+        /* 样例：只取重数最大的几组，用来让人一眼看出"重的是什么" */
+        let sample_sql = format!(
+            "SELECT session_id, event_type, MIN(seq), MAX(seq), COUNT(*) AS c
+             FROM session_events WHERE {TEXT_TYPES}{scope}
+             GROUP BY session_id, event_type, payload
+             HAVING c > 1 ORDER BY c DESC LIMIT 5"
+        );
+        let samples: Vec<Value> = {
+            let mut stmt = tx.prepare(&sample_sql).map_err(DbError::from)?;
+            let map = |r: &Row<'_>| -> rusqlite::Result<Value> {
+                Ok(json!({
+                    "session_id": r.get::<_, String>(0)?,
+                    "event_type": r.get::<_, String>(1)?,
+                    "min_seq": r.get::<_, i64>(2)?,
+                    "max_seq": r.get::<_, i64>(3)?,
+                    "copies": r.get::<_, i64>(4)?,
+                }))
+            };
+            let mut rows = if scoped {
+                stmt.query(params![session_id]).map_err(DbError::from)?
+            } else {
+                stmt.query([]).map_err(DbError::from)?
+            };
+            let mut out = Vec::new();
+            while let Some(r) = rows.next().map_err(DbError::from)? {
+                out.push(map(r).map_err(DbError::from)?);
+            }
+            out
+        };
+
+        let removable = before_rows - groups;
+        if !apply || removable <= 0 {
+            return Ok(json!({
+                "applied": false,
+                "dry_run": !apply,
+                "scope_session": session_id,
+                "before_rows": before_rows,
+                "distinct_groups": groups,
+                "removable": removable,
+                "removed": 0,
+                "affected_rows": 0,
+                "samples": samples,
+            }));
+        }
+
+        /* ---- 真删：同会话 + 同类型 + 载荷逐字节相同 的行里，只留 MIN(seq) ---- */
+        let delete_sql = format!(
+            "DELETE FROM session_events
+             WHERE {TEXT_TYPES}{scope}
+               AND seq NOT IN (
+                   SELECT MIN(seq) FROM session_events
+                   WHERE {TEXT_TYPES}{scope}
+                   GROUP BY session_id, event_type, payload
+               )"
+        );
+        let (removed, impact) = crate::crud::measure_delete_impact(tx, || {
+            let n = if scoped {
+                tx.execute(&delete_sql, params![session_id]).map_err(DbError::from)?
+            } else {
+                tx.execute(&delete_sql, []).map_err(DbError::from)?
+            };
+            Ok(n as i64)
+        })?;
+        if enforce_limit {
+            crate::crud::guard_cascade_scope(
+                &format!("去重文本事件（删除 {removed} 行完全重复的文本事件）"),
+                impact,
+                confirmed,
+            )?;
+        }
+        let after_rows: i64 = if scoped {
+            tx.query_row(
+                &format!("SELECT COUNT(*) FROM session_events WHERE {TEXT_TYPES}{scope}"),
+                params![session_id],
+                |r| r.get(0),
+            )
+        } else {
+            tx.query_row(
+                &format!("SELECT COUNT(*) FROM session_events WHERE {TEXT_TYPES}"),
+                [],
+                |r| r.get(0),
+            )
+        }
+        .map_err(DbError::from)?;
+
+        Ok(json!({
+            "applied": true,
+            "dry_run": false,
+            "scope_session": session_id,
+            "before_rows": before_rows,
+            "distinct_groups": groups,
+            "removable": removable,
+            "removed": removed,
+            "after_rows": after_rows,
+            "affected_rows": impact,
+            "samples": samples,
+        }))
+    })
+}
+
 /// 会话内事件整体复制（fork）
 pub fn events_fork(engine: &Engine, p: &Value) -> DbResult<Value> {
     let source = req_text(p, "source_session_id")?;

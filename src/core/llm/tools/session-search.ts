@@ -16,6 +16,7 @@
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
 import { domainReadMany } from "../../storage/domain-store";
+import { collapseExactDuplicateTextEvents } from "../../storage/event-types";
 
 interface SessionSearchResult {
   sessionId: string;
@@ -289,7 +290,22 @@ Use this to find specific actions or messages within a known session.`,
         }
         const events = getEventLog().readAll(sessionId);
 
-        const matching = events.filter((evt) => {
+        /**
+         * ## O-31：**模型可见面不能出现重复命中**
+         *
+         * 1.16.175 及更早的版本里，页面每次重载都会把当前会话的消息再落库一遍
+         * （`appendMessageTextEvent` 的指纹表当时是进程内内存态，重载即清空）。
+         * 真机实测（2026-09）：某会话 4842 条文本事件里**只有 64 条是不同的**。
+         *
+         * 1.16.176 修好了"不再新增"，引擎侧的 `events.dedup_text` 负责把存量删掉；
+         * 这里再收敛一次是**读路兜底**：不管库里还剩多少历史重复行、或将来又出了新的
+         * 重复来源，这个工具给出的命中数都不会被重复行灌水。
+         *
+         * 判据与引擎侧同一份（见 `collapseExactDuplicateTextEvents`）：只收敛
+         * `user_message` / `assistant_text` 里**载荷逐字节相同**的事件，保留 `seq` 最小者。
+         * 收敛后再 `slice(limit)` —— 否则重复行会白占配额，把真正不同的命中挤出去。
+         */
+        const matching = collapseExactDuplicateTextEvents(events).filter((evt) => {
           if (eventType && evt.type !== eventType) return false;
           const payloadStr = JSON.stringify(evt.payload).toLowerCase();
           return payloadStr.includes(query);
