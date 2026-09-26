@@ -2,6 +2,77 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.155] - 2026-09-26 — 皮肤对标 OpenBitFun 的 P0 四条全部落地（圆角真 bug / 边框阶梯 / 行高字距令牌 + 排版角色 / 写死值棘轮）+ 暗色档首次有不变量门禁
+
+> 承接上一轮的对标分析（`docs/SKIN-BENCHMARK-OPENBITFUN.md`，取对方 `main@ded818312a39`）。
+> 本轮把文档 §4 的 **P0 四条**全部做掉，并按用户"暗色也再对标一下"的要求补了 **暗色档的六条不变量**与两条实测缺口。
+
+### ① P0-1：`--radius-xs` 被自己覆盖坏（真 bug，81 处受影响）
+
+- **现场**：`src/styles.css:79` 写 `0.25rem`（注释"4px：细条、滚动条滑块"），文件后半段另一个 `:root`
+  又写 `8px`（注释却写"补齐 6px 这一档"）⇒ 同特异度后写者胜，**装机版运行时实测 8px**，
+  与 `--radius` 完全重复，**81 处**密集控件全都比设计意图更圆，而且不报错、不告警。
+- **处置**：唯一定义 = **4px**；80 处"密集控件"（关闭按钮/标签/页签/小动作按钮）按文档意图迁到
+  `--radius-sm`（6px），只留滚动条滑块继续用 xs；两套皮肤补上缺失的 `--radius-xs`/`--radius-xl`（梯子成套）。
+- **新门禁** `tools/audit/scan-token-hygiene.mjs`（audit **第 18 道**）：H1 同作用域重复定义、H2 刻度成套、
+  H3 非递减、H4 类型必须是长度/数字；用例 `style-token-gates.test.ts` **12 条** + **变异 5/5**
+  （其中 M1 就是"再造一个 `:root` 定义 `--radius-xs`"这个真形态）。
+
+### ② P0-2：边框阶梯 + 输入态（对齐 OpenBitFun 的 subtle/default/strong + `field.borderHover/Focus`）
+
+- 改动前只有 `--border-primary 9%` 与 `--border-secondary/-separator 5%`：**没有强调档**，也**没有输入框的
+  hover/focus 档** —— 凡是"悬停时边界抬一点"的地方只能现写 rgba（颜色字面量的主要来源之一）。
+- 现在：`5% / 9% / 34%` 三档（合成到白底的对比度 **1.10 / 1.19 / 2.15**）+ `--field-border-hover`（20% → 1.61）
+  + `--field-border-focus`（= strong），并用**末尾的 `:where()` 规则**（特异度 0）真的接到
+  `input/textarea/select/[contenteditable]` 上：组件自己写过边框的照样优先，没写过的获得统一手感；
+  `border-style: none` 的控件（如 composer 输入框）天然不受影响。
+- 判据：新用例 **LIGHT-UI-2c**（三档单调 + 强度带内 + hover 夹在 default 与 focus 之间 + 消费者必须存在）。
+
+### ③ P0-3：行高/字距令牌 + 复合排版角色
+
+- **实测起点**：行高 **100 条声明全部写死**、字距 **24 条全部写死** —— 这是全项目唯一"一个令牌都没有"的排版维度。
+- 现在补 `--lh-*` 7 档（none/tight/compact/ui/base/reading/loose）与 `--ls-*` 3 档（normal/tight/wide），
+  并把**行高 87 处、字距 7 处**换成令牌 —— 只做**精确等值替换**（1.5→`--lh-base` 这类渲染逐像素相同），
+  唯二例外如实记：`line-height: 24px` → `var(--lh-base)`（`--fs-lg` 16px × 1.5 = 24px，等价，且从此**跟着字号滑杆缩放**）。
+- 另加两个复合排版角色并**接到真实调用点**：`.text-overline`（侧栏会话分组标题 4 处）、
+  `.text-meta`（文件编辑器路径 2 处）。`label/body/heading` 三档写了但没人用 ⇒ 被
+  `css-class-unused`/`css-var-unused`（基线 0）当场抓出，**已删** —— 规矩定死：先有调用点、再补角色。
+
+### ④ P0-4：写死值棘轮（audit 第 19 道）
+
+- `tools/audit/scan-style-literals.mjs` + `tools/audit/style-literals-baseline.json`：对 9 个族
+  （裸颜色字面量 / line-height / letter-spacing / font-weight / font-size / z-index / border-radius /
+  box-shadow / animation·transition）记基线，**只许降**；`--update` 拒绝变大的族（要放宽得显式 `--force`）。
+- **⚠️ 口径更正（这条必须记着）**：第一版对账脚本用 `font-size:\s*(?!var\()` 这种负向先行断言，
+  而 `\s*` 能匹配零字符 ⇒ `font-size: var(--fs-sm)` 也被算成"写死"，报出 **917 处**（真实值 45）。
+  现在的判据：一条声明算写死 ⇔ 值里**完全没有 `var(--…)`**；颜色再加一层"必须含真实颜色字面量"，
+  并把 `var(--x, 兜底)` 单独计数（那是正当做法）。**更正后的实测**：默认皮肤主样式表的**裸颜色字面量只有 7 处**
+  （11 372 条声明的 0.1%），脏的是两套皮肤（dream 72 / hub 51）与**字重**（317 处没走 `--weight-*`）——
+  这三条现在是棘轮的靶子。
+- **变异 5/5**（`.preview-shot/mutate-style-gates.mjs`：塞裸颜色、塞写死行高、皮肤刻度残缺、刻度非单调、
+  几何令牌重复定义，五条全部被抓）。
+
+### ⑤ 暗色档：首次有"不变量门禁"，并修掉两条实测缺口
+
+- **缺口 A（可访问性）**：`--text-muted #888888` 落在 `--bg-hover #2a2d2d`（悬停行）上只有 **3.92:1**
+  —— 而"悬停行的元信息（时间戳/计数/路径）"正好大量用这一档。反解后取 **#939393**：四个面 **4.52 / 5.09 / 5.57 / 6.25** 全过 4.5。
+- **缺口 B（结构可见度）**：暗色控件边界在 `--bg-secondary` 上只有 **1.35**，而参考实现 dark 的
+  `border.default`（白 18%）是 **1.78**；现在 10%→**14%**（**1.54**）、6%→**8%**（1.25），往参考靠一档但不到 18%。
+- **新增 DARK-UI-0…5 六条不变量**（此前暗色档**一条都没有**，只有亮色有 LIGHT-UI-*）：
+  面阶梯方向 + 每段亮度差下限、弱文字在**四个面**上 ≥4.5、主/次文字带（含上限防眩光）、
+  边框三档单调与带内、暗色 `--accent-strong` 在品牌浅底上 ≥4.5。
+  **顺带被自己的门槛抓出一次**：初稿写"每段亮度差 ≥0.008"，实测我方 0.00579、对方 0.00668 ⇒ 按实测改成 0.005。
+
+### ⑥ 实测（这一版）
+
+- `npm run verify` **exit 0**：**400 文件 / 6267 通过 / 16 跳过 / 0 失败**；`tsc` **0**；
+  阈值对账 ✅、按文件地板 **307 个文件**全过、knip 棘轮 94/94 · 59/59 · 10/10、jscpd 171 clones。
+- `npm run audit` **exit 0**（**19 道**，新增 token-hygiene 与 style-literals 两道）；
+  缺口清单：**未关闭 3 项**（`O-1` 崩溃根因、`O-29` 重载重复写事件、`O-30` 皮肤对标剩下的 P1/P2 + 暗色 D1–D8）。
+- 新增/更新的工具（都在 `.preview-shot/`，gitignore）：`_style-literals-census.mjs`、`_color-literal-census.mjs`、
+  `_color-literal-triage.mjs`、`_contrast-pairs.mjs`、`_contrast-pairs-dark.mjs`（**现读 CSS**，不写死值）、
+  `_dark-thresholds.mjs`、`_find-role-matches.mjs`、`mutate-style-gates.mjs`、`_ui-audit-detail.mjs`。
+
 ## [1.16.154] - 2026-09-25 — O-28 装机版复核**当场量出来的第三条口径差**：`system` 行永远没有事件 ⇒ 维护自检「本次新产生」恒非 0
 
 > 1.16.153 修的是 O-28 的真因（工具事件挂错 messageId），在装机版上复核时又量出一条**相邻但不同**的缺陷，
