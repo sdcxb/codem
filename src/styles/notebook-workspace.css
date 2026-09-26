@@ -102,7 +102,7 @@
 
 .nb-studio-btn:hover:not(:disabled) {
   background: var(--bg-tertiary);
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 
 .nb-studio-btn:disabled {

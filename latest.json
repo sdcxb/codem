@@ -1,15 +1,15 @@
 {
-  "version": "1.16.160",
-  "notes": "外观档位的启动路径补上（1.16.159 的模块在产品代码里没人调）",
-  "pub_date": "2026-09-26T09:14:51Z",
+  "version": "1.16.161",
+  "notes": "颜色用量注册表门禁（audit 第 20 道）+ 全部对比度违规修复",
+  "pub_date": "2026-09-26T09:47:38Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1IybCszT0JqQ05SSlh2VWdHcEZXaTVXNFJIK1MwS0lSVk1GejJkUW5ULzRyUmFRdVBERkFGNDNTcmNQWnA2ekMydEQ2a01GMncwZ3JpR3NBV2RKQmd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE0MDkxCWZpbGU6Q29kZW1fMS4xNi4xNjBfeDY0LXNldHVwLmV4ZQpOSVFIRGtjZEgwZStvN3NGUmtUVXF1ZFVDb0VjVlNTdDl1OVhlNCt0bitHZlM2b1JRWittRHdnRDdyeWZ6aGp3MkUwNS9BMWNDczRGMktrLzJSRzBDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.160/Codem_1.16.160_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F5bzRrdFppdWZ4OFZQUEE3QWRjNWVQYVpxSkMrZmoyL0w2VlpPNXIwdGNPbms5Wnp0RVNXdEpHZHVuY0hpcVlZaHdmZUQ2Nlo3Q3d4RTYxOFI5NXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE2MDU3CWZpbGU6Q29kZW1fMS4xNi4xNjFfeDY0LXNldHVwLmV4ZQpxRXpxVTFRSFBFTXF3MUxlZkxNaE1aR1ZwQ1Y4alBDOGFXa1NRTXV6VFUrWkY3cWUwdnozd3Z5NllTNzlqVW13QWVTOHlvQXRtcHRYY1dXYnFiNytCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.161/Codem_1.16.161_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1IybCszT0JqQ05SSlh2VWdHcEZXaTVXNFJIK1MwS0lSVk1GejJkUW5ULzRyUmFRdVBERkFGNDNTcmNQWnA2ekMydEQ2a01GMncwZ3JpR3NBV2RKQmd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE0MDkxCWZpbGU6Q29kZW1fMS4xNi4xNjBfeDY0LXNldHVwLmV4ZQpOSVFIRGtjZEgwZStvN3NGUmtUVXF1ZFVDb0VjVlNTdDl1OVhlNCt0bitHZlM2b1JRWittRHdnRDdyeWZ6aGp3MkUwNS9BMWNDczRGMktrLzJSRzBDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.160/Codem_1.16.160_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2F5bzRrdFppdWZ4OFZQUEE3QWRjNWVQYVpxSkMrZmoyL0w2VlpPNXIwdGNPbms5Wnp0RVNXdEpHZHVuY0hpcVlZaHdmZUQ2Nlo3Q3d4RTYxOFI5NXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE2MDU3CWZpbGU6Q29kZW1fMS4xNi4xNjFfeDY0LXNldHVwLmV4ZQpxRXpxVTFRSFBFTXF3MUxlZkxNaE1aR1ZwQ1Y4alBDOGFXa1NRTXV6VFUrWkY3cWUwdnozd3Z5NllTNzlqVW13QWVTOHlvQXRtcHRYY1dXYnFiNytCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.161/Codem_1.16.161_x64-setup.exe"
     }
   }
 }

@@ -141,6 +141,30 @@ function cssFiles(): string[] {
 const FILES = cssFiles().map((abs) => ({ rel: relative(ROOT, abs).replace(/\\/g, "/"), css: readFileSync(abs, "utf8") }));
 
 describe("CSS 结构完整性（第 52 波）", () => {
+  /**
+   * CSS-INTEGRITY-9：**用真的 CSS 解析器过一遍**（第 161 轮补）。
+   *
+   * 这条是"事后补的"：第 161 轮我用 PowerShell 跑了一段 node -e 做批量替换，
+   * 而 PowerShell 把替换串里的 `$1` 当变量吃掉了 ⇒ `color: var(--error-content)` **丢了分号**。
+   * 结果是：`npm run build`（postcss）报 `Missed semicolon` 直接失败，
+   * 而 `tsc` / `vitest` / `npm run audit` **全绿** —— 本文件上面那些"极简校验"也没抓住它
+   * （它们查的是括号深度与选择器形态，不看声明分隔符）。
+   * 于是这里加一道真解析：**门禁的权威就是构建器用的那个解析器**。
+   */
+  it("CSS-INTEGRITY-9: 全部基础样式表必须能被 postcss 解析（缺分号这类语法错当场红）", async () => {
+    const postcss = (await import("postcss")).default;
+    for (const f of FILES) {
+      if (!/\.css$/.test(f.rel)) continue;
+      let error: string | null = null;
+      try {
+        postcss.parse(f.css, { from: join(ROOT, f.rel) });
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
+      expect(error, `${f.rel} 解析失败（构建器用的就是 postcss，这里红 = npm run build 会失败）：${error}`).toBeNull();
+    }
+  });
+
   it("CSS-INTEGRITY-0: 至少扫到了全部基础样式表（防止 glob 写错导致「空集也通过」）", () => {
     const rels = FILES.map((f) => f.rel);
     for (const expected of [

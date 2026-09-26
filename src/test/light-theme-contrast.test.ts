@@ -892,7 +892,9 @@ describe("DARK-UI 暗色模式观感不变式", () => {
     const base = color(token(darkBlock, "--bg-primary"), "--bg-primary");
     const fails: string[] = [];
     for (const s of ["success", "warning", "error", "info"]) {
-      const fg = colorFollowingAlias(darkBlock, `--${s}-content`);
+      /* 第 161 轮：暗色档的 `-content` 现在是 **color-mix 配方**（往白里混 28%）⇒ 要用认 `color-mix` 的解析器。
+         `colorFollowingAlias` 只认 `var(--x)` 别名，遇到 color-mix 会解析失败 —— 那正是 DARK-UI-9 当时报的错。 */
+      const fg = color(token(darkBlock, `--${s}-content`), `--${s}-content`, darkBlock);
       const status = color(token(darkBlock, `--${s}`), `--${s}`);
       for (const tint of [0.10, 0.15, 0.18, 0.20]) {
         const bg = over([status[0], status[1], status[2], tint], base);

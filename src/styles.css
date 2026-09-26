@@ -268,6 +268,12 @@
      把 transition: all 换成显式列表时这两类必须一起带上，否则悬停会从"渐变"变成"瞬变"。 */
   --transition-shadow: box-shadow var(--duration-fast) var(--ease-out);
   --transition-fade: opacity var(--duration-fast) var(--ease-out);
+  /* 第 161 轮：这两个令牌原先只写在亮色档里 ⇒ **暗色档没有值**（颜色用量门禁报"暗色档解析不了"）。
+     它们本来就是"两档同值"的一族（纯黑底 / 外来内容面），移到基础档。 */
+  --window-close-bg: #e81123;
+  /* 第 161 轮：这两个令牌原先只写在亮色档里 ⇒ **暗色档没有值**（颜色用量门禁报"暗色档解析不了"）。
+     它们本来就是"两档同值"的一族（纯黑底 / 外来内容面），移到基础档。 */
+  --surface-content: #ffffff;
 }
 
 /* ========== Theme Variables ========== */
@@ -367,6 +373,10 @@
      加深到 #5b46cf 后：chip 上 4.80、白底 6.52（门禁 LIGHT-UI-3 会守这一条）。 */
   --accent-strong: #5b46cf;
   --text-on-accent: #ffffff;
+  /* 状态色块上的文字（第 161 轮）：浅色档的四种状态色都是**深色**（#17702f/#8a5c00/#cf222e/#6555e0）
+     ⇒ 白字 5.34–6.19 全过；暗色档反之（#3fb950/#d29922/#f85149/#58a6ff 都是亮色）⇒ 白字只有 2.5–2.8，
+     必须换**深墨水**（实测四色 5.5–8.3）。这一档是门禁「scan-color-roles.mjs」第一次跑就抓出来的。 */
+  --text-on-status: #ffffff;
   /* 输入光标颜色：跟"可见文字"同色。
      第 59 波修复（用户报「默认皮肤暗色下，对话编辑区打字时紫光标在深底上看不清」）：
      原来写成 var(--accent)，暗色主题下 accent 是 #7c6cf0、与输入框背景对比度只有 4.29:1，
@@ -529,7 +539,6 @@
   /* 纯黑底：演示舞台、视频信箱 —— 外来内容假设的黑底 */
   --backdrop-black: #000000;
   /* 外来内容面：iframe 网页底、PPT 幻灯片底（内容本身假设白底） */
-  --surface-content: #ffffff;
   /* 搜索命中高亮（原文/PDF/DOCX 里标出匹配片段）：内容高亮色而不是状态色 */
   --match-highlight: rgb(255 235 59 / 30%);
   --match-highlight-strong: rgb(255 235 59 / 50%);
@@ -541,7 +550,6 @@
   --mac-btn-close: #fe5f57;
   --mac-btn-minimize: #febc2e;
   --mac-btn-maximize: #28c840;
-  --window-close-bg: #e81123;
   /* 皮肤选择器的小色卡：展示每个皮肤的代表色（属于皮肤数据） */
   --skin-preview-default-1: #0d1117;
   --skin-preview-default-2: #161b22;
@@ -598,6 +606,9 @@
      需要**更亮**的一档（#a99bff：chip 上 5.37 / 画布上 8.06）。 */
   --accent-strong: #a99bff;
   --text-on-accent: #ffffff;
+  /* 第 161 轮：暗色档的状态色是**亮色**（#3fb950/#d29922/#f85149/#58a6ff）⇒ 白字只有 2.5–2.8，
+     状态色块上的文字必须换**深墨水**（实测四色 5.5–8.3）。这条是颜色用量门禁第一次跑就抓出来的。 */
+  --text-on-status: #101314;
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
@@ -607,7 +618,9 @@
      是为了让"两档各自的决定"在文件里看得见，而不是靠默认档继承。 */
   --success-content: var(--success);
   --warning-content: var(--warning);
-  --error-content: var(--error);
+  /* 第 161 轮：原来就是原色 —— 实测原色压在 `--bg-hover` 上只有 **4.14:1**（门禁抓出来的），
+     所以暗色档的 error 文字往白里混 28%（灰底上 5.64、内嵌块 6.36、内容面 6.96）。 */
+  --error-content: color-mix(in srgb, var(--error) 72%, #ffffff);
   --info-content: var(--info);
   --chart-cat-1: #58a6ff;
   --chart-cat-2: #d29922;
@@ -1448,9 +1461,9 @@ flex-shrink: 0;
   border-color: var(--glass-border-strong, var(--border-primary));
 }
 .sidebar-add-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--accent-surface);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 .sidebar-project-btn.active {
@@ -1479,7 +1492,7 @@ flex-shrink: 0;
 .sidebar-project-btn.delete:is(:hover, :focus-visible) {
   background: var(--error);
   border-color: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
 }
 
 .sidebar-project-more-wrapper {
@@ -1925,7 +1938,7 @@ font-size: var(--fs-base);
 
 .model-option-tag.free {
   background: var(--success);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
 }
 .model-picker-hint {
   padding: var(--space-4) var(--space-6);
@@ -2038,7 +2051,7 @@ user-select: none;
 .qa-turn-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 
 .empty-state {
@@ -2125,7 +2138,9 @@ user-select: none;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
-  background: var(--surface-content);
+  /* 第 161 轮：原来用 `--surface-content` —— 那个令牌**恒为白**（它是给外来内容/iframe 的底），
+     于是暗色档下主题文字（浅色）压在白底上只有 **1.48:1**。这是主题内的提示条，要用主题感知的底色。 */
+  background: var(--bg-tertiary);
   color: var(--text-primary);
   font-size: var(--fs-sm);
   box-shadow: var(--shadow-md);
@@ -2589,7 +2604,7 @@ vertical-align: text-bottom;
 
 .files-cleanup-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
-  color: var(--error);
+  color: var(--error-content);
 }
 
 .files-confirm {
@@ -2626,7 +2641,7 @@ vertical-align: text-bottom;
   background: var(--error);
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
   cursor: pointer;
   font-size: var(--fs-sm);
 }
@@ -3778,7 +3793,7 @@ min-height: 0;
 
 .terminal-tab-new:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .terminal-stop-btn {
@@ -4066,7 +4081,7 @@ min-height: 0;
 }
 
 .needs-you-option.selected {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--info-surface);
 }
 
@@ -4124,7 +4139,7 @@ min-height: 0;
 
 .workbench-view-tab.active {
   background: var(--bg-tertiary);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
@@ -4835,7 +4850,7 @@ color: var(--text-primary);
 
 .confirm-btn.danger {
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
 }
 
 .confirm-btn.danger:is(:hover, :focus-visible) {
@@ -5378,7 +5393,7 @@ pointer-events: auto;
 
 .step-tooltip-badge {
   font-size: var(--fs-xs);
-color: var(--accent);
+color: var(--accent-strong);
 background: var(--accent-surface-strong);
   padding: 1px var(--space-3);
   border-radius: var(--radius);
@@ -6046,7 +6061,7 @@ background: var(--accent-surface-strong);
 
 .permission-btn.allow-always {
   background: var(--success);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
 }
 
 .permission-btn.allow-always:is(:hover, :focus-visible) {
@@ -6374,7 +6389,7 @@ background: var(--accent-surface-strong);
 
 .mcp-action-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 
 .mcp-server-status-icon {
@@ -8200,7 +8215,7 @@ color: var(--text-on-accent);
 .memory-delete-btn {
   padding: var(--space-3) var(--space-7);
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -8246,7 +8261,7 @@ color: var(--text-on-accent);
 
 .memory-action-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 
 .memory-action-label {
@@ -8337,7 +8352,7 @@ color: var(--text-on-accent);
 .memory-save-btn {
   padding: var(--space-3) var(--space-8);
   background: var(--success);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -8503,7 +8518,7 @@ color: var(--text-on-accent);
 
 .context-compact-btn:hover:not(:disabled) {
   background: var(--bg-tertiary);
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 
 .context-compact-btn:disabled {
@@ -9529,7 +9544,7 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-base);
   cursor: pointer;
 }
-.perf-dialog-btn.is-danger { border: none; background: var(--error); color: var(--text-on-accent); }
+.perf-dialog-btn.is-danger { border: none; background: var(--error); color: var(--text-on-status); }
 .perf-dialog-btn.is-danger:is(:hover, :focus-visible) { background: var(--error-hover); }
 
 .perf-tab-btn {
@@ -9675,7 +9690,7 @@ border-bottom: 1px solid var(--accent);
   word-break: break-all;
   border-radius: var(--radius);
   background: var(--bg-hover);
-  color: var(--error);
+  color: var(--error-content);
   font-size: var(--fs-sm);
 }
 .pm-retry-btn {
@@ -9787,8 +9802,8 @@ border-bottom: 1px solid var(--accent);
 }
 .plugin-mgr-dialog-item-name { font-weight: var(--weight-medium); }
 .plugin-mgr-dialog-actions { display: flex; gap: var(--space-4); justify-content: flex-end; }
-.plugin-mgr-confirm-btn.is-danger { background: var(--error); border: none; color: var(--text-on-accent); }
-.plugin-mgr-confirm-btn.is-warn { background: var(--warning); border: none; color: var(--text-on-accent); }
+.plugin-mgr-confirm-btn.is-danger { background: var(--error); border: none; color: var(--text-on-status); }
+.plugin-mgr-confirm-btn.is-warn { background: var(--warning); border: none; color: var(--text-on-status); }
 
 .plugin-mgr-tabs {
   display: flex;
@@ -9882,7 +9897,7 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-sm);
   cursor: pointer;
 }
-.tj-filter-item.is-active { background: var(--accent-surface); color: var(--accent); }
+.tj-filter-item.is-active { background: var(--accent-surface); color: var(--accent-strong); }
 
 .tj-stats {
   display: flex;
@@ -10908,7 +10923,7 @@ border-bottom: 1px solid var(--accent);
 
 .tool-call-status.running {
   background: var(--info-surface);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .tool-call-status.done {
@@ -11230,7 +11245,7 @@ border-bottom: 1px solid var(--accent);
 .diff-custom-textarea { width: 100%; padding: var(--space-4) var(--space-5); font-size: 13px; font-family: inherit; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-sm); resize: vertical; min-height: 50px; }
 .diff-custom-textarea:focus { border-color: var(--accent); }
 .diff-custom-actions { display: flex; gap: var(--space-4); }
-.diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--info-surface-strong); color: var(--accent); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--info-surface-strong); color: var(--accent-strong); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-submit-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--info) 35%, transparent); }
 .diff-custom-submit-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 .diff-custom-cancel-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
@@ -11667,7 +11682,7 @@ min-height: 36px;
 .collapse-btn {
   padding: var(--space-2) var(--space-8);
   font-size: var(--fs-base);
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-full);
@@ -11826,7 +11841,9 @@ border-color: var(--text-muted);
   border: 1px solid var(--border-secondary);
   border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
-  color: var(--text-secondary);
+  /* 第 161 轮：原来用 --text-secondary，压在 15% 品牌浅底上实测 **5.99:1**（差一点点没到 6 的下限）。
+     这是"引用上下文"横幅，属于要读清的内容 ⇒ 换正文色（≈13:1）。 */
+  color: var(--text-primary);
 }
 .quote-context-icon {
   flex-shrink: 0;
@@ -11984,7 +12001,7 @@ border-color: var(--text-muted);
   border-radius: var(--radius);
   border: none;
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
   font-size: var(--fs-md);
   font-weight: 500;
   cursor: pointer;
@@ -12321,7 +12338,7 @@ border-color: var(--text-muted);
   min-height: 120px;
 }
 .notebook-card:is(:hover, :focus-visible) {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--bg-hover);
 }
 
@@ -12655,7 +12672,7 @@ border-color: var(--text-muted);
   transition: border-color var(--duration-fast), background var(--duration-fast);
 }
 .notebook-question-item:is(:hover, :focus-visible) {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--bg-hover);
 }
 
@@ -13616,7 +13633,7 @@ html.pet-window-mode body,
 /* ========== P1 #6: Unread message badge ========== */
 .session-unread-badge {
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
   font-size: var(--fs-xs);
   font-weight: 700;
   min-width: 18px;
@@ -16456,8 +16473,8 @@ color: var(--accent, #7c6cf0);
 }
 .titlebar-add-tab:is(:hover, :focus-visible) {
   border-style: solid;
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
   background: var(--accent-surface);
 }
 
@@ -16660,8 +16677,8 @@ color: var(--accent, #7c6cf0);
 }
 .snapshot-diff-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
 }
 
 /* Diff 视图：split 与 unified 是对称的两种钩子（.diff-split 已有分栏边框） */
@@ -16806,7 +16823,7 @@ color: var(--accent, #7c6cf0);
 .plugin-manager button:is(:hover, :focus-visible),
 .cordis-panel button:is(:hover, :focus-visible) {
   background: var(--bg-hover);
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   color: var(--text-primary);
 }
 
@@ -17289,7 +17306,10 @@ color: var(--accent, #7c6cf0);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-full);
   background: var(--bg-hover);
-  color: var(--text-on-accent);
+  /* 第 161 轮：这里原来有一条 `color: var(--text-on-accent)`（白字），但整条规则里**没有任何地方**用
+     currentColor（滑块用的是 --surface-content 实色）⇒ 它是一句**死声明**。
+     颜色用量门禁按"角色 × 表面"配对算对比度，于是"白字压浅灰底"被判成 1.16:1。
+     处置不是"把这个配对登记掉"，而是删掉它 —— 它本来就不该在。 */
   cursor: pointer;
   transition: background var(--duration-normal), border-color var(--duration-normal);
 }
@@ -17423,7 +17443,7 @@ input[type="range"].sp-flex-fill {
   background: var(--bg-tertiary);
 }
 .sp-pet-row.is-active {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-surface-strong);
 }
 .sp-rule-row {
@@ -18147,7 +18167,7 @@ textarea {
       ProjectManager 的 .pm-radio */
 .mode-option:has(input:checked),
 .pm-radio:has(input:checked) {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-surface);
 }
 

@@ -1,0 +1,202 @@
+{
+ "_note": "颜色用量注册表（第 161 轮，audit 第 20 道）。键是 `角色|表面`；未登记的配对会被 --check 拦下。unresolvedBudget 只许降。",
+ "_measuredAt": "2026-09-26T09:41:04.624Z",
+ "unresolvedBudget": 49,
+ "pairs": {
+  "--accent-strong|--accent-muted": {
+   "registeredAt": "2026-09-26"
+  },
+  "--accent-strong|--accent-surface": {
+   "registeredAt": "2026-09-26"
+  },
+  "--accent-strong|--accent-surface-strong": {
+   "registeredAt": "2026-09-26"
+  },
+  "--accent-strong|--bg-hover": {
+   "registeredAt": "2026-09-26"
+  },
+  "--accent-strong|--bg-tertiary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--accent-strong|--info-surface": {
+   "registeredAt": "2026-09-26"
+  },
+  "--accent-strong|--info-surface-strong": {
+   "registeredAt": "2026-09-26"
+  },
+  "--accent-strong|--surface-1": {
+   "registeredAt": "2026-09-26"
+  },
+  "--error-content|--bg-hover": {
+   "registeredAt": "2026-09-26"
+  },
+  "--error-content|--error-surface-strong": {
+   "registeredAt": "2026-09-26"
+  },
+  "--error|--error-surface": {
+   "registeredAt": "2026-09-26"
+  },
+  "--info-content|--info-surface-strong": {
+   "registeredAt": "2026-09-26"
+  },
+  "--info|--info-surface": {
+   "registeredAt": "2026-09-26"
+  },
+  "--success-content|--success-surface-strong": {
+   "registeredAt": "2026-09-26"
+  },
+  "--success|--success-surface": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-muted|--bg-primary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-muted|--bg-secondary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-muted|--bg-tertiary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-muted|--surface-1": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-on-accent|--accent": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-on-accent|--window-close-bg": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-on-status|--error": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-on-status|--success": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-on-status|--warning": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--accent-muted": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--bg-hover": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--bg-primary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--bg-secondary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--bg-tertiary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--error-surface": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--glass-bg-strong": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--input-bg": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--message-bubble-user": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--rich-table-header-bg": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--surface-1": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--surface-2": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-primary|--surface-hover": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--accent-surface": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--bg-hover": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--bg-primary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--bg-secondary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--bg-tertiary": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--rich-code-bg": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--rich-code-header-bg": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--run-bar-bg": {
+   "registeredAt": "2026-09-26"
+  },
+  "--text-secondary|--surface-1": {
+   "registeredAt": "2026-09-26"
+  },
+  "--warning-content|--warning-surface-strong": {
+   "registeredAt": "2026-09-26"
+  },
+  "--warning|--warning-surface": {
+   "registeredAt": "2026-09-26"
+  }
+ },
+ "unresolved": [
+  "--accent|color-mix(in srgb, var(--accent) 10%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|color-mix(in srgb, var(--accent) 12%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|color-mix(in srgb, var(--accent) 13%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|color-mix(in srgb, var(--accent) 20%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|color-mix(in srgb, var(--accent) 5%, transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|color-mix(in srgb, var(--info) 15%, transparent)|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|none|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|var(--accent-soft, rgba(108, 92, 231, 0.15))|底色不是单个令牌（渐变/字面量/多层）",
+  "--accent|var(--accent-soft, rgba(124,58,237,0.08))|底色不是单个令牌（渐变/字面量/多层）",
+  "--error|color-mix(in srgb, var(--error) 12%, transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--error|color-mix(in srgb, var(--error) 15%, transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--error|color-mix(in srgb, var(--error) 5%, transparent)|底色不是单个令牌（渐变/字面量/多层）",
+  "--error|color-mix(in srgb, var(--error) 8%, transparent)|底色不是单个令牌（渐变/字面量/多层）",
+  "--error|none|底色不是单个令牌（渐变/字面量/多层）",
+  "--error|transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--error|var(--error)10|底色不是单个令牌（渐变/字面量/多层）",
+  "--info|color-mix(in srgb, var(--info) 15%, transparent)|底色不是单个令牌（渐变/字面量/多层）",
+  "--info|color-mix(in srgb, var(--info) 8%, transparent)|底色不是单个令牌（渐变/字面量/多层）",
+  "--success|color-mix(in srgb, var(--success) 12%, transpare|底色不是单个令牌（渐变/字面量/多层）",
+  "--success|color-mix(in srgb, var(--success) 15%, transpare|底色不是单个令牌（渐变/字面量/多层）",
+  "--success|color-mix(in srgb, var(--success) 18%, transpare|底色不是单个令牌（渐变/字面量/多层）",
+  "--success|color-mix(in srgb, var(--success) 8%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-muted|none|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-muted|transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-on-accent|--overlay-backdrop|遮罩/背景层：底色取决于盖住的内容，算不出固定对比度",
+  "--text-on-accent|color-mix(in srgb, var(--success) 80%, transpare|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-on-accent|linear-gradient(135deg, var(--accent), var(--acc|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-on-accent|none|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-on-accent|var(--accent, #7c6cf0)|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|color-mix(in srgb, var(--accent) 14%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|color-mix(in srgb, var(--accent) 32%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|color-mix(in srgb, var(--accent, #7c6cf0) 12%, t|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|color-mix(in srgb, var(--accent, #7c6cf0) 18%, v|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|color-mix(in srgb, var(--bg-primary) 70%, transp|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|color-mix(in srgb, var(--success) 5%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|none|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|var(--bg-hover, rgba(255,255,255,0.06))|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-primary|var(--surface-hover, var(--bg-hover))|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-secondary|color-mix(in srgb, var(--bg-secondary) 90%, tran|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-secondary|color-mix(in srgb, var(--error) 5%, transparent)|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-secondary|color-mix(in srgb, var(--success) 8%, transparen|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-secondary|none|底色不是单个令牌（渐变/字面量/多层）",
+  "--text-secondary|transparent|底色不是单个令牌（渐变/字面量/多层）",
+  "--warning|color-mix(in srgb, var(--warning) 13%, transpare|底色不是单个令牌（渐变/字面量/多层）",
+  "--warning|color-mix(in srgb, var(--warning) 14%, transpare|底色不是单个令牌（渐变/字面量/多层）",
+  "--warning|color-mix(in srgb, var(--warning) 15%, transpare|底色不是单个令牌（渐变/字面量/多层）",
+  "--warning|color-mix(in srgb, var(--warning) 8%, transparen|底色不是单个令牌（渐变/字面量/多层）"
+ ]
+}

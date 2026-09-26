@@ -397,7 +397,7 @@
   border-radius: var(--radius-sm);
   font-size: 0.88em;
   font-family: var(--font-mono);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* Simple inline term — single words/short phrases without code-box styling */
@@ -1214,7 +1214,7 @@
 }
 .decision-tray-btn.approve {
   background: var(--success);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
 }
 .decision-tray-btn.approve:is(:hover, :focus-visible) {
   background: var(--success-hover);
@@ -1225,7 +1225,7 @@
 }
 .decision-tray-btn.reject:is(:hover, :focus-visible) {
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
 }
 .decision-tray-btn.submit {
   background: var(--accent);
@@ -1675,8 +1675,8 @@ body.resizing-columns * {
   transition: var(--transition-color);
 }
 .git-branch-new-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  color: var(--accent);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
 }
 .git-branch-create {
   display: flex;
@@ -1921,8 +1921,8 @@ body.resizing-columns * {
   transition: var(--transition-color);
 }
 .space-switcher-new-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  color: var(--accent);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
 }
 
 /* ========== 18. Enhanced Sidebar Rail Mode ========== */
@@ -2546,14 +2546,14 @@ overflow: hidden;
 }
 
 .panel-sidebar-tab:is(:hover, :focus-visible) {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: var(--surface-hover);
 }
 
 .panel-sidebar-tab.active {
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--accent-strong);
   background: var(--bg-tertiary);
 }
 
@@ -2929,7 +2929,7 @@ background: var(--bg-secondary);
 }
 .inline-diff-btn.accept {
   background: var(--success);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
 }
 .inline-diff-btn.accept:is(:hover, :focus-visible) {
   background: var(--success-hover, #27ae60);
@@ -2941,7 +2941,7 @@ background: var(--bg-secondary);
 }
 .inline-diff-btn.reject:is(:hover, :focus-visible) {
   background: var(--error);
-  color: var(--text-on-accent);
+  color: var(--text-on-status);
   border-color: var(--error);
 }
 .inline-diff-btn.accept-all {
