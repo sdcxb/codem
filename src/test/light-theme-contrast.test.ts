@@ -99,6 +99,50 @@ const mixWithTransparent = (
   return { base: base!, alpha: Number(m![2]) / 100 };
 };
 
+/**
+ * **玻璃的最坏情况可读性**（第 157 轮新增，LIGHT-UI-10 / DARK-UI-6 的真正判据）。
+ *
+ * 玻璃是半透明的 ⇒ 侧栏上的文字实际压在「场景层最坏像素 + 玻璃」的合成上。
+ * 这里把四件事都算出来：
+ *   场景底两个端点（`--bg-secondary` / `--bg-primary`）× 两种最强着色（`--scene-veil` / `--scene-veil-alt`）
+ *   → 得到 4 个最坏场景像素 → 每个都叠上玻璃 α 的 `--sidebar-bg` → 在合成上量三档文字的对比度。
+ * 门槛取深浅两档既有门禁里更严的那一档：主 ≥10、次 ≥6、弱 ≥4.5。
+ */
+const worstGlassCase = (block: string, theme: string) => {
+  const glass = mixWithTransparent(token(block, "--surface-glass-chrome"), "--surface-glass-chrome", block);
+  const veils = ["--scene-veil", "--scene-veil-alt"].map((n) => mixWithTransparent(token(block, n), n, block));
+  const bases = ["--bg-secondary", "--bg-primary"].map((n) => color(token(block, n), n));
+  const texts: Array<[string, string, number]> = [
+    ["正文", "--text-primary", 10],
+    ["次级", "--text-secondary", 6],
+    ["弱级", "--text-muted", 4.5],
+  ];
+  const failures: string[] = [];
+  const samples: string[] = [];
+  for (const base of bases) {
+    for (const veil of veils) {
+      const scene = over([veil.base[0], veil.base[1], veil.base[2], veil.alpha], base);
+      const composite = over([glass.base[0], glass.base[1], glass.base[2], glass.alpha], scene);
+      for (const [label, tok, floor] of texts) {
+        const r = contrast(color(token(block, tok), tok), composite);
+        if (r < floor) {
+          failures.push(`${theme} ${label}在「场景 ${tok} 之上」只有 ${r.toFixed(2)}:1（需 ≥${floor}）`);
+        }
+      }
+      samples.push(`L=${lum(composite).toFixed(4)}`);
+    }
+  }
+  return { failures, samples, alpha: glass.alpha };
+};
+
+/** `--x: var(--y)` 这种**别名**要跟着解析一层（暗色档的 `-content` 就是原色的别名） */
+const colorFollowingAlias = (block: string, name: string, depth = 0): [number, number, number, number] => {
+  const raw = need(token(block, name), name);
+  const alias = /^var\((--[\w-]+)\)$/.exec(raw.trim());
+  if (alias && depth < 4) return colorFollowingAlias(block, alias[1], depth + 1);
+  return color(raw, name);
+};
+
 describe("LIGHT-UI 亮色模式观感不变式", () => {
   it("LIGHT-UI-0（前提）：解析到了亮色档令牌块，且能读出关键令牌", () => {
     expect(lightBlock.length, "styles.css 的亮色档块没解析到").toBeGreaterThan(200);
@@ -493,14 +537,34 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
    * 并且第一行永远是**先给不透明底**、再由 `@supports` 覆盖成玻璃。
    *
    * 为什么这条必须有门禁：玻璃的"好看"是模糊给的，而**可读性是底色不透明度给的** ——
-   * 低于这两个数，压着侧栏/菜单的文字对比度就会随背后的内容（图片、代码块）变化而不可控，
-   * 而"背后恰好有深色内容"这件事在真实会话里天天发生。这条守的是"别为了更好看把透明度调过头"。
+   * 透明度调过头，压着侧栏/菜单的文字对比度就会随背后的东西变化而不可控。
+   *
+   * ⚠️ **第 157 轮改口径（有实测依据，不是为了让改动变绿）**：上一版把判据写成"α ≥ 90%/94%"，
+   * 那是**从参考实现抄来的代理指标**。用户实测反馈「侧栏还是没有玻璃材质的效果」，查下去发现真因是
+   * **背后没有东西可透**（侧栏是 flex 里的一列，身后只有 `.app` 的纯色底 ⇒ 90% 压纯色 = 实色），
+   * 于是这一轮加了**有界的场景层**并把 α 降到 72%。此时"α ≥ 90%"这条代理指标就挡住正确做法了，
+   * 所以把它换成**它本来想守的那个东西**：
+   *   ① α 只留一条下限（≥0.6，纯防"透明到看不清"）；
+   *   ② **真正判据**：把弱/次/主三档文字放在「场景层最坏像素 + 玻璃」的**合成**上量对比度
+   *      （≥4.5 / ≥6 / ≥10）—— 这比"α 下限"严格得多：它直接算最坏情况的真实可读性；
+   *   ③ 口径与写入点对齐：`--scene-layer` 必须**引用** `--scene-veil`/`--scene-veil-alt`
+   *      （防止"声明一套着色、画另一套"）。
    */
-  it("LIGHT-UI-10：玻璃面不透明度不低于下限（侧栏 ≥90%、浮层 ≥94%），且有不透明回退面", () => {
+  it("LIGHT-UI-10：玻璃 α 有下限 + 最坏场景合成上文字仍达标，且有不透明回退面", () => {
     const chrome = mixWithTransparent(token(lightBlock, "--surface-glass-chrome"), "--surface-glass-chrome", lightBlock);
     const raised = mixWithTransparent(token(lightBlock, "--surface-glass-raised"), "--surface-glass-raised", lightBlock);
-    expect(chrome.alpha, `侧栏玻璃 ${(chrome.alpha * 100).toFixed(0)}%（参考实现 sidebar-glass 是 90%）`).toBeGreaterThanOrEqual(0.9);
-    expect(raised.alpha, `浮层玻璃 ${(raised.alpha * 100).toFixed(0)}%（参考实现 floating 是 94%）`).toBeGreaterThanOrEqual(0.94);
+    expect(chrome.alpha, `侧栏玻璃 ${(chrome.alpha * 100).toFixed(0)}% 低于硬下限 60%`).toBeGreaterThanOrEqual(0.6);
+    expect(raised.alpha, `浮层玻璃 ${(raised.alpha * 100).toFixed(0)}% 低于硬下限 60%`).toBeGreaterThanOrEqual(0.6);
+    /* 浮层是**压在真实内容上**的（聊天正文、代码块），所以它还额外守一条：94% 上下 —— 
+       低于这个数，菜单后面的正文会透得影响阅读。侧栏压的是我们自己画的场景层，不受这条约束。 */
+    expect(raised.alpha, `浮层玻璃 ${(raised.alpha * 100).toFixed(0)}% 太低：菜单后面是真实内容，不是场景层`).toBeGreaterThanOrEqual(0.9);
+    /* ② 最坏场景合成上的真实对比度 */
+    const worst = worstGlassCase(lightBlock, "light");
+    expect(worst.failures, `玻璃+场景的最坏合成上这些文字不达标：\n  - ${worst.failures.join("\n  - ")}`).toEqual([]);
+    /* ③ 场景层必须引用声明的着色令牌 */
+    const layer = need(token(lightBlock, "--scene-layer"), "--scene-layer");
+    expect(layer, "--scene-layer 必须引用 var(--scene-veil)（声明的着色就是画出来的着色）").toContain("var(--scene-veil)");
+    expect(layer, "--scene-layer 必须引用 var(--scene-veil-alt)").toContain("var(--scene-veil-alt)");
     /* 回退面必须**真的不透明**：`prefers-reduced-transparency` / `prefers-contrast: more` /
        `[data-contrast="high"]` 三种情况都落到它身上（styles.css 末尾"玻璃表面"一节）。 */
     const opaque = color(token(lightBlock, "--surface-opaque-raised"), "--surface-opaque-raised");
@@ -535,8 +599,7 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
    * **暗色档方向相反且最小成立值是 13%**（10% 时在画布上合成 `#262727`，比悬停 `#2a2d2d` 还暗 ⇒ 方向反了）。
    * 所以两档不能是同一个数，这条门禁就是钉住"别把暗色抄浅色"。
    */
-  it("LIGHT-UI-11：按下态比悬停态更暗（三个面上都成立），且差别看得出来", () => {
-    const hover = color(token(lightBlock, "--bg-hover"), "--bg-hover");
+  it("LIGHT-UI-11：按下态比悬停态更暗（三个面上都成立），且差别看得出来", () => {    const hover = color(token(lightBlock, "--bg-hover"), "--bg-hover");
     const pressed = color(token(lightBlock, "--surface-pressed"), "--surface-pressed");
     const fails: string[] = [];
     for (const name of ["--bg-primary", "--bg-secondary", "--bg-tertiary"]) {
@@ -547,6 +610,35 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
       else if (r < 1.03) fails.push(`${name} 上只差 ${r.toFixed(3)}（<1.03，按下去看不出来）`);
     }
     expect(fails, `按下态在以下面不成立（按下必须比悬停更"陷进去"）：\n  - ${fails.join("\n  - ")}`).toEqual([]);
+  });
+
+  /**
+   * LIGHT-UI-12（第 157 轮 P1-4）：**状态色文字压在同色浅底上必须 ≥4.5:1**。
+   *
+   * 这是本轮的实测发现：全项目 57 处"状态色文字 + 同色浅底"的组合里，15%/18%/20% 那几档
+   * 在浅色档低于 4.5（error 在 20% 上 **3.87**、info 4.04、warning 4.37），而它们都是 12px 小标签。
+   * 修法不是"把浅底调淡"（那会丢掉状态色的存在感），而是给文字一档 `-content`（往 `--text-primary` 压深 86%）。
+   * 门禁把**四档浅底**（10/15/18/20%）都量一遍 —— 这几档就是站内真实用到的全部强度。
+   */
+  it("LIGHT-UI-12：状态色 -content 在四档自色浅底上都 ≥4.5:1（压深没白压）", () => {
+    const fails: string[] = [];
+    for (const s of ["success", "warning", "error", "info"]) {
+      const content = token(lightBlock, `--${s}-content`);
+      /* `-content` 是 color-mix(状态色 N%, --text-primary) ⇒ 用同一个混合公式在测试里还原 */
+      const m = /color-mix\(in srgb,\s*var\(--([\w-]+)\)\s*([\d.]+)%,\s*var\(--([\w-]+)\)\)/.exec(content ?? "");
+      expect(m, `--${s}-content 应是从状态色往 --text-primary 压深的 color-mix：${content}`).toBeTruthy();
+      const status = color(token(lightBlock, `--${m![1]}`), `--${m![1]}`);
+      const ink = color(token(lightBlock, `--${m![3]}`), `--${m![3]}`);
+      const pct = Number(m![2]) / 100;
+      const fg = status.slice(0, 3).map((v, i) => v * pct + ink[i] * (1 - pct)).concat(1);
+      const base = color(token(lightBlock, "--bg-primary"), "--bg-primary");
+      for (const tint of [0.10, 0.15, 0.18, 0.20]) {
+        const bg = over([status[0], status[1], status[2], tint], base);
+        const r = contrast(fg, bg);
+        if (r < 4.5) fails.push(`${s}-content 在自身 ${(tint * 100).toFixed(0)}% 浅底上只有 ${r.toFixed(2)}:1`);
+      }
+    }
+    expect(fails, `状态色文字在自色浅底上不达标（原色在 20% 上只有 3.87，这一档就是为此加的）：\n  - ${fails.join("\n  - ")}`).toEqual([]);
   });
 });
 
@@ -650,19 +742,43 @@ describe("DARK-UI 暗色模式观感不变式", () => {
     expect(strong, `暗色 --accent-strong 在品牌浅底上只有 ${strong.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
   });
 
-  /** DARK-UI-6：与 LIGHT-UI-10 同标准 —— 玻璃不透明度下限不因主题而放宽。 */
-  it("DARK-UI-6：暗色玻璃面同样不低于下限（侧栏 ≥90%、浮层 ≥94%），回退面不透明", () => {
+  /** DARK-UI-6：与 LIGHT-UI-10 同口径（第 157 轮起是"最坏场景合成上量对比度"，不再是抄来的 α 下限）。 */
+  it("DARK-UI-6：暗色玻璃 α 有下限 + 最坏场景合成上文字仍达标，回退面不透明", () => {
     const chrome = mixWithTransparent(token(darkBlock, "--surface-glass-chrome"), "--surface-glass-chrome", darkBlock);
     const raised = mixWithTransparent(token(darkBlock, "--surface-glass-raised"), "--surface-glass-raised", darkBlock);
-    expect(chrome.alpha, `暗色侧栏玻璃 ${(chrome.alpha * 100).toFixed(0)}%`).toBeGreaterThanOrEqual(0.9);
-    expect(raised.alpha, `暗色浮层玻璃 ${(raised.alpha * 100).toFixed(0)}%`).toBeGreaterThanOrEqual(0.94);
+    expect(chrome.alpha, `暗色侧栏玻璃 ${(chrome.alpha * 100).toFixed(0)}% 低于硬下限 60%`).toBeGreaterThanOrEqual(0.6);
+    expect(raised.alpha, `暗色浮层玻璃 ${(raised.alpha * 100).toFixed(0)}% 太低：菜单后面是真实内容`).toBeGreaterThanOrEqual(0.9);
+    const worst = worstGlassCase(darkBlock, "暗色");
+    expect(worst.failures, `暗色玻璃+场景的最坏合成上这些文字不达标：\n  - ${worst.failures.join("\n  - ")}`).toEqual([]);
+    const layer = need(token(darkBlock, "--scene-layer"), "--scene-layer");
+    expect(layer, "--scene-layer 必须引用 var(--scene-veil)").toContain("var(--scene-veil)");
+    expect(layer, "--scene-layer 必须引用 var(--scene-veil-alt)").toContain("var(--scene-veil-alt)");
     expect(color(token(darkBlock, "--surface-opaque-raised"), "--surface-opaque-raised")[3]).toBe(1);
     expect(need(token(darkBlock, "--dropdown-bg"), "--dropdown-bg")).toBe("var(--surface-glass-raised)");
   });
 
+  /**
+   * DARK-UI-9（第 157 轮 P1-4）：暗色档的状态色文字在自色浅底上也必须 ≥4.5:1。
+   * 实测暗色**原色**本来就过（10/15/18/20% 上 5.21–6.66），所以暗色档 `-content` = 原色；
+   * 这条门禁守的是"以后有人为了好看把状态色调淡"。
+   */
+  it("DARK-UI-9：暗色状态色 -content 在四档自色浅底上都 ≥4.5:1", () => {
+    const base = color(token(darkBlock, "--bg-primary"), "--bg-primary");
+    const fails: string[] = [];
+    for (const s of ["success", "warning", "error", "info"]) {
+      const fg = colorFollowingAlias(darkBlock, `--${s}-content`);
+      const status = color(token(darkBlock, `--${s}`), `--${s}`);
+      for (const tint of [0.10, 0.15, 0.18, 0.20]) {
+        const bg = over([status[0], status[1], status[2], tint], base);
+        const r = contrast(fg, bg);
+        if (r < 4.5) fails.push(`${s}-content 在自身 ${(tint * 100).toFixed(0)}% 浅底上只有 ${r.toFixed(2)}:1`);
+      }
+    }
+    expect(fails, `暗色状态色文字在自色浅底上不达标：\n  - ${fails.join("\n  - ")}`).toEqual([]);
+  });
+
   /** DARK-UI-7：按下态的方向在暗色档**是反的**（朝画布的反方向 = 更亮），且下限也不同（14%，不是 10%）。 */
-  it("DARK-UI-7：暗色按下态比悬停态更亮（三个面上都成立），且 α 不小于实测的 13%", () => {
-    const hover = color(token(darkBlock, "--bg-hover"), "--bg-hover");
+  it("DARK-UI-7：暗色按下态比悬停态更亮（三个面上都成立），且 α 不小于实测的 13%", () => {    const hover = color(token(darkBlock, "--bg-hover"), "--bg-hover");
     const pressedRaw = need(token(darkBlock, "--surface-pressed"), "--surface-pressed");
     const pressed = color(pressedRaw, "--surface-pressed");
     /* 暗色按下态必须是**白**的低 alpha 叠加：如果哪天有人把浅色档的 `rgb(31 31 30 / 10%)` 抄过来，

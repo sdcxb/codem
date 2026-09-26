@@ -625,7 +625,8 @@
     "width": "36px"
   },
   "app": {
-    "background": "var(--bg-primary)",
+    "background-color": "var(--bg-primary)",
+    "background-image": "var(--scene-layer)",
     "display": "flex",
     "flex-direction": "column",
     "height": "100dvh",
@@ -894,7 +895,7 @@
   },
   "badge-danger": {
     "background": "color-mix(in srgb, var(--error) 15%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "border": "1px solid var(--error-border)",
     "color": "var(--error)"
   },
   "badge-default": {
@@ -904,7 +905,7 @@
   },
   "badge-info": {
     "background": "color-mix(in srgb, var(--info) 15%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--info) 30%, transparent)",
+    "border": "1px solid var(--info-border)",
     "color": "var(--info)"
   },
   "badge-muted": {
@@ -914,12 +915,12 @@
   },
   "badge-success": {
     "background": "color-mix(in srgb, var(--success) 15%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--success) 30%, transparent)",
+    "border": "1px solid var(--success-border)",
     "color": "var(--success)"
   },
   "badge-warning": {
     "background": "color-mix(in srgb, var(--warning) 15%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+    "border": "1px solid var(--warning-border)",
     "color": "var(--warning)"
   },
   "boot-splash": {
@@ -2365,8 +2366,8 @@
   "connection-lost-banner": {
     "align-items": "center",
     "animation": "connection-banner-slide-in 0.3s ease-out",
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border-bottom": "1px solid color-mix(in srgb, var(--error) 20%, transparent)",
+    "background": "var(--error-surface)",
+    "border-bottom": "1px solid var(--error-surface-strong)",
     "color": "var(--error, #ef4444)",
     "display": "grid",
     "font-size": "var(--fs-sm)",
@@ -2664,8 +2665,8 @@
     "font-size": "var(--fs-2xs)"
   },
   "context-pressure-warning": {
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 20%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-surface-strong)",
     "border-radius": "var(--radius-sm)",
     "color": "var(--error)",
     "font-size": "var(--fs-2xs)",
@@ -3108,10 +3109,10 @@
     "margin": "0"
   },
   "diff-accept-btn": {
-    "background": "color-mix(in srgb, var(--success) 20%, transparent)",
+    "background": "var(--success-surface-strong)",
     "border": "none",
     "border-radius": "var(--radius-sm)",
-    "color": "var(--success)",
+    "color": "var(--success-content)",
     "cursor": "pointer",
     "font-size": "13px",
     "font-weight": "600",
@@ -3194,7 +3195,7 @@
     "padding": "var(--space-6) var(--space-8)"
   },
   "diff-custom-submit-btn": {
-    "background": "color-mix(in srgb, var(--info) 20%, transparent)",
+    "background": "var(--info-surface-strong)",
     "border": "none",
     "border-radius": "var(--radius-sm)",
     "color": "var(--accent)",
@@ -3341,14 +3342,14 @@
     "font-size": "11px"
   },
   "diff-preview-new": {
-    "border": "1px solid color-mix(in srgb, var(--success) 30%, transparent)"
+    "border": "1px solid var(--success-border)"
   },
   "diff-preview-new-file": {
     "padding": "var(--space-6)",
     "text-align": "center"
   },
   "diff-preview-old": {
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)"
+    "border": "1px solid var(--error-border)"
   },
   "diff-preview-section": {
     "border-radius": "var(--radius-sm)",
@@ -3677,7 +3678,7 @@
   },
   "error-card": {
     "background": "color-mix(in srgb, var(--error) 8%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "border": "1px solid var(--error-border)",
     "border-radius": "var(--radius)",
     "margin": "var(--space-4) 0",
     "padding": "var(--space-6)"
@@ -4819,8 +4820,8 @@
     "justify-content": "space-between"
   },
   "git-status-added": {
-    "background": "color-mix(in srgb, var(--success) 20%, transparent)",
-    "color": "var(--success)"
+    "background": "var(--success-surface-strong)",
+    "color": "var(--success-content)"
   },
   "git-status-badge": {
     "border-radius": "var(--radius-sm)",
@@ -4831,20 +4832,20 @@
     "padding": "1px var(--space-2)"
   },
   "git-status-deleted": {
-    "background": "color-mix(in srgb, var(--error) 20%, transparent)",
-    "color": "var(--error)"
+    "background": "var(--error-surface-strong)",
+    "color": "var(--error-content)"
   },
   "git-status-modified": {
-    "background": "color-mix(in srgb, var(--warning) 20%, transparent)",
-    "color": "var(--warning)"
+    "background": "var(--warning-surface-strong)",
+    "color": "var(--warning-content)"
   },
   "git-status-renamed": {
     "background": "color-mix(in srgb, var(--accent) 20%, transparent)",
     "color": "var(--accent)"
   },
   "git-status-untracked": {
-    "background": "color-mix(in srgb, var(--info) 20%, transparent)",
-    "color": "var(--info)"
+    "background": "var(--info-surface-strong)",
+    "color": "var(--info-content)"
   },
   "github-clone-input": {
     "background": "var(--input-bg)",
@@ -6821,8 +6822,8 @@
     "margin-bottom": "var(--space-6)"
   },
   "mcp-json-error": {
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-border)",
     "border-radius": "var(--radius-sm)",
     "color": "var(--error)",
     "font-size": "var(--fs-sm)",
@@ -7428,8 +7429,8 @@
     "padding": "var(--space-8)"
   },
   "mermaid-error": {
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-border)",
     "border-radius": "var(--radius-sm)",
     "color": "var(--error)",
     "font-size": "var(--fs-sm)",
@@ -7681,7 +7682,7 @@
   },
   "mm-note": {
     "background": "color-mix(in srgb, var(--success) 8%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--success) 20%, transparent)",
+    "border": "1px solid var(--success-surface-strong)",
     "border-radius": "var(--radius)",
     "color": "var(--text-secondary)",
     "font-size": "var(--fs-sm)",
@@ -11011,8 +11012,8 @@
     "color": "var(--text-on-accent)"
   },
   "petm-btn--uninstall": {
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-border)",
     "color": "var(--error)"
   },
   "petm-card": {
@@ -12100,7 +12101,7 @@
   },
   "ppt-studio-error": {
     "background": "color-mix(in srgb, var(--error) 15%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "border": "1px solid var(--error-border)",
     "border-radius": "var(--radius)",
     "color": "var(--error)",
     "font-size": "var(--fs-sm)",
@@ -12722,7 +12723,7 @@
     "text-align": "left"
   },
   "publish-market-unavailable": {
-    "background": "color-mix(in srgb, var(--warning) 10%, transparent)",
+    "background": "var(--warning-surface)",
     "border-radius": "var(--radius-sm)",
     "color": "var(--warning)",
     "font-size": "var(--fs-2xs)",
@@ -12754,7 +12755,7 @@
   },
   "publish-warning": {
     "background": "color-mix(in srgb, var(--warning) 8%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+    "border": "1px solid var(--warning-border)",
     "border-radius": "var(--radius-sm)",
     "color": "var(--warning)",
     "font-size": "var(--fs-sm)",
@@ -13222,8 +13223,8 @@
   },
   "revert-btn": {
     "align-items": "center",
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 20%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-surface-strong)",
     "border-radius": "var(--radius-sm)",
     "color": "var(--error)",
     "cursor": "pointer",
@@ -13234,9 +13235,9 @@
     "padding": "var(--space-2) var(--space-4)"
   },
   "reverted-tag": {
-    "background": "color-mix(in srgb, var(--error) 20%, transparent)",
+    "background": "var(--error-surface-strong)",
     "border-radius": "var(--radius-sm)",
-    "color": "var(--error)",
+    "color": "var(--error-content)",
     "font-size": "var(--fs-xs)",
     "margin-left": "var(--space-2)",
     "padding": "1px var(--space-2)"
@@ -14524,8 +14525,8 @@
     "overflow": "hidden"
   },
   "skill-delete-confirm": {
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-border)",
     "border-radius": "var(--radius)",
     "color": "var(--text-primary)",
     "display": "flex",
@@ -14644,8 +14645,8 @@
   },
   "skill-install-error": {
     "align-items": "center",
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-border)",
     "border-radius": "var(--radius)",
     "color": "var(--error)",
     "display": "flex",
@@ -15170,12 +15171,12 @@
   },
   "snapshot-toast-error": {
     "background": "color-mix(in srgb, var(--error) 15%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "border": "1px solid var(--error-border)",
     "color": "var(--error)"
   },
   "snapshot-toast-success": {
     "background": "color-mix(in srgb, var(--success) 15%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--success) 30%, transparent)",
+    "border": "1px solid var(--success-border)",
     "color": "var(--success)"
   },
   "source-chip": {
@@ -15335,8 +15336,8 @@
     "opacity": "0.6"
   },
   "sp-btn--danger": {
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border-color": "color-mix(in srgb, var(--error) 30%, transparent)",
+    "background": "var(--error-surface)",
+    "border-color": "var(--error-border)",
     "color": "var(--error)"
   },
   "sp-btn--danger-ghost": {
@@ -16861,8 +16862,8 @@
   },
   "terminal-stop-btn": {
     "align-items": "center",
-    "background": "color-mix(in srgb, var(--error) 10%, transparent)",
-    "border": "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+    "background": "var(--error-surface)",
+    "border": "1px solid var(--error-border)",
     "border-radius": "var(--radius-sm)",
     "color": "var(--error)",
     "cursor": "pointer",

@@ -687,8 +687,8 @@
 .mermaid-error {
   margin: var(--space-6) 0;
   padding: var(--space-6);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  background: var(--error-surface);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
   color: var(--error);
@@ -823,8 +823,8 @@
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-8);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
+  background: var(--error-surface);
+  border-bottom: 1px solid var(--error-surface-strong);
   color: var(--error, #ef4444);
   font-size: var(--fs-sm);
   font-weight: 500;
@@ -942,7 +942,7 @@
 
 .tool-call-pill.error {
   background: color-mix(in srgb, var(--error) 6%, transparent);
-  border-color: color-mix(in srgb, var(--error) 20%, transparent);
+  border-color: var(--error-surface-strong);
 }
 
 .tool-call-pill.expandable {
@@ -2158,7 +2158,7 @@ body.resizing-columns * {
   background: var(--surface-content);
   border-radius: 50%;
   transition: transform var(--duration-fast) var(--ease-out);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-raise-1);
 }
 .toggle-entry.on::after {
   transform: translateX(18px);

@@ -182,6 +182,26 @@
   --accent-surface-strong: color-mix(in srgb, var(--accent) 15%, transparent);
   --accent-border: color-mix(in srgb, var(--accent) 30%, transparent);
   --accent-border-strong: color-mix(in srgb, var(--accent) 45%, transparent);
+  /* ===== 状态色的浅底/描边（第 157 轮 P1-4）=====
+     三个角色派生自各自的 `var(--<status>)` ⇒ 皮肤换状态色时整套跟着走。
+     取值是**站内实测出现最多的三档**（10% ×29、20% ×18、30% ×23），所以迁移是逐字符等值替换、零视觉变化。
+     `-content`（压在浅底上的文字色）在默认档就等于原色，只有浅色档需要压深（那里原色在 20% 浅底上只有 3.87）。 */
+  --success-surface: color-mix(in srgb, var(--success) 10%, transparent);
+  --success-surface-strong: color-mix(in srgb, var(--success) 20%, transparent);
+  --success-border: color-mix(in srgb, var(--success) 30%, transparent);
+  --warning-surface: color-mix(in srgb, var(--warning) 10%, transparent);
+  --warning-surface-strong: color-mix(in srgb, var(--warning) 20%, transparent);
+  --warning-border: color-mix(in srgb, var(--warning) 30%, transparent);
+  --error-surface: color-mix(in srgb, var(--error) 10%, transparent);
+  --error-surface-strong: color-mix(in srgb, var(--error) 20%, transparent);
+  --error-border: color-mix(in srgb, var(--error) 30%, transparent);
+  --info-surface: color-mix(in srgb, var(--info) 10%, transparent);
+  --info-surface-strong: color-mix(in srgb, var(--info) 20%, transparent);
+  --info-border: color-mix(in srgb, var(--info) 30%, transparent);
+  --success-content: var(--success);
+  --warning-content: var(--warning);
+  --error-content: var(--error);
+  --info-content: var(--info);
   /* 控件高度尺度（第 31 波）：文档 §2.4 早就定了档位，但此前所有控件都是 padding 撑出来的，
      同一行里两个控件能差 1–6px —— 这是"没对齐"的根因。现在统一写高度。 */
   --control-xs: 26px;    /* 密集内联：标签页、迷你按钮、chip */
@@ -335,6 +355,23 @@
   --warning: #8a5c00;
   --error: #cf222e;
   --info: #6555e0;
+  /* ===== 状态色的**四角色**（第 157 轮 P1-4，对标参考实现的 emphasis/content/surface/border =====
+     改动前的状况：全项目 **156 处**手写 `color-mix(in srgb, var(--<status>) N%, transparent)`，
+     而且和品牌色一样各写各的（error 就有 8/10/12/15/20/30/40/50% 八种）。更要紧的是一个**实测到的可读性缺口**：
+     57 处"状态色文字压在同色浅底上"，其中 15%/18%/20% 那几档在浅色档**低于 4.5:1**
+     （error 在 20% 上只有 **3.87**、info 4.04、warning 4.37 —— 都是 12px 小标签）。
+     四角色：
+       · `-surface` 10%   浅底（最常用的一档）
+       · `-surface-strong` 20%  更实的浅底（**文字会压在上面的那一档**）
+       · `-border` 30%    描边
+       · `-content`       压在浅底上的**文字色**：浅色档把状态色往 `--text-primary`（近黑）压到 86%，
+                          实测刚好让 10/15/18/20% 四档浅底全部 ≥4.5（原色只到 3.87）；
+                          暗色档原色本来就过（最低 4.54）⇒ 无需压，定义为原色（见 `:root` 里的同名定义）。
+     ⚠️ 浅底/描边/文字三档**全部派生自 `var(--<status>)`** ⇒ 皮肤改状态色时整套跟着走。 */
+  --success-content: color-mix(in srgb, var(--success) 86%, var(--text-primary));
+  --warning-content: color-mix(in srgb, var(--warning) 86%, var(--text-primary));
+  --error-content: color-mix(in srgb, var(--error) 86%, var(--text-primary));
+  --info-content: color-mix(in srgb, var(--info) 86%, var(--text-primary));
   /* 分类色板（浅色主题）：与深色主题刻意取不同的明度，保证在浅底上仍可区分 */
   --chart-cat-1: #0969da;
   --chart-cat-2: #bf8700;
@@ -357,22 +394,44 @@
   --message-bubble-user-border: rgba(107, 92, 231, 0.16);
   --system-bg: #f2f2f0;
   --code-bg: #f6f6f4;
-  --sidebar-bg: #f8f8f7;
+  /* 第 157 轮：外壳底从 `#f8f8f7` 提到 **`#fbfbfa`**。
+     用户实测反馈"侧栏还是**比较深的灰色**"—— 在"内容面纯白 + 侧栏 #f8f8f7"的搭配里，
+     侧栏是**唯一偏灰的那块**，读起来就是"灰板"；参考实现的外壳（`chrome #f8f8f9`）之所以不显灰，
+     是因为它的**工作区更灰**（`workbench #f3f3f5`）⇒ 外壳反而是最亮的一档。
+     我们不整体翻工作区底色（那是另一件事、要用户看过再定），只把外壳提到近白，让它读成"纸白外壳"。 */
+  --sidebar-bg: #fbfbfa;
   --input-bg: #ffffff;
   --scrollbar-track: rgb(242 242 240 / 80%);
   --scrollbar-thumb: rgb(31 31 30 / 16%);
   /* Shadows：浅色下要比暗色轻得多，否则像"发霉的边缘" */
-  --shadow-sm: 0 1px 2px rgb(31 31 30 / 6%);
-  --shadow-md: 0 4px 12px rgb(31 31 30 / 8%);
-  --shadow-lg: 0 12px 32px rgb(107 92 231 / 10%);
-  --shadow-popover: 0 8px 24px rgb(31 31 30 / 12%);
+  /* ===== 高度阴影：**一条中性阶梯**（第 157 轮 P1-3/D4 收口）=====
+     改动前是**两套阶梯并存**：`--shadow-sm/md/lg/popover`（各自写死几何与颜色）与 `--shadow-raise-1/2/3`
+     （引用 `--shadow-color*`）—— 同一个"抬起来"的语义有两个来源，颜色也是各写各的。
+     现在收敛成一条阶梯（数值引用 `--shadow-color*`，所以两档主题只换色、不重复定义几何）；
+     语义名变成**阶梯的别名**（口径与写入点对齐：`--shadow-md` 就是第 2 档，不是另一个数）：
+       · `--shadow-md`      → 第 2 档（卡片）
+       · `--shadow-popover` → 第 3 档（菜单/浮层；`.popover-shell` 本来就用这一档）
+       · `--shadow-lg`      → 第 4 档（对话框/模态）
+     ⚠️ **D4：品牌色从高度阶梯里拿掉**。改动前 `--shadow-lg` 是 `rgb(107 92 231 / 10%)`（品牌紫）——
+     "高度"与"品牌发光"是两件事混在一个令牌里（参考实现的做法是高度全中性、品牌色单独出 `accentGlow`）。
+     现在 `--shadow-lg` 是中性第 4 档，品牌色只出现在 `--shadow-glow`（**有真实消费点**：主按钮/品牌 chip 的悬停）。
+     ⚠️ 这条改动会**改掉一条既有用例**（`ui-batch-a-d.test.ts` 原来钉的是"阴影最大档使用主色调阴影"）——
+     那条断言正是本轮要对标掉的旧决策，已连同理由一起改写成"阶梯必须中性 + 品牌色只在 --shadow-glow"。 */
+  --shadow-md: var(--shadow-raise-2);
+  --shadow-lg: var(--shadow-raise-4);
+  --shadow-popover: var(--shadow-raise-3);
   --shadow-color: rgb(31 31 30 / 14%);
   --shadow-color-soft: rgb(31 31 30 / 6%);
   /* 分层阴影（第 30 波）：值引用上面的 shadow-color 令牌，
-     所以两档主题各自换色即可，这三档本身不需要重复定义。 */
+     所以两档主题各自换色即可，这几档本身不需要重复定义（暗色档除外：它要更强的强度，见 D3）。 */
   --shadow-raise-1: 0 1px 2px var(--shadow-color-soft), 0 1px 1px var(--shadow-color-soft);
   --shadow-raise-2: 0 2px 4px var(--shadow-color-soft), 0 4px 12px var(--shadow-color-soft);
   --shadow-raise-3: 0 4px 8px var(--shadow-color-soft), 0 12px 32px var(--shadow-color);
+  /* 第 4 档（最高）：对话框/模态。改动前这一档就是那个紫色 `--shadow-lg`，现在中性化并成为阶梯的顶。 */
+  --shadow-raise-4: 0 8px 16px var(--shadow-color-soft), 0 24px 48px var(--shadow-color);
+  /* 品牌发光（D4）：**只**用于"品牌色在发光"的场合（主按钮/品牌 chip 的悬停），不参与高度语义。
+     用 `color-mix` 从 `--accent` 派生 ⇒ 皮肤换品牌色时它跟着走（不用每套皮肤重写一遍）。 */
+  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent), 0 6px 20px color-mix(in srgb, var(--accent) 30%, transparent);
   /* 抬升面的顶部 1px 高光：暗色下是"白 5%"透出来，浅色下必须是实打实的白，
      否则面与面之间没有"厚度差"（此前浅色沿用了暗色的 5% 白，等于没有） */
   --highlight-top: rgb(255 255 255 / 90%);
@@ -399,8 +458,30 @@
   --surface-glass-raised: color-mix(in srgb, #ffffff 94%, transparent);
   --dropdown-bg: var(--surface-glass-raised);
   --dropdown-hover: rgb(31 31 30 / 7%);
-  /* 外壳/侧栏的玻璃面：90% 不透明（对方 `sidebar-glass` 用的是 90% + blur(12px) + 内高光） */
-  --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 90%, transparent);
+  /* 外壳/侧栏的玻璃面。
+     ⚠️ **第 157 轮改口径（用户实测反馈："侧栏还是没有玻璃材质的效果"）**：
+     上一版按对方的 90% 抄了下来，但**玻璃能不能看见不取决于不透明度，取决于背后有没有东西可透** ——
+     我们的侧栏是 flex 布局里的一列，背后只有 `.app` 的纯色底（见 `.preview-shot/_diag-sidebar-glass.mjs`
+     的父链读数）⇒ 90% 的玻璃压在一块纯色上，模糊前后逐位相同，视觉上**就是实色**。
+     所以这一版做两件事：① 给外壳铺一层**有界的场景层** `--scene-layer`（见 `.app`），玻璃才有东西可透；
+     ② 不透明度从 90% 降到 **72%**，让场景真的透得出来（下限与"最坏情况下文字对比度"由门禁 LIGHT-UI-10/
+     DARK-UI-6 钉住：α ≥ 0.6，且**最坏场景像素**上的弱文字仍 ≥4.5:1）。 */
+  --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 62%, transparent);
+  /* ===== 场景层（shell scene）：外壳背后那层"可透的东西" =====
+     口径（必须机器可判）：场景的最强着色由 `--scene-veil`/`--scene-veil-alt` **声明**，
+     而 `--scene-layer` 必须**引用**这两个令牌（门禁同时校验"声明"与"引用"，防止声明一套、画另一套）。
+     取值不是拍脑袋，而是**按"可见度预算"算出来的**（探针 `.preview-shot/_glass-alpha-budget.mjs`）：
+       · 玻璃能透出多少 = (1 − α) × 场景着色强度 ⇒ 想让玻璃**看得见**，着色与 α 是**一对**参数；
+       · 约束是"最坏场景像素 + 玻璃"上的三档文字仍需 主 ≥10 / 次 ≥6 / 弱 ≥4.5；
+       · 实测（浅色档）：着色 16% 时最小可行 α = **0.53**；着色 26% 时升到 0.72。
+     现取 **着色 16% + α 0.62**：透出量 ≈ 0.38 × 16% ≈ 6% 的品牌色，在整块面板上看得见渐变，
+     同时弱文字仍有 4.8:1 左右（门禁按最坏值卡住）。 */
+  --scene-veil: color-mix(in srgb, var(--accent) 16%, transparent);
+  --scene-veil-alt: color-mix(in srgb, var(--info) 10%, transparent);
+  --scene-layer:
+    radial-gradient(1100px 620px at 0% 0%, var(--scene-veil), transparent 62%),
+    radial-gradient(900px 520px at 100% 0%, var(--scene-veil-alt), transparent 58%),
+    linear-gradient(168deg, var(--bg-secondary) 0%, var(--bg-primary) 46%, var(--bg-primary) 100%);
   /* 玻璃的**不透明回退面**：`prefers-reduced-transparency` / `prefers-contrast` / `[data-contrast=high]`
      三种情况一律用它（对方 `_surface-recipes.scss` 的第一行就是"先给不透明底"）。 */
   --surface-opaque-raised: #ffffff;
@@ -485,6 +566,13 @@
   --warning: #d29922;
   --error: #f85149;
   --info: #58a6ff;
+  /* 暗色档的 `-content` 就是原色：实测原色在 10/15/18/20% 自色浅底上是 5.2–6.7，
+     本来就过 4.5 ⇒ 不需要压深（压了反而会因为混进浅灰而变淡）。这里显式写出来，
+     是为了让"两档各自的决定"在文件里看得见，而不是靠默认档继承。 */
+  --success-content: var(--success);
+  --warning-content: var(--warning);
+  --error-content: var(--error);
+  --info-content: var(--info);
   --chart-cat-1: #58a6ff;
   --chart-cat-2: #d29922;
   --chart-cat-3: #f85149;
@@ -502,12 +590,26 @@
   --input-bg: rgba(22, 27, 34, 1);
   --scrollbar-track: rgba(26, 28, 28, 0.80);
   --scrollbar-thumb: rgba(255, 255, 255, 0.12);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 12px 32px rgba(124, 108, 240, 0.12);
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-color: rgba(0, 0, 0, 0.3);
-  --shadow-color-soft: rgba(0, 0, 0, 0.10);
+  /* ===== 暗色高度阴影（第 157 轮 D3：**只上调有依据的那几档**）=====
+     实测（对标文档 §8.3 D3）：我们的暗色 sm/md/popover 是黑 0.30/0.35/0.40，
+     而参考实现 xs…xl 是 **0.9 / 0.8 / 0.7 / 0.6 / 0.5** —— 暗底上阴影本来就"看不见"，
+     低 alpha 会让浮层看起来像**贴着画布的黑块**而不是浮起来。
+     处置：阶梯改为暗色档**显式定义**（浅色档仍由 `--shadow-color*` 派生），逐档递增；
+     升幅最大的是**浮层档（第 3 档）**——那是"必须看得出浮起来"的一档（菜单/下拉/右键菜单）。
+     没有直接抄 0.9：那在纯黑画布（#0e0f0f）上会把"浮起"变成"糊了一块黑"，先按 0.55 落地，
+     由 DARK-UI-8 门禁保证"单调递增 + 浮层档峰值 ≥0.5"（参考实现的最低档就是 0.5）。 */
+  --shadow-color: rgba(0, 0, 0, 0.38);
+  --shadow-color-soft: rgba(0, 0, 0, 0.16);
+  --shadow-raise-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.30);
+  --shadow-raise-2: 0 2px 4px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.42);
+  --shadow-raise-3: 0 4px 8px rgba(0, 0, 0, 0.42), 0 12px 32px rgba(0, 0, 0, 0.55);
+  --shadow-raise-4: 0 8px 16px rgba(0, 0, 0, 0.48), 0 24px 48px rgba(0, 0, 0, 0.62);
+  /* 语义别名（与亮色档同源，阶梯换色时自动跟随） */
+  --shadow-md: var(--shadow-raise-2);
+  --shadow-lg: var(--shadow-raise-4);
+  --shadow-popover: var(--shadow-raise-3);
+  /* 品牌发光（D4）：暗底上要更亮一点才看得出"发光"（浅色档 26%/30%） */
+  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent), 0 6px 22px color-mix(in srgb, var(--accent) 40%, transparent);
   --highlight-top: rgb(255 255 255 / 5%);
   --highlight-top-strong: rgb(255 255 255 / 9%);
   --error-hover: #da3633;
@@ -523,7 +625,15 @@
   --surface-glass-raised: color-mix(in srgb, rgba(26, 28, 28, 1) 94%, transparent);
   --dropdown-bg: var(--surface-glass-raised);
   --dropdown-hover: rgba(255, 255, 255, 0.08);
-  --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 90%, transparent);
+  --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 62%, transparent);
+  /* 场景层（暗色档）：同一套"可见度预算"口径（见亮色档注释）。暗底上要给到更强的着色才看得见
+     —— 实测暗色档在 20%/12% 下最小可行 α 仍 ≤0.5（亮色档才是约束方），取 0.62 有富余。 */
+  --scene-veil: color-mix(in srgb, var(--accent) 20%, transparent);
+  --scene-veil-alt: color-mix(in srgb, var(--info) 12%, transparent);
+  --scene-layer:
+    radial-gradient(1100px 620px at 0% 0%, var(--scene-veil), transparent 62%),
+    radial-gradient(900px 520px at 100% 0%, var(--scene-veil-alt), transparent 58%),
+    linear-gradient(168deg, var(--bg-secondary) 0%, var(--bg-primary) 46%, var(--bg-primary) 100%);
   --surface-opaque-raised: rgba(26, 28, 28, 1);
   /* 按下态（与亮色档同名同源）：**白色 14%**，不是 10%。
      这条不是审美取值而是**算出来的**：按下态是半透明的，合成后的亮度取决于它压着哪个面，
@@ -619,7 +729,12 @@ body {
   flex-direction: column;
   height: 100dvh;
   width: 100vw;
-  background: var(--bg-primary);
+  /* 第 157 轮：底色之上再铺一层**场景层** —— 外壳（侧栏/标题栏）的玻璃只有"背后有东西"才看得见。
+     层级关系：`.app` 自己的 background 画在**子元素之下** ⇒ 透明的标题栏会透出场景、
+     不透明的 `.main-area`（内容面）正常盖住它、半透明的侧栏则把它**模糊后**透出来。
+     内容面保持实色 ⇒ 正文对比度不受场景影响（场景只影响外壳，且被门禁按最坏值卡住）。 */
+  background-color: var(--bg-primary);
+  background-image: var(--scene-layer);
 }
 
 /* 自定义标题栏：透明背景，让 Mica 透出 */
@@ -1305,6 +1420,8 @@ flex-shrink: 0;
   background: var(--accent);
   border-color: var(--accent);
   color: var(--text-on-accent);
+  /* 品牌 chip 的"被选中"用发光表示（与上面同一档 `--shadow-glow`：品牌色只在这里发光） */
+  box-shadow: var(--shadow-glow);
 }
 
 .sidebar-project-header:is(:hover, :focus-visible) .sidebar-project-btn {
@@ -1580,7 +1697,7 @@ font-size: var(--fs-base);
 }
 
 .sidebar-session-context-menu button.destructive:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--error) 10%, transparent);
+  background: var(--error-surface);
 }
 
 .sidebar-context-menu-separator {
@@ -2817,6 +2934,9 @@ display: block;
 
 .send-btn:hover:not(.disabled) {
   background: var(--accent-hover);
+  /* 第 157 轮 D4：品牌色**发光**是单独一档语义（`--shadow-glow`），不混进高度阶梯。
+     挂在这里是因为它是全应用最"主"的那颗按钮（发送）—— 悬停时亮起来，是一个"可点"的强信号。 */
+  box-shadow: var(--shadow-glow);
 }
 
 .send-btn.disabled {
@@ -3112,23 +3232,23 @@ color: var(--accent);
 }
 
 .git-status-modified {
-  background: color-mix(in srgb, var(--warning) 20%, transparent);
-  color: var(--warning);
+  background: var(--warning-surface-strong);
+  color: var(--warning-content);
 }
 
 .git-status-added {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success);
+  background: var(--success-surface-strong);
+  color: var(--success-content);
 }
 
 .git-status-deleted {
-  background: color-mix(in srgb, var(--error) 20%, transparent);
-  color: var(--error);
+  background: var(--error-surface-strong);
+  color: var(--error-content);
 }
 
 .git-status-untracked {
-  background: color-mix(in srgb, var(--info) 20%, transparent);
-  color: var(--info);
+  background: var(--info-surface-strong);
+  color: var(--info-content);
 }
 
 .git-status-renamed {
@@ -3602,8 +3722,8 @@ min-height: 0;
 }
 
 .terminal-tab-close:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--error) 20%, transparent);
-  color: var(--error);
+  background: var(--error-surface-strong);
+  color: var(--error-content);
 }
 
 .terminal-tab-new {
@@ -3631,15 +3751,15 @@ min-height: 0;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-5);
   font-size: var(--fs-sm);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  background: var(--error-surface);
+  border: 1px solid var(--error-border);
   color: var(--error);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .terminal-stop-btn:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--error) 20%, transparent);
+  background: var(--error-surface-strong);
 }
 
 .terminal-container-wrapper {
@@ -3693,8 +3813,8 @@ min-height: 0;
   font-size: var(--fs-xs);
   padding: 1px var(--space-2);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--error) 20%, transparent);
-  color: var(--error);
+  background: var(--error-surface-strong);
+  color: var(--error-content);
   margin-left: var(--space-2);
 }
 
@@ -3759,15 +3879,15 @@ min-height: 0;
   padding: var(--space-2) var(--space-4);
   margin-top: var(--space-2);
   font-size: var(--fs-2xs);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
+  background: var(--error-surface);
+  border: 1px solid var(--error-surface-strong);
   color: var(--error);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .revert-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--error) 20%, transparent);
+  background: var(--error-surface-strong);
 }
 
 .revert-btn:disabled {
@@ -3909,7 +4029,7 @@ min-height: 0;
 
 .needs-you-option.selected {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--info) 10%, transparent);
+  background: var(--info-surface);
 }
 
 .needs-you-input {
@@ -6134,13 +6254,13 @@ background: var(--accent-surface-strong);
 .snapshot-toast-success {
   background: color-mix(in srgb, var(--success) 15%, transparent);
   color: var(--success);
-  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  border: 1px solid var(--success-border);
 }
 
 .snapshot-toast-error {
   background: color-mix(in srgb, var(--error) 15%, transparent);
   color: var(--error);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border: 1px solid var(--error-border);
 }
 
 @keyframes snapshot-toast-slide {
@@ -6253,8 +6373,8 @@ background: var(--accent-surface-strong);
 .mcp-json-error {
   margin-top: var(--space-4);
   padding: var(--space-3) var(--space-5);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  background: var(--error-surface);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
   color: var(--error);
@@ -6749,7 +6869,7 @@ color: var(--text-on-accent);
   color: var(--error);
 }
 .mcp-catalog-btn.uninstall:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--error) 10%, transparent);
+  background: var(--error-surface);
 }
 
 .mcp-catalog-link {
@@ -7057,8 +7177,8 @@ color: var(--text-on-accent);
 .skill-install-error {
   margin: 0 var(--space-8) var(--space-4);
   padding: var(--space-4) var(--space-6);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  background: var(--error-surface);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius);
   font-size: var(--fs-base);
   color: var(--error);
@@ -7078,8 +7198,8 @@ color: var(--text-on-accent);
   gap: var(--space-3);
   margin-top: var(--space-4);
   padding: var(--space-4) var(--space-6);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  background: var(--error-surface);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius);
   font-size: var(--fs-sm);
   color: var(--text-primary);
@@ -7263,7 +7383,7 @@ color: var(--text-on-accent);
 .publish-market-unavailable {
   font-size: var(--fs-2xs);
   color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  background: var(--warning-surface);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
 }
@@ -7283,7 +7403,7 @@ color: var(--text-on-accent);
 .publish-warning {
   padding: var(--space-4) var(--space-6);
   background: color-mix(in srgb, var(--warning) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+  border: 1px solid var(--warning-border);
   border-radius: var(--radius-sm);
   color: var(--warning);
   font-size: var(--fs-sm);
@@ -7297,13 +7417,13 @@ color: var(--text-on-accent);
 
 .publish-result.success {
   background: color-mix(in srgb, var(--success) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  border: 1px solid var(--success-border);
   color: var(--success);
 }
 
 .publish-result.error {
   background: color-mix(in srgb, var(--error) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border: 1px solid var(--error-border);
   color: var(--error);
 }
 
@@ -8378,9 +8498,9 @@ color: var(--text-on-accent);
   font-size: var(--fs-2xs);
   font-weight: 500;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
+  background: var(--error-surface);
   color: var(--error);
-  border: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
+  border: 1px solid var(--error-surface-strong);
 }
 
 /* Compaction Banner (in App.tsx) */
@@ -8401,9 +8521,9 @@ border-bottom: 1px solid var(--accent);
 }
 
 .compaction-banner.compaction-done {
-  background: color-mix(in srgb, var(--success) 10%, transparent);
+  background: var(--success-surface);
   color: var(--success);
-  border-bottom: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+  border-bottom: 1px solid var(--success-surface-strong);
 }
 
 .compaction-spinner {
@@ -9447,7 +9567,7 @@ border-bottom: 1px solid var(--accent);
 .mm-note {
   margin-top: var(--space-4);
   padding: var(--space-3) var(--space-5);
-  border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+  border: 1px solid var(--success-surface-strong);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--success) 8%, transparent);
   font-size: var(--fs-sm);
@@ -9472,9 +9592,9 @@ border-bottom: 1px solid var(--accent);
 .mm-tag { padding: 1px var(--space-3); border-radius: var(--radius-sm); background: var(--bg-secondary); font-size: var(--fs-xs); }
 
 .mm-status { padding: var(--space-3) var(--space-4); border-radius: var(--radius); font-size: var(--fs-sm); background: var(--bg-tertiary); color: var(--text-secondary); }
-.mm-status.is-ready { background: color-mix(in srgb, var(--success) 10%, transparent); color: var(--success); }
-.mm-status.is-loading { background: color-mix(in srgb, var(--info) 10%, transparent); color: var(--info); }
-.mm-status.is-error { background: color-mix(in srgb, var(--error) 10%, transparent); color: var(--error); }
+.mm-status.is-ready { background: var(--success-surface); color: var(--success); }
+.mm-status.is-loading { background: var(--info-surface); color: var(--info); }
+.mm-status.is-error { background: var(--error-surface); color: var(--error); }
 .mm-help { padding: var(--space-2) 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: var(--lh-reading); }
 
 .mm-footer {
@@ -9572,11 +9692,11 @@ border-bottom: 1px solid var(--accent);
 .plugin-mgr-impact { margin-top: var(--space-3); }
 .plugin-mgr-box.is-danger {
   background: color-mix(in srgb, var(--error) 12%, transparent);
-  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+  border-color: var(--error-border);
 }
 .plugin-mgr-box.is-warn {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  border-color: var(--warning-border);
 }
 .plugin-mgr-box.is-accent {
   background: var(--accent-surface);
@@ -9605,12 +9725,12 @@ border-bottom: 1px solid var(--accent);
   border-radius: var(--radius);
 }
 .plugin-mgr-dialog-risk.is-danger {
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+  background: var(--error-surface);
+  border-color: var(--error-border);
 }
 .plugin-mgr-dialog-risk.is-warn {
-  background: color-mix(in srgb, var(--warning) 10%, transparent);
-  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
 }
 .plugin-mgr-dialog-risk-title { margin-bottom: var(--space-2); font-size: var(--fs-base); font-weight: 600; }
 .plugin-mgr-dialog-risk-desc { font-size: var(--fs-sm); color: var(--text-secondary); }
@@ -10057,8 +10177,8 @@ border-bottom: 1px solid var(--accent);
 .petm-btn--install { border: none; background: var(--accent); color: var(--text-on-accent); }
 .petm-btn--install:is(:hover, :focus-visible) { background: var(--accent-hover); }
 .petm-btn--uninstall {
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
+  border: 1px solid var(--error-border);
+  background: var(--error-surface);
   color: var(--error);
 }
 .petm-footer {
@@ -10749,17 +10869,17 @@ border-bottom: 1px solid var(--accent);
 
 
 .tool-call-status.running {
-  background: color-mix(in srgb, var(--info) 10%, transparent);
+  background: var(--info-surface);
   color: var(--accent);
 }
 
 .tool-call-status.done {
-  background: color-mix(in srgb, var(--success) 10%, transparent);
+  background: var(--success-surface);
   color: var(--success);
 }
 
 .tool-call-status.error {
-  background: color-mix(in srgb, var(--error) 10%, transparent);
+  background: var(--error-surface);
   color: var(--error);
 }
 
@@ -11011,10 +11131,10 @@ border-bottom: 1px solid var(--accent);
 .diff-mode-btn { padding: var(--space-2) var(--space-5); font-size: 12px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-mode-btn:is(:hover, :focus-visible) { color: var(--text-primary); background: var(--bg-hover); }
 .diff-mode-btn.active { background: var(--accent-muted); color: var(--accent-strong); }
-.diff-accept-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-accept-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: var(--success-surface-strong); color: var(--success-content); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-accept-btn:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--success) 35%, transparent); }
 .diff-reject-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
-.diff-reject-btn:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--error) 30%, transparent); }
+.diff-reject-btn:is(:hover, :focus-visible) { background: var(--error-border); }
 .diff-close-btn { padding: var(--space-2); border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); display: flex; align-items: center; justify-content: center; }
 .diff-close-btn:is(:hover, :focus-visible) { color: var(--text-primary); background: var(--bg-hover); }
 .diff-viewer-path { padding: var(--space-3) var(--space-8); font-size: 11px; color: var(--text-muted); background: var(--bg-primary); border-bottom: 1px solid var(--border-secondary); font-family: var(--font-mono); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -11023,8 +11143,8 @@ border-bottom: 1px solid var(--accent);
 /* Preview View (default) */
 .diff-preview { display: flex; flex-direction: column; gap: 0; padding: var(--space-8); }
 .diff-preview-section { border-radius: var(--radius-sm); overflow: hidden; }
-.diff-preview-old { border: 1px solid color-mix(in srgb, var(--error) 30%, transparent); }
-.diff-preview-new { border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
+.diff-preview-old { border: 1px solid var(--error-border); }
+.diff-preview-new { border: 1px solid var(--success-border); }
 .diff-preview-new-file { text-align: center; padding: var(--space-6); }
 .diff-preview-label { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-6); background: var(--bg-tertiary); }
 .diff-preview-badge { font-size: var(--fs-sm); font-weight: var(--weight-medium); padding: var(--space-1) var(--space-5); border-radius: var(--radius-sm); }
@@ -11065,14 +11185,14 @@ border-bottom: 1px solid var(--accent);
 
 /* Custom Instruction Panel */
 .diff-custom-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
-.diff-custom-btn:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--warning) 30%, transparent); }
+.diff-custom-btn:is(:hover, :focus-visible) { background: var(--warning-border); }
 .diff-custom-panel { padding: var(--space-6) var(--space-8); background: var(--bg-primary); border-bottom: 1px solid var(--border-primary); }
 .diff-custom-label { font-size: 12px; color: var(--text-secondary); margin-bottom: var(--space-4); }
 .diff-custom-input-row { margin-bottom: var(--space-4); }
 .diff-custom-textarea { width: 100%; padding: var(--space-4) var(--space-5); font-size: 13px; font-family: inherit; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-sm); resize: vertical; min-height: 50px; }
 .diff-custom-textarea:focus { border-color: var(--accent); }
 .diff-custom-actions { display: flex; gap: var(--space-4); }
-.diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--info) 20%, transparent); color: var(--accent); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--info-surface-strong); color: var(--accent); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-submit-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--info) 35%, transparent); }
 .diff-custom-submit-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 .diff-custom-cancel-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
@@ -11864,22 +11984,22 @@ border-color: var(--text-muted);
 .badge-success {
   background: color-mix(in srgb, var(--success) 15%, transparent);
   color: var(--success);
-  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  border: 1px solid var(--success-border);
 }
 .badge-warning {
   background: color-mix(in srgb, var(--warning) 15%, transparent);
   color: var(--warning);
-  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+  border: 1px solid var(--warning-border);
 }
 .badge-danger {
   background: color-mix(in srgb, var(--error) 15%, transparent);
   color: var(--error);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border: 1px solid var(--error-border);
 }
 .badge-info {
   background: color-mix(in srgb, var(--info) 15%, transparent);
   color: var(--info);
-  border: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
+  border: 1px solid var(--info-border);
 }
 
 /* Card */
@@ -13150,7 +13270,7 @@ html.pet-window-mode body,
 
 
 .guidance-cancel-btn:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--error) 20%, transparent);
+  background: var(--error-surface-strong);
 }
 
 
@@ -13253,11 +13373,11 @@ html.pet-window-mode body,
 }
 .feedback-btn.like.active {
   background: color-mix(in srgb, var(--success) 15%, transparent);
-  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  border-color: var(--success-border);
 }
 .feedback-btn.dislike.active {
   background: color-mix(in srgb, var(--error) 15%, transparent);
-  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+  border-color: var(--error-border);
 }
 
 /* ========== P0: Scrollbar Markers v3（对标 dsh-navbar 节点导航）
@@ -13531,7 +13651,7 @@ html.pet-window-mode body,
 
 /* ========== P1 #20: ErrorCard ========== */
 .error-card {
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--error) 8%, transparent);
   padding: var(--space-6);
@@ -14713,8 +14833,8 @@ color: var(--accent, #7c6cf0);
   color: var(--text-secondary, #a0a0a8);
 }
 .context-badge.type-notebook { border: 1px solid var(--accent-border); }
-.context-badge.type-file { border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
-.context-badge.type-url { border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); }
+.context-badge.type-file { border: 1px solid var(--success-border); }
+.context-badge.type-url { border: 1px solid var(--warning-border); }
 
 /* ========== P4: MentionAutocomplete ========== */
 .mention-autocomplete {
@@ -15992,8 +16112,8 @@ color: var(--accent, #7c6cf0);
 }
 .structure-file.exists {
   color: var(--success);
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-  border-color: color-mix(in srgb, var(--success) 20%, transparent);
+  background: var(--success-surface);
+  border-color: var(--success-surface-strong);
 }
 .structure-file.missing {
   color: var(--text-muted);
@@ -17004,8 +17124,8 @@ color: var(--accent, #7c6cf0);
 .sp-btn--primary { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
 .sp-btn--primary:is(:hover, :focus-visible) { background: var(--accent-hover); }
 .sp-btn--danger {
-  border-color: color-mix(in srgb, var(--error) 30%, transparent);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
+  border-color: var(--error-border);
+  background: var(--error-surface);
   color: var(--error);
 }
 .sp-btn--danger-ghost { border-color: var(--error); background: transparent; color: var(--error); }
@@ -17405,11 +17525,11 @@ input[type="range"].sp-flex-fill {
   font-size: var(--fs-sm);
 }
 .turn-status-row.turn-error {
-  border-color: color-mix(in srgb, var(--error) 20%, transparent);
+  border-color: var(--error-surface-strong);
   background: color-mix(in srgb, var(--error) 8%, transparent);
 }
 .turn-status-row.turn-max-tokens {
-  border-color: color-mix(in srgb, var(--warning) 20%, transparent);
+  border-color: var(--warning-surface-strong);
   background: color-mix(in srgb, var(--warning) 8%, transparent);
 }
 .turn-status-row.turn-retry {

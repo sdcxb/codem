@@ -45,10 +45,17 @@
   --tooltip-border: #2a2a2a;
   --dropdown-bg: #121212;
   --dropdown-hover: #2a2a2a;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 12px 32px rgba(255, 107, 0, 0.08);
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.7);
+  /* 第 157 轮：皮肤不再覆盖**语义别名**（`--shadow-md/lg/popover` 现在是阶梯的别名，
+     覆盖它们等于把"两套阶梯"这个毛病搬进皮肤里），改成覆盖阶梯**本身**与它的颜色输入。
+     原来的 `--shadow-lg: rgba(255,107,0,0.08)` 是**品牌橙发光**（不是高度）⇒ 按 D4 的同一口径
+     移到 `--shadow-glow`；高度阶梯这里给的是"比默认档更重"的一套（Hub 是深色界面）。 */
+  --shadow-color: rgba(0, 0, 0, 0.6);
+  --shadow-color-soft: rgba(0, 0, 0, 0.35);
+  --shadow-raise-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 1px rgba(0, 0, 0, 0.45);
+  --shadow-raise-2: 0 2px 4px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-raise-3: 0 4px 8px rgba(0, 0, 0, 0.6), 0 12px 32px rgba(0, 0, 0, 0.7);
+  --shadow-raise-4: 0 8px 16px rgba(0, 0, 0, 0.65), 0 24px 48px rgba(0, 0, 0, 0.75);
+  --shadow-glow: 0 0 0 1px rgba(255, 107, 0, 0.22), 0 6px 22px rgba(255, 107, 0, 0.28);
 }
 
 /* Hub 皮肤根容器 - 三栏 Grid 布局 */

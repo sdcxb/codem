@@ -677,7 +677,7 @@
 
 .nb-source-delete:is(:hover, :focus-visible) {
   color: var(--error);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
+  background: var(--error-surface);
 }
 
 /* 来源卡片操作栏 — 查看原文 + 重新索引 同一行 */
@@ -1660,7 +1660,7 @@ top: 36px;
 .ppt-studio-error {
   margin-bottom: var(--space-8);
   padding: var(--space-4) var(--space-6);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--error) 15%, transparent);
   color: var(--error);

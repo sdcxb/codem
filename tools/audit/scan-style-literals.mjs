@@ -125,6 +125,12 @@ export function scanStyleLiterals({ files }) {
       if (/color-mix\(in srgb,/i.test(value) && /var\(--accent[\w-]*(?:,[^)]*)?\)\s*[\d.]+%/i.test(value)) {
         bump(bag, "accent-tint", "raw");
       }
+      /* 状态色**手写混色**（第 157 轮 P1-4）：与 accent-tint 同源的问题 —— 全项目曾有 **156 处**
+         手写 `color-mix(in srgb, var(--<status>) N%, transparent)`，光 error 就有 8 种百分比。
+         四角色令牌（-surface 10% / -surface-strong 20% / -border 30%）落地后，剩下的每一处由这一族盯着。 */
+      if (/color-mix\(in srgb,/i.test(value) && /var\(--(?:success|warning|error|info)[\w-]*(?:,[^)]*)?\)\s*[\d.]+%/i.test(value)) {
+        bump(bag, "status-tint", "raw");
+      }
     }
     perFile[f.path] = bag;
     for (const [family, c] of Object.entries(bag)) {

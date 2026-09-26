@@ -190,6 +190,35 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
 `);
     expect(viaToken["accent-tint"]?.raw ?? 0, "走令牌的不算").toBe(0);
   });
+
+  /**
+   * LIT-8：状态色四角色（P1-4）。与品牌色阶梯同源的问题：全项目曾有 **156 处**手写状态色混色
+   * （光 error 就有 8 种百分比），而且**有一个实测到的可读性缺口** —— 57 处"状态色文字压在同色浅底上"，
+   * 浅色档 20% 那档只有 3.87:1（都是 12px 小标签）。
+   */
+  it("LIT-8：四个状态 × 四角色令牌齐备，且都派生自各自的 var(--<status>)", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    for (const s of ["success", "warning", "error", "info"]) {
+      for (const [role, pct] of [["surface", "10"], ["surface-strong", "20"], ["border", "30"]] as const) {
+        expect(css, `缺 --${s}-${role}（应为 ${pct}% 的浅底/描边）`).toContain(`--${s}-${role}: color-mix(in srgb, var(--${s}) ${pct}%, transparent);`);
+      }
+      /* 文字角色：浅色档必须**压深**（写成原色就等于没修那个缺口） */
+      const lightContent = new RegExp(`--${s}-content:\\s*color-mix\\(in srgb, var\\(--${s}\\) ([\\d.]+)%, var\\(--text-primary\\)\\)`).exec(css);
+      expect(lightContent, `浅色档缺 --${s}-content 的压深配方`).toBeTruthy();
+      expect(Number(lightContent![1]), `--${s}-content 混入比例 ${lightContent![1]}% 太高，压不深就没修缺口`).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it("LIT-9：`status-tint` 族进棘轮；状态色浅底/描边不得再手写百分比", () => {
+    const { totals } = scanLiterals(`.a { background: color-mix(in srgb, var(--error) 15%, transparent); }`);
+    expect(totals["status-tint"]?.raw, "自编的 15% 必须被数出来").toBe(1);
+    const { totals: viaToken } = scanLiterals(`
+.b { background: var(--error-surface); }
+.c { border-color: var(--warning-border); }
+.d { color: var(--success-content); }
+`);
+    expect(viaToken["status-tint"]?.raw ?? 0, "走令牌的不算").toBe(0);
+  });
 });
 
 /**

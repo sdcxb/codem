@@ -87,7 +87,30 @@
  *  13. 主题切换过渡不闪烁
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { Message } from "../store";
+
+/**
+ * ⚠️ `getCSSVar` 读的是**本文件里的夹具**（注入一个 `<style>` 来模拟变量），不是真的 styles.css ——
+ * 第 157 轮发现这件事：一条"钉住 `--shadow-lg` 是紫色"的断言，其实是在钉夹具里的字符串，
+ * 改源码它也不会红（**口径与写入点不对齐**：断言的对象不是产品文件）。
+ * 所以第 157 轮新增的阴影断言一律走下面这两个"读真文件"的助手；
+ * 夹具派断言继续保留在它自己的用例里（它们测的是渲染层拿不拿得到变量，那也有价值）。
+ */
+const REAL_STYLES = readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+const themeBlock = (theme: "light" | "dark"): string =>
+  theme === "light"
+    ? /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/.exec(REAL_STYLES)?.[1] ?? ""
+    : /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(REAL_STYLES)?.[1] ?? "";
+/** 取**最后一次**声明（后写覆盖先写）—— 与 CSS 的层叠一致 */
+const realToken = (block: string, name: string): string | null => {
+  const re = new RegExp(`--${name.slice(2)}\\s*:\\s*([^;]+);`, "g");
+  let m: RegExpExecArray | null;
+  let last: string | null = null;
+  while ((m = re.exec(block))) last = m[1].trim();
+  return last;
+};
 
 // ===== 1. CSS 变量完整性测试 =====
 describe("批次 A: CSS 变量完整性", () => {
@@ -177,9 +200,60 @@ describe("批次 A: CSS 变量完整性", () => {
     expect(getCSSVar("--radius-full", "dark")).toBe("9999px");
   });
 
-  it("阴影系统 --shadow-lg 使用主色调阴影（紫色 rgba）", () => {
-    const shadow = getCSSVar("--shadow-lg", "dark");
-    expect(shadow).toContain("124, 108, 240"); // 紫色阴影
+  /**
+   * ⚠️ **第 157 轮改判据（有对标依据，不是为了让改动变绿）**。
+   *
+   * 这条原来钉的是「`--shadow-lg` 使用主色调阴影（紫色 rgba）」——那是第 30 波的一个决定。
+   * 第 156 轮对标 `GCWing/OpenBitFun` 时发现这条决定**把两件事混进了一个令牌**：
+   *   · "高度"（elevation）：越高的面阴影越强，颜色必须是**中性**的（参考实现 xs…xl 全中性黑）；
+   *   · "品牌发光"（accentGlow）：品牌色只在"这东西是品牌的/在发光"时出现。
+   * 对方把后者单独做成 `accentGlow`，而不是塞进高度阶梯。我们照做：
+   * `--shadow-lg` 中性化为阶梯第 4 档，品牌色只出现在 `--shadow-glow`（并接了真实消费点）。
+   * 改动前 `--shadow-lg` 在全项目**零消费方**（只有两处定义），所以这次中性化没有视觉风险。
+   */
+  it("阴影阶梯必须中性：每档都不含品牌色，品牌色只在 --shadow-glow（D4）", () => {
+    const themes = { light: themeBlock("light"), dark: themeBlock("dark") };
+    for (const [theme, block] of Object.entries(themes)) {
+      expect(block.length, `${theme} 档没解析到`).toBeGreaterThan(200);
+      for (const name of ["--shadow-raise-1", "--shadow-raise-2", "--shadow-raise-3", "--shadow-raise-4"]) {
+        const v = realToken(block, name);
+        expect(v, `${theme} 档缺 ${name}`).toBeTruthy();
+        expect(v, `${theme} 的 ${name} 混进了品牌色（高度阶梯必须中性）：${v}`).not.toMatch(/124,\s*108,\s*240|107,\s*92,\s*231/);
+      }
+      const glow = realToken(block, "--shadow-glow");
+      expect(glow, `${theme} 缺 --shadow-glow`).toBeTruthy();
+      expect(glow, `${theme} 的发光必须从 --accent 派生（皮肤换品牌色要跟着走）`).toContain("var(--accent)");
+    }
+  });
+
+  it("语义阴影是阶梯的别名（`--shadow-md/popover/lg` 不得另写一套几何）", () => {
+    for (const theme of ["light", "dark"] as const) {
+      const block = themeBlock(theme);
+      expect(realToken(block, "--shadow-md")).toBe("var(--shadow-raise-2)");
+      expect(realToken(block, "--shadow-popover")).toBe("var(--shadow-raise-3)");
+      expect(realToken(block, "--shadow-lg")).toBe("var(--shadow-raise-4)");
+    }
+  });
+
+  /**
+   * DARK-UI-8（第 157 轮 D3）：暗色高度阶梯必须**单调递增**且浮层档够强。
+   * 依据：对标文档 §8.3 D3 实测我们暗色阴影 0.30/0.35/0.40 vs 参考实现 0.9…0.5 ——
+   * 暗底上阴影本来就容易被"看不见"，浮层会像贴着画布的黑块而不是浮起来。
+   * 门禁取"单调 + 浮层档峰值 ≥0.5"（0.5 是参考实现最低的那一档）。
+   */
+  it("DARK-UI-8：暗色阴影阶梯单调递增，且浮层档（第 3 档）峰值 alpha ≥0.5", () => {
+    const block = themeBlock("dark");
+    const peak = (name: string) => {
+      const v = realToken(block, name)!;
+      const alphas = [...v.matchAll(/rgba\([^)]*?([\d.]+)\)/g)].map((m) => Number(m[1]));
+      expect(alphas.length, `${name} 里没解析到 rgba alpha：${v}`).toBeGreaterThan(0);
+      return Math.max(...alphas);
+    };
+    const ladder = ["--shadow-raise-1", "--shadow-raise-2", "--shadow-raise-3", "--shadow-raise-4"].map(peak);
+    for (let i = 1; i < ladder.length; i++) {
+      expect(ladder[i], `暗色第 ${i + 1} 档 (${ladder[i]}) 必须强于第 ${i} 档 (${ladder[i - 1]})`).toBeGreaterThan(ladder[i - 1]);
+    }
+    expect(ladder[2], `暗色浮层档峰值 alpha ${ladder[2]} 低于 0.5（参考实现最低档就是 0.5）`).toBeGreaterThanOrEqual(0.5);
   });
 
   it("z-index 层级递增：dropdown < tooltip < popover < modal", () => {
