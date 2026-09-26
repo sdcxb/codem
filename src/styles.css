@@ -172,8 +172,6 @@
      让"皮肤到底改了什么"完全读不出来。
      现在：几何由主样式表持有（下面的取值就是主表当前的生效值 ⇒ 默认档零变化），
      皮肤要在这个组件上分叉，就覆盖**同名令牌**（写进该皮肤的令牌块，一处、带理由）。 */
-  --radius-input-card: var(--radius-lg);
-  --radius-input-wrapper: 0;
   --radius-code: var(--radius-sm);
   --radius-message-user: var(--radius-lg);
   --radius-message-assistant: 0;
@@ -206,9 +204,6 @@
   --empty-hint-gap: var(--space-4);
 
 
-  /* 行内图标尺寸：此前侧栏用 `font-size: var(--fs-lg)` 来定图标大小（16px）——
-     那是「拿字号当尺寸」，改字号会连带改图标。这里给它一个**表意的名字**（与 --fs-icon 同值）。 */
-  --icon-size-inline: var(--fs-icon);
   --chrome-surface: var(--bg-secondary);
   /* 左缘阴影：把纸面与外壳分开。亮色档 8% 墨色就够；暗色档**必须单独加强**（见 [data-theme="dark"]），
      否则 8% 的黑在暗底上等于没有（D3 那一轮的同一个教训）。 */
@@ -412,8 +407,8 @@
   --text-base: #1f1f1e;
   --text-ramp-paper: #fffbe2;
   --text-primary: var(--text-base);
-  --text-secondary: color-mix(in srgb, var(--text-base) 75%, var(--text-ramp-paper));
-  --text-muted: color-mix(in srgb, var(--text-base) 65%, var(--text-ramp-paper));
+  --text-secondary: color-mix(in srgb, var(--text-base) 86%, var(--text-ramp-paper));
+  --text-muted: color-mix(in srgb, var(--text-base) 78%, var(--text-ramp-paper));
   /* 线：一律用"文字色 + alpha"，这样深浅两档的线色相自动一致。
      强度 12% → 9%：合成在白底上是 #ebebeb、对比度 **1.194**，
      与参考实现的 9%（白底 1.201）几乎逐位一致；改动前的 12% 是 1.269，偏重。 */
@@ -523,7 +518,7 @@
        取值是活体 A/B 量出来的（`.preview-shot/_ab-chrome.mjs`）：
        #fafaf9→0.0199 / #f8f8f6→0.028 / **#f7f7f5→0.0317** / #f6f6f4→0.0356 / #f4f4f2→0.0434
        —— 取 0.0317 是为了「达标且留余量、又不偏灰」。 */
-  --sidebar-bg: #f7f7f5;
+  --sidebar-bg: #f8f8f9;
   --input-bg: #ffffff;
   --scrollbar-track: rgb(242 242 240 / 80%);
   --scrollbar-thumb: rgb(31 31 30 / 16%);
@@ -1423,7 +1418,7 @@ flex-shrink: 0;
    列表 `padding: 2px 6px`）；行间 gap 统一 2px（对方 `calc(space-1/2)`）。
    此前是 4/12 + 12/16 + 8/12 三套，左边缘上三排文字起点各不相同。 */
 .sidebar-nav {
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-6);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -1436,18 +1431,17 @@ flex-shrink: 0;
 .sidebar-nav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-6);
   width: 100%;
-  height: var(--sidebar-row-h);
   /* 列表容器被限高时（Sidebar.tsx 的 maxHeight）必须是**滚动**而不是把行压矮 */
   flex-shrink: 0;
-  padding: 0 var(--space-2);
+  padding: var(--space-5) var(--space-6);
   background: none;
   border: none;
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  border-radius: var(--radius);
   cursor: pointer;
-  font-size: var(--fs-base);
+  font-size: var(--fs-md);
   text-align: left;
   /* 第 166 轮 P0-1：过渡换成 `--transition-color`（color + background-color + border-color，.15s + 标准曲线）——
      原来只有 `background var(--duration-fast) ease`：**文字色不跟着动**、且用的是默认 `ease`（不是我们自己的曲线）。 */
@@ -1471,11 +1465,12 @@ flex-shrink: 0;
    （实测 hover 前后背景 0% 面积变化）。现在底色收掉、交给行状态。 */
 .sidebar-tool-row {
   display: flex;
-  gap: 1px;
-  margin: 0;
-  padding: var(--space-1);
-  border-radius: var(--radius-sm);
-  background: none;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent, #7c6cf0) 8%, transparent);
+  box-shadow: inset 0 1px 3px var(--shadow-color-soft);
 }
 
 .sidebar-tool-row:is(:hover, :focus-within) {
@@ -1484,15 +1479,14 @@ flex-shrink: 0;
 
 .sidebar-tool-item {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   flex: 1;
   /* 第 166 轮 P0-2：原来是**竖排**（图标在上文字在下）⇒ 单行 51px、整簇 59px，把侧栏节奏打断了。
      现在改成行内 chip：**26px 高**（外面 2px padding ⇒ 整簇正好 30px）。 */
-  height: 26px;
-  padding: 0 var(--space-2);
+  padding: var(--space-4) var(--space-1);
   border-radius: var(--radius-xs);
   background: transparent;
   border: none;
@@ -1552,14 +1546,14 @@ flex-shrink: 0;
 }
 
 .sidebar-nav-icon {
-  font-size: var(--icon-size-inline);
+  font-size: var(--fs-lg);
   width: 20px;
   text-align: center;
 }
 
 /* ========== Sidebar Projects ========== */
 .sidebar-projects {
-  padding: var(--space-1) var(--space-3);
+  padding: 0 var(--space-6);
 }
 
 
@@ -1574,14 +1568,14 @@ flex-shrink: 0;
 .sidebar-project-header {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  height: var(--sidebar-row-h);
+  gap: var(--space-3);
   flex-shrink: 0;
-  padding: 0 var(--space-2);
+  padding: var(--space-4) var(--space-4);
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-secondary);
   transition: var(--transition-color), var(--transition-transform);
+  min-height: 32px;
 }
 
 /* hover 明确排除"选中态的父级"：`.sidebar-project.active > .sidebar-project-header` 的 (0,3,0) 本来能压过
@@ -1606,18 +1600,18 @@ flex-shrink: 0;
 }
 
 .sidebar-project-arrow {
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   width: 12px;
 }
 
 .sidebar-project-icon {
-  font-size: var(--icon-size-inline);
+  font-size: var(--fs-md);
 }
 
 .sidebar-project-name {
   flex: 1;
-  font-size: var(--fs-base);
+  font-size: var(--fs-md);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1786,7 +1780,7 @@ flex-shrink: 0;
 
 
 .sidebar-sessions {
-  padding-left: var(--space-3);
+  padding-left: var(--space-9);
   /* 第 166 轮 P0-2：会话行之间也要 **2px** 间距（此前为 0，只有导航区有 gap ⇒ 间距取值 4 种） */
   display: flex;
   flex-direction: column;
@@ -1800,10 +1794,9 @@ flex-shrink: 0;
 .sidebar-session {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  height: var(--sidebar-row-h);
+  gap: var(--space-3);
   flex-shrink: 0;
-  padding: 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--fs-base);
@@ -1979,7 +1972,7 @@ font-size: var(--fs-base);
 /* 第 166 轮 P0-2：分组容器同样收到 **6px 外层**（对齐对方的 `surface-padding`），
    此前是 12/16 —— 于是"导航项 / 会话行 / 项目行"三排文字在左边缘上起点各不相同。 */
 .sidebar-section {
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-6) var(--space-8);
 }
 
 .sidebar-section:last-of-type {
@@ -1993,7 +1986,7 @@ font-size: var(--fs-base);
   align-items: center;
   justify-content: space-between;
   height: 24px;
-  margin-bottom: var(--space-1);
+  margin-bottom: var(--space-4);
   /* 第 166 轮 P1-3：**吸顶**。此前是 static ⇒ 滚下去以后不知道自己在看哪个分组
      （对方是 sticky + 吸住时浮出一条 hairline）。背景必须不透明：吸顶时行会从它下面滚过。
      z-index 用 `--z-chrome`（外壳内部的局部层叠，不是全局浮层）。 */
@@ -2036,7 +2029,7 @@ font-size: var(--fs-base);
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-md);
   transition: var(--transition-color);
 }
 
@@ -2923,16 +2916,16 @@ z-index: 50;
    而不是新编一个 16px —— 刻度外的值会被 `radius-raw` 门禁拦下（实测踩过一次）。
    聚焦反馈放到**这一层**：原来只有 textarea 上的一圈 outline，承载视觉的卡片本身完全没反应。 */
 .input-card-container {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-input-card);
+  background: transparent;
+  border: none;
+  border-radius: 0;
   box-shadow: var(--shadow-raise-2);
   transition: var(--transition-color), var(--transition-shadow);
   overflow: hidden;
 }
 
 .input-card-container:focus-within {
-  border-color: var(--accent-border);
+  border-color: var(--text-primary);
   box-shadow: var(--shadow-raise-3), 0 0 0 3px var(--accent-surface);
 }
 
@@ -2966,7 +2959,7 @@ z-index: 50;
   gap: 0;
   background: transparent;
   border: none;
-  border-radius: var(--radius-input-wrapper);
+  border-radius: 0;
   padding: 0;
   transition: none;
   position: relative;
@@ -11952,7 +11945,7 @@ border-color: var(--text-muted);
      （同一个声明块，单一来源），这里只留布局相关的两项。
      第 166 轮 P0-2：内边距定为 **8/12/2/12** —— 配上 overline 的行盒正好 **24px**，
      与分组标题同高（此前是 22px，属于「又多出的一种行高」）。 */
-  padding: var(--space-4) var(--space-6) var(--space-1) var(--space-6);
+  padding: var(--space-4) var(--space-6) var(--space-2) var(--space-6);
   /* 分组标签也在那个被限高的列表里：不参与压缩，否则"今天/更早"会被挤成一条缝 */
   flex-shrink: 0;
   user-select: none;
@@ -13807,9 +13800,9 @@ html.pet-window-mode body,
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-4);
   /* 第 166 轮 P0-2：底部区从 8/12 收到 **4/6**（与列表外层 6px 对齐），分隔线换**墨色 hairline**（5% 太淡）。 */
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-4) var(--space-6);
   border-top: 1px solid var(--hairline-ink);
   flex-shrink: 0;
 }
@@ -18072,12 +18065,11 @@ input[type="range"].sp-flex-fill {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   margin-left: auto;
   /* 第 166 轮 P0-2：28.33px（= padding 6/10 + 行盒）→ **24px**（与分组标题同档，且 ≥ WCAG 24 命中区） */
-  height: 24px;
   flex-shrink: 0;
-  padding: 0 var(--space-3);
+  padding: var(--space-3) var(--space-5);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
   background: var(--bg-hover);
