@@ -282,22 +282,28 @@ html[data-native-material="sidebar"] .sidebar-tool-item:is(:hover, :focus-visibl
 
 ---
 
-## 10. 覆盖度矩阵：这一轮审了什么、**没审什么**
+## 10. 覆盖度矩阵（第 166 轮两阶段：先审侧栏/面板，再补齐其余）
 
-| 维度 | 侧栏 | 面板/内容区 | 备注 |
-| --- | --- | --- | --- |
-| 几何一致性（行高/圆角/内边距/字号档数） | ✅ 深 | ✅ 已量（§11） | 不需要对标截图即可判定 |
-| 状态覆盖（hover/按下/focus/选中） | ✅ 深（含真实指针 + 像素） | ⚠️ 仅统计了规则数（§11） | 面板的 hover/按下**没有做像素级验证** |
-| 表面与边界（ΔL、台阶强度） | ✅ 浅色 + 暗色 | ⚠️ 只量了整屏 | — |
-| 排版层级（字号/字重/文字色角色） | ✅ 计数 + 角色 | ✅ 计数 | 与对方**语义角色表**的逐档对比见 §13（其 token 文件已抓取） |
-| 图标（尺寸/描边/栅格） | ✅ 计数 + 实测字形 | ⚠️ 未做 | 未审：图标网格对齐、描边宽度分布、实心/线框混用 |
-| 动效（时长/曲线/被谁消费） | ✅ 对方侧栏统计 | ❌ 未审 | 未审：我们的动效令牌覆盖率、是否有统一曲线 |
-| 内容态（空/加载/错误/长文本/截断） | ❌ **未审** | ❌ **未审** | 需要构造状态，这一轮没做 |
-| 键盘/无障碍（focus-visible 全量、ARIA、命中区） | ⚠️ 只统计规则数 | ❌ 未审 | 我方命中区另有 `min-hit-area` 用例覆盖 |
-| 暗色档 | ✅ 已补（§12） | ⚠️ 只量了整屏 ΔL | — |
-| 主题/皮肤（hub/dream） | ❌ 未审 | ❌ 未审 | 皮肤是另一条线（前几轮动过令牌，未做像素级复核） |
-| 窗口外壳（顶栏/窗口按钮/圆角/材质） | ⚠️ 只量了顶栏计数 | — | 顶栏 45 元素 / 2 号字号 / 2 圆角 / 4 行高 |
-| 组件清单（对方有什么组件我们没有） | — | ✅ 见 §13.4 | 来自对方 `design-system/packages/ui` |
+| 维度 | 状态 | 在哪一节 |
+| --- | --- | --- |
+| 侧栏：几何一致性（行高/圆角/内边距/字号档数） | ✅ 深（DOM 真值 + 像素辅证） | §3 |
+| 侧栏：状态覆盖（hover/按下/focus/选中） | ✅ 深（真实指针 + 像素**面积** + 分档 A/B） | §2 |
+| 表面与边界（ΔL、台阶强度、亮度层级） | ✅ 浅色 + 暗色 | §4、§12 |
+| **外壳构图**（纸面/材质层/拖拽反馈/折叠） | ✅ 源码 + 截图剖面 | §13 |
+| 令牌体系（规模/排版角色/动效/阴影/间距/控件） | ✅ 对方 token 全量 + 我方实测 | §14 |
+| 图标系统（尺寸/描边/颜色/统一入口） | ✅ 活体实测（112 个 svg） | §15 |
+| 动效（覆盖率/曲线/属性/减少动效） | ✅ 活体实测（300 条 transition） | §16 |
+| 弹层（模态/浮层/菜单/提示/Toast + z-index/阴影阶梯） | ✅ 真实点开 + CSSOM | §17 |
+| 键盘与无障碍（焦点顺序/焦点环/命中区/可访问名/ARIA） | ✅ 12 跳实测 + 属性计数 | §18 |
+| 响应式/窄窗 | ✅ 三档视口实测 | §19 |
+| 皮肤几何（hub/dream） | ✅ 三套对比实测 | §20 |
+| 内容态（空/加载/错误/离线）与长文本截断 | ✅ 规则盘点 + 注入实测 | §21 |
+| 面板/内容区一致性 + 输入区解剖 | ✅ 计数 + DOM 链 | §11 |
+| 读屏软件真实走查 | ❌ **未做**（只有属性计数） | §22 |
+| 触屏/触摸手势、高 DPI 缩放（125%/150%） | ❌ **未做** | §22 |
+| 多语言文案长度压测（只有中文界面） | ❌ **未做** | §22 |
+| 第三方嵌入（编辑器/终端）观感、窗口外壳深层 | ❌ **未做** | §22 |
+| 动态内容态（流式输出时的行高抖动、长任务下的侧栏状态） | ❌ **未做** | §22 |
 
 ---
 
@@ -496,6 +502,129 @@ hover 的缺陷**两档都有** ⇒ 修那一条覆盖就等于同时修好两�
 
 > 注意：他们的**中性文字/表面阶不是"墨纸二元派生"**，而是"参考色板 → 语义别名 → 少量 color-mix 透明层"；
 > 我们是"墨+纸派生"。两套都成立，**不要为了对标把自己的派生体系改掉**（§8 已列）。
+
+---
+
+## 15. 图标系统（本轮补齐）
+
+| | OpenBitFun | 我们（活体实测） |
+| --- | --- | --- |
+| 尺寸 | 令牌 6 档：`control-icon-size` 2xs 8 / xs 12 / **sm 14** / md 16 / lg 24；导航行字形 14px、槽 22px | **4 种混用**：14px(49 个) / 12px(36) / 16px(20) / 10px(6) |
+| 描边 | `control-icon-stroke-width` = **1.6**，strong = 2 | **硬编码 `stroke-width: 2`：109/112**（另 3 个继承） |
+| 颜色 | 由 `currentColor` 继承 + hover/选中升 `content-primary` | `currentColor` **109 / 字面色 0** ✅（颜色这层是干净的） |
+| 统一入口 | `Icon` 组件（`size="xs|sm|md|lg"`）+ `icon-slots` 契约测试 + `IconButton` 尺寸映射表 | DOM 里 112 个内联 `<svg>`（React 内联正常，但**没有尺寸/描边的统一封装**，每个调用点自己写 width/height） |
+| viewBox | 约定统一 | 2 种（24×24 109 个 + 10×10 3 个）|
+
+**缺口**：字形尺寸 4 → 1（14px）、槽统一 22px、描边走令牌 1.6。
+**不变**：颜色继承已经是 `currentColor`，不需要动。
+
+---
+
+## 16. 动效（本轮补齐；并修正上一版的判断）
+
+⚠️ **修正**：上一版说"我们的动效都是字面量"——**不准确**。实测（CSSOM 声明）：
+
+| 指标 | 我们 | OpenBitFun |
+| --- | --- | --- |
+| 带 `transition` 的规则 | **300 条** | — |
+| 其中走令牌 | **289 条**（var(--duration/--ease/--transition)）| — |
+| 其中字面时长 | **11 条**（5 条是 `none`/`0ms` 的降级，属正常；其余是 xterm/步骤环等第三方或局部） | — |
+| 曲线令牌 | `--ease-out: cubic-bezier(.23, 1, .32, 1)` ← **与对方 `motion-easing-standard` 完全同值** | `motion-easing-standard` 同一条曲线，web-ui 引用 **618** 次 |
+| 时长令牌 | `--duration-press .12s` / `--duration-fast .15s` / `--duration-slow .3s` | instant 80 / **fast 140** / base 220 / content-swap 320 / slow 420 |
+| 复合令牌 | 有：`--transition-color` = color+background-color+border-color `.15s` + 那条曲线；`--transition-transform` | 无（他们用时长+曲线组合） |
+| **侧栏行实际用的** | `styles.css:1314` `transition: background var(--duration-fast) ease` ⇒ **只动 background + 默认 ease 曲线**（`--transition-color` 就在手边却没用） | 行过渡 = background + **color** + opacity + transform，120ms + 标准曲线 |
+| `animation` 规则 | 92 条，其中 13 条走令牌（其余多为 FontAwesome 自带） | — |
+| 减少动效覆盖 | **15 个文件** | **169 个文件** |
+
+**缺口**：① 侧栏行换用 `--transition-color` 并补 `transform`；② 行的文字色/图标色要跟着状态过渡（现在只动背景）；
+③ `prefers-reduced-motion` 覆盖面从 15 个文件往上提（至少覆盖所有自定义 `@keyframes`）。
+
+---
+
+## 17. 弹层（本轮补齐；结论比预期好）
+
+**活体实测（真实点开一个下拉菜单）**：`.bottom-bar-dropdown.popover-shell.chat-dropdown` ——
+240×66、圆角 **10px**、内边距 4px、背景 `color(srgb 1 1 1 / 0.94)`、
+**`backdrop-filter: blur(12px) saturate(1.2)`**（与对方 `effect-blur-medium` 同值）、
+阴影 = 1px 环 + 柔和投影、**入场动画 `0.15s cubic-bezier(0.23, 1, 0.32, 1)`**（正好是我们的 `--duration-fast` + `--ease-out`）。
+
+| 类 | 我们（CSSOM + 活体） | OpenBitFun（token） |
+| --- | --- | --- |
+| 浮层/菜单 | 圆角 `--radius-md`(10px)、阴影 `--shadow-raise-3`/`--shadow-popover`、`--blur-medium`、z 走令牌 | `overlay-menu-inline-size` 220px、`shadow-menu`、`layer-dropdown/popover` |
+| 模态 | `.modal-panel` 圆角 `--radius-lg` + `--shadow-popover`；但 `.modal-editor` 用**字面阴影** `0 8px 32px var(--shadow-color…)` | `overlay-dialog-max-inline-size` 420–1200px、`overlay-dialog-footer-height` 68px、backdrop blur 20px |
+| 提示 | `.tooltip-content` `--radius-sm` + `--shadow-md` + `tooltip-fade-in var(--…) ` ✅ | `overlay-tooltip-max-inline-size` 280px |
+| Toast | `.plugin-mgr-toast` 走 `--z-toast`/`--shadow-popover`；但 `.snapshot-toast`/`.toast-item` 的动画是**字面 `0.3s ease`** | — |
+| z-index | **令牌 64 / 字面量 46**；且 `--z-top: 10000`、`--z-toast: 20000`、`--z-dialog: 1410` 是"临时数字" | `layer-*` 16 档具名层级（base 0 → contextMenu 500） |
+| 阴影阶梯 | **两套并存**：`--elevation-1/3/4`（8 处，全在 `codem-ui.css`）+ `--shadow-*`（70 处） | 一套：`shadow-xs/sm/base/lg/xl` + 3 个功能阴影 + 2 个内高光 |
+
+**缺口**：① `--elevation-*` 并入 `--shadow-*`；② z-index 字面量棘轮；③ `--z-top` 这类"临时数字"归到 8 档层级；
+④ 模态/Toast 里残留的字面阴影与字面动画时长。
+**合格项**：浮层的玻璃配方、圆角、入场曲线都与对方同级——**这块不用重做**。
+
+---
+
+## 18. 键盘与无障碍（本轮补齐）
+
+| 指标 | 我们（实测） | OpenBitFun |
+| --- | --- | --- |
+| 焦点环 | **12 跳全部有可见焦点环**（2px 强调色）✅ | `focus-width` 2 / `focus-offset` 2；各行/按钮普遍有 `:focus-visible` |
+| 焦点顺序 | 顶栏 → 侧栏导航 → 侧栏分组按钮 → 用户区 → 收起 → 对话标题，**顺序合理** ✅ | — |
+| **命中区 < 24px 的可交互元素** | **41 / 111**（会话行 pin/delete **16×19**、分组按钮 22×22、收起 32×28…） | `control-hit-target` = **40px**（compact 36 / touch 48） |
+| 无可访问名 | 标题栏按钮、`.sidebar-project-btn` 等（≥2 处） | `aria-label` 惯例 + 契约测试 |
+| `aria-live` | **0 处**（流式输出/状态变化无播报） | 有（Alert / 状态组件） |
+| `role` / `tabindex` | 5 / 1（极少） | roving tabindex 工具 + 语义角色 |
+
+**缺口**：① 命中区 41 → 0（用 `::before` 扩大点击面，图标不用变大）；② 补 `aria-label`；
+③ `aria-live` 至少给流式输出区加一个。
+
+---
+
+## 19. 响应式 / 窄窗（本轮补齐；这一项基本合格）
+
+| 视口宽 | 侧栏宽 | 内容区宽 | 横向滚动 | 命中区 <24px | 被裁剪元素 |
+| --- | --- | --- | --- | --- | --- |
+| 1000 | 200 | 764 | 无 | 41 | 3 |
+| 820 | 200 | 584 | 无 | 40 | 5 |
+| **700** | **0（自动收起）** | 664 | 无 | 32 | 3 |
+
+⇒ 我们有自动收起、没有横向滚动；**这一块不用改**（对方是 `width:0` + 76px 浮动条 + 顶部栏里放收起控件，形态不同但效果等价）。
+
+---
+
+## 20. 皮肤（hub / dream）的几何（本轮补齐）
+
+| 皮肤 | 侧栏底 | 导航行 | 会话行 |
+| --- | --- | --- | --- |
+| 默认 | 88% 近白玻璃 | 40.3px / **radius 8px** / 14px | 31.5px / **radius 6px** / 13px |
+| hub | `rgb(18,18,18)` | 40.3px / **radius 6px** / 14px | 31.5px / **radius 4px** / 13px |
+| dream | `rgba(255,255,255,0.65)` | 40.3px / **radius 10px** / 14px | 31.5px / **radius 6px** / 13px |
+
+⇒ **行高一致、圆角三套**（8 / 6 / 10）。也就是说皮肤作者在**各自重造几何**，而几何本该继承主样式表。
+**缺口**：皮肤只许覆盖颜色/阴影，几何一律继承（门禁 SKIN-3：皮肤文件不得出现 height/padding/gap/border-radius/font-size）。
+
+---
+
+## 21. 内容态与长文本（本轮补齐）
+
+| 指标 | 我们 | OpenBitFun |
+| --- | --- | --- |
+| 空态 | **7 条规则**、各功能各自实现：`.empty-state` / `.mp-empty-hint` / `.notebook-empty-state` / `.notebook-empty-hint` … | `Empty` 组件（design-system 43 个组件之一，带契约测试） |
+| 加载 | **8 条**：`.subagent-elapsed-spinner` / `.compaction-spinner` / `.streaming-timer-spinner` / `.boot-splash-spinner` …（**没有骨架屏**） | `Spinner` 组件；（对方另有骨架/呼吸动效） |
+| 错误 | **6 条**，且只有 retry 按钮：`.project-retry-btn` / `.pm-retry-btn` / `.kg-retry-btn` | `Alert` 组件（4 级）+ `StatusPill` |
+| 离线/重连 | **2 条**：`.status-dot.disconnected` / `.mcp-status-dot.disconnected` | 有专门的重连/设备状态组件 |
+| 长文本截断 | **正常**：会话标题 `text-overflow: ellipsis` + `nowrap`，注入 3 倍长文本后**行高不变、无溢出** ✅ | `OverflowText` / `RollingText` 原语 + `text-clipping.test.mjs` |
+| 输入框聚焦态 | **弱**：聚焦时只有 textarea 上的 2px 焦点环；承载视觉的 `.input-textarea-row`（1px 9% 边框）**完全没变** | `field-border-focus` + 焦点面 |
+
+**缺口**：① 三类内容态各收成一个共享实现；② 输入卡片聚焦要有可见变化（border + shadow）；
+③ 骨架屏目前**完全没有**（长任务只有转圈）。
+**合格项**：长文本截断已经做对了。
+
+---
+
+## 22. 本轮覆盖度小结
+
+**已审**：侧栏（深）、面板/内容区、外壳构图、暗色档、图标、动效、弹层、键盘与无障碍、响应式、皮肤几何、内容态与截断、令牌/排版体系、设计系统组织方式。
+**仍未审（明确列出）**：① 读屏软件实测（只有属性计数，没有真实 SR 走查）；② 触屏/触摸手势；③ 多语言文案长度（我们只有中文界面，未做英文长度压测）；④ 高 DPI 缩放（125%/150% 下的布局）；⑤ 窗口外壳（标题栏按钮、圆角、系统材质在深色下的表现）；⑥ 第三方嵌入（编辑器/终端）的观感；⑦ 动态内容态（流式输出进行中的行高抖动、长任务下的侧栏状态）。
 
 ---
 
