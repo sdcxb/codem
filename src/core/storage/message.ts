@@ -8,7 +8,7 @@ import {
   DEFAULT_EXTERNALIZE_THRESHOLD,
 } from "./attachment-files";
 import { storageUnavailable } from "./health";
-import { getEventLog } from "./event-log";
+import { getEventLog, isSessionEventsReadable, whenSessionEventsLoaded } from "./event-log";
 import { getStoragePort, hasStoragePort } from "./port";
 import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
@@ -2218,9 +2218,89 @@ function appendMessageTextEvent(sessionId: string, message: Message): void {
   const type = message.role === "user" ? "user_message" : "assistant_text";
   const key = `${sessionId}\u0000${type}\u0000${message.id}`;
   const fingerprint = textEventFingerprint(content);
-  // ② 同一份定稿正文只写一条（正文被改写时才补写）
+  // ② 快路径：同一次运行里同一份定稿正文只写一条（正文被改写时才补写）
   if (writtenTextEventFingerprints.get(key) === fingerprint) return;
+  writeTextEventOnce(sessionId, message, type, key, fingerprint, false);
+}
 
+/**
+ * 每个会话的「**已落库**文本事件指纹」索引（第 176 轮修 O-29）。
+ *
+ * 为什么必须有它：上面的 `writtenTextEventFingerprints` 是**模块级内存态**，
+ * 页面一重载就空了；而重载后 store 会把当前会话的消息再 `saveMessages` 一遍
+ * ⇒ 同一条定稿正文被当成"第一次写"再补一条事件（真机复现：`seq=8991/9001` 同一条
+ * `user_message`、`seq=8995/9002` 同一条 `assistant_text`）。
+ * 危害不是"可见即已记录"（同一个 `messageId` 仍成立），而是 `session_event_search`
+ * 会搜出重复结果、事件表凭空变大。
+ *
+ * 所以去重判据换成**可复核的持久判据**：写之前回查事件日志里是否已有
+ * `(type, messageId, 内容指纹)` 完全相同的事件。内存表退化为**快路径**（避免每次 autosave
+ * 都去扫一遍日志），命中持久判据时顺手把快路径也填上。
+ *
+ * 惰性建索引：只在"镜像已就绪"时才建，之后随写入增量维护。
+ */
+const persistedTextEventKeys = new Map<string, Set<string>>();
+
+/** 持久指纹的键：`type \0 messageId \0 指纹`（会话维度由 Map 的外层键表达） */
+const persistedKeyOf = (type: string, messageId: string, fingerprint: string) =>
+  `${type}\u0000${messageId}\u0000${fingerprint}`;
+
+/**
+ * 取该会话的持久指纹索引。
+ *
+ * @returns 已就绪 ⇒ 索引（可能是空集，那代表"确实没有"）；
+ *          **未就绪 ⇒ `null`**（`readAll` 的空数组此时**不代表"没有事件"**，不许据此下结论）。
+ */
+function persistedKeysFor(sessionId: string): Set<string> | null {
+  const events = getEventLog().readAll(sessionId); // 顺带触发一次惰性加载（幂等）
+  if (!isSessionEventsReadable(sessionId)) return null;
+  let set = persistedTextEventKeys.get(sessionId);
+  if (!set) {
+    set = new Set<string>();
+    for (const e of events) {
+      if (e.type !== "user_message" && e.type !== "assistant_text") continue;
+      const payload = e.payload as { messageId?: string; content?: string } | null | undefined;
+      if (!payload?.messageId || typeof payload.content !== "string" || !payload.content) continue;
+      set.add(persistedKeyOf(e.type, payload.messageId, textEventFingerprint(payload.content)));
+    }
+    persistedTextEventKeys.set(sessionId, set);
+  }
+  return set;
+}
+
+/**
+ * 「镜像还没就绪」时**先记下来、等就绪后再判定**的待写事件（键与快路径同构，重复 save 会覆盖）。
+ *
+ * 为什么不能"读不到就当没有、直接写"：那正是 O-29 的形态（重载后第一次 save 时事件镜像
+ * 常常还没加载完 ⇒ 判"没有" ⇒ 又写一条）。延后判定既不会重复，也不会丢：
+ * `whenSessionEventsLoaded` 就绪（或超时）后重跑同一套判据。
+ */
+const deferredTextEvents = new Map<string, { sessionId: string; message: Message; type: string; fingerprint: string; key: string }>();
+
+/** 真正写一条文本事件（判据都在这里，快路径与延后路径共用） */
+function writeTextEventOnce(
+  sessionId: string,
+  message: Message,
+  type: string,
+  key: string,
+  fingerprint: string,
+  allowUnreadableMirror: boolean,
+): void {
+  const persisted = persistedKeysFor(sessionId);
+  if (persisted === null && !allowUnreadableMirror) {
+    /* 镜像没就绪 ⇒ **不知道**有没有写过。延后判定（见上面的注释）。 */
+    deferredTextEvents.set(key, { sessionId, message, type, fingerprint, key });
+    void whenSessionEventsLoaded(sessionId).then(() => flushDeferredTextEvents(sessionId));
+    return;
+  }
+  const incoming = persistedKeyOf(type, message.id, fingerprint);
+  /* ③ 持久判据：事件日志里已经有"同类型 + 同 messageId + 同内容"的事件 ⇒ 不写第二条 */
+  if (persisted?.has(incoming)) {
+    writtenTextEventFingerprints.set(key, fingerprint);
+    return;
+  }
+
+  const content = typeof message.content === "string" ? message.content : "";
   const eventLog = getEventLog();
   const event =
     type === "user_message"
@@ -2235,18 +2315,39 @@ function appendMessageTextEvent(sessionId: string, message: Message): void {
    * （`event-log.ts:226`）。那种情况不能记指纹 —— 否则下一次同样的正文会被去重挡掉，
    * 变成"事件永久缺失"。
    */
-  if (event.seq !== 0) writtenTextEventFingerprints.set(key, fingerprint);
+  if (event.seq !== 0) {
+    writtenTextEventFingerprints.set(key, fingerprint);
+    persisted?.add(incoming);
+  }
+}
+
+/** 镜像就绪（或等待超时）后，把该会话积压的待写事件按持久判据补判一次 */
+function flushDeferredTextEvents(sessionId: string): void {
+  for (const [key, pending] of Array.from(deferredTextEvents.entries())) {
+    if (pending.sessionId !== sessionId) continue;
+    deferredTextEvents.delete(key);
+    /* allowUnreadableMirror = true：等过了还是读不到 ⇒ 照旧写（宁可有重复，也不能丢事件） */
+    writeTextEventOnce(pending.sessionId, pending.message, pending.type, pending.key, pending.fingerprint, true);
+  }
 }
 
 /** 测试/会话清理用：清掉文本事件指纹（不传则清全部） */
 export function __resetTextEventFingerprints(sessionId?: string): void {
   if (!sessionId) {
     writtenTextEventFingerprints.clear();
+    persistedTextEventKeys.clear();
+    deferredTextEvents.clear();
     return;
   }
   const prefix = `${sessionId}\u0000`;
   for (const key of Array.from(writtenTextEventFingerprints.keys())) {
     if (key.startsWith(prefix)) writtenTextEventFingerprints.delete(key);
+  }
+  /* 持久索引与待写队列同样按会话清：持久索引缓存的是"该会话在库里的指纹"，
+     删掉会话事件之后它就不再成立（沿用同一处清理入口，避免又出现"两个口径"). */
+  persistedTextEventKeys.delete(sessionId);
+  for (const [key, pending] of Array.from(deferredTextEvents.entries())) {
+    if (pending.sessionId === sessionId) deferredTextEvents.delete(key);
   }
 }
 

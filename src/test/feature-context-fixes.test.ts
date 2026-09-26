@@ -265,9 +265,48 @@ describe("FC-D0：主聊天事件双写（P0-D0）", () => {
     );
   });
 
-  it("FC-D0c: 消费方语义 —— 投影里的助手正文等于定稿正文，用户消息按 messageId 去重", () => {
-    const S = sid("d0c");
+  /**
+   * FC-D0d：**重载后不得重复落库**（第 176 轮修 O-29）。
+   *
+   * 现场（第 154 轮装机复核顺手看到的）：跑完一个回合后**重载页面**（启动维护重跑），
+   * 副本库里该会话出现成对重复：`seq=8991` 与 `seq=9001` 是同一条 `user_message`、
+   * `seq=8995` 与 `seq=9002` 是同一条 `assistant_text`。
+   * 根因：去重用的指纹表（`writtenTextEventFingerprints`）是**模块级内存态**，页面一重载就空了，
+   * 而重载后 store 会把当前会话的消息再 `saveMessages` 一遍 ⇒ 同一条正文被当成"第一次写"。
+   *
+   * 这里用 `__resetTextEventFingerprints()` **模拟重载**（清掉进程内快路径、事件表原样保留），
+   * 再落库同一份定稿正文：事件表**不得新增行**。
+   * 反向对照（同一条用例里）：正文**真的被改写**时必须补一条 —— 去重不能把改写也吞掉。
+   */
+  it("FC-D0d: 重载（内存指纹清空）后再落库同一份定稿正文，事件表不得新增行（O-29）", () => {
+    const S = sid("d0d");
     seedSession(S);
+    const userMsg = { id: "u-reload", role: "user" as const, content: "重载前那条正文", timestamp: 11, status: "done" as const };
+    const assistantMsg = { id: "a-reload", role: "assistant" as const, content: "重载前那条回复", timestamp: 12, status: "done" as const };
+    const countOf = (type: string) => eventsOf(S).filter((e) => e.event_type === type).length;
+
+    createMessage(userMsg, S);
+    createMessage(assistantMsg, S);
+    expect(countOf("user_message"), "首次落库写一条").toBe(1);
+    expect(countOf("assistant_text"), "首次落库写一条").toBe(1);
+
+    /* —— 模拟页面重载：进程内快路径清空，权威事件表（持久）还在 —— */
+    __resetTextEventFingerprints();
+
+    createMessage(userMsg, S);
+    createMessage(assistantMsg, S);
+    expect(countOf("user_message"), "重载后重复落库同一份正文 ⇒ 不该新增事件行").toBe(1);
+    expect(countOf("assistant_text"), "重载后重复落库同一份正文 ⇒ 不该新增事件行").toBe(1);
+
+    /* 反向对照：正文真的被改写 ⇒ 必须补一条（持久判据只挡"同类型+同 id+同内容"） */
+    createMessage({ ...assistantMsg, content: "重载后改写过的回复" }, S);
+    expect(countOf("assistant_text"), "正文变了要补一条，去重不能把改写吞掉").toBe(2);
+    const list = eventsOf(S).filter((e) => e.event_type === "assistant_text");
+    expect(JSON.parse(String(list[1].payload)).content).toBe("重载后改写过的回复");
+  });
+
+  it("FC-D0c: 消费方语义 —— 投影里的助手正文等于定稿正文，用户消息按 messageId 去重", () => {
+    const S = sid("d0c");    seedSession(S);
     createMessage({ id: "u9", role: "user", content: "问题", timestamp: 1, status: "done" }, S);
     createMessage({ id: "a9", role: "assistant", content: "", timestamp: 2, status: "streaming" }, S);
     createMessage({ id: "a9", role: "assistant", content: "答案", timestamp: 2, status: "done" }, S);
