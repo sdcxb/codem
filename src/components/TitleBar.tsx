@@ -15,6 +15,7 @@ import codemLogoUrl from "../assets/codem-logo.png";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
 import { DEFAULT_THEME, applyThemeAttribute, cacheTheme, isThemeMode, resolveEffectiveTheme } from "../core/theme/theme-default";
+import { applyAppearanceAttributes } from "../core/theme/appearance-modes";
 import { AppMenuBar } from "./AppMenuBar";
 import type { AppMenuSection } from "./AppMenuBar";
 import { buildAppShortcuts, isMacPlatform, matchesShortcut, shortcutAria, shortcutLabel } from "../core/shortcuts/app-shortcuts";
@@ -89,6 +90,15 @@ export function TitleBar({
   const dbReady = useProjectStore((s) => s.dbReady);
   useEffect(() => {
     if (!dbReady) return;
+    /* 第 159 轮（P2-1）：外观档位（高对比/密度）的**真相源是 DB** —— 启动时先按 localStorage 镜像
+       应用了一次（见 `main.tsx` 的 bootstrap），这里在 DB 就绪后用真值再校正一次。
+       不这样做的话，"改了档但镜像丢了"（清了缓存/换机恢复设置）会一直用默认档，
+       直到用户碰一次设置页 —— 那正是"口径与写入点没对齐"的另一种形态。 */
+    try {
+      applyAppearanceAttributes(getSetting);
+    } catch (e) {
+      console.warn("[appearance] DB 校正失败，保持镜像档", e);
+    }
     try {
       const saved = getSetting("codem-theme");
       if (isThemeMode(saved) && saved !== theme) {

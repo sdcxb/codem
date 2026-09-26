@@ -175,4 +175,25 @@ describe("APPEARANCE 外观档位（第 159 轮 P2-1）", () => {
     expect(styles.match(/data-contrast-mode|data-high-contrast/g) ?? [], "出现了别的对比度属性名").toEqual([]);
     expect(styles.match(/data-densition|data-density-mode/g) ?? [], "出现了别的密度属性名（注意 densition 这种拼错）").toEqual([]);
   });
+
+  /**
+   * APPEARANCE-6：**启动路径必须真的应用一次**。
+   *
+   * 这一条是装机版复核时量出来的：1.16.159 装好后 `data-contrast` / `data-density` 都是 `null`
+   * —— 因为当时只有"设置页改档"这一条写入路径，`applyAppearanceAttributes`（DB→镜像→默认那条链）
+   * **产品代码里根本没人调**（只有测试在调）。于是"用户改了档 → 清缓存/换机恢复设置"这条路上，
+   * 档位会一直是默认值，直到他再碰一次设置页。
+   * 现在两处都接上：`main.tsx` 首帧前按镜像应用、`TitleBar` 在 dbReady 后用 DB 真值校正。
+   */
+  it("APPEARANCE-6：启动路径（首帧 + DB 就绪）都必须应用外观档位", () => {
+    const main = read("src/main.tsx");
+    expect(main, "main.tsx 的 bootstrap 必须在首帧前按镜像应用一次").toMatch(/applyAppearanceAttributes\(\)/);
+    expect(main, "必须发生在 renderApp() 之前").toMatch(/applyAppearanceAttributes\(\)[\s\S]{0,600}?renderApp\(\)/);
+
+    const dbSync = ["src/components/TitleBar.tsx", "src/App.tsx"]
+      .map((f) => ({ f, text: read(f) }))
+      .filter((x) => /applyAppearanceAttributes\(/.test(x.text));
+    expect(dbSync.length, "DB 就绪后必须有一次校正（TitleBar 或 App 里调 applyAppearanceAttributes(getSetting)）").toBeGreaterThan(0);
+    expect(dbSync.some((x) => /applyAppearanceAttributes\(\s*getSetting\s*\)/.test(x.text)), "DB 校正必须把 getSetting 传进去（否则读的是镜像，不是真相源）").toBe(true);
+  });
 });

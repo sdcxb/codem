@@ -10,6 +10,7 @@ import ReactDOM from "react-dom/client";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import App from "./App";
 import AppErrorBoundary from "./components/AppErrorBoundary";
+import { applyAppearanceAttributes } from "./core/theme/appearance-modes";
 import "./styles.css";
 import "./styles/skin-hub.css";
 import "./styles/skin-dream.css";
@@ -85,6 +86,9 @@ function renderApp(): void {
  */
 const MATERIAL_HINT_TIMEOUT_MS = 400;
 async function bootstrap(): Promise<void> {
+  /* 外观档位（高对比/密度）先按**镜像**应用一次：用户上次选的档要立刻生效，
+     不然会先按默认档渲染一帧再跳（DB 的真值由 TitleBar 在 dbReady 后再校正一次）。 */
+  applyAppearanceAttributes();
   await Promise.race([
     applyNativeMaterialHint(),
     new Promise((resolve) => setTimeout(resolve, MATERIAL_HINT_TIMEOUT_MS)),

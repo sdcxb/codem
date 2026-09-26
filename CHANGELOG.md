@@ -2,6 +2,21 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.160] - 2026-09-26 — 外观档位的**启动路径**补上（1.16.159 的模块在产品代码里没人调）
+
+> 装机版复核 1.16.159 时量出来的：装好后 `data-contrast` / `data-density` 都是 `null`。
+> 查下去发现 —— 当时**只有"设置页改档"这一条写入路径**，而 `applyAppearanceAttributes()`
+> （就是那条 `DB → 镜像 → 默认` 的解析链）**产品代码里根本没人调**，只有测试在调。
+> 后果：用户改了档之后若清了缓存或换机恢复设置，档位会一直停在默认值，直到他再碰一次设置页。
+
+### 补上两处（+ 一条门禁）
+
+- `main.tsx` 的 `bootstrap()`：首帧前按 **localStorage 镜像**应用一次（否则先按默认档渲染一帧再跳）；
+- `TitleBar`（DB 就绪后，与主题校正同一处）：用 **DB 真值**再校正一次（`applyAppearanceAttributes(getSetting)`）；
+- 新增 **APPEARANCE-6**：两处都必须存在，且 DB 那次必须把 `getSetting` 传进去（否则读的还是镜像、不是真相源）。
+  变异 `mutate-appearance-gates.mjs` 扩到 **7/7 红**（新增 A6：删掉启动路径的应用）。
+- 实测：`npm run verify` **exit 0**（401 文件 / 6295 通过）、`npm run audit` exit 0。
+
 ## [1.16.159] - 2026-09-26 — 高对比/密度档**真的接上了设置页**（此前是死规则）+ 文字与品牌浅底解耦
 
 > 这一轮的开头是一条自查：`[data-contrast="high"]` 的 CSS 早在 1.16.156 就写了，
