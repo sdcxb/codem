@@ -274,6 +274,19 @@
   /* 第 161 轮：这两个令牌原先只写在亮色档里 ⇒ **暗色档没有值**（颜色用量门禁报"暗色档解析不了"）。
      它们本来就是"两档同值"的一族（纯黑底 / 外来内容面），移到基础档。 */
   --surface-content: #ffffff;
+  /* **卡片/面板面**（第 162 轮 P1-1 的第一半）：今天它与画布同色（迁移前就是这个现状），
+     把它单独命名出来是为了**解耦"卡片面"与"画布面"** —— 对标实现是"灰工作区 + 白卡"，
+     要往那边走时只需改这一行（再把工作区底色换成更灰的一档），不必去翻几百条 --bg-primary。
+     ⚠️ 它**不是**新的浅色阶梯：局部浅面仍用既有的 --surface-1 / --surface-2（codem-ui.css），
+     再加一个同义名就是"两套阶梯并存"—— 那正是这次对标一直在批的毛病。 */
+  --surface-raised: var(--bg-primary);
+  /* ===== 身份色（第 162 轮 D8）：**不表状态**，只表「这是谁 / 哪一种工作区」 =====
+     口径：状态色（--success/warning/error/info）回答"好不好"，身份色回答"是哪一个"。
+     我们只做**有真实消费方**的那两个（执行模式徽标）—— 头像/工具族没有对应元素、或本来就该用状态色，
+     造没有消费方的身份令牌会被 `css-var-unused` 拦下（和 `--blur-base` 那次一样，是"看起来体系很全"的假象）。
+     这里只放**别名**：workspace = 次级文字色（与主题无关）；
+     worktree 两档取值不同（亮 #7c3aed / 暗 #c084fc）⇒ 各档自己定义。 */
+  --identity-mode-workspace: var(--text-secondary);
 }
 
 /* ========== Theme Variables ========== */
@@ -377,6 +390,11 @@
      ⇒ 白字 5.34–6.19 全过；暗色档反之（#3fb950/#d29922/#f85149/#58a6ff 都是亮色）⇒ 白字只有 2.5–2.8，
      必须换**深墨水**（实测四色 5.5–8.3）。这一档是门禁「scan-color-roles.mjs」第一次跑就抓出来的。 */
   --text-on-status: #ffffff;
+  /* 身份色（第 162 轮 D8）：worktree 的身份紫。workspace 是别名（定义在基础 `:root`），
+     而这一档的紫要单独给 —— 暗底上这个紫偏深、对比度不够，所以暗色档要提亮一档
+     （具体取值见暗色档那两行；这里刻意不写另一个档的十六进制，免得被 LIGHT-UI-4 的
+     "亮色档不许出现饱和 web 色"当成取值 —— 它扫的是代码行，注释续行也算）。 */
+  --identity-mode-worktree: #7c3aed;
   /* 输入光标颜色：跟"可见文字"同色。
      第 59 波修复（用户报「默认皮肤暗色下，对话编辑区打字时紫光标在深底上看不清」）：
      原来写成 var(--accent)，暗色主题下 accent 是 #7c6cf0、与输入框背景对比度只有 4.29:1，
@@ -695,6 +713,9 @@
      亮色档的对应结论是"α ≥ 8%"（黑压白），取 10% 已够 —— 两档不是同一个数，因为**方向相反**。
      这条不变量有门禁：`src/test/light-theme-contrast.test.ts` 的 LIGHT-UI-11 / DARK-UI-7。 */
   --surface-pressed: rgba(255, 255, 255, 0.14);
+  /* 身份色（暗色档）：workspace 仍中性；worktree 提亮一档（暗底上 #7c3aed 对比度不够） */
+  --identity-mode-workspace: var(--text-secondary);
+  --identity-mode-worktree: #c084fc;
   --overlay-backdrop: rgba(0, 0, 0, 0.5);
   --overlay-backdrop-strong: rgba(0, 0, 0, 0.72);
 }
@@ -7722,7 +7743,7 @@ color: var(--text-on-accent);
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-7);
-  background: var(--bg-primary);
+  background: var(--surface-raised);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -9339,7 +9360,7 @@ border-bottom: 1px solid var(--accent);
  * 统计卡的色用「内联只给 color + currentColor 派生淡底淡边」（§2.3 状态色不实心填充），
  * 趋势图/占比条的蓝色渐变也从写死的十六进制改成 --info 派生。
  * ========================================================================== */
-.perf-panel { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); }
+.perf-panel { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-raised); }
 .perf-panel-inline { position: relative; }
 
 .perf-header {
@@ -9575,7 +9596,7 @@ border-bottom: 1px solid var(--accent);
   margin-top: var(--space-4);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
-  background: var(--bg-primary);
+  background: var(--surface-raised);
 }
 .mm-panel-floating {
   position: fixed;
@@ -11239,7 +11260,7 @@ border-bottom: 1px solid var(--accent);
 /* Custom Instruction Panel */
 .diff-custom-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-btn:is(:hover, :focus-visible) { background: var(--warning-border); }
-.diff-custom-panel { padding: var(--space-6) var(--space-8); background: var(--bg-primary); border-bottom: 1px solid var(--border-primary); }
+.diff-custom-panel { padding: var(--space-6) var(--space-8); background: var(--surface-raised); border-bottom: 1px solid var(--border-primary); }
 .diff-custom-label { font-size: 12px; color: var(--text-secondary); margin-bottom: var(--space-4); }
 .diff-custom-input-row { margin-bottom: var(--space-4); }
 .diff-custom-textarea { width: 100%; padding: var(--space-4) var(--space-5); font-size: 13px; font-family: inherit; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-sm); resize: vertical; min-height: 50px; }
@@ -16390,6 +16411,16 @@ color: var(--accent, #7c6cf0);
 }
 
 /* ---------- TitleBar 工作区标签栏 ---------- */
+/* 执行模式徽标（第 162 轮 D8）：用**身份色**区分"本地处理 / 新工作树"。
+   改动前只有图标与文字、没有任何视觉区分 ⇒ 用户在顶部看不出"我现在跑在新工作树里"。
+   身份色与状态色分开命名（--identity-*），所以以后要调"工作树的颜色"不会牵动任何告警语义。 */
+.execution-mode-toggle {
+  color: var(--identity-mode-workspace);
+}
+.execution-mode-toggle.active {
+  color: var(--identity-mode-worktree);
+  background: color-mix(in srgb, var(--identity-mode-worktree) 14%, transparent);
+}
 .execution-mode-label {
   font-size: var(--fs-xs);
   white-space: nowrap;

@@ -722,6 +722,62 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
  * ⚠️ 关键的一条是**要有写入方**：`[data-contrast="high"]` 那种"规则写了但全项目没有任何地方设置这个属性"
  * 的坑（第 157 轮发现）不能在这条新规则上重演 —— 所以下面直接断言前端真的有地方 setAttribute。
  */
+/**
+ * IDENTITY —— **身份色**（第 162 轮 D8）。
+ *
+ * 对标文档说身份色是"不是状态的颜色"。我们只做**有真实消费方**的那两个（执行模式徽标）：
+ * 头像不存在、工具卡本来就该用状态色 ⇒ 造了没有消费方的身份令牌会被 `css-var-unused` 拦下，
+ * 也会变成"看起来体系很全"的假象（和 `--blur-base` 那次同一个道理）。
+ */
+describe("IDENTITY 身份色（第 162 轮 D8）", () => {
+  const darkBlk = () => /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
+  const cssNoCommentsLocal = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("IDENTITY-1：两个身份色令牌两档都在、都有消费方，且**与状态色分开命名**", () => {
+    /* workspace 是**别名**（与主题无关）⇒ 定义在基础 `:root`；worktree 两档取值不同 ⇒ 各档定义。
+       所以这里查"基础档或该主题档里有定义"，而不是只查主题档（第一版就是只查主题档，报了假红）。 */
+    const baseBlock = /^:root\s*\{([\s\S]*?)\n\}/m.exec(styles)?.[1] ?? "";
+    for (const [label, block] of [["亮色", lightBlock], ["暗色", darkBlk()]] as const) {
+      expect(token(block, "--identity-mode-workspace") ?? token(baseBlock, "--identity-mode-workspace"), `${label}档（或基础档）缺 --identity-mode-workspace`).toBeTruthy();
+      expect(token(block, "--identity-mode-worktree"), `${label}档缺 --identity-mode-worktree`).toBeTruthy();
+    }
+    const identityTokens = [...new Set([...styles.matchAll(/(--identity-[\w-]+)\s*:/g)].map((m) => m[1]))];
+    expect(identityTokens.length, "一个身份令牌都没有").toBeGreaterThan(0);
+    for (const tok of identityTokens) {
+      expect(tok, `${tok} 的命名里混进了状态词（身份色不表状态）`).not.toMatch(/success|warning|error|danger|info/);
+    }
+    expect(cssNoCommentsLocal, "执行模式徽标必须用 --identity-mode-workspace").toMatch(/\.execution-mode-toggle\s*\{[^}]*color:\s*var\(--identity-mode-workspace\)/);
+    expect(cssNoCommentsLocal, "工作树激活态必须用 --identity-mode-worktree").toMatch(/\.execution-mode-toggle\.active\s*\{[^}]*color:\s*var\(--identity-mode-worktree\)/);
+  });
+
+  it("IDENTITY-2：身份色压在内容面/悬停面/自己的 14% 浅底上都 ≥4.5:1（11px 小徽标）", () => {
+    const fails: string[] = [];
+    for (const [label, block] of [["亮色", lightBlock], ["暗色", darkBlk()]] as const) {
+      const baseBlock = /^:root\s*\{([\s\S]*?)\n\}/m.exec(styles)?.[1] ?? "";
+      /* 解析要用**基础档 + 主题档**拼起来的表：`--identity-mode-workspace` 是基础档里的别名，
+         它指向的 `--text-secondary` 定义在**主题档**里 ⇒ 只拿其中一个都解析不出来。 */
+      const merged = `${baseBlock}\n${block}`;
+      const worktree = color(token(block, "--identity-mode-worktree"), "--identity-mode-worktree", merged);
+      const workspace = color(token(baseBlock, "--identity-mode-workspace"), "--identity-mode-workspace", merged);
+      const base = color(token(block, "--bg-primary"), "--bg-primary", block);
+      const surfaces: Array<[string, [number, number, number, number]]> = [
+        ["内容面", base],
+        ["悬停面", color(token(block, "--bg-hover"), "--bg-hover", block)],
+        ["worktree 14% 浅底", over([worktree[0], worktree[1], worktree[2], 0.14], base)],
+      ];
+      for (const [sname, s] of surfaces) {
+        const r = contrast(worktree, s);
+        if (r < 4.5) fails.push(`${label} worktree 压在${sname}上只有 ${r.toFixed(2)}:1`);
+      }
+      for (const [sname, s] of surfaces.slice(0, 2)) {
+        const r = contrast(workspace, s);
+        if (r < 4.5) fails.push(`${label} workspace 压在${sname}上只有 ${r.toFixed(2)}:1`);
+      }
+    }
+    expect(fails, `身份色不达标（11px 小徽标要 4.5:1）：\n  - ${fails.join("\n  - ")}`).toEqual([]);
+  });
+});
+
 describe("NATIVE 系统材质档（第 158 轮）", () => {
   const cssNoComments = styles.replace(/\/\*[\s\S]*?\*\//g, "");
   const nativeBlock = cssNoComments.slice(cssNoComments.indexOf('html[data-native-material="sidebar"]'));
@@ -771,8 +827,7 @@ describe("NATIVE 系统材质档（第 158 轮）", () => {
     expect(tbFilters.length, "材质档的标题栏必须显式关掉 CSS 模糊").toBeGreaterThan(0);
   });
 
-  it("NATIVE-3：无界壁纸 ⇒ 材质档的玻璃 α 必须更保守（≥80%），且两档都要有降级", () => {
-    for (const [name, block] of [
+  it("NATIVE-3：无界壁纸 ⇒ 材质档的玻璃 α 必须更保守（≥80%），且两档都要有降级", () => {    for (const [name, block] of [
       ["亮色", lightBlock],
       ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? ""],
     ] as const) {

@@ -260,8 +260,37 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
     }
   });
 
-  it("LIT-11：品牌浅底（--accent-muted）必须派生自 --accent（皮肤换品牌色时浅底要跟着走）", () => {
-    const allCss = readFileSync(path.join(ROOT, "src/styles.css"), "utf8") + readFileSync(path.join(ROOT, "src/styles/skin-hub.css"), "utf8");
+  /**
+   * LIT-12：**面的角色**收口（第 162 轮 P1-1 的第一半）。
+   *
+   * 背景：对标实现是"灰工作区 + 白卡"，我们是"画布与卡片同色"（卡片都用 `--bg-primary`）。
+   * 这一轮把"卡片面"单独命名成 `--surface-raised` 并接上真实消费方 —— 取值**刻意等于** `--bg-primary`，
+   * 所以是零视觉变化；它的价值是**把接口留出来**：将来要翻成"灰工作区 + 白卡"，
+   * 只需改这一行 + 工作区底色，不必去翻几百条 `--bg-primary`。
+   *
+   * 同时锁住一条**取舍**：对标文档 P1-1 还提到 `--surface-subtle`（3% 局部着色），
+   * 但我们已经有 `--surface-1` / `--surface-2` 两档局部浅面（codem-ui.css，被引用 19 次）——
+   * 再加一个同义名就是"两套阶梯并存"。所以这里断言：**不许同时存在 `--surface-subtle` 与 `--surface-1`**
+   * （要换名字就一次换干净，别并存）。
+   */
+  it("LIT-12：--surface-raised 是别名（不是写死色）、有 ≥3 个消费方、且不与 --surface-1 重名并存", () => {
+    const stylesText = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    const codemUi = readFileSync(path.join(ROOT, "src/styles/codem-ui.css"), "utf8");
+    const rootBlock = /^:root\s*\{([\s\S]*?)\n\}/m.exec(stylesText)?.[1] ?? "";
+    const def = token(rootBlock, "--surface-raised");
+    expect(def, "应在基础 :root 里定义 --surface-raised（卡片/面板面）").toBeTruthy();
+    expect(def, `--surface-raised 不能写死颜色（否则又变成"卡片面各写一处"）：${def}`).toMatch(/^var\(--[\w-]+\)$/);
+    const consumers = [...stylesText.matchAll(/var\(--surface-raised\)/g)].length;
+    /* 阈值取**当前实测值**（4 个消费方：市场技能卡 / 多模态内嵌面板 / diff 面板 / 性能面板）——
+       写 `≥3` 时"删掉一个消费方"这种变异根本不会红（实测），等于门槛没咬住。 */
+    expect(consumers, `--surface-raised 只有 ${consumers} 个消费方（实测 4 个，门槛取 ≥4：少一个就说明有人把它换回 --bg-primary 了）`).toBeGreaterThanOrEqual(4);
+    /* 两套"局部浅面"不许并存（见上面注释） */
+    const hasSubtle = /--surface-subtle\s*:/.test(stylesText);
+    const hasSurface1 = /--surface-1\s*:/.test(codemUi) || /--surface-1\s*:/.test(stylesText);
+    expect(hasSubtle && hasSurface1, "同时存在 --surface-subtle 与 --surface-1：这是两套浅面阶梯，必须合成一套").toBe(false);
+  });
+
+  it("LIT-11：品牌浅底（--accent-muted）必须派生自 --accent（皮肤换品牌色时浅底要跟着走）", () => {    const allCss = readFileSync(path.join(ROOT, "src/styles.css"), "utf8") + readFileSync(path.join(ROOT, "src/styles/skin-hub.css"), "utf8");
     const scopes: Array<[string, RegExp]> = [
       ["默认/亮色", /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/],
       ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/],
