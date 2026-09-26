@@ -1,0 +1,9 @@
+{
+  "_note": "release tag 与版本号对不上的**已知例外**（`tools/release/verify-release-tags.mjs` 读它）。每条必须写清：为什么、以及什么时候能清掉。没有理由的条目不许加。",
+  "exceptions": {
+    "v1.16.153": {
+      "reason": "1.16.153 的 package.json 版本号提交**从未单独落地**（153 与 154 是同一次会话里连着出包，只提交了后者的版本号），所以 tag 指向的是**含本版修复的提交** 519d99d（其 package.json 仍是 1.16.152）。这一点已写进它的 release 说明与 CHANGELOG。",
+      "expires": "永久（历史事实，不会改变）—— 保留这条记录比伪造一个提交更诚实。"
+    }
+  }
+}
