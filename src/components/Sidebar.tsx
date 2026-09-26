@@ -6,6 +6,7 @@ import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
+import { OverflowText } from "./OverflowText";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { SpaceSwitcher } from "./SpaceSwitcher";
@@ -678,7 +679,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                   >
                     <span className="sidebar-project-arrow">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
                     <span className="sidebar-project-icon">{project.pinned ? <Pin size={14} style={{ color: "var(--accent)" }} /> : <Folder size={14} />}</span>
-                    <span className="sidebar-project-name" title={project.name}>{project.name}</span>
+                    <OverflowText className="sidebar-project-name">{project.name}</OverflowText>
                     <button
                       className="sidebar-project-btn"
                       onClick={(e) => { e.stopPropagation(); handleNewSession(project.id); }}
@@ -1037,7 +1038,7 @@ function SessionItem({
           return hasActive ? <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={12} /></span> : null;
         } catch { return null; }
       })()}
-      <span className="sidebar-session-title" title={session.title}>{session.title}</span>
+      <OverflowText className="sidebar-session-title">{session.title}</OverflowText>
       <div className="sidebar-session-actions">
         <button
           className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.170",
-  "notes": "P2-3 皮肤几何收口：皮肤规则体里 34 条「逐组件覆盖几何」收进令牌块（hub 11 / dream 23）—— 纯冗余 8 条直接删、真分叉 26 条改用 15 条新的组件角色令牌（--radius-input-card/-code/-diff-*/-scrollbar-size/-panel-tabs-* 等，取值即主表现有值 ⇒ 默认档零变化），皮肤自有布局类 41 条保持原样。口径更正：方案原文的 geometry 127→0 会把皮肤自带界面（.hub-navbar 等）一起删掉，改成只盯共享组件且剩余差异必须可追溯到皮肤令牌覆盖。顺带修主表 ::-webkit-scrollbar 的两份静默覆盖。新增门禁 SKIN-3，变异 17/17 全红。",
-  "pub_date": "2026-09-26T13:45:18Z",
+  "version": "1.16.171",
+  "notes": "P2-5 长文本：10 条多行截断此前只写 -webkit-line-clamp、没有标准 line-clamp（换引擎静默失效）⇒ 全部双写；新增唯一的截断工具类 .truncate/.truncate-2/.truncate-3 与 OverflowText 组件（只在真被截断时才挂 title，替代全仓 258 处无条件 title），已用于侧栏会话标题与项目名。口径更正：方案说的「148 条无截断 overflow:hidden」实测绝大多数是布局裁切，真正的硬切形态只有 .sr-only 一条；另实测「两皮肤 :active 均为 0 ⇒ 按压失效」不成立（CDP forcePseudoState 三档都有背景+位移反馈）。新增门禁 TEXT-1，变异 21/21 全红。",
+  "pub_date": "2026-09-26T13:58:45Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R4ekRadGE2bVdGMzI3WXZoWWo0a2VBWEYxcGJZYW9XZTNWL3E2RXVyVVd4S0h2VVQ5Uk1ubWxBelY5T0hYZVU5YUE2dU5JVHJRaGx5R3U5b09LYlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMwMzE0CWZpbGU6Q29kZW1fMS4xNi4xNzBfeDY0LXNldHVwLmV4ZQpPeTVnblpFbGhpZW52ZkV1anAvV0dvV0l2dTFGSi95WUJOSUg1aWtVR1Z1NDdLV3YrSU5JV3NTS1YyZGtuS3ZtTTFOYVhuTTBqUmlpWDNZSE9IeUZEZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.170/Codem_1.16.170_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VCa0h2Rjg3bmQ0T3UvTlY3M3VHNGN3dWxDNzFPaUFCSXZ4cisvdW8xSUdhUVpzNWVSN1dndDNVVzBWQnl0NVBieHk4c21lMTh1ZlJPdEM4a2lweXc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMxMDQ2CWZpbGU6Q29kZW1fMS4xNi4xNzFfeDY0LXNldHVwLmV4ZQpXcnNqM3Y0Zzc4ZXlyMHpnTzUvZXdzL2U2OEdFYWV4YW5tSGphTTJBOTkzQkd2WmM3NzhJTStaQ2RvN0ZGdFZZRzQ5K2hLam9uUEFyaU5GeGxuVzNCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.171/Codem_1.16.171_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R4ekRadGE2bVdGMzI3WXZoWWo0a2VBWEYxcGJZYW9XZTNWL3E2RXVyVVd4S0h2VVQ5Uk1ubWxBelY5T0hYZVU5YUE2dU5JVHJRaGx5R3U5b09LYlF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMwMzE0CWZpbGU6Q29kZW1fMS4xNi4xNzBfeDY0LXNldHVwLmV4ZQpPeTVnblpFbGhpZW52ZkV1anAvV0dvV0l2dTFGSi95WUJOSUg1aWtVR1Z1NDdLV3YrSU5JV3NTS1YyZGtuS3ZtTTFOYVhuTTBqUmlpWDNZSE9IeUZEZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.170/Codem_1.16.170_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VCa0h2Rjg3bmQ0T3UvTlY3M3VHNGN3dWxDNzFPaUFCSXZ4cisvdW8xSUdhUVpzNWVSN1dndDNVVzBWQnl0NVBieHk4c21lMTh1ZlJPdEM4a2lweXc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMxMDQ2CWZpbGU6Q29kZW1fMS4xNi4xNzFfeDY0LXNldHVwLmV4ZQpXcnNqM3Y0Zzc4ZXlyMHpnTzUvZXdzL2U2OEdFYWV4YW5tSGphTTJBOTkzQkd2WmM3NzhJTStaQ2RvN0ZGdFZZRzQ5K2hLam9uUEFyaU5GeGxuVzNCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.171/Codem_1.16.171_x64-setup.exe"
     }
   }
 }

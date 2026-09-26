@@ -2,6 +2,61 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.171] - 2026-09-26 — P2-5 长文本：10 条多行截断缺标准属性 + 新增唯一截断工具类与 OverflowText（并更正方案口径）
+
+> 这一版同样**先量后改**，量完发现方案给的两个数字都不对，而真问题在别处。
+
+### 口径更正：方案原文的「148 条无截断的 overflow:hidden（约 58 条疑似文本容器）」
+
+实测（`_measure-truncation2.mjs`，装机版基线）：
+
+| 量 | 数字 |
+| --- | --- |
+| `overflow: hidden` 的规则 | **217** |
+| 其中没有任何截断机制 | **134** —— 但**绝大多数是布局裁切**（面板裁圆角、头像裁方、输入框裁溢出、`.sr-only`） |
+| **真正的"硬切"形态**（`nowrap` + `hidden` 且无 `text-overflow`） | **1 条**，而且就是 `.sr-only` 本身（屏读专用类，`nowrap + hidden` 是设计） |
+
+按「148 → ≤20」去改，会把力气花在**布局裁切**上（那是正当写法）。真问题只有一个，而且此前没有任何门禁看得见：
+**10 条多行截断只写了 `-webkit-line-clamp`，没有标准 `line-clamp`** —— 换引擎就静默失效，
+和 SKIN-2 那条「压缩器把命名色改成 hex」是同一类**口径漂移**问题。
+
+### 处置
+
+- **10 条 clamp 全部双写**：`.market-skill-desc` / `.tj-summary` / `.petm-desc` / `.notebook-card-desc` /
+  `.notebook-card-summary` / `.guidance-item-text` / `.scrollbar-marker-preview-text` /
+  `.quote-context-text` / `.nb-source-preview` / `.nb-note-preview`。
+- **新增唯一的截断工具类**：`.truncate`（=`-1`，单行三件套）/ `.truncate-2` / `.truncate-3`（多行 clamp，双写）。
+  此前 74 条规则各自手抄三件套、没有任何通用工具类 —— 新写一处截断就要再抄一遍、再漏一遍。
+- **新增 `OverflowText` 组件**（`src/components/OverflowText.tsx`）：**只在真的被截断时**才挂 `title`。
+  仓库既有做法是「CSS 截断 + 无条件 `title={…}`」（全仓 258 处），两个毛病：
+  ① 没截断也会弹提示（纯噪声）；② 截断是**布局结果**，字号/窗口一变"截没截断"就变了，写死的 `title` 不跟。
+  已接到侧栏的会话标题与项目名（原本就是无条件 `title`）；单行看宽度、多行看高度，文本与尺寸变化都会重新丈量。
+
+### 顺带的审计发现：方案里「两皮肤 `:active` 均为 0 ⇒ 按压反馈失效」**不成立**
+
+用 CDP 的 `CSS.forcePseudoState` 强制 `:active` 真机实测三档：
+
+| 皮肤 | `.sidebar-session` 按下前 → 按下后 |
+| --- | --- |
+| 默认 | 背景 `transparent` → 墨色 9.8%，位移 `none` → `translateY(0.98px)` |
+| hub | 背景 → 10% 浅墨（暗底），位移 → `translateY(0.98px)` |
+| dream | 背景 → 9.3% 墨色，位移 → `translateY(0.93px)` |
+
+⇒ 皮肤文件里 0 条 `:active` **不等于**按下没反馈：基线选择器是**级联下来**的，皮肤没有再覆盖 background/transform。
+判据必须看**渲染结果**，不能数源码里的规则条数。**这一项无需修改**（记在这里，免得下轮有人照着方案去"修"）。
+
+### 门禁与证据
+
+- 新增 **TEXT-1**：① 每条 `-webkit-line-clamp: N` 必须配同值 `line-clamp: N`；② 三条工具类必须存在且双写；
+  ③ `nowrap + overflow:hidden` 必须配 `text-overflow`（白名单只放 `.sr-only` 这类**故意的**）；
+  ④ 工具类必须有真实消费者（`OverflowText`）—— 否则就是死类。
+- 新增 **OverflowText 行为用例 5 条**（OVF-1…5）：在元素原型上造 `scrollWidth/clientWidth` 来模拟
+  「放得下 / 放不下」——jsdom 没有排版引擎，不造布局的话组件永远"看起来没 bug"。
+- 变异自证 **21/21 全红**（新增 4 条：工具类丢标准属性 / 新增只写前缀的 clamp / 新增硬切规则 /
+  把 OverflowText 退回无条件 title），且逐字节还原。
+- CSS 生效取值快照 27 处变化逐条过目：全部是"新增 `line-clamp`"与"新增工具类"，无既有取值漂移。
+- `verify` 403 文件全绿、`audit` exit 0、`scan-ui` error 0 / warn 0。
+
 ## [1.16.170] - 2026-09-26 — P2-3 皮肤几何收口：34 条「规则体里逐组件覆盖」收进令牌块（并更正方案的口径）
 
 > 先量后改。装机实测（`_cross-skin-geometry.mjs`）同一个组件在三档下的计算几何：

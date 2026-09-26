@@ -826,4 +826,84 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
       "Sidebar.tsx 的列表上限应由 --sidebar-row-h 与 --space-1 算出（行高变了上限要跟着变）",
     ).toBe(true);
   });
+
+  /**
+   * TEXT-1：**长文本截断必须双写、必须走唯一的工具类**（第 171 轮 P2-5）。
+   *
+   * 先更正方案的口径（实测，见 `.preview-shot/_measure-truncation2.mjs`）：
+   * 方案原文说「overflow:hidden 246 条里 148 条既无省略号也无 clamp（约 58 条疑似文本容器）」。
+   * 实测 `overflow: hidden` **217** 条、其中无任何截断机制的 **134** 条 —— 但绝大多数是**布局裁切**
+   * （面板裁圆角、头像裁方、输入框裁溢出、`.sr-only`），**真正的"硬切"只有 1 条**（`.sr-only` 本身，
+   * 它是屏读专用类，`nowrap + hidden` 是设计）。所以按 148→≤20 去改会把力气花在布局裁切上。
+   *
+   * 真问题是另外两条，都能机检：
+   * ① **10 条多行截断只写了 `-webkit-line-clamp`**，没有标准 `line-clamp` —— 换引擎静默失效
+   *    （与 SKIN-2 那条"压缩器改写命名色"同类的口径漂移）；实测已全部双写；
+   * ② 截断写法散在 74 条规则里各抄一遍，没有任何通用工具类 —— 新写一处就要再抄一遍、再漏一遍。
+   *
+   * 判据：
+   * ① 每条 `-webkit-line-clamp: N` 必须配一条同值的 `line-clamp: N`；
+   * ② `.truncate` / `.truncate-2` / `.truncate-3` 必须存在且双写（`.truncate` 是三件套、后两者是 clamp）；
+   * ③ `white-space: nowrap` + `overflow: hidden` 必须配 `text-overflow`，白名单只放**故意的**（`.sr-only`）。
+   * 变异：删掉 `.truncate-2` 的 `line-clamp` / 新增一条只写前缀的 clamp / 新增一条 nowrap+hidden 无省略号 ⇒ 全红。
+   */
+  it("TEXT-1：多行截断必须双写（line-clamp + -webkit-），且截断工具类唯一", () => {
+    const files = ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css", "src/styles/pet-window.css"];
+    const missingDual: string[] = [];
+    const hardCut: string[] = [];
+    let clampCount = 0;
+    /* 白名单：`.sr-only` 是屏读专用类（视觉上就该藏起来，不是"文本被硬切"） */
+    const HARD_CUT_ALLOW = [/^\.sr-only$/];
+    for (const rel of files) {
+      const code = readFileSync(path.join(ROOT, rel), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+      const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(code))) {
+        const sel = m[2].trim().replace(/\s+/g, " ");
+        const body = m[3];
+        const lineOf = code.slice(0, m.index).split("\n").length;
+        const w = /-webkit-line-clamp:\s*(\d+)/.exec(body);
+        if (w) {
+          clampCount++;
+          if (!new RegExp(`(^|[;\\s])line-clamp:\\s*${w[1]}\\b`).test(body)) {
+            missingDual.push(`${rel}:${lineOf}  ${sel.slice(0, 50)}  -webkit-line-clamp: ${w[1]} 没有标准 line-clamp`);
+          }
+        }
+        if (/white-space:\s*nowrap/.test(body) && /overflow(-[xy])?:\s*hidden/.test(body) && !/text-overflow/.test(body)) {
+          if (!HARD_CUT_ALLOW.some((re2) => re2.test(sel))) hardCut.push(`${rel}:${lineOf}  ${sel.slice(0, 50)}`);
+        }
+      }
+    }
+    expect(clampCount, "一条 -webkit-line-clamp 都没扫到 ⇒ 判据失效").toBeGreaterThanOrEqual(8);
+    expect(missingDual, "多行截断缺标准属性（换引擎会静默失效）：\n  - " + missingDual.join("\n  - ")).toEqual([]);
+    expect(hardCut, "nowrap + overflow:hidden 却没给省略号（文字会被硬切）：\n  - " + hardCut.join("\n  - ")).toEqual([]);
+
+    /* 工具类必须存在、必须双写。
+       ⚠️ 要把**所有**提到该选择器的规则体拼起来看：`.truncate-2` 出现在两组规则里
+       （`.truncate-2, .truncate-3 { 盒模型 }` 与 `.truncate-2 { line-clamp }`），
+       只取第一条会误报「缺标准 line-clamp」——第一版就是这么红的。 */
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const util = (sel: string) => {
+      const bodies: string[] = [];
+      const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(css))) {
+        const sels = m[2].split(",").map((s) => s.trim().replace(/\s+/g, " "));
+        if (sels.includes(sel)) bodies.push(m[3]);
+      }
+      return bodies.join("\n");
+    };
+    const t1 = util(".truncate");
+    expect(/overflow:\s*hidden/.test(t1) && /text-overflow:\s*ellipsis/.test(t1) && /white-space:\s*nowrap/.test(t1),
+      ".truncate 必须是单行三件套（overflow:hidden + text-overflow:ellipsis + white-space:nowrap）").toBe(true);
+    for (const [sel, n] of [[".truncate-2", "2"], [".truncate-3", "3"]] as const) {
+      const body = util(sel);
+      expect(body, `找不到 ${sel} 的规则体`).not.toBe("");
+      expect(new RegExp(`(^|[;\\s])line-clamp:\\s*${n}\\b`).test(body), `${sel} 缺标准 line-clamp: ${n}`).toBe(true);
+      expect(new RegExp(`-webkit-line-clamp:\\s*${n}\\b`).test(body), `${sel} 缺 -webkit-line-clamp: ${n}`).toBe(true);
+    }
+    /* 工具类必须有真实消费者（否则就是死类，`css-class-unused` 也会报） */
+    const ov = readFileSync(path.join(ROOT, "src/components/OverflowText.tsx"), "utf8");
+    expect(/truncate-/.test(ov), "OverflowText 没在用 .truncate 工具类 ⇒ 工具类没有消费者").toBe(true);
+  });
 });
