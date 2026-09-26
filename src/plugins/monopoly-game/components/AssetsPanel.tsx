@@ -82,7 +82,7 @@ export function AssetsPanel({ engine, playerId, onClose }: Props) {
         {/* 地产清单 */}
         <div className="sell-section-title">地产 ({lands.length})</div>
         {lands.length === 0 ? (
-          <div className="empty-state">无地产</div>
+          <div className="empty-hint is-compact">无地产</div>
         ) : (
           <div className="card-list">
             {lands.map((l, i) => (
@@ -100,7 +100,7 @@ export function AssetsPanel({ engine, playerId, onClose }: Props) {
         {/* 股票清单 */}
         <div className="sell-section-title">股票 ({stocks.length})</div>
         {stocks.length === 0 ? (
-          <div className="empty-state">无股票</div>
+          <div className="empty-hint is-compact">无股票</div>
         ) : (
           <div className="card-list">
             {stocks.map((s, i) => {

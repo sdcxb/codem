@@ -250,7 +250,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
         </div>
         <div className="flashcard-body">
           {cards.length === 0 ? (
-            <div className="flashcard-empty">
+            <div className="empty-hint is-stacked">
               <Layers size={32} className="flashcard-empty-icon" />
               <p>{isZh ? '暂无闪卡，点击「新建」或「AI 生成」创建' : 'No flashcards yet. Click "New" or "AI Generate"'}</p>
             </div>

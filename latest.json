@@ -1,15 +1,15 @@
 {
-  "version": "1.16.178",
-  "notes": "修 O-31：清理历史遗留的重复文本事件（真机 6069 -> 0），会话内搜索不再出现重复命中。新增引擎命令 events.dedup_text（默认干跑、保留最早的记录、删除留审计痕迹）+ 启动维护一次性去重 + 读路兜底。投影回放逐条不变。",
-  "pub_date": "2026-09-26T15:47:50Z",
+  "version": "1.16.179",
+  "notes": "P2-1 收口：24 处空态内边距收进共享族（棘轮 24 -> 1），新增 .empty-hint.is-stacked / .is-fill 两个修饰与 --empty-hint-gap 令牌；顺手收掉名字像空态却一直没被门禁看见的第三族（O-32）并新增 COND-1b 结构门禁。",
+  "pub_date": "2026-09-26T16:14:03Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FHK09IRUJnUURDOW03YXp6QWwydmUxTURjSWJxaUtaUjMyaU1KcUNDRXdsSjV1bmtZTXowSGZ2SytCMG04Q01VLzduVTFiOU8wR1ladUw4ZlBTeFFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM3NjY2CWZpbGU6Q29kZW1fMS4xNi4xNzhfeDY0LXNldHVwLmV4ZQpVTWVmOFAzazFBRFp5Zy9zNE5pRkdZR1QzVWFoaFZYMVNvQTFGVTNJOGJGRW1lcmt6SDNsN0J0NU93T0FxTUoyNC9iUm8zTW9VV1JKa005U1FXcmZBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.178/Codem_1.16.178_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RZSTFxNWF0TjJXeGRGVm9GbXRzTXc1anBucVBEVW5Hc0xEcjZjcHR2SlFxRndram1WVG1Mamw4L1NyTGt4RlhuNXRTcWN5MnZVcTQycHR5SmJIZ2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM5MjQwCWZpbGU6Q29kZW1fMS4xNi4xNzlfeDY0LXNldHVwLmV4ZQp3b3gyL2I5dGxRYWhFalJKVGJpbW44ZXlqeHlHQXczWEpoVzc3Sk1VU1pmUEtjZGxzRmZSbU5aZG9kUWpvY3BsdUo1VUdsQllhRm9oVjB2Mjd2R21DZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.179/Codem_1.16.179_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FHK09IRUJnUURDOW03YXp6QWwydmUxTURjSWJxaUtaUjMyaU1KcUNDRXdsSjV1bmtZTXowSGZ2SytCMG04Q01VLzduVTFiOU8wR1ladUw4ZlBTeFFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM3NjY2CWZpbGU6Q29kZW1fMS4xNi4xNzhfeDY0LXNldHVwLmV4ZQpVTWVmOFAzazFBRFp5Zy9zNE5pRkdZR1QzVWFoaFZYMVNvQTFGVTNJOGJGRW1lcmt6SDNsN0J0NU93T0FxTUoyNC9iUm8zTW9VV1JKa005U1FXcmZBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.178/Codem_1.16.178_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RZSTFxNWF0TjJXeGRGVm9GbXRzTXc1anBucVBEVW5Hc0xEcjZjcHR2SlFxRndram1WVG1Mamw4L1NyTGt4RlhuNXRTcWN5MnZVcTQycHR5SmJIZ2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM5MjQwCWZpbGU6Q29kZW1fMS4xNi4xNzlfeDY0LXNldHVwLmV4ZQp3b3gyL2I5dGxRYWhFalJKVGJpbW44ZXlqeHlHQXczWEpoVzc3Sk1VU1pmUEtjZGxzRmZSbU5aZG9kUWpvY3BsdUo1VUdsQllhRm9oVjB2Mjd2R21DZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.179/Codem_1.16.179_x64-setup.exe"
     }
   }
 }

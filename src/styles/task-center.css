@@ -55,12 +55,7 @@
 }
 .squads-new-btn:is(:hover, :focus-visible) { background: var(--accent-hover); border-color: var(--accent-hover); }
 
-.tc-empty {
-  padding: var(--space-11) var(--space-9);
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: var(--fs-md);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint（文字色由 --text-secondary 统一到 --text-muted） */
 
 .squads-list { display: flex; flex-direction: column; gap: var(--space-4); }
 .squads-card {
@@ -268,7 +263,7 @@
   white-space: nowrap;
 }
 .automation-trigger-meta svg { flex-shrink: 0; }
-.automation-empty { margin-bottom: var(--space-4); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 第 179 轮 O-32：并入 .empty-hint.is-compact（下边距改由 is-compact 的内边距承担） */
 .automation-actions { display: flex; gap: var(--space-4); margin-bottom: var(--space-8); }
 
 .automation-history-title {

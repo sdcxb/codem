@@ -200,6 +200,10 @@
      面板里独占一块 vs 列表或浮层里挤一行。 */
   --empty-hint-pad: var(--space-10);                        /* 面板级：24px */
   --empty-hint-pad-compact: var(--space-4) var(--space-3);  /* 紧凑：8px 6px */
+  /* 「图标在上、文字在下」那种空态的间距（第 179 轮）。取 space-4（8px）是**折中值**：
+     原来的各站点是 4/6/8/8/12px 五档 —— 4px 对 48px 的大图标太挤、12px 对列表内的小图标太散，
+     8px 落在两头都不难看的中间。**仍然只有一处可调**（门禁 COND-1 断言 is-stacked 必须引用它）。 */
+  --empty-hint-gap: var(--space-4);
 
 
   /* 行内图标尺寸：此前侧栏用 `font-size: var(--fs-lg)` 来定图标大小（16px）——
@@ -1261,8 +1265,9 @@ overflow: hidden;
   white-space: nowrap;
 }
 .flashcard-body { overflow: auto; max-height: 50vh; padding: var(--space-5) var(--space-8); }
-.flashcard-empty { text-align: center; padding: var(--space-12); color: var(--text-muted); }
-.flashcard-empty-icon { margin: 0 auto var(--space-3); opacity: 0.5; }
+/* 第 179 轮 P2-1：并入 .empty-hint.is-stacked */
+/* 第 179 轮 P2-1：间距交给 .empty-hint.is-stacked 的 gap */
+.flashcard-empty-icon { opacity: 0.5; }
 .flashcard-list { display: flex; flex-direction: column; gap: var(--space-3); }
 .flashcard-item { padding: var(--space-4) var(--space-5); background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius); }
 .flashcard-item-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); }
@@ -1560,12 +1565,7 @@ flex-shrink: 0;
 
 
 
-.sidebar-empty {
-  padding: var(--space-8);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .sidebar-project {
   margin-bottom: var(--space-1);
@@ -3553,12 +3553,7 @@ color: var(--accent);
   font-weight: 500;
 }
 
-.file-loading,
-.file-empty {
-  padding: var(--space-6) var(--space-8);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-compact */
 
 /* ========== File Editor ========== */
 
@@ -4383,12 +4378,8 @@ min-height: 0;
   font-weight: 600;
 }
 
-.workbench-empty {
-  padding: var(--space-6);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  text-align: center;
-}
+/* 第 179 轮 P2-1：`.workbench-empty` 的三处消费者已并入 .empty-hint（原规则只剩一行 color，
+   由共享层提供）⇒ 整条删除。 */
 
 .workbench-activity-entry {
   display: grid;
@@ -4515,29 +4506,8 @@ background: var(--bg-secondary);
   padding: var(--space-6);
 }
 
-.project-empty {
-  padding: var(--space-13) var(--space-9);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-md);
-}
-
-/* 「暂时读不到项目列表」的重试入口（第 47 轮补） */
-.project-retry-btn {
-  display: block;
-  margin: var(--space-3) auto 0;
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.project-retry-btn:hover {
-  background: var(--bg-hover);
-}
+/* 第 179 轮 P2-1：`.project-empty` 并入 .empty-hint（纯文本那处）/ 换成共享 StatusBanner（带重试那处），
+   `.project-retry-btn` 随之删除 —— 重试按钮由 StatusBanner 自己渲染，不再每个调用点写一套。 */
 
 .project-item {
   display: grid;
@@ -6099,11 +6069,7 @@ background: var(--accent-surface-strong);
   padding: 0 var(--space-8) var(--space-8);
 }
 
-.subagent-activity-empty {
-  font-size: var(--fs-base);
-  color: var(--text-muted);
-  padding: var(--space-4) 0;
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-compact */
 
 .subagent-activity-item {
   display: flex;
@@ -6377,13 +6343,7 @@ background: var(--accent-surface-strong);
   padding: var(--space-4);
 }
 
-.snapshot-loading,
-.snapshot-empty {
-  padding: var(--space-10);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .snapshot-item {
   margin-bottom: var(--space-2);
@@ -7033,13 +6993,8 @@ color: var(--text-on-accent);
   align-content: start;
 }
 
-.mcp-marketplace-empty {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: var(--space-14) var(--space-8);
-  color: var(--text-muted);
-  font-size: var(--fs-md);
-}
+/* 第 179 轮 P2-1：内容几何并入 .empty-hint；**只留网格跨列**（那是布局，不属共享层） */
+.mcp-marketplace-empty { grid-column: 1 / -1; }
 
 .mcp-catalog-card {
   display: flex;
@@ -8919,7 +8874,7 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-xs);
 }
 .layered-pre--export { max-height: 300px; border: 1px solid var(--border-primary); }
-.layered-empty-data { font-size: var(--fs-sm); font-style: italic; color: var(--text-muted); }
+/* 第 179 轮 O-32：并入 .empty-hint.is-compact（同上，不再斜体） */
 
 .layered-policy { display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--fs-sm); }
 .layered-policy-key { color: var(--text-muted); }
@@ -9031,7 +8986,7 @@ border-bottom: 1px solid var(--accent);
 .git-env-save-btn { padding: var(--space-3) var(--space-8); font-size: var(--fs-sm); }
 
 .git-env-ops-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
-.git-env-ops-empty { font-size: var(--fs-sm); font-style: italic; color: var(--text-muted); }
+/* 第 179 轮 O-32：并入 .empty-hint.is-compact（italic 是这一族的"自有语气"，统一后不再斜体） */
 .git-env-op {
   display: flex;
   align-items: flex-end;
@@ -9453,7 +9408,7 @@ border-bottom: 1px solid var(--accent);
   cursor: pointer;
 }
 .cicd-refresh-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
-.cicd-empty { padding: var(--space-10); text-align: center; color: var(--text-muted); }
+/* 第 179 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .cicd-runs { display: flex; flex-direction: column; gap: var(--space-3); }
 .cicd-run-card {
@@ -9632,8 +9587,9 @@ border-bottom: 1px solid var(--accent);
   padding: var(--space-6) var(--space-8);
 }
 
-.perf-empty { padding: var(--space-12); text-align: center; color: var(--text-muted); }
-.perf-empty-icon { opacity: 0.3; margin-bottom: var(--space-4); }
+/* 第 179 轮 P2-1：并入 .empty-hint（is-stacked / 纯文本两种用法） */
+/* 第 179 轮 P2-1：间距交给 .empty-hint.is-stacked 的 gap */
+.perf-empty-icon { opacity: 0.3; }
 
 .perf-stat-row { display: flex; gap: var(--space-6); flex-wrap: wrap; margin-bottom: var(--space-8); }
 /* 颜色由内联 style 给出，底/边从当前色派生 */
@@ -10064,7 +10020,7 @@ border-bottom: 1px solid var(--accent);
  * 等宽字体走共享类 .mono，这里不再各写一遍 font-family。
  * ========================================================================== */
 .trajectory-panel { display: flex; flex-direction: column; height: 100%; }
-.tj-empty { padding: var(--space-10) var(--space-6); text-align: center; color: var(--text-muted); font-size: var(--fs-sm); }
+/* 第 179 轮 P2-1：并入 .empty-hint */
 .tj-header {
   display: flex;
   align-items: center;
@@ -10637,13 +10593,7 @@ border-bottom: 1px solid var(--accent);
   padding: var(--space-4);
 }
 
-.session-loading,
-.session-empty {
-  padding: var(--space-10);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .session-item {
   padding: var(--space-5) var(--space-6);
@@ -11644,12 +11594,7 @@ border-bottom: 1px solid var(--accent);
   text-overflow: ellipsis;
 }
 
-.slash-command-empty {
-  padding: var(--space-6) var(--space-4);
-  font-size: var(--fs-base);
-  color: var(--text-muted);
-  text-align: center;
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-compact */
 
 /* Input bottom control bar — unified single-line inside the card */
 .input-control-bar {
@@ -11761,12 +11706,9 @@ min-height: 36px;
   align-items: center;
 }
 
-.bottom-bar-dropdown-empty {
-  padding: var(--space-4);
-  font-size: var(--fs-2xs);
-  opacity: 0.5;
-  text-align: center;
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-compact
+   （原来还写了 font-size: --fs-2xs 与 opacity: .5；字号统一到共享层，
+     .5 的半透明改成 --text-muted —— 同一个"弱化"意图，但不再靠 alpha 叠出来） */
 
 .bottom-bar-dropdown-item {
   display: flex;
@@ -12626,19 +12568,8 @@ border-color: var(--text-muted);
   flex-wrap: wrap;
 }
 
-.notebook-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-4);
-  padding: var(--space-14) var(--space-10);
-  text-align: center;
-  flex: 1;
-}
-.notebook-empty-state p {
-  margin: 0;
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-stacked.is-fill */
+/* 第 179 轮 P2-1：并入 .empty-hint > p */
 .notebook-empty-hint {
   font-size: var(--fs-sm);
   color: var(--text-muted);
@@ -15140,11 +15071,7 @@ color: var(--accent, #7c6cf0);
   color: var(--text-muted, #6b6b7b);
 }
 
-.mention-empty {
-  padding: var(--space-4) var(--space-5);
-  font-size: var(--fs-sm);
-  color: var(--text-muted, #6b6b7b);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-compact */
 .mention-list {
   list-style: none;
   margin: 0;
@@ -15746,16 +15673,7 @@ color: var(--accent, #7c6cf0);
   min-height: 0;
 }
 
-.right-sidebar-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  color: var(--text-muted, #6b6b7b);
-  font-size: var(--fs-sm);
-  text-align: center;
-  padding: var(--space-10);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-fill */
 
 .right-sidebar-browser {
   display: flex;
@@ -16220,11 +16138,17 @@ color: var(--accent, #7c6cf0);
  *
  * 为什么要有：空态规则 59 条里 padding 有 **19 种**、字号 7 种、gap 5 种 ——
  * 而其中 13 个类在 TSX 里都是同一个形状（div 上挂一个类名、里面只有一句提示文本），
- * 只是每处都自己定了一套内边距。这里收成一个类 + 两个修饰：
- *   .empty-hint              面板级（上下 24px、居中、--text-muted、--fs-base）
- *   .empty-hint.is-compact   列表/浮层内的紧凑提示（8/6、--fs-sm、左对齐）
- *   .empty-hint.is-boxed     带虚线框的面板占位（底色 + 1px 虚线 + 圆角）
+ * 只是每处都自己定了一套内边距。这里收成一个类 + 四个修饰：
+ *   .empty-hint                   面板级（上下 24px、居中、--text-muted、--fs-base）
+ *   .empty-hint.is-compact        列表/浮层内的紧凑提示（8/6、--fs-sm、左对齐）
+ *   .empty-hint.is-boxed          带虚线框的面板占位（底色 + 1px 虚线 + 圆角）
+ *   .empty-hint.is-stacked        图标在上、文字在下（间距走 gap，第 179 轮）
+ *   .empty-hint.is-fill           撑满父容器（flex: 1，第 179 轮）
  * 几何全部走令牌 ⇒ 要调一次就够（门禁 COND-1 守这一条）。
+ *
+ * 第 179 轮把剩下 24 处也按**真实标记形状**收进来：18 处纯文本、5 处"图标 + 一句话"、
+ * 2 处要撑满父容器 ⇒ 棘轮 24 → 1。**那 1 处是 ChatPanel 的欢迎页 `.empty-state`**
+ * （标题 + 副标题 + 建议按钮的富空态），理由写在 COND-1 的头注释里。
  * ========================================================================== */
 .empty-hint {
   padding: var(--empty-hint-pad);
@@ -16244,6 +16168,26 @@ color: var(--accent, #7c6cf0);
   border: 1px dashed var(--border-primary);
   border-radius: var(--radius);
 }
+
+/* 图标在上、文字在下（空态的第二种形状：闪卡 / 性能面板 / 笔记本几处）。
+   间距走 `--empty-hint-gap` 单一令牌；图标自身的下边距要一并去掉，
+   否则 gap 与 margin 会叠加成两倍间距（那是"统一"变成"变形"的典型坑）。 */
+.empty-hint.is-stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--empty-hint-gap);
+}
+
+/* 需要撑满父容器（右侧栏正文区 / 笔记本列表区）：原来各自写 flex: 1 */
+.empty-hint.is-fill {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 富空态里的段落不该带默认外边距（旧 .notebook-empty-state p 的等价物） */
+.empty-hint > p { margin: 0; }
 
 
 /* 装饰性/占位图标（空态、未激活状态） */
@@ -17245,7 +17189,9 @@ color: var(--accent, #7c6cf0);
   overflow-y: auto;
 }
 .input-popover-title { margin-bottom: var(--space-3); font-size: var(--fs-sm); font-weight: 600; opacity: 0.7; }
-.input-popover-empty { padding: var(--space-4) 0; font-size: var(--fs-sm); opacity: 0.5; }
+/* 第 179 轮 P2-1：`.input-popover-empty` 并入 .empty-hint.is-compact（原来自己写 padding + fs-sm + opacity .5）。
+   这处此前**从来没被 COND-1 的棘轮看见** —— 门禁的排除条件里写了子串 `input`，
+   把"名字里带 input 的空态"整条静默跳过（同轮已把排除条件收紧到"真的是 input 元素"）。 */
 
 
 /* ==========================================================================
@@ -18094,15 +18040,7 @@ input[type="range"].sp-flex-fill {
 .nb-msg-source-chip:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .note-op-notifications { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); }
 .agent-teams-panel { display: flex; flex-direction: column; height: 100%; font-size: var(--fs-sm); }
-.agent-teams-empty {
-  display: grid;
-  gap: var(--space-5);
-  justify-items: center;
-  padding: var(--space-8);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  text-align: center;
-}
+/* 第 179 轮 P2-1：并入 .empty-hint */
 .sidebar-user-plugin-btn {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

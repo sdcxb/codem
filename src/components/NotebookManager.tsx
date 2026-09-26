@@ -419,7 +419,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
           </div>
 
           {sources.length === 0 && !indexing && (
-            <div className="notebook-empty-state">
+            <div className="empty-hint is-stacked is-fill">
               <FileText size={32} style={{ color: 'var(--text-muted)' }} />
               <p>{lang === 'zh' ? '暂无来源，添加文件/文本/URL 开始知识化' : 'No sources yet. Add files, text, or URLs to get started.'}</p>
             </div>
@@ -622,7 +622,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       </div>
 
       {filteredNotebooks.length === 0 && groups.length === 0 ? (
-        <div className="notebook-empty-state">
+        <div className="empty-hint is-stacked is-fill">
           <BookOpen size={48} style={{ color: 'var(--text-muted)' }} />
           <p className="notebook-empty-title">
             {searchQuery

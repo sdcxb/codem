@@ -862,7 +862,7 @@ function SellLandPanel({ engine, playerId, onSell, onClose }: {
           <button className="panel-close" onClick={onClose}>×</button>
         </div>
         {lands.length === 0 ? (
-          <div className="empty-state">暂无可出售的地产</div>
+          <div className="empty-hint is-compact">暂无可出售的地产</div>
         ) : (
           <div className="card-list">
             {lands.map(l => {

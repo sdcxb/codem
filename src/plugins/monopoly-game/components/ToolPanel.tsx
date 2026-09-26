@@ -48,7 +48,7 @@ export function ToolPanel({ engine, currentPlayerId, onClose }: Props) {
         </div>
 
         {ownedTools.length === 0 ? (
-          <div className="empty-state">没有道具</div>
+          <div className="empty-hint is-compact">没有道具</div>
         ) : (
           <div className="card-list">
             {ownedTools.map((t, idx) => {

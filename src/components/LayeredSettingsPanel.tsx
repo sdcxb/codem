@@ -214,7 +214,7 @@ export function LayeredSettingsPanel() {
           )}
 
           {(!selectedConfig.data || Object.keys(selectedConfig.data).length === 0) && (
-            <div className="layered-empty-data">
+            <div className="empty-hint is-compact">
               {selectedConfig.loadError
                 ? (zh ? `无数据（读取失败：${selectedConfig.loadError}）` : `No data (read failed: ${selectedConfig.loadError})`)
                 : selectedConfig.path
@@ -237,11 +237,11 @@ export function LayeredSettingsPanel() {
             既骗用户也骗审计（看起来像"检查过了，没有限制"）。
           */}
           {policySource?.loadError ? (
-            <div className="layered-empty-data">
+            <div className="empty-hint is-compact">
               {zh ? `策略读取失败：${policySource.loadError}` : `Policy read failed: ${policySource.loadError}`}
             </div>
           ) : !policySource?.data || Object.keys(policySource.data).length === 0 ? (
-            <div className="layered-empty-data">
+            <div className="empty-hint is-compact">
               {zh
                 ? "未配置组织策略（DB 键 codem-policy 不存在）—— 以下限制不适用，不代表已检查通过"
                 : "No organization policy configured (DB key codem-policy absent) — restrictions below do not apply"}

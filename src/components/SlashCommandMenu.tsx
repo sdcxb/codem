@@ -96,7 +96,7 @@ export function SlashCommandMenu({ filter, onSelect, onClose }: SlashCommandMenu
   if (commands.length === 0) {
     return (
       <div className="slash-command-menu" ref={listRef}>
-        <div className="slash-command-empty">
+        <div className="empty-hint is-compact">
           {zh ? "无匹配技能" : "No matching skills"}
         </div>
       </div>

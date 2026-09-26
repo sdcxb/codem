@@ -100,7 +100,7 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
           <Search size={12} />
           <span>{lang === "zh" ? "提及文件" : "Mention file"}</span>
         </div>
-        <div className="mention-empty">
+        <div className="empty-hint is-compact">
           {lang === "zh" ? "未找到匹配的文件" : "No matching files"}
           {query && (
             <span className="mention-query-hint">

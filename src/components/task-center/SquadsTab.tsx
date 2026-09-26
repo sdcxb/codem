@@ -132,14 +132,14 @@ export function SquadsTab() {
 
       {/* 归档/恢复的结果提示：这两件事必须对用户可见（归档原来像删除，恢复原来不存在） */}
       {notice && (
-        <div className="tc-empty squads-notice" onClick={() => setNotice(null)} role="status">
+        <div className="empty-hint is-compact squads-notice" onClick={() => setNotice(null)} role="status">
           {notice}
         </div>
       )}
 
       {/* Squad list */}
       {squads.length === 0 && !editing && (
-        <div className="tc-empty">
+        <div className="empty-hint">
           {zh
             ? showArchived
               ? "没有 Squad（含已归档）。"

@@ -56,7 +56,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
 
   if (!snap) {
     return (
-      <div className="agent-teams-empty">
+      <div className="empty-hint">
         <Users size={32} style={{ opacity: 0.4 }} />
         <div>
           {zh

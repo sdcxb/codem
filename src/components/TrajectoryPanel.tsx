@@ -314,7 +314,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
 
   if (steps.length === 0) {
     return (
-      <div className="tj-empty">
+      <div className="empty-hint">
         {zh ? '暂无执行轨迹' : 'No trajectory data'}
       </div>
     )

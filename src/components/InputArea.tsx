@@ -1462,7 +1462,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                       try { disabled = getSettingJSON<string[]>("codem-disabled-skills", []); } catch {}
                       const skills = getSkillRegistry().getAll().filter(s => !disabled.includes(s.name));
                       if (skills.length === 0) {
-                        return <div className="input-popover-empty">{zh ? "无可用技能" : "No skills available"}</div>;
+                        /* 第 179 轮 P2-1：并入共享 .empty-hint.is-compact（原来自己写
+                           padding + fs-sm + opacity .5；弱化改用 --text-muted，不再靠 alpha 叠） */
+                        return <div className="empty-hint is-compact">{zh ? "无可用技能" : "No skills available"}</div>;
                       }
                       return skills.map(s => (
                         <label key={s.name} className="skill-option">

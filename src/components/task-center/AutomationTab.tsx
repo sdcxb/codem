@@ -150,7 +150,7 @@ export function AutomationTab() {
       ))}
 
       {triggers.length === 0 && (
-        <div className="automation-empty">
+        <div className="empty-hint is-compact">
           {zh ? "无触发器。点击下方按钮添加。" : "No triggers. Click below to add one."}
         </div>
       )}

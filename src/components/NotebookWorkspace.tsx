@@ -884,7 +884,7 @@ notebookId={notebookId}
 
               <div className="nb-source-list">
                 {sources.length === 0 && !indexing && (
-                  <div className="nb-empty-mini">
+                  <div className="empty-hint is-stacked is-compact">
                     <FileText className="icon-xl icon-dim" />
                     <p>{isZh ? '添加文件/文本/URL' : 'Add files, text, or URLs'}</p>
                   </div>
@@ -959,7 +959,7 @@ notebookId={notebookId}
               hasSources={sources.length > 0}
             />
           ) : sources.length === 0 && !indexing ? (
-            <div className="nb-chat-empty">
+            <div className="empty-hint is-stacked is-fill">
               <BookOpen className="icon-3xl icon-dim" />
               <p className="nb-empty-title">{isZh ? '开始使用笔记本' : 'Get Started'}</p>
               <p className="nb-empty-desc">
@@ -1010,7 +1010,7 @@ notebookId={notebookId}
 
               <div className="nb-note-list">
                 {notes.length === 0 && (
-                  <div className="nb-empty-mini">
+                  <div className="empty-hint is-stacked is-compact">
                     <StickyNote className="icon-xl icon-dim" />
                     <p>{isZh ? '点击 + 创建笔记' : 'Click + to create a note'}</p>
                   </div>
@@ -1129,7 +1129,7 @@ notebookId={notebookId}
             </div>
             <div className="nb-study-path">
               {studyPath.length === 0 ? (
-                <div className="nb-study-empty">
+                <div className="empty-hint is-stacked">
                   <Map className="icon-2xl nb-study-empty-icon" />
                   <p>{isZh ? '请先生成知识图谱后再使用学习路径' : 'Please generate a knowledge graph first'}</p>
                 </div>
@@ -1290,7 +1290,7 @@ notebookId={notebookId}
                         {studioPreviewContent}
                       </ReactMarkdown>
                     ) : (
-                      <p className="nb-studio-empty">
+                      <p className="empty-hint">
                         {isZh ? '内容为空' : 'Content is empty'}
                       </p>
                     )}

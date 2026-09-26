@@ -520,7 +520,7 @@ export function NoteEditor({
                     {previewContent}
                   </ReactMarkdown>
                 ) : (
-                  <p className="nb-preview-empty">
+                  <p className="empty-hint">
                     {isZh ? '预览区域为空 — 开始输入内容' : 'Preview is empty — start typing'}
                   </p>
                 )}
@@ -544,7 +544,7 @@ export function NoteEditor({
                 <span className="nb-backlinks-count">{outgoingLinks.length}</span>
               </h4>
               {outgoingLinks.length === 0 ? (
-                <p className="nb-backlinks-empty">
+                <p className="empty-hint is-compact">
                   {isZh ? '无出链。使用 [[笔记标题]] 创建链接' : 'No outgoing links. Use [[note title]] to link'}
                 </p>
               ) : (
@@ -570,7 +570,7 @@ export function NoteEditor({
                 <span className="nb-backlinks-count">{backlinks.length}</span>
               </h4>
               {backlinks.length === 0 ? (
-                <p className="nb-backlinks-empty">
+                <p className="empty-hint is-compact">
                   {isZh ? '暂无反向链接' : 'No backlinks yet'}
                 </p>
               ) : (

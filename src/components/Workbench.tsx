@@ -110,7 +110,7 @@ export const Workbench = memo(function Workbench({
             </>
           )}
           {activeTools.length === 0 && (
-            <div className="workbench-empty">当前无执行中的工具</div>
+            <div className="empty-hint">当前无执行中的工具</div>
           )}
         </div>
       )}
@@ -136,7 +136,7 @@ export const Workbench = memo(function Workbench({
               ))}
             </>
           ) : (
-            <div className="workbench-empty">暂无修改文件</div>
+            <div className="empty-hint">暂无修改文件</div>
           )}
         </div>
       )}
@@ -156,7 +156,7 @@ export const Workbench = memo(function Workbench({
               </div>
             ))
           ) : (
-            <div className="workbench-empty">暂无活动记录</div>
+            <div className="empty-hint">暂无活动记录</div>
           )}
         </div>
       )}

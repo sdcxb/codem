@@ -145,7 +145,7 @@ export function ShopPanel({ engine, onClose }: Props) {
               </>
             )}
             {player.cards.length === 0 && player.tools.length === 0 && (
-              <div className="empty-state">没有可出售的物品</div>
+              <div className="empty-hint is-compact">没有可出售的物品</div>
             )}
           </div>
         )}

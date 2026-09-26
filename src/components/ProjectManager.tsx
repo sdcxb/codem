@@ -7,6 +7,7 @@ import type { EnvironmentConfig, GitConfig } from "../core/settings/settings";
 import { Folder, FolderOpen, Link as LinkIcon, Download, Server, Lock, Globe } from "lucide-react";
 import { ActionIcons, StatusIcons } from "../core/icons/icon-map";
 import { confirmDialog } from "../core/ui/native-dialog";
+import { StatusBanner } from "./ui/StatusBanner";
 
 const isTauri = () => !!(window as any).__TAURI__;
 
@@ -338,19 +339,23 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                 取"读路径是否可用"而不是"结果是不是空"）。
               */}
               {projects.length === 0 && projectsReadUnavailable && (
-                <div className="project-empty" data-testid="projects-unavailable">
+                /**
+                 * 第 179 轮 P2-1：「读不到 + 重试」是**状态提示条**那个形状（错误/提示 + 重试入口），
+                 * 不再自己写一套 div + button —— 用共享 `StatusBanner`（4 档 tone、`role="alert"`、
+                 * 重试按钮由组件给）。`data-testid` 与原来一致，既有用例不受影响。
+                 * tone 取 `info` 而不是 `error`：判据是"读路径此刻不可用"，读成"出错了"是过度告警。
+                 */
+                <StatusBanner
+                  tone="info"
+                  data-testid="projects-unavailable"
+                  onRetry={() => useProjectStore.getState().loadFromDB()}
+                  retryLabel="重新读取"
+                >
                   暂时读不到项目列表（存储引擎可能还在启动）。这不代表项目丢了，请稍后重试。
-                  <button
-                    type="button"
-                    className="project-retry-btn"
-                    onClick={() => useProjectStore.getState().loadFromDB()}
-                  >
-                    重新读取
-                  </button>
-                </div>
+                </StatusBanner>
               )}
               {projects.length === 0 && !projectsReadUnavailable && (
-                <div className="project-empty">暂无项目，新建或导入一个</div>
+                <div className="empty-hint">暂无项目，新建或导入一个</div>
               )}
               {projects.map((p) => (
                 <div key={p.id} className="project-item" onClick={() => handleOpen(p)}>

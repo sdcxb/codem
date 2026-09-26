@@ -929,22 +929,40 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
   });
 
   /**
-   * COND-1：**空态提示只能有一个实现**（第 172 轮 P2-1）。
+   * COND-1：**空态提示只能有一个实现**（第 172 轮 P2-1 建族、第 179 轮收第二批）。
    *
    * 依据（实测，`.preview-shot/_measure-content-states.mjs`）：空态 59 条规则里
    * `padding` **19 种**、`font-size` **7 种**、`gap` **5 种**；但按**真实标记**分族后
    * （`_classify-empty-markup.mjs`）会发现其中 13 个类在 TSX 里是同一个形状
    * （一个 div、一句提示文本）—— 也就是说"暂无数据"这一个东西在 13 个面板里有 13 套内边距。
    *
+   * **第 179 轮把剩下 24 处也按形状分完了**（同一份探针）：18 处是纯文本提示、
+   * 5 处是"图标 + 一句话"、2 处需要撑满父容器。于是补两个修饰
+   * （`.is-stacked` = 图标在上、gap 由共享层给；`.is-fill` = `flex: 1`），
+   * 棘轮 **24 → 1**。**那 1 处是有理由的例外**：`ChatPanel` 的欢迎页
+   * （`.empty-state`，标题 + 副标题 + 建议按钮的**富空态** + `flex: 1` 撑满会话区），
+   * 它不是"一句提示"，硬并进来只会把欢迎页的版式交给一个提示原语 —— 所以留一条并写明理由，
+   * 而不是为了把数字做成 0 去改用户第一眼看到的那一屏。
+   *
    * 判据：
-   * ① `.empty-hint` 与两个修饰（`.is-compact` / `.is-boxed`）必须存在，且几何**只能**引用
-   *    `--empty-hint-pad` / `--empty-hint-pad-compact`（写死 px 或另找间距令牌都算违规）；
-   * ② 被合并掉的 13 个旧类**不许回到样式表里**（回来了就是"又长出第二套实现"）；
-   * ③ 两个修饰必须有真实消费者（否则修饰是死的）；
-   * ④ 棘轮：**空态类里自定 padding 的处数只许降**（本轮 19 种取值 → 实测计数见常量）。
+   * ① `.empty-hint` 与四个修饰（`.is-compact` / `.is-boxed` / `.is-stacked` / `.is-fill`）
+   *    必须存在，且几何**只能**引用 `--empty-hint-pad` / `--empty-hint-pad-compact` 或
+   *    `--space-*`（写死 px 或另找间距令牌都算违规）；
+   * ② 被合并掉的旧类**不许回到样式表里**（回来了就是"又长出第二套实现"）；
+   * ③ 四个修饰都必须有真实消费者（否则修饰是死的）；
+   * ④ 棘轮：**空态类里自定 padding 的处数只许降**（第 172 轮 19 种取值 → 36 处 → 24 处 → **1 处**）。
+   *
+   * ⚠️ **这道门禁自己有过一个盲点，第 179 轮修掉并记档**：`sel` 的排除条件原来写
+   * `/placeholder-shown|input|@keyframes/`，而 `input` 是**子串**匹配 ⇒ `.input-popover-empty`
+   * （一个货真价实的空态，自己写了 `padding: var(--space-4) 0`）被整条静默跳过。
+   * 症状很具体：**棘轮数字比真值更小**（看起来"更干净"），而那一处从第 172 轮起就没被算过。
+   * 现在排除条件收紧成"选择器里真的有 `input` 元素"。修完棘轮真值从 1 → 2，
+   * 把 `.input-popover-empty` 也迁掉后才是 **1**（只剩 `.empty-state`）。
+   * **教训**：排除条件按子串写，就是把"我没想到的名字"变成"永远不被检查的东西"。
+   *
    * 变异：给 `.empty-hint` 写死 padding / 把 `.mcp-empty` 加回来 / 去掉 `.is-compact` 的消费者 ⇒ 全红。
    */
-  it("COND-1：空态提示只有一个共享实现（.empty-hint + 两个修饰），且几何走令牌", () => {
+  it("COND-1：空态提示只有一个共享实现（.empty-hint + 四个修饰），且几何走令牌", () => {
     const files = ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css"];
     const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
     const rule = (sel: string) => {
@@ -970,10 +988,40 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
     const boxed = rule(".empty-hint.is-boxed");
     expect(/border:\s*1px dashed var\(--border-primary\)/.test(boxed), ".empty-hint.is-boxed 必须给出虚线框（用 --border-primary）").toBe(true);
 
-    /* ② 被合并的旧类不许回来 */
+    /* 第 179 轮新增的两个修饰：几何同样只能走令牌 */
+    const stacked = rule(".empty-hint.is-stacked");
+    expect(stacked, "找不到 .empty-hint.is-stacked（「图标 + 一句话」那 5 处靠它收口）").not.toBe("");
+    expect(/flex-direction:\s*column/.test(stacked), ".is-stacked 必须是纵向排列（图标在上、文字在下）").toBe(true);
+    expect(/gap:\s*var\(--empty-hint-gap\)/.test(stacked),
+      ".is-stacked 的间距必须走 --empty-hint-gap 单一令牌 —— 写死 px 会让「间距统一」这件事又散掉").toBe(true);
+    /**
+     * 令牌本身必须**只定义一处**、且取值仍来自 `--space-*`。
+     * 少了这一条，把 `--empty-hint-gap` 定义成 `gap: 8px` 也能过 —— 那只是把字面量换了个名字。
+     * （`--space-*` 的定义次数统计要包含 `:root` 的两个档，所以只查"一行里同时出现两样"。）
+     */
+    const gapDefs = css.split("\n").filter((l) => /--empty-hint-gap\s*:/.test(l));
+    expect(gapDefs.length, `--empty-hint-gap 必须恰好定义一处，实际 ${gapDefs.length} 处`).toBe(1);
+    expect(/--empty-hint-gap\s*:\s*var\(--space-/.test(gapDefs[0]),
+      `--empty-hint-gap 的取值必须来自 --space-*（实际：${gapDefs[0].trim()}）`).toBe(true);
+    const fill = rule(".empty-hint.is-fill");
+    expect(fill, "找不到 .empty-hint.is-fill（右侧栏与笔记本那两处靠它保住 flex: 1）").not.toBe("");
+    expect(/flex:\s*1/.test(fill), ".is-fill 必须给 flex: 1").toBe(true);
+
+    /* ② 被合并的旧类不许回来（第 172 轮的 13 个 + 第 179 轮的 26 个）
+       ⚠️ 刻意**不含** `.mcp-marketplace-empty`（它只剩 `grid-column: 1 / -1` 一条布局声明，
+       内容几何已交回共享层）与三个 `*-empty-icon`（它们只剩 `opacity`，与几何无关）。 */
     const LEGACY = [".mcp-empty", ".skill-empty", ".panel-empty", ".sidebar-session-empty", ".chat-search-empty",
       ".notebook-group-empty", ".usage-empty", ".sp-empty", ".sp-empty--plain", ".memory-empty", ".agent-empty",
-      ".issue-detail-empty", ".issue-detail-picker-empty"];
+      ".issue-detail-empty", ".issue-detail-picker-empty",
+      /* 第 179 轮 */
+      ".flashcard-empty", ".sidebar-empty", ".file-loading", ".file-empty", ".workbench-empty", ".project-empty",
+      ".project-retry-btn", ".subagent-activity-empty", ".snapshot-loading", ".snapshot-empty", ".cicd-empty",
+      ".perf-empty", ".tj-empty", ".session-loading", ".session-empty", ".slash-command-empty",
+      ".bottom-bar-dropdown-empty", ".notebook-empty-state", ".mention-empty", ".right-sidebar-empty",
+      ".agent-teams-empty", ".nb-empty-mini", ".nb-preview-empty", ".nb-study-empty", ".nb-studio-empty", ".tc-empty",
+      /* 第 179 轮 O-32（"第三族"：名字像空态、但从不写 padding，棘轮数不到） */
+      ".input-popover-empty", ".ppt-property-empty", ".automation-empty", ".git-env-ops-empty",
+      ".layered-empty-data", ".nb-backlinks-empty", ".nb-chat-empty"];
     const back = LEGACY.filter((c) => new RegExp(`(^|\\n)\\s*\\${c}(\\s*[,{]|\\s*:)`, "m").test(css)
       || files.slice(1).some((f) => new RegExp(`(^|\\n)\\s*\\${c}(\\s*[,{]|\\s*:)`, "m").test(readFileSync(path.join(ROOT, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, " "))));
     expect(back, "这些空态类又回来了（第二套实现会长草）：" + back.join(" / ")).toEqual([]);
@@ -989,9 +1037,27 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
     })(path.join(ROOT, "src"));
     const all = tsx.join("\n");
     const count = (needle: string) => (all.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length;
-    expect(count("empty-hint"), "empty-hint 的消费者太少（迁移没做完？）").toBeGreaterThanOrEqual(15);
-    expect(count("empty-hint is-compact"), "is-compact 没有消费者（或在用别的写法）").toBeGreaterThanOrEqual(4);
-    expect(count("empty-hint is-boxed"), "is-boxed 没有消费者").toBeGreaterThanOrEqual(2);
+    /**
+     * ⚠️ **组合写法必须按 token 数，不能按子串**（第 179 轮踩到）：
+     * 子串数法下 `"empty-hint is-fill"` 数不到 `empty-hint is-stacked is-fill`
+     * （笔记本两处 + 图谱一处全是这种组合）⇒ 断言写成 ≥4 会红，而**迁移其实是好的**。
+     * 这类"仪器口径比事实严/松"的错都必须当场改仪器，不许改事实。
+     */
+    const countCombo = (...tokens: string[]) => {
+      let n = 0;
+      for (const m of all.matchAll(/className="([^"]*)"/g)) {
+        const set = new Set(m[1].split(/\s+/).filter(Boolean));
+        if (tokens.every((t) => set.has(t))) n++;
+      }
+      return n;
+    };
+    /* 阈值 = `.preview-shot/_count-empty-consumers.mjs` **同一口径**数出来的实测值
+       （计数只含字面量 `className="…"`；模板字面量不算）⇒ 掉下去就是"有人把某一处撤了"。 */
+    expect(countCombo("empty-hint"), "empty-hint 的消费者太少（迁移没做完？）").toBeGreaterThanOrEqual(73);
+    expect(countCombo("empty-hint", "is-compact"), "is-compact 没有消费者（或在用别的写法）").toBeGreaterThanOrEqual(31);
+    expect(countCombo("empty-hint", "is-stacked"), "is-stacked 没有消费者（「图标 + 一句话」那批没迁过来？）").toBeGreaterThanOrEqual(9);
+    expect(countCombo("empty-hint", "is-fill"), "is-fill 没有消费者（右侧栏 / 笔记本 / 图谱那几处没迁过来？）").toBeGreaterThanOrEqual(6);
+    expect(countCombo("empty-hint", "is-boxed"), "is-boxed 没有消费者").toBeGreaterThanOrEqual(2);
 
     /* ④ 棘轮：空态类里自定 padding 的处数只许降（基线 = 本轮迁移后的实测值） */
     const EMPTY_SEL = /(^|[.\-\s])(empty|no-data|no-result|not-found)([\s.\-:{]|$)/i;
@@ -1002,7 +1068,18 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
       let m: RegExpExecArray | null;
       while ((m = re.exec(code))) {
         const sel = m[2].trim().replace(/\s+/g, " ");
-        if (!EMPTY_SEL.test(sel) || /placeholder-shown|input|@keyframes/.test(sel)) continue;
+        /* ⚠️ 排除条件必须**精确到元素**，不能按子串 —— 第 179 轮实测：
+           原来写 `/placeholder-shown|input|@keyframes/`，而 `input` 是**子串**匹配，
+           于是 `.input-popover-empty` 这种**名字里带 input 的空态**被整条静默跳过
+           （它的 `padding: var(--space-4) 0` 从来没进过棘轮 —— 数字好看是因为门禁没看它）。
+           现在只排除"选择器里真的有 `input` **元素**"（前有边界、后跟空格/伪类/属性）。 */
+        if (
+          !EMPTY_SEL.test(sel) ||
+          /placeholder-shown|@keyframes/.test(sel) ||
+          /(^|[\s,>+~(])input(?=[\s.:[>+~),]|$)/.test(sel)
+        ) {
+          continue;
+        }
         const body = m[3];
         for (const d of body.split(";")) {
           if (!/(^|\s)padding\s*:/.test(d)) continue;
@@ -1013,17 +1090,102 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
       }
     }
     /* 基线：**用本门禁这套口径**在 HEAD 与工作区各统计一次（`.preview-shot/_count-empty-padding.mjs`）：
-       迁移前 **36** 处 → 迁移后 **24** 处（13 个类合并进 .empty-hint，减掉 12 处）。
+       迁移前 **36** 处 → 第 172 轮迁移后 **24** 处（13 个类合并进 .empty-hint，减掉 12 处）
+       → 第 179 轮迁移后 **1** 处（第二批 23 处收口）。
        ⚠️ 别拿"不同取值个数"（那是 19 → 18）当基线 —— 两个口径数出来不是一个东西，
-       棘轮必须钉在**门禁自己数出来的那个数**上（否则以后没人能复现这条断言）。剩 24 处是下一族的迁移清单：
-       .flashcard-empty / .sidebar-empty / .file-empty / .workbench-empty / .project-empty / .mcp-marketplace-empty /
-       .cicd-empty / .perf-empty / .tj-empty / .session-empty / .notebook-empty-state / .mention-empty /
-       .right-sidebar-empty / .agent-teams-empty / .nb-* 等。 */
-    const BASELINE = 24;
+       棘轮必须钉在**门禁自己数出来的那个数**上（否则以后没人能复现这条断言）。
+       **剩下的这 1 处是 `.empty-state`（ChatPanel 欢迎页）**：它是"标题 + 副标题 + 建议按钮"
+       的富空态、还要 `flex: 1` 撑满会话区，不是"一句提示"。留一条 + 写明理由，
+       比为了把数字凑成 0 去改用户第一眼看到的那一屏更诚实（门禁的头注释里有完整说明）。 */
+    const BASELINE = 1;
     expect(selfStyled,
       `空态类里自己写内边距的处数 ${selfStyled}，超过基线 ${BASELINE} —— `
       + "新写空态请用 .empty-hint（面板级）/ .empty-hint.is-compact（列表内）/ .empty-hint.is-boxed（虚线框）",
     ).toBeLessThanOrEqual(BASELINE);
+  });
+
+  /**
+   * COND-1b：**"名字像空态"的 class 必须挂共享实现，或在登记表里**（第 179 轮 O-32 收口）。
+   *
+   * ## 为什么要这一条
+   *
+   * COND-1 的棘轮数的是"空态类里**自己写 padding** 的处数"。第 179 轮修它的排除条件盲点时
+   * 顺手做了一次全仓扫描，发现 **37 处** className 名字像空态却**不含 `empty-hint`** ——
+   * 其中 9 处是真的空态（它们**本来就不写 padding**，所以棘轮从来没看见它们），
+   * 已经迁进共享族；剩下的是"共享族的子元素""图标""插件自有面板"三类。
+   *
+   * 也就是说：**棘轮只守住了"取值统一"，没守住"实现唯一"** —— 新增一个自己写
+   * `font-size`/`color` 却不写 `padding` 的空态类，棘轮是绿的。
+   * 这一条把另一半补上：按 **className token**（不是子串）判，
+   * 凡是名字像空态的 token，要么**同一个 className 里有 `empty-hint`**，
+   * 要么**在下面的登记表里并写明理由**。既然登记是要写理由的，它就不是"忽略名单"。
+   *
+   * 清单是**机算出来的**（`.preview-shot/_list-empty-tokens.mjs`），不是手抄的：
+   * 改了 TSX 之后若出现新 token，这条用例会直接报出它的名字与文件。
+   */
+  it("COND-1b：名字像空态的 class 必须挂 .empty-hint，或在登记表里写明理由", () => {
+    /** token 判据：`empty` / `no-data` / `no-result` / `not-found` 作为 `-`/`_`/首尾切出来的一段 */
+    const EMPTY_TOKEN = /(^|[-_])empty([-_]|$)|(^|[-_])no-data|(^|[-_])no-result|(^|[-_])not-found/i;
+
+    /**
+     * 登记表：token → 为什么它**可以不挂** `.empty-hint`。
+     * 三类的理由必须分得开，否则以后没人知道是"忘了迁"还是"有意留"。
+     */
+    const REGISTERED: Record<string, string> = {
+      /* ① 富空态（本体的例外，理由见 COND-1 头注释） */
+      "empty-state": "ChatPanel 欢迎页：标题 + 副标题 + 建议按钮 + flex:1，是富空态不是一句提示",
+      "chat-empty-inner": "上面那个富空态的内层容器（宽 600px 居中）",
+      "chat-empty-suggestions": "上面那个富空态的建议按钮行",
+      /* ② 共享空态的**子元素**：它们不是空态本体，而是里面的图标/标题/说明 */
+      "flashcard-empty-icon": "空态里的图标（只管尺寸与透明度）",
+      "perf-empty-icon": "空态里的图标",
+      "nb-study-empty-icon": "空态里的图标",
+      "kg-empty-icon": "空态里的图标",
+      "nb-empty-title": "空态里的标题文字（排版角色，不是空态本体）",
+      "nb-empty-desc": "空态里的说明文字（排版角色）",
+      "notebook-empty-title": "空态里的标题文字（排版角色）",
+      /* ③ 插件自有面板：library-ops 是像素风房间界面，有自己的 BEM 命名与样式表 */
+      "lo-empty": "library-ops 插件自有面板的占位（像素风视觉语言，不属主界面设计系统）",
+      "lo-empty--diag": "同上（诊断面板变体）",
+      "lo-empty__title": "同上（子元素）",
+      "lo-scene__empty": "同上（场景内没有智能体时的提示）",
+      "lo-scene-option__thumb--empty": "同上（缩略图占位，不是文字空态）",
+    };
+
+    const offenders: string[] = [];
+    let scanned = 0;
+    const files: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = path.join(dir, n);
+        if (statSync(p).isDirectory()) { if (!/node_modules/.test(p)) walk(p); continue; }
+        if (/\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)) files.push(p);
+      }
+    })(path.join(ROOT, "src"));
+
+    for (const full of files) {
+      const rel = path.relative(ROOT, full).replace(/\\/g, "/");
+      const src = readFileSync(full, "utf8");
+      for (const m of src.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\}|\{([^}]*)\})/g)) {
+        const value = m[1] ?? m[2] ?? m[3] ?? "";
+        if (!value) continue;
+        const hasShared = /\bempty-hint\b/.test(value);
+        for (const tok of value.split(/\s+/).filter(Boolean)) {
+          if (!EMPTY_TOKEN.test(tok)) continue;
+          scanned++;
+          if (hasShared || REGISTERED[tok]) continue;
+          offenders.push(`${rel} :: "${tok}"`);
+        }
+      }
+    }
+
+    /* 守卫：扫描范围不能塌成空集（否则这条用例会"永远通过"） */
+    expect(scanned, "扫到的「名字像空态」className token 太少 —— 判据坏了？").toBeGreaterThan(80);
+    expect(offenders,
+      `这些「名字像空态」的 class 既没挂 .empty-hint、也不在登记表里：\n  ${offenders.join("\n  ")}\n` +
+      "要么迁进共享族（.empty-hint [+ .is-compact / .is-stacked / .is-fill / .is-boxed]），" +
+      "要么在 REGISTERED 里写好「为什么它可以不挂」",
+    ).toEqual([]);
   });
 
   /**

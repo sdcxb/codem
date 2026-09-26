@@ -146,7 +146,7 @@ export function ModelSelector({ model: modelProp, models: modelsProp, onModelCha
           </div>
 
           {models.length === 0 && (
-            <div className="bottom-bar-dropdown-empty">
+            <div className="empty-hint is-compact">
               {zh ? '无可用模型' : 'No models available'}
             </div>
           )}

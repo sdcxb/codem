@@ -111,7 +111,7 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
         {/* Activity List */}
         <div className="subagent-activity-list">
           {activities.length === 0 && !isRunning && (
-            <div className="subagent-activity-empty">
+            <div className="empty-hint is-compact">
               {zh ? "暂无活动记录" : "No activities recorded"}
             </div>
           )}

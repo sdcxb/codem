@@ -1360,10 +1360,16 @@ describe("跨模块集成测试", () => {
   describe("X4: styles.css 笔记本样式类", () => {
     const cssSrc = fs.readFileSync(path.join(__dirname, "../styles.css"), "utf-8");
 
+    /**
+     * ⚠️ 第 179 轮 P2-1 从这份清单里**去掉**了 `.notebook-empty-state`：
+     * 笔记本两处空态已并入共享类 `.empty-hint is-stacked is-fill`（原规则整条删除）。
+     * 覆盖没有丢 —— `style-token-gates.test.ts` 的 COND-1 的 LEGACY 名单专门钉
+     * "这个类不许回到样式表里"，比"断言它在"更严。
+     */
     const expectedClasses = [
       ".notebook-manager", ".notebook-manager-header", ".notebook-grid",
       ".notebook-card", ".notebook-card-header", ".notebook-card-title",
-      ".notebook-card-delete", ".notebook-empty-state", ".notebook-detail-view",
+      ".notebook-card-delete", ".notebook-detail-view",
       ".notebook-detail-header", ".notebook-back-btn", ".notebook-title",
       ".notebook-chat-btn", ".notebook-summary-section", ".notebook-section-title",
       ".notebook-sources-section", ".notebook-source-list", ".notebook-source-item",

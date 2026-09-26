@@ -456,7 +456,9 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   // Empty state
   if (graphData.nodes.length === 0) {
     return (
-      <div className="kg-empty">
+      /* 第 179 轮 O-32：内容几何走共享层；`kg-empty` 只留"铺面板底色"一条声明
+         （这一支替代了 .kg-container，不铺底会露出下层背景）—— 两个类必须一起挂。 */
+      <div className="empty-hint is-stacked is-fill kg-empty">
         <Share2 size={48} className="kg-empty-icon" />
         {extractError ? (
           <>

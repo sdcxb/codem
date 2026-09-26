@@ -52,7 +52,7 @@ export function CardPanel({ engine, currentPlayerId, onClose }: Props) {
         </div>
 
         {ownedCards.length === 0 ? (
-          <div className="empty-state">没有卡牌</div>
+          <div className="empty-hint is-compact">没有卡牌</div>
         ) : (
           <div className="card-list">
             {ownedCards.map((card, idx) => {

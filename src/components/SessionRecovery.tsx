@@ -105,10 +105,10 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
       <div className="session-recovery-content">
         <div className="session-list">
           {loading && sessions.length === 0 && (
-            <div className="session-loading"><Spinner size="sm" label="" /> 加载中...</div>
+            <div className="empty-hint"><Spinner size="sm" label="" /> 加载中...</div>
           )}
           {!loading && sessions.length === 0 && (
-            <div className="session-empty">暂无可恢复的会话</div>
+            <div className="empty-hint">暂无可恢复的会话</div>
           )}
           {sessions.map((session) => (
             <div

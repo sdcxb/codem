@@ -326,7 +326,7 @@ export function EnvironmentConfigSection() {
         </div>
 
         {(envConfig.customOperations || []).length === 0 && (
-          <div className="git-env-ops-empty">
+          <div className="empty-hint is-compact">
             {zh ? "暂无自定义操作。点击\"添加\"创建一键构建/启动/测试等操作。" : "No custom operations yet."}
           </div>
         )}

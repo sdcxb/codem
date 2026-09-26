@@ -180,7 +180,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         {/* Content */}
         <div className="perf-content">
           {overview.totalEvents === 0 ? (
-            <div className="perf-empty">
+            <div className="empty-hint is-stacked">
               <Activity size={48} className="perf-empty-icon" />
               <div>{S.perf.noData[lang]}</div>
             </div>
@@ -265,7 +265,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
             <>
               {/* Latency Stats */}
               {latencyStats.length === 0 ? (
-                <div className="perf-empty">
+                <div className="empty-hint">
                   {S.perf.noData[lang]} — {lang === "zh" ? "需要事件 data 中包含 duration_ms 字段" : "Requires duration_ms field in event data"}
                 </div>
               ) : (

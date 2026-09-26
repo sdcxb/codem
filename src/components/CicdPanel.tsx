@@ -350,9 +350,9 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
               </div>
 
               {loading && runs.length === 0 ? (
-                <div className="cicd-empty">{S.cicd.fetching[lang]}</div>
+                <div className="empty-hint">{S.cicd.fetching[lang]}</div>
               ) : runs.length === 0 ? (
-                <div className="cicd-empty">{S.cicd.noRuns[lang]}</div>
+                <div className="empty-hint">{S.cicd.noRuns[lang]}</div>
               ) : (
                 <div className="cicd-runs">
                   {runs.map(run => (

@@ -168,7 +168,7 @@ const effectiveWidth = sidebarWidth;
               />
             )
           ) : (
-            <div className="right-sidebar-empty">
+            <div className="empty-hint is-fill">
               {zh ? "选择项目后可浏览文件" : "Select a project to browse files"}
             </div>
           )
@@ -211,7 +211,7 @@ const effectiveWidth = sidebarWidth;
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               />
             ) : (
-              <div className="right-sidebar-empty">
+              <div className="empty-hint is-fill">
                 {zh ? "输入网址开始浏览" : "Enter a URL to browse"}
               </div>
             )}

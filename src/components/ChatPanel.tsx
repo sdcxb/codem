@@ -539,7 +539,7 @@ setStepTooltipLocked(false);
                   const sessions = currentProject
                     ? useProjectStore.getState().getProjectSessions(currentProject.id)
                     : [];
-                  if (sessions.length === 0) return <div className="bottom-bar-dropdown-empty">{lang === "zh" ? "无会话" : "No sessions"}</div>;
+                  if (sessions.length === 0) return <div className="empty-hint is-compact">{lang === "zh" ? "无会话" : "No sessions"}</div>;
                   return sessions.slice(0, 15).map(s => (
                     <button
                       key={s.id}

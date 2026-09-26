@@ -300,12 +300,12 @@ export function FileExplorer({ cwd, onFileClick, refreshKey, onFileDragStart, se
 
       <div className="file-tree">
         {loading && (
-        <div className="file-loading">
+        <div className="empty-hint is-compact">
           <Spinner size="sm" label="" /> 正在加载...
         </div>
       )}
         {!loading && displayTree.length === 0 && (
-          <div className="file-empty">{searchQuery ? "无匹配文件" : "无法加载目录"}</div>
+          <div className="empty-hint is-compact">{searchQuery ? "无匹配文件" : "无法加载目录"}</div>
         )}
         {displayTree.map((entry) => (
           <FileEntryNode

@@ -31,7 +31,7 @@ export function PropertyPanel({
     return (
       <div className="ppt-property-panel">
         <div className="ppt-property-header">属性面板</div>
-        <div className="ppt-property-empty">
+        <div className="empty-hint is-compact">
           点击画布上的元素查看属性<br />
           或从工具栏插入新元素
         </div>

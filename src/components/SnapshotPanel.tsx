@@ -198,13 +198,13 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
 
       <div className="snapshot-list">
         {loading && snapshots.length === 0 && (
-          <div className="snapshot-loading">加载中...</div>
+          <div className="empty-hint">加载中...</div>
         )}
         {!loading && snapshots.length === 0 && !readFailed && (
-          <div className="snapshot-empty">暂无快照</div>
+          <div className="empty-hint">暂无快照</div>
         )}
         {!loading && snapshots.length === 0 && readFailed && (
-          <div className="snapshot-empty">快照列表读取失败，请查看上方提示后重试</div>
+          <div className="empty-hint">快照列表读取失败，请查看上方提示后重试</div>
         )}
         {snapshots.map((snapshot) => (
           <div key={snapshot.id} className="snapshot-item">

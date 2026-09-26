@@ -766,15 +766,7 @@
 
 
 /* ========== Chat Empty State ========== */
-.nb-chat-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: var(--space-4);
-}
+/* 第 179 轮 O-32：并入 .empty-hint.is-stacked.is-fill */
 
 .nb-empty-title {
   font-size: var(--fs-md);
@@ -890,17 +882,7 @@
 }
 
 /* ========== Empty Mini ========== */
-.nb-empty-mini {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-8) var(--space-4);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-}
+/* 第 179 轮 P2-1：并入 .empty-hint.is-stacked.is-compact */
 
 /* ========== Dialogs ========== */
 .nb-dialog-overlay {
@@ -1218,14 +1200,7 @@ top: 36px;
 }
 
 .kg-loading,
-.kg-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-6);
-}
+/* 第 179 轮 O-32：并入 .empty-hint.is-stacked.is-fill */
 
 .kg-retry-btn {
   padding: var(--space-4) var(--space-9);
@@ -1414,7 +1389,13 @@ top: 36px;
 }
 
 .kg-loading { background: var(--bg-primary); color: var(--text-primary); }
-.kg-empty { background: var(--bg-primary); color: var(--text-secondary); }
+/* 第 179 轮 O-32：`.kg-empty` 的内容几何并入 .empty-hint.is-stacked.is-fill；
+   **这一条留下的是"表面"**（空态在这一支里替代了 `.kg-container`，得自己铺面板底色），
+   所以两个类一起挂（`empty-hint is-stacked is-fill kg-empty`）——
+   `color` 交回共享层（原来这里是 `--text-secondary`，统一到 `--text-muted`）。
+   ⚠️ 迁移时差点漏掉这一条：它跟布局那条**不在同一处**，而 LEGACY 门禁当场把它抓了出来
+   —— 这就是"旧类不许长回来"这条断言的价值。 */
+.kg-empty { background: var(--bg-primary); }
 .kg-empty-icon { opacity: 0.3; }
 .kg-error-text { color: var(--error); }
 .kg-retry-btn { background: var(--accent); color: var(--text-on-accent); }
@@ -2282,11 +2263,7 @@ top: 36px;
   font-weight: 600;
 }
 
-.nb-preview-empty {
-  color: var(--text-muted);
-  text-align: center;
-  padding: var(--space-13) 0;
-}
+/* 第 179 轮 P2-1：并入 .empty-hint */
 
 /* Backlinks Sidebar */
 .nb-backlinks-sidebar {
@@ -2339,12 +2316,7 @@ top: 36px;
   color: var(--text-muted);
 }
 
-.nb-backlinks-empty {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  margin: 0;
-  line-height: var(--lh-ui);
-}
+/* 第 179 轮 O-32：并入 .empty-hint.is-compact（line-height 由全局排版接管） */
 
 .nb-backlinks-list {
   display: flex;
@@ -2723,8 +2695,9 @@ top: 36px;
   color: var(--text-on-accent);
 }
 
-.nb-study-empty { padding: var(--space-10); text-align: center; color: var(--text-muted); }
-.nb-study-empty-icon { margin: 0 auto var(--space-4); opacity: 0.5; }
+/* 第 179 轮 P2-1：并入 .empty-hint.is-stacked */
+/* 第 179 轮 P2-1：间距交给 .empty-hint.is-stacked 的 gap */
+.nb-study-empty-icon { opacity: 0.5; }
 .nb-study-path-item-reason { opacity: 0.7; }
 /* 学习路径条目原本用 JS 的 onMouseEnter/Leave 改 style.background，直接把下面这条
  * CSS :is(:hover, :focus-visible)（accent 淡底 + accent 描边）盖掉了 —— 内联样式优先级高于样式表。
@@ -2778,7 +2751,7 @@ top: 36px;
 }
 .nb-mermaid-pre { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); white-space: pre-wrap; }
 .nb-mermaid-hint { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-muted); }
-.nb-studio-empty { padding: var(--space-10); color: var(--text-muted); text-align: center; }
+/* 第 179 轮 P2-1：并入 .empty-hint */
 .nb-dialog-footer { padding: var(--space-6) var(--space-9); border-top: 1px solid var(--border-primary); }
 .nb-dialog-actions { display: flex; align-items: center; gap: var(--space-2); }
 .nb-studio-footer-hint { margin-right: auto; font-size: var(--fs-xs); color: var(--text-muted); }

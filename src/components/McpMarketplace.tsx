@@ -211,7 +211,16 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
       {/* Entry Grid */}
       <div className="mcp-marketplace-grid">
         {entries.length === 0 && (
-          <div className="mcp-marketplace-empty">
+          /*
+           * 第 179 轮 P2-1：内容几何并入 .empty-hint；`.mcp-marketplace-empty` 只留
+           * `grid-column: 1 / -1`（它是网格子项 —— 跨列是**布局**、不属共享层）。
+           * 两个类必须一起挂：只留旧的会丢内边距，只留新的会丢跨列。
+           *
+           * ⚠️ 注释用 `/* … *\/` 而不是 JSX 的 `{/* … *\/}` —— 这里在 `( … )` 表达式里，
+           * 再写一个 `{}` 表达式就成了"括号里两个相邻表达式"，tsc 直接报 TS1005
+           * （第一版就是这么写的，改完才发现）。
+           */
+          <div className="empty-hint mcp-marketplace-empty">
             {query ? `未找到匹配 "${query}" 的 MCP 服务器` : "暂无服务器"}
           </div>
         )}
