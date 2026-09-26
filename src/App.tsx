@@ -4727,7 +4727,13 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
 
       {showMcpManager && (
         <div className="modal-overlay" onClick={() => setShowMcpManager(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="MCP 管理"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SlotBridge name="app.mcp-manager" fallback={McpManager} onClose={() => setShowMcpManager(false)}  />
           </div>
         </div>
@@ -4735,7 +4741,13 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
 
       {showPluginManager && (
         <div className="modal-overlay" onClick={() => setShowPluginManager(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="插件管理"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SlotBridge name="app.plugin-manager" fallback={PluginManager} onClose={() => setShowPluginManager(false)}  />
           </div>
         </div>
@@ -4743,7 +4755,13 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
 
       {showSkillManager && (
         <div className="modal-overlay" onClick={() => setShowSkillManager(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="技能管理"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SlotBridge name="app.skill-manager" fallback={SkillManager} onClose={() => setShowSkillManager(false)}  />
           </div>
         </div>
@@ -4751,7 +4769,13 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
 
       {showMemoryManager && (
         <div className="modal-overlay" onClick={() => setShowMemoryManager(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="记忆管理"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SlotBridge name="app.memory-manager" fallback={MemoryManager} onClose={() => setShowMemoryManager(false)}  />
           </div>
         </div>
@@ -4807,7 +4831,14 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
 
 {showNotebookManager && (
 <div className="modal-overlay notebook-modal-overlay" onClick={() => setShowNotebookManager(false)}>
-<div className="modal-editor" style={{ maxWidth: '900px', height: '80vh', maxHeight: 'calc(100vh - 36px)' }} onClick={(e) => e.stopPropagation()}>
+<div
+  className="modal-editor"
+  role="dialog"
+  aria-modal="true"
+  aria-label="笔记本"
+  style={{ maxWidth: '900px', height: '80vh', maxHeight: 'calc(100vh - 36px)' }}
+  onClick={(e) => e.stopPropagation()}
+>
 <SlotBridge name="app.notebook-manager" fallback={NotebookManager}
 onClose={() => setShowNotebookManager(false)}
 onOpenWorkspace={(notebookId, notebookName) => {
@@ -4855,7 +4886,13 @@ onClose={() => setCitationViewer(null)}
 
       {showSessionRecovery && (
         <div className="modal-overlay" onClick={() => setShowSessionRecovery(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="会话恢复"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SlotBridge name="app.session-recovery" fallback={SessionRecovery} onClose={() => setShowSessionRecovery(false)}  />
           </div>
         </div>
@@ -4863,7 +4900,13 @@ onClose={() => setCitationViewer(null)}
 
       {showUsageStats && (
         <div className="modal-overlay" onClick={() => setShowUsageStats(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="用量统计"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SlotBridge name="app.usage-stats" fallback={UsageStats} onClose={() => setShowUsageStats(false)}  />
           </div>
         </div>
@@ -4889,7 +4932,14 @@ onClose={() => setCitationViewer(null)}
 
       {showAgentManager && (
         <div className="modal-overlay" onClick={() => setShowAgentManager(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: "85vh" }}>
+          <div
+            className="modal-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="智能体管理"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 900, maxHeight: "85vh" }}
+          >
             <SlotBridge name="app.agent-manager" fallback={AgentManager} onClose={() => setShowAgentManager(false)}  />
           </div>
         </div>
@@ -4966,7 +5016,14 @@ onClose={() => setCitationViewer(null)}
         const { id, name, path } = removeProjectDialog;
         return createPortal(
           <div className="confirm-overlay" onClick={() => setRemoveProjectDialog(null)}>
-            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div
+              className="confirm-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label={lang === "zh" ? "移除项目" : "Remove Project"}
+              onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: 420 }}
+            >
               <div className="confirm-title">{lang === "zh" ? "移除项目" : "Remove Project"}</div>
               <div className="confirm-message" style={{ marginBottom: 16 }}>
                 {lang === "zh" ? `确定要移除项目 "${name}" 吗？` : `Remove project "${name}"?`}

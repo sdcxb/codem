@@ -2,6 +2,47 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.177] - 2026-09-26 — P2-2 收尾：26 个对话框补上语义（role / aria-modal / 可访问名）
+
+### 实测（`.preview-shot/_measure-dialog-boxes.mjs`）
+
+| 项 | 改前 | 改后 |
+| --- | --- | --- |
+| `role="dialog"` | 4 | **25** |
+| `role="alertdialog"` | 1 | **4** |
+| `aria-modal` | 4 | **28** |
+| 对话框本体**语义不全** | 18 / 26 | **0 / 26** |
+
+读屏此前把绝大多数对话框当成"一个普通的 div 里多了一堆东西"：既不知道"打开了一个对话框"，
+也念不出它的名字。26 个对话框本体里只有 8 个有 `role="dialog"`（其中还有的没有 `aria-modal` 或名字）。
+
+### 处置
+
+- 对话框**本体**（`.modal-editor` / `.modal-panel` / `.confirm-dialog` / `.search-dialog` /
+  `.task-center-panel` / `.nb-dialog` / `.petm-panel` / `.plugin-mgr-dialog` / `.chat-search-panel`）补
+  `role="dialog"`（**确认类**用 `role="alertdialog"`）+ `aria-modal="true"` + 可访问名；
+- **遮罩不加**（`.modal-overlay` 是背景，语义属于里面的盒子）；
+- 名字全部取自**组件自己的可见标题**（`ConfirmDialog` 用 `title` 变量、闪卡用 `isZh ? '闪卡复习' : …`），
+  不编造新文案；
+- 覆盖 18 处：App.tsx 的 8 个面板外壳（MCP/插件/技能/记忆/笔记本/会话恢复/用量/智能体）、
+  ConfirmDialog、CloseConfirmDialog、GitHubCloneDialog、InteractiveFormDialog、PluginManager、
+  TaskCenter、PetMarketDialog、PlanApprovalCard、ChatPanel 搜索面板、FlashcardViewer ×3、
+  NotebookWorkspace ×3、NoteEditor、App.tsx 移除项目确认。
+
+### 门禁与证据
+
+- 新增 **A11Y-DLG-1**：每个对话框本体必须有 `role` + `aria-modal` + 可访问名；扫描到的本体不得少于 20 个
+  （防"判据写错导致空集也通过"）。变异 **2 条全红**（去掉 `role` / 去掉 `aria-modal`），本轮变异合计 **35/35**。
+- **口径踩了两次**（都写进门禁注释）：① 第一版把 `.modal-overlay` 遮罩也算成"该有 dialog 语义的元素"
+  ⇒ 永远报 31 处；② 第二版用**前缀**匹配 `nb-dialog`，把 `.nb-dialog-overlay` / `-header` / `-title` /
+  `-close` 全算成对话框 ⇒ 报出 77 个"盒子"、58 处"缺语义"，数字没有意义。
+  最终口径：**按 className token 精确匹配 + 遮罩不算 + 语义窗口 ±6/8 行**（本仓库两种写法都有）。
+- **施工 bug 也记一笔**：App.tsx 那批属性第一版被**重复插了一遍**（我的字符串拼接先 `replace(/>$/, …)`
+  又在末尾补了一次），多出来的那份变成了 div 的**文字子节点** —— `tsc` **照样通过**（裸文本是合法 JSX 子节点），
+  只有把 diff 打出来逐行看才发现。第二版改成"整体替换那两行 + 自证 `role="dialog"` 恰好 8 次、
+  `<SlotBridge` 行数不变"。
+- `verify` 406 文件 / 6346 通过、`scan-ui` error 0 / warn 0。
+
 ## [1.16.176] - 2026-09-26 — 修 O-29：重载后重复落库（真机实测 **5614 条重复文本事件**，不是 2 条）
 
 > 这版修的是缺口清单里最后一条**数据正确性**缺口。方案给的现场是"同一个会话里出现成对重复

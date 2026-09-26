@@ -114,7 +114,13 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
     const card = dueCards[currentIdx];
     return (
       <div className="nb-dialog-overlay" onClick={onClose}>
-        <div className="nb-dialog flashcard-dialog--review" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="nb-dialog flashcard-dialog--review"
+          role="dialog"
+          aria-modal="true"
+          aria-label={isZh ? '闪卡复习' : 'Flashcard Review'}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="nb-dialog-header">
             <h3 className="nb-dialog-title">
               <Layers size={16} />
@@ -180,7 +186,13 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
   if (mode === 'create') {
     return (
       <div className="nb-dialog-overlay" onClick={onClose}>
-        <div className="nb-dialog flashcard-dialog--create" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="nb-dialog flashcard-dialog--create"
+          role="dialog"
+          aria-modal="true"
+          aria-label={isZh ? '创建闪卡' : 'Create Flashcard'}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="nb-dialog-header">
             <h3 className="nb-dialog-title"><Plus size={16} />{isZh ? '创建闪卡' : 'Create Flashcard'}</h3>
             <button aria-label="关闭" title="关闭" className="nb-dialog-close" onClick={() => setMode('list')}><CloseIcon size={16} /></button>
@@ -207,7 +219,13 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
   // ========== List Mode ==========
   return (
     <div className="nb-dialog-overlay" onClick={onClose}>
-      <div className="nb-dialog flashcard-dialog--list" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="nb-dialog flashcard-dialog--list"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isZh ? '闪卡列表' : 'Flashcard List'}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="nb-dialog-header">
           <h3 className="nb-dialog-title">
             <Layers size={16} />

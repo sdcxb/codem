@@ -220,6 +220,9 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
       <div
         onClick={(e) => e.stopPropagation()}
         className="modal-panel petm-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="宠物市场"
       >
         {/* 标题栏 */}
         <div className="petm-header">

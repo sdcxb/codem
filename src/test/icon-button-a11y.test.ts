@@ -30,7 +30,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   scanNamelessIconButtons,
@@ -202,6 +202,79 @@ describe("图标按钮的可访问名（第 84 轮）", () => {
       "这些按钮的有效命中区小于 24×24（WCAG 2.5.8）：" + bad.join(" / ")
       + " —— 要么把盒子做到 24（width/height 或 min-width/min-height），"
       + "要么照 .sidebar-session-pin 的写法加伪元素扩圈（视觉零变化）",
+    ).toEqual([]);
+  });
+});
+
+/**
+ * A11Y-DLG-1：**对话框必须有对话框语义**（第 177 轮 P2-2 收尾）。
+ *
+ * ## 实测（`.preview-shot/_measure-dialog-boxes.mjs`）
+ *
+ * 全仓 `role="dialog"` **4 处**、`aria-modal` **4 处**、`aria-labelledby` **0 处**，
+ * 而用对话框外壳类（`.modal-editor` / `.modal-panel` / `.confirm-dialog` / `.nb-dialog` …）的
+ * **本体有 26 个** ⇒ 大多数对话框对读屏只是"一个普通的 div 里多了一堆东西"：
+ * 既不知道"打开了一个对话框"，也念不出它的名字。
+ *
+ * ## 口径（前两版都量错了，写清楚）
+ *
+ * - **遮罩不算**：`.modal-overlay` 是背景遮罩，dialog 语义属于里面的盒子（第一版把它算进来 ⇒ 永远报 31 处）；
+ * - **必须按类名 token 精确匹配**：用前缀匹配 `nb-dialog` 会把 `.nb-dialog-overlay` / `-header` /
+ *   `-title` / `-close` 全算成对话框 ⇒ 报出 77 个"盒子"（第二版）；
+ * - 语义可以写成**同一行**或**相邻几行**（本仓库两种写法都有），所以按元素 ±6/8 行窗口判定。
+ *
+ * 判据：每个对话框本体必须有 ① `role="dialog"`（确认类用 `role="alertdialog"`）、
+ * ② `aria-modal`、③ 一个可访问名（`aria-label` / `aria-labelledby`）。
+ * 变异：把任一处 `role=` 或 `aria-modal` 删掉 ⇒ 必须红。
+ */
+describe("A11Y-DLG-1：对话框语义（role/aria-modal/可访问名）", () => {
+  const ROOT = process.cwd();
+  const BOX_CLASSES = new Set([
+    "modal-editor", "modal-panel", "confirm-dialog", "search-dialog",
+    "task-center-panel", "petm-panel", "plugin-mgr-dialog", "nb-dialog", "chat-search-panel",
+  ]);
+
+  /** 一行里所有静态 className 的 token */
+  const classTokens = (line: string): Set<string> => {
+    const out = new Set<string>();
+    for (const m of line.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\}|\{"([^"]*)"\})/g)) {
+      for (const tok of (m[1] ?? m[2] ?? m[3] ?? "").split(/\s+/)) if (tok) out.add(tok);
+    }
+    return out;
+  };
+
+  it("每个对话框本体都有 role + aria-modal + 可访问名", () => {
+    const tsx: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = path.join(dir, n);
+        if (statSync(p).isDirectory()) { if (!/node_modules|test$/.test(p)) walk(p); continue; }
+        if (/\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)) tsx.push(p);
+      }
+    })(path.join(ROOT, "src"));
+
+    const bad: string[] = [];
+    let scanned = 0;
+    for (const full of tsx) {
+      const rel = path.relative(ROOT, full).replace(/\\/g, "/");
+      const lines = readFileSync(full, "utf8").split(/\r?\n/);
+      lines.forEach((l, i) => {
+        const hit = [...classTokens(l)].find((t) => BOX_CLASSES.has(t));
+        if (!hit) return;
+        scanned++;
+        const near = lines.slice(Math.max(0, i - 6), Math.min(lines.length, i + 8)).join(" ");
+        const hasRole = /role="(dialog|alertdialog)"/.test(near);
+        const hasModal = /aria-modal=/.test(near);
+        const hasName = /aria-label=|aria-labelledby=/.test(near);
+        if (!(hasRole && hasModal && hasName)) {
+          bad.push(`${rel}:${i + 1}  .${hit}  role=${hasRole ? "✓" : "✗"} aria-modal=${hasModal ? "✓" : "✗"} name=${hasName ? "✓" : "✗"}`);
+        }
+      });
+    }
+    expect(scanned, "一个对话框本体都没扫到 ⇒ 判据失效（类名表写错了？）").toBeGreaterThanOrEqual(20);
+    expect(bad,
+      "这些对话框缺语义（读屏不知道打开了对话框、也念不出名字）：\n  - " + bad.join("\n  - ")
+      + "\n  口径：遮罩不算；按类名 token 精确匹配；确认类用 role=\"alertdialog\"",
     ).toEqual([]);
   });
 });

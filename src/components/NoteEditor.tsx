@@ -616,7 +616,14 @@ export function NoteEditor({
       {/* A17: Version History Dialog */}
       {showVersions && (
         <div className="nb-dialog-overlay" onClick={() => setShowVersions(false)}>
-          <div className="nb-dialog" style={{ width: '600px', maxHeight: '70vh' }} onClick={(e) => e.stopPropagation()}>
+          <div
+            className="nb-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isZh ? '版本历史' : 'Version History'}
+            style={{ width: '600px', maxHeight: '70vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="nb-dialog-header">
               <h3 className="nb-dialog-title">
                 <History className="icon-md" />

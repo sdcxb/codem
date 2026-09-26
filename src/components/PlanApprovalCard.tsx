@@ -25,6 +25,9 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
   const card = (
     <div className="modal-overlay" onClick={() => onReject("")}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="计划审批"
         onClick={e => e.stopPropagation()}
         style={{
           width: "90vw", maxWidth: 680, maxHeight: "80vh",

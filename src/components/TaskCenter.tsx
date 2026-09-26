@@ -129,6 +129,9 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="task-center-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="任务中心"
         data-wide={wide ? "1" : "0"}
         onClick={(e) => e.stopPropagation()}
         style={{

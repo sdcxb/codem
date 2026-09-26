@@ -701,7 +701,7 @@ setStepTooltipLocked(false);
       {showSearch && (
         <>
           <div className="modal-overlay" style={{ zIndex: "var(--z-modal)" }} onClick={() => { setShowSearch(false); setSearchQuery(''); }}>
-            <div className="modal-panel chat-search-panel">
+            <div className="modal-panel chat-search-panel" role="dialog" aria-modal="true" aria-label="搜索会话">
             <div className="chat-search-row">
               <Search size={14} className="chat-search-icon" />
               <input

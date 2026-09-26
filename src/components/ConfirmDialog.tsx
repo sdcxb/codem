@@ -22,7 +22,14 @@ export function ConfirmDialog({ title, message, confirmLabel = "确定", cancelL
   // which would break position:fixed for children.
   return createPortal(
     <div className="confirm-overlay" onClick={onCancel}>
-      <div className="confirm-dialog" ref={dialogRef} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="confirm-dialog"
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="confirm-title">{title}</div>
         <div className="confirm-message">{message}</div>
         <div className="confirm-actions">

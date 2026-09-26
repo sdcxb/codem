@@ -308,6 +308,9 @@ function CascadeConfirmDialog({
     <div className="modal-overlay" style={{ zIndex: "var(--z-modal-stacked)" }} onClick={onCancel}>
       <div
         className="modal-editor plugin-mgr-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="插件管理"
         onClick={e => e.stopPropagation()}
       >
         <div className="plugin-mgr-dialog-head">

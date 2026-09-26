@@ -111,6 +111,9 @@ return createPortal(
 <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-label={lang === "zh" ? "从 GitHub 拉取项目" : "Clone from GitHub"}
         style={{ maxWidth: "500px", padding: "24px" }}
         onClick={(e) => e.stopPropagation()}
       >

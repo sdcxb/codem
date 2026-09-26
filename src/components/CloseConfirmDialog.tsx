@@ -12,7 +12,14 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
 
   return createPortal(
     <div className="confirm-overlay">
-      <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px" }}>
+      <div
+          className="confirm-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-label={S.closeConfirm.title[lang]}
+          onClick={(e) => e.stopPropagation()}
+          style={{ maxWidth: "420px" }}
+        >
         <div className="confirm-title">{S.closeConfirm.title[lang]}</div>
         <div className="confirm-message" style={{ marginBottom: "16px" }}>
           {S.closeConfirm.message[lang]}

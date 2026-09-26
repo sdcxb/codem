@@ -1111,7 +1111,13 @@ notebookId={notebookId}
       {/* 学习路径弹窗 (借鉴 Understand-Anything Guided Tours 思路, 自研拓扑排序) */}
       {showStudyPath && (
         <div className="nb-dialog-overlay" onClick={() => setShowStudyPath(false)}>
-          <div className="nb-dialog nb-dialog--study" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="nb-dialog nb-dialog--study"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isZh ? '引导式学习路径' : 'Guided Study Path'}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="nb-dialog-header">
               <h3 className="nb-dialog-title">
                 <Route className="icon-md" />
@@ -1196,6 +1202,9 @@ notebookId={notebookId}
         <div className="nb-dialog-overlay" onClick={() => setStudioPreview(null)}>
           <div
             className="nb-dialog nb-dialog--studio"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isZh ? 'Studio 预览' : 'Studio Preview'}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="nb-dialog-header">
@@ -1539,7 +1548,13 @@ function AddSourceDialog({
 }: any) {
   return (
     <div className="nb-dialog-overlay" onClick={onCancel}>
-      <div className="nb-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="nb-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isZh ? '添加来源' : 'Add Source'}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h3 className="nb-dialog-title">{isZh ? '添加来源' : 'Add Source'}</h3>
         <div className="nb-source-type-tabs">
           <button className={`nb-type-tab ${sourceType === 'text' ? 'active' : ''}`} onClick={() => setSourceType('text')}>
