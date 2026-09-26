@@ -527,7 +527,7 @@ hover 的缺陷**两档都有** ⇒ 修那一条覆盖就等于同时修好两�
 | 指标 | 我们 | OpenBitFun |
 | --- | --- | --- |
 | 带 `transition` 的规则 | **300 条** | — |
-| 其中走令牌 | **289 条**（var(--duration/--ease/--transition)）| — |
+| 其中走令牌 | **289 条**含任一令牌（var(--duration/--ease/--transition)），但**按维度拆开看差很多**：见下方修正 | — |
 | 其中字面时长 | **11 条**（5 条是 `none`/`0ms` 的降级，属正常；其余是 xterm/步骤环等第三方或局部） | — |
 | 曲线令牌 | `--ease-out: cubic-bezier(.23, 1, .32, 1)` ← **与对方 `motion-easing-standard` 完全同值** | `motion-easing-standard` 同一条曲线，web-ui 引用 **618** 次 |
 | 时长令牌 | `--duration-press .12s` / `--duration-fast .15s` / `--duration-slow .3s` | instant 80 / **fast 140** / base 220 / content-swap 320 / slow 420 |
@@ -535,6 +535,12 @@ hover 的缺陷**两档都有** ⇒ 修那一条覆盖就等于同时修好两�
 | **侧栏行实际用的** | `styles.css:1314` `transition: background var(--duration-fast) ease` ⇒ **只动 background + 默认 ease 曲线**（`--transition-color` 就在手边却没用） | 行过渡 = background + **color** + opacity + transform，120ms + 标准曲线 |
 | `animation` 规则 | 92 条，其中 13 条走令牌（其余多为 FontAwesome 自带） | — |
 | 减少动效覆盖 | **15 个文件** | **169 个文件** |
+
+
+> ⚠️ **第 166 轮源码级复核（更细的口径，我复算过）**：把 transition 按**时长**与**缓动**两个维度**分开**统计：
+> 声明 **282 条** → 走**时长**令牌 **121（43%）**、走**缓动**令牌**仅 17（6%）**、**字面 `ease` 且无缓动令牌 43 条**。
+> 结论要分开说：**时长基本统一了，曲线几乎没统一** —— `ease` 与 `--ease-out`（cubic-bezier(.23,1,.32,1)）是**完全不同的两条曲线**。
+> `animation` 更差：**100 条简写里 87 条既无时长也无缓动令牌**（`ease-in-out` 37 次、`ease-out` 20 次、`linear` 11 次…）。
 
 **缺口**：① 侧栏行换用 `--transition-color` 并补 `transform`；② 行的文字色/图标色要跟着状态过渡（现在只动背景）；
 ③ `prefers-reduced-motion` 覆盖面从 15 个文件往上提（至少覆盖所有自定义 `@keyframes`）。
@@ -556,6 +562,18 @@ hover 的缺陷**两档都有** ⇒ 修那一条覆盖就等于同时修好两�
 | Toast | `.plugin-mgr-toast` 走 `--z-toast`/`--shadow-popover`；但 `.snapshot-toast`/`.toast-item` 的动画是**字面 `0.3s ease`** | — |
 | z-index | **令牌 64 / 字面量 46**；且 `--z-top: 10000`、`--z-toast: 20000`、`--z-dialog: 1410` 是"临时数字" | `layer-*` 16 档具名层级（base 0 → contextMenu 500） |
 | 阴影阶梯 | **两套并存**：`--elevation-1/3/4`（8 处，全在 `codem-ui.css`）+ `--shadow-*`（70 处） | 一套：`shadow-xs/sm/base/lg/xl` + 3 个功能阴影 + 2 个内高光 |
+
+
+> ⚠️ **第 166 轮源码级复核（补三条更严重的）**：
+> ① **有共享浮层组件却几乎没人用**：Radix 那套在 `src/components/ui/`（dialog / alert-dialog / popover / dropdown-menu / tooltip），
+>   实际采用：`ui/dialog` **4 个文件**、`ui/alert-dialog` 3、`ui/tooltip` 8、**`ui/popover` 与 `ui/dropdown-menu` 各 0**；
+>   手写 `createPortal` **48 处 / 21 个生产文件**，`modal-overlay` 类名 **16 处 / 9 个文件** ⇒ 没有统一收口点。
+> ② **一处真缺陷：**`src/styles.css:762` **的悬空逗号**。`.context-menu,` / `.dropdown-menu,` / `.popover,` 最后多了一个逗号，
+>   于是它们与下面的 `.modal, .modal-editor, .settings-panel, .confirm-dialog` **合并成一条规则**，全部拿到 `transform-origin: center`；
+>   而注释写的 D-4 意图**正好相反**（浮层应从触发点缩放），JSX 里也**没有** `transformOrigin` 兜底 ⇒ **所有手写浮层都从中心缩放**。
+>   现有 `LAYOUT-4` 用例只查"外壳类与非外壳兄弟类同规则"，本组全是外壳类，**测不出来**。
+> ③ **三套浮层材质并存**：Radix 玻璃层（`--glass-blur` 16/24px）、旧浮层（`blur(12px) saturate(140%)`）、**无模糊**的 `.modal-overlay` 与 toast（toast 还是不透明底）；
+>   `context-menu` 18 条规则**零入场动画**（只有 opacity 过渡）。
 
 **缺口**：① `--elevation-*` 并入 `--shadow-*`；② z-index 字面量棘轮；③ `--z-top` 这类"临时数字"归到 8 档层级；
 ④ 模态/Toast 里残留的字面阴影与字面动画时长。
@@ -615,7 +633,14 @@ hover 的缺陷**两档都有** ⇒ 修那一条覆盖就等于同时修好两�
 | 长文本截断 | **正常**：会话标题 `text-overflow: ellipsis` + `nowrap`，注入 3 倍长文本后**行高不变、无溢出** ✅ | `OverflowText` / `RollingText` 原语 + `text-clipping.test.mjs` |
 | 输入框聚焦态 | **弱**：聚焦时只有 textarea 上的 2px 焦点环；承载视觉的 `.input-textarea-row`（1px 9% 边框）**完全没变** | `field-border-focus` + 焦点面 |
 
-**缺口**：① 三类内容态各收成一个共享实现；② 输入卡片聚焦要有可见变化（border + shadow）；
+> ⚠️ **第 166 轮源码级复核（截断只在「标题类」做对了）**：`text-overflow: ellipsis` **89 处**、`-webkit-line-clamp` **10 处**（**无标准 `line-clamp` 回退**），
+> 而 `overflow: hidden` 的 **246 条规则里有 148 条既没有省略号也没有 clamp**（其中约 **58 条**选择器含 text/label/title/body/content 等，**疑似承载文本**）。
+> 也就是说：会话标题截断是对的，但**面板/正文类的长中文串会被硬切、没有省略号**。
+> 另外**没有通用截断工具类**（无 `.truncate` / `.line-clamp-2`），也**没有 OverflowText / 跑马灯组件**（全仓只有 `StatsLine.tsx:211-220` 一处用 ResizeObserver 探测溢出后设 title）。
+> 空态：**71 条规则 / 63 个类名**，只有 1 条写了 `min-height`（还是 0）⇒ 空态高度忽高忽低；**骨架屏 0 条**（`skeleton`/`shimmer` 全仓 0 命中）。
+
+**缺口**：① 三类内容态各收成一个共享实现（并补骨架屏）；② 输入卡片聚焦要有可见变化（border + shadow）；
+②b 长文本：补`.truncate`/`.line-clamp-n` 工具类 + `OverflowText` 组件；**148 条硬切**里至少把疑似文本容器那批接上省略号；
 ③ 骨架屏目前**完全没有**（长任务只有转圈）。
 **合格项**：长文本截断已经做对了。
 
@@ -627,6 +652,86 @@ hover 的缺陷**两档都有** ⇒ 修那一条覆盖就等于同时修好两�
 **仍未审（明确列出）**：① 读屏软件实测（只有属性计数，没有真实 SR 走查）；② 触屏/触摸手势；③ 多语言文案长度（我们只有中文界面，未做英文长度压测）；④ 高 DPI 缩放（125%/150% 下的布局）；⑤ 窗口外壳（标题栏按钮、圆角、系统材质在深色下的表现）；⑥ 第三方嵌入（编辑器/终端）的观感；⑦ 动态内容态（流式输出进行中的行高抖动、长任务下的侧栏状态）。
 
 ---
+
+
+---
+
+## 23. 源码级补充审计（第 166 轮，与活体测量互补）
+
+> 方法：Node 逐字节扫描 `src/` 下 1234 个 `.tsx/.ts/.css`（10 个 CSS 文件，约 19661 条声明、5078 条 leaf 规则），
+> 注释剥离后做规则级统计；活体侧另用 CDP 实测。两边结论不一致的地方一律以"口径"标注。
+
+### 23.1 内容态：71 条空态规则 / 63 个类名 / **0 条骨架屏**
+
+| 类别 | 规则数（leaf） | 关键事实 |
+| --- | ---: | --- |
+| 空态 | **71**（6 个文件） | TSX 里 `empty` 类名 **98 处 / 63 个不同类名**；最高频 `.empty-state` 只有 9 处；**71 条里只有 1 条写 `min-height`（还是 0）** |
+| 加载 | **18** + 旋转 15 | 只有转圈（12/14px），**唯一显式 `min-height` 是硬编码 130px** |
+| 骨架/微光 | **0 / 0** | 全仓 `skeleton` 唯一命中是注释；**没有骨架屏** |
+| 错误 | **76** + 重试 16 | 错误态与空态**常共用同一条规则**（4 组 `.x-loading, .x-empty`） |
+| 离线/重连 | `offline`/`reconnect` **0** | 真正的实现叫 `connection-lost-banner`（`codem-ui.css:820`），入场 `0.3s ease-out` **字面量**、状态点 `1.5s ease-in-out` **字面量** |
+
+**共享组件：未找到。** `ErrorCard.tsx` 只被 1 个文件用，`StreamingWaitIndicator.tsx` 只被 1 个文件用。
+
+### 23.2 图标：token 档位齐全，但**字面量绝对主导**；一处死令牌
+
+| 写法 | 次数 |
+| --- | ---: |
+| `size={14}` | **368** |
+| `size={12}` | **249** |
+| `size={16}` | **224** |
+| `size={10}` / {20} / {32} / {48} / {24} | 41 / 24 / 17 / 7 / 5 |
+| 语义类名（`icon-xs/sm/md…`）合计 | **77** |
+
+- ⚠️ **`.icon-lg` 没有尺寸声明**：`styles.css:15883` 只把它列进组合选择器（只有 flex-shrink/display/vertical-align），
+  尺寸块 `:15894-15898` 从 `md` 直接跳到 `xl` ⇒ **`--icon-lg: 20px` 从未被消费**（TSX 里 `icon-lg` 用了 0 次）。
+- **描边：CSS 侧统一、JSX 侧散落**。`styles.css:18352-18363` 已把 `svg.lucide` 统一到 **1.75**（小图标 2、超大 1.5）；
+  但 JSX 里仍有 `{1.2}×7、{1}×6、{0.6}×6、{2.5}×5、{1.5}×4、{2}×4…` 共 10 余种字面描边。
+  （我早先报告"DOM 里 stroke-width=2 占 109/112"量的是 **属性**，渲染值由 CSS 覆盖 —— 这里更正。）
+- **守护测试方向反了**：`icon-standardization.test.ts:300` 断言字符串 `'<${icon} size={14}'`、`:322` 断言 `'<Lock size={10} />'` —— **测试在正向锁死字面量尺寸**；且**没有任何测试**守 stroke-width 或 `--icon-*` 尺寸一致性。
+
+### 23.3 动效：见 §16 的修正（时长 43% / 缓动 6%；`animation` 87% 无令牌）
+
+### 23.4 无障碍：焦点环很好，**动态内容不播报**、**无焦点陷阱**
+
+| 指标 | 我们 | 说明 |
+| --- | ---: | --- |
+| `:focus-visible` 规则数 | **449** | 与 `:focus`（43）之比 **10.4:1**，方向正确 ✅ |
+| `aria-label` | **183** | 覆盖不错 |
+| `aria-live` | **3** | 流式输出/任务状态/错误对读屏**基本不可见** |
+| `aria-describedby` / `aria-labelledby` | **0 / 0** | 错误说明与描述关系完全缺失 |
+| `sr-only` 使用 | **1 次** | CSS 有定义，基建没被用起来 |
+| 焦点陷阱工具 | **无**（无 `useFocusTrap`、无 `inert`） | 唯一陷阱来自 Radix（只用 4 + 3 个文件） |
+| Escape 处理 | **~14 个组件各写一遍** | 行为不一致（绑 document vs 绑元素、是否 preventDefault） |
+| 命中区 <24px 的可交互元素（活体） | **41 / 111** | 与会话行 pin/delete **16×19** 一致；CSS 侧只有 2 条规则显式写小高度（口径不同：我量的是**渲染后**尺寸） |
+
+### 23.5 截断：标题类做对了，**正文类硬切**
+
+- `text-overflow: ellipsis` **89 处**；`-webkit-line-clamp` **10 处**（2/3/4 行，**无标准 `line-clamp` 回退**）；
+- `overflow: hidden` **246 条规则里 148 条既无省略号也无 clamp**（约 **58 条**选择器疑似承载文本）；
+- 无通用工具类（无 `.truncate`）；无 `OverflowText`/跑马灯组件；全仓只有 `StatsLine.tsx:211-220` 一处做溢出探测 + 设 `title`。
+
+### 23.6 响应式与皮肤（源码口径）
+
+- 窄窗：`max-width` 断点 **5 个**（600/700/768/900/1024），覆盖规则 **68 / 5078 = 1.3%**；皮肤**自带断点**（hub 1024、dream 900/600）与主样式冲突；
+  JS 里**没有按宽度分支的 matchMedia**（只有 3 处 `innerWidth` 临时夹取），`[data-density="compact"]` **没有 JS 去切换**。
+- 皮肤：`skin-hub.css` 446 条声明（几何 **74** / 颜色 **167**）、`skin-dream.css` 426 条（几何 **53** / 颜色 **238**）；
+  **三套圆角标尺**（基线 0.25–0.875rem / hub 2–12px / dream 4–16px）、**三套玻璃材质**；
+  **两个皮肤的 `:active` 规则都是 0 条** ⇒ 基线按压反馈（`styles.css:743-757`）在皮肤下**失效**；
+  两皮肤还都写 `border-radius: 0 !important` 把气泡/输入框直角化，滚动条宽度 hub 6px / dream 4px（同一元素两套几何）。
+
+### 23.7 对方侧对照（子代理源码审计小结；详细表格待补）
+
+| 维度 | OpenBitFun | 我们 |
+| --- | --- | --- |
+| 内容态组件 | 有 `Empty` / `Spinner` / `Alert` / `StatusPill` 等设计系统组件（**无骨架屏组件、无 Toast/Drawer 组件**） | **无共享组件**（空态 63 个类名） |
+| 浮层收口 | 有中心化 `OverlayCoordinator`（焦点/inert/Escape 一处收口）+ `layer-*` 16 档层级 | 有 Radix 层但**采用率≈0**；Escape 复制 14 份 |
+| 图标 | 5 档尺寸阶梯（`lg` 默认 24px）、描边 **1.6**、20 槽几何表、4 个契约测试 | 尺寸字面量 841 次 vs 语义类名 77 次；`.icon-lg` 是死令牌 |
+| 焦点环 | 2px / offset 2px / #6a6a6a | 2px 强调色 ✅ 同级 |
+| 命中区 token | 有 token（**但只有 1 个消费点** —— 他们自己的死令牌味道） | 无 token、无强制；活体 41 个 <24px |
+| 减少动效 | `prefers-reduced-motion` 覆盖 **169 个文件**；`duration.base`(220ms) **故意不归零**（Dialog/MobileSheet 自带 1ms 兜底） | **15 个文件**；缺口也在这 |
+| 窄窗 | **不会自动收起**（唯一触发是拖动 6px 分隔条越过 152px）；18 个不同 `max-width` 值 / 99 处 | **700px 自动收起**、5 个断点 / 68 条规则 ⇒ **这一项我们更好** |
+| 多语言 | 3 语言 × 10337 键 = **31011** 条文案 + 4 个截断守护测试 | 只有中文；无长度守护 |
 
 ## 附：测量方法（脚本都在 `.preview-shot/`，可复跑）
 
