@@ -883,7 +883,7 @@
 .run-status-bar.phase-error { color: var(--run-bar-error); }
 
 .spinning {
-  animation: spin 1s linear infinite;
+  animation: spin var(--spin-duration) linear infinite;
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -962,7 +962,7 @@
 }
 
 .tool-pill-icon { color: var(--text-muted); }
-.tool-pill-icon-spin { color: var(--accent); animation: tool-spin 1s linear infinite; }
+.tool-pill-icon-spin { color: var(--accent); animation: tool-spin var(--spin-duration) linear infinite; }
 .tool-pill-icon-error { color: var(--error); }
 
 @keyframes tool-spin {
@@ -1074,7 +1074,7 @@
 
 .tool-group-spin {
   color: var(--accent);
-  animation: tool-spin 1s linear infinite;
+  animation: tool-spin var(--spin-duration) linear infinite;
 }
 
 .tool-group-body-inline {

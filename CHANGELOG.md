@@ -2,6 +2,54 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.175] - 2026-09-26 — P2-1 后半：加载 / 骨架 / 状态提示三个共享实现 + 转圈只有一个节拍
+
+### 先量（`.preview-shot/_classify-loading-anims.mjs`）
+
+| 项 | 实测 |
+| --- | --- |
+| 转圈（rotate）规则 | **10 条，3 种时长**：0.8s ×6 / 1s ×3 / 1.2s ×1 —— 同一个「正在加载」三种节拍 |
+| 呼吸（pulse）那些 | `session-pulse` / `reasoning-pulse` / `connection-dot-pulse` … —— 是**注意力/入场动画**，不是加载 |
+| TSX 加载图标 | **4 种**：Loader2 14 / LoaderCircle 10 / RefreshCw 8 / RotateCw 3 |
+| TSX 转圈类名 | **3 套**：spin 28 / spinner 9 / spinning 2 |
+| 骨架规则 | **0 条**（参考实现也没有组件 ⇒ 补上就是领先项） |
+| `role="alert"` | 全仓**只有 4 处** |
+
+**分族口径（很重要）**：rotate 与 pulse **必须分开收** —— 把 pulse 一起"统一时长"会把入场/注意力动画也改掉。
+本轮只收 rotate 族。
+
+### 处置
+
+- **一个节拍**：11 条 rotate 规则（含新增的 `.spinner`）全部走 `--spin-duration: 0.8s`。
+- **三个共享实现**（几何与时长全部走令牌）：
+  - `.spinner`：尺寸走 `--spinner-size`（默认回落 `--icon-*` 刻度）；
+  - `.skeleton`：1.2s 线性 shimmer、多行时最后一行收窄成 60%、**减动效下关动画退化成静态块**（不是"不动画的闪烁"）；
+  - `.status-banner`：4 档 tone、内边距 12/16、圆角 8、1px 状态边、surface 10% / border 30%（对齐参考实现的数值）。
+- **组件 + 真实消费者**（否则就是死类）：`src/components/ui/{Spinner,Skeleton,StatusBanner}.tsx`
+  - `Spinner` → 文件浏览器、会话恢复的加载态（原来只有一句「正在加载...」，连转圈都没有）；
+  - `Skeleton` → **文件预览加载态**：原来是「一个眼睛图标 + 加载中…」，而预览出来的本来就是文本/代码
+    ⇒ 同形占位更接近真实内容，数据到达时布局也不跳；
+  - `StatusBanner` → 上下文压缩报错、恢复面板动作失败（这两处现在拿到 `role="alert"`，error 档 `aria-live="assertive"`）。
+
+### 门禁与证据
+
+- 新增 **COND-2**：① 转圈时长必须全走 `--spin-duration`（rotate 族不许再有字面时长）；
+  ② 三个共享类存在且几何走令牌；③ 循环动画必须在 `prefers-reduced-motion: reduce` 下**显式关停**；
+  ④ 三个组件必须有真实消费者；⑤ `StatusBanner` 必须 `role="alert"` 且 error 档 assertive；
+  ⑥ 棘轮：裸转圈图标（`Loader2`/`LoaderCircle`）只许降。
+- 新增行为用例 **CS-1…CS-6**（Spinner 的 role/可访问名/尺寸刻度、Skeleton 的 aria-hidden 与末行收窄、
+  StatusBanner 的四档与 `aria-live`、重试按钮只在给了回调时出现）。
+- 变异 **32/32 全红**（新增 4 条），逐字节还原。
+- **门禁自身抓到两个假绿**（都记在注释里）：① 取 `prefers-reduced-motion` 块体用 `\{([\s\S]*?)\n\}` 会在
+  第一个内层 `}` 处截断 ⇒ 明明写了 `.spinner { animation: none }` 也读不到，改成**大括号配对**；
+  ② `StatusBanner` 的**文档注释里也写着 `role="alert"`** ⇒ 直接在原文上 `test(/role="alert"/)` 永远为真，
+  变异把 JSX 属性去掉照样过 ⇒ 必须**先剥注释**（本仓库那条"扫描前先剥注释"的纪律又救了一次）。
+- **一处判据随设计变更对齐**：`RA-1e`「切换文件必须给出加载反馈」原先断言 `textContent` 里出现「加载中」，
+  改成断言「骨架行 + `role=status` + 可访问名」—— 用例**意图不变**（切文件必须给反馈），只是反馈形态变了。
+- **补记一个施工 bug**：批量替换转圈时长时用了 `src.replace(from, to)`（字符串只替换**第一处**），
+  而统计用的是 `split().length - 1`（总处数）⇒ 以为改了 3 处其实只改了 1 处（4 处残留）。
+  装机前用 `_classify-loading-anims.mjs` 复量时发现并补上（`split().join()` 全量替换）。
+
 ## [1.16.174] - 2026-09-26 — 修 1.16.173 的"焦点归还"没生效（自动聚焦的浮层恰恰是没归还的那一类）
 
 > 1.16.173 装上机器之后按验收清单逐条量，发现新 hook 的"焦点归还"在**最需要它的那类浮层**上没生效。

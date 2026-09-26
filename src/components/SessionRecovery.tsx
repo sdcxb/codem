@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Spinner } from "./ui/Spinner";
 import { getSessionRecoveryService } from "../core/recovery/recovery";
 import type { Session } from "../core/llm/session";
 import { useProjectStore } from "../core/store";
@@ -104,7 +105,7 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
       <div className="session-recovery-content">
         <div className="session-list">
           {loading && sessions.length === 0 && (
-            <div className="session-loading">加载中...</div>
+            <div className="session-loading"><Spinner size="sm" label="" /> 加载中...</div>
           )}
           {!loading && sessions.length === 0 && (
             <div className="session-empty">暂无可恢复的会话</div>

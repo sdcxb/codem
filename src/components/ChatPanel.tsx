@@ -839,7 +839,7 @@ setStepTooltipLocked(false);
             只有加载**已定论且仍不可用**才走下面那支告警 + 重试。
           */}
           {messages.length === 0 && messagesLoading && !messagesReadUnavailable && (
-            <div className="empty-state" data-testid="messages-loading">
+            <div className="empty-state" data-testid="messages-loading" role="status" aria-label={lang === "zh" ? "正在读取历史消息" : "Loading message history"}>
               <div className="chat-unavailable-inner">
                 <p className="chat-unavailable-title">
                   {lang === "zh" ? "正在读取历史消息…" : "Loading message history…"}

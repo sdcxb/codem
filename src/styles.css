@@ -188,6 +188,12 @@
   --panel-tabs-height: auto;
   --panel-tabs-padding: 0;
   --panel-tabs-gap: 0;
+  /* ===== 加载态令牌（第 175 轮 P2-1）=====
+     实测：10 条转圈规则用了 3 种时长（0.8s / 1s / 1.2s）—— 同一个"正在加载"三种节拍。
+     取 0.8s 作为唯一值（它在现有取值里出现最多，也接近参考实现的 720ms）。 */
+  --spin-duration: 0.8s;
+  --skeleton-duration: 1.2s;
+
   /* ===== 内容态令牌（第 172 轮 P2-1）=====
      实测：空态 59 条规则的 padding 有 19 种、字号 7 种 —— 同一个"暂无数据"在 13 个面板里 13 种内边距。
      单行提示族收成两个取值就走令牌（门禁 COND-1 守），面板级/紧凑两档对应两种真实场景：
@@ -5503,7 +5509,7 @@ position: relative;
 }
 
 .step-ring-indeterminate {
-  animation: step-ring-spin 1.2s linear infinite;
+  animation: step-ring-spin var(--spin-duration) linear infinite;
 }
 
 @keyframes step-ring-spin {
@@ -6078,7 +6084,7 @@ background: var(--accent-surface-strong);
   border: 2px solid var(--border-primary);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: subagent-spin 0.8s linear infinite;
+  animation: subagent-spin var(--spin-duration) linear infinite;
   flex-shrink: 0;
 }
 
@@ -6139,7 +6145,7 @@ background: var(--accent-surface-strong);
   border: 1.5px solid var(--border-primary);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: subagent-spin 0.8s linear infinite;
+  animation: subagent-spin var(--spin-duration) linear infinite;
 }
 
 .subagent-activity-label {
@@ -7924,7 +7930,7 @@ color: var(--text-on-accent);
 }
 
 .spin {
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--spin-duration) linear infinite;
 }
 
 .skill-market-grid {
@@ -8801,7 +8807,7 @@ border-bottom: 1px solid var(--accent);
   border: 2px solid currentColor;
   border-top-color: var(--text-primary);
   border-radius: 50%;
-  animation: compaction-spin 0.8s linear infinite;
+  animation: compaction-spin var(--spin-duration) linear infinite;
 }
 
 @keyframes compaction-spin {
@@ -11086,7 +11092,7 @@ border-bottom: 1px solid var(--accent);
   border: 2px solid var(--bg-tertiary);
   border-top-color: var(--accent);
   border-radius: var(--radius-full);
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--spin-duration) linear infinite;
   flex-shrink: 0;
 }
 
@@ -14490,7 +14496,7 @@ html.pet-window-mode body,
   border: 2px solid var(--border-primary);
   border-top-color: var(--accent, #7c6cf0);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--spin-duration) linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -16133,6 +16139,81 @@ color: var(--accent, #7c6cf0);
   line-clamp: 3;
   -webkit-line-clamp: 3;
 }
+/* ==========================================================================
+ * 内容态：加载中 / 骨架 / 状态提示（唯一实现，第 175 轮 P2-1）
+ *
+ * 为什么要有：转圈有 10 条规则 3 种时长、TSX 里 4 种加载图标 3 套类名；
+ * 骨架一个都没有；role="alert" 全仓只有 4 处（"出事了"对读屏基本是静默的）。
+ * 这三段是它们的唯一实现，几何与时长全部走令牌。
+ * ========================================================================== */
+.spinner {
+  display: inline-block;
+  width: var(--spinner-size, var(--icon-sm));
+  height: var(--spinner-size, var(--icon-sm));
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin var(--spin-duration) linear infinite;
+  flex-shrink: 0;
+}
+
+/* 骨架：1.2s 线性 shimmer；减动效下**关掉动画退化成静态块**（不是"不动画的闪烁"） */
+.skeleton-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 37%, var(--bg-tertiary) 63%);
+  background-size: 400% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shimmer var(--skeleton-duration) linear infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 50%; }
+  to { background-position: 0 50%; }
+}
+
+/* 状态提示条：4 档 tone，内边距 12/16、圆角 8、surface 10% / border 30%（对齐参考实现） */
+.status-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--banner-border, var(--border-primary));
+  border-radius: var(--radius);
+  background: var(--banner-surface, var(--bg-tertiary));
+  color: var(--banner-text, var(--text-primary));
+  font-size: var(--fs-sm);
+  line-height: var(--lh-ui);
+}
+.status-banner-text { min-width: 0; flex: 1; }
+.status-banner-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--banner-border, var(--border-primary));
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+.status-banner.is-info { --banner-surface: color-mix(in srgb, var(--info) 10%, transparent); --banner-border: color-mix(in srgb, var(--info) 30%, transparent); --banner-text: var(--info-content, var(--text-primary)); }
+.status-banner.is-success { --banner-surface: color-mix(in srgb, var(--success) 10%, transparent); --banner-border: color-mix(in srgb, var(--success) 30%, transparent); --banner-text: var(--success-content, var(--text-primary)); }
+.status-banner.is-warning { --banner-surface: color-mix(in srgb, var(--warning) 10%, transparent); --banner-border: color-mix(in srgb, var(--warning) 30%, transparent); --banner-text: var(--warning-content, var(--text-primary)); }
+.status-banner.is-error { --banner-surface: color-mix(in srgb, var(--error) 10%, transparent); --banner-border: color-mix(in srgb, var(--error) 30%, transparent); --banner-text: var(--error-content, var(--text-primary)); }
+
+/* 减动效：转圈与骨架都显式关停（全局兜底对循环动画无效，门禁 motion-uncovered 守这一条） */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+  .skeleton { animation: none; background: var(--bg-tertiary); }
+}
+
 
 /* ==========================================================================
  * 内容态：单行空态提示（唯一实现，第 172 轮 P2-1）

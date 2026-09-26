@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { StatusBanner } from "./ui/StatusBanner";
 import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import { listVisibleMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
@@ -480,9 +481,9 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               </span>
             )}
             {compactError && (
-              <span className="context-compact-result error" role="alert" data-testid="compact-error">
-                ⚠️ {compactError}
-              </span>
+              <StatusBanner tone="error" data-testid="compact-error">
+                {compactError}
+              </StatusBanner>
             )}
           </div>
         )}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { StatusBanner } from "./ui/StatusBanner";
 import {
   getSessionRecoveryService,
   type RecoveryConfig,
@@ -162,9 +163,9 @@ export function RecoveryPanel() {
 
       {/* 失败提示（P1-6）：面板内可见的"上一步动作没成功" */}
       {actionError && (
-        <div className="empty-hint is-boxed" role="alert" data-testid="recovery-action-error">
-          ⚠️ {actionError}
-        </div>
+        <StatusBanner tone="error" data-testid="recovery-action-error">
+          {actionError}
+        </StatusBanner>
       )}
 
       {/* Session list */}

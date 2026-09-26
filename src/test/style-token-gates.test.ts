@@ -1025,4 +1025,137 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
       + "新写空态请用 .empty-hint（面板级）/ .empty-hint.is-compact（列表内）/ .empty-hint.is-boxed（虚线框）",
     ).toBeLessThanOrEqual(BASELINE);
   });
+
+  /**
+   * COND-2：**加载态只有一个节拍、骨架与状态提示只有一个实现**（第 175 轮 P2-1）。
+   *
+   * 依据（实测，`.preview-shot/_classify-loading-anims.mjs`）：
+   * - **转圈（rotate）10 条规则用了 3 种时长**（0.8s ×6 / 1s ×3 / 1.2s ×1）——
+   *   同一个"正在加载"三种节拍；现在全部走 `--spin-duration: 0.8s`（11 条，含新增的 `.spinner`）；
+   * - 呼吸（pulse）那些是**注意力/入场动画**（`session-pulse` / `reasoning-pulse` / `connection-dot-pulse`…），
+   *   **不是加载**，本条门禁**只管 rotate 族**（把两类混在一起收会把入场动画也改掉）；
+   * - 骨架规则 **0 条**（参考实现也没有组件 ⇒ 补上就是领先项）；`role="alert"` 全仓只有 **4 处**。
+   *
+   * 判据：
+   * ① `--spin-duration` 只有一处定义；**rotate 族的动画时长必须全部走它**（不许再出现字面时长）；
+   * ② `.spinner` / `.skeleton` / `.status-banner` 三个共享类存在，几何走令牌；
+   * ③ 循环动画必须在 `prefers-reduced-motion: reduce` 下**显式关停**（`.spinner` / `.skeleton`）；
+   * ④ 三个组件必须有真实消费者（Spinner ≥2 文件、Skeleton ≥1、StatusBanner ≥2，否则就是死类）；
+   * ⑤ `StatusBanner` 必须 role=alert，且 error 档 aria-live=assertive（行为用例 CS-5 守细节）；
+   * ⑥ 棘轮：TSX 里**裸加载图标**（Loader2/LoaderCircle/RefreshCw/RotateCw）用量只许降。
+   * 变异：把某条转圈时长改回字面量 / 删掉骨架的减动效关停 / 把 StatusBanner 的 role 去掉 ⇒ 全红。
+   */
+  it("COND-2：转圈只有一个节拍，加载/骨架/状态提示各只有一个实现", () => {
+    const files = ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css"];
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const allCss = files.map((f) => readFileSync(path.join(ROOT, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))).join("\n");
+
+    /* ① 转圈时长令牌 */
+    const defs = (css.match(/--spin-duration\s*:/g) ?? []).length;
+    expect(defs, `--spin-duration 定义了 ${defs} 处（必须恰好 1 处）`).toBe(1);
+    const rotateKeyframes = new Set<string>();
+    for (const m of allCss.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)) {
+      if (/rotate/i.test(m[2])) rotateKeyframes.add(m[1]);
+    }
+    expect(rotateKeyframes.size, "没找到任何 rotate 关键帧 ⇒ 判据失效").toBeGreaterThanOrEqual(3);
+    const literalSpin: string[] = [];
+    let rotateRules = 0;
+    for (const rel of files) {
+      const code = readFileSync(path.join(ROOT, rel), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+      const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(code))) {
+        const anim = /animation\s*:\s*([^;]+)/.exec(m[3]);
+        if (!anim) continue;
+        const name = anim[1].trim().split(/\s+/)[0];
+        if (!rotateKeyframes.has(name)) continue;
+        rotateRules++;
+        if (!/var\(--spin-duration\)/.test(anim[1])) {
+          const line = code.slice(0, m.index).split("\n").length;
+          literalSpin.push(`${rel}:${line}  ${m[2].trim().slice(0, 40)}  ${anim[1].trim()}`);
+        }
+      }
+    }
+    expect(rotateRules, "一条转圈规则都没扫到 ⇒ 判据失效").toBeGreaterThanOrEqual(8);
+    expect(literalSpin, "转圈时长没走 --spin-duration（同一个「正在加载」又出现第二种节拍）：\n  - " + literalSpin.join("\n  - ")).toEqual([]);
+
+    /* ② 三个共享类存在且几何走令牌 */
+    const ruleOf = (sel: string) => {
+      const bodies: string[] = [];
+      const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(css))) {
+        if (m[2].split(",").map((s) => s.trim().replace(/\s+/g, " ")).includes(sel)) bodies.push(m[3]);
+      }
+      return bodies.join("\n");
+    };
+    const spinner = ruleOf(".spinner");
+    expect(spinner, "找不到 .spinner").not.toBe("");
+    expect(/width:\s*var\(--spinner-size/.test(spinner), ".spinner 的尺寸必须走 --spinner-size（默认回落到 --icon-* 刻度）").toBe(true);
+    expect(/animation:\s*spin\s*var\(--spin-duration\)/.test(spinner), ".spinner 必须用统一的转圈节拍").toBe(true);
+    const skeleton = ruleOf(".skeleton");
+    expect(skeleton, "找不到 .skeleton").not.toBe("");
+    expect(/animation:\s*skeleton-shimmer\s*var\(--skeleton-duration\)/.test(skeleton), ".skeleton 的时长必须走 --skeleton-duration").toBe(true);
+    const banner = ruleOf(".status-banner");
+    expect(banner, "找不到 .status-banner").not.toBe("");
+    expect(/padding:\s*var\(--space-6\)\s*var\(--space-8\)/.test(banner), ".status-banner 的内边距必须是 12/16（--space-6 --space-8）").toBe(true);
+    expect(/border-radius:\s*var\(--radius\)/.test(banner), ".status-banner 的圆角走 --radius（=8px，对齐参考实现）").toBe(true);
+    expect(/border:\s*1px solid var\(--banner-border/.test(banner), ".status-banner 必须有 1px 状态边（色由 tone 决定）").toBe(true);
+    for (const tone of ["info", "success", "warning", "error"]) {
+      expect(new RegExp(`\\.status-banner\\.is-${tone}\\b`).test(css), `.status-banner 缺 ${tone} 档`).toBe(true);
+    }
+
+    /* ③ 减动效必须显式关停。
+       ⚠️ 取媒体查询块体必须**按大括号配对**：用 `\{([\s\S]*?)\n\}` 会在第一个内层 `}` 处截断，
+       于是 `.spinner { animation: none }` 明明在块里也读不到（第一版就是这么红的）。 */
+    const reducedBlocks: string[] = [];
+    for (const m of css.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{/g)) {
+      let depth = 0;
+      const start = m.index! + m[0].length - 1;
+      let i = start;
+      for (; i < css.length; i++) {
+        if (css[i] === "{") depth++;
+        else if (css[i] === "}") { depth--; if (depth === 0) break; }
+      }
+      reducedBlocks.push(css.slice(start + 1, i));
+    }
+    expect(reducedBlocks.length, "一个 prefers-reduced-motion 块都没有 ⇒ 判据失效").toBeGreaterThan(0);
+    const reduced = reducedBlocks.join("\n");
+    expect(/\.spinner\s*\{\s*animation:\s*none/.test(reduced), "减动效下必须关掉 .spinner 的转圈").toBe(true);
+    expect(/\.skeleton\s*\{[^}]*animation:\s*none/.test(reduced), "减动效下必须关掉 .skeleton 的 shimmer").toBe(true);
+
+    /* ④ 组件必须有真实消费者 */
+    const tsx: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = path.join(dir, n);
+        if (statSync(p).isDirectory()) { if (!/node_modules/.test(p)) walk(p); continue; }
+        if (/\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)) tsx.push(readFileSync(p, "utf8"));
+      }
+    })(path.join(ROOT, "src"));
+    const usage = (name: string) => tsx.filter((s) => new RegExp(`<${name}\\b`).test(s)).length;
+    expect(usage("Spinner"), "Spinner 的消费者不足 2 个文件").toBeGreaterThanOrEqual(2);
+    expect(usage("Skeleton"), "Skeleton 没有消费者（骨架会是死类）").toBeGreaterThanOrEqual(1);
+    expect(usage("StatusBanner"), "StatusBanner 的消费者不足 2 个文件").toBeGreaterThanOrEqual(2);
+
+    /* ⑤ StatusBanner 的语义（细节由行为用例守，这里只钉源码里必须有）。
+       ⚠️ 必须先剥注释：这个组件的**文档注释里也写着 `role="alert"`**，
+       直接在原文上 `test(/role="alert"/)` 会永远为真 —— 变异把 JSX 属性去掉时**照样通过**（假绿，变异自证抓到）。 */
+    const bannerSrc = readFileSync(path.join(ROOT, "src/components/ui/StatusBanner.tsx"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+      .replace(/\/\/[^\n]*/g, " ");
+    expect(/role="alert"/.test(bannerSrc), "StatusBanner 必须带 role=alert").toBe(true);
+    expect(/aria-live=\{tone === "error" \? "assertive" : "polite"\}/.test(bannerSrc), "error 档必须 assertive、其余 polite").toBe(true);
+
+    /* ⑥ 棘轮：裸**转圈图标**只许降。
+       口径：只数 `Loader2` / `LoaderCircle`（真·转圈图标）——
+       `RefreshCw` / `RotateCw` 同时被当"刷新/重试"按钮用（例如 StatusBanner 的重试图标），
+       把它们算进来会让棘轮变成"不许写重试按钮"，那是错的（第一版按 4 个图标数，基线 35 就是这么来的）。
+       基线 = 第 175 轮实测 24。 */
+    const RAW_ICON = /<(Loader2|LoaderCircle)\b/g;
+    let rawIcons = 0;
+    for (const s of tsx) rawIcons += (s.match(RAW_ICON) ?? []).length;
+    const BASELINE = 24;
+    expect(rawIcons, `TSX 里裸转圈图标 ${rawIcons} 个，超过基线 ${BASELINE} —— 新的加载指示请用 <Spinner />`).toBeLessThanOrEqual(BASELINE);
+  });
 });

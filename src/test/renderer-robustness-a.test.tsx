@@ -189,7 +189,18 @@ describe("P0-3 FileEditor 切换文件不得把 A 的正文写进 B", () => {
     const { switchTo } = await renderAEditedThenSwitchToB({ kind: "pending" });
     switchTo(FILE_B);
     expect(document.body.textContent).not.toContain("AAA file A v1");
-    expect(document.body.textContent).toMatch(/加载中/);
+    /*
+     * 判据从「textContent 里出现『加载中』」改成「加载反馈以**骨架 + 可访问状态**呈现」：
+     * 第 175 轮 P2-1 把文件预览的加载态从「一个眼睛图标 + 加载中…」换成了骨架行
+     * （预览出来的本来就是文本/代码，同形占位比一句文字更接近真实内容，数据到达时布局也不跳）。
+     * **这条用例的意图没变**（切文件必须给加载反馈），只是反馈的形态变了 ——
+     * 所以这里同时钉三件事：骨架在、容器带 role=status、且它有可访问名（读屏仍能知道「正在加载」）。
+     */
+    const loading = document.querySelector(".file-editor-loading");
+    expect(loading, "切换文件后必须出现加载态容器").toBeTruthy();
+    expect(loading!.querySelector(".skeleton"), "加载反馈应当是骨架行").toBeTruthy();
+    expect(loading!.getAttribute("role")).toBe("status");
+    expect(loading!.getAttribute("aria-label")).toMatch(/加载中/);
   });
 
   it("RA-2: RightSidebar 给 FileEditor 传 key={编辑中的文件路径}（实例隔离）", () => {

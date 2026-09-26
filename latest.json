@@ -1,15 +1,15 @@
 {
-  "version": "1.16.174",
-  "notes": "修 1.16.173 的「焦点归还」没生效：装机复核逐条验收时发现，打开搜索对话框后按真实 Esc 对话框关掉了、但**焦点落在 body**，而焦点归还正是上一版新 hook 主打补的能力。诊断：触发器一直在文档里、手动 focus 能留住（没有别的焦点管理在抢）⇒ 问题在 hook —— SearchDialog 组件体里先写了自己的 useEffect(() => input.focus(), []) 再调用 hook，被动 effect 按注册顺序执行，等 hook 记录「打开前的焦点」时 activeElement 已经是浮层里的输入框，关闭时输入框随浮层移除 ⇒ 记下的元素已脱离文档 ⇒ 被 isConnected 保护拦下。**自己做自动聚焦的浮层恰恰是没归还的那一类。** 修法：把「记住打开前的焦点」从 useEffect 换成 useLayoutEffect（布局 effect 早于所有被动 effect）+ 已有值不覆盖的守卫；保留「只在没人接管焦点时才归还」（否则会顶掉调用方刚设好的焦点）。并补 ESC-7 用例（刻意复刻 SearchDialog 的顺序：先自动聚焦再调 hook），变异 OVERLAY1-记住焦点退回被动effect 必须红，本轮变异 28/28 全红。",
-  "pub_date": "2026-09-26T14:41:57Z",
+  "version": "1.16.175",
+  "notes": "P2-1 后半：CSS 里 10 条转圈规则用了 3 种时长（0.8s/1s/1.2s）、TSX 里 4 种加载图标与 3 套转圈类名、骨架规则 0 条、role=alert 全仓只有 4 处。处置：分族口径写清（rotate 与 pulse 必须分开收，pulse 那些是注意力/入场动画不是加载）；11 条 rotate 规则全部走 --spin-duration: 0.8s；新增三个共享实现 .spinner（尺寸走 --spinner-size）/ .skeleton（1.2s 线性 shimmer、末行收窄、减动效下关动画退化成静态块）/ .status-banner（4 档 tone、内边距 12/16、圆角 8、1px 状态边、surface 10% / border 30%）并配 src/components/ui/{Spinner,Skeleton,StatusBanner}.tsx，接上真实消费者：Spinner → 文件浏览器/会话恢复；Skeleton → 文件预览加载态（原来是眼睛图标+加载中…，预览本就是文本/代码，同形占位更贴内容且布局不跳）；StatusBanner → 上下文压缩报错 + 恢复面板动作失败（role=alert，error 档 assertive）。新增门禁 COND-2 + 行为用例 6 条，变异 32/32 全红。门禁自身两个假绿也记档（媒体查询块体截断、注释里的 role=alert 让断言永远为真）；另记一个施工 bug：字符串 replace 只替换第一处，导致 4 处转圈时长漏改（装机前复量抓到）。",
+  "pub_date": "2026-09-26T14:56:37Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2E1REZqVlVqWXVxS1JMSVRqZHNqLzNMY2htSUFFOGV5OG1HejJFWUhXaWlEMDl2YnVlN2ZiK1Bxb2tOZFNiTit6UVFkSVdGVnZBaEVaa1ZYN2lPQWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMzNzA4CWZpbGU6Q29kZW1fMS4xNi4xNzRfeDY0LXNldHVwLmV4ZQpobzlOMzZwNVZGdTlZeENOMnJ5RlU0RVIxMzBLUkVOT01RZmtTcVUrMlV1VjNrNlVzY1NJclNZZjBvc2JJSi9TK21qbmhoRFgrVExMM1c1WXNyenpBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.174/Codem_1.16.174_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Jub3RkSEozTGxORmdWTzFFL0daUVgvMVdneWFyQStPNVB4ZTdOMS9qbk45UHAwaVFabjZ2b3U0TndBN0RoVDBYVlBMVytXUnY0WWlsVVBTeThKVWdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM0NTg5CWZpbGU6Q29kZW1fMS4xNi4xNzVfeDY0LXNldHVwLmV4ZQpoV09OVDhEcnNlV1UvZ3V0cEZscTdvamxTc2pvUWwzMHpCdnFpbTVZZUR6SEtWc0U5L0JBR3JzOGFrKzBXSWp1VFhVQUpQR25UMkZaOXBEckF2Ni9EQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.175/Codem_1.16.175_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2E1REZqVlVqWXVxS1JMSVRqZHNqLzNMY2htSUFFOGV5OG1HejJFWUhXaWlEMDl2YnVlN2ZiK1Bxb2tOZFNiTit6UVFkSVdGVnZBaEVaa1ZYN2lPQWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMzNzA4CWZpbGU6Q29kZW1fMS4xNi4xNzRfeDY0LXNldHVwLmV4ZQpobzlOMzZwNVZGdTlZeENOMnJ5RlU0RVIxMzBLUkVOT01RZmtTcVUrMlV1VjNrNlVzY1NJclNZZjBvc2JJSi9TK21qbmhoRFgrVExMM1c1WXNyenpBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.174/Codem_1.16.174_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Jub3RkSEozTGxORmdWTzFFL0daUVgvMVdneWFyQStPNVB4ZTdOMS9qbk45UHAwaVFabjZ2b3U0TndBN0RoVDBYVlBMVytXUnY0WWlsVVBTeThKVWdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDM0NTg5CWZpbGU6Q29kZW1fMS4xNi4xNzVfeDY0LXNldHVwLmV4ZQpoV09OVDhEcnNlV1UvZ3V0cEZscTdvamxTc2pvUWwzMHpCdnFpbTVZZUR6SEtWc0U5L0JBR3JzOGFrKzBXSWp1VFhVQUpQR25UMkZaOXBEckF2Ni9EQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.175/Codem_1.16.175_x64-setup.exe"
     }
   }
 }

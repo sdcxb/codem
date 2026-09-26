@@ -16,6 +16,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Skeleton } from "./ui/Skeleton";
 import { createPortal } from "react-dom";
 import { Save, FileText, Image as ImageIcon, FileX, Eye, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink, Sheet, Music, Video, FileCode, Maximize2, Minimize2 } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
@@ -531,10 +532,11 @@ function FilePreviewBinary({ filePath, fileName }: { filePath: string; fileName:
 }
 
 function PreviewLoading() {
+  /* 第 175 轮 P2-1：换成骨架行 —— 预览出来的本来就是文本/代码，
+     用"即将出现的同形占位"比一个图标 + "加载中..."更接近真实内容，数据到达时布局也不跳。 */
   return (
-    <div className="file-editor-loading">
-      <Eye size={32} />
-      <span>加载中...</span>
+    <div className="file-editor-loading" role="status" aria-label="加载中">
+      <Skeleton lines={5} height={14} />
     </div>
   );
 }

@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from "react";
+import { Spinner } from "./ui/Spinner";
 import { onFileChangesTracked } from "../core/environment/file-change-tracker";
 import {
   Search, RefreshCw,
@@ -298,7 +299,11 @@ export function FileExplorer({ cwd, onFileClick, refreshKey, onFileDragStart, se
       </div>
 
       <div className="file-tree">
-        {loading && <div className="file-loading">正在加载...</div>}
+        {loading && (
+        <div className="file-loading">
+          <Spinner size="sm" label="" /> 正在加载...
+        </div>
+      )}
         {!loading && displayTree.length === 0 && (
           <div className="file-empty">{searchQuery ? "无匹配文件" : "无法加载目录"}</div>
         )}
