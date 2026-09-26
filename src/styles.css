@@ -165,6 +165,30 @@
      而 Sidebar.tsx 又按"当时以为是 32px 的行距"把列表上限写成硬编码 144 —— 两边一旦不同步，
      就会退化成"行被压矮"（见 _fix-squashed-rows.mjs 顶部的因果实验）。 */
   --sidebar-row-h: 30px;
+  /* ===== 组件角色几何令牌（第 170 轮 P2-3）=====
+     由来：皮肤此前在**规则体里逐组件覆盖几何**（hub 11 条 / dream 23 条），同一个组件在三档下的
+     圆角/高度/内边距各不相同，而且"为什么不同"只能靠翻两个皮肤文件才能拼出来；另一批还是**纯冗余**
+     （值等于主表：.message-bubble 的 0、.user .message-content 的 var(--radius-lg)），
+     让"皮肤到底改了什么"完全读不出来。
+     现在：几何由主样式表持有（下面的取值就是主表当前的生效值 ⇒ 默认档零变化），
+     皮肤要在这个组件上分叉，就覆盖**同名令牌**（写进该皮肤的令牌块，一处、带理由）。 */
+  --radius-input-card: var(--radius-lg);
+  --radius-input-wrapper: 0;
+  --radius-code: var(--radius-sm);
+  --radius-message-user: var(--radius-lg);
+  --radius-message-assistant: 0;
+  --radius-diff-review: var(--radius-md);
+  --radius-diff-btn: var(--radius);
+  --radius-diff-textarea: var(--radius-sm);
+  --radius-skill-picker: 0;
+  --scrollbar-size: 8px;
+  --scrollbar-thumb-radius: var(--radius-full);
+  /* 面板页签：主表此前完全没有几何（高度 auto / 无内边距 / gap 0），两个皮肤各写了一份 40px ——
+     现在主表持有默认值，皮肤覆盖令牌即可（默认档零变化：auto/0/0 就是当前计算值）。 */
+  --panel-tabs-height: auto;
+  --panel-tabs-padding: 0;
+  --panel-tabs-gap: 0;
+
   /* 行内图标尺寸：此前侧栏用 `font-size: var(--fs-lg)` 来定图标大小（16px）——
      那是「拿字号当尺寸」，改字号会连带改图标。这里给它一个**表意的名字**（与 --fs-icon 同值）。 */
   --icon-size-inline: var(--fs-icon);
@@ -1245,8 +1269,10 @@ overflow: hidden;
 }
 
 .panel-tabs {
+  padding: var(--panel-tabs-padding);
+  height: var(--panel-tabs-height);
   display: flex;
-  gap: 0;
+  gap: var(--panel-tabs-gap);
   border-bottom: 1px solid var(--border-primary);
   background: var(--bg-secondary);
 }
@@ -2540,7 +2566,7 @@ margin-top: var(--space-1);
  */
 .user .message-content {
   padding: var(--space-5) var(--space-8);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-message-user);
   background: var(--message-bubble-user);
   border: 1px solid var(--message-bubble-user-border);
   box-shadow: var(--shadow-bubble);
@@ -2555,6 +2581,7 @@ margin-top: var(--space-1);
 /* AI message: no bubble — open document style */
 /* 对齐 wecode: px-5 pt-5 pb-10，底部空间预留给绝对定位工具栏 */
 .assistant .message-content {
+  border-radius: var(--radius-message-assistant);
   padding: var(--space-2) var(--space-9) var(--space-12) var(--space-9);
   background: transparent;
   border: none;
@@ -2605,7 +2632,7 @@ margin-top: var(--space-1);
 /* ========== Code Blocks ========== */
 .code-block {
   margin: var(--space-4) 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-code);
   overflow: hidden;
   border: 1px solid var(--border-primary);
 }
@@ -2889,7 +2916,7 @@ z-index: 50;
 .input-card-container {
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-input-card);
   box-shadow: var(--shadow-raise-2);
   transition: var(--transition-color), var(--transition-shadow);
   overflow: hidden;
@@ -2930,7 +2957,7 @@ z-index: 50;
   gap: 0;
   background: transparent;
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius-input-wrapper);
   padding: 0;
   transition: none;
   position: relative;
@@ -5063,8 +5090,8 @@ color: var(--text-primary);
 
 /* ========== Scrollbar ========== */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-track {
@@ -5073,7 +5100,7 @@ color: var(--text-primary);
 
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: var(--radius-xs);
+  border-radius: var(--scrollbar-thumb-radius);
 }
 
 ::-webkit-scrollbar-thumb:is(:hover, :focus-visible) {
@@ -11486,6 +11513,7 @@ border-bottom: 1px solid var(--accent);
 
 /* Skill Picker Popup (InputArea) — 外观统一走 .popover-shell */
 .skill-picker-popup {
+  border-radius: var(--radius-skill-picker);
   padding: var(--space-5) var(--space-6);
 }
 
@@ -18285,11 +18313,12 @@ progress {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
-::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar { width: var(--scrollbar-size); height: var(--scrollbar-size); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: var(--radius-full);
+  /* 圆角走同名令牌（第 170 轮）：此前它与上面那份互相覆盖，只有后一份生效 */
+  border-radius: var(--scrollbar-thumb-radius);
   background-clip: padding-box;
   background-color: var(--scrollbar-thumb);
 }

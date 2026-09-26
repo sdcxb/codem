@@ -1867,7 +1867,7 @@
   },
   "code-block": {
     "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius-sm)",
+    "border-radius": "var(--radius-code)",
     "margin": "var(--space-4) 0",
     "overflow": "hidden"
   },
@@ -5148,7 +5148,7 @@
   "inline-diff-btn": {
     "align-items": "center",
     "border": "none",
-    "border-radius": "var(--radius)",
+    "border-radius": "var(--radius-diff-btn)",
     "cursor": "pointer",
     "display": "grid",
     "font-size": "var(--fs-sm)",
@@ -5206,7 +5206,7 @@
   "inline-diff-custom-textarea": {
     "background": "var(--input-bg)",
     "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius-sm)",
+    "border-radius": "var(--radius-diff-textarea)",
     "color": "var(--text-primary)",
     "font-family": "inherit",
     "font-size": "var(--fs-sm)",
@@ -5351,7 +5351,7 @@
   "inline-diff-review": {
     "background": "var(--bg-secondary)",
     "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius-md)",
+    "border-radius": "var(--radius-diff-review)",
     "box-shadow": "var(--shadow-raise-1)",
     "margin": "var(--space-3) 0",
     "overflow": "hidden",
@@ -5514,7 +5514,7 @@
   "input-card-container": {
     "background": "var(--bg-primary)",
     "border": "1px solid var(--border-primary)",
-    "border-radius": "var(--radius-lg)",
+    "border-radius": "var(--radius-input-card)",
     "box-shadow": "var(--shadow-raise-2)",
     "overflow": "hidden",
     "transition": "var(--transition-color), var(--transition-shadow)"
@@ -5643,7 +5643,7 @@
   "input-wrapper": {
     "background": "transparent",
     "border": "none",
-    "border-radius": "0",
+    "border-radius": "var(--radius-input-wrapper)",
     "display": "flex",
     "flex-direction": "column",
     "gap": "0",
@@ -10490,7 +10490,9 @@
     "background": "var(--bg-secondary)",
     "border-bottom": "1px solid var(--border-primary)",
     "display": "flex",
-    "gap": "0"
+    "gap": "var(--panel-tabs-gap)",
+    "height": "var(--panel-tabs-height)",
+    "padding": "var(--panel-tabs-padding)"
   },
   "paragraph-action-btn": {
     "align-items": "center",
@@ -14838,6 +14840,7 @@
     "font-weight": "600"
   },
   "skill-picker-popup": {
+    "border-radius": "var(--radius-skill-picker)",
     "padding": "var(--space-5) var(--space-6)"
   },
   "skill-pill-token": {

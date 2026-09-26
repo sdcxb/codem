@@ -265,22 +265,20 @@
 
 /* Bug5: 梦幻皮肤 — app-content 加 padding+gap 创造间距 */
 [data-skin="dream"] .app-content {
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-4);
-  gap: var(--space-4);
+  padding: var(--shell-gutter);
+  gap: var(--shell-gutter);
 }
 
 /* Bug5: 梦幻皮肤 — 边栏圆角+毛玻璃，不再单独设 margin（由 app-content 的 padding 统一控制） */
 [data-skin="dream"] .sidebar {
-  border-radius: var(--radius) !important;
+  border-radius: var(--radius-shell-panel);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15)) !important;
   box-shadow: 0 4px 12px var(--dream-c17);
-  margin: 0 !important;
 }
 
 [data-skin="dream"] .main-area {
-  margin: 0 !important;
   overflow: hidden;
-  border-radius: var(--radius);
+  border-radius: var(--radius-shell-panel);
 }
 
 [data-skin="dream"] .right-sidebar {
@@ -288,9 +286,8 @@
   backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
-  border-radius: var(--radius) !important;
+  border-radius: var(--radius-shell-panel);
   box-shadow: 0 4px 12px var(--dream-c17);
-  margin: 0 !important;
 }
 [data-skin="dream"][data-theme="dark"] .right-sidebar {
   background: var(--dream-bg-card, rgba(30, 30, 46, 0.65)) !important;
@@ -301,9 +298,8 @@
   backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
-  border-radius: var(--radius) !important;
+  border-radius: var(--radius-shell-panel);
   box-shadow: 0 4px 12px var(--dream-c17);
-  margin: 0 !important;
   overflow: hidden;
   flex: 1;
   display: flex;
@@ -313,10 +309,10 @@
 [data-skin="dream"] .panel-tabs {
   background: var(--dream-c21);
   border-bottom: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
-  padding: 0 var(--space-6);
+  padding: var(--panel-tabs-padding);
   display: flex;
-  gap: var(--space-2);
-  height: 40px;
+  gap: var(--panel-tabs-gap);
+  height: var(--panel-tabs-height);
   align-items: center;
 }
 
@@ -325,9 +321,9 @@
   color: var(--dream-text-muted, #a88a8f);
   border: none;
   border-bottom: 2px solid transparent;
-  padding: var(--space-4) var(--space-8);
+  padding: var(--panel-tabs-tab-padding);
   cursor: pointer;
-  font-size: var(--fs-base);
+  font-size: var(--panel-tabs-tab-font-size);
   transition: color var(--duration-normal), border-color var(--duration-normal);
 }
 
@@ -354,7 +350,6 @@
 [data-skin="dream"] .message {
   background: transparent !important;
   border: none !important;
-  border-radius: 0 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -370,7 +365,6 @@ background: var(--dream-c24) !important;
 backdrop-filter: blur(var(--dream-blur-px, 12px));
 -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
 border: 1px solid var(--dream-c17) !important;
-border-radius: var(--radius-lg) !important;
 box-shadow: 0 2px 8px var(--dream-c15);
 }
 
@@ -397,7 +391,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
   border: none !important;
-  border-radius: 0 !important;
+  border-radius: var(--radius-input-card);
   box-shadow: none !important;
   overflow: hidden !important;
 }
@@ -408,7 +402,6 @@ backdrop-filter: none !important;
 [data-skin="dream"] .input-wrapper {
   background: transparent !important;
   border: none !important;
-  border-radius: 0 !important;
 }
 
 [data-skin="dream"] .input-textarea-row {
@@ -461,7 +454,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
-  border-radius: var(--radius);
+  border-radius: var(--radius-code);
   color: var(--dream-text-main, #1a1a2e);
 }
 
@@ -552,8 +545,8 @@ backdrop-filter: none !important;
 
 /* ========== 滚动条 ========== */
 [data-skin="dream"] ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 [data-skin="dream"] ::-webkit-scrollbar-track {
@@ -562,7 +555,7 @@ backdrop-filter: none !important;
 
 [data-skin="dream"] ::-webkit-scrollbar-thumb {
   background: var(--dream-c27);
-  border-radius: var(--radius-xs);
+  border-radius: var(--scrollbar-thumb-radius);
 }
 
 [data-skin="dream"] ::-webkit-scrollbar-thumb:is(:hover, :focus-visible) {
@@ -632,9 +625,8 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-skill-picker);
   box-shadow: 0 8px 24px var(--dream-c18);
-  padding: var(--space-5) var(--space-6);
   color: var(--dream-text-main, #1a1a2e) !important;
 }
 
@@ -652,7 +644,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: var(--radius);
+  border-radius: var(--radius-popover-element);
   box-shadow: 0 4px 16px var(--dream-c22);
   color: var(--dream-text-main, #1a1a2e) !important;
 }
@@ -881,6 +873,26 @@ backdrop-filter: none !important;
   --radius-lg: 16px;
   --radius-xl: 24px;
   --radius-full: 9999px;
+  /* ===== 几何令牌覆盖（第 170 轮 P2-3）=====
+     dream 的几何语言与默认档不同（面板更圆、输入区方正、外壳留 8px 缝）；
+     此前这些决定散在 23 条规则体里，现在集中到这里 —— 一眼就能看出"这个皮肤改了什么几何"。 */
+  --shell-gutter: var(--space-4);
+  --radius-shell-panel: var(--radius);
+  --panel-tabs-height: 40px;
+  --panel-tabs-padding: 0 var(--space-6);
+  --panel-tabs-gap: var(--space-2);
+  --panel-tabs-tab-padding: var(--space-4) var(--space-8);
+  --panel-tabs-tab-font-size: var(--fs-base);
+  --radius-input-card: 0;
+  --radius-code: var(--radius);
+  --scrollbar-size: 4px;
+  --scrollbar-thumb-radius: var(--radius-xs);
+  --radius-skill-picker: var(--radius-md);
+  --radius-popover-element: var(--radius);
+  --radius-diff-review: var(--radius-lg);
+  --radius-diff-btn: var(--radius-md);
+  --radius-diff-textarea: var(--radius-md);
+  --radius-message-assistant: var(--radius-md);
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.20));
   --accent-soft: var(--dream-c5);
   --success-hover: var(--dream-c63);
@@ -900,7 +912,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-diff-review);
   box-shadow: 0 8px 32px var(--dream-c17), 0 0 0 1px var(--dream-c62);
 }
 [data-skin="dream"] .inline-diff-review:is(:hover, :focus-visible) {
@@ -994,7 +1006,7 @@ backdrop-filter: none !important;
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.80));
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
   color: var(--dream-text-main, #6c474d);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-diff-textarea);
 }
 [data-skin="dream"] .inline-diff-custom-textarea:focus {
   border-color: var(--dream-accent, #e88c9a);
@@ -1011,7 +1023,6 @@ backdrop-filter: none !important;
 [data-skin="dream"] .inline-diff-btn.accept {
   background: var(--dream-c77);
   color: var(--dream-c7); /* 同上：`white` 会被压缩器改写成 #fff（第 164 轮 SKIN-2） */
-  border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-btn.accept:is(:hover, :focus-visible) {
   background: var(--dream-c63);
@@ -1022,7 +1033,6 @@ backdrop-filter: none !important;
   background: var(--dream-c48);
   color: var(--dream-text-main, #6c474d);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  border-radius: var(--radius-md);
 }
 [data-skin="dream"][data-theme="dark"] .inline-diff-btn.reject {
   background: var(--dream-c57);
@@ -1032,7 +1042,6 @@ backdrop-filter: none !important;
 [data-skin="dream"] .inline-diff-btn.accept-all {
   color: var(--dream-accent, #e88c9a);
   border: 1px solid var(--dream-accent, #e88c9a);
-  border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-btn.accept-all:is(:hover, :focus-visible) {
   background: var(--dream-c5);
@@ -1042,7 +1051,6 @@ backdrop-filter: none !important;
 [data-skin="dream"] .inline-diff-btn.custom {
   color: var(--dream-text-muted, #a88a8f);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
-  border-radius: var(--radius-md);
 }
 
 /* 浮动容器：Dream 柔和阴影 */

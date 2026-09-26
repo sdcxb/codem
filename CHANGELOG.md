@@ -2,6 +2,53 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.170] - 2026-09-26 — P2-3 皮肤几何收口：34 条「规则体里逐组件覆盖」收进令牌块（并更正方案的口径）
+
+> 先量后改。装机实测（`_cross-skin-geometry.mjs`）同一个组件在三档下的计算几何：
+> `.sidebar-session` 圆角 **6 / 4 / 6**、`.input-card-container` **14 / 8 / 0**、
+> `.panel-tabs` 高度 **auto / 40 / 40**、`.user .message-content` **14 / 12 / 16** —— 而"为什么不同"
+> 要翻两个皮肤文件才能拼出来。皮肤规则体里的**共享类几何声明：hub 11 条 / dream 23 条**。
+
+### 口径更正（写清楚，因为方案原文的数字会误导执行）
+
+方案原文的验收是「皮肤文件里 geometry 声明 **127 → 0**」。按这个数字去删会**把皮肤自己的界面删掉**：
+那 127 条里有 41 条属于 `.hub-navbar` / `.hub-agent-card` / `.dream-polaroid` 这类**只有该皮肤才有的布局类**
+（主样式表里根本没有对应规则）—— 它们是 hub/dream 自带的界面，删掉皮肤就散架。
+所以口径改成：**只盯"覆盖共享组件"的那部分**，判据是「选择器里的类名全部在主样式表里出现过」。
+剩余差异必须是**可追溯的**：每条都对应该皮肤令牌块里的一条覆盖。
+
+### 三类处置
+
+| 类别 | 条数 | 处置 |
+| --- | --- | --- |
+| **纯冗余**（值等于主表） | 8 | 直接删声明：`.message-bubble`/`.message` 的 `border-radius: 0 !important`、`.user .message-content` 的 `var(--radius-lg)`、`.input-wrapper` 的 `0 !important`、dream 四个 `.inline-diff-btn.*` 的 `var(--radius-md)`（合成一条令牌覆盖）、`.skill-picker-popup` 的 padding、四个 `margin: 0 !important`（跨皮肤探针实测三档 margin 一致） |
+| **真分叉** | 26 | 改成引用**组件角色令牌**，取值写进该皮肤的令牌块 |
+| **皮肤自有布局类** | 41 | 保持原样（不是共享组件） |
+
+主表新增 15 条**组件角色几何令牌**（取值就是主表现有生效值 ⇒ 默认档零变化）：
+`--radius-input-card` / `--radius-input-wrapper` / `--radius-code` / `--radius-message-user` /
+`--radius-message-assistant` / `--radius-diff-review` / `--radius-diff-btn` / `--radius-diff-textarea` /
+`--radius-skill-picker` / `--scrollbar-size` / `--scrollbar-thumb-radius` /
+`--panel-tabs-height` / `--panel-tabs-padding` / `--panel-tabs-gap`。
+
+顺带修一处**静默覆盖**：主表里 `::-webkit-scrollbar` / `::-webkit-scrollbar-thumb` 各有**两份定义**
+（后一份赢，前一份的 `--radius-xs` 一直被盖掉）—— 两处都改成同名令牌，不会再"改一处没生效"。
+
+### 复核时抓到的一次误删（记下来）
+
+第一版把 `.message-bubble, .message { border-radius: 0 !important }` **整条规则删掉**了 ——
+而这条规则体里还有 `background: transparent !important` 与 `border: none !important`，
+等于顺手把气泡的颜色/边框也删了。复核 diff 时逐条比"颜色相关行有没有变化"才抓到，
+改成只删 `border-radius` 那一行。**教训：删声明与删规则是两件事，"这条是冗余"只对那一条声明成立。**
+
+### 新门禁 SKIN-3 + 证据
+
+- **SKIN-3**：皮肤对共享类的几何声明必须是 `var(--token)`，且该令牌必须在**本皮肤令牌块里定义**；
+  不许几何字面量、不许 `!important`。变异 **3 条全红**（塞几何字面量 / 换成本皮肤没定义的令牌 / 加回 `!important`），
+  本轮变异自证合计 **17/17 全红**且逐字节还原。
+- CSS 生效取值快照（CSS-INTEGRITY-7）显示**恰好 10 处**变化，全部是"值 → 同名令牌"，没有一处取值漂移。
+- 渲染不变的证明：装机版跨皮肤探针在三档下逐项对比（下一节的表）。
+
 ## [1.16.169] - 2026-09-26 — P2-2：8 个可点目标低于 24×24（含「第 63 轮补了同排的钉子、漏了删除」）
 
 > 审计口径先修正：命中区要按**有效命中区**量 —— 这个仓库有一批行内按钮用

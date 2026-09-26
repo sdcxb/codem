@@ -410,8 +410,72 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
     }
   });
 
-  it("LIT-11：品牌浅底（--accent-muted）必须派生自 --accent（皮肤换品牌色时浅底要跟着走）", () => {    const allCss = readFileSync(path.join(ROOT, "src/styles.css"), "utf8") + readFileSync(path.join(ROOT, "src/styles/skin-hub.css"), "utf8");
-    const scopes: Array<[string, RegExp]> = [
+  /**
+   * SKIN-3：**皮肤不得在规则体里覆盖共享组件的几何**（第 170 轮 P2-3）。
+   *
+   * 依据（装机实测，见 `_cross-skin-geometry.mjs`）：同一个组件在三档下的计算几何不同，而
+   * "为什么不同"要翻两个皮肤文件才能拼出来 —— 皮肤规则体里的**共享类几何声明 hub 11 / dream 23 条**。
+   * 其中一批是**纯冗余**（值等于主表：`.message-bubble` 的 `0 !important`、`.user .message-content`
+   * 的 `var(--radius-lg)`），另一批是**真分叉**（hub 想要 8px 的输入卡、dream 想要方角输入卡）。
+   *
+   * 判据（口径必须写清，否则会把皮肤自己的界面也算进来）：
+   * 一个规则属于「覆盖共享组件」⇔ **选择器里的类名全部在主样式表里出现过**
+   * （`.hub-navbar` / `.dream-polaroid` 这类只有该皮肤才有的类 ⇒ 那是皮肤**自带的界面**，不受此限 ——
+   * 方案原文的「几何声明 127 → 0」把这些也算进去了，删掉皮肤就散架，所以口径改成只盯共享组件）。
+   * 对这类规则：几何声明必须是 `var(--token)`，且该令牌**必须在本皮肤的令牌块里定义**
+   * （= 这是本皮肤**有意**的几何分叉，一处可改、可读）；不许几何字面量、不许 `!important`。
+   *
+   * 变异：`SKIN3-皮肤里改行高`（往共享类规则里塞 `height: 40px`）必须红。
+   */
+  it("SKIN-3：皮肤只在令牌块里分叉几何（规则体不许对共享类写几何字面量 / !important）", () => {
+    const GEO_PROPS = /^(height|min-height|max-height|width|min-width|max-width|padding|padding-[\w-]+|gap|row-gap|column-gap|margin|margin-[\w-]+|border-radius|font-size|line-height|letter-spacing)$/;
+    const mainClasses = new Set<string>();
+    for (const rel of ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css"]) {
+      const code = readFileSync(path.join(ROOT, rel), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+      for (const m of code.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) mainClasses.add(m[1]);
+    }
+    expect(mainClasses.size, "主样式表的类名表是空的 ⇒ 判据失效").toBeGreaterThan(500);
+
+    const bad: string[] = [];
+    let sharedDecls = 0;
+    for (const rel of ["src/styles/skin-hub.css", "src/styles/skin-dream.css"]) {
+      const s = skinScan(rel);
+      /* 本文件定义过的令牌（含令牌块里的几何覆盖） */
+      const tokens = new Set<string>([...s.raw.matchAll(/(^|[;{\s])(--[\w-]+)\s*:/g)].map((m) => m[2]));
+      const code = s.raw.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+      const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(code))) {
+        const sel = m[2].trim().replace(/\s+/g, " ");
+        const classes = [...sel.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((x) => x[1]);
+        if (!classes.length || !classes.every((c) => mainClasses.has(c))) continue; // 皮肤自有布局类不受此限
+        for (const d of m[3].split(";")) {
+          const i = d.indexOf(":");
+          if (i < 0) continue;
+          const prop = d.slice(0, i).trim().toLowerCase();
+          if (!GEO_PROPS.test(prop)) continue;
+          const raw = d.slice(i + 1).trim();
+          sharedDecls++;
+          const important = /!important/.test(raw);
+          const val = raw.replace(/!\s*important/, "").trim();
+          const tok = /^var\((--[\w-]+)\)$/.exec(val);
+          if (!tok) {
+            bad.push(`${rel}:${s.lineOf(m.index)}  ${sel.slice(0, 44)}  ${prop}: ${raw}（几何必须走令牌；字面量/calc 一律不行）`);
+          } else if (!tokens.has(tok[1])) {
+            bad.push(`${rel}:${s.lineOf(m.index)}  ${sel.slice(0, 44)}  ${prop}: var(${tok[1]})（该令牌不是本皮肤定义的 ⇒ 分叉没有落点，读不出"这是有意还是抄主表"）`);
+          } else if (important) {
+            bad.push(`${rel}:${s.lineOf(m.index)}  ${sel.slice(0, 44)}  ${prop}: var(${tok[1]}) !important（令牌已经能一处改，不需要 !important 静默压过主表）`);
+          }
+        }
+      }
+    }
+    expect(sharedDecls, "一条共享类的几何声明都没扫到 ⇒ 判据失效（选择器或类名表写错了）").toBeGreaterThan(10);
+    expect(bad,
+      "皮肤在规则体里覆盖共享组件的几何（该收进令牌块）：\n  - " + bad.slice(0, 10).join("\n  - "),
+    ).toEqual([]);
+  });
+
+  it("LIT-11：品牌浅底（--accent-muted）必须派生自 --accent（皮肤换品牌色时浅底要跟着走）", () => {    const allCss = readFileSync(path.join(ROOT, "src/styles.css"), "utf8") + readFileSync(path.join(ROOT, "src/styles/skin-hub.css"), "utf8");    const scopes: Array<[string, RegExp]> = [
       ["默认/亮色", /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/],
       ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/],
       ["hub 皮肤", /\[data-skin="hub"\]\s*\{([\s\S]*?)\n\}/],
