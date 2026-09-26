@@ -61,7 +61,75 @@
   --shadow-raise-2: 0 2px 4px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6);
   --shadow-raise-3: 0 4px 8px rgba(0, 0, 0, 0.6), 0 12px 32px rgba(0, 0, 0, 0.7);
   --shadow-raise-4: 0 8px 16px rgba(0, 0, 0, 0.65), 0 24px 48px rgba(0, 0, 0, 0.75);
-  --shadow-glow: 0 0 0 1px rgba(255, 107, 0, 0.22), 0 6px 22px rgba(255, 107, 0, 0.28);
+  --shadow-glow: 0 0 0 1px var(--hub-c1), 0 6px 22px var(--hub-c2);
+  /* ===== 调色板（第 163 轮 P2-3 皮肤数据化）=====
+     下面这些令牌的值是从本文件**规则体里收集**来的裸颜色字面量，逐字相同 ⇒ 迁移是零视觉变化的；
+     规则体现在只引用令牌、不再抄色（门禁 SKIN-1 守住"规则体里不许出现颜色字面量"）。
+     命名用 --hub-cN 是**值优先**的机械编号、不是语义命名 —— 先解决"能不能只改一处"：
+     以后调 Hub 皮肤的颜色，改这里就够；要改成语义命名（如 --hub-ink / --hub-accent）需要人逐个确认。 */
+  --hub-c1: rgba(255, 107, 0, 0.22);
+  --hub-c2: rgba(255, 107, 0, 0.28);
+  --hub-c3: rgba(255, 255, 255, 0.08);
+  --hub-c4: rgba(255, 107, 0, 0.08);
+  --hub-c5: rgba(255, 107, 0, 0.2);
+  --hub-c6: #fff;
+  --hub-c7: #333;
+  --hub-c8: #a5d6ff;
+  --hub-c9: rgba(0, 0, 0, 0.7);
+  --hub-c10: #444;
+  --hub-c11: #000;
+  --hub-c12: #1a1a1a;
+  --hub-c13: #222;
+  --hub-c14: #1e1e2e;
+  --hub-c15: #ff6b35;
+  --hub-c16: rgba(0, 0, 0, 0.25);
+  --hub-c17: rgba(59, 130, 246, 0.15);
+  --hub-c18: #60a5fa;
+  --hub-c19: rgba(34, 197, 94, 0.15);
+  --hub-c20: rgba(251, 146, 60, 0.15);
+  --hub-c21: #fb923c;
+  --hub-c22: rgba(168, 85, 247, 0.15);
+  --hub-c23: #c084fc;
+  --hub-c24: rgba(18, 18, 18, 0.72);
+  --hub-c25: rgba(28, 28, 30, 0.88);
+  --hub-c26: rgba(18, 18, 18, 0.48);
+  --hub-c27: rgba(255, 255, 255, 0.06);
+  --hub-c28: rgba(255, 255, 255, 0.10);
+  --hub-c29: rgba(28, 28, 30, 0.50);
+  --hub-c30: rgba(40, 40, 42, 0.60);
+  --hub-c31: rgba(42, 42, 42, 0.80);
+  --hub-c32: rgba(0, 0, 0, 0.40);
+  --hub-c33: rgba(255, 255, 255, 0.03);
+  --hub-c34: rgba(0, 0, 0, 0.55);
+  --hub-c35: rgba(255, 255, 255, 0.05);
+  --hub-c36: rgba(0, 0, 0, 0.65);
+  --hub-c37: rgba(255, 107, 0, 0.10);
+  --hub-c38: rgba(28, 28, 30, 0.95);
+  --hub-c39: rgba(18, 18, 18, 0.90);
+  --hub-c40: rgba(21, 21, 21, 0.85);
+  --hub-c41: rgba(10, 10, 10, 0.85);
+  --hub-c42: rgba(18, 18, 18, 0.60);
+  --hub-c43: rgba(5, 5, 5, 0.92);
+  --hub-c44: rgba(28, 28, 30, 0.80);
+  --hub-c45: rgba(42, 42, 42, 0.60);
+  --hub-c46: rgba(18, 18, 18, 0.40);
+  --hub-c47: rgba(28, 28, 30, 0.60);
+  --hub-c48: rgba(42, 42, 42, 0.40);
+  --hub-c49: #3b82f6;
+  --hub-c50: #8b5cf6;
+  --hub-c51: rgba(255, 107, 0, 0.06);
+  --hub-c52: rgba(88, 166, 255, 0.04);
+  --hub-c53: rgba(255, 107, 0, 0.04);
+  --hub-c54: rgba(255, 107, 0, 0.3);
+  --hub-c55: rgba(10, 10, 10, 0.6);
+  --hub-c56: rgba(42, 42, 42, 0.8);
+  --hub-c57: rgba(74, 222, 128, 0.06);
+  --hub-c58: rgba(248, 81, 73, 0.06);
+  --hub-c59: rgba(10, 10, 10, 0.5);
+  --hub-c60: rgba(28, 28, 30, 0.8);
+  --hub-c61: rgba(5, 5, 5, 0.8);
+  --hub-c62: #22c55e;
+  --hub-c63: rgba(0, 0, 0, 0.5);
 }
 
 /* Hub 皮肤根容器 - 三栏 Grid 布局 */
@@ -94,7 +162,7 @@
   color: var(--hub-text-muted);
 }
 [data-skin="hub"] .titlebar-btn:is(:hover, :focus-visible) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hub-c3);
   color: var(--hub-text-main);
 }
 
@@ -234,8 +302,8 @@
 }
 
 [data-skin="hub"] .user .message-content {
-  background: rgba(255, 107, 0, 0.08);
-  border: 1px solid rgba(255, 107, 0, 0.2);
+  background: var(--hub-c4);
+  border: 1px solid var(--hub-c5);
   border-radius: var(--radius-lg);
 }
 
@@ -286,7 +354,7 @@
 [data-skin="hub"] .btn-send,
 [data-skin="hub"] .send-button {
   background: var(--hub-color-primary);
-  color: #fff;
+  color: var(--hub-c6);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -300,10 +368,10 @@
 /* ========== 代码块 ========== */
 [data-skin="hub"] pre,
 [data-skin="hub"] .code-block {
-  background: #050505;
-  border: 1px solid #333;
+  background: var(--code-bg);
+  border: 1px solid var(--hub-c7);
   border-radius: var(--radius-sm);
-  color: #a5d6ff;
+  color: var(--hub-c8);
 }
 
 /* ========== 工具调用 ========== */
@@ -317,7 +385,7 @@
 
 /* ========== 模态框 ========== */
 [data-skin="hub"] .modal-overlay {
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--hub-c9);
 }
 
 [data-skin="hub"] .modal-editor {
@@ -337,12 +405,12 @@
 }
 
 [data-skin="hub"] ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--hub-c7);
   border-radius: var(--radius-xs);
 }
 
 [data-skin="hub"] ::-webkit-scrollbar-thumb:is(:hover, :focus-visible) {
-  background: #444;
+  background: var(--hub-c10);
 }
 
 /* ========== Hub 顶部导航栏 ========== */
@@ -371,7 +439,7 @@
 
 [data-skin="hub"] .hub-navbar-logo .hub-badge {
   background: var(--hub-color-primary);
-  color: #000;
+  color: var(--hub-c11);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-xs);
   margin-left: var(--space-2);
@@ -435,7 +503,7 @@
 }
 
 [data-skin="hub"] .hub-agent-card {
-  background: #050505;
+  background: var(--code-bg);
   border: 1px solid var(--hub-border-color);
   border-radius: var(--radius-md);
   padding: var(--space-9);
@@ -446,7 +514,7 @@
 [data-skin="hub"] .hub-agent-image {
   width: 120px;
   height: 120px;
-  background: #1a1a1a;
+  background: var(--hub-c12);
   border-radius: var(--radius-xl);
   margin: 0 auto var(--space-8);
   display: flex;
@@ -513,7 +581,7 @@
 }
 
 [data-skin="hub"] .hub-task-item:is(:hover, :focus-visible) {
-  border-color: #444;
+  border-color: var(--hub-c10);
 }
 
 [data-skin="hub"] .hub-task-icon {
@@ -543,7 +611,7 @@
 }
 
 [data-skin="hub"] .hub-task-tags span {
-  background: #222;
+  background: var(--hub-c13);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-xs);
 }
@@ -573,12 +641,12 @@
   z-index: 10;
   transition: var(--transition-color);
   font-size: 10px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 6px var(--hub-c16);
 }
 
 [data-skin="hub"] .hub-sidebar-toggle:is(:hover, :focus-visible) {
   background: var(--hub-color-primary, #ff6b35);
-  color: #fff;
+  color: var(--hub-c6);
   border-color: var(--hub-color-primary, #ff6b35);
   transform: scale(1.1);
 }
@@ -619,23 +687,23 @@
 
 /* ========== 任务图标颜色区分 ========== */
 [data-skin="hub"] .hub-task-icon-blue {
-  background: rgba(59, 130, 246, 0.15) !important;
-  color: #60a5fa !important;
+  background: var(--hub-c17) !important;
+  color: var(--hub-c18) !important;
 }
 
 [data-skin="hub"] .hub-task-icon-green {
-  background: rgba(34, 197, 94, 0.15) !important;
-  color: #4ade80 !important;
+  background: var(--hub-c19) !important;
+  color: var(--hub-text-success) !important;
 }
 
 [data-skin="hub"] .hub-task-icon-orange {
-  background: rgba(251, 146, 60, 0.15) !important;
-  color: #fb923c !important;
+  background: var(--hub-c20) !important;
+  color: var(--hub-c21) !important;
 }
 
 [data-skin="hub"] .hub-task-icon-purple {
-  background: rgba(168, 85, 247, 0.15) !important;
-  color: #c084fc !important;
+  background: var(--hub-c22) !important;
+  color: var(--hub-c23) !important;
 }
 
 /* ========== 新手引导 ========== */
@@ -658,7 +726,7 @@
 }
 
 [data-skin="hub"] .hub-recent-item:is(:hover, :focus-visible) {
-  border-color: #444 !important;
+  border-color: var(--hub-c10) !important;
   background: var(--hub-bg-hover) !important;
 }
 
@@ -701,68 +769,68 @@
 
 /* ========== H-6: Hub glass token overrides for codem-ui components ========== */
 [data-skin="hub"] {
-  --glass-bg: rgba(18, 18, 18, 0.72);
-  --glass-bg-strong: rgba(28, 28, 30, 0.88);
-  --glass-bg-subtle: rgba(18, 18, 18, 0.48);
-  --glass-border: rgba(255, 255, 255, 0.06);
-  --glass-border-strong: rgba(255, 255, 255, 0.10);
+  --glass-bg: var(--hub-c24);
+  --glass-bg-strong: var(--hub-c25);
+  --glass-bg-subtle: var(--hub-c26);
+  --glass-border: var(--hub-c27);
+  --glass-border-strong: var(--hub-c28);
   --glass-blur: 20px;
   --glass-blur-strong: 28px;
   --glass-blur-subtle: 10px;
   --glass-saturate: 1.2;
 
-  --surface-1: rgba(28, 28, 30, 0.50);
-  --surface-2: rgba(40, 40, 42, 0.60);
-  --surface-hover: rgba(42, 42, 42, 0.80);
+  --surface-1: var(--hub-c29);
+  --surface-2: var(--hub-c30);
+  --surface-hover: var(--hub-c31);
 
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --elevation-1: 0 1px 2px var(--hub-c32), 0 0 0 1px var(--hub-c33);
+  --elevation-3: 0 8px 24px var(--hub-c34), 0 0 0 1px var(--hub-c35);
+  --elevation-4: 0 16px 48px var(--hub-c36), 0 0 0 1px var(--hub-c27);
 
-  --message-bubble-user: rgba(255, 107, 0, 0.10);
-  --message-bubble-user-border: rgba(255, 107, 0, 0.22);
-  --message-actions-bg: rgba(28, 28, 30, 0.95);
-  --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.40);
+  --message-bubble-user: var(--hub-c37);
+  --message-bubble-user-border: var(--hub-c1);
+  --message-actions-bg: var(--hub-c38);
+  --message-actions-shadow: 0 2px 8px var(--hub-c32);
 
-  --run-bar-bg: rgba(18, 18, 18, 0.90);
-  --run-bar-thinking: #58a6ff;
+  --run-bar-bg: var(--hub-c39);
+  --run-bar-thinking: var(--info);
   --run-bar-working: var(--hub-color-primary, #ff6b00);
   --run-bar-presenting: var(--hub-text-success, #4ade80);
-  --run-bar-error: #f85149;
+  --run-bar-error: var(--error);
 
   /* 第 62 轮删除：--tool-card-* / --tool-status-*（唯一引用点是被删的 ActivityTimeline 样式，0 处 var() 引用） */
 
-  --composer-bg: rgba(21, 21, 21, 0.85);
-  --composer-border: rgba(42, 42, 42, 0.80);
+  --composer-bg: var(--hub-c40);
+  --composer-border: var(--hub-c31);
 
-  --titlebar-bg: rgba(10, 10, 10, 0.85);
+  --titlebar-bg: var(--hub-c41);
 
-  --right-rail-bg: rgba(18, 18, 18, 0.60);
+  --right-rail-bg: var(--hub-c42);
 
-  --rich-code-bg: rgba(5, 5, 5, 0.92);
-  --rich-code-header-bg: rgba(28, 28, 30, 0.80);
-  --rich-code-border: rgba(42, 42, 42, 0.60);
-  --rich-table-bg: rgba(18, 18, 18, 0.40);
-  --rich-table-header-bg: rgba(28, 28, 30, 0.60);
-  --rich-table-border: rgba(42, 42, 42, 0.40);
+  --rich-code-bg: var(--hub-c43);
+  --rich-code-header-bg: var(--hub-c44);
+  --rich-code-border: var(--hub-c45);
+  --rich-table-bg: var(--hub-c46);
+  --rich-table-header-bg: var(--hub-c47);
+  --rich-table-border: var(--hub-c48);
   --rich-link-color: var(--hub-color-primary, #ff6b00);
   --stream-cursor-color: var(--hub-color-primary, #ff6b00);
 
-  --security-ask: #3b82f6;
-  --security-auto: #8b5cf6;
-  --security-full: #4ade80;
+  --security-ask: var(--hub-c49);
+  --security-auto: var(--hub-c50);
+  --security-full: var(--hub-text-success);
 }
 
 /* Hub skin: ambient backdrop uses hub accent */
 [data-skin="hub"] .ambient-backdrop {
   background: radial-gradient(
     ellipse at top left,
-    rgba(255, 107, 0, 0.06),
+    var(--hub-c51),
     transparent 50%
   ),
   radial-gradient(
     ellipse at bottom right,
-    rgba(88, 166, 255, 0.04),
+    var(--hub-c52),
     transparent 50%
   );
 }
@@ -770,13 +838,13 @@
 /* Hub skin: native title bar dark */
 [data-skin="hub"] .native-title-bar {
   background: var(--titlebar-bg);
-  border-bottom-color: rgba(42, 42, 42, 0.60);
+  border-bottom-color: var(--hub-c45);
 }
 
 /* Hub skin: security button colors */
-[data-skin="hub"] .composer-tool-btn.security-ask { color: #3b82f6; }
-[data-skin="hub"] .composer-tool-btn.security-auto { color: #8b5cf6; }
-[data-skin="hub"] .composer-tool-btn.security-full { color: #4ade80; }
+[data-skin="hub"] .composer-tool-btn.security-ask { color: var(--hub-c49); }
+[data-skin="hub"] .composer-tool-btn.security-auto { color: var(--hub-c50); }
+[data-skin="hub"] .composer-tool-btn.security-full { color: var(--hub-text-success); }
 
 /* ========== Hub Skin: InlineDiffReview 专属样式 ========== */
 /* Hub 风格：深色科技感，橙色强调，硬朗边框，微弱发光 */
@@ -797,20 +865,20 @@
   background: var(--hub-bg-card, #1c1c1e);
   border: 1px solid var(--hub-border-color, #2a2a2a);
   border-radius: var(--radius);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 107, 0, 0.04);
+  box-shadow: 0 4px 16px var(--shadow-color), 0 0 0 1px var(--hub-c53);
 }
 [data-skin="hub"] .inline-diff-review:is(:hover, :focus-visible) {
-  border-color: rgba(255, 107, 0, 0.3);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 107, 0, 0.08);
+  border-color: var(--hub-c54);
+  box-shadow: 0 4px 16px var(--shadow-color), 0 0 0 1px var(--hub-c4);
 }
 
 /* 头部：Hub 深色条 */
 [data-skin="hub"] .inline-diff-header {
-  background: rgba(10, 10, 10, 0.6);
+  background: var(--hub-c55);
   border-bottom: 1px solid var(--hub-border-color, #2a2a2a);
 }
 [data-skin="hub"] .inline-diff-header:is(:hover, :focus-visible) {
-  background: rgba(42, 42, 42, 0.8);
+  background: var(--hub-c56);
 }
 
 /* 文件名：Hub 橙色高亮 */
@@ -826,42 +894,42 @@
 
 /* 序列徽章：Hub 橙色风格 */
 [data-skin="hub"] .inline-diff-sequence-badge {
-  background: rgba(255, 107, 0, 0.15);
+  background: var(--hub-color-primary-muted);
   color: var(--hub-color-primary, #ff6b00);
 }
 
 /* Diff 内容区：Hub 纯黑代码背景 */
 [data-skin="hub"] .inline-diff-content {
-  background: rgba(5, 5, 5, 0.92);
+  background: var(--hub-c43);
 }
 [data-skin="hub"] .inline-diff-added {
-  background: rgba(74, 222, 128, 0.06);
+  background: var(--hub-c57);
 }
 [data-skin="hub"] .inline-diff-removed {
-  background: rgba(248, 81, 73, 0.06);
+  background: var(--hub-c58);
 }
 
 /* 工具栏：Hub 深色 */
 [data-skin="hub"] .inline-diff-toolbar {
-  background: rgba(10, 10, 10, 0.5);
+  background: var(--hub-c59);
   border-bottom: 1px solid var(--hub-border-color, #2a2a2a);
 }
 [data-skin="hub"] .inline-diff-mode-toggle {
-  background: rgba(28, 28, 30, 0.8);
+  background: var(--hub-c60);
 }
 [data-skin="hub"] .inline-diff-mode-btn.active {
-  background: rgba(255, 107, 0, 0.12);
+  background: var(--user-bg);
   color: var(--hub-color-primary, #ff6b00);
 }
 
 /* 预览区：Hub 深色卡片 */
 [data-skin="hub"] .inline-diff-preview-content {
-  background: rgba(5, 5, 5, 0.8);
+  background: var(--hub-c61);
 }
 
 /* 自定义指令输入：Hub 风格 */
 [data-skin="hub"] .inline-diff-custom-panel {
-  background: rgba(10, 10, 10, 0.5);
+  background: var(--hub-c59);
   border-top: 1px solid var(--hub-border-color, #2a2a2a);
 }
 [data-skin="hub"] .inline-diff-custom-textarea {
@@ -871,27 +939,27 @@
 }
 [data-skin="hub"] .inline-diff-custom-textarea:focus {
   border-color: var(--hub-color-primary, #ff6b00);
-  box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.15);
+  box-shadow: 0 0 0 2px var(--hub-color-primary-muted);
 }
 
 /* 操作栏：Hub 深色底 */
 [data-skin="hub"] .inline-diff-actions {
-  background: rgba(10, 10, 10, 0.6);
+  background: var(--hub-c55);
   border-top: 1px solid var(--hub-border-color, #2a2a2a);
 }
 
 /* 批准按钮：Hub 绿色 */
 [data-skin="hub"] .inline-diff-btn.accept {
   background: var(--hub-text-success, #4ade80);
-  color: #0a0a0a;
+  color: var(--hub-bg-base);
 }
 [data-skin="hub"] .inline-diff-btn.accept:is(:hover, :focus-visible) {
-  background: #22c55e;
+  background: var(--hub-c62);
 }
 
 /* 拒绝按钮：Hub 深灰 */
 [data-skin="hub"] .inline-diff-btn.reject {
-  background: rgba(42, 42, 42, 0.8);
+  background: var(--hub-c56);
   color: var(--hub-text-main, #e0e0e0);
   border: 1px solid var(--hub-border-color, #2a2a2a);
 }
@@ -902,12 +970,12 @@
   border: 1px solid var(--hub-color-primary, #ff6b00);
 }
 [data-skin="hub"] .inline-diff-btn.accept-all:is(:hover, :focus-visible) {
-  background: rgba(255, 107, 0, 0.12);
+  background: var(--user-bg);
 }
 
 /* 浮动容器：Hub 深色阴影 */
 [data-skin="hub"] .inline-diff-container {
-  filter: drop-shadow(0 -4px 20px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 -4px 20px var(--hub-c63));
 }
 
 /* ========== Hub 皮肤同步移除段落 hover 背景色 ========== */

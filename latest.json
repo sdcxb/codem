@@ -1,15 +1,15 @@
 {
-  "version": "1.16.162",
-  "notes": "P1-1 表面角色（卡片面解耦）+ D8 身份色（执行模式徽标）",
-  "pub_date": "2026-09-26T10:14:13Z",
+  "version": "1.16.163",
+  "notes": "P2-3 皮肤数据化：skin-hub/skin-dream 规则体里的颜色字面量归零（Hub 63 个 --hub-cN、Dream 81 个 --dream-cN），零视觉变化经 css-contract 2733 个类逐位机证；新增 SKIN-1 门禁；写死值棘轮 color 140→17、box-shadow 29→8。",
+  "pub_date": "2026-09-26T10:32:53Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VwN2RXb2dvZWxHQlJ5eThFTk85SXRXU1paTlgrR2NjeVBBaTVUbG9PWFY4eEpXSm5PWjJiNWhFbHBCM0NpWlZCYWdCTnRVUHZMQ2Y0dWs5eWpvQ3djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE3NjUzCWZpbGU6Q29kZW1fMS4xNi4xNjJfeDY0LXNldHVwLmV4ZQo0amNZT0pNdlhwY0w2aFB0Rkp6NXgyYXpBcjBIQ1F2dlBsRjkvMzVaa2xCOUw5SFdyMlNxK2Fod3QyaHJpdGNVd3hiSEROelc4YWNtbEk4REJkL1FDQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.162/Codem_1.16.162_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dkM1ZmenNsQ1dQWTZ2SWlQRkNhdVp2Q0JHYzVVQ2FlakpPWS9SVWtxMXF6eFlOdTFtMEt2TlcvaFd4UE53R3JQeUhCNStFY2hxekZSZnBhREtDRkFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE4NzcwCWZpbGU6Q29kZW1fMS4xNi4xNjNfeDY0LXNldHVwLmV4ZQp2ME1CZ3dZTjRxOE1HQ3NBSkg5K2RRN1ZLV2RJTC94V2t1TTN2MHFKV3AxSmhZMlBUYmpvdUw0dmE0Ty9KTDlBSStJMXdCbXVJcWFsRnVwci9HOFhCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.163/Codem_1.16.163_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VwN2RXb2dvZWxHQlJ5eThFTk85SXRXU1paTlgrR2NjeVBBaTVUbG9PWFY4eEpXSm5PWjJiNWhFbHBCM0NpWlZCYWdCTnRVUHZMQ2Y0dWs5eWpvQ3djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE3NjUzCWZpbGU6Q29kZW1fMS4xNi4xNjJfeDY0LXNldHVwLmV4ZQo0amNZT0pNdlhwY0w2aFB0Rkp6NXgyYXpBcjBIQ1F2dlBsRjkvMzVaa2xCOUw5SFdyMlNxK2Fod3QyaHJpdGNVd3hiSEROelc4YWNtbEk4REJkL1FDQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.162/Codem_1.16.162_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dkM1ZmenNsQ1dQWTZ2SWlQRkNhdVp2Q0JHYzVVQ2FlakpPWS9SVWtxMXF6eFlOdTFtMEt2TlcvaFd4UE53R3JQeUhCNStFY2hxekZSZnBhREtDRkFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDE4NzcwCWZpbGU6Q29kZW1fMS4xNi4xNjNfeDY0LXNldHVwLmV4ZQp2ME1CZ3dZTjRxOE1HQ3NBSkg5K2RRN1ZLV2RJTC94V2t1TTN2MHFKV3AxSmhZMlBUYmpvdUw0dmE0Ty9KTDlBSStJMXdCbXVJcWFsRnVwci9HOFhCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.163/Codem_1.16.163_x64-setup.exe"
     }
   }
 }

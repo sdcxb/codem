@@ -16,9 +16,95 @@
 /* 梦幻皮肤根容器 - 透明，让背景层可见 */
 [data-skin="dream"] {
   --dream-panel-bg: rgba(255, 255, 255, 0.78);
+  /* ===== 调色板（第 163 轮 P2-3 皮肤数据化）=====
+     下面这些令牌的值是从本文件**规则体里收集**来的裸颜色字面量，逐字相同 ⇒ 迁移是零视觉变化的；
+     规则体现在只引用令牌、不再抄色（门禁 SKIN-1 守住"规则体里不许出现颜色字面量"）。
+     命名用 --dream-cN 是**值优先**的机械编号、不是语义命名 —— 先解决"能不能只改一处"：
+     以后调 Dream 皮肤的颜色，改这里就够；要改成语义命名（如 --dream-ink / --dream-accent）需要人逐个确认。 */
+  --dream-c1: rgba(30, 30, 46, 0.82);
+  --dream-c2: #6c474d;
+  --dream-c3: #e88c9a;
+  --dream-c4: #a88a8f;
+  --dream-c5: rgba(232, 140, 154, 0.12);
+  --dream-c6: #e81123;
+  --dream-c7: #ffffff;
+  --dream-c8: #fdf5f7;
+  --dream-c9: #fce8eb;
+  --dream-c10: #f7dee2;
+  --dream-c11: rgba(0, 0, 0, 0.15);
+  --dream-c12: rgba(255, 255, 255, 0.65);
+  --dream-c13: rgba(232, 140, 154, 0.15);
+  --dream-c14: rgba(232, 140, 154, 0.1);
+  --dream-c15: rgba(0, 0, 0, 0.06);
+  --dream-c16: rgba(255,255,255,0.65);
+  --dream-c17: rgba(0, 0, 0, 0.08);
+  --dream-c18: rgba(0, 0, 0, 0.12);
+  --dream-c19: rgba(30, 30, 46, 0.65);
+  --dream-c20: rgba(255, 255, 255, 0.88);
+  --dream-c21: rgba(0, 0, 0, 0.03);
+  --dream-c22: rgba(0, 0, 0, 0.1);
+  --dream-c23: #1a1a2e;
+  --dream-c24: rgba(0, 0, 0, 0.04);
+  --dream-c25: #555566;
+  --dream-c26: rgba(30, 30, 46, 0.88);
+  --dream-c27: rgba(232, 140, 154, 0.3);
+  --dream-c28: rgba(245, 245, 248, 0.9);
+  --dream-c29: rgba(255, 255, 255, 0.8);
+  --dream-c30: rgba(0, 0, 0, 0.35);
+  --dream-c31: rgba(255, 255, 255, 0.95);
+  --dream-c32: rgba(30, 30, 46, 0.95);
+  --dream-c33: #e0d8e0;
+  --dream-c34: rgba(255, 255, 255, 0.92);
+  --dream-c35: rgba(30, 30, 46, 0.92);
+  --dream-c36: #eee;
+  --dream-c37: rgba(232, 140, 154, 0.18);
+  --dream-c38: rgba(255, 255, 255, 0.98);
+  --dream-c39: rgba(30, 30, 46, 0.98);
+  --dream-c40: rgba(0, 0, 0, 0.2);
+  --dream-c41: rgba(255, 255, 255, 1);
+  --dream-c42: rgba(40, 40, 60, 1);
+  --dream-c43: rgba(255, 255, 255, 0.72);
+  --dream-c44: rgba(255, 255, 255, 0.48);
+  --dream-c45: rgba(232, 140, 154, 0.20);
+  --dream-c46: rgba(232, 140, 154, 0.30);
+  --dream-c47: rgba(255, 255, 255, 0.30);
+  --dream-c48: rgba(255, 255, 255, 0.40);
+  --dream-c49: rgba(232, 140, 154, 0.10);
+  --dream-c50: rgba(232, 140, 154, 0.24);
+  --dream-c51: rgba(255, 255, 255, 0.85);
+  --dream-c52: rgba(255, 255, 255, 0.60);
+  --dream-c53: rgba(30, 30, 46, 0.72);
+  --dream-c54: rgba(30, 30, 46, 0.48);
+  --dream-c55: rgba(232, 140, 154, 0.28);
+  --dream-c56: rgba(30, 30, 46, 0.30);
+  --dream-c57: rgba(30, 30, 46, 0.40);
+  --dream-c58: rgba(232, 140, 154, 0.08);
+  --dream-c59: rgba(30, 30, 46, 0.85);
+  --dream-c60: rgba(30, 30, 46, 0.60);
+  --dream-c61: rgba(232, 140, 154, 0.05);
+  --dream-c62: rgba(232, 140, 154, 0.06);
+  --dream-c63: #22c55e;
+  --dream-c64: rgba(255, 255, 255, 0.80);
+  --dream-c65: rgba(0, 0, 0, 0.20);
+  --dream-c66: rgba(30, 30, 46, 0.80);
+  --dream-c67: rgba(232, 140, 154, 0.40);
+  --dream-c68: rgba(0, 0, 0, 0.10);
+  --dream-c69: rgba(0, 0, 0, 0.25);
+  --dream-c70: rgba(46, 204, 113, 0.06);
+  --dream-c71: rgba(231, 76, 60, 0.06);
+  --dream-c72: rgba(46, 204, 113, 0.08);
+  --dream-c73: rgba(231, 76, 60, 0.08);
+  --dream-c74: rgba(232, 140, 154, 0.04);
+  --dream-c75: rgba(255, 255, 255, 0.50);
+  --dream-c76: rgba(30, 30, 46, 0.50);
+  --dream-c77: rgba(46, 204, 113, 0.85);
+  --dream-c78: rgba(0, 0, 0, 0.3);
+  --dream-c79: rgba(255, 255, 255, 0.15);
+  --dream-c80: rgba(30, 30, 46, 0.15);
+  --dream-c81: rgba(255, 255, 255, 0.06);
 }
 [data-skin="dream"][data-theme="dark"] {
-  --dream-panel-bg: rgba(30, 30, 46, 0.82);
+  --dream-panel-bg: var(--dream-c1);
 }
 [data-skin="dream"] .app {
   position: relative;
@@ -40,12 +126,12 @@
   color: var(--dream-text-muted, #a88a8f);
 }
 [data-skin="dream"] .titlebar-btn:is(:hover, :focus-visible) {
-  background: rgba(232, 140, 154, 0.12);
+  background: var(--dream-c5);
   color: var(--dream-text-main, #6c474d);
 }
 [data-skin="dream"] .titlebar-btn-close:is(:hover, :focus-visible) {
-  background: #e81123;
-  color: #ffffff;
+  background: var(--dream-c6);
+  color: var(--dream-c7);
 }
 
 /* 背景层 - 固定定位覆盖整个窗口 */
@@ -65,7 +151,7 @@
 
 /* 无背景图时的渐变 fallback */
 [data-skin="dream"] .dream-bg-layer.no-image {
-  background: linear-gradient(135deg, #fdf5f7 0%, #fce8eb 50%, #f7dee2 100%);
+  background: linear-gradient(135deg, var(--dream-c8) 0%, var(--dream-c9) 50%, var(--dream-c10) 100%);
 }
 
 /* 背景层叠加 - 增强可读性 */
@@ -76,7 +162,7 @@
   width: 100%;
   height: 100%;
   z-index: 1;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--dream-c11);
   pointer-events: none;
 }
 
@@ -144,11 +230,11 @@
 
 [data-skin="dream"] .sidebar-session-item:is(:hover, :focus-visible),
 [data-skin="dream"] .sidebar-nav-item:is(:hover, :focus-visible) {
-  background: rgba(232, 140, 154, 0.1);
+  background: var(--dream-c14);
 }
 
 [data-skin="dream"] .sidebar-session-item.active {
-  background: rgba(232, 140, 154, 0.15);
+  background: var(--dream-c13);
   color: var(--dream-accent, #e88c9a);
 }
 
@@ -166,7 +252,7 @@
 /* Dream 分段控件 — 使用 dream-accent 主题色 */
 [data-skin="dream"] .sidebar-tool-row {
   background: color-mix(in srgb, var(--dream-accent, #e88c9a) 10%, transparent);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: inset 0 1px 3px var(--dream-c15);
 }
 
 [data-skin="dream"] .sidebar-tool-item {
@@ -181,7 +267,7 @@
 [data-skin="dream"] .sidebar-tool-item.active {
   background: color-mix(in srgb, var(--dream-accent, #e88c9a) 20%, var(--dream-bg-card, rgba(255,255,255,0.65)));
   color: var(--dream-text-main, #6c474d);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px var(--dream-c17);
 }
 
 /* ========== 主面板区域 - 透明 ========== */
@@ -203,7 +289,7 @@
 [data-skin="dream"] .sidebar {
   border-radius: var(--radius) !important;
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15)) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px var(--dream-c17);
   margin: 0 !important;
 }
 
@@ -219,7 +305,7 @@
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
   border-radius: var(--radius) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px var(--dream-c17);
   margin: 0 !important;
 }
 [data-skin="dream"][data-theme="dark"] .right-sidebar {
@@ -232,7 +318,7 @@
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
   border-radius: var(--radius) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px var(--dream-c17);
   margin: 0 !important;
   overflow: hidden;
   flex: 1;
@@ -241,7 +327,7 @@
 }
 
 [data-skin="dream"] .panel-tabs {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--dream-c21);
   border-bottom: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
   padding: 0 var(--space-6);
   display: flex;
@@ -296,12 +382,12 @@ color: var(--dream-text-main, #1a1a2e) !important;
 }
 
 [data-skin="dream"] .user .message-content {
-background: rgba(0, 0, 0, 0.04) !important;
+background: var(--dream-c24) !important;
 backdrop-filter: blur(var(--dream-blur-px, 12px));
 -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
-border: 1px solid rgba(0, 0, 0, 0.08) !important;
+border: 1px solid var(--dream-c17) !important;
 border-radius: var(--radius-lg) !important;
-box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+box-shadow: 0 2px 8px var(--dream-c15);
 }
 
 [data-skin="dream"] .assistant .message-content {
@@ -313,7 +399,7 @@ backdrop-filter: none !important;
 }
 
 [data-skin="dream"] .system .message-content {
-  background: rgba(0, 0, 0, 0.03) !important;
+  background: var(--dream-c21) !important;
   color: var(--dream-text-muted, #555566);
 }
 
@@ -369,7 +455,7 @@ backdrop-filter: none !important;
   color: white !important;
   border: none;
   border-radius: 50%;
-  box-shadow: 0 4px 8px rgba(232, 140, 154, 0.3);
+  box-shadow: 0 4px 8px var(--dream-c27);
   cursor: pointer;
   transition: var(--transition-color);
 }
@@ -408,7 +494,7 @@ backdrop-filter: none !important;
 [data-skin="dream"] .confirm-overlay,
 [data-skin="dream"] .permission-overlay,
 [data-skin="dream"] .search-overlay {
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--dream-c30);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -420,11 +506,11 @@ backdrop-filter: none !important;
 [data-skin="dream"] .confirm-dialog,
 [data-skin="dream"] .permission-dialog,
 [data-skin="dream"] .search-dialog {
-  background: rgba(255, 255, 255, 0.95) !important;
+  background: var(--dream-c31) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 32px var(--dream-c11);
   color: var(--dream-text-main, #1a1a2e) !important;
 }
 
@@ -436,7 +522,7 @@ backdrop-filter: none !important;
 [data-skin="dream"][data-theme="dark"] .confirm-dialog,
 [data-skin="dream"][data-theme="dark"] .permission-dialog,
 [data-skin="dream"][data-theme="dark"] .search-dialog {
-  background: rgba(30, 30, 46, 0.95) !important;
+  background: var(--dream-c32) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
 
@@ -451,16 +537,16 @@ backdrop-filter: none !important;
 
 /* ========== 底部控制栏下拉菜单 - 磨砂效果 ========== */
 [data-skin="dream"] .bottom-bar-dropdown {
-  background: rgba(255, 255, 255, 0.92) !important;
+  background: var(--dream-c34) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 16px var(--dream-c18);
   color: var(--dream-text-main, #1a1a2e);
 }
 
 [data-skin="dream"][data-theme="dark"] .bottom-bar-dropdown {
-  background: rgba(30, 30, 46, 0.92) !important;
+  background: var(--dream-c35) !important;
   color: var(--dream-text-main, #e0d8e0);
 }
 
@@ -469,7 +555,7 @@ backdrop-filter: none !important;
 }
 
 [data-skin="dream"] .bottom-bar-dropdown-item:is(:hover, :focus-visible) {
-  background: rgba(232, 140, 154, 0.12);
+  background: var(--dream-c5);
 }
 
 [data-skin="dream"] .bottom-bar-dropdown-header {
@@ -488,7 +574,7 @@ backdrop-filter: none !important;
 }
 
 [data-skin="dream"] ::-webkit-scrollbar-thumb {
-  background: rgba(232, 140, 154, 0.3);
+  background: var(--dream-c27);
   border-radius: var(--radius-xs);
 }
 
@@ -506,7 +592,7 @@ backdrop-filter: none !important;
   height: 120px;
   object-fit: cover;
   object-position: center top;
-  background-color: #eee;
+  background-color: var(--dream-c36);
   margin-bottom: var(--space-6);
   border-radius: 2px;
 }
@@ -555,18 +641,18 @@ backdrop-filter: none !important;
 
 /* ========== 技能选择弹窗 - 毛玻璃，确保文字可读 ========== */
 [data-skin="dream"] .skill-picker-popup {
-  background: rgba(255, 255, 255, 0.95) !important;
+  background: var(--dream-c31) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px var(--dream-c18);
   padding: var(--space-5) var(--space-6);
   color: var(--dream-text-main, #1a1a2e) !important;
 }
 
 [data-skin="dream"][data-theme="dark"] .skill-picker-popup {
-  background: rgba(30, 30, 46, 0.95) !important;
+  background: var(--dream-c32) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
 
@@ -575,12 +661,12 @@ backdrop-filter: none !important;
 [data-skin="dream"] .popover,
 [data-skin="dream"] .popup-menu,
 [data-skin="dream"] .context-menu {
-  background: rgba(255, 255, 255, 0.95) !important;
+  background: var(--dream-c31) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
   border-radius: var(--radius);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px var(--dream-c22);
   color: var(--dream-text-main, #1a1a2e) !important;
 }
 
@@ -588,7 +674,7 @@ backdrop-filter: none !important;
 [data-skin="dream"][data-theme="dark"] .popover,
 [data-skin="dream"][data-theme="dark"] .popup-menu,
 [data-skin="dream"][data-theme="dark"] .context-menu {
-  background: rgba(30, 30, 46, 0.95) !important;
+  background: var(--dream-c32) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
 
@@ -605,7 +691,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(20px) saturate(1.5) !important;
   -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.3)) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 8px 32px var(--dream-c11) !important;
   color: var(--dream-text-main, #1a1a2e) !important;
 }
 
@@ -643,12 +729,12 @@ backdrop-filter: none !important;
 [data-skin="dream"] .model-option:is(:hover, :focus-visible),
 [data-skin="dream"] .slash-command-item:is(:hover, :focus-visible),
 [data-skin="dream"] .more-action-item:is(:hover, :focus-visible) {
-  background: rgba(232, 140, 154, 0.12) !important;
+  background: var(--dream-c5) !important;
 }
 
 [data-skin="dream"] .model-option.active,
 [data-skin="dream"] .slash-command-item.selected {
-  background: rgba(232, 140, 154, 0.18) !important;
+  background: var(--dream-c37) !important;
 }
 
 /* ========== D-4: Dream popover transform-origin ========== */
@@ -685,34 +771,34 @@ backdrop-filter: none !important;
   [data-skin="dream"][data-theme="dark"] .skill-picker-popup,
   [data-skin="dream"][data-theme="dark"] .dropdown-menu,
   [data-skin="dream"][data-theme="dark"] .popover {
-    background: rgba(30, 30, 46, 0.98) !important;
+    background: var(--dream-c39) !important;
   }
 }
 
 /* ========== 定位圆圈 — 梦幻皮肤强制不透明 ========== */
 [data-skin="dream"] .scroll-to-bottom-btn {
-  background: rgba(255, 255, 255, 0.98) !important;
+  background: var(--dream-c38) !important;
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.3)) !important;
   color: var(--dream-text-main, #1a1a2e) !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 2px 12px var(--dream-c40) !important;
 }
 [data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn {
-  background: rgba(30, 30, 46, 0.98) !important;
+  background: var(--dream-c39) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
 [data-skin="dream"] .scroll-to-bottom-btn:is(:hover, :focus-visible) {
-  background: rgba(255, 255, 255, 1) !important;
+  background: var(--dream-c41) !important;
   border-color: var(--dream-accent, #e88c9a) !important;
 }
 [data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn:is(:hover, :focus-visible) {
-  background: rgba(40, 40, 60, 1) !important;
+  background: var(--dream-c42) !important;
 }
 
 /* ========== D-6: Dream glass token overrides for codem-ui components ========== */
 [data-skin="dream"] {
   --glass-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.72));
   --glass-bg-strong: var(--dream-bg-panel, rgba(255, 255, 255, 0.88));
-  --glass-bg-subtle: rgba(255, 255, 255, 0.48);
+  --glass-bg-subtle: var(--dream-c44);
   --glass-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
   --glass-border-strong: var(--dream-border-color, rgba(232, 140, 154, 0.30));
   --glass-blur: var(--dream-blur-px, 16px);
@@ -720,12 +806,12 @@ backdrop-filter: none !important;
   --glass-blur-subtle: 8px;
   --glass-saturate: 1.6;
 
-  --surface-1: rgba(255, 255, 255, 0.30);
-  --surface-2: rgba(255, 255, 255, 0.40);
-  --surface-hover: rgba(232, 140, 154, 0.12);
+  --surface-1: var(--dream-c47);
+  --surface-2: var(--dream-c48);
+  --surface-hover: var(--dream-c5);
 
-  --message-bubble-user: rgba(232, 140, 154, 0.10);
-  --message-bubble-user-border: rgba(232, 140, 154, 0.24);
+  --message-bubble-user: var(--dream-c49);
+  --message-bubble-user-border: var(--dream-c50);
   --message-actions-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.92));
 
   --run-bar-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.85));
@@ -739,10 +825,10 @@ backdrop-filter: none !important;
   --right-rail-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.60));
 
   --rich-code-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.85));
-  --rich-code-header-bg: rgba(255, 255, 255, 0.60);
+  --rich-code-header-bg: var(--dream-c52);
   --rich-code-border: var(--dream-border-color, rgba(232, 140, 154, 0.15));
-  --rich-table-bg: rgba(255, 255, 255, 0.40);
-  --rich-table-header-bg: rgba(255, 255, 255, 0.60);
+  --rich-table-bg: var(--dream-c48);
+  --rich-table-header-bg: var(--dream-c52);
   --rich-table-border: var(--dream-border-color, rgba(232, 140, 154, 0.12));
   --rich-link-color: var(--dream-accent, #e88c9a);
   --stream-cursor-color: var(--dream-accent, #e88c9a);
@@ -751,16 +837,16 @@ backdrop-filter: none !important;
 [data-skin="dream"][data-theme="dark"] {
   --glass-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.72));
   --glass-bg-strong: var(--dream-bg-panel, rgba(30, 30, 46, 0.88));
-  --glass-bg-subtle: rgba(30, 30, 46, 0.48);
+  --glass-bg-subtle: var(--dream-c54);
   --glass-border: var(--dream-border-color, rgba(232, 140, 154, 0.18));
   --glass-border-strong: var(--dream-border-color, rgba(232, 140, 154, 0.28));
 
-  --surface-1: rgba(30, 30, 46, 0.30);
-  --surface-2: rgba(30, 30, 46, 0.40);
-  --surface-hover: rgba(232, 140, 154, 0.10);
+  --surface-1: var(--dream-c56);
+  --surface-2: var(--dream-c57);
+  --surface-hover: var(--dream-c49);
 
-  --message-bubble-user: rgba(232, 140, 154, 0.08);
-  --message-bubble-user-border: rgba(232, 140, 154, 0.20);
+  --message-bubble-user: var(--dream-c58);
+  --message-bubble-user-border: var(--dream-c45);
   --message-actions-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.92));
 
   --run-bar-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.85));
@@ -768,9 +854,9 @@ backdrop-filter: none !important;
 
   --composer-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.72));
   --rich-code-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.85));
-  --rich-code-header-bg: rgba(30, 30, 46, 0.60);
-  --rich-table-bg: rgba(30, 30, 46, 0.40);
-  --rich-table-header-bg: rgba(30, 30, 46, 0.60);
+  --rich-code-header-bg: var(--dream-c60);
+  --rich-table-bg: var(--dream-c57);
+  --rich-table-header-bg: var(--dream-c60);
 
   --titlebar-bg: transparent;
   --right-rail-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.60));
@@ -786,12 +872,12 @@ backdrop-filter: none !important;
 [data-skin="dream"] .ambient-backdrop {
   background: radial-gradient(
     ellipse at top left,
-    rgba(232, 140, 154, 0.08),
+    var(--dream-c58),
     transparent 50%
   ),
   radial-gradient(
     ellipse at bottom right,
-    rgba(232, 140, 154, 0.05),
+    var(--dream-c61),
     transparent 50%
   );
 }
@@ -809,17 +895,17 @@ backdrop-filter: none !important;
   --radius-xl: 24px;
   --radius-full: 9999px;
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(232, 140, 154, 0.06);
-  --accent-soft: rgba(232, 140, 154, 0.12);
-  --success-hover: #22c55e;
+  --elevation-1: 0 1px 3px var(--dream-c15), 0 0 0 1px var(--dream-c62);
+  --accent-soft: var(--dream-c5);
+  --success-hover: var(--dream-c63);
   --input-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.80));
 }
 
 /* Dream 暗色模式变量补充 */
 [data-skin="dream"][data-theme="dark"] {
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.18));
-  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(232, 140, 154, 0.06);
-  --accent-soft: rgba(232, 140, 154, 0.10);
+  --elevation-1: 0 1px 3px var(--dream-c65), 0 0 0 1px var(--dream-c62);
+  --accent-soft: var(--dream-c49);
   --input-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.80));
 }
 
@@ -830,26 +916,26 @@ backdrop-filter: none !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(232, 140, 154, 0.06);
+  box-shadow: 0 8px 32px var(--dream-c17), 0 0 0 1px var(--dream-c62);
 }
 [data-skin="dream"] .inline-diff-review:is(:hover, :focus-visible) {
-  border-color: rgba(232, 140, 154, 0.40);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10), 0 0 0 1px rgba(232, 140, 154, 0.12);
+  border-color: var(--dream-c67);
+  box-shadow: 0 8px 32px var(--dream-c68), 0 0 0 1px var(--dream-c5);
 }
 
 /* Dream 暗色模式主容器 */
 [data-skin="dream"][data-theme="dark"] .inline-diff-review {
   background: var(--dream-bg-panel, rgba(30, 30, 46, 0.88));
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(232, 140, 154, 0.06);
+  box-shadow: 0 8px 32px var(--dream-c69), 0 0 0 1px var(--dream-c62);
 }
 
 /* 头部：Dream 柔和半透明 */
 [data-skin="dream"] .inline-diff-header {
-  background: rgba(232, 140, 154, 0.06);
+  background: var(--dream-c62);
   border-bottom: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
 }
 [data-skin="dream"] .inline-diff-header:is(:hover, :focus-visible) {
-  background: rgba(232, 140, 154, 0.10);
+  background: var(--dream-c49);
 }
 
 /* 文件名/路径：Dream 粉色系文字 */
@@ -865,7 +951,7 @@ backdrop-filter: none !important;
 
 /* 序列徽章：Dream 粉色风格 */
 [data-skin="dream"] .inline-diff-sequence-badge {
-  background: rgba(232, 140, 154, 0.15);
+  background: var(--dream-c13);
   color: var(--dream-accent, #e88c9a);
 }
 
@@ -874,10 +960,10 @@ backdrop-filter: none !important;
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.60));
 }
 [data-skin="dream"] .inline-diff-added {
-  background: rgba(46, 204, 113, 0.06);
+  background: var(--dream-c70);
 }
 [data-skin="dream"] .inline-diff-removed {
-  background: rgba(231, 76, 60, 0.06);
+  background: var(--dream-c71);
 }
 
 /* Dream 暗色模式 diff 内容 */
@@ -885,38 +971,38 @@ backdrop-filter: none !important;
   background: var(--dream-bg-card, rgba(30, 30, 46, 0.60));
 }
 [data-skin="dream"][data-theme="dark"] .inline-diff-added {
-  background: rgba(46, 204, 113, 0.08);
+  background: var(--dream-c72);
 }
 [data-skin="dream"][data-theme="dark"] .inline-diff-removed {
-  background: rgba(231, 76, 60, 0.08);
+  background: var(--dream-c73);
 }
 
 /* 工具栏：Dream 柔和 */
 [data-skin="dream"] .inline-diff-toolbar {
-  background: rgba(232, 140, 154, 0.04);
+  background: var(--dream-c74);
   border-bottom: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.12));
 }
 [data-skin="dream"] .inline-diff-mode-toggle {
-  background: rgba(232, 140, 154, 0.08);
+  background: var(--dream-c58);
 }
 [data-skin="dream"] .inline-diff-mode-btn.active {
-  background: rgba(232, 140, 154, 0.15);
+  background: var(--dream-c13);
   color: var(--dream-accent, #e88c9a);
 }
 
 /* 预览区：Dream 毛玻璃 */
 [data-skin="dream"] .inline-diff-preview-content {
-  background: rgba(255, 255, 255, 0.50);
+  background: var(--dream-c75);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 [data-skin="dream"][data-theme="dark"] .inline-diff-preview-content {
-  background: rgba(30, 30, 46, 0.50);
+  background: var(--dream-c76);
 }
 
 /* 自定义指令输入：Dream 风格 */
 [data-skin="dream"] .inline-diff-custom-panel {
-  background: rgba(232, 140, 154, 0.04);
+  background: var(--dream-c74);
   border-top: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.12));
 }
 [data-skin="dream"] .inline-diff-custom-textarea {
@@ -927,34 +1013,34 @@ backdrop-filter: none !important;
 }
 [data-skin="dream"] .inline-diff-custom-textarea:focus {
   border-color: var(--dream-accent, #e88c9a);
-  box-shadow: 0 0 0 3px rgba(232, 140, 154, 0.12);
+  box-shadow: 0 0 0 3px var(--dream-c5);
 }
 
 /* 操作栏：Dream 柔和底色 */
 [data-skin="dream"] .inline-diff-actions {
-  background: rgba(232, 140, 154, 0.04);
+  background: var(--dream-c74);
   border-top: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.12));
 }
 
 /* 批准按钮：Dream 柔和绿色 */
 [data-skin="dream"] .inline-diff-btn.accept {
-  background: rgba(46, 204, 113, 0.85);
+  background: var(--dream-c77);
   color: white;
   border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-btn.accept:is(:hover, :focus-visible) {
-  background: #22c55e;
+  background: var(--dream-c63);
 }
 
 /* 拒绝按钮：Dream 柔和 */
 [data-skin="dream"] .inline-diff-btn.reject {
-  background: rgba(255, 255, 255, 0.40);
+  background: var(--dream-c48);
   color: var(--dream-text-main, #6c474d);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
   border-radius: var(--radius-md);
 }
 [data-skin="dream"][data-theme="dark"] .inline-diff-btn.reject {
-  background: rgba(30, 30, 46, 0.40);
+  background: var(--dream-c57);
 }
 
 /* 全部批准：Dream 粉色描边 */
@@ -964,7 +1050,7 @@ backdrop-filter: none !important;
   border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-btn.accept-all:is(:hover, :focus-visible) {
-  background: rgba(232, 140, 154, 0.12);
+  background: var(--dream-c5);
 }
 
 /* 自定义按钮 */
@@ -976,10 +1062,10 @@ backdrop-filter: none !important;
 
 /* 浮动容器：Dream 柔和阴影 */
 [data-skin="dream"] .inline-diff-container {
-  filter: drop-shadow(0 -4px 20px rgba(232, 140, 154, 0.08));
+  filter: drop-shadow(0 -4px 20px var(--dream-c58));
 }
 [data-skin="dream"][data-theme="dark"] .inline-diff-container {
-  filter: drop-shadow(0 -4px 20px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 -4px 20px var(--dream-c78));
 }
 
 /* ========== 梦幻皮肤段落 hover 修复 + 消息 hover 高亮 ========== */
@@ -995,30 +1081,30 @@ backdrop-filter: none !important;
   border-radius: var(--radius-md);
 }
 [data-skin="dream"] .assistant:is(:hover, :focus-visible) .message-content {
-  background: rgba(255, 255, 255, 0.15) !important;
+  background: var(--dream-c79) !important;
 }
 [data-skin="dream"][data-theme="dark"] .assistant:is(:hover, :focus-visible) .message-content {
-  background: rgba(30, 30, 46, 0.15) !important;
+  background: var(--dream-c80) !important;
 }
 
 /* 梦幻皮肤：用户消息 hover 时增强磨砂效果 */
 [data-skin="dream"] .user:is(:hover, :focus-visible) .message-content {
-  background: rgba(0, 0, 0, 0.06) !important;
+  background: var(--dream-c15) !important;
   border-color: var(--dream-accent, rgba(232, 140, 154, 0.30)) !important;
 }
 [data-skin="dream"][data-theme="dark"] .user:is(:hover, :focus-visible) .message-content {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: var(--dream-c81) !important;
 }
 
 /* ========== 梦幻皮肤 --bg-tertiary 变量补齐 ========== */
 /* 确保梦幻皮肤下 --bg-tertiary 有合理的值，避免继承默认皮肤的暗色值 */
 [data-skin="dream"] {
-  --bg-tertiary: rgba(255, 255, 255, 0.40);
-  --bg-secondary: rgba(255, 255, 255, 0.30);
-  --bg-hover: rgba(232, 140, 154, 0.10);
+  --bg-tertiary: var(--dream-c48);
+  --bg-secondary: var(--dream-c47);
+  --bg-hover: var(--dream-c49);
 }
 [data-skin="dream"][data-theme="dark"] {
-  --bg-tertiary: rgba(30, 30, 46, 0.40);
-  --bg-secondary: rgba(30, 30, 46, 0.30);
-  --bg-hover: rgba(232, 140, 154, 0.08);
+  --bg-tertiary: var(--dream-c57);
+  --bg-secondary: var(--dream-c56);
+  --bg-hover: var(--dream-c58);
 }

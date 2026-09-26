@@ -290,6 +290,65 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
     expect(hasSubtle && hasSurface1, "同时存在 --surface-subtle 与 --surface-1：这是两套浅面阶梯，必须合成一套").toBe(false);
   });
 
+  /**
+   * SKIN-1：**皮肤文件里，规则体不许再有颜色字面量**（第 163 轮 P2-3 皮肤数据化）。
+   *
+   * 对标文档 P2-3 的判据就是这一条："hub/dream 迁移后，`skin-*.css` 里只剩令牌块（颜色字面量 0）"。
+   * 做法：把两个皮肤文件规则体里的裸颜色收进各自顶部的**调色板令牌块**（值逐字相同 ⇒ 零视觉变化），
+   * 规则体只引用 `var(--hub-cN)` / `var(--dream-cN)`。
+   *
+   * **零视觉变化的证据**不是"我觉得"：迁移后 `css-integrity.test.ts` 的 CSS-INTEGRITY-7
+   * （2733 个类的**生效取值**快照）**没有 --write 就通过** ⇒ 所有类的计算值逐位不变。
+   */
+  it("SKIN-1：两套皮肤的规则体里不许出现颜色字面量（必须收进顶部令牌块）", () => {
+    for (const rel of ["src/styles/skin-hub.css", "src/styles/skin-dream.css"]) {
+      const raw = readFileSync(path.join(ROOT, rel), "utf8");
+      const commentSpans: Array<[number, number]> = [...raw.matchAll(/\/\*[\s\S]*?\*\//g)].map((m) => [m.index, m.index + m[0].length]);
+      const inComment = (i: number) => commentSpans.some(([a, b]) => i >= a && i < b);
+      /* 令牌块 = 第一个顶层块（块体里有 `--x: y;`） */
+      const cleanLines = raw.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).split(/\r?\n/);
+      let start = -1;
+      let depth = 0;
+      let end = -1;
+      for (let i = 0; i < cleanLines.length; i++) {
+        if (start < 0 && cleanLines[i].includes("{")) {
+          start = i;
+          depth = 0;
+        }
+        if (start < 0) continue;
+        for (const ch of cleanLines[i]) {
+          if (ch === "{") depth++;
+          else if (ch === "}") depth--;
+        }
+        if (depth === 0 && i > start) {
+          if (/^\s*--[\w-]+\s*:/m.test(cleanLines.slice(start, i + 1).join("\n"))) {
+            end = i;
+            break;
+          }
+          start = -1;
+        }
+      }
+      expect(start >= 0 && end > start, `${rel} 找不到令牌块（皮肤文件必须把颜色定义集中在顶部令牌块里）`).toBe(true);
+      /* ⚠️ 行首偏移必须按 `\n` 的真实位置算 —— 第一版用"每行长度 + 1"累加，
+         而这个文件是 **CRLF**（每行实际占 2 个换行字符）⇒ 累加值比真实偏移小、越往后偏得越多
+         （130 行后偏了约 130 字符），于是**令牌块内的字面量被当成规则体里的**、报了 4 处假红。 */
+      const lineStarts: number[] = [0];
+      for (let i = 0; i < raw.length; i++) if (raw[i] === "\n") lineStarts.push(i + 1);
+      const blockStart = lineStarts[start] ?? 0;
+      const blockEnd = (lineStarts[end] ?? raw.length) + (raw.split(/\r?\n/)[end]?.length ?? 0);
+      const varSpans: Array<[number, number]> = [...raw.matchAll(/var\([^)]*\)/g)].map((m) => [m.index, m.index + m[0].length]);
+      const stray: string[] = [];
+      for (const m of raw.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)) {
+        const i = m.index!;
+        if (inComment(i)) continue; // 注释里解释颜色是文档，不是取值
+        if (i >= blockStart && i < blockEnd) continue; // 令牌块内是"数据"
+        if (varSpans.some(([a, b]) => i >= a && i < b)) continue; // `var(--x, #fff)` 的兜底是正当写法
+        stray.push(`${rel}:${raw.slice(0, i).split("\n").length}  ${m[0]}`);
+      }
+      expect(stray, `${rel} 的规则体里还有颜色字面量（应收进顶部令牌块）：\n  - ${stray.slice(0, 8).join("\n  - ")}`).toEqual([]);
+    }
+  });
+
   it("LIT-11：品牌浅底（--accent-muted）必须派生自 --accent（皮肤换品牌色时浅底要跟着走）", () => {    const allCss = readFileSync(path.join(ROOT, "src/styles.css"), "utf8") + readFileSync(path.join(ROOT, "src/styles/skin-hub.css"), "utf8");
     const scopes: Array<[string, RegExp]> = [
       ["默认/亮色", /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/],
