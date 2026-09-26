@@ -188,6 +188,13 @@
   --panel-tabs-height: auto;
   --panel-tabs-padding: 0;
   --panel-tabs-gap: 0;
+  /* ===== 内容态令牌（第 172 轮 P2-1）=====
+     实测：空态 59 条规则的 padding 有 19 种、字号 7 种 —— 同一个"暂无数据"在 13 个面板里 13 种内边距。
+     单行提示族收成两个取值就走令牌（门禁 COND-1 守），面板级/紧凑两档对应两种真实场景：
+     面板里独占一块 vs 列表或浮层里挤一行。 */
+  --empty-hint-pad: var(--space-10);                        /* 面板级：24px */
+  --empty-hint-pad-compact: var(--space-4) var(--space-3);  /* 紧凑：8px 6px */
+
 
   /* 行内图标尺寸：此前侧栏用 `font-size: var(--fs-lg)` 来定图标大小（16px）——
      那是「拿字号当尺寸」，改字号会连带改图标。这里给它一个**表意的名字**（与 --fs-icon 同值）。 */
@@ -1780,11 +1787,7 @@ flex-shrink: 0;
   gap: var(--space-1);
 }
 
-.sidebar-session-empty {
-  padding: var(--space-4);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint.is-compact */
 
 /* 第 166 轮 P0-2：会话行同样收到 **30px / 行内 8px / 圆角 6px / 字号 13px**。
    实测原来它是 31.5px（小数）、内边距 6/8、字号 13 —— 与导航项的 40.33/10/12/14 各一套尺子。 */
@@ -5733,12 +5736,7 @@ background: var(--accent-surface-strong);
   gap: var(--space-6);
 }
 
-.agent-empty {
-  padding: var(--space-10);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .agent-item {
   padding: var(--space-6);
@@ -6743,12 +6741,7 @@ color: var(--text-on-accent);
   padding: var(--space-4);
 }
 
-.mcp-empty {
-  padding: var(--space-10);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .mcp-server-item {
   padding: var(--space-6);
@@ -7770,12 +7763,7 @@ color: var(--text-on-accent);
   margin: 0;
 }
 
-.skill-empty {
-  padding: var(--space-4) var(--space-5);
-  text-align: center;
-  color: var(--text-muted, #6b6b7b);
-  font-size: var(--fs-sm);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint（原 8/10 内边距 + --fs-sm，已按面板级统一） */
 
 .skill-item {
   padding: var(--space-3) var(--space-5);
@@ -8303,12 +8291,7 @@ color: var(--text-on-accent);
   padding: var(--space-4);
 }
 
-.memory-empty {
-  padding: var(--space-10);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .memory-item {
   padding: var(--space-5) var(--space-6);
@@ -8956,15 +8939,7 @@ border-bottom: 1px solid var(--accent);
 /* 次要说明文字（fs-sm + text-muted 的组合在项目里出现 30 多次） */
 .hint-sm { font-size: var(--fs-sm); color: var(--text-muted); }
 .panel-section-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-3); }
-.panel-empty {
-  padding: var(--space-8);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  background: var(--bg-tertiary);
-  border: 1px dashed var(--border-primary);
-  border-radius: var(--radius);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint.is-boxed（16→24px 内边距、--fs-sm→--fs-base，与全体一致） */
 .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: var(--space-4); }
 .stat-card {
   flex: 1;
@@ -10874,12 +10849,7 @@ border-bottom: 1px solid var(--accent);
   padding: var(--space-8);
 }
 
-.usage-empty {
-  padding: var(--space-10);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .usage-overview {
   display: grid;
@@ -12557,12 +12527,7 @@ border-color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.notebook-group-empty {
-  margin: 0;
-  padding: var(--space-4) var(--space-3);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
+/* 第 172 轮 P2-1：并入 .empty-hint.is-compact（取值本来就相同） */
 .notebook-file-select-info {
   display: flex;
   flex-direction: column;
@@ -16169,6 +16134,37 @@ color: var(--accent, #7c6cf0);
   -webkit-line-clamp: 3;
 }
 
+/* ==========================================================================
+ * 内容态：单行空态提示（唯一实现，第 172 轮 P2-1）
+ *
+ * 为什么要有：空态规则 59 条里 padding 有 **19 种**、字号 7 种、gap 5 种 ——
+ * 而其中 13 个类在 TSX 里都是同一个形状（div 上挂一个类名、里面只有一句提示文本），
+ * 只是每处都自己定了一套内边距。这里收成一个类 + 两个修饰：
+ *   .empty-hint              面板级（上下 24px、居中、--text-muted、--fs-base）
+ *   .empty-hint.is-compact   列表/浮层内的紧凑提示（8/6、--fs-sm、左对齐）
+ *   .empty-hint.is-boxed     带虚线框的面板占位（底色 + 1px 虚线 + 圆角）
+ * 几何全部走令牌 ⇒ 要调一次就够（门禁 COND-1 守这一条）。
+ * ========================================================================== */
+.empty-hint {
+  padding: var(--empty-hint-pad);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-base);
+}
+
+.empty-hint.is-compact {
+  padding: var(--empty-hint-pad-compact);
+  text-align: left;
+  font-size: var(--fs-sm);
+}
+
+.empty-hint.is-boxed {
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-primary);
+  border-radius: var(--radius);
+}
+
+
 /* 装饰性/占位图标（空态、未激活状态） */
 .icon-dim { opacity: var(--icon-dim-opacity); }
 /* 仅用于屏幕阅读器的文本（a11y 标准工具类） */
@@ -17246,7 +17242,7 @@ color: var(--accent, #7c6cf0);
   cursor: pointer;
 }
 .chat-search-count { margin-bottom: var(--space-4); font-size: var(--fs-sm); color: var(--text-muted); }
-.chat-search-empty { padding: var(--space-4) var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 第 172 轮 P2-1：并入 .empty-hint.is-compact（8/4 → 8/6） */
 .chat-search-result {
   padding: var(--space-4);
   margin-bottom: var(--space-2);
@@ -17439,16 +17435,8 @@ color: var(--accent, #7c6cf0);
 
 .sp-card--between { display: flex; align-items: center; justify-content: space-between; }
 .sp-card--lg { border-radius: var(--radius); padding: var(--space-6) var(--space-8); }
-.sp-empty {
-  padding: var(--space-10);
-  border: 1px dashed var(--border-primary);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: var(--fs-base);
-  text-align: center;
-}
-.sp-empty--plain { border: none; background: transparent; }
+/* 第 172 轮 P2-1：并入 .empty-hint.is-boxed（几何原本就一致） */
+/* 第 172 轮 P2-1：该修饰只做「去框」，改用 .empty-hint（不带 is-boxed）表达 */
 
 .sp-hint { font-size: var(--fs-sm); color: var(--text-muted); }
 
@@ -18420,7 +18408,7 @@ textarea {
   margin: 0; /* 网格已经管间距，标签自己不再留 margin */
 }
 /* 只有单列内容的设置组（说明文字、按钮堆叠）走单列，避免被塞进两列网格 */
-.setting-group > :is(p, .sp-note, .sp-hint, .sp-col, .sp-row, .sp-card, .sp-output, .sp-empty, table, pre, .sp-templates, .sp-plot) {
+.setting-group > :is(p, .sp-note, .sp-hint, .sp-col, .sp-row, .sp-card, .sp-output, .empty-hint, table, pre, .sp-templates, .sp-plot) {
   grid-column: 1 / -1;
 }
 

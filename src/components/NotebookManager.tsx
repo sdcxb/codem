@@ -678,7 +678,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
                   </div>
                 )}
                 {isExpanded && groupNotebooks.length === 0 && (
-                  <p className="notebook-group-empty">{lang === 'zh' ? '暂无笔记本' : 'No notebooks'}</p>
+                  <p className="empty-hint is-compact">{lang === 'zh' ? '暂无笔记本' : 'No notebooks'}</p>
                 )}
               </div>
             );

@@ -157,7 +157,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         {showSquadPicker && (
           <div className="issue-detail-picker">
             {availableSquads.length === 0 ? (
-              <div className="issue-detail-picker-empty">
+              <div className="empty-hint is-compact">
                 {zh ? "暂无 Squad。请先在 Squads Tab 创建。" : "No squads. Create one in the Squads tab first."}
               </div>
             ) : (
@@ -183,7 +183,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
           {zh ? "活动" : "Activity"} ({currentIssue.comments.length})
         </div>
         {currentIssue.comments.length === 0 ? (
-          <div className="issue-detail-empty">
+          <div className="empty-hint is-compact">
             {zh ? "暂无评论" : "No comments yet"}
           </div>
         ) : (

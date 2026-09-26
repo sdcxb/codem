@@ -175,7 +175,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
       {/* 工具列表 */}
       <div className="usage-content" style={{ maxHeight: "60vh", overflowY: "auto" }}>
         {filteredTools.length === 0 && (
-          <div className="usage-empty">暂无匹配工具</div>
+          <div className="empty-hint">暂无匹配工具</div>
         )}
         {filteredTools.map(({ tool, category, enabled }) => {
           const catInfo = CATEGORY_LABELS[category];

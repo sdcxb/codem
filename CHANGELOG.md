@@ -2,6 +2,49 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.172] - 2026-09-26 — P2-1 内容态：13 个「单行空态」收成一个共享类（19 种内边距 → 2 种）
+
+> 计划里 P2-1 的目标是「空态/加载/错误三类各只保留一个共享实现」。先量，再按**真实标记**分族 ——
+> 分完才发现该做的不是"三类各一个组件"，而是**一族 13 个形状完全相同的类各写了一套几何**。
+
+### 现状（实测，`_measure-content-states.mjs` + `_classify-empty-markup.mjs`）
+
+空态共 **59 条规则**：`padding` **19 种**、`font-size` **7 种**、`gap` **5 种**。
+按「TSX 里的真实形状」分族（正则抓 `<tag className="X">…</tag>` 整段，看内部有没有嵌套 `className`）：
+
+| 族 | 数量 | 形状 |
+| --- | --- | --- |
+| **单行提示** | **13 个类 / 21 处用法** | 一个元素、里面只有一句提示文本（`<div className="mcp-empty">暂无 MCP 服务器</div>`） |
+| 块级 | 3 个（`.empty-state` / `.notebook-empty-state` / `.chat-empty-inner`） | 图标 + 标题 + 说明 + 行动 |
+
+⇒ 真问题是「**同一个"暂无数据"，在 13 个面板里有 13 套内边距**」。
+
+### 处置
+
+- 新增唯一实现 **`.empty-hint`** + 两个修饰：`.is-compact`（列表/浮层内：8/6、`--fs-sm`、左对齐）、
+  `.is-boxed`（虚线框占位）；几何全部走新令牌 `--empty-hint-pad` / `--empty-hint-pad-compact`。
+- **13 个旧类从样式表里删除**，21 处 TSX 改用共享类（`mcp-empty` / `skill-empty` / `panel-empty` /
+  `sidebar-session-empty` / `chat-search-empty` / `notebook-group-empty` / `usage-empty` / `sp-empty` /
+  `sp-empty--plain` / `memory-empty` / `agent-empty` / `issue-detail-empty` / `issue-detail-picker-empty`）。
+- 设置面板那条 `.setting-group > :is(…, .sp-empty, …)` 同步改成 `.empty-hint`（**样式表内部引用也要跟着走**，
+  否则选择器静默失配 —— 这类"内部引用"是删类时最容易漏的）。
+- **视觉影响**：13 个类里 11 个的现取值就等于新取值 ⇒ **零变化**；`.panel-empty`（16→24px、`--fs-sm`→`--fs-base`）
+  与两处紧凑提示（8/4 → 8/6）有 1–8px 级差异，方向是"与全体一致"。
+- **块级那族这轮不动**：`.empty-state` 是**新会话欢迎页**（hero 版式，20/14 的字号是刻意的），
+  按方案 §6.5「已经合格、本轮不要动的」先不碰。
+
+### 门禁与证据
+
+- 新增 **COND-1**：① `.empty-hint` 与两个修饰必须存在且几何走令牌；② 被合并的 13 个旧类**不许回来**
+  （回来了就是"第二套实现长草"）；③ 两个修饰必须有真实消费者（≥6 / ≥2 处）；④ **棘轮**：空态类里
+  自定 padding 的处数只许降。
+- 棘轮基线的口径**专门对齐过**：用门禁自己那套口径在 `HEAD` 与工作区各数一次 ⇒
+  **36 → 24**（减 12）。⚠️ 不能拿"不同取值个数"（19 → 18）当基线 —— 两个口径数的不是同一个东西，
+  棘轮必须钉在门禁自己数出来的那个数上，否则以后没人能复现这条断言。
+- 变异 **24/24 全红**（新增 3 条：共享类写死内边距 / 旧类加回来 / 修饰类名对不上），逐字节还原。
+- `verify` 403 文件全绿、`audit` exit 0、`scan-ui` **error 0 / warn 0**（`css-class-undefined` 也是 0 ——
+  删类之后没有留下"TSX 用了但 CSS 没有"的悬空类名）。
+
 ## [1.16.171] - 2026-09-26 — P2-5 长文本：10 条多行截断缺标准属性 + 新增唯一截断工具类与 OverflowText（并更正方案口径）
 
 > 这一版同样**先量后改**，量完发现方案给的两个数字都不对，而真问题在别处。

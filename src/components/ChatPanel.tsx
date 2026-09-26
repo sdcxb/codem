@@ -730,7 +730,7 @@ setStepTooltipLocked(false);
               </div>
             )}
             {searchQuery.trim() && searchMatches.length === 0 && (
-              <div className="chat-search-empty">
+              <div className="empty-hint is-compact">
                 {lang === 'zh' ? '无匹配消息' : 'No matching messages'}
               </div>
             )}

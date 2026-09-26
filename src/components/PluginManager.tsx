@@ -731,7 +731,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       {/* 插件网格 */}
       <div className="skill-market-grid">
         {plugins.length === 0 ? (
-          <div className="skill-empty">
+          <div className="empty-hint">
             {manager ? (zh ? '没有找到匹配的插件' : 'No matching plugins') : (zh ? '正在加载...' : 'Loading...')}
           </div>
         ) : (

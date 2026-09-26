@@ -927,4 +927,102 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
         "产物里没有 display:-webkit-box —— 没有它 -webkit-line-clamp 不生效（多行截断静默失效）").toBe(true);
     }
   });
+
+  /**
+   * COND-1：**空态提示只能有一个实现**（第 172 轮 P2-1）。
+   *
+   * 依据（实测，`.preview-shot/_measure-content-states.mjs`）：空态 59 条规则里
+   * `padding` **19 种**、`font-size` **7 种**、`gap` **5 种**；但按**真实标记**分族后
+   * （`_classify-empty-markup.mjs`）会发现其中 13 个类在 TSX 里是同一个形状
+   * （一个 div、一句提示文本）—— 也就是说"暂无数据"这一个东西在 13 个面板里有 13 套内边距。
+   *
+   * 判据：
+   * ① `.empty-hint` 与两个修饰（`.is-compact` / `.is-boxed`）必须存在，且几何**只能**引用
+   *    `--empty-hint-pad` / `--empty-hint-pad-compact`（写死 px 或另找间距令牌都算违规）；
+   * ② 被合并掉的 13 个旧类**不许回到样式表里**（回来了就是"又长出第二套实现"）；
+   * ③ 两个修饰必须有真实消费者（否则修饰是死的）；
+   * ④ 棘轮：**空态类里自定 padding 的处数只许降**（本轮 19 种取值 → 实测计数见常量）。
+   * 变异：给 `.empty-hint` 写死 padding / 把 `.mcp-empty` 加回来 / 去掉 `.is-compact` 的消费者 ⇒ 全红。
+   */
+  it("COND-1：空态提示只有一个共享实现（.empty-hint + 两个修饰），且几何走令牌", () => {
+    const files = ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css"];
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const rule = (sel: string) => {
+      const bodies: string[] = [];
+      const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(css))) {
+        if (m[2].split(",").map((s) => s.trim().replace(/\s+/g, " ")).includes(sel)) bodies.push(m[3]);
+      }
+      return bodies.join("\n");
+    };
+
+    /* ① 共享类 + 两个修饰：几何必须走令牌 */
+    const base = rule(".empty-hint");
+    expect(base, "找不到 .empty-hint（空态的唯一实现）").not.toBe("");
+    expect(/padding:\s*var\(--empty-hint-pad\)/.test(base),
+      ".empty-hint 的内边距必须走 --empty-hint-pad（写死 px / 换别的间距令牌都会让「改一处」失效）").toBe(true);
+    expect(/color:\s*var\(--text-muted\)/.test(base), ".empty-hint 的文字色必须走 --text-muted").toBe(true);
+    expect(/font-size:\s*var\(--fs-/.test(base), ".empty-hint 的字号必须走 --fs-* 令牌").toBe(true);
+
+    const compact = rule(".empty-hint.is-compact");
+    expect(/padding:\s*var\(--empty-hint-pad-compact\)/.test(compact), ".empty-hint.is-compact 的内边距必须走 --empty-hint-pad-compact").toBe(true);
+    const boxed = rule(".empty-hint.is-boxed");
+    expect(/border:\s*1px dashed var\(--border-primary\)/.test(boxed), ".empty-hint.is-boxed 必须给出虚线框（用 --border-primary）").toBe(true);
+
+    /* ② 被合并的旧类不许回来 */
+    const LEGACY = [".mcp-empty", ".skill-empty", ".panel-empty", ".sidebar-session-empty", ".chat-search-empty",
+      ".notebook-group-empty", ".usage-empty", ".sp-empty", ".sp-empty--plain", ".memory-empty", ".agent-empty",
+      ".issue-detail-empty", ".issue-detail-picker-empty"];
+    const back = LEGACY.filter((c) => new RegExp(`(^|\\n)\\s*\\${c}(\\s*[,{]|\\s*:)`, "m").test(css)
+      || files.slice(1).some((f) => new RegExp(`(^|\\n)\\s*\\${c}(\\s*[,{]|\\s*:)`, "m").test(readFileSync(path.join(ROOT, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, " "))));
+    expect(back, "这些空态类又回来了（第二套实现会长草）：" + back.join(" / ")).toEqual([]);
+
+    /* ③ 修饰必须有真实消费者 */
+    const tsx: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = path.join(dir, n);
+        if (statSync(p).isDirectory()) { if (!/node_modules/.test(p)) walk(p); continue; }
+        if (/\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)) tsx.push(readFileSync(p, "utf8"));
+      }
+    })(path.join(ROOT, "src"));
+    const all = tsx.join("\n");
+    const count = (needle: string) => (all.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length;
+    expect(count("empty-hint"), "empty-hint 的消费者太少（迁移没做完？）").toBeGreaterThanOrEqual(15);
+    expect(count("empty-hint is-compact"), "is-compact 没有消费者（或在用别的写法）").toBeGreaterThanOrEqual(4);
+    expect(count("empty-hint is-boxed"), "is-boxed 没有消费者").toBeGreaterThanOrEqual(2);
+
+    /* ④ 棘轮：空态类里自定 padding 的处数只许降（基线 = 本轮迁移后的实测值） */
+    const EMPTY_SEL = /(^|[.\-\s])(empty|no-data|no-result|not-found)([\s.\-:{]|$)/i;
+    let selfStyled = 0;
+    for (const rel of files) {
+      const code = readFileSync(path.join(ROOT, rel), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+      const re = /(^|\n)([^{}\n][^{}]*?)\{([^{}]*)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(code))) {
+        const sel = m[2].trim().replace(/\s+/g, " ");
+        if (!EMPTY_SEL.test(sel) || /placeholder-shown|input|@keyframes/.test(sel)) continue;
+        const body = m[3];
+        for (const d of body.split(";")) {
+          if (!/(^|\s)padding\s*:/.test(d)) continue;
+          const val = d.split(":").slice(1).join(":").trim();
+          if (val === "var(--empty-hint-pad)" || val === "var(--empty-hint-pad-compact)") continue; // 共享实现自己不算
+          selfStyled++;
+        }
+      }
+    }
+    /* 基线：**用本门禁这套口径**在 HEAD 与工作区各统计一次（`.preview-shot/_count-empty-padding.mjs`）：
+       迁移前 **36** 处 → 迁移后 **24** 处（13 个类合并进 .empty-hint，减掉 12 处）。
+       ⚠️ 别拿"不同取值个数"（那是 19 → 18）当基线 —— 两个口径数出来不是一个东西，
+       棘轮必须钉在**门禁自己数出来的那个数**上（否则以后没人能复现这条断言）。剩 24 处是下一族的迁移清单：
+       .flashcard-empty / .sidebar-empty / .file-empty / .workbench-empty / .project-empty / .mcp-marketplace-empty /
+       .cicd-empty / .perf-empty / .tj-empty / .session-empty / .notebook-empty-state / .mention-empty /
+       .right-sidebar-empty / .agent-teams-empty / .nb-* 等。 */
+    const BASELINE = 24;
+    expect(selfStyled,
+      `空态类里自己写内边距的处数 ${selfStyled}，超过基线 ${BASELINE} —— `
+      + "新写空态请用 .empty-hint（面板级）/ .empty-hint.is-compact（列表内）/ .empty-hint.is-boxed（虚线框）",
+    ).toBeLessThanOrEqual(BASELINE);
+  });
 });

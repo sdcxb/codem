@@ -266,7 +266,7 @@ export function PluginMarketTab({ manager, stateVersion, zh, onToggle, notify }:
           )
         })}
         {filtered.length === 0 && (
-          <div className="skill-empty">{zh ? '没有匹配的 dsh 插件' : 'No matching dsh plugins'}</div>
+          <div className="empty-hint">{zh ? '没有匹配的 dsh 插件' : 'No matching dsh plugins'}</div>
         )}
       </div>
 

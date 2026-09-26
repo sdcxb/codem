@@ -397,7 +397,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
         <div className="memory-content">
           <div className="memory-list">
             {displayEntries.length === 0 && (
-              <div className="memory-empty">暂无记忆条目</div>
+              <div className="empty-hint">暂无记忆条目</div>
             )}
             {displayEntries.map((entry) => (
               <div

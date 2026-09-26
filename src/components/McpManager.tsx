@@ -202,7 +202,7 @@ export function McpManager({ onClose }: McpManagerProps) {
       {/* Server List */}
       <div className="mcp-server-list">
         {servers.length === 0 && (
-          <div className="mcp-empty">暂无 MCP 服务器</div>
+          <div className="empty-hint">暂无 MCP 服务器</div>
         )}
         {servers.map((server) => {
           const status = statuses.get(server.name);

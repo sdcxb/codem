@@ -249,7 +249,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
       {/* 个体维度：子 agent 任务平铺列表（团队成员已在上面去重） */}
       <div className="agent-list">
         {flatAgents.length === 0 && (
-          <div className="agent-empty">
+          <div className="empty-hint">
             {teamSnap
               ? (zh ? "暂无其它智能体任务（团队成员见上方）" : "No other subagent tasks (team members above)")
               : (zh ? "暂无智能体任务" : "No subagent tasks")}

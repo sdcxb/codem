@@ -2323,7 +2323,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           {zh ? "已安装宠物" : "Installed Pets"} ({installedPets.length})
         </div>
         {installedPets.length === 0 ? (
-          <div className="sp-empty">
+          <div className="empty-hint is-boxed">
             {zh ? "暂无已安装的宠物，去市场看看吧~" : "No pets installed yet. Check out the market!"}
           </div>
         ) : (
@@ -3048,7 +3048,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
       )}
 
       {profiles.length === 0 && !editing && (
-        <div className="sp-empty sp-empty--plain">{zh ? "暂无 Agent Profile" : "No agent profiles yet"}</div>
+        <div className="empty-hint">{zh ? "暂无 Agent Profile" : "No agent profiles yet"}</div>
       )}
 
       {profiles.map((p) => (

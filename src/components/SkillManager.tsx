@@ -699,7 +699,7 @@ return true;
           <div className="skill-content">
             <div className="skill-list">
               {filteredSkills.length === 0 && (
-                <div className="skill-empty">
+                <div className="empty-hint">
                   {searchQuery ? "未找到匹配的技能" : "暂无技能"}
                 </div>
               )}
@@ -995,12 +995,12 @@ return true;
           {/* Market Skills Grid */}
           <div className="skill-market-grid">
             {filteredMarketSkills.length === 0 && !marketLoading && !onlineSearching && (
-              <div className="skill-empty">
+              <div className="empty-hint">
                 {marketSearchQuery ? "未找到匹配的技能" : "暂无市场技能，点击检查更新重试"}
               </div>
             )}
             {filteredMarketSkills.length === 0 && onlineSearching && (
-              <div className="skill-empty">
+              <div className="empty-hint">
                 正在联网搜索 "{marketSearchQuery}"...
               </div>
             )}

@@ -584,7 +584,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             const globalSessions = (allSessions["__global__"] || []).slice().sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
             const { today, earlier } = groupSessionsByTime(globalSessions);
             if (globalSessions.length === 0) {
-              return <div className="sidebar-session-empty">{S.sidebar.noSessions[lang]}</div>;
+              return <div className="empty-hint is-compact">{S.sidebar.noSessions[lang]}</div>;
             }
             return (
               <>
@@ -800,7 +800,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                   {isExpanded && (
                     <div className="sidebar-sessions">
                       {projectSessions.length === 0 ? (
-                        <div className="sidebar-session-empty">{S.sidebar.noSessions[lang]}</div>
+                        <div className="empty-hint is-compact">{S.sidebar.noSessions[lang]}</div>
                       ) : (
                         <>
                           {/* #9: Time-grouped sessions */}

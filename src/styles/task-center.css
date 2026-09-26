@@ -410,7 +410,7 @@
   border-radius: var(--radius);
   background: var(--bg-tertiary);
 }
-.issue-detail-picker-empty { padding: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 第 172 轮 P2-1：并入 .empty-hint.is-compact */
 .issue-detail-picker-item {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
@@ -437,7 +437,7 @@
   font-weight: 600;
   color: var(--text-secondary);
 }
-.issue-detail-empty { padding: var(--space-4); font-size: var(--fs-sm); color: var(--text-muted); }
+/* 第 172 轮 P2-1：并入 .empty-hint.is-compact */
 .issue-detail-comment-list { display: flex; flex-direction: column; gap: var(--space-3); }
 .issue-detail-comment {
   padding: var(--space-4) var(--space-6);

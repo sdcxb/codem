@@ -162,7 +162,7 @@ export function RecoveryPanel() {
 
       {/* 失败提示（P1-6）：面板内可见的"上一步动作没成功" */}
       {actionError && (
-        <div className="panel-empty" role="alert" data-testid="recovery-action-error">
+        <div className="empty-hint is-boxed" role="alert" data-testid="recovery-action-error">
           ⚠️ {actionError}
         </div>
       )}
@@ -173,7 +173,7 @@ export function RecoveryPanel() {
           {zh ? "已保存的会话" : "Saved Sessions"} ({sessions.length})
         </div>
         {sessions.length === 0 ? (
-          <div className="panel-empty">
+          <div className="empty-hint is-boxed">
             {zh ? "暂无已保存的会话" : "No saved sessions"}
           </div>
         ) : (

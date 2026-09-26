@@ -194,7 +194,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
         {activeTab === "models" && (
           <div className="usage-models">
             {Object.entries(costByModel).length === 0 && (
-              <div className="usage-empty">暂无数据</div>
+              <div className="empty-hint">暂无数据</div>
             )}
             {Object.entries(costByModel)
               .sort((a, b) => b[1] - a[1])
@@ -218,7 +218,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
         {activeTab === "history" && (
           <div className="usage-history">
             {records.length === 0 && (
-              <div className="usage-empty">暂无记录</div>
+              <div className="empty-hint">暂无记录</div>
             )}
             {records.map((record) => (
               <div key={record.id} className={`usage-record ${record.success ? "" : "error"}`}>
