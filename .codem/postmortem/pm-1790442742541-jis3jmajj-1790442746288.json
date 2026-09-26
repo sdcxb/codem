@@ -1,0 +1,25 @@
+{
+  "id": "pm-1790442742541-jis3jmajj-1790442746288",
+  "sessionId": "1790442742541-jis3jmajj",
+  "timestamp": 1790442746288,
+  "error": "Failed to fetch",
+  "eventsReadable": true,
+  "eventSummary": {
+    "totalEvents": 1,
+    "lastEvents": [
+      {
+        "seq": 9294,
+        "type": "user_message",
+        "timestamp": 1790442745634,
+        "payloadPreview": "{\"messageId\":\"user-1790442745576\",\"content\":\"审计探针：请只回复「OK」两个字\"}"
+      }
+    ]
+  },
+  "toolCallStats": {
+    "totalCalls": 0,
+    "successfulCalls": 0,
+    "failedCalls": 0,
+    "toolBreakdown": {}
+  },
+  "possibleCauses": []
+}
