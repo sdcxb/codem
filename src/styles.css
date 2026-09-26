@@ -161,6 +161,10 @@
   /* 内容纸面：第 166 轮 P0-0 —— 内容区做成"浮在 chrome 上的圆角纸面"（对方 token 就是 24px）。
      ⚠️ 半径只能取**一个明确的档**，不要现编：这里取 24px 与对方 `layout-split-view-content-panel-radius` 同值。 */
   --surface-sheet-radius: 24px;
+  /* 侧栏行的**唯一**行高（第 168 轮）。此前 30px 在导航项/项目头/会话行三处各写一遍，
+     而 Sidebar.tsx 又按"当时以为是 32px 的行距"把列表上限写成硬编码 144 —— 两边一旦不同步，
+     就会退化成"行被压矮"（见 _fix-squashed-rows.mjs 顶部的因果实验）。 */
+  --sidebar-row-h: 30px;
   /* 行内图标尺寸：此前侧栏用 `font-size: var(--fs-lg)` 来定图标大小（16px）——
      那是「拿字号当尺寸」，改字号会连带改图标。这里给它一个**表意的名字**（与 --fs-icon 同值）。 */
   --icon-size-inline: var(--fs-icon);
@@ -1390,7 +1394,9 @@ flex-shrink: 0;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  height: 30px;
+  height: var(--sidebar-row-h);
+  /* 列表容器被限高时（Sidebar.tsx 的 maxHeight）必须是**滚动**而不是把行压矮 */
+  flex-shrink: 0;
   padding: 0 var(--space-2);
   background: none;
   border: none;
@@ -1530,7 +1536,8 @@ flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 30px;
+  height: var(--sidebar-row-h);
+  flex-shrink: 0;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1757,7 +1764,8 @@ flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 30px;
+  height: var(--sidebar-row-h);
+  flex-shrink: 0;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1970,6 +1978,7 @@ font-size: var(--fs-base);
   /* 第 166 轮 P2-2 提前做掉：22 → **24×24**（WCAG 2.5.8 的下限），图标字号不变。 */
   width: 24px;
   height: 24px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11981,6 +11990,8 @@ border-color: var(--text-muted);
      第 166 轮 P0-2：内边距定为 **8/12/2/12** —— 配上 overline 的行盒正好 **24px**，
      与分组标题同高（此前是 22px，属于「又多出的一种行高」）。 */
   padding: var(--space-4) var(--space-6) var(--space-1) var(--space-6);
+  /* 分组标签也在那个被限高的列表里：不参与压缩，否则"今天/更早"会被挤成一条缝 */
+  flex-shrink: 0;
   user-select: none;
 }
 
@@ -17944,6 +17955,7 @@ input[type="range"].sp-flex-fill {
   margin-left: auto;
   /* 第 166 轮 P0-2：28.33px（= padding 6/10 + 行盒）→ **24px**（与分组标题同档，且 ≥ WCAG 24 命中区） */
   height: 24px;
+  flex-shrink: 0;
   padding: 0 var(--space-3);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);

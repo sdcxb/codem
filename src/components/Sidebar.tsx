@@ -567,7 +567,17 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         </div>
         <div className="sidebar-sessions" style={(() => {
           const globalCount = (allSessions["__global__"] || []).length;
-          return globalCount > 3 ? { maxHeight: 144, overflowY: "auto" } : undefined;
+          /* 第 168 轮：上限**由令牌算出来**，不再写 144 这种"按当时的行高反推的魔数"。
+             144 是按 32px 行距算的，而实际行高是 30px + 2px 间距 ⇒ 5 行内容 152px 被塞进 144px，
+             浏览器**把行压矮**（实测 30 → 28px）而不是给滚动条 —— 会话越多压得越狠。
+             现在：4 行 + 半个行高的提示（让用户看出"还能滚"）+ 行间距，
+             且行类都带 flex-shrink: 0 ⇒ 超出就滚动，行高恒定。 */
+          return globalCount > 3
+            ? {
+                maxHeight: "calc((var(--sidebar-row-h) + var(--space-1)) * 4 + var(--sidebar-row-h) / 2)",
+                overflowY: "auto" as const,
+              }
+            : undefined;
         })()}>
           {(() => {
             const globalSessions = (allSessions["__global__"] || []).slice().sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));

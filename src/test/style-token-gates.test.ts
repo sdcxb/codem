@@ -488,12 +488,21 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
       new RegExp(`(^|\\n)\\s*${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
 
     const rows = [".sidebar-nav-item", ".sidebar-session", ".sidebar-project-header"];
+    /*
+     * ⚠️ 第 168 轮：行高改成走令牌 `--sidebar-row-h`（此前 30px 在三处各写一遍，
+     * 而 Sidebar.tsx 的上限又按另一个行距反推 ⇒ 两边一旦不同步就退化成"行被压矮"）。
+     * 本门禁的口径不变：仍断言**生效的 px 值**，只是先解析令牌再比数值。
+     */
+    const rowHToken = /--sidebar-row-h\s*:\s*(\d+(?:\.\d+)?)px;/.exec(cssNoComments)?.[1];
+    expect(rowHToken, "找不到 --sidebar-row-h 的定义").toBeTruthy();
+    expect(Number(rowHToken), "--sidebar-row-h 必须等于 30px（侧栏只有一个行高常量）").toBe(30);
     for (const sel of rows) {
       const body = ruleOf(sel);
       expect(body, `找不到 ${sel}`).not.toBe("");
       const h = /(?:^|;)\s*height:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
-      expect(h, `${sel} 的行高必须是 30px（侧栏只有一个行高常量），实际：${h || "（未声明）"}`).toBe("30px");
-      expect(h, `${sel} 不能用 min-height 代替固定行高（那会让内容把行撑高、节奏再次散掉）`).toBe("30px");
+      const hPx = h === "var(--sidebar-row-h)" ? Number(rowHToken) : (/^(\d+(?:\.\d+)?)px$/.exec(h)?.[1] ? Number(/^(\d+(?:\.\d+)?)px$/.exec(h)![1]) : NaN);
+      expect(hPx, `${sel} 的行高必须生效为 30px（侧栏只有一个行高常量），实际：${h || "（未声明）"}`).toBe(30);
+      expect(h, `${sel} 不能用 min-height 代替固定行高（那会让内容把行撑高、节奏再次散掉）`).not.toMatch(/min-height/);
       const pad = /(?:^|;)\s*padding:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
       expect(pad, `${sel} 的行内边距必须是 "0 var(--space-2)"，实际：${pad || "（未声明）"}`).toBe("0 var(--space-2)");
     }
@@ -697,5 +706,60 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
     expect(unused,
       `这些档位没有任何 TSX 引用（第 167 轮 ` + "`.icon-lg`" + ` 就踩过这个坑）：${unused.join(" / ")}`,
     ).toEqual([]);
+  });
+
+  /**
+   * RHYTHM-2：**定高的列表行必须 `flex-shrink: 0`，且行高只许有一个来源**（第 168 轮）。
+   *
+   * 依据（装机版因果实验，不是推断）：`.sidebar-session` 的 CSS 写着 `height: 30px`，
+   * 渲染出来却是 **28px**，而同一列的 `.sidebar-nav-item` 是 30px —— 源码里两边都是 30px。
+   * 机制：`Sidebar.tsx` 在会话数 > 3 时给容器加内联 `{ maxHeight: 144, overflowY: "auto" }`，
+   * 而 `.sidebar-sessions` 是 `display:flex; flex-direction:column`，行是默认 `flex-shrink: 1`
+   * 的 flex 子项 ⇒ **内容超限时浏览器压缩行，而不是产生滚动条**。只改一个变量的对照：
+   *   放开 max-height ⇒ 容器 144→152、行 28→**30**（内容本来就是 152px）；
+   *   只加 `flex-shrink: 0` ⇒ 容器仍 144、行保持 30、`scrollHeight(152) > clientHeight(144)`（出现滚动）。
+   * 危害不是"少 2px"：会话越多压得越狠，而「行高 30px 常量」这条验收指标在有 4 个以上会话时根本不成立。
+   *
+   * 判据三件事：
+   * ① `--sidebar-row-h` 只有一处定义；② 三个行类都用 `var(--sidebar-row-h)` 而不是字面 30px；
+   * ③ 三个行类（以及同列里定高的分组标签/按钮）都声明 `flex-shrink: 0`；
+   * ④ `Sidebar.tsx` 的上限**由令牌算出来**，不许再出现"按当时行高反推的魔数"。
+   * 变异：删掉任一条 `flex-shrink: 0`、或把上限改回字面 144，都必须红。
+   */
+  it("RHYTHM-2：定高的列表行必须 flex-shrink: 0，且行高只有一个来源（会被限高容器压扁）", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    /* ① 令牌只有一处定义（重复定义会静默覆盖 —— 本仓库 TOK-H1 已经吃过一次） */
+    const defs = (css.match(/--sidebar-row-h\s*:/g) ?? []).length;
+    expect(defs, `--sidebar-row-h 定义了 ${defs} 处（必须恰好 1 处）`).toBe(1);
+
+    /* ②③ 行类：行高走令牌 + flex-shrink: 0 */
+    const rowRules = [".sidebar-nav-item", ".sidebar-project-header", ".sidebar-session"];
+    for (const sel of rowRules) {
+      const m = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`, "s").exec(css);
+      expect(m, `找不到 ${sel} 的规则体`).toBeTruthy();
+      const body = m![1];
+      expect(/height:\s*var\(--sidebar-row-h\)/.test(body),
+        `${sel} 的行高必须走 var(--sidebar-row-h)（写死 30px 就会和"上限"两套口径）`,
+      ).toBe(true);
+      expect(/flex-shrink:\s*0/.test(body),
+        `${sel} 缺 flex-shrink: 0 —— 一旦被限高的 flex 列包住，它会被压矮（第 168 轮的 28px 就是这样来的）`,
+      ).toBe(true);
+    }
+    /* ③b 同列里的其它定高成员 */
+    for (const sel of [".sidebar-section-btn", ".sidebar-user-plugin-btn", ".sidebar-session-group-label"]) {
+      const m = new RegExp(`\\${sel}\\s*\\{([^}]*)\\}`, "s").exec(css);
+      expect(m, `找不到 ${sel} 的规则体`).toBeTruthy();
+      expect(/flex-shrink:\s*0/.test(m![1]), `${sel} 缺 flex-shrink: 0（它也在那个被限高的列表里）`).toBe(true);
+    }
+
+    /* ④ TSX 侧的上限必须由令牌推导 */
+    const sidebar = readFileSync(path.join(ROOT, "src/components/Sidebar.tsx"), "utf8");
+    expect(/maxHeight:\s*144\b/.test(sidebar),
+      "Sidebar.tsx 又把列表上限写成了字面 144 —— 这个魔数是按 32px 行距反推的，"
+      + "实际行高 30px + 2px 间距 ⇒ 内容 152px 被塞进 144px，浏览器会把行压矮",
+    ).toBe(false);
+    expect(/maxHeight:\s*"calc\(\(var\(--sidebar-row-h\)/.test(sidebar),
+      "Sidebar.tsx 的列表上限应由 --sidebar-row-h 与 --space-1 算出（行高变了上限要跟着变）",
+    ).toBe(true);
   });
 });
