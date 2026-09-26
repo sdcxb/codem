@@ -36,8 +36,14 @@ vi.mock("../core/storage/persist-failure", () => ({
 }));
 // 旧库不可用（rust 模式下不该用它）；需要时由测试自己设置
 let legacyQuery = 0;
+/* ⚠️ mock 必须跟上被 mock 模块的真实接口：第 176 轮 message.ts 新增了
+   isSessionEventsReadable / whenSessionEventsLoaded 与 getEventLog().readAll 的使用，
+   只给 append/appendBatch 会让"新调用点"在测试里变成 undefined（TypeError）而不是"缺行为" ——
+   那会把 createMessage 的索引写整条跳过（MSG-1/2/10 就是这么红的）。 */
 vi.mock("../core/storage/event-log", () => ({
-  getEventLog: () => ({ append: () => ({ seq: 1 }), appendBatch: () => [] }),
+  getEventLog: () => ({ append: () => ({ seq: 1 }), appendBatch: () => [], readAll: () => [] }),
+  isSessionEventsReadable: () => true,
+  whenSessionEventsLoaded: () => Promise.resolve(true),
 }));
 
 function rustPortRecorder(opts: { failIndex?: boolean } = {}) {

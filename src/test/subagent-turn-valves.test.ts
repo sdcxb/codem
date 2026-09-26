@@ -19,8 +19,11 @@ vi.mock("../core/storage/message", () => ({
   createMessage: vi.fn(),
   listMessages: vi.fn(() => []),
 }));
+/* 同 message-index-cutover：mock 要跟上真实接口（第 176 轮新增两个导出 + readAll） */
 vi.mock("../core/storage/event-log", () => ({
-  getEventLog: () => ({ append: vi.fn() }),
+  getEventLog: () => ({ append: vi.fn(), readAll: () => [] }),
+  isSessionEventsReadable: () => true,
+  whenSessionEventsLoaded: () => Promise.resolve(true),
 }));
 
 import { SubagentRuntime } from "../core/subagent/runtime";

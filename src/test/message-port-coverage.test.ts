@@ -50,8 +50,11 @@ vi.mock("../core/storage/session-jsonl", () => ({
   flushSessionLogWrites: async () => {},
 }));
 
+/* 同 message-index-cutover：mock 要跟上真实接口（第 176 轮新增两个导出 + readAll） */
 vi.mock("../core/storage/event-log", () => ({
-  getEventLog: () => ({ append: () => ({ seq: 1 }), appendBatch: () => [] }),
+  getEventLog: () => ({ append: () => ({ seq: 1 }), appendBatch: () => [], readAll: () => [] }),
+  isSessionEventsReadable: () => true,
+  whenSessionEventsLoaded: () => Promise.resolve(true),
 }));
 
 const settle = async () => {
