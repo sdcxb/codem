@@ -1,3 +1,4 @@
+import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
@@ -40,6 +41,9 @@ interface SidebarProps {
 }
 
 export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onPlugins, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onCicd, onPerf, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+  /* 第 166 轮 P1-3：分组标题吸顶（滚到顶时加 is-stuck，CSS 才画分隔线） */
+  const stickyGlobalRef = useStickySectionHeader<HTMLDivElement>();
+
   const [inboxUnread, setInboxUnread] = useState(0);
   /**
    * 每个会话的未读条数（第 72 轮审计补上的**真实数据源**）。
@@ -549,7 +553,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       </div>
 
       <div className="sidebar-section sidebar-global-section">
-        <div className="sidebar-section-header">
+        <div className="sidebar-section-header" ref={stickyGlobalRef}>
           <span>{S.sidebar.globalChats[lang]}</span>
           <button
             className="sidebar-project-btn sidebar-add-btn"

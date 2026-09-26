@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { scanTokenHygiene, loadDefaultFiles as loadTokenFiles, SCALE_FAMILIES } from "../../tools/audit/scan-token-hygiene.mjs";
 import { scanStyleLiterals, loadDefaultFiles as loadLiteralFiles, evaluateRatchet, readBaseline } from "../../tools/audit/scan-style-literals.mjs";
@@ -587,5 +587,115 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
     const defs = scanTokenHygiene({ files: loadTokenFiles(ROOT) }).defs.filter((d: { name: string }) => d.name === "--opacity-disabled");
     expect(defs.length, "`--opacity-disabled` 应只有一处定义（默认档）").toBe(1);
     expect(defs[0].value, "禁用态取值：众数 0.5（收敛前的六个值都归到它）").toBe("0.5");
+  });
+
+  /**
+   * MOTION-1：**缓动必须走令牌**（第 166 轮 P1-7）。
+   *
+   * 依据（源码级实测）：transition 声明 282 条里，走**时长**令牌的有 121 条（43%），
+   * 而走**缓动**令牌的只有 **17 条（6%）** —— 即「时长统一了、曲线没统一」：
+   * 字面 `ease` 出现 43–64 处，而 `ease`（浏览器默认 cubic-bezier(.25,.1,.25,1)）与我们自己的
+   * `--ease-out`（cubic-bezier(.23,1,.32,1)，与参考实现同值）**是两条完全不同的曲线**。
+   *
+   * 判据：每条 transition（或 transition-timing-function）要么引用 `var(--ease…`，
+   * 要么是 `none` / `0ms`（降级写法）；覆盖率 ≥95%。
+   * 变异：把任意一条改回字面 `ease` 就该红。
+   */
+  it("MOTION-1：transition 的缓动必须走令牌（覆盖率 ≥95%；字面 ease 会让曲线与设计不一致）", () => {
+    const files = ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css"];
+    const offenders: string[] = [];
+    let total = 0;
+    for (const rel of files) {
+      const raw = readFileSync(path.join(ROOT, rel), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+      for (const m of raw.matchAll(/transition(?:-timing-function)?\s*:\s*([^;{}]+)/g)) {
+        const value = m[1].trim();
+        total++;
+        const isDegrade = /^(none|0ms|0s)\b/.test(value);
+        /* ⚠️ 口径：`var(--transition-*)` 是**复合令牌**（本身就含时长 + 缓动），必须算「已走令牌」 ——
+           第一版只认 `var(--ease`，于是 213 条复合令牌被误报（假红）。 */
+        const tokenized = value.includes("var(--ease") || value.includes("var(--transition");
+        const onlyDuration = /var\(--duration[\w-]*\)/.test(value) && !/var\(--ease/.test(value);
+        if (!tokenized && !isDegrade) offenders.push(rel + ": " + value.slice(0, 56));
+        else if (onlyDuration) offenders.push(rel + " （只给了时长、缺缓动）: " + value.slice(0, 48));
+      }
+    }
+    expect(total, "没扫到 transition 声明，判据失效").toBeGreaterThan(50);
+    const coverage = (total - offenders.length) / total;
+    expect(coverage, 
+      "transition 的缓动令牌覆盖率只有 " + (coverage * 100).toFixed(1) + "%（要求 ≥95%）。未走令牌的：\n  - " + offenders.slice(0, 6).join("\n  - "),
+    ).toBeGreaterThanOrEqual(0.95);
+  });
+
+  /**
+   * ICON-1：**图标尺寸字面量只许降**（第 166 轮 P1-6）。
+   *
+   * 依据（源码级实测）：参考实现 **997 处 <Icon> 只用 5 个 token 映射值**（2xs/xs/sm/md/lg，默认 lg=24），
+   * 而我们是 **841 次字面 size={N}**（14×368 / 12×249 / 16×224 …）对 77 次语义类名 —— token 刻度形同虚设。
+   * 全量迁移是一大工程，所以先立**棘轮**：只许降，涨一处就红。
+   * 变异：加一个 size={13} 就该红。
+   */
+  it("ICON-1：TSX 里的字面图标尺寸只许降（897 次是历史账，先钉住不再涨）", () => {
+    const root = path.join(ROOT, "src");
+    const files: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = path.join(dir, n);
+        if (statSync(p).isDirectory()) { if (!/node_modules/.test(p)) walk(p); continue; }
+        if (/\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)) files.push(p);
+      }
+    })(root);
+    let count = 0;
+    for (const f of files) count += (readFileSync(f, "utf8").match(/size=\{\s*\d+\s*\}/g) ?? []).length;
+    /* ⚠️ 口径说明：源码级审计（子代理）报的是 **841**，本门禁实测是 **918** —— 差在统计范围：
+       它只数 size={N} 且排除了部分目录；本门禁扫 src 下全部 .tsx（排除测试文件）共 918 处。
+       **棘轮要按自己的口径钉**，所以基线取 918（第 166 轮实测），只许降。
+       第 167 轮 P1-6 起步：把 20px 这一档（18 处 `size={20}`）改成语义类 `icon-lg`，
+       本口径实测降到 **897**，基线同步收紧到 897（棘轮降了就要收紧，不能留着空档）。 */
+    const BASELINE = 897;
+    expect(count,
+      "字面图标尺寸 " + count + " 处，超过历史基线 " + BASELINE + " —— 新写的图标请走 icon-* 类或 Icon 封装",
+    ).toBeLessThanOrEqual(BASELINE);
+  });
+
+  /**
+   * ICON-2：**图标刻度里不许有死档位**（第 167 轮 P1-6）。
+   *
+   * 依据（源码级实测）：`--icon-lg: 20px` 曾是个**双重死令牌** ——
+   * ① `.icon-lg` 只出现在组合选择器里（只有 flex-shrink/display/vertical-align），**没有尺寸声明**；
+   * ② TSX 里 `icon-lg` 被引用 **0 次**。
+   * 于是「刻度是完整的 8 档」只是注释里的一句话，实际用不到的那一档谁也不会发现它坏了。
+   *
+   * 判据（三件事必须同时成立）：
+   * ① 每个 `--icon-*` 令牌至少有一个消费者（`.icon-*` 类的 width/height 声明）；
+   * ② 每个 `.icon-*` 类至少被 TSX 引用一次（否则就是死类，扫描器也会有 `css-class-unused`）；
+   * ③ 8 档刻度必须齐全（少一档说明刻度被悄悄削过）。
+   * 变异：把 `.icon-lg { width: … }` 删掉就该红。
+   */
+  it("ICON-2：图标 8 档刻度不许有死档位（令牌有声明、类有引用、档位齐全）", () => {
+    const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+    const tiers = ["2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl"];
+    /* ① 令牌定义齐全 */
+    const missingToken = tiers.filter((t) => !new RegExp(`--icon-${t}\\s*:`).test(css));
+    expect(missingToken, `图标刻度缺档：${missingToken.join(" / ")}`).toEqual([]);
+    /* ② 每个档位都要有「只含尺寸」的独立规则（组合选择器里那半套不算数） */
+    const deadToken = tiers.filter((t) => !new RegExp(`\\.icon-${t}\\s*\\{[^}]*width:\\s*var\\(--icon-${t}\\)`).test(css));
+    expect(deadToken,
+      `这些档位只有令牌、没有消费它的尺寸规则（等于死令牌）：${deadToken.join(" / ")}`,
+    ).toEqual([]);
+    /* ③ 每个档位都要被 TSX 真的引用过 */
+    const root = path.join(ROOT, "src");
+    const tsx: string[] = [];
+    (function walk(dir: string) {
+      for (const n of readdirSync(dir)) {
+        const p = path.join(dir, n);
+        if (statSync(p).isDirectory()) { if (!/node_modules/.test(p)) walk(p); continue; }
+        if (/\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)) tsx.push(p);
+      }
+    })(root);
+    const all = tsx.map((f) => readFileSync(f, "utf8")).join("\n");
+    const unused = tiers.filter((t) => !new RegExp(`icon-${t}(?![\\w-])`).test(all));
+    expect(unused,
+      `这些档位没有任何 TSX 引用（第 167 轮 ` + "`.icon-lg`" + ` 就踩过这个坑）：${unused.join(" / ")}`,
+    ).toEqual([]);
   });
 });

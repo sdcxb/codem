@@ -893,7 +893,7 @@ setStepTooltipLocked(false);
                       id: a.id,
                       name: a.name,
                       description: a.description,
-                      icon: a.id === 'build' ? <Hammer size={20} /> : a.id === 'plan' ? <ClipboardList size={20} /> : a.id === 'explore' ? <Search size={20} /> : <Bot size={20} />,
+                      icon: a.id === 'build' ? <Hammer className="icon-lg" /> : a.id === 'plan' ? <ClipboardList className="icon-lg" /> : a.id === 'explore' ? <Search className="icon-lg" /> : <Bot className="icon-lg" />,
                     }))}
                     favoriteIds={quickAccessFavorites}
                     onSelect={(agentId) => {

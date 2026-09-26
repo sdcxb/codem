@@ -311,7 +311,7 @@ function CascadeConfirmDialog({
         onClick={e => e.stopPropagation()}
       >
         <div className="plugin-mgr-dialog-head">
-          <StatusIcons.danger size={20} className="plugin-mgr-dep-warn" />
+          <StatusIcons.danger className="icon-lg plugin-mgr-dep-warn" />
           <span className="plugin-mgr-dialog-title">
             {hasCascade ? '关闭插件将影响其他插件' : '确认关闭插件'}
           </span>
@@ -655,7 +655,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       {/* Header */}
       <div className="skill-manager-header">
         <div className="skill-manager-title">
-          <PanelIcons.plugins size={20} className="skill-manager-icon-svg" />
+          <PanelIcons.plugins className="icon-lg skill-manager-icon-svg" />
           <span>{zh ? '插件管理' : 'Plugin Manager'}</span>
           <Badge variant="muted">{totalCount}</Badge>
           <Badge variant="success">{enabledCount} 启用</Badge>

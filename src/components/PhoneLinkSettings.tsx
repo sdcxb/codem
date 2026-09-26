@@ -134,7 +134,7 @@ export function PhoneLinkSettings() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span
             style={{
-              padding: "3px 10px", borderRadius: 999, fontSize: 'var(--fs-xs)', fontWeight: 600,
+              padding: "3px 10px", borderRadius: "var(--radius-full)", fontSize: 'var(--fs-xs)', fontWeight: 600,
               background: status.running ? "color-mix(in srgb, var(--success) 18%, transparent)" : "color-mix(in srgb, var(--accent) 14%, transparent)",
               color: status.running ? "var(--success)" : "var(--text-primary)",
               border: "1px solid var(--border-primary)",

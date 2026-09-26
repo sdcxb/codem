@@ -1063,7 +1063,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
               >
-                <span className="mode-icon"><Key size={20} /></span>
+                <span className="mode-icon"><Key className="icon-lg" /></span>
                 <span className="mode-title">{S.settings.apiMode[lang]}</span>
                 <span className="mode-desc">{S.settings.apiModeDesc[lang]}</span>
               </button>
@@ -1093,7 +1093,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
               >
-                <span className="mode-icon"><Terminal size={20} /></span>
+                <span className="mode-icon"><Terminal className="icon-lg" /></span>
                 <span className="mode-title">{S.settings.cliMode[lang]}</span>
                 <span className="mode-desc">{S.settings.cliModeDesc[lang]}</span>
               </button>

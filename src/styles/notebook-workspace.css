@@ -152,7 +152,7 @@
   font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
-  transition: background var(--duration-press) ease;
+  transition: background var(--duration-press) var(--ease-out);
 }
 
 .nb-studio-option:is(:hover, :focus-visible) {
@@ -181,7 +181,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  transition: width var(--duration-normal) ease;
+  transition: width var(--duration-normal) var(--ease-out);
   overflow: hidden;
 }
 
@@ -1009,7 +1009,7 @@ top: 36px;
   font-size: var(--fs-sm);
   margin-bottom: var(--space-5);
   outline: none;
-  transition: border-color var(--duration-fast) ease;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
 .nb-dialog-input:focus {
@@ -1030,7 +1030,7 @@ top: 36px;
   resize: vertical;
   margin-bottom: var(--space-5);
   outline: none;
-  transition: border-color var(--duration-fast) ease;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
 .nb-dialog-textarea:focus {
@@ -1435,7 +1435,7 @@ top: 36px;
   border-radius: var(--radius);
 }
 
-.kg-node { display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: opacity var(--duration-normal); }
+.kg-node { display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: opacity var(--duration-normal) var(--ease-out); }
 .kg-node-handle { opacity: 0; width: 1px; height: 1px; }
 .kg-node-circle {
   display: flex;
@@ -1446,7 +1446,7 @@ top: 36px;
   background: radial-gradient(circle at 35% 35%, currentColor, color-mix(in srgb, currentColor 80%, transparent));
   font-size: var(--kg-node-font, var(--fs-md));
   user-select: none;
-  transition: box-shadow var(--duration-fast) ease, border-width var(--duration-fast) ease;
+  transition: box-shadow var(--duration-fast) var(--ease-out), border-width var(--duration-fast) var(--ease-out);
 }
 .kg-node-circle.is-selected {
   border-width: 3px;
@@ -1468,7 +1468,7 @@ top: 36px;
 }
 .kg-node-label.is-selected { font-weight: 600; }
 
-.kg-edge-path { transition: stroke var(--duration-normal), stroke-width var(--duration-normal); }
+.kg-edge-path { transition: stroke var(--duration-normal) var(--ease-out),  stroke-width var(--duration-normal) var(--ease-out); }
 .kg-edge-label {
   position: absolute;
   padding: var(--space-1) var(--space-3);
@@ -1824,7 +1824,7 @@ top: 36px;
   height: 3px;
   border-radius: var(--radius-full);
   background: var(--border-primary);
-  transition: background var(--duration-slow) ease;
+  transition: background var(--duration-slow) var(--ease-out);
 }
 .ppt-studio-progress-seg.is-done { background: var(--accent); }
 .ppt-studio-stages { display: grid; justify-content: center; gap: var(--space-2); }

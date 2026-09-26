@@ -592,7 +592,7 @@ return true;
       {/* Header */}
       <div className="skill-manager-header">
         <div className="skill-manager-title">
-          <SkillsIcon size={20} className="skill-manager-icon-svg" />
+          <SkillsIcon className="icon-lg skill-manager-icon-svg" />
           <span>技能管理</span>
         </div>
         {/* 第 61 轮：补可访问名（该组件没有 zh 变量，用中英并列的固定文案，避免引错未定义变量） */}

@@ -10,6 +10,10 @@
   --hub-bg-input: #151515;
   --hub-bg-hover: #2a2a2a;
   --hub-color-primary: #ff6b00;
+  /* 工作区背景光斑（第 167 轮）：覆盖宿主的 --backdrop-blob-* 令牌，取值与本皮肤主色同源。
+     blob-2 的青蓝与宿主暗色档同色（rgb(88,166,255)），皮肤主色之外的第二点缀色。 */
+  --backdrop-blob-1: color-mix(in srgb, var(--hub-color-primary) 30%, transparent);
+  --backdrop-blob-2: color-mix(in srgb, #58a6ff 25%, transparent);
   --hub-color-primary-hover: #e56000;
   --hub-color-primary-muted: rgba(255, 107, 0, 0.15);
   --hub-text-main: #e0e0e0;
@@ -80,8 +84,6 @@
   --hub-c11: #000;
   --hub-c12: #1a1a1a;
   --hub-c13: #222;
-  --hub-c14: #1e1e2e;
-  --hub-c15: #ff6b35;
   --hub-c16: rgba(0, 0, 0, 0.25);
   --hub-c17: rgba(59, 130, 246, 0.15);
   --hub-c18: #60a5fa;
@@ -99,10 +101,6 @@
   --hub-c30: rgba(40, 40, 42, 0.60);
   --hub-c31: rgba(42, 42, 42, 0.80);
   --hub-c32: rgba(0, 0, 0, 0.40);
-  --hub-c33: rgba(255, 255, 255, 0.03);
-  --hub-c34: rgba(0, 0, 0, 0.55);
-  --hub-c35: rgba(255, 255, 255, 0.05);
-  --hub-c36: rgba(0, 0, 0, 0.65);
   --hub-c37: rgba(255, 107, 0, 0.10);
   --hub-c38: rgba(28, 28, 30, 0.95);
   --hub-c39: rgba(18, 18, 18, 0.90);
@@ -267,7 +265,7 @@
   border-bottom: 2px solid transparent;
   padding: var(--space-4) var(--space-8);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-base);
   transition: color var(--duration-normal), border-color var(--duration-normal);
 }
 
@@ -429,7 +427,7 @@
   display: flex;
   align-items: center;
   font-weight: 900;
-  font-size: 18px;
+  font-size: var(--fs-xl);
   margin-right: var(--space-13);
   letter-spacing: 1px;
   color: var(--hub-text-main);
@@ -443,7 +441,7 @@
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-xs);
   margin-left: var(--space-2);
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 700;
 }
 
@@ -520,14 +518,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 40px;
+  font-size: 40px; /* ui-audit-allow fs-hardcoded: 美术图形尺寸（不是排版字号，按 --fs-* 缩放会压扁装饰比例） */
   color: var(--hub-color-primary);
   position: relative;
 }
 
 [data-skin="hub"] .hub-agent-info {
   text-align: left;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 [data-skin="hub"] .hub-agent-info p {
@@ -551,14 +549,14 @@
 }
 
 [data-skin="hub"] .hub-tasks-header h3 {
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--hub-text-main);
 }
 
 [data-skin="hub"] .hub-tasks-header a {
   color: var(--hub-text-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-decoration: none;
   cursor: pointer;
 }
@@ -597,7 +595,7 @@
 }
 
 [data-skin="hub"] .hub-task-content h4 {
-  font-size: 13px;
+  font-size: var(--fs-base);
   margin-bottom: var(--space-3);
   font-weight: 500;
   color: var(--hub-text-main);
@@ -606,7 +604,7 @@
 [data-skin="hub"] .hub-task-tags {
   display: flex;
   gap: var(--space-3);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--hub-text-muted);
 }
 
@@ -640,7 +638,7 @@
   cursor: pointer;
   z-index: 10;
   transition: var(--transition-color);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   box-shadow: 0 2px 6px var(--hub-c16);
 }
 
@@ -783,9 +781,6 @@
   --surface-2: var(--hub-c30);
   --surface-hover: var(--hub-c31);
 
-  --elevation-1: 0 1px 2px var(--hub-c32), 0 0 0 1px var(--hub-c33);
-  --elevation-3: 0 8px 24px var(--hub-c34), 0 0 0 1px var(--hub-c35);
-  --elevation-4: 0 16px 48px var(--hub-c36), 0 0 0 1px var(--hub-c27);
 
   --message-bubble-user: var(--hub-c37);
   --message-bubble-user-border: var(--hub-c1);

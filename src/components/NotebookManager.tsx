@@ -591,7 +591,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       <div className="notebook-manager-header">
         <div className="notebook-manager-title-row">
           <h2 className="notebook-manager-title">
-            <BookOpen size={20} style={{ color: 'var(--accent)' }} />
+            <BookOpen className="icon-lg" style={{ color: 'var(--accent)' }} />
             {lang === 'zh' ? '知识笔记本' : 'Knowledge Notebooks'}
           </h2>
           <button aria-label="关闭" title="关闭" className="notebook-close-btn" onClick={onClose}><CloseIcon size={16} /></button>
@@ -812,7 +812,7 @@ function NotebookCard({
       onClick={onOpen}
     >
       <div className="notebook-card-header">
-        <BookOpen size={20} style={{ color: 'var(--accent)' }} />
+        <BookOpen className="icon-lg" style={{ color: 'var(--accent)' }} />
         <h3 className="notebook-card-title">{nb.name}</h3>
         <button
           className="notebook-card-delete"

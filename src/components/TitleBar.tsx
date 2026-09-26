@@ -457,6 +457,7 @@ export function TitleBar({
             className="titlebar-btn"
             onClick={handleMinimize}
             title="最小化"
+            aria-label="最小化"
           >
             <svg width="10" height="10" viewBox="0 0 10 10">
               <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="1" />
@@ -466,6 +467,7 @@ export function TitleBar({
             className="titlebar-btn"
             onClick={handleToggleMaximize}
             title={maximized ? "还原" : "最大化"}
+            aria-label={maximized ? "还原窗口" : "最大化窗口"}
           >
             {maximized ? (
               <svg width="10" height="10" viewBox="0 0 10 10">
@@ -482,6 +484,7 @@ export function TitleBar({
             className="titlebar-btn titlebar-btn-close"
             onClick={handleClose}
             title="关闭"
+            aria-label="关闭窗口"
           >
             <svg width="10" height="10" viewBox="0 0 10 10">
               <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2" />

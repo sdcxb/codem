@@ -16,15 +16,18 @@
 /* 梦幻皮肤根容器 - 透明，让背景层可见 */
 [data-skin="dream"] {
   --dream-panel-bg: rgba(255, 255, 255, 0.78);
+  /* 工作区背景光斑（第 167 轮）：覆盖宿主的 --backdrop-blob-* 令牌。
+     blob-1 跟 --dream-accent（从用户背景图提取，未注入时回落到 rgb(232,140,154)），
+     blob-2/3 是这套梦幻色板的第二、第三点缀色。 */
+  --backdrop-blob-1: color-mix(in srgb, var(--dream-accent, #e88c9a) 30%, transparent);
+  --backdrop-blob-2: color-mix(in srgb, #b48ce8 25%, transparent);
+  --backdrop-blob-3: color-mix(in srgb, #8cc8e8 20%, transparent);
   /* ===== 调色板（第 163 轮 P2-3 皮肤数据化）=====
      下面这些令牌的值是从本文件**规则体里收集**来的裸颜色字面量，逐字相同 ⇒ 迁移是零视觉变化的；
      规则体现在只引用令牌、不再抄色（门禁 SKIN-1 守住"规则体里不许出现颜色字面量"）。
      命名用 --dream-cN 是**值优先**的机械编号、不是语义命名 —— 先解决"能不能只改一处"：
      以后调 Dream 皮肤的颜色，改这里就够；要改成语义命名（如 --dream-ink / --dream-accent）需要人逐个确认。 */
   --dream-c1: rgba(30, 30, 46, 0.82);
-  --dream-c2: #6c474d;
-  --dream-c3: #e88c9a;
-  --dream-c4: #a88a8f;
   --dream-c5: rgba(232, 140, 154, 0.12);
   --dream-c6: #e81123;
   --dream-c7: #ffffff;
@@ -32,28 +35,18 @@
   --dream-c9: #fce8eb;
   --dream-c10: #f7dee2;
   --dream-c11: rgba(0, 0, 0, 0.15);
-  --dream-c12: rgba(255, 255, 255, 0.65);
   --dream-c13: rgba(232, 140, 154, 0.15);
   --dream-c14: rgba(232, 140, 154, 0.1);
   --dream-c15: rgba(0, 0, 0, 0.06);
-  --dream-c16: rgba(255,255,255,0.65);
   --dream-c17: rgba(0, 0, 0, 0.08);
   --dream-c18: rgba(0, 0, 0, 0.12);
-  --dream-c19: rgba(30, 30, 46, 0.65);
-  --dream-c20: rgba(255, 255, 255, 0.88);
   --dream-c21: rgba(0, 0, 0, 0.03);
   --dream-c22: rgba(0, 0, 0, 0.1);
-  --dream-c23: #1a1a2e;
   --dream-c24: rgba(0, 0, 0, 0.04);
-  --dream-c25: #555566;
-  --dream-c26: rgba(30, 30, 46, 0.88);
   --dream-c27: rgba(232, 140, 154, 0.3);
-  --dream-c28: rgba(245, 245, 248, 0.9);
-  --dream-c29: rgba(255, 255, 255, 0.8);
   --dream-c30: rgba(0, 0, 0, 0.35);
   --dream-c31: rgba(255, 255, 255, 0.95);
   --dream-c32: rgba(30, 30, 46, 0.95);
-  --dream-c33: #e0d8e0;
   --dream-c34: rgba(255, 255, 255, 0.92);
   --dream-c35: rgba(30, 30, 46, 0.92);
   --dream-c36: #eee;
@@ -63,30 +56,21 @@
   --dream-c40: rgba(0, 0, 0, 0.2);
   --dream-c41: rgba(255, 255, 255, 1);
   --dream-c42: rgba(40, 40, 60, 1);
-  --dream-c43: rgba(255, 255, 255, 0.72);
   --dream-c44: rgba(255, 255, 255, 0.48);
   --dream-c45: rgba(232, 140, 154, 0.20);
-  --dream-c46: rgba(232, 140, 154, 0.30);
   --dream-c47: rgba(255, 255, 255, 0.30);
   --dream-c48: rgba(255, 255, 255, 0.40);
   --dream-c49: rgba(232, 140, 154, 0.10);
   --dream-c50: rgba(232, 140, 154, 0.24);
-  --dream-c51: rgba(255, 255, 255, 0.85);
   --dream-c52: rgba(255, 255, 255, 0.60);
-  --dream-c53: rgba(30, 30, 46, 0.72);
   --dream-c54: rgba(30, 30, 46, 0.48);
-  --dream-c55: rgba(232, 140, 154, 0.28);
   --dream-c56: rgba(30, 30, 46, 0.30);
   --dream-c57: rgba(30, 30, 46, 0.40);
   --dream-c58: rgba(232, 140, 154, 0.08);
-  --dream-c59: rgba(30, 30, 46, 0.85);
   --dream-c60: rgba(30, 30, 46, 0.60);
   --dream-c61: rgba(232, 140, 154, 0.05);
   --dream-c62: rgba(232, 140, 154, 0.06);
   --dream-c63: #22c55e;
-  --dream-c64: rgba(255, 255, 255, 0.80);
-  --dream-c65: rgba(0, 0, 0, 0.20);
-  --dream-c66: rgba(30, 30, 46, 0.80);
   --dream-c67: rgba(232, 140, 154, 0.40);
   --dream-c68: rgba(0, 0, 0, 0.10);
   --dream-c69: rgba(0, 0, 0, 0.25);
@@ -188,14 +172,14 @@
 [data-skin="dream"] .dream-decoration.rose-left {
   top: -10px;
   left: -10px;
-  font-size: 60px;
+  font-size: 60px; /* ui-audit-allow fs-hardcoded: 美术图形尺寸（不是排版字号，按 --fs-* 缩放会压扁装饰比例） */
   transform: rotate(-15deg);
 }
 
 [data-skin="dream"] .dream-decoration.rose-right {
   bottom: 40px;
   right: -15px;
-  font-size: 75px;
+  font-size: 75px; /* ui-audit-allow fs-hardcoded: 美术图形尺寸（不是排版字号，按 --fs-* 缩放会压扁装饰比例） */
   transform: rotate(20deg);
 }
 
@@ -343,7 +327,7 @@
   border-bottom: 2px solid transparent;
   padding: var(--space-4) var(--space-8);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-base);
   transition: color var(--duration-normal), border-color var(--duration-normal);
 }
 
@@ -601,7 +585,7 @@ backdrop-filter: none !important;
 }
 
 [data-skin="dream"] .dream-polaroid-text {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--dream-text-muted, #a88a8f);
   line-height: var(--lh-ui);
 }
@@ -612,7 +596,7 @@ backdrop-filter: none !important;
   left: 50%;
   transform: translateX(-50%);
   color: var(--dream-accent, #e88c9a);
-  font-size: 20px;
+  font-size: var(--fs-2xl);
 }
 
 [data-skin="dream"] .dream-polaroid[data-hidden="1"] {
@@ -638,7 +622,7 @@ backdrop-filter: none !important;
   }
 
   [data-skin="dream"] .dream-decoration {
-    font-size: 80px;
+    font-size: 80px; /* ui-audit-allow fs-hardcoded: 美术图形尺寸（不是排版字号，按 --fs-* 缩放会压扁装饰比例） */
   }
 }
 
@@ -898,7 +882,6 @@ backdrop-filter: none !important;
   --radius-xl: 24px;
   --radius-full: 9999px;
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  --elevation-1: 0 1px 3px var(--dream-c15), 0 0 0 1px var(--dream-c62);
   --accent-soft: var(--dream-c5);
   --success-hover: var(--dream-c63);
   --input-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.80));
@@ -907,7 +890,6 @@ backdrop-filter: none !important;
 /* Dream 暗色模式变量补充 */
 [data-skin="dream"][data-theme="dark"] {
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.18));
-  --elevation-1: 0 1px 3px var(--dream-c65), 0 0 0 1px var(--dream-c62);
   --accent-soft: var(--dream-c49);
   --input-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.80));
 }
@@ -1080,7 +1062,7 @@ backdrop-filter: none !important;
 
 /* 梦幻皮肤：AI 消息 hover 时显示柔和磨砂高亮 */
 [data-skin="dream"] .assistant .message-content {
-  transition: background var(--duration-normal) ease, border-radius var(--duration-normal) ease;
+  transition: background var(--duration-normal) var(--ease-out), border-radius var(--duration-normal) var(--ease-out);
   border-radius: var(--radius-md);
 }
 [data-skin="dream"] .assistant:is(:hover, :focus-visible) .message-content {

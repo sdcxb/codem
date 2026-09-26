@@ -115,7 +115,7 @@ export const NewChatPage = memo(function NewChatPage({
                 className="new-chat-suggestion"
                 onClick={() => handleClick(item.prompt)}
               >
-                <Icon size={20} className="new-chat-suggestion-icon" />
+                <Icon className="icon-lg new-chat-suggestion-icon" />
                 <div className="new-chat-suggestion-body">
                   <span className="new-chat-suggestion-title">{item.title}</span>
                   <span className="new-chat-suggestion-desc">{item.desc}</span>

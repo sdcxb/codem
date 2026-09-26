@@ -64,7 +64,7 @@ export const ExcelViewer = memo(function ExcelViewer({ filePath, data, onClose }
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 48, gap: 8 }}>
-        <LoaderCircle size={20} className="spinning" />
+        <LoaderCircle className="icon-lg spinning" />
         <span>Loading...</span>
       </div>
     );

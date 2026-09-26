@@ -37,9 +37,6 @@
   --surface-hover: rgba(56, 62, 70, 0.80);
 
   /* 阴影层级 */
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
-  --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
 
   /* 消息流令牌
    *
@@ -132,9 +129,6 @@
   --surface-2: rgb(31 31 30 / 11%);
   --surface-hover: rgb(31 31 30 / 26%);
 
-  --elevation-1: 0 1px 2px rgb(31 31 30 / 6%), 0 0 0 1px rgb(31 31 30 / 3%);
-  --elevation-3: 0 8px 24px rgb(31 31 30 / 12%), 0 0 0 1px rgb(31 31 30 / 5%);
-  --elevation-4: 0 16px 48px rgb(31 31 30 / 18%), 0 0 0 1px rgb(31 31 30 / 6%);
 
   --message-actions-bg: rgba(255, 255, 255, 0.95);
   --message-actions-shadow: 0 2px 8px rgb(31 31 30 / 10%);
@@ -182,7 +176,7 @@
   max-height: 85vh;
   overflow-y: auto;
   z-index: var(--z-dialog);
-  box-shadow: var(--elevation-4) !important;
+  box-shadow: var(--shadow-raise-4) !important;
   animation: dialog-slide-in 0.2s ease-out;
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
@@ -196,7 +190,7 @@
   background: var(--glass-bg-strong) !important;
   border: 1px solid var(--glass-border) !important;
   border-radius: var(--radius);
-  box-shadow: var(--elevation-3) !important;
+  box-shadow: var(--shadow-raise-3) !important;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   animation: dropdown-slide-in var(--duration-fast) ease;
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -208,7 +202,7 @@
   background: var(--glass-bg-strong) !important;
   border: 1px solid var(--glass-border) !important;
   border-radius: var(--radius);
-  box-shadow: var(--elevation-3) !important;
+  box-shadow: var(--shadow-raise-3) !important;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   animation: popover-slide-in var(--duration-fast) ease;
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -236,7 +230,7 @@
   display: flex;
   gap: var(--space-1);
   opacity: 0;
-  transition: opacity var(--duration-fast) ease;
+  transition: opacity var(--duration-fast) var(--ease-out);
   pointer-events: none;
   z-index: 5;
 }
@@ -509,7 +503,7 @@
   background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--elevation-4);
+  box-shadow: var(--shadow-raise-4);
   overflow: hidden;
 }
 .content-fullscreen-header {
@@ -1119,7 +1113,7 @@
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--elevation-3);
+  box-shadow: var(--shadow-raise-3);
   animation: slideUp 0.2s ease;
 }
 .decision-tray-header {
@@ -1441,29 +1435,9 @@ body.resizing-columns * {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: radial-gradient(
-    ellipse at top left,
-    var(--accent-surface),
-    transparent 50%
-  ),
-  radial-gradient(
-    ellipse at bottom right,
-    color-mix(in srgb, var(--info) 6%, transparent),
-    transparent 50%
-  );
+  background: var(--ambient-backdrop);
 }
-[data-theme="light"] .ambient-backdrop {
-  background: radial-gradient(
-    ellipse at top left,
-    rgba(107, 92, 231, 0.05),
-    transparent 50%
-  ),
-  radial-gradient(
-    ellipse at bottom right,
-    rgba(88, 166, 255, 0.04),
-    transparent 50%
-  );
-}
+/* 第 167 轮：氛围底已是分档令牌 --ambient-backdrop，浅色覆写不再需要 */
 
 /* ========== 14. Workspace Backdrop (macOS-style material) ========== */
 .workspace-backdrop {
@@ -1489,21 +1463,21 @@ body.resizing-columns * {
   height: 50vw;
   top: -10%;
   left: -5%;
-  background: radial-gradient(circle, var(--accent-border-strong), transparent 70%);
+  background: radial-gradient(circle, var(--backdrop-blob-1), transparent 70%);
 }
 .workspace-backdrop .blob-2 {
   width: 45vw;
   height: 45vw;
   bottom: -10%;
   right: -5%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--info) 35%, transparent), transparent 70%);
+  background: radial-gradient(circle, var(--backdrop-blob-2), transparent 70%);
 }
 .workspace-backdrop .blob-3 {
   width: 35vw;
   height: 35vw;
   top: 30%;
   right: 20%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent), transparent 70%);
+  background: radial-gradient(circle, var(--backdrop-blob-3), transparent 70%);
   opacity: 0.2;
 }
 /* 第 40 波：删掉三个背景光斑的无限漂移动画（25s/30s/20s 交替）。
@@ -1516,7 +1490,7 @@ body.resizing-columns * {
   mix-blend-mode: overlay;
 }
 .workspace-backdrop-vignette {
-  background: radial-gradient(ellipse at center, transparent 40%, var(--overlay-backdrop) 100%);
+  background: var(--backdrop-vignette);
 }
 /* Light theme adjustments */
 [data-theme="light"] .workspace-backdrop {
@@ -1525,35 +1499,17 @@ body.resizing-columns * {
 [data-theme="light"] .workspace-backdrop-blob {
   opacity: 0.2;
 }
-[data-theme="light"] .workspace-backdrop .blob-1 {
-  background: radial-gradient(circle, rgba(107, 92, 231, 0.3), transparent 70%);
-}
-[data-theme="light"] .workspace-backdrop .blob-2 {
-  background: radial-gradient(circle, rgba(88, 166, 255, 0.25), transparent 70%);
-}
-[data-theme="light"] .workspace-backdrop .blob-3 {
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.15), transparent 70%);
-}
-[data-theme="light"] .workspace-backdrop-vignette {
-  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.08) 100%);
-}
+/* 第 167 轮：光斑色已是分档令牌 --backdrop-blob-1，浅色覆写不再需要 */
+/* 第 167 轮：光斑色已是分档令牌 --backdrop-blob-2，浅色覆写不再需要 */
+/* 第 167 轮：光斑色已是分档令牌 --backdrop-blob-3，浅色覆写不再需要 */
+/* 第 167 轮：暗角已是分档令牌 --backdrop-vignette（含断点位置），浅色覆写不再需要 */
 /* Hub skin accent */
-[data-skin="hub"] .workspace-backdrop .blob-1 {
-  background: radial-gradient(circle, rgba(255, 107, 0, 0.3), transparent 70%);
-}
-[data-skin="hub"] .workspace-backdrop .blob-2 {
-  background: radial-gradient(circle, rgba(88, 166, 255, 0.25), transparent 70%);
-}
+/* 第 167 轮：hub 光斑色改为在 skin-hub.css 里覆盖 --backdrop-blob-1 */
+/* 第 167 轮：hub 光斑色改为在 skin-hub.css 里覆盖 --backdrop-blob-2 */
 /* Dream skin accent */
-[data-skin="dream"] .workspace-backdrop .blob-1 {
-  background: radial-gradient(circle, rgba(232, 140, 154, 0.3), transparent 70%);
-}
-[data-skin="dream"] .workspace-backdrop .blob-2 {
-  background: radial-gradient(circle, rgba(180, 140, 232, 0.25), transparent 70%);
-}
-[data-skin="dream"] .workspace-backdrop .blob-3 {
-  background: radial-gradient(circle, rgba(140, 200, 232, 0.2), transparent 70%);
-}
+/* 第 167 轮：dream 光斑色改为在 skin-dream.css 里覆盖 --backdrop-blob-1 */
+/* 第 167 轮：dream 光斑色改为在 skin-dream.css 里覆盖 --backdrop-blob-2 */
+/* 第 167 轮：dream 光斑色改为在 skin-dream.css 里覆盖 --backdrop-blob-3 */
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .workspace-backdrop.animated .blob-1,
@@ -1608,7 +1564,7 @@ body.resizing-columns * {
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  box-shadow: var(--elevation-3);
+  box-shadow: var(--shadow-raise-3);
   padding: var(--space-2);
   z-index: var(--z-dropdown);
 }
@@ -1861,7 +1817,7 @@ body.resizing-columns * {
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  box-shadow: var(--elevation-3);
+  box-shadow: var(--shadow-raise-3);
   padding: var(--space-2);
   z-index: var(--z-dropdown);
 }
@@ -2539,7 +2495,7 @@ overflow: hidden;
   border-bottom: 2px solid transparent;
   border-radius: var(--radius-xs) var(--radius-xs) 0 0;
   cursor: pointer;
-  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
+  transition: color var(--duration-fast) var(--ease-out),  background var(--duration-fast) var(--ease-out),  border-color var(--duration-fast) var(--ease-out);
   /* 第 46 波：允许压缩（窗口很小时优雅收窄，而不是把容器撑出滚动条） */
   flex-shrink: 1;
   min-width: 0;
@@ -2577,7 +2533,7 @@ overflow: hidden;
   color: var(--text-muted);
   cursor: pointer;
   border-radius: var(--radius-xs);
-  transition: color var(--duration-fast), background var(--duration-fast);
+  transition: color var(--duration-fast) var(--ease-out),  background var(--duration-fast) var(--ease-out);
 }
 .panel-sidebar-close:is(:hover, :focus-visible) {
   color: var(--text-primary);
@@ -2594,8 +2550,8 @@ border: 1px solid var(--border-primary);
 border-radius: var(--radius-md);
 overflow: hidden;
 background: var(--bg-secondary);
-box-shadow: var(--elevation-1);
-  transition: border-color var(--duration-normal);
+box-shadow: var(--shadow-raise-1);
+  transition: border-color var(--duration-normal) var(--ease-out);
 }
 .inline-diff-review:is(:hover, :focus-visible) {
   border-color: var(--accent);
@@ -2610,7 +2566,7 @@ box-shadow: var(--elevation-1);
   user-select: none;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-primary);
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .inline-diff-header:is(:hover, :focus-visible) {
   background: var(--surface-hover);
@@ -3006,9 +2962,6 @@ background: var(--bg-secondary);
   --surface-hover: rgba(42, 42, 42, 0.80);
 
   /* Elevation tokens */
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
 
   /* Message tokens
    *

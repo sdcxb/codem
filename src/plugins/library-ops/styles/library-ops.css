@@ -362,8 +362,8 @@
 .lo-session-card__top { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--space-2); min-width: 0; }
 .lo-session-card__icon { flex-shrink: 0; }
 .lo-session-card__name { flex: 1; min-width: 0; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-session-card__live { color: var(--success); font-size: 9px; }
-.lo-session-card__bottom { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-3); font-size: 10px; color: var(--text-muted); }
+.lo-session-card__live { color: var(--success); font-size: var(--fs-xs); /* 第 167 轮：9px 既不在刻度上、也低于可读下限（吸附到 --fs-xs = 10px） */ }
+.lo-session-card__bottom { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-3); font-size: var(--fs-xs); color: var(--text-muted); }
 .lo-session-card__tools { margin-left: auto; }
 
 /* 活动概览两列 */
@@ -564,8 +564,8 @@
 .lo-donut { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-6); }
 .lo-donut__track { fill: none; stroke: color-mix(in srgb, var(--text-muted) 20%, transparent); stroke-width: 8; }
 .lo-donut__hole { fill: var(--bg-secondary); }
-.lo-donut__value { fill: var(--text-primary); font-size: 15px; font-weight: 700; }
-.lo-donut__unit { fill: var(--text-muted); font-size: 8px; }
+.lo-donut__value { fill: var(--text-primary); font-size: var(--fs-lg); /* 第 167 轮：15px 不在刻度上，吸附到最近的 --fs-lg = 16px */ font-weight: 700; }
+.lo-donut__unit { fill: var(--text-muted); font-size: var(--fs-xs); /* 第 167 轮：8px 既不在刻度上、也低于可读下限（吸附到 --fs-xs = 10px） */ }
 .lo-donut__legend { display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--fs-xs); }
 .lo-donut__legend-item { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--space-3); }
 .lo-donut__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -585,7 +585,7 @@
 .lo-hourbars__col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
 .lo-hourbars__bar { width: 100%; border-radius: 2px 2px 0 0; opacity: 0.75; transition: opacity var(--duration-normal) ease; }
 .lo-hourbars__col.is-now .lo-hourbars__bar { opacity: 1; }
-.lo-hourbars__label { font-size: 8px; color: var(--text-muted); margin-top: var(--space-1); }
+.lo-hourbars__label { font-size: var(--fs-xs); /* 第 167 轮：8px 既不在刻度上、也低于可读下限（吸附到 --fs-xs = 10px） */ color: var(--text-muted); margin-top: var(--space-1); }
 
 .lo-bar-row { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--space-4); font-size: var(--fs-xs); margin-bottom: var(--space-2); }
 .lo-bar-row__label { width: 120px; flex-shrink: 0; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -595,7 +595,7 @@
 
 .lo-ring { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
 .lo-ring__track { fill: none; stroke: color-mix(in srgb, var(--text-muted) 20%, transparent); }
-.lo-ring__text { fill: var(--text-primary); font-size: 13px; font-weight: 700; }
+.lo-ring__text { fill: var(--text-primary); font-size: var(--fs-base); font-weight: 700; }
 .lo-ring__label { font-size: var(--fs-xs); color: var(--text-muted); }
 
 /* ===== 总览布局 ===== */
@@ -810,7 +810,7 @@
 
 /* --- 入口 --- */
 .lo-entrance__pad { fill: color-mix(in srgb, var(--accent) 20%, transparent); }
-.lo-entrance text { fill: color-mix(in srgb, var(--accent) 82%, transparent); font-size: 11px; font-weight: 700; }
+.lo-entrance text { fill: color-mix(in srgb, var(--accent) 82%, transparent); font-size: var(--fs-2xs); font-weight: 700; }
 
 /* ===== 像素场景（ClawLibrary 美术） ===== */
 .lo-scene--asset-error .lo-scene__empty { padding: 0 var(--space-10); line-height: 1.8; }
@@ -1275,7 +1275,7 @@
 .lo-roster__swatch { width: 8px; height: 18px; border-radius: 2px; flex-shrink: 0; }
 .lo-roster__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .lo-roster__name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-roster__role { color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lo-roster__role { color: var(--text-muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lo-roster__status { flex-shrink: 0; white-space: nowrap; }
 
 .lo-zones__item {

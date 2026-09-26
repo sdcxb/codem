@@ -31,11 +31,15 @@ export const StreamingWaitIndicator = memo(function StreamingWaitIndicator({
   }[phase];
 
   return (
-    <div className="streaming-wait-indicator">
-      <div className="wait-icon">{phaseConfig.icon}</div>
+    /* 第 166 轮 P2-2（提前做掉）：这一个是"模型正在想/正在跑工具"的**状态变化**，
+       此前对读屏完全不可见（全仓 `aria-live` 只有 3 处）。
+       `role="status"` + `aria-live="polite"`：播报但不打断用户当前朗读。
+       ⚠️ 只在这一处加：流式**正文**逐字更新，挂 aria-live 会让读屏不停念（那是另一种坑）。 */
+    <div className="streaming-wait-indicator" role="status" aria-live="polite">
+      <div className="wait-icon" aria-hidden="true">{phaseConfig.icon}</div>
       <div className="wait-label">{phaseConfig.label}</div>
       {message && <div className="wait-message">{message}</div>}
-      <div className="wait-spinner" />
+      <div className="wait-spinner" aria-hidden="true" />
     </div>
   );
 });

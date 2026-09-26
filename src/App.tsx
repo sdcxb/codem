@@ -4551,7 +4551,7 @@ refreshKey={fileExplorerRefreshKey}
             title={lang === "zh" ? "打开菜单" : "Open menu"}
             style={{ display: "none" }}
           >
-            <Menu size={20} />
+            <Menu className="icon-lg" />
           </button>
           {sidebarOpen && (
 <SlotBridge name="app.sidebar" fallback={Sidebar}

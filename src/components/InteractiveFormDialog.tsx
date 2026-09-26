@@ -101,7 +101,7 @@ return createPortal(
             borderBottom: "1px solid var(--border-primary)",
           }}
         >
-          <HelpCircle size={20} style={{ color: "var(--accent)" }} />
+          <HelpCircle className="icon-lg" style={{ color: "var(--accent)" }} />
           <h2 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 600 }}>
             {isSingleQuestion ? questions[0].question : "请回答以下问题"}
           </h2>

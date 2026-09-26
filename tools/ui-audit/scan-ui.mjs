@@ -25,6 +25,25 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
 const BASELINE_PATH = join(HERE, "baseline.json");
 
+/**
+ * 「按字面量位置判定」这条口径的**遗留缺口开关**（第 167 轮修）。
+ *
+ * 现场：字号/圆角/间距三条规则此前都写成 `if (match && !line.includes("var(--"))` ——
+ * 也就是**整行只要出现过一次 `var()`，这一行的字号/圆角/间距字面量就全部放过**。
+ * 这个写法在 `src/styles.css` 的单行规则上直接失效：
+ *   `.diff-preview-meta { font-size: 11px; color: var(--text-muted); }`
+ * `color` 走了令牌 ⟹ 整行豁免 ⟹ `font-size: 11px`（**不吃 --ui-font-scale**）永远看不见。
+ * 颜色规则早就改成了按字面量位置排除（见 scanCss 里那段注释），这三条没跟上 ——
+ * 于是门禁报 0，而真机上有 29 处字号字面量不受「设置 → 字号」影响。
+ *
+ * 现在默认**严格**（不再整行豁免）；`--legacy-var-line-exempt` 只用于量化"老口径漏了多少"。
+ */
+const STRICT_LITERAL_SCOPE = !process.argv.includes("--legacy-var-line-exempt");
+function lineLevelVarExempt(line) {
+  if (STRICT_LITERAL_SCOPE) return false;
+  return line.includes("var(--");
+}
+
 // ========== 扫描范围 ==========
 const SCAN_DIRS = ["src"];
 const EXCLUDE_DIRS = new Set(["node_modules", "dist", "target", "test", "__snapshots__", ".git"]);
@@ -66,8 +85,22 @@ const ALLOWLIST = [
     why: "xterm.js 的主题对象要的是真实色值（它画在 canvas 上，读不到 CSS 变量）；令牌里的 --terminal-bg/-fg 就是为这块暗色表面准备的对照值",
     rules: ["color-hardcoded-ts"],
   },
-  { re: /^src\/plugins\/monopoly-game\//, why: "大富翁游戏插件（自带美术语言：棋盘/卡牌/角色是一套独立视觉，改令牌会破坏美术）" },
-  { re: /^src\/styles\/skin-[^/]+\.css$/, why: "皮肤定义源（每个皮肤的调色板与覆盖层：原始色值就是该皮肤的真相源）" },
+  {
+    re: /^src\/plugins\/monopoly-game\//,
+    why: "大富翁游戏插件（自带美术语言：棋盘/卡牌/角色是一套独立视觉，改令牌会破坏美术）。"
+      + "**这份豁免刻意覆盖排版**：棋盘格位与卡牌是固定几何，字号跟着 --ui-font-scale 放大会把卡面文字挤出版面；"
+      + "这是唯一一处「美术优先级高于字号刻度」的地方，写在这里以免后来者以为是漏配。",
+  },
+  {
+    /*
+     * 皮肤：豁免的**理由只成立于颜色**（每个皮肤的调色板与覆盖层，原始色值就是该皮肤的真相源）。
+     * 排版不属于皮肤的表达范围 —— 皮肤不该改字号刻度，否则「设置 → 字号」在换肤后就失效。
+     * 第 167 轮把这份豁免收窄到颜色类规则：收窄后立刻暴露出 10 处字号字面量（此前被整份豁免掩盖）。
+     */
+    re: /^src\/styles\/skin-[^/]+\.css$/,
+    why: "皮肤定义源（每个皮肤的调色板与覆盖层：原始色值就是该皮肤的真相源）",
+    rules: ["color-hardcoded-css", "color-hardcoded-tsx", "color-hardcoded-ts"],
+  },
   { re: /^src\/plugins\/library-ops\/data\/characters\.ts$/, why: "图书馆角色调色板（注释性常量，实际渲染已用 var() 令牌）" },
   {
     re: /^src\/components\/AppErrorBoundary\.tsx$/,
@@ -146,9 +179,39 @@ const codeSources = [];
 /** 每个文件的「内联样式属性数」（供 --inline-counts 看收口进度：门禁只看 >120 的，
  *  但排队时要知道每个文件离阈值多远、以及收口后还剩多少） */
 const inlineCounts = [];
+/** 行内指令豁免的计数（按规则）：--json 里也会列出，免得「写个注释就绕过门禁」无声增长 */
+const directives = new Map();
+/**
+ * 每个文件的**原始行**（未剥注释）。
+ *
+ * 行内指令本身写在注释里（`/* ui-audit-allow … *\/`），而扫描用的是**剥掉注释之后**的代码行 ——
+ * 拿剥过的行去找指令必然找不到（第一版就踩了这个：指令写了、门禁照样报 4 处）。所以指令要从原始行里读。
+ */
+const originalSourceLines = new Map();
+
+/**
+ * 行内指令豁免：`/* ui-audit-allow <rule>: <理由> *\/`（第 167 轮新增）。
+ *
+ * 为什么需要它：门禁的口径必须是「字面量一律令牌化」，但皮肤里的**装饰图形**是个真实例外 ——
+ * `.dream-decoration { font-size: 80px }` 里的 80px 不是排版字号，是美术图形的尺寸
+ * （玫瑰/宝丽来/画像这类 ornament），按 --fs-* 排版刻度缩放会把美术比例压扁。
+ * 这类例外以前靠「整份文件豁免」表达，代价是整个文件的字号问题都看不见（正是这一轮修掉的洞）。
+ *
+ * 纪律：豁免必须写在**出事的那一行**上、且必须带理由；豁免数量会与 error/warn 一起打印，
+ * 门禁的用例也会断言它不超过基线 —— 允许写例外，不允许例外悄悄长草。
+ */
+function hasInlineDirective(text, rule) {
+  if (!text || text === "(file-level)") return false;
+  const re = new RegExp(`ui-audit-allow[^\\n]*\\b${rule}\\b`);
+  if (!re.test(text)) return false;
+  directives.set(rule, (directives.get(rule) ?? 0) + 1);
+  return true;
+}
 function add(rule, file, line, text, detail) {
   // 例外按「文件 + 规则」判定：豁免一份文件不再等于豁免它的所有规则
   if (allowedReason(file, rule)) return;
+  const directiveSrc = originalSourceLines.get(file)?.[line - 1] ?? text;
+  if (hasInlineDirective(directiveSrc, rule)) return;
   findings.push({ rule, file, line, text: text.trim().slice(0, 140), detail });
 }
 
@@ -322,7 +385,7 @@ function scanTsx(rel, src) {
     //    三元分支里的数字同样是像素（`fontSize: compact ? 11 : 13`），以前整条看不见 ——
     //    这一类已全部清零，门禁留着防回归。
     const fs = /fontSize:\s*(?:'|")?([0-9.]+)\s*(px|rem|pt)?\s*(?:'|")?\s*[,}\n]/.exec(line);
-    if (fs && !line.includes("var(--fs")) {
+    if (fs && !lineLevelVarExempt(line)) {
       add("fs-hardcoded", rel, no, raw, `fontSize: ${fs[1]}${fs[2] ?? "px(无单位)"}`);
     }
     const fsTernary = /fontSize:\s*[^,}\n]*?\?\s*([0-9.]+)\s*:\s*([0-9.]+)/.exec(line);
@@ -401,7 +464,7 @@ function scanTsx(rel, src) {
 
     // 3) 圆角离格
     const br = /borderRadius:\s*(?:'|")?([0-9.]+)(px|rem|%)?(?:'|")?/.exec(line);
-    if (br && !line.includes("var(--")) {
+    if (br && !lineLevelVarExempt(line)) {
       const v = br[1];
       const unit = br[2] ?? "";
       let ok = false;
@@ -418,7 +481,7 @@ function scanTsx(rel, src) {
 
     // 4) 间距离格（padding/margin/gap 的纯数字）
     const sp = /(?:^|[\s,{])(padding|paddingTop|paddingBottom|paddingLeft|paddingRight|margin|marginTop|marginBottom|marginLeft|marginRight|gap|rowGap|columnGap)\s*:\s*([0-9]+)(?:\s*[,}])/.exec(line);
-    if (sp && !SPACING_OK(parseInt(sp[2], 10)) && !line.includes("var(--")) {
+    if (sp && !SPACING_OK(parseInt(sp[2], 10)) && !lineLevelVarExempt(line)) {
       add("spacing-offgrid", rel, no, raw, `${sp[1]}: ${sp[2]}`);
     }
 
@@ -445,8 +508,20 @@ function scanTsx(rel, src) {
 }
 
 function scanCss(rel, src) {
-  const lines = src.split("\n");
+  /*
+   * 先整体剥掉**多行**块注释（保留换行，行号不变）。
+   *
+   * 老写法只在行内 `stripComments` 里去掉 `/* … *\/`，多行注释的**中间行**等于没被剥：
+   * `src/styles.css` 的令牌区有大段解释性注释，里面满是「对比度 4.35:1」「从 #6b5ce7 加深到 #6555e0」
+   * 这类**散文里的色值**。inRoot 那个洞补上之后，这些散文行立刻被当成 62 处硬编码色值（全是假阳性）。
+   * 口径：文档不是取值 —— 剥注释必须在扫描之前、按文件做，而不是逐行做。
+   */
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  const lines = code.split("\n");
+  originalSourceLines.set(rel, src.split("\n"));
   let inRoot = false;
+  /* 令牌块的续行（`--shadow-sheet: 0 1px 2px rgba(…),\n   0 2px 4px rgba(…)` 这种多行取值） */
+  let tokenValueContinues = false;
   let inFontFace = false; // @font-face 里的 font-family 是**声明字体的名字**，不是使用字体栈
   lines.forEach((raw, i) => {
     const no = i + 1;
@@ -454,15 +529,29 @@ function scanCss(rel, src) {
     if (/@font-face/.test(line)) inFontFace = true;
     if (inFontFace && /\}/.test(line) && !/@font-face/.test(line)) inFontFace = false;
     if (/^\s*:root|^\s*\[data-theme|^\s*\[data-skin/.test(line)) inRoot = true;
-    if (inRoot && /^\s*\}/.test(line)) inRoot = false;
-    if (inRoot) return; // 令牌定义块允许原始值
+    if (inRoot && /^\s*\}/.test(line)) { inRoot = false; tokenValueContinues = false; }
+    /*
+     * 令牌块豁免（第 167 轮修）：**只豁免自定义属性声明行**。
+     *
+     * 老写法是 `if (inRoot) return;` —— 只要选择器以 `:root` / `[data-theme` / `[data-skin` 开头，
+     * **整个规则体**（直到某个顶格 `}`）都不再被扫描。而 `[data-skin="hub"] .hub-agent-info {` 这种
+     * 「皮肤下的某条规则」同样以 `[data-skin` 开头 ⇒ 皮肤里所有规则的 font-size / border-radius /
+     * padding / z-index 全部隐形。实测：skin-hub/skin-dream 里的字号字面量在门禁里一直是 0 条，
+     * 而文件里明明有 10 条 —— 这不是"皮肤没有字号问题"，是**规则体被整块跳过了**。
+     *
+     * 正确的口径：豁免的对象是「令牌定义」（`--x: 原始值` 是唯一真相源），不是「某个选择器开头的块」。
+     */
+    if (inRoot && (tokenValueContinues || /^\s*--[\w-]+\s*:/.test(line))) {
+      tokenValueContinues = !/;\s*(\/\*.*)?$/.test(line);
+      return;
+    }
 
     // 字号硬编码（CSS 侧，§2.1：禁止在 style 或 CSS 里写数字字号）
     // 写成 px/rem 的字号既不在刻度上，也**不吃 --ui-font-scale**（设置里调字号没反应）。
     // 相对单位 em/% 除外：它们是刻意的相对层级（如 markdown 内容里 h1>h2>正文），
     // 父级字号本身就是令牌，缩放链没有断。
     const fsz = /font-size:\s*([0-9.]+)(px|rem|pt)\b/.exec(line);
-    if (fsz && !line.includes("var(--")) {
+    if (fsz && !lineLevelVarExempt(line)) {
       add("fs-hardcoded", rel, no, raw, `font-size: ${fsz[1]}${fsz[2]}`);
     }
 
@@ -487,7 +576,13 @@ function scanCss(rel, src) {
     // 例外：0（无圆角）、2px（细条/进度条端头）、50%（圆形）、inherit/initial/unset、var()/calc()。
     const brDecl = /border-radius:\s*([^;{}\n]+)/i.exec(line);
     if (brDecl && !/\bvar\(|calc\(/.test(brDecl[1])) {
+      /*
+       * `!important` 必须先摘掉（第 167 轮修）：它跟着取值一起被 `split(/[\s/]+/)` 切成了
+       * 「一个叫 `!important` 的圆角值」，于是 `border-radius: 0 !important`（皮肤里用来
+       * 压掉宿主圆角的正当写法）被报成 radius-raw —— 4 处假阳性全出自这里。
+       */
       const bad = brDecl[1]
+        .replace(/!\s*important/g, " ")
         .split(/[\s/]+/)
         .map((v) => v.trim())
         .filter((v) => v && v !== "0" && v !== "2px" && v !== "50%" && v !== "inherit" && v !== "initial" && v !== "unset");
@@ -1499,7 +1594,11 @@ if (flag("--census")) {
 }
 
 if (flag("--json")) {
-  console.log(JSON.stringify({ errorCount, warnCount, byRule, byFile, findings: filtered }, null, 2));
+  console.log(JSON.stringify({
+    errorCount, warnCount, byRule, byFile,
+    directives: Object.fromEntries([...directives.entries()].sort()),
+    findings: filtered,
+  }, null, 2));
   process.exit(0);
 }
 
@@ -1509,6 +1608,13 @@ for (const [rule, meta] of Object.entries(RULES)) {
   const n = byRule[rule] ?? 0;
   const mark = meta.level === "error" ? "✗" : "·";
   console.log(`  ${mark} ${rule.padEnd(22)} ${String(n).padStart(5)}   ${meta.desc}`);
+}
+/* 行内指令豁免要**显式可见**：一个 `/* ui-audit-allow *\/` 就是一个被放过的违规，
+   不打印出来的话「门禁 0 违规」这句话就不成立。 */
+const dirRows = [...directives.entries()].sort((a, b) => b[1] - a[1]);
+if (dirRows.length) {
+  console.log(`\n行内指令豁免（ui-audit-allow）：${dirRows.reduce((s, [, n]) => s + n, 0)} 处`);
+  for (const [rule, n] of dirRows) console.log(`  ${String(n).padStart(5)}  ${rule}`);
 }
 
 const top = Object.entries(byFile).sort((a, b) => b[1] - a[1]).slice(0, 15);

@@ -161,6 +161,9 @@
   /* 内容纸面：第 166 轮 P0-0 —— 内容区做成"浮在 chrome 上的圆角纸面"（对方 token 就是 24px）。
      ⚠️ 半径只能取**一个明确的档**，不要现编：这里取 24px 与对方 `layout-split-view-content-panel-radius` 同值。 */
   --surface-sheet-radius: 24px;
+  /* 行内图标尺寸：此前侧栏用 `font-size: var(--fs-lg)` 来定图标大小（16px）——
+     那是「拿字号当尺寸」，改字号会连带改图标。这里给它一个**表意的名字**（与 --fs-icon 同值）。 */
+  --icon-size-inline: var(--fs-icon);
   --chrome-surface: var(--bg-secondary);
   /* 左缘阴影：把纸面与外壳分开。亮色档 8% 墨色就够；暗色档**必须单独加强**（见 [data-theme="dark"]），
      否则 8% 的黑在暗底上等于没有（D3 那一轮的同一个教训）。 */
@@ -465,12 +468,17 @@
   --message-bubble-user-border: rgba(107, 92, 231, 0.16);
   --system-bg: #f2f2f0;
   --code-bg: #f6f6f4;
-  /* 第 157 轮：外壳底从 `#f8f8f7` 提到 **`#fbfbfa`**。
-     用户实测反馈"侧栏还是**比较深的灰色**"—— 在"内容面纯白 + 侧栏 #f8f8f7"的搭配里，
-     侧栏是**唯一偏灰的那块**，读起来就是"灰板"；参考实现的外壳（`chrome #f8f8f9`）之所以不显灰，
-     是因为它的**工作区更灰**（`workbench #f3f3f5`）⇒ 外壳反而是最亮的一档。
-     我们不整体翻工作区底色（那是另一件事、要用户看过再定），只把外壳提到近白，让它读成"纸白外壳"。 */
-  --sidebar-bg: #fbfbfa;
+  /* 外壳色（chrome）**三改其手**，每次都留下「为什么」：
+     · 第 156 轮：从 `#f8f8f7` 提到 `#fbfbfa` —— 用户当时反馈「侧栏还是比较深的灰色」，
+       而那时内容面是纯白、侧栏是屏幕上唯一偏灰的一块 ⇒ 读起来像「灰板」。
+     · 第 166 轮 P0-0：**收回一档到 `#f7f7f5`**。依据是渲染级审计实测：侧栏与内容只差 4 个灰阶
+       （ΔL 0.016，参考实现 0.0328）⇒ 侧栏读不出「外壳」、纸面也读不出「浮起」。
+       区别在于这次**同时补了结构**（内容 = 纯白圆角纸面 + 左缘阴影 + 墨色 hairline）：
+       分界靠结构成立，颜色只出「一档」的力，所以不会回到「一整块灰板」。
+       取值是活体 A/B 量出来的（`.preview-shot/_ab-chrome.mjs`）：
+       #fafaf9→0.0199 / #f8f8f6→0.028 / **#f7f7f5→0.0317** / #f6f6f4→0.0356 / #f4f4f2→0.0434
+       —— 取 0.0317 是为了「达标且留余量、又不偏灰」。 */
+  --sidebar-bg: #f7f7f5;
   --input-bg: #ffffff;
   --scrollbar-track: rgb(242 242 240 / 80%);
   --scrollbar-thumb: rgb(31 31 30 / 16%);
@@ -493,6 +501,30 @@
   --shadow-popover: var(--shadow-raise-3);
   --shadow-color: rgb(31 31 30 / 14%);
   --shadow-color-soft: rgb(31 31 30 / 6%);
+
+  /* ===== 语义令牌补全（第 167 轮）=====
+     这三条此前是**暗色档规则体里的特例色值**（思考块紫、气泡投影、分割线）：同一个语义在浅色档
+     由 --accent / --shadow-color-soft / --border-primary 解析，暗色档却另写一个字面量 ——
+     于是「暗色下这一块为什么是紫的」只能靠翻规则体。令牌化之后两档各一处，且门禁看得见。
+     --shadow-bubble：用户气泡的投影（浅底靠细边分层，只要极轻一层；暗色档稍重才浮得起来）。
+     --reasoning-accent：思考块的强调色（浅色档 = 品牌色；暗色档用更亮的紫以保证对比度）。
+     --separator-fade：步骤分割线「两端渐隐」的中间色（浅色档 = 常规边框色）。 */
+  --shadow-bubble: 0 1px 2px var(--shadow-color-soft);
+  --reasoning-accent: var(--accent);
+  --separator-fade: var(--border-primary);
+
+  /* ===== 背景装饰令牌（第 167 轮）=====
+     `.ambient-backdrop` / `.workspace-backdrop-*`（codem-ui.css）是纯装饰渐变：浅色档是低 α 的
+     品牌紫 + 青蓝，暗色档直接由语义色 color-mix 派生。此前浅色档把 6 个字面量写在规则体里，
+     用 `[data-theme="light"]` 覆写暗色档 —— 两档表达同一件事的两份副本。
+     现在两档各定义一次，规则体只引用；**皮肤要换光斑色就覆盖同名令牌**（见 skin-hub / skin-dream）。
+     注意 --backdrop-vignette / --ambient-backdrop 是**整条渐变**（含断点位置），不只是颜色。 */
+  --backdrop-blob-1: rgba(107, 92, 231, 0.3);
+  --backdrop-blob-2: rgba(88, 166, 255, 0.25);
+  --backdrop-blob-3: rgba(168, 85, 247, 0.15);
+  --backdrop-vignette: radial-gradient(ellipse at center, transparent 50%, rgb(31 31 30 / 8%) 100%);
+  --ambient-backdrop: radial-gradient(ellipse at top left, rgba(107, 92, 231, 0.05), transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(88, 166, 255, 0.04), transparent 50%);
   /* 分层阴影（第 30 波）：值引用上面的 shadow-color 令牌，
      所以两档主题各自换色即可，这几档本身不需要重复定义（暗色档除外：它要更强的强度，见 D3）。 */
   --shadow-raise-1: 0 1px 2px var(--shadow-color-soft), 0 1px 1px var(--shadow-color-soft);
@@ -684,6 +716,15 @@
      由 DARK-UI-8 门禁保证"单调递增 + 浮层档峰值 ≥0.5"（参考实现的最低档就是 0.5）。 */
   --shadow-color: rgba(0, 0, 0, 0.38);
   --shadow-color-soft: rgba(0, 0, 0, 0.16);
+  --shadow-bubble: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --reasoning-accent: #c084fc;
+  --separator-fade: rgba(255, 255, 255, 0.14);
+  --backdrop-blob-1: color-mix(in srgb, var(--accent-border-strong) 30%, transparent);
+  --backdrop-blob-2: color-mix(in srgb, var(--info) 35%, transparent);
+  --backdrop-blob-3: color-mix(in srgb, var(--accent) 25%, transparent);
+  --backdrop-vignette: radial-gradient(ellipse at center, transparent 40%, var(--overlay-backdrop) 100%);
+  --ambient-backdrop: radial-gradient(ellipse at top left, var(--accent-surface), transparent 50%),
+    radial-gradient(ellipse at bottom right, color-mix(in srgb, var(--info) 6%, transparent), transparent 50%);
   --shadow-raise-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.30);
   --shadow-raise-2: 0 2px 4px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.42);
   --shadow-raise-3: 0 4px 8px rgba(0, 0, 0, 0.42), 0 12px 32px rgba(0, 0, 0, 0.55);
@@ -1054,7 +1095,7 @@ justify-content: flex-end;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 
 .titlebar-action-btn:is(:hover, :focus-visible) {
@@ -1072,7 +1113,7 @@ justify-content: flex-end;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 
 .titlebar-btn:is(:hover, :focus-visible) {
@@ -1461,7 +1502,7 @@ flex-shrink: 0;
 }
 
 .sidebar-nav-icon {
-  font-size: var(--fs-lg);
+  font-size: var(--icon-size-inline);
   width: 20px;
   text-align: center;
 }
@@ -1519,18 +1560,18 @@ flex-shrink: 0;
 }
 
 .sidebar-project-arrow {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   width: 12px;
 }
 
 .sidebar-project-icon {
-  font-size: var(--fs-md);
+  font-size: var(--icon-size-inline);
 }
 
 .sidebar-project-name {
   flex: 1;
-  font-size: var(--fs-md);
+  font-size: var(--fs-base);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1655,7 +1696,7 @@ flex-shrink: 0;
   align-items: center;
   gap: var(--space-1);
   opacity: 0;
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .sidebar-session:is(:hover, :focus-visible) .sidebar-session-actions {
@@ -1698,6 +1739,10 @@ flex-shrink: 0;
 
 .sidebar-sessions {
   padding-left: var(--space-3);
+  /* 第 166 轮 P0-2：会话行之间也要 **2px** 间距（此前为 0，只有导航区有 gap ⇒ 间距取值 4 种） */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .sidebar-session-empty {
@@ -1775,7 +1820,7 @@ font-size: var(--fs-base);
   cursor: pointer;
   padding: var(--space-1);
   font-size: var(--fs-2xs);
-  transition: opacity var(--duration-press);
+  transition: opacity var(--duration-press) var(--ease-out);
 }
 
 .sidebar-session:is(:hover, :focus-visible) .sidebar-session-rename,
@@ -1851,7 +1896,7 @@ font-size: var(--fs-base);
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--duration-press);
+  transition: background var(--duration-press) var(--ease-out);
 }
 
 .sidebar-session-context-menu button:is(:hover, :focus-visible) {
@@ -1892,6 +1937,25 @@ font-size: var(--fs-base);
   justify-content: space-between;
   height: 24px;
   margin-bottom: var(--space-1);
+  /* 第 166 轮 P1-3：**吸顶**。此前是 static ⇒ 滚下去以后不知道自己在看哪个分组
+     （对方是 sticky + 吸住时浮出一条 hairline）。背景必须不透明：吸顶时行会从它下面滚过。
+     z-index 用 `--z-chrome`（外壳内部的局部层叠，不是全局浮层）。 */
+  position: sticky;
+  top: 0;
+  z-index: var(--z-chrome);
+  background: var(--sidebar-bg);
+  isolation: isolate;
+}
+
+/* 只有**真吸住**时才画线（静止不留痕；对方 `is-stuck` 同构）。
+   判定在组件侧：IntersectionObserver 给标题加 `.is-stuck`（见 Sidebar.tsx 的吸顶哨兵）。 */
+.sidebar-section-header.is-stuck::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--space-3);
+  inset-block-end: -1px;
+  height: 0;
+  border-bottom: 1px solid var(--hairline-ink);
 }
 
 .sidebar-section-header span {
@@ -1914,7 +1978,7 @@ font-size: var(--fs-base);
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: var(--fs-md);
+  font-size: var(--fs-2xs);
   transition: var(--transition-color);
 }
 
@@ -2034,7 +2098,7 @@ font-size: var(--fs-base);
   font-size: var(--fs-base);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--duration-press);
+  transition: background var(--duration-press) var(--ease-out);
 }
 
 .model-option:is(:hover, :focus-visible) {
@@ -2124,7 +2188,7 @@ width: 100%;
 /* Buttons hidden by default, shown on hover */
 .qa-turn-footer .qa-turn-btn {
   opacity: 0;
-  transition: opacity var(--duration-fast) ease;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 /* Show buttons when hovering the preceding message or the footer itself */
@@ -2456,16 +2520,14 @@ margin-top: var(--space-1);
   border-radius: var(--radius-lg);
   background: var(--message-bubble-user);
   border: 1px solid var(--message-bubble-user-border);
-  box-shadow: 0 1px 2px var(--shadow-color-soft);
+  box-shadow: var(--shadow-bubble);
   color: var(--text-primary);
 }
 
 /* Bug3 fix: 暗色模式下用户气泡增强对比度，使用 accent 色调背景与 AI 消息区分 */
 /* 暗色档只在**阴影**上不同（浅底气泡在暗色下需要稍重的投影才"浮"得起来）；
    底色与边框已由 `--message-bubble-user*` 两档各自解析，不再在这里重复写死。 */
-[data-theme="dark"] .user .message-content {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
+/* 第 167 轮：投影已令牌化为 --shadow-bubble（两档各一处），暗色覆写不再需要 */
 
 /* AI message: no bubble — open document style */
 /* 对齐 wecode: px-5 pt-5 pb-10，底部空间预留给绝对定位工具栏 */
@@ -2603,28 +2665,22 @@ align-items: center;
 gap: var(--space-3);
 padding: var(--space-2) var(--space-6);
 border-radius: var(--radius-xl);
-border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-background: color-mix(in srgb, var(--accent) 5%, transparent);
-color: var(--accent);
+border: 1px solid color-mix(in srgb, var(--reasoning-accent) 20%, transparent);
+background: color-mix(in srgb, var(--reasoning-accent) 5%, transparent);
+color: var(--reasoning-accent);
 cursor: pointer;
 font-size: var(--fs-sm);
 font-weight: 500;
 transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-[data-theme="dark"] .reasoning-toggle {
-color: #c084fc;
-border-color: rgba(192, 132, 252, 0.2);
-background: rgba(192, 132, 252, 0.05);
-}
+/* 第 167 轮：思考块强调色已令牌化为 --reasoning-accent（两档各一处） */
 
 .reasoning-toggle:is(:hover, :focus-visible) {
-background: color-mix(in srgb, var(--accent) 10%, transparent);
+background: color-mix(in srgb, var(--reasoning-accent) 10%, transparent);
 }
 
-[data-theme="dark"] .reasoning-toggle:is(:hover, :focus-visible) {
-background: rgba(192, 132, 252, 0.1);
-}
+/* 第 167 轮：hover 底同样走 --reasoning-accent */
 @keyframes reasoning-pulse {
 0%, 100% { opacity: 0.5; }
 50% { opacity: 1; }
@@ -2633,7 +2689,7 @@ background: rgba(192, 132, 252, 0.1);
 
 
 [data-theme="dark"] .reasoning-content {
-border-left-color: rgba(192, 132, 252, 0.2);
+border-left-color: color-mix(in srgb, var(--reasoning-accent) 20%, transparent);
 }
 
 .reasoning-cursor {
@@ -2802,19 +2858,23 @@ z-index: 50;
   width: 100%;
 }
 
-/* P-UI: Card container — 融入 panel-right，无边框无圆角 */
+/* 第 166 轮 P1-2：输入区做成**卡片**（类名一直叫 input-card-container，但此前圆角 0、阴影 none、
+   边框靠子元素一条 1px 9% —— 渲染出来是一块"直角灰框贴在近白面上"，是"面板看着廉价"最直接的一条）。
+   对齐参考实现的意图（它是圆角 16px + `shadow-composer`）：我们取**刻度上最接近的一档** `--radius-lg`（14px），
+   而不是新编一个 16px —— 刻度外的值会被 `radius-raw` 门禁拦下（实测踩过一次）。
+   聚焦反馈放到**这一层**：原来只有 textarea 上的一圈 outline，承载视觉的卡片本身完全没反应。 */
 .input-card-container {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  transition: none;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raise-2);
+  transition: var(--transition-color), var(--transition-shadow);
   overflow: hidden;
 }
 
 .input-card-container:focus-within {
-  border-color: var(--text-primary);
-  box-shadow: none;
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-raise-3), 0 0 0 3px var(--accent-surface);
 }
 
 /* P-UI: A3 失焦折叠（对标 meow-smooth）— 多行草稿失焦后收成单行胶囊 */
@@ -2823,12 +2883,12 @@ z-index: 50;
   cursor: text;
 }
 .input-card-container.blur-folded .input-backdrop-wrapper {
-  transition: height var(--duration-normal, 0.18s) ease;
+  transition: height var(--duration-normal, 0.18s) var(--ease-out);
   overflow: hidden;
 }
 .input-card-container.blur-folded .message-input {
   overflow-y: hidden;
-  transition: height var(--duration-normal, 0.18s) ease;
+  transition: height var(--duration-normal, 0.18s) var(--ease-out);
 }
 .input-card-container.blur-folded .input-textarea-row {
   overflow: hidden;
@@ -3098,7 +3158,7 @@ align-items: center;
 justify-content: center;
 flex-shrink: 0;
 padding: 0;
-transition: background var(--duration-fast) ease;
+transition: background var(--duration-fast) var(--ease-out);
 }
 
 /* P0-FIX: Ensure SVG icons inside send-btn are vertically centered */
@@ -3319,7 +3379,7 @@ display: block;
   cursor: pointer;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
-  transition: background var(--duration-press);
+  transition: background var(--duration-press) var(--ease-out);
 }
 
 .file-explorer-search-refresh:is(:hover, :focus-visible) {
@@ -3356,7 +3416,7 @@ font-size: var(--fs-base);
 color: var(--text-secondary);
 cursor: pointer;
 border-radius: var(--radius-sm);
-transition: background var(--duration-press), color var(--duration-press);
+transition: background var(--duration-press) var(--ease-out),  color var(--duration-press) var(--ease-out);
 user-select: none;
 }
 
@@ -3807,7 +3867,7 @@ min-height: 0;
   cursor: pointer;
   font-size: var(--fs-base);
   margin-top: var(--space-4);
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .file-preview-office-btn:is(:hover, :focus-visible) {
@@ -4428,7 +4488,7 @@ background: var(--bg-secondary);
   padding: var(--space-7) var(--space-8);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
   margin-bottom: var(--space-4);
 }
 
@@ -5375,7 +5435,7 @@ position: relative;
   border-radius: var(--radius-lg);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: background var(--duration-normal), border-color var(--duration-normal);
+  transition: background var(--duration-normal) var(--ease-out),  border-color var(--duration-normal) var(--ease-out);
   max-width: 400px;
   user-select: none;
 }
@@ -5436,7 +5496,7 @@ position: relative;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transition: opacity var(--duration-press) ease, visibility var(--duration-press) ease;
+  transition: opacity var(--duration-press) var(--ease-out), visibility var(--duration-press) var(--ease-out);
 }
 
 .step-progress-container:is(:hover, :focus-visible) .step-tooltip,
@@ -5485,7 +5545,7 @@ pointer-events: auto;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-7);
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .step-tooltip-item.active {
@@ -5634,7 +5694,7 @@ background: var(--accent-surface-strong);
   padding: var(--space-6);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
   margin-bottom: var(--space-2);
 }
 
@@ -5999,7 +6059,7 @@ background: var(--accent-surface-strong);
   border-radius: var(--radius-sm);
   font-size: var(--fs-base);
   line-height: var(--lh-ui);
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .subagent-activity-item.running {
@@ -6284,7 +6344,7 @@ background: var(--accent-surface-strong);
   justify-content: space-between;
   padding: var(--space-5) var(--space-6);
   cursor: pointer;
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .snapshot-item-header:is(:hover, :focus-visible) {
@@ -7260,7 +7320,7 @@ color: var(--text-on-accent);
   background: var(--bg-tertiary, #2a2a3e);
   border: 1px solid var(--border-primary, #333);
   border-radius: var(--radius);
-  transition: border-color var(--duration-fast);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
 .skill-search-box:focus-within {
@@ -7308,7 +7368,7 @@ color: var(--text-on-accent);
   font-size: var(--fs-base);
   font-weight: 500;
   cursor: pointer;
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
   white-space: nowrap;
 }
 
@@ -7497,7 +7557,7 @@ color: var(--text-on-accent);
   font-size: var(--fs-base);
   font-family: inherit;
   outline: none;
-  transition: border-color var(--duration-fast);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
 .publish-input:focus,
@@ -7528,7 +7588,7 @@ color: var(--text-on-accent);
   color: var(--text-primary, #e0e0e0);
   font-size: var(--fs-base);
   cursor: pointer;
-  transition: border-color var(--duration-fast), background var(--duration-fast);
+  transition: border-color var(--duration-fast) var(--ease-out),  background var(--duration-fast) var(--ease-out);
 }
 
 .publish-market-item:hover:not(:disabled) {
@@ -7672,7 +7732,7 @@ color: var(--text-on-accent);
   border-radius: var(--radius-sm);
   cursor: pointer;
   margin-bottom: var(--space-2);
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
   border-bottom: 1px solid var(--border-primary, #1e1e24);
 }
 
@@ -8204,7 +8264,7 @@ color: var(--text-on-accent);
   border-radius: var(--radius-sm);
   cursor: pointer;
   margin-bottom: var(--space-2);
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .memory-item:is(:hover, :focus-visible) {
@@ -8540,7 +8600,7 @@ color: var(--text-on-accent);
 .context-usage-fill {
   height: 100%;
   border-radius: var(--radius-sm);
-  transition: width var(--duration-slow) ease;
+  transition: width var(--duration-slow) var(--ease-out);
 }
 
 .context-usage-info {
@@ -10289,7 +10349,7 @@ border-bottom: 1px solid var(--accent);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: var(--bg-tertiary);
-  transition: transform var(--duration-fast) ease, border-color var(--duration-fast) ease;
+  transition: transform var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
 }
 .petm-card:is(:hover, :focus-visible) { transform: translateY(-2px); border-color: var(--accent); }
 .petm-preview {
@@ -10337,7 +10397,7 @@ border-bottom: 1px solid var(--accent);
 .petm-actions { margin-top: var(--space-4); }
 .petm-install-block { width: 100%; }
 .petm-progress-track { width: 100%; height: 4px; overflow: hidden; border-radius: var(--radius-full); background: var(--bg-hover); }
-.petm-progress-fill { height: 100%; background: var(--accent); transition: width var(--duration-slow) ease; }
+.petm-progress-fill { height: 100%; background: var(--accent); transition: width var(--duration-slow) var(--ease-out); }
 .petm-progress-msg { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-secondary); }
 .petm-btn {
   width: 100%;
@@ -10556,7 +10616,7 @@ border-bottom: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   cursor: pointer;
   margin-bottom: var(--space-2);
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .session-item:is(:hover, :focus-visible) {
@@ -10838,7 +10898,7 @@ border-bottom: 1px solid var(--accent);
   height: 100%;
   background: var(--accent);
   border-radius: var(--radius-sm);
-  transition: width var(--duration-slow) ease;
+  transition: width var(--duration-slow) var(--ease-out);
 }
 
 .usage-history {
@@ -11296,22 +11356,22 @@ border-bottom: 1px solid var(--accent);
 }
 .diff-viewer-title { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--space-4); min-width: 0; }
 .diff-viewer-icon { font-size: var(--fs-xl); flex-shrink: 0; }
-.diff-viewer-filename { font-weight: 600; font-size: 14px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-viewer-filename { font-weight: 600; font-size: var(--fs-md); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-viewer-stats { display: flex; gap: var(--space-3); font-size: var(--fs-sm); font-weight: 600; flex-shrink: 0; }
 .diff-stat-added { color: var(--success); }
 .diff-stat-removed { color: var(--error); }
 .diff-viewer-actions { display: flex; align-items: center; gap: var(--space-4); flex-shrink: 0; }
 .diff-view-mode-toggle { display: flex; gap: var(--space-1); background: var(--bg-primary); border-radius: var(--radius-sm); padding: var(--space-1); }
-.diff-mode-btn { padding: var(--space-2) var(--space-5); font-size: 12px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-mode-btn { padding: var(--space-2) var(--space-5); font-size: var(--fs-sm); border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-mode-btn:is(:hover, :focus-visible) { color: var(--text-primary); background: var(--bg-hover); }
 .diff-mode-btn.active { background: var(--accent-muted); color: var(--accent-strong); }
-.diff-accept-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: var(--success-surface-strong); color: var(--success-content); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-accept-btn { padding: var(--space-3) var(--space-7); font-size: var(--fs-base); font-weight: 600; border: none; background: var(--success-surface-strong); color: var(--success-content); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-accept-btn:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--success) 35%, transparent); }
-.diff-reject-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-reject-btn { padding: var(--space-3) var(--space-7); font-size: var(--fs-base); font-weight: 600; border: none; background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-reject-btn:is(:hover, :focus-visible) { background: var(--error-border); }
 .diff-close-btn { padding: var(--space-2); border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); display: flex; align-items: center; justify-content: center; }
 .diff-close-btn:is(:hover, :focus-visible) { color: var(--text-primary); background: var(--bg-hover); }
-.diff-viewer-path { padding: var(--space-3) var(--space-8); font-size: 11px; color: var(--text-muted); background: var(--bg-primary); border-bottom: 1px solid var(--border-secondary); font-family: var(--font-mono); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-viewer-path { padding: var(--space-3) var(--space-8); font-size: var(--fs-2xs); color: var(--text-muted); background: var(--bg-primary); border-bottom: 1px solid var(--border-secondary); font-family: var(--font-mono); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-viewer-body { flex: 1; overflow: auto; min-height: 200px; }
 
 /* Preview View (default) */
@@ -11324,17 +11384,17 @@ border-bottom: 1px solid var(--accent);
 .diff-preview-badge { font-size: var(--fs-sm); font-weight: var(--weight-medium); padding: var(--space-1) var(--space-5); border-radius: var(--radius-sm); }
 .diff-preview-badge-old { background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); }
 .diff-preview-badge-new { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-.diff-preview-meta { font-size: 11px; color: var(--text-muted); }
+.diff-preview-meta { font-size: var(--fs-2xs); color: var(--text-muted); }
 .diff-preview-content { margin: 0; padding: var(--space-6); font-family: var(--font-mono); font-size: var(--fs-base); line-height: var(--lh-base); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow: auto; }
 .diff-preview-content-old { background: color-mix(in srgb, var(--error) 5%, transparent); color: var(--text-secondary); }
 .diff-preview-content-new { background: color-mix(in srgb, var(--success) 5%, transparent); color: var(--text-primary); }
-.diff-preview-arrow { text-align: center; font-size: 20px; color: var(--text-muted); padding: var(--space-4) 0; }
+.diff-preview-arrow { text-align: center; font-size: var(--fs-2xl); color: var(--text-muted); padding: var(--space-4) 0; }
 
 /* Unified Diff View */
 .diff-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: var(--fs-base); }
 .diff-table td { padding: 0; vertical-align: top; }
 .diff-line { line-height: var(--lh-base); }
-.diff-line-num { width: 40px; min-width: 40px; padding: 0 var(--space-4); text-align: right; color: var(--text-muted); font-size: 11px; user-select: none; border-right: 1px solid var(--border-secondary); }
+.diff-line-num { width: 40px; min-width: 40px; padding: 0 var(--space-4); text-align: right; color: var(--text-muted); font-size: var(--fs-2xs); user-select: none; border-right: 1px solid var(--border-secondary); }
 .diff-old-num { width: 45px; min-width: 45px; }
 .diff-new-num { width: 45px; min-width: 45px; border-right: 2px solid var(--border-primary); }
 .diff-line-marker { width: 24px; min-width: 24px; text-align: center; font-weight: 700; font-size: var(--fs-md); user-select: none; }
@@ -11352,24 +11412,24 @@ border-bottom: 1px solid var(--accent);
 
 /* Split Diff View */
 .diff-split { width: 100%; }
-.diff-split th { padding: var(--space-3) var(--space-5); font-size: 12px; font-weight: 600; color: var(--text-secondary); background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary); }
+.diff-split th { padding: var(--space-3) var(--space-5); font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary); }
 .diff-split-header-old { border-right: 1px solid var(--border-primary); }
 .diff-split td { border-right: 1px solid var(--border-secondary); }
 .diff-empty { background: color-mix(in srgb, var(--text-muted) 5%, transparent); }
 
 /* Custom Instruction Panel */
-.diff-custom-btn { padding: var(--space-3) var(--space-7); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-custom-btn { padding: var(--space-3) var(--space-7); font-size: var(--fs-base); font-weight: 600; border: none; background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-btn:is(:hover, :focus-visible) { background: var(--warning-border); }
 .diff-custom-panel { padding: var(--space-6) var(--space-8); background: var(--surface-raised); border-bottom: 1px solid var(--border-primary); }
-.diff-custom-label { font-size: 12px; color: var(--text-secondary); margin-bottom: var(--space-4); }
+.diff-custom-label { font-size: var(--fs-sm); color: var(--text-secondary); margin-bottom: var(--space-4); }
 .diff-custom-input-row { margin-bottom: var(--space-4); }
-.diff-custom-textarea { width: 100%; padding: var(--space-4) var(--space-5); font-size: 13px; font-family: inherit; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-sm); resize: vertical; min-height: 50px; }
+.diff-custom-textarea { width: 100%; padding: var(--space-4) var(--space-5); font-size: var(--fs-base); font-family: inherit; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-sm); resize: vertical; min-height: 50px; }
 .diff-custom-textarea:focus { border-color: var(--accent); }
 .diff-custom-actions { display: flex; gap: var(--space-4); }
-.diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--info-surface-strong); color: var(--accent-strong); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: var(--fs-base); font-weight: 600; border: none; background: var(--info-surface-strong); color: var(--accent-strong); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-submit-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--info) 35%, transparent); }
 .diff-custom-submit-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
-.diff-custom-cancel-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
+.diff-custom-cancel-btn { padding: var(--space-3) var(--space-8); font-size: var(--fs-base); font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-cancel-btn:is(:hover, :focus-visible) { color: var(--text-primary); }
 
 /* ========== Radix UI Component Styles ========== */
@@ -11516,7 +11576,7 @@ border-bottom: 1px solid var(--accent);
   cursor: pointer;
   border-radius: var(--radius-sm);
   text-align: left;
-  transition: background var(--duration-press);
+  transition: background var(--duration-press) var(--ease-out);
 }
 
 .slash-command-item:is(:hover, :focus-visible),
@@ -11596,7 +11656,7 @@ min-height: 36px;
   cursor: pointer;
   border: 1px solid transparent;
   background: none;
-  transition: background var(--duration-press), border-color var(--duration-press);
+  transition: background var(--duration-press) var(--ease-out),  border-color var(--duration-press) var(--ease-out);
   white-space: nowrap;
   /* 第 48 波：工具行不换行 —— 宽度不够时压缩文字而不是把后面的 chip 顶到下一行 */
   min-width: 0;
@@ -11691,7 +11751,7 @@ min-height: 36px;
   background: none;
   width: 100%;
   text-align: left;
-  transition: background var(--duration-press), border-color var(--duration-press);
+  transition: background var(--duration-press) var(--ease-out),  border-color var(--duration-press) var(--ease-out);
 }
 
 .bottom-bar-dropdown-item:is(:hover, :focus-visible) {
@@ -11719,7 +11779,7 @@ min-height: 36px;
   cursor: pointer;
   user-select: none;
   outline: none;
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .dropdown-menu-item:is(:hover, :focus-visible) {
   background: var(--dropdown-hover);
@@ -11831,7 +11891,7 @@ min-height: 36px;
   display: flex;
   gap: var(--space-2);
   opacity: 0;
-  transition: opacity var(--duration-fast) ease;
+  transition: opacity var(--duration-fast) var(--ease-out);
   z-index: 10;
 }
 .message:is(:hover, :focus-visible) .message-toolbar {
@@ -11917,9 +11977,10 @@ border-color: var(--text-muted);
 /* #9: Collapsed sidebar *//* #9: Session time grouping */
 .sidebar-session-group-label {
   /* 第 155 轮 P0-3：字号/字重/行高/字距/大写/颜色六项已并入上面的 `.text-overline` 角色
-     （同一个声明块，单一来源），这里只留布局相关的两项。 */
-  /* 第 166 轮 P0-2：内边距从 8/12/4/12 收到 **6/8/2/8**，与行的 8px 对齐（左边缘一条线）。 */
-  padding: var(--space-3) var(--space-4) var(--space-1) var(--space-4);
+     （同一个声明块，单一来源），这里只留布局相关的两项。
+     第 166 轮 P0-2：内边距定为 **8/12/2/12** —— 配上 overline 的行盒正好 **24px**，
+     与分组标题同高（此前是 22px，属于「又多出的一种行高」）。 */
+  padding: var(--space-4) var(--space-6) var(--space-1) var(--space-6);
   user-select: none;
 }
 
@@ -12009,15 +12070,13 @@ border-color: var(--text-muted);
 /* ========== Unified Mode Separator ========== */
 .unified-separator {
   height: 1px;
-  background: linear-gradient(to right, transparent, var(--border-primary), transparent);
+  background: linear-gradient(to right, transparent, var(--separator-fade), transparent);
   margin: var(--space-6) 0;
   border: none;
 }
 
 /* 暗色模式：Markdown 步骤分割线稍微调亮 */
-[data-theme="dark"] .unified-separator {
-  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.14), transparent);
-}
+/* 第 167 轮：分割线中间色走 --separator-fade（两档各一处） */
 
 /* ========== Unified Mode Reasoning (collapsed by default) ========== *//* ========== Unified Mode Tool Calls (collapsed by default) ========== */
 .unified-mode .tool-calls {
@@ -12040,7 +12099,7 @@ border-color: var(--text-muted);
   border-radius: var(--radius-full);
   position: relative;
   cursor: pointer;
-  transition: background var(--duration-normal);
+  transition: background var(--duration-normal) var(--ease-out);
   border: 1px solid var(--border-primary, #444);
   flex-shrink: 0;
 }
@@ -12058,7 +12117,7 @@ border-color: var(--text-muted);
   background: var(--surface-content);
   border-radius: 50%;
   transform: translateX(2px);
-  transition: transform var(--duration-normal);
+  transition: transform var(--duration-normal) var(--ease-out);
   box-shadow: 0 1px 3px var(--shadow-color);
 }
 .switch-root[data-state="checked"] .switch-thumb {
@@ -12080,7 +12139,7 @@ border-color: var(--text-muted);
   background: transparent;
   color: var(--text-muted, #888);
   cursor: pointer;
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .dialog-close:is(:hover, :focus-visible) {
   background: var(--bg-tertiary, #2a2a3e);
@@ -12139,7 +12198,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-md);
   font-weight: 500;
   cursor: pointer;
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 .alert-dialog-action:is(:hover, :focus-visible) {
   opacity: 0.9;
@@ -12156,7 +12215,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .alert-dialog-cancel:is(:hover, :focus-visible) {
   background: var(--bg-tertiary, #2a2a3e);
@@ -12197,7 +12256,7 @@ border-color: var(--text-muted);
   border: 1px solid var(--border-primary, #333);
   border-radius: var(--radius-md);
   overflow: hidden;
-  transition: border-color var(--duration-fast);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 .card:is(:hover, :focus-visible) {
   border-color: var(--border-secondary);
@@ -12297,7 +12356,7 @@ border-color: var(--text-muted);
   color: var(--text-muted, #888);
   padding: var(--space-2);
   border-radius: var(--radius-sm);
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12382,7 +12441,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
   white-space: nowrap;
 }
 .notebook-create-btn:is(:hover, :focus-visible) {
@@ -12468,7 +12527,7 @@ border-color: var(--text-muted);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: border-color var(--duration-fast), background var(--duration-fast);
+  transition: border-color var(--duration-fast) var(--ease-out),  background var(--duration-fast) var(--ease-out);
   min-height: 120px;
 }
 .notebook-card:is(:hover, :focus-visible) {
@@ -12499,7 +12558,7 @@ border-color: var(--text-muted);
   cursor: pointer;
   color: var(--text-muted, #888);
   opacity: 0;
-  transition: opacity var(--duration-fast), color var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 .notebook-card:is(:hover, :focus-visible) .notebook-card-delete {
   opacity: 1;
@@ -12590,7 +12649,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius);
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .notebook-back-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
@@ -12616,7 +12675,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 .notebook-chat-btn:is(:hover, :focus-visible) {
   opacity: 0.9;
@@ -12681,7 +12740,7 @@ border-color: var(--text-muted);
   border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .notebook-add-source-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
@@ -12705,7 +12764,7 @@ border-color: var(--text-muted);
   padding: var(--space-4) var(--space-6);
   background: var(--bg-tertiary);
   border-radius: var(--radius);
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .notebook-source-item:is(:hover, :focus-visible) {
   background: var(--bg-hover);
@@ -12758,7 +12817,7 @@ border-color: var(--text-muted);
   cursor: pointer;
   color: var(--text-muted, #888);
   opacity: 0;
-  transition: opacity var(--duration-fast), color var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 .notebook-source-item:is(:hover, :focus-visible) .notebook-source-delete {
   opacity: 1;
@@ -12803,7 +12862,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   color: var(--text-secondary, #ccc);
   cursor: pointer;
-  transition: border-color var(--duration-fast), background var(--duration-fast);
+  transition: border-color var(--duration-fast) var(--ease-out),  background var(--duration-fast) var(--ease-out);
 }
 .notebook-question-item:is(:hover, :focus-visible) {
   border-color: var(--accent-strong);
@@ -12846,7 +12905,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   color: var(--text-muted, #888);
   cursor: pointer;
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 .source-type-tab.active {
   background: var(--accent);
@@ -12903,7 +12962,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   color: var(--text-primary, #fff);
   cursor: pointer;
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .notebook-file-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
@@ -12925,7 +12984,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   color: var(--text-primary, #fff);
   cursor: pointer;
-  transition: background var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .notebook-btn-cancel:is(:hover, :focus-visible) {
   background: var(--bg-hover);
@@ -12940,7 +12999,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 .notebook-btn-confirm:is(:hover, :focus-visible) {
   opacity: 0.9;
@@ -12984,7 +13043,7 @@ border-color: var(--text-muted);
   font-size: var(--fs-md);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 .notebook-mode-close:is(:hover, :focus-visible) {
 background: color-mix(in srgb, var(--text-on-accent) 8%, transparent);
@@ -12999,7 +13058,7 @@ cursor: pointer;
 font-size: var(--fs-md);
 padding: var(--space-1) var(--space-3);
 border-radius: var(--radius-sm);
-transition: background var(--duration-fast), color var(--duration-fast);
+transition: background var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 
 .notebook-mode-save:is(:hover, :focus-visible) {
@@ -13212,7 +13271,7 @@ line-height: var(--lh-compact);
   border: 2px dashed var(--border-primary, #30363d);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: border-color var(--duration-fast, 100ms) ease;
+  transition: border-color var(--duration-fast, 100ms) var(--ease-out);
 }
 
 .dream-bg-upload-area:is(:hover, :focus-visible) {
@@ -13402,7 +13461,7 @@ html.pet-window-mode body,
   background: transparent;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 
 .guidance-action-btn:is(:hover, :focus-visible) {
@@ -13477,7 +13536,7 @@ html.pet-window-mode body,
   border-radius: var(--radius);
   resize: none;
   outline: none;
-  transition: border-color var(--duration-fast) ease;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 .inline-edit-textarea:focus {
   border-color: var(--accent);
@@ -13528,13 +13587,13 @@ html.pet-window-mode body,
   gap: var(--space-2);
   margin-top: var(--space-2);
   opacity: 0;
-  transition: opacity var(--duration-fast, 0.15s) ease;
+  transition: opacity var(--duration-fast, 0.15s) var(--ease-out);
 }
 .feedback-inline {
   display: inline-flex;
   gap: var(--space-1);
   opacity: 0;
-  transition: opacity var(--duration-fast, 0.15s) ease;
+  transition: opacity var(--duration-fast, 0.15s) var(--ease-out);
 }
 .message:is(:hover, :focus-visible) .feedback-buttons,
 .message:is(:hover, :focus-visible) .feedback-inline {
@@ -13832,7 +13891,7 @@ html.pet-window-mode body,
   cursor: col-resize;
   z-index: 10;
   background: transparent;
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .right-sidebar-resize-handle:is(:hover, :focus-visible),
 .right-sidebar-resize-handle.active {
@@ -14203,7 +14262,7 @@ html.pet-window-mode body,
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--fs-2xs);
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .conversation-overview-round-item:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
@@ -14700,7 +14759,7 @@ html.pet-window-mode body,
   padding: var(--space-8);
   max-width: 320px;
   box-shadow: 0 4px 24px var(--shadow-color);
-  transition: top var(--duration-slow) ease, left var(--duration-slow) ease;
+  transition: top var(--duration-slow) var(--ease-out), left var(--duration-slow) var(--ease-out);
 }
 .tour-header {
   display: flex;
@@ -14799,7 +14858,7 @@ html.pet-window-mode body,
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   padding: var(--space-6);
-  transition: border-color var(--duration-fast) ease;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 .quick-access-card:is(:hover, :focus-visible) {
   border-color: var(--accent, #7c6cf0);
@@ -15114,7 +15173,7 @@ color: var(--accent, #7c6cf0);
   font-weight: 500;
   line-height: var(--lh-ui);
   max-width: 240px;
-  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
   cursor: default;
   user-select: none;
 }
@@ -15151,7 +15210,7 @@ color: var(--accent, #7c6cf0);
   opacity: 0.5;
   cursor: pointer;
   padding: 0;
-  transition: opacity var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition: opacity var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 .composer-badge-remove:is(:hover, :focus-visible) {
   opacity: 1;
@@ -15375,7 +15434,7 @@ color: var(--accent, #7c6cf0);
   color: var(--text-muted, #6b6b7b);
   cursor: pointer;
   white-space: nowrap;
-  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
+  transition: color var(--duration-fast) var(--ease-out),  background var(--duration-fast) var(--ease-out),  border-color var(--duration-fast) var(--ease-out);
   /* 宽度不足时压缩标签文字，而不是撑出滚动条 */
   min-width: 0;
 }
@@ -15442,7 +15501,7 @@ color: var(--accent, #7c6cf0);
   border-radius: 50%;
   border: none;
   cursor: pointer;
-  transition: opacity var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .mac-btn:is(:hover, :focus-visible) { opacity: 0.8; }
@@ -15639,7 +15698,7 @@ color: var(--accent, #7c6cf0);
   color: var(--text-secondary, #aaa);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
   flex-shrink: 0;
 }
 .right-sidebar-back-btn:is(:hover, :focus-visible) {
@@ -16005,6 +16064,10 @@ color: var(--accent, #7c6cf0);
 .icon-2xs { width: var(--icon-2xs); height: var(--icon-2xs); }
 .icon-xs { width: var(--icon-xs); height: var(--icon-xs); }
 .icon-sm { width: var(--icon-sm); height: var(--icon-sm); }
+/* 第 166 轮 P1-6：`.icon-lg` 此前只出现在上面的组合选择器里（只有 flex-shrink/display/vertical-align），
+   **没有尺寸声明** ⇒ `--icon-lg: 20px` 是个**从未被消费的死令牌**（TSX 里 `icon-lg` 也用了 0 次）。
+   这里补上声明：要么用它、要么删令牌，不能留着假装刻度完整。 */
+.icon-lg { width: var(--icon-lg); height: var(--icon-lg); }
 .icon-md { width: var(--icon-md); height: var(--icon-md); }
 
 .icon-xl { width: var(--icon-xl); height: var(--icon-xl); }
@@ -17141,7 +17204,7 @@ color: var(--accent, #7c6cf0);
 .chat-float-panel--w300 { width: 300px; }
 .chat-float-panel--w360 { width: 360px; }
 .chat-float-panel--trajectory { display: flex; flex-direction: column; overflow: hidden; }
-.step-ring-progress { transition: stroke-dashoffset 0.4s ease; }.input-popover-hint { margin-left: auto; font-size: var(--fs-xs); opacity: 0.6; }
+.step-ring-progress { transition: stroke-dashoffset 0.4s var(--ease-out); }.input-popover-hint { margin-left: auto; font-size: var(--fs-xs); opacity: 0.6; }
 
 .skill-option {
   display: flex;
@@ -17456,7 +17519,7 @@ color: var(--accent, #7c6cf0);
      颜色用量门禁按"角色 × 表面"配对算对比度，于是"白字压浅灰底"被判成 1.16:1。
      处置不是"把这个配对登记掉"，而是删掉它 —— 它本来就不该在。 */
   cursor: pointer;
-  transition: background var(--duration-normal), border-color var(--duration-normal);
+  transition: background var(--duration-normal) var(--ease-out),  border-color var(--duration-normal) var(--ease-out);
 }
 .sp-toggle.is-on { border-color: transparent; background: var(--accent); }
 .sp-toggle-knob {
@@ -17467,7 +17530,7 @@ color: var(--accent, #7c6cf0);
   height: 18px;
   border-radius: var(--radius-full);
   background: var(--surface-content);
-  transition: left var(--duration-normal);
+  transition: left var(--duration-normal) var(--ease-out);
 }
 .sp-toggle.is-on .sp-toggle-knob { left: 22px; }
 
@@ -17687,7 +17750,7 @@ input[type="range"].sp-flex-fill {
   height: 100%;
   border-radius: var(--radius-sm);
   background: var(--accent);
-  transition: width var(--duration-slow);
+  transition: width var(--duration-slow) var(--ease-out);
 }
 .sp-bar-fill.is-danger { background: var(--error); }
 .sp-hint--tiny { margin-top: var(--space-1); }
@@ -17877,9 +17940,11 @@ input[type="range"].sp-flex-fill {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin-left: auto;
-  padding: var(--space-3) var(--space-5);
+  /* 第 166 轮 P0-2：28.33px（= padding 6/10 + 行盒）→ **24px**（与分组标题同档，且 ≥ WCAG 24 命中区） */
+  height: 24px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
   background: var(--bg-hover);
@@ -17887,7 +17952,7 @@ input[type="range"].sp-flex-fill {
   font-family: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-out),  color var(--duration-fast) var(--ease-out);
 }
 .sidebar-user-plugin-btn:is(:hover, :focus-visible) { color: var(--text-primary); }
 .settings-section { display: flex; flex-direction: column; }
@@ -17912,7 +17977,7 @@ input[type="range"].sp-flex-fill {
  * React 会把 `var(--accent)` 原样输出成属性名，浏览器判定非法后整条属性失效
  * （stroke 默认 none → 图形根本不画出来）。所以 SVG 的颜色必须走 CSS 类。 */
 .step-ring-track { stroke: var(--bg-tertiary); }
-.step-ring-progress { stroke: var(--accent); transition: stroke-dashoffset 0.4s ease; }
+.step-ring-progress { stroke: var(--accent); transition: stroke-dashoffset 0.4s var(--ease-out); }
 .step-ring-indeterminate { stroke: var(--accent); }
 .step-ring-ok { stroke: var(--success); }
 .step-ring-active { stroke: var(--accent); }
@@ -17988,7 +18053,7 @@ input[type="range"]:active {
   .context-menu,
   .dropdown-menu,
   .popover {
-    transition: opacity var(--duration-normal) ease !important;
+    transition: opacity var(--duration-normal) var(--ease-out) !important;
     transform: none !important;
   }
   button:not(:disabled):active,

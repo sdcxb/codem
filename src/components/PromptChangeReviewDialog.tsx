@@ -60,7 +60,7 @@ onClick={(e) => e.stopPropagation()}
             borderBottom: "1px solid var(--border-primary)",
           }}
         >
-          <FileText size={20} style={{ color: "var(--accent)" }} />
+          <FileText className="icon-lg" style={{ color: "var(--accent)" }} />
           <h2 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 600 }}>
             提示词修改审核 ({changes.length} 项变更)
           </h2>

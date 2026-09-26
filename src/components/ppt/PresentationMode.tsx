@@ -241,7 +241,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       <div className="ppt-present-controls" style={{
         position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)',
         display: 'flex', gap: 8, alignItems: 'center',
-        background: 'var(--overlay-backdrop-strong)', padding: '8px 16px', borderRadius: 24,
+        background: 'var(--overlay-backdrop-strong)', padding: '8px 16px', borderRadius: 'var(--radius-xl)',
         opacity: 0, transition: 'opacity 0.3s',
         backdropFilter: 'blur(12px)',
       }}

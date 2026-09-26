@@ -158,7 +158,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <ClipboardList size={20} style={{ color: "var(--accent, #7c3aed)" }} />
+            <ClipboardList className="icon-lg" style={{ color: "var(--accent, #7c3aed)" }} />
             <span style={{ fontSize: "var(--fs-lg)", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
               {zh ? "任务管理" : "Task Center"}
             </span>
