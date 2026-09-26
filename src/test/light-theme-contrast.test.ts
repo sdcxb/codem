@@ -660,6 +660,80 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
  * 但"暗色底上的亮字更亮"同时会带来眩光，用户明确说过当前暗色已经好看 ——
  * 所以**没有动它**，只把这条差距写在这里（要动它可以按 DARK-UI-1 的同一条判据来评估）。
  */
+/**
+ * NATIVE —— **系统窗口材质档**（第 158 轮，对标 OpenBitFun 的 `native-material='sidebar'`）。
+ *
+ * 这一组守的是"玻璃到底有没有东西可透"的另一半答案：**系统材质（Windows Mica/Acrylic、macOS vibrancy）**。
+ * 我们的 Rust 侧早就 apply 了材质，但前端一直不透明底 ⇒ 材质白开（用户实测："看上去还是实色"）。
+ * 对方源码的做法是"材质 + 前端让出底色 + CSS 关掉自己的 backdrop-filter"三件配套，这里逐条钉住。
+ *
+ * ⚠️ 关键的一条是**要有写入方**：`[data-contrast="high"]` 那种"规则写了但全项目没有任何地方设置这个属性"
+ * 的坑（第 157 轮发现）不能在这条新规则上重演 —— 所以下面直接断言前端真的有地方 setAttribute。
+ */
+describe("NATIVE 系统材质档（第 158 轮）", () => {
+  const cssNoComments = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+  const nativeBlock = cssNoComments.slice(cssNoComments.indexOf('html[data-native-material="sidebar"]'));
+  const srcFiles: string[] = [];
+  (function walk(dir: string) {
+    for (const n of readdirSync(dir)) {
+      const p = join(dir, n);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (/\.(tsx?|rs|json)$/.test(n) && !/\.test\./.test(n)) srcFiles.push(p);
+    }
+  })(join(ROOT, "src"));
+
+  it("NATIVE-1：前端必须真的**写入** `data-native-material`（否则这一档是死规则）", () => {
+    const writers = srcFiles.filter((f) => /setAttribute\(\s*["']data-native-material["']/.test(readFileSync(f, "utf8")));
+    expect(writers.length, "没有任何地方设置 data-native-material —— 这一档 CSS 永远不会生效").toBeGreaterThan(0);
+    const main = readFileSync(join(ROOT, "src", "main.tsx"), "utf8");
+    expect(main, "必须在**首次渲染前**打上属性（渲染后打会先闪一帧实色）").toMatch(/await\s+Promise\.race\(\[[\s\S]{0,200}?applyNativeMaterialHint\(\)[\s\S]{0,200}?\]\);?\s*renderApp\(\)/);
+    expect(main, "顶层 await 会让构建失败（esbuild 目标不支持）—— 必须包在函数里").not.toMatch(/^await\s/m);
+    /* Rust 侧要提供"材质成功没有"的真相源：前端猜不出来 */
+    const rust = readFileSync(join(ROOT, "src-tauri", "src", "lib.rs"), "utf8");
+    expect(rust, "Rust 侧缺 native_material 命令").toMatch(/fn native_material\(\)/);
+    expect(rust, "命令必须注册进 invoke_handler").toMatch(/generate_handler!\[[\s\S]*?native_material,/);
+    expect(rust, "Windows 侧必须真的 apply 材质").toMatch(/apply_mica|apply_acrylic/);
+    expect(rust, "macOS 侧必须真的 apply vibrancy").toMatch(/apply_vibrancy/);
+  });
+
+  it("NATIVE-2：这一档里外壳让出底色、内容面保持不透明、CSS 模糊关掉", () => {
+    expect(nativeBlock, "缺少 data-native-material 档").not.toBe("");
+    expect(nativeBlock, "html/body 必须透明（否则系统材质被网页盖住）").toMatch(/html\[data-native-material="sidebar"\],\s*html\[data-native-material="sidebar"\] body\s*\{\s*background:\s*transparent/);
+    expect(nativeBlock, "`.app` 必须透明").toMatch(/\.app\s*\{[^}]*background-color:\s*transparent/);
+    expect(nativeBlock, "`.app` 必须关掉场景层（否则场景会把系统材质挡掉）").toMatch(/\.app\s*\{[^}]*background-image:\s*none/);
+    expect(nativeBlock, "侧栏必须走 --surface-glass-chrome-native").toMatch(/\.sidebar\s*\{[^}]*background:\s*var\(--surface-glass-chrome-native\)/);
+    /* ⚠️ 只断言"里面有 backdrop-filter: none"不够 —— 变异 N3 试过：再插一条
+       `backdrop-filter: var(--blur-medium)` 进去，那条断言照样绿（两个声明都在，正则匹配到的是后者）。
+       所以要**把这条规则的 body 抠出来**，要求它里面出现的每一个 backdrop-filter 都是 none。 */
+    const nativeSidebarRule = /html\[data-native-material="sidebar"\] \.sidebar\s*\{([^}]*)\}/.exec(nativeBlock)?.[1] ?? "";
+    expect(nativeSidebarRule, "找不到材质档的 .sidebar 规则").not.toBe("");
+    const filters = [...nativeSidebarRule.matchAll(/-?w?-?e?-?b?-?k?-?i?-?t?-?\s*-?backdrop-filter:\s*([^;]+);/g)].map((m) => m[1].trim());
+    expect(filters.length, "材质档的侧栏必须显式关掉 CSS 模糊（系统已经糊过桌面了）").toBeGreaterThan(0);
+    expect(filters.filter((v) => v !== "none"), `材质档的侧栏里出现了非 none 的 backdrop-filter：${filters.join(" / ")}（系统糊过了，这层是白花性能）`).toEqual([]);
+    expect(nativeBlock, "侧栏控件必须改成给材质上色（18% overlay），不能再盖不透明块").toMatch(/color-mix\(in srgb,\s*var\(--sidebar-bg\) 18%,\s*transparent\)/);
+    /* 标题栏同样要关掉自己那层模糊（系统糊过了；再糊一层会让材质发浑） */
+    const nativeTitlebar = /html\[data-native-material="sidebar"\] \.titlebar\s*\{([^}]*)\}/.exec(nativeBlock)?.[1] ?? "";
+    expect(nativeTitlebar, "找不到材质档的 .titlebar 规则").not.toBe("");
+    const tbFilters = [...nativeTitlebar.matchAll(/backdrop-filter:\s*([^;]+);/g)].map((m) => m[1].trim());
+    expect(tbFilters.filter((v) => v !== "none"), `材质档的标题栏里出现了非 none 的 backdrop-filter：${tbFilters.join(" / ")}`).toEqual([]);
+    expect(tbFilters.length, "材质档的标题栏必须显式关掉 CSS 模糊").toBeGreaterThan(0);
+  });
+
+  it("NATIVE-3：无界壁纸 ⇒ 材质档的玻璃 α 必须更保守（≥80%），且两档都要有降级", () => {
+    for (const [name, block] of [
+      ["亮色", lightBlock],
+      ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? ""],
+    ] as const) {
+      const native = mixWithTransparent(token(block, "--surface-glass-chrome-native"), "--surface-glass-chrome-native", block);
+      expect(native.alpha, `${name}档系统材质玻璃 ${(native.alpha * 100).toFixed(0)}% 太透了：背后是无界桌面壁纸，对比度算不出来`).toBeGreaterThanOrEqual(0.8);
+      const scene = mixWithTransparent(token(block, "--surface-glass-chrome"), "--surface-glass-chrome", block);
+      expect(native.alpha, `${name}档：材质档反而比场景档更透（${native.alpha} vs ${scene.alpha}）——两档的取舍反了`).toBeGreaterThan(scene.alpha);
+    }
+    expect(nativeBlock, "材质档缺 prefers-reduced-transparency 降级").toMatch(/prefers-reduced-transparency:\s*reduce/);
+    expect(nativeBlock, '材质档缺 [data-contrast="high"] 降级').toMatch(/\[data-contrast="high"\]\s*\.app/);
+  });
+});
+
 describe("DARK-UI 暗色模式观感不变式", () => {
   const darkBlock = /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
   const surfaces = () => ({

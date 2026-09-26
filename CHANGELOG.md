@@ -2,6 +2,61 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.158] - 2026-09-26 — 查清对标项目"看上去不是实色"的机制：**系统窗口材质（Mica/Acrylic）**，我们其实早就有一半
+
+> 用户追问：**"对标项目是怎么做的呢？看上去不是实色，学习借鉴一下"**。
+
+### ① 对方的机制（源码取证：三件配套，缺一不可）
+
+| # | 位置 | 关键行 | 作用 |
+| --- | --- | --- | --- |
+| ① | `src/apps/desktop/src/appearance.rs` | `let native_sidebar_material = cfg!(any(windows, macos));` + 窗口 `.transparent(true)` + `tauri::window::Effect::Acrylic` | **系统窗口材质**：由操作系统把窗口背后的桌面糊掉 |
+| ② | 启动注入 | `root.setAttribute('data-openbitfun-native-material','sidebar')` + `root.style.backgroundColor='transparent'`（body 同） | **网页把底色让出来**，材质才透得出来 |
+| ③ | `_workspace-shell-surfaces.scss` | 这一档 `backdrop-filter: none`，注释原文：**"The OS blurs desktop pixels; a CSS backdrop only sees the webview."** | 关掉自己的 CSS 模糊（系统已经糊过桌面） |
+| ④ | 同文件 | `@mixin sidebar-overlay($surface, 18%)`："Controls tint the shared material instead of covering it" | 侧栏控件**给材质上色**，而不是再盖不透明面板 |
+
+### ② 我们的差距：这四件里我们只做了第 ① 件
+
+- Rust 侧**早就 apply 了**：`apply_mica(Some(true))` → 失败退 `apply_acrylic((18,18,18,100))`，macOS `apply_vibrancy(HudWindow)`，窗口本来就是 `transparent: true`；
+- 但前端一路不透明底色（`html/body/.app`）+ 我们自己的场景层 ⇒ **材质被网页整块盖住，等于白开**。
+  这正是两次"看上去还是实色"的根因，也说明 1.16.157 的场景层只解决了一半（换成了我们自己的渐变，没换系统材质）。
+
+### ③ 本轮落地（照抄那三件配套）
+
+- **让出底色**：`src/main.tsx` 在**首次渲染前**（`bootstrap()` 里 `await Promise.race([applyNativeMaterialHint(), 400ms 超时])` 之后才渲染）打上
+  `data-native-material="sidebar"` 与 `data-native-material-kind=<mica|acrylic|vibrancy>`；
+  值来自新增的 Rust 命令 `native_material`（**前端猜不出来**：系统版本、用户「透明效果」开关、DWM 状态都会让 apply 失败，
+  而失败时把底色设成 transparent 会得到"没有材质的透明窗口"，比实色更糟）。
+  这一档里让出底色的**只有外壳**（html/body/.app/标题栏/侧栏），**内容面照旧不透明** ⇒ 桌面壁纸透不进正文。
+- **关掉自己的模糊**：这一档 `.sidebar` 与 `.titlebar` 都是 `backdrop-filter: none`（含把 D-6 给标题栏加的那层 `blur(20px)` 也关掉）。
+- **控件给材质上色**：`.sidebar-session` / `.sidebar-tool-item` 的 hover 改成 18% overlay。
+- **降级**：材质档同样受 `prefers-reduced-transparency` / `prefers-contrast: more` / `[data-contrast="high"]` 约束。
+- **α 取值**：材质档单独一档 `--surface-glass-chrome-native` = **88%**（对方 90%）—— 背后是**无界桌面壁纸**，
+  对比度算不出来也保证不了 ⇒ 用高 α 压风险；只有有界场景层那一档才用 62%。
+- 踩到并修掉一个构建问题：main.tsx 里用**顶层 await** 被构建目标拒绝（`Top-level await is not available in the configured target environment`），改成 `bootstrap()` 里的 await + 超时兜底，并加门禁禁止顶层 await 回归。
+
+### ④ 装机版实测（1.16.158）
+
+- `data-native-material=sidebar`、`data-native-material-kind=**mica**`（Win11 25H2，透明效果已开）；
+- `html`/`.app`/标题栏背景 `rgba(0,0,0,0)`，侧栏 `color(srgb .984 .984 .980 / **0.88**)` + `backdrop-filter: none`；
+- **主内容面仍是 `rgb(255,255,255)` 不透明**（正文不受壁纸影响）；
+- A/B（同一次会话摘掉属性再截一张）：标题栏中段 rgb(238,239,241) → rgb(234,231,255)（**Δ16.6**）、
+  侧栏空白带 Δ7.1、主内容面 Δ1.4（≈0）⇒ 外壳真的换成了系统材质。
+
+### ⑤ 一个反直觉但重要的实测：**对方也没有"很透明"**
+
+同一套像素统计量对方官方截图与我们的截图：对方侧栏区 rgb(242,242,243) / 内容区 rgb(249,249,249)（差 **7**）；
+我们 1.16.158 侧栏区 rgb(242,241,243) / 内容区 rgb(246,246,246)（差 **4**）——
+**对方侧栏也只比内容面暗 7 个色阶**。"不是实色"是「系统材质 + 内高光 + 发丝线 + 控件半透明叠色」共同给出的**细微**印象。
+如实标注仍不同的一处：对方侧栏"有色像素占比 0.0%"（中性选中态），我们 20.7%（主色相 240°，品牌紫）——那是我们的选中态设计，是否改中性属产品选择。
+
+### 门禁与自证
+
+- 新增 **NATIVE-1/2/3** 三条：必须**有写入方**（前端真的 setAttribute + Rust 命令已注册 + 两侧都 apply 材质）、
+  材质档必须让出外壳底色且**关掉所有非 none 的 backdrop-filter**（变异 N3 就是钻"两个声明都在"的空子，被这条抓住）、
+  材质档 α 必须 ≥80% 且必须**比场景档更保守**。变异 `mutate-glass-gates.mjs` **15/15 红**（新增 N1–N4）。
+- `npm run verify` **exit 0**（400 文件 / 6287 通过 / 0 失败）、`npm run audit` **exit 0**。
+
 ## [1.16.157] - 2026-09-26 — 玻璃终于看得见（场景层 + α 62%）+ 阴影阶梯统一 + 状态色四角色
 
 > 用户实测反馈：**"为什么我看侧栏还是没有玻璃材质的效果呢？而且还是比较深的灰色？"**

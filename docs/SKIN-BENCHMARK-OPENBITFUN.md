@@ -572,5 +572,76 @@ P1-2 文字令牌 alpha/单一来源化（`--text-*` 三档仍各自写死、`--
 P2-1 高对比 + 密度档**接进设置页**（现在 `[data-contrast="high"]` / 密度档没有任何写入方 ⇒ D7 是"有规则没人触发"）、
 P2-2/D8 身份色一层、P2-3 皮肤数据化（hub / dream 的裸颜色字面量）、P2-4 颜色用量注册表。
 
+---
+
+## 11. 第四轮（1.16.158）：**对方"看上去不是实色"的机制查清了，而且我们也早就有一半**
+
+用户追问：**"对标项目是怎么做的呢？看上去不是实色，学习借鉴一下"**。
+
+### 11.1 对方源码里的机制（三件配套，缺一不可）
+
+取对方 `main@ded818312a39` 的两个文件：`src/apps/desktop/src/appearance.rs` 与
+`src/webUI/…/shared/styles/_workspace-shell-surfaces.scss`（以及 `AppLayout.scss`）：
+
+| # | 在哪 | 原文/关键行 | 作用 |
+| --- | --- | --- | --- |
+| ① | `appearance.rs` | `let native_sidebar_material = cfg!(any(target_os = "windows", target_os = "macos"));` + 窗口 `.transparent(true)` + `tauri::window::Effect::Acrylic` | **系统窗口材质**（Windows Acrylic / macOS vibrancy）：由**操作系统**把窗口背后的桌面糊掉 |
+| ② | 启动注入 | `root.setAttribute('data-openbitfun-native-material', 'sidebar');` + `root.style.backgroundColor = 'transparent'`（body 同样） | **网页把底色让出来** —— 材质才透得出来 |
+| ③ | `_workspace-shell-surfaces.scss` | `:root[data-openbitfun-native-material='sidebar'] & { background: color-mix(chrome 90%, transparent); backdrop-filter: none; }`，注释原文：**"The OS blurs desktop pixels; a CSS backdrop only sees the webview."** | 这一档里**关掉自己的 CSS 模糊**（系统已经糊过桌面了，CSS 只能糊到空 webview） |
+| ④ | 同文件 | `@mixin sidebar-overlay($surface, $opacity: 18%)` —— "Controls tint the shared material instead of covering it with another panel." | 侧栏里的**控件给材质上色**（18% 半透明），而不是盖一块不透明面板 |
+
+另外 `AppLayout.scss` 里 `html[data-openbitfun-native-material='sidebar'], … body { background: transparent }`、
+以及 `&[data-openbitfun-background-media='video'] { background: transparent }`（他们还有"背景媒体"档）。
+
+### 11.2 我们的差距：**这四件里我们只有第 ① 件**
+
+- 我们的 Rust 侧**早就 apply 了材质**：`window_vibrancy::apply_mica(&window, Some(true))`，失败退
+  `apply_acrylic(&window, Some((18,18,18,100)))`，macOS 走 `apply_vibrancy(HudWindow)`，窗口也是 `transparent: true`；
+- 但前端从来不知道这件事，`html/body/.app` 一路不透明底色 + 我们自己的场景层
+  ⇒ **材质被网页整块盖住，等于白开**。这正是用户两次说"看上去还是实色"的根因，也是 1.16.157 那个
+  "场景层"只解决了一半的原因（那一轮把"背后有东西"换成了我们自己的渐变，没换系统材质）。
+
+### 11.3 本轮落地（严格照抄对方的三件配套）
+
+| 件 | 我们的实现 |
+| --- | --- |
+| ① 材质 | 已有（未改）；但把"**材质到底应用成功没有**"记进 `static NATIVE_MATERIAL` 并用 `native_material` 命令暴露出去 —— 前端**猜不出来**（系统版本、用户「透明效果」开关、DWM 状态都会让 apply 失败，而失败时把底色设成 transparent 会得到"没有材质的透明窗口"，比实色更糟） |
+| ② 让出底色 | `src/main.tsx` 在**首次渲染前**（`bootstrap()` 里 `await Promise.race([applyNativeMaterialHint(), 400ms 超时])` 之后才 `renderApp()`）打上 `data-native-material="sidebar"` + `data-native-material-kind=<mica/acrylic/vibrancy>`；CSS 里 `html/body/.app/标题栏/侧栏` 这一档透明，**内容面（聊天/笔记/编辑器）照旧不透明** ⇒ 桌面壁纸透不进正文 |
+| ③ 关掉自己的模糊 | 这一档 `.sidebar` 与 `.titlebar` 都是 `backdrop-filter: none` |
+| ④ 控件给材质上色 | `.sidebar-session`/`.sidebar-tool-item` 的 hover 改成 `color-mix(in srgb, var(--sidebar-bg) 18%, transparent)` |
+| 降级 | 材质档同样受 `prefers-reduced-transparency` / `prefers-contrast: more` / `[data-contrast="high"]` 三条约束（回到不透明 + 场景层） |
+| α 取值 | 材质档单独一个令牌 `--surface-glass-chrome-native` = **88%**（对方 90%）。理由：这一档背后是**无界的桌面壁纸**，对比度**算不出来也没法保证** ⇒ 用高 α 压风险；只有"有界场景层"那一档才敢用 62% |
+
+**装机版实测（1.16.158）**：`data-native-material=sidebar`、`data-native-material-kind=**mica**`；
+`html/.app/标题栏` 背景 `rgba(0,0,0,0)`，侧栏 `color(srgb .984 .984 .980 / **0.88**)` + `backdrop-filter: none`；
+主内容面仍是 `rgb(255,255,255)` 不透明。A/B（同会话摘掉属性再截一张）：
+标题栏中段 rgb(238,239,241) → rgb(234,231,255)（**Δ16.6**）、侧栏空白带 Δ7.1、主内容面 Δ1.4（≈0）⇒
+**外壳确实换成了系统材质，正文一点没被波及**。
+
+### 11.4 一个反直觉但重要的实测：**对方也没有"很透明"**
+
+把对方的官方截图和我们的截图用**同一套像素统计**量（`.preview-shot/_obf-screenshot-stats.mjs`，同尺寸归一）：
+
+| | 侧栏区平均色 | 内容区平均色 | 侧栏比内容 |
+| --- | --- | --- | --- |
+| 对方 `openbitfun-desktop.png` | rgb(242,242,243) | rgb(249,249,249) | 暗 **7** |
+| 我们 1.16.158（材质档） | rgb(242,241,243) | rgb(246,246,246) | 暗 **4** |
+
+也就是说：**对方侧栏也不是"看穿"的，它只比内容面暗 7 个色阶** —— "不是实色"是
+「系统材质 + 内高光 + 发丝线 + 控件半透明叠色」共同给出的**细微**印象，而不是大面积透明。
+我们现在这一档的读数与它**基本逐位一致**（242,241,243 vs 242,242,243）。
+
+如实标注一处**仍然不同**的地方：对方侧栏区"有色像素占比 **0.0%**"（它的选中态是中性色），
+我们是 **20.7%**（主色相 240°，即品牌紫）—— 这是我们自己"选中态用品牌色"的设计，不是本轮引入的问题；
+要不要改成对方那种中性选中底，属于产品选择，已记在此处。
+
+### 11.5 如果还想更"透"，只有两条路（都摆在桌面上）
+
+1. 调低 `--surface-glass-chrome-native`（现在 88%）：**代价**是背后变成无界壁纸后，弱文字对比度无法保证
+   （我们现在的门禁只能守住"有界场景"那一档）；
+2. 加一层**背景媒体/壁纸**（对方有 `data-openbitfun-background-media='video'` 这一档）：
+   那才是"一眼就不是实色"的做法，但它会把整个工作区的观感主动权交给一张图，需要产品决定。
+
+
 
 

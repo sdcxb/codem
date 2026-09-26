@@ -2535,6 +2535,23 @@ const HTTP_GET_MAX_IN_FLIGHT: usize = 12;
 static HTTP_GET_CLIENT: std::sync::OnceLock<Result<reqwest::Client, String>> = std::sync::OnceLock::new();
 static HTTP_GET_GATE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
 
+/// 第 158 轮：**系统窗口材质（Windows Mica/Acrylic、macOS vibrancy）到底应用成功没有**。
+/// 取值：`"mica"` / `"acrylic"` / `"vibrancy"` / `""`（没成功）。前端只在非空时才敢把外壳底色让出来。
+/// 为什么要跨进程边界问 Rust：前端**猜不出来** —— 系统版本、用户"透明效果"开关、DWM 组合状态
+/// 都会让 apply 失败，而失败时把底色设成 transparent 会得到"没有材质的透明窗口"（比实色更糟）。
+static NATIVE_MATERIAL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+fn set_native_material(name: &str) {
+    let _ = NATIVE_MATERIAL.set(name.to_string());
+    eprintln!("[vibrancy] native material = {}", if name.is_empty() { "(none)" } else { name });
+}
+
+/// 前端启动时问一次：有没有系统材质可用（空串 = 没有）。
+#[tauri::command]
+fn native_material() -> String {
+    NATIVE_MATERIAL.get().cloned().unwrap_or_default()
+}
+
 /// 建一次共享客户端（只会被执行一次）。参数与理由见 `http_get` 的调用点注释。
 fn build_shared_http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
@@ -2899,6 +2916,7 @@ let app = tauri::Builder::default()
             secret_backend_available,
     secret_seal,
     secret_unseal,
+    native_material,
     send_message,
             get_providers,
             add_provider,
@@ -3015,6 +3033,16 @@ path_exists,
             crash_evidence::install_process_failed_logging(app.handle());
 
             // Apply window vibrancy (frosted glass effect)
+            //
+            // ⚠️ 第 158 轮（对标 OpenBitFun 的 `data-openbitfun-native-material='sidebar'`）：
+            // **光有系统材质是看不见的** —— 网页只要在它上面画了不透明底色，Mica/Acrylic 就等于没开。
+            // 对方源码里这件事是三件配套：Rust 侧 `.transparent(true)` + `Effect::Acrylic`；
+            // 启动注入脚本给 `<html>` 打 `data-…-native-material='sidebar'` 并把 html/body 底色设成
+            // `transparent`；CSS 再按这个属性把外壳的 CSS 模糊**关掉**（他们的注释原文：
+            // The OS blurs desktop pixels; a CSS backdrop only sees the webview）。
+            // 我们此前只做了第一件（材质早就 apply 了，见下面几行），前端一直是不透明底 ⇒ 材质白开。
+            // 现在把"材质到底应用成功没有"记进静态量，由 `native_material` 命令交给前端，
+            // 前端在**首次渲染前**打上 `data-native-material` ⇒ CSS 才敢把底色让出来。
             #[cfg(target_os = "windows")]
             {
                 if let Some(window) = app.get_webview_window("main") {
@@ -3022,7 +3050,15 @@ path_exists,
                     let result = window_vibrancy::apply_mica(&window, Some(true));
                     if let Err(e) = result {
                         eprintln!("[vibrancy] Mica failed ({}), trying Acrylic", e);
-                        let _ = window_vibrancy::apply_acrylic(&window, Some((18, 18, 18, 100)));
+                        match window_vibrancy::apply_acrylic(&window, Some((18, 18, 18, 100))) {
+                            Ok(()) => set_native_material("acrylic"),
+                            Err(e2) => {
+                                eprintln!("[vibrancy] Acrylic 也失败（{e2}）—— 保持不透明底（前端不打 data-native-material）");
+                                set_native_material("");
+                            }
+                        }
+                    } else {
+                        set_native_material("mica");
                     }
                 }
             }
@@ -3031,7 +3067,13 @@ path_exists,
             {
                 if let Some(window) = app.get_webview_window("main") {
                     use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
-                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, Some(NSVisualEffectState::Active), None);
+                    match apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, Some(NSVisualEffectState::Active), None) {
+                        Ok(()) => set_native_material("vibrancy"),
+                        Err(e) => {
+                            eprintln!("[vibrancy] macOS vibrancy 失败（{e}）—— 保持不透明底");
+                            set_native_material("");
+                        }
+                    }
                 }
             }
 

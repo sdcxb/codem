@@ -1,15 +1,15 @@
 {
-  "version": "1.16.157",
-  "notes": "玻璃真正看得见（场景层 + α 62%）+ 阴影阶梯统一 + 状态色四角色",
-  "pub_date": "2026-09-26T08:06:22Z",
+  "version": "1.16.158",
+  "notes": "系统窗口材质档（Mica/Acrylic）：前端让出外壳底色，外壳才是真玻璃",
+  "pub_date": "2026-09-26T08:29:31Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VXQ1kvNTE4aWxwcEw5ODdXUlVuSCtiZ1h0SnN5c0lVdzkwdUlaSmZROEQvbklHUFVKbWJFNm9wTUhITy9tSEZMOCtmaXBrRjdjYjFrc25oZmZ0UWc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDA5OTc4CWZpbGU6Q29kZW1fMS4xNi4xNTdfeDY0LXNldHVwLmV4ZQo2VHAydjJiYlo0K3l6bXBFbW9CUERnNTRJejZac255STl5UjBvaWd5MWVPTzV4WCtibGw4SFpWd2UzUVRNcDlKUnpUQjJxUTBCTGkxNHY0cTN1cjhEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.157/Codem_1.16.157_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lOSzVnbzRLZXpFTXF4YmRzb3ZRWm5QUTJBczYwWnc5dXZOWjcwazYvL1VWTnVlZFZCd0Vkem9ZRmRQZUVVSUdUM0V5OVQyd1hmL0lzT2NMdlN2REFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDExMjMwCWZpbGU6Q29kZW1fMS4xNi4xNThfeDY0LXNldHVwLmV4ZQppbFlSUkZ4dkhieE9MenhqOGRkM1duc2h5ZzRNRGVLclJrRW1maVZHVWhqTzFndVNTOGdwNkJkSEhTdmdJNlQ3Qm0zV1BtSnRyNFNSMzdobjFjem9EZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.158/Codem_1.16.158_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VXQ1kvNTE4aWxwcEw5ODdXUlVuSCtiZ1h0SnN5c0lVdzkwdUlaSmZROEQvbklHUFVKbWJFNm9wTUhITy9tSEZMOCtmaXBrRjdjYjFrc25oZmZ0UWc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDA5OTc4CWZpbGU6Q29kZW1fMS4xNi4xNTdfeDY0LXNldHVwLmV4ZQo2VHAydjJiYlo0K3l6bXBFbW9CUERnNTRJejZac255STl5UjBvaWd5MWVPTzV4WCtibGw4SFpWd2UzUVRNcDlKUnpUQjJxUTBCTGkxNHY0cTN1cjhEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.157/Codem_1.16.157_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lOSzVnbzRLZXpFTXF4YmRzb3ZRWm5QUTJBczYwWnc5dXZOWjcwazYvL1VWTnVlZFZCd0Vkem9ZRmRQZUVVSUdUM0V5OVQyd1hmL0lzT2NMdlN2REFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDExMjMwCWZpbGU6Q29kZW1fMS4xNi4xNThfeDY0LXNldHVwLmV4ZQppbFlSUkZ4dkhieE9MenhqOGRkM1duc2h5ZzRNRGVLclJrRW1maVZHVWhqTzFndVNTOGdwNkJkSEhTdmdJNlQ3Qm0zV1BtSnRyNFNSMzdobjFjem9EZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.158/Codem_1.16.158_x64-setup.exe"
     }
   }
 }

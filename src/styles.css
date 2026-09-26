@@ -467,6 +467,11 @@
      ② 不透明度从 90% 降到 **72%**，让场景真的透得出来（下限与"最坏情况下文字对比度"由门禁 LIGHT-UI-10/
      DARK-UI-6 钉住：α ≥ 0.6，且**最坏场景像素**上的弱文字仍 ≥4.5:1）。 */
   --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 62%, transparent);
+  /* **系统材质档**用的外壳玻璃：更保守的 α（88%）。
+     为什么两档不同：62% 那一档背后是我们的**有界场景层**（着色强度写死在令牌里，最坏合成能算、
+     有门禁卡住）；而系统材质背后是**无界的桌面壁纸**（用户换张图就变），对比度**算不出来也没法保证**
+     ⇒ 用高 α 把风险压住。参考实现在这一档同样选 90%（`sidebar-glass` 的 native-material 分支）。 */
+  --surface-glass-chrome-native: color-mix(in srgb, var(--sidebar-bg) 88%, transparent);
   /* ===== 场景层（shell scene）：外壳背后那层"可透的东西" =====
      口径（必须机器可判）：场景的最强着色由 `--scene-veil`/`--scene-veil-alt` **声明**，
      而 `--scene-layer` 必须**引用**这两个令牌（门禁同时校验"声明"与"引用"，防止声明一套、画另一套）。
@@ -626,6 +631,8 @@
   --dropdown-bg: var(--surface-glass-raised);
   --dropdown-hover: rgba(255, 255, 255, 0.08);
   --surface-glass-chrome: color-mix(in srgb, var(--sidebar-bg) 62%, transparent);
+  /* 系统材质档（与亮色档同名同源）：同样 88% —— 理由见亮色档注释（无界壁纸 ⇒ 保守 α） */
+  --surface-glass-chrome-native: color-mix(in srgb, var(--sidebar-bg) 88%, transparent);
   /* 场景层（暗色档）：同一套"可见度预算"口径（见亮色档注释）。暗底上要给到更强的着色才看得见
      —— 实测暗色档在 20%/12% 下最小可行 α 仍 ≤0.5（亮色档才是约束方），取 0.62 有富余。 */
   --scene-veil: color-mix(in srgb, var(--accent) 20%, transparent);
@@ -18472,4 +18479,75 @@ td,
   background: var(--surface-opaque-raised);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* ========== ⑤ 系统窗口材质模式（第 158 轮，对标 OpenBitFun 的 `native-material='sidebar'`）==========
+ *
+ * **这一节才是"为什么对方的侧栏看上去不是实色"的答案。**
+ *
+ * 对方源码里的三件配套（`src/apps/desktop/src/appearance.rs` + `_workspace-shell-surfaces.scss`）：
+ *   ① Rust 侧：`let native_sidebar_material = cfg!(any(windows, macos));`，
+ *      窗口 `.transparent(true)` + `tauri::window::Effect::Acrylic`（macOS 走 vibrancy）；
+ *   ② 启动注入：`root.setAttribute('data-openbitfun-native-material', 'sidebar')`，
+ *      并且把 `root.style.backgroundColor` / `document.body.style.backgroundColor` 设成 `transparent`；
+ *   ③ CSS：这一档里外壳仍然给半透明色，但**把 CSS 的 backdrop-filter 关掉**，注释写得很清楚 ——
+ *      "The OS blurs desktop pixels; a CSS backdrop only sees the webview."
+ *      （系统已经在窗口后面把桌面糊过了；CSS 的 backdrop 只能看见 webview 自己那层，等于白糊。）
+ *
+ * 我们的情况：**Rust 侧的材质早就 apply 了**（`apply_mica` → 失败退 `apply_acrylic`，macOS 走 vibrancy），
+ * 但前端从头到尾没被告知过，`html/body/.app` 一直是不透明底 ⇒ 材质被网页盖住，白开 ——
+ * 这就是用户说的"看上去还是实色"。现在按对方的做法补齐 ②③：
+ *   · `data-native-material="sidebar"` 由 `src/main.tsx` 在**首帧前**打上，值来自 Rust 的
+ *     `native_material` 命令（**猜不出来**：系统版本、用户「透明效果」开关、DWM 状态都会让 apply 失败，
+ *     而失败时把底色设成 transparent 会得到"没有材质的透明窗口"，比实色更糟）；
+ *   · 这一档里让出底色的**只有外壳**（html/body/.app/标题栏/侧栏），内容面（聊天/笔记/编辑器）
+ *     照旧不透明 ⇒ 正文对比度完全不受桌面壁纸影响；
+ *   · 外壳玻璃用**更保守**的 α：`--surface-glass-chrome-native` 88%（对方取 90%）。原因：这一档背后是
+ *     **无界的桌面壁纸**，对比度无法定量保证 ⇒ 用高 α 压住风险；只有"有界场景层"那一档才敢用 62%。
+ *   · 场景层在这一档**关掉**（它会把系统材质挡掉）——两者是同一件事的两种实现：
+ *     有系统材质就用系统的，没有就用我们自己的场景层。 */
+html[data-native-material="sidebar"],
+html[data-native-material="sidebar"] body {
+  background: transparent;
+}
+html[data-native-material="sidebar"] .app {
+  background-color: transparent;
+  background-image: none;
+}
+html[data-native-material="sidebar"] .sidebar {
+  background: var(--surface-glass-chrome-native);
+  /* 系统已经糊过桌面了：CSS 再糊一次只能糊到"空 webview"，白花性能（对方同款注释） */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* 标题栏本来就是为材质留的透明底（见 `.titlebar` 那句"让 Mica 透出"），这里把这条意图坐实；
+   顺带把 D-6 给标题栏加的那层 `blur(20px)` 在这一档关掉 —— 系统已经把桌面糊过了，
+   自己再糊一层只会让材质发浑（对方同一条注释：CSS 的 backdrop 只能看见 webview 自己那层）。 */
+html[data-native-material="sidebar"] .titlebar {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* 侧栏里的控件：**给共享材质上色**，而不是再盖一块不透明面板（对方的 `sidebar-overlay($surface, 18%)`）。
+   否则一块块实色行会把玻璃切成碎片，看起来又变回"实色 + 灰块"。 */
+html[data-native-material="sidebar"] .sidebar-session:is(:hover, :focus-visible),
+html[data-native-material="sidebar"] .sidebar-tool-item:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--sidebar-bg) 18%, transparent);
+}
+/* 降级与高对比：材质档也必须回到不透明（与 ①②③④ 同一组条件） */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-native-material="sidebar"] .app {
+    background-color: var(--bg-primary);
+    background-image: var(--scene-layer);
+  }
+  html[data-native-material="sidebar"] .sidebar {
+    background: var(--sidebar-bg);
+  }
+}
+html[data-native-material="sidebar"][data-contrast="high"] .app {
+  background-color: var(--bg-primary);
+  background-image: var(--scene-layer);
+}
+html[data-native-material="sidebar"][data-contrast="high"] .sidebar {
+  background: var(--sidebar-bg);
 }
