@@ -341,7 +341,7 @@
   margin: 0;
   font-size: var(--fs-xl);
   font-weight: 700;
-  line-height: 1.3;
+  line-height: var(--lh-compact);
   color: var(--text-primary);
 }
 
@@ -368,7 +368,7 @@
   border-radius: var(--radius);
   background: var(--bg-tertiary);
   font-size: var(--fs-base);
-  line-height: 1.6;
+  line-height: var(--lh-reading);
   color: var(--text-secondary);
 }
 

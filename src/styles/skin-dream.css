@@ -514,7 +514,7 @@ backdrop-filter: none !important;
 [data-skin="dream"] .dream-polaroid-text {
   font-size: 11px;
   color: var(--dream-text-muted, #a88a8f);
-  line-height: 1.4;
+  line-height: var(--lh-ui);
 }
 
 [data-skin="dream"] .dream-polaroid-pin {
@@ -801,10 +801,12 @@ backdrop-filter: none !important;
 
 /* 添加 Dream 缺失的 radius 和 border 变量 */
 [data-skin="dream"] {
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius: 10px;
   --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-xl: 24px;
   --radius-full: 9999px;
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.20));
   --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(232, 140, 154, 0.06);

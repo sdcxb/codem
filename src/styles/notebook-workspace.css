@@ -302,7 +302,7 @@
   border-radius: var(--radius);
   color: var(--text-secondary);
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
-  line-height: 1.4;
+  line-height: var(--lh-ui);
 }
 
 .nb-chat-question-card:is(:hover, :focus-visible) {
@@ -1341,7 +1341,7 @@ top: 36px;
 
 .kg-detail-section p {
   font-size: var(--fs-base);
-  line-height: 1.5;
+  line-height: var(--lh-base);
 }
 
 .kg-connected-list {
@@ -1854,7 +1854,7 @@ top: 36px;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  line-height: 1.6;
+  line-height: var(--lh-reading);
   text-align: left;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2341,7 +2341,7 @@ top: 36px;
   font-size: var(--fs-sm);
   color: var(--text-muted);
   margin: 0;
-  line-height: 1.4;
+  line-height: var(--lh-ui);
 }
 
 .nb-backlinks-list {
@@ -2464,7 +2464,7 @@ top: 36px;
 
 .nb-source-viewer-content {
   font-size: var(--fs-sm);
-  line-height: 1.6;
+  line-height: var(--lh-reading);
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
@@ -2611,7 +2611,7 @@ top: 36px;
 .nb-study-path-item-desc {
   font-size: var(--fs-sm);
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: var(--lh-ui);
 }
 
 .nb-study-path-connector {
@@ -2764,7 +2764,7 @@ top: 36px;
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--fs-base);
-  line-height: 1.6;
+  line-height: var(--lh-reading);
   resize: none;
   outline: none;
 }

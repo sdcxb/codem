@@ -575,7 +575,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
               <>
             {today.length > 0 && (
               <>
-                <div className="sidebar-session-group-label">{S.sidebar.sessionToday[lang]}</div>
+                <div className="sidebar-session-group-label text-overline">{S.sidebar.sessionToday[lang]}</div>
                 {today.map((s: any) => (
                   <SessionItem
                     key={s.id}
@@ -600,7 +600,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             )}
             {earlier.length > 0 && (
               <>
-                <div className="sidebar-session-group-label">{S.sidebar.sessionEarlier[lang]}</div>
+                <div className="sidebar-session-group-label text-overline">{S.sidebar.sessionEarlier[lang]}</div>
                 {earlier.map((s: any) => (
                   <SessionItem
                     key={s.id}
@@ -791,7 +791,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                           {/* #9: Time-grouped sessions */}
                           {today.length > 0 && (
                             <>
-                              <div className="sidebar-session-group-label">{S.sidebar.sessionToday[lang]}</div>
+                              <div className="sidebar-session-group-label text-overline">{S.sidebar.sessionToday[lang]}</div>
                               {today.map((s: any) => (
                                 <SessionItem
                                   key={s.id}
@@ -816,7 +816,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                           )}
                           {earlier.length > 0 && (
                             <>
-                              <div className="sidebar-session-group-label">{S.sidebar.sessionEarlier[lang]}</div>
+                              <div className="sidebar-session-group-label text-overline">{S.sidebar.sessionEarlier[lang]}</div>
                               {earlier.map((s: any) => (
                                 <SessionItem
                                   key={s.id}

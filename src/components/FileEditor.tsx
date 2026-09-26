@@ -863,7 +863,7 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
           {modified && <span className="file-editor-modified-dot">●</span>}
           {fileName}
         </span>
-        <span className="file-editor-path" title={filePath}>{filePath}</span>
+        <span className="file-editor-path text-meta" title={filePath}>{filePath}</span>
         <div className="file-editor-actions">
           {error && <span className="file-editor-error">{error}</span>}
           {isText && (
@@ -928,7 +928,7 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
             <div className="file-editor-floating-header">
               <span className="file-editor-icon">{fileIcon}</span>
               <span className="file-editor-name">{fileName}</span>
-              <span className="file-editor-path" title={filePath}>{filePath}</span>
+              <span className="file-editor-path text-meta" title={filePath}>{filePath}</span>
               <div className="file-editor-actions">
                 {isText && (
                   <button

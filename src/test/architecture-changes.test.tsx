@@ -385,18 +385,44 @@ describe('架构变更: InputArea 两行布局', () => {
     const rawPx = new RegExp(`\\${token}:\\s*calc\\(([0-9.]+)px`).exec(css)?.[1]
     expect(Number(rawPx), `${token} = ${rawPx}px，输入框字号必须 >= 15px`).toBeGreaterThanOrEqual(15)
     expect(inputBlock).toContain('min-height: 56px')
-    expect(inputBlock).toContain('line-height: 24px')
+    /**
+     * 行高：第 155 轮（P0-3）从写死的 `24px` 改成令牌 `var(--lh-base)`。
+     *
+     * 为什么这次替换是**等价且更好**的：`--lh-base = 1.5`、`--fs-lg = 16px` ⇒ 定稿值仍是 **24px**；
+     * 而写成比例值之后，它随设置里的字号滑杆（`--ui-font-scale`）一起缩放 ——
+     * 原来 24px 是死的，字号调大后输入框行高不变（.input-backdrop 镜像层同样如此）。
+     * 判据同时钉住两件事：① 走的是行高令牌；② 在默认字号下仍然等于 24px；③ 镜像层用**同一个**令牌
+     * （见下面那条用例 —— 两层字号/行高不一致会直接表现为光标错位）。
+     */
+    expect(inputBlock, '输入框行高必须走 --lh-* 令牌').toContain('line-height: var(--lh-base)')
+    const lhToken = /line-height:\s*var\((--lh-[a-z]+)\)/.exec(inputBlock!)?.[1]
+    expect(lhToken, '输入框行高必须使用设计系统令牌 var(--lh-*)').toBeTruthy()
+    const lhFactor = new RegExp(`\\${lhToken}:\\s*([0-9.]+);`).exec(css)?.[1]
+    const fsPx = Number(rawPx)
+    expect(
+      lhFactor && Math.abs(Number(lhFactor) * fsPx - 24) < 0.01,
+      `${lhToken}(${lhFactor}) × ${token}(${fsPx}px) = ${(Number(lhFactor) * fsPx).toFixed(2)}px，必须等于 24px`,
+    ).toBe(true)
   })
 
-  it('输入框实时镜像层（.input-backdrop）与 .message-input 同字号令牌', async () => {
+  it('输入框实时镜像层（.input-backdrop）与 .message-input 同字号、同行高令牌', async () => {
     const src = await vi.importActual('fs')
     const css = src.readFileSync('src/styles.css', 'utf8')
-    const grab = (sel: string) =>
-      /font-size:\s*var\((--[a-z0-9-]+)\)/.exec(css.match(new RegExp(`(?:^|\\n)\\${sel}\\s*\\{[^}]+\\}`, 's'))?.[0] ?? '')?.[1]
-    const a = grab('.message-input')
-    const b = grab('.input-backdrop')
+    const grab = (sel: string, prop: string) =>
+      new RegExp(`${prop}:\\s*var\\((--[a-z0-9-]+)\\)`).exec(css.match(new RegExp(`(?:^|\\n)\\${sel}\\s*\\{[^}]+\\}`, 's'))?.[0] ?? '')?.[1]
+    const a = grab('.message-input', 'font-size')
+    const b = grab('.input-backdrop', 'font-size')
     expect(a).toBeTruthy()
     // 两层字号一旦漂移，输入文字与镜像文字会错位（光标跑到文字前面/后面）
     expect(b, '.input-backdrop 必须与 .message-input 同字号令牌').toBe(a)
+    /**
+     * 第 155 轮（P0-3）补：**行高也必须同令牌**。
+     * 字号一致但行高不同，同样会错位（镜像层按自己的行高排版）—— 而且这正好是
+     * "行高从 24px 改成令牌"那次迁移最容易踩的地方：只改一层就静默错位。
+     */
+    const la = grab('.message-input', 'line-height')
+    const lb = grab('.input-backdrop', 'line-height')
+    expect(la, '.message-input 行高必须走令牌').toBeTruthy()
+    expect(lb, '.input-backdrop 必须与 .message-input 同行高令牌').toBe(la)
   })
 })

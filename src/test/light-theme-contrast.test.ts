@@ -119,6 +119,41 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
   });
 
   /**
+   * LIGHT-UI-2c 边框阶梯（第 155 轮 P0-2）：三档必须**单调**、可见而不吵，
+   * 且输入框的两档交互强度必须**夹在** default 与 strong 之间。
+   *
+   * 为什么加这一条：对标 `GCWing/OpenBitFun` 的亮色皮肤时发现我们只有 5%/9% 两档 ——
+   * 没有"强调档"、也没有输入框的 hover/focus 档（`field.borderHover/Focus`），
+   * 于是凡需要"悬停时边界抬一点"的地方只能现写 rgba（颜色字面量的主要来源之一）。
+   * 补齐之后，这条断言把**阶梯关系**钉住：改任何一个值都必须保持单调与区间。
+   */
+  it("LIGHT-UI-2c：边框三档单调（subtle<default<strong）、强度在带内，且输入 hover 夹在 default 与 focus 之间", () => {
+    const bg = color(token(lightBlock, "--bg-primary"), "--bg-primary");
+    const onBg = (v: string | null, name: string) => contrast(over(color(v, name), bg), bg);
+    const subtle = onBg(token(lightBlock, "--border-secondary"), "--border-secondary");
+    const def = onBg(token(lightBlock, "--border-primary"), "--border-primary");
+    const strong = onBg(token(lightBlock, "--border-strong"), "--border-strong");
+    const hover = onBg(token(lightBlock, "--field-border-hover"), "--field-border-hover");
+
+    expect(subtle, `subtle(${subtle.toFixed(3)}) 必须弱于 default(${def.toFixed(3)})`).toBeLessThan(def);
+    expect(def, `default(${def.toFixed(3)}) 必须弱于 strong(${strong.toFixed(3)})`).toBeLessThan(strong);
+    expect(subtle, `subtle 只有 ${subtle.toFixed(3)}，结构线看不见了`).toBeGreaterThanOrEqual(1.05);
+    expect(strong, `strong 到了 ${strong.toFixed(3)}，比参考实现的 2.15 还重 —— 界面会像线框稿`).toBeLessThanOrEqual(2.4);
+    expect(hover, `输入框 hover(${hover.toFixed(3)}) 必须比 default(${def.toFixed(3)}) 明显`).toBeGreaterThan(def + 0.05);
+    expect(hover, `输入框 hover(${hover.toFixed(3)}) 不该强过 strong(${strong.toFixed(3)})`).toBeLessThan(strong);
+
+    /* 聚焦档必须是 strong 的别名（同一个真源，而不是又一个魔数） */
+    expect(
+      (token(lightBlock, "--field-border-focus") ?? "").replace(/\s+/g, ""),
+      "--field-border-focus 应当是 var(--border-strong) —— 聚焦强度只允许有一个真源",
+    ).toBe("var(--border-strong)");
+
+    /* 消费方必须真的存在（否则又变成"定义了没人用"的令牌） */
+    expect(styles, "输入类控件的 hover 规则必须真的消费 --field-border-hover").toContain("border-color: var(--field-border-hover)");
+    expect(styles, "输入类控件的 focus 规则必须真的消费 --field-border-focus").toContain("border-color: var(--field-border-focus)");
+  });
+
+  /**
    * LIGHT-UI-2b 结构分隔线：`--border-separator` 必须**比主线条弱**、又不能弱到看不见；
    * 而且消费它的规则必须落在**界面真的会渲染的类**上。
    *
@@ -427,5 +462,106 @@ describe("LIGHT-UI 亮色模式观感不变式", () => {
     expect(border).toBeLessThanOrEqual(1.28);
     const muted = contrast(color(token(lightBlock, "--text-muted"), "--text-muted"), bg);
     expect(muted, `弱文字 ${muted.toFixed(2)}:1 低于 4.5（参考实现只到 3.56，但它没有我们这么多 10px 小字）`).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+/**
+ * DARK-UI —— **暗色模式观感不变式**门禁（第 155 轮，对标 `GCWing/OpenBitFun` 的暗色档）。
+ *
+ * ## 为什么要补这一组（真实缺口）
+ *
+ * 亮色档从第 65 轮起就有一整套不变量（LIGHT-UI-*），而**暗色档一条都没有** ——
+ * 于是"暗色好看"这件事只靠手感维持。本轮对标时用同一套数学量了一遍，立刻抓到两条：
+ *
+ * 1. **`--text-muted` 在最亮的悬停面上不达标**：`#888888` 落在 `--bg-hover`（`#2a2d2d`）上只有
+ *    **3.92:1**，而"悬停行的元信息（时间戳/计数/路径）"正好大量用这一档 ⇒ 已提到 `#939393`（4.52）；
+ * 2. **边框比参考实现弱一大截**：我们的控件边界在 `--bg-secondary` 上只有 **1.35**，
+ *    对方 dark 的 `border.default`（白 18%）是 **1.78**（暗底上低 alpha 白线本来就更容易糊掉）
+ *    ⇒ 暗色 `--border-primary` 10%→14%（1.54）、`--border-secondary/-separator` 6%→8%（1.25）。
+ *
+ * 如实标注：主文字 `#d4d4d4`（bg-secondary 上 11.55）**比对方的 `#e8e8e8`（13.87）暗**，
+ * 但"暗色底上的亮字更亮"同时会带来眩光，用户明确说过当前暗色已经好看 ——
+ * 所以**没有动它**，只把这条差距写在这里（要动它可以按 DARK-UI-1 的同一条判据来评估）。
+ */
+describe("DARK-UI 暗色模式观感不变式", () => {
+  const darkBlock = /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
+  const surfaces = () => ({
+    primary: color(token(darkBlock, "--bg-primary"), "--bg-primary"),
+    secondary: color(token(darkBlock, "--bg-secondary"), "--bg-secondary"),
+    tertiary: color(token(darkBlock, "--bg-tertiary"), "--bg-tertiary"),
+    hover: color(token(darkBlock, "--bg-hover"), "--bg-hover"),
+  });
+
+  it("DARK-UI-0：暗色档令牌解析得到（否则后面几条是空转）", () => {
+    expect(darkBlock.length, "解析不到 [data-theme=dark] 块").toBeGreaterThan(200);
+    const s = surfaces();
+    expect(Object.values(s).every(Boolean)).toBe(true);
+  });
+
+  /** ① 面阶梯方向：暗色是"越靠内容越亮"，且相邻差要看得出来——这是暗色"有层次"的来源。 */
+  it("DARK-UI-1：暗色的面阶梯必须单调变亮（primary < secondary < tertiary < hover）", () => {
+    const s = surfaces();
+    const l = (c: [number, number, number, number]) => lum(c);
+    expect(l(s.primary), `primary 应最暗：${l(s.primary).toFixed(3)} vs secondary ${l(s.secondary).toFixed(3)}`).toBeLessThan(l(s.secondary));
+    expect(l(s.secondary)).toBeLessThan(l(s.tertiary));
+    expect(l(s.tertiary)).toBeLessThan(l(s.hover));
+    /* 每一档都要"看得出是一档"：亮度差 ≥0.005。
+       口径来源（第 155 轮实测，两边同一套数学）：
+         我方三段：primary #0e0f0f → secondary #1a1c1c **0.00664**、
+                   secondary → tertiary #212424 **0.00579**、tertiary → hover #2a2d2d **0.00766**；
+         对方（OpenBitFun dark）：canvas #0e0e10 → panel #1c1c1f **0.00668**（它只有两级实色面，
+                   第三/第四档用 rgba(255,255,255,0.06) 叠出来，没有可比的"实色段"）。
+       所以门禁取 0.005 = 实测最紧那段（0.00579）再留一点余量：它守的是"别把某一档调到看不见"，
+       而不是"必须比参考实现分得更开"（初稿写 0.008 时被这条自己抓出来两次，已按实测下调）。 */
+    const deltas = [l(s.secondary) - l(s.primary), l(s.tertiary) - l(s.secondary), l(s.hover) - l(s.tertiary)];
+    for (const [i, d] of deltas.entries()) {
+      expect(d, `第 ${i + 1} 段亮度差 ${d.toFixed(5)} 太小（实测最紧的一段是 0.00579），层次会糊在一起`).toBeGreaterThanOrEqual(0.005);
+    }
+  });
+
+  /**
+   * ② 弱文字在**四个面**上都要过 4.5（含最亮的悬停面）——这条就是本轮那条缺口的守卫。
+   */
+  it("DARK-UI-2：弱文字（--text-muted）在四个面上都 ≥4.5:1（含悬停面）", () => {
+    const muted = color(token(darkBlock, "--text-muted"), "--text-muted");
+    const fails: string[] = [];
+    for (const [name, bg] of Object.entries(surfaces())) {
+      const r = contrast(muted, bg);
+      if (r < 4.5) fails.push(`${name} 面只有 ${r.toFixed(2)}:1`);
+    }
+    expect(fails, `弱文字在以下面达不到 4.5:1（悬停行的元信息就在这些面上）：\n  - ${fails.join("\n  - ")}`).toEqual([]);
+  });
+
+  it("DARK-UI-3：主/次文字在内容面上有足够对比（主 ≥10、次 ≥6）", () => {
+    const s = surfaces();
+    const p = contrast(color(token(darkBlock, "--text-primary"), "--text-primary"), s.secondary);
+    const sec = contrast(color(token(darkBlock, "--text-secondary"), "--text-secondary"), s.secondary);
+    expect(p, `暗色主文字在内容面上只有 ${p.toFixed(2)}:1`).toBeGreaterThanOrEqual(10);
+    expect(sec, `暗色次文字在内容面上只有 ${sec.toFixed(2)}:1`).toBeGreaterThanOrEqual(6);
+    /* 上下都要管：主文字过亮（>17）在暗色下有眩光争议，钉住上限免得被"越亮越好"推着走 */
+    expect(p, `暗色主文字 ${p.toFixed(2)}:1 偏亮（暗底眩光）——要提亮请连同 DARK-UI-2 一起评估`).toBeLessThanOrEqual(17);
+  });
+
+  it("DARK-UI-4：暗色边框三档单调且强度在带内，hover 夹在 default 与 strong 之间", () => {
+    const bg = surfaces().secondary;
+    const on = (v: string | null, name: string) => contrast(over(color(v, name), bg), bg);
+    const subtle = on(token(darkBlock, "--border-secondary"), "--border-secondary");
+    const def = on(token(darkBlock, "--border-primary"), "--border-primary");
+    const strong = on(token(darkBlock, "--border-strong"), "--border-strong");
+    const hover = on(token(darkBlock, "--field-border-hover"), "--field-border-hover");
+    expect(subtle, `subtle ${subtle.toFixed(3)} 必须弱于 default ${def.toFixed(3)}`).toBeLessThan(def);
+    expect(def, `default ${def.toFixed(3)} 必须弱于 strong ${strong.toFixed(3)}`).toBeLessThan(strong);
+    expect(subtle, `暗色 subtle ${subtle.toFixed(3)} 太弱（<1.15）—— 分隔线在暗底上会看不见`).toBeGreaterThanOrEqual(1.15);
+    expect(def, `暗色 default ${def.toFixed(3)} 偏弱：参考实现（OpenBitFun dark）是 1.78`).toBeGreaterThanOrEqual(1.4);
+    expect(def, `暗色 default ${def.toFixed(3)} 偏重，暗色界面会像线框稿`).toBeLessThanOrEqual(1.75);
+    expect(hover, `hover ${hover.toFixed(3)} 要明显强于 default`).toBeGreaterThan(def + 0.08);
+    expect(hover).toBeLessThan(strong);
+  });
+
+  it("DARK-UI-5：暗色 accent-strong 在品牌浅底 chip 上 ≥4.5:1（与亮色同标准）", () => {
+    const base = color(token(darkBlock, "--bg-primary"), "--bg-primary");
+    const chip = over(color(token(darkBlock, "--accent-muted"), "--accent-muted"), base);
+    const strong = contrast(over(color(token(darkBlock, "--accent-strong"), "--accent-strong"), chip), chip);
+    expect(strong, `暗色 --accent-strong 在品牌浅底上只有 ${strong.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
   });
 });
