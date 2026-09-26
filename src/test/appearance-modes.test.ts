@@ -33,6 +33,7 @@ import {
   DEFAULT_CONTRAST,
   DEFAULT_DENSITY,
 } from "../core/theme/appearance-modes";
+import { contrastRatio, resolveRgba, visibleContrastOver } from "../core/theme/contrast-checker";
 
 const ROOT = join(__dirname, "..", "..");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
@@ -195,5 +196,96 @@ describe("APPEARANCE 外观档位（第 159 轮 P2-1）", () => {
       .filter((x) => /applyAppearanceAttributes\(/.test(x.text));
     expect(dbSync.length, "DB 就绪后必须有一次校正（TitleBar 或 App 里调 applyAppearanceAttributes(getSetting)）").toBeGreaterThan(0);
     expect(dbSync.some((x) => /applyAppearanceAttributes\(\s*getSetting\s*\)/.test(x.text)), "DB 校正必须把 getSetting 传进去（否则读的是镜像，不是真相源）").toBe(true);
+  });
+
+  /**
+   * APPEARANCE-7：**高对比档必须真的提高对比度**（第 165 轮补全 P2-1 的另一半）。
+   *
+   * ## 为什么要有这一条
+   *
+   * 1.16.159 把 `data-contrast="high"` 的写入方接好了，但 CSS 侧只做了"玻璃回到不透明"这一件事。
+   * 对标文档 P2-1 承诺的是"文字更黑、边框更实、焦点环更粗"——**这三件在 1.16.164 之前一件都没做**：
+   * 用户打开高对比，看到的只是"玻璃没了"，文字与线条一个像素都没变。
+   * 而 APPEARANCE-5 当时只断言了 `[data-contrast="high"] .sidebar` 存在 ⇒ 这种"半成品"能全绿通过。
+   *
+   * ## 判据（全部是**量出来的**，不是"看代码里有这行"）
+   *
+   * 1. 令牌块存在，且覆盖文字两档 + 边框三档 + 焦点环两项；
+   * 2. 文字：亮/暗两档下，高对比的 `--text-secondary` **≥9:1**、`--text-muted` **≥7:1**（对主内容面），
+   *    并且都**严格强于**常态（只"变了一点"不算）；
+   * 3. 边框：合到主内容面上之后的可见度，高对比必须**严格强于**常态（`--border-primary` ≥1.7:1）；
+   *    —— 这一步以前根本量不了：`--border-primary` 亮色档是 `rgb(31 31 30 / 9%)`（空格写法），
+   *    老的解析器连它都认不出（见 `contrast-alpha.test.ts` 的 ALPHA-2）；
+   * 4. 焦点环：宽度必须**更粗**，颜色必须是实色（不许再是"品牌色 + transparent"的半透明值）。
+   */
+  it("APPEARANCE-7：高对比档必须真的提高对比度（文字 ≥7/9:1、边框更实、焦点环更粗）", () => {
+    const block = /html\[data-contrast="high"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
+    expect(block, "缺少 html[data-contrast=\"high\"] 令牌块（这一档必须覆盖文字/边框/焦点环，不只是把玻璃关掉）").not.toBe("");
+
+    /* ① 覆盖齐全 */
+    for (const name of ["--text-secondary", "--text-muted", "--border-primary", "--border-secondary", "--border-separator", "--border-strong", "--focus-ring-width", "--focus-ring-color"]) {
+      expect(block, `高对比档必须覆盖 ${name}`).toContain(`${name}:`);
+    }
+
+    /* ② 按主题量文字：常态 vs 高对比 */
+    const themes: Array<[string, RegExp]> = [
+      ["亮色", /:root,\s*\n?\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/],
+      ["暗色", /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/],
+    ];
+    const tok = (text: string, name: string) => new RegExp(`--${name.slice(2)}\\s*:\\s*([^;]+);`).exec(text)?.[1]?.trim() ?? "";
+    /* 高对比块里的值要**替代**主题块里的同名值：合成一张"生效取值表"（后者覆盖前者） */
+    const rows: string[] = [];
+    for (const [label, re] of themes) {
+      const themeBlock = re.exec(styles)?.[1] ?? "";
+      expect(themeBlock.length, `${label}档没解析到`).toBeGreaterThan(200);
+      const vars: Record<string, string> = {};
+      for (const m of (themeBlock + "\n" + block).matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) vars[m[1]] = m[2].trim();
+      const face = vars["--bg-primary"];
+      expect(face, `${label}档缺 --bg-primary`).toBeTruthy();
+
+      /* 常态：把高对比块里的覆盖**去掉**，就是常态取值 */
+      const normalVars: Record<string, string> = {};
+      for (const m of themeBlock.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) normalVars[m[1]] = m[2].trim();
+
+      const floors: Array<[string, number]> = [["--text-secondary", 9], ["--text-muted", 7]];
+      for (const [name, floor] of floors) {
+        const high = contrastRatio(vars[name], face, vars);
+        const normal = contrastRatio(normalVars[name], face, normalVars);
+        expect(high, `${label}档高对比的 ${name} 解析不出来：${vars[name]}`).not.toBeNull();
+        expect(normal, `${label}档常态的 ${name} 解析不出来：${normalVars[name]}`).not.toBeNull();
+        expect(high!, `${label}档高对比 ${name} = ${high!.toFixed(2)}:1，低于 ${floor}:1`).toBeGreaterThanOrEqual(floor);
+        expect(high!, `${label}档高对比 ${name}（${high!.toFixed(2)}:1）必须严格强于常态（${normal!.toFixed(2)}:1）`).toBeGreaterThan(normal!);
+        rows.push(`${label} ${name}: ${normal!.toFixed(2)} → ${high!.toFixed(2)}`);
+      }
+
+      /* ③ 边框可见度：合成到面上再比 */
+      const borderHigh = visibleContrastOver(vars["--border-primary"], face, vars);
+      const borderNormal = visibleContrastOver(normalVars["--border-primary"], face, normalVars);
+      expect(borderHigh, `${label}档高对比 --border-primary 量不出来：${vars["--border-primary"]}`).not.toBeNull();
+      expect(borderNormal, `${label}档常态 --border-primary 量不出来：${normalVars["--border-primary"]}`).not.toBeNull();
+      expect(borderHigh!, `${label}档高对比边框 ${borderHigh!.toFixed(2)}:1 低于 1.7:1（"更实"要有下限）`).toBeGreaterThanOrEqual(1.7);
+      expect(borderHigh!, `${label}档高对比边框必须严格强于常态（${borderNormal!.toFixed(2)}:1）`).toBeGreaterThan(borderNormal!);
+      /* 次级分隔线也要更强（不必过 1.7，但必须比常态强） */
+      const secHigh = visibleContrastOver(vars["--border-secondary"], face, vars);
+      const secNormal = visibleContrastOver(normalVars["--border-secondary"], face, normalVars);
+      expect(secHigh!, `${label}档次级分隔线必须严格强于常态`).toBeGreaterThan(secNormal!);
+      rows.push(`${label} 边框: ${borderNormal!.toFixed(2)} → ${borderHigh!.toFixed(2)}`);
+    }
+
+    /* ④ 焦点环：更粗 + 实色 */
+    const baseRoot = /^:root\s*\{([\s\S]*?)\n\}/m.exec(styles)?.[1] ?? "";
+    const widthOf = (text: string) => Number(/^(\d+(?:\.\d+)?)px$/.exec(tok(text, "--focus-ring-width"))?.[1] ?? NaN);
+    const normalWidth = widthOf(baseRoot);
+    const highWidth = widthOf(block);
+    expect(Number.isNaN(highWidth), `高对比的 --focus-ring-width 不是 px：${tok(block, "--focus-ring-width")}`).toBe(false);
+    expect(highWidth, `高对比焦点环宽度 ${highWidth}px 必须比常态 ${normalWidth}px 更粗`).toBeGreaterThan(normalWidth);
+    const ringColor = tok(block, "--focus-ring-color");
+    const ring = resolveRgba(ringColor, { "--accent": "#6b5ce7" });
+    expect(ring, `高对比焦点环颜色解析不出来：${ringColor}`).not.toBeNull();
+    expect(ring!.a, `高对比焦点环必须是实色（现在是 α=${ring!.a}）`).toBeGreaterThanOrEqual(0.9);
+    rows.push(`焦点环: ${normalWidth}px → ${highWidth}px`);
+
+    /* 把量出来的数字打进测试输出（复核时不用再去翻脚本） */
+    console.log("[APPEARANCE-7] 实测：" + rows.join(" | "));
   });
 });

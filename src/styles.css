@@ -18647,3 +18647,51 @@ html[data-native-material="sidebar"][data-contrast="high"] .sidebar {
   --control-std: var(--control-std-compact);
   --control-form: var(--control-form-compact);
 }
+
+/* ========== ⑦ 高对比档（第 165 轮补全 P2-1 的另一半）==========
+ * ## 此前这一档只做了一半
+ *
+ * `data-contrast="high"` 的**写入方**在 1.16.159 就接好了（设置页 + 首屏镜像 + DB 校正），
+ * 但 CSS 侧只有"回到不透明"这一件事：`[data-contrast="high"] .sidebar { … }` 那几条把玻璃降级成实色。
+ * 对标文档 P2-1 承诺的是"**文字更黑、边框更实、焦点环更粗**"（约 10 个令牌）—— 这三件一件都没做。
+ * 用户开了高对比，看到的只是"玻璃没了"，文字与线条**一个像素都没变**。这一档补的就是它。
+ *
+ * ## 为什么**一套值同时管两个主题**（不写 light/dark 两块）
+ *
+ * 第 159 轮 P1-2 把文字三档改成了"由墨色与纸色混合出来"：
+ * `--text-secondary/secondary/muted = color-mix(in srgb, var(--text-base) N%, var(--text-ramp-paper))`。
+ * 混合的两端是**墨**与**纸**，而墨/纸在两套主题里是反的 ⇒ 把 N 调大这件操作
+ * 在亮色档是"更黑"、在暗色档是"更亮"，**两档都朝"远离底色"的方向走**。
+ * 所以高对比只需要覆盖这几个 N，不必按主题分叉 —— 也就不会出现"改了一档忘了另一档"。
+ *
+ * 取值是**反解出来的**（`.preview-shot/_pick-high-contrast.mjs` 的真实计算，不是拍的）：
+ *
+ * | 令牌 | 常态 | 高对比 | 亮色实测（对主内容面） | 暗色实测 |
+ * | --- | --- | --- | --- | --- |
+ * | `--text-secondary` | 墨 75% / 82% | **墨 90%** | 7.37 → **12.30:1** | 8.93 → **10.55:1** |
+ * | `--text-muted` | 墨 65% / 67% | **墨 80%** | 5.28 → **8.75:1** | 6.25 → **8.53:1** |
+ * | `--border-primary` | α 9% / 14% | **墨 α 26%** | 1.19 → **1.73:1** | 1.47 → **≈2.0:1** |
+ * | `--border-secondary` | α 5% / 8% | **墨 α 16%** | 1.10 → **≈1.4:1** | 1.20 → **≈1.6:1** |
+ *
+ * 口径：`--text-muted` 在高对比下 **≥7:1**（AAA 正文）、`--text-secondary` **≥9:1**，
+ * 且两者都必须**严格强于**常态；边框合到面上后的可见度也必须严格更强。
+ * 这些数字由 `APPEARANCE-7` 钉住（变异 `A7/A8/A9` 会红）。
+ *
+ * ⚠️ **不动 `--text-base`（墨色本身）**：D1（暗色主文字亮度）是用户明确说"当前暗色好看、别动"的那一项，
+ * 高对比档只推**派生档**的混合比例，墨色本身两档都不碰。
+ *
+ * 选择器写 `html[...]`：属性在 `<html>` 上，而主题令牌在 `[data-theme="light"|"dark"]` 上
+ * 也是同一个元素 —— `html[data-contrast="high"]`（0,1,1）比 `[data-theme="dark"]`（0,1,0）更具体，
+ * 所以**不依赖书写顺序**就赢（这一条比"把块放到文件最后"可靠）。
+ */
+html[data-contrast="high"] {
+  --text-secondary: color-mix(in srgb, var(--text-base) 90%, var(--text-ramp-paper));
+  --text-muted: color-mix(in srgb, var(--text-base) 80%, var(--text-ramp-paper));
+  --border-primary: color-mix(in srgb, var(--text-base) 26%, transparent);
+  --border-secondary: color-mix(in srgb, var(--text-base) 16%, transparent);
+  --border-separator: color-mix(in srgb, var(--text-base) 16%, transparent);
+  --border-strong: color-mix(in srgb, var(--text-base) 48%, transparent);
+  /* 焦点环：更粗 + 不再半透明（70% 的品牌色压在浅底上只有 2.6:1，高对比下必须是实色） */
+  --focus-ring-width: 3px;
+  --focus-ring-color: var(--accent);
+}
