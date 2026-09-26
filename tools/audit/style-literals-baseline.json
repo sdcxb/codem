@@ -1,0 +1,15 @@
+{
+ "_note": "样式写死值棘轮（第 155 轮 P0-4）。判据与口径见 tools/audit/scan-style-literals.mjs 文件头。只许降：--update 会拒绝变大的族，除非显式 --force。",
+ "_measuredAt": "2026-09-26T06:01:05.454Z",
+ "raw": {
+  "animation/transition": 61,
+  "border-radius": 43,
+  "box-shadow": 31,
+  "color": 140,
+  "font-size": 45,
+  "font-weight": 317,
+  "letter-spacing": 17,
+  "line-height": 13,
+  "z-index": 25
+ }
+}
