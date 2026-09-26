@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import path from "node:path";
 import { scanTokenHygiene, loadDefaultFiles as loadTokenFiles, SCALE_FAMILIES } from "../../tools/audit/scan-token-hygiene.mjs";
 import { scanStyleLiterals, loadDefaultFiles as loadLiteralFiles, evaluateRatchet, readBaseline } from "../../tools/audit/scan-style-literals.mjs";
@@ -905,5 +905,26 @@ describe("DIS：禁用态不透明度必须走令牌（P1-4 / H5）", () => {
     /* 工具类必须有真实消费者（否则就是死类，`css-class-unused` 也会报） */
     const ov = readFileSync(path.join(ROOT, "src/components/OverflowText.tsx"), "utf8");
     expect(/truncate-/.test(ov), "OverflowText 没在用 .truncate 工具类 ⇒ 工具类没有消费者").toBe(true);
+
+    /*
+     * ⑤ **产物级**核对（有 dist 就跑，没有就跳过）。
+     *
+     * 为什么源码级不够：本仓库已经吃过一次"源码对、产物错"的亏（SKIN-2：压缩器把命名色 `white`
+     * 改写成 `#fff`，源码门禁全绿而产物漏了）。第 171 轮加标准 `line-clamp` 时同样要防：
+     * 压缩器完全可能只留前缀写法（或反过来只留标准写法）—— 那时源码双写就是**纸面功夫**。
+     * 所以这里直接读打包后的 CSS 文本：**标准属性与前缀属性必须成对出现**。
+     */
+    const distDir = path.join(ROOT, "dist/assets");
+    if (existsSync(distDir)) {
+      const css = readdirSync(distDir).filter((f) => f.endsWith(".css")).map((f) => readFileSync(path.join(distDir, f), "utf8")).join("\n");
+      expect(css.length, "读到了空的产物 CSS ⇒ 检查方式失效").toBeGreaterThan(10000);
+      const stdCount = [...css.matchAll(/(^|[^-\w])line-clamp\s*:/g)].length;
+      const preCount = [...css.matchAll(/-webkit-line-clamp\s*:/g)].length;
+      expect(stdCount, `产物里标准 line-clamp 只有 ${stdCount} 条、前缀 ${preCount} 条 —— 压缩器把其中一种写法吃掉了`
+        + "（源码写了、产物没有 = 纸面功夫；这类「源码对、产物错」本仓库吃过一次：SKIN-2 的命名色）").toBeGreaterThan(0);
+      expect(preCount, `产物里 -webkit-line-clamp 只有 ${preCount} 条 —— 现役 Chromium 靠前缀写法生效，少了就是多行截断全坏`).toBeGreaterThan(0);
+      expect(css.includes("display:-webkit-box") || css.includes("display: -webkit-box"),
+        "产物里没有 display:-webkit-box —— 没有它 -webkit-line-clamp 不生效（多行截断静默失效）").toBe(true);
+    }
   });
 });

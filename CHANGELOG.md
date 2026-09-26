@@ -57,6 +57,25 @@ All notable changes to Codem will be documented in this file.
 - CSS 生效取值快照 27 处变化逐条过目：全部是"新增 `line-clamp`"与"新增工具类"，无既有取值漂移。
 - `verify` 403 文件全绿、`audit` exit 0、`scan-ui` error 0 / warn 0。
 
+### 装机版复核（1.16.171，产物级）
+
+| 断言 | 实测 |
+| --- | --- |
+| `.truncate` 生效值 | `overflow: hidden` + `text-overflow: ellipsis` + `white-space: nowrap` ✓ |
+| `.truncate-2` 生效值 | `-webkit-line-clamp: 2`、`overflow: hidden` ✓ |
+| 侧栏会话标题压到 12px / 24px | `scrollWidth 38 > clientWidth 12/24` ⇒ **title="对话 4"**（截断才提示）✓ |
+| 同一元素放宽到 60px | 放得下 ⇒ **title=null**（这正是新组件要消掉的噪声）✓ |
+| 还原后 | title 回到 null、`185/185` ✓（探针不留痕） |
+| dist 产物 CSS | 标准 `line-clamp` **12 条** / `-webkit-line-clamp` **12 条**、`display:-webkit-box` 在位 ✓ |
+
+**这一轮的探针踩坑（记下来，因为差点写出一条假结论）**：复核脚本先在运行时用
+`document.styleSheets` 的 `cssText` 去数标准属性，报出「0 处标准 / 12 处前缀」，
+看起来就是 SKIN-2 那类"压缩器吃掉标准属性"的故事。差一点就当成真问题写进 CHANGELOG。
+**去读产物文件（`dist/assets/*.css`）才发现 12/12 成对** —— 是探针自己的统计错了，不是产物错。
+教训有两条：① 运行时探针与产物文本不一致时，**以产物文本为准**，并回头查探针；
+② 这条"源码双写 ≠ 产物双写"的风险是真的，所以把它**固化成门禁**（TEXT-1 里新增产物级断言：
+有 `dist/` 时直接读打包后的 CSS，标准属性与前缀属性必须成对、且 `display:-webkit-box` 必须在位）。
+
 ## [1.16.170] - 2026-09-26 — P2-3 皮肤几何收口：34 条「规则体里逐组件覆盖」收进令牌块（并更正方案的口径）
 
 > 先量后改。装机实测（`_cross-skin-geometry.mjs`）同一个组件在三档下的计算几何：
