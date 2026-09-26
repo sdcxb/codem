@@ -1,4 +1,5 @@
 import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
@@ -318,15 +319,9 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
     setSessionContextMenu({ session, x, y });
   };
 
-  // Close context menu on Escape
-  useEffect(() => {
-    if (!sessionContextMenu) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSessionContextMenu(null);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sessionContextMenu]);
+  /* 第 173 轮 P2-6：右键菜单的 Esc 关闭走共享 hook（原来的手写版没有"只关最上层"，
+     侧栏里同时开着别的浮层时会被一起关掉）。 */
+  useDismissableLayer({ open: !!sessionContextMenu, onDismiss: () => setSessionContextMenu(null) });
 
   const handleRenameSession = (sessionId: string, currentTitle: string) => {
     setEditingSessionId(sessionId);

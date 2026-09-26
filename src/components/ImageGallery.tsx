@@ -5,6 +5,7 @@
  */
 
 import { memo, useState, useEffect } from "react";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useLang, S } from "../core/i18n/lang";
 import { ActionIcons } from "../core/icons/icon-map";
 
@@ -37,8 +38,11 @@ export const ImageGallery = memo(function ImageGallery({
     setCurrentIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0));
   };
 
+  /* 第 173 轮 P2-6：Escape 走共享 hook（方向键仍是这个 handler 的职责 —— 它属于"元素自己的
+     按键语义"，不该搬到 document 级去做浮层关闭）。 */
+  useDismissableLayer({ onDismiss: onClose });
+
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") onClose();
     if (e.key === "ArrowLeft") handlePrev();
     if (e.key === "ArrowRight") handleNext();
   };

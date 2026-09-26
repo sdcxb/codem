@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { createPortal } from "react-dom";
 import { useProjectStore } from "../core/store";
 import { useLang, S } from "../core/i18n/lang";
@@ -24,15 +25,9 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
     inputRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  /* 第 173 轮 P2-6：Esc 关闭走共享 hook（下面的按键导航 handler 里仍留着一个 Escape 分支
+     用于"导航逻辑里顺手关"，两处都走同一个 onClose，重复按只关一次） */
+  useDismissableLayer({ onDismiss: onClose });
 
   // P2-12: 同上，`filteredProjects` 也是渲染期新建的数组，必须一起稳定下来，
   // 否则 `allItems` 的记忆化会被它每次新建的引用打穿。

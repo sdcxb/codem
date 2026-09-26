@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import {
   type MCPRegistryEntry,
   type MCPCategory,
@@ -143,13 +144,9 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
    *      `padding-top: var(--chrome-height)`）—— 真机注入复量：中心点 `elementFromPoint`
    *      由 `BUTTON.titlebar-btn-close` 变为 `BUTTON.mcp-marketplace-close`（命中自己）。
    */
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  /* 第 173 轮 P2-6：上面那段注释说的"与仓库既有 modal 同一套写法"现在有了唯一实现：
+     Esc 关闭走 useDismissableLayer（顺带解决"两层叠着时只关最上层"和"焦点归还"）。 */
+  useDismissableLayer({ onDismiss: onClose });
 
   return (
     <div className="mcp-marketplace">

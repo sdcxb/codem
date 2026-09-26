@@ -2,6 +2,45 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.173] - 2026-09-26 — P2-6 浮层收口：9 处手写 Escape 收敛成 `useDismissableLayer`（并更正方案口径）
+
+> 方案写的是「手写 Escape 14 处 → ≤2」。实测 **22 处**，但逐条看下来是**两族不同的东西**，
+> 按原文数字去"收敛"会把元素自己的按键语义也搬走 —— 那是错的。
+
+### 口径更正：22 处里只有一半该收
+
+| 族 | 数量 | 是什么 | 处置 |
+| --- | --- | --- | --- |
+| A. document/window 级的**纯 Escape 关闭** | **9** | `ConfirmDialog` / `SearchDialog` / `ImageGallery` / `McpMarketplace` / `Sidebar`（会话右键菜单）/ `FileLinkContextMenu` / `AppMenuBar`（捕获阶段）/ `SlashCommandMenu` / `PixelLibraryScene` | **全部走 `useDismissableLayer`**，手写监听归零 |
+| B. 元素级或导航 handler 里的一个分支 | 13 | 输入框的 Enter/Esc（`FileEditor` / `GoalBar` / `InlineMessageEdit` / `GitBranchSelector`）、菜单方向键导航（`MentionAutocomplete`）、画布 Esc 取消选择（`SlideCanvas`）、PPT 演示/搜索框的键盘导航、注释与模板字符串 | **不动** —— 那是元素自己的按键语义，搬到 document 级反而错 |
+
+⇒ 验收从「14 → ≤2」换成可机检的版本：**document/window 级的纯 Escape 关闭 → 0**。
+
+### 迁移后每处自动获得手写版普遍缺的两件事
+
+- **只关最上层**：模块级栈 + "比对自己是不是最后一个"的守卫。手写版 9 处里没有一处处理过 ——
+  侧栏同时开着右键菜单与别的浮层时，一次 Esc 会把两个一起关掉；
+- **关闭后焦点归还**：手写版把焦点留在 `body`（键盘用户回到文档开头）。现在还给打开它的那个元素，
+  且只在它还连着文档、且没被 disabled 时才还（否则焦点会留在 body —— 那正是要避免的）。
+- 另有 `inertBackground`（打开时给 `#root` 加 `inert`，Tab 不跑进浮层后面）与 `capture`（AppMenuBar
+  原来就是捕获阶段，迁移**没有**顺手改掉这个语义）。
+
+### 门禁与证据
+
+- **OVERLAY-1a/b/c**：① hook 存在、被 **9 个文件**采用、且"只关最上层"的守卫在；
+  ② document/window 级的 keydown 里不许再手写纯 Escape（判据必须**配对到那个回调本身**、
+  并顺着回调名找定义；只处理 Escape 才算违规，导航 handler 放行）；
+  ③ 棘轮：`Escape` 相关行数只许降。
+- 新增行为用例 **6 条**（ESC-1…6）：Escape 触发关闭 / `open:false` 不响应 / **两层叠着只关最上层** /
+  **焦点归还** / `inertBackground` 加去 `inert` / 非 Escape 按键不触发。
+- 变异 **27/27 全红**（新增 3 条：手写监听回来 / 删掉"只关最上层"的守卫 / 棘轮上涨），逐字节还原。
+- **三次假结果都记在门禁注释里**（这轮的门禁比前几轮难写）：
+  ① 只看注册点**后面** 12 行 ⇒ 回调定义在前面，变异抓不到（假绿）；
+  ② 只断言 `/layerStack/` ⇒ 把它改名成 `layerStackRemoved` 照样通过（子串仍在）；
+  ③ 光断言 `\blayerStack\b` 还不够 ⇒ 变异只改声明、别处仍在使用；最终改成断言**守卫那一行**。
+- 门槛口径对齐：棘轮基线用**门禁自己那套口径**数出来（同时含 `Escape` 与 `key|Key` 的**行数**）
+  = 迁移前 22 → 迁移后 **16**；第一版写成 18 会让棘轮永远不响。
+
 ## [1.16.172] - 2026-09-26 — P2-1 内容态：13 个「单行空态」收成一个共享类（19 种内边距 → 2 种）
 
 > 计划里 P2-1 的目标是「空态/加载/错误三类各只保留一个共享实现」。先量，再按**真实标记**分族 ——

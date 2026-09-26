@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import {
   subscribeFileLinkMenu,
   getFileLinkMenuState,
@@ -28,7 +29,11 @@ export function FileLinkContextMenu() {
 
   const state = getFileLinkMenuState();
 
-  // Close on click outside or Escape
+  /* 第 173 轮 P2-6：Esc 关闭交给共享 hook；"点外面关"仍由上面的 mousedown 处理
+     （两者是不同的关闭触发，hook 只管键盘那一半）。 */
+  useDismissableLayer({ open: state.visible, onDismiss: closeFileLinkMenu });
+
+  // Close on click outside（键盘那一半已交给 useDismissableLayer）
   useEffect(() => {
     if (!state.visible) return;
     const handleClick = (e: MouseEvent) => {
@@ -36,14 +41,9 @@ export function FileLinkContextMenu() {
         closeFileLinkMenu();
       }
     };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeFileLinkMenu();
-    };
     document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleKey);
     return () => {
       document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
     };
   }, [state.visible]);
 

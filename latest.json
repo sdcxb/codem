@@ -1,15 +1,15 @@
 {
-  "version": "1.16.172",
-  "notes": "P2-1 内容态：空态 59 条规则里 padding 有 19 种、字号 7 种 —— 按真实标记分族后发现其中 13 个类（21 处用法）在 TSX 里是同一个形状（一个元素 + 一句提示文本），即同一个「暂无数据」在 13 个面板里有 13 套内边距。处置：新增唯一实现 .empty-hint + 两个修饰（.is-compact 列表内、.is-boxed 虚线框），几何走新令牌；13 个旧类从样式表删除、21 处 TSX 改用共享类；设置面板 :is() 里的 .sp-empty 引用同步改名。13 个类里 11 个取值本来就相同 ⇒ 零视觉变化，其余差 1–8px 且方向是与全体一致。新增门禁 COND-1（含「旧类不许回来」与自定 padding 处数棘轮：口径对齐后 36 → 24），变异 24/24 全红。",
-  "pub_date": "2026-09-26T14:12:08Z",
+  "version": "1.16.173",
+  "notes": "P2-6 浮层收口：方案写「手写 Escape 14 处 → ≤2」，实测 22 处，分两族 —— A. document/window 级纯 Escape 关闭 9 处（ConfirmDialog / SearchDialog / ImageGallery / McpMarketplace / Sidebar 会话右键菜单 / FileLinkContextMenu / AppMenuBar / SlashCommandMenu / PixelLibraryScene）全部走新的 useDismissableLayer，手写监听归零；B. 元素级或导航 handler 里的一个分支 13 处（输入框 Enter/Esc、菜单方向键、画布 Esc 取消选择、PPT 演示与搜索框键盘导航、注释与模板串）不动 —— 那是元素自己的按键语义。验收改成可机检的「document 级纯 Escape → 0」。迁移后每处自动获得手写版普遍缺的两件事：只关最上层（模块级栈+守卫）、关闭后焦点归还（且只在没人接管焦点时才还，否则会顶掉调用方刚设好的焦点）。门禁 OVERLAY-1a/b/c + 行为用例 6 条；变异 27/27 全红。三次假结果（只看注册点后面 12 行 / 只断言 /layerStack/ / 只断言 \\blayerStack\\b）都记进门禁注释。",
+  "pub_date": "2026-09-26T14:32:21Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FyQjVvS0N6UThGM0RJV3loSEc0VnZlVDIyQUpCKzNUSEVxQTQzUU5KaDFXanpFK0xuZjBOdlB4V2NkTzdpRUcwS1gzTGhhNmJ4THlHSDVLcWhxa2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMxOTIxCWZpbGU6Q29kZW1fMS4xNi4xNzJfeDY0LXNldHVwLmV4ZQpybHpWZ0g4T0kwZ1J0ZEVIVzRVK0FIZEV3TDVFeW81S3ZqNnBFUTVvZGl2dUw5SzdOWEcrTTFDaW9KWEVkbmdlR1NLMUhHU3BaL0U1eWZld2g5dWZCZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.172/Codem_1.16.172_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R5V0hKOHRZd2lJTWIyZTVDYnF3L3RHcFhkZDJadzVMeTZzSFM5Tm9rQ0dzZytJL2dqZzZiODhMcElMaWVsQVZ6S2VXU2Z5M3IxK2J1d1JPN1lRMFFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMzMTM0CWZpbGU6Q29kZW1fMS4xNi4xNzNfeDY0LXNldHVwLmV4ZQp4dVVkMXk0N2xMUU9sd1R0WElvYUd2L2RBaVZ1WC9Ha2lCQXFoWURwZkV6amdDdG8xaHczb09YVVhtK2JiMEFHVUpkYXhwei9PN2l2Z2VkNDJMVFBDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.173/Codem_1.16.173_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FyQjVvS0N6UThGM0RJV3loSEc0VnZlVDIyQUpCKzNUSEVxQTQzUU5KaDFXanpFK0xuZjBOdlB4V2NkTzdpRUcwS1gzTGhhNmJ4THlHSDVLcWhxa2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMxOTIxCWZpbGU6Q29kZW1fMS4xNi4xNzJfeDY0LXNldHVwLmV4ZQpybHpWZ0g4T0kwZ1J0ZEVIVzRVK0FIZEV3TDVFeW81S3ZqNnBFUTVvZGl2dUw5SzdOWEcrTTFDaW9KWEVkbmdlR1NLMUhHU3BaL0U1eWZld2g5dWZCZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.172/Codem_1.16.172_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R5V0hKOHRZd2lJTWIyZTVDYnF3L3RHcFhkZDJadzVMeTZzSFM5Tm9rQ0dzZytJL2dqZzZiODhMcElMaWVsQVZ6S2VXU2Z5M3IxK2J1d1JPN1lRMFFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDMzMTM0CWZpbGU6Q29kZW1fMS4xNi4xNzNfeDY0LXNldHVwLmV4ZQp4dVVkMXk0N2xMUU9sd1R0WElvYUd2L2RBaVZ1WC9Ha2lCQXFoWURwZkV6amdDdG8xaHczb09YVVhtK2JiMEFHVUpkYXhwei9PN2l2Z2VkNDJMVFBDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.173/Codem_1.16.173_x64-setup.exe"
     }
   }
 }

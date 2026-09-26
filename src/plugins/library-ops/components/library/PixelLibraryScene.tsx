@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { prefersReducedMotion } from "../../../../hooks/useReducedMotion";
+import { useDismissableLayer } from "../../../../hooks/useDismissableLayer";
 import type { LibraryActor, LibrarySnapshot } from "../../types";
 import { ACTIVITY_META } from "../../types";
 import {
@@ -251,15 +252,8 @@ export function PixelLibraryScene({
     };
   }, [layoutDrag, setNodeOverride, setRoomOverride]);
 
-  // Esc 退出对位模式
-  useEffect(() => {
-    if (!editingLayout) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setEditingLayout(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [editingLayout, setEditingLayout]);
+  /* 第 173 轮 P2-6：Esc 退出对位模式走共享 hook（window 级那套手写逻辑自此归零） */
+  useDismissableLayer({ open: editingLayout, onDismiss: () => setEditingLayout(false) });
 
   const startRoomDrag = useCallback(
     (e: React.PointerEvent<HTMLElement>, room: PixelRoom, mode: "move" | "resize") => {

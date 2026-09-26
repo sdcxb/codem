@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 interface AppMenuAction {
   id: string;
@@ -59,23 +60,19 @@ export function AppMenuBar({ zh, menus }: AppMenuBarProps) {
     });
   }, []);
 
+  /* 第 173 轮 P2-6：Esc 关闭走共享 hook。原来这里是**捕获阶段**监听（要抢在别人前面处理），
+     所以显式传 capture: true —— 迁移不能顺手改掉这个语义。 */
+  useDismissableLayer({ open: openId !== null, onDismiss: close, capture: true });
+
   // 点击别处 / 按 Esc 关闭
   useEffect(() => {
     if (!openId) return;
     const onPointerDown = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpenId(null);
     };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-      }
-    };
     document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown, true);
     };
   }, [openId, close]);
 

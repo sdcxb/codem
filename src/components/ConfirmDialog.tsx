@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { createPortal } from "react-dom";
 
 interface ConfirmDialogProps {
@@ -13,13 +14,8 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({ title, message, confirmLabel = "确定", cancelLabel = "取消", onConfirm, onCancel }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
+  /* 第 173 轮 P2-6：Esc 关闭收敛到 useDismissableLayer（只关最上层 + 关闭后焦点归还） */
+  useDismissableLayer({ onDismiss: onCancel });
 
   // Use Portal to render at document.body level — avoids backdrop-filter
   // containing block issues in Dream skin where sidebar has backdrop-filter

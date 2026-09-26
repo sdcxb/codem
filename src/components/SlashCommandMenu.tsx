@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { getSkillRegistry } from "../core/skill/skill";
 import { getSettingJSON } from "../core/storage/settings";
 import { useLang } from "../core/i18n/lang";
@@ -61,6 +62,10 @@ export function SlashCommandMenu({ filter, onSelect, onClose }: SlashCommandMenu
     setSelectedIndex(0);
   }, [filter]);
 
+  /* 第 173 轮 P2-6：Escape 关闭由共享 hook 负责（原来是下面这个导航 handler 里的一个分支）；
+     显式 capture: true —— 原实现就是捕获阶段，迁移不能顺手改掉这个语义。 */
+  useDismissableLayer({ onDismiss: onClose, capture: true });
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
@@ -75,10 +80,6 @@ export function SlashCommandMenu({ filter, onSelect, onClose }: SlashCommandMenu
         e.preventDefault();
         e.stopPropagation();
         commands[selectedIndex].onSelect();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
       }
     };
     document.addEventListener("keydown", handleKeyDown, true);
