@@ -33,7 +33,7 @@
  * - `inertBackground: true` 时给 `#root` 加 `inert`（Tab 不再跑进背景），关闭时移除；
  * - 回调用 ref 保存 ⇒ 父组件每次渲染换函数引用不会导致反复订阅。
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 interface DismissableLayerOptions {
   /** 浮层是否处于"打开"状态。传 false 时不监听（例如浮层还没渲染） */
@@ -70,15 +70,29 @@ export function useDismissableLayer({
   /** 打开前拿着焦点的那个元素 */
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
+  /**
+   * ⚠️ 「打开前的焦点」必须用 **useLayoutEffect** 抢在浮层的自动聚焦之前记下来。
+   *
+   * 现场（1.16.173 装机复核抓到的真问题）：`SearchDialog` 自己的 `useEffect(() => inputRef.current?.focus(), [])`
+   * 注册得**比本 hook 更早**（它写在组件上半部分），被动 effect 按注册顺序执行 ⇒
+   * 等本 hook 的 effect 跑起来时，`document.activeElement` **已经是浮层里的输入框**了；
+   * 关闭时那个输入框又随浮层一起被移除 ⇒ 记下的"上一个焦点"是一个**已脱离文档**的元素，
+   * 被 `isConnected` 保护拦下 ⇒ 焦点留在 body（也就是说：**最需要焦点归还的那一类浮层，恰恰没归还**）。
+   * 布局 effect 早于所有被动 effect 执行，所以在这里记才拿得到真正的"打开前"。
+   * （单元用例里没有自动聚焦所以一直是绿的 —— 这也是为什么要补一条"浮层自己 autofocus"的用例。）
+   */
+  useLayoutEffect(() => {
+    if (!open) return;
+    if (previousFocusRef.current) return;
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    previousFocusRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
 
     const id = idRef.current;
     layerStack.push(id);
-    if (typeof document !== "undefined") {
-      const active = document.activeElement;
-      previousFocusRef.current = active instanceof HTMLElement ? active : null;
-    }
     const root = inertBackground && typeof document !== "undefined" ? document.getElementById("root") : null;
     if (root) root.setAttribute("inert", "");
     /* inert 在旧内核上不生效也不报错，作为"锦上添花"而不是唯一防线 */

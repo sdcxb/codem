@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, cleanup, act } from "@testing-library/react";
+import { useEffect, useRef } from "react";
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import path from "node:path";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
@@ -112,6 +113,32 @@ describe("useDismissableLayer", () => {
     expect(root.hasAttribute("inert"), "打开期间背景应该是 inert 的").toBe(true);
     unmount();
     expect(root.hasAttribute("inert"), "关闭后必须去掉（否则整个应用都点不动了）").toBe(false);
+  });
+
+  it("ESC-7：**浮层自己 autofocus** 时也要记住打开前的焦点（1.16.173 装机复核抓到的真问题）", () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "打开浮层";
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    /* 模拟 SearchDialog：组件里先写自己的 `useEffect(() => input.focus())`，再调用本 hook ——
+       被动 effect 按注册顺序执行，所以"记上一个焦点"如果也放在被动 effect 里，
+       拿到的会是浮层里的输入框（它的 autofocus 先跑），关闭时那个输入框已经随浮层移除 ⇒
+       焦点回不去（装机版实测：SearchDialog 关掉后焦点落在 body）。 */
+    function AutofocusLayer({ onDismiss }: { onDismiss: () => void }) {
+      const inputRef = useRef<HTMLInputElement | null>(null);
+      useEffect(() => {
+        inputRef.current?.focus();
+      }, []);
+      useDismissableLayer({ onDismiss });
+      return <input ref={inputRef} data-testid="auto" />;
+    }
+
+    const { unmount, getByTestId } = render(<AutofocusLayer onDismiss={() => {}} />);
+    expect(document.activeElement, "浮层里的输入框应该已经自动聚焦").toBe(getByTestId("auto"));
+    unmount();
+    expect(document.activeElement, "关闭后必须回到触发器，而不是 body").toBe(trigger);
+    trigger.remove();
   });
 
   it("ESC-6：非 Escape 按键不触发关闭", () => {

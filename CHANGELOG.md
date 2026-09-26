@@ -2,6 +2,41 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.174] - 2026-09-26 — 修 1.16.173 的"焦点归还"没生效（自动聚焦的浮层恰恰是没归还的那一类）
+
+> 1.16.173 装上机器之后按验收清单逐条量，发现新 hook 的"焦点归还"在**最需要它的那类浮层**上没生效。
+> 这一版修掉，并把漏掉的那条判据补成用例。
+
+### 现场（装机复核实测）
+
+打开搜索对话框（顶栏「搜索」按钮 → `SearchDialog`）后按真实 Esc：
+- ✅ 对话框关掉了；
+- ❌ 焦点落在 `body` —— 而"关闭后焦点归还"正是这一轮新 hook 主打补上的能力。
+
+诊断（`_diagnose-focus-restore.mjs` / `_diagnose-focus-steal.mjs`）：
+触发器元素**一直在文档里**（不是被 React 重新挂载），且**手动 focus 它能留住**（没有别的焦点管理在抢）。
+⇒ 问题在 hook 自己：
+
+**根因**——`SearchDialog` 组件体里先写了自己的 `useEffect(() => inputRef.current?.focus(), [])`，**之后**才调用本 hook。
+被动 effect 按**注册顺序**执行 ⇒ 等 hook 的 effect 跑起来记录"打开前的焦点"时，
+`document.activeElement` **已经是浮层里的输入框**了。关闭时那个输入框随浮层一起被移除
+⇒ 记下的"上一个焦点"指向一个**已脱离文档**的元素 ⇒ 被 `isConnected` 保护拦下 ⇒ 焦点留在 body。
+**换句话说：自己做自动聚焦的浮层，恰恰是焦点归还不生效的那一类。**
+
+### 修法
+
+把"记住打开前的焦点"从 `useEffect` 换成 **`useLayoutEffect`**（布局 effect 早于所有被动 effect 执行，
+所以抢得到真正的"打开前"），并加一条 `previousFocusRef.current` 已存在就不覆盖的守卫。
+另加：只在**没人接管焦点**时才归还（`activeElement` 是 body/null）——这条是 1.16.173 里被
+`app-menu-bar` 既有用例逼出来的，否则会把调用方自己刚设好的焦点顶掉。
+
+### 为什么单元用例没抓到
+
+原来的 ESC-4 用例里，浮层**没有**自动聚焦，所以"记录焦点"的时机对不对完全看不出来。
+新增 **ESC-7**：用例里刻意复刻 `SearchDialog` 的顺序（先 `useEffect` 自动聚焦、再调用 hook）
+⇒ 暴露问题；变异 `OVERLAY1-记住焦点退回被动effect`（把 `useLayoutEffect` 改回 `useEffect`）必须红。
+本轮变异自证 **28/28 全红**。
+
 ## [1.16.173] - 2026-09-26 — P2-6 浮层收口：9 处手写 Escape 收敛成 `useDismissableLayer`（并更正方案口径）
 
 > 方案写的是「手写 Escape 14 处 → ≤2」。实测 **22 处**，但逐条看下来是**两族不同的东西**，
