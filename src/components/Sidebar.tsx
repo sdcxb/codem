@@ -920,20 +920,64 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       {/* SlotListBridge 消费 sidebar.tabs — list 类型，允许插件注入侧边栏 tab */}
       <SlotListBridge name="sidebar.tabs" />
       {/* P1 #8: Bottom user info area + 插件管理按钮 */}
+      {/**
+       * 第 197 轮：**头像与用户名可点，点开设置页**（用户要求）。
+       *
+       * ## 为什么不是"整块包一个 button"
+       * 这一块里**本来就有**一个插件管理按钮。<button> 里再放 <button> 是**非法 HTML**，
+       * 浏览器会把它拆开、行为不可预期。所以结构是"相邻的两个按钮"：
+       *   · `.sidebar-user-me`（头像 + 用户名 + 状态）—— 点击打开设置；
+       *   · `.sidebar-user-plugin-btn` —— 插件管理，**位置与行为都不变**。
+       * 外层 `.sidebar-user-area` 仍是三列 grid（`max-content / 1fr / max-content`），
+       * 所以前两列被 `.sidebar-user-me` 占掉后，插件按钮还落在原来那一列 —— 视觉零变化。
+       *
+       * ## 为什么用 <button>
+       * 键盘可达（Tab 聚焦、回车/空格触发）与读屏语义都是**内建**的，不必自己补 onKeyDown。
+       *
+       * ## 为什么 `onSettings` 不存在时退回普通容器
+       * 设置被插件禁用时（`settingsEnabled === false`）不该出现"点了没反应"的死按钮 ——
+       * 那比"不能点"更糟。此时渲染成 <div>，行为与改动前一致。
+       */}
       <div className="sidebar-user-area">
-        <div className="sidebar-user-avatar">
-          {userAvatar ? (
-            <img src={userAvatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-          ) : identity?.name ? (
-            identity.name.charAt(0).toUpperCase()
-          ) : (
-            <User size={16} />
-          )}
-        </div>
-        <div className="sidebar-user-info">
-          <div className="sidebar-user-name">{identity?.name || (lang === 'zh' ? '未登录' : 'Guest')}</div>
-          <div className="sidebar-user-status">{lang === 'zh' ? '本地用户' : 'Local user'}</div>
-        </div>
+        {onSettings ? (
+          <button
+            type="button"
+            className="sidebar-user-me sidebar-user-me--clickable"
+            onClick={onSettings}
+            title={S.sidebar.settings[lang]}
+            aria-label={S.sidebar.settings[lang]}
+          >
+            <div className="sidebar-user-avatar">
+              {userAvatar ? (
+                <img src={userAvatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              ) : identity?.name ? (
+                identity.name.charAt(0).toUpperCase()
+              ) : (
+                <User className="icon-md" />
+              )}
+            </div>
+            <div className="sidebar-user-info">
+              <div className="sidebar-user-name">{identity?.name || (lang === 'zh' ? '未登录' : 'Guest')}</div>
+              <div className="sidebar-user-status">{lang === 'zh' ? '本地用户' : 'Local user'}</div>
+            </div>
+          </button>
+        ) : (
+          <div className="sidebar-user-me">
+            <div className="sidebar-user-avatar">
+              {userAvatar ? (
+                <img src={userAvatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              ) : identity?.name ? (
+                identity.name.charAt(0).toUpperCase()
+              ) : (
+                <User className="icon-md" />
+              )}
+            </div>
+            <div className="sidebar-user-info">
+              <div className="sidebar-user-name">{identity?.name || (lang === 'zh' ? '未登录' : 'Guest')}</div>
+              <div className="sidebar-user-status">{lang === 'zh' ? '本地用户' : 'Local user'}</div>
+            </div>
+          </div>
+        )}
         {onPlugins && (
           <button className="sidebar-user-plugin-btn" onClick={onPlugins} title={S.sidebar.pluginManager[lang]}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}

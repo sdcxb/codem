@@ -1,15 +1,15 @@
 {
-  "version": "1.16.196",
-  "notes": "图标边缘不再泛白：应用图标各尺寸档的透明边缘此前混进了白色，在深色任务栏上表现为一圈发白的毛刺（上一版把任务栏改用最大档图标后才明显起来）。现在按透明度把边缘像素的颜色还原为真实颜色，透明边缘的形状与图标主体未做任何改动。",
-  "pub_date": "2026-09-27T09:22:07Z",
+  "version": "1.16.197",
+  "notes": "点击左下角的头像与用户名可直接打开设置；设置里的「高级」与「帮助」移到最后。",
+  "pub_date": "2026-09-27T10:31:22Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JuaXB2UFQwbU9MWjRORzQ0MExkT2dVVmlkMXI3Y1JqRTNEWWtLU0pIaTFuaGtrNmtqaWFiMEJVOUtCS2lDZkNlcyszUVJVcW8zM3VyTTVsbG4rQ2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTAwNjY1CWZpbGU6Q29kZW1fMS4xNi4xOTZfeDY0LXNldHVwLmV4ZQpSdHRRZTlUeElIN0tmTjEwQVhNbWRKUDVGU2VaVnhJWlZCcDA5bUcrNmFpQzIvamNINU1BaS9BTmVuU2NSTkFHbWZNRldrY3JmdEtIY2pobDRDaG1Edz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.196/Codem_1.16.196_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1diWWpqT3ZLYVRhSm4yUGdBbHFMZmoxcjFDLzlIU3JXR0VtK1VvYkl1VVRlaXJxemRqSnM2SEpheWhacW9raFdjM2tWVlNiQ2dDUlgwbUVUYjRnS3djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTA0OTY4CWZpbGU6Q29kZW1fMS4xNi4xOTdfeDY0LXNldHVwLmV4ZQpma0xuc09TYjFOMUVBRSt2N3RxYThmdGRyazZsUnpyc0FWVDFvKzlkMXYxNlVEbXYwcjlsak82WnpBQ3hOSkY1a2kveExyNFIwY0NYRHl0bXdxMlFBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.197/Codem_1.16.197_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JuaXB2UFQwbU9MWjRORzQ0MExkT2dVVmlkMXI3Y1JqRTNEWWtLU0pIaTFuaGtrNmtqaWFiMEJVOUtCS2lDZkNlcyszUVJVcW8zM3VyTTVsbG4rQ2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTAwNjY1CWZpbGU6Q29kZW1fMS4xNi4xOTZfeDY0LXNldHVwLmV4ZQpSdHRRZTlUeElIN0tmTjEwQVhNbWRKUDVGU2VaVnhJWlZCcDA5bUcrNmFpQzIvamNINU1BaS9BTmVuU2NSTkFHbWZNRldrY3JmdEtIY2pobDRDaG1Edz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.196/Codem_1.16.196_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1diWWpqT3ZLYVRhSm4yUGdBbHFMZmoxcjFDLzlIU3JXR0VtK1VvYkl1VVRlaXJxemRqSnM2SEpheWhacW9raFdjM2tWVlNiQ2dDUlgwbUVUYjRnS3djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTA0OTY4CWZpbGU6Q29kZW1fMS4xNi4xOTdfeDY0LXNldHVwLmV4ZQpma0xuc09TYjFOMUVBRSt2N3RxYThmdGRyazZsUnpyc0FWVDFvKzlkMXYxNlVEbXYwcjlsak82WnpBQ3hOSkY1a2kveExyNFIwY0NYRHl0bXdxMlFBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.197/Codem_1.16.197_x64-setup.exe"
     }
   }
 }

@@ -13937,6 +13937,51 @@ html.pet-window-mode body,
   border-top: 1px solid var(--hairline-ink);
   flex-shrink: 0;
 }
+/**
+ * 第 197 轮：头像 + 用户名 + 状态这一组（点它打开设置）。
+ *
+ * 它**必须**是外层三列 grid 的**单个**子项并占掉前两列 —— 这样右边的插件按钮
+ * 仍落在第三列，位置与改动前**逐像素一致**。所以这里自己再开一个两列 grid
+ * （max-content / 1fr），而不是把头像和信息直接摊在外层 grid 里。
+ *
+ * 为什么用 `grid-column: 1 / 3` 而不是 `span 2`：两者等价，但显式写列号更明确
+ * "前两列是这一组"的意图，改外层列数时也更容易发现要同步。
+ */
+.sidebar-user-me {
+  grid-column: 1 / 3;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+/**
+ * 可点状态下把它变回"看起来不是按钮"：
+ *   · 去掉按钮自带的边框/底色/字体继承差异，外观与改动前**完全一致**；
+ *   · `text-align: left` 让用户名左对齐（按钮默认居中）；
+ *   · 负外边距 + 内边距 = 给一个**更大的命中区**，但不改变视觉位置
+ *     （padding 撑出去多少，margin 就收回来多少）。
+ * 悬停/聚焦只加一层很轻的底，告诉用户"这里能点"。
+ */
+.sidebar-user-me--clickable {
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
+  border-radius: var(--radius);
+}
+.sidebar-user-me--clickable:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+.sidebar-user-me--clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .sidebar-user-avatar {
   width: 28px;
   height: 28px;

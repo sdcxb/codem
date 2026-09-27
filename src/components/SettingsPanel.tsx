@@ -1039,14 +1039,6 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               aria-current={activeTab === "pet" ? "page" : undefined} onClick={() => setActiveTab("pet")}>
               <span className="sidebar-icon"><PawPrint size={16} /></span>{lang === "zh" ? "宠物" : "Pet"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`}
-              aria-current={activeTab === "advanced" ? "page" : undefined} onClick={() => setActiveTab("advanced")}>
-              <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "高级" : "Advanced"}
-            </button>
-            <button className={`settings-sidebar-item ${activeTab === "help" ? "active" : ""}`}
-              aria-current={activeTab === "help" ? "page" : undefined} onClick={() => setActiveTab("help")}>
-              <span className="sidebar-icon"><HelpCircle size={16} /></span>{lang === "zh" ? "帮助" : "Help"}
-            </button>
             {/* P2 #35: Usage stats tab */}
             <button className={`settings-sidebar-item ${activeTab === "usage" ? "active" : ""}`}
               aria-current={activeTab === "usage" ? "page" : undefined} onClick={() => setActiveTab("usage")}>
@@ -1056,6 +1048,26 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <button className={`settings-sidebar-item ${activeTab === "performance" ? "active" : ""}`}
               aria-current={activeTab === "performance" ? "page" : undefined} onClick={() => setActiveTab("performance")}>
               <span className="sidebar-icon"><Activity size={16} /></span>{lang === "zh" ? "性能" : "Performance"}
+            </button>
+            {/**
+             * 第 197 轮：**「高级」与「帮助」移到最后**（用户要求）。
+             *
+             * 原先它们排在「宠物」之后、「用量统计」之前 —— 夹在日常功能中间。
+             * 这两项都属于"偶尔才去一次"的：高级是实验性/分层开关，帮助是文档入口。
+             * 放到列表末尾后，日常区（通用→外观→…→宠物/用量/性能）连成一片，
+             * 不常用的收在最后，符合"从常用到不常用"的阅读顺序。
+             *
+             * ⚠️ 只动了**渲染顺序**：`activeTab` 的取值、"更多"折叠逻辑、
+             * 以及各分区自身的实现都没动 —— 所以不影响任何跳转（例如侧栏/标题栏的
+             * "打开设置"仍然落到 `general`，`onPerf` 仍然先设 `performance`）。
+             */}
+            <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`}
+              aria-current={activeTab === "advanced" ? "page" : undefined} onClick={() => setActiveTab("advanced")}>
+              <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "高级" : "Advanced"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "help" ? "active" : ""}`}
+              aria-current={activeTab === "help" ? "page" : undefined} onClick={() => setActiveTab("help")}>
+              <span className="sidebar-icon"><HelpCircle size={16} /></span>{lang === "zh" ? "帮助" : "Help"}
             </button>
           </div>
 
