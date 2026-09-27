@@ -796,6 +796,27 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
     expect(cardRings[0].w, `焦点环宽度 ${cardRings[0].w}px 应为 1.5–2px`).toBeLessThanOrEqual(2);
     expect(cardRings[0].color, `焦点环色要用**实色**品牌色 var(--accent)（半透明的那种是 184 轮"看着太细"的另一半原因），实际：${cardRings[0].color}`).toMatch(/var\(--accent(?!-)/);
 
+    /**
+     * ①b **顶边不许再叠一层边框色**（第 189 轮）。
+     *
+     * 用户原话：「紫色的框**上面部分比其他部分粗**，是边框叠加了吗？」
+     * `_probe-189-ring-edges.mjs`（沿四条边法线各取 2–4 个采样点，dpr=3）实测：
+     * ```
+     *   上边 3 物理像素   ← border-top 1px（被我换成了品牌色）+ 环 2px
+     *   下/左/右 2 物理像素 ← 只有环
+     * ```
+     * 即 **188 轮多画了一圈**：本意是"让顶边不缺一段"，但环本来就完整覆盖四条边，
+     * 那条 1px 边框再上色就是**加粗**。
+     *
+     * 判据：聚焦时该行的边框色必须**透明**（让位给环）。
+     * 边框**宽度**不动 —— 所以失焦态的结构线照常显示，布局也不变。
+     */
+    expect(
+      /(?:^|;)\s*border-color:\s*transparent/.test(cardBody),
+      "聚焦时 `.input-textarea-row` 的顶边必须让位给环（`border-color: transparent`）—— " +
+        "上色会与 2px 环叠加成 3px，就是用户说的「上面部分比其他部分粗」。实际规则体：" + cardBody.trim(),
+    ).toBe(true);
+
     /* ②③ textarea：**不许**画自己那圈 —— 这就是"外边框多出来的紫条" */
     const taBody = new RegExp(`(^|\\n)\\s*\\.message-input:focus-visible\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
     expect(

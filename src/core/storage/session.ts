@@ -62,6 +62,8 @@ function wireToSession(row: Record<string, unknown>): Session {
     preserveExecutor: (row.preserve_executor as number) ?? undefined,
   // 第 54 轮：谱系要**读回来**才谈得上"写侧不丢"（写侧见 `sessionToWire` 的 parent_id）
   parentId: (row.parent_id as string | null) ?? null,
+  // 第 189 轮：内部会话标记（子智能体轨迹）。老库/未迁移时该列为 undefined → 当 false。
+  isInternal: Number(row.is_internal ?? 0) === 1,
   };
 }
 
@@ -122,6 +124,12 @@ function sessionToWire(s: Session): Record<string, unknown> {
    * 假端口比引擎更严格）。
    */
   parent_id: s.parentId ?? null,
+  /**
+   * 第 189 轮：`is_internal` 也必须一起写回 —— 与上面 `parent_id` 同一个道理
+   * （建行路径走 `mode: "insert"`，构造器漏列 = 落库静默丢值）。
+   * 显式写 0/1 而不是省略键：`replace` 路径上只有显式值才能改这一列。
+   */
+  is_internal: s.isInternal ? 1 : 0,
   };
 }
 
@@ -182,43 +190,31 @@ function rowToSessionFromAny(row: any[]): Session {
 
 
 /**
- * 子智能体会话 id 的形态（**唯一定义处**，与生成侧保持一致）。
+ * 这个会话**是不是内部轨迹**（而不是用户眼里的对话目录）。
  *
- * 生成侧只有两处，必须与这里同步：
- *   · `src/core/subagent/spawn-in-process-provider.ts:43`
- *   · `src/core/subagent/runtime.ts:91`
- * 两处都是 `` `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` ``。
- */
-const SUBAGENT_SESSION_ID = /^sub-\d+-[a-z0-9]+$/;
-
-/**
- * 这个会话**是不是子智能体的轨迹**（而不是用户跟它对话的那个会话）。
- *
- * ## 为什么需要区分（第 188 轮，用户报的 bug）
+ * ## 判据：表里的显式列 `is_internal`（第 189 轮）
  *
  * 用户原话：「项目对话里调用子智能体的时候，会在左侧边栏的项目对话目录，增加子智能体的条目，
  * 这个逻辑不对。**子智能体不作为单独的对话目录**。」
  *
- * 成因是 C-2 那轮的修复只做了一半：子智能体的会话 id 需要一行 `sessions` 才能在
- * `messages` / `session_events` / `cost_records` 上过外键，于是 `ensureSubagentSession`
- * 给它建了行 —— 并**故意跟父会话同 `project_id`**（那时为了"不凭空造项目归属"）。
- * 副作用没人处理：侧栏按 `project_id` 列会话，子会话于是和真会话一样出现在项目目录里。
+ * 成因：C-2 那轮给子智能体补 `sessions` 行时**照抄了父会话的 `project_id`**（为了不凭空造归属），
+ * 而侧栏按 `project_id` 列会话 ⇒ 子会话和真会话一样挤进项目目录。
  * `src/core/subagent/subagent-session.ts` 的注释其实点名过这个缺口
- * （"UI 侧也没有按 `parent_id` 折叠会话列表的渲染路径"）—— 这里补上那条路径。
+ * （"UI 侧也没有按 `parent_id` 折叠会话列表的渲染路径"）。
  *
- * ## ⚠️ 判据为什么**不能**用 `parentId`（第一版就是那么写的，被测试当场纠正）
+ * ## ⚠️ 两条被否掉的判据（都写在这里，免得第三个人再走一遍）
  *
- * `sessions.parent_id` 有三处写：分叉、编辑并回退、以及 `ensureSubagentSession`。
- * 第一版把"有 parentId"一律当轨迹过滤掉，`FIXB-7d` 立刻红了 ——
- * 而它是对的：**分叉出来的是一个真会话**，用户要能切回去继续聊；
- * 子智能体才是内部轨迹，不该占目录。两者都有 `parent_id`，靠它分不开。
+ * 1. **按 `parentId` 一刀切**：`sessions.parent_id` 有三处写 —— 分叉、编辑并回退、
+ *    `ensureSubagentSession`。一刀切会**连带滤掉分叉会话**，而分叉是用户真会切回去继续聊的对话
+ *    —— `FIXB-7d` 当场把这一版判红（它是对的）。
+ * 2. **按 id 前缀 `sub-`**（188 轮实装过）：能用，但与"id 怎么拼"耦合 ——
+ *    改一次生成规则就得同步改判据，**漏改没有任何东西会提醒你**。
  *
- * 所以判据取**id 形态**：子智能体的 id 由 `sub-<时间戳>-<随机>` 固定生成（见上）。
- * 这条判据与"id 怎么拼"耦合，是**已知的代价**；改成显式列需要动 Rust 侧 schema，
- * 不在本 bug 的范围。**若哪天改了 id 生成规则，必须同步改这里**（上面写了两个出处）。
+ * 所以现在读**表里的列**：`is_internal` 由创建那段代码显式声明
+ * （`ensureSubagentSession` 建行时置 1），是"可以被查询的事实"，不是"从字符串形状里猜的结论"。
  */
-export function isChildSession(s: Pick<Session, "id">): boolean {
-  return SUBAGENT_SESSION_ID.test(s.id);
+export function isChildSession(s: Pick<Session, "isInternal">): boolean {
+  return s.isInternal === true || s.isInternal === 1;
 }
 
 export function listSessions(projectId: string): Session[] {

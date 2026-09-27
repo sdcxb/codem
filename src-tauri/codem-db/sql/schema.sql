@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_message_at INTEGER NOT NULL,
   message_count INTEGER DEFAULT 0,
   pinned INTEGER DEFAULT 0,
+  -- 内部会话标记（第 189 轮）：子智能体的轨迹会话。它们需要一行 sessions 才能在
+  -- messages / session_events / cost_records 上过外键，但**不是用户可见的对话目录**。
+  -- 早先靠 id 前缀（sub-）在渲染侧认，与生成规则耦合；这里落成显式列。
+  is_internal INTEGER DEFAULT 0,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 

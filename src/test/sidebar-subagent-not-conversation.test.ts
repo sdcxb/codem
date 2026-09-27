@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
-import { createSession, listSessions, forkSession } from "../core/storage/session";
+import { createSession, listSessions, forkSession, getSession } from "../core/storage/session";
 import { ensureSubagentSession } from "../core/subagent/subagent-session";
 
 const mk = (id: string, projectId = "proj", parentId: string | null = null) =>
@@ -59,14 +59,45 @@ describe("SUBCONV：子智能体不作为单独的对话目录", () => {
     ).toEqual(["p1", "p2"]);
   });
 
-  it("SUBCONV-3：判据与生成侧同步（id 形态变了必须一起改）", () => {
-    /* 生成侧两个出处：spawn-in-process-provider.ts / runtime.ts，形态都是 sub-<ts>-<rand>。
-       这里直接按那个形态造一个，确认被识别为子会话。 */
-    mk("sub-1790000000000-abcdefghi", "proj");
-    mk("real-session-1", "proj");
+  it("SUBCONV-3：判据读的是**表里的 `is_internal` 列**，不是 id 形状（第 189 轮换了判据）", () => {
+    /* 188 轮曾按 id 前缀（`sub-`）认，与"id 怎么拼"耦合；现在读显式列。
+       两条断言把这个切换钉住：① 换一个**不像** sub- 的 id、但置 isInternal=true，也必须被挡掉；
+       ② 一个**长得像** sub- 但没置标志的会话，**不许**被误伤（判据不再看形状）。 */
+    createSession({
+      id: "internal-trace-1",
+      projectId: "proj",
+      title: "内部轨迹",
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+      messageCount: 0,
+      isInternal: true,
+    });
+    createSession({
+      id: "sub-1790000000000-lookalike",
+      projectId: "proj",
+      title: "长得像子会话但其实不是",
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+      messageCount: 0,
+      // 刻意**不**置 isInternal
+    });
+
     expect(
-      listSessions("proj").map((s) => s.id),
-      "子智能体 id 形态未被识别",
-    ).toEqual(["real-session-1"]);
+      listSessions("proj").map((s) => s.id).sort(),
+      "判据必须是表里的 is_internal 列：置了标志的（不管 id 长什么样）要挡掉，" +
+        "没置标志的（哪怕 id 长得像 sub-）不许误伤",
+    ).toEqual(["sub-1790000000000-lookalike"]);
+  });
+
+  it("SUBCONV-4：`is_internal` 必须真的落库、真的读回来（不是只存在于内存）", () => {
+    mk("p1", "proj"); // 父会话必须先存在，否则 ensureSubagentSession 按约定不建行
+    const childId = `sub-${Date.now()}-abc654321`;
+    expect(ensureSubagentSession(childId, "p1"), "子会话行应当建成功").toBe(true);
+    const row = listSessions("proj");
+    expect(row.map((s) => s.id), "子会话不该进列表").not.toContain(childId);
+    /* 直接查那一行：标志必须写进去了（建行走 insert，构造器漏列 = 静默丢值） */
+    const one = getSession(childId);
+    expect(one, "子会话行应当存在（消息/事件/成本依赖它过外键）").toBeTruthy();
+    expect(one!.isInternal, "`is_internal` 没落到库里 —— `sessionToWire` 漏了这一列").toBe(true);
   });
 });

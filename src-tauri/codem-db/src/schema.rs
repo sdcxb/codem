@@ -1,7 +1,7 @@
 //! schema 与迁移（真源仍是渲染侧 TS，这里由 `tools/audit/gen-schema-sql.mjs` 生成）
 //!
 //! - `sql/schema.sql`：39 张表的建表语句（`execute_batch` 一次执行，与 sql.js 的 `db.run(SCHEMA)` 等价）
-//! - `sql/migrations.json`：23 条 `ALTER TABLE`（逐条执行并**容忍"列已存在"**，与渲染侧行为一致）
+//! - `sql/migrations.json`：29 条 `ALTER TABLE`（逐条执行并**容忍"列已存在"**，与渲染侧行为一致）
 //! - `sql/fts.json`：会话全文检索表的列定义（`session_fts`）
 //!
 //! FTS 模块选择：老库里 `session_fts` 是 **FTS4**（sql.js 不支持 FTS5）。Rust bundled SQLite 两者都有，

@@ -56,6 +56,30 @@ export interface Session {
    * 那是假端口比引擎更严格造出来的假象（已改，见 `fake-storage-port.ts`）。
    */
   parentId?: string | null;
+  /**
+   * **内部会话**标记（第 189 轮）：这一行是某个机制的"轨迹会话"，不是用户眼里的对话。
+   *
+   * ## 为什么必须单独一列，而不是继续靠 id 前缀认
+   *
+   * 子智能体的会话 id 形如 `sub-<ts>-<rand>`，需要一行 `sessions` 才能在
+   * `messages` / `session_events` / `cost_records` 上过外键 —— 但**它不是用户可见的对话目录**。
+   * 第 188 轮先按 id 前缀（`/^sub-\d+-[a-z0-9]+$/`）把它从会话列表里滤掉，
+   * 那条判据能用但**与"id 怎么拼"耦合**：改一次生成规则就得同步改判据，
+   * 漏改就是"子会话又冒出来"的静默回归（没有任何东西会提醒你）。
+   *
+   * 现在它是**表里的显式列**（`ALTER TABLE sessions ADD COLUMN is_internal INTEGER DEFAULT 0`）：
+   * 「这条会话是不是内部轨迹」变成一个可以被查询、被审计、被索引的事实，
+   * 而不再是"从字符串形状里猜出来的结论"。
+   *
+   * ## 语义边界（写清免得被滥用）
+   *
+   * · `1` = 内部轨迹：**不进任何"把会话当目录列"的地方**（`listSessions` 已按它过滤）；
+   * · `0`/缺省 = 普通对话。
+   * · **分叉会话不是内部会话**：它是用户真会切回去继续聊的对话，必须留在列表里
+   *   （第 188 轮第一版按 `parentId` 一刀切，正是被 `FIXB-7d` 当场纠正的）。
+   *   所以这一列**不许**由 `parentId` 推导，只能由"创建它的那段代码"显式声明。
+   */
+  isInternal?: boolean | number;
 }
 
 export interface Attachment {
