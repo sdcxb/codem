@@ -1,15 +1,15 @@
 {
-  "version": "1.16.199",
-  "notes": "把设置里搜索框的紫色焦点框改成画在搜索框内侧，不再超出搜索区域；键盘焦点提示保留。",
-  "pub_date": "2026-09-27T11:16:52Z",
+  "version": "1.16.200",
+  "notes": "修掉设置搜索框聚焦时出现的两个紫框：只保留搜索框内的一圈，不再有包裹整块的外框。",
+  "pub_date": "2026-09-27T11:59:55Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JGUHh4YS9EUWhwUUw0aGVhWXJQcFZmQ2duaWVvTVRkL0lKSUMrQUtkcWtTNmJDQWo4RVllMDFYV09Pc2VCZVFVdE1tcllWYVEzUWR2aWlCRC9MM2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTA3NTQzCWZpbGU6Q29kZW1fMS4xNi4xOTlfeDY0LXNldHVwLmV4ZQpuaTd5RGg3RFZ4eFVVNnV0Tm9xVG93aEFScU01eC9UU2lDTmkzM0dxM0pycTYvZGQ0VURLWHdubElHZHFwZ2NxbStxbEYrMFFXeFlaR3orUzJpNUpEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.199/Codem_1.16.199_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hvQ2VzUjcwYlBiTEJQelZYbWU4Yk5uYVhUYUR3OWdwc09EYktOMVpwQS8zYWpVSUNEUjRvb0VPWXlyTngrd1ovYVVENDNsZDdjU05oTGlHL25qUGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTEwMjk1CWZpbGU6Q29kZW1fMS4xNi4yMDBfeDY0LXNldHVwLmV4ZQpoTXc5RGlBY2UyT3lDdmdGTjdVM3NtdHpuYWVCbm55RWZBRlYxdWFFS3NRUkx4cFBqeVFiZStkbE93aFVlcEJsblgrazdvajB1UktMd2Fzbnp5RDZEUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.200/Codem_1.16.200_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JGUHh4YS9EUWhwUUw0aGVhWXJQcFZmQ2duaWVvTVRkL0lKSUMrQUtkcWtTNmJDQWo4RVllMDFYV09Pc2VCZVFVdE1tcllWYVEzUWR2aWlCRC9MM2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTA3NTQzCWZpbGU6Q29kZW1fMS4xNi4xOTlfeDY0LXNldHVwLmV4ZQpuaTd5RGg3RFZ4eFVVNnV0Tm9xVG93aEFScU01eC9UU2lDTmkzM0dxM0pycTYvZGQ0VURLWHdubElHZHFwZ2NxbStxbEYrMFFXeFlaR3orUzJpNUpEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.199/Codem_1.16.199_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hvQ2VzUjcwYlBiTEJQelZYbWU4Yk5uYVhUYUR3OWdwc09EYktOMVpwQS8zYWpVSUNEUjRvb0VPWXlyTngrd1ovYVVENDNsZDdjU05oTGlHL25qUGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTEwMjk1CWZpbGU6Q29kZW1fMS4xNi4yMDBfeDY0LXNldHVwLmV4ZQpoTXc5RGlBY2UyT3lDdmdGTjdVM3NtdHpuYWVCbm55RWZBRlYxdWFFS3NRUkx4cFBqeVFiZStkbE93aFVlcEJsblgrazdvajB1UktMd2Fzbnp5RDZEUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.200/Codem_1.16.200_x64-setup.exe"
     }
   }
 }

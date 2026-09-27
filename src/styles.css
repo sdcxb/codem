@@ -17791,26 +17791,31 @@ color: var(--accent, #7c6cf0);
   font-family: inherit;
   font-size: var(--fs-sm);
   /**
-   * 第 199 轮：**按掉全局焦点环，改由 `.sp-search` 画内嵌环**。
+   * 第 199–200 轮：**搜索输入框自己不许画任何环**，环统一由 `.sp-search` 的内嵌环承担。
    *
-   * 那条全局规则是 `input:focus-visible { outline: 2px solid … }`，特异度 **(0,1,1)** ——
-   * 比这里 `.sp-search-input`（0,1,0）**高**，所以普通声明压不住它。实测两次：
-   *   · 先写 `outline: none` ⇒ 计算样式仍是 `2px solid`（被它盖过去）；
-   *   · 改 `outline-width: 0` 也一样压不住。
-   * 于是这里用 `!important` —— 这是**有意的、有替代环的**抑制，不是"关掉焦点提示"：
-   * 环没有消失，只是从"输入框外侧 4px"挪成了"搜索行上的 2px 内嵌环"
+   * ## 要按掉的是**两条**全局规则（第 200 轮才把第二条找出来）
+   * 1. `codem-ui.css`：`button:focus-visible, …, input:focus-visible, … { outline: 2px solid var(--accent); outline-offset: 2px }`
+   *    —— 特异度 **(0,1,1)**，压 `.sp-search-input`（0,1,0）。
+   * 2. **`styles.css`（本文件 18664 行附近）**：
+   *    `input:focus-visible, textarea:focus-visible, [contenteditable="true"]:focus-visible { outline: none; box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color) }`
+   *    —— 它画的是 **box-shadow 外扩环**（`outline` 那条它自己已经关掉了）。
+   *
+   * ⚠️ **第 199 轮我只按掉了第 1 条的 `outline`**，以为齐活了 —— 结果输入框上仍留着第 2 条的
+   * box-shadow 环，于是叠加成**两个紫框**（用户第 200 轮的反馈：「出现了两个紫色边框，
+   * 其中一个包裹住整个块」）。装机版实测当时输入框上确实是
+   * `box-shadow: color(srgb 0.396 0.333 0.878 / 0.75) 0px 0px 0px 2px`。
+   *
+   * ⇒ 结论：**"关掉焦点环"要连 outline 与 box-shadow 两条通道一起关**，
+   *    只关其中一条，另一条会安静地把环画出来。
+   *
+   * ## 为什么可以放心用 `!important`
+   * 不是"把焦点提示关掉"：环没有消失，只是**换了个位置**由 `.sp-search` 画
    * （见上面 `.sp-search:has(.sp-search-input:focus-visible)`，装机版实测为
-   *   `rgb(101,85,224) 0px 0px 0px 2px inset`），键盘用户照样看得见焦点。
-   *
-   * 为什么不用"给选择器加个类把特异度抬到 (0,2,1)"：那要往 TSX 里塞一个只为覆盖而存在的类，
-   * 反而更难维护；这里覆盖的是**一条全局规则**，用 `!important` 的意图更直白。
-   *
-   * ⚠️ 注意别写成 `outline: none`：`ui-audit` 的 `focus-outline-none` 规则会扫
-   * 「选择器带 `:focus` + 规则体有 `outline:none` + 没有 `box-shadow`」并报错。
-   * 这条选择器不含 `:focus`（替代环也画在别的元素上），写 `outline: none` 本不会触发；
-   * 但只归零"宽度"语义更准：**只是不画线，不是把整个 outline 机制关掉**。
+   * `rgb(101,85,224) 0 0 0 2px inset`，仍然清晰可见，且不会溢出搜索区）。
+   * 门禁 `SEARCHRING-199-4` 专门守着"替代环不许丢"。
    */
   outline-width: 0 !important;
+  box-shadow: none !important;
   height: var(--control-std);
 }
 .sp-search-status { padding: var(--space-2) var(--space-1) 0; font-size: var(--fs-xs); color: var(--text-muted); }

@@ -15676,6 +15676,7 @@
   "sp-search-input": {
     "background": "transparent",
     "border": "none",
+    "box-shadow": "none !important",
     "color": "var(--text-primary)",
     "flex": "1",
     "font-family": "inherit",

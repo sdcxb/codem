@@ -152,11 +152,22 @@ describe("SEARCHRING-199 搜索框焦点环收在搜索区内", () => {
     const at = clean.indexOf(".sp-search-input {");
     expect(at, "找不到 .sp-search-input 规则").toBeGreaterThan(-1);
     const body = clean.slice(at, clean.indexOf("}", at));
-    /* 本轮实测出来的关键点：全局那条是 (0,1,1)，`.sp-search-input` 只有 (0,1,0)，
-       所以 `outline: none` / `outline-width: 0` 都会被盖过去 —— 必须 !important。 */
+    /* 全局那条是 (0,1,1)，`.sp-search-input` 只有 (0,1,0) ⇒ 必须 !important。 */
     expect(body, "输入框的 outline 归零必须带 !important").toMatch(/outline-width:\s*0\s*!important/);
     expect(body, "不该写成 outline: none（语义过宽，且会踩 focus-outline-none 门禁）")
       .not.toMatch(/outline:\s*none/);
+    /**
+     * ★ **第 200 轮补的这条**：光按掉 `outline` **不够**。
+     * 本文件里还有一条全局文本输入规则：
+     *   `input:focus-visible, textarea:focus-visible, [contenteditable=true]:focus-visible {
+     *      outline: none; box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color) }`
+     * 它画的是 **box-shadow 环**。只关 outline 时，输入框上仍留着那圈 box-shadow，
+     * 与搜索行的内嵌环叠成**两个紫框** —— 用户第 200 轮反馈的正是这个
+     * （「出现了两个紫色边框，其中一个包裹住整个块」）。
+     * ⇒ **"关掉焦点环"必须把 outline 与 box-shadow 两条通道一起关。**
+     */
+    expect(body, "输入框的 box-shadow 也必须按掉（否则还剩第二个紫框）")
+      .toMatch(/box-shadow:\s*none\s*!important/);
   });
 
   it("SEARCHRING-199-4 替代环不许丢（键盘用户必须看得见焦点）", () => {
@@ -165,5 +176,17 @@ describe("SEARCHRING-199 搜索框焦点环收在搜索区内", () => {
     const clean = stripCssComments(CSS);
     const hasRing = /\.sp-search:has\(\.sp-search-input:focus-visible\)\s*\{[^}]*box-shadow:\s*inset/.test(clean);
     expect(hasRing, "按掉了输入框的环，就必须在搜索行上补一个 inset 环").toBe(true);
+  });
+
+  it("SEARCHRING-199-5 ★上面那条压制的前提仍在（那条全局 box-shadow 环确实存在）", () => {
+    /* 这条判据的**理由**：本文件里真有一条给文本输入画 box-shadow 环的全局规则。
+       若哪天它被删了/改了，`.sp-search-input` 上那两条 !important 就可以简化甚至去掉 ——
+       让它红，提醒重看，而不是留一条"理由已经消失"的压制。 */
+    const clean = stripCssComments(CSS);
+    expect(
+      clean,
+      "styles.css 里那条 `input:focus-visible … box-shadow: 0 0 0 var(--focus-ring-width)` 不在了 —— " +
+        "请重新评估 .sp-search-input 上那两条 !important 压制是否还需要",
+    ).toMatch(/input:focus-visible[\s\S]{0,260}box-shadow:\s*0 0 0 var\(--focus-ring-width\)/);
   });
 });
