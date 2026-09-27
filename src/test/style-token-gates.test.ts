@@ -729,13 +729,32 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
    * 于是越调越偏：用户说粗就调窄、说细就调宽，而"有两圈"这件事一次都没被问到。
    * **判据的前提错了，调多少参数都是白调。**
    *
-   * 现在的判据换成三条**直接对应观感**的：
+   * 现在的判据换成四条**直接对应观感**的：
    *   ① 卡片（唯一的焦点环）宽度落在 **1.5–2px**、环色为**实色品牌色**；
    *   ② textarea **不许**再画自己那圈（`box-shadow: none`）—— 这就是"外边框多出来的紫条"；
    *   ③ textarea 的聚焦规则**必须存在**且显式写 `outline: none` + `box-shadow`
-   *      —— 否则会回落全局 `textarea:focus-visible`，两圈又回来。
+   *      —— 否则会回落全局 `textarea:focus-visible`，两圈又回来；
+   *   ④ **触发条件必须是 `:has(.message-input:focus-visible)`，不许是 `:focus-within`**（第 187 轮）。
+   *
+   * ## ④ 的来历：用户第四次反馈「那个外边框多的紫色条，**现在常显了**」
+   *
+   * `_diag-187-four-edges.mjs` 把输入卡**四条边**在两种状态下各扫一遍（吸取"只扫一条边就下结论"的教训）：
+   * ```
+   *   失焦：四条边 **0** 个紫像素
+   *   聚焦 textarea：上边 y=590/591 一条**整宽**紫线（x 从 116 一直铺到 1048+）
+   * ```
+   * 这条线的位置正好是**面板顶部那条通宽边界**，所以看起来就是"外边栏多了一条常亮紫条"。
+   * 根因是 `:focus-within` **触发面太宽**：点进输入框要打字 → 亮；打字过程中 → **一直亮**；
+   * 焦点落在卡内任何控件（工具条按钮）→ 也亮，即使根本没在编辑文字。
+   *
+   * 改成 `:has(.message-input:focus-visible)` 之后：**只有文字编辑框自身处于键盘可见焦点时才亮**
+   * —— 鼠标点一下不再亮、一打字就亮、焦点离开就灭；焦点落到工具条按钮上也不亮这圈。
+   * 键盘可达性没丢（Tab 进来或在框内打字时照常出现）。
+   *
+   * 变异：卡片环改到 1px 以下 / 3px 以上 / 环色退回半透明 / textarea 又画出自己那圈 /
+   *      触发条件退回 `:focus-within` ⇒ 红。
    */
-  it("SHELL-2：输入区只许有**一圈**焦点环（卡片那圈 1.5–2px 实色；textarea 不许再画）", () => {
+  it("SHELL-2：输入区只许有**一圈**焦点环，且只在编辑框有键盘焦点时出现", () => {
     const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
     const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
 
@@ -744,9 +763,27 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
        不解析就无法区分"环"与"投影档"。最后一条 `0 0 0 Npx <色>` 正好是环的写法。 */
     const RING = /(?:^|\s)0 0 0 (\d+(?:\.\d+)?)px\s+(\S+)\s*$/;
 
-    /* ① 卡片：**唯一的**一圈，1.5–2px、实色品牌色 */
-    const cardBody = new RegExp(`(^|\\n)\\s*\\.input-card-container:focus-within\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
-    expect(cardBody, "找不到 .input-card-container:focus-within").not.toBe("");
+    /* ① 环画在**文字编辑行**上：唯一一圈、1.5–2px、实色品牌色；触发条件是 textarea 的 :focus-visible
+       ⚠️ 第 188 轮把环从 `.input-card-container` 移到 `.input-textarea-row` ——
+       前者正好是**面板顶部那条通宽边界**，用户反馈"编辑时外框多了条紫条、反而编辑框内没有框"。 */
+    const CARD_SEL = "\\.input-textarea-row:has\\(\\.message-input:focus-visible\\)";
+    const cardBody = new RegExp(`(^|\\n)\\s*${CARD_SEL}\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
+    expect(
+      cardBody,
+      "找不到 `.input-textarea-row:has(.message-input:focus-visible)` —— " +
+        "焦点环必须画在**文字编辑区那一行**上（圈住输入框），且只在**编辑框自身有键盘焦点**时出现",
+    ).not.toBe("");
+    for (const [sel, why] of [
+      [".input-card-container:focus-within", "触发面太宽：卡内任何控件拿到焦点都亮（187 轮「常显」）"],
+      [".input-card-container:has(.message-input:focus-visible)", "画在**面板顶部那条通宽边界**上，就是用户说的「外框多条紫条、编辑框内反而没框」（188 轮）"],
+      [".input-textarea-row:focus-within", "触发面太宽：行内任何控件拿到焦点都亮"],
+    ] as const) {
+      const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      expect(
+        new RegExp(`(?:^|\\n)\\s*${esc}\\s*\\{`).test(cssNoComments),
+        `\`${sel}\` 又回来了 —— ${why}`,
+      ).toBe(false);
+    }
     const cardShadow = /(?:^|;)\s*box-shadow:\s*([^;]+)/.exec(cardBody)?.[1]?.trim() ?? "";
     const cardRings: Array<{ w: number; color: string }> = [];
     for (const layer of cardShadow.split(/,(?![^(]*\))/)) {

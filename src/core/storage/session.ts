@@ -181,6 +181,46 @@ function rowToSessionFromAny(row: any[]): Session {
 }
 
 
+/**
+ * 子智能体会话 id 的形态（**唯一定义处**，与生成侧保持一致）。
+ *
+ * 生成侧只有两处，必须与这里同步：
+ *   · `src/core/subagent/spawn-in-process-provider.ts:43`
+ *   · `src/core/subagent/runtime.ts:91`
+ * 两处都是 `` `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` ``。
+ */
+const SUBAGENT_SESSION_ID = /^sub-\d+-[a-z0-9]+$/;
+
+/**
+ * 这个会话**是不是子智能体的轨迹**（而不是用户跟它对话的那个会话）。
+ *
+ * ## 为什么需要区分（第 188 轮，用户报的 bug）
+ *
+ * 用户原话：「项目对话里调用子智能体的时候，会在左侧边栏的项目对话目录，增加子智能体的条目，
+ * 这个逻辑不对。**子智能体不作为单独的对话目录**。」
+ *
+ * 成因是 C-2 那轮的修复只做了一半：子智能体的会话 id 需要一行 `sessions` 才能在
+ * `messages` / `session_events` / `cost_records` 上过外键，于是 `ensureSubagentSession`
+ * 给它建了行 —— 并**故意跟父会话同 `project_id`**（那时为了"不凭空造项目归属"）。
+ * 副作用没人处理：侧栏按 `project_id` 列会话，子会话于是和真会话一样出现在项目目录里。
+ * `src/core/subagent/subagent-session.ts` 的注释其实点名过这个缺口
+ * （"UI 侧也没有按 `parent_id` 折叠会话列表的渲染路径"）—— 这里补上那条路径。
+ *
+ * ## ⚠️ 判据为什么**不能**用 `parentId`（第一版就是那么写的，被测试当场纠正）
+ *
+ * `sessions.parent_id` 有三处写：分叉、编辑并回退、以及 `ensureSubagentSession`。
+ * 第一版把"有 parentId"一律当轨迹过滤掉，`FIXB-7d` 立刻红了 ——
+ * 而它是对的：**分叉出来的是一个真会话**，用户要能切回去继续聊；
+ * 子智能体才是内部轨迹，不该占目录。两者都有 `parent_id`，靠它分不开。
+ *
+ * 所以判据取**id 形态**：子智能体的 id 由 `sub-<时间戳>-<随机>` 固定生成（见上）。
+ * 这条判据与"id 怎么拼"耦合，是**已知的代价**；改成显式列需要动 Rust 侧 schema，
+ * 不在本 bug 的范围。**若哪天改了 id 生成规则，必须同步改这里**（上面写了两个出处）。
+ */
+export function isChildSession(s: Pick<Session, "id">): boolean {
+  return SUBAGENT_SESSION_ID.test(s.id);
+}
+
 export function listSessions(projectId: string): Session[] {
   const rust = domainReadMany(SESSION_TABLE, wireToSession, { project_id: projectId });
   if (rust) {
@@ -202,16 +242,23 @@ export function listSessions(projectId: string): Session[] {
      * 已拖拽会话（0、1、2…）**前面**，于是"用户刚拖过的顺序"被一堆没拖过的会话顶下去 ——
      * 比不排序还糟。给一个"最大"值，等价于"全都跟在有排序键的会话后面"，
      * 组内再按 `last_message_at DESC` → **默认就是时间序**（与拖拽前完全一致）。
+     *
+     * ⚠️ 第 188 轮：**子会话（子智能体轨迹 / 分叉副本）不进这个列表** ——
+     * 见上面 `isChildSession` 的长注释。过滤放在这里（而不是侧栏里）的理由：
+     * 用户的诉求是"不作为单独的对话目录"，也就是**任何把会话当目录列的地方**都不该出现它们；
+     * 逐个调用点去滤，早晚会漏一处（本仓库已经因为"点名法"漏过好几次）。
      */
-    return rust.sort((a, b) => {
-      const pa = a.pinned ? 1 : 0;
-      const pb = b.pinned ? 1 : 0;
-      if (pa !== pb) return pb - pa;
-      const oa = sessionSortOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-      const ob = sessionSortOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-      if (oa !== ob) return oa - ob;
-      return b.lastMessageAt - a.lastMessageAt;
-    });
+    return rust
+      .filter((s) => !isChildSession(s))
+      .sort((a, b) => {
+        const pa = a.pinned ? 1 : 0;
+        const pb = b.pinned ? 1 : 0;
+        if (pa !== pb) return pb - pa;
+        const oa = sessionSortOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const ob = sessionSortOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        if (oa !== ob) return oa - ob;
+        return b.lastMessageAt - a.lastMessageAt;
+      });
   }
   return []; // 第 17 轮（L4）：旧库回退（ORDER BY pinned/last_message_at）已删 —— 空结果
 }

@@ -447,17 +447,40 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     appendTranscript, zh,
   ]);
 
-  // Auto-focus textarea after browser voice stops
+  /**
+   * 语音停止后把光标送回输入框。
+   *
+   * ⚠️ 第 187 轮：这里原来写的是「`!isListeningVoice` 就 focus」——
+   * 而**初次挂载时 `isListeningVoice` 就是 false** ⇒ 应用一打开就无条件把焦点塞进输入框，
+   * 于是输入卡一启动就处于 `:focus-visible` 状态，焦点环**开机即常亮**
+   * （用户原话：「刚才那个外边框多的紫色条，现在常显了」；
+   *  `_diag-187-four-edges.mjs` 实测：失焦时四条边 0 个紫像素、聚焦时上边一条整宽紫线）。
+   *
+   * 正确语义是"**语音从开到关**"这一个**跃迁**，而不是"当前没在听"这一个**状态**。
+   * 所以用 `prevListeningRef` 记住上一次的值：只有真的从"在听"变成"没在听"才恢复焦点。
+   * 挂载时 prev 初值是 false、当前也是 false ⇒ 不触发，开机不再抢焦点。
+   *
+   * 顺带尊重用户的当前位置：若焦点此刻已在别处（用户在别的输入框里打字），
+   * 只有当焦点没落进任何可输入元素时才抢回来 —— 这是"恢复光标"而不是"抢光标"。
+   */
+  const prevListeningRef = useRef(isListeningVoice);
   useEffect(() => {
-    if (!isListeningVoice) {
-      // Refocus textarea and place cursor at end
-      const ta = textareaRef.current;
-      if (ta) {
-        ta.focus();
-        const len = ta.value.length;
-        ta.setSelectionRange(len, len);
-      }
-    }
+    const wasListening = prevListeningRef.current;
+    prevListeningRef.current = isListeningVoice;
+    if (!wasListening || isListeningVoice) return; // 只在"正在听 → 停止"这一跃迁上动作
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const active = document.activeElement as HTMLElement | null;
+    const activeIsInput =
+      !!active &&
+      (active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.isContentEditable ||
+        active.getAttribute?.("role") === "textbox");
+    if (active && active !== ta && activeIsInput) return; // 尊重用户已经放好的光标
+    ta.focus();
+    const len = ta.value.length;
+    ta.setSelectionRange(len, len);
   }, [isListeningVoice]);
   const [customOps, setCustomOps] = useState<CustomOperation[]>([]);
   const [runningOp, setRunningOp] = useState<string | null>(null);

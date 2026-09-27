@@ -2926,32 +2926,69 @@ z-index: 50;
   overflow: hidden;
 }
 
-/* 第 185 轮：**折中值**。
-   用户在三个值之间来回反馈过 —— 1.16.183 之前是 textarea 的 `outline: 2px` + `0 0 0 2px`
-   （两层相加 ≈5px 观感）→「非常粗」；1.16.184 收到 1px →「又改的太细了」。
-   折中取 **2px**，环色从 30% 的品牌色改成**实色** `--accent`
-   —— "细"和"淡"是两件事，上一版两个都拉到底，等于双重减弱（这正是"太细"的来源）。
-
-   ## 为什么是 2px 而不是 1.5px（有读数，不是拍的）
-   `.preview-shot/_verify-185-ring.mjs` 在同一台装机版上按「声明宽度 → 渲染成几个物理像素」
-   逐档量过（锚在卡片上边线，dpr=3）：
-   ```
-     声明 1px   → 1 个物理像素（淡线；这就是 1.184 的形态，用户说"太细"）
-     声明 1.5px → 1 个物理像素（**分数 spread 被栅格化回 1px，等于白改**）
-     声明 2px   → 2 个物理像素（干净、实心）
-     声明 2.5px → 2 个物理像素
-     声明 3px   → 3 个物理像素
-   ```
-   1.5px 在 dpr=3 上栅格化后**与 1px 完全一样**，选它等于没改；
-   取值必须落在**整数物理像素**上，2px 才是真正的中间档（1 太细、3 回到"非常粗"那侧）。
-
-   ⚠️ 两层（本卡片 + `.message-input`）**必须同宽同色** —— 门禁 SHELL-2 断言这一点；
-   一处细一处粗看起来仍然是粗（1.16.183 就是这个形态，所以用户又说了一遍）。
-   ⚠️ textarea 那层**不许用 `outline`**：outline 画在整个编辑区的**外框**上（不与卡片环重合），
-   那是"非常粗"形态的成因。 */
-.input-card-container:focus-within {
-  border-color: var(--text-primary);
-  box-shadow: var(--shadow-raise-3), 0 0 0 2px var(--accent);
+/* 第 185/186/187 轮：输入区的焦点环 —— 位置、宽度、**触发条件**都改过，三次各有实测依据。
+ *
+ * ## ① 宽度（185 轮）：2px，不是 1.5px —— 有物理像素读数
+ * `.preview-shot/_verify-185-ring.mjs` 在同一台装机版上按「声明宽度 → 渲染成几个物理像素」逐档量过（dpr=3）：
+ * ```
+ *   声明 1px   → 1 个物理像素（淡线；1.184 的形态，用户判"太细"）
+ *   声明 1.5px → 1 个物理像素（**分数 spread 被栅格化回 1px，等于白改**）
+ *   声明 2px   → 2 个物理像素（干净、实心）
+ *   声明 3px   → 3 个物理像素（回到"非常粗"那侧）
+ * ```
+ * 宽度必须落在**整数物理像素**上，所以取 2px；环色用**实色** `--accent`
+ * （"细"和"淡"是两件事，1.184 两个都拉到底 ⇒ 双重减弱，那才是"太细"的来源）。
+ *
+ * ## ② 位置（186 轮）：不让 textarea 自己画环
+ * textarea 被 `.input-textarea-row` 的 padding 内缩 34/19/34/60px，它那圈与卡片这圈**不重合**，
+ * 实测两条紫带相距 19px —— 用户看到的就是「编辑区外框多了条紫带」。
+ * 所以 textarea 那层改成 `box-shadow: none`，整个输入区**只留这一圈**。
+ *
+ * ## ③ ⚠️ 触发条件（187 轮）：`:focus-within` → `:has(.message-input:focus-visible)`
+ *
+ * 用户原话：「刚才那个外边框多的紫色条，**现在常显了**」。
+ * 实测（`_diag-187-four-edges.mjs`，四条边各取 3–5 个采样点）：
+ * ```
+ *   失焦：四条边**零**紫像素
+ *   聚焦 textarea：上边 y=590/591 一条**整宽**紫线（x 从 116 一直到 1048+ 都有）
+ * ```
+ * 也就是说这条紫线**只在卡片内有焦点时出现**，而它出现的位置正好是**面板顶部那条通宽边界** ——
+ * 看起来就像"外边栏多了一条常亮的紫条"。`:focus-within` 的问题是**触发面太宽**：
+ *   · 点进输入框（要开始打字）→ 亮；
+ *   · 打字过程中 → **一直亮**（这正是"常显"）；
+ *   · 焦点落在输入卡里的任何控件（工具条按钮等）→ 也亮，即使你根本没在编辑文字。
+ *
+ * 改成 `:has(.message-input:focus-visible)`：**只有"文字编辑框自身处于键盘可见焦点"时才亮**。
+ * 于是：鼠标点一下输入框不再亮环，一打字就亮、焦点离开就灭；
+ * 焦点落到工具条按钮上不再亮这一圈（那是按钮自己的 `:focus-visible` 该管的事）。
+ * 键盘用户的可达性没有丢：Tab 到输入框、或在框内打字时，这一圈照常出现。
+ *
+ * ⚠️ **第 188 轮：环从"卡片边界"移到"文字编辑行"。** 用户原话：
+ * 「编辑的时候，刚才那个外边框多的紫色条出现了，反而**编辑框内的紫色框不见了**」。
+ *
+ * 也就是说 187 轮虽然把触发条件修对了（不再常亮），但**环画的位置是错的**：
+ * 它画在 `.input-card-container` 的边界上 —— 而那正好是**面板顶部那条通宽边界**，
+ * 于是"编辑时亮起的一条外框紫条"和"输入框自己没有框"同时成立，正是用户描述的这两句。
+ *
+ * 环应当圈住**文字编辑区**（textarea 所在的那一行 `.input-textarea-row`）：
+ * 它有 `padding: 0 34px` 把 textarea 包住，尺寸 ≈ 893×69，画在这里才是"编辑框"。
+ * 之前的教训都在说"别画两圈"，而这两圈的分歧**从来不是宽度，是位置**：
+ *   · `.message-input` 自己那圈（textarea 边界）→ 186 轮去掉；
+ *   · `.input-card-container` 那圈（面板边界）→ 188 轮去掉；
+ *   · 画在 `.input-textarea-row`（编辑区那一行）→ 现在这一圈，**只有这一圈**。
+ *
+ * ⚠️ 为什么不用 `:has()` 挂在行上：`:has()` 只影响**自己与被选中的后代**，
+ * `.input-textarea-row:has(...)` 同样可行，但环与行是**同一个元素**时规则更短也更易读；
+ * 触发条件仍用 `textarea 的 :focus-visible`（而不是行的 `:focus-within`），
+ * 这样"鼠标点一下不亮、一打字就亮、焦点离开就灭"的行为保持不变（187 轮的修复）。
+ */
+.input-textarea-row:has(.message-input:focus-visible) {
+  /* ⚠️ 行本身有 `border-top: 1px solid var(--border-primary)`（结构线）。
+     聚焦时把它也换成品牌色，这样"一圈"在视觉上是**闭合**的 —— 否则顶边会缺一段、
+     看起来像"框没画完"。 */
+  border-color: var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 /* P-UI: A3 失焦折叠（对标 meow-smooth）— 多行草稿失焦后收成单行胶囊 */
@@ -3055,7 +3092,7 @@ z-index: 50;
   flex-shrink: 0;
 }
 
-/* Focus state now handled by .input-card-container:focus-within */
+/* Focus state now handled by .input-card-container:has(.message-input:focus-visible) */
 
 /* C1: Collaboration mode toggle */
 .mode-toggle-btn {
@@ -18482,7 +18519,7 @@ textarea:focus-visible,
  * 前两轮我都假设"textarea 的环与卡片的环视觉上重合"，所以只调宽度。
  * `_probe-186-outer-purple.mjs` 用**真打字**触发聚焦后按像素扫垂直切线，实测：
  * ```
- *   卡片上边  y=537    紫带 ①：y=536   ← .input-card-container:focus-within
+ *   卡片上边  y=537    紫带 ①：y=536   ← .input-card-container 的环（187 轮已改为 :has(...:focus-visible)）
  *   textarea 上边 y=556 紫带 ②：y=555   ← .message-input:focus-visible
  * ```
  * textarea 被 `.input-textarea-row` 的 padding **内缩 34/19/34/60 px**，
