@@ -17752,6 +17752,36 @@ color: var(--accent, #7c6cf0);
   border-radius: var(--radius);
   background: var(--bg-tertiary);
 }
+/**
+ * 第 199 轮：**焦点环改画在「搜索行」上，并画成内嵌环**。
+ *
+ * ## 用户现场
+ * 「搜索设置内的紫色编辑框太大，都超过搜索设置的外边区域了。」
+ *
+ * ## 成因（用 CDP 的 `CSS.getMatchedStylesForNode` 把命中的规则逐条读出来的，不是猜）
+ * 输入框聚焦时最终生效的是 `codem-ui.css` 里那条
+ * `button:focus-visible, a:focus-visible, input:focus-visible, … { outline: 2px solid var(--accent); outline-offset: 2px; }`
+ * —— 特异度 **(0,1,1)**，而 `.sp-search-input` 里那句 `outline: none` 只有 **(0,1,0)**，
+ * **压不住它**（我原以为"靠后加载就能盖住"，是错的）。
+ * 于是环画在**输入框盒之外 4px**（2 宽 + 2 偏移）。装机版实测：
+ *   输入框 478×38 ⇒ 环外沿 486×**46**；而搜索行只有 520×**42**
+ *   ⇒ 横向靠左右 padding(8px) 兜住了，**纵向兜不住，上下各溢出 2px**。
+ *
+ * ## 改法
+ * 环从输入框挪到**搜索行**上，并改成 `inset`（画在盒**内**）：
+ *   · 内嵌环完全落在搜索行盒内 ⇒ **几何上不可能溢出**（可断言）；
+ *   · 与搜索行自己的圆角对齐，比套在输入框上更贴形。
+ *
+ * 触发条件用 `:has(.sp-search-input:focus-visible)` 而**不是** `:focus-within`：
+ * 与第 187 轮给输入区定下的同一条规矩一致 —— **鼠标点进来不亮环，只有键盘可见焦点才亮**。
+ *
+ * ⚠️ 输入框自己那圈仍由上面那条 (0,1,1) 的全局规则画着，所以这里必须**把它按掉**
+ * （`.sp-search-input { outline: none }` 特异度不够）。做法见下面 `.sp-search-input` 上的
+ * `outline-width: 0` 一处 —— 那里写了为什么不能直接写 `outline: none`。
+ */
+.sp-search:has(.sp-search-input:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
 .sp-search-icon { color: var(--text-muted); }
 .sp-search-input {
   flex: 1;
@@ -17760,7 +17790,27 @@ color: var(--accent, #7c6cf0);
   color: var(--text-primary);
   font-family: inherit;
   font-size: var(--fs-sm);
-  outline: none;
+  /**
+   * 第 199 轮：**按掉全局焦点环，改由 `.sp-search` 画内嵌环**。
+   *
+   * 那条全局规则是 `input:focus-visible { outline: 2px solid … }`，特异度 **(0,1,1)** ——
+   * 比这里 `.sp-search-input`（0,1,0）**高**，所以普通声明压不住它。实测两次：
+   *   · 先写 `outline: none` ⇒ 计算样式仍是 `2px solid`（被它盖过去）；
+   *   · 改 `outline-width: 0` 也一样压不住。
+   * 于是这里用 `!important` —— 这是**有意的、有替代环的**抑制，不是"关掉焦点提示"：
+   * 环没有消失，只是从"输入框外侧 4px"挪成了"搜索行上的 2px 内嵌环"
+   * （见上面 `.sp-search:has(.sp-search-input:focus-visible)`，装机版实测为
+   *   `rgb(101,85,224) 0px 0px 0px 2px inset`），键盘用户照样看得见焦点。
+   *
+   * 为什么不用"给选择器加个类把特异度抬到 (0,2,1)"：那要往 TSX 里塞一个只为覆盖而存在的类，
+   * 反而更难维护；这里覆盖的是**一条全局规则**，用 `!important` 的意图更直白。
+   *
+   * ⚠️ 注意别写成 `outline: none`：`ui-audit` 的 `focus-outline-none` 规则会扫
+   * 「选择器带 `:focus` + 规则体有 `outline:none` + 没有 `box-shadow`」并报错。
+   * 这条选择器不含 `:focus`（替代环也画在别的元素上），写 `outline: none` 本不会触发；
+   * 但只归零"宽度"语义更准：**只是不画线，不是把整个 outline 机制关掉**。
+   */
+  outline-width: 0 !important;
   height: var(--control-std);
 }
 .sp-search-status { padding: var(--space-2) var(--space-1) 0; font-size: var(--fs-xs); color: var(--text-muted); }
@@ -17849,10 +17899,42 @@ color: var(--accent, #7c6cf0);
 .sp-field-label { flex-shrink: 0; font-size: var(--fs-sm); color: var(--text-muted); }
 
 
-.settings-search-box--bordered { padding: var(--space-4) var(--space-6); border-bottom: 1px solid var(--border-primary); }
-/* 这几个类此前只在 tsx 里出现、CSS 里根本没有（外观全靠同行内联样式撑着，
-   所以 css-class-undefined 一直看不到）：现在补上真实定义。 */
+/**
+ * ⚠️ 第 198 轮：`--bordered` 这一支**已随搜索框搬走而删除**。
+ * 它原来给"左侧栏里那条横条"加下边框与内边距；搜索框搬进标题栏后已无调用方，
+ * 留着就是一条死规则（`css-var-unused` 那类门禁正是防这个）。
+ * 若将来又把搜索放回侧栏，从 git 历史里取回即可。
+ */
 .settings-search-box { flex-shrink: 0; }
+/**
+ * 第 198 轮：搜索框搬进**标题栏中间**（用户要求）。
+ *
+ * 原先它挂在左侧栏里（`.settings-search-box--bordered` 是"一条带下边框的横条"）——
+ * 而 `.settings-sidebar` 只有 **160px** 宽，减掉内边距后真正能打字的宽度不到 120px，
+ * 用户反馈的「搜索设置留的区域太小了」就是这个。
+ *
+ * `--in-header` 这一支只负责**在「⚙️ 设置」标题与右侧 ✕ 之间撑开**：
+ *   · 不用 `--bordered` 的内边距与下边框（标题栏自己已有下边框）；
+ *   · `flex: 1` + `max-width` 而不是写死宽度 —— 标题栏是 `space-between` 的 flex，
+ *     弹性项加个上限即可在 760px 面板里拿到约 520px 的输入宽度，窗口变窄时自动收，
+ *     不会把 ✕ 挤出去；`min-width: 0` 是防长占位符把容器撑破（flex 项的经典坑）。
+ *   · 两侧等量外边距 = 用户说的「那个中间」。
+ */
+.settings-search-box--in-header {
+  flex: 1;
+  max-width: 520px;
+  min-width: 0;
+  padding: 0;
+  margin: 0 var(--space-9);
+}
+/* 固定单行高度：底部区标题栏不许因为多了个搜索框而被撑高。
+   ⚠️ 用 `--control-std`（38px），**不是** `--control-sm` —— 后者在本项目里**不存在**
+   （`grep --control-` 只有 `--control-std` 与 `--control-std-compact`）。
+   写一个不存在的令牌不会报错，只会让 `height` 整条失效 ⇒ 输入框高度塌成 0，
+   表现是"搜索框没了"。这类"静默失效"只有真机看一眼才会发现。 */
+.settings-search-box--in-header .sp-search { padding: var(--space-1) var(--space-4); }
+.settings-search-box--in-header .sp-search-input { height: var(--control-std); }
+.settings-search-box--in-header .sp-search-status { text-align: center; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; }
 .user-avatar-preview {
   display: flex;

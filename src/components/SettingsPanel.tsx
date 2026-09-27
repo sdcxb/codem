@@ -935,6 +935,47 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       <div className="settings-panel" role="dialog" aria-modal="true" aria-label="设置" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h3>{S.settings.title[lang]}</h3>
+          {/**
+           * 第 198 轮：**搜索框从左侧栏搬进标题栏中间**（用户要求）。
+           *
+           * 用户原话：「搜索设置留的区域太小了，把它从这个地方拿走，移到设置窗口弹窗
+           * 标题栏【带 ⚙️ 设置】的那个中间。」
+           *
+           * 为什么原来确实太小：`.settings-panel` 宽 760px，而 `.settings-sidebar` 只占
+           * **160px**，再减掉搜索框自身左右内边距，真正能打字的宽度不到 120px。
+           *
+           * 放在标题栏中间后，它落在「⚙️ 设置」标题与右侧 ✕ 之间，可用宽度约 520px。
+           * 标题栏本身已是 `display:flex; justify-content:space-between`，
+           * 所以这里只需给容器 `flex: 1; max-width` 就能居中占位，不必动标题栏布局。
+           *
+           * ⚠️ `.settings-header` **不能**直接摆可换行的元素（下面注释里那条：
+           *   标题栏不许换行），所以输入框**固定单行高度**，匹配结果提示放在下一行、
+           *   靠搜索词非空才出现 —— 只有在打字时标题栏才会稍高一点。
+           */}
+          <div className="settings-search-box settings-search-box--in-header">
+            <div className="sp-search">
+              <SearchIcon size={14} className="sp-search-icon" />
+              <input
+                type="text"
+                placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
+                value={settingsSearch}
+                onChange={(e) => setSettingsSearch(e.target.value)}
+                className="sp-search-input"
+              />
+              {settingsSearch && <button
+        aria-label={lang === "zh" ? "清空搜索" : "Clear search"}
+                  title={lang === "zh" ? "清空搜索" : "Clear search"} onClick={() => setSettingsSearch("")} className="sp-btn--icon sp-btn"><X size={12} /></button>}
+            </div>
+            {settingsSearch.trim() && (
+              <div className="sp-search-status">
+                {searchFilteredTabs.length > 0
+                  ? (lang === "zh"
+                    ? `已跳转至「${SETTINGS_TAB_INDEX.find(([id]) => id === searchFilteredTabs[0])?.[1]?.[0] || searchFilteredTabs[0]}」设置`
+                    : `Jumped to "${searchFilteredTabs[0]}" settings`)
+                  : (lang === "zh" ? "未找到匹配的设置分组" : "No matching settings group")}
+              </div>
+            )}
+          </div>
           {/* 第 74 轮：补可访问名 —— 真机普查实测这个 ✕ 是面板内 127 个按钮里**唯一无名**的那个
               （读屏只念"按钮"；第 63 轮走查脚本也因此按名字找不到它、只能按位置兜底）。 */}
           <button className="settings-close" aria-label={lang === "zh" ? "关闭设置" : "Close settings"} onClick={onClose}><X size={16} /></button>
@@ -942,31 +983,6 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
         <div className="settings-body">
           <div className="settings-sidebar">
-            {/* P2 #36: Settings search */}
-            <div className="settings-search-box settings-search-box--bordered">
-              <div className="sp-search">
-                <SearchIcon size={14} className="sp-search-icon" />
-                <input
-                  type="text"
-                  placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
-                  value={settingsSearch}
-                  onChange={(e) => setSettingsSearch(e.target.value)}
-                  className="sp-search-input"
-                />
-                {settingsSearch && <button
-          aria-label={lang === "zh" ? "清空搜索" : "Clear search"}
-                    title={lang === "zh" ? "清空搜索" : "Clear search"} onClick={() => setSettingsSearch("")} className="sp-btn--icon sp-btn"><X size={12} /></button>}
-              </div>
-              {settingsSearch.trim() && (
-                <div className="sp-search-status">
-                  {searchFilteredTabs.length > 0
-                    ? (lang === "zh"
-                      ? `已跳转至「${SETTINGS_TAB_INDEX.find(([id]) => id === searchFilteredTabs[0])?.[1]?.[0] || searchFilteredTabs[0]}」设置`
-                      : `Jumped to "${searchFilteredTabs[0]}" settings`)
-                    : (lang === "zh" ? "未找到匹配的设置分组" : "No matching settings group")}
-                </div>
-              )}
-            </div>
             <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`}
               aria-current={activeTab === "general" ? "page" : undefined} onClick={() => setActiveTab("general")}>
               <span className="sidebar-icon"><SettingsIcon size={16} /></span>{lang === "zh" ? "通用" : "General"}

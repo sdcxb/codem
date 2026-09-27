@@ -13862,9 +13862,12 @@
   "settings-search-box": {
     "flex-shrink": "0"
   },
-  "settings-search-box--bordered": {
-    "border-bottom": "1px solid var(--border-primary)",
-    "padding": "var(--space-4) var(--space-6)"
+  "settings-search-box--in-header": {
+    "flex": "1",
+    "margin": "0 var(--space-9)",
+    "max-width": "520px",
+    "min-width": "0",
+    "padding": "0"
   },
   "settings-section": {
     "display": "flex",
@@ -15678,7 +15681,7 @@
     "font-family": "inherit",
     "font-size": "var(--fs-sm)",
     "height": "var(--control-std)",
-    "outline": "none"
+    "outline-width": "0 !important"
   },
   "sp-search-status": {
     "color": "var(--text-muted)",
