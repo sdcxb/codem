@@ -1,15 +1,15 @@
 {
-  "version": "1.16.194",
-  "notes": "跨对话交接产生的中间任务不再出现在对话目录里：这类会话由系统在交接时建立（标题形如 [DELEGATED TASK] 【交接：…】），启动维护时会识别并收纳；识别只依据「有系统注入的交接任务消息」且「没有任何你自己输入的消息」，只要你在其中说过话就永不自动收纳。不删除任何数据，可撤销。",
-  "pub_date": "2026-09-27T04:42:28Z",
+  "version": "1.16.195",
+  "notes": "任务栏与托盘的图标不再模糊：此前窗口图标只取了图标文件里最小的一档（16×16），高分屏下任务栏需要更大尺寸时系统只能放大显示；现在改用最大档（256×256）作为窗口图标，各种缩放下都是缩小绘制。图标设计与配色未改动，安装包/快捷方式/资源管理器里的图标不受影响。",
+  "pub_date": "2026-09-27T08:16:35Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dTMC8wVFYyU29yckNYaXVpa1ZHcE5leHNpZVY4VU5Wc1h1YVh0Um5tQ2k5dFpMNVlRWHpxdXQxWWxGU1RLVmZCdnM5clN6MTMxSnJFVXg0bXdZNlFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDg0MTQzCWZpbGU6Q29kZW1fMS4xNi4xOTRfeDY0LXNldHVwLmV4ZQoxNDVIakU5SkIzTTVWZStKdGpzUmxwelNMYzBSRDBVdm1DeFNMTnhBUkx6RG9qaDUvS1hBQ0NWd0JvWFhpTTdzeU5FMGJSODlrUExxS1NYTUcyQjFEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.194/Codem_1.16.194_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Z1QUx6NlBaKzYraXZ0dTAwOUEwVll1Q1Bnd2xNUWFidWtkUW5NM0ErSXlKQlJ1SVVZK2NreGpQbkU4QU5QT3dpTlpUaGV1SUgrejlLTHRDQWhPZEFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDk2NjAyCWZpbGU6Q29kZW1fMS4xNi4xOTVfeDY0LXNldHVwLmV4ZQpkdnVxTjVvN3J0UkVjQkJSeXNQSVJFQkhQY3NEUU1lU1BLajFmTnY3RWRieU51eDlTaDN3TVBnaTU1RjZmekNyYS9uMG1Ib3lIRkxmS2lUZElzZ0xBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.195/Codem_1.16.195_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dTMC8wVFYyU29yckNYaXVpa1ZHcE5leHNpZVY4VU5Wc1h1YVh0Um5tQ2k5dFpMNVlRWHpxdXQxWWxGU1RLVmZCdnM5clN6MTMxSnJFVXg0bXdZNlFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDg0MTQzCWZpbGU6Q29kZW1fMS4xNi4xOTRfeDY0LXNldHVwLmV4ZQoxNDVIakU5SkIzTTVWZStKdGpzUmxwelNMYzBSRDBVdm1DeFNMTnhBUkx6RG9qaDUvS1hBQ0NWd0JvWFhpTTdzeU5FMGJSODlrUExxS1NYTUcyQjFEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.194/Codem_1.16.194_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Z1QUx6NlBaKzYraXZ0dTAwOUEwVll1Q1Bnd2xNUWFidWtkUW5NM0ErSXlKQlJ1SVVZK2NreGpQbkU4QU5QT3dpTlpUaGV1SUgrejlLTHRDQWhPZEFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDk2NjAyCWZpbGU6Q29kZW1fMS4xNi4xOTVfeDY0LXNldHVwLmV4ZQpkdnVxTjVvN3J0UkVjQkJSeXNQSVJFQkhQY3NEUU1lU1BLajFmTnY3RWRieU51eDlTaDN3TVBnaTU1RjZmekNyYS9uMG1Ib3lIRkxmS2lUZElzZ0xBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.195/Codem_1.16.195_x64-setup.exe"
     }
   }
 }
