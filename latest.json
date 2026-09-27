@@ -1,15 +1,15 @@
 {
-  "version": "1.16.195",
-  "notes": "任务栏与托盘的图标不再模糊：此前窗口图标只取了图标文件里最小的一档（16×16），高分屏下任务栏需要更大尺寸时系统只能放大显示；现在改用最大档（256×256）作为窗口图标，各种缩放下都是缩小绘制。图标设计与配色未改动，安装包/快捷方式/资源管理器里的图标不受影响。",
-  "pub_date": "2026-09-27T08:16:35Z",
+  "version": "1.16.196",
+  "notes": "图标边缘不再泛白：应用图标各尺寸档的透明边缘此前混进了白色，在深色任务栏上表现为一圈发白的毛刺（上一版把任务栏改用最大档图标后才明显起来）。现在按透明度把边缘像素的颜色还原为真实颜色，透明边缘的形状与图标主体未做任何改动。",
+  "pub_date": "2026-09-27T09:22:07Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Z1QUx6NlBaKzYraXZ0dTAwOUEwVll1Q1Bnd2xNUWFidWtkUW5NM0ErSXlKQlJ1SVVZK2NreGpQbkU4QU5QT3dpTlpUaGV1SUgrejlLTHRDQWhPZEFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDk2NjAyCWZpbGU6Q29kZW1fMS4xNi4xOTVfeDY0LXNldHVwLmV4ZQpkdnVxTjVvN3J0UkVjQkJSeXNQSVJFQkhQY3NEUU1lU1BLajFmTnY3RWRieU51eDlTaDN3TVBnaTU1RjZmekNyYS9uMG1Ib3lIRkxmS2lUZElzZ0xBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.195/Codem_1.16.195_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JuaXB2UFQwbU9MWjRORzQ0MExkT2dVVmlkMXI3Y1JqRTNEWWtLU0pIaTFuaGtrNmtqaWFiMEJVOUtCS2lDZkNlcyszUVJVcW8zM3VyTTVsbG4rQ2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTAwNjY1CWZpbGU6Q29kZW1fMS4xNi4xOTZfeDY0LXNldHVwLmV4ZQpSdHRRZTlUeElIN0tmTjEwQVhNbWRKUDVGU2VaVnhJWlZCcDA5bUcrNmFpQzIvamNINU1BaS9BTmVuU2NSTkFHbWZNRldrY3JmdEtIY2pobDRDaG1Edz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.196/Codem_1.16.196_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Z1QUx6NlBaKzYraXZ0dTAwOUEwVll1Q1Bnd2xNUWFidWtkUW5NM0ErSXlKQlJ1SVVZK2NreGpQbkU4QU5QT3dpTlpUaGV1SUgrejlLTHRDQWhPZEFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDk2NjAyCWZpbGU6Q29kZW1fMS4xNi4xOTVfeDY0LXNldHVwLmV4ZQpkdnVxTjVvN3J0UkVjQkJSeXNQSVJFQkhQY3NEUU1lU1BLajFmTnY3RWRieU51eDlTaDN3TVBnaTU1RjZmekNyYS9uMG1Ib3lIRkxmS2lUZElzZ0xBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.195/Codem_1.16.195_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JuaXB2UFQwbU9MWjRORzQ0MExkT2dVVmlkMXI3Y1JqRTNEWWtLU0pIaTFuaGtrNmtqaWFiMEJVOUtCS2lDZkNlcyszUVJVcW8zM3VyTTVsbG4rQ2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTAwNjY1CWZpbGU6Q29kZW1fMS4xNi4xOTZfeDY0LXNldHVwLmV4ZQpSdHRRZTlUeElIN0tmTjEwQVhNbWRKUDVGU2VaVnhJWlZCcDA5bUcrNmFpQzIvamNINU1BaS9BTmVuU2NSTkFHbWZNRldrY3JmdEtIY2pobDRDaG1Edz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.196/Codem_1.16.196_x64-setup.exe"
     }
   }
 }
