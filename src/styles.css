@@ -407,8 +407,8 @@
   --text-base: #1f1f1e;
   --text-ramp-paper: #fffbe2;
   --text-primary: var(--text-base);
-  --text-secondary: color-mix(in srgb, var(--text-base) 84%, var(--text-ramp-paper));
-  --text-muted: color-mix(in srgb, var(--text-base) 78%, var(--text-ramp-paper));
+  --text-secondary: color-mix(in srgb, var(--text-base) 75%, var(--text-ramp-paper));
+  --text-muted: color-mix(in srgb, var(--text-base) 65%, var(--text-ramp-paper));
   /* 线：一律用"文字色 + alpha"，这样深浅两档的线色相自动一致。
      强度 12% → 9%：合成在白底上是 #ebebeb、对比度 **1.194**，
      与参考实现的 9%（白底 1.201）几乎逐位一致；改动前的 12% 是 1.269，偏重。 */
@@ -518,7 +518,7 @@
        取值是活体 A/B 量出来的（`.preview-shot/_ab-chrome.mjs`）：
        #fafaf9→0.0199 / #f8f8f6→0.028 / **#f7f7f5→0.0317** / #f6f6f4→0.0356 / #f4f4f2→0.0434
        —— 取 0.0317 是为了「达标且留余量、又不偏灰」。 */
-  --sidebar-bg: #f8f8f9;
+  --sidebar-bg: #fbfbfa;
   --input-bg: #ffffff;
   --scrollbar-track: rgb(242 242 240 / 80%);
   --scrollbar-thumb: rgb(31 31 30 / 16%);
@@ -18420,6 +18420,42 @@ textarea:focus-visible,
 
   box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+
+/* ==========================================================================
+ * 7b. **主对话区的输入框不吃上面那一圈**（第 184 轮，用户第二次点名）
+ *
+ * 用户原话：「主对话区域的对话编辑窗口，输入编辑时会出现个紫色的框，
+ * 这个框还是太粗了（非常粗）。」
+ *
+ * ## 上一轮改错了地方 —— 如实记档
+ *
+ * 第 183 轮我把 `.input-card-container:focus-within` 的**外扩环**从 3px 收到 1px，
+ * 以为那就是用户说的框。**不是。** 用户看到的是这一条：
+ * `.message-input` 是 `<textarea>`，命中上面的全局规则 ⇒ 它自己画了
+ * **`outline: 2px solid var(--focus-ring-color)`（75% 品牌色）+ `0 0 0 2px` 内嵌环**。
+ * 环画在**整个编辑区**的边上（实测 945×56 的盒子），所以"非常粗"。
+ * 实测依据：`.preview-shot/_probe-184-purple-frame.mjs` 列页面所有紫框元素，
+ * 聚焦时 textarea 本体那两条是唯二的紫环（卡片那条是 1px、0.3 α 的极淡环）。
+ *
+ * ## 现在怎么办：**整个输入卡只留一圈**
+ *
+ * 把 textarea 自己那圈**去掉**，改由 `.input-card-container:focus-within` 提供**唯一**的一圈
+ * （它包住 textarea，所以"焦点在哪"依然看得出来 —— 不是把焦点可见性删掉）。
+ * 这样从"两层叠着 ≈ 5px"变成"一圈 1px"。
+ *
+ * ⚠️ 为什么仍留一个 `box-shadow`（而不是只写 `outline: none`）：
+ *   · 单纯 `outline: none` 正是第 39 波那个真缺陷的形态（`scan-ui` 的 `focus-outline-none` 会拦，
+ *     因为它只认"同一规则体里有 box-shadow"这一种替代写法，它看不见 `.input-card-container` 那一层）；
+ *   · 这条 `box-shadow` 是**与卡片同色同宽**的一圈，视觉上完全重合在卡片那圈里 ——
+ *     它不额外增粗，但让"这条规则自带替代环"这件事在源码里是**成立的、可读的**，
+ *     而不是靠"隔壁选择器存在"来豁免。宁可多一行，也不要一句需要解释的豁免。
+ */
+.message-input:focus-visible {
+  /* 显式关掉 UA / 全局那条 outline：本规则特异度更高，但**不要依赖邻居提供 `outline: none`** ——
+     门禁 SHELL-2 要求这条规则**自带**它（自证，读代码的人不必回看上面那条）。 */
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent-border);
 }
 
 /* 8. 文字选中在输入框内用主题色淡底（与 ::selection 呼应，避免系统蓝打断氛围） */

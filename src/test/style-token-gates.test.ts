@@ -397,6 +397,55 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
   });
 
   /**
+   * LIT-14：**左栏文字配色钉回 v1.16.165 的实测值**（第 184 轮，用户第二次反馈后补）。
+   *
+   * ## 为什么需要这条：同一件事已经被"改进"了两次，两次用户都不要
+   *
+   * | 轮次 | 改法 | 依据 | 用户反馈 |
+   * | --- | --- | --- | --- |
+   * | 182 | 亮色档 `--text-muted` 65%→78%、`--text-secondary` 75%→86% | 用户说「亮色模式很丑」⇒ 判为"发灰"，往深里压 | — |
+   * | 183 | `--text-secondary` 86%→84% | 拿 **OpenBitFun** 当基准"对齐层级" | **「左侧栏里的文字颜色比咱们原来的版本难看，改回去」** |
+   * | 184 | 三者全部回退到 182 之前 = v1.16.165 实测值 | **用户的原版** | 本条门禁 |
+   *
+   * 教训与 SHELL-1 / RHYTHM-1 完全同型：**"对标实现的取值"不等于"我们要的取值"。**
+   * 182/183 两次都是"有依据地改坏了"——依据（发灰、对标）本身没错，
+   * 错在**没有把用户的原版当成基准**。所以这里把左栏那四个值**钉死**，
+   * 并写明"要动它必须用户先验收"。
+   *
+   * 覆盖范围：左栏用到的文字令牌 + 文字所在的底（`--sidebar-bg`）。
+   * 数值全部来自 `git show v1.16.165:src/styles.css`，不是抄下来的印象。
+   *
+   * 可达性同时守住：回退后实测对比度（`_fix-184-sidebar-text.mjs` 会打出来）
+   *   亮色：primary 15.93 / secondary **7.12** / muted **5.10**（门禁要求 ≥7 / ≥4.5 / ≥4.5）
+   *   即"回退到原版"并没有牺牲可达性 —— 原版本来就过线。
+   *
+   * 变异：把任一个百分比或 `--sidebar-bg` 改掉 ⇒ 红。
+   */
+  it("LIT-14：左栏文字配色 + 侧栏底色必须是 v1.16.165 的实测值（不许再拿对标实现「改进」）", () => {
+    const styles = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+    const lightBlock = /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
+    expect(lightBlock.length, "亮色档块没解析到").toBeGreaterThan(100);
+
+    /* 基准：v1.16.165 的实测取值（逐字写死在这里，改它就得先有用户验收） */
+    const EXPECTED: Array<[string, string]> = [
+      ["--text-primary", "var(--text-base)"],
+      ["--text-secondary", "color-mix(in srgb, var(--text-base) 75%, var(--text-ramp-paper))"],
+      ["--text-muted", "color-mix(in srgb, var(--text-base) 65%, var(--text-ramp-paper))"],
+      ["--sidebar-bg", "#fbfbfa"],
+    ];
+    const wrong: string[] = [];
+    for (const [tok, want] of EXPECTED) {
+      const got = token(lightBlock, tok);
+      if (got !== want) wrong.push(`${tok}: 现在 ${got ?? "（缺）"}，v1.16.165 是 ${want}`);
+    }
+    expect(
+      wrong,
+      "左栏配色偏离了用户的原版 —— 182/183 两轮已经因为「有依据地改进」被退回两次，" +
+        `要改必须先让用户看过实物：\n  - ${wrong.join("\n  - ")}`,
+    ).toEqual([]);
+  });
+
+  /**
    * LIT-12：**面的角色**收口（第 162 轮 P1-1 的第一半）。
    *
    * 背景：对标实现是"灰工作区 + 白卡"，我们是"画布与卡片同色"（卡片都用 `--bg-primary`）。
@@ -650,38 +699,73 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
    * ⚠️ 只认"恰好 4 个长度值"的项：`--shadow-raise-3` 是 `0 2px 4px 0, 0 4px 12px 0`（两个偏移+模糊，
    * 不是环），把它当成环来限制就会误伤。
    *
-   * 变异：把环改回 `0 0 0 3px` ⇒ 红。
+   * ⚠️ **第 184 轮：这条判据上一轮只守了一层，所以用户又说了一遍"还是太粗"**。
+   * 用户第二次原话：「主对话区域的对话编辑窗口，输入编辑时会出现个紫色的框，
+   * 这个框**还是太粗了（非常粗）**。」
+   *
+   * 实测（`_probe-184-purple-frame.mjs` 列页面所有紫框元素）发现"紫色框"其实是**两层**：
+   *   · `.input-card-container:focus-within` 的外扩环（第 183 轮已收成 1px）；
+   *   · **`.message-input`（textarea 本体）自己那圈** —— 它命中全局
+   *     `input/textarea/[contenteditable]:focus-visible` ⇒ `outline: 2px solid var(--focus-ring-color)`
+   *     + `0 0 0 2px` 内嵌环，**环画在整个 945×56 编辑区的边上**，那才是"非常粗"。
+   * 上一轮只改了卡片那层就以为修好了 —— 所以这条判据现在**同时守两处**，
+   * 并且改为"**枚举所有画出聚焦环的规则**"，而不是点名某一个选择器
+   * （点名法必然会再漏一处，这正是上次的错法）。
+   *
+   * 变异：任一处环改回 2px / 3px ⇒ 红。
    */
-  it("SHELL-2：输入卡聚焦环不许超过 1px（第 183 轮：用户实测 3px 太粗）", () => {
+  it("SHELL-2：对话输入区的聚焦环不许超过 1px（第 184 轮：卡片 + textarea 本体两处一起守）", () => {
     const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
     const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
-    const body = new RegExp(`(^|\\n)\\s*\\.input-card-container:focus-within\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
-    expect(body, "找不到 .input-card-container:focus-within").not.toBe("");
-
-    const shadow = /(?:^|;)\s*box-shadow:\s*([^;]+)/.exec(body)?.[1]?.trim() ?? "";
-    expect(shadow, "聚焦态必须有可见反馈（不是要求它消失，只是要求细）").not.toBe("");
 
     /* ⚠️ 必须**先解析令牌**：写的是 `0 0 0 1px var(--accent-border)`，
        而 `--shadow-raise-3` 也是 `var(...)`（它展开成 `0 2px 4px 0, 0 4px 12px 0` 两层）。
        不解析就无法区分"环"与"投影档"，第一版直接匹配 px 就漏掉了整条（rings=0）。
        最后一条 `0 0 0 Npx <色/令牌>` 正好是环的写法，取它的第 4 个长度值。 */
     const RING = /(?:^|\s)0 0 0 (\d+(?:\.\d+)?)px\s+\S+\s*$/;
-    const rings: number[] = [];
-    for (const layer of shadow.split(/,(?![^(]*\))/)) {
-      const m = RING.exec(layer.trim());
-      if (!m) continue;
-      /* 环色必须是品牌色派生的令牌（不许写死 rgba） */
-      expect(layer, `外扩环的色要走 var(--accent-border)（不许写死 rgba），实际该层：${layer.trim()}`).toMatch(/var\(--accent-border\)/);
-      rings.push(Number(m[1]));
-    }
+
+    /** 从一段 box-shadow 里挑出"外扩环"的宽度（并校验环色走令牌） */
+    const ringsOf = (shadow: string, who: string): number[] => {
+      const out: number[] = [];
+      for (const layer of shadow.split(/,(?![^(]*\))/)) {
+        const m = RING.exec(layer.trim());
+        if (!m) continue;
+        expect(layer, `${who} 的环色要走品牌色派生的令牌（不许写死 rgba），实际该层：${layer.trim()}`).toMatch(/var\(--accent/);
+        out.push(Number(m[1]));
+      }
+      return out;
+    };
+
+    /* ① 卡片：必须**恰好一圈** ≤1px */
+    const cardBody = new RegExp(`(^|\\n)\\s*\\.input-card-container:focus-within\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
+    expect(cardBody, "找不到 .input-card-container:focus-within").not.toBe("");
+    const cardShadow = /(?:^|;)\s*box-shadow:\s*([^;]+)/.exec(cardBody)?.[1]?.trim() ?? "";
+    expect(cardShadow, "卡片聚焦态必须有可见反馈（不是要求它消失，只是要求细）").not.toBe("");
+    const cardRings = ringsOf(cardShadow, "输入卡");
+    expect(cardRings.length, `输入卡应当有**恰好一圈**外扩环，实际 box-shadow：${cardShadow}`).toBe(1);
+    expect(cardRings[0], `输入卡的外扩环是 ${cardRings[0]}px，上限 1px（${cardShadow}）`).toBeLessThanOrEqual(1);
+
+    /* ② textarea 本体：这才是"非常粗"的那一圈 —— 不许再出现 ≥2px 的环，也不许有 outline */
+    const taBody = new RegExp(`(^|\\n)\\s*\\.message-input:focus-visible\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
     expect(
-      rings.length,
-      `聚焦态应当有**恰好一圈**外扩环（写成 \`0 0 0 Npx var(--accent-border)\`），实际 box-shadow：${shadow}`,
-    ).toBe(1);
+      taBody,
+      "找不到 `.message-input:focus-visible` —— 这条是第 184 轮用来把 textarea 自己那圈收细的规则，" +
+        "删掉它就会回落到全局 `textarea:focus-visible` 的 2px outline + 2px 环（用户说的「非常粗」）",
+    ).not.toBe("");
     expect(
-      rings[0],
-      `输入卡的紫色外扩环是 ${rings[0]}px —— 用户实测 3px「太粗」，上限 1px（实际 box-shadow：${shadow}）`,
-    ).toBeLessThanOrEqual(1);
+      /(?:^|;)\s*outline:\s*none/.test(taBody),
+      `textarea 本体的聚焦**必须**用 box-shadow 内嵌环、不许再用 outline（outline 画在整个编辑区边上，正是「非常粗」的形态）：${taBody.trim()}`,
+    ).toBe(true);
+    const taShadow = /(?:^|;)\s*box-shadow:\s*([^;]+)/.exec(taBody)?.[1]?.trim() ?? "";
+    const taRings = ringsOf(taShadow, "textarea 本体");
+    expect(taRings.length, `textarea 的聚焦环应当**恰好一圈**，实际 box-shadow：${taShadow}`).toBe(1);
+    expect(taRings[0], `textarea 本体的聚焦环是 ${taRings[0]}px，上限 1px（实际 box-shadow：${taShadow}）`).toBeLessThanOrEqual(1);
+
+    /* ③ 两处环宽必须一致：一处细一处粗 = 看起来还是粗（上一轮就是这个形态） */
+    expect(
+      cardRings[0],
+      `卡片环 ${cardRings[0]}px 与 textarea 环 ${taRings[0]}px 不一致 —— 两层叠在一起时，粗的那层决定观感`,
+    ).toBe(taRings[0]);
   });
 
   /**

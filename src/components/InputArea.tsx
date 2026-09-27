@@ -611,7 +611,14 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const historyRef = useRef<string[]>([]);
   // -1 = not browsing history (editing a fresh draft)
   const historyIndexRef = useRef(-1);
-  const pendingDraftRef = useRef("");
+  /**
+   * 进入历史浏览**之前**输入框里的真实文本（↓ 越过最新那条时原样还回去）。
+   *
+   * ⚠️ 第 184 轮改名 `pendingDraft` → `browsingDraft`：旧名字让人以为它"就是草稿"，
+   * 而缺陷恰恰是**历史项被写进了草稿**。现在语义收紧成"这一次浏览的还原点"，
+   * 与持久化的 `draft` 是两件事 —— 见 `browseHistory` 的头注释。
+   */
+  const browsingDraftRef = useRef("");
 
   useEffect(() => {
     try {
@@ -693,7 +700,33 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     return measureVisualLines(ta.value.slice(caret)) <= 1;
   };
 
-  /** Browse input history. Returns true when the key was consumed. */
+  /**
+   * 浏览输入历史。返回 true 表示这次按键被吃掉了。
+   *
+   * ## ⚠️ 第 184 轮修的一条真缺陷：历史项**不许**写进草稿
+   *
+   * 用户原话：「输入大段文字后，不小心按了向上的按钮，加载了历史输入信息，
+   * 按理来讲再按向下的按钮这段文字应该覆盖回来，结果现在这段文字直接就不见了。」
+   *
+   * 复现（`src/test/input-history-draft.test.tsx`）断在两处，都是"显示态"与"草稿态"**两套状态**造成的：
+   *
+   * 1. **翻历史时把历史项 `setDraft` 进去了**。`draft` 是**持久化**的那份
+   *    （`useDraftPersistence` 防抖 500ms 落盘）。于是"按一下 ↑"就等于
+   *    **拿历史项覆盖掉用户正在写的草稿**：存储里的大段文字当场被替换成历史项，
+   *    之后无论是切会话、刷新、还是本轮修之前那条 ↓ 路径，草稿都已经回不来了。
+   *    终端里 ↑ 是"借用一行来编辑"，不等于"把我没写完的稿子扔了"——
+   *    所以现在 ↑/↓ 只改**显示态**（`input`），**一个字都不碰草稿**。
+   * 2. **恢复时用的是"进入浏览那一刻"的快照**。原来存在 `pendingDraftRef` 里，
+   *    但用户完全可能在历史行上接着敲字（`onChange` 会把 `draft`/`input` 都更新成新文本，
+   *    而那个快照还是旧的）⇒ 按 ↓ 会把**用户刚敲的内容**revert 掉。
+   *    现在恢复的是**进入浏览前那一刻输入框里的真实文本**（`ta.value` 快照），
+   *    它同时也被写回 `input`+`draft`，两套状态重新对齐。
+   *
+   * ⚠️ 试过但**不能**这么做：进入浏览时也 `setDraft(value)`。看起来能顺手修掉
+   * `quoteContext` 那条"只写 input"的疏漏，实际会把 ↑ 弄坏 —— `draft` 是显示值的**高位来源**
+   * （textarea 取 `draft || input`），一写 `draft`，同一次事件里 `setInput(历史项)` 就被盖住，
+   * 按 ↑ 变成"什么都不发生"。实测就是这么红的。所以草稿只在**退出浏览**时对齐一次。
+   */
   const browseHistory = (dir: 1 | -1) => {
     const h = historyRef.current;
     if (h.length === 0) return false;
@@ -712,29 +745,30 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       if (!isCaretOnLastVisualLine(ta, caret)) return false;
     }
     if (historyIndexRef.current === -1) {
-      // Entering history browse: remember the in-progress draft so ArrowDown
-      // past the newest entry can restore it. ArrowDown on a fresh draft
-      // stays native (caret down) — matching the terminal.
+      // 进入浏览：记下"进浏览之前输入框里的真实文本"，↓ 越过最新那条时原样还回去。
+      // ArrowDown 在草稿态保持原生（光标下移）——与终端一致。
       if (dir !== -1) return false;
-      pendingDraftRef.current = value;
+      browsingDraftRef.current = value;
       historyIndexRef.current = h.length - 1;
     } else if (dir === -1) {
       // Wrap around to the newest when passing the oldest (doskey cycles).
       historyIndexRef.current = (historyIndexRef.current - 1 + h.length) % h.length;
     } else {
       if (historyIndexRef.current >= h.length - 1) {
-        // Past the newest entry: restore the draft we saved on entry.
+        // 越过最新那条 ⇒ 退出浏览态，把进浏览前的文本还回去
         historyIndexRef.current = -1;
-        setDraft(pendingDraftRef.current);
-        setInput(pendingDraftRef.current);
+        const live = browsingDraftRef.current;
+        setInput(live);
+        /* 草稿写回 live 而不是"什么都不做"：这样两套状态重新对齐，
+           也覆盖掉"用户在历史行上敲了字"那段临时内容（它本来就不该变成草稿）。 */
+        setDraft(live);
         restoreCaretEnd();
         return true;
       }
       historyIndexRef.current += 1;
     }
-    const recalled = h[historyIndexRef.current];
-    setDraft(recalled);
-    setInput(recalled);
+    /* ⚠️ 只写显示态：历史项**不进草稿**（进草稿就等于按一下 ↑ 就把没写完的稿子扔了）。 */
+    setInput(h[historyIndexRef.current]);
     restoreCaretEnd();
     return true;
   };
@@ -811,7 +845,15 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   useEffect(() => {
     if (quoteContext) {
       const quoted = quoteContext.split("\n").map((line) => `> ${line}`).join("\n");
-      setInput((prev) => prev ? `${prev}\n\n${quoted}\n\n` : `${quoted}\n\n`);
+      /* ⚠️ 第 184 轮：这条 effect 原来**只写 `input`**，于是一出现两种后果：
+         ① 草稿没跟上（切会话回来引用就没了）；② 显示态与草稿态不同步，
+            再叠加"历史项写进草稿"那条缺陷，就会出现"引用 → 翻历史 → 回来"文本消失。
+         现在两套状态一起写。 */
+      setInput((prev) => {
+        const next = prev ? `${prev}\n\n${quoted}\n\n` : `${quoted}\n\n`;
+        setDraft(next);
+        return next;
+      });
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [quoteContext]);
@@ -917,6 +959,50 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // P0: Model list for inline model selector
   const modelList: ModelOption[] = getModelsForMode(mode);
   const currentModelName = modelList.find(m => m.id === model)?.name || model || "";
+
+  /**
+   * 显示态与草稿态的**对齐规则**（第 184 轮，这条是修"文字不见了"的关键）。
+   *
+   * ## 背景：这里有两套状态，`input`（显示）与 `draft`（会被持久化）
+   *
+   * `draft` 由 `useDraftPersistence` 管：进会话时从 `composer-draft-*` 读出来，
+   * 之后每次编辑防抖 500ms 落盘。`input` 是组件自己的显示态。
+   *
+   * ## 原来的写法 `value={draft || input}` 是错的，而且错得很隐蔽
+   *
+   * 它让 **`draft` 成为显示值的"高位来源"**：只要 `draft` 非空，`input` 写什么都没用。
+   * 而 `onChange` 又把两者写成同一个值 ⇒ 一敲字 `draft` 就非空 ⇒
+   * **从那一刻起，任何"只改 `input`"的路径在界面上都是隐形的**。
+   * 历史浏览恰好就是"只改 `input`"的路径（历史项不许进草稿）——
+   * 于是按 ↑ 会**看起来毫无反应**（实测：`value` 仍是原草稿）。我在本轮改这条缺陷时真踩到了。
+   *
+   * ## 现在的规则
+   *
+   * · 显示值取 **`input || draft`**；
+   * · `draft` 只负责"**冷启动时把落盘的草稿喂给 `input`**"（下面这条 effect）。
+   *   一旦喂过，显示就完全由 `input` 说了算 —— 历史浏览、引用插入、拖拽 @ 都只改 `input`，都能看见。
+   *
+   * 为什么不是"干脆删掉 `input`"：`input` 在 ~15 处被写（引用、建议、拖拽、语音转写、快捷短语…），
+   * 每一处都要改成 `draft` 才能收敛成一个状态 —— 那是另一轮的重构，本轮先把它修对。
+   */
+  const hydratedRef = useRef(false);
+  /* 用 ref 读 input，避免把 input 写进依赖（否则每次敲字都要多跑一次这个 effect） */
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  useEffect(() => {
+    /* 只在"这次会话的草稿刚读出来、而用户还没动过输入框"时喂一次：
+       `input === ""` 保证不会盖掉用户已经敲进去的东西；`hydratedRef` 保证只喂一次。 */
+    if (hydratedRef.current) return;
+    if (draft && inputRef.current === "") {
+      hydratedRef.current = true;
+      setInput(draft);
+    }
+  }, [draft]);
+
+  // 切会话 / 新对话时允许重新喂一次（每个会话各自的落盘草稿）
+  useEffect(() => {
+    hydratedRef.current = false;
+  }, [draftKey]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // P0: IME composition guard — suppress Enter right after compositionEnd
@@ -1304,7 +1390,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             <textarea
               ref={textareaRef}
               className={`message-input ${hasSkillPattern ? "mirror-mode" : ""} ${expanded ? "expanded" : ""} ${micActive ? "voice-listening" : ""}`}
-              value={draft || input}
+              value={input || draft}
             onChange={(e) => {
               const val = e.target.value;
               setDraft(val);
