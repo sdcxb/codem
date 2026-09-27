@@ -290,12 +290,16 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       createQuerySessionResultTool,
       createListSessionsTool,
       createCancelDelegationTool,
+      createSetSessionInternalTool,
     }) => {
       this.tools.register(createDelegateToSessionTool());
       this.tools.register(createWaitForDelegationTool());
       this.tools.register(createQuerySessionResultTool());
       this.tools.register(createListSessionsTool());
       this.tools.register(createCancelDelegationTool());
+      /* 第 190 轮：让 agent 能把"为用户的一次性任务开的会话"标成内部（不进对话目录），可逆。
+         为什么必须由 agent 声明而不是应用自动判定 —— 见 `createSetSessionInternalTool` 的注释。 */
+      this.tools.register(createSetSessionInternalTool());
       console.log("[LLMEngine] Cross-session delegation tools registered");
     }).catch(() => {
       // Non-critical — import may fail during test environment teardown

@@ -63,4 +63,6 @@ export {
   createQuerySessionResultTool,
   createListSessionsTool,
   createCancelDelegationTool,
+  /* 第 190 轮：把会话标记为内部（不进对话目录）—— 由 agent 显式声明，可逆 */
+  createSetSessionInternalTool,
 } from "./tools";

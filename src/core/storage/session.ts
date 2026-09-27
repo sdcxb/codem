@@ -308,12 +308,21 @@ export function createSession(session: Session): void {
 }
 
 export function updateSession(id: string, update: Partial<Session>): void {
+  /**
+   * ⚠️ 这是一个**字段白名单**：没列在这里的字段会被**静默丢弃**（函数早返回）。
+   *
+   * 第 190 轮踩到过：`set_session_internal` 工具调 `updateSession(id, { isInternal })`，
+   * 而这里没有 `isInternal` ⇒ 更新被丢掉、库里那一列纹丝不动。
+   * 那次是工具自己的**回读校验**当场抓到的（"标记未生效（回读仍是 false）"）——
+   * 如果当时只写不验，用户看到的就是"工具说标好了，侧栏里那条还在"。
+   * **加字段时这里必须同步**（`sessionToWire` 那边也一样）。
+   */
   const hasAnyField =
     update.title !== undefined || update.model !== undefined || update.lastMessageAt !== undefined ||
     update.messageCount !== undefined || update.pinned !== undefined || update.executionMode !== undefined ||
     update.worktreePath !== undefined || update.worktreeBranch !== undefined ||
     update.correctionMode !== undefined || update.deepThinkingMode !== undefined ||
-    update.preserveExecutor !== undefined;
+    update.preserveExecutor !== undefined || update.isInternal !== undefined;
   if (!hasAnyField) return;
 
   // 迁移期：读出整行 → 应用改动 → 整体写回（未改动列必须保留）
@@ -333,6 +342,8 @@ export function updateSession(id: string, update: Partial<Session>): void {
       ...(update.correctionMode !== undefined ? { correctionMode: update.correctionMode ?? undefined } : {}),
       ...(update.deepThinkingMode !== undefined ? { deepThinkingMode: update.deepThinkingMode ?? undefined } : {}),
       ...(update.preserveExecutor !== undefined ? { preserveExecutor: update.preserveExecutor ?? undefined } : {}),
+      /* 第 190 轮：内部标记也要能改（`set_session_internal` 走这条路径） */
+      ...(update.isInternal !== undefined ? { isInternal: update.isInternal } : {}),
     };
     domainWrite(SESSION_TABLE, [
       /**

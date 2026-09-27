@@ -497,3 +497,103 @@ export function createCancelDelegationTool(): ToolDef {
     },
   };
 }
+
+// ========== 6. set_session_internal（第 190 轮） ==========
+/**
+ * 把某个会话标记为**内部会话**（`sessions.is_internal = 1`）—— 它从此不进对话目录。
+ *
+ * ## 为什么需要这个工具（用户报的问题 + 实测结论）
+ *
+ * 用户原话：「左侧栏里，原有聊天产生的子智能体对话还是在目录里没被收纳，有什么策略吗？」
+ *
+ * 实测（`.preview-shot/_audit-190-legacy-internal.mjs`，读真库 + 逐条读会话正文）后发现，
+ * 这件事**不能靠自动判据解决**，两个事实决定了它必须由"知道真相的那一方"显式声明：
+ *
+ * 1. **188/189 之前，子智能体轨迹根本不建 `sessions` 行** —— 真机磁盘上有 16 个
+ *    `sessions/*.jsonl` 在 `sessions` 表里没有对应行，而侧栏读的是表 ⇒ **它们从来没进过目录**。
+ *    真正在目录里的是**委派目标会话**（见第 2 条）。
+ * 2. **`delegate_to_session` 的目标是"已存在的会话"**（工具参数就是 `target_session_id`），
+ *    它往往就是用户自己开的那个对话。实测本机 5 条委派关系里，有一条目标会话的首条用户消息是
+ *    「我们正在对标 codex 开发本项目…」—— 那是**人打的**。
+ *    ⇒ 任何"出现在 delegation_tasks 里就收纳"的自动判据都会**藏掉真对话**，
+ *      后果（用户找不到自己的会话）比"没收纳干净"严重得多。
+ *
+ * ## 为什么是"由 agent 显式声明"而不是"应用猜"
+ *
+ * **谁开的会话，谁才知道它是不是用完即弃的**：
+ *   · 用户自己开的对话 → agent 不该碰；
+ *   · 用户明确说"你把这件事交给一个新会话去做，别占我的列表"→ agent 开完就标；
+ *   · 子智能体轨迹 → 由 `ensureSubagentSession` 在建行时直接置 1（不需要这个工具）。
+ * 判据是**声明**，不是**推测**。
+ *
+ * ## 可逆
+ *
+ * 传 `internal: false` 就撤销标记（会话回到目录里）。所以这一步**不是删除**，
+ * 最坏情况是"标错了再标回来"，不存在丢数据。
+ */
+export function createSetSessionInternalTool(): ToolDef {
+  return {
+    id: "set_session_internal",
+    guidance:
+      "Mark a session as internal so it does not appear in the conversation list. " +
+      "Use this for sessions you create on the user's behalf for a throwaway task. " +
+      "Reversible: pass internal=false to show it again.",
+    description:
+      "Set whether a session is internal (internal sessions are hidden from the project conversation list). " +
+      "Use it right after creating a session for a task the user does not want cluttering their sidebar. " +
+      "Do NOT mark the user's own conversations — they would disappear from the list.",
+    parameters: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "The session ID to mark" },
+        internal: {
+          type: "boolean",
+          description: "true = hide from the conversation list (internal), false = show it again",
+        },
+        reason: { type: "string", description: "Short reason (optional, recorded in logs)" },
+      },
+      required: ["session_id", "internal"],
+    },
+    async execute(args, _ctx) {
+      const zh = getLang() === "zh";
+      const sessionId = args.session_id as string;
+      const internal = args.internal as boolean;
+      const reason = (args.reason as string) || "";
+
+      const session = SessionStorage.getSession(sessionId);
+      if (!session) {
+        return {
+          title: "set_session_internal",
+          output: zh
+            ? `错误：找不到会话 "${sessionId}"。请用 list_sessions 拿当前项目里的会话 ID。`
+            : `Error: session "${sessionId}" not found. Use list_sessions to get IDs from the current project.`,
+        };
+      }
+
+      SessionStorage.updateSession(sessionId, { isInternal: internal });
+      /* 回读校验：`updateSession` 的契约是 void，写没写成只能回读一次（本仓库的既有做法）。 */
+      const after = SessionStorage.getSession(sessionId);
+      const ok = !!after && after.isInternal === internal;
+
+      console.log(`[set_session_internal] ${sessionId} → ${internal ? "内部" : "普通"}${reason ? `（${reason}）` : ""} 生效=${ok}`);
+
+      if (!ok) {
+        return {
+          title: `set_session_internal: ${sessionId}`,
+          output: zh
+            ? `标记**未生效**（回读仍是 ${after ? after.isInternal : "读不到"}）。会话在库里可能还没落盘 —— 请稍后重试，并把这件事告诉用户。`
+            : `Marking did NOT take effect (read-back: ${after ? after.isInternal : "unreadable"}). The session may not be persisted yet — retry shortly and tell the user.`,
+        };
+      }
+
+      return {
+        title: `set_session_internal: ${sessionId}`,
+        output: zh
+          ? `已把会话 "${session.title || sessionId}" 标记为**${internal ? "内部（不进对话目录）" : "普通（回到对话目录）"}**。` +
+            (internal ? `\n它仍然可以按 ID 访问；要还原就再调一次并传 internal: false。` : "")
+          : `Session "${session.title || sessionId}" is now ${internal ? "internal (hidden from the conversation list)" : "normal (visible again)"}.` +
+            (internal ? `\nIt is still accessible by ID; pass internal: false to restore it.` : ""),
+      };
+    },
+  };
+}
