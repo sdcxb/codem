@@ -217,15 +217,43 @@ function looksLikeLegacySubagentSession(s: Pick<Session, "id" | "title">): boole
  * 也确实出现在侧栏；而 `is_internal` 是 189 轮才加的列，那些老行是 0。
  * **拿一台机器的读数去否定另一台机器上的现象，是无效推断。**
  *
+ * ## 第 193 轮补的判据3：**委派任务会话**（跨对话交接产生的中间任务）
+ *
+ * 用户现场：「左侧栏里有个全局对话 [DELEGATED TASK] 内容是【交接：项目 1.4.2.5 → 课题3 会话】…
+ * 是做跨对话交接的时候产生的，这种中间任务应该也不显示在对话目录中吧？」
+ *
+ * ### ⚠️ 第一版判据写错了 —— 是本机真库取证当场纠正的
+ *
+ * 我原先要求「`delegation_tasks.task` 里有一条带 `[DELEGATED TASK]` 前缀的记录」。
+ * 真库一读就露馅（`_audit-193-delegation-sessions.mjs`）：**8 条真实委派记录的正文开头
+ * 全是 `【会话交接】…`**（那是模型按 `HANDOVER_TEMPLATE` 写的**原文**）；
+ * `[DELEGATED TASK] ` 是 `executor.ts` 在**注入消息**时才加的
+ * （`content: prefix + message + receiverNote`），**从不写回 `task` 列**。
+ * ⇒ 那条判据**永远匹配不到任何东西** —— 等于上线一个静默失效的功能。
+ * 这就是"单测全绿也看不出来、真机一读就穿"的那类错误：
+ * **判据必须落在真实存在的数据上，而不是我以为存在的数据上。**
+ *
+ * ### 改后的判据：只看**消息**（那个前缀真正所在的地方）
+ *   1. 这个会话里**有**机器注入的 user 消息（以 `[DELEGATED TASK] ` 开头），**且**
+ *   2. **没有任何一条人打的 user 消息**（非空、且不以该前缀开头）
+ *
+ * 第 1 条证明"委派任务确实被注入过这个会话"（前缀用户不可能手打）；
+ * 第 2 条是**防误伤**：用户只要在里面说过一句自己的话，就永远不会被自动隐藏。
+ * 两条一起，落到的正是用户说的那类"跨对话交接产生的中间任务"。
+ *
+ * ### 为什么渲染期的 `isChildSession` 里只留判据1/2
+ * 这条判据要读该会话的消息（DB 读），**不能**放进每次渲染都会跑的 `isChildSession` 里。
+ * 所以它是**回填时**判定一次、落成 `is_internal` 列（见 `backfillInternalSessions` 的
+ * `isDelegationArtifact` 参数），渲染期照旧只读列。
+ *
  * ## 两条被否掉的判据（免得第三个人再走一遍）
  *
  * 1. **按 `parentId` 一刀切**：`parent_id` 有三处写（分叉 / 编辑并回退 / 子智能体建行），
  *    一刀切会**连带滤掉分叉会话**，而分叉是用户真会切回去继续聊的对话 ——
  *    `FIXB-7d` 当场把那一版判红（它是对的）。
- * 2. **"首条消息像任务书" / "出现在 delegation_tasks 里"**：第 190 轮实测，
- *    后者会把**用户自己的对话**判进去（真机 5 条委派关系里有一条目标会话首条用户消息是
- *    「我们正在对标 codex 开发本项目…」—— 人打的）。误判代价（用户找不到自己的会话）
- *    远大于"没收纳干净"，所以**不做这类推测**。
+ * 2. **裸的"出现在 `delegation_tasks` 里"**：`delegate_to_session` 的目标是**已存在的会话**，
+ *    用户确实会把任务委派给**自己的对话**（真机 5 条委派关系里有一条目标会话首条用户消息是
+ *    「我们正在对标 codex 开发本项目…」，那是人打的）⇒ 单凭它会把用户的对话判进去。
  */
 export function isChildSession(s: Pick<Session, "isInternal" | "id" | "title">): boolean {
   if (s.isInternal === true || s.isInternal === 1) return true;
@@ -234,6 +262,42 @@ export function isChildSession(s: Pick<Session, "isInternal" | "id" | "title">):
      这些行也会带上列，判据1 就足够了。两条都留着是为了"还没回填完"的那段时间也不漏。 */
   return looksLikeLegacySubagentSession(s);
 }
+
+/**
+ * 委派任务注入目标会话时，由 `session/executor.ts` 加在 user 消息前面的机器前缀。
+ *
+ * 放在这里导出是为了**判据与写入点共用一个常量** —— 两处各写一遍字符串，
+ * 将来改前缀时必然漏一处，而漏的那一处表现是"回填静默失效"（最难查的那种）。
+ */
+export const DELEGATED_TASK_PREFIX = "[DELEGATED TASK] ";
+
+/**
+ * 这个会话是不是**纯委派任务产物**（可以安全地不进对话目录）。
+ *
+ * **两条必须同时成立**（理由见 `isChildSession` 的长注释）：
+ *   1. 这个会话里**有**机器注入的 user 消息（以 `[DELEGATED TASK] ` 开头）
+ *   2. **没有任何一条人打的 user 消息**
+ *
+ * ⚠️ **注意参数只有"消息"一份**：第一版曾要求"委派表里有带前缀的记录"，
+ * 而真库证明那个前缀**从不写进 `delegation_tasks.task`**（只加在注入的消息上）——
+ * 那条判据永远匹配不到东西。现在只认消息，因为它才是前缀真正所在的地方。
+ *
+ * @param userMessages 该会话的 user 消息正文（**只取 user 角色**；调用方从消息表取）
+ */
+export function isDelegationArtifact(userMessages: readonly string[]): boolean {
+  /* 判据1：必须有一条**机器注入**的消息。前缀由 `executor.ts` 加，用户不可能手打。 */
+  const injected = userMessages.filter(
+    (m) => typeof m === "string" && m.startsWith(DELEGATED_TASK_PREFIX),
+  );
+  if (injected.length === 0) return false;
+  /* 判据2：**一条人打的用户消息都不能有**（防误伤）。
+     空白消息不算"人打的"——否则敲个空格就能逃过收纳。 */
+  const humanMessages = userMessages.filter(
+    (m) => typeof m === "string" && m.trim().length > 0 && !m.startsWith(DELEGATED_TASK_PREFIX),
+  );
+  return humanMessages.length === 0;
+}
+
 
 /**
  * **一次性回填**：把老数据里能确认是子智能体轨迹的会话标上 `is_internal = 1`。
@@ -249,24 +313,46 @@ export function isChildSession(s: Pick<Session, "isInternal" | "id" | "title">):
  *
  * 不做更"聪明"的推测（理由见 `isChildSession` 注释里被否掉的第 2 条）。
  *
+ * ## 第 193 轮：多了一类候选 —— **纯委派任务会话**
+ *
+ * 判据由调用方注入（`isDelegationArtifact`），因为它要查委派表 + 该会话的消息，
+ * 这两样都不属于本模块。**默认不注入 ⇒ 行为与第 191 轮完全一致**（不改变既有测试与调用方）。
+ *
  * ## 幂等 + 可逆 + 有读数
  *
- * · 只改 `is_internal` 为空/0 **且**形态匹配的行；标过的不会再动 ⇒ 可重复调用；
+ * · 只改 `is_internal` 为空/0 **且**判据成立的行；标过的不会再动 ⇒ 可重复调用；
  * · 返回**本次新标记的条数**，调用方据此决定要不要告诉用户（0 就什么都不用说）；
  * · 撤销走 `set_session_internal(session_id, false)`，不删任何数据。
  *
  * @param sessions 候选集合（由调用方按项目取，便于逐个项目跑，也便于测试注入）
  * @param mark     真正的写入函数（默认 `updateSession`；测试可注入以观察/构造失败）
+ * @param isDelegationArtifact 可选：判断某会话是否是"纯委派任务产物"
+ *        （不传 ⇒ 只按子智能体形态回填，与 191 轮同）
  * @returns        本次新标记的条数
  */
 export function backfillInternalSessions(
   sessions: Array<Pick<Session, "id" | "title" | "isInternal">>,
   mark: (id: string) => void = (id) => updateSession(id, { isInternal: true }),
+  isDelegationArtifact?: (sessionId: string) => boolean,
 ): number {
   let marked = 0;
   for (const s of sessions) {
     if (s.isInternal === true || s.isInternal === 1) continue; // 已经是内部会话
-    if (!looksLikeLegacySubagentSession(s)) continue;          // 形态不匹配：**绝不动**
+    /**
+     * 两条判据是**或**的关系：命中任一条就标。
+     * `isDelegationArtifact` 的调用包在 try 里 —— 它要读库，读失败时**不能**
+     * 让"这一条"把整批带崩（更糟的是：读失败若被当成 `true`，就会误伤真对话）。
+     * 所以异常一律按 `false`（不标）处理，宁可漏判。
+     */
+    let byShape = looksLikeLegacySubagentSession(s);
+    if (!byShape && isDelegationArtifact) {
+      try {
+        byShape = isDelegationArtifact(s.id) === true;
+      } catch {
+        byShape = false;
+      }
+    }
+    if (!byShape) continue;                                    // 判据不成立：**绝不动**
     try {
       mark(s.id);
       marked++;

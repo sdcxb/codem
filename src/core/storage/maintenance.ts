@@ -2417,14 +2417,56 @@ export async function runDatabaseMaintenance(
     result.internalSessionsMarked = 0;
     try {
       const { domainReadMany } = await import("./domain-store");
-      const { backfillInternalSessions } = await import("./session");
+      const { backfillInternalSessions, isDelegationArtifact } = await import("./session");
       const rows = domainReadMany<{ id?: unknown; title?: unknown; is_internal?: unknown }>("sessions", (r) => r) ?? [];
       const candidates = rows.map((r) => ({
         id: String(r.id ?? ""),
         title: String(r.title ?? ""),
         isInternal: Number(r.is_internal ?? 0) === 1,
       })).filter((s) => s.id.length > 0);
-      result.internalSessionsMarked = backfillInternalSessions(candidates);
+
+      /**
+       * ## 第 193 轮：把"纯委派任务产物"也纳入回填
+       *
+       * 用户现场：全局对话里有一条标题是 `[DELEGATED TASK] 【交接：项目 1.4.2.5 → 课题3 会话】`
+       * —— 跨对话交接时产生的中间任务，用户认为「这种中间任务应该也不显示在对话目录中吧」。
+       *
+       * 判据与**防误伤**都写在 `isDelegationArtifact` 里，**只看消息**：
+       * 有机器注入的 user 消息 **且** 没有任何人打的 user 消息。
+       *
+       * ⚠️ 这里**不需要**读 `delegation_tasks` —— 第一版读它，且要求"task 带机器前缀"，
+       * 而真库取证（`_audit-193-delegation-sessions.mjs`）显示 8 条真实委派记录的 task
+       * 全是模型按模板写的 `【会话交接】…` 原文，那个前缀只在**注入的消息**上。
+       * 也就是说旧的判据永远匹配不到东西。**判据必须落在真实存在的数据上。**
+       *
+       * ⚠️ 读失败时**整体退化为"不判委派"**（predicate 传 undefined），
+       * 也就是退回第 191 轮的行为 —— 而**不是**"读不到就都标上"。
+       * 方向上必须偏保守：误标的代价是用户的对话被藏起来，比漏判严重得多。
+       */
+      let userMessagesBySession: Map<string, string[]> | null = null;
+      try {
+        const { domainReadMany: readMany } = await import("./domain-store");
+        const mRows = readMany<{ session_id?: unknown; role?: unknown; content?: unknown }>("messages", (r) => r) ?? [];
+        userMessagesBySession = new Map();
+        for (const m of mRows) {
+          if (String(m.role ?? "") !== "user") continue;   // 只看 user 角色（助手/工具消息与判据无关）
+          const sid = String(m.session_id ?? "");
+          if (!sid) continue;
+          const list = userMessagesBySession.get(sid) ?? [];
+          list.push(String(m.content ?? ""));
+          userMessagesBySession.set(sid, list);
+        }
+      } catch (e) {
+        console.warn("[Maintenance] 读取消息用于内部会话判定失败（本次跳过委派判据）:", e);
+        userMessagesBySession = null;
+      }
+
+      const userMsgs = userMessagesBySession;
+      const isDelegation = userMsgs
+        ? (id: string) => isDelegationArtifact(userMsgs.get(id) ?? [])
+        : undefined;
+
+      result.internalSessionsMarked = backfillInternalSessions(candidates, undefined, isDelegation);
       if (result.internalSessionsMarked > 0) {
         console.log(
           `[Maintenance] 已把 ${result.internalSessionsMarked} 个旧的子智能体会话标为"内部"` +

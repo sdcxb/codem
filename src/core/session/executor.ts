@@ -19,6 +19,8 @@ import * as MessageStorage from "../storage/message";
 import { reportPersistFailure } from "../storage/persist-failure";
 import { retainToolResult } from "../storage/spill";
 import * as SessionStorage from "../storage/session";
+/* 第 193 轮：前缀常量与回填判据共用一处定义（两处各写一遍，改的时候必漏一处） */
+import { DELEGATED_TASK_PREFIX } from "../storage/session";
 import { getSessionMessageBus } from "./bus";
 import { idleWatchdog } from "./idle-watchdog";
 import { recordLoopStop } from "../llm/loop-stop-log";
@@ -285,7 +287,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   try {
     // 保存用户消息到 DB（委派任务作为 user message 注入目标会话）
     const userMsgId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-    const prefix = delegationTaskId ? "[DELEGATED TASK] " : "";
+    const prefix = delegationTaskId ? DELEGATED_TASK_PREFIX : "";
     // 第 63 波（审计补）：给"接收方"一句兜底约束。
     // 交接正文再规范，也可能漏东西；漏了的时候模型的本能是"把整个盘扫一遍找找看" ——
     // 那正是第 62 波事故的行为。所以这句必须由系统注入（而不是指望交接里写了）。
