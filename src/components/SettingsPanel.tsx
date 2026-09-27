@@ -117,6 +117,8 @@ import {
   Mic,
   Trash2,
   Plus,
+  /* 第 186 轮：运行模式的「更多」入口图标 */
+  Ellipsis,
 } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { alertDialog, confirmDialog } from "../core/ui/native-dialog";
@@ -571,6 +573,15 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
 const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "phone" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
+  /**
+   * 运行模式的「更多」是否展开（第 186 轮）。
+   *
+   * CLI 模式默认收起来：用户已改用 API 模式登录，平时不需要看到它。
+   * ⚠️ 但它**不能只靠这个 state 决定可见性** —— 当前模式就是 CLI 时也必须显示，
+   * 否则正在用 CLI 的人打开设置会只看到"API 模式已选中"，以为自己的模式被改掉了。
+   * 展开状态**不持久化**：下次打开设置回到"只有 API 模式"的默认形态（这正是用户要的"平常不显示"）。
+   */
+  const [showMoreRunModes, setShowMoreRunModes] = useState(false);
   // P2 #36: Settings search — D2 修复：占位搜索框现在真正过滤/跳转设置分组
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
@@ -1061,42 +1072,84 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   setSettings(newSettings);
                   setSettingJSON("codem-settings", newSettings);
                   window.dispatchEvent(new Event("codem-settings-changed"));
+                  /* 切回 API 模式后把「更多」收起来：CLI 已经不在用，没必要占着一行 */
+                  setShowMoreRunModes(false);
                 }}
               >
                 <span className="mode-icon"><Key className="icon-lg" /></span>
                 <span className="mode-title">{S.settings.apiMode[lang]}</span>
                 <span className="mode-desc">{S.settings.apiModeDesc[lang]}</span>
               </button>
+
+              {/*
+                第 186 轮：CLI 模式默认**不显示**，收在「更多」里按需展开。
+                用户原话：「因为我不怎么用 CLI 模式了，把设置里的 CLI 模式隐藏吧，
+                以后 mimo 也改成 api 模式登陆。在运行模式里加一个更多按钮，
+                在更多里面用户可以自己选择 cli，平常不显示。」
+
+                ⚠️ 三个必须同时成立的条件（少一个就会让人找不到自己的模式）：
+                  ① `showMoreRunModes` 为真时显示；
+                  ② **当前就是 CLI 时无条件显示** —— 否则正在用 CLI 的人打开设置只会看到
+                     API 模式被选中，会以为自己的模式被改掉了；
+                  ③ 展开按钮的文案随状态切换（更多 / 收起），并且带 `aria-expanded`。
+              */}
               <button
-                className={`mode-btn ${settings.mode === "cli" ? "active" : ""}`}
-                onClick={() => {
-                  /**
-                   * D-9：切到 CLI 时**必须同一次写入里把模型也切成 MiMo 模型**。
-                   *
-                   * 旧写法只改 `mode`，于是 `codem-settings` 落下的是
-                   * `{ mode: "cli", model: "deepseek-…" }`；而 `codem-settings-changed`
-                   * 会立刻触发 `configureEngine`，它的"历史脏数据修正"看到
-                   * "mode=cli 但 model 是 API 模型前缀"就判定为脏数据、把 mode 翻回 `api`
-                   * **并回写落库**（`App.tsx:1701-1711` / `:1787-1790`）。
-                   * 结果：面板仍显示 CLI 选中、库里已是 api —— 用户的选择静默无效。
-                   * 把模型一起换掉，这次写入就不再是"脏数据"，自愈逻辑自然不触发。
-                   */
-                  const nextModel = MIMO_MODELS[0]?.id ?? "mimo-v2.5-pro";
-                  const keepMimoModel = (settings.model || "").startsWith("mimo-");
-                  const newSettings = {
-                    ...settings,
-                    mode: "cli" as const,
-                    model: keepMimoModel ? settings.model : nextModel,
-                  };
-                  setSettings(newSettings);
-                  setSettingJSON("codem-settings", newSettings);
-                  window.dispatchEvent(new Event("codem-settings-changed"));
-                }}
+                type="button"
+                className="mode-btn mode-btn--more"
+                aria-expanded={showMoreRunModes}
+                onClick={() => setShowMoreRunModes((v) => !v)}
               >
-                <span className="mode-icon"><Terminal className="icon-lg" /></span>
-                <span className="mode-title">{S.settings.cliMode[lang]}</span>
-                <span className="mode-desc">{S.settings.cliModeDesc[lang]}</span>
+                <span className="mode-icon"><Ellipsis className="icon-lg" /></span>
+                <span className="mode-title">
+                  {showMoreRunModes ? S.settings.lessOptions[lang] : S.settings.moreOptions[lang]}
+                </span>
+                <span className="mode-desc">{S.settings.moreOptionsHint[lang]}</span>
               </button>
+            </div>
+
+            {/*
+              第 186 轮：CLI 模式**默认不显示**（收在「更多」里按需展开）。
+              用户原话：「因为我不怎么用 CLI 模式了，把设置里的 CLI 模式隐藏吧，
+              以后 mimo 也改成 api 模式登陆。在运行模式里加一个更多按钮，
+              在更多里面用户可以自己选择 cli，平常不显示。」
+
+              ⚠️ 这里是"**看起来收起**"（`mode-options--collapsed` 做 display:none），
+              而不是"从 DOM 里摘掉"。两个理由都是硬的：
+                ① 正在用 CLI 的人打开设置必须一眼看到自己的模式 ⇒ `settings.mode === "cli"` 时无条件可见；
+                ② 收起时仍留在 DOM 里：整块卸载会让读屏与自动化都拿不到这个入口 ——
+                   那就是「藏得连自己都找不到」，而不是"平常不显示"。
+            */}
+            <div className={`mode-options mode-options--extra ${showMoreRunModes || settings.mode === "cli" ? "" : "mode-options--collapsed"}`}>
+                <button
+                  className={`mode-btn ${settings.mode === "cli" ? "active" : ""}`}
+                  onClick={() => {
+                    /**
+                     * D-9：切到 CLI 时**必须同一次写入里把模型也切成 MiMo 模型**。
+                     *
+                     * 旧写法只改 `mode`，于是 `codem-settings` 落下的是
+                     * `{ mode: "cli", model: "deepseek-…" }`；而 `codem-settings-changed`
+                     * 会立刻触发 `configureEngine`，它的"历史脏数据修正"看到
+                     * "mode=cli 但 model 是 API 模型前缀"就判定为脏数据、把 mode 翻回 `api`
+                     * **并回写落库**（`App.tsx:1701-1711` / `:1787-1790`）。
+                     * 结果：面板仍显示 CLI 选中、库里已是 api —— 用户的选择静默无效。
+                     * 把模型一起换掉，这次写入就不再是"脏数据"，自愈逻辑自然不触发。
+                     */
+                    const nextModel = MIMO_MODELS[0]?.id ?? "mimo-v2.5-pro";
+                    const keepMimoModel = (settings.model || "").startsWith("mimo-");
+                    const newSettings = {
+                      ...settings,
+                      mode: "cli" as const,
+                      model: keepMimoModel ? settings.model : nextModel,
+                    };
+                    setSettings(newSettings);
+                    setSettingJSON("codem-settings", newSettings);
+                    window.dispatchEvent(new Event("codem-settings-changed"));
+                  }}
+                >
+                  <span className="mode-icon"><Terminal className="icon-lg" /></span>
+                  <span className="mode-title">{S.settings.cliMode[lang]}</span>
+                  <span className="mode-desc">{S.settings.cliModeDesc[lang]}</span>
+                </button>
             </div>
           </div>
 

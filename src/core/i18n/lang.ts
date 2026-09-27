@@ -205,6 +205,14 @@ search: { zh: "搜索", en: "Search" },
     apiModeDesc: { zh: "配置 API Key，调用大模型 API", en: "Configure API Key to call LLM API" },
     cliMode: { zh: "CLI 模式", en: "CLI Mode" },
     cliModeDesc: { zh: "MiMo 账号登录，使用积分调用", en: "MiMo account login, use credits" },
+    /* 第 186 轮：CLI 模式收进「更多」。用户已不再用 CLI（改用 API 模式登录），
+       所以默认只展示 API 模式，CLI 放在折叠区里按需展开 —— 入口保留、不占视线。 */
+    moreOptions: { zh: "更多", en: "More" },
+    lessOptions: { zh: "收起", en: "Less" },
+    moreOptionsHint: {
+      zh: "其它运行方式（一般不需要）",
+      en: "Other run modes (usually not needed)",
+    },
     model: { zh: "模型", en: "Model" },
     theme: { zh: "主题", en: "Theme" },
     dark: { zh: "深色", en: "Dark" },

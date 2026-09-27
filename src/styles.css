@@ -2926,9 +2926,32 @@ z-index: 50;
   overflow: hidden;
 }
 
+/* 第 185 轮：**折中值**。
+   用户在三个值之间来回反馈过 —— 1.16.183 之前是 textarea 的 `outline: 2px` + `0 0 0 2px`
+   （两层相加 ≈5px 观感）→「非常粗」；1.16.184 收到 1px →「又改的太细了」。
+   折中取 **2px**，环色从 30% 的品牌色改成**实色** `--accent`
+   —— "细"和"淡"是两件事，上一版两个都拉到底，等于双重减弱（这正是"太细"的来源）。
+
+   ## 为什么是 2px 而不是 1.5px（有读数，不是拍的）
+   `.preview-shot/_verify-185-ring.mjs` 在同一台装机版上按「声明宽度 → 渲染成几个物理像素」
+   逐档量过（锚在卡片上边线，dpr=3）：
+   ```
+     声明 1px   → 1 个物理像素（淡线；这就是 1.184 的形态，用户说"太细"）
+     声明 1.5px → 1 个物理像素（**分数 spread 被栅格化回 1px，等于白改**）
+     声明 2px   → 2 个物理像素（干净、实心）
+     声明 2.5px → 2 个物理像素
+     声明 3px   → 3 个物理像素
+   ```
+   1.5px 在 dpr=3 上栅格化后**与 1px 完全一样**，选它等于没改；
+   取值必须落在**整数物理像素**上，2px 才是真正的中间档（1 太细、3 回到"非常粗"那侧）。
+
+   ⚠️ 两层（本卡片 + `.message-input`）**必须同宽同色** —— 门禁 SHELL-2 断言这一点；
+   一处细一处粗看起来仍然是粗（1.16.183 就是这个形态，所以用户又说了一遍）。
+   ⚠️ textarea 那层**不许用 `outline`**：outline 画在整个编辑区的**外框**上（不与卡片环重合），
+   那是"非常粗"形态的成因。 */
 .input-card-container:focus-within {
   border-color: var(--text-primary);
-  box-shadow: var(--shadow-raise-3), 0 0 0 1px var(--accent-border);
+  box-shadow: var(--shadow-raise-3), 0 0 0 2px var(--accent);
 }
 
 /* P-UI: A3 失焦折叠（对标 meow-smooth）— 多行草稿失焦后收成单行胶囊 */
@@ -4796,6 +4819,30 @@ background: var(--bg-secondary);
 .mode-options {
   display: flex;
   gap: var(--space-4);
+}
+
+/* 运行模式的「更多」（第 186 轮）：CLI 模式收在展开区里按需显示。
+   展开区与上面一行**留出间距**，否则会被读成"同一排的第三个按钮"。 */
+.mode-options--extra {
+  margin-top: var(--space-4);
+}
+
+/* 「更多」收起时的状态：**看起来不显示**，但仍在 DOM 里（读屏/自动化可达）。
+   用户要的是「平常不显示」，不是「入口消失」—— 整块卸载会让正在用 CLI 的人
+   与辅助技术都找不到它，那是藏得连自己都找不到。 */
+.mode-options--collapsed {
+  display: none;
+}
+
+/* 「更多」按钮：与模式按钮同形，但视觉上**次级**（它本身不是一种模式，只是入口） ——
+   虚线边框 + 次级文字色，避免用户以为"更多"也是一种运行模式。 */
+.mode-btn--more {
+  border-style: dashed;
+  color: var(--text-secondary);
+}
+
+.mode-btn--more .mode-icon {
+  color: var(--text-muted);
 }
 
 .mode-btn {
@@ -18423,39 +18470,39 @@ textarea:focus-visible,
 }
 
 /* ==========================================================================
- * 7b. **主对话区的输入框不吃上面那一圈**（第 184 轮，用户第二次点名）
+ * 7b. **主对话区的输入框不吃上面那一圈**（第 184 轮起，第 186 轮才真正做对）
  *
- * 用户原话：「主对话区域的对话编辑窗口，输入编辑时会出现个紫色的框，
- * 这个框还是太粗了（非常粗）。」
+ * 用户前后提了三次，每次的措辞都指向同一件事的不同侧面：
+ *   1. 184 轮：「输入编辑时会出现个紫色的框，这个框**还是太粗了（非常粗）**」
+ *   2. 185 轮：「又改的**太细**了，折中一下」
+ *   3. 186 轮：「除了内部的紫色框，为什么**外边框多了个紫色的条**？去掉」
  *
- * ## 上一轮改错了地方 —— 如实记档
+ * ## 第 186 轮查明的真相：一直是**两圈**，而且它们**不重合**
  *
- * 第 183 轮我把 `.input-card-container:focus-within` 的**外扩环**从 3px 收到 1px，
- * 以为那就是用户说的框。**不是。** 用户看到的是这一条：
- * `.message-input` 是 `<textarea>`，命中上面的全局规则 ⇒ 它自己画了
- * **`outline: 2px solid var(--focus-ring-color)`（75% 品牌色）+ `0 0 0 2px` 内嵌环**。
- * 环画在**整个编辑区**的边上（实测 945×56 的盒子），所以"非常粗"。
- * 实测依据：`.preview-shot/_probe-184-purple-frame.mjs` 列页面所有紫框元素，
- * 聚焦时 textarea 本体那两条是唯二的紫环（卡片那条是 1px、0.3 α 的极淡环）。
+ * 前两轮我都假设"textarea 的环与卡片的环视觉上重合"，所以只调宽度。
+ * `_probe-186-outer-purple.mjs` 用**真打字**触发聚焦后按像素扫垂直切线，实测：
+ * ```
+ *   卡片上边  y=537    紫带 ①：y=536   ← .input-card-container:focus-within
+ *   textarea 上边 y=556 紫带 ②：y=555   ← .message-input:focus-visible
+ * ```
+ * textarea 被 `.input-textarea-row` 的 padding **内缩 34/19/34/60 px**，
+ * 所以两圈之间隔着 19px —— 用户看到的就是「内部一个紫框 + 外边框多一条紫条」。
+ * **前提错了，后面怎么调都是白调**：调宽度解决不了"有两圈"。
  *
- * ## 现在怎么办：**整个输入卡只留一圈**
+ * ## 处理：整个输入卡只留**外面那一圈**
  *
- * 把 textarea 自己那圈**去掉**，改由 `.input-card-container:focus-within` 提供**唯一**的一圈
- * （它包住 textarea，所以"焦点在哪"依然看得出来 —— 不是把焦点可见性删掉）。
- * 这样从"两层叠着 ≈ 5px"变成"一圈 1px"。
+ * textarea 自己那圈**必须去掉**（`box-shadow: none`），由 `.input-card-container:focus-within`
+ * 提供唯一的一圈。焦点可见性没有丢 —— 卡片把 textarea 整个包住，用户依然一眼看得出焦点在输入区。
  *
- * ⚠️ 为什么仍留一个 `box-shadow`（而不是只写 `outline: none`）：
- *   · 单纯 `outline: none` 正是第 39 波那个真缺陷的形态（`scan-ui` 的 `focus-outline-none` 会拦，
- *     因为它只认"同一规则体里有 box-shadow"这一种替代写法，它看不见 `.input-card-container` 那一层）；
- *   · 这条 `box-shadow` 是**与卡片同色同宽**的一圈，视觉上完全重合在卡片那圈里 ——
- *     它不额外增粗，但让"这条规则自带替代环"这件事在源码里是**成立的、可读的**，
- *     而不是靠"隔壁选择器存在"来豁免。宁可多一行，也不要一句需要解释的豁免。
+ * ⚠️ 为什么写 `box-shadow: none` 而不是把整条删掉：
+ *   删掉会回落到上面那条全局 `textarea:focus-visible`（`0 0 0 var(--focus-ring-width)`），
+ *   也就是**又变回两圈**。`box-shadow: none` 同时说明"这条规则自带替代反馈的声明位"，
+ *   免得 `scan-ui` 的 `focus-outline-none` 把一条 `outline: none` 判成"没有替代环"
+ *   （那个扫描器看不见 `.input-card-container` 那一层，这是它的已知视角局限）。
  */
 .message-input:focus-visible {
-  /* 显式关掉 UA / 全局那条 outline：本规则特异度更高，但**不要依赖邻居提供 `outline: none`** ——
-     门禁 SHELL-2 要求这条规则**自带**它（自证，读代码的人不必回看上面那条）。 */
   outline: none;
-  box-shadow: 0 0 0 1px var(--accent-border);
+  box-shadow: none;
 }
 
 /* 8. 文字选中在输入框内用主题色淡底（与 ::selection 呼应，避免系统蓝打断氛围） */

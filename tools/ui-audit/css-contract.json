@@ -7727,6 +7727,10 @@
     "padding": "var(--space-6) var(--space-4)",
     "transition": "var(--transition-color)"
   },
+  "mode-btn--more": {
+    "border-style": "dashed",
+    "color": "var(--text-secondary)"
+  },
   "mode-desc": {
     "color": "var(--text-muted)",
     "font-size": "var(--fs-2xs)",
@@ -7759,6 +7763,12 @@
   "mode-options": {
     "display": "flex",
     "gap": "var(--space-4)"
+  },
+  "mode-options--collapsed": {
+    "display": "none"
+  },
+  "mode-options--extra": {
+    "margin-top": "var(--space-4)"
   },
   "mode-selector": {
     "display": "flex",

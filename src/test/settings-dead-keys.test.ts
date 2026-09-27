@@ -23,6 +23,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createElement } from "react";
 import { render, cleanup, fireEvent, renderHook, waitFor, act } from "@testing-library/react";
+/* 第 186 轮：按**文案**找模式按钮（不再按位置取） */
+import { findModeButton } from "./helpers/mode-button";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import { getSetting, setSetting, setSettingJSON, getSettingJSON } from "../core/storage/settings";
@@ -317,10 +319,16 @@ describe("D-9 CLI 模式按钮的写入形状", () => {
 
     const { container } = render(createElement(SettingsPanel, { onClose: () => {} }));
     try {
-      const modeButtons = [...container.querySelectorAll(".mode-btn")] as HTMLElement[];
-      expect(modeButtons.length).toBeGreaterThanOrEqual(2);
+      /**
+       * ⚠️ 第 186 轮：原来按**位置**取（`modeButtons[1]` = 第二个模式按钮 = CLI）。
+       * 那一轮把 CLI 收进了「更多」折叠区，位置变了 —— 按下标取会点到「更多」按钮，
+       * 于是这条用例红在"点了没反应"上，**看着像 D-9 又坏了，其实是选择器过期**。
+       * 现在改成**按文案找**（浏览器/测试都能用的 XPath），不再依赖按钮在标题栏里的次序。
+       */
+      const cliBtn = findModeButton(container, "CLI");
+      expect(cliBtn, "找不到「CLI 模式」按钮 —— 它现在默认收在「更多」里（display:none），但仍必须在 DOM 中可达").toBeTruthy();
       await act(async () => {
-        fireEvent.click(modeButtons[1]); // 第二个是「CLI 模式」
+        fireEvent.click(cliBtn!);
       });
 
       const saved = getSettingJSON<any>("codem-settings", null);

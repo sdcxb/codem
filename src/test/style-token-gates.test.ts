@@ -712,60 +712,76 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
    * 并且改为"**枚举所有画出聚焦环的规则**"，而不是点名某一个选择器
    * （点名法必然会再漏一处，这正是上次的错法）。
    *
-   * 变异：任一处环改回 2px / 3px ⇒ 红。
+   * 变异：卡片环改到 1px 以下 / 3px 以上 / 环色退回半透明 / textarea 又画出自己那圈 ⇒ 红。
+   *
+   * ## ⚠️ 第 186 轮：**判据的前提被实测推翻了，整条重写**
+   *
+   * 用户第三次说这件事：「**除了内部的紫色框，为什么外边框多了个紫色的条？去掉**」。
+   * `_probe-186-outer-purple.mjs`（用**真打字**触发聚焦，再按像素扫垂直切线）实测：
+   * ```
+   *   卡片上边   y=537  紫带 ①：y=536   ← .input-card-container:focus-within
+   *   textarea 上边 y=556  紫带 ②：y=555   ← .message-input:focus-visible
+   * ```
+   * textarea 被 `.input-textarea-row` 的 padding **内缩 34/19/34/60 px** ——
+   * 两圈之间隔着 **19px**，**根本不重合**。
+   *
+   * 前两轮（184/185）的判据都建立在「两层视觉上重合，所以要求它们同宽同色」这个**错误前提**上，
+   * 于是越调越偏：用户说粗就调窄、说细就调宽，而"有两圈"这件事一次都没被问到。
+   * **判据的前提错了，调多少参数都是白调。**
+   *
+   * 现在的判据换成三条**直接对应观感**的：
+   *   ① 卡片（唯一的焦点环）宽度落在 **1.5–2px**、环色为**实色品牌色**；
+   *   ② textarea **不许**再画自己那圈（`box-shadow: none`）—— 这就是"外边框多出来的紫条"；
+   *   ③ textarea 的聚焦规则**必须存在**且显式写 `outline: none` + `box-shadow`
+   *      —— 否则会回落全局 `textarea:focus-visible`，两圈又回来。
    */
-  it("SHELL-2：对话输入区的聚焦环不许超过 1px（第 184 轮：卡片 + textarea 本体两处一起守）", () => {
+  it("SHELL-2：输入区只许有**一圈**焦点环（卡片那圈 1.5–2px 实色；textarea 不许再画）", () => {
     const css = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
     const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
 
-    /* ⚠️ 必须**先解析令牌**：写的是 `0 0 0 1px var(--accent-border)`，
+    /* ⚠️ 必须**先解析令牌**：写的是 `0 0 0 2px var(--accent)`，
        而 `--shadow-raise-3` 也是 `var(...)`（它展开成 `0 2px 4px 0, 0 4px 12px 0` 两层）。
-       不解析就无法区分"环"与"投影档"，第一版直接匹配 px 就漏掉了整条（rings=0）。
-       最后一条 `0 0 0 Npx <色/令牌>` 正好是环的写法，取它的第 4 个长度值。 */
-    const RING = /(?:^|\s)0 0 0 (\d+(?:\.\d+)?)px\s+\S+\s*$/;
+       不解析就无法区分"环"与"投影档"。最后一条 `0 0 0 Npx <色>` 正好是环的写法。 */
+    const RING = /(?:^|\s)0 0 0 (\d+(?:\.\d+)?)px\s+(\S+)\s*$/;
 
-    /** 从一段 box-shadow 里挑出"外扩环"的宽度（并校验环色走令牌） */
-    const ringsOf = (shadow: string, who: string): number[] => {
-      const out: number[] = [];
-      for (const layer of shadow.split(/,(?![^(]*\))/)) {
-        const m = RING.exec(layer.trim());
-        if (!m) continue;
-        expect(layer, `${who} 的环色要走品牌色派生的令牌（不许写死 rgba），实际该层：${layer.trim()}`).toMatch(/var\(--accent/);
-        out.push(Number(m[1]));
-      }
-      return out;
-    };
-
-    /* ① 卡片：必须**恰好一圈** ≤1px */
+    /* ① 卡片：**唯一的**一圈，1.5–2px、实色品牌色 */
     const cardBody = new RegExp(`(^|\\n)\\s*\\.input-card-container:focus-within\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
     expect(cardBody, "找不到 .input-card-container:focus-within").not.toBe("");
     const cardShadow = /(?:^|;)\s*box-shadow:\s*([^;]+)/.exec(cardBody)?.[1]?.trim() ?? "";
-    expect(cardShadow, "卡片聚焦态必须有可见反馈（不是要求它消失，只是要求细）").not.toBe("");
-    const cardRings = ringsOf(cardShadow, "输入卡");
-    expect(cardRings.length, `输入卡应当有**恰好一圈**外扩环，实际 box-shadow：${cardShadow}`).toBe(1);
-    expect(cardRings[0], `输入卡的外扩环是 ${cardRings[0]}px，上限 1px（${cardShadow}）`).toBeLessThanOrEqual(1);
+    const cardRings: Array<{ w: number; color: string }> = [];
+    for (const layer of cardShadow.split(/,(?![^(]*\))/)) {
+      const m = RING.exec(layer.trim());
+      if (!m) continue;
+      cardRings.push({ w: Number(m[1]), color: m[2] });
+    }
+    expect(cardRings.length, `输入卡应当有**恰好一圈**外扩环（这是输入区唯一的焦点环），实际 box-shadow：${cardShadow}`).toBe(1);
+    expect(cardRings[0].w, `焦点环宽度 ${cardRings[0].w}px 应为 1.5–2px（184 轮 1px 被用户判"太细"、≈5px 被判"非常粗"）`).toBeGreaterThanOrEqual(1.5);
+    expect(cardRings[0].w, `焦点环宽度 ${cardRings[0].w}px 应为 1.5–2px`).toBeLessThanOrEqual(2);
+    expect(cardRings[0].color, `焦点环色要用**实色**品牌色 var(--accent)（半透明的那种是 184 轮"看着太细"的另一半原因），实际：${cardRings[0].color}`).toMatch(/var\(--accent(?!-)/);
 
-    /* ② textarea 本体：这才是"非常粗"的那一圈 —— 不许再出现 ≥2px 的环，也不许有 outline */
+    /* ②③ textarea：**不许**画自己那圈 —— 这就是"外边框多出来的紫条" */
     const taBody = new RegExp(`(^|\\n)\\s*\\.message-input:focus-visible\\s*\\{([^}]*)\\}`).exec(cssNoComments)?.[2] ?? "";
     expect(
       taBody,
-      "找不到 `.message-input:focus-visible` —— 这条是第 184 轮用来把 textarea 自己那圈收细的规则，" +
-        "删掉它就会回落到全局 `textarea:focus-visible` 的 2px outline + 2px 环（用户说的「非常粗」）",
+      "找不到 `.message-input:focus-visible` —— 删掉它会让 textarea 回落到全局 " +
+        "`textarea:focus-visible` 的环，于是**又变成两圈**（正是用户第 186 轮报的「外边框多了个紫色的条」）",
     ).not.toBe("");
     expect(
       /(?:^|;)\s*outline:\s*none/.test(taBody),
-      `textarea 本体的聚焦**必须**用 box-shadow 内嵌环、不许再用 outline（outline 画在整个编辑区边上，正是「非常粗」的形态）：${taBody.trim()}`,
+      `textarea 的聚焦规则必须显式关掉 outline，实际：${taBody.trim()}`,
     ).toBe(true);
-    const taShadow = /(?:^|;)\s*box-shadow:\s*([^;]+)/.exec(taBody)?.[1]?.trim() ?? "";
-    const taRings = ringsOf(taShadow, "textarea 本体");
-    expect(taRings.length, `textarea 的聚焦环应当**恰好一圈**，实际 box-shadow：${taShadow}`).toBe(1);
-    expect(taRings[0], `textarea 本体的聚焦环是 ${taRings[0]}px，上限 1px（实际 box-shadow：${taShadow}）`).toBeLessThanOrEqual(1);
-
-    /* ③ 两处环宽必须一致：一处细一处粗 = 看起来还是粗（上一轮就是这个形态） */
     expect(
-      cardRings[0],
-      `卡片环 ${cardRings[0]}px 与 textarea 环 ${taRings[0]}px 不一致 —— 两层叠在一起时，粗的那层决定观感`,
-    ).toBe(taRings[0]);
+      /(?:^|;)\s*box-shadow:\s*none/.test(taBody),
+      "textarea **不许**再画自己的环 —— 它在卡片的 padding 里（实测内缩 34/19/34/60px），" +
+        "与卡片那圈**不重合**，会变成用户看到的「外边框多出来的紫条」。实际规则体：" + taBody.trim(),
+    ).toBe(true);
+
+    /* ④ 输入区里不许再出现带像素值的 outline（那是"非常粗"形态的成因） */
+    const seg = cssNoComments.slice(
+      Math.max(0, cssNoComments.indexOf(".message-input:focus-visible") - 300),
+      cssNoComments.indexOf(".message-input:focus-visible") + 400,
+    );
+    expect(/outline:\s*[1-9]\d*px/.test(seg), "textarea 的聚焦规则附近又出现了带像素值的 outline（「非常粗」的成因）").toBe(false);
   });
 
   /**

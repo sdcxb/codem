@@ -1,15 +1,15 @@
 {
-  "version": "1.16.184",
-  "notes": "紫色聚焦框收细（这次找对了那一圈：textarea 本体命中全局 focus-visible 的 2px outline+2px 环才是「非常粗」，已收成 1px 且不再用 outline）；左栏文字配色与侧栏底色全部回退到 v1.16.165（对比度仍过线 15.93/7.12/5.10）；修「↑ 翻历史后草稿消失」（历史项不再写进草稿 + 显示态与草稿两套状态对齐）；SHELL-2 扩成两处同守 + 新增 LIT-14，变异 61/61。",
-  "pub_date": "2026-09-27T00:24:39Z",
+  "version": "1.16.186",
+  "notes": "修复输入框焦点框出现两条描边的问题（只保留一圈 2px 品牌色描边）；修复历史输入召回覆盖草稿导致长文本丢失的问题；运行模式默认只展示 API 模式，CLI 模式收进「更多」展开区。",
+  "pub_date": "2026-09-27T01:03:23Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RsbDV2UGZ6bVhIdnhWYkwyTlFsYXltSTl2bENuQUprYUI5QmVOK0Rnai91VS85eDlHcU9NK3pNQnFWNjk0Rnpld1lrMzJIZml6ZkFMMVo3Uk1mRHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDY4Njc1CWZpbGU6Q29kZW1fMS4xNi4xODRfeDY0LXNldHVwLmV4ZQpBSWhMUDNKN042N2RHUkYxT0dEWVNRSEU2N1hnNXl5KzdxWnEyc1ZqYUdKZ0VEejFLVGZJQTBrWVNEenlNcGlta0ZRTnRpdlNyMGZBbndyaFNzQmpCdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.184/Codem_1.16.184_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FCRFVBeXYxdElmcnI5Q0lqTEozbXNZVTlTVXZEVi8wYUJLRFExQ056VG9WdTh5cVZCdlBJR3VJN0ZtQ1Zzazc3OHpFbi93aXZxRzc4OTZRVjZMYWcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDcwOTkyCWZpbGU6Q29kZW1fMS4xNi4xODZfeDY0LXNldHVwLmV4ZQo0eTNScGh2VVBKZEtjbEx4Y2dFY1IxTUZ6Yko0Njh4dHJpUTZxZkIyUldhcy92MEdISm1ycTByWDliTjRFMlVROUppNmtia0IzeWdiRHlDV2FwVlBEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.186/Codem_1.16.186_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RsbDV2UGZ6bVhIdnhWYkwyTlFsYXltSTl2bENuQUprYUI5QmVOK0Rnai91VS85eDlHcU9NK3pNQnFWNjk0Rnpld1lrMzJIZml6ZkFMMVo3Uk1mRHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDY4Njc1CWZpbGU6Q29kZW1fMS4xNi4xODRfeDY0LXNldHVwLmV4ZQpBSWhMUDNKN042N2RHUkYxT0dEWVNRSEU2N1hnNXl5KzdxWnEyc1ZqYUdKZ0VEejFLVGZJQTBrWVNEenlNcGlta0ZRTnRpdlNyMGZBbndyaFNzQmpCdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.184/Codem_1.16.184_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FCRFVBeXYxdElmcnI5Q0lqTEozbXNZVTlTVXZEVi8wYUJLRFExQ056VG9WdTh5cVZCdlBJR3VJN0ZtQ1Zzazc3OHpFbi93aXZxRzc4OTZRVjZMYWcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDcwOTkyCWZpbGU6Q29kZW1fMS4xNi4xODZfeDY0LXNldHVwLmV4ZQo0eTNScGh2VVBKZEtjbEx4Y2dFY1IxTUZ6Yko0Njh4dHJpUTZxZkIyUldhcy92MEdISm1ycTByWDliTjRFMlVROUppNmtia0IzeWdiRHlDV2FwVlBEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.186/Codem_1.16.186_x64-setup.exe"
     }
   }
 }
