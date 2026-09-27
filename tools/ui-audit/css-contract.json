@@ -13331,7 +13331,6 @@
     "bottom": "80px",
     "display": "flex",
     "flex-direction": "column",
-    "gap": "var(--space-2)",
     "left": "50%",
     "pointer-events": "auto",
     "position": "absolute",
@@ -17855,7 +17854,12 @@
     "border-radius": "var(--radius-full)",
     "color": "var(--text-secondary, #a0a0a8)",
     "font-size": "var(--fs-2xs)",
+    "left": "50%",
     "padding": "var(--space-1) var(--space-4)",
+    "pointer-events": "none",
+    "position": "absolute",
+    "top": "calc(100% + var(--space-2))",
+    "transform": "translateX(-50%)",
     "white-space": "nowrap"
   },
   "upload-btn": {

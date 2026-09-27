@@ -174,6 +174,13 @@ export interface MaintenanceResult {
    * 全过程的判据见 `dedupDuplicateTextEvents` 与引擎侧 `repo::events_dedup_text`。
    */
   dedupTextEvents: number;
+  /**
+   * 第 191 轮：本次**回填成"内部会话"的老子智能体会话条数**（0 = 没有可标的，或这一步没跑到）。
+   *
+   * 为什么要进汇总行：它会让侧栏里的条目**变少**。用户看到会话"消失"必须能查到原因 ——
+   * 否则"我的会话呢？"永远只能靠猜。判据与可逆性见 `backfillInternalSessions`。
+   */
+  internalSessionsMarked: number;
 }
 
 /**
@@ -1990,6 +1997,7 @@ export async function runDatabaseMaintenance(
     compactedBytes: 0,
     integrity: "skipped",
     dedupTextEvents: 0,
+    internalSessionsMarked: 0,
     recountedSessions: 0,
     recountCheckedSessions: 0,
     recountFailedSessions: 0,
@@ -2386,6 +2394,47 @@ export async function runDatabaseMaintenance(
      * ⚠️ 放在对账之后：对账段读的就是同一份 `sessions` 镜像，
      * 两会话集合不一致（一个读镜像、一个读列表）会让"检查了几个会话"这个数自相矛盾。
      */
+    /**
+     * ## 老数据的"内部会话"回填（第 191 轮）
+     *
+     * 用户原话：「左侧栏里，原有聊天产生的子智能体对话还是在目录里没被收纳」
+     * ＋ 纠正：「我是再另一个电脑里安装后测试的」——
+     * 即**他那台机器上，旧版本真的把子智能体会话写进了 `sessions` 表**（于是出现在侧栏），
+     * 而 `is_internal` 是 189 轮才加的列，那些老行是 0 ⇒ 列表过滤对它们无效。
+     *
+     * 这里做**一次性幂等回填**：只认"旧代码自己写下的两种形态"
+     * （id `sub-<ts>-<rand>` / 标题 `子智能体 <id>`，见 `isChildSession`），
+     * 标上 `is_internal = 1` 之后侧栏就不再列它们。**不删任何数据**，可逆
+     * （`set_session_internal(id, false)` 就回来）。
+     *
+     * ⚠️ 刻意**不做**更"聪明"的推测（"首条消息像任务书""出现在 delegation_tasks 里"）：
+     * 第 190 轮实测后者会把**用户自己的对话**判进去（真机 5 条委派关系里有一条目标会话
+     * 首条用户消息是「我们正在对标 codex 开发本项目…」——人打的）。误判代价远大于漏判。
+     *
+     * ⚠️ **位置有语义**：放在不变量审计**之前** —— 审计按"会话集合"读数，
+     * 先回填再审计，汇总行里的数字描述的才是库里现在真实的样子。
+     */
+    result.internalSessionsMarked = 0;
+    try {
+      const { domainReadMany } = await import("./domain-store");
+      const { backfillInternalSessions } = await import("./session");
+      const rows = domainReadMany<{ id?: unknown; title?: unknown; is_internal?: unknown }>("sessions", (r) => r) ?? [];
+      const candidates = rows.map((r) => ({
+        id: String(r.id ?? ""),
+        title: String(r.title ?? ""),
+        isInternal: Number(r.is_internal ?? 0) === 1,
+      })).filter((s) => s.id.length > 0);
+      result.internalSessionsMarked = backfillInternalSessions(candidates);
+      if (result.internalSessionsMarked > 0) {
+        console.log(
+          `[Maintenance] 已把 ${result.internalSessionsMarked} 个旧的子智能体会话标为"内部"` +
+            `（它们不再出现在对话目录里；数据未删除，撤销见 set_session_internal）`,
+        );
+      }
+    } catch (e) {
+      console.warn("[Maintenance] 内部会话回填失败（跳过）:", e);
+    }
+
     result.invariantCheckedSessions = 0;
     result.invariantViolations = 0;
     result.invariantNewViolations = 0;

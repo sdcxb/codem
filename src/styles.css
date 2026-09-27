@@ -13778,6 +13778,25 @@ html.pet-window-mode body,
 }
 
 /* ========== P0: Scroll to Bottom Indicator ========== */
+/**
+ * ⚠️ 第 191 轮：**锚点从"整块"改成"按钮本身"**。
+ *
+ * 用户原话：「返回最新聊天的圆圈按钮位置好像不对，检查一下。」
+ *
+ * 实测（`_probe-191-scrollbtn-states.mjs`，两种状态各量一次）：
+ * ```
+ *   无未读（只有按钮）：按钮 y=484..512   按钮下沿到输入区 80px
+ *   有未读（按钮+下方标签）：按钮 y=458..486   按钮下沿到输入区 107px
+ * ```
+ * ⇒ **同一颗按钮两个位置，差 26px**。成因：包装层是 `flex-direction: column` 且
+ * `bottom: 80px` 锚的是**整块的下边**，而"新消息"标签渲染在按钮**下面** ⇒
+ * 标签一出现就把按钮**往上顶**。用户滚动过程中未读态来回切换，按钮就会上下跳。
+ *
+ * 现在的做法：包装层只负责**定位锚点**，`bottom` 锚在**按钮**上；
+ * 标签改成 `position: absolute`（脱离文档流、挂在按钮下方）⇒
+ * **按钮位置与有没有标签无关**（标签只是从按钮下沿往下长）。
+ * `pointer-events: none` 加在标签上：它不该挡住下面的消息点击。
+ */
 .scroll-to-bottom-wrapper {
   position: absolute;
   bottom: 80px;
@@ -13786,7 +13805,6 @@ html.pet-window-mode body,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
   z-index: 10;
   pointer-events: auto;
 }
@@ -13832,7 +13850,14 @@ html.pet-window-mode body,
   border-radius: 50%;
   border: 2px solid var(--bg-primary, #0f0f10);
 }
+/* ⚠️ 第 191 轮：标签**脱离文档流**（挂在按钮下方），不再顶动按钮。
+   原来它是 flex 列里的第二个子元素 ⇒ "有未读"时把按钮往上推 26px（实测见上面的注释）。 */
 .unread-label {
+  position: absolute;
+  top: calc(100% + var(--space-2));   /* 按钮下沿再往下一点，视觉上仍是"按钮下方的说明" */
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;               /* 它只是文字说明，不该挡住下面的消息 */
   font-size: var(--fs-2xs);
   color: var(--text-secondary, #a0a0a8);
   background: var(--bg-secondary, #1a1a20);

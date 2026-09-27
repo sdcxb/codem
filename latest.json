@@ -1,15 +1,15 @@
 {
-  "version": "1.16.190",
-  "notes": "新增会话「内部」标记能力（可按 ID 把会话标记为内部、不再出现在对话目录，可撤销）；修复 updateSession 静默丢弃未列入白名单字段的问题。",
-  "pub_date": "2026-09-27T03:05:16Z",
+  "version": "1.16.193",
+  "notes": "标题栏 logo 在高分屏上更清晰：按显示尺寸提供 1 倍 / 2 倍 / 3 倍三档，浏览器按屏幕缩放选用最接近的一档，缩放比例接近 1:1（实测笔画边缘宽度收窄 8.3%）。图形与配色未做任何改动。",
+  "pub_date": "2026-09-27T04:05:21Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2NsaE1iaHZGVURwLzdTSHdLWGxQZDhxRGpCK1oxYk5zWHJBVkhOVEtYQythNVB2bWgyS3NqakVWNFc0bFgzR0RSTDZLUVloTFd3Y0lNVWJCRlR3OHc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDc4MzEyCWZpbGU6Q29kZW1fMS4xNi4xOTBfeDY0LXNldHVwLmV4ZQpwZEQxMmIxSGN5UUkvRWxiZ1gvUDZmOGljMDNJRURvbTVYV25HZ1FobHMzd0syWG5xV01tcHdiK05QR0VUTVJGMU5HakppMTdrZmZrclJtaGljajFDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.190/Codem_1.16.190_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RjTytBak55dUJBS1pFYitHQ1JJYy9ESjVZN1pUZ2pkMEJGK0pJeXdoSVp2T2dubmZrVmlVZEljSjM2ZjJrLzk3ZnVzNVJ0R2JPSE1wUU9sWHFXOEFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDgxOTE3CWZpbGU6Q29kZW1fMS4xNi4xOTNfeDY0LXNldHVwLmV4ZQpaZmVPS0FHY0s1aFl1VXdOMGJobHg0Z2tUZ0Rkemltd2RKVTZDWXhQOG80TTZHcU1tdVZTY1AzMi9abWxEaTJRL2YrektLejVwY3JzOHZyOHRuUXNEUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.193/Codem_1.16.193_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2NsaE1iaHZGVURwLzdTSHdLWGxQZDhxRGpCK1oxYk5zWHJBVkhOVEtYQythNVB2bWgyS3NqakVWNFc0bFgzR0RSTDZLUVloTFd3Y0lNVWJCRlR3OHc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDc4MzEyCWZpbGU6Q29kZW1fMS4xNi4xOTBfeDY0LXNldHVwLmV4ZQpwZEQxMmIxSGN5UUkvRWxiZ1gvUDZmOGljMDNJRURvbTVYV25HZ1FobHMzd0syWG5xV01tcHdiK05QR0VUTVJGMU5HakppMTdrZmZrclJtaGljajFDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.190/Codem_1.16.190_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RjTytBak55dUJBS1pFYitHQ1JJYy9ESjVZN1pUZ2pkMEJGK0pJeXdoSVp2T2dubmZrVmlVZEljSjM2ZjJrLzk3ZnVzNVJ0R2JPSE1wUU9sWHFXOEFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDgxOTE3CWZpbGU6Q29kZW1fMS4xNi4xOTNfeDY0LXNldHVwLmV4ZQpaZmVPS0FHY0s1aFl1VXdOMGJobHg0Z2tUZ0Rkemltd2RKVTZDWXhQOG80TTZHcU1tdVZTY1AzMi9abWxEaTJRL2YrektLejVwY3JzOHZyOHRuUXNEUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.193/Codem_1.16.193_x64-setup.exe"
     }
   }
 }

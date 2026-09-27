@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from "react";
 import { PencilLine, Search, Settings, Sun, Moon, Home, GitBranch, Terminal } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import codemLogoUrl from "../assets/codem-logo.png";
+import { CODEM_LOGO_SRCSET } from "../assets/codem-logo-srcset";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
 import { DEFAULT_THEME, applyThemeAttribute, cacheTheme, isThemeMode, resolveEffectiveTheme } from "../core/theme/theme-default";
@@ -338,7 +339,20 @@ export function TitleBar({
       <div className="titlebar-left">
         {/* Bug9: 新建对话按钮已移至侧边栏全局对话栏右侧，此处删除 */}
         <span className="titlebar-icon">
-          <img src={codemLogoUrl} alt="Codem" className="titlebar-logo-img" />
+          {/* 第 192 轮：补 srcset —— 18 CSS px 在 dpr3 上是 54 物理像素，
+              单给 256px 源会让浏览器按 4.74:1 硬降采样（固定小核），把 logo 很细的
+              笔画抹软，用户报的就是"装机版 logo 变糊"。给出 1x/2x/3x 三档后，
+              浏览器选到 54px 档，比例≈1:1。
+              实测（.preview-shot/_probe-192-logo-sharp-compare.mjs，同条件 dpr3）：
+              刃口 3.91→3.59 px（收窄 8.3%），边缘能量 9.915→11.777。
+              用 **x 描述符**，所以**不写 `sizes`** —— `sizes` 只对 `w` 描述符有意义，
+              配 x 描述符属于语义错配（实测有无 sizes 选中结果一致，等于噪音）。 */}
+          <img
+            src={codemLogoUrl}
+            srcSet={CODEM_LOGO_SRCSET}
+            alt="Codem"
+            className="titlebar-logo-img"
+          />
         </span>
         <span className="titlebar-title">Codem</span>
         {/* 第 41 波：应用级菜单栏 —— 在应用名右侧，和原生桌面应用一致 */}

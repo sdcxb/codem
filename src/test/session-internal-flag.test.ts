@@ -100,3 +100,80 @@ describe("SESSINT：会话的内部标记（第 190 轮）", () => {
     expect(listSessions("proj").map((s) => s.id), "因此它从一开始就不在目录里").toEqual(["parent-1"]);
   });
 });
+
+/**
+ * SESSINT-B —— **老数据回填**（第 191 轮）。
+ *
+ * ⚠️ 这一组的存在本身要记一笔：第 190 轮我在**自己这台机器**上查库，看到 `sub-%` 是 0 行，
+ * 就写下「老数据里根本没有子智能体会话条目，这个前提不成立」。
+ * **用户当场纠正：「我是再另一个电脑里安装后测试的，你不要这么机械！」**
+ * 他那台机器上旧版本**确实**把子智能体会话写进了 `sessions` 表 ⇒ 出现在侧栏，
+ * 而 `is_internal` 是 189 轮才加的列、老行是 0 ⇒ 过滤对它们无效。
+ * 所以必须有回填，而且回填的判据必须是"旧代码自己写下的形态"。
+ */
+describe("SESSINT-B：老数据的内部会话回填（第 191 轮）", () => {
+  beforeEach(() => {
+    setStoragePort(createFakeStoragePort());
+  });
+
+  it("SESSINT-B1：老形态的子智能体会话被回填成内部 ⇒ 从目录消失", async () => {
+    const { backfillInternalSessions } = await import("../core/storage/session");
+    /* 造"老数据"：isInternal 故意不设（=0），只有旧代码写下的 id/标题形态 */
+    mk("parent-1", "proj");
+    mk(`sub-1790000000001-aaa111bbb`, "proj", { title: "子智能体 sub-1790000000001-aaa111bbb" });
+    /* ⚠️ 第二种形态：id 不是 sub- 形态，但标题是 `子智能体 <id>`（childTitle 写死的前缀） */
+    mk("1790000000002-ccc222ddd", "proj", { title: "子智能体 1790000000002-ccc222ddd" });
+    /* 一个真对话做对照 */
+    mk("real-1", "proj", { title: "对话 1" });
+
+    expect(listSessions("proj").map((s) => s.id).sort(), "回填前：子会话形态就已经被过滤（判据2 兜底）")
+      .toEqual(["parent-1", "real-1"]);
+
+    const marked = backfillInternalSessions(
+      ["parent-1", "sub-1790000000001-aaa111bbb", "1790000000002-ccc222ddd", "real-1"]
+        .map((id) => getSession(id)!),
+    );
+    expect(marked, "应当回填 2 条子智能体会话").toBe(2);
+    expect(getSession("sub-1790000000001-aaa111bbb")!.isInternal, "列要真的写上").toBe(true);
+    expect(getSession("1790000000002-ccc222ddd")!.isInternal, "标题形态的那条也要写上").toBe(true);
+    expect(getSession("real-1")!.isInternal, "**真对话绝不能被标记**").toBe(false);
+    expect(getSession("parent-1")!.isInternal, "父会话也不能被标记").toBe(false);
+  });
+
+  it("SESSINT-B2：回填**幂等**（第二次跑不重复标记）", async () => {
+    const { backfillInternalSessions } = await import("../core/storage/session");
+    mk("sub-1790000000003-ddd333eee", "proj", { title: "子智能体 sub-1790000000003-ddd333eee" });
+    const rows = () => [getSession("sub-1790000000003-ddd333eee")!];
+    expect(backfillInternalSessions(rows()), "第一次应当标记 1 条").toBe(1);
+    expect(backfillInternalSessions(rows()), "第二次应当标记 0 条（已经标过）").toBe(0);
+  });
+
+  it("SESSINT-B3：只认两种旧形态，**不做**「首条消息像任务书」之类的推测", async () => {
+    const { backfillInternalSessions } = await import("../core/storage/session");
+    /* 一条"看起来像子智能体"的普通会话：标题是"对话 2"、id 是普通形态。
+       哪怕它其实是被委派用的，回填也**不许**动它 —— 第 190 轮实测过：
+       真机 5 条委派关系里有一条目标会话首条用户消息是「我们正在对标 codex 开发本项目…」，
+       那是人打的。误判代价（用户找不到自己的会话）远大于漏判。 */
+    mk("1790000000004-eee444fff", "proj", { title: "对话 2" });
+    const marked = backfillInternalSessions([getSession("1790000000004-eee444fff")!]);
+    expect(marked, "不匹配旧形态的会话一条都不许动").toBe(0);
+    expect(getSession("1790000000004-eee444fff")!.isInternal).toBe(false);
+    expect(listSessions("proj").map((s) => s.id), "它应当照旧留在目录里").toEqual(["1790000000004-eee444fff"]);
+  });
+
+  it("SESSINT-B4：单条标记失败不打断整批（能改多少改多少）", async () => {
+    const { backfillInternalSessions } = await import("../core/storage/session");
+    mk("sub-1790000000005-fff555ggg", "proj", { title: "子智能体 sub-1790000000005-fff555ggg" });
+    mk("sub-1790000000006-hhh666iii", "proj", { title: "子智能体 sub-1790000000006-hhh666iii" });
+    const seen: string[] = [];
+    const marked = backfillInternalSessions(
+      ["sub-1790000000005-fff555ggg", "sub-1790000000006-hhh666iii"].map((id) => getSession(id)!),
+      (id) => {
+        seen.push(id);
+        if (id.endsWith("fff555ggg")) throw new Error("模拟单条写失败");
+      },
+    );
+    expect(seen.length, "两条都要尝试").toBe(2);
+    expect(marked, "成功的那条算 1 条（失败的不算、也不抛）").toBe(1);
+  });
+});

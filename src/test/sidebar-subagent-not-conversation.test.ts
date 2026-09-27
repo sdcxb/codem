@@ -59,10 +59,11 @@ describe("SUBCONV：子智能体不作为单独的对话目录", () => {
     ).toEqual(["p1", "p2"]);
   });
 
-  it("SUBCONV-3：判据读的是**表里的 `is_internal` 列**，不是 id 形状（第 189 轮换了判据）", () => {
-    /* 188 轮曾按 id 前缀（`sub-`）认，与"id 怎么拼"耦合；现在读显式列。
-       两条断言把这个切换钉住：① 换一个**不像** sub- 的 id、但置 isInternal=true，也必须被挡掉；
-       ② 一个**长得像** sub- 但没置标志的会话，**不许**被误伤（判据不再看形状）。 */
+  it("SUBCONV-3：显式列**优先**（置了标志就必须挡掉，不管 id 长什么样）", () => {
+    /* ⚠️ 第 191 轮起判据是**两条**：显式列 `is_internal`（新数据）+ 旧形态兜底（老数据）。
+       所以本用例只钉"显式列这一半"：换一个**不像** sub- 的 id、但置了标志，也必须被挡掉。
+       （"长得像 sub- 但没置标志"那半 **不再** 要求放行 —— 191 轮的老数据兜底会认它，
+         那是刻意的：用户机器上老数据就是那个形态。见下面 SUBCONV-5。） */
     createSession({
       id: "internal-trace-1",
       projectId: "proj",
@@ -73,20 +74,61 @@ describe("SUBCONV：子智能体不作为单独的对话目录", () => {
       isInternal: true,
     });
     createSession({
-      id: "sub-1790000000000-lookalike",
+      id: "real-session-1",
       projectId: "proj",
-      title: "长得像子会话但其实不是",
+      title: "对话 1",
       createdAt: Date.now(),
       lastMessageAt: Date.now(),
       messageCount: 0,
-      // 刻意**不**置 isInternal
     });
 
     expect(
       listSessions("proj").map((s) => s.id).sort(),
-      "判据必须是表里的 is_internal 列：置了标志的（不管 id 长什么样）要挡掉，" +
-        "没置标志的（哪怕 id 长得像 sub-）不许误伤",
-    ).toEqual(["sub-1790000000000-lookalike"]);
+      "置了 is_internal 的必须挡掉（不管 id 是什么形态），没置且形态不像的必须留下",
+    ).toEqual(["real-session-1"]);
+  });
+
+  /**
+   * SUBCONV-5：**老数据兜底**要认旧代码写下的两种形态（第 191 轮补）。
+   *
+   * 这一条的存在本身要记一笔：第 190 轮我在**自己这台机器**上查库、看到 `sub-%` 是 0 行，
+   * 就断言「老数据里没有子智能体会话条目，这个前提不成立」；
+   * **用户当场纠正：「我是再另一个电脑里安装后测试的，你不要这么机械！」**
+   * 他那台机器上旧版本确实把子智能体会话写进了 `sessions` 表、也确实显示在侧栏，
+   * 而 `is_internal` 是后来才加的列、老行是 0 ⇒ 光靠显式列**盖不住**老数据。
+   */
+  it("SUBCONV-5：老形态（id `sub-…` / 标题 `子智能体 …`）也要被挡掉", () => {
+    createSession({
+      id: "sub-1790000000000-oldstyle1",
+      projectId: "proj",
+      title: "子智能体 sub-1790000000000-oldstyle1",
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+      messageCount: 0,
+      // 刻意不置 isInternal —— 模拟 189 之前建的行
+    });
+    createSession({
+      id: "1790000000001-oldstyle2",
+      projectId: "proj",
+      title: "子智能体 1790000000001-oldstyle2", // id 不是 sub- 形态，但标题是 childTitle 写的
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+      messageCount: 0,
+    });
+    createSession({
+      id: "1790000000002-real",
+      projectId: "proj",
+      title: "对话 1",
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+      messageCount: 0,
+    });
+
+    expect(
+      listSessions("proj").map((s) => s.id),
+      "两种旧形态都该被挡掉；普通标题/id 的真对话必须留下 ——" +
+        "误判（藏掉真对话）比漏判严重，所以判据只认旧代码**写死的形态**，不做推测",
+    ).toEqual(["1790000000002-real"]);
   });
 
   it("SUBCONV-4：`is_internal` 必须真的落库、真的读回来（不是只存在于内存）", () => {

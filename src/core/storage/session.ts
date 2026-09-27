@@ -190,31 +190,91 @@ function rowToSessionFromAny(row: any[]): Session {
 
 
 /**
+ * 旧版本写子智能体会话行的两种**可机检形态**（都是旧代码自己写下的，不是"长得像"的推测）：
+ *   · id：`sub-<13 位时间戳>-<9 位随机>`
+ *     （`subagent/spawn-in-process-provider.ts` 与 `subagent/runtime.ts` 的生成式）
+ *   · 标题：`子智能体 <id>`（`subagent/subagent-session.ts::childTitle()` 写死的前缀）
+ */
+const SUBAGENT_SESSION_ID = /^sub-\d+-[a-z0-9]+$/;
+const SUBAGENT_SESSION_TITLE = /^子智能体\s/;
+
+function looksLikeLegacySubagentSession(s: Pick<Session, "id" | "title">): boolean {
+  return SUBAGENT_SESSION_ID.test(s.id) || SUBAGENT_SESSION_TITLE.test(String(s.title ?? ""));
+}
+
+/**
  * 这个会话**是不是内部轨迹**（而不是用户眼里的对话目录）。
  *
- * ## 判据：表里的显式列 `is_internal`（第 189 轮）
+ * ## 判据1：表里的显式列 `is_internal`（第 189 轮起，新数据都带）
  *
- * 用户原话：「项目对话里调用子智能体的时候，会在左侧边栏的项目对话目录，增加子智能体的条目，
- * 这个逻辑不对。**子智能体不作为单独的对话目录**。」
+ * ## 判据2：**旧数据的形态兜底**（第 191 轮补）
  *
- * 成因：C-2 那轮给子智能体补 `sessions` 行时**照抄了父会话的 `project_id`**（为了不凭空造归属），
- * 而侧栏按 `project_id` 列会话 ⇒ 子会话和真会话一样挤进项目目录。
- * `src/core/subagent/subagent-session.ts` 的注释其实点名过这个缺口
- * （"UI 侧也没有按 `parent_id` 折叠会话列表的渲染路径"）。
+ * ⚠️ 这段注释里要留一条**判断错误**的记录：第 190 轮我在**自己这台机器**上查了库，
+ * 看到 `sub-%` 是 0 行、磁盘上 16 个 `sessions/*.jsonl` 没有对应行，于是写下
+ * 「老数据里根本没有子智能体会话条目，这个前提不成立」。
+ * **用户当场纠正：「我是再另一个电脑里安装后测试的，你不要这么机械！」**
+ * ——他是在**另一台机器**上测的，那台上子智能体会话**确实写进了 `sessions` 表**、
+ * 也确实出现在侧栏；而 `is_internal` 是 189 轮才加的列，那些老行是 0。
+ * **拿一台机器的读数去否定另一台机器上的现象，是无效推断。**
  *
- * ## ⚠️ 两条被否掉的判据（都写在这里，免得第三个人再走一遍）
+ * ## 两条被否掉的判据（免得第三个人再走一遍）
  *
- * 1. **按 `parentId` 一刀切**：`sessions.parent_id` 有三处写 —— 分叉、编辑并回退、
- *    `ensureSubagentSession`。一刀切会**连带滤掉分叉会话**，而分叉是用户真会切回去继续聊的对话
- *    —— `FIXB-7d` 当场把这一版判红（它是对的）。
- * 2. **按 id 前缀 `sub-`**（188 轮实装过）：能用，但与"id 怎么拼"耦合 ——
- *    改一次生成规则就得同步改判据，**漏改没有任何东西会提醒你**。
- *
- * 所以现在读**表里的列**：`is_internal` 由创建那段代码显式声明
- * （`ensureSubagentSession` 建行时置 1），是"可以被查询的事实"，不是"从字符串形状里猜的结论"。
+ * 1. **按 `parentId` 一刀切**：`parent_id` 有三处写（分叉 / 编辑并回退 / 子智能体建行），
+ *    一刀切会**连带滤掉分叉会话**，而分叉是用户真会切回去继续聊的对话 ——
+ *    `FIXB-7d` 当场把那一版判红（它是对的）。
+ * 2. **"首条消息像任务书" / "出现在 delegation_tasks 里"**：第 190 轮实测，
+ *    后者会把**用户自己的对话**判进去（真机 5 条委派关系里有一条目标会话首条用户消息是
+ *    「我们正在对标 codex 开发本项目…」—— 人打的）。误判代价（用户找不到自己的会话）
+ *    远大于"没收纳干净"，所以**不做这类推测**。
  */
-export function isChildSession(s: Pick<Session, "isInternal">): boolean {
-  return s.isInternal === true || s.isInternal === 1;
+export function isChildSession(s: Pick<Session, "isInternal" | "id" | "title">): boolean {
+  if (s.isInternal === true || s.isInternal === 1) return true;
+  /* 老数据兜底：`is_internal` 对 189 之前建的行是 0，只能靠"旧代码写下的 id/标题"认。
+     这不是重新启用"按 id 猜"——那是**迁移期**的兜底；回填之后（见 `backfillInternalSessions`）
+     这些行也会带上列，判据1 就足够了。两条都留着是为了"还没回填完"的那段时间也不漏。 */
+  return looksLikeLegacySubagentSession(s);
+}
+
+/**
+ * **一次性回填**：把老数据里能确认是子智能体轨迹的会话标上 `is_internal = 1`。
+ *
+ * ## 为什么要有它（用户的真实处境）
+ *
+ * 用户原话：「左侧栏里，原有聊天产生的子智能体对话还是在目录里没被收纳」
+ * ＋ 纠正：「我是再另一个电脑里安装后测试的」。
+ * ⇒ **他那台机器上，旧版本真的把子智能体会话写进了 `sessions` 表**，于是它们出现在侧栏；
+ * 而 `is_internal` 是 189 轮才加的列，那些老行是 0，列表过滤对它们无效。
+ *
+ * ## 只认"旧代码写下的形态"（两种，见 `looksLikeLegacySubagentSession`）
+ *
+ * 不做更"聪明"的推测（理由见 `isChildSession` 注释里被否掉的第 2 条）。
+ *
+ * ## 幂等 + 可逆 + 有读数
+ *
+ * · 只改 `is_internal` 为空/0 **且**形态匹配的行；标过的不会再动 ⇒ 可重复调用；
+ * · 返回**本次新标记的条数**，调用方据此决定要不要告诉用户（0 就什么都不用说）；
+ * · 撤销走 `set_session_internal(session_id, false)`，不删任何数据。
+ *
+ * @param sessions 候选集合（由调用方按项目取，便于逐个项目跑，也便于测试注入）
+ * @param mark     真正的写入函数（默认 `updateSession`；测试可注入以观察/构造失败）
+ * @returns        本次新标记的条数
+ */
+export function backfillInternalSessions(
+  sessions: Array<Pick<Session, "id" | "title" | "isInternal">>,
+  mark: (id: string) => void = (id) => updateSession(id, { isInternal: true }),
+): number {
+  let marked = 0;
+  for (const s of sessions) {
+    if (s.isInternal === true || s.isInternal === 1) continue; // 已经是内部会话
+    if (!looksLikeLegacySubagentSession(s)) continue;          // 形态不匹配：**绝不动**
+    try {
+      mark(s.id);
+      marked++;
+    } catch {
+      /* 单条失败不打断整批（能改多少改多少；失败由调用方按返回值汇总上报） */
+    }
+  }
+  return marked;
 }
 
 export function listSessions(projectId: string): Session[] {
