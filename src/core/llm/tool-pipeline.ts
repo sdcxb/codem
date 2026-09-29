@@ -484,9 +484,14 @@ export class SandboxGuard implements GuardMiddleware {
     }
 
     if (!this.isWithinWorkspace(resolvedPath, ctx.cwd)) {
+      // 第 119 轮修正：文案原来对**所有**工具都说 "Write to" ——
+      // 但这份名单里既有写工具也有读工具（`read` / `grep` / `glob` …），
+      // 于是「读操作被沙箱拒绝」时用户看到的是「写入被拒绝」，
+      // 排查方向直接被带偏。这里按工具类别说清楚。
+      const verb = toolName === "delete_file" ? "Delete" : writeTools.includes(toolName) ? "Write to" : "Read from";
       return {
         action: "deny",
-        denyMessage: `Sandbox: Write to "${path}" is outside the workspace "${ctx.cwd}". The sandbox is enabled — disable it in settings or write within the workspace.`,
+        denyMessage: `Sandbox: ${verb} "${path}" is outside the workspace "${ctx.cwd}". The sandbox is enabled — disable it in settings or use a path within the workspace.`,
       };
     }
     return { action: "proceed" };

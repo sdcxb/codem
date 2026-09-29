@@ -1,15 +1,15 @@
 {
-  "version": "1.16.202",
-  "notes": "修复：「目标」现在真的会交给模型。此前 create_goal 声称的「自动续做」是空话——那段注释写着 Inject goal status into the system prompt，代码却只 console.log，摘要算完就丢，模型从头到尾没看到过目标。现在活跃目标（进行中/被阻塞）会以 # Active Goals 段注入，并写明「不要重复已完成的工作」。",
-  "pub_date": "2026-09-29T01:55:49Z",
+  "version": "1.16.203",
+  "notes": "工具的并行执行改为有界流水线：以前按上限切成定长块、块间要等（12 个调用 = 5→5→2，第二批必须等第一批全部跑完），现在始终维持上限个在跑、完成一个立刻补一个。结果的交付顺序仍严格按你给出的顺序。并发上限 5 → 10（本机历史数据里并发数中位数 1、最大 4，所以真正的提升来自流水线改动）。沙箱拒绝提示不再对读操作说「写入被拒绝」。附件按设计不在沙箱范围内（已确认决策）。",
+  "pub_date": "2026-09-29T02:27:21Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2IxdHpoNFdIT0xWNUlVVW1lSk1ZdnB1alZ6a3NmSjZlT05Hb0FCaXc1MjUzNVlSem9TSU9jaklYMWRYbjZGaWhTQUU3Sm5UWHg5TEc1UHdVRGNFYnc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjQ2OTQxCWZpbGU6Q29kZW1fMS4xNi4yMDJfeDY0LXNldHVwLmV4ZQo1RVdCSklhRzRJVmNmMUlmTDZ5ZnRxWU5VMXZ6RjJuRlFIZU52TWoxd3RCSUFvbDIrOUxBdnlYbmJsazlNSVNqQ29ETmliUzMySnE3QVlOVU84UVFBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.202/Codem_1.16.202_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lsTERMUENhaXNNaGxzNmtnd3pwN0U0MlRrbDVPb1E3Q0JhMkdZaTB6NU9aT2ViVVV1UmY4RkpIbWJrREYvVzErbGdSbXd1WUhQcDlqaTYzdmkwS1FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjQ4ODM1CWZpbGU6Q29kZW1fMS4xNi4yMDNfeDY0LXNldHVwLmV4ZQplbis1SFp0cWJXdXJ1UG1WN1RGdUpFOUtRNy9pNnkxRGRISWtxL2hVQkJMcGVNWGMwNk5hVHZiSzJFeDF5UlZEcWJZclBDTnhTa0pLdzJXNEl0OGNDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.203/Codem_1.16.203_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2IxdHpoNFdIT0xWNUlVVW1lSk1ZdnB1alZ6a3NmSjZlT05Hb0FCaXc1MjUzNVlSem9TSU9jaklYMWRYbjZGaWhTQUU3Sm5UWHg5TEc1UHdVRGNFYnc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjQ2OTQxCWZpbGU6Q29kZW1fMS4xNi4yMDJfeDY0LXNldHVwLmV4ZQo1RVdCSklhRzRJVmNmMUlmTDZ5ZnRxWU5VMXZ6RjJuRlFIZU52TWoxd3RCSUFvbDIrOUxBdnlYbmJsazlNSVNqQ29ETmliUzMySnE3QVlOVU84UVFBZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.202/Codem_1.16.202_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lsTERMUENhaXNNaGxzNmtnd3pwN0U0MlRrbDVPb1E3Q0JhMkdZaTB6NU9aT2ViVVV1UmY4RkpIbWJrREYvVzErbGdSbXd1WUhQcDlqaTYzdmkwS1FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjQ4ODM1CWZpbGU6Q29kZW1fMS4xNi4yMDNfeDY0LXNldHVwLmV4ZQplbis1SFp0cWJXdXJ1UG1WN1RGdUpFOUtRNy9pNnkxRGRISWtxL2hVQkJMcGVNWGMwNk5hVHZiSzJFeDF5UlZEcWJZclBDTnhTa0pLdzJXNEl0OGNDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.203/Codem_1.16.203_x64-setup.exe"
     }
   }
 }
