@@ -79,6 +79,7 @@ async function fetchStyles(fileKey: string, token: string): Promise<any> {
 export function createFigmaFetchTool(): ToolDef {
   return {
     id: "figma_fetch",
+    contract: { readOnly: true, sideEffectScope: "network" },
     guidance: "Use figma_fetch to import design data from Figma. Provide a Figma URL or file key.",
     description:
       "Fetch design data from Figma files using the Figma REST API. " +

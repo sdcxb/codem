@@ -121,23 +121,50 @@ export async function maybePersistToolResult(
 }
 
 /**
- * Get the list of tool names that should NEVER have their results persisted.
- * These tools return critical information (task IDs, short confirmations)
- * that the LLM must always see in full.
+ * 结果**永不落盘**的工具 —— 运行时注册工具的**兜底**表。
+ *
+ * ## 第 120 轮：主判据已改为工具契约的 `persistResult`
+ *
+ * 这些工具的结果是「短但关键」的：id、确认、清单。落盘会把模型要用的东西
+ * 换成一个文件路径 —— 模型拿不到 id 就没法继续（例如子智能体 id）。
+ *
+ * 契约化之后，声明写在工具自己身上（`contract: { persistResult: false }`），
+ * 由 `shouldPersistResult()` 统一判定。这张表**只**在拿不到契约时兜底，
+ * 服务两类工具：
+ *
+ * 1. **运行时注册的工具**（MCP 等）—— 不可能带声明；
+ * 2. **本仓不再存在的名字**（`delegate_to_session` / `wait_for_delegation`）——
+ *    它们由别的注册路径提供，这里保留以免那条路径上行为变化。
+ *
+ * ⚠️ 不要把新工具加到这里 —— 加在工具自己的 `contract` 上。
+ * 那张表越长，就越接近我们要消灭的「多份真相」。
  */
 export const NEVER_PERSIST_TOOLS = new Set([
-  "read",               // Prevents infinite persist→read→persist loops
-  "subagent",           // Returns subagent ID for background tracking
-  "send_message",       // Returns message delivery confirmation
-  "interrupt_agent",    // Returns interrupt confirmation
-  "list_agents",        // Returns agent list (short)
-  "report",             // Returns report acceptance
   "delegate_to_session", // Returns delegation task ID
   "wait_for_delegation", // Returns delegation results
-  "list_sessions",      // Returns session list (usually small)
-  "show_todo",          // Returns todo list (usually small)
-  "ask_clarification",  // Returns user answer
-  "fact_check",         // Returns fact check result
-  "tts",                // Returns short confirmation
-  "image_gen",          // Returns markdown image (not text)
 ]);
+
+/**
+ * 该工具的结果是否可以落盘。**唯一判据入口** —— 所有消费者都走这里。
+ *
+ * 顺序（与 `streaming-executor` 的并发判定同形态）：
+ * 1. 能拿到契约 ⇒ 用 `contract.persistResult`（缺省 `true`）；
+ * 2. 拿不到契约（未注入查询器 / 运行时注册的工具）⇒ 查 `NEVER_PERSIST_TOOLS` 兜底。
+ *
+ * 为什么不能反过来：名字表优先会让一份手写名单继续覆盖工具自己的声明，
+ * 就又回到「7 组名单」的老问题。
+ */
+export function shouldPersistResult(
+  toolName: string,
+  contractOf?: (name: string) => { persistResult: boolean },
+): boolean {
+  if (contractOf) {
+    try {
+      return contractOf(toolName).persistResult;
+    } catch {
+      // 查询器抛错 ⇒ 保守：不落盘（宁可把内容原样给模型，也不要凭空少掉 id）
+      return false;
+    }
+  }
+  return !NEVER_PERSIST_TOOLS.has(toolName);
+}

@@ -361,14 +361,25 @@ describe('功能闭环: 工具管道数据流', () => {
   it('SandboxGuard 覆盖写工具和读工具', async () => {
     const src = await vi.importActual('fs')
     const code = src.readFileSync('src/core/llm/tool-pipeline.ts', 'utf8')
-    expect(code).toContain('"write"')
-    expect(code).toContain('"edit"')
-    expect(code).toContain('"multi_edit"')
-    expect(code).toContain('"delete_file"')
-    expect(code).toContain('"read"')
-    expect(code).toContain('"read_file"')
-    expect(code).toContain('"list_dir"')
-    expect(code).toContain('"glob"')
+
+    // 第 120 轮：判据从「工具名名单」改为**读工具契约**。
+    //
+    // 旧断言逐字要求源码里出现 "write" / "read" / "read_file" / "list_dir" …
+    // 那是在断言一份硬编码名单的**字面内容** —— 而那份名单里
+    // `read_file` / `list_dir` / `delete_file` 都不对应任何真实工具。
+    // 现在断言的是「覆盖靠契约判定」，并到真实 registry 上验覆盖没缩水。
+    expect(code).toContain('sideEffectScope')
+
+    const { createDefaultToolRegistry } = await import('../core/llm/tools')
+    const registry = createDefaultToolRegistry()
+    // 写工具：契约必须说明它会碰工作区
+    for (const id of ['write', 'edit', 'multi_edit']) {
+      expect(registry.getContract(id).sideEffectScope, `${id} 应被沙箱覆盖`).not.toBe('none')
+    }
+    // 读工具同样要覆盖（沙箱也拦工作区外读取）
+    for (const id of ['read', 'grep', 'glob']) {
+      expect(registry.getContract(id).sideEffectScope, `${id} 应被沙箱覆盖`).toBe('workspace')
+    }
   })
 
   it('SandboxGuard 在 path 不存在时放行', async () => {

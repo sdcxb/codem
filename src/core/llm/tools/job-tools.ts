@@ -22,6 +22,7 @@ export function createJobTools(): ToolDef[] {
     // job_list
     {
       id: "job_list",
+      contract: { readOnly: true, sideEffectScope: "session" },
       guidance: "Use job_list to list all background jobs and their statuses.",
       description: `List all background jobs (bash commands or terminal sends running in the background).
 
@@ -46,6 +47,7 @@ Returns a list of jobs with their ID, command, status, and start time.`,
     // job_output
     {
       id: "job_output",
+      contract: { readOnly: true, sideEffectScope: "session" },
       guidance: "Use job_output to read the output of a background job started with bash run_in_background or terminal_send run_in_background.",
       description: `Get the output (stdout/stderr) of a background job by ID.
 
@@ -90,6 +92,7 @@ Use this to check on long-running background commands.`,
     // job_kill
     {
       id: "job_kill",
+      contract: { destructive: true, sideEffectScope: "session" },
       description: `Kill a running background job by ID.
 
 Use this when a background command needs to be terminated.`,

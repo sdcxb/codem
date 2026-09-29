@@ -71,6 +71,16 @@
       "site": "src/plugins/library-ops/core/scene-image-db.ts::isSceneImageDbAvailable",
       "direction": "conservative",
       "reason": "场景图片库可用性探测；失败⇒不启用该功能。"
+    },
+    {
+      "site": "src/core/llm/streaming-executor.ts::isConcurrencySafe",
+      "direction": "conservative",
+      "reason": "并发判定：契约查询器抛错时返回 false（=独占执行）。后果是该工具不参与并行，属于「少一项优化」而不是「放行本该串行的写操作」。安全方向。"
+    },
+    {
+      "site": "src/core/llm/tool-result-storage.ts::shouldPersistResult",
+      "direction": "conservative",
+      "reason": "落盘判定：契约查询器抛错时返回 false（=不落盘），把结果原样留给模型。后果是上下文多占字节，而不是让模型拿不到 id/确认这类关键短信息。安全方向。"
     }
   ]
 }

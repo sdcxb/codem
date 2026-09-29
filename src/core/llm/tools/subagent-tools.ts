@@ -18,6 +18,9 @@
 import type { ToolDef, ToolContext, ToolExecuteResult } from '../tools';
 import type { SubagentRuntime } from '../../subagent/runtime';
 import { getLang } from '../../i18n/lang';
+// 本文件的工具声明 `timeoutMs: NO_TIMEOUT`（它们是长任务，或会等用户确认），
+// 哨兵值必须在声明处可见。
+import { NO_TIMEOUT } from '../tool-contract';
 
 // ========== Runtime 引用 ==========
 
@@ -47,6 +50,7 @@ export function createSubagentTool(): ToolDef {
   const zh = getLang() === 'zh';
   return {
     id: 'subagent',
+    contract: { sideEffectScope: "session", timeoutMs: NO_TIMEOUT, persistResult: false },
     description:
       zh
         ? '将独立任务委派给子智能体（在独立上下文中工作的子 agent），以卸载聚焦的、独立的工作 — '
@@ -196,6 +200,7 @@ export function createReportTool(): ToolDef {
   const zh = getLang() === 'zh';
   return {
     id: 'report',
+    contract: { sideEffectScope: "session", timeoutMs: NO_TIMEOUT, persistResult: false },
     description:
       zh
         ? '向启动你的 agent 汇报选定的内容。在完成前调用一次，给出自足的最终结果；'
@@ -271,6 +276,7 @@ export function createSendMessageTool(): ToolDef {
   const zh = getLang() === 'zh';
   return {
     id: 'send_message',
+    contract: { sideEffectScope: "session", timeoutMs: NO_TIMEOUT, persistResult: false },
     description:
       zh
         ? '通过子智能体 ID 向后台子智能体发送消息，继续同一对话。'
@@ -338,6 +344,7 @@ export function createInterruptAgentTool(): ToolDef {
   const zh = getLang() === 'zh';
   return {
     id: 'interrupt_agent',
+    contract: { sideEffectScope: "session", timeoutMs: NO_TIMEOUT, persistResult: false },
     description:
       zh
         ? '通过 agent ID 请求取消后台 agent 的当前轮次。目标可以是你的直接子智能体或更深的 agent。'
@@ -397,6 +404,7 @@ export function createListAgentsTool(): ToolDef {
   const zh = getLang() === 'zh';
   return {
     id: 'list_agents',
+    contract: { readOnly: true, sideEffectScope: "session", timeoutMs: NO_TIMEOUT, persistResult: false },
     description:
       zh
         ? '按持久 ID 和标签列出你的可持续后台子智能体。'

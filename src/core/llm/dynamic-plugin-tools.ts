@@ -22,6 +22,7 @@ import type { ToolDef } from "./tools";
 export function createCordisDefineTool(): ToolDef {
   return {
     id: "cordis_define",
+    contract: { sideEffectScope: "system" },
   guidance: "Use cordis_define to dynamically define a Cordis plugin at runtime. Useful for creating custom tools or services on-the-fly.",
     description: "Define a dynamic Cordis plugin at runtime. The plugin code is compiled and registered in the runtime. Use this when you need to create custom functionality that doesn't exist as a built-in tool.",
     parameters: {
@@ -66,6 +67,7 @@ export function createCordisDefineTool(): ToolDef {
 export function createCordisInspectTool(): ToolDef {
   return {
     id: "cordis_inspect",
+    contract: { readOnly: true, sideEffectScope: "system" },
   guidance: "Use cordis_inspect to list or query dynamically defined Cordis plugins.",
     description: "Inspect all registered dynamic plugins and available Cordis services. Returns a list of plugins and services.",
     parameters: {
@@ -114,6 +116,7 @@ export function createCordisInspectTool(): ToolDef {
 export function createCordisRunTool(): ToolDef {
   return {
     id: "cordis_run",
+    contract: { sideEffectScope: "system" },
   guidance: "Use cordis_run to execute a dynamically defined Cordis plugin.",
     description: "Run a previously defined dynamic Cordis plugin by name.",
     parameters: {
@@ -159,6 +162,7 @@ export function createCordisRunTool(): ToolDef {
 export function createCordisStopTool(): ToolDef {
   return {
     id: "cordis_stop",
+    contract: { sideEffectScope: "system" },
   guidance: "Use cordis_stop to stop a running Cordis plugin.",
     description: "Stop a running dynamic Cordis plugin. The plugin's dispose function is called if available.",
     parameters: {
@@ -200,6 +204,7 @@ export function createCordisStopTool(): ToolDef {
 export function createCordisUndefineTool(): ToolDef {
   return {
     id: "cordis_undefine",
+    contract: { sideEffectScope: "system", destructive: true },
   guidance: "Use cordis_undefine to remove a dynamically defined Cordis plugin.",
     description: "Remove a defined dynamic Cordis plugin from the runtime.",
     parameters: {

@@ -2,7 +2,18 @@
  * Tests for P1-5: Tool Result Disk Persistence
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { maybePersistToolResult, NEVER_PERSIST_TOOLS, DEFAULT_MAX_RESULT_SIZE_CHARS } from "../core/llm/tool-result-storage";
+import {
+  maybePersistToolResult,
+  shouldPersistResult,
+  DEFAULT_MAX_RESULT_SIZE_CHARS,
+} from "../core/llm/tool-result-storage";
+import { createDefaultToolRegistry } from "../core/llm/tools";
+import {
+  createSubagentTool,
+  createSendMessageTool,
+  createListAgentsTool,
+  createReportTool,
+} from "../core/llm/tools/subagent-tools";
 
 // Mock file-api writeFile
 vi.mock("../core/file-api", () => ({
@@ -101,20 +112,42 @@ describe("P1-5: Tool Result Disk Persistence", () => {
     });
   });
 
-  describe("NEVER_PERSIST_TOOLS", () => {
+  describe("落盘豁免：主判据是契约，名字表只兜底", () => {
+    // 第 120 轮：判据从「名字在不在 NEVER_PERSIST_TOOLS 里」改成
+    // 「工具契约的 persistResult」。名字表只剩**运行时注册工具**的兜底，
+    // 所以这里改成断言契约 —— 那才是现在真正生效的判据。
     it("should include 'read' tool to prevent infinite loops", () => {
-      expect(NEVER_PERSIST_TOOLS.has("read")).toBe(true);
+      const registry = createDefaultToolRegistry();
+      expect(registry.getContract("read").persistResult).toBe(false);
+      expect(shouldPersistResult("read", (n) => registry.getContract(n))).toBe(false);
     });
 
     it("should include tools that return task IDs", () => {
-      expect(NEVER_PERSIST_TOOLS.has("subagent")).toBe(true);
-      expect(NEVER_PERSIST_TOOLS.has("send_message")).toBe(true);
-      expect(NEVER_PERSIST_TOOLS.has("delegate_to_session")).toBe(true);
-      expect(NEVER_PERSIST_TOOLS.has("wait_for_delegation")).toBe(true);
+      // 这几个不在默认 registry 里（由 LLMEngine 在 subagent 就绪后注册），
+      // 直接建工具验契约
+      const byId: Record<string, () => { contract?: { persistResult?: boolean } }> = {
+        subagent: createSubagentTool,
+        send_message: createSendMessageTool,
+        list_agents: createListAgentsTool,
+        report: createReportTool,
+      };
+      for (const [id, factory] of Object.entries(byId)) {
+        expect(factory().contract?.persistResult, `${id} 必须声明 persistResult: false`).toBe(
+          false,
+        );
+      }
+      // 兜底表仍覆盖不在本仓注册路径上的委派工具
+      expect(shouldPersistResult("delegate_to_session")).toBe(false);
+      expect(shouldPersistResult("wait_for_delegation")).toBe(false);
+
+      // 反向对照：普通工具仍要落盘（否则「豁免」等于没有边界）
+      const registry = createDefaultToolRegistry();
+      expect(shouldPersistResult("write", (n) => registry.getContract(n))).toBe(true);
     });
 
     it("should include 'show_todo' tool", () => {
-      expect(NEVER_PERSIST_TOOLS.has("show_todo")).toBe(true);
+      const registry = createDefaultToolRegistry();
+      expect(registry.getContract("show_todo").persistResult).toBe(false);
     });
   });
 });

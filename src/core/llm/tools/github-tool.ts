@@ -150,6 +150,7 @@ async function fetchVulnerabilityAlerts(owner: string, repo: string, token: stri
 export function createGitHubTool(): ToolDef {
   return {
     id: "github_tool",
+    contract: { sideEffectScope: "network" },
     guidance: "Use github_tool to interact with GitHub: PR reviews, code search, issue tracking, repository info. Requires a GitHub token in settings.",
     description:
       "Interact with GitHub using the REST/GraphQL API. " +

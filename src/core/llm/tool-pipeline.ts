@@ -32,7 +32,8 @@ import type { ToolExecutorContext } from "./streaming-executor";
 import { validateToolOutput } from "./output-contract";
 import { RepeatToolReminderMiddleware } from "./repeat-tool-reminder";
 import { analyzeBashCommand } from "../permission/bash-analyzer";
-import { CONCURRENCY_SAFE_TOOL_IDS } from "./concurrency-policy";
+import { CONCURRENCY_SAFE_TOOL_IDS } from './concurrency-policy';
+import { resolveToolContract, type ResolvedToolContract } from './tool-contract';
 
 // ========== Pipeline Types ==========
 
@@ -451,13 +452,17 @@ export class SandboxGuard implements GuardMiddleware {
   name = "sandbox";
   private isEnabled: () => boolean;
   private isWithinWorkspace: (path: string, cwd: string) => boolean;
+  /** 契约查询器；见 `contractFor()` 的说明。 */
+  private contractOf?: (toolName: string) => ResolvedToolContract;
 
   constructor(
     isEnabled: () => boolean,
     isWithinWorkspace: (path: string, cwd: string) => boolean,
+    contractOf?: (toolName: string) => ResolvedToolContract,
   ) {
     this.isEnabled = isEnabled;
     this.isWithinWorkspace = isWithinWorkspace;
+    this.contractOf = contractOf;
   }
 
   async execute(
@@ -467,12 +472,23 @@ export class SandboxGuard implements GuardMiddleware {
   ): Promise<GuardResult> {
     if (!this.isEnabled()) return { action: "proceed" };
 
-    // D1-3: 扩展覆盖读操作 — 限制敏感路径的读取
-    const writeTools = ["write", "edit", "multi_edit", "delete_file"];
-    const readTools = ["read", "read_file", "cat", "head", "tail", "grep", "find", "list_dir", "glob"];
-    const allProtectedTools = [...writeTools, ...readTools];
-    if (!allProtectedTools.includes(toolName)) return { action: "proceed" };
+    // 第 120 轮：判据从「工具名在不在两份硬编码名单里」改为**读工具契约**。
+    //
+    // 旧名单的问题（两个都实测过）：
+    // - `read_file` / `cat` / `head` / `tail` / `find` / `list_dir` / `delete_file`
+    //   都**不对应任何真实工具**，是历史残留；
+    // - `read_attachment` 不在名单里 —— 而且**加了也没用**，因为它取不到路径
+    //   （入参是 `attachment_id`，见下方 `!path` 分支）。
+    //
+    // 新判据：`sideEffectScope !== "none"` ⇒ 这个工具会碰外部世界 ⇒ 沙箱要管。
+    // 这个判据天然覆盖「以后新增的写工具」，不需要谁记得来登记。
+    const contract = this.contractFor(toolName);
+    if (contract.sideEffectScope === "none") return { action: "proceed" };
 
+    // 取路径：读/写工具的入参都叫 `path`（个别历史工具用 `file_path`）。
+    // 取不到就放行 —— **这不是漏洞，是有意的边界**：沙箱管的是「路径在不在
+    // 工作区内」，而按 id 访问的资源（附件）根本没有路径可判。
+    // 「附件不算沙箱范围」是产品决策，见 `src/test/sandbox-boundary.test.ts`。
     const path = (args.path || args.file_path) as string;
     if (!path) return { action: "proceed" };
 
@@ -484,11 +500,10 @@ export class SandboxGuard implements GuardMiddleware {
     }
 
     if (!this.isWithinWorkspace(resolvedPath, ctx.cwd)) {
-      // 第 119 轮修正：文案原来对**所有**工具都说 "Write to" ——
-      // 但这份名单里既有写工具也有读工具（`read` / `grep` / `glob` …），
-      // 于是「读操作被沙箱拒绝」时用户看到的是「写入被拒绝」，
-      // 排查方向直接被带偏。这里按工具类别说清楚。
-      const verb = toolName === "delete_file" ? "Delete" : writeTools.includes(toolName) ? "Write to" : "Read from";
+      // 文案按工具类别说清楚：原来对**所有**工具都说 "Write to"，
+      // 于是「读操作被沙箱拒绝」时用户看到「写入被拒绝」，排查方向被带偏。
+      // 现在三态由契约给出（`destructive` / `readOnly`），不再靠名单。
+      const verb = contract.destructive ? "Delete" : contract.readOnly ? "Read from" : "Write to";
       return {
         action: "deny",
         denyMessage: `Sandbox: ${verb} "${path}" is outside the workspace "${ctx.cwd}". The sandbox is enabled — disable it in settings or use a path within the workspace.`,
@@ -496,18 +511,54 @@ export class SandboxGuard implements GuardMiddleware {
     }
     return { action: "proceed" };
   }
+
+  /** 取契约；未注入 `contractOf` 时按「碰工作区」保守处理（不放行）。 */
+  private contractFor(toolName: string): ResolvedToolContract {
+    if (this.contractOf) {
+      try {
+        return this.contractOf(toolName);
+      } catch {
+        // 查询器抛错 ⇒ 保守：当作会碰外部世界（继续走路径检查）
+      }
+    }
+    return { ...resolveToolContract(undefined, toolName), sideEffectScope: "workspace" };
+  }
 }
 
 /**
  * Plan mode guard middleware (guard layer)
- * Blocks write tools in plan mode.
+ *
+ * 计划模式是「只读契约」，所以本守卫的判据是 **`contract.readOnly`** ——
+ * 不是「工具名在不在写工具名单里」。
+ *
+ * 第 120 轮之前这里有两问题：
+ * 1. 名单硬编码（`delete`、`delete_file` 都不对应真实工具，而真实的
+ *    `delete_note` / `job_kill` / `cordis_undo` 之类写手段不在名单里）；
+ * 2. 于是「计划模式只读」这个承诺只能靠名单碰巧写对来维持。
+ *
+ * 现在一个只读工具天然放行、非只读天然拦下，**新增写工具不需要谁记得登记**。
+ * `bash` / `terminal` 这类「同一工具既可能只读也可能写」的，额外按命令意图判
+ * （见下面第 83 波那段）。
  */
 export class PlanModeGuard implements GuardMiddleware {
   name = "plan-mode";
   private isPlanMode: () => boolean;
+  private contractOf?: (toolName: string) => ResolvedToolContract;
 
-  constructor(isPlanMode: () => boolean) {
+  constructor(isPlanMode: () => boolean, contractOf?: (toolName: string) => ResolvedToolContract) {
     this.isPlanMode = isPlanMode;
+    this.contractOf = contractOf;
+  }
+
+  private contractFor(toolName: string): ResolvedToolContract {
+    if (this.contractOf) {
+      try {
+        return this.contractOf(toolName);
+      } catch {
+        // 查询器抛错 ⇒ 保守：当作非只读（计划模式宁严不宽）
+      }
+    }
+    return { ...resolveToolContract(undefined, toolName), readOnly: false };
   }
 
   async execute(
@@ -517,13 +568,7 @@ export class PlanModeGuard implements GuardMiddleware {
   ): Promise<GuardResult> {
     if (!this.isPlanMode()) return { action: "proceed" };
 
-    const writeTools = ["write", "edit", "multi_edit", "delete_file", "delete"];
-    if (writeTools.includes(toolName)) {
-      return {
-        action: "deny",
-        denyMessage: `Blocked: Cannot use "${toolName}" in Plan mode. Plan mode is read-only. Ask the user to switch to Default mode to execute changes.`,
-      };
-    }
+    const contract = this.contractFor(toolName);
 
     /**
      * 第 83 波（审计修正）：**bash 也是写手段**。
@@ -532,9 +577,25 @@ export class PlanModeGuard implements GuardMiddleware {
      * `Set-Content -Path src/x.ts -Value '…'`、`Remove-Item …` 照样能执行，
      * "计划模式只读"这个承诺被绕过。现在按命令意图判定：只读查询放行，
      * 其余（写/危险/认不出的）一律拒绝，并把原因说清楚。
+     *
+     * 第 120 轮起「哪些工具是 shell」也由契约给出（`sideEffectScope === "system"`），
+     * 不再靠 `toolName === "bash" || "shell" || "run_command" || "terminal"`
+     * 这种列举（后三个都不对应真实工具）。
      */
-    if (toolName === "bash" || toolName === "shell" || toolName === "run_command" || toolName === "terminal") {
+    const isShellLike =
+      toolName === "bash" || contract.sideEffectScope === "system";
+    if (isShellLike) {
       const command = String((args as any)?.command ?? (args as any)?.cmd ?? "");
+      // 没有 command 参数的系统类工具（例如终端会话操作）：除非契约声明只读，否则拦下
+      if (!command) {
+        return contract.readOnly
+          ? { action: "proceed" }
+          : {
+              action: "deny",
+              denyMessage: `Blocked: Cannot use "${toolName}" in Plan mode. Plan mode is read-only. Ask the user to switch to Default mode to execute changes.`,
+            };
+      }
+
       let classification: "readonly" | "write" | "dangerous" = "write";
       try {
         classification = analyzeBashCommand(command).classification as any;
@@ -550,7 +611,32 @@ export class PlanModeGuard implements GuardMiddleware {
             `Ask the user to approve the plan (switch to Default mode) before executing changes.`,
         };
       }
+
+      /**
+       * 命令意图是只读 ⇒ **直接放行，不再看工具的 `readOnly` 声明**。
+       *
+       * 这里踩过一次坑（PLAN-4 当场红）：`bash` / 终端类工具是「同一工具
+       * 既可能只读也可能写」的 —— 它们的契约**不能**是 `readOnly: true`
+       * （那会让 `Set-Content` 也走只读通道）。所以判据必须是**命令意图**，
+       * 而不是工具声明。
+       *
+       * 第一版写成「命令只读 ⇒ 落到下面那句 `if (!contract.readOnly) deny`」，
+       * 于是 `Get-ChildItem -Path src` 这种纯只读查询也被拦下 ——
+       * 计划模式直接没法调研，这正是第 83 波想修的反面。
+       */
+      return { action: "proceed" };
     }
+
+    // 只读工具（由契约声明）天然放行；其余一律拦下。
+    // 这一条替代了旧的写工具名单 —— 新增写工具只要没声明 readOnly 就会被拦住，
+    // 不需要谁记得把它加进名单。
+    if (!contract.readOnly) {
+      return {
+        action: "deny",
+        denyMessage: `Blocked: Cannot use "${toolName}" in Plan mode. Plan mode is read-only. Ask the user to switch to Default mode to execute changes.`,
+      };
+    }
+
     return { action: "proceed" };
   }
 }
@@ -804,6 +890,16 @@ export async function initDefaultPipeline(config: {
     args: Record<string, unknown>,
     ctx: ToolExecutorContext,
   ) => Promise<{ allowed: boolean; denyMessage?: string }>;
+  /**
+   * 契约查询器（第 120 轮）。
+   *
+   * 沙箱/计划模式这些守卫原来是**按工具名硬编码名单**判断「要不要管这个工具」，
+   * 名单里还混着 `read_file` / `cat` / `find` 等不对应任何真实工具的幽灵名。
+   * 改为读工具自己的声明：`sideEffectScope !== "none"` ⇒ 碰外部世界 ⇒ 要管。
+   *
+   * 未注入时守卫退化为「不介入」（保守），调用方（`agentic-loop`）会注入。
+   */
+  contractOf?: (toolName: string) => ResolvedToolContract;
   /** R3-1.1: Spill policy — 超过此字节大小的纯文本工具输出被溢出存储 + 替换为预览 */
   maxInlineBytes?: number;
 }): Promise<ToolPipeline> {
@@ -814,6 +910,10 @@ export async function initDefaultPipeline(config: {
   // 此处曾硬编码另一份 9 名字名单（含 read_file / list_dir / zvec_grep_rg 等
   // 不对应任何真实工具的幽灵名），与 streaming-executor 的默认名单**互不一致** ——
   // 同一个概念两份真相，其中一份还整体失效。现在统一来源。
+  //
+  // 注：第 120 轮起并发的主判据也改成了工具契约（`streaming-executor`
+  // 的 `contractOf`）；这里注册的分类器供**管线内部**查询使用，保留名字来源
+  // 以兼容运行时注册的工具（MCP）。
   for (const toolName of CONCURRENCY_SAFE_TOOL_IDS) {
     pipeline.registerConcurrency(toolName, () => true);
   }
@@ -825,8 +925,10 @@ export async function initDefaultPipeline(config: {
   pipeline.registerPreExecute(new HookPreExecuteMiddleware());
 
   // Layer 2: guards (monotonic — order is frozen)
-  pipeline.registerGuard(new PlanModeGuard(config.isPlanMode));
-  pipeline.registerGuard(new SandboxGuard(config.isSandboxEnabled, config.isPathWithinWorkspace));
+  pipeline.registerGuard(new PlanModeGuard(config.isPlanMode, config.contractOf));
+  pipeline.registerGuard(
+    new SandboxGuard(config.isSandboxEnabled, config.isPathWithinWorkspace, config.contractOf),
+  );
 
   // Layer 3: execute (handled by toolHandler in pipeline.execute())
 

@@ -328,6 +328,7 @@ export function createQuerySessionResultTool(): ToolDef {
 export function createListSessionsTool(): ToolDef {
   return {
     id: "list_sessions",
+    contract: { readOnly: true, sideEffectScope: "session", persistResult: false },
   guidance: "Use list_sessions to see all active sessions and their statuses.",
     description:
       "List all sessions in the current project with their status. " +

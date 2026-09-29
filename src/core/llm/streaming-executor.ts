@@ -1,7 +1,8 @@
 import type { ToolCallResult, LLMMessage } from "../llm/types";
-import { maybePersistToolResult, NEVER_PERSIST_TOOLS } from "./tool-result-storage";
+import { maybePersistToolResult, shouldPersistResult } from "./tool-result-storage";
 import { getToolPipeline } from "./tool-pipeline";
-import { DEFAULT_CONCURRENCY_SAFE_TOOLS } from "./concurrency-policy";
+import { DEFAULT_CONCURRENCY_SAFE_TOOLS } from './concurrency-policy';
+import { resolveToolContract, resolveToolTimeout, type ResolvedToolContract } from './tool-contract';
 
 // ========== P1-A: Per-message Tool Result Budget ==========
 
@@ -40,13 +41,14 @@ function truncateErrorMessage(message: string): string {
 async function enforcePerMessageBudget(
   results: ToolCallResult[],
   ctx: ToolExecutorContext,
+  contractOf?: (name: string) => { persistResult: boolean },
 ): Promise<void> {
   let totalSize = results.reduce((sum, r) => sum + (r.output?.length || 0), 0);
   if (totalSize <= MAX_TOOL_RESULTS_PER_MESSAGE_CHARS) return;
 
   // Sort by output size descending — persist largest first
   const sortable = results
-    .filter(r => r.output && !NEVER_PERSIST_TOOLS.has(r.name))
+    .filter(r => r.output && shouldPersistResult(r.name, contractOf))
     .sort((a, b) => (b.output?.length || 0) - (a.output?.length || 0));
 
   for (const r of sortable) {
@@ -112,9 +114,25 @@ export interface StreamingToolCall {
 
 export interface ToolExecutorConfig {
   maxConcurrent: number;
+  /**
+   * 可并发工具的名字名单。
+   *
+   * **第 120 轮起这是「兜底」，不是主判据** —— 主判据是工具自己的
+   * `contract.concurrencySafe`（经 `resolveToolContract` 解析，缺省保守）。
+   * 保留它的原因有两条：①运行时注册的工具（MCP）不可能带声明；
+   * ②调用方（测试、桥接层）可能只给名字。
+   * 解析顺序见 `isConcurrencySafe()`。
+   */
   concurrencySafeTools: string[];
   toolTimeout: number;
   abortSiblingsOnError: boolean;
+  /**
+   * 契约查询器：给工具名，返回它的完整契约。
+   *
+   * 由 `agentic-loop` 注入（它持有 ToolRegistry）。未注入时只靠
+   * `concurrencySafeTools` 兜底 —— 这样测试与独立用法不必构造 registry。
+   */
+  contractOf?: (toolName: string) => ResolvedToolContract;
 }
 
 const DEFAULT_CONFIG: ToolExecutorConfig = {
@@ -126,13 +144,38 @@ const DEFAULT_CONFIG: ToolExecutorConfig = {
   // 这次改的是「上限不再成为天花板」，真实吞吐提升来自同一轮把
   // 定长块换成 rolling pool（见 `executeBatch`）。
   maxConcurrent: 10,
-  // 名单唯一定义在 concurrency-policy.ts。此前这里硬编码了 9 个名字，其中
-  // codebase_search / file_search / list_directory / web_fetch / zvec_grep_search
-  // 等 6 个**不对应任何真实工具**，而真实存在的 web_search 反而缺席、被强制串行。
+  // 兜底名单（见 `ToolExecutorConfig.concurrencySafeTools` 的说明）。
+  // 契约化之后主判据是工具自己的声明；这份名单只在拿不到契约时用。
   concurrencySafeTools: DEFAULT_CONCURRENCY_SAFE_TOOLS,
   toolTimeout: 60000, // 60 seconds for regular tools
   abortSiblingsOnError: false,
+  // contractOf 默认不注入：拿不到契约时退化为上面的名字名单
 };
+
+/**
+ * 一次调用是否可与其他调用并发。
+ *
+ * **契约优先、名字兜底**（照 zcode `scheduler.ts:97` 的形态）：
+ * 1. 能拿到契约 ⇒ 用 `contract.concurrencySafe`（缺省保守：只读才可并发）；
+ * 2. 拿不到契约（未注入 contractOf，或工具未注册）⇒ 查 `concurrencySafeTools`。
+ *
+ * 注意**不能**反过来（名字优先）—— 那会让一份手写名单继续覆盖工具自己的声明，
+ * 就又回到「7 组名单」的老问题。
+ */
+function isConcurrencySafe(
+  toolName: string,
+  config: { concurrencySafeTools: string[]; contractOf?: (n: string) => ResolvedToolContract },
+): boolean {
+  if (config.contractOf) {
+    try {
+      return config.contractOf(toolName).concurrencySafe;
+    } catch {
+      // 契约查询器抛错时不要静默放行并发（安全侧：独占）
+      return false;
+    }
+  }
+  return config.concurrencySafeTools.includes(toolName);
+}
 
 export type ToolExecutorEvent =
   | { type: "tool_start"; toolCall: StreamingToolCall }
@@ -210,7 +253,7 @@ export class StreamingToolExecutorImpl {
     type Group = { parallel: boolean; calls: StreamingToolCall[] };
     const groups: Group[] = [];
     for (const tc of toolCalls) {
-      const safe = this.config.concurrencySafeTools.includes(tc.name);
+      const safe = isConcurrencySafe(tc.name, this.config);
       const last = groups[groups.length - 1];
       if (safe) {
         // 只与**紧邻**的可并发调用同组，不跨越不可并发的调用
@@ -384,7 +427,7 @@ export class StreamingToolExecutorImpl {
     }
 
     // P1-A: Enforce per-message tool result budget
-    await enforcePerMessageBudget(results, ctx);
+    await enforcePerMessageBudget(results, ctx, this.config.contractOf);
   }
 
   /**
@@ -417,10 +460,17 @@ export class StreamingToolExecutorImpl {
       // F2.5: Security scan before execution
       const securityWarning = scanParametersForSecrets(tc.name, tc.input);
 
-      // bash manages its own timeout via timeout_ms parameter; spawn/wait_subagent never timeout
-      // write/edit/multi_edit may trigger user confirmation dialogs (overwrite, permission) — no timeout
-      const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "subagent", "send_message", "interrupt_agent", "list_agents", "report", "write", "edit", "multi_edit"];
-      const useTimeout = !noTimeoutTools.includes(tc.name);
+      // 超时由**工具自己的契约**决定（第 120 轮起）。
+      //
+      // 契约化之前这里有一份 11 个名字的 `noTimeoutTools`，而 `executeSingle` 里
+      // 另有一份 6 个名字的 —— 同一批工具走不同路径就有不同超时行为。
+      // 现在两份都删掉，改读 `contract.timeoutMs`：缺省用执行器默认预算，
+      // 要「永不超时」的工具必须显式声明 `NO_TIMEOUT`（见 tool-contract.ts）。
+      const timeout = resolveToolTimeout(
+        this.contractFor(tc.name),
+        this.config.toolTimeout,
+      );
+      const useTimeout = timeout.useTimeout;
 
       // P0-2: Route through ToolPipeline if initialized (5-layer waterfall)
       const pipeline = getToolPipeline();
@@ -446,7 +496,7 @@ export class StreamingToolExecutorImpl {
           return pr.result;
         }),
         useTimeout
-          ? (toolTimer = this.timeoutTimer(this.config.toolTimeout)).promise
+          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs)).promise
           : new Promise<never>(() => {}),
       ]);
 
@@ -458,7 +508,7 @@ export class StreamingToolExecutorImpl {
       }
 
       // P1-5: Persist large tool results to disk
-      if (result.output && !NEVER_PERSIST_TOOLS.has(tc.name)) {
+      if (result.output && shouldPersistResult(tc.name, this.config.contractOf)) {
         const persistResult = await maybePersistToolResult(
           tc.name,
           result.output,
@@ -474,6 +524,24 @@ export class StreamingToolExecutorImpl {
     } finally {
       toolTimer?.cancel();
     }
+  }
+
+  /**
+   * 取工具的完整契约。
+   *
+   * 拿不到 `contractOf` 时返回一份**保守缺省**（不并发、要超时、落盘），
+   * 而不是「假装它是安全的」。这样测试与独立用法不必构造 registry 也能跑，
+   * 且缺省永远落在安全侧。
+   */
+  private contractFor(toolName: string): ResolvedToolContract {
+    if (this.config.contractOf) {
+      try {
+        return this.config.contractOf(toolName);
+      } catch {
+        // 查询器抛错 ⇒ 落到下面那份保守缺省，不静默放行
+      }
+    }
+    return resolveToolContract(undefined, toolName);
   }
 
   private async *executeSingle(
@@ -498,10 +566,15 @@ export class StreamingToolExecutorImpl {
       // F2.5: Security scan before execution
       const securityWarning = scanParametersForSecrets(tc.name, tc.input);
 
-      // bash manages its own timeout via timeout_ms parameter; spawn/wait_subagent never timeout
-      // write/edit/multi_edit may trigger user confirmation dialogs — no timeout
-      const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "write", "edit", "multi_edit"];
-      const useTimeout = !noTimeoutTools.includes(tc.name);
+      // 超时同样读工具契约 —— 这里原来有一份 6 个名字的 `noTimeoutTools`，
+      // 与 runOneTool 里那份 11 个名字的**不一致**（少了 subagent / send_message /
+      // interrupt_agent / list_agents / report）。同一批工具走单发路径与批量路径
+      // 就有不同超时行为，这正是多份真相的必然结果。现在两处都读契约。
+      const timeout = resolveToolTimeout(
+        this.contractFor(tc.name),
+        this.config.toolTimeout,
+      );
+      const useTimeout = timeout.useTimeout;
 
       // S0-1: Route through ToolPipeline (same as executeBatch) to ensure
       // all tools go through the 5-layer waterfall, including EventLog finalize.
@@ -523,7 +596,7 @@ export class StreamingToolExecutorImpl {
           return pr.result;
         }),
         useTimeout
-          ? (toolTimer = this.timeoutTimer(this.config.toolTimeout)).promise
+          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs)).promise
           : new Promise<never>(() => {}),
       ]);
 
@@ -535,7 +608,7 @@ export class StreamingToolExecutorImpl {
       }
 
       // P1-5: Persist large tool results to disk
-      if (result.output && !NEVER_PERSIST_TOOLS.has(tc.name)) {
+      if (result.output && shouldPersistResult(tc.name, this.config.contractOf)) {
         const persistResult = await maybePersistToolResult(
           tc.name,
           result.output,

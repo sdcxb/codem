@@ -638,7 +638,13 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     if (ctx) this._ctx = ctx;
     this.guidanceQueue = getGuidanceQueue();
     this.needsYouQueue = getNeedsYouQueue();
-    this.executor = new StreamingToolExecutorImpl(config?.toolExecutor);
+    this.executor = new StreamingToolExecutorImpl({
+      // 契约查询器：调度（并发）与超时都靠它读**工具自己的声明**，
+      // 而不是执行器里再维护一份名单。`this.tools` 在 handle() 时已注册完毕，
+      // 这里传的是闭包，调用时才求值，所以构造顺序不影响正确性。
+      contractOf: (toolName: string) => this.tools.getContract(toolName),
+      ...(config?.toolExecutor ?? {}),
+    });
     // Sync the model's real context window into TokenTracker so pressure
     // estimation uses the correct denominator (DSH: model-aware window).
     if (this.config.contextWindow) {
@@ -922,6 +928,10 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       isPlanMode: () => this.config.collaborationMode === "plan",
       // 第 87 波：跟随设置（原来是硬编码 () => false，面板里的沙箱开关形同虚设）
       isSandboxEnabled: () => isSandboxAclEnabled(),
+      // 第 120 轮：沙箱与计划模式守卫改读**工具契约**，不再维护工具名名单。
+      // 判据变成「sideEffectScope !== "none"」与「readOnly」—— 新增工具天然被覆盖，
+      // 不需要谁记得来登记（旧名单里还混着 read_file / cat / find 等幽灵名）。
+      contractOf: (toolName: string) => this.tools.getContract(toolName),
       isPathWithinWorkspace: (path: string, cwd: string) => {
         // Basic check: path should be within cwd
         const normalized = path.replace(/\\/g, "/");
@@ -2630,9 +2640,21 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         // Auto-snapshot before destructive tools
-        if (["write", "edit", "bash"].includes(name) && ctx.cwd) {
+        //
+        // 第 120 轮：判据从「名字在不在 ["write","edit","bash"] 里」改为**读契约**。
+        // 旧写法的问题是同类工具漏登记就静默失去快照保护（`multi_edit` 就曾不在列，
+        // 而它同样能改文件）。现在按「会改工作区 / 破坏性」判定，新增写工具自动被覆盖。
+        const callContract = this.tools.getContract(name);
+        const mutatesWorkspace =
+          callContract.sideEffectScope === "workspace" && !callContract.readOnly;
+        if ((mutatesWorkspace || callContract.destructive) && ctx.cwd) {
           await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
-          if ((name === "write" || name === "edit") && typeof args.path === "string" && this.currentSnapshotId) {
+          // 逐文件快照只对「按 path 改单个文件」的工具做（write/edit 系列）
+          if (
+            (callContract.sideEffectScope === "workspace" && !callContract.readOnly) &&
+            typeof args.path === "string" &&
+            this.currentSnapshotId
+          ) {
             try {
               const { readFile } = await import("../file-api");
                 const snapshotService = this.getSnapshotService(ctx.cwd);
