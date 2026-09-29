@@ -5,6 +5,7 @@ import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
 import type { Context } from "../cordis/src/index.ts";
 import type { PlanUpdateOp } from "./plan-utils";
+import { replaceLiteral, suggestEditCandidates } from "./edit-matchers";
 
 // R4: 可选的 ctx 消费层 — 当 ctx 可用时优先通过 ctx.get() 消费服务
 let _ctx: Context | null = null;
@@ -1300,8 +1301,50 @@ export function createWriteFileTool(): ToolDef {
   };
 }
 
-export function createEditFileTool(): ToolDef {
-  return {
+/**
+ * 校验 edit / multi_edit 的字符串参数，把「模型参数写错」变成可行动的提示。
+ *
+ * ## 为什么需要它
+ *
+ * 模型写这两个工具时有三种常见错法，旧实现全都变成同一条听不懂的崩溃信息：
+ *
+ * | 模型的写法 | 旧行为 |
+ * | --- | --- |
+ * | 蛇形 `old_string` / `new_string`（Anthropic 风格） | `undefined` 一路传下去 → `Cannot read properties of undefined (reading 'length')` |
+ * | 漏字段（输出被截断时常见） | 同上 |
+ * | 传了 `null` | 同上 |
+ *
+ * 这三种**都不是内部的 bug，而是模型可以自己修好的输入错误**。所以这里返回
+ * 一条说明「哪个参数缺了、是不是写成了蛇形」，模型下一轮就能改对，
+ * 而不是花一轮去猜「Cannot read properties」是什么意思。
+ *
+ * @param names 必填的驼峰参数名
+ * @returns 错误说明；`null` 表示参数没问题
+ */
+function validateEditParams(
+  args: Record<string, unknown>,
+  names: readonly string[],
+): string | null {
+  const missing = names.filter((n) => typeof args[n] !== "string");
+  if (missing.length === 0) return null;
+
+  // 识别「驼峰写成蛇形」这一具体情形 —— 光说 "missing" 模型可能重复同样的错误
+  const snakeHints: string[] = [];
+  for (const n of missing) {
+    const snake = n.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+    if (snake in args) snakeHints.push(`did you mean \`${n}\` instead of \`${snake}\`?`);
+  }
+
+  return (
+    `Missing required string parameter(s): ${missing.map((n) => `\`${n}\``).join(", ")}. ` +
+    (snakeHints.length > 0
+      ? `This tool uses camelCase — ${snakeHints.join(" ")} `
+      : "") +
+    `Required parameters are: ${names.map((n) => `\`${n}\``).join(", ")}.`
+  );
+}
+
+export function createEditFileTool(): ToolDef {  return {
     id: "edit",
     guidance: "Use edit to modify existing files by replacing exact strings. The old_string must match exactly (including whitespace). For multiple edits in one file, use multi_edit instead. After editing, when you mention the file in your response, ALWAYS use a Markdown link with the full path: [filename](./path/to/file). This lets the user click to open it.",
     description: "Edit a file by replacing exact string matches. This is preferred over 'write' for modifying existing files because it preserves the rest of the file content.",
@@ -1318,6 +1361,15 @@ export function createEditFileTool(): ToolDef {
       const path = args.path as string;
       const oldString = args.oldString as string;
       const newString = args.newString as string;
+
+      // 参数校验：模型常见两种写错方式 —— 用蛇形 `old_string`/`new_string`
+      // （Anthropic 风格），或漏字段。缺字段时值是 `undefined`，若直接往下传会变成
+      // 「Cannot read properties of undefined」这种**内部崩溃信息**，
+      // 模型既看不懂也不知道该怎么改。这里显式回一条可行动的错误。
+      const paramError = validateEditParams(args, ["oldString", "newString"]);
+      if (paramError) {
+        return { title: `edit: ${path}`, output: `Error: ${paramError}` };
+      }
 
       // S2: Protected path check
       if (isProtectedPath(path)) {
@@ -1336,11 +1388,20 @@ export function createEditFileTool(): ToolDef {
       try {
         const content = await readFile(path);
 
-        if (!content.includes(oldString)) {
-          return { title: `edit: ${path}`, output: `Error: oldString not found in ${path}` };
+        // 用 replaceLiteral 而非 content.replace(oldString, newString)：
+        // 后者会把 newString 里的 $& / $$ / $` / $' 当替换记号展开，
+        // 静默改写文件内容却照样返回成功。详见 edit-matchers.ts 文件头。
+        const newContent = replaceLiteral(content, oldString, newString);
+        if (newContent === null) {
+          // 没命中就给出「大概想改哪里」，而不是只回一句 not found ——
+          // 后者会让模型必须额外花一次 read + 一次重试，还可能猜偏。
+          const suggestion = suggestEditCandidates(content, oldString);
+          return {
+            title: `edit: ${path}`,
+            output: `Error: ${suggestion ? suggestion.message : `oldString not found in ${path}`}`,
+          };
         }
 
-        const newContent = content.replace(oldString, newString);
         await writeFile(path, newContent, { workspace: ctx.workspace || ctx.cwd });
         // E4: Invalidate cache after edit
         fileCache.invalidate(path);
@@ -1387,6 +1448,29 @@ export function createMultiEditTool(): ToolDef {
       const path = args.path as string;
       const edits = args.edits as Array<{ oldString: string; newString: string }>;
 
+      // 同 edit：`edits` 缺失/非数组/条目缺字段都要变成可行动的提示，
+      // 而不是 `undefined.map is not a function` 这类内部崩溃。
+      if (!Array.isArray(edits) || edits.length === 0) {
+        return {
+          title: `multi_edit: ${path}`,
+          output:
+            `Error: Missing required parameter \`edits\` — it must be a non-empty array of ` +
+            `\`{ oldString, newString }\` objects.`,
+        };
+      }
+      for (let i = 0; i < edits.length; i++) {
+        const perItem = validateEditParams(
+          (edits[i] ?? {}) as Record<string, unknown>,
+          ["oldString", "newString"],
+        );
+        if (perItem) {
+          return {
+            title: `multi_edit: ${path}`,
+            output: `Error: edits[${i}]: ${perItem}`,
+          };
+        }
+      }
+
       // S2: Protected path check
       if (isProtectedPath(path)) {
         return {
@@ -1408,11 +1492,16 @@ export function createMultiEditTool(): ToolDef {
 
         for (let i = 0; i < edits.length; i++) {
           const { oldString, newString } = edits[i];
-          if (!content.includes(oldString)) {
-            errors.push(`Edit ${i + 1}: oldString not found`);
+          // 同上：必须用 replaceLiteral，否则 newString 里的 $ 记号会静默改写文件。
+          const next = replaceLiteral(content, oldString, newString);
+          if (next === null) {
+            const suggestion = suggestEditCandidates(content, oldString);
+            errors.push(
+              `Edit ${i + 1}: ${suggestion ? suggestion.message : "oldString not found"}`,
+            );
             continue;
           }
-          content = content.replace(oldString, newString);
+          content = next;
           appliedCount++;
         }
 

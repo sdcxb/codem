@@ -331,24 +331,50 @@ describe("工具调用 — edit 工具", () => {
     mockReadFile.mockResolvedValue("old text here");
     mockWriteFile.mockResolvedValue(undefined);
     const tool = createEditFileTool();
+    // 用工具真实的参数名（驼峰）。此前这里传蛇形 `old_string` / `new_string`，
+    // 两个字段都落在 undefined 上 → 工具走的是「未命中」分支，
+    // 而断言只有 `toBeDefined()`，所以「根本没执行替换」也照样绿。
     const result = await tool.execute(
-      { path: "/test/file.txt", old_string: "old", new_string: "new" },
+      { path: "/test/file.txt", oldString: "old", newString: "new" },
       createMockCtx()
     );
 
-    expect(result).toBeDefined();
+    expect(result.output).toContain("Successfully edited");
+    // 真正证明替换发生了：写回的第二个参数应当含替换后的文本
+    const written = mockWriteFile.mock.calls[0]?.[1] as string | undefined;
+    expect(written).toContain("new text here");
+    expect(written).not.toContain("old text here");
   });
 
-  it("TOOL-004b: edit 工具 old_string 不匹配时报错", async () => {
+  it("TOOL-004b: edit 工具收到蛇形参数名时给出可行动提示", async () => {
     mockReadFile.mockResolvedValue("content without target");
     const tool = createEditFileTool();
+    // 保留蛇形入参这一情形本身有价值：模型确实会用 `old_string`（Anthropic 风格）。
+    // 这里验的是「缺参数不能变成一条内部 TypeError」，而是明确告诉模型参数名写错了。
     const result = await tool.execute(
       { path: "/test/file.txt", old_string: "nonexistent", new_string: "x" },
       createMockCtx()
     );
 
     expect(result).toBeDefined();
+    // 必须点名缺哪个参数，并指出是驼峰/蛇形的问题 —— 而不是 "Cannot read properties"
+    expect(result.output).toContain("oldString");
+    expect(result.output).toContain("camelCase");
+    expect(result.output).not.toContain("Cannot read properties");
+    // 参数不合法时绝不能碰文件
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("TOOL-004c: 驼峰参数名未命中时同样报错，且不崩", async () => {
+    mockReadFile.mockResolvedValue("content without target");
+    const tool = createEditFileTool();
+    const result = await tool.execute(
+      { path: "/test/file.txt", oldString: "nonexistent", newString: "x" },
+      createMockCtx()
+    );
+
     expect(result.output).toContain("not found");
+    expect(result.output).not.toContain("Cannot read properties");
   });
 });
 

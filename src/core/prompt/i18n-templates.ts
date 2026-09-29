@@ -100,6 +100,9 @@ You write GitHub-flavored Markdown that renders in a chat interface.
 - After a change, clean up comments and docstrings that describe the old behavior.
 - Don't end with "If you want me to..." — suggest a follow-up only when it genuinely builds on the request.
 - Provide high-signal answers. Don't repeat yourself, don't pad with filler, and don't describe everything exhaustively when a focused answer would do.
+- **Before ending your turn, read your own last paragraph.** If it is a plan, an analysis, a question, a list of next steps, or a promise about work you have not done ("I'll…", "let me know when…", "next we could…"), do that work **now** with tool calls. That includes retrying after errors and gathering missing information yourself. Do not stop because the context or session is long. End your turn only when the task is complete, or when you are blocked on input only the user can provide.
+- **Do not ask for permission to start work you were already asked to do.** For reversible actions that follow from the request, proceed. Asking "Shall I…?" mid-task blocks the work, because the user is not watching in real time. Offer follow-ups after the task is done; ask before only for destructive or genuinely out-of-scope actions.
+- If something important only appeared mid-turn (in your thinking, or in a tool output you did not quote), restate it in your final message — the user may not have seen it.
 - **When listing files you created or modified, use Markdown links with full paths.** Format: \`[filename](./path/to/file)\`. This makes each file clickable so the user can open it directly.`,
 
   scriptExecution: `# Script Execution
@@ -350,6 +353,9 @@ const ZH_TEMPLATES: PromptTemplates = {
 - 改动后，清理描述旧行为的注释和文档字符串。
 - 不要以 "如果你需要我..." 结尾——仅在确实延续请求时才建议后续操作。
 - 提供高信息量的回答。不要重复、不要填充废话、不要在聚焦回答就够时穷尽描述。
+- **结束本轮前，读一遍你自己写的最后一段。** 如果它是计划、分析、提问、下一步清单，或者对尚未完成工作的承诺（"我会…"、"你告诉我什么时候…"、"接下来可以…"），就**现在**用工具调用把它做掉。包括自己重试报错、自己补齐缺失信息。不要因为上下文长或会话长就停下。只有任务完成、或卡在只有用户能提供的输入上，才结束本轮。
+- **不要为「你已经被要求做的工作」请求许可。** 请求范围内的可逆动作直接做。中途问"需要我…吗？"会阻塞工作，因为用户并不是实时盯着。任务做完后再提后续建议；只有破坏性动作或真正超出范围的事才先问。
+- 如果重要信息只出现在回合中途（你的思考里，或你没有引用的工具输出里），在最终消息里重述一遍——用户可能没看到。
 - **列出创建或修改的文件时，使用带完整路径的 Markdown 链接。** 格式：\`[文件名](./路径/到/文件)\`。这样每个文件都是可点击的，用户可以直接打开。`,
 
   scriptExecution: `# 脚本执行

@@ -1,6 +1,7 @@
 import type { ToolCallResult, LLMMessage } from "../llm/types";
 import { maybePersistToolResult, NEVER_PERSIST_TOOLS } from "./tool-result-storage";
 import { getToolPipeline } from "./tool-pipeline";
+import { DEFAULT_CONCURRENCY_SAFE_TOOLS } from "./concurrency-policy";
 
 // ========== P1-A: Per-message Tool Result Budget ==========
 
@@ -118,8 +119,10 @@ export interface ToolExecutorConfig {
 
 const DEFAULT_CONFIG: ToolExecutorConfig = {
   maxConcurrent: 5,
-  // E5: Extended concurrency-safe tools — all read-only tools can run in parallel
-  concurrencySafeTools: ["read", "glob", "grep", "codebase_search", "file_search", "list_directory", "web_fetch", "lsp", "zvec_grep_search"],
+  // 名单唯一定义在 concurrency-policy.ts。此前这里硬编码了 9 个名字，其中
+  // codebase_search / file_search / list_directory / web_fetch / zvec_grep_search
+  // 等 6 个**不对应任何真实工具**，而真实存在的 web_search 反而缺席、被强制串行。
+  concurrencySafeTools: DEFAULT_CONCURRENCY_SAFE_TOOLS,
   toolTimeout: 60000, // 60 seconds for regular tools
   abortSiblingsOnError: false,
 };
@@ -173,25 +176,50 @@ export class StreamingToolExecutorImpl {
     toolHandler: (name: string, args: Record<string, unknown>, ctx: ToolExecutorContext) => Promise<ToolCallResult>,
   ): AsyncGenerator<ToolExecutorEvent, ToolCallResult[], unknown> {
     const results: ToolCallResult[] = [];
-    const concurrentBatch: StreamingToolCall[] = [];
-    const sequentialQueue: StreamingToolCall[] = [];
 
+    /**
+     * 按「模型给的顺序」切调度组：连续的可并发调用合成一组并行跑，
+     * 不可并发的调用各自独占一组。**组间严格保序。**
+     *
+     * ## 为什么不能像以前那样「先把所有可并发工具跑完」
+     *
+     * 旧实现把调用分成两个队列（`concurrentBatch` / `sequentialQueue`），
+     * 先整批跑完可并发的、再跑其余的 —— **模型给的顺序被丢弃**。具体失效场景：
+     *
+     * ```
+     * 模型发出:  read(a.ts)  →  edit(a.ts)      （顺序正确）
+     * 旧实现实际: edit(a.ts)  →  read(a.ts)      （顺序反了，中间隔着整批并行组）
+     * ```
+     *
+     * 模型按「先读后写」组织调用是有意义的：它可能依赖刚读到的内容。顺序被打乱后，
+     * 它看到的结果与自己的推理链不一致，只能重读重试。
+     *
+     * 新实现把 `read(a.ts)` 收成单元素组先跑、`edit(a.ts)` 再跑，顺序保住；
+     * 而 `read(a) → read(b) → edit(c)` 仍会合成一组并行。
+     *
+     * 注意：**结果提交顺序**一直是对的（`executeBatch` 内按 `slots` 索引回填），
+     * 这里修的只是**执行顺序**。
+     */
+    type Group = { parallel: boolean; calls: StreamingToolCall[] };
+    const groups: Group[] = [];
     for (const tc of toolCalls) {
-      if (this.config.concurrencySafeTools.includes(tc.name)) {
-        concurrentBatch.push(tc);
+      const safe = this.config.concurrencySafeTools.includes(tc.name);
+      const last = groups[groups.length - 1];
+      if (safe) {
+        // 只与**紧邻**的可并发调用同组，不跨越不可并发的调用
+        if (last && last.parallel) last.calls.push(tc);
+        else groups.push({ parallel: true, calls: [tc] });
       } else {
-        sequentialQueue.push(tc);
+        groups.push({ parallel: false, calls: [tc] });
       }
     }
 
-    // Execute concurrent batch in parallel
-    if (concurrentBatch.length > 0) {
-      yield* this.executeBatch(concurrentBatch, ctx, toolHandler, results);
-    }
-
-    // Execute sequential tools one by one
-    for (const tc of sequentialQueue) {
-      yield* this.executeSingle(tc, ctx, toolHandler, results);
+    for (const group of groups) {
+      if (group.parallel) {
+        yield* this.executeBatch(group.calls, ctx, toolHandler, results);
+      } else {
+        yield* this.executeSingle(group.calls[0], ctx, toolHandler, results);
+      }
     }
 
     yield { type: "batch_complete", results };

@@ -382,8 +382,19 @@ describe('功能闭环: 工具管道数据流', () => {
     const src = await vi.importActual('fs')
     const code = src.readFileSync('src/core/llm/tool-pipeline.ts', 'utf8')
     expect(code).toContain('registerConcurrency')
-    expect(code).toContain('"read_file"')
-    expect(code).toContain('"web_search"')
+    // 名单来源必须是唯一权威常量，而不是本地硬编码数组。
+    //
+    // 此前这里断言 `toContain('"read_file"')` —— 也就是断言管线源码里必须出现
+    // `read_file` 这个**不对应任何内置工具**的名字（它只由 MCP 在运行时提供，
+    // 内置工具里没有）。那条断言在守 bug：保证幽灵名留在名单里，谁改对它谁红。
+    // 现在名单收敛到 concurrency-policy.ts，这里改为断言来源 + 断言真实内容。
+    expect(code).toContain('CONCURRENCY_SAFE_TOOL_IDS')
+
+    const { CONCURRENCY_SAFE_TOOL_IDS } = await import('../core/llm/concurrency-policy')
+    const ids = [...CONCURRENCY_SAFE_TOOL_IDS]
+    expect(ids).toContain('read')
+    expect(ids).toContain('web_search')
+    expect(ids).not.toContain('read_file')
   })
 })
 

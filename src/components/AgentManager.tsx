@@ -65,7 +65,7 @@ const BUILTIN_TOOL_NAMES = [
   "browser_automate",
   "figma_fetch",
   "github_tool",
-  "lsp_tool",
+  "lsp",
   "tool_search",
   "subagent",
   "send_message",

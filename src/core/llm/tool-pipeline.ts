@@ -32,6 +32,7 @@ import type { ToolExecutorContext } from "./streaming-executor";
 import { validateToolOutput } from "./output-contract";
 import { RepeatToolReminderMiddleware } from "./repeat-tool-reminder";
 import { analyzeBashCommand } from "../permission/bash-analyzer";
+import { CONCURRENCY_SAFE_TOOL_IDS } from "./concurrency-policy";
 
 // ========== Pipeline Types ==========
 
@@ -804,11 +805,11 @@ export async function initDefaultPipeline(config: {
   const pipeline = getToolPipeline();
   pipeline.clear();
 
-  // R3-1.5: Register concurrency classifiers for read-only tools.
-  // These tools are safe to run concurrently — they don't mutate state.
-  // Write tools (write, edit, multi_edit, delete_file, bash) are exclusive by default (no registration).
-  const readOnlyTools = ["read", "read_file", "grep", "glob", "list_dir", "web_search", "web_fetch", "zvec_grep_search", "zvec_grep_rg"];
-  for (const toolName of readOnlyTools) {
+  // 并发分类器：名单唯一定义在 concurrency-policy.ts。
+  // 此处曾硬编码另一份 9 名字名单（含 read_file / list_dir / zvec_grep_rg 等
+  // 不对应任何真实工具的幽灵名），与 streaming-executor 的默认名单**互不一致** ——
+  // 同一个概念两份真相，其中一份还整体失效。现在统一来源。
+  for (const toolName of CONCURRENCY_SAFE_TOOL_IDS) {
     pipeline.registerConcurrency(toolName, () => true);
   }
 

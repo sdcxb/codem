@@ -56,14 +56,15 @@
 | 机制 | `<persisted-output>` 信封 + 2000 字符预览（`tool/executor/result-persistence-format.ts:1-5,33`） | `src/core/llm/spill-policy.ts`，`NOTICE_RESERVE_BYTES = 512` |
 | 阈值 | 默认 `maxModelBytes: 100_000`；Bash `MAX_INLINE_OUTPUT_BYTES = 30_000` 取**尾部**；Edit 100_000 取头部（`tool/executor/result-serialization.ts:33-40`、`handlers/bash.ts:70,480-492`） | `maxInlineBytes: 32768`（`agentic-loop.ts:1006`） |
 
-**真正的差异集中在四处**，按「对模型下一步决策的影响」排序：
+**真正的差异集中在三处**，按「对模型下一步决策的影响」排序：
 
 1. **工具返回给模型的错误文本质量**（影响最大 → 见 §2.1）
-2. **compact 的触发精度与熔断**——这里有个反直觉发现：zcode 的实际阈值是 **166K 不是 200K**，而我方是 **80K**，而且缩得更狠（只保最近 1 个 assistant 轮次）（见 §2.3）
+2. **工具调度的声明化与保序**——`classifyConcurrency(args)` 已建好但没人消费；切调度组时模型给的顺序被重排（见 §2.3.1、§2.6）
 3. **系统提示里的行为约束密度**（见 §2.2）
-4. **工具契约的显式程度**（见 §2.5）
 
-另外发现**我方一个会导致静默损坏文件的确定性 bug**（见 §3.1），这条与对标无关，但比对标结论更紧急。
+另外发现**我方一个会导致静默损坏文件的确定性 bug**（见 §3.1），这条与对标无关，但比对标结论更紧急——**已修复并带 mutation 自证**。
+
+⚠️ **本节初版还有一条「压缩阈值写死 80K」的结论，复核后是错的**：真实阈值是 `> 0.8` 比值（与 DSH 同口径），80K 属于死代码。误因见 §2.3。这也说明一件事：**我第一遍读代码时，把「定义了某个常量」当成了「这个常量生效」**，两者的区别必须靠查调用点来确认。
 
 ---
 
@@ -125,19 +126,25 @@ zcode 有三条**直接改变模型何时收工**的指令，我方**没有对�
 
 | 维度 | zcode | 我方 |
 | --- | --- | --- |
-| token 计数来源 | **provider 实际 usage 优先**，估算兜底（`compact/policy.ts:28-39,103-104`） | 估算 |
-| 有效窗口 | `contextWindow - reserve`，reserve = `min(32000, 21000) = 21000`（`policy.ts:75-82`） | `maxContextWindow - systemPromptTokens - outputReserve`（`src/core/context/context.ts:120`） |
-| **实际自动压缩阈值** | **166,000**：`200000 − 21000 − 13000`（`policy.ts:12,84-88`）。**不是 200K** | 阈值直判 `contextPressure > 80000`（`src/core/provider/compaction-basic-provider.ts:15,27`） |
-| 压缩后保留 | **默认只保最近 1 个 assistant 轮次**（`runtime/helpers/compact-selection.ts:36`）；手动 `/compact` 一组都不保（`:225` 只对 Auto/Reactive 置 true） | `KEEP_RECENT_MESSAGES = 10` |
-| 摘要输出上限 | `MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000` | — |
-| 连续失败熔断 | `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3`（`policy.ts:14,136-144`） | **无** |
-| 压缩后快速回填熔断 | `MAX_CONSECUTIVE_RAPID_REFILLS = 3`，连续 3 次「压完没干几个工具活又超阈值」→ **直接抛错结束 turn**（`runtime/methods/turn-loop-state.ts:22,154-168`，触发点 `turn-loop.ts:91-98`） | **无** |
-| microcompact | **默认关闭**（`runtime/methods/microcompact.ts:111` `enabled: config.microcompact?.enabled === true`）；开启后阈值 = `max(0, min(floor(auto×0.9), auto−2000))` = 149,400，比全量压缩早约 16.6K token；只清 9 个白名单工具的**非错误**结果，图片/视频/文件块永不清（`compact/microcompact.ts:215-235,249-256`）；清空标记 `[Old tool result content cleared]`（`:13`） | **默认常开**；`KEEP_RECENT_MESSAGES = 10`、`MIN_RESULT_SIZE_TO_COMPACT = 500`、`HEAD_CHARS = 3000 / TAIL_CHARS = 800`（`micro-compact.ts:66,72,83-84`） |
+| token 计数来源 | provider 实际 usage 优先，估算兜底（`compact/policy.ts:28-39,103-104`） | 同样优先实际 usage：`token-tracker.ts` 以「上次实际 promptTokens」为基准叠加增量（`estimatePressure`），无实际值时纯估算 |
+| 有效窗口 | `contextWindow - reserve`，reserve = `min(32000, 21000) = 21000`（`policy.ts:75-82`） | 直接用完整 `contextWindow` 作分母（`token-tracker.ts:205`） |
+| 自动压缩阈值 | 166,000 / 200K = **0.83**（`policy.ts:12,84-88`） | **`contextPressure > 0.8`**（`agentic-loop.ts:1326` + `:260` 默认值）。`estimatePressure` 返回的是 **0–1 比值**（`token-tracker.ts:205` `Math.min(1, estimatedTokens / contextWindow)`） |
+| 压缩后保留 | 默认只保最近 1 个 assistant 轮次（`compact-selection.ts:36`）；手动 `/compact` 一组都不保 | 最近 ≤20 条并按**体积收缩**：估算保留集 token 超预算就成半收缩直到进预算（`agentic-loop.ts::doCompactMessages`，第 83 波，源自真实事故「861 条会话压完仍 105 万 token」） |
+| 摘要输出上限 | `MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000` | `maxTokens` 默认 8192 |
+| 连续压缩熔断 | `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3`（`policy.ts:14,136-144`） | `if (this.state.consecutiveCompactions >= 3)` → 可见地结束并提示开新对话（`agentic-loop.ts:1328-1337`） |
+| 压缩后快速回填熔断 | `MAX_CONSECUTIVE_RAPID_REFILLS = 3` → 抛错结束 turn（`turn-loop-state.ts:22,154-168`） | 无**同名**机制，但 `consecutiveCompactions` 上限覆盖了「反复压不动」这一失效模式 |
+| overflow 反应式压缩 | provider 报错即触发，每 step 限 1 次 | `enableReactiveCompaction: true`（`:261`），**语义匹配**超窗文案（`provider-errors.ts` 覆盖 DeepSeek「maximum context length is …」/ Anthropic「prompt is too long」等），同样计入 `consecutiveCompactions` 上限（`:2239-2256`） |
+| microcompact | 默认关闭；开启后阈值 149,400，只清 9 个白名单工具的**非错误**结果 | **默认常开**；`KEEP_RECENT_MESSAGES = 10`、`MIN_RESULT_SIZE_TO_COMPACT = 500`、`HEAD_CHARS = 3000 / TAIL_CHARS = 800`（`micro-compact.ts:66,72,83-84`） |
 
-**值得学的是两个熔断**，不是阈值数字：
+**⚠️ 本节初版写错了，此处更正。** 初版说「我方阈值写死 80000、是三方里最激进的」——那是我读了 `src/core/provider/compaction-basic-provider.ts:15` 的 `private threshold = 80000` 得出的。**核实后：那份 provider 的 `shouldCompact` 是死代码**——全仓只有 `agentic-loop.ts:504` 一处引用 `ctx.get('compactionBasic')`，且仅用于「检查服务是否存在」，从不调用其 `shouldCompact`。真实的阈值在 `agentic-loop.ts:1326`，是 **0.8 比值**，与 DSH 基线同口径。
 
-- `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES`：压缩自己也会失败（prompt 过长等）。我方 `compaction-basic-provider.ts:26` 只有 `if (consecutiveCount >= this.maxConsecutive) return false`，是「连续压缩次数」不是「连续失败次数」——语义不同，压不动时会反复尝试。
-- `MAX_CONSECUTIVE_RAPID_REFILLS`：这是**唯一一条会真正终止 turn 的「空转」判据**，而且判的是「压缩收敛不了」而不是「模型调用次数多」。思路和我方 `src/core/llm/loop-guard.ts` 的 `DEFAULT_GUARD_LIMITS = { noGainWarn: 2, noGainSuppress: 4, noGainStop: 6, mutationExcusesPerPair: 3 }`（按**信息增益**判定）是同一个哲学，但覆盖的失效模式不同——它覆盖「上下文视角」的空转，我方覆盖「动作视角」的空转。**两者互补，不是二选一。**
+教训：**看到一个眼熟的常量就当成生效配置，等于没验证。** 「这个字段有消费者吗」必须单独查一次调用点，而不是从定义处推断。
+
+**核实后仍然成立的差异**（都不大）：
+
+- 我方比值分母是完整 `contextWindow`，DSH/zcode 都先扣掉输出预留再算 → 我方触发点略早（约 4%），差距不大。
+- 我方保留策略按「最近 N 条 + 体积收缩」，DSH 按 `retainRatio` 比例保留；两者都解决了「固定条数在超长会话里压不动」的问题，取向一致。
+- zcode 的 `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES` 是**失败**计数（压缩自身报错也计数），我方是**调用**计数。语义更粗，但配合「压缩返回 0 也会 +1」实际能收敛，**不构成真实缺口**。
 
 我方在「按信息增益判定空转」这件事上**比 zcode 更细**：zcode 的 `detectToolCallBudgetWarning` 阈值默认 `undefined`（`runtime/helpers/model-anomaly.ts:70-84`，等于默认关闭），主要靠重复调用提醒（阈値 3，每 turn 最多 3 条）。我方 `loop-guard.ts` 是常开的。
 
@@ -147,16 +154,16 @@ zcode 有三条**直接改变模型何时收工**的指令，我方**没有对�
 
 | 维度 | DSH 基线 | zcode v3.14.3 | 我方（Codem 现状） |
 | --- | --- | --- | --- |
-| 压缩触发 | **比例制**：`thresholdRatio = 0.8`、`retainRatio = 0.16`（`compaction-basic/src/config.ts:19-23,144-148`） | 绝对制：`200000 − 21000 − 13000 = 166000`（`compact/policy.ts:12,75-88`） | **绝对制写死 80000**（`src/core/provider/compaction-basic-provider.ts:15,27`） |
-| overflow 路径 | provider 报错即触发，**绕过比例阈值与保留尾部**（`index.ts:179-189,283-291`） | reactive compact，每 step 限 1 次 | 有 |
-| 重试预算 | `compactionRetries ?? 1`、`maxOverflowRetries ?? 1`（`config.ts:92-95`） | 连续失败熔断 3 次 | 无熔断 |
-| 工具并发 | **`DEFAULT_MAX_PARALLEL_TOOL_CALLS = 10`**，mode 为**每工具声明**；顺序模型：`mode === 'parallel' ? planned.slice(next) : [first]`（`core/agent-loop/src/tool-calls.ts:84-99`），README 原文：「exclusive calls form barriers; parallel-safe calls use a **bounded rolling pool** and are **reclassified before start**… Policy, durable results, and result context remain **model-ordered**」 | 10，`destructive`→false / `readOnly`→true / `sideEffectScope === "none"`（`tool/scheduler.ts:48,98-102`） | **5，且是硬编码字符串数组**；声明通道 `classifyConcurrency` 已建但无人消费 |
+| 压缩触发 | **比例制**：`thresholdRatio = 0.8`、`retainRatio = 0.16`（`compaction-basic/src/config.ts:19-23,144-148`） | 绝对制：`200000 − 21000 − 13000 = 166000`（`compact/policy.ts:12,75-88`），即 0.83 | **比例制 `> 0.8`**（`agentic-loop.ts:1326`）——**同口径，误报已更正，见 §2.3** |
+| overflow 路径 | provider 报错即触发，**绕过比例阈值与保留尾部**（`index.ts:179-189,283-291`） | reactive compact，每 step 限 1 次 | 有，且**语义匹配**超窗文案（`provider-errors.ts`），比字符串白名单更耐 provider 换词 |
+| 重试预算 | `compactionRetries ?? 1`、`maxOverflowRetries ?? 1`（`config.ts:92-95`） | 连续失败熔断 3 次 | `consecutiveCompactions >= 3` 硬停（含 reactive 路径）——**存在，也是我初版误报为「无」的一项** |
+| 工具并发 | `DEFAULT_MAX_PARALLEL_TOOL_CALLS = 10`，mode 为**每工具声明**；顺序模型：`mode === 'parallel' ? planned.slice(next) : [first]`（`core/agent-loop/src/tool-calls.ts:84-99`），README：「exclusive calls form barriers; parallel-safe calls use a **bounded rolling pool** and are **reclassified before start**… result context remain **model-ordered**」 | 10，`destructive`→false / `readOnly`→true / `sideEffectScope === "none"`（`tool/scheduler.ts:48,98-102`） | 5，硬编码字符串数组（`streaming-executor.ts:122`）；`tool-pipeline.classifyConcurrency(args)` 已计算但**无人消费**——**此项经复核成立** |
 | 会话级外置 | 生产 `maxInlineBytes = 50000` 字节（`spill/spill-policy/src/index.ts:66`、`bundle/base/cordis.patch.yml:352`） | 100,000 字节（`result-serialization.ts:33-40`） | `32768`（`agentic-loop.ts:1006` 显式传入；`spill-policy.ts:86` 自身默认是 `0`＝关闭） |
-| 工具结果剪枝（无模型调用的前置 pass） | `thresholdChars: 8192, headChars: 4096, tailChars: 1024`（`compaction-tool-result-pruner/src/config.ts:10-14`），**只在压力已达标后才跑，跑完重测量，可能完全跳过摘要**（`compaction-basic/src/index.ts:281,304-312`） | microcompact：清空标记 + 9 工具白名单（默认关闭） | `MIN_RESULT_SIZE_TO_COMPACT = 500`、`HEAD_CHARS = 3000 / TAIL_CHARS = 800`（`micro-compact.ts:72,83-84`）——**我方阈值更松（500 vs 8192），更容易误剪小结果** |
-| 被压范围的选取 | **head-anchored span**：压 `[surfaceNodes[0] … keepFromIdx-1]`，保留 token 计价的尾部，边界必须 tool-call/result 配对平衡（`compaction-basic/src/region.ts:98-134`）；README 明说「**Turn boundaries do not protect old steps inside a runaway turn**」 | 按轮次保留 | `KEEP_RECENT_MESSAGES = 10` |
-| 压缩摘要落盘形式 | `compaction/summary` + `surfaceOp:{op:'replace'}` 的 user/message，内容 = `CHECKPOINT_PREAMBLE + <compacted-summary> + 8 个强制段落`（`summarizer.ts:31-70,189-195`）；**后续周期合并前一个 checkpoint 而非嵌套**（`summarizer.ts:65`） | 摘要文本 | 需核对 |
-| 取消时未派发的调用 | **合成错误结果**保证 replay 合法（`tool-calls.ts:249-259`：`'Error: tool call aborted before dispatch'`） | — | — |
-| LLM 请求永久失败 | **终止 turn 且对模型不可见**（`agent.ts:354-371,309-314`）——与「工具错误喂回模型」形成刻意的非对称 | 同 —— | 与 zcode 一致 |
+| 工具结果剪枝（无模型调用的前置 pass） | `thresholdChars: 8192, headChars: 4096, tailChars: 1024`（`compaction-tool-result-pruner/src/config.ts:10-14`），**只在压力已达标后才跑，跑完重测量，可能完全跳过摘要**（`compaction-basic/src/index.ts:281,304-312`） | microcompact：清空标记 + 9 工具白名单（默认关闭） | `MIN_RESULT_SIZE_TO_COMPACT = 500`、`HEAD_CHARS = 3000 / TAIL_CHARS = 800`（`micro-compact.ts:72,83-84`）——阈值更松（500 vs 8192），更容易剪到小结果 |
+| 被压范围的选取 | **head-anchored span**：压 `[surfaceNodes[0] … keepFromIdx-1]`，保留 token 计价的尾部，边界必须 tool-call/result 配对平衡（`compaction-basic/src/region.ts:98-134`）；README：「**Turn boundaries do not protect old steps inside a runaway turn**」 | 按轮次保留 | 最近 ≤20 条 + 体积收缩 + 轮次边界对齐（`alignKeepBoundary`） |
+| 压缩摘要落盘形式 | `compaction/summary` + `surfaceOp:{op:'replace'}` 的 user/message，内容 = `CHECKPOINT_PREAMBLE + <compacted-summary> + 8 个强制段落`（`summarizer.ts:31-70,189-195`）；**后续周期合并前一个 checkpoint 而非嵌套**（`summarizer.ts:65`） | 摘要文本 | 需核对（本轮未查） |
+| 取消时未派发的调用 | **合成错误结果**保证 replay 合法（`tool-calls.ts:249-259`：`'Error: tool call aborted before dispatch'`） | — | 需核对（本轮未查） |
+| LLM 请求永久失败 | **终止 turn 且对模型不可见**（`agent.ts:354-371,309-314`）——与「工具错误喂回模型」形成刻意的非对称 | 同 —— | 我方失败**对用户可见**（`agentic-loop.ts:2282-2289` 输出带 ⚠️ 的文本 + `tool_error` 事件），取向不同但更透明 |
 | 流式中断已产出的 chunk | `llm-retry` 判定在**流结束之后**（`agent.ts:347-371`）；已产出 chunk 留在 log 作 trace 但**不进 `deriveMessages()`**（`core/session/src/surface.ts:109-113`）——即**丢弃部分输出，不续传** | zcode 从安全锚点**重开流**并保留 partial，续写 3 次 | 需核对我方行为 |
 
 **关键翻转**：在工具调度上，**DSH 基线比 zcode 更先进，而我方偏离了 DSH**。DSH 的 `planned.slice(next)` + 分类重判 + 「结果保持模型顺序」正是 §2.6(b) 指出的我方缺陷的**正解**，而且它是我们自己的架构基线，不是外来方案。
@@ -366,32 +373,77 @@ content.replace(oldString, () => newString)
 
 ## 4. 值得学的清单（按性价比排序）
 
-### P0 — 半天内可做完，直接改变结果
+### P0 — 已完成的（本次，1.16.201）
 
-| # | 事项 | 依据 | 改动量 |
-| --- | --- | --- | --- |
-| 1 | **修 `$` 记号损坏**：`edit`/`multi_edit` 改用 `() => newString` | §3.1 | 2 行 + 测试 |
-| 2 | **压缩阈值从写死 80K 改为按窗口比例**（DSH 基线 `thresholdRatio 0.8` / `retainRatio 0.16`）；`outputReserve` 从 4096 提到与模型输出上限一致 | §2.3.1 | 小，但需回归 |
-| 3 | **`edit` 失败时给可行动信息**：至少返回「文件里最接近的候选 + 差在哪」；进阶做 `quote_normalized` / `line_trimmed` / `indentation_flexible` 三级匹配（先不做 7 级） | §2.1 | 1 个新文件 + 接线 |
-| 4 | **系统提示补两条自检**：「最后一段是不是没兑现的承诺 → 现在就做」；「不要因为上下文长而收工」 | §2.2 | 纯文本 |
+| # | 事项 | 状态 |
+| --- | --- | --- |
+| 1 | **修 `$` 记号损坏**：`edit`/`multi_edit`/`str-replace-editor` 三处调用点改用字面替换 | ✅ 带 mutation 自证（还原 bug → 集成测试 5 项失败） |
+| 2 | **`edit` 失败时给可行动信息**：5 级归一化候选 + 行号 + 「按原文复制」指令 | ✅ 已完成（`src/core/llm/edit-matchers.ts`） |
+| 3 | **参数名写错给可行动提示**（而非 `Cannot read properties`） | ✅ 已完成（`validateEditParams`） |
+| 4 | **系统提示补自检**：「最后一段是不是没兑现的承诺 → 现在就做」；「不要因为上下文长而收工」 | ✅ 已完成（中英双语） |
+| 5 | **删掉那个误导人的死阈值**（`compaction-basic-provider.ts` 的 `80000`） | ✅ 已完成 |
 
-### P1 — 需要一点设计，收益结构性
+### P1 — 已完成
+
+| # | 事项 | 状态 |
+| --- | --- | --- |
+| 6 | **并发名单收敛为单一来源** + 补上真实缺席的 `web_search` + 清掉幽灵名 | ✅ `concurrency-policy.ts`，8 条门禁 |
+| 7 | **工具调度保序**：按模型顺序切调度组，连续只读仍并行 | ✅ 7 条门禁，mutation 2/2 |
+| 8 | **修 `lsp_tool` 错名**（7 处，权限规则从未生效） | ✅ 5 条门禁 |
+
+### P1 — 经复核仍然成立、尚未做的
 
 | # | 事项 | 依据 |
 | --- | --- | --- |
-| 5 | **工具调度回归 DSH 基线**：`planned.slice(next)` + 每工具 `executionMode` 声明 + 有界 rolling pool，并保证**结果保持模型顺序**；弃用硬编码数组 | §2.3.1、§2.6(a)(b) |
-| 6 | **给 `ToolDef` 补契约字段**：`readOnly` / `destructive` / `sideEffectScope` / `outputSchema` / `timeout`，并让权限与调度**读声明**而不是各自硬编码 | §2.5 |
-| 7 | **取消时给未派发的调用合成错误结果**，保证 replay/历史合法（DSH `tool-calls.ts:249-259`） | §2.3.1 |
-| 8 | **补两个熔断**：compact 连续**失败**熔断（3 次）；「压完立刻又超阈值」连续 3 次 → 结束 turn | §2.3 |
+| 9 | **给 `ToolDef` 补契约字段**：`readOnly` / `destructive` / `sideEffectScope` / `outputSchema` / `timeout`，让权限与调度**读声明**而不是各自硬编码 | §2.5。本轮只做了「名单单一来源」，没做「让工具自己声明」 |
+| 10 | **组内并发仍是固定分块，不是真正的 rolling pool**：`executeBatch` 按 `maxConcurrent` 把组切成定长块，块间是屏障（12 个并发读 = 5 + 5 + 2 三块依次跑）。DSH 是「有界 rolling pool」—— 一个完成就补一个。本轮**保住了顺序，没做滚动补位**，所以吞吐仍略低于 DSH | §2.3.1、§2.6。**已如实记录，未修**（属优化而非缺陷） |
+| 11 | **`SandboxGuard` 的读工具名单仍是幽灵名**（`read_file` / `cat` / `head` / `tail` / `find` / `list_dir` 都不存在）；`read_attachment` / `lsp` 不在里面，实际不受沙箱路径约束 | §2.6。**未修**：需要先确认沙箱对这两个工具的预期行为，不能靠猜 |
 
 ### P2 — 长期结构
 
 | # | 事项 | 依据 |
 | --- | --- | --- |
-| 9 | **system-reminder 声明式分桶**：给每个提醒源标 `request_prefix` / `persisted` / `per_request`，前缀类冷恢复按原文重建以保缓存 | §2.4 |
-| 10 | **`traceId` 贯通**：所有异步任务/工具/子 session 必须可关联，否则视为不可观测 | §2.7 |
-| 11 | **压缩触发改用 provider 实际 usage** 优先、估算兜底 | §2.3 |
-| 12 | **工具超时改可暂停 deadline**：区分「provider 挂了」和「我们自己的队列长」 | §2.7 |
+| 7 | **system-reminder 声明式分桶**：给每个提醒源标 `request_prefix` / `persisted` / `per_request`，前缀类冷恢复按原文重建以保缓存 | §2.4 |
+| 8 | **`traceId` 贯通**：所有异步任务/工具/子 session 必须可关联，否则视为不可观测 | §2.7 |
+| 9 | **`tool_result_warning` 通道**：工具结果出问题时在**结果内**联一条提醒，而不是只改状态 | §2.7 |
+
+### 已从清单中删除的（初版误判，复核后不成立）
+
+| 初版声称 | 复核结果 |
+| --- | --- |
+| 「压缩阈值写死 80K，是三方里最激进」 | ❌ 错。真实阈值是 `> 0.8` 比值，与 DSH 同口径；80K 属于死代码。**误因：把定义处当成了生效处** |
+| 「compact 连续失败熔断：无」 | ❌ 已有 `consecutiveCompactions >= 3` 硬停，且 reactive 路径也计入 |
+| 「压缩后快速回填熔断：无」 | ❌ 同名机制确实没有，但 `consecutiveCompactions` 已覆盖「反复压不动」这一失效模式，非真实缺口 |
+| 「取消时未派发调用合成错误结果：无」 | ⬜ 本轮未核实，不作为结论 |
+| 「工具失败级联跳过：已对齐」 | ✅ 该结论成立（grep `skipRemaining\|abortOnError\|stopOnError` 零命中） |
+
+---
+
+## 3.5 修复落地记录（1.16.201）
+
+P0/P1 已在同轮修完并发布，逐项判据与**变异自证**：
+
+| # | 修复 | 判据 | 变异自证 |
+| --- | --- | --- | --- |
+| 1 | `$` 记号损坏 → `replaceLiteral()`（`edit` / `multi_edit` / `str-replace-editor` 三处） | `edit-dollar-token.test.ts` 22 条 + `edit-tool-integration.test.ts` 13 条（走**真实 `execute()`**，Tauri IPC 桩到 Node fs） | 改回裸 replace → 7 条红；只改 `tools.ts` 的 `edit` → 5 条红；只改 `multi_edit` → 1 条红 |
+| 2 | `edit` 未命中 → 5 级归一化候选 + 行号 + 相似度 | 同上（`suggestEditCandidates` 单测 + 集成） | 归一层顺序与「只报告不替换」各有断言 |
+| 3 | 参数名写错 → 可行动提示（点名缺哪个参数 + 驼峰提示） | `core-tool-execution.test.ts` TOOL-004b/004c | 断言「不得出现 `Cannot read properties`」 |
+| 4 | 工具调度保序（连续只读仍并行） | `tool-scheduling-order.test.ts` 7 条 | 还原旧的「二队列先并行」→ 2 条红 |
+| 5 | 并发名单收敛为单一来源 `concurrency-policy.ts` | `tool-concurrency-list.test.ts` 8 条 | 幽灵名塞回名单 → 2 条红 |
+| 6 | `lsp_tool` → `lsp`（7 处） | `agent-tool-name-integrity.test.ts` 5 条 | 断言 `lsp_tool` 不得回归 |
+
+**这一轮改动也暴露了三个「名字写错 → 规则静默失效」的同形态问题**，都已修：
+
+- 并发名单三份互不一致，且多为幽灵名；真实只读的 `web_search` 反而**一直被串行**。
+- `agent.ts` / `AgentManager.tsx` 共 7 处写 `lsp_tool`，而 `permission.ts:176` 是**精确匹配** ⇒ 三个只读子智能体的 LSP allow 规则**从未生效过**。
+- `compaction-basic-provider.ts` 的 `threshold = 80000` 没有任何读取方 —— 就是它误导了我第一版对标报告。
+
+### 门禁口径的两次自我修正（方法论，比结论更重要）
+
+1. **扫描 `id:` 只收双引号** ⇒ 漏掉 `subagent-tools.ts` / `note-operations.ts` 的**单引号**写法，于是把 `create_note` / `subagent` / `send_message` 等**真实工具**误报成幽灵名。改成两种引号都收后，真实 id 从 129 → **156**；幽灵名结论经复核**全部成立**（`read_file`、`list_directory`、`codebase_search`、`file_search`、`web_fetch`、`delete_file`、`cat`、`head`、`tail`、`find` 都不存在）。
+2. **`zvec_grep_search` / `zvec_grep_rg` 由 MCP 运行时注册**，静态扫描**天然看不到**。我第一版据此把它们当幽灵名删掉，`zvec-tool-sync.test.ts` 当场变红 —— 那两条用例是对的，它们守的正是「zvec 搜索工具必须可并发」。现改为显式 `DYNAMIC_TOOL_ID_ALLOWLIST`。
+
+**结论：扫不到 ≠ 不存在。用扫描结果去删东西之前，必须先证明扫描口径是对的。** 这与 §2.3 那条（「定义了常量」≠「常量生效」）是同一类错误的两种表现。
 
 ### 不建议照搬的
 
@@ -420,13 +472,12 @@ content.replace(oldString, () => newString)
 - 两边的**架构哲学已经收敛**（无硬停止、结果落盘、长程优先），不存在「一边有、一边没有」的代差。
 - zcode 在**「失败时给模型多少可行动信息」**上明显更细（7 级编辑匹配、结构化 schema 错误、可暂停超时）。
 - 我方在**「空转检测」**上确实领先两边。
-- **最重要的发现不是「该学 zcode 什么」，而是「我方偏离了自己的架构基线 DSH」**——三处：
-  1. 工具调度：DSH 是「每工具声明 mode + 有界 rolling pool + 结果保持模型顺序」，我方退化成「硬编码数组 + 批次重排」；
-  2. 压缩阈值：DSH 按窗口比例（0.8），我方写死 80K；
-  3. 声明通道：DSH 靠 `executionMode` 声明，我方 `classifyConcurrency` 建好了却没人消费。
-- 我方还有一个**确定性文件损坏 bug**（§3.1），无论对标结论如何都该先修。
+- **最重要的发现不是「该学 zcode 什么」，而是两条**：
+  1. **我方在工具调度上偏离了自己的架构基线 DSH**：DSH 是「每工具声明 mode + 有界 rolling pool + 结果保持模型顺序」，我方 `classifyConcurrency(args)` 算完没人用，判据退回硬编码数组；DSH 的 `planned.slice(next)` 保序，我方把并行工具全部提到前面跑。**zcode 恰好也做对了，但正解来自我们自己的基线。**
+  2. **我第一次审计时的两处「差距」是我读代码不严造成的**（压缩阈值、compact 熔断）。真实阈值本就是 0.8 比值，compact 也本就有 3 次硬停。**误因是「看到常量定义就当成生效配置」。** 已在 §2.3 与 §4 更正，并把「删掉那个死阈值」列入待办——一个永久不生效的「阈值」字段会持续误导后来者（包括我）。
+- 我方还有一个**确定性文件损坏 bug**（§3.1），无论对标结论如何都该先修——**已修复**。
 
-**所以「zcode 比 deepseek harness 好」这个说法，与我这一轮测出的东西不一致的部分是**：在工具调度和上下文预算这两个关键机制上，**DSH 基线的设计比 zcode 更完整，而问题出在我方没有按 DSH 走**。如果那位比较的是「zcode vs 我方当前实现」，那有可能成立；如果是「zcode vs DSH」，按源码看方向是反的。
+**所以「zcode 比 deepseek harness 好」这个说法**：按源码看，两边核心机制高度同构，我找不到「一边有、一边没有」的代差。在工具调度这一处，**DSH 基线的设计比 zcode 更完整**（有界 rolling pool + 分类重判 + 模型顺序），问题出在我方没有按 DSH 走。如果那位比较的是「zcode vs 我方当前实现」，在编辑工具容错和调度保序上**有可能成立**；如果是「zcode vs DSH」，按源码看方向是反的。
 
 要真正验证，需要任务集 + 判分方式 + 两边模型参数——**那才是能判定的唯一路径**。我没法替别人的结论背书。
 

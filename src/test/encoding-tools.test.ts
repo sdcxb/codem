@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { createDefaultToolRegistry } from "../core/llm/tools";
+import { replaceLiteral } from "../core/llm/edit-matchers";
 
 // ========== 辅助函数：模拟 grepSearch 的单引号转义 ==========
 function escapeForPowerShell(str: string): string {
@@ -239,7 +240,10 @@ emoji: "⚡"
     // Agent B 编辑（替换中文字符串）
     const oldString = 'name: "测试"';
     const newString = 'name: "新测试"';
-    const edited = readContent.replace(oldString, newString);
+    // 走真实实现（replaceLiteral），不再用裸 content.replace ——
+    // 之前这里复制的是工具内部的写法，工具改了这个断言也不会发现（见下方 $-token 测试）。
+    const edited = replaceLiteral(readContent, oldString, newString);
+    expect(edited).not.toBeNull();
 
     expect(edited).toContain('name: "新测试"');
     expect(edited).not.toContain('name: "测试"');

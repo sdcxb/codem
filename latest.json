@@ -1,15 +1,15 @@
 {
-  "version": "1.16.200",
-  "notes": "修掉设置搜索框聚焦时出现的两个紫框：只保留搜索框内的一圈，不再有包裹整块的外框。",
-  "pub_date": "2026-09-27T11:59:55Z",
+  "version": "1.16.201",
+  "notes": "修复改文件时 $ 记号静默改坏内容；edit 未命中时给出可行动候选与行号；参数名写错不再报内部错误；工具执行顺序不再被打乱；只读工具并行名单收敛为单一来源并补上真实缺席的 web_search；修掉 agent 权限规则里的错名 lsp_tool（三个只读子智能体的 LSP 放行从未生效）",
+  "pub_date": "2026-09-29T01:42:34Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hvQ2VzUjcwYlBiTEJQelZYbWU4Yk5uYVhUYUR3OWdwc09EYktOMVpwQS8zYWpVSUNEUjRvb0VPWXlyTngrd1ovYVVENDNsZDdjU05oTGlHL25qUGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTEwMjk1CWZpbGU6Q29kZW1fMS4xNi4yMDBfeDY0LXNldHVwLmV4ZQpoTXc5RGlBY2UyT3lDdmdGTjdVM3NtdHpuYWVCbm55RWZBRlYxdWFFS3NRUkx4cFBqeVFiZStkbE93aFVlcEJsblgrazdvajB1UktMd2Fzbnp5RDZEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.200/Codem_1.16.200_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JrQzV4bFkrU25TYnZPem05Z05XVE91OW8xK2tvem50eXAwMVhJaDFNTnVWa3daUmlCOGdISENCQXJUd2ZaM0JTZEY4UjhCVnBaWWhjUEFFMzlyTXd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjQ2MTI3CWZpbGU6Q29kZW1fMS4xNi4yMDFfeDY0LXNldHVwLmV4ZQo1ampCNnc4QmhyM3ZwcEZNMTlINDd2VzM4NmxpamYzSE1USjRVamg3dzhjZlNXVGN0c0h6L3NuZUd4ZVhzVUpnbHpnemJuUXYrWmgxT2RoUVZ1Q1pCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.201/Codem_1.16.201_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hvQ2VzUjcwYlBiTEJQelZYbWU4Yk5uYVhUYUR3OWdwc09EYktOMVpwQS8zYWpVSUNEUjRvb0VPWXlyTngrd1ovYVVENDNsZDdjU05oTGlHL25qUGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTEwMjk1CWZpbGU6Q29kZW1fMS4xNi4yMDBfeDY0LXNldHVwLmV4ZQpoTXc5RGlBY2UyT3lDdmdGTjdVM3NtdHpuYWVCbm55RWZBRlYxdWFFS3NRUkx4cFBqeVFiZStkbE93aFVlcEJsblgrazdvajB1UktMd2Fzbnp5RDZEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.200/Codem_1.16.200_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JrQzV4bFkrU25TYnZPem05Z05XVE91OW8xK2tvem50eXAwMVhJaDFNTnVWa3daUmlCOGdISENCQXJUd2ZaM0JTZEY4UjhCVnBaWWhjUEFFMzlyTXd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjQ2MTI3CWZpbGU6Q29kZW1fMS4xNi4yMDFfeDY0LXNldHVwLmV4ZQo1ampCNnc4QmhyM3ZwcEZNMTlINDd2VzM4NmxpamYzSE1USjRVamg3dzhjZlNXVGN0c0h6L3NuZUd4ZVhzVUpnbHpnemJuUXYrWmgxT2RoUVZ1Q1pCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.201/Codem_1.16.201_x64-setup.exe"
     }
   }
 }

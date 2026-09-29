@@ -33,11 +33,24 @@ describe("zvec-grep 工具接入：双轨路由契约", () => {
     expect(src).toContain("zvec_grep_search then grep to verify");
   });
 
-  it("只读/并发集合包含 zvec_grep_search（防误拦截/串行）", () => {
-    const streaming = readFileSync(join(__dirname, "../core/llm/streaming-executor.ts"), "utf-8");
-    expect(streaming).toContain('"zvec_grep_search"');
+  it("只读/并发集合包含 zvec_grep_search（防误拦截/串行）", async () => {
+    // 并发名单已收敛到 concurrency-policy.ts，所以这里断言**名单内容**，
+    // 而不是断言某个具体文件的文本里出现该字符串。
+    //
+    // 旧写法是 `expect(streaming).toContain('"zvec_grep_search"')`：它把
+    // 「名单在哪两处硬编码」这件事也钉死了，于是任何把名单收敛到一个模块的重构
+    // 都会红 —— 而收敛正是我们要的。断言内容而不是断言位置。
+    const { CONCURRENCY_SAFE_TOOL_IDS } = await import("../core/llm/concurrency-policy");
+    expect([...CONCURRENCY_SAFE_TOOL_IDS]).toContain("zvec_grep_search");
+    expect([...CONCURRENCY_SAFE_TOOL_IDS]).toContain("zvec_grep_rg");
+
+    // 名单必须真的被管线与调度器消费（而不是又一份没人读的真相）
     const pipeline = readFileSync(join(__dirname, "../core/llm/tool-pipeline.ts"), "utf-8");
-    expect(pipeline).toContain('"zvec_grep_search", "zvec_grep_rg"');
+    expect(pipeline).toContain("CONCURRENCY_SAFE_TOOL_IDS");
+    const streaming = readFileSync(join(__dirname, "../core/llm/streaming-executor.ts"), "utf-8");
+    expect(streaming).toContain("DEFAULT_CONCURRENCY_SAFE_TOOLS");
+
+    // 子智能体的只读白名单仍须允许 zg 工具（这条与名单位置无关，保留原文断言）
     const agent = readFileSync(join(__dirname, "../core/agent/agent.ts"), "utf-8");
     expect(agent).toContain('"zvec_grep_search"');
     expect(agent).toContain('{ tool: "zvec_grep_search", action: "allow" }');
