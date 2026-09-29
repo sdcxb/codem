@@ -371,7 +371,35 @@ content.replace(oldString, () => newString)
 
 ---
 
-## 4. 值得学的清单（按性价比排序）
+## 4. 修复落地记录（1.16.201 / 1.16.202）
+
+P0/P1 已在同轮修完并发布，逐项判据与**变异自证**：
+
+| # | 修复 | 判据 | 变异自证 |
+| --- | --- | --- | --- |
+| 1 | `$` 记号损坏 → `replaceLiteral()`（`edit` / `multi_edit` / `str-replace-editor` 三处） | `edit-dollar-token.test.ts` 22 条 + `edit-tool-integration.test.ts` 13 条（走**真实 `execute()`**，Tauri IPC 桩到 Node fs） | 改回裸 replace → 7 条红；只改 `tools.ts` 的 `edit` → 5 条红；只改 `multi_edit` → 1 条红 |
+| 2 | `edit` 未命中 → 5 级归一化候选 + 行号 + 相似度 | 同上（`suggestEditCandidates` 单测 + 集成） | 归一层顺序与「只报告不替换」各有断言 |
+| 3 | 参数名写错 → 可行动提示（点名缺哪个参数 + 驼峰提示） | `core-tool-execution.test.ts` TOOL-004b/004c | 断言「不得出现 `Cannot read properties`」 |
+| 4 | 工具调度保序（连续只读仍并行） | `tool-scheduling-order.test.ts` 7 条 | 还原旧的「二队列先并行」→ 2 条红 |
+| 5 | 并发名单收敛为单一来源 `concurrency-policy.ts` | `tool-concurrency-list.test.ts` 8 条 | 幽灵名塞回名单 → 2 条红 |
+| 6 | `lsp_tool` → `lsp`（7 处） | `agent-tool-name-integrity.test.ts` 5 条 | 断言 `lsp_tool` 不得回归 |
+
+**这一轮改动也暴露了三个「名字写错 → 规则静默失效」的同形态问题**，都已修：
+
+- 并发名单三份互不一致，且多为幽灵名；真实只读的 `web_search` 反而**一直被串行**。
+- `agent.ts` / `AgentManager.tsx` 共 7 处写 `lsp_tool`，而 `permission.ts:176` 是**精确匹配** ⇒ 三个只读子智能体的 LSP allow 规则**从未生效过**。
+- `compaction-basic-provider.ts` 的 `threshold = 80000` 没有任何读取方 —— 就是它误导了我第一版对标报告。
+
+### 门禁口径的两次自我修正（方法论，比结论更重要）
+
+1. **扫描 `id:` 只收双引号** ⇒ 漏掉 `subagent-tools.ts` / `note-operations.ts` 的**单引号**写法，于是把 `create_note` / `subagent` / `send_message` 等**真实工具**误报成幽灵名。改成两种引号都收后，真实 id 从 129 → **156**；幽灵名结论经复核**全部成立**（`read_file`、`list_directory`、`codebase_search`、`file_search`、`web_fetch`、`delete_file`、`cat`、`head`、`tail`、`find` 都不存在）。
+2. **`zvec_grep_search` / `zvec_grep_rg` 由 MCP 运行时注册**，静态扫描**天然看不到**。我第一版据此把它们当幽灵名删掉，`zvec-tool-sync.test.ts` 当场变红 —— 那两条用例是对的，它们守的正是「zvec 搜索工具必须可并发」。现改为显式 `DYNAMIC_TOOL_ID_ALLOWLIST`。
+
+**结论：扫不到 ≠ 不存在。用扫描结果去删东西之前，必须先证明扫描口径是对的。** 这与 §2.3 那条（「定义了常量」≠「常量生效」）是同一类错误的两种表现。
+
+---
+
+## 5. 值得学的清单（按性价比排序）
 
 ### P0 — 已完成的（本次，1.16.201）
 
@@ -419,35 +447,7 @@ content.replace(oldString, () => newString)
 
 ---
 
-## 3.5 修复落地记录（1.16.201）
-
-P0/P1 已在同轮修完并发布，逐项判据与**变异自证**：
-
-| # | 修复 | 判据 | 变异自证 |
-| --- | --- | --- | --- |
-| 1 | `$` 记号损坏 → `replaceLiteral()`（`edit` / `multi_edit` / `str-replace-editor` 三处） | `edit-dollar-token.test.ts` 22 条 + `edit-tool-integration.test.ts` 13 条（走**真实 `execute()`**，Tauri IPC 桩到 Node fs） | 改回裸 replace → 7 条红；只改 `tools.ts` 的 `edit` → 5 条红；只改 `multi_edit` → 1 条红 |
-| 2 | `edit` 未命中 → 5 级归一化候选 + 行号 + 相似度 | 同上（`suggestEditCandidates` 单测 + 集成） | 归一层顺序与「只报告不替换」各有断言 |
-| 3 | 参数名写错 → 可行动提示（点名缺哪个参数 + 驼峰提示） | `core-tool-execution.test.ts` TOOL-004b/004c | 断言「不得出现 `Cannot read properties`」 |
-| 4 | 工具调度保序（连续只读仍并行） | `tool-scheduling-order.test.ts` 7 条 | 还原旧的「二队列先并行」→ 2 条红 |
-| 5 | 并发名单收敛为单一来源 `concurrency-policy.ts` | `tool-concurrency-list.test.ts` 8 条 | 幽灵名塞回名单 → 2 条红 |
-| 6 | `lsp_tool` → `lsp`（7 处） | `agent-tool-name-integrity.test.ts` 5 条 | 断言 `lsp_tool` 不得回归 |
-
-**这一轮改动也暴露了三个「名字写错 → 规则静默失效」的同形态问题**，都已修：
-
-- 并发名单三份互不一致，且多为幽灵名；真实只读的 `web_search` 反而**一直被串行**。
-- `agent.ts` / `AgentManager.tsx` 共 7 处写 `lsp_tool`，而 `permission.ts:176` 是**精确匹配** ⇒ 三个只读子智能体的 LSP allow 规则**从未生效过**。
-- `compaction-basic-provider.ts` 的 `threshold = 80000` 没有任何读取方 —— 就是它误导了我第一版对标报告。
-
-### 门禁口径的两次自我修正（方法论，比结论更重要）
-
-1. **扫描 `id:` 只收双引号** ⇒ 漏掉 `subagent-tools.ts` / `note-operations.ts` 的**单引号**写法，于是把 `create_note` / `subagent` / `send_message` 等**真实工具**误报成幽灵名。改成两种引号都收后，真实 id 从 129 → **156**；幽灵名结论经复核**全部成立**（`read_file`、`list_directory`、`codebase_search`、`file_search`、`web_fetch`、`delete_file`、`cat`、`head`、`tail`、`find` 都不存在）。
-2. **`zvec_grep_search` / `zvec_grep_rg` 由 MCP 运行时注册**，静态扫描**天然看不到**。我第一版据此把它们当幽灵名删掉，`zvec-tool-sync.test.ts` 当场变红 —— 那两条用例是对的，它们守的正是「zvec 搜索工具必须可并发」。现改为显式 `DYNAMIC_TOOL_ID_ALLOWLIST`。
-
-**结论：扫不到 ≠ 不存在。用扫描结果去删东西之前，必须先证明扫描口径是对的。** 这与 §2.3 那条（「定义了常量」≠「常量生效」）是同一类错误的两种表现。
-
----
-
-## 3.6 第二轮审计：逐条核证「机制到底有没有消费者」
+## 6. 第二轮审计：逐条核证「机制到底有没有消费者」
 
 用户要求「做完后再次对标分析审计」。这一轮不再看「两边各自写了什么」，而是**逐条核证我方每个机制是否真的接线**——因为第一轮的教训正是「看起来在工作、其实没接线」。
 
@@ -510,7 +510,7 @@ P0/P1 已在同轮修完并发布，逐项判据与**变异自证**：
 
 ---
 
-## 5. 我方比 zcode 更强的地方（避免只看到差距）
+## 7. 我方比 zcode 更强的地方（避免只看到差距）
 
 1. **空转判定按信息增益，不按计数**：`loop-guard.ts` 的 `DEFAULT_GUARD_LIMITS`（`noGainWarn: 2 / noGainSuppress: 4 / noGainStop: 6`）+ `exactSignature` 稳定序列化 + `mutationExcusesPerPair: 3`。zcode 的对应机制（`detectToolCallBudgetWarning`）阈值默认 `undefined`，等于默认关闭；DSH 的 `repeat-tool-reminder` 也只是「顾问式提醒，不否决、不改写调用」（`src/index.ts:1-7`）。**这条我方确实领先两边。**
 2. **`stall-guard` / `micro-compact` / `artifact-tracker` / `spill-policy` 已是完整链路**，不是零散补丁。
@@ -522,7 +522,7 @@ P0/P1 已在同轮修完并发布，逐项判据与**变异自证**：
 
 ---
 
-## 6. 对「谁效果更好」的最终回答
+## 8. 对「谁效果更好」的最终回答
 
 **我没法回答这个问题，也不打算替别人的评测背结论。** 我能说的是：
 
@@ -551,5 +551,11 @@ P0/P1 已在同轮修完并发布，逐项判据与**变异自证**：
 | **DSH 基线** | `.preview-shot/_dsh-agent-report.md` | 3495 行 / 166 KB |
 | `$` 记号损坏复现脚本 | `.preview-shot/_repro-edit-dollar.cjs` | 可重跑 |
 | zcode 源码检出 | `.preview-shot/_zcode-ref`（commit `29628c9a`） | 7060 文件 / 70.9 MB |
+| 装机版核验（内容哈希比对） | `.preview-shot/_verify-201-installed.mjs` | 可重跑 |
+| 装机版核验（产物串扫描） | `.preview-shot/_verify-201-bundle.mjs` | 可重跑 |
+| 运行中应用 attach 探针 | `.preview-shot/_attach-201-live.mjs` | 可重跑 |
 
-本轮**未修改仓库任何源码文件**，仅新增本文档。
+本轮结论**已全部落地并发布**：1.16.201（6 处静默失效）、1.16.202（第 7 处：目标只打日志不注入）。
+两版均已在装机版核验：exe 内嵌入口 contentHash 与本地构建一致，且 attach 到运行中的应用实测 console error 0。
+
+新增门禁 6 个文件 / 71 条，5 组变异自证全部被抓。全量 **426 套件 / 6507 通过**，`npm run audit` exit 0，scan-ui error 0 / warn 0。
