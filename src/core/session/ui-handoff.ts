@@ -25,7 +25,8 @@
  * 手动压缩与自动路径共用）。于是：
  *
  * 1. 用既有渲染器产出结构化摘要 → 充入交接模板的主体；
- * 2. 「已完成产物」段只写**磁盘上确实存在**的路径（`fs.existsSync` 逐条核）；
+ * 2. 「已完成产物」段只写**磁盘上确实存在**的路径（由调用方注入的检查器逐条核，
+ *    不是 `node:fs` —— 那个在浏览器里恒返回 false，见 `ExistsChecker`）；
  * 3. 完成判据一律是**可判定的**（「以 <绝对路径> 为交付物」——该路径经正则与存在性双重核对）；
  * 4. 第 6 条固定写"不要重新扫描目录"。
  *
@@ -38,7 +39,6 @@
  * 「本交接由平台机械生成」——接收方据此知道哪些是需要自己核实的，而不是把它当成
  * 上一轮模型的确认结论。**不知道下一步要做什么时就不编**（见 `nextStepLine`）。
  */
-import { existsSync } from "node:fs";
 import type { ToolCall } from "../../store";
 import { renderStructuredHistorySummary } from "../llm/compaction-budget";
 import { checkHandover } from "./handover";
@@ -72,6 +72,24 @@ export interface HandoverFacts {
   lastProducedPath: string | null;
   /** `checkHandover` 的结果（调用方据此决定是否还要给模型一次机会） */
   check: ReturnType<typeof checkHandover>;
+  /**
+   * 工作目录的**诊断事实**（哪个候选拿到了、用户主目录存不存在、最后用了哪个）。
+   *
+   * 为什么值得留在契约里：这个字段是"真机上交接被拒"定位过程中的唯一抓手。
+   * 第一次修完（退到用户主目录）在单元测试里全绿，真机仍然被拒 ——
+   * 如果当时只能看到 `check.ok === false`，就又要靠猜。留着它，
+   * 下一次同类问题可以直接在 advisory 里读出"是哪个候选没通过"。
+   */
+  cwdProbe: {
+    /** 调用方给的 cwd（原始值，可能是空串） */
+    given: string;
+    /** 解析到的用户主目录 */
+    home: string;
+    /** 该主目录是否通过存在性检查（`"THREW"` 表示检查器本身抛错） */
+    homeExists: boolean | "THREW";
+    /** 最终采用的目录；null 表示没有任何候选可用 */
+    effective: string | null;
+  };
 }
 
 /** 从工具入参里抽绝对路径（Windows 盘符 / UNC / POSIX 根） */
@@ -103,16 +121,45 @@ function absPathsFromArgs(args: unknown): string[] {
 const looksLikeFile = (p: string): boolean => /\.[A-Za-z0-9]{1,8}$/.test(p);
 
 /**
+ * 校验"这个路径存在吗"的**必填检查器**。
+ *
+ * ## 为什么必须由调用方给（这一段是真机上的一次事故换来的）
+ *
+ * 第一版直接用 `import { existsSync } from "node:fs"`。它在 Vitest 里工作得很好
+ * （Node 有真 `fs`），但**在装机版里恒为 `false`** —— 因为浏览器侧 `node:fs` 被
+ * `vite.config.ts` 的 alias 换成了 `src/stubs/node-fs-stub.ts`，而那文件里
+ * `existsSync` 是 `() => false`。
+ *
+ * 后果：`verifiedPaths` 永远为空、`primaryPath` 永远为 null ⇒ 交接正文永远没有
+ * 绝对路径 ⇒ 协议校验永远拒绝 ⇒ **「开启新对话」这个功能在真机上完全不可用**，
+ * 而单元测试全绿（它们跑在 Node 上）。
+ *
+ * 真机诊断把它钉死了（提示条上印出来的原文）：
+ * ```
+ * ［cwd="C:\\Users\\abee\\AppData\\Roaming\\com.codem.app\\workspace\\" home="" homeExists=false effective=null］
+ * ```
+ * cwd 明明是**真实存在**的目录，而 `homeExists` 也是 `false`（不是抛错）——
+ * 说明 `existsSync` 在正常返回，只是永远返回 false。
+ *
+ * 所以检查器**没有默认值**（`exists?` 后来去掉了）：生产代码不该有机会"忘了传"
+ * 而拿到一个不会回答的实现。生产走 `core/file-api.ts` 的 `exists()`（真机是 Tauri IPC），
+ * 测试显式传同步实现。这条约定由 `renderer-standin-guards.test.ts` 的 STUB-* 判据守着。
+ */
+export type ExistsChecker = (path: string) => boolean | Promise<boolean>;
+
+/**
  * 构造一次会话交接。
  *
  * @param messages 已按时间升序排列的会话消息（可见消息即可）
  * @param opts.cwd 工作目录（所有路径都核不到时的退路，必须是绝对路径）
  * @param opts.goal 当前活跃目标的标题（有就写进"目标"段，没有就如实说没有）
+ * @param opts.exists 存在性检查器（**必填**：生产传运行时的那个，见 `ExistsChecker` 的事故说明）
  */
-export function buildHandover(
+export async function buildHandover(
   messages: Array<{ role?: string; content?: unknown; toolCalls?: ToolCall[] }>,
-  opts: { cwd: string; goal?: string },
-): HandoverFacts {
+  opts: { cwd: string; goal?: string; exists: ExistsChecker },
+): Promise<HandoverFacts> {
+  const exists = opts.exists;
   const recent = messages.slice(-RECENT_MESSAGE_LIMIT);
   const summary = renderStructuredHistorySummary(recent as never[]);
 
@@ -138,17 +185,24 @@ export function buildHandover(
   }
 
   // ---- 2. 逐条核实存在性（没核过的一律不写进交接）----
-  const verify = (list: string[]): string[] =>
-    list.filter((p) => {
+  /**
+   * 用**注入的检查器**，而不是 `node:fs`。理由见 `ExistsChecker` 的事故说明：
+   * 浏览器里 `node:fs` 是恒返回 false 的桩，用它会让整份交接永远没有路径可指。
+   */
+  const verify = async (list: string[]): Promise<string[]> => {
+    const out: string[] = [];
+    for (const p of list) {
       try {
-        return existsSync(p);
+        if (await exists(p)) out.push(p);
       } catch {
-        return false;
+        /* 单条核不了就当它不存在（宁可不写，也不写没核实的路径） */
       }
-    });
+    }
+    return out;
+  };
 
-  const producedOk = verify(produced);
-  const touchedOk = verify(touched).filter((p) => !producedOk.includes(p));
+  const producedOk = await verify(produced);
+  const touchedOk = (await verify(touched)).filter((p) => !producedOk.includes(p));
   const verifiedPaths = [...producedOk, ...touchedOk].slice(0, MAX_PRODUCT_PATHS);
 
   // ---- 3. 主要交付物：最近一次真实写出、且**仍在磁盘上**的文件；否则退到工作目录 ----
@@ -179,12 +233,22 @@ export function buildHandover(
    *
    * 修法：把"工作目录"解析成**第一个真实存在的绝对路径**：
    * 「调用方给的 cwd → 用户主目录」。用户主目录几乎总在，于是这条路径不可能为空。
+   *
+   * ## 真机抓到的第三个洞（也是最后真正的那个）：**`node:fs` 在浏览器里是桩**
+   *
+   * 上面两条修完之后真机**仍然被拒**，而诊断印出来的是：
+   * ```
+   * ［cwd="C:\\Users\\abee\\AppData\\Roaming\\com.codem.app\\workspace\\" home="" homeExists=false effective=null］
+   * ```
+   * cwd 明明是**真实存在**的目录，`existsSync` 却说它不存在 —— 因为浏览器侧的
+   * `node:fs` 被 alias 成桩、`existsSync` 恒返回 false（详见 `ExistsChecker` 的说明）。
+   * 所以这一条不是"目录找错了"，而是"**我们根本没有在问一个会回答的人**"。
    */
-  const firstExistingDir = (candidates: Array<string | undefined>): string | null => {
+  const firstExistingDir = async (candidates: Array<string | undefined>): Promise<string | null> => {
     for (const c of candidates) {
       if (!c) continue;
       try {
-        if (existsSync(c)) return c;
+        if (await exists(c)) return c;
       } catch {
         /* 不可访问的候选跳过，继续下一个 */
       }
@@ -193,7 +257,24 @@ export function buildHandover(
   };
   const homeDir =
     (typeof process !== "undefined" && (process.env?.USERPROFILE || process.env?.HOME)) || "";
-  const effectiveCwd = firstExistingDir([opts.cwd, homeDir]);
+  const effectiveCwd = await firstExistingDir([opts.cwd, homeDir]);
+  /**
+   * 诊断用：把"这次拿到了什么候选、哪个通过了存在性检查"如实挂在返回值上。
+   * 真机上必须能看出**是哪个候选失败了**，否则只能一次次猜（这件事上我猜了三轮）。
+   * 它是只读事实，不参与任何决策。
+   */
+  let homeExists: boolean | "THREW" = false;
+  try {
+    homeExists = homeDir ? await exists(homeDir) : false;
+  } catch {
+    homeExists = "THREW";
+  }
+  const cwdProbe: HandoverFacts["cwdProbe"] = {
+    given: opts.cwd || "",
+    home: homeDir,
+    homeExists,
+    effective: effectiveCwd,
+  };
 
   const primaryCandidates = [
     lastProducedPath && producedOk.includes(lastProducedPath) ? lastProducedPath : null,
@@ -290,6 +371,7 @@ ${doneCriteria}
     verifiedPaths,
     primaryPath,
     lastProducedPath,
+    cwdProbe,
     check: checkHandover(body),
   };
 }

@@ -64,6 +64,16 @@ vi.mock("../core/session/orchestrator", () => ({
   getDelegationOrchestrator: () => ({ delegate: delegateMock }),
 }));
 
+/**
+ * `file-api` 必须 mock：`buildHandover` 的**存在性检查器**在生产里由 banner 从
+ * `core/file-api.ts` 取（真机是 Tauri IPC）—— 测试环境没有 Tauri，不 mock 就会
+ * 在 await 那句话上炸掉。这里让"磁盘上什么都有"，于是交接正文能正常生成。
+ */
+vi.mock("../core/file-api", () => ({
+  exists: vi.fn().mockResolvedValue(true),
+  getDefaultCwd: vi.fn().mockResolvedValue("D:\\proj"),
+}));
+
 const reportAdvisoryMock = vi.fn();
 const reportActionFailureMock = vi.fn();
 const reportPersistFailureMock = vi.fn();

@@ -144,7 +144,38 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
     setNote(null);
     try {
       const messages = listVisibleMessages(sourceSessionId) as unknown as Message[];
-      const cwd = useProjectStore.getState().currentProject?.path || "";
+      /**
+       * ## 工作目录必须**问运行时**，不能从 `process.env` 推
+       *
+       * 第一版这里写的是 `currentProject?.path || ""`，然后让 `buildHandover` 在
+       * "cwd 为空"时退到 `process.env.USERPROFILE`。它在 Vitest 里全绿（Node 有 env），
+       * 但**装机版上必然失败** —— 真机诊断印出来的是：
+       *
+       * ```
+       * ［cwd="" home="" homeExists=false effective=null］
+       * ```
+       *
+       * 也就是说：Tauri WebView 的渲染进程**没有 `process.env` 兜底**（本仓没有
+       * `vite-plugin-node-polyfills`），所以那条退路永远是空串。
+       * 于是**全局对话（没有 currentProject）+ 没有产出文件**这个最常见组合下，
+       * 交接正文找不到任何绝对路径 ⇒ 协议校验拒绝 ⇒「开启新对话」点不通。
+       *
+       * 正确做法：问运行时要默认工作目录（`getDefaultCwd` → Rust 侧 `get_default_cwd`），
+       * 那是一个**真实存在的绝对路径**。`buildHandover` 里的 home 兜底保留为纵深防御，
+       * 但不再承担主要职责。
+       */
+      const projectPath = useProjectStore.getState().currentProject?.path || "";
+      let cwd = projectPath;
+      if (!cwd) {
+        try {
+          const { getDefaultCwd } = await import("../core/file-api");
+          cwd = await getDefaultCwd();
+        } catch (e) {
+          // 拿不到就如实留空：`buildHandover` 返回的 cwdProbe 会把这件事印出来，
+          // 不做静默兜底（静默兜底正是上面那个 bug 的成因）。
+          console.warn("[WaterLevelBanner] 取默认工作目录失败，交接正文可能缺绝对路径：", e);
+        }
+      }
       /**
        * 目标段优先取"最近一次用户请求"。
        *
@@ -153,7 +184,20 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
        */
       const userTurns = messages.filter((m) => m.role === "user" && String(m.content ?? "").trim());
       const lastUserRequest = userTurns.length > 0 ? String(userTurns[userTurns.length - 1].content).trim() : "";
-      const handover = buildHandover(messages as never[], { cwd, goal: lastUserRequest.slice(0, 200) });
+      /**
+       * ⚠️ 存在性检查必须传**运行时的**实现（`file-api.exists` → Tauri IPC）。
+       *
+       * 不传的话 `buildHandover` 会退回 `node:fs`，而浏览器里那个模块被 alias 成
+       * `src/stubs/node-fs-stub.ts`（`existsSync` **恒返回 false**）⇒ 交接正文永远
+       * 找不到任何存在的路径 ⇒ 协议校验永远拒绝 ⇒ 这个按钮在真机上完全不可用，
+       * 而单元测试全绿（跑在 Node 上）。详见 `ui-handoff.ts` 里 `ExistsChecker` 的说明。
+       */
+      const { exists: runtimeExists } = await import("../core/file-api");
+      const handover = await buildHandover(messages as never[], {
+        cwd,
+        goal: lastUserRequest.slice(0, 200),
+        exists: (p) => runtimeExists(p),
+      });
 
       if (!handover.check.ok) {
         /**
@@ -164,7 +208,19 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
         reportAdvisory("waterLevel.handover.invalid", zh
           ? `生成的交接正文未通过协议校验（${handover.check.error?.slice(0, 120) ?? "未知原因"}），已取消本次交接。`
           : `Generated handover failed protocol check; handoff cancelled.`);
-        setNote({ ok: false, text: zh ? "交接正文未通过协议校验，已取消（详见提示条上方告警）" : "Handover failed protocol check; cancelled." });
+        setNote({
+          ok: false,
+          text:
+            (zh ? "交接正文未通过协议校验，已取消（详见提示条上方告警）" : "Handover failed protocol check; cancelled.") +
+            /**
+             * 把**工作目录诊断**一起印出来。
+             *
+             * 为什么连诊断都要给用户看：这个字段是真机上定位"交接被拒"的唯一抓手 ——
+             * 只看 `check.ok === false` 时，我连续两轮都在猜（先猜"没有产出文件"，
+             * 再猜"全局对话没有工作目录"）。它是只读事实，多印这一行远比再猜两轮便宜。
+             */
+            `［cwd=${JSON.stringify(handover.cwdProbe.given)} home=${JSON.stringify(handover.cwdProbe.home)} homeExists=${String(handover.cwdProbe.homeExists)} effective=${JSON.stringify(handover.cwdProbe.effective)}］`,
+        });
         return;
       }
 
