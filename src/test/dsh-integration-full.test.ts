@@ -194,51 +194,58 @@ describe("A1: Compaction Control — 压缩锁 + 崩溃修复", () => {
 });
 
 // ========== A2: Output Contract ==========
+//
+// 第 121 轮迁移：本段原先直接测 `output-contract.ts`（模块已删，见下）。
+// 断言的**行为**逐一保留，改测现在生效的实现 `output-value.ts`。
+//
+// 为什么必须迁移而不是留旧测试：旧的 `output-contract.ts` 是个**能跑但没人用**的
+// 模块 —— 零个工具注册过契约，所以那句校验恒真；只 `console.warn` 不拦。
+// 留着它 + 留着测它的测试，会让"输出契约有效"看起来成立。
 
-describe("A2: Output Contract — 规范化输出契约", () => {
-  it("validateOutput — 类型检查通过", async () => {
-    const { validateOutput } = await import("../core/llm/output-contract");
-    const result = validateOutput("hello", { type: "string" });
-    expect(result.valid).toBe(true);
+describe("A2: Output Contract — 规范化输出契约（迁移到 output-value）", () => {
+  it("checkSchema — 类型检查通过", async () => {
+    const { checkSchema } = await import("../core/llm/output-value");
+    expect(checkSchema({ type: "string" }, "hello")).toEqual([]);
   });
 
-  it("validateOutput — 类型检查失败", async () => {
-    const { validateOutput } = await import("../core/llm/output-contract");
-    const result = validateOutput(42, { type: "string" });
-    expect(result.valid).toBe(false);
-    expect(result.errors.length).toBeGreaterThan(0);
+  it("checkSchema — 类型检查失败，且给出原因", async () => {
+    const { checkSchema } = await import("../core/llm/output-value");
+    const v = checkSchema({ type: "string" }, 42);
+    expect(v.length).toBeGreaterThan(0);
+    expect(v[0].message).toMatch(/期望 string/);
   });
 
-  it("registerOutputContract + validateToolOutput — 注册后验证", async () => {
-    const { registerOutputContract, validateToolOutput } = await import("../core/llm/output-contract");
-    registerOutputContract("my_tool", { schema: { type: "object", properties: { success: { type: "boolean" } } } });
+  it("声明了 schema 后校验真的生效（对象字段级）", async () => {
+    const { checkSchema } = await import("../core/llm/output-value");
+    const schema = { type: "object", properties: { success: { type: "boolean" } }, required: ["success"] };
 
-    const valid = validateToolOutput("my_tool", { success: true });
-    expect(valid.valid).toBe(true);
-
-    const invalid = validateToolOutput("my_tool", { success: "yes" });
-    expect(invalid.valid).toBe(false);
-
-    // 无声明时返回 valid
-    const noContract = validateToolOutput("unknown_tool", "anything");
-    expect(noContract.valid).toBe(true);
+    expect(checkSchema(schema, { success: true })).toEqual([]);
+    // 类型不符
+    expect(checkSchema(schema, { success: "yes" }).length).toBeGreaterThan(0);
+    // 缺字段
+    expect(checkSchema(schema, {}).length).toBeGreaterThan(0);
   });
 
-  it("renderToolOutput — 有 render 函数时使用自定义渲染", async () => {
-    const { registerOutputContract, renderToolOutput } = await import("../core/llm/output-contract");
-    registerOutputContract("render_tool", {
-      render: (args, value) => [{ type: "text", text: `Result: ${JSON.stringify(value)}` }],
-    });
-    const blocks = renderToolOutput("render_tool", {}, { ok: true });
-    expect(blocks.length).toBe(1);
-    expect(blocks[0].text).toContain("ok");
+  it("未声明 schema 的工具零变化（validateAndRenderOutput 传 undefined）", async () => {
+    const { validateAndRenderOutput } = await import("../core/llm/output-value");
+    const r = validateAndRenderOutput({}, "anything");
+    expect(r.violations).toEqual([]);
   });
 
-  it("renderToolOutput — 无 render 函数时回退为默认文本", async () => {
-    const { renderToolOutput } = await import("../core/llm/output-contract");
-    const blocks = renderToolOutput("no_render_tool", {}, "plain text");
-    expect(blocks.length).toBe(1);
-    expect(blocks[0].text).toBe("plain text");
+  it("自定义 renderOutput 生效", async () => {
+    const { validateAndRenderOutput } = await import("../core/llm/output-value");
+    const r = validateAndRenderOutput(
+      { outputSchema: { type: "object" }, renderOutput: (v) => `Result: ${JSON.stringify(v)}` },
+      { ok: true },
+    );
+    expect(r.output).toContain("ok");
+    expect(r.violations).toEqual([]);
+  });
+
+  it("无 renderOutput 时用通用渲染（字符串原样）", async () => {
+    const { validateAndRenderOutput } = await import("../core/llm/output-value");
+    const r = validateAndRenderOutput({}, "plain text");
+    expect(r.output).toBe("plain text");
   });
 });
 

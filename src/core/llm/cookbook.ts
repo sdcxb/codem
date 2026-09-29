@@ -49,8 +49,8 @@ export interface NewToolGuide {
 
   /** 步骤 3: (可选) 声明输出契约 */
   step3_outputContract?: {
-    file: "src/core/llm/output-contract.ts";
-    action: "Call registerOutputContract('my_tool', { schema, render })";
+    file: "src/core/llm/output-value.ts";
+    action: "在工具自己的 contract 上声明 outputSchema（可选 renderOutput），并让 execute 返回结构化 value；参考 glob / grep 的写法";
   };
 
   /** 步骤 4: (可选) 声明并发安全 */

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.206",
-  "notes": "全面审计后的收口：修 bash 的 cmd 别名（此前权限分析看不到命令，危险命令会漏判）；glob/grep 缺参不再报内部错误；新增契约不变量门禁（9 条）与真实管线端到端门禁（14 条）；删除无消费者的空壳导出；output-contract 标注为已被取代。",
-  "pub_date": "2026-09-29T04:55:34Z",
+  "version": "1.16.207",
+  "notes": "删除那个「能用但没人用」的输出契约旧模块（它的 3 个测试已逐条迁移到生效机制上）；新增结果契约采纳率棘轮（只许增长、基线与真实工具表交叉核对）。",
+  "pub_date": "2026-09-29T05:39:57Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VtSWxaMkhOV2F3OTlIRERnKy8xeUdsTlpyMWJUM29kRTJIb2VSSHZkODVPSW0vZlB1aFJUVGtBZmQ5ZGN2aUVFWEZQc2lpdWt0U0dCRkhZNjV5dmdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjU3NzMwCWZpbGU6Q29kZW1fMS4xNi4yMDZfeDY0LXNldHVwLmV4ZQpwWGp0em1DTlFWQU45cmZJNHZ0aUtHSDVQWDI1MDRKT1BDck1uWWhXUU5GR3JEVStMcWNiQXYxTVp6MjZPSktScGZaSUlYNm5pSGJKNDljd0xUVHBCQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.206/Codem_1.16.206_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1YxRldLSDdPWXRReTRzQ1c1NElNZHRqeFlLcjJsSUk4bThKb1hjRUNMV1FFRGtBUWZ1d1EyZ2kyY3krSWdXbW15LzZwQTVBVUhQUmpOWDNPZ0FLc2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjYwMzkyCWZpbGU6Q29kZW1fMS4xNi4yMDdfeDY0LXNldHVwLmV4ZQpVeHhuNU5ZWGMvN3pOb3FZaEpMdXlXTUJhY1p5alIzQzlydm5PTTNIOHVUb0l1eW5QanYzZXp1KytMdWhEMnpUdjRpaHMyTmRKeG85TnRvcjV0TS9DQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.207/Codem_1.16.207_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VtSWxaMkhOV2F3OTlIRERnKy8xeUdsTlpyMWJUM29kRTJIb2VSSHZkODVPSW0vZlB1aFJUVGtBZmQ5ZGN2aUVFWEZQc2lpdWt0U0dCRkhZNjV5dmdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjU3NzMwCWZpbGU6Q29kZW1fMS4xNi4yMDZfeDY0LXNldHVwLmV4ZQpwWGp0em1DTlFWQU45cmZJNHZ0aUtHSDVQWDI1MDRKT1BDck1uWWhXUU5GR3JEVStMcWNiQXYxTVp6MjZPSktScGZaSUlYNm5pSGJKNDljd0xUVHBCQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.206/Codem_1.16.206_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1YxRldLSDdPWXRReTRzQ1c1NElNZHRqeFlLcjJsSUk4bThKb1hjRUNMV1FFRGtBUWZ1d1EyZ2kyY3krSWdXbW15LzZwQTVBVUhQUmpOWDNPZ0FLc2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjYwMzkyCWZpbGU6Q29kZW1fMS4xNi4yMDdfeDY0LXNldHVwLmV4ZQpVeHhuNU5ZWGMvN3pOb3FZaEpMdXlXTUJhY1p5alIzQzlydm5PTTNIOHVUb0l1eW5QanYzZXp1KytMdWhEMnpUdjRpaHMyTmRKeG85TnRvcjV0TS9DQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.207/Codem_1.16.207_x64-setup.exe"
     }
   }
 }

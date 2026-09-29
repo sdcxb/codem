@@ -341,28 +341,45 @@ describe("功能触发→调用→执行闭环测试", () => {
     });
   });
 
-  // ========== Chain 12: Output Contract → register → validate → render ==========
+  // ========== Chain 12: Output Contract → validate → render ==========
+  //
+  // 第 121 轮迁移：原链路测的 `output-contract.ts` 已删除（它能跑但没人用 ⇒ 校验恒真）。
+  // 链路**形状保持不变**：声明 → 校验 → 渲染，只是走现在生效的 `output-value.ts`。
 
-  describe("Chain 12: OutputContract register → validate → render", () => {
-    it("完整契约链路：注册 → 验证 → 渲染", async () => {
-      const { registerOutputContract, validateToolOutput, renderToolOutput } = await import("../core/llm/output-contract");
-      registerOutputContract("chain12_tool", {
-        schema: { type: "object", properties: { count: { type: "number" } } },
-        render: (args, value: any) => [{ type: "text", text: `Count: ${value.count}` }],
-      });
+  describe("Chain 12: 结果契约 → 校验 → 渲染", () => {
+    it("完整契约链路：声明 schema → 校验值 → 渲染文本", async () => {
+      const { validateAndRenderOutput } = await import("../core/llm/output-value");
 
-      // 验证通过
-      const valid = validateToolOutput("chain12_tool", { count: 5 });
-      expect(valid.valid).toBe(true);
+      const contract = {
+        outputSchema: {
+          type: "object",
+          properties: { count: { type: "number" } },
+          required: ["count"],
+          additionalProperties: false,
+        },
+        renderOutput: (v: unknown) => `Count: ${(v as { count: number }).count}`,
+      };
 
-      // 验证失败
-      const invalid = validateToolOutput("chain12_tool", { count: "five" });
-      expect(invalid.valid).toBe(false);
+      // 合法值 ⇒ 无违规 + 渲染出文本
+      const ok = validateAndRenderOutput(contract, { count: 5 });
+      expect(ok.violations).toEqual([]);
+      expect(ok.output).toBe("Count: 5");
 
-      // 渲染
-      const blocks = renderToolOutput("chain12_tool", {}, { count: 5 });
-      expect(blocks.length).toBe(1);
-      expect(blocks[0].text).toBe("Count: 5");
+      // 类型不符 ⇒ 有违规（且**不会**被静默放过 —— 这正是旧机制缺的那一环）
+      const bad = validateAndRenderOutput(contract, { count: "five" });
+      expect(bad.violations.length).toBeGreaterThan(0);
+      expect(bad.violations[0].path).toBe("value.count");
+
+      // 缺字段 ⇒ 同样被抓
+      const missing = validateAndRenderOutput(contract, {});
+      expect(missing.violations.length).toBeGreaterThan(0);
+    });
+
+    it("未声明 schema 时链路仍然通（老工具零变化）", async () => {
+      const { validateAndRenderOutput } = await import("../core/llm/output-value");
+      const r = validateAndRenderOutput({}, { anything: 1 });
+      expect(r.violations).toEqual([]);
+      expect(r.output).toContain("anything");
     });
   });
 });

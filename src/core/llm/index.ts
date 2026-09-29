@@ -76,8 +76,8 @@ export { ToolRenderRegistry, getToolRenderRegistry, DefaultToolRenderer } from "
 export type * from "./cookbook";
 // R3-4.4: Type safety utilities — re-export for use across codebase
 export { assertNever, brand, unbrand, type Branded } from "./type-safety";
-// R3-3.5: Output contract — re-export for tool registration
-export { registerOutputContract, validateToolOutput, renderToolOutput } from "./output-contract";
+// R3-3.5: output-contract 已于第 121 轮删除（能用但零个工具注册过契约 ⇒ 校验恒真）。
+// 现在的机制：ToolContract.outputSchema + renderOutput（见 output-value.ts）。
 // R3-4.6: Event system strict — re-export typed event bus
 export { getTypedEventBus, type TypedEventBus } from "./event-system-strict";
 // R3-3.7: Request header tracking — re-export

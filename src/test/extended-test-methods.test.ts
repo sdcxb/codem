@@ -104,11 +104,11 @@ describe("模糊测试 (Fuzzing) — 随机输入不崩溃", () => {
     }
   });
 
-  it("output-contract validateOutput — 随机输入不崩溃", async () => {
-    const { validateOutput } = await import("../core/llm/output-contract");
+  it("output-value checkSchema — 随机输入不崩溃", async () => {
+    const { checkSchema } = await import("../core/llm/output-value");
     const randomInputs = [null, undefined, "", "string", 42, {}, [], { key: "value" }, true, false, NaN, Infinity, { nested: { deep: {} } }];
     for (const input of randomInputs) {
-      expect(() => validateOutput(input, { type: "string" })).not.toThrow();
+      expect(() => checkSchema({ type: "string" }, input)).not.toThrow();
     }
   });
 
@@ -273,12 +273,28 @@ describe("契约测试 (Contract) — 接口契约验证", () => {
     expect(typeof mod.repairCrashedSession).toBe("function");
   });
 
-  it("output-contract — 导出契约：validate, register, render", async () => {
-    const mod = await import("../core/llm/output-contract");
-    expect(typeof mod.validateOutput).toBe("function");
-    expect(typeof mod.registerOutputContract).toBe("function");
-    expect(typeof mod.validateToolOutput).toBe("function");
-    expect(typeof mod.renderToolOutput).toBe("function");
+  it("output-value — 导出契约：校验、渲染、端到端入口", async () => {
+    const mod = await import("../core/llm/output-value");
+    expect(typeof mod.checkSchema).toBe("function");
+    expect(typeof mod.renderOutputValue).toBe("function");
+    expect(typeof mod.validateAndRenderOutput).toBe("function");
+  });
+
+  it("output-contract 已删除（旧机制不该复活）", async () => {
+    // 那个模块能用但**零个工具注册过契约** ⇒ 校验恒真、失败只 warn。
+    // 第 121 轮迁移完它的测试后删除。这条断言防止有人把它加回来，
+    // 从而让「输出契约有效」重新变成一句看起来成立的话。
+    //
+    // ⚠️ 用 `existsSync` 而不是 `await import(...)`：静态字符串 import 会被
+    // Vite/vitest **在解析阶段**就尝试 resolve，文件不存在时整个测试文件加载失败
+    // （实测：报 "Failed to resolve import"），而不是让我断言 reject。
+    // 想断言"某个模块不存在"，就得绕开打包器的静态解析 —— 这点值得记。
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    expect(
+      existsSync(join(__dirname, "..", "core", "llm", "output-contract.ts")),
+      "output-contract.ts 又被加回来了 —— 它会与 ToolContract.outputSchema 形成两套并存的机制",
+    ).toBe(false);
   });
 
   it("postmortem — 导出契约：generate, list, get", async () => {
