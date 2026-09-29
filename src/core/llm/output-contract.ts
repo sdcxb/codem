@@ -1,21 +1,35 @@
 /**
- * Output Contract — 规范化工具输出契约
+ * ⚠️ **已被取代（第 121 轮）—— 新代码不要用这个模块。**
  *
- * 设计对标 DSH `core/tools` output declaration.
+ * 用 `ToolContract.outputSchema` + `ToolContract.renderOutput` 代替，实现见
+ * `output-value.ts`（校验/渲染）与 `tool-pipeline.ts` 的
+ * `OutputContractValidationMiddleware`（接线）。
  *
- * 每个工具可以声明其输出的 schema 和 render 函数：
- * ```typescript
- * output: {
- *   schema: { type: 'string' },
- *   render: (args, value) => [{ type: 'text', text: value }],
- * }
- * ```
+ * ## 为什么被取代（这是一次真实的"框架在、但没人用"事故）
  *
- * 这让工具的输出可以被：
- * 1. JSON 验证 — 确保工具返回的值符合声明
- * 2. 自定义渲染 — 工具控制自己的输出如何呈现给模型
- * 3. 类型安全 — 调用方知道输出的结构
+ * 这个模块**本身没问题**：`validateOutput` 能用、`registerOutputContract` 能用、
+ * 管线也确实调了它。但**零个工具注册过契约** ⇒ `validateToolOutput` 永远命中
+ * `if (!contract?.schema) return { valid: true }` 这条短路、**恒真**；
+ * 而且即使验失败也只 `console.warn`、不拦。
  *
+ * 根因不是"忘了接线"，而是**没有可校验的对象**：工具结果此前只有不透明的字符串
+ * `output`，没有结构化 `value`。所以第 121 轮补的是**数据形状**（`ToolCallResult.value`）
+ * 与**声明位置**（工具自己的 `contract` 上），而不是又写一个校验器。
+ *
+ * ## 为什么保留而没有删除
+ *
+ * - 它是 `llm/index.ts` 的公开导出（外部可能有引用）；
+ * - 仍有 3 个历史测试文件直接测它（`dsh-integration-full` /
+ *   `extended-test-methods` / `functional-chain-closed-loop`）。
+ *
+ * **保留 ≠ 仍受支持**：新增工具请用新机制。若要彻底删除，需要先把那三个测试文件
+ * 迁移到 `output-value.ts` 上 —— 那是一件独立的事，不该和本轮混在一起做。
+ *
+ * ---
+ *
+ * 原说明（保留以便对照）：
+ * 每个工具可以声明其输出的 schema 和 render 函数。
+ * 这让工具的输出可以被 1. JSON 验证 2. 自定义渲染 3. 类型安全。
  * 无声明（undefined）时，输出原样传递（向后兼容）。
  */
 

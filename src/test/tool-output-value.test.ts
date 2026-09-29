@@ -16,13 +16,7 @@ import {
   renderOutputValue,
   validateAndRenderOutput,
 } from "../core/llm/output-value";
-import {
-  validateToolArgs,
-  describeArgProblems,
-  str,
-  num,
-  bool,
-} from "../core/llm/input-args";
+import { validateToolArgs, describeArgProblems, str } from "../core/llm/input-args";
 import { createDefaultToolRegistry } from "../core/llm/tools";
 
 describe("output-value：校验通过的情形", () => {
@@ -212,17 +206,14 @@ describe("input-args：入参校验（只报「确定是问题」的两类）", 
 });
 
 describe("input-args：安全取值（消灭 as string 之后的崩溃点）", () => {
-  it("str/num/bool 对错误类型一律当「没给」", () => {
+  it("str 对非字符串一律当「没给」", () => {
     expect(str("a")).toBe("a");
+    expect(str("")).toBe(""); // 空串是"给了但为空"，是否算缺失由调用方判
     expect(str(1)).toBeUndefined();
     expect(str(null)).toBeUndefined();
-    expect(num(1.5)).toBe(1.5);
-    expect(num("1.5")).toBeUndefined();
-    expect(num(NaN)).toBeUndefined();
-    expect(num(Infinity)).toBeUndefined();
-    expect(bool(true)).toBe(true);
-    // "true" 不算 —— 悄悄改语义比报错更糟
-    expect(bool("true")).toBeUndefined();
+    expect(str(undefined)).toBeUndefined();
+    expect(str({})).toBeUndefined();
+    expect(str(["a"])).toBeUndefined();
   });
 });
 

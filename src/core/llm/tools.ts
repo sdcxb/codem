@@ -6,6 +6,7 @@ import { getSetting } from "../storage/settings";
 import type { Context } from "../cordis/src/index.ts";
 import type { PlanUpdateOp } from "./plan-utils";
 import { replaceLiteral, suggestEditCandidates } from "./edit-matchers";
+import { str } from "./input-args";
 import {
   NO_TIMEOUT,
   resolveToolContract,
@@ -845,7 +846,36 @@ class ScopedToolRegistry extends ToolRegistry {
 export function createBashTool(): ToolDef {
   return {
     id: "bash",
-    contract: { sideEffectScope: "system", accessScope: "system", timeoutMs: NO_TIMEOUT },
+    contract: {
+      sideEffectScope: "system",
+      accessScope: "system",
+      timeoutMs: NO_TIMEOUT,
+      /**
+       * 入参归一化 —— **这是全仓第一个真正使用该钩子的工具**，也是它存在的理由。
+       *
+       * 解决的问题：此前权限层用 `args.command ?? args.cmd ?? ""` 兜底，而执行层只读
+       * `args.command` —— 模型写 `{cmd: "..."}` 时，权限/计划模式看到命令、执行层看到
+       * 空串，两层对同一份入参得出不同结论。归一化把别名补齐成**唯一规范形态**，
+       * 位置在**权限判定之前**，于是后续所有层看到的都是同一份
+       * （zcode 的原话：「此后 hook、项目权限规则、权限事件载荷、handler 读到的
+       * 都是同一份归一化输入」；「位置就是全部的意义」）。
+       *
+       * ⚠️ **刻意不做的事**：不在这里把相对 `workdir` 解析成绝对路径。
+       * 归一化钩子只拿得到 `args`，**拿不到 `ctx.cwd`**，而相对路径必须有基准目录
+       * 才能解析。我第一版写了 `str(out.cwd)` 去取基准 —— 那个字段在入参里根本不存在，
+       * 于是解析会被静默跳过（"看起来在做、其实没做"）。相对路径的解析留在实现里，
+       * 那里有真正的 `ctx.cwd`。**要扩展这个钩子的能力（比如传 ctx），得先改签名
+       * 并让每个调用点都拿到 ctx，不要在这里用不存在的字段凑。**
+       */
+      normalizeInput: (a) => {
+        const out = { ...a };
+        // 别名：模型常用 cmd，规范名是 command
+        if (out.command === undefined && typeof out.cmd === "string") out.command = out.cmd;
+        delete out.cmd;
+        return out;
+      },
+    },
+
     description: "Execute a bash command in the terminal (PowerShell on Windows). The system automatically sets UTF-8 encoding (chcp 65001) and PYTHONUTF8=1. Output includes stdout, stderr, and exit code. If output contains garbled characters (乱码), the source command may be outputting in GBK — do NOT retry with a different tool, adjust the command instead. For long-running commands (builds, tests, dependency installations), set a higher timeout_ms.",
     guidance: "Use bash for any shell command: build, test, git, install dependencies, run scripts. Prefer workdir over `cd`. For long-running commands, set a higher timeout_ms.",
     parameters: {
@@ -861,8 +891,22 @@ export function createBashTool(): ToolDef {
       required: ["command"],
     },
     async execute(args, ctx) {
-      let command = args.command as string;
-      let workdir = (args.workdir as string) || ctx.cwd;
+      // 用 `str()` 而不是 `args.command as string`：后者在模型漏参时是 `undefined`，
+      // 下面 `command.match(...)` 会抛 TypeError，被 catch 包成
+      // 「Cannot read properties of undefined (reading 'match')」这种看不懂的内部错。
+      // 现在缺参数会走到下面显式的那条提示（且带 `errorSource: "tool"`，
+      // 模型能自行纠正、不累加连续错误）。
+      let command = str(args.command) ?? "";
+      if (!command) {
+        return {
+          title: "bash",
+          output:
+            "Error: Missing required parameter `command` (a non-empty string). " +
+            "Example: bash({ command: \"git status\" })",
+          isError: true,
+        };
+      }
+      let workdir = str(args.workdir) || ctx.cwd;
       // python -c 中文 编码规避写入的临时文件路径；执行后必须删除，避免项目下堆积 __pyc_temp_*.py
       let tempFile: string | null = null;
 

@@ -156,17 +156,13 @@ export function describeArgProblems(
  * 注意语义是「宽容」而不是「报错」—— 报错由 `validateToolArgs` 负责；
  * 这里只保证**取不到时不会炸**。两者配合：先校验给模型可行动提示，
  * 实现里再用它兜住漏网的（比如 `validateToolArgs` 刻意不判的联合类型）。
+ *
+ * ## 为什么只有 `str`（第 121 轮审计）
+ *
+ * 一开始还写了 `num()` / `bool()`，但**没有任何调用点** —— 那就成了我自己
+ * 刚刚批判过的「空壳导出」。按同一条标准处理：删掉，需要时再加。
+ * （`output-value.ts` 与 `input-args.ts` 的导出一律遵守这条。）
  */
 export function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
-}
-
-/** 安全取数字参数：非有限数字一律当"没给"。 */
-export function num(v: unknown): number | undefined {
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
-
-/** 安全取布尔参数：只接受真布尔（`"true"` 不算，避免悄悄改语义）。 */
-export function bool(v: unknown): boolean | undefined {
-  return typeof v === "boolean" ? v : undefined;
 }
