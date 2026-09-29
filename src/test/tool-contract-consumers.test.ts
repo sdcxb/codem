@@ -31,8 +31,8 @@ const CONTRACT_SRC = join(__dirname, "..", "core", "llm", "tool-contract.ts");
 /**
  * 允许「读取契约字段」的文件。
  *
- * - `tool-contract.ts`：解析默认值的地方（`resolveToolContract`）
- * - 下面几个是真正的消费者
+ * - `tool-contract.ts`：解析默认值（`resolveToolContract`）与**命名谓词**所在处
+ * - 下面几个是真正的消费者（它们调用谓词，而不是直接读字段）
  */
 const CONSUMER_FILES = [
   "src/core/llm/tool-contract.ts",
@@ -41,6 +41,36 @@ const CONSUMER_FILES = [
   "src/core/llm/tool-result-storage.ts",
   "src/core/llm/agentic-loop.ts",
 ];
+
+/**
+ * 字段 → 「它被哪个命名谓词消费」的映射。
+ *
+ * ## 为什么需要这张表（这是本门禁第二次自我修正）
+ *
+ * 第 121 轮拆字段后，`sideEffectScope` / `accessScope` / `blocksOnUserInput`
+ * 都不再被消费者**直接**读 —— 它们只被 `tool-contract.ts` 里的谓词读，
+ * 消费者调谓词（`requiresPathGuard` / `mutatesWorkspace` / `resolveToolContract`）。
+ * 第一版门禁只找 `.字段` 的直接访问，于是把这四个字段全判成「空壳」——
+ * **假红**：它们有消费者，只是隔了一层。
+ *
+ * 同时又**不能**简单地「凡在 tool-contract.ts 里出现过就算有消费者」——
+ * 那样从接口解析出来的字段名在本文件里天然都会出现（正则里就有），
+ * 门禁会恒真。所以要显式声明「谁消费它」，让「这个字段谁在读」始终是个
+ * 必须被回答的问题。
+ *
+ * 新增字段时必须同时更新这张表（或让它被消费者直接读）—— 这道摩擦是有意的。
+ */
+const FIELD_CONSUMERS: Record<string, string> = {
+  readOnly: "tool-pipeline.ts（计划模式）/ resolveToolContract（并发推导）/ streaming-executor（并发）",
+  destructive: "tool-pipeline.ts（拒绝文案三态）/ resolveToolContract（并发一票否决）",
+  concurrencySafe: "streaming-executor.ts（调度判据）",
+  sideEffectScope: "tool-contract.ts::isShellLike / mutatesWorkspace（谓词）",
+  accessScope: "tool-contract.ts::requiresPathGuard（谓词）",
+  blocksOnUserInput: "tool-contract.ts::resolveToolContract（并发一票否决）",
+  timeoutMs: "streaming-executor.ts（resolveToolTimeout）",
+  persistResult: "tool-result-storage.ts（shouldPersistResult）",
+  normalizeInput: "tool-pipeline.ts（入参归一化步骤）",
+};
 
 /** 从 `export interface ToolContract { … }` 里取字段名。 */
 function declaredFields(): string[] {
@@ -65,7 +95,7 @@ describe("契约字段必须都有消费者（防造空壳）", () => {
     expect(fields).toContain("timeoutMs");
   });
 
-  it("每个字段都在消费者里被读过", () => {
+  it("每个字段都有人消费（直接读 或 经由命名谓词）", () => {
     const consumers = CONSUMER_FILES.map((rel) => ({
       rel,
       text: readFileSync(join(__dirname, "..", "..", rel), "utf8"),
@@ -73,19 +103,34 @@ describe("契约字段必须都有消费者（防造空壳）", () => {
 
     const orphans: string[] = [];
     for (const field of fields) {
-      // 在**除 tool-contract.ts 之外**的消费者里找读取点：
-      // 只看 `c.<field>` / `contract.<field>` / `<field>:` 这类访问形态
+      // ① 消费者**直接**读：`.字段`
       const readPattern = new RegExp(`\\.${field}\\b`);
-      const readByNonResolver = consumers.some(
+      const readDirectly = consumers.some(
         (c) => c.rel !== "src/core/llm/tool-contract.ts" && readPattern.test(c.text),
       );
-      if (!readByNonResolver) orphans.push(field);
+      // ② 经由命名谓词消费（显式登记）
+      const viaPredicate = FIELD_CONSUMERS[field] !== undefined;
+
+      if (!readDirectly && !viaPredicate) orphans.push(field);
     }
 
     expect(
       orphans,
       `这些契约字段没有任何消费者 —— 加了只会是空壳（本轮已修过 8 处「建了没接线」）：${orphans.join(", ")}`,
     ).toEqual([]);
+  });
+
+  it("登记表里不含已不存在的字段（防登记表过期）", () => {
+    const stale = Object.keys(FIELD_CONSUMERS).filter((f) => !fields.includes(f));
+    expect(stale, `这些字段已从 ToolContract 删除，登记表要同步清理：${stale.join(", ")}`).toEqual(
+      [],
+    );
+  });
+
+  it("登记表里每个字段的「由谁消费」都必须写清楚", () => {
+    for (const [field, why] of Object.entries(FIELD_CONSUMERS)) {
+      expect(why.length, `${field} 的消费说明太短`).toBeGreaterThan(8);
+    }
   });
 
   it("消费者白名单里的文件都真实存在（防白名单过期）", () => {

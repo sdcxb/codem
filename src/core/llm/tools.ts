@@ -559,6 +559,23 @@ export class ToolRegistry {
     return resolveToolContract(this.tools.get(id)?.contract, id);
   }
 
+  /**
+   * 取工具**原始**契约声明（未解析）。
+   *
+   * 为什么还需要它：`ResolvedToolContract` 只承载**值**（布尔/数值/枚举），
+   * 刻意不带函数。而入参归一化（`normalizeInput`）与结果渲染（`renderOutput`）
+   * 是**行为**，必须从原始声明上取。两个入口分工明确：
+   * - 判据/默认值 ⇒ `getContract()`
+   * - 行为钩子 ⇒ `getRawContract()`
+   *
+   * 分开而不是把函数塞进 `ResolvedToolContract`：后者会被序列化/比较/缓存，
+   * 带上函数会让「值契约」变得不可序列化，也会让「契约字段必须有消费者」
+   * 那道门禁失去意义。
+   */
+  getRawContract(id: string): ToolContract | undefined {
+    return this.tools.get(id)?.contract;
+  }
+
   getAll(): ToolDef[] {
     return Array.from(this.tools.values()).filter((t) => !isToolDisabled(t.id));
   }
@@ -828,7 +845,7 @@ class ScopedToolRegistry extends ToolRegistry {
 export function createBashTool(): ToolDef {
   return {
     id: "bash",
-    contract: { sideEffectScope: "system", timeoutMs: NO_TIMEOUT },
+    contract: { sideEffectScope: "system", accessScope: "system", timeoutMs: NO_TIMEOUT },
     description: "Execute a bash command in the terminal (PowerShell on Windows). The system automatically sets UTF-8 encoding (chcp 65001) and PYTHONUTF8=1. Output includes stdout, stderr, and exit code. If output contains garbled characters (乱码), the source command may be outputting in GBK — do NOT retry with a different tool, adjust the command instead. For long-running commands (builds, tests, dependency installations), set a higher timeout_ms.",
     guidance: "Use bash for any shell command: build, test, git, install dependencies, run scripts. Prefer workdir over `cd`. For long-running commands, set a higher timeout_ms.",
     parameters: {
@@ -1092,7 +1109,7 @@ function extractLinesIncremental(
 export function createReadFileTool(): ToolDef {
   return {
     id: "read",
-    contract: { readOnly: true, sideEffectScope: "workspace", persistResult: false },
+    contract: { readOnly: true, accessScope: "workspace", persistResult: false },
     guidance: "Use read to view file contents. Use offset/limit for large files. After a write or edit, the tool result confirms success — do NOT re-read the file you just wrote.",
     description: "Read a file from the filesystem. Files are read as UTF-8 text. BOM (Byte Order Mark) is automatically stripped. Chinese and emoji content is fully supported.",
     // Never persist read results to disk — prevents infinite loops
@@ -1572,7 +1589,28 @@ export function createMultiEditTool(): ToolDef {
 export function createGlobTool(): ToolDef {
   return {
     id: "glob",
-    contract: { readOnly: true, sideEffectScope: "workspace" },
+    contract: {
+      readOnly: true,
+      accessScope: "workspace",
+      // 第 121 轮：结果契约。这是第一个**真的注册了** outputSchema 的工具 ——
+      // 在此之前全仓零个工具注册过，于是整套输出校验形同虚设（恒真）。
+      outputSchema: {
+        type: "object",
+        properties: {
+          files: { type: "array", items: { type: "string" } },
+          count: { type: "number" },
+          pattern: { type: "string" },
+        },
+        required: ["files", "count", "pattern"],
+        additionalProperties: false,
+      },
+      // 渲染保持与旧行为**逐字一致**（旧实现是 `files.join("\n") || "No files found"`）——
+      // 注册契约不该改变模型看到的东西，否则就是偷偷改了行为。
+      renderOutput: (v) => {
+        const o = v as { files: string[] };
+        return o.files.length > 0 ? o.files.join("\n") : "No files found";
+      },
+    },
     guidance: "Use glob to find files by name pattern (e.g. `**/*.ts`). Use grep to search file contents instead.",
     description: "Find files matching a glob pattern. Supports Chinese filenames natively. Patterns: * (wildcard), ? (single char), {a,b} (alternatives), ** (recursive). Example: glob(pattern=\"*.py\") or glob(pattern=\"测试*.md\", path=\"D:\\\\项目\")",
     parameters: {
@@ -1595,6 +1633,9 @@ export function createGlobTool(): ToolDef {
         console.log("[glob tool] found:", files.length, "files");
         return {
           title: `glob: ${pattern}`,
+          // `value` 是**结构化事实**（下游可结构化消费，不必再切字符串）；
+          // `output` 由契约的 renderOutput 统一渲染（这里给的是骨架，会被覆盖）。
+          value: { files, count: files.length, pattern },
           output: files.join("\n") || "No files found",
         };
       } catch (error: any) {
@@ -1608,7 +1649,26 @@ export function createGlobTool(): ToolDef {
 export function createGrepTool(): ToolDef {
   return {
     id: "grep",
-    contract: { readOnly: true, sideEffectScope: "workspace" },
+    contract: {
+      readOnly: true,
+      accessScope: "workspace",
+      // 第 121 轮：结果契约（第 2 个）。渲染复现旧行为逐字 ——
+      // 注册契约不该改变模型看到的东西，否则就是偷偷改了行为。
+      outputSchema: {
+        type: "object",
+        properties: {
+          matches: { type: "array", items: { type: "string" } },
+          count: { type: "number" },
+          pattern: { type: "string" },
+        },
+        required: ["matches", "count", "pattern"],
+        additionalProperties: false,
+      },
+      renderOutput: (v) => {
+        const o = v as { matches: string[] };
+        return o.matches.length > 0 ? o.matches.join("\n") : "No matches found";
+      },
+    },
     guidance:
       "Use grep to search file contents with a regular expression. Returns matching lines with line numbers. " +
       "This is the EXACT-route search: ideal when you already know precise identifiers, quotes, filenames, keys, dates or regexes. " +
@@ -1637,6 +1697,7 @@ export function createGrepTool(): ToolDef {
         const results = await grepSearch(pattern, searchPath, include);
         return {
           title: `grep: ${pattern}`,
+          value: { matches: results, count: results.length, pattern },
           output: results.join("\n") || "No matches found",
         };
       } catch (error: any) {
@@ -1652,7 +1713,7 @@ export function createGrepTool(): ToolDef {
 export function createTTSTool(): ToolDef {
   return {
     id: "tts",
-    contract: { sideEffectScope: "network", persistResult: false },
+    contract: { sideEffectScope: "network", accessScope: "network", persistResult: false },
     guidance: "Use tts when the user asks to read text aloud, generate audio/voice, or convert text to speech (朗读、语音、配音).",
     description: "Convert text to speech audio and play it. Call this tool when the user wants to: read text aloud (朗读), generate voice/audio (生成语音/声音/音频), convert text to speech (转语音), do voiceover (配音), or any request involving generating audio from text. The tool detects intent from natural language — no commands needed. The audio will be played automatically.",
     parameters: {
@@ -1694,7 +1755,7 @@ export function createTTSTool(): ToolDef {
 export function createImageGenTool(): ToolDef {
   return {
     id: "image_gen",
-    contract: { sideEffectScope: "network", persistResult: false },
+    contract: { sideEffectScope: "network", accessScope: "network", persistResult: false },
     guidance: "Use image_gen when the user asks to generate, draw, or create an image (生成图片、画图、插图).",
     description: "Generate images from a text description. Call this tool when the user wants to: generate/create an image (生成图片/图像), draw something (画一幅图/画图/帮我画), create a poster/icon/illustration (海报/图标/插图), or any request involving creating visual content from a description. The tool detects intent from natural language — no commands needed. Returns the generated image for display.",
     parameters: {
@@ -1842,7 +1903,7 @@ registry.register(createSessionEventReadTool());
 export function createUpdatePlanTool(): ToolDef {
   return {
     id: "update_plan",
-    contract: { sideEffectScope: "session" },
+    contract: { sideEffectScope: "session", accessScope: "session" },
     guidance:
       "执行过程中，如果发现必须先处理的新问题（例如当前修复依赖一个调用链路问题），调用 update_plan 把新步骤插入到当前进行中的步骤之前，再继续原计划。插入后总步数与后续编号会自动更新。",
     description:

@@ -123,6 +123,31 @@ export interface ToolCallResult {
   errorSource?: "tool" | "pipeline";
   /** 工具执行元数据（如 subagentId 等）— 从 ToolExecuteResult 透传 */
   metadata?: Record<string, any>;
+  /**
+   * 结构化结果值（第 121 轮新增，照 DSH 的 `output.schema` 形态）。
+   *
+   * ## 为什么需要它（此前只有字符串 `output`）
+   *
+   * 工具结果此前是**不透明的字符串**，于是下游只能靠**字符串嗅探**去理解它：
+   * `micro-compact.ts` 用正则从文本里抠文件路径 / 退出码 / 命令；
+   * `spill` 只能按字节数截；结果展示只能猜。而且**没有任何东西可校验** ——
+   * 我们那个 `output-contract` 框架因此长期形同虚设（0 个工具注册过契约）。
+   *
+   * 现在工具可以返回 `value`（结构化事实），由 `contract.outputSchema` 校验，
+   * 再由 `contract.renderOutput` 渲染成 `output`（给模型看的文本）。
+   * **三者分工**：`value` 是事实、`output` 是呈现、中间那次校验是保障。
+   *
+   * ## 兼容
+   *
+   * 可选字段。没有 `value` 的老工具照旧只填 `output`，行为零变化；
+   * 有 `value` 的工具才受校验与下游结构化消费。
+   */
+  value?: unknown;
+  /**
+   * 展示用结构化载荷（纯投影，不参与校验、不回灌模型）。
+   * 供 UI 渲染卡片等用途，照 DSH 的 `presentationMeta`。
+   */
+  meta?: Record<string, unknown>;
 }
 
 // ========== Streaming Types ==========

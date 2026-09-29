@@ -475,7 +475,7 @@ export function processSkillGestures(sessionId: string, userMessage: string): st
 export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
   return {
     id: "load_skill",
-    contract: { sideEffectScope: "session" },
+    contract: { sideEffectScope: "session", accessScope: "session" },
     guidance: "Use load_skill to activate a skill by name. Skills provide specialized instructions and capabilities. After loading, follow the skill's instructions.",
     description:
       "Load a skill by name to get its full instructions and tools. " +

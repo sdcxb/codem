@@ -368,17 +368,17 @@ describe('功能闭环: 工具管道数据流', () => {
     // 那是在断言一份硬编码名单的**字面内容** —— 而那份名单里
     // `read_file` / `list_dir` / `delete_file` 都不对应任何真实工具。
     // 现在断言的是「覆盖靠契约判定」，并到真实 registry 上验覆盖没缩水。
-    expect(code).toContain('sideEffectScope')
+    expect(code).toContain('requiresPathGuard')
 
     const { createDefaultToolRegistry } = await import('../core/llm/tools')
     const registry = createDefaultToolRegistry()
     // 写工具：契约必须说明它会碰工作区
     for (const id of ['write', 'edit', 'multi_edit']) {
-      expect(registry.getContract(id).sideEffectScope, `${id} 应被沙箱覆盖`).not.toBe('none')
+      expect(registry.getContract(id).accessScope, `${id} 应被沙箱覆盖`).not.toBe('none')
     }
     // 读工具同样要覆盖（沙箱也拦工作区外读取）
     for (const id of ['read', 'grep', 'glob']) {
-      expect(registry.getContract(id).sideEffectScope, `${id} 应被沙箱覆盖`).toBe('workspace')
+      expect(registry.getContract(id).accessScope, `${id} 应被沙箱覆盖`).toBe('workspace')
     }
   })
 

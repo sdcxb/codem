@@ -467,7 +467,7 @@ function getTerminalManager(): TerminalManager {
 export function createTerminalOpenTool(): ToolDef {
   return {
     id: "terminal_open",
-    contract: { sideEffectScope: "system" },
+    contract: { sideEffectScope: "system", accessScope: "system" },
     guidance: "Use terminal_open to create a persistent, owner-isolated terminal session for interactive commands. Use bash for one-shot commands instead. Track every terminal session id and close sessions that no longer matter.",
     description: "Open a new persistent terminal (PTY) session. Returns a terminal ID for use with terminal_send, terminal_read, terminal_signal, terminal_close, and terminal_list.",
     parameters: {
@@ -496,7 +496,7 @@ export function createTerminalOpenTool(): ToolDef {
 export function createTerminalSendTool(): ToolDef {
   return {
     id: "terminal_send",
-    contract: { sideEffectScope: "system" },
+    contract: { sideEffectScope: "system", accessScope: "system" },
     guidance: "Use terminal_send to type text into an open terminal session. By default Enter is submitted and the call waits for output silence. Use run_in_background for long-running commands and collect output with job_output. Use terminal_signal to send Ctrl+C. An inferred_idle or timeout result does not prove the foreground command exited.",
     description: "Send text to a persistent terminal session. By default submits Enter and waits for the command to settle.",
     parameters: {
@@ -561,7 +561,7 @@ export function createTerminalSendTool(): ToolDef {
 export function createTerminalReadTool(): ToolDef {
   return {
     id: "terminal_read",
-    contract: { readOnly: true, sideEffectScope: "system" },
+    contract: { readOnly: true, accessScope: "system" },
     guidance: "Use terminal_read to page backward through retained scrollback when a terminal_send result is truncated or you need earlier output.",
     description: "Read a bounded page from a terminal session's retained scrollback.",
     parameters: {
@@ -598,7 +598,7 @@ export function createTerminalReadTool(): ToolDef {
 export function createTerminalSignalTool(): ToolDef {
   return {
     id: "terminal_signal",
-    contract: { sideEffectScope: "system", destructive: true },
+    contract: { sideEffectScope: "system", accessScope: "system", destructive: true },
     guidance: "Use terminal_signal to send SIGINT (Ctrl+C) or SIGTSTP (Ctrl+Z) to the foreground process of a terminal session. Prefer terminal_close to end a session entirely.",
     description: "Send a control signal (SIGINT/Ctrl+C, Ctrl+D, SIGTSTP/Ctrl+Z) to a terminal session's foreground process.",
     parameters: {
@@ -629,7 +629,7 @@ export function createTerminalSignalTool(): ToolDef {
 export function createTerminalCloseTool(): ToolDef {
   return {
     id: "terminal_close",
-    contract: { sideEffectScope: "system" },
+    contract: { sideEffectScope: "system", accessScope: "system" },
     guidance: "Use terminal_close to close a persistent terminal session opened with terminal_open. Closing kills the shell and its process tree.",
     description: "Close a terminal session and clean up its PTY.",
     parameters: {
@@ -654,7 +654,7 @@ export function createTerminalCloseTool(): ToolDef {
 export function createTerminalListTool(): ToolDef {
   return {
     id: "terminal_list",
-    contract: { readOnly: true, sideEffectScope: "system" },
+    contract: { readOnly: true, accessScope: "system" },
     guidance: "Use terminal_list to list your live terminal sessions and their status.",
     description: "List active terminal sessions opened by the current caller.",
     parameters: {

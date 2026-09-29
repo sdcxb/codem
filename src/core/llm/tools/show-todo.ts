@@ -60,7 +60,7 @@ interface ShowTodoInput {
 export function createShowTodoTool(): ToolDef {
   return {
     id: "show_todo",
-    contract: { sideEffectScope: "session", persistResult: false },
+    contract: { sideEffectScope: "session", accessScope: "session", persistResult: false },
     guidance: "Use show_todo to display the current task list to the user. Use this when the user asks what tasks are pending or to review progress.",
     description: "展示 Todo 列表给用户，支持待办/进行中/已完成状态。用户可以勾选完成。",
     parameters: {

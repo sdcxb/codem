@@ -135,7 +135,7 @@ function formatAttachmentContent(
 export function createReadAttachmentTool(): ToolDef {
   return {
     id: "read_attachment",
-    contract: { readOnly: true, sideEffectScope: "workspace" },
+    contract: { readOnly: true, accessScope: "workspace" },
     guidance: "Use read_attachment to read the content of a document attached to the conversation (PDF, DOCX, images, etc.). Only available when attachments exist.",
     description:
       "Read the full content of a file or attachment uploaded by the user. " +

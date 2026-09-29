@@ -245,12 +245,30 @@ describe("过渡期对齐：只读工具都应可并发（修 web_search 那类�
 
     const readOnly = known.filter((t) => t.contract?.readOnly === true);
     for (const t of readOnly) {
+      const c = registry.getContract(t.id);
+      // 例外：**会阻塞等用户输入**的只读工具不该并发（它等的是人，人不会因为
+      // 并行就答得更快；而且它若与「等用户同意写文件」的确认框并发，两个框会互相盖住）。
+      // 这正是 zcode 把 `userInteraction` 单列一类的原因 —— 我们用
+      // `blocksOnUserInput` 表达同一件事。
+      if (c.blocksOnUserInput) {
+        expect(
+          c.concurrencySafe,
+          `${t.id} 声明了 blocksOnUserInput，必须不可并发`,
+        ).toBe(false);
+        continue;
+      }
       expect(
-        registry.getContract(t.id).concurrencySafe,
+        c.concurrencySafe,
         `${t.id} 声明了 readOnly 却不可并发`,
       ).toBe(true);
     }
     // 至少要有几个真的声明了（否则这条断言恒真）
     expect(readOnly.length).toBeGreaterThan(0);
+    // 并且确实存在至少一个「只读但阻塞等人」的例外（否则上面那个分支是死代码）
+    const blocking = readOnly.filter((t) => registry.getContract(t.id).blocksOnUserInput);
+    expect(
+      blocking.length,
+      "没有任何「只读但阻塞等人」的工具 —— 若确实没有了，把上面那个分支删掉",
+    ).toBeGreaterThan(0);
   });
 });

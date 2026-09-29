@@ -1,15 +1,15 @@
 {
-  "version": "1.16.204",
-  "notes": "工具契约化：工具的可并发/超时/落盘/只读等事实从七组硬编码名单搬回工具自己的声明（contract 字段，缺省一律在安全侧）。删除超时豁免的两份不一致名单；并发/落盘/沙箱名单降级为运行时工具兜底。修复：bash 的只读命令在计划模式下曾被误拦（判据应为命令意图而非工具声明）。",
-  "pub_date": "2026-09-29T03:23:52Z",
+  "version": "1.16.205",
+  "notes": "工具契约第三轮落地：拆开「改了什么」与「访问了什么」两个字段；判据收敛为 6 个命名谓词；工具结果加结构化值并按声明的形状校验（此前输出校验恒真、零个工具注册）；新增入参校验（此前完全没有），缺参数/类型错会给出可行动的提示；修复 bash 只读命令在计划模式下被误拦。",
+  "pub_date": "2026-09-29T04:35:13Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JaRm1Xc2V1KzA3ZFpZanAxUzBvZ0czTG9hWitaK29vZVEybDRQMzZ5c1AwVFpZemJPcy9zZ1YzdTBWcHVOdkgySTBENTJqU1dXb2xJbnR3Ym5IcFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjUyMTM3CWZpbGU6Q29kZW1fMS4xNi4yMDRfeDY0LXNldHVwLmV4ZQp5WnNWUWxVeVN2ZUdDQWowT1Z1TlFuRjZDMzVrVHBJY3BLZmxQY3UyTGFBZ2tabC9CL3NheThISEMrTUIvWUZWQWI5Z0lUb2ZMSTNUcU9JdFVjd2tDdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.204/Codem_1.16.204_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R0dHBrdkdKc1RpQzMveFhlSmJmZmZwQmIwdVpwSlJGRWFnUDR6alhqT2tWbmNBT1F0Z2ROemc0d0kyNnoyellHWWhlVkdjbDh1a0JUR1hnZjUxVlFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjU2NTA5CWZpbGU6Q29kZW1fMS4xNi4yMDVfeDY0LXNldHVwLmV4ZQo1MVhYZk5XRStnTlVHOG9DSXYvcnpTQWNTMnJqbWlTM1FLOVNHWlpleXZYMklCN041aVdGeHA4ZDhDTXpWQVBHZFloNEM2VWwvQWNLZFR0ZU9xeEFDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.205/Codem_1.16.205_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JaRm1Xc2V1KzA3ZFpZanAxUzBvZ0czTG9hWitaK29vZVEybDRQMzZ5c1AwVFpZemJPcy9zZ1YzdTBWcHVOdkgySTBENTJqU1dXb2xJbnR3Ym5IcFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjUyMTM3CWZpbGU6Q29kZW1fMS4xNi4yMDRfeDY0LXNldHVwLmV4ZQp5WnNWUWxVeVN2ZUdDQWowT1Z1TlFuRjZDMzVrVHBJY3BLZmxQY3UyTGFBZ2tabC9CL3NheThISEMrTUIvWUZWQWI5Z0lUb2ZMSTNUcU9JdFVjd2tDdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.204/Codem_1.16.204_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R0dHBrdkdKc1RpQzMveFhlSmJmZmZwQmIwdVpwSlJGRWFnUDR6alhqT2tWbmNBT1F0Z2ROemc0d0kyNnoyellHWWhlVkdjbDh1a0JUR1hnZjUxVlFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjU2NTA5CWZpbGU6Q29kZW1fMS4xNi4yMDVfeDY0LXNldHVwLmV4ZQo1MVhYZk5XRStnTlVHOG9DSXYvcnpTQWNTMnJqbWlTM1FLOVNHWlpleXZYMklCN041aVdGeHA4ZDhDTXpWQVBHZFloNEM2VWwvQWNLZFR0ZU9xeEFDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.205/Codem_1.16.205_x64-setup.exe"
     }
   }
 }

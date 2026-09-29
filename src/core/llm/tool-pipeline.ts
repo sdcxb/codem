@@ -29,11 +29,19 @@
 import type { ToolCallResult } from "./types";
 import type { ToolContext, ToolDef } from "./tools";
 import type { ToolExecutorContext } from "./streaming-executor";
-import { validateToolOutput } from "./output-contract";
+import { validateAndRenderOutput } from "./output-value";
+import { validateToolArgs, describeArgProblems } from "./input-args";
 import { RepeatToolReminderMiddleware } from "./repeat-tool-reminder";
 import { analyzeBashCommand } from "../permission/bash-analyzer";
 import { CONCURRENCY_SAFE_TOOL_IDS } from './concurrency-policy';
-import { resolveToolContract, type ResolvedToolContract } from './tool-contract';
+import {
+  allowedInReadOnlyMode,
+  isShellLike,
+  requiresPathGuard,
+  resolveToolContract,
+  type ResolvedToolContract,
+  type ToolContract,
+} from './tool-contract';
 
 // ========== Pipeline Types ==========
 
@@ -159,6 +167,30 @@ export class ToolPipeline {
   private finalizeMiddlewares: FinalizeMiddleware[] = [];
   // R3-1.5: Tool concurrency registrations
   private concurrencyRegistrations: Map<string, ConcurrencyClassifier> = new Map();
+  /**
+   * 原始契约查询器（第 121 轮）。
+   *
+   * 归一化（`normalizeInput`）与结果渲染（`renderOutput`）是**行为钩子**，
+   * `ResolvedToolContract` 只承载值、刻意不带函数 —— 所以这两个从原始声明取。
+   */
+  private rawContractOf?: (toolName: string) => ToolContract | undefined;
+  /** 工具定义查询器（入参校验要读它下发给模型的 `parameters` schema）。 */
+  private toolDefOf?: (toolName: string) => ToolDef | undefined;
+
+  /** 注入原始契约查询器（由 `initDefaultPipeline` 调用）。 */
+  setRawContractOf(fn: (toolName: string) => ToolContract | undefined): void {
+    this.rawContractOf = fn;
+  }
+
+  /**
+   * 注入工具定义查询器（由 `initDefaultPipeline` 调用）。
+   *
+   * 入参校验要读 `ToolDef.parameters` —— 那是**下发给模型的同一份 schema**，
+   * 用它校验才不会出现「发给模型一套、实际校验另一套」的错位。
+   */
+  setToolDefOf(fn: (toolName: string) => ToolDef | undefined): void {
+    this.toolDefOf = fn;
+  }
 
   /** Register a pre-execute middleware */
   registerPreExecute(m: PreExecuteMiddleware): void {
@@ -237,8 +269,83 @@ export class ToolPipeline {
       };
     }
 
+    // ===== 第 121 轮：入参归一化（必须在权限判定之前）=====
+    //
+    // 位置是全部的意义（照 zcode `tool/executor/call-runner.ts`）：归一化之后的
+    // 入参**替换**后续所有层（权限 / hook / 守卫 / handler）看到的那一份。
+    // 放在这里（而不是更晚）的理由是下面那条：`classifyConcurrency` 与
+    // pre-execute 层的权限判定都读 `currentArgs`，晚了就会出现
+    // 「权限层按原始入参判、执行层按归一化入参做」的错位。
+    //
+    // 归一化抛错 ⇒ 视为**入参非法**，直接给出可行动的错误（不入权限、不执行）。
+    // 归一化钩子从**原始**契约取（`ResolvedToolContract` 只承载值、不带函数，见
+    // `ToolRegistry.getRawContract()` 的说明）。
+    const hook = this.rawContractOf?.(currentName);
+    if (hook?.normalizeInput) {
+      try {
+        currentArgs = hook.normalizeInput(currentArgs) ?? currentArgs;
+      } catch (e) {
+        const msg = `Error: ${(e as Error)?.message ?? e}`;
+        events.push({
+          layer: "pre-execute",
+          middleware: "normalize-input",
+          action: "deny",
+          timestamp: Date.now(),
+        });
+        return {
+          result: {
+            id: ctx.messageId,
+            name: currentName,
+            input: args,
+            output: msg,
+            status: "error",
+            // errorSource:"tool" ⇒ 让模型看到文本并自行纠正，不累加连续错误
+            errorSource: "tool",
+            error: msg,
+          },
+          events,
+        };
+      }
+    }
+
     // ===== R3-1.5: Concurrency classification =====
     const concurrencySafe = this.classifyConcurrency(currentName, currentArgs);
+
+    // ===== 第 121 轮：入参校验（归一化之后、权限判定之前）=====
+    //
+    // 放在归一化之后：先让工具把别名/默认值补成规范形态，再按下发的 schema 判，
+    // 否则会误拦「用了合法别名」的调用（归一化本来就是为它们存在的）。
+    //
+    // 放在权限判定之前：缺参数/类型错的调用**不该走到权限询问**（用户被问一个
+    // 注定会失败的调用毫无意义），也不该执行。
+    //
+    // 违规以 `errorSource: "tool"` 返回 ⇒ 模型能看到「哪个参数错了、期望什么」并
+    // 自行纠正，不累加 `consecutiveErrors`（与第 84 波对工具失败的处理同取向）。
+    const toolDef = this.toolDefOf?.(currentName);
+    if (toolDef) {
+      const problems = validateToolArgs(currentName, toolDef.parameters, currentArgs);
+      if (problems.length > 0) {
+        const msg = describeArgProblems(currentName, problems, toolDef.parameters);
+        events.push({
+          layer: "pre-execute",
+          middleware: "validate-args",
+          action: "deny",
+          timestamp: Date.now(),
+        });
+        return {
+          result: {
+            id: ctx.messageId,
+            name: currentName,
+            input: currentArgs,
+            output: `Error: ${msg}`,
+            status: "error",
+            errorSource: "tool",
+            error: msg,
+          },
+          events,
+        };
+      }
+    }
 
     // ===== Layer 1: pre-execute (waterfall) =====
     for (const mw of this.preExecuteMiddlewares) {
@@ -472,18 +579,15 @@ export class SandboxGuard implements GuardMiddleware {
   ): Promise<GuardResult> {
     if (!this.isEnabled()) return { action: "proceed" };
 
-    // 第 120 轮：判据从「工具名在不在两份硬编码名单里」改为**读工具契约**。
+    // 第 121 轮：判据改读 `accessScope`（**访问**了哪类边界），不再读
+    // `sideEffectScope`（**改变**了哪类状态）—— 两个概念已拆开（见 tool-contract.ts）。
     //
-    // 旧名单的问题（两个都实测过）：
-    // - `read_file` / `cat` / `head` / `tail` / `find` / `list_dir` / `delete_file`
-    //   都**不对应任何真实工具**，是历史残留；
-    // - `read_attachment` 不在名单里 —— 而且**加了也没用**，因为它取不到路径
-    //   （入参是 `attachment_id`，见下方 `!path` 分支）。
-    //
-    // 新判据：`sideEffectScope !== "none"` ⇒ 这个工具会碰外部世界 ⇒ 沙箱要管。
-    // 这个判据天然覆盖「以后新增的写工具」，不需要谁记得来登记。
+    // 拆之前用 `sideEffectScope !== "none"` 有个实测后果：51 个工具里 `"none"` 的有
+    // **0 个**（因为只读工具为了让沙箱覆盖自己，都被填成了 workspace/network），
+    // 于是这个粗筛一次都不命中、对沙箱毫无区分能力。现在 `read` 是
+    // `sideEffectScope: "none"` + `accessScope: "workspace"`，语义各归其位。
     const contract = this.contractFor(toolName);
-    if (contract.sideEffectScope === "none") return { action: "proceed" };
+    if (!requiresPathGuard(contract)) return { action: "proceed" };
 
     // 取路径：读/写工具的入参都叫 `path`（个别历史工具用 `file_path`）。
     // 取不到就放行 —— **这不是漏洞，是有意的边界**：沙箱管的是「路径在不在
@@ -503,7 +607,7 @@ export class SandboxGuard implements GuardMiddleware {
       // 文案按工具类别说清楚：原来对**所有**工具都说 "Write to"，
       // 于是「读操作被沙箱拒绝」时用户看到「写入被拒绝」，排查方向被带偏。
       // 现在三态由契约给出（`destructive` / `readOnly`），不再靠名单。
-      const verb = contract.destructive ? "Delete" : contract.readOnly ? "Read from" : "Write to";
+      const verb = contract.destructive ? "Delete" : allowedInReadOnlyMode(contract) ? "Read from" : "Write to";
       return {
         action: "deny",
         denyMessage: `Sandbox: ${verb} "${path}" is outside the workspace "${ctx.cwd}". The sandbox is enabled — disable it in settings or use a path within the workspace.`,
@@ -512,16 +616,16 @@ export class SandboxGuard implements GuardMiddleware {
     return { action: "proceed" };
   }
 
-  /** 取契约；未注入 `contractOf` 时按「碰工作区」保守处理（不放行）。 */
+  /** 取契约；未注入 `contractOf` 时按「访问工作区」保守处理（不放行）。 */
   private contractFor(toolName: string): ResolvedToolContract {
     if (this.contractOf) {
       try {
         return this.contractOf(toolName);
       } catch {
-        // 查询器抛错 ⇒ 保守：当作会碰外部世界（继续走路径检查）
+        // 查询器抛错 ⇒ 保守：当作会访问外部边界（继续走路径检查）
       }
     }
-    return { ...resolveToolContract(undefined, toolName), sideEffectScope: "workspace" };
+    return { ...resolveToolContract(undefined, toolName), accessScope: "workspace" };
   }
 }
 
@@ -578,13 +682,11 @@ export class PlanModeGuard implements GuardMiddleware {
      * "计划模式只读"这个承诺被绕过。现在按命令意图判定：只读查询放行，
      * 其余（写/危险/认不出的）一律拒绝，并把原因说清楚。
      *
-     * 第 120 轮起「哪些工具是 shell」也由契约给出（`sideEffectScope === "system"`），
-     * 不再靠 `toolName === "bash" || "shell" || "run_command" || "terminal"`
-     * 这种列举（后三个都不对应真实工具）。
+     * 第 121 轮：这段逻辑抽成 `isShellLike()` 并写明理由 —— 它是本仓**唯一**
+     * 一处必须按工具名特判的地方。隐式留在守卫里会让「契约化已经消灭了按名
+     * 硬编码」这个结论变得不准确。
      */
-    const isShellLike =
-      toolName === "bash" || contract.sideEffectScope === "system";
-    if (isShellLike) {
+    if (isShellLike(toolName, contract)) {
       const command = String((args as any)?.command ?? (args as any)?.cmd ?? "");
       // 没有 command 参数的系统类工具（例如终端会话操作）：除非契约声明只读，否则拦下
       if (!command) {
@@ -766,30 +868,100 @@ export class HookPostExecuteMiddleware implements PostExecuteMiddleware {
 }
 
 /**
- * R3-3.5: Output Contract Validation finalize middleware
- * Validates tool output against declared OutputContract schema (if declared).
- * Non-declared tools pass through unchanged (backward compatible).
+ * 结果契约校验 + 渲染（finalize 层）。
+ *
+ * ## 第 121 轮：从「恒真」改成真校验
+ *
+ * 这个中间件此前调的是 `validateToolOutput`（`output-contract.ts`），而那份实现
+ * 在**没有任何工具注册契约**时会走 `if (!contract?.schema) return { valid: true }`
+ * 这条短路 —— 实测全仓 `registerOutputContract(` 零命中，所以它**永远恒真**；
+ * 而且即使验失败也只 `console.warn` 后放行。
+ *
+ * 现在改读工具**自己声明的** `contract.outputSchema`：
+ * - 声明了 ⇒ 校验 `result.value`，**违规就拦**（把可行动的错误还给模型，
+ *   而不是让一份形状错误的数据继续往下流）；
+ * - 声明了且提供了 `renderOutput` ⇒ 用它把 `value` 渲染成 `output`；
+ * - 没声明 ⇒ 原样放行（老工具零变化）。
+ *
+ * ## 为什么违规要拦而不是只告警
+ *
+ * DSH 的做法是直接 `throw new ToolOutputError`（`core/tools/src/index.ts:1796`）。
+ * 我们**不抛**，而是把它变成一条 `status: "error"` + `errorSource: "tool"` 的结果——
+ * 这样模型能看到「我拿到的形状不对，应该是什么样」并自行纠正，而不是整轮崩掉
+ * （与第 84 波对工具失败的处理同取向）。
+ *
+ * 但**必须让用户也可见**：`errorSource: "tool"` 的结果会走 `tool_complete`
+ * 带 error 状态，界面显示失败。这正是旧实现缺的那一环。
  */
 class OutputContractValidationMiddleware implements FinalizeMiddleware {
   name = "output-contract";
 
+  private rawContractOf?: (toolName: string) => ToolContract | undefined;
+
+  constructor(rawContractOf?: (toolName: string) => ToolContract | undefined) {
+    this.rawContractOf = rawContractOf;
+  }
+
   async execute(
     toolName: string,
-    args: Record<string, unknown>,
+    _args: Record<string, unknown>,
     result: ToolCallResult,
     _ctx: ToolExecutorContext,
-    _events: PipelineEvent[],
+    events: PipelineEvent[],
   ): Promise<ToolCallResult> {
-    if (result.status === "error" || !result.output) return result;
-    try {
-      const validation = validateToolOutput(toolName, result.output);
-      if (!validation.valid) {
-        console.warn(`[output-contract] ${toolName} output validation failed:`, validation.errors.join("; "));
-      }
-    } catch {
-      // output-contract module not available or no contract declared — pass through
+    // 工具**自己汇报**的失败（errorSource: `tool`，例如 glob 的 catch 分支）已经是一句
+    // 可行动的错误文本，不能再被包装一次 —— 否则模型看到的是「格式违规」而不是
+    // 真正的原因（这类遮蔽在本仓出过多次，所以显式挡掉）。
+    if (result.status === "error" || result.errorSource === "tool") return result;
+
+    const declared = this.rawContractOf?.(toolName);
+    if (!declared?.outputSchema) {
+      // 未声明结果契约 ⇒ 零变化（这是渐进路径的关键：不给老工具引入风险）
+      return result;
     }
-    return result;
+
+    // 声明了契约却没给值 ⇒ 这是**实现漏了**，不是数据违规。如实报出来。
+    if (result.value === undefined) {
+      events.push({
+        layer: "finalize",
+        middleware: "output-contract",
+        action: "deny",
+        timestamp: Date.now(),
+      });
+      return {
+        ...result,
+        status: "error",
+        errorSource: "tool",
+        output:
+          `Error: ${toolName} declared outputSchema but returned no \`value\`. ` +
+          `Return the structured value so it can be validated.`,
+      };
+    }
+
+    const { output, violations } = validateAndRenderOutput(
+      { outputSchema: declared.outputSchema, renderOutput: declared.renderOutput },
+      result.value,
+    );
+
+    if (violations.length > 0) {
+      events.push({
+        layer: "finalize",
+        middleware: "output-contract",
+        action: "deny",
+        timestamp: Date.now(),
+      });
+      return {
+        ...result,
+        status: "error",
+        errorSource: "tool",
+        output:
+          `Error: ${toolName} returned a value that violates its declared outputSchema:\n` +
+          violations.map((v) => `  - ${v.path}: ${v.message}`).join("\n"),
+      };
+    }
+
+    // 渲染成功 ⇒ 用渲染结果作为模型可见文本（结构化值保留在 result.value 上）
+    return { ...result, output };
   }
 }
 
@@ -900,6 +1072,15 @@ export async function initDefaultPipeline(config: {
    * 未注入时守卫退化为「不介入」（保守），调用方（`agentic-loop`）会注入。
    */
   contractOf?: (toolName: string) => ResolvedToolContract;
+  /**
+   * 原始契约查询器（第 121 轮）。
+   *
+   * `contractOf` 给的是**解析后的值**（判据用）；这个给的是**原始声明**，
+   * 因为归一化与结果渲染是**行为钩子**，解析后的契约刻意不带函数。
+   */
+  rawContractOf?: (toolName: string) => ToolContract | undefined;
+  /** 工具定义查询器（入参校验用）。未注入时跳过入参校验。 */
+  toolDefOf?: (toolName: string) => ToolDef | undefined;
   /** R3-1.1: Spill policy — 超过此字节大小的纯文本工具输出被溢出存储 + 替换为预览 */
   maxInlineBytes?: number;
 }): Promise<ToolPipeline> {
@@ -948,7 +1129,9 @@ export async function initDefaultPipeline(config: {
   }
 
   // Layer 5: finalize
-  pipeline.registerFinalize(new OutputContractValidationMiddleware());
+  pipeline.setRawContractOf(config.rawContractOf ?? (() => undefined));
+  pipeline.setToolDefOf(config.toolDefOf ?? (() => undefined));
+  pipeline.registerFinalize(new OutputContractValidationMiddleware(config.rawContractOf));
   pipeline.registerFinalize(new EventLogFinalizeMiddleware());
 
   return pipeline;

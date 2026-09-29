@@ -310,7 +310,7 @@ async function callCorrectionModel(
 export function createFactCheckTool(): ToolDef {
   return {
     id: "fact_check",
-    contract: { readOnly: true, sideEffectScope: "network", persistResult: false },
+    contract: { readOnly: true, accessScope: "network", persistResult: false },
     guidance:
       "Use fact_check to verify an AI response for factual errors, inaccuracies, or misleading statements. " +
       "It calls the configured correction model (or the main model when none is configured) and returns a corrected version plus a list of changes.",

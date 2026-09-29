@@ -15,7 +15,7 @@ import { syncNoteLinks } from '../../knowledge/note-manager';
 export function createGeneratePPTTool(): ToolDef {
   return {
     id: 'generate_ppt',
-    contract: { sideEffectScope: "workspace" },
+    contract: { sideEffectScope: "workspace", accessScope: "workspace" },
     guidance:
       'Use generate_ppt to create a presentation (PPT) from the notebook\'s knowledge base content. ' +
       'Use this when the user asks to "make a presentation", "create slides", "生成PPT", "做个演示文稿", etc. ' +

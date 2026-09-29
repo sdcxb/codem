@@ -6,6 +6,8 @@ import { foldStats, renderFoldSummary, isFoldMessage, pruneStaleToolResults } fr
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
 import { initDefaultPipeline } from "./tool-pipeline";
+// 契约谓词：快照判据从这里来，不在调用点自己拼条件（那样又会长出第二处真相）
+import { mutatesWorkspace, needsPreCallSnapshot } from "./tool-contract";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { extractJSON } from "./output-parser";
@@ -932,6 +934,10 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       // 判据变成「sideEffectScope !== "none"」与「readOnly」—— 新增工具天然被覆盖，
       // 不需要谁记得来登记（旧名单里还混着 read_file / cat / find 等幽灵名）。
       contractOf: (toolName: string) => this.tools.getContract(toolName),
+      // 原始契约（归一化 / 结果渲染这类**行为钩子**从它取：解析后的契约只带值）
+      rawContractOf: (toolName: string) => this.tools.getRawContract(toolName),
+      // 入参校验读 ToolDef.parameters（下发给模型的同一份 schema）
+      toolDefOf: (toolName: string) => this.tools.get(toolName),
       isPathWithinWorkspace: (path: string, cwd: string) => {
         // Basic check: path should be within cwd
         const normalized = path.replace(/\\/g, "/");
@@ -2641,17 +2647,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
 
         // Auto-snapshot before destructive tools
         //
-        // 第 120 轮：判据从「名字在不在 ["write","edit","bash"] 里」改为**读契约**。
-        // 旧写法的问题是同类工具漏登记就静默失去快照保护（`multi_edit` 就曾不在列，
-        // 而它同样能改文件）。现在按「会改工作区 / 破坏性」判定，新增写工具自动被覆盖。
+        // 判据来自契约（`needsPreCallSnapshot` = 改工作区 或 破坏性），不再按名字列举。
+        // 旧写法 `["write","edit","bash"]` 漏了 `multi_edit`（它同样能改文件），
+        // 于是同类工具漏登记就静默失去快照保护。
         const callContract = this.tools.getContract(name);
-        const mutatesWorkspace =
-          callContract.sideEffectScope === "workspace" && !callContract.readOnly;
-        if ((mutatesWorkspace || callContract.destructive) && ctx.cwd) {
+        if (needsPreCallSnapshot(callContract) && ctx.cwd) {
           await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
           // 逐文件快照只对「按 path 改单个文件」的工具做（write/edit 系列）
           if (
-            (callContract.sideEffectScope === "workspace" && !callContract.readOnly) &&
+            mutatesWorkspace(callContract) &&
             typeof args.path === "string" &&
             this.currentSnapshotId
           ) {

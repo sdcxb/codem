@@ -384,3 +384,48 @@ zcode 的 `ToolMetadata` 有 15 个字段，其中至少 `riskLevel` / `needsApp
 3. **能力缺口**：**没有入参归一化** ⇒ 同一份入参在不同层被解释成不同东西（§4）。
 
 zcode 的 `dependencies`/拓扑排序看着唬人，但它自己的工具路径上 `dependsOn` 恒为空 —— **那不是差距，是没启用的机制**。不必抄。
+
+---
+
+## 10. 结论复审（动手前逐条核证）
+
+写完之后我把每条结论又验了一遍。**4 条成立，1 条要更正**。
+
+### 成立的
+
+| 结论 | 核证方式 | 结果 |
+| --- | --- | --- |
+| A. `read` 在 zcode 是 `sideEffectScope: "none"` | 读 `read.ts:470-475`、`grep.ts:145-150`、`glob.ts:90-95` 三个文件 | ✅ 三处一致，均为 `"none"` |
+| A. 我们有 19 个「只读但 scope != none」 | 跑真实 registry 逐个打印 | ✅ 实测 19 个（工具总数 51） |
+| B. DSH `output` 必填 + 违规抛错 | 读 `index.ts:224`（`readonly output:`，无 `?`）、`:1795-1796`、`ToolOutputError` 定义 | ✅ `execute` 返回 `Promise<unknown>`，违规 `throw new ToolOutputError` |
+| B. 我们 0 个工具注册输出契约、校验恒真 | 全仓搜 `registerOutputContract(`（排除定义与 cookbook）+ 读 `:697-699` 的短路 | ✅ 零命中；`if (!contract?.schema) return { valid: true }` |
+| D. 判据散在 7 处 + 已有按名特例 | grep 全部 `contract.<field>` 读取点 | ✅ 7 处；`tool-pipeline.ts:586` 含 `toolName === "bash"` |
+
+### 需要更正的
+
+**§4 我写「同一份入参在不同层被解释成不同的东西」——这个判断夸大了。**
+
+核证结果（grep 全部 `args.command` 读取点）：
+
+```
+agentic-loop.ts:954/960/963     typeof args.command        ← 用 command
+tools.ts:847                    args.command               ← 用 command
+provider/permissions-provider   args?.command              ← 用 command
+hooks/hook-types.ts             input?.command             ← 用 command
+tool-renderer.ts:205            args.command               ← 用 command
+artifact-tracker.ts:100         args?.command ?? args?.cmd ← 接受别名
+tool-pipeline.ts:588            command ?? cmd ?? ""       ← 接受别名
+```
+
+**绝大多数消费者读的都是 `args.command`**，只有 2 处额外容错 `cmd`。所以不存在「权限层认、执行层不认」的稳定不对称。
+
+而且我漏查了一件更重要的事：**我们根本没有入参 schema 校验。** 全仓搜 `validateToolInput` / `validateArgs` 零命中——`parameters` 只用于**构造**给模型的请求 schema，调用时**不校验**。所以对 `{cmd: ...}`：
+
+- 权限层看到 `""` → 按「未知命令」处理（偏保守）
+- 执行层 `args.command` 是 `undefined` → `.match()` 抛 TypeError → 被 catch 包成 `Error: Cannot read properties of undefined`
+
+**结论修正为**：差异 C 成立（我们确实没有归一化也没有入参校验），但**严重度从「语义不一致」下调为「缺一层校验 + 报错不可行动」**。真正该补的是**入参 schema 校验**（照 zcode 的 `validateInitialModelToolInput`），归一化紧随其后。
+
+### 本轮顺带查清、值得记的一件事
+
+**我们目前 0 个工具的 `sideEffectScope` 是 `"none"`** ⇒ `SandboxGuard` 的粗筛（`if (scope === "none") return proceed`）**一处都不会命中**，沙箱对全部 51 个工具都会走到「取 path」那一步（取不到就放行）。所以沙箱行为是**正确的、不是漏洞**；但这个字段当前**对沙箱没有区分能力**——它名义上是「作用域」，实际全被填成了「访问边界」。这是 §2 那条语义混淆的**直接证据**，拆字段之后 `requiresPathGuard` 才会有真实判别力。
