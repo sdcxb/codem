@@ -3,6 +3,12 @@ import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
 import { foldStats, renderFoldSummary, isFoldMessage, pruneStaleToolResults } from "./context-fold";
+/**
+ * 第 122 轮 B 项：把「这一轮丢了什么上下文」投给界面。
+ * 三处剥离/折叠原来只写 `console.warn`（`3138`/`3142`/`3161`），
+ * 模型少了半截上下文而用户一无所知 —— 归因必然是「模型不行」。
+ */
+import { recordContextDrop } from "./context-visibility";
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
 import { initDefaultPipeline } from "./tool-pipeline";
@@ -3118,6 +3124,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     }
 
     const valid: any[] = [];
+    /**
+     * 第 122 轮 B 项：这两处剥离原来**只写 console.warn**（用户在界面上完全看不到），
+     * 而它们正是"模型突然忘了自己调过什么工具"的直接原因。计数后交给
+     * `context-visibility` 投给界面（见下面 `recordContextDrop` 的注释）。
+     */
+    let strippedToolCallMessages = 0;
+    let strippedToolCalls = 0;
     for (const msg of selected) {
       if (msg.role === "tool") {
         // Drop orphan tool results — no assistant in the selected window declares this tool_call_id.
@@ -3135,10 +3148,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           // No results at all → strip tool_calls entirely; the LLM only sees the text content.
           const { tool_calls, ...rest } = msg;
           valid.push(rest);
+          strippedToolCallMessages++;
+          strippedToolCalls += (msg as any).tool_calls.length;
           console.warn(`[buildMessages] Stripped dangling tool_calls from assistant ${msg.id} (tool results were dropped by context selection)`);
         } else if (matched.length !== (msg as any).tool_calls.length) {
           // Partial results → keep only the fulfilled tool_calls so the API pairing is exact.
           valid.push({ ...msg, tool_calls: matched });
+          strippedToolCallMessages++;
+          strippedToolCalls += (msg as any).tool_calls.length - matched.length;
           console.warn(`[buildMessages] Stripped ${(msg as any).tool_calls.length - matched.length} unfulfilled tool_calls from assistant ${msg.id} (results dropped by context selection)`);
         } else {
           valid.push(msg);
@@ -3154,12 +3171,41 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     // 重复执行，消耗反而随轮次膨胀。这里在截断发生后，为被丢弃的操作插入
     // 一条零成本紧凑摘要（不调 LLM），保留下文可读。已存在折叠行则跳过
     // （避免每轮重复累积）。对标 dsh compaction 的语义化替换思想。
+    let droppedCount = 0;
+    let droppedStats: ReturnType<typeof foldStats> | null = null;
+    let foldInserted = false;
     if (valid.length > 0 && llmMessages.length > valid.length) {
       const dropped = llmMessages.filter((m: any) => !valid.includes(m));
-      if (dropped.length > 0 && !valid.some((m: any) => isFoldMessage(m))) {
-        const foldMsg = renderFoldSummary(foldStats(dropped), "zh");
-        valid.unshift({ role: "user", content: foldMsg, id: `ctx-fold-${Date.now()}` } as any);
+      droppedCount = dropped.length;
+      if (dropped.length > 0) {
+        droppedStats = foldStats(dropped);
+        if (!valid.some((m: any) => isFoldMessage(m))) {
+          const foldMsg = renderFoldSummary(droppedStats, "zh");
+          valid.unshift({ role: "user", content: foldMsg, id: `ctx-fold-${Date.now()}` } as any);
+          foldInserted = true;
+        }
       }
+    }
+
+    /**
+     * ## 第 122 轮 B 项：把"这一轮丢了什么"**同时**投给界面
+     *
+     * 上面那条 `[上下文精简]` 摘要只进了**模型**的消息数组（`valid`），不落库、
+     * 不上界面；`3138`/`3142` 那两处剥离更是只写 `console.warn`。
+     * 结果是：模型少了半截上下文，用户只看到"回答变差了" —— 归因必然是「模型不行」。
+     *
+     * 这里把**已经算出来的同一份事实**投给 `context-visibility`，
+     * 由水位提示条把"再这样下去会丢"改成"这一轮已经丢了"。
+     * ⚠️ 纯通知：`recordContextDrop` 内部吞掉所有异常，不影响本函数的返回值。
+     */
+    if (droppedCount > 0 || strippedToolCallMessages > 0) {
+      recordContextDrop(this.currentSessionId ?? "", {
+        droppedMessages: droppedCount,
+        toolCounts: droppedStats?.toolCounts ?? {},
+        strippedToolCallMessages,
+        strippedToolCalls,
+        foldSummaryInserted: foldInserted,
+      });
     }
 
     // P0-3: Micro-compact — replace old tool result content with placeholders

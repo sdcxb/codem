@@ -1,8 +1,11 @@
 {
-  "_note": "结果契约（outputSchema）采纳率基线 —— **只许增长**。由 tools/audit/output-schema-baseline.mjs 生成；判据在 src/test/output-schema-ratchet.test.ts。给某个工具注册结果契约后跑 --update 抬高基线；若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。 注：toolCountAtBaseline 刻意填**真实 registry 工具数**（51），而不是静态扫描得到的近似值（75）——因为棘轮里有一条判据要求它与 registry 一致，不一致即基线过期。静态扫描只用来找 covered 集合。",
+  "_note": "结果契约（outputSchema）采纳率基线 —— **只许增长**。由 tools/audit/output-schema-baseline.mjs 生成；判据在 src/test/output-schema-ratchet.test.ts。给某个工具注册结果契约后跑 --update 抬高基线；若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。",
+  "_toolCountAtBaseline_note": "⚠️ 这个数字是**手工订正过**的，不是脚本静态扫描的原始输出。脚本的形态启发式（`export function createXxxTool(): ToolDef` + 后 60 行内出现 contract/guidance/parameters）实测得出 **75**，而**真实 registry 只有 51 个工具** —— 差在：有些非工具文件里也有 `createXxxTool` + `id:` 的组合被计入。棘轮那条判据要的是\"真实 registry\"这个数（它会跟 `getAll()` 对账），所以这里必须是 51。订正这件事本身由 `output-schema-ratchet.test.ts` 的\"基线工具数与真实 registry 一致\"那条判据守着 —— 写错就红。",
   "covered": [
+    "bash",
     "glob",
-    "grep"
+    "grep",
+    "read"
   ],
   "toolCountAtBaseline": 51
 }

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.207",
-  "notes": "删除那个「能用但没人用」的输出契约旧模块（它的 3 个测试已逐条迁移到生效机制上）；新增结果契约采纳率棘轮（只许增长、基线与真实工具表交叉核对）。",
-  "pub_date": "2026-09-29T05:39:57Z",
+  "version": "1.16.208",
+  "notes": ".preview-shot\\_notes-208.md",
+  "pub_date": "2026-09-29T06:33:32Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1YxRldLSDdPWXRReTRzQ1c1NElNZHRqeFlLcjJsSUk4bThKb1hjRUNMV1FFRGtBUWZ1d1EyZ2kyY3krSWdXbW15LzZwQTVBVUhQUmpOWDNPZ0FLc2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjYwMzkyCWZpbGU6Q29kZW1fMS4xNi4yMDdfeDY0LXNldHVwLmV4ZQpVeHhuNU5ZWGMvN3pOb3FZaEpMdXlXTUJhY1p5alIzQzlydm5PTTNIOHVUb0l1eW5QanYzZXp1KytMdWhEMnpUdjRpaHMyTmRKeG85TnRvcjV0TS9DQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.207/Codem_1.16.207_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1p3dTNZVlFzdGpDTFRyemxFNDRHNzR4ZjVGYnltMTc0TGh5cmhnd1VNb1NDTEV3dE9VM2hKWWFGQmVPSDhPTXpzSWp5KytNRFhnZ1IwS2o5SjZkdkFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjYzNjAwCWZpbGU6Q29kZW1fMS4xNi4yMDhfeDY0LXNldHVwLmV4ZQowbVdXblFCNTlOSTNnaVNTWk41VmVueURBbWgzV0RENGcxWktHT0pRVE5zNG1nM2dBdElRaldJeWZsY05XaFR1R0RCcFVHQ1BvVDhaUTVzemxBaDZDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.208/Codem_1.16.208_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1YxRldLSDdPWXRReTRzQ1c1NElNZHRqeFlLcjJsSUk4bThKb1hjRUNMV1FFRGtBUWZ1d1EyZ2kyY3krSWdXbW15LzZwQTVBVUhQUmpOWDNPZ0FLc2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjYwMzkyCWZpbGU6Q29kZW1fMS4xNi4yMDdfeDY0LXNldHVwLmV4ZQpVeHhuNU5ZWGMvN3pOb3FZaEpMdXlXTUJhY1p5alIzQzlydm5PTTNIOHVUb0l1eW5QanYzZXp1KytMdWhEMnpUdjRpaHMyTmRKeG85TnRvcjV0TS9DQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.207/Codem_1.16.207_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1p3dTNZVlFzdGpDTFRyemxFNDRHNzR4ZjVGYnltMTc0TGh5cmhnd1VNb1NDTEV3dE9VM2hKWWFGQmVPSDhPTXpzSWp5KytNRFhnZ1IwS2o5SjZkdkFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjYzNjAwCWZpbGU6Q29kZW1fMS4xNi4yMDhfeDY0LXNldHVwLmV4ZQowbVdXblFCNTlOSTNnaVNTWk41VmVueURBbWgzV0RENGcxWktHT0pRVE5zNG1nM2dBdElRaldJeWZsY05XaFR1R0RCcFVHQ1BvVDhaUTVzemxBaDZDQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.208/Codem_1.16.208_x64-setup.exe"
     }
   }
 }

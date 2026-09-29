@@ -10,6 +10,7 @@ import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
+import { WaterLevelBanner } from "./WaterLevelBanner";
 import { SideSessionPanel } from "./SideSessionPanel";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
@@ -764,6 +765,29 @@ setStepTooltipLocked(false);
           <span>{lang === "zh" ? "连接已断开，正在重新连接..." : "Connection lost, reconnecting..."}</span>
         </div>
       )}
+
+      {/*
+        ## 第 122 轮：上下文水位**常驻**提示条
+
+        两件事必须一起成立，缺一个用户就看不到风险：
+        ① 水位计算与告警文案本仓早就有了（`PRESSURE_THRESHOLDS` + ContextMonitor 里那两句）；
+        ② 但它们只渲染在 `ContextMonitor` 内，而那个面板挂在 `showContextMonitor`
+           （**默认 false**）后面 —— 不主动点开就永远看不到。
+
+        这里把它放到消息区上方、与"连接已断开"同一层：**不需要打开任何面板**。
+        真实机制是 `agentic-loop.ts::buildMessages` 在超预算时静默丢弃最早的消息与
+        无结果的 `tool_calls`，用户感觉到的只是"回答变差了" —— 提示条负责把这件事说出来。
+      */}
+      <WaterLevelBanner
+        sessionId={currentSession?.id || ""}
+        onOpenDetail={() => {
+          setShowContextMonitor(true);
+          setShowAgentPanel(false);
+          setShowSnapshotPanel(false);
+          setShowTrajectoryPanel(false);
+          setSelectedAgentId(null);
+        }}
+      />
 
       <div className={`chat-body ${showWorkbench ? "workbench-split-active" : ""}`}>
         <div className="messages-container" ref={messagesContainerRef}>

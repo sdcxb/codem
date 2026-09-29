@@ -246,8 +246,16 @@ describe("端到端：真实 registry 上的结果契约", () => {
 
   it("未注册结果契约的工具零变化（渐进路径的关键性质）", () => {
     const registry = createDefaultToolRegistry();
-    // read 还没注册（本轮只给 glob 做了示范）—— 断言它现在**不受**校验影响
-    const read = registry.getRawContract("read");
-    expect(read?.outputSchema).toBeUndefined();
+    /**
+     * ⚠️ 第 122 轮改掉了本用例的示例对象（原来拿 `read` 当"未注册"的例子）。
+     * 现在 `read`/`bash` **已经注册**（它们是调用量第 1、第 2 的工具），
+     * 所以改拿 `write` 举例 —— 它确实没有结果契约。
+     * 这条判据本身（"未注册的必须不受校验影响"）没有变，变的是例子。
+     */
+    const write = registry.getRawContract("write");
+    expect(write?.outputSchema).toBeUndefined();
+    // 反向对照：read / bash 现在**必须**有（否则"高频面已覆盖"是句空话）
+    expect(registry.getRawContract("read")?.outputSchema).toBeDefined();
+    expect(registry.getRawContract("bash")?.outputSchema).toBeDefined();
   });
 });

@@ -2,8 +2,8 @@
  "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
  "_counts": {
-  "total": 219,
-  "triaged": 219,
+  "total": 221,
+  "triaged": 221,
   "pending": 0
  },
  "sites": [
@@ -118,6 +118,19 @@
    "status": "triaged",
    "reason": "快照列表**读不出来** ⇒ action（读取失败 ⇒ 功能本次不可用；不是写盘）。",
    "round": 104
+  },
+  {
+   "site": "src/components/WaterLevelBanner.tsx::waterLevel.handoff::#1",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "「开启新对话（交接当前工作）」这个按钮的动作**没生效**（新会话可能已建但工作没交过去）⇒ action。它是用户点出来的功能失败，不是写盘失败，也不是自检发现。",   "round": 122
+  },
+  {
+   "site": "src/components/WaterLevelBanner.tsx::waterLevel.handover.invalid::#1",
+   "kind": "advisory",
+   "status": "triaged",
+   "reason": "机械生成的交接正文**没通过协议校验**（`handover.ts::checkHandover`）⇒ advisory。这不是「这次操作失败」，而是**代码缺陷的自检发现**：正文里的路径都经磁盘核实、完成判据固定可判定，理论上不可能不合规 —— 一旦不合规就说明模板与校验规则脱钩了。用 advisory 的语气才不会让用户以为「重试一下就好」。",
+   "round": 122
   },
   {
    "site": "src/core/agent/agent.ts::agentRegistry.loadPresets::#1",

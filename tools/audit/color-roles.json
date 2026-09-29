@@ -30,6 +30,9 @@
   "--error-content|--bg-hover": {
    "registeredAt": "2026-09-26"
   },
+  "--error-content|--error-surface": {
+   "registeredAt": "2026-09-29"
+  },
   "--error-content|--error-surface-strong": {
    "registeredAt": "2026-09-26"
   },
@@ -143,6 +146,9 @@
   },
   "--text-secondary|--surface-1": {
    "registeredAt": "2026-09-26"
+  },
+  "--warning-content|--warning-surface": {
+   "registeredAt": "2026-09-29"
   },
   "--warning-content|--warning-surface-strong": {
    "registeredAt": "2026-09-26"

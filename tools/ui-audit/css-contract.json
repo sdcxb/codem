@@ -18335,6 +18335,86 @@
     "font-size": "var(--fs-xs)",
     "text-align": "center"
   },
+  "water-level-actions": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-3)"
+  },
+  "water-level-banner": {
+    "align-items": "start",
+    "animation": "connection-banner-slide-in 0.3s ease-out",
+    "background": "var(--warning-surface)",
+    "border-bottom": "1px solid var(--warning-border)",
+    "color": "var(--warning-content)",
+    "display": "grid",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-4) var(--space-6)",
+    "grid-template-columns": "max-content minmax(0, 1fr) max-content",
+    "padding": "var(--space-6) var(--space-8)"
+  },
+  "water-level-body": {
+    "display": "flex",
+    "flex-direction": "column",
+    "gap": "var(--space-2)",
+    "min-width": "0"
+  },
+  "water-level-btn": {
+    "align-items": "center",
+    "background": "var(--accent-surface)",
+    "border": "1px solid var(--accent-border, var(--accent))",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-primary, inherit)",
+    "cursor": "pointer",
+    "display": "inline-flex",
+    "font-family": "inherit",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-2)",
+    "height": "var(--control-dense)",
+    "padding": "0 var(--space-6)",
+    "white-space": "nowrap"
+  },
+  "water-level-choice": {
+    "color": "var(--text-secondary)",
+    "line-height": "var(--lh-reading)"
+  },
+  "water-level-close": {
+    "align-items": "center",
+    "background": "transparent",
+    "border": "none",
+    "border-radius": "var(--radius-sm)",
+    "color": "inherit",
+    "cursor": "pointer",
+    "display": "inline-flex",
+    "height": "var(--control-xs)",
+    "justify-content": "center",
+    "opacity": "0.7",
+    "padding": "0",
+    "width": "var(--control-xs)"
+  },
+  "water-level-detail": {
+    "color": "var(--text-primary)",
+    "line-height": "var(--lh-reading)"
+  },
+  "water-level-drop": {
+    "border-inline-start": "2px solid currentColor",
+    "color": "var(--text-primary)",
+    "font-weight": "var(--weight-medium)",
+    "margin-top": "var(--space-1)",
+    "padding-inline-start": "var(--space-4)"
+  },
+  "water-level-icon": {
+    "align-items": "center",
+    "display": "inline-flex",
+    "padding-top": "var(--space-1)"
+  },
+  "water-level-note": {
+    "font-weight": "var(--weight-medium)",
+    "margin-top": "var(--space-1)"
+  },
+  "water-level-title": {
+    "font-weight": "var(--weight-semibold)"
+  },
   "websearch-head": {
     "align-items": "center",
     "display": "grid",

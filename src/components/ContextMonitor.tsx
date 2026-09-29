@@ -15,15 +15,19 @@ import { getTokenTracker } from "../core/llm/token-tracker";
 import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
+import { FALLBACK_CONTEXT_WINDOW } from "../core/context/water-level";
 
 interface ContextMonitorProps {
   sessionId: string;
   visible: boolean;
 }
 
-// 默认 budget，让面板在无会话时也能显示
+// 默认 budget，让面板在无会话时也能显示。
+//
+// 第 122 轮：窗口兜底值改从 `core/context/water-level.ts` 取 —— 常驻水位提示条
+// 也要在拿不到真实窗口时兜底，两处必须是同一个数，否则面板与提示条会分叉。
 const DEFAULT_BUDGET: TokenBudget = {
-  total: 128000,
+  total: FALLBACK_CONTEXT_WINDOW,
   systemPrompt: 2000,
   outputReserve: 4096,
   available: 121904,

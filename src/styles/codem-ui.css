@@ -840,6 +840,130 @@
   50% { opacity: 0.3; }
 }
 
+/* ========== 5c. Water Level Banner（第 122 轮：上下文水位常驻提示条） ==========
+   与 `.connection-lost-banner` 同一层（消息区之上、整宽），但用**警告色**而不是错误色：
+   上下文偏高是"即将付出代价"，不是"已经出错"。两档（is-high / is-critical）分开，
+   因为 90% 之后的行为差别是实质的（最早的消息已经开始被丢掉）。
+   全宽横条，不是浮层 —— 它必须"不打开任何面板就能看见"。 */
+.water-level-banner {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: var(--space-4) var(--space-6);
+  padding: var(--space-6) var(--space-8);
+  background: var(--warning-surface);
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning-content);
+  font-size: var(--fs-sm);
+  animation: connection-banner-slide-in 0.3s ease-out;
+}
+.water-level-banner.is-critical {
+  background: var(--error-surface);
+  border-bottom-color: var(--error-border);
+  color: var(--error-content);
+}
+.water-level-icon {
+  display: inline-flex;
+  align-items: center;
+  padding-top: var(--space-1);
+}
+.water-level-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.water-level-title {
+  font-weight: var(--weight-semibold);
+}
+.water-level-detail,
+.water-level-choice {
+  color: var(--text-secondary);
+  line-height: var(--lh-reading);
+}
+/* 「会发生什么」比「选哪个」更要紧：机制句用主文字色，选择说明压到次级 */
+.water-level-detail {
+  color: var(--text-primary);
+}
+.water-level-note {
+  margin-top: var(--space-1);
+  font-weight: var(--weight-medium);
+}
+.water-level-note.is-ok { color: var(--success); }
+.water-level-note.is-error { color: var(--error); }
+/* 「这一轮已经丢了」—— 事实陈述，比机制说明更靠前地抓住眼睛（用警告色加粗左边框） */
+.water-level-drop {
+  margin-top: var(--space-1);
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid currentColor;
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+}
+.water-level-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.water-level-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-dense);
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-border, var(--accent));
+  background: var(--accent-surface);
+  color: var(--text-primary, inherit);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.water-level-btn:hover:not(:disabled) {
+  background: var(--accent-surface-strong);
+}
+.water-level-btn:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+}
+.water-level-btn.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent, white);
+  font-weight: var(--weight-medium);
+}
+.water-level-btn.is-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.water-level-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.water-level-close:hover {
+  opacity: 1;
+  background: var(--accent-surface);
+}
+/* 窄窗口：动作按钮换到下一行整宽排开，不要把说明文字挤成一条竖线 */
+@media (max-width: 900px) {
+  .water-level-banner {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+  .water-level-actions {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ========== 6. Run Status Bar + Activity Timeline ========== */
 .run-status-bar {
   display: flex;
