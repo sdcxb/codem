@@ -445,6 +445,63 @@ P0/P1 已在同轮修完并发布，逐项判据与**变异自证**：
 
 **结论：扫不到 ≠ 不存在。用扫描结果去删东西之前，必须先证明扫描口径是对的。** 这与 §2.3 那条（「定义了常量」≠「常量生效」）是同一类错误的两种表现。
 
+---
+
+## 3.6 第二轮审计：逐条核证「机制到底有没有消费者」
+
+用户要求「做完后再次对标分析审计」。这一轮不再看「两边各自写了什么」，而是**逐条核证我方每个机制是否真的接线**——因为第一轮的教训正是「看起来在工作、其实没接线」。
+
+方法：对每个声称存在的机制，查它的**调用方**（不是定义处）。
+
+### 本轮查出的第 7 处静默失效：目标从没交给过模型
+
+| 声称 | 实际 |
+| --- | --- |
+| `create_goal` 的 guidance：「Goals help track progress and **enable automatic continuation**」 | — |
+| `goal-round-driver-provider.ts` 文件头：「AgenticLoop 每轮迭代后检查目标完成状态」 | 该 provider 的 `advanceRound` / `isGoalComplete` **无任何调用方** |
+| `agentic-loop.ts` 注释：「Inject goal status into the system prompt for LLM awareness」 | 代码只有 `console.log(...)`，`goalSummary` 算完就丢 |
+
+**模型从头到尾没看到过目标。** 目标建了、`update_goal` 也改了状态，但循环里没有任何一处把它回灌——「自动续做」无从谈起。
+
+**为什么现有测试抓不到**：没有任何东西崩，日志里反而能看到 `[AgenticLoop] Active goals: …` 这种「看起来一切正常」的输出。**只有断言「有没有真的进 prompt」才能发现它。**
+
+已在 1.16.202 修复（`# Active Goals` 段注入，措辞刻意要求「不要重复已完成的工作」——模型可能已做完只是状态没更新，硬命令会让它重复劳动）。门禁 `goal-injection.test.ts` 6 条，变异自证 3/3（换回只打日志 ⇒ 3 条红）。
+
+### 同一轮核证过、确认**不是**缺口的
+
+| 机制 | 核证结果 |
+| --- | --- |
+| 停止条件下的「用户插话闸」 | ✅ `agentic-loop.ts:1661` 已有 `guidanceQueue.hasPending()` |
+| 停止条件下的「后台子智能体闸」 | ✅ `:1669` `pendingBackgroundSubagents.size > 0` |
+| 停止条件下的「未取回的委派闸」 | ✅ `:1697` `delegatedTasks.size > 0` 并注入 `wait_for_delegation` 提醒 |
+| 工具结果 id 与调用配对 | ✅ 处理器返回空 id，但 `streaming-executor` 在 `:327/:446` 用 `id: tc.id` 覆盖 ⇒ API 契约成立 |
+| 压缩的连续失败熔断 | ✅ `consecutiveCompactions >= 3`（含 reactive 路径） |
+| 长度截断自动续写 | ✅ `agentic-loop.ts:1723`，上限 3 次 |
+| 空响应视为错误 | ✅ `EMPTY_RESPONSE` 抛错 + 重试路径（`:2142-2152`） |
+| reactive compact on overflow | ✅ `enableReactiveCompaction: true` + **语义匹配**超窗文案（`provider-errors.ts`，覆盖 DeepSeek「maximum context length is…」/ Anthropic「prompt is too long」） |
+
+### 仍然成立的、未修的差距
+
+| # | 差距 | 性质 |
+| --- | --- | --- |
+| 1 | **工具名错误的提示质量**：我们回 `Tool "X" not found`；zcode 回 `<tool_use_error>Error: No such tool available: X</tool_use_error>`，且**流式组装期**就能修掉坏调用（`streaming-tool-call-assembler` + `strict-tool-schema` + `tool-input-normalization` 三件套） | 提示质量 + 早期修复，非崩溃 |
+| 2 | **`ToolDef` 缺契约字段**（`readOnly`/`destructive`/`sideEffectScope`/`outputSchema`/`timeout`）：调度与权限各自硬编码名单 | 结构性，本轮只做了「名单单一来源」 |
+| 3 | **组内并发是固定分块**，不是 rolling pool（12 个读 = 5+5+2 三块依次） | 属优化 |
+| 4 | **`SandboxGuard` 读工具名单仍是幽灵名**，且 `read_attachment`/`lsp` 不在其中 | **未修**：需先确认沙箱对这两个工具的预期行为，不能靠猜 |
+| 5 | **子智能体无独立墙钟超时**（zcode 有 600,000 ms 静默看门狗；DSH 无 per-driver 超时） | 需评估 |
+| 6 | **`traceId` 贯通**：zcode 要求所有异步任务可关联到统一 traceId | 可观测性 |
+
+### 方法论收获（比结论更值钱）
+
+这一轮一共查出 **7 处**「看起来在工作、其实没接线」：`$` 记号替换（静默改坏文件）、`oldString not found`（无可行动信息）、调度顺序被打乱、并发名单幽灵名、`lsp_tool` 错名、永不适用的 `threshold = 80000`、目标只打日志不注入。
+
+它们的**共同形态**是：**代码存在、注释声称在工作、日志看起来正常、测试全绿**。四种检查都过不了这一关，只有两种方法能发现：
+
+1. **查调用方**：断言「这个东西有消费者」，而不是「这个东西存在」。
+2. **查输出流向**：断言「数据真的到了该去的地方」，而不是「数据被算出来了」。
+
+本轮新增的门禁全部按这两条写：`tool-concurrency-list`（名字有没有真实对应）、`agent-tool-name-integrity`（规则会不会命中）、`goal-injection`（变量有没有被读用）、`tool-scheduling-order`（执行顺序对不对）、`edit-tool-integration`（走真实 `execute()` 而不只是测 helper）。
+
 ### 不建议照搬的
 
 - **`maxTurns: 4`** 用在子智能体上：zcode 自己的核心 turn loop 都不消费它（§2.7）。我方子智能体 `maxIterations: 15` 更符合「长程任务优先」。

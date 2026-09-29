@@ -1061,6 +1061,15 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       //   1. maxIterations (if > 0): hard cap, ONLY used by sub-agents to prevent recursive runaway
       //   2. consecutiveNoProgress: stop if model is stuck in a loop with no progress
       while (true) {
+        /**
+         * 本轮要注入到 system 消息尾部的「活跃目标」摘要。
+         *
+         * 为什么在这里声明：目标摘要要在迭代体**前段**算出来（见下面 P2-12 那段），
+         * 而注入点在迭代体**后段**（`apiMessages` 构建完、与 time-context 同处）。
+         * 两处之间没有别的共享变量可用，所以用迭代作用域的 `let` 串起来。
+         * 为空表示本轮没有活跃目标（或 goal 模块不可用）——两者都静默跳过。
+         */
+        let goalSummaryForPrompt = "";
         // Safety valve 1: hard iteration cap (sub-agent runaway prevention only)
         if (this.state.maxIterations > 0 && this.state.iteration >= this.state.maxIterations) {
           break;
@@ -1113,19 +1122,37 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         }
 
         // P2-12: Goal continuation — check for blocked/in_progress goals
-        try {
-          const { listGoals } = await import("../goal/goal");
-          const goals = listGoals(sessionId, "in_progress");
-          const blockedGoals = listGoals(sessionId, "blocked");
-          if ((goals.length > 0 || blockedGoals.length > 0) && this.state.iteration > 1) {
-            // Inject goal status into the system prompt for LLM awareness
-            const goalSummary = [...goals, ...blockedGoals].map(g =>
-              `- [${g.status}] ${g.title}${g.successCriteria ? ` (criteria: ${g.successCriteria})` : ""}`
-            ).join("\n");
-            console.log(`[AgenticLoop] Active goals:\n${goalSummary}`);
+        //
+        // 第 118 轮修正：这段原来**只 `console.log`、从不注入**。
+        // 注释写着 "Inject goal status into the system prompt for LLM awareness"，
+        // 而 `goalSummary` 算完就丢进了日志 —— 模型从头到尾没看到过目标。
+        // 于是 `create_goal` 的 guidance 承诺「enable automatic continuation」是空话：
+        // 目标建了、`update_goal` 也改了状态，但循环里没有任何一处会把它回灌给模型。
+        //
+        // 现在真正注入（与下面的 time-context 走同一条路径：追加到 system 消息尾部）。
+        // 在这里只**计算**，注入点放在 time-context 旁边 —— 那里已经确认
+        // `apiMessages[0]` 是 system 消息并且已经构建完毕。
+        if (this.state.iteration > 1) {
+          try {
+            const { listGoals } = await import("../goal/goal");
+            const activeGoals = [
+              ...listGoals(sessionId, "in_progress"),
+              ...listGoals(sessionId, "blocked"),
+            ];
+            if (activeGoals.length > 0) {
+              goalSummaryForPrompt = activeGoals
+                .map((g: any) => {
+                  const criteria = g.successCriteria
+                    ? ` (success criteria: ${g.successCriteria})`
+                    : "";
+                  const note = g.blockedReason ? ` — blocked: ${g.blockedReason}` : "";
+                  return `- [${g.status}] ${g.title}${criteria}${note}`;
+                })
+                .join("\n");
+            }
+          } catch (err) {
+            // Goal system not available — non-critical
           }
-        } catch (err) {
-          // Goal system not available — non-critical
         }
 
         // E8: Cost-aware degradation — degrade to cheaper model before hard stop
@@ -1306,6 +1333,30 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           const sysMsg = apiMessages[0];
           if (typeof sysMsg.content === "string") {
             sysMsg.content += "\n\n" + timeContextMessage;
+          }
+        }
+      }
+
+      // P2-12（第 118 轮修正）：把活跃目标真正注入给模型。
+      //
+      // 修之前这里只 `console.log`，模型看不到目标 —— 详见上面计算处的注释。
+      // 措辞与 zcode 的 `resume_goal_state` / DSH 的目标提醒同取向：
+      // **只陈述事实 + 明确「不要因此重复已完成的工作」**，
+      // 而不是命令模型「继续做」（模型可能已经做完、只是状态没更新，
+      // 硬命令会让它重复劳动）。
+      if (goalSummaryForPrompt) {
+        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
+          const sysMsg = apiMessages[0];
+          if (typeof sysMsg.content === "string") {
+            sysMsg.content +=
+              "\n\n# Active Goals\n\n" +
+              "This session has goals that are still open:\n\n" +
+              goalSummaryForPrompt +
+              "\n\nIf the current work has already satisfied a goal's success criteria, " +
+              "mark it complete with `update_goal` before finishing. " +
+              "Do NOT redo work that is already done just because a goal is listed as in_progress — " +
+              "check the actual state first. If a goal is genuinely blocked on something only the " +
+              "user can provide, say so plainly instead of working around it.";
           }
         }
       }
