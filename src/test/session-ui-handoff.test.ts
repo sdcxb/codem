@@ -96,6 +96,37 @@ describe("第 122 轮 · UI 会话交接正文", () => {
     expect(h.body).toContain(dir);
   });
 
+  it("UH-2b: **全局对话**（cwd 为空 / 不存在）也必须能交接 —— 这是装机版上抓到的第二个洞", () => {
+    /**
+     * ## 为什么这条必须单独有（真机打出来的，不是推理出来的）
+     *
+     * UH-2 修完之后单元测试全绿，但在**装机版**上点「开启新对话（交接当前工作）」
+     * 仍然被拒，原因（advisory 原文）：
+     *
+     * > 交接正文缺少必需内容： - 「已完成产物 / 具体目标」的**绝对路径** …
+     *
+     * 复现出来是这两行：
+     * ```
+     * cwd=""                     check.ok=false primaryPath=null
+     * cwd="D:\\不存在的目录xyz"    check.ok=false primaryPath=null
+     * ```
+     * `cwd = ""` 正是**全局对话**（`currentProject` 为 null）的常态 ——
+     * 也就是说**最常见的场景里交接必然失败**，而 UH-2 用的是 `mkdtempSync` 出来的
+     * 真实临时目录，**永远看不到这个洞**。
+     *
+     * 这条用例把两种"没有可用工作目录"的形态都钉住：合法退路是**用户主目录**
+     * （它几乎总存在、且是绝对路径）。
+     */
+    const msgs = [{ id: "u1", role: "user", content: "随便一句", timestamp: 1, status: "done" }];
+    for (const cwd of ["", join(dir, "不存在的子目录")]) {
+      const h = buildHandover(msgs as never[], { cwd, goal: "测试" });
+      expect(h.check.ok, `cwd=${JSON.stringify(cwd)} 时校验失败：${h.check.error ?? ""}`).toBe(true);
+      expect(h.primaryPath, `cwd=${JSON.stringify(cwd)} 时没有可指的绝对路径`).toBeTruthy();
+      expect(h.check.stats.hasAbsolutePath).toBe(true);
+      expect(h.check.stats.hasCheckableCriterion).toBe(true);
+    }
+  });
+
   it("UH-3: 磁盘上**不存在**的路径不进「已完成产物」（写不存在的路径比不写更坏）", () => {
     const real = join(dir, "真实.md");
     writeFileSync(real, "x", "utf8");

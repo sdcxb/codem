@@ -164,13 +164,42 @@ export function buildHandover(
    *
    * 工作目录是**已核实存在**的绝对路径，写进完成判据既真实又可判定
    * （接收方就在这个目录里干活，"以此为根产出目标文件"是能检查的）。
+   *
+   * ## 真机抓到的第二个洞：**全局对话没有工作目录**
+   *
+   * 上面那条修完之后单元测试全绿，但在装机版上点「开启新对话（交接当前工作）」
+   * **仍然被拒**，原因（advisory 里的原文）：
+   *
+   * > 交接正文缺少必需内容： - 「已完成产物 / 具体目标」的**绝对路径** …
+   *
+   * 复现出来是 `cwd = ""`（**全局对话**：`currentProject` 为 null）以及
+   * `cwd` 指向一个不存在的目录这两种情况 ⇒ `primaryPath = null` ⇒ 无路径可指。
+   * 也就是说：**"没有项目的对话"这个最常见的场景，交接必然失败** ——
+   * 而单元测试用的是 `mkdtempSync` 出来的真实临时目录，**它永远看到绿**。
+   *
+   * 修法：把"工作目录"解析成**第一个真实存在的绝对路径**：
+   * 「调用方给的 cwd → 用户主目录」。用户主目录几乎总在，于是这条路径不可能为空。
    */
-  const verifiedCwd = opts.cwd && existsSync(opts.cwd) ? opts.cwd : null;
+  const firstExistingDir = (candidates: Array<string | undefined>): string | null => {
+    for (const c of candidates) {
+      if (!c) continue;
+      try {
+        if (existsSync(c)) return c;
+      } catch {
+        /* 不可访问的候选跳过，继续下一个 */
+      }
+    }
+    return null;
+  };
+  const homeDir =
+    (typeof process !== "undefined" && (process.env?.USERPROFILE || process.env?.HOME)) || "";
+  const effectiveCwd = firstExistingDir([opts.cwd, homeDir]);
+
   const primaryCandidates = [
     lastProducedPath && producedOk.includes(lastProducedPath) ? lastProducedPath : null,
     producedOk.find(looksLikeFile) ?? null,
     producedOk[0] ?? null,
-    verifiedCwd,
+    effectiveCwd,
   ].filter((p): p is string => Boolean(p));
   const primaryPath = primaryCandidates[0] ?? null;
 
