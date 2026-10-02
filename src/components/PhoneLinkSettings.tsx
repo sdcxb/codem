@@ -34,6 +34,8 @@ import {
  * 为了显示自己的状态去请求自己毫无意义（还多一次循环）。
  */
 import { getPresence } from "../core/phone-link/presence";
+// 阶段 N1–N3：Agents Anywhere 登录入口（默认官方服务、可填自建）
+import { AaRemoteSection } from "./AaRemoteSection";
 
 async function tauriInvoke(cmd: string, args?: Record<string, unknown>): Promise<any> {
   const { invoke } = (window as any).__TAURI__?.core || {};
@@ -194,6 +196,9 @@ export function PhoneLinkSettings() {
           ? "把桌面端 Codem 变成手机可访问的会话助手（对标 dsh-phone）：手机在同一 Wi-Fi 下扫码配对后，可浏览全部会话、继续桌面对话、发起新对话（真机执行在桌面端）。数据由桌面引擎提供，不编造。"
           : "Expose this desktop Codem to your phone on the same LAN (dsh-phone parity): after QR pairing you can browse sessions, continue desktop chats and start new ones (execution happens here on desktop)."}
       </div>
+
+      {/* 阶段 N1–N3：主路径 —— 登录 Agents Anywhere 就能用（与 DSH 一致） */}
+      <AaRemoteSection zh={zh} />
 
       {/* ---- 服务启停 + 状态 ---- */}
       <div className="setting-group">

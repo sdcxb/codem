@@ -513,6 +513,205 @@ pub async fn register_connector(
     AaDeviceCredential::from_json(&v)
 }
 
+/// 它的云地址（`host/index.ts:9` 的 `CLOUD_API_BASE_URL`）。
+///
+/// 这是 DSH 的**默认值**，我们照抄 —— 所以界面上"云端"是默认选项，
+/// 用户不需要填任何地址。
+pub const AA_CLOUD_BASE_URL: &str = "https://web.agents-anywhere.com";
+
+/// 把用户填的地址规范化成 API 根（允许只填域名、允许带 `/api/v2`）。
+///
+/// 为什么值得单独一个函数：填地址是**最容易出错**的一步
+/// （多一个斜杠、带了 `/api/v2`、带了末尾路径）。这里统一收口，
+/// 于是后面所有拼接都不用再想这件事。
+pub fn normalize_api_base(input: &str) -> Result<String, String> {
+    let raw = input.trim();
+    if raw.is_empty() {
+        return Err("服务器地址不能为空".into());
+    }
+    let with_scheme = if raw.contains("://") { raw.to_string() } else { format!("https://{}", raw) };
+    let u = url::Url::parse(&with_scheme).map_err(|_| format!("服务器地址不合法：{}", input))?;
+    if u.scheme() != "http" && u.scheme() != "https" {
+        return Err("服务器地址必须是 http(s)".into());
+    }
+    if u.host_str().unwrap_or("").is_empty() {
+        return Err("服务器地址缺少主机名".into());
+    }
+    if !u.username().is_empty() || u.password().is_some() {
+        return Err("服务器地址里不要带账号密码".into());
+    }
+    Ok(u.origin().ascii_serialization().trim_end_matches('/').to_string())
+}
+
+// ---------------- 邮箱 + 密码登录（最简单的那条）----------------
+//
+// 为什么**不用**它插件那套 OAuth（PKCE + 回环回调）：
+//
+// 1. 服务端本身就支持邮箱+密码（`POST /api/v2/auth/register` 与 `/auth/login`），
+//    我在这台真服务端上就是用这条建的管理员；
+// 2. OAuth 那条路要用**它插件的 client id**（`agents-anywhere-dsh-plugin`）——
+//    那是它的身份，不是我们的；
+// 3. 用户要的是"不要太复杂"：邮箱+密码是一屏能说清的事，
+//    而 PKCE + 回环监听 + 授权 URL 不是。
+//
+// `Pkce` / `authorization_url` / 回环那几件**保留**（已写好并有判据），
+// 作为将来的备选路线，但**默认不走**。
+
+#[derive(Debug, Deserialize)]
+struct AuthResponse {
+    #[serde(rename = "accessToken")]
+    access_token: String,
+}
+
+/// `POST /api/v2/auth/login`。
+pub async fn login_with_password(
+    client: &reqwest::Client,
+    api_base: &str,
+    email: &str,
+    password: &str,
+) -> Result<String, String> {
+    auth_post(
+        client,
+        api_base,
+        "/api/v2/auth/login",
+        serde_json::json!({ "email": email, "password": password }),
+    )
+    .await
+}
+
+/// `POST /api/v2/auth/register`（首次没有账号时用）。
+///
+/// `setup_token` 只在**自建服务端首次运行**时需要（它把 token 打在服务端日志里）。
+/// 云端注册不需要。
+pub async fn register_with_password(
+    client: &reqwest::Client,
+    api_base: &str,
+    email: &str,
+    password: &str,
+    display_name: Option<&str>,
+    setup_token: Option<&str>,
+) -> Result<String, String> {
+    let mut body = serde_json::json!({ "email": email, "password": password });
+    if let Some(n) = display_name.filter(|s| !s.trim().is_empty()) {
+        body["displayName"] = serde_json::json!(n);
+    }
+    if let Some(t) = setup_token.filter(|s| !s.trim().is_empty()) {
+        body["setupToken"] = serde_json::json!(t);
+    }
+    auth_post(client, api_base, "/api/v2/auth/register", body).await
+}
+
+async fn auth_post(
+    client: &reqwest::Client,
+    api_base: &str,
+    path: &str,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    let resp = client
+        .post(format!("{}{}", api_base.trim_end_matches('/'), path))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        // 把服务端的话**原样带出来**：它比我们能编的话准确
+        //（"密码不对" / "邮箱未验证" / "setup token 无效" 是三件不同的事）
+        let msg = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("detail").and_then(|d| d.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| text.chars().take(200).collect());
+        return Err(format!("{}（HTTP {}）", msg, status.as_u16()));
+    }
+    let parsed: AuthResponse =
+        serde_json::from_str(&text).map_err(|e| format!("登录响应不可解析: {}", e))?;
+    if parsed.access_token.is_empty() {
+        return Err("服务端返回了空 accessToken".into());
+    }
+    Ok(parsed.access_token)
+}
+
+// ---------------- 账号态持久化 ----------------
+
+/// 账号态文件（`<app-data>/phone/aa-account.json`）。
+pub fn account_state_path(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join("aa-account.json")
+}
+
+/// 读；文件不存在或坏了都返回 `None`（**不报错**：首次运行是正常状态）。
+pub fn load_account_state(dir: &std::path::Path) -> Option<AaAccountState> {
+    let raw = std::fs::read_to_string(account_state_path(dir)).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+/// 写账号态（含令牌）。
+pub fn save_account_state(dir: &std::path::Path, st: &AaAccountState) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("建目录失败: {}", e))?;
+    let json = serde_json::to_string_pretty(st).map_err(|e| format!("序列化失败: {}", e))?;
+    std::fs::write(account_state_path(dir), json).map_err(|e| format!("写账号态失败: {}", e))
+}
+
+/// 账号态的**内存 + 落盘**封装。
+///
+/// 为什么要它而不是每次读写文件：界面会在几处读状态（显示账号、显示连接阶段），
+/// 每次都读文件既慢又可能读到半个写。内存里一份、写的时候落盘即可。
+pub struct AaAccountStore {
+    dir: std::path::PathBuf,
+    state: tokio::sync::Mutex<Option<AaAccountState>>,
+}
+
+impl AaAccountStore {
+    /// 构造时**不读盘**（读盘可能失败，不该拖住应用启动）；第一次 `get` 时懒加载。
+    pub fn new(dir: std::path::PathBuf) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(AaAccountStore {
+            dir,
+            state: tokio::sync::Mutex::new(None),
+        })
+    }
+
+    pub async fn get(&self) -> Option<AaAccountState> {
+        let mut g = self.state.lock().await;
+        if g.is_none() {
+            *g = load_account_state(&self.dir);
+        }
+        g.clone()
+    }
+
+    pub async fn set(&self, st: AaAccountState) -> Result<(), String> {
+        save_account_state(&self.dir, &st)?;
+        *self.state.lock().await = Some(st);
+        Ok(())
+    }
+
+    pub async fn clear(&self) -> Result<(), String> {
+        let path = account_state_path(&self.dir);
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| format!("删除账号态失败: {}", e))?;
+        }
+        *self.state.lock().await = None;
+        Ok(())
+    }
+
+    /// 只改设备凭据（登录态不变）—— "注册本机"那一步用。
+    pub async fn set_device(&self, cred: AaDeviceCredential) -> Result<AaAccountState, String> {
+        let mut st = self.get().await.ok_or_else(|| "请先登录".to_string())?;
+        st.device = Some(cred);
+        self.set(st.clone()).await?;
+        Ok(st)
+    }
+
+    /// 安装标识文件（同一台机器上应当**稳定**，它那边用来避免重复注册）。
+    pub fn installation_id_path(&self) -> std::path::PathBuf {
+        self.dir.join("aa-installation-id")
+    }
+
+    /// 账号态目录（给命令层拼别的文件用）。
+    pub fn dir(&self) -> &std::path::Path {
+        &self.dir
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -765,5 +964,76 @@ mod tests {
         assert_eq!(m.get("serverUrl").unwrap(), &serde_json::json!("https://x.example.com"));
         assert_eq!(m.get("connectorId").unwrap(), &serde_json::json!("cn-1"));
         assert_eq!(m.get("connectorToken").unwrap(), &serde_json::json!("tk"));
+    }
+
+    #[test]
+    fn normalize_api_base_accepts_the_ways_people_actually_type_it() {
+        // 只填域名 ⇒ 补 https
+        assert_eq!(normalize_api_base("web.agents-anywhere.com").unwrap(), "https://web.agents-anywhere.com");
+        // 带协议
+        assert_eq!(normalize_api_base("https://web.agents-anywhere.com").unwrap(), "https://web.agents-anywhere.com");
+        // 带末尾斜杠
+        assert_eq!(normalize_api_base("https://web.agents-anywhere.com/").unwrap(), "https://web.agents-anywhere.com");
+        // 带 /api/v2（**最常见的误填**：从文档里抄来的地址就长这样）
+        assert_eq!(
+            normalize_api_base("https://web.agents-anywhere.com/api/v2").unwrap(),
+            "https://web.agents-anywhere.com"
+        );
+        // 本机自建 + 端口
+        assert_eq!(normalize_api_base("http://127.0.0.1:8010/").unwrap(), "http://127.0.0.1:8010");
+        // 前后空格
+        assert_eq!(normalize_api_base("  https://x.example.com  ").unwrap(), "https://x.example.com");
+        // 非法
+        assert!(normalize_api_base("").is_err());
+        assert!(normalize_api_base("ftp://x.example.com").is_err());
+    }
+
+    #[test]
+    fn normalize_api_base_rejects_embedded_credentials() {
+        // 地址里带账号密码是**危险**的：它会跟着错误信息、日志、
+        // 甚至界面上"服务器"那一行一起显示出来。直接拒绝，而不是默默带下去。
+        assert!(normalize_api_base("https://user:pass@example.com").is_err());
+        assert!(normalize_api_base("https://user@example.com").is_err());
+    }
+
+    #[test]
+    fn cloud_is_the_default_like_dsh() {
+        // DSH 的默认值（`host/index.ts:9`）—— 照抄，所以界面默认不填地址
+        assert_eq!(AA_CLOUD_BASE_URL, "https://web.agents-anywhere.com");
+        // 规范化之后仍然等于它自己（幂等）
+        assert_eq!(normalize_api_base(AA_CLOUD_BASE_URL).unwrap(), AA_CLOUD_BASE_URL);
+    }
+
+    #[test]
+    fn account_state_roundtrips_through_disk() {
+        let dir = std::env::temp_dir().join(format!("aa-acct-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // 没有文件时是 None（首次运行是正常状态，不是错误）
+        assert!(load_account_state(&dir).is_none());
+        let st = AaAccountState {
+            server_url: AA_CLOUD_BASE_URL.into(),
+            client_id: None,
+            access_token: Some("tok".into()),
+            expires_at_ms: Some(1),
+            profile: Some(AaAccountProfile { user_id: "u".into(), ..Default::default() }),
+            device: Some(AaDeviceCredential { connector_id: "c".into(), connector_token: "t".into() }),
+        };
+        save_account_state(&dir, &st).unwrap();
+        let back = load_account_state(&dir).expect("应当读得回来");
+        assert_eq!(back.server_url, st.server_url);
+        assert_eq!(back.access_token.as_deref(), Some("tok"));
+        assert_eq!(back.device.as_ref().unwrap().connector_id, "c");
+        // 坏文件 ⇒ None（不 panic、不报错）
+        std::fs::write(account_state_path(&dir), "{ 这不是 json").unwrap();
+        assert!(load_account_state(&dir).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn auth_response_field_is_camel_case() {
+        // 它的字段是 camelCase（`accessToken`），不是 snake
+        let v: AuthResponse = serde_json::from_str(r#"{"accessToken":"abc"}"#).unwrap();
+        assert_eq!(v.access_token, "abc");
+        assert!(serde_json::from_str::<AuthResponse>(r#"{"access_token":"abc"}"#).is_err());
     }
 }

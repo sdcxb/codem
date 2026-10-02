@@ -46,6 +46,69 @@ fn live_env() -> Option<(String, String, String)> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "需要一台在跑的 AA 服务端 + 账号（见文件头）"]
+async fn live_login_then_register_this_machine() {
+    // 这条就是"登录一下就能用"的**前两步**，对着真服务端验：
+    //   登录（邮箱+密码）→ 读账号 → **注册本机**（拿 connectorId/connectorToken）
+    let (Ok(base), Ok(email), Ok(password)) = (
+        std::env::var("AA_BASE"),
+        std::env::var("AA_EMAIL"),
+        std::env::var("AA_PASSWORD"),
+    ) else {
+        eprintln!("跳过：未设置 AA_BASE / AA_EMAIL / AA_PASSWORD");
+        return;
+    };
+    let base = super::aa_account::normalize_api_base(&base).expect("地址规范化");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap();
+
+    // 1) 登录
+    let token = super::aa_account::login_with_password(&client, &base, &email, &password)
+        .await
+        .expect("登录应当成功");
+    assert!(!token.is_empty());
+
+    // 2) 读账号（/auth/me）—— 顺便证明这个 token 真的能用
+    let me = super::aa_account::fetch_me(&client, &base, &token)
+        .await
+        .expect("读账号应当成功");
+    assert!(!me.user_id.is_empty(), "账号应当有 userId");
+
+    // 3) **注册本机** —— 这是我先前漏掉的那一步
+    let name = format!("Codem live test {}", std::process::id());
+    let cred = super::aa_account::register_connector(
+        &client,
+        &base,
+        &token,
+        &name,
+        &uuid::Uuid::new_v4().to_string(),
+    )
+    .await
+    .expect("注册本机应当成功");
+    assert!(!cred.connector_id.is_empty(), "应当拿到 connectorId");
+    assert!(!cred.connector_token.is_empty(), "应当拿到 connectorToken");
+    println!("注册本机成功: id={} token_len={}", cred.connector_id, cred.connector_token.len());
+
+    // 4) 这套凭据要能过 connector 鉴权（**闭环**：注册出来的东西真的可用）
+    let auth = client
+        .post(format!("{}/api/v2/connector/auth", base))
+        .header(
+            "authorization",
+            format!("Connector {}:{}", cred.connector_id, cred.connector_token),
+        )
+        .send()
+        .await
+        .expect("connector/auth 请求");
+    assert!(
+        auth.status().is_success(),
+        "刚注册出来的凭据通不过 connector/auth：HTTP {}",
+        auth.status().as_u16()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "需要一台在跑的 AA 服务端 + 设备凭据（见文件头）"]
 async fn live_connector_authenticates_and_answers_runtime_discover() {
     let Some((base, id, token)) = live_env() else {

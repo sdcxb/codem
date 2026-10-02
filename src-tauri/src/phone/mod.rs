@@ -293,6 +293,14 @@ pub fn auth_device<'a>(devices: &'a [Device], secret: Option<&str>) -> Option<&'
 
 // ---- 持久化 ----
 
+/// 手机连接的持久化目录（同步版，给需要在 setup 里取目录的地方用）。
+pub fn phone_dir(app: &AppHandle) -> std::path::PathBuf {
+    app.path()
+        .app_data_dir()
+        .map(|d| d.join(PHONE_DIR))
+        .unwrap_or_else(|_| std::env::temp_dir().join(PHONE_DIR))
+}
+
 async fn data_dir(app: &AppHandle) -> std::path::PathBuf {
     app.path()
         .app_data_dir()
@@ -1081,6 +1089,190 @@ pub async fn aa_connector_status(
 ) -> Result<serde_json::Value, String> {
     let c: Arc<aa_connector::AaConnectorState> = cs.inner().clone();
     Ok(aa_connector::snapshot(c).await)
+}
+
+// ============================================================
+// N1–N3 命令层：登录 → 注册本机 → 连上
+//
+// 用户口径：**简单**。所以这条链只有三个动作，界面上一屏能看完：
+//
+//   1. 选服务器（默认云端，或填自建地址）
+//   2. 填邮箱 + 密码 → 登录（没账号时用同一个按钮注册）
+//   3. 点「连接」→ 自动注册本机 → 启动 connector
+//
+// **不用** OAuth/PKCE：服务端本身支持邮箱+密码（真服务端上验过），
+// 而 OAuth 那条要用它插件的 client id（它的身份，不是我们的）。
+// `aa_account.rs` 里那套 PKCE/回环保留为备选，默认不走。
+// ============================================================
+
+/// 读账号态（**只回不含令牌的视图**）。
+#[tauri::command]
+pub async fn aa_account_status(
+    store: State<'_, Arc<aa_account::AaAccountStore>>,
+) -> Result<serde_json::Value, String> {
+    let s: Arc<aa_account::AaAccountStore> = store.inner().clone();
+    Ok(match s.get().await {
+        Some(st) => st.redacted(now_ms() as u64),
+        None => serde_json::json!({ "signedIn": false, "serverUrl": aa_account::AA_CLOUD_BASE_URL }),
+    })
+}
+
+/// 登录（`register=true` 时先注册）。
+///
+/// 返回**脱敏**的账号视图；令牌只留在 Rust 侧与账号态文件里。
+#[tauri::command]
+pub async fn aa_account_login(
+    store: State<'_, Arc<aa_account::AaAccountStore>>,
+    server_url: Option<String>,
+    email: String,
+    password: String,
+    register: Option<bool>,
+    display_name: Option<String>,
+    setup_token: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let email = email.trim().to_string();
+    if email.is_empty() || password.is_empty() {
+        return Err("邮箱和密码都要填".into());
+    }
+    // 空/未给 ⇒ 用它自己的云（DSH 的默认值）
+    let base = match server_url.filter(|s| !s.trim().is_empty()) {
+        Some(u) => aa_account::normalize_api_base(&u)?,
+        None => aa_account::AA_CLOUD_BASE_URL.to_string(),
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("构造 HTTP 客户端失败: {}", e))?;
+
+    let token = if register.unwrap_or(false) {
+        aa_account::register_with_password(
+            &client,
+            &base,
+            &email,
+            &password,
+            display_name.as_deref(),
+            setup_token.as_deref(),
+        )
+        .await?
+    } else {
+        aa_account::login_with_password(&client, &base, &email, &password).await?
+    };
+    let profile = aa_account::fetch_me(&client, &base, &token).await?;
+
+    let s: Arc<aa_account::AaAccountStore> = store.inner().clone();
+    // 换了服务器 ⇒ 旧设备凭据**必须作废**（那是另一台服务器上的设备，
+    // 带着它去连新服务器只会拿到 401，而用户看到的是莫名其妙的"凭据失效"）
+    let prev = s.get().await;
+    let keep_device = prev
+        .as_ref()
+        .filter(|p| p.server_url == base)
+        .and_then(|p| p.device.clone());
+
+    let st = aa_account::AaAccountState {
+        server_url: base.clone(),
+        client_id: None,
+        access_token: Some(token),
+        // 服务端没给过期时间；这里留空，靠"用的时候失败就重新登录"
+        expires_at_ms: None,
+        profile: Some(profile),
+        device: keep_device,
+    };
+    s.set(st.clone()).await?;
+    Ok(st.redacted(now_ms() as u64))
+}
+
+/// 退出登录：清掉账号态与设备凭据，并停掉 connector。
+#[tauri::command]
+pub async fn aa_account_logout(
+    store: State<'_, Arc<aa_account::AaAccountStore>>,
+    cs: State<'_, Arc<aa_connector::AaConnectorState>>,
+) -> Result<serde_json::Value, String> {
+    let s: Arc<aa_account::AaAccountStore> = store.inner().clone();
+    let c: Arc<aa_connector::AaConnectorState> = cs.inner().clone();
+    aa_connector::stop(c).await;
+    s.clear().await?;
+    Ok(serde_json::json!({ "signedIn": false }))
+}
+
+/// 连上：确保本机已注册为连接器，然后启动 connector。
+///
+/// 这一步是"登录一下就能用"里的**最后一下** —— 也是我先前漏掉的那段
+/// （`connectorToken` 是这里换来的，不是让用户手工准备）。
+#[tauri::command]
+pub async fn aa_connect(
+    store: State<'_, Arc<aa_account::AaAccountStore>>,
+    cs: State<'_, Arc<aa_connector::AaConnectorState>>,
+    state: State<'_, Arc<PhoneState>>,
+    device_name: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let s: Arc<aa_account::AaAccountStore> = store.inner().clone();
+    let c: Arc<aa_connector::AaConnectorState> = cs.inner().clone();
+    let st: Arc<PhoneState> = state.inner().clone();
+
+    let acct = s.get().await.ok_or_else(|| "请先登录".to_string())?;
+    let token = acct
+        .access_token
+        .clone()
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| "登录已失效，请重新登录".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("构造 HTTP 客户端失败: {}", e))?;
+
+    // 1) 没有设备凭据 ⇒ 注册本机（有就直接用）
+    let cred = match acct.device.clone() {
+        Some(d) if !d.connector_id.is_empty() && !d.connector_token.is_empty() => d,
+        _ => {
+            let name = device_name
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| hostname_or_default());
+            let cred = aa_account::register_connector(
+                &client,
+                &acct.server_url,
+                &token,
+                &name,
+                &installation_id(&s).await,
+            )
+            .await?;
+            s.set_device(cred.clone()).await?;
+            cred
+        }
+    };
+
+    // 2) 启动 connector
+    let cfg = aa_connector::AaConfig::new(&acct.server_url, &cred.connector_id, &cred.connector_token);
+    aa_connector::start(st, c.clone(), cfg).await?;
+    Ok(aa_connector::snapshot(c).await)
+}
+
+/// 安装标识：同一次安装应当**稳定**（它那边用来避免重复注册同一台机器）。
+///
+/// 放在账号态文件旁边，首次生成后一直复用。
+async fn installation_id(store: &Arc<aa_account::AaAccountStore>) -> String {
+    // 借用设备凭据的持久化目录：与账号态同目录
+    let path = store.installation_id_path();
+    if let Ok(s) = std::fs::read_to_string(&path) {
+        let t = s.trim().to_string();
+        if !t.is_empty() {
+            return t;
+        }
+    }
+    let fresh = uuid::Uuid::new_v4().to_string();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, &fresh);
+    fresh
+}
+
+fn hostname_or_default() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(|h| format!("Codem @ {}", h))
+        .unwrap_or_else(|| "Codem".to_string())
 }
 
 #[tauri::command]

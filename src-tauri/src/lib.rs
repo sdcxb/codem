@@ -2993,7 +2993,11 @@ path_exists,
             ilink::ilink_logout,
             ilink::ilink_send_text,
             // 手机连接（phone-link）
-            phone::aa_connector_start,
+            phone::aa_account_login,
+        phone::aa_account_logout,
+        phone::aa_account_status,
+        phone::aa_connect,
+        phone::aa_connector_start,
         phone::aa_connector_stop,
         phone::aa_connector_status,
         phone::phone_start,
@@ -3023,6 +3027,7 @@ path_exists,
             let ilink_state = ilink_state.clone();
             move |app| {
             // ===== 运行时日志：清理过期文件 + 启动记录（对标 dsh log-files）=====
+            app.manage(phone::aa_account::AaAccountStore::new(phone::phone_dir(app.handle())));
             runtime_log::purge_old_logs();
             // ===== 崩溃检测标记（对标 dsh crash-evidence）=====
             // 先检测上次是否异常退出，再写本次运行标记。
