@@ -621,6 +621,62 @@ export interface PhoneStateView {
 export const EVT_STATE = "codem:phone-state";
 export const EVT_PAIRED = "codem:phone-paired";
 
+/**
+ * 出站 connector（远程中继）的状态视图 —— 第 122 轮 §11D。
+ *
+ * 字段与 Rust 侧 `connector::snapshot` 一一对应；`serverUrl` / `connectorId`
+ * **如实透传**，界面不许自己编（用户要靠 connectorId 在中继上认出这台机器）。
+ */
+export interface RelayStateView {
+  running: boolean;
+  connected: boolean;
+  serverUrl: string;
+  connectorId: string;
+  lastError: string | null;
+  lastBeatMs: number;
+  requestsServed: number;
+  errors: number;
+  reconnects: number;
+  reconnectSeconds: number;
+}
+
+/** 连接阶段（界面据此措辞；**不许**在没连上时说"已连接"）。 */
+export type RelayPhase = "stopped" | "connecting" | "connected" | "error";
+
+export function normalizeRelay(raw: any): RelayStateView {
+  return {
+    running: raw?.running === true,
+    connected: raw?.connected === true,
+    serverUrl: raw?.serverUrl || "",
+    connectorId: raw?.connectorId || "",
+    lastError: raw?.lastError ?? null,
+    lastBeatMs: raw?.lastBeatMs || 0,
+    requestsServed: raw?.requestsServed || 0,
+    errors: raw?.errors || 0,
+    reconnects: raw?.reconnects || 0,
+    reconnectSeconds: raw?.reconnectSeconds || 3,
+  };
+}
+
+/**
+ * 把若干字段压成一个**互斥**的阶段。
+ *
+ * 判据顺序不是随便定的：
+ * 1. `!running` ⇒ `stopped`（用户关掉了，此时计数都无意义）
+ * 2. `connected` ⇒ `connected`（**只有真连上才敢这么说**）
+ * 3. 有 `lastError` ⇒ `error`（连不上**且**有原因，必须如实显示原因）
+ * 4. 剩下的才是 `connecting`（在跑、没连上、也还没有错误 = 正在重连）
+ *
+ * 第 3 条排在第 4 条之前是有意的：**"正在连接"与"上次报错了"必须分开**，
+ * 否则用户看不到失败原因，只会觉得一直在转圈。
+ */
+export function relayPhase(r: RelayStateView): RelayPhase {
+  if (!r.running) return "stopped";
+  if (r.connected) return "connected";
+  if (r.lastError) return "error";
+  return "connecting";
+}
+
 let stateCache: PhoneStateView = { running: false, port: 0, lan_ip: "", devices: [] };
 export function getPhoneStateCache(): PhoneStateView {
   return stateCache;

@@ -631,8 +631,8 @@ syncIntervalSeconds(30) / syncExistingOnConnect(true)
 | **A** | **中继**（`tools/relay/codem-relay.mjs`，零依赖）：`/connector/hello`、`/connector/stream`(SSE)、`/connector/response`、`/app/pair`、`/app/*` 隧道 | ✅ **v1.16.214**；判据 `RL-1..RL-11` + 7 个变异自证 |
 | **B** | **Connector**（`src-tauri/src/phone/connector.rs`）：`connector.json`、出站长连、心跳、重连、把推来的请求转给回环上游 | ✅ **v1.16.214**；字段逐字对齐 AA（两边配置可互读）+ 7 条 Rust 单测 |
 | **C** | **配对**：桌面把 `pairingCode` 注册给中继；手机用码换中继会话 | ✅ 已实现（connector 每 2 秒检查配对码轮换，轮换即重连登记） |
-| **D** | **设置界面**：中继地址、连接状态、connectorId、启停、日志 | ⬜ 未做 |
-| **E** | **装机版端到端**：起中继 → 桌面连上 → 模拟手机走中继拿到会话 | 🔄 脚本已写（`.preview-shot/_verify-relay-e2e.mjs`） |
+| **D** | **设置界面**：中继地址、连接状态、connectorId、启停、日志 | ✅ **v1.16.215**；判据 `RUI-1..RUI-7` + 5 个变异自证 |
+| **E** | **装机版端到端**：起中继 → 桌面连上 → 模拟手机走中继拿到会话 | ✅ **v1.16.214 验过 14/14**（`.preview-shot/_verify-relay-e2e.mjs`） |
 
 ### 11.5 A/B 步落地时"我自己的三个错"（都由判据/变异抓出，记档）
 

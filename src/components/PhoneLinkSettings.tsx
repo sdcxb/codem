@@ -9,17 +9,19 @@
  * 事件订阅：桥（startPhoneLink）把 Rust phone-* 事件转成 window CustomEvent
  * （EVT_STATE/EVT_PAIRED）；组件另每 3s 轮询 phone_status 兜底（等待态变化来源手机侧）。
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLang } from "../core/i18n/lang";
 import qrcode from "qrcode-generator";
 import {
-  getPhoneStateCache,
-  normalizeState,
+  getPhoneStateCache, normalizeState,
   EVT_STATE,
   EVT_PAIRED,
   getPhoneSettings,
   savePhoneSettings,
+  normalizeRelay,
+  relayPhase,
   type PhoneStateView,
+  type RelayStateView,
 } from "../core/phone-link/phone-link";
 
 async function tauriInvoke(cmd: string, args?: Record<string, unknown>): Promise<any> {
@@ -71,6 +73,27 @@ export function PhoneLinkSettings() {
   const [autoStart, setAutoStart] = useState(() => getPhoneSettings().autoStart !== false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  /**
+   * 第 122 轮 §11D：出站 connector（远程中继）。
+   *
+   * 输入框的值**独立于** relay.serverUrl 保存：用户正在改地址时不该被
+   * 每 2 秒一次的轮询覆盖回去（那是"输入框自己跳字"的经典成因）。
+   * 判断"用户有没有动过"用的是 **ref 而不是 state**：它是在异步回调里读的，
+   * 用 state 会读到闭包里的旧值。只用一处真相，不要既存 state 又存 ref。
+   */
+  const [relay, setRelay] = useState<RelayStateView>(() => normalizeRelay(null));
+  const [relayUrl, setRelayUrl] = useState("");
+  const relayTouchedRef = useRef(false);
+
+  const refreshRelay = useCallback(async () => {
+    try {
+      const raw = await tauriInvoke("phone_relay_status");
+      const next = normalizeRelay(raw);
+      setRelay(next);
+      // 用户没动过输入框 ⇒ 跟着服务端走（首次进页面能看到已配置的地址）
+      setRelayUrl((cur) => (relayTouchedRef.current ? cur : next.serverUrl || cur));
+    } catch { /* 非 tauri */ }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -89,10 +112,14 @@ export function PhoneLinkSettings() {
       on(EVT_PAIRED, () => refresh()),
     ];
     refresh();
+    refreshRelay();
     const timer = setInterval(refresh, 3000); // 等待态/过期兜底
+    // 中继状态刷新得快一点：断线重连是 3 秒一次，界面要能跟上
+    const relayTimer = setInterval(refreshRelay, 2000);
     return () => {
       offs.forEach((f) => f());
       clearInterval(timer);
+      clearInterval(relayTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -125,6 +152,18 @@ export function PhoneLinkSettings() {
   const origin = `${scheme}://${status.lan_ip}:${status.port}`;
   const caUrl = status.ca_url || `${origin}/ca.crt`;
   const fingerprint = status.ca_fingerprint || "";
+  // §11D：中继连接的阶段（互斥四态；没连上就绝不说"已连接"）
+  // 颜色不在这里算 —— 交给 CSS 的 `.relay-phase[data-phase=...]`，
+  // 这样"什么阶段什么颜色"是声明式的，不会漏掉一处。
+  const rPhase = relayPhase(relay);
+  const rLabel =
+    rPhase === "connected"
+      ? (zh ? "已连接" : "Connected")
+      : rPhase === "connecting"
+        ? (zh ? `正在连接（每 ${relay.reconnectSeconds} 秒重试）` : `Connecting (retry every ${relay.reconnectSeconds}s)`)
+        : rPhase === "error"
+          ? (zh ? "连接失败（正在重试）" : "Failed (retrying)")
+          : (zh ? "未启用" : "Disabled");
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
@@ -175,6 +214,82 @@ export function PhoneLinkSettings() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* ---- 第 122 轮 §11D：远程中继（出站长连，手机在外网也能用）---- */}
+      <div className="setting-group relay-card">
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
+          {zh ? "远程中继（手机不在同一 Wi-Fi 时用这条）" : "Remote relay (use this when the phone is not on the same Wi-Fi)"}
+        </div>
+        <div className="relay-desc">
+          {zh
+            ? "这是一条**出站长连**：电脑主动连到你自己跑的中继，手机再连中继。电脑**不为此开任何局域网端口**（这与 DSH 的做法是同一条策略）。中继是一段零依赖的 Node 程序：在中继机器上运行 node tools/relay/codem-relay.mjs --port 8787 即可。公网部署请放在 HTTPS 反代之后，或用 --tls-cert/--tls-key 提供证书，否则流量是明文的。"
+            : "This is an OUTBOUND long connection: the desktop dials out to a relay you run, and the phone talks to that relay. The desktop opens NO LAN port for this path (same strategy as DSH). The relay is a zero-dependency Node script: run node tools/relay/codem-relay.mjs --port 8787 on the relay machine. For public deployment put it behind an HTTPS reverse proxy or pass --tls-cert/--tls-key, otherwise traffic is plaintext."}
+        </div>
+
+        <div className="relay-row">
+          <input
+            data-testid="relay-url"
+            className="relay-url"
+            style={inputStyle}
+            placeholder="https://relay.example.com"
+            value={relayUrl}
+            disabled={relay.running}
+            onChange={(e) => {
+              relayTouchedRef.current = true;
+              setRelayUrl(e.target.value);
+            }}
+          />
+          {!relay.running ? (
+            <button
+              data-testid="relay-start"
+              disabled={busy || !relayUrl.trim()}
+              onClick={() =>
+                act(async () => {
+                  await tauriInvoke("phone_relay_start", { serverUrl: relayUrl.trim() });
+                  relayTouchedRef.current = false;
+                  await refreshRelay();
+                })
+              }
+              style={{ ...btnStyle, background: "var(--accent)", color: "var(--text-on-accent)", fontWeight: 600 }}
+            >
+              {zh ? "连接中继" : "Connect"}
+            </button>
+          ) : (
+            <button
+              data-testid="relay-stop"
+              disabled={busy}
+              onClick={() => act(async () => { await tauriInvoke("phone_relay_stop"); await refreshRelay(); })}
+              style={btnStyle}
+            >
+              {zh ? "断开中继" : "Disconnect"}
+            </button>
+          )}
+        </div>
+
+        {/* 状态：**没连上就绝不显示"已连接"**（措辞与颜色都由 data-phase 驱动） */}
+        <div className="relay-status">
+          <span data-testid="relay-phase" className="relay-phase" data-phase={rPhase}>
+            {rLabel}
+          </span>
+          {relay.connectorId && (
+            <span className="relay-id">
+              {zh ? "本机标识" : "device id"}：<code>{relay.connectorId}</code>
+            </span>
+          )}
+        </div>
+        {relay.running && (
+          <div className="relay-stats">
+            {zh
+              ? `已服务 ${relay.requestsServed} 个请求 · 重连 ${relay.reconnects} 次 · 错误 ${relay.errors} 次`
+              : `${relay.requestsServed} requests · ${relay.reconnects} reconnects · ${relay.errors} errors`}
+          </div>
+        )}
+        {rPhase === "error" && relay.lastError && (
+          <div data-testid="relay-error" className="relay-error">
+            {zh ? "失败原因" : "Reason"}：{relay.lastError}
+          </div>
+        )}
       </div>
 
       {/* ---- 第 122 轮阶段 1：HTTPS 证书与指纹核对 ---- */}

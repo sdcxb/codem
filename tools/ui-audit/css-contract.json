@@ -13048,6 +13048,50 @@
     "position": "absolute",
     "z-index": "var(--z-popover)"
   },
+  "relay-card": {
+    "display": "flex",
+    "flex-direction": "column",
+    "gap": "var(--space-3)"
+  },
+  "relay-desc": {
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-xs)",
+    "line-height": "var(--lh-loose)"
+  },
+  "relay-error": {
+    "color": "var(--error)",
+    "font-size": "var(--fs-xs)",
+    "word-break": "break-all"
+  },
+  "relay-id": {
+    "color": "var(--text-secondary)",
+    "word-break": "break-all"
+  },
+  "relay-phase": {
+    "color": "var(--text-secondary)",
+    "font-weight": "var(--weight-semibold)"
+  },
+  "relay-row": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-4)"
+  },
+  "relay-stats": {
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-xs)"
+  },
+  "relay-status": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-5)"
+  },
+  "relay-url": {
+    "flex": "1",
+    "min-width": "260px"
+  },
   "resolution-label": {
     "color": "var(--text-secondary)",
     "font-size": "var(--fs-sm)"

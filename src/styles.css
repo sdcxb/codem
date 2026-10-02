@@ -19301,3 +19301,61 @@ html[data-contrast="high"] {
   --focus-ring-width: 3px;
   --focus-ring-color: var(--accent);
 }
+
+/* ============================================================
+   第 122 轮 §11D：远程中继卡片
+
+   为什么抽成类而不是继续写内联样式：这一段的内联样式密度触发了
+   ui-audit 的 inline-style-dense（棘轮只降不升）。而且内联样式没法用
+   data-phase 做状态着色 —— 那种写法只能靠 JS 算颜色，比 CSS 选择器脆弱。
+   ============================================================ */
+.relay-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.relay-desc {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  /* 大段说明文字 ⇒ 用 --lh-loose（1.8），与其它引导/说明段落一致。
+     写裸数字会被 LIT-5 棘轮拦下（我第一版写 1.8 就是被它拦的）。 */
+  line-height: var(--lh-loose);
+}
+.relay-row {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.relay-url {
+  flex: 1;
+  min-width: 260px;
+}
+.relay-status {
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: var(--fs-xs);
+}
+/* 连接阶段由 data-phase 着色：这样"什么阶段显示什么颜色"是**声明式**的，
+   不靠 JS 三元表达式，改的时候也不会漏掉一处。 */
+.relay-phase {
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+.relay-phase[data-phase="connected"] { color: var(--success); }
+.relay-phase[data-phase="error"] { color: var(--error); }
+.relay-id {
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.relay-stats {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.relay-error {
+  font-size: var(--fs-xs);
+  color: var(--error);
+  word-break: break-all;
+}
