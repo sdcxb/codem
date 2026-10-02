@@ -36,6 +36,7 @@
 // ============================================================
 
 pub mod aa_connector;
+pub mod aa_dsh_identity;
 pub mod aa_protocol;
 pub mod connector;
 pub mod guard;

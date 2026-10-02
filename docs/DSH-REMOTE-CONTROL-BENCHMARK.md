@@ -993,3 +993,58 @@ serde_json 的 `Map` 在我们当前构建里本就是 BTreeMap（键天然有�
 
 我按你的话默认**完全复刻**（去掉限制），除非你另有交代 ——
 但它会**削掉阶段 0 审批的实际意义**，所以我把这句话明确写在这里，不埋在代码里。
+
+### 14.12 一处**关键发现**：DSH 运行时不用通用的 `sel_*` 方案
+
+（阶段 R3 的实地结论，直接改变了我原来的实现。）
+
+通用方案是 `protocol.py:126-133` 的 `protocol_selection_id`，产出 `sel_model_<24 字符>`。
+**但 `dsh` 这一个运行时不用它** —— DSH 那一支另有一套 `dsh:` 前缀方案：
+
+```
+dsh:model:      <base64url( JSON.stringify([provider, model, effort|null]) )>
+dsh:permission: <base64url( preset )>
+timelineId:     "dsh_" + sha256_hex( external_session_id \0 kind \0 business_id )
+```
+
+证据（它捆绑包里的**两处**独立实现，语义一致）：
+- 插件侧 TS：`host/dsh-runtime/selections.ts`（`modelSelectionId` / `permissionSelectionId`）
+- connector 侧 Python：`connector/runtimes/dsh/identity.py`
+- 目录构造：`host/dsh-runtime/catalogs.ts`（插件侧造目录，connector 只是**转发**）
+
+**我一开始只实现了通用方案 —— 那对 `dsh` 运行时是错的。**
+而这类错的可怕之处在于**它不会报错**：服务端与它存下来的选择用的是 `dsh:` 形式，
+我们发 `sel_model_...` 的结果只是"用户选了模型但设备不认"。
+
+这正是"读协议文件不够、必须读**这个运行时**的适配层"的实例：
+`catalogs.py`（通用）与 `catalogs.ts`（DSH 专用）看名字像是一件事，实际是两套。
+
+#### 必须照抄的三条严格性
+
+1. **编码规范性**：解码后重编码必须与输入**逐字**相等（`selections.ts:14`）。
+   挡住"同一份内容有多种 base64 写法"⇒ **同一个选择被当成两个**。
+   它真正不可替代的一类是**载荷不是合法 UTF-8**：`_w`（字节 `0xFF`）是**规范**编码，
+   解码器与字符集校验都拦不住，只有重编码复核能发现
+   （`TextDecoder` 会换成 `U+FFFD`，再编码变成 `77-9`）。
+   *这条判据是我漏掉的，变异自证当场把它抓了出来。*
+2. **`custom` 权限档不可远端切换**，且拒绝空串、首尾空白、含 CR/LF（`selections.ts:38`）。
+   `custom` 是"用户自定义的一整套权限"，远端把它当可选档套用 = 绕过用户定制。
+3. **`parseSelections` 只认 `model` 与 `permission` 两个作用域**，且每个值必须**能解出来**
+   才接受 —— 不做"先存下、以后再校验"。
+
+#### 两侧各一份实现，必须逐字一致
+
+- 插件侧（我们的渲染进程）：`src/core/phone-link/dsh-selection-id.ts`
+- connector 侧（Rust）：`src-tauri/src/phone/aa_dsh_identity.rs`
+
+它们必须产出**逐字相同**的 id，否则就是经典的"半边能跑"：
+一端发出去的 id 另一端解不出来，而表现只是"选择不生效"。
+两侧各用**同一组基准值**（由独立实现算出）钉住，任一侧改动都会被抓到。
+
+**判据 R3-1..R3-9 + 7 个变异自证全部咬住。** 其中三条**第一版没咬住**，逐个查明：
+- 变异 3（去掉规范性复核）⇒ 我漏了"非法 UTF-8"那类，已补判据；
+- 变异 5（`effort` 用 `undefined`）⇒ **这条变异本身是假的**：
+  `JSON.stringify` 对数组里的 `undefined` 输出 `null`，与 `?? null` 逐字相同；
+  已换成真的会改变行为的写法；
+- 变异 7（去掉作用域校验）⇒ 判据用的值**碰巧也不合法**，所以"报错"不是来自作用域校验；
+  已改成用对该作用域本身合法的值。
