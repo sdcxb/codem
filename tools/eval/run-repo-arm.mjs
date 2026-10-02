@@ -31,7 +31,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmdirSync, mkdirS
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { TASKS, REPO_ROOT, validateTaskSet } from "./tasks-repo.mjs";
+import { TASKS, REPO_ROOT, validateTaskSet, gradeCommand, filesToRestore } from "./tasks-repo.mjs";
 import { summarize, render, verdict } from "./paired-report.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -103,9 +103,9 @@ function restoreImplementation(task, ws) {
   if (r.status !== 0) throw new Error(`${task.id}: 还原实现失败：${r.stderr || r.stdout}`);
 }
 
-/** 反作弊：判据文件从 HEAD 还原，agent 改测试无效。 */
+/** 反作弊：判据文件 + 回归子集都从 HEAD 还原，agent 改测试无效。 */
 function restoreTests(task, ws) {
-  git(["checkout", "HEAD", "--", ...task.testFiles], ws);
+  git(["checkout", "HEAD", "--", ...filesToRestore(task)], ws);
 }
 
 function cleanupRepoWorkspace(ws) {
@@ -173,7 +173,7 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
 
     if (outcome !== "errored") {
       restoreTests(task, ws); // 反作弊
-      const grade = spawnSync(task.grade, { cwd: ws, shell: true, encoding: "utf8", timeout: GRADE_TIMEOUT_MS });
+      const grade = spawnSync(gradeCommand(task), { cwd: ws, shell: true, encoding: "utf8", timeout: GRADE_TIMEOUT_MS });
       if (grade.error?.code === "ETIMEDOUT" || grade.signal === "SIGTERM") {
         outcome = "errored";
         failureReason = "判据命令超时";
