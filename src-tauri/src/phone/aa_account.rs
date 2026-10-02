@@ -419,7 +419,21 @@ impl AaAccountState {
             "serverUrl": self.server_url,
             "clientId": self.client_id(),
             "signedIn": self.access_token.is_some(),
-            "tokenValid": self.token_valid(now_ms),
+            /*
+             * ⚠️ 这里**不能**直接把 token_valid() 的 bool 丢出去。
+             *
+             * 密码登录那条路，服务端**不返回 expiresIn**，所以我们不知道过期时间
+             * （expires_at_ms 为 None）。此时 token_valid() 会返回 false ——
+             * 但那是"**不知道**"，不是"已失效"。直接报 false 会让界面显示
+             * "token 无效"，而实际上一切正常（我实测过：连上了、服务端也调了我们）。
+             *
+             * 所以三态：true（确定有效）/ false（**确定**已过期）/ null（不知道）。
+             */
+            "tokenValid": match (&self.access_token, self.expires_at_ms) {
+                (Some(t), Some(exp)) if !t.is_empty() => Some(now_ms + 60_000 < exp),
+                (Some(t), None) if !t.is_empty() => None,
+                _ => Some(false),
+            },
             "profile": self.profile,
             "deviceId": self.device.as_ref().map(|d| d.connector_id.clone()),
             // 只报"有没有"，不报内容
@@ -1070,6 +1084,44 @@ mod tests {
         std::fs::write(account_state_path(&dir), "{ 这不是 json").unwrap();
         assert!(load_account_state(&dir).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn redacted_token_validity_is_tristate() {
+        /*
+         * 事故记录：密码登录那条路服务端**不返回 expiresIn**，所以我们不知道过期时间。
+         * 原来的实现直接把 token_valid() 的 bool 丢出去 ⇒ 界面显示 "token 无效"，
+         * 而实际上一切正常（我实测过：连上了、服务端也调了我们一次）。
+         *
+         * **"不知道"和"已失效"是两件事**，混起来会让人去排查一个不存在的问题。
+         */
+        let mk = |tok: Option<&str>, exp: Option<u64>| AaAccountState {
+            server_url: AA_CLOUD_BASE_URL.into(),
+            client_id: None,
+            access_token: tok.map(|s| s.to_string()),
+            expires_at_ms: exp,
+            profile: None,
+            device: None,
+        };
+
+        // 不知道过期时间 ⇒ null（不是 false）
+        let v = mk(Some("tok"), None).redacted(1_000);
+        assert_eq!(v.get("tokenValid"), Some(&serde_json::Value::Null), "不知道就该报 null");
+        // 确定还没过期 ⇒ true（留 60 秒余量）
+        let v = mk(Some("tok"), Some(10_000_000)).redacted(1_000);
+        assert_eq!(v.get("tokenValid").and_then(|x| x.as_bool()), Some(true));
+        // 确定已过期 ⇒ false
+        let v = mk(Some("tok"), Some(1_000)).redacted(1_000);
+        assert_eq!(v.get("tokenValid").and_then(|x| x.as_bool()), Some(false));
+        // 离到期不足 60 秒 ⇒ 也算过期（要提前刷新）
+        let v = mk(Some("tok"), Some(1_030_000)).redacted(1_000_000);
+        assert_eq!(v.get("tokenValid").and_then(|x| x.as_bool()), Some(false));
+        // 没登录 ⇒ false
+        let v = mk(None, None).redacted(1_000);
+        assert_eq!(v.get("tokenValid").and_then(|x| x.as_bool()), Some(false));
+        // 空 token 也当没登录
+        let v = mk(Some(""), None).redacted(1_000);
+        assert_eq!(v.get("tokenValid").and_then(|x| x.as_bool()), Some(false));
     }
 
     #[test]

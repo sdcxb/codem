@@ -165,8 +165,8 @@ export function AaRemoteSection({ zh }: { zh: boolean }) {
       </div>
       <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 10 }}>
         {zh
-          ? "登录 Agents Anywhere 后，这台电脑会注册成一台设备；手机用同一个账号登录官方 App/网页就能看到并操作它的会话。默认用官方服务，也可以填自己的服务器。"
-          : "Sign in to Agents Anywhere and this computer registers as a device; sign in with the same account on your phone (official app/web) to see and drive its sessions. Official service by default; you can point it at your own server."}
+          ? "登录 Agents Anywhere 后，这台电脑会注册成一台设备。手机用同一个账号登录 Agents Anywhere 的 App 或网页（web.agents-anywhere.com）就能看到并操作它的会话。默认用它的服务，也可以填自己的服务器。"
+          : "Sign in to Agents Anywhere and this computer registers as a device. Sign in with the same account in the Agents Anywhere app or web app (web.agents-anywhere.com) to see and drive its sessions. Its service by default; you can point it at your own server."}
       </div>
 
       {/* 状态 */}

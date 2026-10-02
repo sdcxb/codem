@@ -2,6 +2,27 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.221] - 2026-10-02
+
+### 改
+
+- **把「官方 App/网页」写清楚是谁的**：原来那句「登录官方 App/网页」里，「官方」没说清是谁的官方。
+  现在是「手机用同一个账号登录 **Agents Anywhere 的 App 或网页（web.agents-anywhere.com）**」。
+  **手机端用的是 Agents Anywhere 的**（网页 + 它们的 Android/iOS 客户端），不是我们的 App；
+  我们自己的手机页面属于**另一条路**（自研中继），收在「高级」里。
+
+### 修复
+
+- **状态里 tokenValid 会把「不知道」报成「已失效」**：密码登录那条路服务端**不返回过期时间**，
+  原来直接报 false ⇒ 界面显示「token 无效」，而**实际一切正常**
+  （实测：已连上 AA 官方云、服务端也调过我们一次 runtime.discover）。
+  **「不知道」和「已失效」是两件事**，混起来会让人去排查一个不存在的问题。
+  改成三态：true（确定有效）/ false（**确定**已过期）/ null（不知道）。
+
+### 说明
+
+- 新增 Rust 判据 redacted_token_validity_is_tristate（六种组合逐一钉住）。
+- Rust **130 条** + 2 条活体、TS **451 套件 / 6770 用例**、npm run audit 全绿。
 ## [1.16.220] - 2026-10-02
 
 ### 修复
