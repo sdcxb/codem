@@ -242,8 +242,88 @@ pub struct LocalCall {
     pub body: String,
 }
 
-/// 未实现的方法要**明确回报**，不能假装成功。
-pub fn map_aa_method_to_local(method: &str, params: &serde_json::Value) -> Option<LocalCall> {
+/// 一个方法的处置结果。
+///
+/// 为什么不用 `Option<LocalCall>`（第一版就是）：那样"本机就能回答"与
+/// "我们不做这个方法"**都是 `None`**，调用方分不清。而这两件事对服务端
+/// 是**相反的**信号 —— 前者是"我们支持"，后者是"我们没有这个能力"。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AaDispatch {
+    /// 转给本机回环上游
+    Local(LocalCall),
+    /// 本机直接回答（不需要上游）
+    Inline(serde_json::Value),
+    /// 我们不做这个方法 —— 要**如实回报**，不能假装成功
+    Unsupported,
+}
+
+impl AaDispatch {
+    /// 取本地调用（判据用；非 Local 时返回 None）。
+    pub fn local(self) -> Option<LocalCall> {
+        match self {
+            AaDispatch::Local(c) => Some(c),
+            _ => None,
+        }
+    }
+    /// 是不是"我们不做这个方法"。
+    pub fn is_unsupported(&self) -> bool {
+        matches!(self, AaDispatch::Unsupported)
+    }
+}
+
+/// 它的入站方法全集（`server/runtime_rpc.py:54-77` 的 `METHODS`）。
+///
+/// 记在这里是为了能**逐条核对**：任何一条既不在映射里、也不在"明确不做"清单里的
+/// 方法，都是漏网之鱼。判据会把两个集合的并集与这张表比对。
+pub const AA_INBOUND_METHODS: &[&str] = &[
+    "runtime.discover",
+    "runtime.configSchema",
+    "runtime.config",
+    "runtime.validateConfig",
+    "runtime.start",
+    "runtime.stop",
+    "runtime.capabilities",
+    "runtime.commands",
+    "runtime.modelCatalog",
+    "runtime.permissionCatalog",
+    "session.discover",
+    "session.create",
+    "session.sync",
+    "session.state",
+    "session.capabilities",
+    "session.notices",
+    "session.selections.update",
+    "session.commands",
+    "session.command.execute",
+    "interaction.respond",
+    "session.send_message",
+    "session.steer",
+    "session.interrupt",
+];
+
+/// 我们**明确不做**的入站方法，以及理由。
+///
+/// 每一个都要有理由 —— "不做"必须是个决定，不是遗漏。
+pub const AA_UNSUPPORTED: &[(&str, &str)] = &[    ("runtime.configSchema", "Codem 的运行时是进程内的，没有可下发配置的 schema"),
+    ("runtime.config", "同上：没有运行时可配置项"),
+    ("runtime.validateConfig", "同上"),
+    ("runtime.start", "运行时由应用自身启动，远端不能拉起一个运行时"),
+    ("runtime.stop", "同上：远端不能停掉本机运行时"),
+    ("runtime.commands", "我们没有运行时可发现的命令集"),
+    ("session.steer", "Codem 暂时没有转向（steer）语义"),
+    ("session.commands", "同上：没有斜杠命令集"),
+    ("session.command.execute", "同上"),
+    ("session.capabilities", "会话级能力我们尚未逐会话上报（目前只报运行时级）"),
+    ("runtime.capabilities", "能力集通过 protocol.capabilitiesUpdated 通知推送，不走这条请求"),
+    ("runtime.modelCatalog", "目录走 catalog.model（能力表里登记的也是它）"),
+    ("runtime.permissionCatalog", "目录走 catalog.permission"),
+];
+
+/// 把一个 AA 协议方法映射成本机动作。
+///
+/// 这一层是"复刻"的**接缝**：左边是它的方法名与参数形状，右边是我们已有的能力面
+/// （阶段 0/1/2/4 建的那些路由）。两侧都不改，只在这里改名与改形状。
+pub fn map_aa_method_to_local(method: &str, params: &serde_json::Value) -> AaDispatch {
     let p = params.as_object();
     let s = |k: &str| -> String {
         p.and_then(|m| m.get(k))
@@ -252,35 +332,85 @@ pub fn map_aa_method_to_local(method: &str, params: &serde_json::Value) -> Optio
             .to_string()
     };
     match method {
-        // 会话清单（我们的会话列表路由）
-        "session.discover" | "session.inventory.begin" => Some(LocalCall {
+        // ---- 运行时发现：本机合成（我们只有一个 dsh 运行时）----
+        "runtime.discover" => AaDispatch::Inline(serde_json::json!({
+            "runtimes": [{
+                "runtime": "dsh",
+                "runtimeVersion": env!("CARGO_PKG_VERSION"),
+                "displayName": "Codem / DSH",
+            }],
+        })),
+
+        // ---- 会话清单 ----
+        "session.discover" => AaDispatch::Local(LocalCall {
             method: "GET".into(),
             path: "/api/sessions".into(),
             query: String::new(),
             body: String::new(),
         }),
-        // 单会话状态（我们的运行态路由）
+
+        // ---- 新建会话 ----
+        //
+        // 它的参数是 `{sessionId, content, title?, cwd?, ...}`（`SessionCreateParams`）。
+        // ⚠️ 它**指定** sessionId，而我们原来的 `/api/chat/new` 是**自己生成** id 的。
+        // 那是真实的协议不一致（调用方按它给的 id 去查，会查不到），
+        // 所以 `chat_new` 已经改成"给了就用给的"。
+        "session.create" => {
+            let mut body = serde_json::Map::new();
+            body.insert("sessionId".into(), serde_json::json!(s("sessionId")));
+            body.insert("text".into(), serde_json::json!(s("content")));
+            // 标题是可选参数；没给就**不传**（让本机用自己的缺省标题，
+            // 而不是传一个空串把标题覆盖成空）
+            if !s("title").is_empty() {
+                body.insert("title".into(), serde_json::json!(s("title")));
+            }
+            AaDispatch::Local(LocalCall {
+                method: "POST".into(),
+                path: "/api/chat/new".into(),
+                query: String::new(),
+                body: serde_json::Value::Object(body).to_string(),
+            })
+        }
+
+        // ---- 单会话状态 ----
         "session.state" => {
             let id = s("sessionId");
-            Some(LocalCall {
+            AaDispatch::Local(LocalCall {
                 method: "GET".into(),
                 path: format!("/api/sessions/{}/run", urlencode(&id)),
                 query: String::new(),
                 body: String::new(),
             })
         }
-        // 时间线（我们的消息路由）
-        "timeline.sync" => {
+
+        // ---- 时间线（它的 `session.sync` 与通知 `timeline.sync` 都读这一份）----
+        "session.sync" | "timeline.sync" => {
             let id = s("sessionId");
-            Some(LocalCall {
+            AaDispatch::Local(LocalCall {
                 method: "GET".into(),
                 path: format!("/api/sessions/{}/messages", urlencode(&id)),
                 query: "?limit=200".into(),
                 body: String::new(),
             })
         }
-        // 目录
-        "catalog.model" | "catalog.permission" => Some(LocalCall {
+
+        // ---- 会话通知（阶段 R4 那条按它形状产出的通知）----
+        "session.notices" => {
+            let id = s("sessionId");
+            AaDispatch::Local(LocalCall {
+                method: "GET".into(),
+                path: "/api/notices".into(),
+                query: if id.is_empty() {
+                    String::new()
+                } else {
+                    format!("?sessionId={}", urlencode(&id))
+                },
+                body: String::new(),
+            })
+        }
+
+        // ---- 目录 ----
+        "catalog.model" | "catalog.permission" => AaDispatch::Local(LocalCall {
             method: "GET".into(),
             path: "/api/catalog".into(),
             query: if s("sessionId").is_empty() {
@@ -290,51 +420,107 @@ pub fn map_aa_method_to_local(method: &str, params: &serde_json::Value) -> Optio
             },
             body: String::new(),
         }),
-        // 选择（模型/权限档）
-        "session.selections.update" => Some(LocalCall {
+
+        // ---- 选择（模型/权限档）----
+        //
+        // 它的参数是 `{sessionId, externalSessionId?, selections: {model?, permission?}}`
+        // （`SessionSelectionUpdateParams`）。我们的路由吃 `{sessionId, model?, securityMode?}`，
+        // 所以这里要做**形状翻译** —— 而且翻译是安全的：我们的路由在 R3'
+        // 已经能解析 `dsh:model:` / `dsh:permission:` 两种写法。
+        "session.selections.update" => {
+            let sel = p
+                .and_then(|m| m.get("selections"))
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
+            let mut body = serde_json::Map::new();
+            body.insert("sessionId".into(), serde_json::json!(s("sessionId")));
+            if let Some(m) = sel.get("model") {
+                if let Some(v) = m.as_str() {
+                    body.insert("model".into(), serde_json::json!(v));
+                }
+            }
+            if let Some(m) = sel.get("permission") {
+                if let Some(v) = m.as_str() {
+                    body.insert("securityMode".into(), serde_json::json!(v));
+                }
+            }
+            AaDispatch::Local(LocalCall {
+                method: "POST".into(),
+                path: "/api/selections".into(),
+                query: String::new(),
+                body: serde_json::Value::Object(body).to_string(),
+            })
+        }
+
+        // ---- 发消息（它的 `TurnStartParams`）----
+        "session.send_message" => AaDispatch::Local(LocalCall {
             method: "POST".into(),
-            path: "/api/selections".into(),
+            path: "/api/chat".into(),
             query: String::new(),
-            body: params.to_string(),
+            body: serde_json::json!({
+                "sessionId": s("sessionId"),
+                "text": s("content"),
+            })
+            .to_string(),
         }),
-        // 中断
+
+        // ---- 中断 ----
         "session.interrupt" => {
             let id = s("sessionId");
-            Some(LocalCall {
+            AaDispatch::Local(LocalCall {
                 method: "POST".into(),
                 path: "/api/chat/cancel".into(),
                 query: String::new(),
                 body: serde_json::json!({ "sessionId": id }).to_string(),
             })
         }
-        // 审批（它的交互模型 → 我们的审批代理）
-        "session.interaction.approval" => {
+
+        // ---- 交互回答（**审批的真正入站方法**）----
+        //
+        // ⚠️ 这里是本轮最要紧的一处修正。
+        //
+        // 我前两轮一直把 `session.interaction.approval` 当成"回答审批"的方法 ——
+        // **那是错的**。读了它 `runtime_rpc.py:54-77` 的 `METHODS` 才知道：
+        //   * 入站请求方法叫 **`interaction.respond`**（`InteractionRespondParams`：
+        //     `{sessionId, noticeId, actionId, inputData?}`）
+        //   * `session.interaction.approval` 是**能力表里的标签/通知方法**，不是入站请求
+        // 也就是说：如果照我原来的写法，服务端发来的回答**根本不会被处理** ——
+        // 手机点了"允许"会石沉大海，而日志上看不出任何异常。
+        "interaction.respond" => {
             let id = s("noticeId");
             let action = s("actionId");
-            // 它的动作名与我们的动作名不同，这里做**显式**映射而不是猜
+            // 它那两个动作 id 必须**逐字**如此：`allow-once` / `reject`
+            // （`host/dsh-runtime/approvals.ts:71-72`）。我第一版凭印象写成
+            // `allow|approve|allow_once` —— 那是猜的，猜错的后果是远端点"允许"
+            // 却收到一句"未知的批准操作"。
             let ours = match action.as_str() {
-                // ⚠️ 它那两个动作 id 必须**逐字**如此：`allow-once` / `reject`。
-                //
-                // 我第一版凭印象写成 `allow|approve|allow_once` —— 那是**猜的**。
-                // 读了它插件侧的 `host/dsh-runtime/approvals.ts:71-72` 才知道
-                // 实际是连字符形式、且 allow 带 once。
-                // 猜错的后果很具体：远端点"允许"，我们会回一句"未知的批准操作"。
                 "allow-once" => "allow",
                 "reject" => "deny",
                 _ => "",
             };
             if ours.is_empty() {
-                return None; // 不认识的动作 ⇒ 不猜，回报未实现
+                return AaDispatch::Unsupported; // 不认识的动作 ⇒ 不猜
             }
-            Some(LocalCall {
+            AaDispatch::Local(LocalCall {
                 method: "POST".into(),
                 path: format!("/api/approvals/{}", urlencode(&id)),
                 query: String::new(),
                 body: serde_json::json!({ "action": ours }).to_string(),
             })
         }
-        // 会话通知列表（我们还没有对应路由 ⇒ 明确未实现）
-        _ => None,
+
+        // ---- 明确不做 ----
+        other => {
+            if AA_UNSUPPORTED.iter().any(|(m, _)| *m == other) {
+                AaDispatch::Unsupported
+            } else if AA_INBOUND_METHODS.contains(&other) || other.starts_with("catalog.") {
+                // 在它的方法表里、但既没映射也没登记 ⇒ 归类为"不做"（判据会拦住这种遗漏）
+                AaDispatch::Unsupported
+            } else {
+                AaDispatch::Unsupported
+            }
+        }
     }
 }
 
@@ -567,13 +753,24 @@ async fn handle_request(
     params: &serde_json::Value,
     cs: &Arc<AaConnectorState>,
 ) -> AaRpcResponse {
-    let Some(call) = map_aa_method_to_local(method, params) else {
+    let call = match map_aa_method_to_local(method, params) {
+        AaDispatch::Local(c) => c,
+        // 本机直接回答（不需要上游）。
+        //
+        // 这类方法**不能**走 `Unsupported`：服务端据此判断"这个连接器有没有运行时"，
+        // 报不支持会让它把我们当成空连接器。
+        AaDispatch::Inline(v) => {
+            cs.inner.lock().await.requests_served += 1;
+            return AaRpcResponse::ok(id, v);
+        }
         // **不假装成功**：明确回报不支持（服务端据此可以把这条能力标成不可用）
-        let mut err = BTreeMap::new();
-        err.insert("code".to_string(), "method_not_supported".to_string());
-        err.insert("message".to_string(), format!("Codem 未实现该方法: {}", method));
-        cs.inner.lock().await.errors += 1;
-        return AaRpcResponse::err(id, err);
+        AaDispatch::Unsupported => {
+            let mut err = BTreeMap::new();
+            err.insert("code".to_string(), "method_not_supported".to_string());
+            err.insert("message".to_string(), format!("Codem 未实现该方法: {}", method));
+            cs.inner.lock().await.errors += 1;
+            return AaRpcResponse::err(id, err);
+        }
     };
     let (upstream_port, edge_token, running) = {
         let g = st.inner.lock().await;
@@ -761,67 +958,186 @@ mod tests {
     }
 
     #[test]
-    fn method_mapping_covers_our_real_capabilities() {
-        // 会话清单
-        let c = map_aa_method_to_local("session.discover", &serde_json::json!({})).unwrap();
+    fn method_mapping_covers_the_full_inbound_set() {
+        // ---- 运行时发现：本机合成，**不能**报不支持 ----
+        match map_aa_method_to_local("runtime.discover", &serde_json::json!({})) {
+            AaDispatch::Inline(v) => {
+                let list = v.get("runtimes").and_then(|r| r.as_array()).expect("要有 runtimes");
+                assert_eq!(list.len(), 1, "我们只有一个运行时");
+                assert_eq!(list[0].get("runtime").and_then(|r| r.as_str()), Some("dsh"));
+            }
+            other => panic!("runtime.discover 应当本机回答，实际 {:?}", other),
+        }
+
+        // ---- 会话清单 ----
+        let c = map_aa_method_to_local("session.discover", &serde_json::json!({})).local().unwrap();
         assert_eq!(c.method, "GET");
         assert_eq!(c.path, "/api/sessions");
-        // 中断
+
+        // ---- 新建会话：它**指定** sessionId，必须带上（否则调用方按那个 id 查不到） ----
         let c = map_aa_method_to_local(
-            "session.interrupt",
-            &serde_json::json!({"sessionId":"s 1"}),
+            "session.create",
+            &serde_json::json!({"sessionId":"srv-1","content":"你好","title":"标题"}),
         )
+        .local()
         .unwrap();
+        assert_eq!(c.path, "/api/chat/new");
+        assert!(c.body.contains("srv-1"), "要带上它指定的 sessionId：{}", c.body);
+        assert!(c.body.contains("你好"), "content 要变成 text：{}", c.body);
+        assert!(c.body.contains("标题"), "给了 title 要带上：{}", c.body);
+        // 没给 title ⇒ **不传**这个键（而不是传空串把标题覆盖成空）
+        let c = map_aa_method_to_local(
+            "session.create",
+            &serde_json::json!({"sessionId":"s2","content":"x"}),
+        )
+        .local()
+        .unwrap();
+        assert!(!c.body.contains("title"), "没给 title 就不该出现这个键：{}", c.body);
+
+        // ---- 单会话状态 ----
+        let c = map_aa_method_to_local("session.state", &serde_json::json!({"sessionId":"s1"}))
+            .local()
+            .unwrap();
+        assert_eq!(c.path, "/api/sessions/s1/run");
+
+        // ---- 时间线：session.sync 与通知 timeline.sync 走同一条 ----
+        for m in ["session.sync", "timeline.sync"] {
+            let c = map_aa_method_to_local(m, &serde_json::json!({"sessionId":"s1"})).local().unwrap();
+            assert_eq!(c.path, "/api/sessions/s1/messages", "{} 应读消息路由", m);
+        }
+
+        // ---- 会话通知 ----
+        let c = map_aa_method_to_local("session.notices", &serde_json::json!({"sessionId":"s1"}))
+            .local()
+            .unwrap();
+        assert_eq!(c.path, "/api/notices");
+        assert!(c.query.contains("sessionId=s1"));
+
+        // ---- 目录 ----
+        for m in ["catalog.model", "catalog.permission"] {
+            let c = map_aa_method_to_local(m, &serde_json::json!({"sessionId":"s1"})).local().unwrap();
+            assert_eq!(c.path, "/api/catalog", "{} 应读目录路由", m);
+        }
+
+        // ---- 选择：它的形状 {selections:{model,permission}} 要**翻译**成我们的形状 ----
+        let c = map_aa_method_to_local(
+            "session.selections.update",
+            &serde_json::json!({"sessionId":"s1","selections":{"model":"dsh:model:AAA","permission":"dsh:permission:YXNr"}}),
+        )
+        .local()
+        .unwrap();
+        assert_eq!(c.path, "/api/selections");
+        assert!(c.body.contains("dsh:model:AAA"), "model 要原样带过去（我们的路由会解码）：{}", c.body);
+        assert!(c.body.contains("securityMode"), "permission 要翻成 securityMode：{}", c.body);
+        assert!(c.body.contains("dsh:permission:YXNr"));
+        // 只给 model 时**不该**出现 securityMode（不许顺手改权限档）
+        let c = map_aa_method_to_local(
+            "session.selections.update",
+            &serde_json::json!({"sessionId":"s1","selections":{"model":"dsh:model:AAA"}}),
+        )
+        .local()
+        .unwrap();
+        assert!(!c.body.contains("securityMode"), "没给 permission 就不该动权限档：{}", c.body);
+
+        // ---- 发消息 ----
+        let c = map_aa_method_to_local(
+            "session.send_message",
+            &serde_json::json!({"sessionId":"s1","content":"hi"}),
+        )
+        .local()
+        .unwrap();
+        assert_eq!(c.path, "/api/chat");
+        assert!(c.body.contains("hi"));
+
+        // ---- 中断 ----
+        let c = map_aa_method_to_local("session.interrupt", &serde_json::json!({"sessionId":"s 1"}))
+            .local()
+            .unwrap();
         assert_eq!(c.method, "POST");
         assert_eq!(c.path, "/api/chat/cancel");
         assert!(c.body.contains("s 1"), "body 应带上会话 id：{}", c.body);
-        // 时间线
-        let c = map_aa_method_to_local("timeline.sync", &serde_json::json!({"sessionId":"s1"})).unwrap();
-        assert_eq!(c.path, "/api/sessions/s1/messages");
-        // 选择
+
+        // ---- 交互回答：入站方法名是 interaction.respond ----
+        //
+        // 这条判据钉的是一个**我先前搞错的事实**：我前两轮把
+        // session.interaction.approval 当成回答方法，而它其实是能力标签/通知方法。
+        // 真正的入站方法是 interaction.respond（runtime_rpc.py 的 METHODS）。
+        // 照我原来的写法，服务端发来的回答**根本不会被处理** ——
+        // 手机点了"允许"会石沉大海，而日志上看不出任何异常。
         let c = map_aa_method_to_local(
-            "session.selections.update",
-            &serde_json::json!({"sessionId":"s1","model":"m"}),
+            "interaction.respond",
+            &serde_json::json!({"sessionId":"s1","noticeId":"n1","actionId":"reject"}),
         )
-        .unwrap();
-        assert_eq!(c.path, "/api/selections");
-        // 审批：它那边的动作名要**显式**映射到我们的
-        let c = map_aa_method_to_local(
-            "session.interaction.approval",
-            &serde_json::json!({"noticeId":"n1","actionId":"reject"}),
-        )
+        .local()
         .unwrap();
         assert_eq!(c.path, "/api/approvals/n1");
         assert!(c.body.contains("\"action\":\"deny\""), "reject 应映射成 deny：{}", c.body);
-        // allow-once ⇒ allow（它用的是连字符形式，不是 allow/approve/allow_once）
         let c = map_aa_method_to_local(
-            "session.interaction.approval",
-            &serde_json::json!({"noticeId":"n2","actionId":"allow-once"}),
+            "interaction.respond",
+            &serde_json::json!({"sessionId":"s1","noticeId":"n2","actionId":"allow-once"}),
         )
+        .local()
         .unwrap();
         assert!(c.body.contains("\"action\":\"allow\""), "allow-once 应映射成 allow：{}", c.body);
-        // **我们自己的内部词汇不是合法的远端动作** —— 不许把旧名字当兼容别名
+
+        // 我原先那个错的方法名**不该**被当成回答来处理
+        assert!(
+            map_aa_method_to_local(
+                "session.interaction.approval",
+                &serde_json::json!({"sessionId":"s1","noticeId":"n1","actionId":"reject"})
+            )
+            .is_unsupported(),
+            "session.interaction.approval 不是入站回答方法，不该被当成回答"
+        );
+
+        // **我们自己的内部词汇不是合法的远端动作** —— 不许当兼容别名
         for wrong in ["allow", "deny", "approve", "allow_once", "allow-always"] {
             assert!(
                 map_aa_method_to_local(
-                    "session.interaction.approval",
-                    &serde_json::json!({"noticeId":"n1","actionId":wrong})
+                    "interaction.respond",
+                    &serde_json::json!({"sessionId":"s1","noticeId":"n1","actionId":wrong})
                 )
-                .is_none(),
+                .is_unsupported(),
                 "{} 不是它的动作 id，不该被接受",
                 wrong
             );
         }
-        // **不认识的动作不许猜**
-        assert!(map_aa_method_to_local(
-            "session.interaction.approval",
-            &serde_json::json!({"noticeId":"n1","actionId":"whatever"})
-        )
-        .is_none());
-        // 未实现的方法必须返回 None（⇒ 上游会回 method_not_supported，而不是假装成功）
-        assert!(map_aa_method_to_local("terminal.create", &serde_json::json!({})).is_none());
-        assert!(map_aa_method_to_local("fs.readText", &serde_json::json!({})).is_none());
-        assert!(map_aa_method_to_local("no.such.method", &serde_json::json!({})).is_none());
+
+        // ---- 明确不做的：必须是"不支持"，不是"假装成功" ----
+        for m in ["session.steer", "session.commands", "session.command.execute", "runtime.start", "runtime.stop"] {
+            assert!(map_aa_method_to_local(m, &serde_json::json!({})).is_unsupported(), "{} 应明确不支持", m);
+        }
+        // 完全不属于它的方法
+        assert!(map_aa_method_to_local("terminal.create", &serde_json::json!({})).is_unsupported());
+        assert!(map_aa_method_to_local("fs.readText", &serde_json::json!({})).is_unsupported());
+        assert!(map_aa_method_to_local("no.such.method", &serde_json::json!({})).is_unsupported());
+    }
+
+    #[test]
+    fn every_inbound_method_is_accounted_for() {
+        // 它的入站方法表（runtime_rpc.py:54-77）里的每一条，都必须
+        // **要么被映射**、**要么被登记为"明确不做"** —— 不许有漏网之鱼。
+        // 漏掉一条的后果是：服务端发过来，我们回"不支持"，
+        // 而看上去像"它没发过" —— 极难归因。
+        let probe = serde_json::json!({"sessionId":"s1","noticeId":"n1","actionId":"allow-once"});
+        for m in AA_INBOUND_METHODS {
+            let d = map_aa_method_to_local(m, &probe);
+            let known = !d.is_unsupported() || AA_UNSUPPORTED.iter().any(|(u, _)| u == m);
+            assert!(known, "{} 既没映射也没登记为「明确不做」", m);
+            // 登记过的都必须有**非空理由**
+            if let Some((_, why)) = AA_UNSUPPORTED.iter().find(|(u, _)| u == m) {
+                assert!(!why.trim().is_empty(), "{} 的「不做」理由不能为空", m);
+            }
+        }
+        // 反向：登记表里的每一条都必须是它的真实方法（别登记一个不存在的）
+        for (m, _) in AA_UNSUPPORTED {
+            assert!(AA_INBOUND_METHODS.contains(m), "{} 不在它的入站方法表里", m);
+        }
+        // 方法表本身不许有重复
+        let mut sorted = AA_INBOUND_METHODS.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), AA_INBOUND_METHODS.len(), "入站方法表里有重复");
     }
 
     #[test]

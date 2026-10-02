@@ -73,23 +73,45 @@ describe("第 122 轮阶段 4 · 远端选择与在场", () => {
     expect(isLoosening("", "ask")).toBe(true);
   });
 
-  it("S4-2/S4-3: 收紧放行、放宽拒绝，且拒绝时说清「为什么 + 怎么办」", () => {
+  it("S4-2/S4-3（R5 修正）: 只校验档位是否存在，**不再限制方向**（与 DSH 一致）", () => {
+    /**
+     * ⚠️ 这条判据在阶段 R5 被**反转**了，过程记档。
+     *
+     * 阶段 4 的规则是"远端只能收紧、放宽拒绝"，判据也照那个写。
+     * 用户后来的口径是**完全按 DSH 的模式走**，而 DSH 允许远端改权限档
+     * ⇒ 那条限制被去掉 ⇒ **这条判据当场变红**。
+     *
+     * 我没有删掉它，而是把它改成钉**新**行为，并把后果写在这里：
+     * 远端现在可以把权限档改成「自动放行一切」，**从那之后阶段 0 的审批不再生效**。
+     * 这是有意的取舍（与 DSH 同语义），不是疏漏。
+     */
+    // 收紧：允许
     const t = verdictForRemoteSecurityChange("full", "ask");
     expect(t.ok).toBe(true);
     expect(t.ok === true && t.kind).toBe("tighten");
 
+    // 不变：允许
     const same = verdictForRemoteSecurityChange("auto", "auto");
     expect(same.ok === true && same.kind).toBe("same");
 
+    // **放宽：现在也允许**（这就是与阶段 4 的区别）
     const loose = verdictForRemoteSecurityChange("ask", "full");
-    expect(loose.ok).toBe(false);
-    if (loose.ok === false) {
-      expect(loose.code).toBe("remote_cannot_loosen");
-      // 要说清**为什么**（会自己取消对自己的监督）
-      expect(loose.message).toMatch(/自己取消对自己的监督|自动通过/);
-      // 还要说清**怎么办**（去电脑上改）—— 含糊的"不允许"没用
-      expect(loose.message).toMatch(/电脑/);
+    expect(loose.ok, "与 DSH 一致 ⇒ 放宽必须被允许").toBe(true);
+    expect(loose.ok === true && loose.kind).toBe("loosen");
+
+    // 但**方向仍要如实报出来**，好让界面能提示"你现在允许所有操作自动通过"
+    expect(isLoosening("ask", "full")).toBe(true);
+    expect(isLoosening("full", "ask")).toBe(false);
+
+    // 唯一保留的拦截：**不认识的档位**（fail-closed）
+    const unknown = verdictForRemoteSecurityChange("ask", "yolo");
+    expect(unknown.ok).toBe(false);
+    if (unknown.ok === false) {
+      expect(unknown.code).toBe("permission_not_in_catalog");
+      // 要说清有哪些可用（含糊的"不允许"没用）
+      expect(unknown.message).toMatch(/ask \/ auto \/ full/);
     }
+    expect(verdictForRemoteSecurityChange("ask", "").ok).toBe(false);
   });
 
   it("S4-4: 判定必须在**服务端**做（界面自己猜规则 = 可绕过）", () => {

@@ -533,11 +533,26 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       const st = useProjectStore.getState();
       const project = st.currentProject;
       const now = Date.now();
-      const sessionId = `ph-${now.toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
+      /**
+       * 阶段 R5：**它指定 sessionId**（`SessionCreateParams.sessionId`），
+       * 我们原来是自己生成一个 —— 那会让调用方按它给的 id 去查却查不到
+       * （真实的协议不一致，不是风格问题）。
+       *
+       * 所以：给了就用给的（并做基本校验），没给才自己生成。
+       */
+      const requested = String(body.sessionId || "").trim();
+      if (requested && !/^[\w.-]{1,128}$/.test(requested)) {
+        await invokePhoneRespond(req.reqId, 400, {
+          error: "sessionId 只允许字母数字与 . _ -，长度 1..128",
+          code: "invalid_session_id",
+        });
+        return;
+      }
+      const sessionId = requested || `ph-${now.toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
       SessionStorage.createSession({
         id: sessionId,
         projectId: project?.id || "",
-        title: "手机新对话",
+        title: String(body.title || "").trim() || "手机新对话",
         createdAt: now,
         lastMessageAt: now,
         messageCount: 0,
