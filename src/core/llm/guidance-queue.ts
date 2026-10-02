@@ -146,23 +146,41 @@ export class GuidanceQueue {
   }
 
   /**
-   * Expire (discard) all pending guidance items for a session.
-   * Called when the agentic loop finishes (normally or via abort).
-   * Returns the IDs of expired items for UI cleanup.
+   * Take **all** pending guidance items for a session (FIFO) and empty the queue.
+   *
+   * 与 `expire()` 的区别只有返回值：`expire()` 只给出 id（调用方拿不到文本，
+   * 因此**没法把没被消费的消息救回来**），`drain()` 把条目本身交出来。
+   * 第 ? 波：`agentic-loop.run()` 在回合开始时用 `drain()` 接管上一轮的残留，
+   * 把每一条**落库成真实 user 消息**并 `yield guidance_received` ——
+   * 「用户发了但模型没看到」不再可能静默发生（见那边的注释）。
    */
-  expire(sessionId: string): string[] {
+  drain(sessionId: string): GuidanceItem[] {
     const queue = this.queues.get(sessionId);
     if (!queue || queue.length === 0) {
       return [];
     }
 
-    const expiredIds = queue.map((item) => item.id);
+    const items = queue.slice();
     this.queues.delete(sessionId);
 
     console.log(
-      `[GuidanceQueue] Expired ${expiredIds.length} item(s) for session ${sessionId}`,
+      `[GuidanceQueue] Drained ${items.length} item(s) for session ${sessionId}`,
     );
-    return expiredIds;
+    return items;
+  }
+
+  /**
+   * Expire (discard) all pending guidance items for a session.
+   * Returns the IDs of expired items for UI cleanup.
+   *
+   * ⚠️ 文档此前写的是「Called when the agentic loop finishes」，与真实调用点不符：
+   * 它唯一的调用点是 `agentic-loop.run()` 的**开头**（接管上一轮的残留）。
+   * 现在那条路径改走 `drain()`（把消息救回来），本方法只保留给
+   * 「确实要丢弃」的调用方和既有测试（`core-guidance-pause-resume.test.ts`）。
+   */
+  expire(sessionId: string): string[] {
+    const items = this.drain(sessionId);
+    return items.map((item) => item.id);
   }
 
   /**

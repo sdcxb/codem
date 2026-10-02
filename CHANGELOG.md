@@ -2,6 +2,61 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.223] - 2026-10-02
+
+### 修复
+
+- **`workflow` 工具与 `run_code` 有完全相同的权限绕过 —— 上一版只关了一扇门。**
+  上一版修掉 `run_code` 内部的 `sdk.bash` / `sdk.write` 绕过权限闸门的问题之后，
+  同一条链路上 **`workflow` 仍然敞着**：它的 `sdk.bash` 同样**直接调用命令执行器**、
+  从不经过危险命令分析器，`sdk.write` 同样不经过写确认与受保护路径检查，
+  而 `workflow` 本身在「替我审批」模式下也是自动放行的。
+  也就是说上一版的修复可以被"换个工具包一层"绕过去。
+  这次的做法不是再抄一遍：把两道闸门抽成共享模块 `src/core/llm/tool-gates.ts`，
+  `run_code` 与 `workflow` 都用它（顺带消掉了原来"相似度函数在两处重复、注释自认有漂移风险"的问题）。
+  `workflow` 的契约也从 `sideEffectScope: "workspace"` 改成 `"system"` —— 它原本**低报**了自己的能力
+  （能跑任意 shell、能 spawn 子智能体、能写工作区外的路径），而权限层正是按这个声明判断的。
+  判据 `workflow-permission-parity.test.ts`（10 条）；变异自证：去掉 bash 闸门 ⇒
+  `包在 workflow 里的危险命令绝不能被真的执行: ...actually been called 1 times`。
+- **`Active Goals` 与「时间上下文」是同一个死守卫的受害者 —— 上一版只修了一半。**
+  上一版发现 `apiMessages[0].role === "system"` 这个守卫**恒为假**（真实请求里 `messages[0]` 是第一条用户消息），
+  于是把时间上下文挪到了尾部消息。这次把同一批里**剩下的那几个**也接上了：
+  deferred 工具提示、待处理/活跃 skill 提示、skill 目录、以及**活跃目标**。
+  也就是说**「活跃目标」以前从来没有到达过模型** —— 这个功能一直是死的。
+  `goal-injection.test.ts` 原来断言的是**源码里某段文本**，所以它在这个功能失效的状态下一直是绿的；
+  已改写成行为判据（驱动真实循环、拦截 provider 请求、断言目标内容确实在请求里）。
+- **`planContext` 是真正活着的那个前缀变动源，会把每轮的 KV 缓存打掉。**
+  `planContext = renderPlanSection(plan, macroStep)` 被拼进 system 前缀，而 `macroStep` 在**同一个回合内**
+  收到 `tool_start` 时就自增 —— 新判据实测到迭代 1 是「进行到第 1/4 步」、迭代 2 是「进行到第 2/4 步」，
+  **同一轮的相邻请求前缀真的不同** ⇒ 缓存必然失效。现在与时间上下文同形：移出前缀、改走尾部独立消息。
+  判据 `dsh-d5b-plan-prefix-stability.test.ts`；变异自证：把计划段拼回前缀 ⇒
+  `第 1 次请求把计划段拼进了 system 前缀（每轮都会变 ⇒ 前缀缓存失效）`。
+- **中途中途输入（引导消息）会被静默丢掉。** 如果用户在"这一轮已经决定要停、下一轮还没开始"的窗口里
+  输入一条纠偏指令，它会被成功入队、界面气泡照常显示，然后**下一轮 `run()` 的第一件事就把它删掉** ——
+  模型永远看不到，用户也收不到任何信号。现在未被消费的引导会**变成一条真实落库的用户消息**交给模型
+  （并发出既有的 `guidance_received` 事件，让状态栏气泡正常收掉）。判据
+  `guidance-carryover-not-dropped.test.ts`（2 条），变异自证：恢复旧行为 ⇒
+  `用户的话必须真的到达模型 —— 静默删除的旧行为在这里会失败: expected false to be true`。
+
+### 新增
+
+- **「水平与 token 消耗不差于 dsh」这把尺子现在是一整套可跑的东西**（`tools/eval/`）：
+  冻结任务集 **14 个任务 / 6 个覆盖口径**、单臂执行器、两根桩臂、成对评测器，
+  以及**证明判据真的会区分对错**的链路自测：什么都不做的桩臂 **14/14 全红**、抄参考解的桩臂 **14/14 全绿**。
+  自测 11 条 + 变异 **4/4 咬住**，全部挂进 `npm run audit`。
+- 测量方案与"还差什么"写在 `docs/MEASUREMENT-PLAN-DSH-VS-CODEM.md`。
+  **重要：仍然没有任何对比数字** —— 两条真实臂的 driver 还没做（已核实：DSH 的 `dsh-headless`/`dsh-cmdline`
+  都没有声明 `bin`，我们的 `package.json` 也没有 headless 入口），所以**本版依旧不能主张"已经不差于 dsh"**。
+
+### 这一版**没有**做的（不是「已经完成」）
+
+- **两条臂的 driver**（§上面的新增里已说明）—— 没有它就没有数字。
+- **`isAutoApprovable` 未动**：外层 `run_code` / `workflow` 在 auto 模式下**仍可被自动放行**；
+  闸门关在**嵌套调用**那一层。要不要连外层也改成需要确认，是产品决定。
+- `run_code` / `workflow` 内 `sdk.read` 仍无 workspace 路径检查；`sdk.spawn` 的子智能体不在这道闸门里。
+- **崩溃时的耐久性**（`append_file` 无 fsync；半截尾行会把下一条合法记录粘在一行、并在压缩时被永久删除）—— 仍未修。
+- **`skippedLines` 没有任何消费者**（那行 doc 承诺了做不到的事）。
+
 ## [1.16.222] - 2026-10-02
 
 ### 改

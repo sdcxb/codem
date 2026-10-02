@@ -26,45 +26,22 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
-import { analyzeBashCommand, evaluateWithBashAnalysis } from "../../permission/bash-analyzer";
-
-// ========== 与 write 工具对齐的覆盖保护参数 ==========
-
 /**
- * `src/core/llm/tools.ts:321` 的 `OVERWRITE_SIMILARITY_THRESHOLD`（0.1）。
+ * 闸门（危险命令 / 受保护路径 / 覆盖确认）已抽到 `../tool-gates`，与
+ * `workflow-engine.ts` **共用同一份实现**（原来这里是本地私有副本，
+ * 而 workflow 侧根本没有闸门 —— 见 `tool-gates.ts` 的文件头）。
  *
- * 该常量与下面的 `calculateContentSimilarity` 在 `tools.ts` 中是**模块私有**的，
- * 且本次任务禁止改动 `tools.ts` —— 所以在本地复刻一份（而不是发明一套新判据）。
- * 两者是同一个判据的两份实现，**存在漂移风险**：`tools.ts` 那份若改了阈值或算法，
- * 这里不会自动跟随，也没有测试能发现（`tools.ts` 的实现没有导出，
- * 无法在测试里做交叉断言）。要消除该风险需要把判据提到共享模块 —— 那会动到
- * `tools.ts`，超出本次修复范围，故只在此如实记录。
+ * `calculateContentSimilarity` / `OVERWRITE_SIMILARITY_THRESHOLD` 从本文件
+ * **重新导出**：`pi-p2-run-code-permission-parity.test.ts` 直接从 `run-code.ts`
+ * 引它来钉住算法，保持该测试一字不改。
  */
-const OVERWRITE_SIMILARITY_THRESHOLD = 0.1;
+import {
+  confirmWriteIfNeeded,
+  refuseDangerousCommand,
+  refuseProtectedPathWrite,
+} from "../tool-gates";
 
-/**
- * 与 `src/core/llm/tools.ts:303-318` 的 `calculateContentSimilarity` 逐行等价：
- * 按行去空白求交集占比。返回 0.0（完全不同）～ 1.0（逐字相同）。
- *
- * 之所以不复用 `tools.ts` 的实现：它是私有的，而本任务不允许改 `tools.ts`。
- * export 只是为了能被测试直接钉住算法（见同名测试文件）。
- */
-export function calculateContentSimilarity(oldContent: string, newContent: string): number {
-  if (oldContent === newContent) return 1.0;
-  if (!oldContent || !newContent) return 0.0;
-
-  const oldLines = new Set(oldContent.split("\n").map(l => l.trim()).filter(l => l.length > 0));
-  const newLines = newContent.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-
-  if (newLines.length === 0) return 0.0;
-
-  let commonLines = 0;
-  for (const line of newLines) {
-    if (oldLines.has(line)) commonLines++;
-  }
-
-  return commonLines / Math.max(newLines.length, oldLines.size);
-}
+export { calculateContentSimilarity, OVERWRITE_SIMILARITY_THRESHOLD } from "../tool-gates";
 
 // ========== Tool SDK (available inside run_code) ==========
 
@@ -139,183 +116,13 @@ export async function executeCode(
 }
 
 // ========== 权限对齐辅助（闸门） ==========
-
-/**
- * 判断 `sdk.bash` 是否必须**拒绝执行**（fail-closed）。
- *
- * 返回 `null` = 允许执行；返回字符串 = 拒绝原因（调用方抛错，脚本与模型都能读到）。
- *
- * ## 规则为什么是「dangerous 一律拒绝」而不是「按模式放行」
- *
- * `analyzeBashCommand` 的 `dangerous` 分类是 `isAutoApprovable`
- * （`security-mode.ts:149-184`）唯一会否掉的东西 —— 也就是说，
- * `dangerous` 的含义正是「**在任何模式下都不许静默执行**」：
- *
- * - `full`：用户显式放弃审批，直接调 `bash` 工具确实会执行；但 `run_code` 内部
- *   拿不到任何审批通道（`ToolContext` 没有 `executeTool`/`onPermissionRequest`，
- *   见 `tools.ts:409-439`）。此时若放行，等于把「用户放弃审批」偷换成
- *   「模型可以在一个被 `isAutoApprovable` 恒判可放行的外壳里执行危险命令」——
- *   而真正的危险闸门（`evaluateWithBashAnalysis`，`bash-analyzer.ts:291`）
- *   只会把 `allow` 升级成 `ask`，**不会**降级成 deny。所以「拒绝」与之一致。
- * - `ask` / `auto`：本应询问用户。这里**没有**可用的询问通道（同样的缺口），
- *   而 `agentic-loop.ts:1005-1019` 已经为「需要问却没人可问」立了先例：
- *   **明确拒绝并说清原因**，不许落到缺省放行。这里照做。
- *
- * 结论：拒绝 + 告诉模型去直接调 `bash` 工具（那条路上用户会被问到）是唯一
- * 既不放行危险命令、又不假装问过的行为。
- *
- * ## fail-closed
- *
- * 分析器抛错时**同样拒绝**（`security-mode.ts:159-163` 的 `catch { return false }`
- * 是同一约定的先例）：拿不准就不执行，而不是当作安全。
- */
-function refuseDangerousCommand(
-  command: string,
-  securityMode: ToolContext["securityMode"],
-  timeoutMs: number,
-): string | null {
-  let analysis: ReturnType<typeof analyzeBashCommand>;
-  try {
-    analysis = analyzeBashCommand(command);
-  } catch (err: any) {
-    return (
-      `Error: refused to execute this command inside run_code — the bash security analyzer threw ` +
-      `(${err?.message || String(err)}), so it was treated as unsafe (fail-closed). ` +
-      `Call the \`bash\` tool directly instead so the normal permission checks apply. ` +
-      `[command: ${command}] [timeout_ms: ${timeoutMs}]`
-    );
-  }
-
-  if (analysis.classification !== "dangerous") return null;
-
-  const detail = analysis.dangerousPatterns.join("; ");
-  let evaluated = "";
-  try {
-    const settlement = evaluateWithBashAnalysis(command, "allow");
-    evaluated = settlement.action === "ask"
-      ? ` The user approval gate would have to be honoured (the analyzer raises the action to 「ask」), but run_code has no approval channel.`
-      : "";
-  } catch (err: any) {
-    // 它抛错**不影响「拒绝」这个决定**（拒绝是无条件的），但也不能静默吞掉：
-    // 写进理由里，否则排查时分不清「确定危险」与「判不出来所以保守拒绝」。
-    evaluated = ` (evaluateWithBashAnalysis also threw: ${err?.message || String(err)}; refusing conservatively)`;
-  }
-
-  return (
-    `Error: refused to execute this command inside run_code — analyzeBashCommand classified it as "dangerous". ` +
-    `Detected patterns: ${detail}. ` +
-    `run_code executes nested calls without a user-approval channel, so a dangerous command cannot be approved here; ` +
-    `refusing is the fail-closed behaviour.${evaluated} ` +
-    `Call the \`bash\` tool directly with the same command so the user is asked. ` +
-    `[command: ${command}] [timeout_ms: ${timeoutMs}] [security_mode: ${securityMode ?? "unset"}]`
-  );
-}
-
-/**
- * 读盘失败是不是「这个路径不存在」。
- *
- * ⚠️ 这是**文本判据**，而文本判据会随文案微调静默失效（仓库里 `src/core/storage/session-jsonl.ts`
- * 的 `isFileMissingError` 已经写过这条教训）。这里用它是因为**方向是保守的**：
- * 判成"不存在" ⇒ 当新建（不问）；**判不出来 ⇒ 按"可能已存在"处理（去问）**。
- * 所以它误判的后果是"多问一次"，而不是"少问一次"。
- */
-function isMissingPathError(message: string): boolean {
-  return (
-    // Node / fetch 层惯例（测试桩与部分 JS 侧路径用这个）
-    /\bENOENT\b/.test(message) ||
-    /\bENOTDIR\b/.test(message) ||
-    // Rust `std::fs` 侧的文案（真机链路：`Failed to read ...: os error 2`）
-    /os error 2\b/.test(message) ||
-    /no such file/i.test(message) ||
-    /cannot find the (file|path)/i.test(message) ||
-    /找不到指定的(路径|文件)/.test(message)
-  );
-}
-
-/**
- * `sdk.write` 的覆盖确认 —— 与 `write` 工具（`tools.ts:1400-1460`）同一判据：
- * 文件已存在、非空、且与**逐行等价**的相似度低于 0.1 时，
- * 在 `securityMode === "ask"` 且有 `onWriteConfirm` 的情况下询问用户（「ask」模式），
- * 并尊重结果（reject / custom ⇒ 不写盘并报明原因）。
- *
- * 与 `write` 工具的两点差异（都不是放宽）：
- * 1. 这里**没有** `append` 语义（`sdk.write` 的契约就是覆盖），所以不做 append 分支。
- * 2. `write` 工具在「没有回调」时打印 warning 后照写；这里同样照写 ——
- *    闸门的缺失由 `createRunCodeTool` 的 guidance/description 如实说明，
- *    不在这一层发明新策略。
- */
-async function confirmWriteIfNeeded(
-  path: string,
-  content: string,
-  ctx: ToolContext,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  let existingContent: string | null = null;
-  /**
-   * 读盘失败**不能**被当成"文件不存在"。旧实现的 catch 是空的 ⇒ `existingContent` 保持 null
-   * ⇒ 走下面的"新建"分支 ⇒ **跳过覆盖确认**。那是这一层的 fail-open，而且窗口是真实的：
-   * 二进制/超大文件、权限、引擎暂时不可用都会让 `read_file` 失败，而 `write_file` 可能照样写得下去
-   * —— 于是用户在被覆盖之前**一次都没被问过**。
-   *
-   * 现在的方向是保守的：只有**能确认不存在**才当新建；**判不出来一律按"可能已存在"处理**（去问）。
-   */
-  let readFailure: string | null = null;
-  try {
-    const { readFile } = await import("../../file-api");
-    existingContent = await readFile(path);
-  } catch (err: any) {
-    const detail = String(err?.message ?? err ?? "");
-    readFailure = isMissingPathError(detail) ? null : detail;
-  }
-
-  if (readFailure === null && (existingContent === null || existingContent.length === 0)) return { ok: true };
-
-  const secMode = ctx.securityMode || "ask";
-  const canConfirm = Boolean(ctx.onWriteConfirm) && secMode === "ask";
-
-  if (readFailure === null) {
-    const similarity = calculateContentSimilarity(existingContent!, content);
-    if (similarity >= OVERWRITE_SIMILARITY_THRESHOLD) return { ok: true };
-    if (!canConfirm) {
-      // 与 write 工具一致：auto/full 模式跳过 Diff 确认；没有回调时无从确认。
-      return { ok: true };
-    }
-  } else if (!canConfirm) {
-    // 读不到、又无从确认（auto/full 或无回调）：与 write 工具一致不阻塞，但**留下痕迹**。
-    console.warn(
-      `[run-code] sdk.write could not read the existing content of "${path}" (${readFailure}); ` +
-        `proceeding without an overwrite confirmation (mode=${secMode}, onWriteConfirm=${Boolean(ctx.onWriteConfirm)})`,
-    );
-    return { ok: true };
-  }
-
-  const confirmResult = await ctx.onWriteConfirm!({
-    filePath: path,
-    existingContent: existingContent ?? "",
-    newContent: content,
-  });
-  if (confirmResult.action === "reject") {
-    return {
-      ok: false,
-      reason:
-        `Error: the user rejected the overwrite of "${path}" by sdk.write inside run_code ` +
-        (readFailure === null
-          ? `(existing ${existingContent!.length} bytes, similarity ${calculateContentSimilarity(existingContent!, content).toFixed(3)} < ${OVERWRITE_SIMILARITY_THRESHOLD}). `
-          : `(its existing content could not be read: ${readFailure}). `) +
-        `Nothing was written. Use the \`edit\` tool for targeted modifications, or ask the user how to proceed.`,
-    };
-  }
-  if (confirmResult.action === "custom") {
-    return {
-      ok: false,
-      reason:
-        `Error: sdk.write did not write "${path}" — the user gave a ONE-TIME instruction for this write instead of ` +
-        `approving the overwrite: "${confirmResult.instruction}". ` +
-        `Nothing was written. Apply that instruction (prefer the \`edit\` tool) and then write again; ` +
-        `the instruction applies only to that one operation.`,
-    };
-  }
-  return { ok: true };
-}
+//
+// 闸门实现已全部搬到 `src/core/llm/tool-gates.ts`（`refuseDangerousCommand` /
+// `refuseProtectedPathWrite` / `confirmWriteIfNeeded`），由 `run_code` 与
+// `workflow` **共用同一份**。原来这里的私有副本已删除 —— 保留副本正是
+// 「两个进程内 SDK 各有一道闸门、其中一个漏装」这类缺陷的温床。
+// 逐字搬运的语义说明（为什么 dangerous 一律拒绝 / 为什么读不到现有内容也要问）
+// 跟着函数一起搬到了 `tool-gates.ts`。
 
 // ========== Tool Definition ==========
 
@@ -381,15 +188,9 @@ Timeout: 30 seconds.`,
         async write(path: string, content: string) {
           // 受保护路径（.git/ .env node_modules/ …）：`write` 工具在建任何东西之前就拒绝
           // （`tools.ts:1385-1391`，`isProtectedPath`，`tools.ts:291`）。
-          // 只 import 既有实现，不改 `tools.ts`。
-          const { isProtectedPath } = await import("../tools");
-          if (isProtectedPath(path)) {
-            throw new Error(
-              `Error: This path is protected and cannot be written to by sdk.write: "${path}". ` +
-              `Protected paths include .git/, .env, .codem-snapshots/, node_modules/. ` +
-              `Use the 'edit' tool for modifying existing files in safe locations.`,
-            );
-          }
+          // 与 `workflow` 共用同一实现（`tool-gates.ts`），判据只有一份。
+          const protectedRefusal = await refuseProtectedPathWrite(path);
+          if (protectedRefusal) throw new Error(protectedRefusal);
           const confirmed = await confirmWriteIfNeeded(path, content, ctx);
           if (!confirmed.ok) throw new Error(confirmed.reason);
           const { writeFile } = await import("../../file-api");

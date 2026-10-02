@@ -937,8 +937,71 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       console.warn("[AgenticLoop.run] Sandbox init failed:", sandboxErr);
     }
 
-    // Clear any stale guidance from a previous run for this session
-    this.guidanceQueue.expire(sessionId);
+    /**
+     * 上一轮遗留的引导消息（mid-turn steering）：**不许静默丢弃**。
+     *
+     * ## 缺陷形态（修复前）
+     *
+     * 这里原来是 `this.guidanceQueue.expire(sessionId)` —— 一句**静默删除**，
+     * 而且它是 `run()` 的**第一件事**。窗口是真实的：
+     * `sendGuidance()`（本文件 `:4094`）只检查 `currentSessionId`，而该字段
+     * 在 `run()` 开头被赋值后**从不复位**（`grep currentSessionId` 只有
+     * `:880` 一处赋值）。于是「循环已经决定停下、下一次 `run()` 还没开始」的间隙里，
+     * 用户手打的纠偏会**入队成功**（`enqueue` 返回条目、UI 气泡出现、`guidance-received`
+     * 一类反馈照走），紧接着下一次 `run()` 把它删掉：模型没见过、用户也没有任何信号。
+     * `guidance-queue.ts` 的 `expire` 文档当时还写着「Called when the agentic loop
+     * finishes」—— 与唯一的调用点（回合**开始**）不符。
+     *
+     * ## 本轮的处置（三选一里选了哪条、为什么）
+     *
+     * 备选：① 把 `expire()` 挪到「回合终态」；② 把残留变成**真实且落库的 user 消息**；
+     * ③ 至少发一条可见通知。选 ②，理由：
+     * - ① 在本文件里**没有单点终态**：`run()` 有 10+ 个 `return`（abort / 截断 /
+     *   重复守卫 / 成本上限 / …），把清理塞进每一条分支就等于「漏一条就泄漏一次」，
+     *   而 `run()` 是生成器、没有包住整个循环的 `try/finally` 可挂 ——
+     *   要造出单点终态得先把 900 行循环拆成内部生成器，改动面远大于收益；
+     * - ② 同时满足「不可能丢」与「可见」：消息**真的会到模型手里**
+     *   （落库后本轮 `buildMessages`（`:1293`）立刻读到），而且**留在会话历史里**
+     *   用户能看见 —— 与 DSH 的 inbox「持久投影」同取向
+     *   （`.deepseek-harness-ref/packages/core/agent-loop/src/inbox.ts` 的丢弃会发
+     *   `agent/inbox/discarded` 事件，这里走得更远：不丢，落库）；
+     * - ③ 只是告知，用户的话仍然没了 —— 不作为唯一手段，但这里**仍然复用**
+     *   `guidance_received` 让 UI 把那条状态栏气泡收掉（否则气泡会永久残留），
+     *   于是「可见」也一并具备。
+     *
+     * ## 为什么落库用 GUIDANCE_MESSAGE_TEMPLATE
+     *
+     * 与「本轮被正常消费」的引导消息**同一个形态**：模型据此知道这是运行期纠偏指令，
+     * 而不是一条要正式回应的普通聊天消息。区别只有时机 —— 它晚了一轮。
+     */
+    const leftoverGuidance = this.guidanceQueue.drain(sessionId);
+    for (const item of leftoverGuidance) {
+      try {
+        this.getMessageStorage().createMessage({
+          id: `guidance-carryover-${item.id}`,
+          role: "user",
+          content: GUIDANCE_MESSAGE_TEMPLATE(item.message),
+          timestamp: item.timestamp,
+          status: "done",
+        }, sessionId);
+        // 落库改变了历史 ⇒ 让消息缓存重建（否则本轮可能用旧投影，看不到这条）
+        this.msgCache = null;
+        console.log(
+          `[AgenticLoop] Carried over unconsumed guidance ${item.id} into the session as a persisted user message`,
+        );
+      } catch (e) {
+        // 落库失败也**不许把它吞掉**：内容直接说给用户听（模型这一轮看不到，
+        // 但用户至少知道要重发），与「静默删除」是两种完全不同的结果。
+        console.warn(`[AgenticLoop] Failed to persist carried-over guidance ${item.id}:`, e);
+        yield {
+          type: "text_delta",
+          text: `\n\n⚠️ 你上一轮结束后发送的引导消息没能写入会话历史（「${item.message}」），本轮模型看不到它，请重新发送。\n`,
+        };
+      }
+      // 复用既有事件：UI 据此移除那条状态栏气泡 + 提示「已注入」——
+      // 它现在确实是**已注入**（作为落库的 user 消息进入本轮请求）。
+      yield { type: "guidance_received", message: item.message, guidanceId: item.id };
+    }
     // 每次新对话重置快照状态，确保每次对话独立创建快照
     this.resetSnapshot();
     // Reset tool deduplication state — new user message = new task, previous
@@ -1562,6 +1625,33 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
        * 放在所有其他注入（guidance / agent message）**之后**：这样"稳定前缀"尽可能长。
        * 该消息是**每轮临时构造**的（不落库），所以不会污染下一轮的历史。
        */
+      /**
+       * 计划上下文（当前执行计划 + 进行到第几步）：**每轮重算**，作为独立的尾部
+       * user 消息注入。
+       *
+       * 为什么是尾部消息而不是 system 前缀：`renderPlanSection(plan, macroStep)` 的
+       * 两半输入在**同一轮**内都会变（`macroStep` 随执行类工具推进、
+       * `activePlan.plan` 被 `update_plan` 改写），写进 `messages[0]` 就会让同一轮
+       * 第 2 次请求的前缀与第 1 次不同 ⇒ provider 前缀缓存整段失效
+       * （判据见 `dsh-d5-prefix-cache-stability.test.ts`；本轮的覆盖测试是
+       * `dsh-d5b-plan-prefix-stability.test.ts`）。
+       *
+       * 放在 `trailingTurnContext` **之前**：这样「最后一条消息」仍然是易变上下文
+       * （时间戳等），D5 的「易变内容只在尾部」判据与位置断言都不受影响；
+       * 计划段同样是**每轮临时构造、不落库**的（下一轮重新渲染，不会累积）。
+       */
+      const planContext = renderPlanSection(this.activePlan.plan, this.macroStep);
+      if (planContext) {
+        messagesForIteration = [
+          ...messagesForIteration,
+          {
+            id: `plan-context-${this.state.iteration}`,
+            role: "user" as const,
+            content: planContext,
+          },
+        ];
+      }
+
       if (trailingTurnContext) {
         messagesForIteration = [
           ...messagesForIteration,
@@ -2237,18 +2327,28 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       }
       const processedMessages = visionResult.messages;
 
-      // 计划上下文注入：让模型每轮看到"当前执行计划 + 进行到第几步"
-      // （对标 dsh todo —— 模型需要知道剩余步骤才能在合适时机 update_plan）。
-      // 无计划（纯问答）时为空串，不影响既有 prompt 缓存。
-      const planContext = renderPlanSection(this.activePlan.plan, this.macroStep);
-      const baseSystemPrompt = planContext
-        ? `${systemPrompt}\n\n${planContext}`
-        : systemPrompt;
-      // 稳定追加内容（deferred 工具提示 / 技能提示）拼在这里 ——
-      // 这是**唯一**真正会发给 provider 的 system 消息（见 extraSystemPrompt 的说明）。
+      /**
+       * 计划上下文**不再拼进 system 前缀**（第 ? 波：前缀缓存 / KV cache 稳定性）。
+       *
+       * 原实现是 `const baseSystemPrompt = systemPrompt + "\n\n" + planContext`，
+       * 而 `planContext = renderPlanSection(this.activePlan.plan, this.macroStep)`
+       * 在**同一轮**里就会变：
+       * - `macroStep` 在 `run()` 消费本迭代事件时推进（tool_start 分支的
+       *   `this.macroStep++`），于是第 N+1 次迭代渲染出的计划段与第 N 次不同；
+       * - `this.activePlan.plan` 会被 `update_plan` 工具改写（插入/追加步骤）。
+       *
+       * 结果：`messages[0]` 在同一轮的第 1 次与第 2 次请求之间就变了 ⇒ provider 的
+       * 前缀缓存（DeepSeek KV cache，命中价约为未命中的 1/4）整段失效 ——
+       * 这正是 `dsh-d5-prefix-cache-stability.test.ts` 守的那条判据，只是它当时
+       * 只覆盖了**跨轮**（时间戳），没覆盖**同轮跨迭代**。
+       *
+       * 现在计划段作为**独立的尾部 user 消息**注入（与 time-context / goals /
+       * surface notice 同一形态，见 `run()` 里 `plan-context-*` 那段），
+       * 每轮重新渲染 ⇒ 模型看到的信息只增不减，稳定前缀逐字节不变。
+       */
       const effectiveSystemPrompt = extraSystemPrompt
-        ? `${baseSystemPrompt}\n${extraSystemPrompt}`
-        : baseSystemPrompt;
+        ? `${systemPrompt}\n${extraSystemPrompt}`
+        : systemPrompt;
 
       const request: LLMRequest = {
         model: this.config.model || this.provider.id,

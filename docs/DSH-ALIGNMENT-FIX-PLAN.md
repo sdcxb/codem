@@ -458,14 +458,24 @@
 | 10b | D10b 同类其余实例（8 处路径） | ✅ | `dsh-d10b-tool-failure-class.test.ts`（13 条） | 3 组变异，每组红点与所修路径 1:1 对应（4 cordis / 2 read_attachment / 2 zvec） |
 | 11 | D11 更新保字段 | ✅ | `dsh-d11-update-message-preserves-fields.test.ts`（4 条） | ①旧优先级 ⇒ 附件 `expected undefined to deeply equal [...]`；②**brief 里给的字面量反转 ⇒ `metadata` 断言变红**（证明那个修法不充分，实施者改成"索引按字段为主 + 镜像补缺"）；③serializer 不写附件 ⇒ 红；④镜像退回手挑字段 ⇒ 红 |
 | 12 | D12 格式版本校验 | ✅ | `dsh-d12-session-log-version.test.ts`（5 条） | 去掉版本校验 ⇒ ①`expected {resolved} to be an instance of Error`；②`expected 1 to be +0`（**真的把未来格式读成了 1 条消息 —— 静默降级的实证**）；③`promise resolved instead of rejecting` |
-| 13 | D13 引导不静默丢弃 | ⬜ **未做** | — | 本轮未实施（见 §3 的口径：它的可达窗口窄，且判据形态取决于最终选哪种修法）。**不算已完成。** |
+| 13 | D13 引导不静默丢弃 | ✅（第 2 轮补做） | `guidance-carryover-not-dropped.test.ts`（2 条） | ①恢复旧 `expire()` + 空数组 ⇒ `必须 yield guidance_received（UI 靠它收掉状态栏气泡；否则气泡永久残留）: expected +0 to be 1`；②去掉 `createMessage` ⇒ `用户的话必须真的到达模型 —— 静默删除的旧行为在这里会失败: expected false to be true` |
+| 14 | **D5b `planContext` 才是真正活着的那个前缀变动源**（第 2 轮补做） | ✅ | `dsh-d5b-plan-prefix-stability.test.ts`（1 条，跑真实 provider 请求） | ①把计划段拼回 system 前缀 ⇒ `第 1 次请求把计划段拼进了 system 前缀（每轮都会变 ⇒ 前缀缓存失效）`；②把逐轮漂移追加到 system ⇒ `第 2 次请求的 system 消息与第 1 次不同 —— 同一轮迭代之间前缀变了，KV cache 必失效` |
+| 15 | **`workflow` 与 `run_code` 完全相同的权限开口**（第 2 轮补做，见 `docs/PI-ALIGNMENT-FIX-PLAN.md` P-2b） | ✅ | `workflow-permission-parity.test.ts`（10 条） | ①去掉 bash 闸门 ⇒ `包在 workflow 里的危险命令绝不能被真的执行: ...actually been called 1 times`；②去掉受保护路径拒绝 ⇒ `受保护路径在建任何东西之前就该拒绝 —— 一个字节都不许写` |
 
-**未做但已取证**：见 §3。**另有两处本轮发现、已记入 §3 的加重项**：`planContext` 才是真正活着的那个前缀变动源；
-以及 `append_file` 不检查尾换行导致"半截行裹住下一条合法记录、并在压缩时被永久删除"。
+**D5b 的证据是"实测漂移"，不是推理**：`planContext = renderPlanSection(this.activePlan.plan, this.macroStep)`，
+而 `macroStep` 在 `run()` 里收到本轮 `tool_start` 时自增 —— 新判据实测到迭代 1 渲染 `进行到第 1/4 步`、
+迭代 2 渲染 `进行到第 2/4 步`，所以同一轮的相邻请求**前缀真的不同**。
+修法与时间上下文同形：移出 system 前缀、改走尾部独立消息（排在对 `turn-context` 之前，以保持 D5 的"最后一条是易变内容"不变）。
 
-**新增的工程产物**：`tools/eval/paired-report.mjs`（尺子，方法学取自 Pi 的 `report.ts`/`plan.ts`）+
-`paired-report.selftest.mjs`（19 条）+ `paired-report.mutation.mjs`（**5/5 咬住**），并已挂进 `npm run audit` 链（`eval:selftest`），
-所以尺子本身也被门禁保护。
+**未做但已取证**：见 §3。**另有两处本轮发现、已记入 §3 的加重项**：`planContext` 才是真正活着的那个前缀变动源
+（**第 2 轮已修**，见上表第 14 行）；以及 `append_file` 不检查尾换行导致"半截行裹住下一条合法记录、并在压缩时被永久删除"（**仍未修**）。
+
+**新增的工程产物**：`tools/eval/` 下的**整套尺子** ——
+`paired-report.mjs`（成对评测器，方法学取自 Pi 的 `report.ts`/`plan.ts`）+ 自测 19 条 + 变异 **5/5 咬住**；
+`tasks.mjs`（**冻结任务集 14 个 / 6 个覆盖口径**）+ `run-arm.mjs`（单臂执行器）+
+`stubs/`（两根桩臂）+ `pipeline.selftest.mjs`（链路 11 条）+ `pipeline.mutation.mjs`（**4/4 咬住**）。
+全部挂进 `npm run audit` 链（`eval:selftest`、`eval:pipeline`），所以**尺子本身也被门禁保护**。
+测量方案与"还差什么"写在 `docs/MEASUREMENT-PLAN-DSH-VS-CODEM.md`。
 
 ---
 
@@ -512,6 +522,53 @@
 - **未 push、未打 tag、未创建 GitHub Release、未上传产物、未跑 `--remote` 的 7 项验证**。
   这些都是对外且不可逆的动作，用户的口径是「bump + build + 装机 + 真机验证」，所以停在这一步。**要发出去请明确说一声。**
 - 因此 `latest.json` 目前只通过**本地** 5 项；远端 7 项要等 `gh release upload` 之后才有意义。
+
+---
+
+## §6c 第 2 轮（v1.16.223）：补掉上一版漏的三处 + 尺子落地
+
+### 补掉的三处（都是"上一版以为修完了，其实只修了一半"）
+
+| 项 | 上一版的状态 | 这一版 |
+|---|---|---|
+| **`workflow` 的权限绕过** | 只关了 `run_code`；`workflow` 的 `sdk.bash` / `sdk.write` **一模一样地绕**，而且它同样被自动放行 ⇒ **换个工具包一层就能绕过修复** | 两道闸门抽成共享模块 `src/core/llm/tool-gates.ts`，`run_code` 与 `workflow` 都用；`workflow` 契约从 `"workspace"` 改为 `"system"`（原本**低报**能力） |
+| **`Active Goals` 从来没有到达过模型** | 发现了 `apiMessages[0].role === "system"` 这个**恒为假**的守卫，但只把「时间上下文」搬走了 | 把同一批里剩下的（deferred 工具提示、skill 提示/目录、**活跃目标**）一并接通 |
+| **`planContext`** | 记在 §3 里"真正活着的那个前缀变动源"，未修 | 已修：实测 `macroStep` 在**同一回合内**自增（迭代 1「第 1/4 步」→ 迭代 2「第 2/4 步」）⇒ 前缀真的会变；改走尾部消息 |
+| **D13 引导被静默丢弃** | 判为"留到下一轮" | 已修：未消费的引导**变成一条真实落库的用户消息**交给模型 |
+
+**这三处的共同教训**：上一轮把"找到一个实例"当成了"消灭了一类问题"。
+`workflow` 是同一个类的第二个实例，`Active Goals` 是同一条死守卫上的第二个受害者 ——
+**修完一处之后，按"这一类还有谁"再扫一遍，成本很低，而漏掉一个就等于没修。**
+（`read_attachment` 那批 8 处假成功当时是这么扫的，所以那批没漏；这次漏了，是因为我没有对"闸门"和"死守卫"做同样的清扫。）
+
+### 尺子落地（用户选的 A 案的后半段）
+
+- `tools/eval/tasks.mjs` —— **冻结任务集：14 个任务 / 6 个覆盖口径**，每个任务带客观判据与参考解。
+- `tools/eval/run-arm.mjs` —— 单臂执行器，约定了 agent 命令怎么拿任务、怎么把实测用量交回来（`<ws>/.arm-usage.json`）。
+- `tools/eval/stubs/` —— 两根桩臂（什么都不做 / 抄参考解）。
+- `tools/eval/pipeline.selftest.mjs` —— **11 条**：证明判据真的会区分对错（桩臂 14/14 全红 vs 14/14 全绿），
+  并在**真实记录**上验证三条纪律（缺数据≠0、样本不足不给结论、没跑起来≠跑错了）。
+- `tools/eval/pipeline.mutation.mjs` —— **4/4 咬住**。
+- `docs/MEASUREMENT-PLAN-DSH-VS-CODEM.md` —— 测量方案、怎么跑、**还差什么**、以及**不衡量什么**。
+- 全部挂进 `npm run audit`（`eval:selftest`、`eval:pipeline`），所以尺子本身也被门禁保护。
+
+**仍然是零数字**：两条真实臂的 driver 没做。已核实的事实（不是推测）：
+DSH 的 `@deepseek-ai/dsh-headless` 与 `dsh-cmdline` **都没有声明 `bin`**，装机目录里也没有任何 `dsh` 可执行文件/shim；
+我们的 `package.json` 同样**没有 `bin`**，也没有 headless 入口。
+**所以在 driver 接通之前，"水平与 token 消耗不差于 dsh"仍然无法判真假** —— §0 的那句话到现在依然成立。
+
+### 第 2 轮我又自己踩到的坑（记档，接续 §5）
+
+7. **`Set-Content` 加了 BOM。** 交接单 §4.2 明写"不要用 `Set-Content`/`Out-File` 写源码（加 BOM）"，
+   我为了做两处机械替换用了它，于是 `tools/eval/pipeline.selftest.mjs` 开头多了 `EF BB BF`。
+   已用 `.preview-shot/_strip-bom.mjs` 清掉。**规矩写着的东西，我在同一轮里就违反了 —— 说明"知道"不等于"会照做"。**
+8. **我的变异脚本报错了行。** 变异记录用 `line.includes("FAIL")` 找红行，
+   而**通过**行的文案里就写着「必须 FAILED」——于是记录指向了一条**绿线**。
+   一份会误导人的记录比没有记录更糟。改成 `startsWith("FAIL")` 后 4 条变异各自指向正确的断言。
+9. **`errored` 的造法第一次是错的。** 我先用 `process.kill(process.pid,'SIGTERM')` 造超时，
+   实测**不成立**：`shell: true` 时直接子进程是 shell，它被杀掉后自己返回非零码，
+   于是走到"判据失败"而不是"没跑起来"。改成**真的超时**（可注入的 `agentTimeoutMs`）才对。
+   —— 顺带观察到一件与 **D4 同形**的事：超时把 shell 杀掉之后，真正的子进程**可能还活着**并占着工作目录（清理报 `EPERM`）。
 
 ---
 

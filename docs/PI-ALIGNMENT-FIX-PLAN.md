@@ -274,11 +274,23 @@ Codemode 不是一个笼统的"机制"，它有两半，而**交接单漏掉的�
 | 3 | P-3 工具失败显式化 | 🟡 **部分**：具体实例已收口（`docs/DSH-ALIGNMENT-FIX-PLAN.md` 的 D8/D9/D10/D10b 共 11 处路径），**"**`isError` **必填化"的普查判据未做** | `dsh-d10b-tool-failure-class.test.ts`（13 条） | 3 组变异，红点与所修路径 1:1 |
 | 4 | P-4 成对评测尺子（开发者侧工具） | ✅ | `tools/eval/paired-report.selftest.mjs`（19 条）+ `paired-report.mutation.mjs` | **5/5 咬住**：缺数据当 0 / 空平均当 0 / 去掉阻塞检查 / 去掉重复次数检查 / 差值方向搞反，每一条都红了 |
 | 5 | P-0 更正交接单对 Codemode 的转述 | ✅ | 本文 §2 P-0 | 纯文档 |
+| 6 | **P-2b `workflow` 的同一个开口**（第 2 轮补做） | ✅ | `workflow-permission-parity.test.ts`（10 条） | ①去掉 bash 闸门 ⇒ `包在 workflow 里的危险命令绝不能被真的执行: expected "vi.fn()" to not be called at all, but actually been called 1 times`；②去掉受保护路径拒绝 ⇒ `受保护路径在建任何东西之前就该拒绝 —— 一个字节都不许写: ...actually been called 1 times`；③去掉写着确认 ⇒ 同上形态；④`run_code` 侧去掉拒绝 ⇒ 原 P-2 判据仍红（证明抽到共享模块后语义没变） |
 
-**P-2 实施中发现的两条超出原描述的加重项**（由实施者与我的核查共同确认，详见 §2 P-2）：
-`sdk.write` 还绕过了真 `write` 工具的**受保护路径拒绝**（`.git/.env/node_modules`）；
-以及同一条链路上 **`workflow-engine.ts:120-133` 的 `createWorkflowTool()` 有完全相同的开口**（已注册给 LLM，见 `tools.ts:2055`），
-`run_code` 已关、**`workflow` 仍然敞着** —— 已记入 §4 与 `docs/DSH-PI-FEATURE-SUGGESTIONS.md`，**本轮未修**。
+**P-2 实施中发现的三条超出原描述的加重项**（由实施者与我的核查共同确认，详见 §2 P-2）：
+① `sdk.write` 还绕过了真 `write` 工具的**受保护路径拒绝**（`.git/.env/node_modules`）；
+② 同一层还有一个 **fail-open**：读不到现有内容时旧代码一律当"新文件"⇒ **跳过覆盖确认**（判据 `pi-p2b`）；
+③ 同一条链路上 **`workflow-engine.ts` 的 `createWorkflowTool()` 有完全相同的开口**（已注册给 LLM，见 `tools.ts:2055`）。
+**③ 已在第 2 轮修掉（P-2b）**：做法不是复制一遍，而是把两道闸门抽成共享模块 `src/core/llm/tool-gates.ts`，
+`run_code` 与 `workflow` 都用它 —— 顺带消掉了原来"`calculateContentSimilarity` 在两处重复、注释自认有漂移风险"的问题。
+`workflow` 的契约也从 `sideEffectScope: "workspace"` 改成 `"system"`（原本**低报**了能力：它能跑任意 shell、能 spawn 子智能体）。
+代价一条，记在这里备查：`needsPreCallSnapshot` 对 `system` 为假 ⇒ `workflow` 不再触发"调用前工作区快照"
+（`bash` / `run_code` 本来就不触发）；**没有**顺手加 `destructive: true`，那会凭空宣称一个不可逆性。
+
+**仍未修的残留（老实说清，别读成"全关了"）**：
+- `run_code` / `workflow` 内 `sdk.read` **没有** workspace 路径检查；`sdk.spawn` 出的子智能体不在这道闸门里。
+- `isAutoApprovable` 未动 ⇒ 外层 `run_code` / `workflow` 工具在 auto 模式下**仍可被自动放行**；
+  闸门关在**嵌套调用**那一层（与 P-2 的做法一致）。要不要连外层也改成需要确认，是**产品决定**，见 `docs/DSH-PI-FEATURE-SUGGESTIONS.md`。
+- `execRunCode` 的 `sdk.write` 仍未接闸门，但该路径经核实**不可达**（`ctx.codeRuntime` 在 `src/` 里没有任何读者）。
 
 **P-2 之后仍然不设防的部分（诚实声明，不要读成"已修好"）**：
 执行仍然是应用进程内的 `new Function`（`run-code.ts` 的 `executeCode`），**全局白名单不是安全边界**；
