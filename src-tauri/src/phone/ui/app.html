@@ -250,9 +250,10 @@
     screen.innerHTML = '<div class="pair-panel"><h2>尚未连接桌面端</h2>'
       + '请先在电脑 Codem 的「设置 → 连接手机」里点击「开始配对」，'
       + '然后用手机微信/浏览器扫一扫二维码，或在此粘贴配对链接：'
-      + '<div style="margin:14px 0"><input id="pairUrl" style="width:100%;background:#1d222c;border:1px solid #2a2f3a;color:#e6e8ec;border-radius:10px;padding:10px;font-size:13px" placeholder="http://192.168.x.x:port/pair?token=…"></div>'
+      + '<div style="margin:14px 0"><input id="pairUrl" style="width:100%;background:#1d222c;border:1px solid #2a2f3a;color:#e6e8ec;border-radius:10px;padding:10px;font-size:13px" placeholder="https://192.168.x.x:port/pair?token=…"></div>'
       + '<button id="pairGo" class="btn primary">去配对</button>'
-      + '<p style="font-size:12px">需手机与电脑在同一 Wi-Fi。</p></div>';
+      + '<p style="font-size:12px">需手机与电脑在同一 Wi-Fi。首次访问会提示证书无效 —— 这是自签证书的正常表现，'
+      + '但请先与电脑上显示的指纹核对一致再继续。</p></div>';
     document.getElementById("pairGo").addEventListener("click", function(){
       var u = document.getElementById("pairUrl").value.trim();
       if (u) location.href = u; else showToast("请粘贴配对链接");

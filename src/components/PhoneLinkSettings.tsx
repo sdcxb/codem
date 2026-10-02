@@ -117,6 +117,14 @@ export function PhoneLinkSettings() {
   const leftSec = pairing?.active && pairing.expires_at_ms
     ? Math.max(0, Math.round((pairing.expires_at_ms - Date.now()) / 1000))
     : 0;
+  /**
+   * 第 122 轮阶段 1：协议取 Rust 侧真值，**不拼字符串猜**。
+   * 局域网侧现在只有 HTTPS（明文监听已从 LAN 撤掉），所以这里显示 https。
+   */
+  const scheme = status.https ? "https" : "http";
+  const origin = `${scheme}://${status.lan_ip}:${status.port}`;
+  const caUrl = status.ca_url || `${origin}/ca.crt`;
+  const fingerprint = status.ca_fingerprint || "";
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
@@ -144,7 +152,7 @@ export function PhoneLinkSettings() {
           </span>
           {status.running && status.port > 0 && (
             <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
-              {zh ? `http://${status.lan_ip}:${status.port} · 已配对设备 ${status.devices.length}` : `http://${status.lan_ip}:${status.port} · devices ${status.devices.length}`}
+              {zh ? `${origin} · 已配对设备 ${status.devices.length}` : `${origin} · devices ${status.devices.length}`}
             </span>
           )}
         </div>
@@ -168,6 +176,81 @@ export function PhoneLinkSettings() {
           )}
         </div>
       </div>
+
+      {/* ---- 第 122 轮阶段 1：HTTPS 证书与指纹核对 ---- */}
+      {status.running && (
+        <div className="setting-group">
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 6 }}>
+            {zh ? "① 先让手机信任这台电脑的证书" : "① First let your phone trust this computer"}
+          </div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", lineHeight: 1.8 }}>
+            {zh
+              ? "局域网走的是 HTTPS 自签证书。手机第一次访问会提示「不安全 / 证书无效」——这是自签证书的正常表现，选择继续即可。"
+              : "LAN traffic uses a self-signed HTTPS certificate. The phone will warn about an invalid certificate on first visit — that is expected for a self-signed certificate; choose to continue."}
+          </div>
+          {fingerprint ? (
+            <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                {zh
+                  ? "② 核对指纹（自签方案里**唯一**能挡住中间人的一步）：手机浏览器里展开证书详情，逐段比对下面这串。对不上就不要继续。"
+                  : "② Verify the fingerprint (the ONLY step that defeats a man-in-the-middle with self-signed certs): expand the certificate details in the phone browser and compare segment by segment. If it differs, stop."}
+              </div>
+              <code
+                data-testid="phone-ca-fingerprint"
+                style={{
+                  fontSize: 'var(--fs-xs)', wordBreak: "break-all", lineHeight: 1.7,
+                  background: "var(--bg-secondary)", border: "1px solid var(--border-primary)",
+                  borderRadius: "var(--radius-sm)", padding: "8px 10px", display: "block",
+                }}
+              >
+                {fingerprint}
+              </code>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  style={btnStyle}
+                  onClick={() => navigator.clipboard?.writeText(fingerprint).then(() => setNotice(zh ? "指纹已复制" : "Fingerprint copied"))}
+                >
+                  {zh ? "复制指纹" : "Copy fingerprint"}
+                </button>
+                <button
+                  style={btnStyle}
+                  onClick={() =>
+                    act(async () => {
+                      /**
+                       * 存到用户选的位置：手机装证书最靠谱的路径是"把文件传过去"
+                       * （USB / 隔空投送 / 网盘）—— 而不是让手机去下载一个
+                       * 它此刻还不信任的 HTTPS 站点上的证书。
+                       */
+                      const pem = await tauriInvoke("phone_ca_pem");
+                      if (!pem) throw new Error(zh ? "证书尚未就绪（先启动服务）" : "Certificate not ready (start the service first)");
+                      const path = await tauriInvoke("dialog_save", {
+                        title: zh ? "保存 Codem CA 证书" : "Save Codem CA certificate",
+                        defaultPath: "codem-ca.crt",
+                        filters: [{ name: "Certificate", extensions: ["crt", "pem"] }],
+                      });
+                      if (!path) return;
+                      await tauriInvoke("write_text_file", { path, content: pem });
+                      setNotice(zh ? `证书已保存到 ${path}` : `Saved to ${path}`);
+                    })
+                  }
+                >
+                  {zh ? "保存证书文件…" : "Save certificate…"}
+                </button>
+                <button
+                  style={btnStyle}
+                  onClick={() => navigator.clipboard?.writeText(caUrl).then(() => setNotice(zh ? "证书地址已复制" : "Certificate URL copied"))}
+                >
+                  {zh ? "复制证书地址" : "Copy certificate URL"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 6 }}>
+              {zh ? "拿不到证书指纹 —— 界面上没有可核对的信息，请不要在此状态下配对。" : "No certificate fingerprint available — do not pair in this state."}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ---- 配对区 ---- */}
       {status.running && pairUrl && (
@@ -245,8 +328,8 @@ export function PhoneLinkSettings() {
       {/* ---- 合规 ---- */}
       <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", lineHeight: 1.7, borderTop: "1px solid var(--border-primary)", paddingTop: 8 }}>
         {zh
-          ? "须知：① 需手机与电脑在同一 Wi-Fi（可能被防火墙拦截，需放行随机端口）；② 本服务为明文 HTTP（含 cookie 会话），请仅在可信网络使用，配对应在桌面端手动批准；③ 配对 token 5 分钟有效，设备 secret 以 sha256 哈希落盘（app-data/phone/devices.json）；④ 手机端可浏览/续聊/新建会话——等于把桌面 agent 能力暴露给配对设备，请勿把二维码发给他人；⑤ 本服务随桌面应用运行（引擎在桌面端），关闭应用即不可用；⑥ 关闭可在插件管理器禁用 @codem/phone-link。"
-          : "Notes: ① phone must be on the same Wi-Fi (allow the random port in firewall); ② plain HTTP with cookie auth — trusted networks only; approve pairing on desktop; ③ token valid 5 min; device secrets stored as sha256 (app-data/phone/devices.json); ④ paired device can browse/continue/create sessions = full agent access — never share the QR; ⑤ service runs with the desktop app; ⑥ disable via Plugin Manager (@codem/phone-link)."}
+          ? "须知：① 需手机与电脑在同一 Wi-Fi（可能被防火墙拦截，需放行随机端口）；② 局域网走 HTTPS 自签证书 —— 首次访问浏览器会警告，这是自签证书的正常表现，**但请务必核对上面的指纹**；③ 配对 token 5 分钟有效，设备 secret 以 sha256 哈希落盘（app-data/phone/devices.json），会话 cookie 30 天有效、桌面端可随时取消配对；④ 手机端可浏览/续聊/新建会话，还能**代替你批准敏感操作**——等于把桌面 agent 能力暴露给配对设备，请勿把二维码发给他人；⑤ 本服务随桌面应用运行（引擎在桌面端），关闭应用即不可用；⑥ 关闭可在插件管理器禁用 @codem/phone-link。"
+          : "Notes: ① phone must be on the same Wi-Fi (allow the random port in firewall); ② LAN uses a self-signed HTTPS certificate — the browser warns on first visit (expected for self-signed), but you MUST verify the fingerprint above; ③ pairing token valid 5 min; device secrets stored as sha256 (app-data/phone/devices.json); session cookie valid 30 days and can be revoked from the desktop at any time; ④ a paired device can browse/continue/create sessions and also APPROVE sensitive operations on your behalf = full agent access — never share the QR; ⑤ service runs with the desktop app; ⑥ disable via Plugin Manager (@codem/phone-link)."}
       </div>
     </div>
   );

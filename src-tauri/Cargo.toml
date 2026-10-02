@@ -1,6 +1,6 @@
 [package]
 name = "codem"
-version = "1.16.211"
+version = "1.16.212"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"
@@ -50,6 +50,10 @@ portable-pty = "0.8"
 url = "2"
 # 存储引擎（Rust 原生 SQLite）—— 渲染进程不再持有 WASM 数据库，见 docs/ARCH-SQLITE-TO-RUST.md
 codem-db = { path = "codem-db" }
+rcgen = { version = "0.14.10", default-features = false, features = ["pem", "ring", "x509-parser"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "logging", "tls12"] }
+time = { version = "0.3.55", default-features = false, features = ["std", "formatting"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "logging", "tls12", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 # `Win32_System_Diagnostics_ToolHelp` / `_Threading` / `_ProcessStatus`：

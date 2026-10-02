@@ -2993,6 +2993,9 @@ path_exists,
             phone::phone_decide,
             phone::phone_unpair,
             phone::phone_respond,
+            // 第 122 轮阶段 1：CA 指纹与证书（桌面展示/保存用）
+            phone::phone_ca_pem,
+            phone::phone_ca_fingerprint,
             // 存储引擎（Rust 原生 SQLite）：类型化仓储命令，不接受 SQL
             storage::storage_invoke,
             storage::storage_batch,

@@ -598,6 +598,17 @@ export interface PhoneStateView {
   lan_ip: string;
   url?: string | null;
   pair_url?: string | null;
+  /**
+   * 第 122 轮阶段 1：局域网侧**只有 HTTPS**。
+   *
+   * 保留这个字段是为了界面能**如实**显示协议，而不是靠拼接字符串猜。
+   * 它取的是 Rust 侧真值（`https: true`），不是"我们觉得应该是 https"。
+   */
+  https?: boolean;
+  /** CA 指纹（大写 hex，冒号分隔）—— 用户要在手机上**带外核对**的那串字 */
+  ca_fingerprint?: string;
+  /** CA 证书下载地址（手机安装用） */
+  ca_url?: string | null;
   pairing?: {
     active: boolean;
     expires_at_ms: number;
@@ -622,6 +633,12 @@ export function normalizeState(raw: any): PhoneStateView {
     lan_ip: raw?.lan_ip || "",
     url: raw?.url ?? null,
     pair_url: raw?.pair_url ?? null,
+    // 阶段 1 的三个新字段：**原样透传**，不在这里编默认值 ——
+    // 界面据此显示"HTTPS + 指纹"，而"缺字段"应当是可见的（显示为空），
+    // 不该被一个看起来合理的默认值掩盖。
+    https: raw?.https === true,
+    ca_fingerprint: raw?.ca_fingerprint || "",
+    ca_url: raw?.ca_url ?? null,
     pairing: raw?.pairing ?? null,
     devices: Array.isArray(raw?.devices) ? raw.devices : [],
   };
