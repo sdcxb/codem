@@ -368,7 +368,36 @@ async fn status_snapshot(app: &AppHandle, st: &Arc<PhoneState>) -> serde_json::V
 
 // ---- HTTP 服务 ----
 
-/// 启动监听（幂等）：未运行则 bind 0.0.0.0:0；已运行按需轮换配对。
+/// 组成 `phone_start` 的返回体 —— **唯一一处**。
+///
+/// ## 为什么必须共用
+///
+/// 第一版在"已运行 ⇒ 提前返回"那条路径上手写了另一份 JSON，于是它一直报
+/// `http://` 且**不带 CA 指纹**。而应用启动时会 `autoStart`，
+/// 所以用户点到的每一次「开始配对 / 刷新配对二维码」走的**都是那条路径** ——
+/// 界面上那串"必须核对的指纹"等于**永远不会显示**。
+///
+/// 单元测试没抓到它：`start_server` 的提前返回分支需要"已运行"状态，
+/// 只有真机端到端才会走到。教训是**同一个响应不要在两处拼**。
+fn start_response(
+    lan_ip: &str,
+    tls_port: u16,
+    token: &str,
+    ca_fingerprint: &str,
+) -> serde_json::Value {
+    // 阶段 1：局域网侧只有 HTTPS，所以这里**只**可能拼出 https。
+    let url = format!("https://{}:{}/", lan_ip, tls_port);
+    serde_json::json!({
+        "url": url,
+        "port": tls_port,
+        "lan_ip": lan_ip,
+        "pair_url": format!("{}pair?token={}", url, token),
+        "https": true,
+        "ca_fingerprint": ca_fingerprint,
+    })
+}
+
+/// 启动监听（幂等）：未运行则起"回环上游 + TLS 边缘"；已运行按需轮换配对。
 async fn start_server(app: AppHandle, st: Arc<PhoneState>) -> Result<serde_json::Value, String> {
     {
         let mut g = st.inner.lock().await;
@@ -381,12 +410,18 @@ async fn start_server(app: AppHandle, st: Arc<PhoneState>) -> Result<serde_json:
             if need_rotate {
                 g.pairing = Some(rotate_pairing(now_ms()));
             }
-            let url = format!("http://{}:{}/", g.lan_ip, g.port);
-            return Ok(serde_json::json!({
-                "url": url, "port": g.port, "lan_ip": g.lan_ip,
-                "pair_url": format!("{}pair?token={}", url,
-                    g.pairing.as_ref().map(|p| p.token.clone()).unwrap_or_default()),
-            }));
+            let token = g
+                .pairing
+                .as_ref()
+                .map(|p| p.token.clone())
+                .unwrap_or_default();
+            // ⚠️ 这条路径**也要**带 https 与指纹，否则用户在界面上看不到要核对的东西
+            return Ok(start_response(
+                &g.lan_ip,
+                g.tls_port,
+                &token,
+                &g.ca_fingerprint,
+            ));
         }
         g.lan_ip = lan::lan_ip();
     }
@@ -518,28 +553,21 @@ async fn start_server(app: AppHandle, st: Arc<PhoneState>) -> Result<serde_json:
         g.tls_handle = Some(edge_handle);
     }
 
-    let url = format!("https://{}:{}/", lan_ip, tls_port);
-    let pair_url = {
-        let g = st.inner.lock().await;
-        format!(
-            "{}pair?token={}",
-            url,
-            g.pairing
-                .as_ref()
-                .map(|p| p.token.clone())
-                .unwrap_or_default()
-        )
-    };
     emit_state(&app, &st).await;
-    Ok(serde_json::json!({
-        "url": url,
-        "port": tls_port,
-        "lan_ip": lan_ip,
-        "pair_url": pair_url,
-        // 阶段 1：手机连的是 HTTPS，桌面要能把 CA 指纹显示出来让用户**带外**核对。
-        "https": true,
-        "ca_fingerprint": material.ca_fingerprint,
-    }))
+    // 与"已运行"那条路径**共用同一个函数**：这个响应只有一种形状。
+    let token = {
+        let g = st.inner.lock().await;
+        g.pairing
+            .as_ref()
+            .map(|p| p.token.clone())
+            .unwrap_or_default()
+    };
+    Ok(start_response(
+        &lan_ip,
+        tls_port,
+        &token,
+        &material.ca_fingerprint,
+    ))
 }
 
 /// 从任意异步流里读一个完整 HTTP 请求（头 + Content-Length 指定的 body）。

@@ -136,4 +136,28 @@ describe("第 122 轮阶段 1 · LAN HTTPS 与边缘准入接线", () => {
     // 必须明确要求"核对指纹"——这是自签方案唯一挡中间人的一步
     expect(ui).toMatch(/核对指纹|Verify the fingerprint/);
   });
+
+  it("LNX-9: **不允许**再拼出 http:// 的地址；start 的两条返回路径必须共用同一个函数", () => {
+    const src = read(PHONE_RS);
+    /**
+     * 这条判据来自一个**真机才发现的 bug**：`start_server` 有两条返回路径
+     * （"已运行 ⇒ 提前返回" 与 "刚启动完"），第一版只在后者里改成了 https，
+     * 前者仍手写 `http://` 且不带指纹。
+     *
+     * 而应用启动时 `autoStart` ⇒ 用户点到的每一次「开始配对 / 刷新二维码」
+     * 都走那条早期路径 ⇒ **界面上的指纹永远不会显示**。
+     * 单元测试抓不到（需要"已运行"状态），端到端才走到 ——
+     * 这就是为什么"同一个响应不要在两处拼"。
+     */
+    expect(src, "代码里不得再拼 http:// 地址").not.toContain('format!("http://');
+    expect(src, "也不得多余的 http 字面量拼接").not.toContain('"http://{}');
+
+    const calls = src.match(/start_response\(/g)?.length ?? 0;
+    expect(calls, "start_response 应出现 3 次（1 处定义 + 2 处调用）").toBe(3);
+    expect(src).toContain('let url = format!("https://{}:{}/", lan_ip, tls_port);');
+    // 提前返回那条也必须带上指纹（否则用户在界面上无从核对）
+    const early = src.slice(src.indexOf("if g.running {"), src.indexOf("g.lan_ip = lan::lan_ip();"));
+    expect(early, "「已运行」的提前返回必须共用 start_response").toContain("start_response(");
+    expect(early, "「已运行」的提前返回必须带 CA 指纹").toContain("&g.ca_fingerprint");
+  });
 });
