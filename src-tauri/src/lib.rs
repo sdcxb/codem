@@ -2875,6 +2875,8 @@ install_panic_hook();
 let ilink_state = ilink::IlinkState::new();
 // ===== 手机连接（phone-link）管理态 =====
 let phone_state = phone::PhoneState::new();
+        // 阶段 R6：AA connector 的运行时状态（与手机那套并列，互不干扰）
+        let aa_connector_state = phone::aa_connector::AaConnectorState::new();
 // ===== 出站 connector（远程中继，第 122 轮 §11B）管理态 =====
 let connector_state = phone::connector::ConnectorState::new();
 // ===== 存储引擎（Rust 原生 SQLite）管理态 =====
@@ -2890,6 +2892,7 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_dialog::init())
         .manage(ilink_state.clone())
         .manage(phone_state.clone())
+        .manage(aa_connector_state)
         .manage(connector_state.clone())
         .manage(storage_state)
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
@@ -2990,7 +2993,10 @@ path_exists,
             ilink::ilink_logout,
             ilink::ilink_send_text,
             // 手机连接（phone-link）
-            phone::phone_start,
+            phone::aa_connector_start,
+        phone::aa_connector_stop,
+        phone::aa_connector_status,
+        phone::phone_start,
             phone::phone_stop,
             phone::phone_status,
             phone::phone_decide,

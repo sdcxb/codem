@@ -36,7 +36,6 @@
 // ============================================================
 
 pub mod aa_connector;
-pub mod aa_dsh_identity;
 pub mod aa_protocol;
 pub mod connector;
 pub mod guard;
@@ -1027,12 +1026,65 @@ pub async fn phone_start(
     start_server(app, state.inner().clone()).await
 }
 
+// ============================================================
+// 阶段 R6（接线）：把 AA connector 做成可用的命令
+//
+// 这一层**不需要服务端**就能做完并验证：它只负责"把凭据交进去、把状态读出来"。
+// 做完之后，用户手上什么时候有一台 AA 服务端（或账号），填进去就能用
+// —— 不需要再改代码。
+// ============================================================
+
+/// 启动 AA connector（完全复刻它那条出站路径）。
+///
+/// 参数：服务端地址 + 设备凭据（`connectorId` / `connectorToken`，字段名与它
+/// `connector.json` 一致）。**凭据失效时它会自己停**（不再无限重连），
+/// 状态里 `credentialsRevoked` 会告诉你"要重新授权"。
+#[tauri::command]
+pub async fn aa_connector_start(
+    state: State<'_, Arc<PhoneState>>,
+    cs: State<'_, Arc<aa_connector::AaConnectorState>>,
+    server_url: String,
+    connector_id: String,
+    connector_token: String,
+) -> Result<serde_json::Value, String> {
+    let st: Arc<PhoneState> = state.inner().clone();
+    let c: Arc<aa_connector::AaConnectorState> = cs.inner().clone();
+    // 空凭据**在进门就拒**：发出去只会拿到 401，然后被判定"凭据失效"，
+    // 而用户看到的是"要我重新授权"—— 那是误导（他根本还没填）。
+    if server_url.trim().is_empty() || connector_id.trim().is_empty() || connector_token.trim().is_empty() {
+        return Err("服务端地址、connectorId、connectorToken 都不能为空".into());
+    }
+    // 地址必须能解析（否则错误会拖到连接阶段才暴露，且信息更含糊）
+    aa_connector::ws_url(server_url.trim(), aa_connector::CONNECTOR_WS_PATH)?;
+    let cfg = aa_connector::AaConfig::new(server_url.trim(), connector_id.trim(), connector_token.trim());
+    aa_connector::start(st, c.clone(), cfg).await?;
+    Ok(aa_connector::snapshot(c).await)
+}
+
+/// 停止 AA connector。
+#[tauri::command]
+pub async fn aa_connector_stop(
+    cs: State<'_, Arc<aa_connector::AaConnectorState>>,
+) -> Result<serde_json::Value, String> {
+    let c: Arc<aa_connector::AaConnectorState> = cs.inner().clone();
+    aa_connector::stop(c.clone()).await;
+    Ok(aa_connector::snapshot(c).await)
+}
+
+/// 读 AA connector 状态（连接阶段、计数、最近错误）。
+#[tauri::command]
+pub async fn aa_connector_status(
+    cs: State<'_, Arc<aa_connector::AaConnectorState>>,
+) -> Result<serde_json::Value, String> {
+    let c: Arc<aa_connector::AaConnectorState> = cs.inner().clone();
+    Ok(aa_connector::snapshot(c).await)
+}
+
 #[tauri::command]
 pub async fn phone_stop(
     app: AppHandle,
     state: State<'_, Arc<PhoneState>>,
-) -> Result<(), String> {
-    let st: Arc<PhoneState> = state.inner().clone();
+) -> Result<(), String> {    let st: Arc<PhoneState> = state.inner().clone();
     {
         let mut g = st.inner.lock().await;
         g.running = false;

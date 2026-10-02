@@ -1090,3 +1090,70 @@ timelineId:     "dsh_" + sha256_hex( external_session_id \0 kind \0 business_id 
 **把 AA connector 接进应用**：Tauri 命令（start/stop/status）+ 设置界面
 （填服务端地址、`connectorId`/`connectorToken`、显示连接阶段）。
 这一层做完，"接上真服务端就能用"，而它本身可以用 mock 验证。
+
+---
+
+## 15. 更正：不需要"买服务端"——就是**注册账号 + 登录**
+
+> 用户问：*"我去 Agents Anywhere 注册个账号？还是他有专门的服务租赁，我要去买服务端？
+> dsh 我看到登录 Agents Anywhere 账号就能用啊？一比一复刻，我们难道不是登录账号就能用？"*
+
+**用户说得对，我前面的措辞是错的。** 这一节把实际流程写清楚，并记下我错在哪。
+
+### 15.1 它的实际流程（逐行有据）
+
+| 步 | 做什么 | 证据 |
+|---|---|---|
+| 1 | 用户在 AA **注册账号**并登录（OAuth，PKCE） | `host/account/api.ts:60-70`：`POST /api/v2/oauth/token`，`grant_type=authorization_code` + `code_verifier` |
+| 2 | 用 token 读账号 | `GET /api/v2/auth/me`（`api.ts:71`） |
+| 3 | **把本机注册成一台设备** | `POST /api/v2/connectors`，体 `{name, connectorKind:'cli', installationId}` ⇒ 返回 `{connector, connectorToken}`（`api.ts:91-99`） |
+| 4 | 校验这对凭据 | `POST /api/v2/connector/auth`，头 `Authorization: Connector <id>:<token>`（`api.ts:101`） |
+| 5 | connector 用它换 accessToken 并连 WS | `connector/server/auth.py:47-51` + `client.py:246-258` ← **这一步我已经实现了（R2）** |
+
+**所以：注册账号 + 登录即可，没有"服务租赁"，也不用买任何东西。**
+`{target:'server'}` 那个"自建服务器"是它给**不想用它的云**的人准备的**可选**分支，
+不是必需项 —— 我先前把它说成前提，是我的错。
+
+### 15.2 我错在哪
+
+我把第 3 步（**注册本机拿 `connectorToken`**）**漏掉了**，于是要求用户
+"手上要有一台服务端 / 或者把 `connectorId`+`connectorToken` 填进来"。
+那是**把插件本该做的事推给了用户**：
+
+- 在 DSH 里，用户**只登录**；`connectorToken` 是插件自己调 `POST /connectors` 换来的。
+- 我只实现了第 5 步（connector 出站），然后让用户去手工准备第 3 步的产物。
+- 结果就是用户看到的："为什么我要买服务端？DSH 登录一下就能用啊。"
+
+**这就是"复刻漏了一段"的典型表现：代码能跑、判据全绿，
+但用户要走的流程与 DSH 不一样。** 判据只钉了我实现的那一段，
+没有钉"用户的完整旅程与 DSH 一致"。
+
+### 15.3 要补的那一段
+
+| | 内容 | 状态 |
+|---|---|---|
+| N1 | OAuth 登录（PKCE：生成 verifier/challenge、开浏览器、收 code、换 token） | **待做** |
+| N2 | `GET /auth/me` 显示当前账号 | **待做** |
+| N3 | `POST /connectors` 注册本机 ⇒ 拿 `connectorId`+`connectorToken` 并持久化 | **待做** |
+| N4 | 设备列表 / 吊销（`GET /connectors`、`POST /connectors/{id}/revoke`） | **待做** |
+| N5 | 用 N3 的凭据启动 connector | ✅ 已实现（R1–R5） |
+
+### 15.4 我在它包里**看不到**的一样东西（这是"缺失的事实"，不是决策）
+
+**`/oauth/authorize` 的 URL 与允许的 `redirect_uri` 看不到。**
+它的 `exchange(code, verifier, redirectUri)` 把这三个当**入参**接进来，
+说明 PKCE 的生成与"开浏览器"发生在**插件之外**（DSH 宿主侧），
+而那部分代码**不在这个捆绑包里**。
+
+我们能看到的只有客户端标识：`OAUTH_CLIENT_ID = 'agents-anywhere-dsh-plugin'`
+（`contracts/index.ts:8`）——**那是它 DSH 插件的 OAuth 身份，不是我们的。**
+
+所以 N1 有两种落地方式：
+
+1. **用它那个 client id**（默认就填它）：开箱即用的可能性最大，
+   但等于**以 DSH 插件的身份**去登录。redirect_uri 若被服务端白名单限制，就可能被拒。
+2. **把 client id / authorize URL / redirect_uri 做成可配置**：
+   默认填它的（行为与 DSH 一致），登录页跑不通时用户可以换成自己的注册值。
+
+**我按第 2 种做**（默认它 + 可配），这样"登录就能用"是默认路径，
+而它是唯一一处我需要**实测一次真实登录**才能确认的细节 —— 不是要用户做决定。

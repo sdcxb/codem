@@ -49,8 +49,6 @@ use super::aa_protocol::{
     build_capability_set, parse_frame, AaFrame, AaRpcNotification, AaRpcResponse, RevisionClock,
 };
 
-/// REST 换 token 的提前刷新量（`auth.py:13`）。
-pub const ACCESS_TOKEN_REFRESH_SKEW_SECS: f64 = 60.0;
 /// 协议里用的 API 前缀（`urls.py:5`）。
 pub const API_V2_PREFIX: &str = "/api/v2";
 /// 出站 WebSocket 路径（`client.py:247-248`）。
@@ -188,45 +186,19 @@ pub async fn fetch_access_token(
     Ok((body.access_token, body.expires_in))
 }
 
-/// access token 的**带提前刷新**缓存（`auth.py:74-83`）。
-pub struct AccessTokenCache {
-    token: Option<String>,
-    expires_at_ms: u64,
-}
-
-impl Default for AccessTokenCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AccessTokenCache {
-    pub fn new() -> Self {
-        AccessTokenCache {
-            token: None,
-            expires_at_ms: 0,
-        }
-    }
-
-    /// 还能用吗？判据是"**离到期还有 60 秒以上**"（不是"还没到期"）。
-    pub fn is_fresh(&self, now_ms: u64) -> bool {
-        match &self.token {
-            None => false,
-            // ⚠️ 括号必须留着：`as` 的优先级高于 `<`，不加括号会被解析成
-            // `(x as u64 < y)`（编译错），而不是"先转成 u64 再比较"。
-            Some(_) => now_ms + ((ACCESS_TOKEN_REFRESH_SKEW_SECS * 1000.0) as u64) < self.expires_at_ms,
-        }
-    }
-
-    pub fn store(&mut self, token: String, expires_in_secs: f64, now_ms: u64) {
-        self.expires_at_ms = now_ms + (expires_in_secs.max(0.0) * 1000.0) as u64;
-        self.token = Some(token);
-    }
-
-    pub fn get(&self) -> Option<&str> {
-        self.token.as_deref()
-    }
-}
+/// 它的 `auth.py:13` 有一个 **60 秒提前刷新量**，配一个 access token 缓存。
+///
+/// ⚠️ 我们**没有**实现那个缓存，因此**不留一个没人用的常量**。
+///
+/// 原因具体：它那个缓存服务于"**同一个连接内**还要发 REST 请求"的场景
+/// （`client.py:113` 把 `ensure_access_token` 交给下载/上传用）。
+/// 而我们连接建立起之后**不再发 REST 请求** —— 每次 `run_once` 都是
+/// `force=True` 强刷一次（与它 `client.py:246` 一致）。
+/// 没有"连接内复用"，那个 60 秒就没有落点。
+///
+/// （这段是记档：先前我实现过 `AccessTokenCache` 并写了判据，
+/// 但它在生产路径上**一次都不会被调用** —— 那种判据给的是**假安慰**，
+/// 所以连缓存带那条判据一起删了。）
 
 // ---------------- 方法 → 本机上游的映射（R5 的骨架）----------------
 
@@ -258,14 +230,16 @@ pub enum AaDispatch {
 }
 
 impl AaDispatch {
-    /// 取本地调用（判据用；非 Local 时返回 None）。
+    /// 取本地调用（**判据用**：生产路径走的是 `match`，不需要这两个便捷方法）。
+    #[cfg(test)]
     pub fn local(self) -> Option<LocalCall> {
         match self {
             AaDispatch::Local(c) => Some(c),
             _ => None,
         }
     }
-    /// 是不是"我们不做这个方法"。
+    /// 是不是"我们不做这个方法"（**判据用**）。
+    #[cfg(test)]
     pub fn is_unsupported(&self) -> bool {
         matches!(self, AaDispatch::Unsupported)
     }
@@ -621,8 +595,7 @@ async fn run_once(
         let mut g = cs.inner.lock().await;
         g.last_error = None;
     }
-    let mut cache = AccessTokenCache::new();
-    cache.store(token.clone(), expires_in, super::now_ms() as u64);
+    let _ = expires_in; // 我们不强刷缓存，见 AA_NO_TOKEN_CACHE 的说明
 
     // 2) 连 WS
     let url = ws_url(&cfg.server_url, CONNECTOR_WS_PATH)
@@ -741,7 +714,6 @@ async fn run_once(
         let mut g = cs.inner.lock().await;
         g.connected = false;
     }
-    let _ = cache; // token 缓存在重连时重建（每次 run_once 都 force 换新）
     result
 }
 
@@ -935,22 +907,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn token_cache_refreshes_60s_before_expiry() {
-        let mut c = AccessTokenCache::new();
-        assert!(!c.is_fresh(0), "没有 token 时不算新鲜");
-        // 100 秒有效期，从 t=0 开始
-        c.store("tok".into(), 100.0, 0);
-        assert_eq!(c.get(), Some("tok"));
-        // 还剩 61 秒 ⇒ 仍算新鲜
-        assert!(c.is_fresh(39_000));
-        // 还剩正好 60 秒 ⇒ **不算**（边界：要"大于 60"）
-        assert!(!c.is_fresh(40_000));
-        // 还剩 59 秒 ⇒ 不算
-        assert!(!c.is_fresh(41_000));
-        // 已过期 ⇒ 不算
-        assert!(!c.is_fresh(100_001));
-    }
 
     #[test]
     fn device_os_is_one_of_the_three() {
