@@ -470,6 +470,28 @@ Agents Anywhere Server  ◀──（出站长连接）──  Python Connector�
 去掉有界回收），接线侧 4 个（去掉收口 / 颠倒审批与跑回合的顺序 / 退回静默 auto-deny /
 手机页面不拉待批准）。
 
+**装机版端到端验证（9/9，`_verify-211-remote-api.mjs`）**：走**真实配对流程**
+（`phone_start` → 拿 token → 桌面 `phone_decide(approved)` → `pair-state` 取 cookie），
+然后带 cookie 直接打新端点：
+
+| 检查 | 结果 |
+|---|---|
+| 未批准时 `/api/pair-state` = 200 waiting | ✅ |
+| 桌面批准配对成功 | ✅ |
+| 批准后拿到会话 cookie | ✅ |
+| `GET /api/approvals` = 200 + 数组（0.1） | ✅ |
+| 既有 `/api/sessions` 仍正常 | ✅ |
+| `GET /api/sessions/<id>/run` = 200 + `running` 布尔（0.3） | ✅ |
+| `POST /api/chat/cancel` = 200 + `wasRunning`（0.2） | ✅ |
+| 回答不存在的审批 ⇒ **409 + `approval_not_pending`**（如实拒绝，不假装成功） | ✅ |
+| 非法动作 ⇒ **400**（远端没有"总是允许"这个选项） | ✅ |
+
+⚠️ 这一步同样抓到我自己两个错（都记档）：
+① `/api/pair-state` **必须带 token**（`mod.rs:457`），第一版没带，拿到 `403 {"state":"invalid"}`
+——那不是产品 bug，是我漏了参数；
+② `phone_unpair` **需要 `deviceId`**，第一版没传 ⇒ invoke reject、测试设备留在
+`devices.json` 里（事后手工清掉）。**收尾代码也要读一遍被调方的签名，不能想当然。**
+
 ⚠️ **其中两条是我自己写错后被用例/变异抓回来的，记在这里**：
 
 - **AB-7**：预览第一版遇到 `path` 就直接返回路径、把 `content` 整个丢掉 ⇒
