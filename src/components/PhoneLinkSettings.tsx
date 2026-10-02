@@ -249,7 +249,15 @@ export function PhoneLinkSettings() {
         </div>
       </div>
 
-      {/* ---- 第 122 轮 §11D：远程中继（出站长连，手机在外网也能用）---- */}
+      {/* ---- 高级：自研中继 ----
+           按用户口径收进「高级」：它是我们自研的第二套传输，**默认不启用**、
+           也不该摆在主路径上（主路径是上面那个 Agents Anywhere 登录入口）。
+           判据 `N-7`/`N-8` 钉住"折叠起来 + 不自动启动"。 */}
+      <details className="setting-group" data-testid="advanced-relay">
+        <summary style={{ cursor: "pointer", fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+          {zh ? "高级：自研中继（默认不用，一般不需要动）" : "Advanced: own relay (off by default)"}
+        </summary>
+        <div style={{ marginTop: 10 }}>
       <div className="setting-group relay-card">
         <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
           {zh ? "远程中继（手机不在同一 Wi-Fi 时用这条）" : "Remote relay (use this when the phone is not on the same Wi-Fi)"}
@@ -324,6 +332,8 @@ export function PhoneLinkSettings() {
           </div>
         )}
       </div>
+        </div>
+      </details>
 
       {/* ---- 第 122 轮阶段 1：HTTPS 证书与指纹核对 ---- */}
       {status.running && (

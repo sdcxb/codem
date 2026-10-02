@@ -36,6 +36,14 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     const ui = read(UI);
     expect(ui).toMatch(/checked=\{!custom\}/);
     expect(ui).toMatch(/官方服务（默认）/);
+    /**
+     * ⚠️ 这条是补的：上面两条都**抓不到**"初始值被改成 true"
+     * （`checked={!custom}` 与文案在任何初始值下都成立）。
+     * 变异自证就是这么发现这个盲区的 —— 判据得盯**初始值本身**。
+     */
+    expect(ui, "自建开关的初值必须是 false（默认官方）").toContain(
+      "const [custom, setCustom] = useState(false);",
+    );
   });
 
   it("N-2: 地址规范化容错，并拒绝内嵌账号密码", () => {
@@ -73,6 +81,15 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     const regAt = body.indexOf("register_connector(");
     const startAt = body.indexOf("aa_connector::start(");
     expect(regAt, "注册本机必须在启动 connector **之前**").toBeLessThan(startAt);
+    /**
+     * 反向判据：没有设备凭据时**不许**直接失败。
+     *
+     * 只判"含有 `register_connector(`"是不够的 —— 变异自证证明过：
+     * 把注册挪到一个永不执行的闭包里，字符串还在，判据照样绿。
+     * 所以要同时钉"缺凭据的分支不是报错"。
+     */
+    const devBranch = body.slice(body.indexOf("let cred = match acct.device.clone()"), regAt);
+    expect(devBranch, "缺凭据时必须去注册，而不是报错").not.toMatch(/return Err/);
   });
 
   it("N-5: 账号态落盘，且给界面的视图不含令牌", () => {
@@ -81,12 +98,20 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     expect(src).toContain("pub fn load_account_state");
     // 坏文件/不存在都当"首次运行"，不报错
     expect(src).toContain("serde_json::from_str(&raw).ok()");
-    // 视图里绝不能出现令牌（前端日志/错误上报/DOM 检查都可能带出去）
-    const i = src.indexOf("pub fn redacted(");
-    const body = src.slice(i, i + 900);
-    expect(body).not.toContain("access_token.clone()");
-    expect(body).toContain("signedIn");
-    expect(body).toContain("hasDeviceToken");
+    /**
+     * 令牌不外泄这件事**只能靠行为判据**（Rust 侧
+     * `account_state_redacts_secrets`：把视图序列化出来，断言里面
+     * **找不到**令牌明文）。结构判据在这里是**不够的** ——
+     * 变异自证证明过：往视图里加一个 `"accessToken": ...` 字段，
+     * 结构判据照样绿。
+     *
+     * 所以这条只做"行为判据还在不在"的守卫，真正的判定在 Rust 那边。
+     */
+    expect(src, "必须有把视图序列化后断言不含令牌的行为判据").toContain(
+      "fn account_state_redacts_secrets()",
+    );
+    expect(src).toContain('assert!(!v.contains("SECRET-TOKEN")');
+    expect(src).toContain('assert!(!v.contains("SECRET-DEVICE")');
   });
 
   it("N-6: 换服务器时作废旧设备凭据", () => {
@@ -125,5 +150,30 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     const panel = read(PANEL);
     expect(panel).not.toMatch(/phone_relay_start"\s*\)/); // 不许无参调用（那等于自动启动）
     expect(panel).toContain('tauriInvoke("phone_relay_start"');
+  });
+
+  it("N-8: 自研中继收进「高级」折叠区，不摆在主路径上", () => {
+    const panel = read(PANEL);
+    /**
+     * 用户口径是"不要太复杂、不要让用户面对看不懂的机制"。
+     * 中继是我们自研的第二套传输 —— 它**不该和主路径并排摆着**，
+     * 否则用户要在两条他都不懂的机制之间选。
+     */
+    expect(panel, "中继必须收进 details").toMatch(/<details[^>]*data-testid="advanced-relay"/);
+    // 折叠区要有说明它"默认不用"
+    expect(panel).toMatch(/高级：自研中继/);
+    expect(panel).toMatch(/默认不用/);
+    // 中继块必须在 details **内部**（在开标签之后、闭标签之前）
+    const open = panel.indexOf('data-testid="advanced-relay"');
+    const relayCard = panel.indexOf('className="setting-group relay-card"');
+    const close = panel.indexOf("</details>", open);
+    expect(open).toBeGreaterThan(0);
+    expect(relayCard, "relay-card 应当被 details 包住").toBeGreaterThan(open);
+    expect(close, "details 应当在 relay-card 之后闭合").toBeGreaterThan(relayCard);
+    // 主路径（AA 登录入口）必须在 details **之前**（先看到主路径）
+    const aaSection = panel.indexOf("<AaRemoteSection");
+    expect(aaSection, "主路径应当在「高级」之前").toBeLessThan(open);
+    // 且 details 默认**不展开**（不许写 open）
+    expect(panel.slice(open - 60, open + 90)).not.toMatch(/<details[^>]*\sopen[\s>]/);
   });
 });
