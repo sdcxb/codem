@@ -176,4 +176,43 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     // 且 details 默认**不展开**（不许写 open）
     expect(panel.slice(open - 60, open + 90)).not.toMatch(/<details[^>]*\sopen[\s>]/);
   });
+
+  it("N-9: 注册必填项必须都有入口（displayName 那次事故）", () => {
+    /**
+     * 事故记录：用户点「注册并登录」拿到
+     * `display name must be 1-64 characters (HTTP 422)` ——
+     * 而**界面上根本没有输入昵称的地方**。
+     *
+     * 服务端 `normalize_display_name` 对注册是**必填**（1-64、不能空白、不能含控制字符），
+     * 而 OpenAPI 上只写了 `required: ["email"]` —— 光看接口文档看不出来。
+     */
+    const ui = read(UI);
+    expect(ui, "必须有昵称输入框").toContain('data-testid="aa-display-name"');
+    // 没填昵称就不许点注册（别让用户去撞 422）
+    expect(ui).toMatch(/disabled=\{busy \|\| !email\.trim\(\) \|\| !password \|\| !displayName\.trim\(\)\}/);
+    // 昵称要被真的发出去
+    expect(ui).toMatch(/displayName: displayName\.trim\(\) \|\| null/);
+
+    // 命令层也要**在进门就拒**，并且说人话（不是转述英文校验错误）
+    const mod = read(MOD);
+    expect(mod).toMatch(/注册需要一个昵称/);
+    // 长度/控制字符也要自己先挡（服务端的规则是 1-64 且无控制字符）
+    expect(mod).toMatch(/昵称最长 64 个字符/);
+    expect(mod).toMatch(/昵称不能包含控制字符/);
+  });
+
+  it("N-10: 需要邮箱验证码的服务端也要有入口（否则又卡在一个没入口的字段上）", () => {
+    const ui = read(UI);
+    // 验证码输入 + 发送按钮都要在（默认折叠，因为多数服务器不需要）
+    expect(ui).toContain('data-testid="aa-code"');
+    expect(ui).toContain('data-testid="aa-send-code"');
+    expect(ui).toContain('data-testid="aa-toggle-code"');
+    // 默认不展开（"不要太复杂"）
+    expect(ui).toMatch(/const \[showCode, setShowCode\] = useState\(false\)/);
+    // 命令存在
+    expect(read(MOD)).toContain("pub async fn aa_account_send_code(");
+    expect(read(ACCOUNT)).toContain("pub async fn send_email_code(");
+    // purpose 用它的取值
+    expect(read(MOD)).toContain('"register"');
+  });
 });

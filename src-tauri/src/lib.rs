@@ -2994,6 +2994,7 @@ path_exists,
             ilink::ilink_send_text,
             // 手机连接（phone-link）
             phone::aa_account_login,
+        phone::aa_account_send_code,
         phone::aa_account_logout,
         phone::aa_account_status,
         phone::aa_connect,

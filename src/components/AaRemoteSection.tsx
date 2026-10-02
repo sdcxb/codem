@@ -45,6 +45,17 @@ export function AaRemoteSection({ zh }: { zh: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [setupToken, setSetupToken] = useState("");
+  /**
+   * 昵称：**注册时服务端必填**（1-64 字符）。
+   *
+   * 这个字段我先前漏了 —— 用户点"注册并登录"撞到
+   * `display name must be 1-64 characters (HTTP 422)`，
+   * 而界面上根本没有输入它的地方。**必填项必须都有入口。**
+   */
+  const [displayName, setDisplayName] = useState("");
+  /** 邮箱验证码：只有服务端启用了邮件验证时才需要，所以默认折叠。 */
+  const [showCode, setShowCode] = useState(false);
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -90,7 +101,9 @@ export function AaRemoteSection({ zh }: { zh: boolean }) {
         email: email.trim(),
         password,
         register,
+        displayName: displayName.trim() || null,
         setupToken: setupToken.trim() || null,
+        code: code.trim() || null,
       });
       setMsg(register ? (zh ? "已注册并登录" : "Registered and signed in") : (zh ? "已登录" : "Signed in"));
     });
@@ -173,6 +186,26 @@ export function AaRemoteSection({ zh }: { zh: boolean }) {
           onChange={(e) => setEmail(e.target.value)} autoComplete="username" />
         <input data-testid="aa-password" style={inputStyle} type="password" placeholder={zh ? "密码" : "Password"} value={password}
           onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        {/* 注册要用；登录不需要 —— 但**必须有个地方填**（服务端注册时必填） */}
+        <input data-testid="aa-display-name" style={inputStyle}
+          placeholder={zh ? "昵称（注册时需要，1-64 个字符）" : "Display name (needed to register, 1-64 chars)"}
+          value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        {showCode && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <input data-testid="aa-code" style={inputStyle} placeholder={zh ? "邮箱验证码（6 位）" : "Email code (6 digits)"}
+              value={code} onChange={(e) => setCode(e.target.value)} />
+            <button data-testid="aa-send-code" style={btnStyle} disabled={busy || !email.trim()}
+              onClick={() => act(async () => {
+                await invokeCmd("aa_account_send_code", { serverUrl: custom ? url.trim() : null, email: email.trim() });
+                setMsg(zh ? "验证码已发送，请查收邮箱" : "Code sent — check your inbox");
+              })}>{zh ? "发送" : "Send"}</button>
+          </div>
+        )}
+        <button type="button" data-testid="aa-toggle-code"
+          style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 'var(--fs-xs)', cursor: "pointer", textAlign: "left", padding: 0 }}
+          onClick={() => setShowCode((v) => !v)}>
+          {showCode ? (zh ? "▲ 这个服务器不需要验证码" : "▲ This server needs no code") : (zh ? "▼ 这个服务器需要邮箱验证码？" : "▼ Does this server need an email code?")}
+        </button>
       </div>
 
       {/* 动作 */}
@@ -181,7 +214,9 @@ export function AaRemoteSection({ zh }: { zh: boolean }) {
           <>
             <button data-testid="aa-login" style={btnStyle} disabled={busy || !email.trim() || !password}
               onClick={() => doLogin(false)}>{zh ? "登录" : "Sign in"}</button>
-            <button data-testid="aa-register" style={btnStyle} disabled={busy || !email.trim() || !password}
+            <button data-testid="aa-register" style={btnStyle}
+              disabled={busy || !email.trim() || !password || !displayName.trim()}
+              title={!displayName.trim() ? (zh ? "注册需要先填昵称" : "A display name is required to register") : undefined}
               onClick={() => doLogin(true)}>{zh ? "注册并登录" : "Register & sign in"}</button>
           </>
         ) : (

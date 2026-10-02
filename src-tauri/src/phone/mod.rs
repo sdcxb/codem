@@ -1106,6 +1106,30 @@ pub async fn aa_connector_status(
 // ============================================================
 
 /// 读账号态（**只回不含令牌的视图**）。
+/// 请求验证码邮件（服务端启用了邮件验证时才需要）。
+#[tauri::command]
+pub async fn aa_account_send_code(
+    server_url: Option<String>,
+    email: String,
+    purpose: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let email = email.trim().to_string();
+    if email.is_empty() {
+        return Err("请先填邮箱".into());
+    }
+    let base = match server_url.filter(|s| !s.trim().is_empty()) {
+        Some(u) => aa_account::normalize_api_base(&u)?,
+        None => aa_account::AA_CLOUD_BASE_URL.to_string(),
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("构造 HTTP 客户端失败: {}", e))?;
+    let p = purpose.filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "register".into());
+    aa_account::send_email_code(&client, &base, &email, &p).await?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
 #[tauri::command]
 pub async fn aa_account_status(
     store: State<'_, Arc<aa_account::AaAccountStore>>,
@@ -1133,6 +1157,22 @@ pub async fn aa_account_login(
     let email = email.trim().to_string();
     if email.is_empty() || password.is_empty() {
         return Err("邮箱和密码都要填".into());
+    }
+    // 注册时 displayName 是**服务端必填**（1-64 字符，不能空白）。
+    // 这条我先前漏了 —— 用户点"注册并登录"撞到 422 才发现界面上根本没这个输入框。
+    // 在**进门就拒**，这样错误信息由我们说清，而不是等服务端回一句英文校验错误。
+    let register_mode = register.unwrap_or(false);
+    let display_name = display_name.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if register_mode && display_name.is_none() {
+        return Err("注册需要一个昵称（1-64 个字符）".into());
+    }
+    if let Some(n) = display_name.as_deref() {
+        if n.chars().count() > 64 {
+            return Err("昵称最长 64 个字符".into());
+        }
+        if n.chars().any(|c| (c as u32) < 32) {
+            return Err("昵称不能包含控制字符".into());
+        }
     }
     // 空/未给 ⇒ 用它自己的云（DSH 的默认值）
     let base = match server_url.filter(|s| !s.trim().is_empty()) {

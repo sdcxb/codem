@@ -601,6 +601,38 @@ pub async fn register_with_password(
     auth_post(client, api_base, "/api/v2/auth/register", body).await
 }
 
+/// `POST /api/v2/auth/email-code` —— 请求一封验证码邮件。
+///
+/// **什么时候需要它**：服务端启用了邮件验证时（`get_email_settings().enabled`），
+/// 注册/绑定就必须要一个 6 位码（`require_verification`）。
+/// 首次运行的自建服务端通常**没有**配邮件服务，所以不需要它。
+///
+/// 我们把它接上，否则遇到"要验证码"的服务端时，用户会卡在一个
+/// **他没有入口去拿**的字段上 —— 和这次 `displayName` 是同一类问题。
+pub async fn send_email_code(
+    client: &reqwest::Client,
+    api_base: &str,
+    email: &str,
+    purpose: &str,
+) -> Result<(), String> {
+    let resp = client
+        .post(format!("{}/api/v2/auth/email-code", api_base.trim_end_matches('/')))
+        .json(&serde_json::json!({ "email": email, "purpose": purpose }))
+        .send()
+        .await
+        .map_err(|e| format!("发送验证码失败: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        let msg = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("detail").and_then(|d| d.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| text.chars().take(200).collect());
+        return Err(format!("{}（HTTP {}）", msg, status.as_u16()));
+    }
+    Ok(())
+}
+
 async fn auth_post(
     client: &reqwest::Client,
     api_base: &str,
