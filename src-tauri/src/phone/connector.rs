@@ -186,7 +186,10 @@ fn take_line(buf: &mut String) -> Option<String> {
 ///
 /// 返回 `(status, headers, body)`。解析不出来就返回 None —— 调用方会如实报错，
 /// **不会**编一个 200 出来。
-fn parse_http_response(raw: &[u8]) -> Option<(u16, Vec<(String, String)>, Vec<u8>)> {
+///
+/// `pub` 是因为 AA 复刻那条路（`aa_connector.rs`）也要转给**同一个**上游，
+/// 两处各写一份解析器是"同一件事两处实现"的老问题。
+pub fn parse_http_response(raw: &[u8]) -> Option<(u16, Vec<(String, String)>, Vec<u8>)> {
     let sep = raw.windows(4).position(|w| w == b"\r\n\r\n")?;
     let head = String::from_utf8_lossy(&raw[..sep]).to_string();
     let body = raw[sep + 4..].to_vec();

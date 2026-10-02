@@ -35,12 +35,16 @@
 // 因此"核对指纹"不是可选项。
 // ============================================================
 
+pub mod aa_connector;
+pub mod aa_protocol;
 pub mod connector;
 pub mod guard;
 pub mod http;
 pub mod lan;
 pub mod tls;
 
+#[cfg(test)]
+mod aa_mock_test;
 #[cfg(test)]
 mod edge_test;
 

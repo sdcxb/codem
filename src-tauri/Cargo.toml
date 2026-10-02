@@ -54,6 +54,7 @@ rcgen = { version = "0.14.10", default-features = false, features = ["pem", "rin
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "logging", "tls12"] }
 time = { version = "0.3.55", default-features = false, features = ["std", "formatting"] }
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "logging", "tls12", "std"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 
 [target.'cfg(windows)'.dependencies]
 # `Win32_System_Diagnostics_ToolHelp` / `_Threading` / `_ProcessStatus`：
