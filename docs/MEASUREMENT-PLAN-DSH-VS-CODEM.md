@@ -309,7 +309,35 @@ Flags: control-saturated, blocked-pairs, insufficient-repetition, headline-withh
 | `noop`（什么都不做） | **0/5 —— 全红** |
 | `reference`（把实现还原成 HEAD） | **5/5 —— 全绿** |
 
-**DSH 实测：4/5。** 这是三档里**第一次不饱和**：
+**DSH 实测（跑了两次，很重要）**：
+
+| 次 | 结果 |
+|---|---|
+| 第 1 次 | **4/5** —— `repo-04-session-update-drops-fields` 没修出来 |
+| 第 2 次 | **5/5** |
+
+**也就是说这一档是不稳定的、处在 DSH 能力的边缘** —— 这恰恰是它的价值：
+前两档是**确定性 100%**，什么都测不出来；这一档会产生**方差**，
+所以必须**重复 ≥ 2 次**才读得出（评测器的 `insufficient-repetition` 旗标正是为此）。
+两次之间翻转的那条 `repo-04` 也正是我这次会话里修过、且变异自证过的问题。
+
+**成本（第 2 次）**：
+
+| 任务 | 结果 | total tokens | cacheRead | 工具调用 | 秒 |
+|---|---|---|---|---|---|
+| repo-01-edit-ambiguity | passed | 3,878,569 | 3,752,704 | 81 | 179 |
+| repo-02-write-false-success | passed | 1,584,380 | 1,507,968 | 41 | 79 |
+| repo-03-usage-accounting | passed | 5,520,657 | 5,397,120 | 87 | 299 |
+| repo-04-session-update-drops-fields | passed | **15,942,596** | 15,694,336 | 118 | 424 |
+| repo-05-workflow-bypasses-permission | passed | 2,455,769 | 2,376,576 | 59 | 114 |
+| **合计** | **5/5** | **29,381,971** | **28,728,704（97.8%）** | **386** | **1095** |
+
+**每任务平均 5,876,394 tokens / 77 次工具调用** —— 是自包含编码档（274,884 tokens / 33 次）的
+**21 倍 token、2.3 倍工具调用**。这就是"真实仓库"的代价，也是它能区分水平的原因。
+
+**我在这里又踩了一个自己的坑（记档）**：第一版 `run-repo-arm.mjs` 把 `readUsage(ws)` 放在
+`cleanupRepoWorkspace(ws)` **之后**，worktree 已经删了 ⇒ **第一次跑的 token 数字全部丢失**（记录里是 `undefined`）。
+已修（先读再清理）。这也说明"判据要看真实产物"这条纪律对**工具本身**同样适用 —— 我当时只看了通过率，没看用量字段。
 
 | 档 | 任务数 | DSH 通过率 | 性质 |
 |---|---|---|---|
