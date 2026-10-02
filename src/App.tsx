@@ -273,6 +273,14 @@ import { getLLMEngine } from "./core/llm";
 import { resolveProviderForModel, getFirstConfiguredModel } from "./core/model-config";
 import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
+/**
+ * 第 122 轮阶段 0.1：远端（手机 / 微信）发起的回合也要能在**桌面**回答权限请求。
+ *
+ * 为什么需要这条：审批代理是**一张共用的表**，远端与桌面都是回答方。
+ * 如果只做手机那一侧，那么"手机没在看 / 断网"时那个回合只能等到 8 分钟兜底超时
+ * 才被按拒绝收尾 —— 用户坐在电脑前，看得见会话在等，却没有任何按钮可点。
+ */
+import { listApprovals, answerApproval, subscribeApprovals, approvalRevision } from "./core/permission/approval-broker";
 import { flushSessionLogWrites } from "./core/storage/session-jsonl";
 import { STORAGE_UNAVAILABLE_EVENT } from "./core/storage/health";
 import { getModelProfileManager } from "./core/llm/model-profile";
@@ -1373,6 +1381,21 @@ request: PermissionRequest;
       return next;
     });
   };
+  /**
+   * 第 122 轮阶段 0.1：**远端待批项**在桌面的回答入口。
+   *
+   * 与上面的 `pendingPermissions` 是**两条独立的路**（那张表由前台回合自己维护），
+   * 这里只订阅审批代理。之所以不复用同一张 Map：两边的 `resolve` 语义不同 ——
+   * 前台的 resolve 直接兑现引擎的 Promise，这里的必须走 `answerApproval()`
+   * 才能保证「只生效一次」与「回合收尾即拒绝」这两条由代理统一裁决。
+   */
+  const [remoteApprovalTick, setRemoteApprovalTick] = useState(0);
+  useEffect(() => subscribeApprovals(() => setRemoteApprovalTick(approvalRevision())), []);
+  const remoteApproval = (() => {
+    void remoteApprovalTick; // 订阅版本号变化时重读
+    const open = listApprovals();
+    return open.length > 0 ? open[0] : null;
+  })();
 const [confirmDialog, setConfirmDialog] = useState<{
 title: string;
 message: string;
@@ -4996,6 +5019,33 @@ onClose={() => setCitationViewer(null)}
               next.delete(backgroundPermission.sessionId);
               return next;
             });
+          }}
+        />
+      )}
+
+      {/* 第 122 轮阶段 0.1：远端待批权限 —— 手机/微信不在时，桌面也能答 */}
+      {remoteApproval && (
+        <SlotBridge name="app.permission-dialog" fallback={PermissionDialog}
+          request={{
+            id: remoteApproval.requestId,
+            sessionId: remoteApproval.sessionId,
+            tool: remoteApproval.tool,
+            input: remoteApproval.input,
+            ...(remoteApproval.resource ? { resource: remoteApproval.resource } : {}),
+            timestamp: remoteApproval.createdAt,
+            // 标题带上来源，用户才知道"这是手机那边发起的回合在等我"
+            title: `[${remoteApproval.origin === "phone" ? "手机" : remoteApproval.origin === "wechat" ? "微信" : "远端"}发起] ${remoteApproval.tool}`,
+          } as any}
+          onResolve={(allow: boolean) => {
+            /**
+             * 走 `answerApproval` 而不是直接 resolve：一次性语义与"回合收尾即拒绝"
+             * 由代理统一裁决。失败（典型是另一端抢先处理了）只记日志 ——
+             * 界面会在下一次订阅通知里自然收敛掉这条。
+             */
+            const out = answerApproval(remoteApproval.requestId, allow ? "allow" : "deny", "desktop");
+            if (!out.ok) {
+              console.warn("[remote-approval] 桌面回答未生效：", out.code, out.message);
+            }
           }}
         />
       )}

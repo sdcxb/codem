@@ -24,6 +24,15 @@
   .msg.user .b{background:#2d4a8c}
   .msg.assistant .b{background:#20242d}
   .msg .meta{font-size:10px;color:#6b7482;margin:2px 2px 0;text-align:right}
+  /* 阶段 0.4：工具调用摘要。用户需要看到 agent 到底干了什么（调了哪些工具、
+     改了哪些文件、哪一步失败），而不只是对话文本。 */
+  .tools{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+  .tool{font-size:11px;background:#1b2028;border:1px solid #2a313c;border-left:3px solid #4f8cff;border-radius:6px;padding:5px 7px;color:#c3cad6;word-break:break-word}
+  .tool.err{border-left-color:#d45555}
+  .tool .n{font-weight:600;color:#9dc0ff}
+  .tool.err .n{color:#ff9d9d}
+  .tool .a{margin-top:2px;color:#8b94a3;white-space:pre-wrap}
+  .files{margin-top:5px;font-size:11px;color:#8b94a3;word-break:break-word}
   .thread{display:flex;flex-direction:column;min-height:calc(100vh - 120px)}
   .list{flex:1;overflow-y:auto;padding:12px}
   .composer{display:flex;gap:8px;padding:10px;border-top:1px solid #232833;background:#14171d;position:sticky;bottom:0}
@@ -32,6 +41,16 @@
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;background:#000c;color:#ffd76a;padding:8px 14px;border-radius:10px;font-size:12px;display:none;z-index:9}
   .pair-panel{text-align:center;padding:60px 24px;line-height:1.8;color:#9aa3b2;font-size:14px}
   .pair-panel h2{color:#e6e8ec;font-size:17px}
+  /* 阶段 0.1：待批准卡片。放在输入框**上方**（sticky），因为它是"必须处理才能继续"的东西，
+     滚到看不见等于没提示。配色用警告色，与普通消息明确区分。 */
+  .approval{position:sticky;bottom:0;background:#2b2314;border-top:2px solid #b9861c;padding:10px 12px;z-index:6}
+  .approval .t{font-size:13px;font-weight:600;color:#ffd76a;margin-bottom:4px}
+  .approval .p{font-size:12px;color:#d8dbe2;white-space:pre-wrap;word-break:break-word;max-height:170px;overflow-y:auto;background:#1b1710;border-radius:8px;padding:8px;margin-bottom:8px}
+  .approval .row{display:flex;gap:8px}
+  .approval .row .btn{flex:1}
+  .approval .hint{font-size:11px;color:#a79a7d;margin-top:6px;line-height:1.5}
+  .btn.danger{background:#7a2a2a;border-color:#9c3a3a;color:#ffe3e3}
+  .btn.stop{background:#7a2a2a;border-color:#9c3a3a;color:#ffe3e3}
 </style>
 </head>
 <body>
@@ -77,7 +96,24 @@
       var body = m.content || "";
       if (m.role === "system") body = "[系统] " + body;
       var when = m.timestamp ? new Date(m.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
-      h += '<div class="msg ' + role + '"><div><div class="b">' + esc(body) + '</div><div class="meta">' + when + '</div></div></div>';
+      // 阶段 0.4：工具调用摘要。失败的要一眼看得出来（红边）。
+      var inner = '<div class="b">' + esc(body) + '</div>';
+      if (m.toolCalls && m.toolCalls.length) {
+        inner += '<div class="tools">';
+        m.toolCalls.forEach(function(t){
+          var err = (t.status === "error") ? " err" : "";
+          inner += '<div class="tool' + err + '"><div class="n">' + esc(t.tool || "工具")
+                 + (t.status && t.status !== "done" ? ' · ' + esc(t.status) : '') + '</div>'
+                 + (t.brief ? '<div class="a">' + esc(t.brief) + '</div>' : '')
+                 + (t.resultBrief ? '<div class="a">→ ' + esc(t.resultBrief) + '</div>' : '')
+                 + '</div>';
+        });
+        inner += '</div>';
+      }
+      if (m.generatedFiles && m.generatedFiles.length) {
+        inner += '<div class="files">📄 ' + esc(m.generatedFiles.join("  ·  ")) + '</div>';
+      }
+      h += '<div class="msg ' + role + '"><div>' + inner + '<div class="meta">' + when + '</div></div></div>';
     });
     if (!h) h = '<div class="empty">还没有消息。从手机发一条试试？</div>';
     screen.innerHTML = h;
@@ -88,18 +124,122 @@
     state.view = "thread"; state.sessionId = id; state.messages = [];
     title.textContent = "会话"; back.style.display = "";
     renderThread([]);
-    loadMessages();
+    loadMessages(); loadApprovals();
     clearInterval(state.timer);
-    state.timer = setInterval(loadMessages, 2600);
+    // 阶段 0.1/0.2：轮询里同时拉待批准与运行状态。
+    // 审批不能只靠"消息变化"驱动 —— 它是**独立于消息**的状态，
+    // 而且用户需要它尽快出现（回合正卡在那里等）。
+    state.timer = setInterval(function(){ loadMessages(); loadApprovals(); loadRun(); }, 2600);
   }
   async function loadMessages(){
     if (state.view !== "thread" || !state.sessionId) return;
+    var sid = state.sessionId;
     try {
-      var j = await api("/api/sessions/" + encodeURIComponent(state.sessionId) + "/messages?limit=80");
+      var j = await api("/api/sessions/" + encodeURIComponent(sid) + "/messages?limit=80");
+      /**
+       * ⚠️ await 之后必须**再确认一次**还在同一页/同一会话。
+       * 请求在飞的时候用户可能已经返回列表页（或被切到别的会话）——
+       * 那时再 renderThread 会把**会话列表整页覆盖成消息列表**。
+       * 这是"只在切换的那一瞬间发生"的竞态，只靠入口那一次判断挡不住。
+       */
+      if (state.view !== "thread" || state.sessionId !== sid) return;
       var msgs = j.messages || [];
       var changed = msgs.length !== state.messages.length;
       if (!changed) for (var i = 0; i < msgs.length; i++) if (!state.messages[i] || state.messages[i].id !== msgs[i].id) { changed = true; break; }
       if (changed) { state.messages = msgs; renderThread(msgs); }
+    } catch (e) { if (e && e.auth) goUnpaired(); }
+  }
+
+  // 阶段 0.1：待批准卡片。用户不点，那个回合就一直停在"等批准"。
+  function approvalBar(){
+    var el = document.getElementById("approval");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "approval"; el.id = "approval"; el.style.display = "none";
+      // 插在 composer **之前**：两者都是 sticky bottom，顺序决定谁在最下面
+      var c = document.getElementById("composer");
+      if (c) document.body.insertBefore(el, c); else document.body.appendChild(el);
+    }
+    return el;
+  }
+  function renderApprovals(list){
+    var el = approvalBar();
+    if (!list || !list.length) { el.style.display = "none"; el.innerHTML = ""; return; }
+    var a = list[0];
+    el.style.display = "";
+    el.innerHTML = '<div class="t">⚠️ 需要你的批准：' + esc(a.tool) + '</div>'
+      + '<div class="p">' + esc(a.preview || "(无参数)") + '</div>'
+      + '<div class="row"><button class="btn primary" id="apAllow">允许一次</button>'
+      + '<button class="btn danger" id="apDeny">拒绝</button></div>'
+      + '<div class="hint">只对这一次生效，不会记住。电脑上也能批准。</div>';
+    function answer(action){
+      var allow = document.getElementById("apAllow"), deny = document.getElementById("apDeny");
+      if (allow) allow.disabled = true;
+      if (deny) deny.disabled = true;
+      api("/api/approvals/" + encodeURIComponent(a.requestId), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: action }),
+      }).then(function(){
+        showToast(action === "allow" ? "已允许这一次" : "已拒绝");
+        loadApprovals();
+      }).catch(function(e){
+        // 失败必须如实说（典型是电脑那边已经处理了）
+        showToast((e && e.message) ? e.message : "这个请求已被处理或已失效");
+        loadApprovals();
+      });
+    }
+    document.getElementById("apAllow").addEventListener("click", function(){ answer("allow"); });
+    document.getElementById("apDeny").addEventListener("click", function(){ answer("deny"); });
+  }
+  async function loadApprovals(){
+    if (state.view !== "thread" || !state.sessionId) return;
+    var sid = state.sessionId;
+    try {
+      var j = await api("/api/approvals?sessionId=" + encodeURIComponent(sid));
+      // 同 loadMessages：await 之后要再确认还在同一页/同一会话，
+      // 否则返回列表页之后卡片会被重新挂上去
+      if (state.view !== "thread" || state.sessionId !== sid) return;
+      renderApprovals(j.approvals || []);
+    } catch (e) { if (e && e.auth) goUnpaired(); }
+  }
+
+  // 阶段 0.3：进行中状态 + 阶段 0.2：中断。手机上发现跑偏了必须有办法停下来，
+  // 否则只能等 8 分钟兜底超时。
+  function runBar(){
+    var el = document.getElementById("runbar");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "approval"; el.id = "runbar"; el.style.display = "none";
+      el.style.background = "#141c2b"; el.style.borderTopColor = "#2f5aa8";
+      var c = document.getElementById("composer");
+      if (c) document.body.insertBefore(el, c); else document.body.appendChild(el);
+    }
+    return el;
+  }
+  function renderRun(st){
+    var el = runBar();
+    if (!st || !st.running) { el.style.display = "none"; el.innerHTML = ""; return; }
+    el.style.display = "";
+    el.innerHTML = '<div class="t" style="color:#9dc0ff">⏳ ' + esc(st.label || "处理中") + '</div>'
+      + '<div class="row"><button class="btn stop" id="runStop">停止</button></div>';
+    document.getElementById("runStop").addEventListener("click", function(){
+      var b = document.getElementById("runStop");
+      if (b) { b.disabled = true; b.textContent = "正在停止…"; }
+      api("/api/chat/cancel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: state.sessionId }),
+      }).then(function(){ showToast("已请求停止"); loadRun(); })
+        .catch(function(){ showToast("停止请求失败"); loadRun(); });
+    });
+  }
+  async function loadRun(){
+    if (state.view !== "thread" || !state.sessionId) return;
+    var sid = state.sessionId;
+    try {
+      var j = await api("/api/sessions/" + encodeURIComponent(sid) + "/run");
+      // 同 loadMessages：await 之后要再确认，避免返回后状态条又冒出来
+      if (state.view !== "thread" || state.sessionId !== sid) return;
+      renderRun(j.run || null);
     } catch (e) { if (e && e.auth) goUnpaired(); }
   }
 
@@ -156,6 +296,9 @@
     state.view = "sessions"; state.sessionId = null;
     clearInterval(state.timer);
     var c = document.getElementById("composer"); if (c) c.remove();
+    // 离开会话页必须把这两条也收掉，否则它们会挂在会话列表页上
+    var ab = document.getElementById("approval"); if (ab) ab.remove();
+    var rb = document.getElementById("runbar"); if (rb) rb.remove();
     loadSessions();
   });
   refresh.addEventListener("click", function(){

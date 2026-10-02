@@ -21,6 +21,16 @@ import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { useProjectStore } from "../store";
 import { getLLMEngine } from "../llm";
 import { executeSessionTurn, isSessionExecuting, cancelSessionExecution } from "../session";
+/**
+ * 第 122 轮阶段 0.1：手机端发起的回合**必须能回答权限请求**。
+ *
+ * 在此之前这里没传 `onPermissionRequest`，于是落到 `executor.ts:368-374` 的缺省策略
+ * （full 放行，否则**自动拒绝**）：手机上发一句"帮我改一下这个文件"，
+ * 需要批准的工具被**静默否掉**，用户看到的是"任务莫名没做"。
+ *
+ * 现在挂上审批代理：请求进待批表，手机页面弹卡片，**桌面也能答**（同一张表）。
+ */
+import { requestApproval, closeSessionApprovals, listApprovals, answerApproval } from "../permission/approval-broker";
 
 // ========== 类型与常量 ==========
 
@@ -65,6 +75,10 @@ export type PhoneRoute =
   | { type: "messages"; sessionId: string }
   | { type: "chat" }
   | { type: "chat_new" }
+  | { type: "chat_cancel" }
+  | { type: "run"; sessionId: string }
+  | { type: "approvals" }
+  | { type: "approval_answer"; requestId: string }
   | null;
 
 /** 解析 Rust 代理上来的 path（不含 query）。limit 由调用方从 query 读取。 */
@@ -75,9 +89,19 @@ export function parsePhonePath(path: string): PhoneRoute {
   if (rest === "/sessions") return { type: "sessions" };
   if (rest === "/chat") return { type: "chat" };
   if (rest === "/chat/new") return { type: "chat_new" };
+  if (rest === "/chat/cancel") return { type: "chat_cancel" };
+  if (rest === "/approvals") return { type: "approvals" };
   const m = /^\/sessions\/([^/]+)\/messages$/.exec(rest);
   if (m) {
     return { type: "messages", sessionId: m[1] };
+  }
+  const r = /^\/sessions\/([^/]+)\/run$/.exec(rest);
+  if (r) {
+    return { type: "run", sessionId: r[1] };
+  }
+  const a = /^\/approvals\/([^/]+)$/.exec(rest);
+  if (a) {
+    return { type: "approval_answer", requestId: a[1] };
   }
   return null;
 }
@@ -92,11 +116,102 @@ export interface PhoneSessionView {
   messageCount: number;
 }
 
+/** 手机上一条工具调用的**摘要**（不搬全文，见 `mapMessages`）。 */
+export interface PhoneToolCallView {
+  tool: string;
+  status: string;
+  /** 参数摘要（如命令 / 路径），有上限 */
+  brief?: string;
+  /** 结果摘要，有上限 */
+  resultBrief?: string;
+}
+
 export interface PhoneMessageView {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
+  /**
+   * 阶段 0.4：工具调用摘要。
+   *
+   * 此前手机只拿到 `role/content/timestamp` —— 于是用户在手机上看会话，
+   * 完全不知道 agent 干了什么：调了哪些工具、改过哪些文件、哪一步失败了。
+   * 而这恰恰是"这个 agent 在干什么"的全部信息。
+   */
+  toolCalls?: PhoneToolCallView[];
+  /** 阶段 0.4：思维链。**默认不在列表里返回**（见 `mapMessages` 的 `withReasoning`） */
+  reasoning?: string;
+  /** 本会话产生的文件（供手机看到"改了哪些文件"） */
+  generatedFiles?: string[];
+}
+
+/** 工具调用摘要里各字段的字符上限（手机屏幕小，也不该为一次列表拉几百 KB）。 */
+export const PHONE_TOOL_BRIEF_MAX_CHARS = 300;
+/** 单条消息返回的工具调用条数上限。 */
+export const PHONE_TOOL_CALLS_MAX = 20;
+/** assistant 正文在手机视图里的字符上限。 */
+export const PHONE_CONTENT_MAX_CHARS = 4000;
+/** 思维链在手机视图里的字符上限。 */
+export const PHONE_REASONING_MAX_CHARS = 1500;
+
+function clipForPhone(text: string, max: number): string {
+  const s = String(text ?? "");
+  return s.length <= max ? s : `${s.slice(0, max)}…（共 ${s.length} 字符）`;
+}
+
+/** 工具调用的参数摘要：优先给人看"干了什么"，而不是整包 JSON。 */
+export function briefToolArgs(args: unknown): string {
+  if (args === undefined || args === null) return "";
+  if (typeof args === "string") return clipForPhone(args, PHONE_TOOL_BRIEF_MAX_CHARS);
+  const obj = args as Record<string, unknown>;
+  for (const key of ["command", "path", "file_path", "pattern", "query", "url", "target"]) {
+    const v = obj?.[key];
+    if (typeof v === "string" && v) return clipForPhone(v, PHONE_TOOL_BRIEF_MAX_CHARS);
+  }
+  try {
+    return clipForPhone(JSON.stringify(obj), PHONE_TOOL_BRIEF_MAX_CHARS);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 会话消息 → 手机视图（含 assistant 内容清理）。
+ *
+ * @param withReasoning 是否带上思维链。**默认 false**：
+ *   一次 `limit=80` 的消息列表若每条都带思维链，响应会大一个量级，
+ *   而多数时候用户只是想看对话。手机可以按需再要（见路由）。
+ */
+export function mapMessages(
+  msgs: Array<{
+    id: string;
+    role: string;
+    content?: string | null;
+    timestamp: number;
+    reasoning?: string | null;
+    toolCalls?: Array<{ tool?: string; args?: unknown; result?: string; status?: string }>;
+    generatedFiles?: string[];
+  }>,
+  withReasoning = false,
+): PhoneMessageView[] {
+  return msgs.map((m) => {
+    const calls = Array.isArray(m.toolCalls) ? m.toolCalls.slice(0, PHONE_TOOL_CALLS_MAX) : [];
+    const toolCalls: PhoneToolCallView[] = calls.map((tc) => ({
+      tool: String(tc?.tool ?? "(未知工具)"),
+      status: String(tc?.status ?? ""),
+      ...(briefToolArgs(tc?.args) ? { brief: briefToolArgs(tc?.args) } : {}),
+      ...(tc?.result ? { resultBrief: clipForPhone(String(tc.result), PHONE_TOOL_BRIEF_MAX_CHARS) } : {}),
+    }));
+    return {
+      id: m.id,
+      role: (m.role === "user" || m.role === "assistant" || m.role === "system" ? m.role : "assistant") as PhoneMessageView["role"],
+      content: clipForPhone(cleanContent(m.content || ""), PHONE_CONTENT_MAX_CHARS),
+      timestamp: m.timestamp,
+      ...(toolCalls.length > 0 ? { toolCalls } : {}),
+      ...(withReasoning && m.reasoning ? { reasoning: clipForPhone(m.reasoning, PHONE_REASONING_MAX_CHARS) } : {}),
+      ...(Array.isArray(m.generatedFiles) && m.generatedFiles.length > 0 ? { generatedFiles: m.generatedFiles.slice(0, 20) } : {}),
+    };
+  });
 }
 
 /** 清掉 system-reminder 噪音，供手机端展示。 */
@@ -140,16 +255,6 @@ export function flattenSessions(): PhoneSessionView[] {
   }
   out.sort((a, b) => b.updatedAt - a.updatedAt);
   return out.slice(0, MAX_SESSIONS);
-}
-
-/** 会话消息 → 手机视图（含 assistant 内容清理）。 */
-export function mapMessages(msgs: Array<{ id: string; role: string; content?: string | null; timestamp: number }>): PhoneMessageView[] {
-  return msgs.map((m) => ({
-    id: m.id,
-    role: (m.role === "user" || m.role === "assistant" || m.role === "system" ? m.role : "assistant") as PhoneMessageView["role"],
-    content: cleanContent(m.content || ""),
-    timestamp: m.timestamp,
-  }));
 }
 
 // ========== 请求路由（引擎半层）==========
@@ -257,7 +362,17 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
   );
   try {
     const res = await Promise.race([
-      executeSessionTurn({ sessionId, message: text, cwd, engine }),
+      executeSessionTurn({
+        sessionId,
+        message: text,
+        cwd,
+        engine,
+        /**
+         * 阶段 0.1：权限请求交给审批代理，手机页面可以点「允许一次 / 拒绝」。
+         * `origin: "phone"` 只用于界面措辞（"手机发起的回合在等批准"），不用于鉴权。
+         */
+        onPermissionRequest: (request) => requestApproval(request, "phone"),
+      }),
       timeoutRace,
     ]);
     if (!res.success) {
@@ -276,6 +391,17 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
     return { ok: false, error: reason, noted: true };
   } finally {
     clearTimeout(timeout);
+    /**
+     * 阶段 0.1：**回合收尾必须收口待批项**。
+     *
+     * 审批代理刻意**不设超时**（与 `permission.ts:239-243` 的既有约定一致：
+     * 用户在电脑前可以慢慢看）。但"不设超时"在远端会变成"手机没在看就永远挂着" ——
+     * 所以由**调用方**在回合结束时收口，未回答的一律按**拒绝**（fail-closed）。
+     *
+     * 放在 `finally`：成功、失败、超时三条路都要收。成功时通常没有待批项，
+     * 真有一条（竞态）也必须拒掉 —— 放行一个没人看过的写操作是最坏的失败模式。
+     */
+    closeSessionApprovals(sessionId, "turn_end");
   }
 }
 
@@ -305,8 +431,14 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       try {
         const rawLimit = parseInt(String(req.query?.limit ?? "80"), 10);
         const limit = Math.min(200, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 80));
+        /**
+         * 阶段 0.4：思维链**按需**返回（`?reasoning=1`）。
+         * 默认不带：80 条消息各带一段思维链会让响应大一个量级，
+         * 而多数时候用户只是想看对话。
+         */
+        const withReasoning = req.query?.reasoning === "1" || req.query?.reasoning === "true";
         const msgs = MessageStorage.listMessages(route.sessionId, limit);
-        await invokePhoneRespond(req.reqId, 200, { ok: true, messages: mapMessages(msgs) });
+        await invokePhoneRespond(req.reqId, 200, { ok: true, messages: mapMessages(msgs, withReasoning) });
       } catch (e: any) {
         await invokePhoneRespond(req.reqId, 404, { error: String(e?.message || e) });
       }
@@ -360,6 +492,97 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       void runAgentTurn(sessionId, text).then((res) => {
         if (!res.ok) console.warn("[phone-link] chat_new turn failed:", res.error);
       });
+      return;
+    }
+    /**
+     * 阶段 0.2：手机发起**中断**。
+     *
+     * 在此之前手机上发现跑偏了**没有任何办法停下来** —— 只能等 `TURN_TIMEOUT_MS`
+     * （8 分钟）兜底超时。长回合里这 8 分钟是实打实的浪费与风险。
+     *
+     * `cancelSessionExecution` 走的是既有路径（`executor.ts:780-785`：abort controller），
+     * 前台/后台共用 —— 与桌面端的取消是同一个动作，不引入第二套中断机制。
+     */
+    case "chat_cancel": {
+      if (req.method !== "POST") {
+        await invokePhoneRespond(req.reqId, 405, { error: "method_not_allowed" });
+        return;
+      }
+      let body: any = {};
+      try { body = JSON.parse(req.body || "{}"); } catch { /* ignore */ }
+      const sessionId = String(body.sessionId || "").trim();
+      if (!sessionId) {
+        await invokePhoneRespond(req.reqId, 400, { error: "sessionId 必填" });
+        return;
+      }
+      const wasRunning = isSessionExecuting(sessionId);
+      cancelSessionExecution(sessionId);
+      /**
+       * 顺手收口这个会话的待批项：已经决定要停了，还挂着一个待批准没有意义，
+       * 而且它会一直占着卡片。按拒绝收尾（fail-closed，与回合收尾同一取向）。
+       */
+      const closed = closeSessionApprovals(sessionId, "cancelled");
+      await invokePhoneRespond(req.reqId, 200, { ok: true, wasRunning, closedApprovals: closed });
+      return;
+    }
+    /**
+     * 阶段 0.3：手机读"这一轮在干什么"。
+     *
+     * 此前手机只知道"我发过消息"和"消息里多了几条" —— 中间那段（在思考 / 在调工具 /
+     * 在等批准）完全不可见，用户看到的就是一个静止的界面，然后忽然冒出一段结果。
+     */
+    case "run": {
+      const sessionId = route.sessionId;
+      const running = isSessionExecuting(sessionId);
+      const approvals = listApprovals({ sessionId });
+      const label = !running
+        ? ""
+        : approvals.length > 0
+          ? "正在等待你的批准"
+          : "助手处理中";
+      await invokePhoneRespond(req.reqId, 200, {
+        ok: true,
+        run: {
+          running,
+          label,
+          pendingApprovals: approvals.length,
+        },
+      });
+      return;
+    }
+    /**
+     * 阶段 0.1：手机读待批权限请求。
+     * `?sessionId=` 可选；带上 `includeDecided=1` 能看到"已被桌面处理"的（界面据此收起按钮）。
+     */
+    case "approvals": {
+      const sessionId = req.query?.sessionId || undefined;
+      const includeDecided = req.query?.includeDecided === "1" || req.query?.includeDecided === "true";
+      await invokePhoneRespond(req.reqId, 200, {
+        ok: true,
+        approvals: listApprovals({ sessionId, includeDecided }),
+      });
+      return;
+    }
+    /**
+     * 阶段 0.1：手机回答一个权限请求。
+     * 体是 `{ action: "allow" | "deny" }`；**只生效一次**（第二次会拿到
+     * `approval_not_pending`，且不会改写已有结果 —— 见 `approval-broker.ts`）。
+     */
+    case "approval_answer": {
+      if (req.method !== "POST") {
+        await invokePhoneRespond(req.reqId, 405, { error: "method_not_allowed" });
+        return;
+      }
+      let body: any = {};
+      try { body = JSON.parse(req.body || "{}"); } catch { /* ignore */ }
+      const action = String(body.action || "");
+      if (action !== "allow" && action !== "deny") {
+        await invokePhoneRespond(req.reqId, 400, { error: "action 必须是 allow 或 deny" });
+        return;
+      }
+      const out = answerApproval(route.requestId, action, "phone");
+      // 失败码如实回给手机（界面据此显示"这个请求已被处理或已失效"，而不是假装成功）
+      await invokePhoneRespond(req.reqId, out.ok ? 200 : 409, out);
       return;
     }
     default:

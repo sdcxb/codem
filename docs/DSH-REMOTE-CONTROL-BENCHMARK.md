@@ -437,3 +437,52 @@ Agents Anywhere Server  ◀──（出站长连接）──  Python Connector�
 - **要跨网络**（再加阶段 3）：手机在外面也能用。但必须先选是
   **自带出口**（Tailscale / Cloudflare Tunnel / 用户自己的 VPS，我们不碰数据），
   还是**自建中继**（我们提供连接器，用户自己部署）。
+
+---
+
+## 10. 实施状态
+
+> 用户已拍板：**要跨网络 + 自建中继**（阶段 3.2），且**现在就开始阶段 0**。
+> 阶段 3.2 排在后面，本节只记已完成的部分。
+
+### 阶段 0 —— 已完成（v1.16.211）
+
+| 项 | 落点 | 判据 |
+|---|---|---|
+| 0.1 远端审批 | 新增 `src/core/permission/approval-broker.ts`；`phone-link.ts` 与 `wechat-bridge.ts` 的回合接入；`App.tsx` 桌面回退；手机页面审批卡片 | `approval-broker.test.ts`（AB-1..AB-10，11 条）+ `remote-approval-wiring.test.ts`（RAW-1..RAW-10） |
+| 0.2 远端中断 | `POST /api/chat/cancel`，复用既有的 `cancelSessionExecution`（`executor.ts:780-785`）；手机「停止」按钮 | RAW-8 + RAW-10 |
+| 0.3 进行中状态 | `GET /api/sessions/<id>/run`，复用 `isSessionExecuting`；手机状态条 | RAW-8 + RAW-10 |
+| 0.4 历史保真 | `PhoneMessageView` 增加 `toolCalls` / `reasoning`（`?reasoning=1` 按需）/ `generatedFiles`，全部有上限；手机渲染工具卡（失败的显红边） | RAW-9 + RAW-10 |
+
+**阶段 0 的取舍（与 §6 一致，实施时逐条落实）**：
+
+1. **只给两个动作**（`allow` / `deny`），远端回答的 `alwaysAllow` **恒为 false** ——
+   照 DSH `approvals.ts:14` 的「a grant always applies once」；
+2. **刻意不设超时**（与 `permission.ts:239-243` 的既有约定一致），
+   悬空由调用方在回合收尾时 `closeSessionApprovals()` 按**拒绝**收口（fail-closed）；
+3. **回答只生效一次**：第二个回答方拿 `approval_not_pending`，且**不能改写已有结果**；
+4. **桌面是共用同一张表的另一个回答方**，不是额外机制 —— 所以手机掉线时桌面照样能答；
+5. **入参消毒**：只保留已知字段、长字段截断并**注明原长**；
+   存的是**有界结构**而不是原始入参（`write` 的 `content` 可能几 MB），
+   同一份结构既喂给桌面 `PermissionDialog`，也渲染成手机的预览文本。
+
+**变异自证 8/8**：broker 侧 4 个（去掉一次性检查 / 收尾改成放行 / 放开 alwaysAllow /
+去掉有界回收），接线侧 4 个（去掉收口 / 颠倒审批与跑回合的顺序 / 退回静默 auto-deny /
+手机页面不拉待批准）。
+
+⚠️ **其中两条是我自己写错后被用例/变异抓回来的，记在这里**：
+
+- **AB-7**：预览第一版遇到 `path` 就直接返回路径、把 `content` 整个丢掉 ⇒
+  手机上只显示一行路径，用户无法判断"要往里写什么"。判据当场变红。
+- **RAW-10**：第一版只断言 `toContain("/api/approvals")`，变异把请求改成
+  `/api/approvals-DISABLED?sessionId=` 之后**照样全绿**（前缀匹配）。
+  已改成断言**完整调用形态**，再测才变红。**判据要盯"它真的在拉这个 URL"。**
+
+### 尚未开始
+
+- 阶段 1（LAN HTTPS + CA 指纹 / 上游收回回环 / Host 白名单 + 抗 rebinding /
+  恒定时间比对 / 缩短 cookie 寿命）；
+- 阶段 2（事件流替代轮询 + `seq`/ACK + 分页预算）；
+- 阶段 3.2（用户自建中继的 egress connector）；
+- 阶段 4（多端在场感知 / 远端改模型与权限 / 手机 UI 语义对齐）。
+

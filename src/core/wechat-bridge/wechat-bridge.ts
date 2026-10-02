@@ -27,6 +27,26 @@ import {
   isSessionExecuting,
   cancelSessionExecution,
 } from "../session";
+/**
+ * 第 122 轮阶段 0.1：远端审批。
+ *
+ * 在此之前，微信路径**没有** `onPermissionRequest`，于是落到 `executor.ts:368-374`
+ * 的缺省策略（full 放行，否则**自动拒绝**）—— 本文件里那条
+ * 「onPermissionRequest 缺省策略已安全：full→放行；否则自动拒绝」的注释自己写明了它。
+ * 后果：微信上让 agent 改个文件，需要批准的工具被**静默否掉**，
+ * 用户看到的是"任务莫名没做"，而不是"它在等你点同意"。
+ *
+ * 现在接进审批代理：请求进待批表（**桌面也能答**），同时给对方发一条可回复的通知，
+ * 回「同意」/「拒绝」即可（见 `parseApprovalReply` 与 `tryHandleApprovalReply`）。
+ */
+import {
+  requestApproval,
+  answerApproval,
+  listApprovals,
+  closeSessionApprovals,
+  summarizeApprovalInput,
+  type ApprovalView,
+} from "../permission/approval-broker";
 
 // ========== 类型 ==========
 
@@ -126,6 +146,35 @@ export function parseCommand(text: string): { name: string; arg: string } | null
   const arg = sp === -1 ? "" : t.slice(sp + 1).trim();
   if (!COMMANDS.has(name)) return null;
   return { name, arg };
+}
+
+/**
+ * 第 122 轮阶段 0.1：判断一条微信消息是不是在**回答待批准请求**。
+ *
+ * ## 为什么必须有它
+ *
+ * 微信是纯文本通道，没有按钮。把审批接进审批代理之后，如果不解析回复，
+ * 那个回合会一直等到 8 分钟兜底超时 —— 比原来的"立即拒绝"**更糟**。
+ * 所以要给它一条能回答的路。
+ *
+ * ## 为什么可以放宽词表
+ *
+ * 本函数**只在确实有一次待批准请求时**才被调用（见 `tryHandleApprovalReply`），
+ * 所以「可以」「不要」这类日常词不会误伤正常对话 —— 那时根本没有待批项。
+ *
+ * 只认**整条消息**就是这几个词（去掉尾部标点后），不做子串匹配：
+ * 「你可以帮我看看吗」不该被当成同意。
+ */
+export function parseApprovalReply(text: string): "allow" | "deny" | null {
+  const t = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[。！!，,.\s]+$/u, "");
+  const ALLOW = ["同意", "允许", "批准", "可以", "同意一次", "允许一次", "ok", "yes", "y", "allow", "approve"];
+  const DENY = ["拒绝", "不同意", "不行", "不要", "no", "n", "deny", "reject"];
+  if (ALLOW.includes(t)) return "allow";
+  if (DENY.includes(t)) return "deny";
+  return null;
 }
 
 export function truncateReply(text: string, max = REPLY_MAX): string {
@@ -395,6 +444,16 @@ async function processInbound(m: InboundMessage): Promise<void> {
     return;
   }
 
+  /**
+   * 第 122 轮阶段 0.1：**待批准请求优先**。
+   *
+   * 顺序很重要，必须排在"跑回合"之前：
+   * 回合还在等批准时，`isSessionExecuting` 为真，新消息进去只会得到
+   * 「上一条消息仍在处理中」—— 用户明明看到"请回复同意/拒绝"，
+   * 回了却得到这句无关的话。所以有未决审批时，这条消息就是**给它**的。
+   */
+  if (await tryHandleApprovalReply(m.peer, text)) return;
+
   const reply = await runAgentTurn(m.peer, text);
   const delivered = await sendReply(m.peer, reply);
   if (!delivered) {
@@ -416,8 +475,70 @@ async function processInbound(m: InboundMessage): Promise<void> {
   }
 }
 
-// ---- 命令短路（与 agent 自由对话分离）----
+// ---- 阶段 0.1：审批通知与回复（微信是纯文本通道，靠回复回答）----
 
+/** 把待批项渲染成一条可回复的通知（含工具名与**有上限**的入参预览）。 */
+export function describeApprovalNotice(tool: string, preview: string): string {
+  return (
+    `⚠️ 需要你的批准：${tool}\n\n` +
+    `${preview}\n\n` +
+    `回复「同意」或「拒绝」。**只对这一次生效**，不会记住。`
+  );
+}
+
+/** 提醒对方"你还有未决的批准请求，请先回同意/拒绝"。 */
+export function describePendingApprovals(pending: ApprovalView[]): string {
+  const first = pending[0];
+  return (
+    `还有 ${pending.length} 个批准请求在等你处理，请先回复。\n` +
+    `当前这条：${first?.tool || "(未知工具)"}\n\n` +
+    `回复「同意」或「拒绝」。`
+  );
+}
+
+async function sendApprovalNotice(
+  peer: string,
+  request: { tool: string; input?: Record<string, unknown> },
+): Promise<void> {
+  await sendReply(peer, describeApprovalNotice(request.tool, summarizeApprovalInput(request.input)));
+}
+
+/**
+ * 如果对方有未决的批准请求，这条消息就当作它的回答。
+ *
+ * @returns 是否**消费**了这条消息（true 表示不要再拿它跑回合）
+ */
+async function tryHandleApprovalReply(peer: string, text: string): Promise<boolean> {
+  let sessionId = "";
+  try {
+    sessionId = (await ensurePeerSession(peer)).sessionId || "";
+  } catch {
+    return false; // 拿不到会话就按普通消息走，绝不因为审批而吞掉用户的话
+  }
+  if (!sessionId) return false;
+
+  const pending = listApprovals({ sessionId });
+  if (pending.length === 0) return false;
+
+  const action = parseApprovalReply(text);
+  if (!action) {
+    // 有未决审批但这条不是回答 ⇒ 明确告诉他先回答，而不是让他撞"正在处理中"
+    await sendReply(peer, describePendingApprovals(pending));
+    return true;
+  }
+
+  const target = pending[0];
+  const out = answerApproval(target.requestId, action, "wechat");
+  if (out.ok) {
+    await sendReply(peer, action === "allow" ? "✅ 已允许这一次。" : "🚫 已拒绝。");
+  } else {
+    // 失败必须如实说（典型是另一个回答方抢先处理了）
+    await sendReply(peer, `（这个批准请求${out.message}）`);
+  }
+  return true;
+}
+
+// ---- 命令短路（与 agent 自由对话分离）----
 async function runCommand(peer: string, name: string, arg: string, kind: "owner" | "allowed" | "blocked" | "unknown"): Promise<void> {
   const invoke = (window as any).__TAURI__?.core?.invoke;
   switch (name) {
@@ -662,12 +783,30 @@ async function runAgentTurn(peer: string, text: string): Promise<string> {
           cwd,
           engine,
           abortSignal: undefined,
-          // onPermissionRequest 缺省策略已安全：full→放行；否则自动拒绝。
+          /**
+           * 第 122 轮阶段 0.1：不再让缺省策略**静默拒绝**。
+           *
+           * 请求进审批代理（桌面与手机都能答），同时给对方发一条可回复的通知 ——
+           * 通知**不阻塞审批本身**（发失败也要能继续等，所以 `void … .catch`）。
+           */
+          onPermissionRequest: (request) => {
+            const pending = requestApproval(request, "wechat");
+            void sendApprovalNotice(peer, request).catch((e) =>
+              console.warn("[wechat-bridge] 审批通知发送失败（审批本身不受影响）:", e),
+            );
+            return pending;
+          },
         }),
         timeoutRace,
       ]);
     } finally {
       clearTimeout(timeout);
+      /**
+       * 回合收尾必须收口待批项：审批代理**刻意不设超时**
+       * （与 `permission.ts:239-243` 的既有约定一致），
+       * 悬空由调用方在回合结束时按**拒绝**收尾（fail-closed）。
+       */
+      closeSessionApprovals(sessionId, "turn_end");
     }
     void settled;
 
