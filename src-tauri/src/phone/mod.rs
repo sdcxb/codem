@@ -949,7 +949,15 @@ async fn route(
                     d.last_seen_ms = now;
                 }
             }
-            proxy_to_ts(app, st, req).await
+            // 第 122 轮阶段 4：把**设备身份**一并转给渲染进程。
+            //
+            // 之前只转 reqId/method/path/query/body —— 渲染侧因此不知道
+            // "这次请求是哪台已配对设备发的"。而"多端在场感知"（谁正在看、
+            // 谁正在答）必须要它，否则只能显示一个匿名的"有远端在线"。
+            //
+            // 注意：这是**已经过 cookie 鉴权**的设备（上面 `auth_device` 查出来的），
+            // 不是客户端自称的 —— 不许由客户端在请求体里带自己的 id 来冒充。
+            proxy_to_ts(app, st, req, Some((device.id.clone(), device.ip.clone()))).await
         }
         _ => HttpResponse::json(404, serde_json::json!({ "error": "not_found" })),
     }
@@ -960,6 +968,7 @@ async fn proxy_to_ts(
     app: &AppHandle,
     st: &Arc<PhoneState>,
     req: HttpRequest,
+    device: Option<(String, String)>,
 ) -> HttpResponse {
     if !st.inner.lock().await.running {
         return HttpResponse::json(502, serde_json::json!({ "error": "server stopped" }));
@@ -982,6 +991,9 @@ async fn proxy_to_ts(
         "path": req.path,
         "query": query,
         "body": body,
+        // 阶段 4：已鉴权的设备身份（缺省 = 非 /api 路径，没有设备概念）
+        "deviceId": device.as_ref().map(|d| d.0.clone()),
+        "deviceIp": device.as_ref().map(|d| d.1.clone()),
     });
     let _ = app.emit("phone-request", payload);
 

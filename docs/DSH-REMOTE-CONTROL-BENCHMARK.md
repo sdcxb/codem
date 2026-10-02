@@ -710,3 +710,93 @@ syncIntervalSeconds(30) / syncExistingOnConnect(true)
 - **跨网络的可达性**已由 §11 的出站中继解决；但**中继需要用户自己跑**（一段零依赖 Node 程序），
   且公网部署**必须**放在 HTTPS 反代之后（否则流量明文，中继启动时会警告）。
   这是**部署形态**，不是未完成的功能。
+
+---
+
+## 13. 调研：「能不能直接用 Agents Anywhere 的中继服务器？」
+
+> 用户问：可以用 dsh 一样的中继服务器吗？是 Agents Anywhere 吗？对其他 agent 平台开放吗？
+> 这一节只写**从证据能看到的**，看不到的明确标注。
+
+### 13.1 是 Agents Anywhere，而且它**支持自建服务器**
+
+| 事实 | 证据 |
+|---|---|
+| 云端地址 | `CLOUD_API_BASE_URL = 'https://web.agents-anywhere.com'`（`src/host/index.ts:9`） |
+| 服务器可换 | `config.ts:18` `apiBaseUrl: z.string().default(CLOUD_API_BASE_URL)`；`config.ts:46` 走 `normalizeServerOrigin` |
+| **明确支持自建** | `LoginRequest = { target: 'cloud' } \| { target: 'server'; serverUrl: string }`（`host/index.ts:29`）；界面文案「请选择云端或自建服务器。」（`locales.ts:82`） |
+| 怎么验服务器 | `GET {apiBaseUrl}/api/v2/health` 必须返回 `{status:'ok'}`（`account/server.ts:25-30`），否则报「该地址未返回正常的 Agents Anywhere 服务」 |
+
+所以答案是：**服务器可以不是它的云，可以是你自己的** —— 但那个"你自己的服务器"
+必须是**一套 Agents Anywhere 服务端**，不是随便什么中继。
+
+### 13.2 它的 connector 是**多平台**的（这就是"对谁开放"的答案）
+
+connector 的 Python 源码**就捆绑在插件包里**：
+`node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/`
+（`pyproject.toml` 里 `name = "anywhere-cli"`、`[project.scripts] anywhere-cli = "connector.cli:main"`；
+`UV_DEFAULT_INDEX` 只是拉**依赖**，不是拉它自己 —— `connector/project.ts` 从
+`config.connectorSourceDir` 复制这份捆绑源码）。
+
+它内置的运行时目录 `connector/runtimes/` 下是：
+
+```
+claude    codex    dsh
+```
+
+**也就是说：它对 Claude Code、OpenAI Codex、DSH 这三个 agent 平台是开放的** ——
+但这是**它主动适配**的结果，不是"任何人实现一个公开协议就能接"。
+协议实现全在 `connector/server/*.py`（`client.py` / `rpc.py` / `pairing.py` /
+`terminal_relay.py` / `urls.py`），依赖 `websockets>=16.0` ——
+**是它的私有 WebSocket 协议，包里没有任何公开规范**。
+
+账号/REST 面倒是从 TS 完全可见（`account/api.ts`）：
+
+```
+POST /api/v2/oauth/token           GET  /api/v2/auth/me
+GET  /api/v2/connectors            POST /api/v2/connectors
+GET  /api/v2/connectors/{id}       POST /api/v2/connectors/{id}/revoke
+POST /api/v2/connector/auth        Authorization: Connector <id>:<token>
+POST /api/v2/auth/mobile-login/qr  .../status  .../confirm
+GET  /api/v2/health
+```
+
+### 13.3 所以「和 DSH 用一模一样的中继」具体有三条路
+
+| 路 | 要做什么 | 代价 |
+|---|---|---|
+| **A. 直接跑它捆绑的 connector** | 用它的 `bundled-connector` + `uv run anywhere-cli rpc --config connector.json`，指向它的云或自建 AA 服务器 | 引入 Python 3.12 + uv + 首次约 235 MiB 依赖；**手机端要用它的 Web App**（中继只服务它自己的前端），我们的手机页面在那条路上没有位置；需要 AA 账号（云）或一套自建 AA 服务端 |
+| **B. 照 `connector/server/*.py` 重实现它的协议** | 用 Rust 实现它的 WebSocket 协议 | 追一个**私有且会变**的协议；它一变我们就坏；同样要用它的 Web App |
+| **C. 保持现状（我们自己的中继）** | 已实现并验过（§11） | 用户要自己跑一段零依赖 Node 程序；**但协议是我们的、手机端是我们的、不依赖任何第三方** |
+
+### 13.4 我的建议与**我核实不了的事**
+
+**建议保持 C**，理由不是"我们做得更好"，而是三条具体的：
+1. 走 A/B 之后，**手机端 UI 就不是我们的了** —— 阶段 0/1/2 做的审批卡片、事件流、
+   指纹核对在那条路上全部作废（它们是我们手机页面的能力）；
+2. 走 A/B 等于把远程控制建在**别人的私有协议**上，它改协议我们就坏，
+   而我们**没有追它的能力**（没有规范、只有 Python 实现）；
+3. 现在这条路**已经验证过**（§11 + §12，装机端到端 14/14 与 9/9）。
+
+**我无法核实的（不在我能看到的信息范围内）**：
+- 把 Codem 接到 `web.agents-anywhere.com` 或自建 AA 服务端，**在许可条款上是否允许** ——
+  插件包里没有可据以判断的材料；
+- **AA 服务端软件本身怎么获取**（插件包里**没有**服务端代码，只有 connector）。
+
+所以"如果可以"这个前提，我只能说：**技术上可行（走 A 最省事），
+但代价是交出手机端并且依赖一个私有协议；许可问题我核实不了。**
+
+### 13.5 与 DSH 的策略到底还有没有差别
+
+**策略层面已经没有差别了**：都是"桌面出站长连到中继，手机连中继"。
+剩下的差别只有一处，而且是**部署形态**不是策略：
+
+| | DSH / AA | 我们 |
+|---|---|---|
+| 中继由谁跑 | 它的云（或你自建 AA 服务端） | **你自己跑**（零依赖 Node 一段程序） |
+| 协议 | 它的私有 WebSocket | 我们的（纯隧道，中继看不懂会话） |
+| 手机端 | 它的 Web App | 我们的手机页面（因此审批卡片/事件流/指纹核对都还在） |
+| 账号体系 | 有（OAuth + 设备绑定） | 无 |
+
+如果你想连账号体系也对齐（走 A），那是一个**产品定位决策**（本地优先 → 依赖第三方平台），
+不是技术债 —— 说一声我就按 A 重做，但上面三条代价会同时到来。

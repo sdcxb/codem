@@ -23,6 +23,17 @@ import {
   type PhoneStateView,
   type RelayStateView,
 } from "../core/phone-link/phone-link";
+/**
+ * 阶段 4.3：桌面侧也要知道"谁正在看"。
+ *
+ * 审批是一张**共用**的表，所以桌面上那张卡片躺着时，用户应该能看到
+ * "手机也在看" —— 否则他可能白等（以为只有自己能答），
+ * 或者在手机上点完才发现桌面已经处理过了。
+ *
+ * 这里**直接读进程内状态**，不走 HTTP：桌面就是宿主，
+ * 为了显示自己的状态去请求自己毫无意义（还多一次循环）。
+ */
+import { getPresence } from "../core/phone-link/presence";
 
 async function tauriInvoke(cmd: string, args?: Record<string, unknown>): Promise<any> {
   const { invoke } = (window as any).__TAURI__?.core || {};
@@ -152,6 +163,14 @@ export function PhoneLinkSettings() {
   const origin = `${scheme}://${status.lan_ip}:${status.port}`;
   const caUrl = status.ca_url || `${origin}/ca.crt`;
   const fingerprint = status.ca_fingerprint || "";
+  /**
+   * 阶段 4.3：在场（谁正在看）。
+   *
+   * 不需要额外的定时器：这个组件本来就有 3 秒一次的 `refresh`，
+   * 而 `setStatus(新对象)` 每次都触发重渲染 —— 于是 `getPresence()`
+   * 会跟着重算。它自己会清理过期项，所以"关掉手机页面后这里会自己消失"。
+   */
+  const presence = getPresence();
   // §11D：中继连接的阶段（互斥四态；没连上就绝不说"已连接"）
   // 颜色不在这里算 —— 交给 CSS 的 `.relay-phase[data-phase=...]`，
   // 这样"什么阶段什么颜色"是声明式的，不会漏掉一处。
@@ -196,6 +215,15 @@ export function PhoneLinkSettings() {
           )}
         </div>
         {notice && <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 6 }}>{notice}</div>}
+
+        {/* 阶段 4.3：谁正在看（桌面自己永远在场，所以只列远端） */}
+        <div className="relay-stats" data-testid="phone-presence" data-count={presence.remoteCount} style={{ marginTop: 6 }}>
+          {presence.remoteCount === 0
+            ? (zh ? "当前没有远端设备在查看" : "No remote device is viewing right now")
+            : (zh
+              ? `${presence.remoteCount} 台远端设备正在查看：${presence.remotes.map((r) => `${r.ip || r.deviceId}${r.sessionId ? `（会话 ${r.sessionId.slice(0, 12)}…）` : ""}`).join("、")}`
+              : `${presence.remoteCount} remote device(s) viewing: ${presence.remotes.map((r) => r.ip || r.deviceId).join(", ")}`)}
+        </div>
 
         <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!status.running ? (

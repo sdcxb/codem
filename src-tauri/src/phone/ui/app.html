@@ -49,6 +49,13 @@
   .approval .row{display:flex;gap:8px}
   .approval .row .btn{flex:1}
   .approval .hint{font-size:11px;color:#a79a7d;margin-top:6px;line-height:1.5}
+  /* 阶段 4：模型/权限选择 + 多端在场（谁在看、谁在答） */
+  .ctl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 12px;background:#14171d;border-bottom:1px solid #232833;font-size:12px}
+  .ctl select{background:#1d222c;border:1px solid #2a2f3a;color:#e6e8ec;border-radius:8px;padding:6px 8px;font-size:12px;max-width:46vw}
+  .ctl select:disabled{opacity:.45}
+  .ctl .who{color:#8b94a3}
+  .ctl .who b{color:#9dc0ff;font-weight:600}
+  .ctl .warn{color:#ffd76a}
   .btn.danger{background:#7a2a2a;border-color:#9c3a3a;color:#ffe3e3}
   .btn.stop{background:#7a2a2a;border-color:#9c3a3a;color:#ffe3e3}
 </style>
@@ -125,6 +132,82 @@
     screen.scrollTop = screen.scrollHeight;
   }
 
+  /**
+   * 阶段 4：模型 / 权限档选择 + 多端在场。
+   *
+   * ⚠️ 权限档里**不能放宽**的选项由**服务端**给出 `remoteAllowed`，
+   * 我们只负责按它禁用 —— 规则不在客户端算（否则改一下前端就能绕过）。
+   */
+  function ctlBar(){
+    var el = document.getElementById("ctl");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "ctl"; el.id = "ctl"; el.style.display = "none";
+      var h = document.getElementById("header");
+      if (h && h.parentNode) h.parentNode.insertBefore(el, h.nextSibling);
+      else document.body.insertBefore(el, document.body.firstChild);
+    }
+    return el;
+  }
+  function renderCatalog(c){
+    var el = ctlBar();
+    el.style.display = "";
+    var models = (c && c.models) || [];
+    var sec = (c && c.security) || { options: [] };
+    var mOpts = models.map(function(m){
+      return '<option value="' + esc(m.id) + '"' + (m.id === c.currentModel ? ' selected' : '') + '>' + esc(m.name || m.id) + '</option>';
+    }).join("");
+    var sOpts = (sec.options || []).map(function(s){
+      // 不能放宽的档位**禁用**，并把原因放在 title 上（用户能看懂为什么点不了）
+      var dis = s.remoteAllowed === false ? ' disabled title="远端只能收紧权限档，放宽请到电脑上改"' : '';
+      return '<option value="' + esc(s.id) + '"' + (s.id === sec.mode ? ' selected' : '') + dis + '>' + esc(s.label || s.id) + '</option>';
+    }).join("");
+    el.innerHTML =
+      '<select id="pickModel" title="模型">' + mOpts + '</select>' +
+      '<select id="pickSec" title="权限档">' + sOpts + '</select>' +
+      '<span class="who" id="who"></span>';
+    document.getElementById("pickModel").addEventListener("change", function(){
+      applySelection({ model: this.value });
+    });
+    document.getElementById("pickSec").addEventListener("change", function(){
+      applySelection({ securityMode: this.value });
+    });
+  }
+  function applySelection(patch){
+    api("/api/selections", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ sessionId: state.sessionId }, patch)),
+    }).then(function(){
+      showToast(patch.model ? "模型已切换" : "权限档已更新");
+      loadCatalog();
+    }).catch(function(e){
+      // 被拒时把**服务端给的原因**原样显示（不是笼统的"操作失败"）
+      showToast((e && e.message) ? e.message : "修改被拒绝");
+      loadCatalog();
+    });
+  }
+  async function loadCatalog(){
+    if (state.view !== "thread" || !state.sessionId) return;
+    try {
+      var j = await api("/api/catalog?sessionId=" + encodeURIComponent(state.sessionId));
+      renderCatalog(j.catalog || null);
+      var el = document.getElementById("ctl");
+      if (el) el.style.display = "";
+    } catch (e) { if (e && e.auth) goUnpaired(); }
+  }
+  async function loadPresence(){
+    if (state.view !== "thread") return;
+    try {
+      var j = await api("/api/presence");
+      var p = j.presence || {};
+      var who = document.getElementById("who");
+      if (!who) return;
+      var others = (p.remotes || []).length;
+      // 电脑端永远在场（它就是宿主），所以这里说"电脑端在线"是事实
+      who.innerHTML = '电脑端 <b>在线</b>' + (others > 0 ? ' · 另有 ' + others + ' 台设备在看' : '');
+    } catch (e) { /* 忽略：在场信息不是关键路径 */ }
+  }
+
   function openSession(id){
     state.view = "thread"; state.sessionId = id; state.messages = [];
     // 换会话 ⇒ 事件流的检查点作废（那是**上一个会话**的进度），必须归零重取
@@ -132,6 +215,7 @@
     title.textContent = "会话"; back.style.display = "";
     renderThread([]);
     loadMessages(); loadApprovals(); loadRun();
+    loadCatalog(); loadPresence();
     startEventLoop();
   }
 
@@ -175,16 +259,18 @@
         }
         state.seq = j.nextSeq || state.seq;
         var evs = j.events || [];
-        var needMsg = false, needAp = false, needRun = false;
+        var needMsg = false, needAp = false, needRun = false, needCtl = false;
         for (var i = 0; i < evs.length; i++) {
           var t = evs[i].type;
           if (t === "messages" || t === "sessions") needMsg = true;
           else if (t === "approval") needAp = true;
-          else if (t === "run") needRun = true;
+          else if (t === "run") { needRun = true; needCtl = true; }
+          else if (t === "presence") needCtl = true;
         }
         if (needMsg) await loadMessages();
         if (needAp) await loadApprovals();
         if (needRun) await loadRun();
+        if (needCtl) { await loadCatalog(); await loadPresence(); }
         // hasMore ⇒ 还有积压，立刻再拉一轮（不要等下一个 10 秒）
       }
     })();
@@ -388,9 +474,10 @@
     state.view = "sessions"; state.sessionId = null;
     if (state.evtToken) state.evtToken.cancelled = true;
     var c = document.getElementById("composer"); if (c) c.remove();
-    // 离开会话页必须把这两条也收掉，否则它们会挂在会话列表页上
+    // 离开会话页必须把这几个也收掉，否则它们会挂在会话列表页上
     var ab = document.getElementById("approval"); if (ab) ab.remove();
     var rb = document.getElementById("runbar"); if (rb) rb.remove();
+    var cb = document.getElementById("ctl"); if (cb) cb.remove();
     loadSessions();
     startListEventLoop();
   });

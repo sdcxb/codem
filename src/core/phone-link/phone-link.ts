@@ -44,6 +44,11 @@ import {
   eventsSince,
   EVENT_WAIT_DEFAULT_MS,
 } from "./event-stream";
+/** 阶段 4：多端在场感知 + 远端改模型/权限档。 */
+import { noteRemoteSeen, getPresence, publishPresenceIfChanged } from "./presence";
+import { verdictForRemoteSecurityChange, isLoosening } from "./remote-selections";
+import { MIMO_MODELS, getConfiguredApiModels } from "../model-config";
+import { SECURITY_MODES, getEffectiveSecurityMode, setProjectSecurityMode, setGlobalSecurityMode } from "../permission/security-mode";
 
 // ========== 类型与常量 ==========
 
@@ -62,6 +67,14 @@ export interface PhoneProxyRequest {
   path: string;
   query: Record<string, string>;
   body: string;
+  /**
+   * 阶段 4.3：**已经过 Rust 侧 cookie 鉴权**的设备身份。
+   *
+   * 由 `phone/mod.rs` 在 `auth_device` 之后填进来 —— 客户端**不能**自己声称，
+   * 否则任何拿到 cookie 的人都能冒充另一台设备。
+   */
+  deviceId?: string | null;
+  deviceIp?: string | null;
 }
 
 // ========== 设置 ==========
@@ -93,6 +106,9 @@ export type PhoneRoute =
   | { type: "approvals" }
   | { type: "approval_answer"; requestId: string }
   | { type: "events" }
+  | { type: "presence" }
+  | { type: "catalog" }
+  | { type: "selections" }
   | null;
 
 /** 解析 Rust 代理上来的 path（不含 query）。limit 由调用方从 query 读取。 */
@@ -106,6 +122,9 @@ export function parsePhonePath(path: string): PhoneRoute {
   if (rest === "/chat/cancel") return { type: "chat_cancel" };
   if (rest === "/approvals") return { type: "approvals" };
   if (rest === "/events") return { type: "events" };
+  if (rest === "/presence") return { type: "presence" };
+  if (rest === "/catalog") return { type: "catalog" };
+  if (rest === "/selections") return { type: "selections" };
   const m = /^\/sessions\/([^/]+)\/messages$/.exec(rest);
   if (m) {
     return { type: "messages", sessionId: m[1] };
@@ -593,12 +612,134 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       const wait = Number.isFinite(rawWait) ? rawWait : EVENT_WAIT_DEFAULT_MS;
       // 有人订阅就顺手登记"这个会话要盯"（探测层据此决定看什么）
       noteWatched(sessionId);
+      /**
+       * 阶段 4.3：长轮询是**最可靠的在场信号** —— 手机只要在看着，
+       * 就会每 10 秒挂一次。用它来维持在场，比另做一个心跳更省事也更准。
+       */
+      const changed = noteRemoteSeen(req.deviceId || "", req.deviceIp || "", sessionId);
+      publishPresenceIfChanged(changed, sessionId);
       const batch = await waitPhoneEvents(
         Number.isFinite(since) ? since : 0,
         sessionId,
         wait,
       );
       await invokePhoneRespond(req.reqId, 200, { ok: true, ...batch });
+      return;
+    }
+    /**
+     * 阶段 4.1/4.2：远端读"能选什么、当前是什么"。
+     *
+     * 与 DSH 的 `catalog.listModels` + `listPermissions` 对应。
+     * 我们把两个目录**合成一个**请求：手机打开选择面板时要的就是这两样，
+     * 分两次请求在跨网络下只是多一次往返。
+     */
+    case "catalog": {
+      const sessionId = req.query?.sessionId || "";
+      const row = sessionId ? SessionStorage.getSession(sessionId) : null;
+      const projectId = row?.projectId || useProjectStore.getState().currentProject?.id || "";
+      const project = projectId ? ProjectStorage.getProject?.(projectId) : null;
+      const projectPath = project?.path || "";
+      // 手机侧的模型来自"当前执行模式"下的目录（与桌面聊天框同一个来源）
+      const mode = (row as any)?.executionMode === "api" ? "api" : "cli";
+      const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
+      await invokePhoneRespond(req.reqId, 200, {
+        ok: true,
+        catalog: {
+          mode,
+          models: models.map((m) => ({ id: m.id, name: m.name })),
+          currentModel: row?.model ?? null,
+          security: {
+            mode: getEffectiveSecurityMode(projectPath || undefined),
+            // 远端只能收紧 ⇒ 把"能不能改"的判定**在服务端**给出，
+            // 界面据此显示哪些档位可选（而不是让界面自己猜规则）
+            options: SECURITY_MODES.map((s) => ({
+              id: s.mode,
+              label: s.label_zh,
+              labelEn: s.label_en,
+              description: s.desc_zh,
+              descriptionEn: s.desc_en,
+              icon: s.icon,
+              remoteAllowed: !isLoosening(getEffectiveSecurityMode(projectPath || undefined), s.mode),
+            })),
+            scope: projectPath ? "project" : "global",
+          },
+        },
+      });
+      return;
+    }
+    /**
+     * 阶段 4.1/4.2：远端按会话改模型 / 收紧权限档。
+     *
+     * 模型随便改；权限档**只能收紧** —— 理由见 `remote-selections.ts`
+     * （远端能放宽权限 = 能自己取消对自己的监督，那会让阶段 0 的整套审批失效）。
+     */
+    case "selections": {
+      if (req.method !== "POST") {
+        await invokePhoneRespond(req.reqId, 405, { error: "method_not_allowed" });
+        return;
+      }
+      let body: any = {};
+      try { body = JSON.parse(req.body || "{}"); } catch { /* ignore */ }
+      const sessionId = String(body.sessionId || "").trim();
+      if (!sessionId) {
+        await invokePhoneRespond(req.reqId, 400, { error: "sessionId 必填" });
+        return;
+      }
+      const row = SessionStorage.getSession(sessionId);
+      if (!row) {
+        await invokePhoneRespond(req.reqId, 404, { error: `会话不存在：${sessionId}` });
+        return;
+      }
+      const projectId = row.projectId || useProjectStore.getState().currentProject?.id || "";
+      const projectPath = (projectId ? ProjectStorage.getProject?.(projectId)?.path : "") || "";
+
+      const applied: Record<string, unknown> = {};
+      // ---- 模型 ----
+      if (typeof body.model === "string" && body.model) {
+        const mode = (row as any).executionMode === "api" ? "api" : "cli";
+        const allowed = (mode === "cli" ? MIMO_MODELS : getConfiguredApiModels()).some((m) => m.id === body.model);
+        if (!allowed) {
+          await invokePhoneRespond(req.reqId, 400, {
+            error: `这个模型不在当前目录里：${body.model}`,
+            code: "model_not_in_catalog",
+          });
+          return;
+        }
+        SessionStorage.updateSession(sessionId, { model: body.model });
+        applied.model = body.model;
+      }
+      // ---- 权限档（单向）----
+      if (typeof body.securityMode === "string" && body.securityMode) {
+        const current = getEffectiveSecurityMode(projectPath || undefined);
+        const verdict = verdictForRemoteSecurityChange(current, body.securityMode);
+        if (!verdict.ok) {
+          // 如实拒绝 + 说清怎么办（不是含糊地说"不允许"）
+          await invokePhoneRespond(req.reqId, 403, {
+            ok: false,
+            code: verdict.code,
+            message: verdict.message,
+            current,
+          });
+          return;
+        }
+        if (projectPath) setProjectSecurityMode(projectPath, body.securityMode as any);
+        else setGlobalSecurityMode(body.securityMode as any);
+        applied.securityMode = body.securityMode;
+        applied.securityScope = projectPath ? "project" : "global";
+      }
+      await invokePhoneRespond(req.reqId, 200, { ok: true, applied });
+      // 选择变了 ⇒ 推一条（另一个回答方/另一台设备的界面立刻跟上）
+      emitPhoneEvent("run", sessionId, { selectionsChanged: true });
+      return;
+    }
+    /**
+     * 阶段 4.3：多端在场（谁在看、谁在答）。
+     *
+     * 审批是一张**共用**的表，所以"还有别人在看"这件事必须可见 ——
+     * 否则用户会以为只有自己在看，或者在"已被处理"时不知道为什么。
+     */
+    case "presence": {
+      await invokePhoneRespond(req.reqId, 200, { ok: true, presence: getPresence() });
       return;
     }
     /**
@@ -929,6 +1070,9 @@ export function startPhoneLink(): () => void {
         path: p.path || "/",
         query: p.query || {},
         body: p.body || "",
+        // 阶段 4.3：设备身份来自 Rust 侧鉴权结果（不是客户端自称）
+        deviceId: p.deviceId ?? null,
+        deviceIp: p.deviceIp ?? null,
       }).catch((e) => console.warn("[phone-link] handle failed:", e));
     }
   });
