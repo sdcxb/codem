@@ -1153,6 +1153,9 @@ pub async fn aa_account_login(
     register: Option<bool>,
     display_name: Option<String>,
     setup_token: Option<String>,
+    // 邮箱验证码（服务端启用邮件验证时必填）—— **必须一路传到服务端**。
+    // 漏掉它的表现是"验证码不对"，而其实是**我们没发出去**。
+    code: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let email = email.trim().to_string();
     if email.is_empty() || password.is_empty() {
@@ -1192,6 +1195,7 @@ pub async fn aa_account_login(
             &password,
             display_name.as_deref(),
             setup_token.as_deref(),
+            code.as_deref(),
         )
         .await?
     } else {

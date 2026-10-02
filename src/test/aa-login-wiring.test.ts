@@ -215,4 +215,48 @@ describe("阶段 N1–N3 · 登录 → 注册本机 → 连上", () => {
     // purpose 用它的取值
     expect(read(MOD)).toContain('"register"');
   });
+
+  it("N-11: 验证码必须**一路传到服务端**（这次是链路中间少了一节）", () => {
+    /**
+     * 事故记录（比 displayName 那次更隐蔽）：
+     * 用户在界面上填了验证码，服务端还是回
+     * `invalid or expired verification code` ——
+     * 因为**命令签名里根本没有 `code` 参数**，前端传的值被静默丢掉。
+     *
+     * 两头看起来都对（界面有输入框、服务端确实要这个字段），
+     * **中间少了一节**。所以判据必须**逐段钉整条链**，不能只钉两端。
+     */
+    const ui = read(UI);
+    const mod = read(MOD);
+    const acct = read(ACCOUNT);
+
+    // 第 1 段：界面把 code 发出去
+    expect(ui, "界面必须把 code 传给命令").toMatch(/code: code\.trim\(\) \|\| null/);
+    // 第 2 段：命令**接受** code 参数
+    expect(mod, "命令签名必须有 code 参数").toMatch(/code: Option<String>,/);
+    // 第 3 段：命令把 code 转交下去
+    expect(mod, "命令必须把 code 转交").toMatch(/code\.as_deref\(\),/);
+    // 第 4 段：下层函数接受它
+    expect(acct, "register_with_password 必须接受 code").toMatch(/code: Option<&str>,/);
+    // 第 5 段：真的写进请求体（**这一步最容易漏**：参数收下了却没用）
+    expect(acct, "code 必须真的进请求体").toMatch(/body\["code"\] = serde_json::json!/);
+
+    // 反向判据：不许只收不用（收下了但请求体里没有 = 静默丢掉）
+    const i = acct.indexOf("pub async fn register_with_password(");
+    const body = acct.slice(i, i + 1400);
+    expect(body.indexOf('body["code"]'), "argv 收下 code 之后必须写进 body").toBeGreaterThan(0);
+  });
+
+  it("N-12: 服务端要验证码时，界面要**主动帮忙**而不是只报错", () => {
+    const ui = read(UI);
+    /**
+     * 验证码那一行默认折叠着 —— 用户既没有入口去拿码，也不知道需要码。
+     * 所以收到"要验证码"的报错时，界面要**展开那一行并直接替他发一封**。
+     */
+    expect(ui, "要能识别服务端在要验证码").toMatch(/verification code\|验证码/);
+    expect(ui, "要自动展开验证码那一行").toMatch(/setShowCode\(true\)/);
+    expect(ui, "要自动替他发码").toMatch(/invokeCmd\("aa_account_send_code"/);
+    // 发不出去时，要显示**服务端对发码这件事的原话**
+    expect(ui).toMatch(/sendErr/);
+  });
 });

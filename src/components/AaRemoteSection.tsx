@@ -87,8 +87,36 @@ export function AaRemoteSection({ zh }: { zh: boolean }) {
       await fn();
       await refresh();
     } catch (e: any) {
-      // 服务端的话**原样显示**（它比我们编的准确：密码错 / 未验证 / token 无效是三件事）
-      setErr(typeof e === "string" ? e : e?.message || String(e));
+      const text = typeof e === "string" ? e : e?.message || String(e);
+      /**
+       * 服务端要验证码时**不要只是报错**。
+       *
+       * 事故记录：用户点「注册并登录」拿到 `invalid or expired verification code` ——
+       * 因为验证码那一行**默认折叠着**，他既没有入口去拿码，也不知道需要码。
+       * （更深一层：我的命令签名里**根本没有 code 参数**，所以哪怕他填了也会被静默丢掉
+       * —— 两头看起来都对，中间少了一节。）
+       *
+       * 现在这里**对服务端的话作出反应**：展开验证码那一行，并**直接替他发一封码**。
+       * 这比"让他自己猜为什么需要验证码"好得多。
+       */
+      const needsCode = /verification code|验证码/i.test(text);
+      if (needsCode && email.trim()) {
+        setShowCode(true);
+        setMsg(zh
+          ? "这个服务器需要邮箱验证码：已为你发送，请查收邮箱后填入下面的验证码再试"
+          : "This server needs an email code — we sent one. Check your inbox, fill it in below and retry");
+        try {
+          await invokeCmd("aa_account_send_code", {
+            serverUrl: custom ? url.trim() : null,
+            email: email.trim(),
+          });
+        } catch (sendErr: any) {
+          // 发不出去时，把**服务端对"发码"这件事的原话**显示出来（那才是有用的信息）
+          setErr(typeof sendErr === "string" ? sendErr : sendErr?.message || String(sendErr));
+        }
+      } else {
+        setErr(text);
+      }
     } finally {
       setBusy(false);
     }

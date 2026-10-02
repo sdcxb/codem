@@ -583,6 +583,12 @@ pub async fn login_with_password(
 ///
 /// `setup_token` 只在**自建服务端首次运行**时需要（它把 token 打在服务端日志里）。
 /// 云端注册不需要。
+///
+/// `code` 是**邮箱验证码**：服务端启用邮件验证时必填。
+/// ⚠️ 这个参数我先前**整个漏了** —— 界面上传了 `code`，命令签名里却没有它，
+/// 于是用户填的验证码被**静默丢掉**，服务端一直回 `invalid or expired verification code`。
+/// 表现像是"验证码不对"，其实是**我们没把它发出去**。
+/// 这与 displayName 那次是同一类错：**链路中间少了一节，而两头看起来都对**。
 pub async fn register_with_password(
     client: &reqwest::Client,
     api_base: &str,
@@ -590,6 +596,7 @@ pub async fn register_with_password(
     password: &str,
     display_name: Option<&str>,
     setup_token: Option<&str>,
+    code: Option<&str>,
 ) -> Result<String, String> {
     let mut body = serde_json::json!({ "email": email, "password": password });
     if let Some(n) = display_name.filter(|s| !s.trim().is_empty()) {
@@ -597,6 +604,10 @@ pub async fn register_with_password(
     }
     if let Some(t) = setup_token.filter(|s| !s.trim().is_empty()) {
         body["setupToken"] = serde_json::json!(t);
+    }
+    // 验证码**必须真的发出去**（漏了这一步，前面做的全是白工）
+    if let Some(c) = code.filter(|s| !s.trim().is_empty()) {
+        body["code"] = serde_json::json!(c.trim());
     }
     auth_post(client, api_base, "/api/v2/auth/register", body).await
 }
