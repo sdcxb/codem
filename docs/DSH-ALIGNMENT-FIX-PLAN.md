@@ -552,10 +552,11 @@
 - `docs/MEASUREMENT-PLAN-DSH-VS-CODEM.md` —— 测量方案、怎么跑、**还差什么**、以及**不衡量什么**。
 - 全部挂进 `npm run audit`（`eval:selftest`、`eval:pipeline`），所以尺子本身也被门禁保护。
 
-**仍然是零数字**：两条真实臂的 driver 没做。已核实的事实（不是推测）：
-DSH 的 `@deepseek-ai/dsh-headless` 与 `dsh-cmdline` **都没有声明 `bin`**，装机目录里也没有任何 `dsh` 可执行文件/shim；
-我们的 `package.json` 同样**没有 `bin`**，也没有 headless 入口。
-**所以在 driver 接通之前，"水平与 token 消耗不差于 dsh"仍然无法判真假** —— §0 的那句话到现在依然成立。
+**~~仍然是零数字~~** —— ⚠️ **这一段被实测推翻了，见 §6d 的更正。**
+当时我写：「两条真实臂的 driver 没做。DSH 的 `@deepseek-ai/dsh-headless` 与 `dsh-cmdline` 都没有声明 `bin`，
+装机目录里也没有任何 `dsh` 可执行文件/shim；我们的 `package.json` 也没有 headless 入口。」
+**结论错了**：`@deepseek-ai/dsh`（主包）声明了 `bin: { dsh: "lib/bin.js" }`，机器上 PATH 里就有 `dsh.cmd`，
+而且 `dsh --profile headless` 本身就是无头任务执行器。**control 臂的基线已经拿到了。**
 
 ### 第 2 轮我又自己踩到的坑（记档，接续 §5）
 
@@ -569,6 +570,61 @@ DSH 的 `@deepseek-ai/dsh-headless` 与 `dsh-cmdline` **都没有声明 `bin`**�
    实测**不成立**：`shell: true` 时直接子进程是 shell，它被杀掉后自己返回非零码，
    于是走到"判据失败"而不是"没跑起来"。改成**真的超时**（可注入的 `agentTimeoutMs`）才对。
    —— 顺带观察到一件与 **D4 同形**的事：超时把 shell 杀掉之后，真正的子进程**可能还活着**并占着工作目录（清理报 `EPERM`）。
+
+---
+
+## §6d 更正 + control 臂基线（被用户的一句质疑推翻的那件事）
+
+用户问：**「你没有 dsh 源代码吗？而且我电脑里装了 dsh，现在咱们用的不就是 dsh 吗?」**
+
+**这句话是对的，我上一轮的结论错了。** 我写过「DSH 没有 CLI ⇒ 两条真实臂的 driver 都没做」。事实：
+
+| 我当时查了什么 | 当时的结论 | 实际 |
+|---|---|---|
+| `dsh-headless` / `dsh-cmdline` 的 `bin` | 空 | 对，但这两个不是入口 |
+| `@deepseek-ai/dsh`（**主包**）的 `bin` | **没查** | `bin: { dsh: "lib/bin.js" }` —— 有 CLI |
+| 装机 app 目录里的 `dsh*` | 没有 | 对，但 `dsh.cmd` 在 `%APPDATA%\DSH Desktop\host-commands\...`（PATH 上），不在 app 目录 |
+| `dsh --help` | **没跑** | 写着 `dsh headless "run the tests"` —— 回答一个任务、打印结果、退出 |
+
+**同一个错误形状**（与 §5 记的那几次完全一样）：查了两处就下"不存在"的结论，**中间那一步没走到底**。
+**"我没找到" ≠ "不存在"。** 而且这个会话本身就跑在 DSH 里 —— 我却说找不到 DSH 的入口。
+
+### 于是 control 臂**今天就能跑**，不需要写任何引擎
+
+`tools/eval/drivers/dsh-driver.mjs` 调 `dsh --profile headless --json -`（prompt 走 stdin，避开引号地狱），
+从 `step_end` 事件里把四个桶各自求和。**实测基线（`deepseek-flash`，14 个任务各 1 次）**：
+
+| | 结果 |
+|---|---|
+| 通过率 | **14/14** |
+| total tokens | **2,463,850** |
+| input / output | 153,826 / 71,688 |
+| **cacheRead** | **2,238,336（占 90.8%）** |
+| 工具调用 | 317 |
+| 总耗时 | ≈ 1024 秒 |
+
+### 这份基线直接回证了本轮那几条修复
+
+**90.8% 的 token 量是缓存读。** 也就是说「token 消耗不差于 DSH」这件事，
+**比的其实是缓存命中率**。而 D1/D5/D5b 修的正是**请求前缀的稳定性**
+（时间戳混在 `apiMessages[0]`、`planContext` 拼进 system 前缀）—— 前缀一变，这 2.24M 会**全部塌成全价输入**。
+**修前缀稳定性不是洁癖，它是这张表里最大的一栏。**
+
+### 一个对尺子本身不利、但必须说的发现
+
+**DSH 在这个任务集上是 100% 通过**，所以评测器把它标成了 `control-saturated` ——
+**这一档任务测不出"水平"差异**。要回答"水平不差于 dsh"，必须加**更难**的任务档。
+尺子自己把这个缺陷报出来了，没有让它悄悄通过。
+
+### 还缺的一块（唯一）
+
+**treatment 臂（Codem）没有无头入口**：`package.json` 没有 `bin`，引擎活在 WebView 里、靠 Tauri IPC 调 Rust。
+两条路（新增 headless 入口 / 用装机版 + CDP 驱动）都写在 `docs/MEASUREMENT-PLAN-DSH-VS-CODEM.md` §5。
+**这一段我没有擅自开始**：它要改产品（新增入口），而且跑起来要用用户的 API 额度
+（control 侧单次实测 ≈ 176k tokens/任务，成对 × 重复 ≥ 2 会成倍）。
+
+所以现在的诚实状态是：**已有 control 臂真实基线；treatment 臂缺入口；成对结论仍然没有** ——
+评测器对此的输出是 `headline-withheld` + 拒绝下结论。
 
 ---
 
