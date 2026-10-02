@@ -5,6 +5,13 @@
 > DSH 官方自己另有一条**独立**能力：把本机 Web UI 经 **LAN HTTPS** 暴露给普通浏览器。
 > 两条路我们都只有一半 —— 详见 §5 三向对照与 §6 改进计划。
 
+> ## ⚠️ 决策修正（第 122 轮，用户口径）
+>
+> 本文初版把「云账号 + 中继」列进 §7「明确不抄」，建议先做局域网。
+> **用户随后明确要求：百分百对标 DSH，直接复制它的策略。** 该决定覆盖 §7 的第一条。
+> 因此本文后续以「**出站中继**」为唯一目标形态，§7 里那几条"不抄"**只保留与策略无关的部分**
+> （Python 运行时、手写 TCP、原生 App、侧栏扩展点），并新增 §11 记录真实策略与实现计划。
+
 ---
 
 ## 0. 方法与证据（先说清楚我凭什么下结论）
@@ -561,3 +568,71 @@ Agents Anywhere Server  ◀──（出站长连接）──  Python Connector�
 - 阶段 3.2（用户自建中继的 egress connector）；
 - 阶段 4（多端在场感知 / 远端改模型与权限 / 手机 UI 语义对齐）。
 
+---
+
+## 11. 策略修正：完全对标「出站中继」（用户口径，覆盖 §7 第一条）
+
+### 11.1 AA 的真实策略（四条通道，只有一条是它的资产）
+
+读 `src/host/connector/process.ts` 才看清全貌 —— AA 不是"一条连接"，是**四条**：
+
+| # | 通道 | 传输 | 凭据 | 证据 |
+|---|---|---|---|---|
+| 1 | 手机 / Web App ↔ **AA 云** | HTTPS | 用户账号会话 | `TECHNICAL.md:12-18` |
+| 2 | **Connector ↔ AA 云（出站）** | HTTPS 长连，心跳 **20s**、重连 **3s**、同步 **30s** | `connectorId` + `connectorToken` | `connector/process.ts:126-135` |
+| 3 | Connector ↔ DSH 插件运行时 | **本机 127.0.0.1** 裸 TCP JSON-RPC | `endpoint.json` 里的 32 字节 token | `dsh-runtime/server.ts:13,60-64,160-170` |
+| 4 | 插件 ↔ Connector **进程** | **stdio** JSON-RPC 2.0，换行分隔，**1 MiB** 帧上限 | — | `connector/process.ts:15,250-261` |
+
+第 4 条的方法只有三个：`connector.getState` / `connector.start` / `connector.stop`
+（`process.ts:193-195,225`），另有 `connector/state` 通知（`:272`）；
+错误码 `-32009` + `data.reason='connector_already_running'` = 所有权冲突（`:280-281`）。
+
+**关键结论：只有第 1、2 条里的那个"云"是它的资产，其余全是桌面侧机制。
+而第 3 条与我们阶段 1 做的「回环上游 + 每次运行随机令牌」是同一个形状。**
+
+### 11.2 Connector 的配置契约（逐字对齐）
+
+`connector/process.ts:126-135` 落盘的 `connector.json` 字段我们**照抄字段名**：
+
+```
+serverUrl / connectorId / connectorToken / statePath
+heartbeatSeconds(20) / reconnectSeconds(3)
+syncIntervalSeconds(30) / syncExistingOnConnect(true)
+```
+
+启动方式它对标不了（它是 `uv run anywhere-cli rpc`，拉 235 MiB 的 Python 轮子），
+但**这条不是策略**，§7 保留"不引 Python 运行时"这一条。
+
+### 11.3 我们要做的形态（同一个策略，唯一差别是"谁来运营中继"）
+
+    手机浏览器 ──HTTPS──▶ [Codem 中继（用户自持：VPS / 家里的小主机 / 本机）]
+                              ▲
+                              │ 出站长连（connectorId + connectorToken，心跳/重连/同步）
+                              │
+                        [Codem egress connector]（Rust，进程内任务）
+                              │
+                              │ 本机 127.0.0.1 + 边缘令牌（= AA 的第 3 条，已在阶段 1 建好）
+                              ▼
+                        [WebView TS phone-link] → 会话/消息/回合
+
+**唯一与 AA 不同的地方：中继由用户自己跑，不走我们的 SaaS、不要账号体系。**
+这是**部署差别**，不是策略差别 —— 策略（谁连谁、凭据怎么发、桌面开不开 LAN 口）
+与 AA 完全一致：**桌面不为这条路径开任何 LAN 端口，只出站。**
+
+中继设计成**纯隧道**：它不认识我们的会话协议，只把手机发来的 HTTP 请求
+原样透给 connector、把响应透回去。好处是：
+① 中继上看不到会话语义（比 AA 的云更保守）；
+② 桌面侧的路由/鉴权/审批代码**一行都不用改** —— 阶段 0 与阶段 1 的全部成果直接复用。
+
+### 11.4 实施顺序
+
+| 步 | 内容 | 判据 |
+|---|---|---|
+| **A** | **中继**（`tools/relay/`，零依赖 Node）：`/connector/hello`、`/connector/stream`(SSE)、`/connector/response`、`/app/pair`、`/app/*` 隧道 | 中继自己的单测 + 变异 |
+| **B** | **Connector**（`src-tauri/src/phone/connector.rs`）：写 `connector.json`、出站长连、心跳、重连、把中继推来的请求转给回环上游 | Rust 集成测试（真起中继、真出站、真往返）+ 变异 |
+| **C** | **配对**：桌面把 `pairingCode` 注册给中继；手机用码换中继会话 | 端到端：手机侧凭码拿到页面 |
+| **D** | **设置界面**：中继地址、连接状态、connectorId、启停、日志 | 承诺判据（界面不得声称局域网可用的假象） |
+| **E** | **装机版端到端**：起中继 → 桌面连上 → 模拟手机走中继拿到会话 | 真机脚本 |
+
+**阶段 2（事件流替代轮询）排在这之后** —— 因为中继这条路上"推"比"轮询"更必要
+（跨网络下轮询的成本高得多）。

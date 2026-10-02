@@ -7,9 +7,22 @@ import { beforeEach, beforeAll, afterAll } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 
+/**
+ * 这些初始化**只对带 DOM 的环境**有意义，所以都要先问一句有没有。
+ *
+ * 第 122 轮：`relay-core.test.ts` 用 `@vitest-environment node` 跑
+ * （它测的是一个真 HTTP 服务；happy-dom 的 `fetch` 会强制 CORS + 发 OPTIONS 预检，
+ * 于是中继本身没问题、用例却全红）。而在 node 环境下 `window` 与 `localStorage`
+ * **都不存在** —— 原来这里直接引用它们，会让那个文件整个套件加载失败。
+ *
+ * 判据是"有没有"，不是"猜它在"：这类共享基座不该假定宿主。
+ */
+const hasDom = typeof window !== "undefined";
+const hasLocalStorage = typeof localStorage !== "undefined";
+
 // 确保 window.__TAURI__ 不存在（模拟浏览器/非 Tauri 环境）
 beforeAll(async () => {
-  delete (window as any).__TAURI__;
+  if (hasDom) delete (window as any).__TAURI__;
 });
 
 /**
@@ -47,8 +60,8 @@ beforeEach(async () => {
    */
   setStoragePort(USE_PORT ? createFakeStoragePort() : null);
 
-  // 清空 localStorage
-  localStorage.clear();
+  // 清空 localStorage（node 环境下没有它 —— 见文件头的 hasDom 说明）
+  if (hasLocalStorage) localStorage.clear();
 });
 
 // vitest worker teardown 竞态规避：重度日志测试（refactor-prompt-to-data /
