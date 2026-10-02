@@ -96,6 +96,8 @@ export interface ApprovalView {
   decidedAction?: "allow" | "deny";
   /** 只有 `open` 才该显示按钮（与 DSH `approvals.ts:69-72` 同一判据） */
   responseRequired: boolean;
+  /** 条目级 revision（每次状态变化自增）—— 多端据此判断"这条过时了没有" */
+  revision: number;
 }
 
 /** 单字段摘录上限（长文本字段）。 */
@@ -120,6 +122,14 @@ interface Entry {
   decide: (result: PermissionResult) => void;
   decidedBy?: ApprovalParty;
   decidedAction?: "allow" | "deny";
+  /**
+   * 条目级 revision（阶段 R4）：**每次状态变化自增**，初值 1。
+   *
+   * 多端靠它判断"我看到的这条是不是过时了"（与 DSH `approvals.ts:52` 同一用途）。
+   * 只给全局 `approvalRevision()` 是不够的：那会让我这边任何一条变化都
+   * 显得"所有卡片都变了"。
+   */
+  revision: number;
 }
 
 const entries = new Map<string, Entry>();
@@ -135,6 +145,18 @@ function bump(): void {
       /* 单个订阅者失败不影响其它订阅者，也不影响审批本身 */
     }
   }
+}
+
+/**
+ * 改状态并推进**条目级** revision。
+ *
+ * 抽成一个函数是为了不让"改状态忘了推进 revision"这种事发生 ——
+ * 漏一次的话，多端那边会以为卡片还是旧的，于是**重复显示已经处理过的请求**。
+ */
+function setStatus(entry: Entry, status: ApprovalStatus): void {
+  if (entry.status === status) return;
+  entry.status = status;
+  entry.revision++;
 }
 
 /** 当前版本号（供 React `useSyncExternalStore` 一类订阅方判断"变了没有"）。 */
@@ -272,6 +294,8 @@ function registerApproval(
       input,
       origin,
       status: "open",
+      // 初值 1（与 DSH `approvals.ts:49` 的 `revision: 1` 一致）
+      revision: 1,
       createdAt: request.timestamp || Date.now(),
       decide: resolve,
     });
@@ -314,6 +338,7 @@ export function answerApproval(
       message: "这个权限请求已处理或已失效。",
     };
   }
+  entry.revision++; // 状态变化推进条目级 revision（多端据此判断过时）
   entry.status = "resolved";
   entry.decidedBy = decidedBy;
   entry.decidedAction = action;
@@ -342,6 +367,7 @@ function toView(entry: Entry): ApprovalView {
     ...(entry.decidedBy ? { decidedBy: entry.decidedBy } : {}),
     ...(entry.decidedAction ? { decidedAction: entry.decidedAction } : {}),
     responseRequired: entry.status === "open",
+    revision: entry.revision,
   };
 }
 
@@ -385,6 +411,7 @@ export function closeSessionApprovals(
   for (const entry of entries.values()) {
     if (entry.sessionId !== sessionId || !pending(entry)) continue;
     entry.status = reason === "turn_end" ? "closed" : "expired";
+    entry.revision++;
     entry.decidedBy = entry.decidedBy ?? entry.origin;
     entry.decidedAction = "deny";
     entry.decide({ requestId: entry.requestId, action: "deny", alwaysAllow: false });
@@ -403,6 +430,7 @@ export function closeAllApprovals(reason: "aborted" | "cancelled" = "cancelled")
   for (const entry of entries.values()) {
     if (!pending(entry)) continue;
     entry.status = "expired";
+    entry.revision++;
     entry.decidedBy = entry.decidedBy ?? entry.origin;
     entry.decidedAction = "deny";
     entry.decide({ requestId: entry.requestId, action: "deny", alwaysAllow: false });

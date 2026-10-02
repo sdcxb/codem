@@ -30,7 +30,7 @@ import { executeSessionTurn, isSessionExecuting, cancelSessionExecution } from "
  *
  * 现在挂上审批代理：请求进待批表，手机页面弹卡片，**桌面也能答**（同一张表）。
  */
-import { requestApproval, closeSessionApprovals, listApprovals, answerApproval, subscribeApprovals } from "../permission/approval-broker";
+import { requestApproval, closeSessionApprovals, listApprovals, answerApproval, subscribeApprovals, approvalRevision } from "../permission/approval-broker";
 /**
  * 阶段 2：事件流（把"轮询"换成"推"）。
  *
@@ -47,6 +47,11 @@ import {
 /** 阶段 4：多端在场感知 + 远端改模型/权限档。 */
 import { noteRemoteSeen, getPresence, publishPresenceIfChanged } from "./presence";
 import { verdictForRemoteSecurityChange, isLoosening } from "./remote-selections";
+// 阶段 R4：按它的形状产出通知（与阶段 0 的审批读**同一份**状态，不搞两个真相）
+import { noticeFromApproval, remoteActionToInternal, platformSessionId } from "./aa-notice";
+// 阶段 R3'：它的选择标识（`dsh:model:` / `dsh:permission:`）—— 目录里附上、选择时解析
+import { modelSelectionId, permissionSelectionId, decodeModelSelection, decodePermissionSelection } from "./dsh-selection-id";
+import { resolveProviderForModel } from "../model-config";
 import { MIMO_MODELS, getConfiguredApiModels } from "../model-config";
 import { SECURITY_MODES, getEffectiveSecurityMode, setProjectSecurityMode, setGlobalSecurityMode } from "../permission/security-mode";
 
@@ -107,6 +112,7 @@ export type PhoneRoute =
   | { type: "approval_answer"; requestId: string }
   | { type: "events" }
   | { type: "presence" }
+  | { type: "notices" }
   | { type: "catalog" }
   | { type: "selections" }
   | null;
@@ -123,6 +129,7 @@ export function parsePhonePath(path: string): PhoneRoute {
   if (rest === "/approvals") return { type: "approvals" };
   if (rest === "/events") return { type: "events" };
   if (rest === "/presence") return { type: "presence" };
+  if (rest === "/notices") return { type: "notices" };
   if (rest === "/catalog") return { type: "catalog" };
   if (rest === "/selections") return { type: "selections" };
   const m = /^\/sessions\/([^/]+)\/messages$/.exec(rest);
@@ -646,7 +653,28 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
         ok: true,
         catalog: {
           mode,
-          models: models.map((m) => ({ id: m.id, name: m.name })),
+          /**
+           * 阶段 R3'：给每个模型附上**它的** selectionId（`dsh:model:...`）。
+           *
+           * 远端（按它的词汇）会把这个 id 回传给我们，所以必须能算、
+           * 也必须与解码侧对得上（`decodeModelSelection`）。
+           *
+           * provider 取不到时**不编一个**：宁可不给 `selectionId`
+           * （那样远端就不会把这一项当成"可选"），也不发一个 `["","m",null]`
+           * 这种谁也解不出来的东西。
+           */
+          models: models.map((m) => {
+            const provider = (() => {
+              try { return resolveProviderForModel(m.id) || ""; } catch { return ""; }
+            })();
+            return {
+              id: m.id,
+              name: m.name,
+              ...(provider
+                ? { selectionId: modelSelectionId({ provider, model: m.id }) }
+                : {}),
+            };
+          }),
           currentModel: row?.model ?? null,
           security: {
             mode: getEffectiveSecurityMode(projectPath || undefined),
@@ -659,6 +687,8 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
               description: s.desc_zh,
               descriptionEn: s.desc_en,
               icon: s.icon,
+              // 阶段 R3'：它的权限档 selectionId（`dsh:permission:...`）
+              selectionId: permissionSelectionId(s.mode),
               remoteAllowed: !isLoosening(getEffectiveSecurityMode(projectPath || undefined), s.mode),
             })),
             scope: projectPath ? "project" : "global",
@@ -696,22 +726,60 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       const applied: Record<string, unknown> = {};
       // ---- 模型 ----
       if (typeof body.model === "string" && body.model) {
+        /**
+         * 阶段 R3'：模型这一项接受**两种**写法——
+         * 我们自己的模型 id，或**它的** `dsh:model:...` selectionId。
+         *
+         * 复刻那条路上的远端只会给后者（`selections.ts` 的 `parseSelections`
+         * 要求值必须先解得出来）。这里解出 `(provider, model, effort)`，
+         * 用其中的 `model` 去目录里查；`effort` 我们目前**没有**对应概念，
+         * 所以**不假装**用上它（解出来了但不用，比悄悄丢掉一个字段更诚实）。
+         */
+        let modelId = body.model;
+        if (modelId.startsWith("dsh:model:")) {
+          try {
+            modelId = decodeModelSelection(modelId).model;
+          } catch (e: any) {
+            await invokePhoneRespond(req.reqId, 400, {
+              error: `无法解析这个 selectionId：${e?.message ?? e}`,
+              code: "model_selection_invalid",
+            });
+            return;
+          }
+        }
         const mode = (row as any).executionMode === "api" ? "api" : "cli";
-        const allowed = (mode === "cli" ? MIMO_MODELS : getConfiguredApiModels()).some((m) => m.id === body.model);
+        const allowed = (mode === "cli" ? MIMO_MODELS : getConfiguredApiModels()).some((m) => m.id === modelId);
         if (!allowed) {
           await invokePhoneRespond(req.reqId, 400, {
-            error: `这个模型不在当前目录里：${body.model}`,
+            error: `这个模型不在当前目录里：${modelId}`,
             code: "model_not_in_catalog",
           });
           return;
         }
-        SessionStorage.updateSession(sessionId, { model: body.model });
-        applied.model = body.model;
+        SessionStorage.updateSession(sessionId, { model: modelId });
+        applied.model = modelId;
       }
       // ---- 权限档（单向）----
       if (typeof body.securityMode === "string" && body.securityMode) {
+        /**
+         * 同样接受两种写法。注意 `dsh:permission:` 的解码会**顺带**拒绝
+         * `custom`/空白/CRLF（那是它在 `selections.ts:38` 的规则）——
+         * 也就是说"解得出"本身就完成了一次校验。
+         */
+        let nextMode = body.securityMode;
+        if (nextMode.startsWith("dsh:permission:")) {
+          try {
+            nextMode = decodePermissionSelection(nextMode);
+          } catch (e: any) {
+            await invokePhoneRespond(req.reqId, 400, {
+              error: `无法解析这个 selectionId：${e?.message ?? e}`,
+              code: "permission_selection_invalid",
+            });
+            return;
+          }
+        }
         const current = getEffectiveSecurityMode(projectPath || undefined);
-        const verdict = verdictForRemoteSecurityChange(current, body.securityMode);
+        const verdict = verdictForRemoteSecurityChange(current, nextMode);
         if (!verdict.ok) {
           // 如实拒绝 + 说清怎么办（不是含糊地说"不允许"）
           await invokePhoneRespond(req.reqId, 403, {
@@ -722,9 +790,9 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
           });
           return;
         }
-        if (projectPath) setProjectSecurityMode(projectPath, body.securityMode as any);
-        else setGlobalSecurityMode(body.securityMode as any);
-        applied.securityMode = body.securityMode;
+        if (projectPath) setProjectSecurityMode(projectPath, nextMode as any);
+        else setGlobalSecurityMode(nextMode as any);
+        applied.securityMode = nextMode;
         applied.securityScope = projectPath ? "project" : "global";
       }
       await invokePhoneRespond(req.reqId, 200, { ok: true, applied });
@@ -746,6 +814,43 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
      * 阶段 0.1：手机读待批权限请求。
      * `?sessionId=` 可选；带上 `includeDecided=1` 能看到"已被桌面处理"的（界面据此收起按钮）。
      */
+    /**
+     * 阶段 R4：按**它的**形状返回通知（`ProtocolNotice` 的 DSH 子集）。
+     *
+     * 与 `/api/approvals` 并存而不是替换：那条是我们自己的形状（阶段 0 就在用，
+     * 有判据钉着），这条是**复刻它**的那条路。两者读的是**同一份**状态
+     * （`listApprovals`），所以不会出现"两个真相" —— 这一点很要紧。
+     */
+    case "notices": {
+      const sessionId = req.query?.sessionId || undefined;
+      const namespace = req.query?.namespace || "codem";
+      const platformId = platformSessionId(namespace, sessionId || "default");
+      const entries = listApprovals({ sessionId, includeDecided: true });
+      await invokePhoneRespond(req.reqId, 200, {
+        ok: true,
+        revision: approvalRevision(),
+        notices: entries.map((a) =>
+          noticeFromApproval(
+            {
+              requestId: a.requestId,
+              tool: a.tool,
+              /**
+               * 字段对映（不是照抄名字）：
+               * - 它的 `reason` = "给用户看的那段话" ⇒ 我们的 `preview`
+               *   （我们的 `preview` 由**已消毒**的 input 渲染而来，有长度上限）
+               * - 它的 `callId` 是工具调用链上的 id，我们目前没有这个概念 ⇒ 不传
+               *   （`context` 里就**不会**出现这个键，而不是出现一个 null）
+               */
+              ...(a.preview ? { reason: a.preview } : {}),
+              status: a.status,
+              revision: a.revision,
+            },
+            platformId,
+          ),
+        ),
+      });
+      return;
+    }
     case "approvals": {
       const sessionId = req.query?.sessionId || undefined;
       const includeDecided = req.query?.includeDecided === "1" || req.query?.includeDecided === "true";
@@ -767,9 +872,21 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       }
       let body: any = {};
       try { body = JSON.parse(req.body || "{}"); } catch { /* ignore */ }
-      const action = String(body.action || "");
-      if (action !== "allow" && action !== "deny") {
-        await invokePhoneRespond(req.reqId, 400, { error: "action 必须是 allow 或 deny" });
+      const rawAction = String(body.action || "");
+      /**
+       * 阶段 R4：接受**两套**动作词汇，但都要显式映射：
+       * - 我们自己的 `allow` / `deny`（手机页面用）
+       * - 它的 `allow-once` / `reject`（复刻那条路上的远端）
+       *
+       * 不认识的**一律拒绝**（不猜、不做"看起来像 allow 就算 allow"的模糊匹配）。
+       */
+      const action = rawAction === "allow" || rawAction === "deny"
+        ? (rawAction as "allow" | "deny")
+        : remoteActionToInternal(rawAction);
+      if (!action) {
+        await invokePhoneRespond(req.reqId, 400, {
+          error: "action 必须是 allow/deny（本地）或 allow-once/reject（远端）",
+        });
         return;
       }
       const out = answerApproval(route.requestId, action, "phone");

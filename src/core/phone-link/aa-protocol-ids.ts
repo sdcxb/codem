@@ -24,8 +24,35 @@ export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
   const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
+  /**
+   * ⚠️ 必须按**码点**排序，不能用 `Object.keys(obj).sort()`。
+   *
+   * JS 的默认字符串比较是 **UTF-16 码元**序，而 Python 的 `sort_keys=True`
+   * 比的是**码点**。两者在**非 BMP 字符**（如 emoji）上结果不同：
+   * U+10000 的 UTF-16 是 `D800 DC00`，而 U+FFFD 是 `FFFD` ——
+   * 按码元比会把代理对排到 U+FFFD **前面**，按码点比则在其后。
+   *
+   * 这不是理论问题：他们的实现（`host/dsh-runtime/identity.ts` 的 `canonicalJson`）
+   * 专门写了码点比较，并注明 "including … Unicode object-key ordering"。
+   */
+  const keys = Object.keys(obj).sort(compareCodePoints);
   return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonicalJson(obj[k])).join(",") + "}";
+}
+
+/** 按 Unicode **码点**比较（与 Python 的 `sort_keys=True` 同语义）。 */
+export function compareCodePoints(a: string, b: string): number {
+  const aa = Array.from(a, (c) => c.codePointAt(0)!);
+  const bb = Array.from(b, (c) => c.codePointAt(0)!);
+  const n = Math.min(aa.length, bb.length);
+  for (let i = 0; i < n; i++) {
+    if (aa[i] !== bb[i]) return aa[i] - bb[i];
+  }
+  return aa.length - bb.length;
+}
+
+/** sha256 的十六进制小写（对应它的 `digest()`）。 */
+export function sha256Hex(value: string): string {
+  return [...sha256(enc(value))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** base64url（无填充）。 */

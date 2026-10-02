@@ -313,8 +313,14 @@ pub fn map_aa_method_to_local(method: &str, params: &serde_json::Value) -> Optio
             let action = s("actionId");
             // 它的动作名与我们的动作名不同，这里做**显式**映射而不是猜
             let ours = match action.as_str() {
-                "allow" | "approve" | "allow_once" => "allow",
-                "deny" | "reject" => "deny",
+                // ⚠️ 它那两个动作 id 必须**逐字**如此：`allow-once` / `reject`。
+                //
+                // 我第一版凭印象写成 `allow|approve|allow_once` —— 那是**猜的**。
+                // 读了它插件侧的 `host/dsh-runtime/approvals.ts:71-72` 才知道
+                // 实际是连字符形式、且 allow 带 once。
+                // 猜错的后果很具体：远端点"允许"，我们会回一句"未知的批准操作"。
+                "allow-once" => "allow",
+                "reject" => "deny",
                 _ => "",
             };
             if ours.is_empty() {
@@ -787,6 +793,25 @@ mod tests {
         .unwrap();
         assert_eq!(c.path, "/api/approvals/n1");
         assert!(c.body.contains("\"action\":\"deny\""), "reject 应映射成 deny：{}", c.body);
+        // allow-once ⇒ allow（它用的是连字符形式，不是 allow/approve/allow_once）
+        let c = map_aa_method_to_local(
+            "session.interaction.approval",
+            &serde_json::json!({"noticeId":"n2","actionId":"allow-once"}),
+        )
+        .unwrap();
+        assert!(c.body.contains("\"action\":\"allow\""), "allow-once 应映射成 allow：{}", c.body);
+        // **我们自己的内部词汇不是合法的远端动作** —— 不许把旧名字当兼容别名
+        for wrong in ["allow", "deny", "approve", "allow_once", "allow-always"] {
+            assert!(
+                map_aa_method_to_local(
+                    "session.interaction.approval",
+                    &serde_json::json!({"noticeId":"n1","actionId":wrong})
+                )
+                .is_none(),
+                "{} 不是它的动作 id，不该被接受",
+                wrong
+            );
+        }
         // **不认识的动作不许猜**
         assert!(map_aa_method_to_local(
             "session.interaction.approval",
