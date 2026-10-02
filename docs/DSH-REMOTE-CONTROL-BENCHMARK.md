@@ -1157,3 +1157,78 @@ timelineId:     "dsh_" + sha256_hex( external_session_id \0 kind \0 business_id 
 
 **我按第 2 种做**（默认它 + 可配），这样"登录就能用"是默认路径，
 而它是唯一一处我需要**实测一次真实登录**才能确认的细节 —— 不是要用户做决定。
+
+---
+
+## 16. R6：**对着真服务端**验过了（自建 AA 服务端）
+
+用户口径：**按方案 A（自建 AA 服务端）+ 装 Docker Desktop。**
+
+### 16.1 先纠正一条我说错的事实
+
+我先前说"插件包里只有 connector、拿不到服务端、许可核实不了"。**只看了插件包，
+没去查它的仓库。** 实际上：
+
+| 事实 | 证据 |
+|---|---|
+| 仓库是**开源**的（跨设备 Agent 工作台） | `anywhere-labs/Agents-Anywhere` |
+| **许可证 MIT** | `README.zh-CN.md:161`「开源许可：MIT」 |
+| **自托管是一等公民** | README 顶部标语「开源 · … · **自托管**」+ `self-hosted-Docker` 徽章 |
+| 官方 Docker 部署 | `README.zh-CN.md:120-132`（`docker-compose.postgres.yml`） |
+| 明确支持 DSH | 「连接运行 Codex、Claude Code 或 **DeepSeek Harness** 的工作设备」 |
+| 服务端 = Python + FastAPI + PostgreSQL + Redis | `server/`、`AGENTS.md` 的目录地图 |
+
+**所以"完全复刻"走得通**，而且比我先前说的干净：自建之后**不碰它的云、不借它的身份**
+（`OAUTH_CLIENT_ID = 'agents-anywhere-dsh-plugin'` 是它插件的身份，
+自建时你用的是自己服务器上的账号），MIT 也把许可问题解决了。
+
+### 16.2 本机把真服务端跑起来了
+
+它自己的测试用 `create_app(db_path)`（SQLite、不要 Postgres/Redis）—— **那是一个真的 HTTP 服务端**，
+不是 mock。用它把服务端跑在本机 `127.0.0.1:8010`：
+
+```
+$ uv run uvicorn aa_launcher:app --host 127.0.0.1 --port 8010
+GET /api/v2/health → {"status":"ok","version":"2.0.3", ...}
+```
+
+首次运行需要在日志里取 `setup-token` 建管理员。整套流程（建管理员 → 建连接器 → 拿凭据）
+写在 `.preview-shot/_aa-setup.mjs`。
+
+### 16.3 对着真服务端的验证结果
+
+用**我们 connector 实际会发的帧**去打它（`.preview-shot/_aa-live.mjs`）：
+
+| | 验的是什么 | 结果 |
+|---|---|---|
+| A1 | `POST /api/v2/connector/auth`，头 `Connector <id>:<token>` | ✅ 200，`{accessToken, expiresIn:900}` |
+| A2 | WS 升级 `ws://…/api/v2/connector/ws` + `Bearer` + `X-Device-OS` | ✅ 升级成功 |
+| A3 | 发 `protocol.capabilitiesUpdated` + `connector.heartbeat` 后连接仍存活 | ✅ 没被判协议错误 |
+| A4 | 连接稳定保持 | ✅ |
+
+**最要紧的一条**：它连上之后**立刻主动发来一条真请求**：
+
+```json
+{"id":"rpc_y8Ad9zJ__EM0Ng","type":"request","method":"runtime.discover","params":{}}
+```
+
+这正是 R5 里我实现成本机合成的那个方法（`AaDispatch::Inline`）——
+**真服务端真的会调它**，而我们那张表覆盖住了。
+把回路走完之后（`.preview-shot/_aa-seq.mjs`，应答逻辑镜像我们 Rust 的 dispatch 决策）：
+
+> 它一共调了 1 次请求：`runtime.discover` —— **✅ 它调过的每个方法我们都有归属**。
+
+也就是说：**鉴权链、WS 升级、帧信封、通知形状、方法归属，全部对着真服务端验过了** ——
+不再是"对着我按 spec 写的 mock"，而是**对着它自己跑起来的服务端**。
+
+### 16.4 还没做的（说清楚，别当成已经做完）
+
+| | 状态 |
+|---|---|
+| 用**我们真正的 Rust connector**（而不是 JS 镜像）连真服务端 | 待做：要在 Codem 里启动 connector 并观察 |
+| 从 Web 端建会话、走 `session.create` / `send_message` / 通知回传 | 待做（需要 `web-next` 跑起来 + 渲染进程供数据） |
+| **Postgres 那一套**（生产形态，`docker-compose.postgres.yml`） | 进行中：Docker Desktop 正在装 |
+| 真实 OAuth 登录（`/auth/oauth/*`） | 待做 |
+
+**注意**：SQLite 模式是它**测试用**的路径（README 明确说不支持作为生产后端）。
+本机跑它只用于**验证协议对接**，生产部署仍应走 Postgres + Docker。
