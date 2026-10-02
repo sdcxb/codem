@@ -62,7 +62,12 @@
   var header = document.getElementById("header"), title = document.getElementById("title"),
       back = document.getElementById("back"), refresh = document.getElementById("refresh"),
       screen = document.getElementById("screen"), toast = document.getElementById("toast");
-  var state = { view: "sessions", sessionId: null, messages: [], timer: null };
+  /**
+   * `seq` = 事件流的检查点（我处理到哪了）；`evtToken` = 当前事件循环的取消标记。
+   * `timer` / `sessionTimer` 是**旧的轮询定时器**，阶段 2 起不再使用 ——
+   * 留名字是为了让"谁还在用轮询"一眼看得出来（真有人加回来时也容易被注意到）。
+   */
+  var state = { view: "sessions", sessionId: null, messages: [], timer: null, sessionTimer: null, seq: 0, evtToken: null };
 
   function showToast(t){ toast.textContent = t; toast.style.display = "block"; clearTimeout(state._t); state._t = setTimeout(function(){ toast.style.display = "none"; }, 2600); }
   async function api(path, opts){
@@ -122,14 +127,67 @@
 
   function openSession(id){
     state.view = "thread"; state.sessionId = id; state.messages = [];
+    // 换会话 ⇒ 事件流的检查点作废（那是**上一个会话**的进度），必须归零重取
+    state.seq = 0;
     title.textContent = "会话"; back.style.display = "";
     renderThread([]);
-    loadMessages(); loadApprovals();
-    clearInterval(state.timer);
-    // 阶段 0.1/0.2：轮询里同时拉待批准与运行状态。
-    // 审批不能只靠"消息变化"驱动 —— 它是**独立于消息**的状态，
-    // 而且用户需要它尽快出现（回合正卡在那里等）。
-    state.timer = setInterval(function(){ loadMessages(); loadApprovals(); loadRun(); }, 2600);
+    loadMessages(); loadApprovals(); loadRun();
+    startEventLoop();
+  }
+
+  /**
+   * 阶段 2：事件流（长轮询），替代原来的 2.6 秒三连轮询。
+   *
+   * 为什么换成它：原来每 2.6 秒要打三个请求；走中继时那是**跨网络的三次往返**，
+   * 而且绝大多数时候什么都没变（白跑）。现在一次请求挂住最多 10 秒，
+   * 有变化立刻回来，没变化就等到超时再挂一次 —— 空闲时的网络开销接近零。
+   *
+   * 为什么是长轮询而不是 SSE：中继那条路是**纯隧道**（请求→应答），
+   * 流式响应会被隧道的超时逻辑掐掉。长轮询两条路都能走，不必维护两套机制。
+   *
+   * `reset` 的语义（对标 DSH「检查点不可用就重来」）：服务端说"你要的那一段
+   * 已经不在缓冲里了"，此时必须**丢掉本地状态整批重取**，不许接着用旧的 seq。
+   */
+  function startEventLoop(){
+    if (state.evtToken) state.evtToken.cancelled = true;   // 停掉上一轮循环
+    var token = { cancelled: false };
+    state.evtToken = token;
+    (async function loop(){
+      while (!token.cancelled && state.view === "thread" && state.sessionId) {
+        var sid = state.sessionId;
+        var j = null;
+        try {
+          j = await api("/api/events?since=" + encodeURIComponent(state.seq || 0) +
+                        "&sessionId=" + encodeURIComponent(sid) + "&wait=10000");
+        } catch (e) {
+          if (e && e.auth) { goUnpaired(); return; }
+          // 网络抖动：歇一下再挂（不要疯狂重试）
+          await new Promise(function(r){ setTimeout(r, 1500); });
+          continue;
+        }
+        if (token.cancelled || state.view !== "thread" || state.sessionId !== sid) return;
+        if (j.reset) {
+          // 检查点失效 ⇒ 整批重取（**不许**接着用旧 seq，那会永久缺一段）
+          state.seq = 0;
+          await loadMessages(); await loadApprovals(); await loadRun();
+          state.seq = j.nextSeq || 0;
+          continue;
+        }
+        state.seq = j.nextSeq || state.seq;
+        var evs = j.events || [];
+        var needMsg = false, needAp = false, needRun = false;
+        for (var i = 0; i < evs.length; i++) {
+          var t = evs[i].type;
+          if (t === "messages" || t === "sessions") needMsg = true;
+          else if (t === "approval") needAp = true;
+          else if (t === "run") needRun = true;
+        }
+        if (needMsg) await loadMessages();
+        if (needAp) await loadApprovals();
+        if (needRun) await loadRun();
+        // hasMore ⇒ 还有积压，立刻再拉一轮（不要等下一个 10 秒）
+      }
+    })();
   }
   async function loadMessages(){
     if (state.view !== "thread" || !state.sessionId) return;
@@ -293,17 +351,54 @@
     input.addEventListener("keydown", function(e){ if (e.key === "Enter") send(); });
   }
 
+  /**
+   * 会话列表页也走事件流（阶段 2）。
+   *
+   * 原来这里是每 5 秒拉一次全量列表 —— 在中继那条路上就是每 5 秒一次跨网络往返，
+   * 而列表绝大多数时候不变。现在只订阅"全局事件"（不带 sessionId），
+   * 由桌面侧的变化探测决定什么时候推。
+   */
+  function startListEventLoop(){
+    if (state.evtToken) state.evtToken.cancelled = true;
+    var token = { cancelled: false };
+    state.evtToken = token;
+    state.seq = 0;
+    (async function loop(){
+      while (!token.cancelled && state.view === "sessions") {
+        var j = null;
+        try {
+          j = await api("/api/events?since=" + encodeURIComponent(state.seq || 0) + "&wait=10000");
+        } catch (e) {
+          if (e && e.auth) { goUnpaired(); return; }
+          await new Promise(function(r){ setTimeout(r, 1500); });
+          continue;
+        }
+        if (token.cancelled || state.view !== "sessions") return;
+        if (j.reset) { state.seq = 0; await loadSessions(); state.seq = j.nextSeq || 0; continue; }
+        state.seq = j.nextSeq || state.seq;
+        var evs = j.events || [];
+        for (var i = 0; i < evs.length; i++) {
+          if (evs[i].type === "sessions" || evs[i].type === "messages") { await loadSessions(); break; }
+        }
+      }
+    })();
+  }
+
   back.addEventListener("click", function(){
     state.view = "sessions"; state.sessionId = null;
-    clearInterval(state.timer);
+    if (state.evtToken) state.evtToken.cancelled = true;
     var c = document.getElementById("composer"); if (c) c.remove();
     // 离开会话页必须把这两条也收掉，否则它们会挂在会话列表页上
     var ab = document.getElementById("approval"); if (ab) ab.remove();
     var rb = document.getElementById("runbar"); if (rb) rb.remove();
     loadSessions();
+    startListEventLoop();
   });
   refresh.addEventListener("click", function(){
-    if (state.view === "thread") loadMessages(); else loadSessions();
+    // 手动刷新 = 丢掉检查点整批重取（用户按了就要一个确定的新状态）
+    state.seq = 0;
+    if (state.view === "thread") { loadMessages(); loadApprovals(); loadRun(); }
+    else loadSessions();
   });
 
   function boot(){
@@ -311,7 +406,7 @@
       if (j && j.desktop && state.view === "sessions" && document.getElementById("composer")) { }
     }).catch(function(){});
     loadSessions();
-    state.sessionTimer = setInterval(function(){ if (state.view === "sessions") loadSessions(); }, 5000);
+    startListEventLoop();
   }
   boot();
   // 进入会话页后再挂 composer（openSession 末尾）

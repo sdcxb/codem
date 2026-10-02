@@ -30,7 +30,20 @@ import { executeSessionTurn, isSessionExecuting, cancelSessionExecution } from "
  *
  * 现在挂上审批代理：请求进待批表，手机页面弹卡片，**桌面也能答**（同一张表）。
  */
-import { requestApproval, closeSessionApprovals, listApprovals, answerApproval } from "../permission/approval-broker";
+import { requestApproval, closeSessionApprovals, listApprovals, answerApproval, subscribeApprovals } from "../permission/approval-broker";
+/**
+ * 阶段 2：事件流（把"轮询"换成"推"）。
+ *
+ * 手机页面原来每 2.6 秒打三个请求（messages / approvals / run）——
+ * 在中继那条路上这是**跨网络的三次往返**。现在改成一次长轮询：
+ * 只有真的变了才回数据，没变化时一个字节的数据都不发。
+ */
+import {
+  emitPhoneEvent,
+  waitPhoneEvents,
+  eventsSince,
+  EVENT_WAIT_DEFAULT_MS,
+} from "./event-stream";
 
 // ========== 类型与常量 ==========
 
@@ -79,6 +92,7 @@ export type PhoneRoute =
   | { type: "run"; sessionId: string }
   | { type: "approvals" }
   | { type: "approval_answer"; requestId: string }
+  | { type: "events" }
   | null;
 
 /** 解析 Rust 代理上来的 path（不含 query）。limit 由调用方从 query 读取。 */
@@ -91,6 +105,7 @@ export function parsePhonePath(path: string): PhoneRoute {
   if (rest === "/chat/new") return { type: "chat_new" };
   if (rest === "/chat/cancel") return { type: "chat_cancel" };
   if (rest === "/approvals") return { type: "approvals" };
+  if (rest === "/events") return { type: "events" };
   const m = /^\/sessions\/([^/]+)\/messages$/.exec(rest);
   if (m) {
     return { type: "messages", sessionId: m[1] };
@@ -353,6 +368,9 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
     lastMessageAt: Date.now(),
     messageCount: (row.messageCount || 0) + 1,
   });
+  // 阶段 2：回合开始就推一条 —— 手机上的"进行中"状态条立刻出现，
+  // 不用等下一次轮询（跨网络下那一等就是好几秒）。
+  emitPhoneEvent("run", sessionId, { running: true, label: "正在处理" });
   // P8：整轮兜底超时（race 保证不把调用方/队列挂死在不产事件的回合）
   const timeout = setTimeout(() => {
     cancelSessionExecution(sessionId);
@@ -371,7 +389,12 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
          * 阶段 0.1：权限请求交给审批代理，手机页面可以点「允许一次 / 拒绝」。
          * `origin: "phone"` 只用于界面措辞（"手机发起的回合在等批准"），不用于鉴权。
          */
-        onPermissionRequest: (request) => requestApproval(request, "phone"),
+        onPermissionRequest: (request) => {
+          // 阶段 2：审批请求也要**推**给手机（否则用户要等到下一次轮询才看到卡片）
+          const p = requestApproval(request, "phone");
+          emitPhoneEvent("approval", sessionId, { requestId: request.id, tool: request.tool });
+          return p;
+        },
       }),
       timeoutRace,
     ]);
@@ -402,6 +425,12 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
      * 真有一条（竞态）也必须拒掉 —— 放行一个没人看过的写操作是最坏的失败模式。
      */
     closeSessionApprovals(sessionId, "turn_end");
+    /**
+     * 阶段 2：回合结束也要推一条 —— 手机上的"停止/进行中"状态条靠它收起。
+     * 放在收口**之后**，这样客户端收到时看到的已经是最终状态（不会先看到
+     * "回合结束"再看到一张还在的审批卡片）。
+     */
+    emitPhoneEvent("run", sessionId, { running: false });
   }
 }
 
@@ -551,6 +580,28 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       return;
     }
     /**
+     * 阶段 2：事件流（长轮询）。
+     *
+     * `since` = 客户端已经处理到哪了（检查点）；`wait` = 最多挂多久。
+     * 有变化立刻回，没变化到点回空。`reset: true` 表示检查点已失效，
+     * 客户端必须**丢掉本地状态整批重取**（不许从现有缓冲里拼凑）。
+     */
+    case "events": {
+      const since = parseInt(String(req.query?.since ?? "0"), 10);
+      const sessionId = req.query?.sessionId || undefined;
+      const rawWait = parseInt(String(req.query?.wait ?? String(EVENT_WAIT_DEFAULT_MS)), 10);
+      const wait = Number.isFinite(rawWait) ? rawWait : EVENT_WAIT_DEFAULT_MS;
+      // 有人订阅就顺手登记"这个会话要盯"（探测层据此决定看什么）
+      noteWatched(sessionId);
+      const batch = await waitPhoneEvents(
+        Number.isFinite(since) ? since : 0,
+        sessionId,
+        wait,
+      );
+      await invokePhoneRespond(req.reqId, 200, { ok: true, ...batch });
+      return;
+    }
+    /**
      * 阶段 0.1：手机读待批权限请求。
      * `?sessionId=` 可选；带上 `includeDecided=1` 能看到"已被桌面处理"的（界面据此收起按钮）。
      */
@@ -581,6 +632,13 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
         return;
       }
       const out = answerApproval(route.requestId, action, "phone");
+      // 阶段 2：回答完要推一条，让**另一个**回答方（桌面）的卡片立刻收起。
+      // 不推的话，桌面那张卡片要等到下一次用户交互才会消失 —— 而它看起来
+      // 还"可以点"，点了只会拿到"已被处理"。
+      if (out.ok) {
+        const view = listApprovals({ includeDecided: true }).find((a) => a.requestId === route.requestId);
+        emitPhoneEvent("approval", view?.sessionId, { requestId: route.requestId, answered: action });
+      }
       // 失败码如实回给手机（界面据此显示"这个请求已被处理或已失效"，而不是假装成功）
       await invokePhoneRespond(req.reqId, out.ok ? 200 : 409, out);
       return;
@@ -588,6 +646,130 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
     default:
       await invokePhoneRespond(req.reqId, 404, { error: "not_found" });
   }
+}
+
+// ========== 阶段 2：变化探测（把轮询从"跨网络"挪到"进程内"）==========
+
+/**
+ * 桌面侧的**变化探测**。
+ *
+ * ## 为什么要有这一层
+ *
+ * 事件流要能推，前提是"有人知道变了"。最直接的做法是去 hook 每一处写消息的地方
+ * （`MessageStorage.createMessage` 等），但那要改动很多既有代码，而且**漏一处就永久漏推**
+ * （那种缺陷表现为"手机上某类变化永远不刷新"，极难归因）。
+ *
+ * 折中方案：在**进程内**每秒看一眼"手机正在看的那个会话"变没变。
+ * - 代价：桌面每秒做一次内存读取（几乎免费）；
+ * - 收益：手机**跨网络的轮询彻底消失**，只在真的变了时才收数据。
+ *
+ * 这正是把轮询成本从"网络往返"降到"内存比对"。缺点是探测粒度是 1 秒
+ * （变化最迟 1 秒后可见），对"看会话"这个场景完全够用。
+ *
+ * ## 只看"有人正在看"的东西
+ *
+ * `watched` 里只登记最近被订阅过的会话（30 秒内），没有订阅者时
+ * 这个定时器什么都不做 —— 不能因为"手机曾经连过"就一直空转。
+ */
+interface WatchState {
+  /** sessionId → 上一次的签名 */
+  sigs: Map<string, string>;
+  /** sessionId → 最近一次被订阅的时刻 */
+  watched: Map<string, number>;
+  timer: ReturnType<typeof setInterval> | null;
+  /** 会话列表的签名 */
+  listSig: string;
+}
+
+const watch: WatchState = { sigs: new Map(), watched: new Map(), timer: null, listSig: "" };
+/** 一个会话被订阅后，我们盯它多久（用户关了页面就不再盯）。 */
+const WATCH_TTL_MS = 30_000;
+
+/** 会话消息的**廉价签名**：条数 + 最后一条的 id/时间。 */
+function messagesSig(sessionId: string): string {
+  try {
+    const msgs = MessageStorage.listMessages(sessionId, 1);
+    const last = msgs && msgs.length > 0 ? msgs[msgs.length - 1] : null;
+    // 注意：listMessages(id, limit) 的语义是"最近 limit 条"，
+    // 这里只要最后一条即可 —— 用它 + 会话行上的 messageCount 一起判断
+    const row = SessionStorage.getSession(sessionId);
+    return `${row?.messageCount ?? 0}:${last?.id ?? ""}:${last?.timestamp ?? 0}`;
+  } catch {
+    return "";
+  }
+}
+
+function sessionsSig(): string {
+  try {
+    const list = flattenSessions();
+    // 只取"会影响列表显示"的字段，避免把无关变化也算成变化
+    return list.map((s) => `${s.id}:${s.updatedAt}:${s.messageCount}`).join("|");
+  } catch {
+    return "";
+  }
+}
+
+function tickWatch(): void {
+  const now = Date.now();
+  // 过期的会话不再盯
+  for (const [sid, at] of [...watch.watched]) {
+    if (now - at > WATCH_TTL_MS) {
+      watch.watched.delete(sid);
+      watch.sigs.delete(sid);
+    }
+  }
+  for (const sid of watch.watched.keys()) {
+    const sig = messagesSig(sid);
+    const prev = watch.sigs.get(sid);
+    if (prev === undefined) {
+      watch.sigs.set(sid, sig); // 首次登记不算变化（否则会推一条假的）
+      continue;
+    }
+    if (sig !== prev) {
+      watch.sigs.set(sid, sig);
+      emitPhoneEvent("messages", sid);
+    }
+  }
+  // 会话列表：只要有订阅者就盯
+  if (watch.watched.size > 0) {
+    const ls = sessionsSig();
+    if (watch.listSig === "") watch.listSig = ls;
+    else if (ls !== watch.listSig) {
+      watch.listSig = ls;
+      emitPhoneEvent("sessions");
+    }
+  }
+}
+
+function ensureWatcher(): void {
+  if (watch.timer || typeof setInterval === "undefined") return;
+  watch.timer = setInterval(tickWatch, 1000);
+}
+
+/** 登记"有人在看这个会话"（由事件路由调用）。 */
+function noteWatched(sessionId: string | undefined): void {
+  if (!sessionId) return;
+  watch.watched.set(sessionId, Date.now());
+  ensureWatcher();
+}
+
+/** 测试用：清空探测状态。 */
+export function __resetWatchForTests(): void {
+  if (watch.timer) clearInterval(watch.timer);
+  watch.timer = null;
+  watch.sigs.clear();
+  watch.watched.clear();
+  watch.listSig = "";
+}
+
+/** 测试用：手动跑一轮探测。 */
+export function __tickWatchForTests(): void {
+  tickWatch();
+}
+
+/** 测试用：当前在盯的会话。 */
+export function __watchedForTests(): string[] {
+  return [...watch.watched.keys()];
 }
 
 // ========== 状态缓存 / 事件 ==========
@@ -712,6 +894,16 @@ export function startPhoneLink(): () => void {
   }
   const listen = tauri.event.listen.bind(tauri.event);
   const invoke = tauri.core.invoke.bind(tauri.core);
+  /**
+   * 阶段 2：把**审批代理**的变化也接进事件流。
+   *
+   * 覆盖"桌面回答的"那一半：手机上的审批卡片要立刻收起。
+   * （手机自己回答的那一半在路由里单独推，因为那里还知道是哪个会话。）
+   * 刻意**不判断"是谁改的"** —— 让客户端以服务端状态为准更简单也更准。
+   */
+  const offApprovals = subscribeApprovals(() => {
+    emitPhoneEvent("approval", undefined, { changed: true });
+  });
   const unlisteners: Array<() => void> = [];
   const fire = (name: string, detail: unknown) => {
     try {
@@ -755,6 +947,9 @@ export function startPhoneLink(): () => void {
 
   return () => {
     bridgeStarted = false;
+    // 阶段 2：退订审批变化 + 停掉变化探测（否则定时器会活过 bridge 的生存期）
+    try { offApprovals(); } catch { /* noop */ }
+    __resetWatchForTests();
     unlisteners.forEach((u) => {
       try { u(); } catch { /* noop */ }
     });

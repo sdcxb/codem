@@ -86,9 +86,27 @@ describe("第 122 轮阶段 0.1 · 远端审批接线", () => {
   it("RAW-4: 手机回合**真的**把权限请求交给了代理（不是留着缺省 auto-deny）", () => {
     const src = read("src/core/phone-link/phone-link.ts");
     expect(src).toContain('from "../permission/approval-broker"');
-    expect(src, "必须给 executeSessionTurn 传 onPermissionRequest").toMatch(
-      /onPermissionRequest:\s*\(request\)\s*=>\s*requestApproval\(request,\s*"phone"\)/,
-    );
+    /**
+     * ⚠️ 这条判据在 v1.16.216（阶段 2）被改过一次，过程记档。
+     *
+     * 它原来钉的是**单表达式**形状 `(request) => requestApproval(request, "phone")`。
+     * 阶段 2 要给手机推一条事件，于是回调变成了块：
+     *
+     *     (request) => {
+     *       const p = requestApproval(request, "phone");
+     *       emitPhoneEvent("approval", sessionId, {...});
+     *       return p;          // ← 关键：必须把 Promise 交回引擎
+     *     }
+     *
+     * 判据**当场变红**，逼我把"这次改动会不会破坏原性质"想清楚。答案是没破坏，
+     * 但多了一条以前不需要守的：**必须把 Promise 返回**（不返回的话引擎
+     * `await` 到 undefined，读 `.action` 直接抛）。所以新版守两件事。
+     */
+    const m = src.match(/onPermissionRequest:\s*\(request\)\s*=>\s*\{[\s\S]{0,400}?\n\s*\},?/);
+    expect(m, "必须给 executeSessionTurn 传 onPermissionRequest（块形状）").toBeTruthy();
+    const body = m![0];
+    expect(body, "块里必须调用审批代理且 origin 是 phone").toContain('requestApproval(request, "phone")');
+    expect(body, "块里必须把代理的 Promise 返回给引擎（不返回引擎会 await 到 undefined）").toMatch(/return\s+\w+;/);
     /**
      * 反向判据：那条**旧的代码注释**不该还在。
      *
