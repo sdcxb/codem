@@ -35,6 +35,7 @@
 // 因此"核对指纹"不是可选项。
 // ============================================================
 
+pub mod connector;
 pub mod guard;
 pub mod http;
 pub mod lan;
@@ -893,13 +894,25 @@ async fn route(
                     emit_state(app, st).await;
                     let mut resp = HttpResponse::json(200, serde_json::json!({ "state": "approved" }));
                     if let Some(secret) = cookie {
+                        // `Secure` 要按**客户端那一侧的真实协议**决定，不能一律加：
+                        // LAN 边缘永远是 HTTPS（该加）；但中继那一跳的协议由中继决定，
+                        // 中继是明文时浏览器会**直接丢弃**带 Secure 的 cookie ⇒
+                        // 手机永远 401，而现象只是"一直登不上"，极难定位。
+                        // connector 会用 `X-Forwarded-Proto` 如实告诉我们（反向代理同一惯例）；
+                        // 没有这个头 = 来自 LAN 边缘 = HTTPS，所以默认加。
+                        let secure = req
+                            .headers
+                            .get("x-forwarded-proto")
+                            .map(|v| v.trim().eq_ignore_ascii_case("https"))
+                            .unwrap_or(true);
                         resp.headers.push((
                             "Set-Cookie".into(),
                             format!(
-                                // 阶段 1：加 `Secure`（现在是 HTTPS，明文路径已不存在），
-                                // 寿命从 1 年收到 30 天。
-                                "{}={}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}",
-                                COOKIE_NAME, secret, COOKIE_MAX_AGE_SECS
+                                "{}={}; Path=/; HttpOnly;{} SameSite=Strict; Max-Age={}",
+                                COOKIE_NAME,
+                                secret,
+                                if secure { " Secure;" } else { "" },
+                                COOKIE_MAX_AGE_SECS
                             ),
                         ));
                     }

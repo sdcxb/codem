@@ -2,6 +2,76 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.214] - 2026-10-02
+
+### 新增（远程控制：完全对标 DSH 的「出站中继」策略）
+
+按用户口径**百分百对标 DSH**。读它的 `connector/process.ts` 才看清真实策略 ——
+Agents Anywhere 不是一条连接，是**四条**通道，其中只有「云」是它的资产：
+
+| # | 通道 | 传输 | 凭据 |
+|---|---|---|---|
+| 1 | 手机 / Web App ↔ AA 云 | HTTPS | 用户账号会话 |
+| 2 | **Connector ↔ AA 云（出站）** | 心跳 20s / 重连 3s / 同步 30s | `connectorId` + `connectorToken` |
+| 3 | Connector ↔ DSH 插件运行时 | **本机 127.0.0.1** | `endpoint.json` 的 32 字节 token |
+| 4 | 插件 ↔ Connector 进程 | stdio JSON-RPC | — |
+
+所以我们做的是**同一个策略，只差"谁来运营中继"**：中继由你自己跑，
+不建云、不要账号体系。**桌面只为这条路出站，不为它开任何 LAN 端口。**
+
+- **中继**（新增 `tools/relay/codem-relay.mjs`，零依赖，扔到任何一台机器就能跑）：
+  设计成**纯隧道** —— 它不认识我们的会话协议，只把手机的 HTTP 请求原样透给桌面再透回来。
+  所以：① 中继上看不到你的会话语义；② 桌面侧的路由/cookie 鉴权/审批卡片
+  **一行都不用改**就能从中继这条路上被访问到。
+  接口：`/connector/hello`、`/connector/stream`（SSE 长连）、`/connector/response`、
+  `/app/pair`、`/app/*`。
+- **出站 connector**（新增 `src-tauri/src/phone/connector.rs`）：主动连到中继、
+  心跳、断线按 3 秒重连、把中继推来的请求转给本机回环上游。
+  配置文件名与字段名**逐字对齐 AA**（`connector.json`：`serverUrl` / `connectorId` /
+  `connectorToken` / `statePath` / `heartbeatSeconds` / `reconnectSeconds` /
+  `syncIntervalSeconds` / `syncExistingOnConnect`）—— 于是同一份配置两边可以互相读。
+- **配对**：桌面每次轮换配对二维码都会把新码报给中继（connector 每 2 秒检查一次，
+  轮换即重连登记），所以刷新二维码后手机立刻能用新码配对。
+
+### 与 AA 两处**有意的**不同（都是依赖/部署差别，不是策略差别）
+
+1. AA 的 connector 是 **Python 子进程**（首次要拉约 235 MiB 轮子，它甚至为此给了 1 小时的
+   首次超时）。我们**不引 Python 运行时**，用 Rust 在应用内跑一个任务 ——
+   连的还是同一个中继、发的还是同一套帧。
+2. AA 的插件↔connector 之间还有一条 **stdio JSON-RPC**（那是"父进程管子进程"用的）。
+   我们同进程，不需要它。
+
+### 说明
+
+- **修掉一个只有走中继才会暴露的问题**：桌面在阶段 1 给会话 cookie 加了 `Secure`，
+  但手机到中继那一跳是不是 HTTPS **由中继决定，桌面看不到**。
+  明文中继下浏览器会**直接丢弃**带 `Secure` 的 cookie ⇒ 手机永远 401，
+  而现象只是"一直登不上"，从表象几乎无法定位。
+  现在 connector 按中继的实际协议发 `X-Forwarded-Proto`（反向代理的同一惯例），
+  上游据此决定要不要加 `Secure`：**缺这个头时默认加**（LAN 边缘永远是 HTTPS，
+  它的安全属性不许因为中继的存在而被削弱）。
+  这条改动**当场把阶段 1 的判据 LNX-7 弄红了** —— 那条判据原来断言的是无条件 `Secure`。
+  我把它改成守三件事（判定仍存在 / 依据是 `x-forwarded-proto` / 缺头默认 `Secure`），
+  并做了变异自证（把默认改成 `false` 会变红）。
+  **记档：判据不是为了永远绿，而是让每一次"放宽"都必须被明确记录并说清理由。**
+- 判据 `RL-1..RL-11`（`src/test/relay-core.test.ts`）+ **7 个变异自证**，
+  其中**三条是变异/端到端把我自己的实现错当场抓住的**：
+  ① `req.on('close')` 对**没有 body 的 GET 会立刻触发** ⇒ connector 刚注册就被判"已断开"，
+     手机请求全拿 503，而表象是"桌面侧什么都没收到"；改成挂 `res.on('close')`。
+  ② `server.close()` **只关监听、不关已建立连接** ⇒ 测试里那条长活 SSE 让 `await close()`
+     永不返回，报「Test timed out」，**看起来像业务逻辑卡住**，其实业务早跑完了。
+     **清理代码把自己的失败伪装成了被测代码的失败。**
+  ③ **变异 1 根本没咬住** ⇒ 才发现 RL-2 压根没覆盖"常数时间比对"：
+     把 `timingSafeEqual` 换成普通 `!==`，功能判据照样全绿（差别只在耗时形状，
+     写计时用例必然是 flaky 的）。已补 **RL-11 静态判据**，并如实记录
+     「这件事没法用行为判据证明」。
+- `src/test/setup.ts` 改成**不假定宿主有 DOM**（中继用例要在 node 环境跑：
+  happy-dom 的 `fetch` 会强制 CORS 并发 OPTIONS 预检，中继没问题却全红）。
+- `phone_relay_start/stop/status` 三个命令；connector 身份落盘
+  `<app-data>/phone/connector.json`，**换中继才换身份**（中继侧是首见登记，
+  身份每次都变会积累一堆永不回收的登记，且手机每次配对都会绑到新 connector 上）。
+- 全量 **445 个测试文件 / 6712 个用例**通过（Rust 侧 29 条通过）；`npm run audit` exit 0。
+
 ## [1.16.213] - 2026-09-29
 
 ### 修复

@@ -626,13 +626,38 @@ syncIntervalSeconds(30) / syncExistingOnConnect(true)
 
 ### 11.4 实施顺序
 
-| 步 | 内容 | 判据 |
+| 步 | 内容 | 状态 |
 |---|---|---|
-| **A** | **中继**（`tools/relay/`，零依赖 Node）：`/connector/hello`、`/connector/stream`(SSE)、`/connector/response`、`/app/pair`、`/app/*` 隧道 | 中继自己的单测 + 变异 |
-| **B** | **Connector**（`src-tauri/src/phone/connector.rs`）：写 `connector.json`、出站长连、心跳、重连、把中继推来的请求转给回环上游 | Rust 集成测试（真起中继、真出站、真往返）+ 变异 |
-| **C** | **配对**：桌面把 `pairingCode` 注册给中继；手机用码换中继会话 | 端到端：手机侧凭码拿到页面 |
-| **D** | **设置界面**：中继地址、连接状态、connectorId、启停、日志 | 承诺判据（界面不得声称局域网可用的假象） |
-| **E** | **装机版端到端**：起中继 → 桌面连上 → 模拟手机走中继拿到会话 | 真机脚本 |
+| **A** | **中继**（`tools/relay/codem-relay.mjs`，零依赖）：`/connector/hello`、`/connector/stream`(SSE)、`/connector/response`、`/app/pair`、`/app/*` 隧道 | ✅ **v1.16.214**；判据 `RL-1..RL-11` + 7 个变异自证 |
+| **B** | **Connector**（`src-tauri/src/phone/connector.rs`）：`connector.json`、出站长连、心跳、重连、把推来的请求转给回环上游 | ✅ **v1.16.214**；字段逐字对齐 AA（两边配置可互读）+ 7 条 Rust 单测 |
+| **C** | **配对**：桌面把 `pairingCode` 注册给中继；手机用码换中继会话 | ✅ 已实现（connector 每 2 秒检查配对码轮换，轮换即重连登记） |
+| **D** | **设置界面**：中继地址、连接状态、connectorId、启停、日志 | ⬜ 未做 |
+| **E** | **装机版端到端**：起中继 → 桌面连上 → 模拟手机走中继拿到会话 | 🔄 脚本已写（`.preview-shot/_verify-relay-e2e.mjs`） |
+
+### 11.5 A/B 步落地时"我自己的三个错"（都由判据/变异抓出，记档）
+
+1. **`req.on('close')` 对没有 body 的 GET 会立刻触发**（Node 的语义是"请求流读完"，
+   不是"连接断了"）⇒ SSE 一注册就被自己的 cleanup 清掉，connector 刚上线就被判"已断开"，
+   手机请求全拿 503。**表象是"桌面侧什么都没收到"**，从表象极难定位。
+   改成挂 `res.on('close')`。
+2. **`server.close()` 只关监听、不关已建立的连接** ⇒ 测试里那条长活 SSE 让
+   `await close()` 永不返回，报出来的是「Test timed out」，
+   **看起来像被测的业务逻辑卡住**，而诊断日志显示 `request` 帧早就到了 ——
+   **清理代码把自己的失败伪装成了被测代码的失败**。改用 `closeAllConnections()`。
+3. **变异 1 没咬住** ⇒ 才发现 `RL-2` 根本没覆盖"常数时间比对"：
+   把 `crypto.timingSafeEqual` 换成普通 `!==`，功能判据**照样全绿**
+   （功能上"对的码通过、错的码拒绝"两种实现完全一样，差别只在耗时形状，
+   而计时用例必然是 flaky 的）。补了 **RL-11 静态判据**，
+   并如实写明：**这件事没法用行为判据证明，只能静态钉住。**
+4. **`Secure` cookie 在明文链路上必然被丢**（端到端 E9 抓到的）：
+   阶段 1 给 cookie 加了 `Secure`，但"手机到中继"那一跳的协议由**中继**决定，
+   桌面看不到。明文中继下浏览器**直接丢弃**该 cookie ⇒ 手机永远 401，
+   现象只是"一直登不上"。修法：connector 发 `X-Forwarded-Proto`
+   （反向代理同一惯例），上游据此决定；**缺这个头时默认加 Secure**
+   （LAN 边缘永远是 HTTPS，不许因中继的存在而被削弱）。
+   这条改动**把阶段 1 的判据 LNX-7 弄红了**（它原来断言无条件 `Secure`），
+   于是改成守三件事 + 变异自证。**判据该有的样子：不是为了永远绿，
+   而是让每一次放宽都必须被明确记录并说清理由。**
 
 **阶段 2（事件流替代轮询）排在这之后** —— 因为中继这条路上"推"比"轮询"更必要
 （跨网络下轮询的成本高得多）。

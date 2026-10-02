@@ -2875,6 +2875,8 @@ install_panic_hook();
 let ilink_state = ilink::IlinkState::new();
 // ===== 手机连接（phone-link）管理态 =====
 let phone_state = phone::PhoneState::new();
+// ===== 出站 connector（远程中继，第 122 轮 §11B）管理态 =====
+let connector_state = phone::connector::ConnectorState::new();
 // ===== 存储引擎（Rust 原生 SQLite）管理态 =====
 // 路径按 `%APPDATA%\<identifier>` 自行解析（不依赖 AppHandle，见 storage.rs 注释）；
 // 引擎本体在首次调用时惰性打开。
@@ -2888,6 +2890,7 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_dialog::init())
         .manage(ilink_state.clone())
         .manage(phone_state.clone())
+        .manage(connector_state.clone())
         .manage(storage_state)
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         .manage(AppState {
@@ -2996,6 +2999,10 @@ path_exists,
             // 第 122 轮阶段 1：CA 指纹与证书（桌面展示/保存用）
             phone::phone_ca_pem,
             phone::phone_ca_fingerprint,
+            // 第 122 轮 §11B：出站 connector（远程中继）
+            phone::connector::phone_relay_start,
+            phone::connector::phone_relay_stop,
+            phone::connector::phone_relay_status,
             // 存储引擎（Rust 原生 SQLite）：类型化仓储命令，不接受 SQL
             storage::storage_invoke,
             storage::storage_batch,

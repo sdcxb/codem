@@ -112,15 +112,39 @@ describe("第 122 轮阶段 1 · LAN HTTPS 与边缘准入接线", () => {
     expect(t).toContain("normalize_san_ips");
   });
 
-  it("LNX-7: cookie 有 Secure，且寿命不再是 1 年", () => {
+  it("LNX-7: cookie 的 Secure 按**实际协议**决定，寿命不再是 1 年", () => {
     const src = read(PHONE_RS);
     const m = src.match(/COOKIE_MAX_AGE_SECS: i64 = ([0-9_ *]+);/);
     expect(m, "必须有一个具名的 cookie 寿命常量").toBeTruthy();
-    expect(src, "cookie 必须带 Secure").toMatch(/HttpOnly; Secure; SameSite=Strict; Max-Age=\{\}/);
     expect(src, "旧的 1 年硬编码必须消失").not.toContain("Max-Age=31536000");
     expect(src).toContain("Max-Age={}", );
     // 具体数值：30 天
     expect(m![1].replace(/[_\s]/g, "")).toBe("30*24*3600");
+
+    /**
+     * ⚠️ **这条判据在 v1.16.214 被改过一次，过程值得记档。**
+     *
+     * 它原来断言的是无条件 `HttpOnly; Secure; SameSite=Strict`。
+     * 做中继（§11）时我把 `Secure` 改成**按 `X-Forwarded-Proto` 决定**：
+     * 手机到中继那一跳的协议由**中继**决定（桌面看不到那一跳），
+     * 明文中继下浏览器会**直接丢弃**带 Secure 的 cookie ⇒ 手机永远 401，
+     * 而现象只是"一直登不上"，从表象几乎无法定位。
+     *
+     * 这条判据**当场变红**，逼我把"为什么可以不再无条件"写清楚。
+     * 这正是判据该有的样子：不是为了永远绿，
+     * 而是让每一次**放宽**都必须被明确记录、并说清为什么不会削弱原有场景。
+     *
+     * 新版守三件事（缺一不可）：
+     * ① Secure 判定**仍然存在**（不是被删掉）；
+     * ② 判定依据是 `x-forwarded-proto`；
+     * ③ **缺这个头时默认加 Secure** —— LAN 边缘那条路永远是 HTTPS，
+     *    它的安全属性不许因为中继的存在而被削弱。
+     */
+    expect(src, "Secure 判定必须还在").toMatch(/Secure;/);
+    expect(src, "判定依据必须是 x-forwarded-proto").toContain("x-forwarded-proto");
+    expect(src, "缺 x-forwarded-proto（= LAN 边缘）时必须默认 Secure").toMatch(/unwrap_or\(true\)/);
+    // HttpOnly 与 SameSite 在任何分支下都必须在（不许被条件化掉）
+    expect(src).toMatch(/HttpOnly;\{\} SameSite=Strict/);
   });
 
   it("LNX-8: 界面显示指纹与 HTTPS 来源，且不再声称自己是明文 HTTP", () => {
