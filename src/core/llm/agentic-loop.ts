@@ -264,6 +264,52 @@ function bashIntentKind(command: string): "enumerate" | "mutate" | "other" {
   return bashIntent(command).kind;
 }
 
+/**
+ * 摘要输入里「单条消息」的字符上限。
+ *
+ * 原来这里是 500 / 200 字硬截断 —— 等于让摘要只读得到每条消息的**开头**。
+ * 长编码任务里那基本等于「没看到任务」：摘要一丢状态，之后模型就会重复劳动，
+ * 甚至把已经改好的东西再改回去。**摘要是长会话里唯一的记忆**，不能这样喂。
+ * 现在放宽到「够用但有界」，并且截断时**必须明说**（见 boundOne）。
+ */
+const LLMEngineTextBounds = {
+  USER: 8000,
+  ASSISTANT: 8000,
+  TOOL_ARGS: 2000,
+  TOOL_RESULT: 4000,
+} as const;
+
+/** 单条消息的截断：保留头部 + 明确写出省略了多少字符（不许静默截断）。导出供判据直接钉。 */
+export function boundOne(text: string, cap: number): string {
+  const s = String(text ?? "");
+  if (s.length <= cap) return s;
+  return `${s.slice(0, cap)}\n…（本条消息过长，已省略 ${s.length - cap} 个字符）`;
+}
+
+/** 摘要输入的整体上限（字符）。60000 ≈ 15k token，比原来的 12000 宽 5 倍且仍有界。 */
+const SUMMARY_CONVERSATION_CHAR_CAP = 60000;
+
+/**
+ * 摘要输入的整体边界。
+ *
+ * ⚠️ 这里修的是一个**方向性**错误：原来超过 12000 字符就 `substring(0, 12000)`，
+ * 也就是**保留最旧的、丢掉最新的**。而在一个编码任务里，最新的上下文恰恰最该进摘要
+ * （刚跑完的测试输出、刚改的文件、刚犯的错）。现在**同时保留头与尾**，并把省略量写在中间 ——
+ * 与 DSH 的 `buildSummarizationInput` 同取向（它直接重放真实消息，不做全局砍尾）。
+ */
+export function boundConversationForSummary(text: string, cap: number = SUMMARY_CONVERSATION_CHAR_CAP): string {
+  const s = String(text ?? "");
+  if (s.length <= cap) return s;
+  const headLen = Math.floor(cap * 0.4);
+  const tailLen = cap - headLen;
+  const omitted = s.length - cap;
+  return (
+    s.slice(0, headLen) +
+    `\n…（中间省略了 ${omitted} 个字符的对话；下面是最近的上下文）\n` +
+    s.slice(s.length - tailLen)
+  );
+}
+
 const MAX_CONSECUTIVE_NO_PROGRESS = 30;
 
 /**
@@ -3973,15 +4019,17 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
           // Include existing summary as-is for cascading
           parts.push(`[已有摘要]\n${content}`);
         } else if (content.trim()) {
-          parts.push(`用户: ${content.substring(0, 500)}`);
+          parts.push(`用户: ${boundOne(content, LLMEngineTextBounds.USER)}`);
         }
       } else if (msg.role === "assistant") {
-        const content = (msg.content || "").substring(0, 500);
+        const content = boundOne(msg.content || "", LLMEngineTextBounds.ASSISTANT);
         if (content.trim()) parts.push(`AI: ${content}`);
         if (msg.toolCalls) {
           for (const tc of msg.toolCalls) {
-            const argsStr = tc.args ? JSON.stringify(tc.args).substring(0, 200) : "";
-            const resultStr = tc.result ? (typeof tc.result === "string" ? tc.result.substring(0, 200) : "") : "";
+            const argsStr = tc.args ? boundOne(JSON.stringify(tc.args), LLMEngineTextBounds.TOOL_ARGS) : "";
+            const resultStr = tc.result
+              ? (typeof tc.result === "string" ? boundOne(tc.result, LLMEngineTextBounds.TOOL_RESULT) : "")
+              : "";
             parts.push(`工具[${tc.tool}]: ${argsStr} → ${resultStr}`);
           }
         }
@@ -4002,10 +4050,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     existingSummary: string,
     compactionInstruction: string,
   ): Promise<string> {
-    const maxConvLen = 12000;
-    const truncatedConv = conversationText.length > maxConvLen
-      ? conversationText.substring(0, maxConvLen) + "\n...(更多对话已截断)"
-      : conversationText;
+    const truncatedConv = boundConversationForSummary(conversationText);
 
     // Build user message: existing summary (if any) + new conversation + compaction instruction
     const userContent = existingSummary
@@ -4041,10 +4086,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
    */
   private async generateCompactionSummary(conversationText: string, existingSummary: string): Promise<string> {
     // Truncate conversation text to avoid token overflow (max ~12K chars ≈ 3K tokens)
-    const maxConvLen = 12000;
-    const truncatedConv = conversationText.length > maxConvLen
-      ? conversationText.substring(0, maxConvLen) + "\n...(更多对话已截断)"
-      : conversationText;
+    const truncatedConv = boundConversationForSummary(conversationText);
 
     // P-OPT1: Cache-aware compaction — replay the current system prompt as prefix
     // instead of using a dedicated compaction system prompt. This ensures the

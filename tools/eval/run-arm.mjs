@@ -41,8 +41,25 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { TASKS, validateTaskSet } from "./tasks.mjs";
+import { TASKS as BASELINE_TASKS, validateTaskSet as validateBaseline } from "./tasks.mjs";
+import { TASKS as CODING_TASKS, validateTaskSet as validateCoding } from "./tasks-coding.mjs";
 import { summarize, render, verdict } from "./paired-report.mjs";
+
+/**
+ * 两档任务集：
+ * · `baseline` —— 链路与成本；实测被 DSH **14/14 全过**（control-saturated），**测不出水平**
+ * · `coding`   —— 专测「写代码 / 改 bug / 调试」，刻意做成能区分编码水平（见 tasks-coding.mjs 的表）
+ */
+export const TASK_SETS = {
+  baseline: { tasks: BASELINE_TASKS, validate: validateBaseline },
+  coding: { tasks: CODING_TASKS, validate: validateCoding },
+};
+
+export function loadTaskSet(name) {
+  const set = TASK_SETS[name];
+  if (!set) throw new Error(`不认识的任务集：${name}（可选：${Object.keys(TASK_SETS).join(", ")}）`);
+  return set;
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUT = join(HERE, "records.jsonl");
@@ -50,7 +67,7 @@ const AGENT_TIMEOUT_MS = 20 * 60 * 1000;
 const GRADE_TIMEOUT_MS = 5 * 60 * 1000;
 
 function parseArgs(argv) {
-  const out = { arms: [], tasks: [], runNumbers: [1], report: false, keep: false };
+  const out = { arms: [], tasks: [], runNumbers: [1], report: false, keep: false, taskSet: "baseline" };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => argv[++i];
@@ -58,6 +75,7 @@ function parseArgs(argv) {
     else if (arg === "--agent-cmd") out.agentCmd = next();
     else if (arg === "--model") out.model = next();
     else if (arg === "--eval-set") out.evalSet = next();
+    else if (arg === "--task-set") out.taskSet = next();
     else if (arg === "--task") out.tasks.push(next());
     else if (arg === "--run") out.runNumbers = [Number(next())];
     else if (arg === "--runs") {
@@ -73,12 +91,13 @@ function parseArgs(argv) {
 }
 
 const USAGE = `用法：
-  node tools/eval/run-arm.mjs --arm <名字> --agent-cmd "<命令>" --model <名字> [--task <id>]... [--runs N] [--out 文件]
+  node tools/eval/run-arm.mjs --arm <名字> --agent-cmd "<命令>" --model <名字> [--task-set baseline|coding] [--task <id>]... [--runs N] [--out 文件]
   node tools/eval/run-arm.mjs --report [--out 文件]
 
   --arm         这条臂的名字。惯例：control = DSH，treatment = Codem。
   --agent-cmd   在任务工作区里执行的命令（见文件头的环境变量契约）。
   --model       模型名。**两侧必须写同一个**，否则对比不成立。
+  --task-set    任务集：baseline（链路与成本）| coding（写代码/改 bug/调试）。默认 baseline。
   --runs N      每个任务重复 N 次（< 2 时报告会标注"一次重复不足以说明稳定性"）。
   --out         记录文件（JSONL），默认 tools/eval/records.jsonl。
   --report      不跑任务，只读记录出成对报告。
@@ -86,10 +105,11 @@ const USAGE = `用法：
 `;
 
 function selectedTasks(args) {
-  if (args.tasks.length === 0) return TASKS;
+  const tasks = loadTaskSet(args.taskSet).tasks;
+  if (args.tasks.length === 0) return tasks;
   const wanted = new Set(args.tasks);
-  const picked = TASKS.filter((t) => wanted.has(t.id));
-  const missing = [...wanted].filter((id) => !TASKS.some((t) => t.id === id));
+  const picked = tasks.filter((t) => wanted.has(t.id));
+  const missing = [...wanted].filter((id) => !tasks.some((t) => t.id === id));
   if (missing.length > 0) throw new Error(`任务集里没有这些 id：${missing.join(", ")}`);
   return picked;
 }
@@ -243,12 +263,13 @@ function main() {
   if (!args.agentCmd) throw new Error("缺少 --agent-cmd");
   if (!args.model) throw new Error("缺少 --model（两侧必须写同一个模型名，否则对比不成立）");
 
-  const problems = validateTaskSet();
-  if (problems.length > 0) throw new Error(`任务集自身有问题：\n  - ${problems.join("\n  - ")}`);
+  const set = loadTaskSet(args.taskSet);
+  const problems = set.validate();
+  if (problems.length > 0) throw new Error(`任务集（${args.taskSet}）自身有问题：\n  - ${problems.join("\n  - ")}`);
 
   const arm = args.arms[0];
   const tasks = selectedTasks(args);
-  console.log(`臂=${arm} 模型=${args.model} 任务=${tasks.length} 重复=${args.runNumbers.length}`);
+  console.log(`臂=${arm} 模型=${args.model} 任务集=${args.taskSet} 任务=${tasks.length} 重复=${args.runNumbers.length}`);
   console.log(`记录写入：${out}`);
 
   let passed = 0;

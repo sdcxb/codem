@@ -17,6 +17,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TASKS } from "../tasks.mjs";
+import { TASKS as CODING_TASKS } from "../tasks-coding.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ws = process.env.EVAL_WORKSPACE;
@@ -27,9 +28,15 @@ if (!ws || !taskId) {
   process.exit(2);
 }
 
-const task = TASKS.find((t) => t.id === taskId);
+/**
+ * ⚠️ 必须**同时**查两档任务集。
+ * 第一版只 import 了 `tasks.mjs`（第一档），于是编码档（`tasks-coding.mjs`）的任务
+ * 在这里查不到 ⇒ 桩臂什么都没写就退出 ⇒ 自证里"抄参考解必须全过"**整片变红**。
+ * 是自证把它抓出来的 —— 参考解没有应用，看起来就像"参考解是错的"。
+ */
+const task = [...TASKS, ...CODING_TASKS].find((t) => t.id === taskId);
 if (!task) {
-  console.error(`reference-solver: 任务集里没有 ${taskId}`);
+  console.error(`reference-solver: 两档任务集里都没有 ${taskId}`);
   process.exit(2);
 }
 
