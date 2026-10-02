@@ -800,3 +800,171 @@ GET  /api/v2/health
 
 如果你想连账号体系也对齐（走 A），那是一个**产品定位决策**（本地优先 → 依赖第三方平台），
 不是技术债 —— 说一声我就按 A 重做，但上面三条代价会同时到来。
+
+---
+
+## 14. 复刻蓝图：DSH / Agents Anywhere 的远程控制路径
+
+> 用户口径：**完全复刻它的路径，不做并行机制。**
+> 这一节是**读它捆绑 connector 的 Python 源码**得出的完整实现规格 ——
+> 所有事实都在
+> `…/dsh-bridge-next/lib/bundled-connector/connector/` 下，逐条标了文件与行号。
+> 这一节的作用是：让"复刻"变成一份**可核对、可施工**的规格，而不是一句口号。
+
+### 14.1 链路全貌（四条通道）
+
+```
+手机 / Web App ──HTTPS──▶ AA 服务端 ◀──WS 出站长连── Connector（Python，捆绑在插件里）
+                              ▲                          │ stdio JSON-RPC（插件 ↔ 子进程）
+                              │ REST: /connector/auth    ▼
+                              │                       插件 host ←→ DSH 运行时
+                              └── 本机 127.0.0.1 ── Connector → 插件运行时
+```
+
+### 14.2 鉴权链（逐行对齐）
+
+| 步 | 做什么 | 证据 |
+|---|---|---|
+| 1 | `POST {server}/api/v2/connector/auth`，头 `Authorization: Connector <connectorId>:<connectorToken>` | `server/auth.py:47-51` |
+| 2 | 返回 `{ accessToken: string, expiresIn: number }`；401 ⇒ **凭据失效，不再重试** | `auth.py:57-69` |
+| 3 | 缓存 accessToken，**提前 60 秒**刷新 | `auth.py:13,74-83` |
+| 4 | `GET {wss}://{host}/api/v2/connector/ws`，头 `Authorization: Bearer <accessToken>` + `X-Device-OS: windows\|macos\|linux` | `client.py:246-258`、`urls.py:24-27` |
+
+**设备身份由此确定**：Bearer 令牌是**为该 connector 换来的**，所以服务端不需要额外的 connectorId 参数。
+
+### 14.3 帧信封（三条）
+
+```jsonc
+{ "id": "<str>", "type": "request",      "method": "...", "params": ... }
+{ "id": "<str>", "type": "response",     "ok": true, "result": ..., "error": {"...":"..."} }
+{                "type": "notification", "method": "...", "params": ... }
+```
+（`server/protocol.py` 的 `RpcRequest` / `RpcResponse` / `RpcNotification`）
+
+**握手**（`ProtocolHandshakeRequest`）：
+```jsonc
+{ "protocolVersions": ["1.0"], "connectorVersion": "2.0.0",
+  "runtimes": [{ "runtime": "dsh", "runtimeVersion": "..." }] }
+```
+`RuntimeName = codex | claude | opencode | acp | dsh`（`protocol.py:15`）
+
+### 14.4 版本与序号：**处处带 revision**
+
+- `ProtocolRevisionClock`：单调微秒时钟，`next() = max(now_us, last+1)`（`protocol_revision.py:15-21`）
+- `ProtocolCapabilitySet.revision`、`ProtocolModelCatalog.revision`、`ProtocolPermissionCatalog.revision`、
+  `ProtocolNotice.revision` 都是它的实例
+- 上限 `PROTOCOL_MAX_REVISION = 2^53-1`（`protocol.py:12`）
+
+**这与我们阶段 2 的 `seq` 是同一个思想**，但它**逐层都带**（能力集/目录/通知各有各的 revision）。
+
+### 14.5 selectionId 的派生（可确定性复算）
+
+```python
+raw = f"1:{runtime}:{catalog_type}:{canonical_json(identity)}"   # ensure_ascii=False, sort_keys, 紧凑分隔符
+digest = base64url(sha256(raw)).rstrip("=")
+return f"sel_{catalog_type}_{digest[:24]}"
+```
+（`protocol.py:126-133`）
+—— 即"同一份 identity 在任何地方都算出同一个 id"。
+
+### 14.6 方法清单（完整，来自 `local_rpc.py:15-32`、`capabilities.py:14-22` 与全量扫描）
+
+**能力 ↔ 方法映射**（`capabilities.py:14-22`，可直接照抄）：
+
+| capabilityId | method |
+|---|---|
+| `modelCatalog` | `catalog.model` / `catalog.effort` |
+| `permissionCatalog` | `catalog.permission` |
+| `steerTurn` | `session.steer` |
+| `interruptTurn` | `session.interrupt` |
+| `commands` | `session.commands` |
+| `interactions` | `session.interaction.approval` |
+| `attachments` | `runtime.attachment` |
+| （`runtime.config`） | `runtime.config` / `runtime.configSchema` / `runtime.validateConfig` |
+
+**会话/回合**：`session.create`、`session.discover`、`session.state`、`session.sync`、
+`session.inventory.begin`、`session.inventory.complete`、`session.meta.upsert`、
+`session.source.updated`、`session.state.updated`、`session.selections.update`、
+`session.capabilities`、`session.notices`、`session.command.execute`、`session.turnEnded`、
+`turn.start`、`turn.end`
+
+**运行时**：`runtime.discover`、`runtime.start`、`runtime.stop`、`runtime.commands`、
+`runtime.capabilities`、`runtime.capability.updated`、`runtime.catalog.updated`、
+`runtime.modelCatalog`、`runtime.permissionCatalog`、`runtime.error`
+
+**通知**：`connector.heartbeat`、`connector.preferencesUpdated`、
+`protocol.capabilitiesUpdated`、`runtime.statusChanged`、
+`timeline.sync`、`timeline.itemUpsert`
+
+**本地能力（fs/shell/terminal）**：`fs.prepareDownload`、`fs.uploadPreparedDownload`、
+`fs.writeFile`、`fs.readDir`、`fs.readText`、`shell.exec`、`shell.task.start`、
+`shell.task.cancel`、`terminal.create/write/resize/close/rename/setPersistent/list/release/snapshot/relay.connect`
+
+### 14.7 通知/交互模型 = 我们的审批代理，但**更完整**
+
+`ProtocolNotice`（`protocol.py:99-121`）就是我们 `approval-broker` 的超集：
+
+| 我们（阶段 0） | 它 |
+|---|---|
+| `status: open\|resolved\|closed\|expired` | `open\|responding\|response_accepted\|resolving\|resolved\|expired\|cancelled\|failed` |
+| `action: allow\|deny` | `actions: [{actionId, label, style: primary\|secondary\|danger\|default, input:{required, schema, uiSchema}}]` |
+| 靠 `sessionId` 关联 | `blocking: {scope: session\|tool_call\|runtime, targetId}` + `responseRequired` |
+| — | `source: {runtime, component, approvalId, timelineItemId, operationId}` |
+| — | `expiresAt`、`severity: info\|success\|warning\|error`、`interactionType`、`context` |
+
+**所以复刻它 = 把我们的审批代理升级成它的 notice/interaction 模型**，而不是另建一套。
+
+### 14.8 复刻的施工顺序（按依赖，不按大小）
+
+| 步 | 内容 | 能否今天验证 |
+|---|---|---|
+| **R1** | WS 传输 + 三条信封 + 握手 + revision 时钟 + selectionId 派生 | ✅ 单测 + 变异 |
+| **R2** | 鉴权链（`/connector/auth` 换 token、60 秒提前刷新、401 不重试） | ✅ 对着 mock |
+| **R3** | capability set 发布 + `catalog.model/permission` + `session.selections.update` | ✅ 对着 mock |
+| **R4** | notice/interaction（用它的状态机替换我们的 broker 状态机） | ✅ 单测 + 变异 |
+| **R5** | `session.*` / `turn.*` 映射到已有能力面（会话/回合/中断/历史） | ✅ 对着 mock |
+| **R6** | 对着**真 AA 服务端**跑通 | ❌ **需要一个服务端** |
+
+**R1–R5 全部可以今天做完并验证**（我写一个**按同一份 spec 的 mock AA 服务端**，
+只实现契约、不实现业务）。R6 卡在下面这一件事上。
+
+### 14.9 唯一的硬阻塞：**服务端**
+
+| 选项 | 现状 |
+|---|---|
+| 它的云 `https://web.agents-anywhere.com` | 需要 **AA 账号**（OAuth）。我没有账号，也不该替你注册 |
+| 自建 AA 服务端 | 插件包里**只有 connector，没有服务端代码**（`lib/bundled-connector/` 是连接器）。我拿不到服务端软件 |
+| 因此 R6 | **无法在不提供上述任一项的情况下完成** |
+
+**另外一件我核实不了的事**：把 Codem 接到它的服务器上是否被许可 ——
+插件包里没有 LICENSE/条款材料可据以判断。这不是技术问题，需要你确认。
+
+### 14.10 与我方现状的映射（复刻不是从零）
+
+| 它的概念 | 我们已有的对应物 | 复用程度 |
+|---|---|---|
+| `session.inventory.begin/complete`、`session.meta.upsert` | `flattenSessions()` + `PhoneSessionView` | 换名字与结构 |
+| `session.state` / `session.state.updated` | `GET /api/sessions/<id>/run` | 换名字与结构 |
+| `timeline.itemUpsert` / `timeline.sync` | `mapMessages()` + 阶段 2 的 `toolCalls/reasoning` | 换名字与结构 |
+| `session.interaction.approval` | `approval-broker.ts` | **升级状态机** |
+| `session.interrupt` | `cancelSessionExecution` | 直接映射 |
+| `session.steer` | （我们没有） | 新做 |
+| `catalog.model` / `session.selections.update` | 阶段 4 的 `catalog` / `selections` | 换名字与结构 |
+| `catalog.permission` | 阶段 4 的权限档（**但我们只能收紧**） | **冲突，见下** |
+| `revision` | 阶段 2 的 `seq` | 逐层扩展 |
+
+### 14.11 一处**必须由你决定**的策略冲突
+
+它允许远端改权限档（`session.selections.update` 带 permission）。
+我们在阶段 4 定的规则是**只能收紧**，理由是"远端不能自己取消对自己的监督"。
+
+复刻它就意味着**放弃那条规则** —— 也就是：拿到手机的人可以把权限档改成
+"自动放行一切"，从此不再需要任何审批。
+
+这**不是技术细节**，是安全姿态：
+
+- 选**完全复刻** ⇒ 我把那条限制去掉，与它一致；
+- 选**保留限制** ⇒ 这一条与它不同，我会在文档里标成"有意的偏离"。
+
+我按你的话默认**完全复刻**（去掉限制），除非你另有交代 ——
+但它会**削掉阶段 0 审批的实际意义**，所以我把这句话明确写在这里，不埋在代码里。
