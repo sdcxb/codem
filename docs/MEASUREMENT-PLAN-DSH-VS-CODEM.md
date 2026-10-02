@@ -250,6 +250,48 @@ Flags: control-saturated, blocked-pairs, insufficient-repetition, headline-withh
 
 ---
 
+## §5d 打通 treatment 臂的**具体配方**（已把卡点定位到可直接执行的程度）
+
+用户口径：**模型调用全都配好了，deepseek-flash 两边都能直接用**。所以卡点从来不是密钥，而是
+**没有任何程序化入口能让 Codem 的引擎跑一个任务**。下面是查证到的事实与可执行步骤。
+
+### 已查证的事实（都不是推测）
+
+| 事实 | 证据 |
+|---|---|
+| 引擎在 WebView，Rust 侧没有能跑一轮 agent 的命令 | `src-tauri/src/*.rs` 里 77 个命令，与 agent/turn 相关的只有 `run` / `storage_invoke` / `truncate_utf8` |
+| 应用**没有**把 store / 调试钩子挂到 window | 全仓只有 `(window as any).__TAURI__`，没有 `window.__codem*` |
+| 工作目录来自 `useProjectStore().currentProject?.path`，并 `setGlobalCwd(...)` | `App.tsx:418,436` |
+| **「上次打开的项目」是持久化的** ⇒ 重启后会自动恢复该项目 | `App.tsx:979,993` 的 `writeLastProjectId(...)`；`:810` 的注释说明启动时会恢复 |
+| 密钥是密封的（外部拿不到） | DB 里 `"id":"deepseek","baseUrl":"https://api.deepseek.com/v1","apiKeySealed":"dsh1:0100…"` |
+| **Node 24 的 `node:sqlite` 可用** ⇒ 外部能读写应用数据库 | 实测 `require('node:sqlite').DatabaseSync` 可用 |
+
+### 配方 A：不改产品，用「数据库 + CDP」驱动（最快能拿到数字）
+
+1. 给任务工作区在 `projects` 表建一行（path = 临时工作区），并把 `lastProjectId` 指到它 —— 用 `node:sqlite` 写。
+2. **重启应用**（启动时会恢复该项目 ⇒ cwd 就是任务工作区）。启动前设
+   `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`。
+3. 用 CDP 把 prompt 写进聊天输入框（用 `HTMLTextAreaElement.prototype.value` 的 native setter +
+   `dispatchEvent(new Event('input',{bubbles:true}))`，与 `.preview-shot/_verify-219.mjs` 同一手法），再点发送。
+4. 轮询"流式结束"（找"停止"按钮消失 / 助手消息落库），再用 `node:sqlite` 读最新一条 usage 记录
+   （字段形如 `model/provider/inputTokens/outputTokens/cacheReadTokens/cost`，D6 修好之后每轮恰好一条），
+   写成 `<ws>/.arm-usage.json`，交给 `run-arm.mjs` 当 `--agent-cmd`。
+
+**风险**：第 3 步依赖 DOM 结构（**聊天输入框没有稳定 `data-testid`**，只有 `messages-loading/unavailable`），
+所以这条路脆；UI 一改就断。
+
+### 配方 B（推荐，且是产品能力升级）：加一个无头入口
+
+让引擎能被脚本/CI 调用：「收一个 prompt + 一个 cwd，跑完，输出四桶用量」。它同时解决三件事：
+**能测**、**引擎可脱离桌面被独立测试**、**平台可被脚本化调用**（顶级 agent 平台该有的能力）。
+落点是**接线而不是重造**：现有测试已经在 Node 里驱动真实 `AgenticLoop`
+（`setStoragePort(createFakeStoragePort())` + 假 provider，见 `src/test/` 多处），
+缺的只是把 `file-api` 换成 Node 适配器（或者做成应用内的一条 Tauri 命令，让它用 Rust 侧已解封的凭据）。
+
+**建议先做配方 B**：配方 A 能最快出数，但脆、且对产品没有沉淀；B 一次投入长期可用。
+
+---
+
 ## §6 为什么可以相信这把尺子（已做的自证，可复跑）
 
 ```powershell
