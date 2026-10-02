@@ -96,8 +96,18 @@ export interface TurnTokenUsage {
   isActual: boolean;
   /** 本轮工具定义开销（估算） */
   toolDefTokens: number;
-  /** 缓存命中（prefix cache hit）估算 */
-  cacheHitTokens: number;
+  /**
+   * 缓存命中（prefix cache hit）token —— **只承载 provider 实际上报的值**。
+   *
+   * 为什么是可选：对标 DSH `token-meter/turn-usage` 的口径，
+   * 「provider 没上报」与「provider 上报了 0」是两件不同的事实。
+   * 旧实现把前者猜成 `floor(promptTokens * 0.3)`（同一 header 指纹时）
+   * 或 `0`（否则）—— 那是**编造的数字**，会让命中率与成本看起来比实际好，
+   * 而且永远无法从数据里看出"这个 provider 根本不报缓存"。
+   * 现在 provider 没报就是 `undefined`，消费方自行决定"未知"怎么显示
+   * （例如 `StatsLine` 的 `cacheReported` 判据）。
+   */
+  cacheHitTokens?: number;
 }
 
 /**
@@ -116,9 +126,6 @@ export class TokenTracker {
   private history: TurnTokenUsage[] = [];
   private maxHistory = 20;
 
-  /** 上次请求的 header 指纹 — 用于缓存命中检测 */
-  private lastHeaderFingerprint: string | null = null;
-
   /** 模型上下文窗口大小 */
   private contextWindow: number;
 
@@ -131,22 +138,28 @@ export class TokenTracker {
    *
    * @param usage LLM 返回的实际 usage
    * @param toolDefTokens 工具定义开销估算
-   * @param headerFingerprint 请求 header 指纹（用于缓存命中检测）
+   * @param headerFingerprint 请求 header 指纹（历史上用于缓存命中的**猜测**，现已不再猜）
    */
   recordActualUsage(
     usage: TokenUsage,
     toolDefTokens: number,
-    headerFingerprint: string,
+    _headerFingerprint: string,
   ): TurnTokenUsage {
-    // 缓存命中检测：优先用 provider 上报的真实 cacheHitTokens（DeepSeek
-    // prompt_cache_hit_tokens）；未上报时回退指纹估算（系统提示+工具定义近似 30%）
-    let cacheHitTokens = usage.cacheHitTokens;
-    if (cacheHitTokens === undefined && this.lastHeaderFingerprint === headerFingerprint) {
-      cacheHitTokens = Math.floor(usage.promptTokens * 0.3);
-    } else if (cacheHitTokens === undefined) {
-      cacheHitTokens = 0;
-    }
-    this.lastHeaderFingerprint = headerFingerprint;
+    /**
+     * 缓存命中：**只用 provider 上报的真实值**（DeepSeek 的
+     * `prompt_cache_hit_tokens` / OpenAI 的 `cache_read_input_tokens`，
+     * 经 `usage-normalize.ts` 归一化）。
+     *
+     * 这里原来有一段"回退指纹估算"：`cacheHitTokens === undefined &&
+     * lastHeaderFingerprint === headerFingerprint` 时把命中量**猜成
+     * `promptTokens * 0.3`**，否则填 `0`。那是一个凭空的数字 ——
+     * 既让"未上报"与"上报 0"再无法区分（`ollama-provider` 这类完全不报
+     * 缓存字段的 provider 会被显示成有 30% 命中），也让按缓存价计的成本
+     * 系统性偏低。DSH 的规则相反：缺报就是缺报，绝不猜
+     * （`.deepseek-harness-ref/packages/llm/token-meter/src/turn-usage.ts`
+     * 只在每一次尝试都报了该 bucket 时才给出合计）。
+     */
+    const cacheHitTokens = usage.cacheHitTokens;
 
     const turn: TurnTokenUsage = {
       promptTokens: usage.promptTokens,
@@ -248,7 +261,6 @@ export class TokenTracker {
   reset(): void {
     this.cumulative = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     this.history = [];
-    this.lastHeaderFingerprint = null;
   }
 
   /** 设置上下文窗口大小 */

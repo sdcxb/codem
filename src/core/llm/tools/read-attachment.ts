@@ -253,9 +253,19 @@ export function createReadAttachmentTool(): ToolDef {
             const cwd = await getDefaultCwd();
             diskPath = `${cwd}/${target.sandboxPath}`.replace(/\\/g, "/");
           } catch (err: any) {
+            /**
+             * 第 D10b 波：**读不到 ≠ 你没有数据**（本仓第 47 轮补的同一条原则，
+             * 见 `read-failure-vs-empty.test.ts`）。这里是一个操作**抛错**了 ——
+             * 工作区路径解析失败，附件内容根本没读到。
+             *
+             * `read_attachment` 在 `tool-result-status.ts` 的 `CONTENT_TOOLS` 里，
+             * 文本启发式对它**按设计关闭**，所以只有显式 `isError` 能表达失败；
+             * 没有它时这条路径**无条件**被判成 `completed`。
+             */
             return {
               title: `read_attachment: ${target.name}`,
               output: `Failed to resolve workspace path for "${target.sandboxPath}": ${err.message}`,
+              isError: true,
             };
           }
         } else if (target.path) {
@@ -277,9 +287,12 @@ export function createReadAttachmentTool(): ToolDef {
               `约从字符 ${offset} 起，每行按 80 字符估算；此窗口**前后都可能有内容**，` +
               `需要更多请调整 offset/limit，或直接用 read_file 读原文件)`;
           } catch (err: any) {
+            // 第 D10b 波：磁盘读**抛错**（文件不存在 / 权限 / 引擎不可用）——
+            // 附件内容一个字都没拿到，必须显式声明失败（理由同上一条）。
             return {
               title: `read_attachment: ${target.name}`,
               output: `Failed to read file "${target.sandboxPath || target.path}": ${err.message}`,
+              isError: true,
             };
           }
         }

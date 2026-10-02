@@ -54,7 +54,14 @@ export function createCordisDefineTool(): ToolDef {
         }
         const result = await runner.define(args.name as string, args.code as string);
         if (!result.success) {
-          return { title: "Result", output: `Failed to define plugin: ${result.error}` };
+          /**
+           * 第 D10b 波（假成功 A 类）：插件**没有**被定义，但这条 output 以
+           * `Failed to define plugin:` 开头 —— 不以 `Error:` 开头、也没有 `isError`，
+           * 于是 `classifyToolResult` 按首行前缀推断得到 `completed`：
+           * 上层（界面、`session/ui-handoff.ts` 的产物判定、委派汇报）看到的是"定义成功了"。
+           * 修法与 D8/D9/D10 一致：失败与否由**显式声明**表达，不靠文本前缀。
+           */
+          return { title: "Result", output: `Failed to define plugin: ${result.error}`, isError: true };
         }
         return { title: "Result", output: `Plugin "${args.name}" defined successfully.` };
       } catch (err: any) {
@@ -149,7 +156,8 @@ export function createCordisRunTool(): ToolDef {
         }
         const result = await runner.run(args.name as string, args.args);
         if (!result.success) {
-          return { title: "Result", output: `Failed to run plugin: ${result.error}` };
+          // 第 D10b 波：插件没跑成功 ≠ 成功。显式声明失败（同 cordis_define 的说明）。
+          return { title: "Result", output: `Failed to run plugin: ${result.error}`, isError: true };
         }
         return { title: "Result", output: `Plugin "${args.name}" ran successfully. Result: ${JSON.stringify(result.result, null, 2)}` };
       } catch (err: any) {
@@ -191,7 +199,8 @@ export function createCordisStopTool(): ToolDef {
         // Stop is similar to undefine but calls dispose first
         const result = runner.retract(args.name as string);
         if (!result.success) {
-          return { title: "Result", output: `Failed to stop plugin: ${result.error}` };
+          // 第 D10b 波：**没有停下来**却报成功 —— dispose 没跑、插件仍在运行。
+          return { title: "Result", output: `Failed to stop plugin: ${result.error}`, isError: true };
         }
         return { title: "Result", output: `Plugin "${args.name}" stopped successfully.` };
       } catch (err: any) {
@@ -232,7 +241,11 @@ export function createCordisUndefineTool(): ToolDef {
         }
         const result = runner.retract(args.name as string);
         if (!result.success) {
-          return { title: "Result", output: `Failed to undefine plugin: ${result.error}` };
+          /**
+           * 第 D10b 波：`cordis_undefine` 是 destructive 契约（`contract.destructive: true`），
+           * 「没删掉却报成功」在这里最贵 —— 上层会把"插件已移除"写进后续推理。
+           */
+          return { title: "Result", output: `Failed to undefine plugin: ${result.error}`, isError: true };
         }
         return { title: "Result", output: `Plugin "${args.name}" undefined successfully.` };
       } catch (err: any) {

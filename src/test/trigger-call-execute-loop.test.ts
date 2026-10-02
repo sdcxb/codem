@@ -897,8 +897,24 @@ describe("功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-050", () =>
       );
       // 1. agentic-loop 失败路径必须输出 text_delta（用户能看到错误原因）
       expect(loopSrc).toMatch(/consecutiveErrors\+\+[\s\S]*?yield \{\s*type: "text_delta"/);
-      // 2. App.tsx 的 end 处理必须对 too_many_errors 显示错误消息（不只 overflow）
-      expect(appSrc).toMatch(/reason === "too_many_errors"[\s\S]*?safeAddMessage/);
+      /**
+       * 2. App.tsx 的 end 处理必须对失败收场显示错误消息（不只 overflow）。
+       *
+       * 第 70 波起这条判据搬到了纯函数 `describeTurnOutcome`（App.tsx 调它）——
+       * 原来的 `reason === "too_many_errors"[\s\S]*?safeAddMessage` 只钉住了"某个字符串
+       * 出现在某个函数之前"，而那正是让 `type === "stop" && reason === "error"`
+       * 这条**恒假判据**活下来的原因。行为证据在
+       * `app-turn-outcome-rendering.test.ts`（TURN-ERR / TURN-TOOMANY）。
+       */
+      expect(appSrc, "App.tsx 的 end 呈现必须走统一判据").toMatch(/describeTurnOutcome\(/);
+      const outcomeSrc = require("fs").readFileSync(
+        __dirname + "/../core/llm/turn-outcome.ts",
+        "utf-8"
+      );
+      expect(outcomeSrc, "too_many_errors 必须落一条用户可见的错误正文").toMatch(
+        /reason === "too_many_errors"[\s\S]*?notice/
+      );
+      expect(outcomeSrc, "{type:'error'} 形状必须按失败呈现").toMatch(/case "error"[\s\S]*?notice/);
       // 3. App.tsx 的 tool_error 对空 toolCall（executeIteration 级错误）也要上报
       expect(appSrc).toMatch(/case "tool_error":[\s\S]*?tc\.id[\s\S]*?safeAddMessage/);
     });

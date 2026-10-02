@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 「回复被输出上限截断」的续写契约（第 68 波）。
  *
  * 用户报告：说"继续之前没完成的任务"之后，一轮就结束了 —— 控制台里只有
@@ -71,9 +71,14 @@ describe("输出截断 ⇒ 自动续写（第 68 波）", () => {
     expect(head).toContain("this.truncatedContinuations = 0");
   });
 
-  it("TRUNC-5: 内容型工具在截断回复里跑过 → 仍要提示核对完整性（第 67 波契约不回归）", () => {
+  it("TRUNC-5: 内容型工具在截断回复里**不许执行**（第 67 波的事后提示已换成第 70 波 fail closed）", () => {
     const src = loop();
+    // 判据换了：从"跑过之后提示核对完整性"改成"执行之前一律拒绝"。
+    // 行为证据在 `pi-p1-truncated-toolcall-not-executed.test.ts`（断言 handler 没被调用、磁盘没变）。
+    expect(src).toMatch(/finishReason === "length"/);
+    expect(src, "整批拒绝要走同一条结构化失败路径").toMatch(/buildTruncatedToolCallError/);
+    expect(src, "拒绝也要落一条可统计的事件").toMatch(/recordLoopStop\(sessionId, "output_truncated"/);
+    // 纵深防御：内容型工具在执行**之前**被拦下
     expect(src).toMatch(/finishReason === "length" && isContentBearingTool\(name\)/);
-    expect(src).toMatch(/核对它是否完整|核实它是否完整/);
   });
 });

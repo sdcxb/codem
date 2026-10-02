@@ -22,8 +22,80 @@ import { appendFile, readTextWindow, listDirectory, writeFile, deleteFile, renam
 import { reportPersistFailure } from "./persist-failure";
 import type { Message } from "../../store";
 
-/** 单行格式版本：将来改字段时按版本兼容读取 */
+/**
+ * 单行格式版本：将来改字段时按版本兼容读取。
+ *
+ * ## 读写必须**共用这一个定义**（第 103+ 轮：版本写了却从来没人读）
+ *
+ * 写侧（`appendSessionMessage` / `appendMessageTombstone` / `appendSessionTombstone`）一直写
+ * `v: LINE_VERSION`，而**读侧一个字节都不看它** —— 于是"版本"这件事只写在纸上：
+ * 一份**更新版本**写的日志（字段改名 / 语义变化）会被本版本当成普通行读进来，
+ * 缺字段一律落到默认值（例如下面 serializer 里那句 `content: typeof … === "string" ? … : ""`
+ * → **正文变空串**），再叠加"日志是权威、索引可重建"（读路径日志覆盖索引、
+ * 重建方向按日志落库），一次静默降级就被**固化**成用户数据。
+ *
+ * 所以现在读侧显式校验版本（见 `assertReadableLogVersion`）：
+ * - `v > LINE_VERSION` ⇒ **大声失败**（`E_SESSION_LOG_VERSION`），绝不吐一条空正文的消息；
+ * - `v` 缺失 / 非数字 ⇒ 视为 **v0（最老的格式）**，照旧读 —— **不报错**，
+ *   因为本机真的有这种日志（历史上写侧固定写 1，而更早的写入器根本没有 `v`；
+ *   测试夹具里也大量存在无 `v` 的行）。这一轮**不做迁移链**。
+ */
 const LINE_VERSION = 1;
+
+/**
+ * 「日志行版本高于本进程能读的版本」的**稳定机器可读错误码**。
+ *
+ * 为什么必须是稳定代码而不是自然语言：调用方（`hydrateSessionLog` → `sessionLogReadState`
+ * 的三态、维护汇总、诊断）要能**按代码**分辨"这份日志读不了是因为格式太新"
+ * 还是"IPC / 权限 / 磁盘坏了" —— 前者是升级应用就能解决的事，后者是环境故障。
+ * 文本判据会随任何一次文案微调静默失效（本仓库在 `isFileMissingError` 那里已经写过这条教训）。
+ */
+export const SESSION_LOG_VERSION_ERROR_CODE = "E_SESSION_LOG_VERSION";
+
+/** 一份日志（或某一行）的格式版本高于本进程支持的版本 */
+export class SessionLogVersionError extends Error {
+  readonly code = SESSION_LOG_VERSION_ERROR_CODE;
+  constructor(
+    /** 日志行里实际写着的版本 */
+    readonly foundVersion: number,
+    /** 本进程能读的最高版本 */
+    readonly supportedVersion: number = LINE_VERSION,
+  ) {
+    super(
+      `${SESSION_LOG_VERSION_ERROR_CODE}: 会话日志行的格式版本 ${foundVersion} 高于本版本支持的 ` +
+        `${supportedVersion}（这份日志由更新的版本写入）。` +
+        `按纪律**不**把它读成「没有内容」：那样会把一次静默降级固化进权威副本。`,
+    );
+    this.name = "SessionLogVersionError";
+  }
+}
+
+/** 这个错误是不是"日志格式版本太新"（调用方/诊断按它分辨故障类型） */
+export function isSessionLogVersionError(e: unknown): e is SessionLogVersionError {
+  return (
+    e instanceof SessionLogVersionError ||
+    (typeof e === "object" &&
+      e !== null &&
+      (e as { code?: unknown }).code === SESSION_LOG_VERSION_ERROR_CODE)
+  );
+}
+
+/**
+ * 一行记录的格式版本。**缺失或非数字 = v0（最老的格式）** —— 见 `LINE_VERSION` 上方的政策说明。
+ */
+function logRecordVersion(rec: { v?: unknown }): number {
+  return typeof rec.v === "number" && Number.isFinite(rec.v) ? rec.v : 0;
+}
+
+/**
+ * 版本校验：只有"比本进程新"才抛。
+ *
+ * 旧的（v0 / v1）照旧读：**不做迁移**，本轮只负责"不认识的新格式必须大声失败"。
+ */
+function assertReadableLogVersion(rec: { v?: unknown }): void {
+  const found = logRecordVersion(rec);
+  if (found > LINE_VERSION) throw new SessionLogVersionError(found);
+}
 
 /**
  * 读日志时的单次窗口字节数（8 MB，与 Rust 侧上限一致）。
@@ -57,6 +129,32 @@ export interface JsonlMessageRecord {
    * 在这一个字段上不成立。
    */
   retrievedSources?: unknown;
+  /**
+   * ## 附件（第 103+ 轮：权威副本里原本**没有**它们）
+   *
+   * `Message.attachments` 是真实字段，而它过去**只存在于索引的 `attachments` 表**里
+   * （`message.ts::writeAttachmentsViaPort` / `attachmentsFromMirror`），JSONL 一行都没有。
+   * 于是"索引可从日志重建"这条不变量在附件上直接不成立 —— 而读路径是**日志覆盖索引**、
+   * 写路径（`updateMessage`）又是"读一条现存快照 + 本次改动"再追加，镜像里没有附件时
+   * 新写的那一行同样没有它们：**任何一次更新都可能把附件从权威副本里抹掉**。
+   *
+   * ## 形态：元数据 + 预览，**正文不进日志**（写侧过滤，见 `attachmentsForLog`）
+   *
+   * 正文可能几十 MB（惰性外置就是为它做的），而日志是 append-only、每次流式更新追加一整行：
+   * 把正文写进去会让"会话日志能长到 600 MB"这个已知病症直接翻倍。正文的权威位置仍然是
+   * `attachments.content`（内联或 `file:<路径>` 外置标记）+ 外置文件本身，
+   * 读侧按 `id` 懒加载（`getAttachmentContent`）—— 与 `attachmentsFromMirror` 同一套约定。
+   */
+  attachments?: unknown;
+  /**
+   * ## 结构化元数据（`Message.metadata`）
+   *
+   * `session-log-bridge.ts::rebuildIndexFromSessionLogs` 早就在**读** `rec.metadata` 往索引里还原
+   * （那条注释还写着"必须还原"），而写侧从来没写过它 —— 又一处"注释里的承诺做不到"
+   * （与 `hidden` 在第 47 轮被修掉的形态完全一样）。`updateMessage` 走"现存快照 + 改动"时，
+   * 索引给不出这个字段（`MessageRow` / 镜像行都没有这一列），所以**只有日志能承载它**。
+   */
+  metadata?: unknown;
   /**
    * ## 压缩状态（第 47 轮补，数据面审计 P1-1）
    *
@@ -165,6 +263,39 @@ export async function flushSessionLogWrites(): Promise<void> {
 }
 
 /**
+ * 附件进权威日志的形态：**元数据 + 预览，正文（`content`）不进**。
+ *
+ * ## 为什么正文不进（这是刻意的，不是漏了）
+ *
+ * - 日志是 **append-only**：同一条消息每被更新一次就多一整行（流式回复每个 flush 一次）。
+ *   把附件正文（外置阈值之上可达几十 MB）复制进每一行，会让"单个会话日志 600 MB"
+ *   这个**已经真实发生过**的病症再翻一倍，而日志体积的唯一控制手段（压缩）只删"被取代的旧行"。
+ * - 正文的权威位置本来就不是这里：`attachments.content` 存内联正文或 `file:<路径>` 外置标记，
+ *   正文本体在 `<appData>/attachments/…`（见 `attachment-files.ts`）。
+ *   读侧按**附件 id** 懒加载（`getAttachmentContent`）—— 与 `attachmentsFromMirror`
+ *   "只投影元数据列"是同一条约定，所以从日志读回来的消息**照样**能取到正文。
+ *
+ * 字段用**通用拷贝**（而不是列白名单）是刻意的：`MessageAttachment` 会长出新字段
+ * （`sandboxPath` / `mimeType` / `preview`… 每一个都是后加的），列白名单就是"新字段静默丢失"
+ * 的温床 —— 而这里要修的正是"字段在权威副本里丢失"。
+ */
+function attachmentsForLog(message: Message): Array<Record<string, unknown>> | undefined {
+  const atts = message.attachments;
+  if (!atts || atts.length === 0) return undefined;
+  const out: Array<Record<string, unknown>> = [];
+  for (const att of atts) {
+    const row: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(att as unknown as Record<string, unknown>)) {
+      if (k === "content") continue;
+      if (v === undefined) continue;
+      row[k] = v;
+    }
+    out.push(row);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
  * 追加一条消息（**追加即持久**，不做任何整库导出）。
  *
  * 失败只记日志、不抛：调用方（消息写入路径）已经有 SQLite 索引兜底，
@@ -188,6 +319,9 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
        */
       const mine = pendingAppendsBySession.get(sessionId);
       if (mine && mine.size > 0) await Promise.allSettled([...mine]);
+
+      /** 附件进日志的形态（正文过滤掉，见 `attachmentsForLog`）：**算一次**，别在字面量里调两遍 */
+      const logAttachments = attachmentsForLog(message);
 
       const record: JsonlMessageRecord = {
         v: LINE_VERSION,
@@ -228,6 +362,20 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
          */
         ...(Number((message as any).hidden ?? 0) ? { hidden: Number((message as any).hidden) } : {}),
         ...(Number((message as any).trimmed ?? 0) ? { trimmed: Number((message as any).trimmed) } : {}),
+        /**
+         * ## 附件与 metadata 也必须进权威日志（第 103+ 轮）
+         *
+         * 理由与 `hidden` / `retrievedSources` 同一句话：**日志是权威、索引可重建** ——
+         * 一个字段只要不在日志里，"重建之后它还在不在"就取决于索引有没有被裁/重建过，
+         * 而那正是这条架构要防的事。
+         *
+         * 另外这两条还有一条**写路径**上的必要性：`updateMessage` 是"取现存快照 + 本次改动"
+         * 再追加一行（后写者胜）。快照里没有的字段，新写的那一行就没有 ——
+         * 于是"更新一次正文"这件事会顺带把这些字段从权威副本里抹掉。
+         * 写侧与读侧（`logMirrorMessage`）必须**共用同一份字段定义**，这个缺陷才不会从另一头回来。
+         */
+        ...((message as any).metadata ? { metadata: (message as any).metadata } : {}),
+        ...(logAttachments ? { attachments: logAttachments } : {}),
       };
       // Rust 侧 append_file 会补一个换行 —— 正好是 JSONL 需要的行分隔
       await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
@@ -300,9 +448,20 @@ export async function forEachLogLine(
 }
 
 /**
- * 读取会话日志：按 id 后写者胜，损坏行跳过并计数。
+ * 读取会话日志：按 id 后写者胜，**坏行**跳过并计数。
  *
- * @returns messages 与 skippedLines（损坏行数，用于诊断"日志是否被截断过"）
+ * ## 什么算"坏行"，什么必须**上抛**（第 103+ 轮把这条界限写清楚）
+ *
+ * | 情形 | 处置 | 为什么 |
+ * | --- | --- | --- |
+ * | 空行 / `JSON.parse` 失败 / 没有 `string` id | `skippedLines++`，跳过该行 | 崩在写入中途最多丢最后一行，前面全部可读（本文件头的设计承诺） |
+ * | 行的 `v` **高于** `LINE_VERSION` | 抛 `SessionLogVersionError`（`E_SESSION_LOG_VERSION`） | 更新版本写的日志本版本读不懂：按"坏行跳过"会把它读成**没有内容**，再被"日志权威 + 读覆盖索引 + 重建按日志落库"**固化**成用户数据（静默降级） |
+ * | 文件不存在 | 返回空结果 | 新会话 / 老会话尚未回填，这是正常形态 |
+ * | 其它读失败（IPC / 权限 / 磁盘） | 照原样抛出 | 读不到 ≠ 没有数据（第 50 轮的纪律，见下面 catch 的长注释） |
+ *
+ * @returns messages 与 skippedLines（坏行数）。⚠️ `skippedLines` 目前**只有测试消费**
+ *          （`src/` 里没有任何生产调用点读它）—— 它还不是一条能被发现的信号，见报告。
+ * @throws {SessionLogVersionError} 日志行的格式版本高于本进程支持的版本
  */
 /**
  * 错误是否表示"文件不存在"（而不是"读失败"）。
@@ -361,20 +520,39 @@ export async function readSessionMessages(
     await forEachLogLine(path, (line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
+      /**
+       * ## 解析与"这道行能不能读"分开处理（第 103+ 轮）
+       *
+       * 这里原来是一个 try 把所有事包住：`JSON.parse` + 字段判据 + **版本**（版本当时根本没判）。
+       * 把版本校验放进那个 try 是**做不到"大声失败"**的 —— 它的 catch 会把任何错误
+       * 记成 `skippedLines++`（"坏行只计数"），于是"这份日志是更新版本写的"会退化成
+       * "这一行读不出来"，最终整份日志被当成**空会话**渲染出来。
+       *
+       * 所以：**只有"解析不了/形状不对"才计入坏行**；版本太新直接抛出
+       * （穿过 `forEachLogLine` → 下面那个 catch 判为"不是文件不存在" → 照原样上抛
+       *  → `hydrateSessionLog` 记 `failed`，界面说"读不到"并给重试，而不是欢迎页）。
+       */
+      let parsed: JsonlMessageRecord;
       try {
-        const parsed = JSON.parse(trimmed) as JsonlMessageRecord;
-        if (!parsed || typeof parsed.id !== "string") throw new Error("bad record");
-        if (parsed.deleted) {
-          // 墓碑：后写者胜的语义在"删除"上同样成立 —— 删除之后再写入就是重新出现
-          tombstones.add(parsed.id);
-          byId.delete(parsed.id);
-          return;
-        }
-        tombstones.delete(parsed.id);
-        byId.set(parsed.id, parsed);
+        parsed = JSON.parse(trimmed) as JsonlMessageRecord;
       } catch {
         result.skippedLines++;
+        return;
       }
+      if (!parsed || typeof parsed.id !== "string") {
+        result.skippedLines++;
+        return;
+      }
+      // 不认识的**更新**格式：大声失败（v 缺失 = v0 老格式，照旧读；政策见 LINE_VERSION 上方）
+      assertReadableLogVersion(parsed);
+      if (parsed.deleted) {
+        // 墓碑：后写者胜的语义在"删除"上同样成立 —— 删除之后再写入就是重新出现
+        tombstones.add(parsed.id);
+        byId.delete(parsed.id);
+        return;
+      }
+      tombstones.delete(parsed.id);
+      byId.set(parsed.id, parsed);
     });
   } catch (e) {
     /**

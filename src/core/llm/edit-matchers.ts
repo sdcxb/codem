@@ -37,6 +37,9 @@ export const REPLACEMENT_TOKEN_PATTERN = /\$(\$|&|`|')/g;
  * 字面量替换：把 `content` 里第一处 `search` 换成 `replacement`，
  * `replacement` 内的 `$` 记号**不做任何展开**。
  *
+ * ⚠️ 它**只换第一处**。出现多次时，改错地方与改对地方在返回文本上无法区分，
+ * 所以需要「不许有歧义」的调用方（`edit` 工具）必须先问 `findAmbiguousLiteral`。
+ *
  * @returns 替换后的内容；未命中时返回 `null`（调用方负责给模型错误信息）
  */
 export function replaceLiteral(
@@ -57,6 +60,58 @@ export function replaceLiteral(
   // 用 slice 拼装而不是 String.replace：既规避 $& / $$ / $` / $' 的模板语义，
   // 也让「只替换一次」这件事在代码里显式可见。
   return content.slice(0, idx) + replacement + content.slice(idx + search.length);
+}
+
+/**
+ * `search` 在 `content` 里出现的**全部**起始下标（非重叠，从左到右）。
+ *
+ * ## 为什么需要它（第 D8 波：`edit` 改错地方却报成功）
+ *
+ * `replaceLiteral` 只换第一处 —— 这正是它名字里的承诺。但当 `oldString` 在文件里
+ * 出现两次以上时，**「第一处」未必是模型想改的那一处**，而工具照样写盘并返回
+ * 「Successfully edited」。错误要等到 build/test 失败（或者用户看见别处被改坏）才暴露，
+ * 而模型已经收到成功信号、多半继续往下走。
+ *
+ * 本文件的 `suggestEditCandidates`（见下方 `:229` 的设计取舍）已经写明原则：
+ * 「候选值不唯一时明确说『有 N 处』，而不是挑一个」。**精确命中同样适用** ——
+ * 挑第一处和挑一个候选，是同一个错误的两种写法。
+ *
+ * 空串 / 非字符串 `search` 返回 `[]`：与 `replaceLiteral` 开头的守卫同一判据
+ * （模型漏字段时是 `undefined`，`content.indexOf(undefined)` 会去找字面量 "undefined"）。
+ * `search` 非空时每次至少前进 `search.length` 个字符，因此不可能死循环。
+ */
+export function findLiteralOccurrences(content: string, search: string): number[] {
+  if (!search || typeof search !== "string") return [];
+  const offsets: number[] = [];
+  for (let from = 0; ; ) {
+    const idx = content.indexOf(search, from);
+    if (idx < 0) break;
+    offsets.push(idx);
+    from = idx + search.length;
+  }
+  return offsets;
+}
+
+export interface AmbiguousLiteralMatch {
+  /** `search` 在文件里出现的次数（≥ 2） */
+  count: number;
+  /** 每处出现的 1-based 起始行号，顺序与 `findLiteralOccurrences` 一致 */
+  lines: number[];
+}
+
+/**
+ * `search` 在 `content` 里出现**多次**时给出「有几处、分别在哪几行」；否则返回 `null`
+ * （0 处 = 未命中，1 处 = 无歧义，两者都由调用方按原逻辑处理）。
+ *
+ * 调用方（`edit` 工具）据此**拒绝写盘**，而不是挑第一处改掉。
+ */
+export function findAmbiguousLiteral(
+  content: string,
+  search: string,
+): AmbiguousLiteralMatch | null {
+  const offsets = findLiteralOccurrences(content, search);
+  if (offsets.length <= 1) return null;
+  return { count: offsets.length, lines: offsets.map((o) => lineNumberOf(content, o)) };
 }
 
 /**

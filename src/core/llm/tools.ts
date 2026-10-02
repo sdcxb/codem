@@ -5,7 +5,7 @@ import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
 import type { Context } from "../cordis/src/index.ts";
 import type { PlanUpdateOp } from "./plan-utils";
-import { replaceLiteral, suggestEditCandidates } from "./edit-matchers";
+import { findAmbiguousLiteral, replaceLiteral, suggestEditCandidates } from "./edit-matchers";
 import { str } from "./input-args";
 import {
   NO_TIMEOUT,
@@ -1436,9 +1436,21 @@ export function createWriteFileTool(): ToolDef {
                 // The next write attempt will trigger confirmation again, so the user can review the LLM's modification
                 const instruction = confirmResult.instruction;
                 console.log(`[write-tool] User custom instruction: ${instruction}`);
+                /**
+                 * 第 D10 波：**没写盘就不能报成功**。
+                 *
+                 * 这条分支的语义是"本次 write 被用户改成一次性指示，文件内容一个字节都没动"，
+                 * 但输出以 `Write not executed.` 开头 —— 它既不以 `Error:` 开头，
+                 * 也没有 `isError`，而 `write` 不在 `tool-result-status.ts` 的
+                 * `CONTENT_TOOLS` 豁免名单里，于是分类器按首行前缀推断得到 `completed`。
+                 * 结果：界面上是绿的、`ui-handoff` 把这条路径当成"产出"、
+                 * 委派汇报说写完了 —— 与 `tool-result-status.ts` 文件头点名的
+                 * 「假成功」缺陷是同一类，只是那一波只覆盖了首行恰好以 `Error:` 开头的路径。
+                 */
                 return {
                   title: `write: ${path}`,
                   output: `Write not executed. User gave a ONE-TIME custom instruction for this specific write operation: "${instruction}".\n\n[IMPORTANT: This instruction applies ONLY to this write. Do not carry it over to future write requests. Each write is independent unless the user explicitly states otherwise.]\n\nCurrent file content (${existingContent.length} bytes):\n---\n${existingContent}\n---\n\nPlease follow the user's instruction to modify the content, then call write again with the complete modified content. The user will review your modification before it is written.`,
+                  isError: true,
                 };
               }
 
@@ -1566,6 +1578,32 @@ export function createEditFileTool(): ToolDef {  return {
 
       try {
         const content = await readFile(path);
+
+        /**
+         * 第 D8 波：**歧义即拒**（对标 DSH 的 `FS_AMBIGUOUS_EDIT`）。
+         *
+         * `replaceLiteral` 只换第一处，而 `oldString` 在文件里出现两次以上时，
+         * 「第一处」可能**不是**模型想改的那一处 —— 旧实现照样写盘、照样返回
+         * 「Successfully edited」，模型拿着成功信号继续往下走，用户要等到
+         * build/test 失败才发现改错了地方。
+         *
+         * 判据与 `edit-matchers.ts` 里 `suggestEditCandidates` 的设计取舍保持一致：
+         * 「候选值不唯一时明确说『有 N 处』，而不是挑一个」—— 精确命中同理。
+         *
+         * 放在 `replaceLiteral` **之前**：一旦发现歧义就绝不调用替换，也就不可能写盘。
+         * `oldString === newString` 时同样拒绝：没有歧义的意图才配得到一次（无变化的）
+         * 写盘，而「两处都长得一样」正说明意图没有唯一确定；拒绝的代价是零字节改动。
+         */
+        const ambiguous = findAmbiguousLiteral(content, oldString);
+        if (ambiguous) {
+          return {
+            title: `edit: ${path}`,
+            output:
+              `Error: oldString appears ${ambiguous.count} times (lines ${ambiguous.lines.join(", ")}) ` +
+              `— include more surrounding context to make it unique. Nothing was written.`,
+            isError: true,
+          };
+        }
 
         // 用 replaceLiteral 而非 content.replace(oldString, newString)：
         // 后者会把 newString 里的 $& / $$ / $` / $' 当替换记号展开，
@@ -1702,7 +1740,24 @@ export function createMultiEditTool(): ToolDef {
         const msg = errors.length > 0
           ? `Applied ${appliedCount}/${edits.length} edits to ${path}. Errors: ${errors.join("; ")}`
           : `Applied ${appliedCount} edits to ${path}`;
-        return { title: `multi_edit: ${path}`, output: lintResult ? `${msg}\n${lintResult}` : msg, metadata: { file_paths: [path] } };
+        /**
+         * 第 D9 波：**部分失败不是成功**。
+         *
+         * 此前这条结果既没有 `Error:` 前缀、也没有 `isError`，于是
+         * `classifyToolResult` 按首行判定得到 `completed`：一半的编辑根本没落盘，
+         * 而上层（`session/ui-handoff.ts` 的"产物"判定、委派汇报）把它当成写完了。
+         *
+         * 用显式 `isError` 而不是改文案：文案里 `Applied 2/3 edits … Errors: …`
+         * 本身是**有用的事实**（哪几条成功、哪几条失败），保持原样；
+         * 失败与否由声明表达。`appliedCount === 0` 的早退分支与全成功分支都不动
+         * （前者首行已经是 `Error:`，后者是真正的成功）。
+         */
+        return {
+          title: `multi_edit: ${path}`,
+          output: lintResult ? `${msg}\n${lintResult}` : msg,
+          metadata: { file_paths: [path] },
+          ...(errors.length > 0 ? { isError: true } : {}),
+        };
       } catch (error: any) {
         return { title: `multi_edit: ${path}`, output: `Error: ${error.message}` };
       }

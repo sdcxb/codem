@@ -27,7 +27,7 @@ import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
 import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
-import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guard";
+import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearingTool } from "./tool-args-guard";
 import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
@@ -107,6 +107,22 @@ export interface LoopState {
   lastFinishReason: string;
   /** 第 69 波：本轮正文输出了多少字符（0 = 只有思考、没有正文；用于区分两种截断） */
   lastIterationTextChars: number;
+  /**
+   * 本迭代 **LLM 调用最终失败**的原因（重试已耗尽 / 不可重试的 4xx），否则 `null`。
+   *
+   * ## 为什么必须有这个字段（假成功：LLM 失败被报成 completed）
+   *
+   * `executeIteration` 的 catch 一旦失败就 `consecutiveErrors++` 然后 `return` ——
+   * 于是**永远走不到** `this.state.toolCallsInIteration = currentToolCalls.length` 那一行。
+   * 主循环看到 `toolCallsInIteration === 0`，把它当成"模型这一轮没有调用工具 ⇒ 自然结束"，
+   * 返回一个 `type: "stop"` 且 **reason 为 completed** 的结果：一次硬失败（400/500、重试耗尽）
+   * 对调用方**和正常完成长得一模一样**（真机表现：用户发一条消息，没有任何回复，
+   * 界面却说"完成"；用量面板也记成成功）。
+   *
+   * 判据只在**最终失败**时置位（内层重试成功的尝试不置位 —— 那正是重试的意义），
+   * 并在每个迭代开头清空，绝不从第 N 轮泄漏到第 N+1 轮。
+   */
+  lastIterationError: string | null;
   /** Turn start timestamp — set at the beginning of each run() for duration tracking */
   turnStartTime?: number;
 }
@@ -258,6 +274,16 @@ const MAX_CONSECUTIVE_NO_PROGRESS = 30;
  * 所以给 3 次预算，用完就明确停下并告诉用户该怎么改（分块写入 / 调大上限）。
  */
 const MAX_TRUNCATED_CONTINUATIONS = 3;
+
+/**
+ * 时间上下文的刷新间隔（毫秒）—— 与 DSH `context/time-context` 的默认值一致。
+ *
+ * 为什么必须节流（第？波，前缀缓存/成本）：注入文本里带**秒级**时间戳，
+ * 不节流就等于"每次准备回合都产生一段新文本"。它现在虽然只出现在尾部消息里
+ * （不破坏稳定前缀），但没有必要每轮都重新告诉模型"现在几点" ——
+ * `buildTimeContext` 的 `refreshIntervalMs = 0` 是"不节流"，正是本条要改掉的默认。
+ */
+const TIME_CONTEXT_REFRESH_INTERVAL_MS = 600_000;
 
 
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
@@ -685,6 +711,7 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
       consecutiveNoProgress: 0,
       lastFinishReason: "stop",
       lastIterationTextChars: 0,
+      lastIterationError: null,
     };
   }
 
@@ -841,6 +868,14 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     systemPrompt: string,
   ): AsyncGenerator<LoopEvent, LoopResult, unknown> {
     this.abortController = new AbortController();
+    /*
+     * 新的回合 = 新的派发闸门：执行器的中止标志只在这里复位。
+     *
+     * 为什么不在 `executor.execute()` 入口复位：用户点 ■ 最常见于**模型正在流式输出**
+     * 的时候，那一轮的工具执行还没开始 —— 入口复位会把刚刚发生的中止抹掉，
+     * 排队中的工具照旧开跑（本条要修的形态）。
+     */
+    this.executor.clearAbort();
     this.state = this.createInitialState();
     this.currentSessionId = sessionId;
 
@@ -1114,6 +1149,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         // 触发一次毫无意义的"续写" —— 事故现场就是这样把超限的上下文又撑大了 257/514 tokens。
         this.state.lastFinishReason = "stop";
         this.state.lastIterationTextChars = 0;
+        /* 本轮的 LLM 失败标志必须每轮清空：否则第 N 轮的失败会泄漏到第 N+1 轮（误报 error） */
+        this.state.lastIterationError = null;
 
         // P0-7.1 / 6.5建议2: 每轮迭代检查关键服务可用性
         if (!this.checkCriticalServices()) {
@@ -1151,9 +1188,11 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         // 于是 `create_goal` 的 guidance 承诺「enable automatic continuation」是空话：
         // 目标建了、`update_goal` 也改了状态，但循环里没有任何一处会把它回灌给模型。
         //
-        // 现在真正注入（与下面的 time-context 走同一条路径：追加到 system 消息尾部）。
-        // 在这里只**计算**，注入点放在 time-context 旁边 —— 那里已经确认
-        // `apiMessages[0]` 是 system 消息并且已经构建完毕。
+        // 现在真正注入：在这里只**计算**，注入点是本迭代末尾那条**尾部 user 消息**
+        // （与 time-context / surface notice 同一条路径）——
+        // 尾部的构建在 time-context 旁边，那里已经确认 `apiMessages` 构建完毕。
+        // （`apiMessages[0]` 在真实会话里**不是** system 消息，所以绝不能用
+        //  `apiMessages[0].content += …` 这条路径；见 `extraSystemPrompt` 的说明。）
         if (this.state.iteration > 1) {
           try {
             const { listGoals } = await import("../goal/goal");
@@ -1277,6 +1316,24 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         return true;
       });
 
+      /**
+       * 本轮要追加给模型的内容，两种落点 —— 判据是「内容会不会随时间变化」：
+       *
+       * - `extraSystemPrompt`：**稳定**内容（deferred 工具提示 / 技能提示）。进
+       *   `executeIteration` 里真正构造出来的 system 消息尾部；每轮都一样 ⇒ 前缀缓存不受影响。
+       * - `trailingTurnContext`：**易变**内容（时间戳 / 技能目录 / 活跃目标 / 表面状态）。
+       *   作为**独立的尾部 user 消息**追加（与 DSH `context/time-context` 同形），
+       *   稳定前缀（system + 历史）逐字节不变。
+       *
+       * ⚠️ 这两种落点取代的是原来那五处 `apiMessages[0].content += …`：
+       * `apiMessages[0]` 在真实会话里**不是** system 消息（system 由 `executeIteration`
+       * 单独构造，`messagesToLLMMessages` 明确丢掉 system 行），
+       * 所以 `if (apiMessages[0].role === "system")` **恒为假** —— 这些注入曾经全是死代码，
+       * 内容从来没到过模型（`goal-injection.test.ts` 曾经用源码文本把这种空转钉成"绿"）。
+       */
+      let extraSystemPrompt = "";
+      let trailingTurnContext = "";
+
       // P0-2: Inject deferred tool hints into system prompt so the LLM knows
       // these tools exist and can call tool_search to load them.
       if (deferredHints.length > 0) {
@@ -1288,11 +1345,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           `The following tools are available but not loaded by default to save tokens.\n` +
           `To use one, first call \`tool_search\` with the tool name, then use the tool.\n\n` +
           `${hintLines}\n`;
-        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
-          if (typeof apiMessages[0].content === "string") {
-            apiMessages[0].content += deferredPrompt;
-          }
-        }
+        extraSystemPrompt += deferredPrompt;
       }
 
       debugLog("agent-loop", `collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length} (deferred: ${deferredHints.length})`, toolDefs.map(t => t.name));
@@ -1301,37 +1354,33 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       const { consumePendingSkillPrompts, getLoadedSkillPrompts, tickSessionSkills } = await import("./tools/load-skill");
       const pendingSkillPrompt = consumePendingSkillPrompts(sessionId);
       if (pendingSkillPrompt) {
-        // Append to the system message or first user message
-        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
-          const sysMsg = apiMessages[0];
-          if (typeof sysMsg.content === "string") {
-            sysMsg.content += pendingSkillPrompt;
-          }
-        }
+        // 进 system 消息尾部（见 extraSystemPrompt 的说明）：技能提示是**指令**，
+        // 而且 `consumePendingSkillPrompts` 是一次性的 —— 若写进"一次性尾部消息"，
+        // 下一轮就再也没人重新注入它。
+        extraSystemPrompt += pendingSkillPrompt;
         console.log("[AgenticLoop] Injected skill prompt:", pendingSkillPrompt.length, "chars");
       }
 
       // Also inject already-loaded skill prompts (for context recovery after compaction)
       const activeSkillPrompt = getLoadedSkillPrompts(sessionId);
       if (activeSkillPrompt && !pendingSkillPrompt) {
-        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
-          const sysMsg = apiMessages[0];
-          if (typeof sysMsg.content === "string" && !sysMsg.content.includes("Active Skill Instructions")) {
-            sysMsg.content += activeSkillPrompt;
-          }
+        // 判据与旧实现一致（同一条 system 消息里不重复拼 "Active Skill Instructions"）；
+        // 差别只是落点从"恒假的 apiMessages[0]"换成了本轮真正会发给 provider 的 extraSystemPrompt。
+        if (!extraSystemPrompt.includes("Active Skill Instructions")) {
+          extraSystemPrompt += activeSkillPrompt;
         }
       }
 
       // 差距 3: Catalog 每轮刷新 — digest 对比，变更才注入
+      //
+      // 落点是**尾部消息**（不是 system 前缀）：catalog 由 digest 门控，
+      // 同一个会话的第二次请求通常返回空串 —— 若它进 system 前缀，
+      // 同一会话两轮之间的 messages[0] 就不再逐字节相同，
+      // `dsh-d5-prefix-cache-stability.test.ts` 守的前缀缓存判据当场失效。
       const { buildCatalogMessage } = await import("./tools/load-skill");
       const catalogMessage = await buildCatalogMessage(sessionId);
       if (catalogMessage) {
-        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
-          const sysMsg = apiMessages[0];
-          if (typeof sysMsg.content === "string") {
-            sysMsg.content += "\n\n" + catalogMessage;
-          }
-        }
+        trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + catalogMessage;
         debugLog("agent-loop", "Injected skill catalog:", catalogMessage.length, "chars");
       }
 
@@ -1348,49 +1397,70 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       }
 
       // R3-1.3: Time context — 每轮注入时间戳 + 时区 + 经过时间
+      //
+      // ## 第？波（前缀缓存 / 成本）：从 system 前缀搬到**尾部独立消息**
+      //
+      // 原实现是 `sysMsg.content += "\n\n" + timeContextMessage`，有两个问题：
+      //
+      // ① **判据本身是错的**：`apiMessages[0]` 在真实会话里不是 system 消息。
+      //    system 消息由 `executeIteration` 单独构造（`messages: [{ role: "system", ... },
+      //    ...processedMessages]`），而 `messagesToLLMMessages` 明确**丢掉** system 行
+      //    （`message.ts`：「Skip system messages (they're handled separately)」）。
+      //    于是这段注入（连同同一形态的 goals / surface notice）**从来没有生效过**。
+      // ② 就算生效也是错的：注入文本含**秒级**时间戳，写进前缀 ⇒ 每一轮前缀都变一次
+      //    ⇒ provider 的 prompt cache（KV cache）整段失效。DeepSeek 命中缓存的输入价
+      //    约为未命中的 1/4 且快得多，所以这是纯粹的成本/延迟损失。
+      //
+      // 现在的形态与 DSH 的 `context/time-context` 对齐：**追加一条独立的尾部 user 消息**，
+      // 并且**节流**（10 分钟，DSH 的默认 `refreshIntervalMs = 600_000`）——
+      // 稳定前缀（system + 历史）逐字节不变，易变内容只出现在末尾。
       const { buildTimeContext } = await import("./time-context");
-      const timeContextMessage = buildTimeContext(sessionId, this.state.iteration, 1);
+      const timeContextMessage = buildTimeContext(sessionId, this.state.iteration, 1, {
+        refreshIntervalMs: TIME_CONTEXT_REFRESH_INTERVAL_MS,
+      });
       if (timeContextMessage) {
-        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
-          const sysMsg = apiMessages[0];
-          if (typeof sysMsg.content === "string") {
-            sysMsg.content += "\n\n" + timeContextMessage;
-          }
-        }
+        trailingTurnContext += timeContextMessage;
       }
 
-      // P2-12（第 118 轮修正）：把活跃目标真正注入给模型。
+      // P2-12（第 118 轮修正 / 第？波改走尾部消息）：把活跃目标真正注入给模型。
       //
       // 修之前这里只 `console.log`，模型看不到目标 —— 详见上面计算处的注释。
       // 措辞与 zcode 的 `resume_goal_state` / DSH 的目标提醒同取向：
       // **只陈述事实 + 明确「不要因此重复已完成的工作」**，
       // 而不是命令模型「继续做」（模型可能已经做完、只是状态没更新，
       // 硬命令会让它重复劳动）。
+      //
+      // ⚠️ 这一段**必须**走尾部消息（与时间上下文同一处置）。
+      // 原来的形态是 `sysMsg.content += …`，被 `apiMessages[0].role === "system"` 守着，
+      // 而真实会话里 `apiMessages[0]` **不是** system 消息 —— 所以那个 if 恒假，
+      // 目标**从来没有到过模型**（`goal-injection.test.ts` 曾经用源码文本把这件事钉成"绿"）。
+      // 目标文本也不该进 system 前缀：它随目标状态变化，写进去会整段击穿前缀缓存。
+      //
+      // 尾部消息是**每轮**临时构造的（不落库），而目标摘要在本轮开头每轮重算 ⇒
+      // 只要目标还在，模型每一轮都能看到它（不存在"注入一次就丢"的问题）。
       if (goalSummaryForPrompt) {
-        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
-          const sysMsg = apiMessages[0];
-          if (typeof sysMsg.content === "string") {
-            sysMsg.content +=
-              "\n\n# Active Goals\n\n" +
-              "This session has goals that are still open:\n\n" +
-              goalSummaryForPrompt +
-              "\n\nIf the current work has already satisfied a goal's success criteria, " +
-              "mark it complete with `update_goal` before finishing. " +
-              "Do NOT redo work that is already done just because a goal is listed as in_progress — " +
-              "check the actual state first. If a goal is genuinely blocked on something only the " +
-              "user can provide, say so plainly instead of working around it.";
-          }
-        }
+        const goalSection =
+          "# Active Goals\n\n" +
+          "This session has goals that are still open:\n\n" +
+          goalSummaryForPrompt +
+          "\n\nIf the current work has already satisfied a goal's success criteria, " +
+          "mark it complete with `update_goal` before finishing. " +
+          "Do NOT redo work that is already done just because a goal is listed as in_progress — " +
+          "check the actual state first. If a goal is genuinely blocked on something only the " +
+          "user can provide, say so plainly instead of working around it.";
+        trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + goalSection;
       }
 
       // R3-3.1: Surface notice — 让模型知道当前上下文窗口状态
+      //
+      // 与时间上下文同一处置（第？波）：这段文本每轮都在变（可见消息数 / 事件总数），
+      // 所以它只能出现在**尾部消息**里，绝不写进 system 前缀。
+      // 原实现（`sysMsg.content += ...`）因为 ① 的判据错误从来没生效过；现在它真的
+      // 会到达模型，但仍不碰前缀 —— 前缀稳定性是这条缺陷的核心判据。
       const { getSurfaceManager } = await import("./surface-manager");
       const surfaceNotice = getSurfaceManager().buildSurfaceNotice(sessionId);
-      if (surfaceNotice && apiMessages.length > 0 && apiMessages[0].role === "system") {
-        const sysMsg = apiMessages[0];
-        if (typeof sysMsg.content === "string") {
-          sysMsg.content += "\n" + surfaceNotice;
-        }
+      if (surfaceNotice) {
+        trailingTurnContext += (trailingTurnContext ? "\n" : "") + surfaceNotice;
       }
 
       this.state.contextPressure = this.estimateContextPressure(apiMessages);
@@ -1482,6 +1552,27 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         // Agent message queue not available — non-critical
       }
 
+      /**
+       * 易变上下文（时间戳 / 表面状态）统一作为**独立的尾部 user 消息**注入。
+       *
+       * 这是 FIX 的核心判据：稳定前缀（system 消息 + 历史消息）与上一轮**逐字节相同**，
+       * 于是 provider 的前缀缓存（DeepSeek 的 KV cache）能命中；易变文本只出现在末尾。
+       * 与 DSH `context/time-context` 的形态一致（它也是 append 一条 user 消息）。
+       *
+       * 放在所有其他注入（guidance / agent message）**之后**：这样"稳定前缀"尽可能长。
+       * 该消息是**每轮临时构造**的（不落库），所以不会污染下一轮的历史。
+       */
+      if (trailingTurnContext) {
+        messagesForIteration = [
+          ...messagesForIteration,
+          {
+            id: `turn-context-${this.state.iteration}`,
+            role: "user" as const,
+            content: trailingTurnContext,
+          },
+        ];
+      }
+
       // Execute iteration - yields events directly for real-time streaming
       let iterationToolCalls = 0;
       let iterationHadText = false;
@@ -1507,6 +1598,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         toolDefs,
         cwd,
         systemPrompt,
+        extraSystemPrompt,
       )) {
         // update_plan 工具修改计划后，先推送一次刷新事件，让 UI 的
         // "第X/X步"与完整步骤列表立即同步（对标 dsh todo 动态插入）。
@@ -1726,6 +1818,31 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         return result;
       }
 
+      // 第？波：**流中途被取消不是"完成"**。
+      //
+      // 用户点 ■ 时，provider 侧的 `reader.cancel()` 会让挂起的 `read()` 以
+      // `{done:true}` 正常返回（不抛 AbortError），于是"取消"看起来和"服务端正常收尾"
+      // 一样。provider 现在会把这种收尾标成 `finishReason: "aborted"`；循环据此
+      // 如实上报取消 —— 判据必须**在 completed 分支之前**，否则这一轮照样会被
+      // 当成 reason 为 completed 的正常收尾（用户按了停止，界面却说完成）。
+      if (this.state.lastFinishReason === "aborted") {
+        if (this.guidanceInterrupt) {
+          /*
+           * 这次中止**不是用户取消**，而是"立刻插入指引"（`sendGuidanceImmediate` /
+           * `interruptForGuidance`）故意打断当前流 —— 目的是让循环马上进入下一轮消费指引。
+           * 所以只清标志、不报 aborted，让下面 completed 分支的
+           * `guidanceQueue.hasPending → continue` 生效（与 AbortError 路径同一语义）。
+           */
+          console.log(`[AgenticLoop] Stream aborted for immediate guidance — continuing to consume guidance`);
+          this.guidanceInterrupt = false;
+        } else {
+          console.log(`[AgenticLoop] Stream was cancelled mid-flight (finishReason=aborted) — reporting aborted instead of completed`);
+          const abortedResult: LoopResult = { type: "aborted" };
+          yield { type: "end", result: abortedResult };
+          return abortedResult;
+        }
+      }
+
       // Check if we should continue
       if (this.state.toolCallsInIteration === 0 && !this.state.compactedThisIteration) {
         // === Guidance pending check ===
@@ -1862,6 +1979,40 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         // No un-waited sub-agents — safe to stop
+        //
+        // 但在"可以停"之前必须先排除两种**不是完成**的收场（它们原来都被这一分支
+        // 抢先当成 completed 返回，于是下面 `:1878` 的 too_many_errors 与
+        // `LoopResult` 里的 `type: "error"` 都是死代码）：
+        //
+        // ① 连续错误到达上限（LLM 调用失败恒定让 toolCallsInIteration 留在 0，
+        //    所以这条判据在 LLM 失败路径上**只能在这里**被看到）；
+        if (this.state.consecutiveErrors >= this.config.maxConsecutiveErrors) {
+          const errResult: LoopResult = {
+            type: "stop",
+            reason: "too_many_errors",
+            usage: this.state.totalUsage,
+          };
+          if (this.config.memoryEnabled && this.config.onTurnComplete) {
+            try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          }
+          yield { type: "end", result: errResult };
+          return errResult;
+        }
+        // ② 本迭代的 LLM 调用最终失败（重试已耗尽 / 不可重试的 4xx）。
+        //    失败就是失败：绝不作为 "completed" 上报（那会让调用方、用量记账、
+        //    界面全部以为这一轮成功了）。
+        if (this.state.lastIterationError !== null) {
+          console.error(
+            `[AgenticLoop] LLM call failed for iteration ${this.state.iteration} — reporting error instead of completed: ${this.state.lastIterationError}`,
+          );
+          const failResult: LoopResult = { type: "error", error: this.state.lastIterationError };
+          if (this.config.memoryEnabled && this.config.onTurnComplete) {
+            try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          }
+          yield { type: "end", result: failResult };
+          return failResult;
+        }
+
         const result: LoopResult = {
           type: "stop",
           reason: "completed",
@@ -2053,6 +2204,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     toolDefs: ToolDefinition[],
     cwd: string,
     systemPrompt: string,
+    /**
+     * 本轮追加到 system 消息尾部的**稳定**内容（deferred 工具提示 / 技能提示）。
+     *
+     * 为什么必须由调用方传进来、而不能像原来那样写 `apiMessages[0].content += …`：
+     * `apiMessages[0]` 在真实会话里不是 system 消息 —— **system 消息是在本函数里
+     * 单独构造的**（见下面 `request.messages[0]`），`messagesToLLMMessages` 还会
+     * 明确丢掉 system 行。所以那个判据恒假，注入曾经是死代码。
+     */
+    extraSystemPrompt = "",
   ): AsyncGenerator<LoopEvent, void, unknown> {
     let currentText = "";
     let currentToolCalls: StreamingToolCall[] = [];
@@ -2081,9 +2241,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       // （对标 dsh todo —— 模型需要知道剩余步骤才能在合适时机 update_plan）。
       // 无计划（纯问答）时为空串，不影响既有 prompt 缓存。
       const planContext = renderPlanSection(this.activePlan.plan, this.macroStep);
-      const effectiveSystemPrompt = planContext
+      const baseSystemPrompt = planContext
         ? `${systemPrompt}\n\n${planContext}`
         : systemPrompt;
+      // 稳定追加内容（deferred 工具提示 / 技能提示）拼在这里 ——
+      // 这是**唯一**真正会发给 provider 的 system 消息（见 extraSystemPrompt 的说明）。
+      const effectiveSystemPrompt = extraSystemPrompt
+        ? `${baseSystemPrompt}\n${extraSystemPrompt}`
+        : baseSystemPrompt;
 
       const request: LLMRequest = {
         model: this.config.model || this.provider.id,
@@ -2352,6 +2517,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
 
       this.state.consecutiveErrors++;
       this.state.lastError = error.message;
+      /**
+       * 走到这里 = **最终失败**：内层 `while (!success && retryCount < maxRetries)`
+       * 的重试已经在上面全部用掉（可重试错误会被内层 catch 拦住继续重试，
+       * 根本走不到这里），或者这个错误压根不可重试（4xx）。
+       * 因此这里是置位失败标志的**唯一正确位置** —— 「重试后成功」不会经过这里，
+       * 也就不会被误报成失败。
+       */
+      this.state.lastIterationError = error.message;
       yield { type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: error.message };
       // DSH-style: 结构化失败上报 — 失败必须对用户可见，绝不静默结束 turn。
       // 空 toolCall 的 tool_error 在 UI 上不可见（没有对应 tool call 可标记），
@@ -2429,6 +2602,57 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           };
         }
         currentToolCalls = currentToolCalls.filter((tc) => !(tc as any).argsError);
+      }
+    }
+
+    // ===== 第 70 波（fail closed）：被输出上限截断的回复里，**一个工具调用都不执行** =====
+    //
+    // 第 67 波只做了「先执行、再提示核对完整性」，而注释自己就承认「我们不能证明它完整」。
+    // 那条路是错的：流式参数由 provider 侧**尽力而为**地收尾，一个被切在半截的 `write`
+    // 能解析、能校验、于是**照旧执行** —— 半个文件被写下去，还报告成成功。
+    //
+    // 现在的判据：这条回复是**被输出上限截断**的（`finish_reason=length`）⇒
+    // 其中任何一个工具调用的参数都**无法证明完整**，所以整批拒绝执行
+    // （对标 Pi Agent Harness `failToolCallsFromTruncatedMessage`），
+    // 每个调用各报一条**结构化失败**（`isError: true` 由执行器的错误路径统一落）+
+    // 一句可操作的指引（分块写入 / 拆小 / 原样重发会被守卫拦下）。
+    //
+    // 为什么整批而不是只拦内容型工具：只有**最后一个**调用能被证明是"被切的那个"，
+    // 其余调用同样无法证明完整；而 `bash` 的命令被切断同样危险
+    // （`rm -rf /some/dir` 截成 `rm -rf /`），只读工具用残缺路径也会读到错东西。
+    // 代价是多花一轮让模型重发整批调用 —— 与"静默写下半截文件"相比这个代价是划算的。
+    //
+    // 与「第 66 波」（参数 JSON 解析失败）**互补**：那里连 JSON 都不是，
+    // 这里 JSON 合法但无法证明完整。两条路都拒绝执行，文案不同。
+    if (finishReason === "length") {
+      const refusedCalls = currentToolCalls;
+      if (refusedCalls.length > 0) {
+        console.warn(
+          `[AgenticLoop] Response hit the output limit (finish_reason=length) — refusing to execute ` +
+            `${refusedCalls.length} tool call(s) whose arguments cannot be proven complete`,
+        );
+        recordLoopStop(sessionId, "output_truncated", {
+          phase: "refused-tool-calls",
+          toolCalls: refusedCalls.length,
+          contentBearingCalls: refusedCalls.filter((tc) => isContentBearingTool(tc.name)).length,
+        });
+        for (const tc of refusedCalls) {
+          const message = buildTruncatedToolCallError(tc.name);
+          /**
+           * 失败要**显式声明**，不能只靠文本（这是第 84 波以来的仓库契约：
+           * 「把失败写在 output 里」不等于成功）。`isError` 是给分类器/上层的机器可读标记，
+           * `status: "error"` 让调用对象自己就带着失败状态（而不是等 UI 去猜）。
+           */
+          tc.status = "error";
+          tc.error = message;
+          (tc as { isError?: boolean }).isError = true;
+          yield {
+            type: "tool_error",
+            toolCall: tc,
+            error: message,
+          };
+        }
+        currentToolCalls = [];
       }
     }
     for (const tc of currentToolCalls) {
@@ -2782,20 +3006,22 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // in the pipeline's pre-execute layer. Do NOT duplicate them here.
         const effectiveArgs = args;
 
-        const result = await tool.execute(effectiveArgs, ctx);
-
-        // 第 67 波（同类问题清查）：**截断的"合法 JSON"也可能写下半截文件**。
-        // 如果本次回复的结束原因是 length（达到输出上限），而调用的是内容型工具，
-        // 那参数 JSON 有可能"恰好"是完整的、但内容被切在了一个合法边界上 —— 我们不能证明它完整，
-        // 所以**明确提示模型去核对并补齐**，同时落一条事件（可统计"多常见"）。
+        // 第 67 波当年的形态是"先执行、再在结果末尾提示核对完整性"。
+        // 第 70 波改成 **fail closed**（见上面 `finishReason === "length"` 的整批拒绝）：
+        // 截断回复里的调用**根本不会执行**，所以这里不再需要"事后核对"——
+        // 真正需要核对的东西已经不存在了。内容型工具的分块写入指引移到了
+        // `buildTruncatedToolCallError`（`tool-args-guard.ts`），并随拒绝一起给模型。
+        //
+        // 下面的判断是**纵深防御**：正常情况下不可达（上面已经整批拒绝并清空
+        // currentToolCalls）。但万一将来有人绕过那条拒绝，内容型工具也绝不许拿到
+        // 可能被切半截的参数去写盘 —— 在**执行之前**直接抛错（不是执行之后补救）。
         if (finishReason === "length" && isContentBearingTool(name)) {
-          console.warn(`[AgenticLoop] ${name} ran in a response truncated by the output limit — asking the model to verify completeness`);
-          recordLoopStop(sessionId, "output_truncated", { tool: name, finishReason });
-          result.output =
-            `${result.output ?? ""}\n\n[WARNING] 本次回复因**达到单次输出上限被截断**（finish_reason=length）。` +
-            `如果这次写的是一个大文件，请立刻核对它是否完整（例如 read 末尾几行）；` +
-            `缺失的部分请用 \`write\` + \`append: true\` 补齐，而不是整篇重写。`;
+          throw new Error(
+            `refusing to execute content-bearing tool ${name}: the response was truncated by the output limit`,
+          );
         }
+
+        const result = await tool.execute(effectiveArgs, ctx);
 
         // 第 65 波：交付物计数 —— 只有"写下来了"才算推进（读多少都不算）。
         // 第 83 波修正：判定改成**分级证据**（见 artifact-tracker.ts）——

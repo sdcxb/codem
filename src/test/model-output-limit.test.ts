@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 输出上限「按模型动态解析 + 自动降档」契约（第 67 波）。
  *
  * 第 66 波把写死的 4096 换成常量 8192 —— 那只是**兜底**，两个方向都可能错：
@@ -146,11 +146,13 @@ describe("同类问题清查（第 67 波）：静默丢数据", () => {
     expect(marks.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("SAMECLASS-2: 因输出上限截断的回复里跑了内容型工具 → 必须提示核对完整性", () => {
+  it("SAMECLASS-2: 因输出上限截断的回复里，工具调用一律**不执行**（第 70 波 fail closed）", () => {
     const loop = read("src/core/llm/agentic-loop.ts");
-    expect(loop).toMatch(/finishReason === "length" && isContentBearingTool\(name\)/);
+    expect(loop).toMatch(/finishReason === "length"/);
+    expect(loop, "拒绝要带上可操作的指引（分块写入 / 拆小）").toMatch(/buildTruncatedToolCallError/);
     expect(loop).toMatch(/recordLoopStop\(sessionId, "output_truncated"/);
-    expect(loop).toMatch(/核对它是否完整|核实它是否完整/);
+    // 纵深防御：内容型工具在执行之前被拦下
+    expect(loop).toMatch(/finishReason === "length" && isContentBearingTool\(name\)/);
   });
 
   it("SAMECLASS-3: 把已有非空文件写成空 → 结果里必须警告（避免静默清空）", () => {

@@ -782,7 +782,31 @@ const cachedLogMessages = new Map<string, Awaited<ReturnType<typeof readSessionM
 
 /** 第 91 波：索引不可用只提示一次（数据库致命时否则每次读都刷一行） */
 
-/** 从日志镜像里按 id 取一条消息（索引不可用时的兜底） */
+/**
+ * 从日志镜像里按 id 取一条消息（索引不可用时的兜底，也是 `updateMessage` 的兜底基准）。
+ *
+ * ## ⚠️ 第 103+ 轮：这里原来**手挑 8 个字段**，是"权威副本里字段静默丢失"的第二个入口
+ *
+ * 旧实现只搬 `id / role / content / timestamp`（外加条件性的 `reasoning / model / status /
+ * toolCalls`）—— 于是 `generatedFiles`、`retrievedSources`、`hidden`、`trimmed`、
+ * **`attachments`**、**`metadata`** 全都不在返回值里。
+ *
+ * 两个后果，都不是理论：
+ * 1. `getMessage` 的日志兜底（本文件 `:1370` 与 `:1388`）返回的消息**少字段** ——
+ *    "从日志读回来的那条消息"和"从索引读回来的那条消息"形状不同，
+ *    而只有前者在索引不可用时才被用到（越需要兜底，兜底越残缺）；
+ * 2. `updateMessage` 曾把它当**读-改-写基准**：基准里没有的字段，新追加的那一行就没有 ——
+ *    因为日志是权威、读路径是"日志覆盖索引"、重建方向按日志落库，那些字段就被**永久抹掉**。
+ *
+ * 所以现在**逐字段对齐 `JsonlMessageRecord`**（写侧 `appendSessionMessage` 的字段清单与
+ * `session-jsonl.ts` 的 serializer 是同一份定义）：一个字段只要写进了权威日志，
+ * 就必须能从这里原样读回来。新增日志字段时**两边一起改**。
+ *
+ * 不进 Message 的三个字段（写在这里以免下一个人以为是漏了）：
+ * - `v`：行格式版本，读侧已校验（不是消息数据）；
+ * - `sessionId`：`Message` 没有这个字段（会话归属由调用方按 id 查，见 `currentSessionIdForMessage`）；
+ * - `deleted`：墓碑行在 `readSessionMessages` 里就被丢掉了，镜像里不可能有。
+ */
 export function logMirrorMessage(sessionId: string, id: string): Message | null {
   const mirror = cachedLogMessages.get(sessionId);
   if (!mirror) return null;
@@ -791,13 +815,105 @@ export function logMirrorMessage(sessionId: string, id: string): Message | null 
   return {
     id: rec.id,
     role: rec.role,
-    content: rec.content ?? "",
+    content: typeof rec.content === "string" ? rec.content : "",
     timestamp: rec.timestamp ?? Date.now(),
     ...(rec.reasoning ? { reasoning: rec.reasoning } : {}),
     ...(rec.model ? { model: rec.model } : {}),
     ...(rec.status ? { status: rec.status } : {}),
     ...(rec.toolCalls ? { toolCalls: rec.toolCalls } : {}),
+    ...(rec.generatedFiles ? { generatedFiles: rec.generatedFiles } : {}),
+    ...(rec.retrievedSources ? { retrievedSources: rec.retrievedSources } : {}),
+    // 压缩/裁剪标记：与写侧同一条约定（只写/只带非 0 值，读侧一律 ?? 0）
+    ...(Number(rec.hidden ?? 0) ? { hidden: Number(rec.hidden) } : {}),
+    ...(Number(rec.trimmed ?? 0) ? { trimmed: Number(rec.trimmed) } : {}),
+    ...(rec.attachments ? { attachments: rec.attachments } : {}),
+    ...(rec.metadata ? { metadata: rec.metadata } : {}),
   } as Message;
+}
+
+/**
+ * `updateMessage` 的**读-改-写基准**：索引（活的那一份）为主，日志镜像补它给不出的字段。
+ *
+ * ## 为什么以索引为主（第 103+ 轮）
+ *
+ * 它以前是 `logMirrorMessage(...) ?? safeGetMessage(...)` —— 镜像优先。两个问题：
+ *
+ * 1. **镜像天生陈旧**：`cachedLogMessages` 的唯一写入者是 `hydrateSessionLog`（进会话时读一次），
+ *    写路径从不更新它。于是"进会话之后被更新过很多次的正文"，在镜像里还是**进会话那一刻的版本**；
+ *    下一次带别的字段的更新（例如 `updateMessage(id, { reasoning })`）会把**旧正文**
+ *    当成现存快照写进权威日志 —— 权威副本回退，索引再被裁就永久回退（后写者胜）。
+ * 2. **镜像是字段被削过的**（见 `logMirrorMessage` 的长注释）：附件这类"住在索引里的字段"
+ *    在镜像里根本没有，`{ ...base, ...update }` 于是把它们抹掉。
+ *
+ * ## 为什么不是裸的 `safeGetMessage(id) ?? logMirrorMessage(...)`（这一条是刻意的）
+ *
+ * 因为索引**也有它给不出的字段**：`metadata` 不在消息行的列投影里
+ * （`MessageRow` / `MirrorMessageRow` 都没有它，`attachments` 则住在另一张表里）——
+ * 这些字段**只有日志镜像有**。裸的 `??` 会在"以索引为基准"时把它们从权威副本里删掉，
+ * 把一种字段丢失换成另一种。所以这里按**字段**取主次：
+ * 索引给得出的字段以索引为准（它是活的），索引给不出的字段由镜像补上。
+ *
+ * ## 与 `storageUnavailable()` 的关系（原有语义一字不改）
+ *
+ * 索引不可用时**根本不去读索引**（那是"往已崩的存储上反复撞"的形态），此时基准完全由
+ * 日志镜像承担 —— 兜底路径照旧可用，且不会因为索引抛错而崩（`safeGetMessage` 本身也 try/catch）。
+ */
+function updateMessageBaseline(sessionId: string, id: string): Message | null {
+  const mirrored = logMirrorMessage(sessionId, id);
+  const indexed = storageUnavailable() ? null : safeGetMessage(id);
+  if (!indexed) return mirrored;
+  if (!mirrored) return indexed;
+  /**
+   * 展开顺序 = 主次：`...mirrored` 在前、`...indexed` 在后。
+   *
+   * ⚠️ 这里依赖"索引对象**不会**带着 `undefined` 的键"（`messageRowToMessage` 用条件展开，
+   * 不给可选字段留 `undefined`）—— 否则那一行会反向擦掉镜像里补上的值。
+   * 唯一的例外是 `attachments`：`attachmentsFromMirror` 的元素**确实**带
+   * `content: undefined` / `preview: undefined` / `path: undefined`（那是刻意的懒加载投影），
+   * 整组替换会把日志里更完整的那一份换成窄的 → 所以它单独按 id 合并。
+   */
+  return {
+    ...mirrored,
+    ...indexed,
+    attachments: mergeAttachments(mirrored.attachments, indexed.attachments),
+  } as Message;
+}
+
+/**
+ * 附件列表合并：**按 id**，索引那侧**确实提供了**的字段优先，镜像补它给不出的字段。
+ *
+ * ## 为什么不能整组替换（这是实测抓到的一条真丢数据）
+ *
+ * 索引侧的附件视图是**刻意窄的**：`attachmentsFromMirror` 只投影元数据列、`content` 一律留空；
+ * 而写侧 `writeAttachmentsViaPort` 在"这次没有正文"时**连同 `preview` 一起不提供**
+ * （`...(hasContent ? { content, preview } : {})`）。于是同一条附件在两边的字段集**不一样**：
+ * 日志那份可能带 `preview`，索引那份没有。整组替换 ⇒ 更新一次消息就把 `preview`
+ * 从权威副本里抹掉（实测：`D11-4` 当场变红）。
+ *
+ * 判据沿用本仓库那条既有约定：**`undefined` = 未提供 = 保持原值**（不是"清空"）。
+ * 镜像里有、索引里没有的附件**保留**：日志是权威副本，索引只是可重建的投影 ——
+ * 因为投影缺一行就把附件丢掉，正是这个文件要消灭的那类"读不到 ≠ 可以覆盖"。
+ */
+function mergeAttachments(
+  mirrored: MessageAttachment[] | undefined,
+  indexed: MessageAttachment[] | undefined,
+): MessageAttachment[] | undefined {
+  if (!indexed || indexed.length === 0) return mirrored;
+  if (!mirrored || mirrored.length === 0) return indexed;
+  const fromLog = new Map(mirrored.map((a) => [a.id, a]));
+  const merged: MessageAttachment[] = indexed.map((att) => {
+    const logSide = fromLog.get(att.id);
+    if (!logSide) return att;
+    const out: Record<string, unknown> = { ...(logSide as unknown as Record<string, unknown>) };
+    for (const [k, v] of Object.entries(att as unknown as Record<string, unknown>)) {
+      if (v === undefined) continue; // 未提供 = 保持日志那一份（见上面的约定）
+      out[k] = v;
+    }
+    return out as unknown as MessageAttachment;
+  });
+  const indexedIds = new Set(indexed.map((a) => a.id));
+  for (const att of mirrored) if (!indexedIds.has(att.id)) merged.push(att);
+  return merged;
 }
 
 /** 在整个日志镜像里找一个消息 id 属于哪个会话（索引不可用时的兜底） */
@@ -2356,8 +2472,15 @@ export function __resetTextEventFingerprints(sessionId?: string): void {
  *
  * 第 91 波（架构级）：与 createMessage 同一处修正 —— **先写权威日志，再更新索引**。
  *
- * 快照的来源优先用**日志镜像/索引里的现存消息**（不依赖"索引还能用"）；两者都取不到时
- * 才退回老的"从索引读一遍再追加"路径（那样在索引崩掉时确实写不进日志，但至少不会写坏）。
+ * 快照的来源优先用**索引里的现存消息**（它是活的：附件行、刚写的字段都在它这边），
+ * 索引不可用时退回**日志镜像**；两者都取不到时才退回老的"从索引读一遍再追加"路径
+ * （那样在索引崩掉时确实写不进日志，但至少不会写坏）。
+ *
+ * ## ⚠️ 第 103+ 轮：基准不能是那份**陈旧且被削过字段**的日志镜像
+ *
+ * 详见 `updateMessageBaseline` 与 `logMirrorMessage` 的长注释：基准里没有的字段，
+ * 新追加的那一行就没有 —— 而日志是权威副本（读路径日志覆盖索引、重建按日志落库），
+ * 于是"更新一次正文"会顺带把 `attachments` / `metadata` 永久抹掉。
  */
 export function updateMessage(id: string, update: Partial<Message>): void {
   // ① 权威日志：先用现有快照 + 本次改动合成一条完整记录追加（同 id 后写者胜）
@@ -2365,7 +2488,7 @@ export function updateMessage(id: string, update: Partial<Message>): void {
   /** 本次用的"现存快照"：下面第 ③ 步（全文索引）复用同一份，不重复读一次 */
   let snapshot: Message | null = null;
   if (sessionId) {
-    const base = logMirrorMessage(sessionId, id) ?? (storageUnavailable() ? null : safeGetMessage(id));
+    const base = updateMessageBaseline(sessionId, id);
     if (base) {
       snapshot = { ...base, ...update, id, timestamp: base.timestamp ?? Date.now() } as Message;
       void appendSessionMessage(sessionId, snapshot);

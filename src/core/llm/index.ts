@@ -1059,30 +1059,168 @@ Report earlier as well whenever a partial finding changes what that agent should
     const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode, knowledgeContext, options?.userSelectedSkills);
 
     const startTime = Date.now();
-    let lastUsage: import("./types").TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    yield* this.runLoopAndRecordUsage({
+      loop,
+      sessionId,
+      message,
+      cwd,
+      systemPrompt,
+      startTime,
+      successLogPrefix: "process",
+    });
+  }
+
+  /**
+   * 驱动一次 `AgenticLoop.run()` 并把**整轮**的 token 消耗记进 CostTracker。
+   *
+   * ## 为什么不能用 `for await` 顺手记（这是本轮修的那条缺陷）
+   *
+   * `for await` **丢掉生成器的 return value**。而 `AgenticLoop` 只在
+   * `agentic-loop.ts` 的每轮迭代末尾 `yield { type: "usage", usage }`，
+   * 带的是**那一次迭代**的用量；真正的**整轮累计**在
+   * `run()` 的返回值 `LoopResult.usage`（= `state.totalUsage`）里。
+   *
+   * 旧代码 `lastUsage = event.usage` 于是被**每一次迭代覆盖**：一轮跑 15 次
+   * LLM 调用，只记下最后 1 次 —— 产品验收要看的"同一模型 token 消耗不高于
+   * DSH"因此**根本量不出来**（15 次里 14 次的输入 token 凭空消失）。
+   * 现在改为手动驱动迭代器（`iter.next()` 直到 `done`），拿到 `value` 里的
+   * **累计** usage；事件仍然逐个原样转发给调用方，对外事件序列不变。
+   *
+   * ## 失败/中止也必须留下记录
+   *
+   * 旧代码把 `recordUsage` 放在循环**之后**：任何抛错（或提前 return）都让它
+   * 整段被跳过，且 `success` 恒为 `true` —— 失败回合在成本/用量面板里
+   * **完全不存在**（不是记错了，是没记）。这里用 `try/finally` 保证
+   * **恰好一条**记录：正常完成 `success: true`，抛错/中止 `success: false`
+   * 并带上失败原因；失败路径取 `loop.getState().totalUsage`（那才是抛错前
+   * 已经真实产生的 token），而不是被跳过的部分。
+   *
+   * ## 保留"零 token 不记录"
+   *
+   * `totalTokens > 0` 的守卫照旧：某些路径（立即 abort、provider 完全不报
+   * usage 的合成/空转路径）产生的是 0/0，记一条 $0 的空记录只会污染
+   * `getStats()` 的 `totalRecords` / `averageCostPerCall`。
+   */
+  private async *runLoopAndRecordUsage(params: {
+    loop: AgenticLoop;
+    sessionId: string;
+    message: string;
+    cwd: string;
+    systemPrompt: string;
+    startTime: number;
+    successLogPrefix: string;
+  }): AsyncGenerator<LoopEvent, void, unknown> {
+    const { loop, sessionId, message, cwd, systemPrompt, startTime } = params;
+
+    /**
+     * 迭代器手动驱动的理由见方法头：`for await` 拿不到 `LoopResult`。
+     * 这里只改"谁读 value"，**不改**上游看到的事件内容与顺序。
+     */
+    const iter = loop.run(sessionId, message, cwd, systemPrompt);
+    let result: import("./agentic-loop").LoopResult | undefined;
     let toolCallCount = 0;
+    let failure: string | undefined;
 
-    for await (const event of loop.run(sessionId, message, cwd, systemPrompt)) {
-      if (event.type === "usage") {
-        lastUsage = event.usage;
+    try {
+      while (true) {
+        const step = await iter.next();
+        if (step.done) {
+          result = step.value;
+          break;
+        }
+        const event = step.value;
+        if (event.type === "tool_complete") {
+          toolCallCount++;
+        }
+        yield event;
       }
-      if (event.type === "tool_complete") {
-        toolCallCount++;
-      }
-      yield event;
+    } catch (err: any) {
+      /**
+       * 抛错 / 中止：**不吞**，原样抛给调用方（外部行为不变），
+       * 但先在 finally 里留下这一轮已经真实消耗的 token。
+       */
+      failure = err?.name ? `${err.name}: ${err.message}` : String(err?.message ?? err);
+      throw err;
+    } finally {
+      /**
+       * 累计口径优先级：
+       * 1. `loop.getState().totalUsage` —— 与 `run()` 返回值里那份**同一个对象**
+       *    （`run()` 各处 `return { ..., usage: this.state.totalUsage }`），
+       *    但这一次 `LoopResult` 可能压根不存在（生成器被提前 return /
+       *    `type: "aborted"` / `type: "error"` 三种形状都不带 usage）；
+       * 2. `LoopResult.usage`（兜底：loop 没有 `getState` 时）；
+       * 3. `undefined` → 不记录（见方法头的零 token 守卫）。
+       */
+      const stateUsage =
+        typeof (loop as any).getState === "function"
+          ? (loop as any).getState()?.totalUsage
+          : undefined;
+      const resultUsage =
+        result && "usage" in result ? result.usage : undefined;
+      const cumulative = stateUsage ?? resultUsage;
+
+      /**
+       * 循环如实上报的失败收场：
+       * - `{ type: "stop", reason: "too_many_errors" }`（连续错误达上限）；
+       * - `{ type: "error", error }`（本轮 LLM 调用最终失败 —— 注意这个形状
+       *   **不带 usage**，此时累计消耗只能从 `loop.getState().totalUsage` 取）。
+       * 两种都必须记成 `success: false`，否则用量面板会把"跑到一半挂了"
+       * 统计成一次正常调用。
+       */
+      const failedReason =
+        failure ??
+        (result && result.type === "error"
+          ? `error: ${result.error}`
+          : result && "reason" in result && result.reason === "too_many_errors"
+            ? "too_many_errors"
+            : undefined);
+
+      this.recordTurnUsage({
+        sessionId,
+        cumulative,
+        toolCallCount,
+        startTime,
+        failure: failedReason,
+        logPrefix: params.successLogPrefix,
+      });
     }
+  }
 
-    // Record usage after loop completes
-    if (lastUsage.totalTokens > 0) {
+  /**
+   * 把一轮的累计 usage 记进 CostTracker —— **只在 `finally` 里调用**
+   * （见 `runLoopAndRecordUsage`：抛错/中止路径也必须走到这里，否则消耗凭空消失）。
+   */
+  private recordTurnUsage(params: {
+    sessionId: string;
+    cumulative: import("./types").TokenUsage | undefined;
+    toolCallCount: number;
+    startTime: number;
+    failure: string | undefined;
+    logPrefix: string;
+  }): void {
+    const { sessionId, cumulative, toolCallCount, startTime, failure } = params;
+    if (!cumulative || !(cumulative.totalTokens > 0)) {
+      /**
+       * 零 token 守卫：立即 abort、provider 完全不报 usage 的合成/空转路径
+       * 产生的都是 0/0 —— 记一条 $0 的空记录只会污染 `getStats()` 的
+       * `totalRecords` / `averageCostPerCall`。
+       */
+      return;
+    }
+    try {
       this.costTracker.recordUsage({
         sessionId,
         model: this.config.defaultModel || "unknown",
         provider: this.config.defaultProvider || "unknown",
-        usage: lastUsage,
+        usage: cumulative,
         duration: Date.now() - startTime,
         toolCalls: toolCallCount,
-        success: true,
+        success: failure === undefined,
+        ...(failure === undefined ? {} : { error: failure }),
       });
+    } catch (recordErr) {
+      // 记账失败绝不能反过来把这一轮的真实结果变成异常
+      console.warn(`[LLMEngine.${params.logPrefix}] recordUsage failed:`, recordErr);
     }
   }
 
@@ -1138,31 +1276,16 @@ Report earlier as well whenever a partial finding changes what that agent should
     } catch (e) { console.warn('[index.ts]', e) }
 
     const startTime = Date.now();
-    let lastUsage: import("./types").TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    let toolCallCount = 0;
-
-    for await (const event of loop.run(sessionId, cleanMessage, cwd, systemPrompt)) {
-      if (event.type === "usage") {
-        lastUsage = event.usage;
-      }
-      if (event.type === "tool_complete") {
-        toolCallCount++;
-      }
-      yield event;
-    }
-
-    // Record usage after loop completes
-    if (lastUsage.totalTokens > 0) {
-      this.costTracker.recordUsage({
-        sessionId: sessionId,
-        model: this.config.defaultModel || "unknown",
-        provider: this.config.defaultProvider || "unknown",
-        usage: lastUsage,
-        duration: Date.now() - startTime,
-        toolCalls: toolCallCount,
-        success: true,
-      });
-    }
+    // 与 process() 同一条记账路径（累计 usage + 失败也留痕），见其方法头说明
+    yield* this.runLoopAndRecordUsage({
+      loop,
+      sessionId,
+      message: cleanMessage,
+      cwd,
+      systemPrompt,
+      startTime,
+      successLogPrefix: "processSubagent",
+    });
 
     // DSH-style: scoped ToolRegistry 随 loop 生命周期自然释放
     // 不需要手动移除 report 工具 — scope 是独立的，不影响主智能体

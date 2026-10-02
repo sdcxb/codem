@@ -307,6 +307,7 @@ import { ClarificationForm } from "./components/ClarificationForm";
 import { PipelineNextStepDialog } from "./components/PipelineNextStepDialog";
 import { getAgentRegistry } from "./core/agent/agent";
 import type { ClarificationFormData } from "./core/llm/agentic-loop";
+import { describeTurnOutcome } from "./core/llm/turn-outcome";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
@@ -3789,9 +3790,21 @@ flushReasoningBuffer(session.id);
             lastEvent = event;
             // Bridge to pet system
             getPet().onStreamEvent(event);
-            // Show bubble notification on task completion
-            const isOverflow = "result" in event && event.result?.type === "overflow";
-            if (!isOverflow) {
+            /**
+             * turn 结束的呈现决策全部交给 `describeTurnOutcome`（纯函数，见
+             * `core/llm/turn-outcome.ts`）。修之前这里的判据是
+             * `result.type === "stop" && reason === "error"`：
+             *   · `{type:"stop",reason:"error"}` **从来没被构造过**（死判据）；
+             *   · 循环真正会返回的 `{type:"error"}`（LLM 调用最终失败）与
+             *     `{type:"aborted"}`（用户中途停止）一个都没处理 → 失败的回合掉进"任务完成"；
+             *   · 整段 stop 处理还被嵌在 `type === "overflow"` 分支里，连正常完成都到不了。
+             */
+            const outcome = describeTurnOutcome(
+              "result" in event ? event.result : undefined,
+              { lang },
+            );
+            // Show bubble notification on task completion（失败/中断时**不许**报喜）
+            if (!outcome.suppressTaskBubble) {
               // Determine if tools were used (task with actions) vs simple chat
               const fileCount = generatedFilesRef.current.size;
               const hadToolCalls = fileCount > 0;
@@ -3805,43 +3818,27 @@ flushReasoningBuffer(session.id);
                 setTimeout(() => getPet().showBubble(bubbleMsg), 300);
               }
             }
-            // Handle overflow result (context completely exhausted)
-            if ("result" in event && event.result?.type === "overflow") {
-              const msg = event.result.message || "上下文窗口已满，请开启新对话。";
+            // 对标 DSH: 非正常结束的 turn 必须对用户可见 — 绝不静默结束。
+            // 失败/中断的正文**必须**透出去（原来 error/aborted 是静默的），
+            // 并且**绝不**显示"任务完成"卡。
+            if (outcome.notice) {
               safeAddMessage({
-                id: 'overflow-' + Date.now(),
+                id: 'loop-outcome-' + Date.now(),
                 role: "system",
-                content: `⚠️ ${msg}`,
+                content: outcome.notice,
                 timestamp: Date.now(),
                 status: "error",
               });
-            // 对标 DSH: 非正常结束的 turn 必须对用户可见 — 绝不静默结束。
-            // too_many_errors / error 等失败 reason 之前被静默吞掉，
-            // 用户看到的是"发消息不回复"。这里将失败原因明确上报。
-            if ("result" in event && event.result?.type === "stop") {
-              const reason = (event.result as any).reason;
-              if (reason === "too_many_errors" || reason === "error") {
-                const errMsg = reason === "too_many_errors"
-                  ? "LLM 调用连续失败多次，任务已停止。可能是 LLM 服务端无响应或上下文过长。请检查服务状态后重试。"
-                  : "任务执行出错，已停止。请检查控制台日志或重试。";
-                safeAddMessage({
-                  id: 'loop-error-' + Date.now(),
-                  role: "system",
-                  content: `⚠️ ${errMsg}`,
-                  timestamp: Date.now(),
-                  status: "error",
-                });
-                // 大肥鱼式状态卡：任务失败
-                updatePetCard({ phase: lang === "zh" ? "遇到问题" : "error", message: errMsg });
-              } else {
-                // 大肥鱼式状态卡：任务完成（保留 2s 后隐藏由下方清理）
-                updatePetCard({ phase: lang === "zh" ? "任务完成" : "done" });
-                setTimeout(() => {
-                  const st = usePetStore.getState();
-                  if (st.card?.phase && (st.card.phase === "任务完成" || st.card.phase === "done")) hidePetCard();
-                }, 2500);
-              }
             }
+            // 大肥鱼式状态卡：完成（保留 2.5s 后隐藏）/ 失败 / 已停止
+            if (outcome.completionCard && outcome.petPhase) {
+              updatePetCard({ phase: outcome.petPhase });
+              setTimeout(() => {
+                const st = usePetStore.getState();
+                if (st.card?.phase && (st.card.phase === "任务完成" || st.card.phase === "done")) hidePetCard();
+              }, 2500);
+            } else if (outcome.petPhase) {
+              updatePetCard({ phase: outcome.petPhase, message: outcome.petMessage });
             }
             break;
           }
@@ -3855,17 +3852,18 @@ flushReasoningBuffer(session.id);
         const turnEndTime = Date.now();
         const turnMetadata: Record<string, any> = {};
         // 从 end 事件中提取 turn 级信息
-        if ("result" in lastEvent && lastEvent.result) {
+        if (lastEvent && "result" in lastEvent && lastEvent.result) {
           const result = lastEvent.result as any;
-          // stop reason → turnStatus
-          if (result.reason === "too_many_errors") {
-            turnMetadata.turnStatus = { kind: "error", message: "Consecutive errors exceeded limit", code: result.reason };
-          } else if (result.reason === "max_iterations") {
-            turnMetadata.turnStatus = { kind: "error", message: "Iteration limit reached", code: result.reason };
-          } else if (result.reason === "no_progress") {
-            turnMetadata.turnStatus = { kind: "error", message: "No progress detected — loop stopped", code: result.reason };
-          } else if (result.reason === "overflow") {
-            turnMetadata.turnStatus = { kind: "max-tokens" };
+          /**
+           * turn 级状态与上面那次呈现**共用同一个判据**（`describeTurnOutcome`）——
+           * 原来是四条 `result.reason === …`：
+           *   · `reason === "overflow"` 恒假（overflow 形状只有 `type`/`message`/`usage`，没有 reason），
+           *     所以 max-tokens 那一行从来没出现过；
+           *   · `{type:"error"}` 根本没有 reason，失败回合一条状态都不落。
+           */
+          const outcomeForMeta = describeTurnOutcome(result, { lang });
+          if (outcomeForMeta.turnStatus) {
+            turnMetadata.turnStatus = outcomeForMeta.turnStatus;
           }
           // usage 数据
           if (result.usage) {
@@ -3873,8 +3871,12 @@ flushReasoningBuffer(session.id);
             turnMetadata.turnEndTime = turnEndTime;
           }
         }
+        const finalOutcome = describeTurnOutcome(
+          lastEvent && "result" in lastEvent ? lastEvent.result : undefined,
+          { lang },
+        );
         safeUpdateMessage(assistantMsgId, {
-          status: "done",
+          status: finalOutcome.messageStatus,
           generatedFiles: generatedFiles.length > 0 ? generatedFiles : undefined,
           metadata: Object.keys(turnMetadata).length > 0 ? turnMetadata : undefined,
         });

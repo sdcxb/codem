@@ -48,12 +48,28 @@ export function createZvecTool(tool: MCPTool & { server: string }): ToolDef {
       try {
         const result = await getMCPRegistry().callTool(ZVEC_MCP_SERVER_NAME, name, args as Record<string, unknown>);
         const text = mcpResultToText(result as any);
+        /**
+         * 第 D10b 波（假成功 A 类）：zg 的 MCP 结果用 `isError` 表示"检索自身失败"
+         * （例如索引未就绪 / 查询语法错），而这里的失败文本以 `[zvec-grep error]` 开头 ——
+         * 首字符是 `[`，**永远不可能**匹配 `tool-result-status.ts` 的首行前缀正则
+         * （`/^(?:error|错误|失败)\s*[:：-]/i`），而 `zvec_*` 也不在 `CONTENT_TOOLS` 里。
+         * 于是失败被判成 `completed`。
+         *
+         * 修法：文本照旧（`[zvec-grep error]` 对模型是有用的诊断内容），
+         * 失败由显式 `isError` 表达。**注意只在 MCP 自报 isError 时才声明失败** ——
+         * "检索成功但零命中"仍是正常结果（下面 `text || JSON.stringify(result)` 那条路径），
+         * 不能把「没有结果」变成错误。
+         */
+        const failed = !!(result && (result as any).isError);
         return {
           title: name,
-          output: result && (result as any).isError ? `[zvec-grep error]\n${text || JSON.stringify(result)}` : text || JSON.stringify(result),
+          output: failed ? `[zvec-grep error]\n${text || JSON.stringify(result)}` : text || JSON.stringify(result),
+          ...(failed ? { isError: true } : {}),
         };
       } catch (e: any) {
-        return { title: name, output: `[zvec-grep error] ${e?.message || e}` };
+        // 第 D10b 波：调用本身抛错（MCP 未连接 / 服务器崩了 / 超时）——
+        // 检索从未发生，必须显式声明失败。
+        return { title: name, output: `[zvec-grep error] ${e?.message || e}`, isError: true };
       }
     },
   };

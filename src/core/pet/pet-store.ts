@@ -479,6 +479,16 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
     switch (event.type) {
       case "end": {
         const result = (event as any).result;
+        /**
+         * `aborted` 必须单独认出来：它是**用户主动停止**，不是失败、更不是完成。
+         * 只判 `error/overflow` 时它会掉进下面的 `else` → 宠物摆出"happy"，
+         * 与"用户刚按了停止"这件事直接矛盾。
+         */
+        if (result && result.type === "aborted") {
+          state.setPetState("waiting");
+          enqueueBubble("已停止", 3000, "low");
+          break;
+        }
         const isError = result && (result.type === "error" || result.type === "overflow");
         if (isError) {
           state.setPetState("sad");

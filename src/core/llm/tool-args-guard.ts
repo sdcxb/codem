@@ -68,3 +68,36 @@ export function buildUnparsableArgsError(
     `  · 不要原样重发同一段内容（会被判定为重复调用并拦下）。`
   );
 }
+
+/**
+ * 生成「回复被输出上限截断 ⇒ 这批调用一个都没执行」的错误文本（fail closed）。
+ *
+ * ## 为什么不是上面那个 `buildUnparsableArgsError`
+ *
+ * 两者是**互补**的两条路：
+ * - `buildUnparsableArgsError`：参数 JSON **解析失败**（「第 66 波」）；
+ * - 本函数：参数 JSON **解析成功了**，但这条回复是被输出上限截断的
+ *   （`finish_reason=length`）—— 也就是"看起来合法，但无法证明完整"。
+ *
+ * 第二种更隐蔽：流式参数由 provider 侧尽力而为地收尾，一次被切在半截的
+ * `write` 调用**能解析、能通过校验**，于是半个文件被写下去、还被报成成功。
+ * 判据（「我们不能证明它完整」）就写在第 67 波的注释里，但那一版只是**事后提示**核对，
+ * 调用已经执行过了 —— 现在改成**执行前拒绝**。
+ *
+ * 文案三要素与 `buildUnparsableArgsError` 一致：发生了什么、这次**没执行**、怎么重试。
+ */
+export function buildTruncatedToolCallError(toolName: string): string {
+  const hint = isContentBearingTool(toolName)
+    ? `  · 长文件请**分块落盘**：先 \`write\` 写第一段（建议每段 ≤200 行），后面的段落用 \`write\` + \`append: true\` 追加；\n` +
+      `  · 写完之后再 \`read\` 末尾几行核对它是否完整；\n`
+    : `  · 把这次调用拆成多次更小的调用；\n`;
+  return (
+    `Tool call "${toolName}" was not executed: the response hit the output token limit, ` +
+    `so its arguments may be truncated. Re-issue the tool call with complete arguments.\n` +
+    `（这条回复的结束原因是 \`length\`（达到单次输出上限），所以参数**无法证明完整** —— ` +
+    `哪怕它能解析成一个合法 JSON，也可能是被切在半截的内容。**这次调用没有执行**。）\n` +
+    `请这样重试：\n` +
+    hint +
+    `  · 不要原样重发同一段内容（会被判定为重复调用并拦下）。`
+  );
+}

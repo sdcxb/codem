@@ -177,11 +177,30 @@ function isConcurrencySafe(
   return config.concurrencySafeTools.includes(toolName);
 }
 
+/**
+ * 工具调用**超时**的机器可读码。
+ *
+ * 为什么不能只靠错误文本：上层（循环、委派、用量统计）需要"这是超时、不是工具自己
+ * 报的失败"这个事实，而文本匹配在措辞一改就失效。超时时错误对象与结果载荷都带它。
+ */
+export const TOOL_TIMEOUT = "TOOL_TIMEOUT";
+
+/**
+ * **未派发即中止**的机器可读码（对标 DSH `TOOL_ABORTED_BEFORE_DISPATCH`）。
+ *
+ * 中止发生在调用真正开始之前时，调用不该执行、但必须在事件流里留下一条有序结果
+ * （否则界面上它永远停在「运行中」，回放也配不上对）。
+ */
+export const TOOL_ABORTED_BEFORE_DISPATCH = "TOOL_ABORTED_BEFORE_DISPATCH";
+
+/** 与 DSH `appendSkippedToolCall` 同文的合成结果文本 */
+const ABORTED_BEFORE_DISPATCH_MESSAGE = "Error: tool call aborted before dispatch";
+
 export type ToolExecutorEvent =
   | { type: "tool_start"; toolCall: StreamingToolCall }
   | { type: "tool_progress"; toolCallId: string; progress: string }
   | { type: "tool_complete"; toolCall: StreamingToolCall; result: ToolCallResult }
-  | { type: "tool_error"; toolCall: StreamingToolCall; error: string }
+  | { type: "tool_error"; toolCall: StreamingToolCall; error: string; code?: string }
   | { type: "batch_complete"; results: ToolCallResult[] };
 
 export interface ToolExecutorContext {
@@ -215,6 +234,20 @@ export interface ToolExecutorContext {
 export class StreamingToolExecutorImpl {
   private config: ToolExecutorConfig;
   private running: Map<string, StreamingToolCall> = new Map();
+  /**
+   * 中止标志：`abortAll()` 置位，**派发循环**逐处检查。
+   *
+   * ## 为什么必须有这个标志（不能只靠 abortController）
+   *
+   * `abortAll()` 只中止**在飞**调用并清空 `running`。而补位循环的判据是
+   * `this.running.size < window` —— 清空之后 `0 < window` 恒成立，于是**排队中的调用
+   * 会带着全新的、从未被中止的 controller 继续派发**（用户点了 ■，工具却照样开始跑）。
+   * `ctx.abort` 也救不了：循环侧刻意传 `abort: undefined`（每个调用用各自的 controller）。
+   *
+   * 所以判据必须是**实例级的事实**（"这一批已经中止"），而不是"当前有没有在飞调用"。
+   * 复位点只在 `execute()` 入口：新的一次执行 = 新的一批调用，否则一次中止会让执行器永久失效。
+   */
+  private abortRequested = false;
 
   constructor(config?: Partial<ToolExecutorConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -225,6 +258,14 @@ export class StreamingToolExecutorImpl {
     ctx: ToolExecutorContext,
     toolHandler: (name: string, args: Record<string, unknown>, ctx: ToolExecutorContext) => Promise<ToolCallResult>,
   ): AsyncGenerator<ToolExecutorEvent, ToolCallResult[], unknown> {
+    /*
+     * ⚠️ 这里**刻意不**复位 `abortRequested`。
+     *
+     * 复位点必须在**回合边界**（`AgenticLoop.run()` 调用 `clearAbort()`），不能放在这里：
+     * 用户点 ■ 时，最常发生的是"模型正在流式输出"——那时本轮的 `execute()` 还没被调用，
+     * 若在入口复位，排队中的调用会带着全新的 controller 开跑（正是本条缺陷的形态）。
+     * 也就是说：**中止一旦发生，本回合余下的一批批调用一个都不许派发**。
+     */
     const results: ToolCallResult[] = [];
 
     /**
@@ -265,6 +306,8 @@ export class StreamingToolExecutorImpl {
     }
 
     for (const group of groups) {
+      /* 中止之后**一个组都不许再进**：进入即等于派发（见 abortRequested 的说明） */
+      if (this.abortRequested) break;
       if (group.parallel) {
         yield* this.executeBatch(group.calls, ctx, toolHandler, results);
       } else {
@@ -272,8 +315,56 @@ export class StreamingToolExecutorImpl {
       }
     }
 
+    /**
+     * 中止后**补合成结果**（对标 DSH `appendSkippedToolCall`）。
+     *
+     * 判据是 `status === "pending"`：只有真正派发过的调用才会被置成 running/completed/error，
+     * 所以"还是 pending"= **从未开始执行**。它们不执行、不产生副作用，但必须有交代 ——
+     * 否则界面上的调用永远停在「运行中」，而事件流里连一条失败都看不到。
+     */
+    for (const tc of toolCalls) {
+      if (tc.status !== "pending") continue;
+      const result = this.skippedResult(tc);
+      results.push(result);
+      yield {
+        type: "tool_error",
+        toolCall: tc,
+        error: ABORTED_BEFORE_DISPATCH_MESSAGE,
+        code: TOOL_ABORTED_BEFORE_DISPATCH,
+      };
+    }
+
     yield { type: "batch_complete", results };
     return results;
+  }
+
+  /**
+   * 从未派发就被中止的调用的合成结果。
+   *
+   * `isError: true` 是给 `tool-result-status.ts` 的**显式失败声明**（它优先于文本启发式），
+   * `code` 让上层不必做文本匹配。
+   */
+  private skippedResult(tc: StreamingToolCall): ToolCallResult {
+    tc.status = "error";
+    tc.error = ABORTED_BEFORE_DISPATCH_MESSAGE;
+    const result: ToolCallResult = {
+      id: tc.id,
+      name: tc.name,
+      input: tc.input,
+      output: ABORTED_BEFORE_DISPATCH_MESSAGE,
+      status: "error",
+      error: ABORTED_BEFORE_DISPATCH_MESSAGE,
+    };
+    (result as { isError?: boolean; code?: string }).isError = true;
+    (result as { isError?: boolean; code?: string }).code = TOOL_ABORTED_BEFORE_DISPATCH;
+    return result;
+  }
+
+  /** 派发前的中止错误：与 `skippedResult` 同一套码与文本（走 catch 统一成形） */
+  private abortedBeforeDispatchError(): Error {
+    const err = new Error(ABORTED_BEFORE_DISPATCH_MESSAGE) as Error & { code?: string };
+    err.code = TOOL_ABORTED_BEFORE_DISPATCH;
+    return err;
   }
 
   /**
@@ -311,7 +402,7 @@ export class StreamingToolExecutorImpl {
   ): AsyncGenerator<ToolExecutorEvent, void, unknown> {
     type Entry =
       | { kind: "ok"; tc: StreamingToolCall; result: ToolCallResult }
-      | { kind: "err"; tc: StreamingToolCall; message: string };
+      | { kind: "err"; tc: StreamingToolCall; message: string; code?: string };
 
     /** 按模型顺序编号的结果槽；`undefined` = 尚未完成。 */
     const entries: Array<Entry | undefined> = new Array(toolCalls.length);
@@ -367,7 +458,7 @@ export class StreamingToolExecutorImpl {
       } catch (error: any) {
         tc.status = "error";
         tc.error = error.message;
-        entries[idx] = { kind: "err", tc, message: error.message };
+        entries[idx] = { kind: "err", tc, message: error.message, code: error?.code };
       } finally {
         this.running.delete(tc.id);
         wake();
@@ -377,7 +468,8 @@ export class StreamingToolExecutorImpl {
     // 启动窗口：先填满 maxConcurrent 个，之后完成一个补一个
     let next = 0;
     const window = Math.max(1, this.config.maxConcurrent);
-    while (next < toolCalls.length && next < window) {
+    /* 中止后不许再派发任何调用（补位循环的清空会让窗口恒有空位，见 abortRequested 的说明） */
+    while (!this.abortRequested && next < toolCalls.length && next < window) {
       const idx = next++;
       const tc = toolCalls[idx];
       tc.status = "running";
@@ -395,7 +487,12 @@ export class StreamingToolExecutorImpl {
       while (from < toolCalls.length && entries[from] !== undefined) {
         const entry = entries[from]!;
         if (entry.kind === "err") {
-          yield { type: "tool_error", toolCall: entry.tc, error: entry.message };
+          yield {
+            type: "tool_error",
+            toolCall: entry.tc,
+            error: entry.message,
+            ...(entry.code ? { code: entry.code } : {}),
+          };
         } else {
           yield { type: "tool_complete", toolCall: entry.tc, result: entry.result };
           results.push(entry.result);
@@ -406,8 +503,21 @@ export class StreamingToolExecutorImpl {
         committed = true;
       }
 
-      // 补位：窗口里空出来的位置立刻填下一个
-      while (next < toolCalls.length && this.running.size < window) {
+      if (this.abortRequested) {
+        /**
+         * 中止：**停止补位**，但把已经派发出去的调用**排空**（按模型顺序交出它们的结果），
+         * 未派发的（`idx >= next`）一个都不启动 —— 它们留给 `execute()` 统一补合成结果。
+         *
+         * 这里不能用原来的 `if (!committed) await signal`：中止后 `running` 已被清空，
+         * 若还有未派发的调用，`entries[from]` 永远不会被填上 —— 判据会永久挂住。
+         */
+        if (from >= next) break;
+        await signal;
+        continue;
+      }
+
+      // 补位：窗口里空出来的位置立刻填下一个（中止后一个都不填 —— 判据与上面的中止分支同源）
+      while (!this.abortRequested && next < toolCalls.length && this.running.size < window) {
         const idx = next++;
         const tc = toolCalls[idx];
         tc.status = "running";
@@ -453,6 +563,10 @@ export class StreamingToolExecutorImpl {
     let toolTimer: { promise: Promise<never>; cancel: () => void } | null = null;
 
     try {
+      /* 中止后不再开始执行：这个调用从未派发 ⇒ 合成"未派发即中止"结果（不产生任何副作用） */
+      if (this.abortRequested) {
+        throw this.abortedBeforeDispatchError();
+      }
       if (ctx.abort?.aborted || tc.abortController?.signal.aborted) {
         throw new Error("Aborted");
       }
@@ -496,7 +610,7 @@ export class StreamingToolExecutorImpl {
           return pr.result;
         }),
         useTimeout
-          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs)).promise
+          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs, tc.abortController!)).promise
           : new Promise<never>(() => {}),
       ]);
 
@@ -550,6 +664,23 @@ export class StreamingToolExecutorImpl {
     toolHandler: (name: string, args: Record<string, unknown>, ctx: ToolExecutorContext) => Promise<ToolCallResult>,
     results: ToolCallResult[],
   ): AsyncGenerator<ToolExecutorEvent, void, unknown> {
+    /*
+     * 中止后**一个都不许再派发**。并且这个检查必须在 `yield tool_start` **之前**：
+     * 队列里剩下的调用既然从未开始，就不该让界面显示"开始执行"。
+     * （`tool_start` 之后才发生中止的情况由下面 try 里的同一判据兜住。）
+     */
+    if (this.abortRequested) {
+      const skipped = this.skippedResult(tc);
+      results.push(skipped);
+      yield {
+        type: "tool_error",
+        toolCall: tc,
+        error: ABORTED_BEFORE_DISPATCH_MESSAGE,
+        code: TOOL_ABORTED_BEFORE_DISPATCH,
+      };
+      return;
+    }
+
     yield { type: "tool_start", toolCall: tc };
 
     tc.status = "running";
@@ -559,6 +690,10 @@ export class StreamingToolExecutorImpl {
     let toolTimer: { promise: Promise<never>; cancel: () => void } | null = null;
 
     try {
+      /* 从 `tool_start` 发出到真正执行之间可能发生中止 —— 未开始的调用一律不执行 */
+      if (this.abortRequested) {
+        throw this.abortedBeforeDispatchError();
+      }
       if (ctx.abort?.aborted || tc.abortController.signal.aborted) {
         throw new Error("Aborted");
       }
@@ -596,7 +731,7 @@ export class StreamingToolExecutorImpl {
           return pr.result;
         }),
         useTimeout
-          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs)).promise
+          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs, tc.abortController)).promise
           : new Promise<never>(() => {}),
       ]);
 
@@ -637,9 +772,21 @@ export class StreamingToolExecutorImpl {
         status: "error",
         error: error.message,
       };
+      /*
+       * 结构化失败：`isError: true` 是给 `tool-result-status.ts` 的**显式声明**
+       * （它优先于"output 首行像不像错误"的文本启发式），`code` 让上层不必匹配文本
+       * （超时 = `TOOL_TIMEOUT`，未派发即中止 = `TOOL_ABORTED_BEFORE_DISPATCH`）。
+       */
+      (errorResult as { isError?: boolean; code?: string }).isError = true;
+      if (error?.code) (errorResult as { code?: string }).code = error.code;
       results.push(errorResult);
 
-      yield { type: "tool_error", toolCall: tc, error: error.message };
+      yield {
+        type: "tool_error",
+        toolCall: tc,
+        error: error.message,
+        ...(error?.code ? { code: error.code as string } : {}),
+      };
     } finally {
       toolTimer?.cancel();
       this.running.delete(tc.id);
@@ -658,11 +805,49 @@ export class StreamingToolExecutorImpl {
    * 现在返回**可取消的句柄**：调用方在 finally 里 `cancel()`（清掉定时器）；
    * 同时给 promise 挂一个空 catch —— 即使 cancel 与超时擦肩而过，这个拒绝也**永远是被观察过的**，
    * 不会再变成未处理拒绝。
+   *
+   * ## 超时必须**真正中止工具**（不只是放弃等待）
+   *
+   * 超时原来只 `reject(...)`：`Promise.race` 放弃等待，而工具**照旧在跑**，
+   * 副作用（写文件、跑命令）照样落盘 —— 模型却被告知它失败了。判据二义：
+   * 一边是"失败"，一边是"成果真的写进去了"。
+   *
+   * 现在超时时**先** `controller.abort()`（那个 signal 就是交给工具的 `ctx.abort`，
+   * 见 `pipeline.execute(..., { ...ctx, abort: tc.abortController.signal })`），
+   * **再** reject。顺序是判据的一部分：反过来时工具可能还没观察到取消就被上报失败。
+   * （`bash` 早先单独修过同一形态；这里把修法提到执行器这一层，所有工具都受益。）
+   *
+   * ## 中止失败**不能只打日志**
+   *
+   * 如果 `abort()` 自己抛了，那么"工具已经被叫停"这个前提就不成立 —— 工具**可能还在跑**，
+   * 副作用（写文件、跑命令）还会继续落盘。这比一次普通的超时严重得多，
+   * 而原来这里只 `console.warn` 然后照旧 reject 一句"超时"，把这件事完全埋掉。
+   *
+   * 现在把它并进**要上抛的那个错误**：消息里加上原因，另挂一个 `abortFailure` 字段
+   * 供上层/测试机器可读地判定。模型与用户因此知道"这次失败之外还有一份可能仍在运行的副作用"。
    */
-  private timeoutTimer(ms: number): { promise: Promise<never>; cancel: () => void } {
+  private timeoutTimer(ms: number, controller?: AbortController): { promise: Promise<never>; cancel: () => void } {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const promise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Tool execution timed out after ${ms}ms`)), ms);
+      timer = setTimeout(() => {
+        const err = new Error(`Tool execution timed out after ${ms}ms`) as Error & {
+          code?: string;
+          abortFailure?: string;
+        };
+        err.code = TOOL_TIMEOUT;
+        /* 先让工具看到取消（协作式停止：杀掉自己的子进程/网络请求/循环）。
+           中止失败时把原因并进 err —— 见上面「中止失败不能只打日志」。 */
+        try {
+          controller?.abort();
+        } catch (abortErr) {
+          const detail = abortErr instanceof Error ? abortErr.message : String(abortErr);
+          err.abortFailure = detail;
+          err.message =
+            `${err.message}; moreover the abort signal could not be delivered ` +
+            `(the tool may still be running and its side effects may still land): ${detail}`;
+        }
+        reject(err);
+      }, ms);
     });
     // 拒绝必须始终有观察者：race 结束后（或调用方忘了 cancel 时）不会变成 unhandledRejection
     promise.catch(() => {});
@@ -677,13 +862,38 @@ export class StreamingToolExecutorImpl {
     };
   }
 
+  /**
+   * 中止在飞调用，并**关掉本回合的派发闸门**。
+   *
+   * 只中止在飞调用是不够的：补位循环的判据是 `running.size < window`，
+   * 清空 `running` 反而会让排队中的调用拿到全新的 controller 继续开跑（详见 `abortRequested`）。
+   * 闸门在**新的回合开始**时由 `clearAbort()` 打开（`AgenticLoop.run()` 调用）——
+   * 不能在每次 `execute()` 入口复位，否则"流式阶段就被中止"的那一批照样会跑。
+   */
   abortAll() {
+    this.abortRequested = true;
     for (const [, tc] of this.running) {
       if (tc.abortController) {
         tc.abortController.abort();
       }
     }
     this.running.clear();
+  }
+
+  /**
+   * 打开派发闸门（**回合边界**的唯一复位点，由 `AgenticLoop.run()` 在每次新回合开头调用）。
+   *
+   * 为什么需要它：`abortAll()` 之后闸门必须一直关着（否则中止会被同一回合后面的
+   * `execute()` 复位掉），但没有复位点的话执行器就永久失效了 —— 一次中止会让**之后
+   * 每一个回合**都不再执行任何工具。回合开始 = 新的用户意图 = 打开闸门。
+   */
+  clearAbort() {
+    this.abortRequested = false;
+  }
+
+  /** 当前是否处于"已中止、不再派发"的状态（判据给测试与上层观测用） */
+  isAborted(): boolean {
+    return this.abortRequested;
   }
 
   getRunning(): StreamingToolCall[] {

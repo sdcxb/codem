@@ -278,6 +278,19 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const data = await response.json();
     const choice = data.choices?.[0];
 
+    /**
+     * D7（后半）：`complete()` 是压缩摘要等**非流式调用**的唯一出口。
+     *
+     * 原来这里的 usage 是手写的三个字段，**丢掉了缓存桶** —— 而流式路径
+     * （下面 `parseProviderUsage(usage)` 那一处）会把 `cacheHitTokens` /
+     * `uncachedInputTokens` 带出来。于是同一轮里"流式那次报了缓存、非流式这次没报"，
+     * 缓存命中率与按缓存价计的成本都会算错（分母 billed input 偏小）。
+     *
+     * 现在两条路径共用同一个真相源。缓存键**只在 provider 真的报了缓存字段时**才展开
+     * （`parseProviderUsage` 的契约：未上报 ≠ 上报 0），不能填 0 冒充"确定没命中"。
+     */
+    const nu = parseProviderUsage(data.usage || {});
+
     return {
       id: data.id,
       content: choice?.message?.content || "",
@@ -288,9 +301,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
         status: "completed" as const,
       })),
       usage: {
-        promptTokens: data.usage?.prompt_tokens || 0,
-        completionTokens: data.usage?.completion_tokens || 0,
-        totalTokens: data.usage?.total_tokens || 0,
+        promptTokens: nu.promptTokens,
+        completionTokens: nu.completionTokens,
+        totalTokens: nu.totalTokens,
+        ...(nu.cacheHitTokens !== undefined ? { cacheHitTokens: nu.cacheHitTokens } : {}),
+        ...(nu.uncachedInputTokens !== undefined ? { uncachedInputTokens: nu.uncachedInputTokens } : {}),
       },
       finishReason: choice?.finish_reason === "tool_calls" ? "tool_use" : "stop",
       model: request.model,
@@ -617,7 +632,26 @@ export class OpenAICompatibleProvider implements LLMProvider {
       // Fallback: if stream ended without finish_reason, yield tool_use_end + end
       // This handles APIs that close the connection without an explicit finish_reason
       if (!streamEnded) {
-        console.warn("[Provider] Stream ended without finish_reason, yielding fallback events");
+        /*
+         * ⚠️ 用户点 ■（或会话被中止）时走的就是这条路：`abortHandler` 调用
+         * `reader.cancel()`，挂起的 `reader.read()` 以 `{done:true}` **正常返回**
+         * （它不会抛 AbortError），于是这里被当成"服务端没给 finish_reason 的正常结束"，
+         * 一直发出 `finishReason: "stop"`（或 `"tool_use"`）。
+         *
+         * 后果不是"少一个字段"：`agentic-loop` 把它记进 `lastFinishReason`，
+         * 这一轮于是看起来**和正常完成一模一样** —— 用户明明按了停止，
+         * 回合却以 "completed" 收场（与"LLM 调用失败也报 completed"同一类假成功）。
+         *
+         * 所以：**中止信号已经置位时如实报 `aborted`**，由循环转成 `{type:"aborted"}`。
+         * 判据用请求自己的 `abortSignal`（就是这个 signal 触发了 `abortHandler`）——
+         * 连接阶段的超时 signal 在这里已经被 `cleanup()` 摘掉了，不会误报。
+         */
+        const abortedByCaller = request.abortSignal?.aborted === true;
+        if (abortedByCaller) {
+          console.warn("[Provider] Stream ended because the request was aborted — reporting finishReason=aborted");
+        } else {
+          console.warn("[Provider] Stream ended without finish_reason, yielding fallback events");
+        }
         for (const key of Object.keys(currentToolCalls)) {
           const tc = currentToolCalls[key];
           if (tc) {
@@ -650,7 +684,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
           }
         }
         yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
-        yield { type: "end", finishReason: Object.keys(currentToolCalls).length > 0 ? "tool_use" : "stop" };
+        yield {
+          type: "end",
+          finishReason: abortedByCaller
+            ? "aborted"
+            : Object.keys(currentToolCalls).length > 0
+              ? "tool_use"
+              : "stop",
+        };
       }
     } finally {
       /* 清理无条件执行：正常读完、抛错、消费者提前 break/return 三条路都会到这里 */

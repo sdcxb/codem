@@ -198,6 +198,14 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   // P6：记录 end 事件的 stop reason（too_many_errors/max_iterations/no_progress/overflow…），
   // 用于"无任何文本产出即异常终止"时落库并返回失败（否则微信/手机端静默无回复）。
   let endReason: string | undefined;
+  /**
+   * 第 70 波（TASK 2 同类清查）：end 事件的**结果本体**也要留下来。
+   *
+   * `{ type: "error"; error }` 与 `{ type: "aborted" }` 这两种形状**不带 `reason`** ——
+   * 只读 `result.reason` 的字符串判据看不见它们（`endReason` 会是 undefined），
+   * 于是一个"LLM 硬失败"的后台/委派回合会被 `completeTask` 当成**成功**交回父会话。
+   */
+  let endResult: any = undefined;
 
   // 第 64 波（用户质疑「用时间做可靠性」之后重做）：
   // 原来是「15 分钟墙钟上限」—— 那是**错的机制**：合法的长任务（装依赖、跑全量测试、编译）
@@ -511,7 +519,13 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
         case "end":
           // 通知 UI 执行结束
-          endReason = (event as any)?.result?.reason || (event as any)?.reason || undefined;
+          endResult = (event as any)?.result;
+          endReason =
+            endResult?.type === "error"
+              ? `error: ${endResult.error ?? "LLM 调用失败"}`
+              : endResult?.type === "aborted"
+                ? "aborted"
+                : (event as any)?.result?.reason || (event as any)?.reason || undefined;
           bus.send(sessionId, {
             type: "status",
             sourceSessionId: delegationTaskId ? orchestrator.getTask(delegationTaskId)?.sourceSessionId || "" : "",
@@ -632,6 +646,64 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
         orchestrator.failTask(delegationTaskId, `${note}\n\n${zht ? "已产出的内容" : "Partial output"}:\n${cleanOutput || "(none)"}`);
       }
       return { output: cleanOutput, toolCallCount, success: false, error: note };
+    }
+
+    /**
+     * 第 70 波（TASK 2 同类清查）：按**形状**识别"不是完成"的收场。
+     *
+     * `{ type: "error"; error }`（LLM 调用最终失败）、`{ type: "aborted" }`（中途停止）
+     * 与 `{ type: "overflow"; message }`（上下文彻底用尽）**都不带 `reason`**，
+     * 所以上面那条字符串判据（以及 STALL 名单）对它们完全失效 ——
+     * 一个失败的后台/委派回合会在最后被 `completeTask` 当成成功交回父会话。
+     * （下面 P6 的注释把 `overflow` 也算进"reason 覆盖"，但 overflow 形状里根本没有
+     * `reason` 字段 —— 那是一条恒假的声称。）
+     *
+     * 这里的判据刻意**不看有没有文本**：失败回合自己也会吐一段说明文本
+     * （`executeIteration` 的可见失败上报），那段文本不该把失败洗成"正常完成"。
+     */
+    const endShape = endResult?.type;
+    if (endShape === "error" || endShape === "aborted" || endShape === "overflow") {
+      const zhf = getLang() === "zh";
+      const detail =
+        endShape === "error"
+          ? String(endResult.error ?? (zhf ? "LLM 调用失败" : "LLM call failed"))
+          : endShape === "overflow"
+            ? String(endResult.message ?? (zhf ? "上下文窗口已满" : "context window exhausted"))
+            : String(abortedBy ?? "cancel");
+      const note =
+        endShape === "error"
+          ? zhf
+            ? `[Agentic 循环失败: ${detail}] 这不是正常完成 —— 已产出的内容附在下方，请确认后再继续。`
+            : `[Agentic loop failed: ${detail}] NOT a normal completion. Partial output below.`
+          : endShape === "overflow"
+            ? zhf
+              ? `[上下文已用尽: ${detail}] 这不是正常完成 —— 已产出的内容附在下方，请确认后再继续。`
+              : `[Context exhausted: ${detail}] NOT a normal completion. Partial output below.`
+            : zhf
+              ? `[回合被中止: ${detail}] 这不是正常完成 —— 已产出的内容附在下方，请确认后再继续。`
+              : `[Turn aborted: ${detail}] NOT a normal completion. Partial output below.`;
+      MessageStorage.createMessage({
+        id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "system",
+        content: note,
+        timestamp: Date.now(),
+        status: "error",
+      }, sessionId);
+      if (delegationTaskId) {
+        if (endShape === "aborted") orchestrator.cancelTask(delegationTaskId);
+        else orchestrator.failTask(delegationTaskId, `${note}\n\n${cleanOutput || "(none)"}`);
+      }
+      return {
+        output: cleanOutput,
+        toolCallCount,
+        success: false,
+        error:
+          endShape === "error"
+            ? `循环失败: ${detail}`
+            : endShape === "overflow"
+              ? `上下文已用尽: ${detail}`
+              : `回合被中止: ${detail}`,
+      };
     }
 
     // P6：end 事件带异常 reason 且无任何文本产出 → 落库 system error 并返回失败
