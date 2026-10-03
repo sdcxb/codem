@@ -1125,6 +1125,14 @@ node .preview-shot/_ab-campaign.mjs … --install 1.16.233 --go     # 真跑：�
 node .preview-shot/_run-repeat-campaign.mjs --arm control --runs 2,3 `
   --tasks repo-02-…,repo-03-… --out .preview-shot/eval-records-repo-control.jsonl
 
+# ⑤b **机制开火核对（先做这一步，再解读 A/B）**
+#    空结果有两种含义：「机制没效果」与「机制根本没触发」。跑完候选先数开火次数：
+#    RED TEST 指针 / 红测试守卫 / read(line_numbers) 各开火多少次。
+node .preview-shot/_mechanism-engagement.mjs .preview-shot/eval-records-codem-repo-v3.jsonl "1.16.234（候选）"
+#    反向对照已做过：在 1.16.232（不含这三个机制）的 14 条会话上开火 **0** 次 ——
+#    也就是说这个检查器不会把"没机制"的会话误报成"开火了"；若候选构建上仍是 0，
+#    第一件要查的是 **appVersion 对不对**（跑的根本不是带机制的构建）。
+
 # ⑥ 单次运行的事后诊断（每条记录都留了产物，不需要重跑）
 node tools/eval/audit-codem-record.mjs --session <sessionId>   # 它到底调过哪些工具、改过哪些文件
 #   .preview-shot/eval-<arm>-<task>.grade.txt   判据输出（哪条红、为什么）
