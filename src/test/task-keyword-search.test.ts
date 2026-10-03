@@ -147,14 +147,6 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
     }
   });
 
-  /**
-   * TSN-8（第 101 波，**由真实跑批的行为数据逼出来的**）：
-   * 小族必须**把成员全列出来**，而不是只给三个例子。
-   *
-   * 实测：236 候选在 repo-02 上**仍然没有碰 `dsh-d9`** ✗ ——
-   * 而对手赢的那次是**在 grep 输出里直接看到了 `dsh-d9-…` 这个文件名** ✓。
-   * 只给"这一族有 19 个、例如 A/B/C"太间接 ✗；19 个文件名短短几行，直接列全就行 ✓。
-   */
   it("TSN-8: 成员不多的小族要把成员全列出来（只给三个例子不够 —— 对手赢在看到具体文件名）", () => {
     const root = mkdtempSync(join(tmpdir(), "codem-task-search-family-"));
     try {
@@ -168,6 +160,35 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
       for (let i = 1; i <= 6; i++) {
         expect(notice, `dsh-d${i} 必须被列出来`).toContain(`dsh-d${i}-something.test.ts`);
       }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * TSN-9（第 104 波，**由 repo-03 的真实行为数据逼出来的**）：
+   * **族的排序要按"族内成员与任务文本的相关性"**，而不是按族的大小。
+   *
+   * 实测：repo-03 的清单里明明有 `dsh-d6-usage-accounting`、`dsh-d7-usage-cache-buckets`，
+   * 但 `dsh-*` 族被排在第三（前面是 25 个的 library-*、21 个的 tool-* ✗）⇒
+   * 那次运行只碰了 d6、没碰 d7 ✗。按相关性排，含 usage 的那个族会浮到第一 ✓。
+   */
+  it("TSN-9: 族的排序按「族内成员与任务文本的相关性」，不按族的大小", () => {
+    const root = mkdtempSync(join(tmpdir(), "codem-task-search-rank-"));
+    try {
+      // 一个"很大但无关"的族，和一个"很小但相关"的族
+      for (let i = 0; i < 60; i++) writeFileSync(join(root, `library-noise-${String(i).padStart(2, "0")}.test.ts`), "// n");
+      writeFileSync(join(root, "dsh-d6-usage-accounting.test.ts"), "// x");
+      writeFileSync(join(root, "dsh-d7-usage-cache-buckets.test.ts"), "// x");
+      const notice = buildTaskSearchNotice(root, "用量统计面板的数字明显偏低，怀疑记账只记了一部分 usage")!;
+      /**
+       * ⚠️ 过滤条件要同时匹配**两种**分族行格式（第 104 波踩到）：
+       * 小族是 `- dsh-*（2 个）：…`，大族是 `- library-*：60 个（例如 …）`。
+       * 第一版只匹配前者 ⇒ 把大族那行滤掉了 ⇒ 判据**恒真**、什么都没测到 ✗。
+       */
+      const clusterLines = notice.split("\n").filter((l) => l.trim().startsWith("- ") && l.trim().includes("-*"));
+      expect(clusterLines.length, `应当给出分族（实际：${notice.split("\n").length} 行）`).toBeGreaterThanOrEqual(2);
+      expect(clusterLines[0], `相关族应当排第一（实际：${clusterLines.join(" | ")}）`).toContain("dsh-*");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

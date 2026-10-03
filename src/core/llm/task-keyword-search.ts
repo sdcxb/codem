@@ -43,6 +43,15 @@ export const SMALL_CLUSTER_MAX = 25;
 /** 只有工作区里的测试文件够多时，「命名分族」才有信息量（否则就是噪声 ✗） */
 export const MIN_FILES_FOR_CLUSTERS = 50;
 
+/** 把文本切成可比较的词元（小写、长度 ≥3 的字母数字片段；camelCase 会拆开） */
+function tokenize(text: string): string[] {
+  return String(text ?? "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((x) => x.length >= 3);
+}
+
 /** 跳过的目录（隐藏目录一律跳过：参考检出、快照、缓存都在这一类里） */
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "target", "coverage", "out", "vendor", "third_party"]);
 
@@ -100,7 +109,11 @@ export function extractSearchTerms(message: string): string[] {
  * 也就是说，真正有用的事实是"**这个仓库的测试文件按前缀分成哪些族**"，
  * 而不是"全部文件列表" ✗（4187 个文件里看不出任何结构 ✓）。
  */
-export function summarizeNameClusters(files: string[], top = 12): { prefix: string; count: number; examples: string[]; members: string[] }[] {
+export function summarizeNameClusters(
+  files: string[],
+  query = "",
+  top = 12,
+): { prefix: string; count: number; examples: string[]; members: string[]; relevance: number }[] {
   const buckets = new Map<string, { count: number; examples: string[]; members: string[] }>();
   for (const f of files) {
     const base = (f.split("/").pop() ?? f).replace(/\.(test|spec)\..*$/, "");
@@ -119,10 +132,31 @@ export function summarizeNameClusters(files: string[], top = 12): { prefix: stri
       if (cur.members.length < MEMBERS_CAP) cur.members.push(f);
     } else buckets.set(prefix, { count: 1, examples: [f], members: [f] });
   }
+  /**
+   * 排序依据（第 104 波修正）：**族内成员与任务文本的相关性**，而不是族的大小。
+   * 实测：repo-03 的清单里明明有 `dsh-d6-usage-accounting`、`dsh-d7-usage-cache-buckets`，
+   * 但 `dsh-*` 族被排在第三（前面是 25 个的 library-*、21 个的 tool-* ✗）⇒ 那次运行只碰了 d6、没碰 d7 ✗。
+   */
+  const queryTokens = new Set(tokenize(query));
+  const relevanceOf = (members: string[]) => {
+    if (queryTokens.size === 0) return 0;
+    let score = 0;
+    for (const m of members) {
+      const nameTokens = new Set(tokenize(m.split("/").pop() ?? m));
+      for (const tk of queryTokens) if (nameTokens.has(tk)) score += 1;
+    }
+    return score;
+  };
   return [...buckets.entries()]
-    .map(([prefix, v]) => ({ prefix, count: v.count, examples: v.examples, members: [...v.members].sort() }))
+    .map(([prefix, v]) => ({
+      prefix,
+      count: v.count,
+      examples: v.examples,
+      members: [...v.members].sort(),
+      relevance: relevanceOf(v.members),
+    }))
     .filter((x) => x.count >= 2)
-    .sort((a, b) => b.count - a.count || a.prefix.localeCompare(b.prefix))
+    .sort((a, b) => b.relevance - a.relevance || b.count - a.count || a.prefix.localeCompare(b.prefix))
     .slice(0, top);
 }
 
@@ -215,7 +249,7 @@ export function buildTaskSearchNotice(root: string, message: string, maxHits = D
   }
 
   if (hits.length === 0 && files.length < MIN_FILES_FOR_CLUSTERS) return null;
-  return buildNotice(hits, files, usefulTerms.length < terms.length ? terms.length - usefulTerms.length : 0);
+  return buildNotice(hits, files, usefulTerms.length < terms.length ? terms.length - usefulTerms.length : 0, message);
 }
 
 /** 组装最终消息（关键词命中 + 命名簇；都只陈述事实） */
@@ -223,6 +257,7 @@ function buildNotice(
   hits: { file: string; count: number; matched: string[] }[],
   files: string[],
   droppedGeneric = 0,
+  query = "",
   maxHits = DEFAULT_MAX_HITS,
 ): string | null {
   hits.sort((a, b) => b.count - a.count || a.file.localeCompare(b.file));
@@ -234,7 +269,7 @@ function buildNotice(
       : `（一共 ${hits.length} 个测试文件命中。）`;
 
   /** 命名簇：赢家正是从"文件名成族"这件事里看出规律的 */
-  const clusters = summarizeNameClusters(files);
+  const clusters = summarizeNameClusters(files, query);
   const clusterLines = clusters.length
     ? [
         `这个工作区有 ${files.length} 个测试文件，按名字开头分成这些族（≥2 个的）：`,
