@@ -1526,19 +1526,24 @@ _run-second-pass.mjs   复跑我们通过过的 8 个任务（run-2）          
 `Cargo.toml` / `CHANGELOG` 顶部 / `PROJECT-GUIDE` 表 / `latest.json` **同时**一致 ——
 所以必须"改号 → 构建 → 生成清单 → 一次性提交"，不能改一半放在树上（那会让判据一直红着）。
 
-**源码层面的内容**（`git diff 9110246..HEAD --stat -- src/` 的准确清单）：
+**源码层面的内容**（`git diff 9110246..HEAD --stat -- src/` 的准确清单，2026-10-03 复核）：
 
 | 文件 | 改动 | 证据来源 |
 |---|---|---|
 | `tool-result-storage.ts` | 大块输出预览改为**头 500 + 尾 2000** | repo-04 那轮 404 passed 的汇总在尾部、模型只看到头部 |
 | `agentic-loop.ts` | **`[RED TEST]` 指针**（红的那一刻把"先去读这些判据"附在结果里） | 四个失败任务**全零**读过失败判据（§13.13g） |
 | `agentic-loop.ts` | 红测试识别**先剥 ANSI** | 交互使用时彩色输出会让标记正则静默失效 |
-| `agentic-loop.ts` | 读缓存键**补上行号开关** | 自查抓到的静默串味（本波自己引入、自己修） |
-| `tool-output-shapes.ts` + `tools.ts` | `read({ line_numbers })` + `edit` 容忍行号前缀 | repo-02 里两次 `node -e` / `python -c` 绕道打印行号 |
-| `i18n-templates.ts` | **「动手之前先看到红」**（中英双语） | 四个失败里两个是"从头到尾没跑到那条判据"（§13.16b），而"跑相关模块"是**收尾**要求、对这个形态没用 |
+| `agentic-loop.ts` | 读缓存键 + 同响应去重键**补上行号开关** | 自查抓到的两处静默串味（同一坑的两处） |
+| `tool-output-shapes.ts` + `tools.ts` | `read({ line_numbers })` + `edit` **容忍行号前缀（精确命中优先）** | repo-02 里两次 `node -e` / `python -c` 绕道打印行号 |
+| `i18n-templates.ts` | **「动手之前先看到红」**（中英双语） | 四个失败里两个是"从头到尾没跑到那条判据"（§13.16b）；基线代理指标：首次跑测试在第 **27** 次调用（§13.18b） |
+| `workflow-engine.ts` | 修掉"仍在应用进程内跑（`new Function`）"的**过时注释** | 它其实早已走 `executeCode()` → Rust 沙箱 |
 
-配套判据：`read-line-numbers.test.ts`（LN-1..5）、`red-test-at-completion.test.ts` 扩到 RT-1..12、
-`tool-result-storage.test.ts` 加两条、`s0-regression-full.test.ts` 的接线判据加强为"断言不变量"。
+**配套判据（新增/加强）**：`read-line-numbers.test.ts`（LN-1..6）、`red-test-at-completion.test.ts`（RT-1..13）、
+`tool-result-storage.test.ts`（+2）、`prompt-root-cause-verification.test.ts`（PROMPT-ROOT-6 + ROOT-5 扩展）、
+**`workflow-sandbox-wiring.test.ts`（WF-1/2）**、**`phase-b-f-regression.test.ts`（CSP 裸 `unsafe-eval` 的 token 判据）**、
+`s0-regression-full.test.ts`（两处接线判据改为断言不变量）。
+评测侧（不进装机包但同批提交）：`repo-workspace.mjs` 的排除清单单一真相与 `isExcludedFromWorkspace`、
+`codem-record-integrity.mjs` 的 junction 逃逸规则、`eval-workspace-exclusions.test.ts`。
 
 **两个交互面已核实安全**（"新功能 × 既有机制"是最容易出事的地方，所以逐条看代码而不是想当然）：
 
