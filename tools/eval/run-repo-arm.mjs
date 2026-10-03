@@ -27,7 +27,7 @@
  *   node tools/eval/run-repo-arm.mjs --arm noop --agent-cmd "node .../noop-agent.mjs"  # 自证：应当全红
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmdirSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmdirSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,7 @@ function parseArgs(argv) {
     else if (arg === "--report") out.report = true;
     else if (arg === "--reference") out.reference = true;
     else if (arg === "--keep") out.keep = true;
+    else if (arg === "--verify-workspace") out.verifyWorkspace = true;
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`不认识的参数：${arg}`);
   }
@@ -71,39 +72,122 @@ const USAGE = `用法：
   --report      只读记录出成对报告
 `;
 
-/** 建一个真实仓库的 worktree，并把实现回退到修复前。 */
+/**
+ * 建一个真实仓库的评测工作区：**一份只有"bug 状态"这一个提交的全新仓库**。
+ *
+ * ## 为什么不再用 `git worktree add --detach HEAD`（第 96 波修掉的漏洞）
+ *
+ * 旧做法是"在 HEAD 上开 worktree，再把实现回退到 <buggyCommit>" —— 于是
+ * **修复后的版本仍然在 `HEAD` 里**：被测 agent 只要跑一句
+ * `git checkout HEAD -- <实现文件>`（或 `git restore` / `git stash`），
+ * 就把**参考解**装了回去，看起来"修好了"。
+ * 这不是假设：本轮实测三次（repo-01/02/03）**三次都这么过关**，
+ * 而且 agent 还会顺藤摸到"自己在评测里"（它列了 `git worktree list`、
+ * 扫到过上一轮留下的 `%TEMP%\codem-eval-repo-*`）。
+ *
+ * ## 现在的口径
+ *
+ * 1. `git archive HEAD` 把**跟踪的文件**导出成一份干净的工作树
+ *    （不拷 `node_modules`：用 junction 指回主仓库；不拷 `target/`、`.preview-shot/` 等未跟踪物）；
+ * 2. **把答案挪出工作区**：排除 `docs/HANDOFF-*`（那份交接单写着每个任务的缺陷与修法）
+ *    与 `tools/eval/**`（任务集本身写着涉及哪些文件、`buggyCommit` 是哪个）；
+ * 3. 用 `<buggyCommit>:<实现文件>` 的内容覆盖实现 ⇒ 造出 bug；
+ * 4. `git init` + 一次提交 ⇒ **工作区的 git 历史只有一个提交，就是 bug 状态**；
+ *    `git checkout HEAD -- <文件>` 只会把 bug 装回来，而"参考解"在这个仓库里**不可达**。
+ *
+ * ⚠️ 仍然挡不住的：agent 去网上找/从别处拿（本档不防这个）；以及"它自己真的会修"（那正是要测的）。
+ */
 function prepareRepoWorkspace(task) {
   const ws = mkdtempSync(join(tmpdir(), `codem-eval-repo-${task.id}-`));
-  // mkdtemp 建出来的是空目录，worktree add 要它不存在或为空（空可以）
-  const add = git(["worktree", "add", "--detach", ws, "HEAD"]);
-  if (add.status !== 0) throw new Error(`worktree add 失败：${add.stderr || add.stdout}`);
-  // node_modules 用 junction 指回主仓库：不拷、也不改主仓库
+  const tar = join(ws, "..", `codem-eval-archive-${task.id}-${process.pid}.tar`);
+  // 1) 导出 HEAD 的跟踪文件（随后再把"答案"删掉，见 EXCLUDED_FROM_WORKSPACE 的说明）
+  const archive = git(["archive", "--format=tar", "-o", tar, "HEAD"]);
+  if (archive.status !== 0) throw new Error(`git archive 失败：${archive.stderr || archive.stdout}`);
+  const untar = spawnSync("tar", ["-xf", tar, "-C", ws], { encoding: "utf8" });
   try {
-    mkdirSync(join(ws, "node_modules"), { recursive: false });
-    rmdirSync(join(ws, "node_modules")); // 立刻删掉，改成 junction
+    rmSync(tar, { force: true });
   } catch {
-    /* 已存在就跳过 */
+    /* 删不掉不影响评测 */
   }
+  if (untar.status !== 0) throw new Error(`解包失败：${untar.stderr || untar.stdout}`);
+  removeAnswersFromWorkspace(ws);
+
+  // 2) node_modules 用 junction 指回主仓库：不拷、也不改主仓库
   const junction = spawnSync("cmd", ["/c", "mklink", "/J", join(ws, "node_modules"), join(REPO_ROOT, "node_modules")], {
     encoding: "utf8",
   });
   if (junction.status !== 0) throw new Error(`node_modules junction 失败：${junction.stderr || junction.stdout}`);
+
+  // 3) 造 bug（用主仓库的对象库读 buggyCommit，写进工作区）
+  applyBug(task, ws);
+
+  // 4) 一次提交：HEAD == bug 状态，历史里没有参考解
+  git(["init", "-q"], ws);
+  git(["add", "-A"], ws);
+  const commit = git(
+    ["-c", "user.name=codem-eval", "-c", "user.email=eval@localhost", "commit", "-q", "-m", `EVAL bug state: ${task.id}`],
+    ws,
+  );
+  if (commit.status !== 0) throw new Error(`${task.id}: 建立 bug 状态提交失败：${commit.stderr || commit.stdout}`);
   return ws;
 }
 
-/** 造 bug：把实现文件回退到修复前。 */
+/**
+ * 从工作区里删掉**答案**与**任务集**。
+ *
+ * - `docs/HANDOFF-*.md`：交接单逐条写着"哪个文件有什么缺陷、怎么修" —— 留着等于开卷考；
+ * - `tools/eval`：任务集里有 `revertPaths` / `buggyCommit` / 判据文件名，等于提前告诉它改哪里。
+ *
+ * 判据（测试文件）**不删** —— 它就是评分依据，而且反作弊会从提交里还原它们。
+ */
+const EXCLUDED_FROM_WORKSPACE = ["docs/HANDOFF-*", "tools/eval"];
+
+function removeAnswersFromWorkspace(ws) {
+  const drop = [
+    join(ws, "tools", "eval"),
+  ];
+  // docs/HANDOFF-*.md（交接单）——用目录枚举，避免依赖 shell 的 glob
+  const docs = join(ws, "docs");
+  if (existsSync(docs)) {
+    for (const name of readdirSync(docs)) {
+      if (name.startsWith("HANDOFF-")) drop.push(join(docs, name));
+    }
+  }
+  for (const p of drop) {
+    try {
+      rmSync(p, { recursive: true, force: true });
+    } catch (error) {
+      console.log(`     （删不掉 ${p}，已忽略：${error?.code ?? error}）`);
+    }
+  }
+}
+
+/** 造 bug：把实现文件换成 `<buggyCommit>` 里的那一版（主仓库的对象库是只读来源）。 */
 function applyBug(task, ws) {
-  const r = git(["checkout", task.buggyCommit, "--", ...task.revertPaths], ws);
-  if (r.status !== 0) throw new Error(`${task.id}: 回退实现失败：${r.stderr || r.stdout}`);
+  for (const rel of task.revertPaths) {
+    const show = git(["show", `${task.buggyCommit}:${rel}`]);
+    if (show.status !== 0) throw new Error(`${task.id}: 取 ${task.buggyCommit}:${rel} 失败：${show.stderr || show.stdout}`);
+    const target = join(ws, rel);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, show.stdout ?? "", "utf8");
+  }
 }
 
 /** 自证用：把实现还原成 HEAD（= 正确解）。 */
 function restoreImplementation(task, ws) {
-  const r = git(["checkout", "HEAD", "--", ...task.revertPaths], ws);
-  if (r.status !== 0) throw new Error(`${task.id}: 还原实现失败：${r.stderr || r.stdout}`);
+  for (const rel of task.revertPaths) {
+    const show = git(["show", `HEAD:${rel}`]);
+    if (show.status !== 0) throw new Error(`${task.id}: 取 HEAD:${rel} 失败：${show.stderr || show.stdout}`);
+    writeFileSync(join(ws, rel), show.stdout ?? "", "utf8");
+  }
 }
 
-/** 反作弊：判据文件 + 回归子集都从 HEAD 还原，agent 改测试无效。 */
+/**
+ * 反作弊：判据文件 + 回归子集从**这个工作区自己的提交**还原（= 评测开始时的版本），agent 改测试无效。
+ *
+ * 它与旧实现的区别只有一处，但很关键：这里还原出来的**只有测试文件**，
+ * 而工作区的 `HEAD` 是 **bug 状态** —— 所以"从 git 还原实现"这条路不再是拿答案。
+ */
 function restoreTests(task, ws) {
   git(["checkout", "HEAD", "--", ...filesToRestore(task)], ws);
 }
@@ -114,15 +198,66 @@ function cleanupRepoWorkspace(ws) {
   } catch {
     /* 已经不是 junction 就跳过 */
   }
-  const r = git(["worktree", "remove", ws, "--force"]);
-  if (r.status !== 0) {
-    try {
-      rmSync(ws, { recursive: true, force: true });
-    } catch (error) {
-      console.log(`     （worktree 删不掉，已忽略：${error?.code ?? error}）`);
-    }
-    git(["worktree", "prune"]);
+  try {
+    rmSync(ws, { recursive: true, force: true });
+  } catch (error) {
+    console.log(`     （工作区删不掉，已忽略：${error?.code ?? error}）`);
   }
+}
+
+/**
+ * `--verify-workspace`：**只验工作区**（不跑 agent、不评分）—— 证明尺子本身是可信的。
+ *
+ * 对每个任务断言三件事：
+ *  1. 工作区历史**只有一个提交**（`HEAD~1` 不存在）⇒ "从 git 里取回参考解"这条路不存在；
+ *  2. 每个 `revertPaths` 的**工作区内容 == 该提交**（干净树）且 **== `<buggyCommit>` 的版本** ⇒ bug 真的在里面；
+ *  3. 它与**主仓库 HEAD 的版本不同** ⇒ 这个任务确实构造出了差异（退化的任务会被抓出来）；
+ *  4. 答案（`docs/HANDOFF-*`）与任务集（`tools/eval`）不在工作区里。
+ *
+ * 为什么值得有一个独立模式：本轮实测三次"agent 用 `git checkout HEAD -- <实现文件>`
+ * 把参考解装回来"，说明"尺子可信"必须自己是被验证过的，不能靠"看起来对"。
+ */
+function verifyWorkspace(task) {
+  const ws = prepareRepoWorkspace(task);
+  const problems = [];
+  const warnings = [];
+  try {
+    const log = git(["log", "--oneline"], ws).stdout?.trim().split("\n").filter(Boolean) ?? [];
+    if (log.length !== 1) problems.push(`历史里有 ${log.length} 个提交（应当只有 1 个：bug 状态）`);
+    if (git(["cat-file", "-e", "HEAD~1"], ws).status === 0) problems.push("HEAD~1 存在 ⇒ 参考解在历史里可达");
+
+    let differing = 0;
+    for (const rel of task.revertPaths) {
+      const inWs = readFileSync(join(ws, rel), "utf8");
+      const wsHead = git(["show", `HEAD:${rel}`], ws).stdout ?? "";
+      if (inWs !== wsHead) problems.push(`${rel}: 工作区内容与自己的 HEAD 不一致（工作区应当是干净树）`);
+      const buggy = git(["show", `${task.buggyCommit}:${rel}`]).stdout ?? "";
+      if (inWs !== buggy) problems.push(`${rel}: 工作区内容 ≠ ${task.buggyCommit} 的版本（bug 没造出来）`);
+      const fixed = git(["show", `HEAD:${rel}`]).stdout ?? "";
+      if (buggy === fixed) {
+        warnings.push(
+          `${rel}: buggyCommit(${task.buggyCommit}) 与 HEAD 的内容**完全相同** —— 这条 revertPath 是空操作（bug 由本任务别的文件提供）`,
+        );
+      } else {
+        differing++;
+      }
+    }
+    /**
+     * **全部** revertPath 都没差异 ⇒ 这个任务根本没构造出 bug（判据会恒绿）—— 这是致命项。
+     * 只有**一部分**没差异 ⇒ 只发警告：bug 确实由别的文件提供，任务有效，但声明里有冗余项
+     * （会让人以为"修复必须动这个文件"）。这是**任务集卫生**问题，不是本次评测不可信。
+     */
+    if (differing === 0) problems.push("所有 revertPath 都与 HEAD 相同 ⇒ 这个任务构造不出任何差异（判据会恒绿）");
+
+    if (existsSync(join(ws, "tools", "eval"))) problems.push("工作区里还有 tools/eval（任务集 = 答案提示）");
+    const docsDir = join(ws, "docs");
+    if (existsSync(docsDir) && readdirSync(docsDir).some((n) => n.startsWith("HANDOFF-"))) {
+      problems.push("工作区里还有 docs/HANDOFF-*（交接单 = 答案）");
+    }
+  } finally {
+    cleanupRepoWorkspace(ws);
+  }
+  return { problems, warnings };
 }
 
 function readUsage(ws) {
@@ -143,7 +278,8 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
   let failureReason = null;
   let usage;
   try {
-    applyBug(task, ws);
+    // 工作区在 `prepareRepoWorkspace` 里已经是**提交过的 bug 状态**（干净树），
+    // 这里不再二次回退：那会让 mtime 变化、也会让"agent 面对的是干净工作区"这件事失真。
     if (reference) {
       restoreImplementation(task, ws);
     } else {
@@ -235,6 +371,31 @@ function main() {
     return 0;
   }
   const out = resolve(args.out ?? join(HERE, "records-repo.jsonl"));
+
+  if (args.verifyWorkspace) {
+    const tasks = args.tasks.length > 0 ? TASKS.filter((t) => args.tasks.includes(t.id)) : TASKS;
+    let bad = 0;
+    let warned = 0;
+    for (const task of tasks) {
+      const { problems, warnings } = verifyWorkspace(task);
+      if (problems.length === 0) {
+        console.log(`  ✅ ${task.id}：工作区可信（历史 1 个提交 = bug 状态；答案与任务集不在里面）`);
+      } else {
+        bad++;
+        console.log(`  ❌ ${task.id}：`);
+        for (const p of problems) console.log(`       - ${p}`);
+      }
+      for (const w of warnings) {
+        warned++;
+        console.log(`  ⚠️  ${task.id}：${w}`);
+      }
+    }
+    console.log(
+      `\n工作区自证：${tasks.length - bad}/${tasks.length} 通过` +
+        (warned > 0 ? `（另有 ${warned} 条任务集卫生警告，不影响"尺子可信"的结论）` : ""),
+    );
+    return bad === 0 ? 0 : 1;
+  }
 
   if (args.report) {
     const records = readRecords(out);

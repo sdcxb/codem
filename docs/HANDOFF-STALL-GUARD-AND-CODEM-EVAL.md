@@ -597,7 +597,60 @@ DSH：`.deepseek-harness-ref/packages/fs/fs-observation-policy/src/index.ts`
   这是**产品决定**，需要用户拍板（闸门目前只关在嵌套调用那一层）。
 - **§3.7 真实仓库档**：先按 §8.5 修尺子（让 `HEAD` 就是 bug 状态 + 把答案挪出工作区 + 每次跑完查
   `git checkout/restore/stash/reset`），再扩任务集。**在尺子修好之前不要拿它下结论。**
+  → **尺子已修（第 96 波，本轮）**，见 §10。
 - `fs-observation-policy` 的**原子 CAS**（把 `replaceIfVersion` 下沉到 `write_file`，在 temp→rename 前校验）
   是本轮明确留下的后续项 —— 现在关闭的是"没读过就写"和"读完之后变过"，剩下的 TOCTOU 窗口见 9.1 的边界说明。
+
+---
+
+## §10 第 96 波（2026-10-03 · `tools/eval`）：把尺子修好（§8.5 的三条一起做）
+
+> 这一波**不动产品代码**，只改评测工具。目的只有一个：让"真实仓库档"的分数**能信**。
+
+### 10.1 工作区不再是"HEAD + 回退实现"，而是**一份只有 bug 状态这一个提交的新仓库**
+
+`tools/eval/run-repo-arm.mjs` 的 `prepareRepoWorkspace` 重写：
+
+1. `git archive HEAD` 导出跟踪文件（未跟踪物本来就不在里面）到临时目录，`node_modules` 仍用 junction；
+2. **把答案删掉**：`docs/HANDOFF-*.md`（交接单写着每个任务的缺陷与修法）与 `tools/eval`（任务集写着
+   `revertPaths` / `buggyCommit` / 判据文件名）；
+3. 用 `<buggyCommit>:<实现文件>`（**主仓库对象库是只读来源**）覆盖实现 ⇒ 造出 bug；
+4. `git init` + 一次提交 ⇒ **工作区的历史只有一个提交，就是 bug 状态**。
+   于是 `git checkout HEAD -- <实现文件>` 只会把 bug 装回来；**参考解在这个仓库里不可达**。
+   （旧的 `git worktree add --detach HEAD` 做法里，修复后的版本就在 `HEAD` 里 —— 那正是 §8.5 那个漏洞。）
+
+顺带把收尾从 `git worktree remove` 换成直接删目录（不再动主仓库的 worktree 列表）。
+
+### 10.2 尺子自己要有判据：`--verify-workspace`（并挂进 `npm run audit`）
+
+新增 `node tools/eval/run-repo-arm.mjs --verify-workspace`（`npm run eval:repo-workspace`，已在 audit 链里），
+对每个任务断言：历史**只有 1 个提交**、`HEAD~1` 不存在、每个 `revertPath` 的工作区内容 == 自己的 `HEAD`
+且 == `<buggyCommit>` 的版本、**至少有一个文件与主仓库 HEAD 不同**（否则任务构造不出差异）、
+答案与任务集不在工作区里。**实测 8/8 通过**。
+
+它立刻抓到一条**任务集卫生**问题（已记为警告，不阻塞）：
+`repo-08-truncated-toolcall-executed` 的 `src/core/llm/tool-args-guard.ts` 在 `buggyCommit(86a21be)`
+与 HEAD **内容完全相同** ⇒ 这条 `revertPath` 是空操作（bug 由同任务的 `agentic-loop.ts` 提供）。
+**要不要删掉这条声明、或者换个 `buggyCommit`，是下一轮的小活。**
+
+### 10.3 尺子的两根桩臂（自证：能判对、也能判错）
+
+用修好的工作区跑**不花钱**的两根桩臂（不需要模型）：
+
+| 臂 | 含义 | 实测（repo-01 + repo-05） |
+| --- | --- | --- |
+| `--reference` | 不跑 agent，直接把实现还原成 HEAD（= 正确解） | **2/2 通过** |
+| `noop` | 什么都不做的桩 agent | **0/2，两条都判失败**（判据退出码 1） |
+
+⇒ 修好的尺子既不会"恒绿"，也没有"把对的判成错"。
+
+### 10.4 还没做的一件事（下一轮的第一步）
+
+**实测分数仍然要重跑**：`.preview-shot/_codem-repo-eval.mjs`（驱动正在运行的 Codem）现在还是
+**在主仓库 `C:\mimo-gui` 上跑**的 —— 它没有用上面那份"干净工作区"。要让 Codem 的分数可信，
+得让应用把**评测工作区**当成项目打开（在 DB 里注册一个项目指向工作区、设 `codem-last-project`、
+重启应用；写库前要先停应用）。**在那之前，§8.4/§8.5 里那三次的分数一律作废**（两次是抄答案，
+一次是旧会话续跑）。
+
 
 
