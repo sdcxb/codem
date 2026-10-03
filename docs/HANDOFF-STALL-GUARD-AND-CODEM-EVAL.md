@@ -1786,6 +1786,13 @@ node tools/eval/repo-paired-report.mjs --control …-clean --treatment …-clean
 2. **逐任务表**：我们 vs 对照臂，每格"通过数/干净运行数"，标明稳定通过 / 稳定不过 / 双方都不稳 / 轮次不足。
 3. **统计**：配对符号检验的赢/输/平与 p 值；**不显著就只能说"打平"**，不许说"更强"。
 4. **成本面**：token、工具调用数、时延（我们基线约 1/3 token、1/2 调用、慢约 50%）。
+   **口径已核过，可以放心引用**（第 119 波独立验算）：
+   · 两臂的 `totalTokens` **含义相同**（都含缓存读）—— 我们的 `total = prompt(含缓存) + completion`；
+     对手的 `total = 未命中输入 + 缓存读 + 输出`，两组数字都对得上（例如对手一条：102537+3819008+32413=3953958 ✓）；
+   · 字段对应关系写在 `normalize-codem-records.mjs` 的文件头里：
+     `inputTokens`（对手，**不含**缓存）↔ `usage.uncachedInputTokens`；
+     `cacheReadTokens` ↔ `usage.cacheHitTokens`；`outputTokens` ↔ `usage.completionTokens`；
+     `cacheWriteTokens` **对手有、我们没有** ⇒ 该指标显示"不可用"，**不是 0**（"缺数据 ≠ 0"）。
 5. **机制与行为**：三个机制的开火次数（含 232 上 0 次的反向对照）+ 行为代理
    （"第一次跑测试"的调用序号分布是否前移；基线中位数 27、从不 ≤8）。
 6. **边界（五条，一条都不许省）**：
