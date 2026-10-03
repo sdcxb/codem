@@ -1725,6 +1725,27 @@ NOT NULL constraint failed: settings.updated_at
 改成直接调 `node tools/eval/run-repo-arm.mjs --verify-workspace` 后 **12/12 通过** ——
 即我这一波对 `repo-workspace.mjs` 的三处改动（停应用、排除清单单一真相、通配删除）**没有破坏建工作区**。）
 
+### 13.21 ⚠️ 重复运行号：为什么它危险、怎么收尾（第 117 波）
+
+判定器与成对报告都按 **(caseId, runNumber)** 配对。同一个键出现两条（结果还可能不同）
+⇒ **该对直接被阻塞**，那一轮白跑。实测踩到两次：`repo-02/control/run-2`（failed 与 passed 各一条）、
+`repo-06/treatment/run-2`（errored 与 failed 各一条 —— `errored` 不计分，但它照样让键重复）。
+
+**处置原则：既不阻塞配对，也不丢数据。**
+新来的重复记录**自动挪到高位 run 号**（900 起递增）并带 `parkedFrom`/`parkNote`，
+不是删掉（`tools/eval/record-append.mjs` 的纯函数 `planRecordAppend()`，判据 PA-1..4，变异已验证）。
+历史重复由 `_dedupe-runs.mjs` 整理（默认预演，`--apply` 才写）。
+
+**收尾顺序（关键，别搞反）**：
+1. 等**所有**排队的补跑落盘（现在跑的对照臂补跑链加载的是旧代码，它还会写出若干重复）；
+2. 跑 `_dedupe-runs.mjs --apply` —— 规则是"**每个键保留最后出现的那条**"；
+   而我们的**干净** run-2/run-3 都写在**脏的那些之后** ⇒ 于是脏记录被自动挪走、
+   干净记录留在 run-2/run-3 上 ⇒ **与对照臂的干净 run-2/3 正好配对** ✓；
+3. 再跑 `_verdict.mjs` 与 `repo-paired-report.mjs` ⇒ 这才是可落笔的数据集。
+
+（所以**不要**给处理臂驱动加"自动挪位"：那会把干净的 run-2 挪走、留下脏的 —— 方向正好搞反。
+处理臂允许写重复，由上面第 2 步统一收敛。）
+
 ### 13.17 执行状态（截至第 113 波；结论按 §13.16 的规则走）
 
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，12 个任务 run-1 **跑满**
