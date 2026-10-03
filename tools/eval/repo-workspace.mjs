@@ -44,10 +44,21 @@ export function git(args, cwd = REPO_ROOT) {
  *
  * 判据（测试文件）**不删** —— 它就是评分依据，而且反作弊会从提交里还原它们。
  */
-export const EXCLUDED_FROM_WORKSPACE = ["docs/HANDOFF-*", "tools/eval"];
+/**
+ * 评测工作区里**绝不许出现**的路径（第 116 波补 `.preview-shot`）。
+ *
+ * 为什么补：`.preview-shot/` 是评测的临时区（记录、探针、每次运行的 diff 产物）——
+ * 里面的 `eval-codem-repo-*.diff.txt` **就是各任务的解**，`eval-records-*.jsonl` 里有任务 ID
+ * 与结果。第 116 波我误用 `git add -f` 把它整个塞进了 git（5527 个文件），
+ * 而工作区是 `git archive HEAD` 造的 ⇒ 差一点让之后每个工作区都自带答案。
+ *
+ * 两层防护：① 从 git 里移除（`git ls-tree HEAD | grep .preview-shot` 必须为 0）；
+ * ② 这里把它列进排除清单，建工作区后**删掉**，且 `verifyRepoWorkspace` 会检查它不在。
+ */
+export const EXCLUDED_FROM_WORKSPACE = ["docs/HANDOFF-*", "tools/eval", ".preview-shot"];
 
 function removeAnswers(ws) {
-  const drop = [join(ws, "tools", "eval")];
+  const drop = [join(ws, "tools", "eval"), join(ws, ".preview-shot")];
   const docs = join(ws, "docs");
   if (existsSync(docs)) {
     for (const name of readdirSync(docs)) if (name.startsWith("HANDOFF-")) drop.push(join(docs, name));
@@ -369,6 +380,10 @@ export function verifyRepoWorkspace(task, ws) {
   if (differing === 0) problems.push("所有 revertPath 都与 HEAD 相同 ⇒ 这个任务构造不出任何差异（判据会恒绿）");
 
   if (existsSync(join(ws, "tools", "eval"))) problems.push("工作区里还有 tools/eval（任务集 = 答案提示）");
+  // 第 116 波：`.preview-shot/` 里有每次运行的 diff（= 各任务的解）与评测记录 —— 必须不在工作区里
+  if (existsSync(join(ws, ".preview-shot"))) {
+    problems.push("工作区里还有 .preview-shot（评测记录与运行 diff = 答案）");
+  }
   const docsDir = join(ws, "docs");
   if (existsSync(docsDir) && readdirSync(docsDir).some((n) => n.startsWith("HANDOFF-"))) {
     problems.push("工作区里还有 docs/HANDOFF-*（交接单 = 答案）");
