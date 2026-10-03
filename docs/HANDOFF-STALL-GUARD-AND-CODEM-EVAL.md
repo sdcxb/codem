@@ -1009,9 +1009,65 @@ bash { command: "Get-Content 'C:\\mimo-gui\\package.json'" } → 通过，内容
 | §3.3 用真实仓库档测 Codem | ✅ | **12 任务 / 15 次有效运行 / 11 通过（73%）/ 按任务 9–12**；三层自证齐（工作区 12/12、bug 态判据红 12/12、reference 全绿）；污染检测与假绿识别都自动化 | §10–§13 |
 | §3.4 `fs-observation-policy`（读后写 + 版本比对） | ✅ | `fs-observation-policy.test.ts`（OBS-1..11）+ Rust `file_version_tests`；三次变异逐个咬住 | §9 |
 | §3.5 线上字段名不一致（`nextOffset` 恒 `undefined`） | ✅ | Rust `wire_naming_tests`；真机复验（111KB 日志两窗读第二窗真的前进） | §9 |
-| §3.6 外层 `run_code` / `workflow` 在「替我审批」模式下是否仍自动放行 | ⏸ **等用户拍板** | 现状与两种改法的代价见 §9.3 | §9 |
+| §3.6 外层 `run_code` / `workflow` 在「替我审批」模式下是否仍自动放行 | ✅ **已拍板：保持现状**（见 §15.1） | 决定是"外层继续自动放行，但补判据钉住**内层**闸门" —— 而内层闸门的判据**早就有了**：`workflow-permission-parity.test.ts`（WF-1/WF-2/WF-3，含反向对照与 fail-closed）与 `pi-p2-run-code-permission-parity.test.ts`（P2-1/P2-2），两者都断言"危险命令 → `executeCommand` 一次都没被调用" | §15.1 |
 | §3.7 真实仓库档的尺子 + 任务集 | ✅ | 三层自证 + 12 个任务（`buggyCommit` = 修复的父提交）；已挂进 `npm run audit` | §10、§12.7、§13 |
 | 附：本轮顺手抓到的**真机级产品缺陷** | ✅ | ①四个主力工具全废（`bash/read/glob/grep` 每次成功调用都被改写成契约错误）②失败原因被契约话术顶掉 ③沙箱漏 shell 路径（含裸 `..`）—— 各自的判据与变异见 CHANGELOG `1.16.227`–`1.16.230` | CHANGELOG |
+
+---
+
+## §15 用户拍板后的两件事（第 101 波末）
+
+### 15.1 §3.6：**保持现状**，内层闸门由已有判据钉住
+
+决定（用户 2026-10-03）：**外层 `run_code` / `workflow` 在「替我审批」模式下继续自动放行**；
+理由是"替我审批"的本意就是不打断，而危险命令的闸门**本来就在嵌套调用那一层**。
+这个决定不需要改代码 —— 需要的是**确认那条闸门真有判据**，查证结果：
+
+| 判据 | 它钉住什么 |
+|---|---|
+| `workflow-permission-parity.test.ts` WF-1 | workflow 内的危险 bash → `executeCommand` **一次都没被调用**，输出点名命中的模式；反例：只读命令仍真的执行；fail-closed：分析器抛错也不执行；**同一道闸门也装在 `execWorkflow` 上**（provider 路径不能漏） |
+| 同上 WF-2 / WF-3 | 写入走受保护路径 + 覆盖确认（reject ⇒ 一个字节都不写；accept ⇒ 真写盘）；契约声明与能力一致 |
+| `pi-p2-run-code-permission-parity.test.ts` P2-1 / P2-2 | `run_code` 侧同上（含 `execRunCode` 路径与"分析器抛错也不执行"） |
+
+⇒ **§3.6 关闭**：决定记录在案，闸门有判据、判据有反向对照与 fail-closed。
+（决策本身不是"改行为"，所以**不需要发版**；这里只补了记录。）
+
+### 15.2 `run_code` 的 CSP 问题：用户选择"改成不经 eval 的实现"—— 但这**不只是一个工具**
+
+用户 2026-10-03 选择：**改成不经 `eval` 的实现**（而不是放开 CSP）。
+查证时发现范围比问题描述大得多 —— `new Function` 在**五个**功能里：
+
+| 用 `new Function` 的地方 | 真机现状 |
+|---|---|
+| `src/core/llm/tools/run-code.ts` | ❌ CSP 违规（第 99 波探针实测） |
+| `src/core/llm/workflow-engine.ts` | ❌ CSP 违规（第 101 波探针：`workflow {code:"return 1 + 1;"}` → `Evaluating a string as JavaScript violates … 'unsafe-eval' is not an allowed source of script`） |
+| `src/core/llm/dynamic-plugin-tools.ts`（Cordis 动态插件） | ❓ 代码同源（`new Function()` 编译），**未单独探针** |
+| `src/core/hooks/hook-manager.ts` | ❓ 同上 |
+| `src/core/provider/dynamic-runner-provider.ts` / `code-runtime-worker-thread-provider.ts` | ❓ 同上 |
+
+而 CSP（`tauri.conf.json`）刻意没有 `unsafe-eval`（`phase-b-f-regression.test.ts` 还专门断言
+它**含** `wasm-unsafe-eval`），所以这**是一整个功能族在真机上不可用**，不是"一个工具坏了"。
+**这也解释了为什么既有判据全绿**：WF-1/P2-1 那些用例跑在 vitest（Node/jsdom，没有 CSP）里 ——
+又一次"判据长在一条生产里不执行的链路上"（§5.2 第 1 条）。
+
+**实现路线（按代价从低到高，附已知风险）**：
+
+| 路线 | 做法 | 代价 / 风险 |
+|---|---|---|
+| **E. 专用页面 + 该页自己的 CSP**（建议先做可行性验证） | 起一个只用来跑脚本的页面/窗口，让它**不继承**这条 CSP（拿到 `unsafe-eval`），应用内用 postMessage 把 `sdk` 桥过去 | ⚠️ **机制未验证**：`tauri.conf.json` 现在的 `csp` 是**一个字符串**；Tauri 的 map 形式是"**指令 → 来源**"（不是"路径 → 策略"），所以"按路径给不同 CSP"**很可能不存在**。可行的替代是"让那个页面**不被注入** CSP"（`dangerousDisableAssetCspModification` 或独立窗口），**必须先真机验一次** |
+| A. Rust 侧 JS 引擎（`boa_engine`，纯 Rust） | 脚本在 Rust 里跑，`sdk` 做成宿主函数回调 | 编译时间与体积增长；JS 特性覆盖有限；`workflow` 的 `spawn/wait` 是异步语义，需要自己做事件循环（**难点在这**） |
+| B. Node 子进程 + stdio JSON-RPC 桥 | 复用现成的进程管理 | **要求用户机器上有 Node**（不能假设）；多一个进程要管 |
+| C. 改为受限 DSL（不跑任意 JS） | 最安全 | 功能缩水，属于产品改型 |
+
+**已知的第一个坑（不管走哪条路）**：`workflow` 的 `sdk.spawn/wait` 是**异步**的，
+而 `run_code` 只要**同步**的 `sdk` 子集 —— 所以合理的**第一步是 `run_code` 单点打通**
+（它不需要事件循环），把 `workflow`/插件/hooks 留到第二步，并且**在那之前让它们失败得诚实**
+（现在抛的是一句 CSP 违规的英文，用户与模型都不知道该怎么办）。
+
+**下一步（第 102 波）**：先做 E 的可行性验证（读 `tauri.conf.json` 的 CSP 结构 + 在装好的应用里
+试一个带 `unsafe-eval` 的独立页面），验不过就按 A 做 `run_code` 的最小切片
+（`boa_engine` + 同步 `sdk` 子集 + 超时/步数上限），两件事都要**先写判据再改实现**。
+
 
 
 
