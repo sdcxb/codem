@@ -71,6 +71,17 @@ function finalIteration(text: string): any[] {
   return [{ type: "text_delta", text }, { type: "end", finishReason: "stop" }];
 }
 
+/** 一个 `read` 迭代（第 114 波：验证读缓存**不会把行号开关搞混**） */
+function readIteration(id: string, path: string, extra: Record<string, unknown> = {}): any[] {
+  const input = { path, ...extra };
+  return [
+    { type: "tool_use_start", id, name: "read" },
+    { type: "tool_use_delta", id, input: JSON.stringify(input) },
+    { type: "tool_use_end", id, input },
+    { type: "end", finishReason: "tool_use" },
+  ];
+}
+
 /** 把 `bash` 换成纯夹具：命令照收，返回脚本化的测试输出（不碰磁盘） */
 function registryWithFakeBash(outputOf: (command: string, call: number) => string) {
   const registry = createDefaultToolRegistry();
@@ -276,6 +287,55 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     const serialized = JSON.stringify(events);
     expect(serialized, "带颜色的输出也必须能识别出红文件并附指针").toContain("[RED TEST]");
     expect(serialized, "要点名带颜色的那个文件").toContain("dsh-d7-usage-cache-buckets.test.ts");
+  });
+
+  /**
+   * RT-12（第 114 波）：**读缓存不许把"要不要行号"搞混**。
+   *
+   * 循环里有一层读缓存（同 path+range 的第二次 read 直接返回缓存文本，省一次工具调用）。
+   * 缓存的是**渲染后的文本**：`read(line_numbers: true)` 与 `read()` 同一段区间的结果是**不同形状**的。
+   * 若缓存键里不含这个开关，就会把带行号的旧文本当成"这次要的普通文本"返回（反之亦然）——
+   * 内容没错、形状错了，而且**静默**。判据：同一区间先带行号读、再不带读 ⇒ 第二次**必须真的执行**。
+   *
+   * 变异自证：把缓存命中条件里的 `cached.lineNumbers === readLineNumbers` 去掉 ⇒ 本用例立刻红。
+   */
+  it("RT-12: 同一区间的「带行号读」与「普通读」不许互相命中缓存", async () => {
+    const provider = new ScriptedProvider();
+    const file = `${CWD}/src/a.ts`;
+    provider.setScript([
+      readIteration("r1", file, { line_numbers: true }),
+      readIteration("r2", file),
+      finalIteration("已完成。"),
+    ]);
+    const registry = createDefaultToolRegistry();
+    let readCalls = 0;
+    /** 每次调用返回**当次编号**的正文：这样"第二次到底跑没跑、拿到的是谁"一目了然 */
+    const outputs: string[] = [];
+    registry.register({
+      id: "read",
+      description: "假 read（夹具：每次调用返回可区分的正文，用来暴露缓存串味）",
+      parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      contract: { readOnly: true, accessScope: "workspace" },
+      async execute(args: any) {
+        readCalls++;
+        const numbered = args?.line_numbers === true;
+        const body = `BODY-${readCalls}`;
+        const output = numbered ? `1\t${body}` : body;
+        outputs.push(output);
+        return { title: `read: ${args?.path}`, output };
+      },
+    } as any);
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    const events = await drain(loop);
+
+    expect(readCalls, "两次读取的形状不同 ⇒ 缓存必须 miss，工具要被真正执行两次").toBe(2);
+    expect(outputs[0], "第一次带行号").toContain("1\tBODY-1");
+    expect(outputs[1], "第二次是普通读").toBe("BODY-2");
+    // 关键：第二次的结果必须是**第二次真的执行**产生的（若命中缓存，模型会拿到 BODY-1 的带行号文本）
+    const text = JSON.stringify(events);
+    expect(text, "第二次的结果要来自第二次执行").toContain("BODY-2");
+    expect(text, "不许把第一次的带行号文本当成第二次的结果").not.toContain("1\\tBODY-1\\n2");
   });
 
   it("RT-3/RT-4: 提醒只来一次，且必须点名条数与命令", async () => {

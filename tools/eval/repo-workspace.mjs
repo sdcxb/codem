@@ -192,6 +192,26 @@ function linkNodeModules(ws) {
  *
  * 三级退让：直接删 → 等一会儿再删 → **改名挪开**（改名对句柄不敏感），把旧的留在旁边。
  */
+/**
+ * 收尾/清理前**确保应用不在跑**（第 114 波）。
+ *
+ * 为什么放在这个模块而不是驱动里：**任何**建/清工作区的路径都该有这一层保护，
+ * 否则"最后一个任务收尾没人管"这种洞会在别的驱动里再犯一次。
+ * 幂等：应用没开时 `Stop-Process` 直接静默返回。
+ */
+function stopAppForCleanup() {
+  try {
+    spawnSync("powershell", ["-NoProfile", "-Command", "Stop-Process -Name codem -Force -ErrorAction SilentlyContinue"], {
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    // 给文件监听/句柄一点释放时间（Windows 上删除"刚被监听的目录"必须等这一下）
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
+  } catch {
+    /* 停不掉也要继续：真正的清理有三级退让，不该因为停应用失败就把任务判死 */
+  }
+}
+
 function resetDir(ws) {
   /** 同步小睡（不 spawn 子进程）：`Atomics.wait` 是唯一干净的同步 sleep */
   const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -223,6 +243,18 @@ function resetDir(ws) {
  * @returns 工作区路径
  */
 export function createRepoWorkspace(task, ws = mkdtempSync(join(tmpdir(), `codem-eval-repo-${task.id}-`))) {
+  /**
+   * 建工作区之前**先请应用让开**（第 114 波修复，有实测代价）。
+   *
+   * 实测：一个批次跑到**最后一个任务**的收尾时抛了
+   * `EPERM: Permission denied ... codem-eval-ws` —— 连"改名挪开"都失败。
+   * 原因不是被测 agent：**应用还开着**（它把这个目录当项目在监听，握着句柄），
+   * 而驱动只在**下一个任务开始时**才停应用 ⇒ 最后一个任务的收尾没人保护它。
+   *
+   * 这里在建/清工作区前调用一次（幂等：应用没开就是空操作）：
+   * 脚手架不该因为"谁还开着"而把一个任务判成 errored —— 那次记录因此作废、白跑一遍。
+   */
+  stopAppForCleanup();
   resetDir(ws);
   mkdirSync(ws, { recursive: true });
 

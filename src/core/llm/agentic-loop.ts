@@ -468,7 +468,7 @@ export class AgenticLoop {
   // State-based tool deduplication — no timers, no thresholds
   // Tracks what files have been read/written in the CURRENT user request.
   // Reset at the start of each run() call (new user message = new task).
-  private readCache: Map<string, { offset: number; limit: number; output: string }> = new Map();   // path → last read content (with its offset/limit range)
+  private readCache: Map<string, { offset: number; limit: number; lineNumbers: boolean; output: string }> = new Map();   // path → last read content (range **和** 是否带行号)
   /** 宏观步骤计数器（1-based）。侦查类工具不推进它。 */
   private macroStep = 1;
   /** First execution tool seen in the current iteration (used to advance macroStep once per iteration). */
@@ -3395,9 +3395,20 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // return cached content instead of re-reading
         const readOffset = typeof args.offset === "number" ? args.offset : 1;
         const readLimit = typeof args.limit === "number" ? args.limit : 2000;
+        /** 第 114 波：本次读取是否要行号（它**必须**进缓存键，见下面的注释） */
+        const readLineNumbers = args.line_numbers === true;
         if ((name === "read" || name === "read_file") && filePath && this.readCache.has(filePath)) {
           const cached = this.readCache.get(filePath)!;
-          if (cached.offset === readOffset && cached.limit === readLimit) {
+          /**
+           * 第 114 波：**行号开关也必须进缓存键**。
+           *
+           * 缓存里存的是**渲染后的文本**（`result.output`）。若只比 path/offset/limit，
+           * 那么「先带 `line_numbers: true` 读一段、再不带开关读同一段」会命中缓存，
+           * 把**带行号的旧文本**当成这次的结果返回（反过来也一样）——
+           * 内容没错，但**模型拿到的形状不是它要的**，而且是静默发生的（这类"缓存把形状搞混"
+           * 是最难查的一种：模型看到的东西与它请求的不一致）。
+           */
+          if (cached.offset === readOffset && cached.limit === readLimit && cached.lineNumbers === readLineNumbers) {
             console.log(`[AgenticLoop] Cache hit for read ${filePath} (offset=${readOffset}, limit=${readLimit}) — returning cached content`);
             cacheHitCount++;
             return {
@@ -3598,7 +3609,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // Record read content for future cache hits (with the range it was read with,
         // so a later read of a different range does not reuse it)
         if ((name === "read" || name === "read_file") && filePath && result.output) {
-          this.readCache.set(filePath, { offset: readOffset, limit: readLimit, output: result.output });
+          this.readCache.set(filePath, {
+            offset: readOffset,
+            limit: readLimit,
+            lineNumbers: readLineNumbers,
+            output: result.output,
+          });
         }
         // Record written content and invalidate read cache for that file
         if ((name === "write" || name === "edit" || name === "multi_edit") && filePath &&

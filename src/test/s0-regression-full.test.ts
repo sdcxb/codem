@@ -492,9 +492,15 @@ describe("S0 Full Regression Suite", () => {
       const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
       // Cache entry stores the read range alongside the output
-      expect(src).toContain("readCache.set(filePath, { offset: readOffset, limit: readLimit, output: result.output })");
-      // Cache hit requires the requested range to match the cached range
-      expect(src).toContain("cached.offset === readOffset && cached.limit === readLimit");
+      // （第 114 波：**还要带上"要不要行号"** —— 同一区间带行号读与普通读的结果是不同形状的，
+      //   缓存键里漏了它就会把带行号的旧文本当成普通读的结果返回，静默且难查；
+      //   行为判据在 `red-test-at-completion.test.ts` 的 RT-12。）
+      expect(src).toContain("private readCache: Map<string, { offset: number; limit: number; lineNumbers: boolean; output: string }>");
+      expect(src).toContain("lineNumbers: readLineNumbers,");
+      // Cache hit requires the requested range **and the numbering flag** to match
+      expect(src).toContain(
+        "cached.offset === readOffset && cached.limit === readLimit && cached.lineNumbers === readLineNumbers",
+      );
       // Range mismatch falls through to a real read instead of returning stale content
       expect(src).toContain("Read cache mismatch");
     });
