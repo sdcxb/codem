@@ -22,9 +22,24 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const HERE = fileURLToPath(new URL(".", import.meta.url));
+/**
+ * ⚠️ 顶层用 `import.meta.url` 算路径时**必须兜住 vitest**（第 124 波踩到）。
+ *
+ * 在 vitest 里 `import.meta.url` **不是 `file://` URL**（是虚拟 URL）⇒
+ * `fileURLToPath` 直接抛 `ERR_INVALID_URL_SCHEME`，而这是**模块顶层**代码
+ * ⇒ 整个 import 失败、vitest 报 **"no tests"**（看起来像"这个文件没有测试" ✗，
+ * 实际是"导入即抛" ✗）。判据要能 import 这个模块，就必须让路径解析容错。
+ */
+const HERE = (() => {
+  try {
+    return fileURLToPath(new URL(".", import.meta.url));
+  } catch {
+    // 兜底：按"脚本就在 tools/audit/ 下"这个事实推（只有测试环境会走到这里）
+    return join(process.cwd(), "tools", "audit");
+  }
+})();
 const ROOT = join(HERE, "..", "..");
 const SRC = join(ROOT, "src");
 
@@ -54,12 +69,24 @@ const ALLOWLIST = {
 /** 扫描目标：只扫产品源码，不扫测试（测试跑在 Node 里，不受 CSP 约束） */
 const SKIP_DIRS = new Set(["node_modules", "dist", "target", ".git"]);
 
-/** 命中模式（`new Function(` / `Function(` 直接构造 / `eval(` / `window.eval`） */
+/**
+ * 命中模式（第 124 波补全）。
+ *
+ * ⚠️ 原来只有 `new Function(`，而**调用形式 `Function("…")` 同样是 eval 等价物**
+ * （CSP 里它也归 `unsafe-eval` 管）—— 文件头注释写着"`Function(` 直接构造"，
+ * 但模式表里没有它：**注释与实现不一致，而门禁只会照实现办事** ✗。
+ * 同类漏网还有**字符串形式的定时器**（`setTimeout("code")`）—— 在 CSP 下同样不可用。
+ *
+ * 误报控制：`\b` 保证 `isFunction(` / `toFunction(` 这类**前缀不是单词边界**的写法不会被误伤
+ * （`s` 与 `F` 之间没有边界）；`new Function(` 用负向后行断言排除，避免与第一条重复计数。
+ */
 const PATTERNS = [
   { re: /\bnew\s+Function\s*\(/g, label: "new Function(" },
+  { re: /(?<![\w$.])Function\s*\(/g, label: "Function( 构造（非 new）" },
   { re: /\beval\s*\(/g, label: "eval(" },
   { re: /\bwindow\s*\.\s*eval\s*\(/g, label: "window.eval(" },
   { re: /\bglobalThis\s*\.\s*eval\s*\(/g, label: "globalThis.eval(" },
+  { re: /\bset(?:Timeout|Interval)\s*\(\s*["'`]/g, label: "字符串形式的定时器（等同 eval）" },
 ];
 
 /** 注释里提到这些词不算（这一波里到处都是"我们不再用 new Function"的注释） */
@@ -84,6 +111,27 @@ function walk(dir) {
   return out;
 }
 
+/**
+ * **纯函数：扫一段源码里有哪些 eval 等价物**（第 124 波抽出，便于判据钉住）。
+ *
+ * 抽出来的理由很直接：门禁"能不能抓住某种写法"是它**唯一**的职责，
+ * 而这件事以前只能靠"跑一遍看有没有命中"来间接验证 ✗（仓库里没有那种写法时，
+ * 门禁再松也显示"0 命中" —— 判据与实现都绿，缺口却一直在）。
+ *
+ * @param source 源码文本
+ * @returns `[{ label, count }]`（去掉注释与字符串之后再匹配）
+ */
+export function findEvalUses(source) {
+  const code = stripCommentsAndStrings(String(source));
+  const found = [];
+  for (const { re, label } of PATTERNS) {
+    re.lastIndex = 0;
+    const matches = code.match(re);
+    if (matches) found.push({ label, count: matches.length });
+  }
+  return found;
+}
+
 const hits = [];
 for (const file of walk(SRC)) {
   const rel = relative(ROOT, file).replace(/\\/g, "/");
@@ -97,32 +145,57 @@ for (const file of walk(SRC)) {
    */
   if (/(^|\/)(test|tests|__tests__)\//.test(rel)) continue;
   if (/\.(test|spec)\.(ts|tsx|js|jsx|mjs)$/.test(rel)) continue;
-  const code = stripCommentsAndStrings(readFileSync(file, "utf8"));
-  for (const { re, label } of PATTERNS) {
-    re.lastIndex = 0;
-    const matches = code.match(re);
-    if (matches) hits.push({ rel, label, count: matches.length });
+  for (const { label, count } of findEvalUses(readFileSync(file, "utf8"))) {
+    hits.push({ rel, label, count });
   }
 }
 
-const allowed = hits.filter((h) => ALLOWLIST[h.rel]);
-const violations = hits.filter((h) => !ALLOWLIST[h.rel]);
+/**
+ * **只有被当作脚本执行时才跑扫描**（第 124 波补的守卫）。
+ *
+ * 为什么需要：门禁的"能不能抓住某种写法"要用判据钉住（`src/test/no-eval-gate-strictness.test.ts`
+ * 会 `import { findEvalUses }`）。而原来的实现是**顶层直接扫描并 process.exit** ——
+ * 被 import 时会把测试进程一起带走（vitest 报 "no tests"，看起来像"没有测试" ✗ 而不是"导入即退出"）。
+ */
+/**
+ * ⚠️ 这里的判断被两件事先后咬过，两次都值得记：
+ *
+ * ① 第一版用字符串拼 `file://${process.argv[1]}` —— **在 Windows 上不成立**
+ *    ⇒ 直接跑 `node tools/audit/no-eval.mjs` 时**什么都不输出**（门禁哑了 ✗✗）。
+ *    正确做法是用 `pathToFileURL()` 规范化。
+ * ② 但在 vitest 里 `process.argv[1]` **不是文件路径**（是虚拟路径）⇒ `pathToFileURL` 会抛
+ *    `The URL must be of scheme file`，而没兜住的异常会让 import 失败、
+ *    vitest 报 **"no tests"**（看起来像"没有测试"，其实是"导入即抛" ✗）。
+ *
+ * 所以：规范化 + 兜异常，缺一不可。
+ */
+const isDirectRun = (() => {
+  try {
+    return process.argv[1] ? pathToFileURL(process.argv[1]).href === import.meta.url : false;
+  } catch {
+    return false;
+  }
+})();
+if (isDirectRun) {
+  const allowed = hits.filter((h) => ALLOWLIST[h.rel]);
+  const violations = hits.filter((h) => !ALLOWLIST[h.rel]);
 
-console.log(`扫描 ${SRC}：命中 ${hits.length} 处（允许 ${allowed.length} 处）`);
-for (const h of allowed) console.log(`  ⏳ 允许（待迁移）${h.rel}：${h.label}×${h.count} —— ${ALLOWLIST[h.rel]}`);
+  console.log(`扫描 ${SRC}：命中 ${hits.length} 处（允许 ${allowed.length} 处）`);
+  for (const h of allowed) console.log(`  ⏳ 允许（待迁移）${h.rel}：${h.label}×${h.count} —— ${ALLOWLIST[h.rel]}`);
 
-if (violations.length > 0) {
-  console.log("\n❌ 这些地方的 `new Function` / `eval` **在装好的应用里跑不起来**（CSP 没有 unsafe-eval）：");
-  for (const h of violations) console.log(`  ${h.rel}: ${h.label}×${h.count}`);
+  if (violations.length > 0) {
+    console.log("\n❌ 这些地方的 `new Function` / `eval` **在装好的应用里跑不起来**（CSP 没有 unsafe-eval）：");
+    for (const h of violations) console.log(`  ${h.rel}: ${h.label}×${h.count}`);
+    console.log(
+      "\n   要么迁到 `src/core/js/js-vm.ts`（QuickJS/WASM，不需要 eval），" +
+        "要么在 ALLOWLIST 里写明理由（迁移期只允许「待迁移」这一种理由）。",
+    );
+    process.exit(1);
+  }
+
   console.log(
-    "\n   要么迁到 `src/core/js/js-vm.ts`（QuickJS/WASM，不需要 eval），" +
-      "要么在 ALLOWLIST 里写明理由（迁移期只允许「待迁移」这一种理由）。",
+    Object.keys(ALLOWLIST).length === 0
+      ? "\n✅ 没有任何 `new Function` / `eval`（目标达成：这一族功能不再依赖 eval）"
+      : `\n✅ 除允许清单外没有新增（还剩 ${Object.keys(ALLOWLIST).length} 个文件待迁移）`,
   );
-  process.exit(1);
 }
-
-console.log(
-  Object.keys(ALLOWLIST).length === 0
-    ? "\n✅ 没有任何 `new Function` / `eval`（目标达成：这一族功能不再依赖 eval）"
-    : `\n✅ 除允许清单外没有新增（还剩 ${Object.keys(ALLOWLIST).length} 个文件待迁移）`,
-);
