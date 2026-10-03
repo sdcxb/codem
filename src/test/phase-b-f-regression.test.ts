@@ -1707,6 +1707,29 @@ expect(stat.size).toBeGreaterThan(20 * 1024 * 1024); // > 20MB
       expect(csp).toContain("wasm-unsafe-eval");
     });
 
+    /**
+     * **CSP 里不许出现裸的 `'unsafe-eval'`**（第 116 波补的缺口）。
+     *
+     * 为什么单独一条：上面那条只钉"**有** `wasm-unsafe-eval`"，**没有任何判据钉"没有 `unsafe-eval`"** ——
+     * 而"CSP 不含 unsafe-eval"正是"无 eval 运行时"这个里程碑的**核心前提**
+     * （QuickJS/WASM 那条路只需要 `wasm-unsafe-eval`）。
+     *
+     * 还必须是**按 token** 判，不能子串判：`wasm-unsafe-eval` 里**包含** `unsafe-eval` 子串 ——
+     * 我自己第一次用子串查就假阳了一次（把达成的东西报成没达成）。子串版判据只有两种下场：
+     * 恒红（永远说违规）或被人加个 `replace` 绕过去，两种都不算判据。
+     */
+    it("CSP 按 token 判定：不许有裸的 'unsafe-eval'（子串不算数，wasm-unsafe-eval 是允许的）", () => {
+      const csp = String(tauriConf.app.security.csp);
+      const tokens = csp
+        .split(";")
+        .flatMap((directive) => directive.trim().split(/\s+/))
+        .filter(Boolean);
+      const bare = tokens.filter((t) => t === "'unsafe-eval'" || t === "unsafe-eval");
+      expect(bare, `CSP 里出现了裸 unsafe-eval：${bare.join(", ")}`).toHaveLength(0);
+      // 反向对照：允许的那一个必须还在（否则"没有 unsafe-eval"可以靠把 wasm 那条也删掉来满足）
+      expect(tokens.some((t) => t.includes("wasm-unsafe-eval"))).toBe(true);
+    });
+
     it("没有引入 onnxruntime-node 原生绑定", () => {
       const packageJson = JSON.parse(
         fs.readFileSync(path.join(__dirname, "../../package.json"), "utf-8")
