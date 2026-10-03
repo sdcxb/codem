@@ -1130,6 +1130,45 @@ node tools/eval/audit-codem-record.mjs --session <sessionId>   # 它到底调过
 ② 被污染的运行（碰过答案仓库）与"零改动通过"的运行**一律剔除**；
 ③ 未配对任务存在时**不发布头部结论**（`Flags: unpaired-tasks / insufficient-coverage`）。
 
+### 13.13c **工具层策略对比**（第 110 波新增：对照臂也留原始事件流）
+
+动机：光有"过/不过"不够，还要知道**对手具体怎么做的**。Codem 侧本来就有会话（DB），
+对照臂第 110 波起也把驱动事件流留档成 `.preview-shot/eval-<arm>-<task>.events.jsonl`，
+于是可以逐工具对比（脚本 `.preview-shot/_compare-strategy.mjs`）。
+
+同一个任务（repo-02，最终失败的判据是 `dsh-d9-multi-edit-partial-failure`）：
+
+| | 对照臂 DSH | 处理臂 Codem |
+|---|---|---|
+| 工具分布 | read×47, grep×35, glob×18, pwsh×13, job_output×5, **edit×4** | read×39, bash×19, grep×10, **run_code×8**, glob×1, **edit×1** |
+| 跑过的判据文件 | **4 个**，**含最终失败的那一个** | **2 个**，最终失败的那一个**没跑** |
+
+**结论**：差别不在"会不会用工具"，而在**验证的宽度**与**改动的彻底程度** ——
+对手会把同一族判据都跑一遍再收工、并且改到 4 处；我们跑两个就停、只改 1 处。
+这与 §13.13b 的两种失败形态一致，也正好是已经落地的两处改动要治的东西。
+
+**两个被数据否掉的猜想**（记下来，免得下次再猜）：
+1. ~~"对手靠委派（subagent）做验证"~~ —— DSH 在 repo-02 上委派 **0** 次、repo-03 上 **1** 次（113 次调用里），
+   不是它的主要手段；Codem 8 个任务全是 0 次。所以这不是差距来源。
+2. ~~"对手有后台任务能力而我们没有，所以它能跑大套件"~~ —— DSH 的 `job_output`/`run_in_background`
+   在 repo-03 上全用在**探测它自己的 shell 好不好用**（`echo hi`、"Minimal shell echo test"、
+   写文件探测、`exit 7` 探测，还为此派了一个子代理去"先确认 shell 能不能用"）。
+   那是**它自己的问题**，不是它跑大套件的手段。
+3. 顺带核实：Codem 的 `read` 本来就支持 `offset/limit`、`bash` 本来就支持最高 10 分钟超时 ——
+   都不是缺口。真正的缺口是**大块输出的预览只给头 500 字符**（汇总在尾部 ⇒ 看不到结论），
+   已在 §13.13d 修掉。
+
+### 13.13d 第三处产品改动：大块输出的预览必须带尾部（第 110 波）
+
+`maybePersistToolResult` 在结果 >50k 字符时落盘、**只把前 500 字符给模型**。
+而 `npx vitest run` 的 `Tests N failed | M passed` 汇总行在**最后**（`cargo build`/`tsc` 同理），
+于是模型**看不到自己那次验证的结论**，也就没有动力跑大套件（跑了也读不到）——
+这与"压根没跑到判据"的行为互相强化。
+
+现在预览 = 头 500 + 尾 2000（中间标注省略量），并点明"结论通常在尾部"。
+判据：`tool-result-storage.test.ts` 两条（尾部汇总行必须在预览里、预览不得膨胀到 >6000 字符）；
+**变异自证**：把 tail 置空 ⇒ 立刻红。
+
 ### 13.14 第 106 波的执行状态（截至本轮）
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，本已跑过 repo-01..05（5/5 通过）；
   本轮补跑 repo-06..12（进度：repo-06 通过）。判据：`tools/eval/drivers/dsh-driver.mjs` 写事件留档，
