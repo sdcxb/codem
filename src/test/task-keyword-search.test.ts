@@ -146,4 +146,30 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  /**
+   * TSN-8（第 101 波，**由真实跑批的行为数据逼出来的**）：
+   * 小族必须**把成员全列出来**，而不是只给三个例子。
+   *
+   * 实测：236 候选在 repo-02 上**仍然没有碰 `dsh-d9`** ✗ ——
+   * 而对手赢的那次是**在 grep 输出里直接看到了 `dsh-d9-…` 这个文件名** ✓。
+   * 只给"这一族有 19 个、例如 A/B/C"太间接 ✗；19 个文件名短短几行，直接列全就行 ✓。
+   */
+  it("TSN-8: 成员不多的小族要把成员全列出来（只给三个例子不够 —— 对手赢在看到具体文件名）", () => {
+    const root = mkdtempSync(join(tmpdir(), "codem-task-search-family-"));
+    try {
+      // ⚠️ 必须先让工作区"够大"（≥ MIN_FILES_FOR_CLUSTERS），否则分族路径根本不走、清单为 null ✗
+      //    —— 第一版夹具只造了 7 个文件，于是这条判据测的是"null 不为真"，什么都没测到 ✗
+      for (let i = 0; i < 60; i++) writeFileSync(join(root, `noise-${String(i).padStart(2, "0")}.test.ts`), "// n");
+      for (let i = 1; i <= 6; i++) writeFileSync(join(root, `dsh-d${i}-something.test.ts`), "// x");
+      const notice = buildTaskSearchNotice(root, "与仓库无关的一句话（触发分族路径）")!;
+      expect(notice, "文件够多时应当给出分族").toBeTruthy();
+      // 6 个成员应当**全部**出现在清单里
+      for (let i = 1; i <= 6; i++) {
+        expect(notice, `dsh-d${i} 必须被列出来`).toContain(`dsh-d${i}-something.test.ts`);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -35,6 +35,11 @@ export const MAX_TERMS = 8;
 const MAX_BYTES_PER_FILE = 128 * 1024;
 /** 扫描的测试文件数上限 */
 const MAX_TEST_FILES = 4000;
+/** 一个族最多记多少个成员名（够小族列全，又不至于爆） */
+const MEMBERS_CAP = 30;
+/** 成员数不超过这个值就**列全**（而不是只给几个例子） */
+export const SMALL_CLUSTER_MAX = 25;
+
 /** 只有工作区里的测试文件够多时，「命名分族」才有信息量（否则就是噪声 ✗） */
 export const MIN_FILES_FOR_CLUSTERS = 50;
 
@@ -95,8 +100,8 @@ export function extractSearchTerms(message: string): string[] {
  * 也就是说，真正有用的事实是"**这个仓库的测试文件按前缀分成哪些族**"，
  * 而不是"全部文件列表" ✗（4187 个文件里看不出任何结构 ✓）。
  */
-export function summarizeNameClusters(files: string[], top = 12): { prefix: string; count: number; examples: string[] }[] {
-  const buckets = new Map<string, { count: number; examples: string[] }>();
+export function summarizeNameClusters(files: string[], top = 12): { prefix: string; count: number; examples: string[]; members: string[] }[] {
+  const buckets = new Map<string, { count: number; examples: string[]; members: string[] }>();
   for (const f of files) {
     const base = (f.split("/").pop() ?? f).replace(/\.(test|spec)\..*$/, "");
     /**
@@ -111,10 +116,11 @@ export function summarizeNameClusters(files: string[], top = 12): { prefix: stri
     if (cur) {
       cur.count++;
       if (cur.examples.length < 3) cur.examples.push(f);
-    } else buckets.set(prefix, { count: 1, examples: [f] });
+      if (cur.members.length < MEMBERS_CAP) cur.members.push(f);
+    } else buckets.set(prefix, { count: 1, examples: [f], members: [f] });
   }
   return [...buckets.entries()]
-    .map(([prefix, v]) => ({ prefix, count: v.count, examples: v.examples }))
+    .map(([prefix, v]) => ({ prefix, count: v.count, examples: v.examples, members: [...v.members].sort() }))
     .filter((x) => x.count >= 2)
     .sort((a, b) => b.count - a.count || a.prefix.localeCompare(b.prefix))
     .slice(0, top);
@@ -232,7 +238,11 @@ function buildNotice(
   const clusterLines = clusters.length
     ? [
         `这个工作区有 ${files.length} 个测试文件，按名字开头分成这些族（≥2 个的）：`,
-        ...clusters.map((c) => `- ${c.prefix}-*：${c.count} 个（例如 ${c.examples.join("、")}）`),
+        ...clusters.map((c) =>
+          c.count <= SMALL_CLUSTER_MAX
+            ? `- ${c.prefix}-*（${c.count} 个）：${c.members.map((m) => m.split("/").pop()).join("、")}`
+            : `- ${c.prefix}-*：${c.count} 个（例如 ${c.examples.join("、")}）`,
+        ),
       ].join("\n")
     : "";
 
