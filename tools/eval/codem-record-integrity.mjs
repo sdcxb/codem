@@ -38,6 +38,23 @@ export const SELF_RESTORE_RE = /\bgit\b[^\n]*\b(checkout|restore|stash|reset|rev
 export const DEFAULT_ANSWER_REPO_RE = /mimo-gui/i;
 
 /**
+ * **"顺着 junction 走出工作区"长什么样**（第 113 波补：这是检测器的一个盲区）。
+ *
+ * 第 110 波实测的效度问题：早期工作区把 `node_modules` junction 到主仓库（答案仓库）根下，
+ * 于是 `node_modules\..` 会**解析到答案仓库** —— 而这条路径里**一个 `mimo-gui` 字符都没有**，
+ * 老的"目标里找 `mimo-gui`"口径**看不见它**。那次 run-1 因此无法证明干净（只能作废重跑）。
+ *
+ * 口径（保守：宁可把可疑的判成泄漏，也不放过）：
+ *  · `node_modules` 后面直接跟 `..`（顺着链接往上跳）；
+ *  · 任何 `../..` 级别的上跳（工作区内的相对路径不需要连跳两级）；
+ *  · 直接写 `%TEMP%\codem-eval-deps`（共享依赖副本的落地处，出现它说明在翻评测设施）。
+ *
+ * 注意：**不**把普通的 `..` 判成泄漏（`src/../lib` 这种正常写法每天都在用）。
+ */
+export const JUNCTION_ESCAPE_RE =
+  /node_modules[\\/]+\.\.|[\\/]\.\.[\\/]+\.\.|codem-eval-deps/i;
+
+/**
  * **"沙箱真的拦下了"长什么样**（第 106 波修正）。
  *
  * 老口径把"这次调用失败了"当成"隔离生效"：`failed = status === "error" || /Sandbox:/`。
@@ -81,12 +98,18 @@ export function classifySessionAccess(rows, answerRepoRe = DEFAULT_ANSWER_REPO_R
         .map((f) => args[f])
         .join(" ");
       const whole = JSON.stringify(args).replace(/\s+/g, " ");
+      /**
+       * `mentions`：目标指向答案仓库（老口径，按 `mimo-gui` 这类特征词）。
+       * `escapes`：目标**顺着 junction/上跳走出工作区**（第 113 波补的盲区口径）——
+       * 这种路径不含特征词，但一样能摸到答案仓库（`node_modules\..` 就是当年的实例）。
+       */
+      const escapes = JUNCTION_ESCAPE_RE.test(target);
       pending = {
         tool: payload.tool ?? "?",
         target,
         whole,
-        mentions: answerRepoRe.test(target),
-        contentOnly: !answerRepoRe.test(target) && answerRepoRe.test(whole),
+        mentions: answerRepoRe.test(target) || escapes,
+        contentOnly: !(answerRepoRe.test(target) || escapes) && answerRepoRe.test(whole),
       };
       const cmd = String(args.command ?? args.text ?? "");
       if (cmd && SELF_RESTORE_RE.test(cmd)) selfRestore.push(cmd.replace(/\s+/g, " ").slice(0, 200));

@@ -32,6 +32,8 @@ import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { TASKS, REPO_ROOT, validateTaskSet, gradeCommand, filesToRestore } from "./tasks-repo.mjs";
+// 第 113 波：污染判定与《记录完整性检查器》共用同一套规则（别再各写一份）
+import { DEFAULT_ANSWER_REPO_RE, JUNCTION_ESCAPE_RE } from "./codem-record-integrity.mjs";
 import { ensureSharedNodeModules } from "./repo-workspace.mjs";
 import { summarize, render, verdict } from "./paired-report.mjs";
 
@@ -145,7 +147,17 @@ function readOutsideAccess(ws) {
       .filter((f) => typeof input[f] === "string")
       .map((f) => input[f])
       .join(" ");
-    if (/mimo-gui/i.test(target)) hits.push(`${event.tool ?? "?"}: ${target.replace(/\s+/g, " ").slice(0, 200)}`);
+    /**
+     * 第 113 波：**同一条规则必须只有一份**。
+     *
+     * 老口径只找 `mimo-gui` 特征词，于是 `node_modules\..`（顺着 junction 走到答案仓库、
+     * 一个特征词都没有）**看不见** —— 那次 run-1 因此无法证明干净。
+     * 现在与 `codem-record-integrity.mjs` 共用 `JUNCTION_ESCAPE_RE`，
+     * 避免两条臂各自演化出不同的"污染"定义（那是尺子最容易出的问题）。
+     */
+    if (DEFAULT_ANSWER_REPO_RE.test(target) || JUNCTION_ESCAPE_RE.test(target)) {
+      hits.push(`${event.tool ?? "?"}: ${target.replace(/\s+/g, " ").slice(0, 200)}`);
+    }
   }
   return { answerRepoHits: hits, contaminated: hits.length > 0 };
 }
