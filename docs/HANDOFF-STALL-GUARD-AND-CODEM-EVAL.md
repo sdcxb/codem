@@ -1080,6 +1080,51 @@ M4 污染照搬、M5 同模型地基）**全部被咬住**；已挂进 `npm run 
 
 这两处改动将在 **1.16.233** 上做 A/B 复测（工具 `tools/eval/ab-report.mjs`）。
 
+### 13.15 **怎么复现这一整套测量**（照抄这些命令即可；"可复现"是目标的一半）
+
+前置：装好被测版本的 Codem（`Start-Process <setup.exe> -ArgumentList "/S" -Wait`），
+`dsh` 在 PATH（`%APPDATA%\DSH Desktop\host-commands\...\bin\dsh.cmd`），Node ≥ 24。
+
+```powershell
+# ① 尺子自证（跑分数之前必须全绿；这两条的通过标准在第 109 波收紧过）
+npm run eval:repo-workspace     # 12/12 工作区可信（含"答案仓库不可达"判据）
+npm run eval:repo-bug-tests     # 12/12 bug 状态下判据红（必须**有真实失败标记**，不是只看退出码）
+
+# ② 对照臂（DSH）—— 与处理臂同模型、同任务、同工作区配方
+node tools/eval/run-repo-arm.mjs --arm control --model deepseek-flash --runs 1 `
+  --out .preview-shot/eval-records-repo-control.jsonl `
+  --agent-cmd "node C:\mimo-gui\tools\eval\drivers\dsh-driver.mjs"
+# 单任务 / 子集：再加 --task <id>（可重复）
+
+# ③ 处理臂（Codem 装机版，经 CDP 驱动真实应用）
+$env:EVAL_RECORDS   = "C:\mimo-gui\.preview-shot\eval-records-codem-repo-v2.jsonl"
+$env:EVAL_APP_VERSION = "1.16.232"      # 被测版本必须写进记录（A/B 靠它区分）
+node .preview-shot\_codem-repo-eval.mjs run <taskId...> --register --run 1 --timeout-min 30
+
+# ④ 成对报告（Codem vs DSH）：两臂模型不同直接拒；0 改动通过会被剔除并阻塞该对
+node tools/eval/repo-paired-report.mjs `
+  --control .preview-shot/eval-records-repo-control.jsonl `
+  --treatment .preview-shot/eval-records-codem-repo-v2.jsonl
+
+# ⑤ A/B 报告（新构建 vs 旧构建，同一条臂）
+node tools/eval/ab-report.mjs `
+  --baseline  .preview-shot/eval-records-codem-repo-v2.jsonl `
+  --candidate .preview-shot/eval-records-codem-repo-v3.jsonl `
+  --only-tasks repo-02-write-false-success,repo-03-usage-accounting,repo-04-session-update-drops-fields `
+  --min-tasks 3
+
+# ⑥ 单次运行的事后诊断（每条记录都留了产物，不需要重跑）
+node tools/eval/audit-codem-record.mjs --session <sessionId>   # 它到底调过哪些工具、改过哪些文件
+#   .preview-shot/eval-<arm>-<task>.grade.txt   判据输出（哪条红、为什么）
+#   .preview-shot/eval-<arm>-<task>.events.jsonl 驱动原始事件流（第 110 波起，两条臂对称）
+#   .preview-shot/eval-codem-<task>.diff.txt     工作区 diff（它到底改了什么）
+```
+
+不变式（跑任何分数之前先确认这三条）：
+① 两臂**同模型**（各自记录里有 `model`，`repo-paired-report` 会拒不同模型）；
+② 被污染的运行（碰过答案仓库）与"零改动通过"的运行**一律剔除**；
+③ 未配对任务存在时**不发布头部结论**（`Flags: unpaired-tasks / insufficient-coverage`）。
+
 ### 13.14 第 106 波的执行状态（截至本轮）
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，本已跑过 repo-01..05（5/5 通过）；
   本轮补跑 repo-06..12（进度：repo-06 通过）。判据：`tools/eval/drivers/dsh-driver.mjs` 写事件留档，

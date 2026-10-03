@@ -150,6 +150,8 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
   let outsideAccess;
   /** 判据输出的留档路径（诊断用；见下面写文件处的说明） */
   let gradeFile = null;
+  /** 驱动原始事件流的留档路径（第 110 波：让对照臂也能事后诊断"它跑过什么"） */
+  let eventsFile = null;
   try {
     // 工作区在 `createRepoWorkspace` 里已经是**提交过的 bug 状态**（干净树），
     // 这里不再二次回退：那会让 mtime 变化、也会让"agent 面对的是干净工作区"这件事失真。
@@ -253,6 +255,25 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
      */
     usage = readUsage(ws);
     outsideAccess = readOutsideAccess(ws);
+    /**
+     * **把驱动留下的原始事件流留档**（第 110 波）。
+     *
+     * 为什么：Codem 侧每个任务都会留下 `.diff.txt` 与 `.grade.txt`（能事后诊断"它改了什么、
+     * 跑过哪些测试、哪条红过"），而对照臂只留一个用量 JSON —— 事件流随工作区一起被删掉。
+     * 于是"DSH 为什么能过 repo-02/03/04"这类问题**事后无法回答**，只能重跑（十几分钟 + 真金白银）。
+     * 两条臂的诊断能力必须对称，否则"差距在哪"就只能靠猜。
+     */
+    eventsFile = null;
+    try {
+      const raw = join(ws, ".dsh-events.jsonl");
+      if (existsSync(raw)) {
+        eventsFile = join(HERE, "..", "..", ".preview-shot", `eval-${arm}-${task.id}.events.jsonl`);
+        writeFileSync(eventsFile, readFileSync(raw, "utf8"), "utf8");
+      }
+    } catch (error) {
+      console.log(`     （事件流没存下来：${error?.message ?? error}）`);
+      eventsFile = null;
+    }
     cleanRepoWorkspace(ws);
   }
 
@@ -266,6 +287,7 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
       outcome,
       // 判据输出的留档路径（对照臂失败时靠它做诊断 —— 只记一个退出码等于事后无法归因）
       ...(gradeFile ? { gradeFile } : {}),
+      ...(eventsFile ? { eventsFile } : {}),
       ...(usage ?? {}),
       totalMs: Date.now() - started,
       ...(failureReason ? { failureReason } : {}),
