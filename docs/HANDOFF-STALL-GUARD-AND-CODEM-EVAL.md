@@ -1527,6 +1527,15 @@ _run-second-pass.mjs   复跑我们通过过的 8 个任务（run-2）          
 配套判据：`read-line-numbers.test.ts`（LN-1..5）、`red-test-at-completion.test.ts` 扩到 RT-1..12、
 `tool-result-storage.test.ts` 加两条、`s0-regression-full.test.ts` 的接线判据加强为"断言不变量"。
 
+**两个交互面已核实安全**（"新功能 × 既有机制"是最容易出事的地方，所以逐条看代码而不是想当然）：
+
+1. **输出契约校验**：`[RED TEST]` 是往 `result.output` **追加文本**，而契约层校验的是
+   `result.value`（`tool-pipeline.ts` 的 `if (result.value === undefined)` 分支），
+   且追加发生在管道返回**之后** ⇒ 不会把"红了"变成"格式违规"（这正是第 97 波
+   `errorSource: "loop"` 那条注释里描述过的坑，当时四个主力工具因此全废）。
+2. **重复守卫的"信息增益"判定**：追加写在 `guardGain` 计算**之后** ⇒ 守卫看到的仍是原始输出，
+   守卫的连续重复计数不会被指针文本搅乱。
+
 **发版仪式**（照 1.16.233 那次做，逐条都有判据）：
 1. 改号：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` → `1.16.234`；
 2. `CHANGELOG.md` 顶部加 `## [1.16.234]`、`docs/PROJECT-GUIDE.md` 加 `| v1.16.234 | … |` 行；
