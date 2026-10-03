@@ -26,8 +26,9 @@
  * ⚠️ 挡不住的：去别处拿答案（本档不防）、以及"它自己真的会修"（那正是要测的）。
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { REPO_ROOT, filesToRestore } from "./tasks-repo.mjs";
 
@@ -61,6 +62,63 @@ function removeAnswers(ws) {
 }
 
 /** node_modules 用 junction 指回主仓库：不拷、也不改主仓库 */
+/**
+ * **共享的 `node_modules` 副本**（第 106 波）：junction 的**父目录不能是答案仓库**。
+ *
+ * ## 为什么（实测发现的泄漏通道）
+ *
+ * 老做法是把工作区的 `node_modules` 直接 junction 到 `C:\mimo-gui\node_modules`。
+ * 这在功能上没问题（省 1GB 拷贝），但它**把答案仓库暴露给了被测 agent**：
+ * `node_modules` 的父目录就是 `C:\mimo-gui` —— 只要 agent 执行 `cd node_modules\..`（或
+ * `ls ..`、`resolve(join(cwd,'node_modules','..'))`），它就站在**有参考解的那个仓库**里了。
+ * 实测证据：一次 repo-02 运行里 agent 直接去改 `C:\mimo-gui\src\core\llm\tools.ts`（主仓库文件）。
+ *
+ * 现在改成：**先把主仓库的 `node_modules` 镜像到 `%TEMP%\codem-eval-node_modules`（一次），
+ * 工作区再 junction 到那份副本**。于是 `node_modules/..` 是 `%TEMP%`，不是答案仓库。
+ *
+ * 镜像只在 `package-lock.json` 变了或副本不存在时做一次（用锁文件的哈希做新鲜度标记，
+ * 标记写在**副本之外**，免得它自己进到被测 agent 的视野里）。
+ */
+export function sharedNodeModulesDir() {
+  return join(tmpdir(), "codem-eval-node_modules");
+}
+
+function lockfileFingerprint() {
+  for (const name of ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]) {
+    const abs = join(REPO_ROOT, name);
+    if (!existsSync(abs)) continue;
+    const st = statSync(abs);
+    return `${name}:${st.size}:${Math.round(st.mtimeMs)}`;
+  }
+  return "no-lockfile";
+}
+
+/** 确保共享副本存在且新鲜；返回它的路径 */
+export function ensureSharedNodeModules({ quiet = false } = {}) {
+  const shared = sharedNodeModulesDir();
+  const marker = `${shared}.ready.json`;
+  const fingerprint = lockfileFingerprint();
+  if (existsSync(marker) && existsSync(shared)) {
+    try {
+      if (JSON.parse(readFileSync(marker, "utf8")).fingerprint === fingerprint) return shared;
+    } catch {
+      /* 标记坏了就当不新鲜 */
+    }
+  }
+  if (!quiet) console.log(`   镜像 node_modules → ${shared}（一次，约 1GB；之后所有工作区共用这份副本）`);
+  // robocopy：退出码 0–7 都算成功（1 = 有文件复制，3 = 有文件+目录）
+  const copy = spawnSync(
+    "robocopy",
+    [join(REPO_ROOT, "node_modules"), shared, "/MIR", "/NFL", "/NDL", "/NJH", "/NJS", "/R:1", "/W:1", "/MT:16"],
+    { encoding: "utf8", timeout: 30 * 60 * 1000 },
+  );
+  if (copy.status > 7) {
+    throw new Error(`镜像 node_modules 失败（robocopy 退出码 ${copy.status}）：${copy.stderr || copy.stdout}`);
+  }
+  writeFileSync(marker, JSON.stringify({ fingerprint, at: Date.now() }), "utf8");
+  return shared;
+}
+
 function linkNodeModules(ws) {
   const target = join(ws, "node_modules");
   if (existsSync(target)) {
@@ -70,7 +128,9 @@ function linkNodeModules(ws) {
       /* 下面 mklink 会报错，交给它说 */
     }
   }
-  const junction = spawnSync("cmd", ["/c", "mklink", "/J", target, join(REPO_ROOT, "node_modules")], {
+  // junction 到**共享副本**，不是主仓库（见 ensureSharedNodeModules 的说明）
+  const shared = ensureSharedNodeModules();
+  const junction = spawnSync("cmd", ["/c", "mklink", "/J", target, shared], {
     encoding: "utf8",
   });
   if (junction.status !== 0) throw new Error(`node_modules junction 失败：${junction.stderr || junction.stdout}`);
@@ -235,5 +295,37 @@ export function verifyRepoWorkspace(task, ws) {
   if (existsSync(docsDir) && readdirSync(docsDir).some((n) => n.startsWith("HANDOFF-"))) {
     problems.push("工作区里还有 docs/HANDOFF-*（交接单 = 答案）");
   }
+
+  /**
+   * **答案仓库不能通过 `node_modules` 的父目录暴露**（第 106 波新增）。
+   *
+   * 实测过的泄漏通道：工作区的 `node_modules` 曾被 junction 到 `C:\mimo-gui\node_modules`，
+   * 于是 `node_modules/..` 就是**有参考解的主仓库** —— 一次 repo-02 运行里 agent 直接去改了
+   * `C:\mimo-gui\src\core\llm\tools.ts`。
+   *
+   * 这条判据检查的是"junction 指向的那份 `node_modules` 的**父目录**"：
+   * 它必须不是主仓库，也不是主仓库的祖先。
+   */
+  const nm = join(ws, "node_modules");
+  if (existsSync(nm)) {
+    /**
+     * ⚠️ 路径比较必须先**归一化**：`REPO_ROOT` 是用 `/` 拼的（`C:/mimo-gui`），
+     * 而 `realpathSync` 给的是 `C:\mimo-gui` —— 直接 `===` 永远不相等，
+     * 判据就成了"永远绿"（这一版第一遍就是这么写的，实测发现后才补上归一化）。
+     */
+    const normalize = (p) => p.replace(/\//g, "\\").replace(/[\\]+$/, "").toLowerCase();
+    const resolved = realpathSync(nm);
+    const parent = normalize(dirname(resolved));
+    const repo = normalize(REPO_ROOT);
+    const looksLikeAnswersRepo = parent === repo || repo.startsWith(parent + "\\");
+    if (looksLikeAnswersRepo) {
+      problems.push(
+        `node_modules 指向 ${resolved}，其父目录 ${dirname(resolved)} 就是答案仓库（或它的祖先）⇒ agent 能顺着它走到参考解`,
+      );
+    }
+  } else {
+    problems.push("工作区里没有 node_modules（依赖没接上，判据会跑不起来）");
+  }
+
   return { problems, warnings };
 }

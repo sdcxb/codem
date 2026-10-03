@@ -985,7 +985,92 @@ bash { command: "Get-Content 'C:\\mimo-gui\\package.json'" } → 通过，内容
 
 要对等地跑，三选一（按代价）：①跑对照臂时把主仓库置于 bug 状态（工作树 + HEAD 都没有答案，
 只剩 reflog/历史，且污染检测兜底）；②容器/VM；③接受"对照臂只能判'碰过'"的保守口径，
-把两次运行都说清楚。**这是下一轮的第一件事。**
+把两次运行都说清楚。
+
+### 13.9 第 106 波拍板：隔离对等用 ③+，并给出为什么这是**可辩护**的口径
+
+先看事实（工作区配方本身就有的隔离）：
+
+1. 两个臂用的是**同一条工作区配方**：`git` 单提交工作区，`HEAD == buggyCommit`（修复的父提交），
+   测试文件在评分前会被 `git checkout HEAD -- <判据文件>` **还原** ⇒ 答案**不在工作区里**，
+   也不在这个工作区的 git 对象库里（单提交，没有后续历史）；
+2. 所以唯一的泄漏通道是"离开工作区、去读主仓库（`C:\mimo-gui`）或它的 git 历史"；
+3. 这条通道**两侧都有判据**：`codem-record-integrity.mjs`（Codem 侧，读会话事件里的访问目标）与
+   `run-repo-arm.mjs` 的与臂无关的污染检测（读 driver 留下的 `.dsh-events.jsonl`，同一口径），
+   命中就写 `contaminated: true`，**宁可作废也不用脏数据**。
+
+结论：**采用 ③+** —— 跑，但把"污染"当成一等公民：
+- 记录里保留 `contaminated`；报告会点名受影响的用例（§16.7 的口径：脏数据不作依据）；
+- 两个臂**都**跑满同一套任务、同模型（见下）、同重复次数，成对报告只在两侧都有分数时才出结论。
+
+为什么不上 ②（容器）：它要额外搬运凭证与仓库副本，而且**不能**消除"两侧工具面本来就不同"这个
+事实差异（见下）—— 那是产品差异，不是测量误差。为什么不上 ①：主仓库的**提交历史里有答案**，
+把工作树/HEAD 挪到 bug 态并不能删除历史（要删就是重写历史），反而会让"我自己的开发环境"处于
+不真实的状态；而且 ③+ 的污染检测本来就能把读历史的行为抓住。
+
+### 13.10 工具面差异是**产品差异**，必须写在结论旁边
+
+- Codem 侧：装好的应用（带**应用级沙箱**）+ 它自己的工具集（`bash/read/write/glob/grep/fetch`…），
+  脚本类工具（`run_code`/`workflow`）现在跑在 **Rust 侧 boa** 沙箱里（§16）；
+- DSH 侧：`dsh --profile headless` 作为**普通子进程**跑，工具集由它的 profile 提供。
+
+这不是测量误差 —— "谁的工具更好用、谁更容易把任务做完"正是要测的东西。**但要说清楚**：
+两侧的分数差里，既包含"模型编排能力"的差，也包含"产品工具面"的差；
+本口径下（同模型、同任务、同工作区）我认为这才是"编码能力"该有的定义（端到端做成事）。
+真要拆开归因，需要再跑一组"两侧都只用 bash"的对照 —— 那是后续的事，先记在这。
+
+### 13.11 同模型是地基：两侧各自的记录里都要有模型名
+
+- DSH 侧：`dsh-driver.mjs` 写 `model`（由命令行 `--model` 传入，实测 `dsh` 会话里模型就是 `deepseek-flash`）；
+- Codem 侧：以前**没写** —— 第 106 波补上（`--run` 与 `EVAL_MODEL`/`EVAL_APP_VERSION`），
+  并新增 `tools/eval/normalize-codem-records.mjs` + `repo-paired-report.mjs`：
+  **模型不同直接拒绝出结论**（`checkSameModel`），并且**不许猜运行号**
+  （缺 `runNumber` 就抛错，因为 `paired-report.mjs` 会把"单侧多条"判成阻塞对）。
+
+实测核对（本机当前配置）：Codem 会话事件里 `"model":"deepseek-flash"`；
+DSH 会话记录里 `"model": "deepseek-flash"` ⇒ **两侧同模型**，地基成立。
+
+### 13.12 判据工具的三层自证（尺子自己也要有判据）
+
+`normalize-codem-records` 的 9 条自测 + 5 条变异（M1 口径、M2 缺数据不等于 0、M3 运行号不许猜、
+M4 污染照搬、M5 同模型地基）**全部被咬住**；已挂进 `npm run audit`（`eval:paired-normalize`）。
+
+### 13.13 ⚠️ 第 106 波：**旧口径那批分（11/20）不能用** —— 四个尺子缺陷（都带实测证据）
+
+重新起臂之前先把旧记录翻了一遍，发现旧结论的每一个环节都有洞。**先说结论**：
+§13.4 报的"Codem 12 任务 / 15 次有效 / 11 通过（73%）"**不再作为基线**，
+必须用修好尺子之后重跑的 v2 数据（`eval-records-codem-repo-v2.jsonl`）说话。
+
+| # | 缺陷 | 实测证据 | 处置 |
+|---|---|---|---|
+| 1 | **构建版本不对** | 抽查旧记录里一次 repo-02 会话（`1790990982706-bgfhxqw2c`）：**每一条 `bash` 都失败**，报 `bash declared outputSchema but returned no value` —— 那正是 §3.x 修掉的 `1.16.227` 前的工具契约缺陷 | 旧分**不代表现在的产品**；v2 全部跑在 1.16.232（`bash/read/glob/grep` + `run_code/workflow` + hooks + 动态插件都已可用） |
+| 2 | **"零改动通过"混进了通过率** | 旧记录里有 **3 次** `passed && git diff == 0`（repo-02/03/08 的首次运行）。查其中 repo-02 那次会话：agent 的 `bash` 全废、它转而去改 **`C:\mimo-gui\src\core\llm\tools.ts`**（主仓库！），三次 `edit/multi_edit` 全部 `status=error` | 记录里新增 `suspiciousNoDiffPass`；规范化器对老记录**当场算**这个标记；`repo-paired-report.mjs` 把它**从可评分集合里剔除**（⇒ 该任务的对缺一侧 ⇒ 头部结论 withheld，退出码 1）。核实用 `tools/eval/audit-codem-record.mjs` |
+| 3 | **`git diff` 漏掉"已提交的改动"** | 老口径只取 `git diff`（工作树 vs 索引）：agent 若自己 `git commit`，这个值就是 0 —— "真的做了活"与"什么都没做"于是长得一样 | 驱动改成同时取 `git diff HEAD`（未提交）与 `git diff <根提交> HEAD`（已提交），并记 `commitsAfterRun`（提交数） |
+| 4 | **`node_modules` junction 把答案仓库暴露了** | 工作区的 `node_modules` 曾 junction 到 `C:\mimo-gui\node_modules` ⇒ `node_modules/..` **就是有参考解的主仓库**。缺陷 2 里 agent 能去改主仓库文件，这条通道是必要条件 | 改成先镜像到 `%TEMP%\codem-eval-node_modules`（一次，约 1GB，锁文件哈希做新鲜度标记），工作区 junction 到**那份副本**；并把"`node_modules` 的父目录不能是答案仓库"写进 `verifyRepoWorkspace` 的致命判据（实测能咬住旧 junction） |
+
+**顺带修掉的一个判据假阴性**（`codem-record-integrity.mjs`）：旧口径把**任何**失败都当成
+"沙箱拦下了"（`failed = status === "error"`）。而缺陷 2 那三次 `edit` 的失败原因是
+**`oldString not found`**（自己锚点写错），**不是**沙箱拒绝 —— 按旧口径它们会被记成"隔离生效"，
+可实际上 agent 已经读到了答案仓库（否则不知道那些行的内容）。
+新口径：只有**明确的拒绝证据**（`SANDBOX_DENIAL_RE`）才算 blocked，**其它失败一律算污染**
+（证明不了干净就不算干净）。
+
+**另一处判据实现 bug（值得记）**：新加的 `node_modules` 判据第一版直接比较
+`dirname(realpathSync(nm)) === REPO_ROOT` —— 永远为假，因为 `REPO_ROOT` 是 `C:/mimo-gui`（正斜杠）
+而 `realpathSync` 给 `C:\mimo-gui`（反斜杠）。判据"永远绿"了。归一化之后才真的咬住。
+**这条再次说明：判据必须用"改坏它会不会红"来验，光看它输出"通过"没有意义。**
+
+### 13.14 第 106 波的执行状态（截至本轮）
+
+- **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，本已跑过 repo-01..05（5/5 通过）；
+  本轮补跑 repo-06..12（进度：repo-06 通过）。判据：`tools/eval/drivers/dsh-driver.mjs` 写事件留档，
+  `run-repo-arm.mjs` 做与臂无关的污染检测。
+- **处理臂（Codem）**：1.16.232 装机版 + CDP 驱动，12 个任务 × run 1，记录写进
+  `eval-records-codem-repo-v2.jsonl`（**新文件**：老记录缺 `arm/runNumber/model`，
+  规范化器**故意拒绝**它们 —— 不许猜运行号）。
+- **成对报告**：`node tools/eval/repo-paired-report.mjs --control … --treatment …`。
+  两臂同模型是硬前提（不同模型直接拒），0 改动通过会被剔除并阻塞该对。
+- **本轮不做结论**：两臂都还没跑满 12×run1；等齐了再出报告（这是纪律，不是拖延）。
 
 ### 13.8 还差什么
 

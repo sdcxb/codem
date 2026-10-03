@@ -38,6 +38,21 @@ export const SELF_RESTORE_RE = /\bgit\b[^\n]*\b(checkout|restore|stash|reset|rev
 export const DEFAULT_ANSWER_REPO_RE = /mimo-gui/i;
 
 /**
+ * **"沙箱真的拦下了"长什么样**（第 106 波修正）。
+ *
+ * 老口径把"这次调用失败了"当成"隔离生效"：`failed = status === "error" || /Sandbox:/`。
+ * 实测反例：一次 repo-02 运行里 agent 去改 `C:\mimo-gui\src\core\llm\tools.ts`，
+ * 三次 `edit/multi_edit` 全是 `status=error` —— 但原因是 **`oldString not found`**（它自己在别的
+ * 版本上写的锚点对不上），**不是**沙箱拒绝。按老口径这三次会被记成"隔离生效"，
+ * 而实际上 agent **已经读到了答案仓库**（否则它不会知道那些行的内容）。
+ *
+ * 新口径：只有**明确的拒绝证据**才算 blocked；其它失败一律按"没能证明被拦下"处理 ⇒ 算污染。
+ * 这与本仓的纪律一致：**证明不了干净，就不算干净**（宁可作废）。
+ */
+export const SANDBOX_DENIAL_RE =
+  /sandbox|沙箱|denied|deny|not allowed|outside the workspace|工作区之外|超出工作区|被拒绝|拒绝访问|EACCES|EPERM/i;
+
+/**
  * @param rows 会话事件行（`{event_type, payload}`，**按 seq 升序**）；
  *             `payload` 可以是字符串（数据库里的原样）或已解析的对象。
  * @param answerRepoRe "答案仓库"的匹配（默认见上）
@@ -80,10 +95,15 @@ export function classifySessionAccess(rows, answerRepoRe = DEFAULT_ANSWER_REPO_R
 
     // tool_result：与上一条 tool_call 配对（一次调用可能有多条结果事件，按第一条判）
     if (!pending || row.event_type !== "tool_result") continue;
-    const failed = payload.status === "error" || /Sandbox:/.test(String(payload.result ?? ""));
+    /**
+     * 真的被沙箱拦下才算 blocked（见 SANDBOX_DENIAL_RE 的说明）：
+     * 其它任何失败都不能证明"没读到答案" ⇒ 按污染处理。
+     */
+    const resultText = String(payload.result ?? "");
+    const denied = SANDBOX_DENIAL_RE.test(resultText) && /error|失败|拒绝|denied/i.test(`${payload.status} ${resultText}`);
     if (pending.mentions) {
       const entry = `${pending.tool}: ${pending.target.slice(0, 200)}`;
-      (failed ? blocked : leaks).push(entry);
+      (denied ? blocked : leaks).push(entry);
     } else if (pending.contentOnly) {
       contentOnly.push(`${pending.tool}: ${pending.whole.slice(0, 160)}`);
     }
