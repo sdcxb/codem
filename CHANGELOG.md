@@ -2,6 +2,23 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.228] - 2026-10-03
+
+### 修复
+
+- **失败的原因被契约话术顶掉：`read` 一个不存在的文件，模型看到的却是「你声明了 outputSchema 却没给 value」。**
+  接上一版：`read` / `glob` / `grep` 是**内容型工具**（`tool-result-status.ts` 的 `CONTENT_TOOLS`：
+  输出是数据，首行恰好是 `Error:` 也可能只是文件内容）⇒ 它们的失败**不会被文本推断**成失败，
+  于是原来被报成 `completed`（**假成功**），而它们又都声明了 `outputSchema`，
+  「没给 value」再被契约层换成 `Error: read declared outputSchema but returned no value` ——
+  **真正的原因（文件不存在 / 权限）就此消失**，模型也无从纠正。
+  两处一起修：①这四类工具的失败路径**显式声明 `isError: true`**（read ×2、glob、grep）；
+  ②契约层**不再顶掉工具自己的失败文本** —— 输出本身就是一句 `Error:` 时原样透传（只留一条
+  console.warn 给开发者），只有"成功文本却没给 value"才继续报契约问题。
+  判据：`tool-contract-pipeline-e2e.test.ts` 新增「输出本身就是一句失败 ⇒ 保留工具自己的原因」；
+  `output-contract-real-loop.test.ts` 新增 `OUTCON-3`（真工具 + 真 file-api 桩：read/glob/grep 的
+  失败必须 `isError === true`）。
+
 ## [1.16.227] - 2026-10-03
 
 ### 修复

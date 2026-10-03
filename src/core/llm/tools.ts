@@ -1294,8 +1294,17 @@ export function createReadFileTool(): ToolDef {
             // or command not registered. If it's a "command not found" error,
             // fall through to the legacy path. Otherwise surface the error.
             if (!e.message?.includes?.("not a function") && !e.message?.includes?.("read_file_lines")) {
-              // File system error — surface it
-              return { title: `read: ${path}`, output: `Error: ${e.message}` };
+              /**
+               * 文件系统错误 —— **必须显式声明失败**（第 97 波）。
+               *
+               * `read` 是**内容型工具**（`tool-result-status.ts` 的 `CONTENT_TOOLS`）：它的输出是数据，
+               * 首行恰好是 `Error:` 也可能只是文件内容，所以分类器**不推断**。
+               * 于是"读一个不存在的文件"原来被报成 `completed` —— 一次**假成功**；
+               * 而它又声明了 `outputSchema`，"没给 value"还会被契约层换成
+               * `read declared outputSchema but returned no value`，把**真正的原因**顶掉。
+               * 显式 `isError: true` 两条一起解决：状态诚实、文本原样透传。
+               */
+              return { title: `read: ${path}`, output: `Error: ${e.message}`, isError: true };
             }
             // Command not found — fall through to legacy path
           }
@@ -1372,7 +1381,8 @@ export function createReadFileTool(): ToolDef {
          * 不记，因为"读不到"不等于"不存在"（本仓库的既有纪律）。
          */
         await noteObservedIfMissing(ctx.sessionId, path);
-        return { title: `read: ${path}`, output: `Error: ${error.message}` };
+        // 第 97 波：内容型工具的失败必须**显式**声明（否则被报成 completed，见上面那条注释）
+        return { title: `read: ${path}`, output: `Error: ${error.message}`, isError: true };
       }
     },
   };
@@ -1954,7 +1964,8 @@ export function createGlobTool(): ToolDef {
         };
       } catch (error: any) {
         console.error("[glob tool] error:", error);
-        return { title: `glob: ${pattern}`, output: `Error: ${error.message}` };
+        // 第 97 波：内容型工具的失败必须显式声明（它同样声明了 outputSchema）
+        return { title: `glob: ${pattern}`, output: `Error: ${error.message}`, isError: true };
       }
     },
   };
@@ -2015,7 +2026,8 @@ export function createGrepTool(): ToolDef {
           output: results.join("\n") || "No matches found",
         };
       } catch (error: any) {
-        return { title: `grep: ${pattern}`, output: `Error: ${error.message}` };
+        // 第 97 波：内容型工具的失败必须显式声明（它同样声明了 outputSchema）
+        return { title: `grep: ${pattern}`, output: `Error: ${error.message}`, isError: true };
       }
     },
   };

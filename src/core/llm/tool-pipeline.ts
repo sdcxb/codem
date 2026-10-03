@@ -926,7 +926,21 @@ class OutputContractValidationMiddleware implements FinalizeMiddleware {
     }
 
     // 声明了契约却没给值 ⇒ 这是**实现漏了**，不是数据违规。如实报出来。
+    //
+    // 第 97 波：**但"没给值"绝不许把工具自己的失败文本顶掉**。
+    // 真机形态：`read` 一个不存在的文件 → 工具返回 `Error: 系统找不到指定的文件。`
+    // （内容型工具不会被文本推断成失败，所以没走上面的早退），契约层于是把它换成
+    // `Error: read declared outputSchema but returned no value` —— 真正的原因（文件不存在）
+    // 就此消失，模型也没法纠正。现在：输出本身就是一句失败 ⇒ 保留它，只把契约问题
+    // 记一条 warn 给开发者看。
     if (result.value === undefined) {
+      const text = String(result.output ?? "");
+      if (/^\s*(?:error|错误|失败)\s*[:：-]/i.test(text)) {
+        console.warn(
+          `[tool-contract] ${toolName} 声明了 outputSchema 但这次没给 value（输出是一句失败，原样透传）: ${text.slice(0, 160)}`,
+        );
+        return { ...result, status: "error", error: text.split("\n", 1)[0], errorSource: "tool" };
+      }
       events.push({
         layer: "finalize",
         middleware: "output-contract",

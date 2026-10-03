@@ -171,4 +171,32 @@ describe("第 97 波：真实循环里 outputSchema 的校验不许把成功结�
     expect(String(result?.output ?? ""), "占位文本不该漏出去").not.toContain("RAW-OUTPUT-SHOULD-BE-REPLACED");
     expect(result?.value, "结构化 value 必须一路透传到下游（UI/微压缩/结构化消费都靠它）").toEqual({ n: 7, label: "ok" });
   });
+
+  it("OUTCON-3: 真实 read/glob/grep 的失败路径必须显式 isError（否则被报成 completed）", async () => {
+    // 用真实工具 + 真实文件 API 的桩：read_file_lines 直接抛"找不到文件"，
+    // 与真机上 Rust 侧返回的错误同形（文本判据见 file-api/session-jsonl 的既有说明）。
+    const w = globalThis as unknown as Record<string, unknown>;
+    const original = w.__TAURI__;
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command: string) => {
+          if (command === "get_app_data_dir") return "C:\\appdata\\";
+          throw new Error(`系统找不到指定的文件。 (os error 2) [${command}]`);
+        },
+      },
+    };
+    try {
+      const registry = createDefaultToolRegistry();
+      for (const name of ["read", "glob", "grep"]) {
+        const tool = registry.get(name)!;
+        const args = name === "read" ? { path: "C:\\definitely\\missing.txt" } : { pattern: "*.ts" };
+        const res: any = await tool.execute(args as any, { cwd: "C:\\definitely", sessionId: "s-criterion" } as any);
+        expect(String(res.output), `${name}: 失败文本要留下`).toMatch(/Error/);
+        expect(res.isError, `${name}: 失败必须**显式**声明 isError —— 它们是内容型工具，不会被文本推断`).toBe(true);
+      }
+    } finally {
+      if (original === undefined) delete w.__TAURI__;
+      else w.__TAURI__ = original;
+    }
+  });
 });

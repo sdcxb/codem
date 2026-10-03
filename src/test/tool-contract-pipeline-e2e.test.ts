@@ -188,6 +188,29 @@ describe("端到端：入参校验在真实管线里生效", () => {
     expect(res.result.output).toContain("[CACHE HIT]");
     expect(res.result.output).not.toMatch(/declared outputSchema but returned no/);
   });
+
+  /**
+   * 第 97 波补：**"没给 value"绝不许把工具自己的失败文本顶掉**。
+   *
+   * 真机形态：`read` 一个不存在的文件 → 工具返回 `Error: …找不到指定的文件…`。
+   * `read` 是**内容型工具**（`tool-result-status.ts` 的 `CONTENT_TOOLS`：输出是数据，
+   * 不做文本推断），所以它不会因为首行是 `Error:` 而被判失败 —— 于是契约层接上，
+   * 把真正的原因换成 `Error: read declared outputSchema but returned no value`。
+   * 模型看到的是内部话术，**文件不存在**这件事消失了，它也无从纠正。
+   */
+  it("输出本身就是一句失败却没给 value ⇒ 保留工具自己的原因（不被契约话术顶掉）", async () => {
+    const res = await getToolPipeline().execute("glob", { pattern: "*.ts" }, ctx(), async () => ({
+      id: "call-fail",
+      name: "glob",
+      input: { pattern: "*.ts" },
+      output: "Error: 系统找不到指定的路径。 (os error 3)",
+      status: "completed" as const, // 内容型工具不会被文本推断成失败 —— 缺陷的入口
+    }));
+
+    expect(res.result.status, "该失败就该是失败").toBe("error");
+    expect(res.result.output, "工具自己的原因必须留下").toContain("os error 3");
+    expect(res.result.output).not.toMatch(/declared outputSchema but returned no/);
+  });
 });
 
 describe("端到端：未声明契约的工具零变化", () => {
