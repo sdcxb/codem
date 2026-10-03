@@ -1923,6 +1923,8 @@ NOT NULL constraint failed: settings.updated_at
 `[RED TEST]` 指针与"先看到红"两条机制要打的靶子 —— 判据文件里 OUTCON-3 明写了三个工具，
 "读过它"与"没读过它"的差别就是这 1 条失败 ✓。
 
+### 13.22 **最终结论的骨架**（数据齐了往里填；怕漏，所以先写死）
+
 填表用的命令（跑完收尾三步之后）：
 ```
 node .preview-shot/_clean-records.mjs 两臂记录 → -clean.jsonl      # 裁干净口径
