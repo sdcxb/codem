@@ -578,9 +578,18 @@ export class AgenticLoop {
    * `npm test` / `cargo test` …）才算，免得把 `grep vitest` 这类命令的输出误当成测试结果
    * （判据误报的代价是"明明没跑测试却被要求解释红"，比漏报更烦人）。
    */
-  private noteTestRun(name: string, args: Record<string, unknown>, output: string): void {
+  private noteTestRun(name: string, args: Record<string, unknown>, rawOutput: string): void {
     const command = String((args as any)?.command ?? (args as any)?.code ?? "");
     if (!command) return;
+    /**
+     * **先剥掉 ANSI 颜色**（第 111 波）。
+     *
+     * 评测 harness 里不会有颜色（实测 12/12 份真实判据输出都不含 ANSI），但**交互使用**时
+     * 有的运行器会带颜色，逐文件标记行会变成 `\u001b[31m❯\u001b[39m src/test/x.test.ts` ——
+     * 我那条 `([❯✓×])\s+(文件)` 的正则就匹配不到，"红的是哪个文件"**静默失效**
+     * （机制变死代码，而所有判据仍然全绿）。剥掉转义码零成本、严格更好。
+     */
+    const output = rawOutput.replace(/\u001b\[[0-9;]*m/g, "");
     // 真的"调用"了运行器（行首/分隔符之后），而不是提到它的名字
     const invokesRunner =
       /(^|[\s;&|])(npx\s+|pnpm\s+|yarn\s+)?(vitest|jest|pytest|mocha)\b/.test(command) ||

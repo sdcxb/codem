@@ -254,6 +254,30 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     expect(JSON.stringify(events), "绿的时候不许附指针").not.toContain("[RED TEST]");
   });
 
+  it("RT-9: 带 ANSI 颜色的输出也要能识别红文件（交互使用时的真实形态）", async () => {
+    /**
+     * 评测 harness 里没有颜色（12/12 份真实判据输出实测），但**交互使用**时运行器会带颜色：
+     * `\u001b[31m❯\u001b[39m src/test/x.test.ts`。若不先剥转义码，标记正则匹配不到，
+     * "红的是哪个文件"会**静默失效**（机制成死代码、判据还全绿）—— 这是本轮新加机制的自证。
+     */
+    const ansi = (s: string) => `\u001b[31m${s}\u001b[39m`;
+    const colored = `\n ${ansi("❯")} ${ansi("src/test/dsh-d7-usage-cache-buckets.test.ts")} (5 tests | 3 failed)\n Test Files  1 failed\n      Tests  3 failed | 2 passed (5)\n`;
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      testIteration("t1", "npx vitest run src/test/dsh-d7-usage-cache-buckets.test.ts"),
+      finalIteration("已完成。"),
+      finalIteration("已完成（收尾）。"),
+    ]);
+    const { registry } = registryWithFakeBash(() => colored);
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    const events = await drain(loop);
+
+    const serialized = JSON.stringify(events);
+    expect(serialized, "带颜色的输出也必须能识别出红文件并附指针").toContain("[RED TEST]");
+    expect(serialized, "要点名带颜色的那个文件").toContain("dsh-d7-usage-cache-buckets.test.ts");
+  });
+
   it("RT-3/RT-4: 提醒只来一次，且必须点名条数与命令", async () => {
     const provider = new ScriptedProvider();
     provider.setScript([
