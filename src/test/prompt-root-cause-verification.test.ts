@@ -68,4 +68,26 @@ describe("第 107 波：根因修复与验证覆盖面的提示词要求", () =>
     expect(src, "英文缺这条").toMatch(/A red test you just ran may not be papered over/);
     expect(src, "英文缺收场二选一").toMatch(/fix them, or name the failure in your receipt/);
   });
+
+  /**
+   * PROMPT-ROOT-5：**这些要求必须出现在真正组装出来的系统提示里**。
+   *
+   * 为什么单独有一条（本仓最贵的一类缺陷）：判据只断言"模板文件里有这句话"是不够的 ——
+   * 如果组装系统提示的那条链路根本没把这个模板段拼进去，这句话就是**死代码**：
+   * 判据全绿、模型永远看不到（本仓有过先例：`apiMessages[0]` 恒假，注入曾经是死代码）。
+   *
+   * 所以这里调用**真正的组装函数** `buildSystemPrompt`，在它的输出里找这三条要求。
+   */
+  it("PROMPT-ROOT-5: 三条要求真的进了组装出来的系统提示（不是只在模板文件里）", async () => {
+    const { buildSystemPrompt } = await import("../core/prompt/prompt");
+    // 传最小可用配置：`agent.prompt` 是必填（缺了直接 TypeError，这正是"接线断了会立刻炸"）
+    const text = buildSystemPrompt({
+      agent: { prompt: "（判据用的最小 agent 段）" },
+      workingDirectory: "C:/workspace",
+    } as never);
+    expect(text.length, "系统提示不该为空").toBeGreaterThan(500);
+    expect(text, "「按根因修」没进系统提示").toContain("修缺陷要按根因修");
+    expect(text, "「验证覆盖面」没进系统提示").toContain("不要只跑你刚找到的那一个文件");
+    expect(text, "「红测试不许被完成盖过去」没进系统提示").toContain("不许被");
+  });
 });
