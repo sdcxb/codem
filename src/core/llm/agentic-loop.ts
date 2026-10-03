@@ -1674,23 +1674,30 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
        * 走尾部消息而不是 system 前缀：与 time-context / goals / plan-context 同一形态，
        * 保持稳定前缀逐字节不变（`dsh-d5-prefix-cache-stability.test.ts` 守这条）。
        */
+      /**
+       * 第 97–98 波：**替它把"拿任务里的词搜仓库"这一步做了**（每个会话一次）。
+       *
+       * 为什么换掉第一版（列全部测试文件）：直接读对照臂（DSH）在 `repo-02` 上通过的那次会话，
+       * 它的路径是 `grep "写入确认"` / `grep "classifyToolResult|applyToolResultStatus|isError"`
+       * → **从命中的文件名里看出 `dsh-dN-*` 这个族** → 直接读 `dsh-d9-multi-edit-partial-failure.test.ts` ✓。
+       * 而"平铺文件清单"在真实工作区里无效（496–4000+ 个测试文件，字母序前 40 全是 `aa-*` ✗；
+       * 任务描述是中文、判据名是英文，词面排序也排不出来 ✗）。
+       *
+       * 现在两段都只陈述事实：① 用消息里的词在**测试文件**里搜，列出命中最多的（泛词按文档频率剔除）；
+       * ② 给出测试文件的**命名分族**（赢家正是靠这个看出规律的 ✓）。
+       */
       if (!this.testFileNoticeSent.has(sessionId)) {
         this.testFileNoticeSent.add(sessionId); // 先标记再做事：失败也不重试，避免每轮扫盘
         try {
-          const { buildTestFileNotice } = await import("./test-file-notice");
-          /**
-           * 第 97 波：**必须把用户消息传进去做相关性排序**。
-           * 第一版按字母序平铺 —— 实测在真实工作区里（496 个测试文件）前 40 个全是 `aa-*`，
-           * 与任务相关的那条排在第 200 位开外 ⇒ 机制**原理上无效** ✗（详见 §13.30）。
-           */
-          const notice = buildTestFileNotice(cwd, undefined, userMessage);
+          const { buildTaskSearchNotice } = await import("./task-keyword-search");
+          const notice = buildTaskSearchNotice(cwd, userMessage);
           if (notice) {
             trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + notice;
-            debugLog("agent-loop", "Injected workspace test-file notice:", notice.length, "chars");
+            debugLog("agent-loop", "Injected task-keyword search notice:", notice.length, "chars");
           }
         } catch (noticeErr) {
-          // 非关键路径：清单构建失败不该影响会话
-          console.warn("[AgenticLoop] test-file notice failed:", noticeErr);
+          // 非关键路径：搜索失败不该影响会话
+          console.warn("[AgenticLoop] task-keyword search failed:", noticeErr);
         }
       }
 
