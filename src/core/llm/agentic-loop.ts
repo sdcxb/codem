@@ -465,6 +465,12 @@ export class AgenticLoop {
   private abortController: AbortController | null = null;
   private currentSnapshotId: string | null = null;
   private lastCwd: string = "";
+
+  /**
+   * 已经收到过"工作区测试文件清单"的会话（第 94 波）。
+   * 每个会话只注入一次：清单本身是常量，重复注入只会白烧 token ✗。
+   */
+  private testFileNoticeSent = new Set<string>();
   // State-based tool deduplication — no timers, no thresholds
   // Tracks what files have been read/written in the CURRENT user request.
   // Reset at the start of each run() call (new user message = new task).
@@ -1652,6 +1658,36 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
        */
       let extraSystemPrompt = "";
       let trailingTurnContext = "";
+
+      /**
+       * 第 94 波：**把"工作区里有哪些测试文件"当成事实摆一次**（每个会话一次）。
+       *
+       * 为什么加：234 对 DSH 唯一"对手稳定过、我们稳定不过"的格子是 `repo-02`，
+       * 失败形状两版一致 —— 判据在 `dsh-d9-multi-edit-partial-failure.test.ts`，
+       * 而 agent **读 1/3、跑 2/3**（既没读也没跑那条判据）。
+       * `[RED TEST]` 指针的触发条件是"测试跑出红" ⇒ 没跑就没红 ⇒ 对这类**原理上无效** ✗。
+       *
+       * 与已被撤下的覆盖率唠叨（`c7feb4a`，在通过运行上 8/8 误报）的区别：
+       * 这里**只呈递事实**（有哪些测试文件、共几个），不含任何"你应该跑更多"的判断 ✓
+       * ⇒ 通过与不通过的运行看到的东西**完全一样**，不会造成选择性偏见 ✓。
+       *
+       * 走尾部消息而不是 system 前缀：与 time-context / goals / plan-context 同一形态，
+       * 保持稳定前缀逐字节不变（`dsh-d5-prefix-cache-stability.test.ts` 守这条）。
+       */
+      if (!this.testFileNoticeSent.has(sessionId)) {
+        this.testFileNoticeSent.add(sessionId); // 先标记再做事：失败也不重试，避免每轮扫盘
+        try {
+          const { buildTestFileNotice } = await import("./test-file-notice");
+          const notice = buildTestFileNotice(cwd);
+          if (notice) {
+            trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + notice;
+            debugLog("agent-loop", "Injected workspace test-file notice:", notice.length, "chars");
+          }
+        } catch (noticeErr) {
+          // 非关键路径：清单构建失败不该影响会话
+          console.warn("[AgenticLoop] test-file notice failed:", noticeErr);
+        }
+      }
 
       // P0-2: Inject deferred tool hints into system prompt so the LLM knows
       // these tools exist and can call tool_search to load them.
