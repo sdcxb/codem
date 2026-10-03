@@ -1747,6 +1747,24 @@ NOT NULL constraint failed: settings.updated_at
 改成直接调 `node tools/eval/run-repo-arm.mjs --verify-workspace` 后 **12/12 通过** ——
 即我这一波对 `repo-workspace.mjs` 的三处改动（停应用、排除清单单一真相、通配删除）**没有破坏建工作区**。）
 
+### 13.20b ✅ 新建工作区"真的干净"的**端到端**验证（第 120 波）
+
+清单和判据都写好了，但截图式检查不够 —— 第 116 波我看到的那个工作区仍是**修复前建的**（还带着四份文档 ✗）。
+所以这一波**真造一个工作区**再逐条看：
+
+```
+工作区自证：✅ 通过
+排除清单（8 条）：
+  ✅ 已删除  tools/eval          ✅ 已删除  .preview-shot
+  ✅ 已删除  docs/HANDOFF-*      ✅ 已删除  docs/DSH-ALIGNMENT-FIX-PLAN.md
+  ✅ 已删除  docs/PI-ALIGNMENT-FIX-PLAN.md   ✅ 已删除  docs/MEASUREMENT-PLAN-DSH-VS-CODEM.md
+  ✅ 已删除  CHANGELOG.md        ✅ 已删除  docs/PROJECT-GUIDE.md
+关键文件仍在：✅ 源码  ✅ 判据文件
+```
+
+**两条都要看**：排除项**全部删掉**（8/8），而 agent 需要的东西**一个不少**（源码、判据文件）——
+只验前者会漏掉"删过头把判据也删了"这种反向事故。
+
 ### 13.21 ⚠️ 重复运行号：为什么它危险、怎么收尾（第 117 波）
 
 判定器与成对报告都按 **(caseId, runNumber)** 配对。同一个键出现两条（结果还可能不同）
