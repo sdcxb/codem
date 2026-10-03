@@ -1821,6 +1821,12 @@ NOT NULL constraint failed: settings.updated_at
    干净记录留在 run-2/run-3 上 ⇒ **与对照臂的干净 run-2/3 正好配对** ✓；
 3. 再跑 `_verdict.mjs` 与 `repo-paired-report.mjs` ⇒ 这才是可落笔的数据集。
 
+**收尾前把"最终表"提前摊开**（`_rehearse-final-table.mjs`，**内存里**走一遍整理+取干净，不写文件）：
+它直接打印"整理动作 + 逐任务表 + 还剩几个缺格"。第 122 波预演的价值：
+① 确认 `parkedFrom` 归位真的把干净记录送回正位（`repo-06：run-901(passed) → run-2` ✓）；
+② 确认**没有规划缺口**（剩下"还没有干净数据"的格子全部由排队中的补跑覆盖 ✓）。
+整条流水线要跑几小时 —— **别等跑完才发现某个任务的干净记录被挪走或压根没跑**。
+
 **收尾前先预演一次**（`tools/eval/dedupe-runs.mjs` 不带 `--apply` 就是预演；第 120 波预演结果：
 我方 1 条待挪（repo-06 run-2 的 `errored`，让位给更新的 `failed`）、对照臂 2 条待挪
 （repo-02 run-2 的旧 `failed` 让位给新 `passed`、repo-03 run-2 的旧 `failed` 让位给同期新记录）——
