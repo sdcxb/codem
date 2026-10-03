@@ -1515,6 +1515,7 @@ _run-second-pass.mjs   复跑我们通过过的 8 个任务（run-2）          
 | `agentic-loop.ts` | 红测试识别**先剥 ANSI** | 交互使用时彩色输出会让标记正则静默失效 |
 | `agentic-loop.ts` | 读缓存键**补上行号开关** | 自查抓到的静默串味（本波自己引入、自己修） |
 | `tool-output-shapes.ts` + `tools.ts` | `read({ line_numbers })` + `edit` 容忍行号前缀 | repo-02 里两次 `node -e` / `python -c` 绕道打印行号 |
+| `i18n-templates.ts` | **「动手之前先看到红」**（中英双语） | 四个失败里两个是"从头到尾没跑到那条判据"（§13.16b），而"跑相关模块"是**收尾**要求、对这个形态没用 |
 
 配套判据：`read-line-numbers.test.ts`（LN-1..5）、`red-test-at-completion.test.ts` 扩到 RT-1..12、
 `tool-result-storage.test.ts` 加两条、`s0-regression-full.test.ts` 的接线判据加强为"断言不变量"。
