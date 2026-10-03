@@ -1087,6 +1087,13 @@ M4 污染照搬、M5 同模型地基）**全部被咬住**；已挂进 `npm run 
 
 ### 13.15 **怎么复现这一整套测量**（照抄这些命令即可；"可复现"是目标的一半）
 
+> **本节的每条命令都已逐条实测过**（第 117 波复核）：工作区自证 12/12、
+> 判据"红得真"12/12（含真实失败标记）、机制开火核对、记录裁剪、机械判定器、
+> A/B run-book 的干跑与两道闸门、单次运行的审计命令。
+> 其中 `eval:repo-workspace` 的 `status: null` 曾误导过一次 —— 那是我的链式脚本
+> 用 `spawnSync("npm", …)` 调 `.cmd` 没加 `shell: true`（ENOENT），
+> 直接调 `node tools/eval/run-repo-arm.mjs --verify-workspace` 才是可靠的写法（已写进本节）。
+
 前置：装好被测版本的 Codem（`Start-Process <setup.exe> -ArgumentList "/S" -Wait`），
 `dsh` 在 PATH（`%APPDATA%\DSH Desktop\host-commands\...\bin\dsh.cmd`），Node ≥ 24。
 
