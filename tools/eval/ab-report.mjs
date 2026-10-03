@@ -26,9 +26,25 @@ import { readRecords, normalizeCodemRecords, checkSameModel } from "./normalize-
  * @param baseline 旧构建的运行（已规范化）
  * @param candidate 新构建的运行（已规范化）
  * @param options.minTasks 低于这个可评分数就拒绝下结论（默认 6）
+ * @param options.onlyTasks **显式声明**只在哪些任务上比较（默认全部）
  */
 export function abCompare(baseline, candidate, options = {}) {
   const minTasks = typeof options.minTasks === "number" ? options.minTasks : 6;
+  /**
+   * **只在声明的任务子集上比较**（第 109 波）。
+   *
+   * 为什么需要它：A/B 复测通常只跑"出问题的那几个任务 + 少量回归对照"（时间与成本决定的），
+   * 而基线记录里往往有更多任务。不过滤的话 `onlyBaseline` 会塞满未配对任务 ⇒ 永远"不下结论"；
+   * 而粗暴地忽略它们又等于**偷偷缩小分母**。
+   * 所以做成**显式声明**：任务清单写在命令行里、也原样印在报告里，谁都能看出
+   * "这次只在这几个任务上比"。声明之后，`onlyBaseline/onlyCandidate` 仍然照常拦截
+   * （声明了却没跑到的任务依然会让结论 withhold）。
+   */
+  const onlyTasks =
+    Array.isArray(options.onlyTasks) && options.onlyTasks.length > 0 ? new Set(options.onlyTasks) : null;
+  const restrict = (rows) => (onlyTasks ? rows.filter((r) => onlyTasks.has(r.caseId)) : rows);
+  baseline = restrict(baseline);
+  candidate = restrict(candidate);
 
   /** 只留"能当证据"的运行：有评分、未污染、不是零改动通过 */
   const usable = (rows) =>
@@ -139,11 +155,12 @@ function main() {
     if (argv[i] === "--baseline") args.baseline = argv[++i];
     else if (argv[i] === "--candidate") args.candidate = argv[++i];
     else if (argv[i] === "--min-tasks") args.minTasks = Number(argv[++i]);
+    else if (argv[i] === "--only-tasks") args.onlyTasks = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
   }
   if (args.help || !args.baseline || !args.candidate) {
     console.log(
-      "用法：node tools/eval/ab-report.mjs --baseline <旧构建记录> --candidate <新构建记录> [--min-tasks N]",
+      "用法：node tools/eval/ab-report.mjs --baseline <旧构建记录> --candidate <新构建记录> [--min-tasks N] [--only-tasks a,b,c]",
     );
     process.exit(args.help ? 0 : 2);
   }
@@ -162,8 +179,10 @@ function main() {
     process.exit(1);
   }
 
+  if (args.onlyTasks) console.log(`只比较这些任务（显式声明）：${args.onlyTasks.join(", ")}`);
   const report = abCompare(normalizeCodemRecords(baselineRaw), normalizeCodemRecords(candidateRaw), {
     minTasks: args.minTasks,
+    onlyTasks: args.onlyTasks,
   });
   console.log("");
   console.log(renderAb(report, { baseline: `旧构建 ${versionOf(baselineRaw)}`, candidate: `新构建 ${versionOf(candidateRaw)}` }));

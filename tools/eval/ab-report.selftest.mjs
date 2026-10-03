@@ -155,5 +155,35 @@ check("A7: 通过率的**分母是可评分的运行**（被剔除的不能稀�
   eq(report.candidatePassRate, 0, "候选通过率");
 });
 
+check("A8: --only-tasks 显式声明子集 ⇒ 未声明的任务不再阻塞结论，但**声明了没跑到的仍会阻塞**", () => {
+  const baseline = [
+    run({ caseId: "gap-1", outcome: "failed" }),
+    run({ caseId: "gap-2", outcome: "failed" }),
+    run({ caseId: "other-a", outcome: "passed" }),
+    run({ caseId: "other-b", outcome: "passed" }),
+  ];
+  const candidate = [
+    run({ caseId: "gap-1", outcome: "passed" }),
+    run({ caseId: "gap-2", outcome: "passed" }),
+  ];
+  // 不声明子集：other-a/other-b 只在基线里 ⇒ 未配对 ⇒ 不下结论
+  const withoutFilter = abCompare(baseline, candidate, { minTasks: 2 });
+  eq(withoutFilter.publishDelta, false, "不过滤时应当 withhold");
+  eq(withoutFilter.flags.includes("unpaired-tasks"), true, "旗");
+  // 显式声明只比 gap-1/gap-2：两个都配对且都变好 ⇒ 允许发布
+  const withFilter = abCompare(baseline, candidate, { minTasks: 2, onlyTasks: ["gap-1", "gap-2"] });
+  eq(withFilter.pairs, 2, "配对数");
+  eq(withFilter.fixed.length, 2, "变好数");
+  eq(withFilter.publishDelta, true, "声明子集后允许发布");
+  eq(withFilter.onlyBaseline.length, 0, "未声明任务不该出现在未配对里");
+  // 声明了却没跑到的任务（候选里缺 gap-2）仍然阻塞
+  const missingOne = abCompare(baseline, [run({ caseId: "gap-1", outcome: "passed" })], {
+    minTasks: 2,
+    onlyTasks: ["gap-1", "gap-2"],
+  });
+  eq(missingOne.publishDelta, false, "声明了没跑到的任务仍然 withhold");
+  eq(missingOne.onlyBaseline.map((r) => r.caseId), ["gap-2"], "未配对任务");
+});
+
 console.log(`\n通过 ${passed} / ${passed + failed}`);
 process.exit(failed === 0 ? 0 : 1);
