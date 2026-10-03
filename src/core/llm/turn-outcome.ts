@@ -15,6 +15,14 @@
  * 判据因此改成**结果对象的实际形状**（`type`），不再猜 `reason` 字符串。
  * 抽成纯函数是为了能用行为断言钉住：渲染层没有便宜的整机夹具，
  * 而源码文本断言会在这种"判据恒假"的缺陷上假绿（本仓库的既有教训）。
+ *
+ * ## 第 93 波补的一条：`plan_stale` 是独立终态
+ *
+ * 用户报的现象是「任务提前停掉，然后说完成了」—— 循环被停滞守卫杀掉（`plan_stale`），
+ * 呈现层却把它当成一次普通收尾。所以 `plan_stale` 现在有**自己的分支**：
+ * 明确说"因停滞而停止 / 这不是正常完成 / 请人工确认下一步"，并带上停滞量级。
+ * （同一轮还修了 `pet-store.ts` 的 end 处理与 App 的后台完成通知 —— 它们原来会把
+ *  `plan_stale` 直接呈现成"任务完成"。）
  */
 
 /** 呈现类别。`none` = 形状不认识/没有结果，保持现状不额外表态。 */
@@ -155,6 +163,44 @@ export function describeTurnOutcome(
         };
       }
 
+      /**
+       * 第 93 波：`plan_stale` = **停滞守卫把循环杀掉了**，它是**独立终态**，
+       * 不是"任务完成"（照 `too_many_errors` 的做法）。
+       *
+       * 为什么必须单独一条：用户报的正是「任务提前停掉，然后说完成了」。一手证据
+       * （会话 `1790981803954-u5dmdoahw`）里循环在第 24 个迭代被杀，而界面侧
+       * 没有任何一句"这不是完成"的话 —— 于是它被读成了完成。
+       *
+       * 呈现要求：**说清"因停滞而停止"**、带上量级（`detail.stalledFor`）、
+       * 明确要求人工确认下一步；不显示完成卡、不许报喜气泡、消息标 error。
+       */
+      if (reason === "plan_stale") {
+        const stalledFor = (r.detail as Record<string, unknown> | undefined)?.stalledFor;
+        const units = typeof stalledFor === "number" ? stalledFor : undefined;
+        const msg = zhOr(
+          zh,
+          `因停滞而停止${units ? `（连续 ${units} 个迭代没有拿到任何新信息、也没有产出交付物）` : ""} ——` +
+            `**这不是正常完成**：上面已产出的内容可能只是半成品。请人工确认下一步` +
+            `（拆小任务、写清完成判据，或指定下一步要读/要改的文件）。`,
+          `Stopped due to a stall${units ? ` (${units} iterations with no new information and no artifact)` : ""} — ` +
+            `this is NOT a normal completion. Verify the partial output and decide the next step manually.`,
+        );
+        return {
+          kind: "stopped",
+          notice: `⚠️ ${msg}`,
+          petPhase: errorPhase,
+          petMessage: msg,
+          completionCard: false,
+          suppressTaskBubble: true,
+          turnStatus: {
+            kind: "error",
+            message: units ? `Stalled for ${units} iterations` : "Stalled",
+            code: reason,
+          },
+          messageStatus: "error",
+        };
+      }
+
       // 迭代上限 / 停滞：循环自己已经吐了可见文本，这里只补 turn 级状态 + 不报完成。
       if (reason === "max_iterations" || reason === "no_progress") {
         return {
@@ -176,7 +222,7 @@ export function describeTurnOutcome(
 
       /**
        * 其它非正常停止：`output_truncated` / `context_overflow` / `safety_valve` /
-       * `plan_stale` / `repeat_guard` / `write_rejected_by_user` /
+       * `repeat_guard` / `write_rejected_by_user` /
        * `critical_service_unavailable` / 成本上限（reason 是一整句）…
        * 这些原因循环**自己**已经吐了可见文本说明，这里只守住一条：
        * **绝不显示"任务完成"**。

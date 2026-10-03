@@ -46,7 +46,19 @@ import { tryAutoCommit } from "../environment/git-commit-service";
 
 // ========== Agentic Loop Types ==========
 export type LoopResult =
-  | { type: "stop"; reason: string; usage: TokenUsage }
+  | {
+      type: "stop";
+      reason: string;
+      usage: TokenUsage;
+      /**
+       * 停止原因的量级细节（可选）。
+       *
+       * 第 93 波新增：`plan_stale` 这条停止原因**必须在界面上有独立终态**
+       * （"因停滞而停止，请人工确认下一步"），而呈现层要能说清停在哪一档，
+       * 就需要把 `stalledFor` 这类数字带出去 —— 否则界面只能给一句空话。
+       */
+      detail?: Record<string, unknown>;
+    }
   | { type: "overflow"; message: string; usage: TokenUsage }
   | { type: "aborted" }
   | { type: "error"; error: string };
@@ -514,7 +526,9 @@ export class AgenticLoop {
   private repeatGuard: RepeatGuard = new RepeatGuard();
   /**
    * 第 65 波：计划停滞检测 —— 补上「每次输出都不一样但任务一步没走」的空转。
-   * 判据与内容无关：**计划指纹没变 + 没产出交付物**；先问（注入聚焦问题）再停。
+   * 判据与内容无关：**计划指纹没变 + 没产出交付物 + 没获得新信息**；先问（注入聚焦问题）再停。
+   * （"没获得新信息"是第 93 波的治本修正，见 `stall-guard.ts` 头部 —— 只认写盘会把
+   *  大仓库里的逐文件探索误杀在第 24 轮。）
    */
   private stallGuard: StallGuard = new StallGuard();
   /**
@@ -526,6 +540,17 @@ export class AgenticLoop {
   private truncatedContinuations = 0;
   /** 本轮迭代是否产出了交付物（写入/编辑/会改盘的命令） */
   private iterationProducedArtifact = false;
+  /**
+   * 【第 93 波治本】本迭代是否**获得了新信息**（读到/查到的东西不是已经见过的）。
+   *
+   * 来源：`repeatGuard.noteResult()` 的 `gained` —— 它已经是现成的"新信息"证据，
+   * 只是原来没有接进停滞判定。接进去之后，**大仓库里逐文件读的称职探索不再被当成停滞**
+   * （一手证据见 `stall-guard.ts` 头部：会话 `1790981803954-u5dmdoahw` 在第 24 轮被杀）。
+   *
+   * 只统计**真正执行了**的调用：读缓存命中、被守卫抑制的调用不会调用 `noteResult`，
+   * 因此不会把"反复看同一份旧内容"洗成新信息。
+   */
+  private iterationGainedInformation = false;
   /** 第 83 波：交付物证据分级（写入类工具 / 可证明改盘命令 / 可能写命令的重复计数） */
   private artifactTracker = new ArtifactTracker();
 
@@ -975,6 +1000,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.planRevision = 0;
     this.truncatedContinuations = 0;
     this.iterationProducedArtifact = false;
+    this.iterationGainedInformation = false;
 
     // Model-aware context window: resolve the current model's real window
     // from the provider and sync it into TokenTracker. Without this the
@@ -1288,6 +1314,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.state.compactedThisIteration = false;
         this.guardSuppressedThisIteration = 0;
         this.iterationProducedArtifact = false;
+        this.iterationGainedInformation = false;
         // 第 69 波（修我自己上一波的 bug）：结束原因必须**每轮重置**。
         // 否则某轮失败（没有任何 finish_reason）时会沿用上一轮的 "length"，
         // 触发一次毫无意义的"续写" —— 事故现场就是这样把超限的上下文又撑大了 257/514 tokens。
@@ -1906,10 +1933,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         const stall = this.stallGuard.noteIteration({
           planRevision: this.planRevision,
           producedArtifact: this.iterationProducedArtifact,
+          gainedInformation: this.iterationGainedInformation,
           stepLabel: this.currentStepTitle(),
         });
         if (stall.action === "ask") {
-          console.warn(`[AgenticLoop] Plan stall detected (${stall.stalledFor} iterations with no plan revision and no artifact) — asking the model instead of stopping`);
+          console.warn(`[AgenticLoop] Plan stall detected (${stall.stalledFor} iterations with no plan revision, no artifact and no new information) — asking the model instead of stopping`);
           try {
             this.getMessageStorage().createMessage({
               id: `stall-ask-${Date.now()}`,
@@ -1919,17 +1947,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               status: "done",
             }, sessionId);
             this.msgCache = null;
-            recordLoopStop(sessionId, "plan_stale_ask", { stalledFor: stall.stalledFor, planRevision: this.planRevision });
+            recordLoopStop(sessionId, "plan_stale_ask", { stalledFor: stall.stalledFor, planRevision: this.planRevision, noGainStreak: this.repeatGuard.noGainStreakCount });
           } catch (e) { console.warn('[agentic-loop.ts]', e) }
-          yield { type: "text_delta", text: `\n\n⏳ **进度自查**：已连续 ${stall.stalledFor} 个迭代没有产出交付物，正在要求模型说明卡点…` };
+          yield { type: "text_delta", text: `\n\n⏳ **进度自查**：已连续 ${stall.stalledFor} 个迭代没有拿到新信息、也没有产出交付物，正在要求模型说明卡点…` };
         } else if (stall.action === "stop") {
           console.warn(`[AgenticLoop] Plan stall stop after ${stall.stalledFor} iterations`);
-          recordLoopStop(sessionId, "plan_stale", { stalledFor: stall.stalledFor, planRevision: this.planRevision });
+          recordLoopStop(sessionId, "plan_stale", { stalledFor: stall.stalledFor, planRevision: this.planRevision, noGainStreak: this.repeatGuard.noGainStreakCount });
           yield { type: "text_delta", text: `\n\n⚠️ **检测到停滞，已停止**：${stall.message ?? ""}` };
           const result: LoopResult = {
             type: "stop",
             reason: "plan_stale",
             usage: this.state.totalUsage,
+            // 第 93 波：把停滞量级带出去 —— 界面要能说清「因停滞而停止」，
+            // 而不是把一次被杀掉的循环呈现成「任务完成」（见 turn-outcome.ts / pet-store.ts）。
+            detail: {
+              stalledFor: stall.stalledFor,
+              planRevision: this.planRevision,
+              noGainStreak: this.repeatGuard.noGainStreakCount,
+            },
           };
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
             try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
@@ -3283,6 +3318,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         try {
           guardGain = this.repeatGuard.noteResult(name, effectiveArgs, result.output);
         } catch (e) { warnOnce("repeat-guard:note-result", "[agentic-loop] 记录守卫结果失败", e); }
+
+        // 第 93 波治本：把「这次拿到的是不是新信息」接进停滞判定。
+        // 为什么放在这里：noteResult 是**唯一**有「结果内容是不是新的」证据的地方，
+        // 而停滞守卫原来只看「有没有写盘」，于是在大仓库里逐文件读的探索被判成零进展。
+        // 注意只认 gained === true：宽容/骗过的路径（写后重看、幂等写）在 noteResult 内部
+        // 已经有独立记账，这里不重复解释。
+        if (guardGain?.gained) this.iterationGainedInformation = true;
 
         // 守卫的「提醒」档 —— 边执行边把提示贴到结果末尾（不打断，只纠正方向）
         if (guardDecision.action === "warn" && guardDecision.message) {

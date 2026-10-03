@@ -12,9 +12,11 @@ import { describe, it, expect } from "vitest";
 import { StallGuard, DEFAULT_STALL_LIMITS } from "../core/llm/stall-guard";
 import { ArtifactTracker } from "../core/llm/artifact-tracker";
 
-const PLAN_A = { planRevision: 0, producedArtifact: false };
-const REVISED = { planRevision: 1, producedArtifact: false };
-const ARTIFACT = { planRevision: 0, producedArtifact: true };
+const PLAN_A = { planRevision: 0, producedArtifact: false, gainedInformation: false };
+const REVISED = { planRevision: 1, producedArtifact: false, gainedInformation: false };
+const ARTIFACT = { planRevision: 0, producedArtifact: true, gainedInformation: false };
+/** 第 93 波：读到/查到**没见过**的内容 —— 与"写盘"同权重的推进信号 */
+const NEW_INFO = { planRevision: 0, producedArtifact: false, gainedInformation: true };
 
 describe("计划停滞检测（第 65 波）", () => {
   it("STALL-1: 计划没修订 + 没有交付物 → 连续到阈值先「问」，不直接停", () => {
@@ -62,6 +64,39 @@ describe("计划停滞检测（第 65 波）", () => {
     expect(g.noteIteration({ planRevision: 2, producedArtifact: false }).action).toBe("none");
     expect(g.stalledIterations).toBe(0);
     expect(g.stats.progressResets).toBeGreaterThanOrEqual(2);
+  });
+
+  it("STALL-4c（第 93 波治本）: **拿到新信息就是推进** —— 真实大仓库里的逐文件探索不许被判成停滞", () => {
+    /**
+     * 一手证据（`docs/HANDOFF-STALL-GUARD-AND-CODEM-EVAL.md` §2）：会话
+     * `1790981803954-u5dmdoahw` 里模型正在逐文件读代码（每个迭代都是**新内容**），
+     * 却在第 12 轮被提醒、第 24 轮被**杀掉**（`plan_stale stalledFor=24`）。
+     * 判据原来只认"写盘 / 改计划"，于是把称职的探索判成了零进展。
+     */
+    const g = new StallGuard();
+    for (let i = 0; i < DEFAULT_STALL_LIMITS.stopAfter * 2; i++) {
+      expect(
+        g.noteIteration(NEW_INFO).action,
+        "每个迭代都读到了没见过的新内容 ⇒ 永远不该到「问」或「停」",
+      ).toBe("none");
+    }
+    expect(g.stalledIterations, "零进展计数必须一直是 0").toBe(0);
+    expect(g.stats.informationGainResets, "信息增益清零次数要能被观测到（>0 才说明信号接上了）").toBe(
+      DEFAULT_STALL_LIMITS.stopAfter * 2,
+    );
+    expect(g.stats.asks).toBe(0);
+    expect(g.stats.stops).toBe(0);
+  });
+
+  it("STALL-4d（第 93 波治本）: 推进信号是**或**关系 —— 只有「写盘/改计划/新信息」三样全无才算零进展", () => {
+    const g = new StallGuard();
+    // 交替：零进展 → 新信息 → 零进展 → …
+    for (let i = 0; i < DEFAULT_STALL_LIMITS.stopAfter; i++) {
+      expect(g.noteIteration(PLAN_A).action).toBe("none");
+      g.noteIteration(NEW_INFO);
+    }
+    expect(g.stalledIterations, "每次拿到新信息都清零，所以永远攒不到停止窗口").toBe(0);
+    expect(g.stats.stops).toBe(0);
   });
 
   it("STALL-4b: **UI 步进（macroStep）不能当推进信号**（审计修正的回归锁）", () => {
@@ -159,12 +194,16 @@ describe("计划停滞检测（第 65 波）", () => {
     expect(tracker.note("bash", { command: "npm test" }, "改了盘之后再跑，合理", { kind: "mutate", provable: false }).artifact).toBe(true);
   });
 
-  it("STALL-12: 判定逻辑真的接在循环里（否则守卫照样失效）", () => {
-    const fs = require("fs");
-    const path = require("path");
-    const loop = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
-    expect(loop, "循环必须用分级判定").toContain("this.artifactTracker.note(");
-    expect(loop, "旧的单一判定（mutate 即交付物）必须已经移除").not.toContain("function isArtifactTool");
-    expect(loop).toContain("this.iterationProducedArtifact = true");
-  });
+  /**
+   * STALL-12 原来在这里断言**源码文本**（`loop.toContain("this.artifactTracker.note(")`），
+   * 注释还声称覆盖了「判定逻辑真的接在循环里」—— 那是**假绿**：
+   * 源码里有那一行 ≠ 循环真的把推进信号喂给了守卫（本仓库的既有教训，见 §5.2）。
+   *
+   * 第 93 波把这条判据改成**驱动真循环**的行为判据，落在
+   * `src/test/stall-guard-loop-behavior.test.ts`：
+   *   · STALL-LOOP-1：26 个迭代只读**新内容** ⇒ 循环跑满、`completed`、无 `plan_stale`；
+   *   · STALL-LOOP-2：零信息增益 ⇒ 必须被停下且不是 `completed`；
+   *   · STALL-LOOP-3：24 个零进展迭代 ⇒ 真的走到 `plan_stale`（`detail.stalledFor === 24`）。
+   * 变异自证：把 `gainedInformation` 从循环的入参里摘掉 ⇒ STALL-LOOP-1 变红。
+   */
 });

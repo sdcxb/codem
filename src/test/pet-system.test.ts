@@ -432,9 +432,38 @@ describe("宠物系统", () => {
     });
 
     it("stream event: end (success) → happy", () => {
+      // 第 93 波：判据统一交给 `describeTurnOutcome` —— **只有 `reason === "completed"`
+      // 才算完成**。原来这里用的是 `reason: "done"`（一个生产代码**从不产出**的字符串），
+      // 于是"任何非 error/overflow/aborted 的收场都摆 happy"这条缺陷被夹具掩盖了。
       usePetStore.getState().setPetState("thinking");
-      usePetStore.getState().onStreamEvent({ type: "end", result: { type: "stop", reason: "done" } });
+      usePetStore.getState().onStreamEvent({ type: "end", result: { type: "stop", reason: "completed" } });
       expect(usePetStore.getState().petState).toBe("happy");
+    });
+
+    it("stream event: end (plan_stale：循环被停滞守卫杀掉) → sad，绝不摆 happy", () => {
+      // 用户报的「任务提前停掉，然后说完成了」：原来 `plan_stale` 会掉进 `else` → happy，
+      // 宠物窗口上写的就是「任务完成！」。
+      usePetStore.getState().setPetState("working");
+      usePetStore.getState().onStreamEvent({
+        type: "end",
+        result: { type: "stop", reason: "plan_stale", detail: { stalledFor: 24 } },
+      });
+      expect(usePetStore.getState().petState).toBe("sad");
+    });
+
+    it("stream event: end (repeat_guard：零信息增益打转) → sad，绝不摆 happy", () => {
+      usePetStore.getState().setPetState("working");
+      usePetStore.getState().onStreamEvent({
+        type: "end",
+        result: { type: "stop", reason: "repeat_guard" },
+      });
+      expect(usePetStore.getState().petState).toBe("sad");
+    });
+
+    it("stream event: end (aborted) → waiting（既不是完成，也不是出错）", () => {
+      usePetStore.getState().setPetState("working");
+      usePetStore.getState().onStreamEvent({ type: "end", result: { type: "aborted" } });
+      expect(usePetStore.getState().petState).toBe("waiting");
     });
 
     it("stream event: end (error result) → sad", () => {
@@ -515,7 +544,8 @@ describe("宠物系统", () => {
       usePetStore.getState().onStreamEvent({ type: "tool_complete", toolCall: { id: "1", name: "read" } });
       expect(usePetStore.getState().petState).toBe("thinking");
 
-      usePetStore.getState().onStreamEvent({ type: "end", result: { type: "stop", reason: "done" } });
+      // 第 93 波：`reason` 必须是生产代码真的会产出的 "completed"（原来是 "done"）
+      usePetStore.getState().onStreamEvent({ type: "end", result: { type: "stop", reason: "completed" } });
       expect(usePetStore.getState().petState).toBe("happy");
     });
 

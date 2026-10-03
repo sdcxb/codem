@@ -1,15 +1,15 @@
 {
-  "version": "1.16.223",
-  "notes": ".preview-shot/_notes-223.md",
-  "pub_date": "2026-10-02T14:00:39Z",
+  "version": "1.16.224",
+  "notes": "停滞守卫治本（把「读」当成「没推进」的误杀）+ 被杀掉的循环不再被呈现成完成",
+  "pub_date": "2026-10-03T01:21:33Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VlS2U4WEtBL3YvaXl1Rk1qNFFwNGY5amdpWGFkM2lua1EzQ1M0SnhHdTlqYWlkZmowZDdzZ0t2SS94SGpESWhldVVYWHgwUE94bU1VU1lpSkRHeVEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTQ5NjM2CWZpbGU6Q29kZW1fMS4xNi4yMjNfeDY0LXNldHVwLmV4ZQovY0RrYS92QWtZd1NaaXJYU1JQVko3KzBLcHpwRDFPcDZ1WTE0cjRSdVR4L1U0cG5FbU9aNWdXL2N1T2orK1JZcS9iUnBVZjJONFpGUEpzcmVaVkREZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.223/Codem_1.16.223_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dNNDBMUytreVlqUVZ1bS9LTWIxcG0rNWJ6Y1Y1bkxWSitkczdjeW9HQU9hRXlwOWg5VWVpTDBvNHg2ejY5SmxkbnNXdWVlaG1KME5DcnliRlV1b2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTkwNDcwCWZpbGU6Q29kZW1fMS4xNi4yMjRfeDY0LXNldHVwLmV4ZQorYVVSSUJxSHNIYjlXRkZIVUJhcC9QaWh4bUhua0ZnYnJyWlJvS2Y4ZTJuZFdsYzVUMmVNRjdTWmFsK0l3NVBwNVhicmZYQXRKUktIdHNVcmtUSERBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.224/Codem_1.16.224_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VlS2U4WEtBL3YvaXl1Rk1qNFFwNGY5amdpWGFkM2lua1EzQ1M0SnhHdTlqYWlkZmowZDdzZ0t2SS94SGpESWhldVVYWHgwUE94bU1VU1lpSkRHeVEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTQ5NjM2CWZpbGU6Q29kZW1fMS4xNi4yMjNfeDY0LXNldHVwLmV4ZQovY0RrYS92QWtZd1NaaXJYU1JQVko3KzBLcHpwRDFPcDZ1WTE0cjRSdVR4L1U0cG5FbU9aNWdXL2N1T2orK1JZcS9iUnBVZjJONFpGUEpzcmVaVkREZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.223/Codem_1.16.223_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dNNDBMUytreVlqUVZ1bS9LTWIxcG0rNWJ6Y1Y1bkxWSitkczdjeW9HQU9hRXlwOWg5VWVpTDBvNHg2ejY5SmxkbnNXdWVlaG1KME5DcnliRlV1b2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTkwNDcwCWZpbGU6Q29kZW1fMS4xNi4yMjRfeDY0LXNldHVwLmV4ZQorYVVSSUJxSHNIYjlXRkZIVUJhcC9QaWh4bUhua0ZnYnJyWlJvS2Y4ZTJuZFdsYzVUMmVNRjdTWmFsK0l3NVBwNVhicmZYQXRKUktIdHNVcmtUSERBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.224/Codem_1.16.224_x64-setup.exe"
     }
   }
 }

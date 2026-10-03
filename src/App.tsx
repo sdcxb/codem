@@ -3275,6 +3275,14 @@ streamingSessionIdRef.current = session.id;
 
     // Watchdog timer lives outside try so the finally block can clear it.
     let watchdogTimer: ReturnType<typeof setInterval> | undefined;
+    /**
+     * 回合结束的**呈现类别**，在 `case "end"` 里算出、给 `finally` 用。
+     *
+     * 为什么要在 try 外面声明：`lastEvent` 是 try 块里的 `let`（块作用域），
+     * finally 块看不见它 —— 而"要不要发『任务完成』通知"必须在 finally 里判断
+     * （见下面第 93 波的说明）。
+     */
+    let turnOutcomeForNotify: ReturnType<typeof describeTurnOutcome> | undefined;
     try {
 console.log(`[runAgenticLoop] starting engine.process for session=${session.id}`);
 const sessionAbort = new AbortController();
@@ -3803,6 +3811,8 @@ flushReasoningBuffer(session.id);
               "result" in event ? event.result : undefined,
               { lang },
             );
+            // 交给 finally 的后台通知判据用（见那里第 93 波的说明：非完成不许报"任务完成"）
+            turnOutcomeForNotify = outcome;
             // Show bubble notification on task completion（失败/中断时**不许**报喜）
             if (!outcome.suppressTaskBubble) {
               // Determine if tools were used (task with actions) vs simple chat
@@ -3932,7 +3942,17 @@ abortControllersRef.current.delete(session?.id || "");
         loopMessageSnapshotRef.current = null;
       }
       // Task completion notification when app is in background or minimized
-      if (!windowVisibleRef.current) {
+      //
+      // 第 93 波修正：这个通知**原来是无条件的** —— 循环被停滞守卫杀掉
+      // （`{type:"stop", reason:"plan_stale"}`）、LLM 调用失败、用户按了停止，
+      // 只要窗口不在前台，用户就会收到一条「✅ 完成」宠物气泡 + 一条
+      // 原生通知「任务完成 — …」。用户报的「任务提前停掉，然后说完成了」，
+      // 这条就是其中最直接的来源之一。
+      //
+      // 现在只有**真完成**才通知：判据是 `case "end"` 里已经算好的同一个纯函数结果
+      // （只有 `reason === "completed"` 会得到 `kind === "completed"`；没跑到 end 的
+      // 异常收场 `turnOutcomeForNotify` 是 undefined，同样不通知）。
+      if (!windowVisibleRef.current && turnOutcomeForNotify?.kind === "completed") {
         // 通过宠物气泡通知（如果宠物已启用）
         const petStore = getPet();
         if (petStore.enabled) {

@@ -15,8 +15,11 @@
  * - tool_start                    → pet state: "working" + 工具气泡
  * - tool_complete (文件修改)       → pet state: "review" → 1.5s 后回 "idle"
  * - tool_complete (其他)           → pet state: "thinking"
- * - end event (success)           → pet state: "happy" → 2s 后回 "idle"
+ * - end event (成功)              → pet state: "happy" → 2s 后回 "idle"
  * - end event (有文件变更)         → pet state: "waving" → 2s 后回 "idle"（由 App.tsx 触发）
+ * - end event (非正常收场)         → pet state: "sad" + 说明气泡（第 93 波：判据是
+ *   `describeTurnOutcome`，**只有 `reason === "completed"` 才算完成**；`plan_stale`
+ *   这类"循环被杀掉"的收场原来会掉进 happy，界面于是写着「任务完成」）
  * - error / tool_error            → pet state: "sad" + 错误详情气泡 → 2s 后回 "idle"
  * - compaction_start              → pet state: "waiting" + 压缩气泡（由 App.tsx 触发）
  * - idle 超时 (>60s)              → pet state: "sleeping"
@@ -28,6 +31,7 @@
 import { create } from "zustand";
 import type { PetState, InstalledPet, PetSettings, PetDefinition, PetCard } from "./pet-types";
 import { DEFAULT_PET_SETTINGS } from "./pet-types";
+import { describeTurnOutcome } from "../llm/turn-outcome";
 import { getPetSettings, savePetSettings, listInstalledPets, loadSpritesheetAsDataUrl, getInstalledPet } from "./pet-manager";
 import { getSettingJSON } from "../storage/settings";
 import type { UserConfig } from "../types";
@@ -480,22 +484,37 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
       case "end": {
         const result = (event as any).result;
         /**
-         * `aborted` 必须单独认出来：它是**用户主动停止**，不是失败、更不是完成。
-         * 只判 `error/overflow` 时它会掉进下面的 `else` → 宠物摆出"happy"，
-         * 与"用户刚按了停止"这件事直接矛盾。
+         * 判据统一交给纯函数 `describeTurnOutcome`（第 93 波修正）。
+         *
+         * 修之前这里只认三种"非完成"：`aborted` / `error` / `overflow`，
+         * **其余一律 `setPetState("happy")`** —— 于是 `{type:"stop", reason:"plan_stale"}`
+         * （循环被停滞守卫杀掉）会让宠物摆出 happy，界面上写的就是「任务完成！」。
+         * 这正是用户报的「任务提前停掉，然后说完成了」的一半来源（另一半是 App 的后台完成通知）。
+         *
+         * 现在只认一种"完成"：`reason === "completed"`。其余的非正常收场一律按停止/失败呈现 ——
+         * 停在 pet 这一层的错误越少越好，判定权只留一个（turn-outcome.ts）。
          */
-        if (result && result.type === "aborted") {
+        const outcome = describeTurnOutcome(result);
+        if (outcome.kind === "aborted") {
           state.setPetState("waiting");
           enqueueBubble("已停止", 3000, "low");
           break;
         }
-        const isError = result && (result.type === "error" || result.type === "overflow");
-        if (isError) {
+        if (outcome.kind === "error" || outcome.kind === "overflow") {
           state.setPetState("sad");
           // P1-7: 错误详情气泡
           const errMsg = result?.message || result?.error || "任务出错了";
           enqueueBubble(`出错了：${truncateText(errMsg, 80)}`, 5000, "high");
-        } else if (state.petState !== "sad") {
+          break;
+        }
+        if (outcome.kind === "stopped") {
+          // 循环因停滞/打转/截断等原因被停下：**不是完成**，宠物不许报喜。
+          state.setPetState("sad");
+          enqueueBubble(truncateText(outcome.notice ?? "已停止（未正常完成）", 80), 5000, "high");
+          break;
+        }
+        // completed / none —— 保持既有语义（形状不认识时不额外表态）
+        if (state.petState !== "sad") {
           state.setPetState("happy");
         }
         break;
