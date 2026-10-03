@@ -1105,16 +1105,48 @@ bash { command: "Get-Content 'C:\\mimo-gui\\package.json'" } → 通过，内容
 **状态**：`run_code` / `workflow` / 函数型 hooks 在真机上**已可用**（发版 1.16.231）；
 `npm run audit:no-eval` 只剩 **1 处**待迁移（动态插件）。
 
-### 16.6 下一步（只剩最深的这一处）
+### 16.6 第 105 波：动态插件（最后一处）已迁完 —— **允许清单清空** ✅
 
-1. **动态插件 `dynamic-runner-provider.ts`**（最后 1 处 `new Function`）：插件代码拿到的是**活的 Cordis ctx**
-   （`ctx.provide(name, { hello: () => "world" })` 这类**带函数**的服务）⇒ 迁移要
-   ①把插件能用到的 ctx 面收敛成**可序列化桥**（宿主函数 + 服务代理），
-   ②用**持久 VM**（一次 `define` 建一个环境、`run` 时调用它）让 `provide` 的函数能被宿主回调。
-   落地后 `audit:no-eval` 的允许清单清空（= 目标达成）。
-2. 然后回到最终目标：用 §13 的 12 任务口径测 **Codem vs DSH**（隔离对等方案见 §13.7）。
+插件比前几处深，因为它要两件单发执行做不到的事，所以新加了**会话形态**
+（`src-tauri/src/js_sandbox_session.rs`，会话 = 专属线程 + 持久 `Context` + handle 表）：
 
-### 16.7 本轮改动的判据总览（三层分工，全绿）
+1. **环境持久**：`define` 时加载插件代码，`run` 时再调它的实例（`Context` 必须活着）；
+2. **宿主回调 guest 函数**：`ctx.provide('svc', { hello: () => … })` 交出去的函数，
+   宿主建**服务代理**后调用它会回到 guest 里执行（`js_sandbox_call_function`）。
+   命令通道（`mpsc`）让"宿主 → guest"与"guest → 宿主"互不嵌套，避免重入。
+
+配套：服务**真的注册进 Cordis**（`retract` 注销，不留悬空服务）；沙箱里没有
+`process` / `require` / `window` / `__TAURI__`；不支持的 ctx 面（`get` / `on`）抛**可读**说明；
+插件死循环由 **Rust 循环迭代上限**中断（加载期 + 调用期都钉）。
+
+**真机探针抓到一个真缺陷**（单元判据没覆盖到的那一层）：
+
+> `cordis_undefine` 报 `Failed to undefine plugin: undefined` —— 而插件其实**已经注销了**。
+> 原因：`runner.retract()` 这一波变成 async（要先关会话），工具里写的是
+> `const result = runner.retract(...)`（**漏 await**）⇒ `result.success` 是 `undefined` ⇒ 成功被报成失败。
+> 两条工具补上 `await`，并新增判据 `plugin-tool-wiring.test.ts` 钉"工具与 runner 的调用姿势"
+> （把 `await` 去掉 ⇒ 判据立刻红，变异自证已做）。
+
+> 另一个"探针自身的坑"也记在这里：应用会复用**当前选中的会话**，所以反复跑探针会把消息
+> 追加进同一个会话 —— 模型一旦绕进弯路（那次它把工具调用写成了 `bash echo`），
+> 之后每一跑都继承那段上下文，看起来像"产品坏了"。探针现在**先点"新对话"**再发。
+
+### 16.7 目标达成情况（里程碑收口）
+
+| 依赖 eval 的部位 | 现在跑在哪 | 真机验证 |
+|---|---|---|
+| `run_code` + `workflow` | Rust 侧 boa（单发） | ✅ 3 次工具调用 + `return 6*7`（§16.5） |
+| 函数型 hooks | `js-vm.ts` 同步路径（QuickJS/WASM） | ✅ `hook-function-vm.test.ts` + 无挂起形状 |
+| `code-runtime-worker-thread` | Rust 沙箱（`methods: []`） | ✅ 与 run_code 同一条命令 |
+| 动态插件 `cordis_*` | Rust 侧 boa（**会话**） | ✅ define/run/inspect/undefine（§16.6） |
+
+`npm run audit:no-eval`：**命中 0 处、允许清单为空** ⇒ 这条目标是"回退检测"，
+新增一处即红（CSP 保持不含 `unsafe-eval`）。
+
+**下一阶段**（回到最终目标）：用 §13 的 12 任务口径测 **Codem vs DSH** 的编码能力，
+先把隔离对等方案定下来（§13.7 的三个选项），再跑任务集。
+
+### 16.8 本轮改动的判据总览（三层分工，全绿）
 
 ```
 js-vm-no-eval.test.ts            12 ✓   （含 JSVM-2/10 的"桩掉 Function/eval 仍能跑"、JSVM-11 的守卫）

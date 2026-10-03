@@ -101,22 +101,46 @@ async function ensureHostCallListener(): Promise<void> {
 }
 
 /** 处理一次来自 Rust 的工具调用请求：执行 → 回复（成功/失败二选一） */
-async function handleHostCall(payload: { id: number; name: string; args: string }): Promise<void> {
+async function handleHostCall(payload: {
+  id: number;
+  name: string;
+  args: string;
+  session_id?: number | null;
+}): Promise<void> {
   const api = tauri();
   if (!api?.core?.invoke) return;
-  const method = currentMethods[payload.name];
+  const sessionId = payload.session_id ?? null;
   let replyArgs: Record<string, unknown>;
-  if (!method) {
-    replyArgs = { reply: { id: payload.id, error: `运行时没有提供工具 ${payload.name}` } };
-  } else {
-    try {
+  try {
+    let result: unknown;
+    if (sessionId !== null) {
+      /**
+       * 会话形态（动态插件）：分两类。
+       *  · `__provide` —— guest 的 `ctx.provide(name, service)`；交给调用方建服务代理；
+       *  · 其它 —— 调用方的 `onCall`。
+       * 回调 guest 函数（服务代理）走的是 `js_sandbox_call_function` 命令，**不经过**这里，
+       * 所以不存在"host → guest → host"的环。
+       */
+      const handlers = sessionHandlers.get(sessionId);
+      if (payload.name === "__provide") {
+        const descriptor = JSON.parse(payload.args || "{}") as ProvidedServiceDescriptor;
+        result = handlers?.onProvide ? await handlers.onProvide(descriptor) : { ok: true };
+      } else if (handlers?.onCall) {
+        const parsed = payload.args ? (JSON.parse(payload.args) as unknown[]) : [];
+        result = await handlers.onCall(payload.name, Array.isArray(parsed) ? parsed : [parsed]);
+      } else {
+        throw new Error(`会话 ${sessionId} 没有提供工具 ${payload.name}`);
+      }
+    } else {
+      const method = currentMethods[payload.name];
+      if (!method) throw new Error(`运行时没有提供工具 ${payload.name}`);
       const parsed = payload.args ? (JSON.parse(payload.args) as unknown[]) : [];
-      const result = await method(Array.isArray(parsed) ? parsed : [parsed]);
-      replyArgs = { reply: { id: payload.id, result: JSON.stringify(result ?? null) } };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      replyArgs = { reply: { id: payload.id, error: message } };
+      result = await method(Array.isArray(parsed) ? parsed : [parsed]);
     }
+    replyArgs = { reply: { id: payload.id, result: JSON.stringify(result ?? null) } };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    replyArgs = { reply: { id: payload.id, error: message } };
   }
   try {
     await api.core.invoke("jsvm_host_reply", replyArgs);
@@ -155,6 +179,7 @@ export async function runSandboxedInRust(options: RustSandboxOptions): Promise<R
 export function __resetJsRemoteRuntimeForTests(): void {
   listenerReady = null;
   currentMethods = {};
+  sessionHandlers.clear();
   if (listenerDispose) {
     try {
       listenerDispose();
@@ -162,6 +187,89 @@ export function __resetJsRemoteRuntimeForTests(): void {
       /* ignore */
     }
     listenerDispose = null;
+  }
+}
+
+// =====================================================================================
+// 会话形态（动态插件用）：持久环境 + 宿主回调 guest 函数
+// =====================================================================================
+
+/** `ctx.provide(name, service)` 到达前端时的描述符 */
+export interface ProvidedServiceDescriptor {
+  name: string;
+  /** 函数属性名 → guest 里的 handle（宿主用 `callSandboxFunction` 回调） */
+  functions: Record<string, number>;
+  /** 非函数属性（JSON 快照） */
+  data: Record<string, unknown>;
+}
+
+export interface SandboxSessionHandlers {
+  /** guest 调 `ctx.provide(...)`；调用方通常据此建"服务代理" */
+  onProvide?: (descriptor: ProvidedServiceDescriptor) => unknown | Promise<unknown>;
+  /** 其它宿主调用 */
+  onCall?: (name: string, args: unknown[]) => unknown | Promise<unknown>;
+}
+
+/** 每个会话自己的处理器（事件里带 `session_id`，据此路由） */
+const sessionHandlers = new Map<number, SandboxSessionHandlers>();
+
+/** 解析 invoke 返回的 JSON 文本（Rust 侧统一回字符串） */
+function parseJsonText(raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/** 打开一个沙箱会话（跑插件代码）；返回会话 id */
+export async function openSandboxSession(options: {
+  code: string;
+  loopLimit?: number;
+} & SandboxSessionHandlers): Promise<number> {
+  const api = tauri();
+  if (!api?.core?.invoke) throw new Error("JS 沙箱不可用：这个环境没有 Tauri 运行时");
+  await ensureHostCallListener();
+  const raw = (await api.core.invoke("js_sandbox_open", {
+    code: options.code,
+    loopLimit: options.loopLimit ?? null,
+  })) as number;
+  const sessionId = Number(raw);
+  sessionHandlers.set(sessionId, { onProvide: options.onProvide, onCall: options.onCall });
+  return sessionId;
+}
+
+/** 在会话里求值（给插件工厂/实例方法用）；返回解析后的值 */
+export async function evalInSandboxSession(sessionId: number, expression: string): Promise<unknown> {
+  const api = tauri();
+  if (!api?.core?.invoke) throw new Error("JS 沙箱不可用：这个环境没有 Tauri 运行时");
+  const raw = await api.core.invoke("js_sandbox_eval", { sessionId, expression });
+  return parseJsonText(raw);
+}
+
+/** **回调 guest 的函数**（服务代理走这里）；返回解析后的值 */
+export async function callSandboxFunction(sessionId: number, handle: number, args: unknown[]): Promise<unknown> {
+  const api = tauri();
+  if (!api?.core?.invoke) throw new Error("JS 沙箱不可用：这个环境没有 Tauri 运行时");
+  const raw = await api.core.invoke("js_sandbox_call_function", {
+    sessionId,
+    handle,
+    argsJson: JSON.stringify(args ?? []),
+  });
+  return parseJsonText(raw);
+}
+
+/** 关闭会话（插件被 retract 时）；返回是否真的关掉了一个 */
+export async function closeSandboxSession(sessionId: number): Promise<boolean> {
+  const api = tauri();
+  sessionHandlers.delete(sessionId);
+  if (!api?.core?.invoke) return false;
+  try {
+    return Boolean(await api.core.invoke("js_sandbox_close", { sessionId }));
+  } catch (error) {
+    console.warn("[js-remote-runtime] 关闭沙箱会话失败：", error);
+    return false;
   }
 }
 

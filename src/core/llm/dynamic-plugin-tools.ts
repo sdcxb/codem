@@ -197,7 +197,10 @@ export function createCordisStopTool(): ToolDef {
           return { title: "Result", output: "Error: dynamicCordisRunner service not available." };
         }
         // Stop is similar to undefine but calls dispose first
-        const result = runner.retract(args.name as string);
+        // 第 104 波：etract 现在是 **async**（要先关沙箱会话）—— 不 await 就会
+        // 拿到一个 Promise，esult.success 是 undefined，于是**成功被报成失败**
+        // （真机探针 _probe-dynamic-plugin-real.mjs 抓到的就是这个）。
+        const result = await runner.retract(args.name as string);
         if (!result.success) {
           // 第 D10b 波：**没有停下来**却报成功 —— dispose 没跑、插件仍在运行。
           return { title: "Result", output: `Failed to stop plugin: ${result.error}`, isError: true };
@@ -239,7 +242,10 @@ export function createCordisUndefineTool(): ToolDef {
         if (!runner) {
           return { title: "Result", output: "Error: dynamicCordisRunner service not available." };
         }
-        const result = runner.retract(args.name as string);
+        // 第 104 波：etract 现在是 **async**（要先关沙箱会话）—— 不 await 就会
+        // 拿到一个 Promise，esult.success 是 undefined，于是**成功被报成失败**
+        // （真机探针 _probe-dynamic-plugin-real.mjs 抓到的就是这个）。
+        const result = await runner.retract(args.name as string);
         if (!result.success) {
           /**
            * 第 D10b 波：`cordis_undefine` 是 destructive 契约（`contract.destructive: true`），

@@ -298,12 +298,10 @@ globalThis.sdk = {{}};
         Err(error) => {
             let text = error.to_string();
             let over_host_limit = OVER_LIMIT.with(|f| *f.borrow());
-            /**
-             * boa 的超预算错误文案是 `RuntimeLimitError: reached the maximum number of iteration
-             * loops on this execution`（实测）—— 第一版只匹配了 "loop iteration limit"，
-             * 于是循环确实被中断了、`budget_exceeded` 却是 false，判据因此红。
-             * 这里按**实测文案**匹配，并留几个同义写法兜底。
-             */
+            // boa 的超预算错误文案是 RuntimeLimitError: reached the maximum number of iteration
+            // loops on this execution（实测）—— 第一版只匹配了 "loop iteration limit"，
+            // 于是循环确实被中断了、budget_exceeded 却是 false，判据因此红。
+            // 这里按**实测文案**匹配，并留几个同义写法兜底。
             let exceeded = over_host_limit
                 || text.contains("RuntimeLimitError")
                 || text.contains("maximum number of iteration")
@@ -398,6 +396,11 @@ pub struct HostCallRequest {
     pub name: String,
     /// 参数数组的 JSON
     pub args: String,
+    /// 来自哪个沙箱会话（动态插件用；单发执行时为 `None`）
+    ///
+    /// 为什么需要它：会话形态里 guest 调 `ctx.provide(...)`，前端必须知道
+    /// "这是哪个插件交出来的服务"，才能把描述符记到那个插件名下、并给它建代理。
+    pub session_id: Option<u64>,
 }
 
 /// 前端回复宿主调用时提交的内容
@@ -467,6 +470,7 @@ pub async fn js_run_sandboxed(
                     id,
                     name: name.to_string(),
                     args: args.to_string(),
+                    session_id: None,
                 };
                 if let Err(error) = app.emit("jsvm://host-call", request) {
                     if let Ok(mut pending) = state.0.lock() {

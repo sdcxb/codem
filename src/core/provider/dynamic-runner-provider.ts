@@ -1,55 +1,73 @@
 // @ts-nocheck
 /**
- * Dynamic Runner Provider 插件 — Self-Referential Runtime。
+ * Dynamic Runner Provider — 自指运行时（动态插件）
  *
- * F6: 深化 — 使用 Web Worker 隔离动态代码执行。
- * 保留 new Function() 作为 fallback（浏览器环境不支持 Worker 时）。
- * 增加 AST 验证（简单正则检查危险 API 调用）。
+ * ## 第 104 波：`new Function` → **Rust 侧沙箱会话**
  *
- * 参考 DSH packages/core/dynamic-runner/src/index.ts:
- *   DynamicRunner extends Service, define(code) → compiled plugin
- *   run(name, args) → executes in isolated context
- *   retract(name) → disposes plugin
+ * 原来这里两处 `new Function('ctx', wrapped)`（`createWorker` 与 `define`）在装好的应用里
+ * **直接抛 CSP 违规**（CSP 不含 `unsafe-eval`）—— 动态插件在真机上是死功能。
+ *
+ * 现在：每个插件开一个**沙箱会话**（`js_sandbox_open`，Rust 侧 boa 引擎 + 专属线程）。
+ * 会话形态解决两件单发执行做不到的事：
+ *  · **环境持久**：`define` 时跑插件代码、`run` 时再调它的实例方法（`Context` 得活着）；
+ *  · **宿主回调 guest 函数**：`ctx.provide('myService', { hello: () => 'world' })` 交出去的
+ *    函数由宿主在建代理时登记 handle，之后 `service.hello()` 走 `js_sandbox_call_function`
+ *    回到 guest 里执行（这正是"服务"能用的关键）。
+ *
+ * 闸门不变：`validateCode` 预检仍然在 `define` 之前跑（早失败 + 一句人话）；
+ * 真正的边界是沙箱本身（guest 里没有 `process` / `require` / `window` / `__TAURI__`）。
+ *
+ * ⚠️ 沙箱里**不支持**的 Cordis ctx 面（`get` / `on` / `plugin`）会抛一句可读错误，
+ * 而不是 `undefined is not a function` —— 插件作者一眼知道该怎么办。
  */
 import type { Plugin } from '../cordis/src/index.ts'
 import { validateCode } from './validate-dynamic-code.ts'
 
-export const dynamicRunnerProvider: Plugin = (ctx: any) => {
-  const dynamicPlugins = new Map<string, any>()
+/** 插件在宿主的登记项 */
+interface DynamicPlugin {
+  name: string
+  code: string
+  sessionId: number
+  /** `ctx.provide` 交出来的服务：服务名 → 宿主侧代理对象（函数会回调 guest） */
+  services: Map<string, unknown>
+  /** Cordis 的注销函数（retract 时要还回去，不能留悬空服务） */
+  disposers: Map<string, () => void>
+}
 
-  /** 尝试在 Worker 中执行代码（Node.js worker_threads 环境） */
-  const createWorker = (code: string, ctxData: any): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      try {
-        // In browser/Electron renderer, fallback to Function constructor
-        const wrappedCode = `
-          const module = { exports: {} };
-          const exports = module.exports;
-          ${code};
-          return module.exports;
-        `
-        const compiled = new Function('ctx', wrappedCode)
-        const result = compiled(ctxData)
-        resolve(result)
-      } catch (err) {
-        reject(err)
+interface ProvidedDescriptor {
+  name: string
+  functions: Record<string, number>
+  data: Record<string, unknown>
+}
+
+export const dynamicRunnerProvider: Plugin = (ctx: any) => {
+  const dynamicPlugins = new Map<string, DynamicPlugin>()
+
+  /** 把 `ctx.provide` 的描述符变成宿主可用对象：数据照搬，函数变成"回调 guest"的代理 */
+  const buildServiceProxy = (descriptor: ProvidedDescriptor, sessionId: number) => {
+    const service: Record<string, unknown> = { ...(descriptor.data ?? {}) }
+    for (const [key, handle] of Object.entries(descriptor.functions ?? {})) {
+      service[key] = async (...args: unknown[]) => {
+        const { callSandboxFunction } = await import('../js/js-remote-runtime.ts')
+        return await callSandboxFunction(sessionId, handle, args)
       }
-    })
+    }
+    // 服务名对插件自己可见（与 Cordis 里 `service.name` 的习惯一致）
+    if (service.name === undefined) service.name = descriptor.name
+    return service
   }
 
   const dispose = ctx.provide('dynamicCordisRunner', {
     _active: true,
 
     inspect() {
-      const plugins = [...dynamicPlugins.values()].map(p => ({
+      const plugins = [...dynamicPlugins.values()].map((p) => ({
         name: p.name,
-        provides: p.provides || [],
-        inject: p.inject || [],
+        provides: [...p.services.keys()],
+        inject: [],
         isDynamic: true,
       }))
-      // 通过 ReflectService.store 获取已注册的服务列表，而非直接枚举 ctx 属性
-      const store = ctx.reflect?.store ?? {}
-      const services = Object.values(store).map((impl: any) => impl?.name).filter(Boolean) as string[]
+      const services = [...dynamicPlugins.values()].flatMap((p) => [...p.services.keys()])
       return { plugins, services }
     },
 
@@ -58,25 +76,40 @@ export const dynamicRunnerProvider: Plugin = (ctx: any) => {
         return { success: false, error: `Plugin "${name}" already defined` }
       }
 
-      // F6: Validate code before compilation
+      // 预检：危险 API 早失败（真正的边界是沙箱，这里只是让错误更早、更好懂）
       const validation = validateCode(code)
       if (!validation.ok) {
         return { success: false, error: validation.error }
       }
 
+      const services = new Map<string, unknown>()
+      const disposers = new Map<string, () => void>()
       try {
-        const wrappedCode = `
-          const module = { exports: {} };
-          const exports = module.exports;
-          ${code};
-          return module.exports;
-        `
-        const compiled = new Function('ctx', wrappedCode)
-        dynamicPlugins.set(name, { name, code, compiled, provides: [], inject: [] })
-        console.log(`[DynamicRunner] Plugin "${name}" defined and validated`)
-        return { success: true }
+        const { openSandboxSession } = await import('../js/js-remote-runtime.ts')
+        const sessionId = await openSandboxSession({
+          code,
+          loopLimit: 2_000_000,
+          onProvide: async (descriptor: ProvidedDescriptor) => {
+            const service = buildServiceProxy(descriptor, sessionId)
+            services.set(descriptor.name, service)
+            /**
+             * **真的注册进 Cordis**（这才是 `ctx.provide` 的意义：别的代码/插件要能 `get` 到它）。
+             * 少了这一步，插件的服务只有它自己看得见 —— 判据 PLUGIN-3 就是因为这个红的。
+             */
+            try {
+              const disposeService = ctx.provide(descriptor.name, service)
+              if (typeof disposeService === 'function') disposers.set(descriptor.name, disposeService)
+            } catch (error) {
+              console.warn('[dynamic-runner-provider] 注册服务失败：', error)
+            }
+            return { ok: true }
+          },
+        })
+        dynamicPlugins.set(name, { name, code, sessionId, services, disposers })
+        console.log(`[DynamicRunner] Plugin "${name}" defined (sandboxed session ${sessionId})`)
+        return { success: true, sessionId }
       } catch (err: any) {
-        return { success: false, error: err.message }
+        return { success: false, error: String(err?.message ?? err) }
       }
     },
 
@@ -86,53 +119,81 @@ export const dynamicRunnerProvider: Plugin = (ctx: any) => {
         return { success: false, error: `Plugin "${name}" not found` }
       }
       try {
-        const result = await createWorker(p.code, ctx)
-        if (result && typeof result.apply === 'function') {
-          result.apply(ctx)
+        const { evalInSandboxSession } = await import('../js/js-remote-runtime.ts')
+        // 工厂形态（`module.exports = (ctx) => ({...})`）与对象形态都支持
+        await evalInSandboxSession(
+          p.sessionId,
+          `
+          globalThis.__plugin = (typeof module.exports === "function") ? module.exports(ctx) : module.exports;
+          "ok"
+          `,
+        )
+        const hasRun = await evalInSandboxSession(
+          p.sessionId,
+          `typeof (globalThis.__plugin && globalThis.__plugin.run) === "function"`,
+        )
+        if (hasRun) {
+          const result = await evalInSandboxSession(
+            p.sessionId,
+            `globalThis.__plugin.run(${JSON.stringify(args ?? null)})`,
+          )
+          return { success: true, result }
         }
-        if (result && typeof result.run === 'function') {
-          const runResult = await result.run(args)
-          return { success: true, result: runResult }
-        }
-        return { success: true, result }
+        // 没有 run：把实例当成结果（函数属性不会进 JSON，这是沙箱的既有边界）
+        const snapshot = await evalInSandboxSession(p.sessionId, `globalThis.__plugin`)
+        return { success: true, result: snapshot }
       } catch (err: any) {
-        return { success: false, error: err.message }
+        return { success: false, error: String(err?.message ?? err) }
       }
     },
 
-    retract(name: string) {
+    async retract(name: string) {
       const p = dynamicPlugins.get(name)
       if (!p) {
         return { success: false, error: `Plugin "${name}" not found` }
       }
-      // Call plugin's dispose if available
-      if (p.compiled) {
-        try {
-          const result = p.compiled(ctx)
-          if (result?.dispose) result.dispose()
-        } catch (e) { console.warn('[dynamic-runner-provider.ts]', e) }
+      const { evalInSandboxSession, closeSandboxSession } = await import('../js/js-remote-runtime.ts')
+      // 插件自己的 dispose（有就调；调不动也不能挡住关闭）
+      try {
+        await evalInSandboxSession(
+          p.sessionId,
+          `(typeof globalThis.__plugin?.dispose === "function") && globalThis.__plugin.dispose()`,
+        )
+      } catch (error) {
+        console.warn('[dynamic-runner-provider]', error)
       }
+      // 把注册进 Cordis 的服务还回去（留悬空服务 = 之后谁 get 到谁踩坑）
+      for (const [serviceName, disposeService] of p.disposers) {
+        try {
+          disposeService()
+        } catch (error) {
+          console.warn(`[dynamic-runner-provider] 注销服务 ${serviceName} 失败：`, error)
+        }
+      }
+      await closeSandboxSession(p.sessionId)
       dynamicPlugins.delete(name)
       console.log(`[DynamicRunner] Plugin "${name}" retracted`)
       return { success: true }
     },
 
-    list() { return [...dynamicPlugins.keys()] },
+    list() {
+      return [...dynamicPlugins.keys()]
+    },
   })
 
-  // Composite dispose — retract all dynamic plugins
+  // Composite dispose — 关掉所有动态插件的会话
   const compositeDispose = () => {
-    for (const [name] of dynamicPlugins) {
-      // Try to dispose each plugin
-      const p = dynamicPlugins.get(name)
-      if (p?.compiled) {
+    void (async () => {
+      const { closeSandboxSession } = await import('../js/js-remote-runtime.ts')
+      for (const p of dynamicPlugins.values()) {
         try {
-          const result = p.compiled(ctx)
-          if (result?.dispose) result.dispose()
-        } catch (e) { console.warn('[dynamic-runner-provider.ts]', e) }
+          await closeSandboxSession(p.sessionId)
+        } catch (error) {
+          console.warn('[dynamic-runner-provider]', error)
+        }
       }
-    }
-    dynamicPlugins.clear()
+      dynamicPlugins.clear()
+    })()
     dispose()
   }
   return compositeDispose

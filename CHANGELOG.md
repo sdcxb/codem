@@ -2,6 +2,45 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.232] - 2026-10-03
+
+### 修复
+
+- **★★ 动态插件（`cordis_define` / `cordis_run` / `cordis_inspect` / `cordis_stop` / `cordis_undefine`）在真机上完全不可用。**
+  它依赖 `new Function('ctx', …)` 编译插件代码，而 CSP 不含 `unsafe-eval` ⇒ 真机必抛违规
+  （这一类功能在本仓叫"假成功"：判据全绿只因为它们跑在 vitest/Node 里，那里没有 CSP）。
+  **修法**：插件跑在 **Rust 侧沙箱会话**里（`src-tauri/src/js_sandbox_session.rs`，boa 引擎 + 专属线程）——
+  - **环境持久**：`define` 时加载插件代码、`run` 时再调它的实例（`Context` 活着）；
+  - **宿主回调 guest 函数**：`ctx.provide('myService', { hello: () => 'world' })` 交出去的函数，
+    宿主建**服务代理**后调用它会回到 guest 里执行（`js_sandbox_call_function`）——
+    这是"服务"能用的关键，也是这一处最深的原因；
+  - 服务会**真的注册进 Cordis**（`retract` 时注销，不留悬空服务）；
+  - 沙箱里没有 `process` / `require` / `window` / `__TAURI__`；`ctx.get` / `ctx.on` 这类不支持的
+    ctx 面会抛一句**可读**的说明，而不是 `undefined is not a function`；
+  - 插件死循环由 **Rust 的循环迭代上限**中断（加载期与调用期都钉了判据）。
+- **★ 顺带修掉一个真机探针抓到的缺陷**：`cordis_stop` / `cordis_undefine` 调用 `runner.retract()` 时
+  **没有 `await`** —— 而 `retract` 现在是 async（要先关沙箱会话），于是拿到 Promise、
+  `result.success` 是 `undefined`，**成功被报成失败**（真机输出 `Failed to undefine plugin: undefined`）。
+  两条工具都补上 `await`，并加了判据 `plugin-tool-wiring.test.ts`（把 `await` 去掉 ⇒ 判据立刻红）。
+
+### 变更
+
+- **`npm run audit:no-eval` 的允许清单已清空**：`src/` 里 `new Function` / `eval` **0 处**。
+  第 103–104 波把四处（`run_code` + `workflow`、函数型 hooks、`code-runtime-worker-thread`、动态插件）
+  全部迁到"不经 eval"的实现（Rust boa 引擎 / QuickJS 同步路径），CSP **保持不含 `unsafe-eval`**。
+  门禁从此是"**回退检测**"：新增一处即红。
+
+### 判据
+
+- Rust：`js_sandbox_tests` 7 条（含**一次执行里多次宿主调用**）+ `js_sandbox_session_tests` 6 条
+  （插件工厂 + `ctx.provide` 描述符、**宿主回调 guest 函数**、加载期/调用期预算中断、
+  不支持的 ctx 面、隔离与干净关闭）。
+- TS：`plugin-sandbox-session.test.ts` 5 条（含 `ctx.provide` → 服务代理 → 回调 guest、无 eval 兜底）；
+  `plugin-tool-wiring.test.ts` 3 条（工具与 runner 的调用姿势，含"必须 await"）。
+- **真机**（1.16.232，`.preview-shot/_probe-dynamic-plugin-real.mjs`）：
+  `cordis_define` ✅ → `cordis_run` 返回 `ran:{"n":7}`（guest 算出来的值）✅ →
+  `cordis_inspect` 显示 `probe-svc-104 (provides: probeService)` ✅ → `cordis_undefine` ✅ → 再 inspect 空 ✅。
+
 ## [1.16.231] - 2026-10-03
 
 ### 修复

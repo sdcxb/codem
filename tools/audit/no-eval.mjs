@@ -42,12 +42,13 @@ const ALLOWLIST = {
   //    改为 `js-vm.ts` 的**同步路径**（`runInJsVmSync`）：`ctx` 以 JSON 注入、guest 看不到应用全局、
   //    并且补上了原来没有的**超时**（旧实现里钩子写 `while(true){}` 会把应用卡死）。
 
-  "src/core/provider/dynamic-runner-provider.ts":
-    "待迁移：两处 `new Function('ctx', …)` 编译 Cordis 动态插件 —— 它把**活的 Cordis ctx** 交给插件代码，" +
-    "迁移要先把插件能用到的 ctx 面收敛成可序列化桥（宿主函数 + 服务代理），是最深的一处",
-  // ✅ 已删：`src/core/provider/code-runtime-worker-thread-provider.ts`（Node 专用死代码：
-  //    `worker_threads` 在 Tauri WebView 里不存在，没有任何产品代码引用它）。
-  //    它的预检 `validateCode` 留在 `src/core/provider/validate-dynamic-code.ts`。
+  // ✅ 已迁完（第 104 波）：`src/core/provider/dynamic-runner-provider.ts`（动态 Cordis 插件）——
+  //    改成**沙箱会话**（`src-tauri/src/js_sandbox_session.rs`）：持久环境 + 宿主回调 guest 函数，
+  //    `ctx.provide('svc', { hello: () => 'world' })` 交出去的函数可以从宿主侧调用回来。
+  //    原先这里是两处 `new Function('ctx', …)`，把**活的 Cordis ctx** 交给插件代码。
+  // ✅ 已删：`src/core/provider/code-runtime-worker-thread-provider.ts` 里的 Node worker 形态
+  //    （`worker_threads` 在 Tauri WebView 里不存在）；现在它走 Rust 沙箱（`methods: []`），
+  //    预检 `validateCode` 留在 `src/core/provider/validate-dynamic-code.ts`。
 };
 
 /** 扫描目标：只扫产品源码，不扫测试（测试跑在 Node 里，不受 CSP 约束） */
