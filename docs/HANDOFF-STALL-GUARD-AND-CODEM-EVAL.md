@@ -1072,6 +1072,11 @@ M4 污染照搬、M5 同模型地基）**全部被咬住**；已挂进 `npm run 
 | **repo-02** | ①3 passed ②**34 passed** —— **一次红都没有** | **根本没跑到那条判据**（只跑了自认为相关的一小撮） | 提示词 PROMPT-ROOT-2/3：验证要跑**相关模块**的测试，不是只跑手边那一个文件 |
 | **repo-03** | ①9 passed ②4 failed ③4 failed（usage-normalize、dsh-d7 红）④4 failed ⑤**9 passed（换了一组别的文件）** | **红过的文件没复跑绿，被"另一组绿了"洗白** | 循环守卫（按文件记账）：RT-5 就是这条序列 |
 | **repo-04** | ①-③ dsh-d11 红 → ④4 passed（修好它）⑤-⑥ dsh-d12 + torn-tail **7 failed** ⑦**404 passed（这一大轮没覆盖 dsh-d12）** | 同上：**红过的 dsh-d12 再没跑绿就收工** | 同一个守卫（按文件记账，所以 ⑦ 的"别处全绿"洗不白 dsh-d12） |
+| **repo-06** | ①10 passed ②41 passed ③3 passed（**一次红都没有**） | 同 repo-02：**压根没跑失败的那条判据**（判据红在 `dsh-d3-abort-not-completed` 的 D3-A：abort 的终态必须是 `aborted`） | 提示词（同上） |
+
+**四个差距、两种形态、各两次**（repo-02/06 = 没跑到判据；repo-03/04 = 红过没复跑绿就收工），
+正好对应已经落地的两处产品改动。A/B 复测清单就按这四条 + 两条回归对照（repo-01/05）：
+`--only-tasks repo-02…,repo-03…,repo-04…,repo-06…,repo-01…,repo-05… --min-tasks 6`。
 
 **两个失败形态 → 两处产品改动**，且都能在判据里复现：
 "只跑手边那个文件" ⇒ `prompt-root-cause-verification.test.ts`（PROMPT-ROOT-1..4）；
