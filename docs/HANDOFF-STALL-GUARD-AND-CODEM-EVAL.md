@@ -1112,11 +1112,18 @@ node tools/eval/repo-paired-report.mjs `
   --treatment .preview-shot/eval-records-codem-repo-v2.jsonl
 
 # ⑤ A/B 报告（新构建 vs 旧构建，同一条臂）
-node tools/eval/ab-report.mjs `
-  --baseline  .preview-shot/eval-records-codem-repo-v2.jsonl `
-  --candidate .preview-shot/eval-records-codem-repo-v3.jsonl `
-  --only-tasks repo-02-write-false-success,repo-03-usage-accounting,repo-04-session-update-drops-fields `
-  --min-tasks 3
+#   一条命令的 run-book（带安全闸门）：先看计划（不动任何东西），确认后加 --go
+node .preview-shot/_ab-campaign.mjs --baseline-version 1.16.232 --candidate-version 1.16.233 `
+  --tasks repo-02-write-false-success,repo-03-usage-accounting,repo-04-session-update-drops-fields,`
+repo-06-llm-failure-not-completed,repo-01-edit-ambiguity,repo-05-workflow-bypasses-permission
+node .preview-shot/_ab-campaign.mjs … --install 1.16.233 --go     # 真跑：装版本→跑候选→出 A/B
+
+#    它的安全闸门（都实测过会拦）：基线里缺 run-1 的任务 ⇒ 拒跑（否则是在"补基线"而不是 A/B）；
+#    装机版本与候选版本不一致 ⇒ 停；候选记录写**另一个文件**（-v3.jsonl），绝不混进基线文件。
+
+# 重复跑（"可复现"落到操作上）：按运行号跑，单条失败不拖垮整批，跑完出稳定性小结
+node .preview-shot/_run-repeat-campaign.mjs --arm control --runs 2,3 `
+  --tasks repo-02-…,repo-03-… --out .preview-shot/eval-records-repo-control.jsonl
 
 # ⑥ 单次运行的事后诊断（每条记录都留了产物，不需要重跑）
 node tools/eval/audit-codem-record.mjs --session <sessionId>   # 它到底调过哪些工具、改过哪些文件
