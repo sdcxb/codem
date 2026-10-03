@@ -30,6 +30,18 @@ export interface ReadOutputValue {
   /** 已去掉 `<system-reminder>` 的正文（可能已被分页/截断） */
   content: string;
   /**
+   * **是否给每行加行号**（第 113 波，可选）。
+   *
+   * 为什么加：实测我们的 agent 会在需要"行号"时**绕道 shell** ——
+   * `node -e "…lines.slice(1405,1530).map((l,i)=>`${1406+i}: ${l}`)"`、
+   * 甚至 `python -c "…i+1+': '+lines[i]…"`（repo-02 那一次里两次）。
+   * 那是缺了"带行号的读取"这个动作的代价：多花调用、还踩引号地狱。
+   * `grep` 的结果本来就带 `line`，`read` 不带 ⇒ 两个工具的"位置感"不一致。
+   */
+  lineNumbers?: boolean;
+  /** 编号的起始行号（1-based，等于本次读取的 offset） */
+  startLine?: number;
+  /**
    * 附加在正文之后的提示行（分页提示、截断提示），**已经拼好的原文**。
    *
    * ## 为什么是"原文"而不是几个数字
@@ -76,7 +88,20 @@ const READ_BORDER_BOTTOM = [
  * 于是"模型看到什么"不可能有两份实现。
  */
 export function renderReadOutput(v: ReadOutputValue): string {
+  /**
+   * 第 113 波：按需给每行加行号（`<n>\t<正文>`）。
+   *
+   * 用 **TAB** 而不是 "│" 或 ": " —— 复制回去当 `oldString` 时更容易被"去行号"的逻辑剥掉
+   * （`edit`/`multi_edit` 里也做了容错，见 tools.ts 的 stripLineNumberGutter）。
+   */
   let body = v.content;
+  if (v.lineNumbers) {
+    const start = typeof v.startLine === "number" && v.startLine > 0 ? v.startLine : 1;
+    body = body
+      .split("\n")
+      .map((line, i) => `${start + i}\t${line}`)
+      .join("\n");
+  }
   for (const n of v.notices ?? []) body += `\n${n}`;
   return [READ_BORDER_TOP, "", `文件: ${v.path}`, "", body, "", READ_BORDER_BOTTOM].join("\n");
 }
@@ -93,6 +118,8 @@ export const READ_OUTPUT_SCHEMA = {
     path: { type: "string" },
     content: { type: "string" },
     notices: { type: "array", items: { type: "string" } },
+    lineNumbers: { type: "boolean" },
+    startLine: { type: "number" },
   },
   required: ["path", "content"],
   additionalProperties: false,

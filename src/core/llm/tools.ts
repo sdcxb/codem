@@ -1229,7 +1229,7 @@ export function createReadFileTool(): ToolDef {
       outputSchema: READ_OUTPUT_SCHEMA,
       renderOutput: (v) => renderReadOutput(v as ReadOutputValue),
     },
-    guidance: "Use read to view file contents. Use offset/limit for large files. After a write or edit, the tool result confirms success — do NOT re-read the file you just wrote.",
+    guidance: "Use read to view file contents. Use offset/limit for large files; pass line_numbers: true when you need line numbers (e.g. to anchor an edit or refer to a position). After a write or edit, the tool result confirms success — do NOT re-read the file you just wrote.",
     description: "Read a file from the filesystem. Files are read as UTF-8 text. BOM (Byte Order Mark) is automatically stripped. Chinese and emoji content is fully supported.",
     // Never persist read results to disk — prevents infinite loops
     // (read → result too large → persist → LLM reads persisted file → result too large → ...)
@@ -1240,6 +1240,13 @@ export function createReadFileTool(): ToolDef {
         path: { type: "string", description: "The file path to read" },
         offset: { type: "number", description: "Line number to start from (1-indexed)" },
         limit: { type: "number", description: "Maximum number of lines to read" },
+        // 第 113 波：需要行号（改代码、对着 diff 说话、指位置）时打开它，**不要**为此去 shell
+        // （`node -e` / `python -c` 打印带行号的区间）—— 实测我们这样绕道过，多花调用还容易踩引号。
+        line_numbers: {
+          type: "boolean",
+          description:
+            "Prefix every line with its 1-based line number. Use this instead of shelling out to print numbered lines.",
+        },
       },
       required: ["path"],
     },
@@ -1247,6 +1254,8 @@ export function createReadFileTool(): ToolDef {
       const path = args.path as string;
       const offset = (args.offset as number) || 1;
       const limit = (args.limit as number) || 2000;
+      /** 第 113 波：要行号时给每行加编号（见 READ 的 `line_numbers` 说明） */
+      const lineNumbers = args.line_numbers === true;
       // 单次 read 结果上限（字符）：对齐 dsh-desktop read 上限（READ_MAX_BYTES≈50KB）。
       // 此前 100k 字符单次返回（中文内容 ≈300KB 字节）会把大半上下文一次性撑满，
       // 是"同样任务 token 比 dsh 大数倍"的主因之一。50k 字符 ≈ 代码/英文 12k tokens。
@@ -1287,6 +1296,8 @@ export function createReadFileTool(): ToolDef {
               output += `\n${notice}`;
               notices.push(notice);
             }
+            // 行号字段**不在这里**加：最终 `value` 在下面统一重建（那里是权威位置，
+            // 也是唯一能被渲染器看到的地方 —— 在这儿加等于写了个没人读的字段）。
             readValue = { path, content: result.text, notices };
             usedRustPaginated = true;
           } catch (e: any) {
@@ -1360,8 +1371,17 @@ export function createReadFileTool(): ToolDef {
             : filtered;
         const value: ReadOutputValue =
           noticeSuffix && filtered.endsWith(noticeSuffix)
-            ? { path, content: contentFinal, notices }
-            : { path, content: filtered };
+            ? {
+                path,
+                content: contentFinal,
+                notices,
+                // 第 113 波：行号开关必须**跟着重建的对象一起走** ——
+                // 第一版只在上面两条路径上加了这两个字段，而这里会把对象**整个重建**，
+                // 于是渲染器永远收不到 lineNumbers：单元测 `renderReadOutput` 会绿、
+                // 真机路径却一个行号都没有（这正是"判据长在没人走的链路上"的老毛病）。
+                ...(lineNumbers ? { lineNumbers: true, startLine: offset } : {}),
+              }
+            : { path, content: filtered, ...(lineNumbers ? { lineNumbers: true, startLine: offset } : {}) };
         /**
          * 第 95 波：**读到 = 观察到**（`fs-observation-policy` 的写入前置条件靠这条记录）。
          *
@@ -1729,7 +1749,23 @@ export function createEditFileTool(): ToolDef {  return {
          * `oldString === newString` 时同样拒绝：没有歧义的意图才配得到一次（无变化的）
          * 写盘，而「两处都长得一样」正说明意图没有唯一确定；拒绝的代价是零字节改动。
          */
-        const ambiguous = findAmbiguousLiteral(content, oldString);
+        /**
+         * 第 113 波：**容忍"从带行号的读取里复制过来"的锚点**。
+         *
+         * 有了 `read({ line_numbers: true })` 之后，模型很可能连行号一起复制进 `oldString`
+         * （`1406\tconst x = 1;`）。若直接拿它去精确匹配，必然匹配不到 ⇒ 报"oldString not found"，
+         * 而模型不知道为什么（它看到的就是带行号的文本）。这里在匹配前**逐行剥掉行号前缀**，
+         * 让"复制带行号的整段"也能改成功 —— 与 `read` 的新能力配对，少一类无谓的失败。
+         */
+        const stripLineNumberGutter = (text: string): string =>
+          text
+            .split("\n")
+            .map((line) => line.replace(/^\s*\d+\t/, ""))
+            .join("\n");
+        const oldStringNoGutter = stripLineNumberGutter(oldString);
+        const newStringNoGutter = stripLineNumberGutter(newString);
+
+        const ambiguous = findAmbiguousLiteral(content, oldStringNoGutter);
         if (ambiguous) {
           return {
             title: `edit: ${path}`,
@@ -1743,7 +1779,7 @@ export function createEditFileTool(): ToolDef {  return {
         // 用 replaceLiteral 而非 content.replace(oldString, newString)：
         // 后者会把 newString 里的 $& / $$ / $` / $' 当替换记号展开，
         // 静默改写文件内容却照样返回成功。详见 edit-matchers.ts 文件头。
-        const newContent = replaceLiteral(content, oldString, newString);
+        const newContent = replaceLiteral(content, oldStringNoGutter, newStringNoGutter);
         if (newContent === null) {
           // 没命中就给出「大概想改哪里」，而不是只回一句 not found ——
           // 后者会让模型必须额外花一次 read + 一次重试，还可能猜偏。
