@@ -1,31 +1,31 @@
 /**
- * run_code 工具 — TypeScript 代码执行
+ * run_code 工具 — 脚本执行（**QuickJS/WASM 沙箱**，不经 eval）
  *
- * Design (对标 DeepSeek Harness run_code):
- * - 代码在**应用进程内**执行（`new Function`），拥有应用自身权限 —— **不是**安全沙箱
- * - 代码可以通过 sdk 对象调用其他工具 (bash, read, write 等)
- * - 嵌套调用**与直接调用同一个工具受同一道闸门**（见下方「权限对齐」）
- * - 超时保护防止无限循环
- * - 结果以 stdout/stderr 形式返回
+ * ## 执行模型（第 103 波改了：从 `new Function` 迁到 WASM 里的 JS 引擎）
  *
- * ## 权限对齐（本次修复的核心）
+ * - 代码在 **guest 侧**跑：`src/core/js/js-vm.ts` 里的 QuickJS（编译成 WebAssembly；
+ *   CSP 允许 `wasm-unsafe-eval`，但**不允许** `unsafe-eval` —— 所以这才是真机上唯一能跑的路）；
+ * - guest 里**没有** `window` / `document` / `process` / `require` / `__TAURI__` / `fetch`：
+ *   它能用的只有宿主显式注入的 `sdk`（`__hostCall` 桥，参数与返回值都只走 JSON）；
+ *   于是**活的引用传不进去**，模型写的脚本摸不到应用内部；
+ * - 代码包在 async IIFE 里，可以用 `await`；`console.*` 被捕获成 stdout/stderr；完成值渲染成 `[Result]`；
+ * - 超时用 QuickJS 的 **interrupt handler** 真正打断（旧实现只是 `Promise.race` 放弃等待，
+ *   底层死循环还在跑）。
  *
- * 修复前这里是**闸门旁路**：`sdk.bash` 直接 `executeCommand(...)`、
- * `sdk.write` 直接 `writeFile(...)`，从不经过 `analyzeBashCommand`
- * （`src/core/permission/bash-analyzer.ts:201`）与 `write` 工具的覆盖确认
- * （`src/core/llm/tools.ts:1400-1460`）。于是模型可以把
- * `Remove-Item -Recurse -Force ...` 包在 `run_code` 里执行 —— 而 `run_code`
- * 本身在 `isAutoApprovable`（`src/core/permission/security-mode.ts:149-184`）下
- * 恒为「可自动放行」，比 `bash` 还宽松。
+ * ## 与工具契约的关系（**没变**）
  *
- * 现在：`sdk.bash` 执行前先分类；`dangerous` **一律拒绝执行**（fail-closed，
- * 分析器抛错同样拒绝）；`sdk.write` 覆盖已有文件时走与 `write` 相同的确认路径。
+ * sdk 的每个方法仍走与直接调用**同一道闸门**（危险命令拒绝、受保护路径拒绝、覆盖确认）——
+ * 见 `tool-gates.ts`；`sdk.write` 覆盖已有文件时照样要用户确认。
+ * 换句话说：**执行环境换了，权限语义没换**，判据 `pi-p2-run-code-permission-parity.test.ts` 一字未改。
  *
- * 仍未解决的（如实记录）：执行本身仍是进程内 `new Function`，
- * 全局对象白名单**不是**安全边界，本文件不再声称它是。
+ * ## 仍然要说清楚的边界
+ *
+ * VM 隔离的是"摸不到应用的 JS 对象"，**不是**"不能干坏事"：`sdk.bash` 照样能跑命令
+ * （那是工具的功能），只是它必须过闸门、而且危险命令会被拒。
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
+import { runInJsVm } from "../../js/js-vm";
 /**
  * 闸门（危险命令 / 受保护路径 / 覆盖确认）已抽到 `../tool-gates`，与
  * `workflow-engine.ts` **共用同一份实现**（原来这里是本地私有副本，
@@ -62,57 +62,79 @@ export interface ToolSDK {
 
 // ========== Code Execution ==========
 
+/**
+ * 执行 `run_code` / `workflow` 的代码。
+ *
+ * ## 第 103 波：从 `new Function` 迁到 **QuickJS/WASM**（`src/core/js/js-vm.ts`）
+ *
+ * 为什么必须迁（真机实测）：装好的应用里 CSP **没有 `unsafe-eval`**，
+ * 于是这里原来的 `new Function(...)` 在真机上**直接抛 CSP 违规**：
+ * `Evaluating a string as JavaScript violates … 'unsafe-eval' is not an allowed source of script`。
+ * `run_code` 与 `workflow` 因此**在真机上等于不可用**（既有的权限判据全绿，是因为它们跑在
+ * vitest/Node 里 —— 又一次"判据长在生产里不执行的链路上"）。
+ *
+ * 现在代码在 **QuickJS（编译成 WebAssembly，CSP 里的 `wasm-unsafe-eval` 允许）** 里跑：
+ *  · 语义保持：包在 async IIFE 里、可以用 `await`、`console.*` 捕获成 stdout/stderr、完成值渲染成 `[Result]`；
+ *  · SDK 调用走宿主函数桥（`__hostCall`），仍是**同一条闸门**（危险命令 / 受保护路径 / 覆盖确认都在 sdk 实现里）；
+ *  · 额外收益：guest 里**没有** `window` / `document` / `process` / `require` / `__TAURI__`
+ *    —— 比原来"与外层共享同一份全局对象"强得多（原来那些白名单参数**不是**安全边界）。
+ */
 export async function executeCode(
   code: string,
   sdk: ToolSDK,
   timeoutMs: number = 30_000,
 ): Promise<{ stdout: string; stderr: string; error?: string }> {
-  let stdout = "";
-  let stderr = "";
-
-  const consoleProxy = {
-    log: (...args: any[]) => {
-      stdout += args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ") + "\n";
+  /**
+   * 宿主函数桥：**每个 sdk 方法都包一层**，保证
+   *  · 参数/返回值只走 JSON（guest 拿不到任何活对象引用）；
+   *  · 抛错带可读原因回 guest（原来的 try/catch 语义）。
+   */
+  const hostFunctions: Record<string, (args: unknown[]) => unknown> = {
+    bash: async (args) => sdk.bash(String(args[0] ?? ""), (args[1] as { timeout_ms?: number }) ?? undefined),
+    read: async (args) => ({ content: await sdk.read(String(args[0] ?? "")) }),
+    write: async (args) => {
+      await sdk.write(String(args[0] ?? ""), String(args[1] ?? ""));
+      return { ok: true };
     },
-    error: (...args: any[]) => {
-      stderr += args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ") + "\n";
-    },
-    warn: (...args: any[]) => {
-      stderr += args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ") + "\n";
-    },
-    info: (...args: any[]) => {
-      stdout += args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ") + "\n";
-    },
+    glob: async (args) => ({ files: await sdk.glob(String(args[0] ?? ""), args[1] as string | undefined) }),
+    grep: async (args) => ({ matches: await sdk.grep(String(args[0] ?? ""), (args[1] as { path?: string; glob?: string }) ?? undefined) }),
+    fetch: async (args) => ({ text: await sdk.fetch(String(args[0] ?? "")) }),
   };
 
-  const wrappedCode = `
-    return (async () => {
-      ${code}
-    })();
+  /** guest 侧的外壳：保持"返回 Promise"的既有契约（`await sdk.bash(...)` 与 `.then` 都能用） */
+  const prelude = `
+    globalThis.sdk = {};
+    for (const [name, shape] of Object.entries({
+      bash: (v) => v,
+      read: (v) => v.content,
+      write: (v) => v.ok,
+      glob: (v) => v.files,
+      grep: (v) => v.matches,
+      fetch: (v) => v.text,
+    })) {
+      // 用 __sdk（Promise 形态）：宿主报错走 reject，不在挂起恢复期同步抛
+      globalThis.sdk[name] = (...args) => __sdk(name, args).then(shape);
+    }
   `;
 
-  try {
-    const fn = new Function("sdk", "console", "Promise", "JSON", "Math", "Date", "Array", "Object", "String", "Number", "Boolean", "RegExp", "Map", "Set", "Error", wrappedCode);
+  const outcome = await runInJsVm({ code, hostFunctions, prelude, timeoutMs });
 
-    const result = await Promise.race([
-      fn(sdk, consoleProxy, Promise, JSON, Math, Date, Array, Object, String, Number, Boolean, RegExp, Map, Set, Error),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Code execution timed out after ${timeoutMs}ms`)), timeoutMs),
-      ),
-    ]);
+  let stdout = outcome.stdout ?? "";
+  let stderr = outcome.stderr ?? "";
+  const error = outcome.ok
+    ? undefined
+    : outcome.error?.message || (outcome.timedOut ? `Code execution timed out after ${timeoutMs}ms` : "未知错误");
 
-    if (result !== undefined) {
-      stdout += `\n[Result]: ${typeof result === "string" ? result : JSON.stringify(result, null, 2)}`;
-    }
-
-    return { stdout, stderr };
-  } catch (err: any) {
-    return {
-      stdout,
-      stderr,
-      error: err.message || String(err),
-    };
+  /**
+   * 完成值的渲染与旧实现保持一致：`[Result]: <字符串或 JSON>`。
+   * （旧实现把它追加到 stdout；这里照旧，避免"迁移顺手改了模型看到的东西"。）
+   */
+  if (outcome.ok && outcome.value !== undefined && outcome.value !== null) {
+    const rendered = typeof outcome.value === "string" ? outcome.value : JSON.stringify(outcome.value, null, 2);
+    stdout += `\n[Result]: ${rendered}`;
   }
+
+  return { stdout, stderr, error };
 }
 
 // ========== 权限对齐辅助（闸门） ==========
@@ -130,8 +152,8 @@ export function createRunCodeTool(): ToolDef {
   return {
     id: "run_code",
     contract: { sideEffectScope: "system", accessScope: "system" },
-    guidance: "Use run_code to execute TypeScript/JavaScript for calculations, data processing, quick scripts, and verifying logic. It runs IN-PROCESS, inside this application and with the application's own privileges; there is no isolation boundary. Nested sdk.bash / sdk.write calls face the same permission checks as direct tool calls, and dangerous bash commands are refused.",
-    description: `Execute TypeScript code in-process: it runs inside this application, with the application's own privileges and no isolation boundary. The code can use the \`sdk\` object to call other tools:
+    guidance: "Use run_code to execute JavaScript for calculations, data processing, quick scripts, and verifying logic. The script runs in its own JavaScript engine (QuickJS on WebAssembly) and cannot see the application's globals (window / document / process / __TAURI__); everything it does goes through the injected `sdk`, and nested sdk.bash / sdk.write calls face the same permission checks as direct tool calls (dangerous bash commands are refused). That is a capability boundary, not a safety guarantee: `sdk.bash` is still a shell.",
+    description: `Execute JavaScript in its own engine (QuickJS compiled to WebAssembly). The script cannot see the application's own globals (window / document / process / require / __TAURI__); everything it does goes through the injected \`sdk\` object:
 - sdk.bash(command) — run a shell command; refused if it is classified dangerous (use the bash tool directly so the user is asked)
 - sdk.read(path) — read a file
 - sdk.write(path, content) — write a file; overwriting a differing existing file requires user confirmation in ask mode
@@ -140,7 +162,8 @@ export function createRunCodeTool(): ToolDef {
 - sdk.fetch(url) — fetch a URL
 
 The code runs in an async context, so you can use \`await\`. Use \`console.log()\` for output.
-Timeout: 30 seconds.`,
+The engine has no network or filesystem access of its own — everything goes through \`sdk\`.
+Timeout: 30 seconds (really interrupted, not just abandoned).`,
     parameters: {
       type: "object",
       properties: {

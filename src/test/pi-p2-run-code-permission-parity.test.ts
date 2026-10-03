@@ -253,9 +253,25 @@ describe("P2-3: 工具不得再声称自己是沙箱", () => {
     for (const text of [tool.guidance || "", tool.description]) {
       expect(text, "不得声称沙箱/隔离").not.toMatch(/sandbox|isolated|隔离|沙箱/i);
     }
-    // 必须明说它用应用自身权限在进程内跑，且嵌套调用受权限检查
+    /**
+     * ## 第 103 波：这条判据的**后半段被改写**了，理由必须写在明处
+     *
+     * 原文是「必须明说它用应用自身权限在**进程内**跑」（`toContain("in-process")`）——
+     * 那句话在 `new Function` 时代是**事实**，也是本仓刻意要求披露的诚实边界。
+     *
+     * 但执行模型换了：`run_code` / `workflow` 现在跑在 **QuickJS/WASM**（`src/core/js/js-vm.ts`）里，
+     * guest 摸不到应用的全局对象（`window` / `document` / `process` / `require` / `__TAURI__` 全 `undefined`，
+     * 见 `js-vm-no-eval.test.ts` 的 JSVM-3）。再要求它写 "in-process" 就是要求它**说假话**。
+     *
+     * 于是后半段改成钉**新的**事实（而不是删掉）：
+     *  ① 必须写明"看不到应用的全局对象"（新的能力边界）；
+     *  ② 必须写明 sdk 调用受**同一套权限检查**（这一条从来不变）；
+     *  ③ **不许**退回旧话术（`in-process` / `own privileges`）—— 那说明描述与实现又脱节了。
+     */
     const all = `${tool.guidance} ${tool.description}`.toLowerCase();
-    expect(all).toContain("in-process");
-    expect(all).toMatch(/permission-checked|permission checks/);
+    expect(all, "必须写明脚本看不到应用的全局对象").toMatch(/cannot see|no access to|not see the application/);
+    expect(all, "必须写明 sdk 调用受同一套权限检查").toMatch(/permission-checked|permission checks/);
+    expect(all, "不许退回旧话术（执行已不在进程内共享应用权限）").not.toContain("in-process");
+    expect(all, "不许声称用应用自身权限").not.toContain("own privileges");
   });
 });

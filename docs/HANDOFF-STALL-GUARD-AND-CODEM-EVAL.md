@@ -1017,6 +1017,85 @@ bash { command: "Get-Content 'C:\\mimo-gui\\package.json'" } → 通过，内容
 
 ## §15 用户拍板后的两件事（第 101 波末）
 
+（见下节 §15 原文）
+
+## §16 第 103 波：把 `new Function` 一族从"真机不可用"里救出来（进行中）
+
+### 16.1 为什么必须先做这件事（它挡在"编码能力不弱于 DSH"前面）
+
+装好的应用 CSP **不含 `unsafe-eval`**（`tauri.conf.json`；`phase-b-f-regression.test.ts` 还专门断言
+它含的是 `wasm-unsafe-eval`）。于是所有 `new Function` / `eval` 在真机上**直接抛 CSP 违规**：
+
+| 功能 | 真机现状（第 99/101 波探针） |
+|---|---|
+| `run_code` | ❌ `Evaluating a string as JavaScript violates … 'unsafe-eval' is not an allowed source of script` |
+| `workflow` | ❌ 同一条（它 `import { executeCode } from run-code.ts`，是同一份实现） |
+| 函数型 hooks | ❌ 同一族 —— 而钩子是**守卫**，"没生效"意味着该拦的没拦 |
+| 动态插件 / dynamic runner | ❌ 同一族（`new Function('ctx', …)`） |
+
+**这直接压住编码能力**：没有可用的 `run_code` / `workflow`，就没有"写脚本 → 跑 → 看结果"的闭环。
+
+### 16.2 方案：把 JS 引擎编成 WASM，在应用自己的 JS 上下文里跑（不改 CSP、不用 eval）
+
+`wasm-unsafe-eval` 是允许的 ⇒ 用 **quickjs-emscripten**（QuickJS/WASM）执行脚本：
+宿主函数是普通 JS 闭包（**不需要跨进程 RPC**），guest 里**看不到** `window` / `document` /
+`process` / `require` / `__TAURI__`（判据 JSVM-3）—— 顺带把原来"与应用共享全局对象"的窟窿补上了。
+
+落地在 `src/core/js/js-vm.ts`（两条路：`runInJsVm` 异步、`runInJsVmSync` 同步）。
+
+### 16.3 ⚠️ 踩到的硬限制：asyncify 引擎**一次执行里只能挂起一次**
+
+宿主函数是"guest 侧同步、宿主导步"的（asyncify）。实测数字（`_probe-jsvm-call-count2.mjs`，
+同进程内每格 5 次，看返回值）：
+
+| 一次执行里的宿主调用数 | 成功 |
+|---|---|
+| 1 | **5/5** |
+| 2 | **0/5**（`memory access out of bounds` / `Aborted(… free_zero_refcount)`） |
+| 3+ | **0/5** |
+
+而且**损坏是进程级的**：一次失败的执行之后，后续所有执行都会失败（换新模块也救不回来），
+还会漏出 `unhandledRejection: memory access out of bounds`（在 WebView 里就是未捕获错误）。
+
+**处置（第 103 波的临时守卫）**：在 **guest 侧、挂起之前**拒绝超限调用
+（`maxHostCalls`，默认 1）—— 拒绝是纯 JS 的 `Promise.reject`，不碰 asyncify。
+判据 JSVM-11 钉三件事：单次正常、第 2 次拿到**可行动的**报错、**紧接着再跑一次仍然成功**（运行时没坏）。
+
+### 16.4 已完成的迁移（判据 + 变异都齐）
+
+| 位置 | 状态 | 判据 / 证据 |
+|---|---|---|
+| `run_code` + `workflow`（同一份 `executeCode`） | ✅ 已迁到 WASM 引擎（**受 1 次工具调用的临时上限**） | `js-vm-no-eval.test.ts` JSVM-1..11（JSVM-2/10 把全局 `Function`/`eval` 换成会抛的桩后仍必须能跑；JSVM-10 钉工具层）；`pi-p2` / `workflow-permission-parity` 一字未改全绿 |
+| 函数型 hooks（两处） | ✅ 已迁到**同步**路径（无挂起 ⇒ 不受 16.3 限制；并补上了原来没有的**超时**） | `hook-function-vm.test.ts` HOOKVM-1..5；`hooks-system`（18）+ `hook-fail-closed`（12）全绿 |
+| Node 专用 `code-runtime-worker-thread-provider.ts` | ✅ **删除**（`worker_threads` 在 Tauri WebView 里不存在，没有任何产品代码引用它；却把 `new Function` 藏在 worker 脚本字符串里） | 预检 `validateCode` 移到 `validate-dynamic-code.ts`；`deep-closed-loop-audit` 里那两条"要求源码出现 `new Function`"的旧判据已改写 |
+| 动态插件 `dynamic-runner-provider.ts` | ⏳ 未迁（**最后 1 处**，门禁里记着） | `npm run audit:no-eval` 只报它一处 |
+| 门禁 | ✅ `npm run audit:no-eval`（扫 `src/`，注释/字符串/正则不算；允许清单每迁完一处就删一行） | 已挂进 `npm run audit` |
+
+### 16.5 下一步（按顺序）
+
+1. **Rust 侧引擎（`boa_engine`）承接异步路径**：那里宿主调用是**阻塞**的（Rust 可以等 Tauri IPC 的回复），
+   没有 asyncify 挂起 ⇒ 没有 16.3 那个上限。前端仍是**唯一**的 SDK 实现（危险命令分析、受保护路径、
+   覆盖确认都在 TS 里），Rust 只做"发事件 → 等回复"的代理 ⇒ 不产生第二份闸门。
+   落地后：`maxHostCalls` 取消、JSVM-11 改成"任意次调用都成功"、`run_code`/`workflow` 恢复完整能力。
+2. **动态插件**：把插件能用到的 `ctx` 面收敛成可序列化桥（宿主函数 + 服务代理），
+   用持久 VM 跑插件代码；之后 `audit:no-eval` 的允许清单清空。
+3. **发布与真机验证**：在 1 与 2 落地之前**不发版** —— 现在装着的 1.16.230 里 `run_code` 本来就是
+   CSP 挡住的状态，保持不动就不是回归；发一个"最多 1 次工具调用"的版本反而是半个功能。
+4. 然后回到最终目标：用 §13 那套 12 任务口径**测 Codem 与 DSH 的编码能力**（隔离对等方案见 §13.7）。
+
+### 16.6 本轮改动的判据总览（106 条相关判据全绿）
+
+```
+js-vm-no-eval.test.ts            12 ✓   （含 JSVM-2/10 的"桩掉 Function/eval 仍能跑"、JSVM-11 的守卫）
+hook-function-vm.test.ts          5 ✓   （钩子迁移 + 隔离 + 超时 fail-closed）
+hooks-system.test.ts             18 ✓
+hook-fail-closed.test.ts         12 ✓
+pi-p2-run-code-permission-parity 11 ✓   （闸门语义一字未改）
+workflow-permission-parity       10 ✓
+deep-closed-loop-audit           38 ✓   （旧的"源码里要有 new Function"判据已改写）
+```
+
+
 ### 15.1 §3.6：**保持现状**，内层闸门由已有判据钉住
 
 决定（用户 2026-10-03）：**外层 `run_code` / `workflow` 在「替我审批」模式下继续自动放行**；

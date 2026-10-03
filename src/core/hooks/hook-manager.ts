@@ -19,6 +19,7 @@
 
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { executeCommand } from "../file-api";
+import { runInJsVmSync, warmupJsVmSync } from "../js/js-vm";
 import {
   type HookDefinition,
   type HookConfig,
@@ -569,16 +570,38 @@ export class HookManager {
   /**
    * Execute a function-type PreToolUse hook.
    * The function body receives (ctx) and returns { action, denyMessage?, modifiedInput? }
+   *
+   * ## 第 103 波：从 `new Function` 迁到 **QuickJS/WASM 同步路径**
+   *
+   * 为什么必须迁：装好的应用里 CSP 没有 `unsafe-eval`，`new Function` 在真机上直接抛 CSP 违规
+   * ⇒ **函数型钩子在真机上等于没生效**（而钩子是"守卫"，没生效意味着该拦的没拦）。
+   * 现在钩子体跑在 `runInJsVmSync`（同一份 QuickJS 引擎，见 `src/core/js/js-vm.ts`）：
+   *  · `ctx` 以 **JSON** 注入（钩子上下文本来就是纯数据）；
+   *  · 钩子里**看不到** `window` / `document` / `process` / `__TAURI__`（比 `new Function` 强）；
+   *  · 顺带补上一个原来没有的东西：**超时**。旧实现在钩子里写 `while(true){}` 会把应用卡死。
    */
   private async executeFunctionPreHook(
     hook: HookDefinition,
     ctx: HookContext,
   ): Promise<PreToolHookResult> {
-    // Use Function constructor for sandboxed evaluation
-    // Note: this is NOT fully sandboxed — production should use a VM
+    const warmed = await warmupJsVmSync();
+    if (!warmed) {
+      // fail-closed：守卫跑不起来时不许静默放行（与 allowOnError 的既有语义一致）
+      const message = `Function hook "${hook.name}" 无法执行：JS 运行时未就绪`;
+      console.warn(`[HookManager] ${message}`);
+      if (hook.allowOnError) return { action: "allow" };
+      return { action: "deny", denyMessage: `${message}（守卫钩子未生效，默认拦下）` };
+    }
     try {
-      const fn = new Function("ctx", hook.function!);
-      const result = fn(ctx);
+      const outcome = runInJsVmSync({
+        code: hook.function!,
+        prelude: `globalThis.ctx = ${JSON.stringify(ctx ?? {})};`,
+        timeoutMs: hook.timeoutMs ?? 2000,
+      });
+      if (!outcome.ok) {
+        throw new Error(outcome.error?.message ?? (outcome.timedOut ? `钩子执行超时（${hook.timeoutMs ?? 2000}ms）` : "未知错误"));
+      }
+      const result = outcome.value;
       if (result && typeof result === "object") {
         const action = (result as PreToolHookResult).action;
         // 第 84 波：返回了无法识别的 action（例如写成 {action:"denied"} / {deny:true}）
@@ -607,9 +630,23 @@ export class HookManager {
     hook: HookDefinition,
     ctx: HookContext,
   ): Promise<PostToolHookResult> {
+    // 与 PreToolUse 同一份迁移理由（CSP 没有 unsafe-eval，`new Function` 在真机上跑不起来）
+    const warmed = await warmupJsVmSync();
+    if (!warmed) {
+      console.warn(`[HookManager] Function hook "${hook.name}" 跳过：JS 运行时未就绪`);
+      return { action: "keep" };
+    }
     try {
-      const fn = new Function("ctx", hook.function!);
-      const result = fn(ctx);
+      const outcome = runInJsVmSync({
+        code: hook.function!,
+        prelude: `globalThis.ctx = ${JSON.stringify(ctx ?? {})};`,
+        timeoutMs: hook.timeoutMs ?? 2000,
+      });
+      if (!outcome.ok) {
+        console.warn(`[HookManager] Function hook "${hook.name}" error: ${outcome.error?.message ?? "未知错误"}`);
+        return { action: "keep" };
+      }
+      const result = outcome.value;
       if (result && typeof result === "object") {
         return result as PostToolHookResult;
       }

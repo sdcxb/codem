@@ -166,11 +166,44 @@ describe('功能闭环: Provider dispose 复合清理', () => {
     expect(code).toContain('stopAutomationEngines')
   })
 
-  it('code-runtime-worker-thread-provider dispose 设置 _active=false', async () => {
-    const src = await vi.importActual('fs')
-    const code = src.readFileSync('src/core/provider/code-runtime-worker-thread-provider.ts', 'utf8')
-    expect(code).toContain('_active = false')
-  })
+  /**
+   * ## 第 103 波：这一组判据被**改写**了，理由写在明处
+   *
+   * 原来这三条读的是 `code-runtime-worker-thread-provider.ts` 的源码，其中一条**要求**
+   * 源码里出现 `new Function`（"Worker 脚本使用 Function 构造器而非 eval"）。
+   *
+   * 但那个 provider 是 **Node 专用的死代码**：它 `import('worker_threads')` 并
+   * `new Worker(script, { eval: true })`，而装好的应用是 Tauri WebView —— 那里没有
+   * `worker_threads`，CSP 也不含 `unsafe-eval`，所以它**在真机上根本无法执行**，
+   * 而且没有任何产品代码引用它。于是它被删掉了（`git rm`），预检 `validateCode`
+   * 移到 `src/core/provider/validate-dynamic-code.ts`。
+   *
+   * 判据改成钉**新的事实**（而不是删掉）：
+   *  ① 那个文件已经不存在（免得有人把它捡回来）；
+   *  ② 预检行为仍然成立（按危险模式拒绝 + 给可读原因）——这是**行为判据**，不是源码文本；
+   *  ③ 预检模块自己**不许**用 `new Function`（真正执行走 `src/core/js/js-vm.ts`）。
+   */
+  it("旧的 Node 专用 Worker provider 已删除（它在 Tauri WebView 里跑不起来）", async () => {
+    const src = await vi.importActual("fs");
+    expect(src.existsSync("src/core/provider/code-runtime-worker-thread-provider.ts")).toBe(false);
+    expect(src.existsSync("src/core/provider/validate-dynamic-code.ts")).toBe(true);
+  });
+
+  it("动态代码预检仍然按危险模式拒绝，并给出可读原因（行为判据）", async () => {
+    const { validateCode } = await import("../core/provider/validate-dynamic-code");
+    expect(validateCode("const x = require('child_process').exec('rm -rf /')").ok).toBe(false);
+    expect(validateCode("require('fs').writeFileSync('/etc/passwd','x')").error).toMatch(/fs not allowed/);
+    expect(validateCode("process.exit(1)").ok).toBe(false);
+    expect(validateCode("const r = [1,2,3].reduce((a,b)=>a+b,0); return r;").ok).toBe(true);
+  });
+
+  it("动态代码预检模块自己不用 new Function（执行走 QuickJS/WASM）", async () => {
+    const src = await vi.importActual("fs");
+    const raw = src.readFileSync("src/core/provider/validate-dynamic-code.ts", "utf8");
+    // 注释里会**提到** new Function（解释历史）；判据只看真代码 —— 与门禁 `audit:no-eval` 同一口径
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    expect(code.match(/new\s+Function\s*\(/g) ?? [], "预检模块不许用 new Function").toHaveLength(0);
+  });
 })
 
 // ============================================================
@@ -253,43 +286,35 @@ describe('功能闭环: Credentials 编码/解码往返', () => {
 // ============================================================
 describe('功能闭环: Worker 隔离 + validateCode', () => {
   it('validateCode 拒绝 child_process', async () => {
-    const { validateCode } = await import('../core/provider/code-runtime-worker-thread-provider')
+    const { validateCode } = await import('../core/provider/validate-dynamic-code')
     expect(validateCode("require('child_process')").ok).toBe(false)
   })
 
   it('validateCode 拒绝 eval()', async () => {
-    const { validateCode } = await import('../core/provider/code-runtime-worker-thread-provider')
+    const { validateCode } = await import('../core/provider/validate-dynamic-code')
     expect(validateCode("eval('test')").ok).toBe(false)
   })
 
   it('validateCode 拒绝 process.exit', async () => {
-    const { validateCode } = await import('../core/provider/code-runtime-worker-thread-provider')
+    const { validateCode } = await import('../core/provider/validate-dynamic-code')
     expect(validateCode("process.exit(0)").ok).toBe(false)
   })
 
   it('validateCode 拒绝 fs require', async () => {
-    const { validateCode } = await import('../core/provider/code-runtime-worker-thread-provider')
+    const { validateCode } = await import('../core/provider/validate-dynamic-code')
     expect(validateCode("require('fs')").ok).toBe(false)
   })
 
   it('validateCode 放行安全代码', async () => {
-    const { validateCode } = await import('../core/provider/code-runtime-worker-thread-provider')
+    const { validateCode } = await import('../core/provider/validate-dynamic-code')
     expect(validateCode("1 + 1").ok).toBe(true)
     expect(validateCode("const x = 'hello'").ok).toBe(true)
   })
 
-  it('Worker 脚本使用白名单 require', async () => {
-    const src = await vi.importActual('fs')
-    const code = src.readFileSync('src/core/provider/code-runtime-worker-thread-provider.ts', 'utf8')
-    expect(code).toContain("allowed = ['worker_threads']")
-    expect(code).toContain("Module not allowed")
-  })
-
-  it('Worker 脚本使用 Function 构造器而非 eval', async () => {
-    const src = await vi.importActual('fs')
-    const code = src.readFileSync('src/core/provider/code-runtime-worker-thread-provider.ts', 'utf8')
-    expect(code).toContain('new Function')
-  })
+  // 第 103 波：这里原来有两条读**已删除的** Node 专用 provider 源码的用例
+  // （"Worker 脚本使用白名单 require" 与 "Worker 脚本使用 Function 构造器而非 eval"）。
+  // 后一条还**要求**源码里出现 `new Function` —— 那是本波要消灭的东西。
+  // 它们已被上面那组「文件已删除 + 预检行为判据 + 不许用 new Function」取代。
 })
 
 // ============================================================

@@ -12,7 +12,7 @@
  *   retract(name) → disposes plugin
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { validateCode } from './code-runtime-worker-thread-provider.ts'
+import { validateCode } from './validate-dynamic-code.ts'
 
 export const dynamicRunnerProvider: Plugin = (ctx: any) => {
   const dynamicPlugins = new Map<string, any>()
