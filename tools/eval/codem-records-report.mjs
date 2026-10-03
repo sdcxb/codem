@@ -35,6 +35,19 @@ if (!existsSync(file)) {
   process.exit(1);
 }
 
+/**
+ * **已知作废的会话**（手工登记，每条都要写明理由）。
+ *
+ * 为什么不自动判：这些是"脚手架自己坏了"造成的失败，特征与"模型没做出来"难以区分 ——
+ * 硬凑一条启发式规则去认它，就是让判据去迁就数据（下一步就会出现"某次失败因为工具调用少于 N 次
+ * 所以不算"这种荒唐规则）。**宁可显式登记 + 写明理由**，也不写一条会误伤的规则。
+ */
+const KNOWN_INVALID_SESSIONS = {
+  // 第 12 波 §12.3：驱动的 registerProject 把项目 path 写成项目 id，应用把工作目录解析成
+  // C:\mimo-gui\codem-eval-workspace（空壳），agent 5 次迭代、0 字符改动就放弃。
+  "1790997686722-xigmsnw00": "工作目录被指到空壳目录（驱动 bug，交接单 §12.3）—— 与模型能力无关",
+};
+
 const records = readFileSync(file, "utf8")
   .split("\n")
   .map((l) => l.trim())
@@ -94,9 +107,14 @@ for (const r of records) {
  */
 const isVacuousPass = (r) => r.outcome === "passed" && (r.diffChars ?? 0) === 0;
 
-/** 算数的那部分：没污染、没跑挂、也不是"通过但零改动"。其余的要显式排除并说明原因。 */
-const trusted = records.filter((r) => r.contaminated === false && r.outcome !== "errored" && !isVacuousPass(r));
-const excluded = records.filter((r) => !(r.contaminated === false && r.outcome !== "errored" && !isVacuousPass(r)));
+/** 手工登记作废的会话（理由见 `KNOWN_INVALID_SESSIONS`） */
+const isKnownInvalid = (r) => Boolean(r.session && KNOWN_INVALID_SESSIONS[r.session]);
+
+/** 算数的那部分：没污染、没跑挂、不是"通过但零改动"、也不是手工登记作废的。 */
+const trusted = records.filter(
+  (r) => r.contaminated === false && r.outcome !== "errored" && !isVacuousPass(r) && !isKnownInvalid(r),
+);
+const excluded = records.filter((r) => !trusted.includes(r));
 
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString("en-US") : "n/a");
 const min = (ms) => (typeof ms === "number" ? (ms / 60000).toFixed(1) : "n/a");
@@ -131,6 +149,7 @@ if (excluded.length > 0) {
   console.log(`\n**不算数**的 ${excluded.length} 条（口径见交接单 §11/§12）：`);
   for (const r of excluded) {
     const why = [];
+    if (isKnownInvalid(r)) why.push(`**手工登记作废**：${KNOWN_INVALID_SESSIONS[r.session]}`);
     if (isVacuousPass(r)) why.push("**通过但零改动** ⇒ 任务退化（bug 没造出来），不算真通过");
     if (r.contaminated) why.push(`污染 ${r.recheckedLeaks?.length ?? r.outsideWorkspaceCalls?.length ?? "?"} 次（碰了主仓库）`);
     if (r.contaminated === undefined) why.push("没有污染检测字段（早于该口径）");

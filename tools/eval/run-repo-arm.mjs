@@ -101,12 +101,52 @@ function readUsage(ws) {
   }
 }
 
+/**
+ * **与臂无关的污染检测**：这次运行里，agent 有没有去碰"答案仓库"（默认 `C:\mimo-gui`）。
+ *
+ * 为什么需要（第 101 波）：Codem 那一侧靠**应用内的沙箱**把工作区外的路径挡住，
+ * 并且由 CDP 驱动从事件流里判定污染；但 `--agent-cmd` 这一侧是**普通子进程**
+ * （DSH driver 就是这种），没有应用级沙箱 —— 它想读哪就读哪。
+ * 于是"两条臂的分数能不能比"这件事，取决于**两条臂是不是都干净**。
+ *
+ * 判据（保守）：driver 把原始事件留在 `<ws>/.dsh-events.jsonl`，这里只取
+ * `tool_call` 的**访问目标**字段（path/file_path/command/code/script/pattern/workdir）——
+ * 与 Codem 侧同一个口径（内容载荷不算）。**因为事件流里没有结果状态**，
+ * 这里只能判"**碰过**"，不能判"读到没读到" ⇒ 保守：碰过就算污染，宁可作废也不用脏数据。
+ *
+ * @returns `{ answerRepoHits: string[], contaminated: boolean } | undefined`（没有事件文件就 undefined）
+ */
+function readOutsideAccess(ws) {
+  const file = join(ws, ".dsh-events.jsonl");
+  if (!existsSync(file)) return undefined;
+  const hits = [];
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let event;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (event?.type !== "tool_call") continue;
+    const input = event.input ?? {};
+    const target = ["path", "file_path", "command", "code", "script", "pattern", "workdir"]
+      .filter((f) => typeof input[f] === "string")
+      .map((f) => input[f])
+      .join(" ");
+    if (/mimo-gui/i.test(target)) hits.push(`${event.tool ?? "?"}: ${target.replace(/\s+/g, " ").slice(0, 200)}`);
+  }
+  return { answerRepoHits: hits, contaminated: hits.length > 0 };
+}
+
 function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) {
   const started = Date.now();
   const ws = createRepoWorkspace(task);
   let outcome = "failed";
   let failureReason = null;
   let usage;
+  let outsideAccess;
   try {
     // 工作区在 `createRepoWorkspace` 里已经是**提交过的 bug 状态**（干净树），
     // 这里不再二次回退：那会让 mtime 变化、也会让"agent 面对的是干净工作区"这件事失真。
@@ -160,6 +200,7 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
      * `.arm-usage.json`）已经被删掉，token 全是 undefined。**第一次跑 DSH 的数字就是这么丢的。**
      */
     usage = readUsage(ws);
+    outsideAccess = readOutsideAccess(ws);
     cleanRepoWorkspace(ws);
   }
 
@@ -174,6 +215,13 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
       ...(usage ?? {}),
       totalMs: Date.now() - started,
       ...(failureReason ? { failureReason } : {}),
+      /**
+       * 与臂无关的污染字段（第 101 波）：`--agent-cmd` 这条路上没有应用级沙箱，
+       * 所以"这次有没有碰答案仓库"必须由驱动自己判。**非空 ⇒ 分数作废**。
+       */
+      ...(outsideAccess
+        ? { outsideAnswerRepoHits: outsideAccess.answerRepoHits, contaminated: outsideAccess.contaminated }
+        : {}),
     },
     failureReason,
   };

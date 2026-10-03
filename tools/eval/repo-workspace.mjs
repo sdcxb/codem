@@ -26,7 +26,7 @@
  * ⚠️ 挡不住的：去别处拿答案（本档不防）、以及"它自己真的会修"（那正是要测的）。
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { REPO_ROOT, filesToRestore } from "./tasks-repo.mjs";
@@ -77,6 +77,39 @@ function linkNodeModules(ws) {
 }
 
 /**
+ * 清掉一个目录，给"句柄还没放开"留余地。
+ *
+ * 实测（第 101 波）：上一个任务刚在同一个路径上跑完 `npx vitest`（esbuild/vitest 的子进程、
+ * 应用的文件监听都可能还握着句柄），紧接着 `rmSync` 会抛
+ * `EPERM: Permission denied`（Windows 上删不掉"正在被使用的目录"）。
+ * 那样整个任务会直接跑挂（`errored`），而这跟被测 agent 一点关系都没有 —— **脚手架不该这么脆**。
+ *
+ * 三级退让：直接删 → 等一会儿再删 → **改名挪开**（改名对句柄不敏感），把旧的留在旁边。
+ */
+function resetDir(ws) {
+  /** 同步小睡（不 spawn 子进程）：`Atomics.wait` 是唯一干净的同步 sleep */
+  const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  let lastError;
+  for (const delay of [0, 400, 1200]) {
+    if (delay) sleep(delay);
+    try {
+      rmSync(ws, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  const stale = `${ws}.stale-${Date.now()}`;
+  try {
+    renameSync(ws, stale);
+    console.log(`     （工作区删不掉，已改名挪开：${stale}）`);
+    return;
+  } catch {
+    throw lastError;
+  }
+}
+
+/**
  * 在 `ws` 里造出 bug 状态并**提交**（幂等：`ws` 已存在时先清空）。
  *
  * @param task 任务对象（用 `revertPaths` / `buggyCommit`）
@@ -84,7 +117,7 @@ function linkNodeModules(ws) {
  * @returns 工作区路径
  */
 export function createRepoWorkspace(task, ws = mkdtempSync(join(tmpdir(), `codem-eval-repo-${task.id}-`))) {
-  rmSync(ws, { recursive: true, force: true });
+  resetDir(ws);
   mkdirSync(ws, { recursive: true });
 
   // 1) 导出 HEAD 的跟踪文件
