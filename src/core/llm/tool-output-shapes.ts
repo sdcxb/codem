@@ -34,7 +34,7 @@ export interface ReadOutputValue {
    *
    * 为什么加：实测我们的 agent 会在需要"行号"时**绕道 shell** ——
    * `node -e "…lines.slice(1405,1530).map((l,i)=>`${1406+i}: ${l}`)"`、
-   * 甚至 `python -c "…i+1+': '+lines[i]…"`（repo-02 那一次里两次）。
+   * 甚至 `python -c "…i+1+': '+lines[i]…"`（真实评测里**同一轮就出现过两次**）。
    * 那是缺了"带行号的读取"这个动作的代价：多花调用、还踩引号地狱。
    * `grep` 的结果本来就带 `line`，`read` 不带 ⇒ 两个工具的"位置感"不一致。
    */

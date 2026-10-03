@@ -45,23 +45,61 @@ export function git(args, cwd = REPO_ROOT) {
  * 判据（测试文件）**不删** —— 它就是评分依据，而且反作弊会从提交里还原它们。
  */
 /**
- * 评测工作区里**绝不许出现**的路径（第 116 波补 `.preview-shot`）。
+ * 评测工作区里**绝不许出现**的路径（第 116 波系统化整理）。
  *
- * 为什么补：`.preview-shot/` 是评测的临时区（记录、探针、每次运行的 diff 产物）——
- * 里面的 `eval-codem-repo-*.diff.txt` **就是各任务的解**，`eval-records-*.jsonl` 里有任务 ID
- * 与结果。第 116 波我误用 `git add -f` 把它整个塞进了 git（5527 个文件），
- * 而工作区是 `git archive HEAD` 造的 ⇒ 差一点让之后每个工作区都自带答案。
+ * 为什么会有这一条清单：工作区是 `git archive HEAD` 造的 ⇒ **凡是进了 git 的东西都会进工作区**。
+ * 而"评测自己的文档"里写满了任务 ID、失败形态和修法线索 —— 它们在用户手里毫无问题
+ * （就是项目文档），但在**被测 agent 的工作区**里就是答案提示。
  *
- * 两层防护：① 从 git 里移除（`git ls-tree HEAD | grep .preview-shot` 必须为 0）；
- * ② 这里把它列进排除清单，建工作区后**删掉**，且 `verifyRepoWorkspace` 会检查它不在。
+ * 分三类：
+ *  1. `tools/eval`：任务集（`revertPaths`、`gradeCommand`）—— 最直接的提示；
+ *  2. `.preview-shot`：评测临时区（每次运行的 diff = **各任务的解**、记录、探针）；
+ *  3. 评测分析类文档：交接单、对齐/测量计划、CHANGELOG 与 PROJECT-GUIDE 里引用任务 ID 的段落。
+ *
+ * 支持 `*` 通配（只用在最后一段），由 `isExcludedFromWorkspace()` 统一判定 ——
+ * **清单与判定共用一处**，免得"删的"和"查的"两份清单各自漂移（第 116 波踩过：`.preview-shot`
+ * 只被误加进 git、两面清单都没覆盖它，差一点让每个工作区都自带答案）。
  */
-export const EXCLUDED_FROM_WORKSPACE = ["docs/HANDOFF-*", "tools/eval", ".preview-shot"];
+export const EXCLUDED_FROM_WORKSPACE = [
+  "tools/eval",
+  ".preview-shot",
+  "docs/HANDOFF-*",
+  "docs/DSH-ALIGNMENT-FIX-PLAN.md",
+  "docs/PI-ALIGNMENT-FIX-PLAN.md",
+  "docs/MEASUREMENT-PLAN-DSH-VS-CODEM.md",
+  "CHANGELOG.md",
+  "docs/PROJECT-GUIDE.md",
+];
+
+/** 某个**工作区相对路径**（正斜杠）是否属于排除清单 */
+export function isExcludedFromWorkspace(relPath) {
+  const rel = String(relPath).replace(/\\/g, "/").replace(/^\.\//, "");
+  return EXCLUDED_FROM_WORKSPACE.some((pattern) => {
+    if (!pattern.includes("*")) return rel === pattern || rel.startsWith(`${pattern}/`);
+    const re = new RegExp(`^${pattern.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*")}$`);
+    return re.test(rel);
+  });
+}
 
 function removeAnswers(ws) {
-  const drop = [join(ws, "tools", "eval"), join(ws, ".preview-shot")];
-  const docs = join(ws, "docs");
-  if (existsSync(docs)) {
-    for (const name of readdirSync(docs)) if (name.startsWith("HANDOFF-")) drop.push(join(docs, name));
+  /** 清单是唯一真相：这里只负责把它"翻译成工作区里的实际路径"（含 `*` 通配） */
+  const drop = [];
+  for (const pattern of EXCLUDED_FROM_WORKSPACE) {
+    if (!pattern.includes("*")) {
+      drop.push(join(ws, pattern));
+      continue;
+    }
+    // 只在最后一段做通配（清单里的用法就这么简单，别把 glob 搞复杂）
+    const slash = pattern.lastIndexOf("/");
+    const dir = slash >= 0 ? pattern.slice(0, slash) : "";
+    const fileGlob = slash >= 0 ? pattern.slice(slash + 1) : pattern;
+    const absDir = join(ws, dir);
+    if (!existsSync(absDir)) continue;
+    const prefix = fileGlob.split("*")[0];
+    const suffix = fileGlob.split("*").slice(-1)[0];
+    for (const name of readdirSync(absDir)) {
+      if (name.startsWith(prefix) && name.endsWith(suffix)) drop.push(join(absDir, name));
+    }
   }
   for (const p of drop) {
     try {
@@ -379,14 +417,30 @@ export function verifyRepoWorkspace(task, ws) {
   }
   if (differing === 0) problems.push("所有 revertPath 都与 HEAD 相同 ⇒ 这个任务构造不出任何差异（判据会恒绿）");
 
-  if (existsSync(join(ws, "tools", "eval"))) problems.push("工作区里还有 tools/eval（任务集 = 答案提示）");
-  // 第 116 波：`.preview-shot/` 里有每次运行的 diff（= 各任务的解）与评测记录 —— 必须不在工作区里
-  if (existsSync(join(ws, ".preview-shot"))) {
-    problems.push("工作区里还有 .preview-shot（评测记录与运行 diff = 答案）");
-  }
-  const docsDir = join(ws, "docs");
-  if (existsSync(docsDir) && readdirSync(docsDir).some((n) => n.startsWith("HANDOFF-"))) {
-    problems.push("工作区里还有 docs/HANDOFF-*（交接单 = 答案）");
+  /**
+   * 第 116 波：**按排除清单逐条验证**（不再手写两条）。
+   *
+   * 手写清单的后果上一轮已经付过代价：`.preview-shot` 被误加进 git 时，
+   * 删除逻辑与验证逻辑**都没覆盖它** ⇒ 差一点让之后每个工作区都自带答案，
+   * 而且没有任何一道闸会拦住。现在两边都从 `EXCLUDED_FROM_WORKSPACE` 派生。
+   */
+  for (const pattern of EXCLUDED_FROM_WORKSPACE) {
+    if (!pattern.includes("*")) {
+      if (existsSync(join(ws, pattern))) problems.push(`工作区里还有 ${pattern}（评测自身的资料 = 答案提示）`);
+      continue;
+    }
+    const slash = pattern.lastIndexOf("/");
+    const dir = slash >= 0 ? pattern.slice(0, slash) : "";
+    const fileGlob = slash >= 0 ? pattern.slice(slash + 1) : pattern;
+    const absDir = join(ws, dir);
+    if (!existsSync(absDir)) continue;
+    const prefix = fileGlob.split("*")[0];
+    const suffix = fileGlob.split("*").slice(-1)[0];
+    for (const name of readdirSync(absDir)) {
+      if (name.startsWith(prefix) && name.endsWith(suffix)) {
+        problems.push(`工作区里还有 ${dir ? `${dir}/` : ""}${name}（评测自身的资料 = 答案提示）`);
+      }
+    }
   }
 
   /**

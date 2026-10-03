@@ -534,7 +534,7 @@ export class AgenticLoop {
   /**
    * **最近一次"跑测试"的结果**（第 108 波）。
    *
-   * 为什么需要它（有一手证据，不是想当然）：真实仓库档评测里 `repo-03` 那一轮，
+   * 为什么需要它（有一手证据，不是想当然）：真实评测里有一轮，
    * agent 跑了 `usage-normalize.test.ts` 等三个文件，输出 **4 failed**（其中就有最后让它
    * 没过的判据），它还专门 `git stash` 回基线复跑确认同样红 —— 然后只跑了另一组绿的
    * （9 passed）就收工，回执写"已完成"。**它看见了红，还是把红说成了完成。**
@@ -545,9 +545,9 @@ export class AgenticLoop {
   /**
    * **本轮跑过的测试文件 → 最近一次已知状态**（第 109 波修正）。
    *
-   * 为什么不能只看"最近一次运行"（这是实测抓到的模型误判）：`repo-03` 那一轮的真实序列是
+   * 为什么不能只看"最近一次运行"（这是实测抓到的模型误判）：有一轮的真实序列是
    *
-   *   ① `usage-normalize` + `dsh-d7` → **4 failed**（红）
+   *   ① 本次任务的判据文件 → **4 failed**（红）
    *   ② 同两个文件再跑 → **4 failed**（红）
    *   ③ 回基线复跑 → **4 failed**（红）
    *   ④ 换一组**别的**文件跑 → **9 passed**（绿）
@@ -652,7 +652,7 @@ export class AgenticLoop {
      *
      * 证据（第 110 波实测，四个失败任务**全零**）：agent 会跑红的那条判据，
      * 却**从不读它**（读的都是自己觉得相关的其它判据）⇒ 不知道期望的语义 ⇒ 照着症状猜着改
-     * （repo-02 只补 `write` 一条分支、repo-04 的 D12 三态语义没做全）。
+     * （只补了报错路径的一条分支、规格里要求的几种状态没做全）。
      *
      * 光在提示词里写"要读测试"是**希望**；这里是**机制**：红的那一刻，把文件路径直接递到它眼前。
      */
@@ -2416,9 +2416,9 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         /**
          * **第 108 波：红测试收尾守卫（"它看见了红还说完成"）。**
          *
-         * 证据（真实仓库档评测 `repo-03` 那一轮，1.16.232 装机版）：
-         * agent 跑了 `usage-normalize.test.ts` 等三个文件，输出 **4 failed**
-         * （其中就有最后让它没过的 D7-B/C 与"缺报不产出 cache 键"两条），
+         * 证据（真实评测里有一轮，装机版）：
+         * agent 跑了某模块的三个判据文件，输出 **4 failed**
+         * （其中就有最后让它没过的两条判据），
          * 它还专门 `git stash` 回基线复跑确认同样红 —— 然后只跑了另一组绿的（9 passed）
          * 就收工，回执写"已完成"。**红它看见了，还是把红说成了完成。**
          *
@@ -2440,7 +2440,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         const redTest: { command: string; failed: number; passed: number; redFiles: string[] } | null = this.currentTestRun();
         /**
          * **按文件**判红（不是只看最近一次运行）—— 理由见 `testFileStatus` 的字段注释：
-         * repo-03 那一轮的失败形态正是"红过的那两个文件没再跑绿，但另一组文件跑绿了"。
+         * 实测的失败形态正是"红过的那两个文件没再跑绿，但另一组文件跑绿了"。
          */
         const redFiles = this.currentRedTestFiles();
         if ((redFiles.length > 0 || (redTest && redTest.failed > 0)) && this.redTestNudges < 1) {
@@ -3595,7 +3595,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          *
          * 证据（第 110 波实测四个失败任务**全零**）：agent 会跑红的那条判据，却**从不读它** ——
          * 读的都是它自己觉得相关的其它判据。于是它不知道期望的语义，只能照症状猜着改
-         * （repo-02 只补 `write` 一条分支、repo-04 的 D12 三态语义没做全）。
+         * （只补了报错路径的一条分支、规格里要求的几种状态没做全）。
          *
          * 为什么做成"附在结果里"而不是另发一条消息：**时机**。模型此刻正盯着这段失败输出，
          * 指针就在同一段文本里，不需要额外一轮去理解；也不额外消耗一次 LLM 调用。
