@@ -1563,6 +1563,33 @@ _run-second-pass.mjs   复跑我们通过过的 8 个任务（run-2）          
 **报告前先跑 `_mechanism-engagement.mjs`** 核对三个机制的开火次数
 （1.16.232 上的反向对照是 0 次，所以"候选也是 0"就意味着装错了版本）。
 
+### 13.19 ⚠️ 一次**差点让之后每个工作区都自带答案**的操作事故（已修，记录在案）
+
+**发生了什么**：第 116 波我给一个提交顺手写了 `git add -f … .preview-shot` ——
+`-f` 把整个临时区（**5527 个文件**）强制塞进了 git。而评测工作区是 `git archive HEAD` 造的 ⇒
+里面的 `eval-codem-repo-*.diff.txt` **就是各任务的解**、`eval-records-*.jsonl` 里有任务 ID 与结果 ⇒
+**之后每个工作区都会自带答案**（评测直接失效，而且不会有人发现，因为"工作区自证"当时只查
+`tools/eval` 与 `docs/HANDOFF-*`）。
+
+**怎么发现的**：提交输出的 git 警告里出现了 `.preview-shot/DB-SCALE-BENCH.json` 之类的文件名 ——
+我本来以为这个目录一直都在 `.gitignore` 里（前面几十轮的 `git add -A` 确实没碰它）。
+
+**处置**：
+1. `git reset --soft HEAD~1` + `git reset HEAD -- .preview-shot`（**只动索引，工作树文件一个没删**），
+   重新提交为 `f61ada0`（只含 docs 与 `tools/eval/repo-workspace.mjs`）；
+2. 校验 `git ls-tree -r HEAD | grep '^\.preview-shot/'` ⇒ **0 个** ✓；
+3. **把 `.preview-shot` 加进 `EXCLUDED_FROM_WORKSPACE`**，并让 `removeAnswers` 真删它、
+   `verifyRepoWorkspace` **显式检查它不在**（不在就报 problems ⇒ 建工作区时直接抛）—— 两层防护；
+4. 核实**没有运行被污染**：误提交只存在了约 3 分钟（20:45–20:48），那段时间里**没有新建任何工作区**
+   （正在跑的 repo-06 工作区建于 20:41，早于这次误提交）✓；
+5. 风险面：仓库有 `origin` 远程，但**全程没有 push 过** ⇒ 那次误提交只存在于**本地**对象库里，
+   且已不被任何分支引用（正常 push 不会带它出去）。
+
+**教训（比事故本身值钱）**：
+- `git add -f` 是**绕过忽略规则**的动作，用之前必须问一句"这个目录里有没有不该进仓库的东西"；
+- **工作区的自证清单要跟着"我往仓库里放了什么"一起维护** —— 那次之所以危险，
+  正是因为自证清单里没有 `.preview-shot` 这一条（现在已经有了）。
+
 ### 13.17 执行状态（截至第 113 波；结论按 §13.16 的规则走）
 
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，12 个任务 run-1 **跑满**
