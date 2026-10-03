@@ -26,8 +26,17 @@ import { writeFile } from "../file-api";
 /** Default threshold for persisting tool results to disk (50KB) */
 export const DEFAULT_MAX_RESULT_SIZE_CHARS = 50_000;
 
-/** Number of characters to include in the preview */
+/** Number of characters to include in the preview (head) */
 const PREVIEW_CHARS = 500;
+
+/**
+ * 预览里保留的**尾部**字符数（第 110 波）。
+ *
+ * 取值理由：`npx vitest run` 的汇总块（`Test Files … / Tests … / Duration …`）与
+ * 失败清单都在最后几行；2000 字符足够覆盖它，同时不会让预览膨胀到影响上下文
+ * （头 500 + 尾 2000 ≈ 2.5KB，相对 50KB 的持久化阈值是零头）。
+ */
+const PREVIEW_TAIL_CHARS = 2000;
 
 /** Subdirectory name for tool results */
 const TOOL_RESULTS_SUBDIR = ".codem-tool-results";
@@ -85,15 +94,32 @@ export async function maybePersistToolResult(
     // Ensure directory exists (writeFile creates parent dirs via Tauri)
     await writeFile(filePath, output, { workspace: cwd });
 
-    // Build preview: first N chars + truncated marker + file path
-    const preview = output.substring(0, PREVIEW_CHARS);
-    const truncated = output.length > PREVIEW_CHARS;
+    /**
+     * **预览必须同时给「头」和「尾」**（第 110 波修正，由评测证据驱动）。
+     *
+     * 旧行为只给前 500 字符。问题在于**大块输出的结论通常在尾部**：
+     * `npx vitest run` 跑一个大套件，先逐文件刷一堆行，**最后的 `Tests N failed | M passed`
+     * 才是唯一有用的那一行**；`cargo build` / `tsc` 的错误摘要也常在末尾。
+     * 只给头部 ⇒ 模型看不到自己刚刚那次验证的结果 ⇒ **它既没法发现红、也没法放心跑大套件**，
+     * 于是倾向于"只跑手边那一个文件"。
+     *
+     * 这不是推测：真实仓库档评测里，agent 跑出 404 passed 的那一轮，模型侧只看到头部 500 字符
+     * （`Tests …` 汇总在尾部），而它同一任务里红过的判据文件再没被复跑 —— 与"看不到结果"一致。
+     *
+     * 现在：头 `PREVIEW_CHARS` + 尾 `PREVIEW_TAIL_CHARS`，中间标注省略了多少字符。
+     */
+    const head = output.substring(0, PREVIEW_CHARS);
+    const tail = output.length > PREVIEW_CHARS + PREVIEW_TAIL_CHARS ? output.slice(-PREVIEW_TAIL_CHARS) : "";
+    const omitted = output.length - head.length - tail.length;
+    const previewBody = tail
+      ? `${head}\n\n…（中间省略 ${omitted.toLocaleString()} 字符）…\n\n${tail}`
+      : output.substring(0, PREVIEW_CHARS + PREVIEW_TAIL_CHARS);
     const persistedOutput = [
       `<persisted-output>`,
       `Output too large (${output.length.toLocaleString()} chars), saved to disk.`,
       ``,
-      `Preview (${preview.length} of ${output.length} chars):`,
-      truncated ? `${preview}...` : preview,
+      `Preview（头 ${head.length} 字符 + 尾 ${tail.length} 字符；**结论通常在尾部**）:`,
+      previewBody,
       ``,
       `Full output file: ${filePath}`,
       `Use the 'read' tool with this path to view the complete output.`,

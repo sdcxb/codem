@@ -57,6 +57,37 @@ describe("P1-5: Tool Result Disk Persistence", () => {
       expect(result.output).toContain("x".repeat(500));
     });
 
+    /**
+     * 第 110 波：**大块输出的预览必须带上尾部**。
+     *
+     * 证据（真实仓库档评测）：agent 跑 `npx vitest run` 大套件时输出远超 50KB 阈值，
+     * 而旧实现只把**前 500 字符**给模型 —— vitest 的汇总行（`Tests 404 passed`）在**尾部**，
+     * 于是模型看不到自己那次验证的结论。同一任务里它"红过的判据文件再没复跑"，
+     * 与"看不到结果"一致；这同时会让模型**不敢**跑大套件（跑了也读不到结论）。
+     *
+     * 变异自证：把尾部那段删掉（只留头）⇒ 本用例立刻红。
+     */
+    it("大块输出的预览必须包含**尾部**（否则模型看不到测试汇总/构建结论）", async () => {
+      const summary = "\n Test Files  1 failed | 12 passed (13)\n      Tests  2 failed | 404 passed (406)\n";
+      const largeOutput = "x".repeat(DEFAULT_MAX_RESULT_SIZE_CHARS + 1000) + summary;
+      const result = await maybePersistToolResult("bash", largeOutput, "session-123", "C:/project");
+
+      expect(result.persisted).toBe(true);
+      expect(result.output, "尾部必须保留：汇总行就在最后").toContain("Tests  2 failed | 404 passed (406)");
+      expect(result.output, "要标出中间省略了多少").toMatch(/中间省略 [\d,]+ 字符/);
+      // 头仍然保留（模型需要看到命令开头/第一批输出）
+      expect(result.output).toContain("x".repeat(500));
+    });
+
+    it("预览不会因为加尾巴而无限膨胀（头 500 + 尾 2000 为界）", async () => {
+      const largeOutput = "y".repeat(500_000);
+      const result = await maybePersistToolResult("bash", largeOutput, "session-123", "C:/project");
+      expect(result.persisted).toBe(true);
+      // 预览体本身（去掉固定说明行）不应超过 头+尾+标记 的量级
+      const preview = result.output;
+      expect(preview.length, `预览长度 ${preview.length} 过大`).toBeLessThan(6000);
+    });
+
     it("should NOT persist when maxResultSizeChars is Infinity", async () => {
       const largeOutput = "x".repeat(DEFAULT_MAX_RESULT_SIZE_CHARS + 1000);
       const result = await maybePersistToolResult(
