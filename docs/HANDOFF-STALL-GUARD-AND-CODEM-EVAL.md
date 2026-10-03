@@ -1132,16 +1132,14 @@ node .preview-shot/_ab-campaign.mjs … --install 1.16.233 --go     # 真跑：�
 node .preview-shot/_run-repeat-campaign.mjs --arm control --runs 2,3 `
   --tasks repo-02-…,repo-03-… --out .preview-shot/eval-records-repo-control.jsonl
 
-# ⑤b **机制开火核对（先做这一步，再解读 A/B）**
-#    空结果有两种含义：「机制没效果」与「机制根本没触发」。跑完候选先数开火次数：
+# ⑤b **机制开火核对（先做这一步，再解读 A/B）**#    空结果有两种含义：「机制没效果」与「机制根本没触发」。跑完候选先数开火次数：
 #    RED TEST 指针 / 红测试守卫 / read(line_numbers) 各开火多少次。
 node .preview-shot/_mechanism-engagement.mjs .preview-shot/eval-records-codem-repo-v3.jsonl "1.16.234（候选）"
 #    反向对照已做过：在 1.16.232（不含这三个机制）的 14 条会话上开火 **0** 次 ——
 #    也就是说这个检查器不会把"没机制"的会话误报成"开火了"；若候选构建上仍是 0，
 #    第一件要查的是 **appVersion 对不对**（跑的根本不是带机制的构建）。
 
-# ⑥ 单次运行的事后诊断（每条记录都留了产物，不需要重跑）
-node tools/eval/audit-codem-record.mjs --session <sessionId>   # 它到底调过哪些工具、改过哪些文件
+# ⑥ 单次运行的事后诊断（每条记录都留了产物，不需要重跑）node tools/eval/audit-codem-record.mjs --session <sessionId>   # 它到底调过哪些工具、改过哪些文件
 #   .preview-shot/eval-<arm>-<task>.grade.txt   判据输出（哪条红、为什么）
 #   .preview-shot/eval-<arm>-<task>.events.jsonl 驱动原始事件流（第 110 波起，两条臂对称）
 #   .preview-shot/eval-codem-<task>.diff.txt     工作区 diff（它到底改了什么）
@@ -1525,6 +1523,12 @@ _run-second-pass.mjs   复跑我们通过过的 8 个任务（run-2）          
 严格说 §13.16 的判定只需要覆盖"对手稳定通过 × 我们稳定不过"这个风险方向，
 但完整数据集才配得上目标里"可比较、可复现"的说法 —— 否则结论只能覆盖 5 个格子，
 其余 7 个永远停在"轮次不足"。
+
+**排队前后都要做一次"计划对账"**（`_check-queue-plan.mjs`）：把各链式脚本里声明的
+`(任务, run 号)` 抽出来，与**对照臂的计划+已有记录**逐任务比。理由很实在 ——
+判定器与成对报告都按 `(caseId, runNumber)` 配对，**排错一次就是几小时白跑**。
+第 117 波对账结果：12 个任务全部有重叠的 run 号 ✓（其中 repo-06 只计划了 run-3，
+所以额外补了一条干净 run-2 —— 它在"我们没做出来的四个任务"里，判定表缺不得）。
 
 ### 13.18 **1.16.234 发布待办**（内容已冻结，等流水线跑完就执行）
 
