@@ -338,6 +338,50 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     expect(text, "不许把第一次的带行号文本当成第二次的结果").not.toContain("1\\tBODY-1\\n2");
   });
 
+  /**
+   * RT-13（第 116 波）：**同一响应里的去重键也必须含行号开关**。
+   *
+   * 与 RT-12 是同一个坑的两处：那里是**跨响应**的读缓存，这里是**同一响应内**的重复调用去重。
+   * 若键里只有 path/offset/limit，模型在同一个响应里先读普通版、再读带行号版时，
+   * 第二次会被当成"重复调用"**跳过**（还回一句 Duplicate），而它以为自己看过了。
+   *
+   * 变异自证：把 `|${readNumbering}` 从键里去掉 ⇒ 本用例红（只执行 1 次）。
+   */
+  it("RT-13: 同一响应里「普通读」与「带行号读」不许被去重掉", async () => {
+    const provider = new ScriptedProvider();
+    const file = `${CWD}/src/a.ts`;
+    /** 一个迭代里**两个** read 工具调用：普通读 + 带行号读 */
+    provider.setScript([
+      [
+        { type: "tool_use_start", id: "r1", name: "read" },
+        { type: "tool_use_delta", id: "r1", input: JSON.stringify({ path: file }) },
+        { type: "tool_use_end", id: "r1", input: { path: file } },
+        { type: "tool_use_start", id: "r2", name: "read" },
+        { type: "tool_use_delta", id: "r2", input: JSON.stringify({ path: file, line_numbers: true }) },
+        { type: "tool_use_end", id: "r2", input: { path: file, line_numbers: true } },
+        { type: "end", finishReason: "tool_use" },
+      ],
+      finalIteration("已完成。"),
+    ]);
+    const registry = createDefaultToolRegistry();
+    const calls: string[] = [];
+    registry.register({
+      id: "read",
+      description: "假 read（夹具：记录每次调用的形状）",
+      parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      contract: { readOnly: true, accessScope: "workspace" },
+      async execute(args: any) {
+        calls.push(args?.line_numbers === true ? "numbered" : "plain");
+        return { title: `read: ${args?.path}`, output: args?.line_numbers === true ? "1\tAAA" : "AAA" };
+      },
+    } as any);
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    await drain(loop);
+
+    expect(calls, `两种形状都必须真的执行，实际：${JSON.stringify(calls)}`).toEqual(["plain", "numbered"]);
+  });
+
   it("RT-3/RT-4: 提醒只来一次，且必须点名条数与命令", async () => {
     const provider = new ScriptedProvider();
     provider.setScript([

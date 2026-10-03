@@ -515,7 +515,9 @@ describe("S0 Full Regression Suite", () => {
       const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
       // Dedup key composes path + offset + limit
-      expect(src).toContain("const readKey = `${filePath}|${readOffset}|${readLimit}`;");
+      // Dedup key composes path + offset + limit + **行号开关**（第 116 波：同一响应里
+      // 「普通读」与「带行号读」是两种形状，不能互相去重；行为判据见 RT-13）
+      expect(src).toContain("const readKey = `${filePath}|${readOffset}|${readLimit}|${readNumbering}`;");
       // Defaults mirror readCache's range defaults
       expect(src).toContain('const readOffset = typeof tc.input?.offset === "number" ? tc.input.offset : 1;');
       expect(src).toContain('const readLimit = typeof tc.input?.limit === "number" ? tc.input.limit : 2000;');

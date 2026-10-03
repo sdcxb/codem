@@ -3143,7 +3143,16 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // 特定片段时第二个 read 会被误判为重复而跳过。
         const readOffset = typeof tc.input?.offset === "number" ? tc.input.offset : 1;
         const readLimit = typeof tc.input?.limit === "number" ? tc.input.limit : 2000;
-        const readKey = `${filePath}|${readOffset}|${readLimit}`;
+        /**
+         * 第 116 波：**行号开关也必须进去重键**。
+         *
+         * 与读缓存是同一个坑的两处（那处已在 `readCache` 修掉，行为判据 RT-12）：
+         * 同一个响应里先 `read(path)`、再 `read(path, { line_numbers: true })`，
+         * 若键里只有 path/offset/limit，第二次会被判成"同一响应里的重复调用"而**跳过** ——
+         * 模型要的带行号版本永远拿不到，而它会以为自己已经看过了。
+         */
+        const readNumbering = tc.input?.line_numbers === true ? "n" : "p";
+        const readKey = `${filePath}|${readOffset}|${readLimit}|${readNumbering}`;
         if (seenReadPaths.has(readKey)) {
           duplicateToolCalls.push(tc);
           continue;
