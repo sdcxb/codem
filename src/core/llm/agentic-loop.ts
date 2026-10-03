@@ -532,6 +532,67 @@ export class AgenticLoop {
    */
   private stallGuard: StallGuard = new StallGuard();
   /**
+   * **最近一次"跑测试"的结果**（第 108 波）。
+   *
+   * 为什么需要它（有一手证据，不是想当然）：真实仓库档评测里 `repo-03` 那一轮，
+   * agent 跑了 `usage-normalize.test.ts` 等三个文件，输出 **4 failed**（其中就有最后让它
+   * 没过的判据），它还专门 `git stash` 回基线复跑确认同样红 —— 然后只跑了另一组绿的
+   * （9 passed）就收工，回执写"已完成"。**它看见了红，还是把红说成了完成。**
+   *
+   * 这里只做一件事：记住"最近一次跑测试红了几条"，供收尾时判"这轮不许就这么结束"。
+   */
+  private lastTestRun: { command: string; failed: number; passed: number } | null = null;
+  /** 本轮因"收尾时测试还红着"提醒过几次（上限 1，避免把模型困在循环里） */
+  private redTestNudges = 0;
+
+  /**
+   * 读"最近一次跑测试的结果"（第 108 波）。
+   *
+   * 刻意包一层方法：直接读字段会被 TypeScript 的控制流分析收窄成 `null`
+   * （本轮重置处的赋值在同一函数内可见），于是收尾守卫那段代码会被判成 `never`。
+   */
+  private currentTestRun(): { command: string; failed: number; passed: number } | null {
+    return this.lastTestRun;
+  }
+
+  /**
+   * 识别"这一次调用是在跑测试"，并把它红了几条记下来（第 108 波）。
+   *
+   * 判据刻意**保守**：只有命令里真的出现测试运行器（`vitest` / `jest` / `pytest` /
+   * `npm test` / `cargo test` …）才算，免得把 `grep vitest` 这类命令的输出误当成测试结果
+   * （判据误报的代价是"明明没跑测试却被要求解释红"，比漏报更烦人）。
+   */
+  private noteTestRun(name: string, args: Record<string, unknown>, output: string): void {
+    const command = String((args as any)?.command ?? (args as any)?.code ?? "");
+    if (!command) return;
+    // 真的"调用"了运行器（行首/分隔符之后），而不是提到它的名字
+    const invokesRunner =
+      /(^|[\s;&|])(npx\s+|pnpm\s+|yarn\s+)?(vitest|jest|pytest|mocha)\b/.test(command) ||
+      /(^|[\s;&|])(npm|pnpm|yarn)\s+(run\s+)?test\b/.test(command) ||
+      /(^|[\s;&|])cargo\s+test\b/.test(command);
+    if (!invokesRunner) return;
+    if (!/^(bash|run_code|workflow|pwsh)$/.test(name)) return;
+
+    /**
+     * 解析条数：**先认汇总行**（vitest 的 `Tests  4 failed | 8 passed`），再退回任意 `N failed`。
+     *
+     * 为什么顺序重要（第一版就是这里错的）：逐文件行也会出现 `(4 tests | 1 failed)`，
+     * 直接 `/(\d+)\s+failed/` 会先匹配到**文件级的 1**，于是提醒里说"1 条失败"，
+     * 与真实情况（4 条）不符 —— 提醒里的数字错了，模型就会被误导。
+     */
+    const failedMatch = output.match(/\bTests\s+(\d+)\s+failed/i) ?? output.match(/(\d+)\s+failed/i);
+    const passedMatch = output.match(/\bTests\s+(\d+)\s+passed/i) ?? output.match(/(\d+)\s+passed/i);
+    /**
+     * 失败数优先取显式数字（vitest：`Tests  4 failed | 8 passed`）；
+     * 没有数字但输出里有 `FAILED`/`failed` 时按 1 条算（cargo/pytest 的风格），
+     * 而 `0 failed` 必须算 0（否则"全绿"会被判成红）。
+     */
+    let failed = failedMatch ? Number(failedMatch[1]) : 0;
+    if (!failedMatch && /(^|\s)(FAILED|FAIL)\b/m.test(output) && !/\b0\s+failed/i.test(output)) failed = 1;
+    const passed = passedMatch ? Number(passedMatch[1]) : 0;
+    this.lastTestRun = { command: command.replace(/\s+/g, " ").slice(0, 200), failed, passed };
+  }
+  /**
    * 计划修订号：**只在模型成功调用 update_plan 时 +1**（第 65 波）。
    * 刻意不用 macroStep —— 那是 UI 启发式步进，会让"计划推进"信号频繁误报。
    */
@@ -993,6 +1054,9 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.delegationStuckPeeks.clear();
     this.stallGuard.reset();
     this.artifactTracker.reset();
+    // 【第 108 波】"红测试收尾"守卫：每轮重置（同一轮里最多提醒一次，见 noteTestRun / 收尾判定）
+    this.lastTestRun = null;
+    this.redTestNudges = 0;
     // 【本轮新增】"改了但没验证"守卫：每轮重置
     this.turnModifiedFiles = false;
     this.turnRanVerification = false;
@@ -2265,6 +2329,63 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           };
         }
 
+        /**
+         * **第 108 波：红测试收尾守卫（"它看见了红还说完成"）。**
+         *
+         * 证据（真实仓库档评测 `repo-03` 那一轮，1.16.232 装机版）：
+         * agent 跑了 `usage-normalize.test.ts` 等三个文件，输出 **4 failed**
+         * （其中就有最后让它没过的 D7-B/C 与"缺报不产出 cache 键"两条），
+         * 它还专门 `git stash` 回基线复跑确认同样红 —— 然后只跑了另一组绿的（9 passed）
+         * 就收工，回执写"已完成"。**红它看见了，还是把红说成了完成。**
+         *
+         * 上面那条"改了但没验证"守卫抓不到这种情况：它只看 `turnRanVerification`，
+         * 而这里是**验证过了、结果是红的**。
+         *
+         * 处置：与既有守卫同一形状 —— **不硬停，只提醒一次**（红测试可能确实不该由它修，
+         * 例如与本任务无关的既有缺陷）：要求"要么修掉、要么在回执里点名这条红"，然后继续。
+         * 上限 1 次：第二次收尾就放行，绝不把模型困在这里。
+         */
+        /**
+         * ⚠️ 通过一个**方法**读它，而不是直接读字段。
+         *
+         * 原因：本轮重置处写了 `this.lastTestRun = null`，TypeScript 的控制流分析于是
+         * 认为"到收尾这里它一定是 null"，`redTest && redTest.failed` 会被收窄成 `never` 而报错。
+         * 赋值真正的来源是 `noteTestRun()`（另一个方法），TS 看不进去 —— 走一层方法调用，
+         * 既让类型恢复正确，也说清了"这个值随时可能被工具结果更新"。
+         */
+        const redTest: { command: string; failed: number; passed: number } | null = this.currentTestRun();
+        if (redTest && redTest.failed > 0 && this.redTestNudges < 1) {
+          this.redTestNudges++;
+          recordLoopStop(sessionId, "completed_unverified", { phase: "red-test-nudge", iteration: this.state.iteration });
+          try {
+            this.getMessageStorage().createMessage(
+              {
+                id: `red-test-nudge-${Date.now()}`,
+                role: "user",
+                content:
+                  `[SYSTEM] 你刚才跑的测试里有 **${redTest.failed} 条红**（命令：${redTest.command}` +
+                  `${redTest.passed > 0 ? `；同一次运行里 ${redTest.passed} 条绿` : ""}）。\n` +
+                  "现在你要收尾了，但这与「完成」是冲突的。二选一：\n" +
+                  "① 把它们修掉（正常收尾）；\n" +
+                  "② 如果这些红确实不该由你修（例如与本任务无关的既有缺陷），就在回执里**点名**它们：" +
+                  "哪几条红、为什么留着、对用户意味着什么。\n" +
+                  "不允许把这次收尾写成「已完成」而不提这些红。",
+                timestamp: Date.now(),
+                status: "done",
+              },
+              sessionId,
+            );
+            this.msgCache = null;
+          } catch (e) {
+            console.warn("[agentic-loop.ts]", e);
+          }
+          yield {
+            type: "text_delta",
+            text: `\n\n🧪 **测试还是红的**（${redTest.failed} 条失败）：先处理它们，或在回执里说清为什么留着。\n\n`,
+          };
+          continue;
+        }
+
         const result: LoopResult = {
           type: "stop",
           reason: "completed",
@@ -3326,6 +3447,16 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         try {
           guardGain = this.repeatGuard.noteResult(name, effectiveArgs, result.output);
         } catch (e) { warnOnce("repeat-guard:note-result", "[agentic-loop] 记录守卫结果失败", e); }
+
+        /**
+         * 第 108 波：顺手记住"这次是不是在跑测试、红了几条"（供收尾守卫用）。
+         *
+         * 放在这里的原因与 `noteResult` 一样：**这是唯一同时拿得到命令与输出**的地方，
+         * 而"测试是否还红着"必须由实际输出判定，不能靠猜。
+         */
+        try {
+          this.noteTestRun(name, effectiveArgs, String(result.output ?? ""));
+        } catch (e) { warnOnce("red-test-guard:note", "[agentic-loop] 记录测试结果失败", e); }
 
         // 第 93 波治本：把「这次拿到的是不是新信息」接进停滞判定。
         // 为什么放在这里：noteResult 是**唯一**有「结果内容是不是新的」证据的地方，

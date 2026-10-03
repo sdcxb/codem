@@ -50,4 +50,22 @@ describe("第 107 波：根因修复与验证覆盖面的提示词要求", () =>
     expect(src).toMatch(/the related module/);
     expect(src).toMatch(/One green test while sibling paths stay broken is not a fix/);
   });
+
+  /**
+   * PROMPT-ROOT-4：**"跑过的红测试不许被『完成』盖过去"**。
+   *
+   * 证据（第 108 波，repo-03 那一轮）：agent 跑 `usage-normalize.test.ts` 等三个文件，
+   * 输出 **4 failed**（其中就有最后让它没过的 D7-B/C 与"缺报不产出 cache 键"），
+   * 它还专门 `git stash` 回基线又跑了一遍确认同样红 —— 然后只跑了另一组绿的（9 passed）
+   * 就收工，回执写"已完成"。**它看见了红，还是把红说成了完成。**
+   *
+   * 这条规则钉的就是这个收场方式：红要么修掉，要么在回执里点名，不许被"完成"盖过去。
+   */
+  it("PROMPT-ROOT-4: 要求「跑过的红测试不许被完成盖过去」（中英）", () => {
+    const src = promptSource();
+    expect(src, "中文缺这条").toMatch(/你刚跑出来的红测试，不许被"完成"两个字盖过去/);
+    expect(src, "中文缺收场二选一").toMatch(/要么把它修掉，要么在回执里\*\*点名这条红\*\*/);
+    expect(src, "英文缺这条").toMatch(/A red test you just ran may not be papered over/);
+    expect(src, "英文缺收场二选一").toMatch(/fix them, or name the failure in your receipt/);
+  });
 });
