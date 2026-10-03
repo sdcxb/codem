@@ -214,6 +214,46 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     expect(textOf(events), "不许出现提醒").not.toMatch(/测试还是红的/);
   });
 
+  /**
+   * RT-7（第 111 波）：**测试红的那一刻，就把"红的是哪个判据文件"递到结果里**。
+   *
+   * 证据：第 110 波逐条核对四个失败任务 —— agent 会跑红的那条判据，却**从不读它**（0/4），
+   * 读的全是自己觉得相关的其它判据；于是不知道期望的语义，只能照症状猜着改。
+   * 光在提示词里写"要读测试"是希望，这里是机制：红的那一刻指针就在同一段输出里。
+   *
+   * 变异自证：把 `[RED TEST]` 那段删掉 ⇒ 本用例立刻红。
+   */
+  it("RT-7: 红的测试结果里必须附上「先读这些判据文件」的指针（且绿的时候不许附）", async () => {
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      testIteration("t1", "npx vitest run src/test/dsh-d7-usage-cache-buckets.test.ts"),
+      finalIteration("已完成。"),
+      finalIteration("已完成（收尾）。"),
+    ]);
+    const { registry } = registryWithFakeBash(() => RED_OUTPUT);
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    const events = await drain(loop);
+
+    // 工具结果事件里应当带上指针（不是只在界面的 text_delta 里）
+    const toolResults = events.filter((e) => e.type === "tool_result" || e.type === "tool_end" || e.type === "tool_complete");
+    const serialized = JSON.stringify(toolResults);
+    expect(serialized, "工具结果里要有 [RED TEST] 指针").toContain("[RED TEST]");
+    expect(serialized, "指针要点名红的是哪个文件").toContain("dsh-d7-usage-cache-buckets.test.ts");
+    expect(serialized, "要明确要求先读它").toMatch(/先去读这些判据文件/);
+  });
+
+  it("RT-8 反向对照: 测试绿的时候，结果里不许出现 [RED TEST] 指针", async () => {
+    const provider = new ScriptedProvider();
+    provider.setScript([testIteration("t1", "npx vitest run src/test/usage-normalize.test.ts"), finalIteration("已完成。")]);
+    const { registry } = registryWithFakeBash((command) => vitestOutputFor(command, false));
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    const events = await drain(loop);
+
+    expect(JSON.stringify(events), "绿的时候不许附指针").not.toContain("[RED TEST]");
+  });
+
   it("RT-3/RT-4: 提醒只来一次，且必须点名条数与命令", async () => {
     const provider = new ScriptedProvider();
     provider.setScript([

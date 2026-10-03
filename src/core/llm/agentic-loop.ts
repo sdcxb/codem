@@ -541,7 +541,7 @@ export class AgenticLoop {
    *
    * 这里只做一件事：记住"最近一次跑测试红了几条"，供收尾时判"这轮不许就这么结束"。
    */
-  private lastTestRun: { command: string; failed: number; passed: number } | null = null;
+  private lastTestRun: { command: string; failed: number; passed: number; redFiles: string[] } | null = null;
   /**
    * **本轮跑过的测试文件 → 最近一次已知状态**（第 109 波修正）。
    *
@@ -567,7 +567,7 @@ export class AgenticLoop {
    * 刻意包一层方法：直接读字段会被 TypeScript 的控制流分析收窄成 `null`
    * （本轮重置处的赋值在同一函数内可见），于是收尾守卫那段代码会被判成 `never`。
    */
-  private currentTestRun(): { command: string; failed: number; passed: number } | null {
+  private currentTestRun(): { command: string; failed: number; passed: number; redFiles: string[] } | null {
     return this.lastTestRun;
   }
 
@@ -606,7 +606,8 @@ export class AgenticLoop {
     let failed = failedMatch ? Number(failedMatch[1]) : 0;
     if (!failedMatch && /(^|\s)(FAILED|FAIL)\b/m.test(output) && !/\b0\s+failed/i.test(output)) failed = 1;
     const passed = passedMatch ? Number(passedMatch[1]) : 0;
-    this.lastTestRun = { command: command.replace(/\s+/g, " ").slice(0, 200), failed, passed };
+    // 先记一个初值（redFiles 在下面按文件记账之后再补全）
+    this.lastTestRun = { command: command.replace(/\s+/g, " ").slice(0, 200), failed, passed, redFiles: [] };
 
     /**
      * **按文件记账**（第 109 波修正，见 `testFileStatus` 的字段注释）。
@@ -636,6 +637,27 @@ export class AgenticLoop {
         if (!marked.has(file) && this.testFileStatus.get(file) !== "green") this.testFileStatus.set(file, "red");
       }
     }
+
+    /**
+     * **把"这次红的是哪些文件"记下来，供结果里附一句指向**（第 111 波）。
+     *
+     * 证据（第 110 波实测，四个失败任务**全零**）：agent 会跑红的那条判据，
+     * 却**从不读它**（读的都是自己觉得相关的其它判据）⇒ 不知道期望的语义 ⇒ 照着症状猜着改
+     * （repo-02 只补 `write` 一条分支、repo-04 的 D12 三态语义没做全）。
+     *
+     * 光在提示词里写"要读测试"是**希望**；这里是**机制**：红的那一刻，把文件路径直接递到它眼前。
+     */
+    this.lastTestRun = {
+      command: this.lastTestRun?.command ?? command.replace(/\s+/g, " ").slice(0, 200),
+      failed,
+      passed,
+      redFiles: [
+        ...new Set([
+          ...[...marked].filter((f) => this.testFileStatus.get(f) === "red"),
+          ...filesInCommand.filter((f) => this.testFileStatus.get(f) === "red"),
+        ]),
+      ],
+    };
   }
 
   /** 本轮"跑过且最近一次是红的"测试文件（第 109 波：按文件记账，不是只看最近一次运行） */
@@ -2406,7 +2428,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 赋值真正的来源是 `noteTestRun()`（另一个方法），TS 看不进去 —— 走一层方法调用，
          * 既让类型恢复正确，也说清了"这个值随时可能被工具结果更新"。
          */
-        const redTest: { command: string; failed: number; passed: number } | null = this.currentTestRun();
+        const redTest: { command: string; failed: number; passed: number; redFiles: string[] } | null = this.currentTestRun();
         /**
          * **按文件**判红（不是只看最近一次运行）—— 理由见 `testFileStatus` 的字段注释：
          * repo-03 那一轮的失败形态正是"红过的那两个文件没再跑绿，但另一组文件跑绿了"。
@@ -3537,6 +3559,25 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           result.output =
             `${result.output ?? ""}\n\n[REPEAT GUARD] 这次拿到的内容与之前**完全相同**（连续第 ${guardGain.streak} 次零信息增益）。` +
             `再重复同类调用不会产生新信息：请换手段，或直接基于已有信息推进/报告。`;
+        }
+
+        /**
+         * **测试红了 ⇒ 把"红的是哪个判据文件"直接递到它眼前**（第 111 波）。
+         *
+         * 证据（第 110 波实测四个失败任务**全零**）：agent 会跑红的那条判据，却**从不读它** ——
+         * 读的都是它自己觉得相关的其它判据。于是它不知道期望的语义，只能照症状猜着改
+         * （repo-02 只补 `write` 一条分支、repo-04 的 D12 三态语义没做全）。
+         *
+         * 为什么做成"附在结果里"而不是另发一条消息：**时机**。模型此刻正盯着这段失败输出，
+         * 指针就在同一段文本里，不需要额外一轮去理解；也不额外消耗一次 LLM 调用。
+         * （与 `[REPEAT GUARD]` 同一手法：就地纠正方向，不打断。）
+         */
+        if (this.lastTestRun && this.lastTestRun.failed > 0 && (this.lastTestRun.redFiles?.length ?? 0) > 0) {
+          const red = this.lastTestRun.redFiles.slice(0, 5).join(", ");
+          result.output =
+            `${result.output ?? ""}\n\n[RED TEST] 这次红的是：${red}。` +
+            `**先去读这些判据文件** —— 它们写明了期望的语义（失败消息、三态、边界条件都在里面）；` +
+            `照着症状猜通常只修到其中一条分支。`;
         }
 
         console.log(`[AgenticLoop] Tool executed: ${name}, path: ${effectiveArgs.path || effectiveArgs.command || "(none)"}, output length: ${result.output?.length || 0}`);
