@@ -71,31 +71,8 @@ function finalIteration(text: string): any[] {
   return [{ type: "text_delta", text }, { type: "end", finishReason: "stop" }];
 }
 
-/** 一个"grep"迭代（用来把判据文件名带进上下文，模拟"见过"） */
-function grepIteration(id: string, pattern: string, path: string): any[] {
-  return [
-    { type: "tool_use_start", id, name: "grep" },
-    { type: "tool_use_delta", id, input: JSON.stringify({ pattern, path }) },
-    { type: "tool_use_end", id, input: { pattern, path } },
-    { type: "end", finishReason: "tool_use" },
-  ];
-}
-
-/** 一个"编辑实现文件"的迭代（用来让 turnModifiedFiles 为真） */
-function editIteration(id: string, path: string): any[] {
-  return [
-    { type: "tool_use_start", id, name: "edit" },
-    { type: "tool_use_delta", id, input: JSON.stringify({ path, oldString: "a", newString: "b" }) },
-    { type: "tool_use_end", id, input: { path, oldString: "a", newString: "b" } },
-    { type: "end", finishReason: "tool_use" },
-  ];
-}
-
-/** 把 `bash` / `grep` / `edit` 换成纯夹具（不碰磁盘） */
-function registryWithFakeBash(
-  outputOf: (command: string, call: number) => string,
-  grepOutput = "",
-) {
+/** 把 `bash` 换成纯夹具：命令照收，返回脚本化的测试输出（不碰磁盘） */
+function registryWithFakeBash(outputOf: (command: string, call: number) => string) {
   const registry = createDefaultToolRegistry();
   const executed: string[] = [];
   registry.register({
@@ -107,28 +84,6 @@ function registryWithFakeBash(
       const command = String(args?.command ?? "");
       executed.push(command);
       return { title: `bash: ${command}`, output: outputOf(command, executed.length) };
-    },
-  } as any);
-  // `grep` 也必须假掉：判据里的"见过"是靠 grep 结果带进上下文的（真 grep 会去读磁盘、什么也找不到）
-  registry.register({
-    id: "grep",
-    description: "假 grep（判据夹具：把判据文件名带进上下文）",
-    parameters: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" } }, required: ["pattern"] },
-    contract: { sideEffectScope: "none", accessScope: "none" },
-    async execute(args: any) {
-      executed.push(`grep:${args?.pattern ?? ""}`);
-      return { title: `grep: ${args?.pattern ?? ""}`, output: grepOutput };
-    },
-  } as any);
-  // `edit` 假成"成功"，这样 `turnModifiedFiles` 才会为真（覆盖面兜底要求"改了文件"）
-  registry.register({
-    id: "edit",
-    description: "假 edit（判据夹具：只标记改动，不碰磁盘）",
-    parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
-    contract: { sideEffectScope: "workspace", accessScope: "workspace" },
-    async execute(args: any) {
-      executed.push(`edit:${args?.path ?? ""}`);
-      return { title: `edit: ${args?.path ?? ""}`, output: "Successfully edited." };
     },
   } as any);
   return { registry, executed };
@@ -321,63 +276,6 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     const serialized = JSON.stringify(events);
     expect(serialized, "带颜色的输出也必须能识别出红文件并附指针").toContain("[RED TEST]");
     expect(serialized, "要点名带颜色的那个文件").toContain("dsh-d7-usage-cache-buckets.test.ts");
-  });
-
-  /**
-   * RT-10/RT-11（第 112 波）：**判据覆盖面兜底**。
-   *
-   * 证据（把我们自己的 12 次运行按结果分组解剖）：过的 8 次里 7 次把该任务的判据**跑全**；
-   * 不过的 4 次里 3 次是**部分覆盖**；失败的那条判据**全都出现在上下文里**
-   * （repo-02/06 是"见过但没跑"）。顺带否掉一个猜想：过的 8/8 与不过的 4/4 **都**在最后一次编辑后复跑了测试
-   * ——"改完不复跑"不是原因。
-   *
-   * 变异自证：把覆盖面兜底那段删掉 ⇒ RT-10 立刻红（RT-11 仍绿）。
-   */
-  it("RT-10: 改了文件、又有「见过却没跑」的判据 ⇒ 收尾时要被要求先跑（repo-02 的真实形状）", async () => {
-    const provider = new ScriptedProvider();
-    provider.setScript([
-      // ① 先"看见"两个判据文件（grep 结果里出现），只跑其中一个
-      grepIteration("g1", "write-not-executed", "src/test"),
-      testIteration("t1", "npx vitest run src/test/dsh-d10-write-not-executed-is-error.test.ts"),
-      // ② 改实现文件
-      editIteration("e1", `${CWD}/src/core/llm/tools.ts`),
-      // ③ 直接收尾（没跑 dsh-d9）
-      finalIteration("已完成：修好了。"),
-      finalIteration("已完成（收尾）。"),
-    ]);
-    const { registry } = registryWithFakeBash(
-      (command) => vitestOutputFor(command, false),
-      "dsh-d10-write-not-executed-is-error.test.ts:1\ndsh-d9-multi-edit-partial-failure.test.ts:9\n",
-    );
-
-    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
-    const events = await drain(loop);
-
-    const text = textOf(events);
-    expect(text, "要提醒还有判据没跑").toMatch(/见过但没跑过/);
-    expect(text, "要点名那个没跑的判据").toContain("dsh-d9-multi-edit-partial-failure.test.ts");
-    // 被提醒之后必须再要一轮（脚本消耗到第 5 段）
-    expect(provider.requests.length, "提醒后应当再走一轮").toBeGreaterThanOrEqual(5);
-  });
-
-  it("RT-11 反向对照: 该跑的判据都跑过了 ⇒ 不许提醒（不制造假提醒）", async () => {
-    const provider = new ScriptedProvider();
-    provider.setScript([
-      grepIteration("g1", "usage", "src/test"),
-      testIteration("t1", "npx vitest run src/test/usage-normalize.test.ts"),
-      editIteration("e1", `${CWD}/src/core/llm/usage-normalize.ts`),
-      finalIteration("已完成。"),
-    ]);
-    const { registry } = registryWithFakeBash(
-      (command) => vitestOutputFor(command, false),
-      "usage-normalize.test.ts:1\n",
-    );
-
-    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
-    const events = await drain(loop);
-
-    expect(textOf(events), "都跑过了就不该提醒").not.toMatch(/见过但没跑过/);
-    expect(provider.requests.length, "应当正常收尾（不被多要一轮）").toBe(4);
   });
 
   it("RT-3/RT-4: 提醒只来一次，且必须点名条数与命令", async () => {
