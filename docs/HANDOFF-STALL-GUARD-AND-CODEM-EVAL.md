@@ -1849,6 +1849,11 @@ node tools/eval/repo-paired-report.mjs --control …-clean --treatment …-clean
   repo-02/03/04/06）；run-2 正在补（repo-02/03 已落、都不过），随后**自动接力**复跑"通过过的 8 个任务"。
 - **⚠️ run-1 的效度**：那段时间工作区的 `node_modules` junction 指向主仓库（`node_modules\..` 可解析到答案仓库），
   而当时的检测器看不见这种路径 ⇒ **run-1 不作为"谁强谁弱"的证据**（§13.13i）；干净条件是 run-2 起。
+- **装机版本复核（第 120 波）**：注册表 `DisplayVersion = 1.16.232`、`codem.exe` 时间戳未变、
+  处理臂所有记录的 `appVersion` 都是 `1.16.232` ⇒ **被测对象在整段测量里没有漂移**。
+  这一条要单独查的原因很实在：`latest.json` 在第 111 波就已指向 **1.16.233**（那次发版仪式的一部分）——
+  如果应用会**自动安装**更新，基线就会在中途被换掉、整批数据作废。实测它不会
+  （`downloadAndInstall` 只有设置面板一处调用点、需要用户点击），这里又用装机状态复核了一遍。
 - **成对报告**：`node tools/eval/repo-paired-report.mjs --control … --treatment … --runs 1`
   现在**正确地 withhold 头部**（控制臂有 run-2、处理臂缺 ⇒ 4 对被阻塞）。
 - **本轮仍不下结论**：等两臂在**同一批任务上都有 ≥2 次干净运行**（§13.16 的入据条件）。
