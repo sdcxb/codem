@@ -24,6 +24,12 @@ export type LoopStopReason =
   | "args_truncated"
   | "output_truncated"
   | "context_overflow"
+  /**
+   * 改动了文件却一次都没跑过验证（测试/构建/类型检查）就收尾。
+   * 真机与实测都出现过：模型报「任务完成」而缺陷还在（实测 38 次工具调用、判据 3/7 红）。
+   * 这个归类是为了能统计"未验证就收尾"到底多常见 —— 它是"假完成"的直接来源。
+   */
+  | "completed_unverified"
   | "cancelled";
 
 /**

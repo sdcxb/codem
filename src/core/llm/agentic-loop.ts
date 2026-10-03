@@ -279,6 +279,23 @@ const LLMEngineTextBounds = {
   TOOL_RESULT: 4000,
 } as const;
 
+/**
+ * 这条命令算不算「验证」。
+ *
+ * 目的是把"改了文件"和"证明改动是对的"分开：**光写不算完成**，要跑过测试/构建/类型检查才算。
+ * 判据刻意放宽（宁可多认几个），因为它只用来**提醒**与**标注**，不用来拦截任何操作。
+ */
+export function looksLikeVerificationCommand(command: string): boolean {
+  const c = String(command ?? "");
+  if (!c.trim()) return false;
+  if (/(^|[\s&|;(])(npm|pnpm|yarn|bun)\s+(run\s+)?(test|vitest|jest|build|lint|typecheck|check|tsc)\b/i.test(c)) return true;
+  if (/(^|[\s&|;(])(npx\s+)?(vitest|jest|mocha|pytest|tsc|eslint|biome|ruff|mypy)\b/i.test(c)) return true;
+  if (/(^|[\s&|;(])(go\s+test|cargo\s+(test|check|build)|dotnet\s+(test|build))\b/i.test(c)) return true;
+  if (/\bnode\s+--test\b/i.test(c)) return true;
+  if (/\bpython\s+-m\s+(pytest|unittest)\b/i.test(c)) return true;
+  return false;
+}
+
 /** 单条消息的截断：保留头部 + 明确写出省略了多少字符（不许静默截断）。导出供判据直接钉。 */
 export function boundOne(text: string, cap: number): string {
   const s = String(text ?? "");
@@ -511,6 +528,20 @@ export class AgenticLoop {
   private iterationProducedArtifact = false;
   /** 第 83 波：交付物证据分级（写入类工具 / 可证明改盘命令 / 可能写命令的重复计数） */
   private artifactTracker = new ArtifactTracker();
+
+  /**
+   * 【本轮新增】"改了但没验证"守卫的三个信号。
+   *
+   * 真机反馈与本次实测都出现过同一个病：**模型改完文件、一次测试都没跑，就宣布「任务完成」**。
+   * 本次实测（在咱们自己仓库上、真实任务）：38 次工具调用、界面显示「任务完成」，
+   * 而判据 **3/7 红** —— 缺陷还在，用户却被告知做完了。
+   *
+   * 判据：**"写下来了"不等于"做对了"**。所以这一轮只要动过文件，就必须跑过验证
+   * （测试 / 构建 / 类型检查）才允许安静地收尾；否则先提示一次，仍然不验证就**明说"未经验证"**。
+   */
+  private turnModifiedFiles = false;
+  private turnRanVerification = false;
+  private verificationNudgeIssued = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
   /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
@@ -937,6 +968,10 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.delegationStuckPeeks.clear();
     this.stallGuard.reset();
     this.artifactTracker.reset();
+    // 【本轮新增】"改了但没验证"守卫：每轮重置
+    this.turnModifiedFiles = false;
+    this.turnRanVerification = false;
+    this.verificationNudgeIssued = false;
     this.planRevision = 0;
     this.truncatedContinuations = 0;
     this.iterationProducedArtifact = false;
@@ -2149,6 +2184,52 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           return failResult;
         }
 
+        /**
+         * 【本轮新增】**「改了但没验证」不许安静地当作完成。**
+         *
+         * 真机反馈与本次实测都是这个形状：模型改完文件、一次验证都没跑，界面就报「任务完成」，
+         * 而缺陷还在（实测：38 次工具调用、报完成、判据 3/7 红）。
+         *
+         * 处理分两步，都**不改变 `reason`**（下游按 `completed` 匹配的地方很多，改它会连锁）：
+         * ① 先提示一次，让它自己去验证（花一轮，换"真的做对了"通常是划算的）；
+         * ② 仍然不验证就**明说"这一轮未经证实"**，让用户与调用方都看得见。
+         */
+        if (this.turnModifiedFiles && !this.turnRanVerification) {
+          if (!this.verificationNudgeIssued) {
+            this.verificationNudgeIssued = true;
+            recordLoopStop(sessionId, "completed_unverified", { phase: "nudge", iteration: this.state.iteration });
+            try {
+              this.getMessageStorage().createMessage(
+                {
+                  id: `verify-nudge-${Date.now()}`,
+                  role: "user",
+                  content:
+                    "[SYSTEM] 你在这一轮里**改动了文件，但一次都没有运行验证**（测试 / 构建 / 类型检查）。\n" +
+                    "在宣布完成之前请**实际验证**：跑相关测试或最小复现，看到它真的通过。\n" +
+                    "如果这个改动无法用命令验证，就**明确说明你是怎么确认它对**的，" +
+                    "不要把未经证实的改动说成已完成。",
+                  timestamp: Date.now(),
+                  status: "done",
+                },
+                sessionId,
+              );
+              this.msgCache = null;
+            } catch (e) {
+              console.warn("[agentic-loop.ts]", e);
+            }
+            yield {
+              type: "text_delta",
+              text: "\n\n🔎 这一轮改动过文件但**没有验证**，已要求它先跑验证再收尾…\n\n",
+            };
+            continue;
+          }
+          recordLoopStop(sessionId, "completed_unverified", { phase: "give-up", iteration: this.state.iteration });
+          yield {
+            type: "text_delta",
+            text: "\n\n⚠️ 这一轮**没有跑过任何验证**就结束了 —— 上面的改动**未经证实**，请自行核对（跑一下测试或构建）。\n\n",
+          };
+        }
+
         const result: LoopResult = {
           type: "stop",
           reason: "completed",
@@ -3173,9 +3254,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // 第 83 波修正：判定改成**分级证据**（见 artifact-tracker.ts）——
         // "可能写"的命令（python/node/npm/git…）在**同一条反复出现**时不再算推进，
         // 否则"用脚本当读手段"的会话会让停滞守卫永远清零（真机现场：四道阀门同时失效）。
+        let artifactThisCall = false;
         {
           const cmd = String((effectiveArgs as any)?.command ?? (effectiveArgs as any)?.cmd ?? "");
           const isBashLike = name === "bash" || name === "shell" || name === "run_command" || name === "terminal";
+          // 【本轮新增】把「验证过了」单独记下来 —— 光"写了"不算完成（见字段声明处的说明）。
+          if (isBashLike && looksLikeVerificationCommand(cmd)) this.turnRanVerification = true;
           const verdict = this.artifactTracker.note(
             name,
             effectiveArgs as Record<string, any>,
@@ -3184,12 +3268,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           );
           if (verdict.artifact) {
             this.iterationProducedArtifact = true;
+            artifactThisCall = true;
           } else if (verdict.verdict === "speculative-repeat") {
             console.log(
               `[AgenticLoop] 交付物判定：同一条"可能写"的命令已重复 ${this.artifactTracker.speculativeCountOf(cmd)} 次且期间没有任何可证明的写操作 → 本轮不计推进（${name}: ${cmd.slice(0, 80)}）`,
             );
           }
         }
+        if (artifactThisCall) this.turnModifiedFiles = true;
 
         // 第 64 波：把**结果**交给守卫 —— 判"原地打转"的依据是"拿到的东西是不是已经有了"，
         // 不是"调用了几次"。守卫据此累计"零信息增益"次数，下一次 inspect 时决定提醒/跳过/停。
