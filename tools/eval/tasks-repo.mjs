@@ -167,6 +167,83 @@ export const TASKS = [
      */
     buggyCommit: "d2f53d0",
   },
+  /**
+   * ===== 第 101 波：用本仓**最近几次真实修复**再扩 4 个任务 =====
+   *
+   * 选材标准（都满足才收）：
+   *  1. `buggyCommit` = 那次修复的**父提交**（所以"该行为还没被修"是定义上的，不靠猜）；
+   *  2. `revertPaths` 只包含那次修复动过的**实现**文件（改动窄 ⇒ 不会顺带回退出别的问题）；
+   *  3. 判据是那次修复新增/修改的测试文件（在工作区里存在 = HEAD 版本）；
+   *  4. **三重自证都要过**：`--verify-workspace`（历史只有 bug 状态）、
+   *     `--verify-bug-tests`（bug 状态下判据必须红）、`reference` 臂（还原实现后必须全绿）。
+   *
+   * ⚠️ 已知局限（对 8 个老任务同样成立，记在这里免得被当成"新任务的问题"）：
+   * 判据文件在工作区里是**可读**的（评分需要它），而这些测试的注释常常写明了根因。
+   * 所以这一档测的是"**能不能按判据把修复做对**"，而不是"能不能独立诊断"。
+   * 要测诊断，得把判据挪出工作区（评分时再放回去）—— 见交接单 §13.3 的待办。
+   */
+  {
+    id: "repo-09-sandbox-shell-path-leak",
+    category: "改小 bug",
+    title: "开着沙箱，命令里照样能读到工作区外的文件",
+    prompt:
+      "开了沙箱模式之后，文件类的工具都老实了（读工作区外面的路径会被拒），" +
+      "但**执行命令的那个工具**像是没接上闸门：用 `Get-Content`、`type` 这类命令照样能把工作区外的文件读出来，" +
+      "`cd` 到别的目录再干活也没人管。这等于沙箱开了一半。\n" +
+      "你去把这条口子补上：**命令里的路径也要按沙箱判定**。注意别把工作区内的正常命令也拦了。" +
+      "**不要改 test/ 或 src/test/ 下的任何测试文件。**",
+    revertPaths: ["src/core/llm/tool-pipeline.ts"],
+    testFiles: ["src/test/sandbox-shell-path-leak.test.ts"],
+    relatedTests: ["src/test/sandbox-path.test.ts", "src/test/sandbox-glob-hardening.test.ts"],
+    buggyCommit: "e6041cd",
+  },
+  {
+    id: "repo-10-tool-result-value-dropped",
+    category: "改小 bug",
+    title: "声明了结果契约的工具，一调用就报「你没给 value」",
+    prompt:
+      "用户报告：`bash`、`read`、`glob`、`grep` 这几个工具**几乎每次调用都失败**，" +
+      "界面上给出的原因是 `declared outputSchema but returned no value` —— 可这些工具明明返回了内容，" +
+      "而且它们自己声称**给了**结构化的结果值。模型看到这条内部话术之后就放弃这些工具、改用别的路子，" +
+      "整个体验断崖式下跌。\n" +
+      "你去查一下：工具返回的结构化结果是在**哪一层被丢掉的**，把它补回去。" +
+      "**不要改 test/ 或 src/test/ 下的任何测试文件。**",
+    revertPaths: ["src/core/llm/agentic-loop.ts", "src/core/llm/types.ts", "src/core/llm/tools.ts"],
+    testFiles: ["src/test/output-contract-real-loop.test.ts"],
+    relatedTests: ["src/test/tool-contract-pipeline-e2e.test.ts"],
+    buggyCommit: "5be439f",
+  },
+  {
+    id: "repo-11-contract-error-not-masked",
+    category: "改小 bug",
+    title: "失败的原因被一句契约话术顶掉了",
+    prompt:
+      "用户报告：读一个**不存在的文件**时，模型收到的不是「文件不存在」，而是" +
+      "`read declared outputSchema but returned no value` 这种内部话术 —— 真正的原因消失了，" +
+      "模型也就没法纠正（它会以为是自己调用方式的问题）。命令类工具报错时也有同样的现象。\n" +
+      "你去查一下：**工具自己给出的失败原因为什么会在这条链路上被替换掉**，把它改成" +
+      "「失败就如实透传失败原因」，并且让内容型工具的失败被明确地判成失败。" +
+      "**不要改 test/ 或 src/test/ 下的任何测试文件。**",
+    revertPaths: ["src/core/llm/tool-pipeline.ts", "src/core/llm/tools.ts"],
+    testFiles: ["src/test/tool-contract-pipeline-e2e.test.ts"],
+    relatedTests: ["src/test/output-contract-real-loop.test.ts"],
+    buggyCommit: "2d0852a",
+  },
+  {
+    id: "repo-12-usage-non-completion",
+    category: "改小 bug",
+    title: "被守卫杀掉/被用户中止的那一轮，还是被记成了成功用量",
+    prompt:
+      "成本面板的数字对不上：**明明是被停掉的那些轮次**（停滞守卫判定原地打转、用户点了中止、" +
+      "上下文溢出、被判定为停滞而收场），在用量统计里却和正常完成一样被算进去，" +
+      "于是「成功率」永远虚高、失败的成本也被算成有效产出。\n" +
+      "你去查一下：**收场原因是「非完成」时，用量该怎么记**，把这几种情况改成明确的失败口径。" +
+      "**不要改 test/ 或 src/test/ 下的任何测试文件。**",
+    revertPaths: ["src/core/llm/index.ts"],
+    testFiles: ["src/test/usage-non-completion.test.ts"],
+    relatedTests: ["src/test/usage-normalize.test.ts", "src/test/dsh-d6-usage-accounting.test.ts"],
+    buggyCommit: "30ed631",
+  },
 ];
 
 export const CATEGORIES = ["改小 bug", "多文件改动", "跑测试"];
