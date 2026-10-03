@@ -764,19 +764,61 @@ fn canonicalize_path(path: &str) -> String {
     }
 }
 
-#[tauri::command]
-async fn append_file(path: String, content: String) -> Result<(), String> {
-    use std::io::Write;
-    if let Some(parent) = std::path::Path::new(&path).parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+/// `append_file` 的实现体（与命令分开：纯函数才能被单测直接喂临时文件）。
+///
+/// ## 第 94 波治本：追加前必须保证文件**以换行结尾**（否则会永久删掉一条合法记录）
+///
+/// 原来直接 `OpenOptions::append(true)` + `writeln!`，**从不检查文件是不是以换行结尾**。
+/// 崩溃/断电留下的**半截尾行**于是会把**下一条记录**粘在同一行上：
+///
+/// ```text
+/// {"id":"m1",...}          ← 完整行
+/// {"id":"m2","conte        ← 崩在写入中途留下的半截行（没有换行）
+/// {"id":"m3",...}          ← 下一条记录被粘上来 ⇒ 整行 JSON.parse 失败
+/// ```
+///
+/// 而读侧（`session-jsonl.ts` 的 `readSessionMessages`）与压缩（`compactSessionLog`）
+/// 把**解析不了的行直接丢掉**；压缩那道"安全闸门"只比行数（`linesAfter < linesBefore`）
+/// ⇒ **看不见「一行坏行里裹着一条合法记录」** ⇒ 那条合法记录被**永久删除**（真实数据丢失）。
+///
+/// 所以追加前先看最后一个字节：不是 `\n` 就先补一个。这不是"把半截行修好"
+/// （残尾本来就该当坏行丢掉），而是**不让它把下一条记录也拖下水**。
+///
+/// 顺带补上 `sync_all()`：同文件的 `write_file`（`:732`）一直有，`append_file` 没有 ——
+/// 于是"已经返回成功"的那条记录可能还留在页缓存里，崩溃后根本没落盘。
+fn append_file_impl(path: &std::path::Path, content: &str) -> Result<(), String> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
     }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
+        // 需要读一个字节来判断尾字节，所以 read 也要开（Windows 下 Rust 会据此申请 GENERIC_READ）
+        .read(true)
         .append(true)
-        .open(&path)
+        .open(path)
         .map_err(|e| e.to_string())?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+    if len > 0 {
+        file.seek(SeekFrom::End(-1)).map_err(|e| e.to_string())?;
+        let mut last = [0u8; 1];
+        file.read_exact(&mut last).map_err(|e| e.to_string())?;
+        // 追加模式下的写**永远落在文件末尾**，所以补的这个换行正好接在残尾后面
+        if last[0] != b'\n' {
+            file.write_all(b"\n").map_err(|e| e.to_string())?;
+        }
+    }
     writeln!(file, "{}", content).map_err(|e| e.to_string())?;
+    // 写成功不等于落盘：没有这一步，"已返回成功"的记录可能在崩溃后消失
+    file.sync_all().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+async fn append_file(path: String, content: String) -> Result<(), String> {
+    append_file_impl(std::path::Path::new(&path), &content)
 }
 
 #[tauri::command]
@@ -3614,5 +3656,101 @@ mod delete_tests {
                 assert!(message.contains("回收站"), "失败信息应说明回收站路径: {}", message);
             }
         }
+    }
+}
+
+/// 第 94 波：`append_file` 的**换行守卫**（真实数据丢失那个缺陷的判据）。
+///
+/// 判据形态就是交接单 §3.4 里写的那一条：**写 2 条完整行 + 半截尾行 → 再 append 一条
+/// → 断言那条仍然可读**（也就是它没有被粘到残尾上变成"一条坏行里裹着两条记录"）。
+///
+/// 变异自证：删掉 `if last[0] != b'\n' { file.write_all(b"\n")… }` 那三行 ⇒
+/// `appending_after_a_torn_tail_keeps_the_new_record_readable` 必须失败
+/// （最后一行会变成 `{"id":"m2",…{"id":"m3",…}`，按行 JSON.parse 全部失败）。
+#[cfg(test)]
+mod append_file_tests {
+    use super::*;
+
+    fn temp_file(name: &str, content: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("codem-append-{}-{}", name, std::process::id()));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let path = dir.join("session.jsonl");
+        std::fs::write(&path, content).expect("写临时文件");
+        path
+    }
+
+    /// 把文件按行切开，**逐行** JSON.parse —— 这就是读侧的判据（坏行会被丢掉）。
+    fn parsed_ids(path: &std::path::Path) -> (Vec<String>, usize) {
+        let raw = std::fs::read_to_string(path).expect("读回文件");
+        let mut ids = Vec::new();
+        let mut bad = 0usize;
+        for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+            match serde_json::from_str::<serde_json::Value>(line) {
+                Ok(v) => match v.get("id").and_then(|x| x.as_str()) {
+                    Some(id) => ids.push(id.to_string()),
+                    None => bad += 1,
+                },
+                Err(_) => bad += 1,
+            }
+        }
+        (ids, bad)
+    }
+
+    /// 反向对照：干净文件（以换行结尾）上追加 —— 不能因为加了守卫就多出空行/多写字节。
+    #[test]
+    fn appending_to_a_clean_file_stays_line_separated() {
+        let path = temp_file("clean", b"{\"id\":\"m1\"}\n{\"id\":\"m2\"}\n");
+        append_file_impl(&path, "{\"id\":\"m3\"}").expect("追加必须成功");
+        let (ids, bad) = parsed_ids(&path);
+        assert_eq!(bad, 0, "干净文件上追加不该产生坏行");
+        assert_eq!(ids, vec!["m1", "m2", "m3"]);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(raw, "{\"id\":\"m1\"}\n{\"id\":\"m2\"}\n{\"id\":\"m3\"}\n", "逐字节形状");
+    }
+
+    /// **主判据**：文件尾是半截行（没有换行）时，新追加的记录必须**自成一行且可读**。
+    #[test]
+    fn appending_after_a_torn_tail_keeps_the_new_record_readable() {
+        // 2 条完整行 + 1 条崩溃留下的半截尾行（没有结尾换行）
+        let path = temp_file(
+            "torn",
+            b"{\"id\":\"m1\"}\n{\"id\":\"m2\"}\n{\"id\":\"m3\",\"conte",
+        );
+        append_file_impl(&path, "{\"id\":\"m4\"}").expect("追加必须成功");
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        // 残尾自己仍然是坏行（该丢），但它**不能**把 m4 拖下水
+        let lines: Vec<&str> = raw.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 4, "补了换行之后新记录应当独占一行；实际：{raw:?}");
+        assert_eq!(lines[2], "{\"id\":\"m3\",\"conte", "残尾保持原样（不伪造它完整）");
+        assert_eq!(lines[3], "{\"id\":\"m4\"}", "新记录必须自成一行");
+
+        let (ids, bad) = parsed_ids(&path);
+        assert_eq!(bad, 1, "只有那一条残尾是坏行");
+        assert_eq!(ids, vec!["m1", "m2", "m4"], "**m4 必须仍然可读**（旧实现里它会和残尾粘成一条坏行，被永久丢掉）");
+    }
+
+    /// 空文件 / 只有一条记录：不该多补换行（否则每行前面多一个空行）。
+    #[test]
+    fn empty_and_single_line_files_are_not_padded() {
+        let empty = temp_file("empty", b"");
+        append_file_impl(&empty, "{\"id\":\"a\"}").expect("空文件追加");
+        assert_eq!(std::fs::read_to_string(&empty).unwrap(), "{\"id\":\"a\"}\n");
+
+        let single = temp_file("single", b"{\"id\":\"a\"}");
+        append_file_impl(&single, "{\"id\":\"b\"}").expect("无换行尾追加");
+        assert_eq!(std::fs::read_to_string(&single).unwrap(), "{\"id\":\"a\"}\n{\"id\":\"b\"}\n");
+    }
+
+    /// **连追加**：多字节 UTF-8 内容也不许被切开（残尾可能正好停在一个多字节字符中间）。
+    #[test]
+    fn repeated_appends_survive_multibyte_content() {
+        let path = temp_file("utf8", "{\"id\":\"m1\",\"content\":\"中文内容\"}".as_bytes());
+        for i in 2..5 {
+            append_file_impl(&path, &format!("{{\"id\":\"m{i}\",\"content\":\"中文 {i}\"}}")).expect("追加");
+        }
+        let (ids, bad) = parsed_ids(&path);
+        assert_eq!(bad, 0, "整条写入的记录不该产生坏行");
+        assert_eq!(ids, vec!["m1", "m2", "m3", "m4"]);
     }
 }

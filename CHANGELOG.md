@@ -2,6 +2,34 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.225] - 2026-10-03
+
+### 修复
+
+- **`append_file` 不检查尾换行 ⇒ 一条**合法记录**会被永久删除（真实数据丢失）。**
+  证据链：Rust 的 `append_file` 是 `OpenOptions::append(true)` + `writeln!`，**从不检查文件是否以换行结尾**，
+  也没有 `sync_all()`（同文件的 `write_file` 一直有）。崩溃留下的**半截尾行**会让**下一条记录粘在同一行**上：
+  `{"id":"m3","conte{"id":"m4",…}` ⇒ 整行 `JSON.parse` 失败；而读侧（`readSessionMessages`）与压缩
+  （`compactSessionLog`）都把解析不了的行**直接丢掉**，压缩的安全闸门只比行数
+  （`linesAfter < linesBefore`）⇒ **看不见「一行坏行里裹着一条合法记录」** ⇒ 那条**真的被写入过**的消息
+  被**永久删除**；而 `skippedLines` 在生产代码里没有任何消费者 ⇒「半截行」事实上**不可见**。
+  修法分两头：**写侧**（`append_file_impl`）追加前先看最后一个字节，不是 `\n` 就先补一个（残尾自己仍然是坏行，
+  但它不再能拖累下一条），并补上 `sync_all()`；**读侧**新增 `tornTailLines` / `salvagedLines`
+  —— 残尾要被看见、粘在残尾后面的合法记录要**抢救回来**（压缩时同样抢救），并在生产代码里打一条 warn。
+  判据：Rust `append_file_tests`（4 条，含交接单 §3.4 那条「2 条完整行 + 半截尾行 → 再 append → 新记录仍可读」）；
+  TS `session-log-torn-tail.test.ts`（4 条：残尾可识别 / **粘住的那条必须救回** / 压缩不许删掉它 / 干净日志反向对照）。
+  **变异自证**：关掉换行守卫 ⇒ Rust 3 条红（实际内容 `{"id":"m3","conte{"id":"m4"}`）；
+  关掉 `salvageGluedRecord` ⇒ TS 的 TORN-B/C 红。
+- **循环被「非正常」停下时，用量/成本记账把它记成了一次成功调用。**
+  `runLoopAndRecordUsage` 里的判据原来**只认两种形状**：`{ type: "error" }` 与 `reason === "too_many_errors"`。
+  于是 `plan_stale`（循环被停滞守卫杀掉）、`repeat_guard`、`output_truncated`、`context_overflow`、
+  `no_progress`、`max_iterations`、`safety_valve`、成本上限……**全部被记成成功** ——
+  与用户报的「任务提前停掉，然后说完成了」是同一个病，只是在**用量面板**这一侧呈现（上一版修的是界面那一侧）。
+  现在判据统一交给纯函数 `describeTurnOutcome`：只有 `kind === "completed"` 才算成功。
+  判据 `usage-non-completion.test.ts`（6 条，**驱动真实记账路径** `runLoopAndRecordUsage`，
+  含 `too_many_errors` / `error:` 两条回归锁与 `completed` 反向对照）；
+  **变异自证**：换回旧口径 ⇒ 4 条红。
+
 ## [1.16.224] - 2026-10-03
 
 ### 修复

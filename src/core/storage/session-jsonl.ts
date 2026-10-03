@@ -415,7 +415,7 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
  */
 export async function forEachLogLine(
   path: string,
-  cb: (line: string) => boolean | void,
+  cb: (line: string, meta: { unterminated: boolean }) => boolean | void,
 ): Promise<{ lines: number; stopped: boolean }> {
   let offset = 0;
   let lines = 0;
@@ -426,10 +426,20 @@ export async function forEachLogLine(
       // 文件末尾未换行的最后一行**不带** "\n"，split 后是正常元素，会被保留。
       const parts = w.text.split("\n");
       const last = parts.length - 1;
+      /**
+       * 第 94 波：**残尾**（torn tail）要能被认出来。
+       *
+       * 只有"到了文件末尾、且最后一个字节不是换行"时，最后那一行才是残尾
+       * （崩在写入中途留下的半截 JSON）。非末尾的窗口按契约只含完整行。
+       * 读侧据此**上报**而不是只把它算进坏行 —— 见 `readSessionMessages` 与
+       * `salvageGluedRecord`：残尾后面粘着的那条**合法记录**必须被抢救回来。
+       */
+      const endsWithNewline = w.text.endsWith("\n");
       for (let i = 0; i < parts.length; i++) {
         if (i === last && parts[i] === "") continue;
+        const unterminated = w.eof && i === last && !endsWithNewline;
         lines++;
-        if (cb(parts[i]) === false) return { lines, stopped: true };
+        if (cb(parts[i], { unterminated }) === false) return { lines, stopped: true };
       }
     }
     offset = w.nextOffset;
@@ -448,19 +458,65 @@ export async function forEachLogLine(
 }
 
 /**
- * 读取会话日志：按 id 后写者胜，**坏行**跳过并计数。
+ * 从一条**解析不了的行**里，抢救出"粘在残尾后面的那条完整记录"（第 94 波）。
  *
- * ## 什么算"坏行"，什么必须**上抛**（第 103+ 轮把这条界限写清楚）
+ * ## 为什么需要它（真实数据丢失）
+ *
+ * Rust 侧的 `append_file` 原来不检查文件是否以换行结尾，崩在写入中途留下的**半截尾行**
+ * 会把下一条记录粘在同一行上：
+ *
+ * ```text
+ * {"id":"m3","conte{"id":"m4",...}     ← 一条坏行里**裹着一条合法记录**
+ * ```
+ *
+ * 读侧与压缩都把这条行整个丢掉，而压缩的安全闸门只比行数（`linesAfter < linesBefore`）
+ * ⇒ **看不见"一行坏行里裹着一条合法记录"** ⇒ 那条合法记录被**永久删除**。
+ * 写侧（`append_file_impl` 的换行守卫）已经不让新的粘连发生；这里负责**把已经粘上的救回来**。
+ *
+ * ## 判据（刻意窄，宁可救不回来也不误收）
+ *
+ * - 只在**整行解析失败**时调用（调用方保证）；
+ * - 只从 `{"` 处开始尝试（日志里每条记录都是对象字面量开头），从左到右最多试 `MAX_CANDIDATES` 次；
+ * - 抢救出来的对象必须**有 `string` 类型的 `id`**，且版本校验通过（与正常行同一道门）。
+ *
+ * @returns 抢救到的记录，以及它在行内的起始下标（便于日志里说清"粘在哪"）；救不回来返回 null
+ */
+export function salvageGluedRecord(line: string): { record: JsonlMessageRecord; offset: number } | null {
+  const MAX_CANDIDATES = 8;
+  let from = line.indexOf('{"', 1);
+  for (let tried = 0; from >= 0 && tried < MAX_CANDIDATES; tried++) {
+    const tail = line.slice(from);
+    try {
+      const parsed = JSON.parse(tail) as JsonlMessageRecord;
+      if (parsed && typeof parsed.id === "string") return { record: parsed, offset: from };
+    } catch {
+      /* 这个位置不是（完整的）记录开头，继续往右找 */
+    }
+    from = line.indexOf('{"', from + 1);
+  }
+  return null;
+}
+
+/** 已经就"这个会话的日志有残尾/坏行"提醒过的会话（避免每次读都刷一行） */
+const tornTailWarned = new Set<string>();
+
+/**
+ * 读取会话日志：按 id 后写者胜，**坏行**跳过并计数；残尾后面的合法记录**抢救回来**。
+ *
+ * ## 什么算"坏行"，什么必须**上抛**（第 103+ 轮把这条界限写清楚；第 94 波补两行）
  *
  * | 情形 | 处置 | 为什么 |
  * | --- | --- | --- |
  * | 空行 / `JSON.parse` 失败 / 没有 `string` id | `skippedLines++`，跳过该行 | 崩在写入中途最多丢最后一行，前面全部可读（本文件头的设计承诺） |
+ * | **无换行的最后一行**（残尾） | `tornTailLines++`（**并且会打一条 warn**） | 第 94 波：半截行原来**完全不可见**（`skippedLines` 在生产里没有消费者）⇒ 没人知道日志被崩断过 |
+ * | **残尾后面粘着的合法记录** | `salvagedLines++`，**当正常记录收下** | 第 94 波：原来它随那条坏行一起被丢掉 ⇒ **永久删除一条真实消息**（写侧的换行守卫负责不再产生新的，这里负责把已有的救回来） |
  * | 行的 `v` **高于** `LINE_VERSION` | 抛 `SessionLogVersionError`（`E_SESSION_LOG_VERSION`） | 更新版本写的日志本版本读不懂：按"坏行跳过"会把它读成**没有内容**，再被"日志权威 + 读覆盖索引 + 重建按日志落库"**固化**成用户数据（静默降级） |
  * | 文件不存在 | 返回空结果 | 新会话 / 老会话尚未回填，这是正常形态 |
  * | 其它读失败（IPC / 权限 / 磁盘） | 照原样抛出 | 读不到 ≠ 没有数据（第 50 轮的纪律，见下面 catch 的长注释） |
  *
- * @returns messages 与 skippedLines（坏行数）。⚠️ `skippedLines` 目前**只有测试消费**
- *          （`src/` 里没有任何生产调用点读它）—— 它还不是一条能被发现的信号，见报告。
+ * @returns messages / skippedLines（坏行数）/ tornTailLines（残尾行数）/ salvagedLines（从坏行里救回来的记录数）。
+ *          第 94 波：残尾与抢救**都会在生产代码里打 warn**（原来 `skippedLines` 只有测试消费，
+ *          于是"半截行"事实上不可见 —— 见文件头的登记）。
  * @throws {SessionLogVersionError} 日志行的格式版本高于本进程支持的版本
  */
 /**
@@ -501,10 +557,20 @@ function isFileMissingError(e: unknown): boolean {
   );
 }
 
-export async function readSessionMessages(
-  sessionId: string,
-): Promise<{ messages: JsonlMessageRecord[]; skippedLines: number }> {
-  const result: { messages: JsonlMessageRecord[]; skippedLines: number } = { messages: [], skippedLines: 0 };
+export async function readSessionMessages(sessionId: string): Promise<{
+  messages: JsonlMessageRecord[];
+  skippedLines: number;
+  tornTailLines: number;
+  salvagedLines: number;
+}> {
+  const result = {
+    messages: [] as JsonlMessageRecord[],
+    skippedLines: 0,
+    /** 第 94 波：文件末尾**没有换行**的那一行（崩断留下的半截记录） */
+    tornTailLines: 0,
+    /** 第 94 波：从坏行里抢救回来的合法记录数（残尾粘住了下一条） */
+    salvagedLines: 0,
+  };
   const path = await sessionLogPath(sessionId);
   const byId = new Map<string, JsonlMessageRecord>();
   const tombstones = new Set<string>();
@@ -517,7 +583,7 @@ export async function readSessionMessages(
      * （上层"回退到索引"、回填跳过、压缩静默失效，详见 `forEachLogLine` 的注释）。
      * 现在按 8 MB 窗口循环消费，语义（后写者胜 / 墓碑 / 坏行计数）一字未改。
      */
-    await forEachLogLine(path, (line) => {
+    await forEachLogLine(path, (line, meta) => {
       const trimmed = line.trim();
       if (!trimmed) return;
       /**
@@ -532,14 +598,34 @@ export async function readSessionMessages(
        * （穿过 `forEachLogLine` → 下面那个 catch 判为"不是文件不存在" → 照原样上抛
        *  → `hydrateSessionLog` 记 `failed`，界面说"读不到"并给重试，而不是欢迎页）。
        */
-      let parsed: JsonlMessageRecord;
+      let parsed: JsonlMessageRecord | null = null;
       try {
         parsed = JSON.parse(trimmed) as JsonlMessageRecord;
       } catch {
-        result.skippedLines++;
-        return;
+        parsed = null;
       }
-      if (!parsed || typeof parsed.id !== "string") {
+      /**
+       * 第 94 波：解析不了的行**先试着抢救**"粘在残尾后面的那条合法记录"。
+       *
+       * 残尾（崩断的半截行）本身该丢；但它后面粘着的那条是**真实写入过的记录**，
+       * 原来会跟着一起被永久丢掉（压缩那道"只比行数"的闸门看不见这种形态）。
+       */
+      if (parsed === null || typeof (parsed as JsonlMessageRecord).id !== "string") {
+        // 文件末尾没有换行 ⇒ 这一行是**残尾**（崩在写入中途）：先如实计数，再试着抢救
+        if (meta?.unterminated) result.tornTailLines++;
+        const salvaged = salvageGluedRecord(trimmed);
+        if (salvaged) {
+          assertReadableLogVersion(salvaged.record);
+          result.salvagedLines++;
+          if (salvaged.record.deleted) {
+            tombstones.add(salvaged.record.id);
+            byId.delete(salvaged.record.id);
+            return;
+          }
+          tombstones.delete(salvaged.record.id);
+          byId.set(salvaged.record.id, salvaged.record);
+          return;
+        }
         result.skippedLines++;
         return;
       }
@@ -577,6 +663,24 @@ export async function readSessionMessages(
      */
     if (isFileMissingError(e)) return result; // 还没有日志：正常（老会话尚未回填）
     throw e;
+  }
+  /**
+   * 第 94 波：让"日志被崩断过"**可见**。
+   *
+   * 原来 `skippedLines` 在生产代码里**没有任何消费者**，于是"半截行"事实上不可见 ——
+   * 没人知道这个会话的权威副本断过、更没人知道有没有记录因此被丢。
+   * 现在残尾与"抢救回来的记录"都在这里留一条 warn（同一会话只报一次，避免刷屏）。
+   */
+  if ((result.tornTailLines > 0 || result.salvagedLines > 0) && !tornTailWarned.has(sessionId)) {
+    tornTailWarned.add(sessionId);
+    console.warn(
+      `[SessionJSONL] 会话 ${sessionId} 的日志有**残尾**（文件末尾没有换行 = 崩在写入中途）：` +
+        `残尾行 ${result.tornTailLines} 条、从坏行里**救回**了 ${result.salvagedLines} 条记录、` +
+        `另有坏行 ${result.skippedLines} 条。` +
+        (result.salvagedLines > 0
+          ? "若没有这次抢救，那些记录会被**永久删除**（写侧的换行守卫已不再产生新的粘连）。"
+          : "（残尾本身按坏行丢弃是正确的：它是一条没写完的记录。）"),
+    );
   }
   result.messages = [...byId.values()]
     .filter((m) => !tombstones.has(m.id))
@@ -857,6 +961,8 @@ export async function compactSessionLog(
        */
       const lastById = new Map<string, string>();
       let linesBefore = 0;
+      /** 第 94 波：压缩时也别把"粘在残尾后面的合法记录"丢掉 */
+      let salvagedDuringCompact = 0;
       try {
         await forEachLogLine(path, (line) => {
           if (!line.trim()) return;
@@ -865,7 +971,16 @@ export async function compactSessionLog(
             const parsed = JSON.parse(line) as JsonlMessageRecord;
             if (parsed && typeof parsed.id === "string") lastById.set(parsed.id, line);
           } catch {
-            /* 坏行在压缩时被丢弃（它本来也读不出来） */
+            /**
+             * 坏了就**先试着抢救**：残尾粘住的那条是真实写入过的记录，
+             * 而压缩是"读出来再整体覆盖写回"—— 在这里丢掉就是**永久**丢掉
+             * （`linesAfter < linesBefore` 那道闸门看不见"一行里裹着一条"）。
+             */
+            const salvaged = salvageGluedRecord(line);
+            if (salvaged) {
+              lastById.set(salvaged.record.id, JSON.stringify(salvaged.record));
+              salvagedDuringCompact++;
+            }
           }
         });
       } catch (e) {
@@ -906,8 +1021,20 @@ export async function compactSessionLog(
       if (linesBefore < MIN_LOG_LINES_TO_COMPACT) return out;
 
       out.linesAfter = lastById.size;
-      // 安全性检查：压缩只应减少"被取代的旧行"，不能少于唯一 id 数
+      /**
+       * 安全性检查：压缩只应减少"被取代的旧行"，不能少于唯一 id 数。
+       *
+       * ⚠️ 第 94 波的补充说明（不是改判据，是把边界写清）：这道闸门只比**行数**，
+       * 所以它**看不见**"一行坏行里裹着一条合法记录" —— 那种丢失由
+       * `salvageGluedRecord` 在上面的读循环里挡住（救回来的会作为一行写回）。
+       */
       if (out.linesAfter === 0 || out.linesAfter >= linesBefore) return out;
+      if (salvagedDuringCompact > 0) {
+        console.warn(
+          `[SessionJSONL] 会话 ${sessionId} 压缩时从坏行里**救回**了 ${salvagedDuringCompact} 条记录` +
+            `（残尾粘住了下一条；不救就会被这次覆盖写永久删掉）`,
+        );
+      }
 
       const tmp = `${path}.tmp`;
       await writeFile(tmp, [...lastById.values()].join("\n") + "\n");

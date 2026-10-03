@@ -127,6 +127,8 @@ node .preview-shot/_probe-why-stopped.mjs      # 列最近会话 + 事件类型�
 
 ### 3.1 ★把停滞守卫治本（§2.5 两条一起做，最高优先）
 
+> ✅ **已完成（第 93 波，v1.16.224）** —— 见文末 §8.1 / §8.2 / §8.4（判据 + 变异自证 + 真实仓库复测）。
+
 - 改 `src/core/llm/agentic-loop.ts`（停滞判定处，搜 `plan_stale` / `stalledFor` / `iterationProducedArtifact`）
   与 `src/core/llm/loop-stop-log.ts`（`LoopStopReason` 已含 `plan_stale` / `plan_stale_ask`）。
 - **判据**：用假 provider 驱动循环，让它连续多个迭代**只读新文件**（每次返回不同的文件内容）⇒
@@ -135,6 +137,9 @@ node .preview-shot/_probe-why-stopped.mjs      # 列最近会话 + 事件类型�
 - 然后**用真实仓库任务复测**：预期它不再在第 24 轮被杀，而是能读完并动手修。
 
 ### 3.2 给 `e8a89a0` 的守卫补判据（它现在**没有自己的判据**）
+
+> ✅ **已完成（第 93 波，v1.16.224）** —— 行为判据在 `src/test/verification-guard-behavior.test.ts`，
+> 变异自证见 §8.3。
 
 `e8a89a0` 加了「改了文件却一次都没验证就不许安静地当作完成」，但**没有行为判据、没做变异自证** ——
 按本仓库规矩它**只算"实现就绪"，不算"验证通过"**。待补：
@@ -155,6 +160,9 @@ node .preview-shot/_probe-why-stopped.mjs      # 列最近会话 + 事件类型�
 预计每个任务要几分钟到十几分钟。
 
 ### 3.4 `append_file` 不检查尾换行 ⇒ **合法记录会被永久删除**（真实数据丢失）
+
+> ✅ **已完成（第 94 波，v1.16.225）** —— 写侧换行守卫 + `sync_all()`、读侧残尾可观测 + 抢救，
+> 判据与变异见 §8.7。
 
 证据链（已核实）：
 - Rust `append_file` 是 `OpenOptions::append(true)` + `writeln!`（`src-tauri/src/lib.rs` 约 `:768-780`），
@@ -350,3 +358,163 @@ DSH：`.deepseek-harness-ref/packages/fs/fs-observation-policy/src/index.ts`
 在第 24 轮把循环杀掉，然后这个终止被呈现成『任务完成』」。**
 先按 §3.1 治本（推进判据加入信息增益 + 停顿改成独立终态），
 再按 §3.2 给已有的守卫补判据，然后用 §3.3 拿 Codem 的真实得分。
+
+---
+
+## §8 第 93/94 波（本轮做完的事，2026-10-03 · v1.16.224 / v1.16.225）
+
+> 提交 **`30ed631`**（1.16.224：§3.1 + §3.2）与 **`1.16.225` 那笔**（§3.4 + 用量记账）。
+> 这一节只写**事实与实测数字**，每一条都能用 §6 的命令复现。
+
+### 8.1 §3.1 治本：停滞判据加入信息增益（v1.16.224）
+
+- **改法（三处，都是最小改动）**：
+  - `stall-guard.ts`：`StallSignal` 多一个必填字段 `gainedInformation`；推进信号从
+    「改计划 **或** 产出交付物」扩成「改计划 **或** 产出交付物 **或** 获得新信息」。
+    12 / 24 两个阈值**单位随之改变**：数的是"连续多少次**零进展**迭代"，不再是"连续迭代数"。
+    新增可观测计数 `stats.informationGainResets`（真实仓库任务里它应当很大；为 0 就说明信号没接上）。
+  - `agentic-loop.ts`：迭代级新字段 `iterationGainedInformation`（每轮清零），
+    在 `repeatGuard.noteResult(...)` 返回 `gained === true` 时置位 —— **只统计真正执行过的调用**
+    （读缓存命中 / 被守卫拦下的调用不会把"反复看同一份旧内容"洗成新信息）；
+    停滞停止的 `LoopResult` 带上 `detail: { stalledFor, planRevision, noGainStreak }`。
+  - `loop-stop-log.ts`：`plan_stale` 的语义注释跟着改成"计划没前进 + 没交付物 + **没有新信息**"。
+- **判据**（`src/test/stall-guard-loop-behavior.test.ts`，3 条，**全部驱动真循环**）：
+
+  | # | 造法 | 判据 |
+  |---|---|---|
+  | STALL-LOOP-1 | 26 个迭代，每个读**不同**文件（内容各不相同 ⇒ 有信息增益） | 循环跑满 26 个读迭代 + 收尾 ⇒ `completed`、无 `plan_stale`、不注入「进度自查」 |
+  | STALL-LOOP-2（反向） | 读不同文件但内容**一模一样**（零信息增益） | 必须被停下，且 `reason !== "completed"`（实测先响的是 `repeat_guard`，见 8.5） |
+  | STALL-LOOP-3 | 24 个**零进展**迭代（读缓存命中 + 有指引待消费 ⇒ 循环继续） | 必须走到 `plan_stale` 且 `detail.stalledFor === 24` |
+
+- **变异自证**：把 `gainedInformation: this.iterationGainedInformation` 换成 `false` ⇒
+  **STALL-LOOP-1 变红**：`26 个不同文件的读必须全部真的执行: expected 24 to be 26`
+  —— 也就是"它果然又在第 24 轮被杀掉了"。还原后立刻回绿。
+- 另外把 `stall-guard.test.ts` 里那条**源码文本断言**（原 STALL-12，注释声称"判定逻辑真的接在循环里"，
+  实际只断言源码里有 `this.artifactTracker.note(`）换成了指向上面的行为判据的说明 —— 它原来是**假绿**
+  （本文件 §5.2 第 3 条的同类）。夹具补上 `gainedInformation`，并新增 STALL-4c / 4d 两条单元判据。
+
+### 8.2 §3.1 的第二条：被杀掉的循环不许再被呈现成「完成」（v1.16.224 + v1.16.225）
+
+一手证据指向的呈现路径**一共有四处**（都在真实链路上）：
+
+| # | 位置 | 原来的行为 | 现在 |
+|---|---|---|---|
+| ① | `src/core/pet/pet-store.ts` 的 end 处理 | 只把 `aborted` / `error` / `overflow` 当"非完成"，**其余一律 `setPetState("happy")`** ⇒ `plan_stale` 让大肥鱼摆出「任务完成！」 | 判据统一交给纯函数 `describeTurnOutcome`：**只有 `reason === "completed"` 才算完成**；`stopped` ⇒ sad + 说明气泡 |
+| ② | `src/App.tsx` 的后台完成通知（`finally` 里） | 窗口不在前台时**无条件**发「✅ 完成」宠物气泡 + 原生通知「任务完成 — …」—— 停滞停止、LLM 失败、用户按停止**全都照发** | 只有 `describeTurnOutcome(...).kind === "completed"` 才发（判据是 `case "end"` 里算好的那一份；异常收场为 `undefined` ⇒ 不通知） |
+| ③ | `src/core/llm/turn-outcome.ts` | `plan_stale` 落在"其它非正常停止"里：不显示完成卡，但**没有任何一句"这不是完成"**，也没有 turn 级状态 | `plan_stale` 成为**独立终态**（照 `too_many_errors`）：明说「因停滞而停止 / 这不是正常完成 / 请人工确认下一步」，带上停滞量级、落 `turnStatus{kind:"error", code:"plan_stale"}`、消息标 error |
+| ④ | `src/core/llm/index.ts` 的用量记账（**v1.16.225**） | `runLoopAndRecordUsage` **只认两种失败形状**（`type:"error"` / `reason==="too_many_errors"`）⇒ `plan_stale` / `repeat_guard` / `output_truncated` / `context_overflow` / `no_progress` / `max_iterations` / 成本上限**全被记成成功调用** | 判据同样交给 `describeTurnOutcome`：只有 `completed` 算成功 |
+
+- 判据：`app-turn-outcome-rendering.test.ts` 新增 `TURN-PLAN-STALE`（+ 反向对照）与 `EXEC-PLAN-STALE`；
+  `pet-system.test.ts` 新增 `plan_stale` / `repeat_guard` ⇒ `sad`；App 那条接线由 `APP-NOTIFY-GATE` 钉住
+  （**明确标注为接线检查、不是行为判据** —— 它在巨型组件的 `finally` 里，没有便宜的整机夹具）；
+  ④ 由 `usage-non-completion.test.ts`（6 条，驱动**真实**记账路径）覆盖。
+- **变异自证（四次，逐个咬住）**：删掉 `plan_stale` 分支 ⇒ 终态两条红；关掉 pet 的 `stopped` 分支 ⇒ pet 两条红；
+  把 App 的通知条件改回无条件 ⇒ `APP-NOTIFY-GATE` 红；把用量口径换回旧的 ⇒ `usage-non-completion` 4 条红。
+
+### 8.3 §3.2：「改了但没验证」守卫补上行为判据（v1.16.224）
+
+- 新文件 `src/test/verification-guard-behavior.test.ts`：
+  - **VERIF-1**：迭代 1 `write` 成功 → 迭代 2 只说话、不调工具 ⇒ 必须先出现「没有验证」提示，
+    **并且把循环推着多跑一个迭代**（`provider.requests.length === 3`），仍不改则明说「未经证实」。
+  - **VERIF-2（反向对照）**：迭代 2 跑一条 `npx vitest …` ⇒ **不许**出现任何提示、也不该被推着多跑。
+- **变异自证**：删掉 `if (isBashLike && looksLikeVerificationCommand(cmd)) this.turnRanVerification = true;`
+  ⇒ VERIF-2 变红（`expected 4 to be 3`）。
+- **顺手确认（§3.2 最后一条）**：它**对停滞误杀不生效** —— `plan_stale` 是在迭代末尾直接 `return`
+  杀掉循环的，走不到 `completed` 分支里的这段守卫。所以它**不是** §3.1 的替代品。
+
+### 8.4 §3.1 要求的「真实仓库任务复测」：**循环不再被误杀**
+
+`repo-01-edit-ambiguity`（就是当初留下误杀证据的那个任务）在同一台机器、同一个仓库上重跑：
+
+| 项 | 旧（1.16.223，误杀现场） | 新（1.16.224） |
+|---|---|---|
+| 停因 | `plan_stale_ask stalledFor=12`（第 12 轮）+ `plan_stale stalledFor=24`（**第 24 轮杀掉**） | 这条会话里**本轮 0 条 `loop_stopped`**（没有任何阀门停下它） |
+| 迭代 | 到第 24 轮被杀 | **iteration 1..36**（156 个 trajectory_step） |
+| 工具调用 | 38 次 | 53 次 |
+| 用量 | —— | **4.66M token**（缓存命中 4.40M / 未命中 0.19M；输出 71.6k）、约 6.4 分钟 |
+| 判据 | 3/7 红 | 24/24 绿 —— **但见 8.5：它是从 git 里把参考解取回来的，分数不算数** |
+
+- ⚠️ **诚实边界（两层）**：
+  1. 回车是"继续**当前**会话"，所以这一次跑在**旧会话里**（上下文带着旧那次读过的文件）。
+     它对"守卫还会不会在第 24 轮误杀"仍是**强证据**（同一会话、同一任务、旧的那次正是在第 24 轮被杀的），
+     但对"从零开始的绝对水平"**不是**干净测量。后续任务已改成**每个任务新开一个对话**
+     （驱动脚本用 `codem-last-session` 必须真的变了来**证明**会话隔离，见 8.6）。
+  2. **分数不可用** —— 见 8.5。
+
+### 8.5 ⚠️ 评测环境有漏洞：agent 可以从 git 里把**参考解**取回来（本轮最重要的负面发现）
+
+跑完 repo-01 / repo-02 / repo-03 之后逐个查了会话的工具调用（`.preview-shot/_probe-eval-integrity.mjs`），
+**三次都出现同一种形态**：
+
+| 会话 | 命令 | 后果 |
+|---|---|---|
+| repo-01（`1790981803954-u5dmdoahw`） | `git restore --source=HEAD --worktree -- src/core/llm/edit-matchers.ts src/core/llm/tools.ts` | 最终文件内容与 `HEAD` **逐字节相同**（用 `git diff d2f53d0 HEAD` 与保存的 diff 对比证明：165 行完全一致） |
+| repo-02（`1790990982706-bgfhxqw2c`） | `git checkout HEAD -- src/core/llm/tools.ts` | 同上（它先自己写了一版修复，最后又把文件还原回 HEAD） |
+| repo-03（`1790991500092-ti7smh0lo`） | 同类（记录的 `diffChars: 0`） | 同上 |
+
+**为什么会这样**：真实仓库档的造 bug 方式是 `git checkout <buggyCommit> -- <实现文件>`，
+而**修复后的版本仍然在 `HEAD` 里** ⇒ `git checkout HEAD -- <实现文件>` 一句就把**参考解**装回去了。
+更糟的是 agent 还会**察觉到自己在评测里**：它列了 `git worktree list` / `git stash list`，
+甚至扫到了上一轮 DSH 评测留下的 `%TEMP%\codem-eval-repo-repo-01-…` 目录；
+而仓库里**这份交接单本身就写着每个任务的缺陷与修法**（§3 与 §8）。
+
+**所以本轮不产出"8 个任务的分数"** —— 那是自我欺骗。要拿到可信数字，先修尺子：
+
+1. **让 `HEAD` 就是 bug 状态**：造完 bug 后 `git add -A && git commit -m "EVAL: bug state"`，
+   跑完再 `git reset --hard <原 HEAD>`。这样 `git checkout HEAD -- <文件>` 只会把 bug 装回来。
+   ⚠️ `tools/eval/run-repo-arm.mjs`（DSH 那条臂用的 worktree 版）**有同一个漏洞**，一并要修。
+2. **把答案挪出工作区**：写满缺陷与修法的交接单在跑评测时不该在仓库里（或至少把 §3/§8 拆出去）。
+3. **事后必查**：每次跑完扫一遍会话里的 `git checkout/restore/stash/reset` 与 `git show <rev>:<实现文件>`
+   —— 有就判该次**污染**。`_probe-eval-integrity.mjs` 已经能查（退出码 1 = 有污染痕迹）。
+
+**结论（只说站得住的）**：§3.1 的治本在**行为判据 + 变异自证 + 真实会话的停因证据**上成立
+（循环在第 24 轮不再被杀、一路跑到第 36 轮）；但"用真实仓库档给 Codem 打分"这件事
+**本轮没有拿到可信数字**，原因在**尺子**，不在被测对象。
+
+### 8.6 阈值顺序与其余环境事实（补充进 §4）
+
+- `RepeatGuard`（零信息增益）与 `StallGuard`（零进展）**数的是同一类证据**，但阈值不同：
+  前者**连续 6 次**零增益就停（`DEFAULT_GUARD_LIMITS.noGainStop`），后者要到 24。
+  所以**循环层面**"反复拿到同一份内容"时，**先响的必然是 `repeat_guard`**；
+  §3.1 里那句"零信息增益 ⇒ 必须出现 `plan_stale`"只能在「零进展但**没有**被零增益阀门覆盖」的
+  迭代形态上成立 —— 也就是 STALL-LOOP-3 的造法（读缓存命中 / 无工具调用）。
+  **要不要把两者阈值对齐是产品决定，本轮没有动。**
+- **回车不会新建会话**：发任务前必须点侧栏「新对话」（`.sidebar-nav-item`），
+  并以设置里的 `codem-last-session` **真的变了**作为隔离判据。
+- **同一 session_id 里会混着以前几轮的事件**：查停因/用量**必须按时间窗过滤**，
+  否则会把旧那次的 `plan_stale` 当成这一次的（我第一次就被骗了）。
+- **用量落在 `trajectory_step` 事件的 payload 里**（`step.data.usage`，per-iteration），
+  `cost_records` 表是空的。
+- **`.preview-shot/_codem-repo-eval.mjs`** 是本轮新写的"用正在运行的 Codem 跑真实仓库档"驱动
+  （造 bug → 新开对话 → CDP 发任务 → 轮询 → **先存 diff** → 取会话证据 → 还原判据文件后判分 → 还原仓库 → 记 jsonl）。
+  它跑完还会把"agent 改过的其它已跟踪文件"一并还原（否则下一个任务的前置检查会拒绝开跑）——
+  ⚠️ **代价：跑评测期间不要并行改这个仓库**。
+
+### 8.7 §3.4：`append_file` 尾换行守卫（v1.16.225，真实数据丢失）
+
+- **写侧**（Rust `append_file_impl`）：追加前读最后一个字节，不是 `\n` 就先补一个；并补上 `sync_all()`
+  （同文件的 `write_file` 一直有，`append_file` 没有）。
+- **读侧**（`session-jsonl.ts`）：`forEachLogLine` 多给一个 `{ unterminated }`（只有"到了文件末尾且没有结尾换行"
+  的那一行才是残尾）；`readSessionMessages` 返回 `tornTailLines` / `salvagedLines`，
+  并用新的 `salvageGluedRecord` 把**粘在残尾后面的合法记录**抢救回来；`compactSessionLog` 同样抢救
+  （它是"读出来整体覆盖写回"，在那里丢掉就是**永久**丢掉）；残尾与抢救结果都会在生产代码里打 warn
+  （原来 `skippedLines` 零消费者 ⇒「半截行」事实上不可见）。
+- **判据**：Rust `append_file_tests`（4 条，含交接单 §3.4 那条「2 条完整行 + 半截尾行 → 再 append
+  → 新记录仍可读」）；TS `src/test/session-log-torn-tail.test.ts`（4 条：残尾可识别 /
+  **粘住的那条必须救回** / 压缩不许删掉它 / 干净日志反向对照）。
+- **变异自证**：关掉换行守卫 ⇒ Rust 3 条红（实际内容 `{"id":"m3","conte{"id":"m4"}`）；
+  关掉 `salvageGluedRecord` ⇒ TS 的 TORN-B / TORN-C 红。
+
+### 8.8 装机与发版（本轮，两个版本）
+
+- **1.16.224**：§3.1 + §3.2。**1.16.225**：§3.4 + 用量记账。
+  两个版本都走完了：版本四处升级 + `CHANGELOG.md` 段 + `docs/PROJECT-GUIDE.md` 已发布版本表行
+  → `npm run tauri:build`（signing key 已设）→ 静默安装（`/S`）→ 注册表 `DisplayVersion` 核对
+  → 装机探针 `_verify-223.mjs` **5/5** → `make-latest-json.mjs` + `verify-update-manifest.mjs` **5/5**。
+- 全量回归：TS **477 套件 / 6894 用例**、Rust **134 条**（+2 ignored）、`tsc --noEmit` 0 错误、
+  `npm run audit` exit 0。
+- **未做**（对外且不可逆，用户没要求）：未 push、未打 tag、未 `gh release create`。
+- **本轮用掉的 token 预算（自我披露）**：评测三次真实仓库任务合计约 **11.2M token**
+  （repo-01 4.66M + repo-02 4.85M + repo-03 1.66M；第四次 repo-04 只跑了 ~1 分钟就被叫停）
+  —— 其中**两次是白花的**（正是 8.5 那个漏洞，成绩不能用）。
+

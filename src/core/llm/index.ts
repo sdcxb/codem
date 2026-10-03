@@ -33,6 +33,7 @@ import { SubagentRuntime } from "../subagent/runtime";
 import { InProcessSpawnProvider } from "../subagent/spawn-in-process-provider";
 import { SessionRecoveryService, getSessionRecoveryService } from "../recovery/recovery";
 import { AgenticLoop, type LoopEvent } from "./agentic-loop";
+import { describeTurnOutcome } from "./turn-outcome";
 import { CostTracker, getCostTracker } from "./cost-tracker";
 import * as MessageStorage from "../storage/message";
 import { ToolRenderRegistry, getToolRenderRegistry } from "./tool-renderer";
@@ -1160,19 +1161,34 @@ Report earlier as well whenever a partial finding changes what that agent should
       const cumulative = stateUsage ?? resultUsage;
 
       /**
-       * 循环如实上报的失败收场：
-       * - `{ type: "stop", reason: "too_many_errors" }`（连续错误达上限）；
-       * - `{ type: "error", error }`（本轮 LLM 调用最终失败 —— 注意这个形状
-       *   **不带 usage**，此时累计消耗只能从 `loop.getState().totalUsage` 取）。
-       * 两种都必须记成 `success: false`，否则用量面板会把"跑到一半挂了"
-       * 统计成一次正常调用。
+       * 循环如实上报的失败/非正常收场 —— 判据统一交给纯函数 `describeTurnOutcome`。
+       *
+       * ## 第 93 波修正：这里原来只认两种形状
+       *
+       * 原来只有 `{ type: "error" }` 与 `reason === "too_many_errors"` 会被记成失败，
+       * 于是 `plan_stale` / `repeat_guard` / `output_truncated` / `context_overflow` /
+       * `no_progress` / `max_iterations` / `safety_valve` / 成本上限…**全部被记成成功**：
+       * 循环被停滞守卫杀掉的那一轮，用量面板把它统计成一次**正常调用**。
+       * 这与用户报的「任务提前停掉，然后说完成了」是同一个病，只是呈现位置在用量/成本这一侧。
+       *
+       * 现在只有 `kind === "completed"` 才算成功；形状不认识（`none`）时保持原样不表态。
        */
+      const outcome = describeTurnOutcome(result);
+      const notCompleted =
+        outcome.kind === "error" ||
+        outcome.kind === "overflow" ||
+        outcome.kind === "aborted" ||
+        outcome.kind === "stopped";
+      const outcomeReason =
+        result && typeof result === "object" && typeof (result as any).reason === "string"
+          ? String((result as any).reason)
+          : outcome.kind;
       const failedReason =
         failure ??
         (result && result.type === "error"
           ? `error: ${result.error}`
-          : result && "reason" in result && result.reason === "too_many_errors"
-            ? "too_many_errors"
+          : notCompleted
+            ? outcomeReason
             : undefined);
 
       this.recordTurnUsage({
