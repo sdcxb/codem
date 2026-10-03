@@ -1795,6 +1795,24 @@ node tools/eval/repo-paired-report.mjs --control …-clean --treatment …-clean
    · 我们的"稳"目前是**稳定地失败**——确定性 ≠ 能力；
    · **1.16.233 从未安装过**（它被 234 完全包含）；234 的 A/B 才是"我们的改动有没有用"的证据。
 
+### 13.23 ✅ 里程碑的**真机复验**（第 119 波，装在机器上的 1.16.232）
+
+趁一个"应用空闲"的窗口（对照臂是 CLI、不占应用）把两个最难的无 eval 路径又在**装好的应用**上跑了一遍
+（CDP 9223 驱动，CSP 仍不含 `unsafe-eval`）：
+
+| 探针 | 结果 |
+|---|---|
+| `run_code`：脚本里**连续三次** `sdk.bash(...)` 再 `return` 三个结果 | ✅ `status=completed`，返回 `["first","second","third"]` |
+| `workflow`：`return 6 * 7;` | ✅ `status=completed`，返回 `42` |
+| 动态插件：`cordis_define` → `cordis_run`（guest 算值）→ `cordis_inspect` → `cordis_undefine` | ✅ 四步全部 `completed`；`inspect` 里能看到插件与它 `provide` 的服务；`undefine` **不再**报 `Failed to undefine plugin: undefined` |
+
+**为什么这条值得单独记**：`run_code` 里"**三次连续宿主调用**"正是老实现（QuickJS/WASM + asyncify）
+在**两次**就崩掉的那个形状 —— 真机跑通说明"搬去 Rust 侧 `boa_engine`"这个决定在**装机形态**下是有效的，
+而不只是在判据里有效。两条探针的完整输出留在 `.preview-shot/`（`_probe-run-code-real.mjs`、
+`_probe-dynamic-plugin-real.mjs`）。
+
+（顺带一条操作纪律：探针要"应用空闲"才能跑；跑完我把应用**停掉**，把干净状态留给排队中的评测批次。）
+
 ### 13.17 执行状态（截至第 113 波；结论按 §13.16 的规则走）
 
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，12 个任务 run-1 **跑满**
