@@ -34,6 +34,8 @@ import { fileURLToPath } from "node:url";
 import { TASKS, REPO_ROOT, validateTaskSet, gradeCommand, filesToRestore } from "./tasks-repo.mjs";
 // 第 113 波：污染判定与《记录完整性检查器》共用同一套规则（别再各写一份）
 import { DEFAULT_ANSWER_REPO_RE, JUNCTION_ESCAPE_RE } from "./codem-record-integrity.mjs";
+// 第 117 波：重复 (caseId, runNumber) 的处置（纯函数，判据见 src/test/eval-record-append.test.ts）
+import { planRecordAppend } from "./record-append.mjs";
 import { ensureSharedNodeModules } from "./repo-workspace.mjs";
 import { summarize, render, verdict } from "./paired-report.mjs";
 
@@ -327,7 +329,23 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
 
 function appendRecord(out, record) {
   mkdirSync(dirname(out), { recursive: true });
-  const line = `${JSON.stringify(record)}\n`;
+  /**
+   * **重复运行号守卫**（第 117 波补，代价已付过两次）。
+   *
+   * 判定器与成对报告都按 `(caseId, runNumber)` 配对。同一个键出现两条（结果还可能不同）⇒
+   * 该对**直接被阻塞**，等于白跑一轮。实测踩到两次：
+   *  · repo-02/control/run-2：策略复跑写过一条（failed），补跑链又写一条（passed）；
+   *  · repo-06/run-2：errored 一条，重跑又写一条（failed）。
+   *
+   * 处置原则：**既不阻塞配对，也不丢数据** —— 新来的这条**自动"挪到高位 run 号"**
+   * （`parkedFrom` 记清它原来该是 run 几），并打一行警告。这样：
+   *  · 同一个 (caseId, runNumber) 只剩最早那条 ⇒ 配对永远干净；
+   *  · 多出来的那次运行仍然留在文件里 ⇒ 事后可查、可复用。
+   */
+  const existing = readRecords(out);
+  const planned = planRecordAppend(existing, record);
+  if (planned.warning) console.log(`   ⚠️ ${planned.warning}`);
+  const line = `${JSON.stringify(planned.record)}\n`;
   writeFileSync(out, existsSync(out) ? readFileSync(out, "utf8") + line : line, "utf8");
 }
 
