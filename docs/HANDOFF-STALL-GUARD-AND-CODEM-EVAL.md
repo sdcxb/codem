@@ -2077,6 +2077,15 @@ A/B 只有三种结果，每种对应**预先定好**的下一步：
 
 填表用的命令（跑完收尾三步之后）：
 ```
+node .preview-shot/_endgame.mjs    # ← 一条命令做完收尾三步 + 全部读数（第 82 波补）
+```
+它按**不可调换**的顺序执行，并在动手前把原始记录备份到 `.preview-shot/backup/<时间戳>-*`：
+1. `dedupe-runs`（先预演、再 `--apply`）——按 `parkedFrom` 归位，每组保留**最后**一条；
+2. 用 `_clean-records … --drop-parked` 重裁干净文件（**必须在归位之后**，否则会把当前被挪位的干净记录删掉 ✗）；
+3. 出全部读数：权威表 → 逐任务判定 → 配对符号检验 → 行为指标（两臂）→ 机制开火核对 → A/B 报告 → 成对报告。
+
+（单独手跑时，用到的脚本与参数是：）
+```
 node .preview-shot/_clean-records.mjs 两臂记录 → -clean.jsonl      # 裁干净口径
 node tools/eval/dedupe-runs.mjs --apply                        # 整理重复键（保留最新）
 node .preview-shot/_verdict.mjs                                    # 逐任务判定（不下场的格子如实标注）
