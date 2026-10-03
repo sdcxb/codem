@@ -1582,6 +1582,8 @@ _run-second-pass.mjs   复跑我们通过过的 8 个任务（run-2）          
    守卫的连续重复计数不会被指针文本搅乱。
 
 **发版仪式**（照 1.16.233 那次做，逐条都有判据）：
+0. **CHANGELOG 条目已经写好草稿**：`.preview-shot/_changelog-1.16.234.md`
+   （按源码 diff 逐项核对过：`workflow-engine.ts` 与 `i18n-templates.ts` 两项都是"核对时发现草稿漏了"再补上的）；
 1. 改号：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` → `1.16.234`；
 2. `CHANGELOG.md` 顶部加 `## [1.16.234]`、`docs/PROJECT-GUIDE.md` 加 `| v1.16.234 | … |` 行；
 3. 构建：`$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content .tauri\codem-updater.key -Raw;`
