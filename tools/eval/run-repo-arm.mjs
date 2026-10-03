@@ -147,6 +147,8 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
   let failureReason = null;
   let usage;
   let outsideAccess;
+  /** 判据输出的留档路径（诊断用；见下面写文件处的说明） */
+  let gradeFile = null;
   try {
     // 工作区在 `createRepoWorkspace` 里已经是**提交过的 bug 状态**（干净树），
     // 这里不再二次回退：那会让 mtime 变化、也会让"agent 面对的是干净工作区"这件事失真。
@@ -180,6 +182,23 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
     if (outcome !== "errored") {
       restoreTestsAt(task, ws); // 反作弊
       const grade = spawnSync(gradeCommand(task), { cwd: ws, shell: true, encoding: "utf8", timeout: GRADE_TIMEOUT_MS });
+      /**
+       * **把判据输出留档**（第 106 波补，与 Codem 侧的 `.preview-shot/eval-codem-*.grade.txt` 对称）。
+       *
+       * 为什么必须有：对照臂失败时，记录里只有 `判据退出码 1` —— 于是"DSH 为什么没过"这件事
+       * 事后**无法诊断**（只能重跑，而重跑要花十几分钟与真金白银）。
+       * 两条臂的诊断能力必须对称，否则"差距在哪"就只能靠猜。
+       */
+      gradeFile = join(HERE, "..", "..", ".preview-shot", `eval-${arm}-${task.id}.grade.txt`);
+      try {
+        writeFileSync(gradeFile, `${grade.stdout ?? ""}${grade.stderr ?? ""}`, "utf8");
+      } catch (error) {
+        console.log(`     （判据输出没存下来：${error?.message ?? error}）`);
+        gradeFile = null;
+      }
+      for (const line of String(`${grade.stdout ?? ""}${grade.stderr ?? ""}`).split("\n")) {
+        if (/Test Files|Tests\s|FAIL|×/.test(line)) console.log(`     ${line.trim().slice(0, 160)}`);
+      }
       if (grade.error?.code === "ETIMEDOUT" || grade.signal === "SIGTERM") {
         outcome = "errored";
         failureReason = "判据命令超时";
@@ -212,6 +231,8 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
       arm,
       runNumber,
       outcome,
+      // 判据输出的留档路径（对照臂失败时靠它做诊断 —— 只记一个退出码等于事后无法归因）
+      ...(gradeFile ? { gradeFile } : {}),
       ...(usage ?? {}),
       totalMs: Date.now() - started,
       ...(failureReason ? { failureReason } : {}),

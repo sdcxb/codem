@@ -97,6 +97,47 @@ function main() {
   } else {
     console.log("");
     console.log(render(report));
+    /**
+     * **逐任务表**（这一节是"收口"用的，不是给结论用的）。
+     *
+     * 头部通过率被 withhold 时，人还是要知道"哪些任务我们过了、DSH 没过，反过来又是哪些" ——
+     * 因为下一步动作（改产品 / 改判据 / 补重复）是按**任务**定的，不是按一个百分数定的。
+     * 表里刻意把两条臂的结果并排放，并把可疑/污染的标记带上，免得看着像结论。
+     */
+    const byCase = new Map();
+    for (const run of [...controlRaw, ...treatmentRaw]) {
+      if (!byCase.has(run.caseId)) byCase.set(run.caseId, { control: [], treatment: [] });
+      byCase.get(run.caseId)[run.arm === "control" ? "control" : "treatment"].push(run);
+    }
+    const mark = (list) => {
+      if (list.length === 0) return "缺";
+      const last = list[list.length - 1];
+      const flags = [];
+      if (last.contaminated) flags.push("污染");
+      if (last.suspiciousNoDiffPass) flags.push("可疑");
+      if (list.length > 1) flags.push(`×${list.length}`);
+      const icon = last.outcome === "passed" ? "✅" : last.outcome === "failed" ? "❌" : "⚠️";
+      return `${icon}${flags.length ? `(${flags.join(",")})` : ""}`;
+    };
+    console.log("\n逐任务（对照臂 vs 处理臂；这一节只用于决定下一步做什么）");
+    for (const [caseId, arms] of [...byCase.entries()].sort()) {
+      const c = mark(arms.control);
+      const t = mark(arms.treatment);
+      /**
+       * ⚠️ **只对"干净的结果"下比较判断**：一侧被污染、或处理臂是"零改动通过"（可疑）时，
+       * 不许写"我们更强/我们要补的" —— 那不是证据，写了就是把脏数据当结论用。
+       */
+      const cleanSide = (list) => list.every((r) => !r.contaminated && !r.suspiciousNoDiffPass);
+      const comparable = cleanSide(arms.control) && cleanSide(arms.treatment) && arms.control.length > 0 && arms.treatment.length > 0;
+      const verdict = !comparable
+        ? "  ← 不可比（有污染/可疑）"
+        : c.startsWith("✅") && t.startsWith("❌")
+          ? "  ← 我们要补的"
+          : c.startsWith("❌") && t.startsWith("✅")
+            ? "  ← 我们更强"
+            : "";
+      console.log(`  ${caseId.padEnd(40)} ${c.padEnd(12)} ${t.padEnd(12)}${verdict}`);
+    }
   }
   // 头部结论没发布（有阻塞对 / 没有对）时，用退出码 1 表示"这次不能下结论"
   process.exit(report.publishHeadline ? 0 : 1);
