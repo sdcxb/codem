@@ -1499,6 +1499,40 @@ _run-second-pass.mjs   复跑我们通过过的 8 个任务（run-2）          
 三段之间**绝不并发**：处理臂只有一个应用实例；`eval:repo-workspace` 会先停应用；
 构建是 CPU 重的会拖垮判据超时。流水线跑完后，判定器会自动给出干净口径下的结论。
 
+### 13.18 **1.16.234 发布待办**（内容已冻结，等流水线跑完就执行）
+
+**为什么没现在就发**：① 处理臂的复跑批/run-3 正在跑，构建是 CPU 重的、会把判据跑成超时；
+② 版本一致性判据（`version-consistency.test.ts`）要求 `package.json` / `tauri.conf.json` /
+`Cargo.toml` / `CHANGELOG` 顶部 / `PROJECT-GUIDE` 表 / `latest.json` **同时**一致 ——
+所以必须"改号 → 构建 → 生成清单 → 一次性提交"，不能改一半放在树上（那会让判据一直红着）。
+
+**源码层面的内容**（`git diff 9110246..HEAD --stat -- src/` 的准确清单）：
+
+| 文件 | 改动 | 证据来源 |
+|---|---|---|
+| `tool-result-storage.ts` | 大块输出预览改为**头 500 + 尾 2000** | repo-04 那轮 404 passed 的汇总在尾部、模型只看到头部 |
+| `agentic-loop.ts` | **`[RED TEST]` 指针**（红的那一刻把"先去读这些判据"附在结果里） | 四个失败任务**全零**读过失败判据（§13.13g） |
+| `agentic-loop.ts` | 红测试识别**先剥 ANSI** | 交互使用时彩色输出会让标记正则静默失效 |
+| `agentic-loop.ts` | 读缓存键**补上行号开关** | 自查抓到的静默串味（本波自己引入、自己修） |
+| `tool-output-shapes.ts` + `tools.ts` | `read({ line_numbers })` + `edit` 容忍行号前缀 | repo-02 里两次 `node -e` / `python -c` 绕道打印行号 |
+
+配套判据：`read-line-numbers.test.ts`（LN-1..5）、`red-test-at-completion.test.ts` 扩到 RT-1..12、
+`tool-result-storage.test.ts` 加两条、`s0-regression-full.test.ts` 的接线判据加强为"断言不变量"。
+
+**发版仪式**（照 1.16.233 那次做，逐条都有判据）：
+1. 改号：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` → `1.16.234`；
+2. `CHANGELOG.md` 顶部加 `## [1.16.234]`、`docs/PROJECT-GUIDE.md` 加 `| v1.16.234 | … |` 行；
+3. 构建：`$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content .tauri\codem-updater.key -Raw;`
+   `$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD="dummy"; npm run tauri:build`；
+4. `node tools/eval/make-latest-json.mjs` + `verify-update-manifest.mjs`（5/5）；
+5. 跑 VERSION-* / UPD-MANIFEST-* 判据（11 条）；
+6. **先不装**：等 A/B 的基线批次全部落盘后再静默安装（装新版本会改变被测对象）。
+
+**A/B 计划**：基线 = 1.16.232 的干净轮次（run-2/run-3，已有一部分）；
+候选 = 1.16.234 在**同一批任务**（四个分歧任务 + repo-07）上的同样轮次；
+**报告前先跑 `_mechanism-engagement.mjs`** 核对三个机制的开火次数
+（1.16.232 上的反向对照是 0 次，所以"候选也是 0"就意味着装错了版本）。
+
 ### 13.17 执行状态（截至第 113 波；结论按 §13.16 的规则走）
 
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，12 个任务 run-1 **跑满**
