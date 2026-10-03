@@ -1896,6 +1896,10 @@ node tools/eval/repo-paired-report.mjs --control …-clean --treatment …-clean
      `inputTokens`（对手，**不含**缓存）↔ `usage.uncachedInputTokens`；
      `cacheReadTokens` ↔ `usage.cacheHitTokens`；`outputTokens` ↔ `usage.completionTokens`；
      `cacheWriteTokens` **对手有、我们没有** ⇒ 该指标显示"不可用"，**不是 0**（"缺数据 ≠ 0"）。
+   · **时延那一项还查过一个混淆源**（第 123 波）：处理臂跑在**同一个装了应用的机器**上，
+     历史会话会累积在应用数据库里 —— 若它涨到 GB 级、几千个会话，就可能**拖慢处理臂**，
+     把"我们慢 50%"变成状态问题而不是能力问题。实测：DB **118MB / 70 个会话 / 1.5 万条事件** ⇒
+     不构成混淆 ✓（对照臂是 CLI，另有一套自己的会话存储，两边都随轮次增长、方向一致）。
 5. **机制与行为**：三个机制的开火次数（含 232 上 0 次的反向对照）+ 行为代理
    （"第一次跑测试"的调用序号分布是否前移；基线中位数 27、从不 ≤8）。
 6. **边界（五条，一条都不许省）**：
