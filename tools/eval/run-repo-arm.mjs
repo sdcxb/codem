@@ -54,6 +54,15 @@ function parseArgs(argv) {
     else if (arg === "--eval-set") out.evalSet = next();
     else if (arg === "--task") out.tasks.push(next());
     else if (arg === "--runs") out.runNumbers = Array.from({ length: Number(next()) }, (_, i) => i + 1);
+    /**
+     * **显式运行号**（第 111 波加）。
+     *
+     * 为什么必须与 `--runs` 分开：`--runs 2` 的语义是"跑 1..2 两次"（次数），
+     * 而我第一版在重复跑 campaign 里把它当成"这次是 run-2"来用 —— 于是**又跑了一次 run-1**，
+     * 记录里同一 (case, arm, model, runNumber) 出现两条、结果还不一样，
+     * 成对报告因此把该对判成阻塞（它的纪律是对的，是我的调用错了）。
+     */
+    else if (arg === "--run-number") out.runNumbers = [Number(next())];
     else if (arg === "--out") out.out = next();
     else if (arg === "--report") out.report = true;
     else if (arg === "--reference") out.reference = true;

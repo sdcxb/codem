@@ -1251,6 +1251,29 @@ node tools/eval/audit-codem-record.mjs --session <sessionId>   # 它到底调过
 这条与已有的"按根因修/验证覆盖面/红不许被完成盖过去"是**不同**的行为，
 值得单独一次 A/B（有了这条证据，它不再是"再加一条提示词"的猜测）。
 
+### 13.13h ⚠️ 重复跑 campaign 自己的一个 bug（"次数"当成了"运行号"）+ repo-02 也是 flaky
+
+第一次重复跑就暴露了两件事，一件是我的工具错、一件是**重要的测量事实**：
+
+**① 工具错**：`run-repo-arm.mjs --runs N` 的语义是"跑 **1..N** 这 N 次"（次数），
+而我在 campaign 里把它当成"这次是 run-N"用 —— 于是**又跑了一次 run-1**，
+记录里同一 `(case, arm, model, runNumber)` 出现两条且结果不同。
+`paired-report.mjs` 因此把该对判成阻塞 —— **它的纪律是对的，是我的调用错了**。
+处置：给 `run-repo-arm.mjs` 加 **`--run-number N`**（显式运行号，与 `--runs` 的次数语义分开），
+campaign 改用它；已落盘的那条记录**更正标签**为 run-2（运行本身真实，只是标签错，
+记录里带 `renumberedFrom`/`renumberNote` 说明）。
+
+**② 测量事实（更重要）**：更正后可见 —— **repo-02 在对照臂上也是 flaky**：
+
+```
+repo-02  run-1: passed   run-2: failed   ⚠️ flaky
+repo-04  run-1: passed   复跑: failed    ⚠️ flaky（第 110 波发现）
+```
+
+也就是说，被我们当成"对手稳定更强"的四个任务里，**至少两个（repo-02/04）对手自己也不稳**。
+原来那版结论（"DSH 6 个全过、我们落后 4 个"）必须降级为：
+**在能稳定复现之前，只能说"这一次它过了"**。重复跑的其余任务（03/06/07）正在补。
+
 ### 13.14 第 106 波的执行状态（截至本轮）
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，本已跑过 repo-01..05（5/5 通过）；
   本轮补跑 repo-06..12（进度：repo-06 通过）。判据：`tools/eval/drivers/dsh-driver.mjs` 写事件留档，
