@@ -1807,16 +1807,21 @@ NOT NULL constraint failed: settings.updated_at
 **处置原则：既不阻塞配对，也不丢数据。**
 新来的重复记录**自动挪到高位 run 号**（900 起递增）并带 `parkedFrom`/`parkNote`，
 不是删掉（`tools/eval/record-append.mjs` 的纯函数 `planRecordAppend()`，判据 PA-1..4，变异已验证）。
-历史重复由 `_dedupe-runs.mjs` 整理（默认预演，`--apply` 才写）。
+历史重复由 `tools/eval/dedupe-runs.mjs` 整理（默认预演、`--apply` 才写；判据 PD-1..4 + 变异自证）。
+**⚠️ 两个机制的规则原本是相反的**（第 122 波才发现）：写入守卫把**新来**的重复记录挪到 900+，
+于是**旧（脏）记录留在正位**；而收尾整理若只按"键"去重，就会把那条**干净记录当成多余的排除掉** ✗。
+实测：`repo-06` 的干净 run 变成 `run-901:passed`、正位留着脏记录。
+**修法**：收尾整理先按 `parkedFrom` 把记录**归回它原本的键**，再在组内保留最后一条 ——
+这样"取最新"才真正等价于"取干净期那一条"。
 
 **收尾顺序（关键，别搞反）**：
 1. 等**所有**排队的补跑落盘（现在跑的对照臂补跑链加载的是旧代码，它还会写出若干重复）；
-2. 跑 `_dedupe-runs.mjs --apply` —— 规则是"**每个键保留最后出现的那条**"；
-   而我们的**干净** run-2/run-3 都写在**脏的那些之后** ⇒ 于是脏记录被自动挪走、
+2. 跑 `node tools/eval/dedupe-runs.mjs --apply` —— 规则是"**按原始 run 号（`parkedFrom` 还原）归组后，
+   每组保留最后出现的那条**"；干净的那些都写在脏的之后 ⇒ 脏记录被挪走、
    干净记录留在 run-2/run-3 上 ⇒ **与对照臂的干净 run-2/3 正好配对** ✓；
 3. 再跑 `_verdict.mjs` 与 `repo-paired-report.mjs` ⇒ 这才是可落笔的数据集。
 
-**收尾前先预演一次**（`_dedupe-runs.mjs` 不带 `--apply` 就是预演；第 120 波预演结果：
+**收尾前先预演一次**（`tools/eval/dedupe-runs.mjs` 不带 `--apply` 就是预演；第 120 波预演结果：
 我方 1 条待挪（repo-06 run-2 的 `errored`，让位给更新的 `failed`）、对照臂 2 条待挪
 （repo-02 run-2 的旧 `failed` 让位给新 `passed`、repo-03 run-2 的旧 `failed` 让位给同期新记录）——
 **方向全部正确**：留下的是"干净期"那条）。这条预演值钱的地方在于：如果哪天
@@ -1830,7 +1835,7 @@ NOT NULL constraint failed: settings.updated_at
 填表用的命令（跑完收尾三步之后）：
 ```
 node .preview-shot/_clean-records.mjs 两臂记录 → -clean.jsonl      # 裁干净口径
-node .preview-shot/_dedupe-runs.mjs --apply                        # 整理重复键（保留最新）
+node tools/eval/dedupe-runs.mjs --apply                        # 整理重复键（保留最新）
 node .preview-shot/_verdict.mjs                                    # 逐任务判定（不下场的格子如实标注）
 node .preview-shot/_sign-test.mjs                                  # 配对符号检验（读法已写死在输出里）
 node .preview-shot/_mechanism-engagement.mjs <候选记录> "1.16.234"  # 机制开火 + 行为代理
