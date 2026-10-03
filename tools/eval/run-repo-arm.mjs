@@ -58,6 +58,7 @@ function parseArgs(argv) {
     else if (arg === "--reference") out.reference = true;
     else if (arg === "--keep") out.keep = true;
     else if (arg === "--verify-workspace") out.verifyWorkspace = true;
+    else if (arg === "--verify-bug-tests") out.verifyBugTests = true;
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`不认识的参数：${arg}`);
   }
@@ -70,6 +71,8 @@ const USAGE = `用法：
 
   --reference   自证用：不跑 agent，直接把实现还原成 HEAD（应当全绿）
   --report      只读记录出成对报告
+  --verify-workspace    自证：工作区可信（历史只有 bug 状态、答案不在里面）—— 已挂进 npm run audit
+  --verify-bug-tests    自证：**bug 状态下每个任务的判据必须是红的**（任务不许退化；不跑 agent、不花钱）
 `;
 
 /**
@@ -198,6 +201,48 @@ function main() {
     return 0;
   }
   const out = resolve(args.out ?? join(HERE, "records-repo.jsonl"));
+
+  /**
+   * `--verify-bug-tests`：**任务集自己的判据**——bug 状态下，每个任务的判据**必须是红的**。
+   *
+   * 为什么需要它（比 `--verify-workspace` 更强的一层）：
+   * 工作区自证只能证明"至少有一个 `revertPath` 与 HEAD 不同"，**不能**证明"那份差异让判据失败"。
+   * 一个退化的任务（改的是无关代码、或者判据本来就依赖别处）在 bug 状态下判据照样绿 ——
+   * 那种任务谁都能"修好"，分数毫无意义。
+   *
+   * 这一层跑的是**真判据命令**（`gradeCommand`），不跑 agent、不花模型钱：
+   * 退出码非 0 ⇒ bug 在位（好）；退出码 0 ⇒ **任务退化**（红）。
+   */
+  if (args.verifyBugTests) {
+    const tasks = args.tasks.length > 0 ? TASKS.filter((t) => args.tasks.includes(t.id)) : TASKS;
+    let vacuous = 0;
+    let errored = 0;
+    for (const task of tasks) {
+      const ws = createRepoWorkspace(task);
+      try {
+        const grade = spawnSync(gradeCommand(task), { cwd: ws, shell: true, encoding: "utf8", timeout: GRADE_TIMEOUT_MS });
+        if (grade.error?.code === "ETIMEDOUT" || grade.signal === "SIGTERM") {
+          errored++;
+          console.log(`  ⚠️  ${task.id}：判据命令超时，无法判定`);
+        } else if (grade.status === 0) {
+          vacuous++;
+          console.log(`  ❌ ${task.id}：**bug 状态下判据是绿的** —— 这个任务退化（谁都能过），分数没有意义`);
+        } else {
+          const out = `${grade.stdout ?? ""}${grade.stderr ?? ""}`;
+          const failed = (out.match(/FAIL|✗|×/g) ?? []).length;
+          console.log(`  ✅ ${task.id}：bug 状态下判据红（退出码 ${grade.status}，命中失败标记 ${failed} 处）`);
+        }
+      } finally {
+        cleanRepoWorkspace(ws);
+      }
+    }
+    console.log(
+      `\n判据自证（bug 状态必须红）：${tasks.length - vacuous - errored}/${tasks.length} 通过` +
+        (vacuous > 0 ? `，**${vacuous} 个任务退化**` : "") +
+        (errored > 0 ? `，${errored} 个超时未判定` : ""),
+    );
+    return vacuous === 0 && errored === 0 ? 0 : 1;
+  }
 
   if (args.verifyWorkspace) {
     const tasks = args.tasks.length > 0 ? TASKS.filter((t) => args.tasks.includes(t.id)) : TASKS;

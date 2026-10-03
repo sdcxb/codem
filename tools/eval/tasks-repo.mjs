@@ -150,7 +150,22 @@ export const TASKS = [
     revertPaths: ["src/core/llm/agentic-loop.ts", "src/core/llm/tool-args-guard.ts"],
     testFiles: ["src/test/pi-p1-truncated-toolcall-not-executed.test.ts"],
     relatedTests: ["src/test/tool-args-truncation.test.ts"],
-    buggyCommit: "86a21be",
+    /**
+     * ⚠️ 这里是 `d2f53d0`（**不是** `86a21be`）—— 一个把任务变成"谁都能过"的坑。
+     *
+     * `86a21be` **正是引入截断守卫的那个提交**（它给 `agentic-loop.ts` 加了
+     * `buildTruncatedToolCallError` 的接线，并新增了 `pi-p1` 那条判据）。
+     * 所以"把实现回退到 `86a21be`"= 把**修好的版本**装回去：工作区里根本没有这个 bug，
+     * 判据一开始就是绿的。
+     *
+     * 后果实测（第 100 波）：一次真实评测里 agent **一个字符都没改**（`diffChars: 0`），
+     * 判据 12/12 全绿 —— 记录上写着"通过"。那 2.07M token 换来的分数毫无意义。
+     * 抓到它的是 `node tools/eval/run-repo-arm.mjs --verify-bug-tests`（bug 状态下判据必须红）。
+     *
+     * 教训：`buggyCommit` 必须是"**该行为还没被修**"的那一版。某个提交顺手修掉了这个 bug 时，
+     * 它就不能再当 `buggyCommit` —— 这条判据现在由 `--verify-bug-tests` 强制。
+     */
+    buggyCommit: "d2f53d0",
   },
 ];
 

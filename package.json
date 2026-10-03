@@ -55,6 +55,7 @@
     "audit:probe-guard": "node tools/audit/probe-guard.selftest.mjs",
     "eval:selftest": "node tools/eval/paired-report.selftest.mjs",
     "eval:repo-workspace": "node tools/eval/run-repo-arm.mjs --verify-workspace",
+    "eval:repo-bug-tests": "node tools/eval/run-repo-arm.mjs --verify-bug-tests",
     "eval:pipeline": "node tools/eval/pipeline.selftest.mjs",
     "eval:coding": "node tools/eval/tasks-coding.selftest.mjs",
     "eval:mutation": "node tools/eval/paired-report.mutation.mjs",
