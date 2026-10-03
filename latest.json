@@ -1,15 +1,15 @@
 {
-  "version": "1.16.225",
-  "notes": "append_file 尾换行守卫（一条合法记录会被永久删除的真实数据丢失）+ 非正常收场不再被记账成成功",
-  "pub_date": "2026-10-03T01:53:27Z",
+  "version": "1.16.226",
+  "notes": "fs-observation-policy 补齐（读后写 + 版本比对）+ 修线上字段名（nextOffset 恒 undefined ⇒ 窗口循环不前进）",
+  "pub_date": "2026-10-03T02:17:56Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hQMkZ0ZDd2c2ZaMXh4WE5IYjZrM3Q3SVhNUkk5NG9XY2dtRmtKbEwrU1YrSXpNL0YvZHE3Z3h2eDF5ZjVRUEtib3RQNk5uWXkvakRXTytBRXZxQlFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTkyMzYyCWZpbGU6Q29kZW1fMS4xNi4yMjVfeDY0LXNldHVwLmV4ZQpRckFML1JudkcrdVJJbG5RSmM4bkQ2UU4vaUJxQ0xNWWlLVk14L2RQbVJpcWMrVjdyYzNFUnBIbjE4aVIrcURSNFc4MWwyZkdRcU1rMFZhZU8yVGtBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.225/Codem_1.16.225_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1ptUXQwbGYvRlZhZVBhOWg4UnZwTE1JZXBVSUpKSW4xSy9BRG1uaEIxcWxVME1uNzV5UDZiVTZXNU1ZTVY4RTVWSWJnSnpRVXdXa2EzTTFmdmdlcVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTkzODI0CWZpbGU6Q29kZW1fMS4xNi4yMjZfeDY0LXNldHVwLmV4ZQpON1lIN3RDczZJNW9oSVlLZmhraHpPTkFCUWJjVFFoOXhyaE91SVdqM3NuUCt2KzVIWHBBcXpjNHlud3BLS3FTaUZsTUNsMHFWbDdVeEtFMGZ6YzdBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.226/Codem_1.16.226_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hQMkZ0ZDd2c2ZaMXh4WE5IYjZrM3Q3SVhNUkk5NG9XY2dtRmtKbEwrU1YrSXpNL0YvZHE3Z3h2eDF5ZjVRUEtib3RQNk5uWXkvakRXTytBRXZxQlFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTkyMzYyCWZpbGU6Q29kZW1fMS4xNi4yMjVfeDY0LXNldHVwLmV4ZQpRckFML1JudkcrdVJJbG5RSmM4bkQ2UU4vaUJxQ0xNWWlLVk14L2RQbVJpcWMrVjdyYzNFUnBIbjE4aVIrcURSNFc4MWwyZkdRcU1rMFZhZU8yVGtBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.225/Codem_1.16.225_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1ptUXQwbGYvRlZhZVBhOWg4UnZwTE1JZXBVSUpKSW4xSy9BRG1uaEIxcWxVME1uNzV5UDZiVTZXNU1ZTVY4RTVWSWJnSnpRVXdXa2EzTTFmdmdlcVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTkzODI0CWZpbGU6Q29kZW1fMS4xNi4yMjZfeDY0LXNldHVwLmV4ZQpON1lIN3RDczZJNW9oSVlLZmhraHpPTkFCUWJjVFFoOXhyaE91SVdqM3NuUCt2KzVIWHBBcXpjNHlud3BLS3FTaUZsTUNsMHFWbDdVeEtFMGZ6YzdBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.226/Codem_1.16.226_x64-setup.exe"
     }
   }
 }

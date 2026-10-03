@@ -25,7 +25,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ToolRegistry, createMultiEditTool, type ToolContext } from "../core/llm/tools";
+import { ToolRegistry, createMultiEditTool, createReadFileTool, type ToolContext } from "../core/llm/tools";
 
 let dir: string;
 let originalTauri: unknown;
@@ -84,12 +84,22 @@ function makeRegistry(): ToolRegistry {
   return registry;
 }
 
+/**
+ * 第 95 波夹具：**先真的读一遍**（`fs-observation-policy` 的"读后写"前置条件）。
+ * 这些用例测的是**部分失败必须判 error**，而不是"读后写"；用真实 read 工具满足前置条件，
+ * 链路才仍然是产品真实链路。
+ */
+async function readFirst(path: string): Promise<void> {
+  await createReadFileTool().execute({ path }, makeCtx());
+}
+
 const BASE = "alpha = 1;\nbeta = 2;\ngamma = 3;\n";
 
 describe("D9: multi_edit 部分失败必须判为 error，且成功的那几条确实落盘", () => {
   it("D9-1: 3 条里第 2 条找不到 → status=error、error 非空、第 1/3 条已落盘（真正的部分应用）", async () => {
     const file = join(dir, "partial.txt");
     writeFileSync(file, BASE, "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-1",
@@ -127,6 +137,7 @@ describe("D9: multi_edit 部分失败必须判为 error，且成功的那几条�
   it("D9-2: 反向对照 —— 全部成功仍是 completed（不能把成功也判成失败）", async () => {
     const file = join(dir, "all-ok.txt");
     writeFileSync(file, BASE, "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-2",
@@ -151,6 +162,7 @@ describe("D9: multi_edit 部分失败必须判为 error，且成功的那几条�
   it("D9-3: 全部失败仍是 error（appliedCount === 0 早退分支不回退）", async () => {
     const file = join(dir, "all-fail.txt");
     writeFileSync(file, BASE, "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-3",

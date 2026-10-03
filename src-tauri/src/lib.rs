@@ -406,7 +406,18 @@ const TEXT_WINDOW_MAX_LINE_BYTES: u64 = 128 * 1024 * 1024;
 
 /// 分窗读取的返回体。`next_offset` **总是指向下一个行首**（或文件末尾），
 /// 所以调用方循环时永远从"一行的开头"继续，不会切出半行。
+///
+/// ## 第 95 波：`rename_all = "camelCase"` —— 这里的**线上字段名**曾经和消费方对不上
+///
+/// 前端（`src/core/file-api.ts` 的 `TextWindow`）读的是 `nextOffset`，而 Rust 默认序列化出的是
+/// `next_offset` ⇒ **真机上那个字段恒为 `undefined`**，于是 `forEachLogLine` 的
+/// `offset = w.nextOffset` 每轮都退回 0：窗口不前进。文件小于一个窗口（8 MB）时，
+/// 第一窗就 `eof`，所以看不出问题；**超过一个窗口的日志会原地打转**。
+/// 前端类型、mock 与共享桩（`src/test/helpers/tauri-fs-stub.ts`）全都写的是 camelCase，
+/// 所以这里改线上名字（让现实与所有消费方的声明一致），而不是去改一圈消费方。
+/// 判据：`wire_naming_tests` 直接对 `serde_json::to_value` 的结果断言键名。
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TextWindow {
     /// 本次返回的文本。**只含完整行**（除文件末尾未换行的最后一行）。
     text: String,
@@ -520,7 +531,12 @@ async fn read_text_window(
 
 /// Result of a paginated file read. The total_lines field lets the frontend
 /// show "line X of Y" without a second round-trip.
+///
+/// 第 95 波：`rename_all = "camelCase"` —— 同 `TextWindow`。前端读 `totalLines` / `hasMore`，
+/// Rust 默认给的是 `total_lines` / `has_more` ⇒ `read` 工具那条
+/// "还有更多行，用 offset 继续读" 的提示**从来没出现过**（静默截断，模型不知道文件没读完）。
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ReadFileLinesResult {
     /// The numbered text (lines with "N: " prefix, joined by \n).
     text: String,
@@ -1575,6 +1591,43 @@ async fn make_directory(path: String) -> Result<(), String> {
 #[tauri::command]
 async fn path_exists(path: String) -> Result<bool, String> {
     Ok(std::path::Path::new(&path).exists())
+}
+
+/// 文件**版本令牌**（第 95 波，`fs-observation-policy` 的 CAS 依据）。
+///
+/// 返回 `"<size>:<mtime_nanos>"`；文件不存在返回 `None`（**"不存在"也是一种观察结果**，
+/// 与"没观察过"必须分开 —— 写入策略 `createIfAbsent` 正是靠这个区分）。
+///
+/// ## 为什么是元数据而不是内容哈希
+///
+/// `read` 工具走的是**分窗流式读取**（大文件整份不进内存），它手里从来没有"整份内容"，
+/// 所以拿不到一个完整内容哈希去当版本。而 `size + mtime` 只要一次 `stat`：
+///
+/// - 任何**改写**都会改 mtime（同长度改写也算）⇒ 能挡住"你读完之后文件被改过"这一类；
+/// - 与 `read` 的窗口大小、是否分页**无关**，所以"只读了一段"也能建立版本。
+///
+/// ⚠️ **已知边界（写清，别当成等于内容 CAS）**：刻意把内容改成另一份、再把 mtime 改回去
+/// （`touch -d`）的组合骗得过它。要连这个也挡住，得在 `write_file` 里做**内容哈希 CAS**
+/// 并把校验放进"临时文件 → rename"那一步（那样连 TOCTOU 窗口一起关掉）—— 见交接单 §3.5 的后续项。
+fn file_version_impl(path: &std::path::Path) -> Result<Option<String>, String> {
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            Ok(Some(format!("{}:{}", meta.len(), mtime)))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn file_version(path: String) -> Result<Option<String>, String> {
+    file_version_impl(std::path::Path::new(&path))
 }
 
 // ========== MCP Stdio Commands ==========
@@ -2996,6 +3049,7 @@ codegraph_install,
             rename_file,
             make_directory,
 path_exists,
+            file_version,
             mcp_stdio_connect,
             mcp_stdio_request,
             mcp_stdio_disconnect,
@@ -3656,6 +3710,132 @@ mod delete_tests {
                 assert!(message.contains("回收站"), "失败信息应说明回收站路径: {}", message);
             }
         }
+    }
+}
+
+/// 第 95 波：**线上字段名**的判据（前端读的名字必须与 Rust 序列化出来的名字一致）。
+///
+/// ## 为什么必须钉这个
+///
+/// 前端 `src/core/file-api.ts` 声明的是 camelCase（`nextOffset` / `totalLines` / `hasMore`），
+/// 而 Rust 结构体字段是 snake_case。真机实测（装机应用里调 `read_text_window`）拿到的键是
+/// `["text","next_offset","eof","size"]` ⇒ **`nextOffset` 恒为 `undefined`**：
+/// 窗口循环不前进（超过 8 MB 的会话日志会原地打转），`read` 的"还有更多行"提示从不出现。
+/// 之所以长期没被发现：TS 单测全都用**自己写的桩**（返回 camelCase），桩比真机"更对"。
+///
+/// 这两条断言直接看 `serde_json::to_value` 的结果 —— 也就是**前端真实收到的东西**。
+/// 变异自证：去掉任一 `#[serde(rename_all = "camelCase")]` ⇒ 对应用例必须失败。
+#[cfg(test)]
+mod wire_naming_tests {
+    use super::*;
+    use serde_json::Value;
+
+    /**
+     * 键名集合（**排序后**比较）。
+     *
+     * 为什么不比顺序：`serde_json::Value` 的对象默认按 BTreeMap 存键（没有 `preserve_order`
+     * 特性），所以 `to_value` 出来的顺序是字典序，而真实 IPC 上发的是结构体字段序。
+     * 线上契约要求的是**名字**一致（消费方按名字取），不是顺序。
+     */
+    fn key_set(v: &Value) -> Vec<String> {
+        let mut k: Vec<String> = v
+            .as_object()
+            .expect("必须是对象")
+            .keys()
+            .cloned()
+            .collect();
+        k.sort();
+        k
+    }
+
+    #[test]
+    fn text_window_serializes_camel_case_keys() {
+        let v = serde_json::to_value(TextWindow {
+            text: "a\n".into(),
+            next_offset: 2,
+            eof: false,
+            size: 2,
+        })
+        .expect("序列化");
+        assert_eq!(
+            key_set(&v),
+            vec!["eof", "nextOffset", "size", "text"],
+            "前端读的是 nextOffset（camelCase）—— 线上名字不一致会让窗口循环退回 offset=0"
+        );
+    }
+
+    #[test]
+    fn read_file_lines_serializes_camel_case_keys() {
+        let v = serde_json::to_value(ReadFileLinesResult {
+            text: "1: a\n".into(),
+            total_lines: 1,
+            has_more: false,
+        })
+        .expect("序列化");
+        assert_eq!(
+            key_set(&v),
+            vec!["hasMore", "text", "totalLines"],
+            "前端读的是 totalLines / hasMore —— 不一致会让「还有更多行」的提示永不出现（静默截断）"
+        );
+    }
+}
+
+/// 第 95 波：文件**版本令牌**的判据（`fs-observation-policy` 的 CAS 依据）。
+///
+/// 变异自证：把 `file_version_impl` 里的 `format!("{}:{}", len, mtime)` 改成只返回 `len`
+/// ⇒ `version_changes_when_a_same_size_file_is_rewritten` 必须失败
+/// （同长度改写会漏判，而那正是"你读完之后文件被改过"最常见的一种）。
+#[cfg(test)]
+mod file_version_tests {
+    use super::*;
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("codem-fsver-{}-{}", name, std::process::id()));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        dir.join("f.txt")
+    }
+
+    #[test]
+    fn missing_file_is_none_not_an_error() {
+        let path = temp_path("missing");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(file_version_impl(&path).expect("不存在不是错误"), None);
+    }
+
+    #[test]
+    fn existing_file_yields_a_token_with_size() {
+        let path = temp_path("exists");
+        std::fs::write(&path, b"hello").expect("写文件");
+        let v = file_version_impl(&path).expect("版本查询").expect("应当有令牌");
+        let (size, mtime) = v.split_once(':').expect("格式 <size>:<mtime>");
+        assert_eq!(size, "5");
+        assert!(mtime.parse::<u128>().unwrap() > 0, "mtime 必须被带上：{v}");
+    }
+
+    /// **主判据**：同长度的改写也必须换令牌（只靠 size 会漏判）。
+    #[test]
+    fn version_changes_when_a_same_size_file_is_rewritten() {
+        let path = temp_path("same-size");
+        std::fs::write(&path, b"aaaaa").expect("写文件");
+        let before = file_version_impl(&path).unwrap().unwrap();
+
+        // 保证 mtime 一定不同：同一个文件系统时间戳粒度可能是 100ns，先等一下再写
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&path, b"bbbbb").expect("改写（同长度）");
+        let after = file_version_impl(&path).unwrap().unwrap();
+
+        assert_eq!(before.split(':').next(), after.split(':').next(), "前置：两次长度相同");
+        assert_ne!(before, after, "同长度改写必须换令牌（否则 CAS 形同虚设）");
+    }
+
+    #[test]
+    fn version_changes_when_size_changes() {
+        let path = temp_path("grow");
+        std::fs::write(&path, b"a").expect("写文件");
+        let before = file_version_impl(&path).unwrap().unwrap();
+        std::fs::write(&path, b"a-much-longer").expect("改写");
+        let after = file_version_impl(&path).unwrap().unwrap();
+        assert_ne!(before, after);
     }
 }
 

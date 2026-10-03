@@ -179,6 +179,9 @@ node .preview-shot/_probe-why-stopped.mjs      # 列最近会话 + 事件类型�
 
 ### 3.5 `fs-observation-policy`：读后写 / 版本比对（DSH 有，我们没有）
 
+> ✅ **已完成（第 95 波，v1.16.226）** —— 见文末 §9。顺带在真机上抓到**另一个**同类缺陷：
+> 前端读的字段名与线上名字对不上（`nextOffset` 恒 `undefined`）。
+
 DSH：`.deepseek-harness-ref/packages/fs/fs-observation-policy/src/index.ts`
 `:78-82` `editIntent` 抛 `FS_NOT_OBSERVED`（"edit requires reading ... first"），
 `:62-70` `writeIntent` 走 `createIfAbsent` / `replaceIfVersion`（版本 CAS）。
@@ -517,4 +520,84 @@ DSH：`.deepseek-harness-ref/packages/fs/fs-observation-policy/src/index.ts`
 - **本轮用掉的 token 预算（自我披露）**：评测三次真实仓库任务合计约 **11.2M token**
   （repo-01 4.66M + repo-02 4.85M + repo-03 1.66M；第四次 repo-04 只跑了 ~1 分钟就被叫停）
   —— 其中**两次是白花的**（正是 8.5 那个漏洞，成绩不能用）。
+
+---
+
+## §9 第 95 波（2026-10-03 · v1.16.226）：§3.5 + 真机上抓到的第二个「名实不符」
+
+提交 **`1.16.226` 那笔**。这一节只写事实与数字。
+
+### 9.1 §3.5 补齐：读后写 + 版本比对（CAS）
+
+- **改法**：
+  - `src/core/llm/fs-observation.ts`（新）：观察状态机 —— 按**会话**记
+    `{ kind: "present" | "absent", version }`；判定是两个**纯函数**
+    `decideEditIntent` / `decideWriteIntent`（可单测，不依赖工具）。
+    `absent` 与"没观察过"是**两件事**（`createIfAbsent` 正是靠这个区分）。
+  - `src-tauri/src/lib.rs`：新命令 **`file_version`** → `"<size>:<mtime_nanos>"`，不存在返回 `None`。
+    为什么用元数据而不是内容哈希：`read` 是**分窗流式**读取，手里从来没有整份内容；
+    一次 `stat` 与窗口大小无关。⚠️ 已知边界写在函数注释里（改内容再把 mtime 改回去骗得过它；
+    校验在工具层、不在 Rust 的 temp→rename 那一步，所以还有极小的 TOCTOU 窗口）。
+  - `src/core/llm/tools.ts`：`read` 成功 → 记观察（失败且确认不存在 → 记 `absent`）；
+    `edit` / `multi_edit` / `write` 在**自己的 `execute` 里**判定（"在做出决定的那一次操作里执行它"）；
+    写盘成功后刷新观察（自己写的文件可以继续 edit，不必重读）。
+    拒绝都是 `{ output: "Error: …", isError: true }` —— 不再有"没写盘却报成功"。
+  - `src/core/provider/fs-observation-policy-provider.ts`：把真判定暴露成
+    `fsObservationPolicy.observe / getObservation / editIntent / writeIntent / forget`
+    —— **名字与能力终于对上**（原来全文 16 行只有防抖配置）。
+- **语义边界（刻意做出的取舍，都写在代码注释里）**：
+  1. **没有会话归属时不启用**（DSH 是直接拒绝）；我们的工具也能在没有会话的上下文里被调用，
+     一律拒绝会把那些调用整体打断。主链路（agentic-loop）始终传 `sessionId`。
+  2. **"读不到"不是"文件没了"**：取不到版本令牌时按 **`undefined` = 不知道** 处置 ——
+     edit 侧**不谎报** `FS_NOT_FOUND`（放行但不做 CAS，并打一条 warn 说明"这次没比版本"）；
+     write 侧降级为"创建"并同样打 warn。这条是本仓库那条纪律（读不到 ≠ 没有数据）的延伸。
+  3. `write` 的 `append: true` **不走**该策略（追加不破坏已有内容，而且它是"大文件分块写入"的落地方式）。
+  4. `bash` 等能任意改盘的工具不走这条策略（它管不住，也不该被文件工具的策略管住）—— 如实记录。
+- **判据**（`src/test/fs-observation-policy.test.ts`，11 条，走**真实工具 `execute()`** + 真文件）：
+  没读过就 edit/write ⇒ 拒绝且**零字节改动**；读过之后被"别人"改过 ⇒ `FS_STALE_OBSERVATION` 且不落盘；
+  自己 write 出来的文件可以接着 edit；新文件与 append 放行；无会话归属放行；读一个不存在的文件后再写它放行。
+  Rust 侧 `file_version_tests`（4 条，含"同长度改写也必须换令牌"）。
+- **变异自证（3 次，逐个咬住）**：关掉 edit/multi_edit 的前置判定 ⇒ OBS-1/3/10 红；
+  放行"未观察但已存在"的覆盖 ⇒ OBS-4 红；去掉 `read` 成功后的观察记录 ⇒ OBS-2/3/6 红。
+- **既有测试的连带改动**（新契约的真实代价，已逐条处理）：给 3 个走真实链路的测试加了
+  "先真的读一遍"的夹具（`readFirst`），其余 40+ 个用例因为新增的"不知道 ⇒ 降级"语义而自动回到绿。
+
+### 9.2 真机实测抓到的第二个「名实不符」：线上字段名与前端声明不一致
+
+用 CDP 在**装好的应用**里直接调 Tauri 命令（`.preview-shot/_probe-tauri-wire.mjs`）得到的事实：
+
+| 命令 | 真机返回的键（修前） | 前端 `file-api.ts` 读的键 | 后果 |
+|---|---|---|---|
+| `read_text_window` | `text, next_offset, eof, size` | `text, **nextOffset**, eof, size` | **`nextOffset` 恒 `undefined`** ⇒ `forEachLogLine` 的 `offset = w.nextOffset` 每轮退回 0：**窗口不前进**。文件小于一个窗口（8 MB）时第一窗就 `eof` ⇒ 长期没暴露；**超过一个窗口的会话日志会原地打转** |
+| `read_file_lines` | `text, total_lines, has_more` | `text, **totalLines**, **hasMore**` | `read` 工具那条"还有更多行，用 offset 继续读"的提示**从来没出现过** ⇒ >2000 行的文件被**静默截断**，模型不知道没读完 |
+
+- 为什么长期没被发现：**TS 单测全都用自己写的桩**（返回 camelCase）——桩比真机"更对"，
+  于是缺陷在测试里必然绿。这正是本文件 §5.2 第 1 条（判据长在不执行的链路上）的同一族。
+- **修法**：让线上名字与**所有**消费方一致 —— 两个结构体加 `#[serde(rename_all = "camelCase")]`
+  （TS 类型、mock、共享桩本来就全是 camelCase，没有第二处要改）。
+- **判据**：Rust `wire_naming_tests` —— 直接对 `serde_json::to_value(...)` 的**键名**断言
+  （也就是前端真实收到的东西）；**变异**：去掉 `rename_all` ⇒ 立刻红
+  （`["eof","next_offset","size","text"]` vs `["eof","nextOffset","size","text"]`）。
+- **装机后的真机复验**（1.16.226 装完，同一个探针）：
+  `read_text_window` → `["text","nextOffset","eof","size"]`、`read_file_lines` → `["text","totalLines","hasMore"]`、
+  新命令 `file_version` 返回 `"6807:1790993573738830700"`；
+  而且那个"111390 字节、分两窗读"的对照里，**第二窗真的前进了**（修前 `sameAsFirst: true`，修后 `false`）。
+
+### 9.3 装机与回归（v1.16.226）
+
+- 版本四处 + `CHANGELOG.md` 段 + `docs/PROJECT-GUIDE.md` 已发布版本表行 → 构建 → 静默安装 →
+  注册表 `DisplayVersion`=1.16.226 → 装机探针 **5/5** → `latest.json` 重生成 + `verify-update-manifest` **5/5**。
+- 全量回归：TS **6905 通过 / 16 跳过**（0 失败）、Rust **140 条**（+2 ignored）、`tsc --noEmit` 0 错误、
+  `npm run audit` exit 0。
+- **仍未做**（对外且不可逆）：未 push、未打 tag、未 `gh release create`。
+
+### 9.4 剩下的（§3.6 / §3.7）
+
+- **§3.6 `isAutoApprovable`**：外层 `run_code` / `workflow` 在「替我审批」模式下仍自动放行 ——
+  这是**产品决定**，需要用户拍板（闸门目前只关在嵌套调用那一层）。
+- **§3.7 真实仓库档**：先按 §8.5 修尺子（让 `HEAD` 就是 bug 状态 + 把答案挪出工作区 + 每次跑完查
+  `git checkout/restore/stash/reset`），再扩任务集。**在尺子修好之前不要拿它下结论。**
+- `fs-observation-policy` 的**原子 CAS**（把 `replaceIfVersion` 下沉到 `write_file`，在 temp→rename 前校验）
+  是本轮明确留下的后续项 —— 现在关闭的是"没读过就写"和"读完之后变过"，剩下的 TOCTOU 窗口见 9.1 的边界说明。
+
 

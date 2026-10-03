@@ -28,12 +28,13 @@
  * 用 .ts 会去拉 tsc/eslint 子进程，把单测变成环境依赖。
  */
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createEditFileTool,
   createMultiEditTool,
+  createReadFileTool,
   type ToolContext,
 } from "../core/llm/tools";
 
@@ -67,7 +68,24 @@ beforeAll(() => {
             const offset = (args.offset as number | undefined) ?? 1;
             const limit = (args.limit as number | undefined) ?? 2000;
             const lines = readFileSync(p, "utf8").split("\n");
-            return { content: lines.slice(offset - 1, offset - 1 + limit).join("\n"), total_lines: lines.length };
+            return {
+              text: lines.slice(offset - 1, offset - 1 + limit).join("\n"),
+              totalLines: lines.length,
+              hasMore: offset - 1 + limit < lines.length,
+            };
+          }
+          /**
+           * 第 95 波：`fs-observation-policy` 的版本令牌。桩必须实现它，否则
+           * `fileVersion` 会走上"拿不到令牌"的退化路径，这些用例就测不到真实判定。
+           * 字段名/形态与 Rust `file_version_impl` 一致（`<size>:<mtime>`，不存在 ⇒ null）。
+           */
+          case "file_version": {
+            try {
+              const st = statSync(args.path as string);
+              return `${st.size}:${Math.round(st.mtimeMs * 1e6)}`;
+            } catch {
+              return null;
+            }
           }
           default:
             throw new Error(`test stub: unhandled tauri command "${command}"`);
@@ -98,6 +116,18 @@ function makeFile(name: string, content: string): string {
   return p;
 }
 
+/**
+ * 第 95 波夹具：**先真的读一遍**再改。
+ *
+ * `edit` / `multi_edit` 现在要求"这个文件在本会话里被读过"（`fs-observation-policy`，
+ * 对标 DSH 的 `FS_NOT_OBSERVED`）。这里用**真实的 read 工具**走这一步，而不是绕过策略 ——
+ * 绕过去的话，这些用例测的就不再是产品真实链路了。
+ */
+async function readFirst(path: string): Promise<void> {
+  const res = await createReadFileTool().execute({ path }, makeCtx());
+  if (String(res.output).startsWith("Error")) throw new Error(`夹具读取失败：${res.output}`);
+}
+
 const BASE = "alpha = 1;\nbeta = 2;\ngamma = 3;\n";
 
 beforeEach(() => {
@@ -122,6 +152,7 @@ describe("edit 工具（真实 execute 链路）：$ 记号不得损坏文件", 
     it(`${token}：磁盘上的字节与期望完全一致`, async () => {
       const file = makeFile("a.txt", BASE);
       const tool = createEditFileTool();
+      await readFirst(file);
 
       const res = await tool.execute(
         { path: file, oldString: "beta = 2;", newString },
@@ -142,6 +173,7 @@ describe("edit 工具（真实 execute 链路）：$ 记号不得损坏文件", 
   it("多行 newString 含 $ 记号也逐字写入", async () => {
     const file = makeFile("b.txt", BASE);
     const tool = createEditFileTool();
+    await readFirst(file);
     const newString = "beta = `\n  x: $&,\n  y: $$,\n`;";
 
     const res = await tool.execute(
@@ -154,6 +186,8 @@ describe("edit 工具（真实 execute 链路）：$ 记号不得损坏文件", 
 
   it("桩未接对时会抛错，而不是静默变成「功能正常」", async () => {
     const tool = createEditFileTool();
+    // 注意：**故意不先读**。第 95 波起 `edit` 要求先读过（`FS_NOT_OBSERVED`），
+    // 而这条用例要的正是"任何异常路径都不许返回成功"——两条路径都必须是 `Error:`。
     const res = await tool.execute(
       { path: join(dir, "nope.txt"), oldString: "a", newString: "b" },
       makeCtx(),
@@ -168,6 +202,7 @@ describe("multi_edit 工具（真实 execute 链路）：$ 记号不得损坏文
   it("多步编辑中任一步含 $ 记号都不损坏", async () => {
     const file = makeFile("c.txt", BASE);
     const tool = createMultiEditTool();
+    await readFirst(file);
 
     const res = await tool.execute(
       {
@@ -189,6 +224,7 @@ describe("multi_edit 工具（真实 execute 链路）：$ 记号不得损坏文
     const file = makeFile("d.txt", BASE);
     const before = readFileSync(file, "utf8");
     const tool = createMultiEditTool();
+    await readFirst(file);
 
     const res = await tool.execute(
       { path: file, edits: [{ oldString: "nonexistent = 9;", newString: "x" }] },
@@ -204,6 +240,7 @@ describe("edit 未命中：给可行动提示而不是一句 not found", () => {
   it("缩进不一致时，提示里带上真实候选与行号", async () => {
     const file = makeFile("e.txt", "line one\n    indented line\nline three\n");
     const tool = createEditFileTool();
+    await readFirst(file);
 
     // 注意：oldString 的前导空白必须**比文件里更多**，这样 indexOf 才会真的失败。
     // 若写成 "  indented line"（2 空格）它是 "    indented line"（4 空格）的子串，
@@ -223,6 +260,7 @@ describe("edit 未命中：给可行动提示而不是一句 not found", () => {
   it("完全不像时说找不到，并给出文件规模", async () => {
     const file = makeFile("f.txt", BASE);
     const tool = createEditFileTool();
+    await readFirst(file);
 
     const res = await tool.execute(
       { path: file, oldString: "totally unrelated zzz", newString: "x" },

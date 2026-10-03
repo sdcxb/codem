@@ -28,7 +28,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ToolRegistry, createEditFileTool, type ToolContext } from "../core/llm/tools";
+import { ToolRegistry, createEditFileTool, createReadFileTool, type ToolContext } from "../core/llm/tools";
 
 let dir: string;
 let originalTauri: unknown;
@@ -89,6 +89,17 @@ function makeRegistry(): ToolRegistry {
   return registry;
 }
 
+/**
+ * 第 95 波夹具：**先真的读一遍**（`fs-observation-policy` 的"读后写"前置条件）。
+ *
+ * 这些用例测的是**歧义即拒**，但 `edit` 现在要求"这个文件在本会话里被读过"。
+ * 用真实 read 工具走这一步（而不是绕过策略），这些用例才仍然走产品真实链路；
+ * 顺带把"取不到版本令牌 ⇒ 不谎报状态"的那条退化路径也覆盖到。
+ */
+async function readFirst(path: string): Promise<void> {
+  await createReadFileTool().execute({ path }, makeCtx());
+}
+
 /** `target = 42;` 出现在第 2 行与第 5 行 */
 const TWICE = [
   "alpha = 1;",
@@ -104,6 +115,7 @@ describe("D8: edit 的 oldString 命中多处时必须拒写（歧义即拒）",
   it("D8-1: 命中 2 处 → status=error、点名处数与行号、磁盘逐字节不变、一次 write_file 都不发", async () => {
     const file = join(dir, "twice.txt");
     writeFileSync(file, TWICE, "utf8");
+    await readFirst(file);
     const before = readFileSync(file);
 
     const res = await makeRegistry().execute(
@@ -132,6 +144,7 @@ describe("D8: edit 的 oldString 命中多处时必须拒写（歧义即拒）",
   it("D8-2: 反向对照 —— 唯一命中仍然成功并真的落盘（证明 D8-1 不是「edit 坏了」）", async () => {
     const file = join(dir, "unique.txt");
     writeFileSync(file, TWICE, "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-2",
@@ -151,6 +164,7 @@ describe("D8: edit 的 oldString 命中多处时必须拒写（歧义即拒）",
   it("D8-3: 唯一命中 + 带上下文的 oldString 可以改到第二处（模型按提示加语境后仍能达成目的）", async () => {
     const file = join(dir, "context.txt");
     writeFileSync(file, TWICE, "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-3",
@@ -169,6 +183,7 @@ describe("D8: edit 的 oldString 命中多处时必须拒写（歧义即拒）",
   it("D8-4: 命中 3 处时处数与行号都列全", async () => {
     const file = join(dir, "three.txt");
     writeFileSync(file, "x = 1;\nx = 1;\nx = 1;\n", "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-4",
@@ -186,6 +201,7 @@ describe("D8: edit 的 oldString 命中多处时必须拒写（歧义即拒）",
   it("D8-5: 未命中仍然走「找不到」那条路（歧义检查不吞掉原分支）", async () => {
     const file = join(dir, "missing.txt");
     writeFileSync(file, TWICE, "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-5",
@@ -203,6 +219,7 @@ describe("D8: edit 的 oldString 命中多处时必须拒写（歧义即拒）",
   it("D8-6: oldString === newString 且命中多处 → 仍然拒绝（且磁盘不变）", async () => {
     const file = join(dir, "noop-multi.txt");
     writeFileSync(file, TWICE, "utf8");
+    await readFirst(file);
     const before = readFileSync(file);
 
     const res = await makeRegistry().execute(
@@ -221,6 +238,7 @@ describe("D8: edit 的 oldString 命中多处时必须拒写（歧义即拒）",
   it("D8-7: oldString === newString 且只命中一处 → 成功、磁盘内容不变（不误伤无变化编辑）", async () => {
     const file = join(dir, "noop-single.txt");
     writeFileSync(file, TWICE, "utf8");
+    await readFirst(file);
 
     const res = await makeRegistry().execute(
       "tc-7",

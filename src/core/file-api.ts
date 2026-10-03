@@ -166,6 +166,22 @@ export async function renameFile(oldPath: string, newPath: string): Promise<void
 }
 
 /**
+ * 文件**版本令牌**（`<size>:<mtime_nanos>`）；文件不存在返回 `null`。
+ *
+ * 第 95 波：`fs-observation-policy` 的 CAS 依据 —— "你读到的" 与 "现在盘上的" 是不是同一版。
+ * 为什么用元数据而不是内容哈希、以及它的已知边界，见 `src-tauri/src/lib.rs::file_version_impl`。
+ *
+ * ⚠️ **语义边界（很重要）**：`null` 表示"**确认不存在**"。而"读不到"（IPC 不可用 / 权限 / 命令没注册）
+ * 会**照原样抛出**，不吞成 `null` —— 本仓库的既有纪律：**读不到 ≠ 没有数据**。
+ * 调用方（`fs-observation-policy` 的工具层）用 `undefined` 表示第三种状态"**不知道**"，
+ * 并对它做退化的、有据可查的处置（见 `tools.ts` 的 `currentVersionOrUnknown`）。
+ */
+export async function fileVersion(path: string): Promise<string | null> {
+  const v = await tauriInvoke("file_version", { path });
+  return typeof v === "string" ? v : null;
+}
+
+/**
  * 追加一行文本到文件（不存在则创建，含父目录）。用于诊断轨迹落盘：
  * 追加比整文件重写便宜，也不会因为写一半崩掉而丢掉已有线索。
  */

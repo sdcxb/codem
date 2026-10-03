@@ -2,6 +2,41 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.226] - 2026-10-03
+
+### 修复
+
+- **`fs-observation-policy` 名不副实：模块名承诺"文件观察策略"，实际只有防抖配置（交接单 §3.5）。**
+  DSH 的同名插件做的是**读后写 + 版本比对**：`editIntent` 抛 `FS_NOT_OBSERVED`、
+  `writeIntent` 走 `createIfAbsent` / `replaceIfVersion`。我们这边**一点拦截都没有**，于是两类事故无人管：
+  ①模型**没读过**就 `edit`/覆盖 `write`（内容来自压缩后的记忆或猜测）⇒ 改错地方、覆盖掉没见过的东西；
+  ②模型**读过**，但文件在这期间被改过（用户手动改 / git 切换 / 子智能体改）⇒ 仍照旧内容下手。
+  现在补齐：`src/core/llm/fs-observation.ts` 是观察状态机（按会话记 `present`/`absent` + 版本令牌），
+  `read` 成功即记录观察、写盘成功后刷新，`edit` / `multi_edit` / `write` 在**自己的 execute 里**做前置判定
+  （「在做出决定的那一次操作里执行它」，不靠包装层）：
+  **`edit` 没读过 ⇒ `FS_NOT_OBSERVED`**；观察为"不存在" ⇒ `FS_NOT_FOUND`；读过但版本变了 ⇒ `FS_STALE_OBSERVATION`；
+  **`write` 覆盖一个从没看过的已存在文件 ⇒ `FS_NOT_OBSERVED`**（`createIfAbsent` 的语义），
+  新文件与 `append: true` 不受限（创建/追加不破坏已有内容）。版本令牌来自新的 Rust 命令
+  `file_version`（`<size>:<mtime>`，一次 stat），`provider` 也真的把判定暴露成
+  `fsObservationPolicy.editIntent/writeIntent/observe` —— 名字与能力对上了。
+  **"读不到"不是"文件没了"**：取不到令牌时按"不知道"处置（不谎报 `FS_NOT_FOUND`，并留 warn 说明这次没做 CAS）。
+  判据 `src/test/fs-observation-policy.test.ts`（11 条，走**真实工具 execute** + 真文件：拒绝时**零字节改动**、
+  自己写的文件可继续 edit、无会话归属不启用、append 豁免……）；Rust 侧 `file_version_tests`（4 条）。
+  **变异自证（3 次）**：关掉 edit/multi_edit 的前置判定 ⇒ OBS-1/3/10 红；放行"未观察但已存在" ⇒ OBS-4 红；
+  去掉 `read` 成功后的观察记录 ⇒ OBS-2/3/6 红。
+- **线上字段名与前端声明不一致：`read_text_window` 的 `nextOffset` 恒为 `undefined`（真机实测）。**
+  前端 `TextWindow` / `ReadFileLinesResult` 读的是 camelCase（`nextOffset` / `totalLines` / `hasMore`），
+  而 Rust 结构体字段是 snake_case、`lib.rs` 里也没有 `rename_all` ⇒ 真机上键是
+  `["text","next_offset","eof","size"]`。后果：**窗口循环不前进**（`forEachLogLine` 的
+  `offset = w.nextOffset` 每轮退回 0；文件小于一个 8 MB 窗口时第一窗就 `eof`，所以一直没被发现，
+  超过一个窗口的会话日志会原地打转），以及 `read` 工具那条"还有更多行，用 offset 继续读"的提示
+  **从来没出现过**（>2000 行的文件被静默截断，模型不知道没读完）。修法是让线上名字与所有消费方一致：
+  `TextWindow` / `ReadFileLinesResult` 加 `#[serde(rename_all = "camelCase")]`。
+  判据：Rust `wire_naming_tests`（直接对 `serde_json::to_value` 的**键名**断言 —— 这正是当初能抓住它的那条判据），
+  **变异**：去掉 `rename_all` ⇒ 对应用例立刻红（`["eof","next_offset","size","text"]`）。
+
+
+
 ## [1.16.225] - 2026-10-03
 
 ### 修复

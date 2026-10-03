@@ -1,6 +1,12 @@
 import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
 import { classifyToolResult } from "./tool-result-status";
-import { readFile, writeFile, deletePath, executeCommand, globSearch, grepSearch, isPathWithinWorkspace } from "../file-api";
+import { readFile, writeFile, deletePath, executeCommand, globSearch, grepSearch, isPathWithinWorkspace, fileVersion } from "../file-api";
+import {
+  decideEditIntent,
+  decideWriteIntent,
+  getFsObservationPolicy,
+  type FsPolicyDenial,
+} from "./fs-observation";
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
 import type { Context } from "../cordis/src/index.ts";
@@ -1333,12 +1339,25 @@ export function createReadFileTool(): ToolDef {
           noticeSuffix && filtered.endsWith(noticeSuffix)
             ? { path, content: contentFinal, notices }
             : { path, content: filtered };
+        /**
+         * 第 95 波：**读到 = 观察到**（`fs-observation-policy` 的写入前置条件靠这条记录）。
+         *
+         * 记的是"这一版"（`size:mtime` 令牌），不是内容哈希 —— 因为 `read` 是分窗读取，
+         * 手里从来没有整份内容。取不到令牌就记 `null`（策略层对"无法比对"有明确退化处置）。
+         */
+        await noteObservedPresent(ctx.sessionId, path);
         return {
           title: `read: ${path}`,
           output: renderReadOutput(value),
           value,
         };
       } catch (error: any) {
+        /**
+         * 读失败也分两种：**确认不存在**要记成 `absent`（它让后续 `createIfAbsent` 有意义，
+         * 也让"我以为它不存在，其实它是被建出来的"能被识别为过期观察）；其它失败（权限/IPC）
+         * 不记，因为"读不到"不等于"不存在"（本仓库的既有纪律）。
+         */
+        await noteObservedIfMissing(ctx.sessionId, path);
         return { title: `read: ${path}`, output: `Error: ${error.message}` };
       }
     },
@@ -1394,6 +1413,20 @@ export function createWriteFileTool(): ToolDef {
       const sandboxError = checkSandbox(path, ctx);
       if (sandboxError) {
         return { title: `write: ${path}`, output: `Error: ${sandboxError}` };
+      }
+
+      /**
+       * 第 95 波：**没看过的文件不许覆盖**（对标 DSH 的 `createIfAbsent` / `replaceIfVersion`）。
+       *
+       * - 目标是**新文件**（当前不存在）⇒ 放行（创建不破坏任何东西）；
+       * - 目标**已存在**：没读过 ⇒ `FS_NOT_OBSERVED` 拒绝；读过但版本变了 ⇒ `FS_STALE_OBSERVATION` 拒绝。
+       *
+       * `append: true` **不走这里**：追加是"往上加"，不破坏已有内容，而且它正是"大文件分块写入"的
+       * 落地方式（先写首段、再逐段 append）—— 要求每段之前都先读一遍会把那条流程变成不可用。
+       */
+      if (!append) {
+        const denial = await checkWriteAllowed(ctx.sessionId, path);
+        if (denial) return fsPolicyDenialResult(`write: ${path}`, denial);
       }
 
       try {
@@ -1468,6 +1501,8 @@ export function createWriteFileTool(): ToolDef {
         await writeFile(path, finalContent, { workspace: ctx.workspace || ctx.cwd });
         // E4: Invalidate cache after write
         fileCache.invalidate(path);
+        // 第 95 波：写盘成功 = 这个会话现在"看到"的是新版本（后续 edit / 再 write 不必重读）
+        await noteObservedPresent(ctx.sessionId, path);
         // F3.4: Auto-lint after write
         const lintResult = await autoLint(path);
         const action = append && existingContent ? "Appended" : "Successfully wrote";
@@ -1534,6 +1569,71 @@ function validateEditParams(
   );
 }
 
+/**
+ * 第 95 波：`fs-observation-policy`（**读后写 + 版本比对**）在工具层的落点。
+ *
+ * 判据本身是纯函数（`fs-observation.ts` 的 `decideEditIntent` / `decideWriteIntent`），
+ * 这里只负责三件事：取当前版本令牌、取本会话的观察、把拒绝结果变成模型看得懂的返回值。
+ * 为什么判定放在**工具自己的 execute 里**而不是某个包装层：本仓库的规矩是
+ * 「在做出决定的那一次操作里执行它」—— 包装/闸门层可以被别的调用点绕过。
+ */
+
+/** 把策略拒绝变成工具返回值（`isError` 让分类器按失败算，不再出现"没写盘却报成功"） */
+function fsPolicyDenialResult(title: string, denial: FsPolicyDenial) {
+  return { title, output: `Error: ${denial.message}`, isError: true as const };
+}
+
+/** 记下"这个会话现在看到的是这一版"（读/写成功之后调用；拿不到令牌就记 `null`） */
+async function noteObservedPresent(sessionId: string | undefined, path: string): Promise<void> {
+  if (!sessionId || !path) return;
+  // 观察是**旁路记账**：取不到令牌绝不能反过来把一次成功的读/写变成失败（所以用不抛的那条路）
+  const version = await currentVersionOrUnknown(path);
+  getFsObservationPolicy().observe(sessionId, path, "present", typeof version === "string" ? version : null);
+}
+
+/** 记下"这个会话确认这个路径不存在"（`read` 失败且当前确实不存在时调用） */
+async function noteObservedIfMissing(sessionId: string | undefined, path: string): Promise<void> {
+  if (!sessionId || !path) return;
+  const version = await currentVersionOrUnknown(path);
+  if (version === null) getFsObservationPolicy().observe(sessionId, path, "absent", null);
+}
+
+/**
+ * 取文件当前版本令牌，**三态**：
+ * - `string` = 拿到了（可以比对）；
+ * - `null` = **确认不存在**；
+ * - `undefined` = **不知道**（拿不到令牌：IPC 不可用 / 命令没注册 / 权限）。
+ *
+ * 为什么必须区分后两者：把"读不到"当成"不存在"正是本仓库反复打的那类缺陷
+ * （`file-api.fileVersion` 的注释与 `session-jsonl` 的 `isFileMissingError` 同一条纪律）。
+ * 策略层对 `undefined` 的处置写在 `fs-observation.ts` 的判定函数里（**不谎报状态**）。
+ */
+async function currentVersionOrUnknown(path: string): Promise<string | null | undefined> {
+  try {
+    return await fileVersion(path);
+  } catch (e) {
+    console.warn(`[fs-observation] 取不到 "${path}" 的版本令牌（按"不知道"处理，不谎报状态）:`, e);
+    return undefined;
+  }
+}
+
+/** `edit` / `multi_edit` 的前置判定：`null` = 放行 */
+async function checkEditAllowed(sessionId: string | undefined, path: string): Promise<FsPolicyDenial | null> {
+  // 没有会话归属 ⇒ 不启用（见 `fs-observation.ts` 模块头的取舍说明）
+  if (!sessionId || !path) return null;
+  const current = await currentVersionOrUnknown(path);
+  const decision = decideEditIntent(path, getFsObservationPolicy().get(sessionId, path), current);
+  return decision.ok ? null : decision;
+}
+
+/** `write`（覆盖）的前置判定：`null` = 放行。`append` 模式不走这里（追加不破坏已有内容） */
+async function checkWriteAllowed(sessionId: string | undefined, path: string): Promise<FsPolicyDenial | null> {
+  if (!sessionId || !path) return null;
+  const current = await currentVersionOrUnknown(path);
+  const decision = decideWriteIntent(path, getFsObservationPolicy().get(sessionId, path), current);
+  return decision.ok ? null : decision;
+}
+
 export function createEditFileTool(): ToolDef {  return {
     id: "edit",
     contract: { sideEffectScope: "workspace", timeoutMs: NO_TIMEOUT },
@@ -1574,6 +1674,17 @@ export function createEditFileTool(): ToolDef {  return {
       const sandboxError = checkSandbox(path, ctx);
       if (sandboxError) {
         return { title: `edit: ${path}`, output: `Error: ${sandboxError}` };
+      }
+
+      /**
+       * 第 95 波：**读后写**（`FS_NOT_OBSERVED` / `FS_STALE_OBSERVATION`）。
+       *
+       * 放在 `readFile` 之前：这条判定要回答的是"你凭什么认为你知道这个文件现在长什么样"，
+       * 一旦没读过（或读完之后文件被改过），`oldString` 就是**猜的**，改错地方只是时间问题。
+       */
+      {
+        const denial = await checkEditAllowed(ctx.sessionId, path);
+        if (denial) return fsPolicyDenialResult(`edit: ${path}`, denial);
       }
 
       try {
@@ -1622,6 +1733,8 @@ export function createEditFileTool(): ToolDef {  return {
         await writeFile(path, newContent, { workspace: ctx.workspace || ctx.cwd });
         // E4: Invalidate cache after edit
         fileCache.invalidate(path);
+        // 第 95 波：写盘成功 = 这个会话现在"看到"的是新版本（下一次 edit 不必再读一次）
+        await noteObservedPresent(ctx.sessionId, path);
         // F3.4: Auto-lint after edit
         const lintResult = await autoLint(path);
         const output = lintResult
@@ -1703,6 +1816,12 @@ export function createMultiEditTool(): ToolDef {
         return { title: `multi_edit: ${path}`, output: `Error: ${sandboxError}` };
       }
 
+      // 第 95 波：与 `edit` 同一条前置判定（读后写 / 版本比对）
+      {
+        const denial = await checkEditAllowed(ctx.sessionId, path);
+        if (denial) return fsPolicyDenialResult(`multi_edit: ${path}`, denial);
+      }
+
       try {
         let content = await readFile(path);
         let appliedCount = 0;
@@ -1734,6 +1853,8 @@ export function createMultiEditTool(): ToolDef {
 
         // E4: Invalidate cache after multi-edit
         fileCache.invalidate(path);
+        // 第 95 波：写盘成功 = 这一版就是本会话"看到"的版本
+        await noteObservedPresent(ctx.sessionId, path);
         // F3.4: Auto-lint after multi-edit
         const lintResult = await autoLint(path);
 
