@@ -68,4 +68,30 @@ describe("第 113 波：污染判定必须看得见 junction 逃逸", () => {
     expect(JUNCTION_ESCAPE_RE.test("src/lib/../util.ts")).toBe(false);
     expect(DEFAULT_ANSWER_REPO_RE.test("C:\\mimo-gui\\x")).toBe(true);
   });
+
+  /**
+   * LK-6（第 123 波修正，假阳性实例）：**代码正文里出现仓库路径 ≠ 去访问它**。
+   *
+   * 实测：对照臂在 `repo-09`（沙箱 shell 路径泄漏）上写的 `workflow` 代码**引用了工作区源码**，
+   * 而那段源码里含仓库路径 ⇒ 一次**合法**运行被判成"污染"、排除出统计 ✗。
+   * 代码正文里的字符串不等于去读它（真去读会走 `sdk.read`，那条路被沙箱拦下、会记成 `blocked`）。
+   */
+  it("LK-6: workflow/run_code 的**代码正文**里出现仓库路径 ⇒ 只算『提到』，不算泄漏", () => {
+    const result = classifySessionAccess(
+      callWithSuccess("workflow", {
+        code: 'const p = "C:\\\\mimo-gui\\\\src\\\\core\\\\llm\\\\tools.ts"; console.log(p);',
+      }) as never,
+    );
+    expect(result.leaks.length, `代码正文不该算泄漏：${JSON.stringify(result)}`).toBe(0);
+    expect(result.contentOnly.length, "但应当作为『提到』记录下来").toBe(1);
+  });
+
+  it("LK-7 反向对照: 真正**去访问**仓库路径（path/command）仍然算泄漏", () => {
+    const byPath = classifySessionAccess(callWithSuccess("read", { path: "C:\\mimo-gui\\src\\a.ts" }) as never);
+    expect(byPath.leaks.length, "read 指向仓库 ⇒ 必须算泄漏").toBe(1);
+    const byCommand = classifySessionAccess(
+      callWithSuccess("bash", { command: "Get-Content C:\\mimo-gui\\src\\core\\llm\\tools.ts" }) as never,
+    );
+    expect(byCommand.leaks.length, "命令里去读仓库 ⇒ 必须算泄漏").toBe(1);
+  });
 });

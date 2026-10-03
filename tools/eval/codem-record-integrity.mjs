@@ -25,8 +25,20 @@
  * - `contentOnly`：只有写入的文本里出现那个路径 ⇒ 不算访问（判据要能自己说清这个区别）。
  */
 
-/** 访问类字段：这些决定"这次调用要碰什么" */
-const TARGET_FIELDS = ["path", "file_path", "command", "code", "script", "pattern", "workdir"];
+/**
+ * 访问类字段：这些决定"这次调用要碰什么" ⇒ 命中答案仓库即算泄漏。
+ *
+ * ⚠️ 第 123 波修正（抓到过一次假阳性）：原本这里还包含 `code` / `script`，
+ * 于是 **workflow / run_code 的代码正文**里只要出现 `mimo-gui` 字样就被判成污染。
+ * 实测：对照臂在 `repo-09`（沙箱 shell 路径泄漏）上写的 workflow 代码**引用了工作区源码**，
+ * 而那段源码里含仓库路径 ⇒ 一次**合法**运行被记成"污染"、被排除在统计外 ✗。
+ *
+ * 代码正文里的字符串**不等于去读它**（真去读会走 `sdk.read`，那条路被工作区沙箱拦下、
+ * 会以 `blocked` 记下来）。所以 `code`/`script` 归入"只是提到"（contentOnly）。
+ */
+const TARGET_FIELDS = ["path", "file_path", "command", "pattern", "workdir"];
+/** 这些字段里出现仓库路径只算"提到"（代码/脚本正文），不算"去访问" */
+const CONTENT_FIELDS = ["code", "script"];
 
 /** git 里"把工作区/历史改回去"的子命令 —— 用来发现"自我还原"的痕迹 */
 export const SELF_RESTORE_RE = /\bgit\b[^\n]*\b(checkout|restore|stash|reset|revert|clean)\b/i;
