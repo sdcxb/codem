@@ -542,6 +542,22 @@ export class AgenticLoop {
    * 这里只做一件事：记住"最近一次跑测试红了几条"，供收尾时判"这轮不许就这么结束"。
    */
   private lastTestRun: { command: string; failed: number; passed: number } | null = null;
+  /**
+   * **本轮跑过的测试文件 → 最近一次已知状态**（第 109 波修正）。
+   *
+   * 为什么不能只看"最近一次运行"（这是实测抓到的模型误判）：`repo-03` 那一轮的真实序列是
+   *
+   *   ① `usage-normalize` + `dsh-d7` → **4 failed**（红）
+   *   ② 同两个文件再跑 → **4 failed**（红）
+   *   ③ 回基线复跑 → **4 failed**（红）
+   *   ④ 换一组**别的**文件跑 → **9 passed**（绿）
+   *   ⑤ 收工，回执写"已完成"
+   *
+   * 只看"最近一次"就会看到 ④ 的绿 ⇒ 守卫沉默，而这恰恰是要抓的那次失败。
+   * **正确口径是按文件记账**：某个文件红过、之后又没有单独跑绿，它就还是红的
+   * （④ 跑的是另一组文件，不能给 ①②③ 里那两个文件洗白）。
+   */
+  private testFileStatus = new Map<string, "red" | "green">();
   /** 本轮因"收尾时测试还红着"提醒过几次（上限 1，避免把模型困在循环里） */
   private redTestNudges = 0;
 
@@ -591,7 +607,42 @@ export class AgenticLoop {
     if (!failedMatch && /(^|\s)(FAILED|FAIL)\b/m.test(output) && !/\b0\s+failed/i.test(output)) failed = 1;
     const passed = passedMatch ? Number(passedMatch[1]) : 0;
     this.lastTestRun = { command: command.replace(/\s+/g, " ").slice(0, 200), failed, passed };
+
+    /**
+     * **按文件记账**（第 109 波修正，见 `testFileStatus` 的字段注释）。
+     *
+     * 优先用逐文件标记行判每个文件的红绿（vitest 会打 `❯ path (4 tests | 1 failed)` /
+     * `✓ path (4 tests)`）；标记行拿不到时（输出被截断/换行形态不同）退回保守口径：
+     * 这次命令里点到的文件，只要这次运行有失败，就都按红算 —— 宁可多问一句，
+     * 也不要漏掉"红过又没复跑绿"的文件。
+     */
+    const filesInCommand = [...command.matchAll(/[\w./\\-]+\.(?:test|spec)\.(?:ts|tsx|js|mjs)/g)].map((m) =>
+      m[0].replace(/\\/g, "/").replace(/^.*?\/(?=[^/]+$)/, ""),
+    );
+    const markerRe = /([❯✓×])\s+([^\s(]+\.(?:test|spec)\.(?:ts|tsx|js|mjs))/g;
+    const marked = new Set<string>();
+    for (const m of output.matchAll(markerRe)) {
+      const file = m[2].replace(/\\/g, "/").split("/").pop() as string;
+      marked.add(file);
+      this.testFileStatus.set(file, m[1] === "✓" ? "green" : "red");
+    }
+    if (marked.size === 0 && filesInCommand.length > 0) {
+      for (const file of new Set(filesInCommand)) {
+        this.testFileStatus.set(file, failed > 0 ? "red" : "green");
+      }
+    } else if (failed > 0) {
+      // 有失败但只认出了部分文件：把命令里点到的、没被标记过的也算红（保守）
+      for (const file of new Set(filesInCommand)) {
+        if (!marked.has(file) && this.testFileStatus.get(file) !== "green") this.testFileStatus.set(file, "red");
+      }
+    }
   }
+
+  /** 本轮"跑过且最近一次是红的"测试文件（第 109 波：按文件记账，不是只看最近一次运行） */
+  private currentRedTestFiles(): string[] {
+    return [...this.testFileStatus.entries()].filter(([, status]) => status === "red").map(([file]) => file);
+  }
+
   /**
    * 计划修订号：**只在模型成功调用 update_plan 时 +1**（第 65 波）。
    * 刻意不用 macroStep —— 那是 UI 启发式步进，会让"计划推进"信号频繁误报。
@@ -1057,6 +1108,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     // 【第 108 波】"红测试收尾"守卫：每轮重置（同一轮里最多提醒一次，见 noteTestRun / 收尾判定）
     this.lastTestRun = null;
     this.redTestNudges = 0;
+    // 【第 109 波】按文件记的测试状态也要按轮清空（否则上一轮的红会污染这一轮）
+    this.testFileStatus.clear();
     // 【本轮新增】"改了但没验证"守卫：每轮重置
     this.turnModifiedFiles = false;
     this.turnRanVerification = false;
@@ -2354,8 +2407,20 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 既让类型恢复正确，也说清了"这个值随时可能被工具结果更新"。
          */
         const redTest: { command: string; failed: number; passed: number } | null = this.currentTestRun();
-        if (redTest && redTest.failed > 0 && this.redTestNudges < 1) {
+        /**
+         * **按文件**判红（不是只看最近一次运行）—— 理由见 `testFileStatus` 的字段注释：
+         * repo-03 那一轮的失败形态正是"红过的那两个文件没再跑绿，但另一组文件跑绿了"。
+         */
+        const redFiles = this.currentRedTestFiles();
+        if ((redFiles.length > 0 || (redTest && redTest.failed > 0)) && this.redTestNudges < 1) {
           this.redTestNudges++;
+          /**
+           * 报"几条失败"时要**取两者的大者**：`redTest.failed` 是最近一次运行的失败数，
+           * 而最近一次可能是别组文件的绿运行（这时它是 0）—— 若直接用它，提醒里会出现
+           * "0 条失败（还有文件是红的）"这种自相矛盾的话（判据 RT-5 第一次跑就是这么红的）。
+           */
+          const failedCount = Math.max(redFiles.length, redTest?.failed ?? 0);
+          const fileList = redFiles.length > 0 ? `（${redFiles.join(", ")}）` : "";
           recordLoopStop(sessionId, "completed_unverified", { phase: "red-test-nudge", iteration: this.state.iteration });
           try {
             this.getMessageStorage().createMessage(
@@ -2363,11 +2428,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                 id: `red-test-nudge-${Date.now()}`,
                 role: "user",
                 content:
-                  `[SYSTEM] 你刚才跑的测试里有 **${redTest.failed} 条红**（命令：${redTest.command}` +
-                  `${redTest.passed > 0 ? `；同一次运行里 ${redTest.passed} 条绿` : ""}）。\n` +
-                  "现在你要收尾了，但这与「完成」是冲突的。二选一：\n" +
-                  "① 把它们修掉（正常收尾）；\n" +
-                  "② 如果这些红确实不该由你修（例如与本任务无关的既有缺陷），就在回执里**点名**它们：" +
+                  `[SYSTEM] 你这一轮跑过的测试里还有 **红的**：${failedCount} 条失败${fileList}` +
+                  `${redTest ? `（最近一次命令：${redTest.command}）` : ""}。\n` +
+                  "「跑另一组绿的」不能给这些文件洗白 —— 它们还是红的。现在你要收尾了，二选一：\n" +
+                  "① 把**这些文件**跑到绿（正常收尾）；\n" +
+                  "② 如果它们确实不该由你修（例如与本任务无关的既有缺陷），就在回执里**点名**：" +
                   "哪几条红、为什么留着、对用户意味着什么。\n" +
                   "不允许把这次收尾写成「已完成」而不提这些红。",
                 timestamp: Date.now(),
@@ -2381,7 +2446,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           }
           yield {
             type: "text_delta",
-            text: `\n\n🧪 **测试还是红的**（${redTest.failed} 条失败）：先处理它们，或在回执里说清为什么留着。\n\n`,
+            text: `\n\n🧪 **测试还是红的**（${failedCount} 条失败${fileList}）：先处理它们，或在回执里说清为什么留着。\n\n`,
           };
           continue;
         }

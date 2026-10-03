@@ -32,6 +32,7 @@ import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { TASKS, REPO_ROOT, validateTaskSet, gradeCommand, filesToRestore } from "./tasks-repo.mjs";
+import { ensureSharedNodeModules } from "./repo-workspace.mjs";
 import { summarize, render, verdict } from "./paired-report.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -180,6 +181,19 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
     }
 
     if (outcome !== "errored") {
+      /**
+       * 评分前**再确认一次**共享 node_modules 副本是完整的（第 109 波）。
+       *
+       * 为什么要在这里再查一次：副本是**所有工作区共用**的，而被测 agent 可能在自己的工作区里跑
+       * `npm install` 之类的命令 —— 那会顺着 junction 改到共享副本上（实测撞过一次：
+       * 判据以 `Cannot find package '@vitest/utils'` 崩掉，而记录把它记成了"任务失败"）。
+       * 抽查只要几毫秒；坏了就重新镜像，绝不让"环境坏了"冒充"任务没做出来"。
+       */
+      try {
+        ensureSharedNodeModules({ quiet: true });
+      } catch (error) {
+        console.log(`     ⚠️ 共享依赖副本不可用（${error?.message ?? error}）—— 判据可能跑不起来`);
+      }
       restoreTestsAt(task, ws); // 反作弊
       const grade = spawnSync(gradeCommand(task), { cwd: ws, shell: true, encoding: "utf8", timeout: GRADE_TIMEOUT_MS });
       /**
@@ -199,9 +213,28 @@ function runTask(task, { arm, model, runNumber, agentCmd, reference, evalSet }) 
       for (const line of String(`${grade.stdout ?? ""}${grade.stderr ?? ""}`).split("\n")) {
         if (/Test Files|Tests\s|FAIL|×/.test(line)) console.log(`     ${line.trim().slice(0, 160)}`);
       }
+      const gradeOutput = `${grade.stdout ?? ""}${grade.stderr ?? ""}`;
+      /**
+       * **"跑不起来"≠"没做出来"**（第 109 波修正，有实测代价）。
+       *
+       * 实测事故：对照臂 `repo-07` 被判成 `failed`，而判据输出里两个测试文件**都是 ✓**，
+       * 真正的原因是环境错误 `ERR_MODULE_NOT_FOUND: Cannot find package '@vitest/utils'`
+       * （评测工作区的依赖副本当时不完整）—— 判据根本没跑到结论那一步。
+       * 把它记成 `failed`，就等于**把一次尺子故障算进了对手的分数**（本轮因此差点得出
+       * "DSH 只有 11/12"的错误结论）。
+       *
+       * 所以：输出里出现"模块/依赖/命令本身跑不起来"的特征，一律记 `errored` 并说明原因；
+       * `errored` 不计入通过率（`paired-report.mjs` 的口径），需要重跑。
+       */
+      const environmentFailure = /ERR_MODULE_NOT_FOUND|Cannot find package|Cannot find module|ENOENT: no such file or directory, open '.*node_modules/i.test(
+        gradeOutput,
+      );
       if (grade.error?.code === "ETIMEDOUT" || grade.signal === "SIGTERM") {
         outcome = "errored";
         failureReason = "判据命令超时";
+      } else if (environmentFailure) {
+        outcome = "errored";
+        failureReason = "判据环境错误（依赖/模块缺失，判据没有跑到结论）—— 需要修环境后重跑";
       } else if (grade.status === 0) {
         outcome = "passed";
       } else {
@@ -299,7 +332,32 @@ function main() {
         } else {
           const out = `${grade.stdout ?? ""}${grade.stderr ?? ""}`;
           const failed = (out.match(/FAIL|✗|×/g) ?? []).length;
-          console.log(`  ✅ ${task.id}：bug 状态下判据红（退出码 ${grade.status}，命中失败标记 ${failed} 处）`);
+          /**
+           * ⚠️ **退出码 1 不等于"判据红了"**（第 109 波修正，抓到过假绿）。
+           *
+           * 实测事故：共享依赖副本的目录名起错（叫 `codem-eval-node_modules` 而不是 `node_modules`），
+           * 判据命令于是以 `ERR_MODULE_NOT_FOUND` 崩掉 —— 它**同样返回退出码 1**，
+           * 而当时这条自证只看退出码 ⇒ 12/12 全"通过"，其实一条断言都没跑到
+           * （线索就在那句"命中失败标记 **0** 处"，当时没追问）。
+           *
+           * 现在必须**同时**满足：①退出码非 0 ②输出里有真实的失败标记 ③没有环境级错误特征。
+           */
+          const environmentFailure =
+            /ERR_MODULE_NOT_FOUND|Cannot find package|Cannot find module|ENOENT: no such file or directory, open '.*node_modules/i.test(
+              out,
+            );
+          if (environmentFailure) {
+            errored++;
+            console.log(`  ⚠️  ${task.id}：判据**没跑起来**（环境错误：依赖/模块缺失）—— 不能算"判据红"`);
+          } else if (failed === 0) {
+            errored++;
+            console.log(
+              `  ⚠️  ${task.id}：退出码 ${grade.status} 但**输出里没有任何失败标记** —— ` +
+                `分不清"判据红"与"跑崩了"，按不可判定处理`,
+            );
+          } else {
+            console.log(`  ✅ ${task.id}：bug 状态下判据红（退出码 ${grade.status}，命中失败标记 ${failed} 处）`);
+          }
         }
       } finally {
         cleanRepoWorkspace(ws);

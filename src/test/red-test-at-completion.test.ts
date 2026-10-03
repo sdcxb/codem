@@ -72,7 +72,7 @@ function finalIteration(text: string): any[] {
 }
 
 /** 把 `bash` 换成纯夹具：命令照收，返回脚本化的测试输出（不碰磁盘） */
-function registryWithFakeBash(outputOf: (command: string) => string) {
+function registryWithFakeBash(outputOf: (command: string, call: number) => string) {
   const registry = createDefaultToolRegistry();
   const executed: string[] = [];
   registry.register({
@@ -83,7 +83,7 @@ function registryWithFakeBash(outputOf: (command: string) => string) {
     async execute(args: any) {
       const command = String(args?.command ?? "");
       executed.push(command);
-      return { title: `bash: ${command}`, output: outputOf(command) };
+      return { title: `bash: ${command}`, output: outputOf(command, executed.length) };
     },
   } as any);
   return { registry, executed };
@@ -105,7 +105,21 @@ function textOf(events: any[]): string {
     .join("");
 }
 
-/** 红测试输出（vitest 形状） */
+/**
+ * 按命令里点到的测试文件生成 vitest 形状的输出。
+ *
+ * 为什么必须"按命令生成"，而不是用一份常量夹具：常量会把**别的**文件也标成红/绿，
+ * 于是判据测的就不是"红过的文件有没有复跑绿"这件事本身了（第一版 RT-5/RT-6 都栽在这）。
+ */
+function vitestOutputFor(command: string, red: boolean): string {
+  const files = [...command.matchAll(/[\w./\\-]+\.(?:test|spec)\.tsx?/g)].map((m) => m[0]);
+  const lines = files.map((f) => (red ? ` ❯ ${f} (4 tests | 1 failed)` : ` ✓ ${f} (4 tests)`));
+  lines.push(` Test Files  ${red ? "1 failed" : `${files.length} passed`}`);
+  lines.push(`      Tests  ${red ? "4 failed | 8 passed (12)" : "12 passed (12)"}`);
+  return `\n${lines.join("\n")}\n`;
+}
+
+/** 红测试输出（vitest 形状，常量版：用于不关心文件名对齐的用例） */
 const RED_OUTPUT = `
  ❯ src/test/usage-normalize.test.ts (4 tests | 1 failed)
  ❯ src/test/dsh-d7-usage-cache-buckets.test.ts (5 tests | 3 failed)
@@ -153,6 +167,51 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
 
     expect(provider.requests.length, "绿测试就该一轮收尾").toBe(2);
     expect(textOf(events), "不许出现红测试提醒").not.toMatch(/测试还是红的/);
+  });
+
+  it("RT-5: **红过又没复跑绿**的文件，不许被「另一组绿了」洗白（repo-03 的真实序列）", async () => {
+    /**
+     * 真实序列（1.16.232，repo-03）：
+     *   ① usage-normalize + dsh-d7 → 4 failed（红）
+     *   ② 同两个文件再跑 → 4 failed（红）
+     *   ③ 换**另一组**文件 → 9 passed（绿）
+     *   ④ 收工，回执写"已完成"
+     * 只看"最近一次运行"会看到 ③ 的绿而放行 —— 这条判据就是钉这个修正。
+     */
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      testIteration("t1", "npx vitest run src/test/usage-normalize.test.ts src/test/dsh-d7-usage-cache-buckets.test.ts"),
+      testIteration("t2", "npx vitest run src/test/dsh-d6-usage-accounting.test.ts src/test/usage-non-completion.test.ts"),
+      finalIteration("已完成：修好了缓存口径。"),
+      finalIteration("已完成（这次真的好了）。"),
+    ]);
+    // 第一组（usage-normalize + dsh-d7）红；第二组（d6 + usage-non-completion）绿
+    const { registry } = registryWithFakeBash((command) =>
+      vitestOutputFor(command, command.includes("usage-normalize")),
+    );
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    const events = await drain(loop);
+
+    expect(provider.requests.length, "红过又没复跑绿 ⇒ 必须再要一轮").toBe(4);
+    expect(textOf(events), "提醒里必须点名那个还是红的文件").toMatch(/usage-normalize\.test\.ts/);
+  });
+
+  it("RT-6 反向对照: 红过的文件**复跑绿**之后，不许再提醒（不制造假红）", async () => {
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      testIteration("t1", "npx vitest run src/test/usage-normalize.test.ts"),
+      testIteration("t2", "npx vitest run src/test/usage-normalize.test.ts"),
+      finalIteration("已完成。"),
+    ]);
+    // 第一次红、第二次绿（同一个文件被修好并复跑 ⇒ 应当放行）
+    const { registry } = registryWithFakeBash((command, call) => vitestOutputFor(command, call === 1));
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    const events = await drain(loop);
+
+    expect(provider.requests.length, "复跑绿之后就该正常收尾").toBe(3);
+    expect(textOf(events), "不许出现提醒").not.toMatch(/测试还是红的/);
   });
 
   it("RT-3/RT-4: 提醒只来一次，且必须点名条数与命令", async () => {

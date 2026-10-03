@@ -73,14 +73,27 @@ function removeAnswers(ws) {
  * `ls ..`、`resolve(join(cwd,'node_modules','..'))`），它就站在**有参考解的那个仓库**里了。
  * 实测证据：一次 repo-02 运行里 agent 直接去改 `C:\mimo-gui\src\core\llm\tools.ts`（主仓库文件）。
  *
- * 现在改成：**先把主仓库的 `node_modules` 镜像到 `%TEMP%\codem-eval-node_modules`（一次），
- * 工作区再 junction 到那份副本**。于是 `node_modules/..` 是 `%TEMP%`，不是答案仓库。
+ * ## ⚠️ 目录名必须是 `node_modules`（第 109 波修正，代价很大）
  *
- * 镜像只在 `package-lock.json` 变了或副本不存在时做一次（用锁文件的哈希做新鲜度标记，
- * 标记写在**副本之外**，免得它自己进到被测 agent 的视野里）。
+ * 第一版把副本放在 `%TEMP%\codem-eval-node_modules`。**这个名字是错的**：
+ * Node 解析裸包名（`import '@vitest/utils'`）时会从导入文件所在目录逐级向上找
+ * **名为 `node_modules` 的目录**；副本自己叫 `codem-eval-node_modules`，于是
+ * 从 `…\codem-eval-node_modules\vitest\dist\chunks\cac.js` 出发**永远找不到**
+ * `…\codem-eval-node_modules\@vitest\utils` —— 判据命令直接
+ * `ERR_MODULE_NOT_FOUND` 崩掉。
+ *
+ * 更糟的是它**看起来像"任务失败"**：崩溃也返回退出码 1，而"bug 状态下判据红"的自证
+ * 只看退出码 ⇒ **自证假绿**（当时的输出里"命中失败标记 0 处"就是线索）。
+ * 现在副本放在 `<临时目录>/codem-eval-deps/node_modules`：父目录名就是 `node_modules`，
+ * 解析链在第 5 级命中它 ✓。
  */
 export function sharedNodeModulesDir() {
-  return join(tmpdir(), "codem-eval-node_modules");
+  return join(tmpdir(), "codem-eval-deps", "node_modules");
+}
+
+/** 完成标记（放在副本**之外**，免得它自己进到被测 agent 的视野里） */
+function sharedMarkerPath() {
+  return join(tmpdir(), "codem-eval-deps.ready.json");
 }
 
 function lockfileFingerprint() {
@@ -96,11 +109,22 @@ function lockfileFingerprint() {
 /** 确保共享副本存在且新鲜；返回它的路径 */
 export function ensureSharedNodeModules({ quiet = false } = {}) {
   const shared = sharedNodeModulesDir();
-  const marker = `${shared}.ready.json`;
+  const marker = sharedMarkerPath();
   const fingerprint = lockfileFingerprint();
   if (existsSync(marker) && existsSync(shared)) {
     try {
-      if (JSON.parse(readFileSync(marker, "utf8")).fingerprint === fingerprint) return shared;
+      if (JSON.parse(readFileSync(marker, "utf8")).fingerprint === fingerprint) {
+        /**
+         * ⚠️ **标记对还不够，必须抽查关键包真的在**（第 109 波，有实测代价）。
+         *
+         * 事故：标记是好的、但副本里缺 `@vitest/utils`，于是判据命令直接
+         * `ERR_MODULE_NOT_FOUND` 崩掉 —— 而当时的记录把它记成"任务失败"，
+         * 差点把一次**尺子故障**算成对手的失分。
+         * 抽查几个判据离不开的包（几毫秒），比"相信标记"可靠得多。
+         */
+        if (sharedCopyLooksComplete(shared)) return shared;
+        if (!quiet) console.log(`   ⚠️ 共享 node_modules 副本不完整（抽查缺包）—— 重新镜像`);
+      }
     } catch {
       /* 标记坏了就当不新鲜 */
     }
@@ -115,8 +139,30 @@ export function ensureSharedNodeModules({ quiet = false } = {}) {
   if (copy.status > 7) {
     throw new Error(`镜像 node_modules 失败（robocopy 退出码 ${copy.status}）：${copy.stderr || copy.stdout}`);
   }
-  writeFileSync(marker, JSON.stringify({ fingerprint, at: Date.now() }), "utf8");
+  if (!sharedCopyLooksComplete(shared)) {
+    throw new Error(
+      `共享 node_modules 副本镜像后仍不完整（抽查失败）—— 不拿它去跑判据：` +
+        `否则判据会以"环境错误"崩掉，而记录会把它误报成任务失败。请检查 ${shared}`,
+    );
+  }
+  writeFileSync(marker, JSON.stringify({ fingerprint, at: Date.now(), verified: true }), "utf8");
   return shared;
+}
+
+/**
+ * 抽查共享副本里"判据离不开的包"是否都在。
+ *
+ * 选这几个的理由：`vitest` 是判据命令本身；`@vitest/utils` 是实测缺过的那一个；
+ * `typescript`/`esbuild` 是 `tsc` 与打包链路的关键依赖。
+ */
+export function sharedCopyLooksComplete(shared) {
+  const sentinels = [
+    "vitest/package.json",
+    "@vitest/utils/package.json",
+    "typescript/package.json",
+    "esbuild/package.json",
+  ];
+  return sentinels.every((rel) => existsSync(join(shared, ...rel.split("/"))));
 }
 
 function linkNodeModules(ws) {
