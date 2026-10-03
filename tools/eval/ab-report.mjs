@@ -19,6 +19,7 @@
  *   node tools/eval/ab-report.mjs --baseline <旧构建记录> --candidate <新构建记录> [--min-tasks 6]
  */
 import { readRecords, normalizeCodemRecords, checkSameModel } from "./normalize-codem-records.mjs";
+import { isParkedRecord } from "./record-append.mjs";
 
 /**
  * 逐任务比较两条记录集合（同臂、不同构建）。
@@ -61,8 +62,7 @@ export function abCompare(baseline, candidate, options = {}) {
          * 那些记录往往是**效度不同期**的样本（泄漏期 / 清理之前），**不能**与正本混在一起算通过率 ——
          * 而它们恰恰满足"runNumber ≥ 2"，只看运行号是拦不住的。
          */
-        r.parkedFrom === undefined &&
-        (typeof r.runNumber !== "number" || r.runNumber < 900),
+        !isParkedRecord(r),
     );
   const dropped = (rows) => rows.length - usable(rows).length;
 

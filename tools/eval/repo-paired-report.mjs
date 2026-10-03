@@ -20,6 +20,7 @@
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { summarize, render } from "./paired-report.mjs";
+import { isParkedRecord } from "./record-append.mjs";
 import { readRecords, normalizeCodemRecords, checkSameModel } from "./normalize-codem-records.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -61,12 +62,11 @@ function main() {
    * 它们往往是**效度不同期**的样本（泄漏期 / 清理之前），混进来会把通过率算歪 ——
    * 而它们满足"runNumber ≥ 2"，只看运行号是拦不住的。
    */
-  const isParked = (r) => r.parkedFrom !== undefined || (typeof r.runNumber === "number" && r.runNumber >= 900);
   const controlAll = readRecords(args.control);
   const treatmentAll = normalizeCodemRecords(readRecords(args.treatment));
-  const controlRaw = controlAll.filter((r) => !isParked(r));
-  const treatmentRaw = treatmentAll.filter((r) => !isParked(r));
-  const parkedCount = controlAll.filter(isParked).length + treatmentAll.filter(isParked).length;
+  const controlRaw = controlAll.filter((r) => !isParkedRecord(r));
+  const treatmentRaw = treatmentAll.filter((r) => !isParkedRecord(r));
+  const parkedCount = controlAll.filter(isParkedRecord).length + treatmentAll.filter(isParkedRecord).length;
   if (parkedCount > 0) {
     console.log(`（已排除 ${parkedCount} 条"挪位"记录 —— 重复运行号里较旧/较脏的那一条，见 §13.21）`);
   }

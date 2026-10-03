@@ -19,6 +19,24 @@
 export const PARK_BASE = 900;
 
 /**
+ * 这条记录是不是"被挪位的"（第 117 波）。
+ *
+ * 判定看**两个**信号，缺一不可：
+ *  · `parkedFrom`/`parkNote`：主动挪位时写的出处（最可靠）；
+ *  · `runNumber >= PARK_BASE`：兜底（万一某些记录只改了号、没写出处）。
+ *
+ * **为什么必须抽成一个共享函数**：报告（`ab-report` / `repo-paired-report`）与判定器都要排除挪位记录
+ * （它们来自效度不同期：泄漏期 / docs 清理之前）。第一版我把这条过滤写在了
+ * `repo-paired-report.mjs` 的**读取路径**里 —— 那样 `summarize()` 级别的自测覆盖不到，
+ * 换个调用方就绕过去了。现在只有一份实现，判据在 `src/test/eval-record-append.test.ts`。
+ */
+export function isParkedRecord(record) {
+  if (!record || typeof record !== "object") return false;
+  if (record.parkedFrom !== undefined || record.parkNote !== undefined) return true;
+  return typeof record.runNumber === "number" && record.runNumber >= PARK_BASE;
+}
+
+/**
  * 决定"这条记录该以什么 run 号写进去"。
  *
  * @param existingRows 现有记录（用来查重与找空位）

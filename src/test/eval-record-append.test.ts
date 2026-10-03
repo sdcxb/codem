@@ -15,7 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 
-import { planRecordAppend, PARK_BASE } from "../../tools/eval/record-append.mjs";
+import { planRecordAppend, isParkedRecord, PARK_BASE } from "../../tools/eval/record-append.mjs";
 
 const row = (caseId, runNumber, outcome) => ({ caseId, runNumber, outcome });
 
@@ -49,5 +49,27 @@ describe("第 117 波：重复运行号的处置", () => {
     const planned = planRecordAppend([row("repo-03", 2, "failed")], row("repo-04", 2, "passed"));
     expect(planned.parked).toBe(false);
     expect(planned.record.runNumber).toBe(2);
+  });
+
+  /**
+   * PA-5/PA-6（第 121 波补）：**"挪位记录"的判定必须抽成共享函数**。
+   *
+   * 起因是一次真实的近失：我把这条过滤分别写进 `ab-report` 与 `repo-paired-report`
+   * 的读取路径，重构时 `repo-paired-report` 里漏掉一个回调引用 ⇒ **CLI 一跑就 ReferenceError**，
+   * 而整套自测（28 条）**全绿** —— 因为它们不经过那条路径。
+   * 所以：判定收成一处（`isParkedRecord`），并用判据钉住。
+   */
+  it("PA-5: 挪位记录的两个信号都要认（parkedFrom/parkNote，以及 runNumber ≥ 900 兜底）", () => {
+    expect(isParkedRecord({ caseId: "x", runNumber: 2, parkedFrom: 2 })).toBe(true);
+    expect(isParkedRecord({ caseId: "x", runNumber: 5, parkNote: "重复键" })).toBe(true);
+    expect(isParkedRecord({ caseId: "x", runNumber: 900 })).toBe(true);
+    expect(isParkedRecord({ caseId: "x", runNumber: 901 })).toBe(true);
+  });
+
+  it("PA-6 反向对照: 正常记录与脏输入都不算挪位（别把正常数据排除掉）", () => {
+    expect(isParkedRecord({ caseId: "x", runNumber: 2, outcome: "passed" })).toBe(false);
+    expect(isParkedRecord({ caseId: "x", runNumber: 89 })).toBe(false);
+    expect(isParkedRecord(null)).toBe(false);
+    expect(isParkedRecord(undefined)).toBe(false);
   });
 });
