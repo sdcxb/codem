@@ -1762,10 +1762,23 @@ export function createEditFileTool(): ToolDef {  return {
             .split("\n")
             .map((line) => line.replace(/^\s*\d+\t/, ""))
             .join("\n");
+        /**
+         * **先去行号"是退路"，不是默认动作**（第 116 波自查修正）。
+         *
+         * 第一版无条件剥掉 `^\d+\t` —— 但那是**破坏性**的：如果锚点本身就是制表符分隔的数据
+         * （`42\tvalue` 这种 TSV 行），剥完就变成 `value`，可能匹配到**别的地方**，
+         * 甚至把不该改的行改掉。所以改成"**精确命中优先，命中不了再退到去行号重试**"：
+         *  · 字面量真的存在 ⇒ 按字面量改（TSV 那类内容不会被破坏）；
+         *  · 字面量不存在（模型从带行号的读取里整段复制过来了）⇒ 去掉行号再试。
+         * 两个方向各有判据（LN-6 钉前者、LN-3 钉后者）。
+         */
         const oldStringNoGutter = stripLineNumberGutter(oldString);
         const newStringNoGutter = stripLineNumberGutter(newString);
+        const exactExists = replaceLiteral(content, oldString, newString) !== null;
+        const effectiveOldString = exactExists ? oldString : oldStringNoGutter;
+        const effectiveNewString = exactExists ? newString : newStringNoGutter;
 
-        const ambiguous = findAmbiguousLiteral(content, oldStringNoGutter);
+        const ambiguous = findAmbiguousLiteral(content, effectiveOldString);
         if (ambiguous) {
           return {
             title: `edit: ${path}`,
@@ -1779,7 +1792,7 @@ export function createEditFileTool(): ToolDef {  return {
         // 用 replaceLiteral 而非 content.replace(oldString, newString)：
         // 后者会把 newString 里的 $& / $$ / $` / $' 当替换记号展开，
         // 静默改写文件内容却照样返回成功。详见 edit-matchers.ts 文件头。
-        const newContent = replaceLiteral(content, oldStringNoGutter, newStringNoGutter);
+        const newContent = replaceLiteral(content, effectiveOldString, effectiveNewString);
         if (newContent === null) {
           // 没命中就给出「大概想改哪里」，而不是只回一句 not found ——
           // 后者会让模型必须额外花一次 read + 一次重试，还可能猜偏。

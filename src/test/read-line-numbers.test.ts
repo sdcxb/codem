@@ -139,4 +139,28 @@ describe("第 113 波：读取带行号 + 编辑容错", () => {
     expect(out).toContain("1\tx");
     expect(out).toContain("2\ty");
   });
+
+  /**
+   * LN-6（第 116 波自查修正）：**"去行号"必须是退路，不能是默认动作**。
+   *
+   * 第一版 `edit` 无条件剥掉 `^\d+\t`，对**制表符分隔的数据**（`42\tvalue`）是破坏性的：
+   * 剥完变成 `value`，可能匹配到别的地方、把不该改的行改掉。
+   * 现在：字面量真存在就按字面量改；只有匹配不到时才退到"去行号重试"。
+   *
+   * 变异自证：把 `exactExists` 判断去掉（回到无条件去行号）⇒ 本用例红。
+   */
+  it("LN-6: 锚点本身就是 `数字+TAB` 的数据行时，必须按字面量精确命中（不许被去行号破坏）", async () => {
+    const file = join(dir, "data.tsv");
+    // 故意让"去行号后的文本"在别处也出现：value 这一行在文件里是唯一的，但若被剥成 "beta"
+    // 就会命中下面那条普通行 —— 破坏性替换会改错地方（这正是要挡住的）
+    writeFileSync(file, "42\tbeta\nbeta\n", "utf8");
+    const registry = createDefaultToolRegistry();
+    const readTool = registry.get("read")!;
+    const tool = registry.get("edit")!;
+    await (readTool as any).execute({ path: file }, ctx());
+    const result = await (tool as any).execute({ path: file, oldString: "42\tbeta", newString: "42\tBETA" }, ctx());
+
+    expect(String(result.output ?? "").toLowerCase()).toContain("success");
+    expect(readFileSync(file, "utf8"), "必须改的是制表符那一行，而 42 前缀不许被吃掉").toBe("42\tBETA\nbeta\n");
+  });
 });
