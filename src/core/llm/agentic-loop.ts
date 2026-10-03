@@ -1678,7 +1678,12 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.testFileNoticeSent.add(sessionId); // 先标记再做事：失败也不重试，避免每轮扫盘
         try {
           const { buildTestFileNotice } = await import("./test-file-notice");
-          const notice = buildTestFileNotice(cwd);
+          /**
+           * 第 97 波：**必须把用户消息传进去做相关性排序**。
+           * 第一版按字母序平铺 —— 实测在真实工作区里（496 个测试文件）前 40 个全是 `aa-*`，
+           * 与任务相关的那条排在第 200 位开外 ⇒ 机制**原理上无效** ✗（详见 §13.30）。
+           */
+          const notice = buildTestFileNotice(cwd, undefined, userMessage);
           if (notice) {
             trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + notice;
             debugLog("agent-loop", "Injected workspace test-file notice:", notice.length, "chars");

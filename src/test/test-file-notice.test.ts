@@ -101,4 +101,46 @@ describe("第 94 波：工作区测试文件清单（只呈递事实）", () => 
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  /**
+   * TN-5/TN-6（第 97 波，**由实测逼出来的**）：清单必须按**与当前任务的相关性**排序。
+   *
+   * 实测：某评测工作区有 **496 个**测试文件，第一版按字母序取前 40 ⇒ 全是 `aa-*`/`ab-*`，
+   * 而与任务相关的那条排在第 200 位开外 ⇒ 机制**原理上无效** ✗（详见交接单 §13.30）。
+   * 判据 TN-5 用"文件名与任务文本共享词"的场景钉住这件事；
+   * TN-6 钉住**不相关时不乱排**（没有共享词就该退回字母序，保证确定性）。
+   */
+  it("TN-5: 与任务文本词面相关的文件必须排到前面（哪怕它在字母序里很靠后）", () => {
+    const root = mkdtempSync(join(tmpdir(), "codem-test-notice-rank-"));
+    try {
+      // 造 60 个"字母序在前"的无关文件，把相关的那个挤到后面
+      for (let i = 0; i < 60; i++) {
+        writeFileSync(join(root, `aa-noise-${String(i).padStart(2, "0")}.test.ts`), "// noise");
+      }
+      writeFileSync(join(root, "dsh-d9-multi-edit-partial-failure.test.ts"), "// 目标判据");
+      const notice = buildTestFileNotice(
+        root,
+        5,
+        "multi_edit 部分失败必须判为 error，而不是 completed（partial failure 不能报成成功）",
+      )!;
+      expect(notice, "必须能列出清单").toBeTruthy();
+      const listed = notice.split("\n").filter((l) => l.trim().startsWith("- ")).map((l) => l.trim());
+      expect(listed.length, "最多列 5 个").toBeLessThanOrEqual(5);
+      expect(listed[0], `相关文件必须排第一（实际：${listed.join(" | ")}）`).toContain("multi-edit-partial-failure");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("TN-6 反向对照: 任务文本与文件名毫无共享词时，退回字母序（保证确定性，不许乱排）", () => {
+    const root = mkdtempSync(join(tmpdir(), "codem-test-notice-norank-"));
+    try {
+      for (const n of ["zeta.test.ts", "alpha.test.ts", "mid.test.ts"]) writeFileSync(join(root, n), "// x");
+      const notice = buildTestFileNotice(root, 10, "完全无关的另一件事，比如给文档改个错别字")!;
+      const listed = notice.split("\n").filter((l) => l.trim().startsWith("- ")).map((l) => l.trim().slice(2));
+      expect(listed).toEqual([...listed].sort());
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

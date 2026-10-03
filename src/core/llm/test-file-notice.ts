@@ -91,18 +91,62 @@ function collect(root: string): { files: string[]; truncatedScan: boolean } {
 }
 
 /**
+ * 把一段文本切成**可比较的词元**（小写、保长度 ≥3 的字母数字片段）。
+ *
+ * 为什么要切：清单必须**按与当前任务的相关性排序**，否则在真实工作区里没用 ——
+ * 实测（第 97 波）：某评测工作区有 **496 个**测试文件，按字母序取前 40 个全是 `aa-*`/`ab-*`，
+ * 而真正相关的那条排在第 200 位开外 ✗。切词后可用"文件名与用户消息的词面重叠"来排序 ✓。
+ */
+export function tokenize(text: string): string[] {
+  return String(text)
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2") // camelCase 拆开
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 3);
+}
+
+/**
+ * 按"与当前任务的相关性"给测试文件排序。
+ *
+ * 打分只看**词面重叠**（不做语义猜测）：用户消息里出现的词，若也出现在**文件名**里就加分，
+ * 出现在**目录路径**里加较少的分。分数相同则按路径字母序（保证确定性 ✓）。
+ *
+ * 仍然是"只陈述事实"：只是**决定先列哪些**，不评价该不该跑 ✓。
+ */
+export function rankByRelevance(files: string[], query: string): string[] {
+  const queryTokens = new Set(tokenize(query));
+  if (queryTokens.size === 0) return [...files].sort();
+  const score = (file: string) => {
+    const base = file.split("/").pop() ?? file;
+    const nameTokens = new Set(tokenize(base));
+    const pathTokens = new Set(tokenize(file));
+    let s = 0;
+    for (const t of queryTokens) {
+      if (nameTokens.has(t)) s += 3;
+      else if (pathTokens.has(t)) s += 1;
+    }
+    return s;
+  };
+  return [...files]
+    .map((f) => ({ f, s: score(f) }))
+    .sort((a, b) => b.s - a.s || a.f.localeCompare(b.f))
+    .map((x) => x.f);
+}
+
+/**
  * 生成"工作区测试文件清单"的尾部消息；没有测试文件时返回 `null`。
  *
  * @param root     工作区根目录
  * @param maxFiles 最多列出多少个（默认 {@link DEFAULT_MAX_TEST_FILES}）
+ * @param query    当前任务的文本（用户消息），用来**按相关性排序**；不给则按字母序
  */
-export function buildTestFileNotice(root: string, maxFiles = DEFAULT_MAX_TEST_FILES): string | null {
-  const { files, truncatedScan } = collect(root);
+export function buildTestFileNotice(root: string, maxFiles = DEFAULT_MAX_TEST_FILES, query = ""): string | null {
+  const { files } = collect(root);
   if (files.length === 0) return null;
 
-  files.sort();
   const total = files.length;
-  const listed = files.slice(0, maxFiles);
+  const ranked = rankByRelevance(files, query);
+  const listed = ranked.slice(0, maxFiles);
   const lines = listed.map((f) => `- ${f}`).join("\n");
   const more =
     total > listed.length
@@ -114,7 +158,7 @@ export function buildTestFileNotice(root: string, maxFiles = DEFAULT_MAX_TEST_FI
    * 判据 TN-3 会扫"务必/必须都/覆盖不足/确保全部/你应该跑/不要偷懒"这些词。
    */
   return [
-    `[工作区测试文件] 这个工作区里有以下测试文件（相对路径）：`,
+    `[工作区测试文件] 这个工作区里有以下测试文件（相对路径，与当前任务词面相近的排在前面）：`,
     lines,
     more.trim(),
     `这些只是事实清单；要看某个文件的内容，用 read 打开它。`,
