@@ -552,9 +552,96 @@ export class PermissionMiddleware implements PreExecuteMiddleware {
 }
 
 /**
- * Sandbox guard middleware (guard layer)
+ * 沙箱 guard middleware (guard layer)
  * Checks if file paths are within the workspace when sandbox mode is enabled.
  */
+
+/**
+ * 从 shell 类入参里找出**第一个跑到工作区之外**的路径（找不到就返回 `null`）。
+ *
+ * ## 为什么要这个（第 97 波）
+ *
+ * 沙箱原来的判据是"入参里有 `path` 就查它，没有就放行" —— 而 `bash` 的路径**藏在命令文本里**，
+ * 于是同一个沙箱里：`read C:\other\x` 被拒，`bash { command: "Get-Content C:\\other\\x" }` 却读得到。
+ *
+ * ## 判据（保守：只报**能确定**的逃逸）
+ *
+ * 1. **绝对路径**：盘符（`C:\…` / `C:/…`）与 UNC（`\\server\share`）；
+ * 2. **含 `..` 的相对路径**：按 `cwd` 解析后判断（`HEAD..main` 这类不含分隔符的 token 会解析成
+ *    工作区内的相对名 ⇒ 自然放行，不会误报 git 的区间写法）；
+ * 3. `workdir` 入参（`bash` 支持它，等于换个目录再执行）。
+ *
+ * ## 明确的边界（别把它当密不透风的隔离）
+ *
+ * - **URL 不算路径**：`https://example.com/x` 里的 `s://` 长得像盘符，先剥掉再扫；
+ * - **变量引用判不了**：`$env:USERPROFILE\…` / `%APPDATA%\…` / `~` 都是运行期才展开的，
+ *   文本层看不见 ⇒ 放行（这是**有意的边界**，不是遗漏）；
+ * - 文本层判据天然挡不住编码/拼接/脚本里二次构造的路径 —— 所以评测那一侧还有"污染检测"兜底。
+ *
+ * @param args   工具入参（读 `command` / `code` / `script` / `workdir`）
+ * @param cwd    当前工作区
+ * @param isWithin 由宿主注入的"在不在工作区内"判定（与 `SandboxGuard` 用的是同一个）
+ */
+export function findOutOfWorkspacePath(
+  args: Record<string, unknown>,
+  cwd: string,
+  isWithin: (path: string, cwd: string) => boolean,
+): string | null {
+  if (!cwd) return null;
+  const sep = cwd.includes("/") && !cwd.includes("\\") ? "/" : "\\";
+
+  /** 把相对路径按 cwd 解析并折叠 `..` / `.`（文本层，不碰文件系统） */
+  const resolveAgainstCwd = (p: string): string => {
+    const normalized = p.replace(/\\/g, "/");
+    const base = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+    const parts = `${base}/${normalized.replace(/^\/+/, "")}`.split("/");
+    const out: string[] = [];
+    for (const part of parts) {
+      if (part === "" || part === ".") continue;
+      if (part === "..") out.pop();
+      else out.push(part);
+    }
+    const joined = out.join("/");
+    // 盘符要保留成 `C:/…` 的形状（isWithin 两种写法都见得到）
+    return /^[A-Za-z]:/.test(joined) ? joined : joined;
+  };
+
+  const candidates: string[] = [];
+  if (typeof args.workdir === "string" && args.workdir.trim()) candidates.push(args.workdir.trim());
+  // 命令文本：bash 的 `command`、run_code 的 `code`、workflow 的 `script` —— 都可能是 shell
+  for (const key of ["command", "code", "script"]) {
+    const raw = args[key];
+    if (typeof raw !== "string" || !raw) continue;
+    // 1) 先剥掉 URL，避免把 `https://…` 的 `s://` 当成盘符
+    const text = raw.replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`]+/g, " ");
+    // 2) 绝对路径（盘符 / UNC）
+    for (const m of text.match(/(?:^|[^\w])([A-Za-z]:[\\/][^\s"'`;|&)<>,]*)/g) ?? []) {
+      candidates.push(m.replace(/^[^\w]*/, "").replace(/[.,;:]+$/, ""));
+    }
+    for (const m of text.match(/\\\\[^\s"'`;|&)<>,]+/g) ?? []) candidates.push(m);
+    // 3) 含 `..` 的相对路径。
+    //
+    // ⚠️ **裸 `..` 也算候选**（真机实测抓到的漏洞）：第一版要求 token 里带 `/` 或 `\` 才当路径，
+    // 于是 `Get-ChildItem ..`（一条就能列出父目录 = 隔壁主仓库）**一路放行**。
+    // 不做正则会误报吗：`HEAD..main` 这类 git 区间会解析成"工作区内的相对名" ⇒ 仍然放行。
+    for (const m of text.match(/[^\s"'`;|&)<>,]*\.\.[^\s"'`;|&)<>,]*/g) ?? []) candidates.push(m);
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const absolute = /^[A-Za-z]:[\\/]/.test(candidate) || candidate.startsWith("\\\\") || candidate.startsWith("/");
+    const resolved = absolute ? candidate.replace(/\\/g, "/") : resolveAgainstCwd(candidate);
+    let within = false;
+    try {
+      within = isWithin(resolved, cwd) || isWithin(resolved.replace(/\//g, sep), cwd);
+    } catch {
+      // 判定器抛错 ⇒ 当作"拦不住"，放行（不因为沙箱自身的问题挡住正常调用）
+      within = true;
+    }
+    if (!within) return candidate;
+  }
+  return null;
+}
 export class SandboxGuard implements GuardMiddleware {
   name = "sandbox";
   private isEnabled: () => boolean;
@@ -594,7 +681,39 @@ export class SandboxGuard implements GuardMiddleware {
     // 工作区内」，而按 id 访问的资源（附件）根本没有路径可判。
     // 「附件不算沙箱范围」是产品决策，见 `src/test/sandbox-boundary.test.ts`。
     const path = (args.path || args.file_path) as string;
-    if (!path) return { action: "proceed" };
+    if (!path) {
+      /**
+       * 第 97 波：**沙箱也要管住 shell 的路径**。
+       *
+       * 原来这里一句 `return { action: "proceed" }` —— 判据是"入参里没有 path 就放行"（附件那种
+       * 按 id 访问的资源确实判不了）。但 `bash` 的入参是 `command` / `workdir`：**它的路径藏在命令文本里**，
+       * 于是"沙箱已开启"时，`read C:\other\file` 被拒、而
+       * `bash { command: "Get-Content C:\\other\\file" }` **照样读得到**。
+       *
+       * 实测后果（真实仓库档评测）：工作区的 git 已经修干净了（历史里只有 bug 状态、参考解不可达），
+       * 被测 agent 直接跑去**隔壁主仓库**把参考解读走：
+       *   `cd C:\mimo-gui; git show HEAD:src/core/llm/edit-matchers.ts | Select-String 'findAmbiguousLiteral'`
+       * 那一次 21 次工具调用碰了工作区之外 ⇒ 成绩作废。
+       *
+       * 判据（见 `src/test/sandbox-shell-path-leak.test.ts`）：
+       * 命令文本里的**绝对路径**（含盘符 / UNC）与**含 `..` 的相对路径**、以及 `workdir`，
+       * 只要解析出来在工作区之外就拒绝；URL（`https://…`）与变量（`$env:X` / `%X%`）不算路径。
+       *
+       * ⚠️ 边界（写在明处，别当它是密不透风的）：这是**文本层**的判据，不是内核级隔离 ——
+       * 变量拼出来的路径、编码后的路径、脚本里二次构造的路径都拦不住。
+       * 所以评测那边还有一道"污染检测"兜底（`.preview-shot/_codem-repo-eval.mjs` 的 `contaminated`）。
+       */
+      const leak = findOutOfWorkspacePath(args, ctx.cwd, (p, cwd) => this.isWithinWorkspace(p, cwd));
+      if (leak) {
+        return {
+          action: "deny",
+          denyMessage:
+            `Sandbox: the command references "${leak}" which is outside the workspace "${ctx.cwd}". ` +
+            `The sandbox is enabled — disable it in settings or stay within the workspace.`,
+        };
+      }
+      return { action: "proceed" };
+    }
 
     // Resolve relative paths
     let resolvedPath = path;

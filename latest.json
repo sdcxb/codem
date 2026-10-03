@@ -1,15 +1,15 @@
 {
-  "version": "1.16.228",
-  "notes": "工具输出契约两处治本：value 透传 + 失败原因不被契约话术顶掉",
-  "pub_date": "2026-10-03T03:05:46Z",
+  "version": "1.16.230",
+  "notes": "沙箱 shell 路径判据补上裸 ..",
+  "pub_date": "2026-10-03T03:27:13Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R6RWMzb2ZieURRbjZjSzdPR3gwanZ0TFdqTVZDUVNRenhpL0lNU0dic2pTNktpRWV0K09jaUh2NHdmcnJOM1F3VGdxYXhUT2UvL3p0NkxBYUVxS0FzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTk2NzMyCWZpbGU6Q29kZW1fMS4xNi4yMjhfeDY0LXNldHVwLmV4ZQpmb2I1RXcwQXNmSVNIZDJtbm9Yc2pHK0dlSytsOG9QdlRkblpNdHlBYjh3WFppQVpUWk00Qnl6NXdTZGlqYVN0UUdkWWRYWVRRb0QzRHc3ZTU0ZkFCdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.228/Codem_1.16.228_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3aUlVQWJta0MyUUZVN1FQVnM4Ri9UVUxsMmhwNXZvbHRDRzFWS3AwVko1V3FUa3A0SDVIMDR3T3Fjb3RGam45OUFqTy9QZEJFYTdZZXhJeE1qZHdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTk4MDIxCWZpbGU6Q29kZW1fMS4xNi4yMzBfeDY0LXNldHVwLmV4ZQpjRHZJTjdESEdzMVlyVDNIdlBmVE9LRnVwbTNCWE5ocGFjSzM5SXk2c0h4SDN6bS9oQlJiNWNBZWUzdFY4QVhCMTU5ckR2ck9hb25xeWFZUisvMVhEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.230/Codem_1.16.230_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2R6RWMzb2ZieURRbjZjSzdPR3gwanZ0TFdqTVZDUVNRenhpL0lNU0dic2pTNktpRWV0K09jaUh2NHdmcnJOM1F3VGdxYXhUT2UvL3p0NkxBYUVxS0FzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTk2NzMyCWZpbGU6Q29kZW1fMS4xNi4yMjhfeDY0LXNldHVwLmV4ZQpmb2I1RXcwQXNmSVNIZDJtbm9Yc2pHK0dlSytsOG9QdlRkblpNdHlBYjh3WFppQVpUWk00Qnl6NXdTZGlqYVN0UUdkWWRYWVRRb0QzRHc3ZTU0ZkFCdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.228/Codem_1.16.228_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3aUlVQWJta0MyUUZVN1FQVnM4Ri9UVUxsMmhwNXZvbHRDRzFWS3AwVko1V3FUa3A0SDVIMDR3T3Fjb3RGam45OUFqTy9QZEJFYTdZZXhJeE1qZHdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTk4MDIxCWZpbGU6Q29kZW1fMS4xNi4yMzBfeDY0LXNldHVwLmV4ZQpjRHZJTjdESEdzMVlyVDNIdlBmVE9LRnVwbTNCWE5ocGFjSzM5SXk2c0h4SDN6bS9oQlJiNWNBZWUzdFY4QVhCMTU5ckR2ck9hb25xeWFZUisvMVhEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.230/Codem_1.16.230_x64-setup.exe"
     }
   }
 }

@@ -382,11 +382,25 @@ describe('功能闭环: 工具管道数据流', () => {
     }
   })
 
-  it('SandboxGuard 在 path 不存在时放行', async () => {
-    const src = await vi.importActual('fs')
-    const code = src.readFileSync('src/core/llm/tool-pipeline.ts', 'utf8')
-    // 检查 path 为空时放行逻辑 — 可能使用双引号或单引号
-    expect(code).toMatch(/if\s*\(\s*!\s*path\s*\)\s*return\s*\{\s*action:\s*['"]proceed['"]\s*\}/)
+  /**
+   * 第 97 波：断言从"源码里那一行的形状"改成**行为**。
+   *
+   * 原来钉的是 `if (!path) return { action: "proceed" }` 这句源码 ——
+   * 它守的意图是对的（**判不了的东西要放行**，比如按 id 访问的附件），
+   * 但形状在 v1.16.229 变了：没有 `path` 之后还要看 **shell 文本**里的路径
+   * （`bash` 的路径藏在 `command` 里，旧写法一律放行 ⇒ 成了评测里的作弊通道）。
+   * 现在直接问判据函数：**没有可判的东西 ⇒ null（放行）；有越界路径 ⇒ 报出来**。
+   */
+  it('SandboxGuard 在「没有可判的路径」时放行（判据是行为，不是源码形状）', async () => {
+    const { findOutOfWorkspacePath } = await vi.importActual<typeof import('../core/llm/tool-pipeline')>(
+      '../core/llm/tool-pipeline',
+    )
+    // 既没有 path、也没有命令文本 ⇒ 没有可判的东西（附件就是这种）
+    expect(findOutOfWorkspacePath({}, 'C:\\workspace', () => false)).toBeNull()
+    // 但 shell 文本里的越界路径**必须**报出来（否则上面那条就是"什么都不判"的托词）
+    expect(findOutOfWorkspacePath({ command: 'type D:\\outside\\x.txt' }, 'C:\\workspace', () => false)).toBe(
+      'D:\\outside\\x.txt',
+    )
   })
 
   it('只读工具注册了并发分类器', async () => {

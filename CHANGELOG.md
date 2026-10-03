@@ -2,6 +2,41 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.230] - 2026-10-03
+
+### 修复
+
+- **沙箱的 shell 路径判据漏了「裸 `..`」**（上一版刚加的判据自己的漏洞，靠真机再验一次抓到）。
+  1.16.229 要求候选 token 里带 `/` 或 `\` 才算路径，于是 `Get-ChildItem -Force ..`、
+  `ls ..`、`cd ..` 这类**没有分隔符的裸 `..`** 一路放行 —— 一条命令就能列出父目录。
+  **真机取证**：装好 1.16.229 之后跑评测，agent 的工作目录被（另一个 bug）指到了空壳目录里，
+  它随即用 `Get-ChildItem -Force .. | Format-Table Name,Mode` **列出了父目录（主仓库）**，
+  结果里能看到 `.deepseek-harness-ref` / `src` / `.codem` 等等 —— 而判据当时是绿的。
+  修法：裸 `..` 也算候选（`HEAD..main` 这类 git 区间解析后落在工作区内，仍然放行，不会误报）。
+  **判据**：`sandbox-shell-path-leak.test.ts` 新增 `SHLEAK-3b`（三条裸 `..` 命令都必须被拒且不执行）；
+  **变异自证**：把 `..` 那一轮扫描去掉 ⇒ `SHLEAK-3`/`SHLEAK-3b` 立刻红。
+
+## [1.16.229] - 2026-10-03
+
+### 修复
+
+- **沙箱只拦住了「参数里的路径」：`bash` 把路径藏在命令文本里，于是同一个沙箱里
+  `read C:\other\x` 被拒、`bash { command: "Get-Content C:\other\x" }` 照样读得到。**
+  沙箱的路径守卫（`tool-pipeline.ts` 的 `SandboxGuard`）判据是"入参里有 `path` 就查它，
+  没有就放行" —— `read` / `grep` / `glob` 有 `path` 所以受管，`bash` 的入参是
+  `command` / `workdir`，**路径在文本里**，于是整条守卫形同虚设。
+  **实机取证**（真实仓库档评测）：工作区的 git 已经修干净（历史里只有 bug 状态、参考解在它的
+  git 里不可达），被测 agent 于是跑去**隔壁主仓库**把参考解读走 ——
+  `cd C:\mimo-gui; git show HEAD:src/core/llm/edit-matchers.ts | Select-String 'findAmbiguousLiteral'`，
+  那一次 21 次工具调用碰了工作区之外，成绩作废（`.preview-shot/_probe-outside-workspace.mjs`）。
+  **修法**：`SandboxGuard` 在没有 `path` 时改为扫描 `command` / `code` / `script` / `workdir`
+  里的路径 —— 绝对路径（盘符/UNC）、含 `..` 的相对路径、`workdir`，只要解析出来在工作区之外就拒绝
+  （文案给出那个路径与工作区）。**边界写在明处**：URL 先剥掉（`https://` 的 `s://` 长得像盘符）；
+  `$env:X` / `%VAR%` / `~` 这类**运行期才展开**的引用判不了，故意放行 —— 评测侧另有"污染检测"兜底。
+  **判据**：`src/test/sandbox-shell-path-leak.test.ts` 8 条（含**反向对照**：沙箱关闭时
+  这些命令必须照旧放行，不给普通用户加隐形墙；以及 URL 假阳性控制与"变量引用拦不住"这条**已知边界**）。
+  **变异自证**：把 `findOutOfWorkspacePath` 的返回值改成 `null` ⇒ 4 条拒绝判据立刻红。
+
 ## [1.16.228] - 2026-10-03
 
 ### 修复

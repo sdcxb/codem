@@ -750,6 +750,79 @@ read  {"limit":140,"path":"C:\\mimo-gui\\src\\core\\llm\\edit-matchers.ts"}
 3. 顺带修掉的两个产品缺陷（v1.16.227/228）都是"真机上工具直接用不了"的级别 —— 它们本来会让**任何**评测都失真
    （agent 拿不到文件内容、跑不了命令）。
 
+---
+
+## §12 第 99 波（2026-10-03 · v1.16.229 / v1.16.230）：把隔离补上，拿到**第一个可信分数**
+
+### 12.1 沙箱原来只拦「参数里的路径」：`bash` 把路径藏在命令文本里
+
+`SandboxGuard`（`tool-pipeline.ts`）的判据是"入参里有 `path` 就查它，**没有就放行**"。
+`read` / `grep` / `glob` 有 `path` ⇒ 受管；`bash` 的入参是 `command` / `workdir`，**路径在文本里**
+⇒ 整条守卫形同虚设。真机上同一个沙箱里：
+
+```text
+read { path: "C:\\mimo-gui\\package.json" }                 → Sandbox: Read from … is outside the workspace
+bash { command: "Get-Content 'C:\\mimo-gui\\package.json'" } → 通过，内容原样返回
+```
+
+**修法（v1.16.229）**：没有 `path` 时扫描 `command` / `code` / `script` / `workdir` 里的路径 ——
+绝对路径（盘符 / UNC）、含 `..` 的相对路径、`workdir`，解析出工作区外即拒绝。
+**边界写在明处**：URL 先剥（`https://` 的 `s://` 长得像盘符）；`$env:X` / `%VAR%` / `~` 是运行期
+才展开的，**故意放行**（文本层判不了）—— 评测侧还有"污染检测"兜底。
+
+### 12.2 上一版刚加的判据自己漏了「裸 `..`」（v1.16.230）
+
+1.16.229 要求候选 token 里带 `/` 或 `\` 才算路径 ⇒ `Get-ChildItem -Force ..` / `ls ..` / `cd ..`
+**一路放行**，一条命令就能列出父目录。这是"装好之后**再验一次**"抓到的：那次 agent 的工作目录
+被另一个 bug 指到了空壳目录，它随即 `Get-ChildItem -Force .. | Format-Table Name,Mode` 列出了主仓库
+（`.deepseek-harness-ref` / `src` / `.codem` …），**而当时判据是绿的**。
+修法：裸 `..` 也算候选（`HEAD..main` 这类 git 区间解析后落在工作区内，仍然放行）。
+判据 `SHLEAK-3b`；变异：去掉 `..` 扫描 ⇒ `SHLEAK-3`/`3b` 立刻红。
+
+### 12.3 尺子自己的第 3 个 bug：项目路径被写成"项目 id"（静默失效，比作弊更难发现）
+
+驱动的 `registerProject()` 在**更新**已有项目那一支写成了 `path = id`（而不是工作区绝对路径），
+于是应用按自己的进程 cwd 把 `codem-eval-workspace` 解析成 `C:\mimo-gui\codem-eval-workspace`
+（还顺手把它建了出来）。后果：agent 的工作目录是个**空壳**，它摸了一圈说
+「工作目录在空壳 codem-eval-workspace，项目实际在父目录 C:\mimo-gui」，5 次迭代就放弃、
+**一个字符都没改** —— 那一次判据全红，而 `contaminated: false` 会让人误以为"隔离成功但模型不行"。
+**教训**：判据必须核到**工作目录本身**（`bash pwd` 的输出），不能只核 `project_id`。
+修好之后同一个任务的表现：**5 次迭代 / 0 字符改动 → 21 次迭代 / 25 次工具调用 / 2776 字符改动**。
+
+### 12.4 第一批**可信**分数（3 个任务，1 通过 / 2 不通过）
+
+口径：工作区是一份只有 bug 状态提交的新仓库（§10）、答案与任务集不在里面、应用的工作目录
+**就是**该工作区（`project_id` + `pwd` 双重核对）、沙箱开启、污染检测为零。
+
+| 任务 | 结果 | 迭代 | 工具调用 | token | 耗时 | 改动字符 | 判据 |
+|---|---|---|---|---|---|---|---|
+| `repo-01-edit-ambiguity` | **通过** | 21 | 25 | 853k | 3.1 min | 2776 | 24/24 |
+| `repo-02-write-false-success` | 不通过 | 28 | 40 | 1.17M | 4.3 min | 1233 | 17/18（`D9-1`：`multi_edit` 部分失败没被判成 error） |
+| `repo-03-usage-accounting` | 不通过 | 36 | 56 | 2.36M | 6.0 min | 8933 | 8/12（`D7-B/C/E`、缓存桶"缺报不猜 0"口径没做对） |
+
+三个会话全部：`loop_stopped` **0 条**（停滞守卫一次没响）、`contaminated: false`、
+`outsideWorkspaceCalls: []`。合计 **4.4M token / 13.4 分钟**。
+
+- **它确实会修**：`repo-01` 那次自己起名 `countLiteralOccurrences`（返回 `{count, lines}`），
+  与参考解的 `findAmbiguousLiteral` 明显不同 —— **不是抄的**。
+- **它也真的会答错**：`repo-02` 卡在"部分失败要判 error"、`repo-03` 卡在"缺报的缓存桶不许猜 0"。
+  这两条都是**口径类**判据（不是没实现，而是实现得不彻底）—— 恰好是这一档最该测出来的东西。
+- 成本对照：同一任务在"尺子坏掉"那一次（§11.1）是 4.15M token / 57 迭代 / 污染 21 次；
+  可信口径下 `repo-01` 只花 **853k token / 21 迭代**（1/5）—— 省下来的正是"先怀疑环境、再去隔壁找答案"。
+
+### 12.5 还差什么
+
+1. **样本仍然太小**：3 个任务 × 1 次还不够支撑"真实仓库档能修几分"。口径已经站住了，
+   接下来是**批量跑**（8 个任务 × 2 次重复 ≈ 8–10M token）。批量时注意 §5.4：跨会话续跑的
+   那几个任务要逐个新会话，或者先排除。
+2. **`run_code` 在真机上被 CSP 挡住**（`unsafe-eval` 不在 `script-src` 里）—— 探针里 agent 试过
+   `run_code` 拿目录，返回「Evaluating a string as JavaScript violates … Content Security Policy」。
+   这个工具**在真机上等于不可用**（本仓已有 `run_code` 的危险命令分析器，但它连跑都跑不起来）。
+   要不要修（放开 CSP 的代价 vs. 把 run_code 改成不经 eval 的实现）**需要产品决定**。
+3. §3.6（外层 `run_code` / `workflow` 在「替我审批」模式下是否仍自动放行）仍然**等用户拍板**。
+
+
+
 
 
 

@@ -36,6 +36,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDefaultToolRegistry } from "../core/llm/tools";
 import { requiresPathGuard } from "../core/llm/tool-contract";
+import { findOutOfWorkspacePath } from "../core/llm/tool-pipeline";
 
 const PIPELINE = join(__dirname, "..", "core", "llm", "tool-pipeline.ts");
 const pipelineSrc = readFileSync(PIPELINE, "utf8");
@@ -60,7 +61,21 @@ describe("沙箱边界：附件按设计不受沙箱约束", () => {
 
   it("守卫在取不到 path 时确实会放行（这是「判不了」的机制）", () => {
     expect(pipelineSrc).toMatch(/const path = \(args\.path \|\| args\.file_path\)/);
-    expect(pipelineSrc).toMatch(/if \(!path\) return \{ action: "proceed" \}/);
+    /**
+     * 第 97 波改动了这段的结构（原来是一句 `if (!path) return proceed`）：
+     * 现在"没有 `path`"之后还会看 **shell 文本**（`command` / `code` / `script` / `workdir`）里
+     * 有没有跑到工作区之外的路径。所以判据从"读源码那一行的形状"改成**直接问判据函数**：
+     * 既没有 `path`、也没有任何可判的文本 ⇒ 返回 `null`（放行）。
+     * 这比字符串断言更强：它验的是行为，不是写法。
+     */
+    expect(
+      findOutOfWorkspacePath({}, "C:\\workspace", () => false),
+      "没有 path、也没有命令文本 ⇒ 没有可判的东西（附件就是这种）",
+    ).toBeNull();
+    // 而且它**确实**在管 shell 文本（否则上面那条就成了"什么都不判"的托词）
+    expect(findOutOfWorkspacePath({ command: "type D:\\outside\\x.txt" }, "C:\\workspace", () => false)).toBe(
+      "D:\\outside\\x.txt",
+    );
   });
 
   it("沙箱判据是命名谓词而不是工具名名单（名单已删除）", () => {
