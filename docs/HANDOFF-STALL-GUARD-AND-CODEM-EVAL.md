@@ -1683,6 +1683,36 @@ multi_edit spawn-in-process-provider.ts → read runtime.ts ×2 → multi_edit r
 （顺带：这次补跑还显示单个任务可能跑到 **16 分钟以上**（多轮验证 + tsc + stash 对照）——
 评测的 30 分钟上限还有余量，但**时延**要作为 A/B 的次指标如实报告：我们的基线本来就比对手慢约 50%。）
 
+### 13.16f **换一个前提，潜伏的错就浮上来**：`settings.updated_at` 事故
+
+第 116 波为了根治 EPERM，把工作区从**固定路径**改成**每次全新路径**。
+紧接着四条 run-3（repo-02/03/04/06）在 **19 秒内全部挂掉**：
+
+```
+NOT NULL constraint failed: settings.updated_at
+```
+
+根因不在被判对象，而在**驱动的数据库写入**：它注册项目时写
+`codem-security-mode-project:<工作区路径>` 这个键，而 INSERT 只给了 `(key, value)` ——
+`settings.updated_at` 是 **NOT NULL 且无默认值**。之所以"几十轮都没炸"，
+是因为**老路径固定**：同一个键在第一次之后就走了 `UPDATE` 分支，永远碰不到 INSERT ✗。
+路径一变新，每次都插入新键 ⇒ 潜伏的错立刻暴露。
+
+**修法**：INSERT/UPDATE 都写 `updated_at`；并在**数据库副本**上验证两条路径都通 ✓
+（`_verify-settings-fix.mjs`，全程不碰真库）。
+
+**教训（与 §13.16d 的 EPERM 同一条）**：
+> **"以前没炸"不等于"对"。** 脚手架里那些"凑巧能跑"的写法（固定路径、已存在的行、
+> 上一个任务恰好留下的状态），会在你换掉任何一个前提时集体浮上来。
+> 所以：改动脚手架的前提时，**先把受它影响的所有隐式假设列一遍**，并准备好"它会炸"的预期。
+
+**代价**：四条 run-3 作废（约 20 分钟评测 + 一轮重排）—— 已排最后一段补齐（`_chain-final-run3`）。
+
+（另一件同时查清的：`eval:repo-workspace` 曾以 `status: null` 结束 —— 原因是我的链式脚本
+用 `spawnSync("npm", …)` 调 `.cmd` 而没有 `shell: true`，spawn 直接 ENOENT 失败。
+改成直接调 `node tools/eval/run-repo-arm.mjs --verify-workspace` 后 **12/12 通过** ——
+即我这一波对 `repo-workspace.mjs` 的三处改动（停应用、排除清单单一真相、通配删除）**没有破坏建工作区**。）
+
 ### 13.17 执行状态（截至第 113 波；结论按 §13.16 的规则走）
 
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，12 个任务 run-1 **跑满**
