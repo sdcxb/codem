@@ -86,8 +86,16 @@ function walk(dir) {
 const hits = [];
 for (const file of walk(SRC)) {
   const rel = relative(ROOT, file).replace(/\\/g, "/");
-  // 测试文件不受 CSP 影响，本门禁不管它们
-  if (/\.test\.(ts|tsx)$/.test(rel)) continue;
+  /**
+   * 测试与测试替身不受 CSP 影响，本门禁不管它们。
+   *
+   * ⚠️ 判据要按**目录**排，不能只按文件名：第一版只跳过 `*.test.ts`，
+   * 于是 `src/test/helpers/script-runner-double.ts`（一个**刻意的**测试替身，
+   * 用 `new Function` 忠实执行 guest 代码）被误报成违规。
+   * 生产代码不许用 eval，测试替身可以 —— 这条边界按目录划才准。
+   */
+  if (/(^|\/)(test|tests|__tests__)\//.test(rel)) continue;
+  if (/\.(test|spec)\.(ts|tsx|js|jsx|mjs)$/.test(rel)) continue;
   const code = stripCommentsAndStrings(readFileSync(file, "utf8"));
   for (const { re, label } of PATTERNS) {
     re.lastIndex = 0;

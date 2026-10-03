@@ -12,6 +12,7 @@ use tokio::sync::{oneshot, Mutex as TokioMutex};
 // ========== Runtime Log ==========
 // 运行时事件文件日志（对标 dsh log-files.ts）：按日 + 轮转 + 上限 + 脱敏。
 // 打包版无控制台，常规事件落盘供用户/开发者诊断。
+mod js_sandbox;
 mod runtime_log;
 // 渲染进程崩溃取证（第 71 轮）：WebView2 `ProcessFailed` → 运行时日志 +
 // 前端心跳（含进程树内存）+ 退出原因区分。见 crash_evidence.rs 顶部的事故注释。
@@ -2991,6 +2992,8 @@ let app = tauri::Builder::default()
         .manage(connector_state.clone())
         .manage(storage_state)
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
+        // 第 103 波：Rust 侧 JS 沙箱的"等前端回复"表（run_code / workflow 的 sdk 调用走它）
+        .manage(js_sandbox::PendingHostCalls::default())
         .manage(AppState {
             providers: Mutex::new(vec![
                 ProviderConfig {
@@ -3011,6 +3014,9 @@ let app = tauri::Builder::default()
             mcp_processes: TokioMutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
+            // 第 103 波：Rust 侧 JS 沙箱（不经 eval 跑 run_code / workflow 的脚本）
+            js_sandbox::js_run_sandboxed,
+            js_sandbox::jsvm_host_reply,
             crash_evidence::log_renderer_event,
             crash_evidence::log_renderer_heartbeat,
             crash_evidence::take_renderer_crash_marker,

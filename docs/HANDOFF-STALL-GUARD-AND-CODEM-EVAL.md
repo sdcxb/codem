@@ -1071,19 +1071,50 @@ bash { command: "Get-Content 'C:\\mimo-gui\\package.json'" } → 通过，内容
 | 动态插件 `dynamic-runner-provider.ts` | ⏳ 未迁（**最后 1 处**，门禁里记着） | `npm run audit:no-eval` 只报它一处 |
 | 门禁 | ✅ `npm run audit:no-eval`（扫 `src/`，注释/字符串/正则不算；允许清单每迁完一处就删一行） | 已挂进 `npm run audit` |
 
-### 16.5 下一步（按顺序）
+### 16.5 第 104 波：异步路径搬进 **Rust 侧 `boa_engine`**（已完成，真机已验证）
 
-1. **Rust 侧引擎（`boa_engine`）承接异步路径**：那里宿主调用是**阻塞**的（Rust 可以等 Tauri IPC 的回复），
-   没有 asyncify 挂起 ⇒ 没有 16.3 那个上限。前端仍是**唯一**的 SDK 实现（危险命令分析、受保护路径、
-   覆盖确认都在 TS 里），Rust 只做"发事件 → 等回复"的代理 ⇒ 不产生第二份闸门。
-   落地后：`maxHostCalls` 取消、JSVM-11 改成"任意次调用都成功"、`run_code`/`workflow` 恢复完整能力。
-2. **动态插件**：把插件能用到的 `ctx` 面收敛成可序列化桥（宿主函数 + 服务代理），
-   用持久 VM 跑插件代码；之后 `audit:no-eval` 的允许清单清空。
-3. **发布与真机验证**：在 1 与 2 落地之前**不发版** —— 现在装着的 1.16.230 里 `run_code` 本来就是
-   CSP 挡住的状态，保持不动就不是回归；发一个"最多 1 次工具调用"的版本反而是半个功能。
-4. 然后回到最终目标：用 §13 那套 12 任务口径**测 Codem 与 DSH 的编码能力**（隔离对等方案见 §13.7）。
+`src-tauri/src/js_sandbox.rs`（引擎 + 命令 + 桥）+ `src/core/js/js-remote-runtime.ts`（前端适配）。
 
-### 16.6 本轮改动的判据总览（106 条相关判据全绿）
+- **执行**：guest 在 Rust 侧的 boa 引擎里跑；`sdk.*` 调用变成
+  "Rust 发事件 `jsvm://host-call` → 前端执行真正的工具 → `jsvm_host_reply` → Rust 阻塞拿到结果"。
+  因为是**阻塞**，guest 看到的是同步函数，`await` 照样能用，而且**没有次数上限**
+  （对比 WebView 侧那个"最多 1 次"的临时守卫，已经删掉）。
+- **闸门仍然只有一份**：危险命令分析、受保护路径、覆盖确认、沙箱路径判定都在 TS 侧
+  （`hostMethodsFromToolSdk` 把 SDK 的**同一个实现**交给执行器），Rust 不做任何权限判断。
+- **隔离变强**：guest 里没有 `process` / `window` / `require` / `__TAURI__`（Rust 测试里也钉了）。
+- **失控兜底**：boa 的**循环迭代上限**（确定性，不依赖墙钟）—— `while(true){}` 会被中断并给出可读原因。
+- **前端测试的形态变了**：vitest 里没有 Tauri 运行时，所以闸门类判据改为注入
+  `src/test/helpers/script-runner-double.ts`（用 Node 的 `new Function` **忠实执行 guest 代码**、
+  但把**真实的** sdk 调起来）。三层分工写在那个文件头：vitest 钉闸门、Rust 钉引擎、真机钉端到端。
+- 顺带修掉两处"隐藏的 eval"与一处误判：
+  · `code-runtime-worker-thread-provider.ts` 原来把 `new Function` 藏在 **worker 脚本字符串**里
+    （源码扫描看不见），现已改走 Rust 沙箱（`methods: []`，比原来的白名单 require 更严）；
+    ⚠️ 它**不是死代码** —— `plugin-loader/builtin-registry.ts` 注册着它，删掉会让 `npm run build` 失败
+    （这次就是被 build 拦下来的，教训写进了对应判据）；
+  · 门禁 `audit:no-eval` 原来只跳过 `*.test.ts`，于是 `src/test/helpers/*` 里的**测试替身**被误报；
+    现在按**目录**跳过（测试与测试替身不受 CSP 约束，生产代码才受）。
+
+**真机验证**（`.preview-shot/_probe-run-code-real.mjs`，装好的 1.16.231）：
+
+| 用例 | 结果 |
+|---|---|
+| `run_code` 里**连续 3 次** `sdk.bash` | ✅ `[Result]: ["first","second","third"]`（这正是 WebView 侧 0/5 的形状） |
+| `workflow {code:"return 6 * 7;"}` | ✅ `[Result]: 42` |
+| 两处是否还有 CSP 违规 | ✅ 没有 |
+
+**状态**：`run_code` / `workflow` / 函数型 hooks 在真机上**已可用**（发版 1.16.231）；
+`npm run audit:no-eval` 只剩 **1 处**待迁移（动态插件）。
+
+### 16.6 下一步（只剩最深的这一处）
+
+1. **动态插件 `dynamic-runner-provider.ts`**（最后 1 处 `new Function`）：插件代码拿到的是**活的 Cordis ctx**
+   （`ctx.provide(name, { hello: () => "world" })` 这类**带函数**的服务）⇒ 迁移要
+   ①把插件能用到的 ctx 面收敛成**可序列化桥**（宿主函数 + 服务代理），
+   ②用**持久 VM**（一次 `define` 建一个环境、`run` 时调用它）让 `provide` 的函数能被宿主回调。
+   落地后 `audit:no-eval` 的允许清单清空（= 目标达成）。
+2. 然后回到最终目标：用 §13 的 12 任务口径测 **Codem vs DSH**（隔离对等方案见 §13.7）。
+
+### 16.7 本轮改动的判据总览（三层分工，全绿）
 
 ```
 js-vm-no-eval.test.ts            12 ✓   （含 JSVM-2/10 的"桩掉 Function/eval 仍能跑"、JSVM-11 的守卫）

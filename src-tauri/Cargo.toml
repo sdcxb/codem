@@ -1,6 +1,6 @@
 [package]
 name = "codem"
-version = "1.16.230"
+version = "1.16.231"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"
@@ -16,6 +16,12 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# 第 103 波：Rust 侧 JS 引擎 —— 用来**不经 eval** 跑 `run_code` / `workflow` 的脚本。
+#
+# 为什么放 Rust 侧：宿主调用可以**阻塞**（Rust 线程等 Tauri IPC 的回复），
+# 于是不需要 WebView 侧那套 asyncify 挂起机制 —— 而那套实测"一次执行只能挂起一次"
+# （2 次工具调用 0/5 成功，且损坏是进程级的），具体数字见交接单 §16.3。
+boa_engine = { version = "0.22", features = ["annex-b"] }
 tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
 # 第 55 轮：库文件路径要与 Tauri 的 `app_data_dir()` **同源**。
 #

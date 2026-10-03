@@ -52,6 +52,7 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { createWorkflowTool, execWorkflow } from "../core/llm/workflow-engine";
+import { installScriptRunnerDouble, uninstallScriptRunnerDouble } from "./helpers/script-runner-double";
 
 // ========== 夹具 ==========
 
@@ -93,6 +94,13 @@ async function run(code: string, ctx: ToolContext): Promise<ToolExecuteResult> {
 }
 
 beforeEach(() => {
+  /**
+   * 第 103 波：`workflow` 的脚本执行也搬到了 **Rust 侧 boa**（vitest 里没有 Tauri 运行时），
+   * 所以这里装**测试替身**把 guest 代码跑起来、把**真实的** sdk 调起来 ——
+   * 本文件钉的是"workflow 内的危险命令/受保护路径/覆盖确认**在生产路径上生效**"。
+   * 替身与三层分工见 `src/test/helpers/script-runner-double.ts` 的文件头。
+   */
+  installScriptRunnerDouble();
   dir = mkdtempSync(join(tmpdir(), "codem-workflow-parity-"));
   mocks.executeCommand.mockReset();
   mocks.writeFile.mockReset();

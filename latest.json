@@ -1,15 +1,15 @@
 {
-  "version": "1.16.230",
-  "notes": "沙箱 shell 路径判据补上裸 ..",
-  "pub_date": "2026-10-03T03:27:13Z",
+  "version": "1.16.231",
+  "notes": "run_code/workflow/hooks 迁到 Rust 侧 JS 引擎：真机上终于可用（不经 eval）",
+  "pub_date": "2026-10-03T09:00:40Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3aUlVQWJta0MyUUZVN1FQVnM4Ri9UVUxsMmhwNXZvbHRDRzFWS3AwVko1V3FUa3A0SDVIMDR3T3Fjb3RGam45OUFqTy9QZEJFYTdZZXhJeE1qZHdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTk4MDIxCWZpbGU6Q29kZW1fMS4xNi4yMzBfeDY0LXNldHVwLmV4ZQpjRHZJTjdESEdzMVlyVDNIdlBmVE9LRnVwbTNCWE5ocGFjSzM5SXk2c0h4SDN6bS9oQlJiNWNBZWUzdFY4QVhCMTU5ckR2ck9hb25xeWFZUisvMVhEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.230/Codem_1.16.230_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JhWnVIZ1lnL0N3a0FKT3JHMWRXQ2lmM3REZU12K2NlUWpMR2NONUdjbnF1UmE1NmU4UGx1aVdteW04aWNmczVTWmM1aUFaK3EyYUVpb0JIVmZRR3dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMDE3OTMxCWZpbGU6Q29kZW1fMS4xNi4yMzFfeDY0LXNldHVwLmV4ZQpOK2NjalFmVzhzMm1rUjVzY1Q4dXo2U0JyQWE2K0RtM0ZCS3NiTEErNHp6RG0zbzNSUG1YdjdjSnhBcVU3TkZFc1dkZU83RFp0OEpxQ0NXUXlkbUpBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.231/Codem_1.16.231_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2I3aUlVQWJta0MyUUZVN1FQVnM4Ri9UVUxsMmhwNXZvbHRDRzFWS3AwVko1V3FUa3A0SDVIMDR3T3Fjb3RGam45OUFqTy9QZEJFYTdZZXhJeE1qZHdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTk4MDIxCWZpbGU6Q29kZW1fMS4xNi4yMzBfeDY0LXNldHVwLmV4ZQpjRHZJTjdESEdzMVlyVDNIdlBmVE9LRnVwbTNCWE5ocGFjSzM5SXk2c0h4SDN6bS9oQlJiNWNBZWUzdFY4QVhCMTU5ckR2ck9hb25xeWFZUisvMVhEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.230/Codem_1.16.230_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JhWnVIZ1lnL0N3a0FKT3JHMWRXQ2lmM3REZU12K2NlUWpMR2NONUdjbnF1UmE1NmU4UGx1aVdteW04aWNmczVTWmM1aUFaK3EyYUVpb0JIVmZRR3dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMDE3OTMxCWZpbGU6Q29kZW1fMS4xNi4yMzFfeDY0LXNldHVwLmV4ZQpOK2NjalFmVzhzMm1rUjVzY1Q4dXo2U0JyQWE2K0RtM0ZCS3NiTEErNHp6RG0zbzNSUG1YdjdjSnhBcVU3TkZFc1dkZU83RFp0OEpxQ0NXUXlkbUpBdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.231/Codem_1.16.231_x64-setup.exe"
     }
   }
 }

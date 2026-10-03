@@ -183,10 +183,31 @@ describe('功能闭环: Provider dispose 复合清理', () => {
    *  ② 预检行为仍然成立（按危险模式拒绝 + 给可读原因）——这是**行为判据**，不是源码文本；
    *  ③ 预检模块自己**不许**用 `new Function`（真正执行走 `src/core/js/js-vm.ts`）。
    */
-  it("旧的 Node 专用 Worker provider 已删除（它在 Tauri WebView 里跑不起来）", async () => {
+  /**
+   * ## 第 103 波：这条判据改写过两次，过程本身就是记录
+   *
+   * 1. 原来它读 `code-runtime-worker-thread-provider.ts` 的源码，**要求**里面出现 `new Function`
+   *    （"Worker 脚本使用 Function 构造器而非 eval"）—— 那是本波要消灭的东西；
+   * 2. 我一度**删掉**了这个 provider（当时以为它是死代码），判据改成"文件不存在"；
+   *    但 `plugin-loader/builtin-registry.ts` **确实注册了它**
+   *    （`@codem/code-runtime-worker-thread`）—— 删除会让 `npm run build` 直接失败
+   *    （rollup：`Could not resolve "../provider/code-runtime-worker-thread-provider"`），
+   *    于是把它**恢复并迁移**到 Rust 沙箱；
+   * 3. 现在这条判据钉**新的事实**：它还在、还能被注册，但**不再**用 Node 的 `worker_threads`、
+   *    也**不再**用 `new Function`，而是调 `js_run_sandboxed`（与 `run_code` 同一条路）。
+   *
+   * 教训：判"死代码"要先确认**没有任何注册点**（`builtin-registry.ts` 是插件体系的入口，
+   * 普通 `src/**` 的 grep 在 PowerShell 下还容易漏 —— 这次是真被 build 拦下来的）。
+   */
+  it("code-runtime-worker-thread provider 已迁到 Rust 沙箱（不再用 worker_threads / new Function）", async () => {
     const src = await vi.importActual("fs");
-    expect(src.existsSync("src/core/provider/code-runtime-worker-thread-provider.ts")).toBe(false);
-    expect(src.existsSync("src/core/provider/validate-dynamic-code.ts")).toBe(true);
+    const path = "src/core/provider/code-runtime-worker-thread-provider.ts";
+    expect(src.existsSync(path), "它被 builtin-registry 注册着，不能删").toBe(true);
+    const raw = src.readFileSync(path, "utf8");
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    expect(code, "不许再起 Node worker").not.toMatch(/worker_threads/);
+    expect(code.match(/new\s+Function\s*\(/g) ?? [], "不许再用 new Function").toHaveLength(0);
+    expect(code, "要走 Rust 沙箱").toContain("js_run_sandboxed");
   });
 
   it("动态代码预检仍然按危险模式拒绝，并给出可读原因（行为判据）", async () => {
@@ -197,7 +218,7 @@ describe('功能闭环: Provider dispose 复合清理', () => {
     expect(validateCode("const r = [1,2,3].reduce((a,b)=>a+b,0); return r;").ok).toBe(true);
   });
 
-  it("动态代码预检模块自己不用 new Function（执行走 QuickJS/WASM）", async () => {
+  it("动态代码预检模块自己不用 new Function（执行走引擎）", async () => {
     const src = await vi.importActual("fs");
     const raw = src.readFileSync("src/core/provider/validate-dynamic-code.ts", "utf8");
     // 注释里会**提到** new Function（解释历史）；判据只看真代码 —— 与门禁 `audit:no-eval` 同一口径

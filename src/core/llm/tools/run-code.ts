@@ -25,7 +25,6 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
-import { runInJsVm } from "../../js/js-vm";
 /**
  * 闸门（危险命令 / 受保护路径 / 覆盖确认）已抽到 `../tool-gates`，与
  * `workflow-engine.ts` **共用同一份实现**（原来这里是本地私有副本，
@@ -63,9 +62,65 @@ export interface ToolSDK {
 // ========== Code Execution ==========
 
 /**
+ * 脚本执行前端：默认是 **Rust 侧 JS 沙箱**（`js_run_sandboxed`）。
+ *
+ * ## 为什么要可注入（第 103 波）
+ *
+ * 执行搬到 Rust 之后，vitest 里没有 Tauri 运行时 ⇒ 那些"**闸门**"判据
+ * （`pi-p2-run-code-permission-parity` / `workflow-permission-parity`）就没法再驱动真实引擎。
+ * 但它们真正要钉的是"**工具把哪些方法交给了执行器、那些方法是否过闸门**" ——
+ * 这件事不需要引擎：注入一个**记录型 runner** 拿到方法表，直接调用即可。
+ *
+ * 于是分工变成（三层，各管一件事）：
+ *  · **vitest**：钉"方法表里有 bash/read/write/…" + "每个方法都过闸门"（确定性、不依赖引擎）；
+ *  · **Rust `cargo test`**（`js_sandbox_tests`）：钉引擎语义（**多次**宿主调用、错误传递、预算中断、隔离）；
+ *  · **真机探针**：钉端到端（脚本真的在装好的应用里跑起来）。
+ */
+export type ScriptRunner = (options: {
+  code: string;
+  sdk: ToolSDK;
+  timeoutMs: number;
+}) => Promise<{
+  ok: boolean;
+  value?: string | null;
+  error?: string | null;
+  stdout: string;
+  stderr: string;
+  budgetExceeded?: boolean;
+}>;
+
+let injectedRunner: ScriptRunner | null = null;
+
+/** 测试用：注入一个脚本执行前端（传 `null` 恢复默认的 Rust 沙箱） */
+export function __setScriptRunnerForTests(runner: ScriptRunner | null): void {
+  injectedRunner = runner;
+}
+
+/** 默认前端：Rust 侧 boa 沙箱（宿主调用经事件回到本进程的 sdk 实现） */
+const rustRunner: ScriptRunner = async ({ code, sdk, timeoutMs }) => {
+  const { runSandboxedInRust, hostMethodsFromToolSdk } = await import("../../js/js-remote-runtime");
+  const outcome = await runSandboxedInRust({
+    code,
+    // 宿主方法表 = SDK 的**同一个实现**，只是换个执行前端；
+    // 危险命令分析 / 受保护路径 / 覆盖确认 / 沙箱路径判定都在这些方法里（TS 侧）生效，
+    // Rust **不做**任何权限判断（免得出现第二套闸门）。
+    methods: hostMethodsFromToolSdk(sdk),
+    loopLimit: Math.max(1_000_000, timeoutMs * 1000),
+  });
+  return {
+    ok: outcome.ok,
+    value: outcome.value ?? null,
+    error: outcome.error ?? null,
+    stdout: outcome.stdout ?? "",
+    stderr: outcome.stderr ?? "",
+    budgetExceeded: outcome.budgetExceeded,
+  };
+};
+
+/**
  * 执行 `run_code` / `workflow` 的代码。
  *
- * ## 第 103 波：从 `new Function` 迁到 **QuickJS/WASM**（`src/core/js/js-vm.ts`）
+ * ## 第 103 波：`new Function` → **Rust 侧 JS 引擎**（`boa_engine`）
  *
  * 为什么必须迁（真机实测）：装好的应用里 CSP **没有 `unsafe-eval`**，
  * 于是这里原来的 `new Function(...)` 在真机上**直接抛 CSP 违规**：
@@ -73,64 +128,45 @@ export interface ToolSDK {
  * `run_code` 与 `workflow` 因此**在真机上等于不可用**（既有的权限判据全绿，是因为它们跑在
  * vitest/Node 里 —— 又一次"判据长在生产里不执行的链路上"）。
  *
- * 现在代码在 **QuickJS（编译成 WebAssembly，CSP 里的 `wasm-unsafe-eval` 允许）** 里跑：
- *  · 语义保持：包在 async IIFE 里、可以用 `await`、`console.*` 捕获成 stdout/stderr、完成值渲染成 `[Result]`；
- *  · SDK 调用走宿主函数桥（`__hostCall`），仍是**同一条闸门**（危险命令 / 受保护路径 / 覆盖确认都在 sdk 实现里）；
- *  · 额外收益：guest 里**没有** `window` / `document` / `process` / `require` / `__TAURI__`
- *    —— 比原来"与外层共享同一份全局对象"强得多（原来那些白名单参数**不是**安全边界）。
+ * 执行模型（`src-tauri/src/js_sandbox.rs` + `src/core/js/js-remote-runtime.ts`）：
+ *  · guest 在 Rust 侧的 boa 引擎里跑，**没有** `process` / `window` / `require` / `__TAURI__`；
+ *  · `sdk.*` 调用变成"Rust 发事件 → 前端执行真正的工具（**同一套闸门**）→ 阻塞等回复"，
+ *    所以 guest 看到的是同步函数、可以用 `await`，且**没有次数上限**
+ *    （WebView 侧的 asyncify 引擎一次执行只能挂起一次，那条路已被这一步取代；见交接单 §16.3）；
+ *  · 超时/失控由 Rust 的**循环迭代上限**兜住（确定性，不依赖墙钟）。
  */
 export async function executeCode(
   code: string,
   sdk: ToolSDK,
   timeoutMs: number = 30_000,
 ): Promise<{ stdout: string; stderr: string; error?: string }> {
-  /**
-   * 宿主函数桥：**每个 sdk 方法都包一层**，保证
-   *  · 参数/返回值只走 JSON（guest 拿不到任何活对象引用）；
-   *  · 抛错带可读原因回 guest（原来的 try/catch 语义）。
-   */
-  const hostFunctions: Record<string, (args: unknown[]) => unknown> = {
-    bash: async (args) => sdk.bash(String(args[0] ?? ""), (args[1] as { timeout_ms?: number }) ?? undefined),
-    read: async (args) => ({ content: await sdk.read(String(args[0] ?? "")) }),
-    write: async (args) => {
-      await sdk.write(String(args[0] ?? ""), String(args[1] ?? ""));
-      return { ok: true };
-    },
-    glob: async (args) => ({ files: await sdk.glob(String(args[0] ?? ""), args[1] as string | undefined) }),
-    grep: async (args) => ({ matches: await sdk.grep(String(args[0] ?? ""), (args[1] as { path?: string; glob?: string }) ?? undefined) }),
-    fetch: async (args) => ({ text: await sdk.fetch(String(args[0] ?? "")) }),
-  };
-
-  /** guest 侧的外壳：保持"返回 Promise"的既有契约（`await sdk.bash(...)` 与 `.then` 都能用） */
-  const prelude = `
-    globalThis.sdk = {};
-    for (const [name, shape] of Object.entries({
-      bash: (v) => v,
-      read: (v) => v.content,
-      write: (v) => v.ok,
-      glob: (v) => v.files,
-      grep: (v) => v.matches,
-      fetch: (v) => v.text,
-    })) {
-      // 用 __sdk（Promise 形态）：宿主报错走 reject，不在挂起恢复期同步抛
-      globalThis.sdk[name] = (...args) => __sdk(name, args).then(shape);
-    }
-  `;
-
-  const outcome = await runInJsVm({ code, hostFunctions, prelude, timeoutMs });
+  const runner = injectedRunner ?? rustRunner;
+  const outcome = await runner({ code, sdk, timeoutMs });
 
   let stdout = outcome.stdout ?? "";
-  let stderr = outcome.stderr ?? "";
-  const error = outcome.ok
-    ? undefined
-    : outcome.error?.message || (outcome.timedOut ? `Code execution timed out after ${timeoutMs}ms` : "未知错误");
+  const stderr = outcome.stderr ?? "";
+  let error: string | undefined;
 
-  /**
-   * 完成值的渲染与旧实现保持一致：`[Result]: <字符串或 JSON>`。
-   * （旧实现把它追加到 stdout；这里照旧，避免"迁移顺手改了模型看到的东西"。）
-   */
-  if (outcome.ok && outcome.value !== undefined && outcome.value !== null) {
-    const rendered = typeof outcome.value === "string" ? outcome.value : JSON.stringify(outcome.value, null, 2);
+  if (!outcome.ok) {
+    // Rust 侧把错误包成 `{"message": ...}`；解开给模型一句人话
+    const raw = String(outcome.error ?? "");
+    try {
+      const parsed = JSON.parse(raw) as { message?: string };
+      error = parsed?.message ?? raw;
+    } catch {
+      error = raw || (outcome.budgetExceeded ? "执行超出预算（脚本循环太久或调用工具过多）" : "未知错误");
+    }
+  }
+
+  /** 完成值的渲染与旧实现保持一致：`[Result]: <字符串或 JSON>` */
+  if (outcome.ok && outcome.value !== null && outcome.value !== undefined) {
+    let rendered = String(outcome.value);
+    try {
+      const parsed = JSON.parse(rendered) as unknown;
+      rendered = typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+    } catch {
+      /* 不是 JSON 就原样输出 */
+    }
     stdout += `\n[Result]: ${rendered}`;
   }
 

@@ -2,6 +2,33 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.231] - 2026-10-03
+
+### 修复
+
+- **★★ `run_code` / `workflow` / 函数型 hooks 在真机上「完全不可用」—— 它们依赖 `new Function`，而 CSP 不含 `unsafe-eval`。**
+  **真机取证**：`run_code` 返回
+  `Evaluating a string as JavaScript violates … 'unsafe-eval' is not an allowed source of script`（第 99 波探针）；
+  `workflow {code:"return 1 + 1;"}` 同一条（第 101 波探针）；函数型 hooks 是同一族 ——
+  而钩子是**守卫**，"没生效"意味着**该拦的没拦**（这一类缺陷在本仓叫假成功/假安全）。
+  既有判据全绿，是因为它们跑在 vitest/Node 里（**没有 CSP**）—— 又一次"判据长在生产里不执行的链路上"。
+  **修法**：执行搬到 **Rust 侧 JS 引擎（`boa_engine`）**，宿主调用**阻塞**等待
+  （Rust 发事件 → 前端执行工具 → 回复），因此不需要 WebView 的 eval，也不需要 CSP 放宽。
+  - **闸门仍然只有一份**：危险命令分析、受保护路径、覆盖确认、沙箱路径判定全在 TS 侧
+    （`hostMethodsFromToolSdk` 把 SDK 的**同一个实现**交给执行器），Rust **不做**任何权限判断；
+    `pi-p2-run-code-permission-parity`（11 条）与 `workflow-permission-parity`（10 条）语义一字未改、全绿。
+  - guest 里**没有** `process` / `window` / `require` / `__TAURI__`（隔离比 `new Function` 时代强）。
+  - 失控由 Rust 的**循环迭代上限**兜住（确定性，不依赖墙钟）：`while(true){}` 会被中断并给出可读原因。
+  - 函数型 hooks 走 `src/core/js/js-vm.ts` 的**同步**路径（QuickJS/WASM，纯数据进出、无挂起），
+    并补上了原来没有的**超时**（旧实现里钩子写 `while(true){}` 会把应用卡死）。
+  - 删掉 `code-runtime-worker-thread-provider.ts`（Node 专用死代码：`worker_threads` 在 WebView 里不存在，
+    无产品代码引用，却把 `new Function` 藏在 worker 脚本字符串里）。
+  **判据**：Rust `js_sandbox_tests` 7 条（含**一次执行里多次**宿主调用 —— 这正是 WebView 侧做不到的、
+  错误传递、预算中断、隔离、宿主调用上限）；TS `js-vm-no-eval.test.ts` 9 条（同步路径 + 桩掉
+  `Function`/`eval` 仍能跑 + `run_code` 无 eval 兜底）；`hook-function-vm.test.ts` 5 条；
+  新门禁 `npm run audit:no-eval`（扫 `src/`，注释/字符串/正则不算；允许清单每迁完一处删一行）。
+  **变异自证**：把 `run_code` 改回 `new Function` ⇒ JSVM-10/12 与门禁同时红。
+
 ## [1.16.230] - 2026-10-03
 
 ### 修复

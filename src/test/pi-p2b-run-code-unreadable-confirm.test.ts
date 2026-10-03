@@ -26,7 +26,7 @@
  * 这里断言 (a) 确认回调**有没有被调用**、(b) `writeFile` **有没有被调用**、
  * (c) 返回值里有没有把那件事说出来。
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -49,6 +49,7 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { createRunCodeTool } from "../core/llm/tools/run-code";
+import { installScriptRunnerDouble, uninstallScriptRunnerDouble } from "./helpers/script-runner-double";
 
 let dir: string;
 
@@ -82,6 +83,13 @@ async function run(code: string, ctx: ToolContext): Promise<ToolExecuteResult> {
 }
 
 beforeEach(() => {
+  /**
+   * 第 103 波：脚本执行搬到 **Rust 侧 boa**（vitest 里没有 Tauri 运行时），
+   * 所以装一个测试替身把 guest 代码跑起来、把**真实的** sdk 调起来 ——
+   * 本文件钉的是"`sdk.write` 读不到现有内容时的覆盖确认在生产路径上生效"。
+   * 替身与三层分工见 `src/test/helpers/script-runner-double.ts` 的文件头。
+   */
+  installScriptRunnerDouble();
   dir = mkdtempSync(join(tmpdir(), "codem-pi-p2b-"));
   mocks.executeCommand.mockReset();
   mocks.writeFile.mockReset();
@@ -159,4 +167,8 @@ describe("run_code / sdk.write：读不到现有的内容", () => {
       warn.mockRestore();
     }
   });
+});
+
+afterEach(() => {
+  uninstallScriptRunnerDouble();
 });

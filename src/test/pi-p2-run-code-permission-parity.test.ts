@@ -48,6 +48,21 @@ vi.mock("../core/file-api", () => ({
 }));
 
 import { createRunCodeTool, execRunCode, calculateContentSimilarity } from "../core/llm/tools/run-code";
+import { installScriptRunnerDouble, uninstallScriptRunnerDouble } from "./helpers/script-runner-double";
+
+/**
+ * 第 103 波：执行引擎已换成 **Rust 侧 boa**（`js_run_sandboxed`），vitest 里没有 Tauri 运行时 ——
+ * 所以这里装一个**测试替身**把 guest 代码跑起来、把**真实的** sdk 调起来，
+ * 从而继续钉住"闸门在生产路径上生效"。替身本身与三层分工见
+ * `src/test/helpers/script-runner-double.ts` 的文件头。
+ */
+beforeEach(() => {
+  installScriptRunnerDouble();
+});
+
+afterEach(() => {
+  uninstallScriptRunnerDouble();
+});
 
 // ========== 夹具 ==========
 

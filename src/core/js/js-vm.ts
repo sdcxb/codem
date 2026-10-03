@@ -32,7 +32,7 @@
  * —— 这比 `new Function`（与外层同一份全局对象）强得多：模型写的脚本再也摸不到应用内部。
  * 它能用的只有宿主**显式注入**的那些函数。
  */
-import { newQuickJSAsyncWASMModule, newQuickJSWASMModule } from "quickjs-emscripten";
+import { newQuickJSWASMModule } from "quickjs-emscripten";
 
 /** 宿主函数：收**一个** JSON 参数（参数数组），返回可 JSON 化的值；抛错会被带回 guest */
 export type JsVmHostFunction = (args: unknown[]) => unknown | Promise<unknown>;
@@ -77,19 +77,9 @@ export interface JsVmOutcome {
   elapsedMs: number;
 }
 
-/** 缓存一个模块（实例化 WASM 不便宜）；**一出 WASM 级错误就丢弃**，下次新建 */
-let cachedAsyncModule: Promise<unknown> | null = null;
+/** 模块复用（实例化 WASM 不便宜）；出 WASM 级错误就丢弃，下次新建 */
 let cachedSyncModule: Promise<unknown> | null = null;
-let asyncModuleDirty = false;
 let syncModuleDirty = false;
-
-async function takeAsyncModule() {
-  if (asyncModuleDirty || !cachedAsyncModule) {
-    cachedAsyncModule = newQuickJSAsyncWASMModule();
-    asyncModuleDirty = false;
-  }
-  return cachedAsyncModule;
-}
 
 async function takeSyncModule() {
   if (syncModuleDirty || !cachedSyncModule) {
@@ -101,58 +91,23 @@ async function takeSyncModule() {
 
 /** 测试用：把缓存的模块丢掉（也会让下一次调用重新实例化） */
 export function __resetJsVmModuleCache() {
-  cachedAsyncModule = null;
   cachedSyncModule = null;
-  asyncModuleDirty = false;
   syncModuleDirty = false;
 }
 
-/** WASM 级错误（模块坏了，不是"这次调用失败"）—— 遇到就丢弃缓存模块 */
-const WASM_LEVEL_ERROR_RE = /memory access out of bounds|null function|Assertion failed|Aborted\(|unreachable/i;
-
 /**
- * 把 WASM 级错误翻译成**用户/模型能看懂并据此行动**的一句话。
+ * ## 第 103 波：这个模块现在只服务**同步路径**（hooks）
  *
- * 不翻译的话，模型看到的是 `memory access out of bounds` —— 它既不知道这是引擎问题，
- * 也不知道该怎么办（本仓的纪律：错误要么可行动，要么明确说"这是我的内部问题，别重试"）。
- */
-function describeRuntimeError(rawMessage: string): { message: string; wasmLevel: boolean } {
-  if (!WASM_LEVEL_ERROR_RE.test(rawMessage)) return { message: rawMessage, wasmLevel: false };
-  return {
-    wasmLevel: true,
-    message:
-      `JS 运行时内部错误（不是你的代码写法问题）：${rawMessage.slice(0, 160)}。` +
-      `已知限制：这个引擎一次执行里**超过 2 次工具调用**会触发它 —— ` +
-      `请把脚本拆成多次调用，或改用 bash / 其它工具直接完成这一步。`,
-  };
-}
-
-/**
- * ## ⚠️ 已知限制（第 103 波实测，**待 Rust 运行时替代**）
+ * 异步路径（`runInJsVm`）已经**删除** —— 它曾经用来跑 `run_code` / `workflow`，
+ * 但那个形状有个硬限制：asyncify 引擎一次执行只能挂起一次
+ * （实测 1 次宿主调用 5/5 成功、2 次 0/5、3+ 次 0/5，而且损坏留在**进程**里）。
+ * 现在 `run_code` / `workflow` 跑在 **Rust 侧 boa 引擎**（`src-tauri/src/js_sandbox.rs`，
+ * 宿主调用阻塞、没有挂起上限），
+ * 这里保留的同步路径**一次挂起都没有**（hooks 的 `ctx` 是 JSON 注入、不调宿主函数），
+ * 因此不受那个限制影响，已被 `hook-function-vm.test.ts` 与 `js-vm-no-eval.test.ts`（同步用例）覆盖。
  *
- * 这个引擎（quickjs-emscripten 的 **asyncify** 构建）在"宿主函数"这件事上**不可靠**：
- * 一次执行里的第 3 次宿主调用起就崩，而且损坏会**跨执行、跨模块**地留在进程里。
- *
- * 实测（`npx tsx .preview-shot/_probe-jsvm-call-count.mjs`，每格 10 次**独立进程**）：
- *
- * | 一次执行里的宿主调用数 | 成功 |
- * |---|---|
- * | 1 | **10/10** |
- * | 2（含"中途失败并 catch"） | **10/10** |
- * | 3 | **0/10**（`memory access out of bounds`） |
- * | 4 | **0/10** |
- *
- * 更麻烦的是同进程多次执行：同一进程里第二次跑"2 次宿主调用"的脚本也会 abort
- * （`Assertion failed: p->ref_count == 0 … free_zero_refcount`）——
- * 也就是说这不是"换个新模块就好"的问题，而是 asyncify 的挂起状态在**进程级**没被清干净。
- *
- * ### 影响与对策
- *
- * · `run_code` / `workflow` 的常见用法就是**连续调用多个工具** ⇒ **不能只靠这个引擎**；
- * · 下一步：异步路径搬到 **Rust 侧引擎（`boa_engine`）** —— 那里宿主调用是**阻塞**的
- *   （Rust 可以等 Tauri IPC 的回复），没有 asyncify 挂起，因此没有这个上限；
- * · **同步路径不受影响**：它一次挂起都没有（hooks 的 `ctx` 是 JSON 注入、不调宿主函数），
- *   已经在 `hook-function-vm.test.ts` 与 `js-vm-no-eval.test.ts`（JSVM-8/9）里稳定跑通。
+ * 删掉异步路径而不是留着，是因为"留着但会崩"的东西迟早会被误用：
+ * 它还会漏出未捕获的 rejection（在 WebView 里就是未捕获错误）。
  */
 
 /** 从 guest 的错误 handle 里**读出人话**（`dump` 一个 Error 只会得到 `{}`） */
@@ -177,276 +132,6 @@ function readError(vm: any, handle: any): JsVmError {
     return { message: text === "[object Object]" ? "guest 抛出的是一个普通对象（没有 message）" : text };
   } catch {
     return { message: "guest 抛出了一个无法读取的错误" };
-  }
-}
-
-/**
- * 跑一段 guest 代码（异步路径：`run_code` / `workflow`）。
- *
- * 语义与旧的 `new Function` 版本保持一致：
- *  · 代码包在 async IIFE 里，可以用 `await`；
- *  · `console.log/error/warn/info` 被捕获成 stdout/stderr；
- *  · 完成值作为 `value` 返回（旧版本渲染成 `[Result]: …`）；
- *  · 超时抛 `执行超时`。
- */
-export async function runInJsVm(options: JsVmOptions): Promise<JsVmOutcome> {
-  const started = Date.now();
-  const timeoutMs = options.timeoutMs ?? 30_000;
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-  let timedOut = false;
-
-  const QuickJS: any = await takeAsyncModule();
-  const rt = QuickJS.newRuntime();
-  rt.setMemoryLimit(options.memoryLimitBytes ?? 64 * 1024 * 1024);
-  rt.setInterruptHandler(() => {
-    if (Date.now() - started > timeoutMs) {
-      timedOut = true;
-      return true;
-    }
-    return false;
-  });
-  const vm = rt.newContext();
-
-  const disposeQuietly = (handle: any) => {
-    try {
-      handle?.dispose?.();
-    } catch {
-      /* 已经释放过就算了 */
-    }
-  };
-
-  try {
-    // ---- console 捕获（同步宿主函数：挂起期间被回调也不能再挂起，所以只 push 字符串） ----
-    const pushLog = (sink: string[]) => (handle: any) => {
-      try {
-        const text = vm.getString(handle);
-        sink.push(text);
-      } catch (error: any) {
-        sink.push(`[console 取值失败] ${error?.message ?? error}`);
-      }
-    };
-    const logFn = vm.newFunction("__log", pushLog(stdout));
-    const errFn = vm.newFunction("__err", pushLog(stderr));
-    logFn.consume((fn: any) => vm.setProp(vm.global, "__log", fn));
-    errFn.consume((fn: any) => vm.setProp(vm.global, "__err", fn));
-
-    // ---- 宿主函数：一个统一入口 `__hostCall(name, argsJson)`（少建 handle，少踩泄漏） ----
-    const hostFunctions = options.hostFunctions ?? {};
-    /** 这次执行里宿主调用了几次 —— 用来在超时/崩溃时给出**可行动**的解释（见文件头「已知限制」） */
-    let hostCallCount = 0;
-    const hostCall = vm.newAsyncifiedFunction("__hostCall", async (nameHandle: any, argsHandle: any) => {
-      hostCallCount++;
-      const name = vm.getString(nameHandle);
-      const argsJson = vm.getString(argsHandle);
-      const impl = hostFunctions[name];
-      let args: unknown[] = [];
-      try {
-        args = JSON.parse(argsJson || "[]");
-      } catch {
-        args = [];
-      }
-      /**
-       * ⚠️ **宿主函数绝不向 guest 抛错**，而是把错误当数据带回去，由 guest 侧的 `__call` 抛出来。
-       *
-       * 为什么：在 asyncify 的挂起回调里 `throw` 会让库去 marshal 一个错误 handle，
-       * 而那时 WASM 模块仍处于挂起态 —— 实测直接 `memory access out of bounds`（整个模块崩掉，
-       * 不是"这次调用失败"）。改成数据传递后，错误语义（`try { await sdk.x() } catch`）**完全不变**，
-       * 但不会把模块弄崩。
-       */
-      try {
-        if (!impl) return vm.newString(JSON.stringify({ __jsvmError: `宿主没有提供函数 ${name}` }));
-        const result = await impl(args);
-        return vm.newString(JSON.stringify({ __jsvmValue: result === undefined ? null : result }));
-      } catch (error: any) {
-        const message = String(error?.message ?? error).slice(0, 2000);
-        return vm.newString(JSON.stringify({ __jsvmError: message }));
-      }
-    });
-    hostCall.consume((fn: any) => vm.setProp(vm.global, "__hostCall", fn));
-
-    // ---- 预置：console 外壳 + 调用方给的 prelude ----
-    const consolePrelude = `
-      globalThis.console = {
-        log: (...a) => __log(a.map(x => typeof x === "string" ? x : JSON.stringify(x)).join(" ")),
-        info: (...a) => __log(a.map(x => typeof x === "string" ? x : JSON.stringify(x)).join(" ")),
-        warn: (...a) => __err(a.map(x => typeof x === "string" ? x : JSON.stringify(x)).join(" ")),
-        error: (...a) => __err(a.map(x => typeof x === "string" ? x : JSON.stringify(x)).join(" ")),
-      };
-      // 宿主函数的统一调用口。
-      //
-      // ⚠️ 两道保护，都写在**挂起之前**：
-      //  ① 次数上限（默认 1 次）：asyncify 引擎第 2 次挂起就会把模块搞坏、而且坏在进程级，
-      //     所以第 2 次调用必须在 guest 侧就被拒（纯 JS 的 Promise.reject，不碰 asyncify）；
-      //  ② 错误走 reject 而不是同步抛：同步抛发生在"挂起恢复帧"里，实测会 memory access out of bounds。
-      globalThis.__jsvmHostCalls = 0;
-      globalThis.__sdk = (name, args) => {
-        globalThis.__jsvmHostCalls += 1;
-        if (globalThis.__jsvmHostCalls > ${options.maxHostCalls ?? 1}) {
-          return Promise.reject(
-            new Error(
-              "当前 JS 运行时的已知限制：一次执行里最多调用 " + ${options.maxHostCalls ?? 1} + " 次工具" +
-              "（引擎的挂起机制在第 2 次就会损坏运行时）。请把脚本拆成多次 run_code 调用，" +
-              "或者直接用 bash / read / write 等工具完成这一步。",
-            ),
-          );
-        }
-        const out = JSON.parse(__hostCall(name, JSON.stringify(args ?? [])));
-        if (out && typeof out === "object" && "__jsvmError" in out) {
-          return Promise.reject(new Error(String(out.__jsvmError)));
-        }
-        return Promise.resolve(out ? out.__jsvmValue : null);
-      };
-      // 兼容口：同步取值（**只在确定不会失败、或调用方自己保证不抛**时用）。
-      globalThis.__call = (name, args) => {
-        const out = JSON.parse(__hostCall(name, JSON.stringify(args ?? [])));
-        if (out && typeof out === "object" && "__jsvmError" in out) throw new Error(String(out.__jsvmError));
-        return out ? out.__jsvmValue : null;
-      };
-    `;
-    const pre = vm.evalCode(`${consolePrelude}\n${options.prelude ?? ""}`);
-    if (pre.error) {
-      const error = readError(vm, pre.error);
-      disposeQuietly(pre.error);
-      return { ok: false, error, stdout: stdout.join("\n"), stderr: stderr.join("\n"), timedOut: false, elapsedMs: Date.now() - started };
-    }
-    disposeQuietly(pre.value);
-
-    // ---- 执行 ----
-    /**
-     * ⚠️ **包一层 try/catch，但不要再套一层 async IIFE**。
-     *
-     * 演进过程（每一步都有实测）：
-     *  1. 直接 `(async () => { CODE })()` —— 用户代码抛错时走"被拒绝的 Promise"路径，
-     *     而 `resolvePromise` 的**拒绝路径**每跑一次漏一个 handle（泄漏探针 (d) 场景 8/8 abort）；
-     *  2. 外面再套一层 `(async () => { try { return {ok:true, value: await (async () => { CODE })()} } catch … })()`
-     *     —— 泄漏没了，但**多了一层 async 帧 + 对内部 promise 的 await**，
-     *     结果 guest 一旦观察到宿主报的错就 `memory access out of bounds`
-     *     （`Assertion failed: p->ref_count … gc_decref_child` / `free_zero_refcount`）；
-     *  3. 现在：**单层 async 帧 + try/catch**，用户代码的 `return` 直接就是函数的返回值。
-     *     成功时完成值就是用户返回的东西；失败时回来的是 `{ __jsvmGuestError: {...} }` 信封
-     *     （宿主侧识别并转成 `ok:false`）。这既没有拒绝路径，也没有嵌套帧。
-     */
-    const raw = await vm.evalCodeAsync(
-      `(async () => {
-        try {
-          ${options.code}
-        } catch (e) {
-          return { __jsvmGuestError: { message: String((e && e.message) || e), stack: e && e.stack ? String(e.stack) : undefined, name: e && e.name ? String(e.name) : undefined } };
-        }
-      })()`,
-    );
-    /**
-     * ⚠️ **不要靠 `unwrapResult` 抛错来判失败** —— 它抛的时候那个错误 handle 就漏了，
-     * QuickJS 会在 `rt.dispose()` 时用 `Assertion failed: list_empty(&rt->gc_obj_list)` 告诉你
-     * （实测：guest 每次抛错漏一个，泄漏计数与抛错次数一模一样）。这里显式取 `raw.error` 并释放。
-     */
-    if (raw.error) {
-      const error = readError(vm, raw.error);
-      disposeQuietly(raw.error);
-      if (raw.value) disposeQuietly(raw.value);
-      return {
-        ok: false,
-        error,
-        stdout: stdout.join("\n"),
-        stderr: stderr.join("\n"),
-        timedOut,
-        elapsedMs: Date.now() - started,
-      };
-    }
-    const completion: any = raw.value;
-
-    let value: unknown;
-    const isPromise = vm.getPromiseState(completion) !== "not-promise";
-    if (isPromise) {
-      // ⚠️ 见文件头第 3 条：宿主必须自己泵 job，否则永远不结算
-      const hostPromise = vm.resolvePromise(completion);
-      let settled: any = null;
-      hostPromise.then((s: any) => {
-        settled = s;
-      });
-      while (!settled && Date.now() - started <= timeoutMs) {
-        rt.executePendingJobs(100);
-        if (!settled) await new Promise((r) => setTimeout(r, 1));
-      }
-      disposeQuietly(completion);
-      if (!settled) {
-        /**
-         * 超时有两种：**用户代码真的死循环**，和**引擎的已知限制被触发**（≥3 次宿主调用会卡住）。
-         * 后者必须给可行动的解释 —— 否则模型看到 "timed out" 只会重试同一个脚本。
-         */
-        const limitHint =
-          hostCallCount >= 2
-            ? `。提示：这次执行至少调用了 ${hostCallCount} 次工具，而当前 JS 运行时的已知限制是"一次执行里最多 2 次工具调用"` +
-              `（超过会卡住或崩溃）—— 请把脚本拆成多次调用，或直接用 bash / 其它工具完成这一步`
-            : "";
-        return {
-          ok: false,
-          error: {
-            message: `Code execution timed out after ${timeoutMs}ms${limitHint}`,
-          },
-          stdout: stdout.join("\n"),
-          stderr: stderr.join("\n"),
-          timedOut: true,
-          elapsedMs: Date.now() - started,
-        };
-      }
-      if (settled.error) {
-        const error = readError(vm, settled.error);
-        disposeQuietly(settled.error);
-        return { ok: false, error, stdout: stdout.join("\n"), stderr: stderr.join("\n"), timedOut, elapsedMs: Date.now() - started };
-      }
-      value = vm.dump(settled.value);
-      disposeQuietly(settled.value);
-    } else {
-      value = vm.dump(completion);
-      disposeQuietly(completion);
-    }
-
-    /**
-     * guest 自报的错误信封（见上面包装那段）：拆出 message/stack 当失败返回。
-     * 没有信封的返回值照旧当结果（用户代码 `return` 什么就是什么）。
-     */
-    if (value && typeof value === "object" && "__jsvmGuestError" in (value as Record<string, unknown>)) {
-      const envelope = value as { __jsvmGuestError?: JsVmError };
-      return {
-        ok: false,
-        error: envelope.__jsvmGuestError ?? { message: "guest 抛出错误但没带 message" },
-        stdout: stdout.join("\n"),
-        stderr: stderr.join("\n"),
-        timedOut,
-        elapsedMs: Date.now() - started,
-      };
-    }
-
-    return { ok: true, value, stdout: stdout.join("\n"), stderr: stderr.join("\n"), timedOut, elapsedMs: Date.now() - started };
-  } catch (error: any) {
-    return {
-      ok: false,
-      error: describeRuntimeError(String(error?.message ?? error).slice(0, 4000)).wasmLevel
-        ? { message: describeRuntimeError(String(error?.message ?? error)).message }
-        : { message: String(error?.message ?? error).slice(0, 4000) },
-      stdout: stdout.join("\n"),
-      stderr: stderr.join("\n"),
-      timedOut,
-      elapsedMs: Date.now() - started,
-    };
-  } finally {
-    /**
-     * ⚠️ **超时不必丢弃模块** —— 实测（`.preview-shot/_probe-jsvm-exit.mjs timeout`）：
-     * 被打断之后同一个模块还能继续跑（后续异步调用与同步路径都正常，进程干净退出）。
-     * 只有**释放本身失败**、或**出过 WASM 级错误**（模块状态已坏）才丢弃 —— 下次会新建一个。
-     */
-    try {
-      vm.dispose();
-    } catch {
-      asyncModuleDirty = true;
-    }
-    try {
-      rt.dispose();
-    } catch {
-      asyncModuleDirty = true;
-    }
   }
 }
 
