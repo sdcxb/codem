@@ -185,5 +185,25 @@ check("A8: --only-tasks 显式声明子集 ⇒ 未声明的任务不再阻塞结
   eq(missingOne.onlyBaseline.map((r) => r.caseId), ["gap-2"], "未配对任务");
 });
 
+/**
+ * A9（第 117 波）：**"挪位"记录不进通过率**。
+ *
+ * 重复的 (caseId, runNumber) 会被搬到高位 run 号（900+）并带 `parkedFrom`。
+ * 它们是**效度不同期**的样本（泄漏期 / 清理之前），混进来会把通过率算歪；
+ * 而它们满足"runNumber ≥ 2"，只看运行号拦不住。
+ */
+check("A9: 挪位记录（parkedFrom / runNumber ≥ 900）一律不计入通过率", () => {
+  const baseline = [run({ caseId: "park-1", outcome: "failed" })];
+  const candidate = [
+    run({ caseId: "park-1", outcome: "passed" }),
+    // 同一个键的另一条被挪到高位（模拟"重复运行号"的处置）
+    { ...run({ caseId: "park-1", outcome: "failed" }), runNumber: 900, parkedFrom: 1, parkNote: "重复键" },
+  ];
+  const cmp = abCompare(baseline, candidate, { minTasks: 1 });
+  eq(cmp.pairs, 1, "只应配到一条（挪位那条不参与）");
+  eq(cmp.fixed.length, 1, "变好数");
+  eq(cmp.scoredCandidate ?? 1, 1, "候选侧可评分运行数应为 1");
+});
+
 console.log(`\n通过 ${passed} / ${passed + failed}`);
 process.exit(failed === 0 ? 0 : 1);

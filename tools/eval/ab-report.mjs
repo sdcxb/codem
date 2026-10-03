@@ -50,7 +50,19 @@ export function abCompare(baseline, candidate, options = {}) {
   const usable = (rows) =>
     rows.filter(
       (r) =>
-        (r.outcome === "passed" || r.outcome === "failed") && !r.contaminated && !r.suspiciousNoDiffPass,
+        (r.outcome === "passed" || r.outcome === "failed") &&
+        !r.contaminated &&
+        !r.suspiciousNoDiffPass &&
+        /**
+         * 第 117 波：**排除"挪位"记录**。
+         *
+         * 同一个 (caseId, runNumber) 出现重复时（策略复跑与补跑链各写一条、errored 与 failed 各一条），
+         * 后写的那条会被搬到高位 run 号（900+）并带 `parkedFrom`/`parkNote`。
+         * 那些记录往往是**效度不同期**的样本（泄漏期 / 清理之前），**不能**与正本混在一起算通过率 ——
+         * 而它们恰恰满足"runNumber ≥ 2"，只看运行号是拦不住的。
+         */
+        r.parkedFrom === undefined &&
+        (typeof r.runNumber !== "number" || r.runNumber < 900),
     );
   const dropped = (rows) => rows.length - usable(rows).length;
 

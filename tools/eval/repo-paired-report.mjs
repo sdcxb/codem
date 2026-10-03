@@ -54,8 +54,22 @@ function main() {
     process.exit(args.help ? 0 : 2);
   }
 
-  const controlRaw = readRecords(args.control);
-  const treatmentRaw = normalizeCodemRecords(readRecords(args.treatment));
+  /**
+   * 第 117 波：**"挪位"记录一律不进报告**（见交接单 §13.21）。
+   *
+   * 重复的 (caseId, runNumber) 会被搬到高位 run 号（900+）并带 `parkedFrom`/`parkNote`；
+   * 它们往往是**效度不同期**的样本（泄漏期 / 清理之前），混进来会把通过率算歪 ——
+   * 而它们满足"runNumber ≥ 2"，只看运行号是拦不住的。
+   */
+  const isParked = (r) => r.parkedFrom !== undefined || (typeof r.runNumber === "number" && r.runNumber >= 900);
+  const controlAll = readRecords(args.control);
+  const treatmentAll = normalizeCodemRecords(readRecords(args.treatment));
+  const controlRaw = controlAll.filter((r) => !isParked(r));
+  const treatmentRaw = treatmentAll.filter((r) => !isParked(r));
+  const parkedCount = controlAll.filter(isParked).length + treatmentAll.filter(isParked).length;
+  if (parkedCount > 0) {
+    console.log(`（已排除 ${parkedCount} 条"挪位"记录 —— 重复运行号里较旧/较脏的那一条，见 §13.21）`);
+  }
 
   const modelCheck = checkSameModel(controlRaw, treatmentRaw);
   console.log(`对照臂：${args.control}（${controlRaw.length} 条，模型 ${modelCheck.controlModels.join("/") || "?"}）`);
@@ -70,8 +84,7 @@ function main() {
   if (contaminated.length > 0) {
     console.log(`\n⚠️ 有 ${contaminated.length} 条**污染**记录（读过工作区外的答案仓库）—— 它们仍会进报告，`);
     console.log("   但报告会按纪律处理（脏数据不作依据）。受影响的用例：");
-    for (const r of contaminated) console.log(`   · ${r.arm}/${r.caseId}/run-${r.runNumber}`);
-  }
+    for (const r of contaminated) console.log(`   · ${r.arm}/${r.caseId}/run-${r.runNumber}`);  }
 
   /**
    * "通过了但工作区没有改动" —— **尺子完整性问题**，必须先说。

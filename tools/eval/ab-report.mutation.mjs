@@ -39,10 +39,17 @@ const mutations = [
   },
   {
     id: "M4",
-    discipline: "污染 / 零改动通过一律剔除",
-    from: "        (r.outcome === \"passed\" || r.outcome === \"failed\") && !r.contaminated && !r.suspiciousNoDiffPass,",
-    to: "        r.outcome === \"passed\" || r.outcome === \"failed\",",
-    why: "不再剔除脏数据：污染运行与「零改动通过」都会被算进通过率。",
+    discipline: "污染 / 零改动通过一律剔除（且「挪位」记录不进报告）",
+    /**
+     * 第 117 波：锚点跟着实现更新。
+     *
+     * 这条变异原先只从 `usable()` 里删掉"污染 / 零改动通过"两个条件；
+     * 我给同一个过滤函数加上了"排除 parkedFrom / runNumber ≥ 900 的挪位记录"之后，
+     * 原文不再匹配 ⇒ 变异**空转**（脚本会如实报"锚点没命中"，这正是在提醒我更新它）。
+     */
+    from: '        (r.outcome === "passed" || r.outcome === "failed") &&\n        !r.contaminated &&\n        !r.suspiciousNoDiffPass &&',
+    to: '        (r.outcome === "passed" || r.outcome === "failed") &&',
+    why: "不再剔除脏数据：污染运行与「零改动通过」都会被算进通过率（挪位记录同样失去保护）。",
   },
   {
     id: "M5",
