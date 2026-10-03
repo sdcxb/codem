@@ -560,6 +560,28 @@ export class AgenticLoop {
   private testFileStatus = new Map<string, "red" | "green">();
   /** 本轮因"收尾时测试还红着"提醒过几次（上限 1，避免把模型困在循环里） */
   private redTestNudges = 0;
+  /**
+   * **在上下文里出现过、但我们一次都没跑过的判据文件**（第 112 波）。
+   *
+   * ## 为什么加这个（这一轮把我们自己的失败解剖了一遍）
+   *
+   * 12 次运行（8 过 / 4 不过）的行为特征对比：
+   *  · **"改完不复跑测试"不是原因** —— 过的 8/8 与不过的 4/4 **都**在最后一次编辑后复跑了测试；
+   *  · **真正的原因是判据覆盖面** —— 过的 8 次里 7 次把该任务的判据**跑全**（2/2、3/3）；
+   *    不过的 4 次里 3 次是**部分覆盖**（repo-02 1/3、repo-04 2/3、repo-06 1/2）。
+   *
+   * 进一步核实"机制可不可行"（`.preview-shot/_coverage-feasibility.mjs`）：
+   * 失败的那条判据**全都出现在我们的上下文里** —— repo-02/06 是"**见过但没跑**"，
+   * repo-03/04 是"跑了、是红的"（后者归红测试守卫管）。
+   *
+   * 所以：**只要在收尾时把"你见过但没跑的判据"列出来**，就能把这两个失败挡住，
+   * 而且**不需要任何 I/O**（文件名来自已经处理过的工具结果/参数）。
+   */
+  private seenTestFiles = new Set<string>();
+  /** 本轮真的跑过的判据文件（由 `noteTestRun` 填） */
+  private ranTestFiles = new Set<string>();
+  /** 本轮因"见过却没跑"提醒过几次（上限 1） */
+  private coverageNudges = 0;
 
   /**
    * 读"最近一次跑测试的结果"（第 108 波）。
@@ -636,6 +658,8 @@ export class AgenticLoop {
       marked.add(file);
       this.testFileStatus.set(file, m[1] === "✓" ? "green" : "red");
     }
+    // 这次真的跑过的判据文件（覆盖面兜底靠它判"见过但没跑"）——命令里点到的与输出里标记的都算
+    for (const file of [...marked, ...filesInCommand]) this.ranTestFiles.add(file);
     if (marked.size === 0 && filesInCommand.length > 0) {
       for (const file of new Set(filesInCommand)) {
         this.testFileStatus.set(file, failed > 0 ? "red" : "green");
@@ -669,9 +693,31 @@ export class AgenticLoop {
     };
   }
 
-  /** 本轮"跑过且最近一次是红的"测试文件（第 109 波：按文件记账，不是只看最近一次运行） */
+  /**
+   * 本轮"跑过且最近一次是红的"测试文件（第 109 波：按文件记账，不是只看最近一次运行）
+   */
   private currentRedTestFiles(): string[] {
     return [...this.testFileStatus.entries()].filter(([, status]) => status === "red").map(([file]) => file);
+  }
+
+  /**
+   * 记下"这个文件在上下文里出现过"（第 112 波）。
+   *
+   * 两个来源都算：工具**结果**里出现（grep/glob/read 的输出）与工具**参数**里出现
+   * （它自己写的 `npx vitest run <文件>`、grep 模式、glob 模式）。
+   * 只记**判据文件**（`*.test.ts(x)` / `*.spec.ts(x)`），别的噪音不进这个集合。
+   */
+  private noteSeenTestFiles(text: string): void {
+    if (!text) return;
+    for (const m of text.matchAll(/[\w./\\-]+\.(?:test|spec)\.(?:ts|tsx|js|mjs)/g)) {
+      const file = m[0].replace(/\\/g, "/").split("/").pop();
+      if (file) this.seenTestFiles.add(file);
+    }
+  }
+
+  /** 本轮"见过、但从没跑过"的判据文件（按名字排序，便于稳定输出与判据断言） */
+  private unseenTestFiles(): string[] {
+    return [...this.seenTestFiles].filter((f) => !this.ranTestFiles.has(f)).sort();
   }
 
   /**
@@ -2482,6 +2528,48 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           continue;
         }
 
+        /**
+         * **第 112 波：判据覆盖面兜底（"见过却没跑"）。**
+         *
+         * 证据（把我们自己的 12 次运行按结果分组解剖）：过的 8 次里 7 次把该任务的判据**跑全**；
+         * 不过的 4 次里 3 次是**部分覆盖**。而且失败的那条判据**全都出现在我们的上下文里**
+         * （repo-02/06 是"见过但没跑"，repo-03/04 是"跑了、是红的"）。顺带否掉一个猜想：
+         * **"改完不复跑测试"不是原因** —— 过的 8/8 与不过的 4/4 都复跑了。
+         *
+         * 所以这一条只做一件极小的事：收尾时，如果**改了文件**且还有**见过却没跑**的判据，
+         * 就把它们列出来，要求先跑（或说明为什么不用跑）。与其它守卫同形：**只提醒一次**，不硬停。
+         */
+        const unseen = this.unseenTestFiles();
+        if (this.turnModifiedFiles && unseen.length > 0 && this.coverageNudges < 1) {
+          this.coverageNudges++;
+          const list = unseen.slice(0, 8);
+          recordLoopStop(sessionId, "completed_unverified", { phase: "coverage-nudge", iteration: this.state.iteration });
+          try {
+            this.getMessageStorage().createMessage(
+              {
+                id: `coverage-nudge-${Date.now()}`,
+                role: "user",
+                content:
+                  `[SYSTEM] 你这一轮改了文件，但**这些判据文件在你的上下文里出现过、你却一次都没跑过**：\n` +
+                  list.map((f) => `  · ${f}`).join("\n") +
+                  `\n在收尾之前，先把它们跑一遍（或者说明为什么这个任务不需要跑它们）。` +
+                  `经验事实：这一轮里"跑全判据"的运行基本都成了，"只跑一两个"的基本都没成。`,
+                timestamp: Date.now(),
+                status: "done",
+              },
+              sessionId,
+            );
+            this.msgCache = null;
+          } catch (e) {
+            console.warn("[agentic-loop.ts]", e);
+          }
+          yield {
+            type: "text_delta",
+            text: `\n\n📋 **还有 ${unseen.length} 个判据文件你见过但没跑过**（${list.join(", ")}）：先跑它们再收尾。\n\n`,
+          };
+          continue;
+        }
+
         const result: LoopResult = {
           type: "stop",
           reason: "completed",
@@ -3581,6 +3669,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 指针就在同一段文本里，不需要额外一轮去理解；也不额外消耗一次 LLM 调用。
          * （与 `[REPEAT GUARD]` 同一手法：就地纠正方向，不打断。）
          */
+        // 第 112 波：把这次结果里出现的判据文件名记下来（覆盖面兜底的输入）
+        this.noteSeenTestFiles(String(result.output ?? ""));
         if (this.lastTestRun && this.lastTestRun.failed > 0 && (this.lastTestRun.redFiles?.length ?? 0) > 0) {
           const red = this.lastTestRun.redFiles.slice(0, 5).join(", ");
           result.output =
