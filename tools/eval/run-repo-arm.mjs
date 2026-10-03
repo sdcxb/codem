@@ -70,6 +70,7 @@ function parseArgs(argv) {
     else if (arg === "--reference") out.reference = true;
     else if (arg === "--keep") out.keep = true;
     else if (arg === "--verify-workspace") out.verifyWorkspace = true;
+    else if (arg === "--verify-reference") out.verifyReference = true;
     else if (arg === "--verify-bug-tests") out.verifyBugTests = true;
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`不认识的参数：${arg}`);
@@ -412,6 +413,55 @@ function main() {
         (errored > 0 ? `，${errored} 个超时未判定` : ""),
     );
     return vacuous === 0 && errored === 0 ? 0 : 1;
+  }
+
+  /**
+   * `--verify-reference`：**第三层尺子自证 —— 参考解必须让判据变绿**（第 117 波补）。
+   *
+   * 为什么必须有它：另外两层只证明"工作区干净"与"bug 状态下判据是红的"。
+   * 但**红的判据不等于可解的判据** —— 若某条判据过严、依赖时序、或参考解根本没盖住它，
+   * 那"agent 没过"就什么也说明不了（我们会在一个**无解**的任务上给自己记败绩）。
+   *
+   * 做法：造工作区 → 把 `revertPaths` 恢复成 HEAD（= 参考解）→ 跑真判据命令 ⇒ **必须绿**。
+   * 不跑 agent、不花模型钱。
+   */
+  if (args.verifyReference) {
+    const tasks = args.tasks.length > 0 ? TASKS.filter((t) => args.tasks.includes(t.id)) : TASKS;
+    let red = 0;
+    let errored = 0;
+    for (const task of tasks) {
+      const ws = createRepoWorkspace(task);
+      try {
+        restoreImplementationAt(task, ws);
+        const grade = spawnSync(gradeCommand(task), { cwd: ws, shell: true, encoding: "utf8", timeout: GRADE_TIMEOUT_MS });
+        const out = `${grade.stdout ?? ""}${grade.stderr ?? ""}`;
+        const environmentFailure =
+          /ERR_MODULE_NOT_FOUND|Cannot find package|Cannot find module|ENOENT: no such file or directory, open '.*node_modules/i.test(
+            out,
+          );
+        if (grade.error?.code === "ETIMEDOUT" || grade.signal === "SIGTERM" || environmentFailure) {
+          errored++;
+          console.log(`  ⚠️  ${task.id}：判据命令超时或环境错误，无法判定`);
+        } else if (grade.status === 0) {
+          console.log(`  ✅ ${task.id}：参考解下判据全绿（任务可解）`);
+        } else {
+          red++;
+          const failedMarkers = (out.match(/FAIL|✗|×/g) ?? []).length;
+          console.log(
+            `  ❌ ${task.id}：**参考解下判据仍是红的**（退出码 ${grade.status}，失败标记 ${failedMarkers} 处）` +
+              ` —— 要么任务无解，要么这条判据还依赖别的改动`,
+          );
+        }
+      } finally {
+        cleanRepoWorkspace(ws);
+      }
+    }
+    console.log(
+      `\n参考解自证（HEAD 必须让判据变绿）：${tasks.length - red - errored}/${tasks.length} 通过` +
+        (red > 0 ? `，**${red} 个任务在参考解下仍红**` : "") +
+        (errored > 0 ? `，${errored} 个无法判定` : ""),
+    );
+    return red === 0 && errored === 0 ? 0 : 1;
   }
 
   if (args.verifyWorkspace) {
