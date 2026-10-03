@@ -78,6 +78,26 @@ describe("第 107 波：根因修复与验证覆盖面的提示词要求", () =>
    *
    * 所以这里调用**真正的组装函数** `buildSystemPrompt`，在它的输出里找这三条要求。
    */
+  /**
+   * PROMPT-ROOT-6（第 116 波）：**动手之前先看到红**。
+   *
+   * 证据（把我们自己的失败逐条解剖）：四个没过的任务里，最常见的形态是
+   * **"从头到尾没跑到那条真正红的判据"** —— repo-02/06 是"既没跑也没读"，
+   * 而 repo-03/04 是"跑了、看见了红，却没读它（照症状猜）"。
+   * 这条要求针对前者：先复现失败、亲眼看到红，再动手。
+   *
+   * 边界同 §13.16：判据只能钉"要求写进去了"，行为证据由真实仓库档评测承担。
+   */
+  it("PROMPT-ROOT-6: 中英都要求「动手前先跑相关测试、亲眼看到那条失败」", () => {
+    const src = promptSource();
+    expect(src, "中文缺这条要求").toMatch(/动手之前，先确认「现在到底什么在红」/);
+    expect(src, "中文缺「先亲眼看到那条失败，再动手改」").toMatch(/先亲眼看到那条失败，再动手改/);
+    expect(src, "英文缺这条要求").toMatch(/Before changing anything, see the failure with your own eyes/);
+    expect(src, "英文缺「criterion that was actually red was never executed」").toMatch(
+      /the criterion that was actually red was never executed/,
+    );
+  });
+
   it("PROMPT-ROOT-5: 三条要求真的进了组装出来的系统提示（不是只在模板文件里）", async () => {
     const { buildSystemPrompt } = await import("../core/prompt/prompt");
     // 传最小可用配置：`agent.prompt` 是必填（缺了直接 TypeError，这正是"接线断了会立刻炸"）
@@ -89,5 +109,6 @@ describe("第 107 波：根因修复与验证覆盖面的提示词要求", () =>
     expect(text, "「按根因修」没进系统提示").toContain("修缺陷要按根因修");
     expect(text, "「验证覆盖面」没进系统提示").toContain("不要只跑你刚找到的那一个文件");
     expect(text, "「红测试不许被完成盖过去」没进系统提示").toContain("不许被");
+    expect(text, "第 116 波那条「先看到红」也没进系统提示").toContain("先亲眼看到那条失败");
   });
 });
