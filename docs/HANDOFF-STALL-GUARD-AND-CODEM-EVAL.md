@@ -1274,6 +1274,61 @@ repo-04  run-1: passed   复跑: failed    ⚠️ flaky（第 110 波发现）
 原来那版结论（"DSH 6 个全过、我们落后 4 个"）必须降级为：
 **在能稳定复现之前，只能说"这一次它过了"**。重复跑的其余任务（03/06/07）正在补。
 
+### 13.13i ⚠️ **run-1 的可信度问题**：那时的 `node_modules` junction 把答案仓库暴露着
+
+这一轮把配对报告跑出来了，同时发现一个**必须先讲清的效度问题**：
+
+**时间线**
+- `19:20` 之前（**两个臂的 run-1 基线全在这段时间里跑**）：工作区的 `node_modules` 是
+  junction 到 `C:\mimo-gui\node_modules` ⇒ **`node_modules\..` 解析到主仓库（有参考解）**；
+- `19:20` 起：改成 junction 到 `%TEMP%\codem-eval-deps/node_modules`（泄漏通道关闭）；
+- 之后的重复跑（campaign 2）都在干净条件下。
+
+**为什么这条不能只靠"污染检测说没事"糊过去**：污染检测（`codem-record-integrity.mjs` 与
+`run-repo-arm.mjs` 的 `readOutsideAccess`）看的是工具调用**目标里有没有出现 `mimo-gui`**。
+而 `Get-ChildItem node_modules/..` 这种路径**一个字符串都不含 `mimo-gui`**，却真的走到了主仓库 ——
+**检测器有盲区**（这是本轮发现的第三个"尺子自己有病"的例子）。
+所以 run-1 的四个"对手通过"**无法证明干净**。
+
+**干净条件下的证据（campaign 2，同一批任务、同模型、同提示）**：
+
+```
+repo-02  run-1: passed   run-2: failed   ⚠️
+repo-03  run-1: passed   run-2: failed   ⚠️
+repo-04  run-1: passed   run-2: failed   ⚠️
+repo-06  run-1: passed   run-2: failed   ⚠️
+```
+
+**四战全翻**。结合 run-1 的可疑性，最保守也最站得住的读法是：
+
+> **在干净工作区里，这四条任务对手也没做出来**（与 Codem 的失败一致）；
+> run-1 的四次"通过"要么是暴露通道带来的，要么是"这一次它做到了"——
+> **两者都无法区分，所以不作为证据**。
+
+**处置**：
+1. 报告与结论**以干净条件下的运行为准**（campaign 2 起）；
+2. 干净条件下**两个臂都要跑满**（Codem 的 run-2 已在跑；对照臂的 runs 2/3 在跑）——
+   这才是有资格谈"谁不弱于谁"的数据集；
+3. **修检测器的盲区**：把 `node_modules\..`、以及任何"能解析到工作区之外"的目标形态纳入判据
+   （下一轮补判据与变异）。
+
+### 13.13j 配对报告：**头部结论 withheld**（工具纪律生效）
+
+`repo-paired-report.mjs` 在现有数据上正确地**拒绝发布通过率**：控制臂有 run-2、处理臂还没有，
+12 对里 4 对被阻塞（`处理臂缺失`），并立起 `blocked-pairs / flaky / insufficient-repetition /
+headline-withheld` 五面旗。**这就是它该有的行为**（"成对样本不足就拒绝给结论"）。
+
+能看的那部分是**逐任务表**（只用于决定下一步做什么）：
+
+| 任务 | 对照臂（最新一次） | 处理臂 |
+|---|---|---|
+| repo-01 / 05 / 08 / 09 / 10 / 11 / 12 | ✅ | ✅ |
+| repo-07 | ❌ | **✅（我们更强）** |
+| repo-02 / 03 / 04 / 06 | ❌（干净条件下第 2 次） | ❌ |
+
+**成本面（12 对，run-1）**：token **1.74M vs 5.43M**（我们约 1/3）、输出 26.8k vs 36.2k、
+工具调用 44 vs 81（我们约一半）、**时延 338s vs 226s（我们慢约 50%）**。
+
 ### 13.14 第 106 波的执行状态（截至本轮）
 - **对照臂（DSH）**：`deepseek-flash`，`dsh --profile headless --json`，本已跑过 repo-01..05（5/5 通过）；
   本轮补跑 repo-06..12（进度：repo-06 通过）。判据：`tools/eval/drivers/dsh-driver.mjs` 写事件留档，
