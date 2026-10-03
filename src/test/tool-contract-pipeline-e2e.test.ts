@@ -162,6 +162,32 @@ describe("端到端：入参校验在真实管线里生效", () => {
     expect(res.status).toBe("completed");
     expect(res.output).toBe("a.ts");
   });
+
+  /**
+   * 第 97 波：**循环合成的结果不参与工具的输出契约校验**。
+   *
+   * 形态来源（真机实测）：一次 `read` 的缓存命中由**循环**返回
+   * （`[CACHE HIT] …`，`errorSource: "loop"`），它当然没有 read 工具声明的那个
+   * `{path, content, notices}` —— 但契约层原来把它判成"工具忘了给 value"，
+   * 于是模型收到 `Error: read declared outputSchema but returned no value`。
+   * 同样的形态还有：重复写被跳过（`[NO-OP]`）、重复调用守卫抑制、已收集的委派结果。
+   *
+   * 判据：这类结果必须**原样**透出去（既不改写成契约错误，也不算失败）。
+   */
+  it("循环合成的结果（errorSource: loop）不被契约层改写成错误", async () => {
+    const res = await getToolPipeline().execute("glob", { pattern: "*.ts" }, ctx(), async () => ({
+      id: "call-loop",
+      name: "glob",
+      input: { pattern: "*.ts" },
+      output: "[CACHE HIT] 这里放的是循环缓存的内容，不是 glob 的结构化结果",
+      status: "completed" as const,
+      errorSource: "loop" as const,
+    }));
+
+    expect(res.result.status, "缓存命中是成功，不是失败").toBe("completed");
+    expect(res.result.output).toContain("[CACHE HIT]");
+    expect(res.result.output).not.toMatch(/declared outputSchema but returned no/);
+  });
 });
 
 describe("端到端：未声明契约的工具零变化", () => {

@@ -453,6 +453,20 @@ export interface ToolExecuteResult {
    * 未声明时由 `classifyToolResult` 按输出推断（内容型工具不推断）。
    */
   isError?: boolean;
+  /**
+   * 第 97 波：工具产出的**结构化结果值**（第 121 轮那套 `outputSchema` 的输入）。
+   *
+   * 工具声明了 `contract.outputSchema` 时**必须**给这个字段：`tool-pipeline` 的 finalize 层
+   * 拿它做校验，再由 `contract.renderOutput` 渲染成给模型看的 `output`。
+   *
+   * ⚠️ 这个字段在第 121/122 轮加进 `ToolCallResult` 时**漏在了这里**（工具侧的类型），
+   * 于是在 `agentic-loop` 里读 `result.value` 会报 TS2339 —— 而那条读取正是"把 value 透传给下游"
+   * 的关键一行。也就是说：**类型漏字段 → 那一行写不出来 → 四个主力工具在真机上全废**
+   * （`bash`/`read`/`glob`/`grep` 每次成功调用都被契约层改写成
+   * `Error: … declared outputSchema but returned no value`）。判据见
+   * `src/test/output-contract-real-loop.test.ts`。
+   */
+  value?: unknown;
 }
 
 // ========== Phase D: Interactive Form & Prompt Optimization Types ==========

@@ -119,8 +119,13 @@ export interface ToolCallResult {
    *   `consecutiveErrors`（否则连错 3 次就把整轮干掉，比原来更容易卡死）。
    * - 其它（含未设置）：管线/宿主层的失败（权限拒绝、守卫拦截、异常、中止）。
    *   这些仍然按原路径抛出并计入连续错误。
+   * - `"loop"`（第 97 波）：这条结果**不是工具自己产出的**，而是循环合成的 ——
+   *   读缓存命中（`[CACHE HIT]`）、重复写被跳过（`[NO-OP]`）、重复调用守卫抑制等。
+   *   它同样**不参与工具的输出契约校验**：工具声明了 `outputSchema` 也不该为"缓存命中的文本"
+   *   背锅（真机实测：这条把 `read` 的每次缓存命中都变成
+   *   `Error: read declared outputSchema but returned no value`，模型因此放弃 read/bash/glob/grep）。
    */
-  errorSource?: "tool" | "pipeline";
+  errorSource?: "tool" | "pipeline" | "loop";
   /** 工具执行元数据（如 subagentId 等）— 从 ToolExecuteResult 透传 */
   metadata?: Record<string, any>;
   /**

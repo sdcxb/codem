@@ -2,6 +2,35 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.227] - 2026-10-03
+
+### 修复
+
+- **★★ 四个主力工具在真机上「全废」：`bash` / `read` / `glob` / `grep` 的每次成功调用都被改写成一条内部话术。**
+  模型实际收到的是 `Error: bash declared outputSchema but returned no value. Return the structured value so it can be validated.`
+  —— 于是它会放弃 `bash`、绕道 `terminal_send`（真机会话里 81 次 `terminal_send` 就是这么来的），或者干脆宣布做不到。
+  **真机取证**（按事件顺序配对统计，`.preview-shot/_probe-tool-health.mjs`，最近 12 个会话）：
+  `bash` 46 次调用 → 42 条 error（32 条是这条）；`read` 11 → 8（8 条）；`glob` 7 → 7（7 条）；`grep` 2 → 2（2 条）；
+  而没声明 `outputSchema` 的 `terminal_*` 是 0 条。
+  **根因（两处，都在同一个"半接线"的功能里）**：
+  1. `agentic-loop.ts` 交给执行器的 **execute 层 handler** 在返回时**重建结果对象**，只带
+     `id/name/input/output/status/metadata` —— 把工具自己产出的结构化 `value` **丢了**；
+     而 `tool-pipeline.ts` 的 `OutputContractValidationMiddleware` 正是靠 `result.value` 校验，
+     「声明了契约却没值」被判成**实现漏了**，把**成功结果改写成 error**。
+  2. `ToolExecuteResult`（**工具侧**的类型）从第 121/122 轮起就**没有 `value` 字段** ——
+     于是在 `agentic-loop` 里写 `value: result.value` 会报 TS2339，那一行根本写不出来。
+     （`ToolCallResult` 有这个字段，工具侧漏了 —— 同一份契约在两侧不同形。）
+  **修法**：`ToolExecuteResult` 补 `value?: unknown`；execute 层 handler 透传 `value`；
+  另外循环**自己合成**的结果（读缓存命中 `[CACHE HIT]`、重复写被跳过 `[NO-OP]`、重复调用守卫抑制、
+  已收集的委派结果）标记 `errorSource: "loop"`，契约层对它们**不做**工具输出校验
+  （它们本来就不是工具的产出，工具不该为"缓存命中的文本"背锅）。
+  **判据**：`src/test/output-contract-real-loop.test.ts`（**驱动真实循环**，断言循环交给下游的那条结果：
+  有 `value` ⇒ `completed` + 渲染文本 + `value` 透传到下游）+ `tool-contract-pipeline-e2e.test.ts`
+  新增"循环合成结果不被改写"一条。**变异自证**：把 `value: result.value` 去掉 ⇒ 立刻红
+  （`Error: contract_probe declared outputSchema but returned no value`）。
+  为什么既有判据没抓到：那份 e2e 测试的夹具 handler 自己写了 `value: out.value`（**测试比生产"更对"**），
+  判据长在一条**生产里不执行**的链路上 —— 本文件 §5.2 第 1 条的同一形态。
+
 ## [1.16.226] - 2026-10-03
 
 ### 修复

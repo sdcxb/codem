@@ -3134,6 +3134,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             input: args,
             output: guardDecision.message ?? "Skipped: repeated identical tool call.",
             status: "completed" as const,
+            // 第 97 波：循环合成的结果 ⇒ 不参与工具的输出契约校验（见 types.ts 的 errorSource 说明）
+            errorSource: "loop" as const,
           };
         }
 
@@ -3187,6 +3189,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               input: args,
               output: `[CACHE HIT] This file was already read earlier in this conversation. The content has not changed since then. Use the content below directly — do NOT call read again.\n\nFile: ${filePath}\n\n${cached.output}`,
               status: "completed" as const,
+              // 第 97 波：循环合成的结果 ⇒ 不参与输出契约校验（真机上它把每次缓存命中变成契约错误）
+              errorSource: "loop" as const,
             };
           }
           // Range mismatch — fall through to a real read instead of returning stale content
@@ -3207,6 +3211,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               input: args,
               output: `[NO-OP] This exact content was already written to ${filePath} earlier in this conversation. The file already contains this content. Do NOT write again. Report success to the user and stop.`,
               status: "completed" as const,
+              // 第 97 波：循环合成的结果 ⇒ 不参与输出契约校验
+              errorSource: "loop" as const,
             };
           }
         }
@@ -3231,6 +3237,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               input: args,
               output: `[ALREADY COLLECTED] You already called ${name} for task ${taskId} in a previous iteration and received the result. Do NOT call ${name} for this task again. Use the result you already received. Here is the cached result for reference:\n\n${cachedResult}\n\nIf you have collected all results, proceed to the next step (e.g., write the output file). Do NOT wait again.`,
               status: "completed" as const,
+              // 第 97 波：循环合成的结果 ⇒ 不参与输出契约校验
+              errorSource: "loop" as const,
             };
           }
 
@@ -3439,6 +3447,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           name,
           input: args,
           output: result.output,
+          /**
+           * 第 97 波：**必须把工具产出的结构化 `value` 透传下去**。
+           *
+           * 这里原来是重建一个"干净"的结果对象，只带 `id/name/input/output/status/metadata` ——
+           * 于是工具自己产出的 `value` 在这一层被丢掉，而下游的
+           * `OutputContractValidationMiddleware` 正是靠 `result.value` 做校验：
+           * 「声明了 outputSchema 却没有 value」被判成**实现漏了**，把**成功结果改写成 error**。
+           *
+           * 真机后果（`.preview-shot/_probe-tool-health.mjs`，按事件顺序配对统计）：
+           * `bash` 46 次调用 42 条 error、`read` 11 次 8 条、`glob` 7 次 7 条、`grep` 2 次 2 条，
+           * 模型看到的是 `Error: bash declared outputSchema but returned no value` 这种内部话术，
+           * 于是绕道 `terminal_*` 或直接宣布做不到 —— **四个主力工具在真机上等于废掉**。
+           *
+           * 为什么既有判据没抓到：`tool-contract-pipeline-e2e.test.ts` 的夹具 handler 自己写了
+           * `value: out.value`（测试比生产"更对"），判据长在一条**生产里不执行**的链路上。
+           * 现在的行为判据是 `src/test/output-contract-real-loop.test.ts`（驱动真实循环）。
+           */
+          value: result.value,
           ...(verdict.status === "error"
             ? { status: "error" as const, error: verdict.error, errorSource: "tool" as const }
             : { status: "completed" as const }),

@@ -912,7 +912,12 @@ class OutputContractValidationMiddleware implements FinalizeMiddleware {
     // 工具**自己汇报**的失败（errorSource: `tool`，例如 glob 的 catch 分支）已经是一句
     // 可行动的错误文本，不能再被包装一次 —— 否则模型看到的是「格式违规」而不是
     // 真正的原因（这类遮蔽在本仓出过多次，所以显式挡掉）。
-    if (result.status === "error" || result.errorSource === "tool") return result;
+    //
+    // 第 97 波：**循环合成的结果**（`errorSource: "loop"`）也挡掉。它们不是工具产出的，
+    // 自然没有工具的 `value`：读缓存命中 / 重复写被跳过 / 守卫抑制都是这种形态。
+    // 不挡的后果是真机上的四个主力工具全废（每次缓存命中都变成
+    // `Error: read declared outputSchema but returned no value`）。
+    if (result.status === "error" || result.errorSource === "tool" || result.errorSource === "loop") return result;
 
     const declared = this.rawContractOf?.(toolName);
     if (!declared?.outputSchema) {
