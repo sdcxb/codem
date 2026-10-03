@@ -22,9 +22,14 @@
  *
  * ## 未闭合的部分（如实记录）
  *
- * workflow 的代码本身仍在**应用进程内**跑（`new Function`），并可以
- * `sdk.spawn` 起子智能体 —— 子智能体是自己的会话，有自己的权限链，
- * 不在这道闸门覆盖范围内。本文件不声称 workflow 是沙箱。
+ * workflow 的代码**不再用 `new Function` 在本进程里跑**（第 103/116 波）：它走
+ * `executeCode()` —— 与 `run_code` 同一条 **Rust 侧 `boa_engine` 沙箱**（无 eval、CSP 不需要
+ * `unsafe-eval`）。仍然可以 `sdk.spawn` 起子智能体 —— 子智能体是自己的会话、有自己的权限链，
+ * 不在这道闸门覆盖范围内。**本文件仍然不声称 workflow 是权限沙箱**：它沙箱化的是
+ * "代码在哪跑"，不是"它能做什么"（后者由 `sdk.*` 上的闸门管）。
+ *
+ * 接线判据：`workflow-sandbox-wiring.test.ts`（换掉 runner 后 workflow 必须走它、
+ * 且不许出现 `new Function`）。
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "./tools";
