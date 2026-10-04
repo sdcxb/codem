@@ -1130,12 +1130,17 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
   ): AsyncGenerator<LoopEvent, LoopResult, unknown> {
     this.abortController = new AbortController();
     /**
-     * **第 116 波排查用探针**（定位"机制在装机版里到不了模型"）：
-     * 用 CDP 控制台录制跑一次，就能知道这个 `run()` 到底有没有在**被录制的那个页面**里执行 ✗/✓。
-     * 若连这一行都录不到，说明会话跑在别的进程/上下文里 ——
-     * 那前面所有"注入没生效"的观察都要重新解释 ✓。
+     * **第 116–118 波排查痕迹，保留但降级为 debugLog**。
+     *
+     * 它曾经是排查的主力 ✓：在"机制在装机版里到不了模型"的追查中，
+     * 正是靠"这一行有没有出现"才证明 `run()` 真的在跑 ✓
+     * （当时我先起应用再挂 CDP 监听 ✗，而驱动会先把应用杀掉重起 ✗ ⇒
+     *  录到的是**死掉的旧实例**，于是我一度错误地判定"这条路径不跑" ✗）。
+     *
+     * 现在它只作诊断用（`codem-debug=agent-loop` 时可见 ✓），不再是无条件输出 ✗。
+     * 判据：`task-keyword-search-wiring.test.ts` / `family-reminder-wiring.test.ts`（真跑 loop ✓）。
      */
-    console.info("[PROBE-116] run() entered | session=", sessionId, "| cwd=", cwd || "(空)", "| msgLen=", userMessage?.length ?? 0);
+    debugLog("agent-loop", "[run] entered | session=", sessionId, "| cwd=", cwd || "(空)", "| msgLen=", userMessage?.length ?? 0);
     // 第 109 波：本回合的用户消息与「是否已补发族提醒」（补发时机 = 第一次测试跑出红）
     this.lastUserMessage = userMessage;
     this.lastCwd = cwd;
@@ -1713,17 +1718,17 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           const { buildTaskSearchNotice } = await import("./task-keyword-search");
           const notice = await buildTaskSearchNotice(cwd, userMessage);
           /**
-           * **第 116 波：把"成功还是 null"也记下来。**
+           * **第 116–118 波：把"成功还是 null"记下来**（排查痕迹，保留 ✓）。
            *
-           * 起因：这个机制在装机版里长期没到模型 ✗，而我只能看到"事件里没有" ✗ ——
-           * 分不清是"没执行 / 抛错 / 返回 null"哪一种 ✗。
-           *
-           * 用 `console.info` 而不是 `debugLog`：`debugLog` 的开关是**模块加载时读一次**并缓存 ✗，
-           * 我按文档先设 `localStorage` 再重启也没能在装机版里看到它 ✗ ——
-           * 排查期间先走不需要开关的通道 ✓（会话级只一行，不构成噪声 ✓）。
+           * 排查期它用过 `console.info`（因为 `debugLog` 的开关是**模块加载时读一次**并缓存 ✗，
+           * 而当时我连"这一行到底有没有执行"都不知道 ✗）。现在机制已被证明真的到模型 ✓
+           * （装机版日志：`task-keyword search: 5743 chars | cwd=… | msgLen=165` ✓，
+           * 与 Node 复算逐字对上 ✓），所以降级回 `debugLog` ✓ ——
+           * 排查能力保留（`codem-debug=agent-loop` 可见 ✓），日常不再刷控制台 ✓。
            */
-          console.info(
-            "[AgentLoop] task-keyword search:",
+          debugLog(
+            "agent-loop",
+            "task-keyword search:",
             notice ? `${notice.length} chars` : "null",
             "| cwd=",
             cwd || "(空)",
