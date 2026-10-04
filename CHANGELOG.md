@@ -2,6 +2,99 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.242] - 2026-10-04
+
+### 其他
+
+- **提示机制的"结果可见性"**（诊断用，第 116 波）。
+  1.16.239 把两个提示机制从 `node:fs` 迁到 `core/file-api` 的 IPC 之后，
+  用 CDP 在**运行中的应用里**实测：`list_directory` 可用 ✓、
+  把遍历算法内联跑一遍能发现 **499 个测试文件**（且含 `dsh-d9`）✓ ——
+  但机制**仍然没有到模型** ✗（会话事件里既没有清单也没有族提醒，而 `[RED TEST]` 指针正常开火 ✓）。
+
+  两种可能（"抛错被吞" ✗ / "返回了 null" ✗）**只有控制台能分开**，
+  于是把这段的 在 `run()` 入口加一行 `console.info("[PROBE-116] run() entered …")` —— 用来判定这个 `run()` 是否真的在**被 CDP 录制的那个页面**里执行
+  并附带 `cwd` 与消息长度（"返回 null"最常见的原因就是这两个入参不对 ✗）：
+
+  ```
+  [debug] task-keyword search: null | cwd=… | msgLen=…
+  [debug] task-keyword search: 2819 chars | cwd=… | msgLen=…
+  ```
+
+  排查方式（不改代码、不猜）：`localStorage.setItem('codem-debug','agent-loop')`
+  + CDP 控制台录制，跑一个任务即可读出是哪一种 ✓。
+
+### 说明（不是 bug，别误改）
+
+- 控制台里另外两条 `[PersistFailure] storage.bootstrap.domain.*.too-large`
+  （`telemetry_events` / `messages` 超过镜像上限 5000 行）**是设计如此** ✓：
+  它们的附注是「暂不镜像（超出内存上限）；稍后会自动重试，**本次该域读给空结果**」——
+  即"确实降级了"，措辞与事实一致 ✓。
+  这与 1.16.239 修的那类**不同**：那次是**逐出成功**却报"操作失败/没有生效" ✗。
+  所以这里**不改** ✗（改了反而会把真实降级藏起来）。
+
+## [1.16.241] - 2026-10-04
+
+### 其他
+
+- **提示机制的"结果可见性"**（诊断用，第 116 波）。
+  1.16.239 把两个提示机制从 `node:fs` 迁到 `core/file-api` 的 IPC 之后，
+  用 CDP 在**运行中的应用里**实测：`list_directory` 可用 ✓、
+  把遍历算法内联跑一遍能发现 **499 个测试文件**（且含 `dsh-d9`）✓ ——
+  但机制**仍然没有到模型** ✗（会话事件里既没有清单也没有族提醒，而 `[RED TEST]` 指针正常开火 ✓）。
+
+  两种可能（"抛错被吞" ✗ / "返回了 null" ✗）**只有控制台能分开**，
+  于是把这段的 该段诊断从 debugLog 改成 **console.info**（不需要开关），
+  并附带 `cwd` 与消息长度（"返回 null"最常见的原因就是这两个入参不对 ✗）：
+
+  ```
+  [debug] task-keyword search: null | cwd=… | msgLen=…
+  [debug] task-keyword search: 2819 chars | cwd=… | msgLen=…
+  ```
+
+  排查方式（不改代码、不猜）：`localStorage.setItem('codem-debug','agent-loop')`
+  + CDP 控制台录制，跑一个任务即可读出是哪一种 ✓。
+
+### 说明（不是 bug，别误改）
+
+- 控制台里另外两条 `[PersistFailure] storage.bootstrap.domain.*.too-large`
+  （`telemetry_events` / `messages` 超过镜像上限 5000 行）**是设计如此** ✓：
+  它们的附注是「暂不镜像（超出内存上限）；稍后会自动重试，**本次该域读给空结果**」——
+  即"确实降级了"，措辞与事实一致 ✓。
+  这与 1.16.239 修的那类**不同**：那次是**逐出成功**却报"操作失败/没有生效" ✗。
+  所以这里**不改** ✗（改了反而会把真实降级藏起来）。
+
+## [1.16.240] - 2026-10-04
+
+### 其他
+
+- **提示机制的"结果可见性"**（诊断用，第 116 波）。
+  1.16.239 把两个提示机制从 `node:fs` 迁到 `core/file-api` 的 IPC 之后，
+  用 CDP 在**运行中的应用里**实测：`list_directory` 可用 ✓、
+  把遍历算法内联跑一遍能发现 **499 个测试文件**（且含 `dsh-d9`）✓ ——
+  但机制**仍然没有到模型** ✗（会话事件里既没有清单也没有族提醒，而 `[RED TEST]` 指针正常开火 ✓）。
+
+  两种可能（"抛错被吞" ✗ / "返回了 null" ✗）**只有控制台能分开**，
+  于是把这段的 debugLog 从"只在成功时打印"改成"**成功与 null 都打印**"，
+  并附带 `cwd` 与消息长度（"返回 null"最常见的原因就是这两个入参不对 ✗）：
+
+  ```
+  [debug] task-keyword search: null | cwd=… | msgLen=…
+  [debug] task-keyword search: 2819 chars | cwd=… | msgLen=…
+  ```
+
+  排查方式（不改代码、不猜）：`localStorage.setItem('codem-debug','agent-loop')`
+  + CDP 控制台录制，跑一个任务即可读出是哪一种 ✓。
+
+### 说明（不是 bug，别误改）
+
+- 控制台里另外两条 `[PersistFailure] storage.bootstrap.domain.*.too-large`
+  （`telemetry_events` / `messages` 超过镜像上限 5000 行）**是设计如此** ✓：
+  它们的附注是「暂不镜像（超出内存上限）；稍后会自动重试，**本次该域读给空结果**」——
+  即"确实降级了"，措辞与事实一致 ✓。
+  这与 1.16.239 修的那类**不同**：那次是**逐出成功**却报"操作失败/没有生效" ✗。
+  所以这里**不改** ✗（改了反而会把真实降级藏起来）。
+
 ## [1.16.239] - 2026-10-04
 
 ### 修复

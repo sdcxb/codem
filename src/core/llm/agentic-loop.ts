@@ -1129,6 +1129,13 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     systemPrompt: string,
   ): AsyncGenerator<LoopEvent, LoopResult, unknown> {
     this.abortController = new AbortController();
+    /**
+     * **第 116 波排查用探针**（定位"机制在装机版里到不了模型"）：
+     * 用 CDP 控制台录制跑一次，就能知道这个 `run()` 到底有没有在**被录制的那个页面**里执行 ✗/✓。
+     * 若连这一行都录不到，说明会话跑在别的进程/上下文里 ——
+     * 那前面所有"注入没生效"的观察都要重新解释 ✓。
+     */
+    console.info("[PROBE-116] run() entered | session=", sessionId, "| cwd=", cwd || "(空)", "| msgLen=", userMessage?.length ?? 0);
     // 第 109 波：本回合的用户消息与「是否已补发族提醒」（补发时机 = 第一次测试跑出红）
     this.lastUserMessage = userMessage;
     this.lastCwd = cwd;
@@ -1705,9 +1712,26 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         try {
           const { buildTaskSearchNotice } = await import("./task-keyword-search");
           const notice = await buildTaskSearchNotice(cwd, userMessage);
+          /**
+           * **第 116 波：把"成功还是 null"也记下来。**
+           *
+           * 起因：这个机制在装机版里长期没到模型 ✗，而我只能看到"事件里没有" ✗ ——
+           * 分不清是"没执行 / 抛错 / 返回 null"哪一种 ✗。
+           *
+           * 用 `console.info` 而不是 `debugLog`：`debugLog` 的开关是**模块加载时读一次**并缓存 ✗，
+           * 我按文档先设 `localStorage` 再重启也没能在装机版里看到它 ✗ ——
+           * 排查期间先走不需要开关的通道 ✓（会话级只一行，不构成噪声 ✓）。
+           */
+          console.info(
+            "[AgentLoop] task-keyword search:",
+            notice ? `${notice.length} chars` : "null",
+            "| cwd=",
+            cwd || "(空)",
+            "| msgLen=",
+            userMessage?.length ?? 0,
+          );
           if (notice) {
             trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + notice;
-            debugLog("agent-loop", "Injected task-keyword search notice:", notice.length, "chars");
           }
         } catch (noticeErr) {
           // 非关键路径：搜索失败不该影响会话
