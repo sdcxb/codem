@@ -43,6 +43,17 @@ export interface TestFileSource {
   read(path: string, maxBytes?: number): Promise<string>;
 }
 
+/**
+ * 内容搜索接口（第 124 波）——**用应用自己的 grep**（`core/file-api.ts` 的 `grepSearch` ✓，
+ * 与 `grep` 工具同一条 IPC ✓）。
+ *
+ * 为什么需要它（会话级证据）：对照臂赢的那次 repo-02 靠一次**全仓库符号 grep**
+ * （"Found 117 matches"）在匹配清单里**同时看到源码与测试文件**，才直接找到
+ * `dsh-d9-multi-edit-partial-failure.test.ts` ✓；而我的清单只搜测试文件 ✗，
+ * 偏偏这个任务的原词在测试文件里零命中 ✗ ⇒ 命中段为空 ⇒ 帮不上 ✗。
+ */
+export type SearchLike = (pattern: string, root: string) => Promise<string[]>;
+
 /** 装机版默认实现：走 `core/file-api.ts`（Tauri IPC），**不是** node:fs ✓ */
 export function createIpcFileSource(): TestFileSource {
   return {
@@ -71,10 +82,18 @@ export function createIpcFileSource(): TestFileSource {
   };
 }
 
+/** 装机版默认搜索实现：走 `grepSearch`（IPC ✓） */
+export function createIpcSearcher(): SearchLike {
+  return async (pattern: string, root: string) => {
+    const { grepSearch } = await import("../file-api");
+    return grepSearch(pattern, root);
+  };
+}
+
 /** 一次最多列多少个命中的测试文件 */
 export const DEFAULT_MAX_HITS = 12;
 /** 最多用几个关键词去搜 */
-export const MAX_TERMS = 8;
+export const MAX_TERMS = 60;
 /** 单个测试文件最多读多少字节（大文件只读头部，够判命中） */
 const MAX_BYTES_PER_FILE = 128 * 1024;
 /** 扫描的测试文件数上限 */
@@ -163,6 +182,30 @@ export function extractSearchTerms(message: string): string[] {
       if (piece.length >= 2 && piece.length <= 6) terms.add(piece);
     }
   }
+  /**
+   * **中文整句补子串**（第 124 波）——真实工作区实测逼出来的 ✓：
+   *
+   * 抽出来的词原来都是整句（「按我的一次性要求改」「写入确认里选」…）✗ ⇒ 在仓库里**逐条 0 命中** ✗
+   * ⇒ 新加的"源码命中"一节是空的 ✗。而对照臂赢的那次真正 grep 的是
+   * **「一次性要求」「写入确认」** ✓ —— 都是那些整句的**子串** ✓。
+   *
+   * 所以对长度为 4 以上的中文片段，再补 3–5 字的子串 ✓（有界：每个片段最多补 18 个 ✓）。
+   * 这样"整句零命中、子串有命中"的形状就能被覆盖 ✓。
+   */
+  for (const m of text.matchAll(/[\u4e00-\u9fa5]{4,60}/g)) {
+    const run = m[0];
+    let added = 0;
+    for (let len = 5; len >= 3 && added < 18; len--) {
+      for (let i = 0; i + len <= run.length && added < 18; i++) {
+        const sub = run.slice(i, i + len);
+        if (!terms.has(sub)) {
+          terms.add(sub);
+          added++;
+        }
+      }
+    }
+  }
+
   const stop = new Set(["this", "that", "with", "from", "have", "will", "test", "tests", "src", "code", "true", "false", "null", "error"]);
   for (const m of text.matchAll(/[A-Za-z_][A-Za-z0-9_]{3,40}/g)) {
     const t = m[0];
@@ -276,6 +319,7 @@ function buildNotice(
   query: string,
   droppedGeneric = 0,
   maxHits = DEFAULT_MAX_HITS,
+  sourceHits: string[] = [],
 ): string | null {
   hits.sort((a, b) => b.count - a.count || a.file.localeCompare(b.file));
   const listed = hits.slice(0, maxHits);
@@ -299,7 +343,15 @@ function buildNotice(
       }`
     : `[任务关键词命中] 你这条消息里的词在测试文件里没有有效命中（太常见的词已忽略）。下面是这个工作区测试文件的**命名分族**，供你判断该看哪一类：`;
 
-  return [head, lines, hits.length ? more : "", clusterLines, `这只是搜索结果；具体某条判据要求什么，用 read 打开对应文件看。`]
+  /**
+   * **源码命中**一节（第 124 波）：只陈述事实（哪些实现文件里有这些词 ✓），
+   * 并明说"这些是源码、不是判据" ✓ —— 不判断、不命令 ✓。
+   */
+  const sourceSection = sourceHits.length
+    ? [`[源码命中] 同样这些词在**源码/实现文件**里命中的位置（供你定位实现，不是判据）：`, ...sourceHits.map((s) => `- ${s}`)].join("\n")
+    : "";
+
+  return [head, lines, hits.length ? more : "", sourceSection, clusterLines, `这只是搜索结果；具体某条判据要求什么，用 read 打开对应文件看。`]
     .filter(Boolean)
     .join("\n");
 }
@@ -314,7 +366,7 @@ function buildNotice(
 export async function buildTaskSearchNotice(
   root: string,
   message: string,
-  opts: { src?: TestFileSource; maxHits?: number } = {},
+  opts: { src?: TestFileSource; maxHits?: number; search?: SearchLike } = {},
 ): Promise<string | null> {
   const src = opts.src ?? createIpcFileSource();
   const terms = extractSearchTerms(message);
@@ -357,8 +409,36 @@ export async function buildTaskSearchNotice(
     if (count > 0) hits.push({ file, count, matched });
   }
 
-  if (hits.length === 0 && files.length < MIN_FILES_FOR_CLUSTERS) return null;
-  return buildNotice(hits, files, message, terms.length - usefulTerms.length, opts.maxHits);
+  /**
+   * **补一节源码命中**（第 124 波）：拿同样几个词去问应用自己的 grep ✓。
+   * 只取前 3 个词、最多 8 条、剔除测试文件（测试命中已在上一节 ✓）——控制体量与噪声 ✓。
+   */
+  let sourceHits: string[] = [];
+  try {
+    const search = opts.search ?? createIpcSearcher();
+    const found: string[] = [];
+    for (const term of usefulTerms.slice(0, 15)) {
+      const rows = await search(term, root);
+      for (const row of rows) found.push(row);
+      /** 够了就停：每个词一次 IPC，别把会话开头拖长 ✓（第 124 波） */
+      if (found.filter((r) => !isTestFile(String(r))).length >= 8) break;
+    }
+    const seen = new Set<string>();
+    for (const row of found) {
+      const file = String(row).replace(/\\/g, "/").split(":")[0];
+      if (!file || isTestFile(file)) continue;
+      const key = file;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      sourceHits.push(String(row).slice(0, 160));
+      if (sourceHits.length >= 8) break;
+    }
+  } catch {
+    // 搜不动就不给这一节（非关键路径 ✓）
+  }
+
+  if (hits.length === 0 && sourceHits.length === 0 && files.length < MIN_FILES_FOR_CLUSTERS) return null;
+  return buildNotice(hits, files, message, terms.length - usefulTerms.length, opts.maxHits, sourceHits);
 }
 
 /**
