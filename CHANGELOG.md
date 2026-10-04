@@ -2,6 +2,53 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.239] - 2026-10-04
+
+### 修复
+
+- **★★★ 提示类机制在装机版里**静默失效**的根因修复（前端没有真的 `fs`）。**
+  用户报的控制台报错牵出的问题：`vite.config.ts` 把前端的 `fs` alias 到
+  `src/stubs/node-fs-stub.ts`，而那个桩**不访问磁盘**（`readdirSync` 恒 `[]`、
+  `readFileSync` 恒 `""`、`existsSync` 恒 `false`）。
+
+  ⇒ `task-keyword-search.ts` 第一版用了 `node:fs` ⇒ 装机版里
+  `collectTestFiles()` 恒为空 ⇒ **1.16.236 / 237 / 238 三个版本的
+  「任务关键词清单」与「判据族提醒」一次都没到过模型** ✗，
+  而**所有判据全绿**（Vitest 跑在 Node 里，`node:fs` 是真的 ✗）。
+
+  | 缺口 | 对策 |
+  |---|---|
+  | 生产代码用了"在判据里是真的、在装机版里是桩"的 API | 所有 I/O 收进注入点 `TestFileSource`：装机版走 `core/file-api.ts` 的 **Tauri IPC**，判据注入真实 Node fs；并加**静态门禁**防复发 |
+
+- **★ I/O 注入点**（`src/core/llm/task-keyword-search.ts`）
+  - `TestFileSource { list, read }` —— 本模块**唯一**的 I/O 出口；
+  - `createIpcFileSource()`：装机版默认实现，走 `listDirectory` / `readFile` / `readTextWindow`；
+  - 相关函数改 **async**（`collectTestFiles` / `buildTaskSearchNotice` / `buildFamilyReminder`），
+    两个调用点补 `await`（本来就在 async 上下文）；
+  - 两个"真跑 loop"的接线判据**mock `core/file-api`**（内部用真实 fs）⇒ 走的是**生产同一条路径** ✓
+    （以前没 mock，恰好**掩盖**了这个坑 ✗）。
+
+- **★ 防复发门禁**（`src/test/no-node-fs-in-llm.test.ts`）
+  - **FSG-1**：`src/core/llm/**` 的**生产**文件（排除 `*.test.*` / `tests/` / `fixtures/`）
+    不许出现 `from "node:fs"` / `from "fs"` ✗；
+  - **FSG-2** 反向对照：正则必须抓得住真实写法（否则门禁是空的 ✗）；
+  - **变异自证 M12**：把 `import { readdirSync } from "node:fs"` 加回生产模块 ⇒ **FSG-1 立刻红** ✓。
+
+- **★★ 正常的内存预算逐出不再冒充「持久化失败」**（用户报的控制台报错）
+  - 症状：`[PersistFailure] storage.bootstrap.events.evict 操作失败（第 N 次）：… —— 该功能本次没有生效`，
+    连打 30+ 条；而**逐出其实成功了**（`evictions` 在涨、LRU 真的释放）；
+  - 根因：`enforceBudget()` 把"逐出发生了"走了 `onFailure` —— 那条通道是**给用户看的失败横幅**；
+    **事件镜像**与**消息镜像**两处都一样 ✗；
+  - 修法：留痕改走 `stats().lastEviction`（可查、有判据）与调试日志，不再调用 `onFailure`；
+  - 判据 `EVB-1` / `MEM-1` **被改写**（原文要求逐出出现在失败通道里 ✗，正是这个假警报的来源），
+    现在钉"**两件事都要成立**"：`failures` 里不许再出现它 ✓，而 `stats().lastEviction` 必须留痕 ✓；
+    改写原因写在判据里（免得下一个人把修复当退步 ✗）；
+  - **变异自证 M10/M11**：把两处逐出**重新接回 `onFailure`** ⇒ `EVB-1`/`MEM-1` 立刻红 ✓。
+
+### 其他
+
+- 全量 vitest **7011 条**全绿 ✓；`tsc --noEmit` 干净 ✓。
+
 ## [1.16.238] - 2026-10-04
 
 ### 修复
