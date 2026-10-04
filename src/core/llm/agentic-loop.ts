@@ -3739,33 +3739,37 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               console.warn("[AgenticLoop] family reminder failed:", reminderErr);
             }
           }
+        }
 
-          /**
-           * **第 125 波：编辑之后，把「还有哪些判据文件提到你刚改的符号」以事实列出** ✓。
-           *
-           * 依据（§13.47）：对照臂赢的那次用的原语就是"一次按**符号**的 grep ⇒
-           * 匹配清单里同时出现源码与测试文件" ✓；而"把判据名送到眼前"那四个机制对 repo-02 全无效 ✗
-           * （任务的中文描述词在仓库里**根本不存在** ✗）。
-           * 这一条与它们不同：由**它自己的编辑动作**触发 ✓、内容与它刚做的事**直接相关** ✓，
-           * 而且只列事实（不说"你应该跑""你漏了" ✗）。
-           *
-           * 每回合最多一次 ✓；失败静默 ✓（非关键路径 ✓）。
-           */
-          if (!this.symbolSiblingsSentInTurn && /^(write|edit|multi_edit)$/.test(name)) {
-            const edited = String(effectiveArgs.path ?? effectiveArgs.file_path ?? "");
-            if (edited) {
-              this.symbolSiblingsSentInTurn = true;
-              try {
-                const root = (this.lastCwd || process.cwd()).replace(/\\/g, "/");
-                const abs = edited.replace(/\\/g, "/");
-                const rel = abs.startsWith(root + "/") ? abs.slice(root.length + 1) : edited;
-                const { buildSymbolSiblings } = await import("./task-keyword-search");
-                const siblings = await buildSymbolSiblings(this.lastCwd || process.cwd(), rel);
-                debugLog("agent-loop", "symbol siblings:", siblings ? `${siblings.length} chars` : "null", "| edited=", rel);
-                if (siblings) result.output = `${result.output}\n\n${siblings}`;
-              } catch (sibErr) {
-                console.warn("[AgenticLoop] symbol siblings failed:", sibErr);
-              }
+        /**
+         * **第 125 波：编辑之后，把「还有哪些判据文件提到你刚改的符号」以事实列出** ✓。
+         *
+         * 依据（§13.47）：对照臂赢的那次用的原语就是"一次按**符号**的 grep ⇒
+         * 匹配清单里同时出现源码与测试文件" ✓；而"把判据名送到眼前"那四个机制对 repo-02 全无效 ✗
+         * （任务的中文描述词在仓库里**根本不存在** ✗）。
+         * 这一条与它们不同：由**它自己的编辑动作**触发 ✓、内容与它刚做的事**直接相关** ✓，
+         * 而且只列事实（不说"你应该跑""你漏了" ✗）。
+         *
+         * ⚠️ 它必须在本层（而不是上面那个 RED TEST 的 `if` 里面 ✓）：触发条件是**编辑** ✓，
+         * 与"有没有红"无关 ✗ —— 第一版我插在 RED TEST 块内 ✗，于是"没跑测试就编辑"时永远不触发 ✗
+         * （接线判据 SSB-W1 当场抓住 ✓）。
+         *
+         * 每回合最多一次 ✓；失败静默 ✓（非关键路径 ✓）。
+         */
+        if (!this.symbolSiblingsSentInTurn && /^(write|edit|multi_edit)$/.test(name)) {
+          const edited = String(effectiveArgs.path ?? effectiveArgs.file_path ?? "");
+          if (edited) {
+            this.symbolSiblingsSentInTurn = true;
+            try {
+              const root = (this.lastCwd || process.cwd()).replace(/\\/g, "/");
+              const abs = edited.replace(/\\/g, "/");
+              const rel = abs.startsWith(root + "/") ? abs.slice(root.length + 1) : edited;
+              const { buildSymbolSiblings } = await import("./task-keyword-search");
+              const siblings = await buildSymbolSiblings(this.lastCwd || process.cwd(), rel);
+              debugLog("agent-loop", "symbol siblings:", siblings ? `${siblings.length} chars` : "null", "| edited=", rel);
+              if (siblings) result.output = `${result.output}\n\n${siblings}`;
+            } catch (sibErr) {
+              console.warn("[AgenticLoop] symbol siblings failed:", sibErr);
             }
           }
         }

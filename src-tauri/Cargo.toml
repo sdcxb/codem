@@ -1,6 +1,6 @@
 [package]
 name = "codem"
-version = "1.16.244"
+version = "1.16.245"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"

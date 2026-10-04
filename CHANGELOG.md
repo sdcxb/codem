@@ -2,6 +2,56 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.245] - 2026-10-04
+
+### 新增
+
+- **★★ 第五个机制（与前四个不是一类）：编辑之后，把「还有哪些判据文件提到你刚改的符号」以事实列出。**
+
+  ```
+  [同族判据] 你刚改的 src/core/llm/tools.ts 里有这些符号（applyToolResultStatus、classifyToolResult），
+  下列**测试/判据**文件也提到它们（只是列出事实）：
+  - src/test/dsh-d9-multi-edit-partial-failure.test.ts
+  ```
+
+  **依据**（§13.47）：对照臂（DSH）赢 repo-02 的那次，用的原语是
+  **一次按符号的 grep（"Found 117 matches"）⇒ 匹配清单里同时出现源码与测试文件** ✓。
+  而此前四个"把信息送到眼前"的机制（列全成员 / 红了重放 / 每族可跑命令 / 全仓库搜任务词）
+  对 repo-02 **全部无效** ✗ —— 因为**任务的中文描述词在仓库里根本不存在** ✗
+  （实现里写的是 `confirmResult.action === "custom"` ✗）。
+
+  这一条不同：由**它自己的编辑动作**触发 ✓、内容与它刚做的事**直接相关** ✓、只列事实 ✓
+  （不说"你应该跑""你漏了" ✗）。
+
+- **`extractSymbols` / `buildSymbolSiblings`**（`src/core/llm/task-keyword-search.ts`）
+  - 符号口径：标识符 **≥8 字符** + 剔除语言关键字 ✓。
+    （判据 SSB-4 在实现前就抓出了 6 字符的 `result`/`target` 会把整仓库倒出来 ✗；8 字符仍保留
+    `multi_edit`、`classifyToolResult` ✓。）
+  - 搜索走**应用自己的 `grepSearch`** ✓（与 `grep` 工具同一条 IPC ✓）；
+  - **只列测试/判据文件** ✓；**没有命中就什么都不追加** ✓（不留噪声）；
+  - 每回合最多一次 ✓、失败静默 ✓、并留 `debugLog("agent-loop", "symbol siblings:", …)` 观测出口 ✓。
+
+### 修复
+
+- **接线位置错误（被判据当场抓住）**：第一版把这段插在 `[RED TEST]` 的 `if` **里面** ✗ ⇒
+  只有"测试跑出红"时才可能触发 ✗ —— 而 repo-02 的失败形状恰恰是**不跑那条测试** ✗
+  ⇒ 等于白做 ✗。判据 **SSB-W1**（真跑 loop：编辑后那段文本必须到模型面前 ✓）直接把它抓出来 ✓，
+  现已在正确层级 ✓。
+
+### 判据与变异
+
+- `symbol-siblings.test.ts`：SSB-1（列出目标判据文件 ✓）、SSB-2 反向对照（无命中 ⇒ `null` ✓）、
+  SSB-3（只列测试文件 ✓）、SSB-4（抽符号口径 ✓）。
+- `symbol-siblings-wiring.test.ts`：SSB-W1（真跑 loop ✓，含前提断言"假 edit 必须真的被派发" ✓）、
+  SSB-W2 反向对照（没编辑 ⇒ 不出现 ✓）。
+- **变异 M15**：去掉"只列测试文件"的过滤 ⇒ SSB-3 立刻红 ✓。
+
+### 验证
+
+- 全量 vitest **7022 条**全绿 ✓；`tsc --noEmit` 干净 ✓。
+
+**预先写死的判据**（沿用 §13.42 口径）：装上本版后，**repo-02 的两轮都必须碰 `dsh-d9`** ✓。
+
 ## [1.16.244] - 2026-10-04
 
 ### 新增
