@@ -62,9 +62,15 @@ describe("第 109 波：判据族提醒（红了之后再放一次）", () => {
   it("TSR-3 反向对照: 小仓库里不给这段提醒（否则每个项目都被塞一段噪声）", () => {
     const root = mkdtempSync(join(tmpdir(), "codem-family-reminder-small-"));
     try {
-      writeFileSync(join(root, "a.test.ts"), "// x");
-      writeFileSync(join(root, "b.test.ts"), "// y");
-      expect(buildFamilyReminder(root, "usage 记账")).toBeNull();
+      /**
+       * ⚠️ 夹具要能**真正区分**这两种实现（第 109 波被变异 M9 咬出来的）：
+       * 原来只放 `a.test.ts`、`b.test.ts` ⇒ 两个族各 1 个成员 ⇒ 会被 `count>=2` 过滤掉 ✗，
+       * 于是"去掉小仓库门控"这个变异**测不出来** ✗（判据恒真）。
+       * 现在放**同前缀的两个文件**（族里有 2 个成员 ✓）⇒ 只有门控在，才会返回 null ✓。
+       */
+      writeFileSync(join(root, "dsh-x-one.test.ts"), "// x");
+      writeFileSync(join(root, "dsh-x-two.test.ts"), "// y");
+      expect(buildFamilyReminder(root, "dsh usage 记账")).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
