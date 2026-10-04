@@ -3711,6 +3711,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             this.familyReminderSentInTurn = true;
             try {
               const reminder = await buildFamilyReminder(this.lastCwd || process.cwd(), this.lastUserMessage);
+              /**
+               * **第 119 波：与关键词清单同一套可见性** —— 成功与 `null` 都记一行 ✓。
+               *
+               * 为什么需要：117 波证明"关键词清单"真的到了模型 ✓，
+               * 但**第二个机制（红了之后再放一次族提醒）没有任何直接证据来源** ✗ ——
+               * 它只在"测试跑出红"时才可能触发 ✗，而"事件里搜不到"根本不能用来判定 ✗
+               * （注入内容不进 `session_events` ✗）。所以这里补一行 debugLog ✓，
+               * 让下一次真机排查可以直接读出"有没有触发/是不是 null" ✓。
+               */
+              debugLog(
+                "agent-loop",
+                "family reminder:",
+                reminder ? `${reminder.length} chars` : "null",
+                "| cwd=",
+                this.lastCwd || process.cwd(),
+                "| msgLen=",
+                this.lastUserMessage?.length ?? 0,
+              );
               if (reminder) result.output = `${result.output}\n\n${reminder}`;
             } catch (reminderErr) {
               console.warn("[AgenticLoop] family reminder failed:", reminderErr);
