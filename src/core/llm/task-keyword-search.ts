@@ -464,3 +464,75 @@ export async function buildFamilyReminder(
     `（只是事实清单；某条判据要求什么，用 read 打开看。）`,
   ].join("\n");
 }
+
+
+/**
+ * 从源码里抽"可拿去 grep 的符号"（第 125 波）——标识符 ≥8 字符，剔除语言关键字 ✓。
+ *
+ * 为什么是 ≥8：真实仓库里 3–7 字符的标识符（`result`/`target`/`payload`）（`data`/`result`/`value`）到处都是 ✓，
+ * grep 它们只会把整个仓库倒出来 ✗；而 `applyToolResultStatus`/`classifyToolResult` 这种
+ * 一搜就是几十条、条条相关 ✓（对照臂赢的那次正是这么搜的 ✓）。
+ */
+export function extractSymbols(source: string, max = 8): string[] {
+  const KEYWORDS = new Set([
+    "function", "return", "const", "export", "import", "interface", "extends", "implements",
+    "public", "private", "protected", "readonly", "number", "string", "boolean", "object",
+    "default", "unknown", "never", "async", "await", "yield", "typeof", "instanceof",
+    "constructor", "undefined", "require", "console",
+  ]);
+  const seen = new Set<string>();
+  for (const m of String(source ?? "").matchAll(/\b[A-Za-z_][A-Za-z0-9_]{7,40}\b/g)) {
+    const s = m[0];
+    if (KEYWORDS.has(s)) continue;
+    seen.add(s);
+  }
+  return [...seen].sort((a, b) => b.length - a.length).slice(0, max);
+}
+
+/**
+ * **"你刚改的符号，还有哪些判据文件提到"**（第 125 波）——见判据文件顶部的长注释。
+ *
+ * 返回 null 表示「没有任何测试文件提到这些符号」⇒ **什么都不追加** ✓（不留噪声 ✓）。
+ */
+export async function buildSymbolSiblings(
+  root: string,
+  editedRelativePath: string,
+  opts: { src?: TestFileSource; search?: SearchLike; maxFiles?: number } = {},
+): Promise<string | null> {
+  const src = opts.src ?? createIpcFileSource();
+  if (isTestFile(editedRelativePath)) return null; // 改的是测试文件 ⇒ 不用提 ✓
+  let text = "";
+  try {
+    text = await src.read(`${root}/${editedRelativePath}`, MAX_BYTES_PER_FILE);
+  } catch {
+    return null;
+  }
+  const symbols = extractSymbols(text, 5);
+  if (symbols.length === 0) return null;
+
+  const search = opts.search ?? createIpcSearcher();
+  const found: string[] = [];
+  for (const sym of symbols.slice(0, 3)) {
+    let rows: string[] = [];
+    try {
+      rows = await search(sym, root);
+    } catch {
+      continue;
+    }
+    for (const row of rows) {
+      const file = String(row).replace(/\\/g, "/").split(":")[0];
+      if (!file || !isTestFile(file)) continue; // 只列判据（测试）文件 ✓
+      if (file.includes(editedRelativePath)) continue;
+      if (!found.includes(file)) found.push(file);
+      if (found.length >= (opts.maxFiles ?? 6)) break;
+    }
+    if (found.length >= (opts.maxFiles ?? 6)) break;
+  }
+  if (found.length === 0) return null;
+
+  return [
+    `[同族判据] 你刚改的 ${editedRelativePath} 里有这些符号（${symbols.slice(0, 3).join("、")}），`,
+    `下列**测试/判据**文件也提到它们（只是列出事实 ✓）：`,
+    ...found.map((f) => `- ${f}`),
+  ].join("\n");
+}

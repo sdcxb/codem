@@ -479,6 +479,9 @@ export class AgenticLoop {
    */
   private familyReminderSentInTurn = false;
 
+  /** 第 125 波：本回合是否已经给过「同族判据」那条事实（每轮最多一次 ✓） */
+  private symbolSiblingsSentInTurn = false;
+
   /** 本回合的用户消息（补发提醒时要用它做相关性排序；第 109 波） */
   private lastUserMessage = "";
   // State-based tool deduplication — no timers, no thresholds
@@ -1175,6 +1178,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.lastUserMessage = userMessage;
     this.lastCwd = cwd;
     this.familyReminderSentInTurn = false;
+    this.symbolSiblingsSentInTurn = false;
     /**
      * **第 116–118 波排查痕迹**（`codem-debug=agent-loop` 时可见 ✓）：它曾经是排查主力 ✓ ——
      * 在"机制在装机版里到不了模型"的追查中，正是靠"这一行有没有出现"才证明 `run()` 真的在跑 ✓
@@ -3733,6 +3737,35 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               if (reminder) result.output = `${result.output}\n\n${reminder}`;
             } catch (reminderErr) {
               console.warn("[AgenticLoop] family reminder failed:", reminderErr);
+            }
+          }
+
+          /**
+           * **第 125 波：编辑之后，把「还有哪些判据文件提到你刚改的符号」以事实列出** ✓。
+           *
+           * 依据（§13.47）：对照臂赢的那次用的原语就是"一次按**符号**的 grep ⇒
+           * 匹配清单里同时出现源码与测试文件" ✓；而"把判据名送到眼前"那四个机制对 repo-02 全无效 ✗
+           * （任务的中文描述词在仓库里**根本不存在** ✗）。
+           * 这一条与它们不同：由**它自己的编辑动作**触发 ✓、内容与它刚做的事**直接相关** ✓，
+           * 而且只列事实（不说"你应该跑""你漏了" ✗）。
+           *
+           * 每回合最多一次 ✓；失败静默 ✓（非关键路径 ✓）。
+           */
+          if (!this.symbolSiblingsSentInTurn && /^(write|edit|multi_edit)$/.test(name)) {
+            const edited = String(effectiveArgs.path ?? effectiveArgs.file_path ?? "");
+            if (edited) {
+              this.symbolSiblingsSentInTurn = true;
+              try {
+                const root = (this.lastCwd || process.cwd()).replace(/\\/g, "/");
+                const abs = edited.replace(/\\/g, "/");
+                const rel = abs.startsWith(root + "/") ? abs.slice(root.length + 1) : edited;
+                const { buildSymbolSiblings } = await import("./task-keyword-search");
+                const siblings = await buildSymbolSiblings(this.lastCwd || process.cwd(), rel);
+                debugLog("agent-loop", "symbol siblings:", siblings ? `${siblings.length} chars` : "null", "| edited=", rel);
+                if (siblings) result.output = `${result.output}\n\n${siblings}`;
+              } catch (sibErr) {
+                console.warn("[AgenticLoop] symbol siblings failed:", sibErr);
+              }
             }
           }
         }
