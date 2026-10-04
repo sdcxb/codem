@@ -154,14 +154,20 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
       testIteration("t1", "npx vitest run src/test/usage-normalize.test.ts"),
       finalIteration("已完成：修好了缓存口径。"),
       finalIteration("已完成：这次真的好了。"),
+      finalIteration("已完成：不打算再改了。"),
     ]);
     const { registry } = registryWithFakeBash(() => RED_OUTPUT);
 
     const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
     const events = await drain(loop);
 
-    // 关键：模型第一次收尾之后**又被问了一轮**（脚本被消耗了 3 次）
-    expect(provider.requests.length, "应当被要求再走一轮（否则就是直接放行了红测试）").toBe(3);
+    /**
+     * 关键：模型每次收尾、只要测试还红着就**又被问一轮** ✓
+     * （第 128 波把上限从 1 提到 2 ✓ —— 依据是 245 里 repo-10 / repo-06 各有一轮
+     * 「提醒完仍然收尾」就结束了 ✗，而它们正是那两格落后的直接原因 ✓）。
+     * 两次之后必须放行 ⇒ 脚本 4 段正好用完 ✓。
+     */
+    expect(provider.requests.length, "应当被要求再走一轮（否则就是直接放行了红测试）").toBe(4);
     expect(textOf(events), "要在界面上说清测试还红着").toMatch(/测试还是红的/);
   });
 
@@ -204,7 +210,8 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
     const events = await drain(loop);
 
-    expect(provider.requests.length, "红过又没复跑绿 ⇒ 必须再要一轮").toBe(4);
+    /** 第 128 波把提醒上限从 1 提到 2 ✓ ⇒ 这里从 4 变 5（脚本段数够 ✓，且两次之后仍会放行 ✓）。 */
+    expect(provider.requests.length, "红过又没复跑绿 ⇒ 必须再要一轮").toBe(5);
     expect(textOf(events), "提醒里必须点名那个还是红的文件").toMatch(/usage-normalize\.test\.ts/);
   });
 
@@ -382,7 +389,7 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     expect(calls, `两种形状都必须真的执行，实际：${JSON.stringify(calls)}`).toEqual(["plain", "numbered"]);
   });
 
-  it("RT-3/RT-4: 提醒只来一次，且必须点名条数与命令", async () => {
+  it("RT-3/RT-4: 提醒**最多两次**（有界），且必须点名条数与命令", async () => {
     const provider = new ScriptedProvider();
     provider.setScript([
       testIteration("t1", "npx vitest run src/test/dsh-d7-usage-cache-buckets.test.ts"),
@@ -395,10 +402,18 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
     const events = await drain(loop);
 
+    /**
+     * ⚠️ **这条判据在 1.16.246 被改写**（原文断言"提醒只应当出现一次"、`requests === 3` ✗）。
+     *
+     * 改写依据（245 的读数，第 128 波）：repo-10 与 repo-06 各有一轮是在**提醒之后仍然收尾**
+     * 而结束的 ✗ —— `loopStops` 里明确记着 `phase=red-test-nudge / reason=completed_unverified` ✓，
+     * 而且那两轮改动量偏小（831 / 2957 字符 ✗，通过那轮 3329 ✓）⇒ 一次提醒不够 ✓。
+     * 现在钉的是"**两次、而且两次之后必须放行**" ✓ —— 仍然有界 ✓，不会无限循环 ✓。
+     */
     const nudges = (textOf(events).match(/测试还是红的/g) ?? []).length;
-    expect(nudges, "提醒只应当出现一次").toBe(1);
-    // 第二遍收尾必须放行：脚本只用掉 3 段（测试 + 两次收尾）
-    expect(provider.requests.length, "上限 1 次之后必须放行").toBe(3);
+    expect(nudges, "两次收尾都还红着 ⇒ 应当提醒两次").toBe(2);
+    // 之后必须放行：脚本 4 段正好用完（测试 + 三次收尾）
+    expect(provider.requests.length, "上限 2 次之后必须放行").toBe(4);
     expect(textOf(events), "要点名红了几条").toMatch(/4 条失败/);
   });
 });

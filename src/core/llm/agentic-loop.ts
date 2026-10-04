@@ -456,6 +456,16 @@ export type LoopEvent =
   | { type: "end"; result: LoopResult };
 
 // ========== Agentic Loop ==========
+/**
+ * **收尾时"还有红的测试"最多提醒几次**（第 128 波，值是**实测逼出来的**）。
+ *
+ * 245 的读数里，repo-10 与 repo-06 各有一轮是**在提醒之后仍然收尾**而结束的 ✗ ——
+ * `loopStops` 明确记着 phase=red-test-nudge / reason=completed_unverified ✓，
+ * 而且那两轮改动量偏小（831 / 2957 字符 ✗，通过那轮 3329 ✓）。原来这里是"只提醒一次"✗
+ * ⇒ 提醒完它就停了 ✗。现在放到 2 ✓：仍然**有界** ✓（判据 RT-3/RT-4 钉住"最多 2 次、之后必须放行" ✓）。
+ */
+const RED_TEST_NUDGE_LIMIT = 2;
+
 export class AgenticLoop {
   private provider: LLMProvider; // E8: not readonly — can be swapped during cost degradation
   private tools: ToolRegistry;
@@ -2539,7 +2549,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 实测的失败形态正是"红过的那两个文件没再跑绿，但另一组文件跑绿了"。
          */
         const redFiles = this.currentRedTestFiles();
-        if ((redFiles.length > 0 || (redTest && redTest.failed > 0)) && this.redTestNudges < 1) {
+        if ((redFiles.length > 0 || (redTest && redTest.failed > 0)) && this.redTestNudges < RED_TEST_NUDGE_LIMIT) {
           this.redTestNudges++;
           /**
            * 报"几条失败"时要**取两者的大者**：`redTest.failed` 是最近一次运行的失败数，
