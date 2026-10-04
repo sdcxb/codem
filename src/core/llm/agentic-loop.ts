@@ -1129,22 +1129,6 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     systemPrompt: string,
   ): AsyncGenerator<LoopEvent, LoopResult, unknown> {
     this.abortController = new AbortController();
-    /**
-     * **第 116–118 波排查痕迹，保留但降级为 debugLog**。
-     *
-     * 它曾经是排查的主力 ✓：在"机制在装机版里到不了模型"的追查中，
-     * 正是靠"这一行有没有出现"才证明 `run()` 真的在跑 ✓
-     * （当时我先起应用再挂 CDP 监听 ✗，而驱动会先把应用杀掉重起 ✗ ⇒
-     *  录到的是**死掉的旧实例**，于是我一度错误地判定"这条路径不跑" ✗）。
-     *
-     * 现在它只作诊断用（`codem-debug=agent-loop` 时可见 ✓），不再是无条件输出 ✗。
-     * 判据：`task-keyword-search-wiring.test.ts` / `family-reminder-wiring.test.ts`（真跑 loop ✓）。
-     */
-    debugLog("agent-loop", "[run] entered | session=", sessionId, "| cwd=", cwd || "(空)", "| msgLen=", userMessage?.length ?? 0);
-    // 第 109 波：本回合的用户消息与「是否已补发族提醒」（补发时机 = 第一次测试跑出红）
-    this.lastUserMessage = userMessage;
-    this.lastCwd = cwd;
-    this.familyReminderSentInTurn = false;
     /*
      * 新的回合 = 新的派发闸门：执行器的中止标志只在这里复位。
      *
@@ -1181,6 +1165,23 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.truncatedContinuations = 0;
     this.iterationProducedArtifact = false;
     this.iterationGainedInformation = false;
+    /**
+     * **本回合的注入状态**（第 109/121 波）—— 与上面这些"按轮重置"的字段放在一起 ✓。
+     *
+     * ⚠️ 它们原来放在 `run()` 的最顶部 ✗，结果把 `this.truncatedContinuations = 0`
+     * 这类**按源码文本前若干字符断言**的判据（TRUNC-4 / GUARD-15 / DELE-043）挤出了窗口 ✗
+     * ⇒ 三条判据变红 ✗。挪到这里既修好了那个问题 ✓，语义上也更对（就是回合初始化 ✓）。
+     */
+    this.lastUserMessage = userMessage;
+    this.lastCwd = cwd;
+    this.familyReminderSentInTurn = false;
+    /**
+     * **第 116–118 波排查痕迹**（`codem-debug=agent-loop` 时可见 ✓）：它曾经是排查主力 ✓ ——
+     * 在"机制在装机版里到不了模型"的追查中，正是靠"这一行有没有出现"才证明 `run()` 真的在跑 ✓
+     * （当时我先起应用再挂 CDP 监听 ✗，而驱动会先把应用杀掉重起 ✗ ⇒ 录到的是**死掉的旧实例** ✗，
+     *  于是我一度错误地判定"这条路径不跑" ✗）。
+     */
+    debugLog("agent-loop", "[run] entered | session=", sessionId, "| cwd=", cwd || "(空)", "| msgLen=", userMessage?.length ?? 0);
 
     // Model-aware context window: resolve the current model's real window
     // from the provider and sync it into TokenTracker. Without this the

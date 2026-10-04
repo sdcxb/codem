@@ -223,12 +223,50 @@ export function summarizeNameClusters(
     .slice(0, top);
 }
 
-/** 渲染一族（小族列全成员；大族给例子） */
+/**
+ * 这一族**实际所在的目录**（用于拼"可以一起跑"的命令）。
+ * 取成员路径的公共目录 —— 例如 `src/test/dsh-d1-x.test.ts` ⇒ `src/test` ✓。
+ */
+function familyDir(members: string[]): string {
+  const dirs = members.map((m) => {
+    const parts = m.replace(/\\/g, "/").split("/");
+    parts.pop();
+    return parts.join("/");
+  });
+  if (dirs.length === 0) return "";
+  const counts = new Map<string, number>();
+  for (const d of dirs) counts.set(d, (counts.get(d) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+}
+
+/**
+ * 渲染一族（小族列全成员；大族给例子）**并给出"这一族可以一起跑"的命令** ✓。
+ *
+ * ## 为什么必须给这条命令（第 121 波，依据是一次被证伪）
+ *
+ * 243 的读数：机制确认已送达 ✓（清单 5536 字符、逐字含 `dsh-d9`、RED TEST 指针开过 2 次 ✓），
+ * 但 `repo-02` 两轮**都只碰 `dsh-d10`** ✗、从没碰被判分的 `dsh-d9` ✗ ⇒ 主判据被违反 ✗。
+ * ⇒ **"把判据名送到眼前"不够** ✗：模型会挑字面最像的那一条就收工 ✗。
+ *
+ * 所以补一条**关于仓库的事实** ✓：这一族可以用一条命令一起跑 ✓。
+ * 它**不替模型做事**（跑不跑、跑完怎么改，仍是它的判断 ✓ ——
+ * 与"自动替它跑那一族"有本质区别 ✗，那条已被排除 ✓）；
+ * 它**不判断**（无"你应该/你漏了" ✗）；它**对通过与不通过一视同仁** ✓
+ * （同一条事实任何时候都成立 ✓ ⇒ 不会重蹈 `c7feb4a` 的选择性偏见 ✗）。
+ *
+ * ⚠️ 每个渲染出来的族都给命令 ✓（不能只给排在第一个的族 ✗ ——
+ * 中文任务描述与英文文件名零重叠时，排序退化成"按族大小" ✗，
+ * 而 `repo-02` 的目标族 `dsh-*` 恰好排在第三 ✗）。
+ */
 function renderCluster(c: { prefix: string; count: number; examples: string[]; members: string[] }): string {
   const short = (p: string) => p.split("/").pop();
-  return c.count <= SMALL_CLUSTER_MAX
-    ? `- ${c.prefix}-*（${c.count} 个）：${c.members.map(short).join("、")}`
-    : `- ${c.prefix}-*：${c.count} 个（例如 ${c.examples.map(short).join("、")}）`;
+  const line =
+    c.count <= SMALL_CLUSTER_MAX
+      ? `- ${c.prefix}-*（${c.count} 个）：${c.members.map(short).join("、")}`
+      : `- ${c.prefix}-*：${c.count} 个（例如 ${c.examples.map(short).join("、")}）`;
+  const dir = familyDir(c.members);
+  const cmd = dir ? `npx vitest run ${dir}/${c.prefix}-*.test.ts` : "";
+  return cmd ? `${line}\n  这一族可以一起跑：${cmd}` : line;
 }
 
 /** 组装最终消息（关键词命中 + 命名分族；都只陈述事实） */
