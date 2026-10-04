@@ -1704,7 +1704,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.testFileNoticeSent.add(sessionId); // 先标记再做事：失败也不重试，避免每轮扫盘
         try {
           const { buildTaskSearchNotice } = await import("./task-keyword-search");
-          const notice = buildTaskSearchNotice(cwd, userMessage);
+          const notice = await buildTaskSearchNotice(cwd, userMessage);
           if (notice) {
             trailingTurnContext += (trailingTurnContext ? "\n\n" : "") + notice;
             debugLog("agent-loop", "Injected task-keyword search notice:", notice.length, "chars");
@@ -3681,7 +3681,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           if (!this.familyReminderSentInTurn) {
             this.familyReminderSentInTurn = true;
             try {
-              const reminder = buildFamilyReminder(this.lastCwd || process.cwd(), this.lastUserMessage);
+              const reminder = await buildFamilyReminder(this.lastCwd || process.cwd(), this.lastUserMessage);
               if (reminder) result.output = `${result.output}\n\n${reminder}`;
             } catch (reminderErr) {
               console.warn("[AgenticLoop] family reminder failed:", reminderErr);

@@ -17,6 +17,30 @@ import { tmpdir } from "node:os";
 import { AgenticLoop } from "../core/llm/agentic-loop";
 import { createDefaultToolRegistry } from "../core/llm/tools";
 
+/**
+ * 第 114 波：把生产用的 Tauri IPC 文件接口 mock 成"真实 Node fs"。
+ * 生产代码经 `core/file-api` 取文件 ⇒ 这里 mock 它，判据才跑得动；
+ * 若哪天有人把生产代码改回直接 `import node:fs`，FSG-1 门禁会红 ✓。
+ */
+vi.mock("../core/file-api", () => {
+  const { readdirSync, readFileSync } = require("node:fs");
+  const { join } = require("node:path");
+  return {
+    listDirectory: async (dir: string) =>
+      readdirSync(dir, { withFileTypes: true }).map((e: any) => ({
+        name: e.name,
+        path: join(dir, e.name),
+        isDirectory: e.isDirectory(),
+      })),
+    readFile: async (path: string) => readFileSync(path, "utf8"),
+    readTextWindow: async (path: string, _offset = 0, maxBytes?: number) => {
+      const text = readFileSync(path, "utf8");
+      return { text: maxBytes ? text.slice(0, maxBytes) : text, totalLines: text.split("\n").length };
+    },
+  };
+});
+
+
 const TEST_MESSAGE = "记账的桶数不对，用量面板数字偏低 usage，把仓库改好并跑测试验证。";
 
 class ScriptedProvider {

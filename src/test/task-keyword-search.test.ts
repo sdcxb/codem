@@ -30,6 +30,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { extractSearchTerms, buildTaskSearchNotice } from "../../src/core/llm/task-keyword-search";
+import { nodeFsSource } from "./helpers/node-fs-source";
 
 function workspace() {
   const root = mkdtempSync(join(tmpdir(), "codem-task-search-"));
@@ -53,13 +54,13 @@ function workspace() {
 }
 
 describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
-  it("TSN-1: 从消息里抽出关键词（中文短语 + 标识符），并能找到含它的测试文件", () => {
+  it("TSN-1: 从消息里抽出关键词（中文短语 + 标识符），并能找到含它的测试文件", async () => {
     const terms = extractSearchTerms('用户反馈「写入确认」选了一次性要求，结果 pendingWriteConfirms 没生效');
     expect(terms).toContain("写入确认");
     expect(terms).toContain("pendingWriteConfirms");
     const root = workspace();
     try {
-      const notice = buildTaskSearchNotice(root, '用户反馈「写入确认」选了一次性要求，结果 pendingWriteConfirms 没生效');
+      const notice = await buildTaskSearchNotice(root, '用户反馈「写入确认」选了一次性要求，结果 pendingWriteConfirms 没生效', { src: nodeFsSource() });
       expect(notice, "有命中就必须给出清单").toBeTruthy();
       expect(notice).toContain("dsh-d9-multi-edit-partial-failure.test.ts");
       expect(notice).toContain("other.test.ts");
@@ -68,10 +69,10 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
     }
   });
 
-  it("TSN-2: 命中次数多的排前面（相关度信号）", () => {
+  it("TSN-2: 命中次数多的排前面（相关度信号）", async () => {
     const root = workspace();
     try {
-      const notice = buildTaskSearchNotice(root, "写入确认")!;
+      const notice = await buildTaskSearchNotice(root, "写入确认", { src: nodeFsSource() })!;
       const lines = notice.split("\n").filter((l) => l.trim().startsWith("- "));
       expect(lines[0], `命中次数多的应当排第一（实际：${lines.join(" | ")}）`).toContain("dsh-d9-multi-edit-partial-failure");
     } finally {
@@ -79,29 +80,29 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
     }
   });
 
-  it("TSN-3 反向对照: **只列测试文件** —— 源码里的命中不进这份清单", () => {
+  it("TSN-3 反向对照: **只列测试文件** —— 源码里的命中不进这份清单", async () => {
     const root = workspace();
     try {
-      const notice = buildTaskSearchNotice(root, "写入确认")!;
+      const notice = await buildTaskSearchNotice(root, "写入确认", { src: nodeFsSource() })!;
       expect(notice).not.toContain("src/core/writer.ts");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("TSN-4 反向对照: 一个测试文件都没命中 ⇒ 返回 null（不留噪声）", () => {
+  it("TSN-4 反向对照: 一个测试文件都没命中 ⇒ 返回 null（不留噪声）", async () => {
     const root = workspace();
     try {
-      expect(buildTaskSearchNotice(root, "这段话与仓库里的任何内容都无关，比如量子纠缠与风笛")).toBeNull();
+      expect(await buildTaskSearchNotice(root, "这段话与仓库里的任何内容都无关，比如量子纠缠与风笛", { src: nodeFsSource() })).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("TSN-5: 措辞只陈述事实（不许出现命令/评判式表达）", () => {
+  it("TSN-5: 措辞只陈述事实（不许出现命令/评判式表达）", async () => {
     const root = workspace();
     try {
-      const notice = buildTaskSearchNotice(root, "写入确认")!;
+      const notice = await buildTaskSearchNotice(root, "写入确认", { src: nodeFsSource() })!;
       for (const banned of ["务必", "必须都", "覆盖不足", "确保全部", "你应该跑", "不要偷懒"]) {
         expect(notice, `不该出现评判式措辞「${banned}」`).not.toContain(banned);
       }
@@ -111,12 +112,12 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
     }
   });
 
-  it("TSN-6: 不读 vendored / 隐藏目录里的测试文件（否则一个参考检出就能把清单撑爆）", () => {
+  it("TSN-6: 不读 vendored / 隐藏目录里的测试文件（否则一个参考检出就能把清单撑爆）", async () => {
     const root = mkdtempSync(join(tmpdir(), "codem-task-search-vendor-"));
     try {
       mkdirSync(join(root, ".vendored", "ref"), { recursive: true });
       writeFileSync(join(root, ".vendored", "ref", "only-here.test.ts"), "// 写入确认 写入确认\n");
-      expect(buildTaskSearchNotice(root, "写入确认"), "只存在于 vendored 目录里 ⇒ 视为没命中").toBeNull();
+      expect(await buildTaskSearchNotice(root, "写入确认", { src: nodeFsSource() }), "只存在于 vendored 目录里 ⇒ 视为没命中").toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -130,7 +131,7 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
    * 判据：造一堆文件里都出现的泛词 + 一个只出现在目标文件里的具体词，
    * 目标文件必须仍然排第一 ✓（即泛词被文档频率过滤掉）。
    */
-  it("TSN-7: 到处都是的泛词被剔除，具体词决定排序", () => {
+  it("TSN-7: 到处都是的泛词被剔除，具体词决定排序", async () => {
     const root = mkdtempSync(join(tmpdir(), "codem-task-search-df-"));
     try {
       // 60 个文件都含泛词 "agent"（每个 5 次），只有目标文件含具体词 "记账"
@@ -138,7 +139,7 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
         writeFileSync(join(root, `noise-${String(i).padStart(2, "0")}.test.ts`), "agent agent agent agent agent\n");
       }
       writeFileSync(join(root, "usage-buckets.test.ts"), "记账 记账\nagent\n");
-      const notice = buildTaskSearchNotice(root, "agent 记账的桶数不对")!;
+      const notice = await buildTaskSearchNotice(root, "agent 记账的桶数不对", { src: nodeFsSource() })!;
       const lines = notice.split("\n").filter((l) => l.trim().startsWith("- "));
       expect(lines.length, "有命中就该有清单").toBeGreaterThan(0);
       expect(lines[0], `具体词所在的文件该排第一（实际：${lines.join(" | ")}）`).toContain("usage-buckets.test.ts");
@@ -147,14 +148,14 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
     }
   });
 
-  it("TSN-8: 成员不多的小族要把成员全列出来（只给三个例子不够 —— 对手赢在看到具体文件名）", () => {
+  it("TSN-8: 成员不多的小族要把成员全列出来（只给三个例子不够 —— 对手赢在看到具体文件名）", async () => {
     const root = mkdtempSync(join(tmpdir(), "codem-task-search-family-"));
     try {
       // ⚠️ 必须先让工作区"够大"（≥ MIN_FILES_FOR_CLUSTERS），否则分族路径根本不走、清单为 null ✗
       //    —— 第一版夹具只造了 7 个文件，于是这条判据测的是"null 不为真"，什么都没测到 ✗
       for (let i = 0; i < 60; i++) writeFileSync(join(root, `noise-${String(i).padStart(2, "0")}.test.ts`), "// n");
       for (let i = 1; i <= 6; i++) writeFileSync(join(root, `dsh-d${i}-something.test.ts`), "// x");
-      const notice = buildTaskSearchNotice(root, "与仓库无关的一句话（触发分族路径）")!;
+      const notice = await buildTaskSearchNotice(root, "与仓库无关的一句话（触发分族路径）", { src: nodeFsSource() })!;
       expect(notice, "文件够多时应当给出分族").toBeTruthy();
       // 6 个成员应当**全部**出现在清单里
       for (let i = 1; i <= 6; i++) {
@@ -173,14 +174,14 @@ describe("第 98 波：任务关键词 → 测试文件命中清单", () => {
    * 但 `dsh-*` 族被排在第三（前面是 25 个的 library-*、21 个的 tool-* ✗）⇒
    * 那次运行只碰了 d6、没碰 d7 ✗。按相关性排，含 usage 的那个族会浮到第一 ✓。
    */
-  it("TSN-9: 族的排序按「族内成员与任务文本的相关性」，不按族的大小", () => {
+  it("TSN-9: 族的排序按「族内成员与任务文本的相关性」，不按族的大小", async () => {
     const root = mkdtempSync(join(tmpdir(), "codem-task-search-rank-"));
     try {
       // 一个"很大但无关"的族，和一个"很小但相关"的族
       for (let i = 0; i < 60; i++) writeFileSync(join(root, `library-noise-${String(i).padStart(2, "0")}.test.ts`), "// n");
       writeFileSync(join(root, "dsh-d6-usage-accounting.test.ts"), "// x");
       writeFileSync(join(root, "dsh-d7-usage-cache-buckets.test.ts"), "// x");
-      const notice = buildTaskSearchNotice(root, "用量统计面板的数字明显偏低，怀疑记账只记了一部分 usage")!;
+      const notice = await buildTaskSearchNotice(root, "用量统计面板的数字明显偏低，怀疑记账只记了一部分 usage", { src: nodeFsSource() })!;
       /**
        * ⚠️ 过滤条件要同时匹配**两种**分族行格式（第 104 波踩到）：
        * 小族是 `- dsh-*（2 个）：…`，大族是 `- library-*：60 个（例如 …）`。

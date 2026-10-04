@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { buildFamilyReminder } from "../../src/core/llm/task-keyword-search";
+import { nodeFsSource } from "./helpers/node-fs-source";
 
 function bigWorkspace() {
   const root = mkdtempSync(join(tmpdir(), "codem-family-reminder-"));
@@ -34,10 +35,10 @@ function bigWorkspace() {
 }
 
 describe("第 109 波：判据族提醒（红了之后再放一次）", () => {
-  it("TSR-1: 给出与任务词面相近的族的成员文件名（不是只给个数量）", () => {
+  it("TSR-1: 给出与任务词面相近的族的成员文件名（不是只给个数量）", async () => {
     const root = bigWorkspace();
     try {
-      const reminder = buildFamilyReminder(root, "用量统计面板的数字偏低，怀疑记账只记了一部分 usage");
+      const reminder = await buildFamilyReminder(root, "用量统计面板的数字偏低，怀疑记账只记了一部分 usage", { src: nodeFsSource() });
       expect(reminder, "有相关族时应当给出提醒").toBeTruthy();
       expect(reminder).toContain("[判据族提醒]");
       // 相关族的成员应当**具体列出来**（而不是只给数量）
@@ -47,10 +48,10 @@ describe("第 109 波：判据族提醒（红了之后再放一次）", () => {
     }
   });
 
-  it("TSR-2: 措辞只陈述事实（不许出现「你没碰过/你该看」这类判断）", () => {
+  it("TSR-2: 措辞只陈述事实（不许出现「你没碰过/你该看」这类判断）", async () => {
     const root = bigWorkspace();
     try {
-      const reminder = buildFamilyReminder(root, "usage 记账")!;
+      const reminder = await buildFamilyReminder(root, "usage 记账", { src: nodeFsSource() })!;
       for (const banned of ["你没", "你该", "必须", "务必", "漏了", "忽略了"]) {
         expect(reminder, `不该出现判断式措辞「${banned}」`).not.toContain(banned);
       }
@@ -59,7 +60,7 @@ describe("第 109 波：判据族提醒（红了之后再放一次）", () => {
     }
   });
 
-  it("TSR-3 反向对照: 小仓库里不给这段提醒（否则每个项目都被塞一段噪声）", () => {
+  it("TSR-3 反向对照: 小仓库里不给这段提醒（否则每个项目都被塞一段噪声）", async () => {
     const root = mkdtempSync(join(tmpdir(), "codem-family-reminder-small-"));
     try {
       /**
@@ -70,7 +71,7 @@ describe("第 109 波：判据族提醒（红了之后再放一次）", () => {
        */
       writeFileSync(join(root, "dsh-x-one.test.ts"), "// x");
       writeFileSync(join(root, "dsh-x-two.test.ts"), "// y");
-      expect(buildFamilyReminder(root, "dsh usage 记账")).toBeNull();
+      expect(await buildFamilyReminder(root, "dsh usage 记账", { src: nodeFsSource() })).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
