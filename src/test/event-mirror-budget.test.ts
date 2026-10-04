@@ -121,10 +121,24 @@ describe("事件镜像内存预算 —— 驻留有界 + 整会话 LRU 逐出（
     expect(stats.evictions, "必须发生逐出").toBeGreaterThan(0);
     expect(port.events.isLoaded("s1"), "最久未使用的会话被逐出").toBe(false);
     expect(port.events.isLoaded("s3"), "刚加载的会话必须还在（对照）").toBe(true);
+    /**
+     * ⚠️ **这条判据在 1.16.238 之后被改写过，原因必须写清楚**（否则下一个人会把修复当成退步 ✗）。
+     *
+     * 原文是 `expect(failures.some((n) => n.includes("内存预算"))).toBe(true)`
+     * —— 要求逐出**必须出现在"持久化失败"通道**里。意图是对的（逐出要留痕 ✓），
+     * 但实现方式**制造了假警报** ✗：那条通道是**给用户看的失败横幅**，于是真机控制台里
+     * 每一次正常逐出都会打印
+     * 「`[PersistFailure] storage.bootstrap.events.evict 操作失败（第 N 次）：… —— 该功能本次没有生效`」
+     * —— 逐出**成功了**（`evictions` 在涨、LRU 也真的释放了），却报告"操作失败 / 没有生效" ✗，
+     * 而且一次批量加载能连打 30+ 条 ✗。
+     *
+     * 现在钉的是"**两件事都要成立**"：不许再冒充失败，也不许丢掉留痕。
+     */
     expect(
       failures.some((n) => n.includes("内存预算")),
-      "逐出必须留痕（否则用户只会看到'卡了一下'，查不出原因）",
-    ).toBe(true);
+      "正常逐出**不许**再报成持久化失败（那是给用户看的失败横幅 ⇒ 假警报）",
+    ).toBe(false);
+    expect(port.events.stats().lastEviction, "但逐出必须仍然留痕（否则只看到'卡了一下'，查不出原因）").toContain("内存预算");
   });
 
   it("EVB-2: 逐出后读回**空数组**（不是残缺集合）+ 再访问能完整恢复", async () => {

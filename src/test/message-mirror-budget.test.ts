@@ -105,8 +105,9 @@ describe("消息镜像内存预算 —— 驻留有界 + LRU 逐出", () => {
     expect(port.messages.isLoaded("s3"), "刚加载的会话必须还在").toBe(true);
     expect(
       failures.some((n) => n.includes("内存预算")),
-      "逐出必须留痕（否则用户只会看到'卡了一下'，查不出原因）",
-    ).toBe(true);
+      "正常逐出**不许**再报成持久化失败（同 EVB-1：那条通道是给用户看的失败横幅 ⇒ 假警报）",
+    ).toBe(false);
+    expect(port.messages.stats().lastEviction, "但逐出必须仍然留痕（第 113 波：从失败通道搬到 stats）").toContain("内存预算");
   });
 
   it("MEM-2: 被逐出的会话读走旧路径（不会读到不完整镜像），再访问能重新加载", async () => {

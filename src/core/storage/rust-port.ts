@@ -1199,6 +1199,9 @@ class RustEventMirror {
   private lru = new Map<string, true>();
   private evictions = 0;
 
+  /** 最近一次逐出的留痕（第 113 波：从失败通道搬到这里，见 `enforceBudget` 注释） */
+  private lastEviction = "";
+
   constructor(
     private readonly t: StorageTransport,
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
@@ -1279,11 +1282,14 @@ class RustEventMirror {
       this.lru.delete(sessionId);
       rows -= dropped.length;
       this.evictions++;
-      this.onFailure(
-        "events.evict",
-        new Error(`事件镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）`),
-        "已释放最久未使用的会话事件镜像（内存预算），下次读取该会话会重新加载",
-      );
+      /**
+       * **第 113 波修复（用户报的控制台报错）**：这里原来走 `onFailure("events.evict", …)`。
+       * 那条通道是**给用户看的失败横幅**（措辞固定为「操作失败…该功能本次没有生效」），
+       * 于是一次**成功**的逐出在真机上被报成失败，批量加载时更会连打 30+ 条 ✗。
+       * 留痕改走 `stats().lastEviction`（可查、有判据）与调试日志 ✓。
+       */
+      this.lastEviction = `事件镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）；已释放最久未使用的会话事件镜像（内存预算），下次读取该会话会重新加载`;
+      console.debug(`[RustStoragePort] ${this.lastEviction}`);
     }
   }
 
@@ -1564,6 +1570,8 @@ class RustEventMirror {
     failures: number;
     /** 已经发生的整会话逐出次数（证"驻留真的有界"的出口，与消息镜像同款） */
     evictions: number;
+    /** 最近一次逐出的留痕（第 113 波：逐出要可查，但**不许**再冒充持久化失败） */
+    lastEviction: string;
     /** 当前预算（行数口径，与 `RustMessageMirror.stats().budgetRows` 同一口径） */
     budgetRows: number;
   } {
@@ -1576,6 +1584,7 @@ class RustEventMirror {
       pendingWrites: this.pendingWrites,
       failures: this.failures,
       evictions: this.evictions,
+      lastEviction: this.lastEviction,
       budgetRows: this.totalBudgetRows,
     };
   }
@@ -1672,6 +1681,8 @@ class RustMessageMirror {
   /** 访问序（Map 的迭代顺序即插入序）：命中时删除再插入 = 移到末尾 = 最新使用 */
   private lru = new Map<string, true>();
   private evictions = 0;
+  /** 最近一次逐出的留痕（第 113 波：逐出要可查，但**不许**再冒充持久化失败） */
+  private lastEviction = "";
 
   constructor(
     private readonly t: StorageTransport,
@@ -1708,6 +1719,8 @@ class RustMessageMirror {
     failures: number;
     truncated: boolean;
     evictions: number;
+    /** 最近一次逐出的留痕（第 113 波：逐出要可查，但**不许**再冒充持久化失败） */
+    lastEviction: string;
     budgetRows: number;
   } {
     let rows = 0;
@@ -1718,6 +1731,7 @@ class RustMessageMirror {
       failures: this.failures,
       truncated: this.truncated,
       evictions: this.evictions,
+      lastEviction: this.lastEviction,
       budgetRows: this.totalBudgetRows,
     };
   }
@@ -1789,11 +1803,14 @@ class RustMessageMirror {
       this.lru.delete(sessionId);
       rows -= dropped.length;
       this.evictions++;
-      this.onFailure(
-        "messages.evict",
-        new Error(`消息镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）`),
-        "已释放最久未使用的会话消息镜像（内存预算），下次读取该会话会重新加载",
-      );
+      /**
+       * **第 113 波修复（与 `events.evict` 同一处错误）**：正常逐出原来走 `onFailure`，
+       * 而那条通道是**给用户看的失败横幅** ⇒ 一次**成功**的逐出被报成
+       * 「操作失败…该功能本次没有生效」✗（用户报的控制台报错）。
+       * 留痕改走 `stats().lastEviction` 与调试日志 ✓。
+       */
+      this.lastEviction = `消息镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）；已释放最久未使用的会话消息镜像（内存预算），下次读取该会话会重新加载`;
+      console.debug(`[RustStoragePort] ${this.lastEviction}`);
     }
   }
 
