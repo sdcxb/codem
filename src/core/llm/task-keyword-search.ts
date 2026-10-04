@@ -187,6 +187,36 @@ function collectTestFiles(root: string): string[] {
 }
 
 /**
+ * **紧凑版"这一族判据"提醒**（第 109 波）——用在**第一次测试跑出红**的那一刻。
+ *
+ * ## 为什么需要它（证据）
+ *
+ * 第 108 波测出：**"有没有主动碰那条判据"对成败的预测力是 4/4** ✓（两任务两构建）。
+ * 而 237 的 repo-02：run-2 **用了**清单（碰了 d9 ⇒ 通过 ✓）、run-3 **没用**（没碰 ⇒ 失败 ✗）——
+ * 同一份清单、同一个构建，差别在**注意力**：完整清单只在会话第一条消息的尾部投递一次，
+ * 到"该看判据"的时刻往往已过 20+ 次工具调用 ⇒ 被推远 ✗。
+ *
+ * ⇒ 在**需要它的时刻**（第一次跑出红）再放一次 ✓ —— 与 `[RED TEST]` 指针同一手法 ✓。
+ * 仍然是**只陈述事实**：列的是这个工作区里 `xxx-*` 族的判据文件，**不做"你没碰过"这种判断** ✗。
+ */
+export function buildFamilyReminder(root: string, message: string, maxFamilies = 4): string | null {
+  const files = collectTestFiles(root);
+  if (files.length < MIN_FILES_FOR_CLUSTERS) return null; // 小仓库里这段就是噪声
+  const clusters = summarizeNameClusters(files, message, maxFamilies);
+  if (clusters.length === 0) return null;
+  const lines = clusters.map((c) =>
+    c.count <= SMALL_CLUSTER_MAX
+      ? `- ${c.prefix}-*（${c.count} 个）：${c.members.map((m) => m.split("/").pop()).join("、")}`
+      : `- ${c.prefix}-*：${c.count} 个（例如 ${c.examples.map((m) => m.split("/").pop()).join("、")}）`,
+  );
+  return [
+    `[判据族提醒] 这个工作区的测试文件按名字分成若干族，与本次任务词面相近的几族如下：`,
+    ...lines,
+    `（只是事实清单；某条判据要求什么，用 read 打开看。）`,
+  ].join("\n");
+}
+
+/**
  * 生成"任务关键词在测试文件里的命中"清单；没有任何命中时返回 `null`。
  *
  * @param root     工作区根目录

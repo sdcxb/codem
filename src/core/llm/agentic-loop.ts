@@ -25,6 +25,7 @@ import { getPermissionManager, type PermissionRequest, type PermissionResult } f
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
+import { buildFamilyReminder } from "./task-keyword-search";
 import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
 import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearingTool } from "./tool-args-guard";
@@ -471,6 +472,15 @@ export class AgenticLoop {
    * 每个会话只注入一次：清单本身是常量，重复注入只会白烧 token ✗。
    */
   private testFileNoticeSent = new Set<string>();
+
+  /**
+   * 第 109 波：本回合是否已经补发过「判据族提醒」。
+   * 每回合只补一次 —— 提示本身是常量，重复投放只会白烧 token ✗。
+   */
+  private familyReminderSentInTurn = false;
+
+  /** 本回合的用户消息（补发提醒时要用它做相关性排序；第 109 波） */
+  private lastUserMessage = "";
   // State-based tool deduplication — no timers, no thresholds
   // Tracks what files have been read/written in the CURRENT user request.
   // Reset at the start of each run() call (new user message = new task).
@@ -1119,6 +1129,10 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     systemPrompt: string,
   ): AsyncGenerator<LoopEvent, LoopResult, unknown> {
     this.abortController = new AbortController();
+    // 第 109 波：本回合的用户消息与「是否已补发族提醒」（补发时机 = 第一次测试跑出红）
+    this.lastUserMessage = userMessage;
+    this.lastCwd = cwd;
+    this.familyReminderSentInTurn = false;
     /*
      * 新的回合 = 新的派发闸门：执行器的中止标志只在这里复位。
      *
@@ -3655,6 +3669,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             `${result.output ?? ""}\n\n[RED TEST] 这次红的是：${red}。` +
             `**先去读这些判据文件** —— 它们写明了期望的语义（失败消息、三态、边界条件都在里面）；` +
             `照着症状猜通常只修到其中一条分支。`;
+
+          /**
+           * 第 109 波：**红了之后再放一次「这一族判据」**。
+           *
+           * 证据：237 的 repo-02 —— run-2 用了清单（碰了 dsh-d9）⇒ 通过 ✓；
+           * run-3 没用 ⇒ 失败 ✗。同一份清单、同一个构建，差别是**注意力**：
+           * 完整清单只在会话第一条消息尾部投递一次，到这一刻已被 20+ 次工具调用推远 ✗。
+           * 所以在此刻（它正盯着失败输出）再放一次紧凑版；每回合只放一次 ✓。
+           */
+          if (!this.familyReminderSentInTurn) {
+            this.familyReminderSentInTurn = true;
+            try {
+              const reminder = buildFamilyReminder(this.lastCwd || process.cwd(), this.lastUserMessage);
+              if (reminder) result.output = `${result.output}\n\n${reminder}`;
+            } catch (reminderErr) {
+              console.warn("[AgenticLoop] family reminder failed:", reminderErr);
+            }
+          }
         }
 
         console.log(`[AgenticLoop] Tool executed: ${name}, path: ${effectiveArgs.path || effectiveArgs.command || "(none)"}, output length: ${result.output?.length || 0}`);
