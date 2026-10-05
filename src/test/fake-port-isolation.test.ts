@@ -77,15 +77,26 @@ describe("第 240 波：假端口实例之间不许共享状态（夹具不许�
    * 再回填这条反向对照 ✓ —— **不许**为了让判据变绿而改夹具 ✗（那正好是反方向 ✗）。
    * `NC-ISO-1`（实例之间不许共享 ✓）**已经绿** ✓，它是本文件的主要目的 ✓。
    */
-  it.skip("NC-ISO-2 反向对照（**量证结果见下** ✗）: 同一实例内两次写同一 notebook ⇒ 第二次看到两次的结果", async () => {
+  it("NC-ISO-2 反向对照: 同一实例内两次写同一 notebook ⇒ 第二次看到两次的结果（累积必须保留 ✓）", async () => {
+    /**
+     * 第 282 波：**启用** ✓ —— 第 280/281 波量清了真因 ✓：
+     * 原来那句 `port.data.command("crud.upsert", …)` ✗ 落到了**另一个**分发器
+     * （`fake-storage-port.ts:1356` 的白名单 ✓，它只认 `crud.list` 那一批 ✓）
+     * ⇒ 报 `未实现的命令 crud.upsert` ✗ —— 而 `crud.upsert` 的实现在 **`invokeCommand`** 里 ✓（241 ✓）。
+     *
+     * ⇒ 改用**文档化的镜像写入口** `domains.applyWrite` ✓（`fake-storage-port.ts:1476` ✓）：
+     * 该假端口的**镜像与表是同一张内存表** ✓ ⇒ 写完 `crud.list` 立刻能读到 ✓。
+     *
+     * 它钉的语义不变 ✓：「**同一个实例内**，第二次写之后能读到两次的结果」✓
+     * —— 守"**不许把同一实例里的累积清掉**"✗，与 `NC-ISO-1`（**实例之间不许共享** ✓）配对 ✓。
+     */
     const port = createFakeStoragePort({
       seed: { notebook_chunks: [chunkRow("a1", "nb1", "s_a")] },
     });
-    await (port.data as { command: (c: string, p?: unknown) => Promise<unknown> }).command("crud.upsert", {
-      table: "notebook_chunks",
-      rows: [chunkRow("a2", "nb1", "s_a")],
-      primaryKey: "id",
-    });
+    (port.domains as unknown as { applyWrite: (t: string, r: Record<string, unknown>) => void }).applyWrite(
+      "notebook_chunks",
+      chunkRow("a2", "nb1", "s_a"),
+    );
     expect(await listIds(port, "nb1"), "同一实例内的累积必须保留（不许一律清空 ✗）").toEqual(["a1", "a2"]);
   });
 });
