@@ -1,4 +1,4 @@
-/**
+﻿/**
  * **拿任务里的词搜仓库 + 给出测试文件命名分族**（第 98–114 波）。
  *
  * ## ⚠️ 第 114 波的关键修正：这里**不许**用 `node:fs`
@@ -585,7 +585,11 @@ export async function siblingCriteriaFiles(
   }
   const symbols = extractSymbols(text, 12);
   if (symbols.length === 0) return [];
-  const { files } = await searchSiblingCriteriaFiles(root, symbols, editedRelativePath, opts);
+  /**
+   * **收尾检查要 `thorough`** ✓（第 155 波）——理由见 `searchSiblingCriteriaFiles` 里的长注释 ✓：
+   * "搜到就收手"会让收尾提醒**恰好漏掉**那两条真正没跑过的判据 ✗。
+   */
+  const { files } = await searchSiblingCriteriaFiles(root, symbols, editedRelativePath, { ...opts, thorough: true });
   return files;
 }
 
@@ -599,12 +603,19 @@ async function searchSiblingCriteriaFiles(
   root: string,
   symbols: string[],
   editedRelativePath: string,
-  opts: { search?: SearchLike; maxFiles?: number },
+  opts: { search?: SearchLike; maxFiles?: number; thorough?: boolean },
 ): Promise<{ files: string[]; tried: string[] }> {
   const search = opts.search ?? createIpcSearcher();
   const found: string[] = [];
   const tried: string[] = [];
-  for (const sym of symbols.slice(0, 6)) {
+  /**
+   * **thorough 时搜满全部符号** ✓（第 155 波第二次修正）：
+   * 只搜前 6 个时，`tools.ts` 仍然**找不到** `dsh-d8` / `dsh-d9` ✗ ——
+   * 那两条判据引用的符号排在更后面 ✓（`extractSymbols` 是**按长度倒序** ✗）。
+   */
+  const symbolBudget = opts.thorough ? symbols.length : 6;
+  const fileBudget = opts.maxFiles ?? (opts.thorough ? 10 : 6);
+  for (const sym of symbols.slice(0, symbolBudget)) {
     tried.push(sym);
     let rows: string[] = [];
     try {
@@ -617,9 +628,24 @@ async function searchSiblingCriteriaFiles(
       if (!file || !isTestFile(file)) continue; // 只列判据（测试）文件 ✓
       if (file.includes(editedRelativePath)) continue;
       if (!found.includes(file)) found.push(file);
-      if (found.length >= (opts.maxFiles ?? 6)) break;
+      if (found.length >= fileBudget) break;
     }
-    if (found.length > 0) break; // 找到了就收手 ✓（时延考虑 ✓）
+    /**
+     * ⚠️ **第 155 波：`thorough` 时不许"搜到就收手"** ✗→✓。
+     *
+     * 原来这里一律"第一个搜到命中的符号就收手"✗（250 波为时延加的 ✓）——
+     * 实测后果很严重 ✗：对 `src/core/llm/tools.ts` 只找得到
+     * `dsh-d10-write-not-executed-is-error.test.ts` ✗，
+     * **漏掉了 `dsh-d8-edit-ambiguity` 与 `dsh-d9-multi-edit-partial-failure`** ✗
+     * —— 而那两条**正是失败轮从没跑过的** ✓✓（通过轮三条都跑了 ✓）。
+     * 也就是说：**收尾提醒若沿用"收手"策略，点出的恰好是"已经跑过的那条"** ✗，等于没提醒 ✓。
+     *
+     * 于是分两种口径 ✓：
+     * - **回合内提示**（`buildSymbolSiblings` ✓）：收手 ✓，时延优先 ✓（用户正等着 ✓）；
+     * - **收尾检查**（`siblingCriteriaFiles` ✓）：`thorough` ✓，6 个符号全搜 ✓
+     *   （一个会话只付一次 ✓；而"漏掉该跑的判据"的代价是整轮失败 ✗）。
+     */
+    if (!opts.thorough && found.length > 0) break;
     if (found.length >= (opts.maxFiles ?? 6)) break;
   }
   return { files: found, tried };
@@ -665,3 +691,4 @@ export function unrunSiblingCriteria(args: {
   }
   return out;
 }
+
