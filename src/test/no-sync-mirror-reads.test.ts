@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 第 144 波：**结构性边界 —— 数据层以外，不许使用"同步整表/整会话读"** ✓。
  *
  * ## 为什么需要这道门（用户的原话）
@@ -48,8 +48,25 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
-/** 数据层：这里**允许**同步整表读 ✓（它就是镜像/端口的实现所在 ✓）。 */
-const DATA_LAYER = join("src", "core", "storage");
+/**
+ * **数据层实现文件**（唯一允许直接使用这些接口的地方 ✓）。
+ *
+ * ## ⚠️ 第 147 波：这里原来是"排除整个 `src/core/storage/**`" ✗ —— 那是个**漏洞** ✗
+ *
+ * 因为**消费方也住在那个目录里** ✓：`maintenance.ts` 的
+ * `domainReadMany(TELEMETRY_TABLE, …)`（`TELEMETRY_TABLE = "telemetry_events"` ✗）
+ * 就是这样**逃过了这道门** ✓ —— 而它读的正是无界表 ✗。
+ * 改成显式白名单之后，量出的面从 31 文件/119 处升到 **43 文件/158 处** ✓
+ * （数字变大是**修正** ✓，不是退步 ✓：原来的少算是排除过宽造成的 ✗）。
+ */
+const DATA_LAYER_FILES = new Set([
+  "src/core/storage/domain-store.ts",
+  "src/core/storage/rust-port.ts",
+  "src/core/storage/port.ts",
+  "src/core/storage/event-log.ts",
+  "src/core/storage/message.ts",
+  "src/core/storage/event-projection.ts",
+]);
 
 /**
  * **冻结基线**（第 144 波的真机实测值 ✓）：文件 → 该文件里这类调用的出现次数。
@@ -60,12 +77,17 @@ const BASELINE: Record<string, number> = {
   "src/core/knowledge/storage.ts": 30,
   "src/core/session/delegation-storage.ts": 8,
   "src/core/squad/squad-storage.ts": 8,
+  "src/core/storage/maintenance.ts": 8,
+  "src/core/storage/session.ts": 7,
   "src/core/inbox/inbox-storage.ts": 6,
   "src/core/issue/issue-storage.ts": 6,
   "src/core/llm/runtime-invariants.ts": 6,
   "src/store.ts": 6,
+  "src/core/storage/prompt-draft.ts": 5,
   "src/core/knowledge/flashcard-store.ts": 4,
   "src/core/llm/index.ts": 4,
+  "src/core/storage/account.ts": 4,
+  "src/core/storage/project.ts": 4,
   "src/App.tsx": 3,
   "src/core/goal/goal.ts": 3,
   "src/core/llm/agentic-loop.ts": 3,
@@ -73,6 +95,8 @@ const BASELINE: Record<string, number> = {
   "src/core/llm/time-context.ts": 3,
   "src/core/llm/tools/show-todo.ts": 3,
   "src/core/phone-link/phone-link.ts": 3,
+  "src/core/storage/agent-profile-storage.ts": 3,
+  "src/core/storage/file-change-storage.ts": 3,
   "src/core/llm/compaction-budget.ts": 2,
   "src/core/llm/tools/session-search.ts": 2,
   "src/core/project/files.ts": 2,
@@ -85,6 +109,11 @@ const BASELINE: Record<string, number> = {
   "src/core/llm/tools/read-attachment.ts": 1,
   "src/core/session/fork-index.ts": 1,
   "src/core/session/tools.ts": 1,
+  "src/core/storage/bootstrap.ts": 1,
+  "src/core/storage/session-log-bridge.ts": 1,
+  "src/core/storage/settings.ts": 1,
+  "src/core/storage/sync-engine.ts": 1,
+  "src/core/storage/v2-session.ts": 1,
   "src/core/store.ts": 1,
   "src/core/telemetry/telemetry.ts": 1,
   "src/test/r3-snapshot-tests.ts": 1,
@@ -150,7 +179,7 @@ function currentCounts(): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const file of walk("src")) {
     const rel = relative(process.cwd(), file).replace(/\\/g, "/");
-    if (rel.startsWith(DATA_LAYER.replace(/\\/g, "/"))) continue;
+    if (DATA_LAYER_FILES.has(rel)) continue;
     const text = readFileSync(file, "utf8");
     const n = (text.match(new RegExp(FORBIDDEN, "g")) ?? []).length;
     if (n > 0) counts[rel] = n;
@@ -202,7 +231,7 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
     const offenders: string[] = [];
     for (const file of walk("src")) {
       const rel = relative(process.cwd(), file).replace(/\\/g, "/");
-      if (rel.startsWith(DATA_LAYER.replace(/\\/g, "/"))) continue;
+      if (DATA_LAYER_FILES.has(rel)) continue;
       const text = readFileSync(file, "utf8");
       for (const m of text.matchAll(/domainRead(?:Many|One)\s*(?:<[^>]*>)?\s*\(\s*([^,)\n]+)/g)) {
         const raw = m[1].trim();
@@ -228,12 +257,16 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
     ).toEqual([
       "src/core/knowledge/storage.ts: T_CHUNKS → 表 notebook_chunks ✗",
       "src/core/knowledge/storage.ts: T_CHUNKS → 表 notebook_chunks ✗",
+      "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
+      "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
+      "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/telemetry/telemetry.ts: TABLE → 表 telemetry_events ✗",
     ].sort());
   });
 
   it("SYNC-4: 基线总量有记录（终局目标 = 0 ✓，这个数字必须只降不升 ✓）", () => {
     const total = Object.values(BASELINE).reduce((a, b) => a + b, 0);
-    expect(total, `当前剩余 ${total} 处（第 144 波按**与判据同一套扫描**测得的真实面 ✓）`).toBeLessThanOrEqual(119);
+    expect(total, `当前剩余 ${total} 处（第 144 波按**与判据同一套扫描**测得的真实面 ✓）`).toBeLessThanOrEqual(158);
   });
 });
+
