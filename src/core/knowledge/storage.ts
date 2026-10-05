@@ -518,7 +518,28 @@ function onDemandChunks(notebookId: string): NotebookChunk[] | undefined {
  * 它不是产品 API：名字带 `__` 前缀，生产代码不调用它。
  */
 export function __warmChunksForTests(notebookId: string): Promise<void> {
-  return warmChunksByNotebook(notebookId);
+  /**
+   * 第 273 波：**按这个钩子自己的契约把它做对** ✓（判据 `NC-DEL-5` ✓）。
+   *
+   * 它的契约就写在上面 ✓：「**测试要确定性等待它**，生产不等待」✓ ——
+   * 所以"等完之后缓存**已被填上**"必须是**可依赖**的 ✓。
+   *
+   * 为什么原来不满足 ✗：`warmChunksByNotebook` 起点遇到"本 key 在飞"就
+   * `return Promise.resolve()` ✗ ⇒ 调用方 `await` 到的是一次 **no-op** ✗
+   *（尤其是在"在飞那次因代际被丢弃"之后 ✓ —— 空窗只换了个占 key 的人 ✓）。
+   *
+   * ⇒ 复核再补 ✓：`await` 之后若该 notebook **仍然没有**缓存条目 ⇒
+   * **自己再发起**（最多 3 次 ✓，每次让出一个宏任务 ✓ 给在飞那次落地的机会 ✓）。
+   * 生产路径**不受影响** ✓（`getChunks` 仍然"未命中 ⇒ 预热 + 抛" ✓，
+   * 它的下一次读会自己重新拉 ✓ —— 这条语义没动 ✗）。
+   */
+  return (async () => {
+    await warmChunksByNotebook(notebookId);
+    for (let i = 0; i < 3 && !currentChunkCache().has(notebookId); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await warmChunksByNotebook(notebookId);
+    }
+  })();
 }
 
 /**
