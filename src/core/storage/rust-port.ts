@@ -2358,6 +2358,23 @@ const QUERY_PAGE_SIZE = 1000;
 const QUERY_MAX_ROUNDS = 200;
 
 /**
+ * 按需查询返回的事件形状（第 143 波，B1 ✓）—— **与镜像路径经 `toSessionEvent` 得到的形状一致** ✓。
+ *
+ * 为什么要显式写这个类型 ✓：两条路径形状不同会让语义悄悄变化 ✗，
+ * 而这种偏差**不会**被"能编译过"发现 ✗ ——
+ * 实测就是被判据抓到的 ✓：`queryEvents` 一开始返回镜像的 `MirrorEvent`（payload 是**字符串** ✗），
+ * 于是不变量检查读不到 `messageId` ✗ ⇒ IAE-2/IAE-3 从"0 违规"变成"每个消息都违规"（6 条 ✗）。
+ */
+export interface SessionEventLike {
+  seq: number;
+  sessionId: string;
+  type: string;
+  /** **已解析**的载荷 ✓（不是 JSON 文本 ✗）—— 两条路径必须一致 ✓。 */
+  payload: Record<string, unknown>;
+  timestamp: number;
+}
+
+/**
  * **事件镜像的字节预算**（第 137 波）：事件里是**工具输出**（单条可到几十上百 KB ✗）。
  * 取 256 MB —— 事件通常比消息更重 ✗，但同样必须给渲染进程留出余量 ✓。
  */
@@ -2796,7 +2813,7 @@ export class RustStoragePort implements StoragePort {
    * 分页形状与镜像的 `loadSession` **完全一致**（`from_seq` 游标 ✓），
    * 保证"搬过去"不会悄悄改变语义 ✓。
    */
-  async queryEvents(sessionId: string): Promise<MirrorEvent[]> {
+  async queryEvents(sessionId: string): Promise<SessionEventLike[]> {
     const list: MirrorEvent[] = [];
     let fromSeq: number | undefined;
     for (let round = 0; round < QUERY_MAX_ROUNDS; round++) {
@@ -2810,7 +2827,15 @@ export class RustStoragePort implements StoragePort {
       if (!page?.has_more || items.length === 0) break;
       fromSeq = Number((items[items.length - 1] as { seq?: unknown })?.seq ?? 0) + 1;
     }
-    return list;
+    /**
+     * ⚠️ **返回形状必须与镜像路径一致** ✓ ——
+     * 镜像读经 `event-log.ts::toSessionEvent` 把 `payload` 从 JSON 文本**解析成对象** ✓，
+     * 所以这里也必须走同一个函数 ✓（实测：直接返回 `MirrorEvent` ⇒ 不变量检查看不到 messageId ✗ ⇒
+     * `IAE-2/IAE-3` 由"0 违规"变成"每个消息都违规" ✗）。
+     * 动态导入是为了**不把 event-log 拖进 rust-port 的静态依赖环** ✓（event-log 反过来要 port ✓）。
+     */
+    const { toSessionEvent } = await import("./event-log");
+    return list.map((e) => toSessionEvent(e));
   }
 
   /**
@@ -3094,3 +3119,4 @@ export function __eventMirrorForTests(budgetRows?: number): {
     },
   };
 }
+

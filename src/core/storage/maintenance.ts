@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 启动维护（第 18 轮，从 `database.ts` 抽出来）。
  *
  * ## 为什么它必须独立存在
@@ -32,6 +32,7 @@
 
 import { reportActionFailure, reportAdvisory, reportPersistFailure } from "./persist-failure";
 import { getStoragePort } from "./port";
+import type { MirrorEvent } from "./rust-port";
 import * as SessionStorage from "./session";
 // 不变量审计的"上次水位"存在 settings（与其它偏好同一种介质，见 `readInvariantWatermark`）
 import { getSettingJSON, setSettingJSON } from "./settings";
@@ -1584,12 +1585,44 @@ export async function auditInvariantsForSessions(
        * "头上就绪、轮到时已被逐出"是常规形态而不是意外，
        * 拿过期快照当放行条件正是要修的那个缺陷。
        */
-      if (!(await recheckMirrorsReady(sid, ready.get(sid) === true, recheckDeadline))) {
+      /**
+       * **第 143 波（B2）：优先走"按需查询"** ✓ —— 它**不需要镜像驻留** ✓。
+       *
+       * ## 为什么这比"等镜像就绪"正确
+       *
+       * 上面那一大段（等待 + 逐出 + `unreadableSessions`）是在**镜像模型**里求正确 ✗：
+       * 自检要读所有会话 ✓，而镜像同一时刻只驻留最近 3 个（S2 ✓）⇒ 每读一个都要重载 ✗，
+       * 重载等不到就被记成"未就绪"✗（真机 1.16.258 实测 **132 个** ✗）。
+       *
+       * 维护自检本来就该**按需读** ✓（DSH 的 `session-query` 正是这个模型 ✓：
+       * 「一次精确读取……**而不是持续保留的订阅**」✓）⇒
+       * `port.queryEvents/queryMessages` 分页查完即弃 ✓，一个字节都不驻留 ✓，
+       * 于是"未就绪"这个状态**根本不存在** ✓（不是"等得更久" ✗，是"不再需要等" ✓）。
+       *
+       * 查询失败**才**退回镜像等待路径 ✓ ⇒ 既拿到了新模型的好处 ✓，
+       * 又不会因为一条新代码把整段自检打死 ✗。
+       */
+      let injected: { events?: unknown[]; messages?: unknown[] } | undefined;
+      try {
+        const { getStoragePort } = await import("./port");
+        const p = getStoragePort() as unknown as {
+          queryEvents?: (s: string) => Promise<unknown[]>;
+          queryMessages?: (s: string) => Promise<unknown[]>;
+        } | null;
+        if (p?.queryEvents && p?.queryMessages) {
+          injected = { events: await p.queryEvents(sid), messages: await p.queryMessages(sid) };
+        }
+      } catch (e) {
+        /** 查询失败 ⇒ 如实留痕并退回镜像路径 ✓（绝不把"没查到"当成"没有问题" ✗）。 */
+        console.debug(`[Maintenance] 会话 ${sid} 的按需查询失败，退回镜像路径：`, e);
+        injected = undefined;
+      }
+      if (!injected && !(await recheckMirrorsReady(sid, ready.get(sid) === true, recheckDeadline))) {
         out.unreadableSessions += 1;
         continue;
       }
       try {
-        const res = runAllInvariants(sid);
+        const res = runAllInvariants(sid, injected as { events?: readonly MirrorEvent[]; messages?: readonly unknown[] } | undefined);
         out.checked += 1;
         if (res.violations.length > 0) {
           out.violations += res.violations.length;
@@ -1599,7 +1632,10 @@ export async function auditInvariantsForSessions(
           }
         }
         try {
-          const errs = getEventProjection().validateReplay(sid);
+          const errs = getEventProjection().validateReplay(
+            sid,
+            injected?.events as readonly MirrorEvent[] | undefined,
+          );
           if (errs.length > 0) {
             for (const e of errs) {
               if (structuralErrors.length < 5) structuralErrors.push(`${sid}: ${e}`);

@@ -13,6 +13,7 @@
 
 import { getEventLog } from "../storage/event-log";
 import * as MessageStorage from "../storage/message";
+import type { MirrorEvent } from "../storage/rust-port";
 
 // ========== Invariant Checking ==========
 
@@ -74,6 +75,18 @@ export interface InvariantCheckResult {
 export function checkVisibleRecordedInvariant(
   sessionId?: string,
   sessionIds?: readonly string[],
+  /**
+   * **注入数据**（第 143 波，B2 ✓）：给了就用它，**不碰镜像** ✓。
+   *
+   * 为什么要它：这条检查原来只能经 `getEventLog().readAll()` / `MessageStorage.listMessages()` 读 ✓，
+   * 而那两个接口**依赖会话镜像驻留** ✗ ⇒ S2（同一时刻只留 3 个会话 ✓）之后，
+   * 维护自检读一个会话就得等一次重载 ✗，于是真机上出现「132 个会话读侧镜像未就绪」✗。
+   *
+   * 维护自检本来就该"**按需读**" ✓（DSH 的 `session-query` 就是这个模型 ✓），
+   * 所以这里开一个注入口 ✓：调用方用 `port.queryEvents/queryMessages` 取数后传进来 ✓，
+   * 检查逻辑一行不变 ✓（同一份归一化 ✓），只是不再需要驻留 ✓。
+   */
+  injected?: { events?: readonly MirrorEvent[]; messages?: readonly unknown[] },
 ): InvariantCheckResult {
   const violations: InvariantViolation[] = [];
   const eventLog = getEventLog();
@@ -96,8 +109,8 @@ export function checkVisibleRecordedInvariant(
   }
 
   for (const sid of sessions) {
-    // 从事件日志投影
-    const projectedEvents = eventLog.readAll(sid);
+    // 从事件日志投影（第 143 波：允许注入 ⇒ 不依赖镜像驻留 ✓）
+    const projectedEvents = injected?.events ?? eventLog.readAll(sid);
     const projectedMessageIds = new Set<string>();
     /** 有 `tool_call` / `tool_result` 事件的消息 id（**纯工具轮助手消息的合法记录形式**） */
     const toolEventMessageIds = new Set<string>();
@@ -112,8 +125,8 @@ export function checkVisibleRecordedInvariant(
       }
     }
 
-    // 从消息存储读取
-    const messages = MessageStorage.listMessages(sid);
+    // 从消息存储读取（第 143 波：允许注入 ✓）
+    const messages = injected?.messages ?? MessageStorage.listMessages(sid);
     const storedMessageIds = new Set(messages.map((m: any) => m.id));
 
     // 检查：消息存储中有但事件日志中没有的
@@ -197,9 +210,13 @@ export function checkVisibleRecordedInvariant(
  * 每个 tool_call 事件都应该有对应的 tool_result 事件。
  * 没有结果的 tool_call 是未完成的会话状态。
  */
-export function checkToolCallPairingInvariant(sessionId: string): InvariantCheckResult {
+export function checkToolCallPairingInvariant(
+  sessionId: string,
+  /** **注入数据**（第 143 波，B2 ✓）：理由同 `checkVisibleRecordedInvariant` ✓。 */
+  injected?: { events?: readonly MirrorEvent[] },
+): InvariantCheckResult {
   const violations: InvariantViolation[] = [];
-  const events = getEventLog().readAll(sessionId);
+  const events = injected?.events ?? getEventLog().readAll(sessionId);
 
   const pendingToolCalls = new Map<string, number>();
 
@@ -236,14 +253,18 @@ export function checkToolCallPairingInvariant(sessionId: string): InvariantCheck
 /**
  * 运行所有不变量检查。
  */
-export function runAllInvariants(sessionId?: string): InvariantCheckResult {
+export function runAllInvariants(
+  sessionId?: string,
+  /** **注入数据**（第 143 波，B2 ✓）：维护自检用它摆脱"必须先加载镜像" ✗。 */
+  injected?: { events?: readonly MirrorEvent[]; messages?: readonly unknown[] },
+): InvariantCheckResult {
   const violations: InvariantViolation[] = [];
 
-  const visibleResult = checkVisibleRecordedInvariant(sessionId);
+  const visibleResult = checkVisibleRecordedInvariant(sessionId, undefined, injected);
   violations.push(...visibleResult.violations);
 
   if (sessionId) {
-    const pairingResult = checkToolCallPairingInvariant(sessionId);
+    const pairingResult = checkToolCallPairingInvariant(sessionId, injected);
     violations.push(...pairingResult.violations);
   }
 

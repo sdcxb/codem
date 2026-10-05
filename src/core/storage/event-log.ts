@@ -131,8 +131,16 @@ function rustEventPortAny(): RustEventPortLike | null {
   return candidate.events ? candidate : null;
 }
 
-/** 镜像事件 → SessionEvent（payload 是 JSON 文本，要解析回来） */
-function toSessionEvent(e: { seq: number; sessionId: string; type: string; payload: string; timestamp: number }): SessionEvent {
+/**
+ * 镜像事件 → SessionEvent（payload 是 JSON 文本，要解析回来）。
+ *
+ * **第 143 波（B2）导出** ✓：按需查询（`port.queryEvents`）与镜像路径必须产出**同一种形状** ✓ ——
+ * 否则"从镜像搬到查询"会悄悄改变语义 ✗。
+ * 实测就是这样被抓到的 ✓：`queryEvents` 一开始直接返回镜像的 `MirrorEvent`（payload 是**字符串** ✗），
+ * 于是不变量检查读 `(evt.payload as any)?.messageId` 全部为 undefined ✗ ⇒
+ * `IAE-2`/`IAE-3` 从"0 违规"变成"每个消息都违规"✗（6 条 ✗）。**复用这一个函数**才是对的 ✓。
+ */
+export function toSessionEvent(e: { seq: number; sessionId: string; type: string; payload: string; timestamp: number }): SessionEvent {
   let payload: Record<string, unknown> = {};
   try {
     payload = JSON.parse(e.payload || "{}") as Record<string, unknown>;

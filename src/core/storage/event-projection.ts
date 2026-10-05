@@ -42,6 +42,7 @@ import type {
 // 值导入（不是 type）：`validateReplay` 的类型判据要用它
 import { isValidEventType } from "./event-types";
 import { getEventLog } from "./event-log";
+import type { MirrorEvent } from "./rust-port";
 // 载荷形状不合契约时如实上报（第 60 轮：不许静默容忍，也不许抛）
 import { reportAdvisory, reportPersistFailure } from "./persist-failure";
 
@@ -473,8 +474,16 @@ export class EventProjection {
    *    把它当错误就是把正常库判成坏库，所以只校验载荷形状。
    *    （对照：`repo.rs::events_compact` 在**写入**侧才要求锚点事件真实存在。）
    */
-  validateReplay(sessionId: string): string[] {
-    const events = getEventLog().readAll(sessionId);
+  /**
+   * @param injected 第 143 波（B2 ✓）：**注入事件** ⇒ 不依赖镜像驻留 ✓。
+   *
+   * 为什么不注入就危险 ✗：不给数据时 `getEventLog().readAll()` 在"镜像没驻留"时返回**空** ✓
+   * ⇒ 这个函数会看到 0 条事件 ⇒ **报 0 处结构异常** ✗ ——
+   * 而汇总行写着"含事件库结构自检" ✗ ⇒ 印出来的不是真的（文件头第 2 条就是这个教训 ✓）。
+   * 维护自检现在用 `port.queryEvents` 取数后注入 ✓，所以"没数据"与"没有异常"不再混在一起 ✓。
+   */
+  validateReplay(sessionId: string, injected?: readonly MirrorEvent[]): string[] {
+    const events = injected ?? getEventLog().readAll(sessionId);
     const errors: string[] = [];
     const seenSeqs = new Set<number>();
     const pendingToolCalls = new Set<string>();
