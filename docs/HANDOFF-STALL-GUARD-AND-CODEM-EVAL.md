@@ -2204,7 +2204,52 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.90 接线**试了一次、撞到 8 条红、已回退** ✗（第 199 波，含两条教训 ✓）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.91 动手前排查：**10 个判据**触及文本块镜像路径（含一个不存在的引用 ✗）（第 200 波）
+
+## 按上轮教训做的排查 ✓
+
+```
+引用 T_CHUNKS / getChunks / getChunkCount / chunkCache / notebook_chunks 的判据文件（10 个 ✓）：
+  core-worktree-notebook-impact.test.ts
+  domain-mirror-per-table-limit.test.ts
+  domain-mirror.test.ts                       ← 上轮红 ✓
+  knowledge-graph-extractor.test.ts
+  no-sync-mirror-reads.test.ts                ← 结构性门 ✓
+  notebook-chunk-query.test.ts                ← 我自己新加的 ✓
+  persist-domain-fixes.test.ts                ← 上轮红 ✓
+  phase-b-f-regression.test.ts                ← 上轮红 ✓
+  ppt-generator.test.ts
+  task-y-feedback-cache-telemetry.test.ts
+
+文件存在性核对 ✓：
+  domain-mirror ✓ / persist-domain-fixes ✓ / phase-b-f-regression ✓ / feature-wire-tail-fixes ✓
+  **knowledge-chunk-mirror-refusal ✗ —— 不存在**（我上轮在注释里点名了它 ✗）
+```
+
+⇒ 结论 ✓：拆镜像读会牵动**至少这 10 个**判据文件 ✓ —— 上一波只盯着 `no-sync-mirror-reads` 一道门 ✗，
+所以撞了 8 条红 ✓。**这不是"运气不好"，是我范围估小了** ✗。
+
+## 为什么这 10 个里有些**必然**要一起改 ✓
+
+`domain-mirror` / `domain-mirror-per-table-limit` / `persist-domain-fixes` / `phase-b-f-regression`
+这些测的是"**镜像读/写这条路本身**"✓（块的镜像上限、拒写后的回退、按需读缓存 ✓）
+⇒ 把这条路从这个域拆掉 ✓ ⇒ 它们**要么改成走按需查询** ✓、**要么删掉对应的断言** ✓
+—— 属于**迁移的一部分** ✓，不是"破坏"✗。
+
+## 因此下一波的做法（把范围先定死 ✓，再改 ✓）
+
+1. **先读这 10 个文件里与 chunk 镜像相关的断言** ✓（一次读完 ✓），列成清单 ✓：
+   哪些是"镜像这条路的行为"✓（随迁移一起改 ✓）、哪些是"域语义"✓（**必须原样通过** ✗，不许动 ✓）；
+2. 只改第一类 ✓；第二类**一条断言都不许放松** ✗；
+3. 改完 ✓：`no-sync-mirror-reads` **5/5** ✓ + 上面 10 个文件**逐个跑** ✓ + 全量 ✓；
+4. 变异 ✓：把其中一处改回 `domainReadMany` ⇒ gate 红 ✓。
+
+⇒ 这样才是"**一次性改完**"✓，而不是改一处、被红一次 ✗。
+
+## 跑批状态 ✓
+
+仍是 **2/24** ✓（墙钟推进慢 ✓）；本轮**未装机、未改运行路径** ✓。
+### 13.90 接线**试了一次、撞到 8 条红、已回退** ✗（第 199 波，含两条教训 ✓）
 
 ## 做了什么 ✓
 
