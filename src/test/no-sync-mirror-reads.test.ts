@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 第 144 波：**结构性边界 —— 数据层以外，不许使用"同步整表/整会话读"** ✓。
  *
  * ## 为什么需要这道门（用户的原话）
@@ -150,6 +150,12 @@ const UNBOUNDED_TABLES = new Set([
  */
 function resolveConst(text: string, name: string, depth = 0): string | null {
   if (depth > 4) return null;
+  /**
+   * ⚠️ 第 148 波：**只解析纯标识符** ✓ ——
+   * 实参里可能是表达式（`foo()` / `(x as any).y` ✗），把它拼进正则会让分组错位 ✗
+   * 甚至抛 TypeError ✓（实测就是这么崩的 ✗）。表达式一律算"解析不出来" ✓。
+   */
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return null;
   const m = text.match(new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*([^;\\n]+)`));
   if (!m) return null;
   const rhs = m[1].trim();
@@ -233,7 +239,7 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
       const rel = relative(process.cwd(), file).replace(/\\/g, "/");
       if (DATA_LAYER_FILES.has(rel)) continue;
       const text = readFileSync(file, "utf8");
-      for (const m of text.matchAll(/domainRead(?:Many|One)\s*(?:<[^>]*>)?\s*\(\s*([^,)\n]+)/g)) {
+      for (const m of text.matchAll(/domainRead(?:Many|One)\b[^(]*\(\s*([^,)\n]+)/g)) {
         const raw = m[1].trim();
         const lit = raw.match(/^["'`]([A-Za-z0-9_]+)["'`]$/);
         const table = lit ? lit[1] : resolveConst(text, raw.replace(/!$/, ""));
@@ -260,6 +266,7 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
+      "src/core/storage/maintenance.ts: TELEMETRY_TABLE → 表 telemetry_events ✗",
       "src/core/telemetry/telemetry.ts: TABLE → 表 telemetry_events ✗",
     ].sort());
   });
@@ -269,4 +276,5 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
     expect(total, `当前剩余 ${total} 处（第 144 波按**与判据同一套扫描**测得的真实面 ✓）`).toBeLessThanOrEqual(158);
   });
 });
+
 
