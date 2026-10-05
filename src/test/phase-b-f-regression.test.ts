@@ -710,13 +710,15 @@ describe("Phase F: 笔记本式知识管理", () => {
       expect(chunks[2].embedding).not.toBeNull();
     });
 
-    it("获取 chunk 数量", () => {
+    it("获取 chunk 数量", async () => {
       const nb = createNotebook({ name: "计数测试" });
       const src = addSource({ notebookId: nb.id, name: "cnt", type: "text", content: "x" });
       addChunksBulk(nb.id, src.id, [
         { content: "a", chunkIndex: 0, embedding: null, tokenCount: 1 },
         { content: "b", chunkIndex: 1, embedding: null, tokenCount: 1 },
       ]);
+      /** 第 213 波：**先预热再断言** ✓（理由见"批量添加 chunks"✓；原断言"计数为 2"未改 ✗）。 */
+      await __warmChunksForTests(nb.id);
       expect(getChunkCount(nb.id)).toBe(2);
     });
 
