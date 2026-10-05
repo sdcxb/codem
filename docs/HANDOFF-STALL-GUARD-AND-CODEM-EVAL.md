@@ -2204,7 +2204,57 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿### 13.164 A 路 step 1 的**进展与下一步的最快路径** ✓（第 290 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿### 13.165 ★★★ A 路 step 1 的**确切位置找到了** ✓（第 291 波）
+
+## 反查结果 ✓（从驱动侧反查 ⇒ 命中产品侧 ✓）
+
+```
+src/core/llm/agentic-loop.ts:2964   let stopReason = "safety_valve";
+src/core/llm/agentic-loop.ts:2967   stopReason = "max_iterations";
+src/core/llm/agentic-loop.ts:2970   stopReason = "no_progress";
+src/core/llm/agentic-loop.ts:2976   reason: stopReason,
+src/core/llm/agentic-loop.ts:2990   reason: stopReason,
+src/core/llm/agentic-loop.ts:2997   reason: stopReason,
+```
+
+⇒ 这就是**循环结束时组装结果**的地方 ✓（三处 eason: stopReason ✓ 对应三种收尾 ✓）
+⇒ **completionNudges（2635 ✓）就加在这里** ✓ —— 只加字段 ✓，不改任何行为 ✗。
+
+## 顺带确认了驱动侧的实情 ✓
+
+```
+tools/eval/codem-records-report.mjs:136/173   … r.loopStops?.length …      ← 只**读** ✓
+tools/eval/normalize-codem-records.mjs:91     loopStops: num(record.loopStops?.length ?? record.loopStops)  ← 只**规范化** ✓
+normalize-codem-records.selftest.mjs:110-112  「N7: loopStops 既支持数组也支持数字（驱动改过形状）」✓
+```
+
+⇒ 两件事 ✓：
+1. 记录里**本来就有** loopStops ✓（驱动只读 ✓）⇒ 它是**产品（headless 入口）产出的** ✓；
+2. 而 src/ 里搜 loopStops **只有注释** ✗ ⇒ 说明**产品侧那个字段名不是它** ✗
+   （
+ormalize 的 N7 那条自证写着"**驱动改过形状**"✓ ⇒ 字段名/形状在两侧不同 ✓）
+   ⇒ **A 路接线时必须按 
+ormalize 认的名字来** ✓（下一波读 loopStops 在记录里的**输入名** ✓）。
+
+## 下一步（A 路，一次做完 ✓）
+
+1. 在 gentic-loop.ts 的**结果组装处**（2964-3000 ✓）加
+   `completionNudges`（数组 ✓，元素=守卫名 ✓）—— 只加字段 ✓；
+2. 读**驱动/headless 入口** ✓ ⇒ 把该字段带进结果 ✓（名字与 
+ormalize 认的一致 ✓）；
+3. 
+ormalize-codem-records.mjs 加一行 ✓（照 :91 的样子 ✓）；
+4. **判据** ✓ 
+udge-1（受控运行触发零产出守卫 ⇒ 记录里非空且写明守卫名 ✓）
+   / **反向对照 
+udge-2**（不该触发的运行 ⇒ 为空 ✓ 且**行为逐字一致** ✓）；
+5. **变异** ✓ 去掉驱动那行 ⇒ 
+udge-1 红 ✓。
+
+## 状态 ✓
+
+树全绿 ✓；跑批 **16/24** ✓（健康、只是慢 ✓）；本轮**未装机** ✓（纯只读 ✓）。
+### 13.164 A 路 step 1 的**进展与下一步的最快路径** ✓（第 290 波）
 
 ## 读到的 ✓
 
