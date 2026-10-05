@@ -2204,7 +2204,54 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.95 迁移的**完整红清单**（6 条 / 4 文件）——量出来的 ✓（第 203 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.96 两条"待看"的量证结果：都是 A 类，且**写入必须更新缓存** ✓（第 204 波）
+
+## 量到的断言（只读 ✓）
+
+```
+domain-mirror.test.ts:1304   await port.domains.ensureLoaded("notebook_chunks");   ← 先把镜像喂满
+domain-mirror.test.ts:1310   expect(k.getChunks("nb1").map(c => c.id)).toEqual(["c1","c3","c2"]);  ✗
+domain-mirror.test.ts:1311   expect(k.getChunkCount("nb1")).toBe(3);                              ✗
+domain-mirror.test.ts:1313-1315  embedding 必须是 Float32Array 且逐元素一致（向量检索全靠它）
+
+phase-b-f-regression.test.ts:692  addChunksBulk(nb.id, src.id, [3 块]);   ← **刚写完**
+phase-b-f-regression.test.ts:697  const chunks = getChunks(nb.id);        ← **紧接着同步读回** ✗
+phase-b-f-regression.test.ts:698-699  expect(chunks.length).toBe(3) / embedding 不为 null  ✗
+```
+
+⇒ 两条**都是**「**写完（或镜像喂满）之后要立刻同步读回**」✗ ⇒ 属 **A 类** ✓（它们依赖的正是被拆掉的路 ✓）。
+
+## 但它们同时暴露了一个**产品设计上的必要项** ✓（不是测试的问题 ✗）
+
+**读后写一致性** ✓：用户（和这些判据 ✓）都要求「**刚写完就能读到**」✓。
+DSH 的模型正是这样 ✓：**写路径先落到后端持久状态 ✓，然后更新内存投影** ✓，
+之后**同步读直接取自内存** ✓。
+
+⇒ 所以迁移不能只改"读"✗，**写也要顺手更新那个有界缓存** ✓：
+
+| 写点 | 要顺手做的 |
+|---|---|
+| `addChunk` ✓ | 把这一块插进 `currentChunkCache()` ✓（按 notebook 分桶 ✓、超预算就不缓存并上报 ✓） |
+| `addChunksBulk` ✓ | 同上（批量 ✓） |
+| `deleteChunksBySource` ✓ | 从缓存里摘掉 ✓ |
+| 删除/更新其它路径 ✓ | 同样摘除 ✓ |
+
+⇒ 这样 ✓：`phase-b-f-regression` 的两条**不用改** ✓（它们本来就是**正确的域语义** ✓：
+"写完必须读得到" ✓）—— 这才是"**域语义不许放松**"✗ 的正确处理 ✓。
+
+## 于是 6 条的最终处置（定稿 ✓）
+
+| 判据 | 处置 |
+|---|---|
+| `phase-b-f-regression` 批量添加 / 按来源删除 ✓ | **不动** ✓（靠"写更新缓存" ✓ 自然转绿 ✓） |
+| `domain-mirror` **DOM-33** ✓ | 同上 ✓（`ensureLoaded` 之后读 ✓ —— 若仍红 ✓ 就把它改成"先触发一次按需拉取再读"✓，**并注明**理由 ✓） |
+| `persist-domain-fixes` **C3-4** ✓ | 改写为「按需缓存命中即快路径」✓ |
+| `no-sync-mirror-reads` **SYNC-3 / SYNC-5** ✓ | 机械收紧（30→28 ✓、清单去两行 ✓） |
+
+## 跑批状态 ✓
+
+**6/24** ✓；本轮**未装机、未改运行路径** ✓（只读代码 ✓）。
+### 13.95 迁移的**完整红清单**（6 条 / 4 文件）——量出来的 ✓（第 203 波）
 
 ## 做法 ✓
 
