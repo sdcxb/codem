@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 笔记本式知识管理 — SQLite CRUD 存储层
  *
  * 对标 NotebookLM：Notebook → Source → Chunk → Retrieval
@@ -241,8 +241,39 @@ function afterChunkWrite(notebookId: string, added: NotebookChunk[]): void {
   bucket.set(notebookId, merged);
 }
 
+/**
+ * **预热的"代际"计数** ✓（第 254 波 ✓）—— 用来让**在飞的预热结果**作废 ✓。
+ *
+ * ## 为什么（第 252/253 波量到并复现的缺陷 ✗）
+ *
+ * ```
+ * t0  addChunksBulk         → 缓存没有该 notebook ⇒ 作废 + **发起预热**（异步 ✓）
+ * t1  deleteChunksBySource  → **同步摘缓存**（摘了个空 ✗，预热还没落地 ✓）
+ * t2  预热结果落地           → 把 t0 时刻（**含被删块**）的数据写进缓存 ✗✗
+ * ```
+ * ⇒ **删除之后，同步读会读回已被删掉的块** ✗（`NC-DEL-3` 已把它最小化复现 ✓）。
+ *
+ * ## 本办法（与文件里**已有**那条纪律同源 ✓）
+ *
+ * `storage.ts:342-344` 早就写了 ✓：**写回之前核对端口还是当初那一个** ✓，
+ * 变了就**丢弃结果并如实上报** ✓ —— 精神是「**宁可让下一次读重新拉，
+ * 也不落一份来路不明的数据**」✓。
+ *
+ * 这里的"代际"把同一条纪律推广到**数据本身的新旧** ✓：
+ * 任何**删除**都让**在飞的**预热结果作废 ✓（保守做法：**全局**递增 ✓ ——
+ * 多拉一次无害 ✓，落一份陈旧数据有害 ✓）。
+ */
+let chunkWarmGeneration = 0;
+
+/** 让**所有在飞的**预热结果作废 ✓（删除时调用 ✓；落地时对不上就丢弃 ✓）。 */
+function bumpChunkWarmGeneration(): void {
+  chunkWarmGeneration += 1;
+}
+
 /** **写点的缓存处置（删除）** ✓：按来源跨桶摘除 ✓（`deleteChunksBySource` 只拿得到 `sourceId` ✓，没有 `notebookId` ✓）。 */
 function afterChunkDeleteBySource(sourceId: string): void {
+  /** 第 254 波：**删除 ⇒ 让在飞的预热作废** ✓（否则它会把被删的块写回来 ✗，见 `NC-DEL-3` ✓）。 */
+  bumpChunkWarmGeneration();
   const bucket = currentChunkCache();
   for (const [nb, chunks] of bucket) {
     const kept = chunks.filter((c) => c.sourceId !== sourceId);
