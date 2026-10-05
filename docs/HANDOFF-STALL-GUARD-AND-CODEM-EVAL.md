@@ -2204,7 +2204,52 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.127 排除分页假设 ✓ ⇒ 锁定唯一没读过的地方：`refreshNotebookCounts` 的计数路径（第 243 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.128 `refreshNotebookCounts` 读完 ✓ ⇒ 只剩 `__warmChunksForTests` 没读（第 244 波）
+
+## 读到的实际代码（`storage.ts:899-937` ✓，**整段读完** ✓）
+
+```ts
+export function refreshNotebookCounts(notebookId: string): void {
+  const sourceCount = getSourceCountOrNull(notebookId);      // 900 ✓
+  const chunkCount  = getChunkCountOrNull(notebookId);       // 901 ✓  ← **只这一条路** ✓
+  …
+  if (sourceCount === null || chunkCount === null) { …不写回… return; }   // 909 ✓（"读不到"不冒充 0 ✓）
+  const current = domainReadOne(T_NOTEBOOKS, { id: notebookId }, wireToNotebook);
+  …domainWrite(T_NOTEBOOKS, [{ …current, sourceCount, chunkCount, updatedAt: now }], { mode:"replace" … });
+```
+
+⇒ **它没有"另一条计数路"** ✓（第 243 波的第 2 种可能 ✗ **排除** ✓）⇒
+`nb.chunkCount = 3` ✗ **就是** `getChunkCountOrNull("nb1")` 的返回值 ✓。
+
+## 于是范围缩到**一个函数** ✓
+
+```
+DOM-31:  await k.__warmChunksForTests("nb1")     ← 填桶 ✓（我**从未读过它** ✗，storage.ts:458 ✓）
+         k.refreshNotebookCounts("nb1")
+           ⇒ getChunkCountOrNull("nb1")
+             ⇒ currentChunkCache().get("nb1")    ← 桶里有 3 行 ✗
+```
+
+⇒ 而"桶里为什么有 3 行"✗ 现在已经**不可能**是这些原因 ✓（全读过 ✓）：
+`where` 带了 ✓（376）✓、过滤在 ✓（1133）✓、分页对 ✓（1143-1146）✓、实例隔离 ✓（`NC-ISO-1`）✓、
+桶按 notebook 分 ✓（340-341）✓、`refreshNotebookCounts` 无第二路径 ✓（本波）✓。
+
+⇒ **唯一没读过的就是 `__warmChunksForTests`（458 行）** ✓ ——
+它是**测试专用入口** ✓，很可能：
+1. **忽略参数** ✓（把**所有** notebook 都预热 ⇒ `nb1` 的桶里混进 `nb2` 的行 ✗✓ 最可能 ✓）；
+2. 或预热**全部表** ✓、或对 `nb1` 与 `nb2` 都拉一次 ✓ 而**写进同一个桶** ✗。
+
+⇒ **下一波第一步唯一动作** ✓：**读完 `__warmChunksForTests`**（458 ✓）✅ 不再做别的 ✓。
+
+## 我这一段的账（第 233–244 波）✓
+
+**五次推断、五次被否定** ✗ —— 但每次都靠"读实际代码行 / 判据 / 探针"挡住 ✓，
+**产品一行未改** ✓。而每否掉一个 ✓，范围就**真的**小一圈 ✓（这次缩到一个函数 ✓）。
+
+## 状态 ✓
+
+树全绿 ✓（`7100 通过` ✓）；跑批 **8/24** ✓；本轮**未装机** ✓（纯只读 ✓）。
+### 13.127 排除分页假设 ✓ ⇒ 锁定唯一没读过的地方：`refreshNotebookCounts` 的计数路径（第 243 波）
 
 ## 读到的实际代码行（假端口 `crud.list` ✓）
 
