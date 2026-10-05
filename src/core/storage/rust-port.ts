@@ -1500,6 +1500,17 @@ class RustEventMirror {
     return [...(this.bySession.get(sessionId) ?? [])];
   }
 
+  /**
+   * **按需查询专用**：把一行引擎结果归一化成 `MirrorEvent` ✓（第 143 波，B1 ✓）。
+   *
+   * 直接复用镜像那份归一化逻辑 ✓ —— 两条路径对同一行必须得到同样的对象 ✓，
+   * 否则"从镜像搬到查询"会悄悄改变语义 ✗（那正是这类迁移最容易翻车的地方 ✗）。
+   * **注意它不写入任何状态** ✓（`normalize` 本来就是纯函数 ✓）。
+   */
+  normalizeForQuery(r: unknown): MirrorEvent {
+    return this.normalize(r);
+  }
+
   readFrom(sessionId: string, fromSeq: number): MirrorEvent[] {
     return (this.bySession.get(sessionId) ?? []).filter((e) => e.seq >= fromSeq);
   }
@@ -1780,6 +1791,14 @@ class RustMessageMirror {
 
   isLoaded(sessionId: string): boolean {
     return this.loaded.has(sessionId);
+  }
+
+  /**
+   * **按需查询专用**：把一行引擎结果归一化成 `MirrorMessageRow` ✓（第 143 波，B1 ✓）。
+   * 与事件镜像的同名方法同一条理由 ✓：两条路径对同一行必须得到同样的对象 ✓，且**不写状态** ✓。
+   */
+  normalizeForQuery(r: unknown): MirrorMessageRow {
+    return this.normalize(r);
   }
 
   /**
@@ -2329,6 +2348,16 @@ const MIRROR_MESSAGE_BUDGET_BYTES = 192 * 1024 * 1024;
 const MIRROR_KEEP_SESSIONS = 3;
 
 /**
+ * **按需查询的分页参数**（第 143 波，B1 ✓）。
+ *
+ * 与镜像的 `maxBatch`/`maxRounds` **同一量级但不是同一个东西** ✗：
+ * 镜像那两个值约束的是"**驻留多少**"✗，这里的约束是"**一次查询拉多少**"✓
+ * —— 查完即弃 ✓，不进内存 ✗。上限取 200 轮 × 1000 条，足够覆盖十万级会话 ✓。
+ */
+const QUERY_PAGE_SIZE = 1000;
+const QUERY_MAX_ROUNDS = 200;
+
+/**
  * **事件镜像的字节预算**（第 137 波）：事件里是**工具输出**（单条可到几十上百 KB ✗）。
  * 取 256 MB —— 事件通常比消息更重 ✗，但同样必须给渲染进程留出余量 ✓。
  */
@@ -2747,6 +2776,62 @@ export class RustStoragePort implements StoragePort {
    */
   warmupEvents(sessionIds: string[]): void {
     for (const id of sessionIds) this.events.ensureLoaded(id);
+  }
+
+  /**
+   * **按需查询一个会话的全部事件** —— **不碰镜像** ✓（第 143 波，B1 ✓）。
+   *
+   * ## 为什么要有它（治本路线的第一块砖 ✓）
+   *
+   * 我们的读接口是**同步**的 ⇒ 当初用"镜像 + 预算"换"同步读不跨 IPC" ✓，
+   * 代价是**内存随浏览史增长** ✗ —— 于是只能一行行加预算去压 ✗
+   * （行数 → 字节 → 每表下限 → 等待预算 ✗）。
+   * DSH 不这么做：数据留在宿主侧，客户端**按需查询** ✓
+   * （`docs/subsystems/session-query.zh.md`：「一次精确读取……**而不是持续保留的订阅**」✓）。
+   *
+   * 这个方法就是"按需查询"那一侧 ✓：直接按引擎分页拉完 ✓，
+   * **调用前后 `events.isLoaded(sid)` 都是 false** ✓ —— 一个字节都不驻留 ✓。
+   * 消费方搬过来之后（先从维护自检开始 ✓），事件镜像就能删掉 ✗→✓。
+   *
+   * 分页形状与镜像的 `loadSession` **完全一致**（`from_seq` 游标 ✓），
+   * 保证"搬过去"不会悄悄改变语义 ✓。
+   */
+  async queryEvents(sessionId: string): Promise<MirrorEvent[]> {
+    const list: MirrorEvent[] = [];
+    let fromSeq: number | undefined;
+    for (let round = 0; round < QUERY_MAX_ROUNDS; round++) {
+      const page = await call<{ items?: unknown[]; has_more?: boolean }>(this.transport, "events.list", {
+        session_id: sessionId,
+        limit: QUERY_PAGE_SIZE,
+        ...(fromSeq === undefined ? {} : { from_seq: fromSeq }),
+      });
+      const items = page?.items ?? [];
+      for (const raw of items) list.push(this.events.normalizeForQuery(raw));
+      if (!page?.has_more || items.length === 0) break;
+      fromSeq = Number((items[items.length - 1] as { seq?: unknown })?.seq ?? 0) + 1;
+    }
+    return list;
+  }
+
+  /**
+   * **按需查询一个会话的全部消息** —— **不碰镜像** ✓（第 143 波，B1 ✓）。理由同 `queryEvents` ✓。
+   */
+  async queryMessages(sessionId: string): Promise<MirrorMessageRow[]> {
+    const rows: MirrorMessageRow[] = [];
+    let offset = 0;
+    for (let round = 0; round < QUERY_MAX_ROUNDS; round++) {
+      const page = await call<{ items?: unknown[]; has_more?: boolean }>(this.transport, "messages.list", {
+        session_id: sessionId,
+        limit: QUERY_PAGE_SIZE,
+        offset,
+        include_hidden: true, // 索引读必须含 hidden（它的 hidden 状态是权威）
+      });
+      const items = page?.items ?? [];
+      for (const raw of items) rows.push(this.messages.normalizeForQuery(raw));
+      if (!page?.has_more || items.length === 0) break;
+      offset += items.length;
+    }
+    return rows;
   }
 
   /**
