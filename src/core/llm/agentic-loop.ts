@@ -2554,6 +2554,25 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         /**
+         * **第 167 波：收尾段的入口诊断** ✓ —— "机制到底有没有被走到"必须能看见 ✗。
+         *
+         * 为什么必须加 ✗：族守卫**连续三次**在真机里沉默 ✗（262 信号选错 ✓、263 前置永假 ✓、
+         * 265→267 前置已放宽到"动过盘或读过源码"✓ 而 v36 三轮**都跑了测试、都改了文件** ✓ 却仍然没有相位 ✗）。
+         * 单靠读代码已经解释不了 ✓ ⇒ 把**进入收尾段那一刻的状态**打出来 ✓，
+         * 下一次抓控制台就能分清两种情况 ✗：
+         * - **根本没打印** ⇒ 收尾段没被走到 ✗（循环从别的出口结束了 ✓）；
+         * - **打印了但守卫没触发** ⇒ 条件不满足 ✓（数字就在这一行里 ✓）。
+         */
+        debugLog(
+          "agent-loop",
+          "收尾段：进入",
+          `modified=${this.sessionModifiedAnything}`,
+          `edited=${this.sessionEditedSources.size}`,
+          `lookedAtSource=${this.sessionLookedAtSource}`,
+          `tests=${this.testFileStatus.size}`,
+          `red=${[...this.testFileStatus.values()].filter((s) => s === "red").length}`,
+        );
+        /**
          * **第 162 波（模式 A）：零产出收工** ✓ —— 一个字节都没改、而判据还红着就收尾 ✗。
          *
          * 真机形态（同版本 264 两批对照 ✓）：
