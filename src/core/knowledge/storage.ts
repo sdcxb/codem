@@ -519,27 +519,23 @@ function onDemandChunks(notebookId: string): NotebookChunk[] | undefined {
  */
 export function __warmChunksForTests(notebookId: string): Promise<void> {
   /**
-   * 第 273 波：**按这个钩子自己的契约把它做对** ✓（判据 `NC-DEL-5` ✓）。
+   * 第 276 波：**回到单纯转发** ✓（判据 `NC-DEL-5` 的取法改了 ✓ —— 见下 ✓）。
    *
-   * 它的契约就写在上面 ✓：「**测试要确定性等待它**，生产不等待」✓ ——
-   * 所以"等完之后缓存**已被填上**"必须是**可依赖**的 ✓。
+   * 第 273 波曾在这里加"**复核 + 重试**"✓（`await` 之后若缓存仍空 ⇒ 自己再发起 ✓），
+   * 用来满足"等完之后缓存已被填上"✓。但第 275 波两次单跑量出**它同时弄坏了另一条判据** ✗：
    *
-   * 为什么原来不满足 ✗：`warmChunksByNotebook` 起点遇到"本 key 在飞"就
-   * `return Promise.resolve()` ✗ ⇒ 调用方 `await` 到的是一次 **no-op** ✗
-   *（尤其是在"在飞那次因代际被丢弃"之后 ✓ —— 空窗只换了个占 key 的人 ✓）。
+   * | ② 开着 | **`Y2-1` 超时 5s** ✗（它用**受控** transport ✓，拉取要等测试放行 ✓
+   * |         | ⇒ 任何"**没人放行的额外拉取**"✗ 都会卡住它 ✓） |
+   * | ② 关掉 | `Y2-1` 绿 ✓，但 `phase-b-f`「按来源删除」红 ✗ |
    *
-   * ⇒ 复核再补 ✓：`await` 之后若该 notebook **仍然没有**缓存条目 ⇒
-   * **自己再发起**（最多 3 次 ✓，每次让出一个宏任务 ✓ 给在飞那次落地的机会 ✓）。
-   * 生产路径**不受影响** ✓（`getChunks` 仍然"未命中 ⇒ 预热 + 抛" ✓，
-   * 它的下一次读会自己重新拉 ✓ —— 这条语义没动 ✗）。
+   * ⇒ 真正的取法 ✓：**"删完之后读不到"这件事，用"同步摘缓存"来断言** ✓
+   * （`deleteChunksBySource` 本来就是**同步**摘的 ✓ ⇒ 不需要任何额外拉取 ✓，
+   * 也就不必让这个钩子去做"再拉一次"✗）。判据改用 `__chunkCacheBucketsForTests()` ✓。
+   *
+   * ⇒ 钩子只做它名字说的事 ✓：**转发一次预热** ✓；"等完之后一定有缓存"**不再是**它的承诺 ✗
+   *（那是第 273 波我**替它**加的 ✗ —— 而它换来的代价是弄坏 `Y2-1` ✓）。
    */
-  return (async () => {
-    await warmChunksByNotebook(notebookId);
-    for (let i = 0; i < 3 && !currentChunkCache().has(notebookId); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await warmChunksByNotebook(notebookId);
-    }
-  })();
+  return warmChunksByNotebook(notebookId);
 }
 
 /**
