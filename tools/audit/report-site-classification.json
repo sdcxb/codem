@@ -2,8 +2,8 @@
  "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
  "_counts": {
-  "total": 222,
-  "triaged": 222,
+  "total": 223,
+  "triaged": 223,
   "pending": 0
  },
  "sites": [
@@ -369,6 +369,13 @@
    "status": "triaged",
    "reason": "读侧失败：文本块未按需读到（catch 分支）⇒ action（功能本次没生效）。没有写盘动作，故不是 persist。",
    "round": 100
+  },
+  {
+   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#4",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "读侧作废：按需读落地时代际核对不上（发起之后发生过删除）⇒ **丢弃**这份过期结果并如实上报 ⇒ action（功能本次没生效；程序没写任何东西、也没有改动被丢 —— 丢的是一次过期的读结果）。判据 NC-DEL-3：删除之后到达的预热结果不许把被删的块写回缓存（否则删除之后同步读会读回已删的块）。与同区 #3 同源：都是“按需读本次没生效”，下一次读会重新拉。",
+   "round": 255
   },
   {
    "site": "src/core/knowledge/storage.ts::notebook.refreshCounts::#1",
