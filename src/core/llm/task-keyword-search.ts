@@ -301,6 +301,25 @@ function familyDir(members: string[]): string {
  * 中文任务描述与英文文件名零重叠时，排序退化成"按族大小" ✗，
  * 而 `repo-02` 的目标族 `dsh-*` 恰好排在第三 ✗）。
  */
+/**
+ * **从 grep 命中行里取文件路径**（第 133 波，修一个"真机上机制从不产出"的根因 ✗）。
+ *
+ * `core/file-api.ts::grepSearch` 的 PowerShell 是
+ * `$_.Path + ':' + $_.LineNumber + ':' + $_.Line` ✗ ⇒ 行是 **Windows 绝对路径**：
+ * `C:\…\src\test\x.test.ts:12: …` ✓。
+ * 原来用 `split(":")[0]` 取路径 ✗ ⇒ 在 Windows 上得到 **`C`** ✗ ⇒ 测试文件过滤全落空 ✗
+ * ⇒ 函数**永远返回 null** ✗。而判据侧的 helper（`node-grep-source.ts`）返回**相对路径** ✓
+ * ⇒ 判据全绿、真机全空 ✗ —— 与 113/114 波同一类「夹具与现实不一致」✓。
+ *
+ * 现在按 `:行号:` 切 ✓（盘符里的冒号不会被误当成分隔 ✓）：
+ * `C:\…\x.test.ts:12: text` ⇒ `C:/…/x.test.ts` ✓；`src/test/x.test.ts:1: text` ⇒ `src/test/x.test.ts` ✓。
+ */
+function fileFromGrepRow(row: string): string {
+  const m = String(row).match(/^(.*?):(\d+):/);
+  const raw = m ? m[1] : String(row).split(":")[0];
+  return raw.replace(/\\/g, "/");
+}
+
 function renderCluster(c: { prefix: string; count: number; examples: string[]; members: string[] }): string {
   const short = (p: string) => p.split("/").pop();
   const line =
@@ -425,7 +444,7 @@ export async function buildTaskSearchNotice(
     }
     const seen = new Set<string>();
     for (const row of found) {
-      const file = String(row).replace(/\\/g, "/").split(":")[0];
+      const file = fileFromGrepRow(String(row));
       if (!file || isTestFile(file)) continue;
       const key = file;
       if (seen.has(key)) continue;
@@ -504,15 +523,31 @@ export async function buildSymbolSiblings(
   let text = "";
   try {
     text = await src.read(`${root}/${editedRelativePath}`, MAX_BYTES_PER_FILE);
-  } catch {
+  } catch (readErr) {
+    /**
+     * **第 133 波：读失败要能看见** ✓（原来静默 `return null` ✗ ⇒ 真机上连查三轮都只能靠猜 ✗）。
+     */
+    console.warn("[同族判据] 读文件失败（这会让提示为空）：", editedRelativePath, readErr);
     return null;
   }
-  const symbols = extractSymbols(text, 5);
+  /**
+   * ⚠️ **第 133 波的第二次修正**：原来这里取 `slice(0, 3)` ✗，而 `extractSymbols` 是**按长度倒序** ✓
+   * —— 长名字往往是实现细节（没有任何判据提到 ✗）⇒ 真机上 `tools.ts` 也返回 null ✗
+   * （它的 `applyToolResultStatus` 明明被 `dsh-d9` 提到 ✓，却排在第四、第五位开外 ✗）。
+   *
+   * 现在取 6 个 ✓，并且**第一个搜到命中的符号就收手** ✓ ——
+   * 兼顾"能找到" ✓ 与"别把时延拖长" ✓（每次 grep 都是一次 PowerShell 调用 ✗）。
+   */
+  const symbols = extractSymbols(text, 12);
+  /** 真机可见性（第 133 波）：**读了多长、抽出几个符号** —— "返回 null"就靠这两行定位 ✓。 */
+  console.warn(`[同族判据] 诊断：${editedRelativePath} 读到 ${text.length} 字符，抽出 ${symbols.length} 个符号`);
   if (symbols.length === 0) return null;
 
   const search = opts.search ?? createIpcSearcher();
   const found: string[] = [];
-  for (const sym of symbols.slice(0, 3)) {
+  const tried: string[] = [];
+  for (const sym of symbols.slice(0, 6)) {
+    tried.push(sym);
     let rows: string[] = [];
     try {
       rows = await search(sym, root);
@@ -520,18 +555,19 @@ export async function buildSymbolSiblings(
       continue;
     }
     for (const row of rows) {
-      const file = String(row).replace(/\\/g, "/").split(":")[0];
+      const file = fileFromGrepRow(String(row));
       if (!file || !isTestFile(file)) continue; // 只列判据（测试）文件 ✓
       if (file.includes(editedRelativePath)) continue;
       if (!found.includes(file)) found.push(file);
       if (found.length >= (opts.maxFiles ?? 6)) break;
     }
+    if (found.length > 0) break; // 找到了就收手 ✓（时延考虑 ✓）
     if (found.length >= (opts.maxFiles ?? 6)) break;
   }
   if (found.length === 0) return null;
 
   return [
-    `[同族判据] 你刚改的 ${editedRelativePath} 里有这些符号（${symbols.slice(0, 3).join("、")}），`,
+    `[同族判据] 你刚改的 ${editedRelativePath} 里有这些符号（${tried.join("、")}），`,
     `下列**测试/判据**文件也提到它们（只是列出事实 ✓）：`,
     ...found.map((f) => `- ${f}`),
   ].join("\n");
