@@ -74,7 +74,7 @@ const DATA_LAYER_FILES = new Set([
  * 只能变小 ✓：迁移一处就把它减一 ✓；减到 0 就把这一行删掉 ✓。
  */
 const BASELINE: Record<string, number> = {
-  "src/core/knowledge/storage.ts": 30,
+  "src/core/knowledge/storage.ts": 28,
   "src/core/session/delegation-storage.ts": 8,
   "src/core/squad/squad-storage.ts": 8,
   "src/core/storage/session.ts": 7,
@@ -265,8 +265,6 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
       `已知越界清单必须**恰好**等于现状 ✓ —— 少了就请收紧这份清单 ✓，多了说明引入了新的无界同步读 ✗：\n` +
         `  现状：\n    ${offenders.join("\n    ")}`,
     ).toEqual([
-      "src/core/knowledge/storage.ts: T_CHUNKS → 表 notebook_chunks ✗",
-      "src/core/knowledge/storage.ts: T_CHUNKS → 表 notebook_chunks ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",

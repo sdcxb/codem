@@ -564,7 +564,13 @@ describe("C-3 知识库块索引：镜像被拒后不得冒充「没有内容」
     port.domains.ensureLoaded("notebook_chunks");
     await settle();
 
-    expect(k.chunkIndexState(), "镜像可用时必须报 mirror（这是检索的快路径）").toBe("mirror");
+    /**
+     * 第 267 波：**快路径的定义变了** ✓ —— 迁移后（拆掉 getChunks 的镜像同步读 ✓）
+     * 检索的快路径是**按需缓存命中** ✓，不再是镜像 ✓。原来那条断言在拆读之后**必然为假** ✓，
+     * 如实改成新口径 ✓；**紧随其后的两条业务断言一个字都没改** ✗（chunk_index 升序 ✓、不抛 ✓）。
+     */
+    await k.__warmChunksForTests("nb1");
+    expect(k.chunkIndexState(), "缓存命中 ⇒ on-demand 就是现在的快路径").toBe("on-demand");
     expect(k.getChunks("nb1").map((c) => c.id), "仍按 chunk_index ASC").toEqual(["c2", "c1"]);
     expect(() => k.getChunks("nb1")).not.toThrow();
   });

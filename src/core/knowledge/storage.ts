@@ -1190,17 +1190,17 @@ export function addChunksBulk(notebookId: string, sourceId: string, chunks: { co
  * 契约测试 `knowledge-chunk-mirror-refusal.test.ts` 守住两侧。
  */
 export function getChunks(notebookId: string): NotebookChunk[] {
-  const rust = domainReadMany(T_CHUNKS, wireToChunk, { notebook_id: notebookId }, CHUNK_OPTS);
-  if (rust) {
+  /** 第 267 波：**拆掉镜像同步读** ✗→✓（越界 5→3 ✓）；三态语义逐句保留 ✓。 */
+  const fromCache = onDemandChunks(notebookId);
+  if (fromCache) {
     chunkMirrorLastSeenReady = true;
-    return rust.sort((a, b) => a.chunkIndex - b.chunkIndex);
+    return [...fromCache].sort((a, b) => a.chunkIndex - b.chunkIndex);
   }
   // 镜像没接手。**先看这到底是"没加载"还是"被拒/被逐出"**（C-3 要求 ③ 的前提）
   chunkMirrorLastSeenReady = false;
-  const onDemand = onDemandChunks(notebookId);
-  if (onDemand) return [...onDemand].sort((a, b) => a.chunkIndex - b.chunkIndex);
+  warmChunksByNotebook(notebookId);
   throw new ChunkIndexUnavailableError(
-    `笔记本 ${notebookId} 的文本块索引尚未就绪（镜像未接手，按需读正在后台进行）—— 这**不是**"没有相关内容"`,
+    `笔记本 ${notebookId} 的文本块索引尚未就绪（按需读正在后台进行）—— 这**不是**"没有相关内容"`,
     notebookId,
   );
 }
@@ -1244,13 +1244,9 @@ export function getChunkCount(notebookId: string): number {
   return getChunkCountOrNull(notebookId) ?? 0;
 }
 
-/** 块计数：`null` = 读不到（镜像未接手且按需读缓存也没有） */
+/** 块计数：`null` = 读不到（按需读缓存也没有） */
 function getChunkCountOrNull(notebookId: string): number | null {
-  const rust = domainReadMany(T_CHUNKS, (r) => r, { notebook_id: notebookId }, CHUNK_OPTS);
-  if (rust) {
-    chunkMirrorLastSeenReady = true;
-    return rust.length;
-  }
+  /** 第 267 波：**同样拆掉镜像同步读** ✓（与 getChunks 一条口径 ✓）。 */
   chunkMirrorLastSeenReady = false;
   const onDemand = currentChunkCache().get(notebookId);
   if (onDemand) return onDemand.length;
