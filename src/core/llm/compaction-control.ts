@@ -153,7 +153,7 @@ export interface CrashRepairResult {
     toolCallId: string;
     toolName: string;
     status: ToolCrashStatus;
-    action: "synthesized_result" | "marked_as_unknown" | "no_action";
+    action: "synthesized_result" | "marked_as_unknown" | "no_action" | "synthesized_call";
   }>;
 }
 
@@ -229,6 +229,58 @@ export function repairCrashedSession(sessionId: string): CrashRepairResult {
       toolName: payload.tool,
       status,
       action,
+    });
+  }
+
+  /**
+   * **第 170 波：反向的缺口 —— 孤儿 `tool_result`** ✓（用户报的那处存量结构异常 ✗）。
+   *
+   * ## 真机取证
+   *
+   * 用户每次维护都被报一次：
+   * `1791003170776-s2dseeyhe: tool_result at seq 13835 references unknown toolCallId: call_00_…` ✗
+   *
+   * 只读摊开 `seq 13833..13836` ✓：同一次调用配了**两条** `tool_result` ✗，
+   * 第二条用的是 **provider 的 id** ✓，而事件库里**没有**那条 `tool_call` ✗ ——
+   * 那是"id 对齐修复（第 71 轮）之前"的历史遗留 ✓（所以它"存量、不会自己消失"✓）。
+   *
+   * ## 为什么这里要**补 `tool_call`** 而不是删结果 ✗
+   *
+   * 上面的第一遍只处理"有调用没结果"✗（补结果 ✓），**从来不处理"有结果没调用"** ✗
+   * ⇒ 这种孤儿一旦产生就**永远留在库里** ✓、永远被自检报出来 ✗（用户看到的正是这个 ✓）。
+   *
+   * 两个方向都能让结构自洽 ✓（补调用 ✓ / 删结果 ✓），选**补调用**的理由：
+   * 结果是**真实发生过**的那次工具执行的记录 ✓（它的正文还在 ✓），
+   * 删掉就等于**销毁事实** ✗；补一条调用只是把"这条结果属于谁"补全 ✓，
+   * 而且**明确标记** `recovered` ✓，事后一眼能看出它是补的 ✓（不冒充原始记录 ✓）。
+   *
+   * ⚠️ **幂等**：已有配对的不动 ✓ —— 所以这条修复跑第二次不会再补 ✓
+   * （它每次都跑，见 `agentic-loop.ts` 的 `repairCrashedSession(sessionId)` ✓）。
+   */
+  const orphanResults = new Map<string, ToolResultPayload>();
+  for (const evt of events) {
+    if (evt.type !== "tool_result") continue;
+    const payload = evt.payload as unknown as ToolResultPayload;
+    const id = String(payload.toolCallId ?? "");
+    if (!id) continue;
+    if (!toolCalls.has(id)) orphanResults.set(id, payload);
+  }
+  for (const [toolCallId, payload] of orphanResults) {
+    log.append(sessionId, "tool_call", {
+      toolCallId,
+      messageId: payload.messageId,
+      tool: "unknown",
+      args: {},
+      status: "error",
+      /** 标记它是**补**出来的 ✓（不冒充原始记录 ✓）。 */
+      recovered: true,
+      recoveredReason: "orphan tool_result (structure repair)",
+    } as unknown as Record<string, unknown>);
+    repairs.push({
+      toolCallId,
+      toolName: "unknown",
+      status: "TOOL_OUTCOME_UNKNOWN",
+      action: "synthesized_call",
     });
   }
 

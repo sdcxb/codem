@@ -53,14 +53,21 @@ vi.mock("../core/storage/event-log", () => ({
 
 const { repairCrashedSession } = await import("../core/llm/compaction-control");
 
-/** 判定：每个 tool_result 都必须能回指到一条 tool_call ✓ */
+/**
+ * 判定：每个 tool_result 都必须能回指到一条 tool_call ✓。
+ *
+ * ⚠️ **必须与检查器同口径**（第 170 波 ✓）：`event-projection.ts::validateReplay` 现在的口径是
+ * "**整个日志里有没有这个 id**"✓（顺序不敏感 ✓）—— 因为修复补出来的调用只能**追加**在结果之后 ✗，
+ * 顺序敏感的口径下"补了也照样报"✓（判据 ORPH-2 当场抓到过这件事 ✗）。
+ */
 function orphans(events: Array<{ type: string; payload: Record<string, unknown> }>): string[] {
-  const calls = new Set<string>();
+  const allCalls = new Set(
+    events.filter((e) => e.type === "tool_call").map((e) => String(e.payload?.toolCallId ?? "")),
+  );
   const bad: string[] = [];
   for (const e of events) {
     const id = String(e.payload?.toolCallId ?? "");
-    if (e.type === "tool_call") calls.add(id);
-    else if (e.type === "tool_result" && id && !calls.has(id)) bad.push(id);
+    if (e.type === "tool_result" && id && !allCalls.has(id)) bad.push(id);
   }
   return bad;
 }
@@ -88,6 +95,38 @@ describe("第 164 波：崩溃修复不许产出孤儿 tool_result", () => {
     expect(
       events.filter((e) => e.type === "tool_result" && String(e.payload?.toolCallId) === "call-A").length,
       "已经有结果的调用不许被再补一条（否则就是重复结果 ✗）",
+    ).toBe(1);
+  });
+
+  it("ORPH-2: 反方向的缺口（有结果没调用）也要被修好，而且**幂等**（第 170 波 ✓）", () => {
+    /**
+     * 用户每次维护都被报一次的那处存量 ✗：
+     * `tool_result at seq 13835 references unknown toolCallId: call_00_…` ✓
+     * —— 它是"id 对齐修复之前"的历史遗留 ✓（所以"存量、不会自己消失"✓）。
+     *
+     * 这里钉住修复的两条性质 ✓：
+     * ① 补一条**被标记**的 `tool_call`（`recovered: true` ✓，不冒充原始记录 ✓）；
+     * ② **幂等** —— 它每次 `run()` 都会跑 ✓，跑第二遍不许再补一遍 ✓。
+     */
+    log = makeLog([
+      { type: "tool_result", payload: { toolCallId: "call-ORPHAN", messageId: "m9", status: "completed", result: "旧结果" } },
+    ]);
+
+    const first = repairCrashedSession("s2");
+    expect(first.repairedCount, "应当补一条调用").toBe(1);
+    expect(first.repairs[0].action).toBe("synthesized_call");
+    let events = log.__events();
+    expect(orphans(events), "补完之后不许再有孤儿").toEqual([]);
+    const recovered = events.filter((e) => e.type === "tool_call" && e.payload?.recovered === true);
+    expect(recovered.length, "补出来的调用必须**明确标记** recovered ✓（不冒充原始记录 ✗）").toBe(1);
+
+    /** ② 幂等：再跑一遍不许再补 ✓ */
+    const second = repairCrashedSession("s2");
+    events = log.__events();
+    expect(second.repairedCount, "第二遍不该再补（已有配对 ✓）").toBe(0);
+    expect(
+      events.filter((e) => e.type === "tool_call" && e.payload?.recovered === true).length,
+      "补出来的调用总数必须仍是 1 ✓",
     ).toBe(1);
   });
 });

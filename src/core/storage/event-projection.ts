@@ -523,9 +523,35 @@ export class EventProjection {
         case "tool_result": {
           const payload = event.payload as unknown as ToolResultPayload;
           if (!pendingToolCalls.has(payload.toolCallId)) {
-            errors.push(
-              `tool_result at seq ${event.seq} references unknown toolCallId: ${payload.toolCallId}`,
+            /**
+             * ## 第 170 波：**先看"整个日志里有没有这条调用"，再决定报不报** ✗→✓
+             *
+             * 原来的口径是"**到这一刻为止**没出现过 ⇒ 孤儿"✗（顺序敏感 ✓），
+             * 而报错文案写的却是"**references unknown toolCallId**"✓ ——
+             * 也就是"日志里没有这条调用"✓。两者在**被修复过的日志**上会分叉 ✗：
+             *
+             * 用户报的那处存量 ✓（`seq 13835` 的孤儿结果 ✗）现在由
+             * `repairCrashedSession` 补一条**标记 `recovered`** 的 `tool_call` ✓ ——
+             * 而事件只能**追加** ✓ ⇒ 补出来的调用必然排在结果**之后** ✗
+             * ⇒ 顺序敏感的口径下，**补了也照样报** ✓（真机实测正是如此 ✓，判据 ORPH-2 当场抓到 ✗）。
+             *
+             * 所以这里补一次**全日志扫描** ✓：只要这个 id 在日志里**存在过**（任何位置 ✓）
+             * 就不算"unknown" ✓。代价只在**已经发现异常**时付 ✓（罕见路径 ✓）。
+             *
+             * 取舍说清 ✓：这样就不再检查"结果排在调用之前"这种**顺序**异常 ✗ ——
+             * 而正常写入路径（`tool-pipeline.ts` ✓）是在**同一处**先写调用、再写结果 ✓，
+             * 唯一会破坏顺序的就是这条修复 ✓ ⇒ 为了"修复能让自检真正恢复干净"✓，这个取舍是对的 ✓。
+             */
+            const known = events.some(
+              (e) =>
+                e.type === "tool_call" &&
+                String((e.payload as unknown as ToolCallPayload)?.toolCallId ?? "") === String(payload.toolCallId ?? ""),
             );
+            if (!known) {
+              errors.push(
+                `tool_result at seq ${event.seq} references unknown toolCallId: ${payload.toolCallId}`,
+              );
+            }
           }
           // Remove from pending (a call can have only one result)
           pendingToolCalls.delete(payload.toolCallId);
