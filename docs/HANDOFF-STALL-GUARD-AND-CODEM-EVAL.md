@@ -2204,7 +2204,43 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.86 迁移前的核对：gate 的越界清单与方案锚点**逐条一致** ✓（第 193 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.87 `notebook_chunks` 迁移：两处越界点的**精确锚点**（第 194 波）
+
+## 锚点（只读定位 ✓）
+
+```
+knowledge/storage.ts:52    const T_CHUNKS = "notebook_chunks";
+knowledge/storage.ts:260   domainPort(T_CHUNKS, CHUNK_OPTS) !== null            // 就绪探测 ✓ 不算越界
+knowledge/storage.ts:332   { table: T_CHUNKS, where, limit: 1000, offset }      // **已有分页读法** ✓ ← 端口方法照它写 ✓
+knowledge/storage.ts:1037/1064  写（domainWrite ✓ 不在门的范围 ✓）
+knowledge/storage.ts:1095  domainReadMany(T_CHUNKS, wireToChunk, { notebook_id }, CHUNK_OPTS)  ✗ **越界 1**
+knowledge/storage.ts:1151  domainReadMany(T_CHUNKS, (r) => r, { notebook_id }, CHUNK_OPTS)     ✗ **越界 2**
+```
+
+⇒ 两处都是"**按 notebook_id 读全部块**"✗ —— 正是该改成"按需查询 + 有界投影"的形态 ✓；
+而且 **332 行已经示范了分页读法** ✓ ⇒ 端口方法可以照抄它的形状 ✓（不必新发明 ✓）。
+
+## 端口方法该长什么样（照现有三种查询对齐 ✓）
+
+```ts
+async queryNotebookChunks(opts: { notebookId: string; limit?: number; offset?: number }):
+  Promise<Array<{ id; notebook_id; source_id; chunk_index; text; created_at }>>   // **不含 embedding** ✗
+```
+
+与 `queryMessages` / `queryEvents` / `queryTelemetry` 同一形状 ✓：一次拉一页 ✓、查完即弃 ✓、
+**不驻留** ✓；并且**明确不返回 embedding 列** ✓（那一列 8KB/行 ✓，进 JS 只会白占内存 ✗）。
+
+## 判据（NC-1/2/3 ✓，下一步实现时一起写 ✓）
+
+- **NC-1**：返回行里**没有** embedding 字段 ✓（拿一行断言 `"embedding" in row === false` ✓）；
+- **NC-2 反向对照**：`text` 等正文/定位字段**必须**照常可得 ✓（只砍 embedding ✗）；
+- **NC-3**：分页取全（`has_more` 循环 ✓，与既有查询判据同构 ✓）；
+- **变异**：把 embedding 放回投影 ⇒ **NC-1 红** ✓。
+
+## 跑批状态 ✓
+
+仍是 **2/24** ✓（墙钟每次只前进几分钟 ✓）；本轮**未装任何东西** ✓。
+### 13.86 迁移前的核对：gate 的越界清单与方案锚点**逐条一致** ✓（第 193 波）
 
 ## 核对结果（只读 ✓）
 
