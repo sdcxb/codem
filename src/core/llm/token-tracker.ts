@@ -71,6 +71,51 @@ export function estimateTokens(text: string): number {
  * 估算工具定义的 token 开销。
  * 不是固定 100 tokens/tool，而是按 JSON schema 大小估算。
  */
+/**
+ * **单条消息的 token 估算（带记忆化 ✓，第 183 波 ✓）** —— 目标②的修复点 ✓。
+ *
+ * 键 = `id + 内容长度` ✓（见 `estimateMessagesTokens` 里的长注释 ✓：长度变了就重算 ✓）。
+ * 有界：超过 `MESSAGE_TOKEN_CACHE_MAX` 条就整表清空 ✓（这里只是**估算** ✓，
+ * 清了只是重算一遍 ✓，不会算错 ✓ —— 比做 LRU 简单且不引入"悄悄错"的风险 ✓）。
+ *
+ * 导出的统计只为判据服务 ✓（`__messageTokenCacheStats` ✓）：判据**不靠计时** ✗
+ * （计时在 CI 上抖 ✓），而是断言"第二遍**不再重复计算**" ✓ —— 确定性的 ✓、变异可证 ✓。
+ */
+const MESSAGE_TOKEN_CACHE_MAX = 4096;
+const messageTokenCache = new Map<string, number>();
+let messageTokenCacheHits = 0;
+let messageTokenCacheMisses = 0;
+
+/** 仅判据使用 ✓：读缓存计数（并清零 ✓）。 */
+export function __messageTokenCacheStats(): { hits: number; misses: number; size: number } {
+  const out = { hits: messageTokenCacheHits, misses: messageTokenCacheMisses, size: messageTokenCache.size };
+  messageTokenCacheHits = 0;
+  messageTokenCacheMisses = 0;
+  return out;
+}
+
+/** 仅判据使用 ✓：清空缓存（避免用例之间互相影响 ✓）。 */
+export function __resetMessageTokenCache(): void {
+  messageTokenCache.clear();
+  messageTokenCacheHits = 0;
+  messageTokenCacheMisses = 0;
+}
+
+function messageTokens(m: { id?: string; content?: unknown }): number {
+  const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
+  const key = `${String(m.id ?? "?")}#${content.length}`;
+  const hit = messageTokenCache.get(key);
+  if (hit !== undefined) {
+    messageTokenCacheHits++;
+    return hit;
+  }
+  messageTokenCacheMisses++;
+  const value = estimateTokens(content);
+  if (messageTokenCache.size >= MESSAGE_TOKEN_CACHE_MAX) messageTokenCache.clear();
+  messageTokenCache.set(key, value);
+  return value;
+}
+
 export function estimateToolDefinitionTokens(tools: unknown[]): number {
   if (!tools || tools.length === 0) return 0;
   let totalChars = 0;
@@ -224,13 +269,28 @@ export class TokenTracker {
    * 再叠加当前消息的实际估算——避免忽略消息增长，也防止低估。
    */
   private estimateMessagesTokens(messages: any[], baseline: number): number {
-    // 纯估算：完整扫描当前消息列表
+    /**
+     * ## 第 183 波：**按消息记忆化** ✗→✓（目标②的实锤修复 ✓）
+     *
+     * 为什么它值得改 ✗：真机分段计时（1.16.275 ✓）显示每轮 `prep=`（`buildMessages` 返回
+     * → 发请求 ✓）稳定在 **1.5–2.4s** ✗，而这条链正是 `prep` 窗口里的头号嫌疑 ✓：
+     *
+     * ```
+     * estimateContextPressure(apiMessages)            // 每轮一次
+     *   ⇒ tracker.estimatePressure(messages, tools)
+     *      ⇒ estimateMessagesTokens(messages, …)      // 对**全部**消息逐条估算 ✗
+     * ```
+     *
+     * 一轮 30–49 次迭代 ⇒ 每轮把**同样那些**历史消息重算一遍 ✗ ⇒ 合计 60–90s ✗
+     * —— 这是整轮里**唯一**由我们自己的代码造成的大头 ✓。
+     *
+     * 口径 ✓：键 = **消息 id + 内容长度** ✓。长度变了就重算 ✓（流式增长 ✓、
+     * 工具结果回填 ✓ 都会改长度 ✓）；同长度不同内容这种极端情形按"旧值"算 ✓ ——
+     * 代价只是**压力估算**略有偏差 ✓（它本来就只是估算 ✓），换来的是**不随历史线性增长** ✓。
+     */
     let rawEstimate = 0;
     for (const m of messages) {
-      const content = typeof m.content === "string"
-        ? m.content
-        : JSON.stringify(m.content || "");
-      rawEstimate += estimateTokens(content);
+      rawEstimate += messageTokens(m as { id?: string; content?: unknown });
       // 每条消息的角色标记开销
       rawEstimate += 4;
     }

@@ -1042,6 +1042,7 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
+| v1.16.276 | 2026-10-05 | **修目标②的根因: 消息 token 估算按消息记忆化。** 275 的 tail/prep 切分(tail 8-14ms / prep 1.5-2.4s)把 2s 定位到 buildMessages 返回之后，逐行排查锁定 estimateContextPressure ⇒ estimateMessagesTokens 对全部消息逐条估算(30-49 轮 ⇒ 同样的历史重算 30-49 遍，合计 60-90s)。新增按'消息 id + 内容长度'的记忆化(有界 4096，超限整表清空 —— 估算而已，清了只重算不会算错)。判据 MTC-1/2/3 **不靠计时**(CI 会抖)，断言'第二遍不再重复计算'+反向对照(内容变长必须重算)+数值不变；变异去掉缓存读取 ⇒ MTC-1 红。 |
 | v1.16.275 | 2026-10-05 | **把 ctx 一刀切开（tail/prep）。** 13.74 已排除已量的四步(2ms) ⇒ 2s 在日志点之后；记下 buildMessages 返回时刻，把 ctx 切成 tail(重建内部日志点→返回) 与 prep(返回→发请求)，二者之和恒等于 ctx 可自校 ⇒ 一次抓取定案在哪一侧。纯诊断 debug-only。 |
 | v1.16.274 | 2026-10-05 | **上下文重建内部再细分（prune/select/fold 三处）。** 13.73 已排除读库(0-1ms)，1.8s 在内存遍历里；给 pruneStaleToolResults / selectMessagesByPriority / foldStats 各加一个 phase()，随 buildMessages 那行一起打出来 ⇒ 一次抓取定案。纯诊断 debug-only；tsc 干净、全量 7089 绿。 |
 | v1.16.273 | 2026-10-05 | **把上下文重建再拆一层量。** §13.72 已证明每轮 ~1.8s 的非模型开销几乎全是重建，但重建里哪一步是黑盒；在 buildMessages 里给"读全量消息/过滤隐藏"等步骤加分段计时并随 buildMessages 那行输出，配合 llm timing 的 ctx= 即可定位余下各步。纯诊断 debug-only。 |
