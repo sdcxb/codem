@@ -2098,6 +2098,15 @@ const DOMAIN_COLUMN_PROJECTION: Record<string, string[]> = {
   ],
 };
 
+/**
+ * 域镜像的**硬天花板**（第 136 波）：显式覆盖可以把上限调大 ✓，但任何表都不许超过它 ✓。
+ *
+ * 取值理由：默认 `maxRows` 是 5000 ✓；真机上需要放宽的是 `messages`（一万余行 ✓）
+ * 这类「行小、但读得频繁」的主线表 ✓ —— 200k 行对小行表约合几十到一百多 MB ✓，
+ * 是「允许放宽」与「不许把渲染进程压死」之间的分界 ✓。
+ */
+const DOMAIN_MIRROR_HARD_MAX_ROWS = 200_000;
+
 export class RustDomainMirror {
 
   private byTable = new Map<string, Array<Record<string, unknown>>>();
@@ -2157,6 +2166,39 @@ export class RustDomainMirror {
    * 才能既修掉"首触必丢"、又不把"永远不成的写"排进一个只涨不消的队列。
    */
   isLoading(table: string): boolean {
+    /**
+     * **第 136 波（修 B）：被拒过的表不算"正在加载"** ✓ —— 哪怕退避重试正在跑 ✗。
+     *
+     * ## 真机故障链（用户报的第 2 条）
+     *
+     * `refused` 的表在**退避窗口到期**时会被放出来重新加载 ✓（A-2 的本意是
+     * "用户清理过之后还能恢复" ✓）⇒ 那一刻 `loading` 里有它 ⇒ `isLoading` 返回 **true** ✗
+     * ⇒ 写路径判成"正在加载" ⇒ **入队**，还向调用方**谎报"已接手"** ✗
+     * ⇒ 重试**再次发现超限** ✗ ⇒ `replayDeferred` 永远不会跑 ✗
+     * ⇒ 条目滞留到 `DEFER_STALE_MS`(15000) ⇒ **出队并丢弃** ✗
+     * （用户看到的就是「表 telemetry_events 在 15000 ms 内未就绪，本次写放弃」✗）。
+     *
+     * 现在：**只要这张表处于"被拒"状态，就不接队列** ✓ ⇒ 调用方拿到 `false` ⇒
+     * 走它原本的回退路径（直连引擎写 ✓）⇒ **既不白等 15 秒，也不丢数据** ✓。
+     * 这同时是"时延"目标的一笔真实收益 ✓。
+     */
+    /**
+     * ⚠️ **判据 `refused.has` 是不够的** ✗ —— 这一版差点就成死代码 ✗。
+     *
+     * `ensureLoaded()` 在退避窗口到期时**先把表从 `refused` 里删掉** ✓
+     * （`refused.delete(table)` ✓，见上面那段），然后才开始重试 ✗ ⇒
+     * 重试进行中的那一刻 `refused.has(table)` 已经是 **false** ✗ ⇒
+     * 只看 `refused` 的话，写入队的老问题原样存在 ✗。
+     *
+     * 真正的信号是 **"这张表被拒过"**（`refusedMisses` 里有记录 ✓）：
+     * 只要它被拒过，那次重试**大概率还会超限** ✗（表只会越来越长 ✗）⇒
+     * 让写入队＝15 秒后丢弃 ✗。所以被拒过的表一律不接队列 ✓，
+     * 调用方拿到 `false` 就走它原本的回退路径（直连引擎写 ✓）⇒ 不丢数据 ✓、不白等 ✓。
+     *
+     * 重试**成功**时 `loadTable` 会清掉这个记录 ✓（见那里的 `refusedMisses.delete`）⇒
+     * 恢复正常之后写又能用镜像队列 ✓。
+     */
+    if (this.refused.has(table) || this.refusedMisses.has(table)) return false;
     return this.loading.has(table);
   }
 
@@ -2255,9 +2297,21 @@ export class RustDomainMirror {
   }
 
   private async loadTable(table: string, maxRowsOverride?: number): Promise<void> {
-    // 每张表可以有更小的上限（例如 notebook_chunks：每行带 Base64 embedding，
-    // 5000 行就是几十 MB 的渲染进程内存）。取更严格的那个。
-    const cap = maxRowsOverride === undefined ? this.maxRows : Math.min(this.maxRows, maxRowsOverride);
+    /**
+     * 每张表可以有**自己的**上限（例如 notebook_chunks：每行带 Base64 embedding，
+     * 5000 行就是几十 MB 的渲染进程内存）。
+     *
+     * ⚠️ **第 136 波改了语义**：原来这里是 `Math.min(this.maxRows, maxRowsOverride)` ✗
+     * —— 覆盖**只能调小、不能调大** ✗。于是"给主线表放宽"这件事从代码上就做不到 ✗：
+     * 真机上 `messages` 涨到 **10052 行**（默认上限 5000 ✗）⇒ 整域被拒 ⇒
+     * 「本次该域**读给空结果**」✗（agent 读不到自己的消息历史 ✗，这也是采样里
+     * "diff=0、只跑几次调用"那种异常的疑似来源 ✓）。
+     *
+     * 现在：**覆盖可以调大 ✓，但受 `DOMAIN_MIRROR_HARD_MAX_ROWS` 硬天花板约束** ✓ ——
+     * 内存护栏没有被拆掉 ✗（默认路径的行为一字未变 ✓）。
+     */
+    const requested = maxRowsOverride === undefined ? this.maxRows : Math.max(this.maxRows, maxRowsOverride);
+    const cap = Math.min(requested, DOMAIN_MIRROR_HARD_MAX_ROWS);
     const rows: Array<Record<string, unknown>> = [];
     let offset = 0;
     for (let round = 0; round < 40; round++) {

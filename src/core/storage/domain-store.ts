@@ -926,18 +926,29 @@ export function domainPortRegistered(): boolean {
  * 正确处置：端口已注册时，**等镜像就绪再写**（一次性回调，不轮询）；
  * 端口未注册才走旧库（第 19 轮：`kind` 已是常量，判据只剩"端口在不在"）。
  */
-export function domainEnsureLoaded(table: string, onReady: () => void): void {
+/**
+ * @param maxRowsOverride 第 136 波：允许**把某些表的上限调大** ✓（原来覆盖只能调小 ✗）。
+ *   真机依据：`messages` 涨到 10052 行 ✗ ⇒ 默认上限 5000 把它整域打在"拒绝镜像"上 ✗
+ *   ⇒ 「本次该域读给空结果」✗（agent 读不到自己的消息历史 ✗）。
+ *   现在由调用方按表给出（见 `bootstrap.ts` 的 `DOMAIN_MIRROR_LIMITS` ✓），
+ *   端口侧仍受硬天花板约束 ✓。
+ */
+export function domainEnsureLoaded(table: string, onReady: () => void, maxRowsOverride?: number): void {
   if (!hasStoragePort()) return;
   const candidate = getStoragePort() as unknown as DomainMirrorPort;
-  candidate.domains?.ensureLoaded?.(table, () => {
-    // 镜像就绪 → 先把加载窗口里排下的写按序重放（A-1），再执行调用方自己的回调。
-    // 顺序很关键：调用方回调里常常是"就绪后重做一次写"，让它排在重放之后，
-    // 否则同一条行的两次写会以相反的顺序落库。
-    if (candidate.domains.isReady(table)) {
-      replayDeferred(table);
-      onReady();
-    }
-  });
+  candidate.domains?.ensureLoaded?.(
+    table,
+    () => {
+      // 镜像就绪 → 先把加载窗口里排下的写按序重放（A-1），再执行调用方自己的回调。
+      // 顺序很关键：调用方回调里常常是"就绪后重做一次写"，让它排在重放之后，
+      // 否则同一条行的两次写会以相反的顺序落库。
+      if (candidate.domains.isReady(table)) {
+        replayDeferred(table);
+        onReady();
+      }
+    },
+    maxRowsOverride,
+  );
 }
 
 /** 读一行（未路由时返回 null，调用方回退旧路径） */

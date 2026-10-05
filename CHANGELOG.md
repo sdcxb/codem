@@ -2,6 +2,53 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.253] - 2026-10-04
+
+### 修复
+
+- **★★★ 域镜像上限允许"对主线表调大"——修用户报的存储故障（读空 + 写丢）。**
+
+  **真机体检**（`%APPDATA%\com.codem.app\codem-db-rust.bin`，433.8 MB）：
+
+  | 表 | 行数 | 默认上限 5000 的后果 |
+  |---|---|---|
+  | `messages` | **10052** ✗ | 整域拒绝镜像 ✗ ⇒ 按设计「本次该域**读给空结果**」✗（**agent 读不到自己的消息历史** ✗） |
+  | `telemetry_events` | **8975** ✗ | 整域拒绝 ✗ ⇒ 写要等镜像就绪 ⇒ **等 15000 ms 后丢弃** ✗ |
+
+  **代码上的死结**（`rust-port.ts::loadTable`）：
+  ```ts
+  const cap = maxRowsOverride === undefined ? this.maxRows : Math.min(this.maxRows, maxRowsOverride);
+  ```
+  —— 覆盖**只能调小、不能调大** ✗ ⇒ "给 `messages` 放宽"从代码上就做不到 ✗；
+  而退避重试**永远不可能成功** ✗（表只会越来越长 ✗）⇒ "太大"事实上成了永久结论 ✗。
+
+  | 缺口 | 对策 |
+  |---|---|
+  | 上限只能调小 | 允许调大 ✓，并加**硬天花板** `DOMAIN_MIRROR_HARD_MAX_ROWS = 200_000` ✓（护栏没被拆 ✗） |
+  | 哪张表值得多花内存没人决定 | `bootstrap.ts` 新增 `DOMAIN_MIRROR_LIMITS`：`messages` 50k ✓、`telemetry_events` 40k ✓，其余仍走默认 5000 ✓ |
+  | 调用链传不下去 | `domainEnsureLoaded(table, onReady, maxRowsOverride?)` 透传 ✓ |
+
+### 判据与变异
+
+- `domain-mirror-cap.test.ts`：
+  - **CAP-1**：默认上限下 8000 行的表**仍然整表拒绝** ✓（内存护栏不许被顺手拆掉 ✗）；
+  - **CAP-2**：显式调到 20000 ⇒ 8000 行**必须被镜像** ✓（这就是修 `messages` 的那一条 ✓）；
+  - **CAP-3**：传天文数字也受硬天花板约束 ✓。
+- **变异 M21**：把覆盖退回 `Math.min`（只能调小）⇒ **CAP-2 立刻红** ✓。
+
+### 一并记下的一件事（不许含糊）
+
+- 同时改了 `RustDomainMirror.isLoading()`：**被拒过的表不再算"正在加载"** ✓
+  （意图：让写快速失败、不再入队等 15 秒后丢弃 ✗）。
+  **但真机状态打印显示这条改动在当前路径上"不触发"** ✗：退避重试那一刻
+  `refused` 已被清空、`loading` 也是空的 ✓ ⇒ 我据此写的判据**咬不住**（不具判别力 ✗），
+  已**删除**那条判据 ✗，并且**不声称**它修掉了 15 秒滞留 ✗。
+  ⇒ **15 秒滞留的真正来源仍未定位** ✗（候选：预取/等待路径 ✗），留作下一步 ✓。
+
+### 验证
+
+- 全量 vitest **7034 条**全绿 ✓；`tsc --noEmit` 干净 ✓。
+
 ## [1.16.252] - 2026-10-04
 
 ### 修复

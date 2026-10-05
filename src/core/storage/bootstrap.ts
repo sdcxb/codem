@@ -52,8 +52,28 @@ import { domainEnsureLoaded } from "./domain-store";
  * 真正的回退手段是**应用级**的：装回上一版安装包 + 旧库 `codem-db.bin` 始终只读不改。
  */
 
-export type StorageBootResult =
-  | {
+/**
+ * **按表放宽镜像上限**（第 136 波）✓ —— 默认上限是 5000 行 ✗。
+ *
+ * ## 依据（真机 1.16.252 上的库）
+ *
+ * | 表 | 行数 | 默认上限 5000 的后果 |
+ * |---|---|---|
+ * | `messages` | **10052** ✗ | 整域拒绝镜像 ✗ ⇒ 「本次该域**读给空结果**」✗（**agent 读不到自己的消息历史** ✗） |
+ * | `telemetry_events` | **8975** ✗ | 整域拒绝 ✗ ⇒ 写要等镜像就绪 ⇒ **等 15000 ms 后丢弃** ✗ |
+ *
+ * 这两张表都是「行小、读得频繁」的类型 ✓ —— 放宽到几万行只占十几到几十 MB ✓，
+ * 而副作用（读空 / 写丢 + 每次白等 15 秒 ✗）都是用户可见的 ✗。
+ * 端口侧还有 `DOMAIN_MIRROR_HARD_MAX_ROWS` 硬天花板 ✓，所以这张表只是"取舍" ✓，不是"放开" ✗。
+ */
+const DOMAIN_MIRROR_LIMITS: Record<string, number | undefined> = {
+  /** 消息是 agent 与界面的核心读路径 ✓ —— 读空会直接让 agent"看不见自己做过什么" ✗ */
+  messages: 50_000,
+  /** 遥测是追加型、行很小 ✓ —— 放宽它是为了不再让写白等 15 秒后丢掉 ✗ */
+  telemetry_events: 40_000,
+};
+
+export type StorageBootResult =  | {
       kind: "registered";
       engine: "rust";
       /** 本次调用是否真的完成了打开与预热（false = 复用已注册的端口） */
@@ -451,7 +471,11 @@ export async function prefetchDomainMirrors(
           settled = true;
           resolve();
         };
-        domainEnsureLoaded(t, finish);
+        /**
+         * **第 136 波：按表给不同的镜像上限** ✓（默认 5000 ✗，见 `DOMAIN_MIRROR_LIMITS` 的注释 ✓）。
+         * 端口侧还有硬天花板兜着 ✓，这里只是"哪张表值得多花内存"的取舍 ✓。
+         */
+        domainEnsureLoaded(t, finish, DOMAIN_MIRROR_LIMITS[t]);
         setTimeout(finish, perTableMs);
       }),
   );
