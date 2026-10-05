@@ -38,6 +38,19 @@ export function shouldNudgeZeroOutput(args: {
   modifiedAnything: boolean;
   /** 本会话跑过的判据 → 结果（`testFileStatus` ✓）；**空 = 一次都没跑过** ✓ */
   testStatuses: Iterable<"red" | "green">;
+  /**
+   * **本会话读过/搜过仓库源码**（第 163 波补 ✓）—— 只用于"连测试都没跑"这一支 ✓。
+   *
+   * 为什么必须有它 ✗：第一版把"没跑测试"直接当成触发条件 ✗，
+   * 结果**把 12 条驱动 AgenticLoop 的既有判据一起打红** ✓
+   * （`stall-guard-loop-behavior` / `guidance-carryover` / `output-truncation-behavior` /
+   * `o28-assistant-event-wiring` / `cache-loop-accumulation` … ✓）——
+   * 那些夹具**既不跑测试也不改文件** ✓，于是我的守卫凭空多要一轮 ⇒ 脚本耗尽 ⇒ 红 ✗。
+   *
+   * 加上这条之后 ✓：只有"**确实在读源码干活**（读过 `src/` ✓）却没改、也没跑测试就收尾"才提醒 ✓
+   * —— 而真机里的"早早收工"轮次**都在读源码** ✓（不读源码根本无从下手 ✓）。
+   */
+  lookedAtSource: boolean;
   /** 这条提醒每会话只发一次 ✓ */
   alreadyNudged: boolean;
 }): boolean {
@@ -47,18 +60,13 @@ export function shouldNudgeZeroOutput(args: {
   /** ① 判据红着 ⇒ "活没干完"的硬证据 ✓ */
   if (statuses.some((s) => s === "red")) return true;
   /**
-   * ② **一次测试都没跑过** ✓（第 163 波补上）。
+   * ② **读过源码 + 一次测试都没跑** ✓（第 163 波补上，并按上面的理由收紧 ✓）。
    *
-   * 为什么必须补 ✗：真机里"早早收工"的轮次**常常连测试都没跑** ✓ ——
-   * 实测迭代数：通过轮 **47 / 61 / 66** ✓，失败轮 **3 / 17 / 21 / 23 / 24 / 26 / 37** ✗。
-   * 其中 v31 run-4（23 次、失败 ✗、`loopStops=[]` ✗）就是"没改、也没跑测试"✓
-   * ⇒ 原来那条"必须有一条红的"**让它完全隐身** ✗。
-   *
-   * 误报代价可控 ✓：只读型任务确实可能"不改也不跑测试"✓，
-   * 但提醒的文案**明确邀请它说明理由** ✓（"确实不用改就明说读了什么、为什么现状是对的"✓），
-   * 而且**每会话只发一次** ✓ —— 用一轮换"不让它安静地过去" ✓，值得 ✓。
+   * 真机实测的迭代数：通过轮 **47 / 61 / 66** ✓，失败轮 **3 / 17 / 21 / 23 / 24 / 26 / 37** ✗
+   * ⇒ "早早收工"是这套指标的主要失败形态 ✓，而它们**常常连测试都没跑** ✓
+   * （v31 run-4：23 次、失败 ✗、`loopStops=[]` ✗）。
    */
-  if (statuses.length === 0) return true;
-  /** ③ 全绿 ⇒ 只跑测试看结论、且结论是通过的 ✓ ⇒ **不打扰** ✓（防误伤的关键 ✓） */
+  if (statuses.length === 0 && args.lookedAtSource) return true;
+  /** ③ 其余（全绿 / 没读过源码）⇒ **不打扰** ✓（防误伤 ✓） */
   return false;
 }

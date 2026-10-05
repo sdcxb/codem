@@ -12,8 +12,16 @@
  * `requests.length` 就是"这一轮被要了几次"✓（判据靠它判断"有没有多要一轮"✓）。
  */
 export class ScriptedProvider {
-  id = "scripted-provider";
-  name = "Scripted Mock";
+  /**
+   * ⚠️ **默认值必须与抽取前逐字一致** ✗→✓ ——
+   * 第一版我改成了通用的 `scripted-provider` ✗，结果 **12 条判据当场变红** ✓：
+   * `dsh-d5-prefix-cache-stability` / `dsh-d1-llm-failure-not-completed` 这些
+   * **逐字节比较系统提示** ✓（提示里嵌着 provider 的 `id`/`name` ✓）⇒ 改默认值就破坏了它们 ✓。
+   * 抽取共享夹具时，**默认值也是契约的一部分** ✓。
+   * （需要别的身份就在用例里改字段 ✓，不要动默认值 ✗。）
+   */
+  id = "red-test-provider";
+  name = "Red Test Mock";
   config: any = { apiKey: "sk-test" };
   requests: any[] = [];
   private queue: any[][] = [];

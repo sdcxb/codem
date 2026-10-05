@@ -166,6 +166,13 @@ describe("停滞守卫在真实循环里的行为（第 93 波治本）", () => 
     provider.setScript([
       ...Array.from({ length: READS }, (_, i) => readIteration(`c${i}`, `${CWD}\\src\\f${i}.ts`)),
       finalIteration("读完了，开始改。"),
+      /**
+       * ⚠️ **第 163 波：收尾多了一轮** ✓ —— 新增的「零产出收工」守卫会在这里拦一次 ✓：
+       * 这一路**读了 `src/`** ✓、**什么都没改** ✓、**一次测试都没跑** ✓ ⇒ 正是它要问的那句话
+       * （"你确定不用改吗"✓）。这是**真实的回路行为变化** ✓ ⇒ 夹具如实加一段脚本 ✓，
+       * 而不是为了让判据变绿去削弱守卫 ✗（削弱它等于放掉真机上那种"读了几次就报完成"✗）。
+       */
+      finalIteration("确认：这次只是探索，不需要改动。"),
     ]);
     const { registry, executed } = registryWithFakeRead(
       (p) => `// ${p}\nexport function f${p.length}() {\n  return ${p.length};\n}\n`,
@@ -184,8 +191,9 @@ describe("停滞守卫在真实循环里的行为（第 93 波治本）", () => 
     // 前置：真的跑到了第 25 个迭代之后（变异时必须在这里变红）
     expect(
       provider.requests.length,
-      "循环必须跑满 26 个读迭代 + 1 个收尾迭代；若小于 26 就说明它在第 24 轮被杀掉了",
-    ).toBe(READS + 1);
+      "循环必须跑满 26 个读迭代 + 收尾（第 163 波起收尾会被零产出守卫多要一轮 ⇒ 2 次收尾）；" +
+        "若小于 26 就说明它在第 24 轮被杀掉了",
+    ).toBe(READS + 2);
 
     expect(result.reason, "逐文件读、越读越准是称职的探索，不是停滞").not.toBe("plan_stale");
     expect(result.reason).toBe("completed");

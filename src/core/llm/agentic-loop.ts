@@ -800,6 +800,15 @@ export class AgenticLoop {
    * 所以这里单独记一个"**动过盘**"的会话级事实 ✓（来自 artifactTracker ✓，它对 bash 写也认 ✓）。
    */
   private sessionModifiedAnything = false;
+  /**
+   * **本会话读过/搜过仓库源码**（第 163 波 ✓）—— 零产出守卫"连测试都没跑"那一支的前置 ✓。
+   *
+   * 为什么要它 ✗：第一版把「没跑测试」直接当触发条件 ✗，结果把 **12 条驱动 AgenticLoop 的既有判据**
+   * 一起打红 ✓（`stall-guard-loop-behavior` / `guidance-carryover` / `output-truncation-behavior` /
+   * `o28-assistant-event-wiring` / `cache-loop-accumulation` … ✓）——
+   * 那些夹具**既不跑测试也不改文件** ✓，于是守卫凭空多要一轮 ⇒ 脚本耗尽 ⇒ 红 ✗。
+   */
+  private sessionLookedAtSource = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
   /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
@@ -2567,6 +2576,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               shouldNudgeZeroOutput({
                 modifiedAnything: this.sessionModifiedAnything || this.sessionEditedSources.size > 0,
                 testStatuses: this.testFileStatus.values(),
+                lookedAtSource: this.sessionLookedAtSource,
                 alreadyNudged: false,
               })
             ) {
@@ -3883,6 +3893,17 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             console.log(
               `[AgenticLoop] 交付物判定：同一条"可能写"的命令已重复 ${this.artifactTracker.speculativeCountOf(cmd)} 次且期间没有任何可证明的写操作 → 本轮不计推进（${name}: ${cmd.slice(0, 80)}）`,
             );
+          }
+        }
+        /**
+         * **第 163 波：读过/搜过仓库源码** ⇒ 记为"确实在读源码干活" ✓
+         * （零产出守卫"连测试都没跑"那一支的前置 ✓ —— 见字段声明处的说明 ✓）。
+         */
+        {
+          const toolName = String(name ?? "");
+          if (/^(read|grep|glob|code_search|search)$/.test(toolName)) {
+            const argsText = JSON.stringify(effectiveArgs ?? {});
+            if (/(^|["'\\/])src[\\/]/.test(argsText)) this.sessionLookedAtSource = true;
           }
         }
         if (artifactThisCall) {
