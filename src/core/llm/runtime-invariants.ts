@@ -130,9 +130,31 @@ export function checkVisibleRecordedInvariant(
     const storedMessageIds = new Set(messages.map((m: any) => m.id));
 
     // 检查：消息存储中有但事件日志中没有的
-    for (const msg of messages as Array<{ id: string; role?: string; content?: string | null }>) {
+    /**
+     * ⚠️ **第 159 波：类型里必须带 `status`** ✗→✓ —— 见下面那条"流式中间态"的跳过 ✓。
+     * （原来这里没带 `status` ✗，于是函数头注释里的**规则 2** 根本没被实现 ✗ ——
+     * 真机实测：4 条被强杀留下的 `status='streaming'` 消息被当成"缺口"报出来 ✓。）
+     */
+    for (const msg of messages as Array<{ id: string; role?: string; content?: string | null; status?: string | null }>) {
       const msgId = String(msg.id);
       if (projectedMessageIds.has(msgId)) continue;
+      /**
+       * ## **流式中间态**：`status === "streaming"` **不是缺口** ✓（第 159 波补上代码 ✓）
+       *
+       * 函数头的**规则 2** 早就写着这件事 ✓：「流式中间态不是定稿，等定稿那次落库才写事件」——
+       * 但代码里**从来没判过** `status` ✗（类型里都没有这个字段 ✗）⇒ 纸面规则与实现不符 ✗。
+       *
+       * 真机取证（第 159 波，只读打开真库 ✓）：
+       * `1791184833098-36oaqywui / assistant-1791185162837-30` 等 **4 条**正是这个形状 ——
+       * `status='streaming'` ✓、**正文非空** ✓、同会话邻居全是 `status='done'` ✓、
+       * 该会话也**没有** compaction / snapshot 事件 ✓ ⇒ 结论是"**回合被中断**"✓
+       * （应用被强杀：装机时的 `Stop-Process` ✓、评测驱动的停止 ✓），
+       * 而不是"写入路径漏了一条"✗。
+       *
+       * ⚠️ **反向对照**（别把真缺口也放过 ✗）：`status='done'` 的正文消息**仍然必须**有事件 ✓
+       * —— 这条排除**只针对 `streaming`** ✓（判据 `IVS-1` / `IVS-2` 钉住两侧 ✓）。
+       */
+      if (String(msg.status ?? "") === "streaming") continue;
       /**
        * ## 第三条口径收窄：`system` 行**不在**这条判据的范围内（第 154 轮，装机版复核时发现）
        *
