@@ -2204,7 +2204,44 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.87 `notebook_chunks` 迁移：两处越界点的**精确锚点**（第 194 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.88 `queryNotebookChunks` 的实现事实 + 一个诚实的取舍（第 195 波）
+
+## 实现要用的事实（只读核实 ✓）
+
+```
+rust-port.ts:2605   "crud.list"                       ← 通用表查询的引擎调用名 ✓
+rust-port.ts:2883   queryTelemetry 的形状（分页 + QUERY_MAX_ROUNDS + has_more）✓ ← 照它写 ✓
+knowledge/storage.ts:332  { table: T_CHUNKS, where, limit, offset } ✓ ← 同一调用的既有用法 ✓
+```
+
+⇒ `queryNotebookChunks({ notebookId, limit, offset })` = **同一个 `crud.list`** ✓
+（`{ table: "notebook_chunks", where: { notebook_id }, limit, offset }` ✓）+ 分页循环 ✓。
+
+## 取舍：embedding 只能在**客户端**丢掉 ✗ —— 说清楚它省什么、不省什么 ✓
+
+`crud.list` 返回**整行**（含 8KB 的 embedding ✗）⇒ 客户端把它映射掉 ⇒
+
+| 省下 ✓ | **没省** ✗ |
+|---|---|
+| **内存**：不驻留（`stats().bytes` 不膨胀 ✓）、不进镜像 ✓ | **IPC 传输**：那 8KB 仍然过桥 ✗ |
+
+⇒ 所以这一步**对"数据留在宿主侧、不许无界镜像"是对的** ✓，
+但**对时延只是部分收益** ✗ —— 我不把它说成"时延优化" ✗。
+
+**后续可做**（等确认引擎支持列投影 ✓）：让 `crud.list` 支持 `columns` ✓
+⇒ 那才是连 IPC 一起省的版本 ✓；本轮**不猜**引擎是否支持 ✗（这是这一路的教训 ✓）。
+
+## 判据（NC-1/2/3 ✓，实现时一起写 ✓）
+
+- **NC-1**：返回行**没有** `embedding` 字段 ✓（断言 `"embedding" in row === false` ✓）；
+- **NC-2 反向对照**：`text` / `chunk_index` 等**必须**照常可得 ✓（只砍 embedding ✗）；
+- **NC-3**：分页取全（`has_more` 循环 ✓，与既有查询判据同构 ✓）；
+- **变异**：把 embedding 放回映射结果 ⇒ **NC-1 红** ✓。
+
+## 跑批状态 ✓
+
+仍是 **2/24** ✓（墙钟推进很慢 ✓）；本轮**未装机** ✓。
+### 13.87 `notebook_chunks` 迁移：两处越界点的**精确锚点**（第 194 波）
 
 ## 锚点（只读定位 ✓）
 
