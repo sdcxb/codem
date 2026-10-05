@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 启动维护（第 18 轮，从 `database.ts` 抽出来）。
  *
  * ## 为什么它必须独立存在
@@ -1274,7 +1274,7 @@ function mirrorsReadyNow(mirrors: MirrorLike[], sid: string): boolean {
  * - **单会话**：头上就绪过的（= 被逐出 → 重新加载本来就快）给 `MIRROR_RECHECK_PER_SESSION_MS`；
  *   头上就没就绪的（= 可能加载慢或本来就失败）只给 `MIRROR_RECHECK_COLD_SESSION_MS`，
  *   免得每个会话都白等一整个窗口；
- * - **整轮共享** `MIRROR_RECHECK_TOTAL_MS`：用尽之后不再等，剩下的会话一律计入
+ * - **整轮共享** `mirrorRecheckTotalBudgetMs(会话数)`：用尽之后不再等，剩下的会话一律计入
  *   "未检查"。这条与 `waitForSessionMirrors` 的 `budgetMs`（"维护不会被拖死"）
  *   是同一条原则：**宁可不检查，也不许报假缺口，更不许把维护挂住**。
  *
@@ -1288,7 +1288,30 @@ function mirrorsReadyNow(mirrors: MirrorLike[], sid: string): boolean {
  */
 const MIRROR_RECHECK_PER_SESSION_MS = 2500;
 const MIRROR_RECHECK_COLD_SESSION_MS = 800;
-const MIRROR_RECHECK_TOTAL_MS = 8000;
+/** 整轮共享预算的**基线**（第 142 波：它不再是全部 ✗，只是底线 ✓）。 */
+const MIRROR_RECHECK_TOTAL_BASE_MS = 8000;
+/** 每个会话**额外**给的共享预算（第 142 波 ✓）。 */
+const MIRROR_RECHECK_TOTAL_PER_SESSION_MS = 250;
+/** 共享预算的**上限** ✓ —— 维护可以被 S2 拖慢，但不许被拖死 ✗。 */
+const MIRROR_RECHECK_TOTAL_CAP_MS = 120_000;
+
+/**
+ * 维护自检的**整轮共享等待预算**（第 142 波 ✓）—— 随会话数伸缩 ✓。
+ *
+ * ## 为什么必须伸缩（1.16.258 真机的 132 个会话 ✗）
+ *
+ * 原来这里是写死的 `8000` ✗。而 **S2**（1.16.255 ✓，同一时刻只驻留最近 3 个会话 ✓）
+ * 让自检**每读一个新会话都要重新加载一次** ✓ ⇒ 8 秒只够覆盖几个会话 ✗
+ * ⇒ 其余 132 个一律被记成「读侧镜像未就绪」✗ ——
+ * **两个各自正确的改动叠在一起产生的噪音** ✗。
+ *
+ * 代价如实写明：S2 之后这一趟维护会**明显变慢** ✓（十几个到几十个会话的重载 ✓）。
+ * 这是"内存有界"换来的 ✓，而它的上限保证维护仍然会结束 ✓。
+ */
+export function mirrorRecheckTotalBudgetMs(sessionCount: number): number {
+  const n = Math.max(0, Math.floor(sessionCount));
+  return Math.min(MIRROR_RECHECK_TOTAL_BASE_MS + n * MIRROR_RECHECK_TOTAL_PER_SESSION_MS, MIRROR_RECHECK_TOTAL_CAP_MS);
+}
 
 async function recheckMirrorsReady(
   sid: string,
@@ -1535,7 +1558,7 @@ export async function auditInvariantsForSessions(
      * 与 `waitForSessionMirrors` 的 `budgetMs` 是同一条原则：维护不许被拖死，
      * 但也绝不把"读不到"折算成缺口。
      */
-    const recheckDeadline = Date.now() + MIRROR_RECHECK_TOTAL_MS;
+    const recheckDeadline = Date.now() + mirrorRecheckTotalBudgetMs(sessionIds.length);
     const structuralErrors: string[] = [];
     for (const sid of sessionIds) {
       if (!sid) continue;
@@ -2575,3 +2598,4 @@ export async function runDatabaseMaintenance(
 
 /** 兼容旧调用点：维护失败时也走统一上报通道（保留导出，供未来需要时使用） */
 export { reportPersistFailure as __reportMaintenanceFailure };
+
