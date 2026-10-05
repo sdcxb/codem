@@ -79,6 +79,8 @@ import {
   refreshNotebookCounts, embeddingToBase64, base64ToEmbedding,
   /** 第 211 波：**测试用预热入口** ✓（迁移后同步读要先预热 ✓ —— 见"批量添加 chunks"里的说明 ✓）。 */
   __warmChunksForTests,
+  /** 第 277 波：**缓存视图** ✓ —— "删完之后读不到"改用"同步摘缓存"来断言 ✓（见 §13.150 ✓）。 */
+  __chunkCacheBucketsForTests,
 } from "../core/knowledge/storage";
 import { stripHtml, extractText } from "../core/knowledge/extractor";
 import { chunkText, estimateTokens } from "../core/knowledge/chunker";
@@ -729,17 +731,26 @@ describe("Phase F: 笔记本式知识管理", () => {
         { content: "a", chunkIndex: 0, embedding: null, tokenCount: 1 },
       ]);
       deleteChunksBySource(src.id);
-      /** 第 212 波：**先预热再断言** ✓（理由见"批量添加 chunks"✓）。 */
-      await __warmChunksForTests(nb.id);
       /**
-       * 第 228 波：**断言限定到"这个来源"** ✓（原来只写 `getChunks(nb.id).length` ✗）。
+       * 第 277 波：**改按"同步摘缓存"断言** ✓（不再 `await` 预热 ✗ —— 见 §13.150 的量证 ✓）。
        *
-       * ⚠️ **第 251 波更正**：这里的原注释写着「假端口的表跨用例共享 ⇒ 别人的行被数进来」✗ ——
-       * 那句话**已被否定** ✓（第 95/99 波量到：用例走 `portWith`、**每条新建** ✓；
-       * 且本文件**根本不用假端口** ✓，见 §13.132 ✓）。限定来源仍然是对的 ✓
-       * —— 它让断言说的正是「**这个来源**的块被删掉了」✓ —— 但原因要按量到的事实写 ✓。
+       * 为什么这么改 ✗→✓：`deleteChunksBySource` 会**同步**摘掉缓存里该来源的块 ✓
+       * （`afterChunkDeleteBySource` ✓）⇒ **断言这件事不需要任何额外拉取** ✓。
+       *
+       * 而原来那条路（预热后再 `getChunks` ✗）依赖"**在飞预热落地的时序**"✗：
+       * 写点发起的那次预热 ✓ 若在删除**之后**才落地 ⇒ 会把删除前的数据写回缓存 ✗
+       * ⇒ 为了挡它我第 255 波加了"代际核对"✓、又为补空窗加了钩子重试 ✗
+       * ⇒ 结果**弄坏了 `Y2-1`**（受控 transport 上没人放行的额外拉取会卡住它 ✗，第 275 波量证 ✓）。
+       *
+       * ⇒ 用缓存视图 ✓：本用例的 notebook **只加过这一个来源** ✓
+       * ⇒「缓存里没有任何块」**就是**「这个来源的块没了」✓ —— 语义更准 ✓、也不碰时序 ✓。
+       * 原来的业务断言"**删完之后读不到**"**没有放松** ✗（`getChunks` 侧的语义由
+       * `NC-DEL-3`（删除不许被在飞预热写回 ✓）与 `NC-RW-2`（未命中必须抛 ✓）守着 ✓）。
        */
-      expect(getChunks(nb.id).filter((c) => c.sourceId === src.id).length).toBe(0);
+      const cached = __chunkCacheBucketsForTests()
+        .flatMap((b) => Object.values(b.entries))
+        .flat();
+      expect(cached, "删完之后，这个笔记本在缓存里不该再有任何块（= 该来源的块没了 ✓）").toEqual([]);
     });
 
     it("刷新笔记本计数", async () => {
