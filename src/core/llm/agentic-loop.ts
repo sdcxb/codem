@@ -2043,6 +2043,15 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         cwd, sessionId, this.resolveMessageIdForTools(sessionId, assistantMsgId), this.state.iteration,
       );
       await this.fileChangeTracker.start();
+      /**
+       * **第 132 波：把"每轮的时间花在哪"记下来**（`codem-debug=agent-loop` 时才输出 ✓）。
+       *
+       * 起因：1.16.246 的时延是对手的 1.47× ✗，而**应用侧的工具落库间隔≈0s** ✓
+       * ⇒ 时间要么在"调模型之前应用自己做的事" ✗，要么在"模型流式" ✗ —— 这两者必须分开量 ✓。
+       * 下面把一轮切成 `准备`（到 `executeIteration` 之前）与 `模型`（流式全过程）两段 ✓。
+       */
+      const iterT0 = Date.now();
+      const iterNo = this.state.iteration;
       for await (const event of this.executeIteration(
         sessionId,
         assistantMsgId,
@@ -2877,11 +2886,22 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           // is unresponsive. The user sees "正在连接 AI 服务器..." and can
           // cancel via the ■ button at any time.
           debugLog("agent-loop", `Iteration ${this.state.iteration}: calling LLM (attempt ${retryCount + 1}/${maxRetries}), messages: ${apiMessages.length}, tools: ${toolDefs.length}`);
+          /**
+           * **第 132 波时延归因**：把"首字节等待（TTFT）"与"整段流式"分开记 ✓。
+           *
+           * 为什么要分开：246 的时延是对手的 1.47× ✗，而工具落库间隔≈0 ✓
+           * ⇒ 要么是**应用在调模型前自己花的时间** ✗，要么是**模型本身**（首字节 / 解码）✗。
+           * `llmReqT0 → 首事件` 是"连接 + 首字节（含 prompt 预填）"✓；
+           * `首事件 → 流结束` 是"生成（含思考）"✓。两者对着看就知道该优化谁 ✓。
+           */
+          const llmReqT0 = Date.now();
+          let llmFirstEventAt = 0;
           yield { type: "llm_status", status: "connecting" };
           let firstEventReceived = false;
 
           for await (const event of this.provider.stream(request)) {
             if (!firstEventReceived) {
+              llmFirstEventAt = Date.now();
               firstEventReceived = true;
               // First byte received — connection is alive, now streaming
               yield { type: "llm_status", status: "streaming" };
@@ -2988,6 +3008,16 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                 break;
             }
           }
+          /**
+           * 一轮模型调用的时延拆分（第 132 波）：`TTFT`（连接+首字节/预填）与 `生成`（含思考）✓。
+           * 只在 `codem-debug=agent-loop` 时输出 ✓。
+           */
+          debugLog(
+            "agent-loop",
+            `llm timing iter=${this.state.iteration}: TTFT=${llmFirstEventAt ? llmFirstEventAt - llmReqT0 : -1}ms`,
+            `stream=${llmFirstEventAt ? Date.now() - llmFirstEventAt : -1}ms`,
+            `total=${Date.now() - llmReqT0}ms`,
+          );
           success = true;
           this.state.lastIterationTextChars = currentText.length;
           debugLog("agent-loop", `Iteration ${this.state.iteration}: LLM stream ended. finishReason: ${finishReason}, toolCalls: ${currentToolCalls.length}, text length: ${currentText.length}`);
