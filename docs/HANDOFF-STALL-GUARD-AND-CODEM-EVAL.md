@@ -2204,7 +2204,46 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.84 备好"同任务 × 新旧版本"的时延对比工具，并拿到第一个**干净配对** ✓（第 191 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.85 存储门剩余越界点：`notebook_chunks` 的迁移方案（含锚点 ✓，第 192 波）
+
+## 现状（只读定位 ✓）
+
+```
+core/knowledge/storage.ts:52   const T_CHUNKS = "notebook_chunks";
+core/storage/rust-port.ts:2294 每行带 Base64 embedding（1536 维 ≈ 8KB 文本）
+core/storage/rust-port.ts:2298 DOMAIN_MIRROR_LOW_ROW_LIMITS.notebook_chunks = 2_000   ← 刻意的低上限 ✓
+core/storage/domain-store.ts:66 镜像里驻留 embedding 会白占内存 ✓
+core/storage/bootstrap.ts:368  故意不预取（预取会顶爆启动内存 ✓）
+```
+
+⇒ 这一张表与"数据留在宿主侧、按需查询 + 领域投影"的模型**最契合** ✓：
+它**天生不该进镜像** ✓（每行 8KB 的 embedding ✓，镜像里只有坏处 ✗）。
+
+## 迁移方案（照既有模板 ✓，判据先行 ✓）
+
+1. **声明有界投影** ✓：`notebook_chunks` 的同步读**只读"一屏"** ✓ 且**不含 embedding 列** ✗
+   —— 投影字段限定为 `id / notebook_id / source_id / chunk_index / text / created_at` ✓；
+2. **加一次性查询** ✓：`port.queryNotebookChunks({ notebookId, limit, offset })` ✓
+   （查完即弃 ✓，不驻留 ✓ —— 与 `queryMessages` / `queryEvents` / `queryTelemetry` 同一形状 ✓）；
+3. **`core/knowledge/storage.ts` 的两处越界点**改走查询 ✓（gate 的越界数 5 → 3 ✓）；
+4. **检索入口**（向量检索 ✓）本来就要下推到引擎 ✓ —— **别把 embedding 拉进 JS** ✗
+   （这也是它低上限存在的原因 ✓）；
+5. **判据** ✓：
+   - **NC-1**：同步读**不含 embedding** ✓（读 2000 行时 `stats().bytes` 不因 embedding 膨胀 ✓）；
+   - **NC-2 反向对照**：内容字段**必须**照常可得 ✓（只砍 embedding ✗，不许把正文也砍掉 ✓）；
+   - **NC-3**：`queryNotebookChunks` 分页取全 ✓（与 `queryMessages` 的分页判据同构 ✓）；
+   **变异**：把 embedding 放回投影 ⇒ NC-1 红 ✓。
+
+## 与 gate 的关系 ✓
+
+`no-sync-mirror-reads` 的越界数必须**只减不增** ✓（BASELINE 冻结 ✓）⇒ 这次要把 5 改成 3 ✓
+（`notebook_chunks` ×2 消掉 ✓，剩 `turn_file_changes` ×3 ✓）；**不许**为了让门变绿去改 BASELINE ✗。
+
+## 顺序说明 ✓
+
+本轮只落盘方案（跑批期间不改运行中的应用 ✓）；**实现排在 24 轮跑完之后** ✓ ——
+但**代码与判据可以先写** ✓（它们不影响正在跑的应用 ✓，只是**不装机** ✗）。
+### 13.84 备好"同任务 × 新旧版本"的时延对比工具，并拿到第一个**干净配对** ✓（第 191 波）
 
 ## 工具 ✓
 
