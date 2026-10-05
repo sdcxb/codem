@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 笔记本式知识管理 — SQLite CRUD 存储层
  *
  * 对标 NotebookLM：Notebook → Source → Chunk → Retrieval
@@ -204,6 +204,50 @@ function currentChunkCache(): Map<string, NotebookChunk[]> {
     chunkCacheBuckets.set(token, bucket);
   }
   return bucket;
+}
+
+/**
+ * ## 第 208 波：**写点的缓存处置** ✓（目标：拆掉镜像同步读而不弄坏域语义 ✓）
+ *
+ * 三条不可能同时成立 ✓（第 205 波量出来 ✓）：①读后写立刻可读 ✓ ②同步读要么完整要么抛 ✓
+ * ③不许镜像同步读 ✗ ⇒ 第 206 波定稿**出路 B** ✓：**放弃"不预热就能同步读到"**✗
+ * （既有契约本来也不保证它 ✓ —— `getChunks` 的注释里写着"从返回 [] 变成可能抛，
+ * 所有调用点已逐个改为先问 `chunkIndexState()` 或在本地 catch"✓）。
+ *
+ * ⇒ 写点只做两件事 ✓：
+ * 1. 缓存**已有**该 notebook ⇒ **就地更新/摘除** ✓（安全 ✓，不会制造不完整视图 ✗）；
+ * 2. 缓存**没有** ⇒ **作废 + 预热** ✓ —— **绝不新建** ✗。
+ *    新建等于"缓存里只有刚写的那一块"✗ ⇒ `getChunks` 会**静默返回不完整列表**✗✗
+ *    （比抛错更糟 ✓：检索会慢慢漏检而没有任何判据会红 ✗）。
+ *    **判据 `NC-RW-2` 就是专门抓这条的** ✓（第 207 波已自证咬得住 ✓）。
+ */
+function afterChunkWrite(notebookId: string, added: NotebookChunk[]): void {
+  const bucket = currentChunkCache();
+  const existing = bucket.get(notebookId);
+  if (!existing) {
+    /** 缓存未知 ✓ ⇒ 作废（本来就没有 ✓）+ 预热 ✓ ⇒ 第一次同步读会**抛** ✓，随后可读 ✓。 */
+    bucket.delete(notebookId);
+    warmChunksByNotebook(notebookId);
+    return;
+  }
+  const byId = new Map(existing.map((c) => [c.id, c]));
+  for (const c of added) byId.set(c.id, c);
+  const merged = [...byId.values()];
+  /** 超预算就不缓存 ✓（与拉取路径同一口径 ✓：宁可少读也不把渲染进程压死 ✓）。 */
+  if (merged.length > CHUNK_CACHE_MAX_PER_NOTEBOOK) {
+    bucket.delete(notebookId);
+    return;
+  }
+  bucket.set(notebookId, merged);
+}
+
+/** **写点的缓存处置（删除）** ✓：按来源跨桶摘除 ✓（`deleteChunksBySource` 只拿得到 `sourceId` ✓，没有 `notebookId` ✓）。 */
+function afterChunkDeleteBySource(sourceId: string): void {
+  const bucket = currentChunkCache();
+  for (const [nb, chunks] of bucket) {
+    const kept = chunks.filter((c) => c.sourceId !== sourceId);
+    if (kept.length !== chunks.length) bucket.set(nb, kept);
+  }
 }
 
 /**
@@ -1037,6 +1081,8 @@ export function addChunk(chunk: Omit<NotebookChunk, 'id' | 'createdAt'>): Notebo
   if (domainWrite(T_CHUNKS, [chunkToWire(created)], { scope: "chunk.add", note: "文本块未保存", ...CHUNK_OPTS })) {
     // 写成功 = 镜像可用（`applyWriteMany` 只有表已镜像时才生效）→ 记下这个事实
     chunkMirrorLastSeenReady = true;
+    /** 第 208 波：**写点的缓存处置** ✓（见 `afterChunkWrite` 的长注释 ✓）。 */
+    afterChunkWrite(created.notebookId, [created]);
     return created;
   }
     reportWriteNotAccepted("chunk.add", "文本块未保存");
@@ -1063,6 +1109,8 @@ export function addChunksBulk(notebookId: string, sourceId: string, chunks: { co
   // 这是"大文档批处理"最直接的瓶颈之一。
   if (domainWrite(T_CHUNKS, rows, { scope: "chunk.addBulk", note: "文本块未批量保存", ...CHUNK_OPTS })) {
     chunkMirrorLastSeenReady = true;
+    /** 第 208 波：**写点的缓存处置** ✓ —— 批量同样走"已有就地更新 / 没有则作废+预热"✓。 */
+    afterChunkWrite(notebookId, rows.map((r) => wireToChunk(r)));
     return;
   }
     reportWriteNotAccepted("chunk.addBulk", "文本块未批量保存");
@@ -1169,7 +1217,11 @@ export function deleteChunksBySource(sourceId: string): void {
     "id",
     { scope: "chunk.deleteBySource", note: "文本块未删除", ...CHUNK_OPTS },
   );
-  if (removed !== null) return;
+  if (removed !== null) {
+    /** 第 208 波：**删除也要更新缓存** ✓（否则同步读会继续给出已删掉的块 ✗）。 */
+    afterChunkDeleteBySource(sourceId);
+    return;
+  }
     reportWriteNotAccepted("chunk.deleteBySource", "文本块未删除");
     // 删除没接手同样意味着镜像不可用（读路径要走按需读）
     if (domainPortRegistered()) chunkMirrorLastSeenReady = false;
