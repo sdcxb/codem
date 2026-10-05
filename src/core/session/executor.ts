@@ -507,6 +507,45 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
               status: "done",
               reasoning: reasoningContent || undefined,
             });
+            /**
+             * ## ⚠️ 第 171 波：**中途定稿也要"钉住空行"** ✗→✓
+             *
+             * 收尾处（本文件后面那个 `if (currentAssistantMsgId)` 分支 ✓）早就有这段逻辑 ✓：
+             * 空正文 + 没调工具的助手行要补一条空 `assistant_text` 把自己钉住 ✓（FWT-C1c ✓），
+             * 否则投影重建时**凭空消失** ✓、不变量判 `VISIBLE_BUT_NOT_RECORDED` ✗。
+             *
+             * 但**中途**这次定稿（`iter > 1` 时把上一条落成 `done` ✓）**没有**那段 ✗ ⇒
+             * 一次"什么都没产出"的迭代（模型只吐 reasoning 就结束、或该轮空转 ✓）
+             * 就留下**空且无事件**的助手行 ✓ —— 这正是用户两次报的
+             * `assistant-…-20`（第 20 次迭代 ⇒ **中途行** ✓）那条缺口 ✓。
+             *
+             * 处置与收尾处**一致** ✓（同一个判据 FWT-C1c：空正文 + 零工具调用 ⇒ 补空事件 ✓），
+             * 不另立第二套口径 ✗（同一个角落在两处用两种做法，正是本仓库反复吃亏的形态 ✓）。
+             */
+            if (!assistantContent) {
+              try {
+                const settled = MessageStorage.getMessage(currentAssistantMsgId);
+                if (settled && (settled.toolCalls?.length ?? 0) === 0) {
+                  const ev = getEventLog().append(sessionId, "assistant_text", {
+                    messageId: currentAssistantMsgId,
+                    content: "",
+                  });
+                  if (ev.seq === 0) throw new Error("事件未落库（seq=0，端口未接手）");
+                }
+              } catch (e) {
+                reportPersistFailure(
+                  "executor.settleEmptyAssistantMidIteration",
+                  e,
+                  `会话 ${sessionId} 的中途空助手行 ${currentAssistantMsgId} 在事件日志里没有记录`,
+                  {
+                    title: "存储：中途定稿的空助手行没进事件日志",
+                    consequence:
+                      "这一行**只存在于消息存储里**：事件日志是投影重建的数据源，重建时它会消失" +
+                      "（运行时不变量的 VISIBLE_BUT_NOT_RECORDED 判的就是这种形态）。",
+                  },
+                );
+              }
+            }
             currentAssistantMsgId = `assistant-${Date.now()}-${iter}`;
             assistantContent = "";
             reasoningContent = "";
