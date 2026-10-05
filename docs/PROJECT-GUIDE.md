@@ -1042,6 +1042,7 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
+| v1.16.280 | 2026-10-05 | **窗口里再打两点（只量不猜）。** 279 已否定第4个假设(fileChangeTracker.start) ⇒ 窗口内还有没量的: new FileChangeTracker 构造本身(在窗口内但上波只量了它后面的 start) 与动态 import("./agent-message-queue")。各打一点 ⇒ 一次抓取即可判定那 1.86s 落在构造上还是别处。纯诊断 debug-only。 |
 | v1.16.279 | 2026-10-05 | **修目标②的实测根因: 改动前快照每回合只取一次。** 278 打点把每轮 prep 的 1.86s 圈到 compactionOut→iterT0 的 124 行，逐行列 await 后只剩 agentic-loop 每轮的 new FileChangeTracker + await start()，而 start() 会跑 rev-parse 与 git stash create(每轮各起 git 进程) ⇒ 30-49 轮≈60-90s 与总账吻合。改为按工作区缓存 beforeTree/beforeSnapshot 复用(finalize 时清掉；这同时修了一个正确性问题: 每轮重拍会让基准越拍越晚、把本轮早期改动算丢)。判据 FCS-1/2/3 **不靠计时也不依赖 git**(播种式)，变异去掉缓存读取 ⇒ FCS-1/3 红。 |
 | v1.16.278 | 2026-10-05 | **压缩块前后各打一点。** 277 已把 1.5s 圈到 pressure→iterT0；段内是压缩块(compactMessages + 同轮第二次 buildMessages)。这一步在块的进出口各打一个时间戳 ⇒ 一次抓取判定那 1.5s 是否在 compactMessages 里(若是，再看是'每轮都在压缩'还是'压缩本身慢')。纯诊断 debug-only。 |
 | v1.16.277 | 2026-10-05 | **prep 窗口逐处打点（只量不猜）。** 13.76 的教训: 我三次靠读代码定位都猜错 ⇒ 规则定死"只量不猜"。在 prep 窗口(buildMessages 返回→发请求)插三个带时间戳的打点(toolDefs / pressure / iterT0)，配合已有的 ctx/tail/prep 即可算出每一段耗时，一次抓取定案那 2s 落在谁身上。纯诊断 debug-only。 |

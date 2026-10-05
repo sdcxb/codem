@@ -2077,7 +2077,9 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       // R3-B10: Consume pending agent messages at iteration boundary
       // Agent messages are similar to guidance — injected as user-role context
       try {
-        const { AgentMessageQueue } = await import("./agent-message-queue");
+        debugLog("agent-loop", `prep打点 preAgentMsgImport t=${Date.now()}`);
+      const { AgentMessageQueue } = await import("./agent-message-queue");
+      debugLog("agent-loop", `prep打点 postAgentMsgImport t=${Date.now()}`);
         const pendingMessages = AgentMessageQueue.consume("primary");
         if (pendingMessages.length > 0) {
           const agentMsgContent = pendingMessages.map(m =>
@@ -2155,6 +2157,12 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       if (!trackerSvc) {
         warnOnce('svc:fileChangeTracker', '[AgenticLoop] Service "fileChangeTracker" not available from ctx, creating standalone instance');
       }
+      /**
+       * 第 187 波：**窗口里还没单独量的两处** ✓（继续「只量不猜」✓）——
+       * `new FileChangeTracker(...)` 的**构造**本身（它在 `compactionOut→iterT0` 窗口内 ✓，
+       * 但上一波只量了它后面的 `start()` ✗）；以及动态 `import` ✓。
+       */
+      debugLog("agent-loop", `prep打点 preTrackerCtor t=${Date.now()}`);
       this.fileChangeTracker = new FileChangeTracker(
         // 同一套口径（O-28）：这一轮的改动记在**消息存储里那一行**的 id 上，
         // 与 tool_calls / 事件日志一致；落库方没接线时才用引擎自造的 id。
