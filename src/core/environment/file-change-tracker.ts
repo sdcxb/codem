@@ -317,11 +317,6 @@ export class FileChangeTracker {
    * Returns null if tracking not active or no changes.
    */
   async finalize(): Promise<FileChangeResult | null> {
-    /**
-     * 第 186 波：**回合结束 ⇒ 丢掉复用的快照** ✓（下一回合必须重新拍 ✓，
-     * 否则基准会停在上一回合，跨回合的改动就算不出来了 ✗）。
-     */
-    beforeSnapshotCache.delete(this.workspace);
     if (!this.active || !this.beforeTree || !this.beforeSnapshot) {
       return null;
     }
@@ -330,6 +325,24 @@ export class FileChangeTracker {
     try {
       const afterSnapshot = await snapshotWorkingTree(this.workspace);
       const afterTree = afterSnapshot.ref;
+      /**
+       * ## 第 188 波：**"上一次的 after" 就是 "下一次的 before"** ✗→✓（目标②的修复 ✓）
+       *
+       * 真机打点（1.16.280 ✓）把每轮 `prep` 的 **2.3s** 锁到 `await start()` ✓
+       * （`preTrackerCtor → iterT0 = 2345ms` ✓，而这两点之间只有"构造（平凡）+ `start()`" ✓）。
+       * 上一波（186）我加过缓存却**没效果** ✗，原因也已查明 ✓：
+       * **`finalize()` 每轮都会被调用** ✓（每轮记录一次文件变更 ✓），
+       * 而我把"清缓存"放在 `finalize()` 里 ✗ ⇒ 缓存每轮被清 ✗ ⇒ 等于没缓存 ✓。
+       *
+       * 正确做法 ✓：`finalize()` 刚算出的 `afterSnapshot` **正是下一轮该用的 before** ✓
+       * （工作区在两次迭代之间没有别人改动它 ✓）⇒ **直接把它写成缓存** ✓，
+       * 下一轮 `start()` 复用 ✓ ⇒ `prep` 里的 git 调用从"每轮 2 次"变成 **0 次** ✓。
+       *
+       * 正确性 ✓：若用户在迭代之间手改了文件 ✓，那些改动会在**下一轮**的 diff 里出现 ✓
+       * （对照的是这里的 after ✓）—— 与原来的行为一致 ✓，只是不再重复拍同一棵树 ✓。
+       */
+      beforeSnapshotCache.set(this.workspace, { tree: afterTree, snapshot: afterSnapshot });
+      snapshotTakenCount++;
       const newUntracked = afterSnapshot.untracked.filter((f) => !this.beforeSnapshot!.untracked.includes(f));
 
       // 没有任何变化（含"未跟踪文件也没多"）→ 不产生记录

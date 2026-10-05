@@ -1042,6 +1042,7 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
+| v1.16.281 | 2026-10-05 | **目标②修复(修正版): 上一次的 after 就是下一次的 before。** 280 打点把 2.3s 锁死在 await start()(preTrackerCtor→iterT0=2345ms，两点间只有'平凡构造+start')；186 波缓存没生效的原因查明: finalize() 每轮都被调用(每轮记录一次文件变更) 而我把清缓存放在里面 ⇒ 每轮被清。改为 finalize() 把刚算出的 afterSnapshot 写成下一轮的 before(工作区两次迭代之间无人改动) ⇒ prep 里 git 调用从每轮 2 次变 0 次。判据 FCS-1/2/3(播种式，不靠计时不依赖 git)；如实记下 FCS-2 偏弱(变异未咬住——测试环境 finalize 早抛错)，改以真机实测为准。 |
 | v1.16.280 | 2026-10-05 | **窗口里再打两点（只量不猜）。** 279 已否定第4个假设(fileChangeTracker.start) ⇒ 窗口内还有没量的: new FileChangeTracker 构造本身(在窗口内但上波只量了它后面的 start) 与动态 import("./agent-message-queue")。各打一点 ⇒ 一次抓取即可判定那 1.86s 落在构造上还是别处。纯诊断 debug-only。 |
 | v1.16.279 | 2026-10-05 | **修目标②的实测根因: 改动前快照每回合只取一次。** 278 打点把每轮 prep 的 1.86s 圈到 compactionOut→iterT0 的 124 行，逐行列 await 后只剩 agentic-loop 每轮的 new FileChangeTracker + await start()，而 start() 会跑 rev-parse 与 git stash create(每轮各起 git 进程) ⇒ 30-49 轮≈60-90s 与总账吻合。改为按工作区缓存 beforeTree/beforeSnapshot 复用(finalize 时清掉；这同时修了一个正确性问题: 每轮重拍会让基准越拍越晚、把本轮早期改动算丢)。判据 FCS-1/2/3 **不靠计时也不依赖 git**(播种式)，变异去掉缓存读取 ⇒ FCS-1/3 红。 |
 | v1.16.278 | 2026-10-05 | **压缩块前后各打一点。** 277 已把 1.5s 圈到 pressure→iterT0；段内是压缩块(compactMessages + 同轮第二次 buildMessages)。这一步在块的进出口各打一个时间戳 ⇒ 一次抓取判定那 1.5s 是否在 compactMessages 里(若是，再看是'每轮都在压缩'还是'压缩本身慢')。纯诊断 debug-only。 |
