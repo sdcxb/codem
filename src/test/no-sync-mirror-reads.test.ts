@@ -77,39 +77,33 @@ const BASELINE: Record<string, number> = {
   "src/core/knowledge/storage.ts": 30,
   "src/core/session/delegation-storage.ts": 8,
   "src/core/squad/squad-storage.ts": 8,
-  "src/core/storage/maintenance.ts": 8,
   "src/core/storage/session.ts": 7,
   "src/core/inbox/inbox-storage.ts": 6,
   "src/core/issue/issue-storage.ts": 6,
-  "src/core/llm/runtime-invariants.ts": 6,
-  "src/store.ts": 6,
-  "src/core/storage/prompt-draft.ts": 5,
+  "src/store.ts": 5,
   "src/core/knowledge/flashcard-store.ts": 4,
   "src/core/llm/index.ts": 4,
   "src/core/storage/account.ts": 4,
   "src/core/storage/project.ts": 4,
-  "src/App.tsx": 3,
+  "src/core/storage/prompt-draft.ts": 4,
   "src/core/goal/goal.ts": 3,
   "src/core/llm/agentic-loop.ts": 3,
   "src/core/llm/feedback.ts": 3,
-  "src/core/llm/time-context.ts": 3,
+  "src/core/llm/runtime-invariants.ts": 3,
   "src/core/llm/tools/show-todo.ts": 3,
-  "src/core/phone-link/phone-link.ts": 3,
   "src/core/storage/agent-profile-storage.ts": 3,
   "src/core/storage/file-change-storage.ts": 3,
-  "src/core/llm/compaction-budget.ts": 2,
-  "src/core/llm/tools/session-search.ts": 2,
-  "src/core/project/files.ts": 2,
+  "src/App.tsx": 2,
+  "src/core/llm/time-context.ts": 2,
+  "src/core/phone-link/phone-link.ts": 2,
   "src/core/provider/session-persistence-sqlite-provider.ts": 2,
-  "src/core/provider/ui-trajectory-provider.ts": 2,
-  "src/components/ContextMonitor.tsx": 1,
   "src/core/agent/preset-discovery.ts": 1,
   "src/core/llm/compaction-control.ts": 1,
   "src/core/llm/postmortem.ts": 1,
   "src/core/llm/tools/read-attachment.ts": 1,
-  "src/core/session/fork-index.ts": 1,
+  "src/core/llm/tools/session-search.ts": 1,
+  "src/core/provider/ui-trajectory-provider.ts": 1,
   "src/core/session/tools.ts": 1,
-  "src/core/storage/bootstrap.ts": 1,
   "src/core/storage/session-log-bridge.ts": 1,
   "src/core/storage/settings.ts": 1,
   "src/core/storage/sync-engine.ts": 1,
@@ -121,6 +115,17 @@ const BASELINE: Record<string, number> = {
 
 /** 这些调用 = "必须有镜像驻留才能工作" ✗ */
 const FORBIDDEN = /readAll\(|listMessages\(|domainReadMany\(|domainReadOne\(/;
+
+/**
+ * **剥掉注释再扫**（第 150 波 ✓）。
+ *
+ * 为什么必须剥 ✗：注释里解释"这里原来用 `domainReadMany(...)` ✗"也会被算成依赖 ✗ ——
+ * 实测就有一次：`maintenance.ts` 被记进"无界对象越界清单"，靠的**正是我刚写下的那句注释** ✗。
+ * 反过来说：判断"代码依赖什么"必须**只看代码** ✓。
+ */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
 
 /**
  * **无界对象**（第 146 波）：这些表**不许**经同步的领域读接口访问 ✗ ✓。
@@ -186,7 +191,7 @@ function currentCounts(): Record<string, number> {
   for (const file of walk("src")) {
     const rel = relative(process.cwd(), file).replace(/\\/g, "/");
     if (DATA_LAYER_FILES.has(rel)) continue;
-    const text = readFileSync(file, "utf8");
+    const text = stripComments(readFileSync(file, "utf8"));
     const n = (text.match(new RegExp(FORBIDDEN, "g")) ?? []).length;
     if (n > 0) counts[rel] = n;
   }
@@ -238,7 +243,7 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
     for (const file of walk("src")) {
       const rel = relative(process.cwd(), file).replace(/\\/g, "/");
       if (DATA_LAYER_FILES.has(rel)) continue;
-      const text = readFileSync(file, "utf8");
+      const text = stripComments(readFileSync(file, "utf8"));
       for (const m of text.matchAll(/domainRead(?:Many|One)\b[^(]*\(\s*([^,)\n]+)/g)) {
         const raw = m[1].trim();
         const lit = raw.match(/^["'`]([A-Za-z0-9_]+)["'`]$/);
@@ -266,14 +271,13 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
-      "src/core/storage/maintenance.ts: TELEMETRY_TABLE → 表 telemetry_events ✗",
       "src/core/telemetry/telemetry.ts: TABLE → 表 telemetry_events ✗",
     ].sort());
   });
 
   it("SYNC-4: 基线总量有记录（终局目标 = 0 ✓，这个数字必须只降不升 ✓）", () => {
     const total = Object.values(BASELINE).reduce((a, b) => a + b, 0);
-    expect(total, `当前剩余 ${total} 处（第 144 波按**与判据同一套扫描**测得的真实面 ✓）`).toBeLessThanOrEqual(158);
+    expect(total, `当前剩余 ${total} 处（第 144 波按**与判据同一套扫描**测得的真实面 ✓）`).toBeLessThanOrEqual(133);
   });
 });
 

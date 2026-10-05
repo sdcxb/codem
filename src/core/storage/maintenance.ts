@@ -572,10 +572,22 @@ export async function pruneTelemetryViaPort(before: number): Promise<TelemetryPr
    * 免得下一个人以为"删的行数必须等于引擎报的 written"。
    */
   try {
-    const { domainReadMany, domainDeleteWhere } = await import("./domain-store");
-    const mirrored = domainReadMany<Record<string, unknown>>(TELEMETRY_TABLE, (r) => r, {
-      maxRows: 5000,
-    });
+    const { domainDeleteWhere } = await import("./domain-store");
+    /**
+     * **第 149 波：改走按需查询** ✓ —— 原来是
+     * `domainReadMany<Record<string, unknown>>(TELEMETRY_TABLE, …)` ✗，
+     * 也就是"**用同步领域读去读无界表**" ✗（门里的越界清单第 7 条 ✓）：
+     * 它要求 `telemetry_events` **先驻留进渲染进程** ✗ —— 而这张表在真机上有 8975 行 ✗，
+     * 正是「表超过镜像上限」与「写等 15 秒后放弃」那两条告警的来源 ✓。
+     *
+     * 现在按需分页查 ✓，**查完即弃** ✓，一个字节都不驻留 ✓。
+     * 注意 `queryTelemetry` 的 `limit` 是**真上限** ✓（这里本来也只同步"镜像上限内那部分"✓）。
+     */
+    const { getStoragePort } = await import("./port");
+    const p = getStoragePort() as unknown as {
+      queryTelemetry?: (o?: { limit?: number }) => Promise<Array<Record<string, unknown>>>;
+    } | null;
+    const mirrored = p?.queryTelemetry ? await p.queryTelemetry({ limit: 5000 }) : undefined;
     if (mirrored && mirrored.length > 0) {
       const expired = mirrored.filter((r) => Number(r.timestamp ?? 0) < before);
       if (expired.length > 0) {

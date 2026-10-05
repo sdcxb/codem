@@ -2358,6 +2358,12 @@ const QUERY_PAGE_SIZE = 1000;
 const QUERY_MAX_ROUNDS = 200;
 
 /**
+ * 遥测表名（第 149 波 ✓）—— 线上契约名 ✓，与 `telemetry.ts` / `maintenance.ts` 用的是同一个 ✓。
+ * 写成常量是为了让"按需查询遥测"这件事只在一个地方声明表名 ✓（免得三处各写一遍 ✗）。
+ */
+const TELEMETRY_TABLE_NAME = "telemetry_events";
+
+/**
  * 按需查询返回的事件形状（第 143 波，B1 ✓）—— **与镜像路径经 `toSessionEvent` 得到的形状一致** ✓。
  *
  * 为什么要显式写这个类型 ✓：两条路径形状不同会让语义悄悄变化 ✗，
@@ -2853,6 +2859,40 @@ export class RustStoragePort implements StoragePort {
       });
       const items = page?.items ?? [];
       for (const raw of items) rows.push(this.messages.normalizeForQuery(raw));
+      if (!page?.has_more || items.length === 0) break;
+      offset += items.length;
+    }
+    return rows;
+  }
+
+  /**
+   * **按需查询遥测行** —— **不碰镜像** ✓（第 149 波 ✓）。
+   *
+   * ## 为什么遥测需要自己的那一个
+   *
+   * `queryEvents` 是**会话事件**的 ✓（`events.list`，按会话 ✓），**不含遥测** ✗ ——
+   * 而 `telemetry_events` 恰恰是那个先后引出
+   * 「表超过镜像上限 5000 行」与「写等 15 秒后放弃」两条用户可见告警的表 ✓（真机 8975 行 ✗）。
+   *
+   * 它此前只被**同步领域读**访问 ✗（门里的 7 处越界清单里占 2 处 ✓）⇒
+   * 那些调用方**必须有镜像驻留才能工作** ✗。这个方法给它们一条按需路径 ✓：
+   * 直接按 `crud.list` 分页拉 ✓，**一个字节都不驻留** ✓。
+   *
+   * `limit` 是**真上限** ✓（维护裁剪只要前 N 行 ✓，不该把两千多行全拉回来 ✗）。
+   */
+  async queryTelemetry(opts: { limit?: number; offset?: number } = {}): Promise<Array<Record<string, unknown>>> {
+    const max = opts.limit ?? Number.POSITIVE_INFINITY;
+    const rows: Array<Record<string, unknown>> = [];
+    let offset = opts.offset ?? 0;
+    for (let round = 0; round < QUERY_MAX_ROUNDS && rows.length < max; round++) {
+      const take = Math.min(QUERY_PAGE_SIZE, max - rows.length);
+      const page = await call<{ items?: Array<Record<string, unknown>>; has_more?: boolean }>(this.transport, "crud.list", {
+        table: TELEMETRY_TABLE_NAME,
+        limit: take,
+        offset,
+      });
+      const items = page?.items ?? [];
+      rows.push(...items);
       if (!page?.has_more || items.length === 0) break;
       offset += items.length;
     }
