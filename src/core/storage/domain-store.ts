@@ -997,6 +997,20 @@ export function domainReadMany<R>(
  * `if (domainWrite(...)) return; reportWriteNotAccepted(...)`，
  * 返回 false 会让它**当场上报一次失败**，而写其实成功了 —— 那是一次假告警。
  */
+/**
+ * **按需表**：这些表**天生不该进镜像** ✓（按需查询 + 有界投影 ✓）。
+ *
+ * 目前只有一个 ✓：`notebook_chunks` —— 每行带一个 Base64 的 embedding（1536 维 ≈ 8KB ✓），
+ * 所以 `DOMAIN_MIRROR_LOW_ROW_LIMITS` 把它压到 2000 行、`bootstrap` 也刻意不预取 ✓。
+ *
+ * **为什么 `domainWrite` 要用到它** ✓（第 263 波**字面定位** ✓）：
+ * 不就绪且**没在加载**时 ✓，`domainWrite` 原来直接 `return false` ✗
+ * ⇒ 调用方只看到"写没被接受" ✓、**这一行就静默丢了** ✗
+ * （判据 `NC-WR-1` 量的就是它 ✓：写完 + 预热之后，新块读不回来 ✓）。
+ * ⇒ 对按需表必须**直达引擎** ✓（与"已就绪"分支同一条 `persistWriteThrough` ✓）。
+ */
+const ON_DEMAND_TABLES = new Set<string>(["notebook_chunks"]);
+
 export function domainWrite(
   table: string,
   rows: Array<Record<string, unknown>>,
@@ -1013,6 +1027,16 @@ export function domainWrite(
     return true;
   }
   if (rows.length === 0) return true;
+  /**
+   * 第 265 波：**按需表 ⇒ 直达引擎** ✓（不能只排队等一个**永远不会就绪**的镜像 ✗）。
+   *
+   * 判据 `NC-WR-1` ✓ 钉的就是这条：镜像永远不就绪时，`addChunksBulk` 写的东西
+   * 必须能被按需拉取读回来 ✓（此前的行为：直接 `return false` ⇒ **静默丢行** ✗）。
+   */
+  if (ON_DEMAND_TABLES.has(table)) {
+    persistWriteThrough(table, "crud.upsert", params, opts.scope, opts.note);
+    return true;
+  }
   // 未就绪：只有"正在加载"才排队（日志与可测性都要求这两种态分开处置）
   if (!port.domains.isLoading?.(table)) return false;
   return deferWrite({
