@@ -2204,7 +2204,53 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿### 13.167 ★★★★ 量清了：默认**没有迭代上限** ✓ ⇒ 第 284 波的"38 次就收工"**成立** ✓（第 293 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿### 13.168 A 路 step 1 的**两次试改量到两件事** ✓（第 294 波）
+
+## 实测（	sc 原样报出来 ✓）
+
+```
+error TS2353: 'completionNudges' does not exist in type
+             '{ type: "stop"; reason: string; usage: TokenUsage; **detail?: Record<string, unknown>** }'
+error TS2304: Cannot find name 'completionNudges'
+```
+
+⇒ **两条都有用** ✓：
+
+1. **不用改类型** ✓ —— LoopResult 的 stop 变体**本来就带 detail?: Record<string, unknown>** ✓
+   ⇒ 最省、最不侵入的写法是 ✓：
+
+   `	s
+   detail: { ...(detail ?? {}), completionNudges: [...completionNudges] },
+   `
+   ⇒ **零类型改动** ✓、**零行为改动** ✗ ✓；
+
+2. completionNudges（2635 ✓）**在结果组装处（2974）不可见** ✗
+   ⇒ 它被声明在**更内层的作用域**里 ✓ ⇒ 要把它**提到方法顶层** ✓
+   （let completionNudges: string[] = []; ✓，原来那三处 push 不动 ✓）。
+
+## 我已回退 ✓
+
+git checkout 撤掉试改 ✓ ⇒ 	sc 干净 ✓（**不留半成品** ✗）。
+
+## 下一步（A 路，一次做完 ✓，两处都已知 ✓）
+
+1. **上提声明** ✅：把 2635 的 const completionNudges: string[] = [] 提到方法顶层 ✓（改 const → let ✓）；
+2. **放进 detail** ✅：esult 里加 detail: { completionNudges: [...completionNudges] } ✓（**不动类型** ✓）；
+3. 驱动/headless 入口把该字段带进结果 ✓（名字与 
+ormalize 认的一致 ✓）；
+4. 
+ormalize-codem-records.mjs 加一行 ✓（照 :91 ✓）；
+5. **判据** 
+udge-1（受控运行触发零产出守卫 ⇒ 非空且写明守卫名 ✓）
+   / **反向对照 
+udge-2**（不该触发的运行 ⇒ 为空 ✓ 且**行为逐字一致** ✓）；
+6. **变异** ✓ 去掉第 2 步 ⇒ 
+udge-1 红 ✓。
+
+## 状态 ✓
+
+树全绿 ✓（	sc 干净 ✓）；跑批 **16/24** ✓（健康、只是慢 ✓）；本轮**未装机** ✓。
+### 13.167 ★★★★ 量清了：默认**没有迭代上限** ✓ ⇒ 第 284 波的"38 次就收工"**成立** ✓（第 293 波）
 
 ## 量到的 ✓
 
