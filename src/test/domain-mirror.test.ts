@@ -1241,6 +1241,16 @@ describe("域镜像分流 —— knowledge/notebooks + sources + counts", () => 
     await settle();
 
     const k = await import("../core/knowledge/storage");
+    /**
+     * 第 229 波：**先预热，再计数** ✓（DOM-31 自己的读点 ✓ —— 第 214 波只补了 DOM-33 那一处 ✗）。
+     *
+     * 理由与 DOM-33 相同 ✓：迁移后（拆掉 `getChunks`/计数的镜像同步读 ✓）
+     * **不存在**"未预热即可同步读到"的视图 ✓（内存投影异步填充 ✓，与 DSH 一致 ✓）。
+     * ⚠️ **本用例原来的两条业务断言一个字都没改** ✗：
+     * `sourceCount=2`（只数本笔记本 ✓）、`chunkCount=2`（只数本笔记本 ✓）、
+     * 以及写回那一行 `{ id:"nb1", source_count:2, chunk_count:2 }` ✓。
+     */
+    await k.__warmChunksForTests("nb1");
     k.refreshNotebookCounts("nb1");
     const nb = k.getNotebook("nb1")!;
     expect(nb.sourceCount, "只数本笔记本的来源").toBe(2);
