@@ -754,6 +754,28 @@ export class AgenticLoop {
    */
   private turnModifiedFiles = false;
   private turnRanVerification = false;
+  /**
+   * **第 140 波：最后一次编辑之后还没验证过** ✓。
+   *
+   * ## 为什么要单独记这个（真机证据）
+   *
+   * repo-02 的四轮实测（同一版本、同一提示词 ✓）：
+   *
+   * | 轮次 | 结果 | 提到的判据 | **在 bash 里真跑过的** |
+   * |---|---|---|---|
+   * | run-2 | **通过** ✓ | dsh-d8/9/10 | dsh-d8, dsh-d9, dsh-d10 ✓ |
+   * | run-3 | 失败 ✗ | d9=0 | 只有 dsh-d10 ✗ |
+   * | run-4 | 失败 ✗ | d9=2 | 只有 dsh-d10 ✗ |
+   * | run-5 | 失败 ✗ | d8=9, d9=7 | dsh-d8, dsh-d9, dsh-d10 ✓ …**然后以 `write` 收尾** ✗ |
+   *
+   * run-5 是关键 ✗：它**读也读了、跑也跑了** ✓，但**跑完之后又改了文件** ✗，
+   * 于是就"验证过了"这个判据而言它是**假的** ✓ ——
+   * 而收尾守卫只看 `turnRanVerification`（本轮**是否跑过**验证 ✗），
+   * 不看"**最后一次改动之后**是否跑过" ✗ ⇒ 守卫放行 ✓，缺陷留在盘上 ✗。
+   *
+   * 所以：编辑把它置 **true** ✓，验证命令把它置回 **false** ✓，守卫看它 ✓。
+   */
+  private turnEditsAfterVerification = false;
   private verificationNudgeIssued = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
@@ -1189,6 +1211,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     // 【本轮新增】"改了但没验证"守卫：每轮重置
     this.turnModifiedFiles = false;
     this.turnRanVerification = false;
+    this.turnEditsAfterVerification = false; // 第 140 波：时序判据 ✓
     this.verificationNudgeIssued = false;
     this.planRevision = 0;
     this.truncatedContinuations = 0;
@@ -2508,7 +2531,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * ① 先提示一次，让它自己去验证（花一轮，换"真的做对了"通常是划算的）；
          * ② 仍然不验证就**明说"这一轮未经证实"**，让用户与调用方都看得见。
          */
-        if (this.turnModifiedFiles && !this.turnRanVerification) {
+        if (this.turnEditsAfterVerification || (this.turnModifiedFiles && !this.turnRanVerification)) {
           if (!this.verificationNudgeIssued) {
             this.verificationNudgeIssued = true;
             recordLoopStop(sessionId, "completed_unverified", { phase: "nudge", iteration: this.state.iteration });
@@ -2518,7 +2541,10 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                   id: `verify-nudge-${Date.now()}`,
                   role: "user",
                   content:
-                    "[SYSTEM] 你在这一轮里**改动了文件，但一次都没有运行验证**（测试 / 构建 / 类型检查）。\n" +
+                    "[SYSTEM] 你在这一轮里**改动了文件，但最后一次改动之后没有再运行验证**" +
+                    "（测试 / 构建 / 类型检查）。\n" +
+                    "注意：**之前跑过验证不算** —— 后来的改动会让那次验证失效（真机实测：" +
+                    "某轮读也读了、跑也跑了，然后以一次 write 收尾，缺陷就留在盘上）。\n" +
                     "在宣布完成之前请**实际验证**：跑相关测试或最小复现，看到它真的通过。\n" +
                     "如果这个改动无法用命令验证，就**明确说明你是怎么确认它对**的，" +
                     "不要把未经证实的改动说成已完成。",
@@ -3707,7 +3733,29 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             );
           }
         }
-        if (artifactThisCall) this.turnModifiedFiles = true;
+        if (artifactThisCall) {
+          this.turnModifiedFiles = true;
+          /**
+           * 第 140 波：**改动发生在什么时候**才是判据 ✓ ——
+           * 跑过验证之后又改文件 ⇒ 那次验证不再作数 ✗。
+           */
+          this.turnEditsAfterVerification = true;
+        }
+        /**
+         * ⚠️ **第 140 波：清零必须放在 `artifactThisCall` 之后** ✓ ——
+         *
+         * `artifactTracker` 会把"**可能写**"的命令（含 `npx vitest …` 这类带输出重定向可能的）
+         * 也判成 artifact ✗ ⇒ 如果清零放在它**前面**，一条验证命令会先清零、再被自己置回 true ✗
+         * ⇒ 收尾守卫**每次收尾都多问一轮** ✗（实测：4 条既有收尾判据当场变红 ✓，
+         * 其中 RT-2 的对照用例报 `expected 3 to be 2` ✓）。
+         *
+         * 时序上正确的语义是：这一调用**是验证** ⇒ 它之后的盘上状态是"已验证" ✓。
+         */
+        {
+          const cmdAfter = String((effectiveArgs as any)?.command ?? (effectiveArgs as any)?.cmd ?? "");
+          const isBashAfter = name === "bash" || name === "shell" || name === "run_command" || name === "terminal";
+          if (isBashAfter && looksLikeVerificationCommand(cmdAfter)) this.turnEditsAfterVerification = false;
+        }
 
         // 第 64 波：把**结果**交给守卫 —— 判"原地打转"的依据是"拿到的东西是不是已经有了"，
         // 不是"调用了几次"。守卫据此累计"零信息增益"次数，下一次 inspect 时决定提醒/跳过/停。

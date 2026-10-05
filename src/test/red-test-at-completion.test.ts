@@ -186,6 +186,48 @@ describe("第 108 波：红测试收尾守卫（真实循环行为）", () => {
     expect(textOf(events), "不许出现红测试提醒").not.toMatch(/测试还是红的/);
   });
 
+  it("VU-1（第 140 波）: **先改后验证** ⇒ 正常收尾，不许再多问一轮", async () => {
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      testIteration("w1", 'echo x > src/core/llm/tools.ts'),
+      testIteration("t1", "npx vitest run src/test/dsh-d10-write-not-executed-is-error.test.ts"),
+      finalIteration("已完成。"),
+    ]);
+    const { registry } = registryWithFakeBash(() => GREEN_OUTPUT);
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    await drain(loop);
+
+    expect(
+      provider.requests.length,
+      "「改完 → 验证通过」是完整序列，不该被多问（否则每次正常收尾都要多花一轮 ✗）",
+    ).toBe(3);
+  });
+
+  it("VU-2（第 140 波·真机形状）: **验证之后又改** ⇒ 那次验证作废，必须再要一轮", async () => {
+    /**
+     * 这是 1.16.254 上 repo-02 run-5 的**真实序列** ✗：
+     * 读也读了、dsh-d8/dsh-d9/dsh-d10 也跑过了 ✓，然后**以一次写收尾** ✗ ——
+     * 缺陷就留在盘上，而旧守卫只看"本轮跑过验证没有" ✗ ⇒ 放行 ✓。
+     */
+    const provider = new ScriptedProvider();
+    provider.setScript([
+      testIteration("t1", "npx vitest run src/test/dsh-d10-write-not-executed-is-error.test.ts"),
+      testIteration("w1", 'echo y >> src/core/llm/tools.ts'),
+      finalIteration("已完成。"),
+      finalIteration("好，这次验证过了。"),
+    ]);
+    const { registry } = registryWithFakeBash(() => GREEN_OUTPUT);
+
+    const loop = new AgenticLoop(provider as any, registry, { maxIterations: 20, model: "m", securityMode: "full" });
+    await drain(loop);
+
+    expect(
+      provider.requests.length,
+      "验证之后又改了文件 ⇒ 必须多要一轮去验证（旧判据在这里会放行 ✗）",
+    ).toBeGreaterThanOrEqual(4);
+  });
+
   it("RT-5: **红过又没复跑绿**的文件，不许被「另一组绿了」洗白（repo-03 的真实序列）", async () => {
     /**
      * 真实序列（1.16.232，repo-03）：
