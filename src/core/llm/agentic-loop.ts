@@ -786,6 +786,18 @@ export class AgenticLoop {
   private sessionEditedSources = new Set<string>();
   /** "有没跑过的同族判据"这条提醒**每会话只发一次** ✓（别把收尾变成复读机 ✗）。 */
   private unrunSiblingsNudged = false;
+  /**
+   * **本会话动过盘上的东西**（第 157 波 ✓）—— 与 `sessionEditedSources` 的区别很关键 ✗：
+   *
+   * 真机上失败轮的编辑**多半是用 bash 写的** ✗（`python -c …` / `echo … > file` ✓，
+   * 254/257 的控制台里到处是这种 ✓）⇒ 走编辑工具那条路才会填的
+   * `sessionEditedSources` **一直是空的** ✗ ⇒ 族提醒的前置条件**永远不成立** ✗
+   * （实测：262/263 的采样里收尾相位全是"（无）"✗）。
+   *
+   * 而族信号本来**不需要知道改的是哪个文件** ✓ —— 它只看"跑了族里几条" ✓。
+   * 所以这里单独记一个"**动过盘**"的会话级事实 ✓（来自 artifactTracker ✓，它对 bash 写也认 ✓）。
+   */
+  private sessionModifiedAnything = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
   /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
@@ -2546,7 +2558,18 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 所以这里说清 **总数/跑过/没跑** ✓，并给出**一条能跑完整个族的命令** ✓ ——
          * 让模型知道"缺口有多大" ✓，而不是被一份截断的清单误导 ✗。
          */
-        if (!this.unrunSiblingsNudged && this.sessionEditedSources.size > 0 && this.testFileStatus.size > 0) {
+        /**
+         * ⚠️ **第 157 波：前置条件放宽** ✗→✓ —— 原来是 `sessionEditedSources.size > 0` ✗，
+         * 而真机失败轮的编辑**多半是用 bash 写的** ✓（`python -c` / `echo > file` ✓，
+         * 254/257 的控制台里到处是这种 ✓）⇒ 那个集合**一直是空的** ✗
+         * ⇒ 这条提醒**从没触发过** ✓（实测：262/263 的采样里收尾相位全是「（无）」✗）。
+         * 族信号本来就不需要知道"改的是哪个文件" ✓ —— 只要"动过盘"+"跑过族里一部分"✓。
+         */
+        if (
+          !this.unrunSiblingsNudged &&
+          this.testFileStatus.size > 0 &&
+          (this.sessionModifiedAnything || this.sessionEditedSources.size > 0)
+        ) {
           try {
             const { unrunFamilyCriteria } = await import("./task-keyword-search");
             const root = this.lastCwd || process.cwd();
@@ -3803,6 +3826,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
         if (artifactThisCall) {
           this.turnModifiedFiles = true;
+          /** 第 157 波：**会话级**的"动过盘" ✓（bash 写也算 ✓，族提醒用它而不是"用编辑工具改过"✗）。 */
+          this.sessionModifiedAnything = true;
           /**
            * 第 140 波：**改动发生在什么时候**才是判据 ✓ ——
            * 跑过验证之后又改文件 ⇒ 那次验证不再作数 ✗。
@@ -5114,3 +5139,4 @@ ${truncatedConv}`;
     return !appendedTitles.has(title) && appendedTitles.size < AgenticLoop.MAX_APPENDED_STEPS;
   }
 }
+
