@@ -823,6 +823,15 @@ export class AgenticLoop {
   private lastBuildMessagesAt = 0;
   private lastIterationEndAt = 0;
   /**
+   * **`buildMessages` 返回的时刻** ✓（第 182 波 ✓）。
+   *
+   * 为什么要单独记 ✗：`ctx=`（进入重建 → 发请求 ✓）稳定在 2.0–2.7s ✗，
+   * 而**已量的四步**（读库/过滤/prune/select ✓）合计只有 2ms ✓、`至今 0ms` ✓
+   * ⇒ 成本必在**日志点之后** ✓，但那可能是"重建的收尾部分"✗ 也可能是"返回之后到发请求之间"✗。
+   * 记下返回时刻 ✓ ⇒ `tail=` 与 `prep=` 一刀切开 ✓，一次抓取定案 ✓。
+   */
+  private lastBuildReturnAt = 0;
+  /**
    * **模式 C：改完又还原**（第 169 波 ✓）—— 还原型命令之后**没有再编辑** ⇒ 提醒一次 ✓。
    *
    * 真机取证：`run-3` 的收尾段诊断是 `modified=true edited=4 lookedAtSource=true tests=8 red=0` ✓，
@@ -1751,6 +1760,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       }
 
       const apiMessages = await this.buildMessages(sessionId);
+      /** 第 182 波：记下重建返回的时刻 ✓ ⇒ 把 ctx= 切成 tail(内部) 与 prep(之后) ✓。 */
+      this.lastBuildReturnAt = Date.now();
       // P2/P4: Filter tool definitions based on runtime context.
       // - Plan mode: write/edit/multi_edit/tts/image_gen tools are hidden (enforced at registration layer)
       // - read_attachment: only available when conversation has document attachments
@@ -2017,6 +2028,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           try { this.config.onCompactionComplete(); } catch (e) { console.warn('[agentic-loop.ts]', e) }
         }
         messagesForIteration = await this.buildMessages(sessionId);
+      /** 第 182 波：记下重建返回的时刻 ✓ ⇒ 把 ctx= 切成 tail(内部) 与 prep(之后) ✓。 */
+      this.lastBuildReturnAt = Date.now();
         this.state.compactedThisIteration = true;
         this.state.consecutiveCompactions++;
       } else {
@@ -3316,6 +3329,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             `total=${Date.now() - llmReqT0}ms`,
             /** 第 179 波：**从"上下文重建开始"到"真正发请求"** ✓ = 每轮的非模型开销之一 ✓。 */
             `ctx=${this.lastBuildMessagesAt ? llmReqT0 - this.lastBuildMessagesAt : -1}ms`,
+            /**
+             * 第 182 波：把 `ctx` 一刀切成两段 ✓ ——
+             * `tail` = 重建**内部**从"日志点"到"返回" ✓；`prep` = 返回**之后**到发请求 ✓。
+             * 二者之和恒等于 `ctx` ✓（可自校 ✓）。
+             */
+            `tail=${this.lastBuildReturnAt && this.lastBuildMessagesAt ? this.lastBuildReturnAt - this.lastBuildMessagesAt : -1}ms`,
+            `prep=${this.lastBuildReturnAt ? llmReqT0 - this.lastBuildReturnAt : -1}ms`,
             /** 第 179 波：**上一轮工具执行/收尾的耗时** ✓（上一次迭代结束到这一次开始 ✓）。 */
             `work=${this.lastIterationEndAt ? llmReqT0 - this.lastIterationEndAt : -1}ms`,
           );
