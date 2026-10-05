@@ -2204,7 +2204,47 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.88 `queryNotebookChunks` 的实现事实 + 一个诚实的取舍（第 195 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.89 接线方案定稿：文件里**已经有**正确机制，只需把两处遗留同步读改走它 ✓（第 198 波）
+
+## 读出来的事实（只读 ✓）
+
+```
+knowledge/storage.ts:100  CHUNK_CACHE_MAX_PER_NOTEBOOK = CHUNK_MIRROR_MAX        ← 缓存**有界** ✓
+knowledge/storage.ts:132  chunkCacheBuckets = new Map<unknown, Map<string, NotebookChunk[]>>()  ← 每端口一桶 ✓
+knowledge/storage.ts:253  if (currentChunkCache().size > 0) return "on-demand"   ← 已有就绪判定 ✓
+knowledge/storage.ts:320-355  **已有的按需拉取** ✓：
+        port.data.command("crud.list", { table: T_CHUNKS, where, limit: 1000, offset }) ✓
+        · 最多 20 页（20000 块）就停手 ✓（"宁可少读也不把渲染进程压死" ✓）
+        · 超预算只上报、不缓存 ✓
+        · 结果写进有界缓存 ✓
+knowledge/storage.ts:1095  getChunks()            → domainReadMany(T_CHUNKS, …) ✗ **遗留同步镜像读 1**
+knowledge/storage.ts:1151  getChunkCountOrNull()  → domainReadMany(T_CHUNKS, …) ✗ **遗留同步镜像读 2**
+```
+
+⇒ 也就是说 ✓：**"按需查询 + 有界投影"在这张表上早就实现了** ✓（320–355 ✓）；
+问题只是**还有两处老的同步镜像读没拆掉** ✗ —— 它们正是 gate 数的 2 处 ✓。
+**不需要新造机制** ✓（我上一波加的 `queryNotebookChunks` 因此**暂时用不上** ✗，
+留着也行 ✓ —— 它与那段拉取是同一形状 ✓；**接线时以既有的那段为准** ✓，不另起一套 ✗）。
+
+## 接法（下一波一次做完 ✓）
+
+1. `getChunks` ✓ / `getChunkCountOrNull` ✓ 的 `domainReadMany(T_CHUNKS, …)` ✗
+   ⇒ 改成**读 `currentChunkCache()`** ✓（有界 ✓、且异步拉取已经在填它 ✓）；
+2. **保留**原有的语义 ✓：缓存未命中时**抛**（"镜像被拒但按需读可用"那条 ✓，
+   契约判据 `knowledge-chunk-mirror-refusal.test.ts` 守着两侧 ✓）—— 不许把"读不到"说成"没有内容" ✗；
+3. gate `no-sync-mirror-reads` 的越界数 **5 → 3** ✓（并把 offender 清单删掉那两行 ✓）；
+4. 判据 ✓：跑 `knowledge-chunk-mirror-refusal.test.ts` ✓ + `no-sync-mirror-reads` ✓
+   （**两个都要绿** ✓）；变异 ✓：把其中一处改回 `domainReadMany` ⇒ gate 红 ✓（这才是这道门的意义 ✓）。
+
+## 与"存储层治本"的关系 ✓
+
+⇒ 这一步之后 ✓，这张"**天生不该进镜像**"的表（8KB/行 ✓）就彻底与镜像无关了 ✓
+—— 与 DSH 的模型（数据留在宿主侧 ✓、按需查询 ✓、有界投影 ✓）对齐 ✓。
+
+## 跑批状态 ✓
+
+仍是 **2/24** ✓（墙钟推进慢 ✓）；本轮**未装机** ✓。
+### 13.88 `queryNotebookChunks` 的实现事实 + 一个诚实的取舍（第 195 波）
 
 ## 实现要用的事实（只读核实 ✓）
 
