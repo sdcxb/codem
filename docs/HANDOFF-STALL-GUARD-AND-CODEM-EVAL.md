@@ -2204,7 +2204,53 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.128 `refreshNotebookCounts` 读完 ✓ ⇒ 只剩 `__warmChunksForTests` 没读（第 244 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.129 ★★★ 关键区别：`domain-mirror` 用的是**它自己的 transport**，不是我测的那个假端口（第 245 波）
+
+## 读到的（`storage.ts:458-460` ✓，整段只有三行 ✓）
+
+```ts
+export function __warmChunksForTests(notebookId: string): Promise<void> {
+  return warmChunksByNotebook(notebookId);      // 只是转发 ✓ **没有忽略参数** ✗
+}
+```
+
+⇒ 我第 244 波"最可能"的猜测（**忽略参数**✗）**被否定** ✓（这是这条链上第 **6** 个被否定的判断 ✗）。
+
+## 而这次否定**指向了一个我一直没注意的区别** ✗
+
+我第 236 波写的守门判据 `NC-WHERE-1/2` ✓ 测的是
+**`createFakeStoragePort`** ✓ —— 那是 `src/test/fake-storage-port.ts` 里的**通用假端口** ✓。
+
+但 **`domain-mirror.test.ts` 用的不是它** ✗：
+
+```
+domain-mirror.test.ts:96    const port = new RustStoragePort(**transport** as never, …);
+domain-mirror.test.ts:131     const { port } = portWith([...]);      ← 每条用例自己拼一个 transport ✓
+```
+
+⇒ 也就是说 ✓：**`domain-mirror` 这个文件里有一个自己的 `transport`** ✓（在 ~110-120 行构造 ✓，
+它自带 `execute` ✓ 并往 `executed` 里记账 ✓）⇒ **它的 `crud.list` 是不是按 `where` 过滤** ✗
+—— **我从来没测过** ✗（我测的是**另一个**夹具 ✓）。
+
+⇒ 这一下把所有量证都解释通了 ✓：
+- 产品带对了条件 ✓（`storage.ts:376` ✓）；
+- **通用**假端口按 `where` 过滤 ✓（`NC-WHERE-1/2` ✓）；
+- 而 **`domain-mirror` 自己的 transport** ✗ 很可能**不过滤** ✗（或它的 `notebook_chunks` 分支另有写法 ✓）
+  ⇒ `nb1` 的桶里因此混进 `nb2` 的 `c9` ✗ ⇒ 计数 3 ✗ ⇒ `expected 3 to be 2` ✓ **完全对上** ✓。
+
+## ⇒ 下一波第一步唯一动作 ✓
+
+**读 `domain-mirror.test.ts` 里 `portWith` 构造的那个 `transport`**（约 60–120 行 ✓），
+看它的 `execute`/`crud.list` **是否按 `where` 过滤** ✓ —— **读完再下结论** ✓
+（这条链上已经被否定 6 次 ✓，我不再抢跑 ✓）。
+
+⇒ 若确实不过滤 ✓：修法在**那个 transport** ✓（而不是产品 ✗、也不是通用假端口 ✗）⇒
+并按 `NC-WHERE-1/2` 的同样思路**补它的判据** ✓（`NC-WHERE-3` ✓：**这个** transport 也必须按 `where` 过滤 ✓）。
+
+## 状态 ✓
+
+树全绿 ✓（`7100 通过` ✓）；跑批 **8/24** ✓；本轮**未装机** ✓（纯只读 ✓）。
+### 13.128 `refreshNotebookCounts` 读完 ✓ ⇒ 只剩 `__warmChunksForTests` 没读（第 244 波）
 
 ## 读到的实际代码（`storage.ts:899-937` ✓，**整段读完** ✓）
 
