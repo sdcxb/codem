@@ -3815,18 +3815,29 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         if (this.symbolSiblingsSentFor.size < SYMBOL_SIBLINGS_MAX_PER_TURN && /^(write|edit|multi_edit)$/.test(name)) {
           const edited = String(effectiveArgs.path ?? effectiveArgs.file_path ?? "");
           if (edited && !this.symbolSiblingsSentFor.has(edited)) {
-            /** 先标记再做事（老规矩 ✓）：同一个文件本回合只尝试一次 ✓，失败也不重试 ✓。 */
-            this.symbolSiblingsSentFor.add(edited);
-            try {
-              const root = (this.lastCwd || process.cwd()).replace(/\\/g, "/");
-              const abs = edited.replace(/\\/g, "/");
-              const rel = abs.startsWith(root + "/") ? abs.slice(root.length + 1) : edited;
-              const { buildSymbolSiblings } = await import("./task-keyword-search");
-              const siblings = await buildSymbolSiblings(this.lastCwd || process.cwd(), rel);
-              debugLog("agent-loop", "symbol siblings:", siblings ? `${siblings.length} chars` : "null", "| edited=", rel);
-              if (siblings) result.output = `${result.output}\n\n${siblings}`;
-            } catch (sibErr) {
-              console.warn("[AgenticLoop] symbol siblings failed:", sibErr);
+            const root = (this.lastCwd || process.cwd()).replace(/\\/g, "/");
+            const abs = edited.replace(/\\/g, "/");
+            const rel = abs.startsWith(root + "/") ? abs.slice(root.length + 1) : edited;
+            /**
+             * **根目录下的文件不占额度**（第 134 波）✓ —— 那是 agent 自己写的临时脚本
+             * （真机日志里全是 `tmp-*.mjs` ✗），既不会有同族判据 ✓，还会把每回合 4 个名额吃光 ✗，
+             * 于是等它去编辑 `src/core/llm/tools.ts` 时已经没机会了 ✗（repo-02 因此 0/4 ✗）。
+             *
+             * ⚠️ 必须在**标记之前**判断 ✓ —— 否则额度照样被吃掉 ✗。
+             */
+            if (!rel.replace(/\\/g, "/").includes("/")) {
+              debugLog("agent-loop", "symbol siblings: 跳过（根目录文件，不占额度）:", rel);
+            } else {
+              /** 先标记再做事（老规矩 ✓）：同一个文件本回合只尝试一次 ✓，失败也不重试 ✓。 */
+              this.symbolSiblingsSentFor.add(edited);
+              try {
+                const { buildSymbolSiblings } = await import("./task-keyword-search");
+                const siblings = await buildSymbolSiblings(this.lastCwd || process.cwd(), rel);
+                debugLog("agent-loop", "symbol siblings:", siblings ? `${siblings.length} chars` : "null", "| edited=", rel);
+                if (siblings) result.output = `${result.output}\n\n${siblings}`;
+              } catch (sibErr) {
+                console.warn("[AgenticLoop] symbol siblings failed:", sibErr);
+              }
             }
           }
         }

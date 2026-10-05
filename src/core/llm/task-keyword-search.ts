@@ -520,6 +520,14 @@ export async function buildSymbolSiblings(
 ): Promise<string | null> {
   const src = opts.src ?? createIpcFileSource();
   if (isTestFile(editedRelativePath)) return null; // 改的是测试文件 ⇒ 不用提 ✓
+  /**
+   * **根目录下的文件不参与**（第 134 波）✓：相对路径里没有目录分隔 ⇒ 是临时脚本/配置 ✓。
+   *
+   * 真机证据（1.16.251）：机制已经能产出 ✓，但产出对象全是 agent 自己写在仓库根目录的
+   * `tmp-*.mjs` ✗ ⇒ 每回合只有 4 个文件的额度 ✗，等它去编辑真正的 `src/core/llm/tools.ts` 时
+   * **额度已经用完** ✗ ⇒ 那一轮 repo-02 连跑四轮 **0/4** ✗。
+   */
+  if (!editedRelativePath.replace(/\\/g, "/").includes("/")) return null;
   let text = "";
   try {
     text = await src.read(`${root}/${editedRelativePath}`, MAX_BYTES_PER_FILE);
