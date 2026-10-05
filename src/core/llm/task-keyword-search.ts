@@ -550,7 +550,57 @@ export async function buildSymbolSiblings(
   /** 真机可见性（第 133 波）：**读了多长、抽出几个符号** —— "返回 null"就靠这两行定位 ✓。 */
   console.warn(`[同族判据] 诊断：${editedRelativePath} 读到 ${text.length} 字符，抽出 ${symbols.length} 个符号`);
   if (symbols.length === 0) return null;
+  void src;
 
+  const { files: found, tried } = await searchSiblingCriteriaFiles(root, symbols, editedRelativePath, opts);
+  if (found.length === 0) return null;
+
+  return [
+    `[同族判据] 你刚改的 ${editedRelativePath} 里有这些符号（${tried.join("、")}），`,
+    `下列**测试/判据**文件也提到它们（只是列出事实 ✓）：`,
+    ...found.map((f) => `- ${f}`),
+  ].join("\n");
+}
+
+/**
+ * **列出某个源码文件的同族判据文件**（公开入口 ✓，第 154 波）。
+ *
+ * 收尾守卫（`unrunSiblingCriteria` 的调用方 ✓）要的是**文件列表** ✓，
+ * 不是渲染好的提示文本 ✓ —— 所以这里把"读文件 + 抽符号 + 搜索"整条链打包 ✓，
+ * 让收尾守卫不必自己再写一遍 ✗（两处各写一遍迟早分叉 ✓）。
+ */
+export async function siblingCriteriaFiles(
+  root: string,
+  editedRelativePath: string,
+  opts: { src?: TestFileSource; search?: SearchLike; maxFiles?: number } = {},
+): Promise<string[]> {
+  const src = opts.src ?? createIpcFileSource();
+  if (isTestFile(editedRelativePath)) return []; // 改的就是判据本身 ⇒ 不用列 ✓
+  if (!editedRelativePath.replace(/\\/g, "/").includes("/")) return []; // 根目录临时文件不参与 ✓
+  let text = "";
+  try {
+    text = await src.read(`${root}/${editedRelativePath}`, MAX_BYTES_PER_FILE);
+  } catch {
+    return [];
+  }
+  const symbols = extractSymbols(text, 12);
+  if (symbols.length === 0) return [];
+  const { files } = await searchSiblingCriteriaFiles(root, symbols, editedRelativePath, opts);
+  return files;
+}
+
+/**
+ * **列出"同族判据"文件** ✓（第 154 波把它从 `buildSymbolSiblings` 里抽出来 ✓）。
+ *
+ * 抽出来的理由：收尾守卫需要的是**文件列表**（"哪些判据没跑过"✓），而不是渲染好的文本 ✓ ——
+ * 两处若各写一遍搜索逻辑，迟早会分叉 ✗（本仓库已经吃过"两条路径形状不同"的亏 ✓）。
+ */
+async function searchSiblingCriteriaFiles(
+  root: string,
+  symbols: string[],
+  editedRelativePath: string,
+  opts: { search?: SearchLike; maxFiles?: number },
+): Promise<{ files: string[]; tried: string[] }> {
   const search = opts.search ?? createIpcSearcher();
   const found: string[] = [];
   const tried: string[] = [];
@@ -572,11 +622,46 @@ export async function buildSymbolSiblings(
     if (found.length > 0) break; // 找到了就收手 ✓（时延考虑 ✓）
     if (found.length >= (opts.maxFiles ?? 6)) break;
   }
-  if (found.length === 0) return null;
+  return { files: found, tried };
+}
 
-  return [
-    `[同族判据] 你刚改的 ${editedRelativePath} 里有这些符号（${tried.join("、")}），`,
-    `下列**测试/判据**文件也提到它们（只是列出事实 ✓）：`,
-    ...found.map((f) => `- ${f}`),
-  ].join("\n");
+/**
+ * **收尾判定：改了源码，但它的同族判据一次都没跑过** ✓（纯函数 ⇒ 可单测 ✓）。
+ *
+ * ## 为什么需要它（目标①的失败签名 ✓）
+ *
+ * repo-02 的真机读数（同版本同提示词 ✓）显示：**决定成败的不是"读没读到判据"** ✗，
+ * 而是**"有没有把该跑的判据都跑过"** ✓：
+ *
+ * | 轮次 | 结果 | 提到 d8/d9/d10 | **在 bash 里真跑过的** |
+ * |---|---|---|---|
+ * | run-2 | **通过** ✓ | 9 / 9 / 10 | **d8, d9, d10** ✓ |
+ * | run-3 | 失败 ✗ | 0 / 0 / 21 | 只有 d10 ✗ |
+ * | run-4 | 失败 ✗ | 2 / 2 / 6 | 只有 d10 ✗ |
+ *
+ * ⇒ 而本任务的缺陷形态正是"**补丁不完整**"✗（需要三处改动，失败轮只做了一两处 ✓）。
+ * 只要在收尾时把"**你改过这个文件、但这条判据你一次都没跑**"点出来 ✓，
+ * 模型就有机会自己发现漏掉的那处 ✓。
+ *
+ * @param editedSources 本会话编辑过的**源码**文件（相对路径 ✓，测试文件不算 ✓）
+ * @param siblingsOf 每个编辑文件 → 它的同族判据文件列表（由 `siblingCriteriaFiles` 提供 ✓）
+ * @param runStatus 本会话**跑过**的判据文件 → 结果（`testFileStatus` ✓；**不在里面 = 从没跑过** ✓）
+ * @returns 没跑过的判据文件列表（去重 ✓、有上限 ✓；空 = 无需提醒 ✓）
+ */
+export function unrunSiblingCriteria(args: {
+  editedSources: Iterable<string>;
+  siblingsOf: ReadonlyMap<string, readonly string[]>;
+  runStatus: ReadonlyMap<string, "red" | "green">;
+  max?: number;
+}): string[] {
+  const max = Math.max(1, args.max ?? 6);
+  const out: string[] = [];
+  for (const source of args.editedSources) {
+    for (const file of args.siblingsOf.get(source) ?? []) {
+      if (args.runStatus.has(file)) continue; // 跑过（不论红绿 ✓）⇒ 不算"没跑过" ✓
+      if (!out.includes(file)) out.push(file);
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
 }

@@ -777,6 +777,15 @@ export class AgenticLoop {
    */
   private turnEditsAfterVerification = false;
   private verificationNudgeIssued = false;
+  /**
+   * **本会话编辑过的源码文件**（第 154 波 ✓）—— 收尾时用它算"同族判据有没有跑过" ✓。
+   *
+   * 与 `symbolSiblingsSentFor` 的区别 ✗：那个是**每回合**清空的额度 ✓；
+   * 这个是**整个会话**的账 ✓（收尾要知道"这一路改过哪些源码"✓）。
+   */
+  private sessionEditedSources = new Set<string>();
+  /** "有没跑过的同族判据"这条提醒**每会话只发一次** ✓（别把收尾变成复读机 ✗）。 */
+  private unrunSiblingsNudged = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
   /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
@@ -2522,6 +2531,63 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         /**
+         * **第 154 波：收尾时点出"没跑过的同族判据"** ✓ —— 目标①的正面突破点 ✓。
+         *
+         * 真机读数（repo-02 四轮，同版本同提示词 ✓）显示：决定成败的**不是"读没读到判据"** ✗，
+         * 而是"**该跑的判据有没有跑过**" ✓ —— 通过轮把 `dsh-d8/d9/d10` 都跑了 ✓，
+         * 失败轮只跑了 `dsh-d10` ✗（或跑完之后又以 `write` 收尾 ✗）。
+         * 而本任务的缺陷形态正是"**补丁不完整**"✗（三处改动只做了一两处 ✓）。
+         *
+         * 所以：改过源码、而它的同族判据里**有从没跑过的** ⇒ 点名一次 ✓（每会话一次 ✓）。
+         * 放在"改了但没验证"那条**前面** ✓：这条更具体（指名道姓 ✓），先给它机会 ✓。
+         */
+        if (!this.unrunSiblingsNudged && this.sessionEditedSources.size > 0) {
+          try {
+            const { siblingCriteriaFiles, unrunSiblingCriteria } = await import("./task-keyword-search");
+            const root = this.lastCwd || process.cwd();
+            const siblingsOf = new Map<string, readonly string[]>();
+            /** 上限 4 个源码文件 ✓（每个都要读文件 + 几次 grep ✓，不能把收尾拖长 ✗）。 */
+            for (const rel of [...this.sessionEditedSources].slice(0, 4)) {
+              siblingsOf.set(rel, await siblingCriteriaFiles(root, rel));
+            }
+            const unrun = unrunSiblingCriteria({
+              editedSources: this.sessionEditedSources,
+              siblingsOf,
+              runStatus: this.testFileStatus,
+            });
+            if (unrun.length > 0) {
+              this.unrunSiblingsNudged = true;
+              debugLog("agent-loop", "收尾：有没跑过的同族判据", unrun);
+              recordLoopStop(sessionId, "completed_unverified", { phase: "unrun-siblings", iteration: this.state.iteration });
+              this.getMessageStorage().createMessage(
+                {
+                  id: `unrun-siblings-nudge-${Date.now()}`,
+                  role: "user",
+                  content:
+                    "[SYSTEM] 你这一路改过源码，但它对应的**判据里有几条你一次都没跑过**：\n" +
+                    unrun.map((f) => `- ${f}`).join("\n") +
+                    "\n\n这不是「命令你跑」✓，而是一条事实：**你还没看过它们的结论**✓。" +
+                    "请先跑一遍（或读一遍）再决定是否收尾 —— 这类任务的真机数据显示：" +
+                    "**跑了全部同族判据的轮次通过，只跑了一部分的轮次失败**✓，" +
+                    "而失败形态几乎都是「改得不完整」（只补了其中一两处）。",
+                  timestamp: Date.now(),
+                  status: "done",
+                },
+                sessionId,
+              );
+              this.msgCache = null;
+              yield {
+                type: "text_delta",
+                text: `\n\n🔎 还有 ${unrun.length} 条同族判据没跑过，已要求它先跑完再收尾…\n\n`,
+              };
+              continue;
+            }
+          } catch (e) {
+            warnOnce("unrun-siblings", "[agentic-loop] 同族判据收尾检查失败", e);
+          }
+        }
+
+        /**
          * 【本轮新增】**「改了但没验证」不许安静地当作完成。**
          *
          * 真机反馈与本次实测都是这个形状：模型改完文件、一次验证都没跑，界面就报「任务完成」，
@@ -3876,6 +3942,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             if (!rel.replace(/\\/g, "/").includes("/")) {
               debugLog("agent-loop", "symbol siblings: 跳过（根目录文件，不占额度）:", rel);
             } else {
+              /**
+               * **整个会话的账**（第 154 波 ✓）：收尾守卫要用它算"同族判据有没有跑过"
+               * （`unrunSiblingCriteria` ✓）。测试文件**不计** ✓ —— 改判据不用提醒去跑别的判据 ✓。
+               */
+              if (!/\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(rel)) this.sessionEditedSources.add(rel);
               /** 先标记再做事（老规矩 ✓）：同一个文件本回合只尝试一次 ✓，失败也不重试 ✓。 */
               this.symbolSiblingsSentFor.add(edited);
               try {
