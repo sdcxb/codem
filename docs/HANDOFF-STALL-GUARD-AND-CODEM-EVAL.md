@@ -2204,7 +2204,48 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.126 ★★★ 更正 §13.124：用例**并不是**共用单例端口 ✗（第 242 波，这是我这条链上第 4 个被否定的判断 ✗）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.127 排除分页假设 ✓ ⇒ 锁定唯一没读过的地方：`refreshNotebookCounts` 的计数路径（第 243 波）
+
+## 读到的实际代码行（假端口 `crud.list` ✓）
+
+```
+fake-storage-port.ts:1132-1133   const where = params?.where ?? {}; if (Object.keys(where).length > 0) rows = rows.filter(r => matches(r, where));
+fake-storage-port.ts:1143-1145   const limit = …; const offset = …; const items = rows.slice(offset, offset + limit);
+fake-storage-port.ts:1146        return { items, has_more: offset + items.length < rows.length, … };
+```
+
+⇒ **过滤在** ✓、**分页在** ✓、`has_more` 也在 ✓ ⇒
+「分页重复累加 ⇒ 2 行变 3 行」这个假设 ✗ **排除** ✓。
+
+## 于是假端口这条线**全部排除了** ✓
+
+| 环节 | 状态 |
+|---|---|
+| `crud.list` 收 `where` ✓ | 产品**带对了** ✓（`storage.ts:376` ✓） |
+| `crud.list` 按 `where` 过滤 ✓ | **在** ✓（`1133` ✓ + `NC-WHERE-1/2` 绿 ✓） |
+| `crud.list` 分页 ✓ | **对** ✓（`1143-1146` ✓） |
+| 假端口实例隔离 ✓ | **是**的 ✓（`NC-ISO-1` 绿 ✓，`portWith` 每条新建 ✓） |
+| 缓存分桶 ✓ | 按 `notebookId` ✓（`storage.ts:340-341` ✓） |
+| DOM-31 的 seed ✓ | `c1,c2`→`nb1` ✓、`c9`→`nb2` ✓（**本波核对** ✓，与我第 232 波的描述一致 ✓） |
+
+## ⇒ 唯一**还没读过**的地方 ✓：`refreshNotebookCounts`
+
+`DOM-31` 断言的是 `nb.chunkCount` ✗（不是直接调 `getChunkCount` ✓）⇒
+中间隔着一层 **`refreshNotebookCounts("nb1")`** ✓ —— 我**从未读过它** ✗。
+
+⇒ 它有两种可能 ✓：
+1. 它调 `getChunkCount("nb1")` ✓ ⇒ 那就是缓存里 3 行 ✗（⇒ 还要再往上游追 ✗）；
+2. **它自己另有计数路径** ✓（例如遍历 sources ✓、或对**每个** source 求和 ✓）
+   ⇒ **那才是 3 的来源** ✓（把 `nb2` 的 `s9`/`c9` 也算进来 ✓ —— `s9` 的 `notebook_id` 是 `nb2` ✓，
+   若某处只按 source 聚合而漏了 notebook 过滤 ✗ ⇒ 正好多 1 ✓✓）。
+
+⇒ **下一波第一步唯一动作** ✓：**读 `refreshNotebookCounts`** ✓（`storage.ts:899` ✓）——
+**读完再下结论** ✓（这是我这条链上第 4 次被否定换来的规矩 ✓）。
+
+## 状态 ✓
+
+树全绿 ✓（`7100 通过` ✓）；跑批 **8/24** ✓；本轮**未装机** ✓（纯只读 ✓）。
+### 13.126 ★★★ 更正 §13.124：用例**并不是**共用单例端口 ✗（第 242 波，这是我这条链上第 4 个被否定的判断 ✗）
 
 ## 读到的实际代码行 ✓
 
