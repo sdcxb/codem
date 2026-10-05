@@ -94,4 +94,28 @@ describe("第 139 波：每表上限必须由端口自己兜住（与调用路�
     await settle();
     expect(port.domains.stats().refused, "没被点名放宽的表必须继续受默认上限保护").toContain("some_other_table");
   });
+
+  it("CAP-7（第 139 波第二次修正）: 传一个**小于策略值**的覆盖（真机传的正是 5000 ✗）⇒ 策略仍然生效", async () => {
+    /**
+     * 真机路径（`domain-store.ts:237`）：`DomainReadOpts.maxRows`（**读选项** ✗）
+     * 被当成**镜像上限**传进 `ensureLoaded` ✗，而 `TELEMETRY_OPTS = { maxRows: 5000 }` ✓
+     * ⇒ 1.16.256 照旧报「表 telemetry_events 超过镜像上限 5000 行」✗。
+     * 判据：**策略是下限** ✓，读选项压不动它 ✓。
+     */
+    const port = portWithRows("telemetry_events", 8000);
+    port.domains.ensureLoaded("telemetry_events", undefined, 5000);
+    await settle();
+    expect(
+      port.domains.stats().refused,
+      "读选项（5000）不许把 telemetry_events 的内存策略压回去 ✗",
+    ).not.toContain("telemetry_events");
+    expect(port.domains.count("telemetry_events")).toBe(8000);
+  });
+
+  it("CAP-8: 点名允许调低的表（notebook_chunks）仍然**只能低** ⇒ 3000 行照样拒绝", async () => {
+    const port = portWithRows("notebook_chunks", 3000);
+    port.domains.ensureLoaded("notebook_chunks", undefined, 2000);
+    await settle();
+    expect(port.domains.stats().refused, "notebook_chunks 每行带 embedding ⇒ 必须守在 2000").toContain("notebook_chunks");
+  });
 });

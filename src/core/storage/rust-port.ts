@@ -2270,12 +2270,43 @@ const DOMAIN_MIRROR_ROW_LIMITS: Record<string, number> = {
 };
 
 /**
- * 这张表实际允许镜像多少行 ✓：
- * **显式覆盖（只能调大 ✓）> 每表放宽（第 139 波 ✓）> 默认上限 ✓**，最后受硬天花板约束 ✓。
+ * **明确允许把镜像上限调低**的表（第 139 波）✓ —— 默认情况下「策略是**下限**」，谁也压不下去 ✗。
+ *
+ * `notebook_chunks` 每行带 Base64 embedding ✓（全表进内存 = 几十 MB ✗），
+ * 所以它必须能被压到 2000 ✓。**例外必须点名** ✓，不能靠调用方随手传 ✗。
+ */
+const DOMAIN_MIRROR_LOW_ROW_LIMITS: Record<string, number> = {
+  notebook_chunks: 2_000,
+};
+
+/**
+ * 这张表实际允许镜像多少行 ✓。
+ *
+ * ## 语义（第 139 波第二次修正 ✗→✓）
+ *
+ * - **`DOMAIN_MIRROR_ROW_LIMITS` 是下限** ✓：不管调用方传什么（哪怕传 5000 ✗）、
+ *   也不管默认值多大，这些表**至少**允许到策略值 ✓；
+ * - 显式覆盖可以**往上调** ✓（仍受硬天花板约束 ✓）；
+ * - `DOMAIN_MIRROR_LOW_ROW_LIMITS` 里的表**只能低** ✓。
+ *
+ * ## 为什么必须做成"下限"（真机第二次报障的根因 ✓）
+ *
+ * `domain-store.ts:237` 把**读选项** `DomainReadOpts.maxRows` 当成**镜像上限**传了进来 ✗：
+ * ```ts
+ * candidate.domains.ensureLoaded(table, () => {…}, opts.maxRows);  // ← 读的条数 ✗ 变成了内存上限 ✗
+ * ```
+ * 而 `telemetry.ts` 的 `TELEMETRY_OPTS = { maxRows: 5000 }` ✓（本意只是"一次读 5000 条" ✓）
+ * 于是变成了**镜像上限 5000** ✗ ⇒ 1.16.256 在真机上照旧报
+ * 「表 telemetry_events 超过镜像上限 5000 行」✗（**又是一轮空转** ✗）。
+ *
+ * 做成下限之后，这种"读选项顺手压掉内存预算"的耦合再也压不动它 ✓。
  */
 function effectiveDomainRowLimit(table: string, maxRowsOverride: number | undefined, defaultMaxRows: number): number {
-  const explicit = maxRowsOverride === undefined ? undefined : Math.max(defaultMaxRows, maxRowsOverride);
-  const requested = explicit ?? DOMAIN_MIRROR_ROW_LIMITS[table] ?? defaultMaxRows;
+  const lowCap = DOMAIN_MIRROR_LOW_ROW_LIMITS[table];
+  if (lowCap !== undefined) return Math.min(maxRowsOverride ?? lowCap, lowCap);
+  /** 这张表**至少**允许这么多（有策略用策略 ✓，没有就用默认 ✓）。 */
+  const floorForTable = DOMAIN_MIRROR_ROW_LIMITS[table] ?? defaultMaxRows;
+  const requested = Math.max(maxRowsOverride ?? defaultMaxRows, floorForTable);
   return Math.min(requested, DOMAIN_MIRROR_HARD_MAX_ROWS);
 }
 
