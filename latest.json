@@ -1,15 +1,15 @@
 {
-  "version": "1.16.255",
-  "notes": "S2：同一时刻只驻留最近 3 个会话的镜像（掐掉跨会话累计这个无界输入端）",
-  "pub_date": "2026-10-05T06:31:36Z",
+  "version": "1.16.256",
+  "notes": "根治镜像上限：改为端口自己兜住（messages 50k/telemetry 40k，与调用路径无关）",
+  "pub_date": "2026-10-05T06:44:37Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2J6RTJieVdoTUZ2dnFPZGdYdkI5amJ0L2NuSjQvOEhScTZOWFlnTWpyUUg3a1JZTDc1alBnVmFnNVYraXZBbW5xRVF2K2VYZ1RKV2JhWHF1VTlYb1FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgxODk1CWZpbGU6Q29kZW1fMS4xNi4yNTVfeDY0LXNldHVwLmV4ZQpyWlQzd1dtSWhzUkdUZjJ4VjhFNVlicmlXWVdURDRQRWg0UmQ5clNYR2J5T2F2K3dCbzRLazBqZWxOamRKbFdWaGtsYlNBNXpHZVkrSmtSMEo3WWVCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.255/Codem_1.16.255_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hJV3VYUGhpMzlyM0xTSE1kWnU2eEZUNUNBbmNYcEc5dWtYR2l6UndGeURqRFZrMGp3cGQ4dHVzb0ROMnhCMGFyYThhQnMvM2Z1RmQyTXRtVXdXMVFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgyNjc3CWZpbGU6Q29kZW1fMS4xNi4yNTZfeDY0LXNldHVwLmV4ZQpuRHBHelppMDZqVjR6SVN5Q1dtMkVnUzFMdSthOW14S0xRb1dqcUsrQVh0aHBGNFpmWjU2bFlXckpwRjhYSGV2RUk1dFJjdWZyUEJwNDhDNTU3YzNDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.256/Codem_1.16.256_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2J6RTJieVdoTUZ2dnFPZGdYdkI5amJ0L2NuSjQvOEhScTZOWFlnTWpyUUg3a1JZTDc1alBnVmFnNVYraXZBbW5xRVF2K2VYZ1RKV2JhWHF1VTlYb1FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgxODk1CWZpbGU6Q29kZW1fMS4xNi4yNTVfeDY0LXNldHVwLmV4ZQpyWlQzd1dtSWhzUkdUZjJ4VjhFNVlicmlXWVdURDRQRWg0UmQ5clNYR2J5T2F2K3dCbzRLazBqZWxOamRKbFdWaGtsYlNBNXpHZVkrSmtSMEo3WWVCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.255/Codem_1.16.255_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hJV3VYUGhpMzlyM0xTSE1kWnU2eEZUNUNBbmNYcEc5dWtYR2l6UndGeURqRFZrMGp3cGQ4dHVzb0ROMnhCMGFyYThhQnMvM2Z1RmQyTXRtVXdXMVFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgyNjc3CWZpbGU6Q29kZW1fMS4xNi4yNTZfeDY0LXNldHVwLmV4ZQpuRHBHelppMDZqVjR6SVN5Q1dtMkVnUzFMdSthOW14S0xRb1dqcUsrQVh0aHBGNFpmWjU2bFlXckpwRjhYSGV2RUk1dFJjdWZyUEJwNDhDNTU3YzNDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.256/Codem_1.16.256_x64-setup.exe"
     }
   }
 }

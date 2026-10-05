@@ -2246,6 +2246,40 @@ const DOMAIN_COLUMN_PROJECTION: Record<string, string[]> = {
 const DOMAIN_MIRROR_HARD_MAX_ROWS = 200_000;
 
 /**
+ * **按表放宽镜像上限**（第 139 波，从 `bootstrap.ts` 搬到这里 ✓）—— 默认上限是 5000 行 ✗。
+ *
+ * ## 为什么必须放在**端口里**，而不是调用方（第 139 波的真教训 ✗）
+ *
+ * 1.16.253 首次加这个放宽时，我把它放在 `bootstrap.ts` 的**预取**里 ✗ ——
+ * 而 `messages` / `telemetry_events` **根本不在预取清单**（`HOT_DOMAIN_TABLES`）里 ✓，
+ * 它们是经 `domainPort(table)` → `candidate.domains.ensureLoaded(table, cb)` ✗
+ * （**不传覆盖** ✗）加载的 ⇒ 拿到的还是 5000 ✗ ⇒ 真机上（1.16.254/255）照旧报
+ * 「表 messages 超过镜像上限 5000 行」✗（用户第二次报障：**测试都在空转** ✗）。
+ *
+ * **结论**：这种"安全默认值"必须由**拥有数据的层**兜住 ✓ ——
+ * 不能指望每个调用点都记得传参数 ✗。
+ *
+ * | 表 | 真机行数 | 为什么放宽 |
+ * |---|---|---|
+ * | `messages` | 10052 | agent 与界面的核心读路径 ✓ —— 读给空结果会让 agent「看不见自己做过什么」✗ |
+ * | `telemetry_events` | 8975 | 追加型、行小 ✓ —— 放宽是为了不再让写白等 15 秒后丢掉 ✗ |
+ */
+const DOMAIN_MIRROR_ROW_LIMITS: Record<string, number> = {
+  messages: 50_000,
+  telemetry_events: 40_000,
+};
+
+/**
+ * 这张表实际允许镜像多少行 ✓：
+ * **显式覆盖（只能调大 ✓）> 每表放宽（第 139 波 ✓）> 默认上限 ✓**，最后受硬天花板约束 ✓。
+ */
+function effectiveDomainRowLimit(table: string, maxRowsOverride: number | undefined, defaultMaxRows: number): number {
+  const explicit = maxRowsOverride === undefined ? undefined : Math.max(defaultMaxRows, maxRowsOverride);
+  const requested = explicit ?? DOMAIN_MIRROR_ROW_LIMITS[table] ?? defaultMaxRows;
+  return Math.min(requested, DOMAIN_MIRROR_HARD_MAX_ROWS);
+}
+
+/**
  * **消息镜像的字节预算**（第 137 波）✓ —— 与行数预算并行生效 ✓。
  *
  * 取 192 MB 的理由：用户那台机器崩溃时**单个渲染进程 3508MB** ✗
@@ -2472,8 +2506,7 @@ export class RustDomainMirror {
      * 现在：**覆盖可以调大 ✓，但受 `DOMAIN_MIRROR_HARD_MAX_ROWS` 硬天花板约束** ✓ ——
      * 内存护栏没有被拆掉 ✗（默认路径的行为一字未变 ✓）。
      */
-    const requested = maxRowsOverride === undefined ? this.maxRows : Math.max(this.maxRows, maxRowsOverride);
-    const cap = Math.min(requested, DOMAIN_MIRROR_HARD_MAX_ROWS);
+    const cap = effectiveDomainRowLimit(table, maxRowsOverride, this.maxRows);
     const rows: Array<Record<string, unknown>> = [];
     let offset = 0;
     for (let round = 0; round < 40; round++) {

@@ -2,6 +2,48 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.256] - 2026-10-04
+
+### 修复
+
+- **★★★ 根治「表 messages / telemetry_events 超过镜像上限 5000 行」——上限改由端口自己兜住。**
+
+  **用户第二次报障**（装着 1.16.254/255 的构建）：
+
+  ```
+  [PersistFailure] storage.bootstrap.domain.messages.too-large 操作失败（第 1 次）：
+    表 messages 超过镜像上限 5000 行
+  ```
+
+  —— **上限还是 5000** ✗，也就是说 1.16.253 那次"给 `messages` 放宽到 50k"**根本没被用上** ✗。
+  用户的原话一针见血：**「否则测试都是空转」** ✓。
+
+  **根因**（1.16.253 的错）：我把放宽表放在 `bootstrap.ts` 的**预取**里 ✗，
+  而 `messages` / `telemetry_events` **根本不在预取清单**（`HOT_DOMAIN_TABLES`）里 ✓ ——
+  它们是经 **`domainPort(table)` → `candidate.domains.ensureLoaded(table, cb)`** ✗
+  （**一个覆盖参数都不传** ✗）加载的 ⇒ 拿到的还是默认 5000 ✗。
+
+  | 缺口 | 对策 |
+  |---|---|
+  | 安全默认值放在调用方 ⇒ 只要有一条路径忘了传就失效 ✗ | 搬到**拥有数据的那一层**：`rust-port.ts::DOMAIN_MIRROR_ROW_LIMITS` ✓，`loadTable` 用 `effectiveDomainRowLimit()` 计算 ✓（**显式覆盖 > 每表放宽 > 默认** ✓，仍受硬天花板约束 ✓） |
+  | 两个真相源 | 删掉 `bootstrap.ts` 里那张表 ✓（并把"为什么搬走"写在原地 ✓，免得后人又搬回去 ✗） |
+
+### 判据与变异
+
+- `domain-mirror-per-table-limit.test.ts`（**全部"不传覆盖"** ✓ —— 关键就在这 ✗）：
+  - **CAP-4**：`messages` 8000 行、只传表名 ⇒ **必须被镜像** ✓（这条在修复前报的正是真机的病：
+    `expected [ 'messages' ] to not include 'messages'` ✓）；
+  - **CAP-5**：`telemetry_events` 8000 行、只传表名 ⇒ 必须被镜像 ✓（用户报的第一条 ✗）；
+  - **CAP-6 反向对照**：没被点名放宽的表超过默认上限 ⇒ **仍然拒绝** ✓（护栏不许被放大 ✗）。
+- **变异 M25**：去掉端口里的每表放宽 ⇒ **CAP-4 / CAP-5 立刻红** ✓。
+- `domain-mirror-cap.test.ts` 的 **CAP-1 夹具更正** ✓：它原来拿 `messages` 当"默认上限"的例子 ✗，
+  而 `messages` 现在已被刻意放宽 ✓ ⇒ 改用没被放宽的表 ✓（否则是假红 ✗，并把原因写在文件里 ✓）。
+
+### 验证
+
+- 全量 vitest **7039 条通过** ✓（唯一失败是既有的 `D4-A` 计时敏感抖动 ✓，单独跑通过 ✓）；
+  `tsc --noEmit` 干净 ✓。
+
 ## [1.16.255] - 2026-10-04
 
 ### 变更

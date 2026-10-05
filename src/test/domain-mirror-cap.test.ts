@@ -62,7 +62,13 @@ function portWithRowCount(count: number) {
   return new RustStoragePort(transport as never, (_s, _e, note) => failures.push(note));
 }
 
-const TABLE = "messages";
+/**
+ * 第 139 波更正：这张表**不能用 `messages`** ✗ ——
+ * `messages` 已经在端口侧的放宽清单里（50k ✓，见 `DOMAIN_MIRROR_ROW_LIMITS`），
+ * 拿它当"默认上限"的夹具会变成假红 ✗。这里改用一张**没被点名放宽**的表 ✓，
+ * 它才能真正代表"默认护栏" ✓（同一件事由 CAP-6 在另一个文件里再钉一次 ✓）。
+ */
+const TABLE = "some_other_table";
 
 afterEach(() => {
   failures.length = 0;

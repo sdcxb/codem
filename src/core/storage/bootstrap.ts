@@ -53,26 +53,15 @@ import { domainEnsureLoaded } from "./domain-store";
  */
 
 /**
- * **按表放宽镜像上限**（第 136 波）✓ —— 默认上限是 5000 行 ✗。
+ * ⚠️ **第 139 波：这张表已经搬到端口里**（`rust-port.ts::DOMAIN_MIRROR_ROW_LIMITS`）✗→✓。
  *
- * ## 依据（真机 1.16.252 上的库）
+ * 原因是真机教训 ✓：放在这里时，只有**预取**这一条路径带着覆盖 ✓，
+ * 而 `messages` / `telemetry_events` 根本不在预取清单里 ✓ ——
+ * 它们走 `domainPort()`（**不传覆盖** ✗）⇒ 真机上照旧报
+ * 「表 messages 超过镜像上限 5000 行」✗（用户第二次报障：测试都在空转 ✗）。
  *
- * | 表 | 行数 | 默认上限 5000 的后果 |
- * |---|---|---|
- * | `messages` | **10052** ✗ | 整域拒绝镜像 ✗ ⇒ 「本次该域**读给空结果**」✗（**agent 读不到自己的消息历史** ✗） |
- * | `telemetry_events` | **8975** ✗ | 整域拒绝 ✗ ⇒ 写要等镜像就绪 ⇒ **等 15000 ms 后丢弃** ✗ |
- *
- * 这两张表都是「行小、读得频繁」的类型 ✓ —— 放宽到几万行只占十几到几十 MB ✓，
- * 而副作用（读空 / 写丢 + 每次白等 15 秒 ✗）都是用户可见的 ✗。
- * 端口侧还有 `DOMAIN_MIRROR_HARD_MAX_ROWS` 硬天花板 ✓，所以这张表只是"取舍" ✓，不是"放开" ✗。
+ * 结论：**安全默认值必须由拥有数据的层兜住** ✓。
  */
-const DOMAIN_MIRROR_LIMITS: Record<string, number | undefined> = {
-  /** 消息是 agent 与界面的核心读路径 ✓ —— 读空会直接让 agent"看不见自己做过什么" ✗ */
-  messages: 50_000,
-  /** 遥测是追加型、行很小 ✓ —— 放宽它是为了不再让写白等 15 秒后丢掉 ✗ */
-  telemetry_events: 40_000,
-};
-
 export type StorageBootResult =  | {
       kind: "registered";
       engine: "rust";
@@ -472,10 +461,12 @@ export async function prefetchDomainMirrors(
           resolve();
         };
         /**
-         * **第 136 波：按表给不同的镜像上限** ✓（默认 5000 ✗，见 `DOMAIN_MIRROR_LIMITS` 的注释 ✓）。
-         * 端口侧还有硬天花板兜着 ✓，这里只是"哪张表值得多花内存"的取舍 ✓。
+         * 上限由**端口自己**决定 ✓（`DOMAIN_MIRROR_ROW_LIMITS`，第 139 波）——
+         * 这是 139 波的真教训：把「安全默认值」放在调用方 ✗ 时，
+         * 只要有**一条**路径忘了传（`domainPort()` → `ensureLoaded(table, cb)` ✗），
+         * 真机上就照旧报「表 messages 超过镜像上限 5000 行」✗（测试全在空转 ✗）。
          */
-        domainEnsureLoaded(t, finish, DOMAIN_MIRROR_LIMITS[t]);
+        domainEnsureLoaded(t, finish);
         setTimeout(finish, perTableMs);
       }),
   );
