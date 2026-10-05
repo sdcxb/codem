@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 第 162 波：**模式 A（零产出收工）守卫的判据** ✓。
  *
  * ## 它针对的真机形态（同版本两批对照 ✓）
@@ -48,4 +48,25 @@ describe("第 162 波：零产出收工守卫", () => {
   it("ZA-4: 已经提醒过 ⇒ 不再提醒（每会话一次 ✓）", () => {
     expect(shouldNudgeZeroOutput({ modifiedAnything: false, testStatuses: ["red"], alreadyNudged: true })).toBe(false);
   });
+
+  it("ZA-5（第 163 波补）: 没改过 + **一次测试都没跑** ⇒ 也要提醒（真机里「早早收工」多半是这个形状 ✗）", () => {
+    /**
+     * 实测迭代数：通过轮 **47 / 61 / 66** ✓，失败轮 **3 / 17 / 21 / 23 / 24 / 26 / 37** ✗。
+     * 其中 v31 run-4（23 次、失败 ✗、`loopStops=[]` ✗）**既没改、也没跑测试** ✓
+     * ⇒ 只要求「有红的判据」会让这种轮次**完全隐身** ✗。
+     */
+    expect(
+      shouldNudgeZeroOutput({ modifiedAnything: false, testStatuses: [], alreadyNudged: false }),
+      "没改、没跑测试就收尾 ⇒ 至少要说一句为什么（提醒文案明确邀请它说明理由 ✓）",
+    ).toBe(true);
+  });
+
+  it("ZA-6 反向对照: 没改过 + 测试**全绿** ⇒ 仍然不许提醒（只读型任务就是做完了 ✓）", () => {
+    expect(
+      shouldNudgeZeroOutput({ modifiedAnything: false, testStatuses: ["green", "green", "green"], alreadyNudged: false }),
+      "全绿说明「跑测试看结论」这条路径本身是成立的 ⇒ 别打扰",
+    ).toBe(false);
+  });
 });
+
+

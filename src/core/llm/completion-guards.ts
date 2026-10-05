@@ -36,13 +36,29 @@
 export function shouldNudgeZeroOutput(args: {
   /** 本会话有没有动过盘（`sessionModifiedAnything` ✓） */
   modifiedAnything: boolean;
-  /** 本会话跑过的判据 → 结果（`testFileStatus` ✓） */
+  /** 本会话跑过的判据 → 结果（`testFileStatus` ✓）；**空 = 一次都没跑过** ✓ */
   testStatuses: Iterable<"red" | "green">;
   /** 这条提醒每会话只发一次 ✓ */
   alreadyNudged: boolean;
 }): boolean {
   if (args.alreadyNudged) return false;
   if (args.modifiedAnything) return false; // 改过了 ⇒ 交给另外两条守卫 ✓
-  for (const s of args.testStatuses) if (s === "red") return true;
+  const statuses = [...args.testStatuses];
+  /** ① 判据红着 ⇒ "活没干完"的硬证据 ✓ */
+  if (statuses.some((s) => s === "red")) return true;
+  /**
+   * ② **一次测试都没跑过** ✓（第 163 波补上）。
+   *
+   * 为什么必须补 ✗：真机里"早早收工"的轮次**常常连测试都没跑** ✓ ——
+   * 实测迭代数：通过轮 **47 / 61 / 66** ✓，失败轮 **3 / 17 / 21 / 23 / 24 / 26 / 37** ✗。
+   * 其中 v31 run-4（23 次、失败 ✗、`loopStops=[]` ✗）就是"没改、也没跑测试"✓
+   * ⇒ 原来那条"必须有一条红的"**让它完全隐身** ✗。
+   *
+   * 误报代价可控 ✓：只读型任务确实可能"不改也不跑测试"✓，
+   * 但提醒的文案**明确邀请它说明理由** ✓（"确实不用改就明说读了什么、为什么现状是对的"✓），
+   * 而且**每会话只发一次** ✓ —— 用一轮换"不让它安静地过去" ✓，值得 ✓。
+   */
+  if (statuses.length === 0) return true;
+  /** ③ 全绿 ⇒ 只跑测试看结论、且结论是通过的 ✓ ⇒ **不打扰** ✓（防误伤的关键 ✓） */
   return false;
 }

@@ -29,32 +29,8 @@ import { createDefaultToolRegistry } from "../core/llm/tools";
 const CWD = "C:\\red-test-loop";
 const SESSION = "test-red-test-session";
 
-/** 脚本化 provider（与 stall-guard 判据同款：每次 `stream()` 消费一段脚本） */
-class ScriptedProvider {
-  id = "red-test-provider";
-  name = "Red Test Mock";
-  config: any = { apiKey: "sk-test" };
-  requests: any[] = [];
-  private queue: any[][] = [];
-  setScript(scripts: any[][]) {
-    this.queue = scripts;
-  }
-  isConfigured() {
-    return true;
-  }
-  async *stream(request: any): AsyncGenerator<any> {
-    this.requests.push(request);
-    const script = this.queue.shift();
-    if (!script) throw new Error("脚本耗尽（不该发生的额外调用）");
-    for (const item of script) yield item;
-  }
-  async complete() {
-    return { content: "{}", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
-  }
-  async listModels() {
-    return [];
-  }
-}
+/** 脚本化 provider 已抽到共享夹具 ✓（见 `helpers/scripted-provider.ts` ✓）。 */
+import { ScriptedProvider } from "./helpers/scripted-provider";
 
 /** 一个"跑测试"的迭代：调用 bash，然后 finishReason=tool_use（循环继续） */
 function testIteration(id: string, command: string): any[] {
