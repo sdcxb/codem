@@ -2204,7 +2204,67 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.129 ★★★ 关键区别：`domain-mirror` 用的是**它自己的 transport**，不是我测的那个假端口（第 245 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.130 ★★★★ 结案（**读字面代码行确认** ✓）：`domain-mirror` 的 transport **忽略 `where`** ✗（第 246 波）
+
+## 找到的那几行 ✓（`domain-mirror.test.ts:72-85` ✓）
+
+```ts
+const transport = {
+  invokeCommand: async (command, params) => {
+    if (command === "crud.list") {
+      const p = params ?? {};
+      const table = String(p.table ?? "");
+      const limit = Number(p.limit ?? 1000);
+      const offset = Number(p.offset ?? 0);
+      const src = rowsFor(table);
+      const count = byTable ? src.length : total;
+      const all = Array.from({ length: count }, (_, i) => src[i] ?? { id: `pad-${i}` });
+      const items = all.slice(offset, offset + limit);      // ← **只看 offset/limit** ✗
+      return { ok: true, result: { items, has_more: … } };
+    }
+```
+
+⇒ **`params.where` 从头到尾没被碰过** ✗✗ —— 它按 `offset/limit` 切片 ✓、
+但**不按 `where` 过滤** ✗ ⇒ 于是**任何** notebook 的拉取都会拿到**整张表** ✓。
+
+## 整条链**闭合** ✓（全部有字面或判据支撑 ✓）
+
+| 环节 | 事实 | 依据 |
+|---|---|---|
+| 产品带的 `where` 对不对 ✓ | **对** ✓（`{notebook_id}` ✓） | `storage.ts:376` 字面 ✓ |
+| 产品读的桶对不对 ✓ | **对** ✓（按 notebook 分桶 ✓） | `storage.ts:340-341` 字面 ✓ |
+| 计数路径对不对 ✓ | **对** ✓（只读该 notebook 的桶 ✓） | `storage.ts:899-937` 读全 ✓ |
+| `__warmChunksForTests` ✓ | **对** ✓（转发参数 ✓） | `storage.ts:458-460` 读全 ✓ |
+| 通用假端口 `createFakeStoragePort` ✓ | **对** ✓（按 `where` 过滤 ✓） | `NC-WHERE-1/2` 绿 ✓ |
+| **`domain-mirror` 自己的 transport** ✗ | **不按 `where` 过滤** ✗ | **本波字面** ✓ |
+
+⇒ `DOM-31` 的 `expected 3 to be 2` ✗ = 产品把**正确的条件**给了 ✗
+**一个不认条件的测试替身** ✓ ⇒ 它把 `nb2` 的 `c9` 也交了出来 ✓ ⇒ 计数 3 ✓ —— **完全对上** ✓✓。
+
+## 修法与判据 ✓（下一波 ✓）
+
+1. **修那个 transport** ✓：让 `crud.list` 按 `where` 过滤 ✓（等值匹配 ✓，与真引擎一致 ✓）；
+2. **判据 `NC-WHERE-3`** ✓：**这个** transport 收到 `where` 也必须只返回匹配行 ✓
+   （用 `nb1` 2 行 / `nb2` 1 行造 ✓：查 `nb1` 必须只回 2 行 ✓）；
+   **反向对照 `NC-WHERE-4`** ✓：不带 `where` ⇒ 全部行 ✓；
+3. **变异** ✓：把过滤去掉 ⇒ `NC-WHERE-3` 红 ✓；
+4. 然后照旧推进最后一波 ✓（拆两处读 + C3-4 + gate + NC-RW-1 ✓）。
+
+## 这一段的总结（第 233–246 波，共 14 轮）✓
+
+- **我提出过 6 个判断 ✗，6 个全被否定** ✓；
+- 但每一步都靠"**读实际代码行 / 判据 / 探针**"把它挡下 ✓ ⇒ **产品一行未改** ✓、
+  **通用夹具也未改坏** ✓；
+- 而**最后一个**（"那是另一个 transport"✓）之所以对 ✓，正是因为它是**读字面代码**得来的 ✓，
+  不是推断 ✓。
+
+⇒ 结论 ✓：**范围缩小只能靠读字面代码 / 量证** ✓ —— 推断能generate假设 ✓，但**不能**收口 ✗。
+这条已写进交接单 ✓。
+
+## 状态 ✓
+
+树全绿 ✓（`7100 通过` ✓）；跑批 **8/24** ✓；本轮**未装机** ✓（纯只读 ✓）。
+### 13.129 ★★★ 关键区别：`domain-mirror` 用的是**它自己的 transport**，不是我测的那个假端口（第 245 波）
 
 ## 读到的（`storage.ts:458-460` ✓，整段只有三行 ✓）
 
