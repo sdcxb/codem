@@ -156,6 +156,43 @@ async function isGitRepo(cwd: string): Promise<boolean> {
 }
 
 /** 工作区快照：能表达"未提交的改动" */
+/**
+ * **同一回合内复用"改动前快照"** ✓（第 186 波 ✓）—— 见 \`start()\` 顶部的长说明 ✓。
+ * 键 = 工作区路径 ✓；\`finalize()\` 之后清掉 ✓（下一回合重新拍 ✓）。
+ */
+const beforeSnapshotCache = new Map<string, { tree: string; snapshot: WorkingTreeSnapshot }>();
+/** 仅判据使用 ✓：真实取快照的次数 / 复用次数（**不靠计时** ✗ —— CI 会抖 ✓）。 */
+let snapshotTakenCount = 0;
+let snapshotReuseCount = 0;
+export function __fileChangeSnapshotStats(): { taken: number; reused: number } {
+  const out = { taken: snapshotTakenCount, reused: snapshotReuseCount };
+  snapshotTakenCount = 0;
+  snapshotReuseCount = 0;
+  return out;
+}
+export function __resetFileChangeSnapshotCache(): void {
+  beforeSnapshotCache.clear();
+  snapshotTakenCount = 0;
+  snapshotReuseCount = 0;
+}
+
+/**
+ * **仅判据使用** ✓：直接播种一条缓存 ✓。
+ *
+ * 为什么需要它 ✗：`start()` 的第一句是 `isGitRepo()` ✓，而它走**宿主 IPC** ✗
+ * ⇒ 在 vitest 里恒为 false ✓ ⇒ 拿不到快照、也测不到缓存逻辑 ✗。
+ * 播种之后，判据就能**不依赖 git** 地验证"复用"与"失效"两条行为 ✓
+ * （与 `MTC-*` 同一思路：测**行为**，不测**计时** ✓）。
+ */
+export function __seedFileChangeSnapshot(workspace: string, tree: string, snapshot: WorkingTreeSnapshot): void {
+  beforeSnapshotCache.set(workspace, { tree, snapshot });
+}
+
+/** **仅判据使用** ✓：某工作区当前有没有可复用的快照 ✓（用于验证 `finalize()` 的失效 ✓）。 */
+export function __hasFileChangeSnapshot(workspace: string): boolean {
+  return beforeSnapshotCache.has(workspace);
+}
+
 interface WorkingTreeSnapshot {
   /** 工作区对应的树对象（`git stash create` 的提交；工作区干净时回退到 HEAD^{tree}） */
   ref: string;
@@ -217,6 +254,29 @@ export class FileChangeTracker {
    * Returns false if not a git repo — caller should skip tracking.
    */
   async start(): Promise<boolean> {
+    /**
+     * ## 第 186 波：**"改动前快照"每回合只取一次** ✗→✓（目标②的修复 ✓）
+     *
+     * 真机打点（1.16.278 ✓）把每轮 `prep=` 的 **1.86s** 圈到 `compactionOut → iterT0` 这 124 行 ✓，
+     * 逐行列 `await` 后只剩这一处 ✓ —— 而 `agentic-loop.ts` 是**每轮**都
+     * `new FileChangeTracker(...)` 再 `await start()` ✗ ⇒ 每轮都跑
+     * `rev-parse` + **`git stash create`**（各起一个 git 进程 ✗）⇒ 30–49 轮 ≈ **60–90s** ✓，
+     * 与总账完全对上 ✓。
+     *
+     * 语义上 ✓：`beforeSnapshot` 是 `finalize()` 用来算"**这一回合**新增了什么"的基准 ✓，
+     * 所以正确的"改动前"是**回合开始时**的工作区 ✓，而不是每一轮各拍一张 ✗
+     * （每轮重拍只会让基准**越拍越晚** ✗，把本轮早期改动算丢 ✗ —— 所以这个缓存**同时修了一个正确性问题** ✓）。
+     *
+     * 失效 ✓：`finalize()` 结束后清掉 ✓（下一回合重新拍 ✓）；工作区路径变了也重新拍 ✓（按 workspace 作键 ✓）。
+     */
+    const cached = beforeSnapshotCache.get(this.workspace);
+    if (cached) {
+      this.beforeTree = cached.tree;
+      this.beforeSnapshot = cached.snapshot;
+      this.active = true;
+      snapshotReuseCount++;
+      return true;
+    }
     if (!(await isGitRepo(this.workspace))) {
       return false;
     }
@@ -240,6 +300,9 @@ export class FileChangeTracker {
        * 而 `stash create` 不改工作区/索引，所以顺序不影响正确性。
        */
       this.beforeSnapshot = await snapshotWorkingTree(this.workspace);
+      /** 第 186 波：**存下来给同一回合的后续迭代复用** ✓（见 `start()` 顶部的说明 ✓）。 */
+      beforeSnapshotCache.set(this.workspace, { tree: this.beforeTree, snapshot: this.beforeSnapshot });
+      snapshotTakenCount++;
       this.active = true;
       return true;
     } catch (e) {
@@ -254,6 +317,11 @@ export class FileChangeTracker {
    * Returns null if tracking not active or no changes.
    */
   async finalize(): Promise<FileChangeResult | null> {
+    /**
+     * 第 186 波：**回合结束 ⇒ 丢掉复用的快照** ✓（下一回合必须重新拍 ✓，
+     * 否则基准会停在上一回合，跨回合的改动就算不出来了 ✗）。
+     */
+    beforeSnapshotCache.delete(this.workspace);
     if (!this.active || !this.beforeTree || !this.beforeSnapshot) {
       return null;
     }
