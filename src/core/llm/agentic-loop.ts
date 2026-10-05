@@ -4487,9 +4487,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     // 先裁剪陈旧超大工具结果（保留最近 2 条完整；对标 dsh tool-result-pruner
     // head/tail 策略，防止单个 read/bash 结果 ≈12-25k token 占据大量预算）。
     const prunedForSelect = pruneStaleToolResults(llmMessages);
+    phase("prune");
     const contextWindow = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
     const selectBudgetTokens = Math.max(16_000, Math.round(contextWindow * 0.9));
     const selected = this.selectMessagesByPriority(prunedForSelect, selectBudgetTokens);
+    phase("select");
 
     // Filter orphan tool messages AND strip dangling tool_calls
     // 1. If a "tool" message has no preceding assistant with tool_calls → drop it
@@ -4569,6 +4571,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       droppedCount = dropped.length;
       if (dropped.length > 0) {
         droppedStats = foldStats(dropped);
+    phase("fold");
         if (!valid.some((m: any) => isFoldMessage(m))) {
           const foldMsg = renderFoldSummary(droppedStats, "zh");
           valid.unshift({ role: "user", content: foldMsg, id: `ctx-fold-${Date.now()}` } as any);
