@@ -1,15 +1,15 @@
 {
-  "version": "1.16.247",
-  "notes": "时延归因：驱动等待口径修正 + 应用侧 TTFT/stream 拆分观测",
-  "pub_date": "2026-10-05T00:01:26Z",
+  "version": "1.16.248",
+  "notes": "修 repo-02 波动根因：同族判据按文件记（原来第一次编辑就消耗掉整回合唯一机会）",
+  "pub_date": "2026-10-05T00:51:50Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hwYlZHR295Y2tLWDlqZFJXeHdZc1FLTHNrSjNrcU5ncHdwZk5USDFzT0w1WXRYdGZZTkVwUkYxdkpWY3ZjNHFiYmh6WHFhMTZ6cGMzRmlBTllnRVFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTU4NDg2CWZpbGU6Q29kZW1fMS4xNi4yNDdfeDY0LXNldHVwLmV4ZQptTnJRb2dIb0NJeEhIRG82aWZSNXNZLzdTaUUrZWh1QlZaUkpyRWRyMmE1eHB5Q2kwT1REeHNBblFPWldLK29OV05DdWpCNHNtcTVOMy9QMUtZa0FEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.247/Codem_1.16.247_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Z3VWU0TDUwVjVPeU9pNTdVdWJrelhWOWJFdWE1UzR5djNpL2UwOWpRMnA0RVlXTGlTSFFWV29uQ2l3ZkN3d2Zvd041a3dWallVdkZpWXJPbU5nc1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTYxNTEwCWZpbGU6Q29kZW1fMS4xNi4yNDhfeDY0LXNldHVwLmV4ZQpiWG9ydEVkQVdZY0dmMHM1OEFVenFMYW9oSjQ2Tm8wc24xV3BpTGlpWXp6MmEvajdEbGJOL0U1VG5zc0ZBWU1KVUJkYlA1anc3RVoyeTZzaGFJaUVDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.248/Codem_1.16.248_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hwYlZHR295Y2tLWDlqZFJXeHdZc1FLTHNrSjNrcU5ncHdwZk5USDFzT0w1WXRYdGZZTkVwUkYxdkpWY3ZjNHFiYmh6WHFhMTZ6cGMzRmlBTllnRVFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTU4NDg2CWZpbGU6Q29kZW1fMS4xNi4yNDdfeDY0LXNldHVwLmV4ZQptTnJRb2dIb0NJeEhIRG82aWZSNXNZLzdTaUUrZWh1QlZaUkpyRWRyMmE1eHB5Q2kwT1REeHNBblFPWldLK29OV05DdWpCNHNtcTVOMy9QMUtZa0FEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.247/Codem_1.16.247_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1Z3VWU0TDUwVjVPeU9pNTdVdWJrelhWOWJFdWE1UzR5djNpL2UwOWpRMnA0RVlXTGlTSFFWV29uQ2l3ZkN3d2Zvd041a3dWallVdkZpWXJPbU5nc1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTYxNTEwCWZpbGU6Q29kZW1fMS4xNi4yNDhfeDY0LXNldHVwLmV4ZQpiWG9ydEVkQVdZY0dmMHM1OEFVenFMYW9oSjQ2Tm8wc24xV3BpTGlpWXp6MmEvajdEbGJOL0U1VG5zc0ZBWU1KVUJkYlA1anc3RVoyeTZzaGFJaUVDZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.248/Codem_1.16.248_x64-setup.exe"
     }
   }
 }

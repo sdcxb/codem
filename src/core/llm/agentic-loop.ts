@@ -466,6 +466,14 @@ export type LoopEvent =
  */
 const RED_TEST_NUDGE_LIMIT = 2;
 
+/**
+ * 一回合里最多为几个文件给「同族判据」那条事实（第 133 波）。
+ *
+ * 取 4 的理由：既不会因为「第一次编辑恰好没有同族判据」而整回合作废 ✓（那正是 repo-02 波动的原因 ✗），
+ * 又仍然**有界** ✓ —— 每多一个文件就是一次 grep（IPC 调用 ✓），不能无限 ✓。
+ */
+const SYMBOL_SIBLINGS_MAX_PER_TURN = 4;
+
 export class AgenticLoop {
   private provider: LLMProvider; // E8: not readonly — can be swapped during cost degradation
   private tools: ToolRegistry;
@@ -489,8 +497,16 @@ export class AgenticLoop {
    */
   private familyReminderSentInTurn = false;
 
-  /** 第 125 波：本回合是否已经给过「同族判据」那条事实（每轮最多一次 ✓） */
-  private symbolSiblingsSentInTurn = false;
+  /**
+   * 第 125/133 波：本回合**已经为哪些文件**给过「同族判据」那条事实 ✓。
+   *
+   * ⚠️ 第 133 波从「每回合一个布尔」改成「按文件记」✗→✓，依据是真机日志：
+   * `symbol siblings: null | edited= src/core/llm/index.ts` —— 机制触发了 ✓，
+   * 但那个文件里的符号没有任何判据提到 ⇒ 返回 null ✗，而布尔标记已经把本回合**唯一**的机会
+   * 用掉了 ✗ ⇒ 之后它去改 `tools.ts`（那里正有 `dsh-d9` 的符号）也不会再提示 ✗。
+   * 这正是 repo-02 轮间波动的来源 ✓。
+   */
+  private symbolSiblingsSentFor = new Set<string>();
 
   /** 本回合的用户消息（补发提醒时要用它做相关性排序；第 109 波） */
   private lastUserMessage = "";
@@ -1188,7 +1204,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.lastUserMessage = userMessage;
     this.lastCwd = cwd;
     this.familyReminderSentInTurn = false;
-    this.symbolSiblingsSentInTurn = false;
+    this.symbolSiblingsSentFor.clear();
     /**
      * **第 116–118 波排查痕迹**（`codem-debug=agent-loop` 时可见 ✓）：它曾经是排查主力 ✓ ——
      * 在"机制在装机版里到不了模型"的追查中，正是靠"这一行有没有出现"才证明 `run()` 真的在跑 ✓
@@ -3796,10 +3812,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          *
          * 每回合最多一次 ✓；失败静默 ✓（非关键路径 ✓）。
          */
-        if (!this.symbolSiblingsSentInTurn && /^(write|edit|multi_edit)$/.test(name)) {
+        if (this.symbolSiblingsSentFor.size < SYMBOL_SIBLINGS_MAX_PER_TURN && /^(write|edit|multi_edit)$/.test(name)) {
           const edited = String(effectiveArgs.path ?? effectiveArgs.file_path ?? "");
-          if (edited) {
-            this.symbolSiblingsSentInTurn = true;
+          if (edited && !this.symbolSiblingsSentFor.has(edited)) {
+            /** 先标记再做事（老规矩 ✓）：同一个文件本回合只尝试一次 ✓，失败也不重试 ✓。 */
+            this.symbolSiblingsSentFor.add(edited);
             try {
               const root = (this.lastCwd || process.cwd()).replace(/\\/g, "/");
               const abs = edited.replace(/\\/g, "/");
