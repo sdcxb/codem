@@ -1212,6 +1212,7 @@ class RustEventMirror {
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
     totalBudgetRows = 20_000,
     totalBudgetBytes = MIRROR_EVENT_BUDGET_BYTES,
+    private readonly keepSessions = MIRROR_KEEP_SESSIONS,
   ) {
     this.totalBudgetRows = totalBudgetRows;
     this.totalBudgetBytes = totalBudgetBytes;
@@ -1342,6 +1343,30 @@ class RustEventMirror {
    *   补进镜像与 Rust 库（见 EventLog 的 pendingDuringLoad）——
    *   否则那一小段时间写入的事件会在切换引擎后"消失"。
    */
+  /**
+   * **只驻留当前活跃会话的事件镜像**（第 138 波，S2 ✓）—— 与消息镜像同款 ✓，理由见那边的长注释。
+   *
+   * 比消息镜像多一条例外：**带 `pending && !settled`（本地追加但未确认落库）的会话不许逐出** ✓
+   * —— 那会删掉 `MirrorEvent.pending` 依赖的唯一一份本地副本（会静默丢事件 ✗）。
+   */
+  private evictOtherSessions(activeId: string): void {
+    const others = [...this.lru.keys()].filter((id) => id !== activeId);
+    const keepOthers = Math.max(0, this.keepSessions - 1);
+    const drop = keepOthers > 0 ? others.slice(0, Math.max(0, others.length - keepOthers)) : others;
+    for (const sessionId of drop) {
+      if (this.loading.has(sessionId)) continue; // 正在加载的不动 ✓
+      const dropped = this.bySession.get(sessionId);
+      if (!dropped) continue;
+      if (dropped.some((e) => e.pending && !e.settled)) continue; // 未落库的本地追加：硬性例外 ✓
+      this.bySession.delete(sessionId);
+      this.loaded.delete(sessionId);
+      this.lru.delete(sessionId);
+      this.evictions++;
+      this.lastEviction = `切到会话 ${activeId} ⇒ 已逐出会话 ${sessionId}（${dropped.length} 条）；S2：同一时刻只驻留当前活跃会话，下次读取该会话会重新加载`;
+      console.debug(`[RustStoragePort] ${this.lastEviction}`);
+    }
+  }
+
   ensureLoaded(sessionId: string, onLoaded?: () => void): void {
     if (this.loaded.has(sessionId)) {
       /*
@@ -1351,6 +1376,7 @@ class RustEventMirror {
        * （与消息镜像 `RustMessageMirror.ensureLoaded` 的 touch 完全同款。）
        */
       this.touch(sessionId);
+      this.evictOtherSessions(sessionId); // S2 ✓：命中路径也要收（否则切回来时旧会话会一直留着 ✗）
       onLoaded?.();
       return;
     }
@@ -1379,6 +1405,8 @@ class RustEventMirror {
          * 详见 `enforceBudget` 的注释（第 63 轮修的真洞）。
          */
         this.enforceBudget();
+        /** S2（第 138 波）：加载完成后也收一次 ✓（此刻其它会话可能刚移出 loading ✓）。 */
+        this.evictOtherSessions(sessionId);
       });
     this.loading.set(sessionId, job);
     if (onLoaded) {
@@ -1730,6 +1758,7 @@ class RustMessageMirror {
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
     totalBudgetRows = 20_000,
     totalBudgetBytes = MIRROR_MESSAGE_BUDGET_BYTES,
+    private readonly keepSessions = MIRROR_KEEP_SESSIONS,
   ) {
     this.totalBudgetRows = totalBudgetRows;
     this.totalBudgetBytes = totalBudgetBytes;
@@ -1884,9 +1913,46 @@ class RustMessageMirror {
     }
   }
 
+  /**
+   * **只驻留"当前活跃"的若干份会话镜像**（第 138 波，S2 ✓）。
+   *
+   * ## 为什么（§13.55：用户问"治标还是治本"）
+   *
+   * 字节/行数预算都是**治标** ✓：模型仍然是"把整域搬进渲染进程再削" ✗，
+   * 内存随"**用户浏览过的历史总量**"增长 ✗ —— 输入端无界 ✗。
+   * DSH 不这么做：数据留在宿主侧，客户端只取"这一屏要显示的" ✓
+   * （`docs/subsystems/session-query.zh.md`：一次精确读取，**而不是持续保留的订阅** ✓）。
+   *
+   * S2 是最小一步 ✓：**切到新会话时，把其它会话的镜像逐出** ✓ ⇒
+   * 上限从"浏览史总量"降到"**一个会话**" ✓（S3 再按视口分页降到"一屏" ✓）。
+   *
+   * 逐出**不影响正确性** ✓：未加载的会话 `isLoaded` 为 false ⇒ 读路径自动回退旧引擎 ✓，
+   * 下次访问重新走 `ensureLoaded` 拉回 ✓（与既有预算逐出同一条约定 ✓）。
+   */
+  private evictOtherSessions(activeId: string): void {
+    const others = [...this.lru.keys()].filter((id) => id !== activeId);
+    const keepOthers = Math.max(0, this.keepSessions - 1);
+    const drop = keepOthers > 0 ? others.slice(0, Math.max(0, others.length - keepOthers)) : others;
+    for (const sessionId of drop) {
+      if (this.loading.has(sessionId)) continue; // 正在加载的不动 ✓（与预算逐出同一取舍）
+      const dropped = this.bySession.get(sessionId);
+      if (!dropped) continue;
+      for (const r of dropped) {
+        if (this.byId.get(r.id) === r) this.byId.delete(r.id);
+      }
+      this.bySession.delete(sessionId);
+      this.loaded.delete(sessionId);
+      this.lru.delete(sessionId);
+      this.evictions++;
+      this.lastEviction = `切到会话 ${activeId} ⇒ 已逐出会话 ${sessionId}（${dropped.length} 条）；S2：同一时刻只驻留当前活跃会话，下次读取该会话会重新加载`;
+      console.debug(`[RustStoragePort] ${this.lastEviction}`);
+    }
+  }
+
   ensureLoaded(sessionId: string, onLoaded?: () => void): void {
     if (this.loaded.has(sessionId)) {
       this.touch(sessionId);
+      this.evictOtherSessions(sessionId);
       onLoaded?.();
       return;
     }
@@ -1907,6 +1973,8 @@ class RustMessageMirror {
         this.loading.delete(sessionId);
         // 强制点必须在 loading 清掉之后（见 `enforceBudget` 的第 1 条修正）
         this.enforceBudget();
+        /** S2（第 138 波）：加载完成后再收一次 —— 此刻"其它会话"里可能有刚被移出 loading 的 ✓。 */
+        this.evictOtherSessions(sessionId);
       });
     this.loading.set(sessionId, job);
     if (onLoaded) void job.then(() => { if (this.loaded.has(sessionId)) onLoaded(); });
@@ -2186,6 +2254,14 @@ const DOMAIN_MIRROR_HARD_MAX_ROWS = 200_000;
  * 又不至于让"浏览过很多大会话"把渲染进程顶爆 ✗。
  */
 const MIRROR_MESSAGE_BUDGET_BYTES = 192 * 1024 * 1024;
+
+/**
+ * **同一时刻驻留几个会话的镜像**（第 138 波，S2 ✓）。
+ *
+ * 取 1：把「跨会话累计」这个**无界输入端**掐掉 ✓ —— 内存上限从
+ * 「用户浏览过的历史总量」降到「**一个会话**」✓（§13.55：DSH 根本不把数据搬进客户端 ✓）。
+ */
+const MIRROR_KEEP_SESSIONS = 3;
 
 /**
  * **事件镜像的字节预算**（第 137 波）：事件里是**工具输出**（单条可到几十上百 KB ✗）。
@@ -2547,7 +2623,17 @@ export class RustStoragePort implements StoragePort {
   constructor(
     transport: StorageTransport = tauriTransport,
     onFailure: (stream: string, e: unknown, note: string) => void = () => {},
-    opts: { messageMirrorBudgetRows?: number; eventMirrorBudgetRows?: number } = {},
+    opts: {
+      messageMirrorBudgetRows?: number;
+      eventMirrorBudgetRows?: number;
+      /**
+       * 第 138 波（S2）：同一时刻驻留几个会话的镜像（默认 `MIRROR_KEEP_SESSIONS = 3` ✓）。
+       *
+       * 判据可以调大它来**单独测预算** ✓ —— 预算类判据关心的是「超预算逐出」✓，
+       * 而 S2 的「只留最近 N 个」是另一条独立规则 ✓；两者混在同一个夹具里会让判据失真 ✗。
+       */
+      mirrorKeepSessions?: number;
+    } = {},
   ) {
     this.reportFailure = onFailure;
     this.transport = transport;
@@ -2566,9 +2652,9 @@ export class RustStoragePort implements StoragePort {
     this.config = new RustConfigPort(transport, onFailure);
     this.append = new RustAppendPort(transport, onFailure);
     this.configDomain = new RustConfigDomainCache(transport, onFailure);
-    this.events = new RustEventMirror(transport, onFailure, opts.eventMirrorBudgetRows);
+    this.events = new RustEventMirror(transport, onFailure, opts.eventMirrorBudgetRows, undefined, opts.mirrorKeepSessions);
     // 预算可注入：契约测试要用小预算来验证"驻留真的有界"（否则得造两万条消息）
-    this.messages = new RustMessageMirror(transport, onFailure, opts.messageMirrorBudgetRows);
+    this.messages = new RustMessageMirror(transport, onFailure, opts.messageMirrorBudgetRows, undefined, opts.mirrorKeepSessions);
     this.domains = new RustDomainMirror(transport, onFailure);
   }
 
