@@ -4385,15 +4385,29 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
    *   - Priority 1 (LOW): Old tool results and assistant text — drop first
    */
   private async buildMessages(sessionId: string): Promise<any[]> {
+    /**
+     * **第 180 波：这 1.8s 到底花在哪一步** ✓（目标②，§13.72 已证明非模型开销几乎全是它 ✓）。
+     *
+     * 只统计、不改行为 ✓，并且只在 `codem-debug=agent-loop` 时输出 ✓。
+     */
+    const phaseT: Record<string, number> = {};
+    let phaseMark = Date.now();
+    const phase = (name: string) => {
+      const now = Date.now();
+      phaseT[name] = (phaseT[name] ?? 0) + (now - phaseMark);
+      phaseMark = now;
+    };
     // DB CRUD is the single source of truth for LLM messages.
     // The event log (session_events table) is used for telemetry and audit only,
     // NOT for message projection — duplicate events in the log caused repeated
     // messages that made the LLM re-answer previous questions.
     let messages: any[];
     messages = this.getMessageStorage().listMessages(sessionId);
+    phase("list");
     // Filter out soft-deleted (hidden) messages — these are kept in DB for
     // history viewing but must NOT be sent to the LLM.
     messages = messages.filter((m: any) => !m.hidden);
+    phase("filter");
 
     // --- E3: Incremental message building ---
     // Fingerprint MUST include tool call statuses + result presence, because
@@ -4622,9 +4636,23 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
      * 还是工具执行/收尾（下一段 ✓）✗ —— 打一个**开始时刻** ✓，让 `callLLM` 里那行
      * `llm timing` 附上 `ctx=…ms`（从本行到真正发请求 ✓）✓。
      */
+    /**
+     * **第 180 波：把"非模型开销"再往下拆一层** ✓（目标②，§13.72 ✓）。
+     *
+     * `ctx=1.8s/轮` 已经确定"几乎全是上下文重建" ✓，但**重建里哪一步**还是黑盒 ✗。
+     * 这里先把已经量到的两步打出来 ✓（`list`=读全量消息 ✓、`filter`=过滤隐藏 ✓），
+     * 外部那一刻的总耗时由 `llm timing` 的 `ctx=` 给出 ✓ ⇒ 两者相减就是**余下各步**的合计 ✓。
+     */
     const buildMessagesT0 = Date.now();
     this.lastBuildMessagesAt = buildMessagesT0;
-    debugLog("agent-loop", `buildMessages raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}, final: ${finalMessages.length}`);
+    debugLog(
+      "agent-loop",
+      `buildMessages raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}, final: ${finalMessages.length}`,
+      `| 分段 ${Object.entries(phaseT)
+        .map(([k, v]) => `${k}=${v}ms`)
+        .join(" ")}`,
+      `| 至今 ${Date.now() - buildMessagesT0}ms`,
+    );
     // Diagnostic: 逐条 dump 仅在调试模式输出 — 长会话（数百条消息）每次迭代
     // 全量打印产生数千行 console 噪音，拖慢 devtools 且掩盖真实错误。
     // 设置 DEBUG_BUILD_MESSAGES=1 可恢复逐条诊断。
