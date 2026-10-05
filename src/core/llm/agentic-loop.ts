@@ -2531,45 +2531,47 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         /**
-         * **第 154 波：收尾时点出"没跑过的同族判据"** ✓ —— 目标①的正面突破点 ✓。
+         * **第 154/156 波：收尾时点出"族里没跑过的判据"** ✓ —— 目标①的正面突破点 ✓。
          *
-         * 真机读数（repo-02 四轮，同版本同提示词 ✓）显示：决定成败的**不是"读没读到判据"** ✗，
-         * 而是"**该跑的判据有没有跑过**" ✓ —— 通过轮把 `dsh-d8/d9/d10` 都跑了 ✓，
-         * 失败轮只跑了 `dsh-d10` ✗（或跑完之后又以 `write` 收尾 ✗）。
-         * 而本任务的缺陷形态正是"**补丁不完整**"✗（三处改动只做了一两处 ✓）。
+         * ## 为什么是"族"而不是"共享符号"（先验前提查出来的 ✗→✓）
          *
-         * 所以：改过源码、而它的同族判据里**有从没跑过的** ⇒ 点名一次 ✓（每会话一次 ✓）。
-         * 放在"改了但没验证"那条**前面** ✓：这条更具体（指名道姓 ✓），先给它机会 ✓。
+         * 第 154 波先做的是"同族判据 = 与所改文件**共享符号**的判据"✗，先验前提一量就发现**是哑的** ✗：
+         * `tools.ts` 只找得到 `dsh-d10`（**已经跑过的那条** ✗），漏掉 `dsh-d8` / `dsh-d9` ✗；
+         * 两次放宽都还是找不到 ✗。而真机读数早就指出差别是「**同一族跑了几条**」✓：
+         * 通过轮跑了整个 `dsh-*` 族 ✓，失败轮只跑了一条 ✗。
+         *
+         * ## 为什么提醒里要带**计数**
+         *
+         * 族可能有十几条 ✓（`dsh` 族实测 18 条 ✓），只列前 8 条（按名字排 ✗）**又会漏掉 d8/d9** ✗。
+         * 所以这里说清 **总数/跑过/没跑** ✓，并给出**一条能跑完整个族的命令** ✓ ——
+         * 让模型知道"缺口有多大" ✓，而不是被一份截断的清单误导 ✗。
          */
-        if (!this.unrunSiblingsNudged && this.sessionEditedSources.size > 0) {
+        if (!this.unrunSiblingsNudged && this.sessionEditedSources.size > 0 && this.testFileStatus.size > 0) {
           try {
-            const { siblingCriteriaFiles, unrunSiblingCriteria } = await import("./task-keyword-search");
+            const { unrunFamilyCriteria } = await import("./task-keyword-search");
             const root = this.lastCwd || process.cwd();
-            const siblingsOf = new Map<string, readonly string[]>();
-            /** 上限 4 个源码文件 ✓（每个都要读文件 + 几次 grep ✓，不能把收尾拖长 ✗）。 */
-            for (const rel of [...this.sessionEditedSources].slice(0, 4)) {
-              siblingsOf.set(rel, await siblingCriteriaFiles(root, rel));
-            }
-            const unrun = unrunSiblingCriteria({
-              editedSources: this.sessionEditedSources,
-              siblingsOf,
-              runStatus: this.testFileStatus,
-            });
+            /** 上限放到 50 ✓：这里只是"够不够看清缺口"✓，不按名字砍在前 8 条 ✗。 */
+            const unrun = await unrunFamilyCriteria({ root, runFiles: [...this.testFileStatus.keys()], max: 50 });
             if (unrun.length > 0) {
               this.unrunSiblingsNudged = true;
-              debugLog("agent-loop", "收尾：有没跑过的同族判据", unrun);
-              recordLoopStop(sessionId, "completed_unverified", { phase: "unrun-siblings", iteration: this.state.iteration });
+              const ranFamilies = [...this.testFileStatus.keys()].map((f) => (f.split("/").pop() ?? f).split(/[-_.]/)[0]);
+              const family = ranFamilies[0] ?? "（同族）";
+              debugLog("agent-loop", "收尾：族里没跑过的判据", { family, unrun: unrun.length, sample: unrun.slice(0, 3) });
+              recordLoopStop(sessionId, "completed_unverified", { phase: "unrun-family", iteration: this.state.iteration });
+              const shown = unrun.slice(0, 8);
               this.getMessageStorage().createMessage(
                 {
-                  id: `unrun-siblings-nudge-${Date.now()}`,
+                  id: `unrun-family-nudge-${Date.now()}`,
                   role: "user",
                   content:
-                    "[SYSTEM] 你这一路改过源码，但它对应的**判据里有几条你一次都没跑过**：\n" +
-                    unrun.map((f) => `- ${f}`).join("\n") +
-                    "\n\n这不是「命令你跑」✓，而是一条事实：**你还没看过它们的结论**✓。" +
-                    "请先跑一遍（或读一遍）再决定是否收尾 —— 这类任务的真机数据显示：" +
-                    "**跑了全部同族判据的轮次通过，只跑了一部分的轮次失败**✓，" +
-                    "而失败形态几乎都是「改得不完整」（只补了其中一两处）。",
+                    "[SYSTEM] 你这一路改过源码，而**判据只跑了一部分**（这是一条事实，不是命令 ✓）：\n" +
+                    `- 你已经跑过 ${this.testFileStatus.size} 条 ✓\n` +
+                    `- 同族（\`${family}-*\`）里还有 **${unrun.length} 条你没跑过**：\n` +
+                    shown.map((f) => `  - ${f}`).join("\n") +
+                    (unrun.length > shown.length ? `\n  - …还有 ${unrun.length - shown.length} 条` : "") +
+                    `\n\n一条命令可以把整族跑完：\`npx vitest run 'src/test/${family}-*.test.ts'\` ✓\n` +
+                    "为什么值得跑完：这类任务的真机数据里，**把同族判据跑齐的轮次通过，只跑了一部分的轮次失败** ✓，" +
+                    "而失败形态几乎都是「改得不完整」（只补了其中一两处）✓。",
                   timestamp: Date.now(),
                   status: "done",
                 },
@@ -2578,12 +2580,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               this.msgCache = null;
               yield {
                 type: "text_delta",
-                text: `\n\n🔎 还有 ${unrun.length} 条同族判据没跑过，已要求它先跑完再收尾…\n\n`,
+                text: `\n\n🔎 同族判据还有 ${unrun.length} 条没跑过（已跑 ${this.testFileStatus.size} 条），已要它先跑完再收尾…\n\n`,
               };
               continue;
             }
           } catch (e) {
-            warnOnce("unrun-siblings", "[agentic-loop] 同族判据收尾检查失败", e);
+            warnOnce("unrun-family", "[agentic-loop] 族判据收尾检查失败", e);
           }
         }
 

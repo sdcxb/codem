@@ -1,4 +1,4 @@
-﻿/**
+/**
  * **拿任务里的词搜仓库 + 给出测试文件命名分族**（第 98–114 波）。
  *
  * ## ⚠️ 第 114 波的关键修正：这里**不许**用 `node:fs`
@@ -649,6 +649,68 @@ async function searchSiblingCriteriaFiles(
     if (found.length >= (opts.maxFiles ?? 6)) break;
   }
   return { files: found, tried };
+}
+
+/**
+ * **收尾判定（族口径）**：本会话跑过的判据属于哪个"族"、族里还有哪几条**没跑过** ✓。
+ *
+ * ## 为什么从"共享符号"换成"族"（第 156 波：先验前提查出来的 ✗→✓）
+ *
+ * 第 154 波先做的是"同族判据 = 与所改文件**共享符号**的判据"✗ —— 先验前提一量就发现它**是哑的** ✗：
+ *
+ * ```
+ * siblingCriteriaFiles("src/core/llm/tools.ts")
+ *   ⇒ 只找得到 dsh-d10（**已经跑过的那条** ✗），漏掉 dsh-d8 / dsh-d9 ✗
+ * ```
+ * 两次放宽（去掉"搜到就收手" ✓、搜满 12 个符号 ✓）**都还是找不到** ✗
+ * ⇒ "共享符号"这条信号**连不到那两条判据** ✗（它们引用的标识符不在最长的 12 个里 ✓）。
+ *
+ * 而真机读数早就把正确信号指出来了 ✓：
+ *
+ * | 轮次 | 结果 | **bash 里真跑过的判据** |
+ * |---|---|---|
+ * | run-2 | **通过** ✓ | **dsh-d8, dsh-d9, dsh-d10（整个族 ✓）** |
+ * | run-3 | 失败 ✗ | 只有 dsh-d10 ✗ |
+ * | run-4 | 失败 ✗ | 只有 dsh-d10 ✗ |
+ *
+ * ⇒ 差别是「**同一族里跑了几条**」✓，不是「认不认识某个符号」✗。
+ * 族的定义沿用本模块既有口径 ✓（`summarizeNameClusters`：**名字第一段** ✓，
+ * 例如 `dsh-d8-edit-ambiguity.test.ts` ⇒ 族 `dsh` ✓）。
+ *
+ * 这条信号**不需要读源码、不需要 grep** ✓（只用文件清单 ✓）⇒ 收尾时几乎不花时间 ✓。
+ *
+ * @param runFiles 本会话**跑过**的判据文件（`testFileStatus` 的键 ✓）
+ * @returns 族里没跑过的判据文件（相对路径 ✓、去重 ✓、有上限 ✓、排序稳定 ✓）
+ */
+export async function unrunFamilyCriteria(args: {
+  root: string;
+  runFiles: Iterable<string>;
+  src?: TestFileSource;
+  max?: number;
+}): Promise<string[]> {
+  const max = Math.max(1, args.max ?? 8);
+  const normalize = (p: string) => p.replace(/\\/g, "/");
+  const run = new Set([...args.runFiles].map((f) => normalize(f).replace(/^\.\//, "")));
+  if (run.size === 0) return [];
+  const familyOf = (file: string) => {
+    const base = normalize(file).split("/").pop() ?? file;
+    return base.split(/[-_.]/).filter(Boolean)[0] ?? base;
+  };
+  const wanted = new Set([...run].map(familyOf));
+  let all: string[] = [];
+  try {
+    all = (await collectTestFiles(args.root, args.src)).map(normalize);
+  } catch {
+    return [];
+  }
+  const unrun: string[] = [];
+  for (const file of all.slice().sort()) {
+    if (run.has(file)) continue;
+    if (!wanted.has(familyOf(file))) continue;
+    if (!unrun.includes(file)) unrun.push(file);
+    if (unrun.length >= max) break;
+  }
+  return unrun;
 }
 
 /**
