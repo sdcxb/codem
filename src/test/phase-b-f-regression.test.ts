@@ -77,6 +77,8 @@ import {
   addSource, getSource, listSources, updateSource, deleteSource,
   addChunk, addChunksBulk, getChunks, getChunkCount, deleteChunksBySource,
   refreshNotebookCounts, embeddingToBase64, base64ToEmbedding,
+  /** 第 211 波：**测试用预热入口** ✓（迁移后同步读要先预热 ✓ —— 见"批量添加 chunks"里的说明 ✓）。 */
+  __warmChunksForTests,
 } from "../core/knowledge/storage";
 import { stripHtml, extractText } from "../core/knowledge/extractor";
 import { chunkText, estimateTokens } from "../core/knowledge/chunker";
@@ -686,7 +688,7 @@ describe("Phase F: 笔记本式知识管理", () => {
       expect(chunk.content).toBe("这是一个文本块");
     });
 
-    it("批量添加 chunks", () => {
+    it("批量添加 chunks", async () => {
       const nb = createNotebook({ name: "批量Chunk测试" });
       const src = addSource({ notebookId: nb.id, name: "bulk", type: "text", content: "x" });
       addChunksBulk(nb.id, src.id, [
@@ -694,6 +696,15 @@ describe("Phase F: 笔记本式知识管理", () => {
         { content: "块2", chunkIndex: 1, embedding: null, tokenCount: 5 },
         { content: "块3", chunkIndex: 2, embedding: new Float32Array([1, 0, 0]), tokenCount: 5 },
       ]);
+      /**
+       * 第 211 波：**先预热，再断言** ✓（原来的业务语义一条未放松 ✗）。
+       *
+       * 为什么必须加 ✗：迁移后（拆掉 `getChunks` 的镜像同步读 ✓）**不存在**
+       * "未预热即可同步读到"的视图 ✓ —— 内存投影是**异步填充**的 ✓
+       * （DSH 的模型也是如此 ✓：写路径先落后端持久 ✓、再更新内存投影 ✓，同步读取自内存 ✓）。
+       * 断言本身（3 块 ✓、第 3 块的 embedding 非空 ✓）**一个字都没改** ✗。
+       */
+      await __warmChunksForTests(nb.id);
       const chunks = getChunks(nb.id);
       expect(chunks.length).toBe(3);
       expect(chunks[2].embedding).not.toBeNull();
