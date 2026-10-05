@@ -720,23 +720,27 @@ describe("Phase F: 笔记本式知识管理", () => {
       expect(getChunkCount(nb.id)).toBe(2);
     });
 
-    it("按来源删除 chunks", () => {
+    it("按来源删除 chunks", async () => {
       const nb = createNotebook({ name: "删除Chunk测试" });
       const src = addSource({ notebookId: nb.id, name: "del", type: "text", content: "x" });
       addChunksBulk(nb.id, src.id, [
         { content: "a", chunkIndex: 0, embedding: null, tokenCount: 1 },
       ]);
       deleteChunksBySource(src.id);
+      /** 第 212 波：**先预热再断言** ✓（理由见"批量添加 chunks"✓；原断言"删完为 0"未改 ✗）。 */
+      await __warmChunksForTests(nb.id);
       expect(getChunks(nb.id).length).toBe(0);
     });
 
-    it("刷新笔记本计数", () => {
+    it("刷新笔记本计数", async () => {
       const nb = createNotebook({ name: "计数刷新测试" });
       const src = addSource({ notebookId: nb.id, name: "cnt", type: "text", content: "x" });
       addChunksBulk(nb.id, src.id, [
         { content: "a", chunkIndex: 0, embedding: null, tokenCount: 1 },
         { content: "b", chunkIndex: 1, embedding: null, tokenCount: 1 },
       ]);
+      /** 第 212 波：**先预热再断言** ✓（`refreshNotebookCounts` 依赖计数 ✓；原断言 1/2 未改 ✗）。 */
+      await __warmChunksForTests(nb.id);
       refreshNotebookCounts(nb.id);
       const updated = getNotebook(nb.id);
       expect(updated!.sourceCount).toBe(1);
