@@ -1305,6 +1305,15 @@ describe("域镜像分流 —— knowledge/notebooks + sources + counts", () => 
     await settle();
 
     const k = await import("../core/knowledge/storage");
+    /**
+     * 第 214 波：**先预热，再断言** ✓（DOM-31/DOM-33 共用的读点 ✓）。
+     *
+     * 为什么加 ✗：迁移后（拆掉 `getChunks` 的镜像同步读 ✓）**不存在**
+     * "未预热即可同步读到"的视图 ✓（内存投影异步填充 ✓，与 DSH 一致 ✓）。
+     * ⚠️ **下面两条业务断言一个字都没改** ✗：`chunk_index` 升序 ✓、
+     * 以及 embedding 的 Base64 → Float32 **逐元素一致** ✓（向量检索全靠它 ✓）。
+     */
+    await k.__warmChunksForTests("nb1");
     // 排序断言必须先把 chunk_index 写在注释里核对一遍：
     // c1→0、c2→1、c3→0，所以正确的顺序是 c1、c3（同为 0，保持相对次序）、c2。
     expect(k.getChunks("nb1").map((c) => c.id), "chunk_index ASC").toEqual(["c1", "c3", "c2"]);
