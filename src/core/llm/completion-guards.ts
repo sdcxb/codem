@@ -7,6 +7,62 @@
  */
 
 /**
+ * **模式 C：改完又还原** ✓（第 169 波）。
+ *
+ * ## 真机取证（1.16.268 的收尾段诊断 ✓）
+ *
+ * ```
+ * run-3（failed、diff=0、29 次调用）
+ * [agent-loop] 收尾段：进入 modified=true edited=4 lookedAtSource=true tests=8 red=0
+ * ```
+ *
+ * ⇒ 收尾段**走到了** ✓、两把守卫**都正确地沉默** ✓（不属于"零产出"✓；`tests=8 / red=0` ✓
+ * 说明该跑的族跑过了 ✓）—— 而它 **`edited=4` 却最终 `diff=0`** ✗。
+ *
+ * 唯一解释 ✓：**它改了真实文件、跑了 8 条判据（全绿）、然后把改动还原掉了** ✗。
+ * 佐证 ✓：这批日志里出现过 `git stash push -- src/core/llm/tools.ts` ✓，
+ * 而评测记录的 `selfRestoreCommands` **是空的** ✗（它只认某几种命令形态 ✓）。
+ *
+ * ## 判据为什么是"**还原之后没有再编辑**"
+ *
+ * - **还原过** ✓：说明作者一度认为改动该撤 ✓；
+ * - **之后再没编辑** ✓：说明它**带着"什么都没留下"的状态收尾** ✗ —— 这是要问的那句话 ✓；
+ * - 若之后**又编辑了** ✓ ⇒ 那是正常的"撤销了错的一版、重做一版"✓ ⇒ **不该打扰** ✗。
+ *
+ * 作用说清 ✓：它消除不了采样方差 ✗，只是把「**看起来全绿、实际什么都没留下**」✗
+ * 这种最隐蔽的失败**变得可见** ✓。
+ */
+export function shouldNudgeRevertedWork(args: {
+  /** 会话里出现过"还原型"命令（`git checkout --` / `restore` / `stash` / `reset --hard` ✓） */
+  revertedAfterEdit: boolean;
+  /** 这条提醒每会话只发一次 ✓ */
+  alreadyNudged: boolean;
+}): boolean {
+  if (args.alreadyNudged) return false;
+  return args.revertedAfterEdit;
+}
+
+/** 这条命令是不是"**还原型**"（第 169 波 ✓） */
+export function looksLikeRevertCommand(command: string): boolean {
+  const c = String(command ?? "");
+  return (
+    /**
+     * `git checkout` **带 `--`**（pathspec 分隔符 ✓）才算还原 ✓ ——
+     * 两种写法都要认 ✓：`git checkout -- <path>` ✓ 与 `git checkout <path> --` ✓
+     * （实测 RV-5 第一版只认前者 ✗，后者漏了 ✓）。
+     */
+    (/\bgit\s+checkout\b/.test(c) && /--/.test(c)) ||
+    /\bgit\s+restore\b/.test(c) ||
+    /**
+     * ⚠️ `git stash list` 是"**看**"不是"**还原**" ✓ ——
+     * 真机日志里它常和还原一起出现 ✗，所以必须先把它排除 ✓。
+     */
+    /\bgit\s+stash\b(?!\s+(list|show))/.test(c) ||
+    /\bgit\s+reset\s+--hard\b/.test(c)
+  );
+}
+
+/**
  * **模式 A：零产出收工** ✓（第 162 波）。
  *
  * ## 为什么要它（同版本两批对照 ✓）

@@ -14,6 +14,8 @@ import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-e
 import { initDefaultPipeline } from "./tool-pipeline";
 // 契约谓词：快照判据从这里来，不在调用点自己拼条件（那样又会长出第二处真相）
 import { mutatesWorkspace, needsPreCallSnapshot } from "./tool-contract";
+/** 第 169 波：**还原型命令的识别**（纯函数 ✓，必须静态导入后**同步**判 ✓ —— 异步会与收尾检查竞态 ✗）。 */
+import { looksLikeRevertCommand } from "./completion-guards";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { extractJSON } from "./output-parser";
@@ -809,6 +811,16 @@ export class AgenticLoop {
    * 那些夹具**既不跑测试也不改文件** ✓，于是守卫凭空多要一轮 ⇒ 脚本耗尽 ⇒ 红 ✗。
    */
   private sessionLookedAtSource = false;
+  /**
+   * **模式 C：改完又还原**（第 169 波 ✓）—— 还原型命令之后**没有再编辑** ⇒ 提醒一次 ✓。
+   *
+   * 真机取证：`run-3` 的收尾段诊断是 `modified=true edited=4 lookedAtSource=true tests=8 red=0` ✓，
+   * 而它最终 `diff=0` ✗ ⇒ 唯一解释就是"改完、测完（全绿）、又还原了"✗。
+   * 编辑会把它**清掉** ✓（"撤掉错的一版、重做一版"是正常动作 ✓，不该打扰 ✗）。
+   */
+  private revertedAfterEdit = false;
+  /** 这条提醒每会话只发一次 ✓ */
+  private revertedNudged = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
   /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
@@ -2573,6 +2585,47 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           `red=${[...this.testFileStatus.values()].filter((s) => s === "red").length}`,
         );
         /**
+         * **第 169 波（模式 C）：改完又还原** ✓ —— 最具体的一条，放最前面 ✓。
+         *
+         * 真机取证（1.16.268 的诊断 ✓）：
+         * `run-3` 的收尾段是 `modified=true edited=4 lookedAtSource=true tests=8 red=0` ✓
+         * 而它最终 **`diff=0`** ✗ ⇒ 唯一解释是"改完、测完（全绿）、又还原了"✗ ——
+         * 而那两把守卫**都正确地沉默了** ✓（它既不是"零产出"、族判据也跑过 ✓）。
+         */
+        if (!this.revertedNudged && this.revertedAfterEdit) {
+          try {
+            const { shouldNudgeRevertedWork } = await import("./completion-guards");
+            if (shouldNudgeRevertedWork({ revertedAfterEdit: this.revertedAfterEdit, alreadyNudged: false })) {
+              this.revertedNudged = true;
+              debugLog("agent-loop", "收尾：改动被还原过，且之后再没编辑");
+              recordLoopStop(sessionId, "completed_unverified", { phase: "reverted", iteration: this.state.iteration });
+              this.getMessageStorage().createMessage(
+                {
+                  id: `reverted-nudge-${Date.now()}`,
+                  role: "user",
+                  content:
+                    "[SYSTEM] 这一路你**改动过文件，但后来把改动撤销了**，而且**之后再没有编辑过**（一条事实 ✓）。\n" +
+                    "\n如果是有意放弃这版实现，请**说明理由**（为什么现在的代码是对的、你验证过什么）✓；" +
+                    "否则请把它**做回来** —— 真机数据里这种形态（改了、测了、又还原，最后盘上什么都没留下）" +
+                    "几乎总是**收尾时误撤**，而不是「确实不需要改」。",
+                  timestamp: Date.now(),
+                  status: "done",
+                },
+                sessionId,
+              );
+              this.msgCache = null;
+              yield {
+                type: "text_delta",
+                text: "\n\n🔎 检测到改动被还原且之后再没编辑，已要它说明理由或把改动做回来…\n\n",
+              };
+              continue;
+            }
+          } catch (e) {
+            warnOnce("reverted-work", "[agentic-loop] 还原守卫检查失败", e);
+          }
+        }
+
+        /**
          * **第 162 波（模式 A）：零产出收工** ✓ —— 一个字节都没改、而判据还红着就收尾 ✗。
          *
          * 真机形态（同版本 264 两批对照 ✓）：
@@ -3936,6 +3989,22 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             const argsText = JSON.stringify(effectiveArgs ?? {});
             if (/(^|["'\\/])src[\\/]/.test(argsText)) this.sessionLookedAtSource = true;
           }
+          /**
+           * **第 169 波：还原型命令** ✓ —— `git checkout -- x` / `restore` / `stash` / `reset --hard` ✓。
+           * 只有在"**这一路确实改过东西**"之后才记 ✓（没改过就无所谓还原 ✗）。
+           */
+          if (/^(bash|shell|run_command|terminal|pwsh)$/.test(toolName) && this.sessionModifiedAnything) {
+            const cmd = String((effectiveArgs as any)?.command ?? (effectiveArgs as any)?.cmd ?? "");
+            /**
+             * ⚠️ **必须同步判断** ✗→✓ —— 第一版写成 `void import(...).then(...)` ✗，
+             * 那是**异步**的 ✓ ⇒ 标志可能晚于收尾检查才置上 ✓（竞态 ✗，而且这种竞态在判据里很难复现 ✗）。
+             * `looksLikeRevertCommand` 是纯函数 ✓ ⇒ 静态导入、当场判 ✓。
+             */
+            if (looksLikeRevertCommand(cmd)) {
+              this.revertedAfterEdit = true;
+              debugLog("agent-loop", "记下还原型命令（改完又还原守卫用）:", cmd.slice(0, 100));
+            }
+          }
         }
         if (artifactThisCall) {
           this.turnModifiedFiles = true;
@@ -4087,6 +4156,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                * （`unrunSiblingCriteria` ✓）。测试文件**不计** ✓ —— 改判据不用提醒去跑别的判据 ✓。
                */
               if (!/\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(rel)) this.sessionEditedSources.add(rel);
+              /**
+               * **第 169 波：编辑会清掉"改完又还原"的标志** ✓ ——
+               * "撤掉错的一版、重做一版"是正常动作 ✓，不该在收尾时被问一句 ✗。
+               */
+              this.revertedAfterEdit = false;
               /** 先标记再做事（老规矩 ✓）：同一个文件本回合只尝试一次 ✓，失败也不重试 ✓。 */
               this.symbolSiblingsSentFor.add(edited);
               try {
