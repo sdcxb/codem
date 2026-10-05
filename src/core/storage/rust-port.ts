@@ -2361,6 +2361,7 @@ const QUERY_MAX_ROUNDS = 200;
  * 遥测表名（第 149 波 ✓）—— 线上契约名 ✓，与 `telemetry.ts` / `maintenance.ts` 用的是同一个 ✓。
  * 写成常量是为了让"按需查询遥测"这件事只在一个地方声明表名 ✓（免得三处各写一遍 ✗）。
  */
+const NOTEBOOK_CHUNKS_TABLE = "notebook_chunks";
 const TELEMETRY_TABLE_NAME = "telemetry_events";
 
 /**
@@ -2888,6 +2889,39 @@ export class RustStoragePort implements StoragePort {
       const take = Math.min(QUERY_PAGE_SIZE, max - rows.length);
       const page = await call<{ items?: Array<Record<string, unknown>>; has_more?: boolean }>(this.transport, "crud.list", {
         table: TELEMETRY_TABLE_NAME,
+        limit: take,
+        offset,
+      });
+      const items = page?.items ?? [];
+      rows.push(...items);
+      if (!page?.has_more || items.length === 0) break;
+      offset += items.length;
+    }
+    return rows;
+  }
+
+  /**
+   * **按需查询文本块** ✓（第 196 波 ✓）—— **不含 embedding 列** ✗。
+   *
+   * 为什么单列一个方法 ✗：`notebook_chunks` 每行带一个 Base64 的 embedding（1536 维 ≈ 8KB ✓），
+   * 进镜像只会白占内存 ✓（域内已有 2000 行低上限与"不预取"的设计 ✓）。
+   * 这里与 `queryMessages` / `queryEvents` / `queryTelemetry` 同一形状 ✓：一次拉一页、查完即弃、不驻留 ✓。
+   *
+   * ⚠️ **说清它省什么** ✗：`crud.list` 返回**整行** ✓ ⇒ 客户端把 embedding 映射掉只省**内存** ✓、
+   * **不省 IPC 传输** ✗（那 8KB 仍然过桥 ✓）。要连传输一起省，得引擎支持列投影 ✓ —— 未证实前不假设 ✗。
+   *
+   * ⚠️ 本波只**加方法**（尚未接线 ✓、还没有判据 ✓）：它是**新增的未使用代码** ✓，
+   * 行为零变化 ✓；判据（NC-1/2/3 ✓）随"接线到 knowledge/storage.ts 那两处"一起写 ✓。
+   */
+  async queryNotebookChunks(opts: { notebookId: string; limit?: number; offset?: number }): Promise<Array<Record<string, unknown>>> {
+    const max = opts.limit ?? Number.POSITIVE_INFINITY;
+    const rows: Array<Record<string, unknown>> = [];
+    let offset = opts.offset ?? 0;
+    for (let round = 0; round < QUERY_MAX_ROUNDS && rows.length < max; round++) {
+      const take = Math.min(QUERY_PAGE_SIZE, max - rows.length);
+      const page = await call<{ items?: Array<Record<string, unknown>>; has_more?: boolean }>(this.transport, "crud.list", {
+        table: NOTEBOOK_CHUNKS_TABLE,
+        where: { notebook_id: opts.notebookId },
         limit: take,
         offset,
       });
