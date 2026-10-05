@@ -812,6 +812,17 @@ export class AgenticLoop {
    */
   private sessionLookedAtSource = false;
   /**
+   * **第 179 波：非模型开销的两个时刻** ✓（目标②的 15% 残差 ✓）。
+   *
+   * `llm timing` 那行原本只有模型自己的三段（TTFT/流式/总计 ✓），
+   * 于是"每轮 ~1.5s 的非模型开销"是个**黑盒** ✗ —— 不知道是上下文重建 ✓ 还是工具执行 ✓。
+   * 这两个字段把它拆开 ✓：
+   * - `lastBuildMessagesAt` ⇒ `ctx=`（从上下文重建开始到发请求 ✓）；
+   * - `lastIterationEndAt` ⇒ `work=`（上一轮迭代结束到这一轮发请求 ✓ = 工具执行 + 收尾 ✓）。
+   */
+  private lastBuildMessagesAt = 0;
+  private lastIterationEndAt = 0;
+  /**
    * **模式 C：改完又还原**（第 169 波 ✓）—— 还原型命令之后**没有再编辑** ⇒ 提醒一次 ✓。
    *
    * 真机取证：`run-3` 的收尾段诊断是 `modified=true edited=4 lookedAtSource=true tests=8 red=0` ✓，
@@ -2260,6 +2271,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         this.state.toolCallsInIteration = iterationToolCalls;
       }
       debugLog("agent-loop", `Iteration ${this.state.iteration} completed: ${iterationToolCalls} tool calls (effective: ${this.state.toolCallsInIteration}), ${this.state.consecutiveErrors} consecutive errors`);
+      /** 第 179 波：记下"这一轮到此结束"✓ —— 下一轮发请求时 `work=` 就是这一段（工具执行 + 收尾 ✓）。 */
+      this.lastIterationEndAt = Date.now();
       // Runaway detection: track whether this iteration made any progress.
       // Progress = text output OR at least one effective tool call.
       // 第 62 波（审计修正）：被守卫拦下的调用不算"有效工具调用" ——
@@ -3301,6 +3314,10 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             `llm timing iter=${this.state.iteration}: TTFT=${llmFirstEventAt ? llmFirstEventAt - llmReqT0 : -1}ms`,
             `stream=${llmFirstEventAt ? Date.now() - llmFirstEventAt : -1}ms`,
             `total=${Date.now() - llmReqT0}ms`,
+            /** 第 179 波：**从"上下文重建开始"到"真正发请求"** ✓ = 每轮的非模型开销之一 ✓。 */
+            `ctx=${this.lastBuildMessagesAt ? llmReqT0 - this.lastBuildMessagesAt : -1}ms`,
+            /** 第 179 波：**上一轮工具执行/收尾的耗时** ✓（上一次迭代结束到这一次开始 ✓）。 */
+            `work=${this.lastIterationEndAt ? llmReqT0 - this.lastIterationEndAt : -1}ms`,
           );
           success = true;
           this.state.lastIterationTextChars = currentText.length;
@@ -4598,6 +4615,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       }
     }
 
+    /**
+     * **第 179 波：把"非模型开销"拆开量一量** ✓（目标②，§13.69 说模型占 85% ✓）。
+     *
+     * 残差 15% 里到底是谁 ✓：`buildMessages`（上下文重建 ✓，这一段 ✓）
+     * 还是工具执行/收尾（下一段 ✓）✗ —— 打一个**开始时刻** ✓，让 `callLLM` 里那行
+     * `llm timing` 附上 `ctx=…ms`（从本行到真正发请求 ✓）✓。
+     */
+    const buildMessagesT0 = Date.now();
+    this.lastBuildMessagesAt = buildMessagesT0;
     debugLog("agent-loop", `buildMessages raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}, final: ${finalMessages.length}`);
     // Diagnostic: 逐条 dump 仅在调试模式输出 — 长会话（数百条消息）每次迭代
     // 全量打印产生数千行 console 噪音，拖慢 devtools 且掩盖真实错误。
