@@ -2930,7 +2930,28 @@ export class RustStoragePort implements StoragePort {
       if (!page?.has_more || items.length === 0) break;
       offset += items.length;
     }
-    return rows;
+    /**
+     * ## 第 197 波：**有界投影 —— 把 `embedding` 丢掉** ✗→✓
+     *
+     * 判据 **NC-1** 先写、当时**就是红的** ✓（`expected 2500 to be +0` ✗ —— 2500 行全带 embedding ✓）⇒
+     * 这里把它映射成**六个字段** ✓。
+     *
+     * ⚠️ **它省什么、不省什么（别含糊 ✓）**：
+     * `crud.list` 已经把整行**过桥**了 ✗ ⇒ 这一步省的是**内存** ✓（不驻留 ✓、不进镜像 ✓），
+     * **不是** IPC 传输 ✗ —— 要连传输一起省，得引擎支持列投影 ✓（未证实前不假设 ✗，
+     * 所以这里只做客户端投影 ✓，并在注释里说清楚 ✓）。
+     *
+     * ⚠️ **不许顺手多砍** ✗：`text` / `chunk_index` / `notebook_id` / `source_id` / `created_at` 一个都不能少 ✓
+     * —— 判据 **NC-2** 就是钉这条的 ✓（只砍 embedding ✓，砍正文会直接弄坏检索 ✗）。
+     */
+    return rows.map((r) => ({
+      id: r.id,
+      notebook_id: r.notebook_id,
+      source_id: r.source_id,
+      chunk_index: r.chunk_index,
+      text: r.text,
+      created_at: r.created_at,
+    }));
   }
 
   /**
