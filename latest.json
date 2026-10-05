@@ -1,15 +1,15 @@
 {
-  "version": "1.16.253",
-  "notes": "修存储故障：镜像上限可对主线表调大（messages 10052 行不再被整域拒绝）",
-  "pub_date": "2026-10-05T06:02:16Z",
+  "version": "1.16.254",
+  "notes": "修渲染进程 OOM：镜像预算补字节口径（消息192MB/事件256MB，行数或字节超即逐出）",
+  "pub_date": "2026-10-05T06:10:22Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RIUko1dkRMWVlLU2FzeWJwYW5LMXZmSWFWZXJMNU41UWN4SEJyR0l4MWhXVytxSEFNRHZhTytYZFgyVWxBdmhKaXBRRUs2OXZpR1pXM25FOUY4NWdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgwMTM2CWZpbGU6Q29kZW1fMS4xNi4yNTNfeDY0LXNldHVwLmV4ZQpHbmpQTDAvaWNON1RtTk8rbzVIYW1DTU5NMTU0Ym5mYmFZMEN0aWdnQVVtVFpOOG5vL00zS21zeWQ5cUpRQjRtQzRTQ1ZOMEo0TWFlYWdGSHkwYklDdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.253/Codem_1.16.253_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Izck80elNCaE5lbGtjRjdCYVJ2WExKTytERC9jR2dZamZLV2ZqbHBEOHBiNG85TEJVSURyZmdzQ1prVXp0b2dlalZicDR4MHdPUDlTTEtzcFRSZFE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgwNjIyCWZpbGU6Q29kZW1fMS4xNi4yNTRfeDY0LXNldHVwLmV4ZQpHTFFsb0IyMCtna2lNZ3h3c1NtRjVUQit6ajZrSm1lTm9zRDM0YlVKYXJlVXpXcGhuQURNRzdSd1JVelA1VzF6Y0czUmk5N1RZNHVFNC93RUx3UGtBZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.254/Codem_1.16.254_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RIUko1dkRMWVlLU2FzeWJwYW5LMXZmSWFWZXJMNU41UWN4SEJyR0l4MWhXVytxSEFNRHZhTytYZFgyVWxBdmhKaXBRRUs2OXZpR1pXM25FOUY4NWdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgwMTM2CWZpbGU6Q29kZW1fMS4xNi4yNTNfeDY0LXNldHVwLmV4ZQpHbmpQTDAvaWNON1RtTk8rbzVIYW1DTU5NMTU0Ym5mYmFZMEN0aWdnQVVtVFpOOG5vL00zS21zeWQ5cUpRQjRtQzRTQ1ZOMEo0TWFlYWdGSHkwYklDdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.253/Codem_1.16.253_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Izck80elNCaE5lbGtjRjdCYVJ2WExKTytERC9jR2dZamZLV2ZqbHBEOHBiNG85TEJVSURyZmdzQ1prVXp0b2dlalZicDR4MHdPUDlTTEtzcFRSZFE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTgwNjIyCWZpbGU6Q29kZW1fMS4xNi4yNTRfeDY0LXNldHVwLmV4ZQpHTFFsb0IyMCtna2lNZ3h3c1NtRjVUQit6ajZrSm1lTm9zRDM0YlVKYXJlVXpXcGhuQURNRzdSd1JVelA1VzF6Y0czUmk5N1RZNHVFNC93RUx3UGtBZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.254/Codem_1.16.254_x64-setup.exe"
     }
   }
 }

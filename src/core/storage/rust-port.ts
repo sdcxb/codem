@@ -1195,6 +1195,11 @@ class RustEventMirror {
    * 这正是消息镜像 `enforceBudget` 注释里那条"逐出不会造成读写分裂"的同一条理由。
    */
   private readonly totalBudgetRows: number;
+  /**
+   * **字节预算**（第 137 波，与消息镜像同款 ✓）：事件里装着**工具输出** ✗，
+   * 只按行数算，允许的驻留量可以到 GB 级 ✗（用户那台 `20056:3508MB` / OUT_OF_MEMORY ✗）。
+   */
+  private readonly totalBudgetBytes: number;
   /** 访问序（Map 的迭代顺序即插入序）：命中时删除再插入 = 移到末尾 = 最新使用 */
   private lru = new Map<string, true>();
   private evictions = 0;
@@ -1206,8 +1211,24 @@ class RustEventMirror {
     private readonly t: StorageTransport,
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
     totalBudgetRows = 20_000,
+    totalBudgetBytes = MIRROR_EVENT_BUDGET_BYTES,
   ) {
     this.totalBudgetRows = totalBudgetRows;
+    this.totalBudgetBytes = totalBudgetBytes;
+  }
+
+  /** 一批事件的**估算字节**（`payload` 是字符串 ⇒ 按 2 字节/字符保守估算 ✓） */
+  private bytesOf(rows: MirrorEvent[]): number {
+    let n = 0;
+    for (const r of rows) n += (r.payload?.length ?? 0) * 2;
+    return n;
+  }
+
+  /** 当前驻留的估算总字节（第 137 波：与行数预算并行的第二把尺子 ✓） */
+  private totalResidentBytes(): number {
+    let n = 0;
+    for (const list of this.bySession.values()) n += this.bytesOf(list);
+    return n;
   }
 
   /** 该会话的事件是否已经完整加载（**路由到镜像的唯一依据**） */
@@ -1258,7 +1279,13 @@ class RustEventMirror {
   private enforceBudget(): void {
     let rows = 0;
     for (const l of this.bySession.values()) rows += l.length;
-    if (rows <= this.totalBudgetRows) return;
+    let bytes = this.totalResidentBytes();
+    /**
+     * **字节口径**（第 137 波）：事件里装着**工具输出**（可能几十上百 KB 一条 ✗）——
+     * 只按 20000 行算，允许的驻留量可以到 GB 级 ✗（用户那台 `20056:3508MB` ✗）。
+     * 两把尺子同时生效 ✓。
+     */
+    if (rows <= this.totalBudgetRows && bytes <= this.totalBudgetBytes) return;
     const oldestFirst = [...this.lru.keys()];
     /**
      * **尾巴（最近使用的那一个）永不逐出**，两条理由都必须成立：
@@ -1272,7 +1299,7 @@ class RustEventMirror {
      *    这是有意的（宁可超，不可抖动）。消息镜像的 MEM-3 是同一条取舍。
      */
     for (const sessionId of oldestFirst.slice(0, Math.max(0, oldestFirst.length - 1))) {
-      if (rows <= this.totalBudgetRows) break;
+      if (rows <= this.totalBudgetRows && bytes <= this.totalBudgetBytes) break;
       if (this.loading.has(sessionId)) continue;
       const dropped = this.bySession.get(sessionId);
       if (!dropped) continue;
@@ -1281,6 +1308,7 @@ class RustEventMirror {
       this.loaded.delete(sessionId);
       this.lru.delete(sessionId);
       rows -= dropped.length;
+      bytes -= this.bytesOf(dropped);
       this.evictions++;
       /**
        * **第 113 波修复（用户报的控制台报错）**：这里原来走 `onFailure("events.evict", …)`。
@@ -1678,6 +1706,19 @@ class RustMessageMirror {
    * - 因为路由规则本来就是"未加载完不路由"，逐出**不会**造成读写分裂。
    */
   private readonly totalBudgetRows: number;
+  /**
+   * **字节预算**（第 137 波）—— 行数预算**不够** ✗。
+   *
+   * 用户另一台机器的崩溃判据：
+   * `reason=OUT_OF_MEMORY`、`webview_procs=6 [ … 20056:3508MB … ]` ✗ ——
+   * **单个渲染进程 3508MB** ✗。而行数预算允许 20000 行 ✓；
+   * 这个类自己的注释也写着「5000 条大消息就是几十上百 MB」✓
+   * ⇒ 20000 行大消息**可以到 GB 级** ✗✓。
+   *
+   * 现在两把尺子**同时**生效 ✓：行数超 **或** 字节超就按 LRU 逐出 ✓。
+   * 字节口径按 JS 字符串保守估算 **2 字节/字符** ✓（宁严不宽 ✓）。
+   */
+  private readonly totalBudgetBytes: number;
   /** 访问序（Map 的迭代顺序即插入序）：命中时删除再插入 = 移到末尾 = 最新使用 */
   private lru = new Map<string, true>();
   private evictions = 0;
@@ -1688,8 +1729,24 @@ class RustMessageMirror {
     private readonly t: StorageTransport,
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
     totalBudgetRows = 20_000,
+    totalBudgetBytes = MIRROR_MESSAGE_BUDGET_BYTES,
   ) {
     this.totalBudgetRows = totalBudgetRows;
+    this.totalBudgetBytes = totalBudgetBytes;
+  }
+
+  /** 一批消息的**估算字节**（JS 字符串 ≈ 2 字节/字符 ✓，另有少量字段开销忽略不计 ✓） */
+  private bytesOf(rows: MirrorMessageRow[]): number {
+    let n = 0;
+    for (const r of rows) n += (r.content?.length ?? 0) * 2;
+    return n;
+  }
+
+  /** 当前驻留的估算总字节 */
+  private totalResidentBytes(): number {
+    let n = 0;
+    for (const list of this.bySession.values()) n += this.bytesOf(list);
+    return n;
   }
 
   isLoaded(sessionId: string): boolean {
@@ -1721,6 +1778,10 @@ class RustMessageMirror {
     evictions: number;
     /** 最近一次逐出的留痕（第 113 波：逐出要可查，但**不许**再冒充持久化失败） */
     lastEviction: string;
+    /** 当前驻留的**估算字节**（第 137 波：行数口径之外的第二把尺子 ✓） */
+    bytes: number;
+    /** 字节预算（超过它就会按 LRU 逐出 ✓） */
+    budgetBytes: number;
     budgetRows: number;
   } {
     let rows = 0;
@@ -1732,6 +1793,8 @@ class RustMessageMirror {
       truncated: this.truncated,
       evictions: this.evictions,
       lastEviction: this.lastEviction,
+      bytes: this.totalResidentBytes(),
+      budgetBytes: this.totalBudgetBytes,
       budgetRows: this.totalBudgetRows,
     };
   }
@@ -1786,10 +1849,16 @@ class RustMessageMirror {
   private enforceBudget(): void {
     let rows = 0;
     for (const l of this.bySession.values()) rows += l.length;
-    if (rows <= this.totalBudgetRows) return;
+    let bytes = this.totalResidentBytes();
+    /**
+     * **两把尺子同时生效**（第 137 波）：行数超 **或** 字节超 ⇒ 逐出 ✓。
+     * 原来只看行数 ✗ ⇒ 行少但每行很大的会话（大文档批处理、长工具输出 ✓）会把
+     * 渲染进程顶到 GB 级 ✗（用户那台 3508MB ✗）。
+     */
+    if (rows <= this.totalBudgetRows && bytes <= this.totalBudgetBytes) return;
     const oldestFirst = [...this.lru.keys()];
     for (const sessionId of oldestFirst.slice(0, Math.max(0, oldestFirst.length - 1))) {
-      if (rows <= this.totalBudgetRows) break;
+      if (rows <= this.totalBudgetRows && bytes <= this.totalBudgetBytes) break;
       if (this.loading.has(sessionId)) continue;
       const dropped = this.bySession.get(sessionId);
       if (!dropped) continue;
@@ -1802,6 +1871,7 @@ class RustMessageMirror {
       this.loaded.delete(sessionId);
       this.lru.delete(sessionId);
       rows -= dropped.length;
+      bytes -= this.bytesOf(dropped);
       this.evictions++;
       /**
        * **第 113 波修复（与 `events.evict` 同一处错误）**：正常逐出原来走 `onFailure`，
@@ -2106,6 +2176,22 @@ const DOMAIN_COLUMN_PROJECTION: Record<string, string[]> = {
  * 是「允许放宽」与「不许把渲染进程压死」之间的分界 ✓。
  */
 const DOMAIN_MIRROR_HARD_MAX_ROWS = 200_000;
+
+/**
+ * **消息镜像的字节预算**（第 137 波）✓ —— 与行数预算并行生效 ✓。
+ *
+ * 取 192 MB 的理由：用户那台机器崩溃时**单个渲染进程 3508MB** ✗
+ * （`reason=OUT_OF_MEMORY` ✓）；WebView2/Chromium 的渲染进程通常在 2GB 上下就开始危险 ✓。
+ * 192 MB 只占其中约十分之一 ✓，足够放下用户日常浏览的若干大会话 ✓，
+ * 又不至于让"浏览过很多大会话"把渲染进程顶爆 ✗。
+ */
+const MIRROR_MESSAGE_BUDGET_BYTES = 192 * 1024 * 1024;
+
+/**
+ * **事件镜像的字节预算**（第 137 波）：事件里是**工具输出**（单条可到几十上百 KB ✗）。
+ * 取 256 MB —— 事件通常比消息更重 ✗，但同样必须给渲染进程留出余量 ✓。
+ */
+const MIRROR_EVENT_BUDGET_BYTES = 256 * 1024 * 1024;
 
 export class RustDomainMirror {
 
