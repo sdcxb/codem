@@ -2951,7 +2951,6 @@ export class RustStoragePort implements StoragePort {
       chunk_index: r.chunk_index,
       text: r.text,
       created_at: r.created_at,
-      embedding: r.embedding,
     }));
   }
 
