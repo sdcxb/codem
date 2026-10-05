@@ -82,7 +82,7 @@ describe("第 262 波：不镜像的表，写必须直达引擎（不能只排�
       seed: { notebook_chunks: [chunkRow("c1", "nb1", "src1", 0)] },
     });
     setStoragePort(port as never);
-    await port.start();
+    /** 注意 ✓：假端口**没有** `start()` ✗（我第 262 波写判据时的笔误 ✗）；只需要把表标成就绪 ✓。 */
     port.domains.ensureLoaded("notebook_chunks");
 
     k.addChunksBulk("nb1", "src1", [{ content: "块2", chunkIndex: 1, embedding: null, tokenCount: 1 }]);
