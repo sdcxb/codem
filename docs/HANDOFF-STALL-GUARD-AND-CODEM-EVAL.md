@@ -2204,7 +2204,51 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.76 记忆化**没解决问题** ✗ —— 我又犯了"读代码定位"的老错（第 183 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.77 ★★★ 那 1.5s 缩到 **2003–2034 行的"压缩块"** ✗（第 184 波，"只量不猜"见效 ✓）
+
+## 打点数据（1.16.277，iter 43/44 一致 ✓）
+
+```
+prep打点 toolDefs t=…383
+prep打点 pressure t=…399     ⇒ toolDefs → pressure = **16ms** ✓
+prep打点 iterT0   t=…931     ⇒ pressure → iterT0  = **1532ms** ✗✗
+llm timing iter=43: ctx=1557ms tail=9ms prep=1548ms work=1584ms
+```
+
+⇒ `prep` 的 **1.5s 全部**落在 `pressure → iterT0` 这一段里 ✓（段外部分≈0 ✓）✓。
+
+## 那一段里是什么（2000 → 2164 行 ✓）
+
+```ts
+if (this.state.contextPressure > this.config.compactionThreshold && this.config.enableCompaction) {
+  …
+  const compacted = await this.compactMessages(sessionId);      // ← 2016 ✗ 头号嫌疑
+  …
+  messagesForIteration = await this.buildMessages(sessionId);   // ← 2034 ✗ 同轮**第二次**重建
+  …
+}
+```
+
+⇒ 两个发现 ✓：
+
+1. **`compactMessages(sessionId)`** ✓ —— 压缩要**生成摘要** ✓，那通常是**又一次 LLM 调用** ✗。
+   而 `llm timing` 那行只计**主调用** ✓ ⇒ **内层 LLM 调用的耗时正好落进 `prep`** ✗✓✓
+   —— 这与"`prep` 每轮都稳定 1.5s ✓、且与消息数无关 ✓"完全吻合 ✓；
+2. **同一轮里 `buildMessages` 被调用了两次** ✓（2034 ✓）—— 那次是**白工** ✗
+   （外层刚算完 ✓，压缩后又算一遍 ✓ ⇒ 至少有一份结果被丢掉 ✓）。
+
+## 下一波（继续"只量不猜" ✓）
+
+在 2003 的 `if` **之前**与压缩块**之后**各打一个点 ✓ ⇒ 一次抓取即可判定 ✓：
+
+- 若这 1.5s 在 `compactMessages` 里 ✓ ⇒ 再看它是"每轮都在压缩"✗（那 `contextPressure` 的阈值/回落有问题 ✗）
+  还是"压缩本身太慢"✗（摘要调用可以**异步化**或**降频** ✓）；
+- 同时干掉 2034 的重复重建 ✓（判据：同一轮 `buildMessages` 只能有一次**结果被使用**✓）。
+
+⇒ 这一波是"只量不猜"规则的**第一次兑现** ✓：不再读代码挑嫌疑人 ✗，
+而是让打点直接指出 **1532ms 的边界** ✓ —— 上三轮靠读代码挑的三个嫌疑（`listMessages`/`prune`/`estimateMessagesTokens` ✓）
+**全部被量数据否定** ✗。
+### 13.76 记忆化**没解决问题** ✗ —— 我又犯了"读代码定位"的老错（第 183 波）
 
 ## 复测（1.16.276，43 轮 ✓）
 
