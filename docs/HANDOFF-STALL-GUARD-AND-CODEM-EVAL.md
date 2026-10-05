@@ -2204,7 +2204,65 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿### 13.145 ★★★ 字面：`chunkIndexState()` **先看镜像** ⇒ 镜像就绪就一定报 `mirror`（第 269 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿### 13.146 ★★★★ 最后一条红的真因：**我第 255 波那个修复的副作用** ✗（第 271 波）
+
+## 完整失败信息 ✓（不去过滤 ✓）
+
+```
+ChunkIndexUnavailableError: 笔记本 nb_… 的文本块索引尚未就绪（按需读正在后台进行）—— 这**不是**"没有相关内容"
+ ❯ getChunks src/core/knowledge/storage.ts:1202:9
+    1200|   chunkMirrorLastSeenReady = false;
+    1201|   warmChunksByNotebook(notebookId);
+    1202|   throw new ChunkIndexUnavailableError(
+ ❯ src/test/phase-b-f-regression.test.ts:742:14
+```
+
+⇒ **不是断言不符** ✗（`expected 1 to be 0` 那类 ✓），而是 `getChunks` **直接抛** ✗
+⇒ 说明那一刻**缓存是空的** ✗。
+
+## 真因：我的"代际核对"修好了旧问题，却开了一个新口子 ✗
+
+时序 ✓：
+
+```
+t0  addChunksBulk（缓存没有该 notebook）⇒ 作废 + **发起预热 A**（异步 ✓）
+t1  deleteChunksBySource ⇒ 摘缓存（空 ✓）+ **代际 +1** ✓
+t2  预热 A 落地 ⇒ 代际对不上 ⇒ **丢弃** ✓（第 255 波 ✓，NC-DEL-3 要的就是这个 ✓）
+t3  用例里 `await __warmChunksForTests(nb.id)` ⇒ 但 `chunkWarmInFlight` 里**还有 A 的 key** ✗
+    （要等 A 的 `finally` 才删 ✓）⇒ **这次预热直接被跳过**（no-op ✗）
+t4  getChunks ⇒ 缓存**空** ✗ ⇒ **抛** ✓✓
+```
+
+⇒ **我第 255 波写下的那句注释** ✓「**刻意不在丢弃处补新预热** —— 那会撞上 `chunkWarmInFlight`」✗
+—— 我当时把"撞 key"当成理由 ✓，**却没想到"丢弃之后没有人再补"** ✗ ⇒ **缓存空窗** ✓。
+⇒ 而正常的读路径（`getChunks` 未命中 ⇒ 预热 + 抛 ✓）本来**允许**"抛一次然后可读"✓ ——
+但这个用例**紧接着就断言** ✗ ⇒ 抛出来了 ✓。
+
+## 修法 ✓（下一波 ✓，判据先行 ✓）
+
+**丢弃过期结果之后，必须补一次预热** ✓ —— 且要在**本 key 从 `chunkWarmInFlight` 删掉之后**做 ✓：
+
+- 位置 ✓：`finally { chunkWarmInFlight.delete(warmKey); }` **之后** ✓
+  （或 `finally` 里删完直接 `if (dropped) void warmChunksByNotebook(notebookId)` ✓）；
+- 判据 ✓：**`NC-DEL-5`** —— 删除之后 ✓（含"在飞预热被作废"的情形 ✓）
+  ⇒ **缓存最终必须能被填上** ✓（不许留下"谁也填不上"的空窗 ✗）：
+  - 造法 ✓：`addChunksBulk`（触发 A ✓）⇒ `deleteChunksBySource` ✓ ⇒
+    `await` 一次"A 的落地 + 补的那次预热" ✓ ⇒ **再** `await __warmChunksForTests` ✓
+    ⇒ `getChunks` **不抛** ✓ 且该来源为 **0** ✓；
+  - **反向对照 `NC-DEL-6`** ✓：**没有删除**时 ✓ 预热结果照常落缓存 ✓（`NC-DEL-4` 已覆盖 ✓）；
+- **变异** ✓：去掉"补预热"⇒ `NC-DEL-5` 红 ✓。
+
+## 这也解释了为什么它是**最后一条** ✓
+
+它**不是**夹具问题 ✗、不是断言口径问题 ✗ —— 是**产品侧的时序缺口** ✓，
+而且**由我自己的前一个修复暴露出来** ✓（修复引入的新窗口 ✓）。
+⇒ 这正是"**修复要连着它的边界一起想**"的实例 ✓（第 255 波我列出了"撞 key"✓，
+但没列出"没人补 ⇒ 空窗"✗）。
+
+## 状态 ✓
+
+树：1 条已知红（这条 ✓）+ 环境那条 ✓；跑批 **11/24** ✓；本轮**未装机** ✓（纯只读量证 ✓）。
+### 13.145 ★★★ 字面：`chunkIndexState()` **先看镜像** ⇒ 镜像就绪就一定报 `mirror`（第 269 波）
 
 ## 读到的（`storage.ts:325-331` ✓，逐行 ✓）
 
