@@ -242,7 +242,13 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       const name = String(params?.table ?? "");
       const rows = (params?.rows as Row[] | undefined) ?? [];
       const replace = params?.mode === "replace";
-      const pk = String(params?.primaryKey ?? primaryKeyOf(name));
+      /**
+       * 第 226 波：**`??` 改成 `||`** ✗→✓ —— 产品在 `crud.upsert` 里显式传 `primaryKey: ""`（空串 ✓），
+       * 空串**不是 nullish** ✗ ⇒ `??` 保留空串 ⇒ `pk` 变空 ✗ ⇒ 该行**永远落不进假端口的表** ✗。
+       * 实测链条：`crud.upsert` 到了 ✓、`removed=0` ✓、`表里现有id=[]` ✓ —— 全由这一处解释 ✓。
+       * 用 `||` 让空串落到"按表名推断"的兜底 ✓（`notebook_chunks` ⇒ `"id"` ✓）。
+       */
+      const pk = String(params?.primaryKey || primaryKeyOf(name));
       const target = table(name);
       for (const row of rows) {
         const idx = target.findIndex((r) => r[pk] === row[pk]);
