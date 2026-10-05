@@ -76,10 +76,24 @@ function portWith(
         const table = String(p.table ?? "");
         const limit = Number(p.limit ?? 1000);
         const offset = Number(p.offset ?? 0);
-        // 模拟 engine 的分页：按 offset/limit 切片，并给出 has_more
+        /**
+         * 第 247 波：**按 `where` 过滤** ✓（原来**完全忽略** `where` ✗）。
+         *
+         * 为什么必须补 ✗（第 246 波读字面代码确认 ✓）：迁移让"读"改走**按需拉取** ✓
+         * ⇒ 才发现这个 transport 的 `crud.list` **只看 `offset/limit`** ✗,
+         * `params.where` 从头到尾没被碰过 ✗ ⇒ **任何** notebook 的拉取都拿到**整张表** ✓
+         * ⇒ `DOM-31` 的 `expected 3 to be 2` ✓（`nb2` 的 `c9` 被算进了 `nb1` ✓）。
+         * 真引擎不会这样 ✓ —— 夹具**比实现宽松** ✗ 正是本仓库明令禁止的方向 ✓。
+         */
+        const where = (p.where as Record<string, unknown> | undefined) ?? {};
         const src = rowsFor(table);
-        const count = byTable ? src.length : total;
-        const all = Array.from({ length: count }, (_, i) => src[i] ?? { id: `pad-${i}` });
+        const matched =
+          Object.keys(where).length > 0
+            ? src.filter((r) => Object.entries(where).every(([k, v]) => (r as Record<string, unknown>)[k] === v))
+            : src;
+        // 模拟 engine 的分页：按 offset/limit 切片，并给出 has_more
+        const count = byTable ? matched.length : total;
+        const all = Array.from({ length: count }, (_, i) => matched[i] ?? { id: `pad-${i}` });
         const items = all.slice(offset, offset + limit);
         return { ok: true, result: { items, has_more: offset + items.length < count, next_cursor: null } } as never;
       }
