@@ -2639,7 +2639,19 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         if (
           !this.unrunSiblingsNudged &&
           this.testFileStatus.size > 0 &&
-          (this.sessionModifiedAnything || this.sessionEditedSources.size > 0)
+          /**
+           * ⚠️ **第 166 波：前置条件再放宽一步** ✗→✓ ——
+           * 原来是"**动过盘**"✗ ⇒ 放过了一种真实形态 ✓：
+           * `v35 run-4`：26 次调用、**diff=0** ✗、跑了**一部分判据且恰好是绿的** ✓、
+           * 自然收尾（`maxIteration=20` ✓ 不是撞上限 ✓，历史上迭代数 3–85 都有 ✓）
+           * ⇒ 零产出守卫的"全绿不打扰"分支放行 ✗、族守卫因为"没动过盘"也不触发 ✗
+           * ⇒ **两把守卫都正确地沉默了，而这轮确实失败了** ✗。
+           *
+           * 但"**跑了族里一部分**"本身就是信号 ✓ —— 它不需要以"改过文件"为前提 ✓。
+           * 所以这里加上"**读过源码**"（`sessionLookedAtSource` ✓）：读过源码、跑过族里一部分、
+           * 而族里还有没跑的 ⇒ 提醒一次 ✓。
+           */
+          (this.sessionModifiedAnything || this.sessionEditedSources.size > 0 || this.sessionLookedAtSource)
         ) {
           try {
             const { unrunFamilyCriteria } = await import("./task-keyword-search");
