@@ -1879,6 +1879,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       }
 
       debugLog("agent-loop", `collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length} (deferred: ${deferredHints.length})`, toolDefs.map(t => t.name));
+      /** 第 184 波：工具定义构建+技能注入 打点 ✓（`prep` 窗口的第一段 ✓）。 */
+      debugLog("agent-loop", `prep打点 toolDefs t=${Date.now()}`);
 
       // B3: Inject pending skill prompts (from load_skill tool)
       const { consumePendingSkillPrompts, getLoadedSkillPrompts, tickSessionSkills } = await import("./tools/load-skill");
@@ -1994,6 +1996,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       }
 
       this.state.contextPressure = this.estimateContextPressure(apiMessages);
+      /** 第 184 波：**只量不猜** ✓ —— 打时间戳，段差由这些行与 `llm timing` 的 ctx/tail/prep 一起算出 ✓。 */
+      debugLog("agent-loop", `prep打点 pressure t=${Date.now()}`);
 
       let messagesForIteration = apiMessages;
       if (this.state.contextPressure > this.config.compactionThreshold && this.config.enableCompaction) {
@@ -2158,6 +2162,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
        * 下面把一轮切成 `准备`（到 `executeIteration` 之前）与 `模型`（流式全过程）两段 ✓。
        */
       const iterT0 = Date.now();
+      /** 第 184 波：迭代计时起点 打点 ✓（这一段之后到发请求就是 callLLM 的准备 ✓）。 */
+      debugLog("agent-loop", `prep打点 iterT0 t=${Date.now()}`);
       const iterNo = this.state.iteration;
       for await (const event of this.executeIteration(
         sessionId,
