@@ -479,6 +479,18 @@ function warmChunksByNotebook(notebookId: string): Promise<void> {
       reportActionFailure("chunk.onDemand", e, `笔记本 ${notebookId} 的文本块未按需读到（下次读会再试一次）`);
     } finally {
       chunkWarmInFlight.delete(warmKey);
+      /**
+       * 第 272 波：**丢弃过期结果之后必须补一次预热** ✓（判据 `NC-DEL-5` ✓）。
+       *
+       * 为什么 ✗：第 255 波加了"代际核对"✓（期间有删除 ⇒ 丢弃过期结果 ✓，`NC-DEL-3` 要的就是这个 ✓），
+       * 但我当时**只想到"别撞 `chunkWarmInFlight`"** ✗、**漏了"丢弃之后没有人再补"** ✗
+       * ⇒ 留下一个**谁也填不上的空窗** ✓：调用方下一次预热会因为"本 key 还在飞"被跳过 ✗
+       * ⇒ 缓存一直空 ✗ ⇒ `getChunks` 一直抛"索引尚未就绪"✗（`phase-b-f`「按来源删除」量的就是它 ✓）。
+       *
+       * 放在 `finally` 里 ✓：**本 key 已删掉** ✓ ⇒ 这次补的预热不会被挡 ✓
+       *（正好避开我第 255 波担心的"撞 key" ✓）。
+       */
+      if (chunkWarmGeneration !== genAtStart) void warmChunksByNotebook(notebookId);
     }
   })();
 }
