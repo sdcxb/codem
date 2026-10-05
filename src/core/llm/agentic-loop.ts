@@ -2000,6 +2000,11 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       debugLog("agent-loop", `prep打点 pressure t=${Date.now()}`);
 
       let messagesForIteration = apiMessages;
+      /**
+       * 第 185 波：**压缩块前后各打一点** ✓ —— 上一波已把 1.5s 圈到 `pressure→iterT0` ✓，
+       * 这一步判定它是否在 `compactMessages` 里（继续「只量不猜」✓）。
+       */
+      debugLog("agent-loop", `prep打点 compactionIn t=${Date.now()}`);
       if (this.state.contextPressure > this.config.compactionThreshold && this.config.enableCompaction) {
         // Prevent infinite compaction loops (max 3 consecutive compactions)
         if (this.state.consecutiveCompactions >= 3) {
@@ -2040,6 +2045,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         // Reset consecutive compactions if no compaction needed
         this.state.consecutiveCompactions = 0;
       }
+      /** 第 185 波：压缩块出口 ✓ —— 与 `compactionIn` 的差就是整块（含 `compactMessages`）的耗时 ✓。 */
+      debugLog("agent-loop", `prep打点 compactionOut t=${Date.now()}`);
 
       // === Guidance injection (mid-turn steering) ===
       // Consume one guidance item from the queue at this iteration boundary.
