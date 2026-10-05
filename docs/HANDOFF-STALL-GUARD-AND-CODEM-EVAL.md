@@ -2204,7 +2204,53 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿### 13.144 两条"预期内红"的**实测**：C3-4 的真因不是我猜的那个 ✗（第 268 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**﻿### 13.145 ★★★ 字面：`chunkIndexState()` **先看镜像** ⇒ 镜像就绪就一定报 `mirror`（第 269 波）
+
+## 读到的（`storage.ts:325-331` ✓，逐行 ✓）
+
+```ts
+export function chunkIndexState(): ChunkIndexState {
+  if (isChunkMirrorReady()) return "mirror";          // 326 ← **镜像就绪 ⇒ 一律 mirror** ✓（**不看缓存** ✗）
+  if (!hasStoragePort()) return "unavailable";        // 327
+  if (currentChunkCache().size > 0) return "on-demand"; // 328 ← 只有**镜像不就绪**时才会走到这
+  return chunkOnDemandPossible() ? "on-demand" : "unavailable"; // 330
+}
+```
+
+⇒ 于是 C3-4 那个用例（它显式 `ensureLoaded("notebook_chunks")` ✓ ⇒ 镜像**就绪** ✓）
+的状态**必然是 `mirror`** ✓ —— **迁移没有、也不该改变这一点** ✗
+（`chunkIndexState()` 说的是"**镜像此刻可用吗**"✓，不是"读走了哪条路"✓）。
+
+⇒ **我上轮把 C3-4 改成断言 `on-demand` 是错的** ✗（实测 `expected 'mirror' to be 'on-demand'` ✓）。
+
+## C3-4 的**正确写法** ✓（下一波 ✓）
+
+它真正想说的有两件事 ✓，分开断言 ✓：
+
+```ts
+/** ① 状态函数的口径**没变** ✓：镜像就绪 ⇒ 仍报 mirror（这条原来就有，保留 ✓）。 */
+expect(k.chunkIndexState(), "镜像就绪 ⇒ 状态仍是 mirror（迁移不改这条口径）").toBe("mirror");
+/** ② 而**读**走的是缓存 ✓（迁移的**实际效果** ✓：getChunks 不再读镜像 ✓）。 */
+expect(
+  k.__chunkCacheBucketsForTests().flatMap((b) => Object.values(b.entries)).flat().length,
+  "预热后缓存里必须有块（= 读走的是按需缓存这条快路径 ✓）",
+).toBeGreaterThan(0);
+```
+
+⇒ 这样两条都**如实** ✓：① 状态口径未变 ✓；② 读的路换了 ✓ —— 而且**都能观察** ✓（不猜 ✗）。
+
+⚠️ 需要 ✓：`persist-domain-fixes.test.ts` 里要 import `__chunkCacheBucketsForTests` ✓
+（`__warmChunksForTests` 已经在用 ✓ ⇒ 说明该文件能 import 这个模块 ✓）。
+
+## 另一条（`phase-b-f`「按来源删除」）✓
+
+上次跑它时**没有 AssertionError 行** ✗ ⇒ 可能是超时或抛出 ✓ ⇒
+下一波**把完整输出打出来** ✓（`--reporter=verbose` 或不去 Select-String 过滤 ✓），再按量到的改 ✓。
+
+## 状态 ✓
+
+树：2 条已知红（C3-4 ✓ + 按来源删除 ✓）+ 环境那条 ✓；跑批 **11/24** ✓；本轮**未装机** ✓（纯只读 ✓）。
+### 13.144 两条"预期内红"的**实测**：C3-4 的真因不是我猜的那个 ✗（第 268 波）
 
 ## 量到的 ✓
 
