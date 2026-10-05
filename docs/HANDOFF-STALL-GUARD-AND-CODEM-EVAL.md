@@ -2204,7 +2204,56 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.139 ★★★★ 启用 `NC-RW-1` 量到**产品侧另一半**：**写也要直达引擎** ✗（第 261 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.140 ★★★★ 字面定位：不就绪且**没在加载**的表，`domainWrite` **直接返回 false** ✗（第 263 波）
+
+## 读到的（`domain-store.ts:1000-1024` ✓，逐行 ✓）
+
+```ts
+const port = domainMirror(table, opts);
+if (!port) return false;                              // 1008 端口没注册 ⇒ 走旧路径
+if (port.domains.isReady(table)) {                    // 1009 已就绪 ⇒
+  if (rows.length === 0) return true;
+  persistWriteThrough(table, "crud.upsert", params, opts.scope, opts.note);   // 1012 **直达引擎** ✓
+  return true;
+}
+if (rows.length === 0) return true;                   // 1015
+// 未就绪：只有"正在加载"才排队
+if (!port.domains.isLoading?.(table)) return false;   // 1017 ← **不就绪且没在加载 ⇒ 直接 false** ✗✗
+return deferWrite({ table, op: "write", key: "id", cmd: "crud.upsert", params, … });   // 1018 只有"正在加载"才排队
+```
+
+⇒ 而 `NC-WR-1` 的夹具正是"**永远不就绪、也不在加载**"✓（`neverReady: ["notebook_chunks"]` ✓）
+⇒ `domainWrite` 在第 1017 行**直接 `return false`** ✗ ⇒
+`addChunksBulk` 拿到 `false` ⇒ 走 `reportWriteNotAccepted` ✓ ⇒ **这一行被静默丢掉** ✗✓✓。
+
+⇒ 于是 `NC-WR-1` 的 `expected [0] to deeply equal [0,1]` ✓ **有了字面解释** ✓ ——
+**不是**"排队等不到重放"✗（我第 261 波的推断 ✗ 只对了一半 ✓），
+而是**根本没排队**✗ ⇒ 更严重 ✓。
+
+## 修法的**确切位置** ✓（下一波 ✓，两三行 ✓）
+
+在 **1017 行那个 `return false`** 之前 ✓ 加一条 ✓：
+
+> 「**该表不是"会被镜像的表"**（即按需表 ✓，如 `notebook_chunks` ✓）⇒ **不排队** ✓，
+> 而是**像已就绪分支那样直达引擎** ✓（`persistWriteThrough(table, "crud.upsert", params, …)` ✓）」
+
+⇒ 判据依据 ✓：
+- 「**不镜像的表，读/写/删三条都要直达引擎**」✓（第 105 波的删除 ✓ + 第 262 波的写 ✓）；
+- **不许**把"正在加载 ⇒ 排队"那条路弄坏 ✗（那是既有的、正确的语义 ✓）⇒ 由 `NC-WR-2`（反向对照 ✓，已绿 ✓）守着 ✓。
+
+## 下一波（顺序 ✓）
+
+1. 在 `domainWrite` 加"按需表 ⇒ 直达引擎"分支 ✓；
+2. 跑 `chunk-write-direct-to-engine` ✓ ⇒ `NC-WR-1` **转绿** ✓、`NC-WR-2` **保持绿** ✓；
+3. **变异** ✓：去掉那个分支 ⇒ `NC-WR-1` 红 ✓；
+4. 全量 ✓（**留意新上报点** ✗ —— 若我引入新的 `report*` 调用 ✓，必须**同一次**登记 ✓，
+   见 §13.135/13.136 那对原子动作 ✓）；
+5. 然后最后一波 ✓。
+
+## 状态 ✓
+
+树：1 条靶子红（`NC-WR-1` ✓）+ 环境那条 ✓；跑批 **10/24** ✓；本轮**未装机** ✓（纯只读 ✓）。
+### 13.139 ★★★★ 启用 `NC-RW-1` 量到**产品侧另一半**：**写也要直达引擎** ✗（第 261 波）
 
 ## 量到的 ✓
 
