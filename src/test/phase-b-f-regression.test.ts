@@ -729,9 +729,18 @@ describe("Phase F: 笔记本式知识管理", () => {
         { content: "a", chunkIndex: 0, embedding: null, tokenCount: 1 },
       ]);
       deleteChunksBySource(src.id);
-      /** 第 212 波：**先预热再断言** ✓（理由见"批量添加 chunks"✓；原断言"删完为 0"未改 ✗）。 */
+      /** 第 212 波：**先预热再断言** ✓（理由见"批量添加 chunks"✓）。 */
       await __warmChunksForTests(nb.id);
-      expect(getChunks(nb.id).length).toBe(0);
+      /**
+       * 第 228 波：**断言限定到"这个来源"** ✓（原来只写 `getChunks(nb.id).length` ✗）。
+       *
+       * 为什么必须限定 ✗（量出来的 ✓，第 225/227 波）：假端口的表**跨用例共享** ✗
+       * ⇒ 别处留下的行也会被数进来 ⇒ 这条用例会因为**别人的行**而红 ✓，
+       * 而它真正想说的是「**这个来源的块**被删掉了」✓。
+       * 限定之后 ✓：既说了它想说的话 ✓，又不受别人的行影响 ✓
+       * （**产品侧一行都不用改** ✓ —— 删除的目标 id 一直是正确的 ✓）。
+       */
+      expect(getChunks(nb.id).filter((c) => c.sourceId === src.id).length).toBe(0);
     });
 
     it("刷新笔记本计数", async () => {
