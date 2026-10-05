@@ -109,7 +109,6 @@ const BASELINE: Record<string, number> = {
   "src/core/storage/sync-engine.ts": 1,
   "src/core/storage/v2-session.ts": 1,
   "src/core/store.ts": 1,
-  "src/core/telemetry/telemetry.ts": 1,
   "src/test/r3-snapshot-tests.ts": 1,
 };
 
@@ -271,13 +270,12 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
       "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
-      "src/core/telemetry/telemetry.ts: TABLE → 表 telemetry_events ✗",
     ].sort());
   });
 
   it("SYNC-4: 基线总量有记录（终局目标 = 0 ✓，这个数字必须只降不升 ✓）", () => {
     const total = Object.values(BASELINE).reduce((a, b) => a + b, 0);
-    expect(total, `当前剩余 ${total} 处（第 144 波按**与判据同一套扫描**测得的真实面 ✓）`).toBeLessThanOrEqual(133);
+    expect(total, `当前剩余 ${total} 处（第 144 波按**与判据同一套扫描**测得的真实面 ✓）`).toBeLessThanOrEqual(132);
   });
 });
 

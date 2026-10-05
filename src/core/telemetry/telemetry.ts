@@ -10,7 +10,7 @@
 import { isCompactionInProgress } from "../storage/compaction-state";
 import { storageUnavailable } from "../storage/health";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { domainDeleteWhere, domainReadMany, domainWrite } from "../storage/domain-store";
+import { domainDeleteWhere, domainPort, domainWrite } from "../storage/domain-store";
 import { StorageError, getStoragePort, hasStoragePort } from "../storage/port";
 
 // ========== Types ==========
@@ -203,13 +203,81 @@ function telemetryToEvent(row: TelemetryRow): TelemetryEvent {
 }
 
 /**
- * 读整个遥测镜像；未接手时返回 `undefined`。
+ * **遥测投影**（第 151 波 ✓）—— 按需查询的结果**就地投影**，不再是"整表镜像"✗。
  *
- * L4 第 18 轮起：`undefined` 不再意味着"回退旧库"（那条路已删除），
- * 而是"该域当前读不到" —— 调用方据此返回合理空结果或如实上报。
+ * ## 为什么（用户问"那同步读怎么办"的落地样板 ✓）
+ *
+ * 这块原来是"用同步领域读读整张 `telemetry_events`" ✗（门里的越界清单第 6 条 ✓）：
+ * 它要求那张表**先完整驻留进渲染进程** ✗ —— 真机上它有 **8975 行** ✗，
+ * 正是「表超过镜像上限」「写等 15 秒后放弃」两条告警的来源 ✓。
+ *
+ * 而界面（`PerformanceDashboard` ✓）确实需要**同步**读统计数字 ✓（渲染期不能 await ✗）。
+ * 解法不是"禁用同步读"✗，而是 DSH 那套 **领域投影** ✓：
+ *
+ * ```
+ * ① 取数：port.queryTelemetry() 一次性异步拉（查完即弃 ✓，不留镜像 ✗）
+ * ② 投影：只把**最近 N 行**留在内存里（有界 ✓ —— keep 就是"一屏"的边界 ✓）
+ * ③ 读：同步读**投影** ✓（渲染期零 IPC ✓、零 await ✓）
+ * ```
+ *
+ * 于是"同步读不用跨 IPC"**依然成立** ✓，而它的**作用域**从"整表"缩到了"最近 N 行" ✓。
+ */
+let projection: TelemetryRow[] | null = null;
+let projectionAt = 0;
+
+/** 投影里最多留多少行（有界 ✓ —— 界面只关心最近这些 ✓）。 */
+const TELEMETRY_PROJECTION_MAX = 5000;
+
+/**
+ * **一次性把遥测拉成有界投影** ✓（界面/插件在 effect 里调它 ✓）。
+ *
+ * 返回投影里的行数 ✓。`limit` 是"最多留多少行" ✓（取**最近**的 ✓ —— 仪表盘看的是近期 ✓）。
+ */
+export async function refreshTelemetryProjection(opts: { keep?: number } = {}): Promise<number> {
+  const keep = Math.max(0, opts.keep ?? TELEMETRY_PROJECTION_MAX);
+  const { getStoragePort } = await import("../storage/port");
+  const p = getStoragePort() as unknown as {
+    queryTelemetry?: (o?: { limit?: number }) => Promise<Array<Record<string, unknown>>>;
+  } | null;
+  if (!p?.queryTelemetry) {
+    projection = [];
+    projectionAt = Date.now();
+    return 0;
+  }
+  const rows = await p.queryTelemetry();
+  /**
+   * ⚠️ 取**最近**的 `keep` 行 ✓（查询按 offset 升序返回 ✓ ⇒ 尾部才是新的 ✓）。
+   * 只保留这一段 ⇒ 内存有界 ✓，而"最近"正是仪表盘要的 ✓。
+   */
+  projection = rows.slice(Math.max(0, rows.length - keep)).map(wireToTelemetry);
+  projectionAt = Date.now();
+  return projection.length;
+}
+
+/** 投影的时间戳（诊断用：界面据此知道数字是"什么时候的" ✓） */
+export function telemetryProjectionAt(): number {
+  return projectionAt;
+}
+
+/**
+ * 测试用：清掉投影 ✓。
+ *
+ * 为什么必须有它 ✗：投影是**模块级状态** ✓ ⇒ 用例之间会互相残留 ✗
+ * （实测：TELE-A1 装了 2500 行之后，TELE-A2 的"没刷新之前必须空"当场变红 ✗）。
+ */
+export function __resetTelemetryProjectionForTests(): void {
+  projection = null;
+  projectionAt = 0;
+}
+
+/**
+ * 读**投影**（同步 ✓）。
+ *
+ * 没有投影时返回 `undefined` ✓ —— 语义与原来一致（"该域当前读不到"✓），
+ * 但来源从"整表镜像"✗ 换成了"按需投影"✓。
  */
 function telemetryRows(): TelemetryRow[] | undefined {
-  return domainReadMany(TABLE, wireToTelemetry, undefined, TELEMETRY_OPTS);
+  return projection ?? undefined;
 }
 
 /** 计数类聚合在**同一份数据**上算（旧实现是一串 COUNT/DISTINCT/GROUP BY） */
@@ -690,11 +758,18 @@ class TelemetryCollector {
    * `0` 因此有两种含义（本来就没有 / 没删成），但"没删成"一定伴随上报，不会静默。
    */
   clearAll(): number {
-    const rows = telemetryRows();
-    if (!rows) {
+    /**
+     * **就绪探针改成"域端口在不在"** ✓（第 151 波）。
+     *
+     * 原来这里用 `telemetryRows()` 当探针 ✗ —— 而它现在读的是**按需投影** ✓，
+     * 没刷新时必然为空 ⇒ 会把"还没拉投影"误报成"未接手" ✗（实测：CLEAR-2 当场变红 ✓）。
+     * 清空这件事**本来也不需要读到那些行** ✓（计数由 `domainDeleteWhere` 的返回值给出 ✓），
+     * 所以探针只该问"端口接不接这活" ✓。
+     */
+    if (!domainPort(TABLE, TELEMETRY_OPTS)) {
       reportPersistFailure(
         "telemetry.clearAll",
-        new Error("遥测域镜像未就绪"),
+        new Error("遥测域未接手"),
         "遥测事件未清空（本次没有清空任何行）",
       );
       return 0;

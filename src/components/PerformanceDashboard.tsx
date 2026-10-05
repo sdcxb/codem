@@ -18,7 +18,7 @@ import {
   Trash2, Download, Zap,
 } from "lucide-react";
 import { useLang, S } from "../core/i18n/lang";
-import { getTelemetry } from "../core/telemetry/telemetry";
+import { getTelemetry, refreshTelemetryProjection } from "../core/telemetry/telemetry";
 
 interface PerformanceDashboardProps {
   onClose: () => void;
@@ -57,9 +57,28 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
 
   const telemetry = getTelemetry();
 
+  /**
+   * **第 151 波：刷新 = 异步拉一次投影，然后同步读** ✓（"领域投影"的样板 ✓）。
+   *
+   * 这块原来是"每次渲染同步读整张 `telemetry_events`" ✗（靠镜像驻留 ✓，
+   * 而真机那张表有 8975 行 ✗ ⇒ 就是「超过镜像上限」那条告警的来源 ✓）。
+   * 现在：`refreshTelemetryProjection()` 一次性按需查询 ✓（查完即弃 ✓，
+   * 只留**最近 N 行**做投影 ✓）⇒ 之后 `getOverviewStats()` 这些**同步**调用照旧 ✓，
+   * 渲染期依然是零 await、零 IPC ✓ —— 变的只是**作用域**：从"整表"到"最近 N 行" ✓。
+   *
+   * ⚠️ 注意**别写成自激循环** ✗：`setTick` 只负责重渲染 ✓，
+   * 而重新拉取只发生在"挂载 / 手动刷新 / 自动刷新定时器"这三处 ✓（不依赖 `tick` ✓）。
+   */
   const refresh = useCallback(() => {
-    setTick(t => t + 1);
+    void refreshTelemetryProjection()
+      .then(() => setTick((t) => t + 1))
+      .catch(() => setTick((t) => t + 1));
   }, []);
+
+  // 挂载时先把投影拉起来（否则首屏读到的会是空的 ✓）
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   // Auto refresh
   useEffect(() => {
