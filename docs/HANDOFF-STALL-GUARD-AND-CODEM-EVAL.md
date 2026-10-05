@@ -2204,7 +2204,44 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.57 同步读怎么解决：**不是禁用，而是"领域投影"**（第 145 波，用户追问）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.58 时延 A/B（目标②）：**推理档位 high vs medium** —— 预登记判据（第 152 波）
+
+## 为什么做它（证据链 ✓）
+
+| 证据 | 数值 |
+|---|---|
+| 每轮耗时构成（§13.52 ✓） | **TTFT 0.4s + 生成 ~9.7s** ✗ ⇒ 大头是**生成** ✓ |
+| 我们的输出 token vs 对照臂 | **1068 vs 474**（2.25× ✗） |
+| 工具参数占多少 | 整个会话仅 **1.5k–6.7k token** ✓ ⇒ 大头**不是**工具参数 ✓ ⇒ 是**思考** ✓ |
+| 我们的档位 | 三处默认写死 **`codem-reasoning-effort = "high"`** ✗ |
+| DSH 的档位 | **provider 默认** ✓（`packages/acp/acp/src/model-control.ts`：`...providerDefault ? {} : { reasoningEffort: ReasoningEffortId(value) }` ✓） |
+
+⇒ 假设：**我们比对手多花的那 2.25× 输出，很大一部分是"被默认开到 high 的思考"** ✗。
+
+## 预登记判据（**先写死，免得事后挑数据** ✗）
+
+1. **通过率不许降** ✓ —— 主判据：repo-02 在 treatment 臂**不得**从"能过"变成"过不了"✓
+   （若降 ⇒ **不改默认** ✗，档位回 high ✓）；
+2. `activeMs` 必须**明显下降** ✓（这是目标②要的 ✓）；
+3. 两臂用**同一把尺子** ✓：同一任务、同样的干净工作区、同样两轮 ✓、
+   同样的 `activeMs` 口径（不含驱动等待 ✓）；
+4. **对照臂**：1.16.257 上 repo-02 的 high 读数（**同口径** ✓）——
+   261 只动了遥测/仪表盘 ✓（不碰 agent 循环 ✓）⇒ 可比 ✓（这一点也记下来 ✓，不作事后调整 ✗）。
+
+## 记录文件
+
+- treatment（medium ✓）：`.preview-shot/eval-records-codem-repo-v26.jsonl`（appVersion 记为 `1.16.261-medium` ✓）
+- 对照（high ✓）：`.preview-shot/eval-records-codem-repo-v24.jsonl`（`1.16.257` ✓）
+
+## 怎么改档位（可复现 ✓）
+
+```
+node .preview-shot/_set-effort.mjs medium   # 或 high（改完必须重启应用 ✓）
+```
+
+⚠️ `settings` 表的 schema 是 `(key, value, updated_at)` ✓ —— **写的时候必须带 `updated_at`** ✗
+（第一次漏了它，报 `NOT NULL constraint failed: settings.updated_at` ✓）。
+### 13.57 同步读怎么解决：**不是禁用，而是"领域投影"**（第 145 波，用户追问）
 
 用户的追问（本波最重要的一句）：
 
