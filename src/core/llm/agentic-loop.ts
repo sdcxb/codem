@@ -786,6 +786,8 @@ export class AgenticLoop {
   private sessionEditedSources = new Set<string>();
   /** "有没跑过的同族判据"这条提醒**每会话只发一次** ✓（别把收尾变成复读机 ✗）。 */
   private unrunSiblingsNudged = false;
+  /** **模式 A（零产出收工）**的提醒也是每会话一次 ✓（第 162 波 ✓）。 */
+  private zeroOutputNudged = false;
   /**
    * **本会话动过盘上的东西**（第 157 波 ✓）—— 与 `sessionEditedSources` 的区别很关键 ✗：
    *
@@ -2540,6 +2542,65 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           }
           yield { type: "end", result: failResult };
           return failResult;
+        }
+
+        /**
+         * **第 162 波（模式 A）：零产出收工** ✓ —— 一个字节都没改、而判据还红着就收尾 ✗。
+         *
+         * 真机形态（同版本 264 两批对照 ✓）：
+         * ```
+         * v31：3/4 ✓   调用 70 / 84 / 39 / 87   ⇒ 每轮都干了活 ✓
+         * v32：0/4 ✗   调用 34 / 7 / 27 / 59    ⇒ run-3 只 7 次、diff=0 ✗
+         *          （maxIteration=3、timedOut=false ⇒ 不是崩溃、不是超时 ✗）
+         * ```
+         * 而现有两把守卫**都正确地沉默了** ✗（没改过 ⇒ VU/族判据都不该触发 ✓）
+         * ⇒ 这条失败一直是**安静地过去**的 ✓，这一波就是不让它安静 ✓。
+         *
+         * 判据刻意做成"**没改 + 至少一条判据是红的**"✓（低误报 ✓）：
+         * 只看"没改"会误伤只读型任务 ✗（只跑测试看结论、全绿就是做完了 ✓）。
+         * 它的定位也说清 ✓：**消除不了采样方差** ✗，只是让这种失败**被看见** ✓。
+         */
+        if (!this.zeroOutputNudged) {
+          try {
+            const { shouldNudgeZeroOutput } = await import("./completion-guards");
+            if (
+              shouldNudgeZeroOutput({
+                modifiedAnything: this.sessionModifiedAnything || this.sessionEditedSources.size > 0,
+                testStatuses: this.testFileStatus.values(),
+                alreadyNudged: false,
+              })
+            ) {
+              this.zeroOutputNudged = true;
+              debugLog("agent-loop", "收尾：零产出（没改过任何文件，但判据还红着）", {
+                ran: this.testFileStatus.size,
+                red: [...this.testFileStatus.values()].filter((s) => s === "red").length,
+              });
+              recordLoopStop(sessionId, "completed_unverified", { phase: "zero-output", iteration: this.state.iteration });
+              this.getMessageStorage().createMessage(
+                {
+                  id: `zero-output-nudge-${Date.now()}`,
+                  role: "user",
+                  content:
+                    "[SYSTEM] 你**没有改动任何文件**就收尾了，而**你已经跑过的判据里还有红的**（一条事实 ✓）。\n" +
+                    `- 跑过的判据：${this.testFileStatus.size} 条，其中红 ${[...this.testFileStatus.values()].filter((s) => s === "red").length} 条\n` +
+                    "\n如果你判断这个任务确实不需要改代码，请**明说**理由（读了什么、为什么现状就是对的）✓；" +
+                    "否则请继续把它做完 —— 真机数据里这种形态（跑了几次、什么都没改就报完成）" +
+                    "几乎总是**漏了实现**，而不是「任务本来就不用改」。",
+                  timestamp: Date.now(),
+                  status: "done",
+                },
+                sessionId,
+              );
+              this.msgCache = null;
+              yield {
+                type: "text_delta",
+                text: "\n\n🔎 这一路没有改动任何文件、但判据还红着，已要它说明理由或继续做完…\n\n",
+              };
+              continue;
+            }
+          } catch (e) {
+            warnOnce("zero-output", "[agentic-loop] 零产出收尾检查失败", e);
+          }
         }
 
         /**
