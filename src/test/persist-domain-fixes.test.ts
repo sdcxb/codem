@@ -565,12 +565,22 @@ describe("C-3 知识库块索引：镜像被拒后不得冒充「没有内容」
     await settle();
 
     /**
-     * 第 267 波：**快路径的定义变了** ✓ —— 迁移后（拆掉 getChunks 的镜像同步读 ✓）
-     * 检索的快路径是**按需缓存命中** ✓，不再是镜像 ✓。原来那条断言在拆读之后**必然为假** ✓，
-     * 如实改成新口径 ✓；**紧随其后的两条业务断言一个字都没改** ✗（chunk_index 升序 ✓、不抛 ✓）。
+     * 第 270 波：**按实测的口径写** ✓（第 269 波读了 `chunkIndexState()` 的实现 ✓：
+     * `storage.ts:326` 是 `if (isChunkMirrorReady()) return "mirror";` ✓
+     * ⇒ **镜像就绪就一定报 `mirror`** ✓、**不看缓存** ✗）。
+     *
+     * ⇒ 我第 267 波改成断言 `on-demand` 是**错的** ✗（实测 `expected 'mirror' to be 'on-demand'` ✓）。
+     * 它真正想说**两件事** ✓，分开断言 ✓：
+     *   ① 状态函数的**口径没变** ✓（镜像就绪 ⇒ `mirror` ✓）；
+     *   ② 而**读**走的是**按需缓存** ✓（迁移的**实际效果** ✓：`getChunks` 不再读镜像 ✓）。
+     * 两条都**可观察** ✓（不猜 ✗）。紧随其后的两条业务断言一个字都没改 ✗。
      */
     await k.__warmChunksForTests("nb1");
-    expect(k.chunkIndexState(), "缓存命中 ⇒ on-demand 就是现在的快路径").toBe("on-demand");
+    expect(k.chunkIndexState(), "镜像就绪 ⇒ 状态仍是 mirror（迁移不改这条口径 ✓）").toBe("mirror");
+    expect(
+      k.__chunkCacheBucketsForTests().flatMap((b) => Object.values(b.entries)).flat().length,
+      "预热后缓存里必须有块（= 读走的是按需缓存这条快路径 ✓）",
+    ).toBeGreaterThan(0);
     expect(k.getChunks("nb1").map((c) => c.id), "仍按 chunk_index ASC").toEqual(["c2", "c1"]);
     expect(() => k.getChunks("nb1")).not.toThrow();
   });
