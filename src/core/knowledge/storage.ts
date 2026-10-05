@@ -389,8 +389,6 @@ function warmChunksByNotebook(notebookId: string): Promise<void> {
   const portAtStart = currentPort();
   const tokenAtStart = portTokenOf(portAtStart);
   const warmKey = warmKeyOf(tokenAtStart, notebookId);
-  /** 第 255 波：把"**发起这一刻的数据代际**"一起定下来 ✓（落地时核对 ✓，见 `NC-DEL-3` ✓）。 */
-  const genAtStart = chunkWarmGeneration;
 
   if (chunkWarmInFlight.has(warmKey)) return Promise.resolve();
   if (!chunkOnDemandPossible()) return Promise.resolve();
@@ -454,23 +452,6 @@ function warmChunksByNotebook(notebookId: string): Promise<void> {
           "chunk.onDemand",
           new Error("存储端口在按需读期间被更换"),
           `笔记本 ${notebookId} 的本次按需读作废（结果不属于当前端口，已丢弃；下一次读会重新拉）`,
-        );
-        return;
-      }
-      /**
-       * ② 写回复核之**代际核对** ✓（第 255 波 ✓）—— 与上面那条"端口核对"同源 ✓：
-       * 发起之后若发生过**删除** ✓ ⇒ 这份结果里的块可能**已经被删掉** ✗
-       * ⇒ **丢弃**它 ✓（否则删除之后同步读会读回已删的块 ✗，`NC-DEL-3` 钉的就是这条 ✓）。
-       *
-       * ⚠️ **不在这里补一次新预热** ✗：那会撞上 `chunkWarmInFlight`（本 key 要到 `finally` 才删 ✓）
-       * ⇒ 变成一次空操作 ✓。丢弃是够的 ✓ —— 下一次读（`getChunks` / `getChunkCountOrNull` ✓）
-       * 未命中时会**自己**再发起一次预热 ✓。
-       */
-      if (chunkWarmGeneration !== genAtStart) {
-        reportActionFailure(
-          "chunk.onDemand",
-          new Error("按需读期间发生了删除（结果可能含已删的块）"),
-          `笔记本 ${notebookId} 的本次按需读作废（期间有删除，结果已丢弃；下一次读会重新拉）`,
         );
         return;
       }
