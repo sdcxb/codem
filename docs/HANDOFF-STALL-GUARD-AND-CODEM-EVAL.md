@@ -2204,7 +2204,67 @@ repo-03 从不做到做到 ✓，repo-02 从做到没做到 ✗。
 - 两者相抵后，最终还要看**其余 5 个任务**（08–12）与 **run-3 全体**。
 
 （另：`repo-06` 与 `repo-07` 的 run-2 通过 ✓ 与基线一致或更好 ✓ —— 至少这两格**没有退步** ✓。）
-### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.140 ★★★★ 字面定位：不就绪且**没在加载**的表，`domainWrite` **直接返回 false** ✗（第 263 波）
+### 13.36 ★ **"有没有碰那条判据"对成败的预测力：4/4**### 13.141 "写直达引擎"的**设计定稿**：引入 `ON_DEMAND_TABLES`（第 264 波）
+
+## 量到的事实 ✓（第 263 波字面 ✓）
+
+```
+domain-store.ts:1017   if (!port.domains.isLoading?.(table)) return false;   ← 不就绪且没在加载 ⇒ 直接 false ✗
+```
+
+⇒ 而且 `domain-store.ts` 里**没有**任何"按需表 / 永不镜像的表"名单 ✗
+（grep `ON_DEMAND|onDemandTables|NEVER_MIRROR|notMirrored|unboundedTables` 全无命中 ✗）
+⇒ 所以要把"**这张表本来就不该进镜像**"这个事实**显式化** ✓。
+
+## 定稿（下一波照做 ✓）
+
+```ts
+// domain-store.ts（靠近 domainWrite ✓）
+/**
+ * **按需表**：这些表**天生不该进镜像**（按需查询 + 有界投影 ✓）。
+ * 目前只有一个：`notebook_chunks` —— 每行带一个 Base64 的 embedding（1536 维 ≈ 8KB ✓），
+ * 所以 `DOMAIN_MIRROR_LOW_ROW_LIMITS` 给它压到 2000 行、`bootstrap` 也刻意不预取 ✓。
+ *
+ * **为什么 `domainWrite` 要用到它** ✓（第 263 波字面定位 ✓）：
+ * 不就绪且**没在加载**时，`domainWrite` 现在直接 `return false` ✗
+ * ⇒ 调用方只看到"写没被接受" ✓，**这一行就静默丢了** ✗
+ * （`NC-WR-1` 量的就是它 ✓：写完 + 预热之后新块读不回来 ✓）。
+ * 对按需表 ⇒ 必须**直达引擎** ✓（与"已就绪"分支同一条 `persistWriteThrough` ✓）。
+ */
+const ON_DEMAND_TABLES = new Set<string>(["notebook_chunks"]);
+
+// domainWrite 里，把第 1017 行改成：
+//   未就绪：按需表**直达引擎** ✓（不能只排队等一个永远不会就绪的镜像 ✗）
+//   if (ON_DEMAND_TABLES.has(table)) {
+//     persistWriteThrough(table, "crud.upsert", params, opts.scope, opts.note);
+//     return true;
+//   }
+//   if (!port.domains.isLoading?.(table)) return false;   ← 原有那条**不动** ✗
+```
+
+**反向对照** ✓（`NC-WR-2` ✓ 已绿 ✓，必须保持 ✓）：**镜像可用**的表**照旧**走镜像那条路 ✓
+—— `ON_DEMAND_TABLES` **只含** `notebook_chunks` ✓ ⇒ 别的表**一点都没变** ✓。
+
+## 需要留意的两件事 ✓
+
+1. **上报点** ✗：`persistWriteThrough` **内部**已有上报 ✓ ⇒ 我**不新引入** `report*` 调用 ✓
+   ⇒ 预计**不需要**改审计登记表 ✓（但仍要跑 `report-site-classification` 确认 ✓，
+   若报新站点 ⇒ **同一次**登记 ✓，见 §13.135/13.136 ✓）；
+2. **`no-sync-mirror-reads` 那条门** ✓：它管的是**同步读** ✓；这次改的是**写** ✓ ⇒ 预计不受影响 ✓
+   （仍要跑一次确认 ✓）。
+
+## 下一波（顺序 ✓）
+
+1. 加 `ON_DEMAND_TABLES` + `domainWrite` 那个分支 ✓；
+2. 跑 `chunk-write-direct-to-engine` ✓ ⇒ `NC-WR-1` **转绿** ✓、`NC-WR-2` **保持绿** ✓；
+3. **变异** ✓：去掉那个分支 ⇒ `NC-WR-1` 红 ✓；
+4. 跑 `report-site-classification` ✓ + `no-sync-mirror-reads` ✓ + 全量 ✓；
+5. 然后最后一波 ✓（拆两处读 ✓ + `C3-4` ✓ + gate ✓）。
+
+## 状态 ✓
+
+树：1 条靶子红（`NC-WR-1` ✓）+ 环境那条 ✓；跑批 **10/24** ✓；本轮**未装机** ✓（纯只读 ✓）。
+### 13.140 ★★★★ 字面定位：不就绪且**没在加载**的表，`domainWrite` **直接返回 false** ✗（第 263 波）
 
 ## 读到的（`domain-store.ts:1000-1024` ✓，逐行 ✓）
 
