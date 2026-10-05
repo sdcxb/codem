@@ -98,13 +98,27 @@ function registryWithFakeReadAndBash() {
 }
 
 describe("第 175 波：收尾提醒的往返预算（判据先行 ✓）", () => {
-  it.skip("NR-1（下一波实现后打开）: 三条守卫同时成立 ⇒ 只能多要 **1** 轮，不是 3 轮", async () => {
+  it("NR-1: 两条收尾守卫同时成立 ⇒ 只能多要 **1** 轮（合并成一次往返 ✓）", async () => {
+    /**
+     * ⚠️ **夹具必须只触发"第 176 波合并的那三条"** ✗→✓ ——
+     * 第一版夹具喂了**红测试输出** ✗ ⇒ 先说话的是**更老的**两条守卫
+     * （"改了但没验证" ✓ 与"测试还是红的" ✓，它们各有各的 `continue` ✓，不在这三条里 ✓）
+     * ⇒ 实测仍是 `expected 5 to be 4` ✗，但那是**别的守卫**在花往返 ✓，判据指错了对象 ✗。
+     *
+     * 现在这个夹具 ✓：**读源码**（让"零产出"那一支成立 ✓）+ **一条还原命令**
+     * （让"改完又还原"成立 ✓）+ **不跑任何测试** ✗ ⇒
+     * - 零产出 ✓（"没跑测试 + 读过源码"这一支 ✓，它不需要红判据 ✓）
+     * - 改完又还原 ✓
+     * - 族判据 ✗（要求 `testFileStatus.size > 0` ✓ ⇒ 不触发 ✓）
+     * - 老的两条 ✗（要有红测试 ✓ ⇒ 不触发 ✓）
+     * ⇒ **正好两条落在我这三条里** ✓ ⇒ 多要 **1** 轮 ✓。
+     */
     const provider = new ScriptedProvider();
     provider.setScript([
-      /** 读源码（让"读过源码"成立 ✓）+ 跑一条红判据（让"有红判据"成立 ✓） */
       readIteration("r1", `${process.cwd()}\\src\\core\\llm\\tools.ts`),
-      bashIteration("b1", "npx vitest run src/test/dsh-d10-write-not-executed-is-error.test.ts"),
-      /** 第一次收尾：三条守卫都会想说话 ✓ */
+      /** 这条会被记成"还原"✓（`git stash` 在识别集合里 ✓） */
+      bashIteration("b1", "git stash push -- src/core/llm/tools.ts"),
+      /** 第一次收尾：两条守卫都会想说话 ✓ */
       finalIteration("我做完了。"),
       /** 合并之后的收尾 ✓ */
       finalIteration("说明：……"),
@@ -123,5 +137,6 @@ describe("第 175 波：收尾提醒的往返预算（判据先行 ✓）", () =
     expect(provider.requests.length, "三条守卫同时成立也只许多要 1 轮（合并成一次往返 ✓）").toBe(4);
   });
 });
+
 
 

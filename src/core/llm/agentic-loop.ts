@@ -2575,6 +2575,17 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * - **根本没打印** ⇒ 收尾段没被走到 ✗（循环从别的出口结束了 ✓）；
          * - **打印了但守卫没触发** ⇒ 条件不满足 ✓（数字就在这一行里 ✓）。
          */
+        /**
+         * **第 176 波：收尾提醒的"往返预算"** ✓（判据 NR-1 ✓）。
+         *
+         * 三条守卫（改完又还原 / 零产出 / 族判据没跑齐 ✓）原来**各自**发一条消息并各自 `continue` ✗
+         * ⇒ 一轮里最多要 **3 次往返** ✗。而实测（§13.69 ✓）：**单轮往返 ~10s** ✓、
+         * 模型流式占 85% ✓ ⇒ 三次往返 ≈ 30s ≈ 慢轮的 13% ✗ —— **守卫是拿时延换可见性** ✓。
+         *
+         * 所以改成"**先把理由都收集起来，最后一次性说完**"✓：
+         * 消息可以一条写全 ✓，但**只多要一轮** ✓。
+         */
+        const completionNudges: string[] = [];
         debugLog(
           "agent-loop",
           "收尾段：进入",
@@ -2599,26 +2610,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               this.revertedNudged = true;
               debugLog("agent-loop", "收尾：改动被还原过，且之后再没编辑");
               recordLoopStop(sessionId, "completed_unverified", { phase: "reverted", iteration: this.state.iteration });
-              this.getMessageStorage().createMessage(
-                {
-                  id: `reverted-nudge-${Date.now()}`,
-                  role: "user",
-                  content:
-                    "[SYSTEM] 这一路你**改动过文件，但后来把改动撤销了**，而且**之后再没有编辑过**（一条事实 ✓）。\n" +
-                    "\n如果是有意放弃这版实现，请**说明理由**（为什么现在的代码是对的、你验证过什么）✓；" +
-                    "否则请把它**做回来** —— 真机数据里这种形态（改了、测了、又还原，最后盘上什么都没留下）" +
-                    "几乎总是**收尾时误撤**，而不是「确实不需要改」。",
-                  timestamp: Date.now(),
-                  status: "done",
-                },
-                sessionId,
+              completionNudges.push(
+  "[SYSTEM] 这一路你**改动过文件，但后来把改动撤销了**，而且**之后再没有编辑过**（一条事实 ✓）。\n" +
+                      "\n如果是有意放弃这版实现，请**说明理由**（为什么现在的代码是对的、你验证过什么）✓；" +
+                      "否则请把它**做回来** —— 真机数据里这种形态（改了、测了、又还原，最后盘上什么都没留下）" +
+                      "几乎总是**收尾时误撤**，而不是「确实不需要改」。",
               );
-              this.msgCache = null;
-              yield {
-                type: "text_delta",
-                text: "\n\n🔎 检测到改动被还原且之后再没编辑，已要它说明理由或把改动做回来…\n\n",
-              };
-              continue;
             }
           } catch (e) {
             warnOnce("reverted-work", "[agentic-loop] 还原守卫检查失败", e);
@@ -2658,27 +2655,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                 red: [...this.testFileStatus.values()].filter((s) => s === "red").length,
               });
               recordLoopStop(sessionId, "completed_unverified", { phase: "zero-output", iteration: this.state.iteration });
-              this.getMessageStorage().createMessage(
-                {
-                  id: `zero-output-nudge-${Date.now()}`,
-                  role: "user",
-                  content:
-                    "[SYSTEM] 你**没有改动任何文件**就收尾了，而**你已经跑过的判据里还有红的**（一条事实 ✓）。\n" +
-                    `- 跑过的判据：${this.testFileStatus.size} 条，其中红 ${[...this.testFileStatus.values()].filter((s) => s === "red").length} 条\n` +
-                    "\n如果你判断这个任务确实不需要改代码，请**明说**理由（读了什么、为什么现状就是对的）✓；" +
-                    "否则请继续把它做完 —— 真机数据里这种形态（跑了几次、什么都没改就报完成）" +
-                    "几乎总是**漏了实现**，而不是「任务本来就不用改」。",
-                  timestamp: Date.now(),
-                  status: "done",
-                },
-                sessionId,
+              completionNudges.push(
+  "[SYSTEM] 你**没有改动任何文件**就收尾了，而**你已经跑过的判据里还有红的**（一条事实 ✓）。\n" +
+                      `- 跑过的判据：${this.testFileStatus.size} 条，其中红 ${[...this.testFileStatus.values()].filter((s) => s === "red").length} 条\n` +
+                      "\n如果你判断这个任务确实不需要改代码，请**明说**理由（读了什么、为什么现状就是对的）✓；" +
+                      "否则请继续把它做完 —— 真机数据里这种形态（跑了几次、什么都没改就报完成）" +
+                      "几乎总是**漏了实现**，而不是「任务本来就不用改」。",
               );
-              this.msgCache = null;
-              yield {
-                type: "text_delta",
-                text: "\n\n🔎 这一路没有改动任何文件、但判据还红着，已要它说明理由或继续做完…\n\n",
-              };
-              continue;
             }
           } catch (e) {
             warnOnce("zero-output", "[agentic-loop] 零产出收尾检查失败", e);
@@ -2737,34 +2720,47 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               debugLog("agent-loop", "收尾：族里没跑过的判据", { family, unrun: unrun.length, sample: unrun.slice(0, 3) });
               recordLoopStop(sessionId, "completed_unverified", { phase: "unrun-family", iteration: this.state.iteration });
               const shown = unrun.slice(0, 8);
-              this.getMessageStorage().createMessage(
-                {
-                  id: `unrun-family-nudge-${Date.now()}`,
-                  role: "user",
-                  content:
-                    "[SYSTEM] 你这一路改过源码，而**判据只跑了一部分**（这是一条事实，不是命令 ✓）：\n" +
-                    `- 你已经跑过 ${this.testFileStatus.size} 条 ✓\n` +
-                    `- 同族（\`${family}-*\`）里还有 **${unrun.length} 条你没跑过**：\n` +
-                    shown.map((f) => `  - ${f}`).join("\n") +
-                    (unrun.length > shown.length ? `\n  - …还有 ${unrun.length - shown.length} 条` : "") +
-                    `\n\n一条命令可以把整族跑完：\`npx vitest run 'src/test/${family}-*.test.ts'\` ✓\n` +
-                    "为什么值得跑完：这类任务的真机数据里，**把同族判据跑齐的轮次通过，只跑了一部分的轮次失败** ✓，" +
-                    "而失败形态几乎都是「改得不完整」（只补了其中一两处）✓。",
-                  timestamp: Date.now(),
-                  status: "done",
-                },
-                sessionId,
+              completionNudges.push(
+  "[SYSTEM] 你这一路改过源码，而**判据只跑了一部分**（这是一条事实，不是命令 ✓）：\n" +
+                      `- 你已经跑过 ${this.testFileStatus.size} 条 ✓\n` +
+                      `- 同族（\`${family}-*\`）里还有 **${unrun.length} 条你没跑过**：\n` +
+                      shown.map((f) => `  - ${f}`).join("\n") +
+                      (unrun.length > shown.length ? `\n  - …还有 ${unrun.length - shown.length} 条` : "") +
+                      `\n\n一条命令可以把整族跑完：\`npx vitest run 'src/test/${family}-*.test.ts'\` ✓\n` +
+                      "为什么值得跑完：这类任务的真机数据里，**把同族判据跑齐的轮次通过，只跑了一部分的轮次失败** ✓，" +
+                      "而失败形态几乎都是「改得不完整」（只补了其中一两处）✓。",
               );
-              this.msgCache = null;
-              yield {
-                type: "text_delta",
-                text: `\n\n🔎 同族判据还有 ${unrun.length} 条没跑过（已跑 ${this.testFileStatus.size} 条），已要它先跑完再收尾…\n\n`,
-              };
-              continue;
             }
           } catch (e) {
             warnOnce("unrun-family", "[agentic-loop] 族判据收尾检查失败", e);
           }
+        }
+
+        /**
+         * **一次性说完** ✓（第 176 波 ✓）：三条守卫的理由合并成**一条**消息 ✓，
+         * 只多要**一轮**往返 ✓（判据 NR-1 钉住这个预算 ✓）。
+         *
+         * 为什么合并是**行为等价**的 ✓：三条讲的都是"收尾之前还有事没交代"✓，
+         * 合成一条只是把三句话放在一起 ✓ —— 而省下的是**实打实的往返** ✓
+         * （实测 2 次提醒往返 ≈ 20s ✓，见 NR-1 注释里的实测数字 ✓）。
+         */
+        if (completionNudges.length > 0) {
+          this.getMessageStorage().createMessage(
+            {
+              id: `completion-nudges-${Date.now()}`,
+              role: "user",
+              content: completionNudges.join("\n\n---\n\n"),
+              timestamp: Date.now(),
+              status: "done",
+            },
+            sessionId,
+          );
+          this.msgCache = null;
+          yield {
+            type: "text_delta",
+            text: `\n\n🔎 收尾前有 ${completionNudges.length} 件事需要先说明或做完（已合并成一次提问），已要它回应…\n\n`,
+          };
+          continue;
         }
 
         /**
