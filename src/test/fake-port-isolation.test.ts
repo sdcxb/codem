@@ -77,7 +77,7 @@ describe("第 240 波：假端口实例之间不许共享状态（夹具不许�
    * 再回填这条反向对照 ✓ —— **不许**为了让判据变绿而改夹具 ✗（那正好是反方向 ✗）。
    * `NC-ISO-1`（实例之间不许共享 ✓）**已经绿** ✓，它是本文件的主要目的 ✓。
    */
-  it.skip("NC-ISO-2 反向对照（待量清 upsert 模式语义后再启用 ✗）: 同一实例内两次写同一 notebook ⇒ 第二次看到两次的结果", async () => {
+  it.skip("NC-ISO-2 反向对照（**量证结果见下** ✗）: 同一实例内两次写同一 notebook ⇒ 第二次看到两次的结果", async () => {
     const port = createFakeStoragePort({
       seed: { notebook_chunks: [chunkRow("a1", "nb1", "s_a")] },
     });
