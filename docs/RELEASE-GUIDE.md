@@ -136,3 +136,77 @@ gh release view v$Version --repo sdcxb/codem   # 应有 5 个 asset
 - **不要信构建日志里的版本号**——`.codem-cache\tauri-build.log` 可能是旧构建残留。验证版本要看磁盘产物的 `VersionInfo.FileVersion/ProductVersion` + 文件时间戳。
 - 签名密钥 `codem-updater.key` 已被 git 跟踪（`.gitignore` 注释说 "NEVER commit" 但历史提交已含），当前不阻塞发布；建议后续从仓库移除并轮换。
 - `npx tauri` 在 PowerShell 传参可能解析失败，用 `node node_modules\@tauri-apps\cli\tauri.js` 直接调 CLI。
+
+---
+
+## 发布政策与说明模板（2026-10-07 起）
+
+### 只发布稳定版
+
+**过程版本不要发布到 GitHub Releases。** 中间版本（每次修复/试验的构建）只留在本地与 CHANGELOG，
+需要时用安装包直接分发即可。
+
+- **稳定版**由维护者指定；发布前先把该版本的 CHANGELOG 段整理成"面向用户"的说明（见下方模板）。
+- 已经误发的过程版本应删除，只保留稳定版：
+
+  ```powershell
+  # 列出现有 release，确认保留清单
+  gh release list --repo sdcxb/codem --limit 300
+  # 逐个删除（保留 tag，历史可追溯；要连 tag 一起删加 --cleanup-tag）
+  gh release delete <tag> --repo sdcxb/codem --yes
+  ```
+
+- **删除 release 不影响自动更新**：更新器读的是 `releases/latest/download/latest.json`，
+  只要最新稳定版的资产与 `latest.json` 完好即可（删完建议跑一次
+  `node tools/release/verify-update-manifest.mjs --remote` 复核）。
+
+### 发布说明必须用标准样式
+
+**不要**写成内部叙事（"我查到…""第 N 波""AI 修复反馈"这类）✗。标题用 `Codem vX.Y.Z`，
+正文按下面模板：
+
+```markdown
+# Codem vX.Y.Z
+
+**发布日期**：YYYY-MM-DD
+**类型**：稳定版（Windows x64）
+**下载**：`Codem_X.Y.Z_x64-setup.exe`（NSIS 安装包）· `Codem_X.Y.Z_x64_en-US.msi`（MSI）
+
+## 本版要点
+1. …（一句话一条，用户在意的结果，不写实现过程）
+
+## 变更
+### 新增与改进
+### 修复
+
+## 升级说明
+- 是否需要手动操作、能否直接覆盖安装、能否回退
+
+## 已知问题 / 后续
+
+## 校验
+- 附更新器签名 `.sig`；`latest.json` 平台键 `windows-x86_64-nsis`、`windows-x86_64`
+```
+
+写作纪律：
+
+- **只写事实**：每条都能在 CHANGELOG 或真机取证里找到依据；不写"预计""应该已经"。
+- **用户视角**：写"用户遇到什么、现在怎样"，而不是"改了哪个函数"。
+- **不写内部编号**：波次号、内部测试代号、任务编号一律不进发布说明。
+- **已知问题如实写**：包括"某类波动属模型侧方差、非构建缺陷"这种让用户少走弯路的结论。
+
+### 发布命令
+
+```powershell
+# 说明写到文件（避免命令行长中文的引号问题）
+gh release create vX.Y.Z --repo sdcxb/codem --title "Codem vX.Y.Z" --notes-file .preview-shot\_rn-X.Y.Z.md
+gh release upload vX.Y.Z --repo sdcxb/codem `
+  "src-tauri\target\release\bundle\nsis\Codem_X.Y.Z_x64-setup.exe" `
+  "src-tauri\target\release\bundle\nsis\Codem_X.Y.Z_x64-setup.exe.sig" `
+  "src-tauri\target\release\bundle\msi\Codem_X.Y.Z_x64_en-US.msi" `
+  "src-tauri\target\release\bundle\msi\Codem_X.Y.Z_x64_en-US.msi.sig" `
+  "latest.json"
+# 改说明
+gh release edit vX.Y.Z --repo sdcxb/codem --title "Codem vX.Y.Z" --notes-file .preview-shot\_rn-X.Y.Z.md
+```
+
