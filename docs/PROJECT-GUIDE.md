@@ -1021,6 +1021,9 @@ Rust 后端 (lib.rs):
 | **plugin-reality-audit.md** | 审计文档 | 插件现实审计（1111行） | ✅ 最新 |
 | **harness-comparative-analysis.md** | 对标分析 | Harness 比较分析 | ✅ 最新 |
 | **BETTER-HARNESS-INTEGRATION-ANALYSIS.md** | 对标分析 | 更好的 Harness 集成分析 | ✅ 最新 |
+| **PI-ALIGNMENT-FIX-PLAN.md** | 对标计划 | Pi Agent Harness **1.0** 对标修复计划（第 67 波，2026-10-02，P-0…P-4） | ⚠️ 历史（见横幅） |
+| **PI-1.0.4-ALIGNMENT-FIX-PLAN.md** | 对标计划 | Pi Agent Harness **1.0.4** 对标修复计划（第 181 波，2026-10-07）：四类隐患的镜面排查 + 已修三项（MCP 生命周期 / 沙箱输出上限 / 重试分诊）+ 功能对标建议 | ⚠️ 历史（见横幅） |
+| **HANDOFF-DSH-PI-ALIGNMENT.md** | 交接单 | DSH / Pi 对标那一轮的交接单（v1.16.221） | ⚠️ 历史（见横幅） |
 
 | **CHANGELOG-v0.70.md** | 变更日志 | v0.70 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.80.md** | 变更日志 | v0.80 变更记录 | 📦 归档 |

@@ -55,6 +55,25 @@ export interface MCPConnection {
   status: "disconnected" | "connecting" | "connected" | "error";
   tools: MCPTool[];
   error?: string;
+  /**
+   * 代次（第 181 波，对标 Pi `8c911797c`：close MCP connections that are still connecting）。
+   *
+   * ## 它修的是什么
+   *
+   * `connect()` 里有三个 `await`（spawn → initialize 握手 → tools/list），每个都可能是
+   * 秒级。用户在这段时间里点「断开」或删掉服务器（`removeServer` **不 await** 就调
+   * `disconnect`）时，旧实现只把 Map 里的条目删掉：
+   *
+   * - Rust 侧的 stdio 子进程**已经在跑了** ⇒ 没人再去杀它（孤儿进程）；
+   * - 更糟的是 `connect()` 的 `await` 一旦返回，它会继续把 `status = "connected"`
+   *   写回**那个已经被删掉的**连接对象 ⇒ 界面/日志出现"已断开但状态是已连接"的
+   *   自相矛盾读数。
+   *
+   * 修法：每次 `disconnect()` 把代次 +1；`connect()` 在每个 `await` 之后核对
+   * "我拿到的还是 Map 里那一份、且代次没变吗"，不是就**主动收掉刚拉起来的子进程**
+   * 并按"已取消"结束，绝不把 connected 写回去。
+   */
+  generation?: number;
 }
 
 // ========== MCP Client ==========
@@ -68,9 +87,31 @@ export class MCPClient {
       config,
       status: "connecting",
       tools: [],
+      generation: 0,
     };
 
     this.connections.set(config.name, connection);
+
+    /**
+     * 这个连接**是否还是"当前那一份"**（第 181 波，见 `MCPConnection.generation`）。
+     *
+     * 两种情况算过期：① 有人把它从 Map 里删了（`disconnect` / `removeServer`）；
+     * ② 同名服务器又被连接了一次（Map 里换成了新的那一份）。
+     * 代次只增不减，所以"删了又连"也会被判为过期 —— 旧的那次连接不该再去动新对象。
+     */
+    const isStale = () =>
+      connection.generation !== 0 || this.connections.get(config.name) !== connection;
+
+    /**
+     * 只是"被新连接顶替"（Map 里换了另一份、且代次没被 disconnect 加过）时为 true：
+     * 此时旧进程还挂在 Rust 侧，必须收。条目被 `disconnect()` 摘掉时返回 false
+     * （那条路径自己已经收过进程了）。
+     */
+    const isStaleStillMapped = () =>
+      connection.generation === 0 && this.connections.get(config.name) !== connection;
+
+    /** 过期时按「已取消」结束；`stillMapped` 决定要不要顺手收进程（见该方法注释） */
+    const abandon = () => this.abandonStaleConnection(config, connection, isStaleStillMapped());
 
     try {
       if (config.transport === "stdio") {
@@ -80,6 +121,8 @@ export class MCPClient {
       } else {
         throw new Error(`Unsupported transport "${(config as any).transport}"`);
       }
+
+      if (isStale()) return abandon();
 
       /**
        * 第 84 波（B 类缺陷：假成功）：**必须先握手并真的拿到工具清单才算连上**。
@@ -94,8 +137,13 @@ export class MCPClient {
         console.log(`[MCP] ${config.name} 握手完成：${handshakeInfo}`);
       }
 
+      if (isStale()) return abandon();
+
+      const tools = await this.fetchTools(config.name);
+      if (isStale()) return abandon();
+
       connection.status = "connected";
-      connection.tools = await this.fetchTools(config.name);
+      connection.tools = tools;
       connection.error = undefined;
     } catch (error: any) {
       connection.status = "error";
@@ -106,6 +154,46 @@ export class MCPClient {
 
     return connection;
   }
+
+  /**
+   * 连接过程中被断开/被替换：**收掉刚拉起来的进程**，并把这次连接按"已取消"结束。
+   *
+   * 为什么必须在这里 kill：stdio 传输的 `mcp_stdio_connect` 是**先 spawn 再握手**，
+   * 所以走到这里时子进程已经在 Rust 侧跑着了。只在 `disconnect()` 里删 Map 条目 =
+   * 把进程句柄从 `mcp_processes` 里摘掉却没人杀 ⇒ 孤儿进程（对标 Pi 的同名修复）。
+   *
+   * 唯一的例外是"条目已经被 `disconnect()` 摘掉"（`stillMapped === false`）：那条路径
+   * 自己已经收过进程了，这里再收一次是**多余的一次 IPC**（判据 MCP-L1 实测到 2 次）。
+   * 而"名字被新连接顶替"时旧进程还在，必须收。
+   */
+  private abandonStaleConnection(
+    config: MCPServerConfig,
+    connection: MCPConnection,
+    stillMapped: boolean,
+  ): MCPConnection {
+    console.warn(
+      `[MCP] ${config.name} 在连接过程中已被断开 → ${stillMapped ? "收掉刚拉起的进程，" : ""}不写回 connected`,
+    );
+    if (stillMapped) this.killStdioProcess(config.name);
+    connection.status = "disconnected";
+    connection.tools = [];
+    connection.error = undefined;
+    return connection;
+  }
+
+  /** 尽力而为地让 Rust 侧收掉某个 stdio 子进程（失败只记日志，不抛） */
+  private killStdioProcess(serverName: string): void {
+    try {
+      const invoke = (window as any).__TAURI__?.core?.invoke;
+      if (typeof invoke !== "function") return;
+      void Promise.resolve(invoke("mcp_stdio_disconnect", { name: serverName })).catch((e: any) =>
+        console.warn("[mcp.ts] killStdioProcess", e),
+      );
+    } catch (e) {
+      console.warn("[mcp.ts] killStdioProcess", e);
+    }
+  }
+
 
   /**
    * MCP 握手（initialize）：确认对端真的按 MCP 协议应答，而不是"进程起来了"。
@@ -127,21 +215,27 @@ export class MCPClient {
     return info?.name ? `${info.name}${info.version ? ` ${info.version}` : ""}` : String(result.protocolVersion ?? "");
   }
 
-  /** Disconnect from an MCP server */
+  /**
+   * Disconnect from an MCP server.
+   *
+   * 第 181 波：代次 +1 是**这套修复的关键一半** —— `connect()` 在每个 `await` 之后
+   * 靠它判断"我这次连接已经被取消了"，从而不再把 `connected` 写回已废弃的对象。
+   */
   async disconnect(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
-    if (!connection) return;
+    if (connection) {
+      connection.generation = (connection.generation ?? 0) + 1;
+      connection.status = "disconnected";
+    }
+    this.connections.delete(serverName);
 
     // If stdio transport, kill the process via Tauri
-    if (connection.config.transport === "stdio") {
+    if (connection?.config.transport === "stdio") {
       try {
         const { invoke } = (window as any).__TAURI__.core;
         await invoke("mcp_stdio_disconnect", { name: serverName });
       } catch (e) { console.warn('[mcp.ts]', e) }
     }
-
-    connection.status = "disconnected";
-    this.connections.delete(serverName);
   }
 
   /** Get all connected servers */

@@ -1297,6 +1297,44 @@ fn kill_process_tree(pid: Option<u32>) -> Result<(), String> {
     }
 }
 
+/// 退出时收掉**所有** MCP stdio 子进程（第 181 波，对标 Pi `8c911797c`）。
+///
+/// ## 为什么必须是「进程树」而不是 `Child::kill`
+///
+/// 用户的 MCP 服务器绝大多数是一个**启动器**（`npx` / `cmd.exe /c codegraph.cmd`），
+/// 真正干活的是它的子进程。`Child::kill` 只杀直接子进程 ⇒ 启动器死了、服务本体还在，
+/// 表现正是"退出 Codem 之后还有个 node 进程赖着"。这里复用 `kill_process_tree`
+/// （Windows `taskkill /T /F`，Unix 杀进程组），把整棵树收掉。
+///
+/// ## 为什么必须**显式**做
+///
+/// `mcp_stdio_connect` 里已经设了 `kill_on_drop(true)`，但那只覆盖"AppState 被丢弃"
+/// 这一条路径；退出事件是唯一能确定自己还活着、还能拿到 pid 的时刻，所以在这里收最可靠。
+fn kill_all_mcp_processes(state: &AppState) {
+    let handles: Vec<(String, Option<u32>)> = match state.mcp_processes.try_lock() {
+        Ok(mut map) => map
+            .drain()
+            .map(|(name, handle)| (name, handle._child.id()))
+            .collect(),
+        Err(_) => return,
+    };
+    if handles.is_empty() {
+        return;
+    }
+    for (name, pid) in handles {
+        match kill_process_tree(pid) {
+            Ok(()) => runtime_log::append_line(
+                "INFO",
+                &format!("mcp shutdown: killed process tree name={name} pid={pid:?}"),
+            ),
+            Err(e) => runtime_log::append_line(
+                "WARN",
+                &format!("mcp shutdown: kill failed name={name} pid={pid:?} err={e}"),
+            ),
+        }
+    }
+}
+
 #[tauri::command]
 async fn execute_command(command: String, cwd: Option<String>, timeout_ms: Option<u64>) -> Result<serde_json::Value, String> {
     let work_dir = cwd.unwrap_or_else(|| std::env::current_dir()
@@ -1905,7 +1943,13 @@ async fn mcp_stdio_connect(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn MCP process: {}", e))?;
+    // 第 181 波：**drop 兜底**。Tauri 退出时 `AppState`（含本进程句柄）会被丢弃，
+    // 而 `tokio::process::Child` 默认**不杀子进程** ⇒ 没有这一行就只能靠 ExitRequested
+    // 的显式回收；有了它，即使退出路径没走到（异常结束），进程也不会留下来当孤儿。
+    cmd.kill_on_drop(true);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn MCP process: {}", e))?;
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
 
@@ -1994,17 +2038,26 @@ async fn mcp_stdio_request(
 }
 
 /// Disconnect and kill an MCP stdio process.
+///
+/// 第 181 波：从 `Child::kill` 改成 **进程树回收**。stdio MCP 服务器几乎都是启动器
+/// （`npx …` / `cmd.exe /c codegraph.cmd`），真正干活的是它的子进程；只杀直接子进程
+/// 会让服务本体留下来（与退出时的同一条缺口，判据共用 `kill_process_tree`）。
 #[tauri::command]
 async fn mcp_stdio_disconnect(
     state: State<'_, AppState>,
     name: String,
 ) -> Result<(), String> {
     let mut processes = state.mcp_processes.lock().await;
-    if let Some(mut handle) = processes.remove(&name) {
-        // Kill the child process
-        let _ = handle._child.kill().await;
-        let _ = handle._child.wait().await;
-    }
+    let Some(handle) = processes.remove(&name) else {
+        return Ok(());
+    };
+    let pid = handle._child.id();
+    // 先按进程树杀（覆盖 `npx`/`cmd.exe` 派生的孙进程）。
+    let _ = kill_process_tree(pid);
+    // 再让 tokio 回收句柄本身：等它退出，避免留下僵尸。
+    let mut handle = handle;
+    let _ = handle._child.kill().await;
+    let _ = handle._child.wait().await;
     Ok(())
 }
 
@@ -3376,12 +3429,17 @@ path_exists,
                         crash_evidence::frontend_quit_requested()
                     ),
                 );
+                // 第 181 波：退出前收掉 MCP stdio 进程树（否则 npx/codegraph 这类
+                // 启动器的服务本体会留在系统里）。
+                kill_all_mcp_processes(&app_handle.state::<AppState>());
                 clear_active_run_marker(app_handle);
             }
             tauri::RunEvent::Exit => {
                 // 事件循环已经结束（进程即将消失）。这一行是"走到最后一步"的证据：
                 // 它存在 ⇒ 退出是**受控**的；它缺失但下次启动报 unclean ⇒ 进程是被强杀/崩掉的。
                 runtime_log::append_line("INFO", "process exit (RunEvent::Exit)");
+                // 兜底：ExitRequested 没走到（或之后又有连接建立）时，这里再收一次。
+                kill_all_mcp_processes(&app_handle.state::<AppState>());
             }
             tauri::RunEvent::WindowEvent {
                 label,

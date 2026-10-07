@@ -3322,3 +3322,68 @@ repo-02 的失败形态 ✓（交接第十九节取证 ✓）：模型**修好�
   · v0.87 的 TypeScript 编译修复在 git 历史里落在 v0.89 区间 ✓，但 tag 注释标为 v0.87 ✓ ⇒ 两版都保留
     （措辞不同 ✓），这是我认可的处置（宁可不丢 ✓），如需唯一归属请指示 ✓。
 ```
+
+---
+
+## ★★★★★ 第 181 波：对标 **Pi Agent Harness 1.0.4** —— 找到并修掉三类真隐患（判据 + 变异 6/6 咬住 ✓）
+
+> 起因：用户要求①对标 Pi 1.0.4 找潜在 bug/隐患 → 出详细修复计划 → 逐一修复；
+> ②Pi 有我们没有的功能/机制 → **只给建议不改代码**。
+> 产出：**`docs/PI-1.0.4-ALIGNMENT-FIX-PLAN.md`**（含四类隐患的镜面排查表 + 五项功能对标建议）。
+
+### 一、取证方式（这次的关键改进：**读真身，不读二手文章**）
+
+- `git -C .preview-shot/_pi-repo checkout v1.0.4`（`7c10bd43`，2026-10-05）。
+  区间 `v1.0.0..v1.0.4` = **86 提交 / 292 文件 / +17233 −4931**。
+- 五路只读并行取证（codemode沙箱 / MCP与工具暴露 / ai调用层 / durable截断 / 评测方法学+新机制），
+  全部只用 `git show|log|diff|tag` 与读源码。**上一轮（第 67 波）的 P-0…P-4 先核实现状再动手**，
+  避免重复投工（结论：P-1/P-2/P-2b/P-4 已落地；**P-2 的根因已在第 103 波治根** ——
+  `run_code` 迁到 Rust `boa` 沙箱，不再 `new Function`）。
+- 把每一路给出的"**通用隐患类**"当作镜面尺回照本仓库，逐条给**成立 / 不成立 + 理由**（见计划 §3）。
+  **如实排除**了四条看起来像但实际不成立的（沙箱内建可被 patch、令牌刷新被取消作废账号、
+  有界读行号错位、BOM 分块边界被吞），理由都写进文档，**不做假修**。
+
+### 二、修掉的三项（都是真机能观察到后果的）
+
+| # | 缺陷形态 | 判据 | 变异自证 |
+|---|---|---|---|
+| 1 | **MCP 连接中途被断开/被替换** ⇒ 子进程孤儿（`npx`/`node` 赖着）+ 状态自相矛盾（已断开却写回 connected） | `src/test/mcp-lifecycle-race.test.ts` MCP-L1…L5（**含反向对照 L4**） | **2 组共 6 咬**：去掉"过期按已取消结束"⇒ L1/L3/L5 红（L5 直接抓到 `expected 'connected' to be 'disconnected'`）；断开/顶替都不收进程 ⇒ L1/L2/L5 红 |
+| 2 | **JS 沙箱输出无上限**：`for(;;) console.log("x".repeat(1e6))` 在撞到循环上限**之前**就把宿主内存吃光 | `js_sandbox.rs::js_sandbox_tests` 4 条（有界 / 反向对照不砍正常输出 / 空串循环有界 / stderr 也记账） | 去掉上限 ⇒ **`memory allocation of 34359738368 bytes failed`（32 GB）** |
+| 3 | **重试分诊不认容量/瞬态文案**：供应商用 200/400 回 `Selected model is at capacity`，或抛 `pending stream has been canceled` ⇒ 一次抖动 = 整段失败 | `src/test/retry-classification-capacity.test.ts` RTC-1…RTC-6（含 2 条反向对照） | **3/3 咬**：摘掉 `at capacity` 文案 ⇒ RTC-1 红；去掉"不可重试优先" ⇒ RTC-4 红；529 顺序调回 ⇒ RTC-5 红 |
+
+### 三、顺带查明的既有缺口（本轮一并修）
+
+- **`mcp_stdio_disconnect` 只 `Child::kill`** —— 而 MCP 服务器几乎都是**启动器**
+  （`npx` / `cmd.exe /c codegraph.cmd`），真正干活的是它的子进程。已改用现成的
+  `kill_process_tree`（Windows `taskkill /T /F`、Unix 杀进程组）。
+- **退出时全仓没有任何收 MCP 进程的路径**（`RunEvent` 里搜不到）。已新增
+  `kill_all_mcp_processes()` 接进 `RunEvent::ExitRequested` **与** `RunEvent::Exit`（兜底），
+  并给 `mcp_stdio_connect` 的 `Command` 加 `kill_on_drop(true)` 作为最后一道网。
+  ⚠️ 注意 `kill_on_drop` 是 **`Command`** 的方法，不是 `Child` 的（第一版写在 `child` 上，`E0599`）。
+- **`status === 529` 那一支永远不可达**（排在 `5xx` 之后）⇒ `RetryableErrorType` 里的
+  `capacity` **从来没被产出过**。顺带也是"新判据咬出既有缺陷"的一个例子（RTC-5 当场变红）。
+
+### 四、判据设计上踩的两个坑（记档，避免重犯）
+
+1. **沙箱这条判据第一版量错了防线**：`"x".repeat(1024*1024)` **本身就按字符计入 boa 的
+   循环迭代预算**（实测：默认 1e6 预算下它直接抛"循环太久"，一个字都没打印）。所以验证
+   **新**防线必须抬高本次 `loop_limit`，否则量到的是**旧**那道防线。
+2. **`try/catch` 会接住"输出超限"的异常** ⇒ 它走的是 guest 错误信封那条路，
+   `match context.eval` 的 Err 分支根本不执行。修法：把归一化提到**唯一的报告出口**，
+   两条路才都覆盖（不归一化时 `budget_exceeded` 仍是 false、给模型看的还是英文原话）。
+3. **测试并行下的 `Select-String` 退出码**：`cargo test ... | Select-String` 的 `$LASTEXITCODE`
+   是 PowerShell cmdlet 的（无匹配 = 1），**不是 cargo 的**。核对真实退出码要 `| Out-Null` 后看。
+
+### 五、验证与遗留
+
+- **验证**：`npx tsc --noEmit` **0 错误**；全量 `vitest run` **7284 通过 / 17 跳过**，
+  2 条失败**均已定性**：①`docs-current-gap-list` 是本轮新文档缺历史横幅（已补，复跑 6/6 绿）；
+  ②`dsh-d4-timeout-aborts` 是**全量并行满载下的计时敏感抖动**（单跑通过，AGENTS.md 已记明该现象）。
+  `cargo test --lib` 全绿；上报点闸门 221 处全登记；knip 棘轮无增长。
+- **如实登记的待办**（本轮**没做完**，不假装关闭）：T-1 `isError` 必填化普查（P-3 残留）、
+  T-2 `{...defaults, ...partial}` 被显式 `undefined` 覆盖的普查、T-3 截断诊断加精确
+  lines/bytes 计数、T-4 有界读对"全文件参照算法"的差分测试。
+- **任务②的净建议**：**只做** codemode `image()` 产物落盘（小、规格清晰：`wx` + `0600` +
+  内容去重 + 写失败不丢结果 + **先截断后落盘**）；其余**观察** ——
+  硬理由是 `packages/env/`（远端执行）在 **Pi 自己仓库里没有任何消费者**，
+  而 `FileSystem.watch` 上游 `spec.md` 明写 **"Durable itself never calls it"**。

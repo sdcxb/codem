@@ -35,6 +35,43 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 };
 
 // ========== Error Classification ==========
+
+/**
+ * 瞬态失败（可退避重试）的**文案**白名单（第 181 波，见 `classifyError` 里的长注释）。
+ *
+ * 只收"这句话只可能出现在瞬态失败里"的写法，宁少勿多 —— 误判成可重试会把
+ * 确定性错误拖成 30 分钟的退避循环。
+ */
+const RETRYABLE_MESSAGE_PATTERNS: RegExp[] = [
+  /\bat capacity\b/i, // 供应商容量（Pi #10278 的原文案）
+  /\boverloaded\b/i,
+  /\boverload(ed)?\b.*\b(try|retry|again|later)\b/i,
+  /currently experiencing high demand/i,
+  /\b(temporarily|service)\s+unavailable\b/i,
+  /\b(server|service)\s+(is\s+)?busy\b/i,
+  /pending stream has been canceled/i, // HTTP/2 请求发出前连接就没了（Pi #10379）
+  /http2 request did not get a response/i,
+  /stream (ended|closed) before/i,
+  /connection (reset|closed) by peer/i,
+  /\bplease retry\b|\btry again later\b/i,
+];
+
+/**
+ * **确定性失败**的文案白名单：命中即判定不可重试，优先于上面那张表。
+ *
+ * 这些错误即使文案里出现了 `overloaded` / `at capacity` 之类的词，也不该退避重试
+ * （例如"不支持的模型名里恰好带了 overloaded"）。
+ */
+const NON_RETRYABLE_MESSAGE_PATTERNS: RegExp[] = [
+  /unsupported (model|parameter|feature)/i,
+  /invalid[_ ](api[_ ]?key|request|model|parameter)/i,
+  /model not found|no such model|unknown model/i,
+  /insufficient (quota|balance|credits)/i,
+  /\bunauthorized\b|\bforbidden\b/i,
+  /context (length|window) exceeded|maximum context length/i,
+  /max_tokens.*(invalid|too large|exceed)/i,
+];
+
 export function classifyError(error: unknown): {
   type: RetryableErrorType | null;
   isRetryable: boolean;
@@ -60,12 +97,20 @@ export function classifyError(error: unknown): {
       };
     }
 
-    if (status >= 500 && status < 600) {
-      return { type: "server_error", isRetryable: true };
-    }
-
+    /**
+     * 529 = 供应商过载（Anthropic 的 Overloaded）。
+     *
+     * 第 181 波：**这一支原来排在 `5xx` 之后，于是永远不可达** —— 529 落进
+     * `status >= 500 && status < 600` 先返回了，`capacity` 这个类型从来没被产出过
+     * （用户看到的仍是"可重试"，所以不是行为 bug，但它让"容量类"无法被单独识别、
+     * 也就没法做针对性退避）。顺序调换后语义与 Pi 1.0.4 对齐。
+     */
     if (status === 529) {
       return { type: "capacity", isRetryable: true };
+    }
+
+    if (status >= 500 && status < 600) {
+      return { type: "server_error", isRetryable: true };
     }
 
     // Client errors (4xx except 429) are not retryable
@@ -86,6 +131,36 @@ export function classifyError(error: unknown): {
   // SSE timeout
   if (err.message?.includes("SSE read timed out")) {
     return { type: "sse_timeout", isRetryable: true };
+  }
+
+  /**
+   * 第 181 波（对标 Pi `3874b3e98` / `5b6c792b4`）：**容量/过载与瞬态传输错误要看文案**。
+   *
+   * ## 缺陷形态
+   *
+   * 修复前这里只认 HTTP 状态码（429 / 5xx / 529）与少数 `code` / `name`。可供应商经常
+   * **用 200 或 400 带回一句"模型忙"**，或者在连接层抛一个带文案的传输错误：
+   *
+   * - `Selected model is at capacity`（Pi #10278 的现场文案，当时也是 fail-fast）
+   * - `The pending stream has been canceled`（Node `ERR_HTTP2_STREAM_CANCEL`；Pi #10379）
+   *
+   * 于是本该退避重试的**一次抖动**被当成"确定性失败"，整段对话就此结束。
+   *
+   * ## 为什么先查"不可重试"再查"可重试"
+   *
+   * 文案匹配天然容易误伤（例如 `Unsupported model: overloaded-v2` 只提了名字）。
+   * 所以：**明确的确定性错误优先**，只有不命中它们、才按"瞬态"重试。
+   */
+  const message = typeof err.message === "string" ? err.message : "";
+  const codeText = typeof code === "string" ? code : "";
+  if (NON_RETRYABLE_MESSAGE_PATTERNS.some((re) => re.test(message) || re.test(codeText))) {
+    return { type: null, isRetryable: false };
+  }
+  if (
+    RETRYABLE_MESSAGE_PATTERNS.some((re) => re.test(message) || re.test(codeText)) ||
+    codeText === "ERR_HTTP2_STREAM_CANCEL"
+  ) {
+    return { type: "capacity", isRetryable: true };
   }
 
   return { type: null, isRetryable: false };
