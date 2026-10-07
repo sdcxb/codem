@@ -203,7 +203,92 @@ watch/read 有界化、Nix flake 与打包），**那三块属于"功能对标"�
 
 ---
 
-## §4 任务②：Pi 1.0.4 **有、我们没有**的机制 —— 建议（**不改代码**）
+## §3.5 本轮**第二轮**：待办 T-1…T-4 的推进结果
+
+用户口径是"按你的建议推进"（T-2 → T-1 → T-3 → T-4）。**逐条如实交代**：
+
+### T-2 ✅ 已完成（`{...defaults, ...partial}` 的显式 `undefined` 覆盖）
+
+- **新增共享 helper** `mergeDefaults(defaults, partial)`（`src/core/storage/settings.ts`）：
+  **跳过显式 `undefined`**、保留显式 `null`、不做深合并。约束刻意用 `T extends object`
+  （不是 `Record<string, unknown>`）—— 后者会让普通 `interface`
+  **无法传参**（实测 TS2740）。
+- **落地点 7 处**（全是"从持久化兑现**部分**配置"的形态）：`knowledge/indexer.ts`、
+  `knowledge/retriever.ts`、`computer-use/computer-use.ts`、`environment/worktree-manager.ts`、
+  `heartbeat/heartbeat.ts`、`storage/sync-engine.ts`、`plugins/library-ops/store.ts`
+  （最后一个是**门禁自己扫出来的漏网点**：它读 localStorage，原来靠后面的"边界收敛"逐字段兜底，
+  但整块仍依赖默认值）。
+- **判据** `src/test/partial-config-defaults.test.ts` 5 条：MD-1（复现 Pi 的原始算例，
+  **先证明朴素展开确实会坏**）、MD-2（`null` 必须保留）、MD-3（`0`/`""`/`false` 不许被当"没设置"）、
+  MD-4（空 partial 返回副本、非同一引用）、MD-5（**结构门禁**：全生产源码零该形状）。
+- **变异 2/2 咬住**：helper 不再跳过 `undefined` ⇒ MD-1 红；把一处改回朴素展开 ⇒ MD-5 红。
+- **判据自身的坑（记档）**：MD-5 第一版**没剥注释**，被 `mergeDefaults` 文档里的反例绊倒
+  （抓到 `settings.ts:136/139` 两处假阳）。已改成"剥注释后再扫"。
+- **测试桩缺件**：`sync-engine.test.ts` 用 `vi.mock` 桩了整个 settings 模块，
+  新导出的 `mergeDefaults` 不在桩里 ⇒ 8 条红（`No "mergeDefaults" export is defined`）。
+  按仓库规矩**补桩而不是绕开**（桩里写真语义的实现）。
+  ⚠️ 全仓还有 26 个 test 文件 mock 了该模块，但**只有真正走到改动点的那个会红** ——
+  已用全量测试确认（见下）。
+
+### T-1 🟡 **尝试后按纪律撤回**（这是本轮最重要的一条发现，不是"没做"）
+
+**发现**：`ToolExecuteResult.isError` 是**可选**的，省略时由 `classifyToolResult` **推断**；
+而推断表里有一份 `CONTENT_TOOLS`（`read`/`grep`/`glob`/`web_fetch`/`load_skill`…）
+**明确不推断**（理由正当：它们的输出是"数据"）。于是这些工具**真的失败**时会落到 `completed`
+—— 一个**静默缺口**。
+
+**测量**：把 `isError` 改成必填后 `tsc` 报 **187 处 / 33 文件**：
+153 处"缺字段" + **34 处"返回类型与 `execute` 签名不匹配"的执行点**（此前编译期完全看不见）。
+
+**为什么不能机械做（这条是撤回的依据）**：
+
+1. 153 处里 **123 处的 `output` 是模板串/表达式**（`` output: `Error: ${e.message}` ``）
+   ⇒ **无法静态判定成败**；
+2. 更关键：本仓库的**成功路径一律省略 `isError`**，而现行推断会对它们**按文本判**
+   （首行 `Error:` ⇒ 失败）。把 `isError` 填 `false` 会**改掉**这条语义（原本判失败的变成显式成功），
+   填 `true` 会把成功误标成失败 —— **两种都是看不见的行为改变**。
+
+**我实际做了什么**：先写脚本机械化（第一版**错了**：没剥字符串/模板串 ⇒ 把 `isError` 插进了
+`` `${…}` `` 里的字符串内部，`tsc` 报 TS1109；用 `git checkout` 精确还原 21 个受害文件、
+保留 T-2 成果）。修正版剥串后只敢机械插 **30/153**。据此判定"**不能机械化**"，
+遂**撤回类型改动**、只落地判据把缺口钉住：
+
+- **判据** `tool-result-status.test.ts` 的 `TRS-1…4`：显式声明优先；**内容型工具真的失败且未声明时
+  会被判成 completed（缺口的形状）**；非内容型工具仍按前缀推断；`isError` **保持可选**
+  （谁想"顺手改成必填"，TRS-4 会红 —— 那是**有意的路障**）。
+- **缺口与修法**写进了 `tools.ts` 里 `isError` 字段的说明（下一轮动手的人先读那里）。
+
+### T-3 ✅ 已完成（截断诊断给出精确 lines/chars）
+
+- Rust `ReadFileLinesResult` 新增 `dropped_lines` / `dropped_chars`，
+  与 `text` **出自同一次遍历**（零额外 IO、一定自洽）；
+- 主体抽成同步 `read_file_lines_impl`（与 `read_text_window_impl` 同惯例）⇒ 判据能直接驱动；
+- 前端提示从 `offset + Math.ceil(text.length / 80) - 1`（**猜**结束行号）改成
+  `showing lines {offset}-{endLine} of {total}; {N} lines / {M} chars not shown; ...`；
+- **顺带修掉一个老缺口**：被 `max_chars` 截断时原来直接 `break` ⇒ 连 `total_lines`
+  都停在截断处（模型看到"共 2 行"而文件有几百行）。现在照常数完。
+- **判据** 4 条（Rust）：计数对全量参照**逐条相符**、恰好读满时 `has_more=false`、
+  `max_chars` 截断仍统计全量、行号随 `offset` 对齐。
+- **变异 1/1 咬住**（offset 分支不计数 ⇒ `tail: 丢弃行数` 红）。
+- **判据自身的坑（记档，第一版假绿）**：最早的样例每行只有 **1 个字符**、且期望值是用
+  **同一套代数**推出来的（`total - kept.len()`）—— 那是**恒等式**，实现漏统计时两边一起变，
+  **变异不咬**。修法：用**长度不等**的行 + 期望值**独立硬编码**。
+
+### T-4 ✅ 已完成（对"全量参照算法"的差分测试）
+
+- 就地保留一份朴素参照实现（整个文件 `split('\n')` → 取区间 → 加行号 → 数总计/丢弃），
+  与生产实现**逐字段比对**；8 种内容 × 5 种 offset × 4 种 limit = **160 组**，
+  覆盖多字节中文/emoji、5000 字符超长行、CRLF、以/不以换行结尾、空文件、offset 超界、
+  `offset=0`、`limit=0`。
+- **差分当场咬出两个真实契约边界**（这正是它的价值）：
+  1. **空文件的 `total_lines`**：参照按 `split('\n')` 得 1，生产得 **0** ⇒
+     确认"空文件 = 0 行"才是契约（行是"有内容的行"）；
+  2. **CRLF 的字符计数**：参照把 `\r` 算进去了，生产走 `BufRead::lines()` 会归一 ⇒
+     确认"按**行内容**计（不含行尾 `\r`）"才是契约。
+- **变异 2/2 咬住**：行号从 0 起 ⇒ 返回文本红；丢弃行数漏算 1 ⇒ 丢弃行数红。
+
+---
+
 
 > 用户口径：**「不要太复杂、不要让用户面对看不懂的机制。」**
 > 所以"它很好但我们不该做"是合法且常常正确的结论。下面把**用户能感知的收益**与

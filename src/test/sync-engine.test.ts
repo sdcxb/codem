@@ -14,6 +14,22 @@ vi.mock("../core/storage/settings", () => ({
   setSettingJSON: vi.fn((key: string, val: unknown) => {
     mockStore.set(key, JSON.stringify(val));
   }),
+  /**
+   * 第 181 波（T-2）：`getSyncConfig` 改用 `mergeDefaults` 合并持久化配置
+   * （跳过显式 `undefined`，见 `settings.ts` 的说明）。**桩里必须是同语义的实现**，
+   * 否则这个 mock 就在测一个不存在的模块形状（实测会报
+   * `No "mergeDefaults" export is defined on the "../core/storage/settings" mock`）。
+   */
+  mergeDefaults: <T extends object>(defaults: T, partial?: Partial<T> | null): T => {
+    if (!partial || typeof partial !== "object") return { ...defaults };
+    const merged: T = { ...defaults };
+    const target = merged as Record<string, unknown>;
+    for (const key of Object.keys(partial)) {
+      const value = (partial as Record<string, unknown>)[key];
+      if (value !== undefined) target[key] = value;
+    }
+    return merged;
+  },
 }));
 
 // Mock database

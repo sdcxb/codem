@@ -11,12 +11,12 @@ import { generateEmbeddings, cosineSimilarity } from '../llm/multimodal';
 import { getChunksOrStatus, listSources, ChunkIndexUnavailableError } from './storage';
 import type { RetrievalResult, NotebookConfig } from './types';
 import { DEFAULT_CONFIG } from './types';
-import { getSettingJSON } from '../storage/settings';
+import { getSettingJSON, mergeDefaults } from '../storage/settings';
 
 const NOTEBOOK_CONFIG_KEY = 'codem-notebook-config';
 
 function getConfig(): NotebookConfig {
-  return { ...DEFAULT_CONFIG, ...getSettingJSON<Partial<NotebookConfig>>(NOTEBOOK_CONFIG_KEY, {}) };
+  return mergeDefaults(DEFAULT_CONFIG, getSettingJSON<Partial<NotebookConfig>>(NOTEBOOK_CONFIG_KEY, {}));
 }
 
 // ========== 活跃来源过滤器 ==========

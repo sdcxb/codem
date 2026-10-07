@@ -123,6 +123,48 @@ export function removeSetting(key: string): void {
     return;
 }
 
+/**
+ * 把"从持久化里读出来的**部分**配置"合并到默认值上，**跳过显式 `undefined`**。
+ *
+ * ## 为什么不能直接用 `{ ...DEFAULT, ...partial }`（第 181 波，对标 Pi `cd60a5b99`）
+ *
+ * 对象展开会把**值为 `undefined` 的自有属性也复制过去**，于是默认值被"清成 undefined"：
+ *
+ * ```ts
+ * const DEFAULT = { a: 100, b: 200 };
+ * const saved   = JSON.parse('{"b": 500}');   // 正常
+ * { ...DEFAULT, ...saved }                    // { a: 100, b: 500 } ✓
+ *
+ * const saved2  = { b: 500, a: undefined };   // 键在、值是 undefined
+ * { ...DEFAULT, ...saved2 }                   // { a: undefined, b: 500 } ✗ a 的默认值没了
+ * ```
+ *
+ * 后果是**静默**的：拿到 `undefined` 的地方通常写成 `setTimeout(f, undefined)`（等价 0ms）、
+ * `Math.max(undefined, x)`（NaN）之类，于是"节流失效 / 间隔变 0 / 阈值变 NaN"，
+ * 而没有任何地方会报错。Pi 1.0.4 修的就是这个形态（他们的 `progress` 字段）。
+ *
+ * ## 语义
+ *
+ * - **键存在但值是 `undefined`** ⇒ 保留默认值（这就是本函数存在的理由）；
+ * - **键存在且值是 `null`** ⇒ **保留 `null`**（调用方显式要 null 是合法意图）；
+ * - 嵌套对象**不做深合并**（只解决顶层这一层；深合并需要每层各自的默认值语义，
+ *   盲目递归会把"整块替换"的意图改掉）。
+ */
+/**
+ * 约束**刻意用 `T extends object`**（不是 `Record<string, unknown>`）：生产里的配置类型
+ * 都是普通 `interface`（没有索引签名），用后者会让它们**无法传参**（实测 TS2740）。
+ */
+export function mergeDefaults<T extends object>(defaults: T, partial?: Partial<T> | null): T {
+  if (!partial || typeof partial !== "object") return { ...defaults };
+  const merged: T = { ...defaults };
+  const target = merged as Record<string, unknown>;
+  for (const key of Object.keys(partial)) {
+    const value = (partial as Record<string, unknown>)[key];
+    if (value !== undefined) target[key] = value;
+  }
+  return merged;
+}
+
 export function getSettingJSON<T>(key: string, defaultValue: T): T {
   const raw = getSetting(key);
   if (raw === null) return defaultValue;

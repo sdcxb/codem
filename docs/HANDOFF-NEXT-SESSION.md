@@ -3387,3 +3387,52 @@ repo-02 的失败形态 ✓（交接第十九节取证 ✓）：模型**修好�
   内容去重 + 写失败不丢结果 + **先截断后落盘**）；其余**观察** ——
   硬理由是 `packages/env/`（远端执行）在 **Pi 自己仓库里没有任何消费者**，
   而 `FileSystem.watch` 上游 `spec.md` 明写 **"Durable itself never calls it"**。
+### 第 181 波·续：T-1…T-4 的推进结果（T-2/T-3/T-4 落地 ✓，T-1 按纪律撤回并留下路障 ✓）
+
+用户口径："按你的建议推进"（顺序 T-2 → T-1 → T-3 → T-4）。
+
+**T-2 ✅ `{...defaults, ...partial}` 的显式 undefined 覆盖**
+- 新增共享 helper `mergeDefaults`（`src/core/storage/settings.ts`）：跳过显式 `undefined`、
+  保留显式 `null`、不深合并；约束用 `T extends object`（用 `Record<string, unknown>` 会让普通
+  interface **无法传参**，实测 TS2740）。
+- 落地 **7 处**"从持久化兑现部分配置"的点。最后一个是**门禁自己扫出来的漏网点**
+  （`plugins/library-ops/store.ts` 读 localStorage）。
+- 判据 `partial-config-defaults.test.ts` **5 条**；**变异 2/2 咬住**。
+- 判据自身的坑：MD-5 第一版**没剥注释**，被 helper 文档里的反例绊倒（两处假阳）⇒ 改成剥注释再扫。
+- 测试桩缺件：`sync-engine.test.ts` 的 `vi.mock("../core/storage/settings")` 里没有新导出
+  `mergeDefaults` ⇒ 8 条红。**按规矩补桩（写真语义实现），不绕开**。
+  全仓另有 26 个 test 文件 mock 了该模块，但只有真正走到改动点的会红 —— 全量测试已确认。
+
+**T-1 🟡 尝试后按纪律撤回（本轮最值钱的发现）**
+- 缺口确认：`isError` 可选 ⇒ 省略时按输出推断，而推断表里 `CONTENT_TOOLS`
+  （read/grep/glob/web_fetch/load_skill…）**明确不推断** ⇒ 这些工具**真的失败**时落到 `completed`。
+- 改成必填后 `tsc` 报 **187 处 / 33 文件**（153 缺字段 + **34 处返回类型与 execute 签名不匹配**，
+  后者此前编译期完全看不见）。
+- **撤回依据**：153 处里 **123 处的 output 是模板串/表达式** ⇒ 无法静态判成败；
+  且本仓库**成功路径一律省略 isError**，而现行推断会按 `Error:` 前缀判失败 ⇒
+  填 `false` 会改掉这条语义、填 `true` 会误标成功，**两种都是看不见的行为改变**。
+- **过程如实记**：第一版机械脚本**错了**（没剥字符串/模板串 ⇒ 把 `isError` 插进 `` `${…}` ``
+  的字符串里，tsc 报 TS1109）；用 `git checkout` 精确还原 21 个受害文件、保住 T-2 成果；
+  修正版剥串后只敢机械插 30/153 ⇒ 据此判定"不能机械化"。
+- **本轮落地**：判据 `tool-result-status.test.ts` 的 `TRS-1…4`（含"缺口形状"与
+  "`isError` 保持可选"的路障）；修法与缺口写进 `tools.ts` 的 `isError` 字段说明。**下一轮先读那里**。
+
+**T-3 ✅ 截断诊断给出精确 lines/chars**
+- Rust `ReadFileLinesResult` 新增 `dropped_lines` / `dropped_chars`，与 `text` **同一次遍历**
+  （零额外 IO、一定自洽）；主体抽成同步 `read_file_lines_impl`（同 `read_text_window_impl` 惯例）。
+- 前端提示从 `offset + Math.ceil(text.length/80) - 1`（**猜**结束行号）改成
+  `showing lines a-b of N; X lines / Y chars not shown; use offset to continue reading`。
+- 顺带修老缺口：`max_chars` 截断时原来直接 `break` ⇒ 连 `total_lines` 都停在截断处。
+- 判据 4 条（Rust）；**变异 1/1 咬住**。判据自身的坑：第一版样例行全是 1 字符、
+  且期望值用**同一套代数**推（恒等式）⇒ **变异不咬**；改成"长度不等的行 + 期望值独立硬编码"。
+
+**T-4 ✅ 对"全量参照算法"的差分测试**
+- 就地保留朴素参照实现，**160 组**（8 内容 × 5 offset × 4 limit），覆盖多字节/emoji、
+  5000 字符超长行、CRLF、空文件、offset 超界、limit=0。
+- **差分当场咬出两个真实契约边界**：① 空文件 = **0 行**（不是 1 行）；
+  ② 字符数按**行内容**计（CRLF 的 `\r` 不算）。
+- 变异 2/2 咬住（行号从 0 起 / 丢弃行数漏算 1）。
+
+**踩到的工具坑（记档）**：`cargo test` 的**陈旧二进制判定**又骗了我一次 —— 源码已还原、
+测试却仍红；`(Get-Item src\lib.rs).LastWriteTime = Get-Date` 强制重编译后 162/162 全绿。
+**测试红了先怀疑二进制陈旧，再怀疑代码。**

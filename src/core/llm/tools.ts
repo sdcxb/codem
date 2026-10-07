@@ -484,8 +484,28 @@ export interface ToolExecuteResult {
   metadata?: Record<string, any>;
   output: string;
   /**
-   * 第 84 波：工具可以**显式**声明本次调用失败。
-   * 未声明时由 `classifyToolResult` 按输出推断（内容型工具不推断）。
+   * 本次调用**是否失败**。
+   *
+   * ## 第 181 波（T-1）：**必填化的尝试与结论**（这一节是给下一次动手的人看的）
+   *
+   * 该字段**应当**是必填的：省略时由 `classifyToolResult` 按输出**推断**，而推断表里有一份
+   * `CONTENT_TOOLS`（`read`/`grep`/`glob`/`web_fetch`/`load_skill`…）**明确不推断**
+   * （理由正当：它们的输出是"数据"，首行恰好是 `Error:` 也可能就是文件内容）。
+   * 于是这些工具**真的失败**时会落到 `completed` —— 一个**静默缺口**。
+   *
+   * 本轮实测把 `isError` 改成必填后 `tsc` 报 **187 处**（33 文件）：
+   * 153 处"缺字段" + **34 处"返回类型与 `execute` 签名不匹配"的执行点**
+   * （后者此前**编译期完全看不见**，因为它们写在联合返回里、被推断成了 `isError?: undefined`）。
+   *
+   * ⚠️ **真正让这项不能机械做的原因**：153 处里 **123 处的 `output` 是模板串/表达式**
+   * （`` output: `Error: ${e.message}` ``），**无法静态判定成败**。更关键的是——
+   * 本仓库的**成功路径一律省略 `isError`**，而现行推断会对它们**按文本判**：
+   * 只要 `output` 首行是 `Error:` 就判失败。把 `isError` 填成 `false` 会**改掉**这条语义
+   * （原本会判失败的路径变成显式成功）；填成 `true` 则会把成功误标成失败。
+   * **两种都会造成"看不见的行为改变"**，所以必须**逐条判成败**，不能用脚本硬插。
+   *
+   * **结论：这一项留给下一轮单独动手**（判据与精确缺口已在
+   * `tool-result-status.test.ts` 的 `TRS-*` 与 `docs/HANDOFF-NEXT-SESSION.md` 第 181 波）。
    */
   isError?: boolean;
   /**
@@ -1327,7 +1347,19 @@ export function createReadFileTool(): ToolDef {
             output = result.text;
             const notices: string[] = [];
             if (result.hasMore) {
-              const notice = `... (showing lines ${offset}-${offset + Math.ceil(result.text.length / 80) - 1} of ${result.totalLines} total lines; use offset to continue reading)`;
+              /**
+               * 第 181 波（T-3）：**精确**的丢弃计数（对标 Pi `cdf79797b` 的
+               * `Output truncated to its end: N lines, M bytes dropped`）。
+               *
+               * 改前这行写的是 `offset + Math.ceil(text.length / 80) - 1` —— 用"每行约 80 字符"
+               * **猜**结束行号（文件里有长行就偏得离谱），而且完全不告诉模型**还差多少**。
+               * 现在结束行号由 Rust 侧的同一次遍历给出，并附上精确的行/字符丢弃量。
+               */
+              const endLine = Math.max(offset, result.totalLines - result.droppedLines);
+              const notice =
+                `... (showing lines ${offset}-${endLine} of ${result.totalLines}; ` +
+                `${result.droppedLines} lines / ${result.droppedChars} chars not shown; ` +
+                `use offset to continue reading)`;
               output += `\n${notice}`;
               notices.push(notice);
             }

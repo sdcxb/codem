@@ -188,4 +188,53 @@ describe("执行器：工具自报失败 ≠ 执行层异常", () => {
     expect(events.some((e) => e.type === "tool_error")).toBe(true);
     expect(events.some((e) => e.type === "tool_complete")).toBe(false);
   });
+
+  /**
+   * ========== 第 181 波（T-1）：把「推断缺口」钉住 ==========
+   *
+   * ## 这一组判据要守的是什么
+   *
+   * `isError` 目前是**可选**的，省略时由 `classifyToolResult` 按输出**推断** ——
+   * 而推断表里有一份 `CONTENT_TOOLS`（`read`/`grep`/`glob`/`web_fetch`/`load_skill`…）
+   * **明确不推断**（理由正当：它们的输出是"数据"，首行恰好是 `Error:` 也可能就是文件内容）。
+   *
+   * 于是这些工具**真的失败**时会落到 `completed` —— 一个**静默缺口**。本轮的结论是
+   * **不能机械把 `isError` 改成必填**（153 处里 123 处的输出是模板串/表达式，无法静态判成败；
+   * 而且本仓库的成功路径一律省略 `isError`，填 `false` 会改掉"按 `Error:` 前缀判失败"的现行语义 ——
+   * 详见 `tools.ts` 里 `isError` 字段的说明）。所以本轮**只把缺口的形状钉住**：
+   * 谁想"顺手修好"这条推断，必须先让 TRS-2 红 —— 那是**有意的路障**。
+   */
+  describe("T-1：显式声明优先，内容型工具的推断缺口被钉住", () => {
+    it("TRS-1: 显式 `isError: false` 优先于文本 —— 输出以 Error: 开头也必须是 completed", () => {
+      const v = classifyToolResult("bash", "Error: 这只是被 cat 出来的文件内容", false);
+      expect(v.status, "显式声明优先（这条是现行契约，别为修缺口而改掉它）").toBe("completed");
+    });
+
+    it("TRS-2: 内容型工具**真的失败**且未声明时，会被判成 completed —— 缺口的形状", () => {
+      for (const toolName of ["read", "grep", "glob", "web_fetch"]) {
+        const v = classifyToolResult(toolName, "Error: ENOENT: no such file or directory", undefined);
+        expect(
+          v.status,
+          `「${toolName}」没有显式 isError 时会被判成 completed —— ` +
+            `这正是 T-1 要治的静默缺口（修法见 tools.ts 里 isError 的说明，不要只改这一条判据）`,
+        ).toBe("completed");
+      }
+    });
+
+    it("TRS-3: 非内容型工具未声明时仍按首行前缀推断（现行兜底不许丢）", () => {
+      expect(classifyToolResult("bash", "Error: command not found", undefined).status).toBe("error");
+      expect(classifyToolResult("bash", "错误：命令失败", undefined).status).toBe("error");
+      expect(classifyToolResult("bash", "ok", undefined).status).toBe("completed");
+    });
+
+    it("TRS-4: `ToolExecuteResult.isError` 保持可选 —— 改成必填会牵连 153 处（其中 123 处无法静态判定）", async () => {
+      const fs = await import("node:fs");
+      const text = fs.readFileSync("src/core/llm/tools.ts", "utf8");
+      expect(
+        /isError\?:\s*boolean/.test(text),
+        "字段一旦改成必填，`tsc` 会报 187 处；其中 123 处的 output 是模板串/表达式，" +
+          "机械填值会静默改掉『按 Error: 前缀判失败』的现行语义 ⇒ 必须逐条判成败（见 T-1 说明）",
+      ).toBe(true);
+    });
+  });
 });

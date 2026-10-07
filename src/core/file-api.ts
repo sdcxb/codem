@@ -78,6 +78,17 @@ export interface ReadFileLinesResult {
   totalLines: number;
   /** Whether there are more lines after the returned range. */
   hasMore: boolean;
+  /**
+   * 第 181 波（T-3，对标 Pi `cdf79797b`）：**没被返回的行数**。
+   *
+   * 与 `text` 出自 Rust 侧**同一次遍历**，所以两者一定自洽（不是分两次扫出来的估值）。
+   * 含两种情况：被 `offset` 跳过的行、以及超出 `limit`/`maxChars` 的行。
+   * 有一句"还有更多行"是不够的 —— 模型得知道"还差 3 行"还是"还差 3 万行"，
+   * 才决定该继续翻页还是改用 grep/bash。
+   */
+  droppedLines: number;
+  /** 未返回部分的字符数（不含 "N: " 行号前缀） */
+  droppedChars: number;
 }
 
 /**

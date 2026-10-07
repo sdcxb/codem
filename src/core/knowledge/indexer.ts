@@ -27,7 +27,7 @@ import type {
   NotebookConfig,
 } from './types';
 import { DEFAULT_CONFIG } from './types';
-import { getSettingJSON } from '../storage/settings';
+import { getSettingJSON, mergeDefaults } from '../storage/settings';
 import { extractJSON, extractList, extractMermaid } from '../llm/output-parser';
 
 /**
@@ -46,7 +46,7 @@ function isLocalMode(): boolean {
 const NOTEBOOK_CONFIG_KEY = 'codem-notebook-config';
 
 export function getNotebookConfig(): NotebookConfig {
-  return { ...DEFAULT_CONFIG, ...getSettingJSON<Partial<NotebookConfig>>(NOTEBOOK_CONFIG_KEY, {}) };
+  return mergeDefaults(DEFAULT_CONFIG, getSettingJSON<Partial<NotebookConfig>>(NOTEBOOK_CONFIG_KEY, {}));
 }
 
 // ========== 索引单个来源 ==========

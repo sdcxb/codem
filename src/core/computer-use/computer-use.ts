@@ -14,7 +14,7 @@
  *   computer_see 工具把截图转 base64 image 交视觉模型理解（bbox 提示词）
  */
 
-import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { getSettingJSON, mergeDefaults, setSettingJSON } from "../storage/settings";
 import { executeCommand } from "../file-api";
 import { CAPTURE_PS1, INPUT_PS1 } from "./scripts-content";
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../llm/tools";
@@ -59,7 +59,7 @@ const DEFAULTS: ComputerSettings = {
 
 export function getComputerSettings(): ComputerSettings {
   try {
-    return { ...DEFAULTS, ...(getSettingJSON<Partial<ComputerSettings>>(SETTINGS_KEY, {}) || {}) };
+    return mergeDefaults(DEFAULTS, getSettingJSON<Partial<ComputerSettings>>(SETTINGS_KEY, {}));
   } catch {
     return { ...DEFAULTS };
   }

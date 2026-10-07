@@ -51,6 +51,12 @@ import {
 } from "./data/layout-override";
 import { CLAW_SCENE, FALLBACK_SCENE_PRESET_ID, getScenePreset, pixelRooms } from "./data/pixel-art";
 import { reportPersistFailure } from "../../core/storage/persist-failure";
+/**
+ * 第 181 波（T-2）：设置从 localStorage 兑现的是**部分对象** —— 磁盘上出现过
+ * `{"key": undefined}` 的形状时，朴素展开 `{...DEFAULT_SETTINGS, ...parsed}` 会把默认值清成
+ * undefined。`mergeDefaults` 跳过显式 undefined，语义与这里"缺啥补默认"的意图一致。
+ */
+import { mergeDefaults } from "../../core/storage/settings";
 import {
   ALIGN_MIN_SCORE,
   autoAlignFromLuma,
@@ -106,7 +112,7 @@ export function loadSettings(): LibraryOpsSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<LibraryOpsSettings>;
-    const merged = { ...DEFAULT_SETTINGS, ...parsed };
+    const merged = mergeDefaults(DEFAULT_SETTINGS, parsed);
     // 边界收敛（防御非法持久化值）
     merged.refreshMs = clamp(Number(merged.refreshMs) || DEFAULT_SETTINGS.refreshMs, 500, 30_000);
     merged.speed = clamp(Number(merged.speed) || 1, 0.25, 4);

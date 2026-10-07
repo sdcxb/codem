@@ -22,7 +22,7 @@
  */
 
 import { executeCommand, exists } from "../file-api";
-import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { getSettingJSON, mergeDefaults, setSettingJSON } from "../storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../storage/persist-failure";
 
 // Platform detection for cross-platform path handling
@@ -79,7 +79,7 @@ const SETTINGS_KEY = "codem-worktree-settings";
 export function getWorktreeSettings(): WorktreeSettings {
   try {
     const stored = getSettingJSON<Partial<WorktreeSettings>>(SETTINGS_KEY, {});
-    return { ...DEFAULT_SETTINGS, ...stored };
+    return mergeDefaults(DEFAULT_SETTINGS, stored);
   } catch {
     return DEFAULT_SETTINGS;
   }

@@ -546,6 +546,19 @@ struct ReadFileLinesResult {
     total_lines: usize,
     /// Whether there are more lines after the returned range.
     has_more: bool,
+    /**
+     * 第 181 波（T-3，对标 Pi `cdf79797b` 的 `droppedLines` / `droppedBytes`）：
+     * **没被返回的行数与字符数**。
+     *
+     * 为什么需要它：此前只有一句"还有更多行，用 offset 继续读"，模型**无法判断还差多少**
+     * （差 3 行还是 3 万行，决定它该继续翻页还是改用 grep/bash）。Pi 的做法是把丢弃量
+     * **精确计数**并交给模型，我们这里对齐同一口径。
+     *
+     * 计数与 `text` **在同一次扫描里产生**（不额外读文件、不额外遍历），所以两者一定自洽。
+     */
+    dropped_lines: usize,
+    /// 未返回部分的字符数（按 `output` 里实际会占用的字符口径：不含 "N: " 行号前缀）
+    dropped_chars: usize,
 }
 
 /// Read a file with line-level pagination. Only the requested [offset, offset+limit)
@@ -589,8 +602,23 @@ async fn read_file_lines(
     let limit = limit.unwrap_or(2000);
     let max_chars = max_chars.unwrap_or(100_000);
 
-    let path_cloned = path.clone();
-    let result = tokio::task::spawn_blocking(move || -> Result<(String, usize, bool), String> {
+    // 第 181 波（T-3）：主体抽成同步 `_impl`，这样判据能直接驱动它
+    // （与 `read_text_window_impl` / `file_version_impl` 同一惯例；
+    //  否则只能靠"起一个 tokio 运行时 + 造临时文件"的间接测法）。
+    tokio::task::spawn_blocking(move || read_file_lines_impl(&path, offset, limit, max_chars))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// `read_file_lines` 的同步主体（可在 `cargo test` 里直接调用）。
+fn read_file_lines_impl(
+    path: &str,
+    offset: usize,
+    limit: usize,
+    max_chars: usize,
+) -> Result<ReadFileLinesResult, String> {
+    let path_cloned = path.to_string();
+    let result = (move || -> Result<(String, usize, bool, usize, usize), String> {
         use std::io::{BufRead, BufReader};
         use std::fs::File;
 
@@ -602,20 +630,29 @@ async fn read_file_lines(
         let mut total_chars = 0usize;
         let mut has_more = false;
         let mut collected = 0usize;
+        // 第 181 波（T-3）：未返回部分的精确计数（与 parts 在同一次遍历里产生）
+        let mut dropped_lines = 0usize;
+        let mut dropped_chars = 0usize;
 
         for (idx, line_result) in reader.lines().enumerate() {
             let line_idx = idx + 1; // 1-indexed
             total_lines = line_idx;
 
             if line_idx < offset {
+                // 第 181 波：被 offset 跳过的行也算"没返回给模型"
+                dropped_lines += 1;
+                if let Ok(line) = &line_result {
+                    dropped_chars += line.chars().count();
+                }
                 continue; // skip lines before the requested offset
             }
 
             if collected >= limit {
                 has_more = true;
-                // Continue counting lines for total_lines — but stop early
-                // if we've already confirmed has_more and don't need exact total.
-                // For correctness we keep counting (the file is being read anyway).
+                dropped_lines += 1;
+                if let Ok(line) = &line_result {
+                    dropped_chars += line.chars().count();
+                }
                 continue;
             }
 
@@ -624,7 +661,9 @@ async fn read_file_lines(
 
             if total_chars + numbered.len() > max_chars {
                 has_more = true;
-                break;
+                dropped_lines += 1;
+                dropped_chars += line.chars().count();
+                continue;
             }
 
             total_chars += numbered.len() + 1; // +1 for \n
@@ -633,18 +672,18 @@ async fn read_file_lines(
         }
 
         let text = parts.join("\n");
-        Ok((text, total_lines, has_more))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+        // 第 181 波（T-3）：计数与 text 出自**同一次遍历** ⇒ 一定自洽
+        Ok((text, total_lines, has_more, dropped_lines, dropped_chars))
+    })()?;
 
-    let (text, total_lines, has_more) = result;
+    let (text, total_lines, has_more, dropped_lines, dropped_chars) = result;
 
     Ok(ReadFileLinesResult {
         text,
         total_lines,
         has_more,
+        dropped_lines,
+        dropped_chars,
     })
 }
 
@@ -3852,12 +3891,16 @@ mod wire_naming_tests {
             text: "1: a\n".into(),
             total_lines: 1,
             has_more: false,
+            // 第 181 波（T-3）：丢弃计数也走 camelCase（前端读 `droppedLines` / `droppedChars`）
+            dropped_lines: 0,
+            dropped_chars: 0,
         })
         .expect("序列化");
         assert_eq!(
             key_set(&v),
-            vec!["hasMore", "text", "totalLines"],
-            "前端读的是 totalLines / hasMore —— 不一致会让「还有更多行」的提示永不出现（静默截断）"
+            vec!["droppedChars", "droppedLines", "hasMore", "text", "totalLines"],
+            "前端读的是 totalLines / hasMore / droppedLines / droppedChars —— 不一致会让\
+             「还有更多行 / 还差多少」的提示永不出现（静默截断）"
         );
     }
 }
@@ -4014,5 +4057,190 @@ mod append_file_tests {
         let (ids, bad) = parsed_ids(&path);
         assert_eq!(bad, 0, "整条写入的记录不该产生坏行");
         assert_eq!(ids, vec!["m1", "m2", "m3", "m4"]);
+    }
+
+    // ========== 第 181 波（T-3）：截断诊断的**精确计数** ==========
+
+    fn lines_file(name: &str, content: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("codem-lines-{}-{}", name, std::process::id()));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let path = dir.join("f.txt");
+        std::fs::write(&path, content).expect("写文件");
+        path.to_string_lossy().to_string()
+    }
+
+    /// 判据 1：`dropped_lines` / `dropped_chars` 必须与"全量读一遍再数"**逐条相符**。
+    ///
+    /// ⚠️ **判据设计踩过的坑（第一版在这里假绿，记档）**：
+    /// 最早的样例每行只有 1 个字符、且期望值是用**同一套代数**从 `kept` 推出来的
+    /// （`total - kept.len()`）—— 那是个恒等式：无论实现有没有统计"被 offset 跳过的行"，
+    /// 两边都一起变，**永远相等**。于是变异（把 offset 分支的计数删掉）**不咬**。
+    ///
+    /// 修法两条：① 用**长度不等**的行（丢 3 个 1 字符行与丢 3 个 10 字符行，
+    /// 字符数差得很明显）；② 期望值**独立硬编码**（直接写死数字），不再从 `kept` 推。
+    #[test]
+    fn dropped_counts_match_a_full_read() {
+        // 行内容刻意不等长：`a`(1) / `bb`(2) / `ccc`(3) / `dddd`(4) / `eeeee`(5)
+        let content = "a\nbb\nccc\ndddd\neeeee\n";
+        // (名字, offset, limit, 期望: total, dropped_lines, dropped_chars, has_more)
+        let cases: Vec<(&str, usize, usize, usize, usize, usize, bool)> = vec![
+            // 从第 1 行读 3 行 ⇒ 丢 dddd(4) + eeeee(5) = 2 行 / 9 字符；后面还有 ⇒ has_more
+            ("head", 1, 3, 5, 2, 9, true),
+            // 从第 4 行读到尾 ⇒ **丢 1 字符 + 2 + 3 = 6 字符**（全部来自 offset 跳过）；
+            // 后面没有了 ⇒ has_more=false —— 这一格专门咬"offset 分支没计数"
+            ("tail", 4, 2, 5, 3, 6, false),
+            // 中间一段：丢 a(1) + eeeee(5) = 2 行 / 6 字符
+            ("middle", 2, 3, 5, 2, 6, true),
+            // 全读 ⇒ 一个都不丢
+            ("all", 1, 5, 5, 0, 0, false),
+        ];
+        for (name, offset, limit, total, dropped_lines, dropped_chars, has_more) in cases {
+            let path = lines_file(name, content);
+            let got = read_file_lines_impl(&path, offset, limit, 100_000).expect("读失败");
+            assert_eq!(got.total_lines, total, "{name}: 总行数");
+            assert_eq!(got.dropped_lines, dropped_lines, "{name}: 丢弃行数");
+            assert_eq!(got.dropped_chars, dropped_chars, "{name}: 丢弃字符数");
+            assert_eq!(got.has_more, has_more, "{name}: has_more = 返回范围之后还有行");
+        }
+    }
+
+    /// 判据 1b：返回文本本身也要对（带 `N: ` 行号前缀、且按 offset 对齐）。
+    #[test]
+    fn returned_text_carries_line_numbers_from_offset() {
+        let path = lines_file("textshape", "a\nbb\nccc\n");
+        let got = read_file_lines_impl(&path, 2, 2, 100_000).expect("读失败");
+        assert_eq!(got.text, "2: bb\n3: ccc", "行号必须从 offset 开始且 1-indexed");
+    }
+
+    /// 判据 2：**恰好读满**（limit == 总行数）时不许报"还有更多"、丢弃数必须为 0。
+    ///
+    /// 反向对照：这是最容易 off-by-one 的那一格（把"读完了"报成"还有很多"，
+    /// 模型就会白翻一页）。
+    #[test]
+    fn reading_everything_reports_nothing_dropped() {
+        let path = lines_file("all", "1\n2\n3\n");
+        let got = read_file_lines_impl(&path, 1, 3, 100_000).expect("读失败");
+        assert_eq!(got.total_lines, 3);
+        assert!(!got.has_more, "全读完了不该说还有更多");
+        assert_eq!(got.dropped_lines, 0, "全读完了丢弃数必须是 0");
+        assert_eq!(got.dropped_chars, 0, "全读完了丢弃字符数必须是 0");
+    }
+
+    /// 判据 3：**按字符上限截断**时，丢弃计数要把"没装下的那些行"也算进去。
+    ///
+    /// 改前这一支直接 `break` ⇒ 连 `total_lines` 都停在截断处（模型看到"共 2 行"，
+    /// 而文件其实有几百行）。这条判据同时钉住那个老缺口。
+    #[test]
+    fn max_chars_truncation_still_counts_everything() {
+        let content = (1..=50).map(|i| format!("line-{i}")).collect::<Vec<_>>().join("\n");
+        let path = lines_file("maxchars", &content);
+        // 给一个只装得下前几行的字符预算
+        let got = read_file_lines_impl(&path, 1, 1000, 60).expect("读失败");
+        assert_eq!(got.total_lines, 50, "总行数必须是**整个文件**的，不是截断处的");
+        assert!(got.has_more, "被 max_chars 截断也算还有更多");
+        assert_eq!(
+            got.dropped_lines,
+            50 - got.text.lines().count(),
+            "丢弃行数 = 总行数 - 实际返回行数"
+        );
+        assert!(got.dropped_chars > 0, "丢弃字符数必须为正");
+    }
+
+    // ========== 第 181 波（T-4）：对"全量参照算法"的差分测试 ==========
+
+    /**
+     * **全量参照实现**（与生产实现完全独立的一条路）。
+     *
+     * 它按最朴素的方式做：整个文件读成字符串 → 按 `\n` 切开 → 取 `[offset-1, +limit)` →
+     * 加 `N: ` 前缀 → 数总计/丢弃。生产实现是流式、有字符预算、逐行 number 的，
+     * 两者的**可观测结果必须逐字节相等**。
+     *
+     * 这就是 Pi `tools-read-differential.test.ts` 的手法：手写几个用例挡不住
+     * "行号错位 / 差一" 这类缺陷，只有一个**独立参照实现**能挡住。
+     */
+    fn reference_read(content: &str, offset: usize, limit: usize) -> (String, usize, usize, usize) {
+        /**
+         * 空文件 = **0 行**（没有行可以编号）。
+         *
+         * 这一条是差分测试**当场咬出来**的契约边界：参照实现第一版按
+         * `split('\n')` 得到 `[""]` 就算 1 行，而生产实现（`BufRead::lines()` 一行都读不到）
+         * 给 0 —— 两边对"空文件有几行"理解不同。**0 才是对的**（与"结尾换行不额外算一行"
+         * 同一套直觉：行是"有内容的行"）。
+         */
+        if content.is_empty() {
+            return (String::new(), 0, 0, 0);
+        }
+        let all: Vec<&str> = content.split('\n').collect();
+        // 尾部空串 = 文件以 \n 结尾 ⇒ 不额外算一行（与 BufRead::lines() 一致）
+        let all = if content.ends_with('\n') && all.len() > 1 {
+            &all[..all.len() - 1]
+        } else {
+            &all[..]
+        };
+        let total = all.len();
+        let start = offset.saturating_sub(1).min(total);
+        let end = (start + limit).min(total);
+        let text = all[start..end]
+            .iter()
+            .enumerate()
+            .map(|(i, l)| format!("{}: {}", start + i + 1, l.trim_end_matches('\r')))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let dropped_lines = total - (end - start);
+        /**
+         * 字符数按**行内容**计（不含行尾）：CRLF 的 `\r` 不算。
+         *
+         * 这也是差分测试咬出来的：参照实现第一版直接用 `split('\n')` 的切片，
+         * 于是 CRLF 行会把自己那个 `\r` 算进去，而生产实现走 `BufRead::lines()`
+         * （它会把 `\r\n` 归一成 `\n`）⇒ 两边差一个字符/行。按行内容计才与
+         * "模型看到的内容"一致 —— 行号前缀后面跟的就是归一化后的内容。
+         */
+        let dropped_chars = all[..start]
+            .iter()
+            .chain(all[end..].iter())
+            .map(|l| l.trim_end_matches('\r').chars().count())
+            .sum::<usize>();
+        (text, total, dropped_lines, dropped_chars)
+    }
+
+    /// 判据 4：**差分测试** —— 生产实现 vs 全量参照，参数与内容都造到边界。
+    ///
+    /// 覆盖：多字节中文/emoji、超长行、CRLF、以/不以换行结尾、空文件、offset 超界、
+    /// offset=0、limit=0、offset+limit 越界。`max_chars` 给足（不触发预算），
+    /// 好让这一条只考"行选择与计数"这一件事。
+    #[test]
+    fn bounded_read_matches_the_full_file_reference() {
+        let contents = [
+            "a\nbb\nccc\n",
+            "1\n2\n3\n4\n5",
+            "",
+            "\n",
+            "中文行\nemoji 😀 行\n第三行\n",
+            "CRLF\r\n第二行\r\n第三行\r\n",
+            &format!("{}\nshort\n", "x".repeat(5000)),
+            "tab\tseparated\nline2\n",
+        ];
+        let offsets = [0usize, 1, 2, 3, 99];
+        let limits = [0usize, 1, 3, 99];
+        let mut checked = 0usize;
+        for (ci, content) in contents.iter().enumerate() {
+            let path = lines_file(&format!("diff{ci}"), content);
+            for offset in offsets {
+                for limit in limits {
+                    // 生产实现要求 offset >= 1（命令层会 `.max(1)`）
+                    let eff_offset = offset.max(1);
+                    let got = read_file_lines_impl(&path, eff_offset, limit, 1_000_000).expect("读失败");
+                    let (text, total, dropped_lines, dropped_chars) =
+                        reference_read(content, eff_offset, limit);
+                    let what = format!("内容#{ci}({content:?}) offset={offset} limit={limit}");
+                    assert_eq!(got.text, text, "{what}: 返回文本");
+                    assert_eq!(got.total_lines, total, "{what}: 总行数");
+                    assert_eq!(got.dropped_lines, dropped_lines, "{what}: 丢弃行数");
+                    assert_eq!(got.dropped_chars, dropped_chars, "{what}: 丢弃字符数");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked >= 100, "差分规模太小（{checked} 组）—— 判据会变成摆设");
     }
 }

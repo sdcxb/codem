@@ -37,7 +37,7 @@
  */
 
 import { getEventLog } from "./event-log";
-import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./settings";
+import { getSetting, setSetting, getSettingJSON, mergeDefaults, setSettingJSON } from "./settings";
 import type { SessionEvent, SessionEventType } from "./event-types";
 import { reportPersistFailure } from "./persist-failure";
 
@@ -132,7 +132,7 @@ export const DEFAULT_SYNC_CONFIG: SyncConfig = {
 /** 获取同步配置 */
 export function getSyncConfig(): SyncConfig {
   const saved = getSettingJSON<SyncConfig>(SYNC_CONFIG_KEY, DEFAULT_SYNC_CONFIG);
-  return { ...DEFAULT_SYNC_CONFIG, ...saved };
+  return mergeDefaults(DEFAULT_SYNC_CONFIG, saved);
 }
 
 /** 保存同步配置 */
