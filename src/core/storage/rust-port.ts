@@ -1318,7 +1318,7 @@ class RustEventMirror {
        * 留痕改走 `stats().lastEviction`（可查、有判据）与调试日志 ✓。
        */
       this.lastEviction = `事件镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）；已释放最久未使用的会话事件镜像（内存预算），下次读取该会话会重新加载`;
-      console.debug(`[RustStoragePort] ${this.lastEviction}`);
+      if (isDebugEnabled("storage-trace")) console.debug(`[RustStoragePort] ${this.lastEviction}`);
     }
   }
 
@@ -1363,7 +1363,7 @@ class RustEventMirror {
       this.lru.delete(sessionId);
       this.evictions++;
       this.lastEviction = `切到会话 ${activeId} ⇒ 已逐出会话 ${sessionId}（${dropped.length} 条）；S2：同一时刻只驻留当前活跃会话，下次读取该会话会重新加载`;
-      console.debug(`[RustStoragePort] ${this.lastEviction}`);
+      if (isDebugEnabled("storage-trace")) console.debug(`[RustStoragePort] ${this.lastEviction}`);
     }
   }
 
@@ -1928,7 +1928,7 @@ class RustMessageMirror {
        * 留痕改走 `stats().lastEviction` 与调试日志 ✓。
        */
       this.lastEviction = `消息镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）；已释放最久未使用的会话消息镜像（内存预算），下次读取该会话会重新加载`;
-      console.debug(`[RustStoragePort] ${this.lastEviction}`);
+      if (isDebugEnabled("storage-trace")) console.debug(`[RustStoragePort] ${this.lastEviction}`);
     }
   }
 
@@ -1964,7 +1964,7 @@ class RustMessageMirror {
       this.lru.delete(sessionId);
       this.evictions++;
       this.lastEviction = `切到会话 ${activeId} ⇒ 已逐出会话 ${sessionId}（${dropped.length} 条）；S2：同一时刻只驻留当前活跃会话，下次读取该会话会重新加载`;
-      console.debug(`[RustStoragePort] ${this.lastEviction}`);
+      if (isDebugEnabled("storage-trace")) console.debug(`[RustStoragePort] ${this.lastEviction}`);
     }
   }
 
@@ -2299,6 +2299,45 @@ const DOMAIN_MIRROR_LOW_ROW_LIMITS: Record<string, number> = {
 };
 
 /**
+ * **结构性禁止镜像**的表 ✓（第 269 波 ✓）—— **不是**"上限调小"✗，是"这张表不进镜像"✓。
+ *
+ * ## 为什么必须有这一层（真机报障的治本处置 ✓）
+ *
+ * 用户第二次报障：「表 `turn_file_changes` 超过镜像上限 5000 行。该功能本次不可用」✗
+ * （`docs/HANDOFF-NEXT-SESSION.md` §3 ✓）。量清的机制是：
+ * 它在 `bootstrap.ts` 的**启动预取清单**里 ✗ ⇒ 启动就整表镜像 ✗ ⇒ 拉满一页发现
+ * `rows.length > cap` ⇒ **拒载**（不是截断 ✗）⇒ 该域这一段时间读给空结果 ✗。
+ *
+ * 而"把 cap 调大"✗ **必然复发** ✓：这是**追加型热表** ✓（每轮每文件若干行 ✓）
+ * ⇒ 行数只增不减 ✓ ⇒ 任何固定上限 ✗ 都只是把复发推后 ✓。
+ * "调小"✗ 更糟 ✓ —— 拒载 ⇒ 只会**更早**拒载 ✓（方向反了 ✓）。
+ *
+ * ## 为什么"结构上排除"才是这条路的落点
+ *
+ * 上面两条都还在"给一张本不该进镜像的表找一个合适的上限"✗ ——
+ * 而这张表**本来就在已声明的边界之外** ✓：`no-sync-mirror-reads.test.ts` 的
+ * `UNBOUNDED_TABLES`（无界对象 ✗）里就有它 ✓。把上限从 5000 调到 20000 ✗
+ * 等于**在已声明的边界上开一个口子** ✗，而那份清单与它的基线**只许变小** ✓。
+ *
+ * 所以这里不提供"上限"，只提供"**排除**"✓：`ensureLoaded` 直接拒绝 ✓，
+ * 表连一页都不会拉 ✗ ⇒ 「超过镜像上限」这条报障**从机制上不可能再出现** ✓
+ * （不是"这次没超"✗）。读改走按需查询 + 有界"一屏"投影 ✓
+ * （`file-change-storage.ts::loadBySession` ✓）。
+ *
+ * ## 为什么需要它、而不是"把表从预取清单里删掉"就够了
+ *
+ * 删预取清单只挡住**启动预取**那一条路 ✗；而加载还有另一条路 ✓：
+ * `domain-store.ts::domainMirror()` 在**任何**读/写时都会
+ * `candidate.domains.ensureLoaded(table, …)` ✓（不传覆盖 ✓）。
+ * 于是某次 `domainWrite` / 一次误加的 `domainReadMany` 就能把这张表
+ * **重新拉进镜像** ✗ —— 这正是 `DOMAIN_MIRROR_ROW_LIMITS` 注释里记的那条真教训 ✓
+ * （「这种'安全默认值'必须由**拥有数据的层**兜住 ✓，不能指望每个调用点都记得传参数 ✗」）。
+ *
+ * ⚠️ **它必须与 `domain-store.ts::ON_DEMAND_TABLES` 一致** ✓（判据 `TFC-7` 直接断言相等 ✓）。
+ */
+export const DOMAIN_QUERY_ONLY_TABLES: ReadonlySet<string> = new Set(["notebook_chunks", "turn_file_changes"]);
+
+/**
  * 这张表实际允许镜像多少行 ✓。
  *
  * ## 语义（第 139 波第二次修正 ✗→✓）
@@ -2577,6 +2616,44 @@ export class RustDomainMirror {
   }
 
   private async loadTable(table: string, maxRowsOverride?: number): Promise<void> {
+    /**
+     * **按需表：结构性拒绝镜像** ✓（第 269 波 ✓）—— 这里是**唯一**真正的装载入口 ✓。
+     *
+     * 为什么放在这里而不是 `ensureLoaded` 开头 ✗：`ensureLoaded` 的开头是
+     * **退避重试**那段逻辑 ✓，而"按需表"是**结构**结论 ✓，不是"这次太大了"那种
+     * **状态**结论 ✗ —— 它不该进 `refused` 集合 ✗：那会顺带让
+     * `retryRefusedTables()`（启动预取每次都会调 ✓）把这张表**反复放出来重试** ✗
+     * （每个启动周期白跑一次 ✓，日志里还会多一堆假"重试"✓）。
+     * 放在装载入口，任何路径（预取 ✓ / `domainMirror` 的惰性加载 ✓ / 将来新写的调用点 ✓）
+     * 都只会到这里一次 ✓，且**一页都不会拉** ✗。
+     *
+     * 留痕用 `console.warn` 而**不**走 `onFailure` ✗：`onFailure` 的通道是
+     * **用户可见的持久化失败上报** ✓（真机上「表 X 超过镜像上限」那条弹窗就是它 ✓）。
+     * "这张表按设计不镜像"✓ 不是失败 ✗ ⇒ 报上去只会制造新的假告警 ✓
+     * （本仓库最在意的那类缺陷 ✗）。
+     */
+    if (DOMAIN_QUERY_ONLY_TABLES.has(table)) {
+      /**
+       * ⚠️ **必须同时标进 `refused`** ✓ —— 否则 `isReady` 会**说谎** ✗。
+       *
+       * 为什么：`ensureLoaded` 的 `.then(() => this.loaded.add(table))` 是**无条件**的 ✓
+       * （它只管"`loadTable` 没抛"✓），而 `isReady` = `loaded.has && !refused.has` ✓。
+       * 于是"我早早 return、什么都没拉"这个**正确行为** ✗→ 会被记成"表已就绪" ✗
+       * ⇒ 所有同步领域读会**路由到一个空镜像** ✗（读什么都得空 ✓，而真相是
+       * "这张表走的是按需查询"✓）—— 那正是本波要消灭的那种"看起来正常、实际空"✗。
+       * 第一版就是这么写的，判据 `TFC-8` 当场把它抓红了 ✓（`expected true to be false` ✓）。
+       *
+       * 用 `refused` 而不是新加一个集合 ✓：它就是"**这张表用不了镜像**"的那个记号 ✓，
+       * 而且 `ensureLoaded` 一进来看到它就直接返回 ✓ ⇒ 不会因为 `retryRefusedTables()`
+       * 或退避窗口到期而被**反复**放出来重试 ✗（每次白跑一遍 ✓）。
+       */
+      this.refused.add(table);
+      console.warn(
+        `[Storage] 表 ${table} 是按需查询表，结构性不进镜像（改走按需查询 + 有界一屏投影）——` +
+          `这不是"太大"的临时状态，调镜像上限不会让它进来`,
+      );
+      return;
+    }
     /**
      * 每张表可以有**自己的**上限（例如 notebook_chunks：每行带 Base64 embedding，
      * 5000 行就是几十 MB 的渲染进程内存）。

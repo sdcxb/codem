@@ -319,7 +319,7 @@ export function getDefaultRoots(appDir?: string): PresetRoot[] {
  * 为会话选择一个 preset。
  * 记录到事件日志的 session_meta 事件中。
  */
-export function selectPresetForSession(sessionId: string, presetId: string): void {
+function selectPresetForSession(sessionId: string, presetId: string): void {
 getEventLog().append(sessionId, "session_meta", {
     action: "preset_selected",
     presetId,
@@ -330,7 +330,7 @@ getEventLog().append(sessionId, "session_meta", {
  * 读取会话选择的 preset。
  * 从事件日志中查找最后一次 preset_selected。
  */
-export function getSessionPreset(sessionId: string): string | null {
+function getSessionPreset(sessionId: string): string | null {
 const events = getEventLog().readAll(sessionId);
   for (let i = events.length - 1; i >= 0; i--) {
     const evt = events[i];
@@ -343,3 +343,5 @@ const events = getEventLog().readAll(sessionId);
   }
   return null;
 }
+
+

@@ -20,7 +20,7 @@
  */
 
 /** 危险模式表（`code` 进引擎前先过一遍） */
-export const DANGEROUS_CODE_PATTERNS: Array<{ pattern: RegExp; msg: string }> = [
+const DANGEROUS_CODE_PATTERNS: Array<{ pattern: RegExp; msg: string }> = [
   { pattern: /require\s*\(\s*['"]child_process['"]\)/, msg: "child_process not allowed" },
   { pattern: /require\s*\(\s*['"]fs['"]\)/, msg: "fs not allowed — use ctx.fs" },
   { pattern: /require\s*\(\s*['"]net['"]\)/, msg: "net not allowed" },
@@ -40,5 +40,3 @@ export function validateCode(code: string): { ok: boolean; error?: string } {
   }
   return { ok: true };
 }
-
-export { validateCode as validateDynamicCode };

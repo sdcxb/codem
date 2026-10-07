@@ -29,6 +29,7 @@ import type { DelegationTask } from "./types";
 import { useAppStore } from "../../store";
 import { useProjectStore } from "../store";
 import { getEventLog } from "../storage/event-log";
+import { EXIT_REASON_DETAIL_KEY } from "../llm/agentic-loop";
 import { getLang } from "../i18n/lang";
 import { getEffectiveSecurityMode } from "../permission/security-mode";
 
@@ -177,6 +178,22 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   // 联动外部 abort 信号
   if (abortSignal) {
     abortSignal.addEventListener("abort", () => abort.abort());
+    /**
+     * ## 第 309 波：**传进来的信号已经是中止态时，必须当场联动** ✗→✓
+     *
+     * `addEventListener("abort", …)` 只在**将来**发生 abort 时触发 ✓ ——
+     * 若调用方给的信号**在传进来之前就已经中止** ✗，那个回调**永远不会跑** ✗
+     * ⇒ 内部 `abort.signal.aborted` 恒为 `false` ✗ ⇒ 这一轮**照常跑到底** ✗
+     * （它该做的"别跑了"完全没有生效 ✓）。
+     *
+     * 这条是**第 309 波的判据 `END-1` 顺带抓出来的** ✓（先写判据的价值：
+     * 写"中止必须留下原因"这条判据时，我用一个**已中止**的信号造夹具 ✓，
+     * 结果发现连"中止"本身都没有传递进去 ✗）。
+     *
+     * `AbortSignal` 的语义本来就是"**已经**中止就是中止" ✓（`aborted` 是状态、
+     * 不是事件 ✓）—— 所以这里**不改**任何既有语义，只是把漏掉的那一半补上 ✓。
+     */
+    if (abortSignal.aborted) abort.abort();
   }
 
   // 标记会话为活跃（UI 层会显示 streaming 指示器）
@@ -235,7 +252,138 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
    * 工具在飞期间每 30 秒心跳一次：既给看门狗续命，也**向父会话上报进度**（它据此知道"还在干活"）。
    */
   const toolFlightMs = delegCfg?.toolFlightMs ?? 20 * 60 * 1000;
+
+  /**
+   * ## ★ 第 309 波：**停顿窗口**（`stallMs` ✓）—— 与 `idleMs` **分开**的短尺子 ✓
+   *
+   * ## 为什么必须有它（`§13.226` 交叉表给的硬证据 ✓）
+   *
+   * `1.16.287` 正式读数 ✓：
+   * ```
+   * 结局 × 结束形态
+   *               settled  stalled  unknown
+   *   passed            5        6        0
+   *   failed            0       13        0
+   * ⇒ 失败的轮次里：被掐停 13 条 / 走到收尾段 0 条
+   * ```
+   * ★ **13 条失败轮，没有一条走到过收尾段** ✗ —— 一条都没有 ✓。
+   *
+   * 机制（`§13.227` ✓）：下面那个 `for await` **只有一道闸门** ✓
+   * （`if (abort.signal.aborted) break;` ✓），而 `abort` 由
+   * `idleWatchdog(…, idleMs = 5 分钟, …)` 触发 ✓ ——
+   * 而**跑批 2 分钟就放弃** ✗ ⇒ ★ **`break` 永远来不及** ✗
+   * ⇒ 收尾段跑不到 ✓ ⇒ `shouldNudgeZeroOutput` 等四把守卫**一次都没机会开火** ✓
+   * （§13.224 查过：守卫**本来就有** ✓、判据也**早就写对了** ✓，缺的只是"机会"✓）。
+   *
+   * ## 口径（**只交出控制权，不中止** ✓ —— 这是与 `idleMs` 的关键区别 ✓）
+   *
+   * | | 判据（沉默多久 ✓） | 处置 |
+   * |---|---|---|
+   * | `idleWatchdog` ✓ | `idleMs`（5 分钟 ✓） | **中止**这个回合 ✗ |
+   * | **本判据** ✓ | **`stallMs`**（**更短** ✓，默认 `idleMs / 4` ✓） | **`break` 出循环** ✓ ⇒ **收尾段跑** ✓ |
+   *
+   * ⚠️ 三条边界 ✓：
+   * 1. **必须比 `idleMs` 短** ✗⇒✓：取成相等就等于没改 ✓（判据 `STALLW-2` 钉这条 ✓）；
+   * 2. **不许 `abort`** ✗：那会把"还想继续"的轮次直接杀掉 ✓
+   *    （而目标① 要的是"**催它继续**"✓）；
+   * 3. **工具在飞时不算停顿** ✓：一个跑 10 分钟的构建期间本来就没有事件 ✓
+   *    （§13.224 第一节那条注释说明过这是**用户质疑后重做**的机制 ✓，不许退回去 ✗）。
+   */
+  const stallMs = Math.max(1_000, delegCfg?.stallMs ?? Math.floor(idleMs / 4));
+  /** 最后一次"有事件"的时刻（`noteActivity` 每次刷新 ✓） */
+  let lastActivityAt = Date.now();
+  /** 是否因"停顿"交出过控制权（进原因口径 ✓，**不许与 `idle` 混名** ✗） */
+  let stalledOut = false;
+  /**
+   * ⚠️ ⚠️ **第 309 波第一次写错的地方（留证 ✓）**：
+   *
+   * 我第一版把停顿判据写成"在循环体里 `if (Date.now() - lastActivityAt >= stallMs) break;`" ✗ ——
+   * **那个判据永远不会触发** ✗：循环体只在**收到事件**时才执行 ✓，
+   * 而"停顿"的定义就是**收不到事件** ✗ ⇒ 判据所在的那段代码**根本不会被跑到** ✓。
+   * ⇒ ★ 与 §13.209 那个错误**逐字同源** ✓（"把东西写在到不了的位置"✗）——
+   * 我在同一个方向上**第三次**踩它 ✓（`turn_end` 一次 ✓、心跳一次 ✓、这次一次 ✓）。
+   *
+   * 正解 ✓：停顿必须由**独立的定时器**发现 ✓，再用一个**自己的**信号让循环退出 ✓
+   * （`AbortSignal.timeout` 不行 ✗ —— 它不会随事件重置 ✓；用一个控制器 + 每次 `pulse` 重排定时器 ✓）。
+   */
+  const stallController = new AbortController();
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearStallTimer = () => {
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
+    stallTimer = undefined;
+  };
+  /**
+   * ## ★★ 第 309 波（`FLIGHT-1..4` ✓）：**"工具在飞"不能是一条没有上限的免死金牌** ✗→✓
+   *
+   * ## 真机取证（`r288` / `1.16.288` ✓，归档 §13.234 ✓）
+   *
+   * 第 2 轮发出**两个** bash ✓，而控制台里 `Tool executed` **只有 1 条** ✓：
+   * ```
+   * Single-response dedup: 2 tool calls:
+   *   [bash("cd …; ls; echo …; cat package.json"),
+   *    bash("cd …; npx vitest run src/test/dsh-d10-write-not-execu…")]   ← ★ 这条**从未出现**
+   * t=…451709  [AgenticLoop] Tool executed: bash, path: cd "…"; ls; …      ← 只有第 1 条
+   * （此后 4 秒控制台还有噪音，然后**整个回合结束** ✗：Iteration 2 completed 从未打出 ✗）
+   * ```
+   * ⇒ 而 `toolsInFlight` 只在**收到完成事件**时才 `--` ✓（`:548` / `:600` ✓）
+   * ⇒ ★ **"工具开始了、完成事件永不回来" ⇒ `toolsInFlight` 永远 `> 0`** ✗ ⇒
+   * **两道看门狗一起失效** ✓：`idleWatchdog`（工具在飞就 `pulse()` 续命 ✓）+ **本函数的旧版**
+   * （`toolsInFlight > 0` ⇒ **无条件重新排队** ✗）。
+   * 唯一还在跑的是 `toolFlightMs`（默认 **20 分钟** ✗）⇒ **远超跑批的 2 分钟** ✗
+   * ⇒ 回合被外人结束 ✓ ⇒ **收尾段一行都没执行** ✓（`收尾` / `nudge` / `zero-output` / `turn_end`
+   * 在控制台里**全是 0 行** ✓）⇒ 四把完成守卫**一次都没机会开火** ✓。
+   *
+   * ## 口径（**这里的关键是"延期本身也要有上限"** ✓）
+   *
+   * 旧版：工具在飞 ⇒ **无条件**重新排队 ✗ —— 那个"延期"**没有尽头** ✗。
+   * 新版 ✓：重新排队**但**累计等待超过 `flightStallMs` 就**照样交出控制权** ✓。
+   * ⚠️ 三条取值边界 ✓：
+   * 1. **必须严格小于 `toolFlightMs`** ✓（20 分钟那条是"**中止**"✓，本条只是"**交出控制权**"✓）；
+   * 2. **必须显著大于正常工具时长** ✓（合法长工具**不许误杀** ✗ ——
+   *    这是 §13.224 第一节那条"用户质疑后重做"的口径 ✓）；
+   * 3. **处置与 `stallMs` 一致** ✓：`break` 出循环 ⇒ **收尾段有机会跑** ✓、**不 `abort`** ✓。
+   */
+  const flightStallMs = Math.max(1_000, delegCfg?.flightStallMs ?? Math.floor(toolFlightMs / 4));
+  /** 工具在飞期间"重新排队"累计等了多久（超过 `flightStallMs` 就不再等 ✓） */
+  let flightWaitedMs = 0;
+  /** 重排停顿定时器：工具在飞时**也计时** ✓，但给一个更长的上限 ✓（见上面长注释 ✓） */
+  const armStallTimer = () => {
+    clearStallTimer();
+    if (stallMs <= 0) return;
+    stallTimer = setTimeout(() => {
+      /**
+       * 工具在飞 ⇒ **延期** ✓，但**延期有上限** ✓ ——
+       * 不超过 `flightStallMs` 时重新排队 ✓；超过了 ⇒ ★ **它已经不是在飞，是丢了** ✓
+       * （"一个永不回来的工具"与本条要防的形态逐字一致 ✓，§13.234 ✓）。
+       */
+      if (toolsInFlight > 0) {
+        flightWaitedMs += stallMs;
+        if (flightWaitedMs < flightStallMs) {
+          armStallTimer();
+          return;
+        }
+        stalledOut = true;
+        console.warn(
+          `[Executor] 会话 ${sessionId} 有 ${toolsInFlight} 个工具在飞、` +
+            `已累计等待 ${Math.round(flightWaitedMs / 1000)}s（上限 ${Math.round(flightStallMs / 1000)}s）` +
+            `—— 判定"工具没回来"，交出控制权（**不中止**），让收尾守卫判一次`,
+        );
+        stallController.abort();
+        return;
+      }
+      stalledOut = true;
+      console.warn(
+        `[Executor] 会话 ${sessionId} 连续 ${Math.round(stallMs / 1000)}s 没有事件 —— ` +
+          `交出控制权（**不中止**），让收尾守卫判一次`,
+      );
+      stallController.abort();
+    }, stallMs);
+    (stallTimer as any)?.unref?.();
+  };
+
   let toolsInFlight = 0;
+  /** 起手就上弦 ✓（第一轮也在计时 ✓） */
+  armStallTimer();
   let toolFlightTimer: ReturnType<typeof setTimeout> | undefined;
   const clearToolFlight = () => {
     if (toolFlightTimer !== undefined) clearTimeout(toolFlightTimer);
@@ -280,6 +428,10 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
    */
   const noteActivity = (text?: string) => {
     watchdog.pulse();
+    lastActivityAt = Date.now();
+    /** ★ 有事件 ⇒ 累计等待清零 ✓（工具真的回来了 ⇒ 不是"丢了"✓） */
+    flightWaitedMs = 0;
+    armStallTimer();
     if (typeof text === "string" && text.length > 0) {
       estimatedTokens += Math.ceil(text.length / 3);
       if (tokenBudget > 0 && estimatedTokens > tokenBudget) {
@@ -382,7 +534,17 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       }),
       securityMode: effectiveSecurityMode,
     })) {
+      /**
+       * ★ 第 309 波：**两道闸门** ✓ ——
+       * ① `abort.signal`（既有的"中止"语义 ✓，`idle`/`budget`/`tool_hung`/`cancel` ✓）；
+       * ② `stallController.signal`（新增的"**停顿**"语义 ✓，只 break、**不中止** ✓）。
+       * ⚠️ 但**光靠这里不够** ✗ —— 循环体只在**收到事件**时才跑 ✓，
+       * 而停顿的定义就是收不到事件 ✗ ⇒ 真正的发现者是上面那个定时器 ✓；
+       * 这一行只是"用定时器的结果退出循环" ✓。
+       */
       if (abort.signal.aborted) break;
+      if (stallController.signal.aborted) break;
+
       // 每个事件都是"还活着"的证据：重新上弦空闲看门狗 + 计入资源预算。
       // 第 65 波修正：预算必须把**工具输入/输出**也算进去 —— 只统计模型吐出的文本
       // 会严重低估（真正吃上下文的是工具结果），于是预算形同虚设。
@@ -574,6 +736,95 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
           });
           break;
       }
+    }
+
+    /**
+     * ## 第 309 波：**「这一轮为什么结束」必须留下痕迹** ✓（`END-1/2/3` ✓）
+     *
+     * ## 要修的缺陷（真机读数换来的 ✓，§13.188 ✓）
+     *
+     * 上面那个消费循环里有一处 `if (abort.signal.aborted) break;` ✓（第 385 行附近 ✓）。
+     * **`break` 之后没有 `endResult`** ✗ ⇒ 下面 `const endShape = endResult?.type` 是 `undefined` ✗
+     * ⇒ 那一整段失败记账（`error` / `aborted` / `overflow` ✓）**全部跳过** ✗
+     * ⇒ 这一轮在事件日志里**没有任何"结束原因"** ✗。
+     *
+     * 真机形态（`repo-04` / `1.16.283` ✓）：3 次工具调用 → 再无任何事件 ✗、
+     * `maxIteration=3` ✓、`loopStops=[]` ✓、`diffChars=0` ✓、收尾消息 `status:"streaming"` ✓。
+     * 而那把「零产出守卫」**本该触发** ✓（判据跑过且 4 failed ✓、读过源码 ✓）
+     * —— 它一次都没写 ✗，正是因为**那段代码根本没执行到** ✗。
+     *
+     * ⇒ 一个**被中止**的回合与一个**正常收尾**的回合，在记录里长得一样 ✗，
+     * 而这两件事的修法**完全不同** ✓（前者是看门狗/预算/provider ✓、
+     * 后者是完成守卫 ✓）——所以"目标①为什么失败"这件事**一直归因不了** ✗。
+     *
+     * ## 本波只做一件事：**让它可见** ✓（不改任何行为 ✗）
+     *
+     * - 不改 `endResult` ✓、不改返回值形状 ✓、不产生用户可见消息 ✓；
+     * - 四个中止原因必须**能区分** ✓（`idle` / `budget` / `tool_hung` / `cancel` ✓）——
+     *   写死成一个常量就等于没量 ✗（判据 `END-3` 钉这条 ✓）；
+     * - 正常收尾的 `reason` 与中止**不同名** ✓（`loop_end` vs `abort:*` ✓，
+     *   判据 `END-2` 钉这条 ✓）。
+     *
+     * ⚠️ **"该不该在这些形态下继续干"是下一条判据的事** ✗（本轮不做 ✓）——
+     * 先把"发生了什么"量出来，再谈处置 ✓（handoff §7 第 1 条：量证才能收口 ✓）。
+     */
+    try {
+      const abortCause = abortedBy ?? (watchdog.timedOut() ? "idle" : abort.signal.aborted ? "cancel" : null);
+      /**
+       * ## 第 309 波（第二版）：把**循环内部的出口原因**也带上 ✓
+       *
+       * `agentic-loop` 的 `run()` 里有一批**比收尾段更早**的出口 ✓
+       * （`critical_service_unavailable` / `cost_limit` / `context_overflow` / `repeat_guard` /
+       * `write_rejected_by_user` / `output_truncated` / `plan_stale` / `completed` … ✓）。
+       * 走前几条的回合**收尾守卫连机会都没有** ✗ —— 而记录里只留下"没催过" ✓，
+       * **与"守卫判定错"长得一模一样** ✗（真机 `repo-02` 卡的就是这件事 ✓，归档 §13.201 ✓）。
+       *
+       * ⚠️ 这个值走**实例字段**而不是会话事件 ✓ —— 第一版写成事件，
+       * 当场把 `dsh-d5-prefix-cache-stability` 打红 ✗（每轮多一条事件 ⇒
+       * 上下文摘要里的 `M total events` 变了 ⇒ 第二轮不再以第一轮为前缀 ⇒ 破坏前缀缓存 ✓）。
+       * 详见 `agentic-loop.ts::noteExit` 的说明 ✓。
+       */
+      /**
+       * ⚠️ 出口原因**从 `endResult.detail` 取** ✓（不是从 loop 实例 ✗）——
+       * 这一版是**真机查出来的换道** ✓：
+       *
+       * 1. `agentic-loop` 的 `noteExit` 现在把原因挂进 `LoopResult.detail` ✓
+       *    （键 `EXIT_REASON_DETAIL_KEY` ✓），随**既有的 `end` 事件**出来 ✓ ——
+       *    而那条通道**已被证明能到达** ✓（`repo-08 r3` 真机的事件里看得到 `loopStops` 载荷 ✓）。
+       * 2. 第一版走"循环之后自己 `getEventLog().append("turn_end", …)`" ✓ ——
+       *    装上 `1.16.284` 真机跑两轮之后：**全库 101 536 条 `session_events` 里 `turn_end` 是 0 条** ✗
+       *    （同一次运行的 `loop_stopped` 有 5 条 ✓ ⇒ 事件日志没坏 ✓，是那条写路径没落地 ✗）。
+       *
+       * ⚠️ 所以这段 `turn_end` 的写入**仍然保留** ✓（它本身是有用的观测 ✓），
+       * 但**不再依赖它**来传出口原因 ✓ —— 原因走 `detail` ✓，两条路都能到 ✓。
+       */
+      const exitedVia =
+        (endResult?.detail as Record<string, unknown> | undefined)?.[EXIT_REASON_DETAIL_KEY] ?? null;
+      /**
+       * ## ★ 第 309 波：这里**曾经**加过一发诊断探针（已删 ✓，结论留在归档 §13.209）
+       *
+       * 探针用的是**已被真机证明会落地**的那条链（`recordLoopStop` ✓），
+       * 目的是一刀切开"那段代码没执行"与"`getEventLog()` 实例不对"✓。**结果：探针也没落地** ✓
+       * ⇒ **那段代码根本没执行** ✗ ⇒ 真因是**那些回合从没走到循环之后**
+       * （`maxIteration` 很小 ✓、会话末行还是 `status: "streaming"` ✗、
+       * 引擎静默 2 分钟后被跑批判"跑完" ✓，而应用的消费循环仍在等下一个事件 ✓）。
+       *
+       * ⇒ **出口原因挂 `detail` 对"被掐停的回合"也无能为力** ✗（它同样在循环之后 ✓）——
+       * 真正要在**循环内部**报 ✓（`recordLoopStop` 那条链在循环里也落地 ✓，见 §13.209 的下一步 ✓）。
+       */
+      getEventLog().append(sessionId, "turn_end", {
+        reason: abortCause ? `abort:${abortCause}` : "loop_end",
+        abortCause,
+        detail: endResult?.type ?? null,
+        /** ★ 循环内部的具体出口 ✓（`null` = 引擎没报，或走的是消费侧 `break` ✓） */
+        exitReason: exitedVia,
+        iteration: (engine as unknown as { getState?: () => { iteration?: number } }).getState?.()?.iteration ?? null,
+        toolCalls: toolCallCount,
+      });
+    } catch (e) {
+      // 观测设施写不进去**不该影响任务本身** ✓（与 `recordLoopStop` 同一条纪律 ✓）；
+      // 但也**不静默** ✗ —— 留一行 warn ✓。
+      console.warn("[SessionExecutor] 结束原因未记录:", e);
     }
 
     /**
@@ -865,6 +1116,16 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 第 65 波：工具挂死上限 + 心跳也要清掉（否则任务结束后还会跑）
     clearToolFlight();
     clearInterval(flightHeartbeat);
+    /**
+     * ★ 第 309 波：**停顿定时器也要清** ✓ —— 自查发现的一处泄漏 ✓。
+     *
+     * 它虽然 `unref()` 过 ✓（不会把进程钉住 ✓），但**会在回合结束后照样开火** ✗：
+     * 那时它会 `stallController.abort()` ✓ 并打一条"交出控制权"的日志 ✓
+     * —— 而**那一轮早就结束了** ✓ ⇒ 日志**骗人** ✓（"看起来停了、其实已经完事"✗），
+     * 而且 `stalledOut` 会被置真 ✓（污染原因口径 ✓）。
+     * ⇒ 与 `watchdog.dispose()` / `clearToolFlight()` **同一处置** ✓（本仓库既有口径 ✓）。
+     */
+    clearStallTimer();
 
     // 清理活跃执行追踪
     activeExecutions.delete(sessionId);

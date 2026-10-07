@@ -73,8 +73,8 @@ export function unbrand<B extends Branded<string>>(branded: B): string {
 
 export type SessionId = Branded<"SessionId">;
 export type ToolCallId = Branded<"ToolCallId">;
-export type MessageId = Branded<"MessageId">;
+type MessageId = Branded<"MessageId">;
 
 export const SessionId = (value: string): SessionId => brand("SessionId", value);
 export const ToolCallId = (value: string): ToolCallId => brand("ToolCallId", value);
-export const MessageId = (value: string): MessageId => brand("MessageId", value);
+const MessageId = (value: string): MessageId => brand("MessageId", value);

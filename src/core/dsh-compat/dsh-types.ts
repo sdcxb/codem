@@ -12,7 +12,7 @@ export interface Message {
 }
 
 /** dsh 内容块 */
-export interface ContentBlock {
+interface ContentBlock {
   type: 'text' | 'image' | 'tool_use' | 'tool_result'
   text?: string
   toolUse?: { id: string; name: string; input: any }

@@ -1,15 +1,15 @@
 {
-  "version": "1.16.281",
-  "notes": "上一次的 after 就是下一次的 before（目标②修复）",
-  "pub_date": "2026-10-05T19:49:09Z",
+  "version": "1.16.297",
+  "notes": "技能安装引导修复（真实技能根进提示词 + 从仓库安装 5 步 + 装完即可见）；① 回归完成门；库维护空闲闸；B 切片（追踪器 git ~180→13.6 次/格）",
+  "pub_date": "2026-10-07T05:48:21Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Y3S09HZGhGWXlxUEhJdDltNzJuZWFEQng2VU9pN2gzM0JrTnZUYnEwUlpVeGNVVTlPbDMxUkd0MExjT09LdzhKVHFmNHJvN0FoN3EvdmM3Qk9ad1FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMjI5NzQ5CWZpbGU6Q29kZW1fMS4xNi4yODFfeDY0LXNldHVwLmV4ZQpRZElBai9zbVo4YUtNWE9NdGkvaGtnUHlSMGhCdjVCMTZSUmY0dG9RR284SmwzTkx6OUZrOTlwL0ZXWGtRZzRzTnZYMXBmbnNtMXNZMTVJRW8vMGVBUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.281/Codem_1.16.281_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FDZTZodEJwRVkwNmdnWDBxNVBTYnludm1MVGpHeWo5REhkT2Zvdnp6bXE2S0t1MDNtTGhsKzRvRFlYQVFRVmIvVGd4R2J5aUlLdWxaclpUdUNPTHc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzUxOTAyCWZpbGU6Q29kZW1fMS4xNi4yOTdfeDY0LXNldHVwLmV4ZQpQblp2ZUxLZlJGTElJZElZc2pxc21sOWRDVG8wYjczeTBqVDRja3RWVW5zYnl2UjU1TjhXcVpVb3BUZC9PLzd6WTZGTUxQc25QNm0zTG5FbDVlSm5BUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.297/Codem_1.16.297_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2Y3S09HZGhGWXlxUEhJdDltNzJuZWFEQng2VU9pN2gzM0JrTnZUYnEwUlpVeGNVVTlPbDMxUkd0MExjT09LdzhKVHFmNHJvN0FoN3EvdmM3Qk9ad1FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMjI5NzQ5CWZpbGU6Q29kZW1fMS4xNi4yODFfeDY0LXNldHVwLmV4ZQpRZElBai9zbVo4YUtNWE9NdGkvaGtnUHlSMGhCdjVCMTZSUmY0dG9RR284SmwzTkx6OUZrOTlwL0ZXWGtRZzRzTnZYMXBmbnNtMXNZMTVJRW8vMGVBUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.281/Codem_1.16.281_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2FDZTZodEJwRVkwNmdnWDBxNVBTYnludm1MVGpHeWo5REhkT2Zvdnp6bXE2S0t1MDNtTGhsKzRvRFlYQVFRVmIvVGd4R2J5aUlLdWxaclpUdUNPTHc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzUxOTAyCWZpbGU6Q29kZW1fMS4xNi4yOTdfeDY0LXNldHVwLmV4ZQpQblp2ZUxLZlJGTElJZElZc2pxc21sOWRDVG8wYjczeTBqVDRja3RWVW5zYnl2UjU1TjhXcVpVb3BUZC9PLzd6WTZGTUxQc25QNm0zTG5FbDVlSm5BUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.297/Codem_1.16.297_x64-setup.exe"
     }
   }
 }

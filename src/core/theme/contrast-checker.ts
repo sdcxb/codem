@@ -45,8 +45,18 @@ function parseRgba(color: string): { r: number; g: number; b: number } | null {
   };
 }
 
-/** 将颜色字符串（hex 或 rgba）解析为 {r, g, b} */
-export function parseColor(color: string): { r: number; g: number; b: number } | null {
+/**
+ * 将颜色字符串（hex 或 rgba）解析为 {r, g, b}
+ *
+ * ⚠️ 第 46 波：**不加 `export`** ✓ —— 它只被**本文件**的 `parseColorValue()` 用（第 96 行 ✓），
+ * 没有任何别的模块 import 它 ✗。而 `audit:knip` 的棘轮把"导出了但没人用"记在 `exports` 类上 ✓
+ * ⇒ 原来那个 `export` 让计数从 58 涨到 59 ✗ ⇒ 门红 ✓。
+ * 取证（三条 ✓）：① 本文件 96 行在用 ✓；② 三个测试文件 import 的是
+ * `contrastRatio`/`resolveRgba`/`visibleContrastOver`/`compositeOver`/`contrastOfRgba`/`evaluateContrast`/`formatRatio` ✓
+ * 都不含它 ✓；③ 全仓再无第二处 `parseColor(` 调用 ✓。
+ * ⇒ 正解是**去掉多余的 `export`** ✓（不是删函数 ✗、也不是放宽棘轮 ✗）。
+ */
+function parseColor(color: string): { r: number; g: number; b: number } | null {
   if (!color) return null;
   const trimmed = color.trim();
   if (trimmed.startsWith("#")) return hexToRgb(trimmed);
@@ -67,7 +77,7 @@ export function parseColor(color: string): { r: number; g: number; b: number } |
  * @param color 颜色值或派生表达式
  * @param vars  变量表（`{ "--text-base": "#1f1f1e", … }`），解析 `var()` 用
  */
-export function parseColorValue(color: string, vars?: Record<string, string>, depth = 0): { r: number; g: number; b: number } | null {
+function parseColorValue(color: string, vars?: Record<string, string>, depth = 0): { r: number; g: number; b: number } | null {
   if (!color) return null;
   if (depth > 8) return null; // 防循环引用
   const v = color.trim();

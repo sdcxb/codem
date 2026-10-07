@@ -17,7 +17,7 @@ import type { StoredEntry } from '../slots/index'
 // ============================================================
 //  LLM Engine
 // ============================================================
-export interface LLMEngineService {
+interface LLMEngineService {
   _active: boolean
   updateConfig(config: { defaultProvider?: string; defaultModel?: string }): void
   setProviderConfig(provider: string, config: { apiKey: string; baseUrl?: string }): void
@@ -43,7 +43,7 @@ export interface LLMEngineService {
 // ============================================================
 //  MiMo Auth
 // ============================================================
-export interface MiMoAuthService {
+interface MiMoAuthService {
   _active: boolean
   getActiveAccount(): { accessToken: string; url: string } | null
   loadFromAuthJson(): Promise<{ accessToken: string; url: string } | null>
@@ -52,7 +52,7 @@ export interface MiMoAuthService {
 // ============================================================
 //  Agent Registry
 // ============================================================
-export interface AgentRegistryService {
+interface AgentRegistryService {
   _active: boolean
   getPrimary(): Array<{ id: string; name: string; description: string; collaborationMode?: string }>
   get(id: string): { id: string; name: string; collaborationMode?: string } | null
@@ -61,7 +61,7 @@ export interface AgentRegistryService {
 // ============================================================
 //  Credentials
 // ============================================================
-export interface CredentialsService {
+interface CredentialsService {
   _active: boolean
   get(provider: string): string | null
   set(provider: string, key: string): void
@@ -71,7 +71,7 @@ export interface CredentialsService {
 // ============================================================
 //  Guard
 // ============================================================
-export interface GuardService {
+interface GuardService {
   _active: boolean
   checkRepeat(toolName: string, args: any): { isRepeat: boolean; message?: string }
   setDeadline(sessionId: string, maxIterations: number): void
@@ -81,7 +81,7 @@ export interface GuardService {
 // ============================================================
 //  Sandbox
 // ============================================================
-export interface SandboxService {
+interface SandboxService {
   _active: boolean
   execute(code: string, timeout?: number): Promise<{ stdout: string; stderr: string; exitCode: number }>
 }
@@ -89,7 +89,7 @@ export interface SandboxService {
 // ============================================================
 //  Hooks
 // ============================================================
-export interface HooksService {
+interface HooksService {
   _active: boolean
   register(event: string, handler: any, options?: { timeout?: number }): void
   unregister(event: string, handlerId: string): void
@@ -101,7 +101,7 @@ export interface HooksService {
 // ============================================================
 //  Automation
 // ============================================================
-export interface AutomationService {
+interface AutomationService {
   _active: boolean
   registerTrigger(config: { type: string; [key: string]: any }): string
   removeTrigger(triggerId: string): void
@@ -114,7 +114,7 @@ export interface AutomationService {
 // ============================================================
 //  Slots
 // ============================================================
-export interface SlotsService {
+interface SlotsService {
   install(renderer: any): void
   subscribe(key: string, onChange: () => void): () => void
   entriesOfSlot(key: string): StoredEntry[]

@@ -87,7 +87,8 @@ const USAGE = `用法：
   --reference   自证用：不跑 agent，直接把实现还原成 HEAD（应当全绿）
   --report      只读记录出成对报告
   --verify-workspace    自证：工作区可信（历史只有 bug 状态、答案不在里面）—— 已挂进 npm run audit
-  --verify-bug-tests    自证：**bug 状态下每个任务的判据必须是红的**（任务不许退化；不跑 agent、不花钱）
+  --verify-bug-tests    自证：**bug 状态下每个任务的判据必须是红的**，且**题面之外的回归子集必须全绿**
+                        （任务不许退化、也不许偷偷要求修题面没提的东西；不跑 agent、不花钱）
 `;
 
 /**
@@ -381,44 +382,86 @@ function main() {
     const tasks = args.tasks.length > 0 ? TASKS.filter((t) => args.tasks.includes(t.id)) : TASKS;
     let vacuous = 0;
     let errored = 0;
+    /**
+     * ## ★ 第 41 波：**把判据与回归拆开跑** ✗→✓（这条修复抓的是一类"无解任务" ✓）
+     *
+     * ### 旧口径的洞（**实测过 ✓**，不是推断 ✗）
+     *
+     * 旧口径跑的是 `gradeCommand` = `testFiles + relatedTests` **一起** ✓，然后只看
+     * **合并后的退出码** ✗。于是这种任务**照样通过自证** ✓：
+     * ```
+     * repo-04：testFiles 红 ✓（bug 在位 ✓）  而 relatedTests 在 bug 状态下**也红** ✗（dsh-d12 3 条）
+     * ```
+     * ⇒ 它对被测 agent 是**无解**的 ✓ —— 题面只描述了一个缺陷 ✓，而计分要求它**顺手把题面
+     * 一个字都没提的另一个缺陷也修掉** ✗（那个缺陷的修复就埋在同一个 `revertPaths` 里、
+     * 是**更晚的一次修复** ✓）。真机上 `repo-03` 的 agent **自己量出来了**：
+     * "这 4 个失败在我改动前就已经红了（git stash 后仍红）… 与本次任务无关" ⇒
+     * 它照实点名、不越界 ✗ ⇒ **照样记 0 分** ✓。这测的不是能力 ✗。
+     *
+     * ### 现在的口径（三条，缺一不可 ✓）
+     * 1. `testFiles` 单独跑 ⇒ **必须红** ✓（bug 在位 ✓）；
+     * 2. `relatedTests` 单独跑 ⇒ **必须全绿** ✓；有红就必须在任务里**显式声明** ✓
+     *    （`relatedRedAtBaseline: { 文件: 理由 }` ✓，见 `tasks-repo.mjs` ✓）；
+     * 3. **实测的红文件集合必须与声明的集合逐字相等** ✓ ——
+     *    多一个（偷偷变难 ✗）少一个（声明过期 ✗）都算红 ✓。
+     */
+    const runSeparate = (ws, files) => {
+      const grade = spawnSync(`npx vitest run ${files.join(" ")}`, {
+        cwd: ws,
+        shell: true,
+        encoding: "utf8",
+        timeout: GRADE_TIMEOUT_MS,
+      });
+      const out = `${grade.stdout ?? ""}${grade.stderr ?? ""}`;
+      const redFiles = [...new Set([...out.matchAll(/FAIL\s+(\S+)/g)].map((m) => m[1].replace(/\\/g, "/")))].sort();
+      return { status: grade.status, out, redFiles, timedOut: grade.error?.code === "ETIMEDOUT" || grade.signal === "SIGTERM" };
+    };
     for (const task of tasks) {
       const ws = createRepoWorkspace(task);
       try {
-        const grade = spawnSync(gradeCommand(task), { cwd: ws, shell: true, encoding: "utf8", timeout: GRADE_TIMEOUT_MS });
-        if (grade.error?.code === "ETIMEDOUT" || grade.signal === "SIGTERM") {
+        const criteria = runSeparate(ws, task.testFiles);
+        const environmentFailure = /ERR_MODULE_NOT_FOUND|Cannot find package|Cannot find module|ENOENT: no such file or directory, open '.*node_modules/i.test(
+          criteria.out,
+        );
+        if (criteria.timedOut) {
           errored++;
           console.log(`  ⚠️  ${task.id}：判据命令超时，无法判定`);
-        } else if (grade.status === 0) {
+        } else if (criteria.status === 0) {
           vacuous++;
           console.log(`  ❌ ${task.id}：**bug 状态下判据是绿的** —— 这个任务退化（谁都能过），分数没有意义`);
+        } else if (environmentFailure) {
+          errored++;
+          console.log(`  ⚠️  ${task.id}：判据**没跑起来**（环境错误：依赖/模块缺失）—— 不能算"判据红"`);
+        } else if ((criteria.out.match(/FAIL|✗|×/g) ?? []).length === 0) {
+          errored++;
+          console.log(`  ⚠️  ${task.id}：退出码 ${criteria.status} 但**输出里没有任何失败标记** —— 分不清"判据红"与"跑崩了"`);
         } else {
-          const out = `${grade.stdout ?? ""}${grade.stderr ?? ""}`;
-          const failed = (out.match(/FAIL|✗|×/g) ?? []).length;
-          /**
-           * ⚠️ **退出码 1 不等于"判据红了"**（第 109 波修正，抓到过假绿）。
-           *
-           * 实测事故：共享依赖副本的目录名起错（叫 `codem-eval-node_modules` 而不是 `node_modules`），
-           * 判据命令于是以 `ERR_MODULE_NOT_FOUND` 崩掉 —— 它**同样返回退出码 1**，
-           * 而当时这条自证只看退出码 ⇒ 12/12 全"通过"，其实一条断言都没跑到
-           * （线索就在那句"命中失败标记 **0** 处"，当时没追问）。
-           *
-           * 现在必须**同时**满足：①退出码非 0 ②输出里有真实的失败标记 ③没有环境级错误特征。
-           */
-          const environmentFailure =
-            /ERR_MODULE_NOT_FOUND|Cannot find package|Cannot find module|ENOENT: no such file or directory, open '.*node_modules/i.test(
-              out,
-            );
-          if (environmentFailure) {
+          const related = runSeparate(ws, task.relatedTests ?? []);
+          const declared = Object.keys(task.relatedRedAtBaseline ?? {}).map((f) => f.replace(/\\/g, "/")).sort();
+          const missing = declared.filter((f) => !related.redFiles.includes(f));
+          const undeclared = related.redFiles.filter((f) => !declared.includes(f));
+          if (related.timedOut) {
             errored++;
-            console.log(`  ⚠️  ${task.id}：判据**没跑起来**（环境错误：依赖/模块缺失）—— 不能算"判据红"`);
-          } else if (failed === 0) {
+            console.log(`  ⚠️  ${task.id}：回归子集超时，无法判定`);
+          } else if (undeclared.length > 0) {
             errored++;
             console.log(
-              `  ⚠️  ${task.id}：退出码 ${grade.status} 但**输出里没有任何失败标记** —— ` +
-                `分不清"判据红"与"跑崩了"，按不可判定处理`,
+              `  ❌ ${task.id}：★ **回归子集在 bug 状态下就是红的** ✗ ⇒ 计分要求它修**题面没提**的东西：` +
+                `\n       红：${undeclared.join(" , ")}` +
+                `\n       ⇒ 这一格量的**不是题面那个能力** ✗（真机上 agent 正确地判断"与我无关"⇒ 记 0 分 ✗；` +
+                `另一批"顺手修了"⇒ 通过 ✓ ⇒ 变成范围判断的掷硬币 ✗）。` +
+                `\n       ⇒ 要么收窄 \`revertPaths\`（别再带进别的修复 ✗），要么在任务里显式声明 \`relatedRedAtBaseline\` + 理由 ✓`,
+            );
+          } else if (missing.length > 0) {
+            errored++;
+            console.log(
+              `  ⚠️  ${task.id}：声明的回归红（${missing.join(" , ")}）**现在不红了** ✗ —— 声明过期，请删掉它（否则真实变难会被这句话遮住 ✗）`,
             );
           } else {
-            console.log(`  ✅ ${task.id}：bug 状态下判据红（退出码 ${grade.status}，命中失败标记 ${failed} 处）`);
+            console.log(
+              `  ✅ ${task.id}：判据红 ✓（退出码 ${criteria.status}）` +
+                `；回归 ${declared.length === 0 ? "全绿 ✓" : `已声明红 ${declared.length} 个 ✓（${declared.join(" , ")}）`}`,
+            );
           }
         }
       } finally {
@@ -426,9 +469,9 @@ function main() {
       }
     }
     console.log(
-      `\n判据自证（bug 状态必须红）：${tasks.length - vacuous - errored}/${tasks.length} 通过` +
+      `\n判据自证（bug 状态：判据必须红、题面之外的回归必须绿）：${tasks.length - vacuous - errored}/${tasks.length} 通过` +
         (vacuous > 0 ? `，**${vacuous} 个任务退化**` : "") +
-        (errored > 0 ? `，${errored} 个超时未判定` : ""),
+        (errored > 0 ? `，${errored} 个未通过/未判定` : ""),
     );
     return vacuous === 0 && errored === 0 ? 0 : 1;
   }

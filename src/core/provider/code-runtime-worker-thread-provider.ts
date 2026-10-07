@@ -101,5 +101,3 @@ export const codeRuntimeWorkerThreadProvider: Plugin = (ctx: any) => {
   return compositeDispose
 }
 
-// Re-export validateCode for other providers
-export { validateCode as validateDynamicCode }

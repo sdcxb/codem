@@ -67,6 +67,21 @@ export const TASKS = [
     testFiles: ["src/test/dsh-d10-write-not-executed-is-error.test.ts"],
     relatedTests: ["src/test/dsh-d9-multi-edit-partial-failure.test.ts", "src/test/tool-result-status.test.ts"],
     buggyCommit: "d2f53d0",
+    /**
+     * ★ 第 41 波：**显式声明"回归里本来就有一条红的"** ✓（新字段 ✓，见 `run-repo-arm.mjs --verify-bug-tests` ✓）。
+     *
+     * 为什么可以接受 ✓（与 repo-03/04 的区别就在这一条 ✓）：
+     * 这条红是**题面那个缺陷的同一族** ✓ —— 题面说的是"写文件被拒绝却报成功"✗（**假成功** ✓），
+     * 而 D9-1 是"`multi_edit` 三条里有一条失败、却整批报成功"✗ ⇒ **同一个病** ✓，
+     * 修好题面那个缺陷时通常**顺手就修掉了** ✓（实测：289 批 run-3 过 ✓、290 批两轮都过 ✓）。
+     *
+     * ⚠️ 与 `repo-03/04` 的差别是**实测出来的** ✓：那两格的回归红指向**另一个特性** ✗
+     * （缓存桶口径 / 会话日志版本校验 ✓）⇒ 那两格收窄了 `revertPaths` ✓，这一格**保留** ✓
+     * （它同时是真实的回归网 ✓）。
+     */
+    relatedRedAtBaseline: {
+      "src/test/dsh-d9-multi-edit-partial-failure.test.ts": "同一族（假成功）：multi_edit 部分失败也报成功；修题面那个缺陷时顺手就修（实测两批都能过）",
+    },
   },
   {
     id: "repo-03-usage-accounting",
@@ -77,10 +92,25 @@ export const TASKS = [
       "我怀疑是记账的地方只记了最后一轮。另外失败的回合好像**完全没有记录**。\n" +
       "你去查一下并修好，保证一轮任务的总量是**累加**的、失败/中止的回合也留下记录。" +
       "**不要改 test/ 或 src/test/ 下的任何测试文件。**",
-    revertPaths: ["src/core/llm/index.ts", "src/core/llm/token-tracker.ts", "src/core/llm/usage-normalize.ts"],
+    revertPaths: ["src/core/llm/index.ts"],
     testFiles: ["src/test/dsh-d6-usage-accounting.test.ts"],
     relatedTests: ["src/test/dsh-d7-usage-cache-buckets.test.ts", "src/test/usage-normalize.test.ts"],
     buggyCommit: "d2f53d0",
+    /**
+     * ⚠️ 第 41 波：`revertPaths` **从三个文件收窄到一个** ✗→✓（实测 ✓）。
+     *
+     * 原来还回退 `token-tracker.ts` 与 `usage-normalize.ts` ✓ —— 而那两个文件里
+     * **另有一次更晚的修复**（"缓存桶只信 provider 上报，绝不猜"✓）✗ ⇒
+     * 整份文件回退 ⇒ `dsh-d7` / `usage-normalize` 在 **bug 状态下就是红的** ✗ ⇒
+     * 计分要求 agent 修一条**题面一个字都没提、且与本题无关**的缺陷 ✗
+     * （真机上 agent **正确地**判断为"既有、与本次无关"⇒ 记 0 分 ✗；另一批"顺手修了"⇒ 通过 ✓
+     * ⇒ **这一格量的是范围判断的掷硬币，不是题面那个能力** ✗）。
+     *
+     * 实测（`.preview-shot/_bug-baseline-split.mjs` ✓）：
+     * `index.ts` 单文件 ⇒ 判据 **3 条红** ✓、回归 **9 条全绿** ✓；
+     * 而 `index.ts + token-tracker.ts` ✗ 与 `index.ts + usage-normalize.ts` ✗ 两种组合回归都还红 ✓
+     * ⇒ **必须一起收窄** ✓。
+     */
   },
   {
     id: "repo-04-session-update-drops-fields",
@@ -90,10 +120,19 @@ export const TASKS = [
       "用户报告：一段对话里如果某条消息带**附件**，之后这条消息只要被更新过一次（比如流式写完、状态变化），" +
       "**附件就没了**；有时候元数据也没了。重启并重建索引之后也恢复不了，像是被写没了。\n" +
       "你去查一下并修好。**不要改 test/ 或 src/test/ 下的任何测试文件。**",
-    revertPaths: ["src/core/storage/message.ts", "src/core/storage/session-jsonl.ts"],
+    revertPaths: ["src/core/storage/message.ts"],
     testFiles: ["src/test/dsh-d11-update-message-preserves-fields.test.ts"],
     relatedTests: ["src/test/dsh-d12-session-log-version.test.ts", "src/test/silent-write-guard.test.ts"],
     buggyCommit: "d2f53d0",
+    /**
+     * ⚠️ 第 41 波：同上，`revertPaths` **从两个文件收窄到一个** ✗→✓（实测 ✓）。
+     *
+     * `session-jsonl.ts` 里另有一次更晚的修复（会话日志**格式版本校验** ✓ —— `E_SESSION_LOG_VERSION` ✓），
+     * 回退它 ⇒ `dsh-d12` 的 D12-1/2/3 在 **bug 状态下就是红的** ✗ ⇒
+     * 题面讲的是"更新消息会丢附件/元数据"✗，一个字都没提版本校验 ✗。
+     *
+     * 实测：`message.ts` 单文件 ⇒ 判据 **3 条红** ✓、回归 **9 条全绿** ✓。
+     */
   },
   {
     id: "repo-05-workflow-bypasses-permission",
@@ -121,6 +160,10 @@ export const TASKS = [
     testFiles: ["src/test/dsh-d1-llm-failure-not-completed.test.ts"],
     relatedTests: ["src/test/dsh-d3-abort-not-completed.test.ts"],
     buggyCommit: "d2f53d0",
+    /** ★ 第 41 波：同族红（**收场必须如实** ✓）—— 题面讲"失败不许报完成"✗，D3-A 讲"中止不许报完成"✗ ⇒ 同一个病 ✓ */
+    relatedRedAtBaseline: {
+      "src/test/dsh-d3-abort-not-completed.test.ts": "同一族（收场必须如实）：abort 也要报 aborted；与题面的「失败不许报 completed」同一次修复",
+    },
   },
   {
     id: "repo-07-plan-not-in-system-prefix",
@@ -228,6 +271,10 @@ export const TASKS = [
     testFiles: ["src/test/tool-contract-pipeline-e2e.test.ts"],
     relatedTests: ["src/test/output-contract-real-loop.test.ts"],
     buggyCommit: "2d0852a",
+    /** ★ 第 41 波：同族红（**失败原因不许被顶掉** ✓）—— 题面讲"失败原因被契约话术顶掉"✗，OUTCON-3 讲"内容型工具的失败要显式 isError"✗ ⇒ 同一个病 ✓ */
+    relatedRedAtBaseline: {
+      "src/test/output-contract-real-loop.test.ts": "同一族（失败不许被顶掉/掩盖）：read/glob/grep 的失败路径要显式 isError；与题面同一次修复",
+    },
   },
   {
     id: "repo-12-usage-non-completion",
@@ -267,6 +314,17 @@ export function validateTaskSet(tasks = TASKS) {
     const protectedFiles = [...(task.testFiles ?? []), ...(task.relatedTests ?? [])];
     for (const t of protectedFiles) {
       if ((task.revertPaths ?? []).includes(t)) problems.push(`${task.id} 把判据文件也回退了 —— 那就不是反作弊了`);
+    }
+    /**
+     * ★ 第 41 波：`relatedRedAtBaseline` 的**键必须是本任务的回归文件** ✓。
+     * 为什么：它是"这一条在 bug 状态下本来就红，我们接受了"的**声明** ✓ ——
+     * 键打错（或指到别的任务的文件）会让那句声明**形同虚设** ✗，
+     * 而自证那边只会看到"实测红集合 ≠ 声明集合"✗ ⇒ 报出来的理由是错的 ✓。
+     */
+    for (const f of Object.keys(task.relatedRedAtBaseline ?? {})) {
+      if (!(task.relatedTests ?? []).includes(f)) {
+        problems.push(`${task.id} 的 relatedRedAtBaseline 声明了 ${f}，但它不在 relatedTests 里（声明形同虚设）`);
+      }
     }
     if (!/^[0-9a-f]{7,40}$/.test(String(task.buggyCommit))) problems.push(`${task.id} 的 buggyCommit 不像提交号`);
   }

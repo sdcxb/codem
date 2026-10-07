@@ -6,12 +6,6 @@ import type { Issue } from "../../core/issue/issue";
 import { useLang } from "../../core/i18n/lang";
 import { ISSUE_STATUS_BY_KEY, issueStatusMeta } from "./issue-status-meta";
 
-/**
- * 状态元数据（图标 / 颜色 / 双语标签）统一来自 `issue-status-meta.ts`。
- * 这里保留 `STATUS_CONFIG` 名称只为兼容既有引用（详情面板）。
- */
-export const STATUS_CONFIG = ISSUE_STATUS_BY_KEY;
-
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: "var(--error)",
   high: "var(--warning)",

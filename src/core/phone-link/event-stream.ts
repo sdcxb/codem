@@ -45,7 +45,7 @@
 /** 事件类型。`sessionId` 缺省表示"全局事件"（任何会话的订阅都该被唤醒）。 */
 export type PhoneEventType = "sessions" | "messages" | "approval" | "run" | "presence";
 
-export interface PhoneEvent {
+interface PhoneEvent {
   seq: number;
   type: PhoneEventType;
   /** 缺省 = 全局（例如会话说列表变了） */

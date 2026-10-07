@@ -257,14 +257,27 @@ export class ToolPipeline {
         timestamp: Date.now(),
       });
       return {
-        result: {
-          id: ctx.messageId,
-          name: currentName,
-          input: currentArgs,
-          output: "Error: tool call aborted before dispatch",
-          status: "error",
-          error: "ABORTED_BEFORE_DISPATCH",
-        },
+        /**
+         * ★ 第 46 波：**这一条原来也绕过了 finalize** ✗（第 21 处自查 ✓）——
+         * `execute` 里真正会**返回结果**的出口共 7 个，我 296 只补了三条 ✗，
+         * `pre-execute` 阶段的**三条**（abort / normalize-input / validate-args）全漏了 ✗。
+         * 它们都**很常见** ✓（模型给错参数是常事 ✓、回合被中止也常见 ✓）⇒
+         * 绕过 finalize 就没有 `tool_result` 事件 ⇒ 缺口 ✓ + UI 可能停在 running ✓（= 120s 白等 ✗）。
+         */
+        result: await this.finalizeResult(
+          {
+            id: ctx.messageId,
+            name: currentName,
+            input: currentArgs,
+            output: "Error: tool call aborted before dispatch",
+            status: "error",
+            error: "ABORTED_BEFORE_DISPATCH",
+          },
+          currentName,
+          currentArgs,
+          ctx,
+          events,
+        ),
         events,
       };
     }
@@ -293,16 +306,23 @@ export class ToolPipeline {
           timestamp: Date.now(),
         });
         return {
-          result: {
-            id: ctx.messageId,
-            name: currentName,
-            input: args,
-            output: msg,
-            status: "error",
-            // errorSource:"tool" ⇒ 让模型看到文本并自行纠正，不累加连续错误
-            errorSource: "tool",
-            error: msg,
-          },
+          /** ★ 第 46 波：与 abort 那条同因 —— 必须过 finalize（见上面那条注释 ✓）。 */
+          result: await this.finalizeResult(
+            {
+              id: ctx.messageId,
+              name: currentName,
+              input: args,
+              output: msg,
+              status: "error",
+              // errorSource:"tool" ⇒ 让模型看到文本并自行纠正，不累加连续错误
+              errorSource: "tool",
+              error: msg,
+            },
+            currentName,
+            args,
+            ctx,
+            events,
+          ),
           events,
         };
       }
@@ -333,15 +353,22 @@ export class ToolPipeline {
           timestamp: Date.now(),
         });
         return {
-          result: {
-            id: ctx.messageId,
-            name: currentName,
-            input: currentArgs,
-            output: `Error: ${msg}`,
-            status: "error",
-            errorSource: "tool",
-            error: msg,
-          },
+          /** ★ 第 46 波：与 abort / normalize 两条同因 —— 必须过 finalize（见上 ✓）。 */
+          result: await this.finalizeResult(
+            {
+              id: ctx.messageId,
+              name: currentName,
+              input: currentArgs,
+              output: `Error: ${msg}`,
+              status: "error",
+              errorSource: "tool",
+              error: msg,
+            },
+            currentName,
+            currentArgs,
+            ctx,
+            events,
+          ),
           events,
         };
       }
@@ -360,14 +387,13 @@ export class ToolPipeline {
 
       if (result.action === "deny") {
         return {
-          result: {
-            id: ctx.messageId,
-            name: currentName,
-            input: currentArgs,
-            output: result.denyMessage || "Denied by pre-execute middleware",
-            status: "error",
-            error: result.denyMessage,
-          },
+          result: await this.finalizeResult(
+            { id: ctx.messageId, name: currentName, input: currentArgs, output: result.denyMessage || "Denied by pre-execute middleware", status: "error", error: result.denyMessage },
+            currentName,
+            currentArgs,
+            ctx,
+            events,
+          ),
           events,
         };
       }
@@ -390,14 +416,13 @@ export class ToolPipeline {
 
       if (result.action === "deny") {
         return {
-          result: {
-            id: ctx.messageId,
-            name: currentName,
-            input: currentArgs,
-            output: result.denyMessage || "Denied by guard",
-            status: "error",
-            error: result.denyMessage,
-          },
+          result: await this.finalizeResult(
+            { id: ctx.messageId, name: currentName, input: currentArgs, output: result.denyMessage || "Denied by guard", status: "error", error: result.denyMessage },
+            currentName,
+            currentArgs,
+            ctx,
+            events,
+          ),
           events,
         };
       }
@@ -478,21 +503,57 @@ export class ToolPipeline {
           break;
         case "reject":
           return {
-            result: {
-              ...result,
-              output: postResult.rejectMessage || "Rejected by post-execute middleware",
-              status: "error",
-              // 明确标注：这是管线层的拒绝，不是工具自报失败（不要被上面的 ...result 带成 "tool"）
-              errorSource: "pipeline",
-            },
+            result: await this.finalizeResult(
+              {
+                ...result,
+                output: postResult.rejectMessage || "Rejected by post-execute middleware",
+                status: "error",
+                // 明确标注：这是管线层的拒绝，不是工具自报失败（不要被上面的 ...result 带成 "tool"）
+                errorSource: "pipeline",
+              },
+              currentName,
+              currentArgs,
+              ctx,
+              events,
+            ),
             events,
           };
       }
     }
 
     // ===== Layer 5: finalize (freeze) =====
+    result = await this.finalizeResult(result, currentName, currentArgs, ctx, events);
+
+    return { result, events, concurrencySafe };
+  }
+
+  /**
+   * ★ 第 46 波：**finalize 层是唯一的收尾口** ✓ —— 所有出口都必须过这里 ✓。
+   *
+   * ## 为什么（用户**第五次**报障的真因 ✓，见 `tool-pipeline-finalize-all-exits.test.ts`）
+   *
+   * 写 `tool_call` / `tool_result` 事件的是 finalize 层的 `EventLogFinalizeMiddleware` ✓，
+   * 而这条管线原来有**三处早退绕过它** ✗：`pre-execute deny`（:361）、`guard deny`（:391）、
+   * `post-execute reject`（:479）—— 都直接 `return` ✓ ⇒ **被拒绝/被拦下的调用一条事件都不写** ✗
+   * ⇒ 那一行助手消息"既无文本事件、又无工具事件"⇒ 维护自检判 `VISIBLE_BUT_NOT_RECORDED` ✓
+   * ⇒ ★ **每次跑任务都新报一条缺口** ✓（真机：`error` 态的 tool_calls 里 6/16 没有事件 ✓，
+   * 而 `done` 的 484/484 都有 ✓）。
+   *
+   * ## 口径
+   *
+   * 收成**一处** ✓（不是在三处各补一次 ✗ —— 那是"靠记得"，而这是结构问题 ✓）：
+   * 谁要 `return`，谁就得先过这里 ✓。判据 `PIPE-1..5` 钉住三条早退 + 成功路径的反向对照 ✓。
+   */
+  private async finalizeResult(
+    result: ToolCallResult,
+    toolName: string,
+    args: Record<string, unknown>,
+    ctx: ToolExecutorContext,
+    events: PipelineEvent[],
+  ): Promise<ToolCallResult> {
+    let out = result;
     for (const mw of this.finalizeMiddlewares) {
-      result = await mw.execute(currentName, currentArgs, result, ctx, events);
+      out = await mw.execute(toolName, args, out, ctx, events);
     }
     events.push({
       layer: "finalize",
@@ -500,8 +561,7 @@ export class ToolPipeline {
       action: "finalized",
       timestamp: Date.now(),
     });
-
-    return { result, events, concurrencySafe };
+    return out;
   }
 
   /** Clear all middlewares and concurrency registrations */
@@ -520,7 +580,7 @@ export class ToolPipeline {
  * Permission middleware (pre-execute layer)
  * Wraps the existing permission check logic.
  */
-export class PermissionMiddleware implements PreExecuteMiddleware {
+class PermissionMiddleware implements PreExecuteMiddleware {
   name = "permission";
   private checkPermission: (
     toolName: string,
@@ -642,7 +702,7 @@ export function findOutOfWorkspacePath(
   }
   return null;
 }
-export class SandboxGuard implements GuardMiddleware {
+class SandboxGuard implements GuardMiddleware {
   name = "sandbox";
   private isEnabled: () => boolean;
   private isWithinWorkspace: (path: string, cwd: string) => boolean;

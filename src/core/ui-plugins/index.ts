@@ -54,7 +54,7 @@ import { reportActionFailure } from "../storage/persist-failure";
  * 插件禁用门控表（短名 → 插件 id）。
  * 仅登记需要「禁用 = 不装配 provider」的 UI 插件。
  */
-export { GATED_PROVIDERS, isUiProviderGated, readDisabledPlugins } from './gating.ts'
+export { GATED_PROVIDERS } from './gating.ts'
 
 /**
  * UI 插件聚合器 — 加载所有 UI 插件包。

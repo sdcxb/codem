@@ -52,10 +52,73 @@ export interface TestFileSource {
  * `dsh-d9-multi-edit-partial-failure.test.ts` ✓；而我的清单只搜测试文件 ✗，
  * 偏偏这个任务的原词在测试文件里零命中 ✗ ⇒ 命中段为空 ⇒ 帮不上 ✗。
  */
-export type SearchLike = (pattern: string, root: string) => Promise<string[]>;
+export type SearchLike = (pattern: string, root: string, include?: string | string[]) => Promise<string[]>;
+
+/**
+ * ★ 第 43 波：**"只可能是判据"的文件名过滤** ✓ —— 一处定义、用在"只认测试文件"的那条链上 ✓。
+ *
+ * ## 为什么（**量出来的 ✓**）
+ *
+ * 收尾检查与回合内提示**只认测试文件** ✓（`isTestFile` ✓：`*.test.*` / `*.spec.*` ✓），
+ * 而它们的搜索是 `Get-ChildItem -Recurse -File | Select-String <符号>` ✓ —— **把整个工作区扫一遍** ✗。
+ *
+ * 实测（`src` 树 1767 个文件 ⇒ 550 个 ✓）：单次搜索 **0.55s ⇒ 0.18s** ✓；
+ * 而真机侧车里一次编辑会**连发 6 次**搜索（`tools.ts` 读到 85138 字符、抽出 12 个符号 ✓，
+ * 命中前不收手 ✓）⇒ **≈10s ⇒ ≈3s** ✓（`.preview-shot/_tool-durations.mjs` 量的 edit 类批 ✓）。
+ *
+ * ⚠️ **两条都算** ✓：只给 `*test*` 会**漏掉 `*.spec.ts`** ✗（而 `isTestFile` 是认 spec 的 ✓）。
+ */
+const TEST_FILE_INCLUDE: string[] = ["*test*", "*spec*"];
+
+/**
+ * ★ 第 44 波：**判据可能住在哪** ✓ —— 只遍历这几个目录，而不是整棵树 ✓。
+ *
+ * ## 为什么（**上一版没吃到的那一口 ✓**）
+ *
+ * 第 43 波给搜索加了 `-Include '*test*','*spec*'` ✓，真机侧车确认它**生效了** ✓（命令行逐字可见 ✓）——
+ * 但一批 edit 仍然 8 s ✗。原因：**`-Include` 只过滤"输出"，`Get-ChildItem -Recurse` 照样遍历整棵树** ✗。
+ * 同一台机器、同一个工作区实测 ✓：
+ * ```
+ * 全树 + -Include     2.35s
+ * 只 src/test         0.06s      ⇒ ★ 40×
+ * ```
+ * ⇒ 真正的着力点是**遍历范围** ✓。本仓布局：**536 条判据里 535 条在 `src/test/`** ✓、
+ * 另 1 条在 `tests/` ✓；没有 `test/` 与 `__tests__/` ✓。
+ *
+ * ⚠️ **找不到任何判据目录时回退到工作区根** ✓（不认识的项目布局照旧能搜 ✓，只是慢 ✓ ——
+ * 宁可慢也不许**假否定** ✗：那会让"同族判据"静默变成"没有同族判据" ✗）。
+ */
+const TEST_DIR_CANDIDATES: Array<{ parent?: string; name: string }> = [
+  { parent: "src", name: "test" },
+  { name: "test" },
+  { name: "tests" },
+  { name: "__tests__" },
+];
+
+/** 解析出**实际存在**的判据目录（去重、保序 ✓）；一个都没有 ⇒ 回退工作区根 ✓ */
+async function resolveTestRoots(root: string, src: TestFileSource): Promise<string[]> {
+  const base = root.replace(/\\/g, "/").replace(/\/+$/, "");
+  const dirsOf = async (dir: string): Promise<string[]> => {
+    try {
+      return (await src.list(dir)).filter((e) => e.isDirectory).map((e) => e.name);
+    } catch {
+      return [];
+    }
+  };
+  const rootDirs = await dirsOf(base);
+  const srcDirs = rootDirs.includes("src") ? await dirsOf(`${base}/src`) : [];
+  const out: string[] = [];
+  for (const cand of TEST_DIR_CANDIDATES) {
+    const present = cand.parent ? (cand.parent === "src" ? srcDirs : []) : rootDirs;
+    if (!present.includes(cand.name)) continue;
+    const abs = cand.parent ? `${base}/${cand.parent}/${cand.name}` : `${base}/${cand.name}`;
+    if (!out.includes(abs)) out.push(abs);
+  }
+  return out.length ? out : [base];
+}
 
 /** 装机版默认实现：走 `core/file-api.ts`（Tauri IPC），**不是** node:fs ✓ */
-export function createIpcFileSource(): TestFileSource {
+function createIpcFileSource(): TestFileSource {
   return {
     async list(dir: string): Promise<DirEntry[]> {
       const { listDirectory } = await import("../file-api");
@@ -83,17 +146,25 @@ export function createIpcFileSource(): TestFileSource {
 }
 
 /** 装机版默认搜索实现：走 `grepSearch`（IPC ✓） */
-export function createIpcSearcher(): SearchLike {
-  return async (pattern: string, root: string) => {
+/**
+ * 装机版默认搜索实现：走 `grepSearch`（IPC ✓）。
+ *
+ * ⚠️ `include` **由调用点传进来** ✓（不是在这里烘焙 ✓）—— 见 `searchSiblingCriteriaFiles` 里的
+ * `search(sym, root, TEST_FILE_INCLUDE)` ✓：**"只扫判据文件"这条策略属于调用点** ✓，
+ * 而这个工厂只负责转发 ✓（判据 `SYM-1` 就是靠"注入的搜索器能不能看见 include"来钉这件事 ✓ ——
+ * 烘焙在工厂里的话，注入式判据**看不见**它 ✗，那就成了"判据绿、策略却没生效" ✓）。
+ */
+function createIpcSearcher(): SearchLike {
+  return async (pattern: string, root: string, include?: string | string[]) => {
     const { grepSearch } = await import("../file-api");
-    return grepSearch(pattern, root);
+    return grepSearch(pattern, root, include);
   };
 }
 
 /** 一次最多列多少个命中的测试文件 */
-export const DEFAULT_MAX_HITS = 12;
+const DEFAULT_MAX_HITS = 12;
 /** 最多用几个关键词去搜 */
-export const MAX_TERMS = 60;
+const MAX_TERMS = 60;
 /** 单个测试文件最多读多少字节（大文件只读头部，够判命中） */
 const MAX_BYTES_PER_FILE = 128 * 1024;
 /** 扫描的测试文件数上限 */
@@ -103,17 +174,17 @@ const MAX_DEPTH = 12;
 /**
  * 只有工作区里的测试文件够多时，「命名分族」才有信息量（否则就是噪声 ✗）。
  */
-export const MIN_FILES_FOR_CLUSTERS = 50;
+const MIN_FILES_FOR_CLUSTERS = 50;
 /** 一个族最多记多少个成员名（够小族列全，又不至于爆） */
 const MEMBERS_CAP = 30;
 /** 成员数不超过这个值就**列全**（而不是只给几个例子） */
-export const SMALL_CLUSTER_MAX = 25;
+const SMALL_CLUSTER_MAX = 25;
 
 /** 跳过的目录（隐藏目录一律跳过：参考检出、快照、缓存都在这一类里） */
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "target", "coverage", "out", "vendor", "third_party"]);
 
 /** 把文本切成可比较的词元（小写、长度 ≥3 的字母数字片段；camelCase 会拆开） */
-export function tokenize(text: string): string[] {
+function tokenize(text: string): string[] {
   return String(text ?? "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
@@ -130,7 +201,7 @@ function isTestFile(name: string): boolean {
  *
  * ⚠️ **async**：第 114 波之后所有 I/O 都走 {@link TestFileSource}（装机版是 IPC）✓。
  */
-export async function collectTestFiles(root: string, src: TestFileSource = createIpcFileSource()): Promise<string[]> {
+async function collectTestFiles(root: string, src: TestFileSource = createIpcFileSource()): Promise<string[]> {
   const out: string[] = [];
   const walk = async (dir: string, prefix: string, depth: number): Promise<void> => {
     if (depth > MAX_DEPTH || out.length >= MAX_TEST_FILES) return;
@@ -224,7 +295,7 @@ export function extractSearchTerms(message: string): string[] {
  * 排序依据是**族内成员与任务文本的相关性**（不按族的大小 —— repo-03 实测里，
  * 相关的 `dsh-*` 被 25 个无关的 `library-*` 压在后面 ✗）。
  */
-export function summarizeNameClusters(
+function summarizeNameClusters(
   files: string[],
   query = "",
   top = 12,
@@ -589,7 +660,7 @@ export async function siblingCriteriaFiles(
    * **收尾检查要 `thorough`** ✓（第 155 波）——理由见 `searchSiblingCriteriaFiles` 里的长注释 ✓：
    * "搜到就收手"会让收尾提醒**恰好漏掉**那两条真正没跑过的判据 ✗。
    */
-  const { files } = await searchSiblingCriteriaFiles(root, symbols, editedRelativePath, { ...opts, thorough: true });
+  const { files } = await searchSiblingCriteriaFiles(root, symbols, editedRelativePath, { ...opts, src, thorough: true });
   return files;
 }
 
@@ -603,9 +674,14 @@ async function searchSiblingCriteriaFiles(
   root: string,
   symbols: string[],
   editedRelativePath: string,
-  opts: { search?: SearchLike; maxFiles?: number; thorough?: boolean },
+  opts: { search?: SearchLike; maxFiles?: number; thorough?: boolean; src?: TestFileSource },
 ): Promise<{ files: string[]; tried: string[] }> {
   const search = opts.search ?? createIpcSearcher();
+  /**
+   * ★ 第 44 波：**只遍历判据目录** ✓ —— 全树 2.35s ⇒ `src/test` 0.06s（40× ✓）。
+   * 判据目录由 `resolveTestRoots` 解析（回退到工作区根 ✓，绝不假否定 ✗）。
+   */
+  const testRoots = await resolveTestRoots(root, opts.src ?? createIpcFileSource());
   const found: string[] = [];
   const tried: string[] = [];
   /**
@@ -618,10 +694,13 @@ async function searchSiblingCriteriaFiles(
   for (const sym of symbols.slice(0, symbolBudget)) {
     tried.push(sym);
     let rows: string[] = [];
-    try {
-      rows = await search(sym, root);
-    } catch {
-      continue;
+    /** ★ 第 44 波：**每个判据目录各搜一次**（都只遍历那一个目录 ✓，合起来仍远小于全树 ✓） */
+    for (const searchRoot of testRoots) {
+      try {
+        rows = rows.concat(await search(sym, searchRoot, TEST_FILE_INCLUDE));
+      } catch {
+        /* 单个根失败不致命 ✓ —— 其余根照样搜 ✓（"没有"与"搜不到"必须分开 ✗）*/
+      }
     }
     for (const row of rows) {
       const file = fileFromGrepRow(String(row));
@@ -692,11 +771,7 @@ export async function unrunFamilyCriteria(args: {
   const normalize = (p: string) => p.replace(/\\/g, "/");
   const run = new Set([...args.runFiles].map((f) => normalize(f).replace(/^\.\//, "")));
   if (run.size === 0) return [];
-  const familyOf = (file: string) => {
-    const base = normalize(file).split("/").pop() ?? file;
-    return base.split(/[-_.]/).filter(Boolean)[0] ?? base;
-  };
-  const wanted = new Set([...run].map(familyOf));
+  const wanted = new Set([...run].map(familyOfTestFile));
   let all: string[] = [];
   try {
     all = (await collectTestFiles(args.root, args.src)).map(normalize);
@@ -706,11 +781,88 @@ export async function unrunFamilyCriteria(args: {
   const unrun: string[] = [];
   for (const file of all.slice().sort()) {
     if (run.has(file)) continue;
-    if (!wanted.has(familyOf(file))) continue;
+    if (!wanted.has(familyOfTestFile(file))) continue;
     if (!unrun.includes(file)) unrun.push(file);
     if (unrun.length >= max) break;
   }
   return unrun;
+}
+
+/**
+ * **判据文件的"族"** ✓（名字第一段 ✓，`dsh-d8-edit-ambiguity.test.ts` ⇒ `dsh` ✓）。
+ *
+ * 为什么抽成导出函数（第 41 波）：收尾提醒的**缺口列表**与它**建议的命令**必须用同一个口径 ✓ ——
+ * 原来列表用一个内部 `familyOf` ✓、而文案里的族名取自**别的**东西（跑过的第一条判据 ✗）⇒
+ * 两者必然可能自相矛盾 ✗（真机代价见 `buildUnrunFamilyNudge` 的说明 ✓）。
+ */
+export function familyOfTestFile(file: string): string {
+  const base = String(file).replace(/\\/g, "/").split("/").pop() ?? String(file);
+  return base.split(/[-_.]/).filter(Boolean)[0] ?? base;
+}
+
+/**
+ * 建议命令里的**过滤器**：`src/test/<族>-` ✓。
+ *
+ * ⚠️ ★ **必须是"位置参数 + 子串匹配"的形式，不能写成 glob** ✗→✓（第 41 波实测 ✓）：
+ * ```
+ * npx vitest list 'src/test/dsh-*.test.ts'   ⇒ 匹配 0 个文件 ✗
+ * npx vitest list 'src/test/dsh-'            ⇒ 匹配 137 条测试 ✓（整个 dsh 族 ✓）
+ * ```
+ * vitest 的位置参数是**按路径做子串匹配**（多个参数是**或** ✓，实测 `chunk-` + `app-` = 2+3 个文件 ✓），
+ * **不认 `*`** ✗。所以旧文案里那句 `npx vitest run 'src/test/<族>-*.test.ts'` **从来就跑不出东西** ✗ ——
+ * 真机侧车里那条 `output length: 101`（≈ 一句"没有匹配文件"✓）就是它 ✓（`repo-02` run-2 ✓）。
+ * 判据 `UNC-7` 钉"过滤器里不许出现通配符"✓。
+ *
+ * 顺带：**不带扩展名**也解决了 `.tsx` 判据 ✓（`src/test/app-` 实测匹配 3 个文件，其中 2 个是 `.tsx` ✓）。
+ */
+export function familyFilter(family: string): string {
+  return `src/test/${family}-`;
+}
+
+/**
+ * `unrun-family` 收尾提醒的**文案构造** ✓（纯函数 ⇒ 可单测 ✓，第 41 波）。
+ *
+ * ## 为什么必须抽出来（**真机读数驱动的修复** ✓，不是重构癖 ✗）
+ *
+ * `repo-02` / run-2（`1.16.289` ✓，败 ✗）的控制台侧车里逐字留着两行，**前后脚**：
+ * ```
+ * 收尾：族里没跑过的判据 {"family":"repro","unrun":50,"sample":["src/test/core-chat-message-storage.test.ts",…]}
+ * … bash: npx vitest run "src/test/repro-*.test.ts"      ← ★ 模型照做了提醒里的命令
+ *              output length: 101                        ← ★ 101 字节 ≈ 一句"没有匹配文件"
+ * ```
+ * ⇒ ★ 提醒**说**的族（`repro-*`）与它**点名**的缺口（`core-*`）不是一回事 ✗ ⇒
+ * 模型照做却一条缺口都没补上 ✓，而 `unrunSiblingsNudged` 已置位 ⇒ 不再提醒 ✓ ⇒ 35 轮收尾 ✗
+ * （同一任务通过的两轮是 79 / 99 轮 ✓）。
+ * ⚠️ 而且那条命令**就算族名说对了也跑不出东西** ✗ —— 位置参数是子串匹配、不认 `*` ✓
+ * （见 `familyFilter` 的实测 ✓）⇒ 这是**同一句话上的两个缺陷** ✓，都必须修 ✓。
+ *
+ * ## 口径（**一句话：文案里的每个集合都必须来自同一个 `unrun`** ✓）
+ *
+ * - 族名 = `unrun` 里**实际出现**的族（去重 + 排序 ✓）—— 不再取"跑过的第一条判据的族" ✗；
+ * - 建议命令 = **每个族一条过滤器** ✓ ⇒ 命令**必然覆盖它自己点名的每一条缺口** ✓；
+ * - 计数与列表都来自同一个 `unrun` ✓（`UNC-6` 钉 ✓）。
+ *
+ * @param runCount 本会话**跑过**的判据条数 ✓（文案里的"你已经跑过 N 条"✓）
+ * @param unrun    **没跑过**的同族判据（相对路径 ✓）；空数组 ⇒ 返回 `""`（= 不提醒 ✓）
+ */
+export function buildUnrunFamilyNudge(args: { runCount: number; unrun: readonly string[] }): string {
+  const unrun = [...new Set(args.unrun.map((f) => String(f).replace(/\\/g, "/").replace(/^\.\//, "")))];
+  if (unrun.length === 0) return "";
+  const families = [...new Set(unrun.map(familyOfTestFile))].sort();
+  const shown = unrun.slice(0, 8);
+  const filters = families.map((f) => `'${familyFilter(f)}'`).join(" ");
+  return (
+    "[SYSTEM] 你这一路动过源码，而**判据只跑了一部分**（这是一条事实，不是命令 ✓）：\n" +
+    `- 你已经跑过 ${args.runCount} 条 ✓\n` +
+    `- 与你跑过的判据**同族**、而**你没跑过**的还有 **${unrun.length} 条**` +
+    `（分属 ${families.length} 个族：${families.map((f) => `\`${f}-*\``).join("、")}）：\n` +
+    shown.map((f) => `  - ${f}`).join("\n") +
+    (unrun.length > shown.length ? `\n  - …还有 ${unrun.length - shown.length} 条` : "") +
+    `\n\n一条命令可以把这些族跑完：\`npx vitest run ${filters}\` ✓\n` +
+    "（vitest 的位置参数是**按路径子串匹配** ✓、多个参数是**或** ✓ —— 别写成 `dsh-*.test.ts` 这种通配符 ✗，那样一个文件都匹配不到 ✓）\n" +
+    "为什么值得跑完：这类任务的真机数据里，**把同族判据跑齐的轮次通过，只跑了一部分的轮次失败** ✓，" +
+    "而失败形态几乎都是「改得不完整」（只补了其中一两处）✓。"
+  );
 }
 
 /**

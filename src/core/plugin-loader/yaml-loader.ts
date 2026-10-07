@@ -49,7 +49,7 @@ export interface YamlLoadResult {
 const activeFibers = new Map<string, any>()
 
 /** 登记装配 fiber（装配入口调用） */
-export function registerActiveFiber(name: string, fiber: any): void {
+function registerActiveFiber(name: string, fiber: any): void {
   activeFibers.set(name, fiber)
 }
 

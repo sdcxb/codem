@@ -118,6 +118,30 @@ function drainReadyCallbacks(table: string): void {
 }
 
 /**
+ * **按需表**：这些表**天生不该进镜像** ✓（按需查询 + 有界投影 ✓）。
+ *
+ * ⚠️ **它必须与 `rust-port.ts::DOMAIN_QUERY_ONLY_TABLES` 一致** ✓
+ * （判据 `TFC-7` 直接断言两份清单相等 ✓）—— 分成两处是因为
+ * `domain-store.ts` 刻意**不 import `rust-port.ts`**（避免循环引用 ✓，见文件头对
+ * `DomainMirrorPort` 的说明 ✓）。两份清单不一致的后果是"一边挡、一边还去拉"✗
+ * 或者"写直达引擎、读却在等镜像"✗，两种都难查 ✓。
+ *
+ * 成员：
+ * - `notebook_chunks` —— 每行带一个 Base64 的 embedding（1536 维 ≈ 8KB ✓），
+ *   `DOMAIN_MIRROR_LOW_ROW_LIMITS` 把它压到 2000 行、`bootstrap` 也刻意不预取 ✓；
+ * - `turn_file_changes`（第 269 波 ✓）—— 追加型热表 ✓、单行 `patch` 上限 500,000 字符 ✗，
+ *   真机撞「超过镜像上限 5000 行」⇒ **拒载** ✗ ⇒ 该域读给空结果 ✗
+ *   （`docs/HANDOFF-NEXT-SESSION.md` §3 ✓）。
+ *
+ * **为什么 `domainWrite` 要用到它** ✓（第 263 波**字面定位** ✓）：
+ * 不就绪且**没在加载**时 ✓，`domainWrite` 原来直接 `return false` ✗
+ * ⇒ 调用方只看到"写没被接受" ✓、**这一行就静默丢了** ✗
+ * （判据 `NC-WR-1` 量的就是它 ✓：写完 + 预热之后，新块读不回来 ✓）。
+ * ⇒ 对按需表必须**直达引擎** ✓（与"已就绪"分支同一条 `persistWriteThrough` ✓）。
+ */
+const ON_DEMAND_TABLES = new Set<string>(["notebook_chunks", "turn_file_changes"]);
+
+/**
  * 取该表可用的域端口，**并顺带触发一次惰性加载**（不判断是否已就绪）。
  *
  * 这是 `domainPort` 的"下层"：写路径需要拿到端口对象本身才能把写**排队**
@@ -831,7 +855,8 @@ export function shouldFallbackToLegacy(): boolean {
  * @param note 上报的说明（要说清"什么没写成"）
  * @returns 是否应当回退旧库
  */
-export function writeShouldFallBackToLegacy(scope: string, note: string): boolean {
+
+function writeShouldFallBackToLegacy(scope: string, note: string): boolean {
   if (shouldFallbackToLegacy()) return true;
   reportPersistFailure(
     scope,
@@ -997,20 +1022,6 @@ export function domainReadMany<R>(
  * `if (domainWrite(...)) return; reportWriteNotAccepted(...)`，
  * 返回 false 会让它**当场上报一次失败**，而写其实成功了 —— 那是一次假告警。
  */
-/**
- * **按需表**：这些表**天生不该进镜像** ✓（按需查询 + 有界投影 ✓）。
- *
- * 目前只有一个 ✓：`notebook_chunks` —— 每行带一个 Base64 的 embedding（1536 维 ≈ 8KB ✓），
- * 所以 `DOMAIN_MIRROR_LOW_ROW_LIMITS` 把它压到 2000 行、`bootstrap` 也刻意不预取 ✓。
- *
- * **为什么 `domainWrite` 要用到它** ✓（第 263 波**字面定位** ✓）：
- * 不就绪且**没在加载**时 ✓，`domainWrite` 原来直接 `return false` ✗
- * ⇒ 调用方只看到"写没被接受" ✓、**这一行就静默丢了** ✗
- * （判据 `NC-WR-1` 量的就是它 ✓：写完 + 预热之后，新块读不回来 ✓）。
- * ⇒ 对按需表必须**直达引擎** ✓（与"已就绪"分支同一条 `persistWriteThrough` ✓）。
- */
-const ON_DEMAND_TABLES = new Set<string>(["notebook_chunks"]);
-
 export function domainWrite(
   table: string,
   rows: Array<Record<string, unknown>>,
@@ -1071,6 +1082,18 @@ export function domainDelete(
   const port = domainMirror(table, opts);
   if (!port) return false;
   if (port.domains.isReady(table)) {
+    persistWriteThrough(table, "crud.delete", params, opts.scope, opts.note);
+    return true;
+  }
+  /**
+   * 第 269 波：**按需表 ⇒ 直达引擎** ✓（与上面写路径同理 ✗→✓）。
+   *
+   * 这张表**永远不会就绪** ✓（`DOMAIN_QUERY_ONLY_TABLES` 结构性挡掉镜像 ✓），
+   * 于是"排队等就绪"那条路会白等 `DEFER_STALE_MS`(15000ms) 再如实放弃 ✗
+   * —— 删会话时那是纯粹的延迟 ✓，而删除**本来就能直接发**✓
+   * （`crud.delete {table, where:{session_id}}` 是引擎的既有能力 ✓）。
+   */
+  if (ON_DEMAND_TABLES.has(table)) {
     persistWriteThrough(table, "crud.delete", params, opts.scope, opts.note);
     return true;
   }

@@ -79,12 +79,12 @@ type PatchFetchResult =
 /**
  * 按 id **只取 `patch` 一列**（C-7）。
  *
- * ## 为什么不用 `FileChangeStorage.getById`
+ * ## 为什么不用 `FileChangeStorage.getByIdAsync`
  *
- * `getById` 走域镜像，而镜像对 `turn_file_changes` 是**按全列**装载的
- * （`DOMAIN_COLUMN_PROJECTION` 里只有 `attachments`）。于是：
- * - 每次启动都会把整表的 patch 正文拉进渲染进程（500KB/行 × 行数）；
- * - 超过 5000 行该表被永久 `refused`，`getById` 恒返回 null → 回滚功能整域失效。
+ * 按需读（一屏投影）**刻意不含 `patch` 正文** ✓ —— 那是这张表里唯一的大列
+ * （单行上限 500,000 字符 ✗），而列表 / 状态更新 / 回滚要用的 `changed_files` 都不需要它 ✓
+ * （判据 `TFC-4` 钉这条 ✓）。所以"一屏"最多几百行 × 小列 ✓，
+ * 而"取正文"是一个**精确到一行一列**的读 ✓。
  *
  * 这里用 `crud.list` + `columns: ["patch"]` + `where: { id }` **只取那一行的那一列** ——
  * 与 `message.ts` 用 `attachments.content` 按 id 取附件正文是同一套做法
@@ -146,6 +146,89 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   }
 }
 
+/**
+ * ★★★ 第 46 波：**把 N 条 git 命令塞进一次 PowerShell 调用** ✓（目标② 的实测着力点 ✓）。
+ *
+ * ## 为什么（**真机实测 ✓**）
+ *
+ * 应用里每条 git 命令都经 `execute_command` ⇒ **一个 PowerShell 进程** ✓，
+ * 而 PowerShell 起进程的固定开销是**大头** ✗。在同一台机器、同一个评测工作区上实测（`PowerShell` 直接计时 ✓）：
+ * ```
+ *   git rev-parse 'HEAD^{tree}'（直接 ✓）                          52 ms
+ *   powershell -NoProfile -Command "git rev-parse 'HEAD^{tree}'"  289 ms   ← ★ 每次多付 ~240 ms ✗
+ *   6 × 独立 powershell -Command                                  1 648 ms
+ *   1 × powershell 里跑 6 条 git（批量化 ✓）                        638 ms   ← ★ 省 ~1 s ✓
+ * ```
+ * 而 `snapshotWorkingTree` 一轮就要 **3 条** ✓（`stash create` / `rev-parse` / `ls-files` ✓）+
+ * `finalize()` 的 diff 再有几条 ✓ ⇒ ★ 真机侧车里"工具结果回来 → `Iteration N completed`"
+ * 之间稳定 **~2 s 且一行日志都没有** ✗ —— 就是这里 ✓（`finalize()` **每轮都会调用** ✓）。
+ *
+ * ## 口径（**为什么要哨兵 + 退出码** ✓）
+ *
+ * `stdout` 里必须能**逐条**拆出来，而且**每条自己的退出码不能丢** ✗
+ * （丢了的话"命令失败"会被读成"输出为空" ✓ —— 那正好是 `stash create` 干净工作区的**正常**输出 ✗ 会混淆）。
+ * 于是每条的写法是：`<cmd>; Write-Output "<哨兵>$LASTEXITCODE"` ✓ —— 也就是
+ * **哨兵行挂在每条命令后面、并带上它自己的退出码** ✓。
+ *
+ * 拆法（`n` 条命令 ⇒ `split(哨兵)` 得到 `n+1` 段 ✓）：
+ * ```
+ * 段[0]        = 第 0 条的输出
+ * 段[i] (1≤i≤n-1) = "第 i-1 条的退出码\n" + 第 i 条的输出
+ * 段[n]        = 第 n-1 条的退出码
+ * ```
+ * ⚠️ 哨兵必须挑**git 输出里不可能出现的字符串** ✓（纯函数 `parseGitBatchOutput` 可单测 ✓）。
+ */
+/**
+ * ★ 哨兵：**必须包含 Windows 文件名里非法的字符** ✓（`< > | ? *` ✓）。
+ *
+ * 为什么（**先怀疑自己的改动** ✓）：`ls-files --others` 的输出就是**文件名清单** ✓ ——
+ * 若哨兵是一个合法文件名 ✗，那么仓库里恰好存在同名文件时 `split(哨兵)` 就会**错位** ✓
+ * ⇒ 解析出来的 diff/清单是**静默错**的 ✗（最坏的一种 ✓：不报错、但内容是别人的 ✓）。
+ * 而 Windows 路径里不可能出现 `< > | ? *` ✓ ⇒ 文件名永远撞不上哨兵 ✓（本应用只跑 Windows ✓）。
+ * 判据 `GB-6` 钉住这一点 ✓。
+ */
+export const GIT_BATCH_SENTINEL = "@@CODEM<>GIT|BATCH?SEP*@@";
+
+/**
+ * 纯解析 ✓（不碰 Tauri ⇒ 可单测/可变异 ✓）。
+ *
+ * @param out 批量化命令的完整 stdout
+ * @param count 命令条数（`split` 的段数应当是 `count + 1` ✓）
+ */
+export function parseGitBatchOutput(out: string, count: number): Array<{ stdout: string; exitCode: number }> {
+  const parts = String(out ?? "").split(GIT_BATCH_SENTINEL);
+  const firstLine = (s: string) => {
+    const nl = s.indexOf("\n");
+    return (nl >= 0 ? s.slice(0, nl) : s).trim();
+  };
+  const restAfterFirstLine = (s: string) => {
+    const nl = s.indexOf("\n");
+    return nl >= 0 ? s.slice(nl + 1).trim() : "";
+  };
+  const res: Array<{ stdout: string; exitCode: number }> = [];
+  for (let i = 0; i < count; i++) {
+    const stdout = i === 0 ? (parts[0] ?? "").trim() : restAfterFirstLine(parts[i] ?? "");
+    const codeText = i === count - 1 ? firstLine(parts[count] ?? "") : firstLine(parts[i + 1] ?? "");
+    const code = Number(codeText || "0");
+    res.push({ stdout, exitCode: Number.isFinite(code) ? code : 0 });
+  }
+  return res;
+}
+
+/** 批量化执行 ✓（薄层：只负责拼命令 + 调一次 `execute_command` ✓） */
+async function runGitBatch(cwd: string, commands: string[][]): Promise<Array<{ stdout: string; exitCode: number }>> {
+  const body = commands
+    .map((args) => `${buildGitCommand(cwd, args)}; Write-Output "${GIT_BATCH_SENTINEL}$LASTEXITCODE"`)
+    .join("; ");
+  const { invoke } = (window as any).__TAURI__.core;
+  const result = await invoke("execute_command", {
+    command: body,
+    cwd,
+    timeout_ms: GIT_TIMEOUT_MS,
+  });
+  return parseGitBatchOutput(String(result.stdout ?? ""), commands.length);
+}
+
 async function isGitRepo(cwd: string): Promise<boolean> {
   try {
     const output = await runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
@@ -164,16 +247,23 @@ const beforeSnapshotCache = new Map<string, { tree: string; snapshot: WorkingTre
 /** 仅判据使用 ✓：真实取快照的次数 / 复用次数（**不靠计时** ✗ —— CI 会抖 ✓）。 */
 let snapshotTakenCount = 0;
 let snapshotReuseCount = 0;
-export function __fileChangeSnapshotStats(): { taken: number; reused: number } {
-  const out = { taken: snapshotTakenCount, reused: snapshotReuseCount };
+/**
+ * ★ 第 46 波：**因"没有会改工作区的工具跑过"而跳过 finalize 的次数** ✓（只给判据用 ✓）。
+ * 它就是为了让"跳过生效了"这件事**可机检** ✓（而不是靠计时 ✗ —— CI 会抖 ✓）。
+ */
+let skippedFinalizeNoMutation = 0;
+export function __fileChangeSnapshotStats(): { taken: number; reused: number; skippedNoMutation: number } {
+  const out = { taken: snapshotTakenCount, reused: snapshotReuseCount, skippedNoMutation: skippedFinalizeNoMutation };
   snapshotTakenCount = 0;
   snapshotReuseCount = 0;
+  skippedFinalizeNoMutation = 0;
   return out;
 }
 export function __resetFileChangeSnapshotCache(): void {
   beforeSnapshotCache.clear();
   snapshotTakenCount = 0;
   snapshotReuseCount = 0;
+  skippedFinalizeNoMutation = 0;
 }
 
 /**
@@ -210,19 +300,22 @@ interface WorkingTreeSnapshot {
  * 工作区没有改动时它输出空字符串（此时用 HEAD 的树当基准）。
  */
 async function snapshotWorkingTree(workspace: string): Promise<WorkingTreeSnapshot> {
-  let stashRef = "";
-  try {
-    stashRef = (await runGit(workspace, ["stash", "create"])).trim();
-  } catch {
-    stashRef = ""; // 没有可 stash 的改动（或极老版本 git）→ 回退到 HEAD
-  }
-  const headTree = (await runGit(workspace, ["rev-parse", "HEAD^{tree}"])).trim();
+  /**
+   * ★ 第 46 波：**三条 git 命令塞进一次 PowerShell** ✓（原来 3 个进程 ≈ 870ms ✗ ⇒ 现在 1 个 ≈ 290ms ✓）。
+   * 每条自己的退出码由哨兵带出来 ✓（`parseGitBatchOutput` ✓），所以"命令失败"与
+   * "干净工作区导致的空输出"仍然分得开 ✓（前者仍走原来的回退 ✓）。
+   */
+  const [stashRes, headRes, lsRes] = await runGitBatch(workspace, [
+    ["stash", "create"],
+    ["rev-parse", "HEAD^{tree}"],
+    ["ls-files", "--others", "--exclude-standard"],
+  ]);
+  /** `stash create` 在干净工作区上输出空且退出码 0 ✓ ⇒ 回退到 HEAD ✓（与原来同口径 ✓） */
+  const stashRef = stashRes && stashRes.exitCode === 0 ? stashRes.stdout.trim() : "";
+  const headTree = (headRes?.stdout ?? "").trim();
   let untracked: string[] = [];
-  try {
-    const out = await runGit(workspace, ["ls-files", "--others", "--exclude-standard"]);
-    untracked = out.split("\n").map((l) => l.trim()).filter(Boolean);
-  } catch {
-    untracked = [];
+  if (lsRes && lsRes.exitCode === 0) {
+    untracked = lsRes.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
   }
   return { ref: stashRef || headTree, clean: !stashRef, untracked };
 }
@@ -233,9 +326,28 @@ export class FileChangeTracker {
   /** 本轮开始时的**工作区**快照（未提交改动也算，第 84 波） */
   private beforeSnapshot: WorkingTreeSnapshot | null = null;
   private active = false;
+  /**
+   * ★ 第 46 波：**自上次 `finalize()` 以来，有没有"会改工作区"的工具跑过** ✓。
+   *
+   * 由 `noteMutation()` 置位 ✓（调用方挂在 `needsPreCallSnapshot(...)` 那条既有钩子上 ✓，
+   * 它同时覆盖文件工具与 shell ✓）；`finalize()` 消费并复位 ✓。
+   * 未置位 ⇒ `finalize()` **一次 git 都不发** ✓（见那里的长说明 ✓）。
+   */
+  private mutatedSinceFinalize = false;
   private sessionId: string;
   private messageId: string;
   private turnIndex: number;
+
+  /**
+   * ★ 第 46 波：**声明"刚跑过一个会改工作区的工具"** ✓。
+   *
+   * 保守方向 ✓：**多打标记没有代价** ✓（最多多跑一次 git ✓），
+   * 漏打标记才有代价 ✗（那一轮的改动会被漏记 ✓）⇒ 所以调用点用**契约判据** ✓
+   * （`needsPreCallSnapshot` ✓ = 改工作区或破坏性 ✓），不按工具名列举 ✗。
+   */
+  noteMutation(): void {
+    this.mutatedSinceFinalize = true;
+  }
 
   constructor(
     workspace: string,
@@ -298,6 +410,11 @@ export class FileChangeTracker {
        *
        * 放在 `beforeTree` 之后取：两次快照之间只隔一次 git 调用，
        * 而 `stash create` 不改工作区/索引，所以顺序不影响正确性。
+       *
+       * ⚠️ 第 46 波量过、**故意不动** ✓：这里（连同 `isGitRepo`）一共 3 次 `execute_command` ✗，
+       * 而 `start()` 只在**每个回合**缓存未命中时跑一次 ✓ —— 合成一次省的 ~0.5s/**回合**
+       * 折到一批里只有 **~0.2%** ✗，却要改 3 个夹具 ✗ ⇒ **不划算** ✓。
+       * （真正贵的是 `finalize()` —— 它**每迭代**都跑 ✓，那两刀已经落地 ✓。）
        */
       this.beforeSnapshot = await snapshotWorkingTree(this.workspace);
       /** 第 186 波：**存下来给同一回合的后续迭代复用** ✓（见 `start()` 顶部的说明 ✓）。 */
@@ -320,6 +437,34 @@ export class FileChangeTracker {
     if (!this.active || !this.beforeTree || !this.beforeSnapshot) {
       return null;
     }
+    /**
+     * ★★ 第 46 波：**"没有会改工作区的工具跑过" ⇒ 不必进 git** ✓（治本 ✓ 结构性 ✓）。
+     *
+     * 现场事实 ✓（读码 + 真机 ✓）：
+     *   · `start()` 的 git 成本**早已为 0** ✓（第 188 波：`finalize()` 把 after 写成下一次的 before ✓）
+     *   · 所以每迭代剩下的成本就是**这里**：`snapshotWorkingTree()` 一次 git ✗
+     *     （实测四类追踪器调用 ~180 次/格 ✓ = exec 的 74–88% ✓，纯开销 ~57s/格 ≈12% 墙钟 ✗）
+     *   · 而 `finalize()` 本来就会在"没变化"时返回 `null` ✓（`:440` ✓）——
+     *     可它**先付了那次 git** ✗ 才知道没变化 ✓ ⇒ 顺序反了 ✓
+     *
+     * 修法 ✓：由调用方在**工具真正可能改工作区**时打个标记 ✓（`noteMutation()` ✓，
+     *   挂在 `needsPreCallSnapshot(...)` 那条既有钩子上 ✓ —— 它同时覆盖文件工具与 shell ✓）；
+     *   这里若**没打过标记** ⇒ 直接返回 `null` ✓，**一次 git 都不发** ✓。
+     *
+     * 为什么这是安全的 ✓（不是"优化掉正确性"✗）：
+     *   · 只有**没有**改工作区的工具跑过时才会跳过 ✓；`bash`/`run_test`/文件工具都会打标记 ✓
+     *     （判据来自契约 `needsPreCallSnapshot` ✓，不是按工具名列举 ✗）
+     *   · 用户在两轮之间**手改**文件的情况 ✓：那属于"本轮没有工具改过" ⇒ 该轮不记录 ✓，
+     *     而**下一轮只要有任何改工作区的工具** ✓ 就会照常对比并记录 ✓（与既有缓存语义一致 ✓）
+     * ⇒ ★ 与 DSH 一致 ✓：`dsh-workspace-changes` 也是"只记文件工具的编辑 + 轮次边界快照" ✓，
+     *   并明说「快照覆盖范围之外只通过 shell 命令做出的改动**不会被记录**」✓ —— 同一取舍 ✓
+     */
+    if (!this.mutatedSinceFinalize) {
+      this.active = false;
+      skippedFinalizeNoMutation++;
+      return null;
+    }
+    this.mutatedSinceFinalize = false;
     this.active = false;
 
     try {
@@ -350,13 +495,16 @@ export class FileChangeTracker {
         return null;
       }
 
-      // Get changed files list
-      const nameStatus = await runGit(this.workspace, [
-        "diff",
-        "--name-status",
-        this.beforeTree,
-        afterTree,
+      /**
+       * ★ 第 46 波：`--name-status` 与 `--stat` **合成一次调用** ✓（两条都是纯文本、彼此独立 ✓）。
+       * `--binary` 依赖 `--stat` 的预检结果（补丁过大就跳过 ✗）⇒ 必须留在后面**单独**发 ✓。
+       * 收益口径：每省一条 git 就省一个 PowerShell 进程 ✓（实测 ~240ms/条 ✗）。
+       */
+      const [nameStatusRes, statRes] = await runGitBatch(this.workspace, [
+        ["diff", "--name-status", this.beforeTree, afterTree],
+        ["diff", "--stat", this.beforeTree, afterTree],
       ]);
+      const nameStatus = nameStatusRes?.stdout ?? "";
 
       const changedFiles = this.parseNameStatus(nameStatus);
       // 未跟踪的新文件不在 git diff 里（`stash create` 不含 untracked），单独补上 —— 否则
@@ -370,13 +518,7 @@ export class FileChangeTracker {
       let patch = "";
       let patchTruncated = false;
       try {
-        // Get stat first to estimate size
-        const statOutput = await runGit(this.workspace, [
-          "diff",
-          "--stat",
-          this.beforeTree,
-          afterTree,
-        ]);
+        const statOutput = statRes?.stdout ?? "";
         // Estimate: if stat output mentions many files or large line counts, skip full patch
         const statLines = statOutput.split("\n").filter(Boolean);
         const summaryLine = statLines[statLines.length - 1] || "";
@@ -499,11 +641,30 @@ export class FileChangeTracker {
    * | 存储未就绪 | 端口没注册 / 命令失败 | 可重试失败：如实上报，明确"稍后再试" |
    */
   static async revert(artifactId: string, workspace: string): Promise<boolean> {
-    const record = FileChangeStorage.getById(artifactId);
+    /**
+     * 第 269 波：这张表**不再有域镜像** ✗→✓（按需查询 + 有界一屏 ✓），
+     * 所以读记录也改成**按需** ✓（`getByIdAsync` ✓）。
+     *
+     * ⚠️ 这里**不能**用删掉的那个同步 `getById()` ✗：它读的是"一屏投影"，
+     * 没读过就是**空** ✗ —— 那会把"**没缓存**"说成"**这行不存在**"✗，
+     * 用户看到的就是"这条变更记录不存在（可能随会话被清理）"✗ 这种**假结论** ✗
+     * （`persist-domain-fixes.test.ts` C7-2 钉的正是这条区分 ✓）。
+     *
+     * 三态仍然分开 ✓（判据 C7-2 / C7-1b 守着 ✓）：
+     * 记录不存在（业务失败 ✓）/ 记录在但 patch 缺失（业务失败 ✓）/
+     * 存储没接手或命令失败（**可重试**失败 ✓）。
+     */
+    let record: Awaited<ReturnType<typeof FileChangeStorage.getByIdAsync>> = null;
+    let readError: unknown = null;
+    try {
+      record = await FileChangeStorage.getByIdAsync(artifactId);
+    } catch (e) {
+      readError = e;
+    }
     if (!record) {
       /*
-       * ⚠️ 不能把 `null` 直接说成"没有这条记录"：`getById` 在端口没接手时也返回 null。
-       * 所以这里再问一次"端口在不在"，把**未就绪**与**不存在**分开报。
+       * ⚠️ 不能把 `null` 直接说成"没有这条记录"：按需读**失败**（端口没注册 /
+       * 命令抛错）与"引擎说这行不在"是两件事，对用户的意义完全不同。
        */
       if (!hasStoragePort()) {
         // 第 100 轮分诊：**回滚这个动作没执行**（读不到记录），不是"写盘失败" ⇒ action。
@@ -511,6 +672,12 @@ export class FileChangeTracker {
           "fileChange.revert",
           new Error("端口未注册（本进程没有可用存储）"),
           `回滚未执行：读不到变更记录 ${artifactId}，请稍后重试`,
+        );
+      } else if (readError) {
+        reportActionFailure(
+          "fileChange.revert",
+          readError,
+          `回滚未执行：读取变更记录 ${artifactId} 失败，请稍后重试`,
         );
       } else {
         reportActionFailure(
@@ -599,7 +766,8 @@ export class FileChangeTracker {
 
       // 第 84 波：状态更新必须确认真的改到了行 —— 原来无脑 return true，
       // 记录不存在时"回滚成功"只写在返回值和提示里，数据库里仍是旧状态。
-      const statusRows = FileChangeStorage.updateStatus(artifactId, "reverted");
+      // 第 269 波：接口改成按需读 + 写回，返回值的**含义一字不变**（1 = 真改到了，0 = 那行不在）。
+      const statusRows = await FileChangeStorage.updateStatus(artifactId, "reverted");
       if (statusRows === 0) {
         console.warn(
           `[FileChangeTracker] revert: 补丁已回滚，但记录 ${artifactId} 的状态没更新（该行不存在）—— 变更历史里会一直显示为未回滚`,

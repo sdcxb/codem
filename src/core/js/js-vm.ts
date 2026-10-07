@@ -35,31 +35,9 @@
 import { newQuickJSWASMModule } from "quickjs-emscripten";
 
 /** 宿主函数：收**一个** JSON 参数（参数数组），返回可 JSON 化的值；抛错会被带回 guest */
-export type JsVmHostFunction = (args: unknown[]) => unknown | Promise<unknown>;
+type JsVmHostFunction = (args: unknown[]) => unknown | Promise<unknown>;
 
-export interface JsVmOptions {
-  /** 用户/模型提供的代码（会被包进 async IIFE；`run_code` 与 `workflow` 共用） */
-  code: string;
-  /** 暴露给 guest 的宿主函数（guest 侧通过 `__hostCall(name, argsJson)` 调用） */
-  hostFunctions?: Record<string, JsVmHostFunction>;
-  /** 预置代码：把 `__hostCall` 包成 `sdk` / `ctx` 之类的形状（各调用方自己写） */
-  prelude?: string;
-  /** 超时（默认 30s）。到点用 `setInterruptHandler` **真正打断**执行 */
-  timeoutMs?: number;
-  /** guest 的内存上限（默认 64MB） */
-  memoryLimitBytes?: number;
-  /**
-   * 一次执行里允许的宿主调用次数上限（默认 **1** —— 见文件头「已知限制」）。
-   *
-   * 为什么要有这个闸门：asyncify 引擎在第 2 次挂起就会出现 WASM 级损坏，而且损坏是
-   * **进程级**的（之后所有执行都失败）。所以必须在 **guest 侧、挂起之前**就拒绝第 2 次调用：
-   * 拒绝发生在纯 JS 里（一个被拒绝的 Promise），不会碰 asyncify。
-   * Rust 侧引擎（boa）落地后这个上限会取消（那时宿主调用是阻塞的，没有挂起）。
-   */
-  maxHostCalls?: number;
-}
-
-export interface JsVmError {
+interface JsVmError {
   name?: string;
   message: string;
   stack?: string;

@@ -2726,7 +2726,7 @@ function PermissionRulesSection() {
 
 // ========== Security Mode Selector Component ==========
 
-export function SecurityModeSelector({
+function SecurityModeSelector({
   currentMode,
   onModeChange,
   lang,

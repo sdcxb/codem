@@ -2,6 +2,343 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.297] - 2026-10-07
+
+### 修复：技能安装"没有任何平台内引导"，模型只能翻别的技能反推
+
+- **根因一：文档与实现不一致。** 模型可见的唯一说法来自 `skill-creator/SKILL.md`：`~/.codem/skills/<名>/SKILL.md`；而实现用的是 **应用数据目录下的 `.codem/skills`**（Windows 真值：`%APPDATA%\com.codem.app\.codem\skills`）。模型照文档写 ⇒ **平台永远发现不了**。修法：文档与内嵌副本共 24 处写死路径改为 `$SKILLS_DIR`，并声明它取自系统提示词的运行时真值；同时把**运行时解析出的真实根**灌进提示词（`setSkillRootsForPrompt`）。
+- **根因二：一个技能都没有时，提示词里连事实都没有。** `buildSkillPrompt()` 在零技能时返回空串 ⇒ 恰好是"请你装第一个技能"的场景。修法：新增**技能环境事实段**（两个根 / 唯一被识别的布局 `<根>/<名>/SKILL.md` / frontmatter 必填项 / **发现是自动的、没有注册步骤** / **从仓库安装的 5 步** / 读回 SKILL.md 验证 / 卸载 = 删目录），它**与技能数量解耦**，经两个组装点前置，且**不改变 `buildSkillPrompt()` 自身输出**（不打红既有判据）。
+- **根因三：装完不重扫。** `loadInstalledSkills()` 只在启动时调用一次 ⇒ 对话中刚装好的技能 `load_skill` 找不到。修法：`load_skill` **未命中时重扫一次**（命中路径零成本、每次调用最多一次、失败只记日志）⇒ "装 → 用"在同一对话内闭环（对标 DSH 的"监视根目录、无需重启"）。
+
+判据：`src/test/skill-environment-facts.test.ts`（ENV-1..3 / WIRE-1..3 / DOC-1..2 共 8 条）；变异（把 `setSkillRootsForPrompt` 改成空操作）⇒ ENV-1 变红。`tsc --noEmit` 0；技能与阶段回归 12 族 / 578 条全绿。
+
+## [1.16.296] - 2026-10-07
+
+### 修复
+
+- **清掉一个真红的审计门：`audit:knip` 的 `exports` 棘轮涨了 1（58→59，样例 `contrast-checker.ts: parseColor`）。** 取证三条：① 它**在生产里被用** —— 同文件第 96 行 `return parseColor(v);`（`parseColorValue` 的兜底分支）✓；② 三个测试文件 import 的是 `contrastRatio`/`resolveRgba`/`visibleContrastOver`/`compositeOver`/`contrastOfRgba`/`evaluateContrast`/`formatRatio`，**都不含它** ✓；③ 全仓没有第二处 `parseColor(` 调用 ✓。⇒ 真相是"**导出了但只在文件内用**" ✓ ⇒ 正解是**去掉多余的 `export`**（不是删函数 ✗、更不是放宽棘轮 ✗），并从 `src/core/theme/index.ts` 桶里摘掉这处再导出 ✓（否则 `tsc` 会报 `declares 'parseColor' locally, but it is not exported` ✗ —— 这一步是 tsc 逼出来的 ✓）。⇒ `tsc` 干净 ✓、主题+提示词族 40/40 ✓、**`audit:knip` 58/58 绿**（棘轮原样 ✓）。
+- **★★ 目标② 首个"产品侧"的实测大项：把 `snapshotWorkingTree` 的三条 git 命令批量化（3 个 PowerShell 进程 ⇒ 1 个）。** 真机取证链：侧车里"工具结果回来 → `Iteration N completed`"之间**稳定 ~2 s 且一行日志都没有**；`agentic-loop.ts:2551` 那句 `await this.fileChangeTracker.finalize()`（**每轮都会调用**）就在这个区间里。在同一台机器、同一个评测工作区上逐条计时：`git rev-parse 'HEAD^{tree}'` **直接 52ms** vs **经 PowerShell 289ms**（每次多付 ~240ms 固定开销）；**6 条独立调用 1648ms vs 一条 PowerShell 里跑 6 条 638ms**。而 `snapshotWorkingTree` 一轮 3 条（`stash create`/`rev-parse`/`ls-files`）⇒ 约 870ms。修法：新增 `runGitBatch()` + **纯解析函数** `parseGitBatchOutput()`（每条命令后跟一行"哨兵 + 该条自己的 `$LASTEXITCODE`"，因此"命令失败"与"干净工作区导致的空输出"仍然分得开——后者是 `stash create` 的正常输出，混淆就会把失败读成没改动）；`snapshotWorkingTree` 3 条 ⇒ 1 次调用。判据 `GB-1..4`（协议逐条拆对 / 空输出+0 与失败要分得开 / 多行不串 / 段数不足不抛异常也不张冠李戴）；变异（丢掉退出码、用 `parts[i]` 当 stdout）⇒ 三条红、反向对照绿。★ **`GB-6`：哨兵必须含 Windows 文件名非法字符**（`< > | ? *` ✓）—— 这是"先怀疑自己的改动"那一步 ✓：`ls-files --others` 的输出**就是文件名清单** ✓，哨兵若是合法文件名 ✗，仓库里恰好存在同名文件时 `split(哨兵)` 会**错位** ⇒ diff/清单**静默读错**（不报错的那种 ✗）；而 Windows 路径不可能含这些字符 ⇒ 永远撞不上 ✓。变异（把哨兵退回合法文件名形态）⇒ `GB-6` 红 ✓、其余 5 条仍绿 ✓。★ **第二刀：`finalize()` 里 `--name-status` 与 `--stat` 也合成一次调用**（两者独立且都是纯文本；`--binary` 依赖 `--stat` 的"补丁过大就跳过"预检 ⇒ 必须留在后面单独发）。判据 `GB-5` 是**行为级 + 计数级**：用 Tauri 桩数 `execute_command` 次数 —— ★ 一次 `start()+finalize()` 的**进程数从 11 降到 6** ✓（`start`: 1+3+1=5；`finalize`: 3+1+1+1=6 ✗ ⇒ 现在 3+3=6 ✓），变异（让 `runGitBatch` 每条命令各起一次进程 = 改动前的世界）⇒ 计数回到 **11** ✓、`GB-5` 红 ✓ —— 这就是收益本身的判据 ✓（每少一个进程 ≈ 240ms/次 ✗ ⇒ 每轮省 ~1.2s ⇒ **~60s/批 ≈ 7–9% 墙钟** ✓，待真机复验 ✓）。⚠️ **`finalize()` 里那几条 diff 还没批量化**（下一刀）。预期省 **~0.5–1 s/轮 ⇒ 25–60 s/批（约 4–8% 墙钟）** ✓。★ **量过、故意不动的一处**：`start()` 里还有 3 次调用（`isGitRepo` + `rev-parse HEAD^{tree}` + 快照里又算一遍同一棵树）✗，但 `start()` 只在**每个回合**缓存未命中时跑一次 ✓ ⇒ 合成一次省 ~0.5 s/**回合** 折到一批只 **~0.2%** ✗，却要改 3 个夹具 ✗ ⇒ **不划算**（已在源码注释里写明，免得下一位再啃 ✗）。真正贵的是 `finalize()` —— 它**每迭代**都跑 ✓。
+- **★★ 撤下「加提示词规则」的做法，改为结构性的「回归完成门」（目标① 的治本修法）。** 用户直接指令：**提示词不是治本手段**（效果随模型升级/切换而变），对标 DSH 就要照它的做法 —— DSH 的正确性由结构承担（本地实现的文档可查：`dsh-agent-loop` 在**关闭失败步骤之前**为每个尚无结果的工具调用**补记错误结果** `TOOL_OUTCOME_UNKNOWN` / `TOOL_NOT_STARTED`，**未被处理的失败是终态**；`dsh-invariants` 让每个包发布 `./invariant` 伴随入口，**运行时自动校验**其持久关系并以 `InvariantError` **归因到拥有该关系的包**）。本波据此落地三处**代码**：① `src/core/llm/test-regression.ts`（纯函数 `regressionRedFiles`：只把「**基线绿 → 现在红**」算作回归；**基线红**与**没见过**的文件都不算 —— 后者保证 `repo-03/04` 那类既有红**不被误伤**）；② `agentic-loop.ts` 记 `testFileBaseline`（每个判据文件**本轮首次观察**状态）+ `currentRegressionRedFiles()` + 收尾处**回归分支**（有回归 ⇒ **不接受「点名豁免」**，递**事实**并继续，上限 `REGRESSION_NUDGE_LIMIT=3`；用尽后照常收尾，**但结果里带 `regressionRedTests`**）；③ `turn-outcome.ts` 的**完成门**（`reason === "completed"` 且有回归 ⇒ **绝不返回 completed**：不显示完成卡、不报喜气泡、`turnStatus.code = "REGRESSION_TESTS_RED"`、正文说清「这不是完成」并点名那些判据）。**判据**：`RG-1..7`（`test-regression-detection.test.ts`）+ `REG-1..7`（`turn-outcome-regression-gate.test.ts`），两侧都含**反向对照**（无回归 / 字段缺失 / 基线红 ⇒ 照旧完成 ✓）。**变异自证**（两处都做了）：关掉完成门 ⇒ `REG` **4 条红**、3 条反向对照仍绿；去掉「只在基线绿才算回归」⇒ `RG` **3 条红**。`npx tsc --noEmit` **退出码 0**；相关 7 族 **75/75 绿**。★ 并**撤下**本波早先加的两处提示词（见下一条）—— 它们把正确性押在措辞上 ✗。
+- **清掉仓库里的 ASCII 控制字节，并加一道审计门让它不能再静默发生。** 第 46 波排查读数脚本时发现 `.preview-shot/_batch-readout.mjs` 里有一个 **NUL(0x00)**（读文件的工具会把它当二进制拒读）；扩到全树后又有两处，而且**不是"多了个字符"，是"吃掉了一个字母"**：`src/core/storage/maintenance.ts` 的注释里 `backfillSkippedUnreadable` 的 `b` 被 **0x08(退格)** 顶掉、归档文档里 6 处 `agentic-loop.ts` 的 `a` 被 **0x07(响铃)** 顶掉。★ 根因是**写文件的方式**：PowerShell 双引号串里的 `\b` / `\a` 会被解释成控制字节落到盘上 —— 这类错**没有任何编译器会报**，而它会破坏文本工具链。修法：全部按字节修回正确字母（全树 2071 个文件复扫 0 处），NUL 那处改成转义写法 `\u0000`（运行时字符串一字不差）；新增 `tools/audit/scan-control-bytes.mjs` + `npm run audit:control-bytes`（并接进聚合 `audit` 链）：按字节扫、命中即印文件名/偏移/上下文并退出码 1。**变异自证** ✓：把 0x08 注入一个临时文件后用 `--root` 指向它 ⇒ 检出并退出码 1 ✓；真树扫描 2053 个文件 0 命中 ✓。
+- **（已撤下 ✗）原「提示词给跑整库加成本约束」** —— 按用户指令「**治本优先、弃用提示词**」撤回 ✗：那两句（中英各一）连同钉住它们措辞的判据一并移除，新增 `RT-4` 断言**被撤措辞不许回归** ✓。整库成本的**结构性**替代（对标 DSH ✓）列入 297：`dsh-tool-pwsh-persistent` 的**每 agent 一个持久 shell**（启动成本从「每命令」降到「每会话」✓）、`dsh-workspace-changes` 的**每顶层轮次只 2 次快照** + **每次编辑整文件捕获**（我们的实现目前是**每迭代**快照 ✗）✓。详见交接的「方法转向」一节 ✓。
+- **清掉库里唯一那条红：`regression-coding-p0` 的 `finalize() — 无变更时返回 null` 是"夹具没隔离"，不是产品缺陷。** 该用例拿到的是上一条用例播下的模块级**快照缓存**（键 = **工作区路径**，本文件所有用例共用同一个路径）⇒ `start()` 复用它 ⇒ `beforeTree` 是上一条用例的值 ⇒ `finalize()` 看到 `afterTree ≠ 陈旧 beforeTree` ⇒ 返回产物而非 `null`。产品侧 `null` 分支一直都在（`afterTree === beforeTree && 无新未跟踪 ⇒ null`）。修法：按同族判据 `file-change-snapshot-reuse.test.ts:39` 的做法，在 `beforeEach` 里调 `__resetFileChangeSnapshotCache()`（模块**本来就提供**了这个钩子）。⇒ 现在 `29/29` 通过，全库判据**零红**。
+- **工具命令的 PowerShell 加上 `-NoProfile -NonInteractive`（正确性优先）。** ★★ **真机取证（比原来那条理由重得多）**：排查时发现系统里挂着 **9 个 `powershell.exe`**，命令行全是应用的 UTF-8 前缀（`chcp 65001 | …`）、**父进程都已退出**、各占 ~50 MB，**存活 873–4842 分钟（14–80 小时）** ✗ —— 即 `execute_command` 起的 shell **从不退出** ⇒ 约 **451 MB** 泄漏，且挂死的 shell 可能攥着文件锁 ✗（已现场清理 ✓，复查 0 个超龄 ✓）。根因两条：① 没有 `-NonInteractive` ⇒ 等输入的命令**永远等** ✗；② 子进程**没有和应用的寿命绑在一起** ✗（应用被结束/重启时没人收拾 ✓ —— Rust 侧的超时杀树只在"应用还活着"时有效 ✗）。296 先落 ①（本项 ✓）；②要上 Windows **Job Object**（`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` ✓，`windows` crate 已在依赖里 ✓）⇒ **放进 297**（不安全的 Windows API + 首次编译，不压在 296 的关键路径上 ✗）。另：原来只传 `-Command`，每个命令都会**加载用户 profile**：① profile 里只要有一句 `Write-Host`（欢迎语 / 代理 / conda 初始化…），**每个工具结果**都会多出那段文字，模型读到的是"命令输出 + 噪声"；② profile 或命令本身有交互提示时会**卡到超时**。⚠️ 速度只是顺带：实测 271 ms/次 ⇒ 224 ms/次（差 48 ms/次，≈12 s/批），**不是**主要收益，别当性能修复。判据 `SH-1..3`（含反向对照：`-Command` 与命令体装配不许被弄丢）；变异（去掉两个 flag）⇒ 两条红、反向对照绿。复验脚本新增第 **⑦** 项：**孤儿 PowerShell 检查**（年龄 > 10 分钟且带本应用前缀 ⇒ 必须 0 ✓）。
+- **★ `reverted` 收尾提醒改成"按还原类型给具体救法"（目标① 的实测着力点）。** `1.16.295` 批的 `repo-02` run-2（败）控制台侧车里，涉及 stash 的命令**逐字只有一条**：`git stash push -- src/core/llm/tools.ts` —— ★ **全轮一次 `git stash pop` 都没有**，模型为做"这条红是不是既有"的基线对比把自己的修复 stash 走了且没恢复（最终 `diff` 只剩 1083 字符，`dsh-d9 :: D9-1` 没过）。而当时 `reverted` 守卫**确实开火了**，文案却是泛泛的"请把它**做回来**" —— **没告诉它改动还在 stash 里**。修法：`revertKindOf()` 把还原分成 `stash`（改动还在 ⇒ 给 `git stash list` + `git stash pop`）与 `discard`（`checkout --`/`restore`/`reset --hard` ⇒ 明说"只能重做"），文案由纯函数 `buildRevertedWorkNudge` 造、循环里只留一次调用；侧车记下是哪种（`kind=`）。判据 `REV-1..4`（含反向对照：discard 型不许出现 stash 字样；既有口径 `git stash list` 是"看"不是"还原"）；变异（stash 分支退化成通用文案 / 把 `list` 也算还原）分别被咬住；守卫族 54 条判据全绿。
+- **★★ 会话回合结束时**留下 4 样脏 UI 状态（`stepProgress` 等）—— 用户可见 ✗ **且让评测器每格白等 120s** ✗。**两处独立罪证**：① `1.16.295` 批的 `busySamples.tail` 留档里，**最后一刻**的界面原文仍是「**处理中** · 4s 第1/5步 · … ＋ 完全访问 搜索 临时会话」✓，而同屏已经写着「任务完成」✗；② 试跑日志里"界面仍显示忙碌，但引擎已静默 ⇒ 按跑完处理"这句在 **8 格里出现 4 次** ✗（历史四批 2/24 ~ 4/24 ✓），把最后采样时刻减去 `activeMs` 得**每格白等 120–121s** ✗ ⇒ 均值 **60s/格** ✗（该批 483s ✓ = 被测墙钟的 ~10% ✗），而对照臂 `dshWallMs` 只是等 CLI 退出、**没有**这种白等 ⇒ 直接**污染 ② 的读数** ✗。根因（`src/store.ts:396-412`）：`setStreaming(false)` **清 6 样**（`isStreaming/streamingMsgId/stepProgress/agentActivities/streamStartTime/llmStatus` ✓），而**会话视图**（评测跑的就是这种 ✓）走的是 `setSessionActive(id,false)` ✗ —— 它**只动 2 样**（`activeSessions/isStreaming` ✓）⇒ 那句"处理中"永远留在页面上 ✗ ⇒ 而评测探针认的正是**整页文本**里的 `处理中|正在执行|…`（`.preview-shot/_codem-repo-eval.mjs:323` ✓）⇒ `busy` 永不回落 ⇒ 只能等"引擎静默 120s"兜底 ⇒ 长工具还会被**截断** ✗（§13.255/§13.256）。修法：`setSessionActive` 在**最后一个活跃会话也结束**时与 `setStreaming(false)` **同口径清干净**（⚠️ 并发会话还在跑时**不许**清 ✗ —— 会抹掉别人的进度条）。判据 `SSE-1..6`，其中 `SSE-2`/`SSE-4` **直接对探针正则**断言（不是只断言"字段是 null" ✗），`SSE-5` 钉住不许矫枉过正；**变异**（把清空去掉、退回只动两样）⇒ `SSE-2`/`SSE-3` 两条红 ✓、其余四条仍绿 ✓；相邻 6 族 **217/217 绿** ✓。★ 这一项同时**修掉用户可见的"界面与记录不一致"** ✓ **并让 ② 的读数变干净** ✓（之后 `totalMs` 不再含白等 ✓）。⚠️ **但必须如实标注它的边界** ✗（第 46 波自查 ✓）：核实渲染条件后发现，「处理中 · Ns 第X/Y步」是 **`StreamingTimer`** 渲染的 ✓，而它**门控在 `isStreaming`** ✓（`ChatPanel.tsx:1151-1152` ✓，`idle: { zh: "处理中" }` 在 `:1497` ✓）⇒ 元素被卸载就不会出现在 `innerText` 里 ✗，可留档的 `tail` 里**明明有** ✓ ⇒ 说明当时 **`isStreaming === true`** ✗ ⇒ ★ **主因是 `activeSessions` 里那个会话没被删掉** ✗（正是 `src/core/llm/provider.ts:30` 注释警告的"`activeSessions` 残留" ✓），**不是"清了但清得不一样"** ✗。⇒ 本项的定位改为：**真实但次要**的一刀 ✓（它让两条收尾路径口径一致 ✓、并补上笔记本取消路径（`App.tsx:2596` ✓）漏清的 `streamingMsgId`/`agentActivities` 等字段 ✓），**治不了主因** ✗（**主因至今未定案** ✗ —— 见下）。★ 另：我曾顺手加过一个"生产者闸门"（无活跃会话时拒绝写 `stepProgress` ✓），**已撤回** ✗ —— 它弄红了两条真判据（`component-store.test.ts` / `regression-p0-p4-full.test.ts` ✓），而且因 `StreamingTimer` 本就门控在 `isStreaming` ✓，那个假设**根本没有证据支持** ✗（详见归档 §13.256 第五节 ✓）。★★ **主因排查到哪一步了**（如实记 ✗，别再猜 ✓）：① 全仓**只有一处**渲染"处理中"（`ChatPanel.tsx:1497` 的 `StreamingTimer` ✓），而它门控在 `isStreaming` ✓（`:1151-1152` ✓）⇒ 元素卸载就不会出现在 `innerText` 里 ✗；② `App.tsx` 的 `finally`（3907 起 ✓）里**同时**有 `setStreaming(false)`（3929 ✓）与 `setSessionActive(session.id,false)`（3931 ✓，`if (session)` 保护 ✓）⇒ **两条都会跑** ✓ ⇒ 按理 `isStreaming` 必变 false ✗；③ 可留档里那行写着 **「处理中 · 4s 第1/5步」** ✗ —— **「4s」**说明计时器**冻在很早的时刻** ✓（那格跑了 ~500s ✗）⇒ 更像**残留/重挂载的 DOM** ✗，用"某条路没清"解释**不通** ✗。⇒ **297 用直接取证收口** ✓：在应用侧把 `turn_end`/清理时刻的 `isStreaming`、`activeSessions.size`、`streamStartTime`、`stepProgress` **打进侧车** ✓，再与"harness 为何仍判 busy"对齐 ✓ —— 先取到证据再改 ✗。
+- **★ 用户第五次报的「存储自检：本次新产生 N 条缺口」的真因：工具管线有三条早退绕过了写事件的那一层。** 真机指纹（只读开库）：缺口行一律是 `assistant / status=done / content=0 / reasoning>0`，`tool_calls` 表里挂着 1 条且 **`status=error`**，而**按 `toolCallId` 反查一条事件都没有**（不是挂错人，是根本没写）。相关性：最近 500 条 `tool_calls` 里 `done` 484/484 都有事件，**`error` 16 条里 6 条没有**。根因：写 `tool_call`/`tool_result` 的是 **finalize 层**（`EventLogFinalizeMiddleware`），而 `ToolPipeline.execute` 里 `pre-execute deny`、`guard deny`、`post-execute reject` **三处直接 `return`**，跳过了 finalize ⇒ 被拒绝/被拦下的调用一条事件都不写 ⇒ 那一行"既无文本事件又无工具事件"⇒ 不变量检查（口径本身是对的）判 `VISIBLE_BUT_NOT_RECORDED` ⇒ 每跑一个任务就新报一条。⚠️ 第四次报障的补钉写在 `updateMessage` 的 `status→done` 分支里，而**主聊天只走 `createMessage`**（`appendMessageTextEvent` 的注释自己写着），补钉打在了不在路径上的分支上 ⇒ 这就是"修了还在报"的原因。修法：新增 `finalizeResult()`，**所有出口都必须过它**（成功路径也走同一个口，结构上不可能漏）。判据 `PIPE-1..5` 用**真的** `EventLogFinalizeMiddleware` + 记录式假事件日志，钉"事件真的写了"而不是"我的规则还在"（第四次报障的教训），其中 `PIPE-5` 直接把"被拒的那一行"喂进**真的**不变量检查；变异（三条早退改回直接 return）⇒ 四条红、成功路径的反向对照仍绿。★★ **但这一版本身不完整 —— 第 46 波审计自己的修复时查出来了** ✗（**21 处自查里最有价值的一处**）：`prepare` 出来的 `execute` **一共有 7 个会产出结果的出口** ✓，上面只覆盖了 3 个 ✗ —— `pre-execute` 阶段**另有三条全绕过 finalize** ✗：**abort-before-dispatch**（回合被中止 ✓）、**normalize-input 抛错**（入参归一化失败 ✓）、**validate-args 失败**（参数缺/类型错 ✓）。而这三条**都很常见** ✓（模型给错参数是常事 ✓、中止也常见 ✓）⇒ **只补三条时缺口仍会从这三条路继续产** ✗（用户第五次报障不会真的停 ✗）。⇒ 三条一并补成 `await this.finalizeResult(…)` ✓，审计复核为 **7 个 return ↔ 7 个 finalize 调用** ✓ 一一对应；判据补 `PIPE-6/7/8`（各钉一条出口"必须写 `tool_call` + `tool_result`"✓）；**变异**（去掉这三条包装 ⇒ 回到旧行为）⇒ **恰好 `PIPE-6/7/8` 三条红 ✗、原五条仍绿 ✓**（隔离良好 ✓）；相邻两族 63/63 ✓、`tsc` 干净 ✓。★ 顺带把 UI 面也闭合了 ✓（读代码 ✓）：`App.tsx:3619-3628` 的工具状态**取自事件里的 `result.status`** ✓ ⇒ 早退路径返回的 `status:"error"` 一旦进了事件 ✓ ⇒ 界面那条「1 running」会随之消失 ✓ ⇒ **DB 面与 UI 面一刀同治** ✓（装后仍按判据 ④ 真机复核 ✓）。
+
+### 观测（只记不判，不改行为）
+
+- **`saveMessages` 的成本账（`save=`）。** 用不受背景行污染的口径量到"客户侧簿记残差 1 303s（占会话跨度 21%）"，同期 `saveMessages` 2 945 次 / 落库 11 172 条（流式 flush 每 100ms 一次都会走到它）。⇒ 先把账打进 `llm timing`（`save=<次数> savemsgs=<条数> savems=<毫秒> savemax=<单次最大>`），由 `core/storage/persist-stats.ts` 统一持有（core 侧，不让 core 反向依赖 UI）。判据 `S1-1..4`；变异（数调用次数而非条数 / 记账挪到写循环之前）分别被咬住。
+
+## [1.16.295] - 2026-10-07
+
+### 性能
+
+- **判据搜索的遍历范围：全树 2.35 s ⇒ 只扫判据目录 0.06 s（40×）。** `1.16.294` 加的 `-Include '*test*','*spec*'` 真机确认**生效了**（命令行逐字可见），但一批 `edit` 仍要 8 s —— 原因是 **`-Include` 只过滤输出，`Get-ChildItem -Recurse` 照样遍历整棵树**。改法：搜索只遍历"判据可能住的那几个目录"（`src/test` / `test` / `tests` / `__tests__`，由 `resolveTestRoots` 解析；**一个都找不到就回退到工作区根** —— 宁可慢，也绝不许让"同族判据"静默变成"没有同族判据"）。同一台机器同一个工作区实测：全树 + Include **2.35 s** vs 只 `src/test` **0.06 s**。判据 `SYM-1..4b`（含反向对照：找不到判据目录必须回退）；变异（调用点不传 include / 只拼一个模式 / 退回全树遍历）分别被咬住。旁证：`unrun-siblings-premise.test.ts` 自己从 2352 ms 降到 754 ms。真机 A/B（同一任务）：`edit` 批 8.0 s ⇒ **1.4 s**、`multi_edit` 批 10.0 s ⇒ **0.5 s**；工具墙钟占会话跨度 42% ⇒ **22%**。
+
+## [1.16.294] - 2026-10-07
+
+### 性能
+
+- **"同族判据"搜索只扫"可能是判据"的文件（单次 0.55s ⇒ 0.18s）。** 真机取证：一次 `multi_edit` 的 10 s 里，**6 次全仓 `Get-ChildItem -Recurse -File | Select-String`**（每次 ~1.6s）花掉了全部时间，而最后 `symbol siblings: null`（白跑）。那 6 次搜索的结果**只保留测试文件**（`isTestFile`：`*.test.*` / `*.spec.*`），非测试命中全被丢掉 ⇒ 让 PowerShell 去扫它们纯属浪费。改法：`SearchLike` 增加 include 参数、由**调用点**传 `["*test*","*spec*"]`（两条都要 —— 只给 `*test*` 会漏掉 `*.spec.ts`）；`grepSearch` 的 include 支持数组、拼成 PowerShell 的 `-Include 'a','b'`。⚠️ 关键词清单那条链**刻意不动**（它要的正是非测试文件）。判据 `SYM-1..3`；变异（调用点不传 include / 只拼一个模式）分别被咬住。
+
+## [1.16.293] - 2026-10-07
+
+### 性能
+
+- **写入/编辑后的自动 lint 从 5.5 s 降到 0.17 s（`.ts`）/ 1.85 s（`.tsx`）。** 动机是目标② 的工具时间账（新量具 `.preview-shot/_tool-durations.mjs`，12 个侧车、249 个工具批）：**工具执行占会话跨度 42%**，其中 `edit` / `multi_edit` / `write` 共 63 批 ≈ **416 s**、单批最大 **15.8 s**，而 `read` 对照 69 批只 8 s（均 0.1 s）⇒ 这笔时间**在工具内部**。根因：`tools.ts::autoLint` 每次写入后跑 `npx tsc --noEmit --pretty <文件>`（实测 **5.5 s**）。改法：`.ts` 走 `node --experimental-strip-types --check`（**0.17 s**，只查语法 —— 编辑最常弄坏的就是语法/半截文件，导入解析与类型交给 agent 自己跑的 tsc/vitest）；`.tsx` 仍走 tsc 但加 `--noResolve --jsx preserve --skipLibCheck`（**1.85 s**；node 的类型剥离**不认 JSX**，实测 `ERR_UNKNOWN_FILE_EXTENSION`）；老 Node 没有该 flag 时**自动回退**到 tsc（判据按"命令没跑起来"区分，不会把回退当语法错报出去）。判据 `LINT-1..5`；三个变异（换回慢命令 / 静默吞掉 / 把 `.tsx` 交给 node）分别被咬住。
+
+## [1.16.292] - 2026-10-07
+
+### 修复
+
+- **收尾提醒的留档被 CDP 压成了 `Object` —— 我自己的判据假绿了一次。** `1.16.291` 真机侧车里逐字是 `"[agent-loop] 收尾：族里没跑过的判据 Object"` ⇒ **`families` / `sample` 根本没进侧车**，而判据 `UNC-8` 当时钉的是"**源码里有这两个字段**"⇒ **判据绿着、数据却不在**（交接 §6 第 2 条那类"判据看起来在钉那件事，其实钉的是别的东西"）。而 §13.247 那次能定位根因，靠的**正是这一行**（289 的侧车里它是展开的）。修法：那一行改成**自己 `JSON.stringify` 成字符串**（字符串不会被压）；判据改成钉"必须先 `JSON.stringify`、且 `families:`/`sample:` 在它里面"。变异（换回对象形式）**被咬住**。
+
+## [1.16.291] - 2026-10-07
+
+### 修复
+
+- **收尾提醒（`unrun-family`）里那条命令"从来跑不出东西"，而且是同一句话上的两个缺陷。** 目标① 的真机取证（`repo-02` run-2，败）：侧车里逐字留着守卫开火那一行 `收尾：族里没跑过的判据 {"family":"repro","unrun":50,"sample":["src/test/core-chat-message-storage.test.ts",…]}`，而**紧接着模型跑的就是提醒给它的那条命令** `npx vitest run "src/test/repro-*.test.ts"`（`output length: 101` ≈ 一句"没有匹配文件"）⇒ **它照做了却一条缺口都没补上**，而提醒只会开火一次 ⇒ 35 轮就收尾，唯一红的那条判据（`dsh-d9`）始终没被看到。两个缺陷：① **族名取自"跑过的第一条判据"**，而缺口列表是**所有跑过的族**的并集 ⇒ 文案必然可能自相矛盾（说 `repro-*`、列的却是 `core-*`）；② ★ **`'src/test/<族>-*.test.ts'` 这种写法在 vitest 里一个文件都匹配不到** —— vitest 的位置参数是**按路径子串匹配**（多个参数是"或"），**不认通配符**（实测：`'src/test/dsh-*.test.ts'` ⇒ 0 个文件；`'src/test/dsh-'` ⇒ 137 条）。修法：文案改由纯函数 `buildUnrunFamilyNudge` 造，族名与命令**都从同一个 `unrun` 推导**（每个族一条 `src/test/<族>-` 过滤器 ⇒ 命令必然覆盖它自己点名的每一条缺口，且 `.tsx` 判据也在内）；循环里只留一次调用。判据 `UNC-1..8`；变异六次全部被咬住（含"退回旧 glob 写法"⇒ 四条同时红）。
+
+### 观测（只记不判，不改行为）
+
+- **`updateMessage` 的成本账（`msgw=`）。** `executor` 对**每一个** `text_delta`/`reasoning_delta` 都调 `updateMessage`，而它是同步路径（两次查询 + 索引 IPC + 正文变了还要重写 FTS IPC）；这笔开销落在 `llm timing` 的 `stream=` 里，与"模型真在生成"混在一起。先用**已有侧车**量过（`.preview-shot/_stream-vs-output.mjs`）：正文斜率只有 ~1.2~2.2 ms/字，而最贵的几轮正文几乎是 0 字 ⇒ **分不开**。⇒ 先打点：`llm timing` 行加 `msgw=<次数> msgwms=<累计ms> msgwmax=<单次maxms>`（每个 `iter` 报的就是这一段窗口的账，取走即清零）。判据 `MW-1..4`；变异（只数一部分 / 不清零 / 删掉 `msgw=`）分别被咬住。
+
+## [1.16.290] - 2026-10-06
+
+### 修复
+
+- **缺口（VISIBLE_BUT_NOT_RECORDED）第四次报障的真因。** 6/6 条样本同形：`content=0 + reasoning>0 + **tool_calls=1** + assistant_text=0`，而它们的 `tool_call`/`tool_result` 事件**挂在别人的 messageId 上**（会话里逐条核过：-6 之后直接跳 -8）⇒ **「有工具调用就由工具事件记账」这个前提是假的**，而 1.16.287 的补钉**恰好把要治的形态排除掉了**（形成`两不管`）。修法：判据从「有没有工具调用」改成「**有没有事件**」（回查事件日志里有没有事件引用该 messageId）。教训：结构判据只能钉「我写的规则还在」，钉不了「规则对不对」——旧判据一直绿着，而真机一直有缺口。
+
+## [1.16.289] - 2026-10-06
+
+### 修复
+
+- **「工具在飞」不再是免死金牌（`flightStallMs`）。** 真机取证（`r288`）：
+  第 2 轮发出**两个** bash，而控制台里 `Tool executed` **只有 1 条** ——
+  第二条 `npx vitest run …` **从头到尾没出现**。而 `toolsInFlight`
+  **只在收到完成事件时才 `--`** ⇒ ★ **它永远 `> 0`** ⇒
+  **两道看门狗一起失效**（`turnIdleMs` 被 `pulse()` 续命 + `stallMs` 旧版**无条件**重新排队）
+  ⇒ 只剩 `toolFlightMs`（**20 分钟**）⇒ 远超跑批的 2 分钟 ⇒
+  回合被外人结束 ⇒ **收尾段一行都没执行**
+  （`收尾` / `nudge` / `zero-output` / `turn_end` 在控制台里**全是 0 行**）。
+  修法：**「延期」本身也要有上限** —— 工具在飞时照常按 `stallMs` 计时，
+  但**累计**等待超过 `flightStallMs`（= `toolFlightMs / 4` = 5 分钟）就**照样交出控制权**
+  （`break`、**不 `abort`**，处置与 `stallMs` 一致）；**有事件即把累计等待清零**。
+  判据 `FLIGHT-1..4`；变异（`flightStallMs` 取成等于 `toolFlightMs` / 去掉清零）**两条都被咬住**。
+- ⚠️ **那条判据我连错三次**（留证）：① 正则匹配到**我自己写的注释** ⇒
+  ② 匹配到 `let flightWaitedMs = 0;`（**初始化**）⇒
+  ③ `indexOf` **在 `let …` 内部**也匹配到子串 ⇒ 两者指向同一处。
+  第四次改用负向回顾 `(?<!let )` 才咬住。三次都是
+  「**判据看起来在钉那件事，其实钉的是别的东西**」——与 `STALLW-2` 同一族。
+
+## [1.16.288] - 2026-10-06
+
+### 修复
+
+- **停顿 ⇒ 交出控制权（`stallMs`）。** `1.16.287` 正式读数的 `STALL-4` 交叉表给出硬证据：
+  **13 条失败轮，没有一条走到过收尾段**（`passed` 5/6、`failed` 0/13）。
+  机制：`executor` 的消费循环**只有一道闸门** `abort.signal`，而它由
+  `idleWatchdog(turnIdleMs = 5 分钟)` 触发——而**跑批 2 分钟就放弃**
+  ⇒ `break` 永远来不及 ⇒ 收尾段跑不到 ⇒ 四把完成守卫**一次都没机会开火**
+  （守卫**本来就有**、判据**早就写对了**，缺的只是"机会"）。
+  修法：新增 `stallMs`（默认 `turnIdleMs / 4`）——由**独立定时器**发现停顿
+  （⚠️ **不能写在循环体里**：循环体只在**收到事件**时才跑，而停顿的定义**就是收不到事件**），
+  用**自己的**信号 `break` 出循环、**不 abort**（要的是"催它继续"，不是"杀掉"）；
+  **工具在飞时不算停顿**（合法长工具期间本来就没有事件）。
+  判据 `STALLW-1..4`；变异（把 `stallMs` 取成与 `idleMs` 相等）咬住 `STALLW-2`。
+- ⚠️ **`STALLW-2` 第一版是假绿的**（留证）：它原来只断言"表达式里出现了数字"，
+  变异 `stallMs: 5 * 60 * 1000` **照样通过** ⇒ 改成**把两个数都算出来直接比大小**才咬住。
+  另有两处**判据自身的假红**：按花括号配平取循环体会被**字符串里的花括号**骗到。
+
+## [1.16.287] - 2026-10-06
+
+### 修复
+
+- **先解结构性约束：上下文里的事件计数不再算诊断类事件。**
+  `projectSurface().totalEvents` 原来数**全部**事件，而这个数被拼进系统提示词
+  `[Context: N visible messages, M total events]` ⇒ 这一轮只要比上一轮**多写一条事件**，
+  M 就变了 ⇒ 第二轮不再以第一轮为前缀 ⇒ **provider 前缀缓存整段失效**。
+  我为「回合出口留痕」加过两次事件，**两次都把 `dsh-d5-prefix-cache-stability` 打红**，
+  机制逐字相同。现在 `CONTEXT_NEUTRAL_EVENT_TYPES = {loop_stopped, turn_end}` 被排除
+  —— 它们**不产生任何消息**，本来就不该算进「context 里有多少事件」。
+  判据 `CTX-1..3`（其中 `CTX-3` 是反向：加一条诊断事件**不许**改变 M）。
+- **回合心跳**（`turn_heartbeat`）：约束解开之后才敢落地 —— 每轮开头一条 `loop_stopped`，
+  用来回答「这一轮**走到第几轮**停住了」。过去只能靠 `maxIteration` 反推，
+  而那个数**分不出**「正常收尾」与「被跑批掐停」。
+
+## [1.16.286] - 2026-10-06
+
+### 诊断
+
+- **临时探针**：切开「executor 那段代码没执行」与「getEventLog() 拿到的实例不对」两种可能 —— 用已被真机证明会落地的那条链（recordLoopStop 的动态 import）在**同一位置**打一发 turn_exit_probe。查明即删。
+
+## [1.16.285] - 2026-10-06
+
+### 修复
+
+- **出口原因换到一条真机能到达的通道**：`1.16.284` 装上真机跑两轮之后发现，
+  **全库 101 536 条 `session_events` 里 `turn_end` 是 0 条**（同一次运行的 `loop_stopped` 有 5 条）
+  ⇒ 原来由 `executor` 在循环之后自己 `getEventLog().append(…, "turn_end", …)` 的那条写路径
+  **从来没落地**（确切成因未查明，如实记录）。现在出口原因挂到 `LoopResult.detail`
+  （键 `exitReason`），随**既有的 `end` 事件**出去 —— 那条通道已被真机证明能到达。
+  `noteExit` 调用相应挪到 `finishWithNudges` 之前（它就是构造 result 的那一刻）。
+  判据同步换向：`EXIT-3` 从「必须有 `getLastExitReason`」改成「必须有 `attachExitReason` 且挂到 `detail`」。
+
+### 说明
+
+- **判据绿 ≠ 它到位**：`EXIT-1..4` 全绿的时候，真机上的 `turn_end` 是 0 条。
+  这一条是本版最大的教训，已写进交接文件。
+
+## [1.16.284] - 2026-10-06
+
+### 修复
+
+- **回合出口留痕**：`run()` 里比收尾段更早的 9 个出口（`critical_service_unavailable` / `cost_limit` /
+  `context_overflow` / `repeat_guard` / `write_rejected_by_user` / `output_truncated` / `plan_stale` /
+  `llm_error` / `aborted`）现在都会报出原因，由 `executor` 并进既有的 `turn_end` 记录（`exitReason` 字段）。
+  此前走这些出口的回合**收尾守卫连机会都没有**，而记录里只留下"没催过"，与"守卫判定错"长得一模一样 ——
+  真机 `repo-02` 卡的就是这件事。
+- **会话日志回填改成有界清扫**：原来每次启动对**全部会话**逐个载入消息镜像 + 重建 FTS + hydrate
+  （真机 373 个会话 ⇒ 一次启动 1868 条镜像逐出日志、占 console 流量 76%），现在每次上限 32 个、
+  且优先处理"还没有日志文件"的会话；超出的**如实计入** `deferredSessions`（只许推迟，不许静默跳过）。
+- **镜像逐出的 `console.debug` 收进 `storage-trace` 开关**（它占 console 流量的 76%，且会淹没真证据）。
+- **已中止的外部信号现在会被当场联动**：`abortSignal.addEventListener("abort", …)` 只在将来触发，
+  传进来之前就已中止的信号以前会被忽略（那一轮照常跑到底）。
+
+### 说明
+
+- `prep`/`ctx` 的分段读数在**首轮**不可信（锚可能陈旧）—— 已在文档里写明，并留了 `ANCHOR` 判据方向。
+- 修正文档里两处错误读数：控制组真实 prompt 是 72 595/调用（不是"与 Codem 只差 3%"）；
+  分段各百分比**不可相加**（`ctx`/`prep` 与 `TTFT` 窗口重叠）。
+
+## [1.16.283] - 2026-10-06
+
+### 修复
+
+- **★★★ 死代码棘轮（`audit:knip`）从"长期红"修成绿，并把基线**收紧到实测值** ✓**。
+
+  **这道门一直在红** ✗：`tools/audit/knip-baseline.json` 是 **2026-09-25** 的快照
+  （`exports=94 / types=59 / duplicates=10` ✓），而实测已经涨到
+  **`exports=129 / types=72`** ✓ ⇒ 每次 `npm run verify` 都红 ✓
+  ⇒ **红久了就没人跑** ✗（这正是 `knip-gate.mjs` 文件头自己写的那个失败模式 ✓）。
+
+  **处置：不调基线，真删死代码** ✓。逐条分诊（`.preview-shot/_knip-triage.mjs` ✓，
+  按"谁在用"分类 ✓）量出来的分布是：
+  ```
+   131  被生产代码引用（只是**不是从这个文件**引用的 ⇒ 再导出门面 ✓）
+    48  无人引用（真候选 ✓）
+    22  test-only（knip 不把 src/test/** 当使用者 ✗ 已知口径 ✓）
+    10  duplicate-default（具名导出与 default 同名 ✓ 基线本来就是 10 ✓）
+  ```
+  ⇒ 前两类**不能一刀切**✗：131 条里大多数是"消费者直接从源模块 import、
+  绕过了再导出"✓（本仓库刻意的分层 ✓），而 48 条里既有真死代码、
+  也有**只被测试用**的 ✓（knip 的 `src/test/**` ignore 造成 ✓，删了会弄坏测试 ✗）。
+
+  **结果**（逐条删除/去导出 ✓，`tsc` 每批复核 ✓）：
+
+  | 类别 | 改前 | 改后 | 棘轮要求 |
+  |---|---|---|---|
+  | `exports` | 129 | **58** | ≤94 ✓ |
+  | `types` | 72 | **21** | ≤59 ✓ |
+  | `duplicates` | 10 | 10 | ≤10 ✓ |
+
+  集合差集核对：**211 条里解决 122 条、新增 0 条** ✓（没有任何符号靠"换个文件"假装被修 ✓）。
+  动作分布：**~21 个声明整段删除** ✓（如 `getSecurityModes` / `getApproval` /
+  `waterLevelFromBudget` / `telemetryProjectionAt` / `hasBootstrap` /
+  `wrapStreamWithIdleTimeout` / `DREAM_COLOR_PRESETS` / `STATUS_CONFIG` / `JsVmOptions` ✓）、
+  **~73 个去导出**（声明留着，因为**它自己模块内还在用** ✓）、
+  **18 处冗余的 barrel 再导出** ✓（消费者本来就直连源模块 ✓）。
+
+  **刻意没删的**（都写了理由 ✓）：只被测试用的 4 类 ✓；
+  被**其它门**按名字钉住的 4 个（`deleteV2Session` / `writeShouldFallBackToLegacy` /
+  `getSessionPreset` / `selectPresetForSession` ✓ —— 它们**本来就是死的** ✗，
+  子代理把它们降级成模块私有以保住别的门的基线 ✓；**这一层如实记为残留** ✓，
+  真正清掉要连那两处门基线一起改 ✓）；可达性门保护的 `theme/contrast-checker.ts` 再导出 ✓；
+  以及 10 条 `export X` + `export default X` 的同名对 ✓（不是死代码 ✓）。
+
+  **变异/自证**：`node tools/audit/knip-gate.mjs` ⇒ `exports=58/94 types=21/59 duplicates=10/10`
+  ⇒ ✅ 没有增长 ✓（然后 `--update` 把基线收紧到 **58/21** ✓，再跑仍然 ✅ ✓）。
+
+### 顺带
+
+- **★ `_codem-repo-eval.mjs`：把应用的 console 接进跑批** ✓（目标②的分段证据来源 ✓）。
+  用 CDP `Runtime.enable` + `Runtime.consoleAPICalled` ✓，并在页面里打开
+  `window.__CODEM_DEBUG__ = 'agent-loop'` ✓（**不重启页面** ✓ —— 设 localStorage 再重载会
+  把首屏/预取换成另一次运行 ✗，分段就与本次墙钟对不上了 ✓）。
+  每轮记录新增 `llmTiming`（`n` / `sumTotalMs` / `sumTTFTMs` / `sumStreamMs` /
+  `sumCtxMs` / `sumPrepMs` / 各字段 `avg*` + `measured` 对账计数 ✓），
+  原始 console 与逐轮明细另存 `<task>.r<run>.console.jsonl` / `.llm-timing.json` ✓；
+  新增 `timing` 子命令直接读出来 ✓。
+  **第一次读数**（repo-01 / run-2，34 轮分段 ✓）：
+  `total=148586ms` 其中 **`stream=137530ms`（92.6%）**、`TTFT=11056ms`、
+  `ctx=38008ms`、`prep=37711ms` ✓ ⇒ **模型侧流式占九成** ✓ —— 这与 §13.69 的
+  "模型流式占 85%" 一致 ✓，也说明**驱动侧那两段（ctx+prep）合计仍有 25.6%** ✓ 是真实可动空间 ✓。
+- **★ 跑批的跨进程互斥** ✓：`run` 分支加了锁文件（陈旧 60 分钟如实提示 ✓）——
+  并行跑批会互相 `Stop-Process` ✓、记录重复 ✓、分段串味 ✗，这是把那条路堵死 ✓。
+- 版本号同步：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` /
+  `latest.json` / `CHANGELOG` / `docs/PROJECT-GUIDE.md` ✓。
+
+## [1.16.282] - 2026-10-06
+
+### 修复
+
+- **★★★ `turn_file_changes` 不再进域镜像 —— 那条「超过镜像上限 5000 行，该功能本次不可用」✗→✓**。
+
+  **用户报障**（第二次出现）：
+  > 【操作没有生效（`storage.bootstrap.domain.turn_file_changes.too-large`）：表 `turn_file_changes`
+  >   超过镜像上限 5000 行。该功能本次不可用，请重试或检查日志。】
+
+  **量清的机制**（不是猜 ✓）：它在 `bootstrap.ts` 的**启动预取清单**里 ⇒ 启动就整表镜像 ✗
+  ⇒ `RustDomainMirror.loadTable` 拉满一页发现 `rows.length > cap` ⇒ **拒载**✗（**不是**截断 ✗）
+  ⇒ `refused.add(table)` + 上报 `domain.<表>.too-large` ✗ ⇒ 该域这一段时间**读给空结果**✗。
+  而用户看到的"请重试"✗ 是**退避重试的设计行为** ✓，不是修法 ✗。
+
+  **为什么"A 路"（把上限调大）不成立**：这张表是**追加型热表** ✓（每轮每文件若干行 ✓）
+  ⇒ 行数只增不减 ⇒ 任何**固定上限**✗ 都只是把复发推后 ✗；调小更糟（拒载 ⇒ 只会更早拒载 ✗）。
+  它本来就**在已声明的边界之外** ✓ —— `no-sync-mirror-reads.test.ts` 的 `UNBOUNDED_TABLES`
+  （无界对象 ✗）里就有它 ✓，而该清单与它的基线**只许变小** ✓。
+
+  **治本处置**（B 路 ✓，与 `notebook_chunks` 同一套）：**结构性退出镜像** ✓
+  （`DOMAIN_QUERY_ONLY_TABLES`，`ensureLoaded`/`loadTable` 双点拒绝 ⇒ **一页都不会拉** ✗）
+  + **按需查询 + 有界"一屏"投影** ✓：
+
+  | 环节 | 做法 |
+  |---|---|
+  | 读 | `crud.list` + `where{会话}` + `order_by turn_index` + `desc` + `limit 200`（**引擎侧**排序 ✓） |
+  | 投影 | `patch` 正文（单行上限 500,000 字符 ✗）**不进一屏** ✓；回滚时按 id 单独取 ✓ |
+  | 驻留 | 有界 LRU ✓（≤3 个会话 × ≤200 行 ✓），**只有被按需读过**的会话才进来 ✓ |
+  | 同步读 | 只读那份有界投影 ✓（`listBySession`）；没读过 ⇒ `[]`（**不假装** ✓、不凭空驻留 ✓） |
+  | 写/删 | **直达引擎** ✓（`ON_DEMAND_TABLES` ✓），不排队等一个**永远不会就绪**的镜像 ✗ |
+  | 失败 | 按需读**只给两个答案** ✓：行 ✓ 或**抛** ✓（绝不把"读不到"✗ 说成"没有"✗） |
+
+  **判据 `TFC-1`~`TFC-8`**（`src/test/turn-file-change-window.test.ts`，**先写判据再改实现** ✓）：
+  5001 行时该域读**不得**给空结果 ✓（主判据）／反向对照：正常规模行为逐字不变 ✓／
+  一屏查询必须带投影 + 排序 + 有界 limit ✓／**引擎回整行时 `patch` 仍不得进一屏** ✓／
+  写后读得到自己 + 删后不许复活 ✓／驻留有界 ✓／结构：不在预取清单 + 两份按需表清单一致 ✓／
+  **显式要求加载它也不会进镜像** ✓。
+
+  **变异自证**（5 处，逐条跑过 ✓）：换回镜像读 ⇒ `TFC-1` 红 ✓（`expected +0 to be 200`）；
+  不过投影 ⇒ `TFC-4` 红 ✓（patch 正文 5000 个 `X` 进了缓存）；不标 `refused`
+  ⇒ `TFC-8` 红 ✓（`isReady` 会说谎 ⇒ 同步读路由到一个空镜像）；把表加回预取清单 ⇒ `TFC-7a` 红 ✓；
+  从 `ON_DEMAND_TABLES` 拿掉 ⇒ `TFC-5`/`TFC-5c`/`TFC-5d`/`TFC-7b` 四处红 ✓
+  （写被静默丢弃、删完还读得出来 ✓）。
+
+  **结构性门**：`no-sync-mirror-reads` 的 `file-change-storage.ts` 基线 **3 → 删除** ✓、
+  越界清单 **3 → 0** ✓（那道门要求的正是"基线只能变小"✓）。
+  顺带修：`DeliverableFiles` 原来取 `records[records.length - 1]` ✗ —— 而契约是
+  `turn_index` DESC ✓，所以它一直显示的是**最旧**一轮 ✗（现取 `records[0]` ✓）。
+
+- **★★ 上报点分诊闸门补登 1 处**：`file-change-tracker.ts::fileChange.revert::#5` —— 按需读
+  变更记录**本身失败**（命令抛错 / 存储不可用）⇒ `action`：回滚没执行，且它**可重试** ✓
+  （与"记录不存在"那条业务失败**分开** ✓ —— 混成一句会让用户以为变更历史丢了 ✗）。
+
+- **★★ 测量能力补上一块：收尾提醒（completion nudges）**进了跑批记录** —— 目标①的数据来源**。
+
+  目标①（repo-02 稳定 2/2）的**唯一可动方向**已量清：让"早收工"变难（完成守卫）。
+  而「**守卫到底有没有拦住**」**一直没有数据**：`loopStops` 只记"停下"、不记"催促"
+  ⇒ "守卫没用"与"守卫根本没触发"这两种完全相反的结论**分不开**。
+
+  本波把 `completionNudges` 带出去 ✓：
+  - `LoopResult` 的**四个变体**都补上 `detail?`（原来只有 `"stop"` 有 ⇒
+    `aborted`/`error`/`overflow` 那三个出口**没地方放**）；
+  - `run()` 的 **15 个结束出口**全部收成**一个入口** `this.finishWithNudges({…})`
+    （逐处加字段 = 15 次机会漏一处）；清空点放在**每轮开头**
+    （本轮有 10 处出口发生在收尾段**之前** ⇒ 否则那些出口会带上**上一轮**的提醒 = 假证据）；
+  - 催促真正发出时额外记一条 `loop_stopped` + `{ phase: "nudges", iteration, nudges, guards }`
+    —— 跑批记录（`.preview-shot/_codem-repo-eval.mjs`）读的**就是**会话事件，
+    只挂结果字段的话数据永远进不了 `.jsonl`；
+  - 守卫名**结构化**记录（`reverted` / `zero-output` / `unrun-family`），
+    不进产品文案里正则抠。
+
+  **判据 `nudge-1/2/3/3b/4/4b`**（`src/test/completion-nudge-detail.test.ts`）；
+  **变异 3 处**逐条红：单一入口改成 `return result` ⇒ `nudge-3` 红
+  （⚠️ **第一次它没红** —— 判据当时只证明"出口都调用了包装函数"、没证明"包装函数真的挂了字段"
+  ⇒ 补了第二环，这就是"调了但没做"的典型假绿）；不落事件 / 不记守卫名 ⇒ `nudge-1`+`nudge-4` 红。
+
+- **★★ 测量：目标②的"变慢"**不是**版本回归**（per-call 反而略快 3.1%）。
+
+  用**已有记录**按 `totalMs / toolCalls` 逐臂读数（新脚本 `.preview-shot/_latency-segments.mjs`）：
+
+  | 臂 | totalMs/调用 | promptTokens/call | 缓存命中 | 未缓存输入/call |
+  |---|---|---|---|---|
+  | Codem v54（本波目标批） | **7 884** | 49 067 | 93.8% | 3 037 |
+  | Codem v2（更早的 1.16.232） | **8 139** | 44 136 | 93.8% | 2 719 |
+  | DSH 对照 | **3 161** | （未记录） | —— | —— |
+
+  ⇒ ① **per-call 没有回归**（7 884 比 8 139 略快）；② 真正的差距是"**每次调用本身**"
+  （2.5×，而两者**同一个模型**）；③ **不是** prompt 变大（未缓存输入只涨 12%）。
+  ⇒ 下一步要拿**真机 `llm timing` 分段**（`TTFT / stream / ctx / prep / work`）——
+  为此要把应用的 console 接进跑批脚本（CDP `Runtime.enable`）。
+
+### 顺带（本波一并落地）
+
+- 上一版（281）的 prep 修复**保持不变** ✓；本版不改上下文构建路径 ✓。
+- `domain-mirror.test.ts` 的夹具补齐三处"比实现宽松"的形态：
+  写/删**真的改到夹具表**、`order_by`/`desc` **真的生效**、`where` 非空时**不再补 `pad-*`**
+  （最后一条会让"按 id 查不到"被误判成"存在"）。
+
 ## [1.16.281] - 2026-10-05
 
 ### 修复

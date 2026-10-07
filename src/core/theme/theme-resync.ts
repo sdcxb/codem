@@ -33,7 +33,7 @@ import { ThemeManager } from './theme-manager';
 let registered = false;
 
 /** 端口已就绪时立刻校正一次（端口没就绪时是空操作） */
-export function resyncThemeSkinNow(): boolean {
+function resyncThemeSkinNow(): boolean {
   if (!hasStoragePort()) return false;
   try {
     // 触发一次同步配置读，确保端口处于可用状态（读不到东西也不会抛）

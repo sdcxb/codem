@@ -73,8 +73,9 @@ export function saveV2Session(session: Session): void {
   reportPersistFailure("v2Session.save", new Error("会话域端口未接手（镜像未就绪）"), "v2 会话未保存");
 }
 
-export function deleteV2Session(id: string): void {
+function deleteV2Session(id: string): void {
   if (domainDelete(TABLE, { id }, { scope: "v2Session.delete", note: "会话未删除" })) return;
   // 第 17 轮（L4）：旧库回退已删；删除必须如实上报（静默失败会让墓碑缺失 → 下次从日志重建时"复活"）
   reportPersistFailure("v2Session.delete", new Error("会话域端口未接手（镜像未就绪）"), "v2 会话未删除");
 }
+

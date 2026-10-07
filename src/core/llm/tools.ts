@@ -376,17 +376,44 @@ export function extractFilePathsFromText(text: string): string[] {
 
 // ========== F3.4: Auto-lint after write/edit ==========
 
-/** File extensions that support linting */
+/**
+ * File extensions that support linting.
+ *
+ * ## ★ 第 42 波：**`.ts` 换快路径** ✓（`LINT-1..5` ✓）—— 目标② 的实测着力点 ✓
+ *
+ * 实测（`.preview-shot/_tool-durations.mjs` ✓，12 个侧车）：`edit`/`multi_edit`/`write`
+ * 共 63 批 ≈ **416 s**、单批最大 **15.8 s**，而 `read`（对照）69 批只 8 s ✓
+ * ⇒ 这笔时间**在工具内部** ✓。根因就是这里：
+ * | 命令 | 实测 |
+ * |---|---|
+ * | `npx tsc --noEmit --pretty <file>`（**旧** ✗）| **5.5 s** |
+ * | `node --experimental-strip-types --check <file>`（新 ✓，只查语法）| **0.17 s** |
+ * | `npx tsc --noEmit --noResolve --jsx preserve --skipLibCheck <file>`（`.tsx` ✓）| **1.85 s** |
+ * ⚠️ `.tsx` **不能**交给 node 的 `--check` ✗（实测 `ERR_UNKNOWN_FILE_EXTENSION` ✓）——
+ * 所以 `.tsx` 仍走 tsc，只是加 `--noResolve`（跳过模块解析 ⇒ 快 3 倍 ✓）。
+ */
 const LINTABLE_EXTENSIONS: Record<string, { cmd: string; args: string }> = {
-  ".ts": { cmd: "npx", args: "tsc --noEmit --pretty" },
-  ".tsx": { cmd: "npx", args: "tsc --noEmit --pretty" },
+  /** ★ 只查**语法**（0.17s ✓）：编辑最常弄坏的就是语法/半截文件 ✓，而导入解析与类型交给 agent 自己的 tsc/vitest ✓ */
+  ".ts": { cmd: "node", args: "--experimental-strip-types --check" },
+  /** `.tsx` 走 tsc：node 的类型剥离**不认 JSX** ✗；`--noResolve` 让它只查这一个文件 ✓ */
+  ".tsx": { cmd: "npx", args: "tsc --noEmit --noResolve --jsx preserve --skipLibCheck --pretty" },
   ".js": { cmd: "npx", args: "eslint" },
   ".jsx": { cmd: "npx", args: "eslint" },
   ".py": { cmd: "python", args: "-m py_compile" },
 };
 
+/**
+ * `.ts` 快路径的**回退**：老 Node 没有 `--experimental-strip-types` ✓
+ * ⇒ 那种机器上 node 会以"bad option"退非 0 ✗ —— 若把它当**语法错**报出去 ✗，
+ * 就等于给每个 `.ts` 编辑塞一条假报警 ✓。
+ * ⇒ 只有**命令本身没跑起来**才回退 ✓；真的语法错照常报 ✓。
+ */
+function isUnsupportedNodeFlag(out: string): boolean {
+  return /bad option|unknown option|not supported|--experimental-strip-types/i.test(out) && !/SyntaxError|Unexpected/i.test(out);
+}
+
 /** Run a quick lint check on a file after writing/editing (F3.4) */
-async function autoLint(filePath: string): Promise<string | null> {
+export async function autoLint(filePath: string): Promise<string | null> {
   const ext = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
   const linter = LINTABLE_EXTENSIONS[ext];
   if (!linter) return null;
@@ -395,10 +422,18 @@ async function autoLint(filePath: string): Promise<string | null> {
     // 用单引号包裹路径：PowerShell 单引号字符串内 $/反引号不做变量展开，
     // 避免路径含 $（如 C:\my$dir\file.ts）被展开为空。单引号转义为双单引号。
     const safeFile = filePath.replace(/'/g, "''");
-    const result = await executeCommand(`${linter.cmd} ${linter.args} '${safeFile}'`);
-    if (result.exitCode === 0) return null; // No errors
+    const run = async (cmd: string, args: string) => {
+      const result = await executeCommand(`${cmd} ${args} '${safeFile}'`);
+      return { code: result.exitCode, text: (result.stderr || result.stdout || "").trim() };
+    };
+    let { code, text } = await run(linter.cmd, linter.args);
+    if (code !== 0 && isUnsupportedNodeFlag(text)) {
+      /** 老 Node ⇒ 回退到 tsc（慢，但至少还在查 ✓） */
+      ({ code, text } = await run("npx", "tsc --noEmit --noResolve --skipLibCheck --pretty"));
+    }
+    if (code === 0) return null; // No errors
     // Return first 3 lines of error output
-    const errors = (result.stderr || result.stdout || "").split("\n").filter((l: string) => l.trim()).slice(0, 5);
+    const errors = text.split("\n").filter((l: string) => l.trim()).slice(0, 5);
     return errors.length > 0 ? `[lint] ${errors.join("\n")}` : null;
   } catch {
     return null; // Linter not available — silently skip

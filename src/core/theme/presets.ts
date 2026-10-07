@@ -145,12 +145,3 @@ export const SKIN_PRESETS: Record<string, SkinConfig> = {
   dream: DREAM_SKIN,
 };
 
-/** 梦幻预设色板（当无法从图片提取时的 fallback） */
-export const DREAM_COLOR_PRESETS: Record<string, { name: string; accent: string; bg: string; text: string }> = {
-  pink: { name: '粉色系', accent: '#e88c9a', bg: '#fdf5f7', text: '#6c474d' },
-  blue: { name: '蓝色系', accent: '#7bb3d9', bg: '#f0f4f8', text: '#3d556b' },
-  green: { name: '绿色系', accent: '#8bc34a', bg: '#f1f8f4', text: '#3a5a40' },
-  purple: { name: '紫色系', accent: '#b39ddb', bg: '#f5f0fa', text: '#4a3a5a' },
-  orange: { name: '橙色系', accent: '#ffb74d', bg: '#fff8f0', text: '#5a4530' },
-  dark: { name: '暗色系', accent: '#9fa8da', bg: '#1a1a2e', text: '#e0e0e0' },
-};

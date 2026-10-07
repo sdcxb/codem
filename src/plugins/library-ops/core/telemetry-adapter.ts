@@ -56,7 +56,7 @@ interface SessionLike {
   worktreeBranch?: string;
 }
 
-export interface ToolCallLike {
+interface ToolCallLike {
   id: string;
   tool: string;
   status: "pending" | "running" | "done" | "error";
@@ -280,11 +280,6 @@ export async function loadDefaultDeps(): Promise<AdapterDeps> {
 
   cachedDefaultDeps = deps;
   return deps;
-}
-
-/** 测试用：清空缺省依赖缓存 */
-export function _resetDefaultDeps(): void {
-  cachedDefaultDeps = null;
 }
 
 // ========== 工具函数 ==========

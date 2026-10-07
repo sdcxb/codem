@@ -42,6 +42,12 @@ import type {
 // 值导入（不是 type）：`validateReplay` 的类型判据要用它
 import { isValidEventType } from "./event-types";
 import { getEventLog } from "./event-log";
+
+/**
+ * **不产生任何上下文体量的事件类型** ✓（第 309 波 ✓）—— 见 `projectSurface` 里 `totalEvents`
+ * 那段说明 ✓。它们只记录"这一轮怎么走的"✓，**不进任何消息** ✓。
+ */
+const CONTEXT_NEUTRAL_EVENT_TYPES = new Set<string>(["loop_stopped", "turn_end"]);
 import type { MirrorEvent } from "./rust-port";
 // 载荷形状不合契约时如实上报（第 60 轮：不许静默容忍，也不许抛）
 import { reportAdvisory, reportPersistFailure } from "./persist-failure";
@@ -627,7 +633,38 @@ export class EventProjection {
 
     return {
       messages,
-      totalEvents: events.length,
+      /**
+       * ## 第 309 波：`totalEvents` **只数"有上下文体量的事件"** ✓（不算诊断类）
+       *
+       * ## 为什么（真机 + 一次真实的回归换来的 ✓，归档 §13.210）
+       *
+       * 这个数被 `surface-manager.ts::buildSurfaceNotice` 拼进系统提示词 ✓：
+       * `[Context: N visible messages, M total events]` ✓（N 是可见消息数 ✓、M 就是本字段 ✓）。
+       * 而 M **每轮都进上下文** ✗ ⇒ 只要这一轮比上一轮**多写一条事件** ✓，
+       * M 就变了 ✓ ⇒ **第二轮的上下文不再以第一轮的为前缀** ✗
+       * ⇒ **provider 前缀缓存整段失效** ✓（而缓存正是**目标②**在读的东西 ✓：
+       * DSH 的 `cacheReadTokens` 占它输入的 97.7% ✓）。
+       *
+       * **这不是理论** ✓：我为"回合出口留痕"加过两次事件 ✓，
+       * **两次都把 `dsh-d5-prefix-cache-stability` 打红** ✗
+       * （第一次是 `turn_end` ✓、第二次是"回合心跳" ✓，机制逐字相同 ✓）。
+       * ⇒ 结论 ✓：**`totalEvents` 没排除诊断类之前，任何新事件都会破坏前缀缓存** ✗ ——
+       * 这是一个**结构性约束** ✓，必须先解它 ✓，再谈加事件 ✓。
+       *
+       * ## 口径（**为什么这也更正确** ✓）
+       *
+       * `loop_stopped` / `turn_end` 这类**不产生任何消息** ✓（`applyEvent` 对它们是 no-op ✓）
+       * —— 它们不是"上下文里的事件" ✓，而是**关于这一轮的诊断** ✓。
+       * 把诊断算进"context 里有多少事件"**本来就是错的** ✓：
+       * 一轮里停下来提醒过几次，与"模型手上握着多少上下文"**没有关系** ✗。
+       * ⇒ 改成只数**会进上下文的那几类** ✓ 之后：
+       * ① 语义对了 ✓；② 加诊断事件**不再破坏前缀缓存** ✓（M 不变 ✓）。
+       *
+       * ⚠️ **诊断类名单要与"消息投影真的会用它"这件事对齐** ✗：
+       * 这里只排除**明确不产生消息**的两类 ✓；其余一律照数 ✓
+       * （宁可多算 ✗，也不要漏算一条**真的进了上下文**的事件 ✗ —— 那会让 M 变成假读数 ✓）。
+       */
+      totalEvents: events.filter((e) => !CONTEXT_NEUTRAL_EVENT_TYPES.has(e.type)).length,
       compactedMessageIds: Array.from(state.removedMessageIds),
       lastSeq: state.lastSeq,
     };

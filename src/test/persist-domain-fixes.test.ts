@@ -861,34 +861,24 @@ function realPortWithScriptedCrudList(seed: Record<string, Array<Record<string, 
   return { real, calls };
 }
 
-/** 让真端口的域镜像真的把 `turn_file_changes` 加载起来（否则 `getById` 恒为 null） */
-async function loadTurnFileChangesMirror(real: RustStoragePort) {
-  real.domains.ensureLoaded("turn_file_changes");
-  for (let i = 0; i < 32; i++) await Promise.resolve();
-  expect(real.domains.isReady("turn_file_changes"), "镜像必须已加载（测试前提）").toBe(true);
+/**
+ * 第 269 波：这张表**不再有域镜像** ✗→✓（`DOMAIN_QUERY_ONLY_TABLES` ✓），
+ * 读改走**按需查询** ✓ —— 所以这里不再"把镜像加载起来"✗，而是**清掉一屏缓存** ✓，
+ * 让接下来的断言走真实的按需路径 ✓（`getByIdAsync` / `loadBySession` ✓）。
+ */
+async function resetTurnFileChangesWindow() {
+  const { __resetFileChangeWindow } = await import("../core/storage/file-change-storage");
+  __resetFileChangeWindow();
 }
 
 /**
- * 把镜像里的 `patch` 抹掉 —— 复刻 `DOMAIN_COLUMN_PROJECTION` 若把
- * `turn_file_changes.patch` 排除之后该表的真实形态（**记录在、正文不在**）。
+ * 把一屏里的 `patch` 抹掉 —— 这是**现在的正常形态**（不是打桩 ✓）：
+ * 一屏投影**刻意不含 `patch` 正文** ✓（单行上限 500,000 字符 ✗，判据 `TFC-4` 钉着 ✓），
+ * 需要正文的调用方按 id 单独取 ✓（`file-change-tracker.ts::fetchPatchById` ✓）。
  *
- * 为什么用"打桩镜像读取"而不是真去改投影：投影清单在 `rust-port.ts`
- * （**别人的文件**，见报告"需要他人配合"）。
  * 本条用例守的是 `file-change-tracker.ts` 自己那一半 ——
  * 这种形态下必须**按 id 去取正文**，而不是像改前那样放弃回滚。
  */
-function stripPatchFromMirror(real: RustStoragePort) {
-  const domains = real.domains as unknown as {
-    findOne<R>(t: string, w: Record<string, unknown>): R | null;
-  };
-  const origFindOne = domains.findOne.bind(real.domains);
-  domains.findOne = <R>(name: string, where: Record<string, unknown>): R | null => {
-    const hit = origFindOne<Record<string, unknown>>(name, where);
-    if (name === "turn_file_changes" && hit) return { ...hit, patch: null } as unknown as R;
-    return hit as R | null;
-  };
-}
-
 describe("C-7 turn_file_changes 的 patch 按需取", () => {
   /**
    * 真 CLI 取证：一张 12 列表、只有 1 行 500KB patch 时，
@@ -911,21 +901,19 @@ describe("C-7 turn_file_changes 的 patch 按需取", () => {
     );
     setStoragePort(real as unknown as StoragePort);
     await real.start();
-    await loadTurnFileChangesMirror(real);
+    /** 一屏缓存清空 ⇒ 接下来的读走真实的按需路径 ✓（不再依赖任何镜像 ✗） */
+    await resetTurnFileChangesWindow();
 
     /**
-     * 让**镜像**只带元数据、不带 patch 正文 —— 那就是列投影生效后的形态
-     * （投影清单在 `rust-port.ts`，**别人的文件**，见报告"需要他人配合"）。
-     * 本用例守的是 `file-change-tracker.ts` 自己那一半：
-     * "记录在、正文不在"时必须**按 id 去取**，而不是像改前那样直接
-     * `no patch found` 然后放弃回滚。
+     * **一屏投影里本来就没有 patch 正文** ✓（第 269 波：不再靠打桩 ✓）——
+     * 这正是"记录在、正文不在"的真实形态 ✓。本用例守的是 `file-change-tracker.ts`
+     * 自己那一半：这种形态下必须**按 id 去取** ✓，而不是像改前那样直接
+     * `no patch found` 然后放弃回滚 ✗。
      */
-    stripPatchFromMirror(real);
-
     const { FileChangeStorage } = await import("../core/storage/file-change-storage");
-    const mirrored = FileChangeStorage.getById("tfc1")!;
-    expect(mirrored, "镜像里记录在").not.toBeNull();
-    expect(mirrored.patch, "但正文不在（这就是按需取要解决的形态）").toBeNull();
+    const mirrored = await FileChangeStorage.getByIdAsync("tfc1");
+    expect(mirrored, "按需读里记录在").not.toBeNull();
+    expect(mirrored!.patch, "但正文不在（这就是按需取要解决的形态）").toBeUndefined();
 
     let writeFileArgs: any = null;
     (window as any).__TAURI__ = {
@@ -948,12 +936,12 @@ describe("C-7 turn_file_changes 的 patch 按需取", () => {
     const listCalls = calls.filter((c) => c.command === "crud.list" && c.params.table === "turn_file_changes");
     expect(listCalls.length, "必须真的发出了按需读").toBeGreaterThan(0);
     /*
-     * 挑出**按需读那一次**：`file-change-tracker.ts` 的 `fetchPatchById` 发的是
-     * `columns: ["patch"]`（只那一列）。镜像装载（`RustDomainMirror.loadTable`）也会发
-     * `crud.list`，但它要么不传 columns、要么传的是**投影清单里的多列**
-     * （`DOMAIN_COLUMN_PROJECTION` 在 `rust-port.ts` —— 别人的文件，
-     * 正在被另一位工作者修改，所以这里**不假设**它长什么样，
-     * 只按"恰好一列且是 patch"来定位按需读）。
+     * 挑出**按需取正文那一次**：`file-change-tracker.ts` 的 `fetchPatchById` 发的是
+     * `columns: ["patch"]`（只那一列 ✓）。
+     *
+     * ⚠️ 第 269 波之后本文件里**已经不存在**"镜像装载"的那种 `crud.list` 了 ✗→✓
+     * （这张表结构性不进镜像 ✓），所以现在这条断言比原来**更强** ✓：
+     * 一屏读（多列投影）+ 正文读（恰好一列 `patch`）两种调用是**唯一**的两种形态 ✓。
      */
     const onDemandCall = listCalls.find(
       (c) => Array.isArray(c.params.columns) && (c.params.columns as string[]).length === 1,
@@ -978,7 +966,7 @@ describe("C-7 turn_file_changes 的 patch 按需取", () => {
     );
     setStoragePort(real as unknown as StoragePort);
     await real.start();
-    await loadTurnFileChangesMirror(real);
+    await resetTurnFileChangesWindow();
     (window as any).__TAURI__ = { core: { invoke: vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0 })) } };
 
     const { FileChangeTracker } = await import("../core/environment/file-change-tracker");
@@ -1002,7 +990,7 @@ describe("C-7 turn_file_changes 的 patch 按需取", () => {
     const { real } = realPortWithScriptedCrudList({ turn_file_changes: [] }, []);
     setStoragePort(real as unknown as StoragePort);
     await real.start();
-    await loadTurnFileChangesMirror(real);
+    await resetTurnFileChangesWindow();
     const { FileChangeTracker } = await import("../core/environment/file-change-tracker");
     resetPersistFailures();
     expect(await FileChangeTracker.revert("missing-id", "/fake/repo")).toBe(false);
@@ -1025,6 +1013,15 @@ describe("C-7 turn_file_changes 的 patch 按需取", () => {
           if (cmd !== "execute_command") return null;
           const c = String(args.command);
           commands.push(c);
+          /**
+           * ★ 第 46 波：`snapshotWorkingTree` 现在是**一次调用三条 git**（批量化 ✓，见 `GIT_BATCH_SENTINEL` ✓）
+           * ⇒ 夹具要按**同一个协议**回话 ✓（每条的输出后面跟一个"哨兵 + 该条退出码"行 ✓）。
+           * 不这么改的话，解析会把三条读成"一条 + 两条空" ✗ ⇒ `start()` 拿不到快照 ✗ ⇒ 这个用例假红 ✓。
+           */
+          if (c.includes(GIT_BATCH_SENTINEL)) {
+            const S = GIT_BATCH_SENTINEL;
+            return { stdout: `stash-abc${S}0\n` + `tree-abc${S}0\n` + `new-file.ts${S}0\n`, stderr: "", exitCode: 0 };
+          }
           if (c.includes("rev-parse --is-inside-work-tree")) return { stdout: "true", stderr: "", exitCode: 0 };
           if (c.includes("HEAD^{tree}")) return { stdout: "tree-abc", stderr: "", exitCode: 0 };
           if (c.includes("stash create")) return { stdout: "stash-abc", stderr: "", exitCode: 0 };
@@ -1040,7 +1037,7 @@ describe("C-7 turn_file_changes 的 patch 按需取", () => {
     });
     setStoragePort(port as unknown as StoragePort);
 
-    const { FileChangeTracker } = await import("../core/environment/file-change-tracker");
+    const { FileChangeTracker, GIT_BATCH_SENTINEL } = await import("../core/environment/file-change-tracker");
     const tracker = new FileChangeTracker("/fake/repo", "s1", "m1", 1);
     expect(await tracker.start()).toBe(true);
     expect(commands.some((c) => c.includes("stash create")), "start() 必须取工作区快照").toBe(true);

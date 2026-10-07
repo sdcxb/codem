@@ -232,7 +232,7 @@ export function checkVisibleRecordedInvariant(
  * 每个 tool_call 事件都应该有对应的 tool_result 事件。
  * 没有结果的 tool_call 是未完成的会话状态。
  */
-export function checkToolCallPairingInvariant(
+function checkToolCallPairingInvariant(
   sessionId: string,
   /** **注入数据**（第 143 波，B2 ✓）：理由同 `checkVisibleRecordedInvariant` ✓。 */
   injected?: { events?: readonly MirrorEvent[] },

@@ -35,8 +35,8 @@ export interface DshModelSelection {
   reasoningEffort?: string;
 }
 
-export const DSH_MODEL_PREFIX = "dsh:model:";
-export const DSH_PERMISSION_PREFIX = "dsh:permission:";
+const DSH_MODEL_PREFIX = "dsh:model:";
+const DSH_PERMISSION_PREFIX = "dsh:permission:";
 
 /** base64url（无填充、url-safe 字母表）。不用 `btoa`：它只吃 latin1，中文会炸。 */
 export function base64url(bytes: Uint8Array): string {

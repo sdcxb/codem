@@ -48,7 +48,7 @@ export function readCachedSkin(): SkinId | null {
 }
 
 /** 写首屏皮肤镜像（值没变就不写，避免无谓抖动） */
-export function cacheSkin(skin: SkinId): void {
+function cacheSkin(skin: SkinId): void {
   try {
     if (globalThis.localStorage?.getItem(SKIN_CACHE_KEY) === skin) return;
     globalThis.localStorage?.setItem(SKIN_CACHE_KEY, skin);

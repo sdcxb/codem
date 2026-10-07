@@ -77,7 +77,7 @@ export function calculateContentSimilarity(oldContent: string, newContent: strin
  * **判不出来 ⇒ 按「可能已存在」处理（去问）**。所以它误判的后果是
  * 「多问一次」，而不是「少问一次」。
  */
-export function isMissingPathError(message: string): boolean {
+function isMissingPathError(message: string): boolean {
   return (
     // Node / fetch 层惯例（测试桩与部分 JS 侧路径用这个）
     /\bENOENT\b/.test(message) ||

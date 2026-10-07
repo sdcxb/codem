@@ -42,7 +42,6 @@ export const NOTICE_STATUSES = [
   "cancelled",
   "failed",
 ] as const;
-export type NoticeStatus = (typeof NOTICE_STATUSES)[number];
 
 export function isPendingStatus(s: string): boolean {
   return s === "open" || s === "responding" || s === "response_accepted" || s === "resolving";
@@ -93,10 +92,6 @@ export const REMOTE_ACTION_REJECT = "reject";
 export const CODE_NOT_PENDING = "dsh_approval_not_pending";
 export const CODE_INVALID_ACTION = "dsh_approval_invalid_action";
 export const CODE_UNAVAILABLE = "dsh_approval_unavailable";
-
-export const MSG_NOT_PENDING = "这个权限请求已处理或已失效。";
-export const MSG_INVALID_ACTION = "未知的批准操作。";
-export const MSG_UNAVAILABLE = "DSH 未接收批准结果，请稍后重试。";
 
 /** 把远端动作 id 映射成我们的内部动作。**不认识就返回 null，不猜。** */
 export function remoteActionToInternal(actionId: string): "allow" | "deny" | null {

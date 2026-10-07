@@ -120,25 +120,6 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
 }
 
 /**
- * 把面板已有的 `TokenBudget` 转成水位。
- *
- * 面板自己算 `budget`（它还要显示 systemPrompt / outputReserve 明细），
- * 但**等级与百分比必须由同一对 `used/available` 导出**，所以走这里，
- * 面板不再单独算压力。
- */
-export function waterLevelFromBudget(budget: TokenBudget, messageCount: number): ContextWaterLevel {
-  const display = summarizeDisplayPressure(budget.used, budget.available);
-  return {
-    used: budget.used,
-    available: budget.available,
-    ratio: display.ratio,
-    percent: display.percent,
-    level: display.level,
-    messageCount,
-  };
-}
-
-/**
  * 订阅水位变化。
  *
  * ## 为什么是**轮询**而不是"内容变化时重算"

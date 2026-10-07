@@ -1339,7 +1339,18 @@ async fn execute_command(command: String, cwd: Option<String>, timeout_ms: Optio
     // $PSDefaultParameterValues: Default encoding for Out-File, redirections
     let utf8_prefix = "chcp 65001 | Out-Null; [Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::InputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; ";
     let full_command = format!("{}{}", utf8_prefix, ps_body);
-    cmd.arg("-Command").arg(&full_command).current_dir(&work_dir);
+    /**
+     * ★ 第 46 波：**`-NoProfile -NonInteractive`** ✓（判据 `SH-1..3` ✓）。
+     *
+     * 原来这一行只有 `-Command` ✗ ⇒ 每个工具命令都会**加载用户 profile** ✓，两条真风险：
+     * 1. ★ **污染工具输出**：profile 里只要有一句 `Write-Host`（欢迎语 / 代理 / conda 初始化… ✓），
+     *    每个工具结果都会多出那段文字 ✗ ⇒ 模型读到的是"命令输出 + 噪声"✗；
+     * 2. ★ **可能挂住**：profile 或命令本身有交互提示时，没有 `-NonInteractive` 会卡到超时 ✗。
+     *
+     * ⚠️ 速度只是**顺带**的 ✓：本机实测 271 ms/次 ⇒ 224 ms/次（差 **48 ms/次** ✓，
+     * ≈12 s/批 ⇒ **不是**主要收益 ✓，别把它当性能修复 ✗）。
+     */
+    cmd.arg("-NoProfile").arg("-NonInteractive").arg("-Command").arg(&full_command).current_dir(&work_dir);
     // Python encoding: PYTHONIOENCODING for stdin/stdout, PYTHONUTF8 for UTF-8 mode (3.7+)
     cmd.env("PYTHONIOENCODING", "utf-8");
     cmd.env("PYTHONUTF8", "1");

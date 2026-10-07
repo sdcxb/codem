@@ -2482,7 +2482,43 @@ export function __resetTextEventFingerprints(sessionId?: string): void {
  * 新追加的那一行就没有 —— 而日志是权威副本（读路径日志覆盖索引、重建按日志落库），
  * 于是"更新一次正文"会顺带把 `attachments` / `metadata` 永久抹掉。
  */
+/**
+ * ★ 第 41 波：`updateMessage` 的**成本账** ✓（**只记不判** ✓ —— 目标② 的"消息行的写"嫌疑 ✓）。
+ *
+ * ## 为什么要有它（**先加留档、别先改逻辑** ✓ —— 交接 §6 第 8 条 / §9 ✓）
+ *
+ * `executor.ts` 对**每一个** `text_delta` / `reasoning_delta` 都调本函数 ✓，
+ * 而本函数是**同步**路径：`currentSessionIdForMessage` 一次查询 ✓ + 索引侧 `safeGetMessage` 再一次 ✓ +
+ * 索引 IPC ✓ + 正文变了还要重写 FTS IPC ✓。消费方是在**生成器的两次 yield 之间**做这些的 ✓
+ * ⇒ 这段开销落在 `llm timing` 的 `stream=` 里 ✓，与输出体量同向增长 ✓。
+ *
+ * ⚠️ 但**已有数据分不开**"模型真在生成"与"客户侧在写盘" ✗（量过 ✓，见
+ * `.preview-shot/_stream-vs-output.mjs`：正文斜率只有 ~1.2~2.2 ms/字 ✓，
+ * 而最贵的几轮正文几乎是 0 字 ✗ —— 贵的部分是 reasoning，`text length` 数不到 ✗）。
+ * ⇒ 所以先打点 ✓：**调用次数 / 累计毫秒 / 单次最大毫秒** ✓，由调用方取走并清零 ✓。
+ *
+ * ★ 两个刻意的取舍 ✓：
+ * 1. **不判任何事** ✓ —— 它不改行为、不设阈值；它只让"到底花了多少"变成可归因的数字 ✓；
+ * 2. 计时只在**函数首尾**两处 ✓（`performance.now()` 各一次 ✓，对热路径可忽略 ✓）。
+ */
+const messageWriteStats = { calls: 0, ms: 0, maxMs: 0 };
+
+/** 取走这一段的账并**清零** ✓（取走即清零 ⇒ 每轮报的是"这一轮的账"✓） */
+export function takeMessageWriteStats(): { calls: number; ms: number; maxMs: number } {
+  const out = { calls: messageWriteStats.calls, ms: Math.round(messageWriteStats.ms), maxMs: Math.round(messageWriteStats.maxMs) };
+  messageWriteStats.calls = 0;
+  messageWriteStats.ms = 0;
+  messageWriteStats.maxMs = 0;
+  return out;
+}
+
+/** 仅供判据使用：把账清零 ✓ */
+export function __resetMessageWriteStatsForTests(): void {
+  takeMessageWriteStats();
+}
+
 export function updateMessage(id: string, update: Partial<Message>): void {
+  const __t0 = performance.now();
   // ① 权威日志：先用现有快照 + 本次改动合成一条完整记录追加（同 id 后写者胜）
   const sessionId = currentSessionIdForMessage(id);
   /** 本次用的"现存快照"：下面第 ③ 步（全文索引）复用同一份，不重复读一次 */
@@ -2532,6 +2568,142 @@ export function updateMessage(id: string, update: Partial<Message>): void {
    */
   if (sessionId && snapshot && (update.status === "done" || update.status === "error")) {
     appendMessageTextEvent(sessionId, snapshot);
+    /**
+     * ## ★ 第 309 波（`GAP-1..3` ✓）：**定稿时把"空正文 + 有 reasoning"的行钉住** ✓
+     *
+     * ## 修的缺陷（用户第三次报障 ✓，归档 §13.217）
+     *
+     * 报障原文：【存储自检：本次新发现记录与界面不一致：不变量审计：本次新产生 1 条缺口…】
+     * 三条样本的形态**完全一致** ✓：
+     * ```
+     * content=""  reasoning=488/57/268 字  status=done
+     * 事件里提到该 messageId 的：**一条都没有** ✗
+     * ```
+     *
+     * ## 为什么会漏（三个环节叠在一起 ✓）
+     *
+     * 1. 上面的 `appendMessageTextEvent` **刻意拒绝空正文** ✓（`if (!content) return;` ✓，口径 FWT-C1a：
+     *    纯工具轮的事实记在 `tool_call`/`tool_result` 里 ✓，"一个事实一个写入者"✓）——
+     *    **这条口径是对的** ✗⇒✓，问题在下面；
+     * 2. **纯工具轮**（空正文 + 有工具调用 ✓）由工具事件记账 ✓ ⇒ **不会**判缺口 ✓，
+     *    这一支**本来就对** ✓；
+     * 3. 但 **"只吐了 reasoning、一个工具都没调"** 的那一轮 ✗ ⇒
+     *    空正文被拒 ✓、又没有工具事件 ✓ ⇒ **这一行在事件日志里彻底没有记录** ✗。
+     *    收尾处与中途定稿处**各有一段补钉逻辑** ✓
+     *    （`executor.ts:542` ✓ / `:708` ✓）—— 但**两段都在消费循环里** ✗
+     *    ⇒ 一旦这一轮**没走到下一步就结束**（§13.219 ✓），两段**都跑不到** ✗
+     *    ⇒ 那一行**永远**停在"可见但无事件" → 下一轮维护审计报成新缺口 ✓。
+     *
+     * ## 为什么修在**这里**（而不是再加一段钉住 ✗）
+     *
+     * `updateMessage(status:"done")` **就是"这一行定稿"的那一刻** ✓ ——
+     * 它**已经**是正文事件的写入点 ✓（上面那行 ✓），只是**把空正文排除了** ✗。
+     * 在这里补上 ⇒ **不依赖"下一步会不会来"** ✓（哪个环节断都不影响 ✓），
+     * 也不需要第三处钉住 ✓。
+     *
+     * ## 口径（刻意极窄 ✓，与既有两处**完全一致** ✓）
+     *
+     * 三条件同时成立才补 ✓：**空正文** ✓ + **有 reasoning** ✓ + **一个工具都没调** ✓。
+     * - 有正文 ⇒ 上面那行已经写了 ✓，这里不重复 ✓；
+     * - 有工具调用 ⇒ 工具事件已记账 ✓（FWT-C1a ✓），**不补** ✓；
+     * - 只有"只吐 reasoning"这一种形态补 ✓ —— 它**确实是"可见"的** ✓（界面上看得见那条思考 ✓），
+     *   所以**必须**在事件日志里有记录 ✓（这正是 `VISIBLE_BUT_NOT_RECORDED` 的定义 ✓）。
+     *
+     * ## 与既有两处的关系（**不是三套口径，是同一条** ✓）
+     *
+     * `executor` 那两处若**也**跑到 ✓ ⇒ 它们写的是**同一形态**（同 `messageId` ✓、同为"空正文"✓）
+     * ⇒ `appendMessageTextEvent` 的**指纹去重**会认出来 ✓ ⇒ **不会写第二条** ✓
+     * （`textEventFingerprint(content)` 在空正文上是同一个指纹 ✓）。
+     * ⇒ 三条路**收敛到一条事件** ✓，多写的风险由既有去重兜住 ✓。
+     */
+    /**
+     * ## ★★ 第 309 波（`GAP2-1..3` ✓）：**判据从"有没有工具调用"改成"有没有事件"** ✗→✓
+     *
+     * ## 为什么必须改（**用户第四次报同一件事** ✓，归档 §13.243 ✓）
+     *
+     * 第一版的条件里有一条 ✗：
+     * ```ts
+     * (snapshot.toolCalls?.length ?? 0) === 0    // ★ 我要求"零工具调用" ✗
+     * ```
+     * 而我当时**写在注释里的理由**是 ✓：
+     * > 「**有工具调用的空行由工具事件记账** ✓（FWT-C1a ✓），不补 ✓。」
+     *
+     * ⇒ ★ **这个前提在真机里是假的** ✗。6 条报障样本**逐条**都是 ✓：
+     * ```
+     * assistant-…-11  status=done content=0 reasoning=1705 tool_calls=1 assistant_text=0
+     * assistant-…-8   status=done content=0 reasoning=1498 tool_calls=1 assistant_text=0
+     * （6/6 条同形 ✓）
+     * ```
+     * 而**逐条核过事件** ✓：`tool_call`/`tool_result` 事件引用的 messageId
+     * 里**跳过了这一行** ✗（`…-6` 之后直接 `…-8` ✓）⇒
+     * ★ **"工具事件会记这一行的账"没有发生** ✗。
+     *
+     * ⇒ ★★ 于是形成**"两不管"** ✗：
+     * | 谁 | 为什么不管 |
+     * |---|---|
+     * | 本补钉 ✗ | 要求"零工具调用" ✗，而 `tool_calls` 表里**有 1 行** ✓ |
+     * | 工具事件 ✗ | 它们挂在**别人**的 messageId 上 ✓ |
+     * ⇒ **这一行在事件日志里彻底没有记录** ✗ ⇒ 审计判 `VISIBLE_BUT_NOT_RECORDED` ✓。
+     *
+     * ## 正确口径（**判"有没有事件"，不判"有没有工具调用"** ✓）
+     *
+     * ★ 关键认识 ✓：**"工具事件会不会记账"是别人的行为** ✗，
+     * 而**"这一行有没有事件"才是我们能直接判的** ✓。
+     * ⇒ `GAP2-1` ✓：**任何 `content=0` 的助手行定稿时** ✓，
+     *    **若事件日志里没有任何事件引用该 messageId** ✓ ⇒ **补一条空 `assistant_text`** ✓。
+     * ⇒ `GAP2-2`（反向 ✓）：**若已经有事件引用它** ✓ ⇒ **不补** ✗（防重复 ✓）。
+     * ⚠️ 而`tool_calls` 的计数**降级为"不作判据"** ✓（它既不保证有事件 ✗、也不禁止有事件 ✓）。
+     */
+    /**
+     * ⚠️ ⚠️ **修这一版时我自己先写错了一次，留证** ✗：
+     * 我第一版把条件写成 `if (snapshot.role === "assistant" && !String(snapshot.content ?? ""))` ✗ ——
+     * ★ **顺手把 `reasoning.length > 0` 也删掉了** ✗ ⇒ 那会让**任何**空正文行都被钉 ✓
+     * （包括**纯工具轮** ✓ —— 而那一支**本来由工具事件记账** ✓，多补一条就是"一个事实两条写入" ✗，
+     * 正是 `GAP-2` 要防的 ✓）。
+     * ⇒ 正解 ✓：**只把"零工具调用"那一条换掉** ✓，**`reasoning` 与"空正文"两条留着** ✓ ——
+     * 一次只改一个条件 ✓（这条纪律我这 40 轮里已经违反过好几次 ✗）。
+     */
+    if (
+      snapshot.role === "assistant" &&
+      !String(snapshot.content ?? "") &&
+      String(snapshot.reasoning ?? "").length > 0
+    ) {
+      /**
+       * `GAP2-1` ✓：**回查事件日志**看有没有任何事件提到这一行 ✓。
+       * ⚠️ **读不到（镜像未就绪）时不许当"没有"** ✓ —— 那会凭空多写事件 ✗
+       * （与 `persistedKeysFor` 的既定口径一致 ✓）。读不到 ⇒ **按"不知道"处理** ✓：
+       * 仍走 `appendMessageTextEvent` ✓（它的**指纹去重**与**延后判定**会兜住 ✓ ——
+       * 宁可有重复也不会丢 ✓，这是既有取舍 ✓）。
+       */
+      const alreadyReferenced = (() => {
+        try {
+          return getEventLog()
+            .readAll(sessionId)
+            .some((e) => {
+              const p = e.payload as { messageId?: string } | null | undefined;
+              return p?.messageId === snapshot.id;
+            });
+        } catch {
+          return false;
+        }
+      })();
+      if (!alreadyReferenced) {
+        /** 直接走既有唯一写入点 ✓ —— 给它一份**空正文**的快照，让指纹与既有两处一致 ✓ */
+        appendMessageTextEvent(sessionId, { ...snapshot, content: "" });
+      }
+    }
+  }
+
+  /**
+   * ★ 第 41 波：**记账在最后一行** ✓ —— 必须在**所有分支之后** ✓，否则只数到一部分调用 ✗
+   * （判据 `MW-1` 钉这条 ✓）。本函数**没有提前 return** ✓，所以这一行是"必然执行到"的位置 ✓
+   * （"写了 ≠ 执行了"是交接 §6 第 1 条 ✓）。
+   */
+  {
+    const dt = performance.now() - __t0;
+    messageWriteStats.calls++;
+    messageWriteStats.ms += dt;
+    if (dt > messageWriteStats.maxMs) messageWriteStats.maxMs = dt;
   }
 }
 

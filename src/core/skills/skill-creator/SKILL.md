@@ -26,15 +26,15 @@ A skill for creating, installing, and iteratively improving skills.
 Skills are stored as directories containing a `SKILL.md` file. The local skills directory is:
 
 ```
-~/.codem/skills/<skill-name>/SKILL.md
+~~/.codem/skills（错 ✗ 已废弃）/<skill-name>/SKILL.md
 ```
 
 On Windows, `~` is the user's home directory (e.g. `C:\Users\<username>\.codem\skills\`).
-On macOS/Linux, it is `/home/<username>/.codem/skills/` or `~/.codem/skills/`.
+On macOS/Linux, it is `/home/<username>/.codem/skills/` or `~~/.codem/skills（错 ✗ 已废弃）/`.
 
 To find the exact path at runtime, run:
 ```bash
-echo $HOME/.codem/skills
+echo $SKILLS_DIR
 ```
 
 The system scans this directory at startup and when `load_skill` is called. Any `SKILL.md` file placed in a subdirectory of this location will be automatically discovered and become available as a skill.
@@ -119,16 +119,16 @@ After writing the SKILL.md content, install it to the local skills directory so 
 
 1. **Determine the skills directory path**:
    ```bash
-   SKILLS_DIR="$HOME/.codem/skills"
+   SKILLS_DIR="<系统提示词 Skill environment 段给出的用户级技能根（运行时真值 ✓）>"
    mkdir -p "$SKILLS_DIR/<skill-name>"
    ```
 
 2. **Write the SKILL.md file** to the skill directory:
-   Use the `write` tool with path `$HOME/.codem/skills/<skill-name>/SKILL.md` and the full SKILL.md content.
+   Use the `write` tool with path `$SKILLS_DIR/<skill-name>/SKILL.md` and the full SKILL.md content.
 
 3. **Write any bundled resources** (scripts, references, assets) to the same directory:
    ```
-   $HOME/.codem/skills/<skill-name>/
+   $SKILLS_DIR/<skill-name>/
    ├── SKILL.md
    ├── scripts/
    │   └── helper.py
@@ -138,7 +138,7 @@ After writing the SKILL.md content, install it to the local skills directory so 
 
 4. **Verify installation** by reading the file back:
    ```
-   read(path="$HOME/.codem/skills/<skill-name>/SKILL.md")
+   read(path="$SKILLS_DIR/<skill-name>/SKILL.md")
    ```
 
 5. **The skill will be available** in the next `load_skill` call. The system scans the skills directory on each `load_skill` invocation, so newly created skills are automatically discovered.
@@ -161,21 +161,21 @@ When a user says "install this skill: <URL>" or shares a skill link:
 
 4. **Create the skill directory** and write the file:
    ```bash
-   mkdir -p "$HOME/.codem/skills/<skill-name>"
+   mkdir -p "$SKILLS_DIR/<skill-name>"
    ```
-   Then use `write` to save the content to `$HOME/.codem/skills/<skill-name>/SKILL.md`.
+   Then use `write` to save the content to `$SKILLS_DIR/<skill-name>/SKILL.md`.
 
 5. **If the URL points to a ZIP file**, download and extract it:
    ```bash
    curl -sL "<URL>" -o /tmp/skill.zip
-   unzip /tmp/skill.zip -d "$HOME/.codem/skills/<skill-name>/"
+   unzip /tmp/skill.zip -d "$SKILLS_DIR/<skill-name>/"
    ```
 
 6. **If the URL is a GitHub repository**, clone or download specific files:
    ```bash
    git clone --depth 1 "<URL>" /tmp/skill-repo
    # Copy the skill directory
-   cp -r /tmp/skill-repo/<skill-dir> "$HOME/.codem/skills/<skill-name>/"
+   cp -r /tmp/skill-repo/<skill-dir> "$SKILLS_DIR/<skill-name>/"
    ```
 
 7. **Verify** by reading the installed SKILL.md and confirming the frontmatter is valid.

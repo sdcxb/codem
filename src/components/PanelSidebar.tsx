@@ -89,32 +89,45 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
       setModifiedFiles([]);
       return;
     }
+    /**
+     * 第 269 波：这张表不再有域镜像 ⇒ 改成**按需查询**（`loadBySession` ✓）。
+     *
+     * 原来同步读镜像：真机超过 5000 行被拒载 ⇒ 恒空 ⇒ 工作台「修改的文件」永远是 0 个 ✗。
+     * `alive` 闩锁守的是"切会话/切页签时旧请求后到"✗ —— 旧结果会把新会话的清单盖回去 ✗。
+     */
+    let alive = true;
     const load = () => {
-      try {
-        const records = FileChangeStorage.listBySession(currentSessionId);
-        const byPath = new Map<string, { path: string; additions: number; deletions: number }>();
-        for (const rec of records) {
-          let files: Array<{ path: string; status: string }> = [];
-          try {
-            const parsed = rec.changed_files ? JSON.parse(rec.changed_files) : [];
-            if (Array.isArray(parsed)) files = parsed;
-          } catch {
-            /* 坏行跳过：一个坏记录不该让整块面板空掉 */
+      FileChangeStorage.loadBySession(currentSessionId)
+        .then((records) => {
+          if (!alive) return;
+          const byPath = new Map<string, { path: string; additions: number; deletions: number }>();
+          for (const rec of records) {
+            let files: Array<{ path: string; status: string }> = [];
+            try {
+              const parsed = rec.changed_files ? JSON.parse(rec.changed_files) : [];
+              if (Array.isArray(parsed)) files = parsed;
+            } catch {
+              /* 坏行跳过：一个坏记录不该让整块面板空掉 */
+            }
+            for (const f of files) {
+              // 同一文件在多轮里被改 → 合并（路径去重），不做数值上的真假推断
+              if (!byPath.has(f.path)) byPath.set(f.path, { path: f.path, additions: 0, deletions: 0 });
+            }
           }
-          for (const f of files) {
-            // 同一文件在多轮里被改 → 合并（路径去重），不做数值上的真假推断
-            if (!byPath.has(f.path)) byPath.set(f.path, { path: f.path, additions: 0, deletions: 0 });
-          }
-        }
-        setModifiedFiles([...byPath.values()]);
-      } catch (e) {
-        console.warn("[PanelSidebar] 读取本会话文件改动失败（工作台文件区块留空）:", e);
-        setModifiedFiles([]);
-      }
+          setModifiedFiles([...byPath.values()]);
+        })
+        .catch((e) => {
+          if (!alive) return;
+          console.warn("[PanelSidebar] 读取本会话文件改动失败（工作台文件区块留空）:", e);
+          setModifiedFiles([]);
+        });
     };
     load();
     const unsub = onFileChangesTracked(load);
-    return unsub;
+    return () => {
+      alive = false;
+      unsub();
+    };
   }, [effectiveTab, currentSessionId]);
 
   if (!open) return null;
@@ -172,8 +185,9 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
 
             修法：
             - `collapsed` / `onToggle` 接**真实状态**（折叠按钮真的有反应）；
-            - `modifiedFiles` 接 `FileChangeStorage.listBySession(currentSessionId)`
-              的**真实数据**（那是本会话的逐轮文件改动，`FileChangesList` 读的同一份）。
+            - `modifiedFiles` 接 `FileChangeStorage.loadBySession(currentSessionId)`
+              的**真实数据**（第 269 波：这张表不再有域镜像，读走**按需查询 + 有界一屏**；
+              与 `FileChangesList` 同一份来源）。
             - `activeTools` 暂时仍为空数组 —— 如实说明：本仓库目前**没有**"正在执行的工具"
               的响应式数据源（`agentActivities` 的形态是 {step,total}，与此处的
               `{name,status}` 不同，硬映射会造出一个看着像真的、其实是猜的列表）。

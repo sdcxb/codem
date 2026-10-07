@@ -517,7 +517,12 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     const agent = this.agents.get(agentId || this.config.defaultAgent || "build");
     if (!agent) return "";
 
-    const skillPrompt = this.skills.buildSkillPrompt();
+    /**
+     * ★ 第 47 波：**环境事实段前置** ✓（装在哪/什么布局/怎么从仓库装/怎么验证 ✓）。
+     * 它**与技能数量无关** ✓ ⇒ 一个技能都没有时也在 ✓ —— 而那正是"让模型去装第一个技能"的场景 ✓。
+     * 为什么放在这里而不是 `buildSkillPrompt()` 里 ✗：后者被 30+ 条既有判据钉着 ✓。
+     */
+    const skillPrompt = this.skills.buildSkillEnvironmentSection() + this.skills.buildSkillPrompt();
     // Preload force-preload skills (e.g. prompt-optimization) so their full
     // instructions are always in context — not dependent on LLM self-awareness.
     const preloadedSkillPrompt = this.skills.buildPreloadedSkillPrompt();
@@ -571,7 +576,7 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       ? { ...agent, collaborationMode }
       : agent;
 
-    const skillPrompt = this.skills.buildSkillPrompt(userSelectedSkills);
+    const skillPrompt = this.skills.buildSkillEnvironmentSection() + this.skills.buildSkillPrompt(userSelectedSkills);
     // Preload force-preload skills (e.g. prompt-optimization) so their full
     // instructions are always in context — not dependent on LLM self-awareness.
     const preloadedSkillPrompt = this.skills.buildPreloadedSkillPrompt();

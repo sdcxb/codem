@@ -349,7 +349,22 @@ export const HOT_DOMAIN_TABLES: readonly string[] = [
   "flashcards",
   "agent_profiles",
   "prompt_drafts",
-  "turn_file_changes",
+  /*
+   * ⚠️ 第 269 波：`turn_file_changes` **已从本清单移除** ✗→✓（用户报障的治本处置 ✓）。
+   *
+   * 它原来在这里 ⇒ 启动就整表镜像 ✗ ⇒ 真机超过默认上限 5000 行 ⇒ `loadTable`
+   * **拒载**✗（不是截断 ✗）⇒ 用户看到「表 turn_file_changes 超过镜像上限 5000 行。
+   * 该功能本次不可用」✗（`docs/HANDOFF-NEXT-SESSION.md` §3 ✓）。
+   *
+   * 为什么不改成像 `messages` / `telemetry_events` 那样"在这里给一个更高的上限"✗：
+   * 这张表是**追加型热表** ✓（每轮每文件若干行 ✓）⇒ 行数只增不减 ✓
+   * ⇒ 任何固定上限 ✗ 迟早复发 ✗，只是把复发推后 ✓。而它**本来就在已声明的边界之外** ✓
+   * —— `no-sync-mirror-reads.test.ts` 的 `UNBOUNDED_TABLES`（无界对象 ✗）里就有它 ✓。
+   *
+   * 现在它走**按需查询 + 有界"一屏"投影** ✓（`FileChangeStorage.loadBySession` ✓，
+   * 与 `notebook_chunks` 同一套 ✓）：启动**一个字节都不拉** ✓，面板打开时按会话查最近
+   * `TURN_FILE_CHANGE_WINDOW_ROWS` 行 ✓（**不含 `patch` 正文** ✗ —— 回滚时按 id 单独取 ✓）。
+   */
   "recovery_data",
   "accounts",
   "notes",

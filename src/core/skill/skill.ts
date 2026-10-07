@@ -971,6 +971,71 @@ export class SkillRegistry {
       .map((r) => r.skill);
   }
 
+  /**
+   * ★ 第 47 波：**技能根目录的运行时真值** ✓（由 `loadInstalledSkills()` 在启动/重扫时灌进来 ✓）。
+   *
+   * 为什么必须有它 ✗→✓：在此之前，模型能看到的唯一"技能装在哪"的说法，是
+   *   `skill-creator/SKILL.md` 里写的 `~~/.codem/skills（错 ✗ 已废弃）/<name>/SKILL.md` ✗ ——
+   *   而实现用的是 `<appData>/.codem/skills` ✓（Windows 上即
+   *   `C:\Users\<u>\AppData\Roaming\com.codem.app\.codem\skills` ✓）。
+   *   **文档与实现不一致** ⇒ 模型照文档写进 `~~/.codem/skills（错 ✗ 已废弃）` ✗ ⇒ 平台**永远发现不了** ✗
+   *   ⇒ 于是它只能"翻别的技能反推安装方式" ✓（用户实报的现象 ✓）。
+   * ⇒ 这里把**运行时解析出来的真值**交给提示词 ✓，模型不必也不该去猜 ✗。
+   */
+  private skillRootsForPrompt: { user?: string; project?: string } = {};
+
+  /** 灌入技能根目录的运行时真值 ✓（同步 ✓ —— 供同步的 `buildSkillPrompt()` 使用 ✓） */
+  setSkillRootsForPrompt(roots: { user?: string; project?: string }): void {
+    this.skillRootsForPrompt = { ...this.skillRootsForPrompt, ...roots };
+  }
+
+  /**
+   * **技能环境事实**（模型始终可见 ✓，且**与"装了几个技能"无关** ✓）。
+   *
+   * 为什么必须与技能数量解耦 ✗→✓：原来 `buildSkillPrompt()` 在 `skills.length === 0` 时
+   * `return ""` ✗ ⇒ **一个技能都没有时，模型拿不到任何环境事实** ✗ ——
+   * 而那恰恰是"请你装第一个技能"的场景 ✓（用户实报 ✓）。
+   *
+   * 只写**事实与约定**（路径/布局/发现规则/安装步骤/验证 ✓）——
+   * 不写"你必须如何如何"的劝说 ✗（那是另一段的事 ✓）。
+   */
+  /**
+   * ★ 环境事实段改为**公开** ✓（由调用方在 `buildSkillPrompt()` **之前**前置 ✓）——
+   * 这样 `buildSkillPrompt()` 自身的输出**一字不变** ✓，
+   * 既有 30+ 条判据（`skill-trigger-mechanism` 等 ✓）不会被打红 ✓。
+   */
+  buildSkillEnvironmentSection(): string {
+    const user = this.skillRootsForPrompt.user;
+    const project = this.skillRootsForPrompt.project;
+    const userLine = user
+      ? `- **用户级技能根（本机真值 ✓）**：\`${user}\``
+      : "- **用户级技能根**：应用数据目录下的 `.codem/skills/`（本机真值由平台在启动时给出；若这里没有具体路径，先用一次 `Get-ChildItem $env:APPDATA` 确认，不要猜 ✗）";
+    const projectLine = project
+      ? `- **项目级技能根（本机真值 ✓）**：\`${project}\``
+      : "- **项目级技能根**：`<项目根>/.codem/skills/`（随项目走 ✓，只对该项目生效 ✓）";
+    return [
+      "### Skill environment (facts — 不要再去别处反推 ✗)",
+      "",
+      userLine,
+      projectLine,
+      "- **布局（唯一被识别的形状 ✓）**：每个技能一个目录，目录里放 `SKILL.md`：`<根>/<技能名>/SKILL.md`",
+      "  - `SKILL.md` 以 YAML frontmatter 开头，**必填** `name` 与 `description`（`name` 用 kebab-case ✓）",
+      "  - 名字取自 frontmatter 的 `name` ✓；目录名与它一致最省事 ✓",
+      "- **发现是自动的 ✓**：只要目录符合上面的形状就会被加载 ✓ —— **没有注册步骤 ✓、没有清单文件要改 ✓**",
+      "  - 技能根下**名为 `SKILL.md` 的目录**会被判为结构异常并跳过 ✗（别把技能文件放成同名目录 ✓）",
+      "- **从仓库/URL 安装一个技能（照这个做 ✓，不要逐仓试探 ✗）**：",
+      "  1. 先看仓库里技能目录在哪 ✓：根目录有 `SKILL.md` ⇒ 整仓就是一个技能 ✓；",
+      "     否则找 `skills/<名>/SKILL.md`、`.agents/skills/<名>/SKILL.md`、`.claude/skills/<名>/SKILL.md` 等 ✓",
+      "  2. 把**那一个技能目录**（含它自己的 `SKILL.md` 与脚本 ✓）复制到用户级技能根下 ✓：",
+      "     `<用户级技能根>/<技能名>/` —— 不要整仓拷进去 ✗（仓库里的 README/测试不是技能的一部分 ✓）",
+      "  3. 只用 `git clone`（或下载 zip 解压 ✓）取文件 ✓；**不需要**任何安装器 ✓、也不需要改配置 ✓",
+      "  4. **验证** ✓：读回 `<用户级技能根>/<技能名>/SKILL.md` ✓；能读到且 frontmatter 有 `name`/`description` ⇒ 装好了 ✓",
+      "  5. 装好后它会出现在上面的技能目录里 ✓；若这一轮还没出现 ⇒ 让用户重启应用或等下一次重扫 ✓（不要重复装 ✗）",
+      "- **卸载** ✓：删掉 `<用户级技能根>/<技能名>/` 整个目录 ✓",
+      "",
+    ].join("\n");
+  }
+
   /** Build skill prompt for system prompt (only name + description, not full prompt) */
   buildSkillPrompt(userSelectedSkills?: string[]): string {
     // C3: Check disabled skills from settings
@@ -982,6 +1047,12 @@ export class SkillRegistry {
     const disabledSet = new Set(disabled);
 
     const skills = this.getAll().filter((s) => !disabledSet.has(s.name));
+    /**
+     * ⚠️ 第 47 波：**这里保持"无技能 ⇒ 空串"** ✓ —— 环境事实段由**调用方**前置 ✓
+     * （见 `llm/index.ts` 里 `buildSkillEnvironmentSection() + buildSkillPrompt()` ✓）。
+     * 为什么不在这里返回它 ✗：`buildSkillPrompt()` 的输出被 30+ 条既有判据钉着 ✓，
+     * 改它自身就会打红它们 ✗；把它放在"调用点前置"既达到目的 ✓ 又不动既有契约 ✓。
+     */
     if (skills.length === 0) return "";
 
     const userSelectedSet = new Set(userSelectedSkills || []);
@@ -1660,15 +1731,15 @@ The user can then apply or cancel each change independently.
 Skills are stored as directories containing a \`SKILL.md\` file. The local skills directory is:
 
 \`\`\`
-~/.codem/skills/<skill-name>/SKILL.md
+~~/.codem/skills（错 ✗ 已废弃）/<skill-name>/SKILL.md
 \`\`\`
 
 On Windows, \`~\` is the user's home directory (e.g. \`C:\\\\Users\\\\<username>\\\\.codem\\\\skills\\\\\`).
-On macOS/Linux, it is \`/home/<username>/.codem/skills/\` or \`~/.codem/skills/\`.
+On macOS/Linux, it is \`/home/<username>/.codem/skills/\` or \`~~/.codem/skills（错 ✗ 已废弃）/\`.
 
 To find the exact path at runtime, run:
 \`\`\`bash
-echo $HOME/.codem/skills
+echo $SKILLS_DIR
 \`\`\`
 
 The system scans this directory at startup and when \`load_skill\` is called. Any \`SKILL.md\` file placed in a subdirectory of this location will be automatically discovered and become available as a skill.
@@ -1753,16 +1824,16 @@ After writing the SKILL.md content, install it to the local skills directory so 
 
 1. **Determine the skills directory path**:
    \`\`\`bash
-   SKILLS_DIR="$HOME/.codem/skills"
+   SKILLS_DIR="<系统提示词 Skill environment 段给出的用户级技能根（运行时真值 ✓）>"
    mkdir -p "$SKILLS_DIR/<skill-name>"
    \`\`\`
 
 2. **Write the SKILL.md file** to the skill directory:
-   Use the \`write\` tool with path \`$HOME/.codem/skills/<skill-name>/SKILL.md\` and the full SKILL.md content.
+   Use the \`write\` tool with path \`$SKILLS_DIR/<skill-name>/SKILL.md\` and the full SKILL.md content.
 
 3. **Write any bundled resources** (scripts, references, assets) to the same directory:
    \`\`\`
-   $HOME/.codem/skills/<skill-name>/
+   $SKILLS_DIR/<skill-name>/
    ├── SKILL.md
    ├── scripts/
    │   └── helper.py
@@ -1772,7 +1843,7 @@ After writing the SKILL.md content, install it to the local skills directory so 
 
 4. **Verify installation** by reading the file back:
    \`\`\`
-   read(path="$HOME/.codem/skills/<skill-name>/SKILL.md")
+   read(path="$SKILLS_DIR/<skill-name>/SKILL.md")
    \`\`\`
 
 5. **The skill will be available** in the next \`load_skill\` call. The system scans the skills directory on each \`load_skill\` invocation, so newly created skills are automatically discovered.
@@ -1795,21 +1866,21 @@ When a user says "install this skill: <URL>" or shares a skill link:
 
 4. **Create the skill directory** and write the file:
    \`\`\`bash
-   mkdir -p "$HOME/.codem/skills/<skill-name>"
+   mkdir -p "$SKILLS_DIR/<skill-name>"
    \`\`\`
-   Then use \`write\` to save the content to \`$HOME/.codem/skills/<skill-name>/SKILL.md\`.
+   Then use \`write\` to save the content to \`$SKILLS_DIR/<skill-name>/SKILL.md\`.
 
 5. **If the URL points to a ZIP file**, download and extract it:
    \`\`\`bash
    curl -sL "<URL>" -o /tmp/skill.zip
-   unzip /tmp/skill.zip -d "$HOME/.codem/skills/<skill-name>/"
+   unzip /tmp/skill.zip -d "$SKILLS_DIR/<skill-name>/"
    \`\`\`
 
 6. **If the URL is a GitHub repository**, clone or download specific files:
    \`\`\`bash
    git clone --depth 1 "<URL>" /tmp/skill-repo
    # Copy the skill directory
-   cp -r /tmp/skill-repo/<skill-dir> "$HOME/.codem/skills/<skill-name>/"
+   cp -r /tmp/skill-repo/<skill-dir> "$SKILLS_DIR/<skill-name>/"
    \`\`\`
 
 7. **Verify** by reading the installed SKILL.md and confirming the frontmatter is valid.

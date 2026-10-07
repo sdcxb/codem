@@ -245,7 +245,12 @@ export async function globSearch(pattern: string, path?: string): Promise<string
   return result;
 }
 
-export async function grepSearch(pattern: string, path?: string, include?: string): Promise<string[]> {
+/**
+ * @param include 文件名过滤（可给多个 ✓，PowerShell `-Include` 的数组形式 ✓）。
+ *   ★ 第 43 波：允许**数组** —— 调用方要"只扫判据文件"时必须能一次给 `*test*` 与 `*spec*` ✓
+ *   （只给 `*test*` 会**漏掉** `*.spec.ts` ✗，而 `isTestFile` 是认 spec 的 ✓）。
+ */
+export async function grepSearch(pattern: string, path?: string, include?: string | string[]): Promise<string[]> {
   // Use PowerShell for better Unicode support
   const searchPath = path || await getDefaultCwd();
   /**
@@ -273,8 +278,10 @@ export async function grepSearch(pattern: string, path?: string, include?: strin
   // Escape single quotes for PowerShell (single quote → double single quotes)
   const safePath = searchPath.replace(/'/g, "''");
   const safePattern = pattern.replace(/'/g, "''");
-  const safeInclude = include ? include.replace(/'/g, "''") : "";
-  const filterArg = safeInclude ? `-Include '${safeInclude}'` : "";
+  const includeList = include === undefined ? [] : Array.isArray(include) ? include : [include];
+  const filterArg = includeList.length
+    ? `-Include ${includeList.map((g) => `'${String(g).replace(/'/g, "''")}'`).join(",")}`
+    : "";
   // Use -AllMatches to support regex (Select-String default is regex, not simple match)
   // PowerShell Select-String supports regex natively and handles Unicode patterns
   const psCommand = `Get-ChildItem -Path '${safePath}' ${filterArg} -Recurse -File -ErrorAction SilentlyContinue | Select-String -Pattern '${safePattern}' | ForEach-Object { $_.Path + ':' + $_.LineNumber + ':' + $_.Line }`;

@@ -1,9 +1,6 @@
 // 类型 + parseTaskResult 从 subagent.ts 导出
-export { parseTaskResult, type SubagentTask, type SubagentResult, type SubagentStatus, type SubagentActivity } from "./subagent";
 // Runtime 从 runtime.ts 导出
-export { SubagentRuntime, sanitizeSubagentOutput } from "./runtime";
-export type { SubagentProvider, SubagentRun, ContinuableStart, ContinuableStartSpec, SubagentStartRequest, SubagentReportOptions, SubagentFollowupOptions, SubagentInterruptAuthority, SubagentListEntry, SubagentStopReason } from "./runtime-types";
-export { type SubagentResult as RuntimeResult } from "./runtime-types";
+export { SubagentRuntime } from "./runtime";
 
 // ========== DSH-style 全局 Runtime 访问 ==========
 

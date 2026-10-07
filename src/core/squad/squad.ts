@@ -35,7 +35,7 @@ export interface Squad {
   updatedAt: number;
 }
 
-export interface SquadMember {
+interface SquadMember {
   id: string;
   squadId: string;
   memberType: "agent" | "human";
@@ -50,19 +50,19 @@ export interface SquadWithMembers extends Squad {
   leader?: AgentDefinition;
 }
 
-export type SquadListener = (squadId: string) => void;
+type SquadListener = (squadId: string) => void;
 
 // ========== 团队模板（B 深合并：Squad → agent-teams 模板） ==========
 
 /** 模板中的一个角色（对应运行时团队的一个成员）。 */
-export interface TeamTemplateRole {
+interface TeamTemplateRole {
   name: string;
   description?: string | null;
   memberType: "agent" | "human";
 }
 
 /** 供 agent-teams 建队使用的模板视图。 */
-export interface TeamTemplate {
+interface TeamTemplate {
   id: string;
   name: string;
   /** 队长角色名（原 leader 的显示名；agentId 兼容保留在 roles 中） */

@@ -14,6 +14,26 @@ import { getStoragePort, hasStoragePort } from "./port";
 import { domainReadMany } from "./domain-store";
 import { reportPersistFailure } from "./persist-failure";
 
+/**
+ * 每次启动维护**最多**回填多少个会话（第 309 波 ✓）。
+ *
+ * 为什么要有这个上限（真机读数 ✓）：原来的循环对**全部 373 个会话**无条件走一遍
+ * （载入消息镜像 + `fts.rebuild` + 回填 + hydrate ✓），而消息镜像 `keepSessions = 3`
+ * ⇒ 载入一个逐出一个 ✗ ⇒ 真机 console 里那 1 868 条 `切到会话 …`（占 76% 流量 ✗）。
+ * 而该机器上日志文件已有 **391 个** ✓ ⇒ 绝大多数会话**早就回填过** ✓，
+ * `backfillSessionLog` 对它们是**一条都不写**的增量语义 ✓ ⇒ 那三件重活是纯开销 ✗。
+ *
+ * 取 **32** 的依据 ✓：本机会话数 373 ✓、把清扫压到"一次启动约 1/12 的会话" ✓
+ * ⇒ 全部覆盖一遍需要十几次启动 ✓（对"回填"这件事足够快 —— 它救的是
+ * "索引崩了/被裁"那种**少见**情形 ✓，不是每条消息的必经路径 ✓，
+ * 而"索引空但日志有内容"这个**用户可见**的场景已经由
+ * `store.ts::ensureSessionLogHydrated` 在**进会话时按需**兜住了 ✓）。
+ *
+ * ⚠️ 上限**只允许推迟、不允许跳过** ✗：多出来的会话必须计入 `deferredSessions` 并打日志 ✓
+ * —— 否则就是"静默没做"✗（这个文件第 62 轮的教训 ✓）。
+ */
+const DEFAULT_BACKFILL_SWEEP_MAX = 32;
+
 export { trimIndexedMessages };
 
 /**
@@ -131,8 +151,8 @@ export async function hydrateAllAttachments(): Promise<{ warmed: number; orphans
  * @returns `backfilled` = 本次回填的消息数；`skippedUnreadable` = 因镜像没就绪而**没回填**的会话数
  */
 export async function backfillAllSessions(
-  opts: { mirrorWaitMs?: number } = {},
-): Promise<{ backfilled: number; skippedUnreadable: number }> {
+  opts: { mirrorWaitMs?: number; maxSessions?: number } = {},
+): Promise<{ backfilled: number; skippedUnreadable: number; deferredSessions: number }> {
   // 第 17 轮（L4）：原来的 `await initDatabase()` 已删 —— 它的唯一作用是"确保旧库存在"，
   // 而新架构下旧库刻意不加载（那次调用只会把 sql.js 拖进渲染进程）。
   let sessionIds: string[] = [];
@@ -151,13 +171,61 @@ export async function backfillAllSessions(
     // 第 17 轮（L4）：旧库回退（`SELECT DISTINCT session_id FROM messages`）已删 ——
     // 镜像未就绪时如实跳过，下次维护重试（静默"回填 0 条"才是要避免的那种假正常）。
     console.warn("[SessionLog] sessions 域镜像未就绪，本次跳过回填（下次维护会重试）");
-    return { backfilled: 0, skippedUnreadable: 0 };
+    return { backfilled: 0, skippedUnreadable: 0, deferredSessions: 0 };
   }
 
-  const unreadable = await waitForMessageMirrors(sessionIds, opts.mirrorWaitMs ?? 5000);
+  /**
+   * ## 第 309 波：**把"无界全量清扫"改成"有界 + 优先补真缺的"** ✓（真机读数换来的 ✓）
+   *
+   * ## 现场（`repo-01 r3`，`1.16.283` ✓）
+   *
+   * 一次启动维护把**全部 373 个会话**逐个走了一遍 ✓ —— 每个都
+   * `ensureLoaded`（消息镜像 `keepSessions = 3` ⇒ **载入一个逐出一个** ✗）
+   * + `rebuildSessionFts`（**一次 `fts.rebuild` IPC** ✓）
+   * + `backfillSessionLog` + `hydrateSessionLog` ✓。
+   * 真机 console 实测的后果 ✓：`[RustStoragePort] 切到会话 …` **1 868 条 = 76% 流量** ✗，
+   * 而当前回合真正相关的 `[agent-loop]` 只占 **1%** ✓（证据被噪声淹掉 ✓）。
+   *
+   * ## 为什么"全都走一遍"是浪费（**有真机依据** ✓）
+   *
+   * 该机器上日志目录里已经有 **391 个 `.jsonl`** ✓（会话 373 个 ✓）——
+   * 也就是**几乎每个会话都早就回填过了** ✓。而 `backfillSessionLog` 本身**是增量的** ✓
+   * （`if (existing.has(message.id)) continue` ✓）⇒ 对已齐的会话它**一条都不写** ✓。
+   * ⇒ 那三件重活（载入镜像 / FTS 重建 / hydrate）**对绝大多数会话是纯开销** ✗。
+   *
+   * ## 改法：只**限定工作量**，不改任何语义 ✓
+   *
+   * 1. **优先**处理"日志文件都还没有"的会话 ✓（那是真正需要回填的一类 ✓，
+   *    与既有注释里"老会话第一次跑维护会被回填一次"的语义一致 ✓）；
+   * 2. 设一个**每次启动的上限** ✓（`maxSessions` ✓），超出的**如实计数** ✓
+   *    （`deferredSessions` ✓）⇒ 下次维护继续 ✓（**有界 + 最终覆盖** ✓，
+   *    而不是"这次做了多少全靠运气"✗）；
+   * 3. ⚠️ **上限只允许"推迟"，不允许"跳过"** ✗：被推迟的会话**必须**在
+   *    `deferredSessions` 里被数出来 ✓ —— 否则就成了"静默没做"✗，
+   *    正是这个文件自己反复警告过的那一类（第 62 轮"回填 0 条"看着正常实则整件事没做 ✗）。
+   *
+   * ⚠️ **这一波不删 `rebuildSessionFts` / `hydrateSessionLog`** ✓ ——
+   * 它们对"索引被裁/崩溃丢写入"那种**真缺**的会话仍然是必须的 ✓
+   * （判据 `SWEEP-5` 钉这条反向 ✓）。本波只是不再对**全部**会话无条件做 ✓。
+   */
+  const maxSessions = Math.max(1, opts.maxSessions ?? DEFAULT_BACKFILL_SWEEP_MAX);
+  const withLog = new Set(await listSessionLogs());
+  /** 真缺的（连日志文件都没有）优先 ✓ */
+  const needFirst = sessionIds.filter((id) => !withLog.has(id));
+  const rest = sessionIds.filter((id) => withLog.has(id));
+  const sweep = [...needFirst, ...rest].slice(0, maxSessions);
+  const deferredSessions = Math.max(0, sessionIds.length - sweep.length);
+  if (deferredSessions > 0) {
+    console.log(
+      `[SessionLog] 本次只回填 ${sweep.length}/${sessionIds.length} 个会话（优先 ${needFirst.length} 个**还没有日志文件**的）` +
+        `；其余 ${deferredSessions} 个**推迟到下次维护**（有界清扫，避免每次启动载入全部会话）`,
+    );
+  }
+
+  const unreadable = await waitForMessageMirrors(sweep, opts.mirrorWaitMs ?? 5000);
   let total = 0;
   let skippedUnreadable = 0;
-  for (const sessionId of sessionIds) {
+  for (const sessionId of sweep) {
     if (unreadable.has(sessionId)) {
       skippedUnreadable += 1;
       continue;
@@ -183,7 +251,7 @@ export async function backfillAllSessions(
         `**权威日志一个文件都建不出来**（真机实测：隔离启动的三次维护全是"回填 0 条"，日志目录始终是空的）`,
     );
   }
-  return { backfilled: total, skippedUnreadable };
+  return { backfilled: total, skippedUnreadable, deferredSessions };
 }
 
 /** 已存在日志文件的会话数（诊断用） */

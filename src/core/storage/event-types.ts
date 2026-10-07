@@ -364,7 +364,6 @@ export function collapseExactDuplicateTextEvents(events: SessionEvent[]): Sessio
 }
 
 // ========== R3-4.4: Type Safety Re-exports ==========
-// Re-export assertNever + Branded types from type-safety module
+// Re-export assertNever + brand from type-safety module
 // so they are available from the core types entry point.
-export { assertNever, brand, unbrand, SessionId, ToolCallId, MessageId } from "../llm/type-safety";
-export type { Branded } from "../llm/type-safety";
+export { assertNever, brand } from "../llm/type-safety";

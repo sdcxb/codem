@@ -47,7 +47,7 @@ export interface FsObservation {
 }
 
 /** 拒绝码：与 DSH 的 `FsError` code 对齐，便于模型/日志认出这是哪一类 */
-export type FsPolicyDenialCode = "FS_NOT_OBSERVED" | "FS_NOT_FOUND" | "FS_STALE_OBSERVATION";
+type FsPolicyDenialCode = "FS_NOT_OBSERVED" | "FS_NOT_FOUND" | "FS_STALE_OBSERVATION";
 
 export interface FsPolicyDenial {
   ok: false;
@@ -57,7 +57,7 @@ export interface FsPolicyDenial {
 }
 
 /** 写入意图（与 DSH 的 `FsWriteIntent` 同形） */
-export type FsWriteIntent =
+type FsWriteIntent =
   | { kind: "createIfAbsent" }
   | { kind: "replaceIfVersion"; version: string };
 

@@ -657,9 +657,22 @@ describe("A-3 消息索引镜像的写入必须保住 hidden 与 generated_files
   });
 });
 
-// ========== A-2：turn_file_changes 列投影 ==========
+// ========== A-2：turn_file_changes 列投影（第 269 波：改走**按需查询**） ==========
 
-describe("A-2 `turn_file_changes` 的 `patch` 正文不进镜像（列投影）", () => {
+/**
+ * ## 第 269 波：这一组从"镜像的列投影"改成"**按需查询的列投影**" ✓
+ *
+ * 背景（用户第二次报障 ✓）：这张表在**启动预取清单**里 ⇒ 启动就整表镜像 ✗
+ * ⇒ 真机 5001 行 > 默认上限 ⇒ `loadTable` **拒载**✗ ⇒ 该域读给空结果 ✗。
+ * 而"调上限"✗ 必然复发（追加型热表 ✓ ⇒ 任何固定 cap 迟早被超过 ✓），
+ * 所以处置是**结构性退出镜像** ✓（`DOMAIN_QUERY_ONLY_TABLES` ✓）+ **按需查询 + 有界一屏** ✓
+ * （`FileChangeStorage.loadBySession` ✓，`TFC-1..8` 在
+ * `turn-file-change-window.test.ts` 里逐条钉着 ✓）。
+ *
+ * 本文件这两条守的是**同一件事在 port 侧的形态** ✓：
+ * 一屏查询请求的列里**没有 `patch`**（但元数据列一个不少 ✓）✓。
+ */
+describe("A-2 `turn_file_changes` 的 `patch` 正文不进一屏（列投影）", () => {
   /** 造一个对 `crud.list` 响应投影的分页传输层（真引擎同样按 `columns` 裁剪） */
   function projectionTransport(rows: Array<Record<string, unknown>>) {
     const seen: Array<Record<string, unknown>> = [];
@@ -697,7 +710,7 @@ describe("A-2 `turn_file_changes` 的 `patch` 正文不进镜像（列投影）"
     return { transport, seen };
   }
 
-  it("PROJ-1: 加载 `turn_file_changes` 时请求的列里**没有 `patch`**，但元数据列一个不少", async () => {
+  it("PROJ-1: 按需读 `turn_file_changes` 时请求的列里**没有 `patch`**，但元数据列一个不少", async () => {
     const t = projectionTransport([
       {
         id: "tfc1",
@@ -715,12 +728,16 @@ describe("A-2 `turn_file_changes` 的 `patch` 正文不进镜像（列投影）"
       },
     ]);
     const port = new RustStoragePort(t.transport, () => {});
-    port.domains.ensureLoaded("turn_file_changes");
+    setStoragePort(port as unknown as StoragePort);
+    const { FileChangeStorage, __resetFileChangeWindow } = await import("../core/storage/file-change-storage");
+    __resetFileChangeWindow();
+
+    const list = await FileChangeStorage.loadBySession("s1");
     await flush();
 
     const cols = (t.seen[0]?.columns as string[] | undefined) ?? [];
     expect(cols.length, "必须显式给出列清单（不给就等于整行装载）").toBeGreaterThan(0);
-    expect(cols, "`patch` 正文是 500KB/行的大列，绝不能进渲染进程镜像").not.toContain("patch");
+    expect(cols, "`patch` 正文是 500KB/行的大列，绝不能进一屏").not.toContain("patch");
     // 其余列必须都在：列表 / 状态更新 / 回滚时的 changed_files 都依赖它们
     for (const c of [
       "id",
@@ -738,25 +755,42 @@ describe("A-2 `turn_file_changes` 的 `patch` 正文不进镜像（列投影）"
       expect(cols, `元数据列 ${c} 不能丢`).toContain(c);
     }
 
-    const row = port.domains.findOne<Record<string, unknown>>("turn_file_changes", { id: "tfc1" });
-    expect(row, "行本身必须读得到（投影不是'读不到'）").not.toBeNull();
-    expect(row?.patch, "镜像里没有 patch —— 这是契约，不是缺失").toBeUndefined();
-    expect(row?.changed_files, "回滚要用的文件清单必须在").toBe("[]");
+    expect(list, "行本身必须读得到（投影不是'读不到'）").toHaveLength(1);
+    expect(list[0].patch, "一屏里没有 patch —— 这是契约，不是缺失").toBeUndefined();
+    expect(list[0].changed_files, "回滚要用的文件清单必须在").toBe("[]");
   });
 
-  it("PROJ-2: 投影不改变「行不存在」与「没接手」的区别（读路径不能把缺失当没有）", async () => {
+  it("PROJ-2: 读路径不许把「没读到」与「确实没有」混成同一个结果", async () => {
+    /**
+     * ## 第 269 波：这条换了形态，但守的**正是原来那条**（读路径必须能分辨三态 ✓）
+     *
+     * | 情形 | 判据 |
+     * |---|---|
+     * | 没按需读过（没有一屏）✓ | `listBySession()` = `[]` ✓（不假装有、也不抛 ✗） |
+     * | 读过、但这个会话确实没有记录 ✓ | `loadBySession()` = `[]` ✓（**诚实的空** ✓） |
+     * | 读过、这条 id 确实不存在 ✓ | `getByIdAsync()` = `null` ✓ |
+     * | 引擎读**失败**（没有端口 / 命令抛错）✗ | **抛** ✗→ 由调用方如实上报 ✓（**绝不吞成空** ✗） |
+     *
+     * 最后一行是这张表以前最要命的形态 ✗：镜像被拒载 ⇒ 读恒返回 `[]` ✗
+     * ⇒ 界面显示"暂无文件变更记录"✗（用户看到的是一个**看起来正常**的空面板 ✗）。
+     */
     const t = projectionTransport([]);
     const port = new RustStoragePort(t.transport, () => {});
-    setStoragePort(port);
-    const { domainReadOne } = await import("../core/storage/domain-store");
+    setStoragePort(port as unknown as StoragePort);
+    const { FileChangeStorage, __resetFileChangeWindow } = await import("../core/storage/file-change-storage");
+    __resetFileChangeWindow();
 
-    // 未就绪 → undefined（没接手）
-    expect(domainReadOne("turn_file_changes", { id: "x" }, (r) => r)).toBeUndefined();
+    // 没读过 ⇒ 同步读是空（诚实 ✓），而且不触发任何查询
+    expect(FileChangeStorage.listBySession("s1")).toEqual([]);
+    expect(t.seen, "同步读不许发查询").toEqual([]);
 
-    port.domains.ensureLoaded("turn_file_changes");
-    await flush();
-    // 就绪但确实没有这行 → null（有接手，行不存在）
-    expect(domainReadOne("turn_file_changes", { id: "x" }, (r) => r)).toBeNull();
+    // 读过、确实没有 ⇒ 空数组（与"没读到"不是同一件事，但空是**结论** ✓）
+    expect(await FileChangeStorage.loadBySession("s1")).toEqual([]);
+    expect(await FileChangeStorage.getByIdAsync("x"), "读了、行不存在 ⇒ null").toBeNull();
+
+    /** 端口被撤掉 ⇒ **抛**（不是静默空 ✗）—— 这一条钉的就是"失败不许说成没有" ✓ */
+    setStoragePort(null);
+    await expect(FileChangeStorage.loadBySession("s1"), "端口没了必须抛，不许说成'没有记录'").rejects.toThrow();
   });
 });
 

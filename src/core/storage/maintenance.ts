@@ -59,6 +59,18 @@ export interface MaintenanceResult {
    * 也就是说"崩溃后从日志重建"这条后路在那次启动里是空的，日志却显示一切正常。
    */
   backfillSkippedUnreadable: number;
+  /**
+   * 第 309 波：因**有界清扫上限**而**推迟到下次维护**的会话数 ✓。
+   *
+   * 与 `backfillSkippedUnreadable` 是**不同**的一件事 ✗，必须分开报：
+   * - `backfillSkippedUnreadable` = 想跑但**镜像没就绪**（**异常** ✓，要上报 ✓）；
+   * - `deferredSessions` = **这次有意只跑一小部分**（**正常** ✓，有界清扫 ✓）。
+   *
+   * 为什么必须有这个字段 ✗：上限**只允许推迟、不允许跳过** ✓ ——
+   * 不数出来，上限就退化成"静默没做"✗（本文件第 62 轮那条教训：
+   * `回填 0 条` 看着正常、实则整件事没做 ✗）。
+   */
+  backfillDeferredSessions: number;
   /** 本次**从权威日志重建进索引**的消息数（第 91 波：崩溃自愈） */
   rebuiltIndexMessages: number;
   /**
@@ -388,7 +400,7 @@ const EVENTS_DEDUP_MARKER_KEY = "codem-events-dedup-text-at";
  * 都写在引擎侧 `repo::events_dedup_text` 的文档里 —— 与读路兜底
  * `collapseExactDuplicateTextEvents` 共用同一份口径（保留最小 `seq`）。
  */
-export async function dedupDuplicateTextEvents(): Promise<DedupTextEventsOutcome> {
+async function dedupDuplicateTextEvents(): Promise<DedupTextEventsOutcome> {
   const mk = (status: DedupTextEventsOutcome["status"], reason?: string): DedupTextEventsOutcome => ({
     status,
     removed: 0,
@@ -519,7 +531,7 @@ type TelemetryPruneOutcome =
   | { status: "noop"; reason: string }
   | { status: "failed"; reason: string };
 
-export async function pruneTelemetryViaPort(before: number): Promise<TelemetryPruneOutcome> {
+async function pruneTelemetryViaPort(before: number): Promise<TelemetryPruneOutcome> {
   const { hasStoragePort, getStoragePort } = await import("./port");
   if (!hasStoragePort()) {
     return { status: "noop", reason: "端口未注册（本次维护没有可用的存储）" };
@@ -813,7 +825,7 @@ interface StorageCompactOutcome {
  * `performed:false`（未达阈值）与"这一步根本没跑"在真机上必须能区分 ——
  * 这正是本模块头注释里那条设计目标，也是这次接线最容易做成"看起来跑了"的地方。
  */
-export async function compactStorageViaPort(): Promise<StorageCompactOutcome> {
+async function compactStorageViaPort(): Promise<StorageCompactOutcome> {
   const { hasStoragePort, getStoragePort } = await import("./port");
   if (!hasStoragePort()) return { status: "noop", reclaimedBytes: 0, reason: "端口未注册" };
   try {
@@ -1984,6 +1996,8 @@ export async function runDatabaseMaintenance(
   };
 
   const result: MaintenanceResult = {
+    /** 第 309 波：有界清扫 ⇒ 被推迟的会话数（与 backfillSkippedUnreadable 不同：那是异常 ✓） */
+    backfillDeferredSessions: 0,
     sizeBefore: 0,
     sizeAfter: 0,
     reclaimed: 0,
@@ -2174,6 +2188,7 @@ export async function runDatabaseMaintenance(
       const backfill = await bridge.backfillAllSessions();
       result.backfilledMessages = backfill.backfilled;
       result.backfillSkippedUnreadable = backfill.skippedUnreadable;
+      result.backfillDeferredSessions = backfill.deferredSessions;
 
       if (keepIndexedMessages > 0) {
         const trimmed = await bridge.trimIndexedMessages({ keepPerSession: keepIndexedMessages });
@@ -2643,7 +2658,4 @@ export async function runDatabaseMaintenance(
   );
   return result;
 }
-
-/** 兼容旧调用点：维护失败时也走统一上报通道（保留导出，供未来需要时使用） */
-export { reportPersistFailure as __reportMaintenanceFailure };
 

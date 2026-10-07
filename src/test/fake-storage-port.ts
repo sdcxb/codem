@@ -1112,6 +1112,13 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
        * **列名必须真实存在**（真引擎 `check_columns` 会报错，这里同样报错，
        * 否则"列名拼错"在测试里被静默忽略）；`where` 只支持等值匹配；
        * 返回 `{items, has_more, next_cursor}`。
+       *
+       * ⚠️ **第 269 波补 `order_by` / `desc`**（假端口原来**忽略**这两个参数 ✗）：
+       * 真引擎 `crud.rs::crud_list` 支持 `order_by`（真实列名，引擎侧逐字核对）+ `desc` ✓，
+       * 而按需查询（`FileChangeStorage.loadBySession` ✓）**必须**靠它把"最新 N 行"
+       * 取回来 ✓。假端口忽略参数 ⇒ 返回的是**插入顺序** ✗ ⇒ 判据会在
+       * "假端口恰好按插入序"上**空转通过** ✗（而真机是 DESC ✗）——
+       * 这正是本仓库那条铁律「夹具不许比实现更宽松」✓。
        */
       if (command === "crud.list") {
         const name = String(params?.table ?? "");
@@ -1127,10 +1134,33 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
           };
           check(Object.keys((params?.where as Record<string, unknown> | undefined) ?? {}));
           if (Array.isArray(params?.columns)) check((params?.columns as unknown[]).map(String));
+          // 真引擎对 order_by 的列名同样逐字核对（crud.rs::check_columns）
+          if (typeof params?.order_by === "string") check([params.order_by]);
         }
         let rows = table(name).map(cloneRow);
         const where = (params?.where as Record<string, unknown> | undefined) ?? {};
         if (Object.keys(where).length > 0) rows = rows.filter((r) => matches(r, where));
+        /**
+         * ORDER BY **单列 + asc/desc**（与真引擎生成的 SQL 逐条对齐 ✓；真引擎也只给
+         * 一个 `order_by` 入口 ✓）。并列时真引擎**不保证**顺序 ✓ ⇒ 判据不许依赖并列顺序 ✓
+         * （那一层的稳定性由客户端排序保证 ✓）。
+         */
+        if (typeof params?.order_by === "string") {
+          const key = params.order_by;
+          const desc = params?.desc === true;
+          rows = [...rows].sort((a, b) => {
+            const av = a[key] as number | string | null | undefined;
+            const bv = b[key] as number | string | null | undefined;
+            if (av === bv) return 0;
+            if (av === null || av === undefined) return desc ? 1 : -1;
+            if (bv === null || bv === undefined) return desc ? -1 : 1;
+            const cmp =
+              typeof av === "number" && typeof bv === "number"
+                ? av - bv
+                : String(av).localeCompare(String(bv));
+            return desc ? -cmp : cmp;
+          });
+        }
         const cols = params?.columns;
         if (Array.isArray(cols) && cols.length > 0) {
           const wanted = cols.map(String);

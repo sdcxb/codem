@@ -81,7 +81,12 @@ describe("P1-4: FileChangesList + DiffViewer 集成", () => {
     expect(list.length).toBe(0);
   });
 
-  it("FileChangeStorage 数据可被 FileChangesList 消费", () => {
+  /**
+   * 第 269 波：这张表不再有域镜像 ⇒ 读改成**按需查询**（`loadBySession` ✓）。
+   * 用例守的语义一字不变 ✓（写一条 → 读回来 → 能解析出文件清单 ✓），
+   * 只是"读"现在是异步的 ✓。
+   */
+  it("FileChangeStorage 数据可被 FileChangesList 消费", async () => {
     FileChangeStorage.create({
       id: "diff-test-1",
       session_id: "diff-session",
@@ -97,7 +102,7 @@ describe("P1-4: FileChangesList + DiffViewer 集成", () => {
       created_at: Date.now(),
     });
 
-    const list = FileChangeStorage.listBySession("diff-session");
+    const list = await FileChangeStorage.loadBySession("diff-session");
     expect(list.length).toBe(1);
 
     const files = FileChangeStorage.parseChangedFiles(list[0]);
@@ -105,7 +110,7 @@ describe("P1-4: FileChangesList + DiffViewer 集成", () => {
     expect(files[0].path).toBe("src/test.ts");
   });
 
-  it("revert 标记 — 状态更新为 reverted", () => {
+  it("revert 标记 — 状态更新为 reverted", async () => {
     const id = "revert-status-test";
     FileChangeStorage.create({
       id,
@@ -122,8 +127,8 @@ describe("P1-4: FileChangesList + DiffViewer 集成", () => {
       created_at: Date.now(),
     });
 
-    FileChangeStorage.updateStatus(id, "reverted");
-    const record = FileChangeStorage.getById(id);
+    expect(await FileChangeStorage.updateStatus(id, "reverted"), "真改到了 ⇒ 1").toBe(1);
+    const record = await FileChangeStorage.getByIdAsync(id);
     expect(record!.status).toBe("reverted");
   });
 });

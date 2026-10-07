@@ -87,7 +87,8 @@ describe("DEAD：印出来的控件必须真的能用", () => {
       "不许再传空的 onToggle（那让折叠按钮成为摆设）",
     ).toBe(false);
     expect(src, "折叠要有真实状态").toContain("workbenchCollapsed");
-    expect(src, "文件区块要读真实数据").toContain("FileChangeStorage.listBySession");
+    // 第 269 波：读从"同步读镜像"改成"按需查询 + 有界一屏投影"（这张表不再进镜像）
+    expect(src, "文件区块要读真实数据").toContain("FileChangeStorage.loadBySession");
 
     // `activeTools` 仍为空：如实标注"没有响应式数据源"，而不是编一个
     expect(

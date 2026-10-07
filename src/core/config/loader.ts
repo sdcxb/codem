@@ -300,15 +300,6 @@ export function saveAppIdentity(identity: AppIdentity): void {
   setSettingJSON("codem-app-identity", identity);
 }
 
-// ========== Bootstrap Detection ==========
-export async function hasBootstrap(projectPath: string): Promise<boolean> {
-  const appDir = `${projectPath}\\..\\.codem-app`;
-  const projectDir = `${projectPath}\\.codem`;
-  const appBootstrap = await readFile(`${appDir}\\BOOTSTRAP.md`);
-  const projectBootstrap = await readFile(`${projectDir}\\BOOTSTRAP.md`);
-  return !!(appBootstrap || projectBootstrap);
-}
-
 // ========== Prompt Builder ==========
 export function buildSystemPrompt(merged: MergedConfig): string {
   const sections: string[] = [];

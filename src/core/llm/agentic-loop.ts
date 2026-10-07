@@ -15,7 +15,9 @@ import { initDefaultPipeline } from "./tool-pipeline";
 // 契约谓词：快照判据从这里来，不在调用点自己拼条件（那样又会长出第二处真相）
 import { mutatesWorkspace, needsPreCallSnapshot } from "./tool-contract";
 /** 第 169 波：**还原型命令的识别**（纯函数 ✓，必须静态导入后**同步**判 ✓ —— 异步会与收尾检查竞态 ✗）。 */
-import { looksLikeRevertCommand } from "./completion-guards";
+import { looksLikeRevertCommand, revertKindOf, type RevertKind } from "./completion-guards";
+/** ★ 第 46 波：回归判定（治本 ✓）—— 纯函数，判据见 `src/test/test-regression-detection.test.ts` ✓ */
+import { regressionRedFiles } from "./test-regression";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { extractJSON } from "./output-parser";
@@ -41,6 +43,8 @@ import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
 import { getEventLog } from "../storage/event-log";
+/** ★ 第 45 波：`saveMessages` 的成本账（core 侧 ✓，store 写入、这里取走 ✓） */
+import { takeSaveStats } from "../storage/persist-stats";
 import { getTelemetry } from "../telemetry/telemetry";
 import { evaluateWithSecurityMode } from "../permission/security-mode";
 import { FileChangeTracker } from "../environment/file-change-tracker";
@@ -61,10 +65,100 @@ export type LoopResult =
        * 就需要把 `stalledFor` 这类数字带出去 —— 否则界面只能给一句空话。
        */
       detail?: Record<string, unknown>;
+      /**
+       * ★★ 第 46 波：**本轮之内被改红的判据**（基线绿 → 现在红 ✓）。
+       *
+       * 由循环在收尾时按"机器比对"填 ✓（见 `currentRegressionRedFiles()` ✓），
+       * 由 `describeTurnOutcome` 消费 ✓ ⇒ **非空时绝不显示"任务完成"** ✓。
+       *
+       * 为什么放在**结果对象**上 ✓（而不是让呈现层自己算 ✗）：能同时掌握"首次观察状态"
+       * 与"当前状态"的只有循环 ✓；呈现层只做**呈现** ✓ —— 一处判定、一处呈现 ✓，
+       * 避免两边各算一遍而分歧 ✓（第 70 波的既有教训 ✓）。
+       */
+      regressionRedTests?: string[];
     }
-  | { type: "overflow"; message: string; usage: TokenUsage }
-  | { type: "aborted" }
-  | { type: "error"; error: string };
+  | {
+      type: "overflow";
+      message: string;
+      usage: TokenUsage;
+      /**
+       * 第 270 波：**四个变体都带 `detail?`** ✗→✓（原来只有 `"stop"` 有 ✗）。
+       *
+       * 为什么要给其余三个也加上：`detail` 是"这次结束的**量级细节**"的载体 ✓，
+       * 而本波要带出去的 `completionNudges`（收尾守卫到底催过没有 ✓）**任何一种出口都可能发生** ✓
+       * —— `aborted` / `error` / `overflow` 都是真实出口 ✓，而按 handoff §5 的判据
+       * `nudge-3`（**所有**出口都带该字段 ✓）要求这条信息不许因出口不同而丢 ✗。
+       * 少给一个变体加字段的后果很具体：那条出口会**静默丢掉**这条证据 ✗
+       * （而它恰好是排查"守卫到底有没有拦住"的**唯一**数据来源 ✓）。
+       */
+      detail?: Record<string, unknown>;
+    }
+  | { type: "aborted"; detail?: Record<string, unknown> }
+  | { type: "error"; error: string; detail?: Record<string, unknown> };
+
+/**
+ * **收尾提醒（completion nudges）在 `detail` 里的键名** ✓（第 270 波）。
+ *
+ * 用常量而不是散落的字面量 ✓：读跑批记录的那一侧（`_codem-repo-eval.mjs` / 判据 ✓）
+ * 与写这一侧必须是**同一个键** ✓ —— 拼错的后果是"字段在、但读不到"✗
+ * （看起来像"守卫从没触发过"✗）。
+ */
+export const COMPLETION_NUDGES_DETAIL_KEY = "completionNudges";
+
+/**
+ * 第 309 波：`LoopResult.detail` 里**出口原因**的键 ✓。
+ *
+ * 为什么要它（**换通道**的产物 ✓）：出口原因第一版走 `executor` 的
+ * `getEventLog().append(sessionId, "turn_end", …)` ✓ —— 真机装上 `1.16.284` 跑了两轮之后，
+ * **全库 101 536 条 `session_events` 里 `turn_end` 是 0 条** ✗
+ * （同一次运行的 `loop_stopped` 有 5 条 ✓ ⇒ 不是事件日志坏了 ✓，是那条写路径没落地 ✗）。
+ * ⇒ 改挂到 `LoopResult.detail` ✓ —— 它随**既有的 `end` 事件**出去 ✓，
+ * 而那条通道**已被证明能到达**（`repo-08 r3` 真机的事件里看得到 `loopStops` 载荷 ✓）。
+ */
+export const EXIT_REASON_DETAIL_KEY = "exitReason";
+
+/**
+ * 把**本轮收尾提醒**挂到结果的 `detail` 上 ✓（第 270 波 ✓）。
+ *
+ * ## 为什么需要它（要修的是什么）
+ *
+ * 目标①（repo-02 稳定 2/2 ✓）的**唯一可动方向**已量清 ✓（handoff §5 ✓）：
+ * 让"早收工"变难 ✓ —— 而完成守卫（零产出 / 回退 / 验证后未提交催促 ✓）
+ * **到底有没有拦住，至今没有数据** ✗：`loopStops` 只记"**停下**"✗、不记"**催促**"✗
+ * ⇒ 于是"守卫没用"与"守卫根本没触发"这两种完全不同的结论**分不开** ✗。
+ *
+ * ## 为什么做成**收成一处**（而不是逐处加字段 ✗）
+ *
+ * `run()` 的结束出口有 **15 处** ✗（9 个 `const result` + 5 个命名结果 +
+ * 1 处内联 `yield` ✓）。逐处加字段 = 15 次机会漏掉一处 ✗，而漏掉的那一处
+ * 恰好是某次跑的出口时，**那条数据静默消失** ✗（判据 `nudge-3` 用
+ * "数出口 = 数带字段的出口"钉这条 ✓）。
+ * 所以这里只留**一个**函数 ✓：每个出口都写成 `this.finishWithNudges({...})` ✓
+ * ⇒ "带不带这条信息"不再取决于作者记不记得 ✗。
+ *
+ * ⚠️ **它会克隆结果对象** ✓（不原地改 ✗）：调用方可能持有原对象的引用做比较 ✓，
+ * 原地加字段会让"同一个对象在 yield 前后不等"✗ —— 那是最难查的一类时序差异 ✓。
+ *
+ * ⚠️ **没有触发时一个字段都不加** ✓：`detail` 保持 `undefined` ✓
+ * ⇒ 正常路径（没被守卫催过 ✓）的结果对象与改前**逐字一致** ✓（判据 `nudge-2` 钉这条 ✓）。
+ *
+ * @param result 结果对象（任何 `LoopResult` 变体 ✓）
+ * @param nudges 本轮收尾提醒的文案数组 ✓（空数组 = 没触发 ⇒ 不加字段 ✓）
+ */
+export function withCompletionNudgesDetail(result: LoopResult, nudges: readonly string[]): LoopResult {
+  if (!nudges || nudges.length === 0) return result;
+  /**
+   * ⚠️ 这里的 `as LoopResult` **不是**在绕过检查 ✗ —— 它是在补一个 TypeScript
+   * 推不出来的事实 ✓：`{...result}` 的**判别属性 `type` 会被拓宽成 `string`** ✗
+   * （对象展开不保留字面量类型 ✓），于是交叉类型不再匹配联合的任何一支 ✗。
+   * 运行时形状完全正确 ✓（只多了一个 `detail` 键 ✓），而"形状对不对"由
+   * **每个调用点的实参**在别处被 `LoopResult` 检查着 ✓（见 `finishWithNudges` 的签名 ✓）。
+   */
+  return {
+    ...result,
+    detail: { ...(('detail' in result && result.detail) || {}), [COMPLETION_NUDGES_DETAIL_KEY]: [...nudges] },
+  } as LoopResult;
+}
 
 // ========== P1 Feature Types ==========
 
@@ -423,7 +517,7 @@ function taskBrief(message: string, max: number): string {
   return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
 }
 
-export type LLMStatus = "connecting" | "streaming" | "executing_tools";
+type LLMStatus = "connecting" | "streaming" | "executing_tools";
 
 export type LoopEvent =
   | { type: "start"; iteration: number }
@@ -467,6 +561,14 @@ export type LoopEvent =
  * ⇒ 提醒完它就停了 ✗。现在放到 2 ✓：仍然**有界** ✓（判据 RT-3/RT-4 钉住"最多 2 次、之后必须放行" ✓）。
  */
 const RED_TEST_NUDGE_LIMIT = 2;
+/**
+ * ★ 第 46 波：**回归**（基线绿 → 现在红）的提醒上限 ✓。
+ *
+ * 为什么比 `RED_TEST_NUDGE_LIMIT` 多一次 ✓：回归是**本轮自己改出来的** ✗ ——
+ * 比"与本任务无关的既有红"更该被处理 ✓；但同样**必须有上限** ✓（绝不把模型困住 ✓：
+ * 上限用尽后照常收尾 ✓，只是结果里带 `regressionRedTests` ✓ ⇒ 界面**不谎报完成** ✓）。
+ */
+const REGRESSION_NUDGE_LIMIT = 3;
 
 /**
  * 一回合里最多为几个文件给「同族判据」那条事实（第 133 波）。
@@ -605,8 +707,209 @@ export class AgenticLoop {
    * （④ 跑的是另一组文件，不能给 ①②③ 里那两个文件洗白）。
    */
   private testFileStatus = new Map<string, "red" | "green">();
+  /**
+   * ★★ 第 46 波：**每个判据文件在本轮内的"首次观察状态"**（= 基线 ✓）。
+   *
+   * 为什么要它 ✓：真机取证（交接第十九节 ✓）显示，`repo-02`/`repo-06` 的失败形态是
+   *   **模型把"本来绿、被自己改红"的判据点名为"与本次无关"**✗ 然后正常收尾 ⇒
+   *   界面显示"任务完成" ✗ —— 而这是一条**可判定的事实**：基线绿 → 现在红 ✓。
+   *
+   * 于是它有两个用途 ✓（都不依赖提示词 ✗）：
+   *   ① 收尾前，对"回归"**不接受点名豁免** ✓（见收尾处 `regressions` 分支 ✓）；
+   *   ② 结果里带 `regressionRedTests` ✓ ⇒ `describeTurnOutcome` **拒绝显示完成** ✓。
+   *
+   * ⚠️ 范围写清 ✓：**每轮**清空（与 `testFileStatus` 同生命周期 ✓）⇒ 它判的是
+   *   "**本轮之内**被改红的"✓；跨轮回归不在本轮职责内（另见交接里的已知限制 ✓）。
+   * ⚠️ 首次观察为红 ⇒ 基线就是红 ✓ ⇒ **不算回归** ✓（`repo-03/04` 那类既有红不会被误伤 ✓）。
+   */
+  private testFileBaseline = new Map<string, "red" | "green">();
+  /** 回归提醒已用次数（每轮重置 ✓，与 `redTestNudges` 并列 ✓） */
+  private regressionNudges = 0;
   /** 本轮因"收尾时测试还红着"提醒过几次（上限 1，避免把模型困在循环里） */
   private redTestNudges = 0;
+
+  /**
+   * **本轮已收集的收尾提醒（completion nudges）** ✓（第 270 波 ✓）。
+   *
+   * ## 为什么它从"局部变量"上提成字段（handoff §5 的"已量清三件事"之一 ✓）
+   *
+   * 原来它在收尾段里**就地声明**（花括号深度 4 ✗），于是只有收尾段那个块能看到它 ✗
+   * —— 而结果组装在深度 2 ✓，**够不着** ✗。要把它带进跑批记录，就必须上提 ✓。
+   *
+   * ## 为什么不放"进入收尾段时清空"（原来那儿就是声明点 ✓）而要放**每轮开头**
+   *
+   * 真正的语义是"**本轮**催过什么"✓。清空放在收尾段入口有个具体后果 ✗：
+   * 本轮在**到达收尾段之前**就结束的出口（关键服务不可用 / 成本上限 / 上下文溢出 /
+   * 重复调用守卫 / 写被拒 / 被中止 … 共 10 处 ✓）会带上**上一轮**的提醒 ✗
+   * ⇒ 跑批记录里就会出现"这轮明明没催，却记着催过"✗ —— 一条**假证据** ✓
+   * （而这条证据正是用来判断"守卫有没有拦住"的 ✓，假证据比没有更糟 ✗）。
+   * 所以清空点放在迭代体开头（与 `guardSuppressedThisIteration` 那几个"每轮清零"的字段同处 ✓）。
+   */
+  private completionNudges: string[] = [];
+
+  /**
+   * **本轮触发过的收尾守卫名** ✓（第 270 波 ✓）—— 与 `completionNudges` 一一对应 ✓。
+   *
+   * 为什么除了文案还要**名字** ✗：文案是给模型看的产品口吻 ✓（"几乎总是收尾时误撤"✓），
+   * 而读跑批记录的那一侧要回答的是"**哪把守卫触发了、触发了几次**"✓
+   * —— 从产品文案里正则抠守卫名 ✗ 正是"靠字面巧合"的形态 ✓（改一个字判据就静默失效 ✗）。
+   * 取值与三处 `recordLoopStop` 的 `phase` 一致 ✓：`reverted` / `zero-output` / `unrun-family` ✓。
+   */
+  private completionNudgeReasons: string[] = [];
+
+  /**
+   * ## 第 309 波：**每个回合出口都要说出"为什么结束"** ✓（判据 `EXIT-1..4` ✓）
+   *
+   * ## 要修的缺陷（`repo-02` 的完整归因链 ✓，归档 §13.199–§13.201）
+   *
+   * `repo-02 r3` 只跑过 `dsh-d10*` ✓（从没跑判据文件 `dsh-d9-…` ✗），
+   * 而 `unrun-family` 守卫**本该点名它** ✓ —— 我拿**真实工作区** +
+   * 它**真实跑过的那 3 条**喂进 `.preview-shot/_unrun-family-check.mjs` ✓，
+   * `dsh-d9` **确实**在"没跑过"的 38 条清单里 ✓。
+   *
+   * **可那一轮的记录是 `loopStops: 0 条`** ✗ ⇒ 两种解释分不开 ✗：
+   * "**守卫判定错**"✗ 与 "**那段代码根本没执行**"✓ —— 而两者修法完全不同 ✗。
+   *
+   * ## 读字面代码之后，第二种解释有了**确定的机制** ✓
+   *
+   * 收尾段（三处 `completionNudges.push` ✓）在 **2787~2910** ✓，
+   * 而 `run()` 里有**比它更早**的出口 ✗：
+   *
+   * | 出口 | 既有的 `reason` | 与收尾段的相对位置 |
+   * |---|---|---|
+   * | `repeat_guard`（重复调用守卫 ✓） | 有 ✓ | **在收尾段之前** ✗ |
+   * | `write_rejected_by_user`（写被用户拒 ✓） | 有 ✓ | **在收尾段之前** ✗ |
+   * | `aborted`（流被取消 ✓） | —— | **在收尾段之前** ✗ |
+   * | `output_truncated` / `too_many_errors` / LLM 失败 | 有 ✓ | 在收尾段之前 ✗ |
+   * | `completed`（正常收尾 ✓） | 有 ✓ | **在收尾段之后** ✓ |
+   *
+   * ⇒ 走前几条出口的回合，**守卫连机会都没有** ✗ —— 而记录里只留下"没催过" ✓，
+   * 与"守卫判定错"长得一模一样 ✗。这正是 `completionNudges` 字段注释里那句
+   * "**假证据比没有更糟**"要防的事 ✓，只是它当时只防了"带上上一轮的提醒"✗，
+   * 没防"**这一轮根本没走到**"✗。
+   *
+   * ## 落地口径（**只加观测** ✓）
+   *
+   * - 每个出口前记一条：`exitReason` ✓ + `reachedNudgePhase` ✓ + `iteration` + `toolCalls`；
+   * - `reachedNudgePhase` 是**这一波的关键读数** ✓：它把"守卫没拦住"一刀切成
+   *   "**守卫没机会**"✗ 与 "**守卫有机会但沉默了**"✗ —— 后者才是要改判定的那种 ✓；
+   * - 写不进去**不影响回合** ✓（与既有的 `recordLoopStop` 同一条纪律 ✓），但也**不静默** ✗。
+   */
+  private noteExit(reason: string, _sessionId?: string): void {
+    /**
+     * ## ⚠️ 为什么**只记字段、不写会话事件**（第 309 波自己踩出来并更正的 ✓）
+     *
+     * 第一版这里调的是 `recordLoopStop(sessionId, "turn_exit", …)` ✓ ——
+     * 结果**当场把 `dsh-d5-prefix-cache-stability` 打红** ✗（单跑必红 ✓、把改动还原即绿 ✓，
+     * 两次 stash 对照都验过 ✓）。
+     *
+     * **机制** ✓：`recordLoopStop` 往**会话事件日志**追加一条 ✓，
+     * 而上下文里那条 `turn-context-N` 的**摘要文本**含
+     * `[Context: N visible messages, M total events]` ✓
+     * ⇒ **每轮多写一条事件** ⇒ 第二轮的上下文**不再以第一轮的为前缀** ✗
+     * ⇒ 直接破坏 provider 前缀缓存 ✓ —— 而前缀缓存**正是目标②在读的东西** ✓
+     * （`cacheReadTokens` 占 DSH 输入的 97.7% ✓）。**加观测把被测的东西弄坏了** ✗，
+     * 这是"**假证据比没有更糟**"的另一面 ✓。
+     *
+     * ⇒ 出口原因改走**实例字段** ✓，由 `executor` 把它并进**既有的** `turn_end` 记录 ✓
+     * （那条本来就是"这一轮为什么结束"的正规通道 ✓，§13.190 ✓）——
+     * **不新增任何会话事件** ✓ ⇒ 不碰上下文 ✓、不碰前缀 ✓。
+     */
+    this.lastExitReason = reason;
+  }
+
+  /**
+   * 本回合的**出口原因码** ✓（`completed` / `repeat_guard` / `write_rejected_by_user` /
+   * `aborted` / `aborted_early` / `output_truncated` / `too_many_errors` / `llm_error` /
+   * `context_overflow` / `cost_limit` / `plan_stale` / `critical_service_unavailable` ✓）。
+   *
+   * 为什么是**字段**而不是事件 ✗：见 `noteExit` 的说明 ✓（写事件会改上下文摘要、
+   * 破坏前缀缓存 ✓）。`executor` 在收尾时读它 ✓ 并并进 `turn_end` ✓。
+   */
+  private lastExitReason: string | null = null;
+
+  /**
+   * 读本回合的出口原因 ✓（`executor` 用它并进 `turn_end` ✓）。
+   *
+   * 为什么要有这个**公开读法** ✗：出口原因必须能被"记录这一轮为什么结束"的那一侧读到 ✓，
+   * 而那一侧（`executor`）拿到的是 `engine` ✓，不是 `AgenticLoop` 实例 ✓。
+   * ⚠️ 不加这个读法的话，`executor` 只能把 `lastExitReason` 当私有字段硬读 ✗ ——
+   * 那正是"靠字面巧合"的形态 ✓（改个字段名就静默失效 ✗）。
+   */
+  getLastExitReason(): string | null {
+    return this.lastExitReason;
+  }
+
+  /**
+   * ★ 第 309 波（第二版）：把出口原因**挂到 `LoopResult` 上** ✓ —— 这才是**已经被证明能到达**的那条通道 ✓。
+   *
+   * ## 为什么要换通道（真机查出来的 ✗）
+   *
+   * 第一版让 `executor` 在循环之后**自己** `getEventLog().append(sessionId, "turn_end", …)` ✓ ——
+   * 装上 `1.16.284` 真机跑了两轮 ⇒ **全库 101 536 条 `session_events` 里 `turn_end` 是 0 条** ✗
+   * （而**同一次**运行里 `loop_stopped` 有 5 条 ✓、`tool_call` 有 40 条 ✓ ⇒ 事件日志本身是通的 ✓）。
+   * 也就是说：**那一次 append 从来没落地** ✗（我没有查出确切成因 ✓ —— 那条写路径与
+   * `recordLoopStop` 的**动态 import + then** 形态不同 ✓）。
+   *
+   * ⇒ 换到**已经被证明能到达**的通道上 ✓：`LoopResult.detail` ✓ ——
+   * `repo-08 r3` 真机的 `tool_call` 事件里**看得到** `loopStops` 的载荷 ✓、
+   * 而 `loop_stop` 也是走这条 ✓。出口原因挂 `detail` 之后，
+   * 它随**既有的 `end` 事件**一起出去 ✓，不新增任何写路径 ✗、也不新增事件 ✗。
+   *
+   * ⚠️ 与括号里那条**同一条纪律** ✓：`shouldNudgeRedTestsAfterEdits` 那次就是"写了但没执行"✗ ——
+   * 这次是"写了但**没落地**"✗。**判据只能证明代码在那儿，真机才能证明它到位** ✓。
+   */
+  private attachExitReason(result: LoopResult): LoopResult {
+    if (!this.lastExitReason) return result;
+    const detail = { ...(result.detail ?? {}), [EXIT_REASON_DETAIL_KEY]: this.lastExitReason } as Record<string, unknown>;
+    return { ...result, detail } as LoopResult;
+  }
+
+
+  /**
+   * ## 第 309 波：**回合心跳** ✓ —— 在**循环里面**报"我走到第几轮了" ✓
+   *
+   * ## 为什么必须有它（真机读数逼出来的 ✓，归档 §13.209）
+   *
+   * 那一批失败轮（`repo-01 r3` / `repo-04` 的 13、18 轮 ✓）的共同形态是：
+   * **引擎静默满 2 分钟** ⇒ 跑批判"跑完" ✓，而应用的 `for await` 消费循环
+   * **仍在等下一个事件** ✗ ⇒ `run()` 的收尾段**永远没执行** ✓
+   * ⇒ `turn_end` / 出口原因 / 消息定稿**全都没有** ✗。
+   *
+   * ⇒ 教训 ✓：**任何写在"循环之后"或"某个出口上"的东西，对这些轮次都到不了** ✗
+   * （我为此白改过两趟通道 ✓）。要在**循环内部**报 ✓ ——
+   * 而 `recordLoopStop` 那条链**已被真机证明会落地** ✓（真机 236 条 `loop_stopped` ✓）。
+   *
+   * ⚠️ 它**曾被撤回一次** ✗：每轮一条事件 ⇒ 上下文摘要里 `M total events` 变了 ⇒
+   * 破坏 provider 前缀缓存 ✗（`dsh-d5` 当场红 ✓）。
+   * 现在 `projectSurface::totalEvents` **已排除诊断类** ✓ ⇒ 加它不再影响那个数 ✓
+   * ⇒ **先解结构性约束、再加事件** ✓（§13.210 ✓）。
+   *
+   * ⚠️ 它与 `completionNudges` **完全无关** ✓（不碰任何收尾字段 ✓）——
+   * 所以**不会**造出"假催促证据"✓（`completionNudges` 字段注释里防的就是那个 ✓）。
+   */
+  private noteHeartbeat(sessionId: string): void {
+    recordLoopStop(sessionId, "turn_heartbeat", {
+      phase: "heartbeat",
+      iteration: this.state.iteration,
+    });
+  }
+  /**
+   * 把本轮收尾提醒挂到结果上（**唯一入口** ✓；理由见 `withCompletionNudgesDetail` 的注释 ✓）。
+   *
+   * ⚠️ 签名刻意**不用泛型** ✗→✓：第一版写成 `<R extends {detail?…}>(result: R): R`，
+   * 结果 `R` 被从**约束**推出来 ✗（而不是从实参 ✓）⇒ 15 个调用点集体报
+   * 「`type` does not exist in type `{ detail?: … }`」✗。用具体的 `LoopResult` 之后，
+   * **每个实参都由它来检查** ✓（哪一支写错了当场报 ✓）—— 这比泛型更严 ✓。
+   */
+  private finishWithNudges(result: LoopResult): LoopResult {
+    /**
+     * ⚠️ 顺序要紧 ✓：先挂**出口原因**（`attachExitReason` ✓）、再挂催促 ✓ ——
+     * 后者的 `withCompletionNudgesDetail` 会**合并**已有 `detail` ✓（不会把前者冲掉 ✓），
+     * 但先挂后挂**语义上**更清楚：出口原因是**结果的一部分** ✓、催促是**补充** ✓。
+     */
+    return withCompletionNudgesDetail(this.attachExitReason(result), this.completionNudges);
+  }
 
   /**
    * 读"最近一次跑测试的结果"（第 108 波）。
@@ -682,15 +985,20 @@ export class AgenticLoop {
       const file = m[2].replace(/\\/g, "/").split("/").pop() as string;
       marked.add(file);
       this.testFileStatus.set(file, m[1] === "✓" ? "green" : "red");
+      if (!this.testFileBaseline.has(file)) this.testFileBaseline.set(file, m[1] === "✓" ? "green" : "red");
     }
     if (marked.size === 0 && filesInCommand.length > 0) {
       for (const file of new Set(filesInCommand)) {
         this.testFileStatus.set(file, failed > 0 ? "red" : "green");
+        if (!this.testFileBaseline.has(file)) this.testFileBaseline.set(file, failed > 0 ? "red" : "green");
       }
     } else if (failed > 0) {
       // 有失败但只认出了部分文件：把命令里点到的、没被标记过的也算红（保守）
       for (const file of new Set(filesInCommand)) {
-        if (!marked.has(file) && this.testFileStatus.get(file) !== "green") this.testFileStatus.set(file, "red");
+        if (!marked.has(file) && this.testFileStatus.get(file) !== "green") {
+          this.testFileStatus.set(file, "red");
+          if (!this.testFileBaseline.has(file)) this.testFileBaseline.set(file, "red");
+        }
       }
     }
 
@@ -719,6 +1027,19 @@ export class AgenticLoop {
   /** 本轮"跑过且最近一次是红的"测试文件（第 109 波：按文件记账，不是只看最近一次运行） */
   private currentRedTestFiles(): string[] {
     return [...this.testFileStatus.entries()].filter(([, status]) => status === "red").map(([file]) => file);
+  }
+
+  /**
+   * ★★ 第 46 波：**本轮之内被改红的判据**（基线绿 → 现在红 ✓）。
+   *
+   * 与 `currentRedTestFiles()` 的区别就是判据的核心 ✓：
+   *   · `currentRedTestFiles()` = 现在红的**全部**（含基线红 ✓）
+   *   · 本方法 = 其中**基线本来是绿的**那部分 ✓ ⇒ **只有这部分才算"回归"** ✓
+   * ⇒ 于是"把红点名为无关"这条既有出路 ✓ 对**基线红**仍然有效 ✓（`repo-03/04` 不会被误伤 ✓），
+   *   而对**回归**不再有效 ✗ —— 这是**代码判定**，不看模型的措辞 ✓。
+   */
+  private currentRegressionRedFiles(): string[] {
+    return regressionRedFiles(this.testFileStatus, this.testFileBaseline);
   }
 
   /**
@@ -839,6 +1160,11 @@ export class AgenticLoop {
    * 编辑会把它**清掉** ✓（"撤掉错的一版、重做一版"是正常动作 ✓，不该打扰 ✗）。
    */
   private revertedAfterEdit = false;
+  /**
+   * ★ 第 46 波：**是哪种还原** ✓（`stash` 的改动还在 stash 里 ⇒ 救法是 `pop` ✓；
+   * 丢弃式的只能重做 ✗）。文案按它分支，见 `buildRevertedWorkNudge` ✓。
+   */
+  private revertedKind: RevertKind | null = null;
   /** 这条提醒每会话只发一次 ✓ */
   private revertedNudged = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
@@ -1272,6 +1598,9 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.redTestNudges = 0;
     // 【第 109 波】按文件记的测试状态也要按轮清空（否则上一轮的红会污染这一轮）
     this.testFileStatus.clear();
+    // 【第 46 波】基线随之清空 ✓（"回归"= 本轮之内被改红 ✓）；回归提醒次数也归零 ✓
+    this.testFileBaseline.clear();
+    this.regressionNudges = 0;
     // 【本轮新增】"改了但没验证"守卫：每轮重置
     this.turnModifiedFiles = false;
     this.turnRanVerification = false;
@@ -1595,6 +1924,26 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
          * 为空表示本轮没有活跃目标（或 goal 模块不可用）——两者都静默跳过。
          */
         let goalSummaryForPrompt = "";
+        /**
+         * ⚠️ **第 309 波在这里试过"回合心跳"，已撤回** ✗ —— 理由见 §13.210。
+         *
+         * 心跳位置是对的 ✓（这是"被掐停的轮次"里唯一必然执行到的报点 ✓），
+         * 但它**每轮写一条 `loop_stopped` 事件** ✗ ⇒
+         * 上下文摘要里那句 `[Context: …, M total events]` 的 **M 变了** ✗
+         * ⇒ **第二轮不再以第一轮为前缀** ⇒ 当场把
+         * `dsh-d5-prefix-cache-stability` 打红 ✗（**与 `turn_end` 那次同一个机制** ✓）。
+         *
+         * ⇒ **`totalEvents` 没把"诊断类事件"排除掉之前，任何新事件都会破坏前缀缓存** ✗
+         * —— 这是一个**结构性约束** ✓，要先解它（§13.210 ✓），再谈加事件 ✓。
+         */
+        /**
+         * ★ 第 309 波：**回合心跳** ✓ —— 必须在**循环体开头** ✓（见 `noteHeartbeat` 的说明 ✓）。
+         *
+         * ⚠️ 位置不是随便挑的 ✓：这是"被掐停的轮次"里**唯一必然执行到**的报点 ✓ ——
+         * 写"循环之后"或"某个出口上"的东西，对那些轮次**一律到不了** ✗
+         * （我为这件事白改过两趟通道 ✓）。
+         */
+        this.noteHeartbeat(sessionId);
         // Safety valve 1: hard iteration cap (sub-agent runaway prevention only)
         if (this.state.maxIterations > 0 && this.state.iteration >= this.state.maxIterations) {
           break;
@@ -1620,14 +1969,34 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.state.lastIterationTextChars = 0;
         /* 本轮的 LLM 失败标志必须每轮清空：否则第 N 轮的失败会泄漏到第 N+1 轮（误报 error） */
         this.state.lastIterationError = null;
+        /**
+         * **第 270 波：收尾提醒必须每轮清空** ✓ —— 语义是"**本轮**催过什么"✓。
+         *
+         * ⚠️ 位置有讲究 ✓：这一段**必须放在其它"每轮重置"之后** ✗→✓ ——
+         * `context-overflow-handling.test.ts::OFLOW-6` 用"在 `lastFinishReason` 重置点**附近 400 字**"
+         * 来钉"每轮状态重置发生在迭代开头"✓（那是第 69 波真机事故换来的判据 ✓）。
+         * 第一版把这段（带一大段注释 ✗）插在 `guardSuppressedThisIteration` **之前**
+         * ⇒ 把 `guardSuppressedThisIteration = 0` 挤出了那个窗口 ✗ ⇒ `OFLOW-6` 当场变红 ✓。
+         * 判据的窗口是 400 字，所以**新增的注释也要算进去** ✓ —— 放在后面既满足本波
+         * 的语义 ✓、也不挤掉别人判据要看的字 ✓。
+         *
+         * 为什么不能沿用"进入收尾段时才清"（原来那儿就是声明点 ✗）：
+         * 本轮有 10 处出口发生在**到达收尾段之前** ✓（关键服务不可用 / 成本上限 /
+         * 上下文溢出 / 重复调用守卫 / 写被拒 / 被中止 …）✗ ⇒ 若在收尾段入口才清 ✗，
+         * 那些出口会带上**上一轮**的提醒 ✗ ⇒ 跑批记录里多一条**假证据** ✓
+         * （而这条证据正是判"守卫到底有没有拦住"的唯一数据来源 ✓，假证据比没有更糟 ✗）。
+         */
+        this.completionNudges = [];
+        this.completionNudgeReasons = [];
 
         // P0-7.1 / 6.5建议2: 每轮迭代检查关键服务可用性
         if (!this.checkCriticalServices()) {
-          const result: LoopResult = {
+          this.noteExit("critical_service_unavailable", sessionId);
+          const result = this.finishWithNudges({
             type: "stop",
             reason: "critical_service_unavailable",
             usage: this.state.totalUsage,
-          };
+          });
           yield { type: "text_delta", text: "\n\n⚠️ **关键服务不可用**，已停止执行。请在插件管理中检查 LLM/工具/消息存储服务是否正常加载。" };
           yield { type: "end", result };
           return result;
@@ -1700,11 +2069,12 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
 
           // Hard stop: cost exceeds stop threshold
           if (ratio >= stopThreshold) {
-            const result: LoopResult = {
+            this.noteExit("cost_limit", sessionId);
+            const result = this.finishWithNudges({
               type: "stop",
               reason: `Cost limit exceeded: $${sessionCost.toFixed(4)} >= $${limit.toFixed(2)} (threshold: ${stopThreshold})`,
               usage: this.state.totalUsage,
-            };
+            });
             if (this.config.memoryEnabled && this.config.onTurnComplete) {
               try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
             }
@@ -1756,6 +2126,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       this.guidanceInterrupt = false;
 
       if (this.abortController.signal.aborted) {
+        this.noteExit("aborted_early", sessionId);
         return { type: "aborted" };
       }
 
@@ -2009,11 +2380,12 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         // Prevent infinite compaction loops (max 3 consecutive compactions)
         if (this.state.consecutiveCompactions >= 3) {
           console.warn("[AgenticLoop] Too many consecutive compactions, forcing stop");
-          const result: LoopResult = {
+          this.noteExit("context_overflow", sessionId);
+          const result = this.finishWithNudges({
             type: "overflow",
             message: "上下文窗口已满，即使压缩后仍无法继续。请开启新对话。",
             usage: this.state.totalUsage,
-          };
+          });
           yield { type: "end", result };
           return result;
         }
@@ -2347,7 +2719,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           console.warn(`[AgenticLoop] Plan stall stop after ${stall.stalledFor} iterations`);
           recordLoopStop(sessionId, "plan_stale", { stalledFor: stall.stalledFor, planRevision: this.planRevision, noGainStreak: this.repeatGuard.noGainStreakCount });
           yield { type: "text_delta", text: `\n\n⚠️ **检测到停滞，已停止**：${stall.message ?? ""}` };
-          const result: LoopResult = {
+          this.noteExit("plan_stale", sessionId);
+          const result = this.finishWithNudges({
             type: "stop",
             reason: "plan_stale",
             usage: this.state.totalUsage,
@@ -2358,7 +2731,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               planRevision: this.planRevision,
               noGainStreak: this.repeatGuard.noGainStreakCount,
             },
-          };
+          });
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
             try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
           }
@@ -2389,11 +2762,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           suppressed: stats.suppressed,
           advisories: stats.advisories,
         });
-        const result: LoopResult = {
+        this.noteExit("repeat_guard", sessionId);
+        const result = this.finishWithNudges({
           type: "stop",
           reason: "repeat_guard",
           usage: this.state.totalUsage,
-        };
+        });
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
           try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
         }
@@ -2405,11 +2779,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       // This prevents the LLM from retrying the write in subsequent iterations
       if (this.state.writeRejected) {
         yield { type: "text_delta", text: "\n\n⚠️ **写入已被拒绝**。用户未确认文件覆盖，已停止执行。如需重新写入，请重新发送指令。" };
-        const result: LoopResult = {
+        this.noteExit("write_rejected_by_user", sessionId);
+        const result = this.finishWithNudges({
           type: "stop",
           reason: "write_rejected_by_user",
           usage: this.state.totalUsage,
-        };
+        });
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
           try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
         }
@@ -2436,7 +2811,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           this.guidanceInterrupt = false;
         } else {
           console.log(`[AgenticLoop] Stream was cancelled mid-flight (finishReason=aborted) — reporting aborted instead of completed`);
-          const abortedResult: LoopResult = { type: "aborted" };
+          this.noteExit("aborted", sessionId);
+          const abortedResult = this.finishWithNudges({ type: "aborted" });
           yield { type: "end", result: abortedResult };
           return abortedResult;
         }
@@ -2565,11 +2941,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
               `建议：① 让它把长文件**分块写入**（\`write\` 首段 + \`write append: true\` 追加）；` +
               `② 或把这个模型/智能体的输出上限调大（设置 → maxTokens）。`,
           };
-          const truncResult: LoopResult = {
+          this.noteExit("output_truncated", sessionId);
+          const truncResult = this.finishWithNudges({
             type: "stop",
             reason: "output_truncated",
             usage: this.state.totalUsage,
-          };
+          });
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
             try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
           }
@@ -2586,11 +2963,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // ① 连续错误到达上限（LLM 调用失败恒定让 toolCallsInIteration 留在 0，
         //    所以这条判据在 LLM 失败路径上**只能在这里**被看到）；
         if (this.state.consecutiveErrors >= this.config.maxConsecutiveErrors) {
-          const errResult: LoopResult = {
+          this.noteExit("too_many_errors", sessionId);
+          const errResult = this.finishWithNudges({
             type: "stop",
             reason: "too_many_errors",
             usage: this.state.totalUsage,
-          };
+          });
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
             try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
           }
@@ -2604,7 +2982,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           console.error(
             `[AgenticLoop] LLM call failed for iteration ${this.state.iteration} — reporting error instead of completed: ${this.state.lastIterationError}`,
           );
-          const failResult: LoopResult = { type: "error", error: this.state.lastIterationError };
+        this.noteExit("llm_error", sessionId);
+          const failResult = this.finishWithNudges({ type: "error", error: this.state.lastIterationError });
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
             try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
           }
@@ -2632,7 +3011,6 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 所以改成"**先把理由都收集起来，最后一次性说完**"✓：
          * 消息可以一条写全 ✓，但**只多要一轮** ✓。
          */
-        const completionNudges: string[] = [];
         debugLog(
           "agent-loop",
           "收尾段：进入",
@@ -2652,17 +3030,18 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          */
         if (!this.revertedNudged && this.revertedAfterEdit) {
           try {
-            const { shouldNudgeRevertedWork } = await import("./completion-guards");
+            const { shouldNudgeRevertedWork, buildRevertedWorkNudge } = await import("./completion-guards");
             if (shouldNudgeRevertedWork({ revertedAfterEdit: this.revertedAfterEdit, alreadyNudged: false })) {
               this.revertedNudged = true;
-              debugLog("agent-loop", "收尾：改动被还原过，且之后再没编辑");
+              debugLog("agent-loop", "收尾：改动被还原过，且之后再没编辑", { kind: this.revertedKind });
               recordLoopStop(sessionId, "completed_unverified", { phase: "reverted", iteration: this.state.iteration });
-              completionNudges.push(
-  "[SYSTEM] 这一路你**改动过文件，但后来把改动撤销了**，而且**之后再没有编辑过**（一条事实 ✓）。\n" +
-                      "\n如果是有意放弃这版实现，请**说明理由**（为什么现在的代码是对的、你验证过什么）✓；" +
-                      "否则请把它**做回来** —— 真机数据里这种形态（改了、测了、又还原，最后盘上什么都没留下）" +
-                      "几乎总是**收尾时误撤**，而不是「确实不需要改」。",
-              );
+              this.completionNudgeReasons.push("reverted");
+              /**
+               * ★ 第 46 波：文案**按还原类型分支** ✓（`buildRevertedWorkNudge` ✓）。
+               * 真机证据：`1.16.295` 的 `repo-02` run-2 —— 只有 `git stash push`、**全轮没有 `pop`** ✗，
+               * 而当时文案是泛泛的"把它做回来" ✗ ⇒ 模型没意识到改动还在 stash 里 ✓。
+               */
+              this.completionNudges.push(buildRevertedWorkNudge(this.revertedKind));
             }
           } catch (e) {
             warnOnce("reverted-work", "[agentic-loop] 还原守卫检查失败", e);
@@ -2702,7 +3081,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                 red: [...this.testFileStatus.values()].filter((s) => s === "red").length,
               });
               recordLoopStop(sessionId, "completed_unverified", { phase: "zero-output", iteration: this.state.iteration });
-              completionNudges.push(
+              this.completionNudgeReasons.push("zero-output");
+              this.completionNudges.push(
   "[SYSTEM] 你**没有改动任何文件**就收尾了，而**你已经跑过的判据里还有红的**（一条事实 ✓）。\n" +
                       `- 跑过的判据：${this.testFileStatus.size} 条，其中红 ${[...this.testFileStatus.values()].filter((s) => s === "red").length} 条\n` +
                       "\n如果你判断这个任务确实不需要改代码，请**明说**理由（读了什么、为什么现状就是对的）✓；" +
@@ -2756,27 +3136,48 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           (this.sessionModifiedAnything || this.sessionEditedSources.size > 0 || this.sessionLookedAtSource)
         ) {
           try {
-            const { unrunFamilyCriteria } = await import("./task-keyword-search");
+            const { unrunFamilyCriteria, buildUnrunFamilyNudge, familyOfTestFile } = await import("./task-keyword-search");
             const root = this.lastCwd || process.cwd();
             /** 上限放到 50 ✓：这里只是"够不够看清缺口"✓，不按名字砍在前 8 条 ✗。 */
             const unrun = await unrunFamilyCriteria({ root, runFiles: [...this.testFileStatus.keys()], max: 50 });
             if (unrun.length > 0) {
               this.unrunSiblingsNudged = true;
-              const ranFamilies = [...this.testFileStatus.keys()].map((f) => (f.split("/").pop() ?? f).split(/[-_.]/)[0]);
-              const family = ranFamilies[0] ?? "（同族）";
-              debugLog("agent-loop", "收尾：族里没跑过的判据", { family, unrun: unrun.length, sample: unrun.slice(0, 3) });
-              recordLoopStop(sessionId, "completed_unverified", { phase: "unrun-family", iteration: this.state.iteration });
-              const shown = unrun.slice(0, 8);
-              completionNudges.push(
-  "[SYSTEM] 你这一路改过源码，而**判据只跑了一部分**（这是一条事实，不是命令 ✓）：\n" +
-                      `- 你已经跑过 ${this.testFileStatus.size} 条 ✓\n` +
-                      `- 同族（\`${family}-*\`）里还有 **${unrun.length} 条你没跑过**：\n` +
-                      shown.map((f) => `  - ${f}`).join("\n") +
-                      (unrun.length > shown.length ? `\n  - …还有 ${unrun.length - shown.length} 条` : "") +
-                      `\n\n一条命令可以把整族跑完：\`npx vitest run 'src/test/${family}-*.test.ts'\` ✓\n` +
-                      "为什么值得跑完：这类任务的真机数据里，**把同族判据跑齐的轮次通过，只跑了一部分的轮次失败** ✓，" +
-                      "而失败形态几乎都是「改得不完整」（只补了其中一两处）✓。",
+              /**
+               * ★ 第 41 波：**文案由纯函数造** ✓（`buildUnrunFamilyNudge` ✓）。
+               *
+               * 为什么必须收成一处 ✗→✓：原来缺口的**列表**与文案里的**族名/命令**来路不同 ✗
+               * （列表 = 所有跑过的族的并集 ✓，族名 = `ranFamilies[0]` ✗）⇒ 真机上就出现了
+               * "说 `repro-*`、列的却是 `core-*`" ✗，而模型**照着那条命令跑了**（输出 101 字节 ≈ 没有匹配文件 ✓）
+               * ⇒ 一条缺口都没补上还不再提醒 ✗（`repo-02` run-2 因此 35 轮收尾 ✓，判据 `UNC-1..6` 钉这条 ✓）。
+               */
+              const nudgeText = buildUnrunFamilyNudge({ runCount: this.testFileStatus.size, unrun });
+              /**
+               * ⚠️ 留档：**族名与命令都要进侧车** ✓（这次归因靠的就是侧车里那行 `{family, unrun, sample}` ✓）——
+               * 只留计数的话，"文案自相矛盾"这种形态**事后看不出来** ✗。
+               */
+              /**
+               * ⚠️ ★ 第 41 波**真机发现**（留证 ✓）：这一行原来传的是**对象** ✗，
+               * 而 CDP 的控制台捕获把它压成了 `Object` ✗ —— 侧车里逐字是
+               * ```
+               * {"t":1791316909549,"type":"log","text":"[agent-loop] 收尾：族里没跑过的判据 Object"}
+               * ```
+               * ⇒ ★ **`families` / `sample` 根本没进侧车** ✗，而判据当时钉的是"源码里有这两个字段" ✓
+               * ⇒ **又一次"判据绿 ≠ 它到位"** ✓（交接 §6 第 2 条 ✓）。
+               * 修法：**自己 JSON.stringify 成字符串** ✓（字符串不会被压 ✓）。
+               * 为什么非要有它：§13.247 那次归因**靠的就是这一行**（289 侧车里它是展开的 ✓）——
+               * 这一行没了，"文案自相矛盾"这种形态下次又只能靠猜 ✗。
+               */
+              debugLog(
+                "agent-loop",
+                `收尾：族里没跑过的判据 ${JSON.stringify({
+                  families: [...new Set(unrun.map(familyOfTestFile))].sort(),
+                  unrun: unrun.length,
+                  sample: unrun.slice(0, 3),
+                })}`,
               );
+              recordLoopStop(sessionId, "completed_unverified", { phase: "unrun-family", iteration: this.state.iteration });
+              this.completionNudgeReasons.push("unrun-family");
+              this.completionNudges.push(nudgeText);
             }
           } catch (e) {
             warnOnce("unrun-family", "[agentic-loop] 族判据收尾检查失败", e);
@@ -2791,12 +3192,40 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
          * 合成一条只是把三句话放在一起 ✓ —— 而省下的是**实打实的往返** ✓
          * （实测 2 次提醒往返 ≈ 20s ✓，见 NR-1 注释里的实测数字 ✓）。
          */
-        if (completionNudges.length > 0) {
+        if (this.completionNudges.length > 0) {
+          /**
+           * **第 270 波：把"这一轮到底催了什么"落进事件日志** ✓ —— 这是目标①**唯一**的数据来源 ✓。
+           *
+           * ## 为什么必须在这里落（而不是只在结果对象上挂字段 ✗）
+           *
+           * 结果对象的 `detail` 只到 `LoopResult` 的**消费方**手里 ✓，而跑批记录
+           * （`.preview-shot/_codem-repo-eval.mjs` ✓）读的是**会话事件** ✓
+           * ⇒ 只挂字段的话，`nudges` 永远进不了 `.jsonl` ✗ ⇒ "守卫有没有拦住"**还是没有数据** ✗
+           * ——那正是本条要修的东西 ✗。
+           *
+           * ## 为什么复用 `loop_stopped` 这条通道（而不是新造一个事件类型 ✗）
+           *
+           * 判据 `nudge-3` 要的是"**所有**出口都带该字段"✓，而跑批记录里的 `loopStops`
+           * 就是这条通道 ✓（`loop-stop-log.ts` 的 `reason` 取值表 ✓）。
+           * 新造一条通道的代价是**每一条既有统计都要改**✗（"哪种卡法最多"那几个数 ✓），
+           * 而收益只是换个名字 ✓。所以：`reason` 沿用 `completed_unverified` ✓
+           * （三条守卫本来就各自记了这个 reason ✓），用 `phase: "nudges"` 与
+           * 那三条**逐条**记录区分开 ✓ —— 前者是"**催了**"✓、后者是"**触发了**"✓。
+           *
+           * ⚠️ 一次 flush 只记**一条** ✓（`nudges` 里是这一轮的全部守卫 ✓）——
+           * 不是"每守卫一条"✗：那正是 `NR-1` 当初修掉的形态（三次往返 ✗）。
+           */
+          recordLoopStop(sessionId, "completed_unverified", {
+            phase: "nudges",
+            iteration: this.state.iteration,
+            nudges: [...this.completionNudges],
+            guards: [...this.completionNudgeReasons],
+          });
           this.getMessageStorage().createMessage(
             {
               id: `completion-nudges-${Date.now()}`,
               role: "user",
-              content: completionNudges.join("\n\n---\n\n"),
+              content: this.completionNudges.join("\n\n---\n\n"),
               timestamp: Date.now(),
               status: "done",
             },
@@ -2805,7 +3234,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           this.msgCache = null;
           yield {
             type: "text_delta",
-            text: `\n\n🔎 收尾前有 ${completionNudges.length} 件事需要先说明或做完（已合并成一次提问），已要它回应…\n\n`,
+            text: `\n\n🔎 收尾前有 ${this.completionNudges.length} 件事需要先说明或做完（已合并成一次提问），已要它回应…\n\n`,
           };
           continue;
         }
@@ -2900,18 +3329,26 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           const fileList = redFiles.length > 0 ? `（${redFiles.join(", ")}）` : "";
           recordLoopStop(sessionId, "completed_unverified", { phase: "red-test-nudge", iteration: this.state.iteration });
           try {
+            /**
+             * ★ 第 46 波：文案由纯函数造 ✓（`buildRedTestNudgeText` ✓）—— 一处生成 ✓、不会漂移 ✓。
+             * ⚠️ 第 46 波**末**已按用户指令**撤下**其中"与题面同一个病的不算无关"那段措辞 ✗：
+             *   **提示词不是治本手段** ✓（随模型升级/切换而变 ✗）。
+             *   正确性改由**结构**承担 ✓：见下方 `regressions` 分支 ✓（回归不接受点名豁免 ✓）
+             *   + `turn-outcome.ts` 的完成门 ✓（有回归 ⇒ 绝不显示"任务完成" ✓）。
+             * 真机取证（保留 ✓，它是这次转向的依据）：`1.16.295` 的 `repo-02` run-2 正是从这条 ② 走掉的 ✗
+             *   （回执逐字："…与本次 write-custom 修复无关，按任务范围我没有动它们" ✓），
+             *   而它点名的 `dsh-d9` 与题面**是同一个病**（假成功 ✓）。
+             */
+            const { buildRedTestNudgeText } = await import("./completion-guards");
             this.getMessageStorage().createMessage(
               {
                 id: `red-test-nudge-${Date.now()}`,
                 role: "user",
-                content:
-                  `[SYSTEM] 你这一轮跑过的测试里还有 **红的**：${failedCount} 条失败${fileList}` +
-                  `${redTest ? `（最近一次命令：${redTest.command}）` : ""}。\n` +
-                  "「跑另一组绿的」不能给这些文件洗白 —— 它们还是红的。现在你要收尾了，二选一：\n" +
-                  "① 把**这些文件**跑到绿（正常收尾）；\n" +
-                  "② 如果它们确实不该由你修（例如与本任务无关的既有缺陷），就在回执里**点名**：" +
-                  "哪几条红、为什么留着、对用户意味着什么。\n" +
-                  "不允许把这次收尾写成「已完成」而不提这些红。",
+                content: buildRedTestNudgeText({
+                  failedCount,
+                  fileList,
+                  command: redTest?.command,
+                }),
                 timestamp: Date.now(),
                 status: "done",
               },
@@ -2928,11 +3365,66 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           continue;
         }
 
-        const result: LoopResult = {
+        /**
+         * ★★ 第 46 波：**回归门**（治本 ✓，不靠提示词 ✗）。
+         *
+         * 上面那条提醒对**所有**红都一样，并且**只提醒一次**✗ ⇒ 模型只要在回执里"点名"，
+         * 收尾就被放行 ✗。真机取证：`repo-02` 与 `repo-06` 都是这么失败掉的 ✗
+         * （回执逐字"与本次 write-custom 修复无关，按任务范围我没有动它们"✗）。
+         *
+         * 这里把"**基线绿 → 现在红**"单独拿出来 ✓ —— 它**不是**判断题 ✗（是可判定事实 ✓）：
+         *   · 有回归 ⇒ **不接受点名豁免** ✓：继续做（有上限 ✓），并只递**事实** ✓
+         *     （哪几个判据、改动前是绿的、现在红 ✓），不靠措辞施压 ✓
+         *   · 上限用尽 ⇒ 照样收尾 ✓，但结果里带 `regressionRedTests` ✓
+         *     ⇒ `describeTurnOutcome` **拒绝显示"任务完成"** ✓（第 46 波的完成门 ✓）
+         *   · **基线红**（`repo-03/04` 那类既有红）**不算回归** ✓ ⇒ 行为与今天完全一致 ✓
+         */
+        const regressions = this.currentRegressionRedFiles();
+        if (regressions.length > 0 && this.regressionNudges < REGRESSION_NUDGE_LIMIT) {
+          this.regressionNudges++;
+          recordLoopStop(sessionId, "completed_unverified", {
+            phase: "regression-nudge",
+            iteration: this.state.iteration,
+            redFiles: regressions,
+          });
+          const list = regressions.join(", ");
+          try {
+            this.getMessageStorage().createMessage(
+              {
+                id: `regression-nudge-${Date.now()}`,
+                role: "user",
+                content:
+                  `**事实**：这些判据在本次改动**之前是绿的**，现在是红的：${list}。` +
+                  `\n（这是机器比对"本轮首次观察状态"与"当前状态"得到的，不是猜测。）` +
+                  `\n请把它们修回绿色；如果你认为某条确实不该由你修，` +
+                  `请**说明是哪一处改动导致它变红**，而不是只说"与本任务无关"。`,
+                timestamp: Date.now(),
+                status: "done",
+              },
+              sessionId,
+            );
+            this.msgCache = null;
+          } catch (e) {
+            console.warn("[agentic-loop.ts]", e);
+          }
+          yield {
+            type: "text_delta",
+            text: `\n\n🔴 **刚被你改红的是**（改动前是绿的）：${list} —— 这不是"无关的既有红"。\n\n`,
+          };
+          continue;
+        }
+
+        this.noteExit("completed", sessionId);
+        const result = this.finishWithNudges({
           type: "stop",
           reason: "completed",
           usage: this.state.totalUsage,
-        };
+          /**
+           * ★ 有回归时**如实带上** ✓ ⇒ 完成门据此拒绝"任务完成" ✓。
+           * 用尽提醒上限后仍然收尾 ✓ —— 但**绝不谎报成功** ✓（这是本条的全部意义 ✓）。
+           */
+          ...(regressions.length > 0 ? { regressionRedTests: regressions } : {}),
+        });
         // F1.3: Trigger memory extraction after turn completes
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
           try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
@@ -2942,11 +3434,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       }
 
       if (this.state.consecutiveErrors >= this.config.maxConsecutiveErrors) {
-        const result: LoopResult = {
+        this.noteExit("too_many_errors", sessionId);
+        const result = this.finishWithNudges({
           type: "stop",
           reason: "too_many_errors",
           usage: this.state.totalUsage,
-        };
+        });
         // F1.3: Trigger memory extraction even on error stop
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
           try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
@@ -2971,11 +3464,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       stopMessage = `\n\n⚠️ **检测到循环停滞**（连续 ${MAX_CONSECUTIVE_NO_PROGRESS} 次迭代无进展），任务已停止以防止死循环。`;
     }
 
-    const result: LoopResult = {
+    const result = this.finishWithNudges({
       type: "stop",
       reason: stopReason,
       usage: this.state.totalUsage,
-    };
+    });
     if (stopMessage) {
       yield { type: "text_delta", text: stopMessage };
     }
@@ -3340,6 +3833,33 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             }
           }
           /**
+           * ★ 第 41 波：**取走这一段的"消息行写"账** ✓（`takeMessageWriteStats` **取走即清零** ✓）。
+           *
+           * 位置要求同 §6 第 1 条 ✓：紧贴下面那行 `llm timing` ✓（同一段窗口 ✓），
+           * 且解析失败时**不抛** ✓（留档设施不该影响任务 ✓，与 `recordLoopStop` 同一条纪律 ✓）。
+           */
+          const msgWriteStats = (() => {
+            try {
+              return MessageStorage.takeMessageWriteStats();
+            } catch {
+              return { calls: 0, ms: 0, maxMs: 0 };
+            }
+          })();
+          /**
+           * ★ 第 45 波：**这一段里 `saveMessages` 花了多少** ✓（只记不判 ✓）。
+           * 为什么要有它：按轮残差量到"客户侧簿记 ≈1303s（占跨度 21%）"✓，
+           * 而 `saveMessages` 是其中最大的嫌疑（2945 次 / 11172 条 ✓）—— 但**那是推的** ✗，
+           * 这一步把它变成数字 ✓（与 `msgw=` 同一手法 ✓）。
+           * ⚠️ 账在 `core/storage/persist-stats.ts` ✓（core，不依赖 UI ✓），store 写入、这里取走 ✓。
+           */
+          const saveStats = (() => {
+            try {
+              return takeSaveStats();
+            } catch {
+              return { calls: 0, msgs: 0, ms: 0, maxMs: 0 };
+            }
+          })();
+          /**
            * 一轮模型调用的时延拆分（第 132 波）：`TTFT`（连接+首字节/预填）与 `生成`（含思考）✓。
            * 只在 `codem-debug=agent-loop` 时输出 ✓。
            */
@@ -3359,6 +3879,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             `prep=${this.lastBuildReturnAt ? llmReqT0 - this.lastBuildReturnAt : -1}ms`,
             /** 第 179 波：**上一轮工具执行/收尾的耗时** ✓（上一次迭代结束到这一次开始 ✓）。 */
             `work=${this.lastIterationEndAt ? llmReqT0 - this.lastIterationEndAt : -1}ms`,
+            /**
+             * ★ 第 41 波：**这一段里"消息行的写"花了多少** ✓（目标② 的嫌疑 ✓，只记不判 ✓）。
+             *
+             * 为什么放在这一行里 ✗→✓：`stream=` 量的是"首字节 → 流结束" ✓，而
+             * `executor` 是**在两次 yield 之间**写消息行的 ✓ ⇒ 那笔开销**就在 `stream` 里面** ✓，
+             * 却与"模型真在生成"混在一起 ✗（已有数据分不开 ✓，见 `takeMessageWriteStats` 的说明 ✓）。
+             * 取走即清零 ✓ ⇒ 每个 `iter` 报的就是"这一段窗口里的账" ✓。
+             *
+             * ⚠️ 格式刻意**用空格分隔、不带斜杠** ✓ —— 既有的侧车解析器认的是
+             * `名字=数字ms?` ✓（`_codem-repo-eval.mjs::parseLlmTiming` ✓），
+             * 写斜杠会让三个数变成一个不可解析的串 ✗。
+             */
+            `msgw=${msgWriteStats.calls} msgwms=${msgWriteStats.ms} msgwmax=${msgWriteStats.maxMs}`,
+            /**
+             * ★ 第 45 波：**`saveMessages` 的账** ✓（`save=<次数> savemsgs=<条数> savems=<毫秒>` ✓）。
+             * 格式与 `msgw=` 同一口径 ✓（空格分隔、`名字=数字ms?` ✓，既有侧车解析器认得 ✓）。
+             */
+            `save=${saveStats.calls} savemsgs=${saveStats.msgs} savems=${saveStats.ms} savemax=${saveStats.maxMs}`,
           );
           success = true;
           this.state.lastIterationTextChars = currentText.length;
@@ -3424,7 +3962,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             message: error.message?.slice(0, 300),
           });
           yield { type: "text_delta", text: `\n\n${describeContextOverflow(error.message)}` };
-          const overflowResult: LoopResult = { type: "stop", reason: "context_overflow", usage: this.state.totalUsage };
+          const overflowResult = this.finishWithNudges({ type: "stop", reason: "context_overflow", usage: this.state.totalUsage });
           if (this.config.memoryEnabled && this.config.onTurnComplete) {
             try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn("[agentic-loop.ts]", e) }
           }
@@ -3467,7 +4005,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         };
         yield {
           type: "end",
-          result: { type: "stop", reason: "context_overflow", usage: this.state.totalUsage } as LoopResult,
+          result: this.finishWithNudges({ type: "stop", reason: "context_overflow", usage: this.state.totalUsage }),
         };
         return;
       }
@@ -3850,6 +4388,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // 于是同类工具漏登记就静默失去快照保护。
         const callContract = this.tools.getContract(name);
         if (needsPreCallSnapshot(callContract) && ctx.cwd) {
+          /**
+           * ★ 第 46 波：告诉追踪器"**这个工具可能改工作区**" ✓ ⇒
+           * 它下次 `finalize()` 才会去发 git ✓；否则（纯读的迭代 ✓）**一次 git 都不发** ✓。
+           * 取证与取舍见 `file-change-tracker.ts` 里 `finalize()` 顶部的长说明 ✓。
+           */
+          this.fileChangeTracker?.noteMutation();
           await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
           // 逐文件快照只对「按 path 改单个文件」的工具做（write/edit 系列）
           if (
@@ -4056,7 +4600,9 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
              */
             if (looksLikeRevertCommand(cmd)) {
               this.revertedAfterEdit = true;
-              debugLog("agent-loop", "记下还原型命令（改完又还原守卫用）:", cmd.slice(0, 100));
+              /** ★ 第 46 波：**记下是哪种还原** ✓（`stash` 与"丢弃式"的救法不同 ✗） */
+              this.revertedKind = revertKindOf(cmd);
+              debugLog("agent-loop", "记下还原型命令（改完又还原守卫用）:", cmd.slice(0, 100), "| kind=", this.revertedKind);
             }
           }
         }
@@ -4215,6 +4761,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                * "撤掉错的一版、重做一版"是正常动作 ✓，不该在收尾时被问一句 ✗。
                */
               this.revertedAfterEdit = false;
+              /** ★ 第 46 波：类型也要一起清 ✓（否则"重做一版"之后仍带着上一次的种类 ✗） */
+              this.revertedKind = null;
               /** 先标记再做事（老规矩 ✓）：同一个文件本回合只尝试一次 ✓，失败也不重试 ✓。 */
               this.symbolSiblingsSentFor.add(edited);
               try {

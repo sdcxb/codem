@@ -437,10 +437,12 @@ describe("工具链路编码 — autoLint 路径单引号包裹（防 $ 展开�
   // 回归：2026-09-01 排查所有 executeCommand 命令构造
   // autoLint 曾用双引号包裹 filePath：`tsc --noEmit --pretty "C:\my$dir\file.ts"`
   // PowerShell 双引号内 $dir 会被展开为空 → lint 路径错误。改为单引号包裹 + 单引号转义。
+  // ⚠️ 第 42 波：`.ts` 的命令换成了 `node --experimental-strip-types --check`（5.5s ⇒ 0.17s ✓）——
+  // 这条判据钉的是**包裹规则**（与用哪条命令无关 ✓），所以这里跟着换，规则本身不变 ✓。
   it("autoLint 命令用单引号包裹路径且转义单引号", () => {
     const filePath = "C:\\my$dir\\it's\\file.ts";
     const safeFile = filePath.replace(/'/g, "''");
-    const cmd = `npx tsc --noEmit --pretty '${safeFile}'`;
+    const cmd = `node --experimental-strip-types --check '${safeFile}'`;
     // 单引号包裹（PS 单引号内 $ 不展开）
     expect(cmd).toContain("'C:\\my$dir\\it''s\\file.ts'");
     expect(cmd).not.toMatch(/"C:\\/);

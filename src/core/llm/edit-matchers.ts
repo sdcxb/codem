@@ -31,7 +31,7 @@
  */
 
 /** `String.replace` 会特殊解释的替换记号（仅用于诊断与测试断言）。 */
-export const REPLACEMENT_TOKEN_PATTERN = /\$(\$|&|`|')/g;
+const REPLACEMENT_TOKEN_PATTERN = /\$(\$|&|`|')/g;
 
 /**
  * 字面量替换：把 `content` 里第一处 `search` 换成 `replacement`，
@@ -80,7 +80,7 @@ export function replaceLiteral(
  * （模型漏字段时是 `undefined`，`content.indexOf(undefined)` 会去找字面量 "undefined"）。
  * `search` 非空时每次至少前进 `search.length` 个字符，因此不可能死循环。
  */
-export function findLiteralOccurrences(content: string, search: string): number[] {
+function findLiteralOccurrences(content: string, search: string): number[] {
   if (!search || typeof search !== "string") return [];
   const offsets: number[] = [];
   for (let from = 0; ; ) {
@@ -143,7 +143,7 @@ export function containsReplacementToken(replacement: string): boolean {
  * 归一化层级。按「越靠前越不可能误匹配」排序，**首个命中即独占**，
  * 不做多级叠加（照 zcode `edit-matchers.ts:46-66` 的取向：保守优先）。
  */
-export const NORMALIZER_NAMES = [
+const NORMALIZER_NAMES = [
   "crlf",
   "line_number_prefix",
   "trailing_whitespace",
@@ -198,7 +198,7 @@ export function normalizeFor(name: NormalizerName, s: string): string {
 }
 
 /** 逐行相似度（1 - levenshtein / maxLen），仅用于给候选排序与展示。 */
-export function lineSimilarity(a: string, b: string): number {
+function lineSimilarity(a: string, b: string): number {
   if (a === b) return 1;
   const maxLen = Math.max(a.length, b.length);
   if (maxLen === 0) return 1;
@@ -222,7 +222,7 @@ function levenshtein(a: string, b: string): number {
   return prev[b.length];
 }
 
-export interface EditCandidate {
+interface EditCandidate {
   /** 文件里真实存在的那段文本（已归一化到与 search 同形） */
   text: string;
   /** 1-based 起始行号 */

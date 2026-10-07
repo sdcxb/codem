@@ -429,6 +429,20 @@ function App() {
    */
   const restoredLastSessionRef = useRef(false);
   const restoreInFlightRef = useRef(false);
+  /**
+   * ★ 第 46 波：**"有没有回合在跑"的 ref 镜像** ✓。
+   *
+   * 为什么不能直接用 `isStreaming` 状态 ✗：库维护跑在一个**启动时就起的长命 IIFE** 里 ✓，
+   * 它闭包捕获的是**那一刻**的 `isStreaming` ✓（陈旧值 ✗）—— 用它当判据 ⇒ 维护永远认为"没人忙" ✗
+   * ⇒ 又会和第一个回合抢线程 ✗（正是本 bug 的形状 ✓，见 `maintenance-schedule.ts` 的说明 ✓）。
+   *
+   * 用 effect 同步（而不是渲染期赋值 ✓）⇒ 保持组件纯净 ✓；首帧为 `false` ✓
+   * （挂载时确实没有回合在跑 ✓）。
+   */
+  const streamingRef = useRef(false);
+  useEffect(() => {
+    streamingRef.current = isStreaming;
+  }, [isStreaming]);
 
 // P0-FIX: Sync global cwd for file-link resolution — without this, clicking
 // file links in markdown output resolves paths against the wrong base dir
@@ -663,6 +677,29 @@ useEffect(() => {
       // 放在启动后台执行：不阻塞首屏，失败也只记日志。
       void (async () => {
         try {
+          /**
+           * ★★ 第 46 波：**先过空闲闸** ✓ —— 维护绝不许与"第一个回合"抢线程 ✗。
+           *
+           * 真机取证 ✓（侧车时间线 ✓，只取发请求之前那段 ✓）：每格前半段的**最大静默**
+           * 合计 **158s ≈ 6.6s/格** ✓，全夹在这些维护行之间 ✗：
+           *   `[Maintenance] 会话计数对账：检查 492 个…` ✓（11s/5s ✗）
+           *   `[IpcTrace] storage.compact` ✓（12s/6s ✗）｜`[Store] saveMessages` ✓（32s/10s ✗）
+           * 而同一批 `llm timing` 的 `ctx` 合计 **602s** ✓ ⇒ 按"只算 LLM + 工具"的老账，
+           * 这 **~7.5% 墙钟**会被**整段漏掉** ✗。
+           *
+           * 判据见 `src/test/maintenance-idle-gate.test.ts` ✓（IG-1..5 ✓），
+           * 其中 IG-3 钉的正是本 bug 的形状 ✓：**"静一静"之后又忙起来 ⇒ 必须重新等** ✗。
+           */
+          const { waitForIdle } = await import("./core/storage/maintenance-schedule");
+          const gate = await waitForIdle({
+            isBusy: () => streamingRef.current,
+            sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
+            now: () => Date.now(),
+          });
+          if (!gate.idle) {
+            // 等满上限仍在忙 ⇒ 照样开跑 ✓（**不饿死维护** ✓ —— 这是刻意的取舍 ✓）
+            console.warn(`[App] 存储维护等到上限仍在忙（${gate.waitedMs}ms），照常开跑 ✓`);
+          }
           // 第 18 轮：维护模块从旧引擎里抽出来了（它本来一行都不跑，见 storage/maintenance.ts 的说明）
           const { runDatabaseMaintenance } = await import("./core/storage/maintenance");
           await runDatabaseMaintenance();

@@ -244,11 +244,6 @@ export interface ExtractedRelation {
   relationType: RelationType;
 }
 
-// ========== PPT 幻灯片 (旧格式, 已迁移到 ppt-types.ts) ==========
-// 保留导出用于向后兼容
-import type { V2SlideDeck, PPTTheme } from './ppt-types';
-export type { V2SlideDeck as SlideDeck, PPTTheme };
-
 /** PPT 笔记内容类型 */
 type SlideContentType = 'ppt';
 

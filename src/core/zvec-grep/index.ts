@@ -7,5 +7,5 @@
  */
 
 export * from "./types";
-export { getRuntimeStatus, installOnline, installFromZip, uninstall, rebuildIndex, listPresentModels, type IndexResult } from "./service";
+export { getRuntimeStatus, installOnline, installFromZip, uninstall, rebuildIndex, type IndexResult } from "./service";
 export { zgCliPathOf, parseNodeVersion, pickNodeWinZipUrl } from "./runtime";

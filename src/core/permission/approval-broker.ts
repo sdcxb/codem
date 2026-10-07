@@ -59,13 +59,13 @@
 import type { PermissionRequest, PermissionResult } from "./permission";
 
 /** 待批项的状态。`responding` 是"已被某个回答方受理、尚未落地"。 */
-export type ApprovalStatus = "open" | "resolved" | "closed" | "expired";
+type ApprovalStatus = "open" | "resolved" | "closed" | "expired";
 
 /** 谁在等这个批准 / 谁回答了它。用于界面措辞与日志，**不用于鉴权**。 */
 export type ApprovalParty = "desktop" | "phone" | "wechat" | "relay";
 
 /** `answerApproval()` 的失败原因（机器可读）。 */
-export type ApprovalFailureCode = "approval_not_pending" | "approval_invalid_action";
+type ApprovalFailureCode = "approval_not_pending" | "approval_invalid_action";
 
 export type ApprovalAnswer =
   | { ok: true; requestId: string; action: "allow" | "deny"; decidedBy: ApprovalParty }
@@ -101,9 +101,9 @@ export interface ApprovalView {
 }
 
 /** 单字段摘录上限（长文本字段）。 */
-export const APPROVAL_TEXT_EXCERPT_CHARS = 800;
+const APPROVAL_TEXT_EXCERPT_CHARS = 800;
 /** 单字段摘录上限（普通字段）。 */
-export const APPROVAL_FIELD_MAX_CHARS = 300;
+const APPROVAL_FIELD_MAX_CHARS = 300;
 /** 整份预览/入参的字符上限。 */
 export const APPROVAL_PREVIEW_MAX_CHARS = 2000;
 /** 已决定条目的保留上限（对齐 DSH `approvals.ts:48-49` 的 128）。 */
@@ -212,7 +212,7 @@ const LONG_KEYS = new Set(["content", "new_string", "old_string", "text", "body"
  *
  * 幂等：对已消毒的对象再调一次不会继续变短（值已在限内）。
  */
-export function sanitizeApprovalInput(input: Record<string, unknown> | undefined): Record<string, unknown> {
+function sanitizeApprovalInput(input: Record<string, unknown> | undefined): Record<string, unknown> {
   const obj = input && typeof input === "object" ? input : {};
   const out: Record<string, unknown> = {};
   let used = 0;
@@ -387,12 +387,6 @@ export function listApprovals(opts?: {
     out.push(toView(entry));
   }
   return out.sort((a, b) => a.createdAt - b.createdAt).slice(0, limit);
-}
-
-/** 读单条（桌面在为某个 id 渲染对话框时用）。 */
-export function getApproval(requestId: string): ApprovalView | null {
-  const entry = entries.get(requestId);
-  return entry ? toView(entry) : null;
 }
 
 /**

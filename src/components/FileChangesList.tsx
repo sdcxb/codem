@@ -23,18 +23,56 @@ interface FileChangesListProps {
 
 export function FileChangesList({ sessionId, workspace }: FileChangesListProps) {
   const [records, setRecords] = useState<TurnFileChangeRecord[]>([]);
+  /**
+   * 读取失败的原因（第 269 波）✓ —— **空列表**与**读不到**必须能区分 ✓。
+   *
+   * 为什么必须显式：这张表以前只能给"空"✗（镜像被拒载 ⇒ 同步读恒返回 `[]` ✗），
+   * 而界面把"空"显示成"暂无文件变更记录"✗ —— 用户看到的是一个**看起来正常**的空面板 ✗。
+   * 现在失败会在面板里如实说出来 ✓，不再是无声的空 ✗。
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedTurn, setExpandedTurn] = useState<string | null>(null);
   const [diffFile, setDiffFile] = useState<{ path: string; before: string; after: string } | null>(null);
 
+  /**
+   * ## 第 269 波：这张表**不再有域镜像** ✗→✓（按需查询 + 有界一屏 ✓）
+   *
+   * 原来 `FileChangeStorage.listBySession()` 是**同步读镜像** ✗ —— 而真机上它超过
+   * 默认上限 5000 行就被**拒载**✗，于是这个面板显示的是"暂无文件变更记录"✗
+   * （用户看到的是「该功能本次不可用」✗，`docs/HANDOFF-NEXT-SESSION.md` §3 ✓）。
+   *
+   * 现在读的是**按需查询** ✓：`loadBySession()` 按会话拉最近
+   * `TURN_FILE_CHANGE_WINDOW_ROWS` 行 ✓（**不含 patch 正文** ✗，回滚时按 id 单独取 ✓）。
+   *
+   * ⚠️ **失败不许吞成空** ✗：拉取失败时把 `loadError` 记下来并**如实显示** ✗→✓
+   * —— 空列表与"读不到"是两件事 ✓（这正是这个面板以前让人误判的地方 ✗）。
+   */
   const loadRecords = useCallback(() => {
-    const list = FileChangeStorage.listBySession(sessionId);
-    setRecords(list);
+    let alive = true;
+    FileChangeStorage.loadBySession(sessionId)
+      .then((list) => {
+        if (!alive) return;
+        setRecords(list);
+        setLoadError(null);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        console.warn("[FileChangesList] 读取本会话文件变更失败:", e);
+        setRecords([]);
+        setLoadError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      alive = false;
+    };
   }, [sessionId]);
 
   useEffect(() => {
-    loadRecords();
+    const cancel = loadRecords();
     const unsub = onFileChangesTracked(() => loadRecords());
-    return unsub;
+    return () => {
+      cancel();
+      unsub();
+    };
   }, [loadRecords]);
 
   /**
@@ -110,8 +148,14 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
     return (
       <div style={{ padding: "16px", color: "var(--text-muted)", fontSize: 'var(--fs-sm)', textAlign: "center" }}>
         <GitBranch className="icon-lg" style={{ opacity: 0.3, marginBottom: 8 }} />
-        <div>暂无文件变更记录</div>
-        <div style={{ marginTop: 4, opacity: 0.6 }}>Agent 执行修改后会自动记录</div>
+        {/*
+         * 读不到 ≠ 没有 ✓（第 269 波）：以前两种情况都显示"暂无文件变更记录"✗，
+         * 而真机上恰恰是"读不到"那一半（镜像被拒载 ✗）—— 用户看到的是一个正常的空面板 ✗。
+         */}
+        <div>{loadError ? "文件变更记录读取失败" : "暂无文件变更记录"}</div>
+        <div style={{ marginTop: 4, opacity: 0.6 }}>
+          {loadError ? loadError : "Agent 执行修改后会自动记录"}
+        </div>
       </div>
     );
   }

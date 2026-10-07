@@ -97,7 +97,8 @@ describe("议题与笔记链接的空写诚实性", () => {
   it("HC-8: FileChangeStorage.updateStatus 返回真实影响行数", async () => {
     const { FileChangeStorage } = await import("../core/storage/file-change-storage");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(FileChangeStorage.updateStatus("ghost-id", "reverted")).toBe(0);
+    // 第 269 波：改成按需读 → 返回 Promise（**语义不变**：0 = 目标行不存在，不是假成功）
+    expect(await FileChangeStorage.updateStatus("ghost-id", "reverted")).toBe(0);
     warn.mockRestore();
   });
 });

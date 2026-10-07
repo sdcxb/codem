@@ -114,6 +114,42 @@ describe("控制台噪声契约（第 58 波）", () => {
     expect(app).toContain('debugLog("autosave"');
   });
 
+  /**
+   * ## LOG-6（第 309 波）：镜像逐出**不许无条件**往 console 打
+   *
+   * ## 真机读数（换来的判据 ✓）
+   *
+   * 一次会话日志回填维护（`backfillAllSessions` ✓）会逐个载入**全部 373 个会话** ✓，
+   * 而消息镜像 `keepSessions = 3` ✓ ⇒ **每载入一个就逐出一个** ✗
+   * ⇒ 那两条 `console.debug(... 切到会话 ... )` 被打了 **1 868 次** ✗。真机 console 实测：
+   *
+   * | 前缀 | 行数 | 占比 |
+   * |---|---|---|
+   * | **`[RustStoragePort]`（全是这一条）** | **1 868** | **76%** |
+   * | `[agent-loop]`（当前回合真正相关） | 33 | **1%** |
+   *
+   * console 是**经 CDP 转发**的 ✓ ⇒ 这 76% 的噪声本身有开销 ✓，
+   * 更糟的是它把**真正的证据淹掉** ✗（我为一次早停定位，前两次都被它带进沟里 ✓）。
+   *
+   * ⚠️ **口径与 LOG-3/LOG-4 完全一致** ✓：不是删掉诊断 ✗，而是**默认静默、按开关打开** ✓
+   * —— `lastEviction` 字段**必须留着** ✓（`message-mirror-budget` /
+   * `event-mirror-budget` 按它断言"逐出必须留痕"✓，删了才是真的弄坏诊断 ✗）。
+   */
+  it("LOG-6: 镜像逐出/预算逐出的 console.debug 必须按开关（不得无条件打）", () => {
+    const port = read("core/storage/rust-port.ts");
+    /** ① 不许再有无条件的那一条 ✗ */
+    expect(
+      port,
+      "`console.debug(`[RustStoragePort] ${this.lastEviction}`)` 不得无条件出现（它一次维护能打 1 868 次）",
+    ).not.toMatch(/^\s*console\.debug\(`\[RustStoragePort\] \$\{this\.lastEviction\}`\);/m);
+    /** ② 但必须仍然有受开关保护的版本 ✓（否则就是"删掉诊断"，与 LOG-3/4 的口径不符 ✗） */
+    expect(port, "受 `storage-trace` 开关保护的版本必须还在").toMatch(
+      /if \(isDebugEnabled\("storage-trace"\)\) console\.debug\(`\[RustStoragePort\] \$\{this\.lastEviction\}`\);/,
+    );
+    /** ③ 逐出的**留痕字段**不许删 ✓（两条既有判据按它断言） */
+    expect(port, "`lastEviction` 字段是诊断的载体，必须保留").toContain("this.lastEviction =");
+  });
+
   it("LOG-5: 关键告警没有被误静默（错误仍是 console.error，回退仍有提示）", () => {
     const loop = read("core/llm/agentic-loop.ts");
     // LLM 流错误等必须保留 error 级别

@@ -26,7 +26,7 @@
  */
 
 /** 呈现类别。`none` = 形状不认识/没有结果，保持现状不额外表态。 */
-export type TurnOutcomeKind = "none" | "completed" | "overflow" | "error" | "aborted" | "stopped";
+type TurnOutcomeKind = "none" | "completed" | "overflow" | "error" | "aborted" | "stopped";
 
 export interface TurnOutcome {
   kind: TurnOutcomeKind;
@@ -133,14 +133,65 @@ export function describeTurnOutcome(
     case "stop": {
       const reason = typeof r.reason === "string" ? r.reason : "";
 
-      // 唯一的"真完成"：显示完成卡、照旧报喜气泡。
-      if (reason === "completed") {
+      /**
+       * ★★ 第 46 波：**确定性完成门**（治本 ✓，不靠提示词 ✗）。
+       *
+       * 现象 ✓：模型在**收尾时刻**把同族的红判据"点名"为"与本次无关"✗，然后正常收尾 ⇒
+       *   界面显示"任务完成"✗，而实际上它刚改红的判据还红着 ✗
+       *   （真机取证 ✓：`repo-02` 与 `repo-06` 两格都是这个形态 ✓；本会话第十九节 ✓）。
+       *
+       * 为什么必须落在**代码**里 ✓（而不是再写一句提示词 ✗）：
+       *   · 提示词的效果随模型升级/切换而变 ✗ ⇒ 每次换模型都要重新赌一次 ✓
+       *   · 而"某个判据**原来是绿的**、现在红了"是**可判定的事实** ✓ ⇒ 由代码判 ✓
+       *   · 对照 DSH ✓：它的正确性由结构性机制保证 ✓（未配对的工具调用补记错误结果 ✓、
+       *     失败是终态 ✓、运行时不变式 ✓），提醒只是**确定性触发**的补充 ✓
+       *
+       * 判据形状 ✓：循环在构造 `{ type: "stop", reason: "completed" }` 时，
+       *   若存在"基线绿 → 现在红"的判据 ⇒ 把文件名数组放进 `regressionRedTests` ✓。
+       *   **本函数只认这个事实** ✓：非空 ⇒ 绝不返回 completed ✓。
+       *
+       * ⚠️ 刻意**不**看模型的解释文字 ✗：解释不能把红变绿 ✓。
+       * ⚠️ 基线红（本轮之前就红的判据 ✓）**不算**回归 ✓ ⇒ 不会被这条门误伤 ✓
+       *   （否则 `repo-03/04` 那种"题面无关的既有红"会被错判 ✗）。
+       */
+      const regressions = Array.isArray(r.regressionRedTests)
+        ? (r.regressionRedTests as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0)
+        : [];
+
+      // 唯一的"真完成"：显示完成卡、照旧报喜气泡 —— 但**有回归时绝不走这里** ✗
+      if (reason === "completed" && regressions.length === 0) {
         return {
           kind: "completed",
           petPhase: donePhase,
           completionCard: true,
           suppressTaskBubble: false,
           messageStatus: "done",
+        };
+      }
+
+      if (reason === "completed" && regressions.length > 0) {
+        const list = regressions.slice(0, 5).join("、") + (regressions.length > 5 ? ` 等 ${regressions.length} 个` : "");
+        const msg = zhOr(
+          zh,
+          `**这不是完成** ✗：有 ${regressions.length} 个「改动前是绿的」判据现在是红的 —— ${list}。` +
+            `这说明这次的修改**还没改完**（或改坏了别处）。请把它们修回绿色，` +
+            `或明确指出是哪一处改动导致它们变红。`,
+          `**This is NOT a completion** ✗: ${regressions.length} test(s) that were green before this change are now red — ${list}. ` +
+            `The change is incomplete (or it broke something else). Fix them, or point out which edit caused them.`,
+        );
+        return {
+          kind: "stopped",
+          notice: `⚠️ ${msg}`,
+          petPhase: errorPhase,
+          petMessage: msg,
+          completionCard: false,
+          suppressTaskBubble: true,
+          turnStatus: {
+            kind: "error",
+            message: `${regressions.length} regression test(s) left red: ${regressions.slice(0, 5).join(", ")}`,
+            code: "REGRESSION_TESTS_RED",
+          },
+          messageStatus: "error",
         };
       }
 

@@ -45,21 +45,51 @@ export const DeliverableFiles = memo(function DeliverableFiles({
   const [records, setRecords] = useState<TurnFileChangeRecord[]>([])
   const [expanded, setExpanded] = useState(false)
 
+  /**
+   * ## 第 269 波：这张表不再有域镜像 ⇒ 改成**按需查询** ✓
+   *
+   * 原来 `listBySession()` 是**同步读镜像** ✗：真机上表超过默认上限 5000 行就被拒载 ✗
+   * ⇒ 恒返回 `[]` ⇒ 交付物区块**恒不渲染** ✗（`records.length === 0` 直接 `return null` ✗）。
+   *
+   * 现在按会话拉最近 `TURN_FILE_CHANGE_WINDOW_ROWS` 行 ✓（不含 patch 正文 ✓）。
+   * 读不到就**什么都不渲染** ✓（这个组件是消息尾部的装饰块 ✓，不该因为一次读失败
+   * 在每条消息上刷一行错误 ✗）—— 但失败要留痕 ✓（`console.warn` ✓，不静默 ✗）。
+   */
   const loadRecords = useCallback(() => {
-    const list = FileChangeStorage.listBySession(sessionId)
-    setRecords(list)
-  }, [sessionId])
+    let alive = true;
+    FileChangeStorage.loadBySession(sessionId)
+      .then((list) => {
+        if (alive) setRecords(list);
+      })
+      .catch((e) => {
+        if (alive) console.warn("[DeliverableFiles] 读取本会话文件变更失败（本块留空）:", e);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
-    loadRecords()
-    const unsub = onFileChangesTracked(() => loadRecords())
-    return unsub
-  }, [loadRecords])
+    const cancel = loadRecords();
+    const unsub = onFileChangesTracked(() => loadRecords());
+    return () => {
+      cancel();
+      unsub();
+    };
+  }, [loadRecords]);
 
   if (records.length === 0) return null
 
-  // 获取最新一轮的文件变更
-  const latestRecord = records[records.length - 1]
+  /**
+   * 获取最新一轮的文件变更。
+   *
+   * ⚠️ 第 269 波**顺手修了一个真缺陷** ✗→✓：原来是 `records[records.length - 1]` ✗，
+   * 而接口契约（以及本波之前的镜像实现 ✓）都是 **`turn_index` DESC** ✓
+   * ⇒ 最后一个元素是**最旧**的一轮 ✗ ⇒ 这个"交付文件"块显示的从来不是最新一轮 ✗
+   * （在按需读下这个错误会更明显：一屏有界，取错那一端更容易看出来 ✓）。
+   * 与 `FileChangesList` 的遍历顺序现在也一致了 ✓（两处都按 DESC ✓）。
+   */
+  const latestRecord = records[0]
   const changedFiles: ChangedFile[] = latestRecord ? FileChangeStorage.parseChangedFiles(latestRecord) : []
 
   if (changedFiles.length === 0) return null

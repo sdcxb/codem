@@ -195,7 +195,7 @@ export function __resetJsRemoteRuntimeForTests(): void {
 // =====================================================================================
 
 /** `ctx.provide(name, service)` 到达前端时的描述符 */
-export interface ProvidedServiceDescriptor {
+interface ProvidedServiceDescriptor {
   name: string;
   /** 函数属性名 → guest 里的 handle（宿主用 `callSandboxFunction` 回调） */
   functions: Record<string, number>;

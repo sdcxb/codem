@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { RustStoragePort } from "../core/storage/rust-port";
+import { __awaitPendingWrites } from "../core/storage/domain-store";
 
 const failures: string[] = [];
 vi.mock("../core/storage/persist-failure", () => ({
@@ -71,8 +72,15 @@ function portWith(
   const rowsFor = (table: string) => (byTable ? byTable[table] ?? [] : fallback);
   const transport = {
     invokeCommand: async (command: string, params?: Record<string, unknown>) => {
+      /**
+       * ⚠️ `p` 必须在**函数作用域**里取（原来只在 `crud.list` 那个块里定义 ✗）。
+       * 踩过的坑：第 269 波给这个 transport 补 `crud.upsert` / `crud.delete` 时，
+       * 新分支引用了块内的 `p` ⇒ **ReferenceError** ✗ ⇒ 而它被端口的写重试链吞掉 ✗
+       * ⇒ 表现为"写没落到夹具里"✗（`DOM-13` 的 `expected 'completed' to be 'reverted'` ✓）
+       * —— 一个**夹具的**作用域错误，看起来却像产品缺陷 ✗。
+       */
+      const p = params ?? {};
       if (command === "crud.list") {
-        const p = params ?? {};
         const table = String(p.table ?? "");
         const limit = Number(p.limit ?? 1000);
         const offset = Number(p.offset ?? 0);
@@ -91,11 +99,82 @@ function portWith(
           Object.keys(where).length > 0
             ? src.filter((r) => Object.entries(where).every(([k, v]) => (r as Record<string, unknown>)[k] === v))
             : src;
-        // 模拟 engine 的分页：按 offset/limit 切片，并给出 has_more
-        const count = byTable ? matched.length : total;
-        const all = Array.from({ length: count }, (_, i) => matched[i] ?? { id: `pad-${i}` });
+        /**
+         * 第 269 波：补 `order_by` / `desc` ✓（真引擎 `crud.rs::crud_list` 支持它们 ✓，
+         * 而按需查询 `FileChangeStorage.loadBySession` 靠它取"最新 N 行" ✓）。
+         * 夹具忽略参数 ⇒ 会在"恰好按插入序"上**空转通过** ✗（真机是 DESC ✗）。
+         */
+        const ordered =
+          typeof p.order_by === "string"
+            ? [...matched].sort((a, b) => {
+                const av = (a as Record<string, unknown>)[p.order_by as string] as number;
+                const bv = (b as Record<string, unknown>)[p.order_by as string] as number;
+                const cmp = av === bv ? 0 : av < bv ? -1 : 1;
+                return p.desc === true ? -cmp : cmp;
+              })
+            : matched;
+        /**
+         * 第 269 波：**列投影也要真的生效** ✓（真引擎 `check_columns` + 只回那些列 ✓）。
+         * 不投影的话，"引擎返回整行"这个形态在测试里被**静默接受** ✗ ——
+         * 而真机上是"只回投影列"✓，`patch`（500KB/行 ✗）根本不过桥 ✓。
+         */
+        const cols = p.columns as string[] | undefined;
+        const projected =
+          Array.isArray(cols) && cols.length > 0
+            ? ordered.map((r) => Object.fromEntries(cols.map((c) => [c, (r as Record<string, unknown>)[c] ?? null])))
+            : ordered;
+        /**
+         * 模拟 engine 的分页：按 offset/limit 切片，并给出 has_more。
+         *
+         * ⚠️ **第 269 波补了一条**（与真引擎对齐 ✓）：`where` **非空**时**不补 `pad-*`** ✗。
+         * `pad-*` 本来是为 `opts.rowCount`（"造 N 千行"那种容量用例 ✓）准备的 ✓，
+         * 但它会**凭空造出**匹配的行 ✗ —— 实测：按需读 `where {id:"nope"}` 竟然拿到
+         * 一行 `pad-0` ✗ ⇒ `updateStatus` 把"这行不存在"判成"存在"✗（返回 1 ✗，
+         * 而那正是第 84 波修过的 A 类语义 ✗）。真引擎的 `crud_list` 是按 `where` 真查 ✓，
+         * 查不到就是**零行** ✓ ⇒ 夹具不能比实现宽松 ✗。
+         */
+        const count = Object.keys(where).length > 0 ? projected.length : byTable ? projected.length : total;
+        const all = Array.from({ length: count }, (_, i) => projected[i] ?? { id: `pad-${i}` });
         const items = all.slice(offset, offset + limit);
         return { ok: true, result: { items, has_more: offset + items.length < count, next_cursor: null } } as never;
+      }
+      /**
+       * 第 269 波：**写/删要真的改到夹具里的表** ✓。
+       *
+       * 为什么必须补 ✗：`turn_file_changes` 现在走**按需读**✓，于是很多用例的形状是
+       * "写一条 → 再读回来"✓。而假 transport 原来对任何写都只回 `{written: 1}` ✗
+       * ⇒ 写**没有落到表里** ✗ ⇒ 用例会以"读回来还是旧值"这种**看起来像产品缺陷**的方式红 ✗
+       * （实测就是 `DOM-13` 的 `expected 'completed' to be 'reverted'` ✓）。
+       * 真引擎的 `crud.upsert` 是"按主键覆盖、未提供的列保持原值"✓，
+       * `mode: "replace"` 同样是"先 UPDATE、没有再 INSERT"（**不是** `INSERT OR REPLACE` ✗）
+       * ⇒ 这里逐条照做 ✓（夹具不许比实现更宽松，也不许更严格 ✓）。
+       */
+      if (command === "crud.upsert") {
+        const target = (byTable ? byTable[String(p.table ?? "")] : undefined) ?? fallback;
+        const incoming = (p.rows as Array<Record<string, unknown>> | undefined) ?? [];
+        for (const row of incoming) {
+          const at = target.findIndex((r) => r.id === row.id);
+          if (at >= 0) target[at] = { ...target[at], ...row };
+          else target.push({ ...row });
+        }
+        return { ok: true, result: { written: incoming.length } } as never;
+      }
+      if (command === "crud.upsert") {
+        const target = (byTable ? byTable[String(p.table ?? "")] : undefined) ?? fallback;
+        const incoming = (p.rows as Array<Record<string, unknown>> | undefined) ?? [];
+        for (const row of incoming) {
+          const at = target.findIndex((r) => r.id === row.id);
+          if (at >= 0) target[at] = { ...target[at], ...row };
+          else target.push({ ...row });
+        }
+        return { ok: true, result: { written: incoming.length } } as never;
+      }
+      if (command === "crud.delete") {
+        const target = (byTable ? byTable[String(p.table ?? "")] : undefined) ?? fallback;
+        const where = (p.where as Record<string, unknown> | undefined) ?? {};
+        const doomed = target.filter((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+        for (const d of doomed) target.splice(target.indexOf(d), 1);
+        return { ok: true, result: { written: doomed.length } } as never;
       }
       if (command === "settings.get_all") return { ok: true, result: {} } as never;
       if (command === "config_warmup") return { ok: true, result: {} } as never;
@@ -369,6 +448,15 @@ describe("域镜像分流 —— v2_sessions / prompt_drafts / turn_file_changes
     expect(row.version, "新版本号必须是 3（旧实现是 MAX(version)+1）").toBe(3);
   });
 
+  /**
+   * ## 第 269 波：这两条从"域镜像分流"改成"**按需查询**的语义等价" ✓
+   *
+   * 原来它们先把 `turn_file_changes` 的镜像加载起来再断言 ✗ ——
+   * 而这张表现在**结构性不进镜像** ✓（真机 5001 行拒载 ⇒ 用户报障 ⇒ 改走按需查询 ✓）。
+   * 用例守的两条语义**一字不变** ✓：
+   * 1. `updateStatus` 的 A 类语义（不存在 ⇒ 0，不是假成功 ✗）；
+   * 2. 按会话删除**不牵连别的会话** ✓。
+   */
   it("DOM-13: turn_file_changes.updateStatus 保住 A 类语义（不存在时返回 0）", async () => {
     const { port } = portWith([
       {
@@ -388,19 +476,19 @@ describe("域镜像分流 —— v2_sessions / prompt_drafts / turn_file_changes
     ]);
     setStoragePort(port);
     await port.start();
-    port.domains.ensureLoaded("turn_file_changes");
-    await settle();
 
     const { FileChangeStorage } = await import("../core/storage/file-change-storage");
-    // 存在 → 更新成功，返回 1，且立刻可读
-    expect(FileChangeStorage.updateStatus("t1", "reverted")).toBe(1);
-    expect(FileChangeStorage.getById("t1")?.status).toBe("reverted");
+    // 存在 → 更新成功，返回 1，且立刻（按需）读得到
+    expect(await FileChangeStorage.updateStatus("t1", "reverted")).toBe(1);
+    /** 写穿是**异步**的（`serializeEngineWrite` 的链）⇒ 断言引擎侧之前要等它落地 ✓ */
+    await __awaitPendingWrites();
+    expect((await FileChangeStorage.getByIdAsync("t1"))?.status).toBe("reverted");
 
     // 不存在 → 必须返回 0（第 84 波修过的 A 类问题：不能静默当成成功）
-    expect(FileChangeStorage.updateStatus("nope", "reverted")).toBe(0);
+    expect(await FileChangeStorage.updateStatus("nope", "reverted")).toBe(0);
 
-    // 列表按 turn_index DESC
-    expect(FileChangeStorage.listBySession("s1").map((r) => r.id)).toEqual(["t1"]);
+    // 按需读按 turn_index DESC 给一屏
+    expect((await FileChangeStorage.loadBySession("s1")).map((r) => r.id)).toEqual(["t1"]);
   });
 
   it("DOM-14: turn_file_changes 删除按会话生效（不牵连别的会话）", async () => {
@@ -410,13 +498,12 @@ describe("域镜像分流 —— v2_sessions / prompt_drafts / turn_file_changes
     ]);
     setStoragePort(port);
     await port.start();
-    port.domains.ensureLoaded("turn_file_changes");
-    await settle();
 
     const { FileChangeStorage } = await import("../core/storage/file-change-storage");
     FileChangeStorage.deleteBySession("s1");
-    expect(FileChangeStorage.listBySession("s1")).toEqual([]);
-    expect(FileChangeStorage.listBySession("s2"), "别的会话不该被牵连").toHaveLength(1);
+    await __awaitPendingWrites();
+    expect(await FileChangeStorage.loadBySession("s1")).toEqual([]);
+    expect(await FileChangeStorage.loadBySession("s2"), "别的会话不该被牵连").toHaveLength(1);
   });
 });
 

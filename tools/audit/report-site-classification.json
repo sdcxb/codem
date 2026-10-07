@@ -2,8 +2,8 @@
  "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
  "_counts": {
-  "total": 223,
-  "triaged": 223,
+  "total": 225,
+  "triaged": 225,
   "pending": 0
  },
  "sites": [
@@ -173,6 +173,13 @@
    "status": "triaged",
    "reason": "记录的 patch 为空 ⇒ action（回滚没执行：没有内容可回滚）。",
    "round": 104
+  },
+  {
+   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#5",
+   "kind": "action",
+   "status": "triaged",
+   "reason": "按需读变更记录**本身失败**（命令抛错 / 存储不可用）⇒ action：回滚这个动作没执行，而它是**可重试**的（不是「记录不存在」那条业务失败）。第 269 波新增：这张表不再有域镜像，读改成按需查询，于是「读不到」与「确实没有」必须在**上报文案**上分开 —— 混成一句会让用户以为变更历史丢了。不是 persist：没有任何写入发生。",
+   "round": 269
   },
   {
    "site": "src/core/environment/worktree-manager.ts::worktree.hasUncommittedChanges::#1",
@@ -939,6 +946,13 @@
    "status": "triaged",
    "reason": "文件变更记录的写入/按会话删除没落盘（域镜像未接手）⇒ persist：回滚能力依赖它，丢了就回滚不了。（本处：fileChange.deleteBySession，第 149 行）",
    "round": 104
+  },
+  {
+   "site": "src/core/storage/file-change-storage.ts::fileChange.updateStatus::#1",
+   "kind": "persist",
+   "status": "triaged",
+   "reason": "回滚之后那条记录的状态没写回去（端口没接手这次写）⇒ persist：状态停在旧值意味着变更历史一直显示「未回滚」，用户以为没回滚成功。第 269 波新增（判据 GATE-13 要求 domainWrite 的 false 必须被处理）：写没被接手时**既如实上报**（用户可见）**又返回 0**（调用方的分支判据）—— 两个接收方，两件事。",
+   "round": 269
   },
   {
    "site": "src/core/storage/maintenance.ts::maintenance.auditPrune::#1",

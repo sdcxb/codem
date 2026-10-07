@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { FileChangeStorage } from "../core/storage/file-change-storage";
-import { FileChangeTracker, onFileChangesTracked, type FileChangeResult } from "../core/environment/file-change-tracker";
+import { FileChangeTracker, onFileChangesTracked, type FileChangeResult, __resetFileChangeSnapshotCache } from "../core/environment/file-change-tracker";
 import { getStoragePort, setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { createTerminalOpenTool, createTerminalSendTool, createTerminalReadTool, createTerminalSignalTool, createTerminalCloseTool, createTerminalListTool, resetTerminalManagerForTest } from "../core/llm/tools/terminal-tools";
@@ -89,6 +89,15 @@ function ensureSession(sessionId: string): void {
 describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
   beforeEach(async () => {
     delete (window as any).__TAURI__;
+    /**
+     * ★ 第 46 波：**必须清掉模块级快照缓存** ✓ —— 否则上一条用例播下的缓存
+     * （键 = **工作区路径** ✓，本文件所有用例共用同一个路径 ✓）会泄漏进来 ✗，
+     * `start()` 复用它 ⇒ `beforeTree` 是**上一条用例的**值 ✗
+     * ⇒ `finalize()` 的"无变更 ⇒ null"那条用例拿到 `afterTree ≠ 陈旧 beforeTree` ⇒ 返回产物 ✗ ⇒ 假红 ✓
+     * （同族判据 `file-change-snapshot-reuse.test.ts:39` 就是这么做的 ✓，
+     *  而本文件原来漏了 —— 这是**真的夹具隔离缺陷** ✓，不是产品缺陷 ✓）。
+     */
+    __resetFileChangeSnapshotCache();
     // 本组用例只驱动 git 命令与 emit，不读写存储：不再需要（也不可能）初始化旧引擎
     installSessionPort();
   });
@@ -196,7 +205,7 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
     installSessionPort("session-1");
   });
 
-  it("create + getById — 写入并读取记录", () => {
+  it("create + getById — 写入并读取记录", async () => {
     const id = "test-artifact-001";
     FileChangeStorage.create({
       id,
@@ -213,7 +222,8 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
       created_at: Date.now(),
     });
 
-    const record = FileChangeStorage.getById(id);
+    // 第 269 波：读改成按需（异步）—— 这张表不再有域镜像（真机 5001 行拒载那条报障的治本处置）
+    const record = await FileChangeStorage.getByIdAsync(id);
     expect(record).not.toBe(null);
     expect(record!.id).toBe(id);
     expect(record!.before_tree).toBe("before");
@@ -221,7 +231,7 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
     expect(record!.status).toBe("completed");
   });
 
-  it("listBySession — 按轮次倒序返回", () => {
+  it("listBySession — 按轮次倒序返回", async () => {
     const sessionId = "session-list-test";
     ensureSession(sessionId);
     for (let i = 1; i <= 3; i++) {
@@ -241,6 +251,9 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
       });
     }
 
+    // 按需读一次（= 面板打开时的真实路径），随后同步读那份**有界一屏**投影
+    const loaded = await FileChangeStorage.loadBySession(sessionId);
+    expect(loaded.length).toBe(3);
     const list = FileChangeStorage.listBySession(sessionId);
     expect(list.length).toBe(3);
     // Should be sorted by turn_index DESC
@@ -248,7 +261,7 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
     expect(list[2].turn_index).toBe(1);
   });
 
-  it("updateStatus — 更新状态为 reverted", () => {
+  it("updateStatus — 更新状态为 reverted", async () => {
     const id = "test-revert-001";
     FileChangeStorage.create({
       id,
@@ -265,12 +278,12 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
       created_at: Date.now(),
     });
 
-    FileChangeStorage.updateStatus(id, "reverted");
-    const record = FileChangeStorage.getById(id);
+    expect(await FileChangeStorage.updateStatus(id, "reverted"), "真改到了 ⇒ 1").toBe(1);
+    const record = await FileChangeStorage.getByIdAsync(id);
     expect(record!.status).toBe("reverted");
   });
 
-  it("deleteBySession — 级联删除", () => {
+  it("deleteBySession — 级联删除", async () => {
     const sessionId = "session-delete-test";
     ensureSession(sessionId);
     FileChangeStorage.create({
@@ -288,12 +301,15 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
       created_at: Date.now(),
     });
 
+    await FileChangeStorage.loadBySession(sessionId);
+    expect(FileChangeStorage.listBySession(sessionId).length, "前置：一屏里读到了").toBe(1);
+
     FileChangeStorage.deleteBySession(sessionId);
-    const list = FileChangeStorage.listBySession(sessionId);
-    expect(list.length).toBe(0);
+    expect(FileChangeStorage.listBySession(sessionId).length, "删完不许从一屏里复活").toBe(0);
+    expect(await FileChangeStorage.loadBySession(sessionId), "引擎侧也真的没了").toEqual([]);
   });
 
-  it("parseChangedFiles — JSON 解析", () => {
+  it("parseChangedFiles — JSON 解析", async () => {
     const id = "test-parse-001";
     const files = [
       { path: "src/index.ts", status: "M" },
@@ -314,14 +330,14 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
       created_at: Date.now(),
     });
 
-    const record = FileChangeStorage.getById(id)!;
+    const record = (await FileChangeStorage.getByIdAsync(id))!;
     const parsed = FileChangeStorage.parseChangedFiles(record);
     expect(parsed.length).toBe(2);
     expect(parsed[0].path).toBe("src/index.ts");
     expect(parsed[1].status).toBe("A");
   });
 
-  it("turn_file_changes 表独立于 messages JSON — 不受压缩影响", () => {
+  it("turn_file_changes 表独立于 messages JSON — 不受压缩影响", async () => {
     // Write a change record
     FileChangeStorage.create({
       id: "compaction-test",
@@ -331,17 +347,26 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
       before_tree: "before",
       after_tree: "after",
       patch: "patch",
-      changed_files: "[]",
+      changed_files: JSON.stringify([{ path: "src/kept.ts", status: "M" }]),
       patch_sha256: "sha",
       current_brief: "test",
       status: "completed",
       created_at: Date.now(),
     });
 
-    // Simulate compaction by clearing messages — turn_file_changes should survive
-    const record = FileChangeStorage.getById("compaction-test");
+    /**
+     * 模拟压缩：把 messages 清掉 —— 这条变更记录必须**照样在** ✓（它与会话消息 JSON 无关 ✓）。
+     *
+     * ⚠️ 第 269 波：这里原来断言 `record.patch === "patch"` ✗ ——
+     * 而"一屏投影**刻意不含 `patch` 正文**"✓ 正是本波的核心不变量 ✓（单行上限 500,000 字符 ✗）。
+     * 正文按需单独取 ✓（`FileChangeTracker.fetchPatchById` ✓，判据 C7-1 守着它 ✓）。
+     * 因此这里改成断言"**记录还在、元数据完好**"✓ —— 那才是这条用例真正守的东西 ✓
+     * （"不受压缩影响"✓，不是"patch 在不在"✗）。
+     */
+    const record = await FileChangeStorage.getByIdAsync("compaction-test");
     expect(record).not.toBe(null);
-    expect(record!.patch).toBe("patch");
+    expect(record!.changed_files).toBe(JSON.stringify([{ path: "src/kept.ts", status: "M" }]));
+    expect(record!.status).toBe("completed");
   });
 });
 

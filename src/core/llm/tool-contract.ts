@@ -75,7 +75,7 @@
  * 联合只会导出「只读但访问文件 ⇒ 不可并发」这种错误结论（zcode 自己靠
  * `concurrentSafe: true` 短路才没出事）。我们保持 `readOnly` 独立判定。
  */
-export type ToolSideEffectScope =
+type ToolSideEffectScope =
   | "none"
   | "workspace"
   | "git"
@@ -94,7 +94,7 @@ export type ToolSideEffectScope =
  * 取不到 `path` 则放行 —— 那是「按 id 访问的资源」的固有边界（附件），
  * 见 `sandbox-boundary.test.ts` 的产品决策。
  */
-export type ToolAccessScope =
+type ToolAccessScope =
   | "none"
   | "workspace"
   | "git"
@@ -226,14 +226,14 @@ export interface ResolvedToolContract {
  * 这张表**故意保持很短**，且每加一条都要写清「为什么它必须在这里」。
  * 它与 `concurrency-policy.ts` 的 `DYNAMIC_TOOL_ID_ALLOWLIST` 是同一类例外。
  */
-export const UNKNOWN_TOOL_FALLBACK_READONLY: readonly string[] = [
+const UNKNOWN_TOOL_FALLBACK_READONLY: readonly string[] = [
   // zvec-grep MCP 在运行时注册，只读搜索工具（见 concurrency-policy.ts 的同类说明）
   "zvec_grep_search",
   "zvec_grep_rg",
 ];
 
 /** 没有任何声明的外部工具（MCP / 动态注册）按名字判断是否只读。 */
-export function isFallbackReadOnly(name: string): boolean {
+function isFallbackReadOnly(name: string): boolean {
   return UNKNOWN_TOOL_FALLBACK_READONLY.includes(name);
 }
 

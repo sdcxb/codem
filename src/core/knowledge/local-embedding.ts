@@ -46,7 +46,7 @@ export interface LocalEmbeddingStatus {
 }
 
 /** 模型领域标签 */
-export type ModelDomain = 'general' | 'chinese' | 'english' | 'multilingual' | 'code' | 'technical';
+type ModelDomain = 'general' | 'chinese' | 'english' | 'multilingual' | 'code' | 'technical';
 
 export interface LocalModelInfo {
   id: string;
@@ -526,7 +526,7 @@ export const AVAILABLE_LOCAL_MODELS: readonly LocalModelInfo[] = [
 /**
  * 根据领域推荐模型。
  */
-export function recommendModelByDomain(domain: ModelDomain): string {
+function recommendModelByDomain(domain: ModelDomain): string {
   const model = AVAILABLE_LOCAL_MODELS.find((m) => m.domain === domain);
   return model?.id || 'Xenova/all-MiniLM-L6-v2';
 }

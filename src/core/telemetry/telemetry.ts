@@ -254,11 +254,6 @@ export async function refreshTelemetryProjection(opts: { keep?: number } = {}): 
   return projection.length;
 }
 
-/** 投影的时间戳（诊断用：界面据此知道数字是"什么时候的" ✓） */
-export function telemetryProjectionAt(): number {
-  return projectionAt;
-}
-
 /**
  * 测试用：清掉投影 ✓。
  *

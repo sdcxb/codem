@@ -165,7 +165,7 @@ class TimerEngine {
   }
 }
 
-export const timerEngine = new TimerEngine();
+const timerEngine = new TimerEngine();
 
 // ========== File Watch Engine ==========
 // Uses polling-based file watching via PowerShell (Tauri native notify is future work)
@@ -246,7 +246,7 @@ class FileWatchEngine {
   }
 }
 
-export const fileWatchEngine = new FileWatchEngine();
+const fileWatchEngine = new FileWatchEngine();
 
 // ========== Cron Engine ==========
 
@@ -350,7 +350,7 @@ class CronEngine {
   }
 }
 
-export const cronEngine = new CronEngine();
+const cronEngine = new CronEngine();
 
 // ========== Issue Status Trigger Engine ==========
 

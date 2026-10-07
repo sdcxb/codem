@@ -5,6 +5,8 @@ import { putMessageFeedback } from "./core/llm/feedback";
 import { isCompactionInProgress } from "./core/storage/compaction-state";
 import { storageUnavailable } from "./core/storage/health";
 import { reportActionFailure, reportPersistFailure } from "./core/storage/persist-failure";
+/** ★ 第 45 波：`saveMessages` 的成本账（只记不判 ✓，目标② 归因用 ✓） */
+import { noteSaveBatch } from "./core/storage/persist-stats";
 
 /** 第 90 波：致命状态只上报一次（否则 AutoSave 每几秒刷一条） */
 let warnedSaveMessagesFatal = false;
@@ -398,15 +400,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     return { isStreaming: true };
   }),
+  /**
+   * ## ★★ 第 46 波修的真缺陷：会话结束时**只清了 2 样，留下 4 样脏 UI 状态** ✗→✓
+   *
+   * 症状（用户可见 ✓）：在**会话视图**里（`activeSessions.has(sessionId)` ✓ —— 评测跑的就是这种 ✓），
+   * 回合结束后界面上仍挂着 **「处理中 · Ns 第X/Y步」** ✗、流式光标 ✗、活动面板 ✗、已用时 ✗。
+   *
+   * 实测证据（`1.16.295` 批 ✓，两处独立 ✓）：
+   *  - 评测器探针认的是**整页文本**里的 `处理中|正在执行|…` ✓（`.preview-shot/_codem-repo-eval.mjs:323` ✓）
+   *    ⇒ 这句话残留 ⇒ `busy=true` **永不回落** ✗ ⇒ 它只能等"引擎静默 120s"兜底 ✓
+   *    ⇒ ★ 每格白等 **120s** ✗（8 格里 4 格中招 ✓，均值 **60s/格** ✓），且长工具会被**截断** ✗；
+   *  - `busySamples.tail` 留档里，**最后一刻**的界面原文仍是
+   *    「处理中 · 4s 第1/5步 · … ＋ 完全访问 搜索 临时会话」✓，而同屏已经写着「任务完成」✗。
+   *
+   * 对照 `setStreaming(false)`（:396-402 ✓）——它**清 6 样** ✓；这里原来**只动 2 样** ✗。
+   * ⇒ 现在**只在"最后一个活跃会话也结束了"时**清那批 UI 状态 ✓
+   *   （⚠️ **不能无条件清** ✗ —— 并发会话还在跑时清掉，会把那个会话的进度条/光标一起抹掉 ✗）。
+   */
   setSessionActive: (sessionId, active) => {
     const next = new Map(get().activeSessions);
     if (active) {
       next.set(sessionId, true);
-    } else {
-      next.delete(sessionId);
+      set({ activeSessions: next, isStreaming: true });
+      return;
     }
+    next.delete(sessionId);
     // isStreaming = true if any session is active
-    set({ activeSessions: next, isStreaming: next.size > 0 });
+    if (next.size > 0) {
+      set({ activeSessions: next, isStreaming: true });
+      return;
+    }
+    // ★ 最后一个会话也结束了 ⇒ 与 `setStreaming(false)` 同口径地清干净 ✓
+    set({
+      activeSessions: next,
+      isStreaming: false,
+      streamingMsgId: null,
+      stepProgress: null,
+      agentActivities: [],
+      streamStartTime: null,
+      llmStatus: "idle" as LLMStatus,
+    });
   },
   hasActiveSessions: () => get().activeSessions.size > 0,
   setCurrentModel: (m) => set({ currentModel: m }),
@@ -777,6 +810,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     try {
       /**
+       * ★ 第 45 波：**这一批落库的账** ✓（只记不判 ✓，见 `core/storage/persist-stats.ts` 的长注释 ✓）。
+       * 位置：**包住整个写循环** ✓ —— 包括 `createMessage` 那次落库 ✓
+       * （"写了 ≠ 执行了"：账要记在**真正做事的那一段**上 ✓，交接 §6 第 1 条 ✓）。
+       */
+      const __saveT0 = performance.now();
+      /**
        * 第 91 波：**只写变化过的消息**（见 messageFingerprint 的说明）。
        * `skipped` 数量进诊断日志 —— 长会话下它应该是绝大多数。
        */
@@ -805,6 +844,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         seen.set(msg.id, fp);
         written++;
       }
+      noteSaveBatch(written, performance.now() - __saveT0);
       if (skipped > 0) {
         console.debug(`[Store] saveMessages: 写入 ${written} 条，跳过未变化 ${skipped} 条（会话 ${sessionId}）`);
       }

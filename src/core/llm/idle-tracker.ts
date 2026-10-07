@@ -186,31 +186,3 @@ export class IdleTimeoutError extends Error {
   }
 }
 
-export async function* wrapStreamWithIdleTimeout(
-  stream: ReadableStream<Uint8Array>,
-  idleThresholdMs: number = 120_000,
-  onActivity?: () => void,
-): AsyncGenerator<Uint8Array> {
-  const reader = stream.getReader();
-  try {
-    while (true) {
-      const readStart = Date.now();
-      const result = await reader.read();
-
-      // 收到数据 — 通知回调
-      if (onActivity) onActivity();
-
-      if (result.done) return;
-
-      // 检查 read() 本身的等待时间（用于诊断）
-      const readDuration = Date.now() - readStart;
-      if (readDuration > idleThresholdMs) {
-        throw new IdleTimeoutError(readDuration);
-      }
-
-      yield result.value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}

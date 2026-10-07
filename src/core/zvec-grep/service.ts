@@ -97,7 +97,7 @@ function findMcpConfig(): { index: number; needUpdate: boolean; nodeExe?: string
 
 // ========== 元数据 ==========
 
-export interface ZvecMeta {
+interface ZvecMeta {
   source: "online" | "zip" | null;
   version: string | null;
   installedAt: string | null;
@@ -444,7 +444,7 @@ export async function rebuildIndex(
 }
 
 /** 已下载模型探测（models 目录 hint 粗查） */
-export async function listPresentModels(): Promise<string[]> {
+async function listPresentModels(): Promise<string[]> {
   const base = await getAppDataBaseDir();
   const paths = buildZvecPaths(base);
   const present: string[] = [];

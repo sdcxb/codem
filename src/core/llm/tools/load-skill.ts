@@ -523,6 +523,30 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
         skill = await loadSkillFromFilesystem(skillName);
       }
 
+      /**
+       * ★★ 第 47 波：**未命中就重扫一次技能根** ✓（对标 DSH 的"监视根目录、无需重启" ✓）。
+       *
+       * 为什么要它 ✗→✓：`loadInstalledSkills()` 原来**只在应用启动时**调一次 ✓
+       * ⇒ 模型在**对话中**刚装好的技能，`load_skill` **永远找不到** ✗
+       * ⇒ 模型只能怀疑自己装错了地方 ✓（用户实报"分析了很久、还要反推" ✓）。
+       *
+       * 语义刻意保守 ✓：
+       *   · **只在未命中时**才扫 ✓（命中路径零额外成本 ✓）
+       *   · 每次调用**最多重扫一次** ✓（`rescanned` 标志 ✓ ⇒ 不会反复扫盘 ✗）
+       *   · 重扫失败只记日志 ✓（不改变"未找到"的结论 ✓，也不抛错 ✓）
+       */
+      if (!skill) {
+        try {
+          const { loadInstalledSkills } = await import("../../skill/installer");
+          const n = await loadInstalledSkills();
+          if (n > 0) {
+            skill = registry.get(skillName) ?? registry.getByAlias(skillName) ?? undefined;
+          }
+        } catch (e) {
+          console.warn("[load_skill] 技能根重扫失败（不影响本次查找结论）:", e);
+        }
+      }
+
       if (!skill) {
         // A4: Catalog 模式 — 返回 DSH 风格的技能目录
         const allSkills = registry.getAll().filter((s) => s.enabled !== false);
@@ -618,7 +642,3 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
     },
   };
 }
-
-// ========== Export for testing ==========
-
-export { sessionCache };

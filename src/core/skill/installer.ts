@@ -392,6 +392,20 @@ export async function uninstallSkill(skillName: string): Promise<{ success: bool
 export async function loadInstalledSkills(): Promise<number> {
   const skillsDir = await getSkillsDir();
   const registry = getSkillRegistry();
+  /**
+   * ★ 第 47 波：把**运行时真值**交给提示词 ✓（`<appData>/.codem/skills` ✓，
+   * Windows 上即 `C:\Users\<u>\AppData\Roaming\com.codem.app\.codem\skills` ✓）。
+   *
+   * 为什么必须这么做 ✗→✓：`skill-creator/SKILL.md` 里写的是 `~/.codem/skills` ✗
+   * —— 那是**错的** ✓（实现用的是 appData 下 ✓）⇒ 模型照它写就**装到平台看不见的地方** ✗
+   * ⇒ 它只能去翻别的技能反推 ✓（用户实报 ✓）。这里先灌真值 ✓，**再**扫目录 ✓
+   * （顺序要紧 ✓：即便根目录为空/不存在，模型也必须先拿到正确路径 ✓）。
+   */
+  try {
+    registry.setSkillRootsForPrompt({ user: skillsDir });
+  } catch (e) {
+    console.warn("[SkillInstaller] 无法把技能根目录交给提示词（不影响加载）:", e);
+  }
 
   let loaded = 0;
   try {

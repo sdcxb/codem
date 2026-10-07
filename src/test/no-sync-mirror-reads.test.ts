@@ -92,7 +92,6 @@ const BASELINE: Record<string, number> = {
   "src/core/llm/runtime-invariants.ts": 3,
   "src/core/llm/tools/show-todo.ts": 3,
   "src/core/storage/agent-profile-storage.ts": 3,
-  "src/core/storage/file-change-storage.ts": 3,
   "src/App.tsx": 2,
   "src/core/llm/time-context.ts": 2,
   "src/core/phone-link/phone-link.ts": 2,
@@ -255,20 +254,29 @@ describe("第 144 波：数据层以外不许使用同步整表/整会话读（�
     /**
      * **迁移中的已知越界**（第 146 波实测 ✓）：只许变小 ✓，不许新增 ✓。
      *
-     * - `knowledge/storage.ts` 的 `T_CHUNKS`（= `notebook_chunks` ✓）：块镜像本来就是"超上限就拒"的设计 ✓，
-     *   该域迟早要搬到按需查询 ✓；
-     * - `telemetry/telemetry.ts` 的 `TABLE`（= `telemetry_events` ✓）：正是 5000 行那条报错的来源 ✓，
-     *   它需要一个自己的按需查询（`queryEvents` 是会话事件的 ✓，不含遥测 ✓）。
+     * ## ⚠️ 第 269 波：这份清单**已清空** ✓（用户报障的治本处置 ✓）
+     *
+     * 原来它**恰好**是三行 `file-change-storage.ts: TABLE → 表 turn_file_changes` ✗，
+     * 而这三行就是用户第二次报障的那张表 ✓：
+     * 「表 `turn_file_changes` 超过镜像上限 5000 行。该功能本次不可用」✗
+     * （`docs/HANDOFF-NEXT-SESSION.md` §3 ✓）。
+     *
+     * 处置是**结构性退出镜像** ✗→✓（`DOMAIN_QUERY_ONLY_TABLES` ✓）
+     * + **按需查询 + 有界一屏投影** ✓（`FileChangeStorage.loadBySession` ✓，
+     * 判据 `TFC-1..8` ✓）⇒ 该文件再没有任何 `domainReadMany/One` ✓
+     * ⇒ 越界清单归 **0** ✓（这正是这份清单存在的目的：**只许变小** ✓）。
+     *
+     * 剩下的两个已知面在**别的文件**里 ✓、且不在这份按表名判的清单里 ✗：
+     * - `knowledge/storage.ts` 的 `T_CHUNKS`（= `notebook_chunks` ✓）——
+     *   它现在**也不进镜像**了 ✓（同一个 `DOMAIN_QUERY_ONLY_TABLES` ✓），
+     *   但那个文件里的 `domainReadMany` 调用点本身还没搬走 ✓（终局同样要归 0 ✓）；
+     * - 遥测（`telemetry/telemetry.ts` ✓）：已有 `queryTelemetry` ✓，调用点搬迁同理 ✓。
      */
     expect(
       offenders.sort(),
       `已知越界清单必须**恰好**等于现状 ✓ —— 少了就请收紧这份清单 ✓，多了说明引入了新的无界同步读 ✗：\n` +
-        `  现状：\n    ${offenders.join("\n    ")}`,
-    ).toEqual([
-      "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
-      "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
-      "src/core/storage/file-change-storage.ts: TABLE → 表 turn_file_changes ✗",
-    ].sort());
+        `  现状：\n    ${offenders.join("\n    ") || "（无）"}`,
+    ).toEqual([]);
   });
 
   it("SYNC-4: 基线总量有记录（终局目标 = 0 ✓，这个数字必须只降不升 ✓）", () => {
