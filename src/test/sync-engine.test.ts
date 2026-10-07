@@ -11,6 +11,8 @@ vi.mock("../core/storage/settings", () => ({
     if (!val) return def;
     try { return JSON.parse(val) as T; } catch { return def; }
   }),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn((key: string, val: unknown) => {
     mockStore.set(key, JSON.stringify(val));
   }),

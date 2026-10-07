@@ -26,6 +26,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ getSetting: vi.fn(), setSetting: vi.fn(), removeSetting: vi.fn() }));
 
 vi.mock("../core/storage/settings", () => ({
+  isSettingsMirrorReady: vi.fn(() => true),
   getSetting: mocks.getSetting,
   setSetting: mocks.setSetting,
   removeSetting: mocks.removeSetting,

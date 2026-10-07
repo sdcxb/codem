@@ -1,5 +1,5 @@
 // ========== MCP Types ==========
-import { getSettingJSON, setSettingJSON, getSetting, setSetting } from "../storage/settings";
+import { getSettingJSON, setSettingJSON, getSetting, setSetting, isSettingsMirrorReady } from "../storage/settings";
 import { reportPersistFailure } from "../storage/persist-failure";
 
 export interface MCPServerConfig {
@@ -409,17 +409,66 @@ export class MCPClient {
 export class MCPRegistry {
   private client: MCPClient;
   private configs: MCPServerConfig[] = [];
+  /**
+   * 是否**成功**读过一次配置（第 182 波，真机取证）。
+   *
+   * 为什么不能只看 `configs.length`：未预热时读到的空表与"确实没有服务器"长得一样，
+   * 所以需要一个独立的"这次读算不算数"的标记（见 `ensureConfigs`）。
+   */
+  private configsLoaded = false;
 
   constructor() {
     this.client = new MCPClient();
     this.loadConfigs();
   }
 
-  /** Load configs from SQLite */
+  /**
+   * 启动早期的空读**不许被永久缓存**（第 182 波）。
+   *
+   * ## 缺陷形态（装机版真机量到）
+   *
+   * 本类是**惰性单例**，而 `configs` 原本只在构造函数里读一次。可启动早期就有人调它
+   * （codegraph / zvec 工具在插件初始化时探测），那一刻存储端口**还没注册**
+   * （`bootstrap` 里 `await port.start()` 之后才 `setStoragePort`），于是
+   * `getSettingJSON` 走"未预热 ⇒ 返回 fallback"那条路 —— **读到空表并被缓存整个会话**。
+   *
+   * 真机读数（同一时刻、同一个库）：引擎 `settings.get_all` 有 498 个键**且含**
+   * `codem-mcp-servers`；渲染侧 `getConfigs()` 却是 **0 项** ⇒ 面板永远「暂无 MCP 服务器」。
+   *
+   * ## 自愈
+   *
+   * 未预热时**只是不把这次读当结论**，下一次 `getConfigs()` / `addServer()` 会重试；
+   * 预热完成后同一个实例就能读到真值，**不需要重启应用**。
+   */
+  private ensureConfigs(): void {
+    if (this.configsLoaded) return;
+    if (!isSettingsMirrorReady()) return; // 未预热：不把 fallback 当结论，留给下一次
+    this.loadConfigs();
+  }
+
+  /**
+   * Load configs from SQLite.
+   *
+   * ⚠️ **只有"镜像已就绪"时的读才算数**：`getSettingJSON` 在未预热时静默返回 fallback，
+   * 光看返回值分不出"真没有"与"读不到"；所以这里显式问镜像是否就绪，就绪了才认这次读。
+   */
   private loadConfigs() {
     try {
-      this.configs = getSettingJSON<MCPServerConfig[]>("codem-mcp-servers", []);
+      const loaded = getSettingJSON<MCPServerConfig[]>("codem-mcp-servers", []);
+      if (!isSettingsMirrorReady()) return;
+      this.configs = loaded;
+      this.configsLoaded = true;
     } catch (e) { console.warn('[mcp.ts]', e) }
+  }
+
+  /**
+   * 准备写入：**写之前必须先把真实列表读回来**。
+   *
+   * 这是比"读不到"更危险的一半：早期空读之后直接 `push` + `saveConfigs()`，会把
+   * **磁盘上原有的服务器整表覆盖掉**（判据 MCP-CFG-3/4 实测：写回后用户原有服务器消失）。
+   */
+  private ensureConfigsForWrite(): void {
+    if (!this.configsLoaded) this.loadConfigs();
   }
 
   /** Save configs to SQLite */
@@ -431,12 +480,14 @@ export class MCPRegistry {
 
   /** Add a server config */
   addServer(config: MCPServerConfig) {
+    this.ensureConfigsForWrite();
     this.configs.push(config);
     this.saveConfigs();
   }
 
   /** Update an existing server config by name */
   updateServer(name: string, config: MCPServerConfig) {
+    this.ensureConfigsForWrite();
     const idx = this.configs.findIndex((c) => c.name === name);
     if (idx >= 0) {
       // If name changed, disconnect old and use new
@@ -450,6 +501,7 @@ export class MCPRegistry {
 
   /** Remove a server config */
   removeServer(name: string) {
+    this.ensureConfigsForWrite();
     this.configs = this.configs.filter((c) => c.name !== name);
     this.saveConfigs();
     this.client.disconnect(name);
@@ -457,6 +509,7 @@ export class MCPRegistry {
 
   /** Get all configs */
   getConfigs(): MCPServerConfig[] {
+    this.ensureConfigs();
     return [...this.configs];
   }
 

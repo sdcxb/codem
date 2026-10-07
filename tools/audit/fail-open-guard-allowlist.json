@@ -23,9 +23,19 @@
       "reason": "worktree 能力探测；失败⇒不提供 worktree 操作。注意：真正的防丢闸门是同文件 hasUncommittedChanges（第 86 轮已改成 boolean|null，不再 fail-open）。"
     },
     {
+      "site": "src/core/llm/streaming-executor.ts::isConcurrencySafe",
+      "direction": "conservative",
+      "reason": "并发判定：契约查询器抛错时返回 false（=独占执行）。后果是该工具不参与并行，属于「少一项优化」而不是「放行本该串行的写操作」。安全方向。"
+    },
+    {
       "site": "src/core/llm/tool-pipeline.ts::isAbortError",
       "direction": "read-error",
       "reason": "错误分类器；判不出是取消⇒按普通错误处理（会照常上报），偏严格方向。"
+    },
+    {
+      "site": "src/core/llm/tool-result-storage.ts::shouldPersistResult",
+      "direction": "conservative",
+      "reason": "落盘判定：契约查询器抛错时返回 false（=不落盘），把结果原样留给模型。后果是上下文多占字节，而不是让模型拿不到 id/确认这类关键短信息。安全方向。"
     },
     {
       "site": "src/core/mcp/mcp.ts::hasCodeGraphIndex",
@@ -68,19 +78,14 @@
       "reason": "墓碑文件探测；失败⇒当作未删除，于是按「还在」处理（更保守：不会误删用户数据）。"
     },
     {
+      "site": "src/core/storage/settings.ts::isSettingsMirrorReady",
+      "direction": "conservative",
+      "reason": "配置面镜像「是否已预热」的探测：问不到就当作**未就绪**（return false），调用方据此**不把这次读当结论**、下次重试 —— 方向是保守的（宁可重读，也不要拿 fallback 当真实配置；真机 bug 正是把 fallback 当结论缓存下来）。"
+    },
+    {
       "site": "src/plugins/library-ops/core/scene-image-db.ts::isSceneImageDbAvailable",
       "direction": "conservative",
       "reason": "场景图片库可用性探测；失败⇒不启用该功能。"
-    },
-    {
-      "site": "src/core/llm/streaming-executor.ts::isConcurrencySafe",
-      "direction": "conservative",
-      "reason": "并发判定：契约查询器抛错时返回 false（=独占执行）。后果是该工具不参与并行，属于「少一项优化」而不是「放行本该串行的写操作」。安全方向。"
-    },
-    {
-      "site": "src/core/llm/tool-result-storage.ts::shouldPersistResult",
-      "direction": "conservative",
-      "reason": "落盘判定：契约查询器抛错时返回 false（=不落盘），把结果原样留给模型。后果是上下文多占字节，而不是让模型拿不到 id/确认这类关键短信息。安全方向。"
     }
   ]
 }

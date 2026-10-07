@@ -20,6 +20,8 @@ import type { HookDefinition, HookContext } from "../core/hooks/hook-types";
 
 vi.mock("../core/storage/settings", () => ({
   getSettingJSON: vi.fn(() => ({ hooks: [] })),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
 }));
 

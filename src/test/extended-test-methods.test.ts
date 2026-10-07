@@ -52,6 +52,8 @@ vi.mock("../core/storage/settings", () => ({
   getSetting: vi.fn().mockReturnValue(null),
   getSettingJSON: vi.fn().mockReturnValue(null),
   setSetting: vi.fn(),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
 }));
 

@@ -68,6 +68,8 @@ vi.mock("../core/storage/settings", () => ({
   getSetting: vi.fn((key: string) => mockSettingsStore[key] ?? null),
   setSetting: vi.fn((key: string, val: string) => { mockSettingsStore[key] = val; }),
   getSettingJSON: vi.fn(<T>(key: string, def: T) => mockSettingsStore[key] ?? def),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn((key: string, val: unknown) => { mockSettingsStore[key] = val; }),
   removeSetting: vi.fn((key: string) => { delete mockSettingsStore[key]; }),
 }));

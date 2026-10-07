@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../core/storage/settings", () => ({
   getSettingJSON: vi.fn((key: string, fallback: unknown) => (key in mocks.store ? mocks.store[key] : fallback)),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn((key: string, value: unknown) => {
     mocks.store[key] = value;
   }),

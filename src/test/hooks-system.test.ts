@@ -7,6 +7,8 @@ import { matchesTool, shouldFireHook, type HookDefinition } from "../core/hooks/
 // Mock settings and file-api for hook-manager tests
 vi.mock("../core/storage/settings", () => ({
   getSettingJSON: vi.fn().mockReturnValue({ hooks: [] }),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
 }));
 

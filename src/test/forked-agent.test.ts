@@ -42,6 +42,8 @@ vi.mock("../core/storage/message", () => ({
 vi.mock("../core/storage/settings", () => ({
   getSetting: vi.fn().mockReturnValue(null),
   getSettingJSON: vi.fn().mockReturnValue(null),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
 }));
 

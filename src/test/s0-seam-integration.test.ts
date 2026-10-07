@@ -46,6 +46,8 @@ vi.mock("../core/file-api", () => ({
 // Mock settings for HookManager
 vi.mock("../core/storage/settings", () => ({
   getSettingJSON: vi.fn().mockReturnValue({ hooks: [] }),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
   getSetting: vi.fn().mockReturnValue(null),
 }));

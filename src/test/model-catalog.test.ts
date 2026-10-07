@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../core/storage/settings", () => ({
   getSettingJSON: mocks.getSettingJSON,
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
 }));
 

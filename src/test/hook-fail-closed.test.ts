@@ -20,6 +20,8 @@ vi.mock("../core/storage/settings", () => ({
   // 每次返回**新的**空配置对象：mockReturnValue 会共享同一个 {hooks:[]}，
   // 导致 addHook 在用例之间累积，后面的用例先被前面的钩子拦下。
   getSettingJSON: vi.fn(() => ({ hooks: [] })),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
 }));
 

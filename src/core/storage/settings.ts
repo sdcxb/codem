@@ -165,6 +165,25 @@ export function mergeDefaults<T extends object>(defaults: T, partial?: Partial<T
   return merged;
 }
 
+/**
+ * 配置面的内存镜像**是否已预热**（第 182 波，真机取证）。
+ *
+ * `getSetting` / `getSettingJSON` 在**未预热**时按设计返回 fallback（不抛、不假装有值），
+ * 但那个 fallback 与"真的没有这个键"**长得一模一样**。于是任何"启动早期读一次就缓存下来"
+ * 的模块会把**空表当成结论**固定住整个会话 —— 真机现场就是 `MCPRegistry`：
+ * 引擎读得到 `codem-mcp-servers`，面板却永远显示「暂无 MCP 服务器」。
+ *
+ * 有了这个判据，这类模块就能区分：未预热 ⇒ **不把这次读当结论**；已预热 ⇒ 读到的就是真值。
+ */
+export function isSettingsMirrorReady(): boolean {
+  if (!hasStoragePort()) return false;
+  try {
+    return getStoragePort().config.stats().warmed === true;
+  } catch {
+    return false;
+  }
+}
+
 export function getSettingJSON<T>(key: string, defaultValue: T): T {
   const raw = getSetting(key);
   if (raw === null) return defaultValue;

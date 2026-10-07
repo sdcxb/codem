@@ -7,6 +7,7 @@ import { OllamaProvider } from "../core/llm/ollama-provider";
 
 // Mock settings
 vi.mock("../core/storage/settings", () => ({
+  isSettingsMirrorReady: vi.fn(() => true),
   getSetting: vi.fn((key: string) => {
     if (key === "ollama-base-url") return "http://localhost:11434";
     if (key === "ollama-auto-detect") return "true";

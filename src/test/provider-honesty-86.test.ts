@@ -20,6 +20,8 @@ import { HookManager } from "../core/hooks/hook-manager";
 
 vi.mock("../core/storage/settings", () => ({
   getSettingJSON: vi.fn(() => ({ hooks: [] })),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn(),
   getSetting: vi.fn(() => null),
   setSetting: vi.fn(),

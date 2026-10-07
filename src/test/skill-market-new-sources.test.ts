@@ -10,6 +10,8 @@ const mockStore: Record<string, any> = {};
 vi.mock("../core/storage/settings", () => ({
   getSetting: vi.fn().mockReturnValue(null),
   getSettingJSON: vi.fn().mockImplementation((key: string, def: any) => mockStore[key] ?? def),
+  isSettingsMirrorReady: vi.fn(() => true),
+
   setSettingJSON: vi.fn().mockImplementation((key: string, val: any) => { mockStore[key] = val; }),
 }));
 

@@ -22,6 +22,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("../core/storage/settings", () => {
   const store: Record<string, string> = {};
   return {
+    isSettingsMirrorReady: vi.fn(() => true),
     getSetting: vi.fn((key: string) => (key in store ? store[key] : null)),
     setSetting: vi.fn((key: string, val: string) => { store[key] = val; }),
     removeSetting: vi.fn((key: string) => { delete store[key]; }),
