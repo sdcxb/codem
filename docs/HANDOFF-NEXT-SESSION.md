@@ -3436,3 +3436,37 @@ repo-02 的失败形态 ✓（交接第十九节取证 ✓）：模型**修好�
 **踩到的工具坑（记档）**：`cargo test` 的**陈旧二进制判定**又骗了我一次 —— 源码已还原、
 测试却仍红；`(Get-Item src\lib.rs).LastWriteTime = Get-Date` 强制重编译后 162/162 全绿。
 **测试红了先怀疑二进制陈旧，再怀疑代码。**
+### 第 181 波·真机验证（装机版 1.16.298，2026-10-07）—— 取证结果与一条新发现
+
+**验证方式**：带签名 release 构建 → 静默安装 → `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"`
+起 CDP → 只读探针。**规矩照旧**：探针不改用户数据，结束后把 `codem-mcp-servers` 还原为原状（原本不存在）。
+
+**① T-3 分页读契约 —— 真机读数与离线期望逐条一致 ✓**
+在应用内直调 `read_file_lines`（`read` 工具的后端命令），文件行内容刻意不等长（`a`/`bb`/`ccc`/`dddd`/`eeeee`）：
+
+| 调用 | 离线期望 | 装机版读数 |
+|---|---|---|
+| `offset=1, limit=3` | 丢 2 行 / 9 字符，`hasMore=true` | `droppedLines:2 droppedChars:9 totalLines:5 hasMore:true` ✓ |
+| `offset=4, limit=2` | 丢 3 行 / 6 字符（**全来自 offset 跳过**），`hasMore=false` | `3 / 6, totalLines:5, hasMore:false` ✓ |
+| `maxChars=60` 截断 | `totalLines` 仍是**整文件** 5 行（老缺口已修） | `totalLines:5` ✓ |
+
+响应键名确认为 camelCase（`droppedLines` / `droppedChars`）⇒ 前端提示真的能拿到这两个数。
+
+**② MCP 退出回收 —— 未能量到，原因是一条**新发现**（不是本轮改动引起的）**
+- 本轮新增的 `kill_all_mcp_processes`（接进 `ExitRequested` / `Exit`）+ `kill_on_drop` 已在
+  `cargo test` 与 `cargo check` 下通过，但**真机没能制造出"MCP 已连接"的状态** ⇒ 退出回收没被跑到。
+- **卡在哪**：`MCPRegistry.loadConfigs()` 读的是 `getSettingJSON("codem-mcp-servers")`，而**渲染侧**
+  读到的是 **0 项**，同一时刻**引擎**（`settings.get_all`）**读得到值**。实测三种写法都读不到：
+  ① 引擎 CLI 直写库 + 重启应用；② 走面板「JSON 导入」（`addServer`）；③ 应用内 `settings.set` + 重载页面。
+  面板在两种写入之后都仍显示「暂无 MCP 服务器」。
+- **可能的根因（未定，留给下一轮）**：配置面有**两条路** —— `settings` 表与**扩展域** `mcp_servers`
+  （`configDomain`，`src/core/storage/settings.ts:450-459` 的 `loadMcpServers`）。渲染侧的配置面是
+  **启动时预热的内存镜像**，而 `codem-mcp-servers` 这个键**可能不在预热清单里** ⇒ 读过得到 fallback。
+  验证方向：看预热清单（`HOT_DOMAIN_TABLES` / `configDomain` 的 `read(..., scope)`）里有没有这个键，
+  以及 `mcp.ts` 是否该改读 `loadMcpServers()`（专用表）。
+- **对本轮结论的影响**：**不构成回归**（我的改动没碰这条读路径），但它是"真机上 MCP 服务器加不进去"
+  这一可观察现象的直接原因 ⇒ **新开一项单独排查**，别混在本轮里。
+
+**踩到的两个工具坑（记档）**
+1. 引擎 CLI 写 `settings` 表**必须带 `updated_at`**，否则 `NOT NULL constraint failed: settings.updated_at`。
+2. PowerShell 里 `Get-ChildItem src\core\**\*.ts` **不递归**（`**` 不是 PS 的通配语法）⇒ 用 grep 工具。
