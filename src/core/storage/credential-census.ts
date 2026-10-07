@@ -19,7 +19,7 @@
  *   `CREDENTIAL_VALUE_RES`）：**只有一份"什么算凭据"的定义**，不能两处各写一份然后漂移。
  */
 
-import { CREDENTIAL_KEY_RE, CREDENTIAL_VALUE_RES } from "../settings/settings";
+import { CREDENTIAL_KEY_RE, CREDENTIAL_VALUE_RES, CREDENTIAL_SHAPE_LABELS } from "../settings/settings";
 
 interface CredentialCensusHit {
   /** 设置项**键名**（这本身就是"去哪改"的信息，不是秘密） */
@@ -31,6 +31,14 @@ interface CredentialCensusHit {
   kind: "field" | "shape" | "sealed";
   /** 命中的**处数**（同一键里可能有多个形状） */
   count: number;
+  /**
+   * ★ 第 49 波：**命中的是哪些形状**（如 `["sk-×9"]`）✓ —— 只报形状名与数量 ✓，从不含值 ✓。
+   *
+   * 为什么必须有 ✓：真机误报时日志只印 `shape×9` ✗ ⇒ 无法判断"是哪条正则打中的" ✗
+   * （用户实报的那次就是 `codem-invariant-watermark` 被某条形状打中 ✓，
+   *  而没有这条信息就只能靠猜 ✗）。有它之后，误报/真报都能一眼定性 ✓。
+   */
+  shapes?: string[];
 }
 
 export interface CredentialCensusResult {
@@ -103,13 +111,26 @@ export function censusCredentialSettings(
     );
 
     let shapeCount = 0;
-    for (const re of CREDENTIAL_VALUE_RES) {
+    /** ★ 第 49 波：按形状分别计数（日志里要能说清是哪一条打中的 ✓，否则误报无法定性 ✗） */
+    const shapeBreakdown: Record<string, number> = {};
+    for (let i = 0; i < CREDENTIAL_VALUE_RES.length; i++) {
+      const re = CREDENTIAL_VALUE_RES[i];
       // 全局正则带 `g`，逐行用要重置 lastIndex，否则会漏（这是 JS 正则的经典坑）
       re.lastIndex = 0;
-      shapeCount += (plainText.match(re) ?? []).length;
+      const n = (plainText.match(re) ?? []).length;
+      if (n > 0) {
+        const label = CREDENTIAL_SHAPE_LABELS[i] ?? `#${i}`;
+        shapeBreakdown[label] = (shapeBreakdown[label] ?? 0) + n;
+        shapeCount += n;
+      }
     }
     if (shapeCount > 0) {
-      out.hits.push({ key, kind: "shape", count: shapeCount });
+      out.hits.push({
+        key,
+        kind: "shape",
+        count: shapeCount,
+        shapes: Object.entries(shapeBreakdown).map(([label, n]) => `${label}×${n}`),
+      });
       out.total += shapeCount;
     }
 

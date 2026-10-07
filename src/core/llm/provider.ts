@@ -13,6 +13,25 @@ import { getLang } from "../i18n/lang";
 import { parseProviderUsage } from "./usage-normalize";
 import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
+
+/**
+ * ★ 第 48 波：**流式时间的"服务端间隙 vs 我们这侧"** 格式化（纯函数 ✓，便于判据 ✓）。
+ *
+ * 背景 ✓：② 的读数里我们**每 1k 输出**约为 DSH 的 2× ✗，而两边**模型同名 + `reasoningEffort`
+ * 同为 high** ✓（已实测 ✓）⇒ 需要知道这 2× 出在"等 provider" ✗ 还是"我们解析/产出事件
+ * （含消费者每 delta 的工作 ✓）" ✓。这条日志就是那把刀 ✓（`console.debug` ⇒ 侧车可收 ✓）。
+ *
+ * 口径 ✓：`net` = `reader.read()` 等待（含空闲计时器 ✓）；`self` = 总时长 − net ✓
+ * （含 `yield` 期间消费者的处理 ✓ —— generator 在那里被挂起 ✓，所以它算"我们这侧" ✓）。
+ */
+export function formatProviderStreamTiming(s: { netMs: number; selfMs: number; chunks: number }): string {
+  const total = s.netMs + s.selfMs;
+  const pct = (v: number) => (total > 0 ? Math.round((v / total) * 100) : 0);
+  return (
+    `[provider] stream timing net=${Math.round(s.netMs)}ms(${pct(s.netMs)}%) ` +
+    `self=${Math.round(s.selfMs)}ms(${pct(s.selfMs)}%) chunks=${s.chunks}`
+  );
+}
 import { OllamaProvider } from "./ollama-provider";
 import { ReplayAdapter } from "./replay-adapter";
 import { redactSecrets } from "../utils/redact";
@@ -495,14 +514,34 @@ export class OpenAICompatibleProvider implements LLMProvider {
       //
       // This is zero-risk: no normal request will ever be killed by a timer.
 
+      /**
+       * ★★ 第 48 波：**"服务端间隙" vs "我们这侧"**（只记不判 ✓，供 ② 归因 ✓）。
+       *
+       * 为什么必须有 ✗→✓：② 的读数里我们**每 1k 输出**是 DSH 的 ~2× ✗，而两边
+       * **模型同名、`reasoningEffort` 同为 high** ✓（已实测 ✓）⇒ 必须知道时间花在
+       * "**等 provider 出下一块**" ✗ 还是 "**我们解析/产出事件（含消费者每 delta 的工作）**" ✓。
+       * 没有这一刀 ⇒ 只能猜 ✗（而猜错会把力气花在错的地方 ✗）。
+       *
+       * 口径 ✓：`net` = `reader.read()` 的等待（含 `Promise.race` 里的空闲计时器 ✓）；
+       * `self` = 拿到这一块之后到处理完（**含 `yield` 期间消费者的处理** ✓ ——
+       * generator 在这里被挂起 ✓，所以它正是"我们这一侧"的账 ✓）。
+       */
+      const __t0 = Date.now();
+      let __netMs = 0;
+      let __selfMs = 0;
+      let __chunks = 0;
+
       while (true) {
         // P-OPT6: Race read() against idle timeout
         // If no data arrives within 120s, the idle timeout fires
+        const __tRead0 = Date.now();
         const { done, value } = await Promise.race([
           reader.read(),
           idlePromise,
         ]);
+        __netMs += Date.now() - __tRead0;
         if (done) break;
+        __chunks++;
 
         // Data received — reset idle timer
         idleTimeout.pulse();
@@ -614,6 +653,18 @@ export class OpenAICompatibleProvider implements LLMProvider {
                   uncachedInputTokens: nu.uncachedInputTokens,
                 },
               };
+
+              /**
+               * ★ 第 48 波：把"**服务端间隙 vs 我们这侧**"落进日志 ✓（侧车能收 ✓，供 ② 归因 ✓）。
+               * `self` 用「总时长 − net」算 ✓ —— 等价且只需插一处 ✓。
+               */
+              console.debug(
+                formatProviderStreamTiming({
+                  netMs: __netMs,
+                  selfMs: Math.max(0, Date.now() - __t0 - __netMs),
+                  chunks: __chunks,
+                }),
+              );
 
               yield { type: "end", finishReason: finishReason === "tool_calls" ? "tool_use" : finishReason };
             }

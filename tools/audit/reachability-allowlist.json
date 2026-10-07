@@ -27,6 +27,7 @@
   "src/core/skills/skill-creator/scripts/package-skill.ts": "技能仓内工具脚本：第 97 轮已定性为**仓库工具、不在装机包里**（由 CLI 与 src/test/skill-creator-scripts.test.ts 使用）",
   "src/core/skills/skill-creator/scripts/quick-validate.ts": "技能仓内工具脚本：第 97 轮已定性为**仓库工具、不在装机包里**（由 CLI 与 src/test/skill-creator-scripts.test.ts 使用）",
   "src/core/skills/skill-creator/scripts/run-eval.ts": "技能仓内工具脚本：第 97 轮已定性为**仓库工具、不在装机包里**（由 CLI 与 src/test/skill-creator-scripts.test.ts 使用）",
+  "src/core/environment/file-edit-capture.ts": "**未接线（已定性）**：编辑前整文件捕获（照 DSH `dsh-workspace-changes`）—— 它是「把追踪器搬到回合边界（E1+E2）」与「按需取 patch」的前置能力；E1+E2 卡在事件顺序（`yield {file_changes_tracked}` 无法先于 `finally` 里的 `yield {end}`）。用例在 `src/test/file-edit-capture.test.ts`（测的是它本身，不是假功能）",
   "src/core/slots/declarations.ts": "槽位声明表：被 declare-slots 的对账用例（SLOT-1…5）读取",
   "src/core/snapshot/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/storage/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",

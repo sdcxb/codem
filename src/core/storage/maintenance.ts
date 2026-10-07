@@ -474,18 +474,14 @@ async function dedupDuplicateTextEvents(): Promise<DedupTextEventsOutcome> {
         `[Maintenance] 文本事件去重：清理 ${out.removed} 条完全重复的事件` +
           `（删除前 ${out.beforeRows} 行 / 不同正文 ${out.distinctGroups} 条 / 删除后 ${out.afterRows} 行）`,
       );
-      reportAdvisory(
-        "maintenance.eventsDedupText",
-        `清理了 ${out.removed} 条完全重复的文本事件（删除前 ${out.beforeRows} 行里只有 ${out.distinctGroups} 条是不同的）`,
-        {
-          title: "存储自检：清理了历史遗留的重复事件记录",
-          nextStep:
-            `1.16.175 及更早的版本会在页面每次重载时把当前会话的消息再记一遍，` +
-            `于是同一条正文在事件表里留下很多份。已收敛为一条（保留最早的那条）。` +
-            `消息正文从未受影响，这次清理只是让会话内搜索不再出现重复命中。`,
-          sample: "已清理历史重复事件（不影响消息本身）",
-        },
-      );
+      /**
+       * ★★ 第 50 波：**不再弹给用户** ✗→✓（用户实报 + 明确要求 ✓）。
+       *
+       * 用户原话 ✓：「这类提示让它不提示了，因为即使提示了用户也没有操作介入的办法」✓。
+       * 这次清理是**已经做完的收敛** ✓（不是失败、也不是待办 ✓）：库更干净了、
+       * 正文从未受影响 ✓ ⇒ 用户既无事可做、也无从判断 ✗ ⇒ 弹横幅只是噪音 ✓。
+       * ⇒ 只进日志 ✓（上面那行 `[Maintenance] 文本事件去重：…` 保留了全部数字 ✓）。
+       */
     } else {
       console.log(`[Maintenance] 文本事件去重：本库没有重复（文本事件 ${out.beforeRows} 行、全部互不相同）`);
     }
@@ -1714,15 +1710,19 @@ export async function auditInvariantsForSessions(
        * 当时靠手工传 `title` + `consequence` 绕开。现在这一类有了正经的 kind，
        * 前缀与后缀都不会再假装失败。
        */
-      reportAdvisory("maintenance.eventStructure", `事件库结构异常 ${out.structuralErrors} 处`, {
-        title: "存储自检：会话事件日志存在结构异常",
-        nextStep:
-          "自检**本身跑成了**（这是它报出的结果，不是没运行）；这些是**存量**异常，" +
-          "不会自己消失，需要人工看一眼（见样例与 docs 里的排查方法）。",
-        sample:
-          "事件是**唯一没有等价物**的存储（消息有权威日志、设置/归属有抢救）：" +
-          `这些异常需要人工看一眼（样例：${structuralErrors.join("；")}）`,
-      });
+      /**
+       * ★★ 第 50 波：改成**只进日志** ✗→✓（同一条规则 ✓ —— 用户实报 + 明确要求 ✓）。
+       *
+       * 原文案自己就写着「需要**人工**看一眼」✓ —— 而"人工"在这里指的就是我们，
+       * 用户在界面上没有任何可点的动作 ✗（事件表不是他能编辑的东西 ✓）。
+       * ⇒ 弹横幅只会让"安全提示"这个词贬值 ✗ ⇒ 细节（样例 ✓）照样进日志 ✓，
+       *   只是不再占用用户注意力 ✓。
+       */
+      console.log(
+        `[Maintenance] 事件库结构自检：结构异常 ${out.structuralErrors} 处` +
+          `（存量异常、不会自己消失 ✓；这是**要人看一眼**的发现 ✓，不是失败 ✗）` +
+          `｜样例：${structuralErrors.join("；") || "（无）"}`,
+      );
     }
   } catch (e) {
     reportPersistFailure("maintenance.invariantAudit", e, "运行时不变量审计未跑成（本次 checked=0）", {
@@ -1858,27 +1858,20 @@ export async function auditInvariantsForSessions(
     if (out.newViolations > 0) {
       const fresh = [...presentKeys].filter((k) => !(watermark?.keys.includes(k) ?? false));
       /**
-       * 第 88 轮：这是**自检的发现**，不是写盘失败 —— 走 advisory。
+       * ★★ 第 50 波：**不再弹给用户** ✗→✓（用户实报 + 明确要求 ✓）。
        *
-       * 改前的真机取证（隔离钻取跑在装机版 1.16.134 上）：
-       * ```text
-       * [PersistFailure] maintenance.invariantAudit.new 写盘失败（第 1 次）：不变量审计：本次新产生 39 条缺口（…）
-       *   —— 本次改动只存在于内存，重启后可能丢失。
-       * ```
-       * 三句话里有两句是假的：没有任何写盘动作失败了，也没有"改动只存在于内存"。
-       * 这会把一个**要人看一眼的对账结论**说成"磁盘坏了"，反而让用户不当回事。
+       * 理由（用户原话 ✓）：「用户不是专业运维人员，这类提示让它不提示了，
+       * **因为即使提示了用户也没有操作介入的办法**」✓。
+       * 这条发现**确实要人看一眼** ✓ —— 但要看的是**我们**（样例指纹指向具体会话 ✓），
+       * 不是用户：他在界面上没有任何可点的动作 ✗ ⇒ 弹横幅只会训练用户忽略安全提示 ✗。
+       * ⇒ 改成**只进日志** ✓，并把定性所需的全部信息一起打进日志 ✓（见下面的格式化器 ✓）：
+       *   按类型分解 ✓、样例指纹 ✓、**按会话的集中度** ✓（"一个会话 1067 条"与
+       *   "几百个会话各几条"是两种完全不同的病因 ✓）。
+       *
+       * ⚠️ 这条**不是**把问题藏起来 ✗：`console.warn` 仍然照打 ✓（调用点在下面审计汇总处 ✓），
+       * 指纹、类型、集中度都留在日志里 ✓ —— 换的是"给谁看"，不是"报不报" ✓。
        */
-      reportAdvisory(
-        "maintenance.invariantAudit.new",
-        `不变量审计：本次新产生 ${out.newViolations} 条缺口（历史缺口另有 ${out.violations - out.newViolations} 条）`,
-        {
-          title: "存储自检：本次新发现记录与界面不一致",
-          nextStep:
-            "自检跑成了（这是它报出的结果）；这些缺口**不影响本次使用**，但意味着事件双写可能又断了一条路，" +
-            "需要看一眼样例对应的会话。",
-          sample: `样例：${fresh.slice(0, 5).join("、")}${fresh.length > 5 ? ` 等 ${fresh.length} 条` : ""}`,
-        },
-      );
+      console.log(formatInvariantFreshLog(fresh, presentKeys.size, out.violations - out.newViolations));
     }
   }
   return out;
@@ -1906,6 +1899,58 @@ export async function auditInvariantsForSessions(
  * 恒为 0、告警分支永不执行。现在水位真的落地了（见 `INVARIANT_WATERMARK_KEY`），
  * 这里也**不再**用 `?? 0` 兜底：字段是必填的，缺了就是编译错误，不许再退化成"永远报历史缺口"。
  */
+/**
+ * 把"本次新产生的缺口"格式化成**只进日志**的一行 ✓（第 50 波 ✓）。
+ *
+ * ## 为什么要有它（用户实报 ✓）
+ *
+ * 用户原话 ✓：「用户不是专业运维人员，这类提示让它不提示了，因为即使提示了用户
+ * 也没有操作介入的办法」✓ ⇒ 这条发现从**用户横幅**改成**日志** ✓。
+ *
+ * 但"不弹给用户"不等于"不用查" ✗ —— 它要的是**我们**看一眼 ✓，所以这一行必须自带给够定性的信息 ✓：
+ *   · **按类型**（`VISIBLE_BUT_NOT_RECORDED` 等 ✓）—— 不同类是不同的病因 ✓；
+ *   · **按会话的集中度**（前 3 ✓）—— ★ 这是最关键的一刀 ✓：
+ *       「一个会话里 1067 条」= 某条具体写路断了 ✓；
+ *       「几百个会话各几条」= 历史迁移/镜像未就绪那种系统性口径差 ✓。
+ *     用户实报的那次（另一台机器 ✓）只给了总数与"历史另有 1724 条" ✗ ⇒ **判不出**是哪种 ✓。
+ *   · **样例指纹**（前 5 ✓）—— 直接指向具体会话与消息 id ✓。
+ *
+ * 指纹口径 ✓：`<会话 id>|<违规类型>|<消息 id 或 seq>`（见 `violationFingerprint` ✓）。
+ */
+export function formatInvariantFreshLog(
+  fresh: readonly string[],
+  presentTotal: number,
+  historical: number,
+): string {
+  const kindCounts = new Map<string, number>();
+  const sessionCounts = new Map<string, number>();
+  for (const raw of fresh) {
+    const parts = String(raw).split("|");
+    const sid = parts[0] || "(未知会话)";
+    const kind = parts[1] || "(未知类型)";
+    kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
+    sessionCounts.set(sid, (sessionCounts.get(sid) ?? 0) + 1);
+  }
+  const byKind = [...kindCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${k}×${n}`)
+    .join("、");
+  const bySession = [...sessionCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([s, n]) => `${s}(${n})`)
+    .join("、");
+  const sample = fresh.slice(0, 5).join("、");
+  return (
+    `[Maintenance] 不变量审计：本次新产生 ${fresh.length} 条缺口` +
+    `（历史缺口另有 ${historical} 条、本次存在 ${presentTotal} 个）` +
+    `｜按类型：${byKind || "（无）"}` +
+    `｜按会话（前 3）：${bySession || "（无）"}` +
+    `｜样例：${sample || "（无）"}${fresh.length > 5 ? ` 等 ${fresh.length} 条` : ""}` +
+    `（这条只进日志 ✓：用户在界面上没有可介入的动作 ✗）`
+  );
+}
+
 function formatInvariantAudit(outcome: {
   checked: number;
   violations: number;
@@ -2164,17 +2209,18 @@ export async function runDatabaseMaintenance(
           }
           result.repairedBehindMessages = repaired;
           /**
-           * 第 88 轮：改用 `reportAdvisory`（**发现并已修好**，不是失败）。
+           * 第 88 轮：改用 advisory（**发现并已修好**，不是失败）—— 界面上说对了，
+           * 控制台也不再假称"写盘失败"✓。
            *
-           * 原来借 `reportActionFailure` + 手工 `title`/`consequence` 把两句都盖掉 ——
-           * 界面上勉强说对了，但**控制台那一行仍然是** `[PersistFailure] … 操作失败（第 1 次）`
-           * （横幅能靠 title 救，日志的前缀救不了）。现在这一类有了正经的 kind。
+           * ★★ 第 50 波：再进一步改成**只进日志** ✗→✓ —— 它同样属于
+           * 「用户没有可介入动作」✗（索引已经由我们补回来了 ✓，用户既不用做也不必判断 ✓）。
+           * 与 `eventStructure` / `invariantAudit.new` / `eventsDedupText` 同一处置 ✓，
+           * 规则见本文件里 `formatInvariantFreshLog` 的注释 ✓。
            */
-          reportAdvisory("maintenance.indexBehindLog", detail, {
-            title: "存储自检：索引落后于权威日志，已自动补回",
-            nextStep: `已逐会话从权威日志重建索引（补回 ${repaired} 行）；消息正文从未受影响。`,
-            sample: "已按权威日志补回索引行（不影响消息本身）",
-          });
+          console.log(
+            `[Maintenance] 索引落后于权威日志：${detail}` +
+              `｜已逐会话从权威日志重建索引（补回 ${repaired} 行 ✓）；消息正文从未受影响 ✓（只进日志 ✓）`,
+          );
         }
       } catch (e) {
         console.warn("[Maintenance] 索引与日志的对账未完成（不影响使用）:", e);
@@ -2262,11 +2308,40 @@ export async function runDatabaseMaintenance(
         if (census.scanned === 0) {
           console.warn("[Maintenance] 凭据普查**未跑成**（一条设置都没读到）—— 不判定为'未命中'");
         } else if (census.total > 0) {
-          const keys = census.hits.map((h) => `${h.key}(${h.kind}×${h.count})`).join("、");
+          /**
+           * ★ 第 49 波：日志里带上**是哪一种形状** ✓（`sk-×9` 而不是光 `shape×9` ✗）。
+           * 用户实报的那次误报之所以难判，就是因为只印了形状的**类别** ✗。
+           */
+          const keys = census.hits
+            .map((h) => `${h.key}(${h.kind}×${h.count}${h.shapes?.length ? ": " + h.shapes.join(",") : ""})`)
+            .join("、");
           console.log(
             `[Maintenance] 凭据普查：${census.scanned} 个设置项里**明文**命中 ${census.total} 处（${keys}）${sealedNote}` +
               "—— 只报位置与数量，不打印值",
           );
+          /**
+           * ★ 第 49 波：**建议文案不许过度断言** ✓（同一条纪律：印出来的必须是真的 ✓）。
+           *
+           * 判据只能证明"值**形状**像凭据 + 不是本产品的封存格式" ✓ —— 它**不能**证明那是一个
+           * 活着的密钥 ✗。所以：键名命中（`field` ✓）才说"密钥/令牌" ✓；
+           * 形状命中（`shape` ✓，出现在**非凭据设置项**里）如实说清"可能是密钥被贴进别处，
+           * 也可能只是普通文本里出现了同形状的片段" ✓ —— 并给出**下一步怎么定性** ✓。
+           */
+          const fieldHits = census.hits.filter((h) => h.kind === "field").reduce((n, h) => n + h.count, 0);
+          const shapeHits = census.hits.filter((h) => h.kind === "shape").reduce((n, h) => n + h.count, 0);
+          const shapeLabels = Array.from(
+            new Set(census.hits.filter((h) => h.kind === "shape").flatMap((h) => h.shapes ?? [])),
+          );
+          const parts: string[] = [];
+          if (fieldHits > 0) {
+            parts.push(`${fieldHits} 处在**键名就是凭据**的设置项里（这些确实以明文存放）`);
+          }
+          if (shapeHits > 0) {
+            parts.push(
+              `${shapeHits} 处是**形状命中**（值长得像 ${shapeLabels.join("/") || "凭据"} ✓，出现在**非凭据设置项**里：` +
+                "可能是密钥被贴进了别处 ✓，也可能只是普通文本里恰好出现了同形状的片段 ✓）",
+            );
+          }
           reportAdvisory("maintenance.credentialCensus", `设置里存在疑似凭据 ${census.total} 处`, {
             /**
              * 第 88 轮改（**印出来的必须是真的**）：
@@ -2278,8 +2353,9 @@ export async function runDatabaseMaintenance(
              */
             title: "安全提示：发现疑似明文凭据",
             nextStep:
-              "这些是**明文存放的密钥/令牌**（本机存储的既有设计）。" +
-              "若该机器或其备份可能外流，建议轮换；值从不打印。",
+              parts.join("；") +
+              "。若该机器或其备份可能外流，建议轮换涉及的凭据；" +
+              "**形状命中**想去掉误报机会，就去看一下上面点名的那个设置项里到底是什么（值从不打印 ✓）。",
             sample: `位置：${keys}（值从不打印）${sealedNote}`,
           });
         } else {

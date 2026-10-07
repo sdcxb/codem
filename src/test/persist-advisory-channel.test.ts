@@ -109,7 +109,7 @@ describe("「发现 ≠ 失败」通道（第 88 轮）", () => {
     expect(advCount).not.toContain("已累计失败");
   });
 
-  it("ADV-4 结构：四个「发现」站点必须走 reportAdvisory（而「没跑成」仍然是失败）", () => {
+  it("ADV-4 结构：发现类**只进日志**（唯一例外是用户能介入的凭据普查）；「没跑成」仍然是失败", () => {
     const maint = read("src/core/storage/maintenance.ts");
 
     /** 抓出文件里所有上报调用（连括号一起取全，避免只看第一处就下结论） */
@@ -132,11 +132,28 @@ describe("「发现 ≠ 失败」通道（第 88 轮）", () => {
       return [...new Set(hit.map((c) => c.kind))].join("+");
     };
 
-    // 发现类（自检/普查跑成了，报的是结果）
-    expect(channelOf("设置里存在疑似凭据"), "凭据普查的发现").toBe("Advisory");
-    expect(channelOf("不变量审计：本次新产生"), "自检发现的新缺口").toBe("Advisory");
-    expect(channelOf("事件库结构异常"), "事件库结构异常").toBe("Advisory");
-    expect(channelOf('"maintenance.indexBehindLog"'), "索引落后于日志（已自动补回）").toBe("Advisory");
+    /**
+     * ★★ 第 50 波改（用户实报 + 明确要求 ✓）：
+     *
+     * 用户原话 ✓：「用户不是专业运维人员，这类提示让它不提示了，**因为即使提示了
+     * 用户也没有操作介入的办法**」✓。
+     *
+     * 第 88 轮把这一类从"动作失败"（假话：功能明明跑成了 ✗）搬到 advisory ✓ —— 那一步是对的 ✓，
+     * **本判据保留那个真意**（它们绝不许再回到失败通道 ✓）；但 advisory 仍然是**用户可见的横幅** ✗
+     * ⇒ 对"用户无事可做"的四条（重复事件已收敛 ✓、索引已补回 ✓、结构异常待我们看 ✓、
+     * 新缺口对账 ✓），弹出来只会训练用户忽略安全提示 ✗ ⇒ 改成**只进日志** ✓。
+     *
+     * 唯一保留 advisory 的是**凭据普查** ✓ —— 用户对它**有**一个动作可做：轮换密钥 ✓。
+     */
+    expect(channelOf("设置里存在疑似凭据"), "凭据普查：用户能轮换密钥 ⇒ 保留可见").toBe("Advisory");
+    for (const [needle, what] of [
+      ["不变量审计：本次新产生", "自检发现的新缺口"],
+      ["事件库结构异常", "事件库结构异常"],
+      ['"maintenance.indexBehindLog"', "索引落后于日志（已自动补回）"],
+    ] as const) {
+      const hit = calls.filter((c) => c.body.includes(needle));
+      expect(hit.length, `★ 「${what}」不该再有上报调用（用户没有可介入的动作 ✗ ⇒ 只进日志 ✓）`).toBe(0);
+    }
 
     // 反向对照：真的没跑成 / 真的失败，仍然必须是失败通道（别把这一类也搬走）
     expect(channelOf("事件结构自检未跑成"), "没跑成就是失败").toBe("PersistFailure");

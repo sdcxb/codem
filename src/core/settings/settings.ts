@@ -189,12 +189,40 @@ export const POLICY_SETTING_KEY = "codem-policy";
  * 的自定义 provider（比如自建网关的短 token）。
  */
 export const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?key|apikey|token|secret|password|passwd|authorization|auth[-_]?token)$/i;
+/**
+ * ★★ 第 49 波修正（真机**误报** ✓，用户实报 ✓）：
+ *
+ * 原来第一条是 `/sk-[A-Za-z0-9_-]{16,}/g` ✗ —— 两个口子 ✓：
+ *   ① **没有前边界**：`ta`+`sk-1791179367418-…` 里的 `sk-` 也算 `sk-` ✓；
+ *   ② **正文允许 `-` / `_`**：路径与 ID 里的分隔符让"凑满 16 个字符"轻而易举 ✓。
+ * ⇒ 真机后果 ✓：`codem-invariant-watermark`（一台机器上 125 KB 的水位记录 ✓）
+ *   被报成 `shape×9` ✗，并触发界面上那条
+ *   「设置里存在**明文**存放的密钥/令牌 … 建议轮换」✗ —— 而那不是凭据 ✓。
+ * ⇒ 现在收紧为「**前边界** + 正文只允许字母数字」✓：真实 `sk-` 令牌形如 `sk-` + 32 位
+ *   十六进制/字母数字 ✓（DeepSeek/OpenAI 都是 ✓），而 `task-…`、路径片段一律不再命中 ✓。
+ *
+ * 为什么这条修正**同时**是数据安全修复 ✓：同一份正则也被**导出脱敏**
+ * （`redactCredentialShapes` ✓）用来替换 ✓ ⇒ 旧写法会把 `task-…` 这类路径片段
+ * **改写**成 `sk-***` ✗（导出/日志里的内容被破坏 ✓）。一处修正，两个口子一起堵 ✓。
+ *
+ * 形状的顺序与语义一一对应（见 `CREDENTIAL_SHAPE_LABELS` ✓）：日志要能说清"**哪一种**形状命中" ✓
+ * —— 这次误报之所以难判，就是因为只印了 `shape×9` ✗、没说是哪一种 ✓。
+ */
 export const CREDENTIAL_VALUE_RES: RegExp[] = [
-  /sk-[A-Za-z0-9_-]{16,}/g,
-  /gho_[A-Za-z0-9]{16,}/g,
-  /ghp_[A-Za-z0-9]{16,}/g,
-  /AKIA[0-9A-Z]{16}/g,
+  /**
+   * 前边界 + 后边界都把令牌当成**完整的一段** ✓（而不是"长串里恰好有这么一段" ✗）：
+   * 少了后边界时，`sk-` + 16 位之后接着更多字母数字也会命中 ✓ —— 那本身还是令牌、无害 ✓，
+   * 但少了**前**边界就会把 `task-…` 这类 ID/路径判成密钥 ✗（真机误报的根因 ✓）；
+   * 两侧都要，判据才是"这是一个独立的令牌形状" ✓。
+   */
+  /(?<![A-Za-z0-9])sk-[A-Za-z0-9]{16,}(?![A-Za-z0-9])/g,
+  /(?<![A-Za-z0-9])gho_[A-Za-z0-9]{16,}(?![A-Za-z0-9])/g,
+  /(?<![A-Za-z0-9])ghp_[A-Za-z0-9]{16,}(?![A-Za-z0-9])/g,
+  /** AWS 的 access key id **恰好**是 `AKIA` + 16 位大写/数字 ✓ ⇒ 两侧都要边界 ✓ */
+  /(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}(?![A-Za-z0-9])/g,
 ];
+/** 与 `CREDENTIAL_VALUE_RES` **同序**的形状名（只用于日志/判据的可诊断性 ✓，不含任何值 ✓） */
+export const CREDENTIAL_SHAPE_LABELS = ["sk-", "gho_", "ghp_", "AKIA"] as const;
 
 export function redactCredentialShapes<T>(value: T): { value: T; redacted: number } {
   let redacted = 0;

@@ -1043,6 +1043,13 @@ describe("C-7 turn_file_changes 的 patch 按需取", () => {
     expect(commands.some((c) => c.includes("stash create")), "start() 必须取工作区快照").toBe(true);
 
     // 有未跟踪新文件 → finalize 必须产出记录（而不是恒 null）
+    /**
+     * ★ 第 48 波补前置 ✓：`finalize()` 现在**只在「有会改工作区的工具跑过」时才发 git**
+     * （B 切片 ✓，判据 GB-7 ✓）—— 因为实测"每个有改动的迭代都跑 4 次 git"占了 88% 的 exec 与
+     * ~12% 墙钟 ✗。⇒ 本用例要模拟"确实发生过改动" ✓，就得先 `noteMutation()` ✓
+     * （与 `GB-5` 同一处置 ✓）。**断言意图一字未改** ✓：start() 取过快照之后，finalize 必须产出记录 ✓。
+     */
+    tracker.noteMutation();
     const result = await tracker.finalize();
     expect(result, "start() 取过快照之后 finalize 才能产出记录").not.toBeNull();
     expect(port.__table("turn_file_changes")).toHaveLength(1);

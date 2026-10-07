@@ -65,9 +65,20 @@ describe('可达性门禁：写了但没接线的代码必须被拦住（第 109
     expect(entries.length, '白名单不该是空的').toBeGreaterThan(10)
     const empty = entries.filter(([, reason]) => typeof reason !== 'string' || reason.trim().length < 8)
     expect(empty.map(([f]) => f)).toEqual([])
-    // 两个"未接线"条目必须**明说**未接线（它们是 O-22 里待判的那两处）
+    // "未接线"条目必须**明说**未接线（它们是 O-22 里待判的那几处）
+    /**
+     * ⚠️ 第 48 波：这里是**写死的钉子** ✓ —— 新增一个"未接线"条目就必须**同时**改这里 ✓，
+     * 目的正是"不许悄悄多一个没人管的死代码" ✓。本次新增 ✓：
+     * `src/core/environment/file-edit-capture.ts` ✓（编辑前整文件捕获 ✓，是「把追踪器搬到回合边界
+     * （E1+E2）」的前置能力 ✓；E1+E2 卡在事件顺序 ✓ —— 详见该文件头部的 @unwired 标记 ✓
+     * 与 `tools/audit/reachability-allowlist.json` 的登记理由 ✓）。
+     */
     const unwired = entries.filter(([, reason]) => reason.includes('未接线')).map(([f]) => f)
-    expect(unwired.sort()).toEqual(['src/components/RegenerateModelPopover.tsx', 'src/core/storage/sync-engine.ts'])
+    expect(unwired.sort()).toEqual([
+      'src/components/RegenerateModelPopover.tsx',
+      'src/core/environment/file-edit-capture.ts',
+      'src/core/storage/sync-engine.ts',
+    ])
   })
 
   it('REACH-5: 白名单说"未接线"的文件，代码里必须有 @unwired 标记（代码与审计不许各自漂移）', () => {

@@ -396,24 +396,22 @@ describe("EVENT-TYPE-WRITES 运行期：写入守卫与结构自检", () => {
       window.removeEventListener("codem:persist-failed", on);
     }
 
+    /**
+     * ★★ 第 50 波改（用户实报 + 明确要求 ✓）：结构异常是**要我们自己看**的发现 ✓，
+     * 用户在界面上没有可介入的动作 ✗（事件表不是他能编辑的东西 ✓）⇒ **只进日志** ✓。
+     * 判据保留原文案的真正意图 ✓，只换载体 ✓：文案仍不许有失败语气 ✓、不许以 error 级别出现 ✓。
+     */
     const evt = captured.find((e) => e.area === "maintenance.eventStructure");
-    expect(evt, "结构自检发现异常必须上报到界面通道").toBeTruthy();
-    const { composePersistAlertText } = await import("../core/storage/persist-failure");
-    const text = composePersistAlertText(evt as never);
-    expect(text, "开头那句必须是真的：这是自检报出的发现，不是『操作没有生效』").not.toContain("操作没有生效");
-    expect(text).toContain("结构异常");
-    // 第 88 轮新增判据：发现类文案里不该出现失败语气
-    for (const bad of ["请重试", "该功能本次不可用", "重启应用后会丢失"]) {
-      expect(text, `发现类文案里出现了失败语气「${bad}」：${text}`).not.toContain(bad);
-    }
+    expect(evt, "★ 不许再上报到界面通道（用户无事可做 ⇒ 只进日志 ✓）").toBeFalsy();
 
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    void logSpy;
     const warnText = warnSpy.mock.calls.map((c) => String(c[0])).join("\n");
     const errorText = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
-    expect(warnText, "控制台那句同样是用户会读到的（真机原文就是它）").toContain("事件库结构异常");
-    expect(warnText, "发现类必须标 [Advisory]").toContain("[Advisory]");
+    const allText = warnText + "\n" + errorText;
     expect(errorText, "发现类不该以 error 级别出现（会被当成「坏了」）").not.toContain("事件库结构异常");
-    for (const bad of ["该功能本次没有生效", "写盘失败", "操作失败"]) {
-      expect(warnText + errorText, `控制台不许出现「${bad}」—— 自检跑成了，报的是存量异常`).not.toContain(bad);
+    for (const bad of ["该功能本次没有生效", "写盘失败", "操作失败", "请重试", "该功能本次不可用", "重启应用后会丢失"]) {
+      expect(allText, `自检发现不许出现失败语气「${bad}」—— 自检跑成了，报的是存量异常`).not.toContain(bad);
     }
   });
 });

@@ -1,6 +1,13 @@
 /**
  * **编辑前整文件捕获**（第 46 波 ✓，照 DSH 的 `dsh-workspace-changes` ✓）。
  *
+ * @unwired（第 48 波登记 ✓）本文件**当前未接线**：0 个生产调用方；判据工具见
+ *   `src/test/file-edit-capture.test.ts`（测的是它本身 ✓）。两条路 ✓：
+ *   **接上** —— 它是「把追踪器搬到回合边界（E1+E2）」与「按需取 patch」的前置能力 ✓，
+ *   而 E1+E2 卡在事件顺序（`yield {file_changes_tracked}` 无法先于 `finally` 里的 `yield {end}` ✓）；
+ *   **删掉** —— 若 E1+E2 最终走"UI 读已存的 turn_file_changes"那条路 ✓，本文件即无消费者 ✓。
+ *   已按 `tools/audit/reachability-allowlist.json` 登记为「未接线（已定性）」✓。
+ *
  * ## 为什么必须有它（这是 B 项的前置 ✓）
  *
  * 现状 ✓：`FileChangeTracker` 靠**每个有改动的迭代都跑一遍 git**（`stash create` +

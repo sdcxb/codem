@@ -124,11 +124,23 @@ async function installPort(opts: { indexRows: number }) {
   return port;
 }
 
+/**
+ * ★ 第 50 波：这条发现改成**只进日志** ✓（用户对它没有可介入的动作 ✗）⇒
+ * 判据不能再盯着上报通道 ✗，而要盯**日志里那行**（数字要写清 ✓）。所以这里把
+ * `console.log` 收进数组 ✓（原来只是 no-op 屏蔽掉 ✓，那会让"只进日志"这件事无从断言 ✗）。
+ */
+const loggedLines: string[] = [];
+
 beforeEach(async () => {
   resetPersistFailures();
   rebuildCalls.length = 0;
-  vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  loggedLines.length = 0;
+  vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => {
+    loggedLines.push(a.map(String).join(" "));
+  });
+  vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => {
+    loggedLines.push(a.map(String).join(" "));
+  });
   vi.spyOn(console, "error").mockImplementation(() => {});
   const msgMod = await import("../core/storage/message");
   msgMod.clearSessionLogCache();
@@ -157,12 +169,21 @@ describe("BEHIND：索引落后于权威日志必须被发现并修回", () => {
     const { runDatabaseMaintenance } = await import("../core/storage/maintenance");
     const result = await runDatabaseMaintenance();
 
+    /**
+     * ★ 第 50 波：**改成只进日志** ✓ —— 用户对"索引落后已自动补回"没有任何可介入的动作 ✗
+     * （索引是我们补的 ✓），弹横幅只会训练用户忽略安全提示 ✓。
+     * 判据保留它真正的意图 ✓：**它必须被记录下来**（这是"系统自己发现过一次"的唯一信号 ✓），
+     * 只是去处从上报通道换成了日志 ✓。
+     */
+    expect(
+      loggedLines.join("\n"),
+      "发现了静默丢行必须在日志里留痕（这是'系统自己发现过一次'的唯一信号）",
+    ).toMatch(/索引落后于权威日志/);
+    expect(loggedLines.join("\n"), "日志里要写清数字，便于排查").toMatch(/索引 1 < 日志 3/);
     expect(
       getPersistFailures().map((f) => f.area),
-      "发现了静默丢行必须上报（这是'系统自己发现过一次'的唯一信号）",
-    ).toContain("maintenance.indexBehindLog");
-    const entry = getPersistFailures().find((f) => f.area === "maintenance.indexBehindLog")!;
-    expect(entry.lastMessage, "上报里要写清数字，便于排查").toMatch(/索引 1 < 日志 3/);
+      "★ 不许再走上报通道（用户无事可做 ⇒ 只进日志 ✓）",
+    ).not.toContain("maintenance.indexBehindLog");
     expect(rebuildCalls, "必须真的按会话重建过").toContain(SESSION);
     expect(typeof result.repairedBehindMessages, "汇总里要有这一项").toBe("number");
   });
@@ -206,9 +227,13 @@ describe("BEHIND：索引落后于权威日志必须被发现并修回", () => {
      * **相反**的性质：没读过也要能发现。
      */
     expect(
+      loggedLines.join("\n"),
+      "索引落后不能因为'日志还没读'就被漏掉 —— 检测器要自己去读，并**在日志里留痕**（第 50 波起只进日志 ✓）",
+    ).toMatch(/索引落后于权威日志/);
+    expect(
       getPersistFailures().map((f) => f.area),
-      "索引落后不能因为'日志还没读'就被漏掉 —— 检测器要自己去读",
-    ).toContain("maintenance.indexBehindLog");
+      "★ 不许再走上报通道（用户无事可做 ✓）",
+    ).not.toContain("maintenance.indexBehindLog");
   });
 
   it("BEHIND-3b: 日志**读失败** → 不告警（拿不到可信集合时不许瞎猜）", async () => {
@@ -272,7 +297,6 @@ describe("BEHIND：索引落后于权威日志必须被发现并修回", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const { runDatabaseMaintenance } = await import("../core/storage/maintenance");
-    const { composePersistAlertText } = await import("../core/storage/persist-failure");
     const events: Array<Record<string, unknown>> = [];
     const on = (e: Event) => events.push((e as CustomEvent).detail as Record<string, unknown>);
     window.addEventListener("codem:persist-failed", on);
@@ -282,18 +306,24 @@ describe("BEHIND：索引落后于权威日志必须被发现并修回", () => {
       window.removeEventListener("codem:persist-failed", on);
     }
 
+    /**
+     * ★ 第 50 波改（用户实报 + 明确要求 ✓）：这条不再进**界面通道** ✗ ——
+     * 用户对它没有可介入的动作 ✓（索引是我们补回来的 ✓）⇒ 只进日志 ✓。
+     *
+     * 判据保留原文案的真正意图 ✓，只是换了载体 ✓：
+     *   · **不许说成失败**（「操作没有生效」/「数据保存失败」都是假话 ✓）—— 现在断言**日志那行** ✓；
+     *   · 句子不许重复同一件事 ✗（横幅印两遍是文案缺陷 ✓）；
+     *   · 结尾不该出现两个句号 ✗（真机上印过 `。。` ✓）。
+     */
     const evt = events.find((e) => e.area === "maintenance.indexBehindLog");
-    expect(evt, "必须上报到界面通道").toBeTruthy();
-    const text = composePersistAlertText(evt as never);
-    expect(
-      text,
-      "开头那句必须是真的：这不是用户的操作没生效，而是自检发现并修好了不一致",
-    ).not.toContain("操作没有生效");
-    expect(text, "也不该说成'数据保存失败'（什么都没丢）").not.toContain("数据保存失败");
-    expect(text).toContain("存储自检");
-    expect(text, "句子不许重复同一件事（横幅自己说两遍也是文案缺陷）").not.toMatch(
-      /索引落后于权威日志.*索引落后于权威日志/,
+    expect(evt, "★ 不许再上报到界面通道（用户无事可做 ⇒ 只进日志 ✓）").toBeFalsy();
+    const line = loggedLines.find((l) => l.includes("索引落后于权威日志")) ?? "";
+    expect(line, "但必须在日志里留痕 ✓").not.toBe("");
+    expect(line, "开头那句必须是真的：不是用户的操作没生效，而是自检发现并修好了不一致").not.toContain(
+      "操作没有生效",
     );
-    expect(text, "结尾不该出现两个句号（真机上印过 '。。'）").not.toContain("。。");
+    expect(line, "也不该说成'数据保存失败'（什么都没丢）").not.toContain("数据保存失败");
+    expect(line, "句子不许重复同一件事").not.toMatch(/索引落后于权威日志.*索引落后于权威日志/);
+    expect(line, "结尾不该出现两个句号（真机上印过 '。。'）").not.toContain("。。");
   });
 });

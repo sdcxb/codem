@@ -118,12 +118,10 @@ describe("上报点分诊闸门（第 90 轮）", () => {
     ).toBeLessThanOrEqual(PENDING_BASELINE);
   });
 
-  it("RPT-5 已搬去 advisory 的「发现」站点不许回退（锁住第 88/89/90 轮的修复）", () => {
+  it("RPT-5 已搬去 advisory 的「发现」站点不许回退（锁住第 88/89/90 轮的决定）；第 50 波起「用户无事可做」的那些改为只进日志", () => {
     const reg = registry();
     const mustBeAdvisory = [
       "src/core/storage/maintenance.ts::maintenance.credentialCensus::#1",
-      "src/core/storage/maintenance.ts::maintenance.invariantAudit.new::#1",
-      "src/core/storage/maintenance.ts::maintenance.indexBehindLog::#1",
       "src/core/storage/event-log.ts::<动态>::#1",
       "src/core/storage/bootstrap.ts::<动态>::#6",
     ];
@@ -131,6 +129,23 @@ describe("上报点分诊闸门（第 90 轮）", () => {
       const s = reg.sites.find((x) => x.site === key);
       expect(s, `${key} 不在登记表里（判据过期了？）`).toBeTruthy();
       expect(s?.kind, `${key} 必须走 advisory（它是"发现"，不是"失败"）`).toBe("advisory");
+    }
+    /**
+     * ★★ 第 50 波（用户实报 + 明确要求 ✓）：「用户没有可介入动作」的发现**不许**再进任何上报
+     * 通道 ✓（改成只进日志 ✓）。它们连登记表条目都不该有 ✓ —— 这样谁想把横幅加回来，
+     * 就必须先过 RPT-1/2 的闸门、并说清"用户能做什么" ✓。
+     * 依据：用户原话「即使提示了用户也没有操作介入的办法」✓。
+     */
+    for (const key of [
+      "src/core/storage/maintenance.ts::maintenance.invariantAudit.new::#1",
+      "src/core/storage/maintenance.ts::maintenance.indexBehindLog::#1",
+      "src/core/storage/maintenance.ts::maintenance.eventsDedupText::#1",
+      "src/core/storage/maintenance.ts::maintenance.eventStructure::#2",
+    ]) {
+      expect(
+        reg.sites.find((x) => x.site === key),
+        `${key} 不该再有上报登记（用户无事可做 ⇒ 只进日志 ✗→✓）`,
+      ).toBeUndefined();
     }
   });
 });

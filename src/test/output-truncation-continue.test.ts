@@ -64,11 +64,44 @@ describe("输出截断 ⇒ 自动续写（第 68 波）", () => {
     expect(block, "结构化停止原因").toMatch(/reason: "output_truncated"/);
   });
 
-  it("TRUNC-4: 续写预算按轮次重置（否则第二次任务一开始就没额度了）", () => {
+  it("TRUNC-4: 续写预算按轮次重置（否则第二次任务一开始就没额度了）", async () => {
+    /**
+     * ⚠️ 第 48 波两处修正 ✗→✓：
+     *   ① 原来只取 `run()` 的**前 1600 字符** ✗（魔法数字 ⇒ 加几行注释就假红 ✗）；
+     *   ② 更要命的 ✓：`toContain("this.truncatedContinuations = 0")` 会被**注释里引用同一串文字**
+     *      满足 ✗ ⇒ **判据空洞** ✓ —— 实测：把 `run()` 里那行改成 `= 777;` 之后它**照样绿** ✗✗。
+     * ⇒ 现在用 **TypeScript AST** 断言「`run()` 内存在一条赋值：左侧是 `this.truncatedContinuations`、
+     *    右侧是数字字面量 `0`」✓ ⇒ 注释骗不过 ✓，长度也不再假设 ✓。
+     */
+    const ts = (await import("typescript")).default;
     const src = loop();
-    const runStart = src.indexOf("async *run(");
-    const head = src.slice(runStart, runStart + 1600);
-    expect(head).toContain("this.truncatedContinuations = 0");
+    const sf = ts.createSourceFile("agentic-loop.ts", src, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TS);
+    let span: { start: number; end: number } | null = null;
+    const visit = (n: any): void => {
+      if (ts.isMethodDeclaration(n) && n.name && n.name.getText(sf) === "run") {
+        span = { start: n.getStart(sf), end: n.end };
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    expect(span, "必须能找到 run() 方法 ✓").not.toBeNull();
+
+    const resets: number[] = [];
+    const walk = (n: any): void => {
+      if (
+        ts.isBinaryExpression(n) &&
+        n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        n.left.getText(sf) === "this.truncatedContinuations" &&
+        ts.isNumericLiteral(n.right) &&
+        n.right.getText(sf) === "0"
+      ) {
+        const pos = n.getStart(sf);
+        if (pos >= span!.start && pos < span!.end) resets.push(pos);
+      }
+      ts.forEachChild(n, walk);
+    };
+    walk(sf);
+    expect(resets.length, "★ run() 内必须**真有**一条 `this.truncatedContinuations = 0` 赋值（注释不算 ✗）").toBeGreaterThan(0);
   });
 
   it("TRUNC-5: 内容型工具在截断回复里**不许执行**（第 67 波的事后提示已换成第 70 波 fail closed）", () => {
