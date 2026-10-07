@@ -253,3 +253,41 @@ gh release edit vX.Y.Z --repo sdcxb/codem --title "Codem vX.Y.Z" --notes-file .p
 
 > 一句话：**用户只关心"能不能用、稳不稳、比对手强在哪"**。凡是回答不了这三问的内容，都别进 Release。
 
+
+### ⚠️ 删除 release 的安全规程（2026-10-07 一次误删事故的教训 ✗）
+
+**事故**：清理过程版本时，把 **v0.88.0 / v0.98.0 / v1.0.0** 一起删了 ✗（当时把"稳定版"理解成
+只有 1.16.43 / 1.16.210 / 最新 ✗，而维护者认为**1.0 之前的版本全部是稳定版** ✓）。
+删除 release 会**连同资产一起删** ✗，且 **GitHub 不支持恢复** ✗（tag 保留 ✓，但安装包不可恢复 ✗）。
+重建 release 后，资产**只能靠重新构建** ✓。
+
+**稳定版清单（以此为准 ✓）**：
+
+- **1.0 之前的全部版本**（`v0.xx` ✓）
+- `v1.16.43`、`v1.16.210`
+- **最新稳定版**（发布时由维护者指定）
+
+其余为过程版本，可删 ✓。
+
+**删除前必须做（三条，缺一不可）**：
+
+1. **导出待删清单**并把**说明正文**存到本地（`gh release view <tag> --json name,body,assets`
+   → 存成文件 ✓）—— 误删后至少说明能原样恢复 ✓；
+2. **确认保留清单**包含上面"稳定版清单"的全部条目 ✓（尤其是 `v0.xx` 与 `v1.0.0` ✗ 别再漏 ✓）；
+3. **确认目标 release 的安装包在本机或别处另有留存** ✓（没有留存就等于永久丢失 ✗）。
+
+**删除后必须复核（两条）**：
+
+```powershell
+# ① Latest 必须仍是当前稳定版 —— ⚠️ 重新创建 release 会把 Latest 抢走 ✗（GitHub 按"最新创建"标记）
+gh release list --repo sdcxb/codem --limit 10
+gh release edit <最新稳定版tag> --repo sdcxb/codem --latest          # 抢回来
+gh release edit <其它tag> --repo sdcxb/codem --latest=false          # 让位
+# ② 自动更新端点必须仍指向最新稳定版（否则用户端会 404）
+node tools/release/verify-update-manifest.mjs --remote
+```
+
+> ⚠️ **重建旧 release 会让它变成 Latest** ✗（即使它的版本号很老）——
+> 因为 GitHub 的 Latest 是按"最近发布"算的 ✓，而 `published_at` **不可写** ✗
+> （重建后的日期只能是当天 ✓）。所以**每次重建后都要把 Latest 显式还给最新稳定版** ✓。
+
