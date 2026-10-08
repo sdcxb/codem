@@ -453,22 +453,62 @@ export function createSession(session: Session): void {
   reportWriteNotAccepted("session.create", "会话未保存");
 }
 
+/**
+ * `updateSession` 支持的字段（**唯一**白名单来源，第 184 波存储审计 S7/③）。
+ *
+ * 为什么必须是一份**具名清单**（而不是原来那样内联在 `hasAnyField` 里）：
+ * 白名单的失败形态是**静默丢弃** —— "改一个没列进来的字段"不写库、不上报、也没有返回值，
+ * 看起来和"改成功了"一模一样。第 190 轮 `isInternal` 就是这么被丢掉的
+ * （那次靠工具自己的回读校验才发现）。收成一份之后，未列出的字段才能被**如实看见**（点名到字段）。
+ */
+const SESSION_UPDATE_FIELDS = [
+  "title",
+  "model",
+  "lastMessageAt",
+  "messageCount",
+  "pinned",
+  "executionMode",
+  "worktreePath",
+  "worktreeBranch",
+  "correctionMode",
+  "deepThinkingMode",
+  "preserveExecutor",
+  "isInternal",
+] as const;
+
 export function updateSession(id: string, update: Partial<Session>): void {
   /**
-   * ⚠️ 这是一个**字段白名单**：没列在这里的字段会被**静默丢弃**（函数早返回）。
+   * ⚠️ 这是一个**字段白名单**：没列在 `SESSION_UPDATE_FIELDS` 里的字段会被丢弃。
    *
    * 第 190 轮踩到过：`set_session_internal` 工具调 `updateSession(id, { isInternal })`，
    * 而这里没有 `isInternal` ⇒ 更新被丢掉、库里那一列纹丝不动。
    * 那次是工具自己的**回读校验**当场抓到的（"标记未生效（回读仍是 false）"）——
    * 如果当时只写不验，用户看到的就是"工具说标好了，侧栏里那条还在"。
    * **加字段时这里必须同步**（`sessionToWire` 那边也一样）。
+   *
+   * ## 第 184 波存储审计 S7/③：**静默丢弃改成可见**
+   *
+   * "加字段时这里必须同步"是**纪律**（靠人记得），而这个坑已经踩过一次。
+   * 现在未列出的字段**当场可见**（一行 warn 点名是哪个字段）—— 不再是一个查无痕迹的 no-op。
+   * （`parentId` / `projectId` / `createdAt` 这类"建会话时定下来、之后不该改"的列仍然不支持更新，
+   * 但调用方会**知道**自己那次调用被丢了一半。）
+   *
+   * ⚠️ 刻意**走日志、不走横幅**（`reportActionFailure`）：这是**调用方写错了字段名**
+   * （开发者问题），用户没有任何可介入的动作 —— 按本仓库第 50 波的规则
+   * （「用户没有可介入动作的发现不许进任何上报通道」），它只该进日志。
    */
-  const hasAnyField =
-    update.title !== undefined || update.model !== undefined || update.lastMessageAt !== undefined ||
-    update.messageCount !== undefined || update.pinned !== undefined || update.executionMode !== undefined ||
-    update.worktreePath !== undefined || update.worktreeBranch !== undefined ||
-    update.correctionMode !== undefined || update.deepThinkingMode !== undefined ||
-    update.preserveExecutor !== undefined || update.isInternal !== undefined;
+  const given = Object.keys(update as Record<string, unknown>).filter(
+    (k) => (update as Record<string, unknown>)[k] !== undefined,
+  );
+  const known = new Set<string>(SESSION_UPDATE_FIELDS);
+  const unsupported = given.filter((k) => !known.has(k));
+  if (unsupported.length > 0) {
+    console.warn(
+      `[Session] updateSession(${id}) 丢弃了未在字段白名单里的字段：${unsupported.join("、")}` +
+        "（这些字段的更新**没有生效**；加字段时请同步 session.ts 的 SESSION_UPDATE_FIELDS 与 sessionToWire）",
+    );
+  }
+  const hasAnyField = given.some((k) => known.has(k));
   if (!hasAnyField) return;
 
   // 迁移期：读出整行 → 应用改动 → 整体写回（未改动列必须保留）
@@ -557,10 +597,24 @@ export function updateSession(id: string, update: Partial<Session>): void {
  * `skippedDeleted`）。墓碑与消息墓碑同处一文件、同一种格式 —— 只有一份真相。
  *
  * ⚠️ 顺序：**先写墓碑、再删行**。
- * - 先写墓碑：即使随后的删除失败（网络/引擎报错），后果是"会话被标记为已删但行还在"
- *   —— 用户还能看到它（可重试删除），数据没丢；
+ * - 先写墓碑：即使随后的删除失败（引擎报错 / 那次写被队满或 15s 老化丢弃），后果是
+ *   "会话被标记为已删但行还在" —— 用户还能看到它（可重试删除），数据没丢；
  * - 反过来先删行再写墓碑：万一墓碑写失败，重建就会把会话复活，且**没有任何痕迹**表明
  *   用户删过它。两害相权，前者是"多留一条待清理的记录"，后者是"删除被静默撤销"。
+ *
+ * ## ⚠️ 但"行还在"必须**真的能让墓碑作废**（第 184 波存储审计 S1 的实质缺陷）
+ *
+ * 上面那段论证成立的前提是**墓碑能被撤销**。而墓碑是 append-only、全仓没有任何撤销入口，
+ * 重建路径（`session-log-bridge.ts` 的 `skippedDeleted`）与对账
+ * （`maintenance.ts::detectSessionsBehindLog`）又都按"日志里有墓碑 ⇒ 这个会话已被删除"处理。
+ * 于是"删除失败/被丢弃"这个形态的后果是：**那个仍然存在的会话被永久跳过** ——
+ * 空库恢复（引擎头损坏 → 建空库 → 从 JSONL 重建索引）之后它不会回到 `sessions` 表，
+ * 会话从侧栏彻底消失，JSONL 正文变成没有任何读路径会去读的孤儿。
+ * 也就是说"数据没丢"这句话在**重建这条路**上不成立。
+ *
+ * 所以判据补在**读墓碑的那一侧**（`sessionTombstoneBinding`）：
+ * `sessions` 镜像里**还有这一行** ⇒ 墓碑作废、照常重建/对账；行确实不在 ⇒ 墓碑成立、跳过。
+ * 这样"删除失败不丢会话"与"删除成功不复活会话"才同时成立。
  */
 export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}): void {
   /**
@@ -599,6 +653,34 @@ export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}):
   }
   // 第 17 轮（L4）：旧库回退（`DELETE FROM sessions` + persistDatabase）已删 → 如实上报。
   reportWriteNotAccepted("session.delete", "会话未删除");
+}
+
+/**
+ * 会话墓碑**是否仍然成立**（第 184 波存储审计 S1）。
+ *
+ * ## 为什么必须有这条判据
+ *
+ * 墓碑（`session-jsonl.ts::appendSessionTombstone`）是 append-only 的，全仓**没有撤销入口**；
+ * 而删除路径是"先写墓碑、再删行"，删除可能没成（`domainDelete` 返回 false），
+ * 也可能"返回了 true 但那次 `deferWrite` 之后被队满 / 15s 老化丢弃"
+ * （`domain-store.ts::deferWrite` / `sweepDeferQueue`）。这两种形态下墓碑已经落盘、
+ * `sessions` 行却还在 —— 若重建/对账只按"日志里有墓碑"判，这个**仍然存在的会话**
+ * 就会被**永久**跳过（空库恢复后从侧栏彻底消失，JSONL 正文成孤儿）。
+ *
+ * 所以"墓碑是否成立"必须问**库里现在有没有这一行**，而不是只看日志里出现过什么。
+ *
+ * ## 三态（不把"读不到"当成"没有"）
+ *
+ * - `true`  —— 墓碑成立（`sessions` 镜像里确实没有这一行）：重建/对账必须跳过；
+ * - `false` —— 墓碑**作废**（镜像里还有这一行 ⇒ 那次删除没成或被丢弃）：照常重建/对账；
+ * - `undefined` —— **判不了**（`sessions` 域镜像未就绪）。调用方必须按最保守处理：
+ *   仍旧按墓碑跳过（宁可晚一次重建，也不要在"判不了"的时候把用户明确删掉的会话复活）；
+ *   而 `sessions` 镜像**就绪且为空**（空库恢复的正常形态）时返回的是 `true`，不是 `undefined`。
+ */
+export function sessionTombstoneBinding(id: string): boolean | undefined {
+  const rows = domainReadMany<Record<string, unknown>>(SESSION_TABLE, (r) => r);
+  if (rows === undefined) return undefined;
+  return !rows.some((r) => String(r.id ?? "") === id);
 }
 
 /** Atomically toggle the pinned state of a session */

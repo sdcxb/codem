@@ -1,6 +1,12 @@
 import * as SessionStorage from "./session";
 import * as MessageStorage from "./message";
-import { getSetting, setSetting, setSettingJSON, getSettingJSON, removeSetting } from "./settings";
+import {
+  getSetting,
+  setSettingJSON,
+  getSettingJSON,
+  removeSetting,
+  setSettingConfirmed,
+} from "./settings";
 // 第 45 轮 D-17：把迁移过来的主题同时写进首屏镜像（否则镜像停在旧值，
 // 下次启动 index.html 的预渲染脚本会按旧档位先渲染一帧）
 import { THEME_SETTING_KEY, THEME_CACHE_KEY, isThemeMode, cacheTheme } from "../theme/theme-default";
@@ -15,8 +21,21 @@ interface MigrationResult {
 /**
  * 迁移旧 mimo-* 前缀的 SQLite settings key 到 codem-* 前缀
  * 同时从 localStorage 迁移数据到 SQLite settings 表
+ *
+ * ## ⚠️ 第 184 波存储审计 S4：**先确认落库成功，才允许删源**
+ *
+ * 原来是 `setSetting(newKey, oldData); removeSetting(oldKey);` —— 两次写都是
+ * "内存即时生效 + **异步**落库"（`settings.ts` 的 `writeThrough` 只 `.catch(report)；
+ * `rust-port.ts` 的 `config.set` 失败只走 `onFailure`），而删除是**立刻**执行的。
+ * 于是复制那条 IPC 失败（`callWithRetry` 重试耗尽 / 磁盘满 / 引擎忙）时**源键已经被删掉**：
+ * 键表第一行 `mimo-settings → codem-settings` 就是**整份设置（含 provider 配置）丢失**，
+ * 既没有回滚也没有重试。
+ *
+ * 现在改成 `await setSettingConfirmed(...)`：**确认落库成功之后**才 `removeSetting`；
+ * 失败就保留源键、如实告警，下次启动自然重试（源还在，数据不丢）。
+ * 这与 `secret-store` 里明写的纪律是同一条："封存成功 → 原子写回 → **才**清明文"。
  */
-function migrateSettingsKeys(): number {
+async function migrateSettingsKeys(): Promise<number> {
   let migrated = 0;
 
   // 旧 key → 新 key 映射（SQLite settings 表内部迁移）
@@ -38,7 +57,18 @@ function migrateSettingsKeys(): number {
 
     const oldData = getSetting(oldKey);
     if (oldData) {
-      setSetting(newKey, oldData);
+      /**
+       * ⚠️ 顺序：**复制并确认落库 → 才删源**。删源不看复制结果就是"失败即丢数据"。
+       * 确认失败时 `continue`：源键**原封不动**，本次不迁移（下次启动重试）。
+       */
+      const copied = await setSettingConfirmed(newKey, oldData);
+      if (!copied) {
+        console.warn(
+          `[Migration] SQLite key: ${oldKey} → ${newKey} 复制**未确认落库** —— ` +
+            `本次**不删除源键**（${oldKey} 数据保留，下次启动重试；重启后若仍失败请检查磁盘/引擎状态）`,
+        );
+        continue;
+      }
       removeSetting(oldKey);
       migrated++;
       console.log(`[Migration] SQLite key: ${oldKey} → ${newKey}`);
@@ -65,8 +95,11 @@ function migrateSettingsKeys(): number {
 /**
  * 从 localStorage 迁移到 SQLite settings 表
  * 处理还未迁移到 SQLite 的 localStorage 数据
+ *
+ * ⚠️ 第 184 波存储审计 S4：与 `migrateSettingsKeys` 同一条纪律 ——
+ * **确认落库成功之后**才删掉 localStorage 里的源（否则复制失败时源被删 = 数据丢失）。
  */
-function migrateFromLocalStorageToSettings(): number {
+async function migrateFromLocalStorageToSettings(): Promise<number> {
   let migrated = 0;
 
   // localStorage key → SQLite settings key 映射
@@ -84,7 +117,14 @@ function migrateFromLocalStorageToSettings(): number {
     try {
       const lsData = localStorage.getItem(lsKey);
       if (lsData) {
-        setSetting(sqliteKey, lsData);
+        const copied = await setSettingConfirmed(sqliteKey, lsData);
+        if (!copied) {
+          console.warn(
+            `[Migration] localStorage → SQLite: ${lsKey} → ${sqliteKey} 复制**未确认落库** —— ` +
+              `本次**不删除 localStorage 源**（数据保留，下次启动重试）`,
+          );
+          continue;
+        }
         localStorage.removeItem(lsKey);
         migrated++;
         console.log(`[Migration] localStorage → SQLite: ${lsKey} → ${sqliteKey}`);
@@ -102,18 +142,35 @@ function migrateFromLocalStorageToSettings(): number {
       if (key && key.startsWith("mimo-cli-session-")) {
         const newKey = "codem-" + key.substring(5); // mimo- → codem-
         const existing = getSetting(newKey);
-        if (!existing) {
-          const data = localStorage.getItem(key);
-          if (data) {
-            setSetting(newKey, data);
-            migrated++;
-            console.log(`[Migration] localStorage → SQLite: ${key} → ${newKey}`);
-          }
+        if (existing) {
+          // 新键已有数据 ⇒ 这份 localStorage 只是残留，可以直接清（没有要复制的东西）
+          keysToRemove.push(key);
+          continue;
         }
-        keysToRemove.push(key);
+        const data = localStorage.getItem(key);
+        if (!data) {
+          // 源本身就是空 ⇒ 没有可复制的内容，清了不丢数据
+          keysToRemove.push(key);
+          continue;
+        }
+        /**
+         * ⚠️ S4 同一条纪律：**确认落库成功之后**才把源列进待清理名单。
+         * 失败时**不列**（源留在 localStorage，下次启动重试）—— 否则就是"复制失败即丢数据"。
+         */
+        const copied = await setSettingConfirmed(newKey, data);
+        if (copied) {
+          migrated++;
+          keysToRemove.push(key);
+          console.log(`[Migration] localStorage → SQLite: ${key} → ${newKey}`);
+        } else {
+          console.warn(
+            `[Migration] localStorage → SQLite: ${key} → ${newKey} 复制**未确认落库** —— ` +
+              `本次**保留 localStorage 源**（下次启动重试）`,
+          );
+        }
       }
     }
-    // 清理已迁移的 localStorage key
+    // 清理**已确认迁移**的 localStorage key
     for (const key of keysToRemove) {
       localStorage.removeItem(key);
     }
@@ -147,13 +204,13 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
      * 两者都走设置接口（rust 模式下就是端口命令，与旧库无关）。
      */
     // 1. 迁移 SQLite settings 表内旧 key → 新 key
-    const settingsMigrated = migrateSettingsKeys();
+    const settingsMigrated = await migrateSettingsKeys();
     if (settingsMigrated > 0) {
       console.log(`[Migration] Migrated ${settingsMigrated} settings keys from mimo-* to codem-*`);
     }
 
     // 2. 从 localStorage 迁移到 SQLite settings 表
-    const lsMigrated = migrateFromLocalStorageToSettings();
+    const lsMigrated = await migrateFromLocalStorageToSettings();
     if (lsMigrated > 0) {
       console.log(`[Migration] Migrated ${lsMigrated} items from localStorage to SQLite`);
     }

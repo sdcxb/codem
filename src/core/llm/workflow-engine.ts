@@ -177,8 +177,10 @@ console.log(JSON.stringify(results, null, 2));
           return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode ?? 0 };
         },
         async read(path) {
+          // ★ 第 185 波（T2）：与 run_code 的 sdk.read 同一个读侧沙箱判定
+          // （`ctx.cwd` 是工作区；不传就等于不检查，见 `file-api.ts` 的 assertWithinWorkspace）。
           const { readFile } = await import("../file-api");
-          return await readFile(path);
+          return await readFile(path, { workspace: ctx.cwd });
         },
         async write(path, content) {
           // 受保护路径（.git/ .env node_modules/ …）：`write` 工具在建任何东西之前就拒绝。
@@ -220,19 +222,54 @@ console.log(JSON.stringify(results, null, 2));
  *   `ui-workflow-run-provider.ts:14-16`（`wf.start/getStatus/cancel`，本 provider
  *   没有这些方法，故只有 `run` 这条真被调到）。
  *
- * 所以本函数**必须**与工具入口受同一道闸门。它的 `ctx` 是空对象
- * （没有 cwd / securityMode / onWriteConfirm）：
- * - `sdk.bash`：危险命令照样拒绝（`securityMode` 为 undefined 只影响拒绝文案里那一行）；
- * - `sdk.write`：受保护路径照样拒绝；覆盖确认因没有回调而无从进行 ——
- *   与 `write` 工具「没有回调时照写」的既有约定一致，不在这里发明新策略。
+ * ★ 第 185 波（T6）：**ctx 必须是真的那一份**。
+ *
+ * 改动前这里是 `tool.execute({ code, timeout_ms }, {} as any)` —— 空对象，于是工具内部
+ * 三个读点全读到 `undefined`：
+ * - `sdk.bash` → `executeCommand(command, undefined, 60_000)`：命令在默认 cwd 下跑，
+ *   相对路径落在别处；
+ * - `sdk.write` → `writeFile(path, content, { workspace: undefined })` ⇒
+ *   `file-api.ts` 的 `if (options?.workspace)` 为假 ⇒ **S5 沙箱检查整条不做**
+ *   （受保护路径与覆盖确认仍在，所以是**沙箱这一道被静默摘掉**）；
+ * - `sdk.spawn` → `parentSessionId: undefined`。
+ *
+ * 现在签名接受调用方给的真实 ctx 字段并透传。**没给 cwd 时不假装有沙箱**：
+ * 判定照旧不做（与 `execRunCode` 同一口径），只是不再由本函数**凭空**丢掉调用方给的值。
  *
  * 注意：调用方传进来的其实是 `steps`（任意值），而本函数签名是 `code: string` ——
  * 形态不匹配（`workflow-provider.ts:18` 的 `execWorkflow(steps, options)`）。
  * 这不是本轮要修的东西，但会让「provider 路径」在真机上大概率只得到一句执行错误；
  * 即便如此，闸门也必须在这里，否则它就是第二个旁路。
  */
-export async function execWorkflow(code: string, options?: { timeout?: number }): Promise<string> {
+export async function execWorkflow(
+  code: string,
+  options?: {
+    timeout?: number;
+    /** 工作区：同时作为 `sdk.bash` 的 cwd 与 `sdk.write` / `sdk.read` 的沙箱依据 */
+    cwd?: string;
+    sessionId?: string;
+    /** 安全模式（决定覆盖写要不要问用户） */
+    securityMode?: ToolContext["securityMode"];
+    /** 覆盖写确认回调（没有它时按「无从确认、不阻塞」处理，与 write 工具一致） */
+    onWriteConfirm?: ToolContext["onWriteConfirm"];
+  },
+): Promise<string> {
   const tool = createWorkflowTool();
-  const result = await tool.execute({ code, timeout_ms: options?.timeout }, {} as any);
+  /**
+   * 真实 ctx：`sessionId` 与 `cwd` 是工具内部真正会读的两个字段；
+   * `abort` 用**未中止**的 signal（provider 路径没有取消通道，不能凭空装一个已中止的）。
+   */
+  const ctx: ToolContext = {
+    sessionId: options?.sessionId ?? "",
+    messageId: "",
+    cwd: options?.cwd ?? "",
+    abort: new AbortController().signal,
+    messages: [],
+    metadata: () => {},
+    workspace: options?.cwd,
+    securityMode: options?.securityMode,
+    onWriteConfirm: options?.onWriteConfirm,
+  };
+  const result = await tool.execute({ code, timeout_ms: options?.timeout }, ctx);
   return result.output;
 }

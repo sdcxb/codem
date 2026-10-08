@@ -541,7 +541,12 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
    */
   function sessionMirror(scope: string, sessionColumn: string) {
     const loaded = new Set<string>();
-    let truncated = false;
+    /**
+     * **哪些会话的镜像加载被上限截断**（按会话；第 184 波 S3）。
+     * `truncatedAny` 保留旧的"全局"语义，只为兼容既有的 `__setTruncated(true)` 用法。
+     */
+    const truncatedSessions = new Set<string>();
+    let truncatedAny = false;
     /** 正在加载的会话（`asyncLoad` 打开时的"加载窗口"） */
     const loadingSessions = new Set<string>();
     /** 加载窗口期内注册的回调：加载完成时**全部**触发（与域镜像同一条规则） */
@@ -558,7 +563,14 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
        * 于是"启动时误报读不到"这个缺陷在 CI 里不可见。
        */
       isLoading: (sid: string) => loadingSessions.has(sid),
-      isTruncated: () => truncated,
+      /**
+       * **截断标记按会话**（第 184 波存储审计 S3）。
+       *
+       * 真端口原来是一个"全局且永不复位"的布尔：一个超大会话被截断之后，
+       * 本进程内**所有**会话的索引读都被判为不可用（`listMessagesFromIndex` 一律空）。
+       * 测试双必须同形，否则"一个会话截断波及其它会话"这个缺陷在 CI 里造不出来。
+       */
+      isTruncated: (sid: string) => truncatedSessions.has(sid) || truncatedAny,
       /**
        * 会话镜像的加载 —— **必须与域镜像一样尊重 `asyncLoad`**（第 44 轮补的保真度缺口）。
        *
@@ -682,8 +694,19 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       },
       /** 供 `applyMessageWrite` / `applyEventWrite` 这类按行同步的入口使用 */
       __markLoaded: (sid: string) => loaded.add(sid),
-      __setTruncated: (v: boolean) => {
-        truncated = v;
+      /**
+       * 测试用：标记某会话（或"所有会话"）的镜像加载被截断。
+       *
+       * 不传 `sid` 时按**全局**语义处理（只为兼容旧用法）；新用例必须传 `sid` ——
+       * 否则就造不出"一个会话截断不该波及其它会话"这条判据。
+       */
+      __setTruncated: (v: boolean, sid?: string) => {
+        if (sid === undefined) {
+          truncatedAny = v;
+          return;
+        }
+        if (v) truncatedSessions.add(sid);
+        else truncatedSessions.delete(sid);
       },
     };
   }
@@ -825,6 +848,22 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         throw e;
       } finally {
         pendingWrites -= 1;
+      }
+    },
+    /**
+     * **确认式写入**（第 184 波存储审计 S4 的测试双）。
+     *
+     * 真端口等的是引擎对 `settings.set` 的确认；这里 `persist` 是同步的（内存表就是"引擎"），
+     * 但它**会真的抛**（`failWrites` / 注入失败），所以"复制失败 ⇒ 源键必须还在"
+     * 这条契约在测试里是可造、可断言的。失败返回 false（不抛）——
+     * 与真端口的契约一致：调用方拿返回值判断，而不是靠异常。
+     */
+    async setConfirmed(key: string, value: unknown): Promise<boolean> {
+      try {
+        config.set(key, value);
+        return true;
+      } catch {
+        return false;
       }
     },
     remove(key: string) {

@@ -217,6 +217,19 @@ export interface StorageConfigPort {
   get<T = unknown>(key: string, fallback: T): T;
   /** 写入（内存即时生效 + 入队落库） */
   set(key: string, value: unknown): void;
+  /**
+   * 写入并**等它真的落库**，返回是否成功（可选能力，第 184 波存储审计 S4）。
+   *
+   * 为什么需要它：`set` 是"内存即时生效 + 异步落库"，失败只走上报通道 ——
+   * 调用方**拿不到"这次到底写进去了没有"**。而设置键迁移（`migration.ts`）的动作是
+   * "复制到新键 → 删掉旧键"：复制失败时旧键已经删掉 = **整份设置丢失**（无回滚无重试）。
+   * 有了这个入口，迁移可以做到"确认落库成功之后**才**删源"
+   * （对照 `secret-store` 的纪律："封存成功 → 原子写回 → **才**清明文"）。
+   *
+   * 缺这个能力的端口必须让调用方**如实知道**（返回 false / 缺失 ⇒ 不删源），
+   * 不许退化成"先删了再说"。
+   */
+  setConfirmed?(key: string, value: unknown): Promise<boolean>;
   /** 删除（内存即时生效 + 入队落库） */
   remove(key: string): void;
   /** 落库失败等异常情况（诊断/测试用） */

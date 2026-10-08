@@ -428,20 +428,29 @@ class TerminalManager {
     }));
   }
 
-  async killBackgroundJob(jobId: string): Promise<boolean> {
+  /**
+   * 终止一个后台发送。
+   *
+   * ★ 第 185 波（T3）：返回值从 `boolean` 改成**三态**。
+   *
+   * 改前对**已结束**的 job 直接 `return true`（因为 job 存在），而它在语义上被当作
+   * "杀掉了" ⇒ 调用方（`job-tools`）报一次不存在的 ✅。模型据此认为"命令被我停住了"，
+   * 而它其实早就自己跑完 —— 后续判断全建立在假事实上。
+   * 现在只有**真的从 running 转成 killed** 才回 `"killed"`。
+   */
+  async killBackgroundJob(jobId: string): Promise<"killed" | "already-finished" | "not-found"> {
     const job = this.backgroundJobs.get(jobId);
-    if (!job) return false;
-    if (job.status === "running") {
-      // 向会话前台发送 SIGINT (\x03)，对齐 dsh job_kill 语义
-      try {
-        await this.signal(job.sessionId, "SIGINT");
-      } catch {
-        // 会话已退出时忽略
-      }
-      job.status = "killed";
-      job.completedAt = Date.now();
+    if (!job) return "not-found";
+    if (job.status !== "running") return "already-finished";
+    // 向会话前台发送 SIGINT (\x03)，对齐 dsh job_kill 语义
+    try {
+      await this.signal(job.sessionId, "SIGINT");
+    } catch {
+      // 会话已退出时忽略
     }
-    return true;
+    job.status = "killed";
+    job.completedAt = Date.now();
+    return "killed";
   }
 
   /** 测试辅助：重置单例。 */
@@ -700,6 +709,8 @@ export function listTerminalBackgroundJobs() {
   return getTerminalManager().listBackgroundJobs();
 }
 
-export async function killTerminalBackgroundJob(jobId: string): Promise<boolean> {
+export async function killTerminalBackgroundJob(
+  jobId: string,
+): Promise<"killed" | "already-finished" | "not-found"> {
   return getTerminalManager().killBackgroundJob(jobId);
 }

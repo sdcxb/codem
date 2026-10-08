@@ -2661,41 +2661,105 @@ async function installSkillFromGitHubDir(
     // 下载并写入所有文件
     onProgress?.(50, `正在下载技能文件 (${files.length} 个)...`);
     let filesWritten = 0;
-    const downloadedContents = new Map<string, string>();
+    /**
+     * ⚠️ 第 184 波 F2（审计哈希的覆盖范围）：这里只装**真的写进技能目录**的内容。
+     *
+     * 改前是"下载成功就 `set`"（写盘失败也算），而 `computeContentHash(...)` 用整个集合
+     * 算审计哈希 ⇒ 审计哈希对应的那份文件集合与磁盘上的技能**不等价**。
+     */
+    const writtenContents = new Map<string, string>();
+    /**
+     * ★ 第 184 波 F2：失败的清单（口径与 `installer.ts` 的 `skipped` 一致）。
+     *
+     * 改前非 200 / 写盘失败只有一行 `console.warn` + `continue`，而**唯一**的失败判据是
+     * `filesWritten === 0` —— 10 个文件里 9 个因限流/403 失败也照样报「安装成功」并登记为可用
+     * （脚本缺失，界面无异常）。现在逐个记账，最后**如实**给出"成功几个 / 失败几个 / 为什么"。
+     *
+     * 这里进 `files` 的文件在扫描阶段已经过扩展名与大小过滤 ⇒ 清单里每一个都是
+     * "本该装上却没装上"，所以它非空就意味着技能是半成品（下面不再报 success）。
+     */
+    const failed: Array<{ path: string; reason: string }> = [];
 
     // SKILL.md 的内容已在前面下载
-    downloadedContents.set(skillMdFile.path, mdResp.body);
-
     for (const file of files) {
       // 跳过 SKILL.md（已下载）
       if (file.path === skillMdFile.path) {
         const fullPath = `${skillDir}${sep}${file.path.replace(/\//g, sep)}`;
-        await writeFile(fullPath, mdResp.body);
-        filesWritten++;
+        try {
+          await writeFile(fullPath, mdResp.body);
+          writtenContents.set(file.path, mdResp.body);
+          filesWritten++;
+        } catch (err: any) {
+          const reason = `写盘失败：${err?.message || String(err)}`;
+          failed.push({ path: file.path, reason });
+          console.warn(`[SkillMarket] Failed to write ${file.path}:`, err);
+        }
         continue;
       }
+
+      let body: string;
       try {
         const fileResp = await httpGet(file.downloadUrl);
         if (fileResp.status !== 200) {
+          failed.push({ path: file.path, reason: `下载失败（HTTP ${fileResp.status}）` });
           console.warn(`[SkillMarket] Failed to download ${file.path}: ${fileResp.status}`);
           continue;
         }
+        body = fileResp.body;
+      } catch (err: any) {
+        failed.push({ path: file.path, reason: `下载失败：${err?.message || String(err)}` });
+        console.warn(`[SkillMarket] Failed to download ${file.path}:`, err);
+        continue;
+      }
 
-        downloadedContents.set(file.path, fileResp.body);
-
-        const fullPath = `${skillDir}${sep}${file.path.replace(/\//g, sep)}`;
-        await writeFile(fullPath, fileResp.body);
+      const fullPath = `${skillDir}${sep}${file.path.replace(/\//g, sep)}`;
+      try {
+        await writeFile(fullPath, body);
+        writtenContents.set(file.path, body);
         filesWritten++;
 
         const progress = 50 + Math.round((filesWritten / files.length) * 40);
         onProgress?.(progress, `写入文件: ${file.path}`);
-      } catch (err) {
+      } catch (err: any) {
+        failed.push({ path: file.path, reason: `写盘失败：${err?.message || String(err)}` });
         console.warn(`[SkillMarket] Failed to write ${file.path}:`, err);
       }
     }
 
     if (filesWritten === 0) {
-      return { success: false, error: "所有文件下载失败。" };
+      return {
+        success: false,
+        skillName: skillDef.name,
+        filesWritten,
+        skipped: failed,
+        error: `所有文件下载失败。${failed.map((f) => `${f.path}: ${f.reason}`).join("；")}`,
+      };
+    }
+
+    /**
+     * ★ 第 184 波 F2：**部分失败不许报成功**。
+     *
+     * `failed` 非空 ⇒ 技能是半成品（脚本/资源缺失，SKILL.md 里引用的路径读不到东西）。
+     * 改前这条路照样 `success: true` + 「安装成功！」+ 注册为可用。
+     * 现在如实报"成功几个 / 失败几个 / 为什么"，并且**不注册、不写安装审计**
+     * （不把半成品当成品登记），让用户能重试（常见原因：GitHub 限流 / 403 / 网络中断）。
+     */
+    if (failed.length > 0) {
+      const detail = failed.map((f) => `${f.path}: ${f.reason}`).join("；");
+      onProgress?.(
+        100,
+        `技能 "${skillDef.name}" 安装未完成：${failed.length} 个文件未能写入`,
+      );
+      return {
+        success: false,
+        skillName: skillDef.name,
+        filesWritten,
+        skipped: failed,
+        warning: `${failed.length} 个文件未能写入，技能不完整`,
+        error:
+          `安装未完成：${files.length} 个文件里成功 ${filesWritten} 个、失败 ${failed.length} 个（${detail}）。` +
+          `技能未登记为可用，请重试。`,
+      };
     }
 
     onProgress?.(95, "正在注册技能...");
@@ -2706,9 +2770,9 @@ async function installSkillFromGitHubDir(
     skillDef.enabled = true;
     registry.register(skillDef);
 
-    // 审计记录
+    // 审计记录（哈希只覆盖**真的写进去**的内容 —— 见 `writtenContents` 的说明）
     try {
-      const hash = computeContentHash(downloadedContents);
+      const hash = computeContentHash(writtenContents);
       addInstallAuditEntry({
         skillName: skillDef.name,
         sourceId: skill.sourceId,
@@ -2750,7 +2814,7 @@ async function installSkillFromZipFiltered(
 ): Promise<InstallResult> {
   const { unzipSync, strFromU8 } = await import("fflate");
   const { getSkillRegistry, parseSkillMarkdown } = await import("./skill");
-  const { writeFile } = await import("../file-api");
+  const { writeFile, u8ToBase64 } = await import("../file-api");
 
   try {
     onProgress?.(60, "正在解压 ZIP 文件...");
@@ -2859,6 +2923,24 @@ async function installSkillFromZipFiltered(
       ".png", ".jpg", ".jpeg", ".gif", ".ico",
       ".toml", ".ini", ".cfg",
     ]);
+    /**
+     * ★ 第 184 波 F3：**二进制必须按二进制写**。
+     *
+     * 白名单里有 `.png/.jpg/.jpeg/.gif/.ico`，而改前的写盘是
+     * `strFromU8(fileData)`（UTF-8 解码）+ 文本 `writeFile` ⇒ 非 UTF-8 字节会被替换成
+     * U+FFFD，**图片字节被静默破坏**（SKILL.md 里引用的资源读出来是乱码，无人察觉）。
+     * 正确形态是 `writeFile(path, base64, { encoding: "base64" })`（`file-api.ts` 既有支持）。
+     */
+    const binaryExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".ico"]);
+    /**
+     * ★ 第 184 波 F3：跳过 / 失败都要**记账**（改前是裸 `continue`，一个都不记）。
+     *
+     * 口径与 `installer.ts` 一致：
+     * - `skipped`：本来就不装的文件（扩展名不在白名单 / 超过 1MB）——技能仍可用，但要如实带出；
+     * - `failed`：该装却没装上的（写盘失败）——技能是半成品，必须报失败。
+     */
+    const skipped: Array<{ path: string; reason: string }> = [];
+    const failed: Array<{ path: string; reason: string }> = [];
 
     for (const zipPath of targetPaths) {
       if (zipPath.endsWith("/") || zipPath.endsWith("\\")) continue;
@@ -2875,22 +2957,75 @@ async function installSkillFromZipFiltered(
       }
       if (!relativePath) continue;
 
-      // 检查扩展名
+      // 检查扩展名（不在白名单 ⇒ **记账**，不再静默跳过）
       const ext = relativePath.substring(relativePath.lastIndexOf(".")).toLowerCase();
-      if (!allowedExtensions.has(ext)) continue;
+      if (!allowedExtensions.has(ext)) {
+        skipped.push({ path: relativePath, reason: `扩展名 ${ext} 不在允许列表内` });
+        continue;
+      }
 
       // 检查文件大小
       const fileData = files[zipPath];
-      if (fileData.length > 1024 * 1024) continue;
+      if (fileData.length > 1024 * 1024) {
+        skipped.push({
+          path: relativePath,
+          reason: `文件过大（${fileData.length} 字节 > ${1024 * 1024}）`,
+        });
+        continue;
+      }
 
-      // 写入文件
+      // 写入文件：二进制按字节原样写，文本按 UTF-8 写
       const fullPath = `${skillDir}${sep}${relativePath.replace(/\//g, sep)}`;
-      const content = strFromU8(fileData);
-      await writeFile(fullPath, content);
+      try {
+        if (binaryExtensions.has(ext)) {
+          await writeFile(fullPath, u8ToBase64(fileData), { encoding: "base64" });
+        } else {
+          await writeFile(fullPath, strFromU8(fileData));
+        }
+      } catch (err: any) {
+        const reason = `写盘失败：${err?.message || String(err)}`;
+        failed.push({ path: relativePath, reason });
+        console.warn(`[SkillMarket] Failed to write ${relativePath}:`, err);
+        continue;
+      }
       filesWritten++;
 
       const progress = 75 + Math.round((filesWritten / targetPaths.length) * 20);
       onProgress?.(progress, `写入文件: ${relativePath}`);
+    }
+
+    /**
+     * ★ 第 184 波 F3：**一个文件都没写进去 ⇒ 安装失败**（改前这里没有任何零文件判据，
+     * 照样 `success: true` + 「安装成功！」）。
+     */
+    if (filesWritten === 0) {
+      const all = [...failed, ...skipped];
+      return {
+        success: false,
+        skillName: skill.name,
+        filesWritten: 0,
+        skipped: all,
+        error:
+          `安装失败：压缩包里的文件全部被跳过或写入失败（` +
+          `${all.map((s) => `${s.path}: ${s.reason}`).join("；") || "没有可写入的文件"}）。`,
+      };
+    }
+
+    /**
+     * ★ 第 184 波 F3：**写盘失败 ⇒ 不许报成功**（技能是半成品，上面已如实记账）。
+     * 刻意与 `installer.ts` 的 skipped/warning 口径一致：`skipped` 只是"本来就不装"，
+     * 如实带出 + warning；`failed` 是"该装却没装上"，报失败。
+     */
+    if (failed.length > 0) {
+      return {
+        success: false,
+        skillName: skill.name,
+        filesWritten,
+        skipped: [...failed, ...skipped],
+        error:
+          `安装未完成：${filesWritten} 个文件已写入、${failed.length} 个写入失败（` +
+          `${failed.map((f) => `${f.path}: ${f.reason}`).join("；")}）。技能未登记为可用。`,
+      };
     }
 
     onProgress?.(95, "正在注册技能...");
@@ -2908,6 +3043,12 @@ async function installSkillFromZipFiltered(
       skillName: skill.name,
       skill,
       filesWritten,
+      ...(skipped.length > 0
+        ? {
+            skipped,
+            warning: `${skipped.length} 个文件被跳过（不在允许列表内或过大），技能可能不完整`,
+          }
+        : {}),
     };
   } catch (err: any) {
     return {

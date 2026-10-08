@@ -1,1550 +1,1593 @@
 {
- "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
- "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
- "_counts": {
-  "total": 221,
-  "triaged": 221,
-  "pending": 0
- },
- "sites": [
-  {
-   "site": "src/core/session/executor.ts::executor.settleEmptyAssistantMidIteration::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "中途定稿的空助手行没进事件日志 ⇒ persist（与收尾那处同一条口径：这一行只存在于消息存储里，事件日志是投影重建的数据源，重建时它会消失，运行时不变量的 VISIBLE_BUT_NOT_RECORDED 判的就是它）。第 171 波补：用户两次报的缺口样例 assistant-…-20（第 20 次迭代 = 中途行）就是这处漏了钉空行造成的。",
-   "round": 171
-  },
-  {
-   "site": "src/core/session/executor.ts::executor.settleEmptyAssistant::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "收尾的空助手行没进事件日志 ⇒ persist（不是「发现」、也不是「动作没生效」：这一行只存在于消息存储里，而事件日志是投影重建的数据源，重建时它会消失）。第 154 轮 O-28 顺带把原来那句吞掉异常的 console.warn 换成了这个上报点。",
-   "round": 154
-  },
-  {
-   "site": "src/App.tsx::app.forkSession::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "分叉会话创建失败 ⇒ action（会话没建起来，功能没生效）。",
-   "round": 104
-  },
-  {
-   "site": "src/App.tsx::app.rewind.linkParent::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "回退会话的谱系没写入 ⇒ action（回退动作没生效）。",
-   "round": 104
-  },
-  {
-   "site": "src/App.tsx::app.rewind.reconcileMessageCount::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "回退后的消息计数没重算 ⇒ action（计数没更新，不是写盘失败）。",
-   "round": 104
-  },
-  {
-   "site": "src/App.tsx::store.saveMessages::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "消息写盘失败 ⇒ persist（这是最典型的落盘失败：聊天记录会丢）。",
-   "round": 104
-  },
-  {
-   "site": "src/components/AppErrorBoundary.tsx::appErrorBoundary.resetUiPreferences::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "崩溃后恢复界面设置没做完 ⇒ action（部分偏好仍是旧值）。",
-   "round": 104
-  },
-  {
-   "site": "src/components/CicdPanel.tsx::<动态>::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "CI/CD 工作流重试/取消**没生效**（`cicd.${kind}WorkflowRun`）⇒ action：动作失败，不是写盘。（本处：<动态>，第 213 行）",
-   "round": 104
-  },
-  {
-   "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "手动压缩没生效 ⇒ action（旧消息与摘要标记没有全部写完）。",
-   "round": 104
-  },
-  {
-   "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact.write::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "压缩写盘失败 ⇒ persist（刻意与上面那条分开：这条是真写盘失败）。",
-   "round": 104
-  },
-  {
-   "site": "src/components/ModelProfilePanel.tsx::modelProfile.updateSlot::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "档案槽位没更新（档案不存在或内置档案不可改）⇒ action。",
-   "round": 104
-  },
-  {
-   "site": "src/components/PluginManager.tsx::<动态>::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "插件管理面板初始化失败/插件注册服务超时未注册 ⇒ action：面板功能不可用。（本处：<动态>，第 446 行）",
-   "round": 104
-  },
-  {
-   "site": "src/components/PluginManager.tsx::<动态>::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "插件管理面板初始化失败/插件注册服务超时未注册 ⇒ action：面板功能不可用。（本处：<动态>，第 454 行）",
-   "round": 104
-  },
-  {
-   "site": "src/components/RecoveryPanel.tsx::<动态>::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "恢复面板里两个上报出口（scope/error/note 由参数传入）：persist 出口用于「恢复结果没写盘」、action 出口用于「恢复动作没生效」 —— 两者都是真失败，各自留原通道。（本处是转发出入口，不是具体调用点。）（本处：<动态>，第 32 行）",
-   "round": 104
-  },
-  {
-   "site": "src/components/RecoveryPanel.tsx::<动态>::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "恢复面板里两个上报出口（scope/error/note 由参数传入）：persist 出口用于「恢复结果没写盘」、action 出口用于「恢复动作没生效」 —— 两者都是真失败，各自留原通道。（本处是转发出入口，不是具体调用点。）（本处：<动态>，第 33 行）",
-   "round": 104
-  },
-  {
-   "site": "src/components/SettingsPanel.tsx::settings.codegraph.toggle::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "代码图谱开关没生效 ⇒ action。",
-   "round": 104
-  },
-  {
-   "site": "src/components/SnapshotPanel.tsx::snapshotPanel.getAll::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "快照列表**读不出来** ⇒ action（读取失败 ⇒ 功能本次不可用；不是写盘）。",
-   "round": 104
-  },
-  {
-   "site": "src/components/WaterLevelBanner.tsx::waterLevel.handoff::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "「开启新对话（交接当前工作）」这个按钮的动作**没生效**（新会话可能已建但工作没交过去）⇒ action。它是用户点出来的功能失败，不是写盘失败，也不是自检发现。",   "round": 122
-  },
-  {
-   "site": "src/components/WaterLevelBanner.tsx::waterLevel.handover.invalid::#1",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "机械生成的交接正文**没通过协议校验**（`handover.ts::checkHandover`）⇒ advisory。这不是「这次操作失败」，而是**代码缺陷的自检发现**：正文里的路径都经磁盘核实、完成判据固定可判定，理论上不可能不合规 —— 一旦不合规就说明模板与校验规则脱钩了。用 advisory 的语气才不会让用户以为「重试一下就好」。",
-   "round": 122
-  },
-  {
-   "site": "src/core/agent/agent.ts::agentRegistry.loadPresets::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "自定义智能体预设没加载 ⇒ action（列表里看不到自定义智能体）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "回滚这个动作没执行（端口没接手、读不到变更记录）⇒ action。不是 persist：没有写入发生。",
-   "round": 100
-  },
-  {
-   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "变更记录不存在 ⇒ action（回滚没执行；与第 100 轮改过的另外两处一致）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#3",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "回滚这个动作没执行（补丁正文本次取不到）⇒ action。同一文件里 #2（记录不存在）本来就是 action，三处语义一致了。",
-   "round": 100
-  },
-  {
-   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#4",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "记录的 patch 为空 ⇒ action（回滚没执行：没有内容可回滚）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#5",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "按需读变更记录**本身失败**（命令抛错 / 存储不可用）⇒ action：回滚这个动作没执行，而它是**可重试**的（不是「记录不存在」那条业务失败）。第 269 波新增：这张表不再有域镜像，读改成按需查询，于是「读不到」与「确实没有」必须在**上报文案**上分开 —— 混成一句会让用户以为变更历史丢了。不是 persist：没有任何写入发生。",
-   "round": 269
-  },
-  {
-   "site": "src/core/environment/worktree-manager.ts::worktree.hasUncommittedChanges::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "git status 没跑通 ⇒ action（无法确认是否有未提交修改，不能当成「工作区干净」）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/environment/worktree-manager.ts::worktree.setExecutionMode::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "执行模式没写入 ⇒ persist（重启后回到旧模式 = 落盘失败）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/goal/goal.ts::goal.create::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "目标未保存（域镜像未接手）⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/goal/goal.ts::goal.update::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "目标未更新（域镜像未接手）⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.archive::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.archive，第 247 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.create::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.create，第 125 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.delete，第 257 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.deleteOlderThan::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.deleteOlderThan，第 322 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.markAllRead::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.markAllRead，第 228 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.markRead::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.markRead，第 197 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.sweep::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.sweep，第 111 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/inbox/inbox-storage.ts::inbox.unarchive::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.unarchive，第 279 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/issue/issue-storage.ts::issue.addComment::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.addComment，第 251 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/issue/issue-storage.ts::issue.create::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.create，第 134 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/issue/issue-storage.ts::issue.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.delete，第 215 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/issue/issue-storage.ts::issue.deleteComment::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.deleteComment，第 269 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/issue/issue-storage.ts::issue.update::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.update，第 204 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/flashcard-store.ts::flashcard.create::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.create，第 125 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/flashcard-store.ts::flashcard.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.delete，第 225 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/flashcard-store.ts::flashcard.deleteByNotebook::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.deleteByNotebook，第 241 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.review，第 269 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.review，第 330 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/flashcard-store.ts::flashcard.update::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.update，第 215 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "旧出链未清除（域镜像未接手）⇒ persist（链接会重复显示）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "旧出链未清除（写入报错）⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#1",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "容量发现：读**成功**了（N 块都读到了），只是按缓存预算不缓存 ⇒ 走 advisory。不是 persist（没有任何写盘动作）、也不是 action（功能没失败，是「这块笔记本超出预算」这个事实）。",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读侧失败：端口在 await 期间被换掉 ⇒ 本次按需读作废。走 action（功能本次没生效）。原通道 persist 会印「写盘失败……本次改动只存在于内存」，而这里什么都没写、也没改动被丢。",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#3",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读侧失败：文本块未按需读到（catch 分支）⇒ action（功能本次没生效）。没有写盘动作，故不是 persist。",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/storage.ts::chunk.onDemand::#4",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读侧作废：按需读落地时代际核对不上（发起之后发生过删除）⇒ **丢弃**这份过期结果并如实上报 ⇒ action（功能本次没生效；程序没写任何东西、也没有改动被丢 —— 丢的是一次过期的读结果）。判据 NC-DEL-3：删除之后到达的预热结果不许把被删的块写回缓存（否则删除之后同步读会读回已删的块）。与同区 #3 同源：都是“按需读本次没生效”，下一次读会重新拉。",
-   "round": 255
-  },
-  {
-   "site": "src/core/knowledge/storage.ts::notebook.refreshCounts::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读侧失败：计数读不到 ⇒ 本次不刷新。走 action。刻意不是 persist —— 代码注释写明「**没有**写回 0（旧值保留）」，而 persist 的默认后果句是「本次改动只存在于内存」，与实际恰好相反。",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/storage.ts::noteVersion.restore::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：笔记版本快照的保存/回滚没落盘（域镜像未接手或未就绪）⇒ persist。这两个是 `noteVersion.save` / `noteVersion.restore`（本文件里读侧的 `chunk.onDemand` 与 `notebook.refreshCounts` 已按上面的理由单独改成 advisory / action）。（本处：noteVersion.restore，第 1787 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/knowledge/storage.ts::noteVersion.save::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：笔记版本快照的保存/回滚没落盘（域镜像未接手或未就绪）⇒ persist。这两个是 `noteVersion.save` / `noteVersion.restore`（本文件里读侧的 `chunk.onDemand` 与 `notebook.refreshCounts` 已按上面的理由单独改成 advisory / action）。（本处：noteVersion.save，第 1731 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/llm/cost-tracker.ts::costTracker.setLimits::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "成本上限没保存 ⇒ persist（重启回到旧值）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/feedback.ts::feedback.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "反馈删除没落盘（镜像未就绪 / 端口未注册）⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/index.ts::delegationTools.agentTeams::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "agent-teams 工具没注册 ⇒ action（模型无法建队派活）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/index.ts::delegationTools.computerUse::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "computer-use 工具没注册 ⇒ action（模型无法读屏/操作桌面）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/index.ts::llmEngine.subagentRuntimeInit::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "子智能体/委派能力本次不可用 ⇒ action。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/model-profile.ts::modelProfile.save::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "模型档案写盘失败 ⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/tools/show-todo.ts::todo.load::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读不到待办列表（两态里的 B 态）⇒ action。不是 persist：没有写盘；也不是 advisory：调用方需要据此提示「稍后重试」，它确实是一次功能缺失。",
-   "round": 100
-  },
-  {
-   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "业务失败：待办列表**已经不在库里**（可能随会话被删）⇒ 用户的勾选没生效。走 action。刻意不是 persist：这里什么都没写（连目标行都没有），而 persist 的默认后果句是「本次改动只存在于内存」；也不是 advisory：这是一次真实的动作失败，不是「发现」。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "todos 字段是坏 JSON ⇒ **勾选没生效**（代码刻意不覆盖写，避免把坏数据写回去）⇒ action。数据损坏这件事写在 message 与 extra 里，不会因为换通道而消失；不选 advisory 是因为用户的操作确实失败了（advisory 的语气是「不影响本次使用」）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#3",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "勾选的条目**不在列表里**（界面显示的是旧快照）⇒ action：本来就是 action，确认。",
-   "round": 104
-  },
-  {
-   "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#4",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "用户的勾选**没生效** ⇒ action。不是 persist：这里连目标行都没读到（不是写失败）；C-5 的现场就是它静默无效，所以必须留在失败通道里。",
-   "round": 100
-  },
-  {
-   "site": "src/core/mcp/mcp.ts::mcp.saveConfigs::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "MCP 配置写盘失败 ⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/mcp/mcp.ts::mcp.setCodeGraphEnabled::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "代码图谱开关写盘失败 ⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/permission/permission.ts::permission.saveCustomRules::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "自定义权限规则写盘失败 ⇒ persist（重启后规则丢失，安全相关）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/provider/agent-teams-service.ts::agentTeams.persist::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "团队状态没持久化 ⇒ persist（重启后团队与任务看板消失 —— 消息里就是这么说的）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/provider/session-recovery-provider.ts::sessionRecovery.clearSnapshot::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "恢复快照没清除 ⇒ persist（下次恢复会提示旧内容）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/recovery/recovery.ts::recovery.save::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "恢复状态写盘失败 ⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/retry/retry.ts::retry.setConfig::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "重试配置没保存 ⇒ persist（重启回默认值）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读沙箱设置失败但沿用上次成功的值 ⇒ action（读失败；提示里如实说明仍按上次值生效）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读沙箱设置失败且没有历史值 ⇒ action（本次按关闭处理，提示里如实说明开关不代表生效状态）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/session/delegation-storage.ts::delegation.clearCompletedDelegations::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.clearCompletedDelegations，第 242 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/session/delegation-storage.ts::delegation.createDelegationTask::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.createDelegationTask，第 90 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/session/delegation-storage.ts::delegation.deleteDelegationTask::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.deleteDelegationTask，第 219 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/session/preferences.ts::preferences.disabledPlugins.diverged::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "禁用插件列表在两侧不一致（已给 consequence）⇒ persist：写回不一致状态属落盘问题。",
-   "round": 104
-  },
-  {
-   "site": "src/core/session/preferences.ts::preferences.forgetLastSession::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "上次会话键没清理 ⇒ persist（磁盘上的状态没被清掉：下次启动仍可能指向已删会话）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/session/session-read-state.ts::session.markRead::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "已读水位没保存 ⇒ persist（重启后可能多一个未读徽标）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/settings/settings.ts::settings.saveFile::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "设置写文件失败（带 path）⇒ persist：同上。（本处：settings.saveFile，第 563 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/slots/SlotBridge.tsx::<动态>::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "插件组件/降级组件**崩溃** ⇒ action：对应界面区域已回退到降级组件，功能本次不可用。（本处：<动态>，第 40 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/slots/SlotBridge.tsx::<动态>::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "插件组件/降级组件**崩溃** ⇒ action：对应界面区域已回退到降级组件，功能本次不可用。（本处：<动态>，第 173 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.addMember::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.addMember，第 281 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.archive::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.archive，第 208 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.create::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.create，第 107 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.delete，第 218 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.removeMember::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.removeMember，第 299 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.unarchive::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.unarchive，第 248 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.update::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.update，第 189 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/squad/squad-storage.ts::squad.updateMemberRole::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.updateMemberRole，第 318 行）",
-   "round": 100
-  },
-  {
-   "site": "src/core/storage/account.ts::account.activate::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.activate，第 183 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/account.ts::account.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.delete，第 154 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/account.ts::account.save::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.save，第 123 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/account.ts::account.update::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.update，第 144 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/agent-profile-storage.ts::agentProfile.create::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.create，第 70 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/agent-profile-storage.ts::agentProfile.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.delete，第 125 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/agent-profile-storage.ts::agentProfile.update::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.update，第 115 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::<动态>::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "启动期的流读失败 ⇒ 该步骤没跑成",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::<动态>::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "Rust 存储引擎未能启动 ⇒ 本进程无可用存储",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::<动态>::#3",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "引擎缺少必需命令 ⇒ 版本不匹配（动作没生效）",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::<动态>::#4",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读不到引擎命令清单 ⇒ 无法校验（没跑成）",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::<动态>::#5",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "搜索索引重建未完成（下次启动重试）",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::<动态>::#6",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "**发现 + 自愈**：新库关键表为空但旧库有数据 ⇒ 正在从旧库重建一次（第 90 轮从 action 改成 advisory：事实不是「操作没生效」，而是对账发现了不一致并且马上修）",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::<动态>::#7",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "旧数据自动迁移未完成（旧库未动，下次重试）",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::storage.dataRoot::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "数据根目录解析失败 ⇒ 没有可信落点（写盘失败的前置）",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/bootstrap.ts::storage.shutdown::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "存储收尾未完成（数据仍在 WAL，下次启动继续）",
-   "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
-  },
-  {
-   "site": "src/core/storage/credential-startup-report.ts::secrets.migrate::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "明文**没被封存**（安全动作未生效，仍是明文）⇒ 真失败"
-  },
-  {
-   "site": "src/core/storage/credential-startup-report.ts::secrets.noBackend::#1",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "本机**没有**可用的系统加密 ⇒ 提醒（环境事实，不是失败）"
-  },
-  {
-   "site": "src/core/storage/credential-startup-report.ts::secrets.residue::#1",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "行级封存生效、**字节级残留**没回收 ⇒ 提醒（要人判断的风险）"
-  },
-  {
-   "site": "src/core/storage/credential-startup-report.ts::secrets.unseal::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "密钥**解不开** ⇒ 真失败：这些 provider 现在用不了（O-16 / C-22 的修复点）"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "表在窗口期内未就绪 ⇒ 本次写放弃（写没落地）",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#10",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "整表替换失败（重建阶段）⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "域写队列已满 ⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#3",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "域写重放时端口已不在 ⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#4",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "域写重放失败 ⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#5",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "域写重放失败 ⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#6",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口已注册但域镜像未接手 ⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#7",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口已注册但域镜像未接手（带 options）⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#8",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "批量写里某一行失败 ⇒ 该行写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/domain-store.ts::<动态>::#9",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "批量写整批失败 ⇒ 写没落地",
-   "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::<动态>::#1",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "**发现**：事件类型未登记（事件照样写入、不丢数据）（第 90 轮从 persist 改成 advisory：修前横幅会说「数据保存失败…重启应用后会丢失」，两句都是假的）",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::eventLog.append::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未接手 ⇒ 事件未写入（写盘失败）",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::eventLog.appendBatch::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未接手 ⇒ 批量事件未写入",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::eventLog.compact::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "锚点之上有非 session_meta 事件 ⇒ 压缩无法同时保一致（未执行）",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::eventLog.compact::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未接手 ⇒ 压缩未落库",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::eventLog.deleteAllForSession::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未接手 ⇒ 会话事件未删除",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::eventLog.forkSession::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未接手 ⇒ 源会话事件读不到（fork 未生效）",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-log.ts::eventLog.forkSession::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未接手 ⇒ fork 未生效",
-   "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
-  },
-  {
-   "site": "src/core/storage/event-projection.ts::eventProjection.compaction::#1",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "**投影没有失败**：这条 compaction 事件形状不合契约时，投影按「不删除任何消息」降级处理并继续跑完，存储自检会在维护里报出这一行 ⇒ 属「发现」，走 advisory。原来走 persist，提示条会印「写盘失败……本次改动只存在于内存」——与事实相反。",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/file-change-storage.ts::fileChange.create::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "文件变更记录的写入/按会话删除没落盘（域镜像未接手）⇒ persist：回滚能力依赖它，丢了就回滚不了。（本处：fileChange.create，第 83 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/file-change-storage.ts::fileChange.deleteBySession::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "文件变更记录的写入/按会话删除没落盘（域镜像未接手）⇒ persist：回滚能力依赖它，丢了就回滚不了。（本处：fileChange.deleteBySession，第 149 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/file-change-storage.ts::fileChange.updateStatus::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "回滚之后那条记录的状态没写回去（端口没接手这次写）⇒ persist：状态停在旧值意味着变更历史一直显示「未回滚」，用户以为没回滚成功。第 269 波新增（判据 GATE-13 要求 domainWrite 的 false 必须被处理）：写没被接手时**既如实上报**（用户可见）**又返回 0**（调用方的分支判据）—— 两个接收方，两件事。",
-   "round": 269
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.auditPrune::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "审计裁剪**没跑成** ⇒ 真失败，已补 title「维护：审计裁剪未跑成」"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.credentialCensus::#1",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "凭据普查的**发现**（普查跑成了，报的是结果）⇒ advisory；修前借 action 语气，横幅会说「该功能本次不可用，请重试」而那是假建议（C-21）"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.eventStructure::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "**这个会话**的结构自检没跑成（本次不判定该会话）⇒ 真失败：没检查不等于没问题（与 #2 是两个语义，别混）"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.integrityCheck::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "完整性检查**没跑成**（已留重建标记）⇒ 真失败，已补 title「维护：完整性检查未跑成」（修前控制台印「写盘失败」是假的）"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "**这个会话**的不变量检查没跑成 ⇒ 真失败（未计入已检查数）"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "读侧镜像未就绪 ⇒ 真失败（这些会话本次**没有被检查**，不能当成没有缺口）"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#3",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "运行时不变量审计未跑成（checked=0）⇒ 真失败：不做任何结论"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.storageCompact::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "空间回收**没跑成** ⇒ 真失败，已补 title「维护：空间回收未跑成」"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "遥测裁剪**没跑成** ⇒ 真失败（维护动作未生效），已补真实 title「维护：遥测裁剪未跑成」"
-  },
-  {
-   "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune.mirror::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "镜像未同步 ⇒ 真失败（界面那份数据落后），已补 title「维护：遥测镜像未同步」"
-  },
-  {
-   "site": "src/core/storage/message.ts::<动态>::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "消息已写日志、查询索引未更新 ⇒ 索引写失败",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::<动态>::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "索引写失败（note 说明具体哪一步）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::<动态>::#3",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "索引写失败（note 说明具体哪一步）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.addToolCall::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "工具调用未写查询索引 ⇒ 索引写失败",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.appendToMessage::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "消息不存在或索引不可读 ⇒ 追加上去的正文没落地",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.attachmentContent::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "附件正文未取到 ⇒ 本次读失败（下次会再试）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.attachmentExternalize::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "附件外置标记未写回 ⇒ 写没落地（正文保留内联）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.attachmentIndex::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "附件未写查询索引 ⇒ 索引写失败",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.createMessage.index::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "权威日志已写、查询索引未更新 ⇒ 索引写失败",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.deleteMessagesByIds::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "缺 messages 能力 ⇒ 未在索引里隐藏（只写了墓碑）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.fts.remove::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "全文索引旧行未清除 ⇒ 可能命中已删消息",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.fts.upsert::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "全文索引未更新 ⇒ 该条暂时搜不到",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.rebuildSessionFts::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "会话 FTS 未对齐 ⇒ 搜索可能漏新消息",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.reconcileMessageCount::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "索引真值读不到 ⇒ 计数未重算（没跑成）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.reconcileMessageCount::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "会话行在镜像里读不到 ⇒ 计数未重算（没跑成）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.sessionIdsForMessages::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "缺 messages 能力 ⇒ 无法判定消息归属（本次跳过）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.toolCalls.warm::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "工具调用未能从索引预热 ⇒ 本次回退旧路径（功能降级）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.trimIndexedMessages::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "sessions 域镜像未就绪 ⇒ 索引裁剪整体跳过（没跑成）",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.updateMessage.index::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "改动已写日志、查询索引未更新 ⇒ 索引写失败",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/message.ts::message.updateToolCall::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "工具调用结果未写查询索引 ⇒ 索引写失败",
-   "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
-  },
-  {
-   "site": "src/core/storage/persist-failure.ts::<动态>::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "**通道自身的转发定义**（reportPersistFailure 转发到 reportFailure 的 persist 分支），不是业务调用点 ⇒ persist"
-  },
-  {
-   "site": "src/core/storage/persist-failure.ts::<动态>::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "**通道自身的转发定义**（reportActionFailure 转发到 action 分支），不是业务调用点 ⇒ action"
-  },
-  {
-   "site": "src/core/storage/persist-failure.ts::<动态>::#3",
-   "kind": "advisory",
-   "status": "triaged",
-   "reason": "**通道自身的转发定义**（reportAdvisory 转发到 advisory 分支），不是业务调用点 ⇒ advisory"
-  },
-  {
-   "site": "src/core/storage/prompt-draft.ts::promptDraft.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "提示词草稿的保存/删除没落盘（查询索引不可用）⇒ persist：草稿会丢。（本处：promptDraft.delete，第 149 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/prompt-draft.ts::promptDraft.save::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "提示词草稿的保存/删除没落盘（查询索引不可用）⇒ persist：草稿会丢。（本处：promptDraft.save，第 115 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore，第 298 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore.setting::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore.setting，第 156 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/rust-port.ts::storage.corrupt::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "引擎报存储库损坏、命令失败 ⇒ persist：这次操作确实失败了、数据有丢失风险，提示里要求「期间请勿继续写入」。刻意不选 advisory —— advisory 的语气是「不影响本次使用」，与这里相反。",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/rust-port.ts::storage.recovered::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "库损坏后已重建空库（坏文件已备份）⇒ action：查询索引丢了、需要从日志重建，功能受影响。同样刻意不选 advisory，理由同上。",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "水位记录读不到 ⇒ 本次自检不判定（也不覆盖水位）",
-   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
-  },
-  {
-   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "已恢复但复核读取失败 ⇒ 保持原水位，下次重试",
-   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
-  },
-  {
-   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#3",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "已执行旧库恢复、但复核读取失败 ⇒ 无法确认结果（保持原水位，下次重试）——**没跑成**，不能当「恢复成功」",
-   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
-  },
-  {
-   "site": "src/core/storage/self-heal.ts::storage.selfHeal::#4",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "旧库恢复执行了但复核仍是 0 条消息 ⇒ 恢复**没生效**（这是真失败，不是发现）",
-   "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
-  },
-  {
-   "site": "src/core/storage/session-jsonl.ts::sessionLog.compact::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "日志压缩没做成（读不出来）⇒ persist：权威副本的**磁盘状态**没有改善（体积一直是这样），属持久状态问题；不是 action（压缩不是一个「动作没生效」就结束的功能点），也不是 advisory（这条是失败，不是发现）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/session-log-bridge.ts::sessionLog.backfill::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "N 个会话本次**没有回填**权威日志（镜像没加载完时 listMessages 返回空数组）⇒ persist：权威日志没建出来，属真落盘缺失。",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/session-log-bridge.ts::sessionLog.rebuildIndex::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "索引重建失败 ⇒ persist（本次重建没完成）。⚠️ 本轮**修掉了这条 extra 里的假话**：原写「已回退旧路径重试」，而回退第 17 轮就删了。",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/settings.ts::<动态>::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "设置写文件失败 ⇒ persist：设置只在内存里，重启即回旧值。（本处：<动态>，第 94 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/sync-engine.ts::syncEngine.autoSync::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "自动同步写盘失败 ⇒ persist。",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/v2-session.ts::v2Session.delete::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "v2 会话的保存/删除没落盘（会话域端口未接手）⇒ persist：会话数据会丢。（本处：v2Session.delete，第 79 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/storage/v2-session.ts::v2Session.save::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "v2 会话的保存/删除没落盘（会话域端口未接手）⇒ persist：会话数据会丢。（本处：v2Session.save，第 73 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/store.ts::store.createProject::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "建项目写盘失败",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.createWorktree::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "建 worktree 失败 ⇒ 已回退主工作区（动作没生效）",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.deleteProject::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "删项目写盘失败",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.fallbackExecutionMode::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "回落执行模式写盘失败",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.forkSession.messageCount::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "分叉会话的消息计数未写入 ⇒ 写没落地",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.forkSession.reconcile::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "分叉后的计数未复核 ⇒ 复核没跑成",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.persistWorktreePath::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "worktree 路径未保存 ⇒ 写没落地",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.removeWorktree::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "清理 worktree 失败 ⇒ 磁盘残留（动作没生效）",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.updateProject::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "改项目写盘失败",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/store.ts::store.updateSession::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "改会话写盘失败",
-   "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
-  },
-  {
-   "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 77 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 132 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#3",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 142 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/telemetry/telemetry.ts::<动态>::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "遥测写失败（note 说明哪一步）",
-   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
-  },
-  {
-   "site": "src/core/telemetry/telemetry.ts::telemetry.clearAll::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "域镜像未就绪 ⇒ 没有清空任何行（没跑成）",
-   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
-  },
-  {
-   "site": "src/core/telemetry/telemetry.ts::telemetry.clearAll::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "删除时端口失去就绪 ⇒ 没有清空任何行（没跑成）",
-   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
-  },
-  {
-   "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "违反外键约束被剔除（数据问题，不再重试）⇒ 这些事件没落地",
-   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
-  },
-  {
-   "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未注册 ⇒ 事件未写入",
-   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
-  },
-  {
-   "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#3",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "端口未接手 ⇒ 事件未写入（内存保留重试）",
-   "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
-  },
-  {
-   "site": "src/core/ui-plugins/index.ts::uiPlugins.load::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "UI 插件没加载 ⇒ action（对应界面区域缺失）。",
-   "round": 104
-  },
-  {
-   "site": "src/core/ui/native-dialog.ts::<动态>::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 176 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/ui/native-dialog.ts::<动态>::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 189 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/ui/native-dialog.ts::<动态>::#3",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 223 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/ui/native-dialog.ts::<动态>::#4",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 232 行）",
-   "round": 104
-  },
-  {
-   "site": "src/core/ui/native-dialog.ts::<动态>::#5",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 241 行）",
-   "round": 104
-  },
-  {
-   "site": "src/hooks/useWindowState.ts::useWindowState.restore::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "窗口尺寸/位置没恢复 ⇒ action（窗口状态没生效；不涉及写盘）。",
-   "round": 104
-  },
-  {
-   "site": "src/plugins/library-ops/store.ts::libraryOps.persistLayoutOverrides::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "插件面板的设置/布局调整没落盘 ⇒ persist：用户的布局调整重启即丢。（本处：libraryOps.persistLayoutOverrides，第 164 行）",
-   "round": 104
-  },
-  {
-   "site": "src/plugins/library-ops/store.ts::libraryOps.persistSettings::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "插件面板的设置/布局调整没落盘 ⇒ persist：用户的布局调整重启即丢。（本处：libraryOps.persistSettings，第 136 行）",
-   "round": 104
-  },
-  {
-   "site": "src/store.ts::store.loadMoreMessages::#1",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "历史读路径不可用 ⇒ 更早的消息没读出来（不代表没有历史）",
-   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-  },
-  {
-   "site": "src/store.ts::store.loadMoreMessages::#2",
-   "kind": "action",
-   "status": "triaged",
-   "reason": "读更早消息抛错 ⇒ 同上，本次读失败",
-   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-  },
-  {
-   "site": "src/store.ts::store.saveMessages::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "本进程没有可用存储 ⇒ 本次运行内不再尝试写入",
-   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-  },
-  {
-   "site": "src/store.ts::store.saveMessages::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "消息归属不一致 ⇒ 已拒绝写入（保护动作）",
-   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-  },
-  {
-   "site": "src/store.ts::store.saveMessages::#3",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "消息未能保存 ⇒ 写盘失败",
-   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-  },
-  {
-   "site": "src/store.ts::store.setFeedback::#1",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "反馈写未被接受 ⇒ 未保存",
-   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-  },
-  {
-   "site": "src/store.ts::store.setFeedback::#2",
-   "kind": "persist",
-   "status": "triaged",
-   "reason": "反馈写入抛错 ⇒ 未保存",
-   "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+  "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area`）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期；pending 数量在用例里做**棘轮（只许降不许升）**。",
+  "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。",
+  "_counts": {
+    "total": 227,
+    "triaged": 227,
+    "pending": 0
+  },
+  "sites": [
+    {
+      "site": "src/App.tsx::app.forkSession::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "分叉会话创建失败 ⇒ action（会话没建起来，功能没生效）。",
+      "round": 104
+    },
+    {
+      "site": "src/App.tsx::app.rewind.linkParent::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "回退会话的谱系没写入 ⇒ action（回退动作没生效）。",
+      "round": 104
+    },
+    {
+      "site": "src/App.tsx::app.rewind.reconcileMessageCount::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "回退后的消息计数没重算 ⇒ action（计数没更新，不是写盘失败）。",
+      "round": 104
+    },
+    {
+      "site": "src/App.tsx::store.saveMessages::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "消息写盘失败 ⇒ persist（这是最典型的落盘失败：聊天记录会丢）。",
+      "round": 104
+    },
+    {
+      "site": "src/components/AppErrorBoundary.tsx::appErrorBoundary.resetUiPreferences::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "崩溃后恢复界面设置没做完 ⇒ action（部分偏好仍是旧值）。",
+      "round": 104
+    },
+    {
+      "site": "src/components/CicdPanel.tsx::<动态>::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "CI/CD 工作流重试/取消**没生效**（`cicd.${kind}WorkflowRun`）⇒ action：动作失败，不是写盘。（本处：<动态>，第 213 行）",
+      "round": 104
+    },
+    {
+      "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "手动压缩没生效 ⇒ action（旧消息与摘要标记没有全部写完）。",
+      "round": 104
+    },
+    {
+      "site": "src/components/ContextMonitor.tsx::contextMonitor.manualCompact.write::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "压缩写盘失败 ⇒ persist（刻意与上面那条分开：这条是真写盘失败）。",
+      "round": 104
+    },
+    {
+      "site": "src/components/ModelProfilePanel.tsx::modelProfile.updateSlot::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "档案槽位没更新（档案不存在或内置档案不可改）⇒ action。",
+      "round": 104
+    },
+    {
+      "site": "src/components/PluginManager.tsx::<动态>::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "插件管理面板初始化失败/插件注册服务超时未注册 ⇒ action：面板功能不可用。（本处：<动态>，第 446 行）",
+      "round": 104
+    },
+    {
+      "site": "src/components/PluginManager.tsx::<动态>::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "插件管理面板初始化失败/插件注册服务超时未注册 ⇒ action：面板功能不可用。（本处：<动态>，第 454 行）",
+      "round": 104
+    },
+    {
+      "site": "src/components/RecoveryPanel.tsx::<动态>::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "恢复面板里两个上报出口（scope/error/note 由参数传入）：persist 出口用于「恢复结果没写盘」、action 出口用于「恢复动作没生效」 —— 两者都是真失败，各自留原通道。（本处是转发出入口，不是具体调用点。）（本处：<动态>，第 32 行）",
+      "round": 104
+    },
+    {
+      "site": "src/components/RecoveryPanel.tsx::<动态>::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "恢复面板里两个上报出口（scope/error/note 由参数传入）：persist 出口用于「恢复结果没写盘」、action 出口用于「恢复动作没生效」 —— 两者都是真失败，各自留原通道。（本处是转发出入口，不是具体调用点。）（本处：<动态>，第 33 行）",
+      "round": 104
+    },
+    {
+      "site": "src/components/SessionRecovery.tsx::sessionRecovery.handleRecover::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "「恢复此会话」点下去但**没能真的恢复**（切换失败/目标不在列表）⇒ action（动作失败：功能没生效）。第 184 波修的就是这里原来**静默 no-op**：`switchSession` 找不到会话时什么都不做、弹窗照常关闭，用户以为恢复了。现在 `switchSession` 返回 boolean、失败时如实上报并**不关窗**。",
+      "round": 185
+    },
+    {
+      "site": "src/components/SessionRecovery.tsx::sessionRecovery.handleRecover::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "同上第二条上报路径（切换抛错那一支）⇒ action。这条通道存在的**全部理由**就是「会话可能已经丢了」，所以它的失败绝不能被吞掉（`RecoveryPanel.tsx` 每支都 fail，这份当时没跟上）。",
+      "round": 185
+    },
+    {
+      "site": "src/components/SessionRecovery.tsx::sessionRecovery.loadSessions::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "恢复列表**读不到** ⇒ action（功能没生效）。第 184 波修的是这里原来 `catch {}` 之后渲染「暂无可恢复的会话」——把「读不到」说成「没有」，而这条通道存在的意义正是「会话可能已经丢了」。现在如实上报并给重试入口。",
+      "round": 185
+    },
+    {
+      "site": "src/components/SettingsPanel.tsx::settings.codegraph.toggle::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "代码图谱开关没生效 ⇒ action。",
+      "round": 104
+    },
+    {
+      "site": "src/components/SnapshotPanel.tsx::snapshotPanel.getAll::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "快照列表**读不出来** ⇒ action（读取失败 ⇒ 功能本次不可用；不是写盘）。",
+      "round": 104
+    },
+    {
+      "site": "src/components/WaterLevelBanner.tsx::waterLevel.handoff::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "「开启新对话（交接当前工作）」这个按钮的动作**没生效**（新会话可能已建但工作没交过去）⇒ action。它是用户点出来的功能失败，不是写盘失败，也不是自检发现。",
+      "round": 122
+    },
+    {
+      "site": "src/components/WaterLevelBanner.tsx::waterLevel.handover.invalid::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "机械生成的交接正文**没通过协议校验**（`handover.ts::checkHandover`）⇒ advisory。这不是「这次操作失败」，而是**代码缺陷的自检发现**：正文里的路径都经磁盘核实、完成判据固定可判定，理论上不可能不合规 —— 一旦不合规就说明模板与校验规则脱钩了。用 advisory 的语气才不会让用户以为「重试一下就好」。",
+      "round": 122
+    },
+    {
+      "site": "src/core/agent/agent.ts::agentRegistry.loadPresets::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "自定义智能体预设没加载 ⇒ action（列表里看不到自定义智能体）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "回滚这个动作没执行（端口没接手、读不到变更记录）⇒ action。不是 persist：没有写入发生。",
+      "round": 100
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "变更记录不存在 ⇒ action（回滚没执行；与第 100 轮改过的另外两处一致）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#3",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "回滚这个动作没执行（补丁正文本次取不到）⇒ action。同一文件里 #2（记录不存在）本来就是 action，三处语义一致了。",
+      "round": 100
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#4",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "记录的 patch 为空 ⇒ action（回滚没执行：没有内容可回滚）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/environment/file-change-tracker.ts::fileChange.revert::#5",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "按需读变更记录**本身失败**（命令抛错 / 存储不可用）⇒ action：回滚这个动作没执行，而它是**可重试**的（不是「记录不存在」那条业务失败）。第 269 波新增：这张表不再有域镜像，读改成按需查询，于是「读不到」与「确实没有」必须在**上报文案**上分开 —— 混成一句会让用户以为变更历史丢了。不是 persist：没有任何写入发生。",
+      "round": 269
+    },
+    {
+      "site": "src/core/environment/worktree-manager.ts::worktree.hasUncommittedChanges::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "git status 没跑通 ⇒ action（无法确认是否有未提交修改，不能当成「工作区干净」）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/environment/worktree-manager.ts::worktree.setExecutionMode::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "执行模式没写入 ⇒ persist（重启后回到旧模式 = 落盘失败）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/goal/goal.ts::goal.create::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "目标未保存（域镜像未接手）⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/goal/goal.ts::goal.update::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "目标未更新（域镜像未接手）⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.archive::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.archive，第 247 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.create::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.create，第 125 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.delete，第 257 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.deleteOlderThan::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.deleteOlderThan，第 322 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.markAllRead::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.markAllRead，第 228 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.markRead::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.markRead，第 197 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.sweep::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.sweep，第 111 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/inbox/inbox-storage.ts::inbox.unarchive::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：通知的新增/已读/归档/删除没能落盘（该域镜像未接手或未就绪）⇒ persist。「未保存」意味着重启后这条状态就没了，属于典型的落盘失败；不是 action（不能只说「动作没生效」——用户的已读/归档状态确实没写进去），也不是 advisory（没有任何「发现」，就是写失败）。（本处：inbox.unarchive，第 279 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/issue/issue-storage.ts::issue.addComment::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.addComment，第 251 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/issue/issue-storage.ts::issue.create::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.create，第 134 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/issue/issue-storage.ts::issue.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.delete，第 215 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/issue/issue-storage.ts::issue.deleteComment::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.deleteComment，第 269 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/issue/issue-storage.ts::issue.update::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：议题的创建/更新/删除、评论的增删没落盘（域镜像未接手或未就绪）⇒ persist。（本处：issue.update，第 204 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/flashcard-store.ts::flashcard.create::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.create，第 125 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/flashcard-store.ts::flashcard.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.delete，第 225 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/flashcard-store.ts::flashcard.deleteByNotebook::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.deleteByNotebook，第 241 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.review，第 269 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/flashcard-store.ts::flashcard.review::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.review，第 330 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/flashcard-store.ts::flashcard.update::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：闪卡的创建/更新/删除、按笔记本批量删除、复习记录没落盘（域镜像未接手或未就绪；其中 #5 还区分了「端口已注册但 store 未就绪」）⇒ persist。复习记录丢了会让学习进度回退，属真失败。（本处：flashcard.update，第 215 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "旧出链未清除（域镜像未接手）⇒ persist（链接会重复显示）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/knowledge/note-manager.ts::noteManager.deleteNoteLinksBySource::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "旧出链未清除（写入报错）⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::chunk.onDemand::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "容量发现：读**成功**了（N 块都读到了），只是按缓存预算不缓存 ⇒ 走 advisory。不是 persist（没有任何写盘动作）、也不是 action（功能没失败，是「这块笔记本超出预算」这个事实）。",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::chunk.onDemand::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读侧失败：端口在 await 期间被换掉 ⇒ 本次按需读作废。走 action（功能本次没生效）。原通道 persist 会印「写盘失败……本次改动只存在于内存」，而这里什么都没写、也没改动被丢。",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::chunk.onDemand::#3",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读侧失败：文本块未按需读到（catch 分支）⇒ action（功能本次没生效）。没有写盘动作，故不是 persist。",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::chunk.onDemand::#4",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读侧作废：按需读落地时代际核对不上（发起之后发生过删除）⇒ **丢弃**这份过期结果并如实上报 ⇒ action（功能本次没生效；程序没写任何东西、也没有改动被丢 —— 丢的是一次过期的读结果）。判据 NC-DEL-3：删除之后到达的预热结果不许把被删的块写回缓存（否则删除之后同步读会读回已删的块）。与同区 #3 同源：都是“按需读本次没生效”，下一次读会重新拉。",
+      "round": 255
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::notebook.refreshCounts::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读侧失败：计数读不到 ⇒ 本次不刷新。走 action。刻意不是 persist —— 代码注释写明「**没有**写回 0（旧值保留）」，而 persist 的默认后果句是「本次改动只存在于内存」，与实际恰好相反。",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::noteVersion.restore::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：笔记版本快照的保存/回滚没落盘（域镜像未接手或未就绪）⇒ persist。这两个是 `noteVersion.save` / `noteVersion.restore`（本文件里读侧的 `chunk.onDemand` 与 `notebook.refreshCounts` 已按上面的理由单独改成 advisory / action）。（本处：noteVersion.restore，第 1787 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/knowledge/storage.ts::noteVersion.save::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：笔记版本快照的保存/回滚没落盘（域镜像未接手或未就绪）⇒ persist。这两个是 `noteVersion.save` / `noteVersion.restore`（本文件里读侧的 `chunk.onDemand` 与 `notebook.refreshCounts` 已按上面的理由单独改成 advisory / action）。（本处：noteVersion.save，第 1731 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/llm/cost-tracker.ts::costTracker.setLimits::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "成本上限没保存 ⇒ persist（重启回到旧值）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/feedback.ts::feedback.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "反馈删除没落盘（镜像未就绪 / 端口未注册）⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/index.ts::delegationTools.agentTeams::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "agent-teams 工具没注册 ⇒ action（模型无法建队派活）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/index.ts::delegationTools.computerUse::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "computer-use 工具没注册 ⇒ action（模型无法读屏/操作桌面）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/index.ts::llmEngine.subagentRuntimeInit::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "子智能体/委派能力本次不可用 ⇒ action。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/model-profile.ts::modelProfile.save::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "模型档案写盘失败 ⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/tools/show-todo.ts::todo.load::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读不到待办列表（两态里的 B 态）⇒ action。不是 persist：没有写盘；也不是 advisory：调用方需要据此提示「稍后重试」，它确实是一次功能缺失。",
+      "round": 100
+    },
+    {
+      "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "业务失败：待办列表**已经不在库里**（可能随会话被删）⇒ 用户的勾选没生效。走 action。刻意不是 persist：这里什么都没写（连目标行都没有），而 persist 的默认后果句是「本次改动只存在于内存」；也不是 advisory：这是一次真实的动作失败，不是「发现」。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "todos 字段是坏 JSON ⇒ **勾选没生效**（代码刻意不覆盖写，避免把坏数据写回去）⇒ action。数据损坏这件事写在 message 与 extra 里，不会因为换通道而消失；不选 advisory 是因为用户的操作确实失败了（advisory 的语气是「不影响本次使用」）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#3",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "勾选的条目**不在列表里**（界面显示的是旧快照）⇒ action：本来就是 action，确认。",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/tools/show-todo.ts::todo.updateStatus::#4",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "用户的勾选**没生效** ⇒ action。不是 persist：这里连目标行都没读到（不是写失败）；C-5 的现场就是它静默无效，所以必须留在失败通道里。",
+      "round": 100
+    },
+    {
+      "site": "src/core/mcp/mcp.ts::mcp.ensureConfigsForWrite::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "MCP 配置**读不到就不能写**（未预热/从未成功读过）⇒ persist（写库没有发生）。第 184 波修的是「陈旧快照整表覆盖」：写前必须重读磁盘并以其为基准，重读失败就**拒绝写入**（原来会把空表写回去、静默抹掉用户与 zvec 的服务器条目）。这是「没写成」的如实上报，必须留在 persist 通道。",
+      "round": 185
+    },
+    {
+      "site": "src/core/mcp/mcp.ts::mcp.ensureConfigsForWrite::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "同上的第二条上报路径（重读抛错那一支）⇒ persist。理由同上：写前重读失败 ⇒ 不写、如实上报。",
+      "round": 185
+    },
+    {
+      "site": "src/core/mcp/mcp.ts::mcp.saveConfigs::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "MCP 配置写盘失败 ⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/mcp/mcp.ts::mcp.setCodeGraphEnabled::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "代码图谱开关写盘失败 ⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/permission/permission.ts::permission.saveCustomRules::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "自定义权限规则写盘失败 ⇒ persist（重启后规则丢失，安全相关）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/provider/agent-teams-service.ts::agentTeams.persist::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "团队状态没持久化 ⇒ persist（重启后团队与任务看板消失 —— 消息里就是这么说的）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/provider/session-recovery-provider.ts::sessionRecovery.clearSnapshot::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "恢复快照没清除 ⇒ persist（下次恢复会提示旧内容）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/recovery/recovery.ts::recovery.save::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "恢复状态写盘失败 ⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/retry/retry.ts::retry.setConfig::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "重试配置没保存 ⇒ persist（重启回默认值）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读沙箱设置失败但沿用上次成功的值 ⇒ action（读失败；提示里如实说明仍按上次值生效）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/sandbox/sandbox-acl.ts::sandbox.readSetting::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读沙箱设置失败且没有历史值 ⇒ action（本次按关闭处理，提示里如实说明开关不代表生效状态）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/session/delegation-storage.ts::delegation.clearCompletedDelegations::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.clearCompletedDelegations，第 242 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/session/delegation-storage.ts::delegation.createDelegationTask::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.createDelegationTask，第 90 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/session/delegation-storage.ts::delegation.deleteDelegationTask::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "委派任务的创建/删除/清理没落盘 ⇒ persist：任务记录会丢，重启后委派历史不完整。（本处：delegation.deleteDelegationTask，第 219 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/session/executor.ts::executor.settleEmptyAssistant::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "收尾的空助手行没进事件日志 ⇒ persist（不是「发现」、也不是「动作没生效」：这一行只存在于消息存储里，而事件日志是投影重建的数据源，重建时它会消失）。第 154 轮 O-28 顺带把原来那句吞掉异常的 console.warn 换成了这个上报点。",
+      "round": 154
+    },
+    {
+      "site": "src/core/session/executor.ts::executor.settleEmptyAssistantMidIteration::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "中途定稿的空助手行没进事件日志 ⇒ persist（与收尾那处同一条口径：这一行只存在于消息存储里，事件日志是投影重建的数据源，重建时它会消失，运行时不变量的 VISIBLE_BUT_NOT_RECORDED 判的就是它）。第 171 波补：用户两次报的缺口样例 assistant-…-20（第 20 次迭代 = 中途行）就是这处漏了钉空行造成的。",
+      "round": 171
+    },
+    {
+      "site": "src/core/session/preferences.ts::preferences.disabledPlugins.diverged::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "禁用插件列表在两侧不一致（已给 consequence）⇒ persist：写回不一致状态属落盘问题。",
+      "round": 104
+    },
+    {
+      "site": "src/core/session/preferences.ts::preferences.forgetLastSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "上次会话键没清理 ⇒ persist（磁盘上的状态没被清掉：下次启动仍可能指向已删会话）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/session/session-read-state.ts::session.markRead::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "已读水位没保存 ⇒ persist（重启后可能多一个未读徽标）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/settings/settings.ts::settings.saveFile::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "设置写文件失败（带 path）⇒ persist：同上。（本处：settings.saveFile，第 563 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/slots/SlotBridge.tsx::<动态>::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "插件组件/降级组件**崩溃** ⇒ action：对应界面区域已回退到降级组件，功能本次不可用。（本处：<动态>，第 40 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/slots/SlotBridge.tsx::<动态>::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "插件组件/降级组件**崩溃** ⇒ action：对应界面区域已回退到降级组件，功能本次不可用。（本处：<动态>，第 173 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.addMember::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.addMember，第 281 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.archive::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.archive，第 208 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.create::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.create，第 107 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.delete，第 218 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.removeMember::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.removeMember，第 299 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.unarchive::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.unarchive，第 248 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.update::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.update，第 189 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/squad/squad-storage.ts::squad.updateMemberRole::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写路径失败：团队的创建/更新/归档/删除、成员的增删与角色变更没落盘（域镜像未接手或未就绪）⇒ persist。与 inbox 同一形态：改动只在内存里，重启即丢。（本处：squad.updateMemberRole，第 318 行）",
+      "round": 100
+    },
+    {
+      "site": "src/core/storage/account.ts::account.activate::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.activate，第 183 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/account.ts::account.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.delete，第 154 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/account.ts::account.save::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.save，第 123 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/account.ts::account.update::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "账号的保存/更新/删除/切换没落盘（该域镜像未接手）⇒ persist：账号信息只在内存里，重启即恢复成旧值，属真落盘失败。（本处：account.update，第 144 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/agent-profile-storage.ts::agentProfile.create::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.create，第 70 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/agent-profile-storage.ts::agentProfile.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.delete，第 125 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/agent-profile-storage.ts::agentProfile.update::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "智能体画像的增/改/删没落盘（域镜像未接手）⇒ persist：画像会丢，重启后回到旧集合。（本处：agentProfile.update，第 115 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::<动态>::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "启动期的流读失败 ⇒ 该步骤没跑成",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::<动态>::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "Rust 存储引擎未能启动 ⇒ 本进程无可用存储",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::<动态>::#3",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "引擎缺少必需命令 ⇒ 版本不匹配（动作没生效）",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::<动态>::#4",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读不到引擎命令清单 ⇒ 无法校验（没跑成）",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::<动态>::#5",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "搜索索引重建未完成（下次启动重试）",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::<动态>::#6",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "**发现 + 自愈**：新库关键表为空但旧库有数据 ⇒ 正在从旧库重建一次（第 90 轮从 action 改成 advisory：事实不是「操作没生效」，而是对账发现了不一致并且马上修）",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::<动态>::#7",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "旧数据自动迁移未完成（旧库未动，下次重试）",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::storage.dataRoot::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "数据根目录解析失败 ⇒ 没有可信落点（写盘失败的前置）",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/bootstrap.ts::storage.shutdown::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "存储收尾未完成（数据仍在 WAL，下次启动继续）",
+      "family": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现"
+    },
+    {
+      "site": "src/core/storage/credential-startup-report.ts::secrets.migrate::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "明文**没被封存**（安全动作未生效，仍是明文）⇒ 真失败"
+    },
+    {
+      "site": "src/core/storage/credential-startup-report.ts::secrets.noBackend::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "本机**没有**可用的系统加密 ⇒ 提醒（环境事实，不是失败）"
+    },
+    {
+      "site": "src/core/storage/credential-startup-report.ts::secrets.residue::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "行级封存生效、**字节级残留**没回收 ⇒ 提醒（要人判断的风险）"
+    },
+    {
+      "site": "src/core/storage/credential-startup-report.ts::secrets.unseal::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "密钥**解不开** ⇒ 真失败：这些 provider 现在用不了（O-16 / C-22 的修复点）"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "表在窗口期内未就绪 ⇒ 本次写放弃（写没落地）",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#10",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "整表替换失败（重建阶段）⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "域写队列已满 ⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "域写重放时端口已不在 ⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#4",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "域写重放失败 ⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#5",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "域写重放失败 ⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#6",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口已注册但域镜像未接手 ⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#7",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口已注册但域镜像未接手（带 options）⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#8",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "批量写里某一行失败 ⇒ 该行写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/domain-store.ts::<动态>::#9",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "批量写整批失败 ⇒ 写没落地",
+      "family": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::<动态>::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "**发现**：事件类型未登记（事件照样写入、不丢数据）（第 90 轮从 persist 改成 advisory：修前横幅会说「数据保存失败…重启应用后会丢失」，两句都是假的）",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::eventLog.append::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未接手 ⇒ 事件未写入（写盘失败）",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::eventLog.appendBatch::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未接手 ⇒ 批量事件未写入",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::eventLog.compact::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "锚点之上有非 session_meta 事件 ⇒ 压缩无法同时保一致（未执行）",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::eventLog.compact::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未接手 ⇒ 压缩未落库",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::eventLog.deleteAllForSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未接手 ⇒ 会话事件未删除",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::eventLog.forkSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未接手 ⇒ 源会话事件读不到（fork 未生效）",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-log.ts::eventLog.forkSession::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未接手 ⇒ fork 未生效",
+      "family": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现"
+    },
+    {
+      "site": "src/core/storage/event-projection.ts::eventProjection.compaction::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "**投影没有失败**：这条 compaction 事件形状不合契约时，投影按「不删除任何消息」降级处理并继续跑完，存储自检会在维护里报出这一行 ⇒ 属「发现」，走 advisory。原来走 persist，提示条会印「写盘失败……本次改动只存在于内存」——与事实相反。",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/file-change-storage.ts::fileChange.create::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "文件变更记录的写入/按会话删除没落盘（域镜像未接手）⇒ persist：回滚能力依赖它，丢了就回滚不了。（本处：fileChange.create，第 83 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/file-change-storage.ts::fileChange.deleteBySession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "文件变更记录的写入/按会话删除没落盘（域镜像未接手）⇒ persist：回滚能力依赖它，丢了就回滚不了。（本处：fileChange.deleteBySession，第 149 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/file-change-storage.ts::fileChange.updateStatus::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "回滚之后那条记录的状态没写回去（端口没接手这次写）⇒ persist：状态停在旧值意味着变更历史一直显示「未回滚」，用户以为没回滚成功。第 269 波新增（判据 GATE-13 要求 domainWrite 的 false 必须被处理）：写没被接手时**既如实上报**（用户可见）**又返回 0**（调用方的分支判据）—— 两个接收方，两件事。",
+      "round": 269
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.auditPrune::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "审计裁剪**没跑成** ⇒ 真失败，已补 title「维护：审计裁剪未跑成」"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.credentialCensus::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "凭据普查的**发现**（普查跑成了，报的是结果）⇒ advisory；修前借 action 语气，横幅会说「该功能本次不可用，请重试」而那是假建议（C-21）"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.eventStructure::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "**这个会话**的结构自检没跑成（本次不判定该会话）⇒ 真失败：没检查不等于没问题（与 #2 是两个语义，别混）"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.integrityCheck::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "完整性检查**没跑成**（已留重建标记）⇒ 真失败，已补 title「维护：完整性检查未跑成」（修前控制台印「写盘失败」是假的）"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "**这个会话**的不变量检查没跑成 ⇒ 真失败（未计入已检查数）"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "读侧镜像未就绪 ⇒ 真失败（这些会话本次**没有被检查**，不能当成没有缺口）"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.invariantAudit::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "运行时不变量审计未跑成（checked=0）⇒ 真失败：不做任何结论"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.storageCompact::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "空间回收**没跑成** ⇒ 真失败，已补 title「维护：空间回收未跑成」"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "遥测裁剪**没跑成** ⇒ 真失败（维护动作未生效），已补真实 title「维护：遥测裁剪未跑成」"
+    },
+    {
+      "site": "src/core/storage/maintenance.ts::maintenance.telemetryPrune.mirror::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "镜像未同步 ⇒ 真失败（界面那份数据落后），已补 title「维护：遥测镜像未同步」"
+    },
+    {
+      "site": "src/core/storage/message.ts::<动态>::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "消息已写日志、查询索引未更新 ⇒ 索引写失败",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::<动态>::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "索引写失败（note 说明具体哪一步）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::<动态>::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "索引写失败（note 说明具体哪一步）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.addToolCall::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "工具调用未写查询索引 ⇒ 索引写失败",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.appendToMessage::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "消息不存在或索引不可读 ⇒ 追加上去的正文没落地",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.attachmentContent::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "附件正文未取到 ⇒ 本次读失败（下次会再试）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.attachmentExternalize::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "附件外置标记未写回 ⇒ 写没落地（正文保留内联）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.attachmentIndex::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "附件未写查询索引 ⇒ 索引写失败",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.createMessage.index::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "权威日志已写、查询索引未更新 ⇒ 索引写失败",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.deleteMessagesByIds::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "缺 messages 能力 ⇒ 未在索引里隐藏（只写了墓碑）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.fts.remove::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "全文索引旧行未清除 ⇒ 可能命中已删消息",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.fts.upsert::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "全文索引未更新 ⇒ 该条暂时搜不到",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.rebuildSessionFts::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "会话 FTS 未对齐 ⇒ 搜索可能漏新消息",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.reconcileMessageCount::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "索引真值读不到 ⇒ 计数未重算（没跑成）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.reconcileMessageCount::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "会话行在镜像里读不到 ⇒ 计数未重算（没跑成）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.sessionIdsForMessages::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "缺 messages 能力 ⇒ 无法判定消息归属（本次跳过）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.toolCalls.warm::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "工具调用未能从索引预热 ⇒ 本次回退旧路径（功能降级）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.trimIndexedMessages::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "sessions 域镜像未就绪 ⇒ 索引裁剪整体跳过（没跑成）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.updateMessage.index::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "改动已写日志、查询索引未更新 ⇒ 索引写失败",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.updateToolCall::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "工具调用结果未写查询索引 ⇒ 索引写失败",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/persist-failure.ts::<动态>::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "**通道自身的转发定义**（reportPersistFailure 转发到 reportFailure 的 persist 分支），不是业务调用点 ⇒ persist"
+    },
+    {
+      "site": "src/core/storage/persist-failure.ts::<动态>::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "**通道自身的转发定义**（reportActionFailure 转发到 action 分支），不是业务调用点 ⇒ action"
+    },
+    {
+      "site": "src/core/storage/persist-failure.ts::<动态>::#3",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "**通道自身的转发定义**（reportAdvisory 转发到 advisory 分支），不是业务调用点 ⇒ advisory"
+    },
+    {
+      "site": "src/core/storage/prompt-draft.ts::promptDraft.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "提示词草稿的保存/删除没落盘（查询索引不可用）⇒ persist：草稿会丢。（本处：promptDraft.delete，第 149 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/prompt-draft.ts::promptDraft.save::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "提示词草稿的保存/删除没落盘（查询索引不可用）⇒ persist：草稿会丢。（本处：promptDraft.save，第 115 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore，第 298 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/recovery-restore.ts::storage.recoveryRestore.setting::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "从损坏库恢复的设置/归属没写回 ⇒ persist：这是数据恢复路径，没写回等于恢复白做。（本处：storage.recoveryRestore.setting，第 156 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/rust-port.ts::storage.corrupt::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "引擎报存储库损坏、命令失败 ⇒ persist：这次操作确实失败了、数据有丢失风险，提示里要求「期间请勿继续写入」。刻意不选 advisory —— advisory 的语气是「不影响本次使用」，与这里相反。",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/rust-port.ts::storage.recovered::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "库损坏后已重建空库（坏文件已备份）⇒ action：查询索引丢了、需要从日志重建，功能受影响。同样刻意不选 advisory，理由同上。",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/self-heal.ts::storage.selfHeal::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "水位记录读不到 ⇒ 本次自检不判定（也不覆盖水位）",
+      "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+    },
+    {
+      "site": "src/core/storage/self-heal.ts::storage.selfHeal::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "已恢复但复核读取失败 ⇒ 保持原水位，下次重试",
+      "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+    },
+    {
+      "site": "src/core/storage/self-heal.ts::storage.selfHeal::#3",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "已执行旧库恢复、但复核读取失败 ⇒ 无法确认结果（保持原水位，下次重试）——**没跑成**，不能当「恢复成功」",
+      "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+    },
+    {
+      "site": "src/core/storage/self-heal.ts::storage.selfHeal::#4",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "旧库恢复执行了但复核仍是 0 条消息 ⇒ 恢复**没生效**（这是真失败，不是发现）",
+      "family": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
+    },
+    {
+      "site": "src/core/storage/session-jsonl.ts::sessionLog.compact::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "日志压缩没做成（读不出来）⇒ persist：权威副本的**磁盘状态**没有改善（体积一直是这样），属持久状态问题；不是 action（压缩不是一个「动作没生效」就结束的功能点），也不是 advisory（这条是失败，不是发现）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/session-log-bridge.ts::sessionLog.backfill::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "N 个会话本次**没有回填**权威日志（镜像没加载完时 listMessages 返回空数组）⇒ persist：权威日志没建出来，属真落盘缺失。",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/session-log-bridge.ts::sessionLog.rebuildIndex::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "索引重建失败 ⇒ persist（本次重建没完成）。⚠️ 本轮**修掉了这条 extra 里的假话**：原写「已回退旧路径重试」，而回退第 17 轮就删了。",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/settings.ts::<动态>::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "设置写文件失败 ⇒ persist：设置只在内存里，重启即回旧值。（本处：<动态>，第 94 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/sync-engine.ts::syncEngine.autoSync::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "自动同步写盘失败 ⇒ persist。",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/v2-session.ts::v2Session.delete::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "v2 会话的保存/删除没落盘（会话域端口未接手）⇒ persist：会话数据会丢。（本处：v2Session.delete，第 79 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/storage/v2-session.ts::v2Session.save::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "v2 会话的保存/删除没落盘（会话域端口未接手）⇒ persist：会话数据会丢。（本处：v2Session.save，第 73 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/store.ts::store.createProject::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "建项目写盘失败",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.createWorktree::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "建 worktree 失败 ⇒ 已回退主工作区（动作没生效）",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.deleteProject::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "删项目写盘失败",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.fallbackExecutionMode::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "回落执行模式写盘失败",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.forkSession.messageCount::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "分叉会话的消息计数未写入 ⇒ 写没落地",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.forkSession.reconcile::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "分叉后的计数未复核 ⇒ 复核没跑成",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.persistWorktreePath::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "worktree 路径未保存 ⇒ 写没落地",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.removeWorktree::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "清理 worktree 失败 ⇒ 磁盘残留（动作没生效）",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.updateProject::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "改项目写盘失败",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/store.ts::store.updateSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "改会话写盘失败",
+      "family": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）"
+    },
+    {
+      "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 77 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 132 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/subagent/subagent-session.ts::subagent.ensureSession::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "子会话行/消息/事件/遥测写不进库 ⇒ persist：子智能体的运行记录会丢。（本处：subagent.ensureSession，第 142 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/telemetry/telemetry.ts::<动态>::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "遥测写失败（note 说明哪一步）",
+      "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+    },
+    {
+      "site": "src/core/telemetry/telemetry.ts::telemetry.clearAll::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "域镜像未就绪 ⇒ 没有清空任何行（没跑成）",
+      "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+    },
+    {
+      "site": "src/core/telemetry/telemetry.ts::telemetry.clearAll::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "删除时端口失去就绪 ⇒ 没有清空任何行（没跑成）",
+      "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+    },
+    {
+      "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "违反外键约束被剔除（数据问题，不再重试）⇒ 这些事件没落地",
+      "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+    },
+    {
+      "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未注册 ⇒ 事件未写入",
+      "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+    },
+    {
+      "site": "src/core/telemetry/telemetry.ts::telemetry.flush::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "端口未接手 ⇒ 事件未写入（内存保留重试）",
+      "family": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）"
+    },
+    {
+      "site": "src/core/ui-plugins/index.ts::uiPlugins.load::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "UI 插件没加载 ⇒ action（对应界面区域缺失）。",
+      "round": 104
+    },
+    {
+      "site": "src/core/ui/generated-files-cleanup.ts::<动态>::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "「清理过程文件」**物理删除失败** ⇒ action（清理没生效）。第 184 波修的是：删除失败原来只 `console.warn`、随后**无条件**抹掉界面记录 ⇒ 文件还在、清单没了、不可逆。现在失败项保留 + 面板可见提示，并走 action 上报。",
+      "round": 185
+    },
+    {
+      "site": "src/core/ui/native-dialog.ts::<动态>::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 176 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/ui/native-dialog.ts::<动态>::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 189 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/ui/native-dialog.ts::<动态>::#3",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 223 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/ui/native-dialog.ts::<动态>::#4",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 232 行）",
+      "round": 104
+    },
+    {
+      "site": "src/core/ui/native-dialog.ts::<动态>::#5",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "确认框/提示框**没弹出来**（插件 JS API 与注入的 confirm/alert 都不可用）⇒ action：用户看不到该确认/提示，这次的交互没生效（真机形态就是 `Command plugin:dialog|confirm not allowed by ACL`）。全部 5 处都是「弹不出来」，没有一处是写盘。（本处：<动态>，第 241 行）",
+      "round": 104
+    },
+    {
+      "site": "src/hooks/useWindowState.ts::useWindowState.restore::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "窗口尺寸/位置没恢复 ⇒ action（窗口状态没生效；不涉及写盘）。",
+      "round": 104
+    },
+    {
+      "site": "src/plugins/library-ops/store.ts::libraryOps.persistLayoutOverrides::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "插件面板的设置/布局调整没落盘 ⇒ persist：用户的布局调整重启即丢。（本处：libraryOps.persistLayoutOverrides，第 164 行）",
+      "round": 104
+    },
+    {
+      "site": "src/plugins/library-ops/store.ts::libraryOps.persistSettings::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "插件面板的设置/布局调整没落盘 ⇒ persist：用户的布局调整重启即丢。（本处：libraryOps.persistSettings，第 136 行）",
+      "round": 104
+    },
+    {
+      "site": "src/store.ts::store.loadMoreMessages::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "历史读路径不可用 ⇒ 更早的消息没读出来（不代表没有历史）",
+      "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/store.ts::store.loadMoreMessages::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "读更早消息抛错 ⇒ 同上，本次读失败",
+      "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/store.ts::store.saveMessages::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "本进程没有可用存储 ⇒ 本次运行内不再尝试写入",
+      "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/store.ts::store.saveMessages::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "消息归属不一致 ⇒ 已拒绝写入（保护动作）",
+      "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/store.ts::store.saveMessages::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "消息未能保存 ⇒ 写盘失败",
+      "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/store.ts::store.setFeedback::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "反馈写未被接受 ⇒ 未保存",
+      "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/store.ts::store.setFeedback::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "反馈写入抛错 ⇒ 未保存",
+      "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    }
+  ],
+  "_families": {
+    "src/core/storage/domain-store.ts": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**",
+    "src/core/storage/message.ts": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败",
+    "src/core/store.ts": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）",
+    "src/store.ts": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）",
+    "src/core/storage/bootstrap.ts": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现",
+    "src/core/storage/event-log.ts": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现",
+    "src/core/telemetry/telemetry.ts": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）",
+    "src/core/storage/self-heal.ts": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
   }
- ],
- "_families": {
-  "src/core/storage/domain-store.ts": "域写路径：写没落地（队列未就绪/队列满/端口不在/重放失败/整表替换失败）—— 全是**写盘失败**",
-  "src/core/storage/message.ts": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败",
-  "src/core/store.ts": "项目/会话的写路径失败 + worktree 动作失败（已回退/未清理）",
-  "src/store.ts": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）",
-  "src/core/storage/bootstrap.ts": "存储启动链路的失败与**发现**（流读失败、引擎未起、能力缺失、索引重建未完成、旧库迁移未完成）+ 一处已改为 advisory 的对账发现",
-  "src/core/storage/event-log.ts": "事件写入/压缩/删除/fork 的失败 + 一处已改为 advisory 的「未注册事件类型」发现",
-  "src/core/telemetry/telemetry.ts": "遥测写入/清空的失败（遥测不影响功能，但确实是**写没落地**）",
-  "src/core/storage/self-heal.ts": "自愈链路的**没跑成**（水位读不到、恢复后复核读不到）—— 都不能被当成「没问题」"
- }
 }

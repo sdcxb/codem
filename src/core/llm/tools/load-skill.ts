@@ -469,6 +469,55 @@ export function processSkillGestures(sessionId: string, userMessage: string): st
 // ========== Tool Definition ==========
 
 /**
+ * 「这个技能的工具现在到底能不能用」的**唯一**说话口径（第 184 波 F4，纯函数）。
+ *
+ * ## 为什么抽成纯函数
+ *
+ * 改前这段拼装写在工具执行体里，而它有个**假成功**形态：技能 frontmatter 里写了
+ * `tools: [{name: x}]` 但没有 Provider 工厂时（`registerFactory` 在生产代码里零调用点），
+ * 工具**一个都没注册**，而 `load_skill` 照样输出「Tools from this skill are now available: x」
+ * ⇒ 模型照技能正文去调不存在的工具、反复失败。抽出来之后，"三种形态各说什么话"
+ * 变成可回归的契约（判据直接断言文案，不靠读源码字符串）。
+ *
+ * ## 三态（各自只说证据支持的话）
+ *
+ * | 形态 | 判据 | 说法 |
+ * |---|---|---|
+ * | 真的注册成功 | `registered.length > 0` | `Tools from this skill are now available: …` |
+ * | 只声明、没有实现 | `declaredOnly.length > 0` | **[WARNING]** 声明 ≠ 可调用，不要调用 |
+ * | 加载抛错 | `loadError` | **[WARNING]** 未能加载 + 原因 |
+ *
+ * 三种可以同时出现（部分实现 + 部分仅声明），所以是**拼接**而不是三选一。
+ */
+export function describeSkillTools(input: {
+  registered: string[];
+  declaredOnly?: string[];
+  loadError?: string | null;
+}): string {
+  const registered = input.registered ?? [];
+  const declaredOnly = input.declaredOnly ?? [];
+  const parts: string[] = [];
+
+  if (registered.length > 0) {
+    parts.push(`\n\nTools from this skill are now available: ${registered.join(", ")}`);
+  }
+  if (declaredOnly.length > 0) {
+    parts.push(
+      `\n\n[WARNING] 该技能声明了以下工具，但**没有实现**（本次未注册，不可调用）：` +
+        `${declaredOnly.join(", ")} —— 请不要调用它们；若技能正文要求使用，` +
+        `请改用现有工具，或告诉用户这些工具未随技能提供。`,
+    );
+  }
+  if (input.loadError) {
+    parts.push(
+      `\n\n[WARNING] 该技能声明的工具**未能加载**（${input.loadError}）—— 正文里提到的工具在当前会话不可用，` +
+        `不要尝试调用它们；请改用现有工具，或告诉用户技能工具加载失败。`,
+    );
+  }
+  return parts.join("");
+}
+
+/**
  * 创建 load_skill 工具。
  * 需要传入 ToolRegistry 以便动态注册技能工具。
  */
@@ -623,21 +672,33 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
         }
       }
 
-      const toolInfo = loadedTools.length > 0
-        ? `\n\nTools from this skill are now available: ${loadedTools.join(", ")}`
-        : "";
-      const toolErrorInfo = toolLoadError
-        ? `\n\n[WARNING] 该技能声明的工具**未能加载**（${toolLoadError}）—— 正文里提到的工具在当前会话不可用，` +
-          `不要尝试调用它们；请改用现有工具，或告诉用户技能工具加载失败。`
-        : "";
+      /**
+       * ★ 第 184 波 F4：**"声明了但没实现"也要如实说**。
+       *
+       * `loadProvider` 现在对"声明了 tools 但没有工厂"这条返回 `[]`（一个都没注册），
+       * 于是 `toolInfo` 不会再谎称"这些工具现在可用"。但光是**不说**不够 ——
+       * 技能正文里写着这些工具名，模型会照着调。所以这里显式告诉它：
+       * 声明 ≠ 可调用。
+       */
+      const declaredOnlyTools = skillToolRegistry.getDeclaredOnlyTools(skill.name);
+      const toolInfo = describeSkillTools({
+        registered: loadedTools,
+        declaredOnly: declaredOnlyTools,
+        loadError: toolLoadError,
+      });
 
       // 关键修复：output 中直接包含 skillContent，
       // 这样 LLM 在工具结果中就能看到完整的 <skill_content> 指令正文，
       // 不需要等到下一轮系统提示注入才能看到。
       return {
         title: `load_skill: ${skill.name}`,
-        output: `${skillContent}${toolInfo}${toolErrorInfo}`, isError: false,
-        metadata: { skillName: skill.name, tools: loadedTools, toolLoadError: toolLoadError ?? undefined },
+        output: `${skillContent}${toolInfo}`, isError: false,
+        metadata: {
+          skillName: skill.name,
+          tools: loadedTools,
+          declaredOnlyTools: declaredOnlyTools.length > 0 ? declaredOnlyTools : undefined,
+          toolLoadError: toolLoadError ?? undefined,
+        },
       };
     },
   };

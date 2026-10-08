@@ -32,9 +32,31 @@ export interface YamlPluginEntry {
 
 /** 加载结果 */
 export interface YamlLoadResult {
+  /**
+   * ⚠️ **语义 = 「已装配」（`ctx.plugin()` 没抛）**，**不是**「已激活」（第 184 波 F6）。
+   *
+   * Cordis 的激活是**异步**的：`fiber._reload` 先 `await Promise.resolve()` 再 `_execute`，
+   * 失败时把错误写进 `_error` 并把 epoch 置 INACTIVE（`cordis/src/fiber.ts:647-665`）。
+   * 所以 `ctx.plugin()` 返回之后立刻 push 进来的这条，只证明"装配调用没抛"。
+   *
+   * 想要"真的在跑"的口径，用 `settleActivation(result)`（本文件）或
+   * `assertActivated(ctx)` —— 它们读的是 fiber 的真实状态。
+   */
   loaded: string[]
   skipped: string[]
   failed: Array<{ name: string; error: string }>
+  /**
+   * **激活结算**后的真实口径（由 `settleActivation()` 填；未调用前为 `undefined`）。
+   * `activated` + `notActivated` 覆盖 `loaded` 里的每一条。
+   */
+  activated?: string[]
+  /** 已装配但没进入 ACTIVE 的条目（激活抛错 / 一直在等依赖） */
+  notActivated?: Array<{ id: string; name: string; reason: string }>
+  /**
+   * 装配时留下的 fiber 句柄（**内部字段**，不参与日志/序列化）。
+   * `settleActivation` 靠它把"装配"结算成"真的激活了没有"。
+   */
+  handles?: Array<{ id: string; name: string; fiber: any }>
 }
 
 // ===== 装配 fiber 登记（对标 dsh 卸载语义） =====
@@ -61,6 +83,18 @@ export function unregisterActiveFiber(name: string): void {
 /** 取某插件由 YAML 装配创建的 fiber（未装配/已卸载返回 undefined） */
 export function getActiveFiber(name: string): any {
   return activeFibers.get(name)
+}
+
+/**
+ * 仅供测试：直接登记一个装配 fiber（不经过 `ctx.plugin`）。
+ *
+ * 用途：`PluginManagerService.doDisable` 对"装配过但没有可卸载句柄"这一形态的报账
+ * （第 184 波 F5：`everLoaded && !unloaded` 那条 warn）需要造出这个状态，
+ * 而生产路径（`loadFromEntries`）要拉起真实的 builtin 插件才能造 —— 那会把用例
+ * 变成启动装配测试。这里只暴露**登记**这一件事，行为本身仍由 `doDisable` 决定。
+ */
+export function __registerActiveFiberForTest(name: string, fiber: any): void {
+  registerActiveFiber(name, fiber)
 }
 
 /**
@@ -306,7 +340,14 @@ export function loadFromYaml(ctx: Context, ymlContent: string): YamlLoadResult {
 
       const fiber = ctx.plugin(plugin as any)
       registerActiveFiber(entry.name, fiber)
+      /**
+       * ⚠️ 这里进的是「已装配」名单（第 184 波 F6）：`ctx.plugin()` 返回只说明
+       * 装配调用没抛，激活是异步的（见 `YamlLoadResult.loaded` 的说明）。
+       * 真实激活口径由 `settleActivation(result)` 结算。
+       */
       result.loaded.push(entry.id)
+      result.handles = result.handles ?? []
+      result.handles.push({ id: entry.id, name: entry.name, fiber })
     } catch (err: any) {
       result.failed.push({
         name: entry.id,
@@ -316,7 +357,8 @@ export function loadFromYaml(ctx: Context, ymlContent: string): YamlLoadResult {
   }
 
   console.log(
-    `[YamlLoader] Loaded ${result.loaded.length}, skipped ${result.skipped.length}, failed ${result.failed.length}`
+    `[YamlLoader] Assembled ${result.loaded.length}, skipped ${result.skipped.length}, failed ${result.failed.length}` +
+      `（"assembled" ≠ "activated"：激活是异步的，真实口径见 settleActivation）`
   )
 
   // 对标 DSH fail-loud：报告失败但不终止启动（桌面应用不能 exit(1)）
@@ -380,6 +422,116 @@ export async function assertActivated(ctx: Context, binName: string = 'codem'): 
     throw new Error(
       `${binName}: ${failures.length} ${noun} did not activate\n${failures.join('\n')}`
     )
+  }
+}
+
+/** 激活结算的默认等待上限（与应用启动时等 fiber 的那个上限同量级） */
+const ACTIVATION_SETTLE_TIMEOUT_MS = 10_000
+
+/**
+ * 把一个 `YamlLoadResult` 的「已装配」名单**结算成真实激活口径**（第 184 波 F6）。
+ *
+ * ## 为什么必须有这一步
+ *
+ * `ctx.plugin()` 不抛 ≠ 插件在跑：Cordis 的 `_reload` 先 `await Promise.resolve()` 再
+ * `_execute`，插件抛错时错误只写进 `fiber._error`（`cordis/src/fiber.ts:647-665`），
+ * 而 `loadFromEntries` 早在那一刻之前就把条目记进了 `loaded`。
+ * 于是启动日志里的「Loaded 60, failed 0」只是**愿望清单** —— 与"真的在跑多少"是两个口径。
+ *
+ * ## 语义
+ *
+ * - 等每个已装配 fiber 结算（`fiber.await()`，**有界**：超时按未激活记）；
+ * - 真的 ACTIVE ⇒ 进 `activated`；
+ * - 抛错 / 一直没进入 ACTIVE ⇒ 进 `notActivated`（带原因）**并追加进 `failed`**
+ *   —— 这样既有的 fail-loud 分支（`failed.length > 0` 打 error）会照实报出来，
+ *   启动汇总也不再可能说"成功"。
+ *
+ * 等的是**并行**的（`Promise.all`），所以不会把启动串行化。
+ */
+export async function settleActivation(
+  result: YamlLoadResult,
+  timeoutMs: number = ACTIVATION_SETTLE_TIMEOUT_MS,
+): Promise<YamlLoadResult> {
+  const handles = result.handles ?? []
+  const activated: string[] = []
+  const notActivated: Array<{ id: string; name: string; reason: string }> = []
+
+  await Promise.all(
+    handles.map(async ({ id, name, fiber }) => {
+      let reason = ''
+      let timer: any
+      try {
+        await Promise.race([
+          typeof fiber?.await === 'function' ? fiber.await() : Promise.resolve(),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`等待激活超过 ${timeoutMs}ms`)),
+              timeoutMs,
+            )
+          }),
+        ])
+      } catch (err: any) {
+        reason = err?.message || String(err)
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+      // FiberState: 2 = ACTIVE（与 assertActivated 同一张表）
+      if (!reason && fiber?.state !== 2) {
+        reason = `激活未完成（state=${fiber?.state}）`
+      }
+      if (reason) {
+        notActivated.push({ id, name, reason })
+        result.failed.push({ name: id, error: reason })
+      } else {
+        activated.push(id)
+      }
+    }),
+  )
+
+  result.activated = activated
+  result.notActivated = notActivated
+
+  console.log(
+    `[YamlLoader] 激活结算：assembled ${handles.length} ⇒ activated ${activated.length}` +
+      `，not activated ${notActivated.length}` +
+      (notActivated.length > 0
+        ? `（${notActivated.map((n) => `${n.id}: ${n.reason}`).join('；')}）`
+        : ''),
+  )
+
+  if (notActivated.length > 0) {
+    const detail = notActivated.map((n) => `  ${n.id}（${n.name}）: ${n.reason}`).join('\n')
+    console.error(`[YamlLoader] ${notActivated.length} plugin(s) 装配了但没有激活：\n${detail}`)
+  }
+
+  return result
+}
+
+/**
+ * 启动汇总的**唯一**口径（第 184 波 F6，纯函数）。
+ *
+ * ## 为什么需要它
+ *
+ * 改前 `App.tsx` 把唯一的权威校验 `assertActivated` 的失败降级成一行
+ * `console.error`（"不终止启动"），随后**同一个函数**照样打印
+ * `getCordisContext completed successfully` —— 必要插件（llm/tools/session/store…）
+ * 没激活时日志仍称成功，排障时被这句成功日志误导（正是"会撒谎的汇总比没有汇总更糟"）。
+ *
+ * 现在汇总只有这一处：只要有未激活的条目，就**不许**出现 "completed successfully"。
+ *
+ * @param activationErrors 未激活条目的说明（来自 `settleActivation().notActivated` 或
+ *        `assertActivated` 抛出的错误信息）
+ */
+export function formatBootCompletion(activationErrors: string[]): { ok: boolean; message: string } {
+  const errors = (activationErrors ?? []).filter(Boolean)
+  if (errors.length === 0) {
+    return { ok: true, message: '[Cordis] getCordisContext completed successfully' }
+  }
+  return {
+    ok: false,
+    message:
+      `[Cordis] getCordisContext finished WITH FAILURES: ${errors.length} 个插件未激活 —— ` +
+      `本次启动不完整（功能可能静默缺失），**不是**成功启动：\n${errors.join('\n')}`,
   }
 }
 
@@ -493,7 +645,14 @@ export function loadFromEntries(ctx: Context, entries: YamlPluginEntry[]): YamlL
 
       const fiber = ctx.plugin(plugin as any)
       registerActiveFiber(entry.name, fiber)
+      /**
+       * ⚠️ 这里进的是「已装配」名单（第 184 波 F6）：`ctx.plugin()` 返回只说明
+       * 装配调用没抛，激活是异步的（见 `YamlLoadResult.loaded` 的说明）。
+       * 真实激活口径由 `settleActivation(result)` 结算。
+       */
       result.loaded.push(entry.id)
+      result.handles = result.handles ?? []
+      result.handles.push({ id: entry.id, name: entry.name, fiber })
     } catch (err: any) {
       result.failed.push({
         name: entry.id,
@@ -503,7 +662,8 @@ export function loadFromEntries(ctx: Context, entries: YamlPluginEntry[]): YamlL
   }
 
   console.log(
-    `[YamlLoader] Loaded ${result.loaded.length}, skipped ${result.skipped.length}, failed ${result.failed.length}`
+    `[YamlLoader] Assembled ${result.loaded.length}, skipped ${result.skipped.length}, failed ${result.failed.length}` +
+      `（"assembled" ≠ "activated"：激活是异步的，真实口径见 settleActivation）`
   )
 
   // 对标 DSH fail-loud：报告失败但不终止启动（桌面应用不能 exit(1)）

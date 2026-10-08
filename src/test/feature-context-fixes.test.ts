@@ -383,10 +383,32 @@ describe("FC-I1：笔记本回合与 currentSession（P0-I1）", () => {
     expect(src, "权限面板必须按 uiSessionId 取值").toContain("pendingPermissions.get(uiSessionId)");
     expect(src, "澄清表单必须按 uiSessionId 取值").toContain("pendingClarifications.get(uiSessionId)");
     // ② runAgenticLoop 的 UI 更新判据：先问消息列表归属
-    const viewingIdx = src.indexOf("const isViewingSession = () => {");
-    const viewingBody = src.slice(viewingIdx, viewingIdx + 700);
-    expect(viewingBody, "UI 更新判据必须以 loadedSessionId 为第一判据").toContain(
-      "useAppStore.getState().loadedSessionId === session.id",
+    /**
+     * ⚠️ 第 184 波（UI 审计 F1）更新了这条**接线检查**的锚点（期望没变，只是实现搬了家）。
+     *
+     * 原来这里断言 `isViewingSession` 的函数体里含
+     * `useAppStore.getState().loadedSessionId === session.id`。
+     * 而审计发现的问题恰恰是"**同一件事有两份判据**"：`isViewingSession` 是这份口径，
+     * 流式正文那两条 flush 路径却是另一份（`currentSession?.id === sessionId`）
+     * ⇒ 笔记本回合的正文从生成到结束界面上都是空的。
+     *
+     * 现在判据**只有一份实现**：`core/ui/loop-stream-state.ts` 的 `isSessionOnScreen()`
+     * （第一判据仍是 `loadedSessionId`），
+     * `isViewingSession` 与两条 flush 路径都只是它的调用方。
+     * 所以这条检查改成"**委派关系**" + "那份唯一实现的第一判据是什么"，
+     * 并额外钉住"不许再有第二条口径"（后者在 `audit184-render-layer-fixes.test.tsx` F1e）。
+     */
+    const viewingIdx = src.indexOf("const isViewingSession = () => isSessionOnScreen(session.id);");
+    expect(viewingIdx, "UI 更新判据必须走那份唯一实现（isSessionOnScreen）").toBeGreaterThan(-1);
+    const predicate = readFileSync(
+      path.join(process.cwd(), "src", "core", "ui", "loop-stream-state.ts"),
+      "utf8",
+    );
+    const predicateStart = predicate.indexOf("export function isSessionOnScreen(");
+    expect(predicateStart, "找不到唯一那份「在屏」判据").toBeGreaterThan(-1);
+    const predicateBody = predicate.slice(predicateStart, predicateStart + 500);
+    expect(predicateBody, "判据必须以 loadedSessionId 为第一判据").toContain(
+      "useAppStore.getState().loadedSessionId === sessionId",
     );
     // ③ 自动保存：按 loadedSessionId 落库（不再按 currentSession 认领列表）
     const autoIdx = src.indexOf("// Auto-save messages with debounce");

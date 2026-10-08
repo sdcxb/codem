@@ -12,6 +12,7 @@ import type {
 import { getLang } from "../i18n/lang";
 import { parseProviderUsage } from "./usage-normalize";
 import { reasoningEffortForRequest } from "./reasoning-effort";
+import { mapFinishReason } from "./finish-reason";
 import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
 
@@ -337,7 +338,20 @@ export class OpenAICompatibleProvider implements LLMProvider {
         ...(nu.cacheHitTokens !== undefined ? { cacheHitTokens: nu.cacheHitTokens } : {}),
         ...(nu.uncachedInputTokens !== undefined ? { uncachedInputTokens: nu.uncachedInputTokens } : {}),
       },
-      finishReason: choice?.finish_reason === "tool_calls" ? "tool_use" : "stop",
+      /**
+       * ★ 第 184 波（审计修复）：**非流式的 `finish_reason` 不许被压成 `stop`**。
+       *
+       * 改前这里只有三元的 `"tool_calls" ? "tool_use" : "stop"`，把其余取值（尤其
+       * **`length`**）全部吞成"正常结束"。而 `types.ts` 的取值域本来就含 `length`，
+       * 主循环也**专门**据它判截断（`agentic-loop.ts` 的 `finishReason === "length"` 分支）。
+       *
+       * 后果：走 `complete()` 的那两条路径 —— **压缩摘要**与**计划生成**（它们直接
+       * `return response.content`）—— 一旦被输出上限截断，会被当成"完整摘要"写回，
+       * 模型与用户都收不到任何截断信号（这就是本仓库最忌讳的"假成功"）。
+       *
+       * 现在保留供应商的原话（只把 OpenAI 的 `tool_calls` 映射成我们内部的 `tool_use`）。
+       */
+      finishReason: mapFinishReason(choice?.finish_reason),
       model: request.model,
     };
   }
@@ -473,6 +487,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
     let currentToolCalls: Record<string, { id: string; name: string; arguments: string }> = {};
     let streamEnded = false;
     /**
+     * ★ 第 184 波（审计修复）：**协议终止符**与**是否收到过用量**都要留痕。
+     * 前者用于区分"服务端收完了"与"连接被半途掐断"（见下面 fallback 的长注释）；
+     * 后者用于避免"没收到用量"被记成"用量为 0"。
+     */
+    let sawDone = false;
+    let sawUsage = false;
+    /**
      * 第 67 波：被丢弃的、无法解析的流数据行数。
      *
      * 以前这里只是 `console.warn` —— 丢掉的可能是 tool_calls 的参数增量，于是累积出的 JSON
@@ -579,7 +600,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
           if (!line.startsWith("data: ")) continue;
           const data = line.slice(6).trim();
-          if (data === "[DONE]") continue;
+          if (data === "[DONE]") {
+            sawDone = true; // 第 184 波：正常收尾的终止符（改前 `continue` 掉了，没留痕）
+            continue;
+          }
 
           try {
             const parsed = JSON.parse(data);
@@ -703,12 +727,24 @@ export class OpenAICompatibleProvider implements LLMProvider {
               const nu = parseProviderUsage(usage);
               yield {
                 type: "usage",
+                /**
+                 * ★ 第 184 波（审计修复）：**"未上报"必须是"键不存在"，不是 `undefined`**。
+                 *
+                 * 契约是按**键存在性**判的（`usage-normalize.ts` 的说明与 `StatsLine.tsx`
+                 * 的 `!== undefined` 判断都如此），而本文件两条路径原来不一致：
+                 * · `complete()`（非流式）用条件展开 ⇒ 未上报就**没有这个键**；
+                 * · 这里（流式）**显式写出** `cacheHitTokens: undefined` ⇒ 键**存在**但值是 undefined。
+                 *
+                 * 后果不只是风格：`JSON.stringify` 会把 `undefined` 的键丢掉，
+                 * 于是同一次调用在不同序列化路径下**形状不同**；判据按 `in` / `hasOwnProperty`
+                 * 判时会得出相反结论（这正是"两套真相"的温床）。
+                 */
                 usage: {
                   promptTokens: nu.promptTokens,
                   completionTokens: nu.completionTokens,
                   totalTokens: nu.totalTokens,
-                  cacheHitTokens: nu.cacheHitTokens,
-                  uncachedInputTokens: nu.uncachedInputTokens,
+                  ...(nu.cacheHitTokens !== undefined ? { cacheHitTokens: nu.cacheHitTokens } : {}),
+                  ...(nu.uncachedInputTokens !== undefined ? { uncachedInputTokens: nu.uncachedInputTokens } : {}),
                 },
               };
 
@@ -751,26 +787,35 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
       // Fallback: if stream ended without finish_reason, yield tool_use_end + end
       // This handles APIs that close the connection without an explicit finish_reason
+      /**
+       * Fallback: 流结束时**没有** `finish_reason`。
+       *
+       * ★ 第 184 波（审计修复）：**必须区分"服务端正常收尾"与"连接被砍断"**。
+       *
+       * 改前这里只检查"调用方有没有 abort"（`:795`），其余一律发 `finishReason: "stop"`
+       * 并把 usage 记成全 0。可代理/网关**吐了半段正文之后掐断连接**时也是这个形状：
+       * 于是这一轮被记成 `completed`（`agentic-loop` 的收尾分支），界面显示"任务完成"、
+       * 用量记 0 —— 又一次"假成功"（用户的观感是"AI 说到一半就没了，还说完成了"）。
+       *
+       * 现在用**协议终止符**当判据：
+       * · OpenAI 兼容的流式响应在正常结束前一定发 `data: [DONE]`（我们一直在解析它，
+       *   但改前把它 `continue` 掉了、没留下任何痕迹）；
+       * · 见过 `[DONE]` ⇒ 服务端确实把这次响应收完了（缺 `finish_reason` 是对端的怪癖）⇒ 保持 `stop`；
+       * · **没见过 `[DONE]`** ⇒ 我们**不知道**它说完了没有 ⇒ 如实报 `finishReason: "error"`
+       *   （非正常结束；主循环的"非 stop/tool_use"分支会把它显式呈现出来），
+       *   而不是假装正常完成。
+       */
       if (!streamEnded) {
-        /*
-         * ⚠️ 用户点 ■（或会话被中止）时走的就是这条路：`abortHandler` 调用
-         * `reader.cancel()`，挂起的 `reader.read()` 以 `{done:true}` **正常返回**
-         * （它不会抛 AbortError），于是这里被当成"服务端没给 finish_reason 的正常结束"，
-         * 一直发出 `finishReason: "stop"`（或 `"tool_use"`）。
-         *
-         * 后果不是"少一个字段"：`agentic-loop` 把它记进 `lastFinishReason`，
-         * 这一轮于是看起来**和正常完成一模一样** —— 用户明明按了停止，
-         * 回合却以 "completed" 收场（与"LLM 调用失败也报 completed"同一类假成功）。
-         *
-         * 所以：**中止信号已经置位时如实报 `aborted`**，由循环转成 `{type:"aborted"}`。
-         * 判据用请求自己的 `abortSignal`（就是这个 signal 触发了 `abortHandler`）——
-         * 连接阶段的超时 signal 在这里已经被 `cleanup()` 摘掉了，不会误报。
-         */
         const abortedByCaller = request.abortSignal?.aborted === true;
         if (abortedByCaller) {
           console.warn("[Provider] Stream ended because the request was aborted — reporting finishReason=aborted");
+        } else if (sawDone) {
+          // 见过 [DONE]：对端把响应收完了，只是没给 finish_reason
+          console.warn("[Provider] Stream ended without finish_reason but after [DONE] — treating as a clean end");
         } else {
-          console.warn("[Provider] Stream ended without finish_reason, yielding fallback events");
+          console.warn(
+            "[Provider] Stream ended without finish_reason **and without [DONE]** — 连接可能在半途被掐断，按非正常结束上报",
+          );
         }
         for (const key of Object.keys(currentToolCalls)) {
           const tc = currentToolCalls[key];
@@ -803,14 +848,27 @@ export class OpenAICompatibleProvider implements LLMProvider {
             };
           }
         }
-        yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
+        /**
+         * ★ 第 184 波（审计修复）：**没收到 usage 就不许发 usage 事件**。
+         *
+         * 改前这里无条件发 `{promptTokens: 0, completionTokens: 0, totalTokens: 0}` ——
+         * 把"对端根本没报用量"说成"这次用了 0 个 token"，而主循环会把 0 累加进 `totalUsage`
+         * （于是成本/用量统计**系统性偏低**，且偏差正好等于所有异常结束的轮次）。
+         * 现在只在**真的收到过 usage** 时才发（与"从未上报 ⇒ 键不存在"同一纪律）。
+         */
+        if (sawUsage) {
+          yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
+        }
         yield {
           type: "end",
           finishReason: abortedByCaller
             ? "aborted"
             : Object.keys(currentToolCalls).length > 0
               ? "tool_use"
-              : "stop",
+              : sawDone
+                ? "stop"
+                : // 没见过 [DONE]：连接可能被半途掐断 ⇒ 非正常结束（不许假装完成）
+                  "error",
         };
       }
     } finally {

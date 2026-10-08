@@ -1,4 +1,4 @@
-﻿/**
+/**
  * P3-31: Ollama Provider — 离线本地 LLM
  *
  * 功能：
@@ -233,6 +233,11 @@ export class OllamaProvider implements LLMProvider {
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
     let finishReason = "stop";
+    /**
+     * ★ 第 184 波（审计修复）：**丢行计数** —— 与 `provider.ts` 同形。
+     * 丢行意味着 tool arguments 的增量可能残缺；下游必须能看到这件事。
+     */
+    let droppedStreamLines = 0;
 
     try {
       while (true) {
@@ -278,7 +283,20 @@ export class OllamaProvider implements LLMProvider {
               totalCompletionTokens = chunk.usage.completion_tokens || totalCompletionTokens;
             }
           } catch (e) {
-            // Incomplete JSON chunk — skip
+            /**
+             * ★ 第 184 波（审计修复）：**丢弃的行要计数，不许静默**。
+             *
+             * 改前这里是空 catch（只有一句注释 "Incomplete JSON chunk — skip"）——
+             * 而同一形状在 `provider.ts` 里早就修过：丢行会**计数**，并在最终
+             * `tool_use_end` 上标出 `argsParseError`/`rawLength`（"参数可能不完整"），
+             * 让主循环走"拒绝执行 + 引导重试"而不是拿着残缺 JSON 继续跑。
+             *
+             * 这里的后果一样严重：被丢的那一行如果正好是 tool arguments 的增量，
+             * 累积出来的 JSON 就是残缺的，而下游看不到任何提示。
+             * 现在与 `provider.ts` **同形**（同一事实同一处置）。
+             */
+            droppedStreamLines++;
+            console.warn(`[ollama-provider] 丢弃了 1 行无法解析的流数据（累计 ${droppedStreamLines} 行）:`, e);
           }
         }
       }

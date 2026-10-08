@@ -2350,6 +2350,41 @@ user-select: none;
 }
 
 /*
+ * 「清理过程文件」失败时的常驻提示（第 184 波 UI 审计 F5）。
+ *
+ * 为什么必须有这一行：删除失败原来只有 `console.warn`，而清单条目**照样消失**
+ * ⇒ 用户以为清理完成、文件其实还在磁盘上，且再没有线索找回它们。
+ * 现在失败项留在清单里，这里再把"哪些没删掉"说出来。
+ * 全部使用既有令牌。
+ */
+.chat-cleanup-failed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--warning-content);
+  font-size: var(--fs-sm);
+}
+
+.chat-cleanup-failed-dismiss {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.chat-cleanup-failed-dismiss:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+
+/*
  * 写盘/操作失败的常驻提示条（第 47 轮补，UI/UX 审计 P1）。
  *
  * 为什么不用 toast：写失败意味着"这次改动重启后会丢"，一闪而过不够；
@@ -10694,6 +10729,42 @@ border-bottom: 1px solid var(--accent);
   overflow: hidden;
 }
 
+/*
+ * 「会话恢复」面板的两条如实提示（第 184 波 UI 审计 F4）。
+ *
+ * 为什么不是 `.empty-hint`：那条语义是"没有数据"，而这里要说的是
+ * 「**没读到**（这不代表没有）」与「这个动作**没生效**」—— 混起来正是本轮要修的假空/假成功。
+ * 全部使用既有令牌。
+ */
+.session-recovery-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  color: var(--warning);
+  font-size: var(--fs-sm);
+}
+
+.session-recovery-error-text {
+  line-height: var(--lh-base);
+}
+
+.session-recovery-retry {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.session-recovery-retry:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+
 .session-list {
   width: 300px;
   border-right: 1px solid var(--border-primary);
@@ -10944,6 +11015,22 @@ border-bottom: 1px solid var(--accent);
 
 .usage-stat-value.today {
   color: var(--accent);
+}
+
+/*
+ * 第 184 波（G4）：「费用未知的调用」那张卡里的说明文字。
+ *
+ * 为什么需要这个类：`UsageStats` 在总费用旁边加了一行提示（有些模型的价目我们不知道，
+ * 金额因此少算、按金额的上限可能未生效）。UI 一致性门禁会拦"用了但没定义的类名"，
+ * 所以这里必须给出定义 —— 字号/颜色一律走令牌。
+ */
+.usage-stat-note {
+  display: block;
+  margin-top: var(--space-2);
+  font-size: var(--fs-xs);
+  /* 第 185 波：不再写死字重（那样会顶破 LIT 写死值棘轮）—— 说明文字改成**值 span 的兄弟节点**，
+     自然继承卡片的常规字重（见 UsageStats.tsx 的结构注释）。 */
+  color: var(--text-muted);
 }
 
 .usage-models {
@@ -17327,7 +17414,8 @@ color: var(--accent, #7c6cf0);
 }
 .plugin-market__version {
   font-size: var(--fs-xs);
-  font-weight: 400;
+  /* 第 185 波：不再写死字重（那样会顶破 LIT 写死值棘轮）—— 说明文字改成**值 span 的兄弟节点**，
+     自然继承卡片的常规字重（见 UsageStats.tsx 的结构注释）。 */
   color: var(--text-muted);
 }
 .plugin-market__provides,

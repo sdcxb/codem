@@ -84,7 +84,21 @@ async function getCordisContext(): Promise<Context> {
   //    合并 base + desktop bundle，按条件过滤、拓扑排序后加载
   const mergedEntries = mergeYamlEntries(baseYml, desktopYml);
   const yamlResult = loadFromEntries(ctx, mergedEntries);
-  console.log(`[Cordis] YAML loader: ${yamlResult.loaded.length} loaded, ${yamlResult.skipped.length} skipped`);
+  /**
+   * ⚠️ 这里只报「已装配」（`ctx.plugin` 没抛）—— 激活是异步的（第 184 波 F6）。
+   * 真实激活口径由下面的 `settleActivation(yamlResult)` 结算后打印。
+   */
+  console.log(
+    `[Cordis] YAML loader: ${yamlResult.loaded.length} assembled (≠ activated), ${yamlResult.skipped.length} skipped`,
+  );
+
+  /**
+   * 未激活 / 未装配条目的说明，最后汇总进启动结论（第 184 波 F6）。
+   *
+   * 改前 `assertActivated` 的失败在唯一调用点被降级成一行 `console.error`，
+   * 随后同一个函数照样打印 `completed successfully` —— 必要插件没激活时日志称成功。
+   */
+  const activationErrors: string[] = yamlResult.failed.map((f) => `${f.name}: ${f.error}`);
 
   // 4. 等待所有 fiber 就绪（对标 DSH ctx.get('loader')?.await()）
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -114,11 +128,24 @@ async function getCordisContext(): Promise<Context> {
   // 5. fail-loud 验证：对标 DSH assertEntriesActivated
   //    检查所有 fiber 是否 ACTIVE，PENDING/FAILED 的会抛出错误
   try {
-    const { assertActivated } = await import("./core/plugin-loader/yaml-loader.ts");
+    const { assertActivated, settleActivation } = await import("./core/plugin-loader/yaml-loader.ts");
+    /**
+     * ★ 第 184 波 F6：先把「已装配」结算成**真实激活口径**。
+     *
+     * 上面那批 fiber 已经等过一遍，所以这里不会引入额外等待；它把
+     * "装配了但没激活"的条目如实记进 `notActivated` 并追加进 `failed`。
+     */
+    await settleActivation(yamlResult);
+    for (const n of yamlResult.notActivated ?? []) {
+      activationErrors.push(`${n.id}: ${n.reason}`);
+    }
     await assertActivated(ctx, 'codem');
     console.log('[Cordis] assertActivated passed — all fibers ACTIVE');
   } catch (err: any) {
     // 不终止启动，但明确报告问题（桌面应用不能直接 exit(1)）
+    // ⚠️ 第 184 波 F6：这里**必须**把失败带进下面的启动汇总 ——
+    //    改前它只 console.error，随后照样打印 "completed successfully"。
+    activationErrors.push(`assertActivated: ${err.message}`);
     console.error('[Cordis] assertActivated FAILED:', err.message);
   }
 
@@ -195,7 +222,18 @@ async function getCordisContext(): Promise<Context> {
   }
 
   _codemCtx = ctx;
-  console.log('[Cordis] getCordisContext completed successfully');
+  /**
+   * ★ 第 184 波 F6：启动结论走**唯一口径**（`formatBootCompletion`）——
+   * 只要有未激活的条目，就**不许**说 "completed successfully"。
+   */
+  try {
+    const { formatBootCompletion } = await import("./core/plugin-loader/yaml-loader.ts");
+    const summary = formatBootCompletion(activationErrors);
+    if (summary.ok) console.log(summary.message);
+    else console.error(summary.message);
+  } catch (e) {
+    console.warn('[Cordis] 启动汇总生成失败:', e);
+  }
   return ctx;
   })();
 
@@ -308,6 +346,18 @@ import { PipelineNextStepDialog } from "./components/PipelineNextStepDialog";
 import { getAgentRegistry } from "./core/agent/agent";
 import type { ClarificationFormData } from "./core/llm/agentic-loop";
 import { describeTurnOutcome } from "./core/llm/turn-outcome";
+/**
+ * 第 184 波（UI 审计 F1/F2/F3）：流式文本的**归属路由**与回合**收尾**抽成纯函数。
+ * 判据见 `src/test/loop-stream-state-fixes.test.ts` —— 「在屏会话」从此**只有一份口径**。
+ */
+import {
+  routeBufferedTextToOwnCopy,
+  applyAbortToRunningToolCalls,
+  buildTurnFinalize,
+  isSessionOnScreen,
+  shouldProcessEventAfterAbort,
+  type ViewStateRef,
+} from "./core/ui/loop-stream-state";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
@@ -1512,29 +1562,24 @@ const generatedFilesRef = useRef<Set<string>>(new Set());
  */
 const loopMessageSnapshotRef = useRef<{ sessionId: string; messages: Map<string, Message> } | null>(null);
 /**
- * 把一段**流式增量**记进 loop 自己那份消息里。
+ * 上一次路由算出的「在屏」判定（`viewRef` 的当前值）。
  *
- * 为什么必须有：`buffer.text` 原来只在"正在查看这个会话"时才通过
- * `appendToMessage` 进 store，**非查看态直接丢弃**（`buffer.text = ""`）——
- * 于是后台会话的正文从头到尾只存在于内存 buffer 里，用户切回来时它已经没了。
- * 光把消息落库还不够：落下去的那条 `content` 会是空壳。
- *
- * ⚠️ 这里刻意**不**读 store 里那条消息（不 `useAppStore.getState().messages.find()`）：
- * 归属不一致时（用户已切走）那份列表属于别的会话，按 id 去查可能**命中别的会话的同名 id**
- * 并把两边的正文拼在一起。内容只从 loop 自己那份里取，来源单一。
+ * 它**不是**第二个判据：判据在 `routeBufferedTextToOwnCopy` 里只算一次并写在这里；
+ * 这里只是把"刚才那次 flush 到底在不在屏"传给 `flushReasoningBuffer` 的界面那一支，
+ * 避免在同一个 flush 里重算（重算正是 F1 那种"两套口径"的来源）。
  */
-const appendToLoopSnapshot = (
-  sessionId: string,
-  messageId: string,
-  text: string,
-  field: "content" | "reasoning",
-) => {
-  const snapshot = loopMessageSnapshotRef.current;
-  if (!snapshot || snapshot.sessionId !== sessionId || !text) return;
-  const own = snapshot.messages.get(messageId);
-  if (!own) return;
-  snapshot.messages.set(messageId, { ...own, [field]: (own[field] || "") + text } as Message);
-};
+const streamViewRef: ViewStateRef = { current: null };
+  /**
+   * 把缓冲的**流式正文**送回去（F1）。
+   *
+   * ⚠️ 判据**只有一份**：`routeBufferedTextToOwnCopy` → `isSessionOnScreen()`
+   * （先看消息列表归属 `loadedSessionId`，再退回 `currentSession`）。
+   * 修前这里判的是 `useProjectStore.getState().currentSession?.id === sessionId` ——
+   * 而笔记本工作区**从不改 `currentSession`**，于是笔记本回合的正文
+   * 两条 flush 路径都判成"不在屏" ⇒ 界面从生成到结束都是空的（F1）。
+   * 同一条链上其余地方（`isViewingSession` / `uiSessionId` / autosave）早就是
+   * `loadedSessionId` 口径 ⇒ 这里是漏改的那一处。
+   */
   const flushStreamBuffer = useCallback((sessionId?: string) => {
     const buffers = streamBufferRef.current;
     // If sessionId given, flush only that session's buffer; otherwise flush all
@@ -1542,13 +1587,22 @@ const appendToLoopSnapshot = (
     for (const buffer of toFlush) {
       if (!buffer) continue;
       if (buffer.id && buffer.text) {
-        // Only append to UI if this session is currently being viewed
-        const viewing = useProjectStore.getState().currentSession?.id;
-        if (viewing === sessionId) {
+        /**
+         * 两个方向都要写（缺一即丢）：
+         * ① loop 自己那份 —— 回合结束时 `persistLoopMessages()` 用 explicit 形态
+         *    拿它落库；不写的话落下去的就是**空壳**（同一行被覆盖，定稿正文丢失）；
+         * ② 界面那份 —— 在屏时才追加（后台会话不碰别的会话的列表）。
+         */
+        const { viewing } = routeBufferedTextToOwnCopy({
+          sessionId,
+          messageId: buffer.id,
+          text: buffer.text,
+          field: "content",
+          snapshotRef: loopMessageSnapshotRef,
+          viewRef: streamViewRef,
+        });
+        if (viewing) {
           appendToMessage(buffer.id, buffer.text);
-        } else if (sessionId) {
-          // P0-1：**非查看态不再丢文本** —— 记进 loop 自己那份，落库时它才不是空壳
-          appendToLoopSnapshot(sessionId, buffer.id, buffer.text, "content");
         }
         buffer.text = "";
       }
@@ -1563,16 +1617,21 @@ const appendToLoopSnapshot = (
     for (const buffer of toFlush) {
       if (!buffer) continue;
       if (buffer.id && buffer.text) {
-        const viewing = useProjectStore.getState().currentSession?.id;
-        if (viewing === sessionId) {
+        // 判据与正文那条**同一个函数**（只有一份口径，见 flushStreamBuffer 的说明）
+        const { viewing } = routeBufferedTextToOwnCopy({
+          sessionId,
+          messageId: buffer.id,
+          text: buffer.text,
+          field: "reasoning",
+          snapshotRef: loopMessageSnapshotRef,
+          viewRef: streamViewRef,
+        });
+        if (viewing) {
           // P3: append 增量到现有 reasoning（消息已由 reasoning_delta 创建）
           const msg = useAppStore.getState().messages.find((m) => m.id === buffer.id);
           if (msg) {
             useAppStore.getState().updateMessage(buffer.id, { reasoning: (msg.reasoning || "") + buffer.text } as any);
           }
-        } else if (sessionId) {
-          // P0-1：同上 —— 后台会话的 reasoning 也要进 loop 自己那份
-          appendToLoopSnapshot(sessionId, buffer.id, buffer.text, "reasoning");
         }
         buffer.text = "";
       }
@@ -3218,7 +3277,7 @@ streamingSessionIdRef.current = session.id;
     }
     /**
      * 把这个 loop 的这份快照挂到组件级 ref 上，供上面的
-     * `appendToLoopSnapshot`（流式 buffer 的两条 flush 路径）写入。
+     * `routeBufferedTextToOwnCopy`（流式 buffer 的两条 flush 路径）写入。
      * loop 结束时清掉，避免下一个会话的 loop 误用上一轮的残留。
      */
     loopMessageSnapshotRef.current = { sessionId: session.id, messages: loopMessages };
@@ -3252,12 +3311,16 @@ streamingSessionIdRef.current = session.id;
      *   → `loadedSessionId` 就是笔记本会话 → 本会话的流式更新照旧进界面 ✅；
      * - 后台会话（用户已切走）→ 两个判据都不成立 → 只落库、不碰界面 ✅（与既有行为一致）；
      * - 新建会话的开头一瞬（`loadMessages` 还没跑）→ 保留"当前会话"这一支兜底 ✅。
+     *
+     * ## ⚠️ 第 184 波（UI 审计 F1）：**判据只许有一份**
+     *
+     * 上一段的说明当时是对的，但它只描述了 `isViewingSession` 自己 —— 而
+     * `flushStreamBuffer` / `flushReasoningBuffer`（**流式正文**）当时另判一套
+     * （`currentSession?.id === sessionId`），漏改 ⇒ 笔记本回合的正文在界面上全空。
+     * 现在两处**都走** `core/ui/loop-stream-state.ts` 的 `isSessionOnScreen()`，
+     * 这里只是它的一个别名（不再自己写第二遍）。
      */
-    const isViewingSession = () => {
-      if (useAppStore.getState().loadedSessionId === session.id) return true;
-      const viewing = useProjectStore.getState().currentSession?.id;
-      return viewing === session.id;
-    };
+    const isViewingSession = () => isSessionOnScreen(session.id);
     /**
      * Safe message helpers：**UI 只在查看这个会话时更新**（这条行为不变），
      * 但**落库与查看态无关** —— 一律写 loop 自己那份（上面 `persistLoopMessages`）。
@@ -3320,6 +3383,15 @@ streamingSessionIdRef.current = session.id;
      * （见下面第 93 波的说明）。
      */
     let turnOutcomeForNotify: ReturnType<typeof describeTurnOutcome> | undefined;
+    /**
+     * 循环吐的**最后一个事件**（通常就是 `{type:"end", result}`）。
+     *
+     * ⚠️ 第 184 波（F2）：必须在 `try` **里面** 声明但要在**收尾（也在 try 里）**之前
+     * 可见 —— 收尾原来被 `if (assistantContent)` 罩住时只在这里面用过一次；
+     * 现在收尾无条件执行，所以它不能再是"循环内部"的局部量。
+     * `finally` 看不见它（块作用域），所以不要在那里读。
+     */
+    let lastEvent: any = undefined;
     try {
 console.log(`[runAgenticLoop] starting engine.process for session=${session.id}`);
 const sessionAbort = new AbortController();
@@ -3346,7 +3418,6 @@ abortControllersRef.current.set(session.id, sessionAbort);
         }
       }, WATCHDOG_CHECK_MS);
 
-      let lastEvent: any = undefined;
       for await (const event of engine.process(session.id, message, cwd, undefined, {
         /**
          * 第 154 轮（O-28）：把界面路径这一轮的助手消息**真实 id** 交给引擎。
@@ -3430,7 +3501,27 @@ abortControllersRef.current.set(session.id, sessionAbort);
         // User-selected skills (injected with 🎯 marker in system prompt)
         ...(selectedSkills && selectedSkills.length > 0 ? { userSelectedSkills: selectedSkills } : {}),
       })) {
-        if (sessionAbort.signal.aborted) break;
+        /**
+         * ## ★★ 第 184 波（UI 审计 F3）：中止只筛掉**过程性**事件，终局事件照旧处理
+         *
+         * 修前这里是 `if (sessionAbort.signal.aborted) break;` —— 在 `switch` **之前**，
+         * 于是用户点「停止」后到达的**第一个**事件（含引擎随后吐的
+         * `agentic-loop.ts:2833` `yield { type: "end", result: abortedResult }`）
+         * 及其后所有事件**全被丢弃**：
+         *  - `case "end"` 里那句「⏹ 已停止（本轮被中断）」在 App 里**不可达**
+         *    （`turn-outcome.ts:120-131` 为它准备了文案，`App.tsx` 那句承诺失守）；
+         *  - `status: "running"` 的工具卡片（唯一写入点见下面 `tool_start`）
+         *    再没有任何回收点 ⇒ 永久转圈，且落库就是 running（重启后仍转圈 ——
+         *    `repairCrashedSession` 只修事件日志，不碰 `messages` 行的
+         *    `tool_calls[].status`）。
+         *
+         * 现在只跳过"继续写正文/继续开新工具"这类过程性事件；终局事件（`end`）
+         * 走完整条 switch（呈现 + 元数据 + 工具卡片收尾都挂在它上面）。
+         * 判据 `shouldProcessEventAfterAbort` 有行为用例。
+         */
+        if (!shouldProcessEventAfterAbort(sessionAbort.signal.aborted, event.type)) {
+          break;
+        }
         lastEventAt = Date.now();
 
         switch (event.type) {
@@ -3892,42 +3983,51 @@ flushReasoningBuffer(session.id);
         }
       }
 
-      if (assistantContent) {
-        const generatedFiles = Array.from(generatedFilesRef.current);
-        // 对标 DSH turn 级 metadata：将 turn 状态写入消息 metadata，
-        // 供 StatsLine（统计行）和 TurnStatus（错误/重试/max-tokens 通知行）消费。
-        const turnEndTime = Date.now();
-        const turnMetadata: Record<string, any> = {};
-        // 从 end 事件中提取 turn 级信息
-        if (lastEvent && "result" in lastEvent && lastEvent.result) {
-          const result = lastEvent.result as any;
-          /**
-           * turn 级状态与上面那次呈现**共用同一个判据**（`describeTurnOutcome`）——
-           * 原来是四条 `result.reason === …`：
-           *   · `reason === "overflow"` 恒假（overflow 形状只有 `type`/`message`/`usage`，没有 reason），
-           *     所以 max-tokens 那一行从来没出现过；
-           *   · `{type:"error"}` 根本没有 reason，失败回合一条状态都不落。
-           */
-          const outcomeForMeta = describeTurnOutcome(result, { lang });
-          if (outcomeForMeta.turnStatus) {
-            turnMetadata.turnStatus = outcomeForMeta.turnStatus;
-          }
-          // usage 数据
-          if (result.usage) {
-            turnMetadata.usage = result.usage;
-            turnMetadata.turnEndTime = turnEndTime;
-          }
-        }
-        const finalOutcome = describeTurnOutcome(
-          lastEvent && "result" in lastEvent ? lastEvent.result : undefined,
-          { lang },
-        );
-        safeUpdateMessage(assistantMsgId, {
-          status: finalOutcome.messageStatus,
-          generatedFiles: generatedFiles.length > 0 ? generatedFiles : undefined,
-          metadata: Object.keys(turnMetadata).length > 0 ? turnMetadata : undefined,
+      /**
+       * ## ★★ 第 184 波（UI 审计 F2）：收尾**与"有没有正文"解耦**
+       *
+       * 修前整个收尾被 `if (assistantContent)` 罩住 —— 末轮**只调工具、没吐正文**时
+       * （第 1 迭代只发 tool_call → 第 2 迭代 LLM 失败/被中断/撞迭代上限或停滞守卫），
+       * `status` / `metadata`（turnStatus·usage）/ `generatedFiles` **一律不写**：
+       *  - 助手气泡永久停在 `streaming`（`MessageBubble.tsx:225` → 反馈按钮 `:1064`、
+       *    StatsLine `:1073`、文件提及 `:491` 全被挡掉）；
+       *  - `generatedFilesRef` 不清（清空点只有 `:3930` 与迭代切分那处）⇒ 下一轮
+       *    「修改了 N 个文件」把上一轮算进来。
+       *
+       * 现在只看"这一轮结束了吗"：`buildTurnFinalize`（纯函数）从 `lastEvent` 的
+       * `end` 结果算出 status/metadata，`generatedFilesRef` **无条件清空**。
+       * `safeUpdateMessage` 自带存在性守卫（消息不在 loop 那份里就是 no-op），
+       * 所以这里不需要再判 `assistantContent` / `loopMessages.has`。
+       */
+      {
+        const { update } = buildTurnFinalize({
+          assistantMsgId,
+          lastEvent,
+          generatedFiles: Array.from(generatedFilesRef.current),
+          lang,
         });
+        safeUpdateMessage(assistantMsgId, update);
+        // ⚠️ 无论有没有助手消息都要清 —— 残留会让下一轮的文件计数虚高
         generatedFilesRef.current.clear();
+      }
+      /**
+       * ## 第 184 波（UI 审计 F3）：中止/异常收场时把仍为 `running` 的工具卡片收成终态
+       *
+       * 放在这里（而不是只放在 `case "end"` 里）是因为三条路都要兜住：
+       * ① 中止后 `end` 事件**照旧处理**（见事件循环入口的说明）；
+       * ② 循环被异常打断、连 `end` 都没吐出来（此时工具卡片同样是 running）；
+       * ③ 正常完成时没有 running 的卡片 ⇒ `applyAbortToRunningToolCalls` 返回 null，
+       *    不产生任何多余写入。
+       */
+      if (sessionAbort.signal.aborted) {
+        const abortedMsg = applyAbortToRunningToolCalls(loopMessages.get(assistantMsgId));
+        if (abortedMsg) {
+          loopMessages.set(assistantMsgId, abortedMsg);
+          for (const tc of abortedMsg.toolCalls || []) {
+            safeUpdateToolCall(assistantMsgId, tc.id, { status: "error", result: tc.result });
+          }
+          persistLoopMessages();
+        }
       }
     } catch (error: any) {
       
@@ -3941,6 +4041,13 @@ flushReasoningBuffer(session.id);
         timestamp: Date.now(),
         status: 'error',
       });
+      /**
+       * 同上（F2）：异常收场时那条助手消息也没有正文的话，同样要收成终态 ——
+       * 否则它永久停在 streaming（这条路径上连 `lastEvent` 都没有）。
+       */
+      try {
+        safeUpdateMessage(assistantMsgId, { status: 'error' });
+      } catch { /* 收尾失败不许盖住原始错误 */ }
     } finally {
 if (watchdogTimer) clearInterval(watchdogTimer);
 // Flush any remaining buffered text for this session

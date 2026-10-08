@@ -135,9 +135,18 @@ describe("FIXB-1：会话墓碑（删掉的会话不许在索引重建后复活�
   });
 
   it("FIXB-1c: **索引重建跳过已删除的会话，并如实计数**（这是缺陷本体）", async () => {
+    /**
+     * ⚠️ 第 184 波存储审计 S1 修正了这条夹具（判据的**含义没变**，但前提必须成立）。
+     *
+     * 原来种子里带着 `SESSION` 那一行，注释说"那是用户点删除之前的状态，与重建无关"——
+     * 而 S1 之后**有关系**了：真正的删除会先把 `sessions` 那一行删掉，
+     * 墓碑是否成立正是按"库里还有没有这一行"判的（否则"删除失败但墓碑已落盘"
+     * 会让仍然存在的会话被**永久**跳过）。所以这里必须如实造出"已经删掉"的状态：
+     * 库里**没有** SESSION 那一行，只有 `s-keep`。
+     */
     const port = createFakeStoragePort({
       seed: {
-        sessions: [{ id: SESSION, project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 }],
+        sessions: [{ id: "s-keep", project_id: "", title: "t", created_at: 0, last_message_at: 0, message_count: 0 }],
       },
     });
     setStoragePort(port);

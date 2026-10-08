@@ -16,7 +16,8 @@
  * | --- | --- | --- |
  * | SSE-1 | 流里先来一帧文本，再来 `{"error":{"message":"server_busy"}}` | **抛错**（不许静默 end） |
  * | SSE-2 | 抛出来的错误要**能被重试分诊认出容量类**（文案/`code` 都在） | `classifyError().isRetryable === true` |
- * | SSE-3 | 反向对照：**没有** error 载荷、服务端正常收尾（无 finish_reason） | 仍然安静收尾（既有兜底不许被一并改掉） |
+ * | SSE-3a | 见过 `[DONE]` 但无 finish_reason | 正常收尾（`stop`） |
+ * | SSE-3b | **没见过** `[DONE]` 就结束 | **非正常结束**（`error`，不许说成 `stop`；也不是 `aborted`） |
  * | SSE-4 | 反向对照：正常的 `finish_reason: "stop"` 不受影响 | 正常 end |
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -121,12 +122,32 @@ describe("第 184 波 · SSE error 载荷（G1）", () => {
     expect(classifyError(caught).isRetryable).toBe(true);
   });
 
-  it("SSE-3 反向对照：没有 error 载荷、服务端正常收尾 ⇒ 仍走既有安静兜底（不许被一并改成抛错）", async () => {
-    const frames = ['data: {"id":"m1","choices":[{"delta":{"content":"hi"}}]}\n\n'];
+  /**
+   * ★ 第 184 波（审计修复后更新）：这一条原来断言"无 `finish_reason` 的兜底仍是 `stop`" ——
+   * 那是**旧的、不诚实的**契约：代理/网关吐半段正文后掐断连接也是这个形状，
+   * 于是被记成 `completed`（用户看到"任务完成"、用量记 0）。
+   *
+   * 新契约用**协议终止符 `[DONE]`** 区分两种情况，所以这一条拆成两半 ——
+   * 比原来**更强**（既守住"不许把掐断说成完成"，也守住"见过 [DONE] 不该被误报成失败"）。
+   */
+  it("SSE-3a: 见过 `[DONE]` 但没 finish_reason ⇒ 服务端确实收完了，仍是 stop", async () => {
+    const frames = [
+      'data: {"id":"m1","choices":[{"delta":{"content":"hi"}}]}\n\n',
+      "data: [DONE]\n\n",
+    ];
     const events = await drive(frames);
     const end = events.find((e) => e.type === "end");
     expect(end, "必须有 end 事件").toBeTruthy();
-    expect(end.finishReason, "无 finish_reason 的兜底仍是 stop").toBe("stop");
+    expect(end.finishReason, "有协议终止符 ⇒ 正常收尾").toBe("stop");
+  });
+
+  it("SSE-3b: **没见过** `[DONE]` 就结束 ⇒ 连接可能被掐断，不许说成正常完成", async () => {
+    const frames = ['data: {"id":"m1","choices":[{"delta":{"content":"说到一半"}}]}\n\n'];
+    const events = await drive(frames);
+    const end = events.find((e) => e.type === "end");
+    expect(end.finishReason, "没有终止符 ⇒ 非正常结束（`error`），不是 `stop`").toBe("error");
+    // 反向对照：这不是"中止"（调用方没 abort）—— 两件事不许混为一谈
+    expect(end.finishReason, "没 abort 就不该报 aborted").not.toBe("aborted");
   });
 
   it("SSE-4 反向对照：正常 finish_reason 不受影响", async () => {

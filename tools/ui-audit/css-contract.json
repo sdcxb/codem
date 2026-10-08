@@ -1297,6 +1297,27 @@
     "overscroll-behavior": "contain",
     "position": "relative"
   },
+  "chat-cleanup-failed": {
+    "align-items": "center",
+    "background": "var(--warning-surface)",
+    "border-bottom": "1px solid var(--warning-border)",
+    "color": "var(--warning-content)",
+    "display": "flex",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-3)",
+    "justify-content": "space-between",
+    "padding": "var(--space-2) var(--space-4)"
+  },
+  "chat-cleanup-failed-dismiss": {
+    "background": "none",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "inherit",
+    "cursor": "pointer",
+    "flex-shrink": "0",
+    "font-size": "var(--fs-xs)",
+    "padding": "var(--space-1) var(--space-3)"
+  },
   "chat-dropdown--sessions": {
     "left": "0",
     "margin-top": "var(--space-2)",
@@ -8300,6 +8321,15 @@
     "margin-bottom": "var(--space-2)",
     "opacity": "0.4"
   },
+  "nb-chat-welcome-retry": {
+    "background": "none",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-primary)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-sm)",
+    "padding": "var(--space-2) var(--space-4)"
+  },
   "nb-chat-welcome-title": {
     "color": "var(--text-primary)",
     "font-size": "var(--fs-md)",
@@ -11239,8 +11269,7 @@
   },
   "plugin-market__version": {
     "color": "var(--text-muted)",
-    "font-size": "var(--fs-xs)",
-    "font-weight": "400"
+    "font-size": "var(--fs-xs)"
   },
   "plugin-mgr-box": {
     "border": "1px solid var(--border-primary)",
@@ -13734,6 +13763,19 @@
     "min-height": "0",
     "overflow": "hidden"
   },
+  "session-recovery-error": {
+    "align-items": "flex-start",
+    "border-bottom": "1px solid var(--border-primary)",
+    "color": "var(--warning)",
+    "display": "flex",
+    "flex-direction": "column",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-3)",
+    "padding": "var(--space-4)"
+  },
+  "session-recovery-error-text": {
+    "line-height": "var(--lh-base)"
+  },
   "session-recovery-header": {
     "align-items": "center",
     "border-bottom": "1px solid var(--border-primary)",
@@ -13743,6 +13785,15 @@
   },
   "session-recovery-icon": {
     "font-size": "var(--fs-lg)"
+  },
+  "session-recovery-retry": {
+    "background": "none",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-primary)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-sm)",
+    "padding": "var(--space-2) var(--space-4)"
   },
   "session-recovery-stats": {
     "border-bottom": "1px solid var(--border-primary)",
@@ -18214,6 +18265,12 @@
   "usage-stat-label": {
     "color": "var(--text-muted)",
     "font-size": "var(--fs-2xs)"
+  },
+  "usage-stat-note": {
+    "color": "var(--text-muted)",
+    "display": "block",
+    "font-size": "var(--fs-xs)",
+    "margin-top": "var(--space-2)"
   },
   "usage-stat-value": {
     "color": "var(--text-primary)",

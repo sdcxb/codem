@@ -130,6 +130,15 @@ export interface MaintenanceResult {
   /** 读取失败而跳过的会话数（单会话失败不再中断整轮，但要可见） */
   recountFailedSessions: number;
   /**
+   * **本次为什么一个会话都没对账**（第 184 波存储审计 S8/④）；空串 = 真的对账过了。
+   *
+   * 为什么必须有它：`recountCheckedSessions = 0` 有两种完全不同的含义 ——
+   * "对账压根没跑"（端口没注册 / `sessions` 域镜像未就绪 / 表是空的）与
+   * "对账跑过、`sessions` 表为空所以没什么可比"。原来这两个在日志与汇总行里**完全同形**，
+   * 而"读不到被当成没有"正是本仓库反复在治的那类缺陷。
+   */
+  recountSkippedReason: string;
+  /**
    * 本次**实际检查**了不变量（"模型可见即已记录" + 工具调用配对）的会话数。
    *
    * ## 为什么这个数字必须存在（第 45 轮功能上下文审计 §"未做"）
@@ -926,8 +935,24 @@ async function detectSessionsBehindLog(): Promise<
        * 的对账去读全文"，不影响任何报告口径 —— 两条路都是 `continue`、都不计数。
        */
       if (await isSessionDeleted(sessionId)) {
-        msgMod.releaseSessionLogCache(sessionId, "会话已删除（日志留墓碑）");
-        continue;
+        /**
+         * ⚠️ 第 184 波存储审计 S1：墓碑**只有"库里确实没有这一行"时才成立**。
+         *
+         * 删除路径是"先写墓碑、再删行"，而删除可能没成（`domainDelete` 返回 false），
+         * 也可能"返回 true 但那次 `deferWrite` 之后被队满 / 15s 老化丢弃" ——
+         * 那时墓碑已落盘、行还在。原来这里只看墓碑就 `continue`，于是这个**仍存在**的会话
+         * 连索引/日志对账都不参与（也不会被重建回来）。
+         *
+         * 现在行还在 ⇒ 墓碑作废，照常走下面的对账；并留一条 warn（长期这个数字应是 0）。
+         */
+        if (SessionStorage.sessionTombstoneBinding(sessionId) !== false) {
+          msgMod.releaseSessionLogCache(sessionId, "会话已删除（日志留墓碑）");
+          continue;
+        }
+        console.warn(
+          `[Maintenance] 会话 ${sessionId} 的日志里有墓碑，但 sessions 里仍有这一行` +
+            "（上次删除没成 / 那次写被丢弃）→ **墓碑作废**，照常参与索引/日志对账",
+        );
       }
       /**
        * ② 这里**必须自己去把日志读一遍**，不能等别人先 hydrate。
@@ -1249,7 +1274,8 @@ function readInvariantWatermark(): InvariantWatermark | null {
  */
 interface MirrorLike {
   isLoaded?: (sid: string) => boolean;
-  isTruncated?: () => boolean;
+  /** **按会话**判截断（第 184 波 S3：一个会话截断不得波及其它会话） */
+  isTruncated?: (sid: string) => boolean;
   ensureLoaded?: (sid: string, cb?: () => void) => void;
 }
 
@@ -1261,10 +1287,10 @@ function sessionMirrors(): MirrorLike[] {
   );
 }
 
-/** 该会话两侧镜像**此刻**是否都已加载（**不触发加载、不等待**） */
+/** 该会话两侧镜像**此刻**是否都已加载（**不触发加载、不等待**；截断判据按会话，S3） */
 function mirrorsReadyNow(mirrors: MirrorLike[], sid: string): boolean {
   return mirrors.every(
-    (m) => m.isLoaded!(sid) === true && !(typeof m.isTruncated === "function" && m.isTruncated()),
+    (m) => m.isLoaded!(sid) === true && !(typeof m.isTruncated === "function" && m.isTruncated(sid)),
   );
 }
 
@@ -2131,6 +2157,7 @@ export async function runDatabaseMaintenance(
     recountedSessions: 0,
     recountCheckedSessions: 0,
     recountFailedSessions: 0,
+    recountSkippedReason: "",
     invariantCheckedSessions: 0,
     invariantViolations: 0,
     invariantNewViolations: 0,
@@ -2454,12 +2481,36 @@ export async function runDatabaseMaintenance(
      * "裁剪改为软删除 + `trimmed` 标记"而不再产生；把它当成计数只会制造第二个真相。
      */
     result.recountedSessions = 0;
+    /**
+     * ⚠️ 第 184 波存储审计 S8/④：**"对账压根没跑"必须看得出**。
+     *
+     * 原来这里是 `domainReadMany(...) ?? []` + `if (!hasStoragePort() || sessions.length === 0)`
+     * ——"`sessions` 域镜像未就绪（返回 `undefined`）"被 `?? []` 收成空表，
+     * 于是"一次都没对账"（`recountCheckedSessions = 0`）与"对账跑过、全部一致"
+     * （同样是 0）在日志/汇总行里**完全同形**。同一个文件对"端口没有 `command` 能力"
+     * 是分开处置的，唯独这条不是。
+     *
+     * 现在把三态分开，并给出一句**可诊断的原因**（`recountSkippedReason`）：
+     * 端口没注册 / 镜像未就绪 / 会话表确实是空的。
+     */
+    result.recountSkippedReason = "";
     try {
       const { domainReadMany } = await import("./domain-store");
-      const sessions = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
       const { hasStoragePort, getStoragePort } = await import("./port");
-      if (!hasStoragePort() || sessions.length === 0) {
-        // 端口没有 / 镜像未就绪：**什么都不做**（不做成"当成 0 写回去"）
+      const sessionsRows = domainReadMany<Record<string, unknown>>("sessions", (r) => r);
+      const sessions = sessionsRows ?? [];
+      if (!hasStoragePort()) {
+        result.recountSkippedReason = "端口未注册（没有可用的存储）";
+      } else if (sessionsRows === undefined) {
+        result.recountSkippedReason = "sessions 域镜像未就绪（读不到 ≠ 没有会话）";
+      } else if (sessions.length === 0) {
+        result.recountSkippedReason = "sessions 表确实是空的（没有可对账的会话）";
+      }
+      if (result.recountSkippedReason) {
+        console.warn(
+          `[Maintenance] 会话计数对账：**本次一个会话都没对账**（${result.recountSkippedReason}）` +
+            "—— 这不是“都对上了”",
+        );
       } else {
         const port = getStoragePort() as unknown as {
           data: { command?: <R>(cmd: string, params?: Record<string, unknown>) => Promise<R> };
@@ -2476,6 +2527,7 @@ export async function runDatabaseMaintenance(
          *    现在逐会话容错，并把"实际检查了几个 / 几个失败"报出来。
          */
         if (typeof port.data.command !== "function") {
+          result.recountSkippedReason = "端口没有 command 能力（拿不到索引真值）";
           console.warn(
             "[Maintenance] 会话计数对账：端口没有 command 能力，**本次一个会话都没对账**（不是“都对上了”）",
           );
@@ -2513,11 +2565,18 @@ export async function runDatabaseMaintenance(
           }
         }
       }
-      if (result.recountedSessions > 0 || result.recountFailedSessions > 0) {
+      if (result.recountCheckedSessions > 0 || result.recountFailedSessions > 0) {
         console.log(
           `[Maintenance] 会话计数对账：检查 ${result.recountCheckedSessions} 个、修正 ${result.recountedSessions} 个` +
             (result.recountFailedSessions > 0 ? `、读取失败 ${result.recountFailedSessions} 个` : ""),
         );
+      } else if (!result.recountSkippedReason) {
+        /**
+         * 端口与镜像都在，却一个会话都没检查到（例如 `messages.count` 对每个会话都返回
+         * 非有限值 → `continue`）。这同样不是"都对上了"，必须说清楚。
+         */
+        result.recountSkippedReason = `对账跑过但一个会话都没能比较（sessions ${sessions.length} 个）`;
+        console.warn(`[Maintenance] 会话计数对账：${result.recountSkippedReason} —— 这不是“都对上了”`);
       }
     } catch (e) {
       console.warn("[Maintenance] 会话计数对账失败（跳过）:", e);
@@ -2608,7 +2667,20 @@ export async function runDatabaseMaintenance(
       let userMessagesBySession: Map<string, string[]> | null = null;
       try {
         const { domainReadMany: readMany } = await import("./domain-store");
-        const mRows = readMany<{ session_id?: unknown; role?: unknown; content?: unknown }>("messages", (r) => r) ?? [];
+        /**
+         * ⚠️ 第 184 波存储审计 S5/①：`domainReadMany` 未接手时返回的是 `undefined`
+         * （"未就绪"），**不是**"这张表是空的" —— 原来这里一个 `?? []` 把两态并成一态，
+         * 于是"messages 域读不到"被当成"该会话一条 user 消息都没有"，
+         * `isDelegationArtifact([])` 恒 false ⇒ 委派判据**静默恒不成立**，
+         * 而下面那段"读失败 ⇒ 整体退化为不判委派"的保守退让**根本走不到**。
+         *
+         * 现在读不到就**抛**，由下面那个 catch 把 `userMessagesBySession` 置 `null`
+         * （= 本次不判委派，方向保守：绝不会把用户的对话标成内部）。
+         */
+        const mRows = readMany<{ session_id?: unknown; role?: unknown; content?: unknown }>("messages", (r) => r);
+        if (mRows === undefined) {
+          throw new Error("messages 域镜像未就绪（读不到 ≠ 一条 user 消息都没有）");
+        }
         userMessagesBySession = new Map();
         for (const m of mRows) {
           if (String(m.role ?? "") !== "user") continue;   // 只看 user 角色（助手/工具消息与判据无关）

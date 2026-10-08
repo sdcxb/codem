@@ -30,7 +30,7 @@ import {
   type ZvecRuntimeStatus,
   type ZvecInstallPhase,
 } from "./types";
-import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { getSettingJSON } from "../storage/settings";
 
 // ========== 内部工具 ==========
 
@@ -128,7 +128,6 @@ async function writeMeta(paths: ZvecPaths, meta: ZvecMeta): Promise<void> {
 // ========== MCP 注册 ==========
 
 async function ensureMcpServer(paths: ZvecPaths, nodeExe: string, zgCli: string): Promise<void> {
-  const configs = getSettingJSON<Array<Record<string, unknown>>>("codem-mcp-servers", []);
   const cfg = {
     name: ZVEC_MCP_SERVER,
     transport: "stdio",
@@ -140,16 +139,34 @@ async function ensureMcpServer(paths: ZvecPaths, nodeExe: string, zgCli: string)
     },
     autoReconnect: true,
   };
-  const idx = configs.findIndex((c) => c.name === ZVEC_MCP_SERVER);
-  if (idx >= 0) configs[idx] = cfg;
-  else configs.push(cfg);
-  setSettingJSON("codem-mcp-servers", configs);
 
+  /**
+   * ★ 第 184 波 F1：**注册走 MCPRegistry 这唯一写入方**，不再自己读改写
+   * `codem-mcp-servers`。
+   *
+   * 改前是 `getSettingJSON(KEY)` → `push` → `setSettingJSON(KEY)`：这是一份**绕过 registry**
+   * 的独立写入方，而 registry 那边用**陈旧快照整表写回** ⇒ 两边互相覆盖，
+   * 用户已配置的 MCP 服务器会静默消失（面板里增删改一条就抹掉 zvec_grep，反向亦然），
+   * 而且面板永远看不到 zvec_grep（`getRuntimeStatus().mcpRegistered` 却是 true = 两套真相）。
+   *
+   * `upsertServer` 是幂等的（同名替换），且内部"写前重读磁盘" —— 别人的条目不会丢。
+   */
   try {
     const { getMCPRegistry } = await import("../mcp/mcp");
-    await getMCPRegistry().connect(cfg as never);
+    const registry = getMCPRegistry();
+    registry.upsertServer(cfg as never);
+
+    /**
+     * ⚠️ 严禁在这里补一次"写设置键"的兜底：那正是本缺陷的成因。
+     * 读设置键得到的状态（`mcpRegistered`）与 registry 的内存视图必须来自同一处写入。
+     */
+    try {
+      await registry.connect(cfg as never);
+    } catch (e) {
+      console.warn("[zvec-grep] MCP connect failed (重启后生效):", e);
+    }
   } catch (e) {
-    console.warn("[zvec-grep] MCP connect failed (重启后生效):", e);
+    console.warn("[zvec-grep] MCP 注册失败（该能力本次不可用）:", e);
   }
 }
 
@@ -176,8 +193,20 @@ export async function getRuntimeStatus(): Promise<ZvecRuntimeStatus> {
     modelReady = await exists(`${paths.modelsDir}/model2vec/minishlab--potion-code-16M-v2`);
   } catch { modelReady = false; }
 
-  const mcpRegistered = (getSettingJSON<Array<Record<string, unknown>>>("codem-mcp-servers", []))
-    .some((c) => c.name === ZVEC_MCP_SERVER);
+  /**
+   * 是否已注册 —— 读**唯一写入方**（`MCPRegistry`）的视图，不再自己去读设置键。
+   *
+   * 第 184 波 F1：改前这里读设置键、面板读 registry，两条读路径曾经给出矛盾结论
+   * （面板永远看不到 `zvec_grep`，这里却说"已注册"）—— 那就是两套真相。
+   * 现在写入与读取都只有一处，`getConfigs()` 自己会在预热完成后自愈。
+   */
+  let mcpRegistered = false;
+  try {
+    const { getMCPRegistry } = await import("../mcp/mcp");
+    mcpRegistered = getMCPRegistry().getConfigs().some((c) => c.name === ZVEC_MCP_SERVER);
+  } catch (e) {
+    console.warn("[zvec-grep] 读取 MCP 注册状态失败（按未注册处理）:", e);
+  }
 
   const status: ZvecRuntimeStatus = {
     runtimeInstalled: zgInstalled,
@@ -385,14 +414,15 @@ export async function installFromZip(zipFilePath: string, onPhase: PhaseCb = () 
 // ========== 卸载 / 索引 ==========
 
 export async function uninstall(): Promise<void> {
-  // 1) 断开/移除 MCP
-  const configs = getSettingJSON<Array<Record<string, unknown>>>("codem-mcp-servers", []);
-  const next = configs.filter((c) => c.name !== ZVEC_MCP_SERVER);
-  setSettingJSON("codem-mcp-servers", next);
+  // 1) 断开/移除 MCP —— **唯一写入方是 MCPRegistry**（第 184 波 F1）。
+  //    改前这里自己 `getSettingJSON` → filter → `setSettingJSON` 整表写回，
+  //    会把"面板在这之间刚加/刚改"的条目一起抹掉（两份实现 = 两套真相）。
   try {
     const { getMCPRegistry } = await import("../mcp/mcp");
     getMCPRegistry().removeServer(ZVEC_MCP_SERVER);
-  } catch { /* 忽略 */ }
+  } catch (e) {
+    console.warn("[zvec-grep] MCP 注销失败（配置可能在下次启动时重现）:", e);
+  }
 
   // 2) 删除运行时目录（永久删除：应用自管的运行时/模型目录动辄数百 MB，
   // 回收站既无意义，也可能撞上"文件太大放不进回收站"的系统对话框而永久卡住）

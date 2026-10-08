@@ -141,10 +141,27 @@ export function createIdleTimeout(
     arm(); // 重新计时
   };
 
+  /**
+   * ★ 第 184 波（审计修复）：**interval 也要能被 dispose 清掉**。
+   *
+   * ## 缺陷形态
+   *
+   * 改前 `dispose()` 只清 `arm()` 的那个 `setTimeout`，而下面这个**轮询 `setInterval`**
+   * 只能靠"下一次触发时发现 `disposed` 再自清" —— 也就是说每个已经结束的流都会**多留最长
+   * 10 秒**的定时器（`Math.min(idleThresholdMs / 4, 10_000)`，而 `provider.stream()`
+   * 每建一次流就 `createIdleTimeout()` 一个）。长会话里这类定时器会持续堆积，
+   * 且它们持有闭包（`lastActivity`、`reject`）⇒ 参与者无法被回收。
+   *
+   * 为什么既有判据没抓到：`provider-stream-cleanup.test.ts` 把 `createIdleTimeout`
+   * **整个 mock 掉**（它测的是 provider 侧的 dispose 调用次数），
+   * 于是真正的定时器实现从来没有判据覆盖。
+   */
+  let interval: ReturnType<typeof setInterval> | undefined;
+
   const promise = new Promise<never>((_, reject) => {
     // 使用 setInterval 轮询，而非单一 setTimeout
     // 这样 pulse() 可以在任意时机重置
-    const interval = setInterval(() => {
+    interval = setInterval(() => {
       if (disposed) {
         clearInterval(interval);
         return;
@@ -164,6 +181,11 @@ export function createIdleTimeout(
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
+    }
+    // 第 184 波：把轮询定时器也清掉（否则它要等到下一次触发才发现"已经废弃"）
+    if (interval) {
+      clearInterval(interval);
+      interval = undefined;
     }
   };
 

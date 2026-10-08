@@ -1,4 +1,4 @@
-import { appendSessionMessage, appendMessageTombstone, readSessionMessages } from "./session-jsonl";
+import { appendSessionMessage, appendMessageTombstone, readSessionMessages, hiddenFlagOf, trimmedFlagOf, isCompressedHidden } from "./session-jsonl";
 import {
   getCachedExternalContent,
   warmExternalContent,
@@ -136,7 +136,8 @@ async function waitForSessionMirror(
   port: {
     messages?: {
       isLoaded(id: string): boolean;
-      isTruncated(): boolean;
+      /** **按会话**判截断（第 184 波 S3：一个会话截断不得波及其它会话） */
+      isTruncated(id: string): boolean;
       ensureLoaded(id: string, cb?: () => void): void;
     };
   },
@@ -147,7 +148,7 @@ async function waitForSessionMirror(
   if (!m) return "timeout";
   const settled = (): "ready" | "truncated" | null => {
     if (!m.isLoaded(sessionId)) return null;
-    return m.isTruncated() ? "truncated" : "ready";
+    return m.isTruncated(sessionId) ? "truncated" : "ready";
   };
   const immediate = settled();
   if (immediate) return immediate;
@@ -587,8 +588,25 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
      * （`hydrateSessionLog` 进会话时读一次）。只要哪条删除路径漏了同步镜像，
      * 磁盘逻辑再正确，本进程内也照样"复活"—— 压缩被复活 = 上下文永不缩小 = 死循环，
      * 代价太大。所以这里按最保守处理：宁可少显示，绝不复活。
+     *
+     * ## ⚠️ 第 184 波存储审计 S2：这一行原来把**数字与布尔**比（那道防线是死的）
+     *
+     * 原来写的是 `(rec as any).hidden === true`，而写侧（`session-jsonl.ts` 的 serializer）、
+     * 读侧（`logMirrorMessage`）、重建侧（`session-log-bridge.ts`）**三处都按数字**
+     * （`Number(rec.hidden ?? 0)`，日志里写的是 `hidden: 1`）⇒ 这个比较**恒不成立**，
+     * 于是"镜像未加载 ⇒ 被压缩隐藏的消息整批从日志合回来"（「压缩 840 条、token 一点没降」）。
+     *
+     * 现在四处**共用同一份判定**（`hiddenFlagOf` / `isRecordHidden`，
+     * 见 `session-jsonl.ts` 里那两个函数的注释）—— 数字 1 就是隐藏。
+     * `deleted` 是**布尔**（墓碑行的形状就是 `deleted: true`），所以它按布尔判是正确的。
+     *
+     * ⚠️ 排除的判据是 `isCompressedHidden`（**隐藏且不是索引裁剪**），不是裸的 `isRecordHidden`：
+     * `hidden=1, trimmed=1` 的行是"被索引裁剪掉、本该仍读得到的历史"，
+     * 它不在 `fromIndex` 里（索引只给 `hidden = 0`），若在这里也丢掉，
+     * 用户会直接少看到那部分历史（SLOG-6/SLOG-8 实测：12 条变 3 条）。
+     * 这条口径与镜像侧 `hiddenMessageIds()` **逐字一致**。
      */
-    if ((rec as any).deleted === true || (rec as any).hidden === true || hiddenIds.has(rec.id)) {
+    if ((rec as any).deleted === true || isCompressedHidden(rec) || hiddenIds.has(rec.id)) {
       merged.delete(rec.id);
       continue;
     }
@@ -824,8 +842,9 @@ export function logMirrorMessage(sessionId: string, id: string): Message | null 
     ...(rec.generatedFiles ? { generatedFiles: rec.generatedFiles } : {}),
     ...(rec.retrievedSources ? { retrievedSources: rec.retrievedSources } : {}),
     // 压缩/裁剪标记：与写侧同一条约定（只写/只带非 0 值，读侧一律 ?? 0）
-    ...(Number(rec.hidden ?? 0) ? { hidden: Number(rec.hidden) } : {}),
-    ...(Number(rec.trimmed ?? 0) ? { trimmed: Number(rec.trimmed) } : {}),
+    // ⚠️ 第 184 波存储审计 S2：判定**共用** `session-jsonl.ts` 的 `hiddenFlagOf` / `trimmedFlagOf`
+    ...(hiddenFlagOf(rec) ? { hidden: hiddenFlagOf(rec) } : {}),
+    ...(trimmedFlagOf(rec) ? { trimmed: trimmedFlagOf(rec) } : {}),
     ...(rec.attachments ? { attachments: rec.attachments } : {}),
     ...(rec.metadata ? { metadata: rec.metadata } : {}),
   } as Message;
@@ -1446,7 +1465,7 @@ export function getMessage(id: string): Message | null {
   const portRow = routed?.byIdLookup(id);
   if (routed && portRow) {
     routed.ensureLoaded(portRow.session_id);
-    if (routed.isLoaded(portRow.session_id) && !routed.isTruncated()) {
+    if (routed.isLoaded(portRow.session_id) && !routed.isTruncated(portRow.session_id)) {
       const mirrored = routed.byIdLookup(id);
       if (mirrored) {
         /**
@@ -1656,7 +1675,14 @@ type RustMessagePortLike = {
      * 与改之前一致，不会更糟）。
      */
     isLoading?(sessionId: string): boolean;
-    isTruncated(): boolean;
+    /**
+     * **按会话**判截断（第 184 波 S3）。
+     *
+     * 原来这一行是"不带会话"的 `isTruncated()`，而真端口那个标记是**全局且永不复位**的：
+     * 只要有一个会话超过单会话上限，`rustMessageSource` 就对**所有**会话返回 null
+     * （索引读整批作废）。现在问的是"**这个**会话的加载被截断了吗"。
+     */
+    isTruncated(sessionId: string): boolean;
     ensureLoaded(sessionId: string, onLoaded?: () => void): void;
     list(sessionId: string): Array<{
       id: string;
@@ -1845,7 +1871,8 @@ function rustMessageSource(sessionId: string): RustMessagePortLike | null {
   port.messages.ensureLoaded(sessionId);
   if (!port.messages.isLoaded(sessionId)) return null;
   // 加载被上限截断时不能用镜像（集合不完整 → hidden 判定会错 → 可能复活消息）
-  if (port.messages.isTruncated()) return null;
+  // ⚠️ 判据**按会话**（第 184 波 S3）：别的会话被截断不该把这个会话的索引读一起判死
+  if (port.messages.isTruncated(sessionId)) return null;
   return port;
 }
 
@@ -1897,8 +1924,8 @@ export function isMessagesReadUnavailable(sessionId: string): boolean {
          */
         const pending = typeof port.messages.isLoading === "function" && port.messages.isLoading(sessionId);
         if (!pending) unavailable = true;
-      } else if (port.messages.isTruncated()) {
-        // 被上限截断时镜像不完整：读到的"空/少"都不是真值，同样算"读不到"
+      } else if (port.messages.isTruncated(sessionId)) {
+        // 被上限截断时镜像不完整：读到的"空/少"都不是真值，同样算"读不到"（按会话判，S3）
         unavailable = true;
       }
     }
@@ -2971,7 +2998,7 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
   if (port?.messages) {
     /** @returns 删除条数；null = 镜像未就绪（调用方登记"就绪后重做"） */
     const runWhenReady = (): number | null => {
-      if (!port.messages!.isLoaded(sessionId) || port.messages!.isTruncated()) return null;
+      if (!port.messages!.isLoaded(sessionId) || port.messages!.isTruncated(sessionId)) return null;
       const ids = port.messages!
         .list(sessionId)
         .filter((r) => Number(r.timestamp) < timestamp)
@@ -3480,7 +3507,7 @@ export function deleteMessagesAfter(
   if (port?.messages) {
     /** @returns 删除条数；null = 镜像未就绪（登记"就绪后重做"） */
     const runWhenReady = (): number | null => {
-      if (!port.messages!.isLoaded(sessionId) || port.messages!.isTruncated()) return null;
+      if (!port.messages!.isLoaded(sessionId) || port.messages!.isTruncated(sessionId)) return null;
       const rows = port.messages!.list(sessionId);
       const target = rows.find((r) => r.id === messageId);
       if (!target) return 0;

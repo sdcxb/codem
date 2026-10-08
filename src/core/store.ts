@@ -34,7 +34,8 @@ interface ProjectState {
 
   createSession: (title?: string) => Session;
   forkSession: (sourceSessionId: string, messageIndex: number, title?: string) => Session;
-  switchSession: (sessionId: string) => void;
+  /** @returns 是否真的切过去了（找不到该会话时返回 false —— 第 184 波 F4） */
+  switchSession: (sessionId: string) => boolean;
   deleteSession: (sessionId: string) => void;
   setSessions: (sessions: Session[]) => void;
   updateSession: (sessionId: string, update: Partial<Session>) => void;
@@ -415,7 +416,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     return child;
   },
 
-  switchSession: (sessionId) => { const s = get().sessions.find((s) => s.id === sessionId); if (s) set({ currentSession: s }); },
+  /**
+   * 切到某个会话。
+   *
+   * ## 第 184 波（UI 审计 F4）：**返回是否真的切过去了**
+   *
+   * 原来这条是**静默 no-op**：`find` 不到就什么都不做、也不抛错。于是调用方
+   * （最典型的是「会话恢复」面板：它的列表来自 `getSessionRecoveryService()`，
+   * 与 store 的会话集合**不保证同源**）在切换失败时照样 `onClose()` ——
+   * 弹窗关了、界面一切正常，而**什么都没发生**：用户以为恢复成功了。
+   *
+   * 现在返回 `boolean`（既有调用点不读返回值 ⇒ 行为完全不变），
+   * 让"我到底切过去了没有"成为可判定的事实，调用方必须据此如实交代。
+   */
+  switchSession: (sessionId) => {
+    const s = get().sessions.find((x) => x.id === sessionId);
+    if (!s) return false;
+    set({ currentSession: s });
+    return true;
+  },
 
   deleteSession: (sessionId) => {
     // Clean up worktree if this session had one

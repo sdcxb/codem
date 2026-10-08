@@ -272,6 +272,27 @@
   margin: 0 0 var(--space-6);
 }
 
+/*
+ * 「读不到历史」那一支的重试入口（第 184 波 F6）。
+ *
+ * 笔记本侧原来对同一份 store 事实只有一支（空 ⇒ 欢迎页），
+ * 修后与 ChatPanel 同形：在途 / 读不到（+ 重试）/ 确实空。
+ * 用既有令牌，不引入新变量。
+ */
+.nb-chat-welcome-retry {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.nb-chat-welcome-retry:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+
 /* 建议问题 — 融入对话区域 */
 .nb-chat-loading-questions {
   display: grid;

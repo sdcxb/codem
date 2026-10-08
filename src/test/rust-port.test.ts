@@ -495,6 +495,23 @@ describe("RustStoragePort —— 引擎与架构承诺", () => {
     }
   });
 
+  it("PORT-26: 未预热时 set **拒绝写库**（不拿空表覆盖已有配置；第 184 波 F1）", () => {
+    // 未预热：内存镜像里没有真值，"读整份 → 改一个字段 → 整份写回"的调用方
+    // 会把**空表**写进库（MCP 服务器列表就是这样被清空的）。
+    port.config.set("codem-mcp-servers", "[]");
+
+    expect(failures.length, "未预热写入必须如实上报").toBe(1);
+    expect(failures[0].note).toContain("未保存");
+    expect(port.config.stats().failures).toBe(1);
+    expect(
+      t.calls.filter((c) => c.command === "settings.set").length,
+      "绝不许发出 settings.set —— 那会把库里的真配置写成空表",
+    ).toBe(0);
+    expect(port.config.get("codem-mcp-servers", "fallback"), "内存镜像也不许假装写成功").toBe(
+      "fallback",
+    );
+  });
+
   it("PORT-25: 语料不进渲染进程 —— 端口不缓存查询结果", async () => {
     t.replies.set("messages.list", {
       ok: true,

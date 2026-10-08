@@ -534,13 +534,47 @@ export class MCPRegistry {
   }
 
   /**
-   * 准备写入：**写之前必须先把真实列表读回来**。
+   * 准备写入：**每次写之前都把磁盘上的真实列表读回来**（第 184 波 F1）。
    *
-   * 这是比"读不到"更危险的一半：早期空读之后直接 `push` + `saveConfigs()`，会把
-   * **磁盘上原有的服务器整表覆盖掉**（判据 MCP-CFG-3/4 实测：写回后用户原有服务器消失）。
+   * ## 为什么"读过一次"不够（写前重读 + 以磁盘为基准）
+   *
+   * 改前是 `if (!this.configsLoaded) this.loadConfigs()` —— 成功读过一次之后
+   * `this.configs` 就成了唯一真相，而 `saveConfigs()` 又**整表写回**。于是任何
+   * **绕过本类的写入方**（zvec-grep 装/卸运行时原来直接读改写 `codem-mcp-servers`）
+   * 写进去的条目，会在用户下次在面板里增/删/改任一服务器时被**静默抹掉**（反向亦然：
+   * zvec 卸载时的整表写也会抹掉面板刚加的那条）。
+   *
+   * 第 184 波已把 zvec 收敛到本类（`upsertServer` / `removeServer`），但"唯一写入方"
+   * 是一条纪律而不是机制 —— 所以这里**不假设**只有自己在写：每次都重读，
+   * 以磁盘为基准做增量，别人的条目原样保留。
+   *
+   * ## 返回 false = 这次读不算数 ⇒ 调用方**不许写**
+   *
+   * `getSettingJSON` 在配置面未预热时静默返回 fallback（空表），而空表与"真的没有
+   * 服务器"长得一模一样 —— 拿它写回等于**用空表覆盖磁盘上全部服务器**。所以未预热时：
+   * 曾经成功读到过真值 ⇒ 用那份快照接着写（真端口的不变量是"注册即预热"）；
+   * **从未成功读过 ⇒ 拒绝写入并如实上报**（宁可这次没保存，也不清空用户的服务器）。
    */
-  private ensureConfigsForWrite(): void {
-    if (!this.configsLoaded) this.loadConfigs();
+  private ensureConfigsForWrite(): boolean {
+    if (!isSettingsMirrorReady()) {
+      if (this.configsLoaded) return true;
+      reportPersistFailure(
+        "mcp.ensureConfigsForWrite",
+        new Error("配置面尚未预热，读不到真实的 MCP 服务器列表"),
+        "MCP 服务器配置本次未保存（配置面就绪后可重试）—— 不拿空表覆盖磁盘上已有的服务器",
+      );
+      return false;
+    }
+    try {
+      const disk = getSettingJSON<MCPServerConfig[]>("codem-mcp-servers", []);
+      if (!Array.isArray(disk)) return false;
+      this.configs = disk; // 以磁盘为基准：别人的写入不许被内存里的陈旧快照覆盖
+      this.configsLoaded = true;
+      return true;
+    } catch (e) {
+      reportPersistFailure("mcp.ensureConfigsForWrite", e);
+      return false;
+    }
   }
 
   /** Save configs to SQLite */
@@ -552,14 +586,29 @@ export class MCPRegistry {
 
   /** Add a server config */
   addServer(config: MCPServerConfig) {
-    this.ensureConfigsForWrite();
+    if (!this.ensureConfigsForWrite()) return;
     this.configs.push(config);
+    this.saveConfigs();
+  }
+
+  /**
+   * 幂等注册一个服务器（同名替换）：**第三方能力（zvec-grep / codegraph 等）的唯一写入入口**。
+   *
+   * 第 184 波 F1：这些能力原来自己 `getSettingJSON` → 改 → `setSettingJSON`（绕开本类），
+   * 于是在面板已加载快照的情况下，双方互相整表覆盖 ⇒ 用户已配置的服务器静默消失、
+   * 面板也永远看不到第三方写入的那一条（两套真相）。现在它们只调本方法。
+   */
+  upsertServer(config: MCPServerConfig) {
+    if (!this.ensureConfigsForWrite()) return;
+    const idx = this.configs.findIndex((c) => c.name === config.name);
+    if (idx >= 0) this.configs[idx] = config;
+    else this.configs.push(config);
     this.saveConfigs();
   }
 
   /** Update an existing server config by name */
   updateServer(name: string, config: MCPServerConfig) {
-    this.ensureConfigsForWrite();
+    if (!this.ensureConfigsForWrite()) return;
     const idx = this.configs.findIndex((c) => c.name === name);
     if (idx >= 0) {
       // If name changed, disconnect old and use new
@@ -573,7 +622,7 @@ export class MCPRegistry {
 
   /** Remove a server config */
   removeServer(name: string) {
-    this.ensureConfigsForWrite();
+    if (!this.ensureConfigsForWrite()) return;
     this.configs = this.configs.filter((c) => c.name !== name);
     this.saveConfigs();
     this.client.disconnect(name);

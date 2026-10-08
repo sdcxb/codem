@@ -797,7 +797,33 @@ export class ToolRegistry {
         name: toolName,
         input: args,
         output: result.output,
+        /**
+         * ★ 第 185 波（T5）：**`value` 必须透传** —— 与 `agentic-loop.ts` 那条路径**同形**。
+         *
+         * 这里原来是"重建一个干净结果对象"，只带 id/name/input/output/status/metadata ——
+         * 工具自己产出的结构化 `value` 在这一层被丢掉。而下游
+         * `OutputContractValidationMiddleware` 正是靠 `result.value` 做校验：
+         * 「声明了 outputSchema 却没有 value」被判成**实现漏了**，把**成功结果改写成
+         * `Error: … declared outputSchema but returned no value`**。
+         * 声明了 `outputSchema` 的四个工具恰好是主力：`bash` / `read` / `glob` / `grep`
+         * ⇒ 经这个入口（`provider/tools-provider.ts:120`、`dsh-compat/index.ts:154`）
+         * 的一次**成功**调用会被改写成错误 —— 就是第 97 波在 `agentic-loop` 那条路上
+         * 修掉的那场真机事故，只是换了入口。
+         *
+         * 无条件赋值（与 `agentic-loop.ts:4944` 逐字同形）：`undefined` 与"没有这个键"
+         * 对契约判定是同一件事（`result.value === undefined`），不需要额外条件。
+         */
+        value: result.value,
         status: verdict.status,
+        /**
+         * ★ 第 185 波（T5）：失败时**只补 `error` 字段，绝不顶掉 `output`**。
+         *
+         * `output` 里可能装着**部分成功的事实**：`multi_edit` 的
+         * `Applied 2/3 edits to x. Errors: …`（`tools.ts:2036-2056`）—— 哪几条落盘了、
+         * 哪几条失败，全靠这句话。它首行就是 `Applied …`，`classifyToolResult` 依据
+         * 显式 `isError` 判失败并把首行放进 `error`；如果这里反过来用 `error` 覆盖
+         * `output`，模型就只看到"失败"、看不到"已经改了哪两条"，也无法定向重试。
+         */
         ...(verdict.status === "error" ? { error: verdict.error, errorSource: "tool" as const } : {}),
         // metadata 之前在这里被丢掉（类型里却写着"从 ToolExecuteResult 透传"），
         // 例如 subagent 的 subagentId —— 上层据此判断要不要等待后台子智能体。

@@ -136,6 +136,27 @@ export function UsageStats({ onClose }: UsageStatsProps) {
               <span className="usage-stat-label">总费用</span>
               <span className="usage-stat-value">${stats.totalCost.toFixed(4)}</span>
             </div>
+            {/*
+              * ★ 第 184 波（G4）：**费用未知**的调用必须让用户看见。
+              *
+              * 为什么：表外模型（动态拉到、内置价目表里没有的）成本只能记 0，
+              * 于是「总费用」会**系统性偏低**，而按金额判定的会话/每日上限在这些调用上
+              * **不可能触发**。只显示一个更小的数字等于骗人 —— 这里如实说明它少算了多少次。
+              */}
+            {stats.uncostedCalls > 0 && (
+              <div className="usage-stat-card is-advisory" data-testid="usage-uncosted-hint">
+                <span className="usage-stat-label">费用未知的调用</span>
+                <span className="usage-stat-value">{stats.uncostedCalls} 次</span>
+                {/*
+                  第 185 波：说明做成**值 span 的兄弟**（而不是嵌在里面）——
+                  这样它继承卡片的常规字重，CSS 里就不必写死 `font-weight`
+                  （写死会顶破 LIT 写死值棘轮）。
+                */}
+                <span className="usage-stat-note">
+                  （这些模型没有价目，上面的金额少算了它们；按金额的成本上限可能未生效）
+                </span>
+              </div>
+            )}
             <div className="usage-stat-card">
               <span className="usage-stat-label">今日费用</span>
               <span className="usage-stat-value today">${stats.todayCost.toFixed(4)}</span>

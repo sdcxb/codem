@@ -120,9 +120,48 @@ describe("D3：流中途取消必须如实上报 aborted", () => {
     expect(ends[0].result.reason).not.toBe("completed");
   });
 
-  it("D3-B: 服务端正常收尾（无 finish_reason、未中止）→ 照旧 completed", async () => {
-    const s = controllableStream();
-    global.fetch = vi.fn(async () => s.response) as never;
+  /**
+   * ★ 第 184 波（审计修复后更新）：这一条原来断言"服务端收尾但没给 finish_reason ⇒ 照旧 completed"。
+   *
+   * 审计指出那个契约**本身是个缺口**：连接被代理/网关半途掐断时形状完全一样
+   * （挂起的 `reader.read()` 也是正常返回 `{done:true}`），于是**半个回答被当成完整回答**、
+   * 界面显示"任务完成"、用量记 0。
+   *
+   * 现在 provider 用**协议终止符 `[DONE]`** 区分：
+   * · 见过 `[DONE]` ⇒ 服务端确实收完了（缺 finish_reason 只是对端怪癖）；
+   * · **没见过** ⇒ 如实报 `finishReason: "error"`，循环把它当"不完整"抛错走重试。
+   *
+   * 这条判据随之改成**两半**，并把原来那句"不许改成 aborted"的意图**保留**下来
+   * （掐断 ≠ 用户中止：一个是可重试的传输问题，一个是用户意图）。
+   */
+  it("D3-B: 掐断（无 [DONE]、无 finish_reason）**不许**算完成 —— 必须走重试，且不许报 aborted", async () => {
+    let attempt = 0;
+    /**
+     * 第一次：吐一段正文后**掐断**（无 `[DONE]`、无 `finish_reason`）。
+     * 第二次（重试）：正常收尾（`finish_reason: "stop"` + `[DONE]`）。
+     * ⇒ 既能证明"掐断被当成可重试的异常"，也能证明"重试后能正常完成"。
+     */
+    global.fetch = vi.fn(async () => {
+      attempt++;
+      const cut = attempt === 1;
+      const frames = cut
+        ? ['data: {"id":"m1","choices":[{"delta":{"content":"说到一半"}}]}\n\n']
+        : [
+            'data: {"id":"m1","choices":[{"delta":{"content":"说完了"},"finish_reason":"stop"}]}\n\n',
+            "data: [DONE]\n\n",
+          ];
+      let i = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(c) {
+          if (i >= frames.length) {
+            c.close();
+            return;
+          }
+          c.enqueue(new TextEncoder().encode(frames[i++]));
+        },
+      });
+      return { ok: true, status: 200, body, text: async () => "", headers: new Headers() };
+    }) as never;
 
     const loop = new AgenticLoop(makeProvider() as any, createDefaultToolRegistry(), {
       maxIterations: 3,
@@ -131,19 +170,61 @@ describe("D3：流中途取消必须如实上报 aborted", () => {
     });
 
     const events: any[] = [];
-    for await (const e of loop.run("dsh-d3-b", "你好", CWD, "system prompt")) {
-      events.push(e);
-      if (e.type === "text_delta") {
-        // 服务端自己收尾（连接关闭、没有 finish_reason）—— 这条兜底路径必须保持原语义
-        s.close();
-      }
-    }
+    for await (const e of loop.run("dsh-d3-b", "你好", CWD, "system prompt")) events.push(e);
+
+    const retried = events.some((e) => e.type === "retry");
+    expect(
+      retried,
+      `"连接被掐断"必须被当成**可重试的异常**（改前它被当成正常完成，压根不重试）。事件序列：${events
+        .map((e) => e.type)
+        .join(",")}`,
+    ).toBe(true);
 
     const ends = events.filter((e) => e.type === "end");
     expect(ends.length).toBe(1);
-    expect(
-      ends[0].result,
-      "没有中止信号时，兜底收尾仍然是正常完成（不许把这条路径一并改成 aborted）",
-    ).toEqual(expect.objectContaining({ type: "stop", reason: "completed" }));
+    // 保留原判据的意图：掐断 ≠ 用户中止
+    expect(ends[0].result.type, "掐断不是 `aborted`（那是用户意图）").not.toBe("aborted");
+    // 重试成功后这一轮才允许算完成
+    expect(ends[0].result, "重试拿到正常收尾后应当完成").toEqual(
+      expect.objectContaining({ type: "stop", reason: "completed" }),
+    );
+  });
+
+  it("D3-C: 见过 `[DONE]` 而缺 finish_reason ⇒ 仍算正常完成（别把有终止符的也误判成掐断）", async () => {
+    const frames = [
+      'data: {"id":"m1","choices":[{"delta":{"content":"hi"}}]}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    let i = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (i >= frames.length) {
+          c.close();
+          return;
+        }
+        c.enqueue(new TextEncoder().encode(frames[i++]));
+      },
+    });
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      body,
+      text: async () => "",
+      headers: new Headers(),
+    })) as never;
+
+    const loop = new AgenticLoop(makeProvider() as any, createDefaultToolRegistry(), {
+      maxIterations: 3,
+      model: "d3-model",
+      securityMode: "full",
+    });
+    const events: any[] = [];
+    for await (const e of loop.run("dsh-d3-c", "你好", CWD, "system prompt")) events.push(e);
+
+    const ends = events.filter((e) => e.type === "end");
+    expect(ends.length).toBe(1);
+    expect(ends[0].result, "有协议终止符 ⇒ 正常完成（不许误报失败）").toEqual(
+      expect.objectContaining({ type: "stop", reason: "completed" }),
+    );
   });
 });

@@ -67,6 +67,20 @@ const RETRYABLE_MESSAGE_PATTERNS: RegExp[] = [
   /stream (ended|closed) before/i,
   /connection (reset|closed) by peer/i,
   /\bplease retry\b|\btry again later\b/i,
+  /**
+   * ★ 第 184/185 波：**"流没有正常收尾"是可重试的**。
+   *
+   * `agentic-loop` 在 `finishReason === "error"`（provider 侧判据：既没有 `finish_reason`
+   * 也没有协议终止符 `[DONE]`）时抛 `INCOMPLETE_STREAM`。那不是"确定性失败"——
+   * 它的根因是连接被代理/网关**半途掐断**，重发一次通常就好。
+   *
+   * ⚠️ 这条是**跨线集成缺口**：第 184 波我只在循环里加了抛错，没同时把这类错加入可重试表，
+   * 于是它掉进默认的"不可重试"⇒ 一次网络抖动直接结束回合（正是 D3-B 判据抓到的形态）。
+   * 判据：`dsh-d3-abort-not-completed.test.ts` 的 D3-B（掐断必须走重试）与
+   * `retry-classification-capacity.test.ts` 的 RTC-9。
+   */
+  /\bINCOMPLETE_STREAM\b/i,
+  /ended without a completion marker/i,
 ];
 
 /**

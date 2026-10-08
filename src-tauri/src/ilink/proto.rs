@@ -46,14 +46,25 @@ pub const QUOTA_WINDOW_MS: i64 = 24 * 3600 * 1000;
 pub const QUOTA_MAX: u32 = 10;
 
 /// 单例 HTTP client（gzip 开启，与现有 http_get/http_download 一致）。
-fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .gzip(true)
-            .build()
-            .expect("ilink reqwest client build")
-    })
+///
+/// ★ 第 185 波（R7）：**从"建不出来就 panic"改成"把错误交出去"**。
+///
+/// 改前是 `OnceLock<reqwest::Client>` + `.expect("ilink reqwest client build")`：
+/// client 建不起来（TLS 后端异常、系统资源耗尽）时会**在 tokio 任务里 panic** ⇒
+/// 任务被吞掉、iLink 从此**静默不工作**（用户看到的是"微信桥没反应"，日志里
+/// 只有一句 panic 文本，错因完全指不出来）。这与 `lib.rs::shared_http_client`
+/// （`OnceLock<Result<Client, String>>`）是同一条纪律：**可报错就不许崩应用**。
+fn client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .gzip(true)
+                .build()
+                .map_err(|e| format!("ilink reqwest client build: {e}"))
+        })
+        .as_ref()
+        .map_err(|e| e.clone())
 }
 
 // ---- 客户端版本 / UIN 工具 ----
@@ -260,7 +271,9 @@ pub async fn post_json(
     timeout: Duration,
 ) -> Result<serde_json::Value, ApiError> {
     let url = build_url(base_url, path, params);
+    // client 建不出来时如实返回错误（改前是 `.expect` ⇒ 任务里 panic ⇒ iLink 静默不工作）
     let resp = client()
+        .map_err(ApiError::Invalid)?
         .post(&url)
         .headers(headers(auth))
         .json(&body)
@@ -285,7 +298,9 @@ pub async fn get_json(
     timeout: Duration,
 ) -> Result<serde_json::Value, ApiError> {
     let url = build_url(base_url, path, params);
+    // 同上：建 client 失败如实返回，不再 panic
     let resp = client()
+        .map_err(ApiError::Invalid)?
         .get(&url)
         .headers(headers(auth))
         .timeout(timeout)

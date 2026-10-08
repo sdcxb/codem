@@ -526,6 +526,14 @@ export class CostTracker {
     totalDuration: number;
     averageCostPerCall: number;
     averageDuration: number;
+    /**
+     * ★ 第 184 波（G4）：**费用未知**的调用次数。
+     *
+     * 为什么必须有消费方：这个数字存在的唯一意义就是"让用户知道账单可能少算了"。
+     * 只写不读等于没做（本波刚修的 G3 就是同一类错：写了 `metadata.duration` 没人读）。
+     * 消费方：`UsageStats.tsx` 在总费用旁边显示一行提示。
+     */
+    uncostedCalls: number;
   } {
     const totalCost = this.getTotalCost();
     const totalSessions = new Set(this.records.map((r) => r.sessionId)).size;
@@ -543,6 +551,7 @@ export class CostTracker {
       totalDuration,
       averageCostPerCall: this.records.length > 0 ? totalCost / this.records.length : 0,
       averageDuration: this.records.length > 0 ? totalDuration / this.records.length : 0,
+      uncostedCalls: this.records.reduce((sum, r) => sum + (r.costUnknown ? 1 : 0), 0),
     };
   }
 

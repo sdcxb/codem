@@ -297,7 +297,13 @@ pub struct CostStats {
 // ========== MCP Stdio Process Management ==========
 
 struct McpProcessHandle {
-    stdin: tokio::process::ChildStdin,
+    /// ★ 第 185 波：stdin 单独包一层锁（`Arc<TokioMutex<…>>`）。
+    ///
+    /// 改前它是**裸** `ChildStdin`，只有 `mcp_processes` 整表锁能保护它 ⇒ 发一个请求
+    /// 就必须**从头到尾**持有整表锁（包括等应答的 30 s）⇒ 期间"断开"、别的服务器的请求、
+    /// 退出时的回收全部排队/抢不到。现在：整表锁只用来取这两个 Arc，取完立刻放掉，
+    /// 写 stdin 由这把小锁串行化，等应答**不持任何锁**。
+    stdin: Arc<TokioMutex<tokio::process::ChildStdin>>,
     pending: Arc<TokioMutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>>,
     _child: tokio::process::Child,
 }
@@ -875,9 +881,11 @@ Use the paginated reader (`read_file_lines`) or the windowed reader (`read_text_
 async fn write_file(path: String, content: String, encoding: Option<String>, workspace: Option<String>) -> Result<(), String> {
     // S5: Sandbox path whitelist — if workspace is provided, restrict writes to workspace
     if let Some(ref ws) = workspace {
-        let ws_canonical = canonicalize_path(ws);
-        let target_canonical = canonicalize_path(&path);
-        if !target_canonical.starts_with(&ws_canonical) {
+        let ws_resolved = resolve_sandbox_path(std::path::Path::new(ws))
+            .map_err(|e| format!("Sandbox: cannot resolve workspace '{}': {}", ws, e))?;
+        let target_resolved = resolve_sandbox_path(std::path::Path::new(&path))
+            .map_err(|e| format!("Sandbox: cannot resolve target '{}': {}", path, e))?;
+        if !path_within_workspace(&target_resolved, &ws_resolved) {
             return Err(format!(
                 "Sandbox: Write to '{}' is outside the workspace '{}'. Set the workspace directory or disable sandbox mode in settings.",
                 path, ws
@@ -922,29 +930,123 @@ async fn write_file(path: String, content: String, encoding: Option<String>, wor
     Ok(())
 }
 
-/// S5: Canonicalize a path for comparison (resolve . and .. without requiring the path to exist)
-fn canonicalize_path(path: &str) -> String {
-    let normalized = path.replace('/', "\\");
-    let mut parts: Vec<&str> = Vec::new();
-    for part in normalized.split('\\') {
-        if part == "" || part == "." {
-            continue;
-        }
-        if part == ".." {
-            parts.pop();
-            continue;
-        }
-        parts.push(part);
+/// 剥掉 Windows 的 **verbatim / 长路径前缀**：`\\?\C:\a` → `C:\a`，
+/// `\\?\UNC\srv\share` → `\\srv\share`。
+///
+/// 为什么必须剥：`std::fs::canonicalize` 在 Windows 上**总是**返回带 `\\?\` 的形式，
+/// 而调用方给的工作区路径是普通形式 ⇒ 不剥就会出现"同一个目录却被判成越界"的假失败
+/// （这正是改前 `write_file` 里那类误报的来源之一）。
+fn strip_verbatim_prefix(p: &std::path::Path) -> std::path::PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return std::path::PathBuf::from(format!(r"\\{}", rest));
     }
-    let result = parts.join("\\");
-    // Preserve drive letter prefix
-    if normalized.len() >= 2 && normalized.as_bytes()[1] == b':' {
-        result
-    } else if normalized.starts_with("\\\\") {
-        format!("\\{}", result)
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return std::path::PathBuf::from(rest);
+    }
+    p.to_path_buf()
+}
+
+/// 纯词法规范化：去掉 `.`、折叠 `..`（**不碰磁盘**，用于"路径还不存在"的兜底）。
+fn lexical_normalize(p: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out = std::path::PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // 已经退到根（或只有前缀）时 pop 会失败 ⇒ 保留 `..`，
+                // 于是它**不可能**再匹配到工作区前缀（判定为越界，安全方向）。
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// 把路径解析成**可用于包含判定**的规范绝对形式。
+///
+/// ## 为什么不是改前那个纯字符串 `canonicalize_path`
+///
+/// 改前只做"去点 + 拼反斜杠 + 大小写敏感前缀比较"，三个缺口都是实测出来的：
+/// 1. **不解析链接/接合点** ⇒ 工作区里一个指向外部的 junction 就能让写穿出去；
+/// 2. **不补分隔符边界** ⇒ `C:\mimo-gui-backup` 的字符串前缀恰好是 `C:\mimo-gui`（见
+///    `path_within_workspace`）；
+/// 3. **大小写敏感** ⇒ `c:\ws` 与 `C:\WS` 是同一个目录，却被判"越界"（假失败）。
+///
+/// ## 目标不存在是常态（`write_file` 写的常常是**新文件**）
+///
+/// 所以：存在 ⇒ 真 `canonicalize`；不存在 ⇒ 规范化**最近的已存在祖先**，
+/// 再把剩余分量（含 `..` 的词法折叠）拼回去。两条路得到的形式都剥掉 `\\?\`，
+/// 保证与调用方给的普通路径可以直接比较。
+fn resolve_sandbox_path(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return Ok(strip_verbatim_prefix(&canonical));
+    }
+    // 逐级向上找"最近的已存在祖先"
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    let mut cur = path.to_path_buf();
+    loop {
+        let Some(parent) = cur.parent() else { break };
+        if let Some(name) = cur.file_name() {
+            missing.push(name.to_os_string());
+        }
+        if let Ok(canonical) = std::fs::canonicalize(parent) {
+            let mut base = strip_verbatim_prefix(&canonical);
+            for seg in missing.iter().rev() {
+                base.push(seg);
+            }
+            return Ok(lexical_normalize(&base));
+        }
+        // 走到根了（parent 没有更上一级）⇒ 无法再解析
+        if parent.parent().is_none() {
+            break;
+        }
+        cur = parent.to_path_buf();
+    }
+    // 整条路径都不存在（含相对路径）：退化为词法规范化（结果仍是相对路径 ⇒ 与
+    // 绝对工作区比较时**必然**判越界，这是安全方向，不是静默放行）。
+    Ok(lexical_normalize(path))
+}
+
+/// 单个路径分量的比较键：**Windows 语义 = 大小写不敏感**（`C:\WS` 与 `c:\ws` 同目录）；
+/// 其它平台保持大小写敏感（在 Linux 上把 `/tmp/WS` 判成 `/tmp/ws` 之内是**放行**错误）。
+fn component_fold(s: &str) -> String {
+    if cfg!(target_os = "windows") {
+        s.to_lowercase()
     } else {
-        result
+        s.to_string()
     }
+}
+
+/// 包含判定：`target` 是否在 `workspace` **之内**。
+///
+/// ## 本仓库最忌讳的"同一规则两份实现"就在这里被合并
+///
+/// 改前有三份实现：`write_file`（字符串前缀）、`check_path_in_workspace`（真 canonicalize，
+/// 但大小写敏感 + 不处理不存在）、`list_directory_sandboxed`（又一份 canonicalize）。
+/// 现在三处都走 `resolve_sandbox_path` + 本函数。
+///
+/// ## 为什么"按组件"而不是"按字符串前缀"
+///
+/// `C:\mimo-gui-backup\x.txt` 的字符串前缀**就是** `C:\mimo-gui` ⇒ 字符串比较会放行
+/// 一次**越界写**。逐组件比较（`C:\mimo-gui-backup` ≠ `C:\mimo-gui`）才能挡住它。
+fn path_within_workspace(target: &std::path::Path, workspace: &std::path::Path) -> bool {
+    let t: Vec<String> = target
+        .components()
+        .map(|c| component_fold(&c.as_os_str().to_string_lossy()))
+        .collect();
+    let w: Vec<String> = workspace
+        .components()
+        .map(|c| component_fold(&c.as_os_str().to_string_lossy()))
+        .collect();
+    if w.is_empty() || t.len() < w.len() {
+        return false;
+    }
+    t[..w.len()] == w[..]
 }
 
 /// `append_file` 的实现体（与命令分开：纯函数才能被单测直接喂临时文件）。
@@ -1303,50 +1405,187 @@ async fn get_installer_default_lang() -> Result<String, String> {
     }
 }
 
+/// `glob_search` 的遍历上限（**两个上限都必须有**，理由见下）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GlobLimits {
+    max_depth: usize,
+    max_results: usize,
+}
+
+impl Default for GlobLimits {
+    fn default() -> Self {
+        Self {
+            max_depth: GLOB_MAX_DEPTH,
+            max_results: GLOB_MAX_RESULTS,
+        }
+    }
+}
+
+/// 递归深度上限。
+///
+/// ## 为什么是 32
+///
+/// 1. **栈安全的最后一道防线**：递归是"每层一个栈帧"的，没有上限时一个环就能把
+///    8 MB 主线程栈啃穿 ⇒ 栈溢出 = 整个应用被 abort（用户看到"应用突然没了"）。
+///    32 层 × 每帧几百字节 ≈ 十几 KB，怎么都不可能溢出；
+/// 2. **真实项目不会更深**：Windows 的 `MAX_PATH` 是 260 字符，平均每层 8 个字符
+///    也就 32 层；再深的目录几乎都是构建产物/包缓存（`node_modules`、`.git` 内部），
+///    这个工具是"找文件"不是"全盘遍历"。
+const GLOB_MAX_DEPTH: usize = 32;
+
+/// 结果条数上限。
+///
+/// 超限**不静默**：`glob_search` 会返回一个明确的错误（见 `glob_truncated_message`），
+/// 而不是回一个"看起来完整"的列表（本仓库最忌讳的静默降级 —— 模型会把截断后的
+/// 前 N 条当全量，据此得出"文件不存在"的错误结论）。
+const GLOB_MAX_RESULTS: usize = 20_000;
+
+/// 一次遍历的结果 + **它是否完整**这两个事实（必须一起返回，不许只回列表）。
+struct GlobWalkOutcome {
+    files: Vec<String>,
+    /// 撞到结果条数上限 ⇒ 列表**不完整**。
+    truncated: bool,
+    /// 撞到深度上限 ⇒ 更深的目录**没被看过**（列表可能不完整）。
+    depth_limited: bool,
+}
+
+/// 结果被截断时给调用方的**明确错误**（唯一能把这件事说清楚的通道：
+/// 命令契约是 `Result<Vec<String>, String>`，把截断塞进返回数组里没人能分辨）。
+fn glob_truncated_message(pattern: &str, path: &str, limit: usize) -> String {
+    format!(
+        "glob_search matched more than {} entries under '{}' (pattern '{}') — results were truncated at {} \
+         so they are NOT a complete list. Narrow the path (search a subdirectory) or the pattern, then retry.",
+        limit, path, pattern, limit
+    )
+}
+
+fn glob_search_walk(
+    root: &std::path::Path,
+    pattern: &str,
+    limits: GlobLimits,
+) -> Result<GlobWalkOutcome, String> {
+    let mut outcome = GlobWalkOutcome {
+        files: Vec::new(),
+        truncated: false,
+        depth_limited: false,
+    };
+    glob_search_recursive(root, pattern, limits, 0, &mut outcome)?;
+    Ok(outcome)
+}
+
 #[tauri::command]
 async fn glob_search(pattern: String, path: String) -> Result<Vec<String>, String> {
-    let search_path = std::path::Path::new(&path);
+    let search_path = std::path::PathBuf::from(&path);
     eprintln!("[glob_search] pattern: {}, path: {}, exists: {}", pattern, path, search_path.exists());
     if !search_path.exists() {
         return Err(format!("Path does not exist: {}", path));
     }
-    
-    let mut results = Vec::new();
-    glob_search_recursive(search_path, &pattern, &mut results)?;
-    eprintln!("[glob_search] found {} files", results.len());
-    Ok(results)
+
+    /*
+     * ★ 第 185 波：**走盘放进 `spawn_blocking`** ✓。
+     *
+     * 改前这个 `async fn` 里直接同步 `read_dir` 递归：tokio 的 worker 线程被占死，
+     * 期间该 worker 上的其它命令（心跳、日志、读写文件…）全都排队；而前端 30 s 的
+     * `Promise.race` 只是**丢掉 Promise**、Rust 侧还在跑 ✓ ⇒ 用户看到"超时了"，
+     * 进程继续吃 CPU，直到栈溢出把应用 abort ✗。
+     * 磁盘遍历是**阻塞 I/O**，本来就属于 blocking pool（与 `js_sandbox_*` 同一写法）。
+     */
+    let pattern_for_task = pattern.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        glob_search_walk(&search_path, &pattern_for_task, GlobLimits::default())
+    })
+    .await
+    .map_err(|e| format!("glob_search 遍历线程失败：{e}"))??;
+
+    if outcome.truncated {
+        runtime_log::append_line(
+            "WARN",
+            &format!(
+                "glob_search truncated pattern={} path={} limit={} (调用方收到明确错误，不是静默截断)",
+                pattern, path, GLOB_MAX_RESULTS
+            ),
+        );
+        return Err(glob_truncated_message(&pattern, &path, GLOB_MAX_RESULTS));
+    }
+    if outcome.depth_limited {
+        // 深度上限不是错误（大多数搜索根本到不了），但"可能漏了更深的目录"这件事要留痕。
+        runtime_log::append_line(
+            "WARN",
+            &format!(
+                "glob_search hit max depth={} pattern={} path={} (更深的目录未遍历)",
+                GLOB_MAX_DEPTH, pattern, path
+            ),
+        );
+    }
+    eprintln!("[glob_search] found {} files", outcome.files.len());
+    Ok(outcome.files)
 }
 
-fn glob_search_recursive(dir: &std::path::Path, pattern: &str, results: &mut Vec<String>) -> Result<(), String> {
+/// 递归遍历。
+///
+/// ## 为什么不会无限递归（两道**互相独立**的闸门）
+///
+/// 1. **跳过重解析点**：`entry.file_type()` 拿的是目录项自带的信息（**不跟随**链接），
+///    `is_symlink()` 在 Windows 上同时覆盖符号链接与**接合点（junction / mount point）**。
+///    本机取证：`%LOCALAPPDATA%\Application Data` 是个指向 `%LOCALAPPDATA%` 自己的
+///    自指接合点，名字不以 `.` 开头（原来的过滤挡不住）、`path.is_dir()` 会跟随它
+///    ⇒ 无限递归。跳过重解析点之后，剩下的就是一棵**普通目录树（天生无环）**，
+///    所以这里**不需要** visited 集合（同 inode 反复到达只可能来自链接）。
+/// 2. **深度上限**：万一将来有别的成环途径（新平台语义、奇怪的卷），深度上限把
+///    栈用量钉死在几十 KB 量级 —— 栈溢出会 abort 整个应用，这个代价不能赌。
+fn glob_search_recursive(
+    dir: &std::path::Path,
+    pattern: &str,
+    limits: GlobLimits,
+    depth: usize,
+    outcome: &mut GlobWalkOutcome,
+) -> Result<(), String> {
+    if depth >= limits.max_depth {
+        outcome.depth_limited = true;
+        return Ok(());
+    }
     let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
-    
+
     for entry in entries {
+        if outcome.truncated {
+            // 结果够了就停：继续走完整棵树只是白烧 I/O（调用方反正会收到"截断"错误）。
+            return Ok(());
+        }
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        
+
         // Skip hidden files and directories
         if name.starts_with('.') {
             continue;
         }
-        
-        let is_dir = path.is_dir();
-        
+
+        // `entry.file_type()` **不跟随**重解析点（`path.is_dir()` 会跟随 ⇒ 自指接合点无限递归）
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let is_dir = file_type.is_dir();
+
         // Check if file matches pattern
         if !is_dir {
             let matches = pattern == "*" || name_matches_glob(&name, pattern);
             if matches {
+                if outcome.files.len() >= limits.max_results {
+                    outcome.truncated = true;
+                    return Ok(());
+                }
                 eprintln!("[glob_search] MATCH: {} against pattern: {}", name, pattern);
-                results.push(path.to_string_lossy().to_string());
+                outcome.files.push(path.to_string_lossy().to_string());
             }
         }
-        
+
         // Recurse into directories
         if is_dir {
-            glob_search_recursive(&path, pattern, results)?;
+            glob_search_recursive(&path, pattern, limits, depth + 1, outcome)?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -1475,17 +1714,104 @@ fn kill_process_tree(pid: Option<u32>) -> Result<(), String> {
 ///
 /// `mcp_stdio_connect` 里已经设了 `kill_on_drop(true)`，但那只覆盖"AppState 被丢弃"
 /// 这一条路径；退出事件是唯一能确定自己还活着、还能拿到 pid 的时刻，所以在这里收最可靠。
-fn kill_all_mcp_processes(state: &AppState) {
-    let handles: Vec<(String, Option<u32>)> = match state.mcp_processes.try_lock() {
-        Ok(mut map) => map
-            .drain()
-            .map(|(name, handle)| (name, handle._child.id()))
-            .collect(),
-        Err(_) => return,
-    };
-    if handles.is_empty() {
-        return;
+/// 退出时收 MCP 进程表的**结果**。
+///
+/// ## 为什么要有这个枚举（第 185 波）
+///
+/// 改前是 `Err(_) => return` —— 抢不到锁就**一行日志都不留**地放弃，调用方（退出事件）
+/// 也无从知道"整棵 MCP 进程树没被回收"：用户看到的就是"退出后任务管理器里还有 node"，
+/// 而日志里什么都没有（这正是"静默降级"里最坏的一种：**谎报收干净**）。
+/// 现在把三种结局分开：收掉了 / 本来就没有 / **一个都没收到**。
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum McpShutdownOutcome {
+    /// 进程表本来就是空的（没什么可收的）
+    NothingToDo,
+    /// 收到了 n 棵进程树
+    Reaped(usize),
+    /// **抢不到锁 ⇒ 一棵都没收到**（调用方必须如实记 WARN，不许说"收干净了"）
+    LockBusy,
+}
+
+/// 退出路径抢 `mcp_processes` 锁的重试预算：最多 8 次 × 50 ms ≈ 400 ms。
+///
+/// 为什么可以这么短：R2 的另一个修复让**请求路径不再跨 await 持锁**，
+/// 所以锁的占用时间只剩"插表/取表"这种微秒级操作 ⇒ 竞争窗口极小，
+/// 重试几乎总是第一次就成功。剩下的 400 ms 是"真的有人在持锁"时的兜底，
+/// 此时如实记 WARN 比无限等待（用户点了退出却没反应）更诚实。
+const MCP_SHUTDOWN_LOCK_ATTEMPTS: u32 = 8;
+const MCP_SHUTDOWN_LOCK_GAP: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// 抢锁取句柄：抢不到就重试（最多 `attempts` 次、每次间隔 `gap`），
+/// 仍然抢不到 ⇒ 返回 `None` —— 调用方**必须**把这件事说出来（见 `mcp_shutdown_log_line`）。
+fn drain_mcp_handles_with<F>(
+    attempts: u32,
+    gap: std::time::Duration,
+    mut try_take: F,
+) -> Option<Vec<(String, Option<u32>)>>
+where
+    F: FnMut() -> Option<Vec<(String, Option<u32>)>>,
+{
+    for attempt in 0..attempts {
+        if let Some(handles) = try_take() {
+            return Some(handles);
+        }
+        if attempt + 1 < attempts {
+            std::thread::sleep(gap);
+        }
     }
+    None
+}
+
+/// "抢不到锁"的日志文案：**如实说没收到**，并且明确否掉"已收干净"的读法。
+fn mcp_shutdown_lock_busy_warn() -> String {
+    format!(
+        "mcp shutdown: mcp_processes 锁被占用（{} 次重试后仍抢不到）⇒ **没能回收任何 MCP 进程**；\
+         这些进程树（npx / cmd.exe 派生的 node 服务）可能残留在系统里。\
+         这是「没收到」，不是「已收干净」。",
+        MCP_SHUTDOWN_LOCK_ATTEMPTS
+    )
+}
+
+/// 把收 MCP 进程的结局变成**一条必须落盘的日志**（`None` = 确实没什么可记）。
+///
+/// 抽成纯函数是为了能被判据直接钉住："抢不到锁"这条路径**必须**有 WARN，
+/// 而不是像改前那样静默 `return`。
+fn mcp_shutdown_log_line(outcome: &McpShutdownOutcome) -> Option<(&'static str, String)> {
+    match outcome {
+        McpShutdownOutcome::NothingToDo => None,
+        McpShutdownOutcome::LockBusy => Some(("WARN", mcp_shutdown_lock_busy_warn())),
+        McpShutdownOutcome::Reaped(n) => Some((
+            "INFO",
+            format!("mcp shutdown: 已回收 {n} 棵 MCP 进程树（全部）"),
+        )),
+    }
+}
+
+fn kill_all_mcp_processes(state: &AppState) -> McpShutdownOutcome {
+    let handles = drain_mcp_handles_with(MCP_SHUTDOWN_LOCK_ATTEMPTS, MCP_SHUTDOWN_LOCK_GAP, || {
+        match state.mcp_processes.try_lock() {
+            Ok(mut map) => Some(
+                map.drain()
+                    .map(|(name, handle)| (name, handle._child.id()))
+                    .collect(),
+            ),
+            Err(_) => None,
+        }
+    });
+
+    let Some(handles) = handles else {
+        let outcome = McpShutdownOutcome::LockBusy;
+        // ★ 不许静默放弃：日志如实说明"没收到所有进程"。
+        if let Some((level, line)) = mcp_shutdown_log_line(&outcome) {
+            runtime_log::append_line(level, &line);
+        }
+        return outcome;
+    };
+
+    if handles.is_empty() {
+        return McpShutdownOutcome::NothingToDo;
+    }
+    let reaped = handles.len();
     for (name, pid) in handles {
         match kill_process_tree(pid) {
             Ok(()) => runtime_log::append_line(
@@ -1497,6 +1823,88 @@ fn kill_all_mcp_processes(state: &AppState) {
                 &format!("mcp shutdown: kill failed name={name} pid={pid:?} err={e}"),
             ),
         }
+    }
+    McpShutdownOutcome::Reaped(reaped)
+}
+
+/// `execute_command` 的**读取期**上限（字节）。
+///
+/// 这两个数与"调用方看到的截断阈值"是**同一个数**（改前它们在 join 之后才生效）：
+/// 收满就不再多留一个字节 ⇒ 内存峰值被钉死在 60 KB 量级（改前是"命令输出的全量"）。
+const EXEC_STDOUT_CAP: usize = 50_000;
+const EXEC_STDERR_CAP: usize = 10_000;
+
+/// 有界读取：最多把 `cap` 字节收进返回的 `Vec`，**其余读掉但不留**。
+///
+/// 为什么"读掉但不留"而不是"直接不读"：不读的话子进程会把管道写满并**阻塞在 write**
+/// 上，那条命令就永远不结束了（看起来像挂死）。丢弃才是既不涨内存又不堵子进程的做法。
+///
+/// 返回 `(留下的字节, 真实读到的总字节数)` —— 总字节数是给调用方**如实标注"截断了"**用的
+/// （只说"截断了"而不给总量，用户无法判断丢了多少）。
+///
+/// `abandon`：由等待方（超时路径）置位 ⇒ 读线程立刻停手并**丢掉管道句柄**，
+/// 不再"继续读进没人看的 Vec"。
+fn read_stream_bounded<R: std::io::Read>(
+    reader: &mut R,
+    cap: usize,
+    abandon: &std::sync::atomic::AtomicBool,
+) -> (Vec<u8>, u64) {
+    let mut kept: Vec<u8> = Vec::with_capacity(cap.min(8192));
+    let mut total: u64 = 0;
+    let mut buf = [0u8; 8192];
+    loop {
+        if abandon.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                total += n as u64;
+                let room = cap.saturating_sub(kept.len());
+                if room > 0 {
+                    kept.extend_from_slice(&buf[..n.min(room)]);
+                }
+                // 超过 cap 的部分：读到了、数过了、丢掉（内存有界）
+            }
+            Err(_) => break,
+        }
+    }
+    (kept, total)
+}
+
+/// 把（有界读到的）字节渲染成给调用方的字符串；**被截断时如实标注丢了什么**。
+///
+/// `total > bytes.len()` 就是"截断"的定义 —— 不靠猜、不靠阈值重算。
+fn render_stream_bounded(bytes: &[u8], total: u64, label: &str) -> String {
+    let text = String::from_utf8_lossy(bytes).to_string();
+    if total <= bytes.len() as u64 {
+        text
+    } else {
+        format!(
+            "{}...({} truncated: kept {} of {} bytes total)",
+            text,
+            label,
+            bytes.len(),
+            total
+        )
+    }
+}
+
+/// 有界 `join`：最多等 `limit`，到点仍没结束就返回 `None`（**交给调用方如实记账**，
+/// 不许假装它已经结束）。
+fn join_thread_within<T>(
+    handle: std::thread::JoinHandle<T>,
+    limit: std::time::Duration,
+) -> Option<T> {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        if handle.is_finished() {
+            return handle.join().ok();
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
@@ -1582,80 +1990,104 @@ async fn execute_command(command: String, cwd: Option<String>, timeout_ms: Optio
     // Take child pid before moving child into a thread
     let child_pid = child.id();
 
-    let (stdout, stderr, status) = {
+    // ===== 输出读取（★ 第 185 波：**读取阶段就有上限**）=====
+    //
+    // 改前 reader 线程 `read_to_end` 把 stdout/stderr **全量**读进 `Vec<u8>`，
+    // 50 KB / 10 KB 的截断发生在 `join()` **之后** ⇒ 内存峰值 = 该命令输出的全量
+    // （`type` 一个 GB 级日志就是 GB 级占用），而模型看到的仍然只有 50 KB。
+    // 现在：收满 `EXEC_STDOUT_CAP` / `EXEC_STDERR_CAP` 就**只读不留**（读掉是为了不让
+    // 子进程把管道写满卡死），同时把**真实总字节数**带出来 ⇒ 截断能如实标注。
+    let (stdout, stderr, stdout_total, stderr_total, status) = {
         let child = &mut child;
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
+        let abandon = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-        // Read output on a worker thread so we can race against the timeout.
-        let reader = std::thread::spawn(move || -> (Vec<u8>, Vec<u8>) {
-            let mut out: Vec<u8> = Vec::new();
-            let mut err: Vec<u8> = Vec::new();
-            if let Some(mut so) = stdout {
-                let _ = std::io::Read::read_to_end(&mut so, &mut out);
+        // 两个流各一个线程：改前是**同一个线程**先读完 stdout 再读 stderr ——
+        // 子进程把 stderr 管道写满就会阻塞在写，而这边还在等 stdout 的 EOF ⇒ 双向死等。
+        let ab = abandon.clone();
+        let reader_out = std::thread::spawn(move || {
+            let mut so = stdout;
+            match so.as_mut() {
+                Some(so) => read_stream_bounded(so, EXEC_STDOUT_CAP, &ab),
+                None => (Vec::new(), 0),
             }
-            if let Some(mut se) = stderr {
-                let _ = std::io::Read::read_to_end(&mut se, &mut err);
+        });
+        let ab = abandon.clone();
+        let reader_err = std::thread::spawn(move || {
+            let mut se = stderr;
+            match se.as_mut() {
+                Some(se) => read_stream_bounded(se, EXEC_STDERR_CAP, &ab),
+                None => (Vec::new(), 0),
             }
-            (out, err)
         });
 
         // Wait with timeout
         let start = std::time::Instant::now();
+        let mut timed_out = false;
         let status = loop {
             if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-                break status;
+                break Some(status);
             }
             if start.elapsed().as_millis() >= effective_timeout as u128 {
-                // Timeout — kill the process tree
-                let _ = kill_process_tree(Some(child_pid));
-                // Give it a moment to die, then reap
-                let _ = child.wait();
-                runtime_log::append_line(
-                    "WARN",
-                    &format!(
-                        "exec timeout pid={} after {}ms cmd={}",
-                        child_pid,
-                        effective_timeout,
-                        runtime_log::truncate_utf8(&runtime_log::mask_secrets(&command), 200)
-                    ),
-                );
-                return Err(format!(
-                    "Command timed out after {}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.",
-                    effective_timeout
-                ));
+                timed_out = true;
+                break None;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
 
-        let (out, err) = reader.join().unwrap_or((Vec::new(), Vec::new()));
-        (out, err, status)
+        if timed_out {
+            // Timeout — kill the process tree
+            let _ = kill_process_tree(Some(child_pid));
+            // Give it a moment to die, then reap
+            let _ = child.wait();
+            /*
+             * ★ **超时路径不许留下"继续读进无人消费的 Vec"的线程** ✓。
+             *
+             * 两步：① 置 `abandon` ⇒ 读线程下一轮循环就退出并**丢掉管道句柄**
+             * （子进程再写会拿到 broken pipe，不再有人替它清管道）；
+             * ② 有界 `join`（最多 2 s）—— 汇合不上时**如实记 WARN**：
+             * 那个线程最多持有 cap 字节（内存有界），但我们不会假装它已经结束 ✗。
+             */
+            abandon.store(true, std::sync::atomic::Ordering::Relaxed);
+            let out_done = join_thread_within(reader_out, std::time::Duration::from_secs(2));
+            let err_done = join_thread_within(reader_err, std::time::Duration::from_secs(2));
+            if out_done.is_none() || err_done.is_none() {
+                runtime_log::append_line(
+                    "WARN",
+                    &format!(
+                        "exec timeout pid={} 后读线程未在 2s 内退出 stdout_done={} stderr_done={}（缓冲有上限，最多 {} + {} 字节）",
+                        child_pid,
+                        out_done.is_some(),
+                        err_done.is_some(),
+                        EXEC_STDOUT_CAP,
+                        EXEC_STDERR_CAP
+                    ),
+                );
+            }
+            runtime_log::append_line(
+                "WARN",
+                &format!(
+                    "exec timeout pid={} after {}ms cmd={}",
+                    child_pid,
+                    effective_timeout,
+                    runtime_log::truncate_utf8(&runtime_log::mask_secrets(&command), 200)
+                ),
+            );
+            return Err(format!(
+                "Command timed out after {}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.",
+                effective_timeout
+            ));
+        }
+
+        let status = status.expect("非超时分支必有退出状态");
+        let (out, out_total) = reader_out.join().unwrap_or((Vec::new(), 0));
+        let (err, err_total) = reader_err.join().unwrap_or((Vec::new(), 0));
+        (out, err, out_total, err_total, status)
     };
 
-    let stdout = String::from_utf8_lossy(&stdout);
-    let stderr = String::from_utf8_lossy(&stderr);
-
-    // Truncate very long output to prevent context overflow
-    let stdout = if stdout.len() > 50000 {
-        let truncate_at = stdout.char_indices()
-            .filter(|(i, _)| *i <= 50000)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
-        format!("{}...(truncated, {} bytes total)", &stdout[..truncate_at], stdout.len())
-    } else {
-        stdout.to_string()
-    };
-    let stderr = if stderr.len() > 10000 {
-        let truncate_at = stderr.char_indices()
-            .filter(|(i, _)| *i <= 10000)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
-        format!("{}...(truncated)", &stderr[..truncate_at])
-    } else {
-        stderr.to_string()
-    };
+    let stdout = render_stream_bounded(&stdout, stdout_total, "stdout");
+    let stderr = render_stream_bounded(&stderr, stderr_total, "stderr");
 
     runtime_log::append_line(
         "INFO",
@@ -1853,13 +2285,14 @@ async fn file_version(path: String) -> Result<Option<String>, String> {
 /// This is the Rust-side enforcement that complements the JS-side check.
 #[tauri::command]
 async fn check_path_in_workspace(path: String, workspace: String) -> Result<bool, String> {
-    let abs_path = std::path::Path::new(&path)
-        .canonicalize()
-        .map_err(|e| format!("Cannot canonicalize path {}: {}", path, e))?;
-    let abs_workspace = std::path::Path::new(&workspace)
-        .canonicalize()
-        .map_err(|e| format!("Cannot canonicalize workspace {}: {}", workspace, e))?;
-    Ok(abs_path.starts_with(&abs_workspace))
+    // ★ 第 185 波：与 `write_file` 的守卫**共用同一份实现**（改前这里是第二份实现：
+    // 自己 `canonicalize`、自己 `starts_with`，于是"同一规则两份行为" —— 正是本仓库
+    // 最忌讳的东西：一处修了另一处不修）。
+    let abs_path = resolve_sandbox_path(std::path::Path::new(&path))
+        .map_err(|e| format!("Cannot resolve path {}: {}", path, e))?;
+    let abs_workspace = resolve_sandbox_path(std::path::Path::new(&workspace))
+        .map_err(|e| format!("Cannot resolve workspace {}: {}", workspace, e))?;
+    Ok(path_within_workspace(&abs_path, &abs_workspace))
 }
 
 /// Get the current process's security context (for debugging sandbox issues).
@@ -1890,18 +2323,27 @@ async fn get_process_token_info() -> Result<String, String> {
     Ok("Process token info not available on this platform".to_string())
 }
 
+/// `list_directory_sandboxed` 里单个文件的**大小事实**：读不到就是 `None`（未知），
+/// **不是** `0`。
+///
+/// 改前是 `entry.metadata().map(|m| m.len()).unwrap_or(0)`：权限不足 / 文件刚被删
+/// （竞态）都会得到 `0` ⇒ 前端与模型看到的是"一个 0 字节的空文件"（假事实）。
+/// 0 与"读不到"是两件不同的事，不能用一个值表示。
+fn file_size_or_unknown(metadata: std::io::Result<std::fs::Metadata>) -> Option<u64> {
+    metadata.ok().map(|m| m.len())
+}
+
 /// List files in a directory with sandbox enforcement.
 /// If sandbox is enabled, only files within the workspace are returned.
 #[tauri::command]
 async fn list_directory_sandboxed(path: String, workspace: String, sandbox_enabled: bool) -> Result<Vec<FileInfo>, String> {
     if sandbox_enabled {
-        let abs_path = std::path::Path::new(&path)
-            .canonicalize()
-            .map_err(|e| format!("Cannot canonicalize path: {}", e))?;
-        let abs_workspace = std::path::Path::new(&workspace)
-            .canonicalize()
-            .map_err(|e| format!("Cannot canonicalize workspace: {}", e))?;
-        if !abs_path.starts_with(&abs_workspace) {
+        // ★ 第 185 波：第三份实现也并入同一份判定（见 `path_within_workspace`）。
+        let abs_path = resolve_sandbox_path(std::path::Path::new(&path))
+            .map_err(|e| format!("Cannot resolve path: {}", e))?;
+        let abs_workspace = resolve_sandbox_path(std::path::Path::new(&workspace))
+            .map_err(|e| format!("Cannot resolve workspace: {}", e))?;
+        if !path_within_workspace(&abs_path, &abs_workspace) {
             return Err(format!("Sandbox: Path {} is outside workspace {}", path, workspace));
         }
     }
@@ -1916,7 +2358,15 @@ async fn list_directory_sandboxed(path: String, workspace: String, sandbox_enabl
             name: entry.file_name().to_string_lossy().to_string(),
             is_dir: file_type.is_dir(),
             is_file: file_type.is_file(),
-            size: entry.metadata().map(|m| m.len()).unwrap_or(0),
+            /*
+             * ★ 第 185 波（R7）：stat 失败**不再变成 0** ✓。
+             *
+             * 改前 `entry.metadata().map(|m| m.len()).unwrap_or(0)`：权限不足 / 竞态
+             * （文件刚被删）都会返回 `0` ⇒ 前端与模型看到的是"一个 0 字节的空文件"，
+             * 而不是"这个大小读不到"。0 与"读不到"是两件不同的事，不能用一个值表示。
+             * `None` 序列化成 `null` ⇒ 消费方必须显式处理"未知"。
+             */
+            size: file_size_or_unknown(entry.metadata()),
         });
     }
 
@@ -1934,7 +2384,8 @@ struct FileInfo {
     name: String,
     is_dir: bool,
     is_file: bool,
-    size: u64,
+    /// `None` = **大小未知**（stat 失败）。改前这里把"读不到"写成 `0`（假事实）。
+    size: Option<u64>,
 }
 
 
@@ -2060,6 +2511,141 @@ fn find_codegraph_launcher(root: &std::path::Path) -> Option<String> {
     walk(root)
 }
 
+/// 变量名字符（cmd 的 `%VAR%` 形态里允许出现的字符）。
+fn is_cmd_var_name_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '#' | '@' | '$' | '?' | '!' | '-' | '(' | ')')
+}
+
+/// 把 `%VAR%` 形态里的百分号写成 `%%`，**挡住 cmd 的变量展开**。
+///
+/// ## 为什么必须挡（这是一个真的注入面）
+///
+/// cmd 的 `%` 展开在**双引号内照样生效**，而 MCP 的 `env` 与 `args` **来自同一份配置**
+/// （设置/市场仓库 = 外部输入）⇒ 构造
+/// `args: ["%EVIL%"]` + `env: {EVIL: "\" & calc.exe & \""}`：展开后塞进来的引号会把我们的
+/// 引号**提前闭合**，后面的 `&` 就落到了引号外 ⇒ 变成第二条命令执行。
+///
+/// ## 为什么是"只改 `%VAR%` 形态"而不是把所有 `%` 都翻倍
+///
+/// cmd 命令行上的 `%%` 是否会折叠回一个 `%` 依赖上下文（批处理里会，命令行上多数实现
+/// 不会），所以"一律翻倍"会把 `C:\100%\docs` 这种**合法参数改坏**。这里只在中性化
+/// **确实构成展开**的 `%…%`（中间全是变量名字符）时才动它 ⇒ 合法参数一字不动，
+/// 展开面全部关掉（最坏情况是那个参数多了两个 `%`，但它再也伤不到引号结构）。
+fn escape_cmd_percent_expansions(arg: &str) -> String {
+    let chars: Vec<char> = arg.chars().collect();
+    let mut out = String::with_capacity(arg.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] == '%' {
+            // 向后找配对的 `%`：中间必须非空且全是变量名字符（长度上限防病态扫描）
+            let mut j = i + 1;
+            while j < chars.len() && j - i <= 64 && is_cmd_var_name_char(chars[j]) {
+                j += 1;
+            }
+            if j > i + 1 && j < chars.len() && chars[j] == '%' {
+                out.push_str("%%");
+                for c in &chars[i + 1..j] {
+                    out.push(*c);
+                }
+                out.push_str("%%");
+                i = j + 1;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// 单个 arg 在 `cmd.exe` 命令行里的引用。
+///
+/// ## 为什么要引号（第 185 波）
+///
+/// 改前是 `format!("{} {}", command, args.join(" "))` —— **完全不加引号**就交给
+/// `cmd.exe /c`。两个后果都实测过：
+/// 1. 路径含空格（`C:\Program Files\…\x.cmd`）⇒ cmd 把 `C:\Program` 当命令，
+///    **真程序从未启动**，可 `spawn` 成功 ⇒ 命令返回成功，前端接着握手 30 s 后
+///    报"initialize 未返回 JSON-RPC 结果（对端可能不是 MCP 服务）"—— 错因指向对端；
+/// 2. arg 里的 `&` / `|` 会被 cmd **当第二条命令执行**（MCP 配置来自设置/市场仓库，
+///    属外部输入进 shell）。
+///
+/// ## 引用规则（每条都有理由，不是"多加点转义看着安全"）
+///
+/// - 整个 arg 套一对双引号：引号**内** `& | < > ^ ( )` 在 cmd 里是字面量，正是我们要的。
+///   （在引号**内**再加 `^` 是错的：cmd 不会在这里吃 `^` ⇒ 反而把 `^` 变成实参的一部分。）
+/// - arg 里的 `"` → `""`（翻倍）：对 cmd 的引号状态机是"开-关"两次 ⇒ **净状态不变**，
+///   所以它后面的元字符仍然在引号里（注入面关闭）；而现代 CRT（2008+ 的
+///   `CommandLineToArgvW`）把引号内的 `""` 当**字面引号**，下游 node/批处理拿到的是正确的引号。
+/// - 结尾的连续反斜杠 → 翻倍：CRT 规则里反斜杠会**转义收尾引号**（`"C:\dir\"` 会把
+///   引号吃掉、`\` 后面的内容跑到引号外）。
+/// - `%VAR%` → 见 `escape_cmd_percent_expansions`（cmd 的百分号展开在引号内照样生效）。
+fn cmd_quote_arg(arg: &str) -> String {
+    let arg = escape_cmd_percent_expansions(arg);
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('"');
+    let chars: Vec<char> = arg.chars().collect();
+    let mut trailing_backslashes = 0usize;
+    for ch in chars.iter() {
+        match ch {
+            '"' => {
+                out.push_str("\"\"");
+                trailing_backslashes = 0;
+            }
+            '\\' => {
+                out.push('\\');
+                trailing_backslashes += 1;
+            }
+            c => {
+                out.push(*c);
+                trailing_backslashes = 0;
+            }
+        }
+    }
+    // 结尾的反斜杠翻倍（否则会把收尾引号转义掉）
+    for _ in 0..trailing_backslashes {
+        out.push('\\');
+    }
+    out.push('"');
+    out
+}
+
+/// 组装交给 `cmd.exe /d /s /c` 的整行。
+///
+/// `/s` 的语义：**剥掉最外层那一对引号**，其余原样执行 ⇒ 所以这里刻意整体再套一层引号，
+/// 内层每个 arg 各自引用。再用 `raw_arg` 原样交给 CreateProcess（不让 std 的
+/// `CommandLineToArgvW` 规则再插一层引号 —— 那会让 cmd 看到 `\"` 这种它不认的写法）。
+fn build_cmd_invocation(command: &str, args: &[String]) -> String {
+    let mut inner = cmd_quote_arg(command);
+    for a in args {
+        inner.push(' ');
+        inner.push_str(&cmd_quote_arg(a));
+    }
+    format!("\"{}\"", inner)
+}
+
+/// `cmd.exe` 壳的启动探测窗口（毫秒）。
+///
+/// 为什么需要探测：`.cmd/.bat` 必须经 `cmd.exe /c` 才能起来，于是 `spawn` 成功只说明
+/// **cmd 起来了**，不说明目标程序起来了。窗口取 400 ms：MCP 服务器（node 起步）
+/// 不可能在 400 ms 内正常退出，而 `cmd` 找不到目标时会立刻退出（几十毫秒）。
+const MCP_START_PROBE_MS: u64 = 400;
+
+/// 探测到"壳立刻退出"时给调用方的错误：**不许报成功**，并把 cmd 自己吐的 stderr 带上
+/// （那里面通常就是 `'C:\Program' 不是内部或外部命令` 这种一眼能看懂的原因）。
+fn cmd_probe_verdict(command: &str, code: Option<i32>, stderr: &str) -> String {
+    let detail = if stderr.trim().is_empty() {
+        "（cmd 的 stderr 为空）".to_string()
+    } else {
+        runtime_log::truncate_utf8(stderr.trim(), 300)
+    };
+    format!(
+        "MCP 目标程序没有真正启动：cmd.exe 壳在 {}ms 内就退出了（exit={:?}）——这不是「连接成功」。\
+         command=「{}」；cmd stderr={}。常见原因：路径/参数引号不对，或该 .cmd/.bat 不存在。",
+        MCP_START_PROBE_MS, code, command, detail
+    )
+}
+
 /// Spawn an MCP stdio child process and start reading its stdout.
 #[tauri::command]
 async fn mcp_stdio_connect(
@@ -2069,31 +2655,40 @@ async fn mcp_stdio_connect(
     args: Option<Vec<String>>,
     env: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
-    let mut cmd = if cfg!(target_os = "windows")
-        && (command.to_ascii_lowercase().ends_with(".cmd")
-            || command.to_ascii_lowercase().ends_with(".bat"))
-    {
+    let lower = command.to_ascii_lowercase();
+    let needs_cmd_wrapper = cfg!(target_os = "windows")
+        && (lower.ends_with(".cmd") || lower.ends_with(".bat"));
+
+    let mut cmd = if needs_cmd_wrapper {
         // Windows CreateProcess 不能直接执行 .cmd/.bat —— 用 cmd.exe /c 包装。
         // （codegraph 官方发布是 bin/codegraph.cmd，MCP 连接指向其绝对路径。）
-        let full = if let Some(a) = &args {
-            format!("{} {}", command, a.join(" "))
-        } else {
-            command.clone()
-        };
+        let full = build_cmd_invocation(
+            &command,
+            args.as_deref().unwrap_or(&[]),
+        );
         let mut c = tokio::process::Command::new("cmd.exe");
-        c.arg("/c").arg(&full);
+        c.arg("/d").arg("/s").arg("/c");
+        #[cfg(target_os = "windows")]
+        {
+            // tokio 的 `raw_arg`（Windows 专有，自带 "for cmd.exe /c" 语义）：
+            // **原样追加**，这一层的引号是**我们自己**算好的（见 build_cmd_invocation）。
+            // 不用普通 `arg`：那会让 std 按 CommandLineToArgvW 规则再插一层引号，
+            // 而 cmd.exe 不认 `\"` 这种写法。
+            c.raw_arg(&full);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            c.arg(&full);
+        }
         c
     } else {
-        tokio::process::Command::new(&command)
-    };
-    if !(cfg!(target_os = "windows")
-        && (command.to_ascii_lowercase().ends_with(".cmd")
-            || command.to_ascii_lowercase().ends_with(".bat")))
-    {
+        let mut c = tokio::process::Command::new(&command);
         if let Some(args) = &args {
-            cmd.args(args);
+            // 直接交给 CreateProcess：每个 arg 独立传递，没有 shell 参与。
+            c.args(args);
         }
-    }
+        c
+    };
     if let Some(env) = &env {
         for (k, v) in env {
             cmd.env(k, v);
@@ -2115,12 +2710,46 @@ async fn mcp_stdio_connect(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP process: {}", e))?;
+
+    // ★ 第 185 波：**只有经 cmd.exe 包装的那条路**才需要探测"目标到底起没起"。
+    // 直接 CreateProcess 的路子上，目标不存在时 `spawn` 自己就返回 Err（已经如实报了），
+    // 所以不加这 400 ms 的无谓延迟。
+    if needs_cmd_wrapper {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(MCP_START_PROBE_MS);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let mut detail = String::new();
+                    if let Some(mut se) = child.stderr.take() {
+                        let mut buf = Vec::new();
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_millis(300),
+                            tokio::io::AsyncReadExt::read_to_end(&mut se, &mut buf),
+                        )
+                        .await;
+                        detail = String::from_utf8_lossy(&buf).to_string();
+                    }
+                    let _ = kill_process_tree(child.id());
+                    return Err(cmd_probe_verdict(&command, status.code(), &detail));
+                }
+                Ok(None) => {}
+                Err(e) => return Err(format!("MCP 进程探测失败：{e}")),
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take();
 
     let pending: Arc<TokioMutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>> =
         Arc::new(TokioMutex::new(HashMap::new()));
     let pending_clone = pending.clone();
+    let name_for_log = name.clone();
 
     // Background task: read stdout line by line, dispatch to pending requesters
     tokio::spawn(async move {
@@ -2143,9 +2772,40 @@ async fn mcp_stdio_connect(
         }
     });
 
+    // stderr 必须有人读：MCP 服务器往 stderr 写日志（node 的 deprecation warning 等），
+    // 管道写满之后子进程会**阻塞在 write 上**，表现是"连着连着就不回话了"。
+    // 这里读一行记一行（有上限，见循环次数），既防堵也留下诊断线索。
+    if let Some(stderr) = stderr {
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr).lines();
+            let mut lines = 0u32;
+            while let Ok(Some(line)) = reader.next_line().await {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                lines += 1;
+                if lines <= 200 {
+                    runtime_log::append_line(
+                        "INFO",
+                        &format!(
+                            "mcp stderr name={} line={}",
+                            name_for_log,
+                            runtime_log::truncate_utf8(&line, 300)
+                        ),
+                    );
+                } else if lines == 201 {
+                    runtime_log::append_line(
+                        "WARN",
+                        &format!("mcp stderr name={} 超过 200 行，后续只丢弃（防止日志刷爆）", name_for_log),
+                    );
+                }
+            }
+        });
+    }
+
     let mut processes = state.mcp_processes.lock().await;
     processes.insert(name, McpProcessHandle {
-        stdin,
+        stdin: Arc::new(TokioMutex::new(stdin)),
         pending,
         _child: child,
     });
@@ -2166,25 +2826,48 @@ async fn mcp_stdio_request(
     let id = parsed.get("id").and_then(|v| v.as_i64())
         .ok_or("Message missing 'id' field")?;
 
-    let mut processes = state.mcp_processes.lock().await;
-    let handle = processes.get_mut(&name)
-        .ok_or(format!("MCP process '{}' not found", name))?;
+    /*
+     * ★ 第 185 波：**整表锁只用来取两个 Arc，取完立刻放掉** ✓。
+     *
+     * 改前这里 `let mut processes = state.mcp_processes.lock().await;` 的 guard
+     * **活到函数结束** ⇒ 等应答的 30 s 里整张进程表都被锁住：另一个服务器的请求、
+     * "断开"、退出时的回收全部排队（各自白等 30 s），而退出路径用的是 `try_lock`
+     * ⇒ 直接放弃回收（就是"退出后还剩 node 服务"那条口子）。
+     */
+    let (stdin, pending) = {
+        let processes = state.mcp_processes.lock().await;
+        let handle = processes
+            .get(&name)
+            .ok_or(format!("MCP process '{}' not found", name))?;
+        (handle.stdin.clone(), handle.pending.clone())
+    }; // ← 整表锁在这里就放掉了
 
     // Register a pending response channel
     let (tx, rx) = oneshot::channel();
-    {
-        let mut map = handle.pending.lock().await;
-        map.insert(id, tx);
+    pending.lock().await.insert(id, tx);
+
+    // Write message + newline to stdin（只持 **stdin 这一把**小锁，且只包住这两次写）
+    let write_result = {
+        let mut stdin = stdin.lock().await;
+        let mut r = stdin
+            .write_all(format!("{}\n", message).as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write to stdin: {}", e));
+        if r.is_ok() {
+            r = stdin
+                .flush()
+                .await
+                .map_err(|e| format!("Failed to flush stdin: {}", e));
+        }
+        r
+    };
+    if let Err(e) = write_result {
+        // 写失败 ⇒ 把刚登记的回调撤掉（改前 `?` 会把它留在表里，谁也收不到）
+        pending.lock().await.remove(&id);
+        return Err(e);
     }
 
-    // Write message + newline to stdin
-    let msg = format!("{}\n", message);
-    handle.stdin.write_all(msg.as_bytes()).await
-        .map_err(|e| format!("Failed to write to stdin: {}", e))?;
-    handle.stdin.flush().await
-        .map_err(|e| format!("Failed to flush stdin: {}", e))?;
-
-    // Wait for response with timeout (30 seconds)
+    // Wait for response with timeout (30 seconds) —— **不持任何锁**
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(30),
         rx,
@@ -2192,11 +2875,13 @@ async fn mcp_stdio_request(
 
     match result {
         Ok(Ok(json)) => Ok(serde_json::to_string(&json).unwrap_or_default()),
-        Ok(Err(_)) => Err("MCP response channel closed".to_string()),
+        Ok(Err(_)) => {
+            pending.lock().await.remove(&id);
+            Err("MCP response channel closed".to_string())
+        }
         Err(_) => {
             // Timeout — clean up pending request
-            let mut map = handle.pending.lock().await;
-            map.remove(&id);
+            pending.lock().await.remove(&id);
             Err("MCP request timeout (30s)".to_string())
         }
     }
@@ -2212,15 +2897,20 @@ async fn mcp_stdio_disconnect(
     state: State<'_, AppState>,
     name: String,
 ) -> Result<(), String> {
-    let mut processes = state.mcp_processes.lock().await;
-    let Some(handle) = processes.remove(&name) else {
+    // ★ 第 185 波：**取句柄时持锁，杀进程时不持锁**。
+    // 改前这把整表锁一直被拿到 `wait().await` 结束 ⇒ 断开一个服务器期间，
+    // 别的服务器的请求/连接全被挡住（用户侧就是"点断开没反应"）。
+    let handle = {
+        let mut processes = state.mcp_processes.lock().await;
+        processes.remove(&name)
+    };
+    let Some(mut handle) = handle else {
         return Ok(());
     };
     let pid = handle._child.id();
     // 先按进程树杀（覆盖 `npx`/`cmd.exe` 派生的孙进程）。
     let _ = kill_process_tree(pid);
     // 再让 tokio 回收句柄本身：等它退出，避免留下僵尸。
-    let mut handle = handle;
     let _ = handle._child.kill().await;
     let _ = handle._child.wait().await;
     Ok(())
@@ -2665,7 +3355,24 @@ async fn quit_app(app: AppHandle, pty_map: State<'_, PtyMap>) -> Result<(), Stri
     crash_evidence::mark_frontend_quit_requested();
     // 清理所有 PTY 会话：kill 子进程，避免退出后 cmd.exe 等残留（对标 dsh
     // 进程树纪律 — Windows 上进程退出不会自动杀孙进程）。
-    if let Ok(mut map) = pty_map.lock() {
+    //
+    // ★ 第 185 波（R7）：**锁中毒时不许静默跳过整树回收**。
+    // 改前 `if let Ok(mut map) = pty_map.lock()` —— 只要有一个别的线程在持锁时 panic
+    // （中毒），这里就一行日志都没有地跳过回收，紧接着 `app.exit(0)`
+    // ⇒ 终端里跑的 `npm test` 等孙进程全部留下，而日志里查不到任何线索。
+    // `into_inner()` 拿到中毒锁里的数据照样能用（里面的 HashMap 只是索引表，
+    // 不参与任何"被 panic 破坏"的不变量），所以这里取数据 + 如实记 WARN 是正确的选择。
+    {
+        let mut map = match pty_map.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                runtime_log::append_line(
+                    "WARN",
+                    "pty cleanup: PtyMap 锁中毒（有线程持锁时 panic）—— 仍按现有内容回收，可能漏掉部分会话",
+                );
+                poisoned.into_inner()
+            }
+        };
         for (id, mut session) in map.drain() {
             runtime_log::append_line("INFO", &format!("pty cleanup killing id={}", id));
             // 杀整树：退出时若终端里正跑长命令（npm test 等），单 kill 会留下孤儿进程。
@@ -2758,9 +3465,22 @@ fn build_tray_menu(app: &AppHandle, lang: &str) -> tauri::Result<tauri::menu::Me
 #[tauri::command]
 async fn update_tray_language(app: AppHandle, lang: String) -> Result<(), String> {
     let menu = build_tray_menu(&app, &lang).map_err(|e| e.to_string())?;
-    if let Some(tray) = app.tray_by_id("main-tray") {
-        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
-    }
+    /*
+     * ★ 第 185 波（R7）：**不许假成功**。
+     *
+     * 改前 `if let Some(tray) … { … }` 后面直接 `Ok(())` —— 托盘不存在时（例如
+     * 托盘被系统/用户关掉、或启动路径没建托盘）这个命令返回成功，而菜单**一个字都没换**：
+     * 用户点"切换语言"看到成功提示、界面纹丝不动，事后从日志里查不出任何东西。
+     * 现在如实返回错误（调用方能把失败告诉用户）。
+     */
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        runtime_log::append_line(
+            "WARN",
+            "update_tray_language: 找不到托盘 'main-tray' ⇒ 语言**没有**生效（如实报错，不再假成功）",
+        );
+        return Err("Tray icon 'main-tray' not found — tray language was NOT updated".to_string());
+    };
+    tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -3596,7 +4316,9 @@ path_exists,
                 );
                 // 第 181 波：退出前收掉 MCP stdio 进程树（否则 npx/codegraph 这类
                 // 启动器的服务本体会留在系统里）。
-                kill_all_mcp_processes(&app_handle.state::<AppState>());
+                // 第 185 波：返回值必须被消费 —— `LockBusy` 表示**没能回收**，
+                // 函数内部已经按结局落了日志（见 mcp_shutdown_log_line）。
+                let _ = kill_all_mcp_processes(&app_handle.state::<AppState>());
                 clear_active_run_marker(app_handle);
             }
             tauri::RunEvent::Exit => {
@@ -3604,7 +4326,7 @@ path_exists,
                 // 它存在 ⇒ 退出是**受控**的；它缺失但下次启动报 unclean ⇒ 进程是被强杀/崩掉的。
                 runtime_log::append_line("INFO", "process exit (RunEvent::Exit)");
                 // 兜底：ExitRequested 没走到（或之后又有连接建立）时，这里再收一次。
-                kill_all_mcp_processes(&app_handle.state::<AppState>());
+                let _ = kill_all_mcp_processes(&app_handle.state::<AppState>());
             }
             tauri::RunEvent::WindowEvent {
                 label,
@@ -4411,5 +5133,652 @@ mod bounded_read_utf8_tests {
         assert_eq!(got.dropped_lines, 1, "非法字节那行计入丢弃");
         assert!(got.has_more, "后面还有行 ⇒ has_more");
         let _ = std::fs::remove_file(&path);
+    }
+}
+
+/// ★ 第 185 波判据：R1（glob 环/深度/结果上限）、R2（退出时抢不到锁不许静默）、
+/// R3（execute_command 读取期上限 + 超时不留读线程）、R4（.cmd 引号与"真程序起没起"）、
+/// R5（workspace 沙箱的真判定）。
+///
+/// 每条判据都对应一个**改前会红**的事实；把对应的修复改坏，这一条必须变红
+/// （变异自证记录见本轮交接报告）。
+#[cfg(test)]
+mod harden_185_tests {
+    use super::*;
+
+    /// 独立的临时目录（每个判据一个，避免互相干扰）。
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("codem-185-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        dir
+    }
+
+    // ==================== R1 ====================
+
+    /// 极深目录：深度上限必须真的生效（函数返回、更深的文件不被算进来，且**如实标记**）。
+    #[test]
+    fn r1_depth_cap_stops_the_walk() {
+        let root = scratch("deep");
+        let mut deep = root.clone();
+        for _ in 0..12 {
+            deep = deep.join("a");
+        }
+        std::fs::create_dir_all(&deep).expect("建 12 层目录");
+        std::fs::write(deep.join("deep.txt"), b"x").unwrap();
+        std::fs::write(root.join("shallow.txt"), b"x").unwrap();
+
+        let capped = glob_search_walk(
+            &root,
+            "*.txt",
+            GlobLimits {
+                max_depth: 3,
+                max_results: 100,
+            },
+        )
+        .expect("必须能返回");
+        assert!(capped.depth_limited, "撞到深度上限必须被记下来（不许静默）");
+        assert!(
+            capped.files.iter().any(|f| f.ends_with("shallow.txt")),
+            "浅层命中仍要返回：{:?}",
+            capped.files
+        );
+        assert!(
+            !capped.files.iter().any(|f| f.ends_with("deep.txt")),
+            "超过深度上限的目录不该被遍历：{:?}",
+            capped.files
+        );
+
+        // 反向对照：默认上限（生产口径）必须覆盖 12 层 —— 上限不能小到把正常项目切掉
+        let full = glob_search_walk(&root, "deep.txt", GlobLimits::default()).expect("必须能返回");
+        assert_eq!(
+            full.files.len(),
+            1,
+            "默认深度 {} 必须覆盖 12 层（否则就是「修好了环、弄丢了文件」）",
+            GLOB_MAX_DEPTH
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 造一个目录链接/接合点。失败返回 false（环境不支持 ⇒ 判据**明说跳过**）。
+    fn try_make_dir_link(target: &std::path::Path, link: &std::path::Path) -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt as _;
+            // 接合点（/J）不需要管理员权限；`raw_arg` 免得 std 再替我们加一层引号
+            let cmdline = format!("/c mklink /J \"{}\" \"{}\"", link.display(), target.display());
+            let ok = std::process::Command::new("cmd")
+                .raw_arg(&cmdline)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            return ok && std::fs::symlink_metadata(link).is_ok();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+    }
+
+    /// **环判据**：自指接合点（本机 `%LOCALAPPDATA%\Application Data` 那种）必须
+    /// **不被进入**。改前 `path.is_dir()` 会跟随它 ⇒ 无限递归（先永不返回，再栈溢出 abort）。
+    ///
+    /// 这里刻意同时断言 `!depth_limited`：环必须由**重解析点跳过**切断，
+    /// 而不是"靠深度上限兜住" —— 否则去掉 `is_symlink()` 判断这条判据不会红。
+    #[test]
+    fn r1_self_referencing_reparse_point_is_not_followed() {
+        let root = scratch("loop");
+        let inner = root.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::write(inner.join("marker.txt"), b"x").unwrap();
+
+        let link = root.join("loop");
+        if !try_make_dir_link(&root, &link) {
+            eprintln!("[r1] 本环境无法创建目录链接/接合点 ⇒ 跳过环判据（深度判据仍然覆盖）");
+            let _ = std::fs::remove_dir_all(&root);
+            return;
+        }
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false),
+            "创建出来的必须真的是重解析点（否则这条判据测的是个假东西）"
+        );
+
+        let started = std::time::Instant::now();
+        let out = glob_search_walk(&root, "*.txt", GlobLimits::default()).expect("必须能返回");
+        assert!(
+            started.elapsed().as_secs() < 20,
+            "环必须被立刻切断（不能靠时间磨）"
+        );
+        assert!(
+            !out.depth_limited,
+            "环应当被「跳过重解析点」切断；撞到深度上限说明接合点被**进入了**：{:?}",
+            out.files
+        );
+        let markers = out
+            .files
+            .iter()
+            .filter(|f| f.ends_with("marker.txt"))
+            .count();
+        assert_eq!(
+            markers, 1,
+            "接合点没被进入 ⇒ 同一个文件只应出现一次：{:?}",
+            out.files
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 结果条数上限：必须有界，且**调用方必须能知道**（改前是无界增长）。
+    #[test]
+    fn r1_result_cap_truncates_and_tells_the_caller() {
+        let root = scratch("cap");
+        for i in 0..10 {
+            std::fs::write(root.join(format!("f{i}.txt")), b"x").unwrap();
+        }
+        let out = glob_search_walk(
+            &root,
+            "*.txt",
+            GlobLimits {
+                max_depth: 8,
+                max_results: 3,
+            },
+        )
+        .expect("必须能返回");
+        assert_eq!(out.files.len(), 3, "结果必须有界");
+        assert!(out.truncated, "撞上限必须被记下来（不许静默）");
+
+        let msg = glob_truncated_message("*.txt", root.to_str().unwrap(), 3);
+        assert!(
+            msg.contains("truncated") && msg.contains('3') && msg.contains("NOT a complete list"),
+            "调用方必须能知道被截断了：{msg}"
+        );
+        assert!(
+            GLOB_MAX_RESULTS >= 1_000 && GLOB_MAX_DEPTH >= 8,
+            "生产上限不能小到把正常搜索切掉"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ==================== R2 ====================
+
+    /// **不许静默**：抢不到 MCP 进程表锁时必须重试，失败后必须留下"没收到"的日志，
+    /// 并且**不许**出现"已回收"这种谎报。
+    #[test]
+    fn r2_mcp_shutdown_never_gives_up_silently() {
+        // ① 一直抢不到 ⇒ 必须把重试预算用完（改前是一次 try_lock 就 `return`）
+        let mut tries = 0;
+        let got = drain_mcp_handles_with(4, std::time::Duration::from_millis(1), || {
+            tries += 1;
+            None
+        });
+        assert!(got.is_none());
+        assert_eq!(tries, 4, "抢不到锁必须重试，而不是第一次就放弃");
+
+        // ② 这个结局**必须**有日志，而且必须如实说"没收到"
+        let busy = mcp_shutdown_log_line(&McpShutdownOutcome::LockBusy)
+            .expect("抢不到锁必须留下日志（改前是静默 return）");
+        assert_eq!(busy.0, "WARN", "必须是 WARN 级");
+        assert!(
+            busy.1.contains("没能回收"),
+            "必须如实说没收到：{}",
+            busy.1
+        );
+        assert!(
+            !busy.1.contains("已回收"),
+            "不许谎报收干净：{}",
+            busy.1
+        );
+
+        // ③ 真的收到时要如实说收到几棵
+        let reaped = mcp_shutdown_log_line(&McpShutdownOutcome::Reaped(2)).expect("收到也要记");
+        assert_eq!(reaped.0, "INFO");
+        assert!(reaped.1.contains('2'), "{}", reaped.1);
+
+        // ④ 前面抢不到、后面抢到 ⇒ 句柄必须真的拿到（重试得有实际意义）
+        let mut tries2 = 0;
+        let got2 = drain_mcp_handles_with(5, std::time::Duration::from_millis(1), || {
+            tries2 += 1;
+            if tries2 < 3 {
+                None
+            } else {
+                Some(vec![("srv".to_string(), Some(4321))])
+            }
+        })
+        .expect("重试之后应当抢到");
+        assert_eq!(got2, vec![("srv".to_string(), Some(4321))]);
+        assert_eq!(tries2, 3);
+
+        // ⑤ "表是空的"与"抢不到锁"是两件不同的事，不能混成一个结局
+        assert_ne!(McpShutdownOutcome::NothingToDo, McpShutdownOutcome::LockBusy);
+        assert!(mcp_shutdown_log_line(&McpShutdownOutcome::NothingToDo).is_none());
+    }
+
+    // ==================== R3 ====================
+
+    /// 读取阶段就有上限（改前 `read_to_end` 全量进内存，截断发生在 join 之后），
+    /// 并且截断要**如实标注 + 给出真实总量**。
+    #[test]
+    fn r3_exec_output_reading_is_bounded_and_marks_truncation() {
+        let data = vec![b'x'; 100_000];
+        let mut cursor = std::io::Cursor::new(data);
+        let flag = std::sync::atomic::AtomicBool::new(false);
+        let (kept, total) = read_stream_bounded(&mut cursor, 1_000, &flag);
+        assert_eq!(
+            kept.len(),
+            1_000,
+            "读取阶段就必须截住（改前这里是 100000 字节全进内存）"
+        );
+        assert_eq!(total, 100_000, "真实总量必须留下来（否则没法如实标注）");
+
+        let rendered = render_stream_bounded(&kept, total, "stdout");
+        assert!(rendered.contains("truncated"), "必须标注被截断：{rendered}");
+        assert!(
+            rendered.contains("100000"),
+            "必须给出真实总量（只说'截断了'不够）：{rendered}"
+        );
+
+        // 没截断时**不许**冒出标记（假截断同样是假事实）
+        assert_eq!(render_stream_bounded(b"hello", 5, "stdout"), "hello");
+    }
+
+    /// 超时路径：置 `abandon` 后读线程必须立刻收手；`join_thread_within` 到点返回 `None`
+    /// （调用方据此如实记 WARN，而不是假装线程结束了）。
+    #[test]
+    fn r3_abandoned_reader_stops_immediately() {
+        let mut cursor = std::io::Cursor::new(vec![b'y'; 50_000]);
+        let flag = std::sync::atomic::AtomicBool::new(true);
+        let (kept, total) = read_stream_bounded(&mut cursor, 10_000, &flag);
+        assert!(
+            kept.is_empty() && total == 0,
+            "已放弃的读线程不许继续累积：{} 字节 / total={}",
+            kept.len(),
+            total
+        );
+
+        let slow = std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        });
+        assert!(
+            join_thread_within(slow, std::time::Duration::from_millis(20)).is_none(),
+            "没结束的线程必须返回 None"
+        );
+        let quick = std::thread::spawn(|| 7u32);
+        assert_eq!(
+            join_thread_within(quick, std::time::Duration::from_millis(500)),
+            Some(7)
+        );
+    }
+
+    /// **端到端**：改过读取路径之后，命令仍然能跑、输出仍然正确，且超限时**如实标注**。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn r3_execute_command_still_works_and_marks_truncation() {
+        let ok = execute_command("Write-Output 'hello-185'".to_string(), None, Some(30_000))
+            .await
+            .expect("普通命令必须成功");
+        assert_eq!(ok["stdout"].as_str().unwrap().trim(), "hello-185");
+        assert_eq!(ok["exitCode"].as_i64(), Some(0));
+
+        // 约 160 KB 输出（> 50 KB 上限）：必须出现**带真实总量**的截断标注
+        let big = execute_command(
+            "1..4000 | ForEach-Object { 'x' * 40 }".to_string(),
+            None,
+            Some(120_000),
+        )
+        .await
+        .expect("大量输出的命令也必须成功返回");
+        let stdout = big["stdout"].as_str().unwrap();
+        assert!(
+            stdout.contains("stdout truncated: kept") && stdout.contains("bytes total"),
+            "超限必须如实标注：{}",
+            &stdout[..200.min(stdout.len())]
+        );
+    }
+
+    /// **超时路径端到端**：必须及时返回明确错误（而不是等命令自己跑完）。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn r3_execute_command_timeout_returns_error_promptly() {
+        let started = std::time::Instant::now();
+        let err = execute_command(
+            "Write-Output 'start'; Start-Sleep -Seconds 30; Write-Output 'end'".to_string(),
+            None,
+            Some(1_000),
+        )
+        .await
+        .expect_err("超时必须返回错误");
+        assert!(err.contains("timed out"), "{err}");
+        assert!(
+            started.elapsed().as_secs() < 20,
+            "超时必须及时返回（实际 {:?}）",
+            started.elapsed()
+        );
+    }
+
+    /// R7：stat 失败必须是**未知**（`None`），不能伪装成"0 字节空文件"。
+    #[test]
+    fn r7_file_size_helper_reports_unknown_instead_of_zero() {
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        assert_eq!(
+            file_size_or_unknown(Err(err)),
+            None,
+            "stat 失败必须返回 None（未知），不能写 0"
+        );
+        let dir = scratch("size");
+        let file = dir.join("a.bin");
+        std::fs::write(&file, b"12345").unwrap();
+        assert_eq!(
+            file_size_or_unknown(std::fs::metadata(&file)),
+            Some(5),
+            "读得到就如实给大小"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ==================== R4 ====================
+
+    /// 引用：含空格的路径必须整体被引用（改前 cmd 把 `C:\Program` 当命令 ⇒ 假成功）。
+    #[test]
+    fn r4_cmd_args_are_quoted() {
+        assert_eq!(
+            cmd_quote_arg(r"C:\Program Files\x.cmd"),
+            r#""C:\Program Files\x.cmd""#
+        );
+        assert_eq!(cmd_quote_arg("plain"), r#""plain""#);
+        // 结尾反斜杠必须翻倍（否则它会转义掉收尾引号）
+        assert_eq!(cmd_quote_arg(r"C:\dir\"), r#""C:\dir\\""#);
+        // arg 里的引号翻倍（cmd：引号状态净不变；CRT：引号内 `""` = 字面引号）
+        assert_eq!(cmd_quote_arg(r#"a"b"#), r#""a""b""#);
+    }
+
+    /// 命令行里**不许有落在引号外的元字符**（含 `&` / `|` / `%VAR%` 展开面）。
+    #[test]
+    fn r4_no_metacharacter_can_escape_the_quotes() {
+        /// 按 cmd 的引号状态机扫一遍：返回落在**引号外**的元字符。
+        ///
+        /// 先按 `/s` 规则剥掉最外层那一对引号（`cmd /d /s /c "<…>"` 的既定语义），
+        /// 剩下的才是 cmd 真正解析的正文 —— 不剥就会把外层引号当成状态机的一次翻转。
+        fn unquoted_metachars(line: &str) -> Vec<char> {
+            assert!(
+                line.starts_with('"') && line.ends_with('"') && line.len() >= 2,
+                "必须靠 /s 规则剥外层引号：{line}"
+            );
+            let body = &line[1..line.len() - 1];
+            let mut out = Vec::new();
+            let mut in_quotes = false;
+            for c in body.chars() {
+                match c {
+                    '"' => in_quotes = !in_quotes,
+                    '&' | '|' | '<' | '>' | '^' => {
+                        if !in_quotes {
+                            out.push(c);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            assert!(!in_quotes, "引号必须成对（否则边界会漂到参数之外）：{line}");
+            out
+        }
+
+        let nasty = vec![
+            "a & calc.exe".to_string(),
+            "b | whoami".to_string(),
+            "c ^ & del".to_string(),
+            r#"d" & calc.exe & ""#.to_string(),
+            "%EVIL%".to_string(),
+            r"C:\Program Files\node.exe".to_string(),
+        ];
+        let line = build_cmd_invocation(r"C:\Program Files\x.cmd", &nasty);
+        assert!(
+            unquoted_metachars(&line).is_empty(),
+            "有元字符落在引号外 ⇒ 会被 cmd 执行：{line}"
+        );        assert!(
+            !line.contains(r#""%EVIL%""#) && line.contains(r#""%%EVIL%%""#),
+            "`%VAR%` 展开必须被中性化（env 值的引号能闭合我们的引号结构）：{line}"
+        );
+        // 合法的单个百分号**不许**被改坏（诚实：不能为了安全把用户参数改形）
+        assert_eq!(escape_cmd_percent_expansions(r"C:\100%\docs"), r"C:\100%\docs");
+        assert_eq!(escape_cmd_percent_expansions("50% off"), "50% off");
+    }
+
+    /// **端到端**：真的用 `cmd.exe /d /s /c`（生产里那一条 raw_arg 路径）起一个
+    /// **路径含空格**的 `.cmd`，并把含 `&` 的 arg 原样传进去。
+    ///
+    /// 这条把两件事一次钉死：
+    /// ① 改前"路径含空格 ⇒ cmd 把 `C:\Program` 当命令、真程序从未启动却返回成功"；
+    /// ② `&` 不许被当成第二条命令。
+    /// 反向对照（改前的无引号拼法）也一起跑：它**必须**起不来目标 —— 这就是"假成功"的取证。
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn r4_cmd_wrapper_really_starts_a_script_with_spaces() {
+        let dir = scratch("cmdspace").join("dir with space");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("hello.cmd");
+        /*
+         * 脚本本身必须用**延迟展开**（`!A!`）回显参数：批处理里 `%1` 的展开发生在
+         * **解析之前**，所以 `echo [%~1]` 遇到 `&` 会把它当成分隔符（这是批处理的语义，
+         * 不是我们的引用出错 —— 第一版判据就栽在这里，输出成了 `ARG1=[a ` + `'b]' 不是命令`）。
+         * 真正的 MCP 服务端（node.exe）自己解析 argv，不存在这一层。
+         */
+        std::fs::write(
+            &script,
+            "@echo off\r\nsetlocal EnableDelayedExpansion\r\nset \"A=%~1\"\r\necho ARG1=[!A!]\r\n",
+        )
+        .unwrap();
+        let script_str = script.display().to_string();
+
+        // ① 生产口径（引用 + raw_arg）
+        let quoted = build_cmd_invocation(&script_str, &["a & b".to_string()]);
+        let out = tokio::process::Command::new("cmd.exe")
+            .arg("/d")
+            .arg("/s")
+            .arg("/c")
+            .raw_arg(&quoted)
+            .output()
+            .await
+            .expect("cmd 必须能起来");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.contains("ARG1=[a & b]"),
+            "含空格路径 + 含 & 的 arg 必须原样传到脚本：stdout={text} stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        // ② 反向对照：改前的无引号拼法 ⇒ 目标根本没起来（"假成功"的取证）
+        let legacy = format!("\"{} {}\"", script_str, "plain");
+        let legacy_out = tokio::process::Command::new("cmd.exe")
+            .arg("/d")
+            .arg("/s")
+            .arg("/c")
+            .raw_arg(&legacy)
+            .output()
+            .await
+            .expect("对照命令也应当能起来 cmd");
+        let legacy_text = String::from_utf8_lossy(&legacy_out.stdout);
+        assert!(
+            !legacy_text.contains("ARG1="),
+            "反向对照失败：无引号拼法居然也起来了目标？{legacy_text}"
+        );
+        assert!(
+            !legacy_out.status.success(),
+            "反向对照：无引号拼法必须是非零退出（真程序没启动）"
+        );
+
+        let _ = std::fs::remove_dir_all(script.parent().unwrap().parent().unwrap());
+    }
+
+    /// 探测结论：cmd 壳立刻退出时**不许报成功**，且要把 cmd 自己的错误带给调用方。
+    #[test]
+    fn r4_probe_verdict_refuses_to_report_success() {
+        let msg = cmd_probe_verdict(
+            r"C:\Program Files\x.cmd",
+            Some(1),
+            r"'C:\Program' 不是内部或外部命令，也不是可运行的程序",
+        );
+        assert!(msg.contains("没有真正启动"), "{msg}");
+        assert!(msg.contains("exit=Some(1)"), "退出码必须带上：{msg}");
+        assert!(
+            msg.contains("不是内部或外部命令"),
+            "cmd 自己的错误必须带给调用方（否则用户无从修）：{msg}"
+        );
+        assert!(msg.contains("command=「C:\\Program Files\\x.cmd」"), "{msg}");
+    }
+
+    // ==================== R5 ====================
+
+    /// **主判据**：同前缀的兄弟目录必须判**越界**（改前字符串前缀 ⇒ 放行一次越界写）。
+    /// 同时：工作区**内**的"还不存在的新文件"必须放行（不能修成假失败）。
+    #[test]
+    fn r5_prefix_similar_sibling_is_outside_the_workspace() {
+        let base = scratch("ws");
+        let ws = base.join("mimo-gui");
+        let sibling = base.join("mimo-gui-backup");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let ws_res = resolve_sandbox_path(&ws).unwrap();
+
+        // 界内：还没创建的文件（write_file 的常态）
+        let inside = resolve_sandbox_path(&ws.join("src").join("new-file.txt")).unwrap();
+        assert!(
+            path_within_workspace(&inside, &ws_res),
+            "工作区内、父目录还不存在的新文件必须放行：{}",
+            inside.display()
+        );
+
+        // 越界：同前缀兄弟目录（字符串前缀判定会放行它）
+        let outside = resolve_sandbox_path(&sibling.join("x.txt")).unwrap();
+        assert!(
+            !path_within_workspace(&outside, &ws_res),
+            "同前缀兄弟目录必须判越界（改前 `starts_with` 会放行）：{}",
+            outside.display()
+        );
+
+        // 越界：`..` 词法逃逸
+        let escape = resolve_sandbox_path(&ws.join("..").join("mimo-gui-backup").join("y.txt")).unwrap();
+        assert!(
+            !path_within_workspace(&escape, &ws_res),
+            "`..` 逃逸必须判越界：{}",
+            escape.display()
+        );
+
+        // 工作区自身（带结尾分隔符也算界内）
+        assert!(path_within_workspace(&ws_res, &ws_res));
+        let with_sep = std::path::PathBuf::from(format!(
+            "{}{}",
+            ws.display(),
+            std::path::MAIN_SEPARATOR
+        ));
+        assert!(path_within_workspace(
+            &resolve_sandbox_path(&with_sep).unwrap(),
+            &ws_res
+        ));
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 大小写必须按 **Windows 语义** 判定（改前按字节比较 ⇒ 同一个目录被拒 = 假失败）。
+    ///
+    /// ## 为什么这样写（第一版判据是「假绿」，必须记下来）
+    ///
+    /// 第一版用"大写写的工作区 + 大写写的目标"去测，结果**变异也绿**：因为
+    /// `resolve_sandbox_path` 对**已存在**的路径走真 `canonicalize`，而 Windows 的
+    /// `canonicalize` 会把大小写还原成磁盘上的真名 ⇒ 两侧自动同形，大小写折叠那一行
+    /// 根本没被走到。真正的缺口在**比较规则**本身（前端给的工作区字符串与磁盘真名
+    /// 大小写不一致，例如 `c:\ws` vs `C:\WS`），所以要直接钉 `path_within_workspace`。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn r5_case_difference_is_still_inside_on_windows() {
+        // ① 比较规则：只在大小写上不同的同一目录必须判**界内**
+        assert!(
+            path_within_workspace(
+                std::path::Path::new(r"C:\MIMO-GUI\src\f.ts"),
+                std::path::Path::new(r"c:\mimo-gui")
+            ),
+            "Windows 上大小写不同是同一个目录，不许判越界（改前按字节比较 ⇒ 假失败）"
+        );
+        assert!(path_within_workspace(
+            std::path::Path::new(r"C:\MimoGui"),
+            std::path::Path::new(r"c:\mimogui")
+        ));
+        // 越界方向不受影响（同前缀兄弟目录仍然越界）
+        assert!(!path_within_workspace(
+            std::path::Path::new(r"C:\MIMO-GUI-BACKUP\f.ts"),
+            std::path::Path::new(r"c:\mimo-gui")
+        ));
+
+        // ② 端到端：不存在的盘（两侧都走词法规范化，大小写**原样保留**）
+        //    ⇒ 这一条在没有大小写折叠时会红
+        let target = resolve_sandbox_path(std::path::Path::new(r"Q:\NONEXISTENT-ws\f.txt")).unwrap();
+        let ws_lexical = resolve_sandbox_path(std::path::Path::new(r"q:\nonexistent-WS")).unwrap();
+        assert!(
+            path_within_workspace(&target, &ws_lexical),
+            "盘符/目录大小写不同必须判界内：{} vs {}",
+            target.display(),
+            ws_lexical.display()
+        );
+
+        // ③ 真磁盘：大写写的工作区字符串不能把界内路径判出去
+        let base = scratch("case");
+        let ws_real = base.join("MimoGui");
+        std::fs::create_dir_all(ws_real.join("src")).unwrap();
+        std::fs::write(ws_real.join("src").join("f.ts"), b"x").unwrap();
+        let ws_upper = resolve_sandbox_path(&std::path::PathBuf::from(
+            ws_real.to_string_lossy().to_uppercase(),
+        ))
+        .unwrap();
+        let inside = resolve_sandbox_path(&ws_real.join("src").join("f.ts")).unwrap();
+        assert!(
+            path_within_workspace(&inside, &ws_upper),
+            "{} 应在 {} 之内",
+            inside.display(),
+            ws_upper.display()
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// `\\?\` 长路径前缀必须剥掉（`canonicalize` 总会带它，而工作区是普通形式 ⇒ 假失败）。
+    #[test]
+    fn r5_verbatim_prefix_is_stripped() {
+        assert_eq!(
+            strip_verbatim_prefix(std::path::Path::new(r"\\?\C:\ws\a.txt")),
+            std::path::PathBuf::from(r"C:\ws\a.txt")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(std::path::Path::new(r"\\?\UNC\srv\share\a")),
+            std::path::PathBuf::from(r"\\srv\share\a")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(std::path::Path::new(r"C:\ws\a.txt")),
+            std::path::PathBuf::from(r"C:\ws\a.txt")
+        );
+    }
+
+    /// R7 同类面：`list_directory_sandboxed` 的 size 在 stat 失败时必须是
+    /// **未知（null）**，而不是伪装成"0 字节空文件"。
+    #[test]
+    fn r7_unknown_size_is_not_reported_as_zero() {
+        let known = FileInfo {
+            name: "a.txt".to_string(),
+            is_dir: false,
+            is_file: true,
+            size: Some(5),
+        };
+        let unknown = FileInfo {
+            name: "b.txt".to_string(),
+            is_dir: false,
+            is_file: true,
+            size: None,
+        };
+        assert_eq!(serde_json::to_value(&known).unwrap()["size"], 5);
+        assert_eq!(
+            serde_json::to_value(&unknown).unwrap()["size"],
+            serde_json::Value::Null,
+            "stat 失败必须是 null（未知），不能写成 0（假事实）"
+        );
     }
 }

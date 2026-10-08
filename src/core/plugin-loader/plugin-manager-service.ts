@@ -370,6 +370,18 @@ export class PluginManagerService {
    */
   private async doDisable(name: string): Promise<{ unloaded: boolean }> {
     let unloaded = false
+    /**
+     * ★★ 第 184 波 F5：`everLoaded` **必须在清理之前**取快照。
+     *
+     * 改前它在 `this.fibers.delete(name)`（`:382`）与 `unregisterActiveFiber(name)`（`:393`）
+     * **之后**才算：两项都刚被删/注销 ⇒ **恒为 false** ⇒ 于是"真·假禁用"
+     * （插件被装载过、但 `dispose()` 抛错或根本没有可卸载句柄，代码仍在跑）
+     * 被报成「本次进程内从未装载…禁用已生效，无需重启」——**说反话**；
+     * 而本该报的那条 warn 分支（`everLoaded && !unloaded`）成了**死代码**。
+     *
+     * 取快照的时机就是判据的一部分：这里读的必须是"清理前"的事实。
+     */
+    const everLoaded = this.fibers.has(name) || Boolean(getActiveFiber(name))
     const fiber = this.fibers.get(name)
     if (fiber?.dispose) {
       try {
@@ -420,8 +432,10 @@ export class PluginManagerService {
      *  - 被装载过但没有可卸载句柄（真·假禁用）→ warn，如实说"没有句柄、请重启"；
      *  - 本次进程里从未装载过（本插件启动时的实际形态）→ info，
      *    如实说"没有卸载对象，因此不需要重启"。
+     *
+     * ⚠️ 第 184 波 F5 修正：判据 `everLoaded` 在函数开头（清理**之前**）取快照 ——
+     * 见那里的说明。改前它在这里求值，恒为 false，第二态永远不可达。
      */
-    const everLoaded = this.fibers.has(name) || Boolean(getActiveFiber(name))
     reportDisableOutcome(name, { unloaded, everLoaded })
     return { unloaded }
   }

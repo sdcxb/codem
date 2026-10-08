@@ -8,11 +8,12 @@
  */
 
 import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts, waitForMessageMirrors } from "./message";
-import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSessionLog } from "./session-jsonl";
+import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSessionLog, hiddenFlagOf } from "./session-jsonl";
 import { hydrateAttachmentsForSession } from "./attachment-files";
 import { getStoragePort, hasStoragePort } from "./port";
 import { domainReadMany } from "./domain-store";
 import { reportPersistFailure } from "./persist-failure";
+import { sessionTombstoneBinding } from "./session";
 
 /**
  * 每次启动维护**最多**回填多少个会话（第 309 波 ✓）。
@@ -292,6 +293,14 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
   messages: number;
   /** 因"日志里有会话墓碑"被跳过的会话数（B-1：跳过必须**如实计数并上报**，不能静默） */
   skippedDeleted: number;
+  /**
+   * 墓碑被**作废**的会话数（第 184 波存储审计 S1）。
+   *
+   * 日志里有墓碑、但 `sessions` 镜像里**还有这一行** ⇒ 那次删除没成（或被队满/老化丢弃），
+   * 此时按"仍存在的会话"照常重建。这个计数长期应当是 0；不是 0 就说明删除链路上
+   * 出过"墓碑已落盘、行没删掉"的事（必须能在日志里看见，否则只剩"会话怎么又回来了"）。
+   */
+  voidedTombstones: number;
   /** 因会话没有任何消息而跳过的会话数（诊断用：与"已删除"区分开，两者含义完全不同） */
   skippedEmpty: number;
   /**
@@ -305,7 +314,7 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
 }> {
   // 第 17 轮（L4）：原来的 `await initDatabase()` 已删（同上：只为"确保旧库存在"）。
   const targets = sessionId ? [sessionId] : await listSessionLogs();
-  const out = { sessions: 0, messages: 0, skippedDeleted: 0, skippedEmpty: 0, withoutProject: 0 };
+  const out = { sessions: 0, messages: 0, skippedDeleted: 0, skippedEmpty: 0, withoutProject: 0, voidedTombstones: 0 };
 
   /**
    * ## 项目归属从哪来（第 45 轮）
@@ -362,8 +371,26 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
        * 窗口就是这行数字对不上。所以它进返回值、进维护汇总、进日志。
        */
       if (await isSessionDeleted(sid)) {
-        out.skippedDeleted++;
-        continue;
+        /**
+         * ## 第 184 波存储审计 S1：墓碑**必须能被作废**
+         *
+         * 墓碑是 append-only、没有撤销入口，而删除失败（`domainDelete` 返回 false）
+         * 或那次写被队满 / 15s 老化丢弃时，墓碑已经落盘、`sessions` 行却还在。
+         * 只按"日志里有墓碑"跳过，就等于把这个**仍然存在的会话永久排除在重建之外**：
+         * 空库恢复之后它不会回到 `sessions` 表，会话从侧栏彻底消失。
+         *
+         * 所以先问一句"库里还有没有这一行"（`sessionTombstoneBinding`）：
+         * `false` = 墓碑作废（行还在）→ 照常重建并如实计数；否则按已删除跳过。
+         * `undefined`（`sessions` 域镜像未就绪）时按最保守处理：仍然跳过 ——
+         * 宁可晚一次重建，也不要在"判不了"的时候把用户明确删掉的会话复活。
+         */
+        const binding = sessionTombstoneBinding(sid);
+        if (binding === false) {
+          out.voidedTombstones++;
+        } else {
+          out.skippedDeleted++;
+          continue;
+        }
       }
       const { messages } = await readSessionMessages(sid);
       if (messages.length === 0) {
@@ -380,6 +407,16 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
   if (out.skippedDeleted > 0) {
     console.log(
       `[Database] 索引重建：跳过 ${out.skippedDeleted} 个**已删除**会话（日志里有会话墓碑，绝不复活）`,
+    );
+  }
+  if (out.voidedTombstones > 0) {
+    /**
+     * 如实上报：这些会话的日志里有墓碑，但库里**还有会话行** ——
+     * 说明某次删除没成或被丢弃。此时按"仍存在的会话"重建（S1），但这件事必须可见。
+     */
+    console.warn(
+      `[Database] 索引重建：${out.voidedTombstones} 个会话的日志里有墓碑但 sessions 里仍有行` +
+        "（上次删除没成 / 那次写被队满或老化丢弃）→ **墓碑作废**，照常重建（否则这些会话会被永久跳过）",
     );
   }
   if (out.withoutProject > 0) {
@@ -420,12 +457,17 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
            * 用户列表凭空多出几百条旧消息、模型上下文跟着涨回去。
            * 现在写侧把非 0 的 `hidden` 记进日志、这里读回来，重建路径按它落库。
            *
+           * ⚠️ 第 184 波存储审计 S2：`hidden` 是**数字**（日志写的是 `Number(...)`），
+           * 所以这里改成共用 `session-jsonl.ts::hiddenFlagOf` —— 写侧 / 读侧
+           * （`logMirrorMessage`）/ 这里 / 合并防线（`listMessagesMerged`）**同一份判定**，
+           * 不再各写一遍（其中一份曾把数字与布尔比，那道防线因此从未生效）。
+           *
            * ⚠️ 刻意**不**在这里传 `trimmed`：引擎的 `MessageFields` 里没有这个字段，
            * 送了也不会被读 —— 传一个"没人读的参数"会让下一个人以为它生效了。
            * 新插入行的 `trimmed` 由 SQL 默认 0（"新行不可能曾经被裁过"），
            * 已存在行则由引擎保持原值（见 `repo.rs` 里那段长注释）。
            */
-          hidden: Number((rec as { hidden?: number }).hidden ?? 0) || 0,
+          hidden: hiddenFlagOf(rec),
           parent_message_id: (rec as { parentMessageId?: string | null }).parentMessageId ?? null,
           metadata: (rec as { metadata?: unknown }).metadata ?? null,
           tool_calls: (rec as { toolCalls?: unknown[] }).toolCalls ?? null,

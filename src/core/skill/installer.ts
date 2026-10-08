@@ -17,7 +17,7 @@
 
 import { unzipSync, strFromU8 } from "fflate";
 import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "./skill";
-import { writeFile, deleteDirectoryPermanent, deleteFile, listDirectory, readFile } from "../file-api";
+import { writeFile, deleteDirectoryPermanent, deleteFile, listDirectory, readFile, u8ToBase64 } from "../file-api";
 import { diagTrail } from "./skill-delete-diag";
 
 import { getAppDataDir } from "../file-api";
@@ -76,6 +76,14 @@ const ALLOWED_EXTENSIONS = new Set([
 /** 最大文件数和大小限制 */
 const MAX_FILES = 100;
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+
+/**
+ * 必须**按字节原样写盘**的扩展名（第 184 波 F3）。
+ *
+ * 为什么不能只按白名单分流：白名单是"允许装"，不是"能当文本读"。
+ * 图片走 UTF-8 解码 + 文本写盘会被替换字符破坏（见下方写入处说明）。
+ */
+const BINARY_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".ico"]);
 
 /**
  * 从 ZIP 文件安装技能。
@@ -197,8 +205,19 @@ export async function installSkillFromZip(
 
       // 写入文件
       const fullPath = `${skillDir}${sep}${relativePath.replace(/\//g, sep)}`;
-      const content = strFromU8(fileData);
-      await writeFile(fullPath, content);
+      /**
+       * ★ 第 184 波 F3：**二进制按二进制写**（白名单里有 `.png/.jpg/.jpeg/.gif/.ico`）。
+       *
+       * 改前一律 `strFromU8(fileData)`（UTF-8 解码）+ 文本 `writeFile` ⇒ 非 UTF-8 字节被
+       * 替换成 U+FFFD ⇒ 图片字节被静默破坏（SKILL.md 引用的资源读出来是乱码，无人察觉）。
+       * 二进制走 `writeFile(path, base64, { encoding: "base64" })`（`file-api.ts` 既有支持），
+       * 字节一致。
+       */
+      if (BINARY_EXTENSIONS.has(ext)) {
+        await writeFile(fullPath, u8ToBase64(fileData), { encoding: "base64" });
+      } else {
+        await writeFile(fullPath, strFromU8(fileData));
+      }
       filesWritten++;
 
       // 更新进度

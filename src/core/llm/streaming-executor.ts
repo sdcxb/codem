@@ -1,6 +1,6 @@
 import type { ToolCallResult, LLMMessage } from "../llm/types";
 import { maybePersistToolResult, shouldPersistResult } from "./tool-result-storage";
-import { getToolPipeline } from "./tool-pipeline";
+import { getToolPipeline, type ToolPipelineHost } from "./tool-pipeline";
 import { DEFAULT_CONCURRENCY_SAFE_TOOLS } from './concurrency-policy';
 import { resolveToolContract, resolveToolTimeout, type ResolvedToolContract } from './tool-contract';
 
@@ -227,6 +227,42 @@ export interface ToolExecutorContext {
    * 读取方一律用 `result.id || ctx.toolCallId`（前者优先：将来处理器补上 id 就自动生效）。
    */
   toolCallId?: string;
+  /**
+   * ★ 第 185 波（T1）：**这一轮调用所属 loop 的管线宿主回调**。
+   *
+   * ## 为什么必须按次放在 ctx 上
+   *
+   * 工具管线是**进程级单例**，而主会话与每个子智能体各持一个 `AgenticLoop`
+   * （`index.ts` 的 `getAgenticLoop(agentId, sessionId, scopedTools)` 带
+   * `toolRegistryOverride` ⇒ 与主 loop 是两个实例）。原来闸门（权限 / 计划模式 /
+   * 沙箱）读的是 `initDefaultPipeline` **最后初始化那个 loop 捕获的闭包** ⇒
+   * 主 loop 的调用会落到子智能体的 `checkPermission` 上，而子智能体通常没有
+   * `onPermissionRequest` ⇒ 按 fail-closed 被拒，**本该弹的确认框永远不弹**。
+   *
+   * 现在由每个 loop 在构造本轮 `ctx` 时带上自己那份回调，管线中间件**优先用它**
+   * （见 `tool-pipeline.ts` 的 `hostFor`）⇒ 闸门只跟"这次调用是谁发的"有关，
+   * 与"谁最后初始化了管线"无关。
+   */
+  pipelineHost?: ToolPipelineHost;
+  /**
+   * ★ 第 185 波（T4）：**这次调用已被判失败**的共享标志。
+   *
+   * ## 为什么需要它（`ctx.abort.aborted` 判不准）
+   *
+   * 超时那支只 `controller.abort()` + `reject`（放弃等待），**没有任何东西取消管线 promise**
+   * ⇒ 工具不观察 `ctx.abort` 时管线照旧跑完，`EventLogFinalizeMiddleware` 会写一条
+   * `status:"completed"` 的 `tool_result`，而调用方已经 `yield tool_error` ——
+   * 同一个 `toolCallId` 两份相反的事实。
+   *
+   * 判据为什么**不能**用 `ctx.abort.aborted`：那是"取消信号发出去了"，而不是"这次调用
+   * 已被判失败"。用户点 ■（`abortAll`）时两者会分叉 —— 在飞工具若在收到取消前就跑完并
+   * 返回成功，调用方**照样 yield `tool_complete`**（放弃等待 ≠ 否定结果），此时按
+   * `aborted` 写 `error` 反而是新的两份真相。所以标志必须由**真正做出失败裁决的那一处**
+   * 置位：`timeoutTimer` 在 `controller.abort()` **同一个同步段**里（那一刻 race 已经决定拒绝）。
+   *
+   * 用对象而不是布尔值：管线拿到的是 `{...ctx}` 的**拷贝**，只有引用类型能共享。
+   */
+  abandoned?: { value: boolean };
   metadata(input: { title?: string; metadata?: Record<string, any> }): void;
 }
 
@@ -588,8 +624,16 @@ export class StreamingToolExecutorImpl {
 
       // P0-2: Route through ToolPipeline if initialized (5-layer waterfall)
       const pipeline = getToolPipeline();
+      /**
+       * ★ 第 185 波（T4）：这次调用的「已被判失败」标志（超时那支会置位，见 `timeoutTimer`）。
+       * 必须是**同一个对象引用**被传进管线 ctx —— finalize 层读它来决定写不写 `completed`。
+       */
+      const abandoned = { value: false };
       const pipelineResult = pipeline.execute(
-        tc.name, tc.input, { ...ctx, abort: tc.abortController!.signal, toolCallId: tc.id }, toolHandler,
+        tc.name,
+        tc.input,
+        { ...ctx, abort: tc.abortController!.signal, toolCallId: tc.id, abandoned },
+        toolHandler,
       );
 
       const result = await Promise.race([
@@ -610,7 +654,9 @@ export class StreamingToolExecutorImpl {
           return pr.result;
         }),
         useTimeout
-          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs, tc.abortController!)).promise
+          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs, tc.abortController!, () => {
+              abandoned.value = true;
+            })).promise
           : new Promise<never>(() => {}),
       ]);
 
@@ -714,8 +760,13 @@ export class StreamingToolExecutorImpl {
       // S0-1: Route through ToolPipeline (same as executeBatch) to ensure
       // all tools go through the 5-layer waterfall, including EventLog finalize.
       const pipeline = getToolPipeline();
+      /** ★ 第 185 波（T4）：与 `runOneTool` 同形 —— 见那里的说明。 */
+      const abandoned = { value: false };
       const pipelineResult = pipeline.execute(
-        tc.name, tc.input, { ...ctx, abort: tc.abortController.signal, toolCallId: tc.id }, toolHandler,
+        tc.name,
+        tc.input,
+        { ...ctx, abort: tc.abortController.signal, toolCallId: tc.id, abandoned },
+        toolHandler,
       );
 
       const result = await Promise.race([
@@ -731,7 +782,9 @@ export class StreamingToolExecutorImpl {
           return pr.result;
         }),
         useTimeout
-          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs, tc.abortController)).promise
+          ? (toolTimer = this.timeoutTimer(timeout.timeoutMs, tc.abortController, () => {
+              abandoned.value = true;
+            })).promise
           : new Promise<never>(() => {}),
       ]);
 
@@ -825,8 +878,19 @@ export class StreamingToolExecutorImpl {
    *
    * 现在把它并进**要上抛的那个错误**：消息里加上原因，另挂一个 `abortFailure` 字段
    * 供上层/测试机器可读地判定。模型与用户因此知道"这次失败之外还有一份可能仍在运行的副作用"。
+   *
+   * ## ★ 第 185 波（T4）：超时同时是「这次调用已被判失败」的**唯一权威时刻**
+   *
+   * `onAbandon` 在 `controller.abort()` 的**同一个同步段**里被调用（那一刻 race 已经决定
+   * reject）—— 管线 finalize 层据此不再写 `completed` 的 `tool_result`。
+   * 为什么不复用 `ctx.abort.aborted`：那是"取消信号发出去了"，用户点 ■ 时它与"已判失败"
+   * 会分叉（在飞工具可能已经跑完并返回成功）。详见 `ToolExecutorContext.abandoned`。
    */
-  private timeoutTimer(ms: number, controller?: AbortController): { promise: Promise<never>; cancel: () => void } {
+  private timeoutTimer(
+    ms: number,
+    controller?: AbortController,
+    onAbandon?: () => void,
+  ): { promise: Promise<never>; cancel: () => void } {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const promise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -845,6 +909,12 @@ export class StreamingToolExecutorImpl {
           err.message =
             `${err.message}; moreover the abort signal could not be delivered ` +
             `(the tool may still be running and its side effects may still land): ${detail}`;
+        }
+        /* ★ 第 185 波（T4）：同一个同步段里置"已放弃"标志（在 reject 之前 —— 顺序是判据的一部分） */
+        try {
+          onAbandon?.();
+        } catch {
+          /* 标志只是诊断/记录用，绝不能因为它自己抛错而改变超时语义 */
         }
         reject(err);
       }, ms);

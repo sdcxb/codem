@@ -124,6 +124,44 @@ export function removeSetting(key: string): void {
 }
 
 /**
+ * 写入并**确认落库**，返回是否真的写进去了（第 184 波存储审计 S4）。
+ *
+ * ## 为什么需要它
+ *
+ * `setSetting` 是 `void`（内存即时生效 + **异步**落库），失败只走上报通道 ——
+ * 调用方拿不到"这次到底写进去了没有"。而设置键迁移（`migration.ts`）的动作是
+ * "复制到新键 → 删掉旧键"，于是复制那条 IPC 失败（重试耗尽 / 磁盘满 / 引擎忙）时
+ * **源键已经被删掉**：键表第一行 `mimo-settings → codem-settings` 就是整份设置
+ * （含 provider 配置）丢失，既没有回滚也没有重试。
+ *
+ * 这与 `secret-store` 里明写的纪律恰好相反 —— 那条是"封存成功 → 一次原子写回 →
+ * **才**清明文"。本函数就是把同一条纪律给设置迁移用：
+ * **先确认落库成功，才允许调用方删源**。
+ *
+ * ## 返回 `false` 的三种情形（都**不**删源，下次启动自然重试）
+ *
+ * 1. 没有配置源（端口未注册）；
+ * 2. 端口没有 `setConfirmed` 能力（如实回绝，**不许**退化成"先删了再说"）；
+ * 3. 落库失败（引擎报错 / 重试耗尽）。
+ */
+export async function setSettingConfirmed(key: string, value: string): Promise<boolean> {
+  const cfg = rustConfig();
+  if (!cfg) {
+    reportWriteNotAccepted("settings.setSettingConfirmed", "设置未保存（没有可用的配置源，源键保持不动）");
+    return false;
+  }
+  const setConfirmed = cfg.setConfirmed;
+  if (typeof setConfirmed !== "function") {
+    reportWriteNotAccepted(
+      "settings.setSettingConfirmed",
+      "设置未保存（配置面不支持确认式写入：本次**不删源键**，下次启动重试）",
+    );
+    return false;
+  }
+  return await setConfirmed.call(cfg, key, value);
+}
+
+/**
  * 把"从持久化里读出来的**部分**配置"合并到默认值上，**跳过显式 `undefined`**。
  *
  * ## 为什么不能直接用 `{ ...DEFAULT, ...partial }`（第 181 波，对标 Pi `cd60a5b99`）

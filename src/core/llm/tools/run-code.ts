@@ -213,10 +213,10 @@ export function createRunCodeTool(): ToolDef {
      */
     description: `Execute JavaScript in its own engine (Rust-side boa — NOT the app's WebView, and not QuickJS). The script cannot see the application's own globals (window / document / process / require / __TAURI__); everything it does goes through the injected \`sdk\` object. **Every sdk method is async — you must \`await\` it** (an un-awaited call gives you a Promise, and \`JSON.stringify(promise)\` is \`{}\`):
 - \`await sdk.bash(command, opts?)\` → \`{ stdout: string, stderr: string, exitCode: number }\`; refused if the command is classified dangerous (use the bash tool directly so the user is asked)
-- \`await sdk.read(path)\` → \`string\` (file content)
-- \`await sdk.write(path, content)\` → \`void\`; overwriting a differing existing file requires user confirmation in ask mode
-- \`await sdk.glob(pattern, path?)\` → \`string[]\` (matching paths)
-- \`await sdk.grep(pattern, opts?)\` → \`{ file: string, line: number, content: string }[]\` (one entry per matching line; \`line\` is 1-based)
+- \`await sdk.read(path)\` → \`string\` (file content); a path outside the workspace is refused while the user's workspace restriction is on
+- \`await sdk.write(path, content)\` → \`void\`; a path outside the workspace is refused while the user's workspace restriction is on, and overwriting a differing existing file requires user confirmation in ask mode
+- \`await sdk.glob(pattern, path?)\` → \`string[]\` (matching paths); the search path and the pattern must stay inside the workspace while the user's workspace restriction is on
+- \`await sdk.grep(pattern, opts?)\` → \`{ file: string, line: number, content: string }[]\` (one entry per matching line; \`line\` is 1-based); the search path must stay inside the workspace while the user's workspace restriction is on
 - \`await sdk.fetch(url)\` → \`string\` — the response **body text only** (no status, no headers, no \`json()\`); it aborts after 15s
 
 Use \`console.log()\` for output. The engine has no network or filesystem access of its own — everything goes through \`sdk\`.
@@ -262,8 +262,17 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
           };
         },
         async read(path: string) {
+          /**
+           * ★ 第 185 波（T2）：**读侧也要过工作区判定**（与写侧同一份实现）。
+           *
+           * 原来是裸 `readFile(path)` ⇒ 沙箱开启时 `await sdk.read("C:/Users/x/.ssh/id_rsa")`
+           * 读得到工作区外的文件，而同样带 `path` 的 `read` 工具调用会被 `SandboxGuard` 拒 ——
+           * 同一个沙箱两条相反的事实。`ctx.cwd` 就是这里的工作区，必须传下去
+           * （`file-api.ts` 的 `assertWithinWorkspace` 在没有 workspace 时不做判定，
+           * 所以"忘了传"就等于"没检查"）。
+           */
           const { readFile } = await import("../../file-api");
-          return await readFile(path);
+          return await readFile(path, { workspace: ctx.cwd });
         },
         async write(path: string, content: string) {
           // 受保护路径（.git/ .env node_modules/ …）：`write` 工具在建任何东西之前就拒绝
@@ -278,12 +287,16 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
           await writeFile(path, content, { workspace: ctx.cwd });
         },
         async glob(pattern: string, path?: string) {
+          // ★ 第 185 波（T2）：搜索路径与模式都要过工作区判定（同一个 `isPathWithinWorkspace`）
           const { globSearch } = await import("../../file-api");
-          return await globSearch(pattern, path || ctx.cwd);
+          return await globSearch(pattern, path || ctx.cwd, { workspace: ctx.cwd });
         },
         async grep(pattern: string, opts?: { path?: string; glob?: string }) {
           const { grepSearch } = await import("../../file-api");
-          const results = await grepSearch(pattern, opts?.path || ctx.cwd, opts?.glob);
+          // ★ 第 185 波（T2）：同上（`pattern` 是正则，只判搜索路径）
+          const results = await grepSearch(pattern, opts?.path || ctx.cwd, opts?.glob, {
+            workspace: ctx.cwd,
+          });
           /**
            * ★ 第 184 波（G5）：**这里原来把结果整个映射错了**。
            *
@@ -363,10 +376,10 @@ export async function execRunCode(code: string, options?: { timeout?: number; cw
       const result = await executeCommand(cmd, options?.cwd, timeout);
       return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode ?? 0 };
     },
-    read: async (path: string) => { const { readFile } = await import("../../file-api"); return readFile(path); },
-    write: async (path: string, content: string) => { const { writeFile } = await import("../../file-api"); return writeFile(path, content); },
-    glob: async (pattern: string) => { const { globSearch } = await import("../../file-api"); return globSearch(pattern); },
-    grep: async (pattern: string) => { const { grepSearch } = await import("../../file-api"); const results = await grepSearch(pattern); return results.map((r: any) => ({ file: r.file || r.path || "", line: r.line || 0, content: r.content || r.line_text || "" })); },
+    read: async (path: string) => { const { readFile } = await import("../../file-api"); return readFile(path, { workspace: options?.cwd }); },
+    write: async (path: string, content: string) => { const { writeFile } = await import("../../file-api"); return writeFile(path, content, { workspace: options?.cwd }); },
+    glob: async (pattern: string) => { const { globSearch } = await import("../../file-api"); return globSearch(pattern, options?.cwd, { workspace: options?.cwd }); },
+    grep: async (pattern: string) => { const { grepSearch } = await import("../../file-api"); const results = await grepSearch(pattern, options?.cwd, undefined, { workspace: options?.cwd }); return results.map((r: any) => ({ file: r.file || r.path || "", line: r.line || 0, content: r.content || r.line_text || "" })); },
     fetch: async (url: string) => { const res = await fetch(url); return res.text(); },
   };
   return executeCode(code, sdk, options?.timeout ?? 30_000);

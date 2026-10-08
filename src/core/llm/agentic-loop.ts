@@ -11,7 +11,7 @@ import { foldStats, renderFoldSummary, isFoldMessage, pruneStaleToolResults } fr
 import { recordContextDrop } from "./context-visibility";
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
-import { initDefaultPipeline } from "./tool-pipeline";
+import { initDefaultPipeline, type ToolPipelineHost } from "./tool-pipeline";
 // 契约谓词：快照判据从这里来，不在调用点自己拼条件（那样又会长出第二处真相）
 import { mutatesWorkspace, needsPreCallSnapshot } from "./tool-contract";
 /** 第 169 波：**还原型命令的识别**（纯函数 ✓，必须静态导入后**同步**判 ✓ —— 异步会与收尾检查竞态 ✗）。 */
@@ -1294,6 +1294,121 @@ export class AgenticLoop {
   return getEventLog();
 }
 
+/**
+ * ★ 第 185 波（T1）：**本 loop 的管线宿主回调**（闸门按次从调用上下文取的那一份）。
+ *
+ * ## 为什么要有这个方法（而不是把对象内联在 `initDefaultPipeline(...)` 里）
+ *
+ * 工具管线是**进程级单例**，同一进程里主 loop 与每个子智能体各持一个 `AgenticLoop`
+ * （`index.ts` 的 `getAgenticLoop(agentId, sessionId, scopedTools)` 带
+ * `toolRegistryOverride` ⇒ 与主 loop 是两个实例）。原来这些回调是**闭包捕获**的：
+ * 谁最后调了 `initDefaultPipeline`，闸门就按谁的 `checkPermission` / `isPlanMode` /
+ * 沙箱开关判 —— 主 loop 的调用会落到子智能体的回调上，而子智能体通常没有
+ * `onPermissionRequest` ⇒ 按 fail-closed 被拒，**本该弹的确认框永远不弹**。
+ *
+ * 现在每个 loop 在构造本轮 `ctx` 时（`executeIteration` 里的 `toolCtx`）带上
+ * `pipelineHost: this.pipelineHost()`，管线中间件**优先用 ctx 里那一份**
+ * （见 `tool-pipeline.ts` 的 `hostFor`）⇒ 闸门只跟"这次调用是谁发的"有关。
+ *
+ * 每次调用返回**新对象**（回调都读 `this.config` / `this.tools` 的当前值，
+ * 所以对象本身不需要缓存 —— 缓存反而会把模式切换之类的活读变成快照）。
+ */
+private pipelineHost(): ToolPipelineHost {
+  return {
+    isPlanMode: () => this.config.collaborationMode === "plan",
+    // 第 87 波：跟随设置（原来是硬编码 () => false，面板里的沙箱开关形同虚设）
+    isSandboxEnabled: () => isSandboxAclEnabled(),
+    // 第 120 轮：沙箱与计划模式守卫改读**工具契约**，不再维护工具名名单。
+    // 判据变成「sideEffectScope !== "none"」与「readOnly」—— 新增工具天然被覆盖，
+    // 不需要谁记得来登记（旧名单里还混着 read_file / cat / find 等幽灵名）。
+    contractOf: (toolName: string) => this.tools.getContract(toolName),
+    // 原始契约（归一化 / 结果渲染这类**行为钩子**从它取：解析后的契约只带值）
+    rawContractOf: (toolName: string) => this.tools.getRawContract(toolName),
+    // 入参校验读 ToolDef.parameters（下发给模型的同一份 schema）
+    toolDefOf: (toolName: string) => this.tools.get(toolName),
+    isPathWithinWorkspace: (path: string, cwd: string) => {
+      // Basic check: path should be within cwd
+      const normalized = path.replace(/\\/g, "/");
+      const cwdNorm = cwd.replace(/\\/g, "/");
+      return normalized.startsWith(cwdNorm) || normalized === cwdNorm;
+    },
+    checkPermission: async (toolName: string, args: Record<string, unknown>, ctx: any) => {
+      // S0-1: Full permission check — migrated from toolHandler inline logic
+      // This replaces the simplified version and includes:
+      // - Resource extraction (path/command)
+      // - Bash deep security analysis
+      // - Security mode evaluation
+      // - User permission request dialog (onPermissionRequest)
+      const secMode = this.config.securityMode || "ask";
+      if (secMode === "full" || !this.config.enablePermissions) {
+        return { allowed: true };
+      }
+
+      const resource = typeof args.path === "string" ? args.path
+        : typeof args.command === "string" ? args.command
+        : undefined;
+      const permissionManager = this.getPermissionManager();
+      let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource);
+
+      // Bash deep security analysis — detect dangerous patterns
+      if (toolName === "bash" && typeof args.command === "string") {
+        try {
+          const { evaluateWithBashAnalysis } = await import("../permission/bash-analyzer");
+          const bashResult = evaluateWithBashAnalysis(args.command, rawAction);
+          if (bashResult.action === "ask" && rawAction === "allow") {
+            console.log(`[Pipeline] Bash analyzer upgraded action to "ask": ${bashResult.reason}`);
+            rawAction = "ask";
+          }
+        } catch (bashErr: any) {
+          console.warn(`[Pipeline] Bash analyzer error (non-blocking): ${bashErr.message}`);
+        }
+      }
+
+      const action = this.evaluateSecurityMode(secMode, toolName, resource, rawAction);
+
+      if (action === "ask" && this.config.onPermissionRequest) {
+        const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        const request: PermissionRequest = {
+          id: requestId,
+          sessionId: ctx.sessionId,
+          tool: toolName,
+          input: args,
+          resource,
+          timestamp: Date.now(),
+        };
+
+        const result = await this.config.onPermissionRequest(request);
+
+        if (result.action === "deny") {
+          return { allowed: false, denyMessage: `Permission denied by user for tool "${toolName}"` };
+        }
+      } else if (action === "deny") {
+        return { allowed: false, denyMessage: `Permission denied by policy for tool "${toolName}"` };
+      } else if (action === "ask") {
+        /**
+         * 第 83 波（审计修正）：**没有人可以问的时候必须拒绝，不能默认放行**。
+         *
+         * 原来 `action === "ask"` 而 `onPermissionRequest` 为空时，两个分支都不命中，
+         * 直接落到 `return { allowed: true }` —— "ask"模式在任何**没接回调的调用方**
+         * （第三方/嵌入式 `engine.process(...)`、子智能体、后台桥接）那里等于 **full**：
+         * 本该要用户确认的写操作被静默放行。这是"守卫被缺省分支绕过"的典型。
+         *
+         * 现在 fail-closed：明确拒绝并说清原因（用户可改为 auto/full，或让调用方提供回调）。
+         */
+        return {
+          allowed: false,
+          denyMessage:
+            `Permission required for tool "${toolName}" but no approval channel is available ` +
+            `(the caller did not provide onPermissionRequest). Denied by default — ` +
+            `set the security mode to "auto"/"full" or provide an approval callback.`,
+        };
+      }
+
+      return { allowed: true };
+    },
+  };
+}
+
 /** P1: 轨迹记录服务 — 对标 DSH ui-trajectory，记录 Agent 执行每一步的完整轨迹 */
 private getTrajectoryService(): { record: (sessionId: string, type: string, data: any, duration?: number) => string } | null {
   if (this._ctx) {
@@ -1307,7 +1422,15 @@ private getTrajectoryService(): { record: (sessionId: string, type: string, data
       const s = (ctx as any).get('uiTrajectory');
       if (s) return s;
     }
-  } catch { /* Context 未初始化 */ }
+  } catch (e) {
+    /*
+     * Context 未初始化 —— 取不到轨迹服务是**预期**情况（测试/早期启动）。
+     * 第 184 波：这里原来是**空 catch**（只挂了一句注释），被 C3 审计门禁判为
+     * "守卫被绕过"的形态。取不到轨迹不该静默：留一条 warnOnce（每个会话只报一次），
+     * 既能事后归因，也不再是一个"看起来像被绕过"的空壳。
+     */
+    warnOnce("trajectory:ctxUnavailable", "[AgenticLoop] uiTrajectory 服务不可用（Context 未初始化），本次不记轨迹", e);
+  }
   return null;
 }
 
@@ -1773,101 +1896,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
             '仍然生效的是工具级受保护路径（.git/.env/node_modules）与权限层。',
       );
     }
-    await initDefaultPipeline({
-      isPlanMode: () => this.config.collaborationMode === "plan",
-      // 第 87 波：跟随设置（原来是硬编码 () => false，面板里的沙箱开关形同虚设）
-      isSandboxEnabled: () => isSandboxAclEnabled(),
-      // 第 120 轮：沙箱与计划模式守卫改读**工具契约**，不再维护工具名名单。
-      // 判据变成「sideEffectScope !== "none"」与「readOnly」—— 新增工具天然被覆盖，
-      // 不需要谁记得来登记（旧名单里还混着 read_file / cat / find 等幽灵名）。
-      contractOf: (toolName: string) => this.tools.getContract(toolName),
-      // 原始契约（归一化 / 结果渲染这类**行为钩子**从它取：解析后的契约只带值）
-      rawContractOf: (toolName: string) => this.tools.getRawContract(toolName),
-      // 入参校验读 ToolDef.parameters（下发给模型的同一份 schema）
-      toolDefOf: (toolName: string) => this.tools.get(toolName),
-      isPathWithinWorkspace: (path: string, cwd: string) => {
-        // Basic check: path should be within cwd
-        const normalized = path.replace(/\\/g, "/");
-        const cwdNorm = cwd.replace(/\\/g, "/");
-        return normalized.startsWith(cwdNorm) || normalized === cwdNorm;
-      },
-      checkPermission: async (toolName: string, args: Record<string, unknown>, ctx: any) => {
-        // S0-1: Full permission check — migrated from toolHandler inline logic
-        // This replaces the simplified version and includes:
-        // - Resource extraction (path/command)
-        // - Bash deep security analysis
-        // - Security mode evaluation
-        // - User permission request dialog (onPermissionRequest)
-        const secMode = this.config.securityMode || "ask";
-        if (secMode === "full" || !this.config.enablePermissions) {
-          return { allowed: true };
-        }
-
-        const resource = typeof args.path === "string" ? args.path
-          : typeof args.command === "string" ? args.command
-          : undefined;
-        const permissionManager = this.getPermissionManager();
-        let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource);
-
-        // Bash deep security analysis — detect dangerous patterns
-        if (toolName === "bash" && typeof args.command === "string") {
-          try {
-            const { evaluateWithBashAnalysis } = await import("../permission/bash-analyzer");
-            const bashResult = evaluateWithBashAnalysis(args.command, rawAction);
-            if (bashResult.action === "ask" && rawAction === "allow") {
-              console.log(`[Pipeline] Bash analyzer upgraded action to "ask": ${bashResult.reason}`);
-              rawAction = "ask";
-            }
-          } catch (bashErr: any) {
-            console.warn(`[Pipeline] Bash analyzer error (non-blocking): ${bashErr.message}`);
-          }
-        }
-
-        const action = this.evaluateSecurityMode(secMode, toolName, resource, rawAction);
-
-        if (action === "ask" && this.config.onPermissionRequest) {
-          const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-          const request: PermissionRequest = {
-            id: requestId,
-            sessionId: ctx.sessionId,
-            tool: toolName,
-            input: args,
-            resource,
-            timestamp: Date.now(),
-          };
-
-          const result = await this.config.onPermissionRequest(request);
-
-          if (result.action === "deny") {
-            return { allowed: false, denyMessage: `Permission denied by user for tool "${toolName}"` };
-          }
-        } else if (action === "deny") {
-          return { allowed: false, denyMessage: `Permission denied by policy for tool "${toolName}"` };
-        } else if (action === "ask") {
-          /**
-           * 第 83 波（审计修正）：**没有人可以问的时候必须拒绝，不能默认放行**。
-           *
-           * 原来 `action === "ask"` 而 `onPermissionRequest` 为空时，两个分支都不命中，
-           * 直接落到 `return { allowed: true }` —— "ask"模式在任何**没接回调的调用方**
-           * （第三方/嵌入式 `engine.process(...)`、子智能体、后台桥接）那里等于 **full**：
-           * 本该要用户确认的写操作被静默放行。这是"守卫被缺省分支绕过"的典型。
-           *
-           * 现在 fail-closed：明确拒绝并说清原因（用户可改为 auto/full，或让调用方提供回调）。
-           */
-          return {
-            allowed: false,
-            denyMessage:
-              `Permission required for tool "${toolName}" but no approval channel is available ` +
-              `(the caller did not provide onPermissionRequest). Denied by default — ` +
-              `set the security mode to "auto"/"full" or provide an approval callback.`,
-          };
-        }
-
-        return { allowed: true };
-      },
-      // R3-1.1: Spill policy — 32KB 上限，超过的纯文本工具输出被溢出存储
-      maxInlineBytes: 32768,
-    });
+    await initDefaultPipeline(this.pipelineHost());
 
     // P2-14: Record telemetry — turn start
     const telemetry = this.getTelemetry();
@@ -3693,6 +3722,27 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         ],
         tools: toolDefs.length > 0 ? toolDefs : undefined,
         temperature: this.config.temperature,
+        /**
+         * ★ 第 184 波（审计修复 · **死链**）：**必须把输出上限发给请求**。
+         *
+         * ## 缺陷形态（审计实测）
+         *
+         * `config.maxOutputTokens` 由 `index.ts:453/:1007` 通过 `resolveMaxOutputTokens(...)`
+         * 精心算出来（显式配置 > 被 API 拒绝后学到的 > 模型目录 > 族规则 > 兜底，
+         * 并夹在 `HARD_OUTPUT_CEILING` 之内），**但本文件从来没有读过它** ——
+         * 全仓只有类型声明（`:261`）与默认值（`:469`），请求体里也没有 `maxTokens`，
+         * 于是 `provider.ts` 的 `if (request.maxTokens)` 恒假、**`max_tokens` 一次都没发过**。
+         *
+         * 后果（全部静默失效）：
+         *  · 用户在设置里改的"输出上限"没有任何作用；
+         *  · 模型目录里的 `maxOutputTokens`、族规则、硬上限都不生效；
+         *  · `model-output-limit.ts` 的"被 API 拒绝后学到新上限并重试一次"是**不可达死代码**。
+         *
+         * 现在接上。**风险与既有设计配套**：上限太小会让思考 token 吃光预算
+         * （`model-output-limit.ts` 的注释记着那次事故），所以族规则给的本来就是保守值；
+         * 万一仍被 API 拒绝，`provider.ts` 已有"降档 + 记住 + 重试一次"的路径兜住。
+         */
+        ...(this.config.maxOutputTokens ? { maxTokens: this.config.maxOutputTokens } : {}),
         stream: true,
         abortSignal: this.abortController!.signal,
         // E2: Pass reasoning effort to LLM
@@ -3834,6 +3884,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                   !reasoningReceived
                 ) {
                   throw new Error("EMPTY_RESPONSE: model returned a completed response with no content");
+                }
+                /**
+                 * ★ 第 184 波（审计修复）：**"连接被半途掐断"不许算完成**。
+                 *
+                 * `provider.stream()` 现在用协议终止符 `[DONE]` 区分两种情况；没见过 `[DONE]`
+                 * 就结束时它发 `finishReason: "error"`（`provider.ts` 的 fallback 注释里有完整取证）。
+                 * 但如果循环这边不理会这个值，用户**照样**看到"任务完成"、用量记 0 ——
+                 * 那就只是把一个谎从 provider 挪到循环里。
+                 *
+                 * 所以这里与 `EMPTY_RESPONSE` **走同一条路**：抛出 ⇒ 交给既有重试；
+                 * 重试耗尽后由结构化失败上报（而不是宣称完成）。半个回答被当成完整回答，
+                 * 与"没回答却说完成了"一样糟。
+                 */
+                if (finishReason === "error") {
+                  throw new Error(
+                    "INCOMPLETE_STREAM: the provider stream ended without a completion marker " +
+                      "(no [DONE] and no finish_reason) — the response may be cut off",
+                  );
                 }
                 break;
 
@@ -4329,10 +4397,17 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
        * 真机取证与完整推理写在 `AgenticLoopConfig.resolveAssistantMessageId` 的注释里。
        */
       const toolMessageId = this.resolveMessageIdForTools(sessionId, assistantMsgId);
-      const toolCtx: ToolContext = {
+      /**
+       * ★ 第 185 波（T1）：`pipelineHost` 就是**本 loop 这一轮**的闸门回调。
+       * 管线中间件优先用它（见 `tool-pipeline.ts` 的 `hostFor`），于是：
+       * 主 loop 的调用走主 loop 的 `checkPermission`（该弹的确认框会弹），
+       * 子智能体的调用走子智能体自己的那份，两者不再互相覆盖。
+       */
+      const toolCtx: ToolContext & { pipelineHost?: ToolPipelineHost } = {
         sessionId,
         messageId: toolMessageId,
         cwd,
+        pipelineHost: this.pipelineHost(),
         // P1-6: Don't use ctx.abort — let each tool have its own abortController
         abort: undefined as any,
         // NOTE: Do NOT call buildMessages() here — it would pollute the cache

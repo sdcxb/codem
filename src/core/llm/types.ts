@@ -61,7 +61,11 @@ export interface LLMResponse {
   content: string;
   toolCalls?: ToolCallResult[];
   usage: TokenUsage;
-  finishReason: "stop" | "tool_use" | "length" | "error";
+  /**
+   * 结束原因。★ 第 184 波：补上 `content_filter`（供应商会回它），
+   * 且**陌生取值一律归 `error`**（不许说成 stop）—— 见 `finish-reason.ts`。
+   */
+  finishReason: "stop" | "tool_use" | "length" | "error" | "content_filter";
   model: string;
 }
 

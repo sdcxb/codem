@@ -178,6 +178,60 @@ export interface JsonlMessageRecord {
   deleted?: boolean;
 }
 
+/**
+ * `hidden` / `trimmed` 的**唯一判定入口**（第 184 波存储审计 S2）。
+ *
+ * ## 为什么必须收成一份
+ *
+ * 这两个标记是**数字**（`session-jsonl.ts` 的 serializer 写的是 `Number(...)`，
+ * 索引里也是 `INTEGER`）。而 `listMessagesMerged` 的那道"日志行被隐藏"防线原来写的是
+ * `(rec as any).hidden === true` —— 拿**布尔**比**数字**，**恒不成立**：那不是"两处口径
+ * 不同"，而是同一个字段的多种读法里错了一种，于是那道防御纵深**从来没有生效过**。
+ * 后果：镜像未加载（S2 只驻留几个会话 / 被字节预算逐出 / 加载失败）时，
+ * `listMessages(sid)` 会把**已被压缩隐藏**的消息从日志镜像整批合回来 ——
+ * 正是「压缩 840 条、token 一点没降」的形态（fork / 父会话路径还会把复活**固化**进新日志）。
+ *
+ * 所以写侧、读侧、重建侧、合并防线**四处共用这两份判定**：任何一处再手写一遍
+ * `hidden === true` / `Number(rec.hidden)`，就是第四次分叉的开始。
+ *
+ * 语义与改前逐条相同（`Number(x ?? 0)` 的真假值）：`undefined` / `null` / `NaN` / `0` → `0`，
+ * 其余（含负数，若将来有别的标记语义）原样返回。
+ */
+function numericFlag(value: unknown): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) && n !== 0 ? n : 0;
+}
+
+/** 这一行**被上下文压缩隐藏**了吗（数字口径；`hidden: 1` 就是隐藏） */
+export function hiddenFlagOf(record: { hidden?: unknown } | null | undefined): number {
+  return numericFlag((record as { hidden?: unknown } | null | undefined)?.hidden);
+}
+
+/** 这一行**被索引裁剪隐藏**了吗（数字口径；`hidden=1 && trimmed=1` = 裁剪而不是压缩） */
+export function trimmedFlagOf(record: { trimmed?: unknown } | null | undefined): number {
+  return numericFlag((record as { trimmed?: unknown } | null | undefined)?.trimmed);
+}
+
+/** 便捷判据：这一行被隐藏（压缩）—— 合并防线按它排除日志行 */
+export function isRecordHidden(record: { hidden?: unknown } | null | undefined): boolean {
+  return hiddenFlagOf(record) !== 0;
+}
+
+/**
+ * 这一行是**被上下文压缩隐藏**（隐藏**且不是**索引裁剪）。
+ *
+ * `hidden` 被两条语义相反的路径共用（见 `message.ts::hiddenMessageIds` 的表格）：
+ * - 压缩：`hidden=1, trimmed=0` ⇒ 读路径要**排除**（否则"压缩 840 条、token 一点没降"）；
+ * - 索引裁剪：`hidden=1, trimmed=1` ⇒ 读路径要**保留**（"被裁的历史仍读得到"是裁剪的前提）。
+ *
+ * 所以"合并防线要不要丢掉这一行"的判据**必须**带上 `trimmed` —— 只按 `hidden` 判会让
+ * 被裁剪的历史整批消失（`session-jsonl-index.test.ts` 的 SLOG-6/SLOG-8 实测：
+ * 不区分时 12 条会变成 3 条）。这条判据与镜像侧 `hiddenIds()` 的口径**逐字一致**。
+ */
+export function isCompressedHidden(record: { hidden?: unknown; trimmed?: unknown } | null | undefined): boolean {
+  return isRecordHidden(record) && trimmedFlagOf(record) === 0;
+}
+
 let cachedDir: string | null = null;
 
 async function sessionsDir(): Promise<string> {
@@ -359,9 +413,14 @@ export function appendSessionMessage(sessionId: string, message: Message): Promi
          *
          * 所以这两列必须由**权威副本**承载。只写非 0 值（`hidden=0` / `trimmed` 不写）
          * 是为了让日志体积与既有格式尽量不变 —— 读侧一律 `?? 0`，语义等价。
+         *
+         * ⚠️ 第 184 波存储审计 S2：写侧 / 读侧（`logMirrorMessage`）/ 重建侧
+         * （`session-log-bridge.ts`）/ 合并防线（`listMessagesMerged`）**共用**
+         * `hiddenFlagOf` / `trimmedFlagOf` / `isRecordHidden` —— 这四处曾经各写一份，
+         * 其中一份把数字与布尔比（恒不成立），那道防线因此**从未生效**。
          */
-        ...(Number((message as any).hidden ?? 0) ? { hidden: Number((message as any).hidden) } : {}),
-        ...(Number((message as any).trimmed ?? 0) ? { trimmed: Number((message as any).trimmed) } : {}),
+        ...(hiddenFlagOf(message as { hidden?: unknown }) ? { hidden: hiddenFlagOf(message as { hidden?: unknown }) } : {}),
+        ...(trimmedFlagOf(message as { trimmed?: unknown }) ? { trimmed: trimmedFlagOf(message as { trimmed?: unknown }) } : {}),
         /**
          * ## 附件与 metadata 也必须进权威日志（第 103+ 轮）
          *

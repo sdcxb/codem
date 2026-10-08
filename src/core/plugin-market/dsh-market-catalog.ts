@@ -69,7 +69,7 @@ export const DSH_MARKET_CATALOG: DshMarketEntry[] = [
   { dshName: '@deepseek-ai/dsh-user-approval', dshDesc: '用户审批流程（关键操作人工确认）', category: 'infra', status: 'bundled', codemAnchor: '@codem/user-approval', note: '内置审批（ask/auto/full 安全模式）' },
   { dshName: '@deepseek-ai/dsh-persona', dshDesc: '人格管理（Agent 行为风格）', category: 'capability', status: 'bundled', codemAnchor: '@codem/persona', note: '内置人格管理' },
   { dshName: '@deepseek-ai/dsh-tool-goal', dshDesc: 'goal 工具组（create/get/update）', category: 'tool', status: 'bundled', codemAnchor: '@codem/goal-round-driver', note: '内置 goal 工具 + 自动续行驱动' },
-  { dshName: '@deepseek-ai/dsh-tool-jobs', dshDesc: '后台任务工具（job_list/output/kill）', category: 'tool', status: 'bundled', codemAnchor: '@codem/tool-jobs', note: '内置 JobManager 工具' },
+  { dshName: '@deepseek-ai/dsh-tool-jobs', dshDesc: '后台任务工具（job_list/output/kill）', category: 'tool', status: 'bundled', codemAnchor: '@codem/tool-jobs', note: '内置后台任务工具（唯一真实来源：terminal_send run_in_background）' },
   { dshName: '@deepseek-ai/dsh-mcp-client', dshDesc: 'MCP 客户端（stdio/http）', category: 'infra', status: 'bundled', codemAnchor: '@codem/mcp', note: '内置 MCP 注册表与 stdio/http 连接' },
   { dshName: '@deepseek-ai/dsh-repeat-tool-reminder', dshDesc: '重复工具调用提醒（loop 卫生）', category: 'infra', status: 'bundled', codemAnchor: '@codem/repeat-tool-reminder', note: '内置 guard 插件' },
   { dshName: '@deepseek-ai/dsh-tool-call-timeout-policy', dshDesc: '工具调用超时策略', category: 'infra', status: 'bundled', codemAnchor: '@codem/tool-call-timeout-policy', note: '内置 timeout-guard' },

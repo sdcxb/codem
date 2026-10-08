@@ -21,8 +21,65 @@ export async function getAppDataDir(): Promise<string> {
 
 // ========== File Operations ==========
 
-export async function readFile(path: string): Promise<string> {
-  return tauriInvoke("read_file", { path });
+/**
+ * 相对路径按工作区解析（**同一套**判定的一部分）。
+ *
+ * ## 为什么必须解析，而且必须用解析后的路径去做 I/O
+ *
+ * 判据与动作必须是同一个路径。Rust 侧的 `resolve_sandbox_path`（`lib.rs:985`）对
+ * **相对路径**是按**进程 cwd** canonicalize 的 —— 所以「检查用工作区解析、写盘用原样相对路径」
+ * 会出现"检查通过、文件落到别处"的错位（比不检查更糟）。因此这里解析之后，
+ * **调用方必须拿解析结果去做 IPC**（`readFile` / `globSearch` / `grepSearch` / `writeFile`
+ * 都照此办理）。
+ *
+ * 语义与 `tools.ts:222-223` 的 `checkSandbox` + `resolvePath` 一致（那儿早就这么做了）：
+ * 相对路径按工作区解析，`..` 逃逸解析后仍然在外面 ⇒ 照旧被拒。
+ */
+function resolveAgainstWorkspace(path: string, workspace: string | undefined): string {
+  if (!workspace) return path;
+  // "." 就是工作区本身（别拼成 `…/.`：检查与动作都更干净）
+  if (path === ".") return workspace;
+  if (/^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("\\\\")) return path;
+  const sep = workspace.includes("/") && !workspace.includes("\\") ? "/" : "\\";
+  return workspace.replace(/[\\/]+$/, "") + sep + path.replace(/^[\\/]+/, "");
+}
+
+/**
+ * ★ 第 185 波（T2）：**读侧的工作区判定** —— 与写侧（`writeFile`）**同一份实现**。
+ *
+ * ## 为什么必须补（这是真机事故的同一形态）
+ *
+ * `writeFile` 早就有 `options.workspace` 的沙箱检查（S5），而 `readFile` / `globSearch` /
+ * `grepSearch` **没有**：同一个沙箱里「带 `path` 的 `read` 工具调用会被 `SandboxGuard` 拒」，
+ * 而 `run_code` / `workflow` 里的 `sdk.read("C:/Users/x/.ssh/id_rsa")` 照样读得到
+ * （它们直接调这里的裸 IPC）。`tool-gates.ts` 只覆盖危险命令 / 受保护**写**路径 / 覆盖确认，
+ * 没有读侧闸门 ⇒ 越界读留下的是「成绩作废」级别的事故（见 `tools.ts` 记的那条真机记录）。
+ *
+ * ## 口径（与写侧一致，只有动词不同）
+ *
+ * - `workspace` 未给 ⇒ 不做判定。应用自管的读写（设置、日志、溢出文件、快照、技能目录）
+ *   本来就不在工作区内，且它们不走工具路径 —— 这是**既有语义**，不是本轮新开的口子；
+ * - `workspace` 给了而目标在外 ⇒ **抛错**（如实失败）。绝不 catch 之后继续：
+ *   那等于「看起来有沙箱、实际没检查」，比没有更糟。
+ *
+ * 判据见 `src/test/run-code-sdk-sandbox-read.test.ts`。
+ */
+function assertWithinWorkspace(verb: string, target: string, workspace: string | undefined): void {
+  if (!workspace) return;
+  if (isPathWithinWorkspace(target, workspace)) return;
+  throw new Error(
+    `Sandbox: ${verb} "${target}" is outside the workspace "${workspace}". ` +
+    `The sandbox restricts file access to the workspace directory and its subdirectories.`,
+  );
+}
+
+export async function readFile(path: string, options?: { workspace?: string }): Promise<string> {
+  // ★ 第 185 波（T2）：读侧沙箱。原来是裸 IPC —— `sdk.read` 因此是整条链上
+  // 唯一没有工作区判定的文件读入口。
+  // 相对路径先按工作区解析：**检查与读取必须是同一个路径**（见 resolveAgainstWorkspace）。
+  const target = resolveAgainstWorkspace(path, options?.workspace);
+  assertWithinWorkspace("Read from", target, options?.workspace);
+  return tauriInvoke("read_file", { path: target });
 }
 
 /**
@@ -110,17 +167,39 @@ export async function readFileLines(
   return tauriInvoke("read_file_lines", { path, offset, limit, maxChars });
 }
 
+/**
+ * `Uint8Array` → base64（**逐字节**，不经过 UTF-8 解码）。
+ *
+ * ## 为什么要有它（第 184 波 F3）
+ *
+ * 技能安装路径（`skill/installer.ts` / `skill/skill-market-client.ts`）原来对**二进制**
+ * 资源也走 `strFromU8(bytes)`（UTF-8 解码）+ 文本 `writeFile` —— 白名单里明明有
+ * `.png/.jpg/.gif/.ico`，而 UTF-8 解码会把非法字节序列替换成 U+FFFD，
+ * 于是**图标字节被静默破坏**（SKILL.md 里引用的资源读出来是乱码）。
+ *
+ * 正确形态是 `writeFile(path, base64, { encoding: "base64" })`（见 `writeFile` 的 `encoding`
+ * 与 `mcp-resources-tool.ts` 的既有用法），本函数负责那一步的编码。
+ *
+ * 分块拼接：`String.fromCharCode(...bytes)` 对大文件会因参数个数上限抛
+ * `RangeError: Maximum call stack size exceeded`，所以按 32KB 分块。
+ */
+export function u8ToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
 export async function writeFile(path: string, content: string, options?: { encoding?: string; workspace?: string }): Promise<void> {
   // S5: Frontend sandbox check — reject writes outside workspace before hitting Rust backend
-  if (options?.workspace) {
-    if (!isPathWithinWorkspace(path, options.workspace)) {
-      throw new Error(
-        `Sandbox: Write to "${path}" is outside the workspace "${options.workspace}". ` +
-        `The sandbox restricts file writes to the workspace directory and its subdirectories.`
-      );
-    }
-  }
-  await tauriInvoke("write_file", { path, content, encoding: options?.encoding, workspace: options?.workspace });
+  // ★ 第 185 波（T2）：与 `readFile` / `globSearch` / `grepSearch` 共用**同一份**判定
+  // （原来是这里内联的一段，读侧要复刻就只能再写一份 —— 那正是漂移的来源）。
+  // 相对路径同样先按工作区解析，并且**用解析结果去写盘**（否则检查与动作不是同一个路径）。
+  const target = resolveAgainstWorkspace(path, options?.workspace);
+  assertWithinWorkspace("Write to", target, options?.workspace);
+  await tauriInvoke("write_file", { path: target, content, encoding: options?.encoding, workspace: options?.workspace });
 }
 
 /**
@@ -233,14 +312,47 @@ export async function executeCommand(command: string, cwd?: string, timeoutMs?: 
   return tauriInvoke("execute_command", { command, cwd, timeout_ms: timeoutMs });
 }
 
-export async function globSearch(pattern: string, path?: string): Promise<string[]> {
-  let searchPath = path || await getDefaultCwd();
-  
+/**
+ * 搜索路径的沙箱判定（glob / grep 共用）—— 与 `readFile` / `writeFile` 同一份实现。
+ *
+ * ★ 第 185 波（T2）：`sdk.glob("*.ts", "C:/other")` / `sdk.grep(p, { path: "C:/other" })`
+ * 原来直接落到 Rust 的 `glob_search` / PowerShell 的 `Get-ChildItem -Path`，
+ * 沙箱开启时照样扫描工作区外 —— 与 `sdk.read` 是同一个缺口。
+ *
+ * @returns 判定通过的**绝对**搜索路径（`workspace` 未给时原样返回）；
+ *   调用方必须拿它去做真正的搜索 —— 检查与动作要是同一个路径。
+ */
+function checkSearchPathWithinWorkspace(
+  searchPath: string,
+  workspace: string | undefined,
+): string {
+  const target = resolveAgainstWorkspace(searchPath, workspace);
+  assertWithinWorkspace("Search in", target, workspace);
+  return target;
+}
+
+export async function globSearch(
+  pattern: string,
+  path?: string,
+  options?: { workspace?: string },
+): Promise<string[]> {
+  // ★ 第 185 波（T2）：给了 workspace 时，"." 与省略 path 都以**工作区**为基准
+  // （不是进程默认 cwd —— 否则 `sdk.glob(p, ".")` 会被解析到一个工作区外的目录、
+  //  然后被沙箱如实拒绝：**假失败**）。
+  let searchPath = path || options?.workspace || await getDefaultCwd();
+
   // Resolve relative paths
   if (searchPath === ".") {
-    searchPath = await getDefaultCwd();
+    searchPath = options?.workspace ?? await getDefaultCwd();
   }
-  
+
+  // ★ 第 185 波（T2）：搜索路径与**模式**都要过工作区判定。
+  // 只判搜索路径是不够的：`glob("../..//*.ts", workspace)` 的 `..` 在模式里，
+  // 由 Rust 侧拼接后照样跑出工作区。模式判据只认**绝对路径**与含 `..` 的形态
+  // （普通 glob 通配符不受影响），判不准的方向是"拦下"（保守），不是"放行"。
+  searchPath = checkSearchPathWithinWorkspace(searchPath, options?.workspace);
+  assertGlobPatternWithinWorkspace(pattern, searchPath, options?.workspace);
+
   const winPattern = pattern.replace(/\//g, '\\');
   console.log("[globSearch] calling Rust glob_search:", { pattern: winPattern, path: searchPath, originalPath: path });
   
@@ -257,13 +369,42 @@ export async function globSearch(pattern: string, path?: string): Promise<string
 }
 
 /**
+ * glob **模式**里的越界形态（绝对路径 / 含 `..`）。
+ *
+ * 为什么只对 glob 做、不对 grep 做：grep 的 `pattern` 是 PowerShell **正则**，
+ * `..`（任意两字符）是常见写法，拿路径规则去判它必然误杀合法检索。
+ * glob 的 `pattern` 本身就是路径表达式 ⇒ 同一个判据在这里语义正确。
+ */
+function assertGlobPatternWithinWorkspace(
+  pattern: string,
+  searchPath: string,
+  workspace: string | undefined,
+): void {
+  if (!workspace) return;
+  const p = pattern.replace(/\\/g, "/");
+  const absolute = /^[A-Za-z]:\//.test(p) || p.startsWith("//") || p.startsWith("/");
+  if (!absolute && !p.split("/").includes("..")) return;
+  const base = searchPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  assertWithinWorkspace("Glob pattern", absolute ? p : `${base}/${p}`, workspace);
+}
+
+/**
  * @param include 文件名过滤（可给多个 ✓，PowerShell `-Include` 的数组形式 ✓）。
  *   ★ 第 43 波：允许**数组** —— 调用方要"只扫判据文件"时必须能一次给 `*test*` 与 `*spec*` ✓
  *   （只给 `*test*` 会**漏掉** `*.spec.ts` ✗，而 `isTestFile` 是认 spec 的 ✓）。
  */
-export async function grepSearch(pattern: string, path?: string, include?: string | string[]): Promise<string[]> {
+export async function grepSearch(
+  pattern: string,
+  path?: string,
+  include?: string | string[],
+  options?: { workspace?: string },
+): Promise<string[]> {
   // Use PowerShell for better Unicode support
-  const searchPath = path || await getDefaultCwd();
+  // ★ 第 185 波（T2）：给了 workspace 时，省略 path 以**工作区**为基准（理由同 globSearch）。
+  let searchPath = path || options?.workspace || await getDefaultCwd();
+  // ★ 第 185 波（T2）：与 `sdk.read` / `sdk.glob` 同一个读侧沙箱判定，并**用解析后的路径**去搜索
+  // （`pattern` 是正则、不做路径判定 —— 理由见 `assertGlobPatternWithinWorkspace` 的说明）。
+  searchPath = checkSearchPathWithinWorkspace(searchPath, options?.workspace);
   /**
    * 第 84 波（A/B 类：静默空结果被当成"没有匹配"）：
    *

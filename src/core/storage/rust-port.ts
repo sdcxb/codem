@@ -781,6 +781,19 @@ class RustDataPort implements StorageDataPort {
 // ========== 配置面（同步读 + 写穿） ==========
 
 /**
+ * 配置值的**线协议文本**（`set` 与 `setConfirmed` 共用一份，避免两处口径漂移）。
+ *
+ * `null` / `undefined` ⇒ `null`（= 删除语义的显式空值）；字符串原样；其余 `JSON.stringify`。
+ */
+function configTextOf(value: unknown): string | null {
+  return value === null || value === undefined
+    ? null
+    : typeof value === "string"
+      ? value
+      : JSON.stringify(value);
+}
+
+/**
  * 配置面：**唯一**允许内存镜像的形态。
  *
  * 为什么必须同步读：`getSetting()` 的历史调用点遍布同步上下文（React 渲染、
@@ -829,12 +842,29 @@ class RustConfigPort implements StorageConfigPort {
   }
 
   set(key: string, value: unknown): void {
-    const text =
-      value === null || value === undefined
-        ? null
-        : typeof value === "string"
-          ? value
-          : JSON.stringify(value);
+    const text = configTextOf(value);
+    /**
+     * ## 第 184 波 F1：**未预热不许写**
+     *
+     * 配置面的写几乎全是"读整份 → 改一个字段 → 整份写回"（MCP 服务器列表、快捷短语、
+     * 记忆……）。未预热时 `get` 返回的是**兜底值**（空表），于是那次"读改写"会把
+     * **磁盘上已有的全部内容用空表覆盖掉** —— `MCPRegistry` 的"启动早期空读之后
+     * `addServer()` 清掉用户所有 MCP 服务器"就是这条路径的真机形态。
+     *
+     * 真端口的不变量是"注册那一刻设置面已经预热完毕"（`port.ts` 先 `await config.warmup()`
+     * 再 `setStoragePort(port)`），所以这条分支在正常启动里走不到；它是一道**护栏**：
+     * 万一有人提前写入，宁可这次没保存（如实上报，内存镜像也不动），也不许把空表写进库。
+     * 不写内存镜像同样重要 —— 否则界面上"看起来保存了"，磁盘上却是空的。
+     */
+    if (!this.warmed) {
+      this.failures++;
+      this.onFailure(
+        key,
+        new StorageError("UNAVAILABLE", "配置面尚未预热"),
+        "设置未保存（配置面尚未就绪；本次不写库，以免用空表覆盖已有内容）",
+      );
+      return;
+    }
     // 先内存后落库：界面即时生效；落库失败会走统一上报（用户能看到"没保存成功"）
     this.cache.set(key, text);
     this.track(
@@ -870,6 +900,47 @@ class RustConfigPort implements StorageConfigPort {
   private track(p: Promise<void>): void {
     this.inFlight.add(p);
     void p.finally(() => this.inFlight.delete(p));
+  }
+
+  /**
+   * 写入并**等它真的落库**，返回是否成功（第 184 波存储审计 S4）。
+   *
+   * ## 为什么需要它（`set` 的 `void` 契约不够用）
+   *
+   * `set` 是"内存即时生效 + 异步落库"，失败只走上报通道 —— 也就是说调用方
+   * **拿不到"这次到底写进去了没有"**。而设置键迁移（`migration.ts`）的动作是
+   * "复制到新键 → 删掉旧键"：复制那条 IPC 失败（重试耗尽 / 磁盘满 / 引擎忙）时
+   * 旧键已经被删掉 —— 键表第一行 `mimo-settings → codem-settings` 就是**整份设置
+   * （含 provider 配置）丢失**。这与 `secret-store` 里明写的纪律相反
+   * （"封存成功 → 原子写回 → **才**清明文"）。
+   *
+   * 所以给迁移这类"删源前必须确认"的路径一个**可等待**的写入口：
+   * 它等的是引擎的确认（`settings.set` 走有界重试，与 `set` 同一条命令、同一份退避），
+   * 成功才返回 `true`。内存镜像仍然先写（同步读的即时可见性不变），
+   * 失败时也**不**回滚镜像（与 `set` 的既有语义一致：本次会话内可见，重启后丢）。
+   *
+   * 未预热时与 `set` 同一条护栏：**不写**（那会把空表覆盖上去），返回 `false`。
+   */
+  async setConfirmed(key: string, value: unknown): Promise<boolean> {
+    const text = configTextOf(value);
+    if (!this.warmed) {
+      this.failures++;
+      this.onFailure(
+        key,
+        new StorageError("UNAVAILABLE", "配置面尚未预热"),
+        "设置未保存（配置面尚未就绪；本次不写库，以免用空表覆盖已有内容）",
+      );
+      return false;
+    }
+    this.cache.set(key, text);
+    try {
+      await callWithRetry<void>(this.t, "settings.set", { key, value: text });
+      return true;
+    } catch (e) {
+      this.failures++;
+      this.onFailure(key, e, "设置未保存，重启后会丢失");
+      return false;
+    }
   }
 
   stats(): { warmed: boolean; keys: number; pendingWrites: number; failures: number } {
@@ -1730,7 +1801,27 @@ class RustMessageMirror {
    */
   private readonly maxBatch = 5000;
   private readonly maxRounds = 60;
-  private truncated = false;
+  /**
+   * **哪些会话的加载被上限截断**（第 184 波存储审计 S3）。
+   *
+   * ## 原来是一个"全局且永不复位"的布尔：一个会话把整个进程的索引读判死
+   *
+   * `private truncated = false` 只在某会话循环到 `maxRounds` 时置真，没有 per-session
+   * 记录、没有任何复位点，而 `message.ts::rustMessageSource` 又**不带会话**地问它 ⇒
+   * 只要**一个**会话超过 `maxRounds(60) × maxBatch(5000)`（单会话 ≈29.5 万行），
+   * 本进程内**所有**会话的索引读都被判为不可用：`listMessagesFromIndex` 一律返回 `[]`、
+   * `hiddenIds` 也拿不到（界面"暂时读不到/欢迎页"，压缩隐藏的判据同时失效）。
+   * 库里的数据完好，但要重启才恢复。
+   *
+   * ## 现在按会话记录
+   *
+   * - `isTruncated(sessionId)` 答的是"**这次读的会话**有没有被截断"，
+   *   别的会话截断**不再影响**它；
+   * - `loadSession` 开头先清掉自己那条标记（这次加载完整就不该再算截断）；
+   * - `stats()` 同时给"有没有任何会话被截断"（`truncated`，兼容既有读数）与**是哪些**
+   *   （`truncatedSessions`）—— 截断必须**可见**，不能静默。
+   */
+  private truncatedSessions = new Set<string>();
   /**
    * **跨会话**的总行数预算。
    *
@@ -1831,6 +1922,13 @@ class RustMessageMirror {
     /** 字节预算（超过它就会按 LRU 逐出 ✓） */
     budgetBytes: number;
     budgetRows: number;
+    /**
+     * **被截断的会话 id 列表**（第 184 波 S3：截断必须可见，且必须能看出是哪一个会话）。
+     *
+     * 上面的 `truncated` 是"有没有任何会话被截断"的兼容读数 —— 只有它的话，
+     * "哪个会话说不出完整集合"就只能靠猜（那正是 S3 把整个进程判死的机制之一）。
+     */
+    truncatedSessions: string[];
   } {
     let rows = 0;
     for (const l of this.bySession.values()) rows += l.length;
@@ -1838,7 +1936,8 @@ class RustMessageMirror {
       sessions: this.loaded.size,
       rows,
       failures: this.failures,
-      truncated: this.truncated,
+      truncated: this.truncatedSessions.size > 0,
+      truncatedSessions: [...this.truncatedSessions],
       evictions: this.evictions,
       lastEviction: this.lastEviction,
       bytes: this.totalResidentBytes(),
@@ -1847,9 +1946,9 @@ class RustMessageMirror {
     };
   }
 
-  /** 加载是否被上限截断（截断后必须以旧库为准，避免读到不完整集合） */
-  isTruncated(): boolean {
-    return this.truncated;
+  /** 加载是否被上限截断（截断后必须以旧库为准，避免读到不完整集合）—— **按会话**（第 184 波 S3） */
+  isTruncated(sessionId: string): boolean {
+    return this.truncatedSessions.has(sessionId);
   }
 
   private touch(sessionId: string): void {
@@ -2002,6 +2101,11 @@ class RustMessageMirror {
   private async loadSession(sessionId: string): Promise<void> {
     const rows: MirrorMessageRow[] = [];
     let offset = 0;
+    /**
+     * 重新加载**先作废本会话的截断标记**（第 184 波 S3）：
+     * 这次如果真的拉全了，就不该再被上次的截断拖着（否则截断会永久粘住这个会话）。
+     */
+    this.truncatedSessions.delete(sessionId);
     for (let round = 0; round < this.maxRounds; round++) {
       const page = await call<{ items?: unknown[]; has_more?: boolean }>(this.t, "messages.list", {
         session_id: sessionId,
@@ -2014,7 +2118,7 @@ class RustMessageMirror {
       rows.push(...items);
       if (!page?.has_more || items.length === 0) break;
       offset += items.length;
-      if (round === this.maxRounds - 1) this.truncated = true;
+      if (round === this.maxRounds - 1) this.truncatedSessions.add(sessionId);
     }
     this.bySession.set(sessionId, rows);
     for (const r of rows) this.byId.set(r.id, r);

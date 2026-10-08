@@ -115,6 +115,156 @@ thread_local! {
     static NEXT_HANDLE: RefCell<u32> = const { RefCell::new(1) };
     static HOST: RefCell<Option<Arc<SendHostCall>>> = const { RefCell::new(None) };
     static LOGS: RefCell<String> = const { RefCell::new(String::new()) };
+    /// 会话日志的**记账**（★ 第 185 波）：已收字节数 / 已收行数 / 是否已截断。
+    ///
+    /// 改前只有 `LOGS` 一个无界 `String`：动态插件只要周期性 `console.log`，
+    /// 一次会话就能把宿主内存吃光（Boa context + 这份日志双份持有），而这份日志
+    /// **全仓库没有任何消费方** ⇒ 代价全付、信息为零。
+    static LOG_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static LOG_LINES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// ★ **截断标记**：撞上限时置位 ⇒ "日志不完整"这件事能被调用方看到（不许静默丢弃）。
+    static LOG_TRUNCATED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// 会话日志的字节上限：与 `js_sandbox.rs::MAX_OUTPUT_BYTES` **同一个数（16 MiB）**。
+///
+/// ## 为什么必须与单发执行那条路同口径
+///
+/// 这是**同一类东西的两份实现**（会话版 vs 单发版）。单发版第 181 波已经用 16 MiB
+/// 挡住"脚本把宿主内存吃光"；会话版漏了 ⇒ 同一份漏洞在另一条路上继续活着。
+pub const MAX_LOG_BYTES: usize = 16 * 1024 * 1024;
+
+/// 会话日志的**行数**上限（第二条闸门）。
+///
+/// 字节上限已经保证内存有界；这条挡的是"极短行"的病态形态（`console.log('')` 死循环）：
+/// 16 MiB 的字节预算放得下上千万行，而每行都要过一次 push + 一次记账，白白拖慢沙箱线程。
+/// 20 万行远超任何真实插件的诊断需要。
+pub const MAX_LOG_LINES: usize = 200_000;
+
+/// 会话里 guest 函数（handle）的条数上限。
+///
+/// ## 为什么必须有（改前既无上限、又从不淘汰）
+///
+/// 每次 `ctx.provide(name, service)` 都会把 service 的每个**函数属性**登记进 `HANDLES`；
+/// 而 `JsValue` 是 Boa 的 GC 根 ⇒ 只要它还在这张表里，那个函数对象就**永不回收**。
+/// 插件在 `run()` 里循环 `ctx.provide('x'+i, { f(){} })` 就能把宿主内存吃光 ——
+/// 这是"漏掉的孪生实现"里的第二条向量（第一条是上面的 LOGS）。
+///
+/// ## 为什么是"撞上限就地报错"而不是淘汰旧的
+///
+/// 淘汰（LRU / 环形）会让**已经发给前端的 handle 失效**：前端还按描述符回调那个函数，
+/// 失效之后错误发生在很久以后、且现场对不上原因（典型的静默降级）。
+/// 4096 远超真实插件所需（一个插件通常 1~20 个服务函数），撞上就是代码本身有问题，
+/// 所以这里选择立刻、就地、可读地拒绝。
+pub const MAX_HANDLES: usize = 4096;
+
+/// 撞上限时的错误文案（写进 `__jsvmError` ⇒ guest 的 `ctx.provide` 会 throw）。
+fn log_limit_message() -> String {
+    format!(
+        "沙箱会话的 console 输出已达上限（{MAX_LOG_BYTES} 字节 / {MAX_LOG_LINES} 行）——\
+         后续输出不再记录（这一次会话的日志已被截断，不是完整日志）。请打印摘要。"
+    )
+}
+
+fn handle_limit_message() -> String {
+    format!(
+        "沙箱会话登记的 guest 函数已达上限（{MAX_HANDLES} 个）——\
+         已拒绝本次 ctx.provide（不静默丢弃：描述符没有发出去，前端不会拿到失效 handle）。"
+    )
+}
+
+/// 容量判定：`live + incoming > MAX_HANDLES` ⇒ 拒绝本次 `ctx.provide`。
+///
+/// 抽成纯函数是为了能被判据直接钉住（真机路径要循环 provide 四千多次才触发）。
+fn handle_capacity_exceeded(live: usize, incoming: usize) -> bool {
+    live.saturating_add(incoming) > MAX_HANDLES
+}
+
+/// 往会话日志里追加一行，**带记账与截断标记**。
+///
+/// 返回 `Err` 表示撞到上限（`log_entry` 把它变成 JS 异常：guest 的 try/catch 拦得住，
+/// 而"输出被限制"这件事已经写进错误文案与 `LOG_TRUNCATED` —— 与 `js_sandbox.rs`
+/// 的 `push_to` 同一口径：**报错 + 标记**，不是静默丢掉）。
+///
+/// 抽成"可注入上限"的纯函数是为了能被判据直接钉住（不必真写 16 MiB）。
+#[allow(clippy::too_many_arguments)]
+fn push_log_bounded_with(
+    sink: &RefCell<String>,
+    used_bytes: &std::cell::Cell<usize>,
+    used_lines: &std::cell::Cell<usize>,
+    truncated: &std::cell::Cell<bool>,
+    max_bytes: usize,
+    max_lines: usize,
+    text: &str,
+) -> Result<(), String> {
+    if truncated.get() {
+        // 已截断：后续行**连记账都不做**（内存与 CPU 都不再增长）
+        return Err(log_limit_message());
+    }
+    let bytes = used_bytes.get().saturating_add(text.len() + 1);
+    let lines = used_lines.get().saturating_add(1);
+    if bytes > max_bytes || lines > max_lines {
+        truncated.set(true);
+        used_bytes.set(bytes);
+        used_lines.set(lines);
+        // ★ 如实标记：留一条说明行（它本身也计入上限附近的少量开销），
+        //   而不是"看起来日志到这儿就正常结束了"。
+        let marker = format!(
+            "[js-sandbox-session] console 输出已达上限（{max_bytes} 字节 / {max_lines} 行）——\
+             本会话共记录 {lines} 行；**后续输出已被丢弃**，这不是完整日志。"
+        );
+        {
+            let mut s = sink.borrow_mut();
+            s.push_str(&marker);
+            s.push('\n');
+        }
+        return Err(log_limit_message());
+    }
+    used_bytes.set(bytes);
+    used_lines.set(lines);
+    let mut s = sink.borrow_mut();
+    s.push_str(text);
+    s.push('\n');
+    Ok(())
+}
+
+/// 生产口径的入口：用 `MAX_LOG_BYTES` / `MAX_LOG_LINES` 记账。
+///
+/// 注意这里必须是**嵌套 `with`**（`with` 闭包给的是 `&Cell<..>` 本身）：
+/// 若改成 `c.clone()` 就会拿到一份**副本**去记账 ⇒ 上限永远撞不到（假修复）。
+fn push_log(text: &str) -> Result<(), String> {
+    LOGS.with(|sink| {
+        LOG_BYTES.with(|bytes| {
+            LOG_LINES.with(|lines| {
+                LOG_TRUNCATED.with(|truncated| {
+                    push_log_bounded_with(
+                        sink,
+                        bytes,
+                        lines,
+                        truncated,
+                        MAX_LOG_BYTES,
+                        MAX_LOG_LINES,
+                        text,
+                    )
+                })
+            })
+        })
+    })
+}
+
+/// 取走当前会话日志，**并把"是否被截断"一起返回**。
+///
+/// 为什么必须一起返回：只给文本的话，调用方会把它当成完整日志（静默降级）。
+/// 生产消费方是会话收到 `Close`（`js_sandbox_close` → `SessionHandle::close`）之后
+/// 在**会话线程上**跑的那条运行时日志；判据也直接用它。
+///
+/// ⚠️ 只能在会话**自己的线程**上调用（thread_local 语义）——在别的线程取只会拿到空串。
+pub fn take_session_logs() -> (String, bool) {
+    let text = LOGS.with(|l| std::mem::take(&mut *l.borrow_mut()));
+    let truncated = LOG_TRUNCATED.with(|c| c.replace(false));
+    LOG_BYTES.with(|c| c.set(0));
+    LOG_LINES.with(|c| c.set(0));
+    (text, truncated)
 }
 
 fn json_escape(s: &str) -> String {
@@ -133,7 +283,12 @@ fn json_escape(s: &str) -> String {
     out
 }
 
-/// `console.log` → 会话日志
+/// 把 `push_log` 的失败变成 JS 侧可捕获的异常（与 `js_sandbox.rs::output_error` 同形）。
+fn log_output_error(message: String) -> boa_engine::JsError {
+    boa_engine::JsNativeError::error().with_message(message).into()
+}
+
+/// `console.log` → 会话日志（★ 第 185 波：**带上限与截断标记**，见 `push_log`）
 fn log_entry(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> boa_engine::JsResult<JsValue> {
     let mut line = String::new();
     for (i, arg) in args.iter().enumerate() {
@@ -146,11 +301,9 @@ fn log_entry(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> boa_engine
                 .unwrap_or_else(|_| "?".to_string()),
         );
     }
-    LOGS.with(|l| {
-        let mut l = l.borrow_mut();
-        l.push_str(&line);
-        l.push('\n');
-    });
+    // 撞上限 ⇒ 变成 JS 异常（guest 的 try/catch 拦得住），同时 `LOG_TRUNCATED` 已置位 ⇒
+    // "日志被截断"对调用方可见。**不是**静默丢弃（与 js_sandbox.rs 的 push_to 同口径）。
+    push_log(&line).map_err(log_output_error)?;
     Ok(JsValue::undefined())
 }
 
@@ -193,6 +346,9 @@ fn provide_entry(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> boa_en
 
     // 拆成"函数 → handle"与"数据 → JSON"
     let mut functions: Vec<(String, u32)> = Vec::new();
+    // ★ 第 185 波：先收集再登记（**先查容量后插表**），避免"登记了一半、描述符没发出去"
+    //   之后那半张表成了谁也调不到的孤儿。
+    let mut pending_functions: Vec<(String, JsValue)> = Vec::new();
     let mut data = serde_json::Map::new();
     if let Some(obj) = service.as_object() {
         let keys = obj.own_property_keys(ctx).unwrap_or_default();
@@ -210,14 +366,7 @@ fn provide_entry(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> boa_en
                 continue;
             };
             if value.as_callable().is_some() {
-                let handle = NEXT_HANDLE.with(|n| {
-                    let mut n = n.borrow_mut();
-                    let id = *n;
-                    *n += 1;
-                    id
-                });
-                HANDLES.with(|h| h.borrow_mut().insert(handle, value.clone()));
-                functions.push((key_str, handle));
+                pending_functions.push((key_str, value));
             } else if let Ok(Some(json)) = value.to_json(ctx) {
                 data.insert(key_str, json);
             }
@@ -225,6 +374,35 @@ fn provide_entry(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> boa_en
     } else if let Ok(Some(json)) = service.to_json(ctx) {
         // 不是对象（数字/字符串/数组）：整份当数据
         data.insert("value".to_string(), json);
+    }
+
+    /*
+     * ★ 第 185 波（R6）：handle 表**必须有上限**，撞上限要**明确失败**。
+     *
+     * 改前 `HANDLES` 只增不减（每个 `ctx.provide` 都插新 handle，从不淘汰），
+     * 而表里的 `JsValue` 是 Boa 的 GC 根 ⇒ 插件循环 provide 就能把宿主内存吃光。
+     * 这里在**插入之前**判断容量，超了就返回 `__jsvmError`（前端会看到明确失败，
+     * 而不是拿到一个指向已失效 handle 的描述符）。
+     */
+    let live = HANDLES.with(|h| h.borrow().len());
+    if handle_capacity_exceeded(live, pending_functions.len()) {
+        return Ok(JsValue::from(js_string!(
+            format!(
+                r#"{{"__jsvmError":"{}"}}"#,
+                json_escape(&handle_limit_message())
+            )
+            .as_str()
+        )));
+    }
+    for (key_str, value) in pending_functions {
+        let handle = NEXT_HANDLE.with(|n| {
+            let mut n = n.borrow_mut();
+            let id = *n;
+            *n += 1;
+            id
+        });
+        HANDLES.with(|h| h.borrow_mut().insert(handle, value));
+        functions.push((key_str, handle));
     }
 
     let descriptor = serde_json::json!({
@@ -276,6 +454,11 @@ pub fn open_session(code: String, host: Arc<SendHostCall>, budget: u64) -> Resul
         .spawn(move || {
             HOST.with(|h| *h.borrow_mut() = Some(host));
             LOGS.with(|l| l.borrow_mut().clear());
+            // ★ 第 185 波：记账与截断标记也要跟着会话一起重置（否则上个会话的
+            // "已截断"会**误报**到新会话上 —— 那是假事实）。
+            LOG_BYTES.with(|c| c.set(0));
+            LOG_LINES.with(|c| c.set(0));
+            LOG_TRUNCATED.with(|c| c.set(false));
             HANDLES.with(|h| h.borrow_mut().clear());
             NEXT_HANDLE.with(|n| *n.borrow_mut() = 1);
 
@@ -344,6 +527,30 @@ globalThis.ctx = {
                         break;
                     }
                 }
+            }
+            /*
+             * ★ 第 185 波（R6）：会话结束时把这份日志的**事实**落盘。
+             *
+             * 改前 `LOGS` 全仓库只有"clear"与"push"两处引用 —— **零消费方**：
+             * 插件刷了几百万行，代价全付、信息为零。这里在**会话线程上**（thread_local
+             * 只有本线程看得到）取一次，把"多少字节 / 是否被截断"写进运行时日志；
+             * 只取事实、不转储全文（16 MiB 灌进日志文件毫无意义）。
+             */
+            let (logs, truncated) = take_session_logs();
+            if !logs.is_empty() || truncated {
+                crate::runtime_log::append_line(
+                    "INFO",
+                    &format!(
+                        "js 沙箱会话结束：console 输出 {} 字节 / {} 行{}",
+                        logs.len(),
+                        logs.lines().count(),
+                        if truncated {
+                            "（**已截断**：这不是完整日志）"
+                        } else {
+                            ""
+                        }
+                    ),
+                );
             }
             HANDLES.with(|h| h.borrow_mut().clear());
         })
@@ -711,5 +918,135 @@ mod js_sandbox_session_tests {
         session.close();
         // 关闭之后再发命令应当是明确失败，而不是挂住
         assert!(session.eval("1+1").is_err(), "关闭后不该还能求值");
+    }
+
+    // ==================== ★ 第 185 波（R6）判据 ====================
+
+    /// 会话日志必须有**上限**，撞上限必须**如实标记**（改前无上限、且从不被读）。
+    #[test]
+    fn session_logs_are_bounded_and_marked_when_truncated() {
+        let sink = RefCell::new(String::new());
+        let bytes = std::cell::Cell::new(0usize);
+        let lines = std::cell::Cell::new(0usize);
+        let truncated = std::cell::Cell::new(false);
+        // 注入小上限（生产是 16 MiB / 20 万行；判据不必真写 16 MiB）
+        let (max_bytes, max_lines) = (64usize, 1_000usize);
+
+        let mut errors = 0usize;
+        for _ in 0..50 {
+            if push_log_bounded_with(
+                &sink,
+                &bytes,
+                &lines,
+                &truncated,
+                max_bytes,
+                max_lines,
+                "xxxxxxxxxx",
+            )
+            .is_err()
+            {
+                errors += 1;
+            }
+        }
+        let text = sink.borrow().clone();
+        assert!(truncated.get(), "撞上限必须置截断标记（不许静默丢弃）");
+        assert!(
+            text.len() <= max_bytes + 256,
+            "日志必须有界（含说明行）：{}",
+            text.len()
+        );
+        assert!(
+            text.contains("已达上限") && text.contains("不是完整日志"),
+            "必须如实标记截断：{text}"
+        );
+        assert!(errors > 0, "撞上限必须把错误交出去（可被 guest try/catch）");
+
+        // 截断之后一个字都不许再涨
+        let len_after = sink.borrow().len();
+        let err = push_log_bounded_with(
+            &sink,
+            &bytes,
+            &lines,
+            &truncated,
+            max_bytes,
+            max_lines,
+            "after",
+        )
+        .expect_err("截断之后必须继续报错");
+        assert!(err.contains("上限"), "错误文案要可读：{err}");
+        assert_eq!(sink.borrow().len(), len_after, "截断之后不许再增长");
+
+        // 生产口径：与单发版（js_sandbox.rs）**同一个数**，不能是 0 或随便一个小值
+        assert_eq!(
+            MAX_LOG_BYTES,
+            crate::js_sandbox::MAX_OUTPUT_BYTES,
+            "会话版与单发版必须同口径（同一类东西的两份实现）"
+        );
+        assert!(MAX_LOG_LINES >= 10_000, "行数上限不能小到把正常日志切掉");
+    }
+
+    /// `take_session_logs` 必须把「是否被截断」一起交出来（只给文本 = 静默降级）。
+    #[test]
+    fn taking_session_logs_reports_truncation() {
+        // 本判据线程独占这些 thread_local（生产里用得着它们的只有会话线程）
+        LOGS.with(|l| l.borrow_mut().clear());
+        LOG_BYTES.with(|c| c.set(0));
+        LOG_LINES.with(|c| c.set(0));
+        LOG_TRUNCATED.with(|c| c.set(false));
+
+        push_log("hello").unwrap();
+        let (text, truncated) = take_session_logs();
+        assert!(text.contains("hello"), "text={text}");
+        assert!(!truncated, "没撞上限就不许报截断（假事实）");
+        assert!(
+            take_session_logs().0.is_empty(),
+            "取走后必须清空（否则下一个会话会继承上一份日志）"
+        );
+    }
+
+    /// handle 表容量判定：到顶必须**拒绝**（改前只增不减、`JsValue` 永不回收）。
+    #[test]
+    fn handle_table_refuses_to_grow_past_the_cap() {
+        assert!(!handle_capacity_exceeded(0, 1));
+        assert!(!handle_capacity_exceeded(MAX_HANDLES - 1, 1));
+        assert!(
+            handle_capacity_exceeded(MAX_HANDLES, 1),
+            "到顶之后必须拒绝（改前只增不减）"
+        );
+        assert!(handle_capacity_exceeded(MAX_HANDLES - 1, 2));
+        let msg = handle_limit_message();
+        assert!(
+            msg.contains("上限") && msg.contains("不静默丢弃"),
+            "错误必须说明是上限、且不静默：{msg}"
+        );
+        assert!(MAX_HANDLES >= 256, "上限不能小到把正常插件挡住");
+    }
+
+    /// **端到端**：循环 `ctx.provide` 超过上限时必须**就地明确失败**
+    /// （而不是把宿主内存吃掉、或者回一个指向失效 handle 的描述符）。
+    #[test]
+    fn provide_beyond_the_handle_cap_fails_loudly() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut session = open_session(
+            "module.exports = (ctx) => {};".to_string(),
+            recording_host(log.clone()),
+            20_000_000,
+        )
+        .expect("会话应当打开");
+        let out = session
+            .eval(&format!(
+                "(function(){{ for (let i = 0; i < {}; i++) {{ \
+                   try {{ ctx.provide('s' + i, {{ f: function () {{ return i; }} }}); }} \
+                   catch (e) {{ return 'FAILED at ' + i + ': ' + String(e.message || e); }} \
+                 }} return 'no-fail'; }})()",
+                MAX_HANDLES + 5
+            ))
+            .expect("循环 provide 必须能返回");
+        assert!(
+            out.contains("FAILED at"),
+            "超过 handle 上限必须就地报错，而不是无界增长：{out}"
+        );
+        assert!(out.contains("不静默丢弃"), "{out}");
+        session.close();
     }
 }

@@ -3,6 +3,8 @@ import { Spinner } from "./ui/Spinner";
 import { getSessionRecoveryService } from "../core/recovery/recovery";
 import type { Session } from "../core/llm/session";
 import { useProjectStore } from "../core/store";
+import { reportActionFailure } from "../core/storage/persist-failure";
+import { useLang } from "../core/i18n/lang";
 import { RotateCcw, Clock, Undo, Trash2, User, Bot, Settings as SettingsIcon } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 
@@ -23,6 +25,8 @@ function formatDuration(start: number, end?: number): string {
 
 export function SessionRecovery({ onClose }: SessionRecoveryProps) {
   const CloseIcon = ActionIcons.close;
+  const lang = useLang();
+  const isZh = lang === "zh";
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,6 +37,20 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
     lastSaved: number;
     recoverableSessions: number;
   } | null>(null);
+  /**
+   * ## 第 184 波（UI 审计 F4）：这一屏原来有三处「假成功 / 假空」
+   *
+   * ① `catch {}` + `sessions.length === 0` → 「暂无可恢复的会话」：
+   *    **把"读不到"说成"没有"**（这条通道存在的唯一理由就是"会话可能丢了"，误报代价最高）；
+   * ② 无当前项目时点「恢复此会话」**毫无反应**（`if (!currentProject) return;`，按钮像坏的）；
+   * ③ `switchSession` 找不到会话时是**静默 no-op**，而恢复列表与 store 的会话集合
+   *    不保证同源 ⇒ 弹窗照常关闭、什么都没发生，用户以为恢复成功了。
+   *
+   * 三处现在都如实交代：读失败给一行**可读的错误 + 重试**；点不动就说明为什么；
+   * 切换失败**不关窗**并给出失败原因。
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { currentProject, switchSession } = useProjectStore();
 
@@ -42,24 +60,65 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
 
   const loadSessions = () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const recovery = getSessionRecoveryService();
       const allSessions = recovery.getAllSessions();
       setSessions(allSessions);
       setSummary(recovery.getRecoverySummary());
-    } catch {}
+    } catch (e) {
+      /**
+       * ★ 读失败**不许**渲染成"暂无可恢复的会话"。列表**保持原样**（不清空），
+       * 并把失败上报到仓库统一的可见通道（`reportActionFailure`）。
+       */
+      setLoadError(
+        isZh
+          ? `恢复数据读取失败：下面的列表可能不是最新的（这不代表没有可恢复的会话）。原因：${e instanceof Error ? e.message : String(e)}`
+          : `Failed to read recovery data — the list below may be stale (this does NOT mean there is nothing to recover). Reason: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      reportActionFailure("sessionRecovery.loadSessions", e, "恢复会话列表没有读出来（这不代表没有可恢复的会话）");
+    }
     setLoading(false);
   };
 
   const handleRecover = async (session: Session) => {
-    if (!currentProject) return;
+    setActionError(null);
+    /**
+     * ② 无当前项目：**明说**，不许静默返回（原来按钮毫无反应）。
+     */
+    if (!currentProject) {
+      setActionError(
+        isZh
+          ? "没有选中的项目，无法恢复这个会话 —— 请先在侧栏选择一个项目，再回来恢复。"
+          : "No project is selected, so this session cannot be recovered. Pick a project in the sidebar first.",
+      );
+      return;
+    }
     setRecovering(session.id);
     try {
-      // Switch to the recovered session
-      switchSession(session.id);
+      /**
+       * ③ 判据取**切换的真实结果**：`switchSession` 现在返回 boolean
+       *    （找不到该会话 = false，不再静默 no-op）。失败时**不关窗**。
+       */
+      const switched = switchSession(session.id);
+      if (!switched) {
+        const msg = isZh
+          ? `恢复失败：会话 ${session.id} 不在当前会话列表里（可能属于另一个项目，或列表尚未加载）。已保持原样，没有任何切换发生。`
+          : `Recovery failed: session ${session.id} is not in the current session list (it may belong to another project). Nothing was switched.`;
+        setActionError(msg);
+        reportActionFailure("sessionRecovery.handleRecover", new Error("switchSession 找不到该会话"), msg);
+        return;
+      }
       onClose();
-    } catch {}
-    setRecovering(null);
+    } catch (e) {
+      const msg = isZh
+        ? `恢复失败：${e instanceof Error ? e.message : String(e)}（已保持原样）`
+        : `Recovery failed: ${e instanceof Error ? e.message : String(e)}`;
+      setActionError(msg);
+      reportActionFailure("sessionRecovery.handleRecover", e, "恢复会话失败，未发生切换");
+    } finally {
+      setRecovering(null);
+    }
   };
 
   const handleDelete = (sessionId: string) => {
@@ -103,11 +162,30 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
       )}
 
       <div className="session-recovery-content">
+        {/*
+          三态（第 184 波 F4）：**读不到 ≠ 没有**。
+          原来只有 `!loading && sessions.length === 0 → 「暂无可恢复的会话」`，
+          把"读失败"也说成了"没有"。现在读失败单独一支，并给重试入口。
+        */}
+        {loadError && (
+          <div className="session-recovery-error" data-testid="session-recovery-read-error" role="alert">
+            <span className="session-recovery-error-text">{loadError}</span>
+            <button type="button" className="session-recovery-retry" onClick={loadSessions}>
+              {isZh ? "重新读取" : "Retry"}
+            </button>
+          </div>
+        )}
+        {actionError && (
+          <div className="session-recovery-error" data-testid="session-recovery-action-error" role="alert">
+            <span className="session-recovery-error-text">{actionError}</span>
+          </div>
+        )}
         <div className="session-list">
           {loading && sessions.length === 0 && (
             <div className="empty-hint"><Spinner size="sm" label="" /> 加载中...</div>
           )}
-          {!loading && sessions.length === 0 && (
+          {/* ⚠️ 只有"读到了、确实空"才是「暂无可恢复的会话」（读失败时上面那支已经说了真话） */}
+          {!loading && !loadError && sessions.length === 0 && (
             <div className="empty-hint">暂无可恢复的会话</div>
           )}
           {sessions.map((session) => (

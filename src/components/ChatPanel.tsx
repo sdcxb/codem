@@ -55,6 +55,8 @@ import { SlotBridge, SlotListBridge } from "../core/slots/SlotBridge";
 import { JobsBadge, type JobView } from "./JobsBadge";
 import { DeliverableFiles } from "./DeliverableFiles";
 import { TrajectoryPanel } from "./TrajectoryPanel";
+/** 第 184 波（F5）：删除失败不许抹记录 —— 两条面板路径共用同一份实现 */
+import { deleteGeneratedFiles } from "../core/ui/generated-files-cleanup";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -457,15 +459,22 @@ setStepTooltipLocked(false);
     };
   }, []);
 
+  /**
+   * 「清理过程文件」（第 184 波 F5）。
+   *
+   * 修前：逐个 `delete_file`，失败只 `console.warn`，随后**无条件**
+   * `removeGeneratedFiles(messageId, files)` —— 文件还在磁盘上，条目却没了。
+   * 现在只对**真的删掉**的条目抹记录，失败项保留并如实提示。
+   */
+  const [cleanupFailed, setCleanupFailed] = useState<string | null>(null);
   const handleDeleteFiles = async (messageId: string, files: string[]) => {
-    for (const file of files) {
-      try {
-        await (window as any).__TAURI__?.core.invoke("delete_file", { path: file });
-      } catch (e) {
-        console.warn("[ChatPanel] Failed to delete file:", file, e);
-      }
-    }
-    removeGeneratedFiles(messageId, files);
+    const { deleted, failed } = await deleteGeneratedFiles({ files, area: "chatPanel.deleteFiles" });
+    if (deleted.length > 0) removeGeneratedFiles(messageId, deleted);
+    setCleanupFailed(
+      failed.length === 0
+        ? null
+        : `${lang === "zh" ? "有 " : ""}${failed.length}${lang === "zh" ? " 个文件没能删除（文件仍在磁盘上，清单条目已保留）：" : " file(s) could not be deleted (still on disk, kept in the list): "}${failed.map((f) => f.file).join("、")}`,
+    );
   };
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
@@ -514,6 +523,14 @@ setStepTooltipLocked(false);
 
   return (
     <div className="chat-panel">
+      {cleanupFailed && (
+        <div className="chat-cleanup-failed" data-testid="chat-cleanup-failed" role="alert">
+          <span>{cleanupFailed}</span>
+          <button type="button" className="chat-cleanup-failed-dismiss" onClick={() => setCleanupFailed(null)}>
+            {lang === "zh" ? "知道了" : "Dismiss"}
+          </button>
+        </div>
+      )}
       <div className="chat-header">
         <button
           className="sidebar-toggle"

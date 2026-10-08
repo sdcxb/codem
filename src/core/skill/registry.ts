@@ -24,6 +24,20 @@ export class SkillToolRegistry {
   /** Provider 创建时注册到 ToolRegistry 的工具名，用于卸载时清理 */
   private registeredToolNames: Map<string, string[]> = new Map();
 
+  /**
+   * **只声明、没有实现**的工具名（第 184 波 F4）。
+   *
+   * 技能可以在 frontmatter 里写 `tools: [{name: x}]`，但真正能让工具出现在
+   * `ToolRegistry` 里的只有 Provider 工厂（内置 2 个 + `registerFactory` 注册的外部工厂）。
+   * 声明了却没有工厂时，改前把这些名字塞进 `registeredToolNames` 并**原样返回**
+   * ⇒ `load_skill` 据此告诉模型「这些工具现在可用」⇒ 模型调用不存在的工具、反复失败；
+   * 卸载时还会对从未注册过的名字调 `toolRegistry.remove()`，**误删同名真工具**。
+   *
+   * 现在这些名字单独记账：`loadProvider` 对它们返回 `[]`（不谎称可用），
+   * 卸载时也不碰它们。
+   */
+  private declaredOnlyToolNames: Map<string, string[]> = new Map();
+
   /** 外部注册的 Provider 工厂（非内置） */
   private externalFactories: Map<string, SkillProviderFactory> = new Map();
 
@@ -64,14 +78,24 @@ export class SkillToolRegistry {
       factory = this.externalFactories.get(skill.name);
     }
 
-    // 如果没有工厂但声明了 tools，创建空 Provider
-    // （工具声明仅用于信息展示，实际工具通过其他方式注册）
+    // 如果没有工厂但声明了 tools：**一个工具都没注册**（第 184 波 F4）。
     if (!factory) {
       if (skill.tools?.length) {
-        // 仅记录工具名，不实际注册
-        const toolNames = skill.tools.map((t) => t.name);
-        this.registeredToolNames.set(skill.name, toolNames);
-        return toolNames;
+        const declared = skill.tools.map((t) => t.name);
+        /**
+         * 改前这里 `this.registeredToolNames.set(...)` 之后 `return declared` ——
+         * 于是"声明"被当成"已注册"，`load_skill` 会说这些工具可用（假成功），
+         * 卸载时还会 `toolRegistry.remove(同名)` 误删**真的**同名工具。
+         *
+         * 现在：如实记账（供 `load_skill` 说明"声明但未实现，不可调用"），返回 `[]`，
+         * 调用方据此**不会**宣称任何工具可用。
+         */
+        this.declaredOnlyToolNames.set(skill.name, declared);
+        console.warn(
+          `[SkillToolRegistry] 技能 "${skill.name}" 声明了 ${declared.length} 个工具，` +
+            `但没有对应的 Provider 工厂 ⇒ 这些工具本次**未注册、不可调用**：${declared.join(", ")}`,
+        );
+        return [];
       }
       return [];
     }
@@ -117,7 +141,13 @@ export class SkillToolRegistry {
       this.providers.delete(skillName);
     }
 
-    // 清理注册的工具
+    /**
+     * ⚠️ 第 184 波 F4：**只移除真的注册过的名字**。
+     *
+     * `registeredToolNames` 现在只装"确实 `toolRegistry.register` 成功"的工具名，
+     * 所以这里不会再把"仅声明"的名字当成自己的工具去 `remove()` ——
+     * 那曾经会**误删同名真工具**（例如技能声明了 `read_file`，卸载时把真的 `read_file` 删掉）。
+     */
     const toolNames = this.registeredToolNames.get(skillName);
     if (toolNames) {
       for (const toolName of toolNames) {
@@ -125,6 +155,17 @@ export class SkillToolRegistry {
       }
       this.registeredToolNames.delete(skillName);
     }
+    this.declaredOnlyToolNames.delete(skillName);
+  }
+
+  /**
+   * 取"**只声明、没有实现**"的工具名（第 184 波 F4）。
+   *
+   * `load_skill` 用它如实告诉模型"这些工具声明了但没装上，不要调用"，
+   * 而不是像改前那样把它们当成"现在可用"。
+   */
+  getDeclaredOnlyTools(skillName: string): string[] {
+    return this.declaredOnlyToolNames.get(skillName) || [];
   }
 
   /**
@@ -152,7 +193,11 @@ export class SkillToolRegistry {
    * 卸载所有 Provider。
    */
   async unloadAll(toolRegistry: ToolRegistry): Promise<void> {
-    const names = Array.from(this.registeredToolNames.keys());
+    // 只声明的技能也要清账（它们没有工具要移除，但 `declaredOnlyToolNames` 得清掉）
+    const names = new Set([
+      ...this.registeredToolNames.keys(),
+      ...this.declaredOnlyToolNames.keys(),
+    ]);
     for (const name of names) {
       await this.unloadProvider(name, toolRegistry);
     }

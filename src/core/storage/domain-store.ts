@@ -1174,14 +1174,23 @@ function persistDeleteIdsBounded(
   note: string,
 ): void {
   const total = ids.length;
-  let chain: Promise<void> = Promise.resolve();
+  /**
+   * **批闸门**：第 i+1 批的写必须等第 i 批全部落地（这是"在飞 ≤ `PERSIST_CHUNK_SIZE`"
+   * 与"批间顺序"这两条既有语义的载体）。
+   *
+   * ⚠️ 但**挂链必须在调用时**完成，不能等批次轮到时才挂（见 `engineDeleteOneRow`）：
+   * 早先的写法是 `chain = chain.then(() => Promise.allSettled(chunk.map(...)))` ——
+   * 删除命令要到**下一个微任务**才发出，而同一行的 upsert（`persistWriteThrough`）
+   * 是**同步**发出的 ⇒ upsert 永远抢在 delete 前面（第 184 波审计②的实测形态）。
+   */
+  let gate: Promise<void> = Promise.resolve();
   for (let i = 0; i < total; i += PERSIST_CHUNK_SIZE) {
     const start = i;
     const chunk = ids.slice(start, start + PERSIST_CHUNK_SIZE);
-    chain = chain
-      .then(() =>
-        Promise.allSettled(chunk.map((id) => port.data.execute("crud.delete", { table, where: { [key]: id } }))),
-      )
+    const current = gate;
+    // 逐行挂进 `(表, 主键)` 写序链（**当场挂**），行内命令仍受 `current` 闸门约束
+    const settled = chunk.map((id) => engineDeleteOneRow(port, table, id, key, current));
+    gate = Promise.allSettled(settled)
       .then((results) => {
         results.forEach((r, idx) => {
           if (r.status === "rejected") {
@@ -1198,6 +1207,53 @@ function persistDeleteIdsBounded(
         reportPersistFailure(scope, e, `${note}（第 ${start + 1}/${total} 行起的那一批）`);
       });
   }
+}
+
+/**
+ * 单行删除：走**与 upsert 同一条** `(表, 主键)` 写序链（第 184 波存储审计 S6/②）。
+ *
+ * ## 它修的是什么
+ *
+ * 第 71 轮为"同一行两次写并发在飞、后发先至撞主键"加了 `serializeEngineWrite`
+ * （按 `表\0主键` 串成 promise 链），但**只有 `persistWriteThrough` 用了它**；
+ * 而"按 id 批量删除"这条路自己造一条局部链、直接发 `crud.delete`。
+ * 于是同一行的 upsert（走 `writeChains`）与 delete（走局部链）**互不等待**：
+ * 谁先到引擎不确定，最坏形态是"镜像里删掉的行被随后的 upsert 复活 /
+ * 镜像里存在的行被 delete 抹掉"（镜像与引擎各说各话）。
+ *
+ * 现在单行删除也挂到同一条链上：**同一行的 delete 与 upsert 严格按调用顺序抵达引擎**，
+ * 不同行仍然各走各的链（互不阻塞）。
+ *
+ * @param gate 批闸门 —— "上一批全部落地"的 promise（约束的是**批次之间**，不改变行内顺序）
+ */
+function engineDeleteOneRow(
+  port: DomainMirrorPort,
+  table: string,
+  id: string,
+  key: string,
+  gate: Promise<void>,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    try {
+      // ⚠️ 这里**同步**调用 `serializeEngineWrite`（挂链），批次闸门放在里面 await ——
+      // 顺序反过来（先等批次再挂链）会让同一行的 upsert 在这段空档里越过去。
+      serializeEngineWrite(`${table}\u0000${id}`, async () => {
+        await gate;
+        try {
+          await port.data.execute("crud.delete", { table, where: { [key]: id } });
+          resolve();
+        } catch (e) {
+          // 失败**只在这里 reject**：上报由批次那层统一做（那里带得行号与 id，归因更准，
+          // 且保证"一次失败一条上报"，不会双报）。
+          reject(e);
+        }
+      });
+    } catch (e) {
+      // `serializeEngineWrite` 自己兜住了同步 throw（"立刻发出"那条路），
+      // 但这里必须让调用方也能看到失败 —— 否则这个 Promise 永不 settle。
+      reject(e);
+    }
+  });
 }
 
 

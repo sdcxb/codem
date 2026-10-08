@@ -32,6 +32,7 @@ import type { ToolExecutorContext } from "./streaming-executor";
 import { validateAndRenderOutput } from "./output-value";
 import { validateToolArgs, describeArgProblems } from "./input-args";
 import { RepeatToolReminderMiddleware } from "./repeat-tool-reminder";
+import { SpillPolicyMiddleware } from "./spill-policy";
 import { analyzeBashCommand } from "../permission/bash-analyzer";
 import { CONCURRENCY_SAFE_TOOL_IDS } from './concurrency-policy';
 import {
@@ -293,7 +294,7 @@ export class ToolPipeline {
     // 归一化抛错 ⇒ 视为**入参非法**，直接给出可行动的错误（不入权限、不执行）。
     // 归一化钩子从**原始**契约取（`ResolvedToolContract` 只承载值、不带函数，见
     // `ToolRegistry.getRawContract()` 的说明）。
-    const hook = this.rawContractOf?.(currentName);
+    const hook = (hostFor(ctx)?.rawContractOf ?? this.rawContractOf)?.(currentName);
     if (hook?.normalizeInput) {
       try {
         currentArgs = hook.normalizeInput(currentArgs) ?? currentArgs;
@@ -341,7 +342,7 @@ export class ToolPipeline {
     //
     // 违规以 `errorSource: "tool"` 返回 ⇒ 模型能看到「哪个参数错了、期望什么」并
     // 自行纠正，不累加 `consecutiveErrors`（与第 84 波对工具失败的处理同取向）。
-    const toolDef = this.toolDefOf?.(currentName);
+    const toolDef = (hostFor(ctx)?.toolDefOf ?? this.toolDefOf)?.(currentName);
     if (toolDef) {
       const problems = validateToolArgs(currentName, toolDef.parameters, currentArgs);
       if (problems.length > 0) {
@@ -616,6 +617,8 @@ class PermissionMiddleware implements PreExecuteMiddleware {
     args: Record<string, unknown>,
     ctx: ToolExecutorContext,
   ) => Promise<{ allowed: boolean; denyMessage?: string }>;
+  /** ★ 第 185 波（T1）：缺省宿主查询器（由 `initDefaultPipeline` 注入）。 */
+  private hostProvider?: () => ToolPipelineHost | undefined;
 
   constructor(
     checkPermission: (
@@ -623,8 +626,10 @@ class PermissionMiddleware implements PreExecuteMiddleware {
       args: Record<string, unknown>,
       ctx: ToolExecutorContext,
     ) => Promise<{ allowed: boolean; denyMessage?: string }>,
+    hostProvider?: () => ToolPipelineHost | undefined,
   ) {
     this.checkPermission = checkPermission;
+    this.hostProvider = hostProvider;
   }
 
   async execute(
@@ -632,7 +637,15 @@ class PermissionMiddleware implements PreExecuteMiddleware {
     args: Record<string, unknown>,
     ctx: ToolExecutorContext,
   ): Promise<PreExecuteResult> {
-    const result = await this.checkPermission(toolName, args, ctx);
+    /**
+     * ★ 第 185 波（T1）：**权限处理器必须来自这次调用的上下文**。
+     *
+     * 改动前这里读的是构造时捕获的闭包 = 「最后初始化那个 loop」的 `checkPermission`：
+     * 主 loop 的调用会落到子智能体的回调上（子智能体通常没有 `onPermissionRequest`
+     * ⇒ 按 fail-closed 被拒，用户看不到本该弹的确认框）。
+     */
+    const check = hostFor(ctx, this.hostProvider)?.checkPermission ?? this.checkPermission;
+    const result = await check(toolName, args, ctx);
     if (!result.allowed) {
       return { action: "deny", denyMessage: result.denyMessage };
     }
@@ -737,15 +750,19 @@ class SandboxGuard implements GuardMiddleware {
   private isWithinWorkspace: (path: string, cwd: string) => boolean;
   /** 契约查询器；见 `contractFor()` 的说明。 */
   private contractOf?: (toolName: string) => ResolvedToolContract;
+  /** ★ 第 185 波（T1）：缺省宿主查询器（由 `initDefaultPipeline` 注入）。 */
+  private hostProvider?: () => ToolPipelineHost | undefined;
 
   constructor(
     isEnabled: () => boolean,
     isWithinWorkspace: (path: string, cwd: string) => boolean,
     contractOf?: (toolName: string) => ResolvedToolContract,
+    hostProvider?: () => ToolPipelineHost | undefined,
   ) {
     this.isEnabled = isEnabled;
     this.isWithinWorkspace = isWithinWorkspace;
     this.contractOf = contractOf;
+    this.hostProvider = hostProvider;
   }
 
   async execute(
@@ -753,7 +770,17 @@ class SandboxGuard implements GuardMiddleware {
     args: Record<string, unknown>,
     ctx: ToolExecutorContext,
   ): Promise<GuardResult> {
-    if (!this.isEnabled()) return { action: "proceed" };
+    /**
+     * ★ 第 185 波（T1）：开关与"在不在工作区内"的判定都从**当轮**宿主取。
+     * 捕获的那份只作兜底（直接构造本类的调用方没有宿主可传）。
+     */
+    const host = hostFor(ctx, this.hostProvider);
+    const isEnabled = host ? () => host.isSandboxEnabled() : this.isEnabled;
+    const isWithinWorkspace = host
+      ? (p: string, cwd: string) => host.isPathWithinWorkspace(p, cwd)
+      : this.isWithinWorkspace;
+
+    if (!isEnabled()) return { action: "proceed" };
 
     // 第 121 轮：判据改读 `accessScope`（**访问**了哪类边界），不再读
     // `sideEffectScope`（**改变**了哪类状态）—— 两个概念已拆开（见 tool-contract.ts）。
@@ -762,7 +789,7 @@ class SandboxGuard implements GuardMiddleware {
     // **0 个**（因为只读工具为了让沙箱覆盖自己，都被填成了 workspace/network），
     // 于是这个粗筛一次都不命中、对沙箱毫无区分能力。现在 `read` 是
     // `sideEffectScope: "none"` + `accessScope: "workspace"`，语义各归其位。
-    const contract = this.contractFor(toolName);
+    const contract = this.contractFor(toolName, host);
     if (!requiresPathGuard(contract)) return { action: "proceed" };
 
     // 取路径：读/写工具的入参都叫 `path`（个别历史工具用 `file_path`）。
@@ -792,7 +819,7 @@ class SandboxGuard implements GuardMiddleware {
        * 变量拼出来的路径、编码后的路径、脚本里二次构造的路径都拦不住。
        * 所以评测那边还有一道"污染检测"兜底（`.preview-shot/_codem-repo-eval.mjs` 的 `contaminated`）。
        */
-      const leak = findOutOfWorkspacePath(args, ctx.cwd, (p, cwd) => this.isWithinWorkspace(p, cwd));
+      const leak = findOutOfWorkspacePath(args, ctx.cwd, isWithinWorkspace);
       if (leak) {
         return {
           action: "deny",
@@ -811,7 +838,7 @@ class SandboxGuard implements GuardMiddleware {
       resolvedPath = ctx.cwd.replace(/[\\/]+$/, "") + sep + path.replace(/^[\\/]+/, "");
     }
 
-    if (!this.isWithinWorkspace(resolvedPath, ctx.cwd)) {
+    if (!isWithinWorkspace(resolvedPath, ctx.cwd)) {
       // 文案按工具类别说清楚：原来对**所有**工具都说 "Write to"，
       // 于是「读操作被沙箱拒绝」时用户看到「写入被拒绝」，排查方向被带偏。
       // 现在三态由契约给出（`destructive` / `readOnly`），不再靠名单。
@@ -825,10 +852,11 @@ class SandboxGuard implements GuardMiddleware {
   }
 
   /** 取契约；未注入 `contractOf` 时按「访问工作区」保守处理（不放行）。 */
-  private contractFor(toolName: string): ResolvedToolContract {
-    if (this.contractOf) {
+  private contractFor(toolName: string, host?: ToolPipelineHost): ResolvedToolContract {
+    const contractOf = host?.contractOf ?? this.contractOf;
+    if (contractOf) {
       try {
-        return this.contractOf(toolName);
+        return contractOf(toolName);
       } catch {
         // 查询器抛错 ⇒ 保守：当作会访问外部边界（继续走路径检查）
       }
@@ -856,16 +884,24 @@ export class PlanModeGuard implements GuardMiddleware {
   name = "plan-mode";
   private isPlanMode: () => boolean;
   private contractOf?: (toolName: string) => ResolvedToolContract;
+  /** ★ 第 185 波（T1）：缺省宿主查询器（由 `initDefaultPipeline` 注入；直接构造本类时为 undefined）。 */
+  private hostProvider?: () => ToolPipelineHost | undefined;
 
-  constructor(isPlanMode: () => boolean, contractOf?: (toolName: string) => ResolvedToolContract) {
+  constructor(
+    isPlanMode: () => boolean,
+    contractOf?: (toolName: string) => ResolvedToolContract,
+    hostProvider?: () => ToolPipelineHost | undefined,
+  ) {
     this.isPlanMode = isPlanMode;
     this.contractOf = contractOf;
+    this.hostProvider = hostProvider;
   }
 
-  private contractFor(toolName: string): ResolvedToolContract {
-    if (this.contractOf) {
+  private contractFor(toolName: string, host?: ToolPipelineHost): ResolvedToolContract {
+    const contractOf = host?.contractOf ?? this.contractOf;
+    if (contractOf) {
       try {
-        return this.contractOf(toolName);
+        return contractOf(toolName);
       } catch {
         // 查询器抛错 ⇒ 保守：当作非只读（计划模式宁严不宽）
       }
@@ -876,11 +912,20 @@ export class PlanModeGuard implements GuardMiddleware {
   async execute(
     toolName: string,
     args: Record<string, unknown>,
-    _ctx: ToolExecutorContext,
+    ctx: ToolExecutorContext,
   ): Promise<GuardResult> {
-    if (!this.isPlanMode()) return { action: "proceed" };
+    /**
+     * ★ 第 185 波（T1）：**计划模式的开关也从当轮宿主取**。
+     *
+     * 改动前它捕获的是「最后初始化那个 loop」的 `isPlanMode` —— 主 loop 在 Default
+     * 模式下发出的写调用会按子智能体的 `collaborationMode`（可能是 plan）被拦下，
+     * 反之亦然：同一个进程里两个 loop 的模式互相覆盖。
+     */
+    const host = hostFor(ctx, this.hostProvider);
+    const isPlanMode = host ? host.isPlanMode() : this.isPlanMode();
+    if (!isPlanMode) return { action: "proceed" };
 
-    const contract = this.contractFor(toolName);
+    const contract = this.contractFor(toolName, host);
 
     /**
      * 第 83 波（审计修正）：**bash 也是写手段**。
@@ -1105,16 +1150,22 @@ class OutputContractValidationMiddleware implements FinalizeMiddleware {
   name = "output-contract";
 
   private rawContractOf?: (toolName: string) => ToolContract | undefined;
+  /** ★ 第 185 波（T1）：缺省宿主查询器（由 `initDefaultPipeline` 注入）。 */
+  private hostProvider?: () => ToolPipelineHost | undefined;
 
-  constructor(rawContractOf?: (toolName: string) => ToolContract | undefined) {
+  constructor(
+    rawContractOf?: (toolName: string) => ToolContract | undefined,
+    hostProvider?: () => ToolPipelineHost | undefined,
+  ) {
     this.rawContractOf = rawContractOf;
+    this.hostProvider = hostProvider;
   }
 
   async execute(
     toolName: string,
     _args: Record<string, unknown>,
     result: ToolCallResult,
-    _ctx: ToolExecutorContext,
+    ctx: ToolExecutorContext,
     events: PipelineEvent[],
   ): Promise<ToolCallResult> {
     // 工具**自己汇报**的失败（errorSource: `tool`，例如 glob 的 catch 分支）已经是一句
@@ -1127,7 +1178,7 @@ class OutputContractValidationMiddleware implements FinalizeMiddleware {
     // `Error: read declared outputSchema but returned no value`）。
     if (result.status === "error" || result.errorSource === "tool" || result.errorSource === "loop") return result;
 
-    const declared = this.rawContractOf?.(toolName);
+    const declared = (hostFor(ctx, this.hostProvider)?.rawContractOf ?? this.rawContractOf)?.(toolName);
     if (!declared?.outputSchema) {
       // 未声明结果契约 ⇒ 零变化（这是渐进路径的关键：不给老工具引入风险）
       return result;
@@ -1198,6 +1249,14 @@ class OutputContractValidationMiddleware implements FinalizeMiddleware {
  */
 let warnedEventLogFatal = false;
 
+/**
+ * ★ 第 185 波（T4）：**这次调用已经被判失败**时，`tool_result` 事件里带的机器可读标记。
+ *
+ * 与「工具自己报的失败」区分开：那不是工具的错，而是**调用方已经放弃等待**
+ * （超时或用户中止）—— 工具没观察到取消、照旧跑完了。
+ */
+export const TOOL_RESULT_ABANDONED = "TOOL_RESULT_ABANDONED";
+
 export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
   name = "event-log";
 
@@ -1221,20 +1280,49 @@ export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
        */
       const toolCallId = result.id || ctx.toolCallId || "";
 
+      /**
+       * ★ 第 185 波（T4）：**「这次调用已被判失败」是写 `tool_result` 的前置**。
+       *
+       * ## 修的是什么
+       *
+       * `streaming-executor` 的超时那支只做 `controller.abort()` + `reject`
+       * （放弃等待），**没有任何东西取消管线 promise** —— 管线照旧走完 Layer 4/5。
+       * 于是当工具不观察 `ctx.abort` 时：调用方已经 `yield tool_error`（模型与界面
+       * 被告知超时），而这里却写下一条 `status:"completed"` 的 `tool_result`
+       * ⇒ **同一个 `toolCallId` 留下两份相反的事实**，事后复盘再也回答不了
+       * "那次超时到底有没有落地副作用"。
+       *
+       * ## 判据为什么是 `ctx.abandoned`（而不是 `ctx.abort.aborted`）
+       *
+       * `abort.aborted` 只说明"取消信号发出去了"，不等于"这次调用已被判失败"：
+       * 用户点 ■（`abortAll`）时，在飞工具若在收到取消前就跑完并返回成功，调用方
+       * **照样 `yield tool_complete`**（放弃等待 ≠ 否定结果）—— 此时按 `aborted`
+       * 写 `error` 反而是**新的**两份真相。
+       *
+       * 所以标志由**真正做出失败裁决的那一处**置位：`timeoutTimer` 在
+       * `controller.abort()` 的同一个同步段里（那一刻 `Promise.race` 已经决定 reject）。
+       * 判据 `src/test/tool-timeout-no-completed-event.test.ts` 的 `T4-C/T4-D`
+       * 正是钉这个分叉：abortAll 之后"调用方报成功"与"事件"必须仍然一致。
+       */
+      const abandoned = ctx?.abandoned?.value === true;
+      const failed = abandoned || result.status === "error";
+      const finalStatus = failed ? "error" : "completed";
+
       eventLog.append(ctx.sessionId, "tool_call", {
         toolCallId,
         messageId: ctx.messageId,
         tool: toolName,
         args,
-        status: result.status,
+        status: finalStatus,
       });
 
       eventLog.append(ctx.sessionId, "tool_result", {
         toolCallId,
         messageId: ctx.messageId,
         result: result.output,
-        error: result.error,
-        status: result.status === "error" ? "error" : "completed",
+        // 已经判失败时补上机器可读的原因；工具自己给的原因优先（信息更多）
+        error: result.error ?? (abandoned ? TOOL_RESULT_ABANDONED : undefined),
+        status: finalStatus,
       });
     } catch (err) {
       /**
@@ -1277,8 +1365,70 @@ export function getToolPipeline(): ToolPipeline {
 }
 
 /**
+ * ★ 第 185 波（T1）：**按次调用的宿主回调**。
+ *
+ * ## 为什么需要它（读这一节就能明白 T1 是什么）
+ *
+ * 管线是**进程级单例**，而主会话与每个子智能体各持一个 `AgenticLoop`
+ * （`index.ts` 的 `getAgenticLoop(agentId, sessionId, scopedTools)` 带
+ * `toolRegistryOverride` ⇒ 不进 loopPool ⇒ 是**另一个实例**）。
+ * 原来每个 loop 在自己回合开头都调 `initDefaultPipeline(...)`，而它**第一步是 `clear()`**：
+ *
+ * 1. `clear()` 到重装完成之间是一个**真实的挂起窗口**（唯一的 `await` 是
+ *    `await import("./spill-policy")`）—— 落在这个窗口里的调用拿到的是**空管线**：
+ *    权限、计划模式、沙箱、EventLog 一个都不跑；
+ * 2. 即使没撞上窗口，守卫读的也是**最后初始化那个 loop 的闭包** ⇒ 主 loop 的调用
+ *    落到子智能体的 `checkPermission` 上，而子智能体通常没有 `onPermissionRequest`
+ *    ⇒ fail-closed 被拒（本该弹的确认框永远不弹）。
+ *
+ * ## 修法（两条合起来才成立）
+ *
+ * - **装配幂等**：`initDefaultPipeline` 只在**首次**真正装配中间件（不再 `clear()`），
+ *   之后的重复调用只更新「缺省宿主」——装配阶段全同步，不存在"装到一半"的中间态；
+ * - **宿主从调用上下文取**：每次调用由调用方在 `ToolExecutorContext.pipelineHost`
+ *   里带上**当轮 loop** 的回调，中间件优先用它，闭包捕获的那份只作为兜底
+ *   （测试与独立驱动管线时用）。
+ */
+export interface ToolPipelineHost {
+  isPlanMode: () => boolean;
+  isSandboxEnabled: () => boolean;
+  isPathWithinWorkspace: (path: string, cwd: string) => boolean;
+  checkPermission: (
+    toolName: string,
+    args: Record<string, unknown>,
+    ctx: ToolExecutorContext,
+  ) => Promise<{ allowed: boolean; denyMessage?: string }>;
+  contractOf?: (toolName: string) => ResolvedToolContract;
+  rawContractOf?: (toolName: string) => ToolContract | undefined;
+  toolDefOf?: (toolName: string) => ToolDef | undefined;
+}
+
+/** 最后一次 `initDefaultPipeline(config)` 登记的回调（**兜底**；按次调用优先用 ctx 里那份）。 */
+let installedHost: ToolPipelineHost | null = null;
+/** 中间件是否已经装配过（★ 幂等的唯一判据；装配之后**永不** `clear()`）。 */
+let defaultPipelineInstalled = false;
+
+/**
+ * 取这次调用该用的宿主。
+ *
+ * 顺序**固定**：`ctx.pipelineHost`（当轮 loop 的回调）优先；
+ * 没有时退回 `hostProvider()`（由 `initDefaultPipeline` 注入，指向「缺省宿主」）。
+ * **不得**反过来 —— 反了就是 T1：闸门读的会是最后初始化那个 loop 的闭包。
+ */
+function hostFor(
+  ctx: ToolExecutorContext | undefined,
+  hostProvider?: () => ToolPipelineHost | undefined,
+): ToolPipelineHost | undefined {
+  const perCall = ctx?.pipelineHost;
+  if (perCall) return perCall;
+  return hostProvider?.();
+}
+
+/**
  * Initialize the default tool pipeline with built-in middlewares.
  * Called once during application startup.
+ *
+ * ★ 第 185 波（T1）：**幂等** —— 只有第一次调用会装配中间件，后续调用只更新兜底宿主。
  */
 export async function initDefaultPipeline(config: {
   isPlanMode: () => boolean;
@@ -1312,7 +1462,49 @@ export async function initDefaultPipeline(config: {
   maxInlineBytes?: number;
 }): Promise<ToolPipeline> {
   const pipeline = getToolPipeline();
-  pipeline.clear();
+
+  /**
+   * ★ 第 185 波（T1）：**先登记「缺省宿主」，再判断要不要真的装配**。
+   *
+   * 这段是同步的（没有任何 await）⇒ 无论并发多少次调用，宿主更新都是一个原子步骤。
+   * 之所以还要更新它：测试与"独立驱动管线"的调用方不会传 `ctx.pipelineHost`，
+   * 它们依赖这份兜底；而且**每个 loop 都会调这里**，兜底跟着最后一次调用走，
+   * 行为与改动前一致（改动前每个 loop 重装时也会覆盖这一份）。
+   */
+  installedHost = {
+    isPlanMode: config.isPlanMode,
+    isSandboxEnabled: config.isSandboxEnabled,
+    isPathWithinWorkspace: config.isPathWithinWorkspace,
+    checkPermission: config.checkPermission,
+    contractOf: config.contractOf,
+    rawContractOf: config.rawContractOf,
+    toolDefOf: config.toolDefOf,
+  };
+  pipeline.setRawContractOf(config.rawContractOf ?? (() => undefined));
+  pipeline.setToolDefOf(config.toolDefOf ?? (() => undefined));
+
+  /** ★ 装配只做一次。已经装过就**不 clear、不重装** ⇒ 不存在"空管线"窗口。 */
+  if (defaultPipelineInstalled) return pipeline;
+
+  /**
+   * ↓↓↓ 以下**全同步**（本函数体内**没有任何 await**）：装配要么整层生效，
+   * 要么一层都没装，绝无"装到一半"的中间态。
+   *
+   * ## 为什么把 `SpillPolicyMiddleware` 改成静态导入（这一条是判据的一部分）
+   *
+   * 原来唯一的挂起点是 `await import("./spill-policy")`，而它夹在装配中间：
+   * - 放在 `clear()` 之后 ⇒ 撞上它的调用**整层闸门都不跑**（T1 ①）；
+   * - 就算把它提到装配之前，撞上它的调用仍然会看到**完全空的管线**（一样糟）。
+   *
+   * 所以消灭它的正确做法不是"挪位置"，而是**让它不再是挂起点**。`spill-policy` 只依赖
+   * `storage/spill`（→ `file-api`）与 `debug`，与 `tool-pipeline` 没有运行时环
+   * （它对本文件的引用是 `import type`，编译期擦除）⇒ 静态导入是安全的。
+   * 判据 `src/test/t1-pipeline-singleton-multiloop.test.ts` 的 `T1-B` 直接钉住这一点：
+   * 与首次装配**并发**发出的调用，闸门照旧生效、`tool_result` 事件照旧落。
+   */
+  defaultPipelineInstalled = true;
+
+  const hostProvider = () => installedHost ?? undefined;
 
   // 并发分类器：名单唯一定义在 concurrency-policy.ts。
   // 此处曾硬编码另一份 9 名字名单（含 read_file / list_dir / zvec_grep_rg 等
@@ -1327,15 +1519,15 @@ export async function initDefaultPipeline(config: {
   }
 
   // Layer 1: pre-execute
-  pipeline.registerPreExecute(new PermissionMiddleware(config.checkPermission));
+  pipeline.registerPreExecute(new PermissionMiddleware(config.checkPermission, hostProvider));
   pipeline.registerPreExecute(new SecurityScanMiddleware());
   // S0-2: HookManager PreToolUse hooks as pre-execute middleware
   pipeline.registerPreExecute(new HookPreExecuteMiddleware());
 
   // Layer 2: guards (monotonic — order is frozen)
-  pipeline.registerGuard(new PlanModeGuard(config.isPlanMode, config.contractOf));
+  pipeline.registerGuard(new PlanModeGuard(config.isPlanMode, config.contractOf, hostProvider));
   pipeline.registerGuard(
-    new SandboxGuard(config.isSandboxEnabled, config.isPathWithinWorkspace, config.contractOf),
+    new SandboxGuard(config.isSandboxEnabled, config.isPathWithinWorkspace, config.contractOf, hostProvider),
   );
 
   // Layer 3: execute (handled by toolHandler in pipeline.execute())
@@ -1351,14 +1543,11 @@ export async function initDefaultPipeline(config: {
   // — hooks 可能修改输出，spill 再 bound 修改后的结果。
   pipeline.registerPostExecute(new HookPostExecuteMiddleware());
   if (config.maxInlineBytes !== undefined && config.maxInlineBytes > 0) {
-    const { SpillPolicyMiddleware } = await import("./spill-policy");
     pipeline.registerPostExecute(new SpillPolicyMiddleware({ maxInlineBytes: config.maxInlineBytes }));
   }
 
   // Layer 5: finalize
-  pipeline.setRawContractOf(config.rawContractOf ?? (() => undefined));
-  pipeline.setToolDefOf(config.toolDefOf ?? (() => undefined));
-  pipeline.registerFinalize(new OutputContractValidationMiddleware(config.rawContractOf));
+  pipeline.registerFinalize(new OutputContractValidationMiddleware(config.rawContractOf, hostProvider));
   pipeline.registerFinalize(new EventLogFinalizeMiddleware());
 
   return pipeline;
