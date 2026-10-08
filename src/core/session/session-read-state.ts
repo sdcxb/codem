@@ -15,7 +15,9 @@
  * - 水位 = 该会话 `message_count` 的**快照**（上次你看它时的条数）；
  * - 未读 = `max(0, message_count - 水位)`，即"**从你上次看过之后，这个会话又多了几条消息**"；
  * - **第一次见到的会话**（没有水位）视作"已读到当前条数" ⇒ 不会把历史会话几百条全算成未读；
- * - 你**正在看的那个会话**会被持续标记为已读 ⇒ 未读恒为 0（符合直觉，也不用特殊判断）。
+ * - 你**正在看的那个会话**会被持续标记为已读 ⇒ 未读恒为 0（符合直觉，也不用特殊判断）；
+ * - ★ **第 187 波**：反过来也要能标 —— 一条 App 级消息写进**归属会话**而用户已经切走时，
+ *   由 `markSessionUnread` 把水位退一格（见该函数的说明），否则那条消息就"静默丢"了。
  *
  * ## 为什么存 settings 而不是加一列
  *
@@ -85,6 +87,65 @@ export function markSessionRead(sessionId: string, messageCount: number): void {
   if (prev !== undefined && prev >= messageCount) return; // 幂等：不写、也不回退
   marks[sessionId] = messageCount;
   writeWatermarks(marks);
+}
+
+/**
+ * 把某个会话标记为「**有你还没看到的东西**」—— `markSessionRead` 的**反向**操作
+ * （第 187 波：App 级消息写进归属会话之后的可见性兜底）。
+ *
+ * ## 为什么需要它
+ *
+ * `runAgenticLoop` 的早退错误（会话忙 / 引擎未初始化 / 认证缺失 / provider 未配置 /
+ * 工作树失败…）现在都写进**归属会话**（`session`），而用户此刻可能已经切到别的会话
+ * ⇒ 那条气泡他当场看不见。既有的"未读水位"正好是这件事的载体：水位退一格，
+ * 侧栏那个 `session-unread-badge` 就会出现，用户切回来就看得到 —— 不打断、也不丢。
+ *
+ * ## 语义与两条守卫
+ *
+ * - **只降不升**（与 `markSessionRead` 只前进恰好相反）：调用方只在"刚往这个会话里
+ *   写了一条**用户没看过**的消息"时调它，所以下降是**有据**的；
+ * - **幂等**（不会越调越低）：水位已经低于该会话当前条数时（`known > prev`）直接返回 ——
+ *   那正是"已经有 ≥1 条未读"的状态，不需要再动。这一条同时挡住了
+ *   "一轮里每条工具消息都调一次 ⇒ 水位被一路踩低 / 写风暴"。
+ *
+ * ## ⚠️ 如实记账：代价是可能多显示 1 条（有界、自愈）
+ *
+ * **为什么不用 `known`（±0）**：`message_count` 由**引擎侧**在 `messages.upsert_index` 里维护
+ * （`repo.rs::bump_session_message_count`），而渲染侧镜像读到它隔着一次 IPC ——
+ * 也就是说"这一条消息的计数**到底落地了没有**"在这里**看不出来**。
+ * 若把水位留成刚好等于 `known`（= 计数），"未读"就完全押在那次异步 bump 上：
+ * bump 一旦晚于侧栏那 5 秒轮询的读取，徽标就**一条都不显示** —— 那正是这个函数要治的病（静默丢）。
+ * `known - 1` 把这件事变成**代码保证**：哪怕计数还没涨，这条消息也至少算 1 条未读。
+ * 代价是计数随后涨上来时徽标可能显示"2 条"而实际 1 条（多 1）；用户点开该会话时
+ * `ChatPanel` 的 `markSessionRead`（取 `max(...)`）会把它推回真值 ⇒ **自愈**。
+ * 这是刻意的取舍：**"宁可多显示 1 条，也不能一条都不显示"**。
+ *
+ * **什么时候该把它改回 `known`**：当 `message_count` 在渲染侧变成**同步可见**时 ——
+ * 即"写消息 → 读计数"发生在同一个同步段里（Rust 侧 bump 随 `applyMessageWrite` 一起回传，
+ * 或镜像改由写路径自己维护这一列）。那时 `known` 就是写入后的真值，`- 1` 反而会凭空多一条，
+ * 这一行应去掉（同时 `src/test/loop-owned-message.test.ts` 的 XSESS-2 / XSESS-3b
+ * 要按"写入后真值"的口径调整）。
+ *
+ * @param messageCount 该会话**当前已知**的消息条数（`getSession(id)?.messageCount`）。
+ *   读不到（镜像未就绪 / ≤0）时退回用现有水位当基准，仍然保证"至少 1 条"。
+ * @returns 是否真的改动了水位（供调用方与用例区分"标了"与"本来就可见"）
+ */
+export function markSessionUnread(sessionId: string, messageCount: number): boolean {
+  if (!sessionId) return false;
+  const marks = getReadWatermarks();
+  const prev = marks[sessionId];
+  /*
+   * 没有水位 ⇒ `unreadFor` 走 `mark === null` 那一支：**全部条数**都算未读（≥1 条）
+   * ⇒ 本来就看得见，不需要（也不该）在这里凭空造一个水位出来。
+   */
+  if (prev === undefined) return false;
+  const known = Number.isFinite(messageCount) && messageCount > 0 ? messageCount : prev;
+  // 计数已经越过水位 ⇒ 未读 ≥ 1，本来就是可见的
+  if (known > prev) return false;
+  const target = Math.max(0, Math.min(known, prev) - 1);
+  if (prev <= target) return false; // 只降不升 + 幂等（已经更低就不写，避免写风暴）
+  marks[sessionId] = target;
+  return writeWatermarks(marks);
 }
 
 /** 该会话的已读水位（没有记录时返回 null —— "不知道"与"读到 0"必须分得开） */

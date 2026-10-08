@@ -232,16 +232,25 @@ describe("端到端：真实 registry 上的结果契约", () => {
   it("glob 的结果契约能挡住形状错误的值", () => {
     const registry = createDefaultToolRegistry();
     const raw = registry.getRawContract("glob")!;
+    /**
+     * ★ 第 186 波：`returned` / `truncated` 进了必填集 —— "结果是否有界、后面还有没有"
+     * 从此是**声明**（缺了就被契约层拦下），而不是"渲染器自己知道"。
+     */
+    const ok = { files: ["a"], count: 1, pattern: "p", returned: 1, truncated: false };
     // 少字段
     expect(checkSchema(raw.outputSchema, { files: ["a"] }).length).toBeGreaterThan(0);
+    expect(
+      checkSchema(raw.outputSchema, { files: [], count: 0, pattern: "p" }).length,
+      "第 186 波新增的 required（returned/truncated）也要真的挡得住",
+    ).toBeGreaterThan(0);
     // 类型错
-    expect(checkSchema(raw.outputSchema, { files: "a", count: 1, pattern: "p" }).length).toBeGreaterThan(0);
+    expect(checkSchema(raw.outputSchema, { ...ok, files: "a" }).length).toBeGreaterThan(0);
     // 多字段
     expect(
-      checkSchema(raw.outputSchema, { files: [], count: 0, pattern: "p", extra: 1 }).length,
+      checkSchema(raw.outputSchema, { ...ok, extra: 1 }).length,
     ).toBeGreaterThan(0);
     // 正确
-    expect(checkSchema(raw.outputSchema, { files: ["a"], count: 1, pattern: "p" })).toEqual([]);
+    expect(checkSchema(raw.outputSchema, ok)).toEqual([]);
   });
 
   it("未注册结果契约的工具零变化（渐进路径的关键性质）", () => {

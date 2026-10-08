@@ -32,7 +32,13 @@ vi.mock("../core/file-api", () => ({
   ]),
   deleteFile: vi.fn().mockResolvedValue(undefined),
   pathExists: vi.fn().mockResolvedValue(true),
-  globSearch: vi.fn().mockResolvedValue(["/mock/path1", "/mock/path2"]),
+  // ★ 第 186 波：globSearch 回**结构化对象**（`truncated`/`depth_limited`/`returned`/`hint`）
+  globSearch: vi.fn().mockResolvedValue({
+    files: ["/mock/path1", "/mock/path2"],
+    truncated: false,
+    depth_limited: false,
+    returned: 2,
+  }),
   grepSearch: vi.fn().mockResolvedValue([
     { file: "/mock/file.ts", line: 1, content: "test line" },
   ]),
@@ -220,8 +226,19 @@ describe("S0-3: Capability Seam Integration", () => {
 
       const result = await provider.glob("*.ts", "/workspace");
       // 第 185 波：glob/grep 同样要带 workspace（读侧沙箱靠它，见 readFile 那条注释）
-      expect(globSearch).toHaveBeenCalledWith("*.ts", "/workspace", { workspace: "/workspace" });
-      expect(result).toEqual(["/mock/path1", "/mock/path2"]);
+      // 第 186 波：不再传 `limit`/`offset` ⇒ 那两个键的值是 `undefined`（"没给"由 Rust 侧兜默认值）
+      expect(globSearch).toHaveBeenCalledWith("*.ts", "/workspace", {
+        workspace: "/workspace",
+        limit: undefined,
+        offset: undefined,
+      });
+      // ★ 第 186 波：**原样透传**结构化结果 —— 不许在这一层把 `truncated` 丢掉当数组用
+      expect(result).toEqual({
+        files: ["/mock/path1", "/mock/path2"],
+        truncated: false,
+        depth_limited: false,
+        returned: 2,
+      });
     });
 
     it("grep delegates to file-api.grepSearch", async () => {

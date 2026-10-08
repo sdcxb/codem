@@ -81,21 +81,28 @@ describe("端到端：结果契约在真实管线里生效", () => {
     const res = await run("glob", { pattern: "*.ts" }, async () => ({
       title: "glob",
       output: "SHOULD-BE-REPLACED",
-      value: { files: ["a.ts", "b.ts"], count: 2, pattern: "*.ts" },
+      // ★ 第 186 波：`returned` / `truncated` 进了必填集（"结果有没有界"是声明，不是实现细节）
+      value: { files: ["a.ts", "b.ts"], count: 2, pattern: "*.ts", returned: 2, truncated: false },
     }));
 
     expect(res.status).toBe("completed");
     // renderOutput 产出的文本（不是 handler 里那句占位）
     expect(res.output).toBe("a.ts\nb.ts");
     // 结构化值被保留下来（下游可结构化消费，不必再切字符串）
-    expect(res.value).toEqual({ files: ["a.ts", "b.ts"], count: 2, pattern: "*.ts" });
+    expect(res.value).toEqual({
+      files: ["a.ts", "b.ts"],
+      count: 2,
+      pattern: "*.ts",
+      returned: 2,
+      truncated: false,
+    });
   });
 
   it("glob 空结果 ⇒ 渲染成 No files found（复现旧行为）", async () => {
     const res = await run("glob", { pattern: "nope" }, async () => ({
       title: "glob",
       output: "x",
-      value: { files: [], count: 0, pattern: "nope" },
+      value: { files: [], count: 0, pattern: "nope", returned: 0, truncated: false },
     }));
     expect(res.output).toBe("No files found");
   });
@@ -157,7 +164,7 @@ describe("端到端：入参校验在真实管线里生效", () => {
     const res = await run("glob", { pattern: "*.ts" }, async () => ({
       title: "glob",
       output: "x",
-      value: { files: ["a.ts"], count: 1, pattern: "*.ts" },
+      value: { files: ["a.ts"], count: 1, pattern: "*.ts", returned: 1, truncated: false },
     }));
     expect(res.status).toBe("completed");
     expect(res.output).toBe("a.ts");

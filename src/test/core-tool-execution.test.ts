@@ -306,10 +306,12 @@ describe("工具调用 — glob 工具", () => {
   });
 
   it("TOOL-007: glob 工具搜索文件", async () => {
-    mockGlobSearch.mockResolvedValue([
-      { path: "/test/a.ts", type: "file" },
-      { path: "/test/b.ts", type: "file" },
-    ]);
+    mockGlobSearch.mockResolvedValue({
+      files: [{ path: "/test/a.ts", type: "file" }, { path: "/test/b.ts", type: "file" }],
+      truncated: false,
+      depth_limited: false,
+      returned: 2,
+    });
     const tool = createGlobTool();
     const result = await tool.execute(
       { pattern: "**/*.ts", path: "/test" },

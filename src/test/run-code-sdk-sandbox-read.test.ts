@@ -50,7 +50,14 @@ function installTauriMock() {
       invoke: vi.fn(async (command: string, args?: Record<string, unknown>) => {
         invokes.push({ command, args });
         if (command === "read_file") return SECRET_BODY; // 底层"读得到" —— 闸门必须在它**之前**
-        if (command === "glob_search") return [`${SECRET_PATH}`];
+        // ★ 第 186 波：`glob_search` 回**结构化对象**（不再是裸数组）
+        if (command === "glob_search")
+          return {
+            files: [`${SECRET_PATH}`],
+            truncated: false,
+            depth_limited: false,
+            returned: 1,
+          };
         if (command === "path_exists") return true;
         if (command === "execute_command") return { stdout: `${SECRET_PATH}:1:secret`, stderr: "", exitCode: 0 };
         return null;

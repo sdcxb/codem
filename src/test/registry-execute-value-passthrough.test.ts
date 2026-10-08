@@ -75,7 +75,14 @@ beforeEach(() => {
             droppedChars: 0,
           };
         }
-        if (command === "glob_search") return [`${WS}\\a.ts`, `${WS}\\b.ts`];
+        // ★ 第 186 波：`glob_search` 的契约是**结构化对象**（截断是数据，不是异常）
+        if (command === "glob_search")
+          return {
+            files: [`${WS}\\a.ts`, `${WS}\\b.ts`],
+            truncated: false,
+            depth_limited: false,
+            returned: 2,
+          };
         if (command === "path_exists") return true;
         if (command === "file_version") return "12:345";
         if (command === "execute_command") {
@@ -122,10 +129,13 @@ describe("第 185 波 T5：registry 入口的结果形状与 agentic-loop 同形
     const res = await runThroughRegistry("glob", { pattern: "*.ts" });
     expect(res.status, String(res.output).slice(0, 120)).toBe("completed");
     expect(String(res.output)).not.toMatch(CONTRACT_ERROR);
+    // ★ 第 186 波：`returned` / `truncated` 也是结构化事实的一部分（"后面还有没有"）
     expect(res.value, "★ 结构化值必须原样带出来（下游要结构化消费）").toEqual({
       files: [`${WS}\\a.ts`, `${WS}\\b.ts`],
       count: 2,
       pattern: "*.ts",
+      returned: 2,
+      truncated: false,
     });
   });
 
@@ -139,7 +149,13 @@ describe("第 185 波 T5：registry 入口的结果形状与 agentic-loop 同形
   it("T5-E: registry.execute 的返回对象带 value（与 agentic-loop.ts:4944 同形）", async () => {
     const r = await registry.execute("call-direct", "glob", { pattern: "*.ts" }, toolCtx());
     expect(r.status).toBe("completed");
-    expect(r.value).toEqual({ files: [`${WS}\\a.ts`, `${WS}\\b.ts`], count: 2, pattern: "*.ts" });
+    expect(r.value).toEqual({
+      files: [`${WS}\\a.ts`, `${WS}\\b.ts`],
+      count: 2,
+      pattern: "*.ts",
+      returned: 2,
+      truncated: false,
+    });
 
     const r2 = await registry.execute("call-direct-2", "bash", { command: "echo hello" }, toolCtx());
     expect(r2.value, "bash 也声明了 outputSchema，value 同样必须带出来").toBeTruthy();

@@ -397,11 +397,39 @@ async function checkSearchPathWithinWorkspace(
   return target;
 }
 
+/**
+ * `glob_search` 的**结构化返回**（第 186 波）。
+ *
+ * ## 为什么不是 `string[]`
+ *
+ * 改前契约是 `Result<Vec<String>, String>`，条数超限就 `Err` —— **截断被当成异常**。
+ * 后果有三重：① 调用方**拿不到数据**（"批处理超大目录、一次两万条以上"是这个工具的
+ * 正常用例，报错等于它在这些场景下不可用）；② "匹配很多"与"参数写错"被压成同一种输出；
+ * ③ 没有下一步。现在：**截断是数据** —— 有界列表 + 三个事实 + 一句可执行的 `hint`。
+ */
+export interface GlobSearchResult {
+  /** 本页的路径（`offset` 之后、最多 `limit` 条） */
+  files: string[];
+  /**
+   * **至少还有更多**。
+   *
+   * ⚠️ 它**不是**"恰好还差 N 条"：为了报一个精确总数把整棵树走完，正是这个契约要避免的
+   * 代价（Rust 侧只在**真的撞见下一条**时才置位）。要拿剩下的就带 `offset` 再调一次。
+   */
+  truncated: boolean;
+  /** 有目录深于 32 层 ⇒ **那部分没被遍历**（列表可能不全，`hint` 会说清） */
+  depth_limited: boolean;
+  /** `files.length`（冗余但显式：调用方不必再取长度） */
+  returned: number;
+  /** 给调用方的**可执行**下一步（夹过 limit / 还有更多 / 有目录没走）；没有要说的事实就没有这个键 */
+  hint?: string;
+}
+
 export async function globSearch(
   pattern: string,
   path?: string,
-  options?: { workspace?: string },
-): Promise<string[]> {
+  options?: { workspace?: string; limit?: number; offset?: number },
+): Promise<GlobSearchResult> {
   // ★ 第 185 波（T2）：给了 workspace 时，"." 与省略 path 都以**工作区**为基准
   // （不是进程默认 cwd —— 否则 `sdk.glob(p, ".")` 会被解析到一个工作区外的目录、
   //  然后被沙箱如实拒绝：**假失败**）。
@@ -420,17 +448,47 @@ export async function globSearch(
   await assertGlobPatternWithinWorkspace(pattern, searchPath, options?.workspace);
 
   const winPattern = pattern.replace(/\//g, '\\');
-  console.log("[globSearch] calling Rust glob_search:", { pattern: winPattern, path: searchPath, originalPath: path });
-  
+
+  /**
+   * 第 186 波：`limit` / `offset` 只在**给了**的时候才发出去。
+   *
+   * 为什么不是 `{ limit: undefined }`：Tauri 的参数反序列化把"缺键"读成 `None`，
+   * 而 `undefined` 在序列化时会被丢掉 —— 两者能对上，但显式判空更不容易被后来的
+   * 序列化改动坑到（`limit: null` 就不是"没给"了）。省略 ⇒ Rust 侧用默认值
+   * （`limit=20000`、`offset=0`）—— **默认值只有一处定义**。
+   */
+  const args: Record<string, unknown> = { pattern: winPattern, path: searchPath };
+  if (options?.limit !== undefined) args.limit = options.limit;
+  if (options?.offset !== undefined) args.offset = options.offset;
+  console.log("[globSearch] calling Rust glob_search:", args);
+
   // Add timeout to prevent hanging
   const timeoutPromise = new Promise<never>((_, reject) => 
     setTimeout(() => reject(new Error("glob_search timed out")), 30000)
   );
-  const result = await Promise.race([
-    tauriInvoke("glob_search", { pattern: winPattern, path: searchPath }),
+  const result = (await Promise.race([
+    tauriInvoke("glob_search", args),
     timeoutPromise
-  ]);
-  console.log("[globSearch] result length:", result.length);
+  ])) as GlobSearchResult | undefined | null;
+  /**
+   * 形状守卫：拿到的**不是**结构化对象就如实失败。
+   *
+   * 为什么值得写：没有它，旧形状（裸数组）会一路流到 `result.files.length` 才炸 ——
+   * 报出来的是 `Cannot read properties of undefined`，看不出真正的原因。这里当场说清
+   * "期望什么形状"（宁可大声失败，也不要静默降级）。
+   */
+  if (!result || !Array.isArray(result.files)) {
+    throw new Error(
+      "glob_search returned an unexpected shape: expected " +
+        "{ files: string[], truncated: boolean, depth_limited: boolean, returned: number, hint?: string }",
+    );
+  }
+  console.log(
+    "[globSearch] returned:",
+    result.returned,
+    "truncated:",
+    result.truncated,
+  );
   return result;
 }
 

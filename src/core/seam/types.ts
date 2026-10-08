@@ -109,6 +109,8 @@ export function getSeamRegistry(): SeamRegistry {
   return seamRegistry;
 }
 
+import type { GlobSearchResult } from "../file-api";
+
 // ========== FileSystem Seam ==========
 
 export interface FileSystemSeam extends SeamProvider {
@@ -117,7 +119,18 @@ export interface FileSystemSeam extends SeamProvider {
   listDirectory(path: string): Promise<Array<{ name: string; isDir: boolean; size: number }>>;
   deleteFile(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
-  glob(pattern: string, cwd?: string): Promise<string[]>;
+  /**
+   * 按 glob 匹配文件。
+   *
+   * ★ 第 186 波：返回**结构化对象**（`{ files, truncated, depth_limited, returned, hint? }`），
+   * 不再是裸 `string[]` —— 否则"结果被窗口截断"这个事实会在这一层被丢掉，
+   * 调用方会把有界的一段当全量（`file-api.ts` 的 `GlobSearchResult` 是同一形状）。
+   */
+  glob(
+    pattern: string,
+    cwd?: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<GlobSearchResult>;
   grep(pattern: string, cwd?: string, glob?: string): Promise<Array<{ file: string; line: number; content: string }>>;
 }
 

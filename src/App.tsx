@@ -358,6 +358,11 @@ import {
   shouldProcessEventAfterAbort,
   type ViewStateRef,
 } from "./core/ui/loop-stream-state";
+/**
+ * 第 187 波：App 级消息的**归属投递**（写进归属会话 + 不在屏时留未读痕迹）。
+ * 判据见 `src/test/loop-owned-message.test.ts`（XSESS-1..4）。
+ */
+import { deliverOwnedMessage } from "./core/ui/loop-owned-message";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
@@ -2739,11 +2744,45 @@ if (!session) {
     // F3.2: Handle /memory slash commands
     const trimmedMessage = message.trim();
 
+    /**
+     * 第 187 波：**handleSend 的归属投递**（slash 命令回执 / 用户消息）。
+     *
+     * 这些调用点里有 7 处落在 `await` 之后（动态 import / 记忆整合 / 生成 AGENTS.md / 附件同步），
+     * 用户可能在等待期间切走 —— 裸 `addMessage` 写的是"当前加载的那份列表"，
+     * 会把回执落到**别人的会话**里。这里统一走 `deliverOwnedMessage`（写进归属会话 +
+     * 不在屏时留未读痕迹），并**显式落库**。
+     *
+     * ⚠️ **"标未读"与"落库"必须同生共死**：只有真落进归属会话的消息才允许留未读痕迹，
+     * 否则徽标会指向一个打开后什么都看不到的会话 —— 那就是**编造数字**
+     * （这条不变量由 `src/test/loop-owned-message.test.ts` 的 XSESS-5b / XSESS-6 守）。
+     *
+     * 逐处的"落库 or 纯界面"判定写在各自调用点的注释里：本轮被改的 8 处**没有一处**走"纯界面"
+     * （都是错误、不可复现的结果、工作区副作用或用户自己的输入）。
+     * `handleSend` 里唯一的瞬时进度提示是 `/generate-agents` 的 🔍 那条，
+     * 它在下面**路径上没有 await** 的地方投递 ⇒ 当前会话就是归属会话，本来就对，
+     * 因此保持纯界面投递不动（并标了 XSESS-5 登记供门禁核对清单）。
+     */
+    const owningSession = session;
+    const deliverToOwningSession = (m: Message) => {
+      deliverOwnedMessage({ sessionId: owningSession.id, message: m });
+      if (isSessionOnScreen(owningSession.id)) addMessage(m);
+      saveMessages(owningSession.id, [m]);
+    };
+
     // /computer — computer-use 会话级批准开关（对标 EAC /computer toggle）
     if (trimmedMessage === "/computer" || trimmedMessage.startsWith("/computer ")) {
       const { approveSession } = await import("./core/computer-use/computer-use");
       const nowApproved = approveSession(session.id);
-      addMessage({
+      /*
+       * 归属判定：**落库**（不是"纯界面"）。
+       * 理由：这是"这个会话到底批没批键鼠工具"的**唯一可见记录** —— 批准状态本身只活在内存里
+       * （`approveSession` 不落盘），再输一次 /computer 是**切换**而不是查询 ⇒ 内容不可复现；
+       * 而它在 `await import(...)` 之后，用户切走时裸 `addMessage` 会把回执写进**别人的会话**。
+       * 落库由 `deliverToOwningSession` 显式完成 —— 原来紧跟其后的
+       * `if (session) saveMessages(session.id)` 是**无 explicit** 的那一支：用户切走后会被归属守卫
+       * 拒绝（回执静默没保存），所以那一句已删除。
+       */
+      deliverToOwningSession({
         id: `computer-${Date.now()}`,
         role: "system",
         content: nowApproved
@@ -2752,7 +2791,6 @@ if (!session) {
         timestamp: Date.now(),
         status: "done",
       });
-      if (session) saveMessages(session.id);
       return;
     }
 
@@ -2764,6 +2802,7 @@ if (!session) {
 
       if (subcommand === "off" || subcommand === "disable") {
         engineInstance.setMemoryEnabled(sessionId, false);
+        // [XSESS-5] 纯界面：这条到这里的路径上没有 await（当前会话就是归属会话）
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -2774,6 +2813,7 @@ if (!session) {
         return;
       } else if (subcommand === "on" || subcommand === "enable") {
         engineInstance.setMemoryEnabled(sessionId, true);
+        // [XSESS-5] 纯界面：同上（路径上无 await）
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -2785,6 +2825,7 @@ if (!session) {
       } else if (subcommand === "status") {
         const enabled = engineInstance.isMemoryEnabled(sessionId);
         const stats = engineInstance.getMemoryConsolidationStats(sessionId);
+        // [XSESS-5] 纯界面：路径上无 await
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -2795,7 +2836,14 @@ if (!session) {
         return;
       } else if (subcommand === "consolidate" || subcommand === "clean") {
         const result = await engineInstance.consolidateMemories(sessionId);
-        addMessage({
+        /*
+         * 归属判定：**落库**。（同族的 off/on/status/用法 那三条保持"纯界面"—— 它们路径上没有
+         * await，见各自的 XSESS-5 登记。）
+         * 理由：这是**不可复现的维护结果**（再跑一次整合，数字就是新的了），而整合本身可能很慢
+         * —— 用户切走时若只投递给"当前会话"，他既看不到结果、也无从复现；
+         * 且它在 `await consolidateMemories(...)` 之后 ⇒ 裸 addMessage 会把结果写进别人的会话。
+         */
+        deliverToOwningSession({
           id: `system-${Date.now()}`,
           role: "system",
           content: `记忆整合完成：合并 ${result.duplicatesMerged} 条重复，清理 ${result.staleRemoved} 条过期，裁剪 ${result.capacityTrimmed} 条超额。`,
@@ -2804,6 +2852,7 @@ if (!session) {
         });
         return;
       } else {
+        // [XSESS-5] 纯界面：/memory 用法回执（路径上无 await）
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -2819,6 +2868,7 @@ if (!session) {
     if (trimmedMessage === "/generate-agents" || trimmedMessage === "/gen-agents") {
       const projectPath = currentProject?.path;
       if (!projectPath) {
+        // [XSESS-5] 纯界面：参数校验回执（路径上无 await）
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -2828,6 +2878,12 @@ if (!session) {
         });
         return;
       }
+      /*
+       * [XSESS-5] 纯界面：**瞬时进度提示**（同一族里唯一的一条）。
+       * 它同步投递（这条路径上到此处没有任何 await）⇒ 当前会话就是归属会话，本来就对；
+       * 而且"正在分析…"这种话**故意不落库** —— 它一旦持久化，就会在会话里永久留一条
+       * 与最终结果重复的过场消息。所以它既不落库、也不制造未读徽标（徽标必须指向真能看到的行）。
+       */
       addMessage({
         id: `system-${Date.now()}`,
         role: "system",
@@ -2840,7 +2896,14 @@ if (!session) {
         const { writeFile } = await import("./core/file-api");
         const content = await generateAgentsMd(projectPath);
         await writeFile(`${projectPath}\\AGENTS.md`, content);
-        addMessage({
+        /*
+         * 归属判定：**落库**（与上面那条 🔍 进度提示刻意不同）。
+         * 理由：这一步在**工作区真的写了一个文件**（AGENTS.md），是不可逆的副作用 ——
+         * 进度提示可以只活在界面里（它同步投递、用户当时就看着），但**结果**必须留档，
+         * 否则用户在 `await generateAgentsMd` / `await writeFile` 期间切走后，
+         * 就再也查不到"到底写没写、写了什么"（真机上他还会以为没生成而重跑）。
+         */
+        deliverToOwningSession({
           id: `system-${Date.now() + 1}`,
           role: "system",
           content: `✅ AGENTS.md 已生成并写入项目根目录。\n\n生成内容摘要：\n- 检测技术栈和框架\n- 识别项目结构\n- 推断构建/测试/lint 命令\n- 生成代码规范和 AI 规则\n\n你可以编辑 AGENTS.md 来补充更多项目特定信息。`,
@@ -2848,7 +2911,11 @@ if (!session) {
           status: "done",
         });
       } catch (e: any) {
-        addMessage({
+        /*
+         * 归属判定：**落库**。理由：真错误 —— 与上面那条结果回执成对，
+         * "生成了什么 / 为什么没生成"必须都能在归属会话里查到（它也在两处 await 之后）。
+         */
+        deliverToOwningSession({
           id: `system-${Date.now() + 1}`,
           role: "system",
           content: `❌ 生成 AGENTS.md 失败：${e?.message || e}`,
@@ -2863,6 +2930,7 @@ if (!session) {
     if (trimmedMessage.startsWith("/feedback")) {
       const feedbackText = trimmedMessage.slice("/feedback".length).trim();
       if (!feedbackText) {
+        // [XSESS-5] 纯界面：用法回执（路径上无 await）
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -2880,7 +2948,15 @@ if (!session) {
         // 所以这里必须看 persisted，不能只靠 try/catch —— 原来那样会在事件根本没落库时
         // 照样打 ✅，属于本项目明令禁止的"假成功"。
         const written = recordSessionFeedback(session.id, feedbackText);
-        addMessage({
+        /*
+         * 归属判定：**落库**。
+         * 理由：这条气泡本身就是"反馈到底有没有进事件日志"的**唯一可见证据**
+         * （事件日志没有界面入口，用户无从自查）；而它的 ⚠️ 分支还是
+         * "用户需要采取动作"的真失败 ⇒ 不能随界面一起消失。
+         * 考虑过"不在屏就不投递"（纯界面档）：**否决** —— 那会让 ⚠️ 那条失败彻底静默。
+         * 另外它在 `await import("./core/llm/feedback")` 之后 ⇒ 裸 addMessage 会写进别人的会话。
+         */
+        deliverToOwningSession({
           id: `system-${Date.now()}`,
           role: "system",
           content: written.persisted
@@ -2893,7 +2969,8 @@ if (!session) {
           status: "done",
         });
       } catch (e: any) {
-        addMessage({
+        /* 归属判定：**落库**。理由：真错误（与上面那条留档回执成对）。 */
+        deliverToOwningSession({
           id: `system-${Date.now()}`,
           role: "system",
           content: `❌ 记录反馈失败：${e?.message || e}`,
@@ -2923,7 +3000,17 @@ if (!session) {
       userContent = attachmentInfo + (message ? "\n\n" + message : "");
 
       // Use synced attachments (with sandboxPath) for the message
-      addMessage({
+      /*
+       * 归属判定：**落库**（用户消息，"纯界面"这一档根本不存在）。
+       * 理由：① 它是这一轮的**输入** —— `runAgenticLoop` 紧接着就要从归属会话里把它读回来；
+       * ② 它在 `await getAppRoot()` / `await syncAttachmentsToWorkspace(...)` 之后 ⇒
+       *    用户切走时裸 `addMessage` 会把**用户自己的话**写进别人的会话；
+       * ③ 顺带修掉一个更严重的形态：原来紧跟其后的 `saveMessages(session.id)`（无 explicit）
+       *    在用户切走时会被归属守卫**拒绝** ⇒ 这一轮的用户消息根本没落库，
+       *    而 `runAgenticLoop` 已经拿着它去跑了（这次会话里"你说的那句话"永久丢失）。
+       * 现在落库由 `deliverToOwningSession` 显式完成，与"当前在看谁"无关。
+       */
+      deliverToOwningSession({
         id: `user-${Date.now()}`,
         role: "user",
         content: userContent,
@@ -2932,7 +3019,14 @@ if (!session) {
         attachments: syncedAttachments,
       });
     } else {
-      addMessage({
+      /*
+       * 归属判定：**落库**。与带附件那条同源 —— 这条今天"看起来安全"只是因为
+       * **碰巧**这条路径上暂时没有 await。为什么不等它坏：一旦有人在上面加一句 await
+       * （附件预览、草稿落盘、项目根目录解析…），它立刻就会变成
+       * "把用户的话写进别人的会话 + 这条用户消息不落库"。
+       * 不脆的写法不该依赖"碰巧" ⇒ 这里直接写成 owned。
+       */
+      deliverToOwningSession({
         id: `user-${Date.now()}`,
         role: "user",
         content: userContent,
@@ -2941,8 +3035,16 @@ if (!session) {
       });
     }
 
-    // Immediately save to database so agentic loop can read it
-    saveMessages(session.id);
+    /*
+     * Immediately save to database so agentic loop can read it
+     *
+     * 第 187 波：这一句是**无 explicit** 的形态（写"当前加载的那份列表"）——
+     * 用户在上面那些 await 里切走时，它会被 `store.saveMessages` 的归属守卫拒绝，
+     * 并**上报一条持久化失败**（横幅）—— 而消息其实已经由 `deliverToOwningSession`
+     * 显式落库了 ⇒ 那条上报是假失败。所以这里补一个在屏判据：不在屏就**不发**这一次。
+     * （在屏时保留原行为：整份列表过一遍指纹去重后落库，供 loop 立刻读回。）
+     */
+    if (isSessionOnScreen(session.id)) saveMessages(session.id);
 
       await runAgenticLoop(message, session, selectedSkills);
   };
@@ -3085,9 +3187,156 @@ if (!session) {
     opts?: { notebookId?: string },
   ) => {
     if (!session) return;
+
+    /**
+     * ===== P0-1：这个 loop **自己的那份消息列表**（跨会话污染的修法） =====
+     *
+     * ## 为什么必须由 loop 自己记
+     *
+     * 原来的 `safeAddMessage` 长这样：
+     * ```
+     * if (isViewingSession()) addMessage(msg);
+     * if (session) saveMessages(session.id);          // ← 注释写着 "Always persist to DB regardless"
+     * ```
+     * 两句合起来是**两个方向都错**：
+     *
+     * 1. `saveMessages(sessionId)` 内部写的是 `get().messages`，也就是"**当前加载的那个会话**"
+     *    的列表 —— 用户切走之后那份列表属于别的会话，于是**别的会话的消息被按本会话落库**
+     *    （权威 JSONL 按 sessionId 决定文件名，读路径还会把它合并显示出来）；
+     * 2. `addMessage` 被"只在查看时更新 UI"拦掉之后，"持久化"实际上依赖 store 列表 ——
+     *    于是**后台会话自己产生的 App 级消息一条都没落库**，注释里那句承诺是假的
+     *    （真机形态：后台跑完一轮，切回去看不到那轮的系统消息/工具消息）。
+     *
+     * 修法：loop 维护自己创建/更新的那几条消息（下面的 `loopMessages`），落库一律走
+     * `saveMessages(session.id, [...loopMessages.values()])` —— **explicit 形态**，
+     * 于是"写谁的消息"由 loop 自己声明，与用户当前在看哪个会话彻底解耦。
+     *
+     * ## 为什么初始要装一份"快照"而不是空 Map
+     *
+     * loop 开始时（用户还在看这个会话）store 里那份列表就是本会话的当前全量；
+     * 把它装进来，loop 的落库才是"本会话的完整列表"。否则一旦用户切走，
+     * loop 再落库就只剩自己新建的几条，而 store 里那份**本会话**的既有消息
+     * 再也不会有任何调用点去写（autosave 也被 `messagesSessionRef` 挡住了）。
+     *
+     * 快照只在归属一致时取（`loadedSessionId === session.id`）—— 不一致说明
+     * store 里那份是别的会话的，一条都不能进 loop 的这份。
+     *
+     * ## ⚠️ 第 187 波：这一段为什么必须定义在**最前面**
+     *
+     * 紧随其后的那几条**早退**（会话忙 / 引擎未初始化 / MiMo 认证缺失 / provider 未配置 /
+     * 工作树创建失败·成功）也在往会话里写系统消息，而它们都在 `await` 之后
+     * （`loadFromAuthJson` / `createWorktree` …）—— 用户可能已经切走。
+     * 所以 loop 自己那份快照与 `safeAddMessage` 必须**先于**这些调用点定义，
+     * 让它们复用同一套"写进归属会话"的投递，而不是像原来那样各自裸调 `addMessage`
+     * （裸 `addMessage` 写的是"当前加载的那份列表" ⇒ 把错误气泡加进**别人的会话**）。
+     */
+    const loopMessages = new Map<string, Message>();
+    {
+      const store = useAppStore.getState();
+      if (store.loadedSessionId === session.id) {
+        for (const m of store.messages) loopMessages.set(m.id, m);
+      }
+    }
+    /**
+     * 落库：**只写本 loop 自己那份**（explicit），并返回同一个 Map 供上层同步取用。
+     *
+     * 选 `saveMessages(session.id, explicit)` 而不是直接 `MessageStorage.createMessage(msg, session.id)`：
+     * - 前者保留了 `saveMessages` 既有的两件事 —— 指纹去重（第 91 波：长会话下绝大多数消息
+     *   内容没变，不该反复写库）与统一失败上报（`reportPersistFailure("store.saveMessages")`）；
+     * - 后者会绕开它们，把"每次 start/tool_start/tool_complete/tool_error/finally 都全量重写"
+     *   请回来（那正是存储压力的来源），而且失败再也不可见。
+     * 另外它就是**同步**的（内部逐条同步 `MessageStorage.createMessage`），不引入 await。
+     */
+    const persistLoopMessages = () => {
+      if (!session) return;
+      saveMessages(session.id, [...loopMessages.values()]);
+    };
+    /**
+     * ## 判据换成"消息列表的归属"（第 45 轮功能上下文审计 P0-I1）
+     *
+     * 原来是 `useProjectStore.getState().currentSession?.id === session.id`。这条判据
+     * 依赖"全局当前会话"这一个状态，而笔记本回合正是靠**改写它**才让流式文本进界面的
+     * （见 `handleNotebookSend` 的长注释）。现在不做那次改写了，判据改为问一个更直接的事实：
+     * **这份消息列表装的是不是这个会话的消息**（`loadedSessionId`，它与列表在同一次 `set`
+     * 里落定，见 `src/store.ts:334–342`）。
+     *
+     * - 笔记本工作区打开时，它自己 `loadMessages(笔记本会话)`（`NotebookWorkspace.tsx:364`）
+     *   → `loadedSessionId` 就是笔记本会话 → 本会话的流式更新照旧进界面 ✅；
+     * - 后台会话（用户已切走）→ 两个判据都不成立 → 只落库、不碰界面 ✅（与既有行为一致）；
+     * - 新建会话的开头一瞬（`loadMessages` 还没跑）→ 保留"当前会话"这一支兜底 ✅。
+     *
+     * ## ⚠️ 第 184 波（UI 审计 F1）：**判据只许有一份**
+     *
+     * 上一段的说明当时是对的，但它只描述了 `isViewingSession` 自己 —— 而
+     * `flushStreamBuffer` / `flushReasoningBuffer`（**流式正文**）当时另判一套
+     * （`currentSession?.id === sessionId`），漏改 ⇒ 笔记本回合的正文在界面上全空。
+     * 现在两处**都走** `core/ui/loop-stream-state.ts` 的 `isSessionOnScreen()`，
+     * 这里只是它的一个别名（不再自己写第二遍）。
+     */
+    const isViewingSession = () => isSessionOnScreen(session.id);
+    /**
+     * Safe message helpers：**UI 只在查看这个会话时更新**（这条行为不变），
+     * 但**落库与查看态无关** —— 一律写 loop 自己那份（上面 `persistLoopMessages`）。
+     *
+     * ⚠️ 这几个 helper 必须定义在 `try` **之外**：`catch` 分支也要用
+     * （原来的 `catch` 里那句裸 `addMessage` 会把错误气泡加进"当前显示的会话"）。
+     *
+     * ## ⚠️ 第 187 波：**归属投递**（写进归属会话 + 不在屏时留未读痕迹）
+     *
+     * `deliverOwnedMessage`（`core/ui/loop-owned-message.ts`）做两件事：
+     * ① 把这条记进 `ownCopy`（= loop 自己那份，落库的唯一来源，与"用户在看谁"无关）；
+     * ② 归属会话**不在屏**时，把它的**已读水位**退一格 ⇒ 侧栏出现未读徽标 —— 不静默丢。
+     * 界面那一支**不**在它里面（下面 `if (isViewingSession())` 照旧负责），
+     * 于是"这个会话在不在屏"仍然只有一份判据（`isSessionOnScreen`）。
+     */
+    const safeAddMessage = (msg: Message) => {
+      // 归属投递：记进 loop 自己那份 + 不在屏时的未读兜底（不许写进"当前加载的"那个会话）
+      deliverOwnedMessage({ sessionId: session.id, message: msg, ownCopy: loopMessages });
+      if (isViewingSession()) addMessage(msg);
+      persistLoopMessages();
+    };
+    const safeUpdateMessage = (id: string, update: any) => {
+      // loop 自己那份同步更新（落库时写的才是"最新版本"，而不是创建时的空壳）
+      const own = loopMessages.get(id);
+      if (own) loopMessages.set(id, { ...own, ...update });
+      if (isViewingSession()) useAppStore.getState().updateMessage(id, update);
+    };
+    /**
+     * 工具调用的等价物。
+     *
+     * 原实现是 `if (isViewingSession()) addToolCall(...)` / `updateToolCall(...)` —— 于是
+     * **非查看态那次工具调用根本没进 loop 的这份列表**，落库写下去的消息永远是"没有工具调用"
+     * 的版本。而下一轮迭代要从存储里读回工具调用来构造上下文
+     * （见下面 `Immediately save tool call so agentic loop can read it` 的注释），
+     * 读到的就是缺了 `result` 的旧版本 → 模型看不到自己刚拿到的结果（会反复重发同一个调用）。
+     * 这里把两边都做：UI 仍然只在查看时更新，loop 自己那份无论何时都更新。
+     */
+    const applyToolCallToOwnCopy = (
+      messageId: string,
+      mutate: (toolCalls: ToolCall[]) => ToolCall[],
+    ) => {
+      const own = loopMessages.get(messageId);
+      if (!own) return;
+      loopMessages.set(messageId, { ...own, toolCalls: mutate(own.toolCalls || []) });
+    };
+    const safeAddToolCall = (messageId: string, toolCall: ToolCall) => {
+      applyToolCallToOwnCopy(messageId, (list) =>
+        list.some((t) => t.id === toolCall.id)
+          ? list.map((t) => (t.id === toolCall.id ? { ...t, ...toolCall } : t))
+          : [...list, toolCall],
+      );
+      if (isViewingSession()) addToolCall(messageId, toolCall);
+    };
+    const safeUpdateToolCall = (messageId: string, toolId: string, update: Partial<ToolCall>) => {
+      applyToolCallToOwnCopy(messageId, (list) =>
+        list.map((t) => (t.id === toolId ? { ...t, ...update } : t)),
+      );
+      if (isViewingSession()) updateToolCall(messageId, toolId, update);
+    };
+
     if (isSessionExecuting(session.id)) {
       console.warn(`[runAgenticLoop] 会话 ${session.id} 已在执行中 —— 前台回合被拒绝（同一会话不并发）`);
-      addMessage({
+      safeAddMessage({
         id: `busy-${Date.now()}`,
         role: "system",
         content: "[Error] 这个会话已有一轮正在执行中（可能是后台委派 / 微信桥 / 手机续聊）。请等它结束，或先点停止。",
@@ -3105,7 +3354,7 @@ if (!session) {
     const engine = engineRef.current;
     if (!engine) {
       console.warn('[App] engine not available — llmEngine provider not registered');
-      addMessage({
+      safeAddMessage({
         id: 'err-' + Date.now(),
         role: 'system',
         content: '[Error] LLM Engine 未初始化。请检查控制台日志中的 [Cordis] 错误信息。',
@@ -3133,7 +3382,7 @@ if (!session) {
         account = await auth.loadFromAuthJson();
       }
       if (!account) {
-        addMessage({
+        safeAddMessage({
           id: 'err-' + Date.now(),
           role: 'system',
           content: '[Error] MiMo auth not found. Please login first.',
@@ -3181,7 +3430,7 @@ streamingSessionIdRef.current = session.id;
       setStreaming(false);
       useAppStore.getState().setSessionActive(session.id, false);
       streamingSessionIdRef.current = null;
-      addMessage({
+      safeAddMessage({
         id: 'err-' + Date.now(),
         role: 'system',
         content: `[Error] ${providerName} not configured.\n\nDebug: DB has settings=${!!savedSettings}, providers=${savedSettings?.providers?.length || 0}, ${providerName} hasKey=${!!providerInfo?.apiKey}`,
@@ -3206,7 +3455,7 @@ streamingSessionIdRef.current = session.id;
         session.worktreePath = wtPath;
       } catch (e) {
         console.error("[App] Failed to create worktree, falling back to project dir:", e);
-        addMessage({
+        safeAddMessage({
           id: `wt-err-${Date.now()}`,
           role: "system",
           content: lang === "zh"
@@ -3219,7 +3468,7 @@ streamingSessionIdRef.current = session.id;
     }
     // Show success toast if worktree was just created
     if (session.worktreePath && session.executionMode === "git_worktree" && cwd === session.worktreePath) {
-      addMessage({
+      safeAddMessage({
         id: `wt-ok-${Date.now()}`,
         role: "system",
         content: lang === "zh" ? `🌲 工作树已创建: ${session.worktreePath}` : `🌲 Worktree created: ${session.worktreePath}`,
@@ -3236,142 +3485,11 @@ streamingSessionIdRef.current = session.id;
     useAppStore.getState().setStreamStartTime(Date.now());
 
     /**
-     * ===== P0-1：这个 loop **自己的那份消息列表**（跨会话污染的修法） =====
-     *
-     * ## 为什么必须由 loop 自己记
-     *
-     * 原来的 `safeAddMessage` 长这样：
-     * ```
-     * if (isViewingSession()) addMessage(msg);
-     * if (session) saveMessages(session.id);          // ← 注释写着 "Always persist to DB regardless"
-     * ```
-     * 两句合起来是**两个方向都错**：
-     *
-     * 1. `saveMessages(sessionId)` 内部写的是 `get().messages`，也就是"**当前加载的那个会话**"
-     *    的列表 —— 用户切走之后那份列表属于别的会话，于是**别的会话的消息被按本会话落库**
-     *    （权威 JSONL 按 sessionId 决定文件名，读路径还会把它合并显示出来）；
-     * 2. `addMessage` 被"只在查看时更新 UI"拦掉之后，"持久化"实际上依赖 store 列表 ——
-     *    于是**后台会话自己产生的 App 级消息一条都没落库**，注释里那句承诺是假的
-     *    （真机形态：后台跑完一轮，切回去看不到那轮的系统消息/工具消息）。
-     *
-     * 修法：loop 维护自己创建/更新的那几条消息（下面的 `loopMessages`），落库一律走
-     * `saveMessages(session.id, [...loopMessages.values()])` —— **explicit 形态**，
-     * 于是"写谁的消息"由 loop 自己声明，与用户当前在看哪个会话彻底解耦。
-     *
-     * ## 为什么初始要装一份"快照"而不是空 Map
-     *
-     * loop 开始时（用户还在看这个会话）store 里那份列表就是本会话的当前全量；
-     * 把它装进来，loop 的落库才是"本会话的完整列表"。否则一旦用户切走，
-     * loop 再落库就只剩自己新建的几条，而 store 里那份**本会话**的既有消息
-     * 再也不会有任何调用点去写（autosave 也被 `messagesSessionRef` 挡住了）。
-     *
-     * 快照只在归属一致时取（`loadedSessionId === session.id`）—— 不一致说明
-     * store 里那份是别的会话的，一条都不能进 loop 的这份。
-     */
-    const loopMessages = new Map<string, Message>();
-    {
-      const store = useAppStore.getState();
-      if (store.loadedSessionId === session.id) {
-        for (const m of store.messages) loopMessages.set(m.id, m);
-      }
-    }
-    /**
      * 把这个 loop 的这份快照挂到组件级 ref 上，供上面的
      * `routeBufferedTextToOwnCopy`（流式 buffer 的两条 flush 路径）写入。
      * loop 结束时清掉，避免下一个会话的 loop 误用上一轮的残留。
      */
     loopMessageSnapshotRef.current = { sessionId: session.id, messages: loopMessages };
-
-    /**
-     * 落库：**只写本 loop 自己那份**（explicit），并返回同一个 Map 供上层同步取用。
-     *
-     * 选 `saveMessages(session.id, explicit)` 而不是直接 `MessageStorage.createMessage(msg, session.id)`：
-     * - 前者保留了 `saveMessages` 既有的两件事 —— 指纹去重（第 91 波：长会话下绝大多数消息
-     *   内容没变，不该反复写库）与统一失败上报（`reportPersistFailure("store.saveMessages")`）；
-     * - 后者会绕开它们，把"每次 start/tool_start/tool_complete/tool_error/finally 都全量重写"
-     *   请回来（那正是存储压力的来源），而且失败再也不可见。
-     * 另外它就是**同步**的（内部逐条同步 `MessageStorage.createMessage`），不引入 await。
-     */
-    const persistLoopMessages = () => {
-      if (!session) return;
-      saveMessages(session.id, [...loopMessages.values()]);
-    };
-
-    // Helper: check if this session's messages are the ones currently loaded in the UI
-    /**
-     * ## 判据换成"消息列表的归属"（第 45 轮功能上下文审计 P0-I1）
-     *
-     * 原来是 `useProjectStore.getState().currentSession?.id === session.id`。这条判据
-     * 依赖"全局当前会话"这一个状态，而笔记本回合正是靠**改写它**才让流式文本进界面的
-     * （见 `handleNotebookSend` 的长注释）。现在不做那次改写了，判据改为问一个更直接的事实：
-     * **这份消息列表装的是不是这个会话的消息**（`loadedSessionId`，它与列表在同一次 `set`
-     * 里落定，见 `src/store.ts:334–342`）。
-     *
-     * - 笔记本工作区打开时，它自己 `loadMessages(笔记本会话)`（`NotebookWorkspace.tsx:364`）
-     *   → `loadedSessionId` 就是笔记本会话 → 本会话的流式更新照旧进界面 ✅；
-     * - 后台会话（用户已切走）→ 两个判据都不成立 → 只落库、不碰界面 ✅（与既有行为一致）；
-     * - 新建会话的开头一瞬（`loadMessages` 还没跑）→ 保留"当前会话"这一支兜底 ✅。
-     *
-     * ## ⚠️ 第 184 波（UI 审计 F1）：**判据只许有一份**
-     *
-     * 上一段的说明当时是对的，但它只描述了 `isViewingSession` 自己 —— 而
-     * `flushStreamBuffer` / `flushReasoningBuffer`（**流式正文**）当时另判一套
-     * （`currentSession?.id === sessionId`），漏改 ⇒ 笔记本回合的正文在界面上全空。
-     * 现在两处**都走** `core/ui/loop-stream-state.ts` 的 `isSessionOnScreen()`，
-     * 这里只是它的一个别名（不再自己写第二遍）。
-     */
-    const isViewingSession = () => isSessionOnScreen(session.id);
-    /**
-     * Safe message helpers：**UI 只在查看这个会话时更新**（这条行为不变），
-     * 但**落库与查看态无关** —— 一律写 loop 自己那份（上面 `persistLoopMessages`）。
-     *
-     * ⚠️ 这几个 helper 必须定义在 `try` **之外**：`catch` 分支也要用
-     * （原来的 `catch` 里那句裸 `addMessage` 会把错误气泡加进"当前显示的会话"）。
-     */
-    const safeAddMessage = (msg: Message) => {
-      // 先记进 loop 自己那份：即使此刻没在看这个会话，这条也必须有归属、必须落库
-      loopMessages.set(msg.id, msg);
-      if (isViewingSession()) addMessage(msg);
-      persistLoopMessages();
-    };
-    const safeUpdateMessage = (id: string, update: any) => {
-      // loop 自己那份同步更新（落库时写的才是"最新版本"，而不是创建时的空壳）
-      const own = loopMessages.get(id);
-      if (own) loopMessages.set(id, { ...own, ...update });
-      if (isViewingSession()) useAppStore.getState().updateMessage(id, update);
-    };
-    /**
-     * 工具调用的等价物。
-     *
-     * 原实现是 `if (isViewingSession()) addToolCall(...)` / `updateToolCall(...)` —— 于是
-     * **非查看态那次工具调用根本没进 loop 的这份列表**，落库写下去的消息永远是"没有工具调用"
-     * 的版本。而下一轮迭代要从存储里读回工具调用来构造上下文
-     * （见下面 `Immediately save tool call so agentic loop can read it` 的注释），
-     * 读到的就是缺了 `result` 的旧版本 → 模型看不到自己刚拿到的结果（会反复重发同一个调用）。
-     * 这里把两边都做：UI 仍然只在查看时更新，loop 自己那份无论何时都更新。
-     */
-    const applyToolCallToOwnCopy = (
-      messageId: string,
-      mutate: (toolCalls: ToolCall[]) => ToolCall[],
-    ) => {
-      const own = loopMessages.get(messageId);
-      if (!own) return;
-      loopMessages.set(messageId, { ...own, toolCalls: mutate(own.toolCalls || []) });
-    };
-    const safeAddToolCall = (messageId: string, toolCall: ToolCall) => {
-      applyToolCallToOwnCopy(messageId, (list) =>
-        list.some((t) => t.id === toolCall.id)
-          ? list.map((t) => (t.id === toolCall.id ? { ...t, ...toolCall } : t))
-          : [...list, toolCall],
-      );
-      if (isViewingSession()) addToolCall(messageId, toolCall);
-    };
-    const safeUpdateToolCall = (messageId: string, toolId: string, update: Partial<ToolCall>) => {
-      applyToolCallToOwnCopy(messageId, (list) =>
-        list.map((t) => (t.id === toolId ? { ...t, ...update } : t)),
-      );
-      if (isViewingSession()) updateToolCall(messageId, toolId, update);
-    };
 
     // Watchdog timer lives outside try so the finally block can clear it.
     let watchdogTimer: ReturnType<typeof setInterval> | undefined;

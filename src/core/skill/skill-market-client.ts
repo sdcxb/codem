@@ -2490,6 +2490,36 @@ export async function installMarketSkill(
 }
 
 /**
+ * 相对路径 → 技能目录内的目标**绝对**路径（并证明它确实落在技能目录里）。
+ *
+ * ## 为什么必须有它（本波新增）
+ *
+ * 目录安装路径从 `writeFile` 改成 Rust 的 `http_download` 之后，就**不再经过**
+ * `file-api.ts` 的那道守卫了（`writeFile` 会 `assertWithinWorkspace`；`http_download`
+ * 是"Rust 直接把字节写到 destPath"，没有任何包含性判定）。
+ *
+ * 而树条目里的 `..` 也不受别的约束：`entry.path` 只要以 `dirPrefix` 开头就会被收下，
+ * 于是 `skills/pic/../../../evil.png` 会被拼成"技能目录之外"的路径。
+ * **判定必须落在拼装点上**（这就是"判据与动作是同一个路径"的落地）：越界即拒绝。
+ *
+ * 返回 `null` 表示"拒绝写入"，调用方按 `failed` 记账（不是静默跳过）。
+ */
+function resolveSkillFileDest(skillDir: string, sep: string, relativePath: string): string | null {
+  const normalized = relativePath.replace(/\\/g, "/");
+  // 绝对路径 / UNC / 盘符：技能目录内的相对路径不可能长这样
+  if (!normalized || normalized.startsWith("/") || normalized.startsWith("//") || /^[A-Za-z]:/.test(normalized)) {
+    return null;
+  }
+  const segments = normalized.split("/").filter((s) => s !== "");
+  // `..` / `.` 一律拒绝（不试图"规范化后看落在哪"—— 拒绝比猜测更可核对）
+  if (segments.length === 0 || segments.some((s) => s === "." || s === "..")) return null;
+  const root = skillDir.replace(/[\\/]+$/, "");
+  const dest = `${root}${sep}${segments.join(sep)}`;
+  if (!dest.startsWith(`${root}${sep}`)) return null;
+  return dest;
+}
+
+/**
  * 通过 GitHub Trees API 搜索 SKILL.md 并下载技能文件。
  *
  * 移植自 vercel-labs/skills blob.ts + download-source.ts 的核心逻辑。
@@ -2497,7 +2527,8 @@ export async function installMarketSkill(
  * 1. 通过 Trees API 一次性获取仓库完整文件树
  * 2. 在树中搜索 SKILL.md（支持 30+ 种 Agent 目录约定）
  * 3. 从 dirPath 目录中筛选所有文件
- * 4. 逐个通过 raw.githubusercontent.com 下载文件内容
+ * 4. 逐个下载文件内容：**走 Rust 的 `http_download`**，响应字节由 Rust 直接写到目标文件，
+ *    不经 JS 字符串（二进制按字节落盘；SKILL.md 例外，见下方写盘处的说明）
  * 5. 写入到本地技能目录并注册
  */
 async function installSkillFromGitHubDir(
@@ -2587,6 +2618,16 @@ async function installSkillFromGitHubDir(
 
     // 技能目录前缀（dirPath 可能为空，表示根目录）
     const dirPrefix = dirPath ? dirPath + "/" : "";
+    /**
+     * ★ 本波：**跳过也要记账**（与 ZIP 那条路径同一口径）。
+     *
+     * 改前这两处是裸 `continue`：白名单外的扩展名、超过 1MB 的资源**一个都不记**，
+     * 而返回值里也没有任何痕迹 ⇒ 用户看到「安装成功」却少了一份脚本/一张图
+     * （ZIP 路径的 `installSkillFromZipFiltered` 早已把同类情形记为 `skipped` + warning）。
+     * 口径：`skipped` = 本来就不装（技能仍可用，但要如实说明可能不完整）；
+     * 与下面的 `failed`（该装却没装上 ⇒ 半成品 ⇒ 不许报成功）区分开。
+     */
+    const skipped: Array<{ path: string; reason: string }> = [];
     for (const entry of tree.tree) {
       if (entry.type !== "blob") continue;
       // 文件必须在该技能目录下
@@ -2599,21 +2640,36 @@ async function installSkillFromGitHubDir(
         relativePath = relativePath.substring(dirPrefix.length);
       }
 
-      // 检查扩展名
+      // 检查扩展名（不在白名单 ⇒ **记账**，不再静默跳过）
       const ext = relativePath.substring(relativePath.lastIndexOf(".")).toLowerCase();
-      if (!allowedExtensions.has(ext) && !relativePath.endsWith("SKILL.md")) continue;
+      if (!allowedExtensions.has(ext) && !relativePath.endsWith("SKILL.md")) {
+        skipped.push({ path: relativePath, reason: `扩展名 ${ext} 不在允许列表内` });
+        continue;
+      }
 
-      // 检查大小（跳过大文件）
-      if (entry.size && entry.size > 1024 * 1024) continue;
+      // 检查大小（跳过大文件 ⇒ **记账**）
+      if (entry.size && entry.size > 1024 * 1024) {
+        skipped.push({
+          path: relativePath,
+          reason: `文件过大（${entry.size} 字节 > ${1024 * 1024}）`,
+        });
+        continue;
+      }
 
       const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${tree.branch}/${entry.path}`;
       files.push({ path: relativePath, downloadUrl: rawUrl, size: entry.size || 0 });
     }
 
     if (files.length === 0) {
+      const all = skipped;
       return {
         success: false,
-        error: `目录 "${dirPath}" 中未找到可安装的文件。`,
+        skipped: all,
+        error:
+          `目录 "${dirPath}" 中未找到可安装的文件` +
+          (all.length > 0
+            ? `（${all.length} 个文件被跳过：${all.map((s) => `${s.path}: ${s.reason}`).join("；")}）`
+            : "。"),
       };
     }
 
@@ -2680,9 +2736,37 @@ async function installSkillFromGitHubDir(
      */
     const failed: Array<{ path: string; reason: string }> = [];
 
-    // SKILL.md 的内容已在前面下载
+    /**
+     * ★ 本波（bug：**二进制静默损坏**）：逐文件下载**改走 `http_download`**。
+     *
+     * ## 改前为什么是坏的
+     *
+     * 这里原来对每个文件 `httpGet(file.downloadUrl)` 拿**字符串**再按文本 `writeFile`。
+     * 而 Rust 的 `http_get` 是 `String::from_utf8_lossy(&bytes)`（`lib.rs:3933`）⇒
+     * 白名单里的 `.png/.jpg/.jpeg/.gif/.ico` 一进 JS 就已经不是原字节了：非法 UTF-8 序列
+     * 被替换成 U+FFFD，写盘的是替换后的文本。**装出来的技能资源是坏的，而且不报错**
+     * （`filesWritten` 照常 +1、`success:true`）。
+     *
+     * ZIP 那条路径（`installSkillFromZipFiltered` / `installer.ts:216`）上一波已经改成
+     * "二进制按 base64 写"；目录路径是**另一个实现**，漏了 —— 于是同一份事实两套处置。
+     *
+     * ## 改后：字节通道，`http_download` 与 `pet-market-client.ts:57` 同一形态
+     *
+     * `http_download(url, destPath, headers)` 由 Rust 把响应字节**原样**写到目标文件
+     * （`lib.rs:3973-3974`：`std::fs::write(&dest, &resp.bytes())`），JS 只拿路径/错误
+     * ⇒ 不经过任何字符串解码，二进制与文本**都是逐字节一致**。这也让这里不再需要
+     * "按扩展名猜哪个是二进制"的那张表（ZIP 路径必须猜，因为它手里的字节要先选编码）。
+     *
+     * URL 形态：树条目里**没有** `download_url` 字段（那是 Contents API 的字段），
+     * 所以用上面按树路径拼出来的 `https://raw.githubusercontent.com/{repo}/{ref}/{path}` ——
+     * 这与 Contents API 对同一路径给出的 `download_url` **是同一个地址形态**（都是 raw），
+     * 优先用它而不是 Contents API 的 `/contents/`：后者返回的是 base64 JSON，
+     * 还得把二进制读回 JS 再解码（正是本波要消掉的那条路）。
+     */
     for (const file of files) {
-      // 跳过 SKILL.md（已下载）
+      // SKILL.md 的正文**已经**在前面用 `httpGet` 拿到（解析元数据必须读文本），
+      // 所以它按 UTF-8 文本写盘是有理由的：`.md` 按定义是文本（与 ZIP 路径同一口径）。
+      // 其余文件一律走下面的字节通道。
       if (file.path === skillMdFile.path) {
         const fullPath = `${skillDir}${sep}${file.path.replace(/\//g, sep)}`;
         try {
@@ -2697,42 +2781,50 @@ async function installSkillFromGitHubDir(
         continue;
       }
 
-      let body: string;
+      // 目标路径必须**在技能目录内**：`http_download` 不经过 `file-api` 的守卫，判定落在这里
+      const destPath = resolveSkillFileDest(skillDir, sep, file.path);
+      if (!destPath) {
+        const reason = "路径越出技能目录（拒绝写入）";
+        failed.push({ path: file.path, reason });
+        console.warn(`[SkillMarket] Refused to write outside skill dir: ${file.path}`);
+        continue;
+      }
+
       try {
-        const fileResp = await httpGet(file.downloadUrl);
-        if (fileResp.status !== 200) {
-          failed.push({ path: file.path, reason: `下载失败（HTTP ${fileResp.status}）` });
-          console.warn(`[SkillMarket] Failed to download ${file.path}: ${fileResp.status}`);
-          continue;
-        }
-        body = fileResp.body;
+        // 字节直落盘：响应体从不变成 JS 字符串（`http_download` 非 2xx 会 reject，含状态码）
+        await httpDownload(file.downloadUrl, destPath, githubApiHeaders());
       } catch (err: any) {
-        failed.push({ path: file.path, reason: `下载失败：${err?.message || String(err)}` });
+        // 措辞刻意是"下载**或**写盘"：字节通道把这两件事都放在 Rust 里做完了，
+        // JS 只拿到一个错误文本（`HTTP <status>: <url>` 或 IO 错误）——分开说才是编造。
+        failed.push({ path: file.path, reason: `下载或写盘失败：${err?.message || String(err)}` });
         console.warn(`[SkillMarket] Failed to download ${file.path}:`, err);
         continue;
       }
 
-      const fullPath = `${skillDir}${sep}${file.path.replace(/\//g, sep)}`;
-      try {
-        await writeFile(fullPath, body);
-        writtenContents.set(file.path, body);
-        filesWritten++;
+      /**
+       * 审计哈希：这个文件的字节由 Rust 直接落盘，JS 手里**没有**它的文本 ——
+       * 而"把它读回来再哈希"就等于把刚修掉的那条路（二进制经 JS 字符串往返）再走一遍，
+       * 所以这里刻意不读回，改记一个 `#bytes:<size>` 标记（size 来自树条目）：
+       * 哈希因此对"装了哪些文件 + 各自多大"敏感、对字节内容不敏感。如实标注，不编假内容。
+       * （`contentHash` 全仓只写不校验：写入两处、复核零处。）
+       */
+      writtenContents.set(file.path, `#bytes:${file.size}`);
+      filesWritten++;
 
-        const progress = 50 + Math.round((filesWritten / files.length) * 40);
-        onProgress?.(progress, `写入文件: ${file.path}`);
-      } catch (err: any) {
-        failed.push({ path: file.path, reason: `写盘失败：${err?.message || String(err)}` });
-        console.warn(`[SkillMarket] Failed to write ${file.path}:`, err);
-      }
+      const progress = 50 + Math.round((filesWritten / files.length) * 40);
+      onProgress?.(progress, `写入文件: ${file.path}`);
     }
 
     if (filesWritten === 0) {
+      const all = [...failed, ...skipped];
       return {
         success: false,
         skillName: skillDef.name,
         filesWritten,
-        skipped: failed,
-        error: `所有文件下载失败。${failed.map((f) => `${f.path}: ${f.reason}`).join("；")}`,
+        skipped: all,
+        error:
+          `所有文件下载失败` +
+          (all.length > 0 ? `。${all.map((f) => `${f.path}: ${f.reason}`).join("；")}` : "。"),
       };
     }
 
@@ -2754,7 +2846,7 @@ async function installSkillFromGitHubDir(
         success: false,
         skillName: skillDef.name,
         filesWritten,
-        skipped: failed,
+        skipped: [...failed, ...skipped],
         warning: `${failed.length} 个文件未能写入，技能不完整`,
         error:
           `安装未完成：${files.length} 个文件里成功 ${filesWritten} 个、失败 ${failed.length} 个（${detail}）。` +
@@ -2792,6 +2884,13 @@ async function installSkillFromGitHubDir(
       skillName: skillDef.name,
       skill: skillDef,
       filesWritten,
+      // 部分文件被跳过（不在允许列表内 / 过大）时如实带出来 —— 与 ZIP 路径逐字同一口径
+      ...(skipped.length > 0
+        ? {
+            skipped,
+            warning: `${skipped.length} 个文件被跳过（不在允许列表内或过大），技能可能不完整`,
+          }
+        : {}),
     };
   } catch (err: any) {
     return {

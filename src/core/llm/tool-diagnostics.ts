@@ -73,6 +73,51 @@ export function pagedDiagnostic(fromLine: number, toLine: number): ToolDiagnosti
   };
 }
 
+/**
+ * **搜索窗口**诊断（第 186 波）—— 给 `glob` 用。
+ *
+ * ## 为什么不能复用 `truncatedDiagnostic`
+ *
+ * 那条说的是"**文件的行**被切了"（丢了多少行/字符，文件总共多少行），数字口径是**读取预算**；
+ * 这条说的是"**匹配结果本身**有界 / 只内联了一部分"，口径是**条数**。两个不同的事实硬套
+ * 同一个函数，就会逼出"glob 有 20000 行、丢了多少字符"这种既算不出也没意义的数字
+ * （本仓纪律：宁可说得少，也不许编数字）。
+ *
+ * ## 措辞里必须同时有三件事
+ *
+ * 1. 结果是**有界窗口**还是**至少还有更多**（后者不许含糊成"结果很多"）；
+ * 2. 内联了几条、本次返回几条（模型据此判断"要不要继续"）；
+ * 3. **完整列表在哪 / 怎么继续拿**（`spillPath` 或 Rust 给的 `hint`）—— 只有"截断了"没有
+ *    "怎么办"的诊断，等于改前那句 `Err(...)` 换个地方出现。
+ */
+export function globWindowDiagnostic(params: {
+  /** 内联给模型的条数（有界） */
+  inlineCount: number;
+  /** 本次搜索返回的总条数（≤ limit） */
+  returned: number;
+  /** 本次搜索结果**至少还有更多** */
+  truncated: boolean;
+  /** 完整列表落盘路径（落盘成功时） */
+  spillPath?: string;
+  /** 落盘失败的原因（**不许沉默**：模型必须知道"完整列表没拿到"） */
+  spillError?: string;
+  /** Rust 侧给的下一步（夹取说明 / 翻页 offset）——原样带上，避免两处各说一套数字 */
+  hint?: string;
+}): ToolDiagnostic {
+  const head = params.truncated
+    ? `glob matched MORE than the ${params.returned} path(s) it returned — this result window is truncated (at least one more match exists)`
+    : `glob returned ${params.returned} path(s)`;
+  const shown = `only the first ${params.inlineCount} are shown inline`;
+  const where = params.spillPath
+    ? `the complete returned list is saved at ${params.spillPath} (read it with the read tool)`
+    : params.spillError
+      ? `saving the complete returned list to disk FAILED (${params.spillError}) — the inline list is all you have`
+      : `the rest were not shown`;
+  const parts = [head, shown, where];
+  if (params.hint) parts.push(params.hint);
+  return { severity: "warn", code: "truncated", message: `${parts.join("; ")}.` };
+}
+
 /** 渲染诊断块（`<harness>` 标记 + 每条一行） */export function renderDiagnostics(diagnostics: readonly ToolDiagnostic[] | undefined): string {
   if (!diagnostics || diagnostics.length === 0) return "";
   const lines = diagnostics.map((d) => `[${d.severity}] ${d.message}`);

@@ -501,6 +501,27 @@ backdrop-filter: none !important;
   -webkit-backdrop-filter: none;
 }
 
+/*
+ * ★ 第 185 波（用户报「有的卡片**下半部分**变成白色，不是磨砂透明」）：
+ * **卡片内部的 `pre` 也要去掉底色与模糊**（边框/底色由卡片本身提供）。
+ *
+ * ⚠️ 上一版我只修了"**包着**卡片的那层 `pre`"（上面那条 `:has()`），漏了**卡片内部**这层 ——
+ * 卡片下半就是代码区，它被上面那条 `[data-skin="dream"] pre { background: … }` 涂成了
+ * `--dream-bg-panel`（默认 `rgba(245,245,248,0.9)`，近白）⇒ 视觉上"下半截变白"。
+ *
+ * ⚠️⚠️ `background` 这里**必须带 `!important`**：`SyntaxHighlighter` 是用**内联样式**
+ * 设 `background: "transparent"` 的（见 `CodeBlockView.tsx` 的 `customStyle`），
+ * 而那条 `pre` 规则的 `!important` **压得过内联样式** —— 所以这里同样要 `!important` 才能夺回。
+ * 这是"两条 `!important` 打架、谁具体谁赢"的少数必须两处都写 `!important` 的场合。
+ */
+[data-skin="dream"] .content-frame pre,
+[data-skin="dream"] .content-frame-body pre {
+  border: none;
+  background: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* ========== 工具调用 ========== */
 [data-skin="dream"] .tool-call,
 [data-skin="dream"] .tool-result {

@@ -24,6 +24,13 @@
  * | SDK-3 | `sdk.fetch` 的返回被描述为**字符串/正文**（不许让模型以为是 Response） |
  * | SDK-4 | `sdk.grep` 的返回形状与 `ToolSDK` 类型一致，且**实现里不再写死 `line: 0`** |
  * | SDK-5 | 行为：给一段 `path:行号:内容` 的输入，`sdk.grep` 必须拆出真实行号；拆不开时 `line` 为 null（**不许编 0**） |
+ *
+ * ## 第 186 波（GLOB-LIMIT-6）：`sdk.glob` 的形状从 `string[]` 变成**结构化对象**
+ *
+ * 描述里原来写的是 `→ string[]`。glob 的截断改口径之后（超限不再报错，而是回一个有界
+ * 窗口 + `truncated` + `hint`），描述不改就是**稳定地教模型写错代码**：脚本会写
+ * `for (const f of await sdk.glob(p))`，然后拿到 `undefined is not iterable`。
+ * 所以这条判据与实现的形状**必须一起动**（描述即契约）。
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -75,6 +82,66 @@ describe("第 184 波 · run_code SDK 契约（G5）", () => {
     expect(src, "`line: 0` 是那个真 bug 的签名").not.toMatch(/line:\s*0\s*,/);
     expect(src, "要按 `path:行号:内容` 的真实格式拆行").toContain("line: Number(m[2])");
     expect(src, "拆不开时不许编行号").toContain("line: null");
+  });
+
+  /**
+   * ★ 第 186 波（GLOB-LIMIT-6）：**描述与形状同形**，而且是"行为可见"的那种同形
+   * —— 描述说 `{ files, … }`，脚本跑起来就必须真的能取到 `files` / `truncated`。
+   */
+  it("SDK-6: `sdk.glob` 描述为结构化对象（不许再宣称返回 `string[]`）", () => {
+    expect(
+      desc,
+      "★ 改前这里写的是 `→ string[]`：截断改口径之后，照旧描述会稳定地教模型写错代码",
+    ).not.toMatch(/sdk\.glob[^\n]*→\s*`?string\[\]`?/);
+    expect(desc, "必须给出结构化形状").toMatch(
+      /sdk\.glob\(pattern[^)]*\)`?\s*→\s*`?\{\s*files/,
+    );
+    for (const field of ["truncated", "returned", "hint"]) {
+      expect(desc, `形状里必须点明 \`${field}\``).toContain(field);
+    }
+    expect(desc, "必须说明翻页的用法（offset += returned）").toMatch(/offset\s*\+=?\s*returned|opts\.offset/);
+  });
+
+  it("SDK-6 行为：`sdk.glob` 的返回值能被脚本按 `{ files, truncated }` 消费", async () => {
+    const { executeCode, __setScriptRunnerForTests } = await import("../core/llm/tools/run-code");
+    __setScriptRunnerForTests(async ({ code: src, sdk }) => {
+      const fn = new Function("sdk", `return (async () => { ${src} })()`);
+      const value = await (fn as never as (s: unknown) => Promise<unknown>)(sdk);
+      return { ok: true, stdout: "", stderr: "", value };
+    });
+    try {
+      const sdk: any = {
+        bash: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+        read: async () => "",
+        write: async () => {},
+        // 与实现同一形状（行为断言：形状契约能被脚本观察到）
+        glob: async () => ({
+          files: ["C:\\repo\\src\\a.ts", "C:\\repo\\src\\b.ts"],
+          truncated: true,
+          depth_limited: false,
+          returned: 2,
+          hint: "call again with offset=2",
+        }),
+        grep: async () => [],
+        fetch: async () => "body-text",
+      };
+      const res = await executeCode(
+        `const r = await sdk.glob("*.ts"); return JSON.stringify({ n: r.files.length, t: r.truncated, ret: r.returned, hint: !!r.hint });`,
+        sdk,
+        5_000,
+      );
+      const idx = String(res.stdout).lastIndexOf("[Result]:");
+      expect(idx, "必须能取到 [Result] 段").toBeGreaterThanOrEqual(0);
+      const parsed = JSON.parse(String(res.stdout).slice(idx + "[Result]:".length).trim());
+      expect(parsed, "★ 脚本必须能按 `{ files, truncated, returned }` 消费（裸数组做不到）").toEqual({
+        n: 2,
+        t: true,
+        ret: 2,
+        hint: true,
+      });
+    } finally {
+      __setScriptRunnerForTests(null);
+    }
   });
 
   it("SDK-5 行为：`path:行号:内容` 必须拆出真实行号；拆不开时 line 为 null（不许编 0）", async () => {

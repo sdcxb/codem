@@ -170,7 +170,13 @@ describe("功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-050", () =>
     });
 
     it("LOOP-006: glob 工具返回匹配文件列表", async () => {
-      mockGlobSearch.mockResolvedValue(["/test/a.ts", "/test/b.ts"]);
+      // ★ 第 186 波：globSearch 回结构化对象
+      mockGlobSearch.mockResolvedValue({
+        files: ["/test/a.ts", "/test/b.ts"],
+        truncated: false,
+        depth_limited: false,
+        returned: 2,
+      });
 
       const registry = createDefaultToolRegistry();
       const glob = registry.get("glob")!;

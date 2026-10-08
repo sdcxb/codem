@@ -1405,11 +1405,16 @@ async fn get_installer_default_lang() -> Result<String, String> {
     }
 }
 
-/// `glob_search` 的遍历上限（**两个上限都必须有**，理由见下）。
+/// `glob_search` 的遍历上限（**深度与条数两个上限都必须有**，理由见下）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GlobLimits {
     max_depth: usize,
     max_results: usize,
+    /// 跳过**前 N 条**匹配（`0` = 从第一条开始）。
+    ///
+    /// 为什么翻页要落在遍历里而不是"先取全部再切片"：先取全部就等于**取消了条数上限**
+    /// （超大目录正是这个工具的用例），翻页的意义也就没了。
+    offset: usize,
 }
 
 impl Default for GlobLimits {
@@ -1417,6 +1422,7 @@ impl Default for GlobLimits {
         Self {
             max_depth: GLOB_MAX_DEPTH,
             max_results: GLOB_MAX_RESULTS,
+            offset: 0,
         }
     }
 }
@@ -1433,30 +1439,135 @@ impl Default for GlobLimits {
 ///    这个工具是"找文件"不是"全盘遍历"。
 const GLOB_MAX_DEPTH: usize = 32;
 
-/// 结果条数上限。
+/// 默认结果条数上限（调用方不给 `limit` 时用它）。
 ///
-/// 超限**不静默**：`glob_search` 会返回一个明确的错误（见 `glob_truncated_message`），
-/// 而不是回一个"看起来完整"的列表（本仓库最忌讳的静默降级 —— 模型会把截断后的
-/// 前 N 条当全量，据此得出"文件不存在"的错误结论）。
+/// ## 这一条是"窗口"，不是"拦人的墙"（第 186 波改正的设计错误）
+///
+/// 改前超限就 `Err`（`glob_truncated_message`）：**那只是换个方式卡住** —— 调用方既拿不到
+/// 数据，也拿不到"怎么拿到剩下的"，而"匹配到两万条以上"在批处理超大目录时**很常见**
+/// （用户原话：*"如果真的超过 2 万条，怎么处理呢？仅仅返回错误，并没有解决问题。"*）。
+/// 更糟的是"匹配数超限"与"参数写错"被压成同一种输出（都是 `Err(String)`）。
+///
+/// 现在：**截断是「数据」，不是「异常」**。撞到窗口 ⇒ 回一个有界列表 +
+/// `truncated: true`（**至少还有更多**）+ `hint`（下一步怎么取），见 `GlobSearchResult`。
 const GLOB_MAX_RESULTS: usize = 20_000;
+
+/// `limit` 的允许区间。
+///
+/// 越界**不报错、也不静默**：夹进区间，并在 `hint` 里如实写明"请求了多少、实际按多少跑"
+/// —— 静默夹与静默截断是同一类失真（调用方会以为自己真拿到了 `limit` 条）。
+///
+/// 为什么上限是 20 万而不是无穷：一次调用要把结果**序列化过 IPC**（一条路径平均几十字符
+/// ⇒ 20 万条就是十几 MB 的字符串），再往上只是把"卡住"从遍历挪到传输。要更多就翻页
+/// （`offset`）—— 翻页是**有界的增量**，"一次要一亿条"不是。
+const GLOB_LIMIT_MIN: usize = 1;
+const GLOB_LIMIT_MAX: usize = 200_000;
 
 /// 一次遍历的结果 + **它是否完整**这两个事实（必须一起返回，不许只回列表）。
 struct GlobWalkOutcome {
     files: Vec<String>,
-    /// 撞到结果条数上限 ⇒ 列表**不完整**。
+    /// 本次遍历**见过**的匹配总数（含被 `offset` 跳过的那一段）—— 下一页的偏移量就是它。
+    matched: usize,
+    /// 撞到结果窗口 ⇒ 列表**不完整**。
+    ///
+    /// ⚠️ `true` 的含义是"**至少还有更多**"，**不是**"恰好还差 N 条"：
+    /// 为了报一个精确总数把整棵树走完，正是这个契约要避免的代价（本仓纪律：
+    /// 宁可说得少，也不许编数字）。
     truncated: bool,
     /// 撞到深度上限 ⇒ 更深的目录**没被看过**（列表可能不完整）。
     depth_limited: bool,
 }
 
-/// 结果被截断时给调用方的**明确错误**（唯一能把这件事说清楚的通道：
-/// 命令契约是 `Result<Vec<String>, String>`，把截断塞进返回数组里没人能分辨）。
-fn glob_truncated_message(pattern: &str, path: &str, limit: usize) -> String {
-    format!(
-        "glob_search matched more than {} entries under '{}' (pattern '{}') — results were truncated at {} \
-         so they are NOT a complete list. Narrow the path (search a subdirectory) or the pattern, then retry.",
-        limit, path, pattern, limit
-    )
+/// 调用方**请求**的 `limit` 与**真正执行**的 `limit`，外加"夹过没有"这个事实。
+struct GlobLimitRequest {
+    effective: usize,
+    /// `Some((请求值, 实际值))` —— 只有真的夹过才有值（静默夹是不许的）。
+    clamped_from: Option<(usize, usize)>,
+}
+
+impl GlobLimitRequest {
+    fn resolve(requested: Option<usize>) -> Self {
+        let requested = requested.unwrap_or(GLOB_MAX_RESULTS);
+        let effective = requested.clamp(GLOB_LIMIT_MIN, GLOB_LIMIT_MAX);
+        Self {
+            effective,
+            clamped_from: (requested != effective).then_some((requested, effective)),
+        }
+    }
+}
+
+/// `glob_search` 的**结构化返回**（第 186 波）。
+///
+/// 为什么不是 `Vec<String>`：截断/深度受限这两个事实**必须能和列表一起回来**。
+/// 塞进数组当哨兵元素（`["...", "<truncated>"]`）或者用错误通道（改前的做法）
+/// 都试过了 —— 前者污染数据，后者把"结果很大"说成"调用出错"。
+#[derive(Debug, Clone, serde::Serialize)]
+struct GlobSearchResult {
+    /// 本页的路径（`offset` 之后、最多 `limit` 条）
+    files: Vec<String>,
+    /// **至少还有更多**（见 `GlobWalkOutcome::truncated`）
+    truncated: bool,
+    /// 有目录深于 `GLOB_MAX_DEPTH` 层 ⇒ 那部分**没被遍历**
+    depth_limited: bool,
+    /// `files.len()`（冗余但显式：调用方不必再取长度，也让形状自解释）
+    returned: usize,
+    /// 给调用方的**可执行**下一步（夹过 limit / 还有更多 / 有目录没走）。
+    /// 没有任何要说的**事实**时是 `None` —— 不写空洞的警告。
+    hint: Option<String>,
+}
+
+/// 组装 `hint`：只写**真的发生了**的事实，且每条都带"下一步怎么做"。
+fn glob_hint(
+    clamped_from: Option<(usize, usize)>,
+    truncated: bool,
+    depth_limited: bool,
+    offset: usize,
+    returned: usize,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some((requested, effective)) = clamped_from {
+        parts.push(format!(
+            "requested limit {requested} is outside [{GLOB_LIMIT_MIN}, {GLOB_LIMIT_MAX}] so it was clamped to {effective} (said out loud on purpose: a silent clamp would look like you got {requested})"
+        ));
+    }
+    if truncated {
+        parts.push(format!(
+            "at least one more match exists beyond this page of {returned} (offset={offset}): call again with offset={} to keep enumerating, or narrow path/pattern, or raise limit (max {GLOB_LIMIT_MAX})",
+            offset.saturating_add(returned)
+        ));
+    }
+    if depth_limited {
+        parts.push(format!(
+            "directories deeper than {GLOB_MAX_DEPTH} levels were NOT walked: search a shallower path for those"
+        ));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
+    }
+}
+
+/// 把一次遍历的结果拼成**对外契约**（`limit` 请求事实 + `offset` 一起进来，才能说出真相）。
+fn glob_result_from(
+    outcome: GlobWalkOutcome,
+    limit_req: &GlobLimitRequest,
+    offset: usize,
+) -> GlobSearchResult {
+    let returned = outcome.files.len();
+    GlobSearchResult {
+        files: outcome.files,
+        truncated: outcome.truncated,
+        depth_limited: outcome.depth_limited,
+        returned,
+        hint: glob_hint(
+            limit_req.clamped_from,
+            outcome.truncated,
+            outcome.depth_limited,
+            offset,
+            returned,
+        ),
+    }
 }
 
 fn glob_search_walk(
@@ -1466,6 +1577,7 @@ fn glob_search_walk(
 ) -> Result<GlobWalkOutcome, String> {
     let mut outcome = GlobWalkOutcome {
         files: Vec::new(),
+        matched: 0,
         truncated: false,
         depth_limited: false,
     };
@@ -1473,16 +1585,80 @@ fn glob_search_walk(
     Ok(outcome)
 }
 
-#[tauri::command]
-async fn glob_search(pattern: String, path: String) -> Result<Vec<String>, String> {
-    let search_path = std::path::PathBuf::from(&path);
-    eprintln!("[glob_search] pattern: {}, path: {}, exists: {}", pattern, path, search_path.exists());
+/// `glob_search` 的**可测核心**（同步）。
+///
+/// 命令层只负责把这一坨挪进 blocking 线程，所以判据（`GLOB-LIMIT-1..4`）能直接驱动
+/// **真正的入口语义**（含 `limit` 夹取、`offset` 翻页、`hint`），而不必起一个 tauri 运行时。
+fn run_glob_search(
+    pattern: &str,
+    raw_path: &str,
+    search_path: &std::path::Path,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<GlobSearchResult, String> {
     if !search_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
+        return Err(format!("Path does not exist: {raw_path}"));
     }
+    let limit_req = GlobLimitRequest::resolve(limit);
+    let offset = offset.unwrap_or(0);
+    let outcome = glob_search_walk(
+        search_path,
+        pattern,
+        GlobLimits {
+            max_depth: GLOB_MAX_DEPTH,
+            max_results: limit_req.effective,
+            offset,
+        },
+    )?;
+
+    if outcome.truncated {
+        // 截断**不是错误**，但"结果不全"这件事必须留痕（改前这里是"返回 Err"）。
+        runtime_log::append_line(
+            "WARN",
+            &format!(
+                "glob_search truncated pattern={} path={} limit={} offset={} (回有界窗口 + truncated=true；调用方能继续翻页，不是报错)",
+                pattern, raw_path, limit_req.effective, offset
+            ),
+        );
+    }
+    if outcome.depth_limited {
+        // 深度上限不是错误（大多数搜索根本到不了），但"可能漏了更深的目录"这件事要留痕。
+        runtime_log::append_line(
+            "WARN",
+            &format!(
+                "glob_search hit max depth={} pattern={} path={} (更深的目录未遍历)",
+                GLOB_MAX_DEPTH, pattern, raw_path
+            ),
+        );
+    }
+    eprintln!(
+        "[glob_search] returned {} files (truncated={}, depth_limited={})",
+        outcome.files.len(),
+        outcome.truncated,
+        outcome.depth_limited
+    );
+    Ok(glob_result_from(outcome, &limit_req, offset))
+}
+
+#[tauri::command]
+async fn glob_search(
+    pattern: String,
+    path: String,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<GlobSearchResult, String> {
+    let search_path = std::path::PathBuf::from(&path);
+    eprintln!(
+        "[glob_search] pattern: {}, path: {}, exists: {}, limit: {:?}, offset: {:?}",
+        pattern,
+        path,
+        search_path.exists(),
+        limit,
+        offset
+    );
 
     /*
-     * ★ 第 185 波：**走盘放进 `spawn_blocking`** ✓。
+     * ★ 第 185 波：**走盘放进 `spawn_blocking`** ✓（保留，与条数设计无关）。
      *
      * 改前这个 `async fn` 里直接同步 `read_dir` 递归：tokio 的 worker 线程被占死，
      * 期间该 worker 上的其它命令（心跳、日志、读写文件…）全都排队；而前端 30 s 的
@@ -1491,34 +1667,18 @@ async fn glob_search(pattern: String, path: String) -> Result<Vec<String>, Strin
      * 磁盘遍历是**阻塞 I/O**，本来就属于 blocking pool（与 `js_sandbox_*` 同一写法）。
      */
     let pattern_for_task = pattern.clone();
-    let outcome = tauri::async_runtime::spawn_blocking(move || {
-        glob_search_walk(&search_path, &pattern_for_task, GlobLimits::default())
+    let path_for_task = path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        run_glob_search(
+            &pattern_for_task,
+            &path_for_task,
+            &search_path,
+            limit,
+            offset,
+        )
     })
     .await
-    .map_err(|e| format!("glob_search 遍历线程失败：{e}"))??;
-
-    if outcome.truncated {
-        runtime_log::append_line(
-            "WARN",
-            &format!(
-                "glob_search truncated pattern={} path={} limit={} (调用方收到明确错误，不是静默截断)",
-                pattern, path, GLOB_MAX_RESULTS
-            ),
-        );
-        return Err(glob_truncated_message(&pattern, &path, GLOB_MAX_RESULTS));
-    }
-    if outcome.depth_limited {
-        // 深度上限不是错误（大多数搜索根本到不了），但"可能漏了更深的目录"这件事要留痕。
-        runtime_log::append_line(
-            "WARN",
-            &format!(
-                "glob_search hit max depth={} pattern={} path={} (更深的目录未遍历)",
-                GLOB_MAX_DEPTH, pattern, path
-            ),
-        );
-    }
-    eprintln!("[glob_search] found {} files", outcome.files.len());
-    Ok(outcome.files)
+    .map_err(|e| format!("glob_search 遍历线程失败：{e}"))?
 }
 
 /// 递归遍历。
@@ -1548,7 +1708,8 @@ fn glob_search_recursive(
 
     for entry in entries {
         if outcome.truncated {
-            // 结果够了就停：继续走完整棵树只是白烧 I/O（调用方反正会收到"截断"错误）。
+            // 窗口满了就停：继续走完整棵树只是白烧 I/O（调用方拿到 `truncated: true` +
+            // `hint`，用 `offset` 翻页就能取到剩下的）。
             return Ok(());
         }
         let entry = entry.map_err(|e| e.to_string())?;
@@ -1571,12 +1732,24 @@ fn glob_search_recursive(
         if !is_dir {
             let matches = pattern == "*" || name_matches_glob(&name, pattern);
             if matches {
-                if outcome.files.len() >= limits.max_results {
+                /**
+                 * 结果窗口 = `[offset, offset + max_results)`（第 186 波）。
+                 *
+                 * 注意这里**不是** `outcome.files.len() >= max_results`：翻页时前 `offset` 条
+                 * 是"见过但不回"，所以窗口的右端要按**见过的总数**算。
+                 * `saturating_add`：`offset` 由调用方给，溢出不该 panic。
+                 */
+                let window_end = limits.offset.saturating_add(limits.max_results);
+                if outcome.matched >= window_end {
+                    // 已经取满窗口、又真的撞见下一条 ⇒ **至少还有更多**（不是估的，是看见的）
                     outcome.truncated = true;
                     return Ok(());
                 }
-                eprintln!("[glob_search] MATCH: {} against pattern: {}", name, pattern);
-                outcome.files.push(path.to_string_lossy().to_string());
+                outcome.matched += 1;
+                if outcome.matched > limits.offset {
+                    eprintln!("[glob_search] MATCH: {} against pattern: {}", name, pattern);
+                    outcome.files.push(path.to_string_lossy().to_string());
+                }
             }
         }
 
@@ -2511,118 +2684,328 @@ fn find_codegraph_launcher(root: &std::path::Path) -> Option<String> {
     walk(root)
 }
 
-/// 变量名字符（cmd 的 `%VAR%` 形态里允许出现的字符）。
-fn is_cmd_var_name_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '_' | '#' | '@' | '$' | '?' | '!' | '-' | '(' | ')')
-}
+/// ⛔ 已删除（第 186 波）：`is_cmd_var_name_char` / `escape_cmd_percent_expansions` /
+/// `cmd_quote_arg` / `build_cmd_invocation`。
+///
+/// **为什么删**：它们存在的理由是「在 `cmd.exe /c` 的**单行**里把实参拼得足够聪明」。
+/// 那一层的输入是「外面还有一层 `cmd /c` 解析 + 脚本内部可能再来一次 `%*` 展开」，
+/// 于是同一个字符要同时满足两套规则 ⇒ 只能靠"更聪明的转义"，而这是**不可判定**的
+/// （登记在案的歧义）。第 186 波改成：**先生成 wrapper 临时批处理**，让引用发生在
+/// 我们完全掌握规则的那一层（见 `build_cmd_wrapper`），无法证明的实参直接拒绝。
+///
+/// 注意：这里**不是**"顺手删掉不需要的东西"——下面 `CMD_ARG_*` 的拒绝名单里，
+/// `%VAR%` 与 `!VAR!` 展开面都还在（只是从"中性化"变成"拒绝"）。
 
-/// 把 `%VAR%` 形态里的百分号写成 `%%`，**挡住 cmd 的变量展开**。
+// ==================== 第 186 波：`.cmd/.bat` 启动改成 wrapper 方案 ====================
+//
+// ## 定性（改前为什么不行）
+//
+// 改前把 `命令 + 实参` 拼成**一整行**交给 `cmd.exe /c`。那一行要同时穿过两套规则：
+//   ① 外层 `cmd /c` 的解析（`%VAR%` 在引号内照样展开、`^`/`&` 只在引号外是元字符）；
+//   ② 目标 `.cmd` 自己拿 `%*` / `%1` 再展开一次。
+// 于是 `"` 在两套规则下语义不同（CRT 的 `""` = 字面引号，批处理只当引号开关），
+// `C:\100%\docs` 里的 `%` 到底会不会被吃掉取决于下游怎么写 —— **在 batch 边界不可判定**。
+//
+// ## 改法（判据先行：先证「能在哪一层证得动」）
+//
+// 让引用发生在我们**完全掌握规则**的那一层：生成一个临时 wrapper 批处理
+//
+//     @echo off
+//     "<目标>" "<arg1>" "<arg2>"
+//     exit /b %ERRORLEVEL%
+//
+// 由 `cmd.exe /d /s /c` 启动它（整行经 `raw_arg` 原样交给 CreateProcess：
+// `cmd.exe /d /s /c ""C:\…\wrapper.cmd""` —— `/s` 会剥掉最外层那一对引号）。
+// wrapper 那一行只被 **cmd 的批处理解析器**看一次，目标进程的 argv 由
+// `CommandLineToArgvW` 解析 —— 两条规则各自独立、都有实证（见下）。
+//
+// ## 判据表（真 `cmd.exe` 端到端；`harden_186_tests` 逐条钉）
+//
+// | 实参内容 | 结果 | 依据 |
+// |---|---|---|
+// | `&` `\|` `^` `<` `>` `(` `)` `;` `,` `=` 空格、中文 | 逐字节保真 | 引号**内**在 cmd 里是字面量 |
+// | `!` | **拒绝** | `!VAR!` 是延迟展开面；"调用方没开延迟展开"是外部假设，不是我们能证的 |
+// | `%`（含 `%PATH%`、`%*`、`100%`、`C:\100%\docs`） | **拒绝** | 批处理里 `%` 的语义依赖上下文（`%%`/`%VAR%`/`%*`），跨层不可能证明逐字节 |
+// | `"` | **拒绝** | `%*` 展开后再转一跳时，`""` 与 CRT 的 `""` 不是同一语义 ⇒ 会被吃掉或分裂 |
+// | CR / LF / NUL | **拒绝** | 单行批处理无法承载换行；CreateProcess 的整行以 NUL 结尾 |
+// | 结尾反斜杠 | 逐字节保真 | 收尾引号前翻倍反斜杠（`"C:\dir\\"`），CRT 与批处理两边都认 |
+//
+// ## 保真口径（判据真的在测什么）
+//
+// 不是"我们拼出来的字符串长什么样"（那是判据与实现互相证明的假绿），而是：
+// 目标进程（真 `.cmd` → 真 `.exe`）**自己的 argv** 是否逐字节等于输入 —— 见
+// `harden_186_tests` 与 `src/bin/argv_probe.rs`（argv 探针）。
+
+/// 判据用 argv 探针的**参数约定**（探针本体在 `src/bin/argv_probe.rs`）。
 ///
-/// ## 为什么必须挡（这是一个真的注入面）
+/// 探针被当"目标 `.exe`"启动时，命令行形状是 `<探针> <MAGIC> <落盘路径> <实参…>`，
+/// 它把 `<实参…>` 逐字节写进文件。判据 `r186_probe_source_and_lib_agree_on_the_magic`
+/// 会**读探针源文件**确认两边用的是同一个串（避免"改了这边忘了那边"而判据照绿）。
+pub const ARGV_DUMP_MAGIC: &str = "--codem-argv-dump-186";
+
+/// wrapper 临时文件的前缀（同目录下的僵尸文件靠它认出来回收）。
+const CMD_WRAPPER_PREFIX: &str = "codem-mcp-cmd-";
+
+/// 比"肯定没人还在跑"更长的下限：只有**明显**是上一条命留下的残骸才回收。
+/// 取值偏大是故意的 —— 另一个 Codem 实例可能正在用同名前缀的文件，宁可不收也不误删。
+const CMD_WRAPPER_STALE_SECS: u64 = 900;
+
+/// 生成 wrapper 后，隔多久删临时文件。
 ///
-/// cmd 的 `%` 展开在**双引号内照样生效**，而 MCP 的 `env` 与 `args` **来自同一份配置**
-/// （设置/市场仓库 = 外部输入）⇒ 构造
-/// `args: ["%EVIL%"]` + `env: {EVIL: "\" & calc.exe & \""}`：展开后塞进来的引号会把我们的
-/// 引号**提前闭合**，后面的 `&` 就落到了引号外 ⇒ 变成第二条命令执行。
-///
-/// ## 为什么是"只改 `%VAR%` 形态"而不是把所有 `%` 都翻倍
-///
-/// cmd 命令行上的 `%%` 是否会折叠回一个 `%` 依赖上下文（批处理里会，命令行上多数实现
-/// 不会），所以"一律翻倍"会把 `C:\100%\docs` 这种**合法参数改坏**。这里只在中性化
-/// **确实构成展开**的 `%…%`（中间全是变量名字符）时才动它 ⇒ 合法参数一字不动，
-/// 展开面全部关掉（最坏情况是那个参数多了两个 `%`，但它再也伤不到引号结构）。
-fn escape_cmd_percent_expansions(arg: &str) -> String {
-    let chars: Vec<char> = arg.chars().collect();
-    let mut out = String::with_capacity(arg.len());
-    let mut i = 0usize;
-    while i < chars.len() {
-        if chars[i] == '%' {
-            // 向后找配对的 `%`：中间必须非空且全是变量名字符（长度上限防病态扫描）
-            let mut j = i + 1;
-            while j < chars.len() && j - i <= 64 && is_cmd_var_name_char(chars[j]) {
-                j += 1;
-            }
-            if j > i + 1 && j < chars.len() && chars[j] == '%' {
-                out.push_str("%%");
-                for c in &chars[i + 1..j] {
-                    out.push(*c);
-                }
-                out.push_str("%%");
-                i = j + 1;
-                continue;
-            }
-        }
-        out.push(chars[i]);
-        i += 1;
+/// 删早了会有风险：cmd 执行批处理是**逐行读**的（不是一次读完），文件在读的中途消失
+/// ⇒ 后面的行可能不被执行。700 ms 覆盖"cmd 已经读过那一行并把目标启动起来"这个窗口：
+/// spawn 之后目标进程通常已在几十毫秒内建立。这个数**有判据**（删晚了/不删要变红）。
+const CMD_WRAPPER_CLEANUP_DELAY_MS: u64 = 700;
+
+/// 命令路径在我们这一层**不能**出现的字符（与实参名单不同：路径不是 cmd 展开的对象，
+/// 但会进 wrapper 那一行，所以要挡住能破坏行结构的字符）。
+const CMD_PATH_FORBIDDEN: &[char] = &['"', '\r', '\n', '\0'];
+
+/// 实参在我们这一层**不能**出现的字符（比路径多 `%` 与 `!`：它们是两套展开的入口）。
+const CMD_ARG_FORBIDDEN: &[char] = &['"', '%', '!', '\r', '\n', '\0'];
+
+/// 被拒绝的字符在错误信息里的可读名字。
+fn cmd_forbidden_char_name(c: char) -> &'static str {
+    match c {
+        '"' => "双引号「\"」（%* 展开后再转一跳时不再是字面引号：CRT 的 \"\" 与批处理的引号开关语义不同）",
+        '%' => "百分号「%」（批处理里 %%/%VAR%/%* 三种含义依赖上下文 ⇒ 跨层无法证明逐字节保真）",
+        '!' => "感叹号「!」（!VAR! 是延迟展开面，而「调用方没开延迟展开」是外部假设、不是我们能证的）",
+        '\r' => "回车 CR（单行批处理无法承载换行）",
+        '\n' => "换行 LF（单行批处理无法承载换行）",
+        '\0' => "NUL（CreateProcess 的整行以 NUL 结尾）",
+        _ => "不可在 cmd 层安全表达的字符",
     }
-    out
 }
 
-/// 单个 arg 在 `cmd.exe` 命令行里的引用。
+/// 在 `s` 里找第一个被禁字符，返回「字符 + 下标（字符数，不是字节）」。
+fn cmd_first_forbidden(s: &str, forbidden: &[char]) -> Option<(char, usize)> {
+    s.char_indices()
+        .find(|(_, c)| forbidden.contains(c))
+        .map(|(byte_idx, c)| (c, s[..byte_idx].chars().count()))
+}
+
+/// 拼装结果：wrapper 的**文本**（纯函数，判据可以直接断言它）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CmdWrapper {
+    pub command: String,
+    pub args: Vec<String>,
+    pub text: String,
+}
+
+/// 生成 wrapper 批处理文本，并对每一条实参做 fail-closed 判定。
 ///
-/// ## 为什么要引号（第 185 波）
+/// **这是可测的核心函数**（纯逻辑，不碰文件系统、不起进程）：命令层只负责"把文本写进
+/// 临时文件 + spawn + 清理"。拒绝时返回的错误**点名是第几个参数、为什么**
+/// （见 `cmd_arg_rejection` / `cmd_path_rejection`），绝不静默改写。
 ///
-/// 改前是 `format!("{} {}", command, args.join(" "))` —— **完全不加引号**就交给
-/// `cmd.exe /c`。两个后果都实测过：
-/// 1. 路径含空格（`C:\Program Files\…\x.cmd`）⇒ cmd 把 `C:\Program` 当命令，
-///    **真程序从未启动**，可 `spawn` 成功 ⇒ 命令返回成功，前端接着握手 30 s 后
-///    报"initialize 未返回 JSON-RPC 结果（对端可能不是 MCP 服务）"—— 错因指向对端；
-/// 2. arg 里的 `&` / `|` 会被 cmd **当第二条命令执行**（MCP 配置来自设置/市场仓库，
-///    属外部输入进 shell）。
+/// ## 为什么实参也要逐字节再检一遍
 ///
-/// ## 引用规则（每条都有理由，不是"多加点转义看着安全"）
+/// 上游（设置面板/市场仓库）可能给我们任何字符串。判据要能**直接驱动**这个判定，
+/// 而不是等到 spawn 之后才靠 cmd 的报错发现 —— 那样错误信息里就没有"第几个参数"了。
+pub fn build_cmd_wrapper(command: &str, args: &[String]) -> Result<CmdWrapper, String> {
+    if let Some(reason) = cmd_path_rejection(command) {
+        return Err(format!("MCP 启动命令无法在 cmd.exe 层无歧义表达：{reason}"));
+    }
+    for (i, a) in args.iter().enumerate() {
+        if let Some(reason) = cmd_arg_rejection(i, a) {
+            return Err(reason);
+        }
+    }
+    Ok(CmdWrapper {
+        command: command.to_string(),
+        args: args.to_vec(),
+        text: cmd_wrapper_text(command, args),
+    })
+}
+
+/// 命令路径的拒绝理由（`None` = 可证）。
+fn cmd_path_rejection(command: &str) -> Option<String> {
+    if command.is_empty() {
+        return Some("命令为空".to_string());
+    }
+    cmd_first_forbidden(command, CMD_PATH_FORBIDDEN).map(|(c, i)| {
+        format!(
+            "命令路径第 {} 个字符是不能用的：{}",
+            i + 1,
+            cmd_forbidden_char_name(c)
+        )
+    })
+}
+
+/// 单个实参的拒绝理由。**错误信息必须点名第几个参数**（Tauri 命令层拿它当
+/// 面向用户的报错文案：不点名的话用户无从知道该改哪一条）。
+fn cmd_arg_rejection(idx: usize, arg: &str) -> Option<String> {
+    cmd_first_forbidden(arg, CMD_ARG_FORBIDDEN).map(|(c, i)| {
+        format!(
+            "第 {} 个参数无法无歧义地传给 .cmd/.bat（共 {} 个字符，问题在第 {} 个字符）：{}{}",
+            idx + 1,
+            arg.chars().count(),
+            i + 1,
+            cmd_forbidden_char_name(c),
+            cmd_arg_probe_hint(c)
+        )
+    })
+}
+
+/// 给用户的下一步提示：我们能说清"换成什么"的，就说清；说不清的不编。
+fn cmd_arg_probe_hint(c: char) -> &'static str {
+    match c {
+        '%' => "。如果这个参数是字面量（不是要 cmd 展开的变量），请让启动器改用 `.exe` 直启，或把 `%` 从参数里去掉。",
+        '!' => "。请去掉 `!`，或改用 `.exe` 直启（直启不经 cmd，不受延迟展开影响）。",
+        '"' => "。请去掉参数里的双引号，或改用 `.exe` 直启（直启时引号由 CRT 规则处理，是逐字节保真的）。",
+        _ => "。请改用 `.exe` 直启，或去掉该字符。",
+    }
+}
+
+/// 引用一个实参：整体套一对双引号，**仅**处理"收尾反斜杠会转义收尾引号"这一条。
 ///
-/// - 整个 arg 套一对双引号：引号**内** `& | < > ^ ( )` 在 cmd 里是字面量，正是我们要的。
-///   （在引号**内**再加 `^` 是错的：cmd 不会在这里吃 `^` ⇒ 反而把 `^` 变成实参的一部分。）
-/// - arg 里的 `"` → `""`（翻倍）：对 cmd 的引号状态机是"开-关"两次 ⇒ **净状态不变**，
-///   所以它后面的元字符仍然在引号里（注入面关闭）；而现代 CRT（2008+ 的
-///   `CommandLineToArgvW`）把引号内的 `""` 当**字面引号**，下游 node/批处理拿到的是正确的引号。
-/// - 结尾的连续反斜杠 → 翻倍：CRT 规则里反斜杠会**转义收尾引号**（`"C:\dir\"` 会把
-///   引号吃掉、`\` 后面的内容跑到引号外）。
-/// - `%VAR%` → 见 `escape_cmd_percent_expansions`（cmd 的百分号展开在引号内照样生效）。
-fn cmd_quote_arg(arg: &str) -> String {
-    let arg = escape_cmd_percent_expansions(arg);
+/// `"` / `%` / `!` / CR / LF / NUL 在 `build_cmd_wrapper` 里已经被拒绝 ⇒ 到这里不必
+/// （也不许）再做任何"更聪明"的转义：那正是这一波要消灭的东西。
+fn quote_cmd_arg_for_wrapper(arg: &str) -> String {
     let mut out = String::with_capacity(arg.len() + 2);
     out.push('"');
-    let chars: Vec<char> = arg.chars().collect();
-    let mut trailing_backslashes = 0usize;
-    for ch in chars.iter() {
-        match ch {
-            '"' => {
-                out.push_str("\"\"");
-                trailing_backslashes = 0;
-            }
-            '\\' => {
-                out.push('\\');
-                trailing_backslashes += 1;
-            }
-            c => {
-                out.push(*c);
-                trailing_backslashes = 0;
-            }
-        }
-    }
-    // 结尾的反斜杠翻倍（否则会把收尾引号转义掉）
-    for _ in 0..trailing_backslashes {
+    out.push_str(arg);
+    let trailing = arg.chars().rev().take_while(|c| *c == '\\').count();
+    for _ in 0..trailing {
         out.push('\\');
     }
     out.push('"');
     out
 }
 
-/// 组装交给 `cmd.exe /d /s /c` 的整行。
-///
-/// `/s` 的语义：**剥掉最外层那一对引号**，其余原样执行 ⇒ 所以这里刻意整体再套一层引号，
-/// 内层每个 arg 各自引用。再用 `raw_arg` 原样交给 CreateProcess（不让 std 的
-/// `CommandLineToArgvW` 规则再插一层引号 —— 那会让 cmd 看到 `\"` 这种它不认的写法）。
-fn build_cmd_invocation(command: &str, args: &[String]) -> String {
-    let mut inner = cmd_quote_arg(command);
+/// wrapper 的文本（**纯函数**：同样的输入永远同样的输出，判据直接断言它）。
+fn cmd_wrapper_text(command: &str, args: &[String]) -> String {
+    let mut line = String::new();
+    line.push('"');
+    line.push_str(command);
+    line.push('"');
     for a in args {
-        inner.push(' ');
-        inner.push_str(&cmd_quote_arg(a));
+        line.push(' ');
+        line.push_str(&quote_cmd_arg_for_wrapper(a));
     }
-    format!("\"{}\"", inner)
+    // `@echo off` 必须在第一行：否则 cmd 会先把这一行自己回显到 stdout，
+    // 而 stdout 是 MCP 的 JSON-RPC 通道 ⇒ 回显就是协议污染（对端会收到非 JSON 行）。
+    // `exit /b %ERRORLEVEL%` 保持与改前一致的退出码语义（脚本立即失败时错误码不失真）。
+    format!("@echo off\r\n{}\r\nexit /b %ERRORLEVEL%\r\n", line)
 }
+
+/// 生成一个唯一的 wrapper 临时文件路径（放在**受控目录** = 系统临时目录下）。
+fn cmd_wrapper_file_path() -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    /*
+     * 线程名只用来"让临时文件认得出是谁写的"，所以**必须消毒**：
+     * Rust 测试线程名形如 `harden_185_tests::harden_186_tests::r186_xxx`，
+     * 里面的 `:` 在 Windows 文件名里非法 ⇒ 第一版直接拼进去，`写 wrapper` 全线报
+     * os error 123（文件名、目录名或卷标语法不正确）。只留 `[A-Za-z0-9_-]`，
+     * 且限长（避免超 MAX_PATH）。
+     */
+    let tag: String = std::thread::current()
+        .name()
+        .unwrap_or("t")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(48)
+        .collect();
+    std::env::temp_dir().join(format!(
+        "{}{}-{}-{}.cmd",
+        CMD_WRAPPER_PREFIX,
+        std::process::id(),
+        nanos,
+        tag
+    ))
+}
+
+/// 把 wrapper 文本写到临时文件（**这一步不删**：删由 `CmdWrapperFile` 负责）。
+fn write_cmd_wrapper(text: &str) -> Result<std::path::PathBuf, String> {
+    let path = cmd_wrapper_file_path();
+    // ASCII 是故意的：命令/实参里的非 ASCII 走 `to_string` 已经是 UTF-8 字节，
+    // 而 `.cmd` 正文只允许 ASCII 才是"字节确定"的（重定向/换行都在这一层定死）。
+    std::fs::write(&path, text.as_bytes())
+        .map_err(|e| format!("写 wrapper 临时文件失败（{}）：{e}", path.display()))?;
+    Ok(path)
+}
+
+/// 回收上一条命留下的僵尸 wrapper 文件。
+///
+/// ## 为什么需要（"必须删"的第三条路）
+///
+/// 正常路径有 `CmdWrapperFile` 的 drop 兜底（spawn 失败、探测失败、提前 return 都覆盖），
+/// 但**进程被强杀**时 drop 不会跑 ⇒ 临时目录里会留文件。这里按前缀 + 足够老的 mtime
+/// 回收（900 s 下限见 `CMD_WRAPPER_STALE_SECS`：故意保守，不误删另一个实例正在用的）。
+///
+/// 每个进程只跑一次（`Once`）；失败只记日志 —— 回收失败不该挡住连接。
+fn reap_stale_cmd_wrappers() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let dir = std::env::temp_dir();
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return;
+        };
+        let now = std::time::SystemTime::now();
+        let mut removed = 0usize;
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.starts_with(CMD_WRAPPER_PREFIX) {
+                continue;
+            }
+            let Ok(meta) = e.metadata() else { continue };
+            let Ok(modified) = meta.modified() else { continue };
+            let age = now
+                .duration_since(modified)
+                .unwrap_or(std::time::Duration::ZERO);
+            if age.as_secs() < CMD_WRAPPER_STALE_SECS {
+                continue;
+            }
+            if std::fs::remove_file(e.path()).is_ok() {
+                removed += 1;
+            }
+        }
+        if removed > 0 {
+            runtime_log::append_line(
+                "INFO",
+                &format!("回收了 {removed} 个上一条命留下的 MCP cmd wrapper 临时文件"),
+            );
+        }
+    });
+}
+
+/// wrapper 临时文件的守卫：**成功/失败/提前 return 三条路都必须删**。
+///
+/// 「多活一会儿」的删除走后台任务（`schedule_cmd_wrapper_cleanup`）；
+/// 这里只负责"还没到那一步就出错"的同步删除。
+struct CmdWrapperFile(std::path::PathBuf);
+
+impl Drop for CmdWrapperFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// spawn 之后的延迟删除：等 cmd 把 wrapper 读完再删（早删会让批处理后半段读不到，
+/// 见 `CMD_WRAPPER_CLEANUP_DELAY_MS`）。
+///
+/// ## 为什么不能"目标进程退出时再删"
+///
+/// MCP 服务器是**长驻**的（stdin 一直开着）⇒ "等它退出"等于永不删除。留一大片
+/// 临时文件是同一类漏；所以按**固定窗口**删（判据：`r186_wrapper_file_is_removed_*`）。
+fn schedule_cmd_wrapper_cleanup(path: std::path::PathBuf) {
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(
+            CMD_WRAPPER_CLEANUP_DELAY_MS,
+        ))
+        .await;
+        let _ = std::fs::remove_file(&path);
+    });
+}
+
+// 第 186 波的 argv 探针**不在 lib 里**：`cargo test` 生成的 `main` 是 libtest 的
+// harness（不走 `run()`），而 libtest 遇到陌生选项会直接 `exit(1)` ⇒ 自举探针不可能
+// 生效（实测报 `error: Unrecognized option: 'codem-argv-dump-186'`）。
+// 探针因此单独立在 `src/bin/argv_probe.rs`（自己有 `main`、不链接 libtest）；
+// 判据在 `harden_186_tests` 里**现场 `rustc` 它**⇒ 不依赖 "先 cargo build --bins"。
 
 /// `cmd.exe` 壳的启动探测窗口（毫秒）。
 ///
@@ -2659,26 +3042,48 @@ async fn mcp_stdio_connect(
     let needs_cmd_wrapper = cfg!(target_os = "windows")
         && (lower.ends_with(".cmd") || lower.ends_with(".bat"));
 
-    let mut cmd = if needs_cmd_wrapper {
-        // Windows CreateProcess 不能直接执行 .cmd/.bat —— 用 cmd.exe /c 包装。
+    /*
+     * ★ 第 186 波：`.cmd/.bat` 那条路不再"拼整行"，改成**生成 wrapper 批处理**。
+     *
+     * 生命周期（成功/失败/超时三条路都必须删）：
+     *   - 生成：`build_cmd_wrapper`（纯函数，先做 fail-closed 判定）→ `write_cmd_wrapper`；
+     *   - 守卫：`CmdWrapperFile`（`Drop` 删）—— 覆盖 spawn 失败、探测失败、任何提前 return；
+     *   - 成功后：`schedule_cmd_wrapper_cleanup` 在固定窗口后删（MCP 是长驻进程，
+     *     "等它退出再删"等于永不删）；
+     *   - 上一条命被杀留下的残骸：`reap_stale_cmd_wrappers`（按前缀 + 足够老回收）。
+     */
+    let wrapper_guard = if needs_cmd_wrapper {
+        let spec = build_cmd_wrapper(&command, args.as_deref().unwrap_or(&[]))?;
+        reap_stale_cmd_wrappers();
+        let path = write_cmd_wrapper(&spec.text)?;
+        Some(CmdWrapperFile(path))
+    } else {
+        None
+    };
+
+    let mut cmd = if let Some(w) = &wrapper_guard {
+        // Windows CreateProcess 不能直接执行 .cmd/.bat ⇒ 用 cmd.exe 包装**wrapper**。
         // （codegraph 官方发布是 bin/codegraph.cmd，MCP 连接指向其绝对路径。）
-        let full = build_cmd_invocation(
-            &command,
-            args.as_deref().unwrap_or(&[]),
-        );
         let mut c = tokio::process::Command::new("cmd.exe");
         c.arg("/d").arg("/s").arg("/c");
+        let path = w.0.display().to_string();
         #[cfg(target_os = "windows")]
         {
-            // tokio 的 `raw_arg`（Windows 专有，自带 "for cmd.exe /c" 语义）：
-            // **原样追加**，这一层的引号是**我们自己**算好的（见 build_cmd_invocation）。
-            // 不用普通 `arg`：那会让 std 按 CommandLineToArgvW 规则再插一层引号，
-            // 而 cmd.exe 不认 `\"` 这种写法。
-            c.raw_arg(&full);
+            /*
+             * `raw_arg` + **双外层引号**：`/s` 的语义是"剥掉最外层那一对引号"，
+             * 所以命令行要写成 `cmd.exe /d /s /c ""C:\…\wrapper.cmd""` —— 剥一层后
+             * 正好剩 `"C:\…"`，含空格的路径才不会被 cmd 从空格处截断（实测：
+             * 写单层引号时 cmd 把 `C:\…\Temp\probe` 当命令名 ⇒ 9009 找不到命令）。
+             *
+             * 这里**不是**"又拼了一行聪明引号"：wrapper 路径由我们生成（受控目录 + 我们起名），
+             * 它的引用规则只有"套一层引号"这一条，且只出现**这一个**被引用的 token。
+             * 实参的引用全部发生在 wrapper 正文里（见 `cmd_wrapper_text`），不再穿这一层。
+             */
+            c.raw_arg(format!("\"{}\"", path));
         }
         #[cfg(not(target_os = "windows"))]
         {
-            c.arg(&full);
+            c.arg(&path);
         }
         c
     } else {
@@ -2740,6 +3145,14 @@ async fn mcp_stdio_connect(
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
+    }
+
+    // ★ 探测通过 ⇒ 到这里 cmd 已经把 wrapper 读过并起了目标。
+    // 交付给后台延迟删除（**成功这条路也要删**；不删就是留着一片临时文件）。
+    if let Some(w) = wrapper_guard {
+        schedule_cmd_wrapper_cleanup(w.0.clone());
+        // 守卫在这里交出所有权：之后（改前那种"提前 return"）由上面的后台任务兜底。
+        std::mem::forget(w);
     }
 
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
@@ -3916,8 +4329,7 @@ fn install_panic_hook() {
 }
 
 pub fn run() {
-install_panic_hook();
-// ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
+install_panic_hook();// ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
 let ilink_state = ilink::IlinkState::new();
 // ===== 手机连接（phone-link）管理态 =====
 let phone_state = phone::PhoneState::new();
@@ -5174,6 +5586,7 @@ mod harden_185_tests {
             GlobLimits {
                 max_depth: 3,
                 max_results: 100,
+                offset: 0,
             },
         )
         .expect("必须能返回");
@@ -5285,22 +5698,222 @@ mod harden_185_tests {
             GlobLimits {
                 max_depth: 8,
                 max_results: 3,
+                offset: 0,
             },
         )
         .expect("必须能返回");
         assert_eq!(out.files.len(), 3, "结果必须有界");
         assert!(out.truncated, "撞上限必须被记下来（不许静默）");
 
-        let msg = glob_truncated_message("*.txt", root.to_str().unwrap(), 3);
+        // 调用方必须能知道 —— 而且知道得**够具体**（下一步该怎么做），见 GLOB-LIMIT-1/3。
+        let res = glob_result_from(out, &GlobLimitRequest::resolve(Some(3)), 0);
+        assert!(res.truncated);
         assert!(
-            msg.contains("truncated") && msg.contains('3') && msg.contains("NOT a complete list"),
-            "调用方必须能知道被截断了：{msg}"
+            res.hint.as_deref().unwrap_or("").contains("offset="),
+            "截断的 hint 必须给出下一步：{:?}",
+            res.hint
         );
         assert!(
             GLOB_MAX_RESULTS >= 1_000 && GLOB_MAX_DEPTH >= 8,
             "生产上限不能小到把正常搜索切掉"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ==================== GLOB-LIMIT（第 186 波：截断是数据，不是异常）====================
+    //
+    // 设计错误的形态（改前）：`glob_search` 的契约是 `Result<Vec<String>, String>`，
+    // 超限 ⇒ `Err("... matched more than 20000 entries ...")`。
+    // 三重代价：① 调用方**拿不到数据**（批处理超大目录时这个工具直接不可用）；
+    // ② "匹配到 2 万+"与"参数写错"被压成同一种输出；③ 没有下一步（`hint`）。
+    // 现在：`{ files, truncated, depth_limited, returned, hint }`（见 `GlobSearchResult`）。
+
+    /// 造 `n` 个 `g0000.txt …`，返回（目录，**排序后的文件名**）。
+    fn scratch_with_files(name: &str, n: usize) -> (std::path::PathBuf, Vec<String>) {
+        let root = scratch(name);
+        let mut names = Vec::new();
+        for i in 0..n {
+            let f = format!("g{i:04}.txt");
+            std::fs::write(root.join(&f), b"x").unwrap();
+            names.push(f);
+        }
+        names.sort();
+        (root, names)
+    }
+
+    /// 只取路径末段（`read_dir` 的顺序不保证，判据要比的是**集合**）。
+    fn basenames(files: &[String]) -> Vec<String> {
+        let mut v: Vec<String> = files
+            .iter()
+            .map(|f| f.replace('\\', "/").rsplit('/').next().unwrap_or("").to_string())
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// **GLOB-LIMIT-1**：结果数超过 `limit` 时**不报错** ⇒ 回 `limit` 条 + `truncated: true`。
+    #[test]
+    fn glob_limit_1_over_limit_is_data_not_an_error() {
+        let (root, all) = scratch_with_files("limit-1", 10);
+        let root_str = root.to_str().unwrap();
+
+        let res = run_glob_search("*.txt", root_str, &root, Some(3), None)
+            .expect("★ 超过 limit 不许再返回 Err —— 那只是换个方式卡住（改前就是这个形态）");
+
+        assert_eq!(res.files.len(), 3, "必须**正好**回 limit 条");
+        assert_eq!(res.returned, 3, "returned 必须与 files.len() 一致");
+        assert!(res.truncated, "超限必须如实说「至少还有更多」");
+        assert!(!res.depth_limited, "浅目录不该报深度受限");
+        assert_eq!(basenames(&res.files).len(), 3, "名单不许带重复");
+        assert!(all.len() > res.returned, "前提：确实有超过 limit 条匹配");
+
+        let hint = res.hint.clone().expect("截断必须给 hint（否则调用方不知道怎么办）");
+        assert!(hint.contains("offset=3"), "hint 必须写明下一页的 offset：{hint}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **GLOB-LIMIT-2**：`offset` 翻页能**枚举到全部**
+    /// —— 两次调用（`offset=0` / `offset=limit`）的并集 == 全量，且第二次 `truncated=false`。
+    #[test]
+    fn glob_limit_2_offset_pages_through_everything() {
+        let (root, all) = scratch_with_files("limit-2", 8);
+        let root_str = root.to_str().unwrap();
+        let limit = 4usize;
+
+        let first = run_glob_search("*.txt", root_str, &root, Some(limit), Some(0)).unwrap();
+        assert_eq!(first.files.len(), 4, "第一页取 limit 条");
+        assert!(first.truncated, "还有 4 条没取 ⇒ 必须说「至少还有更多」");
+
+        let second = run_glob_search("*.txt", root_str, &root, Some(limit), Some(limit)).unwrap();
+        assert_eq!(second.files.len(), 4, "第二页取剩下的");
+        assert!(
+            !second.truncated,
+            "★ 第二页取完必须如实说「没有了」（改前这里只会得到一句「超限」错误）"
+        );
+
+        let mut union = basenames(&first.files);
+        union.extend(basenames(&second.files));
+        union.sort();
+        union.dedup();
+        assert_eq!(union.len(), 8, "两页不许重叠：{union:?}");
+        assert_eq!(union, all, "★ 两页并集必须 == 全量（翻页真的能枚举全部）");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **GLOB-LIMIT-3**：`limit` 越界被**夹住**，且 `hint` **如实说明**（静默夹是不许的）。
+    #[test]
+    fn glob_limit_3_out_of_range_limit_is_clamped_and_said_out_loud() {
+        let (root, _all) = scratch_with_files("limit-3", 5);
+        let root_str = root.to_str().unwrap();
+
+        // ① 超过上限：夹到 GLOB_LIMIT_MAX，且请求值必须原样出现在 hint 里
+        let requested = GLOB_LIMIT_MAX + 12_345;
+        let big = run_glob_search("*.txt", root_str, &root, Some(requested), None).unwrap();
+        let hint = big
+            .hint
+            .clone()
+            .expect("★ 夹过 limit 就必须给 hint —— 静默夹会让调用方以为真拿到了那么多");
+        assert!(hint.contains(&requested.to_string()), "要说明请求了多少：{hint}");
+        assert!(
+            hint.contains(&GLOB_LIMIT_MAX.to_string()),
+            "要说明实际按多少跑：{hint}"
+        );
+        assert!(!big.truncated, "5 条文件远没到上限");
+
+        // ② 低于下限：夹到 1（不是「回 0 条」那种更隐蔽的失真）
+        let zero = run_glob_search("*.txt", root_str, &root, Some(0), None).unwrap();
+        assert_eq!(zero.files.len(), 1, "limit=0 必须夹到 {GLOB_LIMIT_MIN}");
+        assert!(zero.truncated, "只回 1 条而还有 4 条 ⇒ 必须说还有更多");
+        let hint0 = zero.hint.clone().unwrap();
+        assert!(hint0.contains("0"), "要说明请求值是 0：{hint0}");
+        assert!(hint0.contains("clamped to 1"), "要说明实际夹到 1：{hint0}");
+
+        // ③ 反向对照：**合法** limit 不许被夹（否则 hint 会永远带着一句废话）
+        let ok = run_glob_search("*.txt", root_str, &root, Some(5), None).unwrap();
+        assert_eq!(ok.files.len(), 5);
+        assert!(!ok.truncated);
+        assert!(
+            ok.hint.is_none(),
+            "什么都没发生时不许写空洞的 hint：{:?}",
+            ok.hint
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **GLOB-LIMIT-4**：深度上限与「不跟随重解析点」**仍然生效**，且这次是在**命令入口**上验
+    /// （既有判据 `r1_depth_cap_stops_the_walk` / `r1_self_referencing_reparse_point_is_not_followed`
+    /// 在 walk 层，一个字都没被削弱；这条把同一事实钉到 `run_glob_search` 的返回上）。
+    #[test]
+    fn glob_limit_4_depth_cap_and_reparse_points_still_hold() {
+        // ① 深度：默认上限必须覆盖 12 层（不许「修好了环、弄丢了文件」）
+        let root = scratch("limit-4-deep");
+        let mut deep = root.clone();
+        for _ in 0..12 {
+            deep = deep.join("a");
+        }
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(deep.join("deep.txt"), b"x").unwrap();
+        std::fs::write(root.join("shallow.txt"), b"x").unwrap();
+        let root_str = root.to_str().unwrap();
+
+        let ok = run_glob_search("deep.txt", root_str, &root, None, None).unwrap();
+        assert_eq!(ok.files.len(), 1, "默认深度必须覆盖 12 层");
+        assert!(!ok.depth_limited, "没撞到深度上限就不许报");
+
+        // 撞到深度上限 ⇒ 如实上报（而且是**数据**里的一栏，不是一句错误）
+        let capped = glob_search_walk(
+            &root,
+            "*.txt",
+            GlobLimits {
+                max_depth: 3,
+                max_results: 100,
+                offset: 0,
+            },
+        )
+        .unwrap();
+        assert!(capped.depth_limited, "撞到深度上限必须被记下来");
+        assert!(
+            !capped.files.iter().any(|f| f.ends_with("deep.txt")),
+            "超过深度上限的目录不该被遍历"
+        );
+        let res = glob_result_from(capped, &GlobLimitRequest::resolve(None), 0);
+        assert!(res.depth_limited, "命令契约里也要如实带上这一栏");
+        let hint = res.hint.unwrap_or_default();
+        assert!(
+            hint.contains(&GLOB_MAX_DEPTH.to_string()),
+            "深度受限必须出现在 hint 里（调用方要能据此换更浅的 path）：{hint}"
+        );
+
+        // ② 重解析点：命令入口跑一遍环，同一个文件只应出现一次，且**不是**靠深度上限兜住的
+        let loop_root = scratch("limit-4-loop");
+        let inner = loop_root.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::write(inner.join("marker.txt"), b"x").unwrap();
+        if try_make_dir_link(&loop_root, &loop_root.join("loop")) {
+            let out = run_glob_search(
+                "*.txt",
+                loop_root.to_str().unwrap(),
+                &loop_root,
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(
+                !out.depth_limited,
+                "环必须被「跳过重解析点」切断（撞深度上限说明接合点被进入了）：{:?}",
+                out.files
+            );
+            assert_eq!(
+                out.files.iter().filter(|f| f.ends_with("marker.txt")).count(),
+                1,
+                "接合点没被进入 ⇒ 同一个文件只应出现一次：{:?}",
+                out.files
+            );
+        } else {
+            eprintln!("[GLOB-LIMIT-4] 本环境无法创建目录链接/接合点 ⇒ 环这一半跳过（walk 层判据仍覆盖）");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&loop_root);
     }
 
     // ==================== R2 ====================
@@ -5479,49 +6092,42 @@ mod harden_185_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ==================== R4 ====================
+    // ==================== R4（第 186 波后：判定 + wrapper 文本） ====================
 
     /// 引用：含空格的路径必须整体被引用（改前 cmd 把 `C:\Program` 当命令 ⇒ 假成功）。
+    ///
+    /// 第 186 波改口径：引用不再发生在"我们给 `cmd /c` 的那一整行"上，而是发生在
+    /// **wrapper 正文**里（`cmd_wrapper_text`）。判据因此直接断言 wrapper 正文。
     #[test]
-    fn r4_cmd_args_are_quoted() {
-        assert_eq!(
-            cmd_quote_arg(r"C:\Program Files\x.cmd"),
-            r#""C:\Program Files\x.cmd""#
+    fn r4_cmd_args_are_quoted_in_the_wrapper() {
+        let text = cmd_wrapper_text(
+            r"C:\Program Files\x.cmd",
+            &[r"C:\Program Files\node.exe".to_string(), "plain".to_string()],
         );
-        assert_eq!(cmd_quote_arg("plain"), r#""plain""#);
-        // 结尾反斜杠必须翻倍（否则它会转义掉收尾引号）
-        assert_eq!(cmd_quote_arg(r"C:\dir\"), r#""C:\dir\\""#);
-        // arg 里的引号翻倍（cmd：引号状态净不变；CRT：引号内 `""` = 字面引号）
-        assert_eq!(cmd_quote_arg(r#"a"b"#), r#""a""b""#);
+        assert!(
+            text.contains(r#""C:\Program Files\x.cmd" "C:\Program Files\node.exe" "plain""#),
+            "每个 token 都必须整体被引用（含空格路径不许被空格截断）：{text:?}"
+        );
+        assert!(text.starts_with("@echo off\r\n"), "必须 @echo off（否则回显污染 MCP stdout）：{text:?}");
+        assert!(text.ends_with("\r\n"), "必须是 CRLF 行尾（批处理口径）：{text:?}");
     }
 
-    /// 命令行里**不许有落在引号外的元字符**（含 `&` / `|` / `%VAR%` 展开面）。
+    /// wrapper 里**不许有落在引号外的元字符**（`&`/`|`/`^`/`<`/`>`），
+    /// 且 `%` / `!` / `"` 这些"跨层说不清"的字符必须**被拒绝**而不是被"聪明转义"。
     #[test]
-    fn r4_no_metacharacter_can_escape_the_quotes() {
+    fn r4_no_metacharacter_can_escape_the_wrapper_quotes() {
         /// 按 cmd 的引号状态机扫一遍：返回落在**引号外**的元字符。
-        ///
-        /// 先按 `/s` 规则剥掉最外层那一对引号（`cmd /d /s /c "<…>"` 的既定语义），
-        /// 剩下的才是 cmd 真正解析的正文 —— 不剥就会把外层引号当成状态机的一次翻转。
-        fn unquoted_metachars(line: &str) -> Vec<char> {
-            assert!(
-                line.starts_with('"') && line.ends_with('"') && line.len() >= 2,
-                "必须靠 /s 规则剥外层引号：{line}"
-            );
-            let body = &line[1..line.len() - 1];
+        fn unquoted_metachars(text: &str) -> Vec<char> {
             let mut out = Vec::new();
             let mut in_quotes = false;
-            for c in body.chars() {
+            for c in text.chars() {
                 match c {
                     '"' => in_quotes = !in_quotes,
-                    '&' | '|' | '<' | '>' | '^' => {
-                        if !in_quotes {
-                            out.push(c);
-                        }
-                    }
+                    '&' | '|' | '<' | '>' | '^' if !in_quotes => out.push(c),
                     _ => {}
                 }
             }
-            assert!(!in_quotes, "引号必须成对（否则边界会漂到参数之外）：{line}");
+            assert!(!in_quotes, "引号必须成对（否则边界会漂到参数之外）：{text:?}");
             out
         }
 
@@ -5529,87 +6135,61 @@ mod harden_185_tests {
             "a & calc.exe".to_string(),
             "b | whoami".to_string(),
             "c ^ & del".to_string(),
-            r#"d" & calc.exe & ""#.to_string(),
-            "%EVIL%".to_string(),
             r"C:\Program Files\node.exe".to_string(),
+            r"C:\dir\".to_string(),
         ];
-        let line = build_cmd_invocation(r"C:\Program Files\x.cmd", &nasty);
+        let spec = build_cmd_wrapper(r"C:\Program Files\x.cmd", &nasty).expect("这些都该可证");
         assert!(
-            unquoted_metachars(&line).is_empty(),
-            "有元字符落在引号外 ⇒ 会被 cmd 执行：{line}"
-        );        assert!(
-            !line.contains(r#""%EVIL%""#) && line.contains(r#""%%EVIL%%""#),
-            "`%VAR%` 展开必须被中性化（env 值的引号能闭合我们的引号结构）：{line}"
+            unquoted_metachars(&spec.text).is_empty(),
+            "有元字符落在引号外 ⇒ 会被 cmd 执行：{:?}",
+            spec.text
         );
-        // 合法的单个百分号**不许**被改坏（诚实：不能为了安全把用户参数改形）
-        assert_eq!(escape_cmd_percent_expansions(r"C:\100%\docs"), r"C:\100%\docs");
-        assert_eq!(escape_cmd_percent_expansions("50% off"), "50% off");
+
+        // `%` / `!` / `"` 一律拒绝（不是"中性化"）：错因必须点名，且不许被静默改写。
+        let err = build_cmd_wrapper(r"C:\x.cmd", &["%EVIL%".to_string()]).unwrap_err();
+        assert!(err.contains("第 1 个参数"), "必须点名第几个参数：{err}");
+        assert!(err.contains("百分号"), "必须说清是 `%`：{err}");
+        let err = build_cmd_wrapper(r"C:\x.cmd", &["a!b!c".to_string()]).unwrap_err();
+        assert!(err.contains("感叹号"), "必须说清是 `!`：{err}");
+        let err = build_cmd_wrapper(r"C:\x.cmd", &[r#"d" & calc.exe"#.to_string()]).unwrap_err();
+        assert!(err.contains("双引号"), "必须说清是 `\"`：{err}");
+
+        // 反向对照：**不许**出现"把 `%` 翻倍后放行"这种中间态
+        assert!(
+            build_cmd_wrapper(r"C:\x.cmd", &["a%%b".to_string()]).is_err(),
+            "任何 `%` 都不许被放行（`%%` 的折叠语义跨层说不清）"
+        );
     }
 
-    /// **端到端**：真的用 `cmd.exe /d /s /c`（生产里那一条 raw_arg 路径）起一个
-    /// **路径含空格**的 `.cmd`，并把含 `&` 的 arg 原样传进去。
-    ///
-    /// 这条把两件事一次钉死：
-    /// ① 改前"路径含空格 ⇒ cmd 把 `C:\Program` 当命令、真程序从未启动却返回成功"；
-    /// ② `&` 不许被当成第二条命令。
-    /// 反向对照（改前的无引号拼法）也一起跑：它**必须**起不来目标 —— 这就是"假成功"的取证。
-    #[cfg(target_os = "windows")]
-    #[tokio::test]
-    async fn r4_cmd_wrapper_really_starts_a_script_with_spaces() {
-        let dir = scratch("cmdspace").join("dir with space");
-        std::fs::create_dir_all(&dir).unwrap();
-        let script = dir.join("hello.cmd");
-        /*
-         * 脚本本身必须用**延迟展开**（`!A!`）回显参数：批处理里 `%1` 的展开发生在
-         * **解析之前**，所以 `echo [%~1]` 遇到 `&` 会把它当成分隔符（这是批处理的语义，
-         * 不是我们的引用出错 —— 第一版判据就栽在这里，输出成了 `ARG1=[a ` + `'b]' 不是命令`）。
-         * 真正的 MCP 服务端（node.exe）自己解析 argv，不存在这一层。
-         */
-        std::fs::write(
-            &script,
-            "@echo off\r\nsetlocal EnableDelayedExpansion\r\nset \"A=%~1\"\r\necho ARG1=[!A!]\r\n",
-        )
-        .unwrap();
-        let script_str = script.display().to_string();
+    /// 合法实参**一字不许改**：`&`/`|`/`^`/空格/中文/结尾反斜杠在 wrapper 正文里必须原样出现
+    /// （只允许"结尾反斜杠翻倍"这一处、且有理由的改写）。
+    #[test]
+    fn r4_legal_args_are_not_rewritten() {
+        let args = vec![
+            "a & b".to_string(),
+            "c | d".to_string(),
+            "e ^ f".to_string(),
+            "g h".to_string(),
+            "中文参数".to_string(),
+        ];
+        let spec = build_cmd_wrapper("x.cmd", &args).expect("这些都该可证");
+        for a in &args {
+            assert!(spec.text.contains(a), "合法实参被改形了（{a}）：{:?}", spec.text);
+        }
+        // 结尾反斜杠：必须翻倍（否则会把收尾引号转义掉）
+        assert_eq!(quote_cmd_arg_for_wrapper(r"C:\dir\"), r#""C:\dir\\""#);
+        assert_eq!(quote_cmd_arg_for_wrapper("plain"), r#""plain""#);
+        assert_eq!(quote_cmd_arg_for_wrapper(""), r#""""#);
+    }
 
-        // ① 生产口径（引用 + raw_arg）
-        let quoted = build_cmd_invocation(&script_str, &["a & b".to_string()]);
-        let out = tokio::process::Command::new("cmd.exe")
-            .arg("/d")
-            .arg("/s")
-            .arg("/c")
-            .raw_arg(&quoted)
-            .output()
-            .await
-            .expect("cmd 必须能起来");
-        let text = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            text.contains("ARG1=[a & b]"),
-            "含空格路径 + 含 & 的 arg 必须原样传到脚本：stdout={text} stderr={}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // ② 反向对照：改前的无引号拼法 ⇒ 目标根本没起来（"假成功"的取证）
-        let legacy = format!("\"{} {}\"", script_str, "plain");
-        let legacy_out = tokio::process::Command::new("cmd.exe")
-            .arg("/d")
-            .arg("/s")
-            .arg("/c")
-            .raw_arg(&legacy)
-            .output()
-            .await
-            .expect("对照命令也应当能起来 cmd");
-        let legacy_text = String::from_utf8_lossy(&legacy_out.stdout);
-        assert!(
-            !legacy_text.contains("ARG1="),
-            "反向对照失败：无引号拼法居然也起来了目标？{legacy_text}"
-        );
-        assert!(
-            !legacy_out.status.success(),
-            "反向对照：无引号拼法必须是非零退出（真程序没启动）"
-        );
-
-        let _ = std::fs::remove_dir_all(script.parent().unwrap().parent().unwrap());
+    /// 命令路径本身也不能有"会在 wrapper 行里炸掉"的字符（点名字符位置）。
+    #[test]
+    fn r4_command_path_is_preflighted_too() {
+        let err = build_cmd_wrapper(r#"C:\a"b\x.cmd"#, &[]).unwrap_err();
+        // `C:\a"b\x.cmd` 里 `"` 是第 5 个字符（1-based）
+        assert!(err.contains("命令路径第 5 个字符"), "必须点名第几号字符：{err}");
+        let err = build_cmd_wrapper("", &[]).unwrap_err();
+        assert!(err.contains("命令为空"), "{err}");
     }
 
     /// 探测结论：cmd 壳立刻退出时**不许报成功**，且要把 cmd 自己的错误带给调用方。
@@ -5627,6 +6207,451 @@ mod harden_185_tests {
             "cmd 自己的错误必须带给调用方（否则用户无从修）：{msg}"
         );
         assert!(msg.contains("command=「C:\\Program Files\\x.cmd」"), "{msg}");
+    }
+
+    // （第 185 波那条"含空格路径的 `.cmd` 端到端"已搬进 `harden_186_tests`：
+    //   那边是同一件事的**新口径**版本 —— 走 wrapper 而不是"拼整行"。
+    //   这里不再保留旧写法的副本，避免"同一判据两份实现互相打架"。）
+
+    // ==================== R4-186：真 cmd.exe 端到端判据表 ====================
+    //
+    // 判据口径（重点）：**不测"我们拼出来的字符串长什么样"**（那是判据与实现互相证明的
+    // 假绿形态），而是真的起 `cmd.exe /d /s /c ""<wrapper>""`，让 wrapper 把目标
+    // （`.cmd` → `.exe`）拉起来，再检查**目标进程自己的 argv** 是否逐字节等于输入。
+    //
+    // 目标进程是一个只有 `main` 的小探针（`src/bin/argv_probe.rs`），判据**现场用
+    // `rustc` 编它**（见 `build_probe`）⇒ 不引入 node/python 依赖、也不依赖
+    // "先跑过 `cargo build --bins`"，但整条链与生产同形。
+    mod harden_186_tests {
+        use super::scratch;
+        use super::*;
+
+        /// 目标进程 argv 的逐字节期望表示（与探针 `escape_bytes` 同一口径）。
+        fn want_argv(i: usize, s: &str) -> String {
+            format!("argv{}={}:{}", i, s.len(), escape_argv_bytes_for_test(s))
+        }
+
+        /// 与 `src/bin/argv_probe.rs::escape_bytes` 同一口径（判据侧独立实现一份：
+        /// 如果哪天探针的转义口径变了，判据必须跟着红，而不是"两边一起改就永远绿"）。
+        fn escape_argv_bytes_for_test(s: &str) -> String {
+            let mut out = String::with_capacity(s.len());
+            for b in s.as_bytes() {
+                if (0x20..0x7f).contains(b) && *b != b'\\' {
+                    out.push(*b as char);
+                } else {
+                    out.push_str(&format!("\\x{:02X}", b));
+                }
+            }
+            out
+        }
+
+        /// 现场把 argv 探针编译出来（每个测试进程只编一次，多个判据共用）。
+        ///
+        /// 用 `rustc` 直编而不是加 `build.rs`：判据自己保证"探针存在且是当前源码编的"，
+        /// 不受"`cargo test --lib` 不会顺手构建 bins"这个坑影响。
+        ///
+        /// 路径**每个进程唯一**（带 pid + 启动纳秒）：固定路径会撞上"上一轮测试留下的
+        /// 文件还被占着"⇒ `LNK1104: 无法打开文件`（实测踩到）。
+        fn build_probe() -> &'static std::path::Path {
+            static PROBE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+            PROBE.get_or_init(|| {
+                let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("src")
+                    .join("bin")
+                    .join("argv_probe.rs");
+                assert!(src.exists(), "探针源文件必须存在：{}", src.display());
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                let out = std::env::temp_dir().join(format!(
+                    "codem-186-argv-probe-{}-{}.exe",
+                    std::process::id(),
+                    nanos
+                ));
+                let st = std::process::Command::new("rustc")
+                    .arg("--edition")
+                    .arg("2021")
+                    .arg("-O")
+                    .arg("-o")
+                    .arg(&out)
+                    .arg(&src)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::piped())
+                    .output()
+                    .expect("rustc 必须能起来（判据环境需要 rustc）");
+                assert!(
+                    st.status.success(),
+                    "编译 argv 探针失败：{}",
+                    String::from_utf8_lossy(&st.stderr)
+                );
+                out
+            })
+        }
+
+        /// 起一个**真的** wrapper：`cmd.exe /d /s /c ""<wrapper>""`（生产那条 raw_arg 路径）。
+        async fn run_wrapper(text: &str) -> (std::process::Output, std::path::PathBuf) {
+            let path = write_cmd_wrapper(text).expect("写 wrapper");
+            let out = tokio::process::Command::new("cmd.exe")
+                .arg("/d")
+                .arg("/s")
+                .arg("/c")
+                // 双外层引号正是生产口径：`/s` 剥掉最外层那一对 ⇒ 剩 `"路径"`。
+                .raw_arg(format!("\"{}\"", path.display()))
+                .output()
+                .await
+                .expect("cmd 必须能起来");
+            (out, path)
+        }
+
+        fn read_argv_dump(path: &std::path::Path) -> Vec<String> {
+            std::fs::read_to_string(path)
+                .unwrap_or_default()
+                .lines()
+                .map(|s| s.to_string())
+                .collect()
+        }
+
+        /// 造一个 `.cmd` 启动器：把 `%*` 原样转发给目标 `.exe`（真实 npm cmd-shim 的形态）。
+        fn make_shim(dir: &std::path::Path, name: &str, exe: &std::path::Path) -> std::path::PathBuf {            let shim = dir.join(format!("{name}.cmd"));
+            std::fs::write(
+                &shim,
+                format!(
+                    "@ECHO off\r\nSETLOCAL\r\nSET \"TARGET_EXE={}\"\r\n\
+                     ENDLOCAL & SET \"TARGET_EXE=%TARGET_EXE%\"\r\n\"%TARGET_EXE%\" %*\r\n",
+                    exe.display()
+                ),
+            )
+            .expect("写 shim");
+            shim
+        }
+
+        /// **主判据（判据表逐条）**：真的把 wrapper 跑起来，逐字节比对目标进程的 argv。
+        ///
+        /// 覆盖判据表里"能保真"的那一半：`&` / `|` / `^` / 空格 / 中文 / 结尾反斜杠 /
+        /// `<` `>` `(` `)`；同时跑两跳（`.cmd` shim 用 `%*` 转发的真实形态）。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn r186_hazard_table_is_byte_exact_or_rejected() {
+            let dir = scratch("186-table").join("dir with space");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = build_probe();
+            let shim = make_shim(&dir, "server shim", &exe);
+            let shim_str = shim.display().to_string();
+
+            /*
+             * 能保真的实参（每一条都必须逐字节回来）：
+             *   - `&` / `|` / `^`：引号内是字面量，不会被当成第二条命令
+             *   - `<` `>` `(` `)` `;` `,` `=`：同上
+             *   - 空格 / 中文：只验证"没被截断、没被转码"
+             *   - 结尾反斜杠：验证"它没把收尾引号吃掉"
+             */
+            let keep: Vec<&str> = vec![
+                "amp & calc.exe",
+                "pipe | whoami",
+                "caret ^ & del",
+                "lt a<b>c gt",
+                "paren a(b)c",
+                "semi a;b,c=d",
+                "two words",
+                "中文 参数",
+                "trailing C:\\dir\\",
+                "empty-ok",
+                "",
+            ];
+            for (idx, arg) in keep.iter().enumerate() {
+                let out_file = dir.join(format!("argv-{idx}.txt"));
+                // 探针形态：`<exe> <MAGIC> <落盘路径> <实参…>`（见 src/bin/argv_probe.rs）
+                let args: Vec<String> = vec![
+                    ARGV_DUMP_MAGIC.to_string(),
+                    out_file.display().to_string(),
+                    (*arg).to_string(),
+                    format!("second-{idx}"),
+                ];
+                let spec = build_cmd_wrapper(&shim_str, &args)
+                    .unwrap_or_else(|e| panic!("{arg:?} 应当可证，却被拒绝：{e}"));
+                let (out, wrapper) = run_wrapper(&spec.text).await;
+                let dump = read_argv_dump(&out_file);
+                // 探针把自己的 argv（= 我们传的那两个实参）逐字节写了出来 ⇒ 比对。
+                let want = vec![want_argv(0, &args[2]), want_argv(1, &args[3])];
+                assert_eq!(
+                    dump, want,
+                    "实参 {arg:?} 没有逐字节传到目标进程（argv 判据口径）：\nstdout={}\nstderr={}\nwrapper={:?}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr),
+                    spec.text
+                );
+                let _ = std::fs::remove_file(&wrapper);
+            }
+
+            /*
+             * **证不到保真**的实参（必须如实拒绝，并点名第几个参数）：
+             * `%PATH%`（变量形态）、`"`、`!`、CR/LF、以及 `%*` 形态本身。
+             */
+            let reject: Vec<(&str, &str)> = vec![
+                ("%PATH%", "百分号"),
+                ("%*", "百分号"),
+                ("100%", "百分号"),
+                (r"C:\100%\docs", "百分号"),
+                (r#"say "hi" now"#, "双引号"),
+                ("a!b!c", "感叹号"),
+                ("line\r\nbreak", "回车"),
+                ("nul\0byte", "NUL"),
+            ];
+            for (arg, needle) in reject {
+                let args: Vec<String> = vec!["first".to_string(), arg.to_string()];
+                let err = build_cmd_wrapper(&shim_str, &args)
+                    .err()
+                    .unwrap_or_else(|| panic!("{arg:?} 证不到逐字节保真，必须拒绝"));
+                assert!(
+                    err.contains("第 2 个参数"),
+                    "错误信息必须点名是第几个参数（{arg:?}）：{err}"
+                );
+                assert!(err.contains(needle), "错误信息必须说清原因（{arg:?}）：{err}");
+                // 反向对照：**不许**留下"改写后放行"的中间态
+                assert_eq!(
+                    build_cmd_wrapper(&shim_str, &[arg.to_string()]).is_err(),
+                    true,
+                    "{arg:?} 在任何位置都必须被拒（不许有位置相关的特例）"
+                );
+            }
+
+            let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        }
+
+        /// **端到端（保留第 185 波那条）**：`.cmd` 真的起来了、`&` 没被当第二条命令。
+        ///
+        /// 改前是"把整行交 `cmd /c`"；现在改成"生成 wrapper，再交 `cmd /c` 起 wrapper"。
+        /// 反向对照仍然保留：**无引号**的旧拼法必须起不来目标（"假成功"的取证）。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn r4_cmd_wrapper_really_starts_a_script_with_spaces() {
+            let dir = scratch("cmdspace").join("dir with space");
+            std::fs::create_dir_all(&dir).unwrap();
+            let script = dir.join("hello.cmd");
+            std::fs::write(
+                &script,
+                "@echo off\r\nsetlocal EnableDelayedExpansion\r\nset \"A=%~1\"\r\necho ARG1=[!A!]\r\n",
+            )
+            .unwrap();
+            let script_str = script.display().to_string();
+
+            // ① 生产口径：wrapper（含空格路径的目标 + 含 & 的实参）
+            let spec = build_cmd_wrapper(&script_str, &["a & b".to_string()]).expect("可证");
+            let (out, wrapper) = run_wrapper(&spec.text).await;
+            let text = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                text.contains("ARG1=[a & b]"),
+                "含空格路径 + 含 & 的 arg 必须原样传到脚本：stdout={text} stderr={}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+
+            // ② 反向对照：改前的无引号拼法 ⇒ 目标根本没起来（"假成功"的取证）
+            let legacy = format!("\"{} {}\"", script_str, "plain");
+            let legacy_out = tokio::process::Command::new("cmd.exe")
+                .arg("/d")
+                .arg("/s")
+                .arg("/c")
+                .raw_arg(&legacy)
+                .output()
+                .await
+                .expect("对照命令也应当能起来 cmd");
+            let legacy_text = String::from_utf8_lossy(&legacy_out.stdout);
+            assert!(
+                !legacy_text.contains("ARG1="),
+                "反向对照失败：无引号拼法居然也起来了目标？{legacy_text}"
+            );
+            assert!(
+                !legacy_out.status.success(),
+                "反向对照：无引号拼法必须是非零退出（真程序没启动）"
+            );
+
+            let _ = std::fs::remove_file(&wrapper);
+            let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        }
+
+        /// **退出码不许失真**：wrapper 结尾的 `exit /b %ERRORLEVEL%` 必须把目标退出码带出来。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn r186_wrapper_propagates_the_exit_code() {
+            let dir = scratch("186-exit");
+            std::fs::create_dir_all(&dir).unwrap();
+            let script = dir.join("fail.cmd");
+            std::fs::write(&script, "@echo off\r\nexit /b 17\r\n").unwrap();
+            let spec = build_cmd_wrapper(&script.display().to_string(), &[]).expect("可证");
+            let (out, wrapper) = run_wrapper(&spec.text).await;
+            assert_eq!(
+                out.status.code(),
+                Some(17),
+                "wrapper 必须把目标的退出码带出来（否则「立刻失败」的诊断会失真）：stderr={}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let _ = std::fs::remove_file(&wrapper);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        /// **生命周期**：wrapper 临时文件必须真的落在受控目录（系统临时目录）里。
+        #[test]
+        fn r186_wrapper_file_lives_in_the_temp_dir() {
+            let spec = build_cmd_wrapper("x.cmd", &[]).expect("可证");
+            let path = write_cmd_wrapper(&spec.text).expect("写文件");
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            assert!(
+                name.starts_with(CMD_WRAPPER_PREFIX),
+                "临时文件必须带可识别的前缀（否则僵尸回收认不出）：{name}"
+            );
+            assert_eq!(
+                path.parent().unwrap(),
+                std::env::temp_dir(),
+                "必须在受控目录（系统临时目录）里"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                spec.text,
+                "落盘内容必须与纯函数给出的文本一致（不允许写的时候再改一次）"
+            );
+            let _ = std::fs::remove_file(&path);
+        }
+
+        /// **生命周期**：守卫 drop（= spawn 失败 / 探测失败 / 提前 return 那三条路）必须删文件。
+        #[test]
+        fn r186_wrapper_file_is_removed_when_the_guard_drops() {
+            let spec = build_cmd_wrapper("x.cmd", &[]).expect("可证");
+            let path = write_cmd_wrapper(&spec.text).expect("写文件");
+            assert!(path.exists(), "先确认真的写出来了：{}", path.display());
+            {
+                let _guard = CmdWrapperFile(path.clone());
+                assert!(path.exists(), "守卫活着的时候文件必须在（不能提前删）");
+            }
+            assert!(
+                !path.exists(),
+                "守卫 drop 必须删掉 wrapper（失败路径不能留临时文件）：{}",
+                path.display()
+            );
+        }
+
+        /// **生命周期**：成功路径的延迟删除必须真的发生（MCP 是长驻进程 ⇒ 不能"等它退出再删"）。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn r186_wrapper_file_is_removed_after_the_success_delay() {
+            let dir = scratch("186-life");
+            std::fs::create_dir_all(&dir).unwrap();
+            // 目标故意活很久：证明"删 wrapper"不依赖目标退出。
+            let sleeper = dir.join("sleep.cmd");
+            std::fs::write(&sleeper, "@echo off\r\nping -n 6 127.0.0.1 >nul\r\n").unwrap();
+            let spec = build_cmd_wrapper(&sleeper.display().to_string(), &[]).expect("可证");
+            let path = write_cmd_wrapper(&spec.text).expect("写文件");
+
+            let mut child = tokio::process::Command::new("cmd.exe")
+                .arg("/d")
+                .arg("/s")
+                .arg("/c")
+                .raw_arg(format!("\"{}\"", path.display()))
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("spawn");
+            assert!(path.exists(), "刚起来的时候文件还要在（cmd 正在读它）");
+
+            schedule_cmd_wrapper_cleanup(path.clone());
+            // 上限给足（3 s），只断言"最终必须没了"
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while path.exists() && std::time::Instant::now() < deadline {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+            assert!(
+                !path.exists(),
+                "成功路径也必须删 wrapper 临时文件（否则长驻 MCP 会一直攒临时文件）：{}",
+                path.display()
+            );
+            assert!(
+                child.try_wait().map(|s| s.is_none()).unwrap_or(false),
+                "目标进程此时应当**还在跑**（证明删除与目标退出解耦）"
+            );
+            let _ = child.kill().await;
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        /// 僵尸回收的形状：只认带前缀、且**足够老**的文件；新文件一个都不许动
+        /// （另一个 Codem 实例可能正在用）。
+        #[test]
+        fn r186_reaper_does_not_touch_fresh_wrappers() {
+            let spec = build_cmd_wrapper("x.cmd", &[]).expect("可证");
+            let fresh = write_cmd_wrapper(&spec.text).expect("写文件");
+            reap_stale_cmd_wrappers();
+            assert!(
+                fresh.exists(),
+                "刚写出来的 wrapper 绝不能被回收（否则会删掉别的实例正在用的文件）：{}",
+                fresh.display()
+            );
+            let _ = std::fs::remove_file(&fresh);
+            // 前缀是回收的唯一凭据 ⇒ 必须够特别
+            assert!(
+                CMD_WRAPPER_PREFIX.starts_with("codem-"),
+                "前缀必须带产品名，避免误伤别人的临时文件"
+            );
+            // 门槛必须"比一次运行长得多"：这是**故意**保守的取值
+            assert!(
+                CMD_WRAPPER_STALE_SECS >= 600,
+                "回收门槛太小会误删同时运行的实例正在用的文件：{CMD_WRAPPER_STALE_SECS}"
+            );
+        }
+
+        /// 探针的**参数约定必须是同一个串**：判据直接读探针源文件，
+        /// 不靠"两边一起改就永远绿"（改了一边，这条会红）。
+        #[test]
+        fn r186_probe_source_and_lib_agree_on_the_magic() {
+            assert_eq!(ARGV_DUMP_MAGIC, "--codem-argv-dump-186");
+            let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src")
+                .join("bin")
+                .join("argv_probe.rs");
+            let text = std::fs::read_to_string(&src)
+                .unwrap_or_else(|e| panic!("读不到探针源码 {}：{e}", src.display()));
+            assert!(
+                text.contains(&format!("const ARGV_DUMP_MAGIC: &str = \"{ARGV_DUMP_MAGIC}\";")),
+                "探针源码里的魔法串与 lib 侧不一致（判据约定会错位）：{}",
+                src.display()
+            );
+        }
+
+        /// 探针本身**必须真的能报告自己的 argv**（否则上面那条主判据只是在测空文件）。
+        /// 反向对照：给错魔法串时它必须什么都不写 —— 那说明这条判据真的在看"探针有没有生效"。
+        #[cfg(target_os = "windows")]
+        #[test]
+        fn r186_probe_really_dumps_its_own_argv() {
+            let dir = scratch("186-probe");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = build_probe();
+            let good = dir.join("good.txt");
+            let st = std::process::Command::new(&exe)
+                .arg(ARGV_DUMP_MAGIC)
+                .arg(&good)
+                .arg("a & b")
+                .arg("")
+                .status()
+                .expect("探针必须能起来");
+            assert!(st.success(), "探针正常退出");
+            let dump = read_argv_dump(&good);
+            assert_eq!(
+                dump,
+                vec![want_argv(0, "a & b"), want_argv(1, "")],
+                "探针必须如实报告自己的 argv（含空实参）"
+            );
+
+            // 反向对照：魔法串不对 ⇒ 不写文件
+            let bad = dir.join("bad.txt");
+            let _ = std::process::Command::new(&exe)
+                .arg("--not-the-magic")
+                .arg(&bad)
+                .output()
+                .expect("跑得起来");
+            assert!(
+                !bad.exists(),
+                "魔法串不对时探针不许写文件（否则判据可能在看上一次的残留）"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     // ==================== R5 ====================

@@ -176,4 +176,40 @@ describe("第 185 波 · 皮肤毛玻璃 vs 原生材质档", () => {
       `包着卡片的那层 pre 必须被显式去掉边框（重复描边：卡片自己已经画过一条同色边框）。实际声明：${JSON.stringify(decls)}`,
     ).toBe("none");
   });
+
+  /**
+   * ★ 第 185 波（用户报「有的卡片**下半部分**变成白色」）：
+   * **卡片内部的 `pre`** 也必须有覆盖 —— 它吃到 `[data-skin="dream"] pre { background: … }`
+   * （默认 `rgba(245,245,248,0.9)`，近白）⇒ 卡片下半（代码区）就成了白色。
+   *
+   * ⚠️⚠️ 而且这里的 `background` **必须带 `!important`**：`SyntaxHighlighter` 是用**内联样式**
+   * 设 `background: "transparent"` 的，而那条 `pre` 规则带 `!important` ⇒ **压得过内联样式**。
+   * （我第一版只修了"包着卡片的那层 pre"，漏了内部这层，用户报的"下半截变白"就是它。）
+   */
+  it("SKIN-BLUR-6: 卡片内部的 `pre` 必须去底且带 !important（否则下半截变白）", () => {
+    const css = read("src/styles/skin-dream.css");
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\[data-skin="dream"\]\s+\.content-frame\s+pre[^{]*\{([^}]*)\}/s.exec(stripped);
+    expect(rule, "找不到「卡片内部 pre」那条规则（必须覆盖 .content-frame 里的 pre）").toBeTruthy();
+    const body = rule?.[1] ?? "";
+    const decls = body
+      .split(";")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => {
+        const i = d.indexOf(":");
+        return { prop: d.slice(0, i).trim(), value: d.slice(i + 1).trim() };
+      });
+    const bg = decls.find((d) => d.prop === "background" || d.prop === "background-color");
+    expect(bg, "卡片内部的 pre 必须有 background 覆盖").toBeTruthy();
+    expect(bg?.value, "底色要透明").toMatch(/^transparent/);
+    expect(
+      bg?.value,
+      "**必须带 !important**：SyntaxHighlighter 用内联样式设 transparent，而 `[data-skin=dream] pre` 那条带 !important，会压过内联",
+    ).toContain("!important");
+    // 反向对照：那条"给所有 pre 涂底"的规则必须仍在（否则本条判据守的是不存在的敌人）
+    expect(stripped, "给所有 pre 涂底的那条规则不在了 ⇒ 判据前提消失，请重审").toMatch(
+      /\[data-skin="dream"\]\s+pre,\s*\n\[data-skin="dream"\]\s+\.code-block\s*\{[^}]*background:/s,
+    );
+  });
 });

@@ -7,6 +7,8 @@
  *   非 200 或写盘失败只 `console.warn`/`continue`，**唯一**失败判据是 `filesWritten === 0`
  *   ⇒ 10 个里 9 个因限流/403 失败也报「安装成功」并登记为可用；审计哈希
  *   （`computeContentHash`）还覆盖了"下载成功"的子集，与磁盘上的技能不等价。
+ *   （本波把这个路径的**通道**换成了 `http_download` —— 字节直落盘，判据见
+ *   `skill-install-binary.test.ts`；**本文件的记账断言一字未改**，同一条事实同一处置。）
  * - **F3**（`installSkillFromZipFiltered`）：跳过不记账、0 文件报成功、
  *   二进制（`.png/.jpg/.gif/.ico`）被 `strFromU8` + 文本 `writeFile` **按 UTF-8 写坏**。
  *
@@ -219,6 +221,12 @@ describe("GitHub 目录安装：逐文件失败（第 184 波 F2）", () => {
   /**
    * ⚠️ 每个用例用**不同的仓库名**：`repoTreeCache` 是模块级的（30 分钟 TTL），
    * 同一个 owner/repo 会让后一个用例拿到前一个用例的文件树（夹具串味）。
+   *
+   * ⚠️ 本波的通道改造：目录路径的非 SKILL.md 文件改走 `http_download`
+   * （字节直落盘，见 `skill-install-binary.test.ts`）。所以替身**两条通道都要扮演**：
+   * `http_get` 只服务 SKILL.md（文本），其余文件走 `http_download`；
+   * 而 Rust 的 `http_download` 在非 2xx（`HTTP <status>: <url>`）与写盘失败（IO 错误）
+   * 两种情形下都是 **reject** ⇒ 下面用 `throw` 模拟。**断言一字未改**。
    */
   function setupGithub(
     repo: string,
@@ -243,9 +251,17 @@ describe("GitHub 目录安装：逐文件失败（第 184 波 F2）", () => {
       if (url.includes("raw.githubusercontent.com")) {
         const rel = url.split("/main/")[1] ?? "";
         const status = opts.rawStatus[rel] ?? 200;
-        return { status, body: status === 200 ? md("f2-partial") : "", headers: {} };
+        if (cmd === "http_get") {
+          return { status, body: status === 200 ? md("f2-partial") : "", headers: {} };
+        }
+        if (cmd === "http_download") {
+          if (status !== 200) throw new Error(`HTTP ${status}: ${url}`);
+          const destPath = String(args?.destPath ?? "");
+          if (writeShouldThrow(destPath)) throw new Error("磁盘满（模拟写盘失败）");
+          return destPath;
+        }
       }
-      throw new Error(`未预期的 URL：${url}`);
+      throw new Error(`未预期的命令/URL：${cmd} ${url}`);
     });
   }
 

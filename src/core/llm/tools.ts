@@ -35,7 +35,9 @@ import {
 } from "./tool-output-shapes";
 import {
   appendDiagnostics,
+  globWindowDiagnostic,
   pagedDiagnostic,
+  renderDiagnostics,
   truncatedDiagnostic,
   type ToolDiagnostic,
 } from "./tool-diagnostics";
@@ -2087,6 +2089,56 @@ export function createMultiEditTool(): ToolDef {
   };
 }
 
+/**
+ * ★ 第 186 波：**模型侧内联上限**（glob 的搜索结果里，最多有多少条路径进上下文）。
+ *
+ * ## 为什么是 500（而不是"有多少给多少"）
+ *
+ * 1. **硬预算**：本仓自己给"工具结果太大、不该躺在上下文里"划的线是
+ *    `DEFAULT_MAX_RESULT_SIZE_CHARS = 50_000` 字符（`tool-result-storage.ts:27`），
+ *    spill 的门限是 64 KB（`spill.ts:37`）。500 条 Windows 绝对路径（本仓实测
+ *    40–90 字符/条）≈ **20–45 KB，压在那两条线以下** ⇒ 这份结果不会被二次 spill、
+ *    也不会一个人吃掉上下文的一大块；
+ * 2. **够用**：500 条足以让模型看清**结构性事实**（命名规律、目录分布、要不要缩小范围）。
+ *    "把两万条逐条处理"那种活本来就该交给 `run_code`（`sdk.glob` 拿全量、可翻页）；
+ * 3. **不撒谎**：少给的部分**不隐藏** —— 完整列表落盘并把路径给模型，
+ *    并在 `<harness>` 里写明"内联了几条 / 本次返回几条 / 剩下的怎么拿"。
+ *
+ * 改前的缺陷**不是上限大小**，而是超限就报错：模型既拿不到数据，也拿不到下一步。
+ */
+const GLOB_INLINE_MAX = 500;
+
+/** `glob` 工具的结构化结果（`outputSchema` 与渲染器共用这一个形状） */
+interface GlobOutputValue {
+  pattern: string;
+  /** **实际内联给模型的那一段**（有界，见 `GLOB_INLINE_MAX`） */
+  files: string[];
+  /** `files.length`（历史字段口径不变：它一直是"这里有多少条"） */
+  count: number;
+  /** 本次搜索**返回**的总条数（可以比 `files.length` 大） */
+  returned: number;
+  /** 本次搜索结果**至少还有更多**（要拿剩下的就用 `offset` 翻页） */
+  truncated: boolean;
+  /** Rust 侧给的可执行下一步（夹取说明 / 翻页 offset） */
+  hint?: string;
+  /** 完整列表落盘路径（只在"模型看不到全部"时才落盘） */
+  spillPath?: string;
+  /** 结构化诊断（渲染成 `<harness>` 块，与 `read` 同一套口径） */
+  diagnostics?: ToolDiagnostic[];
+}
+
+/**
+ * `glob` 的模型可见输出 —— **唯一来源**（`execute` 与 `renderOutput` 都走它）。
+ *
+ * 未被截断时**逐字**等于旧行为（`files.join("\n") || "No files found"`）：注册契约
+ * 与这次改动都不该改变"结果完整时模型看到的东西"。
+ */
+function renderGlobOutput(v: GlobOutputValue): string {
+  const body = v.files.length > 0 ? v.files.join("\n") : "No files found";
+  const diagBlock = renderDiagnostics(v.diagnostics);
+  return diagBlock ? `${body}\n${diagBlock}` : body;
+}
+
 export function createGlobTool(): ToolDef {
   return {
     id: "glob",
@@ -2095,30 +2147,57 @@ export function createGlobTool(): ToolDef {
       accessScope: "workspace",
       // 第 121 轮：结果契约。这是第一个**真的注册了** outputSchema 的工具 ——
       // 在此之前全仓零个工具注册过，于是整套输出校验形同虚设（恒真）。
+      // 第 186 波：补上 `returned` / `truncated` / `hint` / `spillPath`
+      // —— "结果有界"这件事从此是**声明**，不是实现细节（形状不符会被契约层拦下）。
       outputSchema: {
         type: "object",
         properties: {
           files: { type: "array", items: { type: "string" } },
           count: { type: "number" },
           pattern: { type: "string" },
+          returned: { type: "number" },
+          truncated: { type: "boolean" },
+          hint: { type: "string" },
+          spillPath: { type: "string" },
+          diagnostics: { type: "array" },
         },
-        required: ["files", "count", "pattern"],
+        required: ["files", "count", "pattern", "returned", "truncated"],
         additionalProperties: false,
       },
-      // 渲染保持与旧行为**逐字一致**（旧实现是 `files.join("\n") || "No files found"`）——
-      // 注册契约不该改变模型看到的东西，否则就是偷偷改了行为。
-      renderOutput: (v) => {
-        const o = v as { files: string[] };
-        return o.files.length > 0 ? o.files.join("\n") : "No files found";
-      },
+      // 渲染与 `execute` 走同一个函数（第 183 波的诊断块也在这里落地）——
+      // "模型看到什么"不可能有两份实现。
+      renderOutput: (v) => renderGlobOutput(v as GlobOutputValue),
     },
-    guidance: "Use glob to find files by name pattern (e.g. `**/*.ts`). Use grep to search file contents instead.",
-    description: "Find files matching a glob pattern. Supports Chinese filenames natively. Patterns: * (wildcard), ? (single char), {a,b} (alternatives), ** (recursive). Example: glob(pattern=\"*.py\") or glob(pattern=\"测试*.md\", path=\"D:\\\\项目\")",
+    guidance:
+      "Use glob to find files by name pattern (e.g. `**/*.ts`). Use grep to search file contents instead. " +
+      "Large result sets are NOT an error: you get a bounded inline list plus `truncated` and `hint`, " +
+      "and the complete returned list is spilled to a file (see `spillPath`). Page with `offset` when you need all of them.",
+    description:
+      "Find files matching a glob pattern. Supports Chinese filenames natively. " +
+      "Patterns: * (wildcard), ? (single char), {a,b} (alternatives), ** (recursive). " +
+      "Returns { files, count, returned, truncated, hint, spillPath? }: `files` is a BOUNDED inline list " +
+      // 数字从常量来（不写死第二份 —— 改了 `GLOB_INLINE_MAX` 而描述没改就是"描述在说谎"）
+      "(at most " + GLOB_INLINE_MAX + " paths), `returned` is how many this call returned, `truncated: true` means at least one " +
+      "more match exists. When the list does not fit inline, the complete returned list is written to `spillPath` " +
+      "and a <harness> note says so — read that file for everything, or call again with `offset` to page. " +
+      "Example: glob(pattern=\"*.py\") or glob(pattern=\"测试*.md\", path=\"D:\\\\项目\") or glob(pattern=\"*.log\", limit=1000, offset=20000)",
     parameters: {
       type: "object",
       properties: {
         pattern: { type: "string", description: "Glob pattern to match" },
         path: { type: "string", description: "Directory to search in" },
+        limit: {
+          type: "number",
+          description:
+            "Max paths to return for this page (allowed 1-200000, default 20000). " +
+            "Out-of-range values are clamped and the clamping is reported in `hint` (never silent).",
+        },
+        offset: {
+          type: "number",
+          description:
+            "Skip the first N matches — use it to page through a large result set " +
+            "(next page = offset + returned).",
+        },
       },
       required: ["pattern"],
     },
@@ -2127,17 +2206,79 @@ export function createGlobTool(): ToolDef {
       const rawPath = (args.path as string) || ctx.cwd || ".";
       // Resolve "." to ctx.cwd (project directory), not user home
       const searchPath = rawPath === "." ? ctx.cwd : rawPath;
+      const limit = typeof args.limit === "number" ? args.limit : undefined;
+      const offset = typeof args.offset === "number" ? args.offset : undefined;
 
       try {
-        console.log("[glob tool] executing:", { pattern, searchPath, ctxCwd: ctx.cwd });
-        const files = await globSearch(pattern, searchPath);
-        console.log("[glob tool] found:", files.length, "files");
+        console.log("[glob tool] executing:", { pattern, searchPath, ctxCwd: ctx.cwd, limit, offset });
+        const res = await globSearch(pattern, searchPath, { limit, offset });
+        console.log("[glob tool] returned:", res.returned, "truncated:", res.truncated);
+
+        // 模型侧只内联有界的一段（完整列表走 spill，见 GLOB_INLINE_MAX）
+        const inline = res.files.slice(0, GLOB_INLINE_MAX);
+        const diagnostics: ToolDiagnostic[] = [];
+        let spillPath: string | undefined;
+        let spillError: string | undefined;
+
+        /**
+         * 只在"模型看不到全部"时落盘 ⇒ **常规搜索零 I/O**（与 `spill.ts` 同一取向）。
+         *
+         * 两种触发：① 本次搜索本身就截断了（后面还有匹配）；② 返回的条数超过内联上限。
+         * 落盘用的是**既有机制**（`retainToolResult`）：会话私有目录、文件名带写入时刻、
+         * 由 `pruneSpillFiles()` 按保留期回收 —— 不新增第二套清理者。
+         */
+        if (res.truncated || res.files.length > inline.length) {
+          try {
+            const { retainToolResult } = await import("../storage/spill");
+            const retained = await retainToolResult(res.files.join("\n"), {
+              sessionId: ctx.sessionId,
+              toolName: "glob",
+              /**
+               * `maxInlineBytes: 0` ⇒ **总是落盘**。
+               *
+               * 这里的名单**已经**超过模型侧内联上限了，而 `retainToolResult` 的默认门限是
+               * 64 KB（按字节判）—— 500 条短路径可能不到 64 KB，于是"该落盘却没落"。
+               * 我们要判的是"模型看不全"，不是"字节数大"，所以按 0 传，由上面的条件决定。
+               */
+              maxInlineBytes: 0,
+            });
+            spillPath = retained.locator;
+          } catch (e: any) {
+            // ★ 落盘失败**不许沉默**：否则模型会把内联的 500 条当成全部
+            spillError = e?.message ?? String(e);
+            console.warn("[glob tool] spill failed:", spillError);
+          }
+          diagnostics.push(
+            globWindowDiagnostic({
+              inlineCount: inline.length,
+              returned: res.returned,
+              truncated: res.truncated,
+              spillPath,
+              spillError,
+              hint: res.hint,
+            }),
+          );
+        }
+
+        const value: GlobOutputValue = {
+          pattern,
+          files: inline,
+          count: inline.length,
+          returned: res.returned,
+          truncated: res.truncated,
+          ...(res.hint ? { hint: res.hint } : {}),
+          ...(spillPath ? { spillPath } : {}),
+          ...(diagnostics.length ? { diagnostics } : {}),
+        };
         return {
           title: `glob: ${pattern}`,
-          // `value` 是**结构化事实**（下游可结构化消费，不必再切字符串）；
-          // `output` 由契约的 renderOutput 统一渲染（这里给的是骨架，会被覆盖）。
-          value: { files, count: files.length, pattern },
-          output: files.join("\n") || "No files found", isError: false,
+          // ① `value` 是**结构化事实**（下游可结构化消费，不必再切字符串）；
+          // ② `output` 与契约的 renderOutput 走**同一个**渲染函数（不会漂移）；
+          // ③ `diagnostics` 同时挂一份在结果上：事件日志/UI 读的是它（`tool-pipeline.ts:1330`）。
+          value,
+          output: renderGlobOutput(value),
+          isError: false,
+          ...(diagnostics.length ? { diagnostics } : {}),
         };
       } catch (error: any) {
         console.error("[glob tool] error:", error);

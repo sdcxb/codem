@@ -51,8 +51,17 @@ export interface ToolSDK {
   read(path: string): Promise<string>;
   /** Write a file */
   write(path: string, content: string): Promise<void>;
-  /** Search files by glob */
-  glob(pattern: string, path?: string): Promise<string[]>;
+  /**
+   * Search files by glob.
+   *
+   * ★ 第 186 波：返回的是**结构化对象**，不是裸数组（截断是数据，不是异常）。
+   * 形状与工具描述、`file-api.globSearch` 三处一致（判据 `run-code-sdk-contract.test.ts`）。
+   */
+  glob(
+    pattern: string,
+    path?: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<import("../../file-api").GlobSearchResult>;
   /**
    * Grep search：每条命中一行。
    *
@@ -215,7 +224,7 @@ export function createRunCodeTool(): ToolDef {
 - \`await sdk.bash(command, opts?)\` → \`{ stdout: string, stderr: string, exitCode: number }\`; refused if the command is classified dangerous (use the bash tool directly so the user is asked)
 - \`await sdk.read(path)\` → \`string\` (file content); a path outside the workspace is refused while the user's workspace restriction is on
 - \`await sdk.write(path, content)\` → \`void\`; a path outside the workspace is refused while the user's workspace restriction is on, and overwriting a differing existing file requires user confirmation in ask mode
-- \`await sdk.glob(pattern, path?)\` → \`string[]\` (matching paths); the search path and the pattern must stay inside the workspace while the user's workspace restriction is on
+- \`await sdk.glob(pattern, path?, opts?)\` → \`{ files: string[], truncated: boolean, depth_limited: boolean, returned: number, hint?: string }\` (**not** a bare array); \`files\` holds at most \`opts.limit\` paths (default 20000, allowed 1-200000), \`opts.offset\` skips the first N matches, and \`truncated: true\` means at least one more match exists — page through everything with \`offset += returned\`; the search path and the pattern must stay inside the workspace while the user's workspace restriction is on
 - \`await sdk.grep(pattern, opts?)\` → \`{ file: string, line: number, content: string }[]\` (one entry per matching line; \`line\` is 1-based); the search path must stay inside the workspace while the user's workspace restriction is on
 - \`await sdk.fetch(url)\` → \`string\` — the response **body text only** (no status, no headers, no \`json()\`); it aborts after 15s
 
@@ -286,10 +295,16 @@ Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
           // 保持原样：workspace 参数是 writeFile 自带的沙箱检查（S5）。
           await writeFile(path, content, { workspace: ctx.cwd });
         },
-        async glob(pattern: string, path?: string) {
+        async glob(pattern: string, path?: string, opts?: { limit?: number; offset?: number }) {
           // ★ 第 185 波（T2）：搜索路径与模式都要过工作区判定（同一个 `isPathWithinWorkspace`）
+          // ★ 第 186 波：`limit` / `offset` 透传（脚本要"枚举全部"就自己翻页），
+          //   返回的是结构化对象（`{ files, truncated, … }`），不是裸数组。
           const { globSearch } = await import("../../file-api");
-          return await globSearch(pattern, path || ctx.cwd, { workspace: ctx.cwd });
+          return await globSearch(pattern, path || ctx.cwd, {
+            workspace: ctx.cwd,
+            limit: opts?.limit,
+            offset: opts?.offset,
+          });
         },
         async grep(pattern: string, opts?: { path?: string; glob?: string }) {
           const { grepSearch } = await import("../../file-api");
@@ -378,7 +393,7 @@ export async function execRunCode(code: string, options?: { timeout?: number; cw
     },
     read: async (path: string) => { const { readFile } = await import("../../file-api"); return readFile(path, { workspace: options?.cwd }); },
     write: async (path: string, content: string) => { const { writeFile } = await import("../../file-api"); return writeFile(path, content, { workspace: options?.cwd }); },
-    glob: async (pattern: string) => { const { globSearch } = await import("../../file-api"); return globSearch(pattern, options?.cwd, { workspace: options?.cwd }); },
+    glob: async (pattern: string, _path?: string, opts?: { limit?: number; offset?: number }) => { const { globSearch } = await import("../../file-api"); return globSearch(pattern, options?.cwd, { workspace: options?.cwd, limit: opts?.limit, offset: opts?.offset }); },
     grep: async (pattern: string) => { const { grepSearch } = await import("../../file-api"); const results = await grepSearch(pattern, options?.cwd, undefined, { workspace: options?.cwd }); return results.map((r: any) => ({ file: r.file || r.path || "", line: r.line || 0, content: r.content || r.line_text || "" })); },
     fetch: async (url: string) => { const res = await fetch(url); return res.text(); },
   };
