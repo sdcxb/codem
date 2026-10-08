@@ -3879,3 +3879,261 @@ legacy 路径（拿不到总数）用 `paged` —— **宁可说得少，也不�
 > 只读探针脚手架在本轮工作区里已就位（`.preview-shot/_mem-device-verify.mjs` 读记忆域分布 +
 > 点开「记忆体检」页签读分组 + 抓 console error/warning；`.preview-shot/_mem-raw.mjs` 走
 > `storage_invoke` 读 `memory` 域原文形状）—— **结论未回填**，下一次从这里接着跑。
+---
+
+## ★★★★★ 第 189 波：记忆注入位置 + 缓存边界（对标三家源码取证 → 四路审计 → 两轮复审 → 修复）+ 顺带收口全仓时间口径
+
+> 编号说明：本轮的实现、判据与注释**自记为第 189 波**（`src/core/time/local-time.ts:4`、
+> `src/core/prompt/prompt.ts:21`、
+> `src/test/memory-placement-boundary.test.ts:23` 等数十处）；其中紧跟其后的两件收尾在代码里自记为**第 190 波**
+> （`src/core/memory/memory.ts:2853` 的链接同侧约束、`src/core/storage/persist-failure.ts:169` 的常量导出、
+> `src/test/memory-load-visibility.test.ts:179` 的判据加强）—— 与第 188 波同款提醒：**别靠编号认版本，靠现象认**。
+
+### 一、最终形态（记忆**仍在系统提示里**，只是分成两半，中间一个无条件哨兵）
+
+1. **段序**：`… 安全规则 → 语言规则 → 班长名册 → 哨兵 → 易变记忆 → date（最末）`。语言规则被显式改成「**稳定前缀的最后一段**」
+   （`src/core/prompt/prompt.ts:611-612`），班长名册仍在它之后（`:637-639`），哨兵紧贴两者（`:653`），
+   易变记忆（`:656-658`）与 date（`:667-669`）才在边界之后；段间仍是 `"\n\n---\n\n"`（`:672`）。
+2. **哨兵无条件出现**，**不再与「有没有稳定记忆」绑定**（`:641-653`）——旧写法与稳定块同一个 `if` ⇒ 存量用户（迁移刻意不给旧数据盖 `source`、
+   稳定侧要求 `manual`）**提示里根本没有边界**。形态照 OpenClaw：常量 `SYSTEM_PROMPT_CACHE_BOUNDARY`（`:36-37`，77
+   字符、不含空行，否则会被段分隔切成两段）。
+3. **缺边界不许静默兜底**：`splitSystemPromptCacheBoundary` 失配时返回
+   `{stable:"",volatile:prompt,boundaryFound:false}`（`:44-52`、`:63-71`）——旧写法把**整份提示**（含 date
+   与易变记忆）当成稳定前缀，调用者据此会得出与事实相反的缓存结论（判据 `MEM-PLACE-16`）。
+4. **两分口径 = 按易变性，不按作用域单维**：稳定侧 = **平台级 + `manual`**（`memory.ts:199-201`、`:298-300`）；易变侧 =
+   其余全部（平台级 `auto` / 项目级 / 对话级 / 来源未知的旧数据，`:302-311`）。显式常量两处，`isStableMemoryEntry` 与两份常量由
+   `MEM-PLACE-17` 逐条对账。
+5. **两块各自带权威性指令**（Hermes 口径的翻译，`memory.ts:72-73`），文案从 104 字符压到**实测 37 字符**（`:324-326`；判据只要求
+   ≤60，`memory-placement-boundary.test.ts:469-474`）⇒ 每轮省 134 字符。
+6. **三块共享一个聚合预算槽**（`:223-226`、`:240-242`、`:331-353`；引擎两处各建一个并传给两块 `llm/index.ts:591`、
+   `:593-608`、`:670-684`）。**披露优先于「空块不留字」**：正文与披露都空才返回 `""`（`memory.ts:344-345`）—— 这是 A4
+   的修复（旧写法先 `if (!text) return ""` ⇒「还有 N 条未注入」随空块一起消失）。
+7. **渲染按创建序**：新写入分配 `max(order)+1`、`update()` 刷新 `timestamp` 但**不动** `order`（`:383-405`、
+   `:1564-1572`、`:1656-1658`），注入侧只读它（`:2076-2078`、`:2125`），面板默认顺序用同一个键（`listAllForPanel`
+   `:1889-1892`）；旧数据**惰性补齐**（按读入顺序，`:399-401`、`buildCreationOrderIndex` `:822-834`）。
+8. **权威性双侧对冲**（Hermes 的另一半）：主请求的记忆块自带豁免；压缩用的两条摘要提示词各带一句「持久记忆权威、不得因压缩降级、冲突时以记忆为准」
+   （`agentic-loop.ts:592-593`、`:596`），因为压缩调用的 system 只有一句「你是一个对话摘要专家。」、
+   **拿不到主请求的系统提示**（`:5801-5807`）。判据 `COMPACT-MEM-1`（`context-consistency.test.ts:549-567`）。
+9. **时间口径收口**：新增 `src/core/time/local-time.ts`（`localTimeParts` `:45-59`、`offsetLabel`
+   `:62-68`、`localDateString` `:81-84`、`localDateTimeString` `:87-91`、`localClockString`
+   `:94-98`），**15 个产品文件**改走它（名单见 `time-single-source.test.ts:172-185` 的 `MUST_USE_SHARED`）。
+10. **新增/更新的判据**：`memory-placement-boundary.test.ts`（MEM-PLACE-1…24，26 用例）、`time-single-source.test.ts`、
+    `prompt-debugger-memory.test.tsx:53-84`（DBG-MEM-1：调试器必须真的带稳定/易变记忆块 + 哨兵 + 权威句）、
+    `time-context-fallback.test.ts`（TIME-CTX-1①..④）；被更新：`cache-prefix-stability.test.ts:9-13/126`、`regression-prompt-builder.test.ts:94/111`、`memory-load-visibility.test.ts:179`、`context-consistency.test.ts:549`。
+
+### 二、对标取证（三家**源码级**，逐条标证据强度）
+
+- **DSH**（`.preview-shot/_bench-memory-placement.md`、`_dsh-reminder-lifecycle.md`）：
+  跨会话知识**根本不在系统提示里** —— `dsh-agent-instructions` 把 `$DSH_HOME/AGENTS.md` + 项目
+  `AGENTS.md`/`CLAUDE.md` 链渲染成 **user 角色 `<system-reminder>`** 追加进派生历史，系统提示段表
+  `SECTION_ORDERS` 里没有记忆槽；每**模型步骤**重新 assemble，靠「渲染未变则节点不动」+
+  `systemPromptUpdate:"in-history"` 保前缀；压缩时**不豁免**（先被摘要器当普通历史逐字读一遍 ⇒ 权威性最弱），压缩后**整份基线重放**（实测
+  3 次压缩 ⇒ 3 条字节完全相同、7,661 B 的基线）；**嵌套 scope 有洞**：`Additional instructions from: …`
+  被遮蔽后不会自动回来。**证据强度：确证**（本机安装包 README + 打包 JS；44 个会话实测）；唯一弱项是「嵌套 scope 后果」无实测样本。
+- **OpenClaw**（`_bench-openclaw-src.md`，depth-1 clone）：记忆**留在系统提示**，
+  且有**硬编码段序表**（`system-prompt-context-files.ts:7-15`：`memory.md=70` **排最后**），渲染完立刻 push
+  `SYSTEM_PROMPT_CACHE_BOUNDARY`（`system-prompt.ts:855,857`）；**内建 project memory
+  在边界之下**（`:876`）；`promptDelta` + 「非 restart 时沿用旧 `prefix`」
+  （`session-prompt-state.ts:174,178`）；缓存纪律厚（边界常量、`cache_control`、`prompt_cache_key` 111 处、
+  live 回归门）。**证据强度：位置/注入/纪律=确证；12 层是否为段序=疑似**（那是延迟/生命周期分层）。
+- **Hermes**（`_bench-hermes-src.md`，tarball 快照）：三档 `stable→context→volatile` 顺序 join，记忆快照**在
+  volatile 尾档但仍在系统提示内**（`agent/system_prompt.py:783,809`）；**会话内冻结**（中途写入不动已构建的提示，
+  唯一自动重建点是压缩边界）；根 `AGENTS.md` 把「**per-conversation prompt caching is sacred**」写成项目第一不变量；
+  摘要器显式获「记忆永远权威」（`context_compressor.py:291-293`）。**证据强度：确证**；文档内部层序自相矛盾一处（未判明哪个是当前实现）。
+- **结论：不照搬 DSH，采用「OpenClaw 形态 + Hermes 权威性纪律」。** 不搬进历史的理由是本仓结构：装配是**纯函数、每轮从零拼**（没有跨轮提示状态可沿用
+  `promptDelta`），且审批语义是「批准即生效」——搬历史或会话内冻结都会**削弱**语义（`prompt.ts:133-143` 如实登记了「为什么这里没有 delta
+  通道」）。
+
+### 三、实测读数（本轮最硬的东西）
+
+口径：真实 `MemoryService` + 真实 `composeMemoryBlock` + 真实 `buildSystemPrompt`，只把
+  agents/skills/mcp 压成桩；原始读数 `.preview-shot/_audit/memplace-readings.json`。
+
+| 场景 | 公共前缀占比 | 顶掉字节 | 覆盖哨兵 | 覆盖易变块抬头 |
+|---|---|---|---|---|
+| 基线：两次组装无变更 | **100%**（sha 相同） | 0 | 是 | 是 |
+| 只改易变侧（新增 1 条 auto + 批准 1 条 pending） | **97.67%** | 802 | **是** | **是** |
+| 只改平台级自动（易变块第一子块） | 95.66% | 1493 | 是 | 是 |
+| 只改对话级（易变块最后一子块） | 99.26% | 253 | 是 | 是 |
+| 带技能/MCP/项目指令，只改易变侧 | 97.65% | 802 | 是 | 是 |
+| **只改平台级手动** | **83.69%** | 5603 | **否** | 否 |
+| 平台级手动**等长**替换 | 83.69% | 5603 | 否 | 否 |
+
+- **反向判据成立**：只改稳定侧（83.69%）与只改易变侧（97.67%）差 **14 个百分点** ⇒ 序列真是两分的，不是「比例恰好够高」。
+- **跨分钟（旧段序 `date → 记忆`）**：公共前缀 **94.64%**、顶掉 1842 字节、断点**恰好落在 date 段** ⇒ 这是 **date
+  后置**的实测依据（97.67% > 94.64%）。
+- **哨兵旧位 vs 真实易变边界**：哨兵在 **84.92%** 处（带技能/MCP 时 **71.71%**），第一个易变字节在 **94.69%**（带技能时 94.64%），
+  中间夹 3.2~7.8 KB 稳定内容 ⇒ 这是**哨兵移位**的依据（判据 `MEM-PLACE-11` 钉「边界之后除易变记忆与 date 外无别的段」）。
+- **非确定性 = 0**：同语料组装 20 次，引擎路径 / 直接装配 / 落库后重载的 sha256 **集合大小都是 1**；同毫秒并列 6 条（timestamp
+  distinct=1）顺序 = 插入序，重载后不变。
+- **空块**：完全无记忆时哨兵**不存在**、两块抬头与豁免**都不出现**（零 token 白占）；两块抬头 + 豁免 + 分隔合计 **559 字节 = 全文 1.63%**。
+- **无条件哨兵的代价（R9 如实登记）**：固定成本 **+84 字符/份**（哨兵 77 + 段分隔 7）。四路审计 F3 那句「**空记忆净增 0**」因此**过期**，
+  交付口径必须改写 —— 这是用 84 字符换一个「稳定前缀到哪结束」的可解析一等事实，属正当取舍。
+- **未测量（留白）**：服务端 KV 真实命中率/计费、`tools` 字段在 provider 模板里的位置、
+  真实会话规模下的比例外推（`_audit-memplace-cache-README.md:40-44`）。
+
+### 四、四路审计的关键发现（各自最重的真缺陷）
+
+1. **实现自审**（`_audit-memplace-impl.md`）：M-1 聚合预算没进「已生效」判定（**后被集成路实跑纠正**：不成立 ——
+   `injectionExplanations` 的单次调用里 `chars` 本来就跨块共享）；★ **M-2 稳定块可被易变条目经 `[[链接]]` 间接改写**（P1）；★
+   M-3 聚合预算耗尽时**整块消失**（连披露一起）；★ M-4 边界语义与实现位置不符（哨兵之后还有 6 段稳定内容，「边界之后 = 易变侧」在 8~13 段区间是假的）；
+   M-5 零调用点的「唯一判据」`isStableMemoryEntry` + `MemoryScopeContext` 这个宽类型同时服务注入与展示。
+2. **跨模块接口**（`_audit-memplace-integration.md`）：★ A1 **同一个 `source` 三处不同形**（注入说「自动提取、未经人工确认」/
+   面板说「手动」/ 保护口径按 manual）——同一条目两套真相；★ A3 存量用户「稳定块恒空 ⇒ **哨兵恒缺**」（且这正是迁移的目标人群）；★ A4
+   聚合披露随空块一起消失；★ A5 权威句只在读者侧、压缩请求里既没有系统提示也没有豁免；★ A6 **设置 →「系统提示词调试器」
+   根本不传两个记忆字段**（自查看到的提示与真实发送不同形）；A7 同一规则两份实现 + 默认形态已无产品调用点。
+3. **回归与副作用**（`_audit-memplace-sideeffects.md`，全部实跑取证）：★ F1 语言规则**不再是最后一段**，但 `prompt.ts`
+   原句与两条判据名仍宣称「在最后」⇒ 「描述与实现不一致」；★ F2 `cache-prefix-stability` 里**两条**断言（不是一条）在带记忆时失效，且 4
+   例全是「无记忆」形态 ⇒ 记忆一进产品形态，它给的绿是**假绿**；★ F3 系统提示每轮固定开销 **+295 字符**（其中 104 字符是同一句豁免的**重复**）；★
+   F4 `source===undefined` 的旧数据在两处算两套真相；★ F5 哨兵只在「有稳定记忆」时出现；F6 聚合预算槽**当前几乎不咬合**（注释里「否则最多是预算的
+   3 倍」这个推断**不成立**，已如实改写 `memory.ts:210-218`）。
+4. **缓存行为实测**（`_audit-memplace-cache-README.md`）：即第三节读数；另记 `add()` **忽略**调用方传的 `timestamp`，
+   `extraSystemPrompt`（deferred 工具/技能提示）**每次迭代重算**并拼在记忆块之后。
+
+### 五、两轮复审（报告 `.preview-shot/_reaudit-memplace.md`，只查「修复线」自身，不重复上面 16 条）
+
+- **R1（P1）时间戳差 8 小时**：`time-context.ts` 取 `toISOString()` 的**UTC 数字**再拼**本机偏移** ⇒ 本地 06:30
+  写成 `2026-10-07T22:30:00+08:00`（解析回比真实早 8 小时），而同一请求的系统提示写 `2026-10-08T06:30:00.000+08:00` ⇒
+  同一次请求两条互相矛盾的「现在几点」。已改走唯一口径（`time-context.ts:83-100`），判据
+  `TIME-CTX-1①..④`（`time-context-fallback.test.ts:194-262`）。
+- **R2（P1）「插入序 = 创建序」在重载路径不成立**：`serialize()` 写的是**以 id 为键的普通对象**，JSON 的**整数样键按数值升序**排列 ⇒
+  实测插入 `mem-3,1,mem-1,2` 读回 `1,2,mem-3,mem-1`（顺序整体反转）。**数字 id 是本仓真实形状**（`memory.ts:391-392`
+  自述「uuid / 中文 / 数字都出现过」）⇒ 构造即 `load()`、开面板还 `reload()` ⇒ 重启后注入块顺序反转，配合每桶 20 条上限**入选集合也会变**。
+  修法 = **持久化 `order`**（`:383-405`），判据
+  `MEM-PLACE-20`（`memory-placement-boundary.test.ts:1206`）。
+- **R3（P2）编辑不再能把条目带进注入窗口**：渲染序改创建序后，面板仍按 `timestamp` 倒序且把该字段标成**「创建时间」**（而 `update()` 每次覆盖它
+  = 实际是最后修改时间）⇒ 两侧口径分叉且用户无从自知。已把面板默认顺序改成同一个键 + 标签改「最后修改时间」（`:1874-1892`），判据
+  `MEM-PLACE-22`（`:1329`）。
+- **R4（P2）导出→导入把「未知（旧数据）」洗成「手动」并搬进稳定前缀**：`JSON.stringify` **丢掉** `source: undefined` ⇒
+  导出件里没有该键，而导入侧自造 `source = scope==="conversation" ? "auto" : "manual"` ⇒ 三态里的「未知」变成「手动」，
+  `platform` 的旧条目还会从**易变侧搬进稳定前缀**（`isStableMemoryEntry` 要求 manual）——注入位置、缓存分块、
+  面板文案**三处同时变而无判据会红**。修法：导出侧显式写 `null`（`:3092-3112`）、导入侧原样保留（`:3156-3185`），判据
+  `MEM-PLACE-21`（`:1271`）。
+- **R5（P3）「三态文案唯一、四处共用」在代码里没成立**：体检视图一行内把三态全写成字面量、面板两处自写 ⇒ 同一屏并存三种说法。已收口到
+  `MEMORY_SOURCE_KIND_LABEL`（`memory.ts:111-115`）+ `MEMORY_AUTO_GROUP_HINT`（`:124`），判据
+  `MEM-PLACE-23①②③`（`test:1156`、`memory-checkup.test.tsx`）。
+- **R6（P3）编译守卫为真但覆盖面比注释宣称的窄**：`@ts-expect-error` **在 `src/test/**` 下不被 `tsc`
+  检查**（`tsconfig.json:20-21` 的 `exclude`）⇒ 守卫**必须放生产代码**（现在两处都在 `memory.ts:499-501`、`:519`，
+  `tsc` 0 错 = 指令确实被消费）；`as` 硬转仍能绕过（`:480` 如实声明）。
+- **R7（P3）记忆行的 `[日期]` 用 UTC 日**：`safeDate` 旧实现 `toISOString().split("T")[0]` ⇒
+  `Asia/Shanghai` 本地 00:00–08:00 写的条目在注入文本里「早一天」，与同提示的 date 矛盾。已走
+  `localDateString()`（`memory.ts:795-814`），判据
+  `TIME-SINGLE-SOURCE②`（`time-single-source.test.ts:251-313`）。
+- **R8（P4）判据重复**：`MEM-PLACE-7` 第三段与 `MEM-PLACE-18-F2` 同形、`MEM-PLACE-5` 与 `-16` 三处重复同一事实 ⇒ 已
+  **P4 合并**（各留一条覆盖，并把更强的断言搬到留下的那条，见 `test:439-441`、`:513-516`、
+  `cache-prefix-stability.test.ts:149-154`）。
+- **R9（评审项）被改动的 `MEM-PLACE-5` 是「正确的契约更新」**：旧断言针对旧语义（哨兵标记记忆块位置），新语义是「稳定前缀到此结束」；
+  替换后的判据**严格更强**（独立段/只出现一次/两半解析/无记忆形态），且「边界无条件在场」由 `MEM-PLACE-16` 两形态独立再钉 ⇒ 若改回条件 push 会红。
+  **代价（84 字符）已如实登记。**
+- **第二轮**：产出第 15 条（编辑不平移，`MEM-PLACE-15`）与**第 16 条（稳定块可被 `[[链接]]` 间接改写）**。**第 16 条是父 agent
+  派活时漏列的**（审计 M-2 早已报出，但下发修复清单时没有列它），**由复审补上**；修复取「同侧约束」且只对**稳定侧**设限（稳定条目只能展开稳定目标；跨侧不展开时
+  `[[key]]` 原样留着，`memory.ts:2869-2872`、`:2885-2905`），判据 `MEM-PLACE-19①②`（`test:784`、`:826`）。
+
+### 六、教训（写成下次能照做的规则）
+
+1. **同一簇 bug 会成三份出现** —— 本轮之前 `sk-` 形状曾有 **5 份**、`date`/时区口径 **3 处**（`prompt.ts` 的 `Z` 后缀、
+   `time-context.ts` 的 UTC 数字 + 本机偏移、`memory.ts` 的 UTC 日）、`source` 口径 **3 处** ⇒
+   **修一处后必须全仓搜同类**，而不是只修那一处。本轮的落地方式不是「再修一处」，而是把判据写成**解析式对账**：`TIME-SINGLE-SOURCE①`
+   扫全仓禁自造时间格式 + 正向要求已知位置真的引用唯一口径 + 例外表**不许过期**（`time-single-source.test.ts:53-92`、`:213-242`）
+   。**15 个产品文件**因此一次性收口。
+2. **判据要防「恒真」**：`MEM-PLACE-2` 曾因断言「公共前缀 ≥ **哨兵偏移**」而恒真（哨兵越早、门槛越松）⇒ 度量改成**易变块首字节**（`test:227`、
+   `:248`）；**反向判据**（只改平台级必须明显缩短，实测 83.69%）才是真闸门（`MEM-PLACE-3`，`test:322`）。
+3. **门禁打印的「样例」不是 delta**：knip 的样例只是列表第一条，照它改会打错目标；真 delta 要靠 `git archive 基线提交` 对账（第 190 波的
+   `_verify-unexport-r190.mjs` / `_verify-unexport-r190b.mjs`）。
+4. **`@ts-expect-error` 在 `src/test/**` 下不被 `tsc` 检查**（`tsconfig.json:21`）⇒ 编译期守卫**必须放生产代码**，
+   否则「守卫为真」只是自我安慰（R6 独立复算证明：指令被消费 ⇒ 0 错；未被消费 ⇒ `TS2578`）。
+5. **「读不到」与「没有」必须区分** —— 本轮**又一次**吃到这个亏：迁移标记、边界哨兵（缺边界 ≠ 整份都稳定）、截断披露（空块 ≠ 没有未注入的条目）三处都是同一个形态。
+6. **判据不许隐式依赖真实时钟**：`promptViaEngine` 原先有个 `date` 形参，但引擎内部**自己取时间** ⇒ 那是**死参数**、跨分钟会假红；
+   现在走可注入时钟 `setPromptClock`（`prompt.ts:89-94`、`test:170-187`）。（这条规矩今天还漏了一个地方，见第七节。）
+7. **给定清单不等于完备清单**：父 agent 下发的修复清单漏了第 16 条，是复审把「审计报告里的每一条都闭合了吗」重新问了一遍才补上 ⇒
+   派活后要有一步「拿审计报告的条目号逐条勾对」。
+
+### 七、如实登记的残留（未做 / 已登记，不重复劳动）
+
+- **一条今天会红的判据（毫秒级 flaky，本轮实测发现，非本波引入）**：
+  `MEM-CHECK-2b`（`src/test/memory-checkup.test.tsx:154-164`）断言两条「归属未知」条目按
+  `["已删项目的记忆","已删对话的记忆"]` 排列，但 `listAll` 的排序键是 **`timestamp` 降序**（`memory.ts:1871`）而 `add()`
+  用 **`Date.now()`** 写它（`:1656`）⇒ 两次 `add()` 一旦跨毫秒，后写的对话条目排到前面，断言变红。**单跑 5 次：4 绿 1 红**；
+  全量跑（本次）恰好绿。**未修**（改动落在既有排序语义上，需先决定「checkup 要不要按创建序」）。
+- **`UsageChart` 的按天窗口仍是固定 24h 步长**（`src/components/UsageVisuals.tsx:103`）：DST 跳变日可能与本地日 key
+  差 1 小时；**未判定是否有意**（`TokenActivityGrid` 同样用 24h 步长生成格子、但按 `localDateString` 聚合，`:31`、`:37`、
+  `:47`）。如实登记，不当缺陷计入。
+- **两份亮度实现**：`src/core/theme/contrast-checker.ts:112` 用 **0.04045**，
+  `tools/audit/scan-color-roles.mjs:137` 用 **0.03928**（三个测试文件也各自镜像了 0.03928：
+  `src/test/css-integrity.test.ts:322`、`src/test/light-theme-contrast.test.ts:53`、
+  `src/test/style-token-gates.test.ts:352`）。不合并的依据（读码得出，**本仓没有文字记录**，故如实标注）：① 两侧**运行面不同** ——
+  一个是产品 bundle（`src/core/theme`）、一个是 `node` 直跑的独立 `.mjs` 审计脚本，合并要让它 import 产品 TS；② 要合并的是 **4
+  处而非 2 处**（审计口径还与 3 个测试文件对齐）；③ 差在第 5 位小数（线性值差 <2e-4），换算到对比度约 1e-3，**不足以翻转任何已登记基数**。
+- **`as` 硬转仍可绕过 `InjectionScopeContext`**（`memory.ts:480` 自述）：类型只挡构造，运行时已由
+  `computeInjection` 内部**重建窄 ctx** 兜住注入行为（`:2102-2107`）。
+- **`MEMORY_UNKNOWN_HEADER` 常量改成函数** `memoryUnknownHeader()`（`memory.ts:135-137`）—— **API
+  变更**；理由是「改文案表 ⇒ 注入抬头在同一个进程里也跟着改」（判据 `MEM-PLACE-23③` 就是靠这条）。
+- **R2 的迁移是「惰性补齐」**：旧条目按**当前读入顺序**补 `order`，而它当时已经是 JSON 键序 ⇒ **补齐前的原始顺序不可复原**（无更早的真相可恢复）；
+  补齐后随下一次 `save()` 落库，跨进程才稳定。
+- **knip 基线 58 → 53（只降）**：`tools/audit/knip-baseline.json` 的 `counts.exports` 从 58 收到 53（配套把
+  `relativeLuminance` / `checkPairs` 从 `src/core/theme/index.ts` 的再导出面摘掉、在
+  `contrast-checker.ts` 里降为非导出）。棘轮只许降，**没有升**。
+- **本轮变异自证没有落下脚本/日志**：判据自述「每一条都实测能变红（见交付报告的变异清单）」（`memory-placement-boundary.test.ts:32`），但
+  `.preview-shot` 里**只找到第 187 波的** `_mutate-memory-187.mjs/.result.json`；本轮的变异脚本与结果**未落盘** ⇒
+  **如实登记为证据缺口**（下次补：把变异脚本连同 `restored:true` 的结果一起落 `.preview-shot`）。
+
+### 八、本轮读数（现算，可复核）
+
+- `npx tsc --noEmit` ⇒ **0 错误**（退出码 0）。
+- `npx vitest run` ⇒ **625 文件 / 7772 通过 / 17 跳过 / 0 红**（121.46s）。
+- 本轮相关判据子集（9 个文件：`memory-placement-boundary` / `time-single-source` /
+  `prompt-debugger-memory` / `cache-prefix-stability` / `regression-prompt-builder` /
+  `memory-load-visibility` / `time-context-fallback` / `context-consistency` /
+  `memory-checkup`）⇒ **124 通过 / 1 红**，那一条就是第七节的 `MEM-CHECK-2b`（毫秒 flaky；单跑 5 次 4 绿 1 红）。其中
+  `memory-placement-boundary.test.ts` 单文件 **26 用例全绿**。
+- `node tools/audit/scan-report-sites.mjs --check` ⇒ 「扫描命中 **244** 处 = 登记表 244 条（triaged 244
+  / pending 0）；未分诊 0、漂移 0、过期 0、缓存漂移 0」。（与第 188 波登记的 247 不同：那是**已提交**的登记表变化，本波未动它；三个口径仍同一个数。）
+- `node tools/audit/knip-gate.mjs` ⇒ 必须为 0 的六项全 0；
+  `exports=53/53  types=21/21  duplicates=10/10` ⇒ **没有增长**；门面交叉对账
+  `knip entry=21 / 可达性白名单=21`。
+- 缓存读数 ⇒ 见第三节（原始 `.preview-shot/_audit/memplace-readings.json`，测量脚本已按纪律删除）。
+
+### 九、下一轮必做
+
+1. **`MEM-CHECK-2b` 的排序键解耦**（别让判据依赖 `Date.now()` 的毫秒边界）—— 顺手决定 checkup 的「归属未知」
+   组该按创建序还是按最后修改时间，并让标签与口径一致。
+2. **真机验证（升级用户形态）**：只有易变记忆（无平台级手写）时，提示里**确实有**边界哨兵，且 `split` 的 `stable` 半边不含 date 与易变记忆；
+   跨分钟重发时**只**顶掉 date 那一段。
+3. **真机验证（链接同侧约束）**：记忆正文里真的写 `[[某条记忆]]`，改易变侧条目时稳定前缀（含哨兵偏移）**逐字节不变**；同侧链接仍照常展开。
+4. **带技能/MCP 形态复核**：`MEM-PLACE-11` 在 2e 语料（哨兵 71.71% vs 易变首字节 94.64%）下的实测复现。
+
+---
+
+## ★★★★★ 给下一个对话：移交说明与优先级
+
+### 一、本轮状态（已提交 / 已发版 / 工作区还留着什么）
+
+- **已提交并推送**（`master` 与 `origin/master` 同步）：`9ee5c04a` 记忆注入按易变性两分 + 显式缓存边界 + 全仓时间口径收口（自记第 189 波；其中两件收尾自记第 190 波）；`2a4ca9d9` 记忆三级作用域 + 来源信任边界 + 体检视图。
+- **已发版：1.16.299**（`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处版本号；远端 tag `v1.16.299` → `8638f642`）。⚠️ **该 tag 在记忆两波之前** ⇒ 1.16.299 的安装包里**没有**记忆两分 / 时间口径；要让用户拿到，必须按 `docs/RELEASE-GUIDE.md` 出新版本号再发一次。
+- **工作区未提交**：`latest.json`（1.16.299 的发布条目）；本文件（第 189 波日志）；以及**并行线**正在做的 `src/core/memory/memory.ts` + `src/core/memory/checkup.ts` + `src/test/memory-checkup.test.tsx`（`MEM-CHECK-2b` 顺序解耦，实测 21/21 绿；见 GAP-LIST 的 **C-44**，别重复做）。
+- 本轮往 `docs/GAP-LIST.md` 追加 **20 条未关闭项（O-36…O-55）+ 1 条已解决（C-44）**；门禁读数：`node tools/audit/check-gaplist.mjs` ⇒ **共 53 项 / 未关闭 24 项 / ✅ 通过**（exit 0），`npx vitest run src/test/docs-current-gap-list.test.ts` ⇒ **6/6 通过**。
+
+### 二、开工先读（按这个顺序，不要通读大文件）
+
+1. `docs/PROJECT-GUIDE.md` 开头「从这里开始」一节（一屏）。
+2. `docs/GAP-LIST.md` 的「二、当前未关闭的项」——**先读 O-36…O-47**（稳健性），再 O-48…O-52（性能），O-53…O-55（证据与流程）；每条都写了现象 / 为什么是问题 / 建议方向 / **验收判据该怎么写** / 证据位置。
+3. 本文件**末尾这一节** + 上一节「第 189 波」（对标取证、实测读数、九条教训、如实登记的残留）。
+4. 需要细节时按条目里给的行号点开代码；`.preview-shot/` 下的对标与审计长文**不在仓库里**（见 O-54）。
+
+### 三、优先级（稳健性与性能优先，**不计改造代价与难度**）
+
+- **P0 立刻做**：`O-36`（记忆镜像字节预算 + 可观测 + 超限如实上报）、`O-37`（`order` 惰性补齐：迁移时落库或给出判据级理由）、`O-47`（快照失败时内存态已被迁移的取舍）、`O-53`（把第 189 波变异脚本连 `restored:true` 落盘 —— 这是「可复核」的前提）。
+- **P1**：`O-38`（把「注入侧 ctx 只许两个键」变成不依赖类型的强校验）、`O-39`（先定亮度阈值口径 0.04045 / 0.03928，再评估 53 对读数漂移，最后收敛单一来源）、`O-46`（executor / 后台路径项目身份）、`O-42`（`known - 1`）、`O-44`（`MEM-CHECK-5a` 补行为判据）、`O-40` + `O-55`（**必须成对做**：固定 24h 步长与 DST 判据是一件事的两半）。
+- **P2（先量化再动手）**：`O-48`（delta 通道的真实收益）、`O-49`（`extraSystemPrompt` 对前缀缓存的影响）、`O-50`（每轮固定开销的净值 + 棘轮）、`O-52`（记忆单字符串 IPC 写放大）、`O-51`（knip 继续收紧）。
+- **必须向用户请示，未拿到答复不许改代码**：`O-41`（重试默认值 10 次 / 500ms·2ⁿ / 30 分钟预算 —— 先出证据再请示）。
+- `O-54`（对标取证落进仓库）可与任意一条并行。
+- **已解决、不重列**：`MEM-CHECK-2b` 的毫秒 flaky 与「两套顺序」= GAP-LIST 的 **C-44**（工作区已修）。
+
+### 四、纪律（照做即可；违反会被判据挡住）
+
+- **判据先行 → 变异自证 → 真机验证 → `npx tsc --noEmit` 0 → `npx vitest run` 全量（约 2 分钟；现规模约 625 文件 / 7772 用例）→ 提交推送**；变异**脚本 + `restored:true` 的结果都要落盘**（别只写进报告，O-53 就是这条的反面教材）。
+- 中文引号一律「」；改文件用 `edit` / `write`（PowerShell 内联脚本会被吃引号，本会话踩过多次）。
+- **绝不在运行中的实例里写内联样式 / 改 DOM**（弄花过用户界面）。
+- 单条耗时长的命令用**后台作业 + `job_output`**；别把长跑进程接进会提前结束的管道。
+- 改日志 / 快照类「一次性结论」必须走**可确认**通道（`setSettingConfirmed` / `writeMemoryConfirmed` 那一套，本会话的核心教训）。
+- **同一规则只许一处实现**；**判据要防恒真**（每条都配反向判据）；改完 `docs/GAP-LIST.md` 后两条门禁都要绿：`node tools/audit/check-gaplist.mjs` + `npx vitest run src/test/docs-current-gap-list.test.ts`。

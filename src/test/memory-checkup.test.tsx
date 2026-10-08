@@ -61,6 +61,21 @@ function index() {
   return buildOwnershipIndexFrom([PROJECT_A, PROJECT_B], SESSIONS);
 }
 
+/**
+ * 夹具：把已写入条目的 `timestamp` 直接改成给定值。
+ *
+ * 为什么需要它（判据先行，第 190 波）：`add()` 写的是 `Date.now()`，于是"两次写入是否跨毫秒"
+ * 是**运行时机**决定的 —— 而判据的颜色不许由运行时机决定。本仓有可注入时钟的先例，但那是
+ * **提示词侧**的 `setPromptClock`（`core/prompt/prompt.ts`），记忆侧没有对应物；
+ * 所以这里用夹具把两种毫秒情形都变成**可控输入**（`MEM-CHECK-2b` 钉"跨毫秒"这一形态）。
+ */
+function stamp(svc: MemoryService, id: string, timestamp: number): void {
+  const entries = (svc as unknown as { entries: Map<string, { timestamp: number }> }).entries;
+  const entry = entries.get(id);
+  if (!entry) throw new Error(`夹具失效：找不到条目 ${id}（判据要因此失败，不许静默跳过）`);
+  entry.timestamp = timestamp;
+}
+
 beforeEach(() => {
   setStoragePort(createFakeStoragePort());
   saveMemory("");
@@ -153,17 +168,88 @@ describe("MEM-CHECK-2：归属未知单列且写明原因（不许静默塞进�
 
   it("MEM-CHECK-2b：归属解析失败（项目/对话已删除）也进「归属未知」，且不假装能跳过去", () => {
     const svc = new MemoryService();
-    svc.add({ scope: "project", projectId: "c:\\work\\deleted", key: "已删项目的记忆", content: "D", source: "manual" });
-    svc.add({ scope: "conversation", sessionId: "sess-deleted", key: "已删对话的记忆", content: "E", source: "auto" });
+    const a = svc.add({ scope: "project", projectId: "c:\\work\\deleted", key: "已删项目的记忆", content: "D", source: "manual" });
+    const b = svc.add({ scope: "conversation", sessionId: "sess-deleted", key: "已删对话的记忆", content: "E", source: "auto" });
+    expect([a.ok, b.ok]).toEqual([true, true]);
+    /*
+     * 判据先行（第 190 波）：这一条原来直接吃 `add()` 的 `Date.now()` —— 两次写入**跨毫秒**时，
+     * 当时 `listAll` 的排序键（`timestamp` 降序）会把后写入的「已删对话的记忆」排到前面，
+     * 于是单跑 5 次 **4 绿 1 红**、全量跑恰好同毫秒才绿（表现为"偶发抖动"）。
+     * 现在把时间戳**钉死成跨毫秒的形状**（先创建的更旧），这一条在两种毫秒情形下是同一个答案；
+     * 而"顺序到底该是什么"由 `MEM-CHECK-2c` 钉（创建序倒序 = 后创建的在前，与注入/面板同口径）。
+     */
+    stamp(svc, a.entry!.id, 1_700_000_000_000);
+    stamp(svc, b.entry!.id, 1_700_000_000_001);
+    expect(
+      svc.get(a.entry!.id)!.timestamp,
+      "夹具必须真的造成跨毫秒，否则这一条又退回'靠运行时机'",
+    ).toBeLessThan(svc.get(b.entry!.id)!.timestamp);
 
     const checkup = createMemoryCheckup({ projectId: PROJ_A_ID, sessionId: "sess-1" }, { index: index(), service: svc });
 
     const unknown = checkup.groups.find((g) => g.kind === "unknown")!;
-    expect(unknown.entries.map((e) => e.key)).toEqual(["已删项目的记忆", "已删对话的记忆"]);
+    expect(unknown.entries.map((e) => e.key), "顺序 = 创建序倒序（后创建的在前），与毫秒无关").toEqual([
+      "已删对话的记忆",
+      "已删项目的记忆",
+    ]);
     expect(checkup.groups.some((g) => g.kind === "project" && g.title.includes("deleted")), "解析不到的项目不许单列成'某项目'组").toBe(false);
   });
 
-  it("MEM-CHECK-2c：全部都有归属时，不出现「归属未知」组（空组不占位）", () => {
+  it("MEM-CHECK-2c：列表/体检的顺序由**创建序**（`order`）决定，与 `timestamp` 无关（= 注入/面板同口径）", async () => {
+    const memoryModule = await import("../core/memory/memory");
+    const { MemoryManager } = await import("../components/MemoryManager");
+
+    const svc = new MemoryService();
+    /*
+     * 造"`timestamp` 顺序与创建序**相反**"的两条：
+     * - 「早创建」先 `add`（创建序更小），时间戳改成**最大**；
+     * - 「晚创建」后 `add`（创建序更大），时间戳改成**最小**。
+     * ⇒ 按 `timestamp` 降序 = [早创建, 晚创建]；按创建序（注入/面板口径）= [晚创建, 早创建]。
+     * 两种口径在这组数据上**可分辨**，而且整个过程没有 `Date.now()` 参与 ⇒ 与运行时机无关。
+     */
+    const early = svc.add({ scope: "platform", key: "早创建", content: "EARLY_CREATED", source: "manual" });
+    const late = svc.add({ scope: "platform", key: "晚创建", content: "LATE_CREATED", source: "manual" });
+    expect([early.ok, late.ok]).toEqual([true, true]);
+    stamp(svc, early.entry!.id, 9_999_999_999_999);
+    stamp(svc, late.entry!.id, 1);
+
+    const tsOf = (id: string) => svc.get(id)!.timestamp;
+    expect(tsOf(early.entry!.id), "夹具必须真的造成'时间戳顺序与创建序相反'").toBeGreaterThan(tsOf(late.entry!.id));
+
+    const ctx = { projectId: PROJ_A_ID, sessionId: "sess-1" };
+    const checkup = createMemoryCheckup(ctx, { index: index(), service: svc });
+    const checkupKeys = checkup.groups.find((g) => g.kind === "platform")!.entries.map((e) => e.key);
+    expect(checkupKeys, "体检按创建序：后创建的在前（即使它的时间戳更小）").toEqual(["晚创建", "早创建"]);
+
+    /*
+     * 反证①：这条判据**真的**能分辨两种口径 —— 按 `timestamp` 降序排会得到**相反**的顺序。
+     * 少了这一句，上面的断言可能因为"两种口径恰好同向"而恒真。
+     */
+    const idOf: Record<string, string> = { 早创建: early.entry!.id, 晚创建: late.entry!.id };
+    const byTimestamp = [...checkupKeys].sort((x, y) => tsOf(idOf[y]) - tsOf(idOf[x]));
+    expect(byTimestamp, "按 timestamp 降序会得到相反的顺序 ⇒ 两种口径可分辨（上面的断言不是恒真）").toEqual([
+      "早创建",
+      "晚创建",
+    ]);
+
+    /* 反证②（同口径）：体检消费的取数、面板入口必须是**同一条序**（同一处 `sortByCreationOrder`） */
+    expect(svc.listAll(ctx).map((e) => e.key), "体检顺序 = listAll 顺序").toEqual(checkupKeys);
+    expect(svc.listAllForPanel(ctx).map((e) => e.key), "面板入口同口径").toEqual(checkupKeys);
+
+    /*
+     * 反证③（渲染层）：把两组时间戳落进镜像，再让**真实面板**挂载一次
+     * （面板挂载会 `reload()`，只改内存会被重读丢掉 ⇒ 用 `finalizeBatch` 触发一次 `save()`），
+     * 断言 DOM 顺序 == 体检顺序。这样"体检与面板同口径"是被产品路径证过的，不是读码推定。
+     */
+    svc.finalizeBatch(svc.beginBatch("mem-check-2c"), 0);
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+    const { container } = render(<MemoryManager onClose={() => {}} projectId={PROJ_A_ID} sessionId="sess-1" />);
+    const panelKeys = Array.from(container.querySelectorAll(".memory-item-key")).map((n) => n.textContent ?? "");
+    expect(panelKeys, "面板 DOM 顺序必须与体检同口径（创建序）").toEqual(checkupKeys);
+    spy.mockRestore();
+  });
+
+  it("MEM-CHECK-2d：全部都有归属时，不出现「归属未知」组（空组不占位）", () => {
     const svc = new MemoryService();
     svc.add({ scope: "platform", key: "P", content: "P", source: "manual" });
     const checkup = createMemoryCheckup({}, { index: index(), service: svc });

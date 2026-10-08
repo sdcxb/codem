@@ -1821,6 +1821,10 @@ export class MemoryService {
    * - 默认**只返回已批准**且归属键齐备的条目（注入与"生效视图"都要求这一点）；
    * - `includePending` / `includeUnscoped` 只给审批界面用。
    * 不传 `ctx` 时按旧语义返回该作用域的全部条目（界面列表/统计用，**不用于注入**）。
+   *
+   * **顺序口径（第 190 波）**：与 `listAll` / 面板 / 注入**同一个创建序**（`sortByCreationOrder`）。
+   * 旧写法是 `timestamp` 降序 —— 那是"同一事实两套顺序"的最后一处：作用域列表（导出 Markdown
+   * 用的就是它）按"最后修改"排，而注入按创建序排。判据 `MEM-CHECK-2c`。
    */
   listByScope(scope: MemoryScope, ctx?: MemoryScopeContext): MemoryEntry[] {
     const viewOnly = ctx?.includePending === true || ctx?.includeUnscoped === true;
@@ -1839,7 +1843,7 @@ export class MemoryService {
       if (!viewCtx) return true;
       return viewOnly ? visibleIn(e, viewCtx) : injectedIn(e, ctx!);
     });
-    return filtered.sort((a, b) => b.timestamp - a.timestamp);
+    return this.sortByCreationOrder(filtered);
   }
 
   /**
@@ -1849,6 +1853,15 @@ export class MemoryService {
    * ⚠️ `ctx` 里的 `projectId` / `sessionId` **不是可选的**：视图要的是"这个项目 + 这个对话的
    * 全部条目（含未批准、含无归属）"。只传 `includeUnscoped` 而不传归属 ⇒ 有归属的项目条目会被
    * `visibleIn` 判为不可见（"可见范围"这个口径始终要求 projectId 相等）。
+   *
+   * **顺序口径（第 190 波，唯一一处）**：创建序倒序（后创建的在前），实现是 `sortByCreationOrder`
+   * —— 与注入块（`computeInjection` 的 `renderOrderIndex`）和面板（`listAllForPanel`）**同一个键**。
+   *
+   * 旧写法是 `timestamp` 降序，于是同一个事实有两套顺序：
+   * ① 体检（它就是这条 API 的消费者之一）的排列按"最后修改时间"，而面板/注入按创建序；
+   * ② `add()` 写的是 `Date.now()` ⇒ **两次写入跨毫秒**时顺序就变 ⇒ 判据
+   *    `MEM-CHECK-2b` 单跑 5 次 4 绿 1 红（全量跑恰好同毫秒 ⇒ 偶发抖动）；
+   * ③ `update()` 刷新 `timestamp` ⇒ 编辑一条会让它在体检列表里平移，而注入里原地不动。
    */
   listAll(ctx?: MemoryScopeContext): MemoryEntry[] {
     const base: MemoryScopeContext = { ...ctx, includePending: true, includeUnscoped: true };
@@ -1868,7 +1881,7 @@ export class MemoryService {
       if (entry.scope === "platform" || entry.scope === "project" || entry.scope === "conversation") continue;
       if (visibleIn(entry, otherCtx)) all.push(entry);
     }
-    return all.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return this.sortByCreationOrder(all);
   }
 
   /**
@@ -1885,10 +1898,36 @@ export class MemoryService {
    * 入选集合 —— 旧行为里"编辑第 25 条能把它顶进注入窗口"依赖的正是"排序键 = 被编辑的字段"，
    * 而那正是本轮要修掉的缓存抖动（`MEM-PLACE-15`）。要让一条超额条目进上下文，
    * 用户的动作仍然是"删掉/整合掉同桶里的其它条目"，不是"编辑它"。
+   *
+   * **第 190 波**：顺序键**只有一处实现**（`sortByCreationOrder`）—— 体检原来消费 `listAll`
+   * 而当时 `listAll` 按 `timestamp` 倒序，于是"体检列表"与"注入/面板"成了同一个事实的两套顺序
+   * （判据 `MEM-CHECK-2c`）。现在 `listAll` 自己就是创建序，这里只是面板的**入口名**
+   * （它带出的是面板的取数语义：这个项目 + 这个对话的全部条目，含 pending 与无归属）
+   * 直接转交同一条实现 ⇒ 两侧**不可能**再分叉。
    */
   listAllForPanel(ctx?: MemoryScopeContext): MemoryEntry[] {
+    return this.listAll(ctx);
+  }
+
+  /**
+   * 记忆条目列表的**唯一排序实现**（第 190 波）：创建序倒序（后创建的在前）。
+   *
+   * 排序键只有 `MemoryEntry.order`（与 `computeInjection` 内部用的 `buildCreationOrderIndex`
+   * 是同一个函数、同一个方向）。`listAll` / `listAllForPanel` / `listByScope` 全走这里，
+   * 于是"体检顺序 = 面板顺序 = 注入块内顺序"是同一条代码，不是三处各自实现的巧合。
+   *
+   * ⚠️ 兜底键（创建序并列，只可能来自损坏数据）**不许**用 `timestamp`：
+   * `add()` 写的是 `Date.now()` ⇒ 跨毫秒时顺序就变（`MEM-CHECK-2b` 单跑 5 次 4 绿 1 红就是这么来的）；
+   * `update()` 又把它刷成"最后修改时间"。这里用与墙钟完全无关的 `id` 兜底，
+   * 于是这条 API 的返回顺序**与运行时机无关**。
+   */
+  private sortByCreationOrder(entries: MemoryEntry[]): MemoryEntry[] {
     const order = buildCreationOrderIndex(this.entries.values());
-    return this.listAll(ctx).sort((a, b) => (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
+    return entries.sort((a, b) => {
+      const gap = (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0);
+      if (gap !== 0) return gap;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
   }
 
   /** 面板列表排序口径的可展示说明（界面的文案取自这里 ⇒ 口径改了文案不改会露出来） */
@@ -1904,6 +1943,13 @@ export class MemoryService {
    * 项目 B 的待批准内容 —— 而 `visibleIn` 需要 ctx 才按项目/会话过滤。
    * 缺 ctx ⇒ **不返回任何条目**（fail-closed：宁可不显示，也不跨项目展示），
    * 跨项目列举只允许体检那条显式带 `showAllProjects` 的路径。
+   *
+   * **顺序口径（第 190 波核对后有意保留 `timestamp` 降序）**：这是**待办队列**
+   * （"最近提交/改动的那条在最上面"，面板与 `/memory pending` 都按它逐条处理），
+   * **不是**"注入顺序的视图"——待批准条目此刻根本不在注入里（`injectedIn` 要求
+   * `status === "active"`），所以不存在"与注入口径不一致"这回事；它对时间字段的
+   * 使用与界面标签（「最后修改时间」）也不矛盾。面板里的**主列表**（`listAll`）
+   * 已经与注入同口径，判据 `MEM-CHECK-2c` 钉的就是那一条。
    */
   listPending(scope?: MemoryScope, ctx?: MemoryScopeContext): MemoryEntry[] {
     if (!ctx) return [];

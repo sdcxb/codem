@@ -333,6 +333,12 @@ export function createMemoryCheckup(
    *   （它不影响注入 —— 注入路径永远只按当前位置过滤）；
    * - `ctx` 里的 projectId/sessionId 仍然传下去，但只用于算每条的 `injected`
    *   （"这条**现在**会不会生效"）—— 它由上面的 `checkupInjected` 按当前位置逐条判定。
+   *
+   * **顺序口径（第 190 波）**：体检的组内顺序**就是 `listAll` 的顺序** = 创建序倒序
+   * （与注入块内顺序、面板列表**同一处实现**：`MemoryService.sortByCreationOrder`）。
+   * 旧写法下 `listAll` 按 `timestamp` 倒序 ⇒ 同一个事实两套顺序（体检 vs 面板/注入），
+   * 而且 `add()` 的 `Date.now()` 让顺序随毫秒抖动（判据 `MEM-CHECK-2b` 单跑 5 次 4 绿 1 红、
+   * 全量跑恰好同毫秒 ⇒ 表现为偶发抖动）。判据 `MEM-CHECK-2c` 钉住这条契约。
    */
   const entries =
     opts?.entries ?? service.listAll({ ...ctx, includePending: true, includeUnscoped: true, showAllProjects: true });
