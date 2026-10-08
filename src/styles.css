@@ -1471,12 +1471,31 @@ flex-shrink: 0;
   margin: var(--space-2) 0;
   padding: var(--space-2);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent, #7c6cf0) 8%, transparent);
+  /*
+   * ★ 第 185 波（用户报「亮色下有种廉价感」）：**默认底从品牌浅紫改成中性灰**，
+   * 把那份紫**挪到悬停**（见下面 `:hover/:focus-within`）。
+   *
+   * 为什么原来是紫的：这块是"工具入口"的分组底，用 8% 品牌色当"这是个可点的区块"的提示。
+   * 但亮色档里 `#6555e0 × 8%` 落在近白侧栏（`--sidebar-bg: #fbfbfa`）上会变成一层**淡紫**——
+   * 一整条横贯侧栏的淡紫在没有选中语义（没有哪个"当前工具"是持久的）时，
+   * 读起来更像"渲染偏色"而不是"分组"（用户的原话是"廉价感"）。
+   *
+   * 为什么用 `--row-hover`：它是仓库**既有的中性底**（`--text-base` 6% 混合，随主题自动换墨/白），
+   * 与"悬停"同一族视觉重量 ⇒ 默认灰、悬停紫，两者对比清楚且不新增写死值。
+   */
+  background: var(--row-hover);
   box-shadow: inset 0 1px 3px var(--shadow-color-soft);
 }
 
+/*
+ * 悬停 / 键盘焦点进入这一行 ⇒ 变回品牌紫（就是原来那份 8% 品牌底）。
+ *
+ * ⚠️ 为什么连 `:focus-within` 一起：键盘用户 Tab 进这一列的按钮时，
+ * 整行变紫是"焦点在这一组"的唯一视觉线索（原来它给的是灰色，与默认底分不出来）。
+ * 这也说明为什么默认底必须是灰的：**紫在这里代表"你正在这里"**，那它就不能同时是常态。
+ */
 .sidebar-tool-row:is(:hover, :focus-within) {
-  background: var(--row-hover);
+  background: color-mix(in srgb, var(--accent, #7c6cf0) 8%, transparent);
 }
 
 .sidebar-tool-item {
@@ -1596,9 +1615,26 @@ flex-shrink: 0;
    原来材质档那条 `html[data-native-material="sidebar"] .sidebar-session:is(:hover,…)` 是 (0,3,1)，
    而 `.sidebar-session.active` 是 (0,2,0) ⇒ 鼠标一碰到当前会话，紫底就被顶掉（选中"一碰就没"）。
    现在统一：`.active` 写在 hover 之后，且 hover 规则一律带 `:not(.active)` —— 不再依赖源码顺序侥幸。 */
+/*
+ * ★ 第 185 波（用户报）：**选中的项目，图标与名字一起变品牌紫**。
+ *
+ * 改前只有底色变（`--accent-muted`）+ 文字提到 `--text-primary`：
+ * 选中与"鼠标悬停"在亮色档里都只是"一层浅底"，扫一眼分不出哪个是当前项目。
+ * 现在把 `color` 交给品牌色 —— 图标是 lucide `<Folder>`（走 `currentColor`），
+ * 所以它和名字**一起**变紫。
+ *
+ * ⚠️ 有意不动的两处：`.sidebar-project-arrow`（自带 `--text-muted`）与
+ * `.sidebar-project-btn`（自带 `--text-secondary`）—— 它们是"展开/新建"这类动作，
+ * 不该跟着"这是当前项目"一起变色（否则一排按钮全紫，反而看不出主次）。
+ *
+ * ⚠️ 用 `--accent-strong` 而**不是** `--accent`：这块底是 `--accent-muted`（品牌浅底），
+ * 品牌色文字压在同色浅底上对比度不够 —— 这正是既有判据 `LIGHT-UI-8`
+ * （`light-theme-contrast.test.ts`）明令的一条，我第一版写 `--accent` 被它当场抓住。
+ * `--accent-strong` 就是为这种底定的深一档品牌色（亮色 `#5b46cf`、暗色 `#a99bff`）。
+ */
 .sidebar-project.active > .sidebar-project-header {
   background: var(--accent-muted);
-  color: var(--text-primary);
+  color: var(--accent-strong);
 }
 
 .sidebar-project-arrow {
@@ -1816,12 +1852,17 @@ flex-shrink: 0;
   transform: translateY(1px);
 }
 
-/* 选中：底色用品牌浅底，并把文字一起提到主色（此前只换底色 ⇒ 与 hover 分不出来）。
+/* 选中：底色用品牌浅底，并把文字一起提到品牌紫（此前只换底色 ⇒ 与 hover 分不出来）。
    ⚠️ 这里**不**写图标色：会话行渲染里没有图标元素（只有标题 + 运行时小圆点 + 尾部动作），
-   上一版写的 `.sidebar-session-icon` 是死规则（被 `css-class-unused` 抓到并删除）。 */
+   上一版写的 `.sidebar-session-icon` 是死规则（被 `css-class-unused` 抓到并删除）。
+   ★ 第 185 波（用户报）：`color` 从 `--text-primary` 改成 **`--accent-strong`** —— 与项目行同一口径：
+   选中 = 图标/文字变品牌紫。行内那些自带颜色的成员（运行中小圆点、未读徽标、
+   钉住/重命名/删除按钮）各自保留自己的语义色，不受影响。
+   ⚠️ 必须是 `--accent-strong`（不是 `--accent`）：底是 `--accent-muted`，
+   同色品牌文字压在上面对比度不够 —— 既有判据 `LIGHT-UI-8` 守这条。 */
 .sidebar-session.active {
   background: var(--accent-muted);
-  color: var(--text-primary);
+  color: var(--accent-strong);
 }
 
 .sidebar-session-title {
