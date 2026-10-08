@@ -126,6 +126,18 @@ export interface ToolCallResult {
    *   `Error: read declared outputSchema but returned no value`，模型因此放弃 read/bash/glob/grep）。
    */
   errorSource?: "tool" | "pipeline" | "loop";
+  /**
+   * 第 183 波：工具结果的**结构化诊断**（对标 Pi 的 `ToolDiagnostic`）。
+   *
+   * 为什么要有它：截断/分页这类"元信息"原来是一条散装括号文本
+   * （`... (showing lines 1-2 ... use offset to continue reading)`），**形态上像正文**
+   * —— 而 `read` 的输出外面还裹着"这是待分析数据"的边界框，模型很难分辨
+   * "这是文件里的字"与"这是系统在说『你只看到了一部分』"。
+   *
+   * 结构化之后：既能统一渲染成带标记的块（见 `tool-diagnostics.ts`），
+   * 也能让 UI 独立消费（不必去正则匹配正文）。
+   */
+  diagnostics?: Array<{ severity: "info" | "warn" | "error"; code: string; message: string }>;
   /** 工具执行元数据（如 subagentId 等）— 从 ToolExecuteResult 透传 */
   metadata?: Record<string, any>;
   /**

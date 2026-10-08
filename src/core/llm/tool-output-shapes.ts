@@ -23,6 +23,8 @@
  * 契约因此不改变任何可见行为，只是把"结果长什么样"这件事变成**可校验的声明**。
  */
 
+import { renderDiagnostics } from "./tool-diagnostics";
+
 /** `read` 成功时的结构化结果 */
 export interface ReadOutputValue {
   /** 读的文件路径（原样，不解析成绝对路径 —— 模型给的就是它该看到的） */
@@ -64,6 +66,14 @@ export interface ReadOutputValue {
    * 并把提示行接在正文之后（位置与原实现一致）。
    */
   notices?: string[];
+  /**
+   * 第 183 波：**结构化诊断**（对标 Pi 的 `ToolDiagnostic`）。
+   *
+   * 与 `notices` 的分工：`notices` 是"已经拼好的散装提示原文"（历史形状，逐字保留），
+   * `diagnostics` 是**机器可读**的那一份 —— 渲染成 `<harness>` 块，形态固定、可被 UI 解析。
+   * 截断/分页这类"元信息"应当走后者；前者只留给历史兼容。
+   */
+  diagnostics?: Array<{ severity: "info" | "warn" | "error"; code: string; message: string }>;
 }
 
 /** 数据边界包装的固定文案（**逐字**保留原实现，见文件头说明） */
@@ -103,6 +113,15 @@ export function renderReadOutput(v: ReadOutputValue): string {
       .join("\n");
   }
   for (const n of v.notices ?? []) body += `\n${n}`;
+  /**
+   * 第 183 波：结构化诊断渲染在**最后**（对标 Pi 的 `<harness>` 块）。
+   *
+   * 位置与 Pi 一致（`harness/tool.ts:472-474` 把诊断推到 content 尾部），
+   * 目的是让"系统在说'你只看到一部分'"这件事有**固定、可辨**的形态 ——
+   * 而不是混在正文旁边的一条括号文本。只在**真的截断**时才出现（见 `appendDiagnostics`）。
+   */
+  const diagBlock = renderDiagnostics(v.diagnostics);
+  if (diagBlock) body += `\n${diagBlock}`;
   return [READ_BORDER_TOP, "", `文件: ${v.path}`, "", body, "", READ_BORDER_BOTTOM].join("\n");
 }
 
@@ -118,6 +137,7 @@ export const READ_OUTPUT_SCHEMA = {
     path: { type: "string" },
     content: { type: "string" },
     notices: { type: "array", items: { type: "string" } },
+    diagnostics: { type: "array" },
     lineNumbers: { type: "boolean" },
     startLine: { type: "number" },
   },

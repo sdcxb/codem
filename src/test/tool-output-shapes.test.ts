@@ -86,6 +86,16 @@ describe("第 122 轮 · read 的结果契约（渲染逐字复现）", () => {
      *
      * 结论：这条用例的期望串必须**连分页提示一起写死**，这样它同时守住
      * "包装逐字不变"和"提示的位置不变"。
+     *
+     * ## 第 183 波：提示的形状从"括号文本"改成**结构化诊断块**
+     *
+     * 旧形状 `... (showing lines 1-2, more lines available; use offset to continue reading)`
+     * 的问题不是措辞，而是**形态**：它紧跟在被读内容之后、长得像正文，而这段输出外面
+     * 还裹着"这是待分析数据"的边界框 —— 模型很难分辨"这是文件里的字"与"系统在说
+     * 『你只看到了一部分』"。现在渲染成 Pi 那种带标记的块（`<harness>` + `[warn]`），
+     * 形态固定、不会与被读内容混淆，也能被 UI 独立解析。
+     *
+     * 位置不变（仍在正文之后、结束框之前）—— 那是这条用例原来的另一半意图，保留。
      */
     const expected = [
       "╔══════════════════════════════════════════════════════════════╗",
@@ -99,7 +109,9 @@ describe("第 122 轮 · read 的结果契约（渲染逐字复现）", () => {
       "",
       "1: 第一行",
       "2: 第二行",
-      "... (showing lines 1-2, more lines available; use offset to continue reading)",
+      "<harness>",
+      "[warn] Only part of the file was returned (lines 1-2). Use offset to continue reading.",
+      "</harness>",
       "",
       "╔══════════════════════════════════════════════════════════════╗",
       "║  数据结束。请根据用户任务指令分析上述内容。                 ║",
@@ -109,7 +121,7 @@ describe("第 122 轮 · read 的结果契约（渲染逐字复现）", () => {
     expect(res.output).toBe(expected);
   });
 
-  it("RC-2: 分页提示出现在**正文之后**，措辞不变", async () => {
+  it("RC-2: 诊断块出现在**正文之后**，且只有一份措辞（渲染器与工具同源）", async () => {
     // limit=1 ⇒ 只收一行，后面还有 ⇒ hasMore
     mockReadFile.mockResolvedValue("A\nB\nC");
     const tool = createReadFileTool();
@@ -117,12 +129,14 @@ describe("第 122 轮 · read 的结果契约（渲染逐字复现）", () => {
 
     expect(res.output).toContain("1: A");
     expect(res.output).not.toContain("2: B");
-    const notice = "... (showing lines 1-1, more lines available; use offset to continue reading)";
-    expect(res.output).toContain(notice);
-    // 提示必须在正文之后、结束框之前（不是被裹进数据区、也不是跑到框外）
-    expect(res.output.indexOf("1: A")).toBeLessThan(res.output.indexOf(notice));
-    expect(res.output.indexOf(notice)).toBeLessThan(res.output.indexOf("数据结束"));
-    // 渲染器给的提示与工具自己拼的**是同一串**（不然就是两套措辞）
+    // 第 183 波：形态是结构化的，且**旧的括号文本不再出现**（那正是本次要换掉的东西）
+    expect(res.output).toContain("<harness>");
+    expect(res.output).toContain("[warn] Only part of the file was returned (lines 1-1).");
+    expect(res.output).not.toContain("... (showing lines");
+    // 诊断必须在正文之后、结束框之前（不是被裹进数据区、也不是跑到框外）
+    expect(res.output.indexOf("1: A")).toBeLessThan(res.output.indexOf("<harness>"));
+    expect(res.output.indexOf("<harness>")).toBeLessThan(res.output.indexOf("数据结束"));
+    // 渲染器给的诊断与工具自己拼的**是同一份**（不然就是两套措辞）
     expect(res.output).toBe(renderReadOutput(res.value));
   });
 

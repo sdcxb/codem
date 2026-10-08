@@ -33,6 +33,12 @@ import {
   renderReadOutput,
   type ReadOutputValue,
 } from "./tool-output-shapes";
+import {
+  appendDiagnostics,
+  pagedDiagnostic,
+  truncatedDiagnostic,
+  type ToolDiagnostic,
+} from "./tool-diagnostics";
 
 // R4: 可选的 ctx 消费层 — 当 ctx 可用时优先通过 ctx.get() 消费服务
 let _ctx: Context | null = null;
@@ -1182,7 +1188,7 @@ function extractLinesIncremental(
   offset: number,
   limit: number,
   maxChars: number,
-): { content: string; notices: string[] } {
+): { content: string; notices: string[]; diagnostics: ToolDiagnostic[] } {
   const len = content.length;
   // Fast path: skip to the start line using indexOf
   let lineStart = 0;
@@ -1197,7 +1203,7 @@ function extractLinesIncremental(
       // —— 漏掉它会让 "offset 超过文件长度" 这条路径返回字符串，
       // 下游 `extracted.content` 就是 `undefined`（真跑一次构建才暴露：
       // `tsc` 报 `Type 'string' is not assignable to type '{ content; notices }'`）。
-      return { content: `[End of file: only ${currentLine} line(s)]`, notices: [] };
+      return { content: `[End of file: only ${currentLine} line(s)]`, notices: [], diagnostics: [] };
     }
     lineStart = next + 1;
     currentLine++;
@@ -1254,16 +1260,27 @@ function extractLinesIncremental(
    * 被裹进数据边界里 —— 而它其实是**元信息**。拆出来之后两条路径
    * （Rust 分页 / 这里）给渲染器的形状一致，措辞与顺序逐字不变。
    */
-  const notices: string[] = [];
+  /**
+   * 第 183 波：分页/截断不再写成"看起来像正文的括号文本"，而是**结构化诊断**
+   * （渲染成 `<harness>` 块，见 `tool-diagnostics.ts`）。
+   *
+   * 这一条路径（legacy 逐行读取）**拿不到**总行数与精确丢弃量 —— 所以只说它知道的
+   * （"给的是第 X-Y 行"）。**宁可说得少，也不许编数字**：截断量说错比不说更糟，
+   * 模型会据此判断该不该继续翻页。
+   */
+  const diagnostics: ToolDiagnostic[] = [];
   if (hasMore) {
-    // Count total lines approximately (we know we didn't read to end)
-    notices.push(`... (showing lines ${offset}-${offset + linesCollected - 1}, more lines available; use offset to continue reading)`);
+    diagnostics.push(pagedDiagnostic(offset, offset + linesCollected - 1));
   }
   if (totalChars >= maxChars) {
-    notices.push(`... (output truncated at ${maxChars} chars; use offset to read more)`);
+    diagnostics.push({
+      severity: "warn",
+      code: "truncated",
+      message: `Output truncated at the ${maxChars}-char cap. Use offset to read more.`,
+    });
   }
 
-  return { content: output, notices };
+  return { content: output, notices: [], diagnostics };
 }
 
 export function createReadFileTool(): ToolDef {
@@ -1345,27 +1362,31 @@ export function createReadFileTool(): ToolDef {
             const { readFileLines } = await import("../file-api");
             const result = await readFileLines(path, offset, limit, MAX_CHARS);
             output = result.text;
-            const notices: string[] = [];
+            /**
+             * 第 181 波（T-3）：**精确**的丢弃计数；第 183 波把它做成**结构化诊断**。
+             *
+             * 改前这里用 `offset + Math.ceil(text.length / 80) - 1` **猜**结束行号
+             * （文件里有长行就偏得离谱），而且完全不告诉模型**还差多少**。
+             * 现在结束行号与丢弃量都由 Rust 侧的同一次扫描给出，并渲染成
+             * `<harness>` 块（形态固定、可被 UI 解析、不会与被读内容混淆）。
+             */
+            const diagnostics: ToolDiagnostic[] = [];
             if (result.hasMore) {
-              /**
-               * 第 181 波（T-3）：**精确**的丢弃计数（对标 Pi `cdf79797b` 的
-               * `Output truncated to its end: N lines, M bytes dropped`）。
-               *
-               * 改前这行写的是 `offset + Math.ceil(text.length / 80) - 1` —— 用"每行约 80 字符"
-               * **猜**结束行号（文件里有长行就偏得离谱），而且完全不告诉模型**还差多少**。
-               * 现在结束行号由 Rust 侧的同一次遍历给出，并附上精确的行/字符丢弃量。
-               */
-              const endLine = Math.max(offset, result.totalLines - result.droppedLines);
-              const notice =
-                `... (showing lines ${offset}-${endLine} of ${result.totalLines}; ` +
-                `${result.droppedLines} lines / ${result.droppedChars} chars not shown; ` +
-                `use offset to continue reading)`;
-              output += `\n${notice}`;
-              notices.push(notice);
+              diagnostics.push(
+                truncatedDiagnostic(result.droppedLines, result.droppedChars, result.totalLines),
+              );
             }
+            /**
+             * 原始 `output` 也带上同一份诊断（逐字相同的块）。
+             *
+             * 为什么两处都要：`readValue` 是**注册了契约之后**模型看到的权威来源；
+             * 而 `output` 是回退路径（以及 UI/日志里显示的文本）。两者若不一致，
+             * 就又回到"同一个事实两份措辞"的老问题上了。
+             */
+            output = appendDiagnostics(output, diagnostics);
             // 行号字段**不在这里**加：最终 `value` 在下面统一重建（那里是权威位置，
             // 也是唯一能被渲染器看到的地方 —— 在这儿加等于写了个没人读的字段）。
-            readValue = { path, content: result.text, notices };
+            readValue = { path, content: result.text, notices: [], diagnostics };
             usedRustPaginated = true;
           } catch (e: any) {
             // read_file_lines failed — could be file not found, permission error,
@@ -1405,8 +1426,13 @@ export function createReadFileTool(): ToolDef {
             content = await readViaSeam(path, ctx.cwd);
           }
           const extracted = extractLinesIncremental(content, offset, limit, MAX_CHARS);
-          output = extracted.content;
-          readValue = { path, content: extracted.content, notices: extracted.notices };
+          output = appendDiagnostics(extracted.content, extracted.diagnostics);
+          readValue = {
+            path,
+            content: extracted.content,
+            notices: extracted.notices,
+            diagnostics: extracted.diagnostics,
+          };
         }
 
         /**
@@ -1447,8 +1473,17 @@ export function createReadFileTool(): ToolDef {
                 // 于是渲染器永远收不到 lineNumbers：单元测 `renderReadOutput` 会绿、
                 // 真机路径却一个行号都没有（这正是"判据长在没人走的链路上"的老毛病）。
                 ...(lineNumbers ? { lineNumbers: true, startLine: offset } : {}),
+                // 第 183 波：**诊断也必须跟着重建一起走** —— 与上面行号开关是同一个坑
+                // （重建对象会丢掉没显式带上的字段）。`diagnostics` 是渲染器唯一的输入，
+                // 这里漏了它，模型就永远看不到"你只读到一部分"。
+                ...(readValue?.diagnostics?.length ? { diagnostics: readValue.diagnostics } : {}),
               }
-            : { path, content: filtered, ...(lineNumbers ? { lineNumbers: true, startLine: offset } : {}) };
+            : {
+                path,
+                content: filtered,
+                ...(lineNumbers ? { lineNumbers: true, startLine: offset } : {}),
+                ...(readValue?.diagnostics?.length ? { diagnostics: readValue.diagnostics } : {}),
+              };
         /**
          * 第 95 波：**读到 = 观察到**（`fs-observation-policy` 的写入前置条件靠这条记录）。
          *
