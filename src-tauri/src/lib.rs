@@ -2734,9 +2734,9 @@ fn find_codegraph_launcher(root: &std::path::Path) -> Option<String> {
 //
 // 不是"我们拼出来的字符串长什么样"（那是判据与实现互相证明的假绿），而是：
 // 目标进程（真 `.cmd` → 真 `.exe`）**自己的 argv** 是否逐字节等于输入 —— 见
-// `harden_186_tests` 与 `src/bin/argv_probe.rs`（argv 探针）。
+// `harden_186_tests` 与 `probe-src/argv_probe.rs`（argv 探针）。
 
-/// 判据用 argv 探针的**参数约定**（探针本体在 `src/bin/argv_probe.rs`）。
+/// 判据用 argv 探针的**参数约定**（探针本体在 `probe-src/argv_probe.rs`）。
 ///
 /// 探针被当"目标 `.exe`"启动时，命令行形状是 `<探针> <MAGIC> <落盘路径> <实参…>`，
 /// 它把 `<实参…>` 逐字节写进文件。判据 `r186_probe_source_and_lib_agree_on_the_magic`
@@ -3004,7 +3004,7 @@ fn schedule_cmd_wrapper_cleanup(path: std::path::PathBuf) {
 // 第 186 波的 argv 探针**不在 lib 里**：`cargo test` 生成的 `main` 是 libtest 的
 // harness（不走 `run()`），而 libtest 遇到陌生选项会直接 `exit(1)` ⇒ 自举探针不可能
 // 生效（实测报 `error: Unrecognized option: 'codem-argv-dump-186'`）。
-// 探针因此单独立在 `src/bin/argv_probe.rs`（自己有 `main`、不链接 libtest）；
+// 探针因此单独立在 `probe-src/argv_probe.rs`（自己有 `main`、不链接 libtest）；
 // 判据在 `harden_186_tests` 里**现场 `rustc` 它**⇒ 不依赖 "先 cargo build --bins"。
 
 /// `cmd.exe` 壳的启动探测窗口（毫秒）。
@@ -6219,7 +6219,7 @@ mod harden_185_tests {
     // 假绿形态），而是真的起 `cmd.exe /d /s /c ""<wrapper>""`，让 wrapper 把目标
     // （`.cmd` → `.exe`）拉起来，再检查**目标进程自己的 argv** 是否逐字节等于输入。
     //
-    // 目标进程是一个只有 `main` 的小探针（`src/bin/argv_probe.rs`），判据**现场用
+    // 目标进程是一个只有 `main` 的小探针（`probe-src/argv_probe.rs`），判据**现场用
     // `rustc` 编它**（见 `build_probe`）⇒ 不引入 node/python 依赖、也不依赖
     // "先跑过 `cargo build --bins`"，但整条链与生产同形。
     mod harden_186_tests {
@@ -6231,7 +6231,7 @@ mod harden_185_tests {
             format!("argv{}={}:{}", i, s.len(), escape_argv_bytes_for_test(s))
         }
 
-        /// 与 `src/bin/argv_probe.rs::escape_bytes` 同一口径（判据侧独立实现一份：
+        /// 与 `probe-src/argv_probe.rs::escape_bytes` 同一口径（判据侧独立实现一份：
         /// 如果哪天探针的转义口径变了，判据必须跟着红，而不是"两边一起改就永远绿"）。
         fn escape_argv_bytes_for_test(s: &str) -> String {
             let mut out = String::with_capacity(s.len());
@@ -6256,8 +6256,7 @@ mod harden_185_tests {
             static PROBE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
             PROBE.get_or_init(|| {
                 let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("src")
-                    .join("bin")
+                    .join("probe-src")
                     .join("argv_probe.rs");
                 assert!(src.exists(), "探针源文件必须存在：{}", src.display());
                 let nanos = std::time::SystemTime::now()
@@ -6361,7 +6360,7 @@ mod harden_185_tests {
             ];
             for (idx, arg) in keep.iter().enumerate() {
                 let out_file = dir.join(format!("argv-{idx}.txt"));
-                // 探针形态：`<exe> <MAGIC> <落盘路径> <实参…>`（见 src/bin/argv_probe.rs）
+                // 探针形态：`<exe> <MAGIC> <落盘路径> <实参…>`（见 probe-src/argv_probe.rs）
                 let args: Vec<String> = vec![
                     ARGV_DUMP_MAGIC.to_string(),
                     out_file.display().to_string(),
@@ -6603,8 +6602,7 @@ mod harden_185_tests {
         fn r186_probe_source_and_lib_agree_on_the_magic() {
             assert_eq!(ARGV_DUMP_MAGIC, "--codem-argv-dump-186");
             let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("src")
-                .join("bin")
+                .join("probe-src")
                 .join("argv_probe.rs");
             let text = std::fs::read_to_string(&src)
                 .unwrap_or_else(|e| panic!("读不到探针源码 {}：{e}", src.display()));
