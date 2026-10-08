@@ -4,15 +4,22 @@ import {
   getMemoryService,
   getWriteApprovalSetting,
   setWriteApprovalSetting,
+  MEMORY_AUTO_GROUP_HINT,
   MEMORY_INJECT_KEY_MAX,
+  MemoryService,
   type ApprovalScopeSetting,
   type MemoryBatch,
   type MemoryEntry,
   type MemoryScope,
   type MemorySearchResult,
   type MemorySource,
+  type MemorySourceKind,
+  MEMORY_SOURCE_KIND_LABEL,
+  memorySourceOf,
+  injectionScopeContext,
 } from "../core/memory/memory";
 import { formatMemoryImportReceipt } from "../core/memory/checkup";
+import { localDateString } from "../core/time/local-time";
 import { getLLMEngine } from "../core/llm";
 import { alertDialog } from "../core/ui/native-dialog";
 
@@ -59,8 +66,27 @@ function getScopeHint(scope: MemoryScope, entry?: MemoryEntry): string {
   }
 }
 
+/**
+ * 来源三态文案 —— 与注入文本 / 记忆体检 / 导出**同一张表**
+ * （`memory.ts` 的 `MEMORY_SOURCE_KIND_LABEL`；判据 `MEM-PLACE-12`）。
+ * 旧写法 `source ?? "manual"` 会把旧数据显示成「手动」，而注入侧把它说成「自动提取」——
+ * 同一条目两套真相，用户据此取舍会删错条目。
+ */
 function sourceLabel(source: MemorySource | undefined): string {
-  return (source ?? "manual") === "manual" ? "手动" : "自动提取";
+  return MEMORY_SOURCE_KIND_LABEL[memorySourceOf({ source })];
+}
+
+/** 来源徽标的 CSS 类（三态各一个；`unknown` 见 styles.css） */
+function sourceBadgeClass(source: MemorySource | undefined): string {
+  return memorySourceOf({ source });
+}
+
+/** 详情页「来源」那一栏的括注（保护口径与 `isProtectedMemoryEntry` 一致） */
+function sourceHint(source: MemorySource | undefined): string {
+  const kind = memorySourceOf({ source });
+  if (kind === "manual") return "自动流程不得改写";
+  if (kind === "unknown") return "来源未知（旧数据）· 按手动条目保护，自动流程不得改写或删除";
+  return "注入时单独标注（由自动流程从对话中提取，未经人工确认）";
 }
 
 interface EditForm {
@@ -100,7 +126,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
   const [stats, setStats] = useState({
     totalEntries: 0,
     byScope: { platform: 0, project: 0, conversation: 0 } as Record<MemoryScope, number>,
-    bySource: { manual: 0, auto: 0 } as Record<MemorySource, number>,
+    bySource: { manual: 0, auto: 0, unknown: 0 } as Record<MemorySourceKind, number>,
     pendingEntries: 0,
     notInjected: 0,
     unknownScope: 0,
@@ -136,7 +162,12 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
      * 漏传就会跨项目展示别项目的内容（含未批准条目）。
      */
     const ctx = { projectId, sessionId };
-    setEntries(service.listAll(ctx));
+    /*
+     * R3：列表默认用**注入顺序**（创建序倒序，与 `computeInjection` 同一个键）——
+     * 旧写法是 `listAll(ctx)`（按 `timestamp` 倒序），于是"编辑一条"之后面板顺序与注入顺序分叉，
+     * 而面板又把 `timestamp` 标成「创建时间」⇒ 用户无从自知。
+     */
+    setEntries(service.listAllForPanel(ctx));
     // 待批准列表**同样按当前位置过滤**（旧实现全量返回 ⇒ 项目 A 能看到项目 B 的待批准内容）
     setPending(service.listPending(undefined, ctx));
     setBatches(service.listBatches().filter((b) => !b.undone));
@@ -149,8 +180,11 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
      * F5：**面板 / 体检 / 注入三处共用同一套注入判定**（含每块 20 条上限、总字符预算、
      * 「暂停注入旧版跨项目记忆」开关）。旧实现只看 status/scope/归属 ⇒ 第 21 条起
      * 面板仍显示「已生效（参与上下文）」而实际不进上下文，用户按面板取舍就会删错条目。
+     *
+     * R6：注入判定走的是**注入侧窄 ctx**（`injectionScopeContext`）——面板的宽 ctx
+     * （将来若带上 `includeUnscoped` 之类）**赋不进去**，于是"把视图开关传进注入路径"编译不过。
      */
-    setInjection(service.injectionExplanations(ctx));
+    setInjection(service.injectionExplanations(injectionScopeContext(projectId, sessionId)));
   };
 
   /** 条目是否会进入上下文（界面必须能一眼看出"未归属 = 不进"，不能假装它在生效） */
@@ -228,6 +262,12 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
       key: entry.key,
       content: entry.content,
       scope: entry.scope,
+      /*
+       * 旧数据（来源未知）在这里只能预选 `manual`：表单的 `source` 是**可写入的两态**
+       * （`manual` / `auto`），"未知"不是一个可以写回去的值。预选手动 = 与保护口径一致
+       * （旧数据按手动条目保护），且**用户保存即确认**"这条是我手写的" ⇒ 不是编造。
+       * 详情页在保存前如实显示「未知（旧数据）」（`sourceHint`）。
+       */
       source: entry.source ?? "manual",
       tags: entry.tags?.join(", ") || "",
       filePath: entry.filePath || "",
@@ -341,7 +381,8 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `codem-memory-${new Date().toISOString().split("T")[0]}.json`;
+    // R7：文件名里的日期是**给人看的**（本地日）—— 旧写法取 UTC 日，本地 00:00–08:00 会写成前一天
+    a.download = `codem-memory-${localDateString(new Date())}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -352,7 +393,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `codem-memory-${new Date().toISOString().split("T")[0]}.md`;
+    a.download = `codem-memory-${localDateString(new Date())}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -400,15 +441,17 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     ? searchResults.map((r) => r.entry)
     : filteredEntries;
 
-  /** 三级分组：手动在前、自动在后（与注入形态一致，界面不会与上下文说的不一样） */
+  /** 三级分组：手动在前、来源未知（旧数据）居中、自动在后
+   *  —— 与注入文本里的三桶顺序（`computeInjection` 的 KINDS）**同一口径** */
   const grouped = SCOPE_ORDER.map((scope) => {
     const scoped = displayEntries.filter((e) => e.scope === scope);
     return {
       scope,
-      manual: scoped.filter((e) => (e.source ?? "manual") === "manual"),
-      auto: scoped.filter((e) => (e.source ?? "manual") === "auto"),
+      manual: scoped.filter((e) => memorySourceOf(e) === "manual"),
+      unknown: scoped.filter((e) => memorySourceOf(e) === "unknown"),
+      auto: scoped.filter((e) => memorySourceOf(e) === "auto"),
     };
-  }).filter((g) => g.manual.length + g.auto.length > 0);
+  }).filter((g) => g.manual.length + g.unknown.length + g.auto.length > 0);
 
   const renderItem = (entry: MemoryEntry) => (
     <div
@@ -422,7 +465,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           <span className="memory-item-scope" style={{ color: getScopeColor(entry.scope) }}>
             {getScopeLabel(entry.scope)}
           </span>
-          <span className={`memory-source-badge ${(entry.source ?? "manual") === "manual" ? "manual" : "auto"}`}>
+          <span className={`memory-source-badge ${sourceBadgeClass(entry.source)}`}>
             {sourceLabel(entry.source)}
           </span>
           {(entry.status ?? "active") === "pending" && (
@@ -722,6 +765,8 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
       {editMode === "none" && (
         <div className="memory-content">
           <div className="memory-list">
+            {/* R3：排序口径必须**说白**（列表按创建序 = 注入顺序；`timestamp` 只是单条字段） */}
+            <div className="memory-batch-note">{MemoryService.PANEL_ORDER_NOTE}</div>
             {displayEntries.length === 0 && (
               <div className="empty-hint">暂无记忆条目</div>
             )}
@@ -731,13 +776,23 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
                     <div className="memory-group-title">
                       {getScopeLabel(group.scope)}记忆 · {getScopeHint(group.scope)}
                     </div>
-                    {/* 手动块在前、自动块在后 —— 与注入到系统提示里的分块顺序一致 */}
+                    {/* 手动块在前、来源未知居中、自动块在后 —— 与注入到系统提示里的分块顺序一致；
+                        R5：三态文案一律走 `MEMORY_SOURCE_KIND_LABEL`（旧写法在这里自写「手动维护」/「自动提取（可能不准，可删）」，
+                        改文案表不会改这两处 ⇒ 同一屏里并存三套说法） */}
                     {group.manual.length > 0 && (
-                      <div className="memory-group-sub">手动维护（{group.manual.length}）</div>
+                      <div className="memory-group-sub">{MEMORY_SOURCE_KIND_LABEL.manual}（{group.manual.length}）</div>
                     )}
                     {group.manual.map(renderItem)}
+                    {group.unknown.length > 0 && (
+                      <div className="memory-group-sub unknown">
+                        来源{MEMORY_SOURCE_KIND_LABEL.unknown}（{group.unknown.length}）· 按手动条目保护
+                      </div>
+                    )}
+                    {group.unknown.map(renderItem)}
                     {group.auto.length > 0 && (
-                      <div className="memory-group-sub auto">自动提取（可能不准，可删）（{group.auto.length}）</div>
+                      <div className="memory-group-sub auto">
+                        {MEMORY_SOURCE_KIND_LABEL.auto}（{MEMORY_AUTO_GROUP_HINT}）（{group.auto.length}）
+                      </div>
                     )}
                     {group.auto.map(renderItem)}
                   </div>
@@ -769,7 +824,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
 
               <div className="memory-detail-section">
                 <label>来源</label>
-                <span>{sourceLabel(selectedEntry.source)}（{(selectedEntry.source ?? "manual") === "manual" ? "自动流程不得改写" : "注入时单独标注"}）</span>
+                <span>{sourceLabel(selectedEntry.source)}（{sourceHint(selectedEntry.source)}）</span>
               </div>
 
               <div className="memory-detail-section">
@@ -791,7 +846,8 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
               )}
 
               <div className="memory-detail-section">
-                <label>创建时间</label>
+                {/* R3：如实命名 —— `update()` 每次刷新这个字段 ⇒ 它是「最后修改时间」，不是「创建时间」 */}
+                <label>{MemoryService.PANEL_TIMESTAMP_LABEL}</label>
                 <span>{formatTime(selectedEntry.timestamp)}</span>
               </div>
 

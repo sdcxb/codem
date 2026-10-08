@@ -29,6 +29,8 @@
 
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { isUnknownModelError } from "./provider-errors";
+// R7：诊断文案里的"上次调用时间"是给人看的 ⇒ 本地时间唯一口径
+import { localDateTimeString } from "../time/local-time";
 
 const HEALTH_KEY = "codem-catalog-health";
 /** 单个 provider 最多保留多少条记录（防止无限增长） */
@@ -214,9 +216,8 @@ export function describeCatalogHealth(entry: CatalogHealthEntry | undefined): st
 
 function formatWhen(at: number): string {
   try {
-    const d = new Date(at);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    // R7：诊断文案里的时间也是**给人看的**（本地）—— 走唯一口径，不自造年月日拼接
+    return localDateTimeString(new Date(at), { seconds: false });
   } catch {
     return "未知时间";
   }

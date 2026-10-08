@@ -163,7 +163,15 @@ export function reportFailure(
   return entry;
 }
 
-/** 撤回事件的窗口事件名（App 侧监听它来摘掉横幅） */
+/**
+ * 撤回事件的窗口事件名（App 侧监听它来摘掉横幅）。
+ *
+ * ⚠️ **必须 export、且由消费方 import**（第 190 波）：这个名字原来只在本文件里当常量用，
+ * 而 `App.tsx` 的监听器自己抄了一遍字面量 —— 于是"改常量"这个动作**不会**被任何判据拦住：
+ * dispatch 发新名、App 听旧名，撤回通道**静默失效**（横幅再也摘不掉，而旧测试只钉字面量、照样绿）。
+ * 现在两侧走同一个来源，`memory-load-visibility.test.ts::MEM-LOAD-QUIET-2b` 同时钉住
+ * "值不变"（线上契约）与"App 侧用常量"（消费方不许再抄一遍）。
+ */
 export const PERSIST_WITHDRAWN_EVENT = "codem:persist-failed-withdrawn";
 
 /**

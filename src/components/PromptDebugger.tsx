@@ -1,10 +1,20 @@
 import { useState, useMemo } from "react";
-import { buildSystemPrompt, type SystemPromptConfig } from "../core/prompt/prompt";
+import { buildSystemPrompt, minutePrecisionDate, type SystemPromptConfig } from "../core/prompt/prompt";
 import { getAgentRegistry, type AgentDefinition, type CollaborationMode } from "../core/agent/agent";
 import { getSettingJSON } from "../core/storage/settings";
 import { getLang, useLang } from "../core/i18n/lang";
 import type { AppIdentity, UserConfig } from "../core/types";
 import type { GitConfig, EnvironmentConfig } from "../core/settings/settings";
+import {
+  composeMemoryBlock,
+  createMemoryInjectBudgetTracker,
+  getMemoryService,
+  MEMORY_STABLE_BLOCK_SELECTION,
+  MEMORY_STABLE_HEADER,
+  MEMORY_VOLATILE_BLOCK_SELECTIONS,
+  MEMORY_VOLATILE_HEADER,
+  projectIdFromCwd,
+} from "../core/memory/memory";
 
 export function PromptDebugger() {
   const lang = useLang();
@@ -53,6 +63,36 @@ export function PromptDebugger() {
       collaborationMode,
     };
 
+    /*
+     * 记忆段必须**真的**在这里出现（第 189 波 A6/F5）：
+     * 旧写法根本不传 `memoryInstructions` / `memoryTailInstructions` ⇒ 用户按这个调试器
+     * 核对"记忆有没有进提示、缓存边界在哪"时，看到的是**与真实发送不同形**的提示
+     * （记忆块、哨兵、权威句全部缺席）。现在与引擎两处注入点（`llm/index.ts:621-634/749-757`）
+     * **同形**：同一组取数常量 + 同一个 `composeMemoryBlock` + 同一份共享预算槽。
+     *
+     * `sessionId` 传 undefined：调试器没有"当前对话"这个概念，所以对话级记忆按"不注入"呈现
+     * （这是**如实**的，不是省略 —— 归属键不匹配时注入路径也不会收它）。
+     */
+    const memoryService = getMemoryService();
+    const debugProjectId = projectIdFromCwd(workingDirectory.trim() || undefined);
+    const memoryBudget = createMemoryInjectBudgetTracker();
+    const stableMemory = composeMemoryBlock(
+      memoryService,
+      MEMORY_STABLE_BLOCK_SELECTION,
+      MEMORY_STABLE_HEADER,
+      debugProjectId,
+      undefined,
+      memoryBudget,
+    );
+    const volatileMemory = composeMemoryBlock(
+      memoryService,
+      MEMORY_VOLATILE_BLOCK_SELECTIONS,
+      MEMORY_VOLATILE_HEADER,
+      debugProjectId,
+      undefined,
+      memoryBudget,
+    );
+
     const config: SystemPromptConfig = {
       agent,
       identity,
@@ -61,7 +101,10 @@ export function PromptDebugger() {
       workingDirectory: workingDirectory.trim() || undefined,
       gitBranch: gitBranch.trim() || undefined,
       modelInfo: modelInfo.trim() || undefined,
-      date: new Date().toLocaleDateString("zh-CN"),
+      // 与引擎同形：分钟精度 + 本地时区真实偏移（旧写法用 toLocaleDateString ⇒ 与真实发送不同形）
+      date: minutePrecisionDate(),
+      memoryInstructions: stableMemory || undefined,
+      memoryTailInstructions: volatileMemory || undefined,
       gitConfig,
       environmentConfig: envConfig,
     };

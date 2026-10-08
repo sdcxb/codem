@@ -15,6 +15,8 @@ import type { LibrarySnapshot, MonitorTab } from "../../types";
 import { ACTIVITY_META, KIND_META } from "../../types";
 import { formatCost, formatAge, formatPercent, formatTokens } from "../../core/format";
 import { useLibraryOps, sortedActors } from "../../store";
+// R7：当前小时（热力图高亮）走唯一本地口径
+import { localTimeParts } from "../../../../core/time/local-time";
 import { Card, Empty, Field, Pill, SectionTitle, StatCard } from "./common";
 import { DonutChart, Heatmap, HourBars, ProgressRing } from "./charts";
 import { EventList } from "./EventList";
@@ -68,7 +70,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
   const days = Object.keys(snapshot.activity.perDay).sort();
   const dayValues = days.map((d) => snapshot.activity.perDay[d]);
   const todayIdx = days.length - 1;
-  const nowHour = new Date().getHours();
+  const nowHour = localTimeParts(new Date()).hour;
   const completion = m.tasksTotal > 0 ? m.tasksDone / m.tasksTotal : 0;
   const actors = sortedActors(snapshot);
   const sessions = actors.filter((a) => a.kind === "captain" || a.kind === "session").slice(0, 6);

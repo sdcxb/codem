@@ -39,7 +39,7 @@ import { join } from "node:path";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { saveMemory } from "../core/storage/settings";
-import { getPersistFailures, resetPersistFailures, composePersistAlertText, type PersistFailureDetail } from "../core/storage/persist-failure";
+import { getPersistFailures, resetPersistFailures, composePersistAlertText, PERSIST_WITHDRAWN_EVENT, type PersistFailureDetail } from "../core/storage/persist-failure";
 import { MemoryService } from "../core/memory/memory";
 import { stripComments } from "./helpers/settings-key-scan";
 
@@ -175,12 +175,20 @@ describe("MEM-LOAD-QUIET：启动期的暂时性失败不许弹用户可见错�
      * App 侧接线（与 `persist-alert-channel.test.ts::ALERT-5` 同一类"通道接线"断言）：
      * `reportedPersistAreas` 是"同一区域只提示一次"的进程内去重 —— 撤回时**必须**把它一起清掉，
      * 否则"先暂时性提醒、后结论性错误"的现场里，**该报的那条会被去重挡掉**。
+     *
+     * ⚠️ 第 190 波**加强**（原来是钉 App 自己抄的那份字面量 —— 它抓不到"常量与字面量各改一半"）：
+     * ① 事件名本身是**线上契约**，直接断言常量的值；
+     * ② 消费方不许再抄一遍 —— 必须**用常量**监听，否则常量一改名就静默失配（dispatch 发新名、App 听旧名）。
      */
+    expect(PERSIST_WITHDRAWN_EVENT, "撤回事件名是线上契约：改名等于把撤回通道打断（发出去了、没人听）").toBe(
+      "codem:persist-failed-withdrawn",
+    );
     const app = stripComments(readFileSync(join(__dirname, "..", "App.tsx"), "utf8"));
-    expect(app, "App 必须监听撤回事件").toContain("codem:persist-failed-withdrawn");
+    expect(app, "App 不许再硬编码撤回事件名（常量改名它就听不到了）").not.toContain("codem:persist-failed-withdrawn");
     const idx = app.indexOf("onPersistWithdrawn");
     expect(idx, "App 里必须有撤回处理函数").toBeGreaterThan(0);
     const around = app.slice(idx, idx + 900);
+    expect(around, "App 必须用**常量**监听撤回事件（单一来源，不许自己抄字面量）").toContain("PERSIST_WITHDRAWN_EVENT");
     expect(around, "撤回必须把横幅摘掉").toContain("withdrawPersistAlert");
     expect(around, "撤回必须重置同区域去重（否则该报的会被挡掉）").toContain("reportedPersistAreas.delete");
   });

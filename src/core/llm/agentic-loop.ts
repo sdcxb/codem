@@ -578,6 +578,92 @@ const REGRESSION_NUDGE_LIMIT = 3;
  */
 const SYMBOL_SIBLINGS_MAX_PER_TURN = 4;
 
+/**
+ * **压缩摘要提示词里的记忆权威性豁免**（照 Hermes `agent/context_compressor.py:291-293`）。
+ *
+ * 为什么要**双侧对冲**（第 189 波 A5）：主请求里的记忆块自带豁免（`MEMORY_AUTHORITY_NOTE`），
+ * 但压缩调用**拿不到系统提示**（它的 system 只有一句「你是一个对话摘要专家。」）⇒
+ * 摘要这一侧完全不知道"记忆是权威的"，于是模型很容易把摘要里的旧结论当成比记忆更新的事实，
+ * 而把系统提示里的记忆降级。两句摘要提示词各带一句成本极低的豁免，把这一侧补上。
+ *
+ * 判据：`context-consistency.test.ts` 的 `COMPACT-MEM-1` 直接调下面两个构造函数断言在场
+ * （产品方法用的就是它们 ⇒ 不是"源码里含某字符串"的伪判据）。
+ */
+const COMPACTION_MEMORY_AUTHORITY_RULE =
+  "- **持久记忆（系统提示里的「Memory System」段）是权威且持续生效的**：不得因为压缩/摘要而忽视、降级或改写它的结论；摘要与记忆冲突时以记忆为准";
+
+/** 压缩指令（cache-aware 那条路径用的 user 消息尾部） */
+export function buildCompactionInstruction(): string {
+  return `你是一个对话摘要专家。请将以上对话内容浓缩为结构化的检查点，让另一个模型可以无损恢复工作。
+
+请输出 EXACTLY 以下 Markdown 结构，保持每个部分，按顺序：
+
+## 主要请求和意图
+- [用户原始和演进的目标]
+
+## 关键技术和概念
+- [涉及的技术、框架、模式和约定]
+
+## 文件和代码
+- [精确路径：为何重要、关键变更或片段]
+
+## 错误和修复
+- [错误：如何解决的，以及相关用户反馈]
+
+## 待办任务
+- [明确请求但尚未完成的工作]
+
+## 当前工作
+- [压缩点正在进行的精确工作]
+
+## 下一步
+- [最直接的下一步行动，或"(无)"]
+
+## 关键上下文
+- [决策及理由、约束、用户偏好、开放问题]
+
+规则：
+- 用简洁的中文工程式写摘要
+- 保留精确的文件路径、命令、错误字符串、标识符、数值
+- 忠实捕获用户反馈和明确指示
+${COMPACTION_MEMORY_AUTHORITY_RULE}
+- 不要提及这个摘要请求本身
+- 只输出检查点文本，不调用任何工具`;
+}
+
+/** 结构化摘要的 system 提示词（另一条摘要路径用的） */
+export function buildCompactionSystemPrompt(): string {
+  return `你是一个对话摘要专家。你的任务是为 AI 编程助手生成结构化的对话摘要，以便在上下文压缩后保留关键信息。
+
+摘要必须包含以下部分（如果有的话）：
+
+## 关键决策
+用户和 AI 共同做出的重要技术决策、架构选择、方案取舍。
+
+## 文件变更
+被创建、修改、删除的文件列表，以及变更的核心内容。
+
+## 用户偏好
+用户表达的语言偏好、代码风格、工具选择、工作方式等。
+
+## 未完成任务
+已开始但尚未完成的工作，包括错误未修复、功能未实现等。
+
+## 重要错误和修复
+遇到的错误信息及解决方案。
+
+## 项目上下文
+项目的技术栈、目录结构、关键配置等背景信息。
+
+规则：
+- 用简洁的中文写摘要
+- 每个条目一行，不要展开细节
+- 如果已有前序摘要，将其内容合并到新摘要中（不要丢失前序信息）
+- 持久记忆是权威的：不得因为压缩/摘要而降级或改写记忆里的结论（摘要与记忆冲突时以记忆为准）
+- 总长度不超过 1500 字符
+- 不要包含临时性信息（如中间步骤的调试输出）`;
+}
+
 export class AgenticLoop {
   private provider: LLMProvider; // E8: not readonly — can be swapped during cost degradation
   private tools: ToolRegistry;
@@ -5712,43 +5798,14 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // Build conversation text for the LLM to summarize
     const conversationText = this.buildConversationText(messagesToRemove);
 
-    // P-OPT1: Cache-aware compaction — replay the current system prompt
-    // and tools schema as prefix so the provider's KV cache is reused.
-    // Only the compaction instruction is new input, minimizing cache miss.
-    const compactionInstruction = `你是一个对话摘要专家。请将以上对话内容浓缩为结构化的检查点，让另一个模型可以无损恢复工作。
-
-请输出 EXACTLY 以下 Markdown 结构，保持每个部分，按顺序：
-
-## 主要请求和意图
-- [用户原始和演进的目标]
-
-## 关键技术和概念
-- [涉及的技术、框架、模式和约定]
-
-## 文件和代码
-- [精确路径：为何重要、关键变更或片段]
-
-## 错误和修复
-- [错误：如何解决的，以及相关用户反馈]
-
-## 待办任务
-- [明确请求但尚未完成的工作]
-
-## 当前工作
-- [压缩点正在进行的精确工作]
-
-## 下一步
-- [最直接的下一步行动，或"(无)"]
-
-## 关键上下文
-- [决策及理由、约束、用户偏好、开放问题]
-
-规则：
-- 用简洁的中文工程式写摘要
-- 保留精确的文件路径、命令、错误字符串、标识符、数值
-- 忠实捕获用户反馈和明确指示
-- 不要提及这个摘要请求本身
-- 只输出检查点文本，不调用任何工具`;
+    // 压缩调用的**实际**请求形态（照实写，第 189 波改掉不实叙述）：
+    // 它的 system 只有一句「你是一个对话摘要专家。」，user = 已有摘要 + 待压缩的**存储层历史** +
+    // 指令。**不含**主请求的系统提示、也不含工具 schema ⇒ 与主请求前缀不同形，
+    // 「replay the current system prompt as prefix 以复用 KV 缓存」这句旧注释与实现不符，已删。
+    // 想真正复用前缀就得改请求构造（本轮不做，见 docs/HANDOFF-NEXT-SESSION.md）。
+    // 另：`purpose: "compaction"` 仍让 provider 侧启用服务端压缩优化（P-OPT5），这是另一件事。
+    // 提示词本体在 `buildCompactionInstruction()`（判据 `COMPACT-MEM-1` 直接断言记忆豁免在场）。
+    const compactionInstruction = buildCompactionInstruction();
 
     // Generate LLM-powered summary
     // DSH design: all async work (LLM summarization) happens FIRST, then all
@@ -5864,11 +5921,11 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
   }
 
   /**
-   * P-OPT1: Cache-aware compaction summary.
-   * Instead of using a dedicated system prompt, replays the current conversation
-   * (system prompt + messages to compact) as the prefix, then appends the
-   * compaction instruction as the final user message. This ensures the
-   * provider's KV cache is reused — only the trailing instruction is novel.
+   * P-OPT1（**照实**，第 189 波修正）：这条路径与上一条一样，**没有**把主请求的系统提示
+   * 当成前缀 replay（system 是下面这段摘要专用提示词）；但请求仍带
+   * `purpose: "compaction"` 以启用服务端压缩优化。
+   * 两条摘要提示词都加了**记忆权威性豁免**（照 Hermes `agent/context_compressor.py:291-293`
+   * 的双侧对冲：主请求里记忆块自带豁免，压缩调用自己也必须被告知"记忆是权威的"）。
    */
   private async generateCompactionSummaryCacheAware(
     conversationText: string,
@@ -5913,39 +5970,11 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // Truncate conversation text to avoid token overflow (max ~12K chars ≈ 3K tokens)
     const truncatedConv = boundConversationForSummary(conversationText);
 
-    // P-OPT1: Cache-aware compaction — replay the current system prompt as prefix
-    // instead of using a dedicated compaction system prompt. This ensures the
-    // provider's KV cache is reused (prefix bytes are identical), dramatically
-    // reducing TTFT and token processing cost for the compaction call.
-    // The compaction instruction is appended as the final user message.
-    const systemPrompt = `你是一个对话摘要专家。你的任务是为 AI 编程助手生成结构化的对话摘要，以便在上下文压缩后保留关键信息。
-
-摘要必须包含以下部分（如果有的话）：
-
-## 关键决策
-用户和 AI 共同做出的重要技术决策、架构选择、方案取舍。
-
-## 文件变更
-被创建、修改、删除的文件列表，以及变更的核心内容。
-
-## 用户偏好
-用户表达的语言偏好、代码风格、工具选择、工作方式等。
-
-## 未完成任务
-已开始但尚未完成的工作，包括错误未修复、功能未实现等。
-
-## 重要错误和修复
-遇到的错误信息及解决方案。
-
-## 项目上下文
-项目的技术栈、目录结构、关键配置等背景信息。
-
-规则：
-- 用简洁的中文写摘要
-- 每个条目一行，不要展开细节
-- 如果已有前序摘要，将其内容合并到新摘要中（不要丢失前序信息）
-- 总长度不超过 1500 字符
-- 不要包含临时性信息（如中间步骤的调试输出）`;
+    // 压缩调用**不含**主请求的系统提示（`generateCompactionSummaryCacheAware` 的 system 只有
+    // 一句「你是一个对话摘要专家。」）⇒ 旧注释「replay the current system prompt as prefix、
+    // 前缀字节相同、复用 KV 缓存」与实现不符，已删（第 189 波；真要复用前缀得改请求构造）。
+    // 提示词本体在 `buildCompactionSystemPrompt()`（判据 `COMPACT-MEM-1` 断言记忆豁免在场）。
+    const systemPrompt = buildCompactionSystemPrompt();
 
     const userPrompt = existingSummary
       ? `这是之前对话的已有摘要：

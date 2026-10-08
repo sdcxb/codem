@@ -20,6 +20,8 @@ import {
 } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
 import { tryGetCtx } from '../core/consumer/index'
+// R7：时间列走**唯一口径**（本地）
+import { localClockString } from '../core/time/local-time'
 
 /** 轨迹步骤类型 */
 export type TrajectoryStepType =
@@ -80,10 +82,9 @@ function typeLabel(type: TrajectoryStepType, zh: boolean): string {
   return labels[type]?.[zh ? 'zh' : 'en'] || type
 }
 
-/** 格式化时间 — 紧凑 HH:MM */
+/** 格式化时间 — 紧凑 HH:MM:SS（**本地**，走唯一口径 `TIME-SINGLE-SOURCE`） */
 function formatTime(ts: number): string {
-  const d = new Date(ts)
-  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
+  return localClockString(new Date(ts))
 }
 
 /** 格式化持续时长 */

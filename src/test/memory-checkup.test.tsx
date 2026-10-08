@@ -34,7 +34,9 @@ import {
   MEMORY_PRE_MIGRATION_KEY,
   MEMORY_PAUSE_LEGACY_POOL_KEY,
   MEMORY_INJECT_MAX_PER_BLOCK,
+  MEMORY_SOURCE_KIND_LABEL,
   setLegacyPoolInjectionPaused,
+  type MemorySourceKind,
 } from "../core/memory/memory";
 import {
   buildOwnershipIndexFrom,
@@ -486,6 +488,200 @@ describe("MEM-CHECK-5：入口、归位与渲染", () => {
     expect(text2, "必须给导出入口").toContain("导出这份快照");
     expect(text2, "回退要写明不可撤销").toContain("不可撤销");
     setSetting(MEMORY_PRE_MIGRATION_KEY, "");
+    spy.mockRestore();
+  });
+});
+
+/**
+ * MEM-PLACE-22（面板顺序 / 标签如实）与 MEM-PLACE-23（三态文案唯一表）。
+ *
+ * ## 为什么必须是**渲染**判据
+ *
+ * 复审报的两条都是"呈现层"的缺陷：
+ * - `MEM-PLACE-23`：三态文案表的声明是"四处共用的**唯一**表，不许任何一处自己再写一份字面量"，
+ *   而 `MemoryCheckupView.tsx` 一行里把三态全写成字面量（且「自动」≠ 表里的「自动提取」）、
+ *   `MemoryManager.tsx` 另有两处自写 —— 判据 `MEM-PLACE-12` 只断言了注入文本/导出/`bySource`，
+ *   没有"视图不许自写字面量"这一面；
+ * - `MEM-PLACE-22`：面板按 `timestamp` 排序却把该字段标成「创建时间」，而注入按创建序
+ *   ⇒ 编辑之后两侧顺序分叉、用户无从自知。
+ *
+ * ## 判据怎么做到"不靠复述字面量"
+ *
+ * ① **改表即改呈现**：渲染时把唯一表的三态值临时换成哨兵（`SENT_*`）。任何自写字面量的地方
+ *    都不会跟着变 ⇒ 断言哨兵出现在**该处**（体检摘要、面板分组头/徽标）即可，而不用把
+ *    "手动/自动提取/未知（旧数据）"再抄一遍进测试（抄一遍就等于把文案冻在测试里）。
+ * ② **顺序用行为区分**：造一条"时间戳最旧、创建序最新"的条目 —— 按 `timestamp` 排序会把它排到
+ *    最后、按创建序排序会排到最前 ⇒ 两种口径在 DOM 里可分辨；再断言"编辑它只改显示的时间、
+ *    不改变它的位置与入选集合"。
+ */
+describe("MEM-PLACE-22/23：面板顺序与标签如实；三态文案只有唯一表", () => {
+  const LABEL_KEYS: readonly MemorySourceKind[] = ["manual", "auto", "unknown"];
+
+  /** 临时把唯一表的三态值换成哨兵（`fn` 结束后逐字恢复）；返回哨兵供断言 */
+  function withSentinelLabels<T>(fn: (sentinel: Record<MemorySourceKind, string>) => T): T {
+    const sentinel: Record<MemorySourceKind, string> = {
+      manual: "SENT_MANUAL",
+      auto: "SENT_AUTO",
+      unknown: "SENT_UNKNOWN",
+    };
+    const backup = { ...MEMORY_SOURCE_KIND_LABEL };
+    Object.assign(MEMORY_SOURCE_KIND_LABEL, sentinel);
+    try {
+      return fn(sentinel);
+    } finally {
+      Object.assign(MEMORY_SOURCE_KIND_LABEL, backup);
+    }
+  }
+
+  it("MEM-PLACE-23①（渲染）：体检摘要的三态计数一律取自唯一表（改表即改呈现）", async () => {
+    const svc = new MemoryService();
+    svc.add({ scope: "platform", key: "手写", content: "SRC_MANUAL", source: "manual" });
+    svc.add({ scope: "platform", key: "自动", content: "SRC_AUTO", source: "auto" });
+    // 来源未知（旧数据）：直接放进内部表（新写入从来都有来源）
+    (svc as unknown as { entries: Map<string, unknown> }).entries.set("src-unknown", {
+      id: "src-unknown",
+      scope: "platform",
+      key: "旧数据",
+      content: "SRC_UNKNOWN",
+      timestamp: 1_700_000_000_000,
+      status: "active",
+    });
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+
+    withSentinelLabels((sentinel) => {
+      const { container } = render(<MemoryCheckupView />);
+      const summary = container.querySelector(".mc-summary")?.textContent ?? "";
+      expect(summary, "体检摘要必须渲染出来（否则这条判据空转）").toContain("总计");
+      for (const k of LABEL_KEYS) {
+        expect(
+          summary,
+          `体检摘要的三态计数必须引用唯一表（${k}）：自写字面量不会跟着表变 ⇒ 哨兵不会出现`,
+        ).toContain(sentinel[k]);
+      }
+      // 三态各自出现一次（不是"同一句话重复三次"）
+      expect(new Set(LABEL_KEYS.map((k) => summary.split(sentinel[k]).length - 1))).toEqual(new Set([1]));
+    });
+    spy.mockRestore();
+  });
+
+  it("MEM-PLACE-23②（渲染）：面板的三态分组头/徽标一律取自唯一表（改表即改呈现）", async () => {
+    /*
+     * ⚠️ 来源未知（旧数据）这条必须走**落库路径**：面板挂载时会 `reload()` 一次，
+     * 只塞进内存的条目会被重读丢掉（`MEM-CHECK-5f` 踩过同一个坑）。
+     */
+    saveMemory(
+      JSON.stringify({
+        version: 2,
+        entries: {
+          "panel-unknown": {
+            id: "panel-unknown",
+            scope: "platform",
+            key: "旧数据",
+            content: "PANEL_UNKNOWN",
+            timestamp: 1_700_000_000_000,
+            status: "active",
+          },
+        },
+      }),
+    );
+    const svc = new MemoryService();
+    svc.add({ scope: "platform", key: "手写", content: "PANEL_MANUAL", source: "manual" });
+    svc.add({ scope: "platform", key: "自动", content: "PANEL_AUTO", source: "auto" });
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+    const { MemoryManager } = await import("../components/MemoryManager");
+
+    withSentinelLabels((sentinel) => {
+      const { container } = render(<MemoryManager onClose={() => {}} projectId={PROJ_A_ID} sessionId="sess-1" />);
+      const groupSubs = Array.from(container.querySelectorAll(".memory-group-sub"))
+        .map((n) => n.textContent ?? "")
+        .join("\n");
+      expect(groupSubs, "分组头必须渲染出来（否则这条判据空转）").not.toBe("");
+      for (const k of LABEL_KEYS) {
+        expect(groupSubs, `面板分组头必须引用唯一表（${k}）`).toContain(sentinel[k]);
+      }
+      const badges = Array.from(container.querySelectorAll(".memory-source-badge")).map((n) => n.textContent ?? "");
+      for (const k of LABEL_KEYS) {
+        expect(badges, `面板徽标必须引用唯一表（${k}）`).toContain(sentinel[k]);
+      }
+    });
+    spy.mockRestore();
+  });
+
+  it("MEM-PLACE-22①②（渲染）：面板默认按**注入顺序**排列；`timestamp` 字段如实标成「最后修改时间」", async () => {
+    const memoryModule = await import("../core/memory/memory");
+    const { MemoryManager } = await import("../components/MemoryManager");
+    const { fireEvent } = await import("@testing-library/react");
+
+    const total = MEMORY_INJECT_MAX_PER_BLOCK + 3;
+    const svc = new MemoryService({ maxEntries: 400 });
+    const ids: string[] = [];
+    for (let i = 0; i < total; i++) {
+      const r = svc.add({ scope: "project", projectId: PROJ_A_ID, key: `K${i}`, content: `P22R_${i}`, source: "manual" });
+      expect(r.ok).toBe(true);
+      ids.push(r.entry!.id);
+    }
+    /*
+     * 造出"两种排序口径可分辨"的形态：
+     * - 创建序**最后**的一条（K{total-1}）把时间戳改成**最旧**（1）⇒ 按 timestamp 排序会垫底；
+     * - 创建序**最先**的一条（K0）把时间戳改成**最新**⇒ 按 timestamp 排序会排头。
+     */
+    const entriesMap = (svc as unknown as { entries: Map<string, { timestamp: number }> }).entries;
+    entriesMap.get(ids[total - 1])!.timestamp = 1;
+    entriesMap.get(ids[0])!.timestamp = 9_999_999_999_999;
+    /*
+     * 让这两处时间戳**落进镜像**：面板挂载时会 `reload()`（真实读入口），只改内存会被重读丢掉
+     * ⇒ 下面"两种口径必须不同"的前提就不成立了（`finalizeBatch` 会走一次 `save()`）。
+     */
+    svc.finalizeBatch(svc.beginBatch("panel-order"), 0);
+
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+    const first = render(<MemoryManager onClose={() => {}} projectId={PROJ_A_ID} sessionId="sess-1" />);
+    const domKeys = (c: HTMLElement) =>
+      Array.from(c.querySelectorAll(".memory-item-key")).map((n) => n.textContent ?? "");
+
+    const rendered = domKeys(first.container);
+    expect(rendered.length, "面板必须把所有条目渲染出来（否则这条判据空转）").toBe(total);
+    // 注入顺序（服务侧口径）
+    const injectedOrder = svc
+      .listAllForPanel({ projectId: PROJ_A_ID, sessionId: "sess-1" })
+      .map((e) => e.key);
+    expect(rendered, "① 面板默认顺序必须 == 注入顺序（同一个创建序）").toEqual(injectedOrder);
+    // 与"按 timestamp 倒序"确实不同 ⇒ 这条判据能分辨两种口径（不是恒真）
+    const byTimestamp = [...rendered].sort(
+      (a, b) =>
+        (svc.listAllForPanel({ projectId: PROJ_A_ID }).find((e) => e.key === b)?.timestamp ?? 0) -
+        (svc.listAllForPanel({ projectId: PROJ_A_ID }).find((e) => e.key === a)?.timestamp ?? 0),
+    );
+    expect(rendered[0], "创建序最新的排最前（即使它的时间戳最旧）").toBe(`K${total - 1}`);
+    expect(rendered[total - 1], "创建序最早的排最后").toBe("K0");
+    expect(rendered, "两种口径必须真的不同，否则上面的断言测不出任何东西").not.toEqual(byTimestamp);
+
+    // ② 标签如实：点开那条 ⇒ 该字段的名字来自产品常量，且不许再叫「创建时间」
+    fireEvent.click(
+      Array.from(first.container.querySelectorAll(".memory-item")).find((i) =>
+        i.textContent?.includes(`K${total - 1}`),
+      )!,
+    );
+    const detail = first.container.querySelector(".memory-detail")?.textContent ?? "";
+    expect(detail, "详情必须渲染出来").toContain(`K${total - 1}`);
+    expect(detail, "`timestamp` 字段必须如实标成产品常量里的名字（它是 update() 刷新的字段）").toContain(
+      MemoryService.PANEL_TIMESTAMP_LABEL,
+    );
+    expect(detail, "不许再把这个字段标成「创建时间」").not.toContain("创建时间");
+
+    // ② 行为一致性：编辑它 ⇒ **显示的时间**变（最后修改时间）、**位置**不变（顺序 = 创建序）
+    const timeOf = (c: HTMLElement, key: string) =>
+      Array.from(c.querySelectorAll(".memory-item"))
+        .find((i) => i.querySelector(".memory-item-key")?.textContent === key)!
+        .querySelector(".memory-item-meta")!.textContent ?? "";
+    const timeBefore = timeOf(first.container, `K${total - 1}`);
+    expect(svc.update(ids[total - 1], { content: "P22R_EDITED" }, { actor: "user" })).toBe(true);
+    cleanup();
+    const again = render(<MemoryManager onClose={() => {}} projectId={PROJ_A_ID} sessionId="sess-1" />);
+    expect(timeOf(again.container, `K${total - 1}`), "编辑后「最后修改时间」必须跟着变").not.toBe(timeBefore);
+    expect(domKeys(again.container), "编辑**不许**因此挪位（面板顺序 = 创建序）").toEqual(rendered);
     spy.mockRestore();
   });
 });

@@ -45,9 +45,9 @@ export function shortId(id: string | undefined, len = 8): string {
   return s.length <= len ? s : `${s.slice(0, len)}…`;
 }
 
-/** 本地时钟 HH:MM:SS */
+/** 本地时钟 HH:MM:SS（走**唯一口径** `TIME-SINGLE-SOURCE`） */
+import { localClockString } from "../../../core/time/local-time";
+
 export function formatClock(at: number): string {
-  const d = new Date(at);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return localClockString(new Date(at));
 }

@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { buildSystemPrompt, type SystemPromptConfig } from "../core/prompt/prompt";
+import { buildSystemPrompt, SYSTEM_PROMPT_CACHE_BOUNDARY, type SystemPromptConfig } from "../core/prompt/prompt";
 import { getAgentRegistry, type AgentDefinition } from "../core/agent/agent";
 import { setLang } from "../core/i18n/lang";
 import type { GitConfig, EnvironmentConfig } from "../core/settings/settings";
@@ -91,19 +91,31 @@ describe("系统提示词构建回归", () => {
       expect(prompt).toContain("UTC+8");
     });
 
-    it("PROMPT-REG-007: 中文模式语言规则在最后", () => {
+    it("PROMPT-REG-007: 中文模式语言规则是稳定前缀的最后一段（紧贴缓存边界之前）", () => {
       setLang("zh");
       const prompt = buildSystemPrompt({ agent: buildAgent });
-      // The last section should be the language rules
-      const lastSection = prompt.split("---").pop()!.trim();
-      expect(lastSection).toContain("语言规则");
+      /*
+       * 第 189 波（F1）：语言规则**不再是整份提示的最后一段** —— 边界哨兵、易变记忆与
+       * date 都在它之后（date 收尾）。原先这两条判据断言"最后一节含语言规则"，在
+       * 无条件边界落地后会红，而在**产品形态**（带记忆/带 date）下它们本来就已经
+       * 看不出真实段序。现在断言**契约本身**：语言规则是稳定前缀的最后一段，
+       * 哨兵紧贴其后（判据 MEM-PLACE-11 再钉"边界之后只有易变记忆与 date"）。
+       */
+      const sections = prompt.split("\n\n---\n\n");
+      const boundaryAt = sections.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY);
+      expect(boundaryAt, "缓存边界必须存在（无条件）").toBeGreaterThan(0);
+      expect(sections[boundaryAt - 1], "语言规则必须紧贴边界之前").toContain("语言规则");
+      expect(prompt, "语言规则段本体必须还在").toContain("# 语言规则");
     });
 
-    it("PROMPT-REG-008: 英文模式语言规则在最后", () => {
+    it("PROMPT-REG-008: 英文模式语言规则是稳定前缀的最后一段（紧贴缓存边界之前）", () => {
       setLang("en");
       const prompt = buildSystemPrompt({ agent: buildAgent });
-      const lastSection = prompt.split("---").pop()!.trim();
-      expect(lastSection).toContain("Language Rules");
+      const sections = prompt.split("\n\n---\n\n");
+      const boundaryAt = sections.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY);
+      expect(boundaryAt, "缓存边界必须存在（无条件）").toBeGreaterThan(0);
+      expect(sections[boundaryAt - 1], "Language Rules 必须紧贴边界之前").toContain("Language Rules");
+      expect(prompt, "语言规则段本体必须还在").toContain("# Language Rules");
     });
 
     it("PROMPT-REG-009: 自定义智能体 prompt 被注入", () => {

@@ -2,6 +2,8 @@ import type { TokenUsage } from "./types";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { getTelemetry } from "../telemetry/telemetry";
 import { reportPersistFailure } from "../storage/persist-failure";
+// R7：按天聚合（限额/统计）走**本地日**，与用户日历一致
+import { localDateString } from "../time/local-time";
 
 // ========== Cost Types ==========
 /**
@@ -439,9 +441,10 @@ export class CostTracker {
     }
 
     if (limits.perDay) {
-      const today = new Date().toISOString().split("T")[0];
+      // R7：**按天**的口径必须与用户日历一致（旧写法取 UTC 日 ⇒ 本地 00:00–08:00 的花费算进前一天）
+      const today = localDateString(new Date());
       const dayCost = this.records
-        .filter((r) => new Date(r.timestamp).toISOString().split("T")[0] === today)
+        .filter((r) => localDateString(new Date(r.timestamp)) === today)
         .reduce((sum, r) => sum + r.cost, 0);
 
       if (dayCost > limits.perDay) {
@@ -477,11 +480,11 @@ export class CostTracker {
     return this.records.reduce((sum, r) => sum + r.cost, 0);
   }
 
-  /** Get cost for today */
+  /** Get cost for today（**本地日**，与用户日历一致；见 `localDateString` 的说明） */
   getTodayCost(): number {
-    const today = new Date().toISOString().split("T")[0];
+    const today = localDateString(new Date());
     return this.records
-      .filter((r) => new Date(r.timestamp).toISOString().split("T")[0] === today)
+      .filter((r) => localDateString(new Date(r.timestamp)) === today)
       .reduce((sum, r) => sum + r.cost, 0);
   }
 

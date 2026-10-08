@@ -22,6 +22,7 @@
 
 import { getEventLog } from "../storage/event-log";
 import { listMessages } from "../storage/message";
+import { localTimeParts, offsetLabel } from "../time/local-time";
 
 // ========== Configuration ==========
 
@@ -78,20 +79,24 @@ function getProcessTimeZone(): string {
 
 /**
  * 格式化时间戳为 ISO + 偏移 + IANA zone。
+ *
+ * ⚠️ **第 189 波 R1 修复**：旧实现取 `date.toISOString()`（**UTC 数字**）→ 去掉 `.000Z`
+ * → 再拼本机偏移与 IANA 名。实测（`TZ=Asia/Shanghai`，本地 2026-10-08 06:30）输出
+ * `2026-10-07T22:30:00+08:00` —— 解析回 `2026-10-07T14:30Z`，**比真实瞬时早 8 小时**，
+ * 而同一请求的系统提示写 `2026-10-08T06:30:00.000+08:00`（`prompt.ts` 的 `minutePrecisionDate`）
+ * ⇒ 模型在同一次请求里收到两条互相矛盾的"现在几点"，且更靠后的那条自带时区名、更可能被采信。
+ *
+ * 现在字段与偏移一律走 `core/time/local-time.ts` 的 `localTimeParts()` / `offsetLabel()`
+ * （**允许**的用例是"共用同一处偏移计算"，不许各算一份）；判据 `TIME-CTX-1` 钉住"解析回的瞬时 == 输入瞬时"
+ * 以及"与同请求的系统提示 date 表示同一分钟"。
  */
 function formatTimestamp(date: Date, timeZone: string): string {
-  const iso = date.toISOString(); // 2026-08-16T12:34:56.789Z
-  // 获取时区偏移
-  const offsetMinutes = -date.getTimezoneOffset();
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const absMinutes = Math.abs(offsetMinutes);
-  const offsetHours = Math.floor(absMinutes / 60);
-  const offsetMins = absMinutes % 60;
-  const offset = `${sign}${String(offsetHours).padStart(2, "0")}:${String(offsetMins).padStart(2, "0")}`;
-
-  // 去掉毫秒和 Z，加上偏移和 zone
-  const isoShort = iso.replace(/\.\d{3}Z$/, "");
-  return `${isoShort}${offset} [${timeZone}]`;
+  const p = localTimeParts(date);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const local =
+    `${p.year}-${pad(p.month)}-${pad(p.day)}` +
+    `T${pad(p.hour)}:${pad(p.minute)}:${pad(p.second)}${offsetLabel(p.offsetMinutes)}`;
+  return `${local} [${timeZone}]`;
 }
 
 /**

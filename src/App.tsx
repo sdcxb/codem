@@ -367,7 +367,7 @@ import { deliverOwnedMessage } from "./core/ui/loop-owned-message";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
-import { composePersistAlertText, reportActionFailure } from "./core/storage/persist-failure";
+import { composePersistAlertText, reportActionFailure, PERSIST_WITHDRAWN_EVENT } from "./core/storage/persist-failure";
 import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaintextResidue } from "./core/storage/secret-store";
 import { reportCredentialStartupIssues } from "./core/storage/credential-startup-report";
 import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
@@ -2505,8 +2505,8 @@ flushStreamBuffer(); // flush all on unmount
       useAppStore.getState().withdrawPersistAlert(area);
     };
     let unlistenPersistWithdrawn: (() => void) | undefined;
-    window.addEventListener("codem:persist-failed-withdrawn", onPersistWithdrawn as EventListener);
-    unlistenPersistWithdrawn = () => window.removeEventListener("codem:persist-failed-withdrawn", onPersistWithdrawn as EventListener);
+    window.addEventListener(PERSIST_WITHDRAWN_EVENT, onPersistWithdrawn as EventListener);
+    unlistenPersistWithdrawn = () => window.removeEventListener(PERSIST_WITHDRAWN_EVENT, onPersistWithdrawn as EventListener);
 
     // 第 84 波：会话创建写库失败（store.createSession 上报）——
     // 该会话只存在于内存，重启后整段对话会消失，必须当场提示而不是静默。

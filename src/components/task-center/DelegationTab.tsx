@@ -11,6 +11,8 @@ import { getDelegationOrchestrator, cancelSessionExecution } from "../../core/se
 import type { DelegationTask, DelegationState } from "../../core/session";
 import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
+// R7：时间列走**唯一口径**（本地）
+import { localClockString } from "../../core/time/local-time";
 import { useCurrentProjectId } from "./use-current-project";
 import { scopeDelegations } from "./delegation-scope";
 
@@ -32,11 +34,8 @@ function getSessionTitle(sessions: any[], sessionId: string): string {
 }
 
 function formatTime(timestamp: number): string {
-  const d = new Date(timestamp);
-  const h = String(d.getHours()).padStart(2, "0");
-  const m = String(d.getMinutes()).padStart(2, "0");
-  const s = String(d.getSeconds()).padStart(2, "0");
-  return `${h}:${m}:${s}`;
+  // R7：走**唯一口径**（本地时分秒），不再自己 getHours/getMinutes/getSeconds
+  return localClockString(new Date(timestamp));
 }
 
 export function DelegationTab() {

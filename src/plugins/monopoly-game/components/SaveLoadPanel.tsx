@@ -7,6 +7,8 @@ import { useState, useEffect } from "react";
 import { SaveLoadSystem, type SaveSlotInfo } from "../engine/SaveLoadSystem";
 import type { GameEngine } from "../engine/GameEngine";
 import type { GameBoardMap, GameConfig, StockDef } from "../types";
+// R7：存档时间走**唯一口径**（本地）
+import { localTimeParts } from "../../../core/time/local-time";
 
 interface Props {
   engine: GameEngine;
@@ -61,8 +63,10 @@ export function SaveLoadPanel({ engine, map, config, stocks, mode, onClose, onLo
 
   const formatDate = (ts: number): string => {
     if (!ts) return "";
-    const d = new Date(ts);
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    // R7：存档时间是**给人看的**（本地）—— 走唯一口径，不自造年月日拼接
+    const p = localTimeParts(new Date(ts));
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${p.year}/${pad(p.month)}/${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)}`;
   };
 
   return (

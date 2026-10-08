@@ -116,7 +116,7 @@ function channelLinear(c: number): number {
  * 计算相对亮度（relative luminance）
  * 返回 0–1 的值，0 = 最暗，1 = 最亮
  */
-export function relativeLuminance(color: string, vars?: Record<string, string>): number | null {
+function relativeLuminance(color: string, vars?: Record<string, string>): number | null {
   const rgb = parseColorValue(color, vars);
   if (!rgb) return null;
   const rl = 0.2126 * channelLinear(rgb.r) + 0.7152 * channelLinear(rgb.g) + 0.0722 * channelLinear(rgb.b);
@@ -180,7 +180,7 @@ export interface ColorPair {
 }
 
 /** 检查一组颜色配对，返回所有结果 */
-export function checkPairs(pairs: ColorPair[]): Array<ColorPair & { result: ContrastResult | null }> {
+function checkPairs(pairs: ColorPair[]): Array<ColorPair & { result: ContrastResult | null }> {
   return pairs.map((p) => ({ ...p, result: evaluateContrast(p.fg, p.bg) }));
 }
 

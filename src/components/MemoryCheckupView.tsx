@@ -21,6 +21,7 @@ import { confirmDialog } from "../core/ui/native-dialog";
 import {
   getMemoryService,
   isLegacyPoolInjectionPaused,
+  MEMORY_SOURCE_KIND_LABEL,
   setLegacyPoolInjectionPaused,
   type MemoryScope,
 } from "../core/memory/memory";
@@ -34,6 +35,7 @@ import {
   type CheckupRetarget,
   type CheckupSource,
 } from "../core/memory/checkup";
+import { localDateString } from "../core/time/local-time";
 
 interface MemoryCheckupViewProps {
   /** 当前项目 id（归一化工作目录）；用于显示"这条现在会不会生效" */
@@ -44,11 +46,12 @@ interface MemoryCheckupViewProps {
   onNavigate?: (target: { projectId?: string; sessionId?: string }) => void;
 }
 
-const SOURCE_LABEL: Record<CheckupSource, string> = {
-  manual: "手动",
-  auto: "自动",
-  unknown: "未知（旧数据）",
-};
+/**
+ * 来源三态文案 —— 与注入文本 / 记忆面板 / 导出**同一张表**
+ * （`memory.ts` 的 `MEMORY_SOURCE_KIND_LABEL`；判据 `MEM-PLACE-12` 钉住"同一事实同一说法"）。
+ * 本视图只负责显示，**不自己再写一份字面量**。
+ */
+const SOURCE_LABEL: Record<CheckupSource, string> = MEMORY_SOURCE_KIND_LABEL;
 
 /** 作用域徽标文案（M-5：不认识的词要**原样**显示，不许假装它是三者之一） */
 function scopeBadgeLabel(entry: CheckupGroup["entries"][number]): string {
@@ -266,7 +269,8 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `codem-memory-pre-migration-${new Date().toISOString().split("T")[0]}.json`;
+    // R7：快照文件名里的日期是**给人看的**（本地日）
+    a.download = `codem-memory-pre-migration-${localDateString(new Date())}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setNotice("已导出迁移前快照（含时间、条数与迁移前的原始字符串）。");
@@ -377,9 +381,10 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
 
       <div className="mc-summary">
         <span>总计 {checkup.total} 条</span>
-        <span>手动 {checkup.sourceCounts.manual}</span>
-        <span>自动 {checkup.sourceCounts.auto}</span>
-        <span className="mc-summary-unknown">未知（旧数据）{checkup.sourceCounts.unknown}</span>
+        {/* R5：三态计数一律走唯一文案表（旧写法在这里一个字面量写三态，且「自动」与表里的「自动提取」不是同一句） */}
+        <span>{SOURCE_LABEL.manual} {checkup.sourceCounts.manual}</span>
+        <span>{SOURCE_LABEL.auto} {checkup.sourceCounts.auto}</span>
+        <span className="mc-summary-unknown">{SOURCE_LABEL.unknown}{checkup.sourceCounts.unknown}</span>
         <span>待批准 {checkup.pendingCount}</span>
         <span>归属未知 {checkup.unresolvedCount}</span>
         {/* I4：注入上限与"实际会进上下文"的条数必须披露（否则用户以为每条都生效） */}

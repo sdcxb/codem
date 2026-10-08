@@ -19,6 +19,8 @@ import {
   withdrawFailure,
 } from "../storage/persist-failure";
 import { redactSecrets } from "../utils/redact";
+// R7：给人看的日期走**唯一口径**（本地日），不再自造 `toISOString().split("T")[0]`
+import { localDateString } from "../time/local-time";
 
 // ========== Memory Types ==========
 
@@ -53,6 +55,303 @@ export type MemorySource = "manual" | "auto";
  */
 export type MemoryStatus = "active" | "pending";
 
+/**
+ * **权威性纪律**（照 Hermes `agent/context_compressor.py:291-293` 的口径翻译）：
+ * 「系统提示里的记忆**始终是权威且生效的**，不得因为压缩/摘要而忽视或降级记忆内容」。
+ *
+ * 为什么要**挂在记忆块上**（而不是写在别处一句通用提醒）：
+ * 记忆是本仓**唯一**「用户手工确认过的长期结论」载体。历史压缩（`context-compressor` /
+ * 本仓 `conversation_compression` 等价物）会在历史里插摘要，模型很容易把摘要当成更新的
+ * 事实而把系统提示里的记忆当"旧背景"降权 —— Hermes 因此在**摘要提示词**里显式下豁免指令
+ * （`context_compressor.py:291-293`），并另加压缩哨兵
+ * （`_COMPRESSION_NOTE`，`context_compressor.py:5453`）。这里取前者的**文本口径**，
+ * 挂在记忆块自身的抬头，保证"读到记忆的同时就读到豁免"。
+ *
+ * ⚠️ 这句话是**内容**，不是实现：判据 `MEM-PLACE-6` 同时钉住"文本在场"与"它挂在记忆块上"。
+ */
+export const MEMORY_AUTHORITY_NOTE =
+  "> **权威性**：以下记忆权威且持续生效，不得因压缩/摘要而降级或改写。";
+
+/**
+ * 两半记忆块的抬头。
+ *
+ * - `MEMORY_STABLE_HEADER`：**稳定前缀侧** —— 平台级（无归属键、跨项目跨对话），很少变；
+ * - `MEMORY_VOLATILE_HEADER`：**易变侧** —— 项目级 + 对话级 + 自动提取块（回合结束自动提取、
+ *   审批通过都会让它 churn）。
+ *
+ * 照 OpenClaw `src/agents/system-prompt-context-files.ts:7-15`（段序表）+
+ * `SYSTEM_PROMPT_CACHE_BOUNDARY`（`system-prompt.ts:855,857`）的形态：
+ * 记忆**留在系统提示**，但按易变性两分，显式缓存边界落在两半之间。
+ *
+ * ⚠️ **落点修正（第 189 波，实测）**：稳定记忆**不是**稳定前缀的最末一段 —— 它之后还有
+ * 技能/知识/MCP/多智能体/安全/语言规则（这些**都是稳定的**，留在稳定前缀之内），
+ * 哨兵统一由 `prompt.ts` 落在稳定前缀的**真正末尾**（语言规则/班长名册之后）。
+ * 旧注释写"稳定前缀最末紧贴边界"，与实现不符（哨兵曾经早 8~13 段），已改。
+ */
+export const MEMORY_STABLE_HEADER = "# Memory System — 稳定记忆（平台级 · 手动维护）";
+export const MEMORY_VOLATILE_HEADER = "# Memory System — 易变记忆（项目级 / 对话级 / 自动提取）";
+
+/**
+ * **来源三态**（展示口径）：`manual` / `auto` / `unknown`。
+ *
+ * 为什么必须有第三态（第 189 波 A1）：旧数据（`normalizeLoadedEntry` 对非法/缺失 `source`
+ * 一律给 `undefined`）在**历史里没有任何字段**能区分"用户手写的"和"当时自动提取的"。
+ * 把它算成 manual 或 auto 都是**编造来源** —— 而两侧一旦各编一套（注入说"自动提取、未经
+ * 人工确认"、面板说"手动"），同一条目就有了两套真相，用户会据此删错条目。
+ */
+export type MemorySourceKind = MemorySource | "unknown";
+
+/** 只关心 `source` 的载体（`undefined` = 旧数据；`MemoryEntry` 结构上可直接传进来） */
+export type MemorySourceCarrier = { source?: MemorySource | undefined };
+
+/**
+ * 三态的**唯一**文案表：注入文本、记忆面板、记忆体检、导出**四处共用**（判据 `MEM-PLACE-12`
+ * 断言同一事实同一说法）。改这里就是改四处，不许任何一处自己再写一份字面量。
+ */
+export const MEMORY_SOURCE_KIND_LABEL: Record<MemorySourceKind, string> = {
+  manual: "手动",
+  auto: "自动提取",
+  unknown: "未知（旧数据）",
+};
+
+/**
+ * 面板「自动提取」分组头的**补充说明**（第 189 波 R5）。
+ *
+ * 它**不是**三态文案 —— 三态只有 `MEMORY_SOURCE_KIND_LABEL` 一处。面板旧写法把
+ * 「自动提取（可能不准，可删）」整句写死在组件里（改文案表不会改它 ⇒ 同一屏并存三套说法）。
+ * 现在分组头 = 表里的 `auto` + 这个补充句，两个来源都是**一处**。
+ */
+export const MEMORY_AUTO_GROUP_HINT = "可能不准，可删";
+
+/**
+ * **来源未知（旧数据）**块的小标题（仅注入用；界面用同一张文案表）。
+ *
+ * 旧数据在注入文本里**必须**显式说"来源未知"，不许冒充"自动提取…未经人工确认"：
+ * 版本升级把用户手写的旧 `global` 条目重写成"由自动流程从对话中提取"是对用户记忆的**编造**。
+ *
+ * ⚠️ R5：**当场**从唯一表拼（不是模块加载时算好的字符串快照）—— 于是"改文案表 ⇒ 注入抬头
+ * 跟着改"在**同一个进程里**也成立，判据 `MEM-PLACE-23③` 就是靠这条把它钉住的。
+ */
+export function memoryUnknownHeader(): string {
+  return `## 来源${MEMORY_SOURCE_KIND_LABEL.unknown}`;
+}
+
+/** 来源未知块的免责声明（说清"为什么不知道"与"怎么保护"，不编造来源） */
+export function memoryUnknownNote(count: number): string {
+  return (
+    `> 以下 ${count} 条来自旧版本：写入时**没有记录来源**，无法确认是你手写的还是当时的自动流程写入的；` +
+    `它们**按手动条目保护**（自动流程不会改写或删除），请核对后决定保留。`
+  );
+}
+
+/** 条目的**展示**来源（三态；`undefined` ⇒ `unknown`，绝不冒充 manual/auto） */
+export function memorySourceOf(entry: MemorySourceCarrier): MemorySourceKind {
+  if (entry.source === "manual") return "manual";
+  if (entry.source === "auto") return "auto";
+  return "unknown";
+}
+
+/**
+ * **受保护条目** = 手动 + 来源未知的旧数据（`memorySourceOf !== "auto"`）。
+ *
+ * 信任边界的**保护口径**：自动流程（回合结束提取 / 自动整合 / 容量裁剪 / 批量清理）
+ * 一律不得改写或删除它们。旧数据必须按受保护处理 —— 否则**存量用户手写的记忆**会被
+ * 自动整合删掉或洗成自动条目（这正是改造前的正确行为，不许改坏；判据 `MEM-PLACE-12` ②）。
+ *
+ * ⚠️ 保护口径（三态里"非 auto 都保护"）与**注入位置**口径（`entrySourceOf`：旧数据算
+ * auto ⇒ 进易变侧）**故意不同**：位置错了只是缓存收益回退，**保护错了是不可逆的数据损失**。
+ */
+export function isProtectedMemoryEntry(entry: MemorySourceCarrier): boolean {
+  return memorySourceOf(entry) !== "auto";
+}
+
+/**
+ * **注入位置口径**：`undefined`（旧数据）按 `auto` 归入**易变侧**。
+ *
+ * 理由：旧 `project` 池正是"可能被自动流程动过"的那批数据（`legacyPool` 标记讲的就是这件事），
+ * 把它放进**稳定前缀**会做出一个我们无法证明的强声明，且它一变就整体位移稳定前缀。
+ *
+ * ⚠️ 这是**位置**口径，只有"manual / 非 manual"两分；**它不决定注入文本里的来源说法** ——
+ * 说法一律走 `memorySourceOf` 的三态文案（`MEMORY_SOURCE_KIND_LABEL`），
+ * 所以旧数据在注入文本里写的是「未知（旧数据）」而不是「自动提取…未经人工确认」。
+ */
+export function entrySourceOf(entry: MemorySourceCarrier): MemorySource {
+  return entry.source === "manual" ? "manual" : "auto";
+}
+
+/**
+ * 稳定/易变两分的**可读镜像**。
+ *
+ * 真正生效的是两份取数常量 `MEMORY_STABLE_BLOCK_SELECTION` /
+ * `MEMORY_VOLATILE_BLOCK_SELECTIONS`（+ `entrySourceOf` 过滤）；这里只是同一条规则的可读形式。
+ * 两者由判据 `MEM-PLACE-17` **钉住一致**（对同一组条目断言"进稳定块"与
+ * `isStableMemoryEntry` 逐条相等）——改了一边不改另一边必然红，所以它不再是"零引用却自称唯一"。
+ *
+ * 稳定侧 = **平台级 + 手动**。其余**一律**易变侧，包括：
+ * - 任何作用域的 `auto` 条目（回合结束自动提取、审批后 `pending→active`、编辑都会 churn）；
+ * - 任何作用域的旧数据（`source === undefined`）；
+ * - `project` / `conversation` 的全部条目。
+ *
+ * 为什么平台级 `auto` **不能**留在稳定侧：体检视图允许把条目「保留为平台级」
+ * ⇒ 一条平台级自动条目若落在稳定前缀里，它一变就**整体位移稳定前缀**，
+ * 本次改造的核心收益当场失效（这正是这条判据要挡的形态）。
+ */
+export function isStableMemoryEntry(entry: Pick<MemoryEntry, "scope" | "source">): boolean {
+  return entry.scope === "platform" && entry.source === "manual";
+}
+
+/** 注入的来源筛选口径（稳定侧只要手动、易变侧只要自动） */
+export const MEMORY_SOURCES_MANUAL: readonly MemorySource[] = ["manual"];
+export const MEMORY_SOURCES_AUTO: readonly MemorySource[] = ["auto"];
+
+/**
+ * **聚合**注入预算的共享计数槽（S1-BUDGET-TOTAL）。
+ *
+ * 背景（**照实**，第 189 波修正了原注释里"最多是预算的 3 倍"这句不成立的推断）：
+ * `computeInjection` 的 `chars` 计数在**单次调用内跨三块共享**（它在 scope 循环之外声明），
+ * 所以"三块各拿一份 12k 预算"这个前提**本身不成立** —— 实测（25 条/作用域）拆成多次调用
+ * 前后的注入条数与字符数与旧口径**逐条一致**。
+ *
+ * 那它为什么还留着：这是**防御性**上限。`buildMemoryPrompt` 的默认形态仍允许调用方
+ * 不传 `sources`/`budgetTracker`，将来任何一条只给"单块预算"的新调用路径出现时，
+ * 聚合槽保证跨块合计仍不超过 `MEMORY_INJECT_CHAR_BUDGET`。它今天就该有的可观测行为是
+ * "超限不静默"（见 `composeMemoryBlock` 的披露），不是"今天真的天天咬合"。
+ *
+ * 语义：`totalChars` 累计**已经被收进注入文本**的字符；超出聚合上限的条目**不收**，
+ * 由调用方在末尾用 `renderAggregateBudgetNotice()` **如实披露**（不许静默丢）。
+ */
+export interface MemoryInjectBudgetTracker {
+  totalChars: number;
+  totalTruncated: number;
+}
+
+/**
+ * 截断披露的**定位锚**（构建与解析共用一处，判据 `MEM-PLACE-24`）。
+ *
+ * 两层必须能**逐句分辨**：同一块里出现 2~4 句文字几乎相同、数字不同的披露时，
+ * 读者（模型/用户）分不清哪句是哪一层的截断 —— 这正是复审读码推定要挡的形态。
+ */
+const TRUNCATION_NOTICE_PREFIX = "> 注入上限";
+/** 逐块层（`renderBlocks`：每作用域每来源的条数上限 / 单次调用的字符预算） */
+const TRUNCATION_NOTICE_PER_BLOCK_ANCHOR = "本段";
+/** 聚合层（`renderAggregateBudgetNotice`：多块共享的合计字符预算） */
+const TRUNCATION_NOTICE_AGGREGATE_ANCHOR = "跨块合计";
+
+export function createMemoryInjectBudgetTracker(): MemoryInjectBudgetTracker {
+  return { totalChars: 0, totalTruncated: 0 };
+}
+
+/**
+ * 聚合上限被触发时的**如实披露**文本。
+ *
+ * ⚠️ 它**故意**不再与 `renderBlocks` 里那条逐字同形（第 189 波附带项，复审的读码推定）：
+ * 一个 `composeMemoryBlock` 的易变半块由**三次** `buildMemoryPrompt` 拼成，每次都会带出
+ * 自己那句「本段还有 N 条未注入」，最后再追加这一句 ⇒ 同一块里会出现 2~4 句**文字几乎相同、
+ * 数字不同**的披露，读者分不清哪句是哪一层的截断（"同句不同数"）。
+ * 现在两层各自自证：逐块的写「**本段**」，聚合的写「**跨块合计**」——
+ * 判据 `MEM-PLACE-24` 同时钉住"分层可辨"与"数字必须能对账
+ * （∑逐块 + 聚合 == 实际未注入条数）"。
+ *
+ * 未触发 ⇒ 返回空串（不留无意义的空话在系统提示里）。
+ */
+export function renderAggregateBudgetNotice(tracker: MemoryInjectBudgetTracker): string {
+  if (tracker.totalTruncated <= 0) return "";
+  return (
+    `${TRUNCATION_NOTICE_PREFIX}（**${TRUNCATION_NOTICE_AGGREGATE_ANCHOR}**）：本块另有 ${tracker.totalTruncated} 条可见记忆**未注入**` +
+    `（多块合计不超过 ${MEMORY_INJECT_CHAR_BUDGET} 字符；每个作用域每来源另受 ` +
+    `${MEMORY_INJECT_MAX_PER_BLOCK} 条上限约束，那一层在各自的小节里单独写明）。` +
+    `这不是它们被删除，只是没进上下文；可在「设置 → 记忆体检」里看到每一条。`
+  );
+}
+
+/**
+ * 把注入文本里的截断披露**按层分开**（判据 `MEM-PLACE-24`；界面若以后要展示也走它）。
+ *
+ * 三层归口：逐块披露（`renderBlocks` 每个 selection 各一句）→ `perBlock`；
+ * 聚合披露（`renderAggregateBudgetNotice`）→ `aggregate`；两句锚都认不出 ⇒ `unknown`
+ * （**不许**静默归到某一层 —— 那正是"同句不同数"的来源）。
+ */
+export function splitMemoryTruncationNotices(text: string): {
+  perBlock: string[];
+  aggregate: string[];
+  unknown: string[];
+} {
+  const perBlock: string[] = [];
+  const aggregate: string[] = [];
+  const unknown: string[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.startsWith(TRUNCATION_NOTICE_PREFIX)) continue;
+    if (line.includes(TRUNCATION_NOTICE_AGGREGATE_ANCHOR)) aggregate.push(line);
+    else if (line.includes(TRUNCATION_NOTICE_PER_BLOCK_ANCHOR)) perBlock.push(line);
+    else unknown.push(line);
+  }
+  return { perBlock, aggregate, unknown };
+}
+
+/** 一块记忆的取数口径：哪个作用域、只要哪个来源 */
+export interface MemoryBlockSelection {
+  scope: MemoryScope;
+  sources?: readonly MemorySource[];
+}
+
+/** 稳定侧取数口径 = **平台级 + 手动**（照 `isStableMemoryEntry`） */
+export const MEMORY_STABLE_BLOCK_SELECTION: readonly MemoryBlockSelection[] = [
+  { scope: "platform", sources: MEMORY_SOURCES_MANUAL },
+];
+
+/**
+ * 易变侧取数口径 = 平台级自动（含旧数据）+ 项目级 + 对话级。
+ *
+ * 顺序照既有的 platform → project → conversation（顺序契约不变，判据 MEM-SCOPE-4 / MEM-INJECT-1）。
+ */
+export const MEMORY_VOLATILE_BLOCK_SELECTIONS: readonly MemoryBlockSelection[] = [
+  { scope: "platform", sources: MEMORY_SOURCES_AUTO },
+  { scope: "project" },
+  { scope: "conversation" },
+];
+
+/**
+ * 把若干"作用域 × 来源"的记忆渲染成**一块**带权威性抬头的记忆块。
+ *
+ * 空 ⇒ 返回空串（**不许**留一个孤零零的抬头占上下文）；但**披露优先于"空块不留字"**：
+ * 正文为空而聚合上限挡下过条目时，抬头 + 权威句 + **披露**必须照样出现
+ * （第 189 波 A4：旧写法先 `if (!text) return ""`，于是"还有 N 条未注入"随空块一起消失，
+ * 正是 `:131` 明令禁止的静默丢）。判据 `MEM-PLACE-14`。
+ *
+ * 注入正文仍由 `MemoryService.buildMemoryPrompt(scope, projectId, sessionId, {sources})` 负责
+ * （截断口径、手动/自动分块、超限如实披露都在那里，这里不重复一遍）。
+ *
+ * 两块（稳定/易变）**各自**带 `MEMORY_AUTHORITY_NOTE`（保留两份：两块可能在上下文里
+ * "可回忆度"不同，豁免必须跟着它自己那块走）。**成本**：旧文案 104 字符 × 2 = 208；
+ * 现在 37 字符 × 2 = 74 ⇒ 每轮省 **134** 字符，两块仍各自带豁免。
+ *
+ * `tracker`（可选）用于**聚合**预算（S1-BUDGET-TOTAL）：同一轮提示里的多块共享一个计数槽，
+ * 合计不超过 `MEMORY_INJECT_CHAR_BUDGET`；被聚合上限挡下的条数会在该块末尾**如实披露**。
+ */
+export function composeMemoryBlock(
+  service: Pick<MemoryService, "buildMemoryPrompt">,
+  selections: readonly MemoryBlockSelection[],
+  header: string,
+  projectId?: string,
+  sessionId?: string,
+  tracker?: MemoryInjectBudgetTracker,
+): string {
+  const text = selections
+    .map((selection) => service.buildMemoryPrompt(selection.scope, projectId, sessionId, { sources: selection.sources, budgetTracker: tracker }))
+    .filter((part) => part !== "")
+    .join("\n\n");
+  const notice = tracker ? renderAggregateBudgetNotice(tracker) : "";
+  // 正文与披露**都**为空 ⇒ 才是真正的空块（不占上下文、不留孤立抬头）
+  if (!text && !notice) return "";
+  return [
+    header,
+    "",
+    MEMORY_AUTHORITY_NOTE,
+    ...(text ? ["", text] : []),
+    ...(notice ? ["", notice] : []),
+  ].join("\n");
+}
+
 export interface MemoryEntry {
   id: string;
   scope: MemoryScope;
@@ -80,6 +379,30 @@ export interface MemoryEntry {
    * —— 于是打上这个可展示的标记，并由体检视图单列一组、提供批量处置与「暂停注入」开关。
    */
   legacyPool?: true;
+  /**
+   * **创建序**（只增不减的整数；`add` 时分配，`update` 永不动它）。
+   *
+   * ## 为什么必须**持久化**一个序号（第 189 波 R2，实测）
+   *
+   * 注入块的块内顺序原先建立在 `this.entries` 的 **Map 插入序**上（"插入序 = 创建序"）。
+   * 那条假设在**重载**路径上不成立：`serialize()` 把条目写成**以 id 为键的普通对象**，
+   * 而 JSON 的**整数样键按数值升序**排列，与插入序无关。实测插入 `mem-3,1,mem-1,2`
+   * ⇒ 落库文本是 `{"1":…,"2":…,"mem-3":…,"mem-1":…}` ⇒ 读回 `1,2,mem-3,mem-1`
+   * （顺序整体反转）。**数字 id 是本仓真实形状**（`looksLikeMemoryEntryValue` 的注释：
+   * 「真实 id 前缀会变（uuid / 中文 / 数字都出现过）」）。而构造即 `load()`、开记忆面板还会
+   * `reload()`（`MemoryManager.tsx` 的 `useEffect`）⇒ 重启后注入块顺序反转，
+   * 配合每桶 20 条上限，**入选的 20 条也会变**（稳定前缀被重写一次）。
+   *
+   * 于是创建序不再依赖"容器保序"这件我们控制不了的事，而是**写在条目自己身上**：
+   * - 新写入（`createEntry`）分配 `max(order)+1` ⇒ 只增不减；
+   * - `update()` 刷新 `timestamp` 但**不动** `order` ⇒ 编辑不平移（第 15 条）；
+   * - `load()` 对**没有** `order` 的旧条目按**当前读入顺序**幂等补齐（旧的 id-keyed 映射
+   *   本来就是"读入顺序"，无更早的真相可复原；补齐后立刻随下一次 `save()` 落库，
+   *   于是**跨进程**也稳定）。
+   *
+   * 判据 `MEM-PLACE-20`（落库→重载后逐条顺序与入选集合不变，整数样 id 与非整数 id 混排）。
+   */
+  order?: number;
 }
 
 /** 待迁移的条目形态（作用域可能是旧名，且没有新的信任字段） */
@@ -133,6 +456,73 @@ export interface MemoryScopeContext {
    * 除体检外**任何地方都不许传它**：注入路径永远只看当前项目/当前对话。
    */
   showAllProjects?: boolean;
+}
+
+/**
+ * 注入侧上下文的**品牌键**（R6 加强）。
+ *
+ * 为什么需要它：`Pick<MemoryScopeContext, "projectId" | "sessionId">` 只是"少几个可选字段"，
+ * 而 TS 的**结构类型**允许把"带额外开关的宽对象"赋给窄类型（多余属性检查只对**新鲜字面量**
+ * 生效）。于是"把 `showAllProjects` 传进注入路径"在旧形态下有两条路都不会红：
+ * ① 宽类型变量直接传进形参；② 类内手工构造带开关的 ctx。
+ * 有了必需品牌键，`InjectionScopeContext` 就**只能**由 `injectionScopeContext()` 构造
+ * （`MemoryScopeContext` 没有这个键 ⇒ 赋不过去）⇒ 上面两条路都变成编译错误。
+ */
+export const INJECTION_SCOPE_CONTEXT_BRAND: unique symbol = Symbol("codem.memory.InjectionScopeContext");
+
+/**
+ * **注入侧**的作用域上下文：只有"当前项目 / 当前对话"，且**只能**由
+ * `injectionScopeContext()` 构造（品牌键必需）。
+ *
+ * 显示专用的三个开关（`includePending` / `includeUnscoped` / `showAllProjects`）**故意不在
+ * 这个类型里**，而且宽类型 `MemoryScopeContext` **赋不进来**（缺品牌键）—— 这条由类型系统保证。
+ *
+ * ⚠️ 覆盖面的**如实**声明（R6）：类型只挡"构造"，挡不住 `as InjectionScopeContext` 这种硬转；
+ * 所以 `computeInjection` 在运行时**再收一次口**（只取两个归属键，见那里）。判据 `MEM-PLACE-13`。
+ */
+export type InjectionScopeContext = Pick<MemoryScopeContext, "projectId" | "sessionId"> & {
+  /** 品牌：由 `injectionScopeContext()` 写入（运行时真的存在，但不进 `Object.keys`） */
+  readonly [INJECTION_SCOPE_CONTEXT_BRAND]: true;
+};
+
+/**
+ * **编译期守卫 ①**（判据 `MEM-PLACE-13`）：注入侧上下文**不许**携带体检开关。
+ *
+ * 为什么守卫必须写在**生产代码**里（`src/**`）而不是测试文件里：`tsconfig.json` 把
+ * `src/test/**` 整个 **exclude** 掉了 ⇒ 测试文件里的 `@ts-expect-error` 不会被 `tsc` 检查
+ * （是装饰品）。这个文件在 `include: ["src"]` 里，所以下面这行的指令是**真的**被检查的：
+ *
+ * - 今天 `showAllProjects` 不在 `InjectionScopeContext` 里 ⇒ 字面量多出一个键 ⇒
+ *   报错 ⇒ `@ts-expect-error` **被消费**，`tsc` 0 错；
+ * - 若将来有人把体检开关加回这个类型，这一行就**编译通过** ⇒ 指令变成"未使用"⇒ `tsc` 立刻红。
+ */
+export const INJECTION_SCOPE_CONTEXT_COMPILE_GUARD: InjectionScopeContext = {
+  ...injectionScopeContext("compile-guard"),
+  // @ts-expect-error 注入侧上下文不许携带体检开关（showAllProjects）
+  showAllProjects: true,
+};
+
+/**
+ * **编译期守卫 ②**（R6 新增：钉住**形参类型**，而不只是类型别名）。
+ *
+ * 旧守卫只挡"把字段加回 `InjectionScopeContext`"。把 `injectionPlan` / `computeInjection`
+ * 的**形参**直接放宽成 `MemoryScopeContext`（不动别名）则一路畅通 —— 复审正是这么打穿它的。
+ * 这条守卫读的**就是**形参类型：
+ * - 今天形参是窄类型 ⇒ `InjectionParamIsNarrow = true` ⇒ `const g: true = false` **报错**
+ *   ⇒ `@ts-expect-error` 被消费，`tsc` 0 错；
+ * - 形参被放宽（`keyof` 里出现 `showAllProjects`）⇒ 类型变 `false` ⇒ 那一行**编译通过**
+ *   ⇒ 指令变成"未使用"⇒ `tsc --noEmit` **立刻红**。
+ */
+type InjectionParamIsNarrow = "showAllProjects" extends keyof Parameters<MemoryService["injectionPlan"]>[0]
+  ? false
+  : true;
+// @ts-expect-error 注入路径的形参必须窄：放宽成 MemoryScopeContext 会让这条指令"未被使用"（tsc 红）
+const INJECTION_PARAM_TYPE_COMPILE_GUARD: InjectionParamIsNarrow = false;
+void INJECTION_PARAM_TYPE_COMPILE_GUARD;
+
+/** 注入侧上下文的**唯一**构造点（新增开关前必须先过判据 `MEM-PLACE-13`） */
+export function injectionScopeContext(projectId?: string, sessionId?: string): InjectionScopeContext {
+  return { projectId, sessionId, [INJECTION_SCOPE_CONTEXT_BRAND]: true };
 }
 
 /** `add` 的结果：容量超限等失败必须**可见**，不许静默驱逐 */
@@ -402,12 +792,22 @@ function textOf(value: unknown): string {
  */
 export const safeMemoryText = textOf;
 
-/** 时间戳 → `YYYY-MM-DD`；不是有限数字时如实写「日期未知」（不抛 RangeError） */
+/**
+ * 时间戳 → **本地**日期 `YYYY-MM-DD`；不是有限数字时如实写「日期未知」（不抛 RangeError）。
+ *
+ * ⚠️ **第 189 波 R7 修复**：旧实现是 `new Date(n).toISOString().split("T")[0]` ——
+ * 那是 **UTC 日**，于是 `Asia/Shanghai` 本地 `00:00–08:00` 写入/展示的条目在注入文本里
+ * **显示前一天**（与同提示的 `# Current Date` 本地口径也互相矛盾）。这是"自造时间格式"
+ * 同一簇的第三份（前两份：`prompt.ts` 的 date、`time-context.ts` 的时间戳）。
+ *
+ * 现在一律走**唯一口径** `localDateString()`（`core/time/local-time.ts`）——
+ * 判据 `TIME-SINGLE-SOURCE①②`（② 就是这条缺陷的正身：固定 +08:00、本地 00:30 必须显示当天）。
+ */
 function safeDate(timestamp: unknown): string {
   const n = typeof timestamp === "number" && Number.isFinite(timestamp) ? timestamp : NaN;
   if (Number.isNaN(n)) return "日期未知";
   try {
-    return new Date(n).toISOString().split("T")[0];
+    return localDateString(new Date(n));
   } catch {
     return "日期未知";
   }
@@ -416,6 +816,37 @@ function safeDate(timestamp: unknown): string {
 /** 非空字符串才认（其它一律 `undefined` —— 空串归属键等于没有归属） */
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * 从若干条目里算出**创建序的完整索引**（`MEM-PLACE-20` 的依据）。
+ *
+ * - 有显式 `order` 的（本版本落库的形态）**以它为唯一依据** —— 它与容器的键序无关；
+ * - 没有 `order` 的（旧数据里直接塞进内部表的条目 / 判据手工构造的条目）按**迭代位置**兜底
+ *   （接在最大显式 `order` 之后）—— 保证"键序变了也不会算出两套顺序"。
+ *
+ * 迭代位置兜底**不是**创建序的第二个真相：`load()` 会把读入的旧条目按读入顺序补齐 `order`
+ * 并随下次 `save()` 落库，所以产品路径上"缺 `order`"只可能出现在同一进程刚塞进来的瞬间。
+ */
+function buildCreationOrderIndex(entries: Iterable<MemoryEntry>): Map<string, number> {
+  /*
+   * ⚠️ 必须先物化成数组：`Map.values()` 返回的是**一次性迭代器**，
+   * 下面要遍历两遍（先取最大显式 order、再逐条建索引），第二遍会拿到空序列 ——
+   * 第一版就是这么写的，判据 `MEM-PLACE-20` 当场抓到（顺序索引恒为空 ⇒ 排序退化成插入序）。
+   */
+  const list = Array.from(entries);
+  const order = new Map<string, number>();
+  let maxExplicit = -1;
+  for (const e of list) {
+    if (typeof e.order === "number" && Number.isFinite(e.order) && e.order > maxExplicit) {
+      maxExplicit = e.order;
+    }
+  }
+  let fallback = maxExplicit + 1;
+  for (const e of list) {
+    order.set(e.id, typeof e.order === "number" && Number.isFinite(e.order) ? e.order : fallback++);
+  }
+  return order;
 }
 
 /**
@@ -495,6 +926,8 @@ function normalizeLoadedEntry(idKey: string, value: unknown): MemoryEntry | null
     sessionId: optionalString(raw.sessionId),
     batchId: optionalString(raw.batchId),
     legacyPool: raw.legacyPool === true ? true : undefined,
+    // 创建序（R2）：非法/缺失一律 `undefined`，由 `load()` / `importFromJSON` 幂等补齐
+    order: typeof raw.order === "number" && Number.isFinite(raw.order) ? raw.order : undefined,
   };
 }
 
@@ -785,11 +1218,30 @@ export class MemoryService {
     }
 
     let dropped = 0;
+    /*
+     * R2：旧条目补齐**创建序**（幂等迁移）。
+     *
+     * 先扫一遍显式 `order` 取最大值，再按**读入顺序**给缺 `order` 的条目依次补齐 ——
+     * 补齐值只增不减、且完全由"这份落库文本的读入顺序"决定，所以**跨进程幂等**：
+     * 同一份文件在任何一次启动里补齐出的顺序逐条相同（不会有第二套真相）。
+     * 补齐结果随下一次 `save()` 落库（`serialize()` 写整个条目对象 ⇒ `order` 一起进 JSON）。
+     */
+    let nextOrder = -1;
+    for (const [, value] of container.pairs) {
+      const raw = (value ?? {}) as { order?: unknown };
+      if (typeof raw.order === "number" && Number.isFinite(raw.order) && raw.order > nextOrder) {
+        nextOrder = raw.order;
+      }
+    }
+    nextOrder += 1;
     for (const [key, value] of container.pairs) {
       const normalized = normalizeLoadedEntry(key, value);
       if (!normalized) {
         dropped++;
         continue;
+      }
+      if (typeof normalized.order !== "number" || !Number.isFinite(normalized.order)) {
+        normalized.order = nextOrder++;
       }
       this.entries.set(normalized.id, normalized);
     }
@@ -1102,6 +1554,23 @@ export class MemoryService {
     for (const stale of sorted.slice(BATCH_KEEP_MAX)) this.batches.delete(stale.id);
   }
 
+  /**
+   * 下一个可用的**创建序**（R2）：现有最大 `order` + 1。
+   *
+   * 为什么是"现算"而不是一个自增计数器字段：计数器必须在 `load()` / `retryLoadIfPossible()`
+   * 的 merge-back / `importFromJSON` 三条路径上各自复位，漏一条就会发出**重复的 order**
+   * （两条同序 ⇒ 顺序退化成"谁先被迭代到"）。现算没有状态可漏。
+   */
+  private nextCreationOrder(): number {
+    let max = -1;
+    for (const entry of this.entries.values()) {
+      if (typeof entry.order === "number" && Number.isFinite(entry.order) && entry.order > max) {
+        max = entry.order;
+      }
+    }
+    return max + 1;
+  }
+
   /** 容量上限（界面/命令用它如实报告"为什么写不进去"） */
   getMaxEntries(): number {
     return this.config.maxEntries;
@@ -1185,6 +1654,8 @@ export class MemoryService {
       status: entry.status ?? "active",
       id,
       timestamp: Date.now(),
+      // R2：创建序**只增不减**（取现有最大值 +1），与插入位置/时间戳都解耦
+      order: this.nextCreationOrder(),
       content: safeContent.substring(0, this.config.maxContentLength),
       key: safeKey.substring(0, MEMORY_INJECT_KEY_MAX),
     };
@@ -1231,7 +1702,8 @@ export class MemoryService {
    * **信任边界（第 187 波收紧为显式要求来源）**：`opts.actor` 是**必填**的 ——
    * 旧写法是 `if (source === "manual" && opts?.allowAutoWrite) return false;`，
    * 即"自动流程只要忘了传标记就能改写手动条目"（fail-open 形状）。现在：
-   * `actor: "auto"` 一律不得改写手动条目；`actor: "user"` 才是用户显式动作。
+   * `actor: "auto"` 一律不得改写**受保护条目**（手动 + 来源未知的旧数据，
+   * 见 `isProtectedMemoryEntry`）；`actor: "user"` 才是用户显式动作。
    * 参数**必填**由类型系统保证（漏传 = 编译不过，而不是运行时静默放行）。
    *
    * **容量（B5）**：改归属可能把一个桶撑过 `maxEntries` —— 与 `add` 同口径**可见地失败**
@@ -1241,8 +1713,13 @@ export class MemoryService {
     const entry = this.entries.get(id);
     if (!entry) return false;
 
+    /*
+     * `source` 只作**写入回填**：旧数据（`undefined`）在用户显式编辑后落定为 `manual`
+     * （用户刚动过它 ⇒ "手动维护"是事实，不是编造）。保护判定不看这一行，走三态
+     * `isProtectedMemoryEntry`（手动 + 来源未知都保护）。
+     */
     const source = entry.source ?? "manual";
-    if (opts?.actor !== "user" && source === "manual") {
+    if (opts?.actor !== "user" && isProtectedMemoryEntry(entry)) {
       this.lastWriteError = `拒绝自动流程改写手动记忆：${id}（自动流程只能通过 actor:"user" 之外的方式新增，不能改写）`;
       console.warn(`[MemoryService] ${this.lastWriteError}`);
       reportActionFailure("memory.updateRejected", new Error(this.lastWriteError), "自动改写被信任边界拦下");
@@ -1395,6 +1872,32 @@ export class MemoryService {
   }
 
   /**
+   * **面板列表的默认顺序** = **注入顺序**（创建序倒序）。
+   *
+   * 第 189 波 R3：注入按创建序、面板按 `timestamp` 倒序，两侧口径不同 ⇒ 用户**编辑一条**
+   * 之后两侧顺序就分叉（面板按"最后修改"把它顶到最前，注入里它原地不动），而面板把
+   * `timestamp` 标成「创建时间」⇒ 用户无从自知、也无从判断"我改的这条到底进没进上下文"。
+   * 现在面板默认就用**注入的同一个键**（`buildCreationOrderIndex`，与 `computeInjection`
+   * 内部那次调用是同一个函数）；`timestamp` 仍在**单条字段**上如实展示，标签是
+   * 「最后修改时间」（`update()` 每次刷新它 ⇒ 名实一致）。
+   *
+   * ⚠️ 有意保留的语义（判据 `MEM-PLACE-22③`）：`update()` 刷新 `timestamp` 但**不影响**
+   * 入选集合 —— 旧行为里"编辑第 25 条能把它顶进注入窗口"依赖的正是"排序键 = 被编辑的字段"，
+   * 而那正是本轮要修掉的缓存抖动（`MEM-PLACE-15`）。要让一条超额条目进上下文，
+   * 用户的动作仍然是"删掉/整合掉同桶里的其它条目"，不是"编辑它"。
+   */
+  listAllForPanel(ctx?: MemoryScopeContext): MemoryEntry[] {
+    const order = buildCreationOrderIndex(this.entries.values());
+    return this.listAll(ctx).sort((a, b) => (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
+  }
+
+  /** 面板列表排序口径的可展示说明（界面的文案取自这里 ⇒ 口径改了文案不改会露出来） */
+  static readonly PANEL_ORDER_NOTE =
+    "列表按创建序排列（与注入顺序一致）；编辑只刷新「最后修改时间」，不会把条目挪位、也不改变入选集合。";
+  /** `timestamp` 字段在界面上的**如实**名字：`update()` 每次刷新它 ⇒ 它是最后修改时间 */
+  static readonly PANEL_TIMESTAMP_LABEL = "最后修改时间";
+
+  /**
    * 待批准条目（审批界面与 `/memory pending` 用）。
    *
    * **`ctx` 必须传**（A2 / F7）：待批准列表原来全量返回，于是项目 A 的面板里能看到
@@ -1416,8 +1919,16 @@ export class MemoryService {
   approve(id: string): MemoryAddResult {
     const entry = this.entries.get(id);
     if (!entry) return { ok: false, error: "invalid", message: `未找到记忆：${id}` };
-    if ((entry.source ?? "manual") === "manual") {
-      return { ok: false, error: "invalid", message: "手动条目不需要批准" };
+    if (isProtectedMemoryEntry(entry)) {
+      // 旧数据（未知来源）按受保护条目处理：它的说法是"未知（旧数据）· 按手动条目保护"
+      return {
+        ok: false,
+        error: "invalid",
+        message:
+          memorySourceOf(entry) === "manual"
+            ? "手动条目不需要批准"
+            : "来源未知（旧数据）的条目按受保护条目处理，不需要批准",
+      };
     }
     if ((entry.status ?? "active") !== "pending") {
       return { ok: false, error: "invalid", message: "该条目不在待批准状态" };
@@ -1514,18 +2025,25 @@ export class MemoryService {
     return results.slice(0, limit);
   }
 
-  /** 手动维护块的小标题（仅注入用；界面不显示） */
+  /**
+   * 手动维护块的小标题（仅注入用；界面不显示）。
+   *
+   * R5：三态说法一律从唯一表取（`MEMORY_SOURCE_KIND_LABEL.manual`），
+   * 这里只拼"作用域 + 这一态 + 说明" —— 文案表改了，注入抬头也跟着改。
+   */
   private static manualHeader(scope: MemoryScope): string {
-    switch (scope) {
-      case "platform": return "## 平台记忆（手动维护）";
-      case "project": return "## 项目记忆（手动维护）";
-      default: return "## 对话记忆（手动维护）";
-    }
+    const where = scope === "platform" ? "平台" : scope === "project" ? "项目" : "对话";
+    return `## ${where}记忆（${MEMORY_SOURCE_KIND_LABEL.manual}维护）`;
   }
 
-  /** 自动提取块的小标题（仅注入用；界面不显示） */
+  /** 自动提取块的小标题（仅注入用；界面不显示）—— 同样是表 + 补充句，没有第二份三态字面量 */
   private static autoHeader(scope: MemoryScope): string {
-    return "## 自动提取（可能不准，可删）";
+    return `## ${MEMORY_SOURCE_KIND_LABEL.auto}（${MEMORY_AUTO_GROUP_HINT}）`;
+  }
+
+  /** 旧数据块的小标题（仅注入用；说"来源未知"而不编造来源，见 `memoryUnknownHeader()`） */
+  private static unknownHeader(): string {
+    return memoryUnknownHeader();
   }
 
   private scopeLabel(scope: MemoryScope): string {
@@ -1534,6 +2052,29 @@ export class MemoryService {
       case "project": return "项目记忆";
       default: return "对话记忆";
     }
+  }
+
+  /**
+   * 条目在**注入文本里**的排序键：**创建序**（条目自己的 `order`，见 `MemoryEntry.order`）。
+   *
+   * 为什么不用 `timestamp`（第 189 波第 15 条）：`update()` 会刷新 `timestamp`，
+   * 于是"原地改一行"变成"把这一条挪到块首"，块内后续内容整体平移
+   * （实测断点后的差异从 124 码元放大到 3813 码元，约 30×）——正好抵消
+   * "稳定前缀钉住、易变块只在尾部 churn"这条收益。
+   *
+   * ⚠️ **第 189 波 R2 修正了这条注释原先的过度声明**：它曾断言"`entries` 的插入序在
+   * 写入/迁移/**重载**后都保持（`Map.set` 命中已有键不改位置），所以它是稳定的创建序"。
+   * 写入/迁移确实不改位置，但**重载**会：`serialize()` 写的是**以 id 为键的普通对象**，
+   * JSON 的整数样键按数值升序排列 ⇒ 插入 `mem-3,1,mem-1,2` 读回 `1,2,mem-3,mem-1`。
+   * 所以创建序**必须持久化**（`order`），这里只读它，不再从迭代位置推。
+   *
+   * 展示侧（面板列表）**按同一个创建序**（`listAllForPanel`）——第 189 波 R3：
+   * 两侧口径不同会让"编辑后两侧顺序分叉"而用户无从自知。界面另有按 `timestamp`
+   * （= 最后修改时间）的单条字段展示，标签与语义一致。
+   * 判据 `MEM-PLACE-15`（编辑不平移）与 `MEM-PLACE-20`（重载后逐条相同）。
+   */
+  private static renderOrderIndex(entries: Map<string, MemoryEntry>): Map<string, number> {
+    return buildCreationOrderIndex(entries.values());
   }
 
   private formatLine(e: MemoryEntry): string {
@@ -1554,28 +2095,36 @@ export class MemoryService {
    * 现在两边共用这一个函数（`buildMemoryPrompt` 也走它），并如实给出被截断的条数。
    */
   private computeInjection(
-    ctx: MemoryScopeContext,
+    ctx: InjectionScopeContext,
     scopes: MemoryScope[],
-  ): { blocks: Array<{ scope: MemoryScope; auto: boolean; entries: MemoryEntry[] }>; ids: Set<string>; truncated: number; chars: number } {
-    const blocks: Array<{ scope: MemoryScope; auto: boolean; entries: MemoryEntry[] }> = [];
+    options?: { sources?: readonly MemorySource[]; budgetTracker?: MemoryInjectBudgetTracker },
+  ): { blocks: Array<{ scope: MemoryScope; kind: MemorySourceKind; entries: MemoryEntry[] }>; ids: Set<string>; truncated: number; chars: number } {
+    /*
+     * R6 运行时收口：类型只保证"品牌 ⇒ 构造点唯一"，而类型会被擦除、也可能被 `as` 硬转绕过。
+     * 注入路径的判定**只认两个归属键**，视图开关一律不参与 —— 否则 `showAllProjects` 一进来，
+     * 下面 `injectedIn` 的 `visibleIn` 就会放行所有项目的记忆（判据 `MEM-PLACE-13` 的运行时一半）。
+     */
+    const scopeCtx: InjectionScopeContext = injectionScopeContext(ctx?.projectId, ctx?.sessionId);
+    const blocks: Array<{ scope: MemoryScope; kind: MemorySourceKind; entries: MemoryEntry[] }> = [];
     const ids = new Set<string>();
+    const sourceFilter = options?.sources ? new Set(options.sources) : null;
+    const tracker = options?.budgetTracker;
     let truncated = 0;
     let chars = 0;
+    // 块内顺序 = 创建序（稳定；`update()` 刷新 timestamp 也不许让条目平移，见 renderOrderIndex）
+    const order = MemoryService.renderOrderIndex(this.entries);
+    /*
+     * 三个来源桶的**固定顺序**：手动 → 来源未知（旧数据）→ 自动提取。
+     * 手动在前是既有契约（MEM-TRUST-2）；旧数据排在自动之前，因为它的显示说法是
+     * 「未知（旧数据）· 按手动条目保护」，比"自动提取"更接近可信侧。
+     */
+    const KINDS: readonly MemorySourceKind[] = ["manual", "unknown", "auto"];
     for (const scope of scopes) {
       const entries = Array.from(this.entries.values())
-        .filter((e) => e.scope === scope && injectedIn(e, ctx))
-        // 手动条目在前；同源按时间倒序
-        .sort((a, b) => {
-          const sa = (a.source ?? "manual") === "manual" ? 0 : 1;
-          const sb = (b.source ?? "manual") === "manual" ? 0 : 1;
-          if (sa !== sb) return sa - sb;
-          return b.timestamp - a.timestamp;
-        });
-      const buckets: Array<[boolean, MemoryEntry[]]> = [
-        [false, entries.filter((e) => (e.source ?? "manual") === "manual")],
-        [true, entries.filter((e) => (e.source ?? "manual") === "auto")],
-      ];
-      for (const [auto, list] of buckets) {
+        .filter((e) => e.scope === scope && injectedIn(e, scopeCtx) && (!sourceFilter || sourceFilter.has(entrySourceOf(e))))
+        .sort((a, b) => (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
+      const buckets = KINDS.map((kind) => [kind, entries.filter((e) => memorySourceOf(e) === kind)] as const);
+      for (const [kind, list] of buckets) {
         const capped = list.slice(0, MEMORY_INJECT_MAX_PER_BLOCK);
         truncated += list.length - capped.length;
         const kept: MemoryEntry[] = [];
@@ -1586,12 +2135,22 @@ export class MemoryService {
             truncated++;
             continue;
           }
+          /*
+           * S1-BUDGET-TOTAL：**聚合**上限（照用户审计口径：不许因为拆成三块就重新开口子）。
+           * 段序与筛选固定 ⇒ 这里的 `spent` 是确定性的。超出即**不收**，由调用方
+           * `renderAggregateBudgetNotice()` 如实披露（不静默丢）。
+           */
+          if (tracker && tracker.totalChars + line.length > MEMORY_INJECT_CHAR_BUDGET) {
+            tracker.totalTruncated++;
+            continue;
+          }
           chars += line.length + 1;
+          if (tracker) tracker.totalChars += line.length + 1;
           kept.push(e);
         }
         if (kept.length > 0) {
           for (const e of kept) ids.add(e.id);
-          blocks.push({ scope, auto, entries: kept });
+          blocks.push({ scope, kind, entries: kept });
         }
       }
     }
@@ -1602,7 +2161,7 @@ export class MemoryService {
    * 当前位置**实际会被注入**的条目 id 集合 + 被截断条数（I4）。
    * 界面与体检必须用它算「已生效」，否则就会出现"界面说生效、实际第 21 条起不进上下文"。
    */
-  injectionPlan(ctx: MemoryScopeContext): { ids: Set<string>; truncated: number; chars: number; budget: number } {
+  injectionPlan(ctx: InjectionScopeContext): { ids: Set<string>; truncated: number; chars: number; budget: number } {
     const plan = this.computeInjection(ctx, ["platform", "project", "conversation"]);
     return { ids: plan.ids, truncated: plan.truncated, chars: plan.chars, budget: MEMORY_INJECT_CHAR_BUDGET };
   }
@@ -1616,8 +2175,13 @@ export class MemoryService {
    *
    * 返回：`injected` = 真的会进上下文的 id 集合；`reasons` = 其余每一条**为什么不进**
    * （待批准 / 已暂停注入 / 作用域无法识别 / 不在当前位置 / 没有归属键 / 超出注入上限）。
+   *
+   * ⚠️ 形参是**注入侧窄类型**（R6）：调用方必须用 `injectionScopeContext(projectId, sessionId)`
+   * 构造 —— 体检/面板的宽 ctx（带 `includePending` / `includeUnscoped` / `showAllProjects`）
+   * **赋不进来**。语义上也必须如此：`showAllProjects` 一旦进到这里，`visibleIn` 会放行
+   * **所有项目**的记忆，面板就会把"别的项目的条目"标成"已生效（参与上下文）"。
    */
-  injectionExplanations(ctx: MemoryScopeContext): {
+  injectionExplanations(ctx: InjectionScopeContext): {
     injected: Set<string>;
     reasons: Map<string, string>;
     truncated: number;
@@ -1657,21 +2221,38 @@ export class MemoryService {
   }
 
   /** 一个作用域里"手动块在前、自动块单独标注在后"的文本 */
-  private buildBlock(scope: MemoryScope, ctx: MemoryScopeContext): string {
+  private buildBlock(scope: MemoryScope, ctx: InjectionScopeContext): string {
     const plan = this.computeInjection(ctx, [scope]);
     return this.renderBlocks(plan.blocks, plan.truncated);
   }
 
   /** 把注入计划渲染成文本（`truncated > 0` 时**如实披露**） */
   private renderBlocks(
-    blocks: Array<{ scope: MemoryScope; auto: boolean; entries: MemoryEntry[] }>,
+    blocks: Array<{ scope: MemoryScope; kind: MemorySourceKind; entries: MemoryEntry[] }>,
     truncated: number,
   ): string {
     const chunks: string[] = [];
     for (const block of blocks) {
-      if (!block.auto) {
+      if (block.kind === "manual") {
         chunks.push(
           [MemoryService.manualHeader(block.scope), "", ...block.entries.map((e) => this.formatLine(e))].join("\n"),
+        );
+        continue;
+      }
+      if (block.kind === "unknown") {
+        /*
+         * 旧数据块**必须**说"来源未知"，不许冒充"自动提取、未经人工确认"（A1）：
+         * 版本升级把用户手写的旧 `global` 条目说成自动提取，是对用户记忆的编造。
+         * 说法与界面/体检/导出**同一个常量**（`MEMORY_SOURCE_KIND_LABEL`）。
+         */
+        chunks.push(
+          [
+            MemoryService.unknownHeader(),
+            "",
+            memoryUnknownNote(block.entries.length),
+            "",
+            ...block.entries.map((e) => this.formatLine(e)),
+          ].join("\n"),
         );
         continue;
       }
@@ -1688,7 +2269,7 @@ export class MemoryService {
     }
     if (truncated > 0) {
       chunks.push(
-        `> 注入上限：本段还有 ${truncated} 条可见记忆**未注入**（每条作用域每来源最多 ` +
+        `${TRUNCATION_NOTICE_PREFIX}：${TRUNCATION_NOTICE_PER_BLOCK_ANCHOR}还有 ${truncated} 条可见记忆**未注入**（每条作用域每来源最多 ` +
           `${MEMORY_INJECT_MAX_PER_BLOCK} 条、总预算 ${MEMORY_INJECT_CHAR_BUDGET} 字符）。` +
           `这不是它们被删除，只是没进上下文；可在「设置 → 记忆体检」里看到每一条。`,
       );
@@ -1701,18 +2282,28 @@ export class MemoryService {
    *
    * 调用形态：
    * - `buildMemoryPrompt()` —— **三块全出**（platform → project → conversation），
-   *   每块内部"手动块在前、自动块标注在后"。这是产品注入路径用的形态；
+   *   每块内部按来源三桶 "手动 → 未知（旧数据）→ 自动提取" 渲染；
    * - `buildMemoryPrompt("project", projectId, sessionId)` —— 只要一块（既有测试与局部注入用）。
    *
    * `projectId` 不再是未使用参数：它决定 `project` 作用域的记忆**能不能出现**。
    * 截断（条数 + 字符预算）由 `computeInjection` 统一决定，并**如实披露**（I4 / S1）。
+   *
+   * `options.sources`（新）：按**来源**过滤（稳定侧只收 `manual`、易变侧只收 `auto` 时用，
+   * 见 `isStableMemoryEntry`）。不传 = 两个来源都收（与既有调用逐字同行为）。
+   * `options.budgetTracker`（新）：**聚合**预算（S1-BUDGET-TOTAL）——多次调用共享一个
+   * 计数槽，三块合计不得超过 `MEMORY_INJECT_CHAR_BUDGET`。
    */
-  buildMemoryPrompt(scope?: MemoryScope, projectId?: string, sessionId?: string): string {
-    const ctx: MemoryScopeContext = { projectId, sessionId };
+  buildMemoryPrompt(
+    scope?: MemoryScope,
+    projectId?: string,
+    sessionId?: string,
+    options?: { sources?: readonly MemorySource[]; budgetTracker?: MemoryInjectBudgetTracker },
+  ): string {
+    const ctx: InjectionScopeContext = injectionScopeContext(projectId, sessionId);
     const scopes: MemoryScope[] = scope
       ? [scope]
       : ["platform", "project", "conversation"];
-    const plan = this.computeInjection(ctx, scopes);
+    const plan = this.computeInjection(ctx, scopes, options);
     return this.renderBlocks(plan.blocks, plan.truncated);
   }
 
@@ -2259,12 +2850,37 @@ export class MemoryService {
   }
 
   /**
+   * **链接目标是否允许展开**（第 190 波 / 审计 M-2，P1）。
+   *
+   * 不变量：**稳定块的字节 = f(稳定数据)**。链接目标原先在**全库**里按 key 找第一条
+   * （不分 scope/source）⇒ 一条平台级手写条目里写 `[[某条记忆]]`，它的注入文本就成了
+   * **易变条目内容的函数**：改一条项目级记忆就会顶掉整个稳定前缀 + 边界 + date
+   * （本次改造的收益被一条链接打穿，且无任何提示）。
+   *
+   * 修法（选**同侧约束**，即用户倾向的方案 1，但只对**稳定侧**设限）：
+   * - 稳定条目（`isStableMemoryEntry`：平台级 + 手动）**只能**展开稳定目标
+   *   ⇒ 稳定块的内容只依赖稳定数据；
+   * - 易变条目不设限（它在边界**之后**，依赖稳定数据不会破坏任何前缀不变量，
+   *   关掉它反而会平白损失既有功能）。
+   *
+   * 跨侧不展开时的呈现 = 现有"目标不存在"的降级形态：`[[key]]` **原样留着**（可见），
+   * 不注入对方正文。
+   */
+  private linkTargetAllowed(source: MemoryEntry, target: MemoryEntry): boolean {
+    if (!isStableMemoryEntry(source)) return true;
+    return isStableMemoryEntry(target);
+  }
+
+  /**
    * Resolve [[link-name]] references in a memory entry's content.
    * Replaces [[name]] with the actual content snippet from the linked entry.
    * If the link target doesn't exist, leaves it as-is (visible to the LLM).
    *
    * M-3：`content` / `key` 不是字符串时**安全降级**（返回安全文本），绝不抛 ——
    * 这条路径在 `buildSystemPrompt` 里，抛一次就丢掉整轮系统提示。
+   *
+   * ⚠️ 目标筛选必须过 `linkTargetAllowed`（稳定侧只解析同侧目标，见那里的说明）：
+   * 否则稳定前缀会被易变条目的内容间接改写（判据 `MEM-PLACE-19`）。
    */
   private resolveLinks(entry: MemoryEntry): string {
     const content = textOf(entry.content);
@@ -2273,9 +2889,9 @@ export class MemoryService {
 
     let resolved = content;
     for (const linkName of links) {
-      // Find the linked entry by key (case-insensitive)
+      // Find the linked entry by key (case-insensitive) —— 且必须**允许展开**（同侧约束）
       const target = Array.from(this.entries.values()).find(
-        e => textOf(e.key).toLowerCase() === linkName.toLowerCase()
+        e => textOf(e.key).toLowerCase() === linkName.toLowerCase() && this.linkTargetAllowed(entry, e)
       );
       if (target) {
         const snippet = textOf(target.content).substring(0, 100);
@@ -2406,7 +3022,8 @@ export class MemoryService {
   getStats(ctx?: MemoryScopeContext): {
     totalEntries: number;
     byScope: Record<MemoryScope, number>;
-    bySource: Record<MemorySource, number>;
+    /** 来源三态计数（`unknown` = 旧数据；旧写法把它并进 manual 是**编造来源**，已改） */
+    bySource: Record<MemorySourceKind, number>;
     pendingEntries: number;
     notInjected: number;
     unknownScope: number;
@@ -2416,7 +3033,7 @@ export class MemoryService {
   } {
     const scoped = ctx ? this.listAll(ctx) : Array.from(this.entries.values());
     const byScope: Record<MemoryScope, number> = { platform: 0, project: 0, conversation: 0 };
-    const bySource: Record<MemorySource, number> = { manual: 0, auto: 0 };
+    const bySource: Record<MemorySourceKind, number> = { manual: 0, auto: 0, unknown: 0 };
     let pendingEntries = 0;
     let unknownScope = 0;
     let legacyPool = 0;
@@ -2427,8 +3044,8 @@ export class MemoryService {
       } else {
         unknownScope++;
       }
-      if (entry.source === "manual" || entry.source === "auto") bySource[entry.source]++;
-      else bySource.manual++; // 旧数据没有来源 ⇒ 与界面口径一致地算进 manual 那一档（不入 NaN）
+      // 三态口径（与注入文本、面板、体检、导出**同一个** `memorySourceOf`）
+      bySource[memorySourceOf(entry)]++;
       if ((entry.status ?? "active") === "pending") pendingEntries++;
       if (entry.legacyPool === true) legacyPool++;
     }
@@ -2459,7 +3076,7 @@ export class MemoryService {
     let removed = 0;
     for (const [id, entry] of Array.from(this.entries)) {
       if (scope && entry.scope !== scope) continue;
-      if (!includeManual && (entry.source ?? "manual") === "manual") continue;
+      if (!includeManual && isProtectedMemoryEntry(entry)) continue;
       this.entries.delete(id);
       removed++;
     }
@@ -2469,12 +3086,26 @@ export class MemoryService {
 
   // ========== F2.4: Export / Import ==========
 
-  /** Export all memories as JSON string */
+  /**
+   * Export all memories as JSON string.
+   *
+   * ⚠️ **第 189 波 R4**：`source === undefined`（来源未知的旧数据）必须**显式写出** `null`。
+   * `JSON.stringify` 会**丢掉** `undefined` 值 ⇒ 旧写法导出的文件里根本没有 `source` 这个键，
+   * 于是"导出留档 → 再导入"（`LOAD_FAILURE_NEXT_STEP` 推荐的常规操作）之后：
+   * 导入侧只能靠兜底**自造**一个来源 ⇒ 三态里的「未知（旧数据）」被洗成「手动」，
+   * `platform` 的旧条目还会从易变侧被搬进稳定前缀（`isStableMemoryEntry` 要求 manual）。
+   * 现在 `null` 是**显式**的"这条来源未知"（`normalizeLoadedEntry` 把 `null` 读回 `undefined`），
+   * 往返逐条保真。判据 `MEM-PLACE-21`。
+   */
   exportAsJSON(): string {
     const data = {
       version: 2,
       exportedAt: new Date().toISOString(),
-      entries: Array.from(this.entries.values()),
+      entries: Array.from(this.entries.values()).map((e) => ({
+        ...e,
+        // `undefined` ⇒ `null`（**显式**表示"来源未知"，不是"字段缺失"）
+        source: e.source ?? null,
+      })),
       batches: Array.from(this.batches.values()),
     };
     return JSON.stringify(data, null, 2);
@@ -2496,7 +3127,7 @@ export class MemoryService {
         lines.push(`### ${textOf(e.key)}`);
         lines.push(`- **ID**: ${e.id}`);
         lines.push(`- **Date**: ${date}`);
-        lines.push(`- **来源**: ${(e.source ?? "manual") === "manual" ? "手动" : "自动提取"}`);
+        lines.push(`- **来源**: ${MEMORY_SOURCE_KIND_LABEL[memorySourceOf(e)]}`);
         if (e.projectId) lines.push(`- **项目**: ${e.projectId}`);
         if (e.sessionId) lines.push(`- **对话**: ${e.sessionId}`);
         if (e.tags && e.tags.length > 0) {
@@ -2521,6 +3152,19 @@ export class MemoryService {
    *   不再"界面回成功导入 N 条、库里却超了上限"；
    * - **脱敏**：手动写入/导入也过同一套 `redactSecrets`（自动提取路径早就过了）。
    *   本波把平台级记忆的注入面从"当前项目"扩大到"所有项目"，扩散面变大，所以在入口一并收口。
+   *
+   * ## 第 189 波 R4：**往返必须保真**（三态来源不许被"洗"）
+   *
+   * 旧写法把 `source` 兜底成 `?? (scope === "conversation" ? "auto" : "manual")` —— 这是
+   * **自造来源**：迁移刻意不给旧数据盖 `source`（`undefined` = 「未知（旧数据）」），而
+   * `LOAD_FAILURE_NEXT_STEP` 与界面按钮把"导出留档 → 再导入"当**常规操作**
+   * ⇒ 用户按提示走一遍，三态里的"未知"就变成"手动"，`platform` 的旧条目还会从**易变侧**
+   * 被搬进**稳定前缀**（`isStableMemoryEntry` 要求 `source === "manual"`）
+   * ⇒ 注入位置、缓存分块、面板文案三处同时变，而**没有任何判据会红**。
+   *
+   * 现在：`source` **原样保留**（`undefined` 就是 `undefined`）；导出侧把 `undefined`
+   * **显式写成 `null`**（见 `exportAsJSON`）—— 于是往返逐条保真，判据 `MEM-PLACE-21`。
+   * 形态确无法保真的只有"由 `add()` 新写入的条目"（新写入从来都有来源，不存在未知态）。
    */
   importFromJSON(jsonStr: string, overwrite = false): { imported: number; rejectedCapacity: number; rejectedInvalid: number; truncated: number } {
     const result = { imported: 0, rejectedCapacity: 0, rejectedInvalid: 0, truncated: 0 };
@@ -2537,6 +3181,8 @@ export class MemoryService {
         ? ((parsed as { entries?: unknown }).entries ?? [])
         : [];
     const list: unknown[] = Array.isArray(raw) ? raw : Object.values(raw as Record<string, unknown>);
+    // R2：缺 `order` 的导入条目按**导入顺序**补齐（接在现有最大 order 之后，只增不减）
+    let nextOrder = this.nextCreationOrder();
     for (const item of list) {
       const normalized = normalizeLoadedEntry("", item);
       if (!normalized) {
@@ -2557,11 +3203,18 @@ export class MemoryService {
       }
       const safeContent = redactSecrets(normalized.content);
       if (safeContent.length > this.config.maxContentLength) result.truncated++;
+      const order =
+        typeof normalized.order === "number" && Number.isFinite(normalized.order)
+          ? normalized.order
+          : nextOrder++;
       this.entries.set(normalized.id, {
         ...normalized,
         scope,
-        source: normalized.source ?? (scope === "conversation" ? "auto" : "manual"),
+        // R4：**不自造来源** —— `undefined`（旧数据）保持 `undefined`，与迁移后的形态一致
+        // （`normalizeLoadedEntry` 已经把 `null`/非法值收成 `undefined`；这里只做类型收窄）
+        source: normalized.source as MemorySource,
         status: normalized.status ?? "active",
+        order,
         key: redactSecrets(normalized.key).substring(0, MEMORY_INJECT_KEY_MAX),
         content: safeContent.substring(0, this.config.maxContentLength),
       });
@@ -2621,7 +3274,7 @@ export class MemoryService {
     for (const scope of ["platform", "project", "conversation"] as MemoryScope[]) {
       const scopedEntries = allEntries
         .filter(e => e.scope === scope)
-        .filter(e => (e.source ?? "manual") === "auto")
+        .filter(e => memorySourceOf(e) === "auto")
         // B6：未批准（pending）的条目不该被自动流程合并/删除
         .filter(e => (e.status ?? "active") === "active")
         .sort((a, b) => b.timestamp - a.timestamp); // Most recent first
@@ -2686,7 +3339,7 @@ export class MemoryService {
     if (removeStale) {
       for (const [id, entry] of this.entries) {
         if (entry.scope === "conversation") continue; // Don't auto-clean conversation memories
-        if ((entry.source ?? "manual") === "manual") continue; // 手动条目永不被自动清理
+        if (isProtectedMemoryEntry(entry)) continue; // 手动 + 来源未知（旧数据）永不被自动清理
         if ((entry.status ?? "active") !== "active") continue; // B6：未批准的不动
         if (!Number.isFinite(entry.timestamp)) continue; // 时间未知 ⇒ 不据此删除
         if (now - entry.timestamp > maxAgeMs) {
@@ -2703,23 +3356,23 @@ export class MemoryService {
       for (const bucket of buckets) {
         const bucketEntries = Array.from(this.entries.values()).filter(e => bucketKey(e) === bucket);
         if (bucketEntries.length <= maxPerScope) continue;
-        const manualCount = bucketEntries.filter(e => (e.source ?? "manual") === "manual").length;
+        const manualCount = bucketEntries.filter(e => isProtectedMemoryEntry(e)).length;
         if (manualCount >= maxPerScope) {
-          // 手动条目自己就超了 ⇒ 拒绝静默驱逐，如实上报
+          // 受保护条目自己就超了 ⇒ 拒绝静默驱逐，如实上报
           capacityBlocked++;
           console.warn(
-            `[MemoryService] 容量裁剪被拒绝（可见地失败）：桶 ${bucket} 有 ${manualCount} 条手动记忆 > 上限 ${maxPerScope}，` +
+            `[MemoryService] 容量裁剪被拒绝（可见地失败）：桶 ${bucket} 有 ${manualCount} 条受保护记忆（手动 / 来源未知）> 上限 ${maxPerScope}，` +
               `不会自动删除任何条目。`,
           );
           continue;
         }
         const autoSorted = bucketEntries
-          .filter(e => (e.source ?? "manual") === "auto")
+          .filter(e => memorySourceOf(e) === "auto")
           .sort((a, b) => b.timestamp - a.timestamp); // Most recent first
         const keepAuto = autoSorted.slice(0, maxPerScope - manualCount);
         const keepIds = new Set([
           ...keepAuto.map(e => e.id),
-          ...bucketEntries.filter(e => (e.source ?? "manual") === "manual").map(e => e.id),
+          ...bucketEntries.filter(e => isProtectedMemoryEntry(e)).map(e => e.id),
         ]);
         for (const entry of bucketEntries) {
           if (!keepIds.has(entry.id)) {

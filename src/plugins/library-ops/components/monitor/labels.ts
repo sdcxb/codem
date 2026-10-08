@@ -3,6 +3,8 @@
  */
 
 import type { ActivitySeverity, LibraryEventKind } from "../../types";
+// R7：时间列走**唯一口径**（本地）
+import { localClockString } from "../../../../core/time/local-time";
 
 /** 事件类别 → 双语标签 */
 const KIND_LABEL: Record<LibraryEventKind, [string, string]> = {
@@ -70,18 +72,14 @@ export function severityLabel(s: ActivitySeverity | string, zh: boolean): string
   return hit ? (zh ? hit[0] : hit[1]) : String(s);
 }
 
-/** HH:MM:SS */
+/** HH:MM:SS（走**唯一口径** `TIME-SINGLE-SOURCE`） */
 export function clockOf(at: number): string {
-  const d = new Date(at);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return localClockString(new Date(at));
 }
 
-/** HH:MM */
+/** HH:MM（展示格式可以不同，**字段**仍来自唯一口径） */
 export function hhmmOf(at: number): string {
-  const d = new Date(at);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return localClockString(new Date(at), { seconds: false });
 }
 
 /** 成员状态 → 双语标签 + 令牌 */

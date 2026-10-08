@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { getMemoryService } from "../core/memory/memory";
+import { buildCompactionInstruction, buildCompactionSystemPrompt } from "../core/llm/agentic-loop";
 
 // ========== 辅助函数 ==========
 
@@ -541,5 +542,33 @@ describe("compactMessages 方法签名变更", () => {
     const callSite = `const compacted = await this.compactMessages(sessionId);`;
     expect(callSite).toContain("await");
     expect(callSite).toContain("this.compactMessages(sessionId)");
+  });
+});
+
+/**
+ * COMPACT-MEM-1（第 189 波 A5）：**压缩摘要提示词必须带记忆权威性豁免**（双侧对冲）。
+ *
+ * 形态：主请求里的记忆块自带 `MEMORY_AUTHORITY_NOTE`（判据 `MEM-PLACE-6` 钉住），
+ * 但压缩调用**没有**主请求的系统提示（system 只有一句「你是一个对话摘要专家。」）⇒
+ * 摘要这一侧完全不知道"记忆是权威的"，模型容易把摘要当成比记忆更新的事实而把记忆降级。
+ *
+ * 断言对象是**产品方法真正调用的那两个构造函数**（`compactMessages` 与
+ * `generateCompactionSummary` 直接用它们的返回值），不是"源码里含某字符串"。
+ */
+describe("COMPACT-MEM-1：压缩摘要提示词带记忆权威性豁免", () => {
+  it("两条摘要提示词都必须写明「持久记忆是权威的、不得因压缩降级」", () => {
+    const instruction = buildCompactionInstruction();
+    const systemPrompt = buildCompactionSystemPrompt();
+
+    for (const [name, text] of [["压缩指令", instruction], ["结构化摘要 system", systemPrompt]] as const) {
+      expect(text, `${name} 必须写明持久记忆权威`).toContain("持久记忆");
+      expect(text, `${name} 必须禁止因压缩降级`).toMatch(/不得(因为压缩|因压缩)/);
+      expect(text, `${name} 必须给出冲突时的判据`).toMatch(/以记忆为准|不得.*降级或改写/);
+    }
+
+    // 反向（防"两处都只是复述同一个空壳句子"）：两条提示词是**各自独立**的文档
+    expect(instruction).not.toBe(systemPrompt);
+    expect(systemPrompt).toContain("总长度不超过 1500 字符");
+    expect(instruction).toContain("只输出检查点文本，不调用任何工具");
   });
 });

@@ -1,17 +1,9 @@
 /**
- * Truncate ISO timestamp to minute precision for prompt cache stability.
- * Same minute → identical string → KV cache prefix stays stable across iterations.
+ * 提示里的 `# Current Date` 文本现在由 `core/prompt/prompt.ts` 提供
+ * （`minutePrecisionDate()`：分钟精度 + **本地时区真实偏移**，可注入时钟）。
+ * 第 189 波把它搬过去的原因：旧实现在这里取**本地**时间却硬编码 `Z` 后缀（标注不实），
+ * 且是模块内私有函数 ⇒ 判据无法注入时钟，只能隐式依赖跑测试时的真实时钟。
  */
-function minutePrecisionDate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const h = String(now.getHours()).padStart(2, "0");
-  const mi = String(now.getMinutes()).padStart(2, "0");
-  return `${y}-${mo}-${d}T${h}:${mi}:00.000Z`;
-}
-
 import { ProviderRegistry, createDefaultProviders, OpenAICompatibleProvider, inferContextWindow } from "./provider";
 import { ToolRegistry, createDefaultToolRegistry } from "./tools";
 import { syncCodeGraphTools } from "./tools/codegraph-tool";
@@ -28,13 +20,20 @@ import {
   approvalRequiredForScope,
   getWriteApprovalSetting,
   setWriteApprovalSetting,
+  composeMemoryBlock,
+  createMemoryInjectBudgetTracker,
+  MEMORY_STABLE_BLOCK_SELECTION,
+  MEMORY_VOLATILE_BLOCK_SELECTIONS,
+  MEMORY_STABLE_HEADER,
+  MEMORY_VOLATILE_HEADER,
+  isProtectedMemoryEntry,
   type MemoryScope,
   type MemoryScopeContext,
   type MemorySource,
   type ApprovalScopeSetting,
 } from "../memory/memory";
 import { RetryExecutor, getRetryExecutor } from "../retry/retry";
-import { buildSystemPrompt, type SystemPromptConfig } from "../prompt/prompt";
+import { buildSystemPrompt, minutePrecisionDate, type SystemPromptConfig } from "../prompt/prompt";
 import { buildPersonaPromptSection } from "../persona/persona";
 import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
@@ -557,8 +556,19 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
      * - `project`：只注入 `projectId === 当前项目` 的条目（旧实现只按 scope 过滤 ⇒ 跨项目泄漏）；
      * - `conversation`：只注入 `sessionId === 当前对话` 的条目（旧实现**根本没有调用点** ⇒ 对话级记忆从不参与上下文）。
      *
-     * 单次调用拿到三块（顺序 platform → project → conversation），每块内部
-     * "手动块在前、自动块单独标注在后"，由 `buildMemoryPrompt` 保证。
+     * **落位是按「作用域 × 来源」两分，不再是一次调用拿三块**（`memory-placement-boundary.test.ts` 钉住）：
+     * - **稳定侧** = 平台级 + `manual` ⇒ `memoryInstructions`（稳定前缀**之内**：其后还有技能/
+     *   知识/MCP/多智能体/安全/语言规则，哨兵由 `prompt.ts` 落在稳定前缀真正的末尾）；
+     * - **易变侧** = 其余全部（平台级自动 / 旧数据 / 项目级 / 对话级）⇒ `memoryTailInstructions`
+     *   （边界之后、**`# Current Date` 之前**）。
+     *
+     * 为什么**自动条目一律进易变侧**（哪怕它是平台级）：体检视图允许把条目「保留为平台级」，
+     * 一条平台级自动条目若落在稳定前缀里，它一变（回合结束提取 / 审批后 `pending→active` / 编辑）
+     * 就整体位移稳定前缀 ⇒ 这次改造的核心收益当场失效。`source === undefined` 的旧数据按
+     * 「可能被自动流程动过」处理，同样进易变侧（判据 `MEM-PLACE-8/9`）。
+     *
+     * 每块内部仍是"手动块在前、自动块单独标注在后"（由 `buildMemoryPrompt` 保证），
+     * 三段相对顺序仍是 platform → project → conversation（既有 MEM-SCOPE-4 / MEM-INJECT-1 判据不变）。
      */
     /**
      * 记忆注入（M-3 的**第二层防御**）。
@@ -570,11 +580,36 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
      * 所以即使上层漏了一条坏数据，也只允许丢掉记忆段，**不许**丢掉整份提示。
      */
     let memoryPrompt = "";
+    let memoryTailPrompt = "";
     try {
-      memoryPrompt = this.memory.buildMemoryPrompt(undefined, this.memoryProjectIdFor(_sessionId, cwd), _sessionId);
+      const projectId = this.memoryProjectIdFor(_sessionId, cwd);
+      /*
+       * S1-BUDGET-TOTAL：稳定块与易变块**共享一个聚合预算槽** —— 拆成多块调用不许把
+       * 「注入量无预算」这条审计结论重新开口子（合计不超过 MEMORY_INJECT_CHAR_BUDGET，
+       * 超出由 `composeMemoryBlock` 在块末**如实披露**，不静默丢）。
+       */
+      const budget = createMemoryInjectBudgetTracker();
+      // 稳定侧 = 平台级 + 手动（isStableMemoryEntry）；易变侧 = 其余全部（含平台级自动 / 旧数据）
+      memoryPrompt = composeMemoryBlock(
+        this.memory,
+        MEMORY_STABLE_BLOCK_SELECTION,
+        MEMORY_STABLE_HEADER,
+        projectId,
+        _sessionId,
+        budget,
+      );
+      memoryTailPrompt = composeMemoryBlock(
+        this.memory,
+        MEMORY_VOLATILE_BLOCK_SELECTIONS,
+        MEMORY_VOLATILE_HEADER,
+        projectId,
+        _sessionId,
+        budget,
+      );
     } catch (e) {
       console.error("[buildSystemPrompt] 记忆段构造失败（本轮不注入记忆，其余提示保持完整）：", e);
       memoryPrompt = "";
+      memoryTailPrompt = "";
     }
 
     const config: SystemPromptConfig = {
@@ -585,6 +620,7 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       date: minutePrecisionDate(),
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,
       memoryInstructions: memoryPrompt || undefined,
+      memoryTailInstructions: memoryTailPrompt || undefined,
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
       // Synchronous tool guidance — fallback when async collection isn't available
@@ -627,11 +663,31 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     // Inject persistent memory into system prompt（三级作用域按维度过滤，见 buildSystemPrompt 的同段说明）
     // M-3：与同步路径同一层防御（坏数据只允许丢掉记忆段，不许丢掉整份系统提示）
     let memoryPrompt = "";
+    let memoryTailPrompt = "";
     try {
-      memoryPrompt = this.memory.buildMemoryPrompt(undefined, this.memoryProjectIdFor(sessionId, cwd), sessionId);
+      const memoryProjectId = this.memoryProjectIdFor(sessionId, cwd);
+      // 与同步路径同一形态：稳定侧 = 平台级手动；易变侧 = 其余全部；两块共享聚合预算槽
+      const budget = createMemoryInjectBudgetTracker();
+      memoryPrompt = composeMemoryBlock(
+        this.memory,
+        MEMORY_STABLE_BLOCK_SELECTION,
+        MEMORY_STABLE_HEADER,
+        memoryProjectId,
+        sessionId,
+        budget,
+      );
+      memoryTailPrompt = composeMemoryBlock(
+        this.memory,
+        MEMORY_VOLATILE_BLOCK_SELECTIONS,
+        MEMORY_VOLATILE_HEADER,
+        memoryProjectId,
+        sessionId,
+        budget,
+      );
     } catch (e) {
       console.error("[buildSystemPromptAsync] 记忆段构造失败（本轮不注入记忆，其余提示保持完整）：", e);
       memoryPrompt = "";
+      memoryTailPrompt = "";
     }
 
     // Load hierarchical AGENTS.md instructions
@@ -692,6 +748,7 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       date: minutePrecisionDate(),
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,
       memoryInstructions: memoryPrompt || undefined,
+      memoryTailInstructions: memoryTailPrompt || undefined,
       projectInstructions,
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
@@ -2045,8 +2102,10 @@ return loop.hasPendingGuidance();
         if (safeContent.length <= 10) continue;
 
         /**
-         * 信任边界①：**同 key 的手动条目永不被自动流程覆盖**。
+         * 信任边界①：**同 key 的受保护条目永不被自动流程覆盖**。
          * 旧实现只做"相似即跳过"，而相似判定会漏（内容不同、key 相同）⇒ 今天这里显式查同 key。
+         * 第 189 波：受保护口径统一走 `isProtectedMemoryEntry`（手动 + **来源未知的旧数据**）
+         * —— 旧数据按手动条目保护，否则存量用户手写的旧条目会被自动提取洗成"自动"。
          *
          * ## B4：判重**不许**因为缺归属而恒空
          *
@@ -2061,7 +2120,7 @@ return loop.hasPendingGuidance();
           includeUnscoped: projectId === undefined,
         });
         const manualSameKey = sameBucket.some(r =>
-          (r.entry.source ?? "manual") === "manual" && r.entry.key === safeKey && r.entry.projectId === projectId
+          isProtectedMemoryEntry(r.entry) && r.entry.key === safeKey && r.entry.projectId === projectId
         );
         if (manualSameKey) {
           blockedByManual++;

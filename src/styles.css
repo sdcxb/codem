@@ -20213,6 +20213,17 @@ html[data-contrast="high"] {
   color: var(--warning-content);
 }
 
+/* 「来源未知（旧数据）」那一栏：不说来源是哪一种，但要说清它**按手动条目保护** */
+.memory-group-sub.unknown {
+  color: var(--text-secondary);
+}
+
+/* 来源徽标第三态（旧数据）——与手动/自动两档区分开：中性色 + 虚线边 */
+.memory-source-badge.unknown {
+  color: var(--text-secondary);
+  border-style: dashed;
+}
+
 /* 概览数字：作用域改名（平台/项目/对话）后补齐缺失的两档着色 */
 .memory-stat-value.platform {
   color: var(--warning);

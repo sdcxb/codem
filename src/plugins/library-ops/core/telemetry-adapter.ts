@@ -36,6 +36,8 @@ import type {
 import { ACTIVITY_META } from "../types";
 import { generateLook } from "../data/characters";
 import { resolveZoneId } from "../data/library-map";
+// R7：热力图的"哪一天/哪个小时"是给人看的 ⇒ 唯一本地口径
+import { localDateString, localTimeParts } from "../../../core/time/local-time";
 
 // ========== 依赖契约（结构类型，避免硬依赖宿主模块） ==========
 
@@ -707,7 +709,7 @@ function buildActivity(input: {
     const at = s.lastMessageAt || 0;
     if (at > 0) {
       perDay[dayKey(at)] = (perDay[dayKey(at)] ?? 0) + 1;
-      if (now - at < 24 * 3600_000) perHour[new Date(at).getHours()] += 1;
+      if (now - at < 24 * 3600_000) perHour[localTimeParts(new Date(at)).hour] += 1;
     }
   }
 
@@ -715,7 +717,7 @@ function buildActivity(input: {
     const at = m.timestamp || 0;
     if (at <= 0) continue;
     perDay[dayKey(at)] = (perDay[dayKey(at)] ?? 0) + 1;
-    if (now - at < 24 * 3600_000) perHour[new Date(at).getHours()] += 1;
+    if (now - at < 24 * 3600_000) perHour[localTimeParts(new Date(at)).hour] += 1;
   }
 
   // 补齐最近 14 天（缺失补 0，保证热力图格子数稳定）
@@ -729,9 +731,8 @@ function buildActivity(input: {
 }
 
 function dayKey(at: number): string {
-  const d = new Date(at);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  // R7：热力图的"哪一天/哪个小时"是**给人看的** ⇒ 走唯一本地口径
+  return localDateString(new Date(at));
 }
 
 function memberActivity(status: string): LibraryActor["activity"] {

@@ -10,6 +10,9 @@
 
 import { memo, useMemo } from "react";
 import type { UsageRecord } from "../core/llm/cost-tracker";
+// R7：按天聚合与日期标签一律走**唯一口径**（本地日）—— 旧写法一边用 `toDateString()`（本地）、
+// 一边（cost-tracker）用 `toISOString()` 的 UTC 日 ⇒ 同一功能两套"哪一天"
+import { localDateString, localTimeParts } from "../core/time/local-time";
 
 // ========== TokenActivityGrid ==========
 
@@ -31,7 +34,7 @@ export const TokenActivityGrid = memo(function TokenActivityGrid({
     // 按天聚合 token 用量
     const dailyTokens: Record<string, number> = {};
     for (const r of records) {
-      const dayKey = new Date(r.timestamp).toDateString();
+      const dayKey = localDateString(new Date(r.timestamp));
       dailyTokens[dayKey] = (dailyTokens[dayKey] || 0) + (r.inputTokens + r.outputTokens);
     }
 
@@ -41,7 +44,7 @@ export const TokenActivityGrid = memo(function TokenActivityGrid({
     // 生成网格数据
     for (let i = days - 1; i >= 0; i--) {
       const date = now - i * dayMs;
-      const dayKey = new Date(date).toDateString();
+      const dayKey = localDateString(new Date(date));
       const tokens = dailyTokens[dayKey] || 0;
       const ratio = tokens / maxTokens;
       let level: 0 | 1 | 2 | 3 | 4 = 0;
@@ -106,7 +109,9 @@ export const UsageChart = memo(function UsageChart({
       const dayStart = now - i * dayMs;
       const dayEnd = dayStart + dayMs;
       const dayDate = new Date(dayStart);
-      const label = `${dayDate.getMonth() + 1}/${dayDate.getDate()}`;
+      // 展示格式（M/D）可以不同于其它处，但**字段必须来自唯一口径**（不再自己 getMonth/getDate）
+      const parts = localTimeParts(dayDate);
+      const label = `${parts.month}/${parts.day}`;
       labels.push(label);
 
       let dayCost = 0;

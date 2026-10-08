@@ -27,6 +27,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildTimeContext, clearTimeContext } from "../core/llm/time-context";
+import { minutePrecisionDate } from "../core/prompt/prompt";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 
@@ -109,6 +110,19 @@ function elapsedLine(): string {
   return line;
 }
 
+/**
+ * 从注入文本里取**时间戳那一行**的原始形态（`Time sampled while preparing turn N, step M: <ts> [Zone]`）。
+ * 返回解析出的 `{ ts, zone }`，`ts` 是可直接被 `new Date()` 解析的时间串。
+ */
+function sampledTimestamp(): { ts: string; zone: string; line: string } {
+  const text = buildTimeContext(SID, 1, 1);
+  const line = text.split("\n").find((l) => l.startsWith("Time sampled"));
+  if (!line) throw new Error(`注入文本里没有 Time sampled 行：${text}`);
+  const m = /^Time sampled while preparing turn \d+, step \d+: (.+?) \[([^\]]+)\]$/.exec(line);
+  if (!m) throw new Error(`时间戳行的形态不认识（判据无从解析）：${line}`);
+  return { ts: m[1], zone: m[2], line };
+}
+
 beforeEach(() => {
   installTauriStub();
   vi.useFakeTimers();
@@ -156,5 +170,113 @@ describe("TC：时间上下文的「上次活动时间」", () => {
     port.events.ensureLoaded(SID);
 
     expect(elapsedLine()).toBe("Elapsed since the preceding model-visible message: unavailable.");
+  });
+});
+
+/**
+ * `TIME-CTX-1`：时间上下文的**时间戳**必须与真实瞬时一致，且与同请求的系统提示 date 同口径。
+ *
+ * ## 修复前的正身（第 189 波 R1，实测）
+ *
+ * `formatTimestamp` 旧实现 = `date.toISOString()`（**UTC 数字**）去掉 `.000Z` + 拼**本机偏移**：
+ * `TZ=Asia/Shanghai`、本地 `2026-10-08 06:30` ⇒ `2026-10-07T22:30:00+08:00`，
+ * 解析回 `2026-10-07T14:30Z` —— **比真实瞬时早 8 小时**。而"刚修好的"系统提示写
+ * `2026-10-08T06:30:00.000+08:00`（`minutePrecisionDate`）⇒ 同一请求两个"现在几点"，
+ * 数字与小时数都不同；尾部那条还自带时区名，模型更可能采信错的那条。
+ *
+ * ## 判据怎么做到"任何机器时区都能红"
+ *
+ * 时区**可注入**：把 `Date.prototype.getTimezoneOffset()` 固定成 `-480`（东八区）。
+ * 于是"输出解析回来的瞬时 == 输入瞬时"这条断言在 UTC 机器上也**必须**成立
+ * —— 只要实现是"UTC 数字 + 拼偏移"，它当场差 8 小时。
+ * 时钟同样可注入（`vi.setSystemTime`，本文件既有的机制）。
+ */
+describe("TIME-CTX-1：时间戳的瞬时与标注必须一致（且与系统提示 date 同口径）", () => {
+  /** 整秒时刻（`beforeEach` 注入的就是它；亚秒为 0 ⇒ "解析回来必须逐毫秒相等"是可断言的强形式） */
+  const TC_NOW = NOW; // 1_800_000_000_000 = 2027-01-15T08:00:00Z
+
+  /** 固定"东八区"（分钟，东为正 480 ⇒ `getTimezoneOffset()` 为 -480） */
+  function withFixedEast8<T>(fn: () => T): T {
+    const spy = vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(-480);
+    try {
+      return fn();
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it("TIME-CTX-1①：固定时区（+08:00）下，输出解析回的**瞬时**必须等于输入瞬时", () => {
+    const port = installPort();
+    seedSession(port);
+    port.events.ensureLoaded(SID);
+
+    withFixedEast8(() => {
+      const { ts, zone } = sampledTimestamp();
+      const parsed = new Date(ts).getTime();
+      expect(Number.isNaN(parsed), `时间戳必须可解析，实际：${ts}`).toBe(false);
+      expect(
+        parsed,
+        `时间戳标注的瞬时必须等于真实瞬时（旧实现"UTC 数字 + 拼本机偏移"会早 8 小时），实际：${ts}`,
+      ).toBe(TC_NOW);
+      // 字段必须是**本地**（东八区 ⇒ UTC 08:00 = 本地 16:00），偏移标注必须是 +08:00
+      expect(ts.slice(0, 19), `东八区本地墙上时间，实际：${ts}`).toBe("2027-01-15T16:00:00");
+      expect(ts.endsWith("+08:00"), `偏移标注必须与字段同源，实际：${ts}`).toBe(true);
+      expect(new Date(ts).getUTCHours(), "UTC 视图必须回到 08:00").toBe(8);
+      expect(zone.length, "IANA 时区名仍在").toBeGreaterThan(0);
+    });
+  });
+
+  it("TIME-CTX-1②：与**同请求**的系统提示 date 表示同一分钟（同一处偏移口径）", () => {
+    const port = installPort();
+    seedSession(port);
+    port.events.ensureLoaded(SID);
+
+    withFixedEast8(() => {
+      const { ts } = sampledTimestamp();
+      // 系统提示里的 date（默认时钟 = setSystemTime 注入的那一刻）与尾部时间戳必须同一分钟
+      const dateStr = minutePrecisionDate();
+      expect(
+        ts.slice(0, 16),
+        `尾部时间戳与系统提示 date 必须是同一分钟、同一偏移：${ts} vs ${dateStr}`,
+      ).toBe(dateStr.slice(0, 16));
+      const offsetOf = (s: string) => /([+-]\d{2}:\d{2})$/.exec(s)?.[1];
+      expect(offsetOf(ts), `偏移也必须一致：${ts} vs ${dateStr}`).toBe(offsetOf(dateStr));
+      // 两侧解析回来都必须是同一分钟（防"两边一起错"）
+      expect(Math.floor(new Date(ts).getTime() / 60_000)).toBe(Math.floor(TC_NOW / 60_000));
+      expect(Math.floor(new Date(dateStr).getTime() / 60_000)).toBe(Math.floor(TC_NOW / 60_000));
+    });
+  });
+
+  it("TIME-CTX-1③（真实本机时区，不做任何注入）：解析回的瞬时仍必须等于输入瞬时", () => {
+    const port = installPort();
+    seedSession(port);
+    port.events.ensureLoaded(SID);
+    const { ts } = sampledTimestamp();
+    expect(
+      new Date(ts).getTime(),
+      `无论本机在哪个时区，标注的瞬时都必须是真实瞬时，实际：${ts}`,
+    ).toBe(TC_NOW);
+    expect(ts.slice(0, 16)).toBe(minutePrecisionDate().slice(0, 16));
+  });
+
+  it("TIME-CTX-1④（反向，防「一律写 Z」）：偏移标注必须来自真实时区，不许硬编码", () => {
+    const port = installPort();
+    seedSession(port);
+    port.events.ensureLoaded(SID);
+    // 东八区 ⇒ 必须写 +08:00（写 Z 或写 -08:00 都会红）
+    withFixedEast8(() => {
+      expect(sampledTimestamp().ts).toContain("+08:00");
+    });
+    // 西五区（`getTimezoneOffset()` = +300）⇒ 必须写 -05:00
+    const spy = vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(300);
+    try {
+      clearTimeContext(SID);
+      const { ts } = sampledTimestamp();
+      expect(ts, "西五区必须写 -05:00").toContain("-05:00");
+      expect(new Date(ts).getTime(), "换时区后瞬时仍然不变").toBe(TC_NOW);
+      expect(ts.slice(0, 19), "西五区本地墙上时间（UTC 08:00 - 5h）").toBe("2027-01-15T03:00:00");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

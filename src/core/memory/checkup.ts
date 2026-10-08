@@ -23,7 +23,9 @@
  */
 import {
   getMemoryService,
+  injectionScopeContext,
   isLegacyPoolInjectionPaused,
+  memorySourceOf,
   projectIdFromCwd,
   type MemoryEntry,
   type MemoryScope,
@@ -253,11 +255,15 @@ export function buildOwnershipIndexFrom(
   };
 }
 
-/** 来源三态：**只有明确记过的来源才算数**，其余一律"未知（旧数据）" */
+/**
+ * 来源三态：**只有明确记过的来源才算数**，其余一律"未知（旧数据）"。
+ *
+ * 第 189 波：判定与文案都收敛到 `memory.ts` 的**同一个** `memorySourceOf`
+ * （注入文本、记忆面板、体检、导出四处共用一套说法，判据 `MEM-PLACE-12`）——
+ * 这里只做类型别名，不再自己写一份 `if`。
+ */
 export function checkupSourceOf(entry: MemoryEntry): CheckupSource {
-  const raw = entry.source;
-  if (raw === "manual" || raw === "auto") return raw;
-  return "unknown";
+  return memorySourceOf(entry);
 }
 
 /**
@@ -336,8 +342,13 @@ export function createMemoryCheckup(
    *
    * 没有 `injectionExplanations` 的实现（判据里传的假 service）退回"只按 scope/归属/status 判"，
    * 并如实把 `truncatedCount` 记为 0 —— 不许假装算过截断。
+   *
+   * ⚠️ R6：必须走 `injectionScopeContext()`（注入侧**窄** ctx）。旧写法 `{ ...ctx }` 把体检的
+   * 宽 ctx 形状原样递进注入路径 —— 今天 `ctx` 只有两个归属键所以"恰好安全"，但只要有人
+   * 往里加一个 `showAllProjects`，`visibleIn` 就会放行所有项目的条目，体检会把它们全标成
+   * 「已生效」。现在那是**编译错误**，不是运气。
    */
-  const plan = service.injectionExplanations?.({ ...ctx }) ?? null;
+  const plan = service.injectionExplanations?.(injectionScopeContext(ctx?.projectId, ctx?.sessionId)) ?? null;
   const checkupInjectedWithReason = (entry: MemoryEntry): { injected: boolean; reason?: string } => {
     if (plan) {
       return plan.injected.has(entry.id)

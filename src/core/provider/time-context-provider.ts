@@ -8,6 +8,8 @@
  *   - 支持 relative time formatting
  */
 import type { Plugin } from '../cordis/src/index.ts'
+// R7：本地时间只允许来自唯一口径（本文件曾经自己拼 toDateString/toTimeString/toLocaleString）
+import { localDateTimeString, localTimeParts, offsetLabel } from '../time/local-time.ts'
 
 export const timeContextProvider: Plugin = (ctx: any) => {
   const service = {
@@ -29,21 +31,19 @@ export const timeContextProvider: Plugin = (ctx: any) => {
     /**
      * 构建时间上下文 — 参考 DSH time-context buildContext()
      * 返回模型可读的时间信息字符串
+     *
+     * ⚠️ R7（`TIME-SINGLE-SOURCE`）：旧实现一次给出**五种**时间表示
+     * （`toISOString()` + `toDateString()` + `toTimeString()` + `toLocaleString()`）——
+     * 同一段文本里多个"现在几点"，正是本簇那三次缺陷的同一形态（模型无从知道该信哪条）。
+     * 现在只给两种，各自口径明确：**瞬时**（ISO，机器口径）+ **本地**（唯一口径渲染）。
      */
     buildContext(): string {
       const now = new Date()
       const tz = this.getTimezone()
-      const dateStr = now.toDateString()
-      const timeStr = now.toTimeString()
-      const isoStr = now.toISOString()
-      const localeStr = now.toLocaleString()
-
       return [
-        `Current time: ${isoStr}`,
+        `Current time (instant): ${now.toISOString()}`,
         `Timezone: ${tz}`,
-        `Date: ${dateStr}`,
-        `Time: ${timeStr}`,
-        `Locale: ${localeStr}`,
+        `Local time: ${localDateTimeString(now)} (${offsetLabel(localTimeParts(now).offsetMinutes)})`,
       ].join('\n')
     },
 
