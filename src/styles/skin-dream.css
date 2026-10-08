@@ -198,8 +198,25 @@
 /* ========== Sidebar - 透明毛玻璃 ========== */
 [data-skin="dream"] .sidebar {
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.65)) !important;
-  backdrop-filter: blur(var(--dream-blur-px, 12px));
-  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  /*
+   * ⚠️ `!important` 不是防御性写法，是**必需的**（第 185 波实测）。
+   *
+   * 原因：系统窗口材质档有这条（`styles.css` 的 NATIVE 段）——
+   *   `html[data-native-material="sidebar"] .sidebar { backdrop-filter: none }`
+   * 它的特异性 (0,2,1) **高于**这条的 (0,2,0)（多一个 `html` 类型选择器）⇒ 不加 `!important`
+   * 就会被它干掉，只剩 65% 白底、**一点模糊都没有**。
+   *
+   * 为什么在梦幻皮肤下必须保住模糊：那条原生材质规则的注释写着"系统已经糊过桌面了" ——
+   * 它糊的是**桌面**。而梦幻皮肤的壁纸是**画在 webview 内部**的一层 DOM（`--dream-bg-image`），
+   * 系统材质根本糊不到它 ⇒ 关掉 CSS 模糊后，侧栏后面什么都不剩，用户看到的就是"一片死白"。
+   * （真机 A/B 实测：带 `data-native-material` 时 `backdrop-filter: none`、去掉后 `blur(12px)`，
+   * 底色两者都是 `rgba(255,255,255,0.65)` —— 即"白"确实来自模糊被关掉。）
+   *
+   * 同文件里 `.right-sidebar`(:286) 与 `.panel-right`(:298) **本来就带 `!important`**，
+   * 只有 `.sidebar` 漏了 —— 这里补齐，口径统一。
+   */
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   border-right: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
   color: var(--dream-text-main, #6c474d);
 }
@@ -362,8 +379,9 @@ color: var(--dream-text-main, #1a1a2e) !important;
 
 [data-skin="dream"] .user .message-content {
 background: var(--dream-c24) !important;
-backdrop-filter: blur(var(--dream-blur-px, 12px));
--webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+/* 同 `.sidebar`：必需 `!important`，否则被原生材质档特异性更高的 `backdrop-filter: none` 干掉 */
+backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
+-webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
 border: 1px solid var(--dream-c17) !important;
 box-shadow: 0 2px 8px var(--dream-c15);
 }
