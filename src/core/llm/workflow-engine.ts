@@ -53,6 +53,24 @@ interface WorkflowSDK {
   read(path: string): Promise<string>;
   /** Write a file */
   write(path: string, content: string): Promise<void>;
+  /**
+   * Search files by glob.
+   *
+   * ★ 本轮（WF-GLOB）：**与 `run_code` 的 `ToolSDK.glob`（`tools/run-code.ts:60`）逐字同形**
+   * —— 同一个 `file-api.globSearch`、同一个结构化返回、同一条「`ctx.cwd` 就是工作区」
+   * 的沙箱口径。改前工作流脚本里**没有**列文件的办法（只能靠 `sdk.bash` 绕）。
+   *
+   * 两点不许走样：
+   * ① 返回的是**结构化对象**（`{ files, truncated, depth_limited, returned, hint? }`），
+   *    不是裸数组 —— 拆成数组就等于把"结果被窗口截断"这个事实丢在这一层；
+   * ② `workspace` 必须传下去（`file-api.assertWithinWorkspace` 的口径是「不给 workspace
+   *    就不检查」）—— 第 185 波刚修过 `execWorkflow` 用空 ctx 把沙箱整条摘掉，别漏回来。
+   */
+  glob(
+    pattern: string,
+    path?: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<import("../file-api").GlobSearchResult>;
 }
 
 // ========== Workflow Tool ==========
@@ -80,7 +98,7 @@ export function createWorkflowTool(): ToolDef {
      * （那会同时改变计划模式的拒绝文案），本轮不擅自扩大改动范围。
      */
     contract: { sideEffectScope: "system", accessScope: "system" },
-    guidance: "Use workflow to define and execute multi-step automated workflows. Workflows can chain tools, run conditionals, and loop. The workflow runs IN-PROCESS with the application's own privileges; nested sdk.bash / sdk.write calls face the same permission gates as run_code (dangerous shell commands are refused outright).",
+    guidance: "Use workflow to define and execute multi-step automated workflows. Workflows can chain tools, run conditionals, and loop. The workflow script reaches the filesystem through the injected sdk (sdk.read / sdk.glob / sdk.write). The workflow runs IN-PROCESS with the application's own privileges; nested sdk.bash / sdk.write calls face the same permission gates as run_code (dangerous shell commands are refused outright).",
     description: `Execute a JavaScript workflow that can fan-out sub-agents and collect results.
 
 The workflow code receives an \`sdk\` object with:
@@ -89,6 +107,7 @@ The workflow code receives an \`sdk\` object with:
 - sdk.bash(command) — execute shell command; refused if it is classified dangerous (use the bash tool directly so the user is asked)
 - sdk.read(path) — read file
 - sdk.write(path, content) — write file; protected paths (.git/, .env, node_modules/) are refused and overwriting a differing existing file requires user confirmation in ask mode
+- \`await sdk.glob(pattern, path?, opts?)\` → \`{ files: string[], truncated: boolean, depth_limited: boolean, returned: number, hint?: string }\` (**not** a bare array) — search files by glob; \`files\` holds at most \`opts.limit\` paths (default 20000, allowed 1-200000), \`opts.offset\` skips the first N matches, and \`truncated: true\` means at least one more match exists — page through everything with \`offset += returned\`; the search path and the pattern must stay inside the workspace while the user's workspace restriction is on
 
 Example:
 \`\`\`javascript
@@ -191,6 +210,22 @@ console.log(JSON.stringify(results, null, 2));
           if (!confirmed.ok) throw new Error(confirmed.reason);
           const { writeFile } = await import("../file-api");
           await writeFile(path, content, { workspace: ctx.cwd });
+        },
+        /**
+         * ★ 本轮（WF-GLOB）：与 `run_code` 的 `sdk.glob`（`tools/run-code.ts:298-308`）
+         * **同一份口径**，照抄同形、不另造一套：
+         * · `path` 缺省就是工作区（`ctx.cwd`）；
+         * · `workspace: ctx.cwd` **必须传**（读侧沙箱「不给 workspace 就不检查」）；
+         * · `limit` / `offset` 透传（脚本要"枚举全部"就自己按 `offset += returned` 翻页）；
+         * · 返回结构化对象，**不拆成裸数组**。
+         */
+        async glob(pattern, path, opts) {
+          const { globSearch } = await import("../file-api");
+          return await globSearch(pattern, path || ctx.cwd, {
+            workspace: ctx.cwd,
+            limit: opts?.limit,
+            offset: opts?.offset,
+          });
         },
       };
 

@@ -21,8 +21,17 @@
  * | `T6-B` | `sdk.bash` 拿到的 cwd 就是调用方给的 cwd（不许丢成 undefined） |
  * | `T6-C` | `sdk.spawn` 拿到的 `parentSessionId` 就是调用方给的 sessionId |
  * | `T6-D` | 反向对照：工作区内的 `sdk.write` 照旧成功（不是"一律拒绝"） |
+ *
+ * ## ★ 误拒修复后的必要前置：**显式打开沙箱**
+ *
+ * `T6-A` 钉的是「沙箱**开启**时越界写被拒」。`file-api.ts` 的判定改后**看开关**
+ * （改前只看"有没有给 workspace"—— 那正是用户点名的误拒缺陷：「关了沙箱沙箱还是生效」），
+ * 所以这里必须显式开开关，否则测的是全访问模式。
+ * **另一个方向**（关 ⇒ 越界必须成功）见 `sandbox-mode-consistency.test.ts` 的 SB-OFF-1/2。
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+
+import { __resetSandboxSettingCache, setSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
 
 /** 记录 spawn 收到的父会话 id（`sdk.spawn` 内部动态 import 这个模块）。 */
 let spawnedParentSessionId: string | undefined;
@@ -72,10 +81,15 @@ function runnerCalling(fn: (sdk: any) => Promise<unknown>) {
 beforeEach(() => {
   installTauriMock();
   spawnedParentSessionId = undefined;
+  // 本文件钉的是「沙箱**开** ⇒ 越界写被拒」这一个方向（见文件头的说明）
+  setSandboxAclEnabled(true);
+  __resetSandboxSettingCache();
 });
 
 afterEach(() => {
   __setScriptRunnerForTests(null);
+  setSandboxAclEnabled(false);
+  __resetSandboxSettingCache();
 });
 
 describe("第 185 波 T6：provider 路径的 workflow 必须带真实 ctx", () => {
@@ -126,5 +140,33 @@ describe("第 185 波 T6：provider 路径的 workflow 必须带真实 ctx", () 
 
     expect(out).not.toMatch(/outside the workspace/i);
     expect(invokes.some((i) => i.command === "write_file")).toBe(true);
+  });
+
+  /**
+   * ★ 误拒修复的**反向**判据：沙箱**关** ⇒ 同一组越界路径必须**成功**。
+   *
+   * 只有 `T6-A`（开 ⇒ 拒）是不够的：一个**无条件拦**的实现也能让 `T6-A` 全绿 ——
+   * 那正是本次要修的缺陷形态（用户点名：「关了沙箱后沙箱还是生效，导致项目读写出问题」）。
+   * 所以这里把**同一路径**在两个方向下各跑一次，并要求结果相反。
+   */
+  it("T6-E（反向对照）: 沙箱**关** ⇒ 工作区外的 sdk.write 必须成功（关了就真的关）", async () => {
+    setSandboxAclEnabled(false);
+    __resetSandboxSettingCache();
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.write(OUTSIDE, "x")) as never);
+
+    const off = await execWorkflow("await sdk.write(p, 'x')", { cwd: WS, securityMode: "auto" });
+    expect(off, "沙箱关闭时工作区外的写不许被误拒").not.toMatch(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "write_file"), "底层写必须真的发出").toBe(true);
+
+    // ★ 同一路径、两个方向、结果必须相反
+    setSandboxAclEnabled(true);
+    __resetSandboxSettingCache();
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.write(OUTSIDE, "x")) as never);
+
+    const on = await execWorkflow("await sdk.write(p, 'x')", { cwd: WS, securityMode: "auto" });
+    expect(on, "沙箱开启时同一路径必须被拒").toMatch(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "write_file")).toBe(false);
   });
 });

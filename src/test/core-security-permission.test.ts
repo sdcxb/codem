@@ -382,7 +382,25 @@ describe("权限 — 沙箱路径检查", () => {
 
     // Verify checkSandbox function exists and returns null when sandbox disabled
     expect(toolsSrc).toContain("function checkSandbox");
-    expect(toolsSrc).toContain('getSetting("codem-sandbox-enabled")');
+    /**
+     * ★ 误拒修复：这里原来断言的是**字面量** `getSetting("codem-sandbox-enabled")`。
+     *
+     * 那正是"同一规则两份实现"的**文本化石**：`checkSandbox` 自己读一遍设置，而
+     * `file-api.ts` 的读写判定读的是"有没有给 workspace"⇒ 同一规则两个结论，
+     * 于是「关了沙箱、`sdk.write` 照样被拒」（用户点名的那次误拒）。
+     *
+     * 现在两处都委托给**唯一一处**判定（`sandbox-acl.isSandboxAclEnabled()`），
+     * 所以判据也从"有没有那个字面量"改成"有没有走统一入口 + 有没有自己再读一遍"。
+     * 只留字面量断言的话，注释里引用一下键名就能让它绿 —— 那是假绿。
+     */
+    const codeOnly = toolsSrc
+      .split(/\r?\n/)
+      .filter((line: string) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .join("\n");
+    expect(codeOnly, "必须委托给唯一入口").toContain("isSandboxAclEnabled");
+    expect(codeOnly, "不许在这里再实现一份开关判断").not.toMatch(
+      /getSetting\(\s*["']codem-sandbox-enabled["']\s*\)/,
+    );
   });
 
   it("SECU-016: 沙箱启用代码路径检查逻辑存在", async () => {

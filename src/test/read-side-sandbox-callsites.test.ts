@@ -24,12 +24,21 @@
  * | RS-6 | 管线守卫认 `file` 参数名（`lsp` 的入参叫 `file`，不是 `path`/`file_path`） |
  *
  * ⚠️ 路径都在**运行期**给（不是写在工具 schema 里）—— 钉的是闸门，不是文本扫描（那是另一道）。
+ *
+ * ## ★ 误拒修复后的必要前置：**显式打开沙箱**
+ *
+ * 本文件钉的是「沙箱**开启**时越界读必须被拒」这一个方向。`file-api.ts` 的
+ * `assertWithinWorkspace` 改后**看开关**（改前只看"有没有给 workspace"——那正是用户点名的
+ * 误拒缺陷：「关了沙箱沙箱还是生效，导致项目读写出问题」），所以这里必须显式开开关。
+ * **另一个方向**（关 ⇒ 越界必须成功）见 `sandbox-mode-consistency.test.ts`
+ * 的 SB-OFF-2 / SB-MODE-1。
  */
-import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 
 import { createLSPTool } from "../core/llm/tools/lsp-tool";
 import { LocalFileSystemProvider } from "../core/seam/local-fs-provider";
 import { readFile } from "../core/file-api";
+import { __resetSandboxSettingCache, setSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
 import { initDefaultPipeline, getToolPipeline } from "../core/llm/tool-pipeline";
 import { createDefaultToolRegistry } from "../core/llm/tools";
 import type { ToolContext } from "../core/llm/tools";
@@ -82,8 +91,16 @@ function lspCtx(cwd = WS): ToolContext {
   } as never;
 }
 
+/** 本文件钉的是「沙箱**开** ⇒ 越界读被拒」这一个方向，所以每个用例前显式打开开关。 */
+beforeEach(() => {
+  setSandboxAclEnabled(true);
+  __resetSandboxSettingCache();
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  setSandboxAclEnabled(false);
+  __resetSandboxSettingCache();
   delete (window as any).__TAURI__;
 });
 
@@ -147,6 +164,61 @@ describe("R1-4：读侧沙箱（lsp / seam / canonicalize）", () => {
 
     installTauriMock();
     await expect(provider.readFile("src/a.ts", WS)).resolves.toBe(SECRET_BODY);
+  });
+
+  /**
+   * ★ 误拒修复的**反向**判据：沙箱**关** ⇒ 同一批越界读必须**成功**。
+   *
+   * 只有 RS-1..RS-5（开 ⇒ 拒）是不够的：一个**无条件拦**的实现也能让它们全绿 ——
+   * 那正是本次要修的缺陷形态（用户点名：「关了沙箱后沙箱还是生效，导致项目读写出问题」）。
+   * 所以这里把**同一批路径**在两个方向下各跑一次，并要求结果相反。
+   */
+  it("RS-7（反向对照）: 沙箱**关** ⇒ 同一批越界读必须成功（关了就真的关）", async () => {
+    setSandboxAclEnabled(false);
+    __resetSandboxSettingCache();
+
+    // lsp：越界 `file` 在关闭时是**合法**读，且底层读必须真的发生
+    installTauriMock();
+    const lspOff = await createLSPTool().execute(
+      { operation: "hover", file: SECRET_PATH, line: 1, column: 1 },
+      lspCtx(),
+    );
+    expect(String(lspOff.output), `关闭时越界 lsp 不许被误拒（实际：${lspOff.output}）`).not.toMatch(
+      /outside the workspace/i,
+    );
+    expect(invokes.some((i) => i.command === "read_file"), "底层读必须真的发生").toBe(true);
+
+    // seam provider
+    installTauriMock();
+    await expect(
+      new LocalFileSystemProvider().readFile(SECRET_PATH, WS),
+      "关闭时越界 seam 读不许被误拒",
+    ).resolves.toBe(SECRET_BODY);
+
+    // file-api 本体（RS-3 的那条路径，关闭时不再 canonicalize 拦）
+    installTauriMock();
+    await expect(
+      readFile(SECRET_PATH, { workspace: WS }),
+      "关闭时越界 readFile 不许被误拒",
+    ).resolves.toBe(SECRET_BODY);
+
+    // lsp 的 grep 搜索路径
+    installTauriMock();
+    const grepOff = await createLSPTool().execute(
+      { operation: "definition", symbol: "findAmbiguousLiteral", file: `${WS}/a.ts`, path: "C:/elsewhere" },
+      lspCtx(),
+    );
+    expect(String(grepOff.output), `关闭时越界搜索不许被误拒（实际：${grepOff.output}）`).not.toMatch(
+      /outside the workspace/i,
+    );
+    expect(invokes.some((i) => i.command === "execute_command"), "底层搜索必须真的发出").toBe(true);
+
+    // ★ 同一批路径、两个方向、结果必须相反
+    setSandboxAclEnabled(true);
+    __resetSandboxSettingCache();
+    installTauriMock();
+    await expect(readFile(SECRET_PATH, { workspace: WS })).rejects.toThrow(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "read_file")).toBe(false);
   });
 });
 

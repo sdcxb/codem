@@ -3,6 +3,27 @@
  * 所有文件操作通过 Tauri IPC 调用 Rust 命令
  */
 
+/**
+ * ★ 误拒修复：「沙箱是否启用」**唯一一处**判定 —— 直接复用 `sandbox-acl.ts` 的实现。
+ *
+ * ## 为什么必须复用，而不是在这里再读一次设置
+ *
+ * 改前这里有**两份**「沙箱是否启用」的实现：
+ * · `tools.ts:220` 的 `checkSandbox` 读设置（`getSetting("codem-sandbox-enabled") !== "true"`
+ *   ⇒ 放行）——**看开关**；
+ * · 本文件的 `assertWithinWorkspace` **不看开关**：`workspace` 有值就判、越界就抛。
+ *
+ * 而 T2（第 185 波）的「读侧沙箱」修复给 `run-code.ts` 的 `sdk.read/write/glob/grep`、
+ * `lsp-tool.ts`、`task-keyword-search.ts`、`seam/local-fs-provider.ts` 全部**无条件**传了
+ * `workspace: ctx.cwd` ⇒ 于是**沙箱关闭（全访问）时工作区外的读写照样被抛**
+ * ——就是用户点名的那个历史 bug：「关了沙箱之后沙箱还生效，导致项目读写出问题」。
+ *
+ * 现在：本文件与 `tools.checkSandbox` 都只问 `isSandboxAclEnabled()`（它读的是
+ * `SANDBOX_SETTING_KEY`，并且按第 87 轮的纪律在"读失败"时沿用上次成功读到的值）。
+ * 判据见 `src/test/sandbox-mode-consistency.test.ts`（SB-OFF-1/2、SB-ON-1/2、SB-ONE-1）。
+ */
+import { isSandboxAclEnabled } from "./sandbox/sandbox-acl";
+
 const isTauri = () => !!(window as any).__TAURI__;
 
 async function tauriInvoke(command: string, args?: Record<string, unknown>): Promise<any> {
@@ -56,6 +77,10 @@ function resolveAgainstWorkspace(path: string, workspace: string | undefined): s
  * 它自己会 canonicalize + 剥 `\\?\` + 按组件比较）；命令不可用（旧构建 / 非 Tauri 宿主 /
  * 单测）才退回**词法**判定（与 Rust 的 `lexical_normalize` 同口径）—— 两个方向都是"判定"，
  * 没有"跳过检查"这一支。
+ *
+ * ⚠️ 「跳过检查」这一支**确实存在**，但它在**上一层**（`assertWithinWorkspace` 的
+ * `!isSandboxAclEnabled()`）—— 那是「用户把沙箱关了」这一个事实的唯一落点。
+ * 本函数只负责"给定工作区，目标在不在里面"，不负责开关（**一条规则一处实现**）。
  */
 async function resolveWithinWorkspace(target: string, workspace: string): Promise<boolean> {
   if (isTauri()) {
@@ -82,15 +107,40 @@ async function resolveWithinWorkspace(target: string, workspace: string): Promis
  *
  * ## 口径（与写侧一致，只有动词不同）
  *
- * - `workspace` 未给 ⇒ 不做判定。应用自管的读写（设置、日志、溢出文件、快照、技能目录）
- *   本来就不在工作区内，且它们不走工具路径 —— 这是**既有语义**，不是本轮新开的口子；
- * - `workspace` 给了而目标在外 ⇒ **抛错**（如实失败）。绝不 catch 之后继续：
+ * - **沙箱未启用 ⇒ 直接返回**（不判、不抛）。这是本轮修的**误拒级缺陷**：改前这里不看开关，
+ *   而 `sdk.read/write/glob/grep` / `lsp` / `task-keyword-search` / seam 全部无条件传
+ *   `workspace: ctx.cwd` ⇒ **关了沙箱，工作区外的读写照样被拒**（用户点名的「关了沙箱
+ *   沙箱还是生效」）。开关只有一处判定：`isSandboxAclEnabled()`（见文件头的说明）。
+ * - `workspace` 未给 ⇒ 不做判定（**既有前置条件语义**，保留）。应用自管的读写
+ *   （设置、日志、溢出文件、快照、技能目录）本来就不在工作区内，且它们不走工具路径 ——
+ *   这是**既有语义**，不是本轮新开的口子；
+ * - 沙箱启用、`workspace` 给了，而目标在外 ⇒ **抛错**（如实失败）。绝不 catch 之后继续：
  *   那等于「看起来有沙箱、实际没检查」，比没有更糟。
  *
- * 判据见 `src/test/run-code-sdk-sandbox-read.test.ts`。
+ * 判据见 `src/test/run-code-sdk-sandbox-read.test.ts`（沙箱开启方向）与
+ * `src/test/sandbox-mode-consistency.test.ts`（**两个方向** + 一处实现的 grep 断言）。
  */
-async function assertWithinWorkspace(verb: string, target: string, workspace: string | undefined): Promise<void> {
+async function assertWithinWorkspace(
+  verb: string,
+  target: string,
+  workspace: string | undefined,
+  /**
+   * ★ 误拒修复：**同一个开关事实**由调用方传进来（不给就现问一次）。
+   *
+   * 为什么留这个口子：`writeFile` 要把开关**同时**给两处用 —— ① 这里判不判、② 随
+   * `write_file` IPC 交给 Rust 的守卫（`sandbox_enabled`）。两处各问一次的话，
+   * 就有了"判定用的事实"与"动作依据的事实"漂移的余地（本仓库最忌讳的形态）。
+   * 只问一次、传下去，两侧依据同一个值。
+   */
+  sandboxEnabled?: boolean,
+): Promise<void> {
   if (!workspace) return;
+  /**
+   * ★ 误拒修复（**本函数是"关了就真的关"的唯一落点**）：
+   * 沙箱没开 ⇒ 不做工作区判定。改前缺的正是这一行，而上面那些调用点全都传了 `workspace`
+   * ⇒ 全访问模式被当成受限模式，工作区外的一切读写都被误拒。
+   */
+  if (!(sandboxEnabled ?? isSandboxAclEnabled())) return;
   if (await resolveWithinWorkspace(target, workspace)) return;
   throw new Error(
     `Sandbox: ${verb} "${target}" is outside the workspace "${workspace}". ` +
@@ -232,8 +282,20 @@ export async function writeFile(path: string, content: string, options?: { encod
   // （原来是这里内联的一段，读侧要复刻就只能再写一份 —— 那正是漂移的来源）。
   // 相对路径同样先按工作区解析，并且**用解析结果去写盘**（否则检查与动作不是同一个路径）。
   const target = resolveAgainstWorkspace(path, options?.workspace);
-  await assertWithinWorkspace("Write to", target, options?.workspace);
-  await tauriInvoke("write_file", { path: target, content, encoding: options?.encoding, workspace: options?.workspace });
+  /**
+   * ★ 误拒修复：开关**只问一次**，同一个值既决定本地判不判、也随 IPC 交给 Rust 的守卫
+   * （`write_file` 的 `sandbox_enabled`）。两侧依据同一个事实 —— 否则又会出现
+   * 「TS 放行、Rust 拦下」这种"关了沙箱沙箱还生效"的形态（用户点名的那个 bug）。
+   */
+  const sandboxEnabled = isSandboxAclEnabled();
+  await assertWithinWorkspace("Write to", target, options?.workspace, sandboxEnabled);
+  await tauriInvoke("write_file", {
+    path: target,
+    content,
+    encoding: options?.encoding,
+    workspace: options?.workspace,
+    sandbox_enabled: sandboxEnabled,
+  });
 }
 
 /**

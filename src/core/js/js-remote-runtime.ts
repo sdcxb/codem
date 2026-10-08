@@ -291,7 +291,18 @@ export function hostMethodsFromToolSdk(sdk: ToolSDK): Record<string, RemoteHostM
       await sdk.write(String(args[0] ?? ""), String(args[1] ?? ""));
       return true;
     },
-    glob: (args) => sdk.glob(String(args[0] ?? ""), args[1] as string | undefined),
+    /**
+     * ★ 本轮（WF-GLOB）：`args[2]`（=`opts`）原来**被丢掉**了 —— guest 写
+     * `sdk.glob(p, path, { limit, offset })` 时，`limit`/`offset` 到不了 `sdk.glob`，
+     * 而工具描述里明确写着这两个参数可用（描述与真实形状不一致）。
+     * 现在原样透传：形状事实不许在桥上悄悄消失。
+     */
+    glob: (args) =>
+      sdk.glob(
+        String(args[0] ?? ""),
+        args[1] as string | undefined,
+        args[2] as { limit?: number; offset?: number } | undefined,
+      ),
     grep: (args) => sdk.grep(String(args[0] ?? ""), (args[1] as { path?: string; glob?: string }) ?? undefined),
     fetch: (args) => sdk.fetch(String(args[0] ?? "")),
   };

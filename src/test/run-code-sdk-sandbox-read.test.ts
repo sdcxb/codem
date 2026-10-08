@@ -28,17 +28,28 @@
  *
  * ⚠️ 路径在**脚本运行期**给（不是写死在 `code` 文本里）—— 这样这条判据钉的就是
  * SDK 实现里的闸门，而不是管线的文本扫描（那是另一道，见 `sandbox-shell-path-leak`）。
+ *
+ * ## ★ 误拒修复后的必要前置：**显式打开沙箱**
+ *
+ * 本文件钉的是「沙箱**开启**时越界必须被拒」这一个方向。而 `assertWithinWorkspace` 改后
+ * **看开关**（改前只看"有没有给 workspace"，那正是用户点名的误拒缺陷：「关了沙箱沙箱还是
+ * 生效」）—— 所以这里必须显式把开关打开，否则测的是"全访问模式"。
+ * **另一个方向**（关 ⇒ 越界必须成功）见 `sandbox-mode-consistency.test.ts` 的 SB-OFF-1/2
+ * 与 SB-MODE-1（同一批路径在两个方向下结果必须相反）。
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { createRunCodeTool, __setScriptRunnerForTests } from "../core/llm/tools/run-code";
 import { createWorkflowTool } from "../core/llm/workflow-engine";
 import { readFile, writeFile, globSearch, grepSearch } from "../core/file-api";
+import { __resetSandboxSettingCache, setSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
 import type { ToolContext } from "../core/llm/tools";
 
 const WS = "C:/ws";
 const SECRET_PATH = "C:/Users/x/.ssh/id_rsa";
 const SECRET_BODY = "-----BEGIN OPENSSH PRIVATE KEY-----SUPER-SECRET";
+/** 工作区外的写入目标（不在 `isProtectedPath` 名单里，避免判据分不清是谁拒的） */
+const OUTSIDE_WRITE = "C:/elsewhere/out/created.txt";
 
 /** 记录所有 IPC 调用（判"根本没发出去"）。 */
 let invokes: Array<{ command: string; args?: Record<string, unknown> }> = [];
@@ -94,8 +105,16 @@ function runnerCalling(fn: (sdk: any) => Promise<string>) {
   };
 }
 
+/** 本文件钉的是「沙箱**开** ⇒ 越界被拒」这一个方向，所以每个用例前显式打开开关。 */
+beforeEach(() => {
+  setSandboxAclEnabled(true);
+  __resetSandboxSettingCache();
+});
+
 afterEach(() => {
   __setScriptRunnerForTests(null);
+  setSandboxAclEnabled(false);
+  __resetSandboxSettingCache();
 });
 
 describe("第 185 波 T2：sdk 读侧的工作区沙箱", () => {
@@ -214,5 +233,67 @@ describe("第 185 波 T2：sdk 读侧的工作区沙箱", () => {
     installTauriMock();
     await readFile("relative/app-file.json");
     expect(invokes.find((i) => i.command === "read_file")?.args?.path).toBe("relative/app-file.json");
+  });
+
+  /**
+   * ★ 误拒修复的**反向**判据：沙箱**关** ⇒ 同一批越界路径必须**成功**。
+   *
+   * 只有 T2-A..T2-F（开 ⇒ 拒）是不够的：一个**无条件拦**的实现也能让它们全绿 ——
+   * 那正是本次要修的缺陷形态（用户点名：「关了沙箱后沙箱还是生效，导致项目读写出问题」）。
+   * 所以这里把**同一批路径**在两个方向下各跑一次，并要求结果相反。
+   *
+   * 顺带把 `glob` 的两个越界判据（`checkSearchPathWithinWorkspace` 的搜索路径 +
+   * `assertGlobPatternWithinWorkspace` 的模式）也钉成"以开关为前提"：
+   * `sdk.glob` / `sdk.grep` 关闭时必须真的发出底层搜索 IPC。
+   */
+  it("T2-G（反向对照）: 沙箱**关** ⇒ 同一批越界读/搜/写必须成功（关了就真的关）", async () => {
+    setSandboxAclEnabled(false);
+    __resetSandboxSettingCache();
+
+    // ① 越界读
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.read(SECRET_PATH)) as never);
+    const readOut = await createRunCodeTool().execute({ code: "await sdk.read(p)" }, ctx());
+    expect(readOut.output, "关闭时越界读不许被误拒").not.toMatch(/outside the workspace/i);
+    expect(readOut.output, "内容必须真的拿到").toContain("SUPER-SECRET");
+    expect(invokes.some((i) => i.command === "read_file"), "底层读必须真的发生").toBe(true);
+
+    // ② 越界 glob（搜索路径 + 含 `..` 的模式两条路都必须在关闭时放行）
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.glob("*.ts", "C:/elsewhere").then(() => "ok")) as never);
+    const globOut = await createRunCodeTool().execute({ code: "await sdk.glob()" }, ctx());
+    expect(globOut.output, "关闭时越界 glob 不许被误拒").not.toMatch(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "glob_search"), "底层搜索必须真的发出").toBe(true);
+
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.glob("../outside/*.ts", ".").then(() => "ok")) as never);
+    const patternOut = await createRunCodeTool().execute({ code: "await sdk.glob()" }, ctx());
+    expect(patternOut.output, "关闭时含 `..` 的 glob 模式不许被误拒").not.toMatch(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "glob_search"), "底层搜索必须真的发出").toBe(true);
+
+    // ③ 越界 grep
+    installTauriMock();
+    __setScriptRunnerForTests(
+      runnerCalling((sdk) => sdk.grep("KEY", { path: "C:/elsewhere" }).then(() => "ok")) as never,
+    );
+    const grepOut = await createRunCodeTool().execute({ code: "await sdk.grep()" }, ctx());
+    expect(grepOut.output, "关闭时越界 grep 不许被误拒").not.toMatch(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "execute_command"), "底层搜索必须真的发出").toBe(true);
+
+    // ④ 越界写（`write_file` 的 IPC 参数里带着开关，Rust 侧据此决定拦不拦）
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.write(OUTSIDE_WRITE, "x")) as never);
+    const writeOut = await createRunCodeTool().execute({ code: "await sdk.write(p)" }, ctx());
+    expect(writeOut.output, "关闭时越界写不许被误拒").not.toMatch(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "write_file"), "底层写必须真的发生").toBe(true);
+
+    // ★ 同一批路径、两个方向、结果必须相反
+    setSandboxAclEnabled(true);
+    __resetSandboxSettingCache();
+    installTauriMock();
+    __setScriptRunnerForTests(runnerCalling((sdk) => sdk.read(SECRET_PATH)) as never);
+    const onOut = await createRunCodeTool().execute({ code: "await sdk.read(p)" }, ctx());
+    expect(onOut.output, "沙箱开启时同一路径必须被拒").toMatch(/outside the workspace/i);
+    expect(invokes.some((i) => i.command === "read_file")).toBe(false);
   });
 });

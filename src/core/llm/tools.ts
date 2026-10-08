@@ -9,6 +9,9 @@ import {
 } from "./fs-observation";
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
+// ★ 误拒修复：「沙箱是否启用」的唯一实现在 `sandbox-acl.ts`（与 `file-api` 的读写判定共用）——
+// 这里不再自己读设置（同一规则不许两份）。
+import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import type { Context } from "../cordis/src/index.ts";
 import type { PlanUpdateOp } from "./plan-utils";
 import { findAmbiguousLiteral, replaceLiteral, suggestEditCandidates } from "./edit-matchers";
@@ -217,7 +220,19 @@ import { createDynamicPluginTools } from "./dynamic-plugin-tools";
 
 /** S5: Check if sandbox mode is enabled and if the path is within the workspace. Returns error message if blocked, null if allowed. */
 function checkSandbox(path: string, ctx: ToolContext): string | null {
-  const sandboxEnabled = getSetting("codem-sandbox-enabled") === "true";
+  /**
+   * ★ 误拒修复：「沙箱是否启用」**只有一处实现** —— `sandbox-acl.isSandboxAclEnabled()`
+   * （与 `file-api.ts:assertWithinWorkspace` 共用它）。
+   *
+   * 改前这里自己读设置：`getSetting("codem-sandbox-enabled") === "true"`。而 `file-api.ts`
+   * 的读侧/写侧判定**不看开关**（`workspace` 有值就判）⇒ 同一规则两份实现、两个结论：
+   * `write` 工具在沙箱关闭时放行，而 `sdk.write({ workspace })` 却抛错 —— 就是用户点名的
+   * 「关了沙箱沙箱还生效」。现在两处都问同一个入口（键名与"读失败时沿用上次值"的纪律
+   * 都只有 `sandbox-acl.ts` 一份）。
+   *
+   * 判据：`src/test/sandbox-mode-consistency.test.ts` 的 SB-ONE-1（全仓只有一处读设置）。
+   */
+  const sandboxEnabled = isSandboxAclEnabled();
   if (!sandboxEnabled) return null;
   const workspace = ctx.cwd;
   if (!workspace) return null; // No workspace set — can't enforce

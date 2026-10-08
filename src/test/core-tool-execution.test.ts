@@ -512,7 +512,13 @@ describe("工具调用 — 沙箱检查 (S5)", () => {
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/tools.ts"), "utf-8");
 
     expect(src).toContain("function checkSandbox");
-    expect(src).toContain("codem-sandbox-enabled");
+    /**
+     * ★ 误拒修复：这里原来断言的是键名字面量 `codem-sandbox-enabled`（"有没有提到这个键"）。
+     * 那条断言**证明不了任何事**，而且它默认了"`checkSandbox` 自己读设置"这个形态 ——
+     * 也就是"同一规则两份实现"的另一半（`file-api.ts` 那份不看开关）。
+     * 现在要求的是：`checkSandbox` 走**唯一入口** `isSandboxAclEnabled()`。
+     */
+    expect(src).toContain("isSandboxAclEnabled");
     expect(src).toContain("outside the workspace");
   });
 

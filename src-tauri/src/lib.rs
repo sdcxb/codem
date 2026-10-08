@@ -877,20 +877,69 @@ Use the paginated reader (`read_file_lines`) or the windowed reader (`read_text_
     }
 }
 
+/// 写侧沙箱的**唯一判定**（`write_file` 的守卫，返回"拒绝原因"或 `None`=放行）。
+///
+/// ## ★ 误拒修复：为什么不许"给了 workspace 就拦"
+///
+/// 改前 `write_file` 是「`workspace` 给了就判、越界就抛」—— **不看设置**。而前端
+/// （`src/core/file-api.ts:236`）**无条件**把 `workspace` 传下来（`sdk.write` / `write` 工具
+/// 都传 `ctx.cwd`）⇒ **沙箱关闭（全访问）时，工作区外的写照样被 Rust 拒绝**。
+/// 与 TS 侧 `assertWithinWorkspace` 改前那份"不看开关"的判定叠加，正是用户点名的
+/// 「关了沙箱后沙箱还是生效，导致项目读写出问题」。
+///
+/// 现在：**「沙箱是否启用」由前端唯一一处判定**（`sandbox-acl.isSandboxAclEnabled()`）
+/// 之后随调用传进来；Rust 只负责"给定工作区，目标在不在里面"
+/// （`resolve_sandbox_path` + `path_within_workspace`，**一条规则一处实现**），不猜开关。
+///
+/// ## 缺省值的方向：`None` ⇒ 按"开着"处理（fail-closed）
+///
+/// 只有调用方**显式**说了 `sandbox_enabled: false` 才放行。理由：
+/// · 前端与本命令**同仓库同版本**，`file-api.ts` 每次都显式传，实际不会有 `None`；
+/// · 其它直接 `invoke("write_file", …)` 的调用点（`App.tsx` / `FileEditor.tsx` /
+///   `file-change-tracker` / `maintenance` / `ProjectManager` …）都**不传 `workspace`**，
+///   本来就不做判定（与 `assertWithinWorkspace` 的既有前置条件语义一致）；
+/// · 于是 `None` 只会出现在"传了 workspace 却没说开关"的将来形态 —— 那种情况宁可保守拦下，
+///   也不许把用户开着的沙箱静默关掉。
+///
+/// 判据：`src/test/sandbox-mode-consistency.test.ts`（TS 侧）+
+/// `harden_185_tests::r8_write_guard_follows_the_sandbox_switch`（本文件）。
+fn write_sandbox_violation(
+    path: &str,
+    workspace: Option<&str>,
+    sandbox_enabled: Option<bool>,
+) -> Result<Option<String>, String> {
+    if !sandbox_enabled.unwrap_or(true) {
+        return Ok(None);
+    }
+    let Some(ws) = workspace else {
+        return Ok(None);
+    };
+    let ws_resolved = resolve_sandbox_path(std::path::Path::new(ws))
+        .map_err(|e| format!("Sandbox: cannot resolve workspace '{}': {}", ws, e))?;
+    let target_resolved = resolve_sandbox_path(std::path::Path::new(path))
+        .map_err(|e| format!("Sandbox: cannot resolve target '{}': {}", path, e))?;
+    if path_within_workspace(&target_resolved, &ws_resolved) {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "Sandbox: Write to '{}' is outside the workspace '{}'. Set the workspace directory or disable sandbox mode in settings.",
+        path, ws
+    )))
+}
+
 #[tauri::command]
-async fn write_file(path: String, content: String, encoding: Option<String>, workspace: Option<String>) -> Result<(), String> {
-    // S5: Sandbox path whitelist — if workspace is provided, restrict writes to workspace
-    if let Some(ref ws) = workspace {
-        let ws_resolved = resolve_sandbox_path(std::path::Path::new(ws))
-            .map_err(|e| format!("Sandbox: cannot resolve workspace '{}': {}", ws, e))?;
-        let target_resolved = resolve_sandbox_path(std::path::Path::new(&path))
-            .map_err(|e| format!("Sandbox: cannot resolve target '{}': {}", path, e))?;
-        if !path_within_workspace(&target_resolved, &ws_resolved) {
-            return Err(format!(
-                "Sandbox: Write to '{}' is outside the workspace '{}'. Set the workspace directory or disable sandbox mode in settings.",
-                path, ws
-            ));
-        }
+async fn write_file(
+    path: String,
+    content: String,
+    encoding: Option<String>,
+    workspace: Option<String>,
+    // ★ 误拒修复：由前端那**唯一一处**开关判定（`sandbox-acl.isSandboxAclEnabled()`）传下来。
+    // 缺省 ⇒ 按"开着"处理（见 `write_sandbox_violation` 的说明）。
+    sandbox_enabled: Option<bool>,
+) -> Result<(), String> {
+    // S5: Sandbox path whitelist — 只在该**用户真的开着沙箱**时才限制写入范围。
+    if let Some(err) = write_sandbox_violation(&path, workspace.as_deref(), sandbox_enabled)? {
+        return Err(err);
     }
 
     if let Some(parent) = std::path::Path::new(&path).parent() {
@@ -6803,5 +6852,96 @@ mod harden_185_tests {
             serde_json::Value::Null,
             "stat 失败必须是 null（未知），不能写成 0（假事实）"
         );
+    }
+
+    // ==================== R8（误拒修复：关了沙箱就真的关） ====================
+
+    /// **主判据（两个方向）**：写侧守卫必须**跟着开关走**。
+    ///
+    /// 同一组路径（工作区外的兄弟目录、工作区内的新文件）在两个方向下结果必须**相反** ——
+    /// 只测"开着 ⇒ 拦"那一个方向，一个**无条件拦**的实现会全绿（那正是本缺陷的形态）。
+    ///
+    /// 改前这里会红：`write_file` 是"给了 workspace 就拦"，关掉沙箱也照样拦 ⇒ 误拒。
+    #[test]
+    fn r8_write_guard_follows_the_sandbox_switch() {
+        let base = scratch("r8-mode");
+        let ws = base.join("ws");
+        std::fs::create_dir_all(&ws).unwrap();
+        let outside = base.join("outside").join("x.txt");
+        let inside = ws.join("src").join("new-file.txt");
+        let ws_str = ws.to_string_lossy().to_string();
+        let outside_str = outside.to_string_lossy().to_string();
+        let inside_str = inside.to_string_lossy().to_string();
+
+        // ① 沙箱**关** ⇒ 工作区外也必须放行（关了就真的关）—— 这就是用户点名的误拒
+        assert!(
+            write_sandbox_violation(&outside_str, Some(&ws_str), Some(false))
+                .unwrap()
+                .is_none(),
+            "沙箱关闭时工作区外的写必须放行（改前这里会拦 = 关了沙箱沙箱还生效）"
+        );
+        // 沙箱关 + 界内：同样放行
+        assert!(write_sandbox_violation(&inside_str, Some(&ws_str), Some(false))
+            .unwrap()
+            .is_none());
+
+        // ② 沙箱**开** ⇒ 工作区外必须拦，且文案说清是沙箱
+        let denied = write_sandbox_violation(&outside_str, Some(&ws_str), Some(true))
+            .unwrap()
+            .expect("沙箱开启时工作区外的写必须被拒");
+        assert!(
+            denied.contains("outside the workspace"),
+            "拒绝文案必须说清原因：{denied}"
+        );
+        // ③ 沙箱开 + 界内 ⇒ 放行（不许把好调用也拦了）
+        assert!(
+            write_sandbox_violation(&inside_str, Some(&ws_str), Some(true))
+                .unwrap()
+                .is_none(),
+            "沙箱开启时工作区内的新文件必须放行（不许修成假失败）"
+        );
+
+        // ④ 两个方向必须相反 —— 逐条对照，防"无条件拦"混过单方向判据
+        let off = write_sandbox_violation(&outside_str, Some(&ws_str), Some(false)).unwrap();
+        let on = write_sandbox_violation(&outside_str, Some(&ws_str), Some(true)).unwrap();
+        assert_ne!(
+            off.is_none(),
+            on.is_none(),
+            "同一路径在开/关两个方向下必须给出**相反**结论"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 边界：① 没给 `workspace` ⇒ 不判（既有前置条件语义，与 TS 侧一致）；
+    /// ② 开关**缺省** ⇒ 按"开着"处理（fail-closed，不许静默关掉用户开着的沙箱）。
+    #[test]
+    fn r8_guard_defaults_and_missing_workspace() {
+        let base = scratch("r8-defaults");
+        let ws = base.join("ws");
+        std::fs::create_dir_all(&ws).unwrap();
+        let outside = base.join("outside").join("x.txt");
+        let ws_str = ws.to_string_lossy().to_string();
+        let outside_str = outside.to_string_lossy().to_string();
+
+        assert!(
+            write_sandbox_violation(&outside_str, None, Some(true))
+                .unwrap()
+                .is_none(),
+            "没给 workspace ⇒ 不判（既有语义：应用自管读写不走工具路径）"
+        );
+        assert!(
+            write_sandbox_violation(&outside_str, Some(&ws_str), None)
+                .unwrap()
+                .is_some(),
+            "开关缺省必须按「开着」处理（fail-closed），不许把用户开着的沙箱静默关掉"
+        );
+        assert!(
+            write_sandbox_violation(&outside_str, None, Some(false))
+                .unwrap()
+                .is_none()
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
