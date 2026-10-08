@@ -3647,3 +3647,48 @@ legacy 路径（拿不到总数）用 `paged` —— **宁可说得少，也不�
 
 `codem-mcp-servers` 写回 `[]`（用户原始状态就是"没有这个键"）、探针目录与全部临时脚本已清、
 无残留 `PING`/`node` 探针进程。
+
+---
+
+## ★★★★★ 第 184 波：按审计清单一次性修完 G1~G10（含 1 条**假成功**级缺陷）+ 结构性三项登记为观察
+
+> 用户指示：**按建议全部修复、不按批次、一次性修完**，然后**全面审计**，
+> 审计中遇到任何 bug（不论新旧）都修，修完**再次审计**；结构性差距**登记为观察**后续再讨论。
+
+### 一、10 条全部修完（每条：判据先行 + 变异自证）
+
+| # | 缺陷 | 修法与关键决策 | 判据 / 变异 |
+|---|---|---|---|
+| **G1** ★★★ | **SSE 里的 `error` 载荷被吞成"正常收尾"**（假成功级）：HTTP 200 + `{"error":{"message":"server_busy"}}` ⇒ `finish_reason` 永不出现 ⇒ 兜底发 `finishReason:"stop"` + usage 全 0，只留一句 `console.warn`；用户看到"模型什么都没说就结束了"，**不重试、成本记 0**，而 `retry.ts` 的文案分诊**根本没机会跑** | 把 `error` 载荷变成**真错误**抛出（带供应商原文 + `code`/`type`/`status` 供分诊），并在**内层 catch 里放行**（否则会被当成"这一行解析不了"重新吞掉 —— 变异 B 专守这条） | `sse-error-payload.test.ts` SSE-1..4 / 变异 **2/2** |
+| **G2** ★★★ | 重试表匹配不到 Pi 的两个原文案：`server_busy`（下划线不是空白）、`servers are currently busy`；默认分支是"不可重试" ⇒ **直接结束回合** | 补两条正则（Pi `ai/src/utils/retry.ts:30-34` 的同款集合） | RTC-7/8 / 变异 **1/1** |
+| **G3** ★★ | **工具耗时没有写入端**：UI 三个读端（StatsLab/MessageBubble/ToolCallCard）读一个**永远为空**的字段；重载后必然也没有（从未落库） | 管线 **Layer 3 只包住 `toolHandler`** 那一次调用（单调钟、**排除 hooks**），成功与抛错都写 `metadata.duration`；并把 `duration` 写进**权威 JSONL** 的 tool_call 载荷（索引只是索引） | DUR-1..3 / 变异 **1/1** |
+| **G4** ★★ | 成本**无长度分档** + 表外模型 `return 0` ⇒ 动态模型成本恒 $0，`checkLimits`（$5/会话、$20/天）**永不触发** | 新增 `ModelCost.tiers` + 纯函数 `pickCostRates`（请求级、取最高满足档、严格 `>`）；新增 `isCostKnown`/`getUncostedModels`/`costUnknown`/`uncostedCalls`（**不编价格**，把"未知"变成可读事实）；旧数据迁移补 0（防 NaN） | 分档 4 例 + 未知模型标记 + COST-MIG-1 / 变异 **2/2** |
+| **G5** ★★ | `run_code` 的 SDK 描述与形状漂移：`sdk.grep` 把整行字符串同时塞进 `file`/`content` 且 **`line` 恒为 0**（真 bug）；描述写 **QuickJS** 实为 Rust boa；逐条没标 async；`sdk.fetch` 返回字符串却没说 | 按 `path:行号:内容` 真实格式拆（拆不开 ⇒ `line: null`，不编数字）；描述改为真实引擎 + 逐条 await/返回形状 + fetch 返回正文 | SDK-1..5 / — |
+| **G6** ★★ | token 估算器**三份、口径不一致**：`context.ts` 用朴素 `chars/4`（**中文压力低报约 2.4×**），而主路径用 CJK 感知的 `token-tracker` | 一份真值：`context.ts` 委托 `token-tracker.estimateTokens` | CMP-6/7 / 变异 **1/1** |
+| **G7** ★★ | 每轮**两次**全量 `listMessages`（内存镜像 merge + 全量排序）：`buildMessages` 与 `checkHasDocumentAttachment`/`time-context.findLastVisibleMessageTime` | `buildMessages` 留**当轮快照**，另两处优先复用（无缓存才自读）；`buildTimeContext` 新增可选 `preloadedMessages`。**诊断读数确认**：第二处读其实来自 `time-context:145`，不是附件判定（我第一版修错了对象，靠判据的调用栈诊断纠正） | PERF-1..3 / 变异 **1/1** |
+| **G8** ★ | MCP「全部连接」**串行** + 等齐才写状态（最坏 ~60s 无反馈） | 并发发起 + **逐条**回调写状态；连接期间显示「连接中...」；按钮进行中禁用 | MCP-ALL-1..7 / 变异 **2/2** |
+| **G9** ★ | MCP resources 落后 v1.1.0：无 `nextCursor` 分页、二进制**丢数据**（只写"不内联"）、多段不标 URI | 分页透出 + `cursor` 续页；二进制按 MIME 分流（图片/文本/其余）**落盘给路径**（复用 spill 目录与 `pruneSpillFiles` 回收，**不新造存储**）；多段标 URI | MCPR-10..17 / 变异 **4/4** |
+| **G10** ★ | 档位被锁在 `high`（上游有 `xhigh`/`max`）；且把非法档位原样发给供应商 | 联合类型放宽到 `ReasoningEffort`（9 文件）；新增**按族钳制**：gpt-oss 只接受扁平 low/medium/high ⇒ `xhigh`/`max` 钳到 `high`（对标上游两张映射表），流式与非流式同源。**没有**给新模型编窗口/价格（上游同样从目录源拉） | EFF-1..5 / 变异 **1/1** |
+
+**变异自证合计 13 次，全部咬住**；全量 **576 文件 / 7356 通过 / 17 跳过 / 0 失败**；`tsc` 0；
+结构闸门（上报点 221 处、可达性、探针语法、docs、UI 一致性）全绿。
+
+### 二、顺带被**既有门禁**抓出并修掉的（如实记）
+
+1. **P2-3「工具不得声称自己是沙箱」**：我第一版把 run_code 描述写成 "Rust-side sandbox"，
+   被这条既有判据当场抓住 —— 那是**能力边界**不是安全保证，说成沙箱是 overpromise。已改为引擎名（boa），
+   并把这条教训写进了 `run-code-sdk-contract.test.ts` 的判据注释。
+2. **UI 一致性门禁**：G8 新增的 `connect-all-btn` 类名未定义（违规 1 > 基线 0）⇒ 补语义令牌样式。
+3. **探针语法门禁**：我的临时脚本语法错误 ⇒ 已清理。
+4. **SDK-1 判据自己踩到我的纠正文案**（描述里写了 "not QuickJS"）⇒ 判据改成"不许**声称**是 QuickJS"。
+
+### 三、结构性三项**登记为观察**（用户要求：后续再讨论）
+
+写进唯一的缺口清单 `docs/GAP-LIST.md` 第二节（`check-gaplist.mjs` 已复核：**未关闭 4 项** = O-1 + 下面三项）：
+
+- **O-33 没有「执行环境」抽象层**（Pi 是 `ExecutionEnv = FileSystem + Shell` 接口，我们是函数式直调）。
+  **取证**：`pi-env` 在 v1.1.0 里**依然零产品内消费者**。触发条件与 ENV-1..3 判据已写进清单。
+- **O-34 没有「副作用相位」协议**（Pi 是 `commit intent → effect → commit outcome`，且**明确承认**
+  "重开在意图相位意味着副作用可能已发生"；我们只有三态崩溃修复）。触发条件 + PHASE-1..3 已写进清单。
+- **O-35 提示词的演化不进会话日志**（Pi 把"具名提示段的增删/工具加减"记成可重放的增量；
+  我们每轮现构）。**这正是第 113/183 波两次踩坑的同源结构**（value 重建丢字段）。触发条件 + PROMPT-1..3 已写进清单。
