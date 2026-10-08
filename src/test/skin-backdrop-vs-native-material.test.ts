@@ -141,4 +141,38 @@ describe("第 185 波 · 皮肤毛玻璃 vs 原生材质档", () => {
       expect(d.important, `${d.sel} 的 ${d.decl} 必须带 !important（否则被原生材质档压掉 ⇒ 死白）`).toBe(true);
     }
   });
+
+  /**
+   * ★ 第 185 波（用户报「有的类型选择器多了个外边框；text 1 行对、3 行错」）：
+   * 梦幻皮肤给**每个** `pre` 描边，而多行代码块外面那层裸 `<pre>` 里包着 `.content-frame`
+   * （它自己已经有一条**同色**边框）⇒ 同色双层外框。单行走行内代码、没有这层 `<pre>`，
+   * 所以只有多行看得出来。真机取证：`.content-frame` 的祖先链里出现
+   * `pre.(no-class) [1px rgba(0,0,0,0.12)]`，而 1 行的卡片祖先链上没有任何边框元素。
+   */
+  it("SKIN-BLUR-5: 卡片内部的 `pre` 不许再描边（否则多行代码块出现同色双层外框）", () => {
+    const css = read("src/styles/skin-dream.css");
+    // 前提：那条"给所有 pre 描边"的规则必须在（否则这条判据守的是不存在的敌人）
+    expect(css, "梦幻皮肤给所有 pre 描边的规则不在了 —— 若有意删除，请连同本条一起重审").toMatch(
+      /\[data-skin="dream"\]\s+pre,\s*\n\[data-skin="dream"\]\s+\.code-block\s*\{[^}]*border:\s*1px solid/s,
+    );
+    // 修复：卡片内部的 pre 必须被显式去掉边框。
+    // ⚠️ 判据第一版是**裸正则**去匹配 `border: none` —— 结果被变异注释里同样的文字骗过
+    // （注释里写 `去掉 border: none` 就能让判据保持绿）。现在**先剥注释、再按声明解析**。
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\[data-skin="dream"\]\s+\.content-frame[^{]*pre[^{]*\{([^}]*)\}/s.exec(stripped);
+    expect(rule, "找不到「卡片内部 pre」那条规则").toBeTruthy();
+    const decls = (rule?.[1] ?? "")
+      .split(";")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => {
+        const i = d.indexOf(":");
+        return { prop: d.slice(0, i).trim(), value: d.slice(i + 1).trim() };
+      });
+    const borderDecl = decls.find((d) => d.prop === "border" || d.prop === "border-top");
+    expect(
+      borderDecl?.value,
+      `卡片内部的 pre 必须被显式去掉边框（它是重复描边：外层卡片已经画过一条同色边框）。实际声明：${JSON.stringify(decls)}`,
+    ).toBe("none");
+  });
 });
