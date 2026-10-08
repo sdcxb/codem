@@ -537,7 +537,7 @@ async fn read_text_window(
 /// 第 95 波：`rename_all = "camelCase"` —— 同 `TextWindow`。前端读 `totalLines` / `hasMore`，
 /// Rust 默认给的是 `total_lines` / `has_more` ⇒ `read` 工具那条
 /// "还有更多行，用 offset 继续读" 的提示**从来没出现过**（静默截断，模型不知道文件没读完）。
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct ReadFileLinesResult {
     /// The numbered text (lines with "N: " prefix, joined by \n).
@@ -611,73 +611,140 @@ async fn read_file_lines(
 }
 
 /// `read_file_lines` 的同步主体（可在 `cargo test` 里直接调用）。
+///
+/// ## 第 183 波：从"逐行解码"改成**字节扫描**（对齐 Pi 的 `BinaryReader.scanLines`）
+///
+/// 改前的实现走 `BufRead::lines()` —— 它对**每一行**都分配一个 `String` 并做一次 UTF-8
+/// 解码，只为拿到 `total_lines` / `dropped_chars` 这两个数。于是读一个 GB 级日志、
+/// 哪怕只要 100 行，也要付出**整文件解码 + 数百万次分配**的代价（真机上就是"读大日志卡住"）。
+///
+/// 改后只做**一遍字节扫描**（64 KiB 缓冲），不解码、不分配：
+///  · 行边界 = LF；
+///  · 字符数 = "非 UTF-8 续字节"的字节数（UTF-8 的每个字符恰好有 1 个非续字节）
+///    —— 不解码也能得到**精确**字符数，非 ASCII 同样正确；
+///  · 行尾 CR 归一：连续 CR 中只有**紧接 LF 的那一个**被丢掉，其余算内容
+///    （与 `lines()` 剥一个尾部 CR 的行为一致）；
+///  · 只有**落在返回窗口内**的行才被解码成 `String`（那才是模型真正要看的内容）。
+///
+/// 语义与改前**逐条对齐**（差分判据 `bounded_read_matches_the_full_file_reference` 守着）：
+///  · 以 LF 分行，行尾 CR 归一；
+///  · 结尾换行**不**多算一行；空文件 0 行；
+///  · `dropped_lines` / `dropped_chars` 覆盖"offset 跳过"与"limit/max_chars 截断"两部分；
+///  · 返回文本带 `N: ` 行号前缀（1-indexed）。
+///
+/// **一处有意的语义放宽**（记录在案）：改前只要文件里**任何**一行是非 UTF-8 就整次报错；
+/// 改后只对**返回窗口内**的行做 UTF-8 校验（窗口外按字节数计字符）。理由：窗口外的内容
+/// 模型根本看不到，为一个看不到的字节让整次读取失败，是"用稳定性换一个没人受益的严格"。
 fn read_file_lines_impl(
     path: &str,
     offset: usize,
     limit: usize,
     max_chars: usize,
 ) -> Result<ReadFileLinesResult, String> {
-    let path_cloned = path.to_string();
-    let result = (move || -> Result<(String, usize, bool, usize, usize), String> {
-        use std::io::{BufRead, BufReader};
-        use std::fs::File;
+    use std::fs::File;
+    use std::io::{BufReader, Read};
 
-        let file = File::open(&path_cloned).map_err(|e| e.to_string())?;
-        let reader = BufReader::new(file);
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
 
-        let mut parts: Vec<String> = Vec::new();
-        let mut total_lines = 0usize;
-        let mut total_chars = 0usize;
-        let mut has_more = false;
-        let mut collected = 0usize;
-        // 第 181 波（T-3）：未返回部分的精确计数（与 parts 在同一次遍历里产生）
-        let mut dropped_lines = 0usize;
-        let mut dropped_chars = 0usize;
+    /// UTF-8 续字节（10xxxxxx）不计入字符数 —— 每个字符恰好一个非续字节
+    #[inline]
+    fn is_continuation(b: u8) -> bool {
+        b & 0xC0 == 0x80
+    }
 
-        for (idx, line_result) in reader.lines().enumerate() {
-            let line_idx = idx + 1; // 1-indexed
-            total_lines = line_idx;
+    let mut parts: Vec<String> = Vec::new();
+    let mut total_lines = 0usize;
+    let mut has_more = false;
+    let mut collected = 0usize;
+    let mut total_chars = 0usize;
+    let mut dropped_lines = 0usize;
+    let mut dropped_chars = 0usize;
 
-            if line_idx < offset {
-                // 第 181 波：被 offset 跳过的行也算"没返回给模型"
-                dropped_lines += 1;
-                if let Ok(line) = &line_result {
-                    dropped_chars += line.chars().count();
-                }
-                continue; // skip lines before the requested offset
+    // 当前行状态
+    let mut line_buf: Vec<u8> = Vec::new();
+    let mut line_chars = 0usize;
+    let mut line_has_any = false;
+    let mut pending_crs = 0usize; // 已见到、但还没决定算不算内容的 CR 个数
+    let mut budget_exhausted = false;
+
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            if line_has_any {
+                // 文件以 CR 结尾（没有 LF）⇒ 这些 CR 是内容
+                line_chars += pending_crs;
+                pending_crs = 0;
+                total_lines += 1;
+                settle_line(
+                    &line_buf,
+                    line_chars,
+                    total_lines,
+                    offset,
+                    limit,
+                    max_chars,
+                    &mut budget_exhausted,
+                    &mut parts,
+                    &mut collected,
+                    &mut total_chars,
+                    &mut dropped_lines,
+                    &mut dropped_chars,
+                    &mut has_more,
+                )?;
             }
-
-            if collected >= limit {
-                has_more = true;
-                dropped_lines += 1;
-                if let Ok(line) = &line_result {
-                    dropped_chars += line.chars().count();
-                }
-                continue;
-            }
-
-            let line = line_result.map_err(|e| e.to_string())?;
-            let numbered = format!("{}: {}", line_idx, line);
-
-            if total_chars + numbered.len() > max_chars {
-                has_more = true;
-                dropped_lines += 1;
-                dropped_chars += line.chars().count();
-                continue;
-            }
-
-            total_chars += numbered.len() + 1; // +1 for \n
-            parts.push(numbered);
-            collected += 1;
+            break;
         }
+        for &b in &buf[..n] {
+            if b == b'\n' {
+                // 行尾 CR 归一：紧接 LF 的那个 CR 丢掉，之前的是内容
+                if pending_crs > 0 {
+                    line_chars += pending_crs - 1;
+                    pending_crs = 0;
+                }
+                total_lines += 1;
+                settle_line(
+                    &line_buf,
+                    line_chars,
+                    total_lines,
+                    offset,
+                    limit,
+                    max_chars,
+                    &mut budget_exhausted,
+                    &mut parts,
+                    &mut collected,
+                    &mut total_chars,
+                    &mut dropped_lines,
+                    &mut dropped_chars,
+                    &mut has_more,
+                )?;
+                line_buf.clear();
+                line_chars = 0;
+                line_has_any = false;
+                pending_crs = 0;
+            } else if b == b'\r' {
+                pending_crs += 1;
+                line_has_any = true;
+                if in_window(total_lines + 1, offset, collected, limit, budget_exhausted) {
+                    line_buf.push(b);
+                }
+            } else {
+                if pending_crs > 0 {
+                    line_chars += pending_crs; // 这些 CR 后面不是 LF ⇒ 是内容
+                    pending_crs = 0;
+                }
+                if !is_continuation(b) {
+                    line_chars += 1;
+                }
+                line_has_any = true;
+                if in_window(total_lines + 1, offset, collected, limit, budget_exhausted) {
+                    line_buf.push(b);
+                }
+            }
+        }
+    }
 
-        let text = parts.join("\n");
-        // 第 181 波（T-3）：计数与 text 出自**同一次遍历** ⇒ 一定自洽
-        Ok((text, total_lines, has_more, dropped_lines, dropped_chars))
-    })()?;
-
-    let (text, total_lines, has_more, dropped_lines, dropped_chars) = result;
-
+    let text = parts.join("\n");
     Ok(ReadFileLinesResult {
         text,
         total_lines,
@@ -686,6 +753,65 @@ fn read_file_lines_impl(
         dropped_chars,
     })
 }
+
+/// 这一行会不会进返回窗口（只用来决定"要不要把字节存进 line_buf"）。
+#[inline]
+fn in_window(line_no: usize, offset: usize, collected: usize, limit: usize, exhausted: bool) -> bool {
+    line_no >= offset && collected < limit && !exhausted
+}
+
+/// 结算一行：进返回窗口，或计入丢弃。
+///
+/// 判断顺序与改前**逐条一致**：先看 offset，再看 limit，最后看 max_chars 预算。
+#[allow(clippy::too_many_arguments)]
+fn settle_line(
+    line_buf: &[u8],
+    line_chars: usize,
+    line_idx: usize,
+    offset: usize,
+    limit: usize,
+    max_chars: usize,
+    budget_exhausted: &mut bool,
+    parts: &mut Vec<String>,
+    collected: &mut usize,
+    total_chars: &mut usize,
+    dropped_lines: &mut usize,
+    dropped_chars: &mut usize,
+    has_more: &mut bool,
+) -> Result<(), String> {
+    if line_idx < offset {
+        *dropped_lines += 1;
+        *dropped_chars += line_chars;
+        return Ok(());
+    }
+    if *collected >= limit || *budget_exhausted {
+        *has_more = true;
+        *dropped_lines += 1;
+        *dropped_chars += line_chars;
+        return Ok(());
+    }
+    // 行尾 CR 已在计数侧归一，但 line_buf 里还留着它 ⇒ 解码前剥掉（与 lines() 一致）
+    let bytes = if line_buf.last() == Some(&b'\r') {
+        &line_buf[..line_buf.len() - 1]
+    } else {
+        line_buf
+    };
+    let line = String::from_utf8(bytes.to_vec())
+        .map_err(|e| format!("文件包含非 UTF-8 内容（第 {} 行）：{}", line_idx, e))?;
+    let numbered = format!("{}: {}", line_idx, line);
+    if *total_chars + numbered.len() > max_chars {
+        *has_more = true;
+        *dropped_lines += 1;
+        *dropped_chars += line_chars;
+        *budget_exhausted = true;
+        return Ok(());
+    }
+    *total_chars += numbered.len() + 1;
+    parts.push(numbered);
+    *collected += 1;
+    Ok(())
+}
+
 
 #[tauri::command]
 async fn read_file(path: String, encoding: Option<String>) -> Result<String, String> {
@@ -4242,5 +4368,48 @@ mod append_file_tests {
             }
         }
         assert!(checked >= 100, "差分规模太小（{checked} 组）—— 判据会变成摆设");
+    }
+}
+
+/// 第 183 波（有界读改字节扫描）的 UTF-8 边界判据。
+///
+/// 字节扫描版**只对返回窗口**做 UTF-8 校验 ⇒ 窗口内严格、窗口外宽容。
+/// 这两条一起把"有意放宽的那一条"钉住，免得后人以为漏了校验。
+#[cfg(test)]
+mod bounded_read_utf8_tests {
+    use super::*;
+
+    /// 判据 5：**窗口内**的非 UTF-8 必须报错（与改前一致）。
+    #[test]
+    fn invalid_utf8_inside_the_window_still_errors() {
+        let dir = std::env::temp_dir().join(format!("codem-utf8-{}-a", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bad.txt");
+        let mut bytes = b"bad \xFF line\ngood line\n".to_vec();
+        bytes.extend_from_slice(b"third\n");
+        std::fs::write(&path, &bytes).unwrap();
+
+        let err = read_file_lines_impl(path.to_str().unwrap(), 1, 10, 100_000).unwrap_err();
+        assert!(err.contains("非 UTF-8"), "窗口内非法字节必须报错：{err}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 判据 6：**窗口外**的非 UTF-8 **不再**让整次读取失败（有意放宽，见实现文档）。
+    #[test]
+    fn invalid_utf8_outside_the_window_is_tolerated() {
+        let dir = std::env::temp_dir().join(format!("codem-utf8-{}-b", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tailbad.txt");
+        let mut bytes = b"good one\ngood two\n".to_vec();
+        bytes.extend_from_slice(b"bad \xFF tail\n");
+        std::fs::write(&path, &bytes).unwrap();
+
+        let got = read_file_lines_impl(path.to_str().unwrap(), 1, 2, 100_000)
+            .expect("窗口外非法字节不该让读取失败");
+        assert_eq!(got.total_lines, 3, "总行数照常统计");
+        assert_eq!(got.text, "1: good one\n2: good two");
+        assert_eq!(got.dropped_lines, 1, "非法字节那行计入丢弃");
+        assert!(got.has_more, "后面还有行 ⇒ has_more");
+        let _ = std::fs::remove_file(&path);
     }
 }
