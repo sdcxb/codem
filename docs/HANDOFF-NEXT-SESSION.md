@@ -3613,13 +3613,37 @@ legacy 路径（拿不到总数）用 `paged` —— **宁可说得少，也不�
 - 变异自证：T-1（判定表）、有界读 2/2、诊断 2/2、MCP resources 4/4 —— 全部咬住；
 - 提交：`1d399805`（T-1）→ `cc368bd5`（有界读）→ `dd5c9770`（诊断）→ `196b147a`（MCP resources）。
 
-### 六、尚未做真机验证的一项（如实记账 ✗）
+### 六、MCP resources 的真机端到端验证 —— **已完成** ✅（本节原为"尚未做"，本轮补齐）
 
-**MCP resources 的端到端真机验证**没做（其余三项都在真机/差分口径下量过）。
-原因：需要一个**真的声明 `resources` 能力**的 MCP 服务器，而现有探针服务器不提供；
-驱动模型去调 `read_mcp_resource` 又需要一轮真实 LLM 请求。
-**下次的现成做法**：把探针服务器扩成声明 `resources` 并实现 `resources/list` + `resources/read`
-（探针脚本曾删过，按 `docs/HANDOFF-NEXT-SESSION.md` 第 182 波那段里的形状重建即可），
-装配置 → 启动（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`）→
-连接探针 → 让模型调 `list_mcp_resources` → 看返回。
-**在此之前不要声称它真机可用** ✓。
+**做法**：写一个**声明 `resources` 能力**的探针 MCP 服务器（`initialize` 的 capabilities 里带
+`resources: {}` —— 那是 `serversWithResources()` 的唯一判据），并让它**把收到的每个 method
+追加到日志文件**。这样"客户端到底有没有发 resources/*"就有了**客观读数**，
+不依赖 UI、也不依赖模型的自述。
+
+**读数（装机版 1.16.298 + CDP 驱动真实模型）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 面板连接探针 | `已连接 / 工具:probe_noop`（能力协商成功） |
+| 让模型「调用 list_mcp_resources」 | 聊天区：**1 个工具调用 1/1**；探针日志：`method=resources/list id=3` ⇒ **客户端真的发了** |
+| 让模型读两个资源（文本 + 二进制） | 探针日志：`resources/read id=4`、`resources/read id=5`；模型报告第一次拿到 `# Probe resource\n\n真机验证用内容。`，第二次输出 **`[binary resource: application/octet-stream, 4096 base64 chars — not inlined]`** ⇒ **4096 个 base64 字符没有被灌进上下文**（真机上验证了这条设计） |
+
+⇒ **能力门控 → 工具注册 → 模型调用 → 协议请求 → 内容回传**整条链在真机上通。
+（`list_mcp_resource_templates` 没单独在真机上调过：它与另两个共用同一条 sync 与协议路径，
+单测 MCPR-5 守着；**不要**因此声称它在真机上验证过 ✓。）
+
+### 七、顺带复验的第 181 波"进程树回收"（新构建）+ 一个新读数
+
+- **优雅退出（产品的 `quit_app` 路径）**：退出前 `node`(38000 探针) + 其子进程 `PING`(20972) 都在，
+  `quit_app` 之后**两者都消失** ⇒ `kill_all_mcp_processes` 在新构建上仍然生效 ✓。
+- **硬杀（`Stop-Process -Force`，等价于任务管理器结束进程）**：`RunEvent::Exit` **不会跑**
+  ⇒ MCP 子进程**会成为孤儿**（本轮实测：探针 `node` 活下来了）。
+  这不是本轮引入的缺陷 —— 它正是 AGENTS.md §4 里记的遗留项
+  **「Job Object `KILL_ON_JOB_CLOSE`」**：只有把 MCP 子进程放进 Job Object 并在句柄关闭时
+  由内核收掉，才能覆盖"硬杀/崩溃"这条路径。**本轮不做**（要动进程创建与作业对象，
+  风险大于收益），但**把它从"未验证"提升为"已定性的已知限制"** ✓。
+
+### 八、现场还原
+
+`codem-mcp-servers` 写回 `[]`（用户原始状态就是"没有这个键"）、探针目录与全部临时脚本已清、
+无残留 `PING`/`node` 探针进程。
