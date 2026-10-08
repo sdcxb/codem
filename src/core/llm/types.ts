@@ -33,6 +33,15 @@ export interface ModelConfig {
   dynamic?: boolean;
 }
 
+/**
+ * 思考强度档位（第 184 波 G10：放宽到含 `xhigh` / `max`）。
+ *
+ * 上游 Pi v1.1.0 支持到 `xhigh` / `max`（自适应思考）；我们原来只有 low/medium/high
+ * ⇒ **无法表达**更高档位（能力被锁在上限之下）。注意各家接受的集合不同，
+ * 发送前要经 `reasoning-effort.ts` 按族钳制。
+ */
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface LLMRequest {
   model: string;
   messages: LLMMessage[];
@@ -42,7 +51,7 @@ export interface LLMRequest {
   stream?: boolean;
   abortSignal?: AbortSignal;
   /** Reasoning effort level (E2): controls how much the model "thinks" before responding */
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: ReasoningEffort;
   /** P-OPT5: Request purpose — used to add provider-specific headers (e.g. compaction) */
   purpose?: "conversation" | "compaction" | "session-title";
 }

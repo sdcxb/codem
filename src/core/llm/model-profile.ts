@@ -28,7 +28,7 @@ export type TaskSlot =
 export interface ModelSlotConfig {
   provider: string;        // Provider id: "openai", "mimo", "deepseek", etc.
   model: string;           // Model id: "gpt-4o-mini", "mimo-v2-flash", etc.
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
   temperature?: number;
   maxTokens?: number;
 }

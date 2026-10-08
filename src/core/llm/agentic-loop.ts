@@ -268,7 +268,7 @@ export interface LoopConfig {
   // ===== Phase 0 新增字段（以下字段暂不使用，为后续 Phase 预留） =====
 
   /** (E2) Reasoning effort level passed to LLMRequest */
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 
   /** (F1.2) Called after context compaction completes, for triggering memory extraction */
   onCompactionComplete?: () => void;
@@ -1353,6 +1353,15 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     llmMessages: any[];
   } | null = null;
 
+  /**
+   * ★ 第 184 波（G7）：**同一轮里刚读到的那份原始消息**（供相邻调用复用，避免第二次全量读）。
+   *
+   * 生命周期极短：每次 `buildMessages` 读完 `listMessages` 就覆盖它，绝不长期持有
+   * （防止它变成"消息的第二份真相"）。需求来自实测：一轮里
+   * `buildMessages` 与 `checkHasDocumentAttachment` 各做一次全量读 + 全量排序。
+   */
+  private _lastRawMessagesForIteration: any[] | null = null;
+
   // F3.6: Retrospective tracking — counts repeated errors to suggest AGENTS.md updates
   private retrospectiveErrorCount = 0;
   private retrospectiveSuggested = false;
@@ -2320,6 +2329,14 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       const { buildTimeContext } = await import("./time-context");
       const timeContextMessage = buildTimeContext(sessionId, this.state.iteration, 1, {
         refreshIntervalMs: TIME_CONTEXT_REFRESH_INTERVAL_MS,
+        /**
+         * ★ 第 184 波（G7）：把**这一轮已经读到的**消息列表交给它。
+         *
+         * 实测（判据 `loop-message-read-dedupe.test.ts` 的诊断读数）：不传的话，
+         * 同一轮里 `buildMessages` 与 `findLastVisibleMessageTime` 会**各做一次全量读**
+         * （内存镜像 merge + 全量排序 + map）—— 每个迭代都发生的纯重复工作。
+         */
+        preloadedMessages: this._lastRawMessagesForIteration ?? undefined,
       });
       if (timeContextMessage) {
         trailingTurnContext += timeContextMessage;
@@ -4992,6 +5009,19 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     // messages that made the LLM re-answer previous questions.
     let messages: any[];
     messages = this.getMessageStorage().listMessages(sessionId);
+    /**
+     * ★ 第 184 波（G7）：把**这一轮已经读到的原始消息**留一手。
+     *
+     * 缺陷形态：同一轮里 `buildMessages()` 读过一次全量消息，紧接着
+     * `checkHasDocumentAttachment(sessionId)` **又读了一次全量**（`listMessages` 是
+     * "内存镜像 merge + 全量排序 + map"，见 `storage/message.ts:548-631`）。
+     * 一轮两次全量读，纯属重复工作 —— 而这条路径在**每一个迭代**上都会走。
+     *
+     * 这里存下刚读到的这份，`checkHasDocumentAttachment` 优先复用它（只在没有缓存时才自己读）。
+     * ⚠️ 只缓存"本次调用刚从存储读到的"那一份，并且每次 `listMessages` 之后立刻覆盖 ——
+     * 绝不长期持有，避免变成"陈旧消息"的第二份真相。
+     */
+    this._lastRawMessagesForIteration = messages;
     phase("list");
     // Filter out soft-deleted (hidden) messages — these are kept in DB for
     // history viewing but must NOT be sent to the LLM.
@@ -5332,7 +5362,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
  */
 private checkHasDocumentAttachment(sessionId: string): boolean {
   try {
-    const messages = this.getMessageStorage().listMessages(sessionId);
+    /**
+     * ★ 第 184 波（G7）：优先复用**同一轮** `buildMessages` 刚读到的那份原始消息。
+     *
+     * 该函数与 `buildMessages` 在同一轮里相邻调用，读的是**同一份**数据；
+     * 各自全量 `listMessages()` 一次是纯粹的重复工作（每迭代都发生）。
+     * 没有缓存时才自己读 —— 行为不变，只是少读一次。
+     */
+    const messages = this._lastRawMessagesForIteration ?? this.getMessageStorage().listMessages(sessionId);
     for (const msg of messages) {
       // 1. Check attachments array (persisted in DB)
       if (msg.attachments && msg.attachments.length > 0) {

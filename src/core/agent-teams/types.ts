@@ -61,7 +61,7 @@ export interface TeamMember {
   /** LLM 路由快照：显式指定时使用；缺省 = 继承队长当前路由 */
   provider?: string;
   model?: string;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
   addedAt: number;
 }
 

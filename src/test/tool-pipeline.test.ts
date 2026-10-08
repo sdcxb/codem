@@ -340,4 +340,71 @@ describe("P0-2: Tool Pipeline", () => {
       expect(events.filter(e => e.layer === "guard").length).toBe(0);
     });
   });
+
+  /**
+   * ★ 第 184 波（G3）：**工具执行耗时必须被测出来并挂到结果上**。
+   *
+   * 改前 UI 三个读端（StatsLine / MessageBubble / ToolCallCard）一直在读
+   * `toolCall.metadata.duration`，而**全仓没有任何地方写它** ⇒ 界面耗时永远为空、
+   * 重载后必然也没有（从来没落库）。上游 Pi v1.1.0 修的就是这条（`#10549`）。
+   *
+   * 口径与上游一致：**只包住 `execute()` 这一次调用，排除 hooks**（上游有判据断言
+   * "hook 里 sleep 100ms 而 durationMs < 100"）。
+   */
+  describe("DUR-1..3（第 184 波 · 工具耗时）", () => {
+    it("DUR-1: 成功执行后 result.metadata.duration 是有限数（单调钟测得的毫秒）", async () => {
+      const slowHandler = async (name: string, args: Record<string, unknown>, c: ToolExecutorContext) => {
+        await new Promise((r) => setTimeout(r, 30));
+        return { id: c.messageId, name, input: args, output: "ok", status: "completed" as const };
+      };
+      const { result } = await pipeline.execute("read", { path: "/x" }, ctx, slowHandler as never);
+      const d = (result.metadata as any)?.duration;
+      expect(typeof d, "必须有 duration").toBe("number");
+      expect(Number.isFinite(d), "必须是有限数").toBe(true);
+      expect(d, `耗时应当 >= 30ms（实际 ${d}）`).toBeGreaterThanOrEqual(25);
+    });
+
+    it("DUR-2: **排除 hooks** —— pre/post 中间件里 sleep 不进食 `duration`（否则性能画像失真）", async () => {
+      const preSleep: PreExecuteMiddleware = {
+        name: "slow-pre",
+        async execute() {
+          await new Promise((r) => setTimeout(r, 80));
+          return { action: "proceed" };
+        },
+      };
+      const postSleep: PostExecuteMiddleware = {
+        name: "slow-post",
+        async execute(_n, _a, res) {
+          await new Promise((r) => setTimeout(r, 80));
+          return { action: "accept", result: res } as PostExecuteResult;
+        },
+      };
+      pipeline.registerPreExecute(preSleep);
+      pipeline.registerPostExecute(postSleep);
+
+      const fastHandler = async (name: string, args: Record<string, unknown>, c: ToolExecutorContext) => ({
+        id: c.messageId,
+        name,
+        input: args,
+        output: "ok",
+        status: "completed" as const,
+      });
+      const { result } = await pipeline.execute("read", { path: "/x" }, ctx, fastHandler as never);
+      const d = (result.metadata as any)?.duration;
+      expect(typeof d).toBe("number");
+      expect(d, `hook 的 160ms 不许算进去（实际 ${d}ms）`).toBeLessThan(80);
+    });
+
+    it("DUR-3: 抛错/中止也算耗时（跑 30s 才失败 与 立刻失败 是不同诊断）", async () => {
+      const failingHandler = async () => {
+        await new Promise((r) => setTimeout(r, 30));
+        throw new Error("boom");
+      };
+      const { result } = await pipeline.execute("read", { path: "/x" }, ctx, failingHandler as never);
+      expect(result.status).toBe("error");
+      const d = (result.metadata as any)?.duration;
+      expect(typeof d, "失败也要有 duration").toBe("number");
+      expect(d, "失败路径的耗时同样要被测出来").toBeGreaterThanOrEqual(25);
+    });
+  });
 });

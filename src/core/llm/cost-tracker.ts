@@ -4,12 +4,61 @@ import { getTelemetry } from "../telemetry/telemetry";
 import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Cost Types ==========
+/**
+ * 单个模型的计价率。
+ *
+ * ★ 第 184 波（G4）：新增 **`tiers`（提示长度分档定价）**，对标 Pi v1.1.0 的
+ * `ModelCostTier { inputTokensAbove }`（`ai/src/models.ts:1200-1209`）。
+ *
+ * ## 缺陷形态（改前）
+ *
+ * 只有一组平费率 ⇒ 像 Claude Haiku 5.5、Gemini 3.1 Pro 这类"**超过 100k 输入后整个请求
+ * 按更高档计费**"的模型会被**系统性少算**（上游的注释原话：
+ * "Prompts over 100k input tokens are billed at 5x for the whole request"）。
+ *
+ * ## 口径（与上游逐条对齐）
+ *
+ * · 档位判据是**该请求的输入总量**（未命中输入 + 缓存命中输入 + 缓存写入）；
+ * · 命中的是**最高的那个满足 `inputTokensAbove` 的档**；
+ * · 该档费率适用于**整个请求**（不是分段累进）；
+ * · 没有 `tiers` 或都不满足 ⇒ 退回平费率。
+ */
 export interface ModelCost {
   modelId: string;
   provider: string;
   inputCostPer1k: number;
   outputCostPer1k: number;
   cacheCostPer1k?: number;
+  /** 分档费率：命中"输入总量 > inputTokensAbove"的**最高**档（请求级，不分段） */
+  tiers?: Array<{
+    inputTokensAbove: number;
+    inputCostPer1k: number;
+    outputCostPer1k: number;
+    cacheCostPer1k?: number;
+  }>;
+}
+
+/**
+ * ★ 第 184 波（G4）：**按输入总量挑费率档**（纯函数，便于直接判据）。
+ *
+ * 口径与上游 Pi `calculateCost`（`ai/src/models.ts:1200-1209`）逐条对齐：
+ * · 判据是**该请求的输入总量**（未命中输入 + 缓存命中输入）；
+ * · 取"输入总量 > `inputTokensAbove`"的**最高档**；
+ * · 该档费率适用于**整个请求**（不是分段累进）；
+ * · 没有档位或都不满足 ⇒ 退回平费率。
+ *
+ * 抽成纯函数是为了让判据能**直接喂合成的 `ModelCost`** —— 我们**不往产品数据里编价格**
+ * （编错价格比"标成未知"更糟：界面会显示一个自信的错数）。
+ */
+export function pickCostRates(
+  costInfo: ModelCost,
+  totalInputTokens: number,
+): { inputCostPer1k: number; outputCostPer1k: number; cacheCostPer1k?: number } {
+  if (!costInfo.tiers || costInfo.tiers.length === 0) return costInfo;
+  const matched = [...costInfo.tiers]
+    .sort((a, b) => b.inputTokensAbove - a.inputTokensAbove)
+    .find((t) => totalInputTokens > t.inputTokensAbove);
+  return matched ?? costInfo;
 }
 
 export interface UsageRecord {
@@ -27,6 +76,14 @@ export interface UsageRecord {
   toolCalls: number;
   success: boolean;
   error?: string;
+  /**
+   * ★ 第 184 波（G4）：这个模型**没有价目** —— `cost` 里的 0 是「不知道」，不是「免费」。
+   *
+   * 为什么要有这个字段：改前表外模型只留一个 0，界面上看起来免费、
+   * `checkLimits`（默认 $5/会话、$20/天）也永远不触发 ⇒ 成本闸门形同虚设。
+   * 现在「未知」是一件**可被判据与界面读到的事实**（数字仍然不编）。
+   */
+  costUnknown?: boolean;
 }
 
 export interface SessionCost {
@@ -37,6 +94,15 @@ export interface SessionCost {
   totalDuration: number;
   apiCalls: number;
   toolCalls: number;
+  /**
+   * 第 184 波（G4）：费用**未知**的调用次数（表外模型）。
+   *
+   * 为什么必须单独计数：`totalCost` 对这些调用只累加 0，于是 `checkLimits`
+   * （默认 $5/会话、$20/天）在这些调用上**不可能触发** —— 用户看到"花得很少"，
+   * 而真相是"有一部分算不出来"。有了这个计数，界面/日志才能如实说
+   * 「本会话有 N 次调用的费用未知，成本上限可能未生效」。
+   */
+  uncostedCalls: number;
   modelBreakdown: Record<string, {
     cost: number;
     inputTokens: number;
@@ -122,6 +188,8 @@ const MODEL_COSTS: Record<string, ModelCost> = {
 export class CostTracker {
   private config: CostTrackerConfig;
   private records: UsageRecord[] = [];
+  /** 第 184 波（G4）：见过的**无价目**模型（价格未知 ≠ 成本为 0） */
+  private uncostedModels = new Set<string>();
   private sessionCosts: Map<string, SessionCost> = new Map();
 
   constructor(config?: Partial<CostTrackerConfig>) {
@@ -144,7 +212,17 @@ export class CostTracker {
       const parsed = getSettingJSON<any>(this.config.storageKey, null);
       if (parsed) {
         this.records = parsed.records || [];
-        this.sessionCosts = new Map(parsed.sessionCosts || []);
+        /**
+         * ★ 第 184 波（G4）：**旧数据没有 `uncostedCalls`**（这个字段是本波新增的）——
+         * 从 localStorage 恢复时必须补 0，否则 `undefined++` 会变成 `NaN`，
+         * 而 NaN 会一路污染"本会话费用未知的调用次数"这个读数（界面上显示 NaN）。
+         * 这类"新增必填字段 + 反序列化旧数据"的组合是本仓库踩过的坑，
+         * 所以补默认值这一步在这里显式做，并有判据（COST-MIG-1）。
+         */
+        const restored = (parsed.sessionCosts || []) as Array<[string, any]>;
+        this.sessionCosts = new Map(
+          restored.map(([id, value]) => [id, { ...value, uncostedCalls: Number(value?.uncostedCalls) || 0 }]),
+        );
       }
     } catch (e) { console.warn('[cost-tracker.ts]', e) }
   }
@@ -197,6 +275,11 @@ export class CostTracker {
       error: params.error,
     };
 
+    /** 第 184 波（G4）：表外模型必须**显式标记**，不许让 0 被读成「免费」 */
+    if (!this.isCostKnown(params.model)) {
+      (record as UsageRecord & { costUnknown?: boolean }).costUnknown = true;
+    }
+
     this.records.push(record);
 
     // R3-Audit C2: Forward to TelemetryCollector for unified logging
@@ -226,35 +309,77 @@ export class CostTracker {
     return record;
   }
 
-  /** Calculate cost for a model */
+  /**
+   * Calculate cost for a model.
+   *
+   * ★ 第 184 波（G4）：
+   * · **支持提示长度分档**（见 `ModelCost.tiers`）——档位判据是"该请求的输入总量"，
+   *   命中的最高档费率适用于整个请求；
+   * · 表外模型**仍然返回 0**（我们**不编价格**），但调用方必须用 `isCostKnown()`
+   *   区分"真的是 0 成本"与"我们不知道价格" —— 见 `recordUsage` 里的 `costUnknown`。
+   */
   calculateCost(model: string, usage: TokenUsage): number {
-    // Try exact match first
-    let costInfo = MODEL_COSTS[model];
-
-    // Try prefix match for model variants (e.g. deepseek-chat -> deepseek-chat)
-    if (!costInfo) {
-      const keys = Object.keys(MODEL_COSTS);
-      for (const key of keys) {
-        if (model.startsWith(key) || key.startsWith(model.split("-").slice(0, 2).join("-"))) {
-          costInfo = MODEL_COSTS[key];
-          break;
-        }
-      }
-    }
-
+    const costInfo = this.resolveCostInfo(model);
     if (!costInfo) return 0;
 
     // 缓存计价：未命中输入按 inputCostPer1k，命中输入按 cacheCostPer1k
     // （DeepSeek 缓存命中输入显著更便宜——成本精确性对标 dsh billed input 口径）
     const uncachedInput = Math.max(0, usage.promptTokens - (usage.cacheHitTokens ?? 0));
     const cacheRead = usage.cacheHitTokens ?? 0;
-    const cacheRate = costInfo.cacheCostPer1k ?? costInfo.inputCostPer1k;
+    const totalInput = uncachedInput + cacheRead;
+
+    /**
+     * 分档（请求级）：取**输入总量**满足的最高档。见 `pickCostRates` 的注释与判据。
+     */
+    const rates = pickCostRates(costInfo, totalInput);
+
+    const cacheRate = rates.cacheCostPer1k ?? rates.inputCostPer1k;
     const inputCost =
-      (uncachedInput / 1000) * costInfo.inputCostPer1k +
+      (uncachedInput / 1000) * rates.inputCostPer1k +
       (cacheRead / 1000) * cacheRate;
-    const outputCost = (usage.completionTokens / 1000) * costInfo.outputCostPer1k;
+    const outputCost = (usage.completionTokens / 1000) * rates.outputCostPer1k;
 
     return inputCost + outputCost;
+  }
+
+  /** 解析模型对应的计价率（含前缀匹配）；表外返回 null */
+  private resolveCostInfo(model: string): ModelCost | null {
+    const exact = MODEL_COSTS[model];
+    if (exact) return exact;
+    // Try prefix match for model variants (e.g. deepseek-chat -> deepseek-chat)
+    const keys = Object.keys(MODEL_COSTS);
+    for (const key of keys) {
+      if (model.startsWith(key) || key.startsWith(model.split("-").slice(0, 2).join("-"))) {
+        return MODEL_COSTS[key];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * ★ 第 184 波（G4）：**这个模型的价格我们到底知不知道**。
+   *
+   * 为什么必须有这个判据：改前表外模型 `calculateCost` 返回 `0`，于是
+   * · 用量面板显示 **$0**（看起来"免费"）；
+   * · `checkLimits`（默认 $5/会话、$20/天）**永远不触发** ⇒ 成本闸门形同虚设。
+   *
+   * 数字仍然是 0（我们不编价格），但"未知"这个事实必须**可被判据与界面读到**。
+   * 见过的表外模型会记进 `uncostedModels`，供一次性提醒与诊断使用。
+   */
+  isCostKnown(model: string): boolean {
+    const known = this.resolveCostInfo(model) !== null;
+    if (!known && model) this.uncostedModels.add(model);
+    return known;
+  }
+
+  /** 至今见过的**无价目**模型（诊断/提醒用；去重） */
+  getUncostedModels(): string[] {
+    return [...this.uncostedModels];
+  }
+
+  /** 清空"见过无价目模型"的记录（测试用） */
+  clearUncostedModels(): void {
+    this.uncostedModels.clear();
   }
 
   /** Update session cost */
@@ -270,6 +395,7 @@ export class CostTracker {
         totalDuration: 0,
         apiCalls: 0,
         toolCalls: 0,
+        uncostedCalls: 0,
         modelBreakdown: {},
       };
       this.sessionCosts.set(record.sessionId, sessionCost);
@@ -281,6 +407,8 @@ export class CostTracker {
     sessionCost.totalDuration += record.duration;
     sessionCost.apiCalls++;
     sessionCost.toolCalls += record.toolCalls;
+    // 第 184 波（G4）：费用未知的调用要计数 —— 它让"上限可能未生效"变成可读事实
+    if (record.costUnknown) sessionCost.uncostedCalls++;
 
     // Update model breakdown
     if (!sessionCost.modelBreakdown[record.model]) {

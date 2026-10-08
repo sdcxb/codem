@@ -253,8 +253,27 @@ export class MCPClient {
 
   /** 第 183 波：`resources/list`（失败时把原因说清，不静默返回空表） */
   async listResources(serverName: string): Promise<any[]> {
-    const result = await this.sendRequest(serverName, "resources/list", {});
-    return Array.isArray(result?.resources) ? result.resources : [];
+    return (await this.listResourcesPage(serverName)).resources;
+  }
+
+  /**
+   * MCPR-10（第 184 波）：`resources/list` 的**整页**（含 `nextCursor`）—— 分页续页的入口。
+   *
+   * 判据：MCP 规范里 `resources/list` 的返回是
+   * `{ resources: [...], nextCursor?: string }`，`cursor` 是**不透明**的续页令牌
+   * （服务器自己产生与解释，我们只做透传，绝不解析/改写它）。
+   *
+   * 为什么必须有：资源多的服务器一次只给一页。旧实现把 `nextCursor` 丢掉 ⇒ 调用方
+   * 只看到第一页、且**无从知道还有更多**（"看不到"与"没有了"变成同一件事）。
+   * 现在整页透传，由 `read_mcp_resource` 之外的那层（`mcp-resources-tool.ts`）决定怎么呈现。
+   *
+   * 传 `cursor` 后 `nextCursor` 通常只出现在最后一页之前 —— 到末页就没有这个字段了。
+   */
+  async listResourcesPage(serverName: string, cursor?: string): Promise<{ resources: any[]; nextCursor?: string }> {
+    const result = await this.sendRequest(serverName, "resources/list", cursor ? { cursor } : {});
+    const resources = Array.isArray(result?.resources) ? result.resources : [];
+    const nextCursor = typeof result?.nextCursor === "string" && result.nextCursor ? result.nextCursor : undefined;
+    return { resources, nextCursor };
   }
 
   /** 第 183 波：`resources/templates/list` */
@@ -593,32 +612,62 @@ export class MCPRegistry {
     await this.client.disconnect(serverName);
   }
 
-  /** Connect to all configured servers */
-  async connectAll(): Promise<MCPServerStatus[]> {
-    const statuses: MCPServerStatus[] = [];
+  /**
+   * Connect to all configured servers —— **并发**发起，并且**逐条**把结果交给调用方
+   * （第 184 波，G8，对标上游 Pi v1.1.0 的同一处修复）。
+   *
+   * ## 缺陷（改前）
+   *
+   * 改前是 `for (const config of this.configs) await this.client.connect(config)`：
+   * **一条连完才发下一条**。而单次 stdio 请求的超时是 30s（`src-tauri/src/lib.rs`），
+   * 一次连接还要做 handshake + `tools/list` 两个往返 ⇒ 一台挂住的服务器会把
+   * **它后面所有**服务器一起拖住（累计可达 ~60s）。再叠上界面那半边
+   * （`McpManager.handleConnectAll` 等齐了才一次性 `setStatuses`），用户全程看到的是
+   * "所有服务器都还是未连接"——既没有进展，也看不出是哪一台在拖后腿。
+   *
+   * ## 现在
+   *
+   * 1. 所有服务器**同时**发起（`Promise.all` 各自独立的 async 任务，谁都不等谁）；
+   * 2. 每条**一有结果**就 `onResult(status)` —— 调用方据此逐条更新界面上那一行，
+   *    不必等齐（面板把"还在连"的那条显示为「连接中…」）；
+   * 3. **错误隔离原样保留**：`this.connect()` 自己就把异常收成
+   *    `{ connected: false, error }`（第 84 波起如此），这里再兜一层，
+   *    所以一条炸了不会掀翻整批，也不会让其他服务器拿不到结果。
+   *
+   * 第 181 波的代次/丢弃逻辑在 `MCPClient.connect()` 内部（`isStale` / `abandonStaleConnection`），
+   * 本方法不碰它：并发发起并不改变"每一次连接各自判自己是否已过期"这件事。
+   *
+   * @param onResult 可选：每条一有结果就回调一次（**不保证顺序**，与谁先回来一致）
+   */
+  async connectAll(onResult?: (status: MCPServerStatus) => void): Promise<MCPServerStatus[]> {
+    // 快照一份：并发期间若有人增删配置（`addServer` / `removeServer`），本批不跟着变
+    const configs = [...this.configs];
 
-    for (const config of this.configs) {
-      try {
-        await this.client.connect(config);
-        const connection = this.client.getStatus(config.name);
-        statuses.push({
-          name: config.name,
-          connected: connection?.status === "connected",
-          tools: connection?.tools || [],
-          error: connection?.error,
-          lastConnected: connection?.status === "connected" ? Date.now() : undefined,
-        });
-      } catch (error: any) {
-        statuses.push({
-          name: config.name,
-          connected: false,
-          tools: [],
-          error: error.message,
-        });
-      }
-    }
-
-    return statuses;
+    return Promise.all(
+      configs.map(async (config) => {
+        let status: MCPServerStatus;
+        try {
+          status = await this.connect(config);
+        } catch (error: any) {
+          status = {
+            name: config.name,
+            connected: false,
+            tools: [],
+            error: error?.message || String(error),
+          };
+        }
+        /**
+         * 回调本身**不许掀翻整批**：它是界面那边传进来的（`setState` 之类），
+         * 一条回调抛错就等于那一台的结果把其他服务器的结果一起丢掉 —— 与"错误隔离"相反。
+         */
+        try {
+          onResult?.(status);
+        } catch (e) {
+          console.warn("[mcp.ts] connectAll 的结果回调抛错（已忽略，不影响其他服务器）", e);
+        }
+        return status;
+      }),
+    );
   }
 
   /** Get all available MCP tools */
@@ -634,6 +683,11 @@ export class MCPRegistry {
   /** 第 183 波：`resources/list` */
   async listResources(serverName: string): Promise<any[]> {
     return this.client.listResources(serverName);
+  }
+
+  /** MCPR-10（第 184 波）：`resources/list` 整页（含 `nextCursor`）—— 只是透传，不改形状 */
+  async listResourcesPage(serverName: string, cursor?: string): Promise<{ resources: any[]; nextCursor?: string }> {
+    return this.client.listResourcesPage(serverName, cursor);
   }
 
   /** 第 183 波：`resources/templates/list` */

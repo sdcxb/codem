@@ -1,5 +1,12 @@
 import type { MessageV2 } from "../llm/session";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+/**
+ * 第 184 波（G6）：**唯一一份 token 估算真值**（CJK 感知）。
+ *
+ * 直接从 `llm/token-tracker` 取，不再在本文件里另写一个 `chars / 4`
+ * —— 两份估算器并存正是这一波要修的缺陷（中文压力被低报约 2.4×）。
+ */
+import { estimateTokens as estimateTokensCjkAware } from "../llm/token-tracker";
 
 // ========== 压力等级（**唯一一份阈值**）==========
 
@@ -242,9 +249,27 @@ export class ContextManager {
     return tokens;
   }
 
-  /** Estimate tokens for text (rough: 1 token ≈ 4 chars) */
+  /**
+   * Estimate tokens for text.
+   *
+   * ★ 第 184 波（G6）：**改用 CJK 感知的估算器**，不再用朴素的 `chars / 4`。
+   *
+   * ## 缺陷形态（实测）
+   *
+   * 本类原来用 `Math.ceil(text.length / 4)`。而本仓库**早就有**一份更准的估算器
+   * （`llm/token-tracker.ts` 的 `estimateTokens`：CJK ≈ 0.6 token/字符、拉丁 0.25、
+   * 数字 0.33、空白/标点 0.5），并且**主路径已经在用它**（`agentic-loop.ts` 的
+   * `estimatePressure`）。两条路径口径不同，后果是：
+   *
+   *  · **中文会话的上下文压力被低报约 2.4×** —— 1000 个汉字按 `chars/4` 是 250 token，
+   *    按 CJK 感知是 600 token。于是界面显示"还很空"而实际已接近上限；
+   *  · 走本类的那条**插件压缩路径**（`compaction-provider` 的 `shouldCompact`）会**太晚**触发。
+   *
+   * 现在两份口径合一：本方法直接委托 `token-tracker.estimateTokens`。
+   * 这样"界面上看到的压力"与"循环里判定的压力"必然是同一个数（否则又是一类双口径缺陷）。
+   */
   estimateTextTokens(text: string): number {
-    return Math.ceil(text.length / 4);
+    return estimateTokensCjkAware(text);
   }
 
   /** Estimate total tokens for all messages */

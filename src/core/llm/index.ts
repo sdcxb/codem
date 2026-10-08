@@ -360,7 +360,7 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
    * Uses the active ModelProfile, with fallback chain.
    * Falls back to engine default if no slot is configured.
    */
-  resolveSlot(slot: TaskSlot): { providerId: string; modelId: string; reasoningEffort?: "low" | "medium" | "high"; temperature?: number; maxTokens?: number } {
+  resolveSlot(slot: TaskSlot): { providerId: string; modelId: string; reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max"; temperature?: number; maxTokens?: number } {
     const slotConfig = this.profileManager.resolveSlot(slot);
     if (slotConfig) {
       // Verify provider exists
@@ -939,7 +939,7 @@ Report earlier as well whenever a partial finding changes what that agent should
       // User-selected skills for this message (injected with 🎯 marker)
       userSelectedSkills?: string[];
       // Deep thinking: reasoning effort level (overrides agent default)
-      reasoningEffort?: "low" | "medium" | "high" | "ultra";
+      reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       /**
        * 本轮助手消息 id 的**落库方**（第 154 轮，O-28）。返回消息存储里那一行的真实 id；
        * 没建行时按需建行（executor 的 `ensureAssistantMessage()` 就是这个语义）。

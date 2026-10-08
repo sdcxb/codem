@@ -242,7 +242,7 @@ export class AgentTeamsServiceClass {
   /** 添加成员并 spawn 可续聊子 agent */
   async addMember(teamId: string, input: {
     name: string; role?: string; provider?: string; model?: string;
-    reasoningEffort?: "low" | "medium" | "high";
+    reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
     parentSessionId: string;
   }) {
     const team = this.teams.get(teamId);

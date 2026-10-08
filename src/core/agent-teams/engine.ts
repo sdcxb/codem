@@ -46,7 +46,7 @@ export function createTeam(input: { name: string; captainSessionId: string }): A
 
 export function addMember(team: AgentTeam, input: {
   id: string; name: string; role?: string;
-  provider?: string; model?: string; reasoningEffort?: "low" | "medium" | "high";
+  provider?: string; model?: string; reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 }): { team: AgentTeam; member: TeamMember } {
   const now = Date.now();
   if (team.members.some((m) => m.name === input.name)) {

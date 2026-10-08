@@ -161,6 +161,18 @@ export async function retainToolResult(
 const DEFAULT_SPILL_KEEP_DAYS = 14;
 
 /**
+ * 溢出目录里**本机制认得**的文件后缀。
+ *
+ * 为什么要有这张名单（第 184 波）：溢出目录不只放文本了 —— MCP 的二进制资源
+ * （`read_mcp_resource` 收到 `blob`）也落在同一处，它不能走 `retainToolResult`
+ * （那是"保头保尾、中间省略"的文本语义，会把字节切坏），但**回收必须还是同一套**
+ * （同一个判据：文件名里的写入时刻毫秒）。名单之外的文件一律不碰。
+ *
+ * 判据与文件名约定：`-<写入时刻毫秒><后缀>`（`.txt` = 文本溢出，`.bin` = 二进制资源）。
+ */
+const SPILL_FILE_RE = /-(\d{10,})\.(txt|bin)$/;
+
+/**
  * 清理过期的溢出文件。
  *
  * 为什么必须有（本波自查发现的问题）：溢出把大文本从数据库搬到磁盘，**磁盘同样会涨** ——
@@ -170,6 +182,9 @@ const DEFAULT_SPILL_KEEP_DAYS = 14;
  *
  * 时间戳写在**文件名**里（`<tool>-<callId>-<epochMs>.txt`）：`list_directory` 不回传修改时间，
  * 靠文件名判断既不需要新增 IPC，也不受"拷贝/移动后 mtime 变化"的影响。
+ *
+ * 第 184 波：认得的后缀扩到 `.txt`（文本溢出）与 `.bin`（MCP 二进制资源，见 `SPILL_FILE_RE`）
+ * —— 二进制资源与文本溢出落在**同一个会话目录**，回收也走**同一处**，不新增清理者。
  *
  * @returns 删除的文件数与释放的字节数
  */
@@ -205,7 +220,7 @@ export async function pruneSpillFiles(
         try { await deleteFile(file.path); result.deletedFiles++; } catch { /* 跳过 */ }
         continue;
       }
-      const match = /-(\d{10,})\.txt$/.exec(file.name);
+      const match = SPILL_FILE_RE.exec(file.name);
       const writtenAt = match ? Number(match[1]) : 0;
       if (writtenAt > 0 && writtenAt >= cutoff) continue; // 还在保留期内
       if (writtenAt === 0) continue; // 认不出来历的文件不碰（可能是用户自己放的）

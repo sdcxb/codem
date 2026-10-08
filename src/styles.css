@@ -6633,6 +6633,21 @@ background: var(--accent-surface-strong);
   font-size: var(--fs-md);
   font-weight: 600;
 }
+
+/*
+ * 第 184 波（G8）：「全部连接」按钮的**进行中**态。
+ *
+ * 这一条是 UI 一致性门禁抓出来要补的：组件里用了 `connect-all-btn`（基类仍是
+ * 已定义的 `mcp-action-btn`），但没有对应规则 ⇒ `css-class-undefined` 违规 1 条、
+ * 超过基线 0（门禁"只降不升"）。
+ *
+ * 只管"看起来在忙"：真正的禁用由 `disabled` / `aria-busy` 表达（那是机制，判据 MCP-ALL-6 守着）。
+ * 颜色与间距一律用语义令牌，不写死值（否则会踩 fs-hardcoded / color-hardcoded 那几条规则）。
+ */
+.connect-all-btn.busy {
+  opacity: 0.7;
+  cursor: progress;
+}
 .mcp-manager-icon-svg {
   color: var(--accent);
 }

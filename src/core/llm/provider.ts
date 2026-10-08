@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { getLang } from "../i18n/lang";
 import { parseProviderUsage } from "./usage-normalize";
+import { reasoningEffortForRequest } from "./reasoning-effort";
 import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
 
@@ -270,7 +271,17 @@ export class OpenAICompatibleProvider implements LLMProvider {
           ...(request.maxTokens ? { max_tokens: request.maxTokens } : {}), // 不传时 API 使用默认最大值
           stream: false,
           // E2: Reasoning effort (OpenAI o-series / DeepSeek R1 etc.)
-          ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+          /**
+           * 第 184 波（G10）：**按族钳制**后才发。
+           *
+           * `gpt-oss` 系只接受扁平的 low/medium/high —— 把 `xhigh`/`max` 原样发出去
+           * 会被拒（400）或静默降级，而用户看到的是"我明明选了最高档"。
+           * 规则与理由见 `reasoning-effort.ts` 的头注释（对标 Pi v1.1.0 的两张映射表）。
+           */
+          ...(() => {
+            const effort = reasoningEffortForRequest(request.model, undefined, request.reasoningEffort);
+            return effort ? { reasoning_effort: effort } : {};
+          })(),
         }),
         signal,
       });
@@ -369,7 +380,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
       temperature: request.temperature ?? 0.7,
       stream: true,
       // E2: Reasoning effort (OpenAI o-series / DeepSeek R1 etc.)
-      ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+      // 第 184 波（G10）：同样要**按族钳制**（流式与非流式两条路径不许有两套行为）
+      ...(() => {
+        const effort = reasoningEffortForRequest(request.model, undefined, request.reasoningEffort);
+        return effort ? { reasoning_effort: effort } : {};
+      })(),
     };
     if (request.maxTokens) {
       bodyObj.max_tokens = request.maxTokens;
@@ -570,6 +585,49 @@ export class OpenAICompatibleProvider implements LLMProvider {
             const parsed = JSON.parse(data);
             msgId = parsed.id || msgId;
 
+            /**
+             * ★ 第 184 波（G1，**假成功**级缺陷）：**必须先看 `error` 载荷**。
+             *
+             * ## 缺陷形态（真机可复现）
+             *
+             * 供应商经常用 **HTTP 200 + `data: {"error":{"message":"server_busy"}}`** 报错
+             * （OpenAI 兼容网关、DeepSeek、各家代理都这么干）。改前这里**完全不看 `parsed.error`**，
+             * 于是：
+             *  · `finish_reason` 永远不出现 ⇒ 落到下面 `:683` 的兜底；
+             *  · 兜底只 `console.warn`、发 `usage` 全 0、发 **`finishReason: "stop"`**；
+             *  ⇒ 模型"什么都没说就结束了"，界面显示**正常收尾**、成本记 0、**不重试**。
+             *
+             * 这是本仓库最忌讳的一类缺陷（假成功）：失败被呈现为成功，而且
+             * **`retry.ts` 那套文案分诊根本轮不到**（因为从来没有错误对象被抛出来）。
+             *
+             * ## 修法
+             *
+             * 把 `error` 载荷变成**真正的错误**抛出：消息取供应商原文（那样 `retry.ts`
+             * 的可重试/不可重试两表都能按文案判），并挂上 `code`/`status` 供分诊使用。
+             * 抛出去之后由既有链路处理：可重试的走退避，不可重试的如实失败。
+             */
+            const streamError = parsed.error;
+            if (streamError) {
+              const message =
+                typeof streamError === "string"
+                  ? streamError
+                  : streamError.message || streamError.type || JSON.stringify(streamError).slice(0, 300);
+              const err = new Error(`Provider stream error: ${message}`) as Error & {
+                code?: string;
+                status?: number;
+                providerError?: unknown;
+              };
+              // 供应商常把错误码放在 code/type 上（如 `server_busy`）⇒ 交给文案分诊按 codeText 匹配
+              const codeText = streamError.code || streamError.type;
+              if (typeof codeText === "string" && codeText) err.code = codeText;
+              // 有的网关把 HTTP 状态塞进错误体（如 503）—— 有就带上，分诊优先看状态码
+              const statusText = streamError.status ?? streamError.status_code;
+              if (typeof statusText === "number") err.status = statusText;
+              err.providerError = streamError;
+              console.warn(`[provider.ts] SSE error payload ⇒ 抛给重试分诊：${message.slice(0, 200)}`);
+              throw err;
+            }
+
             const delta = parsed.choices?.[0]?.delta;
             const finishReason = parsed.choices?.[0]?.finish_reason;
 
@@ -669,6 +727,17 @@ export class OpenAICompatibleProvider implements LLMProvider {
               yield { type: "end", finishReason: finishReason === "tool_calls" ? "tool_use" : finishReason };
             }
           } catch (e) {
+            /**
+             * ⚠️ 第 184 波（G1）：**供应商错误必须在这里放行**。
+             *
+             * 上面那段 `throw err` 是在这个 `try` 里抛的，而这里的 catch 原本会把
+             * 任何异常当成"这一行解析不了"处理（记 `droppedStreamLines` 然后继续）——
+             * 那正好又把 G1 修好的"假成功"变回"静默丢弃"。所以：
+             * 带 `providerError` 标记的**不是解析失败，是供应商在报错**，必须往外抛。
+             */
+            if ((e as { providerError?: unknown } | null)?.providerError !== undefined) {
+              throw e;
+            }
             // 第 66/67 波（同类问题清查）：**这条 catch 以前只是打一行 warn 就把整行丢了** ——
             // 若被丢的那行正好带 tool_calls 的参数增量，累积出来的 JSON 就是残缺的，
             // 现象与"参数被截断"一模一样（用户的报错就是这一类）。现在**计数并上报**：

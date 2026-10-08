@@ -59,7 +59,7 @@ export interface AgentDefinition {
   collaborationMode?: CollaborationMode;
 
   /** Reasoning effort override (E2): "low" | "medium" | "high" */
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 
   /** M1: Model slot for this agent — determines which Profile slot to use for model resolution */
   modelSlot?: TaskSlot;

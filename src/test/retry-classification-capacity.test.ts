@@ -89,4 +89,33 @@ describe("重试分诊（第 181 波）", () => {
     expect(classifyError(new Error("something totally unexpected")).isRetryable).toBe(false);
     expect(classifyError(null).isRetryable).toBe(false);
   });
+
+  /**
+   * ★ 第 184 波（G2）：**Pi v1.1.0 的两个原文案**（`ai/src/utils/retry.ts:30-34`）。
+   *
+   * 改前 `/\b(server|service)\s+(is\s+)?busy\b/i` 匹配不到它们（下划线 / `servers are currently`），
+   * 而默认分支是"不可重试" ⇒ 一次瞬时忙碌被当成确定性失败，回合直接结束（Pi #10543）。
+   */
+  it("RTC-7: `server_busy` 与 `servers are currently busy` 必须可重试（Pi #10543 的原文案）", () => {
+    for (const message of [
+      "server_busy",
+      "Server_Busy",
+      "servers are currently busy",
+      "Servers are currently busy, please retry",
+      "server busy",
+      "service is busy",
+    ]) {
+      const r = classifyError(new Error(message));
+      expect(r.isRetryable, `「${message}」应当可重试`).toBe(true);
+      expect(r.type, `「${message}」应当归到容量类`).toBe("capacity");
+    }
+  });
+
+  it("RTC-8: 以 `code` 返回的 `server_busy` 同样可重试（SSE 错误体常把码放在 code/type）", () => {
+    const byCode = classifyError(err({ message: "Provider stream error: server busy", code: "server_busy" }));
+    expect(byCode.isRetryable, "code=server_busy 应当可重试").toBe(true);
+    // 反向对照：`server_busy` 不能被误当成"确定性失败"
+    const withStatus = classifyError(err({ message: "server_busy", status: 503 }));
+    expect(withStatus.isRetryable, "带 503 的 busy 仍可重试").toBe(true);
+  });
 });

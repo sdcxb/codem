@@ -431,8 +431,32 @@ export class ToolPipeline {
     // ===== Layer 3: execute =====
     // R3-1.4: AbortSignal is already on ctx.abort — tools that forward it can cooperatively cancel.
     let result: ToolCallResult;
+    /**
+     * ★ 第 184 波（G3）：**工具执行耗时（单调钟）**，对标 Pi v1.1.0 的 `durationMs`。
+     *
+     * ## 为什么要修
+     *
+     * UI 的三个读端（`StatsLine.tsx:122-130` 累加、`MessageBubble.tsx:866`、`ToolCallCard.tsx`）
+     * 一直在读 `toolCall.metadata.duration`，而**全仓没有任何地方写它** ⇒
+     * 界面上"工具耗时"永远为空，会话重载后也必然没有（从来没落库）。
+     *
+     * ## 量在哪、为什么量在这
+     *
+     * 只包住 `toolHandler(...)` 这一次调用 —— 与上游同口径（`agent-loop.ts:826-846`：
+     * "严格包住 `execute()` 一次调用"，**排除 hooks**）。放在这里而不是执行器外层，
+     * 是因为 pre/post hook 的耗时不是"工具本身的耗时"：混进去会让性能画像失真
+     * （上游有专门的判据断言 hook 里 sleep 100ms 而 `durationMs < 100`）。
+     *
+     * 用 `performance.now()`（单调钟）：`Date.now()` 会被系统时钟跳变影响，
+     * 那正是上游把"重载后 `Took` 丢失/含墙钟跳变"当成 bug 修掉的原因。
+     */
+    const __toolStartedAt = performance.now();
     try {
       result = await toolHandler(currentName, currentArgs, ctx);
+      result.metadata = {
+        ...(result.metadata ?? {}),
+        duration: Math.max(0, Math.round(performance.now() - __toolStartedAt)),
+      };
       events.push({
         layer: "execute",
         middleware: "tool",
@@ -442,6 +466,9 @@ export class ToolPipeline {
       });
     } catch (error: any) {
       // R3-1.4: Detect abort during execution → ABORTED status
+      // 第 184 波（G3）：抛错/中止也计时 —— 与上游同口径（"抛错也计时"）。
+      // 中止与失败同样值得看耗时："跑了 30s 才被超时打断"与"立刻失败"是完全不同的诊断。
+      const __failedAfter = Math.max(0, Math.round(performance.now() - __toolStartedAt));
       if (isAbortError(error) || ctx.abort?.aborted) {
         result = {
           id: ctx.messageId,
@@ -450,6 +477,7 @@ export class ToolPipeline {
           output: "Error: tool call was aborted",
           status: "error",
           error: "ABORTED",
+          metadata: { duration: __failedAfter },
         };
         events.push({
           layer: "execute",
@@ -465,6 +493,7 @@ export class ToolPipeline {
           output: `Error: ${error.message}`,
           status: "error",
           error: error.message,
+          metadata: { duration: __failedAfter },
         };
         events.push({
           layer: "execute",

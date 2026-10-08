@@ -36,6 +36,16 @@ export interface TimeContextConfig {
    * 正值 = 仅当距离上次注入超过此间隔时才注入。
    */
   refreshIntervalMs?: number;
+  /**
+   * ★ 第 184 波（G7）：**调用方已经读到的消息列表**（可选）。
+   *
+   * 为什么需要它：本模块回退到"读消息表"来算"距上一条模型可见消息过了多久"，
+   * 而调用方（`AgenticLoop`）在**同一轮**里已经全量读过一次消息表（`buildMessages`）。
+   * 不传的话就是一轮两次全量读（内存镜像 merge + 全量排序 + map）—— 实测就是这么读的。
+   *
+   * 语义边界：**只是省一次读**。给了就用、没给就自己读（行为与结果都不变）。
+   */
+  preloadedMessages?: Array<{ timestamp?: unknown }>;
 }
 
 // ========== State ==========
@@ -118,7 +128,10 @@ function formatDuration(ms: number): string {
  * 回退顺序：事件（最准，含工具结果时间）→ 消息表（`MessageStorage.listMessages`，
  * 索引 + 权威日志的合并视图）→ 都没有才返回 null（那才是真的"没有可依据的时间"）。
  */
-function findLastVisibleMessageTime(sessionId: string): number | null {
+function findLastVisibleMessageTime(
+  sessionId: string,
+  preloadedMessages?: Array<{ timestamp?: unknown }>,
+): number | null {
   try {
     const events = getEventLog().readAll(sessionId);
     for (let i = events.length - 1; i >= 0; i--) {
@@ -142,7 +155,8 @@ function findLastVisibleMessageTime(sessionId: string): number | null {
    * `message.ts` 不 import `time-context`，所以这里是单向依赖，没有环。
    */
   try {
-    const list = listMessages(sessionId);
+    // 第 184 波（G7）：调用方在同一轮里已读过就用它，省掉这一轮第二次全量读
+    const list = preloadedMessages ?? listMessages(sessionId);
     let last: number | null = null;
     for (const m of list) {
       const ts = Number((m as { timestamp?: unknown }).timestamp);
@@ -195,7 +209,7 @@ export function buildTimeContext(
   const timestampStr = formatTimestamp(new Date(now), timeZone);
 
   // 计算经过时间
-  const lastVisibleTime = findLastVisibleMessageTime(sessionId);
+  const lastVisibleTime = findLastVisibleMessageTime(sessionId, config.preloadedMessages);
   const elapsedStr = lastVisibleTime
     ? formatDuration(now - lastVisibleTime)
     : "unavailable";

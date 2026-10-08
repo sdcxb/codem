@@ -40,6 +40,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 
+import { estimateTokens as estimateTokensCjkAware } from "../core/llm/token-tracker";
 import {
   pressureLevelForRatio,
   summarizeDisplayPressure,
@@ -122,5 +123,31 @@ describe("上下文面板：占用率与压力等级必须自洽（第 72 轮）
     const high = summarizeDisplayPressure(109440, 115200);
     expect(high.percent).toBe(95);
     expect(high.level, "95% 才是「临界」").toBe(3);
+  });
+
+  /**
+   * ★ 第 184 波（G6）：**估算器必须只有一份真值（CJK 感知）**。
+   *
+   * 改前本类用 `Math.ceil(text.length / 4)`，而主路径（`agentic-loop` 的 `estimatePressure`）
+   * 用 `token-tracker.estimateTokens`（CJK ≈ 0.6 token/字符）。于是**中文会话的压力被低报约 2.4×**
+   * ——界面显示"还很空"而实际已接近上限，插件压缩路径也太晚才触发。
+   */
+  it("CMP-6: 中文文本的估算必须走 CJK 感知口径（不许再是 chars/4）", () => {
+    const cm = getContextManager();
+    const zh = "这是一段中文内容，用来验证估算器口径。".repeat(50); // 950 字符，全部是汉字/标点
+    const naive = Math.ceil(zh.length / 4);
+    const estimate = cm.estimateTextTokens(zh);
+    expect(estimate, `中文估算 ${estimate} 必须显著高于朴素的 chars/4=${naive}`).toBeGreaterThan(naive * 1.5);
+    // 与循环那条路径**同一个数**（同一份真值）
+    expect(estimate, "必须与 token-tracker 的口径一致（否则又是两套口径）").toBe(
+      estimateTokensCjkAware(zh),
+    );
+  });
+
+  it("CMP-7 反向对照：纯 ASCII 的估算不被抬高（别把英文也算成 CJK）", () => {
+    const cm = getContextManager();
+    const ascii = "a".repeat(400);
+    // 拉丁 ≈ 0.25 token/字符 ⇒ 与 chars/4 同量级（允许 1 的取整差）
+    expect(Math.abs(cm.estimateTextTokens(ascii) - 100)).toBeLessThanOrEqual(2);
   });
 });

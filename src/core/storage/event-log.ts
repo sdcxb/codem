@@ -921,6 +921,14 @@ export async function migrateMessagesToEvents(sessionId: string): Promise<number
       }
       if (msg.toolCalls) {
         for (const tc of msg.toolCalls) {
+          /**
+           * ★ 第 184 波（G3）：把工具耗时写进**权威日志**。
+           *
+           * 消息索引里的 `toolCalls[].metadata` 只是索引；"从日志重建会话"走的是这里。
+           * 不写的话，重载/崩溃修复重建后的会话又会看不到耗时（上游 Pi `#10549` 修的就是这条）。
+           * 未执行的调用没有该字段（可选），所以只在真的有数时才带上。
+           */
+          const duration = (tc.metadata as { duration?: unknown } | undefined)?.duration;
           events.push({
             type: "tool_call",
             payload: {
@@ -929,6 +937,7 @@ export async function migrateMessagesToEvents(sessionId: string): Promise<number
               tool: tc.tool,
               args: tc.args,
               status: "completed",
+              ...(typeof duration === "number" && Number.isFinite(duration) ? { duration } : {}),
             },
           });
           if (tc.result) {

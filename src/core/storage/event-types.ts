@@ -199,6 +199,15 @@ export interface ToolCallPayload {
   tool: string;
   args: Record<string, unknown>;
   status: "pending" | "running" | "completed" | "error";
+  /**
+   * ★ 第 184 波（G3）：**工具执行耗时（毫秒，单调钟测得的）**。
+   *
+   * 为什么必须进权威日志（JSONL）：消息索引里那份 `toolCalls[].metadata.duration`
+   * 只是**索引**，而"从日志重建会话"走的是本事件流 —— 不写进这里，
+   * 重载/修复重建后的会话就**又看不到耗时**了（这正是上游 Pi `#10549` 修的那条：
+   * "重载会话后 `Took` 丢失"）。可选：未执行的调用（被拒/被跳过）没有它。
+   */
+  duration?: number;
 }
 
 export interface ToolResultPayload {

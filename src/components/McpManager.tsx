@@ -37,7 +37,13 @@ export function McpManager({ onClose }: McpManagerProps) {
   const [showAdd, setShowAdd] = useState(false);
   const [editingServer, setEditingServer] = useState<{ originalName: string; config: MCPServerConfig } | null>(null);
   const [newServer, setNewServer] = useState<MCPServerConfig>(emptyConfig());
-  const [connecting, setConnecting] = useState<string | null>(null);
+  /**
+   * 正在连接中的服务器名。**单条「连接」与「全部连接」共用这一份状态** —— 于是
+   * 「连接中…」的文案与"点不动"的语义只有一套，批量路径不会长出第二套说法。
+   */
+  const [connecting, setConnecting] = useState<Set<string>>(new Set());
+  /** 「全部连接」是否正在进行（按钮的进行中态；也是重复点击的闸门） */
+  const [connectingAll, setConnectingAll] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [jsonInput, setJsonInput] = useState("");
@@ -85,13 +91,25 @@ export function McpManager({ onClose }: McpManagerProps) {
     loadServers();
   };
 
+  /** 把若干服务器标记为「连接中」/取消标记（单条与批量共用） */
+  const markConnecting = useCallback((names: string[], on: boolean) => {
+    setConnecting((prev) => {
+      const next = new Set(prev);
+      for (const n of names) {
+        if (on) next.add(n);
+        else next.delete(n);
+      }
+      return next;
+    });
+  }, []);
+
   // 连接/断开
   const handleConnect = async (config: MCPServerConfig) => {
-    setConnecting(config.name);
+    markConnecting([config.name], true);
     const registry = getMCPRegistry();
     const status = await registry.connect(config);
     setStatuses((prev) => new Map(prev).set(config.name, status));
-    setConnecting(null);
+    markConnecting([config.name], false);
   };
 
   const handleDisconnect = async (name: string) => {
@@ -104,12 +122,32 @@ export function McpManager({ onClose }: McpManagerProps) {
     });
   };
 
+  /**
+   * 「全部连接」：**并发**发起，且**每一条一有结果就更新它自己**（第 184 波修 G8）。
+   *
+   * 改前是 `await registry.connectAll()` 把结果收齐，再一次性 `setStatuses`：
+   * 期间不置「连接中」，已连上的条目也不更新 ⇒ 一台服务器卡住，用户就看到整块面板
+   * 停在"未连接"上（连接本身还是串行的，见 `mcp.ts` 的 `connectAll`）。
+   */
   const handleConnectAll = async () => {
+    // 进行中直接忽略：真机上 DOM 会吞掉 disabled 按钮的点击，这层是兜底（判据 MCP-ALL-6）
+    if (connectingAll) return;
     const registry = getMCPRegistry();
-    const results = await registry.connectAll();
-    const map = new Map<string, MCPServerStatus>();
-    for (const r of results) map.set(r.name, r);
-    setStatuses(map);
+    const names = registry.getConfigs().map((c) => c.name);
+
+    setConnectingAll(true);
+    markConnecting(names, true);
+    try {
+      await registry.connectAll((status) => {
+        // 逐条：这一条刚有结果就写它的状态，并把它从「连接中」里摘掉 —— 不等其余
+        setStatuses((prev) => new Map(prev).set(status.name, status));
+        markConnecting([status.name], false);
+      });
+    } finally {
+      // 兜底：正常路径下每条都在回调里摘过了，这里只清"回调没跑到"的那些名字
+      markConnecting(names, false);
+      setConnectingAll(false);
+    }
   };
 
   // JSON 导入
@@ -175,9 +213,14 @@ export function McpManager({ onClose }: McpManagerProps) {
           <span style={{ marginRight: 4 }}>🏪</span>
           服务器目录
         </button>
-        <button className="mcp-action-btn" onClick={handleConnectAll}>
+        <button
+          className={`mcp-action-btn connect-all-btn${connectingAll ? " busy" : ""}`}
+          onClick={handleConnectAll}
+          disabled={connectingAll}
+          aria-busy={connectingAll}
+        >
           <RefreshIcon size={14} />
-          全部连接
+          {connectingAll ? "全部连接中..." : "全部连接"}
         </button>
         <button className="mcp-action-btn" onClick={() => setShowAdd(true)}>
           <AddIcon size={14} />
@@ -261,10 +304,10 @@ export function McpManager({ onClose }: McpManagerProps) {
                   <button
                     className="mcp-server-btn connect"
                     onClick={() => handleConnect(server)}
-                    disabled={connecting === server.name}
+                    disabled={connecting.has(server.name)}
                   >
                     <ConnectIcon size={14} />
-                    {connecting === server.name ? "连接中..." : "连接"}
+                    {connecting.has(server.name) ? "连接中..." : "连接"}
                   </button>
                 )}
                 <button

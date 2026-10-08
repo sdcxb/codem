@@ -49,6 +49,19 @@ const RETRYABLE_MESSAGE_PATTERNS: RegExp[] = [
   /currently experiencing high demand/i,
   /\b(temporarily|service)\s+unavailable\b/i,
   /\b(server|service)\s+(is\s+)?busy\b/i,
+  /**
+   * ★ 第 184 波（G2）：**补上 Pi v1.1.0 的两个原文案**（`ai/src/utils/retry.ts:30-34`）。
+   *
+   * 上面那条 `\b(server|service)\s+(is\s+)?busy\b` 匹配不到这两种真实写法：
+   *  · `server_busy` —— 中间是**下划线**，不是空白（`\s+` 不匹配 `_`）；
+   *  · `servers are currently busy` —— `server` 后面是 `s` + ` are currently`。
+   *
+   * 而 `classifyError` 的默认分支是"不可重试"（本文件末尾 `return { isRetryable: false }`），
+   * 于是这两种文案会**直接结束回合**（正是 Pi #10543 修的缺陷）。
+   * 判据：`retry-classification-capacity.test.ts` 的 RTC-7/RTC-8。
+   */
+  /\bserver[_ -]?busy\b/i,
+  /\bservers?\s+(are\s+)?(currently\s+)?busy\b/i,
   /pending stream has been canceled/i, // HTTP/2 请求发出前连接就没了（Pi #10379）
   /http2 request did not get a response/i,
   /stream (ended|closed) before/i,

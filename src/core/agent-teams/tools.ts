@@ -97,7 +97,7 @@ export function createAgentTeamsAddMemberTool(): ToolDef {
         role: args.role as string | undefined,
         provider: args.provider as string | undefined,
         model: args.model as string | undefined,
-        reasoningEffort: args.reasoning_effort as "low" | "medium" | "high" | undefined,
+        reasoningEffort: args.reasoning_effort as "low" | "medium" | "high" | "xhigh" | "max" | undefined,
         parentSessionId: ctx.sessionId,
       });
       return out("agent_teams_add_member", [

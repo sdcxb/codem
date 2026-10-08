@@ -53,8 +53,13 @@ export interface ToolSDK {
   write(path: string, content: string): Promise<void>;
   /** Search files by glob */
   glob(pattern: string, path?: string): Promise<string[]>;
-  /** Grep search */
-  grep(pattern: string, opts?: { path?: string; glob?: string }): Promise<Array<{ file: string; line: number; content: string }>>;
+  /**
+   * Grep search：每条命中一行。
+   *
+   * `line` 可以是 `null` —— 那表示**这一行没解析出真实行号**（不该拿 0 冒充）。
+   * 第 184 波（G5）改：改前 `line` 恒为 0，模型据此定位必然出错。
+   */
+  grep(pattern: string, opts?: { path?: string; glob?: string }): Promise<Array<{ file: string; line: number | null; content: string }>>;
   /** Fetch a URL */
   fetch(url: string): Promise<string>;
 }
@@ -188,18 +193,34 @@ export function createRunCodeTool(): ToolDef {
   return {
     id: "run_code",
     contract: { sideEffectScope: "system", accessScope: "system" },
-    guidance: "Use run_code to execute JavaScript for calculations, data processing, quick scripts, and verifying logic. The script runs in its own JavaScript engine (QuickJS on WebAssembly) and cannot see the application's globals (window / document / process / __TAURI__); everything it does goes through the injected `sdk`, and nested sdk.bash / sdk.write calls face the same permission checks as direct tool calls (dangerous bash commands are refused). That is a capability boundary, not a safety guarantee: `sdk.bash` is still a shell.",
-    description: `Execute JavaScript in its own engine (QuickJS compiled to WebAssembly). The script cannot see the application's own globals (window / document / process / require / __TAURI__); everything it does goes through the injected \`sdk\` object:
-- sdk.bash(command) — run a shell command; refused if it is classified dangerous (use the bash tool directly so the user is asked)
-- sdk.read(path) — read a file
-- sdk.write(path, content) — write a file; overwriting a differing existing file requires user confirmation in ask mode
-- sdk.glob(pattern) — search for files
-- sdk.grep(pattern) — search file contents
-- sdk.fetch(url) — fetch a URL
+    guidance: "Use run_code to execute JavaScript for calculations, data processing, quick scripts, and verifying logic. The script runs in its own JavaScript engine (Rust-side `boa`, NOT the app's WebView) and cannot see the application's globals (window / document / process / __TAURI__); everything it does goes through the injected `sdk`, and nested sdk.bash / sdk.write calls face the same permission checks as direct tool calls (dangerous bash commands are refused). That is a capability boundary, not a safety guarantee: `sdk.bash` is still a shell.",
+    /**
+     * ★ 第 184 波（G5）：描述必须与实现**同形**（"描述即契约"）。
+     *
+     * ## 改前的三处失真（都会被模型照字面用）
+     *
+     * 1. **引擎写错**：写的 "QuickJS compiled to WebAssembly"，而真机跑的是 **Rust `boa_engine`**
+     *    （`src-tauri/src/js_sandbox.rs:11`）。模型据此推断可用 API/超时语义会错。
+     *    （QuickJS/WASM 那条路在第 103 波就被换掉了 —— 它一次执行只能挂起一次，
+     *    2 次宿主调用 0/5 成功。）
+     * 2. **逐条没标 async / 没写返回形状**：五个 SDK 方法**全是 async**，模型不 await 时
+     *    拿到的是 Promise（`JSON.stringify(promise)` 会得到 `{}`）。上游 Pi 的同款缺陷
+     *    （`#10555`）就是这么来的，修法是**改描述**而不是再提醒一句。
+     * 3. **`sdk.fetch` 返回的是字符串**（`response.text()`），不是 `Response` ——
+     *    照标准 fetch 直觉写 `res.ok` / `res.json()` 会拿到 undefined 或抛错。
+     *
+     * 判据：`run-code-sdk-contract.test.ts`。
+     */
+    description: `Execute JavaScript in its own engine (Rust-side boa — NOT the app's WebView, and not QuickJS). The script cannot see the application's own globals (window / document / process / require / __TAURI__); everything it does goes through the injected \`sdk\` object. **Every sdk method is async — you must \`await\` it** (an un-awaited call gives you a Promise, and \`JSON.stringify(promise)\` is \`{}\`):
+- \`await sdk.bash(command, opts?)\` → \`{ stdout: string, stderr: string, exitCode: number }\`; refused if the command is classified dangerous (use the bash tool directly so the user is asked)
+- \`await sdk.read(path)\` → \`string\` (file content)
+- \`await sdk.write(path, content)\` → \`void\`; overwriting a differing existing file requires user confirmation in ask mode
+- \`await sdk.glob(pattern, path?)\` → \`string[]\` (matching paths)
+- \`await sdk.grep(pattern, opts?)\` → \`{ file: string, line: number, content: string }[]\` (one entry per matching line; \`line\` is 1-based)
+- \`await sdk.fetch(url)\` → \`string\` — the response **body text only** (no status, no headers, no \`json()\`); it aborts after 15s
 
-The code runs in an async context, so you can use \`await\`. Use \`console.log()\` for output.
-The engine has no network or filesystem access of its own — everything goes through \`sdk\`.
-Timeout: 30 seconds (really interrupted, not just abandoned).`,
+Use \`console.log()\` for output. The engine has no network or filesystem access of its own — everything goes through \`sdk\`.
+Timeout: 30 seconds by default (really interrupted, not just abandoned).`,
     parameters: {
       type: "object",
       properties: {
@@ -263,7 +284,23 @@ Timeout: 30 seconds (really interrupted, not just abandoned).`,
         async grep(pattern: string, opts?: { path?: string; glob?: string }) {
           const { grepSearch } = await import("../../file-api");
           const results = await grepSearch(pattern, opts?.path || ctx.cwd, opts?.glob);
-          return results.map(r => ({ file: r, line: 0, content: r }));
+          /**
+           * ★ 第 184 波（G5）：**这里原来把结果整个映射错了**。
+           *
+           * 改前是 `results.map(r => ({ file: r, line: 0, content: r }))` ——
+           * `grepSearch` 返回的是**已经拼好的整行字符串** `path:行号:内容`
+           * （`file-api.ts:298` 的 `$_.Path + ':' + $_.LineNumber + ':' + $_.Line`），
+           * 于是 `file` 与 `content` 是同一坨原文、而 `line` **恒为 0**。
+           * 模型据此定位（"改第 0 行"）必然出错，而且看不出哪一段是文件名。
+           *
+           * 现在按真实格式拆开。**拆不开时不再编行号** —— 退回 `line: null` 并把原文放进
+           * `content`（"宁可说得少，也不许编数字"，与截断诊断同一纪律）。
+           */
+          return results.map((raw) => {
+            const m = /^(.*?):(\d+):([\s\S]*)$/.exec(raw);
+            if (!m) return { file: "", line: null as number | null, content: raw };
+            return { file: m[1], line: Number(m[2]), content: m[3] };
+          });
         },
         async fetch(url: string) {
           // FIX: 有界超时（15s），避免 LLM 代码 fetch 慢 URL 挂起
