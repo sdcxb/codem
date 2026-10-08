@@ -157,4 +157,20 @@ describe("第 183 波 · MCP resources（MCPR）", () => {
     expect(res.output).toBe("No connected MCP server exposes resources.");
     expect(calls).toEqual([]);
   });
+
+  it("MCPR-9: **接线**在真实链路上（防『判据长在没人走的链路』的老毛病）", async () => {
+    const fs = await import("node:fs");
+    const index = fs.readFileSync("src/core/llm/index.ts", "utf8");
+    // ① 服务方法存在，且它把能力名单交给 sync（而不是自己瞎注册）
+    expect(index).toMatch(/syncMcpResourceTools\(\)\s*:\s*void\s*\{/);
+    expect(index).toMatch(/syncMcpResourceTools\(this\.tools,\s*servers\)/);
+    // ② 能力来自 MCP 侧的 serversWithResources（不是写死的常量）
+    expect(index).toMatch(/serversWithResources/);
+    // ③ 真的在构建系统提示时被调用（与 codegraph / zvec 的 sync 并列 —— 那是同一处时机）
+    expect(index).toMatch(/this\.syncMcpResourceTools\(\);/);
+    const buildIdx = index.indexOf("this.syncCodeGraphTools();");
+    const mcpIdx = index.indexOf("this.syncMcpResourceTools();");
+    expect(buildIdx, "codegraph sync 应当仍在").toBeGreaterThan(-1);
+    expect(mcpIdx, "MCP resources sync 必须在同一处时机被调用").toBeGreaterThan(buildIdx);
+  });
 });

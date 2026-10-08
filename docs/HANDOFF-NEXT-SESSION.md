@@ -3530,3 +3530,96 @@ repo-02 的失败形态 ✓（交接第十九节取证 ✓）：模型**修好�
   保住已完成的 MCP 修复与已提交的 T-2/T-3/T-4。
 - **下一轮的正确入口**：`node .preview-shot/_t1-fill.mjs`（会打印"需人工"的逐条清单），
   建议按文件分组做（`lsp-tool` 9 / `note-operations` 4 / `job-tools` 4 三处占了大头）。
+---
+
+## ★★★★★ 第 183 波：按 Pi 差距分析的优先级一次性做完（P0 + 两个 P1 + MCP resources；context_edit 判不做）
+
+> 用户指示：**一次性把后续做完，尽量自己做完，不要问；判断一律以平台稳定性与性能为前提，
+> 不考虑难度与 tokens**。本轮据此把 `docs/PI-GAP-ANALYSIS-182.md` §5 的优先级执行完。
+
+### 一、P0 —— **T-1 收口**（`ToolExecuteResult.isError` 必填化）✅
+
+上一轮做到 43%（81/187）后按纪律撤回。本轮**做完 187 处**，tsc 0，显式声明 124 处。
+
+**关键教训（下一轮别再重走）**：前六版自动化都死在"**算插入点**"上 ——
+`getEnd()` / `getEnd()+1` / 逗号归属 / 两侧看……每一种都在**某些节点类型**上错
+（`StringLiteral` 不含逗号、模板串含逗号、调用表达式不含……），产出
+`"…"isError` / `,,` / `…" isError: false,,` 之类的坏形状。
+
+**最终有效的手法**（`.preview-shot/_t1-replace.mjs`，留档）：
+**AST 只用来定位**（取 `output` 属性的**原文**），修改用"原文 → 原文 + `, isError: x`"
+的**文本替换** + 每文件重解析校验；重复原文用**绝对位置 + 从后往前 + 累积偏移**处理。
+**不做任何位置运算** ⇒ 不可能因偏移算错而写坏。
+
+判定依据两条（逐条打印供复核）：① output 的静态文字含失败词；② 该 return 的上文是失败守卫
+（`if (!x) {` / `catch {` / `const errMsg =`）。**刻意不收** `if (xs.length === 0)`
+—— "查询成功但结果为空"是成功（第一版把它当失败守卫，误判了 `No goals found…`）。
+
+第二刀：给 34 处 TS2322 的 `execute` 补**显式返回类型注解** ⇒ 类型系统转为**逐分支检查**，
+又暴露出 **67 处**此前看不见的缺字段，再跑第一刀收掉。
+
+判据 `src/test/tool-result-status.test.ts` TRS-1..4 **随契约演进**（TRS-4 从"必须保持可选"
+反转成"必须保持必填"）。
+
+### 二、P1a —— **有界读**（`read` 不再逐行解码整个文件）✅
+
+`read_file_lines_impl` 从 `BufRead::lines()`（每行一次 String 分配 + UTF-8 解码）
+改成**一遍字节扫描**（64 KiB 缓冲）：行边界 = LF；字符数 = "非 UTF-8 续字节"的字节数
+（不解码也精确，非 ASCII 同样对）；只有落在返回窗口内的行才解码。
+
+**实测（34 MB / 50 万行、只取 10 行）**：release **45.8 ms → 23.3 ms**；
+debug 102 ms → 235 ms（⚠️ **debug 数字不代表装机版**：逐字节循环在 debug 下有大量边界检查
+—— 我先量到 debug 的"变慢"差点据此否掉这次改动，量 release 才看到真实收益）。
+
+**语义等价**由 T-4 差分判据（160 组：多字节/emoji、5000 字符长行、CRLF、空文件、offset 超界、
+limit=0）守着；本轮补的 CR 归一与多字节计数**各做一次变异，都咬住**。
+
+**有意放宽一条**（记在实现文档 + 两条判据里）：改前文件里任何一行非 UTF-8 就整次报错，
+改后只校验**返回窗口内**的行。
+
+### 三、P1b —— **结构化截断诊断**（对标 Pi 的 `ToolDiagnostic` + `<harness>` 块）✅
+
+新增 `src/core/llm/tool-diagnostics.ts`；`ToolCallResult` / `ReadOutputValue` /
+`READ_OUTPUT_SCHEMA` 增加 `diagnostics`；`renderReadOutput` 把诊断渲染在正文之后、
+结束框之前。`read` 两条路径都改走它：Rust 路径（有精确数字）用 `truncated`，
+legacy 路径（拿不到总数）用 `paged` —— **宁可说得少，也不许编数字**。
+
+判据 `DIAG-1..5`；变异 2/2（"空诊断也渲染"、"空块不短路"都被 DIAG-3 抓住）。
+同步把 RC-1/RC-2 从"旧括号文本"改成新形状（RC-2 保留"渲染器与工具同源"这条不变量）。
+
+**顺带修掉一个同类坑**：`read` 的 value 在链路末端会被**整个重建**，第 113 波就因此丢过
+`lineNumbers`（单元测绿、真机没行号）。这次重建处显式带上 `diagnostics`。
+
+### 四、P2 —— **MCP resources 三件套** ✅ / **`context_edit` 判不做** ✗
+
+- **resources**：`MCPClient` 留下 `initialize` 的 capabilities（改前只取 `serverInfo.name`
+  就丢掉），新增 `serversWithResources` / `listResources` / `listResourceTemplates` /
+  `readResource`；三个只读工具 `list_mcp_resources` / `list_mcp_resource_templates` /
+  `read_mcp_resource`（命名对齐 Codex/opencode）；按**能力门控**注册（有意的与 Pi 的差异：
+  工具定义进每一轮 schema，绝大多数服务器不提供 resources）。
+  判据 `MCPR-1..9`；**变异 4/4**（去门控、内联 blob、假成功、删接线）。
+  MCPR-9 是**接线判据**（断言 `index.ts` 真的在构建系统提示时调用它）——
+  专门防"判据长在没人走的链路上"。
+- **`context_edit`**：**不做**。理由与重新评估的触发条件写在
+  `docs/PI-GAP-ANALYSIS-182.md` §8：稳定性风险高（要保证导出/账单/回放/resume 四条路径
+  不受影响，而我们**没有**能自动发现这类漂移的判据）、性能收益**未证实**、需求证据为零。
+  若将来要做，落地前必须先有 EX-1..EX-4 四条判据（同文档）。
+
+### 五、本轮验证总账
+
+- `tsc` 0；全量 vitest **571 文件 / 7313 通过 / 17 跳过 / 0 失败**；
+  `cargo test --lib` **164 通过**；
+- 结构门禁：上报点分诊 221 处全登记；可达性 + 探针语法 7/7；docs 门禁 6/6；
+- 变异自证：T-1（判定表）、有界读 2/2、诊断 2/2、MCP resources 4/4 —— 全部咬住；
+- 提交：`1d399805`（T-1）→ `cc368bd5`（有界读）→ `dd5c9770`（诊断）→ `196b147a`（MCP resources）。
+
+### 六、尚未做真机验证的一项（如实记账 ✗）
+
+**MCP resources 的端到端真机验证**没做（其余三项都在真机/差分口径下量过）。
+原因：需要一个**真的声明 `resources` 能力**的 MCP 服务器，而现有探针服务器不提供；
+驱动模型去调 `read_mcp_resource` 又需要一轮真实 LLM 请求。
+**下次的现成做法**：把探针服务器扩成声明 `resources` 并实现 `resources/list` + `resources/read`
+（探针脚本曾删过，按 `docs/HANDOFF-NEXT-SESSION.md` 第 182 波那段里的形状重建即可），
+装配置 → 启动（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`）→
+连接探针 → 让模型调 `list_mcp_resources` → 看返回。
+**在此之前不要声称它真机可用** ✓。
