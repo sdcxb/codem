@@ -478,7 +478,7 @@ backdrop-filter: none !important;
 
 /*
  * ★ 第 185 波（用户报「有的类型选择器多了个外边框；text 1 行是对的、3 行是错的」）：
- * **卡片内部的 `pre` 不许再描一次边**。
+ * **包着卡片的那层 `pre` 不许再描边**。
  *
  * 缺陷形态（真机取证）：
  *  · markdown 的**多行**代码块外面有一层裸 `<pre>`，而里面的代码块渲染成
@@ -486,14 +486,15 @@ backdrop-filter: none !important;
  *  · 上面那条规则给**每个** `pre` 也加了同色边框 ⇒ **同色双层外框**；
  *  · **单行**代码走行内代码、没有那层 `<pre>` ⇒ 所以只有多行（用户说的"3 行"）才看得出来。
  *
- * 真机读数：`.content-frame` 的祖先链里出现 `pre.(no-class) [1px rgba(0,0,0,0.12)]`，
- * 而 1 行的那些卡片祖先链上没有任何边框元素。
+ * 真机读数：`text 3 行` 的卡片祖先链里出现 `pre.(no-class) [1px rgba(0,0,0,0.12)]`，
+ * 而 `text 1 行` 的卡片祖先链上没有任何边框元素。
  *
- * 这里只把**卡片内部**的 `pre` 去掉边框与背景（边框/底色由卡片本身提供），
- * 卡片之外的独立 `pre` 不受影响。
+ * ⚠️ 我第一版把方向写反了（写成"`.content-frame` **内部**的 `pre`"）—— 真机复核实测
+ * 那两处 `pre` 边框**依旧在**，因为真实结构是 `pre > .content-frame`（`pre` 是**祖先**）。
+ * 现在用 `:has()` 精确命中"里面装着卡片的那个 `pre`"（WebView2/Chromium 支持）。
  */
-[data-skin="dream"] .content-frame pre,
-[data-skin="dream"] .content-frame-body pre {
+[data-skin="dream"] pre:has(> .content-frame),
+[data-skin="dream"] pre:has(> .code-block-view) {
   border: none;
   background: transparent !important;
   backdrop-filter: none;

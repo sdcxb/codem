@@ -155,12 +155,13 @@ describe("第 185 波 · 皮肤毛玻璃 vs 原生材质档", () => {
     expect(css, "梦幻皮肤给所有 pre 描边的规则不在了 —— 若有意删除，请连同本条一起重审").toMatch(
       /\[data-skin="dream"\]\s+pre,\s*\n\[data-skin="dream"\]\s+\.code-block\s*\{[^}]*border:\s*1px solid/s,
     );
-    // 修复：卡片内部的 pre 必须被显式去掉边框。
-    // ⚠️ 判据第一版是**裸正则**去匹配 `border: none` —— 结果被变异注释里同样的文字骗过
-    // （注释里写 `去掉 border: none` 就能让判据保持绿）。现在**先剥注释、再按声明解析**。
+    // 修复：**包着卡片的那层 `pre`** 必须被显式去掉边框。
+    // ⚠️ 第一版判据把方向搞反了（写成"`.content-frame` 内部的 pre"），真机复核实测边框**依旧在** ——
+    // 真实结构是 `pre > .content-frame`（`pre` 是祖先）。这里按真实结构断言 `:has()`。
+    // ⚠️ 第二版判据是**裸正则**匹配 `border: none`，被变异注释里同样的文字骗过 ⇒ 现在先剥注释再按声明解析。
     const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    const rule = /\[data-skin="dream"\]\s+\.content-frame[^{]*pre[^{]*\{([^}]*)\}/s.exec(stripped);
-    expect(rule, "找不到「卡片内部 pre」那条规则").toBeTruthy();
+    const rule = /\[data-skin="dream"\]\s+pre:has\([^)]*\)[^{]*\{([^}]*)\}/s.exec(stripped);
+    expect(rule, "找不到「包着卡片的 pre」那条规则（必须用 :has() 命中祖先 pre）").toBeTruthy();
     const decls = (rule?.[1] ?? "")
       .split(";")
       .map((d) => d.trim())
@@ -172,7 +173,7 @@ describe("第 185 波 · 皮肤毛玻璃 vs 原生材质档", () => {
     const borderDecl = decls.find((d) => d.prop === "border" || d.prop === "border-top");
     expect(
       borderDecl?.value,
-      `卡片内部的 pre 必须被显式去掉边框（它是重复描边：外层卡片已经画过一条同色边框）。实际声明：${JSON.stringify(decls)}`,
+      `包着卡片的那层 pre 必须被显式去掉边框（重复描边：卡片自己已经画过一条同色边框）。实际声明：${JSON.stringify(decls)}`,
     ).toBe("none");
   });
 });
