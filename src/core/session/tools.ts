@@ -11,7 +11,7 @@
  * 通过 setDelegationOrchestrator 注入单例。
  */
 
-import type { ToolDef } from "../llm/tools";
+import type { ToolDef, ToolExecuteResult } from "../llm/tools";
 import { getLang } from "../i18n/lang";
 import { getDelegationOrchestrator } from "./orchestrator";
 import { cancelSessionExecution, isSessionExecuting } from "./executor";
@@ -57,7 +57,7 @@ export function createDelegateToSessionTool(): ToolDef {
       },
       required: ["target_session_id", "task"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const targetSessionId = args.target_session_id as string;
       const task = args.task as string;
@@ -90,7 +90,7 @@ export function createDelegateToSessionTool(): ToolDef {
               ? `错误：目标会话不存在（未创建委派任务）："${targetSessionId}"。\n` +
                 `请用 list_sessions 拿当前项目里的会话 ID（注意：list_sessions 只列**当前项目**的会话）。`
               : `Error: target session not found (no task created): "${targetSessionId}".\n` +
-                `Use list_sessions to get a session ID from the CURRENT project (it lists the current project only).`),
+                `Use list_sessions to get a session ID from the CURRENT project (it lists the current project only).`), isError: true,
         };
       }
 
@@ -113,7 +113,7 @@ export function createDelegateToSessionTool(): ToolDef {
             check.error +
             (zh
               ? `\n\n（连续被拒 3 次后会放宽放行 —— 校验是为了让交接更有效，不是拦住你干活。）`
-              : `\n\n(After 3 rejections this check will stand down — it exists to make handovers work, not to block you.)`),
+              : `\n\n(After 3 rejections this check will stand down — it exists to make handovers work, not to block you.)`), isError: true,
         };
       }
       if (check.ok && rejections > 0) handoverRejections.delete(targetSessionId);
@@ -156,13 +156,13 @@ export function createDelegateToSessionTool(): ToolDef {
             (check.warning ? (zh ? `提醒：${check.warning}\n\n` : `Note: ${check.warning}\n\n`) : "") +
             (zh
               ? "目标会话已开始后台处理。使用 wait_for_delegation 获取结果（注意：等待有预算，到点会带着进度返回，不要反复空等）。"
-              : "Target session is now processing in the background. Use wait_for_delegation (it returns with progress on budget — do not wait in a tight loop)."),
+              : "Target session is now processing in the background. Use wait_for_delegation (it returns with progress on budget — do not wait in a tight loop)."), isError: false,
           metadata: { delegationTaskId: delegationTask.id },
         };
       } catch (error: any) {
         return {
           title: "delegate_to_session",
-          output: (zh ? "错误: " : "Error: ") + error.message,
+          output: (zh ? "错误: " : "Error: ") + error.message, isError: true,
         };
       }
     },
@@ -188,7 +188,7 @@ export function createWaitForDelegationTool(): ToolDef {
       },
       required: ["task_id"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const taskId = args.task_id as string;
       const orchestrator = getDelegationOrchestrator();
@@ -200,7 +200,7 @@ export function createWaitForDelegationTool(): ToolDef {
           title: "wait_for_delegation",
           output: zh
             ? `错误：未找到委派任务 "${taskId}"。请确保使用 delegate_to_session 返回的 task_id。`
-            : `Error: Delegation task "${taskId}" not found. Make sure to use the task_id returned by delegate_to_session.`,
+            : `Error: Delegation task "${taskId}" not found. Make sure to use the task_id returned by delegate_to_session.`, isError: true,
         };
       }
 
@@ -234,7 +234,7 @@ export function createWaitForDelegationTool(): ToolDef {
           ].filter(Boolean);
           return {
             title: `wait_for_delegation: ${taskId.substring(0, 16)}... (running)`,
-            output: lines.join("\n"),
+            output: lines.join("\n"), isError: false,
           };
         }
 
@@ -244,19 +244,19 @@ export function createWaitForDelegationTool(): ToolDef {
 
         return {
           title: `wait_for_delegation: ${taskId.substring(0, 16)}...`,
-          output: `${statusL}: ${completed.status}\n${sessionL}: ${completed.targetSessionId}\n${resultL}:\n${completed.result || "(empty)"}`,
+          output: `${statusL}: ${completed.status}\n${sessionL}: ${completed.targetSessionId}\n${resultL}:\n${completed.result || "(empty)"}`, isError: false,
         };
       } catch (error: any) {
         // 如果是 abort 导致的取消
         if (ctx.abort?.aborted) {
           return {
             title: "wait_for_delegation",
-            output: zh ? "等待已取消（主任务被中断）" : "Wait cancelled (parent task aborted)",
+            output: zh ? "等待已取消（主任务被中断）" : "Wait cancelled (parent task aborted)", isError: false,
           };
         }
         return {
           title: "wait_for_delegation",
-          output: (zh ? "错误: " : "Error: ") + error.message,
+          output: (zh ? "错误: " : "Error: ") + error.message, isError: true,
         };
       }
     },
@@ -286,7 +286,7 @@ export function createQuerySessionResultTool(): ToolDef {
       },
       required: ["session_id"],
     },
-    async execute(args, _ctx) {
+    async execute(args, _ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const sessionId = args.session_id as string;
       const count = Math.min((args.message_count as number) || 1, 5);
@@ -298,7 +298,7 @@ export function createQuerySessionResultTool(): ToolDef {
       if (assistantMessages.length === 0) {
         return {
           title: `query_session_result: ${sessionId.substring(0, 12)}...`,
-          output: zh ? "该会话暂无 assistant 输出。" : "No assistant output in this session yet.",
+          output: zh ? "该会话暂无 assistant 输出。" : "No assistant output in this session yet.", isError: false,
         };
       }
 
@@ -318,6 +318,7 @@ export function createQuerySessionResultTool(): ToolDef {
       return {
         title: `query_session_result: ${sessionId.substring(0, 12)}...`,
         output,
+        isError: false,
       };
     },
   };
@@ -337,7 +338,7 @@ export function createListSessionsTool(): ToolDef {
       type: "object",
       properties: {},
     },
-    async execute(_args, ctx) {
+    async execute(_args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
 
       /**
@@ -385,7 +386,7 @@ export function createListSessionsTool(): ToolDef {
       if (rows.length === 0) {
         return {
           title: "list_sessions",
-          output: zh ? "没有任何会话可列（当前作用域与全局都是空的）。" : "No sessions to list (current scope and global are both empty).",
+          output: zh ? "没有任何会话可列（当前作用域与全局都是空的）。" : "No sessions to list (current scope and global are both empty).", isError: false,
         };
       }
 
@@ -420,7 +421,7 @@ export function createListSessionsTool(): ToolDef {
 
       return {
         title: "list_sessions",
-        output: header + "\n" + lines.join("\n"),
+        output: header + "\n" + lines.join("\n"), isError: false,
       };
     },
   };
@@ -458,7 +459,7 @@ export function createCancelDelegationTool(): ToolDef {
       },
       required: ["task_id"],
     },
-    async execute(args, _ctx) {
+    async execute(args, _ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const taskId = args.task_id as string;
       const reason = (args.reason as string) || (zh ? "调用方主动终止" : "cancelled by caller");
@@ -470,7 +471,7 @@ export function createCancelDelegationTool(): ToolDef {
           title: "cancel_delegation",
           output: zh
             ? `错误：未找到委派任务 "${taskId}"。`
-            : `Error: Delegation task "${taskId}" not found.`,
+            : `Error: Delegation task "${taskId}" not found.`, isError: true,
         };
       }
 
@@ -493,7 +494,7 @@ export function createCancelDelegationTool(): ToolDef {
             ? `已终止委派任务 "${taskId}"（目标会话: ${task.targetSessionId}）。原因: ${reason}\n` +
               `子会话已完成的部分产出仍可用 query_session_result 查看。请向用户说明：任务被主动终止 + 终止原因 + 已经拿到的部分结果。`
             : `Cancelled delegation task "${taskId}" (target session: ${task.targetSessionId}). Reason: ${reason}\n` +
-              `Partial output is still available via query_session_result. Tell the user: the task was cancelled, why, and what partial results exist.`,
+              `Partial output is still available via query_session_result. Tell the user: the task was cancelled, why, and what partial results exist.`, isError: false,
       };
     },
   };
@@ -555,7 +556,7 @@ export function createSetSessionInternalTool(): ToolDef {
       },
       required: ["session_id", "internal"],
     },
-    async execute(args, _ctx) {
+    async execute(args, _ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const sessionId = args.session_id as string;
       const internal = args.internal as boolean;
@@ -567,7 +568,7 @@ export function createSetSessionInternalTool(): ToolDef {
           title: "set_session_internal",
           output: zh
             ? `错误：找不到会话 "${sessionId}"。请用 list_sessions 拿当前项目里的会话 ID。`
-            : `Error: session "${sessionId}" not found. Use list_sessions to get IDs from the current project.`,
+            : `Error: session "${sessionId}" not found. Use list_sessions to get IDs from the current project.`, isError: true,
         };
       }
 
@@ -583,7 +584,7 @@ export function createSetSessionInternalTool(): ToolDef {
           title: `set_session_internal: ${sessionId}`,
           output: zh
             ? `标记**未生效**（回读仍是 ${after ? after.isInternal : "读不到"}）。会话在库里可能还没落盘 —— 请稍后重试，并把这件事告诉用户。`
-            : `Marking did NOT take effect (read-back: ${after ? after.isInternal : "unreadable"}). The session may not be persisted yet — retry shortly and tell the user.`,
+            : `Marking did NOT take effect (read-back: ${after ? after.isInternal : "unreadable"}). The session may not be persisted yet — retry shortly and tell the user.`, isError: true,
         };
       }
 
@@ -593,7 +594,7 @@ export function createSetSessionInternalTool(): ToolDef {
           ? `已把会话 "${session.title || sessionId}" 标记为**${internal ? "内部（不进对话目录）" : "普通（回到对话目录）"}**。` +
             (internal ? `\n它仍然可以按 ID 访问；要还原就再调一次并传 internal: false。` : "")
           : `Session "${session.title || sessionId}" is now ${internal ? "internal (hidden from the conversation list)" : "normal (visible again)"}.` +
-            (internal ? `\nIt is still accessible by ID; pass internal: false to restore it.` : ""),
+            (internal ? `\nIt is still accessible by ID; pass internal: false to restore it.` : ""), isError: false,
       };
     },
   };

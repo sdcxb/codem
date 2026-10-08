@@ -94,14 +94,14 @@ If the user rejects, stay in Plan mode, revise the plan based on their feedback,
       if (!plan || plan.trim().length === 0) {
         return {
           title: "exit_plan_mode",
-          output: "Error: plan parameter is required and must not be empty.",
+          output: "Error: plan parameter is required and must not be empty.", isError: true,
         };
       }
 
       if (!planApprovalCallback) {
         return {
           title: "exit_plan_mode",
-          output: "Error: Plan approval UI is not available. The user will need to manually switch to Default mode.",
+          output: "Error: Plan approval UI is not available. The user will need to manually switch to Default mode.", isError: true,
         };
       }
 
@@ -115,30 +115,30 @@ If the user rejects, stay in Plan mode, revise the plan based on their feedback,
           if (result.modeSwitched === false) {
             return {
               title: "Plan Approved (mode switch failed)",
-              output: `⚠️ 用户已批准计划，但**协作模式没有切换成功**（仍在 Plan 模式），写操作仍会被拦下。\n${result.modeNote ? `\n细节：${result.modeNote}\n` : ""}\n请不要继续尝试写入/执行；请让用户手动把模式切到 Default 后再说"继续"，或重新调用 exit_plan_mode。\n\n计划原文：\n${plan}`,
+              output: `⚠️ 用户已批准计划，但**协作模式没有切换成功**（仍在 Plan 模式），写操作仍会被拦下。\n${result.modeNote ? `\n细节：${result.modeNote}\n` : ""}\n请不要继续尝试写入/执行；请让用户手动把模式切到 Default 后再说"继续"，或重新调用 exit_plan_mode。\n\n计划原文：\n${plan}`, isError: false,
             };
           }
           if (result.modeSwitched === undefined) {
             return {
               title: "Plan Approved",
-              output: `✅ 用户已批准计划。模式切换结果未被 UI 确认 —— 如果接下来的写入工具仍然报 "Cannot use ... in Plan mode"，说明模式没有切换，请停下来告诉用户手动切换到 Default 模式，不要反复重试。${result.modeNote ? `\n\n细节：${result.modeNote}` : ""}\n\n${plan}`,
+              output: `✅ 用户已批准计划。模式切换结果未被 UI 确认 —— 如果接下来的写入工具仍然报 "Cannot use ... in Plan mode"，说明模式没有切换，请停下来告诉用户手动切换到 Default 模式，不要反复重试。${result.modeNote ? `\n\n细节：${result.modeNote}` : ""}\n\n${plan}`, isError: false,
             };
           }
           return {
             title: "Plan Approved",
-            output: `✅ Plan approved by user. You are now in Default mode. Begin executing the plan.${result.modeNote ? `\n\n(${result.modeNote})` : ""}\n\n${plan}`,
+            output: `✅ Plan approved by user. You are now in Default mode. Begin executing the plan.${result.modeNote ? `\n\n(${result.modeNote})` : ""}\n\n${plan}`, isError: false,
           };
         } else {
           const feedback = result.feedback || "No specific feedback provided.";
           return {
             title: "Plan Rejected",
-            output: `❌ Plan rejected by user. Stay in Plan mode.\n\nUser feedback:\n${feedback}\n\nRevise your plan and call exit_plan_mode again when ready.`,
+            output: `❌ Plan rejected by user. Stay in Plan mode.\n\nUser feedback:\n${feedback}\n\nRevise your plan and call exit_plan_mode again when ready.`, isError: true,
           };
         }
       } catch (err: any) {
         return {
           title: "exit_plan_mode",
-          output: `Error during plan approval: ${err.message}`,
+          output: `Error during plan approval: ${err.message}`, isError: true,
         };
       }
     },

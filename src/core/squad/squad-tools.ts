@@ -12,7 +12,7 @@
  * 注册方式：在 LLMEngine.setupDelegationTools() 中调用
  */
 
-import type { ToolDef } from "../llm/tools";
+import type { ToolDef, ToolExecuteResult } from "../llm/tools";
 import { getSquadManager } from "./squad";
 import { useProjectStore } from "../store";
 import { getLang } from "../i18n/lang";
@@ -31,7 +31,7 @@ export function createSquadListTool(): ToolDef {
       properties: {},
       required: [],
     },
-    async execute(_args, _ctx) {
+    async execute(_args, _ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const mgr = getSquadManager();
       const projectId = useProjectStore.getState().currentProject?.id;
@@ -40,7 +40,7 @@ export function createSquadListTool(): ToolDef {
       if (squads.length === 0) {
         return {
           title: "squad_list",
-          output: zh ? "当前项目暂无团队模板（Squad）。" : "No team templates (squads) found in the current project.",
+          output: zh ? "当前项目暂无团队模板（Squad）。" : "No team templates (squads) found in the current project.", isError: false,
         };
       }
 
@@ -65,7 +65,7 @@ export function createSquadListTool(): ToolDef {
 
       return {
         title: `squad_list: ${squads.length} template(s)`,
-        output: lines.join("\n"),
+        output: lines.join("\n"), isError: false,
       };
     },
   };
@@ -97,7 +97,7 @@ export function createSquadDispatchTool(): ToolDef {
       },
       required: ["squad_id", "task"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const squadId = args.squad_id as string;
       const task = (args.task as string) || "";
@@ -108,20 +108,20 @@ export function createSquadDispatchTool(): ToolDef {
       if (!squad) {
         return {
           title: "squad_dispatch",
-          output: (zh ? "错误: 团队模板不存在: " : "Error: Team template not found: ") + squadId,
+          output: (zh ? "错误: 团队模板不存在: " : "Error: Team template not found: ") + squadId, isError: true,
         };
       }
       if (squad.archived) {
         return {
           title: "squad_dispatch",
-          output: (zh ? "错误: 团队模板已归档: " : "Error: Template is archived: ") + squad.name,
+          output: (zh ? "错误: 团队模板已归档: " : "Error: Template is archived: ") + squad.name, isError: true,
         };
       }
       const template = mgr.toTeamTemplate(squadId);
       if (!template) {
         return {
           title: "squad_dispatch",
-          output: zh ? "错误: 无法导出团队模板" : "Error: failed to export team template",
+          output: zh ? "错误: 无法导出团队模板" : "Error: failed to export team template", isError: true,
         };
       }
       // 模板需至少一个可 spawn 的 agent 角色（human 角色无法成为运行时成员）
@@ -134,7 +134,7 @@ export function createSquadDispatchTool(): ToolDef {
             ` (${squad.name})。\n` +
             (zh
               ? "请先在任务管理「团队」Tab 的模板里添加 agent 成员（角色），或用 agent_teams_create 直接建队。"
-              : "Add agent member roles to the template (Task Center → Teams) first, or use agent_teams_create directly."),
+              : "Add agent member roles to the template (Task Center → Teams) first, or use agent_teams_create directly."), isError: true,
         };
       }
 
@@ -152,7 +152,7 @@ export function createSquadDispatchTool(): ToolDef {
             `: ${e?.message || e}\n` +
             (zh
               ? "当前会话可能已作为队长带领一个活动团队（一人一队）——用 agent_teams_status 查看并用 agent_teams_delete 结束旧队后重试。"
-              : "This session may already lead an active team (one team per captain). Check with agent_teams_status and delete it with agent_teams_delete, then retry."),
+              : "This session may already lead an active team (one team per captain). Check with agent_teams_status and delete it with agent_teams_delete, then retry."), isError: true,
         };
       }
 
@@ -186,7 +186,7 @@ export function createSquadDispatchTool(): ToolDef {
         svc.deleteTeam(team.id);
         return {
           title: "squad_dispatch",
-          output: (zh ? "错误: 派发任务失败，已回收团队: " : "Error: task creation failed, team rolled back: ") + (e?.message || e),
+          output: (zh ? "错误: 派发任务失败，已回收团队: " : "Error: task creation failed, team rolled back: ") + (e?.message || e), isError: true,
         };
       }
 
@@ -212,7 +212,7 @@ export function createSquadDispatchTool(): ToolDef {
                 : `⚠️ ${spawnFailures.length} member(s) FAILED to start (removed from team): ${spawnFailures.join("; ")}\nReady members: ${team.members.map((m) => `${m.name}(${m.status})`).join(", ") || "(none)"}.`)
             : (zh
                 ? "成员已按角色就绪，调度器将唤醒空闲成员领取任务。用 agent_teams_status 查看进度、agent_teams_send_message 指导成员、agent_teams_update_task 更新状态。"
-                : "Members are ready by role; the scheduler wakes idle members to claim the task. Use agent_teams_status to track, agent_teams_send_message to guide, agent_teams_update_task to update.")),
+                : "Members are ready by role; the scheduler wakes idle members to claim the task. Use agent_teams_status to track, agent_teams_send_message to guide, agent_teams_update_task to update.")), isError: true,
         metadata: {
           teamId: team.id, taskId: created?.id || "", squadTemplateId: squadId,
           task: task.substring(0, 100),
@@ -247,7 +247,7 @@ export function createSquadStatusTool(): ToolDef {
       },
       required: ["squad_id"],
     },
-    async execute(args, _ctx) {
+    async execute(args, _ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const squadId = args.squad_id as string;
       const teamId = (args.team_id as string) || "";
@@ -257,7 +257,7 @@ export function createSquadStatusTool(): ToolDef {
       if (!squad) {
         return {
           title: "squad_status",
-          output: (zh ? "错误: 团队模板不存在: " : "Error: Team template not found: ") + squadId,
+          output: (zh ? "错误: 团队模板不存在: " : "Error: Team template not found: ") + squadId, isError: true,
         };
       }
 
@@ -307,7 +307,7 @@ export function createSquadStatusTool(): ToolDef {
 
       return {
         title: `squad_status: ${squad.name}`,
-        output: lines.join("\n"),
+        output: lines.join("\n"), isError: false,
       };
     },
   };

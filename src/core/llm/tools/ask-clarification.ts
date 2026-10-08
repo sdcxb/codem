@@ -52,7 +52,7 @@ export function createClarificationTool(): ToolDef {
       if (type !== "text" && (!options || options.length === 0)) {
         return {
           title: "Error",
-          output: `单选/多选类型必须提供选项列表`,
+          output: `单选/多选类型必须提供选项列表`, isError: false,
         };
       }
 
@@ -96,7 +96,7 @@ export function createClarificationTool(): ToolDef {
 
       return {
         title: "Clarification Answer",
-        output: answerText,
+        output: answerText, isError: false,
       };
     },
   };

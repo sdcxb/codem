@@ -14,7 +14,7 @@
  *   在 Deferred hints 里；断连即移除（syncCodeGraphTools）。
  */
 
-import type { ToolDef, ToolRegistry } from "../tools";
+import type { ToolDef, ToolExecuteResult, ToolRegistry } from "../tools";
 import { getMCPRegistry } from "../../mcp/mcp";
 import type { MCPTool } from "../../mcp/mcp";
 
@@ -58,7 +58,7 @@ export function createCodeGraphTool(tool: MCPTool & { server: string }): ToolDef
       "codegraph 代码图谱查询（调用链/谁调用/改动影响范围等代码关系问题）：" +
       `工具 ${name} 为 deferred——先调用 tool_search 获取完整参数 schema 再使用；` +
       "普通读文件用 read、按名搜用 glob、按内容搜用 grep。",
-    execute: async (args, _ctx) => {
+    execute: async (args, _ctx): Promise<ToolExecuteResult> => {
       try {
         const result = await getMCPRegistry().callTool(tool.server, name, args as Record<string, unknown>);
         const text = mcpResultToText(result as any);
@@ -67,9 +67,13 @@ export function createCodeGraphTool(tool: MCPTool & { server: string }): ToolDef
           output: result && (result as any).isError
             ? `[CodeGraph error]\n${text || JSON.stringify(result)}`
             : (text || JSON.stringify(result)),
+          // 第 182 波 T-1：失败由**显式声明**表达（MCP 自报 isError 才算失败；
+          // 「检索成功但零命中」仍是正常结果）。
+          isError: !!(result && (result as any).isError),
         };
       } catch (e: any) {
-        return { title: `CodeGraph ${name}`, output: `[CodeGraph error] ${e?.message || e}` };
+        // 第 182 波 T-1：调用本身抛错（MCP 未连接 / 服务器崩了）—— 显式声明失败
+        return { title: `CodeGraph ${name}`, output: `[CodeGraph error] ${e?.message || e}`, isError: true };
       }
     },
   };

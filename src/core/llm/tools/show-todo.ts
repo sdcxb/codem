@@ -94,7 +94,7 @@ export function createShowTodoTool(): ToolDef {
       if (!inputTodos || inputTodos.length === 0) {
         return {
           title: "Error",
-          output: "Todo 列表不能为空",
+          output: "Todo 列表不能为空", isError: true,
         };
       }
 
@@ -133,6 +133,7 @@ export function createShowTodoTool(): ToolDef {
         return {
           title: allCompleted ? "Todo List — All Completed" : "Todo List Created",
           output,
+          isError: false,
           metadata: {
             totalTasks: todos.length,
             completed,
@@ -144,7 +145,7 @@ export function createShowTodoTool(): ToolDef {
       } catch (error) {
         return {
           title: "Error",
-          output: `保存 Todo 列表失败: ${error instanceof Error ? error.message : String(error)}`,
+          output: `保存 Todo 列表失败: ${error instanceof Error ? error.message : String(error)}`, isError: true,
         };
       }
     },

@@ -122,7 +122,7 @@ console.log(JSON.stringify(results, null, 2));
       const timeoutMs = Math.min(args.timeout_ms as number || 120_000, 300_000);
 
       if (!code || code.trim().length === 0) {
-        return { title: "workflow", output: "Error: code parameter is required." };
+        return { title: "workflow", output: "Error: code parameter is required.", isError: true };
       }
 
       // Build SDK — DSH-style: use SubagentRuntime instead of old SubagentManager
@@ -198,9 +198,9 @@ console.log(JSON.stringify(results, null, 2));
         if (result.stdout) output += result.stdout;
         if (result.stderr) output += "\n[stderr]:\n" + result.stderr;
         if (result.error) output += "\n[error]: " + result.error;
-        return { title: "workflow", output: output || "(no output)" };
+        return { title: "workflow", output: output || "(no output)", isError: false };
       } catch (err: any) {
-        return { title: "workflow", output: "Error: " + err.message };
+        return { title: "workflow", output: "Error: " + err.message, isError: true };
       }
     },
   };

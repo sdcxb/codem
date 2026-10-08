@@ -32,7 +32,7 @@ Returns a list of jobs with their ID, command, status, and start time.`,
         const jobs = getJobManager().listJobs();
         const ptyJobs = listTerminalBackgroundJobs();
         if (jobs.length === 0 && ptyJobs.length === 0) {
-          return { title: "job_list", output: "No background jobs running." };
+          return { title: "job_list", output: "No background jobs running.", isError: false };
         }
         const lines = jobs.map(j =>
           `- ${j.id} [${j.status}] "${j.command}" (started: ${new Date(j.startedAt).toISOString()})`
@@ -40,7 +40,7 @@ Returns a list of jobs with their ID, command, status, and start time.`,
         for (const p of ptyJobs) {
           lines.push(`- ${p.id} [${p.status}] (terminal send, session: ${p.sessionId}, started: ${new Date(p.startedAt).toISOString()})`);
         }
-        return { title: `Background Jobs (${jobs.length + ptyJobs.length})`, output: lines.join("\n") };
+        return { title: `Background Jobs (${jobs.length + ptyJobs.length})`, output: lines.join("\n"), isError: false };
       },
     },
 
@@ -65,26 +65,26 @@ Use this to check on long-running background commands.`,
         if (isPtyJobId(jobId)) {
           const pty = getTerminalBackgroundJob(jobId);
           if (!pty) {
-            return { title: "job_output", output: `Job not found: ${jobId}` };
+            return { title: "job_output", output: `Job not found: ${jobId}`, isError: true };
           }
           const stdout = pty.stdout ? `stdout:\n${pty.stdout}` : "(no stdout)";
           const stderr = pty.stderr ? `stderr:\n${pty.stderr}` : "(no stderr)";
           const wait = pty.waitReason ? `\n[wait: ${pty.waitReason}]` : "";
           return {
             title: `Job ${jobId} [${pty.status}]`,
-            output: `${stdout}\n\n${stderr}${wait}`,
+            output: `${stdout}\n\n${stderr}${wait}`, isError: false,
           };
         }
 
         const output = getJobManager().getOutput(jobId);
         if (!output) {
-          return { title: "job_output", output: `Job not found: ${jobId}` };
+          return { title: "job_output", output: `Job not found: ${jobId}`, isError: true };
         }
         const stdout = output.stdout ? `stdout:\n${output.stdout}` : "(no stdout)";
         const stderr = output.stderr ? `stderr:\n${output.stderr}` : "(no stderr)";
         return {
           title: `Job ${jobId} [${output.status}]`,
-          output: `${stdout}\n\n${stderr}`,
+          output: `${stdout}\n\n${stderr}`, isError: false,
         };
       },
     },
@@ -109,16 +109,16 @@ Use this when a background command needs to be terminated.`,
         if (isPtyJobId(jobId)) {
           const killed = await killTerminalBackgroundJob(jobId);
           if (killed) {
-            return { title: "Job Killed", output: `✅ Job ${jobId} has been killed (SIGINT sent to terminal).` };
+            return { title: "Job Killed", output: `✅ Job ${jobId} has been killed (SIGINT sent to terminal).`, isError: false };
           }
-          return { title: "job_kill", output: `❌ Job ${jobId} not found or not running.` };
+          return { title: "job_kill", output: `❌ Job ${jobId} not found or not running.`, isError: true };
         }
 
         const killed = getJobManager().kill(jobId);
         if (killed) {
-          return { title: "Job Killed", output: `✅ Job ${jobId} has been killed.` };
+          return { title: "Job Killed", output: `✅ Job ${jobId} has been killed.`, isError: false };
         }
-        return { title: "job_kill", output: `❌ Job ${jobId} not found or not running.` };
+        return { title: "job_kill", output: `❌ Job ${jobId} not found or not running.`, isError: true };
       },
     },
   ];

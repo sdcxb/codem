@@ -188,7 +188,7 @@ export function createGitHubTool(): ToolDef {
       },
       required: ["action"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const action = args.action as string;
 
@@ -199,7 +199,7 @@ export function createGitHubTool(): ToolDef {
           title: "github_tool",
           output: zh
             ? "错误：未配置 GitHub Token。请在 设置 → Git 偏好配置 中填写 GitHub Token。\n获取方式：GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens\n所需权限：repo, read:user, security_events"
-            : "Error: GitHub Token not configured. Please configure it in Settings → Git Preferences.\nGet it from: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens\nRequired scopes: repo, read:user, security_events",
+            : "Error: GitHub Token not configured. Please configure it in Settings → Git Preferences.\nGet it from: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens\nRequired scopes: repo, read:user, security_events", isError: true,
         };
       }
 
@@ -212,7 +212,7 @@ export function createGitHubTool(): ToolDef {
           case "pr_review": {
             const prNumber = args.prNumber as number;
             if (!owner || !repo || !prNumber) {
-              return { title: label, output: "Error: owner, repo, and prNumber are required for 'pr_review' action" };
+              return { title: label, output: "Error: owner, repo, and prNumber are required for 'pr_review' action", isError: true };
             }
             const data = await fetchPR(owner, repo, prNumber, token);
             const pr = data.pr;
@@ -230,14 +230,14 @@ export function createGitHubTool(): ToolDef {
 
             return {
               title: label,
-              output: `PR #${pr.number}: ${pr.title}\nState: ${pr.state} | ${pr.user?.login} | ${new Date(pr.created_at).toLocaleDateString()}\n\nFiles changed (${files.length}):\n${fileSummaries}\n\nReviews (${reviews.length}):\n${reviewSummaries || "(none)"}\n\nDiff (truncated to 5000 chars):\n${diff.substring(0, 5000)}${diff.length > 5000 ? "\n... (truncated)" : ""}`,
+              output: `PR #${pr.number}: ${pr.title}\nState: ${pr.state} | ${pr.user?.login} | ${new Date(pr.created_at).toLocaleDateString()}\n\nFiles changed (${files.length}):\n${fileSummaries}\n\nReviews (${reviews.length}):\n${reviewSummaries || "(none)"}\n\nDiff (truncated to 5000 chars):\n${diff.substring(0, 5000)}${diff.length > 5000 ? "\n... (truncated)" : ""}`, isError: false,
             };
           }
 
           case "search_code": {
             const query = args.query as string;
             if (!query) {
-              return { title: label, output: "Error: query is required for 'search_code' action" };
+              return { title: label, output: "Error: query is required for 'search_code' action", isError: true };
             }
             const data = await searchCode(query, token);
             const items = data.items || [];
@@ -246,14 +246,14 @@ export function createGitHubTool(): ToolDef {
             }).join("\n");
             return {
               title: label,
-              output: `${data.total_count} results found (showing ${Math.min(items.length, 20)}):\n\n${results}`,
+              output: `${data.total_count} results found (showing ${Math.min(items.length, 20)}):\n\n${results}`, isError: false,
             };
           }
 
           case "search_issues": {
             const query = args.query as string;
             if (!query) {
-              return { title: label, output: "Error: query is required for 'search_issues' action" };
+              return { title: label, output: "Error: query is required for 'search_issues' action", isError: true };
             }
             const data = await searchIssues(query, token);
             const items = data.items || [];
@@ -262,24 +262,24 @@ export function createGitHubTool(): ToolDef {
             }).join("\n");
             return {
               title: label,
-              output: `${data.total_count} issues/PRs found (showing ${Math.min(items.length, 20)}):\n\n${results}`,
+              output: `${data.total_count} issues/PRs found (showing ${Math.min(items.length, 20)}):\n\n${results}`, isError: false,
             };
           }
 
           case "repo_info": {
             if (!owner || !repo) {
-              return { title: label, output: "Error: owner and repo are required for 'repo_info' action" };
+              return { title: label, output: "Error: owner and repo are required for 'repo_info' action", isError: true };
             }
             const data = await fetchRepo(owner, repo, token);
             return {
               title: label,
-              output: `Repository: ${data.full_name}\nDescription: ${data.description || "(none)"}\nStars: ${data.stargazers_count} | Forks: ${data.forks_count}\nDefault branch: ${data.default_branch}\nLanguage: ${data.language || "(none)"}\nTopics: ${(data.topics || []).join(", ") || "(none)"}\nCreated: ${data.created_at}\nUpdated: ${data.updated_at}\nURL: ${data.html_url}`,
+              output: `Repository: ${data.full_name}\nDescription: ${data.description || "(none)"}\nStars: ${data.stargazers_count} | Forks: ${data.forks_count}\nDefault branch: ${data.default_branch}\nLanguage: ${data.language || "(none)"}\nTopics: ${(data.topics || []).join(", ") || "(none)"}\nCreated: ${data.created_at}\nUpdated: ${data.updated_at}\nURL: ${data.html_url}`, isError: false,
             };
           }
 
           case "commits": {
             if (!owner || !repo) {
-              return { title: label, output: "Error: owner and repo are required for 'commits' action" };
+              return { title: label, output: "Error: owner and repo are required for 'commits' action", isError: true };
             }
             const data = await fetchCommits(owner, repo, token, (args.perPage as number) || 10);
             const commits = data.map((c: any) => {
@@ -288,7 +288,7 @@ export function createGitHubTool(): ToolDef {
             }).join("\n");
             return {
               title: label,
-              output: `Recent commits (${data.length}):\n\n${commits}`,
+              output: `Recent commits (${data.length}):\n\n${commits}`, isError: false,
             };
           }
 
@@ -324,7 +324,7 @@ export function createGitHubTool(): ToolDef {
             if (alerts.length === 0) {
               return {
                 title: label,
-                output: `✅ No open vulnerability alerts found for ${owner}/${repo}`,
+                output: `✅ No open vulnerability alerts found for ${owner}/${repo}`, isError: false,
               };
             }
             const alertList = alerts.map((a: any) => {
@@ -333,7 +333,7 @@ export function createGitHubTool(): ToolDef {
             }).join("\n");
             return {
               title: label,
-              output: `${alerts.length} open vulnerability alerts found:\n\n${alertList}`,
+              output: `${alerts.length} open vulnerability alerts found:\n\n${alertList}`, isError: false,
             };
           }
 

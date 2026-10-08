@@ -158,10 +158,10 @@ export function createBrowserAutomateTool(): ToolDef {
       },
       required: ["actions"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const actions = args.actions as BrowserAction[];
       if (!actions || !Array.isArray(actions) || actions.length === 0) {
-        return { title: "browser_automate", output: "Error: actions array is required" };
+        return { title: "browser_automate", output: "Error: actions array is required", isError: true };
       }
 
       const zh = getLang() === "zh";
@@ -245,7 +245,7 @@ export function createBrowserAutomateTool(): ToolDef {
 
         return {
           title: `browser_automate (${actions.length} actions)`,
-          output: results.join("\n\n"),
+          output: results.join("\n\n"), isError: false,
           metadata: { total: actions.length, failed: 0 },
         };
       } catch (error: any) {

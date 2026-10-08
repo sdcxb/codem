@@ -39,7 +39,7 @@ Use this when you have a multi-step task that needs structured tracking. After c
         });
         return {
           title: "Goal Created",
-          output: `✅ Goal created: ${goal.title}\nID: ${goal.id}\nStatus: in_progress\nPriority: ${goal.priority}${goal.successCriteria ? `\nSuccess criteria: ${goal.successCriteria}` : ""}`,
+          output: `✅ Goal created: ${goal.title}\nID: ${goal.id}\nStatus: in_progress\nPriority: ${goal.priority}${goal.successCriteria ? `\nSuccess criteria: ${goal.successCriteria}` : ""}`, isError: false,
         };
       },
     },
@@ -60,22 +60,22 @@ Use this when you have a multi-step task that needs structured tracking. After c
         if (args.goalId) {
           const goal = getGoal(args.goalId as string);
           if (!goal) {
-            return { title: "get_goal", output: `Goal not found: ${args.goalId}` };
+            return { title: "get_goal", output: `Goal not found: ${args.goalId}`, isError: true };
           }
           return {
             title: `Goal: ${goal.title}`,
-            output: `ID: ${goal.id}\nTitle: ${goal.title}\nStatus: ${goal.status}\nPriority: ${goal.priority}${goal.description ? `\nDescription: ${goal.description}` : ""}${goal.successCriteria ? `\nSuccess criteria: ${goal.successCriteria}` : ""}`,
+            output: `ID: ${goal.id}\nTitle: ${goal.title}\nStatus: ${goal.status}\nPriority: ${goal.priority}${goal.description ? `\nDescription: ${goal.description}` : ""}${goal.successCriteria ? `\nSuccess criteria: ${goal.successCriteria}` : ""}`, isError: false,
           };
         }
         // List all goals
         const goals = listGoals(ctx.sessionId);
         if (goals.length === 0) {
-          return { title: "get_goal", output: "No goals found for this session." };
+          return { title: "get_goal", output: "No goals found for this session.", isError: false };
         }
         const lines = goals.map(g => `- [${g.status}] ${g.title} (${g.id})${g.priority !== "normal" ? ` [${g.priority}]` : ""}`);
         return {
           title: `Goals (${goals.length})`,
-          output: lines.join("\n"),
+          output: lines.join("\n"), isError: false,
         };
       },
     },
@@ -114,11 +114,11 @@ Status transitions:
 
         const goal = getGoal(goalId);
         if (!goal) {
-          return { title: "update_goal", output: `Goal not found: ${goalId}` };
+          return { title: "update_goal", output: `Goal not found: ${goalId}`, isError: true };
         }
         return {
           title: "Goal Updated",
-          output: `✅ Goal "${goal.title}" updated. Status: ${goal.status}`,
+          output: `✅ Goal "${goal.title}" updated. Status: ${goal.status}`, isError: false,
         };
       },
     },

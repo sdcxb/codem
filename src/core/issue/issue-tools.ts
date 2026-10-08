@@ -8,7 +8,7 @@
  * 4. issue_list — 列出当前项目的 Issue
  */
 
-import type { ToolDef } from "../llm/tools";
+import type { ToolDef, ToolExecuteResult } from "../llm/tools";
 import { getIssueManager } from "./issue";
 import { useProjectStore } from "../store";
 import { getLang } from "../i18n/lang";
@@ -51,7 +51,7 @@ export function createIssueCreateTool(): ToolDef {
       },
       required: ["title"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const mgr = getIssueManager();
       const projectId = useProjectStore.getState().currentProject?.id;
@@ -63,7 +63,7 @@ export function createIssueCreateTool(): ToolDef {
           title: "issue_create",
           output: zh
             ? "尚未选择项目，无法创建 Issue（Issue 必须归属到某个项目）。请先在侧栏选择或新建项目。"
-            : "No project selected — issues are project-scoped. Select or create a project first.",
+            : "No project selected — issues are project-scoped. Select or create a project first.", isError: true,
         };
       }
 
@@ -90,7 +90,7 @@ export function createIssueCreateTool(): ToolDef {
           `\nTitle: ${issue.title}` +
           `\nStatus: ${issue.status}` +
           `\nPriority: ${issue.priority}` +
-          (issue.assigneeId ? `\nAssignee: ${issue.assigneeType}/${issue.assigneeId}` : ""),
+          (issue.assigneeId ? `\nAssignee: ${issue.assigneeType}/${issue.assigneeId}` : ""), isError: false,
         metadata: { issueId: issue.id },
       };
     },
@@ -132,14 +132,14 @@ export function createIssueUpdateTool(): ToolDef {
       },
       required: ["issue_id"],
     },
-    async execute(args, _ctx) {
+    async execute(args, _ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const mgr = getIssueManager();
       const issueId = args.issue_id as string;
 
       const issue = mgr.get(issueId);
       if (!issue) {
-        return { title: "issue_update", output: (zh ? "错误: Issue 不存在" : "Error: Issue not found") };
+        return { title: "issue_update", output: (zh ? "错误: Issue 不存在" : "Error: Issue not found"), isError: true };
       }
 
       // 校验枚举：非法 status/priority 会让 UI 的 STATUS_CONFIG[status] 取到 undefined
@@ -151,13 +151,13 @@ export function createIssueUpdateTool(): ToolDef {
       if (nextStatus !== undefined && !VALID_STATUS.includes(nextStatus)) {
         return {
           title: "issue_update",
-          output: (zh ? "错误: 非法 status（可选值: " : "Error: invalid status (allowed: ") + VALID_STATUS.join(", ") + ")",
+          output: (zh ? "错误: 非法 status（可选值: " : "Error: invalid status (allowed: ") + VALID_STATUS.join(", ") + ")", isError: true,
         };
       }
       if (nextPriority !== undefined && !VALID_PRIORITY.includes(nextPriority)) {
         return {
           title: "issue_update",
-          output: (zh ? "错误: 非法 priority（可选值: " : "Error: invalid priority (allowed: ") + VALID_PRIORITY.join(", ") + ")",
+          output: (zh ? "错误: 非法 priority（可选值: " : "Error: invalid priority (allowed: ") + VALID_PRIORITY.join(", ") + ")", isError: true,
         };
       }
 
@@ -172,7 +172,7 @@ export function createIssueUpdateTool(): ToolDef {
 
       return {
         title: `issue_update: ${issue.title}`,
-        output: (zh ? "Issue 已更新" : "Issue updated") + `\nID: ${issueId}` + (args.status ? `\nNew status: ${args.status}` : ""),
+        output: (zh ? "Issue 已更新" : "Issue updated") + `\nID: ${issueId}` + (args.status ? `\nNew status: ${args.status}` : ""), isError: false,
       };
     },
   };
@@ -196,7 +196,7 @@ export function createIssueCommentTool(): ToolDef {
       },
       required: ["issue_id", "content"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const mgr = getIssueManager();
       const issueId = args.issue_id as string;
@@ -204,7 +204,7 @@ export function createIssueCommentTool(): ToolDef {
 
       const issue = mgr.get(issueId);
       if (!issue) {
-        return { title: "issue_comment", output: (zh ? "错误: Issue 不存在" : "Error: Issue not found") };
+        return { title: "issue_comment", output: (zh ? "错误: Issue 不存在" : "Error: Issue not found"), isError: true };
       }
 
       mgr.addComment(issueId, {
@@ -216,7 +216,7 @@ export function createIssueCommentTool(): ToolDef {
 
       return {
         title: `issue_comment: ${issue.title}`,
-        output: (zh ? "评论已添加" : "Comment added") + `\nIssue: ${issueId}\nContent: ${content.substring(0, 200)}`,
+        output: (zh ? "评论已添加" : "Comment added") + `\nIssue: ${issueId}\nContent: ${content.substring(0, 200)}`, isError: false,
       };
     },
   };
@@ -242,7 +242,7 @@ export function createIssueListTool(): ToolDef {
       },
       required: [],
     },
-    async execute(args, _ctx) {
+    async execute(args, _ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const mgr = getIssueManager();
       const projectId = useProjectStore.getState().currentProject?.id;
@@ -254,7 +254,7 @@ export function createIssueListTool(): ToolDef {
           title: "issue_list",
           output: zh
             ? "尚未选择项目，无法列出 Issue。请先在侧栏选择或新建项目。"
-            : "No project selected — issues are project-scoped. Select or create a project first.",
+            : "No project selected — issues are project-scoped. Select or create a project first.", isError: true,
         };
       }
 
@@ -266,7 +266,7 @@ export function createIssueListTool(): ToolDef {
       if (issues.length === 0) {
         return {
           title: "issue_list",
-          output: zh ? "当前项目暂无 Issue。" : "No issues found in the current project.",
+          output: zh ? "当前项目暂无 Issue。" : "No issues found in the current project.", isError: false,
         };
       }
 
@@ -284,7 +284,7 @@ export function createIssueListTool(): ToolDef {
         lines.push(`${icon} ${issue.id} | ${issue.title} | ${issue.status} | ${issue.priority}${assignee}`);
       }
 
-      return { title: `issue_list: ${issues.length} issue(s)`, output: lines.join("\n") };
+      return { title: `issue_list: ${issues.length} issue(s)`, output: lines.join("\n"), isError: false };
     },
   };
 }

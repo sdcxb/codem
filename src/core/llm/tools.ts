@@ -507,7 +507,7 @@ export interface ToolExecuteResult {
    * **结论：这一项留给下一轮单独动手**（判据与精确缺口已在
    * `tool-result-status.test.ts` 的 `TRS-*` 与 `docs/HANDOFF-NEXT-SESSION.md` 第 181 波）。
    */
-  isError?: boolean;
+  isError: boolean;
   /**
    * 第 97 波：工具产出的**结构化结果值**（第 121 轮那套 `outputSchema` 的输入）。
    *
@@ -985,7 +985,7 @@ export function createBashTool(): ToolDef {
       },
       required: ["command"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       // 用 `str()` 而不是 `args.command as string`：后者在模型漏参时是 `undefined`，
       // 下面 `command.match(...)` 会抛 TypeError，被 catch 包成
       // 「Cannot read properties of undefined (reading 'match')」这种看不懂的内部错。
@@ -1079,7 +1079,7 @@ export function createBashTool(): ToolDef {
 
         // 已取消则直接返回，不 spawn 命令（对标 dsh abort 语义）
         if (ctx.abort?.aborted) {
-          return { title: `bash: ${command.substring(0, 50)}`, output: "Error: Command cancelled" };
+          return { title: `bash: ${command.substring(0, 50)}`, output: "Error: Command cancelled", isError: true };
         }
 
         const data = await Promise.race([
@@ -1122,12 +1122,12 @@ export function createBashTool(): ToolDef {
         const filePaths = extractFilePathsFromText(output);
         return {
           title: `bash: ${command.substring(0, 50)}`,
-          output: formatted,
+          output: formatted, isError: false,
           value: bashValue,
           metadata: filePaths.length > 0 ? { file_paths: filePaths } : undefined,
         };
       } catch (error: any) {
-        return { title: `bash: ${command.substring(0, 50)}`, output: `Error: ${error.message}` };
+        return { title: `bash: ${command.substring(0, 50)}`, output: `Error: ${error.message}`, isError: true };
       } finally {
         // 清理超时/取消监听（含 catch 路径，防泄漏）
         if (timeoutController && timeoutAbortFn) {
@@ -1305,7 +1305,7 @@ export function createReadFileTool(): ToolDef {
       },
       required: ["path"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const path = args.path as string;
       const offset = (args.offset as number) || 1;
       const limit = (args.limit as number) || 2000;
@@ -1458,7 +1458,7 @@ export function createReadFileTool(): ToolDef {
         await noteObservedPresent(ctx.sessionId, path);
         return {
           title: `read: ${path}`,
-          output: renderReadOutput(value),
+          output: renderReadOutput(value), isError: false,
           value,
         };
       } catch (error: any) {
@@ -1495,7 +1495,7 @@ export function createWriteFileTool(): ToolDef {
       },
       required: ["path", "content"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const path = args.path as string;
       const content = args.content as string;
       const append = args.append === true;
@@ -1508,7 +1508,7 @@ export function createWriteFileTool(): ToolDef {
           title: `write: ${path}`,
           output:
             `Error: 'content' must be a string (received ${content === undefined ? "undefined" : typeof content}). ` +
-            `This usually means the tool arguments were truncated by the output limit — write the file in chunks (append: true) instead of one huge call.`,
+            `This usually means the tool arguments were truncated by the output limit — write the file in chunks (append: true) instead of one huge call.`, isError: true,
         };
       }
 
@@ -1516,14 +1516,14 @@ export function createWriteFileTool(): ToolDef {
       if (isProtectedPath(path)) {
         return {
           title: `write: ${path}`,
-          output: `Error: This path is protected and cannot be written to. Protected paths include .git/, .env, .codem-snapshots/, node_modules/. Use the 'edit' tool for modifying existing files in safe locations.`,
+          output: `Error: This path is protected and cannot be written to. Protected paths include .git/, .env, .codem-snapshots/, node_modules/. Use the 'edit' tool for modifying existing files in safe locations.`, isError: true,
         };
       }
 
       // S5: Sandbox path whitelist check
       const sandboxError = checkSandbox(path, ctx);
       if (sandboxError) {
-        return { title: `write: ${path}`, output: `Error: ${sandboxError}` };
+        return { title: `write: ${path}`, output: `Error: ${sandboxError}`, isError: true };
       }
 
       /**
@@ -1570,7 +1570,7 @@ export function createWriteFileTool(): ToolDef {
               if (confirmResult.action === "reject") {
                 return {
                   title: `write: ${path}`,
-                  output: `Error: User rejected the overwrite of "${path}". Use the 'edit' tool for targeted modifications instead.`,
+                  output: `Error: User rejected the overwrite of "${path}". Use the 'edit' tool for targeted modifications instead.`, isError: true,
                 };
               }
 
@@ -1627,11 +1627,11 @@ export function createWriteFileTool(): ToolDef {
           title: `write: ${path}`,
           output: emptiedExisting
             ? `${output}\n\n[WARNING] 你刚刚把**已有文件的全部内容**写成了空（原文件 ${existingContent!.length} 字符）。如果这不是你的本意，请立刻用 write 恢复内容或从版本控制里找回。`
-            : output,
+            : output, isError: false,
           metadata: { file_paths: [path] },
         };
       } catch (error: any) {
-        return { title: `write: ${path}`, output: `Error: ${error.message}` };
+        return { title: `write: ${path}`, output: `Error: ${error.message}`, isError: true };
       }
     },
   };
@@ -1759,7 +1759,7 @@ export function createEditFileTool(): ToolDef {  return {
       },
       required: ["path", "oldString", "newString"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const path = args.path as string;
       const oldString = args.oldString as string;
       const newString = args.newString as string;
@@ -1770,21 +1770,21 @@ export function createEditFileTool(): ToolDef {  return {
       // 模型既看不懂也不知道该怎么改。这里显式回一条可行动的错误。
       const paramError = validateEditParams(args, ["oldString", "newString"]);
       if (paramError) {
-        return { title: `edit: ${path}`, output: `Error: ${paramError}` };
+        return { title: `edit: ${path}`, output: `Error: ${paramError}`, isError: true };
       }
 
       // S2: Protected path check
       if (isProtectedPath(path)) {
         return {
           title: `edit: ${path}`,
-          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .codem-snapshots/, node_modules/.`,
+          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .codem-snapshots/, node_modules/.`, isError: true,
         };
       }
 
       // S5: Sandbox path whitelist check
       const sandboxError = checkSandbox(path, ctx);
       if (sandboxError) {
-        return { title: `edit: ${path}`, output: `Error: ${sandboxError}` };
+        return { title: `edit: ${path}`, output: `Error: ${sandboxError}`, isError: true };
       }
 
       /**
@@ -1866,7 +1866,7 @@ export function createEditFileTool(): ToolDef {  return {
           const suggestion = suggestEditCandidates(content, oldString);
           return {
             title: `edit: ${path}`,
-            output: `Error: ${suggestion ? suggestion.message : `oldString not found in ${path}`}`,
+            output: `Error: ${suggestion ? suggestion.message : `oldString not found in ${path}`}`, isError: true,
           };
         }
 
@@ -1880,9 +1880,9 @@ export function createEditFileTool(): ToolDef {  return {
         const output = lintResult
           ? `Successfully edited ${path}\n${lintResult}`
           : `Successfully edited ${path}`;
-        return { title: `edit: ${path}`, output, metadata: { file_paths: [path] } };
+        return { title: `edit: ${path}`, output, isError: false, metadata: { file_paths: [path] } };
       } catch (error: any) {
-        return { title: `edit: ${path}`, output: `Error: ${error.message}` };
+        return { title: `edit: ${path}`, output: `Error: ${error.message}`, isError: true };
       }
     },
   };
@@ -1915,7 +1915,7 @@ export function createMultiEditTool(): ToolDef {
       },
       required: ["path", "edits"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const path = args.path as string;
       const edits = args.edits as Array<{ oldString: string; newString: string }>;
 
@@ -1926,7 +1926,7 @@ export function createMultiEditTool(): ToolDef {
           title: `multi_edit: ${path}`,
           output:
             `Error: Missing required parameter \`edits\` — it must be a non-empty array of ` +
-            `\`{ oldString, newString }\` objects.`,
+            `\`{ oldString, newString }\` objects.`, isError: true,
         };
       }
       for (let i = 0; i < edits.length; i++) {
@@ -1937,7 +1937,7 @@ export function createMultiEditTool(): ToolDef {
         if (perItem) {
           return {
             title: `multi_edit: ${path}`,
-            output: `Error: edits[${i}]: ${perItem}`,
+            output: `Error: edits[${i}]: ${perItem}`, isError: true,
           };
         }
       }
@@ -1946,14 +1946,14 @@ export function createMultiEditTool(): ToolDef {
       if (isProtectedPath(path)) {
         return {
           title: `multi_edit: ${path}`,
-          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .codem-snapshots/, node_modules/.`,
+          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .codem-snapshots/, node_modules/.`, isError: true,
         };
       }
 
       // S5: Sandbox path whitelist check
       const sandboxError = checkSandbox(path, ctx);
       if (sandboxError) {
-        return { title: `multi_edit: ${path}`, output: `Error: ${sandboxError}` };
+        return { title: `multi_edit: ${path}`, output: `Error: ${sandboxError}`, isError: true };
       }
 
       // 第 95 波：与 `edit` 同一条前置判定（读后写 / 版本比对）
@@ -1985,7 +1985,7 @@ export function createMultiEditTool(): ToolDef {
         if (appliedCount === 0) {
           return {
             title: `multi_edit: ${path}`,
-            output: `Error: No edits could be applied. ${errors.join("; ")}`,
+            output: `Error: No edits could be applied. ${errors.join("; ")}`, isError: true,
           };
         }
 
@@ -2017,10 +2017,10 @@ export function createMultiEditTool(): ToolDef {
           title: `multi_edit: ${path}`,
           output: lintResult ? `${msg}\n${lintResult}` : msg,
           metadata: { file_paths: [path] },
-          ...(errors.length > 0 ? { isError: true } : {}),
+          isError: errors.length > 0,
         };
       } catch (error: any) {
-        return { title: `multi_edit: ${path}`, output: `Error: ${error.message}` };
+        return { title: `multi_edit: ${path}`, output: `Error: ${error.message}`, isError: true };
       }
     },
   };
@@ -2061,7 +2061,7 @@ export function createGlobTool(): ToolDef {
       },
       required: ["pattern"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const pattern = args.pattern as string;
       const rawPath = (args.path as string) || ctx.cwd || ".";
       // Resolve "." to ctx.cwd (project directory), not user home
@@ -2076,7 +2076,7 @@ export function createGlobTool(): ToolDef {
           // `value` 是**结构化事实**（下游可结构化消费，不必再切字符串）；
           // `output` 由契约的 renderOutput 统一渲染（这里给的是骨架，会被覆盖）。
           value: { files, count: files.length, pattern },
-          output: files.join("\n") || "No files found",
+          output: files.join("\n") || "No files found", isError: false,
         };
       } catch (error: any) {
         console.error("[glob tool] error:", error);
@@ -2127,7 +2127,7 @@ export function createGrepTool(): ToolDef {
       },
       required: ["pattern"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const pattern = args.pattern as string;
       const rawPath = (args.path as string) || ctx.cwd || ".";
       // Resolve "." to ctx.cwd (project directory), not user home
@@ -2139,7 +2139,7 @@ export function createGrepTool(): ToolDef {
         return {
           title: `grep: ${pattern}`,
           value: { matches: results, count: results.length, pattern },
-          output: results.join("\n") || "No matches found",
+          output: results.join("\n") || "No matches found", isError: false,
         };
       } catch (error: any) {
         // 第 97 波：内容型工具的失败必须显式声明（它同样声明了 outputSchema）
@@ -2167,14 +2167,14 @@ export function createTTSTool(): ToolDef {
       },
       required: ["text"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const text = args.text as string;
-      if (!text) return { title: "tts", output: "Error: text is required" };
+      if (!text) return { title: "tts", output: "Error: text is required", isError: true };
       try {
         const { textToSpeech, playTTSAudio, getMultimodalSettings } = await import("./multimodal");
         const config = getMultimodalSettings().tts;
         if (!config || !config.enabled) {
-          return { title: "tts", output: "Error: TTS provider not configured. Ask the user to enable it in Settings → Multimodal." };
+          return { title: "tts", output: "Error: TTS provider not configured. Ask the user to enable it in Settings → Multimodal.", isError: true };
         }
         const result = await textToSpeech({
           text,
@@ -2184,11 +2184,11 @@ export function createTTSTool(): ToolDef {
         playTTSAudio(result);
         return {
           title: `🔊 语音合成: ${text.substring(0, 50)}${text.length > 50 ? "..." : ""}`,
-          output: `✅ 语音已生成并开始播放（${text.length} 字，格式: ${result.format}）。音频正在播放中。`,
+          output: `✅ 语音已生成并开始播放（${text.length} 字，格式: ${result.format}）。音频正在播放中。`, isError: false,
           metadata: { type: "tts", textLength: text.length, format: result.format },
         };
       } catch (e: any) {
-        return { title: "tts", output: `Error: ${e?.message || e}` };
+        return { title: "tts", output: `Error: ${e?.message || e}`, isError: true };
       }
     },
   };
@@ -2210,14 +2210,14 @@ export function createImageGenTool(): ToolDef {
       },
       required: ["prompt"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const prompt = args.prompt as string;
-      if (!prompt) return { title: "image_gen", output: "Error: prompt is required" };
+      if (!prompt) return { title: "image_gen", output: "Error: prompt is required", isError: true };
       try {
         const { generateImages, getMultimodalSettings } = await import("./multimodal");
         const config = getMultimodalSettings().imageGen;
         if (!config || !config.enabled) {
-          return { title: "image_gen", output: "Error: Image generation provider not configured. Ask the user to enable it in Settings → Multimodal." };
+          return { title: "image_gen", output: "Error: Image generation provider not configured. Ask the user to enable it in Settings → Multimodal.", isError: true };
         }
         const result = await generateImages({
           prompt,
@@ -2235,11 +2235,11 @@ export function createImageGenTool(): ToolDef {
         const revisedInfo = result.images[0]?.revisedPrompt ? `\n\n优化后的提示词: ${result.images[0].revisedPrompt}` : "";
         return {
           title: `🎨 图像生成: ${prompt.substring(0, 50)}${prompt.length > 50 ? "..." : ""}`,
-          output: `已生成 ${result.images.length} 张图片：\n\n${imageMarkdown}${revisedInfo}`,
+          output: `已生成 ${result.images.length} 张图片：\n\n${imageMarkdown}${revisedInfo}`, isError: false,
           metadata: { type: "image_gen", prompt, count: result.images.length },
         };
       } catch (e: any) {
-        return { title: "image_gen", output: `Error: ${e?.message || e}` };
+        return { title: "image_gen", output: `Error: ${e?.message || e}`, isError: true };
       }
     },
   };
@@ -2375,19 +2375,19 @@ export function createUpdatePlanTool(): ToolDef {
       },
       required: ["action", "titles"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const action = args.action as PlanUpdateOp["action"];
       const titles = (Array.isArray(args.titles) ? args.titles : []).map((t) => String(t));
       if (!ctx.updatePlan) {
-        return { title: "update_plan", output: "Error: 当前没有可更新的执行计划（仅对话任务进行中可用）。" };
+        return { title: "update_plan", output: "Error: 当前没有可更新的执行计划（仅对话任务进行中可用）。", isError: true };
       }
       const op: PlanUpdateOp = action === "append"
         ? { action, titles }
         : { action, ...(typeof args.index === "number" ? { index: args.index } : {}), titles };
       const err = ctx.updatePlan(op);
-      if (!err) return { title: "update_plan", output: "Error: 计划更新失败（无返回）。" };
-      if (!err.ok) return { title: "update_plan", output: `Error: ${err.error}` };
-      return { title: "update_plan", output: err.message };
+      if (!err) return { title: "update_plan", output: "Error: 计划更新失败（无返回）。", isError: true };
+      if (!err.ok) return { title: "update_plan", output: `Error: ${err.error}`, isError: true };
+      return { title: "update_plan", output: err.message, isError: true };
     },
   };
 }

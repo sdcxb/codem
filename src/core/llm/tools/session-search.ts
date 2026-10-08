@@ -72,7 +72,7 @@ Returns matching messages with snippets showing the matched content.`,
       if (!query || query.trim().length === 0) {
         return {
           title: "session_search",
-          output: "Error: query parameter is required and must not be empty.",
+          output: "Error: query parameter is required and must not be empty.", isError: true,
         };
       }
 
@@ -86,7 +86,7 @@ Returns matching messages with snippets showing the matched content.`,
         const viaRust = await searchViaRust(query, limit, sessionIdFilter);
         if (viaRust) {
           if (viaRust.length === 0) {
-            return { title: "session_search", output: `No results found for query: "${query}"` };
+            return { title: "session_search", output: `No results found for query: "${query}"`, isError: false };
           }
           const formatted = viaRust
             .map((r, i) => {
@@ -99,7 +99,7 @@ Returns matching messages with snippets showing the matched content.`,
             .join("\n\n");
           return {
             title: `session_search: ${query}`,
-            output: `Found ${viaRust.length} result(s) for "${query}":\n\n${formatted}`,
+            output: `Found ${viaRust.length} result(s) for "${query}":\n\n${formatted}`, isError: false,
           };
         }
 
@@ -116,19 +116,19 @@ Returns matching messages with snippets showing the matched content.`,
          */
         return {
           title: "session_search",
-          output: "Error: 全文搜索暂时不可用（索引侧未接手，可稍后重试）—— 本次没有查询旧库",
+          output: "Error: 全文搜索暂时不可用（索引侧未接手，可稍后重试）—— 本次没有查询旧库", isError: true,
         };
       } catch (err: any) {
         // FTS5 table might not exist yet
         if (err.message?.includes("no such table") || err.message?.includes("session_fts")) {
           return {
             title: "session_search",
-            output: `Error: Full-text search index not available. This feature requires database initialization with FTS5 support.`,
+            output: `Error: Full-text search index not available. This feature requires database initialization with FTS5 support.`, isError: true,
           };
         }
         return {
           title: "session_search",
-          output: `Error: ${err.message}`,
+          output: `Error: ${err.message}`, isError: true,
         };
       }
     },
@@ -317,7 +317,7 @@ Use this to find specific actions or messages within a known session.`,
           return {
             title: "session_event_search",
             // 走到这里 = 镜像**已就绪**（上面等过了）⇒ "没有匹配"是**真话**
-            output: `No events found matching "${query}" in session ${sessionId}.`,
+            output: `No events found matching "${query}" in session ${sessionId}.`, isError: false,
           };
         }
 
@@ -329,12 +329,12 @@ Use this to find specific actions or messages within a known session.`,
 
         return {
           title: `session_event_search: ${query}`,
-          output: `Found ${matching.length} event(s) in session ${sessionId}:\n\n${formatted}`,
+          output: `Found ${matching.length} event(s) in session ${sessionId}:\n\n${formatted}`, isError: false,
         };
       } catch (err: any) {
         return {
           title: "session_event_search",
-          output: `Error: ${err.message}`,
+          output: `Error: ${err.message}`, isError: true,
         };
       }
     },
@@ -404,7 +404,7 @@ Use this to understand session relationships and history.`,
 
         if (viaPort) {
           if (viaPort.missing) {
-            return { title: "session_trace", output: `Session ${sessionId} not found.` };
+            return { title: "session_trace", output: `Session ${sessionId} not found.`, isError: true };
           }
           const lines: string[] = [];
           lines.push(`Session: ${sessionId}`);
@@ -417,7 +417,7 @@ Use this to understand session relationships and history.`,
           lines.push(
             `Descendants: ${viaPort.descendants.length > 0 ? viaPort.descendants.join(", ") : "(none)"}`,
           );
-          return { title: `session_trace: ${sessionId.substring(0, 8)}`, output: lines.join("\n") };
+          return { title: `session_trace: ${sessionId.substring(0, 8)}`, output: lines.join("\n"), isError: false };
         }
 
         /**
@@ -426,12 +426,12 @@ Use this to understand session relationships and history.`,
          */
         return {
           title: "session_trace",
-          output: "Error: 会话谱系暂时不可读（sessions 域镜像未就绪，可稍后重试）—— 本次没有查询旧库",
+          output: "Error: 会话谱系暂时不可读（sessions 域镜像未就绪，可稍后重试）—— 本次没有查询旧库", isError: true,
         };
       } catch (err: any) {
         return {
           title: "session_trace",
-          output: `Error: ${err.message}`,
+          output: `Error: ${err.message}`, isError: true,
         };
       }
     },
@@ -503,7 +503,7 @@ Use this to inspect a specific event in detail, including its surrounding contex
           return {
             title: "session_event_read",
             // 走到这里 = 镜像已就绪 ⇒ "没有这条事件"是**真话**
-            output: `Event seq=${seq} not found in session ${sessionId}.`,
+            output: `Event seq=${seq} not found in session ${sessionId}.`, isError: true,
           };
         }
 
@@ -520,12 +520,12 @@ Use this to inspect a specific event in detail, including its surrounding contex
 
         return {
           title: `session_event_read: seq=${seq}`,
-          output: formatted,
+          output: formatted, isError: false,
         };
       } catch (err: any) {
         return {
           title: "session_event_read",
-          output: `Error: ${err.message}`,
+          output: `Error: ${err.message}`, isError: true,
         };
       }
     },

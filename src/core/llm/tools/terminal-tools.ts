@@ -486,7 +486,7 @@ export function createTerminalOpenTool(): ToolDef {
       const label = name === undefined ? view.sessionId : `${view.sessionId} (${name})`;
       return {
         title: "terminal_open",
-        output: `started terminal session ${label} [type: ${view.type}]\nWorking directory: ${cwd}`,
+        output: `started terminal session ${label} [type: ${view.type}]\nWorking directory: ${cwd}`, isError: false,
         metadata: { sessionId: view.sessionId, cwd },
       };
     },
@@ -534,7 +534,7 @@ export function createTerminalSendTool(): ToolDef {
         }
         return {
           title: "terminal_send",
-          output: `started background job ${jobId}`,
+          output: `started background job ${jobId}`, isError: false,
           metadata: { kind: "background", jobId },
         };
       }
@@ -546,7 +546,7 @@ export function createTerminalSendTool(): ToolDef {
       const suffix = `\n[wait: ${result.waitReason}]${result.truncated ? "\n[output truncated]" : ""}\n[session: ${statusText}]`;
       return {
         title: "terminal_send",
-        output: `${result.viewport || "(no new output)"}${suffix}`,
+        output: `${result.viewport || "(no new output)"}${suffix}`, isError: false,
         metadata: {
           viewport: result.viewport,
           waitReason: result.waitReason,
@@ -583,7 +583,7 @@ export function createTerminalReadTool(): ToolDef {
         : `\n[lines: ${page.lineBegin}-${page.lineEnd} of ${page.totalLines}]${page.truncated ? "\n[output truncated]" : ""}`;
       return {
         title: "terminal_read",
-        output: `${page.text || "(no retained output)"}${marker}`,
+        output: `${page.text || "(no retained output)"}${marker}`, isError: false,
         metadata: {
           totalLines: page.totalLines,
           lineBegin: page.lineBegin,
@@ -619,7 +619,7 @@ export function createTerminalSignalTool(): ToolDef {
       const result = await getTerminalManager().signal(id, signal);
       return {
         title: "terminal_signal",
-        output: `delivered ${result.target} to terminal ${id}`,
+        output: `delivered ${result.target} to terminal ${id}`, isError: false,
         metadata: { delivered: result.delivered, target: result.target },
       };
     },
@@ -644,7 +644,7 @@ export function createTerminalCloseTool(): ToolDef {
       const killed = await getTerminalManager().close(id);
       return {
         title: "terminal_close",
-        output: killed ? `closed terminal session ${id}` : `terminal session not found: ${id}`,
+        output: killed ? `closed terminal session ${id}` : `terminal session not found: ${id}`, isError: true,
         metadata: { killed },
       };
     },
@@ -664,7 +664,7 @@ export function createTerminalListTool(): ToolDef {
     async execute(_args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolExecuteResult> {
       const sessions = getTerminalManager().list();
       if (sessions.length === 0) {
-        return { title: "terminal_list", output: "(no terminal sessions)" };
+        return { title: "terminal_list", output: "(no terminal sessions)", isError: false };
       }
       const text = sessions.map((s) => {
         const name = s.name === undefined ? "" : ` (${s.name})`;
@@ -673,7 +673,7 @@ export function createTerminalListTool(): ToolDef {
           : `exited code=${s.status.exitCode ?? "null"} signal=${s.status.signal ?? "null"}`;
         return `${s.sessionId}${name} [${s.type}] ${status}`;
       }).join("\n");
-      return { title: "terminal_list", output: text, metadata: { sessions } };
+      return { title: "terminal_list", output: text, isError: false, metadata: { sessions } };
     },
   };
 }

@@ -71,7 +71,7 @@ export function createGeneratePPTTool(): ToolDef {
       if (!notebookId) {
         return {
           title: 'Generate PPT',
-          output: 'Error: No active notebook. This tool only works in notebook mode.',
+          output: 'Error: No active notebook. This tool only works in notebook mode.', isError: true,
         };
       }
 
@@ -79,7 +79,7 @@ export function createGeneratePPTTool(): ToolDef {
       if (!notebook) {
         return {
           title: 'Generate PPT',
-          output: `Error: Notebook not found (id: ${notebookId})`,
+          output: `Error: Notebook not found (id: ${notebookId})`, isError: true,
         };
       }
 
@@ -90,14 +90,14 @@ export function createGeneratePPTTool(): ToolDef {
       if (!loadedPptTool.ok) {
         return {
           title: 'Generate PPT',
-          output: `Error: 知识库索引未就绪（请稍后重试一次）：${loadedPptTool.reason}`,
+          output: `Error: 知识库索引未就绪（请稍后重试一次）：${loadedPptTool.reason}`, isError: true,
         };
       }
       const chunks = loadedPptTool.chunks;
       if (chunks.length === 0) {
         return {
           title: 'Generate PPT',
-          output: 'Error: No indexed content available. Please add sources to the notebook first.',
+          output: 'Error: No indexed content available. Please add sources to the notebook first.', isError: true,
         };
       }
 
@@ -118,7 +118,7 @@ export function createGeneratePPTTool(): ToolDef {
           return {
             title: 'Generate PPT',
             output: `Error: No matching sources found for names: ${sourceNames.join(', ')}.
-Available sources: ${available}`,
+Available sources: ${available}`, isError: true,
           };
         }
         sourceIds = matched.map(s => s.id);
@@ -179,14 +179,14 @@ Available sources: ${available}`,
             (sourceIds ? `\nSources used: ${sourceIds.length} selected source(s).` : '\nSources used: all indexed sources.') +
             `\n\nThe presentation has been saved as a note in notebook "${notebook.name}" and is visible in the Notes panel.\n` +
             `Note ID: ${note.id}\n\n` +
-            `The user can click the note to open the PPT editor for further editing.`,
+            `The user can click the note to open the PPT editor for further editing.`, isError: false,
           metadata: { noteId: note.id, notebookId, slideCount: actualSlides, requestedSlideCount: slideCount, title: deck.title, sourceIds },
         };
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         return {
           title: 'Generate PPT',
-          output: `Error generating PPT: ${errMsg}`,
+          output: `Error generating PPT: ${errMsg}`, isError: true,
         };
       }
     },

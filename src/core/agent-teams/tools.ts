@@ -35,7 +35,7 @@ function callerName(ctx: ToolContext, teamId: string): string {
 
 /** 输出统一渲染：title + output 文本 */
 function out(title: string, lines: string[]): ToolExecuteResult {
-  return { title, output: lines.join("\n") };
+  return { title, output: lines.join("\n"), isError: false };
 }
 
 // ========== 1. create ==========

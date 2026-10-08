@@ -182,7 +182,7 @@ export function createReadAttachmentTool(): ToolDef {
         if (attachments.size === 0) {
           return {
             title: "read_attachment",
-            output: "No attachments found in this conversation.",
+            output: "No attachments found in this conversation.", isError: false,
           };
         }
         const list = Array.from(attachments.values()).map(({ attachment: a }) => {
@@ -192,7 +192,7 @@ export function createReadAttachmentTool(): ToolDef {
         }).join("\n");
         return {
           title: "read_attachment",
-          output: `Available attachments:\n${list}\n\nUse attachment_id or name to read content.`,
+          output: `Available attachments:\n${list}\n\nUse attachment_id or name to read content.`, isError: false,
         };
       }
 
@@ -217,7 +217,7 @@ export function createReadAttachmentTool(): ToolDef {
       if (!target) {
         return {
           title: "read_attachment",
-          output: `Attachment "${attachmentId || name}" not found. Call read_attachment without parameters to list available attachments.`,
+          output: `Attachment "${attachmentId || name}" not found. Call read_attachment without parameters to list available attachments.`, isError: true,
         };
       }
 
@@ -301,7 +301,7 @@ export function createReadAttachmentTool(): ToolDef {
         if (!target.content) {
           return {
             title: `read_attachment: ${target.name}`,
-            output: `Attachment "${target.name}" exists but has no readable content. Type: ${target.type}, Size: ${target.size || 0} bytes.`,
+            output: `Attachment "${target.name}" exists but has no readable content. Type: ${target.type}, Size: ${target.size || 0} bytes.`, isError: true,
           };
         }
       }
@@ -318,7 +318,7 @@ export function createReadAttachmentTool(): ToolDef {
 
       return {
         title: `read_attachment: ${target.name}`,
-        output: formatted + sandboxHint,
+        output: formatted + sandboxHint, isError: false,
         metadata: {
           attachmentId: target.id,
           attachmentName: target.name,

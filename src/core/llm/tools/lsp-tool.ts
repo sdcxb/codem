@@ -328,10 +328,10 @@ export function createLSPTool(): ToolDef {
               targetSymbol = getWordAtPosition(targetLine, column);
             }
             if (!targetSymbol) {
-              return { title: `lsp: definition`, output: "Error: symbol is required (either provide 'symbol' or 'line'+'column')" };
+              return { title: `lsp: definition`, output: "Error: symbol is required (either provide 'symbol' or 'line'+'column')", isError: true };
             }
             const result = await findDefinition(targetSymbol, searchPath);
-            return { title: `lsp: definition "${targetSymbol}"`, output: result };
+            return { title: `lsp: definition "${targetSymbol}"`, output: result, isError: false };
           }
 
           case "references": {
@@ -344,42 +344,42 @@ export function createLSPTool(): ToolDef {
               targetSymbol = getWordAtPosition(targetLine, column);
             }
             if (!targetSymbol) {
-              return { title: `lsp: references`, output: "Error: symbol is required (either provide 'symbol' or 'line'+'column')" };
+              return { title: `lsp: references`, output: "Error: symbol is required (either provide 'symbol' or 'line'+'column')", isError: true };
             }
             const result = await findReferences(targetSymbol, searchPath);
-            return { title: `lsp: references "${targetSymbol}"`, output: result };
+            return { title: `lsp: references "${targetSymbol}"`, output: result, isError: false };
           }
 
           case "hover": {
             if (line === undefined || column === undefined) {
-              return { title: `lsp: hover`, output: "Error: line and column are required for hover operation" };
+              return { title: `lsp: hover`, output: "Error: line and column are required for hover operation", isError: true };
             }
             const { readFile } = await import("../../file-api");
             const content = await readFile(file);
             const result = await getHover(file, line, column, content);
-            return { title: `lsp: hover ${file}:${line}:${column}`, output: result };
+            return { title: `lsp: hover ${file}:${line}:${column}`, output: result, isError: false };
           }
 
           case "document_symbols": {
             const { readFile } = await import("../../file-api");
             const content = await readFile(file);
             const result = extractDocumentSymbols(content, file);
-            return { title: `lsp: symbols ${file}`, output: result };
+            return { title: `lsp: symbols ${file}`, output: result, isError: false };
           }
 
           case "workspace_symbols": {
             if (!symbol) {
-              return { title: `lsp: workspace_symbols`, output: "Error: symbol is required for workspace_symbols operation" };
+              return { title: `lsp: workspace_symbols`, output: "Error: symbol is required for workspace_symbols operation", isError: true };
             }
             const result = await searchWorkspaceSymbols(symbol, searchPath);
-            return { title: `lsp: search "${symbol}"`, output: result };
+            return { title: `lsp: search "${symbol}"`, output: result, isError: false };
           }
 
           default:
-            return { title: `lsp`, output: `Error: Unknown operation "${operation}". Supported: definition, references, hover, document_symbols, workspace_symbols` };
+            return { title: `lsp`, output: `Error: Unknown operation "${operation}". Supported: definition, references, hover, document_symbols, workspace_symbols`, isError: true };
         }
       } catch (error: any) {
-        return { title: `lsp: ${operation}`, output: `Error: ${error.message}` };
+        return { title: `lsp: ${operation}`, output: `Error: ${error.message}`, isError: true };
       }
     },
   };

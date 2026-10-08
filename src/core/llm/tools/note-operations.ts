@@ -58,7 +58,7 @@ export function createCreateNoteTool(): ToolDef {
       if (!title || !content) {
         return {
           title: 'Create Note',
-          output: 'Error: Both title and content are required',
+          output: 'Error: Both title and content are required', isError: true,
         };
       }
 
@@ -66,7 +66,7 @@ export function createCreateNoteTool(): ToolDef {
       if (!notebookId) {
         return {
           title: 'Create Note',
-          output: 'Error: No active notebook',
+          output: 'Error: No active notebook', isError: true,
         };
       }
 
@@ -74,7 +74,7 @@ export function createCreateNoteTool(): ToolDef {
       if (!notebook) {
         return {
           title: 'Create Note',
-          output: `Error: Notebook not found (id: ${notebookId})`,
+          output: `Error: Notebook not found (id: ${notebookId})`, isError: true,
         };
       }
 
@@ -92,14 +92,14 @@ export function createCreateNoteTool(): ToolDef {
 
         return {
           title: `Note Created: ${title}`,
-          output: `Successfully created note "${title}" (id: ${note.id}) in notebook "${notebook.name}".\n\nThe note has been saved and is visible in the Notes panel.`,
+          output: `Successfully created note "${title}" (id: ${note.id}) in notebook "${notebook.name}".\n\nThe note has been saved and is visible in the Notes panel.`, isError: false,
           metadata: { noteId: note.id, notebookId },
         };
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         return {
           title: 'Create Note',
-          output: `Error creating note: ${errMsg}`,
+          output: `Error creating note: ${errMsg}`, isError: true,
         };
       }
     },
@@ -150,7 +150,7 @@ function createEditNoteTool(): ToolDef {
       if (!noteId) {
         return {
           title: 'Edit Note',
-          output: 'Error: note_id is required',
+          output: 'Error: note_id is required', isError: true,
         };
       }
 
@@ -158,7 +158,7 @@ function createEditNoteTool(): ToolDef {
       if (!notebookId) {
         return {
           title: 'Edit Note',
-          output: 'Error: No active notebook',
+          output: 'Error: No active notebook', isError: true,
         };
       }
 
@@ -166,7 +166,7 @@ function createEditNoteTool(): ToolDef {
       if (!existingNote) {
         return {
           title: 'Edit Note',
-          output: `Error: Note not found (id: ${noteId})`,
+          output: `Error: Note not found (id: ${noteId})`, isError: true,
         };
       }
 
@@ -194,14 +194,14 @@ function createEditNoteTool(): ToolDef {
           output: `Successfully updated note "${existingNote.title}" (id: ${noteId}).\nChanges: ${[
             update.title ? 'title' : null,
             update.content ? (append ? 'content (appended)' : 'content (replaced)') : null,
-          ].filter(Boolean).join(', ') || 'no changes'}`,
+          ].filter(Boolean).join(', ') || 'no changes'}`, isError: false,
           metadata: { noteId, notebookId },
         };
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         return {
           title: 'Edit Note',
-          output: `Error editing note: ${errMsg}`,
+          output: `Error editing note: ${errMsg}`, isError: true,
         };
       }
     },
@@ -247,14 +247,14 @@ function createLinkNotesTool(): ToolDef {
       if (!sourceNoteId || !targetNoteId) {
         return {
           title: 'Link Notes',
-          output: 'Error: Both source_note_id and target_note_id are required',
+          output: 'Error: Both source_note_id and target_note_id are required', isError: true,
         };
       }
 
       if (sourceNoteId === targetNoteId) {
         return {
           title: 'Link Notes',
-          output: 'Error: Cannot link a note to itself',
+          output: 'Error: Cannot link a note to itself', isError: true,
         };
       }
 
@@ -264,14 +264,14 @@ function createLinkNotesTool(): ToolDef {
       if (!sourceNote) {
         return {
           title: 'Link Notes',
-          output: `Error: Source note not found (id: ${sourceNoteId})`,
+          output: `Error: Source note not found (id: ${sourceNoteId})`, isError: true,
         };
       }
 
       if (!targetNote) {
         return {
           title: 'Link Notes',
-          output: `Error: Target note not found (id: ${targetNoteId})`,
+          output: `Error: Target note not found (id: ${targetNoteId})`, isError: true,
         };
       }
 
@@ -280,14 +280,14 @@ function createLinkNotesTool(): ToolDef {
 
         return {
           title: `Notes Linked: ${sourceNote.title} → ${targetNote.title}`,
-          output: `Successfully created link:\n  Source: "${sourceNote.title}" (id: ${sourceNoteId})\n  Target: "${targetNote.title}" (id: ${targetNoteId})\n  Display text: ${linkText || targetNote.title}\n\nThe link is now visible in both notes' backlinks panels.`,
+          output: `Successfully created link:\n  Source: "${sourceNote.title}" (id: ${sourceNoteId})\n  Target: "${targetNote.title}" (id: ${targetNoteId})\n  Display text: ${linkText || targetNote.title}\n\nThe link is now visible in both notes' backlinks panels.`, isError: false,
           metadata: { sourceNoteId, targetNoteId },
         };
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         return {
           title: 'Link Notes',
-          output: `Error linking notes: ${errMsg}`,
+          output: `Error linking notes: ${errMsg}`, isError: true,
         };
       }
     },
@@ -322,7 +322,7 @@ function createDeleteNoteTool(): ToolDef {
       if (!noteId) {
         return {
           title: 'Delete Note',
-          output: 'Error: note_id is required',
+          output: 'Error: note_id is required', isError: true,
         };
       }
 
@@ -331,7 +331,7 @@ function createDeleteNoteTool(): ToolDef {
       if (!notebookId) {
         return {
           title: 'Delete Note',
-          output: 'Error: No active notebook. This tool only works in notebook mode.',
+          output: 'Error: No active notebook. This tool only works in notebook mode.', isError: true,
         };
       }
 
@@ -340,7 +340,7 @@ function createDeleteNoteTool(): ToolDef {
       if (!note) {
         return {
           title: 'Delete Note',
-          output: `Error: Note not found (id: ${noteId})`,
+          output: `Error: Note not found (id: ${noteId})`, isError: true,
         };
       }
 
@@ -351,14 +351,14 @@ function createDeleteNoteTool(): ToolDef {
 
         return {
           title: `Note Deleted: ${note.title}`,
-          output: `Successfully deleted note "${note.title}" (id: ${noteId}).\n\nThe note and all its backlinks have been removed.`,
+          output: `Successfully deleted note "${note.title}" (id: ${noteId}).\n\nThe note and all its backlinks have been removed.`, isError: false,
           metadata: { deletedNoteId: noteId, notebookId },
         };
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         return {
           title: 'Delete Note',
-          output: `Error deleting note: ${errMsg}`,
+          output: `Error deleting note: ${errMsg}`, isError: true,
         };
       }
     },

@@ -190,51 +190,62 @@ describe("执行器：工具自报失败 ≠ 执行层异常", () => {
   });
 
   /**
-   * ========== 第 181 波（T-1）：把「推断缺口」钉住 ==========
+   * ========== 第 181/182 波（T-1）：必填化**已完成**，这里守新契约 ==========
    *
-   * ## 这一组判据要守的是什么
+   * ## 缺口与修法（已落地）
    *
-   * `isError` 目前是**可选**的，省略时由 `classifyToolResult` 按输出**推断** ——
+   * 第 181 波发现的缺口：`isError` 是**可选**的，省略时由 `classifyToolResult` 按输出**推断** ——
    * 而推断表里有一份 `CONTENT_TOOLS`（`read`/`grep`/`glob`/`web_fetch`/`load_skill`…）
    * **明确不推断**（理由正当：它们的输出是"数据"，首行恰好是 `Error:` 也可能就是文件内容）。
+   * 于是这些工具**真的失败**时会落到 `completed` —— 一个**静默缺口**。
    *
-   * 于是这些工具**真的失败**时会落到 `completed` —— 一个**静默缺口**。本轮的结论是
-   * **不能机械把 `isError` 改成必填**（153 处里 123 处的输出是模板串/表达式，无法静态判成败；
-   * 而且本仓库的成功路径一律省略 `isError`，填 `false` 会改掉"按 `Error:` 前缀判失败"的现行语义 ——
-   * 详见 `tools.ts` 里 `isError` 字段的说明）。所以本轮**只把缺口的形状钉住**：
-   * 谁想"顺手修好"这条推断，必须先让 TRS-2 红 —— 那是**有意的路障**。
+   * 第 182 波把 `isError` 改成**必填**：187 处编译错误逐条判成败（149 处由脚本按
+   * "失败词 + 失败守卫"判定、其余逐条手工），并给 34 处 `execute` 补上显式返回类型注解
+   * ⇒ 类型系统转为**逐分支检查**（又暴露出 67 处此前看不见的缺字段）。
+   *
+   * ## 这组判据现在守什么
+   *
+   * · TRS-1：显式声明优先于文本（**这条契约不变**，别为"更聪明"去改推断）；
+   * · TRS-2：**绕过类型的地方**（动态插件等第三方工具）仍然可能不声明 ⇒ 推断的兜底行为
+   *   保持原样并被钉住（它是兜底，不再是主路径）；
+   * · TRS-3：非内容型工具未声明时仍按首行前缀推断；
+   * · TRS-4：**`isError` 必须保持必填** —— 退回可选会让上面那个静默缺口重新长出来。
    */
-  describe("T-1：显式声明优先，内容型工具的推断缺口被钉住", () => {
+  describe("T-1：显式声明优先，且 isError 必填（缺口已修）", () => {
     it("TRS-1: 显式 `isError: false` 优先于文本 —— 输出以 Error: 开头也必须是 completed", () => {
       const v = classifyToolResult("bash", "Error: 这只是被 cat 出来的文件内容", false);
       expect(v.status, "显式声明优先（这条是现行契约，别为修缺口而改掉它）").toBe("completed");
     });
 
-    it("TRS-2: 内容型工具**真的失败**且未声明时，会被判成 completed —— 缺口的形状", () => {
+    it("TRS-2: 绕过类型（未声明）时，内容型工具仍按「不推断」兜底 —— 兜底行为被钉住", () => {
       for (const toolName of ["read", "grep", "glob", "web_fetch"]) {
         const v = classifyToolResult(toolName, "Error: ENOENT: no such file or directory", undefined);
         expect(
           v.status,
-          `「${toolName}」没有显式 isError 时会被判成 completed —— ` +
-            `这正是 T-1 要治的静默缺口（修法见 tools.ts 里 isError 的说明，不要只改这一条判据）`,
+          `「${toolName}」未声明时仍判 completed（这是**兜底**：类型层已强制声明，` +
+            `只有绕过类型的第三方工具才会走到这里）`,
         ).toBe("completed");
       }
     });
 
-    it("TRS-3: 非内容型工具未声明时仍按首行前缀推断（现行兜底不许丢）", () => {
+    it("TRS-3: 非内容型工具未声明时仍按首行前缀推断（兜底不许丢）", () => {
       expect(classifyToolResult("bash", "Error: command not found", undefined).status).toBe("error");
       expect(classifyToolResult("bash", "错误：命令失败", undefined).status).toBe("error");
       expect(classifyToolResult("bash", "ok", undefined).status).toBe("completed");
     });
 
-    it("TRS-4: `ToolExecuteResult.isError` 保持可选 —— 改成必填会牵连 153 处（其中 123 处无法静态判定）", async () => {
+    it("TRS-4: `ToolExecuteResult.isError` 必须**必填** —— 退回可选会让静默缺口重新长出来", async () => {
       const fs = await import("node:fs");
       const text = fs.readFileSync("src/core/llm/tools.ts", "utf8");
       expect(
-        /isError\?:\s*boolean/.test(text),
-        "字段一旦改成必填，`tsc` 会报 187 处；其中 123 处的 output 是模板串/表达式，" +
-          "机械填值会静默改掉『按 Error: 前缀判失败』的现行语义 ⇒ 必须逐条判成败（见 T-1 说明）",
+        /^  isError: boolean;/m.test(text),
+        "字段必须是必填（`isError: boolean`）。退回 `isError?:` 会让「内容型工具真失败却被判成功」" +
+          "这个静默缺口重新出现 —— 那正是第 182 波花 187 处逐条判定修掉的东西。",
       ).toBe(true);
+      expect(
+        /isError\?:\s*boolean/.test(text),
+        "不许同时留下可选版本（否则必填形同虚设）",
+      ).toBe(false);
     });
   });
 });

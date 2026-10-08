@@ -15,7 +15,7 @@
  * 后续计划使用 Worker 隔离增强安全性。
  */
 
-import type { ToolDef } from "./tools";
+import type { ToolDef, ToolExecuteResult } from "./tools";
 
 // ========== Tool Definitions ==========
 
@@ -41,16 +41,16 @@ export function createCordisDefineTool(): ToolDef {
     },
     shouldDefer: true,
     searchHint: "Define a dynamic Cordis plugin at runtime — compile and register custom code as a Cordis plugin",
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       try {
         const { getToolContext } = await import("./tools");
         const toolCtx = getToolContext();
         if (!toolCtx) {
-          return { title: "Result", output: "Error: Tool context not available. Dynamic plugins require a Cordis context." };
+          return { title: "Result", output: "Error: Tool context not available. Dynamic plugins require a Cordis context.", isError: true };
         }
         const runner = (toolCtx as any).get?.("dynamicCordisRunner");
         if (!runner) {
-          return { title: "Result", output: "Error: dynamicCordisRunner service not available." };
+          return { title: "Result", output: "Error: dynamicCordisRunner service not available.", isError: true };
         }
         const result = await runner.define(args.name as string, args.code as string);
         if (!result.success) {
@@ -63,9 +63,9 @@ export function createCordisDefineTool(): ToolDef {
            */
           return { title: "Result", output: `Failed to define plugin: ${result.error}`, isError: true };
         }
-        return { title: "Result", output: `Plugin "${args.name}" defined successfully.` };
+        return { title: "Result", output: `Plugin "${args.name}" defined successfully.`, isError: false };
       } catch (err: any) {
-        return { title: "Result", output: `Error defining plugin: ${err.message}` };
+        return { title: "Result", output: `Error defining plugin: ${err.message}`, isError: true };
       }
     },
   };
@@ -88,16 +88,16 @@ export function createCordisInspectTool(): ToolDef {
     },
     shouldDefer: true,
     searchHint: "Inspect registered dynamic Cordis plugins and available services",
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       try {
         const { getToolContext } = await import("./tools");
         const toolCtx = getToolContext();
         if (!toolCtx) {
-          return { title: "Result", output: "Error: Tool context not available." };
+          return { title: "Result", output: "Error: Tool context not available.", isError: true };
         }
         const runner = (toolCtx as any).get?.("dynamicCordisRunner");
         if (!runner) {
-          return { title: "Result", output: "Error: dynamicCordisRunner service not available." };
+          return { title: "Result", output: "Error: dynamicCordisRunner service not available.", isError: true };
         }
         const inspection = runner.inspect();
         let output = `Dynamic Plugins (${inspection.plugins.length}):\n`;
@@ -112,9 +112,9 @@ export function createCordisInspectTool(): ToolDef {
         for (const s of services) {
           output += `  - ${s}\n`;
         }
-        return { title: "Inspect", output };
+        return { title: "Inspect", output, isError: false };
       } catch (err: any) {
-        return { title: "Result", output: `Error inspecting plugins: ${err.message}` };
+        return { title: "Result", output: `Error inspecting plugins: ${err.message}`, isError: true };
       }
     },
   };
@@ -143,25 +143,25 @@ export function createCordisRunTool(): ToolDef {
     },
     shouldDefer: true,
     searchHint: "Run a defined dynamic Cordis plugin by name",
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       try {
         const { getToolContext } = await import("./tools");
         const toolCtx = getToolContext();
         if (!toolCtx) {
-          return { title: "Result", output: "Error: Tool context not available." };
+          return { title: "Result", output: "Error: Tool context not available.", isError: true };
         }
         const runner = (toolCtx as any).get?.("dynamicCordisRunner");
         if (!runner) {
-          return { title: "Result", output: "Error: dynamicCordisRunner service not available." };
+          return { title: "Result", output: "Error: dynamicCordisRunner service not available.", isError: true };
         }
         const result = await runner.run(args.name as string, args.args);
         if (!result.success) {
           // 第 D10b 波：插件没跑成功 ≠ 成功。显式声明失败（同 cordis_define 的说明）。
           return { title: "Result", output: `Failed to run plugin: ${result.error}`, isError: true };
         }
-        return { title: "Result", output: `Plugin "${args.name}" ran successfully. Result: ${JSON.stringify(result.result, null, 2)}` };
+        return { title: "Result", output: `Plugin "${args.name}" ran successfully. Result: ${JSON.stringify(result.result, null, 2)}`, isError: false };
       } catch (err: any) {
-        return { title: "Result", output: `Error running plugin: ${err.message}` };
+        return { title: "Result", output: `Error running plugin: ${err.message}`, isError: true };
       }
     },
   };
@@ -185,16 +185,16 @@ export function createCordisStopTool(): ToolDef {
     },
     shouldDefer: true,
     searchHint: "Stop a running dynamic Cordis plugin",
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       try {
         const { getToolContext } = await import("./tools");
         const toolCtx = getToolContext();
         if (!toolCtx) {
-          return { title: "Result", output: "Error: Tool context not available." };
+          return { title: "Result", output: "Error: Tool context not available.", isError: true };
         }
         const runner = (toolCtx as any).get?.("dynamicCordisRunner");
         if (!runner) {
-          return { title: "Result", output: "Error: dynamicCordisRunner service not available." };
+          return { title: "Result", output: "Error: dynamicCordisRunner service not available.", isError: true };
         }
         // Stop is similar to undefine but calls dispose first
         // 第 104 波：etract 现在是 **async**（要先关沙箱会话）—— 不 await 就会
@@ -205,9 +205,9 @@ export function createCordisStopTool(): ToolDef {
           // 第 D10b 波：**没有停下来**却报成功 —— dispose 没跑、插件仍在运行。
           return { title: "Result", output: `Failed to stop plugin: ${result.error}`, isError: true };
         }
-        return { title: "Result", output: `Plugin "${args.name}" stopped successfully.` };
+        return { title: "Result", output: `Plugin "${args.name}" stopped successfully.`, isError: false };
       } catch (err: any) {
-        return { title: "Result", output: `Error stopping plugin: ${err.message}` };
+        return { title: "Result", output: `Error stopping plugin: ${err.message}`, isError: true };
       }
     },
   };
@@ -231,16 +231,16 @@ export function createCordisUndefineTool(): ToolDef {
     },
     shouldDefer: true,
     searchHint: "Remove a defined dynamic Cordis plugin from the runtime",
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       try {
         const { getToolContext } = await import("./tools");
         const toolCtx = getToolContext();
         if (!toolCtx) {
-          return { title: "Result", output: "Error: Tool context not available." };
+          return { title: "Result", output: "Error: Tool context not available.", isError: true };
         }
         const runner = (toolCtx as any).get?.("dynamicCordisRunner");
         if (!runner) {
-          return { title: "Result", output: "Error: dynamicCordisRunner service not available." };
+          return { title: "Result", output: "Error: dynamicCordisRunner service not available.", isError: true };
         }
         // 第 104 波：etract 现在是 **async**（要先关沙箱会话）—— 不 await 就会
         // 拿到一个 Promise，esult.success 是 undefined，于是**成功被报成失败**
@@ -253,9 +253,9 @@ export function createCordisUndefineTool(): ToolDef {
            */
           return { title: "Result", output: `Failed to undefine plugin: ${result.error}`, isError: true };
         }
-        return { title: "Result", output: `Plugin "${args.name}" undefined successfully.` };
+        return { title: "Result", output: `Plugin "${args.name}" undefined successfully.`, isError: false };
       } catch (err: any) {
-        return { title: "Result", output: `Error undefining plugin: ${err.message}` };
+        return { title: "Result", output: `Error undefining plugin: ${err.message}`, isError: true };
       }
     },
   };

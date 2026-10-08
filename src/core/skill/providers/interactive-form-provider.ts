@@ -99,7 +99,7 @@ export class InteractiveFormProvider implements SkillToolProvider {
         if (!questions || !Array.isArray(questions) || questions.length === 0) {
           return {
             title: "interactive_form_question",
-            output: "Error: 'questions' must be a non-empty array.",
+            output: "Error: 'questions' must be a non-empty array.", isError: true,
           };
         }
 
@@ -108,13 +108,13 @@ export class InteractiveFormProvider implements SkillToolProvider {
           if (!q.id || !q.question || !q.input_type) {
             return {
               title: "interactive_form_question",
-              output: `Error: Each question must have 'id', 'question', and 'input_type'. Got: ${JSON.stringify(q)}`,
+              output: `Error: Each question must have 'id', 'question', and 'input_type'. Got: ${JSON.stringify(q)}`, isError: true,
             };
           }
           if (q.input_type === "choice" && (!q.options || q.options.length === 0)) {
             return {
               title: "interactive_form_question",
-              output: `Error: Question "${q.id}" has input_type 'choice' but no options.`,
+              output: `Error: Question "${q.id}" has input_type 'choice' but no options.`, isError: true,
             };
           }
         }
@@ -136,7 +136,7 @@ export class InteractiveFormProvider implements SkillToolProvider {
 
           return {
             title: "interactive_form_question",
-            output: `Interactive form is not available in this context. Please present these questions to the user as text and wait for their response:\n\n${formatted}`,
+            output: `Interactive form is not available in this context. Please present these questions to the user as text and wait for their response:\n\n${formatted}`, isError: false,
             metadata: { questionCount: questions.length },
           };
         }
@@ -150,14 +150,14 @@ export class InteractiveFormProvider implements SkillToolProvider {
           const answer = answers[questions[0].id];
           return {
             title: "interactive_form_question",
-            output: JSON.stringify({ answer }),
+            output: JSON.stringify({ answer }), isError: false,
             metadata: { questionCount: 1 },
           };
         }
 
         return {
           title: "interactive_form_question",
-          output: JSON.stringify({ answers }),
+          output: JSON.stringify({ answers }), isError: false,
           metadata: { questionCount: questions.length },
         };
       },

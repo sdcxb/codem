@@ -119,13 +119,13 @@ export function createFigmaFetchTool(): ToolDef {
       },
       required: ["action", "fileKey"],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       const zh = getLang() === "zh";
       const action = args.action as string;
       const fileKey = args.fileKey as string;
 
       if (!fileKey) {
-        return { title: "figma_fetch", output: "Error: fileKey is required" };
+        return { title: "figma_fetch", output: "Error: fileKey is required", isError: true };
       }
 
       // Get Figma token from settings
@@ -135,7 +135,7 @@ export function createFigmaFetchTool(): ToolDef {
           title: "figma_fetch",
           output: zh
             ? "错误：未配置 Figma access token。请在设置面板中配置 Figma Personal Access Token。\n获取方式：Figma → Settings → Account → Personal access tokens"
-            : "Error: Figma access token not configured. Please configure Figma Personal Access Token in Settings.\nGet it from: Figma → Settings → Account → Personal access tokens",
+            : "Error: Figma access token not configured. Please configure Figma Personal Access Token in Settings.\nGet it from: Figma → Settings → Account → Personal access tokens", isError: true,
         };
       }
 
@@ -156,14 +156,14 @@ export function createFigmaFetchTool(): ToolDef {
             const styleCount = result.styles ? Object.keys(result.styles).length : 0;
             return {
               title: label,
-              output: `File: ${result.name}\nLast modified: ${result.lastModified}\n\nPages:\n${summary}\n\nComponents: ${componentCount}\nStyles: ${styleCount}\n\nFull JSON:\n${JSON.stringify(result, null, 2).substring(0, 8000)}`,
+              output: `File: ${result.name}\nLast modified: ${result.lastModified}\n\nPages:\n${summary}\n\nComponents: ${componentCount}\nStyles: ${styleCount}\n\nFull JSON:\n${JSON.stringify(result, null, 2).substring(0, 8000)}`, isError: false,
             };
           }
 
           case "node": {
             const nodeIds = args.nodeIds as string[];
             if (!nodeIds || nodeIds.length === 0) {
-              return { title: label, output: "Error: nodeIds required for 'node' action" };
+              return { title: label, output: "Error: nodeIds required for 'node' action", isError: true };
             }
             result = await fetchNode(fileKey, token, nodeIds);
             const nodes = result.nodes || {};
@@ -173,14 +173,14 @@ export function createFigmaFetchTool(): ToolDef {
             }).join("\n\n");
             return {
               title: label,
-              output: nodeSummaries,
+              output: nodeSummaries, isError: false,
             };
           }
 
           case "export": {
             const nodeIds = args.nodeIds as string[];
             if (!nodeIds || nodeIds.length === 0) {
-              return { title: label, output: "Error: nodeIds required for 'export' action" };
+              return { title: label, output: "Error: nodeIds required for 'export' action", isError: true };
             }
             result = await exportImages(fileKey, token, nodeIds, (args.format as string) || "png", (args.scale as number) || 2);
             const images = result.images || {};
@@ -189,7 +189,7 @@ export function createFigmaFetchTool(): ToolDef {
             }).join("\n");
             return {
               title: label,
-              output: `Exported ${nodeIds.length} nodes as ${(args.format as string) || "png"}:\n${imageList}`,
+              output: `Exported ${nodeIds.length} nodes as ${(args.format as string) || "png"}:\n${imageList}`, isError: false,
             };
           }
 
@@ -201,7 +201,7 @@ export function createFigmaFetchTool(): ToolDef {
             }).join("\n");
             return {
               title: label,
-              output: `${components.length} components found:\n\n${compList}`,
+              output: `${components.length} components found:\n\n${compList}`, isError: false,
             };
           }
 
@@ -213,17 +213,17 @@ export function createFigmaFetchTool(): ToolDef {
             }).join("\n");
             return {
               title: label,
-              output: `${styles.length} styles found:\n\n${styleList}`,
+              output: `${styles.length} styles found:\n\n${styleList}`, isError: false,
             };
           }
 
           default:
-            return { title: label, output: `Unknown action: ${action}` };
+            return { title: label, output: `Unknown action: ${action}`, isError: false };
         }
       } catch (error: any) {
         return {
           title: "figma_fetch",
-          output: zh ? `Figma API 请求失败: ${error.message}` : `Figma API request failed: ${error.message}`,
+          output: zh ? `Figma API 请求失败: ${error.message}` : `Figma API request failed: ${error.message}`, isError: true,
         };
       }
     },

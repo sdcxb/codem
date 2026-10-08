@@ -496,7 +496,7 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
       if (!skillName) {
         return {
           title: "load_skill",
-          output: "Error: skill_name is required.",
+          output: "Error: skill_name is required.", isError: true,
         };
       }
 
@@ -578,7 +578,7 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
 
         return {
           title: "load_skill",
-          output: `Skill "${skillName}" not found. Available skills:\n${catalogEntries.join("\n")}${providerCatalog}`,
+          output: `Skill "${skillName}" not found. Available skills:\n${catalogEntries.join("\n")}${providerCatalog}`, isError: true,
         };
       }
 
@@ -589,7 +589,7 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
         // 已缓存：返回确认消息（指令已在历史消息中可见）
         return {
           title: `load_skill: ${skill.name}`,
-          output: result.message,
+          output: result.message, isError: false,
         };
       }
 
@@ -636,7 +636,7 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
       // 不需要等到下一轮系统提示注入才能看到。
       return {
         title: `load_skill: ${skill.name}`,
-        output: `${skillContent}${toolInfo}${toolErrorInfo}`,
+        output: `${skillContent}${toolInfo}${toolErrorInfo}`, isError: false,
         metadata: { skillName: skill.name, tools: loadedTools, toolLoadError: toolLoadError ?? undefined },
       };
     },

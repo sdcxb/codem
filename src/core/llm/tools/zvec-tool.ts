@@ -11,7 +11,7 @@
  * - 混合任务 → 先 zvec_grep_search 发现，再 grep/read 验证。
  */
 
-import type { ToolDef, ToolRegistry } from "../tools";
+import type { ToolDef, ToolExecuteResult, ToolRegistry } from "../tools";
 import type { MCPTool } from "../../mcp/mcp";
 import { getMCPRegistry } from "../../mcp/mcp";
 
@@ -44,7 +44,7 @@ export function createZvecTool(tool: MCPTool & { server: string }): ToolDef {
     id: name,
     description,
     parameters,
-    execute: async (args, _ctx) => {
+    execute: async (args, _ctx): Promise<ToolExecuteResult> => {
       try {
         const result = await getMCPRegistry().callTool(ZVEC_MCP_SERVER_NAME, name, args as Record<string, unknown>);
         const text = mcpResultToText(result as any);
@@ -64,7 +64,7 @@ export function createZvecTool(tool: MCPTool & { server: string }): ToolDef {
         return {
           title: name,
           output: failed ? `[zvec-grep error]\n${text || JSON.stringify(result)}` : text || JSON.stringify(result),
-          ...(failed ? { isError: true } : {}),
+          isError: failed,
         };
       } catch (e: any) {
         // 第 D10b 波：调用本身抛错（MCP 未连接 / 服务器崩了 / 超时）——

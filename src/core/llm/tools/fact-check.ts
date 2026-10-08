@@ -332,7 +332,7 @@ export function createFactCheckTool(): ToolDef {
       if (!content) {
         return {
           title: "Error",
-          output: "内容不能为空",
+          output: "内容不能为空", isError: true,
         };
       }
 
@@ -355,12 +355,12 @@ export function createFactCheckTool(): ToolDef {
 
         return {
           title: "Fact Check Result",
-          output: JSON.stringify(payload, null, 2),
+          output: JSON.stringify(payload, null, 2), isError: false,
         };
       } catch (error) {
         return {
           title: "Error",
-          output: `事实核查失败: ${error instanceof Error ? error.message : String(error)}`,
+          output: `事实核查失败: ${error instanceof Error ? error.message : String(error)}`, isError: true,
         };
       }
     },

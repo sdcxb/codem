@@ -43,7 +43,7 @@ export class PromptOptimizationProvider implements SkillToolProvider {
         if (!ctx.getSystemPrompt) {
           return {
             title: "get_system_prompt",
-            output: "Error: System prompt access is not available in this context.",
+            output: "Error: System prompt access is not available in this context.", isError: true,
           };
         }
 
@@ -52,7 +52,7 @@ export class PromptOptimizationProvider implements SkillToolProvider {
         if (!assembledPrompt) {
           return {
             title: "get_system_prompt",
-            output: "The system prompt is empty or not yet configured.",
+            output: "The system prompt is empty or not yet configured.", isError: true,
           };
         }
 
@@ -73,7 +73,7 @@ export class PromptOptimizationProvider implements SkillToolProvider {
 
         return {
           title: "get_system_prompt",
-          output: JSON.stringify(result, null, 2),
+          output: JSON.stringify(result, null, 2), isError: false,
           metadata: { sourceCount: sources.length, promptLength: assembledPrompt.length },
         };
       },
@@ -115,7 +115,7 @@ export class PromptOptimizationProvider implements SkillToolProvider {
         if (!changes || !Array.isArray(changes) || changes.length === 0) {
           return {
             title: "submit_prompt_changes",
-            output: "Error: 'changes' must be a non-empty array.",
+            output: "Error: 'changes' must be a non-empty array.", isError: true,
           };
         }
 
@@ -130,7 +130,7 @@ export class PromptOptimizationProvider implements SkillToolProvider {
 
           return {
             title: "submit_prompt_changes",
-            output: `Prompt changes prepared (interactive review not available in this context). Please present these changes to the user:\n\n${summary}`,
+            output: `Prompt changes prepared (interactive review not available in this context). Please present these changes to the user:\n\n${summary}`, isError: false,
             metadata: { changeCount: changes.length },
           };
         }
@@ -139,7 +139,7 @@ export class PromptOptimizationProvider implements SkillToolProvider {
 
         return {
           title: "submit_prompt_changes",
-          output: result.message,
+          output: result.message, isError: false,
           metadata: { applied: result.applied, changeCount: changes.length },
         };
       },

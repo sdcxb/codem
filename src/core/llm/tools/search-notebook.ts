@@ -56,7 +56,7 @@ export function createSearchNotebookTool(): ToolDef {
       if (!query) {
         return {
           title: "Search Notebook",
-          output: "Error: No query provided",
+          output: "Error: No query provided", isError: true,
         };
       }
 
@@ -65,7 +65,7 @@ export function createSearchNotebookTool(): ToolDef {
       if (!notebookId) {
         return {
           title: "Search Notebook",
-          output: "Error: No active notebook. This tool only works in notebook mode.",
+          output: "Error: No active notebook. This tool only works in notebook mode.", isError: true,
         };
       }
 
@@ -73,7 +73,7 @@ export function createSearchNotebookTool(): ToolDef {
       if (!notebook) {
         return {
           title: "Search Notebook",
-          output: `Error: Notebook not found (id: ${notebookId})`,
+          output: `Error: Notebook not found (id: ${notebookId})`, isError: true,
         };
       }
 
@@ -83,7 +83,7 @@ export function createSearchNotebookTool(): ToolDef {
         if (results.length === 0) {
           return {
             title: `Search: "${query}"`,
-            output: `No relevant results found in notebook "${notebook.name}". The query may not match any indexed content.`,
+            output: `No relevant results found in notebook "${notebook.name}". The query may not match any indexed content.`, isError: false,
           };
         }
 
@@ -107,6 +107,7 @@ export function createSearchNotebookTool(): ToolDef {
         return {
           title: `Search: "${query}"`,
           output,
+          isError: false,
           // 结构化元数据 — 前端用于渲染可点击的来源引用面板
           metadata: {
             sources,
@@ -130,13 +131,13 @@ export function createSearchNotebookTool(): ToolDef {
             output:
               `索引未就绪：笔记本 "${notebook.name}" 的文本块索引暂时读不到（${error.message}）。\n` +
               `这不代表笔记本里没有相关内容 —— 请稍后重试一次；如果连续多次如此，请告诉用户"知识库索引未就绪"，` +
-              `不要让用户以为资料丢了。`,
+              `不要让用户以为资料丢了。`, isError: true,
           };
         }
         const errMsg = error instanceof Error ? error.message : String(error);
         return {
           title: "Search Notebook",
-          output: `Error searching notebook: ${errMsg}`,
+          output: `Error searching notebook: ${errMsg}`, isError: true,
         };
       }
     },

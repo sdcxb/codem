@@ -152,7 +152,7 @@ export function createSubagentTool(): ToolDef {
               ? `已启动后台子智能体 ${started.childId}。当它完成时你会自动收到通知。`
               + `使用 send_message 向它发送后续消息。`
               : `Started subagent ${started.childId} in the background. You will be notified when it finishes. `
-              + `Use send_message to send it follow-up messages.`,
+              + `Use send_message to send it follow-up messages.`, isError: false,
             metadata: { subagentId: started.childId },
           };
         } else {
@@ -174,14 +174,14 @@ export function createSubagentTool(): ToolDef {
             title: `subagent: ${description}`,
             output: result.stopReason === 'completed'
               ? result.output
-              : `${result.stopReason}: ${result.summary}\n${result.output}`,
+              : `${result.stopReason}: ${result.summary}\n${result.output}`, isError: false,
             metadata: { runId: run.id, stopReason: result.stopReason },
           };
         }
       } catch (error: any) {
         return {
           title: `subagent: ${description}`,
-          output: `Error: ${error.message}`,
+          output: `Error: ${error.message}`, isError: true,
         };
       }
     },
@@ -255,7 +255,7 @@ export function createReportTool(): ToolDef {
           title: 'report',
           output: zh
             ? `汇报已被启动你的 agent 接受为消息 ${messageId}`
-            : `report accepted by the agent that started you as message ${messageId}`,
+            : `report accepted by the agent that started you as message ${messageId}`, isError: false,
           metadata: { messageId },
         };
       } catch (error: any) {
@@ -263,7 +263,7 @@ export function createReportTool(): ToolDef {
           title: 'report',
           output: zh
             ? `汇报失败: ${error.message}`
-            : `Report failed: ${error.message}`,
+            : `Report failed: ${error.message}`, isError: true,
         };
       }
     },
@@ -323,7 +323,7 @@ export function createSendMessageTool(): ToolDef {
           title: `send_message: ${subagentId}`,
           output: zh
             ? `消息已作为子智能体 ${subagentId} 的下一轮排队`
-            : `message queued as the next turn for subagent ${subagentId}`,
+            : `message queued as the next turn for subagent ${subagentId}`, isError: false,
           metadata: { messageId },
         };
       } catch (error: any) {
@@ -331,7 +331,7 @@ export function createSendMessageTool(): ToolDef {
           title: `send_message: ${subagentId}`,
           output: zh
             ? `消息未送达: ${error.message}`
-            : `Message NOT delivered: ${error.message}`,
+            : `Message NOT delivered: ${error.message}`, isError: true,
         };
       }
     },
@@ -383,7 +383,7 @@ export function createInterruptAgentTool(): ToolDef {
           title: `interrupt_agent: ${agentId}`,
           output: zh
             ? `已请求中断 agent ${agentId}`
-            : `interrupt requested for agent ${agentId}`,
+            : `interrupt requested for agent ${agentId}`, isError: false,
           metadata: { accepted: true },
         };
       } catch (error: any) {
@@ -391,7 +391,7 @@ export function createInterruptAgentTool(): ToolDef {
           title: `interrupt_agent: ${agentId}`,
           output: zh
             ? `中断失败: ${error.message}`
-            : `Interrupt failed: ${error.message}`,
+            : `Interrupt failed: ${error.message}`, isError: true,
         };
       }
     },
@@ -436,6 +436,7 @@ export function createListAgentsTool(): ToolDef {
       return {
         title: 'list_agents',
         output,
+        isError: false,
         metadata: { count: entries.length },
       };
     },

@@ -206,18 +206,18 @@ const zh = () => getLang() === "zh";
 const COORD_DESC = () => (zh() ? "相对多屏虚拟屏原点的像素坐标 [x, y]（原点 = computer_screenshot 返回的 virtual_offset）" : "Pixel coords [x,y] relative to the multi-monitor virtual screen origin (returned by computer_screenshot as virtual_offset)");
 
 function out(title: string, output: string): ToolExecuteResult {
-  return { title, output };
+  return { title, output, isError: false };
 }
 
 function simpleOut(title: string, v: PsOut): ToolExecuteResult {
-  if (v.ok === false) return { title, output: `Error: ${v.error || "unknown"}` };
+  if (v.ok === false) return { title, output: `Error: ${v.error || "unknown"}`, isError: true };
   const lines: string[] = [];
   for (const [k, val] of Object.entries(v)) {
     if (k === "ok") continue;
     if (val === undefined || val === null) continue;
     lines.push(`${k}: ${JSON.stringify(val)}`);
   }
-  return { title, output: lines.join("\n") };
+  return { title, output: lines.join("\n"), isError: false };
 }
 
 // ---- screenshot ----
@@ -240,7 +240,7 @@ export function createComputerScreenshotTool(): ToolDef {
       },
       required: [],
     },
-    async execute(args, ctx) {
+    async execute(args, ctx): Promise<ToolExecuteResult> {
       modeGate("computer_screenshot", ctx);
       const cfg = getComputerSettings();
       const baseDir = cfg.screenshot_dir || (await getTempDir());
@@ -260,7 +260,7 @@ export function createComputerScreenshotTool(): ToolDef {
           `virtual_offset: [${(v.virtual_offset as number[]).join(", ")}]\n\n` +
           (zh()
             ? "如需理解画面内容，可将此截图作为图片发送（vision 通道自动处理），或用 computer_see。坐标为相对虚拟屏原点像素。"
-            : "To understand the screen, send this screenshot as an image (auto vision) or use computer_see. Coords are pixels relative to the virtual origin."),
+            : "To understand the screen, send this screenshot as an image (auto vision) or use computer_see. Coords are pixels relative to the virtual origin."), isError: false,
         metadata: { imagePath: String(v.path), width: v.width as number, height: v.height as number, virtual_offset: v.virtual_offset },
       };
     },

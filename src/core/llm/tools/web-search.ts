@@ -289,7 +289,7 @@ export function createWebSearchTool(): ToolDef {
     async execute(args: Record<string, unknown>): Promise<ToolExecuteResult> {
       const query = args.query as string;
       if (!query) {
-        return { title: "web_search", output: "Error: query is required." };
+        return { title: "web_search", output: "Error: query is required.", isError: true };
       }
 
       try {
@@ -298,7 +298,7 @@ export function createWebSearchTool(): ToolDef {
         if (results.length === 0) {
           return {
             title: `web_search: ${query}`,
-            output: `No results found for "${query}".`,
+            output: `No results found for "${query}".`, isError: false,
           };
         }
 
@@ -314,7 +314,7 @@ export function createWebSearchTool(): ToolDef {
 
         return {
           title: `web_search: ${query}`,
-          output: `[Search source: ${source}]\n\nFound ${results.length} results for "${query}":\n\n${formatted}`,
+          output: `[Search source: ${source}]\n\nFound ${results.length} results for "${query}":\n\n${formatted}`, isError: false,
           metadata: {
             query,
             resultCount: results.length,
@@ -330,7 +330,7 @@ export function createWebSearchTool(): ToolDef {
       } catch (err: any) {
         return {
           title: `web_search: ${query}`,
-          output: `Search failed: ${err.message}`,
+          output: `Search failed: ${err.message}`, isError: true,
         };
       }
     },

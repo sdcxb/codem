@@ -55,7 +55,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
       if (!query) {
         return {
           title: "tool_search: Error",
-          output: "Error: query parameter is required.",
+          output: "Error: query parameter is required.", isError: true,
         };
       }
 
@@ -70,7 +70,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
       if (deferredList.length === 0) {
         return {
           title: "tool_search: No deferred tools",
-          output: "No deferred tools are available. All tools are already loaded with full schemas.",
+          output: "No deferred tools are available. All tools are already loaded with full schemas.", isError: false,
         };
       }
 
@@ -88,7 +88,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
               `Tool "${exactMatch.name}" schema loaded successfully.\n\n` +
               `You can now call this tool. Here is the full schema:\n\n` +
               JSON.stringify(fullDef, null, 2) +
-              `\n\nCall ${exactMatch.name} with the appropriate parameters in your next response.`,
+              `\n\nCall ${exactMatch.name} with the appropriate parameters in your next response.`, isError: false,
           };
         }
       }
@@ -114,7 +114,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
               `Tool "${fuzzyMatches[0].name}" schema loaded successfully.\n\n` +
               `You can now call this tool. Here is the full schema:\n\n` +
               JSON.stringify(fullDef, null, 2) +
-              `\n\nCall ${fuzzyMatches[0].name} with the appropriate parameters in your next response.`,
+              `\n\nCall ${fuzzyMatches[0].name} with the appropriate parameters in your next response.`, isError: false,
           };
         }
       }
@@ -127,7 +127,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
             fuzzyMatches
               .map((t) => `- ${t.name}: ${t.searchHint}`)
               .join("\n") +
-            `\n\nCall tool_search again with the exact name, e.g. tool_search({ query: "${fuzzyMatches[0].name}" })`,
+            `\n\nCall tool_search again with the exact name, e.g. tool_search({ query: "${fuzzyMatches[0].name}" })`, isError: false,
         };
       }
 
@@ -140,7 +140,7 @@ export function createToolSearchTool(registry: ToolRegistry): ToolDef {
           deferredList
             .map((t) => `- ${t.name}: ${t.searchHint}`)
             .join("\n") +
-            `\n\nCall tool_search with one of the above tool names.`,
+            `\n\nCall tool_search with one of the above tool names.`, isError: false,
       };
     },
   };

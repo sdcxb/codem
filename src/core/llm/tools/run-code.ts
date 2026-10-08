@@ -221,7 +221,7 @@ Timeout: 30 seconds (really interrupted, not just abandoned).`,
       if (!code || code.trim().length === 0) {
         return {
           title: "run_code",
-          output: "Error: code parameter is required and must not be empty.",
+          output: "Error: code parameter is required and must not be empty.", isError: true,
         };
       }
 
@@ -288,12 +288,12 @@ Timeout: 30 seconds (really interrupted, not just abandoned).`,
 
         return {
           title: "run_code",
-          output: output || "(no output)",
+          output: output || "(no output)", isError: false,
         };
       } catch (err: any) {
         return {
           title: "run_code",
-          output: "Error: " + err.message,
+          output: "Error: " + err.message, isError: true,
         };
       }
     },
