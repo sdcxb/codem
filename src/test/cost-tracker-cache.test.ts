@@ -10,11 +10,16 @@ import { describe, it, expect, vi } from "vitest";
 
 /** 第 184 波（G4）：把"旧版本存下的"成本数据喂给 getSettingJSON（见 COST-MIG-1 的说明） */
 const legacyStore: Record<string, unknown> = {};
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例自己的 `legacyStore`（注意：它存的是**原值**而不是 JSON 字符串，
+ * 所以这两条必须照原样覆盖，基座的 `getSettingJSON` 语义与此不同）。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSettingJSON: (key: string, fallback: unknown) => (key in legacyStore ? legacyStore[key] : fallback),
   setSettingJSON: (key: string, value: unknown) => { legacyStore[key] = value; },
-  getSetting: () => "",
-  setSetting: () => {},
 }));
 function setLegacyCostSetting(key: string, value: unknown): void { legacyStore[key] = value; }
 

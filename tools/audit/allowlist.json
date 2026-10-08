@@ -30,6 +30,18 @@
       "file": "src/core/session/preferences.ts",
       "contains": "localStorage 镜像未写入",
       "reason": "第 47 轮 D-22：localStorage 在本次改动后只是**兼容镜像**，权威介质是 DB（setSettingJSON 那一路，失败会走 reportPersistFailure）。镜像写不进去只有隐私模式 / 配额满两种情形，两者都不影响权威值；把镜像写失败升级成失败上报会让『隐私模式下打开应用』每次都弹一条错误，而用户偏好其实一切正常。"
+    },
+    {
+      "file": "src/core/memory/memory.ts",
+      "contains": "重读记忆失败（仍按读失败处理）",
+      "reason": "第 188 波 F2 重写理由（原理由『它失败时不改变任何结论 —— loadState.ok 保持 false』在**抛异常支不成立**，已作废）：`retryLoadIfPossible()` 现在把 merge-back 放进 `finally`，只有『捕获 pending + 清表』在 try 里；而 `load()` 内部已把迁移异常收成『读失败 + `memory.load` 上报』（见 `runMigration()`）。所以这条 warn 是**第三道**防线，只可能因为 `load()` 自身的意外（`clear()`/`Array.from` 之类）触发：那时 `loadState.ok` 由 `load()` 自己保证为 false（写入走 `memory.saveRefused`），条目由同一个 `finally` 补回。失败本身上报在 `memory.load`（action，已登记），这里留一行只为日志可诊断，不是唯一可见性来源。",
+      "round": 188
+    },
+    {
+      "file": "src/core/storage/bootstrap.ts",
+      "contains": "端口注册后重读记忆失败",
+      "reason": "第 188 波 F2 重写理由（原理由『重读失败不改变任何结论』在抛异常支不成立，已作废）：`reload()` 内部的失败**全部**已由 memory 自己如实上报 —— 读不到 / 解析失败 / 迁移抛出都走 `memory.load`（action，已登记），并伴随 `loadState.ok === false` ⇒ 后续写入走 `memory.saveRefused`（persist，已登记）。这条 catch 只兜『动态 import 或 reload 本身炸了』这种更外层的意外，再上报一次会让同一次失败在界面上出现两遍（同区域重复告警）。记忆域不会因此被当成『读成功』：`loadState` 的置真只发生在 `load()` 内部。",
+      "round": 188
     }
   ],
   "silentWrites": [],

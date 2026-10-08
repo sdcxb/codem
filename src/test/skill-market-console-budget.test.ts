@@ -27,13 +27,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockSettings: Record<string, any> = {};
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例自己的 `mockSettings`（恒 null 的 `getSetting` 也照原样保留）。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSetting: vi.fn().mockReturnValue(null),
   getSettingJSON: vi.fn().mockImplementation((k: string, d: any) => mockSettings[k] ?? d),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
-  removeSetting: vi.fn(),
 }));
 vi.mock("../core/file-api", () => ({
   // CLI 源：**永不 settle 的 promise**，用来制造一个真实"源超时"（不 reject，避免留下噪声）

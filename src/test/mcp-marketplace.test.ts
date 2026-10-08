@@ -1,13 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock settings before importing
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 本文件只覆盖"空库 + getSettingJSON 恒返回 `[]`"这两点与本用例相关的差异，
+ * 其余导出（含本批新增的 `loadMemoryChecked` / `saveMemoryConfirmed` / `isMemoryDomainReady`）
+ * 由基座按真实语义提供，不会再出现"真实导出面涨了、mock 面没跟上"的运行时炸。
+ *
+ * 工厂里用**动态 import**：`vi.mock` 的工厂被提到文件顶部执行，直接引用 import 进来的
+ * 标识符会 `ReferenceError: Cannot access '__vi_import_0__' before initialization`。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSetting: vi.fn(() => ""),
-  setSetting: vi.fn(),
   getSettingJSON: vi.fn(() => []),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
 }));
 
 // Mock Tauri

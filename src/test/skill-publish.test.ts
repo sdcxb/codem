@@ -14,12 +14,14 @@ vi.mock("../core/file-api", () => ({
   deletePath: vi.fn(),
 }));
 
-vi.mock("../core/storage/settings", () => ({
-  getSetting: vi.fn().mockReturnValue(null),
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例需要的"技能市场配置恒为空"（`getSettingJSON` 恒 `[]`）。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSettingJSON: vi.fn().mockReturnValue([]),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
 }));
 
 

@@ -254,6 +254,8 @@ interface AppState {
   addPersistAlert: (alert: Omit<PersistAlert, "id" | "count" | "timestamp"> & { timestamp?: number }) => void;
   /** 关掉一条失败提示 */
   dismissPersistAlert: (id: string) => void;
+  /** 撤回某个区域的全部提示（系统自恢复；例如启动期暂时性的 `memory.load` 失败） */
+  withdrawPersistAlert: (area: string) => void;
   /** P0: Message feedback map (messageId -> 'like' | 'dislike') */
   feedback: FeedbackMap;
   /** P0: Whether the user has scrolled up from the bottom of the chat */
@@ -916,6 +918,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   /** 关掉一条失败提示（用户已经看到了） */
   dismissPersistAlert: (id) => set((s) => ({ persistAlerts: s.persistAlerts.filter((a) => a.id !== id) })),
+
+  /**
+   * **撤回**某个区域的全部提示（第 189 波：MEM-LOAD-QUIET-2）。
+   *
+   * 与 `dismissPersistAlert`（用户自己关掉）区分开：这一条是**系统自恢复**的结果 ——
+   * 例如启动期 `memory.load` 报了"存储端口还没就绪"，随后自动重载成功，
+   * 那条横幅就变成了陈旧且不可操作的假象。上传侧（`persist-failure.withdrawFailure`）
+   * 发 `codem:persist-failed-withdrawn`，App 收到后调这里把它摘掉。
+   */
+  withdrawPersistAlert: (area) => set((s) => ({ persistAlerts: s.persistAlerts.filter((a) => a.area !== area) })),
 
   setFeedback: (messageId, feedback, sessionId) => {
     /*

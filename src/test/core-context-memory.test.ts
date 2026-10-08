@@ -274,11 +274,23 @@ describe("记忆系统 — Memory Service", () => {
    * 判据因此换成端口语义，断言的对象（"记忆内容存得进、读得回"）与强度保持不变：
    *   ① 写入必须**写穿到端口**（`memory.set`）—— 只改内存不算存下来；
    *   ② 读取走**产品路径**：新建一个 `MemoryService` 从存储重新加载（等价于原来那次 SELECT）。
+   *
+   * 第 N 波（记忆作用域/信任边界重构）：写入入口 `add` 改为返回 `MemoryAddResult`
+   * （`{ok, entry, error?, message?}`）—— 因为"容量满时**可见地失败**"要求调用方拿得到失败原因。
+   * 作用域名也从 `global` 改名为 `platform`（同一档语义：所有项目、所有对话）。
+   * 四条判据的**断言对象与强度不变**，只是跟着新契约取值。
    */
-  it("CTXT-017: 写入和读取 memory", () => {
+  it("CTXT-017: 写入和读取 memory", async () => {
     const svc = new MemoryService();
-    const entry = svc.add({ scope: "global", key: "k1", content: "记忆内容" });
+    const result = svc.add({ scope: "platform", key: "k1", content: "记忆内容" });
+    expect(result.ok).toBe(true);
+    const entry = result.entry!;
 
+    /*
+     * 第 187 波 R1：写入走**可确认通道**（异步）—— "已接受"（`add` 返回 ok）不等于"已落库"，
+     * 所以断言"写穿到端口"之前必须等确认链排空（`flushPendingPersist()`）。
+     */
+    await svc.flushPendingPersist();
     expect(
       port().__writes().some((w) => w.command === "memory.set"),
       "记忆必须写穿到端口（只改内存不算存下来）",
@@ -291,8 +303,13 @@ describe("记忆系统 — Memory Service", () => {
   // CTXT-018
   it("CTXT-018: 更新 memory", () => {
     const svc = new MemoryService();
-    const entry = svc.add({ scope: "global", key: "k2", content: "旧内容" });
-    expect(svc.update(entry.id, { content: "新内容" })).toBe(true);
+    const entry = svc.add({ scope: "platform", key: "k2", content: "旧内容" }).entry!;
+    /*
+     * 第 187 波：`update` 的**来源守卫从 fail-open 改为显式要求来源** ——
+     * `actor` 现在必填：`"user"`（用户显式动作）才允许改写手动条目，
+     * `"auto"` 一律拒绝（自动流程不得改写手动记忆）。这里是用户动作，如实声明即可。
+     */
+    expect(svc.update(entry.id, { content: "新内容" }, { actor: "user" })).toBe(true);
 
     const reloaded = new MemoryService();
     expect(reloaded.get(entry.id)!.content).toBe("新内容");
@@ -301,7 +318,7 @@ describe("记忆系统 — Memory Service", () => {
   // CTXT-019
   it("CTXT-019: 删除 memory", () => {
     const svc = new MemoryService();
-    const entry = svc.add({ scope: "global", key: "k3", content: "内容" });
+    const entry = svc.add({ scope: "platform", key: "k3", content: "内容" }).entry!;
     expect(svc.delete(entry.id)).toBe(true);
 
     // 删除同样要落库：重载后不得复活（原来断言的是"旧库里查不到这行了"）
@@ -313,7 +330,7 @@ describe("记忆系统 — Memory Service", () => {
   it("CTXT-020: memory 中文内容正确存储", () => {
     const content = "这是一段中文记忆 🧠";
     const svc = new MemoryService();
-    const entry = svc.add({ scope: "global", key: "k4", content });
+    const entry = svc.add({ scope: "platform", key: "k4", content }).entry!;
 
     const reloaded = new MemoryService();
     expect(reloaded.get(entry.id)!.content).toBe(content);

@@ -26,11 +26,15 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例需要的"没有任何持久化配置（恒返回默认值）"。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSettingJSON: (_key: string, fallback: unknown) => fallback,
   setSettingJSON: () => {},
-  getSetting: () => "",
-  setSetting: () => {},
 }));
 
 import { CostTracker } from "../core/llm/cost-tracker";

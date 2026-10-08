@@ -569,6 +569,21 @@ export function loadMemory(): string {
 }
 
 export function saveMemory(content: string): void {
+  /**
+   * I1（硬要求）：**所有写路径都要检查预热状态**。
+   *
+   * 未预热时 `read()` 返回 fallback（空串），而 `patch()` **不检查**预热状态 ——
+   * 于是"把兜底空串整份写回 `memory` 字段"这件事真的会发生；而 `MemoryService.save()` 是
+   * 全量重写、`finalizeBatch()` 每回合都调它 ⇒ **预热失败后的下一个回合就把全部历史记忆清空**。
+   * 这里直接拒绝写（并如实上报），绝不把 fallback 派生出的值写回磁盘。
+   */
+  if (!isMemoryDomainReady()) {
+    reportWriteNotAccepted(
+      "settings.saveMemory",
+      `记忆未保存：${MEMORY_DOMAIN_NOT_WARMED}（拒绝把兜底值写回库，库内容保持原样）`,
+    );
+    return;
+  }
   const dom = rustConfigDomain();
   if (dom && isRust()) {
     dom.patch({ memory: content });
@@ -577,6 +592,129 @@ export function saveMemory(content: string): void {
   }
     reportWriteNotAccepted("settings.saveMemory", "记忆未保存");
     return;
+}
+
+// ========== 记忆读写的**就绪判据**与确认式写入（第 187 波 I1 / I6）==========
+//
+// ## I1：为什么写路径必须自己判「预热好了没有」
+//
+// `config_warmup` 一次抓三个域（`quick_phrases` / `mcp_servers` / `memory`），
+// **任一域失败整条预热失败**，而 `RustStoragePort.start()` 对扩展域失败是「只上报不抛」
+// ⇒ 端口照常注册，但 `RustConfigDomainCache.warmed` 恒为 false ⇒ `read()` 返回 **fallback**。
+//
+// 危险的是**写**那一侧：`patch()` 不看预热状态，`saveMemory("")` 于是把「兜底空串」当成
+// 真实内容整份写回 `memory` 字段 —— 而 `MemoryService.save()` 是**全量重写**，
+// `finalizeBatch()` 每回合都调它 ⇒ **预热失败后的下一个回合就把全部历史记忆清空**。
+//
+// 所以写路径与读路径用**同一个判据**：`isMemoryDomainReady()` 为假 ⇒ 拒绝写并如实上报，
+// **绝不允许**把 fallback 派生出来的值写回磁盘。
+
+/** 记忆域读不到时的原因文案（**用户可读**；调用方要把它如实带到界面上） */
+export const MEMORY_DOMAIN_NOT_WARMED = "配置面记忆域尚未预热（读到/写回的都会是兜底值，不是真实数据）";
+export const MEMORY_DOMAIN_NO_PORT = "没有可用的存储端口（本次既读不到也写不了记忆）";
+
+/**
+ * 记忆域（`memory` 字段所在的那个配置扩展域）**是否已经预热**（第 187 波 I1）。
+ *
+ * 判据取两层，缺一不可：
+ * - 设置面镜像已预热（`isSettingsMirrorReady()`：迁移标记这类键得**真的写得上磁盘**）；
+ * - 扩展域自己也已预热（`configDomain.isWarmed()`：`memory` 字段的镜像**不是**兜底值）。
+ *
+ * 只判第一层是不够的：`config_warmup` 是「一把抓三个域」，设置面成功、扩展域失败是**真实形态**，
+ * 而那时 `loadMemory()` 返回的正是兜底空串。
+ */
+export function isMemoryDomainReady(): boolean {
+  if (!hasStoragePort()) return false;
+  if (!isSettingsMirrorReady()) return false;
+  const dom = rustConfigDomain();
+  if (!dom) return false;
+  try {
+    return dom.isWarmed() === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 一次记忆读取的结果：**必须能区分「读不到」与「本来就空」** */
+export type MemoryReadResult = { ok: true; data: string; bytes: number } | { ok: false; reason: string };
+
+/**
+ * 记忆读取（**带就绪判据**的那一版）。
+ *
+ * `loadMemory()` 在未预热时返回 `""`，与「这个库里真的一条记忆都没有」**长得一模一样**。
+ * 任何据此判断「记忆为空」的调用方（尤其是一次性迁移）都必须改用本函数。
+ */
+export function loadMemoryChecked(): MemoryReadResult {
+  if (!hasStoragePort()) return { ok: false, reason: MEMORY_DOMAIN_NO_PORT };
+  if (!isMemoryDomainReady()) return { ok: false, reason: MEMORY_DOMAIN_NOT_WARMED };
+  try {
+    const data = loadMemory();
+    if (typeof data !== "string") {
+      return { ok: false, reason: `memory 字段不是字符串（实际是 ${typeof data}）：库内容不是本模块能解释的形状` };
+    }
+    return { ok: true, data, bytes: data.length };
+  } catch (e) {
+    return { ok: false, reason: `记忆读取失败：${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/**
+ * 记忆写入的**确认式**版本（第 187 波 I6）。
+ *
+ * 与 `saveMemory` 的差别是「能等到结果」：`writeThrough` 只 `.catch(上报)`，
+ * 于是 `MemoryService.save()` 的返回值**只反映有没有抛同步异常** —— IPC 失败 / 重试耗尽 /
+ * 磁盘满都不会让它变成 false，界面因此永远显示「保存成功」。
+ *
+ * 返回 `{ ok:false, reason }` 的四种情形（都**不**改镜像、**不**发写穿）：
+ * ① 没有端口；② 记忆域未预热（I1）；③ 端口没有 `execute` 能力；
+ * ④ 引擎报错（`memory.set` 被拒 / 重试耗尽）。
+ */
+export async function saveMemoryConfirmed(content: string): Promise<{ ok: boolean; reason?: string }> {
+  const result = await writeMemoryConfirmed(content);
+  if (result.ok) rustConfigDomain()?.patch({ memory: content });
+  return result;
+}
+
+/**
+ * **只更新内存镜像**（同步；"内存即时生效"这一半）。
+ *
+ * 第 187 波 R1 把记忆写入拆成两半，因为"两件事必须能分别确认"：
+ * - `patchMemoryMirror()`：同步改镜像（保证同一 tick 之后的读路径看得到新内容，
+ *   例如迁移后立刻 `new MemoryService()` 要读到迁移后的形态）；
+ * - `writeMemoryConfirmed()`：异步写穿并**等引擎答复**（不碰镜像）。
+ *
+ * 未预热时**拒绝**（I1）并如实上报 —— 绝不把 fallback 派生出的内容写回磁盘。
+ */
+export function patchMemoryMirror(content: string): void {
+  if (!isMemoryDomainReady()) {
+    reportWriteNotAccepted("settings.patchMemoryMirror", `记忆镜像未更新：${MEMORY_DOMAIN_NOT_WARMED}`);
+    return;
+  }
+  rustConfigDomain()?.patch({ memory: content });
+}
+
+/**
+ * **只写穿并等确认**（不改镜像；R1/F6）。
+ *
+ * 与 `saveMemoryConfirmed` 的差别：后者在成功后顺带更新镜像（"写一份完整记忆"用），
+ * 本函数只负责"磁盘上落定了没有"（写路径自己已经在同步那半改过镜像）。
+ *
+ * 返回 `{ ok:false, reason }` 的四种情形：① 没有端口；② 记忆域未预热；
+ * ③ 端口没有 `execute` 能力；④ 引擎报错（`memory.set` 被拒 / 重试耗尽）。
+ */
+export async function writeMemoryConfirmed(content: string): Promise<{ ok: boolean; reason?: string }> {
+  if (!hasStoragePort()) return { ok: false, reason: MEMORY_DOMAIN_NO_PORT };
+  if (!isMemoryDomainReady()) return { ok: false, reason: MEMORY_DOMAIN_NOT_WARMED };
+  const port = getStoragePort() as { data?: { execute(c: string, p?: Record<string, unknown>): Promise<{ written: number }> } };
+  if (typeof port.data?.execute !== "function") {
+    return { ok: false, reason: "存储端口不支持确认式写穿（拒绝写入，避免把内存态当成已落库）" };
+  }
+  try {
+    await port.data.execute("memory.set", { content });
+  } catch (e) {
+    return { ok: false, reason: `记忆落库失败：${e instanceof Error ? e.message : String(e)}` };
+  }
+  return { ok: true };
 }
 
 // ========== Recovery Data Storage ==========

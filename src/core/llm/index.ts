@@ -21,7 +21,18 @@ import type { Context } from "../cordis/src/index.ts";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
 import { PermissionManager, getPermissionManager } from "../permission/permission";
 import { ContextManager, getContextManager, type CompactionConfig } from "../context/context";
-import { MemoryService, getMemoryService, type MemoryScope } from "../memory/memory";
+import {
+  MemoryService,
+  getMemoryService,
+  projectIdFromCwd,
+  approvalRequiredForScope,
+  getWriteApprovalSetting,
+  setWriteApprovalSetting,
+  type MemoryScope,
+  type MemoryScopeContext,
+  type MemorySource,
+  type ApprovalScopeSetting,
+} from "../memory/memory";
 import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, type SystemPromptConfig } from "../prompt/prompt";
 import { buildPersonaPromptSection } from "../persona/persona";
@@ -120,7 +131,7 @@ export { redactSecrets, redactSecretsDeep } from "../utils/redact";
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 import { loadAppIdentity, loadUserConfig } from "../config/loader";
-import { reportActionFailure } from "../storage/persist-failure";
+import { reportActionFailure, reportAdvisory } from "../storage/persist-failure";
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { getEventLog } from "../storage/event-log";
@@ -540,8 +551,31 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     console.log("[buildSystemPrompt] user:", JSON.stringify(user));
 
     // Inject persistent memory into system prompt
-    const memoryPrompt = this.memory.buildMemoryPrompt("project") +
-      this.memory.buildMemoryPrompt("global");
+    /**
+     * 三级作用域各自注入，且**按维度过滤**：
+     * - `platform`：所有项目、所有对话（无归属键）；
+     * - `project`：只注入 `projectId === 当前项目` 的条目（旧实现只按 scope 过滤 ⇒ 跨项目泄漏）；
+     * - `conversation`：只注入 `sessionId === 当前对话` 的条目（旧实现**根本没有调用点** ⇒ 对话级记忆从不参与上下文）。
+     *
+     * 单次调用拿到三块（顺序 platform → project → conversation），每块内部
+     * "手动块在前、自动块单独标注在后"，由 `buildMemoryPrompt` 保证。
+     */
+    /**
+     * 记忆注入（M-3 的**第二层防御**）。
+     *
+     * `buildMemoryPrompt` 内部已经对 `content`/`key` 做了类型校验与安全字符串化
+     * （读入时还有条目级校验，坏条目直接丢弃并计数上报）。这里再包一层 try/catch 的理由是
+     * **后果极不对称**：这一句抛出去，整轮的系统提示（工具纪律 / 技能说明 / 记忆）全都没有，
+     * 用户看到的是"这一轮莫名其妙失灵"，日志里只有一条 TypeError。
+     * 所以即使上层漏了一条坏数据，也只允许丢掉记忆段，**不许**丢掉整份提示。
+     */
+    let memoryPrompt = "";
+    try {
+      memoryPrompt = this.memory.buildMemoryPrompt(undefined, this.memoryProjectIdFor(_sessionId, cwd), _sessionId);
+    } catch (e) {
+      console.error("[buildSystemPrompt] 记忆段构造失败（本轮不注入记忆，其余提示保持完整）：", e);
+      memoryPrompt = "";
+    }
 
     const config: SystemPromptConfig = {
       agent,
@@ -590,9 +624,15 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
     const identity = loadAppIdentity();
     const user = loadUserConfig();
 
-    // Inject persistent memory into system prompt
-    const memoryPrompt = this.memory.buildMemoryPrompt("project") +
-      this.memory.buildMemoryPrompt("global");
+    // Inject persistent memory into system prompt（三级作用域按维度过滤，见 buildSystemPrompt 的同段说明）
+    // M-3：与同步路径同一层防御（坏数据只允许丢掉记忆段，不许丢掉整份系统提示）
+    let memoryPrompt = "";
+    try {
+      memoryPrompt = this.memory.buildMemoryPrompt(undefined, this.memoryProjectIdFor(sessionId, cwd), sessionId);
+    } catch (e) {
+      console.error("[buildSystemPromptAsync] 记忆段构造失败（本轮不注入记忆，其余提示保持完整）：", e);
+      memoryPrompt = "";
+    }
 
     // Load hierarchical AGENTS.md instructions
     let projectInstructions: string | undefined;
@@ -919,6 +959,29 @@ Report earlier as well whenever a partial finding changes what that agent should
     return 128000;
   }
 
+  /**
+   * 记忆归属项目身份的**按会话登记**（R3）。
+   *
+   * `process()` 在开跑前登记（与写入侧同一个值），提示词构造读它 —— 于是
+   * "写进哪个桶"与"从哪个桶注入"永远同一个来源。worktree 会话因此能立刻看到自己提取的记忆。
+   */
+  private readonly sessionMemoryProjectId = new Map<string, string>();
+
+  /** 登记某会话的记忆归属项目身份（`process()` 调；同一会话重复调用以最后一次为准） */
+  setSessionMemoryProject(sessionId: string, projectId?: string): void {
+    if (!sessionId) return;
+    if (projectId) this.sessionMemoryProjectId.set(sessionId, projectId);
+    else this.sessionMemoryProjectId.delete(sessionId);
+  }
+
+  /**
+   * 注入侧用的项目身份：**登记过就用登记值**，否则回落 `projectIdFromCwd(cwd)`
+   * （兜底与写入侧 `options?.memoryProjectId ?? projectIdFromCwd(cwd)` 逐字一致）。
+   */
+  private memoryProjectIdFor(sessionId: string, cwd?: string): string | undefined {
+    return this.sessionMemoryProjectId.get(sessionId) ?? projectIdFromCwd(cwd);
+  }
+
   /** Process a user message through the agentic loop */
   async *process(
     sessionId: string,
@@ -946,6 +1009,15 @@ Report earlier as well whenever a partial finding changes what that agent should
        * 不传 → 引擎自造 `msg-…`，事件里的 `messageId` 会与消息行对不上（见 agentic-loop 的注释）。
        */
       resolveAssistantMessageId?: (sessionId: string) => string | undefined;
+      /**
+       * **记忆归属的项目身份**（I9）。
+       *
+       * 为什么不直接用 `cwd`：git worktree 会话的 `cwd` 是 worktree 目录，用它当项目记忆的归属键
+       * 会让主工作区与 worktree 会话互相看不到对方的记忆，且 worktree 目录一删归属键就永久失效
+       * （体检只能显示"归属已失效"）。界面用当前项目的 path 传进来；不传时退回 `projectIdFromCwd(cwd)`
+       * （后台路径与判据不传，行为与旧版一致）。
+       */
+      memoryProjectId?: string;
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
     /*
@@ -1020,16 +1092,37 @@ Report earlier as well whenever a partial finding changes what that agent should
     // F1.2/F1.3: Wire memory extraction callbacks
     // F3.2: Only enable if memory is enabled for this session
     const memoryEnabled = this.isMemoryEnabled(sessionId);
+    /**
+     * 自动提取的归属项目：**由本轮的工作目录推出**（不再是"没有归属、到处生效"）。
+     * 这是跨项目泄漏的修复点之一：写入时带上 projectId，读取时按 projectId 过滤。
+     *
+     * I9：优先用调用方给的**项目身份**（`options.memoryProjectId`，界面传 `currentProject.path`）——
+     * worktree 会话的 cwd 是 worktree 目录，拿它当归属键会把同一个项目的记忆拆成两个桶
+     * （主工作区看不到 worktree 会话写的记忆，反之亦然），而 worktree 目录删除后归属键永久失效。
+     */
+    const memoryProjectId = options?.memoryProjectId ?? projectIdFromCwd(cwd);
+    /**
+     * R3（第 187 波复审）：**写入侧的项目身份必须一路传到注入侧**。
+     *
+     * 修复前的形态是两侧分叉：写入用 `options.memoryProjectId`（界面传 `currentProject.path`），
+     * 注入仍用 `projectIdFromCwd(cwd)`。worktree 会话的 `cwd` 是 worktree 目录
+     * ⇒ 提取的记忆写进「主工作区」桶，而注入只查「worktree 目录」桶
+     * ⇒ **该会话永远看不到自己刚提取的项目记忆（批准了也不进上下文）**，
+     * 比修复前（两侧同一个错的键）更糟。所以这里把身份按会话记下来，
+     * 注入点（`buildSystemPrompt` / `buildSystemPromptAsync`）读**同一个来源**，
+     * `projectIdFromCwd(cwd)` 只作**兜底**（两侧的兜底逻辑也完全一致）。
+     */
+    this.setSessionMemoryProject(sessionId, memoryProjectId);
     loop.updateConfig({
       memoryEnabled,
       onCompactionComplete: () => {
         if (memoryEnabled) {
-          this.extractMemoriesFromSession(sessionId).catch(() => {});
+          this.extractMemoriesFromSession(sessionId, memoryProjectId).catch(() => {});
         }
       },
       onTurnComplete: () => {
         if (memoryEnabled) {
-          this.extractMemoriesFromSession(sessionId).catch(() => {});
+          this.extractMemoriesFromSession(sessionId, memoryProjectId).catch(() => {});
         }
       },
     });
@@ -1738,25 +1831,79 @@ return loop.hasPendingGuidance();
     };
   }
 
-  searchMemory(query: string, scope?: MemoryScope) {
-    return this.memory.search(query, scope);
+  /**
+   * 记忆检索（A2 / F7）：`ctx` **必须传**（当前项目/当前对话）。
+   * 不传时 `MemoryService.search` 走 fail-closed（返回空）——刻意如此：
+   * 旧写法（不传 ctx）会让可见性守卫整体短路，等于回到"只按 scope 过滤"的跨项目泄漏口径。
+   */
+  searchMemory(query: string, scope?: MemoryScope, ctx?: MemoryScopeContext) {
+    return this.memory.search(query, scope, 10, ctx);
   }
 
   addMemory(entry: { scope: MemoryScope; key: string; content: string; tags?: string[] }) {
-    return this.memory.add(entry);
+    // 界面/命令走这条路径 ⇒ 来源是 manual（自动流程直接调 memory.add 并显式带 source:"auto"）
+    return this.memory.add({ ...entry, source: "manual" });
   }
 
   /**
    * F3.1: Consolidate memories across sessions.
    * Deduplicates, removes stale entries, and enforces capacity limits.
-   * Should be called periodically (e.g., when a session ends or on app startup).
+   *
+   * 容量语义（作用域/信任边界重构）：**默认不做容量裁剪**（静默驱逐 = 用户看不到的丢失）。
+   * 传 `maxEntriesPerScope` 时才裁，且只裁 `auto` 条目、手动条目超额时如实上报 `capacityBlocked`。
    */
   consolidateMemories(options?: {
     maxAgeDays?: number;
     maxEntriesPerScope?: number;
     similarityThreshold?: number;
-  }): { duplicatesMerged: number; staleRemoved: number; capacityTrimmed: number } {
+  }): { duplicatesMerged: number; staleRemoved: number; capacityTrimmed: number; capacityBlocked: number } {
     return this.memory.consolidate(options);
+  }
+
+  /** 写入审批设置（按作用域；`/memory approval` 与设置面板共用） */
+  getMemoryWriteApproval(): ApprovalScopeSetting {
+    return getWriteApprovalSetting();
+  }
+
+  setMemoryWriteApproval(next: Partial<ApprovalScopeSetting>): ApprovalScopeSetting {
+    return setWriteApprovalSetting(next);
+  }
+
+  /** 待批准的自动记忆（未批准不进上下文） */
+  /**
+   * 待批准的自动记忆。
+   *
+   * ⚠️ `ctx` **必须传**（A2 / F7）：它决定"当前是哪个项目/哪个对话"。
+   * 不传时 `MemoryService.listPending` 走 fail-closed（返回空）—— 这是刻意的：
+   * 旧行为是全量返回，项目 A 的面板/命令里能看到项目 B 的待批准内容。
+   */
+  listPendingMemories(scope?: MemoryScope, ctx?: MemoryScopeContext) {
+    return this.memory.listPending(scope, ctx);
+  }
+
+  /** 批准一条待审自动记忆 */
+  approvePendingMemory(id: string) {
+    return this.memory.approve(id);
+  }
+
+  /** 拒绝并删除一条待审自动记忆 */
+  rejectPendingMemory(id: string) {
+    return this.memory.reject(id);
+  }
+
+  /** 自动提取批次列表（用于撤销） */
+  listMemoryBatches() {
+    return this.memory.listBatches();
+  }
+
+  /** 撤销一个自动提取批次（只删该批次写入的条目） */
+  undoMemoryBatch(batchId: string) {
+    return this.memory.undoBatch(batchId);
+  }
+
+  /** 一次性作用域迁移报告（读入口已自动跑过迁移） */
+  getMemoryMigrationReport() {
+    return this.memory.getMigrationReport();
   }
 
   /**
@@ -1791,20 +1938,46 @@ return loop.hasPendingGuidance();
    *
    * Strategy:
    * - Only extract stable, reusable facts — not temporary state
-   * - Store as project-scoped memories for cross-session recall
+   * - Store as **project-scoped** memories **with an explicit `projectId`** for cross-session recall
+   *   （旧实现写的是"没有 projectId 的 project 条目" ⇒ 实际上到处生效 = 跨项目泄漏）
+   * - 写入来源恒为 `source: "auto"`，并打上 `batchId`（可整批撤销）
+   * - 审批开启时写入 `status: "pending"`（未批准不进上下文）
+   * - **不覆盖同 key 的手动条目**（信任边界：自动不许改写手动）
+   * - 容量满时**如实拒绝并计数**（不静默驱逐已有条目）
    * - Skip if provider is not configured or session is too short
+   *
+   * @param projectId 归属项目（由调用方的工作目录推出）；缺省 ⇒ 条目没有归属，**任何项目都不注入**
+   *                  （宁可不注入，也不猜一个项目塞进去）
    */
-  async extractMemoriesFromSession(sessionId: string): Promise<void> {
+  async extractMemoriesFromSession(sessionId: string, projectId?: string): Promise<void> {
     // F3.2: Check if memory extraction is enabled for this session
     if (!this.isMemoryEnabled(sessionId)) return;
 
     const messages = MessageStorage.listMessages(sessionId);
     if (messages.length < 10) return; // Too short to extract meaningful memories
 
+    /**
+     * 自动提取的目标作用域。
+     * 保持 `project`（而不是降级成 `platform`）：用户期望的是"这个项目里学到的东西"，
+     * 跨项目共享必须是**显式**动作（手动写一条 platform 记忆），不能由自动流程代劳。
+     */
+    const targetScope: MemoryScope = "project";
+    const approvalRequired = approvalRequiredForScope(targetScope);
+
     // M1: Use "memory" slot from active profile (falls back to subagent → chat)
     const resolved = this.resolveSlot("memory");
     const provider = this.providers.get(resolved.providerId);
+    /**
+     * C1 / S3：provider 没配好时**直接返回，不建批次**。
+     *
+     * 旧实现在这里才 `return`，而 `beginBatch` 已经建过批次 ⇒ 每一轮都留下一个
+     * `count:0` 的"幽灵批次"（界面上是一个可撤销、但撤销 0 条的按钮），而且它会被
+     * `finalizeBatch`/`save()` 序列化进库、让 `batches` 无界增长。
+     */
     if (!provider || !provider.isConfigured()) return;
+
+    // 批次号：含时间与来源会话 ⇒ `/memory undo <batchId>` 能只回滚这一批
+    const batchId = this.memory.beginBatch(sessionId, targetScope);
 
     // P1-9: Use forked agent instead of independent API call.
     // This reuses the parent conversation's messages → provider's prompt cache
@@ -1846,6 +2019,7 @@ return loop.hasPendingGuidance();
       );
 
       if (!responseText || responseText.trim().length === 0) {
+        this.memory.finalizeBatch(batchId, 0);
         console.log("[extractMemories] Forked agent returned empty response");
         return;
       }
@@ -1853,46 +2027,126 @@ return loop.hasPendingGuidance();
       // 健壮的 JSON 解析 — 使用 extractJSON 处理 markdown 包裹、中文标点、尾部逗号等
       const memories = extractJSON<Array<{ key: string; content: string; tags?: string[] }>>(responseText);
       if (!Array.isArray(memories)) {
+        this.memory.finalizeBatch(batchId, 0);
         console.warn("[extractMemories] Failed to parse memories from forked agent response:", responseText.substring(0, 200));
         return;
       }
 
       // Save extracted memories
+      let written = 0;
+      let rejectedCapacity = 0;
+      let blockedByManual = 0;
+      let duplicates = 0;
       for (const mem of memories) {
+        if (typeof mem?.key !== "string" || typeof mem?.content !== "string") continue;
         // F2.1: Redact sensitive data before saving
         const safeKey = redactSecrets(mem.key);
         const safeContent = redactSecrets(mem.content);
+        if (safeContent.length <= 10) continue;
 
-        // Check if similar memory already exists (avoid duplicates)
-        const existing = this.memory.search(safeKey, "project", 3);
-        const isDuplicate = existing.some(r =>
+        /**
+         * 信任边界①：**同 key 的手动条目永不被自动流程覆盖**。
+         * 旧实现只做"相似即跳过"，而相似判定会漏（内容不同、key 相同）⇒ 今天这里显式查同 key。
+         *
+         * ## B4：判重**不许**因为缺归属而恒空
+         *
+         * `visibleIn` 对"没有 projectId 的 project 条目"要求 `includeUnscoped === true`。
+         * `projectId` 缺省（全局对话 / 未落项目）时旧写法只传 `{ projectId: undefined }`
+         * ⇒ 查询恒为空 ⇒ `isDuplicate` 恒 false ⇒ **每一轮把同一条事实再写一遍**，
+         * 直到该桶撞上 maxEntries 之后变成每轮一串"容量已满"。
+         * 所以无归属时显式打开 `includeUnscoped`（"同一个无归属桶里的条目"正是要去重的那批）。
+         */
+        const sameBucket = this.memory.search(safeKey, targetScope, 5, {
+          projectId,
+          includeUnscoped: projectId === undefined,
+        });
+        const manualSameKey = sameBucket.some(r =>
+          (r.entry.source ?? "manual") === "manual" && r.entry.key === safeKey && r.entry.projectId === projectId
+        );
+        if (manualSameKey) {
+          blockedByManual++;
+          console.log(`[extractMemories] 跳过（同 key 已有手动记忆，自动流程不得覆盖）：${safeKey}`);
+          continue;
+        }
+
+        // Check if similar memory already exists (avoid duplicates) — 只在**同一项目**内判重
+        const isDuplicate = sameBucket.some(r =>
           r.entry.key === safeKey ||
           r.entry.content.substring(0, 50) === safeContent.substring(0, 50)
         );
-
-        if (!isDuplicate && safeContent.length > 10) {
-          this.memory.add({
-            scope: "project",
-            key: safeKey,
-            content: safeContent,
-            tags: mem.tags,
-          });
-          console.log(`[extractMemories] Saved memory: ${safeKey}`);
+        if (isDuplicate) {
+          duplicates++;
+          continue;
         }
+
+        const result = this.memory.add({
+          scope: targetScope,
+          projectId,
+          sessionId,
+          key: safeKey,
+          content: safeContent,
+          tags: mem.tags,
+          source: "auto" as MemorySource,
+          // 审批开启 ⇒ 只暂存，未批准不进上下文
+          status: approvalRequired ? "pending" : "active",
+          batchId,
+        });
+
+        if (!result.ok) {
+          if (result.error === "capacity") {
+            rejectedCapacity++;
+            console.warn(`[extractMemories] 容量已满，本次写入被拒绝（可见地失败，未驱逐任何已有条目）：${safeKey}`);
+          } else {
+            console.warn(`[extractMemories] 写入失败：${result.message}`);
+          }
+          continue;
+        }
+        written++;
+        console.log(
+          `[extractMemories] Saved memory: ${safeKey}（source=auto, projectId=${projectId ?? "(无归属)"}, ` +
+            `status=${approvalRequired ? "pending（待批准）" : "active"}, batch=${batchId}）`,
+        );
       }
 
-      console.log(`[extractMemories] Extracted ${memories.length} memories from session ${sessionId}`);
+      this.memory.finalizeBatch(batchId, written);
+      console.log(
+        `[extractMemories] Extracted ${memories.length} memories from session ${sessionId}：` +
+          `写入 ${written} 条（${approvalRequired ? "待批准" : "直接生效"}）、同 key 手动条目拦下 ${blockedByManual} 条、` +
+          `重复跳过 ${duplicates} 条、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
+      );
 
-      // F3.1: Run lightweight consolidation after extraction
-      // (only if we actually saved new memories)
-      if (memories.length > 0) {
-        try {
-          this.memory.consolidate({ maxAgeDays: 90, maxEntriesPerScope: 200 });
-        } catch (err) {
-          console.warn("[extractMemories] Consolidation failed:", err);
-        }
+      /**
+       * S4：容量拒绝**必须如实上报**（旧实现只有一行渲染侧 console ⇒ 自动提取在桶满之后
+       * 静默停写，用户以为它还在学）。上限本身是用户可介入的事（删/整合记忆），
+       * 所以走 advisory（发现 + 建议），不走"失败"语气。
+       */
+      if (rejectedCapacity > 0) {
+        reportAdvisory(
+          "llm.memoryExtractionCapacity",
+          `本轮自动提取有 ${rejectedCapacity} 条因子记忆容量已满被拒绝（记忆没有被写入，已有条目一条未动）`,
+          {
+            title: "自动记忆写入被容量上限拒绝",
+            nextStep: `请到「记忆系统」删掉不再需要的条目，或调大上限后重试（上限：${this.memory.getMaxEntries()} 条/作用域）。`,
+            sample: `session=${sessionId} role=${targetScope} project=${projectId ?? "(无归属)"}`,
+          },
+        );
       }
+
+      /**
+       * ## I5：**自动整合已删除**（每回合调用 `consolidate`）
+       *
+       * 旧实现在这里无条件跑一次 `consolidate({ maxAgeDays: 90 })` 并丢弃返回值，而它内部会
+       * 删除过期自动条目、合并（改写 keeper 正文）重复项 —— 全过程的"可见性"只有一行渲染侧
+       * console（按仓库纪律用户看不到）。与此同时界面写着"程序不会自动删除或改写任何条目"，
+       * 两边直接矛盾；更糟的是"过期"只比 `entry.timestamp`，而注入从不回写访问时间
+       * ⇒ **每天在用的旧自动记忆也会在某回合被静默删掉**。
+       *
+       * 现在选择"让承诺成真"：自动流程**不再**做任何删除/改写。整合只发生在
+       * 用户点「整合」按钮或跑 `/memory consolidate` 时（那里会如实回执条数）。
+       * 重复项由上面的同 key 判重（B4 已修好）挡住，容量由 `add` 的可见失败兜住。
+       */
     } catch (err) {
+      this.memory.finalizeBatch(batchId, 0);
       console.warn("[extractMemories] Failed to extract memories:", err);
     }
   }

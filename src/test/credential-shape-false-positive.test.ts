@@ -19,6 +19,15 @@
  *
  * 本文件既钉住"**新判据不再误报**" ✓，也用**旧正则**做反例对照 ✓（证明这确实是那条类 ✓），
  * 并钉住"**真令牌仍然要报**" ✓（不许为了消误报把能力改瞎 ✗）。
+ *
+ * ## 第 188 波 R5：形状口径收敛到唯一来源，本文件两处断言**如实跟着变**
+ *
+ * 收口前 `sk-` 形状有**四份**实现（普查/导出脱敏、记忆与日志脱敏、两处工具参数扫描），
+ * 现在只有一份（`core/utils/credential-shapes.ts`，见 `credential-shape-single-source.test.ts`）。
+ * 因此：
+ *  - `FP-5` 的形状名由 `sk-` 改成 `sk-/pk-`（共享来源的强前缀**同时**覆盖 `sk-` 与 `pk-`）；
+ *  - `FP-6` 由"前边界必须是 `(?<![A-Za-z0-9])`"改成"必须有前/后边界 **且强前缀的前边界必须排除
+ *    `-`/`_`**"—— 后者是**加强**：修复前普查那条前边界放行 `-`，`task-sk-…` 照样被报成凭据（实测）。
  */
 import { describe, expect, it } from "vitest";
 
@@ -76,14 +85,31 @@ describe("凭据形状误报（第 49 波 ✓）", () => {
     const out = censusCredentialSettings([{ key: "n", value: `a ${REAL_SK} b ${REAL_AKIA}` }]);
     const shape = out.hits.find((h) => h.kind === "shape");
     expect(shape, "应有形状命中").toBeTruthy();
-    expect(shape!.shapes?.join(","), "要能说清是哪几种形状").toContain("sk-×1");
+    /**
+     * ⚠️ 第 188 波 R5 **如实改名** ✓：这条形状原来叫 `sk-`，现在是共享来源里的 `apiKeyStrong`
+     * —— 它的强前缀是 **`sk-` 与 `pk-` 两个**（改名之前普查只认 `sk-`，而脱敏那份认两个 ⇒
+     * 同一规则两份实现）。名字必须跟着形状走，否则日志里那句"命中的是哪一种形状"又是假的。
+     */
+    expect(shape!.shapes?.join(","), "要能说清是哪几种形状").toContain("sk-/pk-×1");
     expect(shape!.shapes?.join(",")).toContain("AKIA×1");
   });
 
   it("FP-6 每一条形状正则都自带两侧边界 ✓（防止有人把边界改回去 ✗）", () => {
     for (const re of CREDENTIAL_VALUE_RES) {
-      expect(re.source, `少了前边界：${re.source}`).toMatch(/^\(\?<!\[A-Za-z0-9\]\)/);
-      expect(re.source, `少了后边界：${re.source}`).toMatch(/\(\?!\[A-Za-z0-9\]\)$/);
+      expect(re.source, `少了前边界：${re.source}`).toMatch(/^\(\?<!/);
+      expect(re.source, `少了后边界：${re.source}`).toMatch(/\(\?!\[A-Za-z0-9[^\]]*\]\)$/);
     }
+    /**
+     * ⚠️ 第 188 波 R5 补强 ✓：强前缀的前边界**必须排除 `-`/`_`** —— 只写 `(?<![A-Za-z0-9])`
+     * 会放行 `-`，于是 `task-sk-…` 里那个 `sk-` 照样命中（修复前实测：普查把
+     * `C:\work\task-sk-…\src\index.ts` 报成明文凭据 ✗，判据 `CS-PATHS` 修复前红）。
+     * `risk-sk-…` 由 `k` 挡住，`task-sk-…` 由 `-` 挡住 —— 两条都要，缺一条就是误报。
+     */
+    const strong = CREDENTIAL_VALUE_RES.find((re) => re.source.includes("(?:sk|pk)"));
+    expect(strong, "强前缀（sk-/pk-）形状必须在表里").toBeTruthy();
+    expect(
+      strong!.source.startsWith("(?<![A-Za-z0-9_-])"),
+      `强前缀的前边界必须排除 -/_（否则 task-sk-… 会被当成凭据）：${strong!.source}`,
+    ).toBe(true);
   });
 });

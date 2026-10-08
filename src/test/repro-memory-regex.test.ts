@@ -16,6 +16,13 @@ import { describe, it, expect } from "vitest";
 
 import { MemoryService } from "../core/memory/memory";
 
+/**
+ * 第 187 波（A2）之后 `search` **必须带 ctx**（缺 ctx ⇒ fail-closed 返回空，
+ * 因为"只按 scope 过滤"正是跨项目泄漏那条老路）。
+ * 这里的夹具条目是 `project` 作用域且**没有归属键**（旧数据形态）⇒ 用 `includeUnscoped` 放行。
+ */
+const CTX = { projectId: "c:\\work\\alpha", includeUnscoped: true };
+
 function makeService(): MemoryService {
   const svc = new MemoryService();
   (svc as any).entries = new Map([
@@ -28,21 +35,22 @@ function makeService(): MemoryService {
 describe("memory.search: 查询含正则元字符不应抛错", () => {
   it("REG-001: 查询词含 + 号 → 正常返回结果，不抛 SyntaxError", () => {
     const svc = makeService();
-    expect(() => svc.search("C++ +", "project", 10)).not.toThrow();
-    const results = svc.search("C++", "project", 10);
+    expect(() => svc.search("C++ +", "project", 10, CTX)).not.toThrow();
+    const results = svc.search("C++", "project", 10, CTX);
     expect(results.length).toBeGreaterThan(0);
   });
 
   it("REG-002: 查询词含括号/星号 → 不抛错", () => {
     const svc = makeService();
-    expect(() => svc.search("(a+b)* 正则", "project", 10)).not.toThrow();
-    const results = svc.search("(a+b)*", "project", 10);
+    expect(() => svc.search("(a+b)* 正则", "project", 10, CTX)).not.toThrow();
+    const results = svc.search("(a+b)*", "project", 10, CTX);
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it("REG-003: 普通查询不受影响", () => {
+  it("REG-003: 普通查询不受影响；但**缺 ctx 一律不返回**（A2：宁可不给，也不跨项目泄漏）", () => {
     const svc = makeService();
-    const results = svc.search("CMake", "project", 10);
+    const results = svc.search("CMake", "project", 10, CTX);
     expect(results.length).toBeGreaterThan(0);
+    expect(svc.search("CMake", "project", 10), "缺 ctx ⇒ fail-closed").toEqual([]);
   });
 });

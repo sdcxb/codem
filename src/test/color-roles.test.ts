@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { scanColorRoles, collectVars, ROLE_FLOORS, DEFAULT_FILES } from "../../tools/audit/scan-color-roles.mjs";
+import { scanColorRoles, collectVars, ROLE_FLOORS, DEFAULT_FILES, resolveColor, over, contrast } from "../../tools/audit/scan-color-roles.mjs";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const registryPath = path.join(ROOT, "tools/audit/color-roles.json");
@@ -126,5 +126,72 @@ describe("COLOR-ROLES 颜色用量注册表（第 161 轮 P2-4）", () => {
     for (const [role, floor] of Object.entries(ROLE_FLOORS)) {
       expect([3, 4.5, 6, 7], `${role} 的下限 ${floor} 不在允许的档位上`).toContain(floor);
     }
+  });
+
+  /**
+   * CR-8（第 188 波复审 F6）：**登记值必须按真实父面复算，且闸门口径的偏差要写进登记里**。
+   *
+   * 起因：闸门一律按 `over(surface, --bg-primary)` 合成透明底（`scan-color-roles.mjs`），
+   * 而记忆体检/管理面板那两个容器写的是 `background: var(--bg-secondary)`
+   * （`.memory-checkup` / `.memory-panel`）—— 于是三对登记的"实算"数字**偏乐观**
+   * （暗档最大差 0.88：`--info-content|--info-surface` 闸门 6.66 / 真实父面 5.78）。
+   *
+   * 三对**都仍在 4.5 下限之上** ⇒ 这是"更正数字"，不是"掩盖对比度问题"；判据两头都钉：
+   * ① 按**真实父面**复算，必须仍过该角色的下限（否则要改样式，不许改下限）；
+   * ② 登记里写的两个数字必须**等于**复算值（不然报告里的"实算"就是假的），
+   *    并且必须写明父面是 `--bg-secondary`（口径偏差要留在登记里，不能只留在这一次的报告里）。
+   */
+  it("CR-8：三对记忆提示条的登记值按**真实父面**（--bg-secondary）复算，且仍过下限", () => {
+    const files = DEFAULT_FILES.filter((rel) => readFileSync(path.join(ROOT, rel), "utf8") !== "").map((rel) => ({
+      path: rel,
+      css: readFileSync(path.join(ROOT, rel), "utf8"),
+    }));
+    const css = files.map((f) => f.css).join("\n");
+    const vars = collectVars(css);
+    const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
+      pairs: Record<string, { _why?: string }>;
+    };
+
+    // 前置：这三对所在的两个面板容器确实以 --bg-secondary 为父面（否则本判据的前提不成立）
+    for (const anchor of [".memory-checkup {", ".memory-manager {"]) {
+      const at = css.indexOf(anchor);
+      expect(at, `找不到容器 ${anchor}（本判据的父面前提来自它）`).toBeGreaterThan(-1);
+      expect(css.slice(at, at + 600), `${anchor} 的父面必须是 --bg-secondary`).toContain("background: var(--bg-secondary)");
+    }
+
+    const CASES: Array<{ role: string; surface: string }> = [
+      { role: "--info-content", surface: "--info-surface" },
+      { role: "--success-content", surface: "--success-surface" },
+    ];
+    for (const { role, surface } of CASES) {
+      const key = `${role}|${surface}`;
+      const why = registry.pairs[key]?._why;
+      expect(why, `登记项 ${key} 必须给出按真实父面复算的理由`).toBeTruthy();
+      expect(why, `${key} 的登记理由要写明父面是 --bg-secondary`).toContain("--bg-secondary");
+      for (const theme of ["light", "dark"]) {
+        const v = vars[theme] ?? {};
+        const fg = resolveColor(`var(${role})`, v);
+        const surfaceColor = resolveColor(`var(${surface})`, v);
+        const parent = resolveColor("var(--bg-secondary)", v);
+        expect(fg && surfaceColor && parent, `${key} 在 ${theme} 档解析不了（缺令牌）`).toBeTruthy();
+        const bg = over(surfaceColor!, parent!);
+        const real = contrast(over(fg!, bg), bg);
+        expect(real + 1e-9, `${key} 按真实父面（${theme}）只有 ${real.toFixed(2)}:1，低于下限`).toBeGreaterThanOrEqual(
+          ROLE_FLOORS[role],
+        );
+        expect(
+          why,
+          `${key}（${theme}）登记的数字必须等于按真实父面复算的 ${real.toFixed(2)}`,
+        ).toContain(real.toFixed(2));
+      }
+    }
+
+    // 第三对（--accent-strong|--bg-primary）的父面**就是** --bg-primary（.mc-group 自己写死了），
+    // 所以闸门口径与真实面一致 —— 一并钉住这一点，免得有人把三对"一视同仁"地改错
+    const groupAt = css.indexOf(".mc-group {");
+    expect(groupAt).toBeGreaterThan(-1);
+    expect(css.slice(groupAt, groupAt + 300), ".mc-group 的父面是 --bg-primary（该对该用闸门口径）").toContain(
+      "background: var(--bg-primary)",
+    );
   });
 });

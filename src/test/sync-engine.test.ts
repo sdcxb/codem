@@ -1,38 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock settings with a shared store
-const mockStore = new Map<string, string>();
-
-vi.mock("../core/storage/settings", () => ({
-  getSetting: vi.fn((key: string) => mockStore.get(key) || ""),
-  setSetting: vi.fn((key: string, val: string) => { mockStore.set(key, val); }),
-  getSettingJSON: vi.fn(<T>(key: string, def: T) => {
-    const val = mockStore.get(key);
-    if (!val) return def;
-    try { return JSON.parse(val) as T; } catch { return def; }
-  }),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn((key: string, val: unknown) => {
-    mockStore.set(key, JSON.stringify(val));
-  }),
-  /**
-   * 第 181 波（T-2）：`getSyncConfig` 改用 `mergeDefaults` 合并持久化配置
-   * （跳过显式 `undefined`，见 `settings.ts` 的说明）。**桩里必须是同语义的实现**，
-   * 否则这个 mock 就在测一个不存在的模块形状（实测会报
-   * `No "mergeDefaults" export is defined on the "../core/storage/settings" mock`）。
-   */
-  mergeDefaults: <T extends object>(defaults: T, partial?: Partial<T> | null): T => {
-    if (!partial || typeof partial !== "object") return { ...defaults };
-    const merged: T = { ...defaults };
-    const target = merged as Record<string, unknown>;
-    for (const key of Object.keys(partial)) {
-      const value = (partial as Record<string, unknown>)[key];
-      if (value !== undefined) target[key] = value;
-    }
-    return merged;
-  },
-}));
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）。
+ *
+ * ⚠️ 库与注册都放在 `./sync-engine-settings-mock` 里：本文件的每条用例都要先
+ * `mockStore.clear()`，而 `vi.mock` 的工厂被提到文件顶部执行、**不能引用本文件顶层变量**
+ * （实测 `Cannot access 'mockStore' before initialization`）。被 import 模块里的
+ * `vi.mock` 同样会提升生效，所以"注册 + 库"整体搬过去即可。
+ */
+import { mockStore } from "./sync-engine-settings-mock";
 
 // Mock database
 

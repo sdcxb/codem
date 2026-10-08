@@ -274,6 +274,7 @@ import { McpManager } from "./components/McpManager";
 import { PluginManager } from "./components/PluginManager";
 import { SkillManager } from "./components/SkillManager";
 import { MemoryManager } from "./components/MemoryManager";
+import { projectIdFromCwd, safeMemoryText } from "./core/memory/memory";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { UsageStats } from "./components/UsageStats";
 import { TaskCenter, type TaskCenterTab } from "./components/TaskCenter";
@@ -2484,6 +2485,29 @@ flushStreamBuffer(); // flush all on unmount
     window.addEventListener("codem:persist-failed", onPersistFail as EventListener);
     unlistenPersist = () => window.removeEventListener("codem:persist-failed", onPersistFail as EventListener);
 
+    /**
+     * **撤回**（第 189 波：MEM-LOAD-QUIET-2）。
+     *
+     * 真机取证（装机版 1.16.299）：启动期 `MemoryService` 构造早于存储端口注册 ⇒ `memory.load`
+     * 报了一条「没有可用的存储端口」并弹成横幅；随后端口就绪、自动重载**成功**了 ——
+     * 那条横幅却留在原处（用户看到一条陈旧、不可操作的错误，"请重试"是假建议）。
+     *
+     * 两件事都必须做，少一件都不行：
+     * - `withdrawPersistAlert` 把它从常驻通道里摘掉；
+     * - **重置 `reportedPersistAreas`**：那张表是"同一区域只提示一次"的进程内去重，
+     *   不重置的话，后面**真的**出错时（例如端口就绪了但形状仍然不认识）会被它挡在门外
+     *   ⇒ 该报的反而看不见了。
+     */
+    const onPersistWithdrawn = (ev: Event) => {
+      const area = ((ev as CustomEvent).detail as { area?: string } | undefined)?.area;
+      if (!area) return;
+      reportedPersistAreas.delete(area);
+      useAppStore.getState().withdrawPersistAlert(area);
+    };
+    let unlistenPersistWithdrawn: (() => void) | undefined;
+    window.addEventListener("codem:persist-failed-withdrawn", onPersistWithdrawn as EventListener);
+    unlistenPersistWithdrawn = () => window.removeEventListener("codem:persist-failed-withdrawn", onPersistWithdrawn as EventListener);
+
     // 第 84 波：会话创建写库失败（store.createSession 上报）——
     // 该会话只存在于内存，重启后整段对话会消失，必须当场提示而不是静默。
     const onSessionPersistFail = (ev: Event) => {
@@ -2558,7 +2582,7 @@ flushStreamBuffer(); // flush all on unmount
       invoke?.("quit_app");
     }).then((un: () => void) => { unlistenQuitReq = un; });
 
-    return () => { unlisten?.(); unlistenCrash?.(); unlistenStorageDown?.(); unlistenSessionPersist?.(); unlistenPersist?.(); unlistenQuitReq?.(); };
+    return () => { unlisten?.(); unlistenCrash?.(); unlistenStorageDown?.(); unlistenSessionPersist?.(); unlistenPersist?.(); unlistenPersistWithdrawn?.(); unlistenQuitReq?.(); };
   }, []);
 
   const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {
@@ -2824,18 +2848,194 @@ if (!session) {
         return;
       } else if (subcommand === "status") {
         const enabled = engineInstance.isMemoryEnabled(sessionId);
-        const stats = engineInstance.getMemoryConsolidationStats(sessionId);
+        const stats = engineInstance.getMemoryConsolidationStats();
+        const approval = engineInstance.getMemoryWriteApproval();
+        const batches = engineInstance.listMemoryBatches().filter((b) => !b.undone);
+        /*
+         * M-5 / I1：作用域无法识别的条数与"读不出来"状态**必须披露**。
+         * 旧回执里 `平台+项目+对话` 三项之和可能小于总数（旧版本写的 workspace 等作用域从不显示），
+         * 用户会以为统计坏了；而"记忆读不出来"时写入会被拒绝，也得当场说清楚。
+         */
+        const unknownScopeLine =
+          stats.unknownScope > 0
+            ? `作用域无法识别（界面上要单独处置）: ${stats.unknownScope} 条（不在上面三项里）\n`
+            : "";
+        const legacyLine =
+          stats.legacyPool > 0
+            ? `旧版跨项目池（可能被污染，可在记忆体检里批量处置）: ${stats.legacyPool} 条\n`
+            : "";
+        const readableLine = stats.readable
+          ? ""
+          : `⚠️ 记忆当前**读不出来**（${stats.loadFailureReason ?? "未知原因"}）：为避免覆盖旧数据，本次不会再写入记忆，请重启应用（或修复存储）后重试\n`;
         // [XSESS-5] 纯界面：路径上无 await
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
-          content: `记忆状态: ${enabled ? "✅ 开启" : "❌ 关闭"}\n记忆总数: ${stats.totalEntries}\n潜在重复: ${stats.potentialDuplicates}\n作用域分布: 项目=${stats.scopeBreakdown.project}, 全局=${stats.scopeBreakdown.global}, 会话=${stats.scopeBreakdown.session}`,
+          content:
+            readableLine +
+            `记忆状态: ${enabled ? "✅ 开启" : "❌ 关闭"}\n` +
+            `记忆总数: ${stats.totalEntries}（其中待批准 ${stats.pendingEntries} 条，未批准不进上下文）\n` +
+            `潜在重复: ${stats.potentialDuplicates}\n` +
+            `作用域分布: 平台=${stats.scopeBreakdown.platform}, 项目=${stats.scopeBreakdown.project}, 对话=${stats.scopeBreakdown.conversation}\n` +
+            unknownScopeLine +
+            legacyLine +
+            `写入审批: 平台=${approval.platform ? "开" : "关"}, 项目=${approval.project ? "开" : "关"}, 对话=${approval.conversation ? "开" : "关"}\n` +
+            `未归属（永远不进上下文）: ${stats.notInjected} 条\n` +
+            `未撤销的自动提取批次: ${batches.length} 个`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      } else if (subcommand === "pending") {
+        /*
+         * A2 / F7：待批准列表**必须带当前位置的 ctx**。
+         * 旧写法 `listPendingMemories()` 不传 ctx ⇒（第 187 波起）返回空表 ⇒
+         * `/memory pending` 会永远说"没有待批准的记忆"，而界面里明明有待批准条目。
+         * 项目 id 用**项目路径**推出（与界面 MemoryManager 同一个口径）。
+         */
+        const memoryCtx = { projectId: projectIdFromCwd(currentProject?.path), sessionId };
+        const pending = engineInstance.listPendingMemories(undefined, memoryCtx);
+        const lines = pending.slice(0, 20).map(
+          /*
+           * F7：读入路径**明确允许** `content` 是数字/布尔（`memory.ts` 的 `normalizeLoadedEntry`
+           * 会安全字符串化），所以这里不许直接 `.substring`（对数字会抛 TypeError）。
+           * 走与注入侧同一个安全转换函数，坏数据只降级、不炸命令。
+           */
+          (e) => `- [${e.id}] (${e.scope}) ${safeMemoryText(e.key)}：${safeMemoryText(e.content).substring(0, 60)}`,
+        );
+        // [XSESS-5] 纯界面：路径上无 await
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: pending.length === 0
+            ? "没有待批准的记忆。（写入审批开启时，自动提取的条目会先进入待批准区，未批准不进上下文。）"
+            : `待批准记忆 ${pending.length} 条（未批准不进上下文）：\n${lines.join("\n")}\n\n用 /memory approve <id> 批准，/memory reject <id> 拒绝。`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      } else if (subcommand === "approve" || subcommand === "reject") {
+        const targetId = parts[2];
+        if (!targetId) {
+          // [XSESS-5] 纯界面：参数校验回执（路径上无 await）
+          addMessage({
+            id: `system-${Date.now()}`,
+            role: "system",
+            content: `用法：/memory ${subcommand} <id>（用 /memory pending 查看待批准条目的 id）`,
+            timestamp: Date.now(),
+            status: "done",
+          });
+          return;
+        }
+        if (subcommand === "approve") {
+          const result = engineInstance.approvePendingMemory(targetId);
+          deliverToOwningSession({
+            id: `system-${Date.now()}`,
+            role: "system",
+            content: result.ok
+              ? `✅ 已批准 ${targetId}：该自动记忆从现在起参与上下文。`
+              : `❌ 批准失败：${result.message ?? "未知原因"}`,
+            timestamp: Date.now(),
+            status: "done",
+          });
+        } else {
+          const removed = engineInstance.rejectPendingMemory(targetId);
+          deliverToOwningSession({
+            id: `system-${Date.now()}`,
+            role: "system",
+            content: removed
+              ? `已拒绝并删除 ${targetId}（它没有进入过上下文）。`
+              : `❌ 拒绝失败：未找到该条目，或它不在待批准状态。`,
+            timestamp: Date.now(),
+            status: "done",
+          });
+        }
+        return;
+      } else if (subcommand === "undo") {
+        const targetBatch = parts[2];
+        if (!targetBatch) {
+          const batches = engineInstance.listMemoryBatches().filter((b) => !b.undone);
+          const lines = batches.slice(0, 20).map(
+            (b) => `- ${b.id}：${b.count} 条（${new Date(b.createdAt).toLocaleString("zh-CN")}${b.sessionId ? `，来自会话 ${b.sessionId}` : ""}）`,
+          );
+          // [XSESS-5] 纯界面：参数校验回执（路径上无 await）
+          addMessage({
+            id: `system-${Date.now()}`,
+            role: "system",
+            content: batches.length === 0
+              ? "没有可撤销的自动提取批次。\n（升级前的旧记忆**没有批次信息**，无法用「撤销批次」回滚 —— 请到「设置 → 记忆体检」用批量删除或归位处置。）"
+              : `用法：/memory undo <batchId>\n可撤销的批次：\n${lines.join("\n")}\n（升级前的旧记忆没有批次信息，不会出现在这份列表里；请用记忆体检的批量删除。）`,
+            timestamp: Date.now(),
+            status: "done",
+          });
+          return;
+        }
+        const undoResult = engineInstance.undoMemoryBatch(targetBatch);
+        deliverToOwningSession({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: `${undoResult.ok ? "✅" : "❌"} ${undoResult.message}`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      } else if (subcommand === "approval") {
+        const mode = parts[2]?.toLowerCase();
+        const current = engineInstance.getMemoryWriteApproval();
+        if (mode === "on" || mode === "off") {
+          const next = engineInstance.setMemoryWriteApproval({
+            platform: mode === "on",
+            project: mode === "on",
+            conversation: mode === "on",
+          });
+          // [XSESS-5] 纯界面：路径上无 await
+          addMessage({
+            id: `system-${Date.now()}`,
+            role: "system",
+            content: `写入审批已全部${mode === "on" ? "开启" : "关闭"}（平台=${next.platform ? "开" : "关"}, 项目=${next.project ? "开" : "关"}, 对话=${next.conversation ? "开" : "关"}）。开启时自动提取只写入待批准区。`,
+            timestamp: Date.now(),
+            status: "done",
+          });
+          return;
+        }
+        if (mode === "platform" || mode === "project" || mode === "conversation") {
+          const value = parts[3]?.toLowerCase();
+          if (value !== "on" && value !== "off") {
+            // [XSESS-5] 纯界面：参数校验回执（路径上无 await）
+            addMessage({
+              id: `system-${Date.now()}`,
+              role: "system",
+              content: "用法：/memory approval <platform|project|conversation> <on|off>",
+              timestamp: Date.now(),
+              status: "done",
+            });
+            return;
+          }
+          const next = engineInstance.setMemoryWriteApproval({ [mode]: value === "on" });
+          // [XSESS-5] 纯界面：路径上无 await
+          addMessage({
+            id: `system-${Date.now()}`,
+            role: "system",
+            content: `写入审批设置已更新：平台=${next.platform ? "开" : "关"}, 项目=${next.project ? "开" : "关"}, 对话=${next.conversation ? "开" : "关"}。`,
+            timestamp: Date.now(),
+            status: "done",
+          });
+          return;
+        }
+        // [XSESS-5] 纯界面：路径上无 await
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content:
+            `写入审批（默认：平台/项目开启，对话关闭）\n` +
+            `平台=${current.platform ? "开" : "关"}, 项目=${current.project ? "开" : "关"}, 对话=${current.conversation ? "开" : "关"}\n` +
+            `用法：/memory approval on|off 或 /memory approval <platform|project|conversation> <on|off>`,
           timestamp: Date.now(),
           status: "done",
         });
         return;
       } else if (subcommand === "consolidate" || subcommand === "clean") {
-        const result = await engineInstance.consolidateMemories(sessionId);
+        const result = await engineInstance.consolidateMemories();
         /*
          * 归属判定：**落库**。（同族的 off/on/status/用法 那三条保持"纯界面"—— 它们路径上没有
          * await，见各自的 XSESS-5 登记。）
@@ -2846,17 +3046,38 @@ if (!session) {
         deliverToOwningSession({
           id: `system-${Date.now()}`,
           role: "system",
-          content: `记忆整合完成：合并 ${result.duplicatesMerged} 条重复，清理 ${result.staleRemoved} 条过期，裁剪 ${result.capacityTrimmed} 条超额。`,
+          content:
+            `记忆整合完成：合并 ${result.duplicatesMerged} 条重复（正文已并入保留的那条），` +
+            `清理 ${result.staleRemoved} 条超过 90 天未写入的自动条目，裁剪 ${result.capacityTrimmed} 条超额。\n` +
+            `（手动条目、对话级条目与待批准条目一条未动；容量裁剪按"可见地失败"处理，被拒绝的桶：${result.capacityBlocked} 个）\n` +
+            `说明：自动提取流程**不再**自动跑整合（以前每回合跑一次且静默删除），清理只发生在你显式执行本命令或点「整合」按钮时。`,
           timestamp: Date.now(),
           status: "done",
         });
         return;
       } else {
+        /*
+         * S6：**未知子命令要如实报错**（拼错 `/memory aproval on` 不许静默当成用法查询）。
+         * 这里仍然只投递一条消息（沿用 XSESS-5 的"纯界面"登记），只是把
+         * "未知子命令：X（没有执行任何动作）"放在用法清单之前。
+         */
+        const unknown = subcommand ? `未知子命令：${parts[1]}（没有执行任何动作）\n\n` : "";
         // [XSESS-5] 纯界面：/memory 用法回执（路径上无 await）
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
-          content: "用法：\n/memory on — 开启记忆提取\n/memory off — 关闭记忆提取\n/memory status — 查看记忆状态\n/memory consolidate — 手动整合记忆",
+          content:
+            unknown +
+            "用法：\n" +
+            "/memory on — 开启记忆提取\n" +
+            "/memory off — 关闭记忆提取\n" +
+            "/memory status — 查看记忆状态（含待批准数与未归属数）\n" +
+            "/memory consolidate — 手动整合记忆\n" +
+            "/memory pending — 列出待批准的自动记忆\n" +
+            "/memory approve <id> — 批准某条待审记忆（批准后才进上下文）\n" +
+            "/memory reject <id> — 拒绝并删除某条待审记忆\n" +
+            "/memory undo <batchId> — 撤销一整批自动提取（只删该批次）\n" +
+            "/memory approval [on|off | <platform|project|conversation> on|off] — 写入审批设置",
           timestamp: Date.now(),
           status: "done",
         });
@@ -3537,6 +3758,13 @@ abortControllersRef.current.set(session.id, sessionAbort);
       }, WATCHDOG_CHECK_MS);
 
       for await (const event of engine.process(session.id, message, cwd, undefined, {
+        /**
+         * I9：记忆的**项目身份**必须来自项目本身（`currentProject.path`），
+         * **不是**本轮的 `cwd` —— git worktree 会话的 cwd 是 worktree 目录（`session.worktreePath`），
+         * 拿它当归属键会让主工作区与 worktree 会话**互相看不到对方的项目记忆**，
+         * 而且 worktree 目录一删，那些归属键就永久无法归位（体检只能把它们标成"归属已失效"）。
+         */
+        memoryProjectId: projectIdFromCwd(currentProject?.path),
         /**
          * 第 154 轮（O-28）：把界面路径这一轮的助手消息**真实 id** 交给引擎。
          *
@@ -5083,7 +5311,18 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
             aria-label="记忆管理"
             onClick={(e) => e.stopPropagation()}
           >
-            <SlotBridge name="app.memory-manager" fallback={MemoryManager} onClose={() => setShowMemoryManager(false)}  />
+            {/*
+              作用域上下文必须显式传入：对话级记忆的归属键是 sessionId，
+              项目级记忆的归属键由工作目录推出 —— 界面靠这两者才能如实显示
+              "这条会/不会被注入"（缺了它们，未归属条目会被误认为在生效）。
+            */}
+            <SlotBridge
+              name="app.memory-manager"
+              fallback={MemoryManager}
+              onClose={() => setShowMemoryManager(false)}
+              sessionId={currentSession?.id}
+              projectId={projectIdFromCwd(currentProject?.path)}
+            />
           </div>
         </div>
       )}
@@ -5631,4 +5870,5 @@ onClose={() => setCitationViewer(null)}
 }
 
 export default App;
+
 

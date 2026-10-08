@@ -372,7 +372,10 @@ describe("XSESS-5 源码级：handleSend 的归属投递清单（按锚点取段
    */
   const OWNED_ANCHORS = [
     "电脑操作已批准", // /computer 批准·撤销回执（内容不可复现：再输一次是切换不是查询）
-    "记忆整合完成", // /memory consolidate 结果（数字不可复现）
+    "记忆整合完成：合并", // /memory consolidate 结果（数字不可复现）
+    "已批准 ${targetId}：该自动记忆", // /memory approve：批准回执（状态变了，再查也不是同一件事）
+    "已拒绝并删除", // /memory reject：删掉了就查不回来
+    "undoResult.message", // /memory undo：撤销结果（批次号 + 删除条数不可复现）
     "AGENTS.md 已生成并写入项目根目录", // 工作区真的写了一个文件
     "生成 AGENTS.md 失败", // 真错误
     "反馈已留档到会话", // 留档回执（含 ⚠️ 那条"用户要采取动作"的失败分支）
@@ -380,21 +383,35 @@ describe("XSESS-5 源码级：handleSend 的归属投递清单（按锚点取段
     "attachments: syncedAttachments", // 带附件的用户消息（这一轮的输入）
   ];
 
-  /** 7 处"纯界面档"的内容锚点（按**源码里的字面**写法，`\n` 是两字符） */
+  /**
+   * "纯界面档"的内容锚点，**按源码顺序**排列（判据会核对"登记前的条数 = 序号"）。
+   *
+   * 顺序即 App.tsx 里 `handleSend` 的实际顺序：/memory off → on → status → pending →
+   * approve/reject 参数校验 → undo 参数校验 → approval 全部开/关 → approval 参数校验 →
+   * approval 状态 → /memory 用法 → 项目路径 → 进度提示 → /feedback。
+   * 这里必须**一一列全**：判据的语义是"每个裸投递都有登记"，漏一个就等于放行一个未登记的裸投递。
+   */
   const SAFE_ANCHORS = [
     "记忆提取已关闭",
     "记忆提取已开启",
     "记忆状态:",
-    "用法：\\n/memory on",
+    "待批准记忆", // /memory pending（同步查询，可复现）
+    "用法：/memory ${subcommand} <id>", // /memory approve|reject 参数校验（同步）
+    "用法：/memory undo <batchId>", // /memory undo 参数校验（同步）
+    "写入审批已全部", // /memory approval on|off（同步）
+    "用法：/memory approval <platform", // /memory approval 参数校验（同步）
+    "写入审批设置已更新：平台", // /memory approval 状态回执（同步，可复现）
+    "写入审批（默认：平台/项目开启，对话关闭）", // /memory approval 状态与用法（同步）
+    "/memory status — 查看记忆状态（含待批准数与未归属数）", // /memory 用法与子命令清单（同步）
     "未找到项目路径",
     "正在分析项目结构并生成 AGENTS.md",
     "用法：/feedback",
   ];
 
-  it("XSESS-5a: 8 处落库档全走 deliverToOwningSession，且锚点各自唯一对应一处", () => {
+  it("XSESS-5a: 落库档全走 deliverToOwningSession，且锚点各自唯一对应一处", () => {
     const code = stripComments(handleSendBody());
     const chunks = code.split("deliverToOwningSession(").slice(1);
-    expect(chunks.length, "落库档必须是 8 处（少一处 = 有一处退回了裸投递）").toBe(8);
+    expect(chunks.length, "落库档数量变了（少一处 = 有一处退回了裸投递；多一处 = 新增了一条不可复现的回执）").toBe(11);
 
     for (const marker of OWNED_ANCHORS) {
       const hit = chunks.filter((c) => c.includes(marker));
@@ -432,15 +449,15 @@ describe("XSESS-5 源码级：handleSend 的归属投递清单（按锚点取段
      */
     const withoutOwned = code.replace(/deliverToOwningSession/g, "OWNED_DELIVER");
     const bare = [...withoutOwned.matchAll(/addMessage\s*\(\{/g)].length;
-    expect(bare, "handleSend 里的裸投递只许剩下 7 处（同步路径那一批）").toBe(7);
+    expect(bare, "handleSend 里的裸投递只许剩下这些同步路径（多一处 = 新增了没登记的裸投递）").toBe(14);
 
     /*
      * ② 登记与调用点**一对一且按源码顺序**。
-     * `[XSESS-5]` 这个 token 在 App.tsx 里**只许出现在这 7 条登记上**（别处注释提到它会让计数错位 ——
+     * `[XSESS-5]` 这个 token 在 App.tsx 里**只许出现在这些登记上**（别处注释提到它会让计数错位 ——
      * 第一版"往前 700 字窗口里找登记"就是这样假绿的：窗口会捞到**上一个站点**的登记）。
      */
     const markers = [...raw.matchAll(/\[XSESS-5\]/g)].map((m) => m.index ?? -1);
-    expect(markers.length, "7 处纯界面档各要正好一条 XSESS-5 登记（多/少都说明是没登记就改了）").toBe(7);
+    expect(markers.length, "每处纯界面档各要正好一条 XSESS-5 登记（多/少都说明是没登记就改了）").toBe(14);
 
     SAFE_ANCHORS.forEach((needle, i) => {
       const at = raw.indexOf(needle);

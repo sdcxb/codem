@@ -3692,3 +3692,190 @@ legacy 路径（拿不到总数）用 `paged` —— **宁可说得少，也不�
   "重开在意图相位意味着副作用可能已发生"；我们只有三态崩溃修复）。触发条件 + PHASE-1..3 已写进清单。
 - **O-35 提示词的演化不进会话日志**（Pi 把"具名提示段的增删/工具加减"记成可重放的增量；
   我们每轮现构）。**这正是第 113/183 波两次踩坑的同源结构**（value 重建丢字段）。触发条件 + PROMPT-1..3 已写进清单。
+
+---
+
+## ★★★★★ 第 188 波：记忆系统「作用域 + 信任边界」重构 +「记忆体检」视图 —— 四路审计 / 四批修复 / 三轮复审
+
+> 编号说明：记忆域的**实现与四批修复**在本轮代码注释与判据名里自记为**第 187 波**
+> （`src/test/memory-migration-guards.test.ts:2`、`.preview-shot/_mutate-memory-187.mjs`），
+> **三轮复审**按本文件口径记为第 188 波（`src/core/memory/memory.ts:1738` 等多处注释写「第 188 波复审」）；
+> 上报点闸门那条缓存对账在工具注释里自记为第 189 波（`tools/audit/scan-report-sites.mjs:167`）。
+> **别靠编号认版本，靠现象认。**
+
+### 一、本轮落地的机制（生效范围 / 归属键 / 落点）
+
+1. **三级作用域** `platform` / `project` / `conversation`：`platform` 恒处处可见；
+   `project` **必须** `entry.projectId === ctx.projectId`（无归属 ⇒ 只有显式 `includeUnscoped` 的
+   界面视图看得到）；`conversation` 同理按 `sessionId`。落点：类型 `memory.ts:56-75`、
+   可见性 `visibleIn` `memory.ts:320-330`、**注入口径** `injectedIn` `memory.ts:333-347`。
+2. **来源信任边界** `manual` / `auto`：自动条目**不能**改写/顶掉同 key 手动条目（提取前显式查同 key 并跳过，
+   `src/core/llm/index.ts:2047-2065`）；注入文本里手动块在前、自动块单独标注（`memory.ts:1408-1430`）。
+   判据 `MEM-TRUST-1/1b/1c/2/2b`（`src/test/memory-scope-trust.test.ts:151-272`）。
+3. **写入审批暂存** `pending`：默认 `{platform:true, project:true, conversation:false}`
+   （`memory.ts:189`），自动提取目标恒为 `project` ⇒ **开箱默认就要批准**；`pending` 不进上下文
+   （`memory.ts:336`）。读写 `memory.ts:531-570`，写入 `llm/index.ts:1964-1965`/`:2091`。
+   判据 `MEM-APPROVE-1/1b/2/3`（`memory-scope-trust.test.ts:273-356`）。
+4. **容量可见失败**（绝不静默驱逐）：桶满 ⇒ `add` 返回 `{ok:false,error:"capacity"}` 且不动已有条目
+   （`memory.ts:996-1002`；`update`/`createEntry`/导入同口径 `memory.ts:1113`/`:1259-1263`/`:2385`）；
+   自动提取的拒绝走 advisory 上报（`llm/index.ts:2123-2133`），不再只有一行渲染侧 console。
+   判据 `MEM-CAP-1/2/3`。
+5. **批次撤销** + 批次修剪：每次自动提取一个 `batchId`，`/memory undo <batchId>` 与界面只删该批次
+   （`undoBatch` `memory.ts:1586`）；批次只留最近 `BATCH_KEEP_MAX=50`（`memory.ts:187`、`:934-936`），
+   早退路径也 `finalizeBatch(batchId,0)`（`llm/index.ts:2022`/`:2030`）⇒ 不再攒 `count:0` 幽灵批次。
+   判据 `MEM-UNDO-1/2`、`S3-BATCH`。
+6. **迁移规则**：`global→platform`；`project→platform`（**保留"到处可见"、不猜 projectId**）；
+   `session→conversation`（`sessionId` 显式置 undefined ⇒ 不进注入）。`memory.ts:1694-1705`、`:1724-1728`。
+   判据 `MEM-MIG-1/2/3`（`memory-scope-trust.test.ts:450-533`）。
+7. **迁移前快照** + 回退入口：键 `memory-pre-migration-v2`（`memory.ts:156`）存迁移前**原始字符串**、
+   只写一次；回退入口在体检视图（二次确认 + 不可逆提示 `MemoryCheckupView.tsx:236-244`，
+   按钮 `:423`，读取/回退 `memory.ts:1902-1945`）。
+8. **旧池标记** + 暂停注入开关：旧 `project` 池迁移后打 `legacyPool`（`memory.ts:74`/`:1728`），
+   体检单列「旧版跨项目记忆（无法判断归属，可能被污染）」（`checkup.ts:287-290`/`:459`）；
+   开关 `memory-pause-legacy-project-pool` **默认关**（默认逐字保持既有可见范围，
+   `memory.ts:164`/`:345`/`:355-370`，界面 `MemoryCheckupView.tsx:396-407`）。
+   判据 `MIG-LEGACY-1/2/3/3b`。
+9. **「记忆体检」视图**：设置里新增只读审查页签；跨项目列举 `showAllProjects` **全仓只允许体检传**
+   （`memory.ts:120-127`；「归属未知」不许静默并入平台级 `checkup.ts:15-22`/`:296`/`:521`）。
+   视图 `src/components/MemoryCheckupView.tsx`，判据 `MEM-CHECK-1..5f`（`src/test/memory-checkup.test.tsx`）。
+
+### 二、四路审计：各自最重的发现（原报告 `.preview-shot/_audit-memory-*.md`）
+
+1. **迁移 / 存量数据**（`_audit-memory-migration.md`）最重：★ `load()` 把「读不出来」和「本来就没有」
+   当成同一件事 —— 记忆域预热失败时 `loadMemory()` 返回兜底空串、`changed===0` 不落库，
+   **标记照写** ⇒ 下次启动 `ran:false`，旧作用域条目**永久不迁**；此后任一写路径的整份 `save()`
+   再把旧条目从库里真正抹掉（静默、不可逆）。
+2. **实现自审**（`_audit-memory-impl.md`）最重：★ 迁移标记**无条件先写**（与第 1 路同一形态，两路独立命中）；
+   ★ **界面搜索没传 ctx**（`service.search(query, scope)`）⇒ `visibleIn` 守卫整体短路 = 跨项目泄漏，
+   还能看到别项目**未批准**条目并直接编辑/删除；★ 无归属时**判重回退**（`includeUnscoped` 未传 ⇒ 恒空）
+   ⇒ 每轮重复写同一事实。
+3. **跨模块接口**（`_audit-memory-integration.md`）最重：★ 配置面未预热时「读回退空串 + 全量写回」
+   会把 `memory` 域**整表覆盖**；★ 记忆块落在系统提示**中段**（第 7/13 段，`prompt.ts:341-344`）
+   ⇒ 新增/批准记忆打坏服务端前缀缓存；★ **注入量无预算**且 `key` 原样注入（实测 120 条饱和约 29,000 字符）。
+4. **回归与副作用**（`_audit-memory-sideeffects.md`）最重：★ **默认审批让自动记忆开箱即用永不进上下文**
+   （用户看到"提取已开启"，上下文里一条都没有），而容量拒绝只进 console；★ 批次**永不修剪** +
+   每回合一次整份记忆 IPC 写（新增成本）；★ 项目记忆按 **worktree 路径**分桶（后来成了 I9）。
+   各路的"未发现"也留了结论（审批绕过注入 / 自动流程改写手动条目 / 样式覆盖既有规则 / 新组件泄漏 ⇒ 未发现）。
+
+### 三、四批修复：判据先行 + 变异自证
+
+- 新增判据 7 个文件：`memory-migration-guards.test.ts`（1285 行）、`memory-scope-trust.test.ts`（610 行）、
+  `memory-checkup.test.tsx`（491 行）、`memory-redact-shape.test.ts`（229 行）、
+  `credential-shape-single-source.test.ts`（243 行）、`css-checkup-classes.test.ts`（357 行）、
+  `settings-mock-parity.test.ts`（532 行）。
+- **变异自证 20/20 全部咬住**，且脚本最后确认"还原后判据全绿"
+  （`.preview-shot/_mutate-memory-187.result.json` 的 `restored: true`）：MUT-1（读失败当空表 + 无条件写标记）、
+  MUT-6（不写快照）、MUT-8（不判预热）、MUT-13（search 缺 ctx）、MUT-14（数据/标记两条写穿）、
+  MUT-17（脱敏退回旧写法）、MUT-18（面板 `isInjected` 退回两套真相）… 逐条刻意把实现改坏去咬判据。
+- 一条铁律被再次执行：**能靠结构解决的不用提示词** —— 每回合的自动 `consolidate` 直接**删除**
+  （`llm/index.ts:2135-2147`），理由是界面原话写着"程序不会因为看起来像自动提取就删除或改写任何条目"。
+
+### 四、三轮复审：各自最重的发现
+
+**第一轮**（`_reaudit-memory.md`，查四批修复自身）——最重四条：
+1. ★★★ **迁移标记的第③条件被异步写穿绕过**：`save()` 只在**同步抛错**时才 false，而 `memory.set` 的
+   IPC 失败是 `.catch(上报)` ⇒ 「数据没落、标记落了」照样发生，终局与 A1 完全相同；
+   当时的判据只 `mockReturnValue(false)`，只覆盖同步分支。
+2. ★★★ **`MemoryService` 单例在端口就绪之前构造** ⇒ `loadState.ok=false` ⇒ 本会话所有写入被拒，
+   **只有打开一次记忆面板才自愈**（表现为"时好时坏"）；`bootstrap` 那时没有任何重读接线。
+3. ★★★ **I9 只修了一半**：写入归属改用了 `options.memoryProjectId`，注入侧仍 `projectIdFromCwd(cwd)`
+   ⇒ worktree 会话**写读分叉**（比修前"两侧同一个错的键"更糟：自己刚提取的项目记忆永远看不到）。
+4. ★★ **`redactSecrets` 接到手动/导入路径后会把正常内容改坏**（无前边界 + 正文允许 `-`/`_`
+   ⇒ `task-sk-…` / `C:\work\key-…` 被整段改写并落库，不可逆）——正是本仓付过代价的历史事故形态。
+
+**第二轮**（**没有留下独立报告文件**，如实登记）——产出是「三条回归」的修复：
+① 测试 mock 与真实导出面漂移（`forked-agent.test.ts` / `engine-catalog-injection.test.ts` 因
+`settings.ts` 新导出未补 mock 而红）⇒ 收口到共享基座 `src/test/settings-mock.ts` + 新判据
+`settings-mock-parity.test.ts`（SMP-1/2/3 解析式对账）；② `color-roles` 三对新登记的实算基数
+（与真实父面不一致，结论仍成立）；③ **上报点 `_counts` 缓存漂移**：扫描 247 / 缓存 245，
+而**闸门从来不校验缓存** ⇒ 现在 `--check` 自己判红（`tools/audit/scan-report-sites.mjs:166-183`），
+判据 `RPT-6`（`src/test/report-site-classification.test.ts:177`）钉住
+「`--check` 打印数字 = `--json` 命中 = 登记表条目 = `_counts`」四个口径同一个数。
+
+**第三轮**（`_reaudit-memory-3.md`，查 R1..R5 + 三条回归自身）——最重四条：
+1. ★★ **R4 的"收窄"顺带把脱敏改瞎**：新正则**丢了 `i` 标志**、尾部边界排除 `-`/`_`
+   ⇒ `SK-…`/`Key-…`/`Api_Key-…`/`OPENAI_API_KEY-…` 与 `sk-…-x`/`sk-…_extra` **全是漏网**
+   （方向 = 真令牌落进记忆/导出件/日志），而判据样本**恰好全在匹配面内** ⇒ 自证空转。
+2. ★ **同类误伤仍在**：前边界只挡住 `task-sk-…`/`risk-sk-…`，**段首**的 `C:\work\key-…`/`feat/key-…`
+   仍被整段吃掉 —— 判据那条样本靠尾巴 `-merge` 救活，不是边界修复的功劳。
+3. ★ **R2 两条 audit-gate 豁免的理由在"抛异常"这一支不成立**：`load()` 若抛出，merge-back 不执行
+   ⇒ 攒下且已回执"已加入本次运行"的条目无声消失；且此时 `loadState.ok` 可能已是 true ⇒ 豁免前提失效。
+   现已在 `runMigration()` 里把迁移异常降级成"读失败"（`llm` 侧同理），豁免理由也重写
+   （`src/core/storage/bootstrap.ts:138-161`）。
+4. ★ **迁移前快照仍是 fire-and-forget**（`snapshotWritten` 无条件置真）⇒ 可能出现"数据已迁（已确认）+
+   标记已写 + **快照没落**" ⇒ 唯一的可逆凭据丢了，而判据 `MIG-SNAP-1` 读的是**镜像**所以抓不到。
+5. 另：导入路径的回执仍"同一个 tick 读 `getLastPersistError()`"（双向失真）；`R3-IDENTITY` 自己调登记函数
+   ⇒ 删掉唯一生产登记点仍全绿；`F7-SAFE-TEXT` 的行为半喂的是读回后的值 ⇒ 换成恒等函数也过。
+6. ★ **同一规则多份实现**：`sk-` 形状曾有 **4 份内联**且互相漂移（普查 `core/settings/settings.ts` /
+   脱敏 `core/utils/redact.ts` / 流式工具安全警告 `streaming-executor.ts:73-82` /
+   工具管线安全审计 `tool-pipeline.ts:1035-1036`），收口时又新建唯一来源 ⇒ **收口那一刻全仓共 5 处定义**；
+   第 49 波只修了普查那份、本轮 R3 只修了脱敏那份（"每修一次只修看得见的那一处"）。
+   第 49 波那条的**前边界放行 `-`**（`settings.ts:198-211`）⇒ `task-sk-…` 从来没被挡住。
+   现在形状只在 `src/core/utils/credential-shapes.ts:76-98`，`CS-ONE-SOURCE` 用 AST 扫描钉住
+   "生产代码里定义 `sk-` 形状的正则字面量只出现在这一个文件"
+   （`src/test/credential-shape-single-source.test.ts:233-242`；四条消费出口见同文件 `:220-231`）。
+
+### 五、教训（下次直接照做）
+
+1. **写标记 / 写快照这类"一次性结论"必须走可确认通道**："只在同步抛错时为 false"的 `save()` 挡不住
+   IPC 异步失败。现在快照 → 数据 → 标记三道都在**同一条确认链**上按序等确认（`memory.ts:1846-1899`），
+   快照没落 ⇒ 整条链停下（不写数据、不写标记、下次启动仍是旧形态、逐字可回退）。
+2. **「读不到」与「本来为空」必须区分**：否则空表会把真实数据整份覆盖。判据 `MIG-GUARD-1a/1b/1c`
+   （`memory-migration-guards.test.ts:104-160`）；对外表示态 `getLoadState()`（`memory.ts:744-746`）。
+3. **同一规则不许两份实现**：本轮 `sk-` 形状一度 4 份内联 + 1 份新建来源；上报点 key 拼装也 2 份
+   （`scan-report-sites.mjs` 的 `keyOf`，M4 变异证明"只改它就两边一起红"）。
+4. **闸门要校验自己的缓存/打印数字**：缓存漂移（245/247）能瞒过所有人 ⇒ 现在三个数字必须相等；
+   打印出来的数字也由判据钉住。
+5. **判据不许「锚点切片 + contains 实现里的值」，也不许用产品永不产生的值做输入**：这类判据能挡改名、
+   **挡不住传错值**（本轮 B3 就是从这种窗口漏过去的）；`MEM-CHECK-5a` 至今仍是源码级（它自述如此），
+   同一诉求改由行为判据承接（`memory-checkup.test.tsx:330-356` 拿**原始项目路径**归位 + 三段注入断言）。
+6. **围栏要写在"不许改行为"上，而不是"不许碰这个目录"**：本轮去掉无人使用的 `export`
+   （落在围栏目录内）**行为不变** ⇒ 应放行；knip 棘轮同理只许降不许升。
+7. **测试 mock 必须与真实导出面同步**：这类漂移只在运行时炸，还会被生产代码自己的 `catch` 吞成
+   "走了另一条路"⇒ 用例红得指向错误的地方；判据要写成解析式对账（`settings-mock-parity.test.ts:20-43`）。
+8. **脱敏是双向判据**：只证"该脱敏的脱敏了"会漏掉"把正常内容改坏"；两张表都要有，并给反例对照
+   （`memory-redact-shape.test.ts` 的 `REDACT-TOKENS` / `REDACT-PATHS` + `legacyHit`）。
+9. **同一件事的两个数字口径必须合并**：`--check` 打印 vs `_counts` 缓存；`getStats()` vs `listAll(ctx)`
+   （判据 `B7-STATS`）。
+
+### 六、如实登记的残留（未做 / 延后 + 理由）
+
+- **I3｜记忆块仍在系统提示中段**（`prompt.ts:341-344`），未拆「稳定前缀 + 易变尾部」⇒ 新增/批准记忆
+  仍会打坏服务端前缀缓存。**未做理由**：要连同 3 条既有提示词判据一起验证（`cache-prefix-stability`
+  只钉 date），改动面在提示词布局。
+- **F8②｜记忆镜像的字节预算/告警未做**：只做了「无变化不写」（`memory.ts:787-788`）。
+  `stats()` 已有 `memoryBytes`（`src/core/storage/rust-port.ts:1148-1153`）却没预算、没判据
+  ⇒ 真缺陷（成本型，非正确性）。
+- **S4｜pending 只有面板内提示条**（`MemoryManager.tsx:140`/`:480-490`），**未加全局角标**；
+  记忆视图之外 grep「待批准」无命中（已复核）。
+- **MEM-CHECK-5a｜仍是源码级接线检查**（`memory-checkup.test.tsx:292-300`）：渲染 `SettingsPanel`
+  需整套桩；同一诉求由 `MEM-CHECK-5b/5c/5d/5e/5f` 行为断言承接。
+- **I9｜只改了界面主路径**：executor / 后台路径仍按 `projectIdFromCwd(cwd)` 兜底
+  （`llm/index.ts:1103`、`:1111-1113` 注释自述）。
+- **快照失败时对象内存态仍被迁移**：磁盘与标记未动、下次启动幂等重跑、逐字可回退；取舍写在
+  `memory.ts:1770-1772`（镜像同步那半边）与 `:1893-1899`。
+- **knip 基线可收紧**：实测 `exports=57/58`（棘轮不会自己收紧，`tools/audit/knip-baseline.json:25-29`），本轮**未动**。
+- **R2 未做真机验证**：需要一次"**不打开**记忆面板"的真实会话才能确认（复审只做代码级推断）。
+
+### 七、本轮读数（现算，可复核）
+
+- `npx tsc --noEmit` ⇒ **0**（退出码 0）。
+- `npx vitest run` ⇒ **620 文件 / 7708 通过 / 17 跳过 / 0 红**（122s）。
+- `cargo test --lib` ⇒ **201 通过 / 0 失败 / 2 ignored**。
+- `node tools/audit/scan-report-sites.mjs --check` ⇒
+  「扫描命中 247 处 = 登记表 247 条（triaged 247 / pending 0）；未分诊 0、漂移 0、过期 0、缓存漂移 0」。
+- `node tools/audit/knip-gate.mjs` ⇒ 必须为 0 的六项全 0；`exports=57/58  types=21/21  duplicates=10/10`
+  ⇒ **没有增长**（且提示"降了 ⇒ 请 `--update` 收紧基线"）；门面交叉对账 `knip entry=21 / 可达性白名单=21`。
+- 变异 ⇒ **20/20 咬住**、还原后全绿（`.preview-shot/_mutate-memory-187.result.json`）。
+
+### 八、下一轮必做（真机验证四项，全部要真实会话）
+
+1. **三级隔离**：项目 A 写的 `project` 记忆在项目 B 看不到；`platform` 处处可见。
+2. **worktree 会话能看见自己提取的项目记忆**（R3/I9 的真机结论；代码级已修、真机未验）。
+3. **不打开记忆面板时，自动提取仍能存下**（R2 的真机结论；未做）。
+4. **旧数据在体检里显示为「归属未知」与「旧版跨项目记忆」并能批量处置 + 快照回退**（含"回退后旧作用域
+   条目落在「作用域无法识别」组、需用户自己归位"这条如实提示）。
+
+> 只读探针脚手架在本轮工作区里已就位（`.preview-shot/_mem-device-verify.mjs` 读记忆域分布 +
+> 点开「记忆体检」页签读分组 + 抓 console error/warning；`.preview-shot/_mem-raw.mjs` 走
+> `storage_invoke` 读 `memory` 域原文形状）—— **结论未回填**，下一次从这里接着跑。

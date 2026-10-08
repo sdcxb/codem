@@ -27,13 +27,15 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例自己的那份记录库（`mocks.store` / `mocks.setSettingJSON`）。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSettingJSON: mocks.getSettingJSON,
-  isSettingsMirrorReady: vi.fn(() => true),
-
   setSettingJSON: mocks.setSettingJSON,
-  getSetting: vi.fn(() => null),
-  setSetting: vi.fn(),
 }));
 
 import {

@@ -163,6 +163,43 @@ export function reportFailure(
   return entry;
 }
 
+/** 撤回事件的窗口事件名（App 侧监听它来摘掉横幅） */
+export const PERSIST_WITHDRAWN_EVENT = "codem:persist-failed-withdrawn";
+
+/**
+ * **撤回**一条上报（第 189 波：MEM-LOAD-QUIET-2）。
+ *
+ * ## 为什么上报通道需要"撤回"
+ *
+ * 真机取证（装机版 1.16.299）：启动期 `MemoryService` 构造**早于**存储端口注册 ⇒ `memory.load`
+ * 报了一条「没有可用的存储端口」，界面弹出一条常驻横幅；随后端口就绪、自动重载**成功**了 ——
+ * 但那条横幅**留在原处**：用户看到一条陈旧、且不可操作（"请重试"是假建议）的错误。
+ *
+ * 上报通道原来只有"报"没有"撤"，于是"系统自己恢复"这件事在界面上没有出口。
+ *
+ * 语义（**只对自恢复的那一类用**）：
+ * - 把 `area` 从失败表里删掉（连同累计次数）——下次再报就是全新的一条；
+ * - 发一条 `codem:persist-failed-withdrawn` 事件，界面据此**摘掉横幅**
+ *   （并重置"同一区域只提示一次"的去重，否则后面那条该报的会被挡掉）。
+ *
+ * ⚠️ 只有**确认恢复/不再成立**时才允许调用：这不等于"把错误藏起来"，
+ * 真正的持久失败必须继续走 `reportFailure`（`MEM-LOAD-VISIBLE-1` 钉的就是这一条）。
+ *
+ * @returns 之前确实有一条被撤回（`false` = 本来就没有，什么都不发）
+ */
+export function withdrawFailure(area: string): boolean {
+  if (!failures.delete(area)) return false;
+  const detail = { area };
+  try {
+    if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(new CustomEvent(PERSIST_WITHDRAWN_EVENT, { detail }));
+    }
+  } catch {
+    /* 非浏览器环境（测试/SSR）忽略 */
+  }
+  return true;
+}
+
 /** 写盘失败上报（reportFailure 的 persist 简写，保留旧名以便既有调用点不改） */
 export function reportPersistFailure(
   area: string,

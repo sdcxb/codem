@@ -120,6 +120,47 @@ export async function registerRustStoragePort(
     const health = await port.start();
     setStoragePort(port);
     /**
+     * ## R2（第 187 波复审）：**端口注册成功后立刻让记忆域重读一次**
+     *
+     * 现场：`MemoryService` 是懒单例，而它的构造点（`LLMEngine` 构造 → `getMemoryService()`）
+     * 在生产里**早于**本函数 —— 那个时刻端口还不存在，于是 `load()` 把"读不到"记成
+     * `loadState.ok === false`，此后**所有写入都被拒**（这是 I1 刻意要的 fail-closed）。
+     * 而全仓唯一的 `reload()` 只在用户打开「记忆系统」面板时才被调用
+     * ⇒ 用户不打开面板时，整个会话的记忆一条都存不下，每回合自动提取还会弹成可见失败
+     * （表现为"时好时坏"）。
+     *
+     * 所以这里在**唯一的端口注册点**补一次重读：不依赖任何用户动作，也不依赖界面挂载。
+     * （`MemoryService.save()` 里另有"未就绪时写前重试一次"的兜底，两条一起把这条路堵死。）
+     *
+     * 只动**已经存在**的单例（`hasMemoryServiceInstance()`），绝不在这里凭空构造它 ——
+     * 否则每次注册端口都会多一个实例，而"单例"这个前提会被自己破坏。
+     *
+     * ## F2（第 188 波复审）：这里的 `catch` 与 memory 侧**同形**，必须一起说清
+     *
+     * `reload()` 会清表再 `load()`，而 `load()` 的迁移段是**读盘的后半段**。修复前
+     * `MemoryService.load()` 在迁移之前就把 `loadState.ok` 置真 ⇒ `load()` 抛出时
+     * 那个"读成功"的标记留在原处、`retryLoadIfPossible()` 的 merge-back 也不会执行。
+     * 现在 memory 侧把迁移异常**收在 `load()` 内部**（降级成"读失败 + memory.load 上报"），
+     * 所以：
+     * - 走到这个 catch 说明是**更外层**的意外（模块加载失败等），此时记忆域**没有**被置成
+     *   "读成功"——`loadState` 的降级由 memory 自己负责，这里**不**假装重读成功；
+     * - 攒下的条目由 `retryLoadIfPossible()` 的 finally 保住（端口注册路径不经过它，见下）。
+     */
+    try {
+      const { hasMemoryServiceInstance, getMemoryService } = await import("../memory/memory");
+      if (hasMemoryServiceInstance()) getMemoryService().reload();
+    } catch (e) {
+      /*
+       * F2：这里**只留日志**是**刻意的**，但理由与修复前不同（原理由"失败不改变任何结论"
+       * 在抛异常支不成立，已作废）。现在的理由是：`reload()` 内部的失败**全部**已经由
+       * `load()` → `memory.load` 如实上报过（端口没就绪那类暂时性失败进 advisory、
+       * 结论性失败走 action；迁移抛出 → action 上报 + `ok` 保持 false ⇒ 写入走
+       * `memory.saveRefused`）。这里再报一条只会让同一次失败在界面上出现两遍
+       * （同一区域的重复告警）。
+       */
+      console.warn("[Storage] 端口注册后重读记忆失败（记忆写入会如实拒绝并上报）:", e);
+    }
+    /**
      * **陈旧二进制守卫**（第 45 轮线协议审计 P2-8）。
      *
      * ## 这条守卫补的是什么

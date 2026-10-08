@@ -35,6 +35,7 @@ import { RepeatToolReminderMiddleware } from "./repeat-tool-reminder";
 import { SpillPolicyMiddleware } from "./spill-policy";
 import { analyzeBashCommand } from "../permission/bash-analyzer";
 import { CONCURRENCY_SAFE_TOOL_IDS } from './concurrency-policy';
+import { credentialShapeTestPattern } from '../utils/credential-shapes';
 import {
   allowedInReadOnlyMode,
   isShellLike,
@@ -1023,8 +1024,16 @@ export class PlanModeGuard implements GuardMiddleware {
 export class SecurityScanMiddleware implements PreExecuteMiddleware {
   name = "security-scan";
 
+  /*
+   * API key / Bearer 的**形状**来自唯一来源 `core/utils/credential-shapes.ts`
+   * （第 188 波 R5）—— 本文件原来自己写了一份窄口径（正文只允许字母数字），
+   * 于是 `sk-proj-…` / `SK-…` 这类真令牌绕过审计（`hits` 为空 ⇒ 日志里没有痕迹）。
+   * `credentialShapeTestPattern` 给的是**去 `g`** 的副本：这里逐次 `test()`，
+   * 带 `g` 的正则会因 `lastIndex` 变成有状态、隔次漏报。
+   */
   private sensitivePatterns: Array<{ name: string; re: RegExp }> = [
-    { name: "api-key", re: /(?:sk-|pk-|Bearer\s+)[a-zA-Z0-9]{20,}/i },
+    { name: "api-key", re: credentialShapeTestPattern("apiKeyStrong") },
+    { name: "bearer", re: credentialShapeTestPattern("bearer") },
     { name: "password", re: /(?:password|passwd|pwd)\s*[:=]\s*\S+/i },
     { name: "secret-or-token", re: /(?:secret|token)\s*[:=]\s*\S+/i },
     { name: "private-key", re: /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----/i },

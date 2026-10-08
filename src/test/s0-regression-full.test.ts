@@ -46,12 +46,13 @@ vi.mock("../core/file-api", () => ({
   grepSearch: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../core/storage/settings", () => ({
-  getSettingJSON: vi.fn().mockReturnValue({ hooks: [] }),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
-  getSetting: vi.fn().mockReturnValue(null),
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例需要的"钩子配置恒为空表"。工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
+  getSettingJSON: vi.fn(() => ({ hooks: [] })),
 }));
 
 vi.mock("../core/hooks/hook-manager", () => ({

@@ -1,6 +1,7 @@
 // ========== Settings Types ==========
 import { reportPersistFailure } from "../storage/persist-failure";
 import { getSettingJSON } from "../storage/settings";
+import { CREDENTIAL_VALUE_SHAPES } from "../utils/credential-shapes";
 
 export type SettingsSource =
   | "cli"           // Command line arguments (highest priority)
@@ -182,7 +183,7 @@ export const POLICY_SETTING_KEY = "codem-policy";
  *
  * 判据两条，**只替换 + 计数，从不打印值**：
  * 1. **键名**像凭据（`apiKey`/`api_key`/`token`/`secret`/`password`/`authorization`）→ 值换占位符；
- * 2. **值形状**像凭据（`sk-` / `gho_` / `ghp_` / `AKIA`）→ 换占位符。
+ * 2. **值形状**像凭据（见下 `CREDENTIAL_VALUE_RES`）→ 换占位符。
  *
  * 为什么两条都要：只看键名会漏掉"被塞进别的字段里的密钥"（本仓库真发生过：一个 GitHub token
  * 形状的值出现在 reasoning / tool 结果 / 事件载荷里）；只看值形状会漏掉"形状不像但确实是密钥"
@@ -190,7 +191,9 @@ export const POLICY_SETTING_KEY = "codem-policy";
  */
 export const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?key|apikey|token|secret|password|passwd|authorization|auth[-_]?token)$/i;
 /**
- * ★★ 第 49 波修正（真机**误报** ✓，用户实报 ✓）：
+ * ★★ 第 49 波修正（真机**误报** ✓，用户实报 ✓）→ ★★ 第 188 波 R5 收口：
+ *
+ * ## 第 49 波修的是什么，为什么**不够**
  *
  * 原来第一条是 `/sk-[A-Za-z0-9_-]{16,}/g` ✗ —— 两个口子 ✓：
  *   ① **没有前边界**：`ta`+`sk-1791179367418-…` 里的 `sk-` 也算 `sk-` ✓；
@@ -198,31 +201,33 @@ export const CREDENTIAL_KEY_RE = /^(.*[-_])?(api[-_]?key|apikey|token|secret|pas
  * ⇒ 真机后果 ✓：`codem-invariant-watermark`（一台机器上 125 KB 的水位记录 ✓）
  *   被报成 `shape×9` ✗，并触发界面上那条
  *   「设置里存在**明文**存放的密钥/令牌 … 建议轮换」✗ —— 而那不是凭据 ✓。
- * ⇒ 现在收紧为「**前边界** + 正文只允许字母数字」✓：真实 `sk-` 令牌形如 `sk-` + 32 位
- *   十六进制/字母数字 ✓（DeepSeek/OpenAI 都是 ✓），而 `task-…`、路径片段一律不再命中 ✓。
  *
- * 为什么这条修正**同时**是数据安全修复 ✓：同一份正则也被**导出脱敏**
- * （`redactCredentialShapes` ✓）用来替换 ✓ ⇒ 旧写法会把 `task-…` 这类路径片段
- * **改写**成 `sk-***` ✗（导出/日志里的内容被破坏 ✓）。一处修正，两个口子一起堵 ✓。
+ * 第 49 波把这条收紧成「前边界 `(?<![A-Za-z0-9])` + 正文只允许字母数字」。
+ * **但那是另一份口径，不是 `redact.ts` 那份** ⇒ 两个方向都还错着（实测，见下）：
+ *   · **假阴性**：正文只允许 `[A-Za-z0-9]` ⇒ 认不出本产品内置 provider 的真实密钥形态
+ *     `sk-proj-…`（OpenAI project key）、`sk-ant-api03-…`（Anthropic）⇒ **明文密钥躺在设置里，
+ *     普查却报 0**（判据 `CS-TOKENS` 修复前红）；
+ *   · **误报**：前边界 `(?<![A-Za-z0-9])` **放行 `-`** ⇒ `task-sk-…` 里那个 `sk-` 照样命中
+ *     （判据 `CS-PATHS` 修复前红）；后边界排除 `-`/`_` 则漏掉 `sk-…-x`。
+ *
+ * ## 现在的口径：形状只有一份，就是 `core/utils/credential-shapes.ts`
+ *
+ * 值形状（`scope === "value"`）从那张表**取**出来 —— 本文件不再自己写正则：
+ * 强前缀 `sk-`/`pk-`（大小写不敏感、正文允许 `-`/`_`、前边界排除字母数字与 `-`/`_`、
+ * 后边界只要不是字母数字）、弱前缀只认显式 `api_key`/`apikey`/`api-key`（且前面不是路径分隔符）、
+ * `gh[opusr]_…`、`AKIA…`。裸 `key-` **一律不当令牌**（与路径段同形，形状规则分不开）。
+ *
+ * 为什么必须共用一份：这里同时是**导出脱敏**（改写）与**凭据普查**（报告）的形状判据
+ * （`credential-census.ts` 直接 import 本文件的 `CREDENTIAL_VALUE_RES`）——
+ * 两者语义不同（一个改写、一个报告），但**形状必须是同一批**，否则就是本波修的这类漂移。
+ * 判据：`src/test/credential-shape-single-source.test.ts`（`CS-TOKENS` / `CS-PATHS` / `CS-ONE-SOURCE`）。
  *
  * 形状的顺序与语义一一对应（见 `CREDENTIAL_SHAPE_LABELS` ✓）：日志要能说清"**哪一种**形状命中" ✓
- * —— 这次误报之所以难判，就是因为只印了 `shape×9` ✗、没说是哪一种 ✓。
+ * —— 当年那次误报之所以难判，就是因为只印了 `shape×9` ✗、没说是哪一种 ✓。
  */
-export const CREDENTIAL_VALUE_RES: RegExp[] = [
-  /**
-   * 前边界 + 后边界都把令牌当成**完整的一段** ✓（而不是"长串里恰好有这么一段" ✗）：
-   * 少了后边界时，`sk-` + 16 位之后接着更多字母数字也会命中 ✓ —— 那本身还是令牌、无害 ✓，
-   * 但少了**前**边界就会把 `task-…` 这类 ID/路径判成密钥 ✗（真机误报的根因 ✓）；
-   * 两侧都要，判据才是"这是一个独立的令牌形状" ✓。
-   */
-  /(?<![A-Za-z0-9])sk-[A-Za-z0-9]{16,}(?![A-Za-z0-9])/g,
-  /(?<![A-Za-z0-9])gho_[A-Za-z0-9]{16,}(?![A-Za-z0-9])/g,
-  /(?<![A-Za-z0-9])ghp_[A-Za-z0-9]{16,}(?![A-Za-z0-9])/g,
-  /** AWS 的 access key id **恰好**是 `AKIA` + 16 位大写/数字 ✓ ⇒ 两侧都要边界 ✓ */
-  /(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}(?![A-Za-z0-9])/g,
-];
+export const CREDENTIAL_VALUE_RES: RegExp[] = CREDENTIAL_VALUE_SHAPES.map((shape) => shape.pattern);
 /** 与 `CREDENTIAL_VALUE_RES` **同序**的形状名（只用于日志/判据的可诊断性 ✓，不含任何值 ✓） */
-export const CREDENTIAL_SHAPE_LABELS = ["sk-", "gho_", "ghp_", "AKIA"] as const;
+export const CREDENTIAL_SHAPE_LABELS: string[] = CREDENTIAL_VALUE_SHAPES.map((shape) => shape.label);
 
 export function redactCredentialShapes<T>(value: T): { value: T; redacted: number } {
   let redacted = 0;

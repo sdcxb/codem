@@ -56,7 +56,9 @@ npx vitest run                          # 全量测试（约 2 分钟；565 文�
 npx vitest run src/test/<某个>.test.ts  # 单跑一个判据文件
 
 # 结构审计（动过上报点/新增未接线文件后要跑）
-node tools/audit/scan-report-sites.mjs --check     # 上报点分诊闸门（应打印"全部已登记"）
+node tools/audit/scan-report-sites.mjs --check     # 上报点分诊闸门（应打印"分诊闸门通过"）
+#   打印形如「扫描命中 247 处 = 登记表 247 条（triaged 247 / pending 0）」——**三个数字必须相等**：
+#   扫描命中（现算）/ 登记表条目 / `_counts` 缓存。缓存漂移也判红（第 188 波吃过亏：扫描 247 而缓存 245）。
 # 可达性门禁由 src/test/reachability-gate.test.ts 守：新增但未接线的文件必须登记进
 #   tools/audit/reachability-allowlist.json 并在文件头写 `* @unwired` 理由
 

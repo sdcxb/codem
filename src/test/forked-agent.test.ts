@@ -8,6 +8,22 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+/**
+ * settings 的 mock **一律走共享基座**（`./settings-mock`，单一实现，见那里的文件头）。
+ *
+ * 本轮记忆系统重构给 `settings.ts` 加了 `loadMemoryChecked` 等导出，而 `MemoryService`
+ * 的构造函数就会调它 ⇒ 老那份手写 mock 不够用，`new LLMEngine()` 当场抛
+ * `No "loadMemoryChecked" export is defined on the "../core/storage/settings" mock`。
+ * 基座另外把**全部**真实导出按语义补齐（含 `getSetting` / `setSettingJSON` 的读写），
+ * 由 `settings-mock-parity.test.ts` 用解析式对账守着"不许再漂移"。
+ *
+ * ⚠️ `vi.mock` 的工厂体内**不能引用 import 进来的标识符**（工厂被提到文件顶部执行，
+ * 实测 `vi.hoisted(() => createSettingsMock())` 会 `ReferenceError: Cannot access
+ * '__vi_import_0__' before initialization`）。这里用**工厂内动态 import**：工厂是异步的，
+ * 执行时 import 早已求值完，既拿到了基座、也不违反 hoisting 规则。
+ */
+vi.mock("../core/storage/settings", async () => (await import("./settings-mock")).createSettingsMock());
+
 // Mock storage/database
 
 vi.mock("../core/storage/message", () => ({
@@ -37,14 +53,6 @@ vi.mock("../core/storage/message", () => ({
   ]),
   createMessage: vi.fn(),
   updateMessage: vi.fn(),
-}));
-
-vi.mock("../core/storage/settings", () => ({
-  getSetting: vi.fn().mockReturnValue(null),
-  getSettingJSON: vi.fn().mockReturnValue(null),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
 }));
 
 vi.mock("../core/storage/transcript-cache", () => ({

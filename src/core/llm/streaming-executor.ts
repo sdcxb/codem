@@ -3,6 +3,7 @@ import { maybePersistToolResult, shouldPersistResult } from "./tool-result-stora
 import { getToolPipeline, type ToolPipelineHost } from "./tool-pipeline";
 import { DEFAULT_CONCURRENCY_SAFE_TOOLS } from './concurrency-policy';
 import { resolveToolContract, resolveToolTimeout, type ResolvedToolContract } from './tool-contract';
+import { credentialShapeTestPattern } from '../utils/credential-shapes';
 
 // ========== P1-A: Per-message Tool Result Budget ==========
 
@@ -70,7 +71,15 @@ async function enforcePerMessageBudget(
 
 /** Patterns that indicate sensitive data in tool parameters */
 const SENSITIVE_PATTERNS = [
-  /(?:sk-|pk-|Bearer\s+)[a-zA-Z0-9]{20,}/i,  // API keys
+  /*
+   * API key / Bearer 的**形状**来自唯一来源 `core/utils/credential-shapes.ts`
+   * （第 188 波 R5）—— 本文件原来自己写了一份窄口径（正文只允许字母数字），
+   * 于是模型把 `sk-proj-…` / `SK-…` 写进文件时**不警告**（普查那份也有同样的漏报）。
+   * `credentialShapeTestPattern` 给的是**去 `g`** 的副本：这里的用法是逐次 `test()`，
+   * 带 `g` 的正则会因 `lastIndex` 变成有状态、隔次漏报。
+   */
+  credentialShapeTestPattern("apiKeyStrong"), // API keys（sk-/pk-）
+  credentialShapeTestPattern("bearer"), // Bearer tokens
   /(?:password|passwd|pwd)\s*[:=]\s*\S+/i,    // Passwords
   /(?:secret|token)\s*[:=]\s*\S+/i,           // Secrets/tokens
   /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----/i, // Private keys

@@ -16,13 +16,14 @@ const mocks = vi.hoisted(() => ({
   store: {} as Record<string, unknown>,
 }));
 
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例自己的那份库（用例直接往 `mocks.store` 写缓存读回）。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSettingJSON: vi.fn((key: string, fallback: unknown) => (key in mocks.store ? mocks.store[key] : fallback)),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
-  getSetting: vi.fn(() => null),
-  setSetting: vi.fn(),
 }));
 
 import { buildAvailableProviders } from "../components/ModelProfilePanel";

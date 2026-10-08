@@ -18,13 +18,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HookManager } from "../core/hooks/hook-manager";
 
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例需要的"钩子配置恒为空表"。工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSettingJSON: vi.fn(() => ({ hooks: [] })),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
-  getSetting: vi.fn(() => null),
-  setSetting: vi.fn(),
 }));
 
 const ctx = {

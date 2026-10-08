@@ -8,7 +8,7 @@
  * 与系统提示的 MCP 清单；绝大多数服务器不提供 resources，为它们注册三个用不上的工具
  * 等于每一轮都付 token 与选择噪声。
  */
-import type { ToolDef, ToolRegistry } from "../tools";
+import type { ToolRegistry } from "../tools";
 import { createMcpResourceTools } from "./mcp-resources-tool";
 
 /** 三件套的工具 id（用于判定残留） */
@@ -34,6 +34,3 @@ export function syncMcpResourceTools(registry: ToolRegistry, serversWithResource
 export function mcpResourceToolsRegistered(registry: ToolRegistry): string[] {
   return MCP_RESOURCE_TOOL_IDS.filter((id) => Boolean(registry.get(id)));
 }
-
-/** 仅用于类型引用，避免 `ToolDef` 被 tree-shake 掉（该文件只导出函数，故显式引用一次） */
-export type { ToolDef };

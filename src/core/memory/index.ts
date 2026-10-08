@@ -1,1 +1,22 @@
-export { MemoryService, getMemoryService, type MemoryEntry, type MemoryScope, type MemorySearchResult, type MemoryConfig } from "./memory";
+export {
+  MemoryService,
+  getMemoryService,
+  projectIdFromCwd,
+  getWriteApprovalSetting,
+  setWriteApprovalSetting,
+  approvalRequiredForScope,
+  MEMORY_WRITE_APPROVAL_KEY,
+  MEMORY_MIGRATED_KEY,
+  type MemoryEntry,
+  type MemoryScope,
+  type LegacyMemoryScope,
+  type MemorySource,
+  type MemoryStatus,
+  type MemorySearchResult,
+  type MemoryConfig,
+  type MemoryBatch,
+  type MemoryAddResult,
+  type MemoryScopeContext,
+  type MemoryMigrationReport,
+  type ApprovalScopeSetting,
+} from "./memory";

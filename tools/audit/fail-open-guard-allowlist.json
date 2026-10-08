@@ -83,6 +83,11 @@
       "reason": "配置面镜像「是否已预热」的探测：问不到就当作**未就绪**（return false），调用方据此**不把这次读当结论**、下次重试 —— 方向是保守的（宁可重读，也不要拿 fallback 当真实配置；真机 bug 正是把 fallback 当结论缓存下来）。"
     },
     {
+      "site": "src/core/storage/settings.ts::isMemoryDomainReady",
+      "direction": "conservative",
+      "reason": "记忆域「是否已预热」的探测（与 isSettingsMirrorReady 同形）：问不到/读不出预热状态就当作**未就绪**（return false）⇒ 读路径走 fail-closed（不迁移、不写标记）、写路径**拒绝写**（绝不把兜底空串整份写回 memory 字段）。方向是保守的：宁可这轮不写记忆，也不清空用户的历史记忆。"
+    },
+    {
       "site": "src/plugins/library-ops/core/scene-image-db.ts::isSceneImageDbAvailable",
       "direction": "conservative",
       "reason": "场景图片库可用性探测；失败⇒不启用该功能。"

@@ -40,7 +40,7 @@ import { useProjectStore } from "../store";
 import { describeTurnOutcome } from "../llm/turn-outcome";
 
 /** 流式文本的一个会话缓冲（正文/推理各自一份，字段同形） */
-export interface StreamBuffer {
+interface StreamBuffer {
   id: string;
   text: string;
   timer: ReturnType<typeof setTimeout> | null;
@@ -50,7 +50,7 @@ export interface StreamBuffer {
 export type StreamField = "content" | "reasoning";
 
 /** loop 自己那份消息快照（`App.tsx` 的 `loopMessages` 挂上来的引用） */
-export interface LoopSnapshot {
+interface LoopSnapshot {
   sessionId: string;
   messages: Map<string, Message>;
 }
@@ -189,7 +189,7 @@ export function buildTurnFinalize(params: {
  * 所以中止只筛掉**过程性**事件（text_delta / tool_start / …），
  * 终局事件照旧走完整条 switch。
  */
-export const TURN_TERMINAL_EVENT_TYPE = "end";
+const TURN_TERMINAL_EVENT_TYPE = "end";
 
 /** 中止后这个事件还要不要处理？*/
 export function shouldProcessEventAfterAbort(aborted: boolean, eventType: string): boolean {
@@ -198,7 +198,7 @@ export function shouldProcessEventAfterAbort(aborted: boolean, eventType: string
 }
 
 /** 中止后工具卡片的终态文案（与「⏹ 已停止」同一件事，见 turn-outcome 的 notice） */
-export const ABORTED_TOOL_RESULT = "⏹ 已停止：本轮被中断，工具没有跑完";
+const ABORTED_TOOL_RESULT = "⏹ 已停止：本轮被中断，工具没有跑完";
 
 /**
  * 中止时把**仍为 `running`** 的工具调用收成终态（F3）。

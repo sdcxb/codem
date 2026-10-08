@@ -15,6 +15,10 @@
   "--accent-strong|--bg-hover": {
    "registeredAt": "2026-09-26"
   },
+  "--accent-strong|--bg-primary": {
+   "_why": "记忆体检视图里两个**文字型按钮**（.mc-expand-btn 展开、.mc-owner-link 归位链接）从 `background: none` 改成显式写清所处的面（.mc-entry 在 .mc-group 的 --bg-primary 上）—— 这是为了让注册表算得出对比度（`none` 只会被记进 unresolved 预算）。**父面就是 --bg-primary**（.mc-group 自己写了 `background: var(--bg-primary)`），所以闸门口径与真实面一致；实算 亮 6.52:1 / 暗 8.06:1，过 --accent-strong 的 4.5 下限",
+   "registeredAt": "2026-11-05"
+  },
   "--accent-strong|--bg-tertiary": {
    "registeredAt": "2026-09-26"
   },
@@ -39,11 +43,19 @@
   "--error|--error-surface": {
    "registeredAt": "2026-09-26"
   },
+  "--info-content|--info-surface": {
+   "_why": "记忆体检/管理的新提示条（.mc-notice / .memory-notice）用 `-content` 压在 10% 浅底上。这些提示条的**父面是 --bg-secondary**（.memory-checkup / .memory-panel 都是 `background: var(--bg-secondary)`），所以闸门按 `over(surface, --bg-primary)` 合成的那 5.51/6.66 是**偏乐观**的——按真实父面复算是 亮 5.29:1 / 暗 5.78:1（第 188 波复审实测），仍然过 --info-content 的 4.5 下限（同族已登记的 --info-content|--info-surface-strong 是 4.78:1）",
+   "registeredAt": "2026-11-05"
+  },
   "--info-content|--info-surface-strong": {
    "registeredAt": "2026-09-26"
   },
   "--info|--info-surface": {
    "registeredAt": "2026-09-26"
+  },
+  "--success-content|--success-surface": {
+   "_why": "新徽标/审批按钮（.mc-source-badge.auto / .memory-source-badge.auto / .memory-approve-btn）用 `-content` 压在 10% 浅底上。它们与提示条同在 `--bg-secondary` 的父面上（.memory-checkup / .memory-panel），所以闸门的 6.21/6.64 同样是**偏乐观**的——按真实父面复算是 亮 5.96:1 / 暗 5.77:1（第 188 波复审实测），仍然过 --success-content 的 4.5 下限（同族已登记的 --success-content|--success-surface-strong 是 5.33:1）",
+   "registeredAt": "2026-11-05"
   },
   "--success-content|--success-surface-strong": {
    "registeredAt": "2026-09-26"

@@ -6,14 +6,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { OllamaProvider } from "../core/llm/ollama-provider";
 
 // Mock settings
-vi.mock("../core/storage/settings", () => ({
-  isSettingsMirrorReady: vi.fn(() => true),
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例需要的 Ollama 两个键。工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSetting: vi.fn((key: string) => {
     if (key === "ollama-base-url") return "http://localhost:11434";
     if (key === "ollama-auto-detect") return "true";
     return "";
   }),
-  setSetting: vi.fn(),
 }));
 
 // Mock fetch

@@ -65,6 +65,15 @@ function runCheck(): { status: number; out: string } {
   }
 }
 
+/** 扫描器的 JSON 口径（**唯一**的站点清单与 key 来源） */
+function runJson(): {
+  count: number;
+  findings: { file: string; area: string; kind: string; occurrence?: number; key: string; line: number }[];
+} {
+  const out = execFileSync(process.execPath, [SCANNER, "--json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return JSON.parse(out.replace(/^\uFEFF/, "")) as ReturnType<typeof runJson>;
+}
+
 describe("上报点分诊闸门（第 90 轮）", () => {
   it("RPT-1 真实仓库：闸门通过（新站点必登记 / 无漂移 / 无过期）", () => {
     const { status, out } = runCheck();
@@ -74,18 +83,21 @@ describe("上报点分诊闸门（第 90 轮）", () => {
 
   it("RPT-2 登记表与扫描结果**逐个对齐**（不多不少，且 kind 一致）", () => {
     const reg = registry();
-    const out = execFileSync(process.execPath, [SCANNER, "--json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-    const { findings } = JSON.parse(out.replace(/^\uFEFF/, "")) as {
-      findings: { file: string; area: string; kind: string; occurrence?: number }[];
-    };
-    const real = findings.map((f) => `${f.file}::${f.area}::#${f.occurrence ?? 1}`).sort();
+    const { findings } = runJson();
+    /**
+     * ⚠️ **不许在这里自己拼 key**（`文件::area::#n`）—— 那是"同一规则两份实现"，
+     * 第 188 波就是死在它上面：另一处口径（登记表的 `_counts` 缓存）与实际站点数
+     * 差 2，用例红在 `expected 245 to be 247`，可**一个站点都没少**。
+     * key 的**唯一实现**在 `tools/audit/scan-report-sites.mjs`（`--json` 每条带 `key`）。
+     */
+    const real = findings.map((f) => f.key).sort();
     const declared = reg.sites.map((s) => s.site).sort();
     expect(declared, "登记表与真实上报点必须逐个对齐").toEqual(real);
     // kind 必须与真实通道一致 —— "_counts" 也不能与实际不符
     for (const f of findings) {
-      const key = `${f.file}::${f.area}::#${f.occurrence ?? 1}`;
-      const s = reg.sites.find((x) => x.site === key);
-      expect(s?.kind, `${key} 的登记 kind 与真实通道不一致`).toBe(f.kind);
+      const s = reg.sites.find((x) => x.site === f.key);
+      expect(s, `${f.key} 未登记`).toBeTruthy();
+      expect(s?.kind, `${f.key} 的登记 kind 与真实通道不一致`).toBe(f.kind);
     }
     expect(reg._counts.total).toBe(real.length);
     expect(reg._counts.triaged + reg._counts.pending).toBe(real.length);
@@ -147,5 +159,34 @@ describe("上报点分诊闸门（第 90 轮）", () => {
         `${key} 不该再有上报登记（用户无事可做 ⇒ 只进日志 ✗→✓）`,
       ).toBeUndefined();
     }
+  });
+
+  /**
+   * ★★ 第 189 波（口径收敛）：**两个口径必须是同一个数字**。
+   *
+   * 事故复盘：上一轮往登记表末尾补了 20 条站点，`_counts` 只从 227 加到 245（漏记 2 条）。
+   * 于是仓库里同时存在两个"上报点数量"：`--check` 打印的**扫描命中**（247）与
+   * `_counts.total`（缓存，245）。谁读到哪个数，结论就不一样 —— 这正是本仓最忌讳的
+   * "同一件事两份实现"。修法不是改数字，而是：
+   *  ① key 只有扫描器一处实现在造（`--json` 每条带 `key`，RPT-2 直接消费）；
+   *  ② `--check` 自己把 `_counts` 与 `sites` 对账（缓存漂移 ⇒ 红），并把三个数字都打出来；
+   *  ③ 这条判据钉住"打印出来的数字 = `--json` 命中 = 登记表条目 = `_counts`"。
+   *
+   * 变异（改任意一套的实现/数字）都会让它红：见 `.preview-shot/mutate-report-site-gate-2.mjs`。
+   */
+  it("RPT-6 两个口径必须是同一份清单与同一个数字（--check 的打印 = --json 命中 = 登记表条目 = `_counts`）", () => {
+    const reg = registry();
+    const { status, out } = runCheck();
+    expect(status, `闸门应通过，实际输出：\n${out}`).toBe(0);
+    const { count, findings } = runJson();
+    const m = /扫描命中 (\d+) 处 = 登记表 (\d+) 条（triaged (\d+) \/ pending (\d+)）/.exec(out);
+    expect(m, `--check 必须把数字带上名字打出来（扫描命中/登记表/triaged/pending），实际：\n${out}`).toBeTruthy();
+    const [, scanned, entries, triaged, pending] = m as RegExpExecArray;
+    expect(Number(scanned), "--check 打印的扫描命中数 ≠ --json 的 findings").toBe(findings.length);
+    expect(Number(entries), "--check 打印的登记表条目数 ≠ sites").toBe(reg.sites.length);
+    expect(Number(scanned), "--check 打印的扫描命中数 ≠ `_counts.total`（缓存漂移！）").toBe(reg._counts.total);
+    expect(Number(triaged)).toBe(reg._counts.triaged);
+    expect(Number(pending)).toBe(reg._counts.pending);
+    expect(count, "`--json` 的 count 与 findings 必须同源").toBe(findings.length);
   });
 });

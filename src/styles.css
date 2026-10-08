@@ -19503,3 +19503,862 @@ html[data-contrast="high"] {
   color: var(--error);
   word-break: break-all;
 }
+
+/* ==========================================================================
+   记忆体检（Memory Checkup）视图 + 记忆管理新增区（写入审批 / 待批准 / 自动提取批次）
+   --------------------------------------------------------------------------
+   消费方：
+     · `src/components/MemoryCheckupView.tsx` —— `.memory-checkup` / `.mc-*`；
+     · `src/components/MemoryManager.tsx` 同批新增的三块 —— `.memory-approval-*` /
+       `.memory-pending-*` / `.memory-batch-*` / `.memory-source-badge`。
+
+   纪律（由 `src/test/css-checkup-classes.test.ts` 的 CSS-CHECKUP-1 / CSS-CHECKUP-2 钉住）：
+     · **一律走语义令牌** —— 字号 `--fs-*`、字重 `--weight-*`、颜色 `--text-*` /
+       `--border-*` / `--accent-*` / `--<status>-{surface,surface-strong,border,content}`、
+       圆角 `--radius*`、间距 `--space-*`、行高 `--lh-*`；
+     · 于是深浅色与皮肤**自动跟随** —— 这两块样式**不需要**、也不许在 `skin-*.css` 里开特例；
+     · 状态一律写成**复合选择器**（`.mc-source-badge.pending` 这类），不新造 `platform` /
+       `pending` / `off` 这样的全局裸类名（那会悄悄影响其它组件）。
+   ========================================================================== */
+/* ===== CSS-CHECKUP-BEGIN ===== */
+
+/* ---- 视图外壳 ---- */
+.memory-checkup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  height: 100%;
+  padding: var(--space-8);
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+}
+
+.mc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.mc-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.mc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mc-action-btn {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.mc-action-btn:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+/* 「清空全部」不可撤销 ⇒ 常驻危险色，不靠悬停才提示 */
+.mc-action-btn.danger {
+  color: var(--error-content);
+  background: var(--error-surface);
+  border-color: var(--error-border);
+}
+
+.mc-action-btn.danger:is(:hover, :focus-visible) {
+  background: var(--error-surface-strong);
+  border-color: var(--error);
+}
+
+/* ---- 概览与说明 ---- */
+.mc-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+/* 「未知（旧数据）」不是在报错，但用户必须能一眼数出来 ⇒ 用警告色而不是中性色 */
+.mc-summary-unknown {
+  color: var(--warning-content);
+}
+
+.mc-note {
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-ui);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-left: 2px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.mc-notice {
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--fs-2xs);
+  color: var(--info-content);
+  background: var(--info-surface);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- 分组 ---- */
+.mc-group {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* 分组类型只靠左缘色条区分：一眼看出"这一组是谁的"，又不抢内容 */
+.mc-group.platform {
+  border-left: 2px solid var(--accent-border-strong);
+}
+
+.mc-group.project {
+  border-left: 2px solid var(--accent);
+}
+
+.mc-group.conversation {
+  border-left: 2px solid var(--success);
+}
+
+.mc-group.unknown {
+  border-left: 2px solid var(--warning);
+}
+
+/* 归属解析不出来是**要用户动手**的状态 ⇒ 整块浅底，而不只是一根色条 */
+.mc-group.unresolved {
+  background: var(--warning-surface);
+}
+
+.mc-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.mc-group-select {
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--accent-strong);
+  /* 第 187 波：`background: none` 让注册表算不出底色（记进 unresolved 预算，而预算只许降）。
+     它就在 `.mc-group-header`（`--bg-tertiary`）上，如实写出来即可；对比度与视觉都不变。 */
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.mc-group-select:is(:hover, :focus-visible) {
+  background: var(--accent-muted);
+}
+
+.mc-group-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.mc-group-count {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.mc-group-reason {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--fs-2xs);
+  color: var(--warning-content);
+  background: var(--warning-surface-strong);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.mc-group-note {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.mc-group-entries {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 条目 ---- */
+.mc-entry {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-secondary);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.mc-entry:last-child {
+  border-bottom: none;
+}
+
+.mc-entry.selected {
+  background: var(--accent-muted);
+}
+
+.mc-entry-check {
+  display: flex;
+  align-items: flex-start;
+  padding-top: var(--space-1);
+  cursor: pointer;
+}
+
+.mc-entry-check input {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.mc-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mc-entry-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.mc-entry-key {
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* 来源/作用域徽标共用同一套几何，只在颜色上分档 —— 标签行的节奏才不会散 */
+.mc-source-badge,
+.mc-scope-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.mc-source-badge.manual {
+  color: var(--accent-strong);
+  background: var(--accent-surface);
+  border-color: var(--accent-border);
+}
+
+.mc-source-badge.auto {
+  color: var(--success-content);
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
+/* 旧数据来源不明 —— 用警告色，避免被当成"正常条目"一眼扫过去 */
+.mc-source-badge.unknown {
+  color: var(--warning-content);
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+}
+
+.mc-source-badge.pending {
+  color: var(--warning-content);
+  background: var(--warning-surface-strong);
+  border-color: var(--warning-border);
+}
+
+/* 虚线 = "这条现在不进上下文"：形状本身带语义，不依赖颜色分辨 */
+.mc-source-badge.not-injected {
+  color: var(--text-muted);
+  background: none;
+  border-style: dashed;
+}
+
+.mc-scope-badge.platform {
+  color: var(--info-content);
+  border-color: var(--info-border);
+}
+
+.mc-scope-badge.project {
+  color: var(--accent-strong);
+  border-color: var(--accent-border);
+}
+
+.mc-scope-badge.conversation {
+  color: var(--success-content);
+  border-color: var(--success-border);
+}
+
+.mc-entry-content {
+  max-height: 4em;
+  overflow: hidden;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-ui);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mc-entry-content.expanded {
+  max-height: none;
+}
+
+.mc-expand-btn {
+  align-self: flex-start;
+  padding: 0;
+  font-size: var(--fs-2xs);
+  color: var(--accent-strong);
+  /* 第 187 波：原来写 `background: none`。颜色注册表**算不出** `none` 这种底色
+     （它是"透明"，真正的底色来自祖先），于是这对被记进 unresolved 预算 —— 而预算只许降。
+     改成显式写清它所处的面（`.mc-entry` 在 `.mc-group` 的 `--bg-primary` 上），
+     视觉不变、对比度可算，且 `--accent-strong|--bg-primary` 是**已登记**的组合。 */
+  background: var(--bg-primary);
+  border: none;
+  cursor: pointer;
+}
+
+.mc-expand-btn:is(:hover, :focus-visible) {
+  text-decoration: underline;
+}
+
+.mc-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.mc-entry-batch {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.mc-entry-owner {
+  color: var(--text-muted);
+}
+
+.mc-owner-link {
+  padding: 0;
+  font-size: var(--fs-2xs);
+  color: var(--accent-strong);
+  text-align: left;
+  /* 同 `.mc-expand-btn`：把"透明"写成它实际所处的面（见那里的说明） */
+  background: var(--bg-primary);
+  border: none;
+  cursor: pointer;
+}
+
+.mc-owner-link:is(:hover, :focus-visible) {
+  text-decoration: underline;
+}
+
+/* ---- 归位（用户显式动作，一行内完成） ---- */
+.mc-retarget-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+
+.mc-retarget-row select {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+
+.mc-retarget-row select:focus {
+  border-color: var(--accent);
+}
+
+.mc-retarget-btn {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.mc-retarget-btn:is(:hover, :focus-visible) {
+  color: var(--accent-strong);
+  background: var(--accent-surface);
+  border-color: var(--accent-border-strong);
+}
+
+.mc-retarget-confirm {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--fs-2xs);
+  color: var(--text-on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.mc-retarget-confirm:is(:hover, :focus-visible) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.mc-retarget-cancel {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.mc-retarget-cancel:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+
+/* ==========================================================================
+   记忆管理（MemoryManager）同批新增区
+   ========================================================================== */
+
+.memory-item-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 来源徽标：与体检视图同一套措辞（手动 / 自动 / 待批准 / 不进上下文） */
+.memory-source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.memory-source-badge.manual {
+  color: var(--accent-strong);
+  background: var(--accent-surface);
+  border-color: var(--accent-border);
+}
+
+.memory-source-badge.auto {
+  color: var(--success-content);
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
+.memory-source-badge.pending {
+  color: var(--warning-content);
+  background: var(--warning-surface-strong);
+  border-color: var(--warning-border);
+}
+
+/* `orphan` = 没有归属键、不会进任何上下文（旧数据）⇒ 虚线边框，与体检视图同一套措辞 */
+.memory-source-badge.orphan {
+  color: var(--text-muted);
+  background: none;
+  border-style: dashed;
+}
+
+/* ---- 写入审批 ---- */
+.memory-approval-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.memory-approval-label {
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.memory-approval-toggle {
+  padding: var(--space-1) var(--space-5);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.memory-approval-toggle:is(:hover, :focus-visible) {
+  border-color: var(--accent-border);
+}
+
+.memory-approval-toggle.on {
+  color: var(--accent-strong);
+  background: var(--accent-muted);
+  border-color: var(--accent-border-strong);
+}
+
+.memory-approval-toggle.off {
+  color: var(--text-muted);
+}
+
+.memory-approval-hint {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.memory-notice {
+  margin: var(--space-4) var(--space-8);
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--fs-2xs);
+  color: var(--info-content);
+  background: var(--info-surface);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- 待批准区 ---- */
+.memory-pending-section {
+  padding: var(--space-6) var(--space-8);
+  background: var(--warning-surface);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.memory-pending-title {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--warning-content);
+}
+
+.memory-pending-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+}
+
+.memory-pending-item + .memory-pending-item {
+  margin-top: var(--space-2);
+}
+
+.memory-pending-key {
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.memory-pending-content {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-pending-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.memory-approve-btn,
+.memory-reject-btn,
+.memory-undo-btn {
+  padding: var(--space-1) var(--space-5);
+  font-size: var(--fs-2xs);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.memory-approve-btn {
+  color: var(--success-content);
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
+.memory-approve-btn:is(:hover, :focus-visible) {
+  background: var(--success-surface-strong);
+}
+
+.memory-reject-btn {
+  color: var(--error-content);
+  background: var(--error-surface);
+  border-color: var(--error-border);
+}
+
+.memory-reject-btn:is(:hover, :focus-visible) {
+  background: var(--error-surface-strong);
+}
+
+.memory-undo-btn:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+
+/* ---- 自动提取批次（可整批撤销） ---- */
+.memory-batch-section {
+  padding: var(--space-6) var(--space-8);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.memory-batch-title {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.memory-batch-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+
+.memory-batch-item + .memory-batch-item {
+  margin-top: var(--space-2);
+}
+
+.memory-batch-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.memory-batch-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+/* ---- 按作用域分组的列表 ---- */
+.memory-group {
+  margin-bottom: var(--space-6);
+}
+
+.memory-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.memory-group-sub {
+  padding: var(--space-1) var(--space-6);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+/* 自动提取的那一栏要能被一眼识别（这些条目"可能不准"） */
+.memory-group-sub.auto {
+  color: var(--warning-content);
+}
+
+/* 概览数字：作用域改名（平台/项目/对话）后补齐缺失的两档着色 */
+.memory-stat-value.platform {
+  color: var(--warning);
+}
+
+.memory-stat-value.conversation {
+  color: var(--success);
+}
+
+/* 「其它（作用域无法识别）」与旧版跨项目池：都是**要用户动手**的档 ⇒ 用警告色，不混进正常档 */
+.memory-stat-value.other {
+  color: var(--warning-content);
+}
+
+/* S4：默认审批 = 自动记忆先进待批准区 ⇒ 常驻一句解释（有待批准条目时加重语气） */
+.memory-pending-hint {
+  margin: var(--space-2) var(--space-8);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  border-left: 2px solid var(--border-strong);
+}
+
+.memory-pending-hint.active {
+  color: var(--warning-content);
+  background: var(--warning-surface);
+  border-left-color: var(--warning);
+  border-radius: var(--radius-sm);
+}
+
+/* 老条目没有批次信息 ⇒ 界面上要如实说明（不是给一个点了没反应的按钮） */
+.memory-batch-note {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-ui);
+  color: var(--text-muted);
+}
+
+/* ---- 第 187 波：旧版跨项目池 / 未知作用域 / 暂停开关 / 迁移前快照 ---- */
+
+/* 旧版跨项目池组：与平台级分开，左缘用警告色 + 浅底（"要用户处置"的状态） */
+.mc-group.legacy-pool {
+  border-left: 2px solid var(--warning);
+  background: var(--warning-surface);
+}
+
+/* 作用域无法识别组：同样是"必须处置"，但用错误色区分于"可能被污染" */
+.mc-group.unknown-scope {
+  border-left: 2px solid var(--error);
+}
+
+.mc-group-action {
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--accent-strong);
+  /* 同 `.mc-group-select`：把"透明"写成它实际所处的面（见那里的说明） */
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.mc-group-action:is(:hover, :focus-visible) {
+  background: var(--accent-muted);
+}
+
+/* 旧版跨项目池徽标（可展示的标记：一眼看出哪几条来自被污染的旧池子） */
+.mc-source-badge.legacy-pool,
+.mc-scope-badge.legacy-pool {
+  color: var(--warning-content);
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+}
+
+/* I4：`不进上下文` 的真实原因（超出注入上限 / 待批准 / 已暂停 / 归属失效） */
+.mc-entry-reason {
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-ui);
+  color: var(--text-muted);
+}
+
+.mc-switch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+
+.mc-switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.mc-switch-label input {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.mc-switch-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-ui);
+  color: var(--text-muted);
+}
+
+/* 迁移前快照（M-6）：回退入口必须与普通动作区分开（危险色 + 常驻说明） */
+.mc-snapshot {
+  padding: var(--space-4) var(--space-6);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.mc-snapshot-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.mc-snapshot-meta {
+  margin-top: var(--space-2);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.mc-snapshot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.mc-snapshot-hint {
+  margin-top: var(--space-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-ui);
+  color: var(--warning-content);
+}
+
+/* ===== CSS-CHECKUP-END ===== */

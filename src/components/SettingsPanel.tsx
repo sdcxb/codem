@@ -74,6 +74,8 @@ import { showToast } from "./ToastNotification";
 // P2 #35: Import UsageStats for embedding in settings
 import { UsageStats } from "./UsageStats";
 import { PerformanceDashboard } from "./PerformanceDashboard";
+import { MemoryCheckupView } from "./MemoryCheckupView";
+import { projectIdFromCwd } from "../core/memory/memory";
 // P2 #38: framer-motion for animations
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -572,7 +574,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "phone" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "phone" | "codegraph" | "advanced" | "help" | "usage" | "performance" | "memory-checkup">((initialTab as any) || "general");
   /**
    * 运行模式的「更多」是否展开（第 186 轮）。
    *
@@ -1064,6 +1066,11 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <button className={`settings-sidebar-item ${activeTab === "performance" ? "active" : ""}`}
               aria-current={activeTab === "performance" ? "page" : undefined} onClick={() => setActiveTab("performance")}>
               <span className="sidebar-icon"><Activity size={16} /></span>{lang === "zh" ? "性能" : "Performance"}
+            </button>
+            {/* 记忆体检：与「记忆管理」面板共用同一套数据层（MemoryService），这里只做分组/梳理视图 */}
+            <button className={`settings-sidebar-item ${activeTab === "memory-checkup" ? "active" : ""}`}
+              aria-current={activeTab === "memory-checkup" ? "page" : undefined} onClick={() => setActiveTab("memory-checkup")}>
+              <span className="sidebar-icon"><BrainCircuit size={16} /></span>{lang === "zh" ? "记忆体检" : "Memory checkup"}
             </button>
             {/**
              * 第 197 轮：**「高级」与「帮助」移到最后**（用户要求）。
@@ -2292,6 +2299,34 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 {activeTab === "performance" && (
   <div className="sp-card">
     <PerformanceDashboard onClose={() => setActiveTab("general")} />
+  </div>
+)}
+{/* 记忆体检：三级分组 + 来源三态 + 归属未知单列（数据层复用 MemoryService） */}
+{activeTab === "memory-checkup" && (
+  <div className="sp-card">
+    <MemoryCheckupView
+      projectId={projectIdFromCwd(useProjectStore.getState().currentProject?.path)}
+      sessionId={useProjectStore.getState().currentSession?.id}
+      onNavigate={(target) => {
+        /*
+         * 「归属」那一栏是可点的：跳到对应项目/对话要**真的切过去**（切不动就如实说一句），
+         * 而不是静默关闭设置面板。
+         */
+        const store = useProjectStore.getState();
+        if (target.projectId) {
+          const project = store.projects.find((p) => projectIdFromCwd(p.path) === target.projectId || p.id === target.projectId);
+          if (project) store.openProject(project.id);
+        }
+        if (target.sessionId) {
+          const session = store.sessions.find((s) => s.id === target.sessionId);
+          if (session) {
+            if (session.projectId && session.projectId !== store.currentProject?.id) store.openProject(session.projectId);
+            useProjectStore.getState().switchSession(session.id);
+          }
+        }
+        onClose?.();
+      }}
+    />
   </div>
 )}
           </div>

@@ -136,7 +136,7 @@ export function appendDiagnostics(output: string, diagnostics: readonly ToolDiag
 }
 
 /** 便于在 `ToolCallResult` 上挂诊断（类型安全的小工具） */
-export function withDiagnostics<T extends ToolCallResult>(result: T, diagnostics: ToolDiagnostic[]): T {
+function withDiagnostics<T extends ToolCallResult>(result: T, diagnostics: ToolDiagnostic[]): T {
   if (diagnostics.length === 0) return result;
   return { ...result, diagnostics: [...(result.diagnostics ?? []), ...diagnostics] };
 }

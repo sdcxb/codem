@@ -223,7 +223,7 @@ async function formatOneContent(c: any, ctx?: ToolContext): Promise<string> {
 }
 
 /** 已连接且在 initialize 里声明了 `resources` 的服务器名 */
-export function serversWithResources(): string[] {
+function serversWithResources(): string[] {
   try {
     return getMCPRegistry().serversWithResources();
   } catch {

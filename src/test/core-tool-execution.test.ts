@@ -492,16 +492,23 @@ describe("工具调用 — 敏感数据检测 (F2.5)", () => {
     expect(src).toContain("Security Warning");
   });
 
-  it("TOOL-015b: 敏感数据模式包含 API key、密码、私钥", () => {
+  it("TOOL-015b: 敏感数据模式包含 API key、密码、私钥（凭据形状来自唯一来源）", () => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/streaming-executor.ts"), "utf-8");
 
-    // The SENSITIVE_PATTERNS regex includes these patterns
-    expect(src).toContain("sk-");
+    /**
+     * ★ 第 188 波 R5 如实改写：原来这里断言的是源码里有没有 `sk-` / `Bearer` 这两个**字符串**
+     * —— 那是"某处有某字符串"式断言（本仓反复吃过的亏：注释里写一句就能满足它）。
+     * 现在断言的是**接线**：凭据形状必须取自唯一来源 `core/utils/credential-shapes.ts`，
+     * 本文件不许再写一份正则（`credential-shape-single-source.test.ts` 的 `CS-ONE-SOURCE`
+     * AST 扫描从另一侧钉住同一件事）。四类敏感数据的覆盖照旧逐条要求。
+     */
+    expect(src, "API key 形状必须取自唯一来源（不许在本文件再写一份正则）").toContain("credentialShapeTestPattern");
+    expect(src).toContain('"apiKeyStrong"');
+    expect(src).toContain('"bearer"');
     expect(src).toMatch(/password/i);
     expect(src).toContain("PRIVATE");
-    expect(src).toContain("Bearer");
   });
 });
 

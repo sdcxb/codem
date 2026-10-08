@@ -43,13 +43,13 @@ vi.mock("../core/file-api", () => ({
   executeCommand: vi.fn(),
 }));
 
-vi.mock("../core/storage/settings", () => ({
-  getSetting: vi.fn(),
-  setSetting: vi.fn(),
-  getSettingJSON: vi.fn(<T>(_key: string, defaultValue: T) => defaultValue),
-  isSettingsMirrorReady: vi.fn(() => true),
-
-  setSettingJSON: vi.fn(),
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例需要的"配置恒为默认值"。工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
+  getSettingJSON: vi.fn(<T,>(_key: string, defaultValue: T) => defaultValue),
 }));
 
 // ========== A. LLM 对话链路 ==========

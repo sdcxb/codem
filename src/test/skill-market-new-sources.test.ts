@@ -7,11 +7,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 
 const mockStore: Record<string, any> = {};
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例自己的 `mockStore`（那两条实现与基座不同，必须照原样保留）。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSetting: vi.fn().mockReturnValue(null),
   getSettingJSON: vi.fn().mockImplementation((key: string, def: any) => mockStore[key] ?? def),
-  isSettingsMirrorReady: vi.fn(() => true),
-
   setSettingJSON: vi.fn().mockImplementation((key: string, val: any) => { mockStore[key] = val; }),
 }));
 

@@ -87,6 +87,15 @@ export interface FakeStoragePortOptions {
   /** 模拟落库失败（验证"写穿失败必须如实上报"的反向用例） */
   failWrites?: boolean;
   /**
+   * **只让这些命令失败**（其余命令照常成功）。
+   *
+   * 为什么需要它（第 187 波 R1）：最危险的形态不是"全都写不进去"，而是
+   * **数据写失败、而另一条写（迁移标记）成功** —— 磁盘上就变成「数据没落、标记落了」，
+   * 下次启动直接 `ran:false`，旧作用域条目**永久**不注入。
+   * `failWrites` 是全局开关，造不出这个组合；这里按命令名精确失败。
+   */
+  failCommands?: string[];
+  /**
    * 这些表**永不就绪**：`isReady` 恒为 false。
    *
    * 用来模拟"端口在、但镜像没就绪"（加载中 / 超上限被拒 / LRU 逐出 / 被截断）——
@@ -234,7 +243,7 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
   /** 落库（写穿目标）：这里就是内存表本身 */
   function persist(command: string, params?: Record<string, unknown>): number {
     writeLog.push({ command, params });
-    if (opts.failWrites) {
+    if (opts.failWrites || (opts.failCommands ?? []).includes(command)) {
       writeFailures += 1;
       throw new Error(`fake-port: 落库失败（${command}）`);
     }
@@ -325,6 +334,24 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       const idx = target.findIndex((r) => r.key === key);
       if (idx >= 0) target[idx] = { ...target[idx], value };
       else target.push({ key, value });
+      return 1;
+    }
+    /**
+     * 记忆域（配置面扩展域）的落库。**必须实现**（第 187 波）。
+     *
+     * 真引擎 `codem-db/src/config.rs::memory_set` 是一条单行 UPDATE（`memory` 表 `id='default'` 的
+     * `content` 列）。假端口早先对这条命令**什么都不做**（落到末尾 `return 0`），于是：
+     *   · "记忆写进了库"在测试里是**假成功**（表里一行都没变）；
+     *   · 更关键的是，`memory.ts` 的"读失败时**绝不许覆盖**"这条判据**无法被钉子钉住** ——
+     *     "旧字符串逐字仍在"在假端口上恒真（因为写根本不落表），判据会假绿。
+     * 测试双不得比实现宽松：这里按同一语义落到 `memory` 表。
+     */
+    if (command === "memory.set") {
+      const content = String((params as { content?: unknown } | undefined)?.content ?? "");
+      const target = table("memory");
+      const idx = target.findIndex((r) => r.id === "default");
+      if (idx >= 0) target[idx] = { ...target[idx], content };
+      else target.push({ id: "default", content });
       return 1;
     }
     if (command === "crud.delete") {

@@ -64,12 +64,17 @@ vi.mock("../core/llm", () => ({
 
 // Mock settings storage — use an in-memory store
 const mockSettingsStore: Record<string, any> = {};
-vi.mock("../core/storage/settings", () => ({
+/**
+ * settings 的 mock 走**共享基座**（`./settings-mock`，单一实现，见那里的文件头）；
+ * 这里只覆盖本用例自己的 `mockSettingsStore`（它存的是**原值**而不是 JSON 字符串，
+ * 且被上面对 `../core/llm` 的 mock 直接读，必须照原样保留）。
+ * 工厂内动态 import 的理由见基座文件头。
+ */
+vi.mock("../core/storage/settings", async () => ({
+  ...(await import("./settings-mock")).createSettingsMock(),
   getSetting: vi.fn((key: string) => mockSettingsStore[key] ?? null),
   setSetting: vi.fn((key: string, val: string) => { mockSettingsStore[key] = val; }),
-  getSettingJSON: vi.fn(<T>(key: string, def: T) => mockSettingsStore[key] ?? def),
-  isSettingsMirrorReady: vi.fn(() => true),
-
+  getSettingJSON: vi.fn(<T,>(key: string, def: T) => mockSettingsStore[key] ?? def),
   setSettingJSON: vi.fn((key: string, val: unknown) => { mockSettingsStore[key] = val; }),
   removeSetting: vi.fn((key: string) => { delete mockSettingsStore[key]; }),
 }));
