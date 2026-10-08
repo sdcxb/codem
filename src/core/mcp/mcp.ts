@@ -54,6 +54,14 @@ export interface MCPConnection {
   config: MCPServerConfig;
   status: "disconnected" | "connecting" | "connected" | "error";
   tools: MCPTool[];
+  /**
+   * 第 183 波：`initialize` 协商到的**服务端能力**。
+   *
+   * 留下它的唯一目的：判断"这个服务器有没有 `resources`"。改前只取 `serverInfo.name`、
+   * 把 capabilities 丢掉 ⇒ 只能无条件注册 resources 三件套，让每一轮请求都为用不上的
+   * 工具付 token 与选择噪声（见 `llm/tools/mcp-resources-tool.ts` 头注释）。
+   */
+  capabilities?: Record<string, unknown>;
   error?: string;
   /**
    * 代次（第 181 波，对标 Pi `8c911797c`：close MCP connections that are still connecting）。
@@ -211,8 +219,53 @@ export class MCPClient {
     if (!result.protocolVersion && !result.serverInfo && !result.capabilities) {
       throw new Error(`initialize 返回内容不符合 MCP 规范：${JSON.stringify(result).slice(0, 160)}`);
     }
+    /**
+     * 第 183 波：**留下 capabilities**。
+     *
+     * 改前只取 `serverInfo.name`，`capabilities` 直接丢掉。而"这个服务器有没有 resources"
+     * 正写在 capabilities 里 —— 丢掉它就只能无条件注册 resources 三件套，
+     * 让每一轮请求都为"永远用不上的工具"付 token 与选择噪声（见 mcp-resources-tool.ts 头注释）。
+     */
+    const connection = this.connections.get(serverName);
+    if (connection) {
+      connection.capabilities =
+        result.capabilities && typeof result.capabilities === "object" ? result.capabilities : {};
+    }
     const info = result.serverInfo;
     return info?.name ? `${info.name}${info.version ? ` ${info.version}` : ""}` : String(result.protocolVersion ?? "");
+  }
+
+  /**
+   * 第 183 波：**声明了 `resources` 能力**的已连接服务器名。
+   *
+   * 判据（MCP 规范）：`initialize` 结果里的 `capabilities.resources` 存在即为支持。
+   * 只算 `status === "connected"` 的 —— 没连上的服务器不该让工具出现在 schema 里。
+   */
+  serversWithResources(): string[] {
+    const out: string[] = [];
+    for (const [name, conn] of this.connections) {
+      if (conn.status !== "connected") continue;
+      const caps = conn.capabilities;
+      if (caps && typeof caps === "object" && (caps as any).resources) out.push(name);
+    }
+    return out;
+  }
+
+  /** 第 183 波：`resources/list`（失败时把原因说清，不静默返回空表） */
+  async listResources(serverName: string): Promise<any[]> {
+    const result = await this.sendRequest(serverName, "resources/list", {});
+    return Array.isArray(result?.resources) ? result.resources : [];
+  }
+
+  /** 第 183 波：`resources/templates/list` */
+  async listResourceTemplates(serverName: string): Promise<any[]> {
+    const result = await this.sendRequest(serverName, "resources/templates/list", {});
+    return Array.isArray(result?.resourceTemplates) ? result.resourceTemplates : [];
+  }
+
+  /** 第 183 波：`resources/read` */
+  async readResource(serverName: string, uri: string): Promise<any> {
+    return this.sendRequest(serverName, "resources/read", { uri });
   }
 
   /**
@@ -571,6 +624,26 @@ export class MCPRegistry {
   /** Get all available MCP tools */
   getAllTools(): Array<MCPTool & { server: string }> {
     return this.client.getAllTools();
+  }
+
+  /** 第 183 波：声明了 `resources` 能力的已连接服务器名 */
+  serversWithResources(): string[] {
+    return this.client.serversWithResources();
+  }
+
+  /** 第 183 波：`resources/list` */
+  async listResources(serverName: string): Promise<any[]> {
+    return this.client.listResources(serverName);
+  }
+
+  /** 第 183 波：`resources/templates/list` */
+  async listResourceTemplates(serverName: string): Promise<any[]> {
+    return this.client.listResourceTemplates(serverName);
+  }
+
+  /** 第 183 波：`resources/read` */
+  async readResource(serverName: string, uri: string): Promise<any> {
+    return this.client.readResource(serverName, uri);
   }
 
   /** Call a tool */

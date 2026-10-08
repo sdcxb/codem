@@ -16,6 +16,7 @@ import { ProviderRegistry, createDefaultProviders, OpenAICompatibleProvider, inf
 import { ToolRegistry, createDefaultToolRegistry } from "./tools";
 import { syncCodeGraphTools } from "./tools/codegraph-tool";
 import { syncZvecTools } from "./tools/zvec-tool";
+import { syncMcpResourceTools } from "./tools/mcp-resources-sync";
 import type { Context } from "../cordis/src/index.ts";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
 import { PermissionManager, getPermissionManager } from "../permission/permission";
@@ -627,6 +628,18 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
           this.syncZvecTools();
         } catch (e) {
           console.log("[zvec-grep] sync tools skipped:", e);
+        }
+        /**
+         * 第 183 波：MCP resources 三件套（对标 Pi）—— **只在有服务器声明能力时注册**。
+         *
+         * 门控的理由是性能：工具定义会进入每一轮请求的 schema 与提示清单，
+         * 而绝大多数服务器（含我们自己的 codegraph / zvec）不提供 resources。
+         * 断连或能力消失时由 sync 自己移除残留（与上面两个 sync 同一套语义）。
+         */
+        try {
+          this.syncMcpResourceTools();
+        } catch (e) {
+          console.log("[MCP] resource tools sync skipped:", e);
         }
       } catch (e) { console.warn('[index.ts]', e) }
     }
@@ -2014,6 +2027,17 @@ return loop.hasPendingGuidance();
   syncZvecTools(): void {
     const mcpTools = (this.mcp as any)?.getAllTools ? (this.mcp as any).getAllTools() : [];
     syncZvecTools(this.tools, mcpTools);
+  }
+
+  /**
+   * 同步 MCP **resources 三件套**（第 183 波）。
+   *
+   * 门控：只有"已连接且 `initialize` 声明了 `resources`"的服务器存在时才注册；
+   * 否则移除残留（提示与可调用集合严格一致，与上面两个 sync 同一套语义）。
+   */
+  syncMcpResourceTools(): void {
+    const servers = (this.mcp as any)?.serversWithResources ? (this.mcp as any).serversWithResources() : [];
+    syncMcpResourceTools(this.tools, servers);
   }
 
   async callMCPTool(serverName: string, toolName: string, args: Record<string, unknown>) {
