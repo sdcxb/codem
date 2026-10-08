@@ -169,4 +169,41 @@ describe("MCP 配置写入：唯一写入方 + 写前重读（第 184 波 F1）"
     expect(src, "注册走 registry.upsertServer").toContain("upsertServer");
     expect(src, "注销走 registry.removeServer").toContain("removeServer");
   });
+
+  /**
+   * ★ 第 185 波（复审 R1-5）：`addServer` **同名不许追加第二条**。
+   *
+   * 形态：面板「添加服务器」用同一个名字连点两次 ⇒ `configs` 两条同名，而
+   * `MCPClient.connections` 以 **name** 为键（第二次 connect 覆盖第一条）
+   * ⇒ 列表显示两条、实际只有一条连接，`removeServer(name)` 一次删两条。
+   */
+  it("MCP-CFG-9: 同名 addServer 两次 ⇒ 配置里只有一条（配置与连接不许分叉）", () => {
+    const port = portWith([cfg("user-server")]);
+    setStoragePort(port);
+
+    const registry = new MCPRegistry();
+    registry.getConfigs();
+
+    registry.addServer(cfg("dup"));
+    registry.addServer(cfg("dup"));
+
+    expect(
+      registry.getConfigs().map((c) => c.name).sort(),
+      "同名添加必须替换（追加会得到「配置两条、连接只有一条」——列表与实际不符）",
+    ).toEqual(["dup", "user-server"]);
+    expect(diskNames(port).sort(), "磁盘上同样不许出现两条同名").toEqual(["dup", "user-server"]);
+  });
+
+  it("MCP-CFG-10: 同名 addServer 是**替换**（反向对照：第二次的内容必须生效）", () => {
+    const port = portWith([]);
+    setStoragePort(port);
+
+    const registry = new MCPRegistry();
+    registry.addServer(cfg("dup"));
+    registry.addServer({ ...cfg("dup"), args: ["-y", "new-version"] });
+
+    const stored = registry.getConfigs().find((c) => c.name === "dup");
+    expect(stored?.args, "第二次添加的参数必须替换掉第一次的（不是被静默忽略）").toEqual(["-y", "new-version"]);
+    expect(diskNames(port)).toEqual(["dup"]);
+  });
 });

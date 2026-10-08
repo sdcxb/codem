@@ -17,6 +17,7 @@
  */
 
 export type LoopStopReason =
+  | "content_filtered"
   | "no_gain"
   | "idle"
   | "tool_hung"

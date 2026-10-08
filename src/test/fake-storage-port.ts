@@ -834,6 +834,21 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       return configMemory.get(key) as T;
     },
     set(key: string, value: unknown) {
+      /**
+       * ★ 第 185 波（复审 I-5）：**未预热拒写** —— 与真端口同形
+       * （`rust-port.ts:859-867`：`if (!this.warmed) { failures++; onFailure(...); return; }`）。
+       *
+       * 改前这里无条件写内存 + 发 `crud.upsert`：于是 `settingsWarmed:false` 时迁移
+       * （`migration.ts` 的「复制到新键 → 确认成功 → 删源键」）在替身上返回 `true` ⇒ **删源键**，
+       * 在真端口返回 `false` ⇒ **保留源键** —— 判据跑的是与生产**相反**的行为，
+       * S4 那条"复制没成功就不许删源"的数据丢失防线等于没被钉住。
+       *
+       * 内存镜像也不动（与真端口一致）：否则界面上"看起来保存了"、磁盘上却是空的。
+       */
+      if (!configWarmed) {
+        configFailures += 1;
+        return;
+      }
       configMemory.set(key, value);
       pendingWrites += 1;
       try {
@@ -857,8 +872,15 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
      * 但它**会真的抛**（`failWrites` / 注入失败），所以"复制失败 ⇒ 源键必须还在"
      * 这条契约在测试里是可造、可断言的。失败返回 false（不抛）——
      * 与真端口的契约一致：调用方拿返回值判断，而不是靠异常。
+     *
+     * ★ 第 185 波（复审 I-5）：**未预热返回 false**（真端口 `rust-port.ts:926-934` 同形）——
+     * 见上面 `set` 的长注释（这正是 S4 防线在 CI 里"绿"而在真机"红"的那条偏差）。
      */
     async setConfirmed(key: string, value: unknown): Promise<boolean> {
+      if (!configWarmed) {
+        configFailures += 1;
+        return false;
+      }
       try {
         config.set(key, value);
         return true;

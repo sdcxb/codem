@@ -100,11 +100,34 @@ export interface LLMMessage {
    * to the API as `reasoning_content` on assistant messages.
    */
   reasoning?: string;
+  /**
+   * ★ 第 185 波（复审 I-3）：**非模型可见**的附带事实（目前只有 `diagnostics`）。
+   *
+   * 事件日志投影（`event-projection.ts` 的 `applyToolResult`）把 `tool_result` 事件的
+   * 结构化诊断还原到这里：诊断是给程序/界面读的元信息，**不该**混进 `content`
+   * （那会把"系统在说『你只看到了一部分』"变成模型眼里的正文）。
+   * API 序列化器只取 `role`/`content`/`tool_call_id`，不会把它发出去。
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+  | {
+      type: "tool_use";
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+      /**
+       * ★ 第 185 波（复审 I-3）：**工具执行耗时（毫秒）**。
+       *
+       * 事件日志投影（`event-projection.ts` 的 `applyToolCall`）把 `tool_call` 事件的
+       * `duration` 还原到这里 —— 消息索引那份在 `toolCalls[].metadata.duration`，
+       * 重建路径（走事件流）要能拿到同一个事实，否则"重建后 `Took` 丢失"又回来了。
+       * 非模型可见字段：API 序列化器只取 `id/name/input`。
+       */
+      duration?: number;
+    }
   | { type: "tool_result"; toolCallId: string; content: string; isError?: boolean }
   | { type: "image"; mediaType: string; data: string }
   | { type: "audio"; mediaType: string; data: string };

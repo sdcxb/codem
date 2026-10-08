@@ -27,6 +27,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
+import { RustStoragePort, type StorageTransport } from "../core/storage/rust-port";
+
+/**
+ * 记录型 transport：`RustStoragePort` 的这一半是**真实现**（真端口代码），
+ * 只是把 IPC 换成一个记账函数 —— 于是"替身 vs 真端口"可以在同一个进程里逐条对比。
+ */
+function recordingTransport(calls: string[]): StorageTransport {
+  return {
+    invokeCommand: async (command: string) => {
+      calls.push(command);
+      if (command === "settings.get_all") return { ok: true, result: {} } as never;
+      return { ok: true, result: { written: 1 } } as never;
+    },
+    invokeBatch: async () => ({ ok: true, result: { count: 0, results: [] } }) as never,
+    health: async () => ({ ok: true, result: { ready: true } }) as never,
+    integrityCheck: async () => ({ ok: true, result: { ok: true } }) as never,
+    checkpoint: async () => ({ ok: true, result: { ok: true } }) as never,
+    capabilities: async () => ({ commands: [] }) as never,
+  };
+}
 
 let port: FakeStoragePort;
 
@@ -121,5 +141,53 @@ describe("FID：假端口 = 引擎语义（双向都不许偏）", () => {
       expect(cold.config.get("codem-settings", null)).toContain("deepseek");
       expect(cold.config.stats().warmed).toBe(true);
     });
+  });
+
+  /**
+   * ★ 第 185 波（复审 I-5）：**写侧**的 warmed 护栏两个端口必须同形。
+   *
+   * 改前替身 `set` / `setConfirmed` **不看 warmed** 就写并返回 true，而真端口
+   * （`rust-port.ts:859-865` / `:926-934`）未预热拒写、`setConfirmed` 返回 false
+   * ⇒ `settingsWarmed:false` 时迁移（`migration.ts` 的「复制成功 → 才删源键」）
+   * 在替身上**删源键**、在真机上**保留源键**：CI 跑的是与生产**相反**的行为，
+   * S4 那条数据丢失防线等于没被钉住。
+   *
+   * 这条判据把**两个端口**放进同一个用例里逐条对比（不是只断言替身自己）。
+   */
+  it("FID-5: 设置面未预热 ⇒ 两个端口都拒写、都留痕；预热后都能写", async () => {
+    // ---- 真端口（真实现 + 记录型 transport）----
+    const calls: string[] = [];
+    const real = new RustStoragePort(recordingTransport(calls) as never, () => {});
+    real.config.set("k", { a: 1 });
+    expect(calls.filter((c) => c === "settings.set"), "真端口未预热不写库").toHaveLength(0);
+    expect(await real.config.setConfirmed("k", { a: 1 }), "真端口未预热返回 false（调用方据此不删源键）").toBe(
+      false,
+    );
+    expect(real.config.stats().warmed).toBe(false);
+    expect(real.config.stats().failures, "真端口要留痕（不是静默忽略）").toBeGreaterThan(0);
+
+    // ---- 替身：同一批操作必须给出同一组结论 ----
+    const cold = createFakeStoragePort({
+      seed: { settings: [{ key: "k", value: "old" }] },
+      settingsWarmed: false,
+    });
+    cold.config.set("k2", { a: 1 });
+    expect(
+      cold.__table("settings").filter((r) => r.key === "k2"),
+      "替身未预热同样不许写库（改前无条件写 + 发 crud.upsert）",
+    ).toHaveLength(0);
+    expect(await cold.config.setConfirmed("k2", { a: 1 }), "替身未预热必须返回 false（改前恒 true）").toBe(false);
+    expect(cold.config.stats().warmed).toBe(false);
+    expect(cold.config.stats().failures, "替身也要留痕").toBeGreaterThan(0);
+
+    // ---- 反向对照：预热之后两条路径都要能写（不是"永远拒写"）----
+    await real.config.warmup();
+    expect(await real.config.setConfirmed("k", "v")).toBe(true);
+    await cold.config.warmup();
+    expect(await cold.config.setConfirmed("k", "v")).toBe(true);
+    expect(
+      cold.__table("settings").some((r) => r.key === "k"),
+      "预热后替身必须真的写进去",
+    ).toBe(true);
   });
 });

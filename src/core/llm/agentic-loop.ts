@@ -18,7 +18,7 @@ import { mutatesWorkspace, needsPreCallSnapshot } from "./tool-contract";
 import { looksLikeRevertCommand, revertKindOf, type RevertKind } from "./completion-guards";
 /** ★ 第 46 波：回归判定（治本 ✓）—— 纯函数，判据见 `src/test/test-regression-detection.test.ts` ✓ */
 import { regressionRedFiles } from "./test-regression";
-import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
+import { RetryExecutor, classifyError, getRetryExecutor, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE, type GuidanceItem } from "./guidance-queue";
@@ -1518,13 +1518,19 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     if (this.config.contextWindow) {
       getTokenTracker().setContextWindow(this.config.contextWindow);
     }
-    this.retryExecutor = new RetryExecutor({
-      maxAttempts: 5,
-      baseDelay: 1000,
-      backoffMultiplier: 2,
-      maxDelay: 30000,
-      totalTimeout: 5 * 60 * 1000,
-    });
+    /**
+     * ★ 第 185 波（复审 I-4）：**重试执行器就是设置面板配置的那一个单例**。
+     *
+     * 改前这里 `new RetryExecutor({...})` 造了**第二个**实例，而设置面板
+     * （`RetryConfigPanel.tsx:45`）配置的是 `getRetryExecutor()` 单例 ⇒ 用户改的
+     * 参数与循环的重试行为**完全没有连线**（面板在骗人），且
+     * `this.retryExecutor` 构造完之后全仓再无使用（死字段）。
+     *
+     * 现在同一个对象：面板保存即生效（下面 `executeIteration` 的重试循环直接读
+     * `getConfig()` 的 `maxAttempts`/`baseDelay`/`backoffMultiplier`/`maxDelay`/
+     * `respectRetryAfter`/`totalTimeout`）。
+     */
+    this.retryExecutor = getRetryExecutor();
     this.state = this.createInitialState();
   }
 
@@ -3460,6 +3466,33 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           continue;
         }
 
+        /**
+         * ★ 第 185 波（集成复审 I-1）：**`content_filter` 是第 4 个"不许算完成"的结束原因**。
+         *
+         * 复审取证：`finish-reason.ts` 有专门的映射分支、`types.ts` 的取值域里有它，
+         * 而循环只显式处理了 `aborted` / `length` / `error` 三个 ⇒ 它一路掉到这里、
+         * 被记成 `noteExit("completed")` + `reason: "completed"`。
+         * 后果与第 184 波修的那三个一样：**被内容过滤截断的回答 = "任务完成"**（假成功）。
+         *
+         * 为什么**不进重试**：内容过滤是**确定性**的 —— 同样的输入再发一次还会被过滤，
+         * 重试只是白烧一轮。所以这里如实收尾并告诉用户发生了什么。
+         */
+        if (this.state.lastFinishReason === "content_filter") {
+          recordLoopStop(sessionId, "content_filtered", { iteration: this.state.iteration });
+          yield {
+            type: "text_delta",
+            text:
+              `\n\n⚠️ **这一轮的回复被供应商的内容过滤中断了**（\`finish_reason: content_filter\`），` +
+              `下面看到的可能不是完整回答。请把问题拆小或换个说法再试；重复发送同样的内容通常还会被过滤。\n\n`,
+          };
+          this.noteExit("content_filtered", sessionId);
+          return this.finishWithNudges({
+            type: "stop",
+            reason: "content_filtered",
+            usage: this.state.totalUsage,
+          });
+        }
+
         this.noteExit("completed", sessionId);
         const result = this.finishWithNudges({
           type: "stop",
@@ -3765,8 +3798,18 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       this.lastRequestHeader = computeHeaderFingerprint(currentHeader);
 
       // Stream events directly - no collection, real-time yielding
+      /**
+       * ★ 第 185 波（复审 I-4）：**重试参数读面板配置**（同一个 `RetryExecutor` 单例）。
+       *
+       * 改前是 `const maxRetries = 3;` + `1000 * retryCount` 两处硬编码 ⇒ 面板里的
+       * 「最大重试次数 / 基础延迟 / 退避倍数 / 最大延迟 / 遵守 Retry-After / 总超时」
+       * 六个字段对 LLM 重试**零影响**。现在逐条接上（`getDelay` 是执行器的唯一实现，
+       * 不再在循环里重写一份退避公式）。
+       */
+      const retryCfg = this.retryExecutor.getConfig();
+      const maxRetries = Math.max(1, retryCfg.maxAttempts);
+      const retryStartedAt = Date.now();
       let retryCount = 0;
-      const maxRetries = 3;
       let success = false;
 
       while (!success && retryCount < maxRetries) {
@@ -4020,9 +4063,46 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           currentText = "";
           reasoningReceived = false;
           currentToolCalls.length = 0;
-          yield { type: "retry", attempt: retryCount, delay: 1000 * retryCount, error: retryError.message, errorType: retryError.name || null };
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          /**
+           * ★ 第 185 波（复审 I-4）：**等待时长由面板配置决定**。
+           * `getDelay` 是 `RetryExecutor` 的唯一实现：有 `Retry-After` 且
+           * `respectRetryAfter` 为真时优先用它，否则按 `baseDelay × multiplier^attempt`
+           * 指数退避并夹到 `maxDelay`。
+           */
+          const retryDelay = this.retryExecutor.getDelay(retryCount - 1, retryClass.retryAfter);
+          /**
+           * 总预算（**墙钟**）——与 `retry.ts:329` 同一条规则：等待完就超预算的话，
+           * 不如现在就把最后一次错误抛出去。不接这一条，"总超时"就还是摆设。
+           */
+          const retryElapsed = Date.now() - retryStartedAt;
+          if (retryElapsed + retryDelay > retryCfg.totalTimeout) {
+            console.warn(
+              `[AgenticLoop] 重试预算已用尽（已耗时 ${retryElapsed}ms + 下次等待 ${retryDelay}ms > 预算 ${retryCfg.totalTimeout}ms）—— 不再重试，抛出最后一次错误`,
+            );
+            throw retryError;
+          }
+          yield { type: "retry", attempt: retryCount, delay: retryDelay, error: retryError.message, errorType: retryError.name || null };
+          /**
+           * 等待必须**可被 ■ 打断**：接线之后 `maxDelay` 由用户配置（默认 5 分钟），
+           * 一个不可中断的 `setTimeout` 会让"停止"在这段时间里完全没反应。
+           */
+          await new Promise<void>((resolve) => {
+            const signal = this.abortController?.signal;
+            if (signal?.aborted) {
+              resolve();
+              return;
+            }
+            let timer: ReturnType<typeof setTimeout> | null = null;
+            const onAbort = () => {
+              if (timer !== null) clearTimeout(timer);
+              resolve();
+            };
+            timer = setTimeout(() => {
+              signal?.removeEventListener("abort", onAbort);
+              resolve();
+            }, retryDelay);
+            signal?.addEventListener("abort", onAbort, { once: true });
+          });
         }
       }
     } catch (error: any) {

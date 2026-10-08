@@ -218,6 +218,16 @@ export interface ToolResultPayload {
   status: "completed" | "error";
   /** Persisted file path if the result was too large and stored to disk */
   persistedPath?: string;
+  /**
+   * ★ 第 185 波（复审 I-3）：**工具结果的结构化诊断**（对标 `ToolCallResult.diagnostics`）。
+   *
+   * 与上面 `ToolCallPayload.duration` 是**同一条缺陷的另一半**：这两样都是"权威日志
+   * （JSONL）里说了要有、而运行时写入者（`tool-pipeline.ts` 的 event-log finalize）
+   * 一个都没写"的字段 —— 于是同一份日志里时有时无（迁移路径 `event-log.ts` 写了
+   * `duration`），"从日志重建会话"拿不到耗时与诊断。
+   * 可选：没有诊断的调用不带这个键（"未上报" ≠ "上报空数组"）。
+   */
+  diagnostics?: Array<{ severity: "info" | "warn" | "error"; code: string; message: string }>;
 }
 
 export interface CompactionPayload {

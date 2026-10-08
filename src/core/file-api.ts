@@ -45,6 +45,31 @@ function resolveAgainstWorkspace(path: string, workspace: string | undefined): s
 }
 
 /**
+ * ★ 第 185 波（复审 R1-4d）：**能 canonicalize 就 canonicalize**。
+ *
+ * `isPathWithinWorkspace` 是纯词法的（同步、不碰磁盘）。词法判定挡得住
+ * `C:\mimo-gui-backup` 这类前缀兄弟，却挡不住"工作区里一个指向外部的 junction/符号链接"
+ * —— 而 Rust 侧（`lib.rs:985` 的 `resolve_sandbox_path` + `:1037` 的 `path_within_workspace`）
+ * 已经改成真 `canonicalize` 了。同一事实两份实现、两个结论，正是本仓库最忌讳的形态。
+ *
+ * 所以这里：宿主可用时直接问 Rust 的 `check_path_in_workspace`（**与写侧守卫同一份实现**，
+ * 它自己会 canonicalize + 剥 `\\?\` + 按组件比较）；命令不可用（旧构建 / 非 Tauri 宿主 /
+ * 单测）才退回**词法**判定（与 Rust 的 `lexical_normalize` 同口径）—— 两个方向都是"判定"，
+ * 没有"跳过检查"这一支。
+ */
+async function resolveWithinWorkspace(target: string, workspace: string): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      const ok = await tauriInvoke("check_path_in_workspace", { path: target, workspace });
+      if (typeof ok === "boolean") return ok;
+    } catch {
+      // 命令不存在/调用失败 ⇒ 退回词法判定（**不是**放行）
+    }
+  }
+  return isPathWithinWorkspace(target, workspace);
+}
+
+/**
  * ★ 第 185 波（T2）：**读侧的工作区判定** —— 与写侧（`writeFile`）**同一份实现**。
  *
  * ## 为什么必须补（这是真机事故的同一形态）
@@ -64,9 +89,9 @@ function resolveAgainstWorkspace(path: string, workspace: string | undefined): s
  *
  * 判据见 `src/test/run-code-sdk-sandbox-read.test.ts`。
  */
-function assertWithinWorkspace(verb: string, target: string, workspace: string | undefined): void {
+async function assertWithinWorkspace(verb: string, target: string, workspace: string | undefined): Promise<void> {
   if (!workspace) return;
-  if (isPathWithinWorkspace(target, workspace)) return;
+  if (await resolveWithinWorkspace(target, workspace)) return;
   throw new Error(
     `Sandbox: ${verb} "${target}" is outside the workspace "${workspace}". ` +
     `The sandbox restricts file access to the workspace directory and its subdirectories.`,
@@ -78,7 +103,7 @@ export async function readFile(path: string, options?: { workspace?: string }): 
   // 唯一没有工作区判定的文件读入口。
   // 相对路径先按工作区解析：**检查与读取必须是同一个路径**（见 resolveAgainstWorkspace）。
   const target = resolveAgainstWorkspace(path, options?.workspace);
-  assertWithinWorkspace("Read from", target, options?.workspace);
+  await assertWithinWorkspace("Read from", target, options?.workspace);
   return tauriInvoke("read_file", { path: target });
 }
 
@@ -123,8 +148,17 @@ export async function readTextWindow(
   path: string,
   offset = 0,
   maxBytes?: number,
+  /**
+   * ★ 第 185 波（复审 R1-4/I-2）：**与 `readFile` 同一个读侧沙箱口径**。
+   *
+   * 分窗读取是"读同一个文件的另一条路"：只堵整读、不堵分窗，等于把同一个绕过口
+   * 留在隔壁（真实的调用方会先试分窗、失败再退回整读 —— 见 `task-keyword-search.ts`）。
+   */
+  options?: { workspace?: string },
 ): Promise<TextWindow> {
-  return tauriInvoke("read_text_window", { path, offset, maxBytes });
+  const target = resolveAgainstWorkspace(path, options?.workspace);
+  await assertWithinWorkspace("Read from", target, options?.workspace);
+  return tauriInvoke("read_text_window", { path: target, offset, maxBytes });
 }
 
 /** Result of a paginated file read via read_file_lines. */
@@ -198,40 +232,72 @@ export async function writeFile(path: string, content: string, options?: { encod
   // （原来是这里内联的一段，读侧要复刻就只能再写一份 —— 那正是漂移的来源）。
   // 相对路径同样先按工作区解析，并且**用解析结果去写盘**（否则检查与动作不是同一个路径）。
   const target = resolveAgainstWorkspace(path, options?.workspace);
-  assertWithinWorkspace("Write to", target, options?.workspace);
+  await assertWithinWorkspace("Write to", target, options?.workspace);
   await tauriInvoke("write_file", { path: target, content, encoding: options?.encoding, workspace: options?.workspace });
 }
 
 /**
- * S5: Check if a path is within the workspace directory.
- * Normalizes both paths and checks if the target starts with the workspace prefix.
+ * ★ 第 185 波（复审 R1-4d）：**与 Rust 侧同口径**的读/写工作区判定。
+ *
+ * ## 为什么不能只是"字符串前缀"
+ *
+ * Rust 侧（`lib.rs:1037` 的 `path_within_workspace`）已经改成：
+ * **真 `canonicalize`**（`:985` 的 `resolve_sandbox_path`，含"路径不存在时规范化最近的
+ * 已存在祖先"）＋ 剥 `\\?\` 前缀（`:939`）＋ **按分量**比较 ＋ Windows 大小写折叠（`:1017`）。
+ * 改前这里只有一份**词法**实现 ⇒ 同一事实两份结论：
+ * · 工作区里一个指向外部的 junction / 符号链接：写侧拒（canonicalize 后在外面），读侧放行；
+ * · `\\?\C:\ws\x` 这种形式：两侧也会得出相反结论。
+ *
+ * 现在这里的**词法**分支逐条对齐 Rust 的 `lexical_normalize` + `component_fold` +
+ * `path_within_workspace`（分量比较、分隔符边界、大小写折叠、剥 verbatim 前缀）；
+ * 需要"真 canonicalize"时由 `resolveWithinWorkspace` 问 Rust 的
+ * `check_path_in_workspace`（**与写侧守卫同一份实现**）。
  */
 export function isPathWithinWorkspace(targetPath: string, workspace: string): boolean {
-  const normalize = (p: string): string => {
-    return p
-      .replace(/\//g, "\\")
-      .split("\\")
-      .filter((seg) => seg !== "" && seg !== ".")
-      .reduce<string[]>((acc, seg) => {
-        if (seg === "..") {
-          acc.pop();
-        } else {
-          acc.push(seg);
-        }
-        return acc;
-      }, [])
-      .join("\\")
-      .toLowerCase();
-  };
+  const normalizedTarget = pathComponents(targetPath);
+  const normalizedWorkspace = pathComponents(workspace);
 
-  const normalizedTarget = normalize(targetPath);
-  const normalizedWorkspace = normalize(workspace);
+  // 两边都空 ⇒ 相等（与改前同形；空工作区本来就不做检查 —— 见 assertWithinWorkspace 的前置条件）
+  if (normalizedWorkspace.length === 0) return normalizedTarget.length === 0;
+  if (normalizedTarget.length < normalizedWorkspace.length) return false;
+  // **逐分量**比较：`c:\mimo-gui-backup` ≠ `c:\mimo-gui`（字符串前缀会误放行）
+  return normalizedWorkspace.every((seg, i) => normalizedTarget[i] === seg);
+}
 
-  // The target must be the workspace itself or a subdirectory/file within it
-  return (
-    normalizedTarget === normalizedWorkspace ||
-    normalizedTarget.startsWith(normalizedWorkspace + "\\")
-  );
+/** 是否按 Windows 路径语义比较（大小写不敏感）—— 对照 Rust 的 `cfg!(target_os = "windows")` */
+const CASE_INSENSITIVE_PATHS: boolean = (() => {
+  try {
+    if (typeof process !== "undefined" && process.platform) return process.platform === "win32";
+  } catch {
+    /* 宿主没有 process ⇒ 走下面的兜底 */
+  }
+  if (typeof navigator !== "undefined" && typeof navigator.userAgent === "string") {
+    return /Windows/i.test(navigator.userAgent);
+  }
+  return true; // 本产品只在 Windows 桌面端跑
+})();
+
+/**
+ * 路径 → **可比较的分量序列**（与 Rust `lexical_normalize` 同形）：
+ * 去 `.`、词法折叠 `..`（退到根时丢弃 —— 与 Rust 一样不可能再匹配到工作区前缀）、
+ * 剥 `\\?\` / `\\?\UNC\` verbatim 前缀（`strip_verbatim_prefix`）、
+ * 反斜杠归一、Windows 下折叠大小写（`component_fold`）。
+ */
+function pathComponents(p: string): string[] {
+  return String(p ?? "")
+    .replace(/\//g, "\\")
+    .replace(/^\\\\\?\\UNC\\/i, "\\\\")
+    .replace(/^\\\\\?\\/, "")
+    .split("\\")
+    .filter((seg) => seg !== "" && seg !== ".")
+    .reduce<string[]>((acc, seg) => {
+      if (seg === "..") {
+        acc.pop();
+      } else {
+        acc.push(CASE_INSENSITIVE_PATHS ? seg.toLowerCase() : seg);
+      }
+      return acc;
+    }, []);
 }
 
 export async function listDirectory(path: string): Promise<Array<{ name: string; path: string; isDirectory: boolean }>> {
@@ -322,12 +388,12 @@ export async function executeCommand(command: string, cwd?: string, timeoutMs?: 
  * @returns 判定通过的**绝对**搜索路径（`workspace` 未给时原样返回）；
  *   调用方必须拿它去做真正的搜索 —— 检查与动作要是同一个路径。
  */
-function checkSearchPathWithinWorkspace(
+async function checkSearchPathWithinWorkspace(
   searchPath: string,
   workspace: string | undefined,
-): string {
+): Promise<string> {
   const target = resolveAgainstWorkspace(searchPath, workspace);
-  assertWithinWorkspace("Search in", target, workspace);
+  await assertWithinWorkspace("Search in", target, workspace);
   return target;
 }
 
@@ -350,8 +416,8 @@ export async function globSearch(
   // 只判搜索路径是不够的：`glob("../..//*.ts", workspace)` 的 `..` 在模式里，
   // 由 Rust 侧拼接后照样跑出工作区。模式判据只认**绝对路径**与含 `..` 的形态
   // （普通 glob 通配符不受影响），判不准的方向是"拦下"（保守），不是"放行"。
-  searchPath = checkSearchPathWithinWorkspace(searchPath, options?.workspace);
-  assertGlobPatternWithinWorkspace(pattern, searchPath, options?.workspace);
+  searchPath = await checkSearchPathWithinWorkspace(searchPath, options?.workspace);
+  await assertGlobPatternWithinWorkspace(pattern, searchPath, options?.workspace);
 
   const winPattern = pattern.replace(/\//g, '\\');
   console.log("[globSearch] calling Rust glob_search:", { pattern: winPattern, path: searchPath, originalPath: path });
@@ -375,17 +441,17 @@ export async function globSearch(
  * `..`（任意两字符）是常见写法，拿路径规则去判它必然误杀合法检索。
  * glob 的 `pattern` 本身就是路径表达式 ⇒ 同一个判据在这里语义正确。
  */
-function assertGlobPatternWithinWorkspace(
+async function assertGlobPatternWithinWorkspace(
   pattern: string,
   searchPath: string,
   workspace: string | undefined,
-): void {
+): Promise<void> {
   if (!workspace) return;
   const p = pattern.replace(/\\/g, "/");
   const absolute = /^[A-Za-z]:\//.test(p) || p.startsWith("//") || p.startsWith("/");
   if (!absolute && !p.split("/").includes("..")) return;
   const base = searchPath.replace(/\\/g, "/").replace(/\/+$/, "");
-  assertWithinWorkspace("Glob pattern", absolute ? p : `${base}/${p}`, workspace);
+  await assertWithinWorkspace("Glob pattern", absolute ? p : `${base}/${p}`, workspace);
 }
 
 /**
@@ -404,7 +470,7 @@ export async function grepSearch(
   let searchPath = path || options?.workspace || await getDefaultCwd();
   // ★ 第 185 波（T2）：与 `sdk.read` / `sdk.glob` 同一个读侧沙箱判定，并**用解析后的路径**去搜索
   // （`pattern` 是正则、不做路径判定 —— 理由见 `assertGlobPatternWithinWorkspace` 的说明）。
-  searchPath = checkSearchPathWithinWorkspace(searchPath, options?.workspace);
+  searchPath = await checkSearchPathWithinWorkspace(searchPath, options?.workspace);
   /**
    * 第 84 波（A/B 类：静默空结果被当成"没有匹配"）：
    *

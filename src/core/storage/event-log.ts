@@ -929,6 +929,14 @@ export async function migrateMessagesToEvents(sessionId: string): Promise<number
            * 未执行的调用没有该字段（可选），所以只在真的有数时才带上。
            */
           const duration = (tc.metadata as { duration?: unknown } | undefined)?.duration;
+          /**
+           * ★ 第 185 波（复审 I-3）：`diagnostics` 与 `duration` 是同一处往返 ——
+           * 索引里的 `tc.metadata.diagnostics` 由运行时写入者（`tool-pipeline.ts` 的
+           * event-log finalize）回写，这里与它**同形**地取出来。
+           * 不写这一段，运行时写进 `tool_result` 的诊断在"日志重建"里就再也拿不到。
+           */
+          const diagnostics = (tc.metadata as { diagnostics?: unknown } | undefined)?.diagnostics;
+          const hasDiagnostics = Array.isArray(diagnostics) && diagnostics.length > 0;
           events.push({
             type: "tool_call",
             payload: {
@@ -948,6 +956,7 @@ export async function migrateMessagesToEvents(sessionId: string): Promise<number
                 messageId: msg.id,
                 result: tc.result,
                 status: "completed",
+                ...(hasDiagnostics ? { diagnostics } : {}),
               },
             });
           }

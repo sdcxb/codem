@@ -60,13 +60,15 @@ describe("沙箱边界：附件按设计不受沙箱约束", () => {
   });
 
   it("守卫在取不到 path 时确实会放行（这是「判不了」的机制）", () => {
-    expect(pipelineSrc).toMatch(/const path = \(args\.path \|\| args\.file_path\)/);
     /**
-     * 第 97 波改动了这段的结构（原来是一句 `if (!path) return proceed`）：
-     * 现在"没有 `path`"之后还会看 **shell 文本**（`command` / `code` / `script` / `workdir`）里
-     * 有没有跑到工作区之外的路径。所以判据从"读源码那一行的形状"改成**直接问判据函数**：
-     * 既没有 `path`、也没有任何可判的文本 ⇒ 返回 `null`（放行）。
-     * 这比字符串断言更强：它验的是行为，不是写法。
+     * ⚠️ 第 185 波（复审 R1-4e）：这里原来有一条**源码字符串**断言
+     * （`/const path = \(args\.path \|\| args\.file_path\)/`）—— 它是"判据与实现互相证明"
+     * 的典型：改动那一行的写法就会让它红/绿，而它并没有证明任何行为。
+     * 那一行现在多了 `args.file`（`lsp` 的入参名，属**修缺陷**），
+     * 所以把"参数名认不认"这件事交给**行为判据**：
+     * · 本用例下面两条 —— 没有可判路径 ⇒ 放行；有可判的 shell 文本 ⇒ 拦下；
+     * · `read-side-sandbox-callsites.test.ts` 的 `RS-6` —— `lsp { file: 工作区外 }` 必须被拦下
+     *   （直接驱动真管线 + 真注册表，改前它一路放行）。
      */
     expect(
       findOutOfWorkspacePath({}, "C:\\workspace", () => false),

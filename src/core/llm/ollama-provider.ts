@@ -23,6 +23,9 @@ import type {
 } from "./types";
 import { getSetting } from "../storage/settings";
 import { redactSecrets } from "../utils/redact";
+// 第 185 波（复审 R1-3/I-6）：`finish_reason` 的归一必须走**唯一实现** —— 两条路径（与非流式）
+// 都不许各写一份三元表达式，否则同一次截断在 Ollama 上是 `stop`、在 OpenAI 上是 `length`。
+import { mapFinishReason } from "./finish-reason";
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
@@ -195,7 +198,16 @@ export class OllamaProvider implements LLMProvider {
         totalTokens: data.usage?.total_tokens || 0,
         cost: 0,
       },
-      finishReason: choice?.finish_reason === "tool_calls" ? "tool_use" : choice?.finish_reason || "stop",
+      /**
+       * ★ 第 185 波（复审 R1-3）：**非流式也要走 `mapFinishReason`**。
+       *
+       * 改前这里是 `… === "tool_calls" ? "tool_use" : choice?.finish_reason || "stop"`：
+       * 未知取值被压成 `"stop"`（"不知道它为什么结束"说成"正常结束"），且与
+       * `provider.ts:354` 的唯一实现 `mapFinishReason` 是两份真相 —— 同一次 `length`
+       * 截断，OpenAI 路径报 `length`（循环据此触发续写）、Ollama 路径报 `stop`
+       * （半截压缩摘要被当成完整摘要写回）。
+       */
+      finishReason: mapFinishReason(choice?.finish_reason),
       model: request.model,
     };
   }
@@ -232,10 +244,30 @@ export class OllamaProvider implements LLMProvider {
     let buffer = "";
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
-    let finishReason = "stop";
     /**
-     * ★ 第 184 波（审计修复）：**丢行计数** —— 与 `provider.ts` 同形。
-     * 丢行意味着 tool arguments 的增量可能残缺；下游必须能看到这件事。
+     * ★ 第 185 波（复审 R1-3/I-6）：**原始词先存着，最后一律过 `mapFinishReason`**。
+     * 改前这里直接透传（只把 `tool_calls` 换成 `tool_use`），陌生词原样进主循环。
+     */
+    let finishReasonRaw: unknown = undefined;
+    /**
+     * ★ 第 185 波（复审 R1-3）：**工具调用必须落地，不许永远 pending**。
+     *
+     * 改前本文件**从不发 `tool_use_end`**（7 处 yield 里没有它）：主循环的
+     * `tool_use_end` 分支（`agentic-loop.ts:3857`）因此永远不执行 —— `currentToolCalls`
+     * 里那几条 `status: "pending"`、`input: {}` 就是全部下场，参数永远解析不出来。
+     *
+     * 现在与 `provider.ts` **同形**：按 `index` 累积增量，在 `finish_reason` 到达时
+     * （或流在没有 `finish_reason` 的情况下结束时的兜底）逐条发 `tool_use_end`，
+     * 带上解析结果与 `argsParseError`/`rawLength`（由循环"拒绝执行 + 引导重试"）。
+     */
+    const currentToolCalls: Record<number, { id: string; name: string; arguments: string }> = {};
+    let streamEnded = false;
+    let toolEndsEmitted = false;
+    /**
+     * ★ 第 185 波（复审 R1-3）：**丢行计数** —— 与 `provider.ts` 同形。
+     * 丢行意味着 tool arguments 的增量可能残缺；下游必须能看到这件事
+     * （改前这里只 `console.warn`，`argsParseError`/`rawLength` **没有任何消费方** ——
+     *  注释宣称"与 provider.ts 同形"，而实现里根本没有那段，注释比没有更糟）。
      */
     let droppedStreamLines = 0;
 
@@ -263,18 +295,41 @@ export class OllamaProvider implements LLMProvider {
             }
 
             if (delta?.tool_calls) {
+              /**
+               * 按 `index` 累积（与 `provider.ts:667-681` 同形）。
+               * 改前是「每片直接透传 `tc.id || ""`」：后续增量片常常**不带 id**，
+               * 于是 `tool_use_delta` 的 id 是空串，主循环按 id 找不到那条调用
+               * （`agentic-loop.ts:3851`）⇒ 参数其实一片都没接上。
+               */
               for (const tc of delta.tool_calls) {
-                if (tc.id && tc.function?.name) {
-                  yield { type: "tool_use_start", id: tc.id, name: tc.function.name };
+                const idx = tc.index || 0;
+                if (!currentToolCalls[idx]) {
+                  currentToolCalls[idx] = {
+                    id: tc.id || `tc-${Date.now()}`,
+                    name: tc.function?.name || "",
+                    arguments: "",
+                  };
+                  if (tc.function?.name) {
+                    yield { type: "tool_use_start", id: currentToolCalls[idx].id, name: tc.function.name };
+                  }
                 }
                 if (tc.function?.arguments) {
-                  yield { type: "tool_use_delta", id: tc.id || "", input: tc.function.arguments };
+                  currentToolCalls[idx].arguments += tc.function.arguments;
+                  yield { type: "tool_use_delta", id: currentToolCalls[idx].id, input: tc.function.arguments };
                 }
               }
             }
 
             if (chunk.choices?.[0]?.finish_reason) {
-              finishReason = chunk.choices[0].finish_reason;
+              finishReasonRaw = chunk.choices[0].finish_reason;
+              if (!streamEnded) {
+                streamEnded = true;
+                // 与 provider.ts 同形：`finish_reason` 到达 = 参数已收全 ⇒ 逐条补发 `tool_use_end`
+                for (const ev of this.buildToolEndEvents(currentToolCalls, droppedStreamLines)) {
+                  toolEndsEmitted = true;
+                  yield ev;
+                }
+              }
             }
 
             // Track usage (some providers include it in final chunk)
@@ -284,16 +339,12 @@ export class OllamaProvider implements LLMProvider {
             }
           } catch (e) {
             /**
-             * ★ 第 184 波（审计修复）：**丢弃的行要计数，不许静默**。
+             * ★ 第 185 波（复审 R1-3）：**丢弃的行要计数，且必须在 `tool_use_end` 上被消费**。
              *
-             * 改前这里是空 catch（只有一句注释 "Incomplete JSON chunk — skip"）——
-             * 而同一形状在 `provider.ts` 里早就修过：丢行会**计数**，并在最终
-             * `tool_use_end` 上标出 `argsParseError`/`rawLength`（"参数可能不完整"），
-             * 让主循环走"拒绝执行 + 引导重试"而不是拿着残缺 JSON 继续跑。
-             *
-             * 这里的后果一样严重：被丢的那一行如果正好是 tool arguments 的增量，
-             * 累积出来的 JSON 就是残缺的，而下游看不到任何提示。
-             * 现在与 `provider.ts` **同形**（同一事实同一处置）。
+             * 被丢的那一行如果正好是 tool arguments 的增量，累积出来的 JSON 就是残缺的；
+             * 现在这个计数在 `buildToolEndEvents` 里变成 `argsParseError`（"参数可能不完整"），
+             * 由主循环走"拒绝执行 + 引导重试"，而不是拿着残缺 JSON 继续跑。
+             * （改前这里只 `console.warn` —— 没有任何消费方，等于把缺陷降级成一行日志。）
              */
             droppedStreamLines++;
             console.warn(`[ollama-provider] 丢弃了 1 行无法解析的流数据（累计 ${droppedStreamLines} 行）:`, e);
@@ -302,6 +353,17 @@ export class OllamaProvider implements LLMProvider {
       }
     } finally {
       reader?.cancel();
+    }
+
+    /**
+     * 兜底：流结束时**没有** `finish_reason`（对端直接关连接）。
+     * 此时 `tool_use_end` 一条都没发过 ⇒ 必须在这里补 —— 否则工具调用永远 pending
+     * （`provider.ts:794-856` 的同类兜底，同一事实同一处置）。
+     */
+    if (!streamEnded && !toolEndsEmitted) {
+      for (const ev of this.buildToolEndEvents(currentToolCalls, droppedStreamLines)) {
+        yield ev;
+      }
     }
 
     // Emit usage event
@@ -317,8 +379,53 @@ export class OllamaProvider implements LLMProvider {
 
     yield {
       type: "end",
-      finishReason: finishReason === "tool_calls" ? "tool_use" : finishReason,
+      // 唯一实现；未收到 `finish_reason` ⇒ `mapFinishReason(undefined) === "stop"`（与改前一致）
+      finishReason: mapFinishReason(finishReasonRaw),
     };
+  }
+
+  /**
+   * ★ 第 185 波（复审 R1-3）：把累积到的工具调用变成 `tool_use_end` 事件（**唯一实现**）。
+   *
+   * 与 `provider.ts:685-721` / `:826-856` 同形：JSON 解析失败 ⇒ 带上失败原因与原始长度，
+   * 由主循环**拒绝执行**并给模型可操作的指引（绝不猜参数、绝不降级成空参数）。
+   * 流里丢过行 ⇒ 即便 JSON 恰好还能解析，也要标出"参数可能不完整"。
+   */
+  private buildToolEndEvents(
+    currentToolCalls: Record<number, { id: string; name: string; arguments: string }>,
+    droppedStreamLines: number,
+  ): StreamEvent[] {
+    const events: StreamEvent[] = [];
+    for (const key of Object.keys(currentToolCalls)) {
+      const tc = currentToolCalls[Number(key)];
+      if (!tc) continue;
+      let parsedArgs: Record<string, unknown> = {};
+      let argsParseError: string | undefined;
+      if (tc.arguments) {
+        try {
+          parsedArgs = JSON.parse(tc.arguments);
+        } catch (e: any) {
+          argsParseError = e?.message || String(e);
+          console.error(
+            `[Ollama] Failed to parse tool args for ${tc.name} (${tc.arguments.length} chars):`,
+            argsParseError,
+            "…tail:",
+            tc.arguments.slice(-120),
+          );
+        }
+      }
+      if (droppedStreamLines > 0 && !argsParseError) {
+        argsParseError = `stream had ${droppedStreamLines} unparsable SSE line(s); arguments may be incomplete`;
+      }
+      events.push({
+        type: "tool_use_end",
+        id: tc.id,
+        name: tc.name,
+        input: parsedArgs,
+        ...(argsParseError ? { argsParseError, rawLength: tc.arguments.length } : {}),
+      });
+    }
+    return events;
   }
 
   /** 转换 LLMMessage 为 OpenAI 格式 */

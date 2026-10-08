@@ -721,6 +721,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
               }
 
               const usage = parsed.usage || {};
+              /**
+               * ★ 第 185 波（复审 R1-1）：**这里必须赋值**。
+               * 改前 `sawUsage` 只有声明与判断、**全仓零赋值** —— 于是掐断兜底分支永远不发 usage 事件，
+               * 而它上方的注释还宣称「没收到就不发」（判据死了，结论也就跟着错）。
+               */
+              sawUsage = true;
               // 缓存字段透传（对标 dsh TokenUsage：cacheRead/uncached 分离）。
               // 归一化口径见 usage-normalize.ts（DeepSeek 显式 miss 最准；
               // OpenAI cache_read 无 miss 时取 prompt - cacheRead 折中）。

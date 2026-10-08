@@ -118,7 +118,16 @@ async function resolveTestRoots(root: string, src: TestFileSource): Promise<stri
 }
 
 /** 装机版默认实现：走 `core/file-api.ts`（Tauri IPC），**不是** node:fs ✓ */
-function createIpcFileSource(): TestFileSource {
+/**
+ * ★ 第 185 波（复审 R1-4/I-2）：**必须把工作区传进读侧沙箱**。
+ *
+ * `readFile` / `readTextWindow` / `grepSearch` 的读侧判定是
+ * 「`workspace` 未给 ⇒ 不做判定」（`file-api.ts:68`）。改前这里的三处调用
+ * （`:142` `readFile(path)`、`:136` `readTextWindow(...)`、`:160` `grepSearch(...)`）
+ * 都**不传** ⇒ 声明要沙箱、实际整条失效：同一路径 `read` 工具被拒，这条内部搜索读得到。
+ * 现在工作区由各入口的 `root`（= 会话工作区）显式传下来。
+ */
+function createIpcFileSource(workspace?: string): TestFileSource {
   return {
     async list(dir: string): Promise<DirEntry[]> {
       const { listDirectory } = await import("../file-api");
@@ -133,13 +142,13 @@ function createIpcFileSource(): TestFileSource {
       const api = await import("../file-api");
       if (maxBytes && typeof api.readTextWindow === "function") {
         try {
-          const win = await api.readTextWindow(path, 0, maxBytes);
+          const win = await api.readTextWindow(path, 0, maxBytes, { workspace });
           return String((win as { text?: string })?.text ?? "");
         } catch {
           // 窗口读失败就退回整读（下面统一截断）
         }
       }
-      const text = await api.readFile(path);
+      const text = await api.readFile(path, { workspace });
       return maxBytes ? text.slice(0, maxBytes) : text;
     },
   };
@@ -154,10 +163,11 @@ function createIpcFileSource(): TestFileSource {
  * 而这个工厂只负责转发 ✓（判据 `SYM-1` 就是靠"注入的搜索器能不能看见 include"来钉这件事 ✓ ——
  * 烘焙在工厂里的话，注入式判据**看不见**它 ✗，那就成了"判据绿、策略却没生效" ✓）。
  */
-function createIpcSearcher(): SearchLike {
+function createIpcSearcher(workspace?: string): SearchLike {
   return async (pattern: string, root: string, include?: string | string[]) => {
     const { grepSearch } = await import("../file-api");
-    return grepSearch(pattern, root, include);
+    // ★ 第 185 波（复审 R1-4/I-2）：`workspace` 一并交给读侧沙箱（理由见 createIpcFileSource）。
+    return grepSearch(pattern, root, include, { workspace });
   };
 }
 
@@ -201,7 +211,7 @@ function isTestFile(name: string): boolean {
  *
  * ⚠️ **async**：第 114 波之后所有 I/O 都走 {@link TestFileSource}（装机版是 IPC）✓。
  */
-async function collectTestFiles(root: string, src: TestFileSource = createIpcFileSource()): Promise<string[]> {
+async function collectTestFiles(root: string, src: TestFileSource = createIpcFileSource(root)): Promise<string[]> {
   const out: string[] = [];
   const walk = async (dir: string, prefix: string, depth: number): Promise<void> => {
     if (depth > MAX_DEPTH || out.length >= MAX_TEST_FILES) return;
@@ -458,7 +468,7 @@ export async function buildTaskSearchNotice(
   message: string,
   opts: { src?: TestFileSource; maxHits?: number; search?: SearchLike } = {},
 ): Promise<string | null> {
-  const src = opts.src ?? createIpcFileSource();
+  const src = opts.src ?? createIpcFileSource(root);
   const terms = extractSearchTerms(message);
   if (terms.length === 0) return null;
 
@@ -505,7 +515,7 @@ export async function buildTaskSearchNotice(
    */
   let sourceHits: string[] = [];
   try {
-    const search = opts.search ?? createIpcSearcher();
+    const search = opts.search ?? createIpcSearcher(root);
     const found: string[] = [];
     for (const term of usefulTerms.slice(0, 15)) {
       const rows = await search(term, root);
@@ -543,7 +553,7 @@ export async function buildFamilyReminder(
   message: string,
   opts: { src?: TestFileSource; maxFamilies?: number } = {},
 ): Promise<string | null> {
-  const src = opts.src ?? createIpcFileSource();
+  const src = opts.src ?? createIpcFileSource(root);
   const files = await collectTestFiles(root, src);
   if (files.length < MIN_FILES_FOR_CLUSTERS) return null; // 小仓库里这段就是噪声
   const clusters = summarizeNameClusters(files, message, opts.maxFamilies ?? 4);
@@ -589,7 +599,7 @@ export async function buildSymbolSiblings(
   editedRelativePath: string,
   opts: { src?: TestFileSource; search?: SearchLike; maxFiles?: number } = {},
 ): Promise<string | null> {
-  const src = opts.src ?? createIpcFileSource();
+  const src = opts.src ?? createIpcFileSource(root);
   if (isTestFile(editedRelativePath)) return null; // 改的是测试文件 ⇒ 不用提 ✓
   /**
    * **根目录下的文件不参与**（第 134 波）✓：相对路径里没有目录分隔 ⇒ 是临时脚本/配置 ✓。
@@ -645,7 +655,7 @@ export async function siblingCriteriaFiles(
   editedRelativePath: string,
   opts: { src?: TestFileSource; search?: SearchLike; maxFiles?: number } = {},
 ): Promise<string[]> {
-  const src = opts.src ?? createIpcFileSource();
+  const src = opts.src ?? createIpcFileSource(root);
   if (isTestFile(editedRelativePath)) return []; // 改的就是判据本身 ⇒ 不用列 ✓
   if (!editedRelativePath.replace(/\\/g, "/").includes("/")) return []; // 根目录临时文件不参与 ✓
   let text = "";
@@ -676,12 +686,12 @@ async function searchSiblingCriteriaFiles(
   editedRelativePath: string,
   opts: { search?: SearchLike; maxFiles?: number; thorough?: boolean; src?: TestFileSource },
 ): Promise<{ files: string[]; tried: string[] }> {
-  const search = opts.search ?? createIpcSearcher();
+  const search = opts.search ?? createIpcSearcher(root);
   /**
    * ★ 第 44 波：**只遍历判据目录** ✓ —— 全树 2.35s ⇒ `src/test` 0.06s（40× ✓）。
    * 判据目录由 `resolveTestRoots` 解析（回退到工作区根 ✓，绝不假否定 ✗）。
    */
-  const testRoots = await resolveTestRoots(root, opts.src ?? createIpcFileSource());
+  const testRoots = await resolveTestRoots(root, opts.src ?? createIpcFileSource(root));
   const found: string[] = [];
   const tried: string[] = [];
   /**

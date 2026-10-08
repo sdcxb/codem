@@ -95,6 +95,15 @@ function getWordAtPosition(line: string, column: number): string {
 async function findDefinition(
   symbol: string,
   searchPath: string,
+  /**
+   * ★ 第 185 波（复审 R1-4/I-2）：**必须把工作区传下去**。
+   *
+   * 本工具的契约声明了 `accessScope: "workspace"`（`:260`），而 `readFile` / `grepSearch`
+   * 的读侧沙箱判定是「`workspace` 未给 ⇒ 不做判定」（`file-api.ts:68`）。
+   * 改前这里（以及 `findReferences` / 四处 `readFile(file)`）**都不传** ⇒ 声明与实际相反：
+   * 同一个越界路径，`read` 工具会被拒、`lsp` 读得到并回显原文。
+   */
+  workspace?: string,
 ): Promise<string> {
   // Build grep patterns for the symbol as a declaration
   const patterns = [
@@ -112,7 +121,7 @@ async function findDefinition(
   const combinedPattern = patterns.join("|");
 
   try {
-    const results = await grepSearch(combinedPattern, searchPath, undefined);
+    const results = await grepSearch(combinedPattern, searchPath, undefined, { workspace });
     if (results.length === 0) {
       return `No definition found for "${symbol}" in ${searchPath}`;
     }
@@ -138,11 +147,13 @@ async function findDefinition(
 async function findReferences(
   symbol: string,
   searchPath: string,
+  /** ★ 第 185 波（复审 R1-4/I-2）：理由同 `findDefinition` —— 不传就是整条检查失效。 */
+  workspace?: string,
 ): Promise<string> {
   try {
     // Use word boundary matching for accurate reference finding
     const pattern = `\\b${escapeRegex(symbol)}\\b`;
-    const results = await grepSearch(pattern, searchPath, undefined);
+    const results = await grepSearch(pattern, searchPath, undefined, { workspace });
     if (results.length === 0) {
       return `No references found for "${symbol}" in ${searchPath}`;
     }
@@ -169,6 +180,8 @@ async function getHover(
   line: number,
   column: number,
   content: string,
+  /** ★ 第 185 波（复审 R1-4/I-2）：继续往下传（下面那次 `findDefinition`）。 */
+  workspace?: string,
 ): Promise<string> {
   const lines = content.split("\n");
   const targetLine = lines[line - 1] || "";
@@ -195,7 +208,7 @@ async function getHover(
 
   // If not found in file, search workspace
   const lastSep = /[\\/]/.test(file) ? file.lastIndexOf(/[\\/]/.exec(file)![0]) : file.lastIndexOf("/");
-  const defResult = await findDefinition(symbol, file.substring(0, lastSep));
+  const defResult = await findDefinition(symbol, file.substring(0, lastSep), workspace);
   return defResult;
 }
 
@@ -242,8 +255,10 @@ function extractDocumentSymbols(content: string, filePath: string): string {
 async function searchWorkspaceSymbols(
   symbol: string,
   searchPath: string,
+  /** ★ 第 185 波（复审 R1-4/I-2）：理由同 `findDefinition`。 */
+  workspace?: string,
 ): Promise<string> {
-  return findDefinition(symbol, searchPath);
+  return findDefinition(symbol, searchPath, workspace);
 }
 
 // ========== Utility ==========
@@ -314,6 +329,12 @@ export function createLSPTool(): ToolDef {
       const column = args.column as number | undefined;
       const symbol = args.symbol as string | undefined;
       const searchPath = (args.path as string) || ctx.cwd;
+      /**
+       * ★ 第 185 波（复审 R1-4/I-2）：**读侧沙箱的工作区**。
+       * 契约声明 `accessScope: "workspace"` ⇒ 每一次真正的文件读/搜都必须带上它，
+       * 否则 `file-api.ts:68` 的 `if (!workspace) return;` 让检查整条失效（fail-open）。
+       */
+      const workspace = ctx.cwd;
 
       try {
         switch (operation) {
@@ -322,7 +343,7 @@ export function createLSPTool(): ToolDef {
             if (!targetSymbol && line !== undefined && column !== undefined) {
               // Read the file and extract the symbol at the position
               const { readFile } = await import("../../file-api");
-              const content = await readFile(file);
+              const content = await readFile(file, { workspace });
               const lines = content.split("\n");
               const targetLine = lines[line - 1] || "";
               targetSymbol = getWordAtPosition(targetLine, column);
@@ -330,7 +351,7 @@ export function createLSPTool(): ToolDef {
             if (!targetSymbol) {
               return { title: `lsp: definition`, output: "Error: symbol is required (either provide 'symbol' or 'line'+'column')", isError: true };
             }
-            const result = await findDefinition(targetSymbol, searchPath);
+            const result = await findDefinition(targetSymbol, searchPath, workspace);
             return { title: `lsp: definition "${targetSymbol}"`, output: result, isError: false };
           }
 
@@ -338,7 +359,7 @@ export function createLSPTool(): ToolDef {
             let targetSymbol = symbol;
             if (!targetSymbol && line !== undefined && column !== undefined) {
               const { readFile } = await import("../../file-api");
-              const content = await readFile(file);
+              const content = await readFile(file, { workspace });
               const lines = content.split("\n");
               const targetLine = lines[line - 1] || "";
               targetSymbol = getWordAtPosition(targetLine, column);
@@ -346,7 +367,7 @@ export function createLSPTool(): ToolDef {
             if (!targetSymbol) {
               return { title: `lsp: references`, output: "Error: symbol is required (either provide 'symbol' or 'line'+'column')", isError: true };
             }
-            const result = await findReferences(targetSymbol, searchPath);
+            const result = await findReferences(targetSymbol, searchPath, workspace);
             return { title: `lsp: references "${targetSymbol}"`, output: result, isError: false };
           }
 
@@ -355,14 +376,14 @@ export function createLSPTool(): ToolDef {
               return { title: `lsp: hover`, output: "Error: line and column are required for hover operation", isError: true };
             }
             const { readFile } = await import("../../file-api");
-            const content = await readFile(file);
-            const result = await getHover(file, line, column, content);
+            const content = await readFile(file, { workspace });
+            const result = await getHover(file, line, column, content, workspace);
             return { title: `lsp: hover ${file}:${line}:${column}`, output: result, isError: false };
           }
 
           case "document_symbols": {
             const { readFile } = await import("../../file-api");
-            const content = await readFile(file);
+            const content = await readFile(file, { workspace });
             const result = extractDocumentSymbols(content, file);
             return { title: `lsp: symbols ${file}`, output: result, isError: false };
           }
@@ -371,7 +392,7 @@ export function createLSPTool(): ToolDef {
             if (!symbol) {
               return { title: `lsp: workspace_symbols`, output: "Error: symbol is required for workspace_symbols operation", isError: true };
             }
-            const result = await searchWorkspaceSymbols(symbol, searchPath);
+            const result = await searchWorkspaceSymbols(symbol, searchPath, workspace);
             return { title: `lsp: search "${symbol}"`, output: result, isError: false };
           }
 
@@ -385,9 +406,21 @@ export function createLSPTool(): ToolDef {
   };
 }
 
-/** Convenience wrapper for executing LSP operations from providers */
-export async function execLspTool(operation: string, args: Record<string, unknown>): Promise<string> {
+/**
+ * 供 **插件/宿主** 调用的入口（`ctx.lsp.*` 走这里）。
+ *
+ * ⚠️ 第 185 波（复审发现）：这里以前用 `{}` 当 ctx —— 于是 `ctx.cwd` 恒 undefined，
+ * 而读侧沙箱的判据是「没给 workspace 就不检查」（见 `file-api.ts` 的 `assertWithinWorkspace`）
+ * ⇒ 经这条入口读文件**绕过工作区检查**。现在把 `cwd` 透传下去：
+ * 调用方知道自己的工作区就传，判据照常生效；不知道就仍是「不检查」
+ * （工具面那条路径由 `tool-pipeline` 的 `args.file` 守卫兜住）。
+ */
+export async function execLspTool(
+  operation: string,
+  args: Record<string, unknown>,
+  cwd?: string,
+): Promise<string> {
   const tool = createLSPTool();
-  const result = await tool.execute({ operation, ...args }, {} as any);
+  const result = await tool.execute({ operation, ...args }, { cwd } as any);
   return result.output;
 }

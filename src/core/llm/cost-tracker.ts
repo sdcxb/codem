@@ -541,6 +541,26 @@ export class CostTracker {
     const totalOutputTokens = this.records.reduce((sum, r) => sum + r.outputTokens, 0);
     const totalDuration = this.records.reduce((sum, r) => sum + r.duration, 0);
 
+    /**
+     * ★ 第 185 波（复审 I-7）：**与 `SessionCost.uncostedCalls` 同源（累加值）**。
+     *
+     * 改前这里从 `this.records` 现算，而 `records` 会被裁到 `maxRecords`（`:236-243`），
+     * 另一个来源（`_applyToSession` 里的 `sessionCost.uncostedCalls++`）在
+     * `sessionCosts` 上**不裁剪** ⇒ 长期使用后这两个数必然分叉，且这里那个**偏小**
+     * （"少算了多少次"变得不保守 —— 恰恰废掉了这个字段存在的意义：让用户知道
+     * 账单可能被低估）。
+     *
+     * 选**累加值**而不是 `records` 的理由：
+     * · 唯一消费方（`UsageStats.tsx:146`）是**保守警告**，不是历史窗口内的精确统计；
+     * · `sessionCosts` 本来就是"全量落库"的聚合（`records` 只是有界历史窗口）——
+     *   拿窗口去算"一共少算了多少次"用的是错的集合；
+     * · 顺带消灭第二份计算（一处累加、一处读，不留两条会漂移的路径）。
+     */
+    const uncostedCalls = Array.from(this.sessionCosts.values()).reduce(
+      (sum, s) => sum + (Number(s.uncostedCalls) || 0),
+      0,
+    );
+
     return {
       totalRecords: this.records.length,
       totalCost,
@@ -551,7 +571,7 @@ export class CostTracker {
       totalDuration,
       averageCostPerCall: this.records.length > 0 ? totalCost / this.records.length : 0,
       averageDuration: this.records.length > 0 ? totalDuration / this.records.length : 0,
-      uncostedCalls: this.records.reduce((sum, r) => sum + (r.costUnknown ? 1 : 0), 0),
+      uncostedCalls,
     };
   }
 

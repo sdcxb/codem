@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   getRetryExecutor,
   classifyError,
@@ -29,27 +29,24 @@ export function RetryConfigPanel() {
   const lang = useLang();
   const zh = lang === "zh";
   const [config, setConfig] = useState<RetryConfig>(() => getRetryExecutor().getConfig());
-  const [state, setState] = useState(() => getRetryExecutor().getState());
   const [saved, setSaved] = useState(false);
   const [testError, setTestError] = useState("");
   const [testResult, setTestResult] = useState<{ type: RetryableErrorType | null; isRetryable: boolean; retryAfter?: number } | null>(null);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setState(getRetryExecutor().getState());
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
+  /**
+   * ★ 第 185 波（复审 I-4）：**原来这里每 2 秒轮询 `getRetryExecutor().getState()` 显示
+   * 「当前尝试 / 累计等待 / 最后重试 / 最后错误」** —— 而那份 state 只有
+   * `RetryExecutor.execute()` 会更新，全仓没有一个生产调用方（循环自己用 while + 常量重试）。
+   * 于是这四行**恒为 0 / 「-」**：典型「看起来在工作、实际是死数据」。
+   *
+   * 现在删掉死状态显示，改为如实展示**当前生效的重试策略**（就是主循环真正读的那份配置，
+   * 见 `agentic-loop.ts` 的 `this.retryExecutor = getRetryExecutor()`）。
+   */
 
   const handleSave = () => {
     getRetryExecutor().setConfig(config);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  };
-
-  const handleReset = () => {
-    getRetryExecutor().reset();
-    setState(getRetryExecutor().getState());
   };
 
   const handleTestClassify = () => {
@@ -90,33 +87,20 @@ export function RetryConfigPanel() {
         </div>
       </div>
 
-      {/* Current state */}
+      {/* 生效口径（★ 第 185 波 复审 I-4）：改前面板配的是死单例 —— 主循环硬编码
+          「3 次 / 1000ms×n」，与本页参数无关。现在循环直接读这份配置。 */}
       <div style={{
         padding: 10, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-primary)",
-        background: "var(--bg-tertiary)", display: "flex", gap: 16, fontSize: 'var(--fs-sm)',
+        background: "var(--bg-tertiary)", fontSize: 'var(--fs-sm)', lineHeight: 1.6,
       }}>
-        <div>
-          <span style={{ color: "var(--text-muted)" }}>{zh ? "当前尝试" : "Current attempt"}: </span>
-          <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{state.attempt} / {state.totalAttempts}</span>
+        <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+          {zh ? "当前生效（保存后立即作用于 LLM 重试）" : "In effect (applies to LLM retries on save)"}
         </div>
-        <div>
-          <span style={{ color: "var(--text-muted)" }}>{zh ? "累计等待" : "Total wait"}: </span>
-          <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{(state.totalWaitTime / 1000).toFixed(1)}s</span>
+        <div style={{ color: "var(--text-secondary)" }}>
+          {zh
+            ? `最多重试 ${config.maxAttempts} 次 · 首延迟 ${(config.baseDelay / 1000).toFixed(2)}s · 退避 ×${config.backoffMultiplier} · 单次上限 ${(config.maxDelay / 1000).toFixed(0)}s · 总预算 ${(config.totalTimeout / 60000).toFixed(1)} 分钟 · ${config.respectRetryAfter ? "遵守 Retry-After" : "忽略 Retry-After"}`
+            : `up to ${config.maxAttempts} retries · first delay ${(config.baseDelay / 1000).toFixed(2)}s · backoff ×${config.backoffMultiplier} · max delay ${(config.maxDelay / 1000).toFixed(0)}s · total budget ${(config.totalTimeout / 60000).toFixed(1)} min · ${config.respectRetryAfter ? "respects Retry-After" : "ignores Retry-After"}`}
         </div>
-        <div>
-          <span style={{ color: "var(--text-muted)" }}>{zh ? "最后重试" : "Last retry"}: </span>
-          <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-            {state.lastRetryTime > 0 ? new Date(state.lastRetryTime).toLocaleTimeString() : "-"}
-          </span>
-        </div>
-        {state.lastError != null && (
-          <div>
-            <span style={{ color: "var(--text-muted)" }}>{zh ? "最后错误" : "Last error"}: </span>
-            <span style={{ fontWeight: 600, color: "var(--error)" }}>
-              {state.lastError instanceof Error ? state.lastError.message : String(state.lastError ?? "")}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Config form */}
@@ -183,13 +167,12 @@ export function RetryConfigPanel() {
           }}>
             {saved ? "✅ " + (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
           </button>
-          <button onClick={handleReset} style={{
-            padding: "6px 16px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
-            border: "1px solid var(--border-primary)", background: "none",
-            color: "var(--text-primary)", cursor: "pointer",
-          }}>
-            {zh ? "重置状态" : "Reset State"}
-          </button>
+          {/*
+            ★ 第 185 波（复审 I-4）：**「重置状态」按钮已删**。
+            它调的是 `RetryExecutor.reset()` —— 那份 state 只有 `execute()` 会驱动，
+            而现在**唯一的**执行路径是主循环自己的 while（读的是 `getConfig()`，不读 state），
+            所以这个按钮按下去没有任何可观察变化（显示它 = 又一个「看起来能配、实际不生效」）。
+          */}
         </div>
       </div>
 

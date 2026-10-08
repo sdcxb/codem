@@ -205,6 +205,11 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [messageCount, setMessageCount] = useState(0);
   const [balances, setBalances] = useState<ProviderBalance[]>([]);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  /**
+   * ★ 第 185 波（复审 R1-6）：**上一次余额刷新失败了**（`null` = 没失败过）。
+   * 旧数字会继续显示（不清空），但界面必须说明它不是刚拿到的。
+   */
+  const [balanceError, setBalanceError] = useState<string | null>(null);
   const [compacting, setCompacting] = useState(false);
   /**
    * P1-8：真正生效的重入守卫。
@@ -303,36 +308,57 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
 
     const fetchBalances = async () => {
       setBalanceLoading(true);
-      const providers = getConfiguredProviders();
-      const results: ProviderBalance[] = [];
+      /**
+       * ★ 第 185 波（复审 R1-6）：**`balanceLoading` 必须在 `finally` 里复位**。
+       *
+       * 改前 `setBalanceLoading(false)` 在函数**最后一行**、且整段不在 try 里
+       * （只有 deepseek 那一小支有自己的 try/catch）。任何**非** `fetchDeepSeekBalance`
+       * 的抛错（`getConfiguredProviders()` 读设置、渲染订阅链、以后新增的 provider 分支）
+       * 都会跳过它，而这个 promise 无人 await ⇒ 面板**永久显示 ⏳**（`:505` 的条件在
+       * `balances.length > 0` 时照样渲染它）。
+       *
+       * 失败也要**如实**：旧数字继续显示，但必须说明"刚才这次没更新成功"，
+       * 否则用户看着旧余额以为是最新的（"看起来在工作、实际是死数据"）。
+       */
+      let failure: string | null = null;
+      try {
+        const providers = getConfiguredProviders();
+        const results: ProviderBalance[] = [];
 
-      for (const p of providers) {
-        const result: ProviderBalance = {
-          provider: p.name || p.id,
-          balance: null,
-          currency: "CNY",
-          loading: false,
-          error: null,
-        };
+        for (const p of providers) {
+          const result: ProviderBalance = {
+            provider: p.name || p.id,
+            balance: null,
+            currency: "CNY",
+            loading: false,
+            error: null,
+          };
 
-        if (p.id === "deepseek") {
-          try {
-            const { balance, currency } = await fetchDeepSeekBalance(p.apiKey, p.baseUrl);
-            result.balance = balance;
-            result.currency = currency;
-          } catch (e: any) {
-            result.error = e?.message || "查询失败";
+          if (p.id === "deepseek") {
+            try {
+              const { balance, currency } = await fetchDeepSeekBalance(p.apiKey, p.baseUrl);
+              result.balance = balance;
+              result.currency = currency;
+            } catch (e: any) {
+              result.error = e?.message || "查询失败";
+            }
+          } else {
+            // 其他 provider 不支持余额查询
+            result.error = "不支持";
           }
-        } else {
-          // 其他 provider 不支持余额查询
-          result.error = "不支持";
+
+          results.push(result);
         }
 
-        results.push(result);
+        setBalances(results);
+      } catch (e: any) {
+        // 整段失败（不是单家 provider 的失败）：留痕 + 让界面说出来
+        failure = e?.message || String(e ?? "查询失败");
+        console.error("[ContextMonitor] balance fetch failed:", e);
+      } finally {
+        setBalanceError(failure);
+        setBalanceLoading(false);
       }
-
-      setBalances(results);
-      setBalanceLoading(false);
     };
 
     fetchBalances();
@@ -502,7 +528,11 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
         )}
 
         {/* 账户余额 */}
-        {(balanceProviders.length > 0 || (balances.length > 0 && balanceLoading)) && (
+        {/*
+          ★ 第 185 波（复审 R1-6）：`balanceError` 也要能撑开这一段 ——
+          首次刷新就整体失败时（连 `balances` 都没有），否则用户什么提示都看不到。
+        */}
+        {(balanceProviders.length > 0 || (balances.length > 0 && balanceLoading) || !!balanceError) && (
           <div className="context-balance-section">
             <div className="context-balance-title">
               💰 账户余额
@@ -516,6 +546,19 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 </span>
               </div>
             ))}
+            {/*
+              ★ 第 185 波（复审 R1-6）：刷新失败要**如实说**。
+              下面这些数字是**上一次成功拿到的**（旧值继续显示，不清空）——
+              不说清楚，用户会把它当成"刚刚的余额"。
+            */}
+            {balanceError && (
+              <div
+                data-testid="context-balance-stale"
+                style={{ fontSize: 'var(--fs-xs)', color: "var(--warning, var(--text-secondary))", marginTop: 4 }}
+              >
+                ⚠️ 刚才更新余额失败：{balanceError}（上面显示的是上次成功获取的数字）
+              </div>
+            )}
           </div>
         )}
 

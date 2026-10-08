@@ -178,4 +178,35 @@ describe("S5 沙箱路径白名单 — isPathWithinWorkspace", () => {
       expect(isPathWithinWorkspace("D:\\mimo-gui\\.env", workspace)).toBe(true);
     });
   });
+
+  /**
+   * ★ 第 185 波（复审 R1-4d）：**与 Rust 侧同口径**。
+   *
+   * 写侧（`lib.rs:985` 的 `resolve_sandbox_path` + `:1037` 的 `path_within_workspace`）是
+   * 「真 canonicalize（能）+ 剥 `\\?\` 前缀 + **按分量**比较 + Windows 大小写折叠」；
+   * 读侧这份原来是纯字符串前缀比较 ⇒ **同一事实两份结论**。
+   *
+   * 期望值逐条写死（不是"两侧一致即可"——两边都不检查也能满足一致性）：
+   * 每一条都对应 Rust 侧那段算法的一个具名性质。
+   */
+  describe("与 Rust 写侧同口径（分量边界 / verbatim 前缀 / 折叠）", () => {
+    it("前缀兄弟目录必须判越界（字符串前缀会放行 —— Rust 注释里的那个例子）", () => {
+      expect(isPathWithinWorkspace("C:\\mimo-gui-backup\\x.txt", "C:\\mimo-gui")).toBe(false);
+      expect(isPathWithinWorkspace("D:\\mimo-gui2", "D:\\mimo-gui")).toBe(false);
+    });
+
+    it("`\\\\?\\` verbatim/长路径前缀必须剥掉后再比（canonicalize 总是带它）", () => {
+      expect(isPathWithinWorkspace("\\\\?\\C:\\project\\src\\main.ts", "C:\\project")).toBe(true);
+      expect(isPathWithinWorkspace("\\\\?\\UNC\\srv\\share\\a.ts", "\\\\srv\\share")).toBe(true);
+    });
+
+    it("分量边界与大小写折叠同时生效", () => {
+      expect(isPathWithinWorkspace("c:\\PROJECT\\Src\\main.ts", "C:\\project")).toBe(true);
+      expect(isPathWithinWorkspace("c:\\PROJECT2\\Src\\main.ts", "C:\\project")).toBe(false);
+    });
+
+    it("`..` 折叠在盘符根处不会把前缀吃掉（退到根就判越界，安全方向）", () => {
+      expect(isPathWithinWorkspace("C:\\..\\..\\project\\a.ts", "C:\\project")).toBe(false);
+    });
+  });
 });

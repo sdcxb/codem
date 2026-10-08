@@ -167,7 +167,9 @@ describe("S0-3: Capability Seam Integration", () => {
 
       const result = await provider.readFile("/test/path");
       // Absolute path is passed through directly (cwd is undefined)
-      expect(readFile).toHaveBeenCalledWith("/test/path");
+      // 第 185 波：读侧也要带上 `{ workspace }`（与同文件 writeFile 那条同一约定）——
+      // 改前只传路径 ⇒ `file-api` 的读侧沙箱判据「没给 workspace 就不检查」整条失效。
+      expect(readFile).toHaveBeenCalledWith("/test/path", { workspace: undefined });
       expect(result).toBe("mock file content");
     });
 
@@ -178,7 +180,7 @@ describe("S0-3: Capability Seam Integration", () => {
 
       (readFile as any).mockClear();
       await provider.readFile("src/main.ts", "/workspace");
-      expect(readFile).toHaveBeenCalledWith("/workspace/src/main.ts");
+      expect(readFile).toHaveBeenCalledWith("/workspace/src/main.ts", { workspace: "/workspace" });
     });
 
     it("writeFile delegates to file-api", async () => {
@@ -217,7 +219,8 @@ describe("S0-3: Capability Seam Integration", () => {
       const provider = new LocalFileSystemProvider();
 
       const result = await provider.glob("*.ts", "/workspace");
-      expect(globSearch).toHaveBeenCalledWith("*.ts", "/workspace");
+      // 第 185 波：glob/grep 同样要带 workspace（读侧沙箱靠它，见 readFile 那条注释）
+      expect(globSearch).toHaveBeenCalledWith("*.ts", "/workspace", { workspace: "/workspace" });
       expect(result).toEqual(["/mock/path1", "/mock/path2"]);
     });
 
@@ -227,7 +230,7 @@ describe("S0-3: Capability Seam Integration", () => {
       const provider = new LocalFileSystemProvider();
 
       const result = await provider.grep("pattern", "/workspace", "*.ts");
-      expect(grepSearch).toHaveBeenCalledWith("pattern", "/workspace", "*.ts");
+      expect(grepSearch).toHaveBeenCalledWith("pattern", "/workspace", "*.ts", { workspace: "/workspace" });
       // grep returns mapped results (file, line, content from the raw string results)
       expect(result).toHaveLength(1);
       expect(result[0].file).toBeDefined();

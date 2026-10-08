@@ -24,7 +24,15 @@ export class LocalFileSystemProvider implements FileSystemSeam {
     const resolvedPath = (cwd && !path.startsWith("/") && !path.match(/^[A-Za-z]:/)) 
       ? `${cwd.replace(/[/\\]+$/, "")}/${path}` 
       : path;
-    return readFile(resolvedPath);
+    /**
+     * ★ 第 185 波（复审 R1-4/I-2）：**把 `cwd` 当工作区交给读侧沙箱**。
+     *
+     * 本 provider 由 `initDefaultSeams()` 在启动时注册（`App.tsx:1843`），
+     * 而 `FileSystemSeam.readFile(path, cwd)` 的 `cwd` 就是调用方的工作区。
+     * 改前这里只拿它拼相对路径、**不传 options** ⇒ `file-api.ts:68`
+     * 的 `if (!workspace) return;` 让读侧检查整条失效（同 `writeFile` 却是传的 ⇒ 一写一读两份行为）。
+     */
+    return readFile(resolvedPath, { workspace: cwd });
   }
 
   async writeFile(path: string, content: string, cwd?: string): Promise<void> {
@@ -64,12 +72,14 @@ export class LocalFileSystemProvider implements FileSystemSeam {
 
   async glob(pattern: string, cwd?: string): Promise<string[]> {
     const { globSearch } = await import("../file-api");
-    return globSearch(pattern, cwd);
+    // ★ 第 185 波（复审 R1-4/I-2）：`glob` 也是读 —— 同一个工作区口径。
+    return globSearch(pattern, cwd, { workspace: cwd });
   }
 
   async grep(pattern: string, cwd?: string, glob?: string): Promise<Array<{ file: string; line: number; content: string }>> {
     const { grepSearch } = await import("../file-api");
-    const results = await grepSearch(pattern, cwd, glob);
+    // ★ 第 185 波（复审 R1-4/I-2）：`grep` 同上（改前两者都不传 ⇒ 读侧检查整条失效）。
+    const results = await grepSearch(pattern, cwd, glob, { workspace: cwd });
     return results.map(r => ({ file: r, line: 0, content: r }));
   }
 }

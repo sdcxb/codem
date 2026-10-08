@@ -584,11 +584,26 @@ export class MCPRegistry {
     } catch (e) { reportPersistFailure("mcp.saveConfigs", e); }
   }
 
-  /** Add a server config */
+  /**
+   * Add a server config.
+   *
+   * ★ 第 185 波（复审 R1-5）：**同名替换，不再盲目 `push`**。
+   *
+   * 改前只 `this.configs.push(config)`（无查重），而 `MCPClient.connections` 以 **name**
+   * 为键（`:101` 的 `this.connections.set(config.name, …)`）⇒ 同一个名字添加两次就是
+   * 「配置两条、连接只有一条」：列表显示两条、实际只有一条连接，
+   * `removeServer(name)` 还会一次删两条（列表与实际不符）。
+   *
+   * 现在走本类**唯一**的"插入或替换"实现 `upsertServer`（不再写第二份同样的逻辑 ——
+   * 那正是本仓库最忌讳的两套真相）。同名时留一行 warn，别让"替换"变成静默事件。
+   */
   addServer(config: MCPServerConfig) {
-    if (!this.ensureConfigsForWrite()) return;
-    this.configs.push(config);
-    this.saveConfigs();
+    if (this.ensureConfigsForWrite()) {
+      if (this.configs.some((c) => c.name === config.name)) {
+        console.warn(`[MCP] addServer: "${config.name}" 已存在 ⇒ 按同名替换（不新增重复条目）`);
+      }
+    }
+    this.upsertServer(config);
   }
 
   /**

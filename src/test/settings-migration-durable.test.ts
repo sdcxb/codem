@@ -115,4 +115,33 @@ describe("设置键迁移必须「先确认落库、再删源」（第 184 波�
     expect(getSetting(OLD_KEY), "判不了「写进去了没有」⇒ 必须保留源键").toBe(OLD_DATA);
     expect(deleteCommands(port), "没有确认能力时一条删除命令都不该发").toEqual([]);
   });
+
+  /**
+   * ★ 第 185 波（复审 I-5）：**`settingsWarmed:false` 这条路径原来在替身上是假的**。
+   *
+   * 真端口未预热**拒写并返回 false**（`rust-port.ts:859-865` / `:926-934`）；而替身的
+   * `set` / `setConfirmed` **不看 warmed**、无条件写内存 + 发 `crud.upsert`、`setConfirmed`
+   * 直接返回 `true` ⇒ 同一段迁移在替身上**删源键**、在真机上**保留源键** ——
+   * S4 那条数据丢失防线在 CI 里跑的是**相反**的行为（判据保真度问题，不是测试写法问题）。
+   */
+  it("S4-E: 设置面未预热 ⇒ 拒写 ⇒ 源键必须还在（替身与真端口同形）", async () => {
+    const port = createFakeStoragePort({
+      seed: { settings: [seededRow] },
+      settingsWarmed: false,
+    });
+    setStoragePort(port);
+    const { migrateFromLocalStorage } = await import("../core/storage/migration");
+
+    await migrateFromLocalStorage();
+
+    expect(
+      settingsRows(port).some((r) => r.key === OLD_KEY),
+      "未预热时复制不可能成功 ⇒ 源键必须原封不动（改前替身返回 true ⇒ 这里被删掉）",
+    ).toBe(true);
+    expect(
+      settingsRows(port).some((r) => r.key === NEW_KEY),
+      "未预热不许把新键写进库（那是拿空表覆盖的同一类风险）",
+    ).toBe(false);
+    expect(deleteCommands(port), "复制未确认 ⇒ 一条删除命令都不该发").toEqual([]);
+  });
 });

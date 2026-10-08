@@ -153,7 +153,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   （写死会顶破 LIT 写死值棘轮）。
                 */}
                 <span className="usage-stat-note">
-                  （这些模型没有价目，上面的金额少算了它们；按金额的成本上限可能未生效）
+                  （累计计数，含已超出历史窗口的调用；这些模型没有价目，上面的金额少算了它们；按金额的成本上限可能未生效）
                 </span>
               </div>
             )}

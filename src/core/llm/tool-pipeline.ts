@@ -267,7 +267,7 @@ export class ToolPipeline {
          */
         result: await this.finalizeResult(
           {
-            id: ctx.messageId,
+            id: ctx.toolCallId || ctx.messageId,
             name: currentName,
             input: currentArgs,
             output: "Error: tool call aborted before dispatch",
@@ -310,7 +310,7 @@ export class ToolPipeline {
           /** ★ 第 46 波：与 abort 那条同因 —— 必须过 finalize（见上面那条注释 ✓）。 */
           result: await this.finalizeResult(
             {
-              id: ctx.messageId,
+              id: ctx.toolCallId || ctx.messageId,
               name: currentName,
               input: args,
               output: msg,
@@ -357,7 +357,7 @@ export class ToolPipeline {
           /** ★ 第 46 波：与 abort / normalize 两条同因 —— 必须过 finalize（见上 ✓）。 */
           result: await this.finalizeResult(
             {
-              id: ctx.messageId,
+              id: ctx.toolCallId || ctx.messageId,
               name: currentName,
               input: currentArgs,
               output: `Error: ${msg}`,
@@ -389,7 +389,7 @@ export class ToolPipeline {
       if (result.action === "deny") {
         return {
           result: await this.finalizeResult(
-            { id: ctx.messageId, name: currentName, input: currentArgs, output: result.denyMessage || "Denied by pre-execute middleware", status: "error", error: result.denyMessage },
+            { id: ctx.toolCallId || ctx.messageId, name: currentName, input: currentArgs, output: result.denyMessage || "Denied by pre-execute middleware", status: "error", error: result.denyMessage },
             currentName,
             currentArgs,
             ctx,
@@ -418,7 +418,7 @@ export class ToolPipeline {
       if (result.action === "deny") {
         return {
           result: await this.finalizeResult(
-            { id: ctx.messageId, name: currentName, input: currentArgs, output: result.denyMessage || "Denied by guard", status: "error", error: result.denyMessage },
+            { id: ctx.toolCallId || ctx.messageId, name: currentName, input: currentArgs, output: result.denyMessage || "Denied by guard", status: "error", error: result.denyMessage },
             currentName,
             currentArgs,
             ctx,
@@ -472,7 +472,7 @@ export class ToolPipeline {
       const __failedAfter = Math.max(0, Math.round(performance.now() - __toolStartedAt));
       if (isAbortError(error) || ctx.abort?.aborted) {
         result = {
-          id: ctx.messageId,
+          id: ctx.toolCallId || ctx.messageId,
           name: currentName,
           input: currentArgs,
           output: "Error: tool call was aborted",
@@ -488,7 +488,7 @@ export class ToolPipeline {
         });
       } else {
         result = {
-          id: ctx.messageId,
+          id: ctx.toolCallId || ctx.messageId,
           name: currentName,
           input: currentArgs,
           output: `Error: ${error.message}`,
@@ -793,10 +793,16 @@ class SandboxGuard implements GuardMiddleware {
     if (!requiresPathGuard(contract)) return { action: "proceed" };
 
     // 取路径：读/写工具的入参都叫 `path`（个别历史工具用 `file_path`）。
+    // ★ 第 185 波（复审 R1-4e）：**`lsp` 的入参叫 `file`**（`tools/lsp-tool.ts:302` 的
+    // `required: ["operation","file"]`），而它声明了 `accessScope: "workspace"`。
+    // 改前只认 `path`/`file_path` ⇒ `path` 取空 ⇒ 掉进下面的 shell 文本扫描分支
+    // （那条只看 `workdir/command/code/script`）⇒ 放行：同一个越界路径
+    // `read({path:…})` 被拒、`lsp({operation:"hover", file:…})` 读得到并回显原文。
+    // 全仓只有 `lsp` 一个工具的参数叫 `file`（其余工具的路径参数一律 `path`/`file_path`）。
     // 取不到就放行 —— **这不是漏洞，是有意的边界**：沙箱管的是「路径在不在
     // 工作区内」，而按 id 访问的资源（附件）根本没有路径可判。
     // 「附件不算沙箱范围」是产品决策，见 `src/test/sandbox-boundary.test.ts`。
-    const path = (args.path || args.file_path) as string;
+    const path = (args.path || args.file_path || args.file) as string;
     if (!path) {
       /**
        * 第 97 波：**沙箱也要管住 shell 的路径**。
@@ -1308,12 +1314,29 @@ export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
       const failed = abandoned || result.status === "error";
       const finalStatus = failed ? "error" : "completed";
 
+      /**
+       * ★ 第 185 波（复审 I-3）：**运行时写入者与迁移路径必须同形**。
+       *
+       * `event-types.ts` 把 `ToolCallPayload.duration` 声明成权威日志的一部分
+       * （并写明"不写这里，重载/重建后看不到耗时"），`ToolResultPayload` 这一波又补上了
+       * `diagnostics` —— 而**唯一运行时写入者**（就是这里）此前一个都没写：
+       * 于是同一份日志里 `duration`/`diagnostics` **时有时无**（迁移路径 `event-log.ts:931/940` 写了），
+       * 重建出来的会话看不到工具耗时与结构化诊断。
+       *
+       * 来源与迁移路径**同一处**（`result.metadata.duration` ↔ 索引里的 `tc.metadata.duration`），
+       * 只在真的有值时带上（"未上报" ≠ "上报 0"）。
+       */
+      const durationMs = (result.metadata as { duration?: unknown } | undefined)?.duration;
+      const diagnostics = result.diagnostics;
+      const hasDiagnostics = Array.isArray(diagnostics) && diagnostics.length > 0;
+
       eventLog.append(ctx.sessionId, "tool_call", {
         toolCallId,
         messageId: ctx.messageId,
         tool: toolName,
         args,
         status: finalStatus,
+        ...(typeof durationMs === "number" && Number.isFinite(durationMs) ? { duration: durationMs } : {}),
       });
 
       eventLog.append(ctx.sessionId, "tool_result", {
@@ -1323,7 +1346,18 @@ export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
         // 已经判失败时补上机器可读的原因；工具自己给的原因优先（信息更多）
         error: result.error ?? (abandoned ? TOOL_RESULT_ABANDONED : undefined),
         status: finalStatus,
+        ...(hasDiagnostics ? { diagnostics } : {}),
       });
+
+      /**
+       * 让这套字段**能走完往返**：迁移路径（`event-log.ts`）是从**消息索引**的
+       * `toolCalls[].metadata` 里取 duration/diagnostics 的，而索引那份来自本中间件
+       * 返回的 `result.metadata`（`agentic-loop.ts:5029`）。不在这里回写，
+       * 迁移分支就永远取不到 `diagnostics`（写了一条取不到的读路径 = 死判据）。
+       */
+      if (hasDiagnostics) {
+        result.metadata = { ...(result.metadata ?? {}), diagnostics };
+      }
     } catch (err) {
       /**
        * 第 90 波（用户现场）：数据库崩掉后，这里**每次工具调用**都打一行

@@ -341,13 +341,24 @@ export class EventProjection {
     const blocks = Array.isArray(assistantMsg.content) ? assistantMsg.content : [];
     // Check if this tool call already exists (dedup)
     const existingTc = blocks.find(b => b.type === "tool_use" && b.id === payload.toolCallId);
+    /**
+     * ★ 第 185 波（复审 I-3）：`tool_call` 事件里的 `duration` 要还原到投影结果上
+     * （改前只搬 `{type,id,name,input}` ⇒ 权威日志里写了、重建路径照样丢）。
+     */
+    const duration = typeof payload.duration === "number" && Number.isFinite(payload.duration)
+      ? payload.duration
+      : undefined;
     if (!existingTc) {
       blocks.push({
         type: "tool_use",
         id: payload.toolCallId,
         name: payload.tool,
         input: payload.args as Record<string, unknown>,
+        ...(duration !== undefined ? { duration } : {}),
       });
+    } else if (duration !== undefined) {
+      // 同一条调用后来又补了耗时（例如 `tool_call` 事件的 status 更新）⇒ 以较新的为准
+      (existingTc as { duration?: number }).duration = duration;
     }
     assistantMsg.content = blocks;
 
@@ -365,11 +376,20 @@ export class EventProjection {
     if (state.messages.some(m => m.id === toolResultId)) return;
 
     // Create a tool message with the result
+    /**
+     * ★ 第 185 波（复审 I-3）：`tool_result` 事件的**结构化诊断**还原到 `metadata` 上
+     * （改前整条丢掉 ⇒ 重建后的会话看不到"这次结果被截断/分页"这类事实）。
+     * 放进 `metadata` 而不是 `content`：诊断是元信息，不是模型该看到的正文。
+     */
+    const diagnostics = Array.isArray(payload.diagnostics) && payload.diagnostics.length > 0
+      ? payload.diagnostics
+      : undefined;
     const toolMessage: LLMMessage = {
       id: toolResultId,
       role: "tool",
       toolCallId: payload.toolCallId,
       content: payload.result || payload.error || "",
+      ...(diagnostics ? { metadata: { diagnostics } } : {}),
     };
 
     state.messages.push(toolMessage);
