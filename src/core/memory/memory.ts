@@ -582,6 +582,18 @@ export const MEMORY_MIGRATED_KEY = "memory-scope-migrated-v2";
 export const MEMORY_PRE_MIGRATION_KEY = "memory-pre-migration-v2";
 
 /**
+ * 体检里两个"归属说不清"的**组标题**（S4 / O-45 的真机复核产物）。
+ *
+ * 为什么要提到 `memory.ts` 这一层：**回退之后的提示文案要指向真实存在的组**。
+ * 真机实测（钻取实例上点「回退到迁移前」）：21 条从「旧版跨项目记忆…」组落到
+ * **「归属未知（旧数据）」**组（因为它们是 `project`/`conversation` 作用域但**没有归属键**），
+ * 而当时的回退提示写的是「作用域无法识别」——**指错了组**（那个组只装"作用域根本不是三者之一"的条目）。
+ * 两处文案现在共用同一对常量，判据 `MEM-REVERT-2` 钉住"提示里点名的组必须是体检真的会产出的组标题"。
+ */
+export const MEMORY_UNKNOWN_OWNER_TITLE = "归属未知（旧数据）";
+export const MEMORY_UNKNOWN_SCOPE_TITLE = "作用域无法识别";
+
+/**
  * 「暂停注入旧版跨项目记忆」开关键（M-2）。
  *
  * **默认关**（键不存在或不是 `"1"` ⇒ 不暂停）—— 也就是**不偷偷改变既有可见范围**；
@@ -3131,19 +3143,26 @@ export class MemoryService {
     this.batches.clear();
     this.ingestRawForRestore(snap.raw);
     const restored = this.entries.size;
+    /*
+     * ⚠️ 必须在这里发一次「记忆域变了」（第 192 波真机实测的缺口）：
+     * 本方法是**绕过 `save()/load()` 直接写库 + 直接改内存态**的，于是外壳角标之类的订阅方
+     * 会一直停在回退前的数字上 —— 真机现场：回退后体检已经是 `待批准 0`，而侧栏角标还是 `9`，
+     * 直到用户打开记忆面板（面板挂载时才 `reload()`）才跟着变。
+     */
+    notifyMemoryChanged();
     reportAdvisory("memory.rollback", `已回退到迁移前快照：写回 ${restored} 条（原样字符串）`, {
       title: "记忆回退完成",
       nextStep:
-        "旧作用域条目现在落在体检的「作用域无法识别」组里，可逐条归位；迁移标记保持不变，" +
-        "所以本次回退不会被下次启动自动撤销。",
+        `旧作用域条目现在落在体检的「${MEMORY_UNKNOWN_OWNER_TITLE}」/「${MEMORY_UNKNOWN_SCOPE_TITLE}」组里，` +
+        "可逐条归位；迁移标记保持不变，所以本次回退不会被下次启动自动撤销。",
     });
     return {
       ok: true,
       restored,
       message:
         `已回退到迁移前：写回 ${restored} 条（逐字恢复原字符串）。` +
-        `旧作用域条目现在只能在体检的「作用域无法识别」组里看到，可逐条归位；` +
-        `本操作不可撤销（再次迁移不会自动发生）。`,
+        `旧作用域条目现在只能在体检的「${MEMORY_UNKNOWN_OWNER_TITLE}」/「${MEMORY_UNKNOWN_SCOPE_TITLE}」组里看到，` +
+        `可逐条归位；本操作不可撤销（再次迁移不会自动发生）。`,
     };
   }
 

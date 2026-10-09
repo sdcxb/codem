@@ -1,8 +1,8 @@
 {
   "wave": "memory-badge-192",
   "description": "O-45 / S4：外壳级「待批准记忆」角标（MEM-BADGE-1/1b/2/3）。每条变异都把实现改坏，期望对应判据变红。",
-  "runAt": "2026-10-09T03:38:13.972Z",
-  "specFingerprint": "5004a4c69adb1e53dd91ed3022e9b3ac6509f99f",
+  "runAt": "2026-10-09T05:27:39.685Z",
+  "specFingerprint": "e8b0026239d436e79529835adfc3dd22ad47d6f0",
   "files": [
     "src/core/memory/memory.ts",
     "src/hooks/useMemoryPendingCount.ts",
@@ -32,7 +32,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4955
+      "ms": 4171
     },
     {
       "id": "MUT-2 角标改读「另算一份」的数",
@@ -52,7 +52,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4796
+      "ms": 4129
     },
     {
       "id": "MUT-3 角标条件恒真（永远亮着的点）",
@@ -72,7 +72,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4989
+      "ms": 4130
     },
     {
       "id": "MUT-4 作用域退化成空（角标不再按当前位置过滤）",
@@ -92,7 +92,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 5443
+      "ms": 4134
     },
     {
       "id": "MUT-6 待批准的可见范围退回「裸 ctx」（面板三处数字分叉）",
@@ -112,7 +112,47 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 5041
+      "ms": 4116
+    },
+    {
+      "id": "MUT-7 快照回退后不再发「记忆域变了」的通知",
+      "why": "MEM-REVERT-1：真机现场就是这一条 —— 回退后体检已是「待批准 0」而侧栏角标还停在 9（要等用户打开面板才刷新）；去掉通知必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    notifyMemoryChanged();\n    reportAdvisory(\"memory.rollback\", `已回退到迁移前快照：写回 ${restored} 条（原样字符串）`, {",
+          "to": "    reportAdvisory(\"memory.rollback\", `已回退到迁移前快照：写回 ${restored} 条（原样字符串）`, {"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-badge.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4156
+    },
+    {
+      "id": "MUT-8 回退提示退回「只写作用域无法识别一个组」的旧口径",
+      "why": "MEM-REVERT-2：真机现场回退后条目落在「归属未知（旧数据）」组，而提示只写了「作用域无法识别」⇒ 指错组；退回旧文案必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "        `旧作用域条目现在只能在体检的「${MEMORY_UNKNOWN_OWNER_TITLE}」/「${MEMORY_UNKNOWN_SCOPE_TITLE}」组里看到，` +",
+          "to": "        `旧作用域条目现在只能在体检的「${MEMORY_UNKNOWN_SCOPE_TITLE}」组里看到，` +"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-badge.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4122
     },
     {
       "id": "MUT-5 反向对照：只改「99+」折叠（没有被任何判据覆盖）",
@@ -132,7 +172,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4891
+      "ms": 4158
     }
   ]
 }

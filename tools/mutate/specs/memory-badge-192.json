@@ -67,6 +67,32 @@
       "expectRed": true
     },
     {
+      "id": "MUT-7 快照回退后不再发「记忆域变了」的通知",
+      "why": "MEM-REVERT-1：真机现场就是这一条 —— 回退后体检已是「待批准 0」而侧栏角标还停在 9（要等用户打开面板才刷新）；去掉通知必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    notifyMemoryChanged();\n    reportAdvisory(\"memory.rollback\", `已回退到迁移前快照：写回 ${restored} 条（原样字符串）`, {",
+          "to": "    reportAdvisory(\"memory.rollback\", `已回退到迁移前快照：写回 ${restored} 条（原样字符串）`, {"
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-8 回退提示退回「只写作用域无法识别一个组」的旧口径",
+      "why": "MEM-REVERT-2：真机现场回退后条目落在「归属未知（旧数据）」组，而提示只写了「作用域无法识别」⇒ 指错组；退回旧文案必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "        `旧作用域条目现在只能在体检的「${MEMORY_UNKNOWN_OWNER_TITLE}」/「${MEMORY_UNKNOWN_SCOPE_TITLE}」组里看到，` +",
+          "to": "        `旧作用域条目现在只能在体检的「${MEMORY_UNKNOWN_SCOPE_TITLE}」组里看到，` +"
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
       "id": "MUT-5 反向对照：只改「99+」折叠（没有被任何判据覆盖）",
       "why": "反向对照：这是一处真实的实现改动，但本波判据一条都没打算覆盖它 ⇒ 必须**保持绿**（证明判据不是「改哪都红」）",
       "patches": [

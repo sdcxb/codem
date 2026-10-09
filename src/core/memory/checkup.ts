@@ -30,6 +30,9 @@ import {
   memorySourceOf,
   // 状态缺省值同样只有一处实现（体检视图把它直接展示出来）
   memoryStatusOf,
+  // 两个"归属说不清"的组标题：与回退提示文案**同一对常量**（真机实测提示曾指错组）
+  MEMORY_UNKNOWN_OWNER_TITLE,
+  MEMORY_UNKNOWN_SCOPE_TITLE,
   projectIdFromCwd,
   type MemoryEntry,
   type MemoryScope,
@@ -302,8 +305,8 @@ const LEGACY_POOL_REASON =
   "所以它们可能混进了别的项目的内容，而今天仍然在所有项目生效。" +
   "旧数据没有批次信息（「撤销批次」对它们没有意义），请用批量删除、归位，或先「暂停注入」再逐条处置。";
 
-/** 作用域无法识别组的标题与说明（M-5） */
-const UNKNOWN_SCOPE_TITLE = "作用域无法识别";
+/** 作用域无法识别组的标题与说明（M-5；标题取自 `memory.ts` 的**唯一一处**常量） */
+const UNKNOWN_SCOPE_TITLE = MEMORY_UNKNOWN_SCOPE_TITLE;
 const UNKNOWN_SCOPE_REASON =
   "这些条目的作用域不是 platform / project / conversation 三者之一（例如更老版本写的 workspace、大小写不符或空值）：" +
   "它们过去在界面上完全看不见、也删不掉，现在单独列出，可删除或归位。";
@@ -515,7 +518,7 @@ export function createMemoryCheckup(
     groups.push({
       groupKey: "unknown",
       kind: "unknown",
-      title: "归属未知（旧数据）",
+      title: MEMORY_UNKNOWN_OWNER_TITLE,
       note: UNRESOLVED_REASON,
       unresolved: true,
       entries: unresolved,

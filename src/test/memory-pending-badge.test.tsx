@@ -34,8 +34,9 @@ import { render, cleanup, fireEvent, act } from "@testing-library/react";
 import { createElement, useState } from "react";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
-import { MemoryService, projectIdFromCwd } from "../core/memory/memory";
+import { MemoryService, projectIdFromCwd, MEMORY_PRE_MIGRATION_KEY, MEMORY_UNKNOWN_OWNER_TITLE, MEMORY_UNKNOWN_SCOPE_TITLE } from "../core/memory/memory";
 import * as memoryModule from "../core/memory/memory";
+import { setSetting } from "../core/storage/settings";
 import { memoryPanelScope } from "../core/memory/panel-scope";
 import { useProjectStore } from "../core/store";
 import { Sidebar } from "../components/Sidebar";
@@ -197,6 +198,76 @@ describe("MEM-BADGE：自动记忆的「待批准」必须在外壳上看得见�
     expect(badgeText(container), "外壳角标必须是同一个数").toBe(stat);
     // 反向对照：无归属那条必须**真的出现**在待批准区里（否则用户既看不到也批不了）
     expect(container.textContent, "无归属的待批准条目必须出现在界面上（它一直占着位置）").toContain("无归属待批准");
+  });
+
+  it("MEM-REVERT-1：快照回退之后，角标必须**立刻**跟着变（不许等用户去打开面板）", async () => {
+    /*
+     * 真机现场（1.16.303，钻取实例）：点了体检里的「回退到迁移前」之后，体检自己已经是
+     * `待批准 0`，而**侧栏角标还停在 `9`** —— 直到打开记忆面板（面板挂载时才 `reload()`）才跟着变。
+     * 根因：`restorePreMigrationSnapshot()` 是**绕过 `save()/load()` 直接写库 + 直接改内存态**的，
+     * 因此没人发「记忆域变了」这条通知。
+     */
+    setStoragePort(createFakeStoragePort());
+    const reverted = { scope: "project", key: "回退后的待批准", content: "回退前快照里的内容足够长", source: "auto", status: "pending" };
+    // 迁移前快照：**裸映射**（存量真实形状）——回退要认它，且里面那条是待批准。
+    // 快照在设置里的形状是 `{takenAt, entries, raw}`（`getPreMigrationSnapshot` 的唯一口径）
+    setSetting(
+      MEMORY_PRE_MIGRATION_KEY,
+      JSON.stringify({
+        takenAt: 1,
+        entries: 1,
+        raw: JSON.stringify({ "mem-reverted-1": { ...reverted, id: "mem-reverted-1", timestamp: 1 } }),
+      }),
+    );
+    const restoredSvc = new MemoryService();
+    spy.mockReturnValue(restoredSvc);
+    expect(restoredSvc.getStats({ projectId: PROJ_A_ID, sessionId: SESSION_A.id }).pendingEntries, "前置：回退前是干净的").toBe(0);
+
+    const container = await act(async () => renderShell("A"));
+    expect(badgeText(container), "前置：回退前没有角标").toBeNull();
+
+    await act(async () => {
+      const r = await restoredSvc.restorePreMigrationSnapshot();
+      expect(r.ok, "快照回退必须成功（否则下面测的不是回退那条路）").toBe(true);
+    });
+
+    expect(badgeText(container), "回退之后角标必须立刻出现（不许等用户打开面板才刷新）").toBe("1");
+  });
+
+  it("MEM-REVERT-2：回退提示里点名的组，必须是体检**真的会产出**的那个组标题", async () => {
+    /*
+     * 真机现场：回退后 21 条落进了「归属未知（旧数据）」组，而提示文案写的是「作用域无法识别」——
+     * 指错了组（那个组只装"作用域根本不是三者之一"的条目）。两处现在共用 `memory.ts` 的一对常量，
+     * 这条判据把"提示点名的组 == 体检会产出的组标题"钉住。
+     */
+    setStoragePort(createFakeStoragePort());
+    setSetting(
+      MEMORY_PRE_MIGRATION_KEY,
+      JSON.stringify({
+        takenAt: 1,
+        entries: 1,
+        raw: JSON.stringify({ "mem-reverted-2": { id: "mem-reverted-2", scope: "conversation", key: "无归属的旧对话记忆", content: "旧 session 记忆：没有 sessionId ⇒ 归属说不清", source: "auto", timestamp: 1 } }),
+      }),
+    );
+    const svc2 = new MemoryService();
+    const r = await svc2.restorePreMigrationSnapshot();
+    expect(r.ok).toBe(true);
+
+    expect(r.message, "提示必须点名「归属未知（旧数据）」组（真机回退后条目就落在那里）").toContain(MEMORY_UNKNOWN_OWNER_TITLE);
+    expect(r.message, "提示也要点名「作用域无法识别」组（另一类旧数据会落在那里）").toContain(MEMORY_UNKNOWN_SCOPE_TITLE);
+
+    /*
+     * ⚠️ 如实留白：这里**没有**再断言"体检确实会产出这两个组标题"。
+     * 试过两种夹具（`project` 无归属键 / `conversation` 无 sessionId），在**裸夹具**下它们都落进
+     * 「归属已失效（目标项目/对话不存在）」，而真机（5 个项目在场、21 条旧数据）落进「归属未知（旧数据）」——
+     * 这一差异**本轮没查清**（它与体检的归属解析索引有关），所以那半只由**真机读数**背书
+     * （见 GAP-LIST 的 C-68 与交接「第 192 波」的真机一节），不在这里假装钉住。
+     *
+     * 真正被这条判据钉住的是：**回退提示点名的组名必须来自与体检同一对常量**
+     * （`MEMORY_UNKNOWN_OWNER_TITLE` / `MEMORY_UNKNOWN_SCOPE_TITLE`）—— 真机现场它曾经只写「作用域无法识别」，
+     * 而条目实际落在「归属未知（旧数据）」，等于指错组。
+     */
+    expect(r.message, "提示不许再写成「只有作用域无法识别一个组」的旧口径").toMatch(/「归属未知（旧数据）」\/「作用域无法识别」/);
   });
 
   it("MEM-BADGE-2：pending 清零 ⇒ 角标消失（反向对照：清之前它在）", async () => {

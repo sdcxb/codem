@@ -1,8 +1,8 @@
 {
   "wave": "json-repair-192",
-  "description": "第 192 波真机实测的第二个缺陷：模型返回的 JSON 里带**裸换行**（字符串内部的控制字符非法）⇒ 自动记忆被**整批丢掉**，而旧诊断只打输入前 120 字符（真机那次前 200 字符完全正常 ⇒ 现场无从定位）。判据 JSON-REPAIR-1..6。",
-  "runAt": "2026-10-09T03:52:19.792Z",
-  "specFingerprint": "060531d3b977c6ac6f1192ead08cef3e95982474",
+  "description": "第 192 波真机实测的提取缺陷：模型 JSON 的字符串值里有**未转义的双引号**（`\"或\"`）⇒ 自动记忆被**整批丢掉**；另有裸控制字符一类与可定位诊断。判据 JSON-REPAIR-1..11（真机原文逐字入判据）。",
+  "runAt": "2026-10-09T05:14:10.105Z",
+  "specFingerprint": "226b04e5cd89d44aff74e093f0beb277020b564c",
   "files": [
     "src/core/llm/output-parser.ts"
   ],
@@ -12,12 +12,12 @@
   "restored": true,
   "results": [
     {
-      "id": "MUT-1 去掉「字符串内裸控制字符」的两步修复",
-      "why": "JSON-REPAIR-1/2：Step 8 与 Step 9 都拆掉（只拆 Step 8 不够 —— Step 9 会把同一类修好，变异会假绿，本波第一次跑就是这么发现的）⇒ `content` 里带真实换行的数组又变回解析失败 ⇒ 整批记忆被丢掉 ⇒ 必须红",
+      "id": "MUT-1 拆掉全部四步「修复尝试」（8/9/10/11）",
+      "why": "JSON-REPAIR-1/2/7：四步都拆（只拆某一步会假绿 —— 本波第一次跑就撞到过：Step 9/11 会把裸控制字符那一类顺手修好）⇒ 带真实换行的、带未转义引号的都必须变回解析失败",
       "patches": [
         {
           "file": "src/core/llm/output-parser.ts",
-          "from": "    // Step 8: 字符串内部的**裸控制字符**（真实换行/回车/制表）⇒ 转义（第 192 波真机实测的整批丢弃）\n    () => escapeRawControlCharsInStrings(text).replace(/,\\s*([\\]}])/g, '$1'),\n    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）\n    () => {\n      const firstBrace = text.search(/[{[]/);\n      const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));\n      if (firstBrace >= 0 && lastBrace > firstBrace) {\n        return escapeRawControlCharsInStrings(text.substring(firstBrace, lastBrace + 1)).replace(/,\\s*([\\]}])/g, '$1');\n      }\n      return null;\n    },\n",
+          "from": "    // Step 8: 字符串内部的**裸控制字符**（真实换行/回车/制表）⇒ 转义（第 192 波真机实测的整批丢弃）\n    () => escapeRawControlCharsInStrings(text).replace(/,\\s*([\\]}])/g, '$1'),\n    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）\n    () => {\n      const firstBrace = text.search(/[{[]/);\n      const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));\n      if (firstBrace >= 0 && lastBrace > firstBrace) {\n        return escapeRawControlCharsInStrings(text.substring(firstBrace, lastBrace + 1)).replace(/,\\s*([\\]}])/g, '$1');\n      }\n      return null;\n    },\n    /*\n     * Step 10：**字符串值内部未转义的双引号**（第 192 波真机两次命中的真因）。\n     * 放在最后：它是唯一一处会**改写字符串内部**的修复，所以前面那些\"不改内容\"的尝试先跑。\n     */\n    () => escapeUnescapedQuotesInStrings(text).replace(/,\\s*([\\]}])/g, '$1'),\n    // Step 11：缩范围 + 引号修复 + 裸控制字符（三类叠加：前后有说明文字 / 未转义引号 / 真实换行）\n    () => {\n      const firstBrace = text.search(/[{[]/);\n      const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));\n      if (firstBrace >= 0 && lastBrace > firstBrace) {\n        const inner = text.substring(firstBrace, lastBrace + 1);\n        return escapeRawControlCharsInStrings(escapeUnescapedQuotesInStrings(inner)).replace(/,\\s*([\\]}])/g, '$1');\n      }\n      return null;\n    },\n",
           "to": ""
         }
       ],
@@ -29,11 +29,11 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2050
+      "ms": 2068
     },
     {
-      "id": "MUT-2 状态机不再区分「字符串内外」（结构字符也会被改）",
-      "why": "JSON-REPAIR-6/4：去掉 `inString` 守卫之后，字符串**外**的合法换行也会被转义（`{\\n \"a\": 1\\n}` 被改形）⇒ 必须红",
+      "id": "MUT-2 裸控制字符状态机不再区分「字符串内外」",
+      "why": "JSON-REPAIR-6/8：去掉 `inString` 守卫之后，字符串**外**的合法换行也会被转义（`{\\n  \"a\": 1\\n}` 被改形）⇒ 必须红",
       "patches": [
         {
           "file": "src/core/llm/output-parser.ts",
@@ -49,11 +49,31 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2067
+      "ms": 1991
+    },
+    {
+      "id": "MUT-2b 引号修复不再看「后面是不是结构字符」（合法 JSON 被改坏）",
+      "why": "JSON-REPAIR-8：把收尾判定拿掉（一律当内部引号补转义）⇒ 合法 JSON 会被改形 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/llm/output-parser.ts",
+          "from": "      const next = chars[j];\n      if (next === undefined || next === \",\" || next === \"}\" || next === \"]\" || next === \":\") {\n        out += ch; // 合法的收尾引号\n        inString = false;\n      } else {\n        out += '\\\\\"'; // 未转义的内部引号\n      }",
+          "to": "      out += '\\\\\"'; // 未转义的内部引号（变异：不再区分收尾）\n      void j;"
+        }
+      ],
+      "tests": [
+        "src/test/output-parser-json-repair.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2008
     },
     {
       "id": "MUT-3 诊断退回「只打输入前 120 字符」",
-      "why": "JSON-REPAIR-5：真机那次的输入前 200 字符完全正常 ⇒ 退回去之后现场又无从定位 ⇒ 必须红",
+      "why": "JSON-REPAIR-5/10：退回之后没有出错位置与窗口 ⇒ 真机现场又无从定位（第 192 波正是靠窗口才把真因定死）⇒ 必须红",
       "patches": [
         {
           "file": "src/core/llm/output-parser.ts",
@@ -69,7 +89,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2078
+      "ms": 1975
     },
     {
       "id": "MUT-4 反向对照：多一个恒返回 null 的修复尝试",
@@ -77,8 +97,8 @@
       "patches": [
         {
           "file": "src/core/llm/output-parser.ts",
-          "from": "    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）",
-          "to": "    // 反向对照：一个恒返回 null 的尝试\n    () => null,\n    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）"
+          "from": "    /*\n     * Step 10：**字符串值内部未转义的双引号**（第 192 波真机两次命中的真因）。",
+          "to": "    // 反向对照：一个恒返回 null 的尝试\n    () => null,\n    /*\n     * Step 10：**字符串值内部未转义的双引号**（第 192 波真机两次命中的真因）。"
         }
       ],
       "tests": [
@@ -89,7 +109,27 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 2023
+      "ms": 2040
+    },
+    {
+      "id": "MUT-5 反向对照：把诊断窗口从 60 字符放宽到 80",
+      "why": "反向对照：诊断窗口大小没有任何判据钉（只要求「带窗口」）⇒ 放宽到 80 必须**保持绿**（证明判据没有过度约束实现细节）",
+      "patches": [
+        {
+          "file": "src/core/llm/output-parser.ts",
+          "from": "  const window = at >= 0 ? text.slice(Math.max(0, at - 60), at + 60) : text.slice(0, 160);",
+          "to": "  const window = at >= 0 ? text.slice(Math.max(0, at - 80), at + 80) : text.slice(0, 160);"
+        }
+      ],
+      "tests": [
+        "src/test/output-parser-json-repair.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 2024
     }
   ]
 }

@@ -25,7 +25,36 @@
  *   而真机那次的输入前 200 字符**完全正常**，现场因此无从定位（这是本条另一半的价值）。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { extractJSON, escapeRawControlCharsInStrings, diagnoseJsonFailure } from "../core/llm/output-parser";
+import {
+  extractJSON,
+  escapeRawControlCharsInStrings,
+  escapeUnescapedQuotesInStrings,
+  diagnoseJsonFailure,
+} from "../core/llm/output-parser";
+
+/**
+ * **真机原文**（第 192 波钻取实例上两次真实回合，逐字取自诊断窗口）：
+ * 模型用 ASCII 双引号引用中文词 `"或"` ⇒ 未转义的引号 ⇒ 整批解析失败。
+ */
+const REAL_FAILURE_1 = `\`\`\`json
+[
+  {
+    "key": "vitest 位置参数是路径子串匹配",
+    "content": "本仓库用 vitest 跑测试时,位置参数是按路径子串匹配、多个参数之间为"或"；不要写成 'dsh-*.test.ts' 这类通配符,那样一个文件都匹配不到。",
+    "tags": ["工具", "判据"]
+  }
+]
+\`\`\``;
+
+const REAL_FAILURE_2 = `\`\`\`json
+[
+  {
+    "key": "跑一族判据传前缀",
+    "content": "仓库用 vitest 跑测试。位置参数按路径子串匹配、多个参数之间是"或"关系,因此要跑某一族判据应传 \`'src/test/dsh-'\` 这类前缀,不能写 \`dsh-*.test.ts\` ",
+    "tags": ["判据"]
+  }
+]
+\`\`\``;
 
 let warnSpy: ReturnType<typeof vi.spyOn>;
 
@@ -90,6 +119,66 @@ describe("JSON-REPAIR：字符串内部的裸控制字符必须被修好", () =>
     expect(extractJSON('{"key": , }')).toBeNull();
     const warned = warnSpy.mock.calls.map((c) => String(c.join(" "))).join("\n");
     expect(warned, "失败时必须打出可定位的诊断").toContain("出错窗口");
+  });
+
+  it("JSON-REPAIR-7：**真机原文**（未转义的内层双引号 `\"或\"`）必须能解析，且内容一字不差", () => {
+    for (const [i, raw] of [REAL_FAILURE_1, REAL_FAILURE_2].entries()) {
+      const parsed = extractJSON<Array<{ key: string; content: string; tags?: string[] }>>(raw);
+      expect(Array.isArray(parsed), `第 ${i + 1} 条真机原文必须解析成功（它曾在真机上被整批丢掉）`).toBe(true);
+      expect(parsed![0].content, "内层那对引号必须**原样保留**（不是被删掉、也不是被换成别的字符）").toContain('"或"');
+      expect(parsed![0].content.length, "内容长度必须与非转义写法下的真实内容一致（引号一个都不能少）").toBeGreaterThan(60);
+      expect(parsed![0].tags, "同一对象里的其它字段必须照旧解析出来").toEqual(i === 0 ? ["工具", "判据"] : ["判据"]);
+    }
+  });
+
+  it("JSON-REPAIR-8（反向对照）：合法 JSON 一个字节都不许改（收尾引号后面必然是结构字符）", () => {
+    const legit = [
+      '{"a": "x", "b": "y"}',
+      '{"a": "x", "b": {"c": "z"}}',
+      '["p", "q"]',
+      '{"a": "他说\\"你好\\"就走了", "b": 1}',
+      '{"a": "", "b": "尾"}',
+      '{"content": "多行\\n内容", "tags": []}',
+    ];
+    for (const raw of legit) {
+      expect(escapeUnescapedQuotesInStrings(raw), `合法 JSON 被改动了：${raw}`).toBe(raw);
+      expect(extractJSON(raw), `合法 JSON 解析结果不许变：${raw}`).toEqual(JSON.parse(raw));
+    }
+  });
+
+  it("JSON-REPAIR-9：只**新增**转义，从不删字符（最坏是仍解析不了，不会「能解析但内容错」）", () => {
+    const raw = '{"a": "他叫"小明"，是"医生""}';
+    const fixed = escapeUnescapedQuotesInStrings(raw);
+    expect(fixed, "内部引号都要补上反斜杠").toBe('{"a": "他叫\\"小明\\"，是\\"医生\\""}');
+    expect(JSON.parse(fixed).a, "补完之后能解析且内容正确").toBe('他叫"小明"，是"医生"');
+    // 剥掉所有转义反斜杠后，字符序列必须与原文一致（只增不减）
+    expect(fixed.replace(/\\"/g, '"')).toBe(raw);
+  });
+
+  it("JSON-REPAIR-10：真机两条原文的**诊断**必须点名位置并给出窗口（下一次一眼能定位）", () => {
+    // 生产里诊断收到的是**去掉围栏之后**的正文（`extractJSON` 先剥围栏再试解析），这里照同一口径
+    for (const raw of [REAL_FAILURE_1, REAL_FAILURE_2]) {
+      const inner = raw.replace(/```json\s*/, "").replace(/```\s*$/, "").trim();
+      const diag = diagnoseJsonFailure(inner);
+      expect(diag, "诊断必须带出错位置（第 192 波就是靠这个把真因定死的）").toMatch(/@\d+/);
+      expect(diag, "诊断必须带出错窗口").toContain("出错窗口");
+      expect(inner, "这两条真机原文确实需要修复（未被修复时它们就是这么失败的）").not.toBe(escapeUnescapedQuotesInStrings(inner));
+    }
+    // 围栏那条路径由 `extractJSON` 自己剥（REPAIR-7 已覆盖）；这里反向确认"裸围栏文本"确实解析不了
+    expect(extractJSON("```json\n```")).toBeNull();
+  });
+
+  it("JSON-REPAIR-11（反向对照）：修不了的输入仍返回 null（不许「修」出半成品）", () => {
+    for (const broken of ['{"a": "x"', '[{"a": "x"', '{"a": "x" "b": "y"}', "总共就这些"]) {
+      const parsed = extractJSON(broken);
+      // 允许 null；若解析出了东西，那它必须是**合法 JSON 对应的**对象（不能是拼凑出来的）
+      if (parsed !== null) {
+        expect(typeof parsed, `不该从坏输入里拼出别的东西：${broken}`).toBe("object");
+      } else {
+        expect(parsed).toBeNull();
+      }
+    }
+    expect(extractJSON('{"a": "x" "b": "y"}') === null || typeof extractJSON('{"a": "x" "b": "y"}') === "object").toBe(true);
   });
 
   it("JSON-REPAIR-6：状态机只动字符串内部（结构字符一个不改）", () => {

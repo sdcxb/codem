@@ -66,6 +66,73 @@ export function escapeRawControlCharsInStrings(text: string): string {
 }
 
 /**
+ * 把**字符串值内部未转义的双引号**补上转义 —— 第 192 波真机复核定死的**真因**。
+ *
+ * ## 真机原文（钻取实例上两次真实回合，逐字，来自本波新加的诊断窗口）
+ *
+ * ```
+ * "content": "…多个参数之间为"或"；不要写成 'dsh-*.test.ts' 这类通配符,那样一个文件都匹配不到。"
+ * "content": "…多个参数之间是"或"关系,因此要跑某一族判据应传 `'src/test/dsh-'` 这类前缀,…"
+ * ```
+ *
+ * 模型用 **ASCII 双引号**去引用中文词（`"或"`），而它在 JSON 字符串里是**未转义的引号** ⇒
+ * 字符串在这里提前结束、`或` 变成非法 token ⇒ 整个响应被判为解析失败 ⇒
+ * **这一批自动记忆一条都不保存**（用户看到的现象就是「自动记忆不好使」）。
+ *
+ * ⚠️ 与本波先前那条"裸控制字符"（`escapeRawControlCharsInStrings`）**不是同一类**：
+ * 那条是**猜的**（真机从未出现），这条是**量到的**（两次都命中）。两条都保留 ——
+ * 前者覆盖"真实换行"，后者覆盖"未转义引号"，都是模型 JSON 的常见病。
+ *
+ * ## 口径：一个 `"` 算"收尾"还是"内部字面量"
+ *
+ * 算**收尾** ⇔ 它后面第一个非空白字符是**结构字符**（`,` `}` `]` `:`）或已到结尾；
+ * 否则它就是字符串内部的字面引号，补成 `\"`。
+ *
+ * 这个口径是**可证伪**的（判据 `JSON-REPAIR-7..11`）：
+ * - 合法 JSON 里，值/键的收尾引号后面**必然**是那四者之一 ⇒ 合法输入一个字节都不改；
+ * - 已经转义好的 `\"` 不会被二次转义（`escaped` 状态）；
+ * - 只 **新增** 转义、从不删字符 ⇒ 最坏情况是"仍然解析不了"，**不会**把内容改坏成"能解析但内容错"。
+ */
+export function escapeUnescapedQuotesInStrings(text: string): string {
+  const chars = [...text];
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (!inString) {
+      out += ch;
+      if (ch === '"') inString = true;
+      continue;
+    }
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < chars.length && /\s/.test(chars[j])) j++;
+      const next = chars[j];
+      if (next === undefined || next === "," || next === "}" || next === "]" || next === ":") {
+        out += ch; // 合法的收尾引号
+        inString = false;
+      } else {
+        out += '\\"'; // 未转义的内部引号
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/**
  * 解析全失败时的**可诊断**说明。
  *
  * 旧写法只打 `raw.slice(0, 120)` —— 而真机那次失败的输入**前 200 字符完全正常**
@@ -102,7 +169,8 @@ export function diagnoseJsonFailure(text: string): string {
  * 5. 中文标点（"" → ""，'' → ''）— 模型常在中文上下文中混淆标点
  * 6. 尾部逗号（JSON5 风格）— 模型常在最后一个元素后加逗号
  * 7. 单引号字符串 — 部分模型使用单引号而非双引号
- * 8. **字符串内部的裸控制字符**（真实换行/回车/制表）— 第 192 波真机实测：整批记忆被丢掉
+ * 8. **字符串内部的裸控制字符**（真实换行/回车/制表）
+ * 9. **字符串值内部未转义的双引号** — 第 192 波真机**两次**命中的真因（模型用 `"或"` 引用中文词）
  *
  * @returns 解析后的对象，或 null（解析失败时）
  */
@@ -162,6 +230,21 @@ export function extractJSON<T = any>(raw: string): T | null {
       const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
       if (firstBrace >= 0 && lastBrace > firstBrace) {
         return escapeRawControlCharsInStrings(text.substring(firstBrace, lastBrace + 1)).replace(/,\s*([\]}])/g, '$1');
+      }
+      return null;
+    },
+    /*
+     * Step 10：**字符串值内部未转义的双引号**（第 192 波真机两次命中的真因）。
+     * 放在最后：它是唯一一处会**改写字符串内部**的修复，所以前面那些"不改内容"的尝试先跑。
+     */
+    () => escapeUnescapedQuotesInStrings(text).replace(/,\s*([\]}])/g, '$1'),
+    // Step 11：缩范围 + 引号修复 + 裸控制字符（三类叠加：前后有说明文字 / 未转义引号 / 真实换行）
+    () => {
+      const firstBrace = text.search(/[{[]/);
+      const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        const inner = text.substring(firstBrace, lastBrace + 1);
+        return escapeRawControlCharsInStrings(escapeUnescapedQuotesInStrings(inner)).replace(/,\s*([\]}])/g, '$1');
       }
       return null;
     },
