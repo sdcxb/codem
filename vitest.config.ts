@@ -78,15 +78,23 @@ export default defineConfig({
          * （这两条是零覆盖清单里最后两个），实测 branches 46.61% / statements 54.51%，
          * `coverage-baseline --check` 如实报出"42/50 比实测低太多 ⇒ 形同没有"。
          * 棘轮不会自己收紧 —— 每次覆盖率真涨了，都要有人把阈值抬到实测之下、棘轮之内。
+         *
+         * **第 191 波再按棘轮上调**（`node tools/audit/coverage-baseline.mjs --ratchet` 现算）：
+         * 全局 lines 55→63 / functions 46→55 / branches 45→53 / statements 53→60；
+         * 四个目录地板：storage 81/82/68/79 → 83/84/70/81、llm 60/61/49/58 → 72/73/62/71、
+         * session 74/78/54/74 → 78/80/60/77、diagnostics（functions 88→93）。
+         * 涨的原因里有一件是**真的补了缺口**：`core/provider/code-runtime-worker-thread-provider.ts`
+         * 原来只有"源码形状"判据（实测行覆盖 7.14%，低于按文件地板 14%），本轮补了 6 条行为判据
+         * （`src/test/code-runtime-provider.test.ts`）⇒ 该文件 100%。
          */
-        lines: 55,
-        functions: 46,
-        branches: 45,
-        statements: 53,
-        "src/core/storage/**": { lines: 81, functions: 82, branches: 68, statements: 79 },
-        "src/core/llm/**": { lines: 60, functions: 61, branches: 49, statements: 58 },
-        "src/core/session/**": { lines: 74, functions: 78, branches: 54, statements: 74 },
-        "src/core/diagnostics/**": { lines: 96, functions: 88, branches: 74, statements: 94 },
+        lines: 63,
+        functions: 55,
+        branches: 53,
+        statements: 60,
+        "src/core/storage/**": { lines: 83, functions: 84, branches: 70, statements: 81 },
+        "src/core/llm/**": { lines: 72, functions: 73, branches: 62, statements: 71 },
+        "src/core/session/**": { lines: 78, functions: 80, branches: 60, statements: 77 },
+        "src/core/diagnostics/**": { lines: 96, functions: 93, branches: 74, statements: 95 },
         perFile: false,
       },
       // Exclude non-source files from coverage
