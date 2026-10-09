@@ -4414,6 +4414,65 @@ Rust 侧判据此前**进不了变异闸门**（`tools/mutate/run.mjs` 只会跑
 
 ---
 
+## 第 192 波收尾：**1.16.304 已发布**（跑满对标评测）
+
+用户拍板「重跑一批评测再发」。按 `docs/RELEASE-GUIDE.md` 走了完整流程：**先构建（跑批期间不构建）** →
+静默安装 → 跑满 **12 格 × run2/run3**（24 格，约 3 小时）→ 官方口径收数 → 发版 → 远端校验。
+
+### 发布物
+
+- `gh release create v1.16.304`（5 个资产：NSIS exe+sig、MSI+sig、latest.json），**Latest = v1.16.304**；
+- `node tools/release/verify-update-manifest.mjs --remote` **7/7 通过**（远端资产 sha256 与本地产物一致）；
+- ⚠️ **1.16.300 / 301 / 302 / 303 都没发布过**（只在本地构建）⇒ 1.16.304 是**累积版**，
+  用户从 1.16.299 升上来会一次性拿到记忆三级作用域、记忆体检、待批准角标、自动提取修复、快照回退等。
+
+### 对标结果（官方口径：`_collect.mjs --apply`）
+
+| | 本版 1.16.304 | 对照臂 DSH |
+| --- | --- | --- |
+| **两轮都通过**（发布说明用的口径） | **10/12** | **9/12** |
+| 单轮 | run2 **11/12**、run3 **10/12** | run2 10/12、run3 10/12 |
+| 工具调用（每对中位） | 45.6 / 53.3 | 94.0 / 90.8 ⇒ **本版约一半** |
+| 输出 tokens | 0.67× / 1.12×（互有高低） | 基准 |
+| 单次响应时延 | 更慢（+75s / +187s 每对） | 基准 |
+
+翻盘的格：`repo-11-contract-error-not-masked`（r2 过、r3 败 ★）；两轮全败：`repo-06-llm-failure-not-completed`（与"模型侧采样方差"的既有结论一致）。
+
+### ⚠️ 这一轮踩到的坑（下一轮跑 2 轮批必读）
+
+**`_collect.mjs` 的配对会"卡住"**：它默认把对照臂过滤成 `runNumber ∈ {1,2,3}`，而
+`_chain-ab-296.mjs` 的循环是 **run 2/3** ⇒ 若候选记录文件是**新建的**（只有 r2/r3），
+官方配对报告会打印 **「Pass rate withheld because pairs are blocked」**（`repo-05/run-1: 处理臂缺失`），
+**没有任何抬头数字**。**正确做法**：用收集器自带的 `--runs-only N`（它**同时**约束候选与对照，
+是机械化的对齐口径）：
+
+```powershell
+node .preview-shot/_collect.mjs --apply --treatment .preview-shot/eval-records-codem-repo-vXX.jsonl --runs-only 2
+node .preview-shot/_collect.mjs --apply --treatment .preview-shot/eval-records-codem-repo-vXX.jsonl --runs-only 3
+```
+
+发布说明里"两轮都通过"的那个数，就是从这两份单轮官方报告 + 逐格逐轮对照算出来的
+（本波用 `.preview-shot/_outcome-table-304.mjs` 做这一步，只读记录、不发明数字）。
+**不要**为了让配对成立去改 `_collect.mjs` 的过滤常量（那是口径代码，改了要带判据）。
+
+### ★ 一个新冒出来的**矛盾**（留给下一轮，别当结论用）
+
+`[prompt-cache]` 这条读数现在有**两个互相矛盾**的来源：
+
+- **钻取实测**（本波）：同一会话里 `[prompt-cache] hit=6400 miss=52159 prompt=58559 ratio=10.9%`
+  —— 命中量**恒定在 ~5–6k**，与提示长度（58k / 137k）无关；
+- **评测批的真实记录**（`eval-records-codem-repo-v76.jsonl`，逐格 usage）：
+  `cacheHitTokens=514688 / promptTokens=587765` ≈ **88% 命中**（长会话、多轮）。
+
+⇒ 两者不可能同时描述"服务端缓存策略"这一件事。可能的解释（**都还没验证**）：
+① 两个数**量的不是同一个东西**（我们自己的 `[prompt-cache]` 计数 vs 服务端返回的 usage 字段）；
+② 缓存命中与**会话长度/轮数**强相关（钻取只跑了一两轮）；
+③ 提示内容里有一段**易变前缀**（记忆块、时间戳）在钻取里每次都变、在评测里反而不变。
+**下一轮要做的**：在**同一个会话连续两轮**里同时读 `[prompt-cache]` 与 provider usage 的
+`cacheHitTokens` ⇒ 一次就能判定这两个口径的关系。**在那之前，O-48 的结论不许改**。
+
+
+
 ## ★★★★★ 给下一个对话：移交说明与优先级
 
 ### 〇、工作模式（**用户明确指定，必须遵守**）

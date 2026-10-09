@@ -12,8 +12,8 @@
 （所以仓库里**大量中文注释在解释"为什么"** ✓ —— 改动前先读注释，很多坑已经写在那里了 ✓）。
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
-- 当前版本：**1.16.298**（已发布，GitHub Releases 的 `Latest`）
-- 测试规模：**565 个测试文件 / 约 7275 个用例全绿**，`tsc` 零错误
+- 当前版本：**1.16.304**（已发布，GitHub Releases 的 `Latest`）
+- 测试规模：**646 个测试文件 / 7899 个用例全绿**，`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
 ## 1. 先读哪几个文件（按这个顺序）
@@ -40,7 +40,7 @@ src/core/environment/ 工作区变更追踪（file-change-tracker.ts）
 src/core/prompt/      系统提示词与外置模板
 src/core/knowledge/   知识与动画类小工具（字体/嵌入/PPT 生成等）
 src/components/       React 界面组件（含技能管理、设置面板、任务中心等）
-src/test/             565 个测试文件（判据都写在这里）
+src/test/             646 个测试文件（判据都写在这里）
 tools/eval/           评测口径（配对报告、去重）
 tools/audit/          结构审计（上报点分诊、可达性门禁等）
 .preview-shot/        评测脚手架与运行产物（**已被 .gitignore 忽略**，不进仓库）
@@ -52,7 +52,7 @@ docs/releases/        1.0 前 26 版发布说明（留档）
 ```powershell
 # 开发 / 检查 / 测试
 npx tsc --noEmit                        # 类型检查（必须 0 错误）
-npx vitest run                          # 全量测试（约 2 分钟；565 文件 / ~7275 用例）
+npx vitest run                          # 全量测试（约 2 分钟；646 文件 / 7899 用例）
 npx vitest run src/test/<某个>.test.ts  # 单跑一个判据文件
 
 # 结构审计（动过上报点/新增未接线文件后要跑）
