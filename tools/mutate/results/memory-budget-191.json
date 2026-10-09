@@ -1,0 +1,129 @@
+{
+  "wave": "memory-budget-191",
+  "description": "第 191 波：记忆 payload 体积预算（O-36）、order 补齐落库（O-37）、迁移被拒后的内存回滚（O-47）的变异自证",
+  "runAt": "2026-10-08T15:20:48.649Z",
+  "specFingerprint": "b73e4c4ed664b693169be606b2ae9d06f568c6c3",
+  "files": [
+    "src/core/memory/memory.ts"
+  ],
+  "tests": [
+    "src/test/memory-payload-guards.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 去掉体积预算检查",
+      "why": "MEM-BYTES-1：没有预算检查时，超预算语料不会被上报（判据必须红）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    this.checkPayloadBudget(this.lastPayloadBytes);\n    return payload;",
+          "to": "    void this.lastPayloadBytes;\n    return payload;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-payload-guards.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2888
+    },
+    {
+      "id": "MUT-2 记忆预算复用消息镜像的量级（等于没预算）",
+      "why": "MEM-BYTES-3：把记忆预算改成消息镜像那个量级（192 MiB）⇒ 超限语料不再越界、两把尺子混成一把",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "export const MEMORY_PAYLOAD_BUDGET_BYTES = 2 * 1024 * 1024;",
+          "to": "export const MEMORY_PAYLOAD_BUDGET_BYTES = 192 * 1024 * 1024;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-payload-guards.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2751
+    },
+    {
+      "id": "MUT-3 order 补齐不落库（回到'只等下一次 save'）",
+      "why": "MEM-ORDER-1/1b：不落库 ⇒ 顺序真相只在 JSON 键序里，另一个写者重排键序就变",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    if (this.loadState.ok && this.orderBackfilled > 0) this.persistOrderBackfill();",
+          "to": "    if (false) this.persistOrderBackfill();"
+        }
+      ],
+      "tests": [
+        "src/test/memory-payload-guards.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3019
+    },
+    {
+      "id": "MUT-4 快照被拒时内存态不回滚",
+      "why": "MIG-SNAP-2：磁盘没动、内存已迁 ⇒ 同一会话里看到的归属与重启后不同（判据必须红）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "            onSnapshotAborted(reason);",
+          "to": "            void reason;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-payload-guards.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3899
+    },
+    {
+      "id": "MUT-5 体积上报不节流（每次改动都报）",
+      "why": "MEM-BYTES-1b：没有 25% 阈值 ⇒ 记忆一超预算就每次改动报一条，用户被同一个提示刷屏",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    if (prevReported !== null && bytes < prevReported * 1.25) return;",
+          "to": "    if (false) return;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-payload-guards.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4386
+    },
+    {
+      "id": "MUT-6 体积回落后不复位上报状态",
+      "why": "MEM-BYTES-1b：状态机卡死 ⇒ 体积真的回落后再超限也不会再报（用户以为已经没事了）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    if (bytes <= MEMORY_PAYLOAD_BUDGET_BYTES) {\n      this.lastBudgetReportBytes = null;\n      return;\n    }",
+          "to": "    if (bytes <= MEMORY_PAYLOAD_BUDGET_BYTES) {\n      return;\n    }"
+        }
+      ],
+      "tests": [
+        "src/test/memory-payload-guards.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3556
+    }
+  ]
+}

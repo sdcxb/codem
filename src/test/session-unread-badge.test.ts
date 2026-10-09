@@ -36,6 +36,9 @@ beforeEach(async () => {
   await new Promise((r) => setTimeout(r, 20));
   const { __resetReadState } = await import("../core/session/session-read-state");
   __resetReadState();
+  // GAP-LIST O-42 的读模型增量是模块级状态：用例之间清掉（避免上一条的写入漏到这一条）
+  const { __resetMessageCountAdjustment } = await import("../core/storage/message");
+  __resetMessageCountAdjustment();
 });
 
 afterEach(async () => {

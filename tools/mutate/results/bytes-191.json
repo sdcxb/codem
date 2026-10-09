@@ -1,0 +1,93 @@
+{
+  "wave": "bytes-191",
+  "description": "第 191 波：字节数人读形态收敛成单一来源（BYTES-SINGLE-SOURCE）的变异自证",
+  "runAt": "2026-10-08T15:23:35.832Z",
+  "specFingerprint": "7ce6a070d3168a9ac58472b26343c6bb8972b186",
+  "files": [
+    "src/core/storage/maintenance.ts",
+    "src/core/utils/bytes.ts",
+    "src/plugins/library-ops/core/scene-image.ts"
+  ],
+  "tests": [
+    "src/test/bytes-single-source.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 维护汇总改回本地实现",
+      "why": "BYTES-1：文件里又出现一遍字节换算 ⇒ 解析式对账必须判红",
+      "patches": [
+        {
+          "file": "src/core/storage/maintenance.ts",
+          "from": "import { formatBytes } from \"../utils/bytes\";",
+          "to": "const formatBytes = (n: number) => `${(n / 1024).toFixed(1)} KB`;"
+        }
+      ],
+      "tests": [
+        "src/test/bytes-single-source.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2476
+    },
+    {
+      "id": "MUT-2 唯一实现的口径被改掉（KB 前少一个空格）",
+      "why": "BYTES-2：口径是全仓契约，改一位小数/空格必须被判据抓住",
+      "patches": [
+        {
+          "file": "src/core/utils/bytes.ts",
+          "from": "  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;",
+          "to": "  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;"
+        }
+      ],
+      "tests": [
+        "src/test/bytes-single-source.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2231
+    },
+    {
+      "id": "MUT-3 插件的再导出变成第二份实现",
+      "why": "BYTES-2：再导出必须是**同一个函数**；自己写一份看起来一样的实现必须红",
+      "patches": [
+        {
+          "file": "src/plugins/library-ops/core/scene-image.ts",
+          "from": "export { formatBytes };",
+          "to": "export const formatBytes = (n: number) => `${(n / 1024).toFixed(1)}KB`;\nvoid formatBytes;"
+        }
+      ],
+      "tests": [
+        "src/test/bytes-single-source.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2554
+    },
+    {
+      "id": "MUT-4 反向对照：只改注释文案（不动数值）",
+      "why": "反向对照：不动实现时判据**不许**红（否则这道闸门是永远红，没人会看它）",
+      "patches": [
+        {
+          "file": "src/core/utils/bytes.ts",
+          "from": "export function formatBytes(n: number): string {",
+          "to": "// 反向对照：这里只加一行注释，行为逐字不变\nexport function formatBytes(n: number): string {"
+        }
+      ],
+      "tests": [
+        "src/test/bytes-single-source.test.ts"
+      ],
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 2347
+    }
+  ]
+}

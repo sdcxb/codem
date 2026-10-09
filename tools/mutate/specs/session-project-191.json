@@ -1,0 +1,62 @@
+{
+  "description": "第 191 波同簇收口之五：「会话 → 项目根路径」只许一处实现，且安全模式必须按它解析（worktree cwd 不许把项目级覆盖弄丢）",
+  "mutations": [
+    {
+      "id": "MUT-1 executor 退回裸 cwd（安全模式按 worktree 目录查）",
+      "why": "SP-2c：项目级覆盖按项目根路径存键 ⇒ 拿 worktree 目录查永远查不到，静默退回全局模式（方向可能是放松权限）",
+      "patches": [
+        {
+          "file": "src/core/session/executor.ts",
+          "from": "    const effectiveSecurityMode = getEffectiveSecurityMode(registeredProjectPath ?? cwd) || \"ask\";",
+          "to": "    const effectiveSecurityMode = getEffectiveSecurityMode(cwd) || \"ask\";"
+        }
+      ],
+      "tests": ["src/test/session-project-single-source.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 llm/index.ts 自己再反查一遍（绕过唯一实现）",
+      "why": "SP-1：同一事实的第二份实现必须被判红（本仓「同一簇多份副本」的正面教训）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "import { sessionProjectPath } from \"../storage/session-project\";",
+          "to": "import * as SessionStorage0 from \"../storage/session\";\nimport * as ProjectStorage0 from \"../storage/project\";"
+        },
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "    const fromTable = projectIdFromCwd(sessionProjectPath(input.sessionId));",
+          "to": "    const row0 = SessionStorage0.getSession(input.sessionId);\n    const fromTable = projectIdFromCwd(ProjectStorage0.getProject(row0?.projectId ?? \"\")?.path);"
+        }
+      ],
+      "tests": ["src/test/session-project-single-source.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 唯一实现不再留痕（读失败静默）",
+      "why": "SP-2b：读失败与「没登记」对调用方是同一观测态，但读失败必须能从日志查出来",
+      "patches": [
+        {
+          "file": "src/core/storage/session-project.ts",
+          "from": "    console.warn(`[session-project] 读会话 ${sessionId} 的项目登记失败（按「查不到」处理）：`, e);",
+          "to": "    void e;"
+        }
+      ],
+      "tests": ["src/test/session-project-single-source.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 反向对照：只改一处说明注释",
+      "why": "反向对照：行为不变时判据不许红",
+      "patches": [
+        {
+          "file": "src/core/storage/session-project.ts",
+          "from": "export function sessionProjectPath(sessionId?: string): string | undefined {",
+          "to": "// 反向对照：只加一行注释，行为逐字不变\nexport function sessionProjectPath(sessionId?: string): string | undefined {"
+        }
+      ],
+      "tests": ["src/test/session-project-single-source.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

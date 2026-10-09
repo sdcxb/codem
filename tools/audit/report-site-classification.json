@@ -2,8 +2,8 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 244,
-    "triaged": 244,
+    "total": 248,
+    "triaged": 248,
     "pending": 0
   },
   "sites": [
@@ -414,6 +414,13 @@
       "round": 100
     },
     {
+      "site": "src/core/llm/agentic-loop.ts::loop.retryBudget::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "第 191 波 O-41 / RETRY-BUDGET-2：**重试预算用尽**（墙钟 30 分钟默认）⇒ action（这一回合没有完成；用户能介入：设置→重试里调小等待/次数后重发）。旧形态只有 console.warn，打包版里用户看不到原因（界面上只剩最后那个 provider 错误）。",
+      "round": 191
+    },
+    {
       "site": "src/core/llm/cost-tracker.ts::costTracker.setLimits::#1",
       "kind": "persist",
       "status": "triaged",
@@ -440,6 +447,13 @@
       "status": "triaged",
       "reason": "computer-use 工具没注册 ⇒ action（模型无法读屏/操作桌面）。",
       "round": 104
+    },
+    {
+      "site": "src/core/llm/index.ts::llm.memoryExtractionCapacity::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "自动记忆被容量上限拒绝是**发现**：这是用户自己设的上限，用户可介入（删/整合记忆或调大上限）⇒ advisory 带建议；不是 persist（没有写盘失败），也不是 action（'功能没生效'会让人以为程序坏了）。",
+      "round": 187
     },
     {
       "site": "src/core/llm/index.ts::llmEngine.subagentRuntimeInit::#1",
@@ -519,6 +533,132 @@
       "round": 104
     },
     {
+      "site": "src/core/memory/memory.ts::memory.byteBudget::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "第 191 波 O-36：记忆整份 payload 的体积**超过预算** ⇒ action（用户能采取动作：在设置→记忆里删条目，或先导出 JSON 留档再清理）。不是 persist：没有任何写失败（超预算也照写、一条不丢）；也不是 advisory：用户可介入，必须能看见（AGENTS §4.6 的口径）。",
+      "round": 191
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.consolidate::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "手动整合的结果回执（合并/清理/裁剪各多少条）⇒ 发现：整合成功了，删了/改了什么必须**如实告知**（旧实现只有渲染侧 console）。不是失败语气。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.entriesDropped::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "读入时跳过 N 条形状不合法的条目是**发现**：读取本身成功了（好条目都进池了），用户可介入（先导出留档，或不管它——下次写入会把它们从库里去掉）⇒ advisory，不是失败。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.legacyPoolPause::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "「暂停注入旧版跨项目记忆」开关没写进设置 ⇒ **写盘失败**：本次运行内已生效、重启会回到默认（关），必须让用户知道旧行为会回来。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.load::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "第 189 波 MEM-LOAD-QUIET-1（口径改写，取代 187 波那条）：**端口还没注册 / 记忆域还没预热**是启动顺序的一部分（记忆单例的构造早于端口注册），系统随后自己会重读（bootstrap 的『端口注册后 reload』+ `save()` 的写前重试）⇒ 这是 advisory（提醒/日志），**不是** action：真机取证（1.16.299）证明用户什么都做不了，弹出来只是一条陈旧且不可操作的横幅（『请重试』是假建议）。",
+      "round": 189
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.load::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "第 189 波 MEM-LOAD-VISIBLE-1（四个结论性分支 + 迁移抛出合并到一处上报，取代 187 波的 #2/#3/#4 与 188 波的 #5）：读到过、重试后**仍然**读不出来（JSON 坏 / 容器形状不认识 / 迁移阶段抛出）⇒ 记忆本轮真的不可用（fail-closed：不迁移、不覆盖），用户必须能看到，并能据此回退（文案给『导出留档 → 设置 → 记忆体检 → 回退到迁移前 → 反馈原文』）。不是 persist：没有任何写盘动作失败，旧数据逐字未动。",
+      "round": 189
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.orderBackfill::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "第 191 波 O-37：读盘时为旧条目补齐的 order（创建序）**没能落库** ⇒ persist（这一次写入没落地；本次运行内仍按内存里的顺序用，重启后会重新补齐一次）。不是 action：顺序规则没失效，只是没持久化。",
+      "round": 191
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.preMigrationSnapshot::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "第 188 波 F4：**迁移前快照**（唯一可逆凭据）没被确认写入 ⇒ 写盘失败。后果不是通用的『重启会丢』而是『这次迁移整体没执行，旧数据保持原样、下次启动会重来』—— 所以这里上报是必须的：用户/命令要知道『为什么没迁移』（同一次失败也写进迁移报告的 snapshotDeferred）。",
+      "round": 188
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.rollback::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "「回退到迁移前」写回失败 ⇒ 该动作没有生效（库内容保持原样）。用户可介入（重试）。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.rollback::#2",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "回退**成功**的回执（写回 N 条 + 建议怎么处置旧作用域条目）⇒ 结果/发现，不是失败。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.saveConfirmed::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "确认式写入拿到了引擎的失败答复（IPC 失败/重试耗尽/磁盘满）⇒ **写盘失败**，正是 I6 要修的那条'假成功'路径。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.saveConfirmed::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "第 187 波复审 R1：确认链上**普通写**的落库失败（`chainPersist`）⇒ 写盘失败，并回传 `lastPersistError` 让界面/回执能如实说'没落库'。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.saveConfirmed::#3",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "第 187 波复审 R1：**迁移**确认链的落库失败（`commitMigrationPayload`）⇒ 写盘失败；这条同时钉住'本次不写迁移标记'（否则就是'数据没落、标记落了'）。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.saveRefused::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "读失败状态下拒绝写记忆 ⇒ **数据保存失败**（改动只在内存里，重启会丢）。拒绝本身是刻意的保护，但用户必须知道'这次改动没保存'。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.saveRefused::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "确认式写入（addConfirmed/saveConfirmed）在读失败状态下被拒绝 ⇒ 同上：写盘失败。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.setWriteApproval::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "写入审批开关没落到设置里 ⇒ **写盘失败**（不是动作失败：开关在本次运行内已生效、重启会回到旧值，用户可再切一次）。也不属 advisory：用户有可介入的动作，不是'已自动修好'。",
+      "round": 209
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.updateRejected::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "改归属会把目标桶撑过容量上限 ⇒ 该动作**没有生效**（条目保持原样）。不是 persist：什么都没写；用户可介入（先删/整合）。",
+      "round": 187
+    },
+    {
+      "site": "src/core/memory/memory.ts::memory.updateRejected::#2",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "自动流程试图改写手动记忆被信任边界拦下 ⇒ 动作没有生效（这是刻意拒绝，**必须留痕**，否则'自动流程改了手写记忆'这类事故无从追查）。",
+      "round": 187
+    },
+    {
       "site": "src/core/permission/permission.ts::permission.saveCustomRules::#1",
       "kind": "persist",
       "status": "triaged",
@@ -545,6 +685,13 @@
       "status": "triaged",
       "reason": "恢复状态写盘失败 ⇒ persist。",
       "round": 104
+    },
+    {
+      "site": "src/core/retry/retry.ts::loop.retryBudget::#1",
+      "kind": "action",
+      "status": "triaged",
+      "reason": "第 191 波 O-41 / RETRY-BUDGET-2：**重试预算用尽**（墙钟 30 分钟默认）⇒ action（这一回合没有完成；用户能介入：设置→重试里调小等待/次数后重发）。旧形态只有 console.warn，打包版里用户看不到原因（界面上只剩最后那个 provider 错误）。",
+      "round": 191
     },
     {
       "site": "src/core/retry/retry.ts::retry.setConfig::#1",
@@ -1578,125 +1725,6 @@
       "status": "triaged",
       "reason": "反馈写入抛错 ⇒ 未保存",
       "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.setWriteApproval::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "写入审批开关没落到设置里 ⇒ **写盘失败**（不是动作失败：开关在本次运行内已生效、重启会回到旧值，用户可再切一次）。也不属 advisory：用户有可介入的动作，不是'已自动修好'。",
-      "round": 209
-    },
-    {
-      "site": "src/core/llm/index.ts::llm.memoryExtractionCapacity::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "自动记忆被容量上限拒绝是**发现**：这是用户自己设的上限，用户可介入（删/整合记忆或调大上限）⇒ advisory 带建议；不是 persist（没有写盘失败），也不是 action（'功能没生效'会让人以为程序坏了）。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.legacyPoolPause::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "「暂停注入旧版跨项目记忆」开关没写进设置 ⇒ **写盘失败**：本次运行内已生效、重启会回到默认（关），必须让用户知道旧行为会回来。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.load::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "第 189 波 MEM-LOAD-QUIET-1（口径改写，取代 187 波那条）：**端口还没注册 / 记忆域还没预热**是启动顺序的一部分（记忆单例的构造早于端口注册），系统随后自己会重读（bootstrap 的『端口注册后 reload』+ `save()` 的写前重试）⇒ 这是 advisory（提醒/日志），**不是** action：真机取证（1.16.299）证明用户什么都做不了，弹出来只是一条陈旧且不可操作的横幅（『请重试』是假建议）。",
-      "round": 189
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.load::#2",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "第 189 波 MEM-LOAD-VISIBLE-1（四个结论性分支 + 迁移抛出合并到一处上报，取代 187 波的 #2/#3/#4 与 188 波的 #5）：读到过、重试后**仍然**读不出来（JSON 坏 / 容器形状不认识 / 迁移阶段抛出）⇒ 记忆本轮真的不可用（fail-closed：不迁移、不覆盖），用户必须能看到，并能据此回退（文案给『导出留档 → 设置 → 记忆体检 → 回退到迁移前 → 反馈原文』）。不是 persist：没有任何写盘动作失败，旧数据逐字未动。",
-      "round": 189
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.preMigrationSnapshot::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "第 188 波 F4：**迁移前快照**（唯一可逆凭据）没被确认写入 ⇒ 写盘失败。后果不是通用的『重启会丢』而是『这次迁移整体没执行，旧数据保持原样、下次启动会重来』—— 所以这里上报是必须的：用户/命令要知道『为什么没迁移』（同一次失败也写进迁移报告的 snapshotDeferred）。",
-      "round": 188
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.entriesDropped::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "读入时跳过 N 条形状不合法的条目是**发现**：读取本身成功了（好条目都进池了），用户可介入（先导出留档，或不管它——下次写入会把它们从库里去掉）⇒ advisory，不是失败。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.saveRefused::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "读失败状态下拒绝写记忆 ⇒ **数据保存失败**（改动只在内存里，重启会丢）。拒绝本身是刻意的保护，但用户必须知道'这次改动没保存'。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.saveRefused::#2",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "确认式写入（addConfirmed/saveConfirmed）在读失败状态下被拒绝 ⇒ 同上：写盘失败。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.saveConfirmed::#1",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "确认式写入拿到了引擎的失败答复（IPC 失败/重试耗尽/磁盘满）⇒ **写盘失败**，正是 I6 要修的那条'假成功'路径。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.saveConfirmed::#2",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "第 187 波复审 R1：确认链上**普通写**的落库失败（`chainPersist`）⇒ 写盘失败，并回传 `lastPersistError` 让界面/回执能如实说'没落库'。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.saveConfirmed::#3",
-      "kind": "persist",
-      "status": "triaged",
-      "reason": "第 187 波复审 R1：**迁移**确认链的落库失败（`commitMigrationPayload`）⇒ 写盘失败；这条同时钉住'本次不写迁移标记'（否则就是'数据没落、标记落了'）。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.updateRejected::#1",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "改归属会把目标桶撑过容量上限 ⇒ 该动作**没有生效**（条目保持原样）。不是 persist：什么都没写；用户可介入（先删/整合）。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.updateRejected::#2",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "自动流程试图改写手动记忆被信任边界拦下 ⇒ 动作没有生效（这是刻意拒绝，**必须留痕**，否则'自动流程改了手写记忆'这类事故无从追查）。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.rollback::#1",
-      "kind": "action",
-      "status": "triaged",
-      "reason": "「回退到迁移前」写回失败 ⇒ 该动作没有生效（库内容保持原样）。用户可介入（重试）。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.rollback::#2",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "回退**成功**的回执（写回 N 条 + 建议怎么处置旧作用域条目）⇒ 结果/发现，不是失败。",
-      "round": 187
-    },
-    {
-      "site": "src/core/memory/memory.ts::memory.consolidate::#1",
-      "kind": "advisory",
-      "status": "triaged",
-      "reason": "手动整合的结果回执（合并/清理/裁剪各多少条）⇒ 发现：整合成功了，删了/改了什么必须**如实告知**（旧实现只有渲染侧 console）。不是失败语气。",
-      "round": 187
     }
   ],
   "_families": {

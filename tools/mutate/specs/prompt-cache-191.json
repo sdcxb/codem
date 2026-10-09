@@ -1,0 +1,44 @@
+{
+  "description": "第 191 波 O-48：服务端前缀缓存读数必须可复核（缺报不许编成 0）且必须真的打出来",
+  "mutations": [
+    {
+      "id": "MUT-1 provider 没报时也硬算一个 ratio（把缺失当 0）",
+      "why": "PC-1b：缺报写成 hit=0 是编造读数，会让「要不要做 delta 通道」的判断反过来",
+      "patches": [
+        {
+          "file": "src/core/llm/cache-percent.ts",
+          "from": "  if (hit === undefined) {",
+          "to": "  if (false) {"
+        }
+      ],
+      "tests": ["src/test/prompt-cache-observability.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 删掉 agentic-loop 里那一行读数",
+      "why": "PC-2：读数不打出来 ⇒ O-48 的问题永远没有数据可判（接线检查必须红）",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      console.log(formatPromptCacheLog(usage));",
+          "to": "      void formatPromptCacheLog;"
+        }
+      ],
+      "tests": ["src/test/prompt-cache-observability.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 反向对照：只改百分比实现的注释文案",
+      "why": "反向对照：读数口径不变时判据不许红",
+      "patches": [
+        {
+          "file": "src/core/llm/cache-percent.ts",
+          "from": "export function formatPromptCacheLog(usage: PromptCacheReading): string {",
+          "to": "// 反向对照：只加一行注释\nexport function formatPromptCacheLog(usage: PromptCacheReading): string {"
+        }
+      ],
+      "tests": ["src/test/prompt-cache-observability.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

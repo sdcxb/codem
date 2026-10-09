@@ -61,6 +61,8 @@ import { KnowledgeGraphView } from './KnowledgeGraphView';
 import PPTAdapter from './ppt/PPTAdapter';
 import { useDomainReady } from '../hooks/use-domain-ready';
 import { alertDialog } from "../core/ui/native-dialog";
+// 第 191 波：字节数的人读形态走全仓**唯一**实现（这里原来是 `(size/1024).toFixed(1)}KB` 的第四份副本）
+import { formatBytes } from "../core/utils/bytes";
 
 interface NotebookWorkspaceProps {
   notebookId: string;
@@ -656,10 +658,11 @@ setShowNoteEditor(true);
     });
     saveMessages(session.id);
 
-    // 更新 session 消息计数
-    const updatedCount = session.messageCount + 1;
-    SessionStorage.updateSession(session.id, { messageCount: updatedCount, lastMessageAt: Date.now() });
-    const updatedSession = { ...session, messageCount: updatedCount, lastMessageAt: Date.now() };
+    // 更新 session 的最后活动时间（⚠️ 第 191 波：**不**写 messageCount ——
+    // 那一列由引擎在 messages.upsert_index 里 bump，渲染侧再写一次会让会话长期多算 1 条；
+    // 读模型上的即时可见由 storage/message.ts 的未吸收增量负责。见 App.tsx 同款说明）
+    SessionStorage.updateSession(session.id, { lastMessageAt: Date.now() });
+    const updatedSession = { ...session, lastMessageAt: Date.now() };
     setNotebookCurrentSession(updatedSession);
 
     // 调用 App.tsx 提供的 agentic loop
@@ -1386,7 +1389,7 @@ function SourceCard({
             <span className="nb-source-type-tag">{typeLabel}</span>
             {source.chunkCount > 0 && <span className="nb-source-chunks">{source.chunkCount} {isZh ? '块' : 'chk'}</span>}
             {source.size != null && source.size > 0 && (
-              <span className="nb-source-size">{(source.size / 1024).toFixed(1)}KB</span>
+              <span className="nb-source-size">{formatBytes(source.size)}</span>
             )}
             <span className="nb-source-status-text" style={{ color: statusColor }}>{source.status}</span>
           </div>

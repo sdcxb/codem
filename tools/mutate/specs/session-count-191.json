@@ -1,0 +1,57 @@
+{
+  "description": "第 191 波同簇收口：sessions.message_count 只许引擎写（渲染侧「读到的值 + 1」必须消失）",
+  "mutations": [
+    {
+      "id": "MUT-1 App.tsx 恢复渲染侧 +1",
+      "why": "SCW-1/2：渲染侧再写一次 message_count = 第二个写入者（引擎 bump 再加一次 ⇒ 会话长期多算 1 条）",
+      "patches": [
+        {
+          "file": "src/App.tsx",
+          "from": "      lastMessageAt: Date.now(),\n    });",
+          "to": "      lastMessageAt: Date.now(),\n      messageCount: session.messageCount + 1,\n    });"
+        }
+      ],
+      "tests": ["src/test/session-count-single-writer.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 微信桥恢复 row.messageCount + 1",
+      "why": "SCW-1/2：同类形态的第二个副本（本仓最怕「同一簇多份」，必须逐份挡住）",
+      "patches": [
+        {
+          "file": "src/core/wechat-bridge/wechat-bridge.ts",
+          "from": "        model: row.model || entry.model || undefined,",
+          "to": "        model: row.model || entry.model || undefined,\n        messageCount: row.messageCount + 1,"
+        }
+      ],
+      "tests": ["src/test/session-count-single-writer.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 例外表次数写错（条目过期/漏登记必须红）",
+      "why": "SCW-1：例外表要能挡住「悄悄多一处」，所以次数对账必须有效",
+      "patches": [
+        {
+          "file": "src/test/session-count-single-writer.test.ts",
+          "from": "    file: \"src/core/storage/maintenance.ts\",\n    occurrences: 1,",
+          "to": "    file: \"src/core/storage/maintenance.ts\",\n    occurrences: 2,"
+        }
+      ],
+      "tests": ["src/test/session-count-single-writer.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 反向对照：只改一处说明注释",
+      "why": "反向对照：不写 messageCount 时判据不许红",
+      "patches": [
+        {
+          "file": "src/core/phone-link/phone-link.ts",
+          "from": "    // ⚠️ 第 191 波：不许写 `messageCount`（引擎在 messages.upsert_index 里 bump 那一列；",
+          "to": "    // 反向对照：只改这一行注释，不写 messageCount 的行为逐字不变\n    // ⚠️ 第 191 波：不许写 `messageCount`（引擎在 messages.upsert_index 里 bump 那一列；"
+        }
+      ],
+      "tests": ["src/test/session-count-single-writer.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

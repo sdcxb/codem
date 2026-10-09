@@ -1,0 +1,37 @@
+{
+  "_how_to_triage": "本文件登记「必须留下变异证据」的波次（O-53 / MUTATE-ARTIFACT-1）。每登记一个波次，就必须有 tools/mutate/specs/<wave>.{json,mjs} 与 tools/mutate/results/<wave>.json，且结果里 restored===true、每条变异 ok===true、锚点未过期。新增判据而没登记波次 = 没留下变异证据。",
+  "_waves": {
+    "memory-budget-191": "O-36 记忆 payload 字节预算 / O-37 order 补齐落库 / O-47 迁移被拒后的内存回滚",
+    "memory-checkup-191": "O-44 记忆体检页签把当前项目 + 当前对话传进视图（行为判据）",
+    "contrast-191": "O-39 相对亮度阈值收敛到单一来源（WCAG 勘误后的取值）",
+    "bytes-191": "第 191 波全仓搜同类的附带产物：字节数人读形态收敛成一份（BYTES-SINGLE-SOURCE）",
+    "time-window-191": "O-40 + O-55 本地日历日窗口（DST 跳变日）与「不许再出现裸 24h 当日长」",
+    "memory-placement-191": "O-49 / O-50 每轮固定开销棘轮 + 带技能/MCP 时易变侧前缀不下降（MEM-PLACE-25/26/27）",
+    "prompt-cache-191": "O-48 提示前缀缓存的**可观测读数**（服务端 KV 命中 token 落到日志与判据）",
+    "project-id-191": "O-46 executor / 后台路径的项目身份必须显式取登记表（不许退化成 worktree 目录）",
+    "unread-191": "O-42 写消息 → 读计数同步可见（未读水位精度）与漂移态兜底",
+    "session-count-191": "同簇收口：sessions.message_count 只许引擎写（渲染侧「读到的值 + 1」四处副本）",
+    "session-project-191": "同簇收口：会话 → 项目根路径只许一处实现（安全模式按项目根解析）",
+    "memory-ipc-191": "O-52 记忆整份写的放大倍数（量化 + 棘轮 + 无变化不写）",
+    "bench-evidence-191": "O-54 对标取证带出处落进仓库（docs/BENCH-EVIDENCE.md）+ 判据 BENCH-EVIDENCE-1",
+    "water-level-banner-191": "紧急修复：上下文水位提示条的回执与风险分离 + 点按钮立刻收起（真机报的两个缺陷）",
+    "skill-scripts-191": "同簇收口：技能脚本的退出不许硬 process.exit（Windows libuv 断言 + 退出码 0xC0000409）"
+  },
+  "waves": [
+    "memory-budget-191",
+    "memory-checkup-191",
+    "contrast-191",
+    "bytes-191",
+    "time-window-191",
+    "memory-placement-191",
+    "prompt-cache-191",
+    "project-id-191",
+    "unread-191",
+    "session-count-191",
+    "session-project-191",
+    "memory-ipc-191",
+    "bench-evidence-191",
+    "water-level-banner-191",
+    "skill-scripts-191"
+  ]
+}

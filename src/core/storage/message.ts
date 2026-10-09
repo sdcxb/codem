@@ -1653,6 +1653,149 @@ function attachmentContentForCopy(att: MessageAttachment): string | undefined {
 //   → 完全维持原行为；
 // - 读不到 base 行（更新路径）→ 回退到原路径，不猜数据。
 
+/**
+ * ## GAP-LIST `O-42`：**写消息 → 读计数同步可见**的读模型增量
+ *
+ * ### 被治的缺陷（真机时序）
+ *
+ * `sessions.message_count` 在引擎侧是**权威**并由 `repo.rs::bump_session_message_count`
+ * 在 `messages.upsert_index` 的同一个事务里维护（引擎是唯一写入者 —— 渲染侧**绝不**
+ * 自己往那一列加一，见 `session.ts::updateSession` 的 `message_count 不写回` 那段）。
+ * 而渲染侧镜像读到它隔着一次 IPC ⇒ 「这条消息的计数**落地了没有**」在这里看不出来。
+ *
+ * 于是 `session-read-state.ts::markSessionUnread` 只能在注释里记一笔取舍：
+ * 计数不可见时把水位多踩一格（"宁可多显示 1 条，也不能一条都不显示"）。
+ * 那个取舍在**标未读先于写消息**的调用形态下是必要的（`App.tsx::safeAddMessage`
+ * 里 `deliverOwnedMessage(...)` 原来排在 `persistLoopMessages()` 之前）：
+ * 标的那一刻 `known` 必然是旧值，不踩一格就一条都不显示。
+ *
+ * ### 这里做什么（以及**刻意不做什么**）
+ *
+ * 写入路径在**同一个同步段**里把这次写入算进读模型：
+ *
+ * - 本进程**首次**看到这条消息 id（= 引擎那边会走 `exists == 0` 的新增分支 ⇒ `bump +1`）
+ *   ⇒ 该会话的读模型计数 **+1**；
+ * - 同一条 id 再写（覆盖写，例如助手消息的流式中间态 → 定稿）⇒ **不加**（引擎也不加）；
+ * - Rust 把权威计数回传（`messages.upsert_index` 的 `session_message_count`）⇒
+ *   **归零对账**：增量清掉、镜像行按引擎真值更新 —— 增量的生命周期**有界到一次 IPC 往返**，
+ *   它不会替代权威、也不会与权威打架。
+ *
+ * ⚠️ **绝不写引擎那一列**：这里只动渲染侧读模型的增量（`messageCountAdjustment`），
+ * `sessions.message_count` 的写入者仍然只有引擎与显式对账（`maintenance.ts`）。
+ * 对照 `src/test/session-count-authority.test.ts`（SC-1：不给 `messageCount` 时
+ * 写穿命令里不许出现那一列）—— 本机制没有新增任何一条 `crud.upsert sessions` 写路径。
+ *
+ * ⚠️ **它不是"第二份计数真相"**：增量只在"写入已发给引擎、权威回执还没到"这个窗口里非零，
+ * 且**只对本次写入生效**；任何一次镜像重载（`ensureLoaded` 走整会话读）都会让
+ * 读数回到引擎真值，而增量会在下一个成功的写入回执上被清掉
+ * （见 `noteMessageCountAuthoritative`）。
+ *
+ * ⚠️ **并发写的收敛**（如实记账）：连续两次写（例如一轮里的两条消息）时，两次回执
+ * 各自携带**自己那一刻**的权威计数，后到的那次会把镜像对齐到"它那一刻"的值；
+ * 而**增量在第一次回执就被清掉了** ⇒ 第二次回执落地之前，读数可能少算一条。
+ * 这是**有界且自愈**的（下一次回执或任何一次镜像重载即收敛），代价与收益相比可接受：
+ * 反过来的设计（增量只在"所有在途写都回来"之后才清）需要一份在途计数表，
+ * 而那正是本项目一直在删的那类中间状态。
+ */
+const messageCountAdjustment = new Map<string, number>();
+
+/**
+ * 本进程**已经记录过增量**的消息 id（按会话分组）。
+ *
+ * 判据取"这条 id 是不是本进程第一次写"而不是"库里有没有这一行"：
+ * 后者要读镜像，而镜像可能还没加载完 / 该会话不在镜像里（`applyMessageWrite` 明确
+ * 不把会话标记为已加载）—— 用它判会**漏加**（读不到就当成"已存在"）。
+ * 而"覆盖写"（流式中间态 → 定稿）与"新增"的区别正是引擎侧 `exists == 0` 那个分支，
+ * 渲染侧能表达它的最省事实就是"这条 id 这次是不是第一次被写"。
+ *
+ * 有界：每个会话最多记 `MAX_TRACKED_WRITTEN_IDS` 条 id，超出按插入序丢最旧的
+ * （丢了最多让一次覆盖写被误判成新增 ⇒ 读数多 1，且下一次镜像重载即收敛；
+ *  反过来"记得太多"才是真的内存问题）。
+ */
+const onWrittenFreshIds = new Map<string, Set<string>>();
+const MAX_TRACKED_WRITTEN_IDS = 20_000;
+
+/** 标一次"这条消息是本进程首次写入"；返回是否**首次**（= 引擎那边会 +1） */
+function noteWrittenOnce(sessionId: string, messageId: string): boolean {
+  let seen = onWrittenFreshIds.get(sessionId);
+  if (!seen) {
+    seen = new Set<string>();
+    onWrittenFreshIds.set(sessionId, seen);
+  }
+  if (seen.has(messageId)) return false;
+  seen.add(messageId);
+  if (seen.size > MAX_TRACKED_WRITTEN_IDS) {
+    const drop = seen.size - MAX_TRACKED_WRITTEN_IDS;
+    let n = 0;
+    for (const old of seen) {
+      seen.delete(old);
+      if (++n >= drop) break;
+    }
+  }
+  return true;
+}
+
+/**
+ * 写入路径的**镜像同步**（由 `writeIndexViaRust` 在 IPC 之前调用，与 `applyMessageWrite`
+ * 同一个"先本地、再写穿"的段里）：本进程首次写入这条 id ⇒ 该会话读模型计数 +1。
+ *
+ * @returns 是否真的记了一次增量（供"这条到底是新增还是覆盖写"的判据使用）
+ */
+function noteMessageWroteToMirror(sessionId: string, messageId: string): boolean {
+  if (!sessionId || !messageId) return false;
+  if (!noteWrittenOnce(sessionId, messageId)) return false;
+  messageCountAdjustment.set(sessionId, (messageCountAdjustment.get(sessionId) ?? 0) + 1);
+  return true;
+}
+
+/**
+ * 引擎的**权威计数**回来了 ⇒ 把该会话的增量清掉（写路径的归零点）。
+ *
+ * @param authoritative 引擎给的该会话消息总数；读不到（老引擎 / 端口不带这个字段）时传 `undefined`
+ *   ⇒ **什么都不做**（宁可继续用有界增量，也不要把"不知道"当成"就是这么多"）。
+ * @returns 是否执行了归零
+ */
+function noteMessageCountAuthoritative(sessionId: string, authoritative: number | undefined): boolean {
+  if (!sessionId) return false;
+  if (typeof authoritative !== "number" || !Number.isFinite(authoritative) || authoritative < 0) return false;
+  messageCountAdjustment.delete(sessionId);
+  /*
+   * 顺手把镜像行也按引擎真值对齐：`applyMessageWrite` 只写消息行，不碰 `sessions` 域
+   * —— 而这一列本来就是引擎在维护，拿到权威值就照它改镜像（**只改镜像，不写引擎**，
+   * 所以不会与 `crud.upsert` 那条"未提供即保持原值"的规则打架）。
+   * 镜像里没有这个会话 / `sessions` 域没接手 ⇒ 什么事都不发生（下一次整域加载会拿到真值）。
+   */
+  try {
+    const row = domainReadOne<Record<string, unknown>>("sessions", { id: sessionId }, (r) => r);
+    if (row && Number(row.message_count ?? NaN) !== authoritative) {
+      const port = getStoragePort() as unknown as {
+        domains?: { applyWrite?: (table: string, row: Record<string, unknown>, pk?: string) => void };
+      } | null;
+      port?.domains?.applyWrite?.("sessions", { id: sessionId, message_count: authoritative });
+    }
+  } catch {
+    /* 镜像对齐失败不影响主流程：增量已经清掉，读模型回到镜像里的引擎值 */
+  }
+  return true;
+}
+
+/**
+ * 该会话**尚未被引擎权威值吸收**的写增量（读模型用；没有就返回 0）。
+ *
+ * 读侧（`session.ts::getSession` / `listSessions`）把它加到镜像的 `message_count` 上，
+ * 于是"刚写进去的消息"在同一个同步段里就**算得进**未读数 —— 那是 `O-42` 里
+ * `markSessionUnread` 去掉"多踩一格"的前提。
+ */
+export function pendingMessageCountAdjustment(sessionId: string): number {
+  return messageCountAdjustment.get(sessionId) ?? 0;
+}
+
+/** 测试用：清掉读模型增量与"本进程写过哪些 id"的记忆（避免用例之间串味） */
+export function __resetMessageCountAdjustment(): void {
+  messageCountAdjustment.clear();
+  onWrittenFreshIds.clear();
+}
+
 type RustMessagePortLike = {
   data: {
     execute(cmd: string, params?: Record<string, unknown>): Promise<{ written: number }>;
@@ -2078,6 +2221,7 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
    * 2. IPC 失败 → 如实上报，并把镜像重新拉一次（`ensureLoaded` 会以 Rust 为准重建），
    *    让"本地镜像"和"落库结果"重新收敛，而不是留一个假的最新值。
    */
+  const hasMirrorContract = typeof port.applyMessageWrite === "function";
   port.applyMessageWrite?.({
     id: message.id,
     session_id: sessionId,
@@ -2089,7 +2233,22 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
     status: message.status ?? "done",
   });
   /**
-   * **工具调用同步缓存也要在这里刷新**（第 14 轮修正）。
+   * ## GAP-LIST `O-42`：**会话计数也在这一段里同步可见**
+   *
+   * 位置与 `applyMessageWrite` 完全同一个段（本地先生效、IPC 随后）：
+   * 本进程首次写这条 id ⇒ 读模型的会话计数 +1。于是"写消息 → 读计数"
+   * 在**同一个同步段**里成立（`session.ts::getSession` 把增量加在镜像值上），
+   * `markSessionUnread` 因此能走精确分支而不再需要"宁可多显示 1 条"。
+   *
+   * ⚠️ **只有声明了 `applyMessageWrite` 的端口才算"读模型同步可见"**：这个钩子就是
+   * "写入即刻反映到镜像"的那份契约（P5 第 10 段：先本地、再写穿）。没有它的端口
+   * （老实现 / 极简替身）**不该**跟着 +1 —— 否则渲染侧会用一个端口根本没保证过的
+   * 读数去走"精确分支"，那是把兜底撤掉却假装看得见（`O-42` 的反面）。
+   * 于是判据缺省一律退到兜底那一侧（`markSessionUnread` 的 `countVisible` 默认 `false`）。
+   */
+  const counted = hasMirrorContract && noteMessageWroteToMirror(sessionId, message.id);
+  /**
+   * 工具调用同步缓存也要在这里刷新（第 14 轮修正）。
    *
    * `message.ts` 里那段注释写着"缓存由**写路径**（`addToolCall` / `updateToolCall` /
    * **`upsert_index`**）负责维护，因此'刚写的立刻读得到'"—— 但这条写路径（`writeIndexViaRust`）
@@ -2103,21 +2262,48 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
     cacheToolCalls(message.id, message.toolCalls);
   }
 
-  void port.data
-    .execute("messages.upsert_index", params)
-    .catch((e) => {
-      // 索引失败不阻塞、不抛：权威副本（会话 JSONL）已经写好，索引可由日志重建
-      reportPersistFailure(
-        `message.${scope}Message.index`,
-        e,
-        "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）",
-      );
-      /**
-       * 重新拉一次该会话的索引：镜像里那份"本地先生效"的值可能是错的
-       * （落库失败 = Rust 那份没有这次更新），必须以落库结果为准重新收敛。
-       */
-      port.messages?.ensureLoaded(sessionId);
-    });
+  /**
+   * ## `O-42`：写穿与**权威计数回执**（同一个 IPC 往返）
+   *
+   * 优先走 `data.command` —— 只有它拿得到结构化的 `session_message_count`
+   * （`execute` 刻意把结果压成 `{written}`）。引擎在 `messages.upsert_index` 的同一个事务里
+   * 已经 `bump_session_message_count`，把那个数一并回传 ⇒ 渲染侧读模型**不猜**：
+   * 拿到就归零对账（`noteMessageCountAuthoritative`），拿不到就继续用上面那笔有界增量
+   * （增量对**下一次**成功写入的回执同样会归零，且任何一次镜像重载都会回到引擎真值）。
+   *
+   * ⚠️ 失败分支与原来**逐字一致**（重新拉一次镜像让读写收敛）；只是多接了一次
+   * 权威计数对账 —— 失败时**不做**归零（那次写入没有权威值可依，增量的语义是对的：
+   * 本地已经写进镜像，而引擎侧还没落）。
+   */
+  const reconcileAuthoritativeCount = (r: unknown): void => {
+    const n = Number((r as { session_message_count?: unknown } | undefined)?.session_message_count);
+    noteMessageCountAuthoritative(sessionId, Number.isFinite(n) ? n : undefined);
+  };
+  const onIndexFailure = (e: unknown): void => {
+    // 索引失败不阻塞、不抛：权威副本（会话 JSONL）已经写好，索引可由日志重建
+    reportPersistFailure(
+      `message.${scope}Message.index`,
+      e,
+      "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）",
+    );
+    /**
+     * 重新拉一次该会话的索引：镜像里那份"本地先生效"的值可能是错的
+     * （落库失败 = Rust 那份没有这次更新），必须以落库结果为准重新收敛。
+     */
+    port.messages?.ensureLoaded(sessionId);
+  };
+  const viaCommand = port.data.command;
+  if (viaCommand) {
+    void viaCommand("messages.upsert_index", params).then(reconcileAuthoritativeCount, onIndexFailure);
+  } else {
+    void port.data.execute("messages.upsert_index", params).catch(onIndexFailure);
+  }
+  /*
+   * `counted` 只用于诊断：它是"这次写入让读模型 +1 了"这一事实的返回值。
+   * 刻意不写日志（每次落库都打一行会把日志刷爆），保留变量是为了让
+   * "这里真的记了一笔"在读代码时看得见（编译器也会盯着它不被误删）。
+   */
+  void counted;
   return true;
 }
 

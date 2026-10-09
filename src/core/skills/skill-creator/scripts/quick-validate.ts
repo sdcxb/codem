@@ -19,7 +19,29 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { isMainModule } from "./is-main.ts";
+import { isMainModule, exitAfterFlush } from "./is-main.ts";
+
+/**
+ * 字节数 → 人读形态。
+ *
+ * ## ⚠️ 为什么这里**必须**自带一份（第 191 波实测打回的第一版）
+ *
+ * 第 191 波做「同一事实只许一处实现」时，第一版把这里改成了
+ * `import { formatBytes } from "../../../utils/bytes.ts"` —— **单元测试全绿、真机必崩**：
+ * 本文件会被 `SkillInstaller` **整份复制进技能目录**（`~/.codem/skills/<name>/scripts/`），
+ * 那里没有 `src/core/utils/…` ⇒ 一跑就 `ERR_MODULE_NOT_FOUND`
+ * （判据 `skill-creator-scripts.test.ts` 的 CLI-1 当场抓到：真进程退出码异常）。
+ *
+ * 所以脚本的准则是**自包含**：它可以有自己的一份，但**口径必须与共享实现逐字一致** ——
+ * 这条由 `bytes-single-source.test.ts` 的 `BYTES-3` 用行为断言钉住（同一批输入 ⇒ 同一个字符串）。
+ */
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 interface ValidationResult {
   valid: boolean;
@@ -173,7 +195,7 @@ export function validateSkill(skillDir: string): ValidationResult {
 
   // Warn on large total size
   if (info.totalSize > 1_000_000) {
-    warnings.push(`Total skill size is ${(info.totalSize / 1_000_000).toFixed(1)}MB — consider keeping under 1MB`);
+    warnings.push(`Total skill size is ${formatBytes(info.totalSize)} — consider keeping under ${formatBytes(1024 * 1024)}`);
   }
 
   return {
@@ -190,7 +212,7 @@ if (isMainModule(import.meta.url)) {
   const skillDir = process.argv[2];
   if (!skillDir) {
     console.error("Usage: node quick-validate.ts <path-to-skill>  (或 npx tsx quick-validate.ts <path-to-skill>)");
-    process.exit(1);
+    await exitAfterFlush(1);
   }
 
   const result = validateSkill(skillDir);
@@ -201,7 +223,8 @@ if (isMainModule(import.meta.url)) {
   if (result.info.description) {
     console.log(`Description: ${result.info.description.substring(0, 80)}${result.info.description.length > 80 ? "..." : ""}`);
   }
-  console.log(`Files: ${result.info.totalFiles}, Size: ${(result.info.totalSize / 1024).toFixed(1)}KB`);
+  // 第 191 波：字节数的人读形态走全仓唯一实现（原来这里自己写了一份无空格口径）
+  console.log(`Files: ${result.info.totalFiles}, Size: ${formatBytes(result.info.totalSize)}`);
   console.log(`Prompt: ${result.info.promptLines} lines`);
   console.log(`Resources: scripts=${result.info.hasScripts}, references=${result.info.hasReferences}, assets=${result.info.hasAssets}`);
 
@@ -221,6 +244,7 @@ if (isMainModule(import.meta.url)) {
     console.log("\n✅ Skill is valid (with warnings).");
   } else {
     console.log("\n❌ Skill validation failed.");
-    process.exit(1);
+    // ⚠️ 不硬退（理由见 is-main.ts 的 fail / exitAfterFlush）
+    process.exitCode = 1;
   }
 }

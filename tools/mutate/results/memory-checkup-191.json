@@ -1,0 +1,76 @@
+{
+  "wave": "memory-checkup-191",
+  "description": "O-44：把「当前项目 + 当前对话」传进记忆体检视图 —— 少传 / 传成别的项目都必须让行为判据变红",
+  "runAt": "2026-10-08T15:18:07.807Z",
+  "specFingerprint": "1a2c3ee4de3a2ccf00ba0956ae71969a90b8baf6",
+  "files": [
+    "src/components/SettingsPanel.tsx"
+  ],
+  "tests": [
+    "src/test/memory-checkup-ctx-behavior.test.tsx",
+    "src/test/memory-checkup-ctx-props.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 体检视图的 projectId 传成 undefined",
+      "why": "MEM-CHECK-5a-行为 / MEM-CHECK-5a-ctx-props：ctx.projectId 丢了 ⇒ 当前项目的记忆不再显示「生效」，体检会给出与用户实际所在项目不符的结论",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "      projectId={projectIdFromCwd(useProjectStore.getState().currentProject?.path)}",
+          "to": "      projectId={undefined}"
+        }
+      ],
+      "tests": [
+        "src/test/memory-checkup-ctx-behavior.test.tsx",
+        "src/test/memory-checkup-ctx-props.test.tsx"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 6056
+    },
+    {
+      "id": "MUT-2 体检视图的 sessionId 少传（只漏一半 ctx）",
+      "why": "MEM-CHECK-5a-行为 / MEM-CHECK-5a-ctx-props：项目对了但当前对话丢了 ⇒ 对话级记忆被误判成「不进上下文」",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "      sessionId={useProjectStore.getState().currentSession?.id}",
+          "to": "      sessionId={undefined}"
+        }
+      ],
+      "tests": [
+        "src/test/memory-checkup-ctx-behavior.test.tsx",
+        "src/test/memory-checkup-ctx-props.test.tsx"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 5579
+    },
+    {
+      "id": "MUT-3 体检视图的 projectId 换成列表里另一个项目",
+      "why": "MEM-CHECK-5a-行为 / MEM-CHECK-5a-ctx-props：类型对、语义错 —— 体检会把「别的项目」的记忆当成当前项目的",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "      projectId={projectIdFromCwd(useProjectStore.getState().currentProject?.path)}",
+          "to": "      projectId={projectIdFromCwd(useProjectStore.getState().projects[1]?.path)}"
+        }
+      ],
+      "tests": [
+        "src/test/memory-checkup-ctx-behavior.test.tsx",
+        "src/test/memory-checkup-ctx-props.test.tsx"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 5802
+    }
+  ]
+}

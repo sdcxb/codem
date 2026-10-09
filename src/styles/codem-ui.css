@@ -867,6 +867,14 @@
   align-items: center;
   padding-top: var(--space-1);
 }
+/* 只有回执、没有风险时的**窄条**（第 191 波）：中性配色、无按钮组 ——
+   它绝不能看起来像"还有一件事要你做"（旧形态把回执渲染进风险提示条，
+   于是「上下文压力偏高（已用 1%）」+「开启新对话」按钮会一直留着）。 */
+.water-level-banner.is-note-only {
+  background: var(--surface-1);
+  border-bottom-color: var(--border-primary);
+  color: var(--text-primary);
+}
 .water-level-body {
   display: flex;
   flex-direction: column;

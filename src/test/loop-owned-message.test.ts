@@ -18,7 +18,7 @@
  * | 用例 | 守什么 |
  * | --- | --- |
  * | XSESS-1 | 归属会话不是"在屏会话"时：消息进**归属那份**、不进当前会话的界面列表；落库也只落到归属会话 |
- * | XSESS-2 | 归属会话不在屏 ⇒ 被标成未读（**水位下降** + 未读数 ≥ 1），且**幂等**（不会一路踩低） |
+ * | XSESS-2 | 归属会话不在屏 ⇒ 被标成未读（**未读 ≥ 1**），且**幂等**（不会一路踩低）。⚠️ `O-42` 之后落库由投递模块自己做（`persist`），标未读因此发生在**写之后** ⇒ 走精确分支、水位不动 |
  * | XSESS-3 | 反向对照：归属会话**在屏** ⇒ 照常进界面、水位一动不动、未读 0 |
  * | XSESS-4 | 源码级（**按锚点取段**）：loop 前导段 0 处裸 `addMessage(...)`，6 个早退锚点各自走 `safeAddMessage` |
  * | XSESS-5 | 源码级（**按锚点取段**）：`handleSend` 的 8 处"落库档"全走 `deliverToOwningSession`（内含真落库），7 处"纯界面档"各自的 `[XSESS-5]` 登记与裸投递都在（清单只许变小） |
@@ -38,6 +38,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { resetPersistFailures } from "../core/storage/persist-failure";
 import { getSession } from "../core/storage/session";
+import { __resetMessageCountAdjustment } from "../core/storage/message";
 import {
   computeUnreadBySession,
   getSessionReadMark,
@@ -99,6 +100,9 @@ function switchToB(): void {
 beforeEach(async () => {
   resetPersistFailures();
   __resetSaveFingerprints();
+  // GAP-LIST O-42 的读模型增量是**模块级**状态（生命周期 = 进程内一次 IPC 往返）：
+  // 用例之间必须清掉，否则上一条用例写入的增量会漏到这一条的 `getSession().messageCount`
+  __resetMessageCountAdjustment();
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -175,7 +179,7 @@ describe("XSESS：归属投递（写进归属会话 + 不在屏标未读）", ()
     ).toContain(polluted.id);
   });
 
-  it("XSESS-2: 归属会话不在屏 ⇒ 标成未读（水位下降 + 未读 ≥ 1），且幂等", () => {
+  it("XSESS-2: 归属会话不在屏 ⇒ 标成未读（未读 ≥ 1），且幂等", () => {
     useAppStore.getState().loadMessages(SESSION_A);
     // 前置：用户看过 A（水位 = 当前条数）
     markSessionRead(SESSION_A, A_COUNT);
@@ -185,28 +189,52 @@ describe("XSESS：归属投递（写进归属会话 + 不在屏标未读）", ()
 
     switchToB();
 
+    /*
+     * GAP-LIST `O-42`：**落库由投递模块自己做**（`persist`），标未读因此发生在**写之后**。
+     * 这一处刻意按 App.tsx 的实际调用形状复刻（`safeAddMessage` 就是
+     * `deliverOwnedMessage({ …, ownCopy: loopMessages, persist: persistLoopMessages })`）。
+     */
+    const own = new Map<string, Message>();
     const r = deliverOwnedMessage({
       sessionId: SESSION_A,
       message: msg("err-owned-2", "[Error] MiMo auth not found."),
-      ownCopy: new Map(),
+      ownCopy: own,
+      persist: () => useAppStore.getState().saveMessages(SESSION_A, [...own.values()]),
     });
 
     expect(r.onScreen, "A 不在屏").toBe(false);
     expect(r.markedUnread, "不在屏必须留下未读痕迹（不许静默丢）").toBe(true);
-    expect(getSessionReadMark(SESSION_A), "水位必须被退一格").toBeLessThan(A_COUNT);
-    const unread = computeUnreadBySession([{ id: SESSION_A, messageCount: A_COUNT }]);
-    expect(unread[SESSION_A] ?? 0, `A 必须出现在未读里：${JSON.stringify(unread)}`).toBeGreaterThanOrEqual(1);
-    expect(unreadFor(A_COUNT, getSessionReadMark(SESSION_A))).toBeGreaterThanOrEqual(1);
+    /*
+     * ⚠️ **判据口径已按 O-42 改**（这里原来断言的是"水位必须被退一格"）：
+     * 写路径让会话计数在**同一个同步段**里可见，所以标未读走的是**精确分支** ——
+     * 水位**一格都不动**（原来的"多踩一格"是"标在写之前"的兜底，代价是计数涨上来后
+     * 多显示 1 条）。现在判据落在**可观察结果**上：未读 ≥ 1，且水位不等于被踩低的值。
+     */
+    const markAfter = getSessionReadMark(SESSION_A);
+    const countAfterWrite = Number(getSession(SESSION_A)?.messageCount ?? 0);
+    expect(
+      countAfterWrite,
+      "落库之后库里的条数必须已经包含刚写的这条（O-42：写消息 → 读计数同步可见）",
+    ).toBe(A_COUNT + 1);
+    expect(markAfter, "计数同步可见 ⇒ 水位不许被踩到「多一条」的位置").toBe(A_COUNT);
+    expect(unreadFor(countAfterWrite, markAfter), "未读必须 ≥ 1（徽标要出现）").toBeGreaterThanOrEqual(1);
+    expect(
+      computeUnreadBySession([{ id: SESSION_A, messageCount: countAfterWrite }])[SESSION_A] ?? 0,
+      `A 必须出现在未读里：${JSON.stringify(computeUnreadBySession([{ id: SESSION_A, messageCount: countAfterWrite }]))}`,
+    ).toBeGreaterThanOrEqual(1);
+    expect(unreadFor(countAfterWrite, getSessionReadMark(SESSION_A))).toBeGreaterThanOrEqual(1);
 
     /*
      * 幂等：一轮里每条工具消息都会投递一次 —— 水位不许被一路踩低（既会写出假数字，也是写风暴）。
      * 第一次标记之后"水位 < 条数"本身就已经是"有未读"的状态，后续投递必须什么都不做。
      */
     const afterFirst = getSessionReadMark(SESSION_A);
+    const own2 = new Map<string, Message>();
     deliverOwnedMessage({
       sessionId: SESSION_A,
       message: msg("err-owned-3", "[Error] provider not configured."),
-      ownCopy: new Map(),
+      ownCopy: own2,
+      persist: () => useAppStore.getState().saveMessages(SESSION_A, [...own2.values()]),
     });
     expect(getSessionReadMark(SESSION_A), "第二次投递不许再把水位降下去").toBe(afterFirst);
   });
@@ -233,20 +261,53 @@ describe("XSESS：归属投递（写进归属会话 + 不在屏标未读）", ()
     expect(storeMessageIds(), "在屏 ⇒ 照常进界面").toContain(hero.id);
   });
 
-  it("XSESS-3b: 水位语义本身 —— 退一格保证 ≥1 条，且绝不抬高/抹掉更早的未读", () => {
-    // 有水位、且水位 = 条数（正常态）：退一格
-    markSessionRead("s-normal", 5);
-    expect(markSessionUnread("s-normal", 5), "标记生效").toBe(true);
-    expect(getSessionReadMark("s-normal")).toBe(4);
-    expect(unreadFor(5, getSessionReadMark("s-normal"))).toBe(1);
+  it("XSESS-3b: 水位语义本身 —— 两个分支各自成立（可见 ⇒ 精确；不可见 ⇒ 恰好兜住 ≥1）", () => {
+    /*
+     * 这三段是**加入 O-42 的 `countVisible` 分支之后**逐条重新对过的真值口径：
+     *
+     * - `markSessionUnread(id, n, true)`  = 计数是**写入后**读到的（精确分支）；
+     * - `markSessionUnread(id, n)`        = 判据缺省（兜底分支，与第 187 波逐字一致）。
+     *
+     * ⚠️ 缺口（如实记账）：这两种形态都**只差一个布尔**，谁也看不出来调用方当时到底
+     * 看得见看不见计数。所以"调用方必须如实传"这件事由
+     * `src/test/session-unread-count-visibility.test.ts` 的 UNREAD-V1/V2 用**真调用链**
+     * （写消息 ⇒ 读计数 ⇒ 标未读）钉住，而不是靠这里的纯函数调用。
+     */
 
-    // 水位比条数大（计数被 `max(...)` 推高过的漂移态）：钉到条数以下，绝不抬高
+    // 精确分支：计数 = 水位（写入后的真值，"你刚看完全部、此刻没有新消息"）⇒ 一格都不动
+    markSessionRead("s-visible", 5);
+    expect(
+      markSessionUnread("s-visible", 5, true),
+      "计数同步可见且没有新消息 ⇒ 不许写水位（写了就会在计数涨上来后凭空多一条）",
+    ).toBe(false);
+    expect(getSessionReadMark("s-visible"), "水位一动不动").toBe(5);
+    expect(unreadFor(5, getSessionReadMark("s-visible")), "未读 0（确实没有新消息）").toBe(0);
+    // 精确分支：计数已经越过水位 ⇒ 未读本来就是 1，也不需要写水位
+    expect(markSessionUnread("s-visible", 6, true), "哨兵自己就看得见，不用动水位").toBe(false);
+    expect(getSessionReadMark("s-visible")).toBe(5);
+    expect(unreadFor(6, getSessionReadMark("s-visible")), "计数涨上来后未读恰好 1（不多）").toBe(1);
+
+    // 兜底分支（判据缺省）：计数与水位相等，但它是**写入之前**的旧值 ⇒ 退一格保证 ≥1
+    markSessionRead("s-normal", 5);
+    expect(markSessionUnread("s-normal", 5), "缺省 = 计数不可见 ⇒ 兜底生效").toBe(true);
+    expect(getSessionReadMark("s-normal"), "恰好退一格").toBe(4);
+    expect(unreadFor(5, getSessionReadMark("s-normal"))).toBe(1);
+    expect(unreadFor(6, getSessionReadMark("s-normal")), "计数随后涨上来 ⇒ 多 1（这就是兜底的代价）").toBe(2);
+
+    // 漂移态（水位被 `ChatPanel` 的 `Math.max(...)` 推高过，prev > known）：
+    // 兜底必须落在 **`known - 1`**（不是"prev - 1"）—— 否则 3 条真实消息配上水位 4
+    // ⇒ 未读 = 3 - 4 = 0，兜底失效（这条消息一条都不显示）
     markSessionRead("s-drift", 9);
     markSessionUnread("s-drift", 4);
-    expect(getSessionReadMark("s-drift"), "只降不升").toBe(3);
-    expect(unreadFor(4, getSessionReadMark("s-drift"))).toBe(1);
+    expect(getSessionReadMark("s-drift"), "兜底基准是「读到的条数」，不是被推高的水位").toBe(3);
+    expect(unreadFor(4, getSessionReadMark("s-drift")), "漂移态下也要 ≥ 1").toBe(1);
+    // 反向对照：若按「相对水位踩一格」（= 修前的 `min(known, prev) - 1`）⇒ 未读 0（静默丢）
+    expect(
+      unreadFor(4, 9 - 1),
+      "对照：按 prev 踩一格 ⇒ 未读 0 —— 那正是漂移态下兜底失效的形态",
+    ).toBe(0);
 
-    // 本来就有更早的未读（水位 3、条数 10）：不许把它抹掉（结果仍是 10 - 2）
+    // 本来就有更早的未读（水位 3、条数 10）：不许把它抹掉（结果仍是 10 - 3）
     markSessionRead("s-older", 3);
     markSessionUnread("s-older", 10);
     expect(getSessionReadMark("s-older"), "计数已越过水位 ⇒ 什么都不用做").toBe(3);

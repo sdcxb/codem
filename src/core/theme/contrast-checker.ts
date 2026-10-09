@@ -5,7 +5,33 @@
  * 计算 relative luminance 后求对比比比率。
  *
  * 参考：https://www.w3.org/TR/WCAG21/#contrast-minimum
+ *
+ * ## 阈值口径 —— 定案（GAP-LIST O-39 / 判据 CR-CONTRAST-1）
+ *
+ * sRGB 线性化的分支阈值在**全仓只有一处来源**：`./wcag-luminance.json` 的
+ * `srgbLinearThreshold`。本文件与 `tools/audit/scan-color-roles.mjs`（纯 node、无打包）
+ * 都从那个 JSON 取数 —— 一个是 `import`、一个是 `readFileSync` + `JSON.parse`，
+ * 于是"产品 bundle 与 node 直跑是两个运行面"这个理由不再能拿来支撑两份实现。
+ *
+ * **哪个是对的：0.04045。** WCAG 2.1 的**勘误后**定义是
+ * `s <= 0.04045 ? s/12.92 : ((s+0.055)/1.055)^2.4`（s = 通道值 / 255，已归一到 0–1）。
+ * **0.03928 是过时取值**：它出自 WCAG 2.0 初版 / 1.0 —— 勘误前把 0.03928 当作 0.04045 的近似，
+ * 勘误后就用 0.04045。所以"两个都对"是不成立的，只有 0.04045 对。
+ *
+ * **统一之后读数会不会漂？** 对 8 位整数通道两者**完全等价**：分支只在
+ * s ∈ (0.03928, 0.04045] 即通道值 ∈ (10.0164, 10.31475]（窗口宽 0.298）时才不同，
+ * 而整数通道 c/255 永远落不进这个窗口，只有 α 合成产生的**小数**通道才可能落进去。
+ * 实测量化（`scan-color-roles.mjs` 的 53 对 × 2 档主题 = 106 条读数）：
+ * 统一到 0.04045 后最大差 **0.000000000**、超过 1e-3 的 **0 条**、
+ * 通过/不通过**翻转 0 条**、已登记基数（注册表 54 条 + `color-roles.test.ts` CR-8 钉住的
+ * 两位小数读数）无一翻转 ⇒ **可接受**。
+ * 完整记录（怎么跑的、两个阈值下的通过集合差集、理论最坏界）：
+ * `tools/audit/color-roles-threshold-drift.md`。
+ *
+ * ⚠️ 从今往后**不许**再把阈值字面量写回本文件的任何**代码**位置（注释用来讲清道理是允许的，
+ * 而且 CR-CONTRAST-1 会反过来要求这段注释必须同时提到两个值与漂移文档路径，免得结论过期）。
  */
+import { srgbLinearThreshold } from "./wcag-luminance.json";
 
 /** 将 hex 颜色解析为 {r, g, b}（0–255） */
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -106,10 +132,21 @@ function parseColorValue(color: string, vars?: Record<string, string>, depth = 0
   return parseColor(v);
 }
 
-/** 计算单个通道的线性值（sRGB → linear） */
-function channelLinear(c: number): number {
+/**
+ * 计算单个通道的线性值（sRGB → linear）。
+ *
+ * 阈值取自 `./wcag-luminance.json`（全仓唯一来源）—— 本函数里**不许**再写阈值字面量。
+ *
+ * ⚠️ 为什么它是 `export`（第 191 波）：O-39 的原始形态是「同一事实 4 处实现」——
+ * 本文件 + `tools/audit/scan-color-roles.mjs` + 三个测试文件各自镜像了一份线性化函数，
+ * 且镜像的那三份用的是旧的 0.03928。现在三份镜像改成 import 本函数
+ * （`src/test/css-integrity.test.ts` / `light-theme-contrast.test.ts` / `style-token-gates.test.ts`），
+ * 阈值只随这一个地方走。这是**恰好一个**给测试复用的导出符号：
+ * 其余测试要的比例请用已导出的 `contrastRatio` / `contrastOfRgba`，不要再加导出。
+ */
+export function channelLinear(c: number): number {
   const s = c / 255;
-  return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  return s <= srgbLinearThreshold ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
 }
 
 /**

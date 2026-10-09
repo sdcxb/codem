@@ -47,6 +47,13 @@ import { AgenticLoop, type LoopEvent } from "./agentic-loop";
 import { describeTurnOutcome } from "./turn-outcome";
 import { CostTracker, getCostTracker } from "./cost-tracker";
 import * as MessageStorage from "../storage/message";
+/* O-46 + 第 191 波：记忆归属项目身份的唯一来源是「session → project 登记表」——
+ * 反查走**唯一实现** `sessionProjectPath`（`core/storage/session-project.ts`），
+ * 本文件不再自己拼 `getSession().project_id → getProject().path`
+ * （同一规则只许一处实现；安全模式那一侧 `executor.ts` 也用它）。
+ * 判据要造"登记读不到"的形态时，`vi.spyOn(ProjectStorage, "getProject")` 依然有效
+ * （ESM 命名空间对象在模块图里是同一份），见 `memory-project-id-paths.test.ts`。 */
+import { sessionProjectPath } from "../storage/session-project";
 import { ToolRenderRegistry, getToolRenderRegistry } from "./tool-renderer";
 import { SettingsManager, getSettingsManager, type SettingsSource, type PermissionRule } from "../settings/settings";
 import { getModelProfileManager, type TaskSlot, type ModelSlotConfig } from "./model-profile";
@@ -148,6 +155,96 @@ export interface LLMEngineConfig {
 }
 
 // ========== LLM Engine ==========
+
+/**
+ * 记忆归属项目身份的**唯一解析点**（O-46：「同一规则只许一处实现」）。
+ *
+ * ## 为什么不能拿 `cwd` 当项目身份
+ *
+ * 记忆条目里的 `projectId` 是**项目根**归一化后的路径（`projectIdFromCwd(project.path)`，
+ * 见 `memory.ts` 的说明）。而 `process()` 收到的 `cwd` 在 **git worktree 会话**上是
+ * worktree 目录（`App.tsx` 用 `session.worktreePath` 当 cwd，`executor.executeSessionTurn`
+ * 原样把它传给 `engine.process`）。拿它当归属键 ⇒ 同一个项目的记忆被拆成两个桶
+ * （主工作区看不到 worktree 会话写的记忆，反之亦然），且 worktree 目录一删，
+ * 那些归属键就永久无法归位（体检只能显示"归属已失效"）。
+ *
+ * ## 唯一来源：`session → project` 登记表
+ *
+ * 优先级（越靠前越权威）：
+ * 1. `explicit` —— 调用方**显式**给的项目身份。**界面主路径该传**（`App.tsx` 传
+ *    `projectIdFromCwd(currentProject.path)`）；它知道"当前项目是什么"，不必依赖任何反查；
+ * 2. `registered` —— **本进程内**按会话登记的值（`process()` 本轮算出的那一份）。
+ *    注入侧靠它保证与写入侧**同一轮内**逐字一致（R3 的教训：两侧分叉过一次，
+ *    后果是"该会话永远看不到自己刚提取的项目记忆"，比两侧同一个错的键更糟）；
+ * 3. **`session → project` 登记表**：`sessions.project_id` → `projects.path` → 归一化。
+ *    **executor / 后台路径**（委派 / 微信桥 / 手机续聊）**不传** `explicit`，
+ *    身份就**显式取这里** —— 它与界面路径**同源**（都是项目根），worktree 会话也落回项目根；
+ * 4. **最后一跳** `projectIdFromCwd(cwd)` —— 只在上面**全部缺失**时使用，且**必须如实上报**
+ *    （见 `reportMemoryProjectIdDegrade`），因为这个 `cwd` **可能正是 worktree 目录**。
+ *
+ * ⚠️ 第 4 条**只能**是最后一跳：它存在的理由是"登记表读不到时也要有一个归属键"，
+ * 而**不是**"顺手拿 cwd 顶上"。O-46 记的缺陷形态就是两侧**一起**退化成 worktree 目录 ——
+ * 因为对称，看起来"一致"，于是**没有任何判据会红**（判据必须能造出"登记值被删掉 ⇒ 红"）。
+ */
+export function resolveMemoryProjectId(input: {
+  /** 会话 id：第 3 条（登记表）靠它反查 */
+  sessionId?: string;
+  /** 本轮的工作目录：**只作最后一跳** */
+  cwd?: string;
+  /** 调用方显式给的项目身份（界面主路径传；executor / 后台路径不传） */
+  explicit?: string;
+  /** 本进程内已登记的会话项目身份（只有注入侧该传，见上面的第 2 条） */
+  registered?: string;
+}): string | undefined {
+  /* ① 显式值（界面主路径）。归一化 ⇒ 身份只有一种写法（大小写/分隔符差异必须落进同一个桶） */
+  const explicit = projectIdFromCwd(input.explicit);
+  if (explicit) return explicit;
+
+  /* ② 写入侧本轮登记的值（注入侧据此与写入侧同源） */
+  const registered = projectIdFromCwd(input.registered);
+  if (registered) return registered;
+
+  /* ③ session → project 登记表（executor / 后台路径的**显式**来源） */
+  if (input.sessionId) {
+    /*
+     * ⚠️ 第 191 波：反查本身走**唯一实现** `sessionProjectPath`（本仓"同一事实多份实现"的收口；
+     * 安全模式那一侧 `executor.ts` 也用它 —— 那个缺陷的形态与本条同源，见那边的说明）。
+     */
+    const fromTable = projectIdFromCwd(sessionProjectPath(input.sessionId));
+    if (fromTable) return fromTable;
+  }
+
+  /* ④ 最后一跳：cwd（**可能**是 worktree 目录）—— 不许静默 */
+  const degraded = projectIdFromCwd(input.cwd);
+  if (degraded) reportMemoryProjectIdDegrade(input.sessionId, degraded);
+  return degraded;
+}
+
+/**
+ * 最后一跳的**如实上报**（O-46）。
+ *
+ * 为什么要报：退化成 `cwd` 之后，那个值**可能**是 worktree 目录 —— 此时记忆会落到
+ * 一个与项目根分叉的桶里（worktree 删掉后归属即失效）。静默地用掉它，正是 O-46
+ * "没有任何判据会红"的那个形态。
+ *
+ * 为什么**只进日志**（不借用 `reportAdvisory` 的横幅通道）：这是"用户无法介入的自检发现"
+ * ——界面上的建议只能是"重试/检查日志"，而日志里那句话才是真的。本仓口径见
+ * AGENTS.md 的「用户无法介入的自检发现只进日志」。
+ *
+ * 按「会话 + 身份」去重：一个**没有项目**的全局会话每轮都会走到这里，不去重会把日志刷满。
+ */
+const degradedMemoryProjectIdKeys = new Set<string>();
+
+function reportMemoryProjectIdDegrade(sessionId: string | undefined, identity: string): void {
+  const key = `${sessionId ?? "(无会话)"}|${identity}`;
+  if (degradedMemoryProjectIdKeys.has(key)) return;
+  degradedMemoryProjectIdKeys.add(key);
+  console.warn(
+    `[memory-project-id] 会话 ${sessionId ?? "(无)"} 查不到 session → project 登记，` +
+      `记忆归属如实退化为工作目录「${identity}」—— 若它是 worktree 目录，归属键会与项目根分叉。`,
+  );
+}
+
 export class LLMEngine {
   readonly providers: ProviderRegistry;
   readonly tools: ToolRegistry;
@@ -1032,11 +1129,31 @@ Report earlier as well whenever a partial finding changes what that agent should
   }
 
   /**
-   * 注入侧用的项目身份：**登记过就用登记值**，否则回落 `projectIdFromCwd(cwd)`
-   * （兜底与写入侧 `options?.memoryProjectId ?? projectIdFromCwd(cwd)` 逐字一致）。
+   * 注入侧用的项目身份。
+   *
+   * ## 谁该传、谁可以兜底（O-46 把这件事写在这儿，免得下一个人再猜一次）
+   *
+   * - **界面主路径**（`App.tsx` 的 `runAgenticLoop`）**该传** `options.memoryProjectId`
+   *   （`projectIdFromCwd(currentProject.path)`）—— 它知道当前项目，是第 ① 优先级；
+   * - **executor / 后台路径**（委派 / 微信桥 / 手机续聊）**不传**：身份由引擎**显式**取
+   *   「`session → project` 登记表」（`sessions.project_id` → `projects.path`）——
+   *   与界面路径**同源**（都是项目根），worktree 会话也落回项目根，而不是它自己的 cwd；
+   * - `projectIdFromCwd(cwd)` **只允许**作最后一跳（登记表查不到时），且会**如实上报**。
+   *
+   * ## 为什么这里也走 `resolveMemoryProjectId`
+   *
+   * 写入侧（`process()` 里算出的 `memoryProjectId`）与注入侧**调同一个函数** ——
+   * 于是"写进哪个桶"与"从哪个桶注入"在**构造上**不可能分叉（R3 的缺陷就是两侧各写一遍）。
+   * 这里额外传 `registered`（写入侧本轮登记的值）：注入发生在 `process()` 登记之后，
+   * 于是同一次回合的两侧**逐字一致**；而写入侧**不**传它（它要每轮重新判一次，
+   * 否则一轮落在"登记读不到"窗口里的退化值会被永久沿用）。
    */
   private memoryProjectIdFor(sessionId: string, cwd?: string): string | undefined {
-    return this.sessionMemoryProjectId.get(sessionId) ?? projectIdFromCwd(cwd);
+    return resolveMemoryProjectId({
+      sessionId,
+      cwd,
+      registered: this.sessionMemoryProjectId.get(sessionId),
+    });
   }
 
   /** Process a user message through the agentic loop */
@@ -1071,8 +1188,12 @@ Report earlier as well whenever a partial finding changes what that agent should
        *
        * 为什么不直接用 `cwd`：git worktree 会话的 `cwd` 是 worktree 目录，用它当项目记忆的归属键
        * 会让主工作区与 worktree 会话互相看不到对方的记忆，且 worktree 目录一删归属键就永久失效
-       * （体检只能显示"归属已失效"）。界面用当前项目的 path 传进来；不传时退回 `projectIdFromCwd(cwd)`
-       * （后台路径与判据不传，行为与旧版一致）。
+       * （体检只能显示"归属已失效"）。
+       *
+       * **谁该传**（O-46）：界面主路径（`App.tsx`）传 `projectIdFromCwd(currentProject.path)`；
+       * **executor / 后台路径（委派 / 微信桥 / 手机续聊）不传** —— 身份由引擎显式取
+       * 「`session → project` 登记表」（`resolveMemoryProjectId`，见那里的完整优先级）。
+       * 只有登记表也查不到时才会走最后一跳 `projectIdFromCwd(cwd)`，且会如实上报退化。
        */
       memoryProjectId?: string;
     },
@@ -1150,14 +1271,25 @@ Report earlier as well whenever a partial finding changes what that agent should
     // F3.2: Only enable if memory is enabled for this session
     const memoryEnabled = this.isMemoryEnabled(sessionId);
     /**
-     * 自动提取的归属项目：**由本轮的工作目录推出**（不再是"没有归属、到处生效"）。
+     * 自动提取的归属项目：**项目身份**（不再是"本轮的工作目录"）。
      * 这是跨项目泄漏的修复点之一：写入时带上 projectId，读取时按 projectId 过滤。
      *
      * I9：优先用调用方给的**项目身份**（`options.memoryProjectId`，界面传 `currentProject.path`）——
      * worktree 会话的 cwd 是 worktree 目录，拿它当归属键会把同一个项目的记忆拆成两个桶
      * （主工作区看不到 worktree 会话写的记忆，反之亦然），而 worktree 目录删除后归属键永久失效。
+     *
+     * O-46：**executor / 后台路径不传 `options.memoryProjectId`**，身份由
+     * `resolveMemoryProjectId` **显式**取「`session → project` 登记表」（与界面路径同源），
+     * `projectIdFromCwd(cwd)` 只剩"登记查不到"时的最后一跳（且会如实上报）。
+     * 这里**刻意不传** `registered`：写入侧是"决策方"，必须每轮重新判一次 ——
+     * 否则上一轮在"登记读不到"窗口里退化成 worktree 目录的值会被永久沿用。
+     * 注入侧（`memoryProjectIdFor`）才会读这份登记，以保证同一轮内两侧逐字一致。
      */
-    const memoryProjectId = options?.memoryProjectId ?? projectIdFromCwd(cwd);
+    const memoryProjectId = resolveMemoryProjectId({
+      sessionId,
+      cwd,
+      explicit: options?.memoryProjectId,
+    });
     /**
      * R3（第 187 波复审）：**写入侧的项目身份必须一路传到注入侧**。
      *
@@ -1166,8 +1298,11 @@ Report earlier as well whenever a partial finding changes what that agent should
      * ⇒ 提取的记忆写进「主工作区」桶，而注入只查「worktree 目录」桶
      * ⇒ **该会话永远看不到自己刚提取的项目记忆（批准了也不进上下文）**，
      * 比修复前（两侧同一个错的键）更糟。所以这里把身份按会话记下来，
-     * 注入点（`buildSystemPrompt` / `buildSystemPromptAsync`）读**同一个来源**，
-     * `projectIdFromCwd(cwd)` 只作**兜底**（两侧的兜底逻辑也完全一致）。
+     * 注入点（`buildSystemPrompt` / `buildSystemPromptAsync`）读**同一个来源**。
+     *
+     * O-46：这里的"同一个来源"已经不是"两份逐字相同的兜底表达式"，而是
+     * **同一个函数** `resolveMemoryProjectId`（写入侧不传 `registered`，注入侧传 ——
+     * 于是"这一轮写进哪个桶"就是"这一轮从哪个桶注入"，在构造上不可能分叉）。
      */
     this.setSessionMemoryProject(sessionId, memoryProjectId);
     loop.updateConfig({

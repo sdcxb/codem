@@ -4104,36 +4104,200 @@ legacy 路径（拿不到总数）用 `paged` —— **宁可说得少，也不�
 
 ---
 
+## 第 191 波：O-36…O-55 全部收口 + 全仓搜同类的五个簇
+
+> 本波的口径：**判据先行 → 变异自证（脚本落盘）→ 真机验证 → `tsc` 0 → 全量测试 → 提交**。
+> 每一条的"关闭依据"都写进了 `docs/GAP-LIST.md` 的 **C-45…C-64**（含判据文件、变异波次与实测读数），
+> 这里只记**读数、失败尝试与教训**。
+
+### 一、交付一览（O 号 → 判据 → 变异波次）
+
+| O 号 | 交付 | 判据文件 | 变异波次 |
+| --- | --- | --- | --- |
+| O-36 | 记忆 payload 字节预算 + 可观测 + 面板消费（**不截断**） | `memory-payload-guards.test.ts`（MEM-BYTES-1/1b/2/3） | `memory-budget-191` |
+| O-37 | `order` 补齐在读盘时**落库一次** | 同上（MEM-ORDER-1/1b/3） | 同上 |
+| O-47 | 快照被拒 ⇒ **内存态逐条回滚**（与磁盘一致） | 同上（MIG-SNAP-2/2b） | 同上 |
+| O-53 | **进仓库**的变异基建（run/check/registry/README） | `mutation-artifacts.test.ts`（MUT-ART-1/2/3） | 全波次（13 个） |
+| O-38 | 注入侧 ctx：`Object.freeze` + 键白名单断言 | `memory-placement-boundary.test.ts`（MEM-PLACE-13 系列） | 该文件既有波次 |
+| O-39 | 亮度阈值收敛到唯一来源（0.04045 定案） | `contrast-luminance-single-source.test.ts` | `contrast-191` |
+| O-46 | executor/后台路径项目身份 = 登记表 | `memory-project-id-paths.test.ts`（MEM-ID-1/1b/2/3） | `project-id-191` |
+| O-42 | 写消息 → 读计数**同步可见**（+漂移态兜底修正） | `session-unread-count-visibility.test.ts`（UNREAD-V1/V2/V2b/V3） | `unread-191` |
+| O-44 | 真渲染 SettingsPanel 断言体检 ctx | `memory-checkup-ctx-{behavior,props}.test.tsx` | `memory-checkup-191` |
+| O-40+O-55 | 本地日历日窗口（DST）+ 裸日长对账 | `time-window-dst.test.ts`（TIME-WINDOW-1..4 / TIME-DST-1..4） | `time-window-191` |
+| O-48 | 服务端缓存读数**可复核**（`[prompt-cache]`） | `prompt-cache-observability.test.ts`（PC-1/1b/2） | `prompt-cache-191` |
+| O-49 | 附录落点抽成唯一实现 + 位置判据 | `memory-placement-overhead.test.ts`（MEM-PLACE-25a..25d） | `memory-placement-191` |
+| O-50 | 固定开销棘轮 246 码元 + 空记忆只留哨兵 | 同上（MEM-PLACE-26/27） | 同上 |
+| O-51 | knip 棘轮收紧 **exports 53 → 49** | `tools/audit/knip-baseline.json` + 门禁 | —— |
+| O-52 | 写放大量化（**不做增量**的决定 + 理由） | `memory-write-amplification.test.ts`（MEM-IPC-1/1b/1c） | `memory-ipc-191` |
+| O-54 | 对标取证带出处落进仓库 | `docs-bench-evidence.test.ts`（BE-1…BE-5） | `bench-evidence-191` |
+| O-41 | 重试最坏路径判据 + 预算用尽可见（默认值**未改**） | `retry-budget.test.ts`（RETRY-BUDGET-1a/1b/1c/2） | 该文件既有波次 |
+| （同类） | `sessions.message_count` 只许引擎写 | `session-count-single-writer.test.ts` | `session-count-191` |
+| （同类） | 「会话 → 项目根」唯一实现 + 安全模式修复 | `session-project-single-source.test.ts` | `session-project-191` |
+| （同类） | 字节数人读形态唯一实现（8 处副本） | `bytes-single-source.test.ts` | `bytes-191` |
+| （真机急修） | 水位提示条：回执与风险分离 + 点按钮立刻收起 + 标题按真实理由分档 | `context-water-level-banner.test.tsx`（WB-10…WB-16） | `water-level-banner-191` |
+| （同类） | 技能脚本退出不许硬 `process.exit`（libuv 断言/退出码 0xC0000409） | `skill-creator-scripts.test.ts`（CLI-1/CLI-2） | `skill-scripts-191` |
+
+### 二、实测读数（都是本轮现算的，可复核）
+
+| 读数 | 值 | 出处 |
+| --- | --- | --- |
+| 记忆 payload 预算 | 2 MiB（2 字节/字符保守估算）；110 条 × 10k 字符 = 2.1 MB ⇒ 上报、**一条不丢** | `memory-payload-guards.test.ts` |
+| 记忆写放大 | 400 条 × 300 字符 = **392,216 字节/次**（整份）；落库次数恒 1 | `memory-write-amplification.test.ts` |
+| 每轮固定开销 vs 收益 | +246 码元（哨兵 77 + 抬头 34+40 + 权威句 37×2 + 分隔 21）换回 ≈28 KB ⇒ **≈80 倍** | `memory-placement-overhead.test.ts` |
+| 重试最坏路径 | 退避之和 **255.5s**；墙钟预算 30 分钟（6 分钟/次的夹具在第 2 次触顶） | `retry-budget.test.ts` |
+| knip | exports **53 → 49**（5 个真没人用的导出摘掉） | `tools/audit/knip-baseline.json` 的 `previous` |
+| 上报点分诊 | 扫描命中 **248** = 登记表 248 = `_counts` 248（triaged 248 / pending 0） | `node tools/audit/scan-report-sites.mjs --check` |
+| 变异证据 | **15 个波次**、62 条变异、全部 `restored===true`、锚点未过期 | `node tools/mutate/check-artifacts.mjs` |
+| 装机版真机 | 水位提示条 0 个（正常水位）· 记忆面板「体积 15.3 KB（预算 2.0 MB）」· 控制台 0 error | `.preview-shot/_verify-191.mjs` |
+
+### 二点五、真机紧急修复（用户当场报告，两件 —— 本波中间插进来做的）
+
+用户在**另一台机器**上看到一条提示条：
+
+```
+上下文压力偏高（已用 1%）
+剩余约 894,998 tokens。继续下去，最早的消息与工具结果会被逐步丢弃……
+已把当前工作交接给新对话（委派 del-…）
+[开启新对话（交接当前工作）] [压缩 / 查看详情]
+```
+
+两条投诉：①**1% 却报"压力偏高"**（既荒谬、也不该打扰）；②点了两个按钮里任何一个，**提示条原样不动**
+⇒ 用户以为没点到、反复点。
+
+**根因只有一个**（`src/components/WaterLevelBanner.tsx`）：旧渲染是
+`if (!visible && !note) return null;` 之后**不区分渲染哪一套** —— 只要有过一次**回执**（交接成功/失败、
+压缩入口），整条**风险提示条**就继续渲染（标题仍是「上下文压力偏高（已用 N%）」、两个按钮仍在）。
+真机现场正是"交接成功后水位掉回 1%，而提示条还在以风险语气挂着"。另外标题只有一句，
+"因为丢过而显示"的形态下也会印出「压力偏高（已用 1%）」这种**假陈述**。
+
+修法（三件，都有判据与变异）：
+1. **风险与回执分离**：风险不在（`!visible && note`）⇒ 只渲染一条**窄回执条**
+   （`data-testid="water-level-note-only"`，中性配色、**没有任何动作按钮**、可关闭）；
+2. **点按钮立刻收起**：`handleOpenDetail` 先按当前水位记一次 dismissed 再打开面板并留回执；
+   交接**成功**后同样记 dismissed（旧代码在这里写的是 `setDismissedAt(null)` —— 那正好把
+   "已处理"状态**取消**掉，这就是"点了没反应"的机制）；
+3. **标题按真实理由分档**：`≥90%` ⇒「上下文即将满」、`≥70%` ⇒「上下文压力偏高」、
+   只因丢过 ⇒「本轮上下文已被精简（当前占用 N%）」——「压力」字样只在等级真的到线时出现。
+
+判据 `context-water-level-banner.test.tsx` 的 **WB-10…WB-16**（含两条反向对照：
+风险真的还在时提示条必须完整渲染、交接成功后**只**留回执），变异波次 `water-level-banner-191`
+（5 条，含一条反向对照）。**真机读数**见下面「四」：装机版上正常水位下
+`water-level-banner` / `water-level-note-only` 都是 **0 个**、控制台 0 error。
+
+顺带修掉的**另一簇**（同一"硬退"形态，用户没报、判据抓到）：技能脚本用
+`console.error(...)` + `process.exit(1)` —— Windows 上偶发撞 libuv 断言
+（`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`，退出码变 `0xC0000409`，**空载 3 次里崩 1 次、
+满载 3 次全崩**）。修法：`is-main.ts` 新增 `fail()`（设 `exitCode` + return）与
+`exitAfterFlush()`（等两个流写完再退），5 个脚本 13 处全部改掉；判据 `skill-creator-scripts.test.ts`
+的 **CLI-1**（每个脚本 bare 跑 3 次 + 断言不出现 `Assertion failed`）与 **CLI-2**（静态：脚本里不许有
+`process.exit(`；`is-main.ts` 只许一处且在 flush 之后），变异波次 `skill-scripts-191`。
+
+### 三、本轮真实教训（每条都是当场踩到的）
+
+1. **「搜同类」要按语义搜，不能按字面量搜。** 本波收掉了五个簇：字节格式（8 处、4 种口径）、
+   「会话 → 项目根」（3 处；其中 `executor` 的安全模式那一处**长得完全不像**同一规则，却同一个根因，
+   且方向可能是**放松权限**）、`message_count`（4 处渲染侧 +1）、本地日 00:00（2 处）、
+   亮度阈值（4 处）。字面量扫描（`24 * 60 * 60 * 1000` / `0.03928` / `1024`）只能抓到其中一半。
+2. **谓词别绑定命名空间/别名。** 「会话→项目」谓词第一版写的是 `ProjectStorage\.getProject`，
+   变异自证把 import 换成 `ProjectStorage0` 就绕过去了（实测判绿）⇒ 改成只认**调用形状**。
+3. **计数式源码判据会恒真。** `payload === this.lastPersistedPayload` 全仓有 3 处，
+   「至少 2 处」的断言删掉 `save()` 里那处照样绿 ⇒ 改成**按函数体**定位（`saveBody.includes(...)`）。
+4. **判据自己的时间预算可能比机器的事件循环延迟还小。** `dsh-d4-timeout-aborts` 的 D4-A 用
+   50ms 超时 / 250ms 干活：全量并行满载时**偶发假红**，失败形态是 `sawSignal === false`
+   （工具的 `execute` 根本没起步 —— 50ms 定时器先到，而 `Promise.race` 的败者不会被取消）。
+   单跑必过 ⇒ 不是产品缺陷，是判据的时间预算太小；放宽到 250ms / 1.5s，不变式（超时 ≪ 干活）不变。
+5. **扫描器覆盖不到的形态要另立判据。** `setHours(0,0,0,0)` 不是 24h 常量，`TIME-DST-4` 抓不到
+   （它只对裸日长字面量），所以补了 `TIME-WINDOW-4b`。
+6. **上报点的 `area` 一旦参数化就会变成 `<动态>`**（分诊闸门按字面 area 静态登记）⇒ 用字面量分支。
+7. **`.preview-shot/` 里的证据等于不存在**（O-53/O-54 的正身）⇒ 本波把**变异基建**（脚本 + 结果 +
+   闸门）与**对标摘要**（`docs/BENCH-EVIDENCE.md`）都搬进了仓库，并加了 `MUTATE-ARTIFACT-1` 闸门
+   （规格指纹 + 锚点未过期，让「上次的绿」不能自动延伸到「这次改过的代码」）。
+
+### 四、真机验证（装机版，本波实测读数）
+
+- **构建**：`node node_modules\@tauri-apps\cli\tauri.js build`（带 `TAURI_SIGNING_PRIVATE_KEY` /
+  `_PASSWORD=dummy`）⇒ 退出码 1 是**预期**（只有 warning）；产物
+  `src-tauri\target\release\bundle\nsis\Codem_1.16.300_x64-setup.exe`（47,208,121 字节）+ `.sig`
+  与 msi 各一份；`Cargo` 侧 `Finished release profile in 1m50s`。
+- **安装**：`Start-Process <setup.exe> -ArgumentList '/S' -Wait` ⇒ 装机版
+  `%LOCALAPPDATA%\Codem\codem.exe` 时间戳更新到本轮构建时间。
+- **探针**（`.preview-shot/_verify-191.mjs`，只读、不改任何设置；用
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` 启动后连 CDP）读数：
+
+| 验的是什么 | 读数 |
+| --- | --- |
+| 应用是否起来 | `title=Codem`、`hasSidebar=true`、`hasTitlebar=true`、正文 5628 字符 ✓ |
+| **水位提示条（正常水位）** | `water-level-banner` **0 个**、`water-level-note-only` **0 个**、`.water-level-title` 不存在 ✓（用户报的那条荒谬提示**没有出现**） |
+| 侧栏「今天 / 更早」分组 | 渲染出「更早」组（本机没有今天动过的会话）；组名与判定同源（本地日 00:00）✓ |
+| **记忆面板「体积」一格**（O-36 的用户可见消费者） | `15.3 KB · 体积`，`title="记忆整份 payload 约 15.3 KB；预算 2.0 MB"`；**未超预算 ⇒ 没有超限提示条** ✓（反向对照：不该报的一个字都没报） |
+| 控制台 | 这几步只读交互期间 **error 0 / warning 0 / exception 0** ✓ |
+
+**没做到的真机验证（如实）**：提示条的**点击行为**（点交接/压缩 ⇒ 立刻收起、只剩回执）需要
+**水位 ≥70% 的长会话**（本机没有这样的会话，也不该为了验证去伪造一个）⇒ 这一半**只有**
+渲染层判据（WB-10…WB-16）+ 变异自证覆盖，**没有**装机版点击取证。
+`[prompt-cache]` 那一行同样需要一次真实模型请求 ⇒ 本机**没有**留下真机样本（见「五、如实留白」第 1 条）。
+
+### 五、如实留白（不要把这几条当成"已解决"）
+
+1. **`[prompt-cache]` 还没有真机样本** ⇒ O-48 的「语义 A（整请求前缀匹配）/ 语义 B（只有稳定前缀进缓存）」
+   **仍未判定**。判据只保证"读数可复核"，不保证"结论已定"。第一次真机回合的日志就能定案。
+2. **GAP-LIST 仍有 4 项未关闭**：`O-1`（渲染进程崩溃根因，关闭条件 = 下一次真机出现时日志里出现
+   `ProcessFailed` 那一行）、`O-33`/`O-34`/`O-35`（三条**观察**，它们自己写的关闭条件就是"触发条件出现"）。
+3. **knip 的 `types=21` 未收紧**：那 21 条里 19 条是登记过的**门面再导出**（`theme/index.ts` 等），
+   剩下 2 条（`contrast-checker.ts` 的 `ColorPair`、`inbox.ts` 的 `InboxPriority`）本轮未动。
+4. **`docs/evidence-270-tfc-real-machine.md` 本身不在仓库里**（被 `docs/*.md` 忽略）—— 给它加的
+   仓库内指针只对本机读者有效，已在该文档与判据的例外表里如实标注。
+
+---
+
 ## ★★★★★ 给下一个对话：移交说明与优先级
 
 ### 一、本轮状态（已提交 / 已发版 / 工作区还留着什么）
 
-- **已提交并推送**（`master` 与 `origin/master` 同步）：`9ee5c04a` 记忆注入按易变性两分 + 显式缓存边界 + 全仓时间口径收口（自记第 189 波；其中两件收尾自记第 190 波）；`2a4ca9d9` 记忆三级作用域 + 来源信任边界 + 体检视图。
-- **已发版：1.16.299**（`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处版本号；远端 tag `v1.16.299` → `8638f642`）。⚠️ **该 tag 在记忆两波之前** ⇒ 1.16.299 的安装包里**没有**记忆两分 / 时间口径；要让用户拿到，必须按 `docs/RELEASE-GUIDE.md` 出新版本号再发一次。
-- **工作区未提交**：`latest.json`（1.16.299 的发布条目）；本文件（第 189 波日志）；以及**并行线**正在做的 `src/core/memory/memory.ts` + `src/core/memory/checkup.ts` + `src/test/memory-checkup.test.tsx`（`MEM-CHECK-2b` 顺序解耦，实测 21/21 绿；见 GAP-LIST 的 **C-44**，别重复做）。
-- 本轮往 `docs/GAP-LIST.md` 追加 **20 条未关闭项（O-36…O-55）+ 1 条已解决（C-44）**；门禁读数：`node tools/audit/check-gaplist.mjs` ⇒ **共 53 项 / 未关闭 24 项 / ✅ 通过**（exit 0），`npx vitest run src/test/docs-current-gap-list.test.ts` ⇒ **6/6 通过**。
+- **本波（第 191 波）已提交**：一个提交收口 `O-36…O-55` 全部 20 条 + 5 个「全仓搜同类」的簇
+  （字节格式 / 会话→项目 / `message_count` / 本地日 00:00 / 亮度阈值 —— 见 `docs/GAP-LIST.md` 的
+  **C-45…C-64**）+ **一件真机紧急修复**（水位提示条的回执/风险分离与点按钮立刻收起，见上）；
+  `docs/GAP-LIST.md` 门禁读数：**共 53 项 / 未关闭 4 项 / ✅ 通过**
+  （未关闭的 4 项 = `O-1` 等真机现场 + `O-33/O-34/O-35` 三条「观察」，它们自己的关闭条件就是触发条件）。
+- **上一个稳定提交**：`9ee5c04a` 记忆注入两分 + 缓存边界 + 时间口径（第 189 波）、`2a4ca9d9` 记忆三级作用域。
+- **已发版：1.16.299**（远端 tag `v1.16.299`）。⚠️ 它**早于**第 189/190/191 三波 ⇒ 安装包里没有这些改动；
+  要让用户拿到，必须按 `docs/RELEASE-GUIDE.md` 出新版本号再发一次（本波**未发版**：先让用户拍板要不要发）。
+- **本波新落地的固定产物**（以后每波都要有）：
+  - `tools/mutate/`（变异基建：`run.mjs` / `check-artifacts.mjs` / `registry.json` / `README.md` / `specs/` / `results/`）
+    ⇒ `npm run audit:mutations` 是本波的**新闸门**（五查：结果存在 / `restored` / 每条 ok / 规格指纹 / 锚点未过期）；
+  - `docs/BENCH-EVIDENCE.md`（对标取证带出处，含 `[prompt-cache]` 这条**我方**可观测口径）；
+  - 13 个变异波次（55 条变异）全部 `restored===true`。
 
 ### 二、开工先读（按这个顺序，不要通读大文件）
 
 1. `docs/PROJECT-GUIDE.md` 开头「从这里开始」一节（一屏）。
-2. `docs/GAP-LIST.md` 的「二、当前未关闭的项」——**先读 O-36…O-47**（稳健性），再 O-48…O-52（性能），O-53…O-55（证据与流程）；每条都写了现象 / 为什么是问题 / 建议方向 / **验收判据该怎么写** / 证据位置。
-3. 本文件**末尾这一节** + 上一节「第 189 波」（对标取证、实测读数、九条教训、如实登记的残留）。
-4. 需要细节时按条目里给的行号点开代码；`.preview-shot/` 下的对标与审计长文**不在仓库里**（见 O-54）。
+2. `docs/GAP-LIST.md` 的「二、当前未关闭的项」——**本波之后只剩 4 项**（`O-1` + `O-33/34/35`），
+   每条都写了关闭条件；「三、本轮已关闭的项」的 **C-45…C-64** 是第 191 波的完整关闭依据（判据 + 变异 + 读数）。
+3. 本文件**末尾这一节** + 上面「第 191 波」那一节（读数、七条教训、如实留白）。
+4. `.preview-shot/` 下的对标与审计长文**不在仓库里**；需要它们时先看 `docs/BENCH-EVIDENCE.md`（带出处的摘要）。
 
-### 三、优先级（稳健性与性能优先，**不计改造代价与难度**）
+### 三、优先级（下一轮）
 
-- **P0 立刻做**：`O-36`（记忆镜像字节预算 + 可观测 + 超限如实上报）、`O-37`（`order` 惰性补齐：迁移时落库或给出判据级理由）、`O-47`（快照失败时内存态已被迁移的取舍）、`O-53`（把第 189 波变异脚本连 `restored:true` 落盘 —— 这是「可复核」的前提）。
-- **P1**：`O-38`（把「注入侧 ctx 只许两个键」变成不依赖类型的强校验）、`O-39`（先定亮度阈值口径 0.04045 / 0.03928，再评估 53 对读数漂移，最后收敛单一来源）、`O-46`（executor / 后台路径项目身份）、`O-42`（`known - 1`）、`O-44`（`MEM-CHECK-5a` 补行为判据）、`O-40` + `O-55`（**必须成对做**：固定 24h 步长与 DST 判据是一件事的两半）。
-- **P2（先量化再动手）**：`O-48`（delta 通道的真实收益）、`O-49`（`extraSystemPrompt` 对前缀缓存的影响）、`O-50`（每轮固定开销的净值 + 棘轮）、`O-52`（记忆单字符串 IPC 写放大）、`O-51`（knip 继续收紧）。
-- **必须向用户请示，未拿到答复不许改代码**：`O-41`（重试默认值 10 次 / 500ms·2ⁿ / 30 分钟预算 —— 先出证据再请示）。
-- `O-54`（对标取证落进仓库）可与任意一条并行。
-- **已解决、不重列**：`MEM-CHECK-2b` 的毫秒 flaky 与「两套顺序」= GAP-LIST 的 **C-44**（工作区已修）。
+- **P0（先把"可观测"变成"已观测"）**：跑一个真机回合，读 `[prompt-cache] hit=… miss=… ratio=…%`
+  ⇒ 判定服务端缓存是「整请求前缀匹配」还是「只有稳定前缀进缓存」，这是 `O-48`（delta 通道值不值得做）
+  的**唯一**分水岭数据（判据 `prompt-cache-observability.test.ts` 只保证读数可复核，不替你下结论）。
+- **P1（继续收「同一事实多份实现」）**：`knip` 的 `types=21`（19 条是登记过的门面再导出，剩 2 条可摘）；
+  以及任何新出现的"看起来不像但同一个根因"的形态 —— 本波的五个簇里有三个是**长得很不一样**的。
+- **P2（观察类，触发条件到了再做）**：`O-33`（执行环境抽象层）/ `O-34`（副作用相位协议）/ `O-35`（提示演化进会话日志）
+  —— 它们的关闭条件写在 GAP-LIST 里，**不是"想做就做"**。
+- **发布**：本波改动全部是用户可感知的（记忆体积提示 / 未经批准的可见性 / DST 日窗口 / 未读计数 / 权限解析），
+  但**是否发版由用户拍板**；发版按 `docs/RELEASE-GUIDE.md`（三处版本号 + CHANGELOG + 构建签名 + `latest.json` + `--latest`）。
 
 ### 四、纪律（照做即可；违反会被判据挡住）
 
-- **判据先行 → 变异自证 → 真机验证 → `npx tsc --noEmit` 0 → `npx vitest run` 全量（约 2 分钟；现规模约 625 文件 / 7772 用例）→ 提交推送**；变异**脚本 + `restored:true` 的结果都要落盘**（别只写进报告，O-53 就是这条的反面教材）。
-- 中文引号一律「」；改文件用 `edit` / `write`（PowerShell 内联脚本会被吃引号，本会话踩过多次）。
-- **绝不在运行中的实例里写内联样式 / 改 DOM**（弄花过用户界面）。
-- 单条耗时长的命令用**后台作业 + `job_output`**；别把长跑进程接进会提前结束的管道。
-- 改日志 / 快照类「一次性结论」必须走**可确认**通道（`setSettingConfirmed` / `writeMemoryConfirmed` 那一套，本会话的核心教训）。
-- **同一规则只许一处实现**；**判据要防恒真**（每条都配反向判据）；改完 `docs/GAP-LIST.md` 后两条门禁都要绿：`node tools/audit/check-gaplist.mjs` + `npx vitest run src/test/docs-current-gap-list.test.ts`。
+- **判据先行 → 变异自证（脚本 + `restored:true` 结果都落进 `tools/mutate/`）→ 真机验证 → `npx tsc --noEmit` 0
+  → `npx vitest run` 全量（现规模 **641 文件 / 7875 用例**，约 2 分钟）→ `npm run audit` → 提交推送**。
+- 新判据**必须登记进 `tools/mutate/registry.json`**（否则 `MUTATE-ARTIFACT-1` 看不到它）；
+  规格锚点必须是**唯一命中**的一段原文（改代码后锚点会过期，闸门会要求你重跑 —— 这是刻意的）。
+- 中文引号一律「」；改文件用 `edit` / `write`（**PowerShell 内联脚本改文件会把换行吃掉** —— 本波踩过一次：
+  `(Get-Content ...) -replace ... | Set-Content -NoNewline` 把一份测试文件压成了一行）。
+- **绝不在运行中的实例里写内联样式 / 改 DOM**；单条耗时长的命令用**后台作业 + `job_output`**。
+- 改日志 / 快照类「一次性结论」必须走**可确认**通道（`setSettingConfirmed` / `writeMemoryConfirmed`）。
+- **同一规则只许一处实现**；**判据要防恒真**（每条都配反向判据 + 一次真实变异）；
+  新增上报点要登记 `tools/audit/report-site-classification.json`（`_counts` 从 `sites` 现算，别手写）；
+  改 `docs/GAP-LIST.md` 后两条门禁都要绿：`node tools/audit/check-gaplist.mjs` + `npx vitest run src/test/docs-current-gap-list.test.ts`。

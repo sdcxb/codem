@@ -19,6 +19,8 @@ import {
   withdrawFailure,
 } from "../storage/persist-failure";
 import { redactSecrets } from "../utils/redact";
+// 第 191 波：字节数的人读形态走**唯一**实现（这一波把 4 份副本收敛成一份，见 `utils/bytes.ts`）
+import { formatBytes } from "../utils/bytes";
 // R7：给人看的日期走**唯一口径**（本地日），不再自造 `toISOString().split("T")[0]`
 import { localDateString } from "../time/local-time";
 
@@ -627,6 +629,17 @@ export interface MemoryMigrationReport {
   projectToPlatform: number;
   /** 由旧 `session` 改为 `conversation` 且**不带 sessionId** 的条数（仍不被注入 = 与今天一致） */
   sessionToConversation: number;
+  /**
+   * O-47：迁移被**整条链拒掉**（快照没落库）时的原因 —— 有它就意味着本次迁移**没有生效**：
+   * 磁盘与内存都保持迁移前形态（见 `MemoryService.rollbackMigration` 的说明）。
+   *
+   * 为什么与 `snapshotDeferred` 分开：`snapshotDeferred` 说的是"快照为什么没写成"，
+   * 它**不**包含"内存态有没有跟着回滚"这个事实 —— 界面要说清"本次迁移未生效，重启后重试"
+   * 必须能读到后者，否则那句话没有任何数据支撑。
+   */
+  aborted?: string;
+  /** O-47：本次回滚**真的还原了几条**（迁移后被用户改过/删过的不许覆盖，故可能少于改动数） */
+  abortedEntries?: number;
   /** 迁移后仍未注入的条目数（孤儿 conversation） */
   notInjected: number;
   /** 迁移后的可见范围快照（判据用它逐字比对迁移前后） */
@@ -1115,6 +1128,62 @@ export function approvalRequiredForScope(scope: MemoryScope): boolean {
   return getWriteApprovalSetting()[scope] === true;
 }
 
+// ========== 记忆 payload 的体积预算与可观测（O-36 / O-52，第 191 波） ==========
+
+/**
+ * **记忆 payload 的体积预算**（O-36）。
+ *
+ * ## 被守的缺陷
+ *
+ * `memory` 是**单个字符串**存在配置域里：`serialize()` 把全部条目 + 批次
+ * `JSON.stringify` 成一份 payload，每次改动都整份走确认式 IPC（`writeMemoryConfirmed`）。
+ * 第 187 波做的「无变化不写」只解决"内容没变"的情况 —— **内容变了时候的整份写放大一点没治**，
+ * 且**没有任何字节上限**：`maxEntries(1000) × maxContentLength(10000)` 的乘积可达 **10 MB 级**
+ * （单条 content 上限 1 万字符 × 1000 条），最坏形态是「越来越大的 payload 每回合重发
+ * + 每回合一次确认往返」，用户只看到卡、看不到原因。
+ *
+ * ## 这个预算做什么、**不**做什么
+ *
+ * - **做**：超限**如实上报**（超了多少、哪个桶最大、能做什么）—— 用户能采取动作
+ *   （删条目 / 导出后清理），所以它走 `action` 通道（用户可见），不是只进日志的 advisory；
+ * - **不做**：**绝不静默截断条目**。记忆是用户的数据，体积超预算不是"删掉一部分"的理由；
+ *   截断会**不可逆地丢内容**，而用户看不到任何提示（本仓最忌讳的形态）。
+ *
+ * ## 取值理由（2 MiB，按「2 字节/字符」保守估算）
+ *
+ * 与消息/事件镜像的字节预算**同一口径**（`payload.length * 2`：JS 字符串按 UTF-16 计，
+ * 中文场景下 2 字节/字符是保守估计，宁严不宽）。取 2 MiB 的依据：
+ * ① 重度用户的记忆域实测在**几十 KB** 量级 ⇒ 2 MiB 是 30 倍以上的余量，正常语料不会报；
+ * ② 2 MiB 的字符串已经意味着每次改动都要序列化 + 过一遍 IPC + 落一次库，
+ *    这是"该告诉用户"的量级；③ 最坏形态（10 MB）必须报得出来。
+ *
+ * 判据：`MEM-BYTES-1`（超限语料必须有上报且**一条不丢**）/ `MEM-BYTES-2`（正常语料**不报**）/
+ * `MEM-BYTES-3`（messages 有预算 ≠ memory 有预算 —— 防止拿前者的绿当后者的绿）。
+ */
+export const MEMORY_PAYLOAD_BUDGET_BYTES = 2 * 1024 * 1024;
+
+/** payload 的**保守字节估算**（2 字节/字符；与消息/事件镜像同一口径，宁严不宽） */
+export function estimatePayloadBytes(payload: string): number {
+  return payload.length * 2;
+}
+
+/** 记忆 payload 的体积读数（面板、诊断与判据共用一处口径） */
+export interface MemoryPayloadByteStats {
+  /** 整份 payload 的估算字节 */
+  payloadBytes: number;
+  /** 预算（`MEMORY_PAYLOAD_BUDGET_BYTES`） */
+  budgetBytes: number;
+  /** 超出多少字节（未超 ⇒ 0） */
+  overBy: number;
+  /** 条目数 */
+  entries: number;
+  /** 体积最大的桶（`bucketKey` 的可读形式）与它的字节 */
+  biggestBucket: string;
+  biggestBucketBytes: number;
+  /** 各桶体积（按字节降序）—— 面板据此说"哪一块最大" */
+  buckets: Array<{ bucket: string; bytes: number; entries: number }>;
+}
+
 // ========== Memory Service ==========
 export class MemoryService {
   private config: MemoryConfig;
@@ -1130,6 +1199,31 @@ export class MemoryService {
   private loadState: MemoryLoadState = { ok: false, reason: "尚未读取记忆", kind: "not-ready", dropped: 0, raw: null };
   /** 最近一次**成功写过磁盘**的 payload（F8/S3：无变化不写，省掉每回合的整份 IPC） */
   private lastPersistedPayload: string | null = null;
+  /**
+   * 最近一次 `serialize()` 出来的 payload 的**保守字节数**（O-36：体积必须可观测）。
+   *
+   * 为什么缓存而不是每次现算：`getByteStats()` 会被面板在每次渲染/刷新时调用，
+   * 而 `serialize()` 是 O(条目数 × 内容长度) 的整份 JSON.stringify —— 现算等于
+   * "看体积"这件事自己也变成一次写放大。这里只缓存**最近一次真正序列化**的读数
+   * （`serialize()` 是唯一的序列化出口，所以缓存不会与内存态分叉）。
+   */
+  private lastPayloadBytes = 0;
+  /**
+   * 上一次「体积超预算」上报时的字节数（O-36：如实上报但**不许写风暴**）。
+   *
+   * 记忆一旦超预算，之后**每一次**改动都会再次超限 —— 若每次都报，用户会被同一个提示刷屏
+   * （而通道按 area 去重、只剩计数在涨，反而看不出"又大了多少"）。
+   * 规则：①**首次**超限一定报；②超出的部分再涨 25% 以上才再报一次；③下降到预算内时清空，
+   * 下次再超限又当"首次"（状态机由判据 `MEM-BYTES-1b` 钉住）。
+   */
+  private lastBudgetReportBytes: number | null = null;
+  /**
+   * 本次 `load()` 里为**缺 `order`** 的旧条目补齐了几个（O-37）。
+   *
+   * 载荷补齐只发生在读入路径，所以它是一个"读盘事实"，与"这次有没有 save()"无关 ——
+   * `runMigration()` 在迁移之后据此**主动落库一次**（否则只读用户每次启动都按键序重算一遍顺序）。
+   */
+  private orderBackfilled = 0;
   /** 在途的确认式写入（I6：异步落库失败要能回传到 `getLastPersistError()`） */
   private pendingPersist: Promise<void> | null = null;
   /** 本进程内是否已经跑过一次真正改动的迁移（R1：标记异步落库时的进程内幂等依据） */
@@ -1166,6 +1260,8 @@ export class MemoryService {
    */
   private load() {
     this.loadState = { ok: false, reason: "尚未读取记忆", kind: "not-ready", dropped: 0, raw: null };
+    // O-37：本次读盘补齐了几个 `order` —— 每次读盘都从 0 起（重读/迁移重跑不许沿用上一次的数）
+    this.orderBackfilled = 0;
     const read = loadMemoryChecked();
     if (!read.ok) {
       this.loadState = { ok: false, reason: read.reason, kind: "not-ready", dropped: 0, raw: null };
@@ -1188,6 +1284,8 @@ export class MemoryService {
       // **真的为空**（不是读不到）：这是合法状态，允许迁移（无事可做）与后续写入
       this.loadState = { ok: true, dropped: 0, raw };
       this.lastPersistedPayload = raw;
+      // O-36：体积读数必须从**构造之后**就可用（否则面板在第一次写入之前显示 0 B，是假读数）
+      this.lastPayloadBytes = estimatePayloadBytes(this.serialize());
       this.markLoadRecovered();
       this.runMigration();
       return;
@@ -1234,6 +1332,15 @@ export class MemoryService {
       }
     }
     nextOrder += 1;
+    /*
+     * O-37（第 191 波）：补齐要**计数**，补完由 `runMigration()` 主动落库一次。
+     *
+     * 修复前：补齐结果**只随下一次 `save()`** 才落库 ⇒ 在「加载完成但还没写过」的那段时间里
+     * （只读用户可能永远是这段时间），顺序真相仍是 JSON 对象键序 —— 而整数样 id 恰好会被
+     * JSON 按数值升序重排（实测：插入 `mem-3,1,mem-1,2` 读回 `1,2,mem-3,mem-1`）
+     * ⇒ 每次启动算出的注入顺序与每桶 20 条的入选集合都可能不同，**没有任何判据会红**。
+     */
+    this.orderBackfilled = 0;
     for (const [key, value] of container.pairs) {
       const normalized = normalizeLoadedEntry(key, value);
       if (!normalized) {
@@ -1242,6 +1349,7 @@ export class MemoryService {
       }
       if (typeof normalized.order !== "number" || !Number.isFinite(normalized.order)) {
         normalized.order = nextOrder++;
+        this.orderBackfilled++;
       }
       this.entries.set(normalized.id, normalized);
     }
@@ -1258,6 +1366,14 @@ export class MemoryService {
 
     this.loadState = { ok: true, dropped, raw };
     this.lastPersistedPayload = raw;
+    /*
+     * O-36：读盘成功就**立刻**算一次体积读数。
+     *
+     * 为什么不能等第一次写入：用户升级后打开记忆面板时可能还没保存过任何东西，
+     * 那时 `getByteStats()` 必须给真实值（"记忆域里有 4 MB"这件事正是只读用户最该看到的），
+     * 而不是 0 —— 0 是**假陈述**，比不显示更糟。
+     */
+    this.lastPayloadBytes = estimatePayloadBytes(this.serialize());
     if (dropped > 0) {
       // 丢弃必须**如实上报**（不静默）：这是"产品自己的读入口做了校验"的可见证据
       reportAdvisory("memory.entriesDropped", `读入时跳过 ${dropped} 条形状不合法（缺 id/key/content 或类型不对）的记忆条目`, {
@@ -1341,7 +1457,32 @@ export class MemoryService {
       this.loadState = { ok: false, reason, kind: "parse", dropped: this.loadState.dropped, raw: this.loadState.raw };
       // 迁移抛出是**结论性**失败（不是"端口没就绪"那类自恢复的暂时状态）
       this.reportLoadUnavailable(reason, false, e, "本次不迁移、不写入：旧数据保持原样（fail-closed）。");
+      return;
     }
+    /*
+     * O-37：**order 补齐必须在读盘时就落库**，不许只留在内存里等下一次 `save()`。
+     *
+     * 为什么放在迁移之后：①迁移（若有）已经整份写过一次 payload（含 `order`），
+     * 那时 `lastPersistedPayload` 就是含补齐结果的形态 ⇒ 这里会**自动短路**（不重复写）；
+     * ②放在迁移之前会给"读失败/迁移推迟"的路径也发写入 —— 那是 fail-closed 明令禁止的。
+     * 所以这里的条件是「读盘成功 + 确有补齐 + 迁移没有整份写过」三者的交集。
+     */
+    if (this.loadState.ok && this.orderBackfilled > 0) this.persistOrderBackfill();
+  }
+
+  /**
+   * O-37：把「`order` 补齐」这件事**落库一次**（只读用户也要稳定顺序）。
+   *
+   * 与 `save()` 的区别只在"为什么写"与上报区域 —— 走的是**同一条**确认链
+   * （`chainPersist`），所以失败语义完全一致（失败 ⇒ `lastPersistError` 非空 + 允许下次重试），
+   * 不需要第二套失败处理。
+   */
+  private persistOrderBackfill(): void {
+    const payload = this.serializeChecked();
+    if (payload === this.lastPersistedPayload) return;
+    patchMemoryMirror(payload);
+    this.lastPersistedPayload = payload;
+    this.chainPersist(payload, { kind: "orderBackfill" });
   }
 
   /** Reload memory from SQLite (call when DB is ready) */
@@ -1401,7 +1542,8 @@ export class MemoryService {
       return false;
     }
     this.pruneBatches();
-    const payload = this.serialize();
+    // O-36：走 `serializeChecked()`（体积预算检查的唯一出口），不要直接 `serialize()`
+    const payload = this.serializeChecked();
     // ② 无变化不写（内容逐字相同 ⇒ 库里已经是这份，不需要再发一次 IPC）
     if (payload === this.lastPersistedPayload) return true;
     // ③ 同步那半：镜像立即反映（同一 tick 之后的读路径看得到），随后由确认通道决定"落没落定"
@@ -1411,14 +1553,108 @@ export class MemoryService {
     return true;
   }
 
-  /** 当前内存态的线上形态（`save` / `saveConfirmed` / 迁移共用同一处序列化） */
+  /**
+   * 当前内存态的线上形态（`save` / `saveConfirmed` / 迁移共用同一处序列化）。
+   *
+   * ⚠️ O-36：**所有写入路径都必须走 `serializeChecked()`**，不要直接调它 ——
+   * 体积预算检查只挂在后者的出口上（本函数只负责"序列化 + 记下体积读数"，
+   * 因为体积读数必须来自**唯一**的序列化出口，否则面板读到的数会与线上形态分叉）。
+   */
   private serialize(): string {
     const obj: Record<string, MemoryEntry> = {};
     for (const [id, entry] of this.entries) {
       obj[id] = entry;
     }
     this.pruneBatches();
-    return JSON.stringify({ version: 2, entries: obj, batches: Array.from(this.batches.values()) });
+    const payload = JSON.stringify({ version: 2, entries: obj, batches: Array.from(this.batches.values()) });
+    this.lastPayloadBytes = estimatePayloadBytes(payload);
+    return payload;
+  }
+
+  /**
+   * O-36：序列化 + **体积预算检查**（写入路径的唯一出口）。
+   *
+   * 检查放在 `serialize()` 之后、`patchMemoryMirror()` 之前：镜像一旦更新，读路径看到的
+   * 就是这份 payload —— 所以"超预算"这件事必须在**发布之前**就已经说出去，
+   * 而不是等某个下游发现（下游今天一个消费方都没有，那正是 O-36 的另一半）。
+   */
+  private serializeChecked(): string {
+    const payload = this.serialize();
+    this.checkPayloadBudget(this.lastPayloadBytes);
+    return payload;
+  }
+
+  /**
+   * O-36：体积超预算 ⇒ **如实上报**（超了多少 / 哪个桶最大 / 能做什么），且**绝不截断条目**。
+   *
+   * 上报节流（见 `lastBudgetReportBytes` 的说明）：首次超限必报；之后超出的部分再涨 25% 以上
+   * 才再报一次；回落到预算内 ⇒ 清空状态（下次再超限又当首次）。
+   * 这样"越用越大"这件事是**可见的**，而不会变成每次改动一条的刷屏。
+   */
+  private checkPayloadBudget(bytes: number): void {
+    if (bytes <= MEMORY_PAYLOAD_BUDGET_BYTES) {
+      this.lastBudgetReportBytes = null;
+      return;
+    }
+    const prevReported = this.lastBudgetReportBytes;
+    if (prevReported !== null && bytes < prevReported * 1.25) return;
+    this.lastBudgetReportBytes = bytes;
+
+    const stats = this.getByteStats();
+    const over = bytes - MEMORY_PAYLOAD_BUDGET_BYTES;
+    const top = stats.buckets
+      .slice(0, 3)
+      .map((b) => `${b.bucket}=${formatBytes(b.bytes)}（${b.entries} 条）`)
+      .join("；");
+    reportActionFailure(
+      "memory.byteBudget",
+      new Error(
+        `记忆体积约 ${formatBytes(bytes)}，已超过预算 ${formatBytes(MEMORY_PAYLOAD_BUDGET_BYTES)}（超出 ${formatBytes(over)}）；` +
+          `最大的一块是「${stats.biggestBucket}」（${formatBytes(stats.biggestBucketBytes)}）`,
+      ),
+      `桶体积前三：${top}（每条改动都要整份序列化 + 过一遍 IPC + 落一次库，体积越大越慢）`,
+      {
+        title: "记忆体积超过预算",
+        // 如实说明"什么都没丢"，并给出**用户能做的**动作（不删任何东西也能继续用）
+        consequence:
+          "记忆**一条都没有被删除或截断**（体积超预算不会丢数据）。要缩小：在「设置 → 记忆」里删除不再需要的条目，" +
+          "或先「导出为 JSON」留档再清理。",
+      },
+    );
+  }
+
+  /**
+   * 记忆 payload 的**体积读数**（O-36：可观测）。
+   *
+   * 三个消费方，口径**同一处**：
+   * ① 记忆面板（展示「体积 X KB / 预算 Y KB」，超限时给一条可操作提示）；
+   * ② 超预算上报（`checkPayloadBudget` 用它说"哪个桶最大"）；
+   * ③ 判据（`MEM-BYTES-1/2/3`）。
+   *
+   * 注意它**不重新序列化**：用最近一次 `serialize()` 的缓存（否则"看体积"自己就是一次写放大）。
+   */
+  getByteStats(): MemoryPayloadByteStats {
+    const buckets = new Map<string, { bytes: number; entries: number }>();
+    for (const entry of this.entries.values()) {
+      const key = bucketKey(entry);
+      const bytes = estimatePayloadBytes(JSON.stringify(entry));
+      const cur = buckets.get(key) ?? { bytes: 0, entries: 0 };
+      cur.bytes += bytes;
+      cur.entries += 1;
+      buckets.set(key, cur);
+    }
+    const sorted = [...buckets.entries()]
+      .map(([bucket, v]) => ({ bucket, bytes: v.bytes, entries: v.entries }))
+      .sort((a, b) => b.bytes - a.bytes);
+    return {
+      payloadBytes: this.lastPayloadBytes,
+      budgetBytes: MEMORY_PAYLOAD_BUDGET_BYTES,
+      overBy: Math.max(0, this.lastPayloadBytes - MEMORY_PAYLOAD_BUDGET_BYTES),
+      entries: this.entries.size,
+      biggestBucket: sorted[0]?.bucket ?? "",
+      biggestBucketBytes: sorted[0]?.bytes ?? 0,
+      buckets: sorted,
+    };
   }
 
   /**
@@ -1468,8 +1704,18 @@ export class MemoryService {
     }
   }
 
-  /** 把一次写入挂到确认链上（失败 ⇒ `lastPersistError` 非空 + `lastPersistedPayload` 回滚，允许下次重试） */
-  private chainPersist(payload: string): void {
+  /**
+   * 把一次写入挂到确认链上（失败 ⇒ `lastPersistError` 非空 + `lastPersistedPayload` 回滚，允许下次重试）。
+   *
+   * @param report 上报的**种类**。默认是"一次普通保存"（`save()` / `saveConfirmed()` 走默认）；
+   *   O-37 的 `order` 补齐落库传 `orderBackfill` —— 同一条链、同一套失败语义，但**说清是哪件事**
+   *   没落库（否则用户看到的永远是"记忆保存失败"，而他并没有保存任何东西）。
+   *   ⚠️ 刻意用**字面量分支**而不是把 `area` 当字符串参数传进来：本仓的上报点分诊闸门
+   *   （`tools/audit/scan-report-sites.mjs --check`）按**字面 area** 静态登记每一条上报点，
+   *   动态 area 会让它变成 `<动态>` 而无法分诊（第 191 波实测踩到过一次）。
+   */
+  private chainPersist(payload: string, report: { kind?: "save" | "orderBackfill" } = {}): void {
+    const kind = report.kind ?? "save";
     /**
      * 捕获**排队时**的存储端口（R1 的配套修正）。
      *
@@ -1490,6 +1736,14 @@ export class MemoryService {
         }
         if (this.lastPersistedPayload === payload) this.lastPersistedPayload = null;
         this.lastPersistError = result.reason ?? "记忆落库失败";
+        if (kind === "orderBackfill") {
+          reportPersistFailure(
+            "memory.orderBackfill",
+            new Error(this.lastPersistError),
+            "记忆条目顺序（创建序）未被引擎确认 ⇒ 本次仍按内存里的顺序用，重启后会重新补齐一次",
+          );
+          return;
+        }
         reportPersistFailure("memory.saveConfirmed", new Error(this.lastPersistError), "记忆写入未被引擎确认（本次改动只在内存里）");
       });
   }
@@ -1506,7 +1760,7 @@ export class MemoryService {
       reportPersistFailure("memory.saveRefused", new Error(this.lastPersistError), "确认式写入被拒绝（读失败 ⇒ 不许覆盖）");
       return false;
     }
-    const payload = this.serialize();
+    const payload = this.serializeChecked();
     if (payload === this.lastPersistedPayload) {
       // 内容与"已接受的那一份"相同：仍要等前面在途的确认落地，不能直接说成功
       await this.flushPendingPersist();
@@ -2558,6 +2812,18 @@ export class MemoryService {
     let snapshotWritten = false;
     let snapshotDeferred: string | null = null;
 
+    /*
+     * O-47（第 191 波）：迁移要能**回滚**，所以先把"迁移前的那一份"逐条留好。
+     *
+     * 被守的形态：`migrateScopeModel()` 是**同步**函数，它在内存里先改完（下面这一行）
+     * 才把"快照 → 数据 → 标记"排进确认链；而快照确认失败时磁盘**什么都没动** ——
+     * 于是同一个进程里"界面看到的归属"与"重启后看到的归属"不一致，靠"下次启动重跑"
+     * 自洽，但**没有任何判据钉住分叉期间界面展示的是什么**。
+     * 现在：快照确认失败 ⇒ 内存态**回滚**到迁移前形态（磁盘本来就没动）⇒ 两侧一致。
+     */
+    const previousEntries = new Map<string, MemoryEntry>(this.entries);
+    const lastPersistedBefore = this.lastPersistedPayload;
+
     for (const [id, next] of nextEntries) this.entries.set(id, next);
 
     /*
@@ -2604,6 +2870,34 @@ export class MemoryService {
     }, () => {
       snapshotWritten = true;
       report.snapshotWritten = true;
+    }, (reason) => {
+      /*
+       * O-47：快照没落库 ⇒ **内存态也回滚到迁移前形态**（磁盘本来就没动）。
+       *
+       * 逐条判"这一条还是不是本次迁移放进去的那一个对象"：确认链是异步的，这中间用户
+       * 完全可能已经改过/删过某条记忆（或自动提取又写了一条）——
+       * **整表回滚会把用户的改动一起抹掉**（那比"内存与磁盘分叉"更糟）。
+       */
+      let rolledBack = 0;
+      for (const [id, migrated] of nextEntries) {
+        if (this.entries.get(id) !== migrated) continue; // 迁移后被改过/删过 ⇒ 不许覆盖用户的改动
+        const prev = previousEntries.get(id);
+        if (prev) this.entries.set(id, prev);
+        else this.entries.delete(id);
+        rolledBack++;
+      }
+      this.migratedThisProcess = false; // 磁盘仍是迁移前形态 ⇒ 下次（本进程内也行）要能重跑
+      report.aborted = reason;
+      report.abortedEntries = rolledBack;
+      report.visibleAfter = snapshot();
+      report.notInjected = this.countNotInjected();
+      this.lastPersistedPayload = lastPersistedBefore;
+      try {
+        patchMemoryMirror(this.serialize());
+      } catch (e) {
+        console.warn("[memory] 迁移回滚时镜像未更新（磁盘仍是迁移前形态）:", e);
+      }
+      console.warn(`[memory] 迁移被整条链拒掉 ⇒ 内存态已回滚 ${rolledBack} 条（与磁盘一致）：${reason}`);
     }) : true;
     /*
      * 本进程内**已迁移**标记（R1 的配套）：迁移标记现在走**异步确认**才落库，
@@ -2645,14 +2939,19 @@ export class MemoryService {
    * @param snapshot 需要写却还没有的迁移前快照（`null` = 键已存在或本次无改动 ⇒ 不写）
    * @param onSnapshotDeferred 把"没写成"的原因交回给报告（报告是界面/命令唯一能看到的凭据）
    * @param onSnapshotConfirmed 快照**确认落库成功**时回调（报告据此把 `snapshotWritten` 置真）
+   * @param onSnapshotAborted O-47：快照确认失败、迁移被整条链拒掉时回调 —— 调用方据此把
+   *   **内存态回滚**到迁移前形态（磁盘本来就没动）。**必须在设置 `lastPersistError` 之后、
+   *   清理 `lastPersistedPayload` 之前**调用（回滚自己要恢复"上一次成功写过的 payload"）。
    */
   private commitMigrationPayload(
     snapshot: MemoryPreMigrationSnapshot | null,
     onSnapshotDeferred: (reason: string) => void,
     onSnapshotConfirmed: () => void,
+    onSnapshotAborted: (reason: string) => void,
   ): boolean {
     if (!this.loadState.ok) return false;
-    const payload = this.serialize();
+    // O-36：迁移的整份写入同样要过体积预算检查（它是**最大**的一次写：整域全量）
+    const payload = this.serializeChecked();
     if (payload === this.lastPersistedPayload) return true;
     patchMemoryMirror(payload);
     this.lastPersistedPayload = payload;
@@ -2671,9 +2970,14 @@ export class MemoryService {
             const reason =
               "迁移前快照未被确认写入 ⇒ 本次**不迁移**（不写数据、不写迁移标记）：没有可逆凭据时迁移不可接受";
             onSnapshotDeferred(reason);
-            if (this.lastPersistedPayload === payload) this.lastPersistedPayload = null;
             this.lastPersistError = reason;
-            reportPersistFailure("memory.preMigrationSnapshot", new Error(reason), "回退凭据没落库 ⇒ 迁移整体未执行，旧数据保持原样");
+            /*
+             * O-47：内存态回滚 —— 顺序是**先**让回滚恢复 `lastPersistedPayload`，
+             * **再**做下面那句"这一份 payload 已不算落库"的兜底清理（否则会把回滚刚恢复的值清掉）。
+             */
+            onSnapshotAborted(reason);
+            if (this.lastPersistedPayload === payload) this.lastPersistedPayload = null;
+            reportPersistFailure("memory.preMigrationSnapshot", new Error(reason), "回退凭据没落库 ⇒ 迁移整体未执行，旧数据保持原样（内存态已同步回滚）");
             return;
           }
           onSnapshotConfirmed();

@@ -15,10 +15,17 @@
  *
  * ## 判据
  *
- * 注册一个 `timeoutMs: 50` 的工具：它在 `ctx.abort` 上挂 abort 监听，然后睡 250ms
+ * 注册一个 `timeoutMs: 250` 的工具：它在 `ctx.abort` 上挂 abort 监听，然后睡 1.5s
  * （**远长于超时**）。断言：
  * 1. 工具**观察到了中止**（`observed.aborted === true`）；
  * 2. 上报的结果是结构化失败并带机器可读码 `TOOL_TIMEOUT`（不靠文本匹配分类）。
+ *
+ * ⚠️ 第 191 波（把"偶发假红"变成本判据的一部分）：这两个数字原来是 **50ms / 250ms**，
+ * 在全量并行满载时会**偶发假红** —— 实测失败形态是 `sawSignal === false`（工具的
+ * `execute` 根本没被调用：50ms 的定时器先到，而 `Promise.race` 的败者不会被取消，
+ * 于是"超时先于工具起步"）。那不是产品缺陷，而是**判据自己的时间预算比被测机器的
+ * 事件循环延迟还小**。放宽到 250ms / 1.5s 后不变式（超时 ≪ 干活）仍然成立，
+ * 而"超时必须 abort 工具"这件事被证明的强度完全相同。
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -30,10 +37,12 @@ const SESSION_ID = "dsh-d4-timeout";
 const CWD = "C:\\d4-timeout";
 const TOOL_NAME = "probe_slow";
 
-/** 超时预算：远小于工具自己的睡眠时长 */
-const TOOL_TIMEOUT_MS = 50;
+/**
+ * 超时预算：**远小于**工具自己的睡眠时长（1.5s）。见下面那句为什么不是 50ms。
+ */
+const TOOL_TIMEOUT_MS = 250;
 /** 工具"干活"的时长：确保超时必然先到 */
-const TOOL_WORK_MS = 250;
+const TOOL_WORK_MS = 1500;
 
 /** 一次回复里给一个慢工具调用 */
 function oneCall(): any[] {
@@ -152,6 +161,6 @@ describe("D4：超时必须 abort 掉工具的 controller", () => {
       timeoutErrors.length,
       `超时结果必须是**结构化失败**（机器可读码 ${TOOL_TIMEOUT}），不能只靠文本匹配分类`,
     ).toBe(1);
-    expect(String(timeoutErrors[0].error)).toMatch(/timed out after 50ms/);
+    expect(String(timeoutErrors[0].error)).toMatch(/timed out after 250ms/);
   });
 });

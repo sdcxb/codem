@@ -1,0 +1,94 @@
+{
+  "wave": "unread-191",
+  "description": "O-42：写消息 → 读计数同步可见 ⇒ 标未读走精确分支（水位不动、未读恰好 1）；计数不可见时兜底恰好踩一格",
+  "runAt": "2026-10-08T15:27:38.872Z",
+  "specFingerprint": "a80fd9984eba9a41c10e842418327890d08105f4",
+  "files": [
+    "src/core/storage/message.ts",
+    "src/core/session/session-read-state.ts"
+  ],
+  "tests": [
+    "src/test/session-unread-count-visibility.test.ts",
+    "src/test/loop-owned-message.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 去掉「写入即刻算进读模型」（同步可见消失）",
+      "why": "UNREAD-V1：写路径不再维护会话计数增量 ⇒ 写入返回时 getSession().messageCount 停在旧值，未读徽标拿不到写入后的真值（这条判据必须红，否则它没在测「同步可见」这件事）",
+      "patches": [
+        {
+          "file": "src/core/storage/message.ts",
+          "from": "  const counted = hasMirrorContract && noteMessageWroteToMirror(sessionId, message.id);",
+          "to": "  const counted = false;"
+        }
+      ],
+      "tests": [
+        "src/test/session-unread-count-visibility.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2330
+    },
+    {
+      "id": "MUT-2 精确分支改回「踩一格」（计数可见时多显示 1 条）",
+      "why": "UNREAD-V1 / XSESS-3b：去掉 countVisible 分支 ⇒ 计数同步可见时水位仍被踩到 anchor - 1，计数涨上来之后未读变成 2 而实际 1 条 —— 这正是 O-42 记的那个偏差",
+      "patches": [
+        {
+          "file": "src/core/session/session-read-state.ts",
+          "from": "  if (countVisible) return false;",
+          "to": "  if (false) return false;"
+        }
+      ],
+      "tests": [
+        "src/test/session-unread-count-visibility.test.ts",
+        "src/test/loop-owned-message.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2686
+    },
+    {
+      "id": "MUT-3 兜底分支不生效（计数不可见时一条都不显示）",
+      "why": "UNREAD-V2：计数不可见时不再踩那一格 ⇒ 水位停在条数上，`unreadFor` 算出 0，那条消息在计数涨上来之前**静默丢**（这条判据必须红）",
+      "patches": [
+        {
+          "file": "src/core/session/session-read-state.ts",
+          "from": "  const target = Math.max(0, known - 1);",
+          "to": "  const target = Math.max(0, known);"
+        }
+      ],
+      "tests": [
+        "src/test/session-unread-count-visibility.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2342
+    },
+    {
+      "id": "MUT-4 兜底基准改成「相对水位踩一格」（漂移态下未读算成 0）",
+      "why": "UNREAD-V2：兜底改成按 prev 踩一格 ⇒ 漂移态（水位被 ChatPanel 的 Math.max(...) 推高过）下目标水位停在「旧计数」附近，未读数算成 0 —— 兜底失效，那条消息一条都不显示",
+      "patches": [
+        {
+          "file": "src/core/session/session-read-state.ts",
+          "from": "  const target = Math.max(0, known - 1);",
+          "to": "  const target = Math.max(0, prev - 1);"
+        }
+      ],
+      "tests": [
+        "src/test/session-unread-count-visibility.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2358
+    }
+  ]
+}

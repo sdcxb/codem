@@ -376,6 +376,12 @@ describe("MEM-CHECK-5：入口、归位与渲染", () => {
    * 它只能挡"改名/删行"，**挡不住"传错值"**。
    * 与"传错值"有关的两条（归位写入的归一化、cwd 归一化）已经改成行为判据：
    * 见下面的 `MEM-CHECK-5c（行为）` 与 `memory-scope-trust.test.ts::MEM-INJECT-3（行为）`。
+   *
+   * O-44（第 191 波）补上了**这一条自己最缺的那半**：`ctx` 从哪来、是不是当前这一对，现在是行为判据 ——
+   * `memory-checkup-ctx-behavior.test.tsx` 的 `MEM-CHECK-5a-行为`（最小桩渲染 `SettingsPanel`
+   * + 点页签 + 断言「这条现在会不会生效」在 DOM 上的后果）与
+   * `memory-checkup-ctx-props.test.tsx` 的 `MEM-CHECK-5a-ctx-props`（探针直接断言传下去的 props 值）。
+   * 所以本条的定位回到它真正能守的东西：**页签还在、文案还在、复用的是同一个视图**。
    */
   it("MEM-CHECK-5a（接线）：设置面板里有「记忆体检」页签，且复用同一套数据层的视图", async () => {
     const fs = await import("node:fs");

@@ -159,8 +159,13 @@ export function tileToPixel(col: number, row: number, map: LibraryMap = LIBRARY_
   };
 }
 
-/** 瓦片坐标版本（取菱形中心） */
-export function tileCenter(tile: TileCoord, map: LibraryMap = LIBRARY_MAP): { x: number; y: number } {
+/**
+ * 瓦片坐标版本（取菱形中心）。
+ *
+ * ⚠️ 第 191 波（O-51 棘轮收紧）：**不再导出**。全仓没有 import（渲染侧用的是
+ * `components/library/iso.ts` 的 `tileCenter(col,row)`，签名不同），这里只留给本文件内部使用。
+ */
+function tileCenter(tile: TileCoord, map: LibraryMap = LIBRARY_MAP): { x: number; y: number } {
   return tileToPixel(tile.col, tile.row, map);
 }
 

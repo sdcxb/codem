@@ -19,6 +19,8 @@ import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
+/** 线性化阈值只能有一处实现（GAP-LIST O-39 / CR-CONTRAST-1）：这里 import 产品实现，不再镜像阈值 */
+import { channelLinear } from "../core/theme/contrast-checker";
 
 const ROOT = join(__dirname, "..", "..");
 
@@ -319,8 +321,11 @@ describe("CSS 结构完整性（第 52 波）", () => {
       return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
     };
     const lum = ([r, g, b]: [number, number, number]) => {
-      const f = (c: number) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
-      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      /* ⚠️ 第 191 波（GAP-LIST O-39）：这里原先**镜像**了一份线性化函数，且用的是 WCAG 2.0 初版的
+         旧阈值 0.03928（全仓同一事实 4 处实现）。现在改成 import 产品实现
+         `channelLinear` —— 阈值只随 `src/core/theme/wcag-luminance.json` 走，
+         判据 `CR-CONTRAST-1` 保证它不会再被镜像回来。 */
+      return 0.2126 * channelLinear(r) + 0.7152 * channelLinear(g) + 0.0722 * channelLinear(b);
     };
     const contrast = (a: [number, number, number], b: [number, number, number]) => {
       const la = lum(a), lb = lum(b);

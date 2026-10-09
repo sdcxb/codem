@@ -1,0 +1,110 @@
+{
+  "wave": "water-level-banner-191",
+  "description": "第 191 波紧急修复：上下文水位提示条的「回执不许混进风险提示条」+「点按钮必须立刻收起」（真机报的『已用 1% 却报警』与『点了没反应』）",
+  "runAt": "2026-10-09T01:23:17.454Z",
+  "specFingerprint": "fd86ab879719efa7d508c4022061163e931fe128",
+  "files": [
+    "src/components/WaterLevelBanner.tsx"
+  ],
+  "tests": [
+    "src/test/context-water-level-banner.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 回执重新混进风险提示条（回到旧渲染）",
+      "why": "WB-10 / WB-12：只要有过一次回执就继续以『上下文压力偏高（已用 N%）』+ 两个按钮的形态渲染 —— 这正是真机上『水位已回到 1% 却还报警、且刚做完的动作看起来没做』的根因",
+      "patches": [
+        {
+          "file": "src/components/WaterLevelBanner.tsx",
+          "from": "  if (!visible && note) {",
+          "to": "  if (false && !visible && note) {"
+        }
+      ],
+      "tests": [
+        "src/test/context-water-level-banner.test.tsx"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2423
+    },
+    {
+      "id": "MUT-2 交接成功后取消『已处理』状态（回到 setDismissedAt(null)）",
+      "why": "WB-10：交接成功后提示条必须收起（记一笔 dismissed）；写回 null 等于把『用户已经处理过』抹掉 ⇒ 提示条继续留着",
+      "patches": [
+        {
+          "file": "src/components/WaterLevelBanner.tsx",
+          "from": "      setDismissedAt(level.ratio);\n    } catch (e) {",
+          "to": "      setDismissedAt(null);\n    } catch (e) {"
+        }
+      ],
+      "tests": [
+        "src/test/context-water-level-banner.test.tsx"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2451
+    },
+    {
+      "id": "MUT-3 「压缩 / 查看详情」不再收起提示条（回到点了没反应）",
+      "why": "WB-11：点了按钮提示条不许原地不动（用户会以为没点到、反复点）",
+      "patches": [
+        {
+          "file": "src/components/WaterLevelBanner.tsx",
+          "from": "  const handleOpenDetail = useCallback(() => {\n    setDismissedAt(level.ratio);",
+          "to": "  const handleOpenDetail = useCallback(() => {"
+        }
+      ],
+      "tests": [
+        "src/test/context-water-level-banner.test.tsx"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2436
+    },
+    {
+      "id": "MUT-5 标题退回「一律压力偏高」（1% 也自称压力偏高）",
+      "why": "WB-15：等级没到线时那句『压力偏高』是假陈述（真机形态：1M 窗口的会话被印成「压力偏高（已用 1%）」）",
+      "patches": [
+        {
+          "file": "src/components/WaterLevelBanner.tsx",
+          "from": "  const droppedThisTurn = !!drop && (drop.droppedMessages > 0 || drop.strippedToolCalls > 0);",
+          "to": "  const droppedThisTurn = false;"
+        }
+      ],
+      "tests": [
+        "src/test/context-water-level-banner.test.tsx"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2427
+    },
+    {
+      "id": "MUT-4 反向对照：只改一处说明注释",
+      "why": "反向对照：行为不变时判据不许红",
+      "patches": [
+        {
+          "file": "src/components/WaterLevelBanner.tsx",
+          "from": "export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerProps) {",
+          "to": "// 反向对照：只加一行注释\nexport function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerProps) {"
+        }
+      ],
+      "tests": [
+        "src/test/context-water-level-banner.test.tsx"
+      ],
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 2455
+    }
+  ]
+}

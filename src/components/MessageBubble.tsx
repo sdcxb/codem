@@ -13,6 +13,8 @@ import { FeedbackButtons } from "./FeedbackButtons";
 import { getSubagentRuntime } from "../core/subagent/index";
 import { SlotBridge } from "../core/slots/SlotBridge";
 import { SourceReferences } from "./SourceReferences";
+// 第 191 波：字节数的人读形态走**唯一**实现（本文件原来自己抄了一份 `formatSize`）
+import { formatBytes } from "../core/utils/bytes";
 import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
 import { RichContent } from "./rich-content/RichContent";
@@ -610,7 +612,7 @@ setTimeout(() => setCopied(false), 2000);
                   <div className="attachment-file">
                     <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={16} /> : <FileText size={16} />}</span>
                     <span className="attachment-name">{att.name}</span>
-                    {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
+                    {att.size && <span className="attachment-size">{formatBytes(att.size)}</span>}
                   </div>
                 )}
                 {showAttachment === att.id && att.type !== "image" && (
@@ -1097,9 +1099,4 @@ const opLabel = tc.tool === 'create_note'
   );
 });
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 

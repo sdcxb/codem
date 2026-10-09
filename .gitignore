@@ -64,6 +64,10 @@ docs/*.docx
 # 而"清单在仓库里"这句话也就不成立了（这正是第 81 轮 `git ls-files` 查出来的）。
 !docs/GAP-LIST.md
 !docs/ui-walk-round72.md
+# 第 191 波（O-54）新增：对标取证的**带出处摘要**必须进仓库。
+#   没有这条白名单，clone 下来的人只能看到 HANDOFF 第 189 波 §二 的摘要，
+#   「结论可复核」就不成立（门禁 `BE-5` 用 `git check-ignore` 退出码直接问 git）。
+!docs/BENCH-EVIDENCE.md
 !docs/AlimamaFangYuanTiVF-Thin.ttf
 !docs/26720-1.png
 !docs/26720-2.png

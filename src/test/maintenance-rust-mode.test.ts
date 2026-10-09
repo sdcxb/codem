@@ -359,7 +359,8 @@ describe("启动维护 —— rust 模式（本进程唯一形态）下必须照
 
     expect(done.compactPerformed).toBe(true);
     expect(done.compactedBytes, "回收字节数必须是真的（来自引擎的 reclaimed_bytes）").toBe(4 * 1024 * 1024);
-    expect(lines2).toContain("空间回收 已回收 4.0 MiB");
+    // 第 191 波：字节格式统一到 `core/utils/bytes.ts`（原来是 KiB/MiB 口径，与界面两处不同）
+    expect(lines2).toContain("空间回收 已回收 4.0 MB");
     expect(lines2, "耗时也要如实报").toContain("10 ms");
   });
 

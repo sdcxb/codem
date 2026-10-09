@@ -1148,6 +1148,29 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
        *   所以这里如实回 `false`，并**不假装**做过这件事（需要"夹断态"的用例
        *   应当自己构造前置漂移，见 `feature-wire-tail-fixes.test.ts` 的 FWT-4a）。
        */
+      /**
+       * `messages.upsert_index`（**写**命令，第 191 波 O-42 补）。
+       *
+       * 为什么必须给 `command` 也补上它：真引擎 `RustDataPort.command` 是**同一条 dispatch**
+       * 且**回传结构化结果**（`repo.rs::messages_upsert_index` 在 `bump_session_message_count`
+       * 之后把权威计数一并返回）。产品的写路径（`message.ts::writeIndexViaRust`）为了拿到
+       * `session_message_count` 而**优先走 `command`** —— 假端口原来只给 `execute` 实现了它，
+       * 于是经 `command` 发出时落到末尾 `throw 未实现的命令` ⇒ 测试里表现为
+       * "消息索引更新失败"（`silent-write-guard` SWG-5 当场红），掩盖的是**假端口的缺口**，
+       * 不是产品行为（这正是「测试双不得比实现更宽松/更狭窄」那条铁律）。
+       *
+       * 口径与真引擎逐条对齐：
+       * - 落到 `messages` 表（同一个 `persist`，因此也进 `__writes()` 的写日志）；
+       * - 返回 `{ written, session_message_count }`，其中计数 = 该会话在**索引里**的条数
+       *   （真引擎给的是同一事务 bump 后的权威值；假端口不维护 `sessions.message_count`，
+       *   用索引真值等价表达"引擎侧那一列的值"）。
+       */
+      if (command === "messages.upsert_index") {
+        const written = writeCommand(command, params);
+        const sid = String(params?.session_id ?? "");
+        const sessionMessageCount = table("messages").filter((r) => String(r.session_id) === sid).length;
+        return { written, session_message_count: sessionMessageCount } as unknown as T;
+      }
       if (command === "messages.delete") {
         const ids = (params?.ids as string[] | undefined) ?? [];
         if (ids.length === 0) {

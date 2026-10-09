@@ -1,6 +1,6 @@
 // ========== Error Types ==========
 import { setSettingJSON } from "../storage/settings";
-import { reportPersistFailure } from "../storage/persist-failure";
+import { reportActionFailure, reportPersistFailure } from "../storage/persist-failure";
 
 export type RetryableErrorType =
   | "rate_limit"        // HTTP 429
@@ -25,6 +25,30 @@ export interface RetryConfig {
   respectRetryAfter: boolean;
 }
 
+/**
+ * **默认重试策略**（第 191 波 O-41：证据与产品决策都记在这里）。
+ *
+ * ## 最坏路径的实测口径（`src/test/retry-budget.test.ts` 的 `RETRY-BUDGET-1a/1b/1c`）
+ *
+ * - **退避等待之和**：`maxAttempts = 10` ⇒ 最多 9 次重试，逐次 500ms × 2ⁿ 并夹到 `maxDelay`：
+ *   `500+1000+2000+4000+8000+16000+32000+64000+128000 = 255_500ms ≈ 4.26 分钟`；
+ * - **真正触到 30 分钟的是墙钟**（第 84 波修过）：`totalTimeout` 算的是**含请求耗时**的墙钟，
+ *   所以"请求本身很慢"（长上下文一次几分钟）才会先撞预算 —— 判据 `RETRY-BUDGET-1b`
+ *   用 6 分钟/次的夹具证明它会在第 2 次就停（只看 sleep 的口径会允许 10 次）；
+ * - **`Retry-After` 受单次上限约束**（`RETRY-BUDGET-1c`）：给一小时也会夹到 5 分钟；
+ * - **abort 已核实**：退避等待可被「■」立刻打断（`agentic-loop.ts` 的等待段监听 abort）；
+ * - **token 花费**：重试是**整请求重发**；同一请求重发时若缓存已建立则按缓存价（DeepSeek 约
+ *   1/4 价），但**在建立缓存前失败**（429/过载常常不写缓存）⇒ 最坏按全价算最多 10 次。
+ *
+ * ## 产品决策（2026-10-08，O-41 要求"未拿到用户答复不许改默认值"）
+ *
+ * 把上面这份证据连同"30 分钟预算收到 5–10 分钟 / 次数保持 10 / 次数降到 6 / 保持现状"
+ * 四个选项交给用户拍板，**用户选择：保持现状（30 分钟 / 10 次），只保留新增的可见提示**。
+ * 所以这里的默认值**一个字都没改**；本波只做了两件不改行为的事：
+ * ①`RETRY-BUDGET-1a/1b/1c`：把"最坏等待 ≤ 声明预算"变成判据（此前没有任何东西核对这两个口径）；
+ * ②`RETRY-BUDGET-2`：预算用尽**用户可见**（旧形态只有 `console.warn`，打包版里用户看不到，
+ *   界面上只剩最后那个 provider 错误）。面板里六个参数（含总超时）用户本来就能改。
+ */
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxAttempts: 10,
   baseDelay: 500,
@@ -288,13 +312,40 @@ export class RetryExecutor {
      * 和 `totalTimeout` 比较。而真正耗时的大头是每次请求本身（fn 的执行时间）——
      * 于是一次 30 秒的请求 + 5 次重试能跑出远超 "总超时 30 分钟" 的墙钟时间，
      * 用户以为有总超时保护，实际没有。
+     *
+     * ⚠️ 第 191 波（O-41 / RETRY-BUDGET-2）：**这一支也是"预算用尽"**，同样必须用户可见。
+     * 旧形态这里静默返回 false（只有下面那条"等待装不下"的分支会报），
+     * 于是"请求本身很慢把预算跑光"这条最常见的路径上，用户什么都看不到。
      */
     if (this.elapsedMs() >= this.config.totalTimeout) {
+      this.reportBudgetExhausted(`已耗时 ${Math.round(this.elapsedMs() / 1000)}s ≥ 预算 ${Math.round(this.config.totalTimeout / 60000)} 分钟`, error);
       return false;
     }
 
     const { isRetryable } = classifyError(error);
     return isRetryable;
+  }
+
+  /**
+   * O-41 / `RETRY-BUDGET-2`：**预算用尽必须用户可见**（唯一实现，两处出口共用）。
+   *
+   * 旧形态只有 `console.warn`（渲染侧日志在打包版里用户看不到）⇒ 界面上只剩最后那个
+   * provider 错误，用户不知道"我们已经重试了 N 次、把预算用完了"。
+   */
+  private reportBudgetExhausted(detail: string, lastError: unknown): void {
+    reportActionFailure(
+      "loop.retryBudget",
+      new Error(
+        `重试预算已用尽：${detail} —— 不再重试（已重试 ${this.state.attempt} 次，上限 ${this.config.maxAttempts}）`,
+      ),
+      `最后一次错误：${lastError instanceof Error ? lastError.message.slice(0, 200) : String(lastError).slice(0, 200)}`,
+      {
+        title: "重试预算已用尽",
+        consequence:
+          "这一回合没有完成（最后一次错误已如实抛出）。可在「设置 → 重试」里调小单次等待或次数，然后重发；" +
+          "若 provider 在响应头里给了 Retry-After，等待会以它为准（受单次上限约束）。",
+      },
+    );
   }
 
   /** 本次 execute 已消耗的墙钟时间（未开始计时时为 0） */
@@ -327,6 +378,10 @@ export class RetryExecutor {
         // 预算里还要给这次等待留位置：等待完就超预算的话，不如现在就把最后的错误抛出去
         const elapsed = this.elapsedMs();
         if (elapsed + delay > this.config.totalTimeout) {
+          this.reportBudgetExhausted(
+            `已耗时 ${Math.round(elapsed / 1000)}s + 下次等待 ${Math.round(delay / 1000)}s > 预算 ${Math.round(this.config.totalTimeout / 60000)} 分钟`,
+            error,
+          );
           console.warn(
             `[Retry] 重试预算已用尽（已耗时 ${elapsed}ms + 下次等待 ${delay}ms > 预算 ${this.config.totalTimeout}ms）—— 不再重试，直接抛出最后一次错误`,
           );

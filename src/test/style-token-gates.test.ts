@@ -18,6 +18,8 @@ import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import path from "node:path";
 import { scanTokenHygiene, loadDefaultFiles as loadTokenFiles, SCALE_FAMILIES } from "../../tools/audit/scan-token-hygiene.mjs";
 import { scanStyleLiterals, loadDefaultFiles as loadLiteralFiles, evaluateRatchet, readBaseline } from "../../tools/audit/scan-style-literals.mjs";
+/** 线性化阈值只能有一处实现（GAP-LIST O-39 / CR-CONTRAST-1）：import 产品实现，不再镜像阈值 */
+import { channelLinear } from "../core/theme/contrast-checker";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 /** 取某个作用域块里的**最后一个**令牌声明（与 CSS 的层叠一致：后写覆盖先写） */
@@ -349,8 +351,10 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
     ];
     const hex2rgb = (h: string) => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) });
     const lum = (c: { r: number; g: number; b: number }) => {
-      const f = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-      return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+      /* ⚠️ 第 191 波（GAP-LIST O-39）：这里原先**镜像**了一份线性化函数、用的是旧阈值 0.03928
+         （同一事实全仓 4 处实现）。现在 import 产品实现 `channelLinear`：
+         阈值唯一来源是 `src/core/theme/wcag-luminance.json`，判据 `CR-CONTRAST-1` 钉住它。 */
+      return 0.2126 * channelLinear(c.r) + 0.7152 * channelLinear(c.g) + 0.0722 * channelLinear(c.b);
     };
 
     for (const [label, re, dir] of scopes) {

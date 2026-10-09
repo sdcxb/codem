@@ -82,7 +82,13 @@ export function setPersistFailureListener(cb: ((detail: PersistFailureDetail) =>
 }
 
 /**
- * 上报一次"被吞掉的失败"。
+ * 上报一次"被吞掉的失败"（**通道的内部原语**，第 191 波起不再对外导出）。
+ *
+ * 为什么不导出（O-51 的死代码棘轮逐条定性）：
+ * - 全仓**没有任何 import** 它（只有注释与一条 mock 白名单里的字符串）—— 它是下面三个
+ *   通道包装（`reportPersistFailure` / `reportActionFailure` / `reportAdvisory`）的实现细节；
+ * - "导出但没人用"会一直挂在 knip 棘轮上，让真正的死代码混在噪声里（这正是 O-51 说的问题）；
+ * - 将来若真需要"自定义 kind"的调用方，把它重新 `export` 即可 —— 那时 knip 会看到真实使用方。
  *
  * @param area 区域标识（例如 "store.updateSession" / "recovery.saveState"）
  * @param error 原始异常
@@ -90,7 +96,7 @@ export function setPersistFailureListener(cb: ((detail: PersistFailureDetail) =>
  * @param kind persist = 写盘失败（重启后会丢）；action = 动作没生效（功能静默缺失）
  * @param options 见 `PersistFailureOptions`（目前只有 `consequence`：覆盖"后果"那一句）
  */
-export function reportFailure(
+function reportFailure(
   area: string,
   error: unknown,
   extra?: string,

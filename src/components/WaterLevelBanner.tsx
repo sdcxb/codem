@@ -40,7 +40,7 @@
  * 那是把风险静音 —— 用户关它的时候往往是"我看见了，先干完这一句"，而不是"以后都别提醒我"。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Layers, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Layers, X } from "lucide-react";
 import type { Message } from "../store";
 import { useProjectStore } from "../core/store";import { useLang } from "../core/i18n/lang";
 import { listVisibleMessages } from "../core/storage/message";
@@ -125,6 +125,29 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
   }, [sessionId, level.level, level.ratio, dismissedAt, drop]);
 
   const dismiss = useCallback(() => setDismissedAt(level.ratio), [level.ratio]);
+
+  /**
+   * 「压缩 / 查看详情」。
+   *
+   * ## ⚠️ 第 191 波修的真机缺陷（用户报告）
+   *
+   * 真机形态：用户点这个按钮之后**提示条原样留在屏幕上**（水位没变、`dismissedAt` 没动），
+   * 于是"点了没反应" ⇒ 用户**反复点**。正确行为是：点击**立刻收起提示条**（按当前这一档水位
+   * 记一次 dismissed），再打开面板，并给一条**回执**说明"压缩在面板里执行"。
+   *
+   * 为什么不是"点了就开始压缩"：压缩是面板里的动作（它要展示摘要与保留条数的取舍），
+   * 这里只负责把用户送过去 —— 但**必须留下可见的反馈**，不能让界面看起来没反应。
+   */
+  const handleOpenDetail = useCallback(() => {
+    setDismissedAt(level.ratio);
+    setNote({
+      ok: true,
+      text: zh
+        ? "已打开上下文详情面板 —— 压缩在那里执行（面板里有「压缩」按钮）。"
+        : "Context details opened — run compaction there.",
+    });
+    onOpenDetail();
+  }, [level.ratio, onOpenDetail, zh]);
 
   /**
    * 「开启新对话（交接当前工作）」。
@@ -241,7 +264,14 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
           ? `已把当前工作交接给新对话（委派 ${task.id}）：新对话拿到的是「状态 + 指针」，不是从零开始。`
           : `Work handed to a new conversation (delegation ${task.id}).`,
       });
-      setDismissedAt(null);
+      /**
+       * ⚠️ 第 191 波修的真机缺陷（用户报告）：交接**成功**之后这里原来写的是
+       * `setDismissedAt(null)` —— 而那正好**取消**了"已处理"的状态 ⇒ 提示条继续以
+       * 全部语气留在屏幕上（标题仍是「上下文压力偏高…」+ 两个按钮），用户以为没点到、反复点。
+       * 正确语义：**用户已经处理过这一档水位** ⇒ 按当前比值记一次 dismissed
+       * （水位再涨 5 个百分点会重新提醒；那时确实值得再提醒一次）。
+       */
+      setDismissedAt(level.ratio);
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       reportActionFailure("waterLevel.handoff", e, zh
@@ -255,7 +285,81 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
 
   if (!visible && !note) return null;
 
+  /**
+   * ## ⚠️ 第 191 波修的真机缺陷（用户报告，本条是**根因**）
+   *
+   * 旧写法是 `if (!visible && !note) return null;` 之后**不区分**渲染哪一套 ——
+   * 只要 `note` 非空（交接成功/失败、压缩入口的回执），整条**风险提示条**就继续渲染：
+   * 标题仍是「上下文压力偏高（已用 N%）」、正文仍是那两大段机制说明、两个按钮仍在。
+   *
+   * 真机现场（用户报告）：他交接完之后水位已经掉到 **1%**，屏幕上却是一条
+   * 「上下文压力偏高（已用 1%）」+「开启新对话（交接当前工作）」按钮的提示条
+   * —— 两件事同时荒谬：①1% 根本不该有压力告警；②刚做完的动作看起来像没做。
+   *
+   * 正确语义：**风险与回执是两件事**。
+   * - 风险还在（`visible`）⇒ 渲染完整提示条，回执作为其中一行（下面那条分支）；
+   * - 风险已消失（水位掉下来 / 用户已处理）⇒ **只**渲染一条窄回执条，
+   *   并带一个关闭按钮。**绝不复用风险提示条的语气与按钮**。
+   */
+  if (!visible && note) {
+    return (
+      <div
+        className={`water-level-banner is-note-only ${note.ok ? "" : "is-critical"}`}
+        role="status"
+        aria-live="polite"
+        data-testid="water-level-note-only"
+        data-note-ok={String(note.ok)}
+      >
+        <span className="water-level-icon" aria-hidden="true">
+          {note.ok ? <CheckCircle2 className="icon-md" /> : <AlertTriangle className="icon-md" />}
+        </span>
+        <div className="water-level-body">
+          <span className={`water-level-note ${note.ok ? "is-ok" : "is-error"}`} data-testid="water-level-note">
+            {note.text}
+          </span>
+        </div>
+        <div className="water-level-actions">
+          <button
+            type="button"
+            className="water-level-close"
+            onClick={() => setNote(null)}
+            aria-label={zh ? "关闭这条回执" : "Dismiss this receipt"}
+            title={zh ? "关闭这条回执" : "Dismiss this receipt"}
+            data-testid="water-level-note-close"
+          >
+            <X className="icon-sm" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const critical = level.level >= WATER_LEVEL.CRITICAL;
+  const high = level.level >= WATER_LEVEL.HIGH;
+  /**
+   * ## ⚠️ 第 191 波：标题必须说**真的**那件事（用户报告的「已用 1% 却显示压力偏高」）
+   *
+   * 提示条有两种独立的显示理由（风险到线 / 本轮真的丢过），而旧写法**只有一句标题**：
+   * 「上下文压力偏高（已用 N%）」。于是"因为丢过而显示"的形态下会印出一句假陈述
+   * （真机形态：1M 窗口的会话被印成「压力偏高（已用 1%）」—— 两个词同时为假）。
+   * 现在标题按**真实理由**分档，且「压力」字样只在等级真的到线时出现。
+   */
+  const droppedThisTurn = !!drop && (drop.droppedMessages > 0 || drop.strippedToolCalls > 0);
+  const title = critical
+    ? zh
+      ? `上下文即将满（已用 ${level.percent}%）`
+      : `Context nearly full (${level.percent}% used)`
+    : high
+      ? zh
+        ? `上下文压力偏高（已用 ${level.percent}%）`
+        : `Context pressure high (${level.percent}% used)`
+      : droppedThisTurn
+        ? zh
+          ? `本轮上下文已被精简（当前占用 ${level.percent}%）`
+          : `Context was trimmed this turn (${level.percent}% used now)`
+        : zh
+          ? `上下文水位提示（当前占用 ${level.percent}%）`
+          : `Context level notice (${level.percent}% used)`;
   const remain = Math.max(0, level.available - level.used);
 
   return (
@@ -276,14 +380,8 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
         <AlertTriangle className="icon-md" />
       </span>
       <div className="water-level-body">
-        <span className="water-level-title">
-          {critical
-            ? zh
-              ? `上下文即将满（已用 ${level.percent}%）`
-              : `Context nearly full (${level.percent}% used)`
-            : zh
-              ? `上下文压力偏高（已用 ${level.percent}%）`
-              : `Context pressure high (${level.percent}% used)`}
+        <span className="water-level-title" data-testid="water-level-title">
+          {title}
         </span>
         {/*
           B 项：把"会发生什么"说清楚。压缩/丢弃是**静默**发生在 `buildMessages` 里的，
@@ -347,7 +445,7 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
         <button
           type="button"
           className="water-level-btn"
-          onClick={onOpenDetail}
+          onClick={handleOpenDetail}
           data-testid="water-level-detail"
           title={zh ? "在上下文面板里压缩" : "Compact in the context panel"}
         >

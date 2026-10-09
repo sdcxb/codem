@@ -255,6 +255,20 @@ export const TASKS = [
     testFiles: ["src/test/output-contract-real-loop.test.ts"],
     relatedTests: ["src/test/tool-contract-pipeline-e2e.test.ts"],
     buggyCommit: "5be439f",
+    /**
+     * ★ 第 191 波：**同族红**（与 repo-06 同一判定口径）。
+     *
+     * 实测（`.preview-shot/_diag-repo10.mjs` 造出 bug 状态工作区后跑那条回归子集）：
+     * 红的两条是「glob 正常调用 ⇒ value 保留」与「合法调用正常放行」，报错都是
+     * `expected 'error' to be 'completed'` —— 也就是**题面那个缺陷本身**
+     * （结构化结果在链路上被丢掉 ⇒ 工具被契约层判成 error）。
+     * 它们与判据文件 `output-contract-real-loop.test.ts` 量的是同一件事的两个角度
+     * （一个走真循环、一个走真管线），所以修好题面必然一起变绿 ⇒ 登记为同族红，
+     * 不把任务变成"要求修题面没提的东西"。
+     */
+    relatedRedAtBaseline: {
+      "src/test/tool-contract-pipeline-e2e.test.ts": "同族（结果契约在链路上被丢掉）：glob/合法调用的端到端断言与判据文件量的是同一件事，修好题面即一起变绿",
+    },
   },
   {
     id: "repo-11-contract-error-not-masked",

@@ -37,7 +37,8 @@ import { ACTIVITY_META } from "../types";
 import { generateLook } from "../data/characters";
 import { resolveZoneId } from "../data/library-map";
 // R7：热力图的"哪一天/哪个小时"是给人看的 ⇒ 唯一本地口径
-import { localDateString, localTimeParts } from "../../../core/time/local-time";
+// O-40：按天分格的**步长**同样只走这一处（`localDayWindows` 逐本地日历日推，不是 `now - i * 24h`）
+import { localDateString, localDayWindows, localTimeParts } from "../../../core/time/local-time";
 
 // ========== 依赖契约（结构类型，避免硬依赖宿主模块） ==========
 
@@ -721,9 +722,13 @@ function buildActivity(input: {
   }
 
   // 补齐最近 14 天（缺失补 0，保证热力图格子数稳定）
+  //
+  // O-40：这里的键是**本地日历日**（`perDay` 的键来自 `dayKey` = `localDateString`），
+  // 所以补零也必须按本地日历日逐日推 —— 旧写法 `now - i * 86_400_000` 在 DST 跳变日
+  // 会与本地日 key 错开 1 小时（补零键与真实键对不上 ⇒ 某格显示 0、记录被挤到相邻格）。
   const filled: Record<string, number> = {};
-  for (let i = 13; i >= 0; i--) {
-    const key = dayKey(now - i * 86_400_000);
+  for (const w of localDayWindows(14, now)) {
+    const key = dayKey(w.start);
     filled[key] = perDay[key] ?? 0;
   }
 

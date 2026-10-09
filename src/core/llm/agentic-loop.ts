@@ -20,6 +20,12 @@ import { looksLikeRevertCommand, revertKindOf, type RevertKind } from "./complet
 import { regressionRedFiles } from "./test-regression";
 import { RetryExecutor, classifyError, getRetryExecutor, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
+// 第 191 波（O-48）：服务端前缀缓存的读数必须**可复核**（一行日志 + 判据）
+import { formatPromptCacheLog } from "./cache-percent";
+// 第 191 波（O-49）：**附录的落点**是判据对象（必须跟在整份系统提示的最后），抽成唯一实现
+import { appendVolatileAppendix } from "../prompt/prompt";
+// 第 191 波（O-41）：重试预算用尽必须**用户可见**（旧形态只有 console.warn）
+import { reportActionFailure } from "../storage/persist-failure";
 import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE, type GuidanceItem } from "./guidance-queue";
 import { getNeedsYouQueue } from "./needs-you-queue";
@@ -3829,9 +3835,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
        * surface notice 同一形态，见 `run()` 里 `plan-context-*` 那段），
        * 每轮重新渲染 ⇒ 模型看到的信息只增不减，稳定前缀逐字节不变。
        */
-      const effectiveSystemPrompt = extraSystemPrompt
-        ? `${systemPrompt}\n${extraSystemPrompt}`
-        : systemPrompt;
+      const effectiveSystemPrompt = appendVolatileAppendix(systemPrompt, extraSystemPrompt);
 
       const request: LLMRequest = {
         model: this.config.model || this.provider.id,
@@ -4162,6 +4166,24 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
            */
           const retryElapsed = Date.now() - retryStartedAt;
           if (retryElapsed + retryDelay > retryCfg.totalTimeout) {
+            /*
+             * O-41 / RETRY-BUDGET-2（第 191 波）：与 `retry.ts` 同一条规则、同一个上报区域 ——
+             * 预算用尽必须用户可见（旧形态只有 console.warn，打包版里用户看不到）。
+             */
+            reportActionFailure(
+              "loop.retryBudget",
+              new Error(
+                `重试预算已用尽：已耗时 ${Math.round(retryElapsed / 1000)}s + 下次等待 ${Math.round(retryDelay / 1000)}s > 预算 ${Math.round(retryCfg.totalTimeout / 60000)} 分钟 —— 不再重试`,
+              ),
+              `已重试 ${retryCount} 次（上限 ${maxRetries}），最后一次错误：${
+                retryError.message?.slice(0, 200) ?? String(retryError).slice(0, 200)
+              }`,
+              {
+                title: "重试预算已用尽",
+                consequence:
+                  "这一回合没有完成（最后一次错误已如实抛出）。可在「设置 → 重试」里调小单次等待或次数，然后重发。",
+              },
+            );
             console.warn(
               `[AgenticLoop] 重试预算已用尽（已耗时 ${retryElapsed}ms + 下次等待 ${retryDelay}ms > 预算 ${retryCfg.totalTimeout}ms）—— 不再重试，抛出最后一次错误`,
             );
@@ -4482,6 +4504,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       const tracker = getTokenTracker();
       const toolDefTokens = estimateToolDefinitionTokens(toolDefs);
       tracker.recordActualUsage(usage, toolDefTokens, this.lastRequestHeader || "");
+      /*
+       * O-48（第 191 波）：把**服务端前缀缓存**的真实读数留下来。
+       *
+       * 这一行是「要不要为提示装配引入跨轮状态（delta 通道）」的**唯一判据来源**：
+       * 同一轮里迭代与迭代之间的 `hit` 覆盖到哪一段，直接区分"整请求前缀匹配"与
+       * "只有稳定前缀进缓存"两种语义（见 `formatPromptCacheLog` 的说明）。
+       * 缺报时它输出 `hit=?`（**不编造 0**）。
+       */
+      console.log(formatPromptCacheLog(usage));
       // P2-14: Record telemetry — LLM response with token usage
     this.getTelemetry().record(sessionId, "llm_response", {
       promptTokens: usage.promptTokens,

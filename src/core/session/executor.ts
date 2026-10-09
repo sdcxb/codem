@@ -19,6 +19,8 @@ import * as MessageStorage from "../storage/message";
 import { reportPersistFailure } from "../storage/persist-failure";
 import { retainToolResult } from "../storage/spill";
 import * as SessionStorage from "../storage/session";
+// 第 191 波：会话 → 项目根路径走**唯一实现**（安全模式的项目级覆盖按项目根路径存键）
+import { sessionProjectPath } from "../storage/session-project";
 /* 第 193 轮：前缀常量与回填判据共用一处定义（两处各写一遍，改的时候必漏一处） */
 import { DELEGATED_TASK_PREFIX } from "../storage/session";
 import { getSessionMessageBus } from "./bus";
@@ -481,9 +483,25 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
      * `session-event-search` 的结果 —— 一个事实一个写入者。
      */
 
-    // 委派/后台任务同样遵循用户选择的安全模式（项目级 > 全局 > 默认 ask），
-    // 不再硬编码 "auto" —— 否则用户在 UI 选择"完全访问"后委派任务仍被权限层拦截。
-    const effectiveSecurityMode = getEffectiveSecurityMode(cwd) || "ask";
+    /**
+     * 委派/后台任务同样遵循用户选择的安全模式（项目级 > 全局 > 默认 ask），
+     * 不再硬编码 "auto" —— 否则用户在 UI 选择"完全访问"后委派任务仍被权限层拦截。
+     *
+     * ⚠️ 第 191 波（全仓搜同类的收口）：项目级覆盖是按**项目根路径**存的键
+     * （`permission/security-mode.ts` 的 `PROJECT_KEY_PREFIX + projectPath`），而这里的 `cwd`
+     * 在 **worktree 会话**上是 worktree 目录（`App.tsx` 用 `session.worktreePath` 当 cwd）
+     * ⇒ 拿它去查**永远查不到**，静默退回全局模式。方向可能是**放松**
+     * （项目里设了 `ask`、全局是 `full` ⇒ 后台/委派任务变成"永不询问"）—— 安全语义上的静默降级。
+     * 现在：项目身份取**登记表**（唯一实现 `sessionProjectPath`），`cwd` 只作最后一跳并如实上报。
+     */
+    const registeredProjectPath = sessionProjectPath(sessionId);
+    if (!registeredProjectPath) {
+      console.warn(
+        `[executor] 会话 ${sessionId} 查不到 session → project 登记：安全模式按工作目录「${cwd}」解析` +
+          `（若它是 worktree 目录，项目级覆盖会取不到、退回全局模式）。`,
+      );
+    }
+    const effectiveSecurityMode = getEffectiveSecurityMode(registeredProjectPath ?? cwd) || "ask";
 
     /**
      * 第 83 波：**当前轮次的助手消息一定是一张真实存在的行**（用户现场：委派出去的 b 会话原地打转）。

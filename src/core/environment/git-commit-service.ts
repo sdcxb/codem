@@ -113,8 +113,11 @@ async function generateCommitMessage(
 
 /**
  * Execute git add -A + git commit with the given message.
+ *
+ * ⚠️ 第 191 波（O-51 棘轮收紧）：**不再导出** —— 全仓唯一调用者是本文件后面那个
+ * 「按已启用开关走一遍」的包装（`runAutoCommitIfEnabled`），没有外部 import。
  */
-export async function autoCommit(
+async function autoCommit(
   workspace: string,
   message: string,
 ): Promise<AutoCommitResult> {

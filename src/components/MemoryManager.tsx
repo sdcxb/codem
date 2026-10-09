@@ -17,9 +17,12 @@ import {
   MEMORY_SOURCE_KIND_LABEL,
   memorySourceOf,
   injectionScopeContext,
+  type MemoryPayloadByteStats,
 } from "../core/memory/memory";
 import { formatMemoryImportReceipt } from "../core/memory/checkup";
 import { localDateString } from "../core/time/local-time";
+// O-36：体积读数的人读形态走**唯一**实现（第 191 波把 4 份字节格式化副本收敛成一份）
+import { formatBytes } from "../core/utils/bytes";
 import { getLLMEngine } from "../core/llm";
 import { alertDialog } from "../core/ui/native-dialog";
 
@@ -140,6 +143,13 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     chars: number;
     budget: number;
   }>(() => ({ injected: new Set(), reasons: new Map(), truncated: 0, chars: 0, budget: 0 }));
+  /**
+   * O-36：记忆 payload 的**体积读数**（可观测的那一半）。
+   *
+   * 它是「记忆镜像字节预算」的唯一用户可见出口：超预算时给一条**可操作**的说明
+   * （删条目 / 导出后清理），而不是让用户只感觉到卡。
+   */
+  const [bytes, setBytes] = useState<MemoryPayloadByteStats | null>(null);
 
   // F1.1: Edit/Create state
   const [editMode, setEditMode] = useState<"none" | "create" | "edit">("none");
@@ -185,6 +195,8 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
      * （将来若带上 `includeUnscoped` 之类）**赋不进去**，于是"把视图开关传进注入路径"编译不过。
      */
     setInjection(service.injectionExplanations(injectionScopeContext(projectId, sessionId)));
+    // O-36：体积读数与上面的统计**同一次刷新**（用户删掉条目后要立刻看到体积下来）
+    setBytes(service.getByteStats());
   };
 
   /** 条目是否会进入上下文（界面必须能一眼看出"未归属 = 不进"，不能假装它在生效） */
@@ -580,7 +592,30 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
             <span className="memory-stat-label">旧版跨项目池</span>
           </div>
         )}
+        {/*
+          O-36：**体积**这一格是"记忆镜像字节预算"的用户可见出口。
+          没有它时，体积只存在于 `stats().memoryBytes` 里 —— 全仓一个消费方都没有，
+          用户只感觉"记忆越多越卡"而看不到原因（这正是 O-36 的另一半）。
+        */}
+        {bytes && (
+          <div className="memory-stat" title={`记忆整份 payload 约 ${formatBytes(bytes.payloadBytes)}；预算 ${formatBytes(bytes.budgetBytes)}`}>
+            <span className={`memory-stat-value ${bytes.overBy > 0 ? "other" : ""}`}>{formatBytes(bytes.payloadBytes)}</span>
+            <span className="memory-stat-label">体积</span>
+          </div>
+        )}
       </div>
+
+      {/*
+        O-36：超预算 ⇒ 一条**可操作**的说明（不是"失败"，因为什么都没丢）。
+        数字与上面那格、与上报通道**同一个来源**（`getByteStats()`）。
+      */}
+      {bytes && bytes.overBy > 0 && (
+        <div className="memory-notice">
+          记忆体积约 {formatBytes(bytes.payloadBytes)}，已超过预算 {formatBytes(bytes.budgetBytes)}（超出{" "}
+          {formatBytes(bytes.overBy)}）；最大的一块是「{bytes.biggestBucket}」（{formatBytes(bytes.biggestBucketBytes)}）。
+          超预算**不会删除或截断任何条目**；要缩小可删掉不再需要的条目，或先「导出为 JSON」留档再清理。
+        </div>
+      )}
 
       {/*
         S4：默认审批开启 ⇒ 自动记忆先进待批准区、**不进上下文**。

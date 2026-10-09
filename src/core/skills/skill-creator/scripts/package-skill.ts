@@ -16,21 +16,37 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { isMainModule } from "./is-main.ts";
+import { isMainModule, fail } from "./is-main.ts";
 import { validateSkill } from "./quick-validate.ts";
+/**
+ * 字节数 → 人读形态。
+ *
+ * ⚠️ 为什么这里自带一份而**不** import `src/core/utils/bytes.ts`：本文件会被
+ * `SkillInstaller` 整份复制进技能目录（`~/.codem/skills/<name>/scripts/`），那里没有应用源码树
+ * ⇒ 相对 import 必然 `ERR_MODULE_NOT_FOUND`（第 191 波第一版就是这么把真机脚本弄崩的，
+ * 判据 `skill-creator-scripts.test.ts` 的 CLI-1 当场抓到）。口径由
+ * `bytes-single-source.test.ts` 的 `BYTES-3` 与共享实现逐字对齐。
+ */
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 async function main() {
   const skillDir = process.argv[2];
   if (!skillDir) {
-    console.error("Usage: node package-skill.ts <path-to-skill-folder> [output.zip]");
-    process.exit(1);
+    fail("Usage: node package-skill.ts <path-to-skill-folder> [output.zip]");
+    return;
   }
 
   // Resolve absolute path
   const absSkillDir = path.resolve(skillDir);
   if (!fs.existsSync(absSkillDir)) {
-    console.error(`Error: Directory not found: ${absSkillDir}`);
-    process.exit(1);
+    fail(`Error: Directory not found: ${absSkillDir}`);
+    return;
   }
 
   // Validate skill structure
@@ -38,7 +54,9 @@ async function main() {
   if (!validation.valid) {
     console.error("❌ Skill validation failed:");
     validation.errors.forEach((e) => console.error(`   - ${e}`));
-    process.exit(1);
+    // ⚠️ 用 exitCode + return 而不是 process.exit(1)：见 is-main.ts 的 fail() 说明
+    process.exitCode = 1;
+    return;
   }
 
   if (validation.warnings.length > 0) {
@@ -82,13 +100,12 @@ async function main() {
   const zipped = zipSync(files);
   fs.writeFileSync(outputPath, zipped);
 
-  const sizeKB = (zipped.length / 1024).toFixed(1);
-  console.log(`\n✅ Skill packaged: ${outputPath} (${sizeKB} KB)`);
+  // 第 191 波：字节数的人读形态走全仓**唯一**实现（原来这里自己写了一份无空格口径）
+  console.log(`\n✅ Skill packaged: ${outputPath} (${formatBytes(zipped.length)})`);
 }
 
 if (isMainModule(import.meta.url)) {
   main().catch((err) => {
-    console.error(`Error: ${err.message}`);
-    process.exit(1);
+    fail(`Error: ${err.message}`);
   });
 }

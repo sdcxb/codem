@@ -17,7 +17,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { isMainModule } from "./is-main.ts";
+import { isMainModule, exitAfterFlush, fail } from "./is-main.ts";
 
 interface GradingResult {
   expectations: Array<{ text: string; passed: boolean; evidence: string }>;
@@ -281,7 +281,7 @@ if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.length < 1) {
     console.error("Usage: node aggregate-benchmark.ts <workspace>/iteration-N --skill-name <name>");
-    process.exit(1);
+    await exitAfterFlush(1);
   }
 
   const iterationDir = args[0];
@@ -304,7 +304,6 @@ if (isMainModule(import.meta.url)) {
     // Print summary
     console.log("\n" + benchmarkToMarkdown(benchmark));
   } catch (err: any) {
-    console.error(`Error: ${err.message}`);
-    process.exit(1);
+    fail(`Error: ${err.message}`);
   }
 }

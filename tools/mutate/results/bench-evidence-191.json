@@ -1,0 +1,92 @@
+{
+  "wave": "bench-evidence-191",
+  "description": "第 191 波（O-54）：对标取证落进仓库（docs/BENCH-EVIDENCE.md）+ 判据 BENCH-EVIDENCE-1（BE-1…BE-5）的变异自证",
+  "runAt": "2026-10-09T00:47:19.277Z",
+  "specFingerprint": "5f8d4e572c31705e2023f2fbb240c2f113b1b81b",
+  "files": [
+    "docs/BENCH-EVIDENCE.md",
+    ".gitignore"
+  ],
+  "tests": [
+    "src/test/docs-bench-evidence.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 删掉两份对标素材的引用",
+      "why": "BE-1：素材引用少于 3 份就必须判红（A-0a/A-0b 两行是「三家落点取证」与「DSH reminder 取证」的唯一引用点）",
+      "patches": [
+        {
+          "file": "docs/BENCH-EVIDENCE.md",
+          "from": "| A-0a | **素材索引**：三家落点取证（含 DSH 段）—— 本组所有 DSH「记忆放哪 / 每步重算 / 缓存纪律」结论的原始长文 | `.preview-shot/_bench-memory-placement.md`（读本机安装包 `@deepseek-ai/dsh-system-prompt/lib/index.js:10-48`、`dsh-agent-instructions/lib/index.js:111-115` / `README.zh.md:86,151`；**版本未知**：本机安装包，未记录版本号 / commit） | **确证** | `docs/HANDOFF-NEXT-SESSION.md:3924-3945`；`src/test/docs-bench-evidence.test.ts`（`BE-1` 的素材匹配） |\n| A-0b | **素材索引**：DSH `<system-reminder>` 生命周期取证 —— 本组所有「压缩 / 重放 / 嵌套 scope」结论的原始长文 | `.preview-shot/_dsh-reminder-lifecycle.md`（读本机安装包 `dsh-agent-instructions/lib/index.js:1074-1080,1125-1132,1160,1213-1220`、`dsh-compaction-basic/lib/index.js:410-432`、`dsh-session/lib/index.js:410-419`；**版本未知**） | **确证** | `src/test/context-consistency.test.ts`（`COMPACT-MEM-1`）；`docs/HANDOFF-NEXT-SESSION.md:3930-3932` |",
+          "to": "| A-0a | **素材索引**：三家落点取证（含 DSH 段）—— 本组所有 DSH「记忆放哪 / 每步重算 / 缓存纪律」结论的原始长文 | 原始长文（不进仓库，见文件头） | **确证** | `docs/HANDOFF-NEXT-SESSION.md:3924-3945`；`src/test/docs-bench-evidence.test.ts`（`BE-1` 的素材匹配） |\n| A-0b | **素材索引**：DSH `<system-reminder>` 生命周期取证 —— 本组所有「压缩 / 重放 / 嵌套 scope」结论的原始长文 | 原始长文（不进仓库，见文件头） | **确证** | `src/test/context-consistency.test.ts`（`COMPACT-MEM-1`）；`docs/HANDOFF-NEXT-SESSION.md:3930-3932` |"
+        }
+      ],
+      "tests": [
+        "src/test/docs-bench-evidence.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2218
+    },
+    {
+      "id": "MUT-2 把「对标三家不可观测」改写成一句无主语的假陈述",
+      "why": "BE-4：O-54 ③ 说的是「对标三家」不可观测；写成没有主语的「KV 命中率不可观测」就是假陈述（我们自己可观测），必须判红",
+      "patches": [
+        {
+          "file": "docs/BENCH-EVIDENCE.md",
+          "from": "- **口径**：**对标三家**（OpenClaw / Hermes / DSH）的服务端 KV 命中率**不可观测** —— 它们没给我们 provider 侧读数",
+          "to": "- **口径**：服务端 KV 命中率**不可观测** —— 它们没给我们 provider 侧读数"
+        }
+      ],
+      "tests": [
+        "src/test/docs-bench-evidence.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2417
+    },
+    {
+      "id": "MUT-3 在结论载体里加一段只指原始长文目录的结论",
+      "why": "BE-2：对标结论的载体（docs/BENCH-EVIDENCE.md）要求段级/表格行级自洽 —— 多加一段只指原始长文目录的结论必须判红",
+      "patches": [
+        {
+          "file": "docs/BENCH-EVIDENCE.md",
+          "from": "不是可一键复跑的证据 —— 这条限制就是 `O-54` 的根因，登记在此以免被当成已解决。",
+          "to": "不是可一键复跑的证据 —— 这条限制就是 `O-54` 的根因，登记在此以免被当成已解决。\n\n### 附：一条只指原始长文目录的结论（变异用）\n\n结论：某某机制比我们更好（原始长文见 `.preview-shot/_bench-hermes-src.md`）。"
+        }
+      ],
+      "tests": [
+        "src/test/docs-bench-evidence.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2212
+    },
+    {
+      "id": "MUT-4 把对标文档从 .gitignore 白名单里摘掉",
+      "why": "BE-5：`docs/*.md` 会把 docs/BENCH-EVIDENCE.md 吞掉 —— 文件在磁盘上但不在仓库里，clone 下来的人看不到证据（git check-ignore 退出码 0），必须判红",
+      "patches": [
+        {
+          "file": ".gitignore",
+          "from": "!docs/BENCH-EVIDENCE.md",
+          "to": "!docs/GAP-LIST.md"
+        }
+      ],
+      "tests": [
+        "src/test/docs-bench-evidence.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2165
+    }
+  ]
+}

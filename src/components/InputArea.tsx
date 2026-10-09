@@ -6,6 +6,8 @@ import { MessageAttachment } from "../store";
 import { FileUpload } from "./FileUpload";
 import { showToast } from "./ToastNotification";
 import { SlotBridge } from "../core/slots/SlotBridge";
+// 第 191 波：字节数的人读形态走**唯一**实现（本文件原来自己抄了一份 `formatSize`）
+import { formatBytes } from "../core/utils/bytes";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { PlanModeChip } from "./PlanModeChip";
 import { ModelSelector } from "./ModelSelector";
@@ -1310,7 +1312,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 <img src={att.content} alt={att.name} className="pending-attachment-thumb" />
               ) : null}
               <span className="attachment-name">{att.name}</span>
-              {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
+              {att.size && <span className="attachment-size">{formatBytes(att.size)}</span>}
               <button aria-label="移除附件" title="移除附件" className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={12} /></button>
             </div>
           ))}
@@ -1806,8 +1808,3 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   );
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}

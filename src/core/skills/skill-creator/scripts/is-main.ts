@@ -58,3 +58,42 @@ export function isMainModule(metaUrl: string, argv1: string | undefined = proces
   if (process.platform === "win32") entry = entry.toLowerCase();
   return self === entry;
 }
+
+/**
+ * **结束一个 CLI 脚本并给出退出码**（第 191 波）。
+ *
+ * ## ⚠️ 不要直接 `process.exit(N)`
+ *
+ * 实测（Windows / Node 24，本目录的脚本）：`console.error(...)` **紧跟** `process.exit(1)`
+ * 会偶发崩在 libuv 的断言上 ——
+ *
+ * ```
+ * Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94
+ * ```
+ *
+ * 退出码从 1 变成 **3221226505（0xC0000409）**，而且**不是必现**（实测 3 次里 2 次崩）。
+ * 这是"在输出还没冲干净时就硬退"的必然代价：进程退出与流的关闭在抢同一个 handle。
+ * 判据 `skill-creator-scripts.test.ts` 的 CLI-1（真进程跑一遍、断言退出码）当场抓到。
+ *
+ * 正确做法：写 `process.exitCode` 然后**返回**，让 Node 在输出冲干净之后自然退出。
+ * 调用方记得在 `fail(...)` 之后 `return`（否则脚本会继续往下跑）。
+ */
+export function fail(message: string): void {
+  console.error(message);
+  process.exitCode = 1;
+}
+
+/**
+ * **冲干净输出之后再退出**（顶层的 CLI 分支用这个，因为它没法"提前 return"）。
+ *
+ * 与 `fail()` 是同一件事的两半：`fail()` 用于**函数体**里（设 exitCode + return，最稳），
+ * 这个用于**顶层 `if (isMainModule(...))` 块**里（那里没有函数可 return，硬退又会撞上面那个
+ * libuv 断言）⇒ 显式等到两个流都写完再 `process.exit`。ESM 顶层 `await` 允许这样写。
+ */
+export async function exitAfterFlush(code: number): Promise<never> {
+  const flush = (s: NodeJS.WriteStream): Promise<void> =>
+    new Promise((resolve) => (s.writableLength === 0 ? resolve() : s.write("", () => resolve())));
+  await Promise.all([flush(process.stdout), flush(process.stderr)]);
+  process.exit(code);
+  throw new Error("unreachable"); // process.exit 不返回；这行只为类型上的 never
+}

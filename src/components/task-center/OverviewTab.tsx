@@ -17,6 +17,8 @@ import { useLang } from "../../core/i18n/lang";
 import { SlotBridge } from "../../core/slots/SlotBridge";
 import { TASK_CENTER_OVERVIEW_SLOT, type TaskCenterTab } from "../TaskCenter";
 import { getCurrentProjectId } from "./use-current-project";
+// 第 191 波：「今天」的边界走唯一实现（本地日 00:00），不再自己 `setHours(0,0,0,0)`
+import { localDayStartMs } from "../../core/time/local-time";
 import { scopeDelegations } from "./delegation-scope";
 
 interface OverviewTabProps {
@@ -74,9 +76,14 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
     // Automation stats
     const config = getAutomationConfig();
     const active = config.triggers.filter((t) => t.enabled).length;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayTriggered = (config.history || []).filter((h) => h.timestamp >= today.getTime()).length;
+    /*
+     * 第 191 波（全仓搜同类的残留）：这里原来是 `new Date(); setHours(0,0,0,0)` ——
+     * 本仓**第二处**「本地日 00:00」的实现（`TIME-SINGLE-SOURCE` 的同族）。
+     * 它落到同一个瞬时，但"同一事实两处实现"正是本轮反复吃亏的形态，
+     * 所以改走唯一实现 `localDayStartMs`（判据 `TIME-WINDOW-4` 钉住全仓只有一处）。
+     */
+    const today = localDayStartMs(Date.now());
+    const todayTriggered = (config.history || []).filter((h) => h.timestamp >= today).length;
     setAutomationCount({ active, total: config.triggers.length, todayTriggered });
 
     // Issue stats（无项目时不做全局统计，避免跨项目串数据，P2-12）

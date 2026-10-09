@@ -16,7 +16,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { isMainModule } from "./is-main.ts";
+import { isMainModule, exitAfterFlush, fail } from "./is-main.ts";
 import { aggregateBenchmark, benchmarkToMarkdown } from "./aggregate-benchmark.ts";
 
 interface ReviewData {
@@ -228,7 +228,7 @@ if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.length < 1) {
     console.error("Usage: node generate-review.ts <workspace>/iteration-N --skill-name <name> [--static <output.html>]");
-    process.exit(1);
+    await exitAfterFlush(1);
   }
 
   const iterationDir = args[0];
@@ -255,7 +255,6 @@ if (isMainModule(import.meta.url)) {
       exec(`${openCmd} "${tmpFile}"`);
     }
   } catch (err: any) {
-    console.error(`Error: ${err.message}`);
-    process.exit(1);
+    fail(`Error: ${err.message}`);
   }
 }

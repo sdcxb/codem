@@ -759,7 +759,7 @@ async function runAgentTurn(peer: string, text: string): Promise<string> {
       SessionStorage.updateSession(sessionId, {
         lastMessageAt: Date.now(),
         model: row.model || entry.model || undefined,
-        messageCount: row.messageCount + 1,
+        // ⚠️ 第 191 波：不许写 `messageCount`（引擎是那一列的唯一写入者，见 App.tsx 同款说明）
       });
     }
 

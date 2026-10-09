@@ -27,7 +27,12 @@ import { join } from "node:path";
 const ROOT = join(__dirname, "..", "..");
 const TEST_DIR = join(ROOT, "src", "test");
 
-const CHANNEL_EXPORTS = ["reportPersistFailure", "reportActionFailure", "reportAdvisory", "reportFailure"] as const;
+/**
+ * 通道的**对外**导出名（第 191 波 O-51 收紧：内部原语 `reportFailure` 不再导出 ——
+ * 全仓没有任何 import 它，它是下面三个包装的实现细节；把"导出但没人用"留在棘轮上
+ * 只会让真正的死代码混在噪声里）。
+ */
+const CHANNEL_EXPORTS = ["reportPersistFailure", "reportActionFailure", "reportAdvisory"] as const;
 const REQUIRED_IN_MOCK = ["reportPersistFailure", "reportActionFailure", "reportAdvisory"] as const;
 const MOCK_RE = /vi\.mock\(\s*"\.\.\/core\/storage\/persist-failure"\s*,\s*\(\)\s*=>\s*\(\{([\s\S]*?)\}\)\)/;
 

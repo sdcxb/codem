@@ -417,3 +417,174 @@ describe("第 122 轮 · 「开启新对话」是**交接**，不是从零开始
     expect(queryByTestId("water-level-note")!.textContent).toContain("Maximum concurrent");
   });
 });
+
+// =====================================================================
+/**
+ * 第 191 波 · **真机报的两个缺陷**（用户原话）：
+ *
+ * > 1、我这个轮次的对话已经非常的长了……结果提示上下文压力偏高（已用 1%），只有 1% 不合理，
+ * > 而且只有 1% 就不应该报提示了。
+ * > 2、点了【开启新对话（交接当前工作）】、或者【压缩 / 查看详情】后，这个提示没有隐藏……
+ * > 用户会以为自己没点到按钮，重复的点。
+ *
+ * 侦察结论（根因只有一个）：旧渲染把**回执（note）**并进了**风险提示条**——
+ * `if (!visible && !note) return null;` 之后不区分渲染哪一套 ⇒ 只要有过一次回执
+ * （交接成功、压缩入口），整条风险提示条就继续渲染：标题仍是「上下文压力偏高（已用 N%）」、
+ * 两个按钮仍在。于是 ①水位已经掉到 1% 却还挂着"压力偏高"（荒谬）；②刚做完的动作看起来像没做
+ * （用户反复点）。
+ *
+ * 判据分三层：①水位正常 + 有回执 ⇒ **只**渲染窄回执条（没有压力标题、没有动作按钮）；
+ * ②点两个按钮 ⇒ 提示条**立刻收起**并有回执；③风险真的还在时（`visible`）提示条照常完整渲染
+ * （不许"一键收起所有告警"）。
+ */
+describe("第 191 波 · 回执不许混进风险提示条（真机报的「已用 1% 却报警」+「点了没反应」）", () => {
+  const banner = () =>
+    render(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
+
+  function armHighLevel() {
+    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2 });
+  }
+
+  /** 真机那条 1M 窗口的会话形态：可用预算 ≈ 904,998、已用 ≈ 9,000 ⇒ 1% */
+  function armNormalLevelLikeRealMachine() {
+    Object.assign(levelBox, { used: 9_000, available: 904_998, ratio: 0.01, percent: 1, level: 0 });
+  }
+
+  function realisticSession() {
+    mockMessages = [
+      { id: "u1", role: "user", content: "把 D:\\proj\\报告.md 的第 3 节补完", timestamp: 1, status: "done" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "已更新",
+        timestamp: 2,
+        status: "done",
+        toolCalls: [
+          { id: "tc1", tool: "edit", args: { file_path: "D:\\proj\\报告.md", old_string: "x", new_string: "y" }, result: "ok", status: "done" },
+        ],
+      },
+    ];
+  }
+
+  it("WB-10: 交接**成功**后风险提示条必须收起（只留一条窄回执）—— 否则用户以为没点到", async () => {
+    armHighLevel();
+    realisticSession();
+    delegateMock.mockResolvedValue({ id: "del-191" });
+
+    const { queryByTestId } = banner();
+    await act(async () => {
+      fireEvent.click(queryByTestId("water-level-handoff")!);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(queryByTestId("water-level-banner"), "用户已经处理过这一档水位 ⇒ 不许继续以风险语气显示").toBeNull();
+    const strip = queryByTestId("water-level-note-only");
+    expect(strip, "但回执必须看得见（不能把'做完了'也一起藏掉）").not.toBeNull();
+    expect(queryByTestId("water-level-note")!.textContent).toContain("del-191");
+    expect(queryByTestId("water-level-handoff"), "动作按钮必须跟着风险提示条一起收起").toBeNull();
+    expect(queryByTestId("water-level-detail")).toBeNull();
+  });
+
+  it("WB-11: 点「压缩 / 查看详情」⇒ 提示条收起 + 打开面板 + 留一条回执（不许看起来没反应）", () => {
+    armHighLevel();
+    const onOpen = vi.fn();
+    const { queryByTestId } = render(
+      createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: onOpen }),
+    );
+    fireEvent.click(queryByTestId("water-level-detail")!);
+    expect(onOpen, "面板照旧要打开（这是既有契约）").toHaveBeenCalledTimes(1);
+    expect(queryByTestId("water-level-banner"), "收起提示条：用户已经按了这个按钮").toBeNull();
+    expect(queryByTestId("water-level-note")!.textContent).toContain("面板");
+  });
+
+  it("WB-12: 水位掉回 1%（真机形态）时只许渲染窄回执 —— 不许出现「上下文压力偏高（已用 1%）」与按钮", async () => {
+    armHighLevel();
+    realisticSession();
+    delegateMock.mockResolvedValue({ id: "del-192" });
+    const { queryByTestId, rerender } = banner();
+    await act(async () => {
+      fireEvent.click(queryByTestId("water-level-handoff")!);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // 真机现场：交接/压缩之后水位回到 1%
+    armNormalLevelLikeRealMachine();
+    rerender(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
+
+    const strip = queryByTestId("water-level-note-only");
+    expect(strip).not.toBeNull();
+    const text = strip!.textContent ?? "";
+    expect(text, "1% 绝不是'压力偏高'").not.toContain("上下文压力");
+    expect(text).not.toContain("已用 1%");
+    expect(queryByTestId("water-level-banner"), "风险提示条本身必须已经不在").toBeNull();
+  });
+
+  it("WB-13 反向对照: 风险真的还在时，提示条必须完整渲染 + 带两个出口（不许被回执逻辑吞掉）", () => {
+    armHighLevel();
+    const { queryByTestId } = banner();
+    const el = queryByTestId("water-level-banner");
+    expect(el).not.toBeNull();
+    expect(el!.textContent).toContain("上下文压力偏高");
+    expect(queryByTestId("water-level-handoff")).not.toBeNull();
+    expect(queryByTestId("water-level-detail")).not.toBeNull();
+    // 而"窄回执条"这种形态此刻**不该**出现（它是给"没有风险"用的）
+    expect(queryByTestId("water-level-note-only")).toBeNull();
+  });
+
+  it("WB-14: 窄回执条可以被关掉（回执不是不可清除的常驻物）", async () => {
+    armHighLevel();
+    realisticSession();
+    delegateMock.mockResolvedValue({ id: "del-193" });
+    const { queryByTestId } = banner();
+    await act(async () => {
+      fireEvent.click(queryByTestId("water-level-handoff")!);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(queryByTestId("water-level-note-only")).not.toBeNull();
+    fireEvent.click(queryByTestId("water-level-note-close")!);
+    expect(queryByTestId("water-level-note-only")).toBeNull();
+  });
+
+  it("WB-15: 只因『本轮已被精简』而显示时，标题**不许**说「压力偏高」（1% + 压力偏高 = 两句话同时为假）", async () => {
+    /*
+     * 真机形态的另一半：用户报告里「已用 1%」与「上下文压力偏高」同时出现。
+     * 只要等级没到线，那句"压力偏高"就是假陈述 —— 无论提示条是因为什么显示出来的。
+     */
+    const vis = await import("../core/llm/context-visibility");
+    vis.__resetContextDrops();
+    armNormalLevelLikeRealMachine(); // 真机那条 1M 窗口：1%
+    const { queryByTestId } = banner();
+    expect(queryByTestId("water-level-banner"), "没有丢过 ⇒ 1% 不打扰").toBeNull();
+
+    await act(async () => {
+      vis.recordContextDrop(SESSION, {
+        droppedMessages: 12,
+        toolCounts: { bash: 2 },
+        strippedToolCallMessages: 1,
+        strippedToolCalls: 3,
+        foldSummaryInserted: true,
+      });
+      await Promise.resolve();
+    });
+    const el = queryByTestId("water-level-banner")!;
+    const text = el.textContent ?? "";
+    expect(text, "1% 绝不是「压力偏高」").not.toContain("压力偏高");
+    expect(text, "也不许说「即将满」").not.toContain("即将满");
+    expect(queryByTestId("water-level-title")!.textContent, "如实说「真的发生了什么」").toContain("精简");
+    expect(text, "百分比仍然要给（但要标明是当前占用）").toContain("1%");
+    expect(queryByTestId("water-level-drop")).not.toBeNull();
+    vis.__resetContextDrops();
+  });
+
+  it("WB-16 反向对照: 等级真的到线时，标题照旧说「压力偏高 / 即将满」", () => {
+    armHighLevel();
+    const { queryByTestId, rerender } = banner();
+    expect(queryByTestId("water-level-title")!.textContent).toContain("上下文压力偏高");
+    Object.assign(levelBox, { used: 106000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
+    rerender(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
+    expect(queryByTestId("water-level-title")!.textContent).toContain("即将满");
+  });
+});

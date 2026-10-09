@@ -268,8 +268,11 @@ function findPluginInRegistry(name: string, id: string): { meta: any; apply: () 
  * @param ctx Cordis Context
  * @param ymlContent YAML 文件内容（codem.base.yml）
  * @returns 加载结果
+ *
+ * ⚠️ 第 191 波（O-51 棘轮收紧）：**不再导出** —— 全仓没有 import（YAML 装配走
+ * `loadFromEntries`；本函数只在"从 YAML 文本直接加载"时用，而那条路径没有调用者）。
  */
-export function loadFromYaml(ctx: Context, ymlContent: string): YamlLoadResult {
+function loadFromYaml(ctx: Context, ymlContent: string): YamlLoadResult {
   const result: YamlLoadResult = {
     loaded: [],
     skipped: [],

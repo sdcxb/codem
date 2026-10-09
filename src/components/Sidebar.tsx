@@ -19,6 +19,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { getDelegationOrchestrator } from "../core/session";
 import { getInboxManager } from "../core/inbox/inbox";
 import { ensureReadStateInitialized, computeUnreadBySession, markSessionRead } from "../core/session/session-read-state";
+// 第 191 波：「今天」的边界必须与标题同口径（本地日 00:00），不再用滚动的 24h
+import { localDayStartMs } from "../core/time/local-time";
 import { ActionIcons } from "../core/icons/icon-map";
 
 interface SidebarProps {
@@ -342,13 +344,23 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   };
 
   // #9: Group sessions by time
+  /**
+   * 按「今天 / 更早」分组。
+   *
+   * ⚠️ 第 191 波（全仓搜同类的残留）：判定原本是 `now - sessionTime < 24h`，
+   * 而分组标题写的是「今天」—— 这是**两个不同的口径**：
+   * ① 非 DST 时区就已经错：昨天 10:30 的会话在 23.5 小时内会被标成「今天」；
+   * ② DST 跳变日本地日历日是 23/25 小时 ⇒ 边界再差一小时。
+   * 现在判定走唯一实现 `localDayStartMs`（本地日 00:00 对应的瞬时），与标题逐字一致
+   * （判据 `TIME-WINDOW-4`）。
+   */
   const groupSessionsByTime = (sessions: any[]) => {
-    const now = Date.now();
+    const todayStart = localDayStartMs(Date.now());
     const today: any[] = [];
     const earlier: any[] = [];
     for (const s of sessions) {
       const sessionTime = s.lastMessageAt || s.createdAt || 0;
-      if (sessionTime && (now - sessionTime) < 24 * 60 * 60 * 1000) {
+      if (sessionTime && sessionTime >= todayStart) {
         today.push(s);
       } else {
         earlier.push(s);

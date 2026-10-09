@@ -120,13 +120,16 @@ export function sceneAdjustTransform(a: SceneImageAdjust): string {
   return `translate(${round(a.x)}px, ${round(a.y)}px) scale(${round(a.scale, 3)})`;
 }
 
-/** 人类可读字节数 */
-export function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "0B";
-  if (n < 1024) return `${Math.round(n)}B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
-  return `${(n / 1024 / 1024).toFixed(2)}MB`;
-}
+import { formatBytes } from "../../../core/utils/bytes";
+
+/**
+ * 人类可读字节数。
+ *
+ * 第 191 波：实现搬到 `src/core/utils/bytes.ts`（**唯一**一处），这里只保留同名导出
+ * 以兼容本插件内的既有 import（原来是 `2.0KB` / `5.00MB` 这种无空格、两位小数的口径，
+ * 与产品其它三处都不同 —— 判据 `BYTES-SINGLE-SOURCE`）。
+ */
+export { formatBytes };
 
 /** 人类可读尺寸 */
 export function formatDimensions(width: number, height: number): string {

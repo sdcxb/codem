@@ -2788,9 +2788,13 @@ if (!session) {
      */
     const owningSession = session;
     const deliverToOwningSession = (m: Message) => {
-      deliverOwnedMessage({ sessionId: owningSession.id, message: m });
+      /*
+       * GAP-LIST `O-42`：`persist` 传给投递模块 ⇒ **先落库、再标未读**。
+       * 写路径会让会话计数在同一个同步段里可见，于是标未读走**精确**分支（未读恰好 1 条），
+       * 不再是"宁可多显示 1 条"。顺序反过来（先标后写）就会退回多显示 1 条的老形态。
+       */
+      deliverOwnedMessage({ sessionId: owningSession.id, message: m, persist: () => saveMessages(owningSession.id, [m]) });
       if (isSessionOnScreen(owningSession.id)) addMessage(m);
-      saveMessages(owningSession.id, [m]);
     };
 
     // /computer — computer-use 会话级批准开关（对标 EAC /computer toggle）
@@ -3203,7 +3207,15 @@ if (!session) {
     }
 
     useProjectStore.getState().updateSession(session.id, {
-      messageCount: session.messageCount + 1,
+      /*
+       * ⚠️ 第 191 波：**不许**在这里写 `messageCount`。
+       *
+       * 这一列由引擎在 `messages.upsert_index` 的同一事务里维护（`repo.rs::bump_session_message_count`），
+       * 渲染侧再写一个"自己读到的值 + 1"就是**第二个写入者** ⇒ 引擎 bump 再加一次，
+       * 该会话从此多算 1 条（靠 12 小时的对账才自愈）。读模型上的即时可见由
+       * `storage/message.ts` 的未吸收增量（`messageCountAdjustment`）负责，
+       * 判据 `SESSION-COUNT-SINGLE-WRITER`。
+       */
       lastMessageAt: Date.now(),
     });
 
@@ -3504,17 +3516,24 @@ if (!session) {
      *
      * ## ⚠️ 第 187 波：**归属投递**（写进归属会话 + 不在屏时留未读痕迹）
      *
-     * `deliverOwnedMessage`（`core/ui/loop-owned-message.ts`）做两件事：
+     * `deliverOwnedMessage`（`core/ui/loop-owned-message.ts`）做三件事，**顺序是语义的一部分**：
      * ① 把这条记进 `ownCopy`（= loop 自己那份，落库的唯一来源，与"用户在看谁"无关）；
-     * ② 归属会话**不在屏**时，把它的**已读水位**退一格 ⇒ 侧栏出现未读徽标 —— 不静默丢。
+     * ② 调 `persist`（这里的 `persistLoopMessages`）把这条落进归属会话；
+     * ③ 归属会话**不在屏**时把它标成未读 ⇒ 侧栏出现未读徽标 —— 不静默丢。
+     *
+     * GAP-LIST `O-42`：②必须排在③之前 —— 写路径让会话计数在**同一个同步段**里可见，
+     * 标未读因此读得到"写入后的真值"，走**精确分支**（水位不动、未读恰好 1）；
+     * 反过来（先标后写）就会退回第 187 波"宁可多显示 1 条"的老形态。
      * 界面那一支**不**在它里面（下面 `if (isViewingSession())` 照旧负责），
      * 于是"这个会话在不在屏"仍然只有一份判据（`isSessionOnScreen`）。
      */
     const safeAddMessage = (msg: Message) => {
-      // 归属投递：记进 loop 自己那份 + 不在屏时的未读兜底（不许写进"当前加载的"那个会话）
-      deliverOwnedMessage({ sessionId: session.id, message: msg, ownCopy: loopMessages });
+      /*
+       * 归属投递：记进 loop 自己那份 + 落库 + 不在屏时的未读兜底（不许写进"当前加载的"那个会话）。
+       * GAP-LIST `O-42`：`persist` 交给投递模块 ⇒ **先落库、再标未读**（标的那一刻计数已可见）。
+       */
+      deliverOwnedMessage({ sessionId: session.id, message: msg, ownCopy: loopMessages, persist: persistLoopMessages });
       if (isViewingSession()) addMessage(msg);
-      persistLoopMessages();
     };
     const safeUpdateMessage = (id: string, update: any) => {
       // loop 自己那份同步更新（落库时写的才是"最新版本"，而不是创建时的空壳）
@@ -3759,12 +3778,21 @@ abortControllersRef.current.set(session.id, sessionAbort);
 
       for await (const event of engine.process(session.id, message, cwd, undefined, {
         /**
-         * I9：记忆的**项目身份**必须来自项目本身（`currentProject.path`），
-         * **不是**本轮的 `cwd` —— git worktree 会话的 cwd 是 worktree 目录（`session.worktreePath`），
+         * I9：记忆的**项目身份**必须来自项目本身，**不是**本轮的 `cwd` ——
+         * git worktree 会话的 cwd 是 worktree 目录（`session.worktreePath`），
          * 拿它当归属键会让主工作区与 worktree 会话**互相看不到对方的项目记忆**，
          * 而且 worktree 目录一删，那些归属键就永久无法归位（体检只能把它们标成"归属已失效"）。
+         *
+         * ⚠️ 第 191 波（O-46 的残余边界）：**显式值只在"当前项目就是该会话所属项目"时才给**。
+         * 旧写法无条件传 `projectIdFromCwd(currentProject.path)` —— 被委派的会话（属于别的项目）
+         * 一旦在"当前项目"里被驱动，显式值就会**盖过登记表**，把记忆写进当前项目而不是它自己的项目。
+         * 现在：项目一致才给显式值（省一次反查）；不一致 / 没有当前项目 ⇒ 传 `undefined`，
+         * 由引擎按「session → project 登记表」解析（唯一实现 `resolveMemoryProjectId`）。
          */
-        memoryProjectId: projectIdFromCwd(currentProject?.path),
+        memoryProjectId:
+          currentProject && session.projectId && currentProject.id === session.projectId
+            ? projectIdFromCwd(currentProject.path)
+            : undefined,
         /**
          * 第 154 轮（O-28）：把界面路径这一轮的助手消息**真实 id** 交给引擎。
          *

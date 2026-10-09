@@ -385,10 +385,26 @@ describe('skill-creator: CLI 真进程 + 静态门禁', () => {
 
     // 没给参数时要印用法并 exit 1（而不是静默什么都不做）
     for (const script of ['run-eval.ts', 'quick-validate.ts', 'aggregate-benchmark.ts', 'generate-review.ts', 'package-skill.ts']) {
-      const bare = runCli(script)
-      expect(bare.status, script).toBe(1)
-      expect(bare.stderr, script).toContain('Usage:')
-      expect(bare.stderr, script).not.toContain('ReferenceError')
+      /*
+       * ⚠️ 第 191 波：**每个脚本跑 3 次**（不是 1 次）。
+       *
+       * 被守的形态是"用 `process.exit(1)` 硬退、而输出还没冲干净"：实测
+       * `console.error(...)` 紧跟 `process.exit(1)` 在 Windows 上会偶发崩在
+       * libuv 的 `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`，
+       * 退出码变成 3221226505（0xC0000409）—— 而且**3 次里只崩 2 次**，
+       * 所以"只跑一次"的判据**有一半概率放过它**（这正是它上一轮没被抓到的原因）。
+       * 正确写法见 `is-main.ts` 的 `fail()` / `exitAfterFlush()`。
+       */
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const bare = runCli(script)
+        expect(bare.status, `${script}（第 ${attempt} 次）：stderr=${bare.stderr}`).toBe(1)
+        expect(bare.stderr, `${script}（第 ${attempt} 次）`).toContain('Usage:')
+        expect(bare.stderr, `${script}（第 ${attempt} 次）`).not.toContain('ReferenceError')
+        expect(
+          bare.stderr,
+          `${script}（第 ${attempt} 次）崩在 libuv 断言上（硬退的竞态）—— 用 fail()/exitAfterFlush() 代替 process.exit()`,
+        ).not.toContain('Assertion failed')
+      }
     }
   })
 
@@ -420,7 +436,28 @@ describe('skill-creator: CLI 真进程 + 静态门禁', () => {
       for (const imp of relativeImports) {
         expect(imp, `${script} 的相对 import 缺 .ts 后缀（原生 node 跑不起来）`).toMatch(/\.ts"/)
       }
+      /*
+       * ★ 第 191 波：**不许硬退**（`process.exit(...)`）。
+       *
+       * 这条是**静态**判据（运行期那条竞态只在机器忙的时候才现形：实测空载 3 次里 1 次崩、
+       * 满载 3 次全崩 ⇒ 只靠 CLI-1 的运行时断言会漏）。硬退的症状是
+       * `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` + 退出码 0xC0000409 ——
+       * 而 `process.exitCode = N`（或 `fail()` / `exitAfterFlush()`）没有这个问题。
+       */
+      expect(
+        stripComments(code).includes('process.exit('),
+        `${script} 用了硬退 process.exit(...)：输出没冲干净时会偶发撞 libuv 断言（退出码变 0xC0000409）。` +
+          `改用 is-main.ts 的 fail()（函数体内）或 exitAfterFlush()（顶层块内）`,
+      ).toBe(false)
     }
+    /*
+     * 允许 `is-main.ts` 里**唯一**一处 `process.exit` —— 它在 `exitAfterFlush` 里、
+     * 且在那之前先等两个流写完。这条断言把"唯一一处"钉死（多一处就要说明理由）。
+     */
+    const helper = stripComments(fs.readFileSync(path.join(SCRIPTS, 'is-main.ts'), 'utf8'))
+    const exitCalls = helper.split('process.exit(').length - 1
+    expect(exitCalls, 'is-main.ts 只许有一处 process.exit（在 exitAfterFlush 里、冲干净输出之后）').toBe(1)
+    expect(helper, 'exitAfterFlush 必须先等 stdout/stderr 写完（writableLength + flush）').toMatch(/writableLength/)
   })
 
   it.skipIf(!NATIVE_TS_OK)('CLI-3: isMainModule 不是摆设 —— 被 import（而不是直接跑）时 CLI 体一行都不执行', () => {

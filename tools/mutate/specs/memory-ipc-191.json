@@ -1,0 +1,57 @@
+{
+  "description": "第 191 波 O-52：记忆整份写的放大倍数必须被量化（无变化不写这条防线不许丢；落库字节必须是整份）",
+  "mutations": [
+    {
+      "id": "MUT-1 去掉「无变化不写」（确认式那一处）",
+      "why": "MEM-IPC-1c：内容逐字相同也必须不重发（放大的前提是内容真的变了）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    if (payload === this.lastPersistedPayload) {\n      // 内容与\"已接受的那一份\"相同：仍要等前面在途的确认落地，不能直接说成功\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;\n    }",
+          "to": "    if (false) {\n      await this.flushPendingPersist();\n      return this.lastPersistError === null;\n    }"
+        }
+      ],
+      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-1b 去掉「无变化不写」（同步那一处）",
+      "why": "MEM-IPC-1c 的源码级计数：两处入口少一处就要红（同步 save 被删掉时，行为断言走不到它）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    // ② 无变化不写（内容逐字相同 ⇒ 库里已经是这份，不需要再发一次 IPC）\n    if (payload === this.lastPersistedPayload) return true;",
+          "to": "    if (false) return true;"
+        }
+      ],
+      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 只落「改动的那一条」而不是整份（伪增量）",
+      "why": "MEM-IPC-1：当前契约是整份原子写；只写一条会让「落库字节 = 整份 payload」这条断言红（也说明判据真的在量放大）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    patchMemoryMirror(payload);\n    this.lastPersistedPayload = payload;\n    this.chainPersist(payload);\n    return true;",
+          "to": "    patchMemoryMirror(payload);\n    this.lastPersistedPayload = payload;\n    this.chainPersist(JSON.stringify({ version: 2, entries: { onlyOne: Array.from(this.entries.values()).pop() }, batches: [] }));\n    return true;"
+        }
+      ],
+      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 反向对照：只改一处说明注释",
+      "why": "反向对照：行为不变时判据不许红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "  private serializeChecked(): string {",
+          "to": "  // 反向对照：只加一行注释\n  private serializeChecked(): string {"
+        }
+      ],
+      "tests": ["src/test/memory-write-amplification.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

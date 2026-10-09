@@ -36,6 +36,9 @@ import type { MirrorEvent } from "./rust-port";
 import * as SessionStorage from "./session";
 // 不变量审计的"上次水位"存在 settings（与其它偏好同一种介质，见 `readInvariantWatermark`）
 import { getSettingJSON, setSettingJSON } from "./settings";
+// 第 191 波：字节数的人读形态走**唯一**实现（本文件原来自己抄了一份 `formatBytes`，
+// 而且口径与界面两处不同 —— 同一个数在维护汇总里是 `4.0 MiB`、在附件气泡里是 `4.0 MB`）
+import { formatBytes } from "../utils/bytes";
 
 export interface MaintenanceResult {
   /** 旧引擎时代的库体积统计（现在由 `storage.compact` 的 before/after 承担，这里保持 0 兼容签名） */
@@ -1075,9 +1078,7 @@ export async function verifyIntegrityThrottled(
         `距上次检查 ${((now - lastAt) / 3_600_000).toFixed(1)} 小时（${
           windowMs / 3_600_000
         } 小时内不重复跑，还需 ${waitH} 小时；` +
-        `库大小 ${
-          dbSizeBytes === null ? "读不到，按小库窗口" : `${(dbSizeBytes / 1048576).toFixed(1)} MB`
-        }）`,
+        `库大小 ${dbSizeBytes === null ? "读不到，按小库窗口" : formatBytes(dbSizeBytes)}）`,
     };
   }
 
@@ -1184,12 +1185,12 @@ function formatIntegrity(outcome: IntegrityCheckOutcome): string {
   }
 }
 
-/** 字节数 → 人读的形态（维护汇总行里报 `reclaimed_bytes` 用） */
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
-}
+/**
+ * 字节数 → 人读的形态（维护汇总行里报 `reclaimed_bytes` 用）。
+ *
+ * 第 191 波：本文件原来自己有一份实现（`KiB` / `MiB` 口径），与界面两处的 `KB` / `MB`
+ * 不一致 —— 现在统一走 `core/utils/bytes.ts` 的**唯一**实现（判据 `BYTES-SINGLE-SOURCE`）。
+ */
 
 /**
  * 不变量审计的**上次水位**（settings 里的一个键）—— 用来把"历史缺口"与"本次新产生"分开。

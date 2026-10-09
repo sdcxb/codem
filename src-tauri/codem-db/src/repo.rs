@@ -1349,11 +1349,38 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
             bump_session_message_count(tx, &f.session_id, 1)?;
         }
 
+        /*
+         * ## GAP-LIST `O-42`：把**权威计数**随结果回传（渲染侧读模型不再需要猜）
+         *
+         * 渲染侧（`src/core/storage/session.ts::getSession`）要回答的是"这个会话现在有几条消息"，
+         * 而这一列**只有引擎知道**（`bump_session_message_count` 的注释：引擎是唯一写入者）。
+         * 渲染侧镜像隔着一次 IPC，于是"刚写进去的这条算进去了没有"在写路径上看不出来 ——
+         * 未读徽标只能靠"宁可多显示 1 条"兜住（`session-read-state.ts` 的长注释记的就是这个取舍）。
+         *
+         * 这里把同一个事务里刚维护好的值一并回传：渲染侧拿到它就把本地那笔**有界增量**归零
+         * （`message.ts::noteMessageCountAuthoritative`），于是"写消息 → 读计数"在
+         * **一次 IPC 往返之内**收敛到引擎真值，而不是靠猜。
+         *
+         * ⚠️ 契约是**只增字段**：`written` / `id` / `inserted` / `tool_calls` 一字不动，
+         * 老的渲染侧（不认识这个字段）行为完全不变 —— 加字段不是改语义。
+         * 它**不是**让渲染侧写这一列：这一列的唯一写入者仍然只有引擎自己。
+         */
+        let session_message_count: i64 = tx
+            .query_row(
+                "SELECT COALESCE(message_count, 0) FROM sessions WHERE id = ?1",
+                params![f.session_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(DbError::from)?
+            .unwrap_or(0);
+
         Ok(json!({
             "written": written,
             "id": f.id,
             "inserted": exists == 0,
             "tool_calls": tool_calls.as_ref().map(|c| c.len()).unwrap_or(0),
+            "session_message_count": session_message_count,
         }))
     })
 }

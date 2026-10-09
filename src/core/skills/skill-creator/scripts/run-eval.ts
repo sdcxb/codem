@@ -17,7 +17,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { isMainModule } from "./is-main.ts";
+import { isMainModule, exitAfterFlush, fail } from "./is-main.ts";
 
 interface EvalCase {
   id: number;
@@ -175,7 +175,7 @@ if (isMainModule(import.meta.url)) {
 
   if (skillIdx === -1 || evalIdx === -1 || outputIdx === -1) {
     console.error("Usage: node run-eval.ts --skill <path> --eval-id <id> --output <dir>");
-    process.exit(1);
+    await exitAfterFlush(1);
   }
 
   const skillDir = args[skillIdx + 1];
@@ -188,7 +188,7 @@ if (isMainModule(import.meta.url)) {
     if (errors.length > 0) {
       console.error("Skill validation failed:");
       errors.forEach((e) => console.error(`  - ${e}`));
-      process.exit(1);
+      await exitAfterFlush(1);
     }
 
     // Load eval case
@@ -213,7 +213,6 @@ if (isMainModule(import.meta.url)) {
       console.log(`  ${i + 1}. ${e}`);
     });
   } catch (err: any) {
-    console.error(`Error: ${err.message}`);
-    process.exit(1);
+    fail(`Error: ${err.message}`);
   }
 }

@@ -32,6 +32,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+/** 线性化阈值只能有一处实现（GAP-LIST O-39 / CR-CONTRAST-1）：import 产品实现，不再镜像阈值 */
+import { channelLinear } from "../core/theme/contrast-checker";
 
 const ROOT = join(__dirname, "..", "..");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
@@ -50,8 +52,10 @@ const parseColor = (v: string): [number, number, number, number] | null => {
 const over = (f: [number, number, number, number], b: [number, number, number, number]): [number, number, number, number] =>
   [f[0] * f[3] + b[0] * (1 - f[3]), f[1] * f[3] + b[1] * (1 - f[3]), f[2] * f[3] + b[2] * (1 - f[3]), 1];
 const lum = (c: [number, number, number, number]) => {
-  const f = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
-  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+  /* ⚠️ 第 191 波（GAP-LIST O-39）：这里原先**镜像**了一份线性化函数、用的是旧阈值 0.03928
+     （同一事实全仓 4 处实现）。现在 import 产品实现 `channelLinear`：
+     阈值唯一来源是 `src/core/theme/wcag-luminance.json`，判据 `CR-CONTRAST-1` 钉住它。 */
+  return 0.2126 * channelLinear(c[0]) + 0.7152 * channelLinear(c[1]) + 0.0722 * channelLinear(c[2]);
 };
 const contrast = (a: [number, number, number, number], b: [number, number, number, number]) => {
   const l1 = lum(a), l2 = lum(b);

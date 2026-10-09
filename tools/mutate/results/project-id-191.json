@@ -1,0 +1,91 @@
+{
+  "wave": "project-id-191",
+  "description": "O-46：把「项目身份」按 session → project 登记表解析这件事改坏（退回 cwd 兜底 / 摘掉登记表 / 让两侧分叉 / 去掉如实上报），MEM-ID-* 必须变红",
+  "runAt": "2026-10-09T00:46:58.532Z",
+  "specFingerprint": "2e57af6ad16a62e52721b4bcfea07b8eaae3cf36",
+  "files": [
+    "src/core/llm/index.ts"
+  ],
+  "tests": [
+    "src/test/memory-project-id-paths.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 摘掉 session → project 登记表那一跳（等于退回按 cwd 兜底）",
+      "why": "MEM-ID-1：executor 路径的 cwd 是 worktree 目录 ⇒ 身份必须来自登记表；登记表被摘掉 ⇒ 两侧一起退化成 worktree 目录（O-46 的原始缺陷形态）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "    const fromTable = projectIdFromCwd(sessionProjectPath(input.sessionId));\n    if (fromTable) return fromTable;",
+          "to": "      // 变异：登记表这一跳被摘掉（身份只能退回最后一跳的 cwd = worktree 目录）"
+        }
+      ],
+      "tests": [
+        "src/test/memory-project-id-paths.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4001
+    },
+    {
+      "id": "MUT-2 最后一跳静默：删掉「如实上报」",
+      "why": "MEM-ID-2 / MEM-ID-3：登记缺失时必须如实上报（不许静默用一个可能是 worktree 目录的值）；上报被删掉 ⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "  const degraded = projectIdFromCwd(input.cwd);\n  if (degraded) reportMemoryProjectIdDegrade(input.sessionId, degraded);\n  return degraded;",
+          "to": "  const degraded = projectIdFromCwd(input.cwd);\n  return degraded;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-project-id-paths.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3955
+    },
+    {
+      "id": "MUT-3 两侧分叉：注入侧不再读写入侧登记的值",
+      "why": "MEM-ID-1：注入侧绕开写入侧登记的身份、直接按 cwd 取 ⇒ 写入落项目根的桶、注入查 worktree 的桶（R3 修过的那个「看不到自己写的记忆」形态）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "    return resolveMemoryProjectId({\n      sessionId,\n      cwd,\n      registered: this.sessionMemoryProjectId.get(sessionId),\n    });",
+          "to": "    return projectIdFromCwd(cwd);"
+        }
+      ],
+      "tests": [
+        "src/test/memory-project-id-paths.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4263
+    },
+    {
+      "id": "MUT-4 写入侧退回 O-46 的原始形态（options?.memoryProjectId ?? projectIdFromCwd(cwd)）",
+      "why": "MEM-ID-1：写入侧不再走唯一解析点、直接拿 cwd 兜底 ⇒ worktree 会话的项目记忆落进 worktree 目录的桶",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "    const memoryProjectId = resolveMemoryProjectId({\n      sessionId,\n      cwd,\n      explicit: options?.memoryProjectId,\n    });",
+          "to": "    const memoryProjectId = options?.memoryProjectId ?? projectIdFromCwd(cwd);"
+        }
+      ],
+      "tests": [
+        "src/test/memory-project-id-paths.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4147
+    }
+  ]
+}

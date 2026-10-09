@@ -125,6 +125,23 @@ export const resolveColor = (value, vars, depth = 0) => {
   return parsePlain(v);
 };
 
+/* ---------------- 阈值：与产品侧**同一个来源**（GAP-LIST O-39 / 判据 CR-CONTRAST-1） ----------------
+ *
+ * 这道门禁是**纯 node 直跑**的（不打包），产品侧（`src/core/theme/contrast-checker.ts`）是 Vite
+ * 打包的 TS。第 189 波评审曾用「两个运行面不同」当作各写一份阈值的理由 ⇒ 全仓 4 处实现，
+ * 而且这里用的是 WCAG 2.0 初版/1.0 的**旧值** 0.03928（产品侧是勘误后的 0.04045）。
+ *
+ * 现在两边读**同一个 JSON**：这里 `readFileSync` + `JSON.parse`，
+ * 产品侧 `import { srgbLinearThreshold } from "./wcag-luminance.json"`。
+ * 口径结论（哪个对、为什么）与漂移量化（53 对读数零漂移）写在
+ * `src/core/theme/wcag-luminance.json` 的 `note` 与 `tools/audit/color-roles-threshold-drift.md`。
+ * ⚠️ 本文件**不许**再出现阈值字面量 —— `src/test/contrast-luminance-single-source.test.ts` 会红。
+ *
+ * 路径按**本模块自身的位置**解析（而不是 `--root`）：阈值属于本仓库的实现，`--root` 只用来换被扫的样式表。
+ */
+const WCAG_LUMINANCE_PATH = path.join(HERE, "..", "..", "src", "core", "theme", "wcag-luminance.json");
+export const srgbLinearThreshold = JSON.parse(fs.readFileSync(WCAG_LUMINANCE_PATH, "utf8")).srgbLinearThreshold;
+
 export const over = (fg, bg) => ({
   r: fg.r * fg.a + bg.r * (1 - fg.a),
   g: fg.g * fg.a + bg.g * (1 - fg.a),
@@ -134,7 +151,7 @@ export const over = (fg, bg) => ({
 export const luminance = ({ r, g, b }) => {
   const f = (c) => {
     const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    return s <= srgbLinearThreshold ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
   };
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
 };

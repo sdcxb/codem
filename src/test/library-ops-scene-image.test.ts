@@ -99,12 +99,18 @@ describe("LO-SCENE-IMG 自定义场景图片（纯逻辑）", () => {
   });
 
   it("LO-SCENE-IMG-5: 格式化与摘要", () => {
-    expect(formatBytes(0)).toBe("0B");
-    expect(formatBytes(512)).toBe("512B");
-    expect(formatBytes(2048)).toBe("2.0KB");
-    expect(formatBytes(5 * 1024 * 1024)).toBe("5.00MB");
+    /*
+     * 第 191 波：字节格式**收敛成全仓唯一一份**（`src/core/utils/bytes.ts`）——
+     * 本插件原来是 `0B` / `512B` / `2.0KB` / `5.00MB` 的无空格两位小数口径，
+     * 与产品其它三处（附件气泡 `2.0 KB`、维护汇总 `2.0 KiB`）都不同。
+     * 断言按**统一后的口径**写（判据 `BYTES-SINGLE-SOURCE-2` 钉住"这里与产品同源"）。
+     */
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(2048)).toBe("2.0 KB");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
     expect(formatDimensions(2752, 1536)).toBe("2752×1536");
-    expect(describeSceneImage({ name: "场景.png", width: 2752, height: 1536, size: 2048 })).toBe("场景.png · 2752×1536 · 2.0KB");
+    expect(describeSceneImage({ name: "场景.png", width: 2752, height: 1536, size: 2048 })).toBe("场景.png · 2752×1536 · 2.0 KB");
   });
 
   it("LO-SCENE-IMG-6: 解码尺寸 —— createImageBitmap 优先、<img> 回退、无能力时报错", async () => {

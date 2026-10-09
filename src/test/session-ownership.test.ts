@@ -281,10 +281,18 @@ describe("SO-4 源码级守卫（防后人回退）", () => {
      * 而"落库是不是一级语句"恰好等价于我们要守的东西 ——
      * 一旦有人把它挪进 `if (isViewingSession()) { … }`，它的缩进就比函数体深一级，
      * 这条断言立刻变红（那正是"后台会话不落库"的原形）。
+     *
+     * ⚠️ **GAP-LIST `O-42` 之后多了一种合法形态**：落库由归属投递模块负责，而它必须
+     * 排在标未读**之前**（标的那一刻计数才同步可见）⇒ 这里是
+     * `deliverOwnedMessage({ …, persist: persistLoopMessages })`。
+     * 它同样是一级语句、同样**与查看态无关**，所以判据接受这两种形态：
+     * 直接调用 `persistLoopMessages()`，或把它作为 `persist:` 的一级实参交出去。
      */
     expect(
-      /persistLoopMessages\s*\(|MessageStorage\.createMessage\s*\(/.test(topLevel),
-      `safeAddMessage 里必须有**无条件**的落库调用（非查看态也要落库）。一级语句只有：\n${topLevel}`,
+      /persistLoopMessages\s*\(|MessageStorage\.createMessage\s*\(|persist:\s*persistLoopMessages/.test(topLevel),
+      "safeAddMessage 里必须有**无条件**的落库（非查看态也要落库；" +
+        "O-42 之后形态是 `persist: persistLoopMessages`，由投递模块在标未读之前执行）。" +
+        `一级语句只有：\n${topLevel}`,
     ).toBe(true);
     // 反向：UI 更新仍然只在查看时做（"不再更新 UI"同样不是我们要的修法）
     expect(

@@ -671,3 +671,30 @@ This rule has the highest priority and overrides any other language-related cont
   // Filter out any <system-reminder> tags that may have been injected
   return sections.join("\n\n---\n\n").replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
 }
+
+/**
+ * 把「本轮附录」拼到系统提示上 —— **唯一实现**（第 191 波 O-49）。
+ *
+ * ## 什么是附录
+ *
+ * `agentic-loop.ts` 每次迭代重算的三段：deferred 工具提示、技能提示、active skill 提示
+ * （`extraSystemPrompt`）。它们**跟在 date 之后**（也就是整条 `messages[0]` 的最末尾）。
+ *
+ * ## 为什么位置必须是「整份系统提示的最后」
+ *
+ * 服务端前缀缓存的命中范围 = 请求前缀到**首个差异点**。附录每轮都可能变（deferred 工具表随
+ * 工具搜索结果变化），所以：
+ * - 放在**最后** ⇒ 它变时差异点在整份提示的末尾，前面的稳定前缀 + 哨兵 + 易变记忆 + date
+ *   全部**逐字节不变**（判据 `MEM-PLACE-25`）；
+ * - 若把它塞进稳定侧（哨兵之前）⇒ 它一变就把**稳定前缀整段**顶掉（实测：稳定前缀 20,788 码元 /
+ *   29,181 字节，等于把 189 波吃到的收益吐回去）。
+ *
+ * 抽成函数（而不是继续内联在 `run()` 里）的理由很直接：**位置本身是判据对象**
+ * （`MEM-PLACE-25` 的正反两半都要能量到同一个实现），内联表达式只能靠源码字符串去猜。
+ *
+ * ⚠️ 它**不**引入任何跨轮状态：`systemPrompt` 是纯函数的产物，这里只是拼一个后缀
+ * （"提示 = 输入的纯函数"这条性质不受影响，见 `buildSystemPrompt` 的说明与 O-48 的结论）。
+ */
+export function appendVolatileAppendix(systemPrompt: string, extraSystemPrompt?: string): string {
+  return extraSystemPrompt ? `${systemPrompt}\n${extraSystemPrompt}` : systemPrompt;
+}

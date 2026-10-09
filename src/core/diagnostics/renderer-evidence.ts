@@ -30,6 +30,9 @@
  * - 心跳只在有 Tauri 宿主时发（浏览器预览/测试环境静默跳过，不报错）。
  */
 
+// 第 191 波：字节 → MB 数字走**唯一**实现（`formatBytes` 的同一处）
+import { megabytesOf } from "../utils/bytes";
+
 /** 默认心跳间隔。20 秒：一次会话 8 小时约 1440 行（每行 ~150 字节，可忽略） */
 export const HEARTBEAT_INTERVAL_MS = 20_000;
 
@@ -61,7 +64,8 @@ function readMemory(): MemoryInfo | null {
   return m;
 }
 
-const MB = (bytes: number) => Math.round((bytes / (1024 * 1024)) * 10) / 10;
+// 第 191 波：字节 → MB 数字也走**唯一**实现（与 `formatBytes` 同一处，免得两份的舍入方向不一致）
+const MB = megabytesOf;
 
 /** 采集一次样本。任何一步拿不到都如实记为 `?`，绝不编造数字。 */
 export function collectSample(now = Date.now()): RendererSample {

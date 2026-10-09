@@ -2,7 +2,7 @@
 // （原来这里唯一的用途就是 `getEventLog().forkSession(...)`，见下面 `parent_id` 写入处的说明）。
 import type { Session } from "../types";
 import { appendSessionTombstone } from "./session-jsonl";
-import { releaseSessionLogCache } from "./message";
+import { pendingMessageCountAdjustment, releaseSessionLogCache } from "./message";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
 /**
@@ -392,6 +392,7 @@ export function listSessions(projectId: string): Session[] {
      */
     return rust
       .filter((s) => !isChildSession(s))
+      .map(withPendingMessageWrites)
       .sort((a, b) => {
         const pa = a.pinned ? 1 : 0;
         const pb = b.pinned ? 1 : 0;
@@ -405,9 +406,45 @@ export function listSessions(projectId: string): Session[] {
   return []; // 第 17 轮（L4）：旧库回退（ORDER BY pinned/last_message_at）已删 —— 空结果
 }
 
+/**
+ * 读模型：把"**刚写进去、权威计数还没回来的**消息"算进 `messageCount`（GAP-LIST `O-42`）。
+ *
+ * ## 为什么必须有这一层
+ *
+ * `sessions.message_count` 是**引擎的列**（`repo.rs::bump_session_message_count`，
+ * 「引擎是唯一写入者」），渲染侧镜像读到它隔着一次 IPC ⇒ 写入返回时**看不出来**
+ * "这一条算进去了没有"。而 `session-read-state.ts::markSessionUnread` 正是靠这个数字
+ * 决定要不要把已读水位多踩一格（"宁可多显示 1 条，也不能一条都不显示"）——
+ * 于是用户会看到"2 条"而实际只有 1 条（有界但**持续**的偏差，且正确性押在一个
+ * 无人盯着的时序假设上）。
+ *
+ * 写路径（`message.ts::writeIndexViaRust`）现在把这件事变成**同一个同步段里的事实**：
+ * 本进程首次写入的消息行 ⇒ 该会话读模型 +1（`pendingMessageCountAdjustment`），
+ * 引擎回传权威计数后归零。于是这里把它加在镜像值上，"刚写的立刻读得到"。
+ *
+ * ## 三条边界（写在这里以免下一个人以为它管得更多）
+ *
+ * 1. **只影响读**：`sessions.message_count` 的写入者仍然只有引擎与显式对账
+ *    （`maintenance.ts` / `NotebookWorkspace` 的 `updateSession({ messageCount })`）——
+ *    本函数不改任何写路径，也不给 `crud.upsert sessions` 增加一列
+ *    （对照 `session-count-authority.test.ts` 的 SC-1）；
+ * 2. **增量有界**：它只在"写入已发出、权威回执未到"这个窗口里非零，且**只对本次写入**生效；
+ *    任何一次镜像重载（`loadSession` 整会话读）都让读数回到引擎真值；
+ * 3. **删除路径不记账**：被删掉的那条如果正好带着增量，读数会在"镜像还没重载"的窗口里
+ *    多算 1（未读数用 `Math.max(0, …)` 夹住，永不为负）；下一次镜像重载即收敛 ——
+ *    这是刻意的取舍：把删除也接进同一套记账会让"删几条"多一份需要维护的真相，
+ *    而收益只是让一个 ≤1 的瞬时偏差早一步消失。
+ */
+function withPendingMessageWrites(session: Session): Session {
+  const pending = pendingMessageCountAdjustment(session.id);
+  if (pending === 0) return session;
+  return { ...session, messageCount: Math.max(0, session.messageCount + pending) };
+}
+
 export function getSession(id: string): Session | null {
   const rust = domainReadOne(SESSION_TABLE, { id }, wireToSession);
-  if (rust !== undefined) return rust;
+  // 端口接手：读模型加上"刚写进去、权威计数还没回来的"那几条（见上）
+  if (rust !== undefined) return rust === null ? null : withPendingMessageWrites(rust);
   return null; // 第 17 轮（L4）：旧库回退已删 —— 镜像未就绪就是"查不到"（端口就绪后会重读）
 }
 

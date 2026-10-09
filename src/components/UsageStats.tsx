@@ -3,6 +3,8 @@ import { getCostTracker, type UsageRecord } from "../core/llm/cost-tracker";
 import { beginSettingsWriteProbe, flushSettingsWrites } from "../core/storage/settings";
 import { formatCacheHitPercent } from "../core/llm/cache-percent";
 import { TokenActivityGrid, UsageChart } from "./UsageVisuals";
+// O-40：可视化取数窗口必须与「本地日历日格子」同口径 ⇒ 走唯一实现（不再自己 `now - i * 24h`）
+import { localDayWindows } from "../core/time/local-time";
 import { Activity, BarChart3, Wrench, ClipboardList, Calendar, CheckCircle, Infinity as InfinityIcon } from "lucide-react";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { ConversationOverview } from "./ConversationOverview";
@@ -45,6 +47,11 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString("zh-CN");
 }
 
+/** 标签页里的可视化天数（取数窗口与格子数必须同源，见 `loadStats`） */
+const VIZ_DAYS = 28;
+/** 历史页回看天数（**经过时长**口径：滚动 7 × 24 小时，不是本地日历日分格） */
+const HISTORY_LOOKBACK_DAYS = 7;
+
 export function UsageStats({ onClose }: UsageStatsProps) {
   const CloseIcon = ActionIcons.close;
   const UsageIcon = PanelIcons.usage;
@@ -68,12 +75,19 @@ export function UsageStats({ onClose }: UsageStatsProps) {
     setStats(tracker.getStats());
     setCostByModel(tracker.getCostByModel());
     setLimits(tracker.getLimits());
-    // Get last 50 records from the last 7 days for history tab
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    /*
+     * 历史页：**滚动 7 × 24 小时**内的最近 50 条 —— 这是「多久以前」的口径（一张按时间倒序的
+     * 清单，没有「按本地日历日分格」），所以这里保留时长常量，并**逐条登记**在判据
+     * `TIME-DST-4` 的例外表里（理由写明是「经过时长」而不是「日历日」）。
+     */
+    const sevenDaysAgo = Date.now() - HISTORY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
     setRecords(tracker.getRecordsInRange(sevenDaysAgo, Date.now()).slice(-50).reverse());
-    // Get 28 days of records for visualizations
-    const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
-    setVizRecords(tracker.getRecordsInRange(twentyEightDaysAgo, Date.now()));
+    /*
+     * 可视化取数（热力图 28 格 / 柱状图 7 格）：窗口必须与**本地日历日格子**同一处实现 ——
+     * 否则「D 天前的本地 00:00」可能落在取数窗口之外（DST 跳变日差 1 小时）⇒ 取最旧那一格的起点。
+     */
+    const vizFrom = localDayWindows(VIZ_DAYS, Date.now())[0]?.start ?? Date.now();
+    setVizRecords(tracker.getRecordsInRange(vizFrom, Date.now()));
   };
 
   // 缓存命中聚合（近 7 天 50 条内 provider 上报了 cache 的调用；未上报不显示）
@@ -198,7 +212,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                 <Activity size={14} />
                 <span>Token 活跃度（近 28 天）</span>
               </div>
-              <TokenActivityGrid records={vizRecords} days={28} />
+              <TokenActivityGrid records={vizRecords} days={VIZ_DAYS} />
             </div>
 
             {/* Daily Usage Chart */}

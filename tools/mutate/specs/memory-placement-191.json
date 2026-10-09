@@ -1,0 +1,70 @@
+{
+  "description": "第 191 波 O-49 / O-50：附录落点（不许顶掉稳定前缀）、每轮固定开销棘轮、空记忆只留哨兵",
+  "mutations": [
+    {
+      "id": "MUT-1 附录改成塞进稳定侧（哨兵之前）",
+      "why": "MEM-PLACE-25a/25c：附录一变就把差异点推到哨兵之前 ⇒ 整段稳定前缀被顶掉（这正是 O-49 要挡的形态，反向对照会把两种落点的差距量出来）",
+      "patches": [
+        {
+          "file": "src/core/prompt/prompt.ts",
+          "from": "  return extraSystemPrompt ? `${systemPrompt}\\n${extraSystemPrompt}` : systemPrompt;",
+          "to": "  return extraSystemPrompt\n    ? systemPrompt.replace(SYSTEM_PROMPT_CACHE_BOUNDARY, `${extraSystemPrompt}\\n${SYSTEM_PROMPT_CACHE_BOUNDARY}`)\n    : systemPrompt;"
+        }
+      ],
+      "tests": ["src/test/memory-placement-overhead.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 agentic-loop 绕开唯一实现（内联拼附录）",
+      "why": "MEM-PLACE-25d：落点是判据对象，内联第二份拼接必须被判据抓红",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      const effectiveSystemPrompt = appendVolatileAppendix(systemPrompt, extraSystemPrompt);",
+          "to": "      const effectiveSystemPrompt = extraSystemPrompt ? `${systemPrompt}\\n${extraSystemPrompt}` : systemPrompt;"
+        }
+      ],
+      "tests": ["src/test/memory-placement-overhead.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 把稳定块抬头写长（棘轮必须变红）",
+      "why": "MEM-PLACE-26：固定开销只许降不许升 —— 文案被加长时必须有东西变红（O-50 的正面要求）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "export const MEMORY_STABLE_HEADER = \"# Memory System — 稳定记忆（平台级 · 手动维护）\";",
+          "to": "export const MEMORY_STABLE_HEADER = \"# Memory System — 稳定记忆（平台级 · 手动维护 · 这一句是变异自证多加的文案）\";"
+        }
+      ],
+      "tests": ["src/test/memory-placement-overhead.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 空记忆也硬塞一个段（哨兵之外多出字节）",
+      "why": "MEM-PLACE-27：空记忆时除哨兵外不许再有任何字节（无条件 push 一个空段就会多出分隔符）",
+      "patches": [
+        {
+          "file": "src/core/prompt/prompt.ts",
+          "from": "  if (config.memoryTailInstructions) {\n    sections.push(config.memoryTailInstructions);\n  }",
+          "to": "  if (true) {\n    sections.push(config.memoryTailInstructions ?? \"\");\n  }"
+        }
+      ],
+      "tests": ["src/test/memory-placement-overhead.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 反向对照：只改文档注释（不动行为）",
+      "why": "反向对照：行为不变时判据不许红（否则这道闸门是永远红，没人会看它）",
+      "patches": [
+        {
+          "file": "src/core/prompt/prompt.ts",
+          "from": "export function appendVolatileAppendix(systemPrompt: string, extraSystemPrompt?: string): string {",
+          "to": "// 反向对照：这里只加一行注释，行为逐字不变\nexport function appendVolatileAppendix(systemPrompt: string, extraSystemPrompt?: string): string {"
+        }
+      ],
+      "tests": ["src/test/memory-placement-overhead.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

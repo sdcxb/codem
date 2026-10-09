@@ -18,6 +18,9 @@
  * - 你**正在看的那个会话**会被持续标记为已读 ⇒ 未读恒为 0（符合直觉，也不用特殊判断）；
  * - ★ **第 187 波**：反过来也要能标 —— 一条 App 级消息写进**归属会话**而用户已经切走时，
  *   由 `markSessionUnread` 把水位退一格（见该函数的说明），否则那条消息就"静默丢"了。
+ * - ★ **第 191 波（GAP-LIST `O-42`）**：写消息与**标未读**的顺序反过来（先写、再标），
+ *   且写路径让会话计数在**同一个同步段**里可见 ⇒ 标未读走**精确分支**（水位不动、未读恰好 1）；
+ *   只有"计数不可见"的调用点才走"宁可多显示 1 条"的兜底（见 `markSessionUnread` 的长注释）。
  *
  * ## 为什么存 settings 而不是加一列
  *
@@ -108,29 +111,57 @@ export function markSessionRead(sessionId: string, messageCount: number): void {
  *   那正是"已经有 ≥1 条未读"的状态，不需要再动。这一条同时挡住了
  *   "一轮里每条工具消息都调一次 ⇒ 水位被一路踩低 / 写风暴"。
  *
- * ## ⚠️ 如实记账：代价是可能多显示 1 条（有界、自愈）
+ * ## ⚠️ 如实记账：`-1` 是**兜底分支**，不是无条件偏移（GAP-LIST `O-42`）
  *
- * **为什么不用 `known`（±0）**：`message_count` 由**引擎侧**在 `messages.upsert_index` 里维护
- * （`repo.rs::bump_session_message_count`），而渲染侧镜像读到它隔着一次 IPC ——
- * 也就是说"这一条消息的计数**到底落地了没有**"在这里**看不出来**。
- * 若把水位留成刚好等于 `known`（= 计数），"未读"就完全押在那次异步 bump 上：
- * bump 一旦晚于侧栏那 5 秒轮询的读取，徽标就**一条都不显示** —— 那正是这个函数要治的病（静默丢）。
- * `known - 1` 把这件事变成**代码保证**：哪怕计数还没涨，这条消息也至少算 1 条未读。
- * 代价是计数随后涨上来时徽标可能显示"2 条"而实际 1 条（多 1）；用户点开该会话时
- * `ChatPanel` 的 `markSessionRead`（取 `max(...)`）会把它推回真值 ⇒ **自愈**。
- * 这是刻意的取舍：**"宁可多显示 1 条，也不能一条都不显示"**。
+ * **为什么曾经必须踩一格**：`message_count` 由**引擎侧**在 `messages.upsert_index` 里维护
+ * （`repo.rs::bump_session_message_count`，引擎是唯一写入者），而渲染侧镜像读到它隔着一次 IPC。
+ * 更硬的一条是**调用点的顺序**：`App.tsx::safeAddMessage` 里原来先 `deliverOwnedMessage(...)`
+ * （= 标未读）再 `persistLoopMessages()`（= 写消息）—— 标的那一刻 `known` **必然是旧值**。
+ * 若那时什么都不做（把水位留成 `known`），徽标就**一条都不显示** —— 那正是这个函数要治的病。
  *
- * **什么时候该把它改回 `known`**：当 `message_count` 在渲染侧变成**同步可见**时 ——
- * 即"写消息 → 读计数"发生在同一个同步段里（Rust 侧 bump 随 `applyMessageWrite` 一起回传，
- * 或镜像改由写路径自己维护这一列）。那时 `known` 就是写入后的真值，`- 1` 反而会凭空多一条，
- * 这一行应去掉（同时 `src/test/loop-owned-message.test.ts` 的 XSESS-2 / XSESS-3b
- * 要按"写入后真值"的口径调整）。
+ * **第 191 波（`O-42`）之后**：写路径让**读模型在写入返回时就反映新计数**
+ * （`message.ts` 的 `messageCountAdjustment`：本进程首次写入的消息 ⇒ 该会话计数 +1；
+ * 引擎回传权威计数（`session_message_count`）后归零对账），而标未读被挪到**写消息之后**。
+ * 于是 `known` 就是**写入后的真值**：水位**一格都不用踩**（`known > prev` 那一支本来就
+ * 什么都不做），未读**恰好 1** —— `O-42` 记的那个"多显示 1 条"的偏差就此消失。
+ *
+ * **但仍然保留兜底分支**（`countVisible: false`）：只要还有"先标未读、后写消息"
+ * 或"端口不带权威计数"的形态，踩一格就是**不静默丢**的唯一保证。代价（计数随后涨上来时
+ * 多显示 1 条）仍然有界、且 `ChatPanel` 的 `markSessionRead`（取 `max(...)`）会自愈。
+ *
+ * **判据（把注释里那句"什么时候该改回去"变成机器条件）**：
+ * `src/test/session-unread-count-visibility.test.ts` 的
+ * `UNREAD-V1`（同步可见 ⇒ 水位不许动、未读恰好 1）与
+ * `UNREAD-V2` / `UNREAD-V2b`（不可见 ⇒ 恰好踩一格、计数涨上来后恰好 1）互为反向对照。
+ * 变异自证：`tools/mutate/specs/unread-191.mjs`。
+ *
+ * ## ⚠️ 如实记账：`countVisible` 这个入参**今天在两种真实形态下不可观察**
+ *
+ * 这是写这一波变异时**量出来的**（不是推测）：三支的入口只由 `known` 与 `prev` 决定，
+ * 而"写后计数可见"的形态**必然**是 `known > prev`（写路径 +1 了），于是它在上面的守卫里
+ * 就返回了，根本走不到 `countVisible`；`known < prev`（漂移态）也走不到它。
+ * 唯一经过它的 `known === prev` 上，"可见"与"不可见"给出的**可观察结果恰好相同**
+ * （都是"水位不动"）。实测：把调用点的 `Boolean(persist) && persisted` 钉死成 `false`，
+ * `UNREAD-V1/V2/V2b` 全绿 ⇒ 这个分支**没有**对应的变异（写一条恒定绿的变异等于没测）。
+ *
+ * 那为什么还留着它：它是**保守缺省**（判据缺省退到"宁可多显示 1 条"那一侧），
+ * 并且把"调用方必须如实说明自己读的是不是写入后的值"这件事写在类型上。
+ * `O-42` 的真实修复落在**顺序**（先写后标）与**同步读模型**上，那两处各有一条能红的变异。
  *
  * @param messageCount 该会话**当前已知**的消息条数（`getSession(id)?.messageCount`）。
  *   读不到（镜像未就绪 / ≤0）时退回用现有水位当基准，仍然保证"至少 1 条"。
+ * @param countVisible  这个 `messageCount` 是不是**写入之后**读到的（= 同步可见）。
+ *   调用方必须如实传：`loop-owned-message.ts` 在写消息**之后**读计数 ⇒ `true`；
+ *   旧形态（先标未读）或缺这个判据的调用点传 `false` ⇒ 走兜底。**默认 `false`**：
+ *   判据缺省时必须退到"宁可多显示 1 条"那一侧（少显示才是静默丢）。
+ *   ⚠️ 它今天只在 `known === prev` 这一支起作用，而那一支的两种取值结果相同（见上）。
  * @returns 是否真的改动了水位（供调用方与用例区分"标了"与"本来就可见"）
  */
-export function markSessionUnread(sessionId: string, messageCount: number): boolean {
+export function markSessionUnread(
+  sessionId: string,
+  messageCount: number,
+  countVisible = false,
+): boolean {
   if (!sessionId) return false;
   const marks = getReadWatermarks();
   const prev = marks[sessionId];
@@ -140,9 +171,39 @@ export function markSessionUnread(sessionId: string, messageCount: number): bool
    */
   if (prev === undefined) return false;
   const known = Number.isFinite(messageCount) && messageCount > 0 ? messageCount : prev;
-  // 计数已经越过水位 ⇒ 未读 ≥ 1，本来就是可见的
+  /*
+   * **精确分支**：计数已经越过水位（`known > prev`）⇒ 这个函数什么都不用做 ——
+   * 未读 ≥ 1 本来就是**算出来**的，不需要动水位。
+   *
+   * `countVisible` 只影响下面**兜底分支**该不该生效，不影响这一行：
+   * `known > prev` 在任何时序下都已经是"有 ≥1 条未读"的事实。
+   */
   if (known > prev) return false;
-  const target = Math.max(0, Math.min(known, prev) - 1);
+  /*
+   * `known === prev` 有**两种含义相反**的形态（这正是本函数唯一需要判断的地方）：
+   *
+   * - `countVisible`：计数与水位相等是**写入后的真值**（你刚看完全部、此刻没有新消息）
+   *   ⇒ 水位**一格都不许动**（动了就会在计数涨上来后凭空多一条）；
+   * - `!countVisible`：`known` 是**写入之前**的旧值 ⇒ 水位必须踩一格，
+   *   否则"刚写进去的那条"在计数涨上来之前**一条都不显示**。
+   */
+  if (countVisible) return false;
+  /*
+   * ## ⚠️ 兜底分支的基准**只取 `known`**（GAP-LIST `O-42` 的第二半）
+   *
+   * 第 187 波写的是 `Math.min(known, prev) - 1`。在这一支里 `known` **必然 ≤ `prev`**
+   * （上面那行守卫已经把 `known > prev` 送走了），所以两者在**正常态**下等价
+   * —— 这正是它一直没被发现的原因。但在**漂移态**（水位被 `ChatPanel` 的
+   * `Math.max(fresh, currentSession, messages.length)` 推高过，`prev > known`）两者分道扬镳：
+   *
+   * - `min(...)`：取 `prev` ⇒ 水位从 5 踩到 4，而真实条数（读模型给的 `known`）是 3
+   *   ⇒ 未读 = 3 − 4 = **0** —— 那条刚写的消息**一条都不显示**（兜底失效 = 静默丢）；
+   * - 只取 `known`：水位从 5 踩到 2 ⇒ 未读 = 3 − 2 = 1 —— 兜底的真意（"至少 1 条"）成立。
+   *
+   * 也就是说：`min` 把"恰好踩一格"变成了"相对水位踩一格"，而那**不保证**任何东西。
+   * 判据：`loop-owned-message.test.ts` 的 XSESS-3b 第三段（漂移态必须落在 `known - 1`）。
+   */
+  const target = Math.max(0, known - 1);
   if (prev <= target) return false; // 只降不升 + 幂等（已经更低就不写，避免写风暴）
   marks[sessionId] = target;
   return writeWatermarks(marks);

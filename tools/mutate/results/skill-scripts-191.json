@@ -1,0 +1,58 @@
+{
+  "wave": "skill-scripts-191",
+  "description": "第 191 波：技能脚本的退出必须走 fail()/exitAfterFlush()（硬 process.exit 在 Windows 上会偶发撞 libuv 断言，退出码变成 0xC0000409）",
+  "runAt": "2026-10-09T01:22:49.295Z",
+  "specFingerprint": "269ea29a5c069953c7aa71d9c0bcb0d24072d3a7",
+  "files": [
+    "src/core/skills/skill-creator/scripts/is-main.ts"
+  ],
+  "tests": [
+    "src/test/skill-creator-scripts.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 fail()/exitAfterFlush() 退回硬 process.exit（把整簇一起放回竞态）",
+      "why": "CLI-1（每个脚本跑 3 次）：硬退时 console.error 的待写输出与进程退出抢同一个 handle ⇒ 偶发 `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` 与退出码 0xC0000409。两处一起改回，5 个脚本 15 次 bare 运行里必然命中（实测：单脚本 3 次里崩 2 次）",
+      "patches": [
+        {
+          "file": "src/core/skills/skill-creator/scripts/is-main.ts",
+          "from": "export function fail(message: string): void {\n  console.error(message);\n  process.exitCode = 1;\n}",
+          "to": "export function fail(message: string): void {\n  console.error(message);\n  process.exit(1);\n}"
+        },
+        {
+          "file": "src/core/skills/skill-creator/scripts/is-main.ts",
+          "from": "export async function exitAfterFlush(code: number): Promise<never> {\n  const flush = (s: NodeJS.WriteStream): Promise<void> =>\n    new Promise((resolve) => (s.writableLength === 0 ? resolve() : s.write(\"\", () => resolve())));\n  await Promise.all([flush(process.stdout), flush(process.stderr)]);\n  process.exit(code);\n  throw new Error(\"unreachable\"); // process.exit 不返回；这行只为类型上的 never\n}",
+          "to": "export async function exitAfterFlush(code: number): Promise<never> {\n  process.exit(code);\n  throw new Error(\"unreachable\");\n}"
+        }
+      ],
+      "tests": [
+        "src/test/skill-creator-scripts.test.ts"
+      ],
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 6379
+    },
+    {
+      "id": "MUT-2 反向对照：只改一处说明注释",
+      "why": "反向对照：行为不变时判据不许红",
+      "patches": [
+        {
+          "file": "src/core/skills/skill-creator/scripts/is-main.ts",
+          "from": "export function isMainModule(metaUrl: string, argv1: string | undefined = process.argv[1]): boolean {",
+          "to": "// 反向对照：只加一行注释\nexport function isMainModule(metaUrl: string, argv1: string | undefined = process.argv[1]): boolean {"
+        }
+      ],
+      "tests": [
+        "src/test/skill-creator-scripts.test.ts"
+      ],
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 6273
+    }
+  ]
+}

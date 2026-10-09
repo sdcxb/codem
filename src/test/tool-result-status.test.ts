@@ -10,6 +10,8 @@
  */
 
 import { describe, it, expect } from "vitest";
+// 第 191 波：TRS-4 搬到 tool-result-type-shape.test.ts，这里只留一个"搬走了"的可执行指针
+import { readFileSync } from "node:fs";
 import { classifyToolResult } from "../core/llm/tool-result-status";
 import { ToolRegistry } from "../core/llm/tools";
 import type { ToolDef, ToolContext } from "../core/llm/tools";
@@ -234,18 +236,21 @@ describe("执行器：工具自报失败 ≠ 执行层异常", () => {
       expect(classifyToolResult("bash", "ok", undefined).status).toBe("completed");
     });
 
-    it("TRS-4: `ToolExecuteResult.isError` 必须**必填** —— 退回可选会让静默缺口重新长出来", async () => {
-      const fs = await import("node:fs");
-      const text = fs.readFileSync("src/core/llm/tools.ts", "utf8");
-      expect(
-        /^  isError: boolean;/m.test(text),
-        "字段必须是必填（`isError: boolean`）。退回 `isError?:` 会让「内容型工具真失败却被判成功」" +
-          "这个静默缺口重新出现 —— 那正是第 182 波花 187 处逐条判定修掉的东西。",
-      ).toBe(true);
-      expect(
-        /isError\?:\s*boolean/.test(text),
-        "不许同时留下可选版本（否则必填形同虚设）",
-      ).toBe(false);
+    it("TRS-4 已搬走: `ToolExecuteResult.isError` 必填的形状判据在 `tool-result-type-shape.test.ts`", () => {
+      /*
+       * ⚠️ 第 191 波搬家（理由见 `tool-result-type-shape.test.ts` 的文件头）：
+       * 那条判据**读 `src/core/llm/tools.ts` 的源码**，而 `tools.ts` 正是
+       * repo-01 / repo-02 两个评测任务的 `revertPaths` —— 而本文件被登记成它们的
+       * `relatedTests`（bug 状态下必须全绿）⇒ 源码形状断言与被回退的文件天然矛盾，
+       * 实测 `node tools/eval/run-repo-arm.mjs --verify-bug-tests` 报
+       * 「回归子集在 bug 状态下就是红的」。
+       *
+       * 这里保留一个**可执行的指针**（不是注释）：搬走的文件必须真的存在，
+       * 否则这条留在原地的"已搬走"会变成一句无据可查的话。
+       */
+      const text = readFileSync("src/test/tool-result-type-shape.test.ts", "utf8");
+      expect(text, "搬走后的形状判据文件必须存在").toContain("isError");
+      expect(text, "并且必须真的在断言 tools.ts 的形状").toContain("src/core/llm/tools.ts");
     });
   });
 });

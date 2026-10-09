@@ -16,6 +16,8 @@
  */
 import * as ProjectStorage from "../storage/project";
 import * as SessionStorage from "../storage/session";
+// 第 191 波：「会话 → 项目根路径」走唯一实现（本文件原来自己反查了一遍）
+import { sessionProjectPath } from "../storage/session-project";
 import * as MessageStorage from "../storage/message";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { useProjectStore } from "../store";
@@ -334,10 +336,14 @@ function defaultWorkspacePath(): Promise<string> {
 async function cwdForSession(sessionId: string): Promise<string> {
   const row = SessionStorage.getSession(sessionId);
   if (!row) return "";
+  /*
+   * ⚠️ 顺序是刻意的：这里回答的是「这个会话该在**哪个目录**跑」——
+   * worktree 会话就该在 worktree 里跑，所以 `worktreePath` 优先。
+   * （「这个会话属于**哪个项目**」是另一个问题，唯一实现是 `sessionProjectPath`，
+   * 第 191 波把"按登记表取项目根"这半并到了那里，避免同一事实两处反查。）
+   */
   if (row.worktreePath) return row.worktreePath;
-  const proj = ProjectStorage.getProject(row.projectId);
-  if (proj?.path) return proj.path;
-  return defaultWorkspacePath();
+  return sessionProjectPath(sessionId) ?? defaultWorkspacePath();
 }
 
 /**
@@ -392,7 +398,8 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
   }
   SessionStorage.updateSession(sessionId, {
     lastMessageAt: Date.now(),
-    messageCount: (row.messageCount || 0) + 1,
+    // ⚠️ 第 191 波：不许写 `messageCount`（引擎在 messages.upsert_index 里 bump 那一列；
+    // 渲染侧再写一次就是第二个写入者，会让这个会话长期多算 1 条。见 App.tsx 同款说明）
   });
   // 阶段 2：回合开始就推一条 —— 手机上的"进行中"状态条立刻出现，
   // 不用等下一次轮询（跨网络下那一等就是好几秒）。
@@ -736,7 +743,12 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
         return;
       }
       const projectId = row.projectId || useProjectStore.getState().currentProject?.id || "";
-      const projectPath = (projectId ? ProjectStorage.getProject?.(projectId)?.path : "") || "";
+      /*
+       * 第 191 波：项目根路径走唯一实现（原来这里自己反查了一遍 `getProject(...).path`）。
+       * 语义与旧写法一致：会话有登记项目 ⇒ 用它的项目根；会话**没有**项目 ⇒ 才回落到当前项目。
+       */
+      const projectPath =
+        sessionProjectPath(sessionId) || (row.projectId ? "" : useProjectStore.getState().currentProject?.path || "");
 
       const applied: Record<string, unknown> = {};
       // ---- 模型 ----
