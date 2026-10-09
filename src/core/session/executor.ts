@@ -22,7 +22,8 @@ import * as SessionStorage from "../storage/session";
 // 第 191 波：会话 → 项目根路径走**唯一实现**（安全模式的项目级覆盖按项目根路径存键）
 import { sessionProjectPath } from "../storage/session-project";
 /* 第 193 轮：前缀常量与回填判据共用一处定义（两处各写一遍，改的时候必漏一处） */
-import { DELEGATED_TASK_PREFIX } from "../storage/session";
+/* 第 194 波（O-56）：委派注入消息的 id 也走同一处定义（可辨认性 + 同 id 覆盖） */
+import { DELEGATED_TASK_PREFIX, delegatedMessageId } from "../storage/session";
 import { getSessionMessageBus } from "./bus";
 import { idleWatchdog } from "./idle-watchdog";
 import { recordLoopStop } from "../llm/loop-stop-log";
@@ -448,7 +449,15 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
   try {
     // 保存用户消息到 DB（委派任务作为 user message 注入目标会话）
-    const userMsgId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    /**
+     * ⚠️ 委派注入的 id 由**委派任务 id** 决定（第 194 波，GAP-LIST O-56）：
+     *   · 同一条委派再注入一次是**同 id 覆盖**，不会再往对话末尾追加一条一模一样的记录；
+     *   · 界面据此把它渲染成「委派任务」记录，而不是用户自己的气泡。
+     * 普通（人打的）消息仍用「时间戳 + 随机」的形态，两者一眼可分。
+     */
+    const userMsgId = delegationTaskId
+      ? delegatedMessageId(delegationTaskId)
+      : `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const prefix = delegationTaskId ? DELEGATED_TASK_PREFIX : "";
     // 第 63 波（审计补）：给"接收方"一句兜底约束。
     // 交接正文再规范，也可能漏东西；漏了的时候模型的本能是"把整个盘扫一遍找找看" ——

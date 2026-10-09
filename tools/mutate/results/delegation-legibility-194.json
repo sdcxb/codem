@@ -1,0 +1,138 @@
+{
+  "wave": "delegation-legibility-194",
+  "description": "第 194 波（GAP-LIST O-56）：委派注入的**可辨认性**（id 前缀 + 界面认它）与**同 id 覆盖**，以及新会话**标题去重**。真机现场：交接会话里第二条委派注入后，最新一条显示成交接记录，与用户自己的消息无法分辨。",
+  "runAt": "2026-10-09T10:22:22.745Z",
+  "specFingerprint": "36de801369f3a437bda06917510c11fc9f48e90d",
+  "files": [
+    "src/core/storage/session.ts",
+    "src/core/session/executor.ts",
+    "src/components/MessageBubble.tsx",
+    "src/core/store.ts"
+  ],
+  "tests": [
+    "src/test/delegation-injection-legibility.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 判定恒真（把用户自己打的也认成委派记录）",
+      "why": "DELEG-LEG-2：反向对照 —— 恒真之后 undefined/数字/普通 id 全被判成委派记录 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/storage/session.ts",
+          "from": "  return typeof m?.id === \"string\" && m.id.startsWith(DELEGATED_MESSAGE_ID_PREFIX);",
+          "to": "  void m;\n  return true;"
+        }
+      ],
+      "tests": [
+        "src/test/delegation-injection-legibility.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2704
+    },
+    {
+      "id": "MUT-2 判定恒假（界面看不见委派记录 = 回到 O-56 的现场）",
+      "why": "DELEG-LEG-1：注入的消息又变成看不出身份 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/storage/session.ts",
+          "from": "  return typeof m?.id === \"string\" && m.id.startsWith(DELEGATED_MESSAGE_ID_PREFIX);",
+          "to": "  void m;\n  return false;"
+        }
+      ],
+      "tests": [
+        "src/test/delegation-injection-legibility.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2945
+    },
+    {
+      "id": "MUT-3 注入点退回「随机 id」（同一条委派会再追加一条一模一样记录）",
+      "why": "DELEG-LEG-4：这正是真机上「交接记录又多一条、排到对话末尾」的成因 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/session/executor.ts",
+          "from": "    const userMsgId = delegationTaskId\n      ? delegatedMessageId(delegationTaskId)\n      : `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;",
+          "to": "    const userMsgId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;\n    void delegatedMessageId;"
+        }
+      ],
+      "tests": [
+        "src/test/delegation-injection-legibility.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2782
+    },
+    {
+      "id": "MUT-4 界面不再标注身份（去掉 data-message-kind）",
+      "why": "DELEG-LEG-3：判据与样式都靠这个标识分辨「委派记录 / 用户消息」⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/components/MessageBubble.tsx",
+          "from": "      data-message-kind={delegatedTask ? \"delegated-task\" : isUser ? \"user\" : isSystem ? \"system\" : \"assistant\"}",
+          "to": ""
+        }
+      ],
+      "tests": [
+        "src/test/delegation-injection-legibility.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2744
+    },
+    {
+      "id": "MUT-5 标题去重失效（又出现一堆同名「交接会话」）",
+      "why": "DELEG-TITLE-2：同名会话无法分辨正是用户原始困惑的一半 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/store.ts",
+          "from": "      title: finalTitle,",
+          "to": "      title: baseTitle,"
+        }
+      ],
+      "tests": [
+        "src/test/delegation-injection-legibility.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2858
+    },
+    {
+      "id": "MUT-6 反向对照：createSession 里多一行日志（没有判据管它）",
+      "why": "反向对照：往实现里加一行**真实但无人断言**的行为，本波判据一条都不该因此变红",
+      "patches": [
+        {
+          "file": "src/core/store.ts",
+          "from": "    console.log(`[createSession] Creating new session: ${newId}, project: ${projectId}`);",
+          "to": "    console.log(`[createSession] Creating new session: ${newId}, project: ${projectId}`);\n    console.log(`[createSession] title will be resolved after dedup`);"
+        }
+      ],
+      "tests": [
+        "src/test/delegation-injection-legibility.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 2913
+    }
+  ]
+}

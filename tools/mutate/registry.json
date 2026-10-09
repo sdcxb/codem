@@ -1,6 +1,7 @@
 {
   "_how_to_triage": "本文件登记「必须留下变异证据」的波次（O-53 / MUTATE-ARTIFACT-1）。每登记一个波次，就必须有 tools/mutate/specs/<wave>.{json,mjs} 与 tools/mutate/results/<wave>.json，且结果里 restored===true、每条变异 ok===true、锚点未过期。新增判据而没登记波次 = 没留下变异证据。",
   "_waves": {
+    "delegation-legibility-194": "O-56 委派注入的可辨认性与幂等：注入消息的 id 由委派任务 id 决定（同 id 覆盖，不再追加第二条）+ 界面渲染成「委派任务」记录 + 新会话标题去重",
     "memory-budget-191": "O-36 记忆 payload 字节预算 / O-37 order 补齐落库 / O-47 迁移被拒后的内存回滚",
     "memory-checkup-191": "O-44 记忆体检页签把当前项目 + 当前对话传进视图（行为判据）",
     "contrast-191": "O-39 相对亮度阈值收敛到单一来源（WCAG 勘误后的取值）",

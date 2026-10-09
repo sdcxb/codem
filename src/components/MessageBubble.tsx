@@ -11,6 +11,8 @@ import { splitGraphemes } from "../core/llm/stream-reveal";
 import { InlineMessageEdit } from "./InlineMessageEdit";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { getSubagentRuntime } from "../core/subagent/index";
+/* 第 194 波（O-56）：委派注入消息的**唯一判定**（id 前缀，定义在 storage/session.ts） */
+import { isDelegatedTaskMessage } from "../core/storage/session";
 import { SlotBridge } from "../core/slots/SlotBridge";
 import { SourceReferences } from "./SourceReferences";
 // 第 191 波：字节数的人读形态走**唯一**实现（本文件原来自己抄了一份 `formatSize`）
@@ -348,6 +350,11 @@ const [galleryIndex, setGalleryIndex] = useState(0);
 
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+  /**
+   * 别的会话委派进来的任务记录（第 194 波，GAP-LIST O-56）。
+   * 判据取 **id 前缀**（唯一写入点 `session/executor.ts`；见 `storage/session.ts` 的长注释）。
+   */
+  const delegatedTask = isDelegatedTaskMessage(message);
   const isError = message.status === "error";
 
   // For user messages: strip <attachment> blocks from displayed content.
@@ -553,11 +560,28 @@ setTimeout(() => setCopied(false), 2000);
 
   return (
     <div 
-      className={`message message-bubble ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}
+      className={`message message-bubble ${isUser ? "user" : isSystem ? "system" : "assistant"} ${delegatedTask ? "delegated-task" : ""} ${displayMode === "unified" ? "unified-mode" : ""}`}
       data-message-id={message.id}
+      data-message-kind={delegatedTask ? "delegated-task" : isUser ? "user" : isSystem ? "system" : "assistant"}
     >
-      {isUser && <UserAvatar />}
+      {isUser && !delegatedTask && <UserAvatar />}
       <div className="message-body">
+        {/*
+          ## 委派任务记录：**不能长得像用户自己说的话**（第 194 波，GAP-LIST O-56）
+          
+          真机现场：别的会话委派进来的任务（正文是一份完整交接），在界面上就是一条**普通用户气泡** ——
+          用户看到"最新一条是交接记录、我后面聊的变成历史"时，无法判断这是**别人派进来的任务**
+          还是**自己刚说的话**。这里给它一条明确的抬头 + 独立的类名（`delegated-task`），
+          正文照旧渲染（它确实是给这一轮用的指令），只是**身份**不再含糊。
+        */}
+        {delegatedTask && (
+          <div className="delegated-task-header">
+            {/* 不加图标：`ICON-1` 棘轮钉住"TSX 里的字面图标尺寸只许降"，这处没有既有尺寸常量可复用 */}
+            <span className="delegated-task-label">
+              {lang === "zh" ? "委派任务（来自其它会话）" : "Delegated task (from another session)"}
+            </span>
+          </div>
+        )}
         {/* AI message inline header — replaces avatar (aligned with wecode/frakio) */}
         {!isUser && !isSystem && (
           <div className="ai-msg-header">

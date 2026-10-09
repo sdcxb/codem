@@ -272,6 +272,44 @@ export function isChildSession(s: Pick<Session, "isInternal" | "id" | "title">):
 export const DELEGATED_TASK_PREFIX = "[DELEGATED TASK] ";
 
 /**
+ * 委派注入消息的 **id 前缀**（第 194 波，GAP-LIST **O-56**）。
+ *
+ * ## 为什么把"来源"落在 **id** 上（而不是新加一列）
+ *
+ * O-56 的真机现场：用户在一个会话里聊了几十条之后，**又有一条委派注入了同一个会话** ——
+ * 注入的正文与最初的交接一模一样，而它在界面上的样子**和用户自己说的话完全一样**
+ * （`[DELEGATED TASK] ` 前缀**没有任何组件认**），于是"最新一条是交接记录、我后面聊的变成历史"。
+ *
+ * 要修的是**可辨认性**，而 id 是**唯一一条已经四处都在**的字段（权威日志 / 查询索引 /
+ * 读路径合并 / 界面）—— 给它加语义不用动表结构、不用改 Rust、不会漏掉某一条读路径；
+ * 这也与既有做法同源：压缩摘要标记就是靠**前缀 + id**认的（见 `compaction-budget.ts`
+ * 的 `COMPACTION_MARKER_PREFIXES` 与它那段"主键生成器"注释）。
+ *
+ * ## 顺带把"同一条委派注入两次"变成**不可能**
+ *
+ * id 由**委派任务 id** 决定 ⇒ 同一条委派再注入一次时 `createMessage` 是**同 id 覆盖**
+ * （不是追加一条新的），于是"交接记录被追加到对话末尾"这条路径**从构造上消失**；
+ * 而**另一次**委派（不同任务 id）仍然会正常注入 —— 那种情况下界面会把它显示成
+ * 「委派任务」记录（见 `MessageBubble`），不再与用户自己的消息混淆。
+ */
+export const DELEGATED_MESSAGE_ID_PREFIX = "delegated-";
+
+/** 委派注入消息的 id（**唯一写入点**：`session/executor.ts` 的注入；判据也用它造夹具） */
+export function delegatedMessageId(taskId: string): string {
+  return `${DELEGATED_MESSAGE_ID_PREFIX}${taskId}`;
+}
+
+/**
+ * 这条消息是不是**别的会话委派进来的任务记录**。
+ *
+ * 参数只要 `id`：它在日志、索引、读路径合并后**都在**（内容前缀会随正文渲染/截断而变，
+ * 而 id 不会）。判据 `DELEG-LEG-1..3` 钉住"注入的消息认得出、用户自己打的认不出"。
+ */
+export function isDelegatedTaskMessage(m: { id?: unknown } | null | undefined): boolean {
+  return typeof m?.id === "string" && m.id.startsWith(DELEGATED_MESSAGE_ID_PREFIX);
+}
+
+/**
  * 这个会话是不是**纯委派任务产物**（可以安全地不进对话目录）。
  *
  * **两条必须同时成立**（理由见 `isChildSession` 的长注释）：

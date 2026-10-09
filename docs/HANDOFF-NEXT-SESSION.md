@@ -4501,7 +4501,26 @@ node .preview-shot/_collect.mjs --apply --treatment .preview-shot/eval-records-c
 **(a)** 该会话被**第二次委派**（源会话在 222% 的大上下文里继续跑，又委派了一次到子会话）⇒ 新 id + 新时间戳，
 正文与交接相同；**(b)** 同一委派被**注入了两次**。
 
-### 下一步（一件事就能定案）
+### 已修（第 194 波）：三条修法全部落地 + 判据 + 变异自证
+
+用户追加确认「那个会话名下**不止一条委派**、每次委派都新建一个同名对话」之后，机制定案并**已修**：
+
+1. **注入消息的 id 由委派任务 id 决定**（`delegatedMessageId()`，定义在 `storage/session.ts`）⇒
+   同一条委派再注入是**同 id 覆盖**，**不可能**再往对话末尾追加第二条一模一样的记录；
+2. **界面认得它**：`MessageBubble` 用同一条判定渲染成「委派任务（来自其它会话）」记录
+   （`delegated-task` 类名 + `data-message-kind`），不再与用户自己的消息混淆；
+3. **`createSession` 标题去重**（同名加 ` · N`）+ **横幅交接按源会话幂等**
+   （已有 pending/running 委派时不再新建会话与委派）—— 针对"一堆同名交接会话"与"重复点击"。
+
+判据 `src/test/delegation-injection-legibility.test.ts` **7 条**（三条反向对照）；变异波次
+`delegation-legibility-194` **6 条**（5 红 + 1 反向对照）。GAP-LIST 的 **O-56 已关闭**，
+完整依据见那一行与 `docs/GAP-LIST.md` 的更正说明。
+
+**还没证的**：那次"第二委派"在**那台机器上**到底是谁发起的（模型在源会话里又委派了一次 /
+同一条被注入两次）—— 现在**已经不会再产生"看不清身份"的后果**，但要彻底闭环仍需上面那条诊断
+（`node .preview-shot/_handoff-diagnose.mjs`）。这一步登记在 O-56 的"关闭它的条件"里。
+
+
 
 ```powershell
 node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑（只读、不启动应用）

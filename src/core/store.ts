@@ -200,9 +200,34 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // 如果内存中 sessions 更长，使用内存长度（防止重复编号）
     const memCount = get().sessions.length;
     if (memCount >= sessionNumber) sessionNumber = memCount + 1;
+    /**
+     * ## 标题去重（第 194 波，GAP-LIST O-56）
+     *
+     * 真机现场：横幅交接**每点一次**就 `createSession("交接会话")` 一次，于是侧栏里出现
+     * 好几个**名字完全一样**的会话 —— 用户看到的后果是"怎么每次委派都新建一个叫交接对话的、
+     * 名字重复了，是不是都委派给同一个了？"（**无法分辨**，而归因错方向）。
+     *
+     * 这里只做一件事：同名就加序号（`交接会话 · 2`）。**不改任何别的语义** ——
+     * 第一个仍用原名（既有判据/习惯不受影响），不同名的一个字都不动。
+     */
+    const baseTitle = title || `对话 ${sessionNumber}`;
+    let finalTitle = baseTitle;
+    try {
+      const taken = new Set<string>([
+        ...get().sessions.filter((s) => (s.projectId || "") === projectId).map((s) => s.title),
+        ...SessionStorage.listSessions(projectId).map((s) => s.title),
+      ]);
+      if (taken.has(baseTitle)) {
+        let n = 2;
+        while (taken.has(`${baseTitle} · ${n}`)) n++;
+        finalTitle = `${baseTitle} · ${n}`;
+      }
+    } catch (e) {
+      console.warn("[createSession] 标题去重失败（沿用原标题）:", e);
+    }
     const session: Session = {
       id: newId, projectId,
-      title: title || `对话 ${sessionNumber}`,
+      title: finalTitle,
       createdAt: Date.now(), lastMessageAt: Date.now(),
       messageCount: 0, attachments: [],
     };

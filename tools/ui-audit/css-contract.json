@@ -3001,6 +3001,19 @@
     "justify-content": "center",
     "width": "24px"
   },
+  "delegated-task-header": {
+    "align-items": "center",
+    "border-left": "var(--space-1) solid var(--accent)",
+    "display": "flex",
+    "gap": "var(--space-3)",
+    "margin-bottom": "var(--space-2)",
+    "padding-left": "var(--space-4)"
+  },
+  "delegated-task-label": {
+    "color": "var(--accent)",
+    "font-size": "var(--fs-sm)",
+    "font-weight": "var(--weight-heavy)"
+  },
   "deliverable-file-chip": {
     "transition": "var(--transition-color), var(--transition-transform), box-shadow var(--duration-fast) var(--ease-out)"
   },

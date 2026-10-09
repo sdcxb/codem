@@ -2550,6 +2550,23 @@ user-select: none;
   content-visibility: auto;
   contain-intrinsic-size: auto 200px;
 }
+/*
+ * 委派任务记录（第 194 波，GAP-LIST O-56）——**必须一眼看出不是自己说的话**。
+ * 与「未读徽标 / 待批准角标」同一族的观感：左侧一条强调色竖线 + 小字抬头。
+ */
+.delegated-task-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: var(--space-1) solid var(--accent);
+}
+.delegated-task-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--accent);
+}
 .message {
   display: flex;
   flex-direction: column;

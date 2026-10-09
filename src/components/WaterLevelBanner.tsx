@@ -247,6 +247,46 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
         return;
       }
 
+      /**
+       * ## 幂等（第 194 波，GAP-LIST O-56）：**同一个源会话不许交出第二份交接**
+       *
+       * 真机现场：交接会话里出现过**不止一条委派**，而每一次委派都会往目标会话里注入一条
+       * 「交接正文」记录 —— 注入的消息在界面上和用户自己说的话长得一样，于是用户看到的是
+       * "最新一条是交接记录、我后面聊的几十条变成历史"。
+       *
+       * 这里拦住最容易复现的那一半：**上一条交接还没跑完时又点一次**（第 191 波之前那个
+       * "以为没点到、反复点"的场景就是这么来的）。已经有活跃委派 ⇒ 不再新建会话、不再委派，
+       * 而是把**已有的那个**指给用户。
+       *
+       * ⚠️ **这一层是"防重复点击"，不是安全闸** ⇒ 读不到活跃委派时按"没有"处理（fail-open：
+       * 照旧交接），而不是把交接挡住。判据用真编排器，替身里没有这个方法时也不许因此变红。
+       */
+      const active = (() => {
+        try {
+          const orch = getDelegationOrchestrator() as unknown as {
+            getAllDelegations?: () => Array<{ id: string; sourceSessionId?: string; status?: string }>;
+          };
+          if (typeof orch.getAllDelegations !== "function") return [];
+          return orch
+            .getAllDelegations()
+            .filter((t) => t.sourceSessionId === sessionId && (t.status === "pending" || t.status === "running"));
+        } catch (e) {
+          console.warn("[WaterLevelBanner] 查活跃委派失败（按「没有」处理，照旧交接）:", e);
+          return [];
+        }
+      })();
+      if (active.length > 0) {
+        setNote({
+          ok: true,
+          text: zh
+            ? `已经有一份交接在进行中（委派 ${active[0].id}）：本次没有新建会话，也没有再委派一次。` +
+              `请等到它结束，或直接打开那个「交接会话」继续。`
+            : `A handover is already in progress (delegation ${active[0].id}): no new session and no second delegation.`,
+        });
+        setDismissedAt(level.ratio);
+        return;
+      }
+
       const target = createSession(zh ? "交接会话" : "Handover session");
       if (!target?.id) throw new Error(zh ? "新建会话失败（没有拿到会话 id）" : "New session was not created");
 
