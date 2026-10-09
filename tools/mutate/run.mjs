@@ -44,8 +44,23 @@ export function specFingerprint(spec) {
     patches: (m.patches ?? []).map((p) => ({ file: p.file, from: p.from, to: p.to })),
     tests: m.tests ?? [],
     expectRed: m.expectRed !== false,
+    /*
+     * 运行面：默认 `vitest`。**只在非默认时进指纹** —— 若无条件加这个键，
+     * 第 191 波那 15 个波次的指纹会全部变掉（旧结果一律作废、必须重跑），
+     * 而那与"变异的形状变了没有"毫无关系。`cargo` 是新面，从它开始就进指纹。
+     */
+    ...(m.runner && m.runner !== "vitest" ? { runner: m.runner } : {}),
   }));
   return createHash("sha1").update(JSON.stringify(shape)).digest("hex");
+}
+
+/** 一个波次的运行面（`vitest` / `cargo`）；混用直接报错，不许悄悄按其中一个跑 */
+export function specRunner(spec) {
+  const runners = [...new Set((spec.mutations ?? []).map((m) => m.runner ?? "vitest"))];
+  if (runners.length > 1) {
+    throw new Error(`同一个波次里不许混两种运行面（${runners.join(" / ")}）：变异与判据必须一一对应`);
+  }
+  return runners[0] ?? "vitest";
 }
 
 /** 所有变异引用的测试文件（去重、保序） */
@@ -130,6 +145,52 @@ function runVitest(tests, extra = []) {
   return { red: (r.status ?? -1) !== 0, status: r.status ?? -1, ms: Date.now() - started };
 }
 
+/**
+ * 跑一次 **cargo** 判据（`runner: "cargo"`，第 192 波给 Rust 侧判据补的入口）。
+ *
+ * ## 为什么必须"点名失败"才算红
+ *
+ * `cargo test` 的退出码非 0 有三种来源：①判据失败；②**编译错误**；③别的用例红了。
+ * ②③都**不是**"这条判据能变红"，把它们算成通过就等于给自己发假证据
+ * （变异把代码改到编译不过 ⇒ 一律"红" ⇒ 每条变异自证都通过 —— 这正是本工具要防的东西）。
+ * 所以这里只认 libtest 打出的 `test <路径> ... FAILED`，且路径里必须含被指定的过滤串；
+ * 退出码非 0 但没有点名失败 ⇒ 记成 `error`（闸门会当问题报出来）。
+ *
+ * ## 为什么每个 filter 单独起一次 cargo
+ *
+ * libtest 只接受**一个**位置过滤串（`cargo test -- a b` 会被它当非法选项拒掉），
+ * 所以 `tests` 数组在这里是"逐个跑，任一点名失败即红"。
+ */
+function runCargo(filters, logName) {
+  const started = Date.now();
+  const logFile = path.join(ROOT, ".preview-shot", `mutate-cargo-${logName}.log`);
+  mkdirSync(path.dirname(logFile), { recursive: true });
+  const outcomes = [];
+  for (const f of filters) {
+    const r = spawnSync(
+      `cargo test --lib --manifest-path src-tauri/Cargo.toml -- ${f} > "${logFile}" 2>&1`,
+      { cwd: ROOT, shell: true, stdio: "inherit" },
+    );
+    const status = r.status ?? -1;
+    const text = existsSync(logFile) ? readFileSync(logFile, "utf8") : "";
+    // 先把输出打出来（不然变异失败时看不到原因）；只打尾部，避免刷屏
+    console.log(text.split("\n").slice(-25).join("\n"));
+    if (/error\[E\d+\]|error: could not compile/.test(text)) {
+      return { red: false, error: `cargo 编译失败（这不是「判据变红」）：\n${text.slice(-1500)}` };
+    }
+    const failed = [...text.matchAll(/^test (\S+) \.\.\. FAILED/gm)].map((m) => m[1]);
+    const named = failed.some((name) => name.includes(f));
+    if (status !== 0 && !named) {
+      return {
+        red: false,
+        error: `cargo 退出码非 0，但没有名为「${f}」的判据失败（可能是别的用例红了）⇒ 这次不能算「判据变红」：\n${text.slice(-1500)}`,
+      };
+    }
+    outcomes.push(named);
+  }
+  return { red: outcomes.some(Boolean), status: outcomes.some(Boolean) ? 1 : 0, ms: Date.now() - started };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--list") || argv.length === 0) {
@@ -153,6 +214,8 @@ async function main() {
 
   const files = specFiles(spec);
   const snapshot = new Map(files.map((f) => [f, readUtf8(f)]));
+  const runner = specRunner(spec);
+  const useCargo = runner === "cargo";
 
   const results = [];
   for (const mut of spec.mutations) {
@@ -163,6 +226,7 @@ async function main() {
       why: mut.why ?? "",
       patches: (mut.patches ?? []).map((p) => ({ file: p.file, from: p.from, to: p.to })),
       tests: mut.tests ?? [],
+      runner,
       expectedRed: expectRed,
       observedRed: null,
       ok: false,
@@ -171,13 +235,19 @@ async function main() {
       for (const p of mut.patches ?? []) {
         writeUtf8(p.file, patchText(readUtf8(p.file), p.from, p.to));
       }
-      const run = runVitest(mut.tests ?? []);
-      entry.observedRed = run.red;
-      entry.exitCode = run.status;
+      const run = useCargo ? runCargo(mut.tests ?? [], `${wave}-${results.length}`) : runVitest(mut.tests ?? []);
+      entry.exitCode = run.status ?? -1;
       entry.ms = run.ms;
-      entry.ok = run.red === expectRed;
+      if (run.error) {
+        // 运行面自己出的问题（编译不过 / 点名之外的失败）**不许**算成"判据变红"
+        entry.error = run.error;
+        entry.ok = false;
+      } else {
+        entry.observedRed = run.red;
+        entry.ok = run.red === expectRed;
+      }
       console.log(
-        `\n=== ${mut.id} :: 期望${expectRed ? "红" : "绿"} / 实测${run.red ? "红" : "绿"} ⇒ ${entry.ok ? "变异自证通过" : "变异自证失败"} ===\n`,
+        `\n=== ${mut.id} :: 期望${expectRed ? "红" : "绿"} / 实测${entry.observedRed === null ? "（运行面报错）" : entry.observedRed ? "红" : "绿"} ⇒ ${entry.ok ? "变异自证通过" : "变异自证失败"} ===\n`,
       );
     } catch (e) {
       entry.error = String(e);
@@ -190,7 +260,16 @@ async function main() {
 
   // 还原之后：规格覆盖到的全部判据必须恢复绿色（否则「变异自证」证明的是别的坏）
   const allTests = specTests(spec);
-  const restore = allTests.length ? runVitest(allTests) : { red: false };
+  let restore;
+  if (allTests.length === 0) {
+    restore = { red: false };
+  } else if (useCargo) {
+    const r = runCargo(allTests, `${wave}-restore`);
+    // 还原后**恰好相反**：判据全绿才算还原成功（点名失败 ⇒ 没还原干净）
+    restore = { red: r.red || Boolean(r.error) };
+  } else {
+    restore = runVitest(allTests);
+  }
   const restored = files.every((f) => readUtf8(f) === snapshot.get(f)) && !restore.red;
 
   const out = {
@@ -210,7 +289,7 @@ async function main() {
   console.log("\n================ 变异自证汇总 ================");
   for (const r of results) {
     console.log(
-      `${r.ok ? "✅" : "❌"} ${r.id} —— 期望红=${r.expectedRed} 实测红=${r.observedRed}${r.error ? ` (${r.error})` : ""}`,
+      `${r.ok ? "✅" : "❌"} ${r.id} —— 期望红=${r.expectedRed} 实测红=${r.observedRed}${r.error ? ` (${r.error.slice(0, 200)})` : ""}`,
     );
   }
   console.log(`还原后判据全绿：${restored ? "是" : "否"}`);

@@ -14069,6 +14069,47 @@ html.pet-window-mode body,
   flex-shrink: 0;
 }
 
+/* ========== S4 / O-45: 外壳级「待批准记忆」角标 ========== */
+/*
+ * 形态照抄紧邻上面的 `.session-unread-badge`（底色 --error、胶囊、粗字重）：
+ * 两者表达的是同一类状态「有事在等你处理」，长得一样用户才不用重新学。
+ * 改配色时要连同那一条一起看。
+ *
+ * 字重走 `--weight-heavy`（700，与 `--weight-*` 阶梯一致），不写裸数字。
+ */
+.memory-pending-badge {
+  background: var(--error);
+  color: var(--text-on-status);
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-heavy);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 折叠态导轨：按钮本来没有 position ⇒ 加一个类来定位（不改内联样式） */
+.sidebar-rail-btn.has-badge {
+  position: relative;
+}
+
+.sidebar-rail-btn .memory-pending-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+}
+
+/* 展开态工具条：`.sidebar-tool-item` 本身已经是 `position: relative` ⇒ 同一套定位 */
+.sidebar-tool-item .memory-pending-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+}
+
 /* ========== P1 #8: Sidebar bottom user area ========== */
 .sidebar-user-area {
   display: grid;

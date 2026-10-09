@@ -1,0 +1,83 @@
+{
+  "description": "O-45 / S4：外壳级「待批准记忆」角标（MEM-BADGE-1/1b/2/3）。每条变异都把实现改坏，期望对应判据变红。",
+  "mutations": [
+    {
+      "id": "MUT-1 去掉「接受写入后」的那次通知",
+      "why": "MEM-BADGE-1b：没有通知 ⇒ 挂载之后新写入的 pending 不会让角标往前走（数字冻在初始值上）；MEM-BADGE-2 也会跟着红（清零之后角标不消失）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    /*\n     * S4 / O-45：**接受写入之后**通知一次。\n     * 位置刻意在 `chainPersist` 之后：内存态与镜像都已经反映这次改动，\n     * 外壳角标再去读 `getStats()` 拿到的一定是这次改动后的真值。\n     * （\"落没落库\"由 `flushPendingPersist()` / `getLastPersistError()` 负责 —— 通知不替它下结论。）\n     */\n    notifyMemoryChanged();\n    return true;",
+          "to": "    return true;"
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 角标改读「另算一份」的数",
+      "why": "MEM-BADGE-1：改成 totalEntries（总数）之后，角标数字与面板「待批准」那一格分叉 ⇒ 必须红（这正是 GAP-LIST 写的「与面板同一个数，不许另算」）",
+      "patches": [
+        {
+          "file": "src/hooks/useMemoryPendingCount.ts",
+          "from": "    const refresh = () => setCount(getMemoryService().getStats(scope).pendingEntries);",
+          "to": "    const refresh = () => setCount(getMemoryService().getStats(scope).totalEntries);"
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 角标条件恒真（永远亮着的点）",
+      "why": "MEM-BADGE-2：条件改成恒真之后，pending 清零角标也不消失 ⇒ 必须红（这条变异就是「永远亮着的点」本身）",
+      "patches": [
+        {
+          "file": "src/components/Sidebar.tsx",
+          "from": "              {/* S4 / O-45：展开态的同一条提示（两处都指向同一个 onMemory，不是两个入口） */}\n              {memoryPending > 0 && (",
+          "to": "              {/* S4 / O-45：展开态的同一条提示（两处都指向同一个 onMemory，不是两个入口） */}\n              {true && ("
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 作用域退化成空（角标不再按当前位置过滤）",
+      "why": "MEM-BADGE-1/反向对照：`memoryPanelScope` 返回两个 undefined 之后，项目级待批准一条都算不进来（3 变成 1、2 变成 1）⇒ 两条断言都必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/panel-scope.ts",
+          "from": "  return {\n    projectId: projectIdFromCwd(projectPath ?? undefined),\n    sessionId: sessionId ?? undefined,\n  };",
+          "to": "  return { projectId: undefined, sessionId: undefined };"
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 待批准的可见范围退回「裸 ctx」（面板三处数字分叉）",
+      "why": "MEM-BADGE-1c：`listPending` 用裸 ctx ⇒ 无归属的待批准条目被 `visibleIn` 挡掉 ⇒ 提示条与「待批准的自动记忆（N 条）」跟顶部那一格分叉（实测 1 vs 0），而且那条在界面上根本不出现 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    const base: MemoryScopeContext = { ...ctx, includePending: true, includeUnscoped: true };\n    return Array.from(this.entries.values())\n      .filter((e) => isPendingMemoryEntry(e) && (!scope || e.scope === scope) && visibleIn(e, base))",
+          "to": "    return Array.from(this.entries.values())\n      .filter((e) => isPendingMemoryEntry(e) && (!scope || e.scope === scope) && visibleIn(e, ctx))"
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 反向对照：只改「99+」折叠（没有被任何判据覆盖）",
+      "why": "反向对照：这是一处真实的实现改动，但本波判据一条都没打算覆盖它 ⇒ 必须**保持绿**（证明判据不是「改哪都红」）",
+      "patches": [
+        {
+          "file": "src/components/Sidebar.tsx",
+          "from": "  const memoryBadgeText = memoryPending > 99 ? \"99+\" : String(memoryPending);",
+          "to": "  const memoryBadgeText = String(memoryPending);"
+        }
+      ],
+      "tests": ["src/test/memory-pending-badge.test.tsx"],
+      "expectRed": false
+    }
+  ]
+}

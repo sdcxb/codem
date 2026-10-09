@@ -7666,6 +7666,20 @@
     "display": "flex",
     "gap": "var(--space-2)"
   },
+  "memory-pending-badge": {
+    "align-items": "center",
+    "background": "var(--error)",
+    "border-radius": "var(--radius-full)",
+    "color": "var(--text-on-status)",
+    "display": "inline-flex",
+    "flex-shrink": "0",
+    "font-size": "var(--fs-xs)",
+    "font-weight": "var(--weight-heavy)",
+    "height": "16px",
+    "justify-content": "center",
+    "min-width": "16px",
+    "padding": "0 var(--space-2)"
+  },
   "memory-pending-content": {
     "color": "var(--text-secondary)",
     "flex": "1",

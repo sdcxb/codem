@@ -1,15 +1,15 @@
 {
-  "version": "1.16.300",
-  "notes": "Codem v1.16.300",
-  "pub_date": "2026-10-08T15:02:07Z",
+  "version": "1.16.301",
+  "notes": "Codem v1.16.301 — 修掉「每条消息的查询索引都写不进去」（用户可见的数据保存失败横幅），新增侧栏「待批准」记忆角标，并给 .cmd 启动参数的拒绝配上可操作文案与逐条实测依据。",
+  "pub_date": "2026-10-09T03:47:00Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VWbGM5b2dMSGt0aDlDbkV0TTJCQXFpRG9rUjRYRFZmWDZ5cDlEUEdGMTBWU3RhNDFnOFRkVy8zZkxqclE5MUc4R3Boc3BzVHJVa1YvMVFRd2IxTFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNDcxNzExCWZpbGU6Q29kZW1fMS4xNi4zMDBfeDY0LXNldHVwLmV4ZQovaURTVDlMMm9qeHlkM2k0MGdTUG9pOG01Z3VONHRtTm43WDlKWVZDcnlyQVZBUFN2TldkTnJWMDNjZ3dOV1NSUnVDZHBYeTZ3WUdtTi9LSVkzLzVCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.300/Codem_1.16.300_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VuMkhkdE4vOHhlTzBUKzg2YWpLNFZ5Ym5PSzNUVHdqbVBqcEwyc1ZPY2Y4UWkrcngyQ3Q0ZmRFNTJqcHdmQWRRRnZzWjZVMDNBaTZ3WkRuSjVLamdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTE3NTY2CWZpbGU6Q29kZW1fMS4xNi4zMDFfeDY0LXNldHVwLmV4ZQpsSUtJZWVMS3ViS0hLZlJnTW9oVjRPYWVhUTVmaXVBenE0bWFjSjBNSG5hTW9leEh6Vm4xMDEySG9raml6eVJnZEZidnlaM1VEQkZBaU0wakdleklCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.301/Codem_1.16.301_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VWbGM5b2dMSGt0aDlDbkV0TTJCQXFpRG9rUjRYRFZmWDZ5cDlEUEdGMTBWU3RhNDFnOFRkVy8zZkxqclE5MUc4R3Boc3BzVHJVa1YvMVFRd2IxTFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNDcxNzExCWZpbGU6Q29kZW1fMS4xNi4zMDBfeDY0LXNldHVwLmV4ZQovaURTVDlMMm9qeHlkM2k0MGdTUG9pOG01Z3VONHRtTm43WDlKWVZDcnlyQVZBUFN2TldkTnJWMDNjZ3dOV1NSUnVDZHBYeTZ3WUdtTi9LSVkzLzVCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.300/Codem_1.16.300_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1VuMkhkdE4vOHhlTzBUKzg2YWpLNFZ5Ym5PSzNUVHdqbVBqcEwyc1ZPY2Y4UWkrcngyQ3Q0ZmRFNTJqcHdmQWRRRnZzWjZVMDNBaTZ3WkRuSjVLamdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTE3NTY2CWZpbGU6Q29kZW1fMS4xNi4zMDFfeDY0LXNldHVwLmV4ZQpsSUtJZWVMS3ViS0hLZlJnTW9oVjRPYWVhUTVmaXVBenE0bWFjSjBNSG5hTW9leEh6Vm4xMDEySG9raml6eVJnZEZidnlaM1VEQkZBaU0wakdleklCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.301/Codem_1.16.301_x64-setup.exe"
     }
   }
 }

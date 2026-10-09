@@ -11,6 +11,8 @@ import {
   MEMORY_DOMAIN_NO_PORT,
 } from "../storage/settings";
 import { getStoragePort, hasStoragePort } from "../storage/port";
+// S4 / O-45：「记忆域变了」的**唯一**通知出口（外壳角标靠它自己亮起来，见该模块的说明）
+import { notifyMemoryChanged } from "./memory-changed";
 import {
   reportAdvisory,
   reportPersistFailure,
@@ -151,6 +153,30 @@ export function memorySourceOf(entry: MemorySourceCarrier): MemorySourceKind {
   if (entry.source === "manual") return "manual";
   if (entry.source === "auto") return "auto";
   return "unknown";
+}
+
+/**
+ * 条目的**当前状态**：缺省 `"active"`（存量记忆没有 `status` 字段）。
+ *
+ * 这个缺省值是**语义**不是防御：把它当成 `pending` 会让所有旧记忆显示成"待批准"，
+ * 而它们其实一直在参与上下文。
+ */
+export function memoryStatusOf(entry: { status?: MemoryStatus }): MemoryStatus {
+  return entry.status ?? "active";
+}
+
+/**
+ * **待批准**判据 —— 全仓唯一一处（S4 / O-45 的"全仓搜同类"产物）。
+ *
+ * 旧写法把 `(entry.status ?? "active") === "pending"` 在**六处**各写了一遍
+ * （`listPending` / `getStats` / `getConsolidationStats` / `checkup.ts` 的体检汇总 /
+ * `MemoryManager.tsx` 的徽标与详情 / `MemoryCheckupView.tsx` 的徽标）。
+ * 缺省值漏掉的后果见 `memoryStatusOf()` 的说明。
+ *
+ * 判据 `MEM-BADGE-1/2` 钉的就是这条判据的后果（角标数字必须等于面板那个数）。
+ */
+export function isPendingMemoryEntry(entry: { status?: MemoryStatus }): boolean {
+  return memoryStatusOf(entry) === "pending";
 }
 
 /**
@@ -744,7 +770,7 @@ function visibleIn(entry: MemoryEntry, ctx: MemoryScopeContext): boolean {
 function injectedIn(entry: MemoryEntry, ctx: MemoryScopeContext): boolean {
   if (!visibleIn(entry, ctx)) return false;
   if (!ownedBySelf(entry)) return false; // 孤儿：任何上下文都不注入
-  if ((entry.status ?? "active") !== "active") return false; // pending：未批准不进上下文
+  if (isPendingMemoryEntry(entry)) return false; // pending：未批准不进上下文
   /*
    * M-2：旧版跨项目池的**暂停注入**开关。
    *
@@ -1257,8 +1283,26 @@ export class MemoryService {
    * 上面第 2 类里的"端口/预热还没就绪"是**暂时性**的（系统随后自己会重读）⇒ 只进 advisory；
    * 其余（形状不认识 / JSON 坏 / 迁移抛出）是**结论性**的 ⇒ 必须用户可见且可操作。
    * 读盘成功时**撤回**先前那条 `memory.load`（否则界面留下一条陈旧横幅）。
+   *
+   * ## S4 / O-45：为什么拆成 `load()` + `loadFromStorage()`
+   *
+   * 读盘会**整份替换**内存态 ⇒ 外壳角标读的「待批准条数」可能变了，必须重新取一次真值。
+   * 而下面的正文有**五个** `return`（读不到 / 空库 / JSON 坏 / 容器不认 / 正常）——
+   * 在每个出口各写一次通知，等于把"通知"变成五处可以各自忘记的约定。
+   * 所以拆成两层：内层只改内存态，外层 `load()` 用 `finally` 保证**恰好通知一次**，
+   * 与走哪个出口无关（读失败也要通知：此时界面该显示的是当前内存态的真值，不是上一次的残影）。
    */
   private load() {
+    try {
+      this.loadFromStorage();
+    } finally {
+      // 通知放在 finally：读成功、读失败、迁移抛出三条路都要让界面重取真值
+      notifyMemoryChanged();
+    }
+  }
+
+  /** 读盘的**内层**：只改内存态与 `loadState`，不发通知（通知由 `load()` 统一负责）。 */
+  private loadFromStorage() {
     this.loadState = { ok: false, reason: "尚未读取记忆", kind: "not-ready", dropped: 0, raw: null };
     // O-37：本次读盘补齐了几个 `order` —— 每次读盘都从 0 起（重读/迁移重跑不许沿用上一次的数）
     this.orderBackfilled = 0;
@@ -1550,6 +1594,13 @@ export class MemoryService {
     patchMemoryMirror(payload);
     this.lastPersistedPayload = payload;
     this.chainPersist(payload);
+    /*
+     * S4 / O-45：**接受写入之后**通知一次。
+     * 位置刻意在 `chainPersist` 之后：内存态与镜像都已经反映这次改动，
+     * 外壳角标再去读 `getStats()` 拿到的一定是这次改动后的真值。
+     * （"落没落库"由 `flushPendingPersist()` / `getLastPersistError()` 负责 —— 通知不替它下结论。）
+     */
+    notifyMemoryChanged();
     return true;
   }
 
@@ -1770,6 +1821,8 @@ export class MemoryService {
     if (result.ok) {
       this.lastPersistedPayload = payload;
       this.lastPersistError = null;
+      // S4 / O-45：确认式写入成功 ⇒ 通知一次（与 `save()` 同一份实现、同一份语义）
+      notifyMemoryChanged();
       return true;
     }
     this.lastPersistError = result.reason ?? "记忆落库失败";
@@ -1905,7 +1958,7 @@ export class MemoryService {
     const fullEntry: MemoryEntry = {
       ...entry,
       source: entry.source ?? "manual",
-      status: entry.status ?? "active",
+      status: memoryStatusOf(entry),
       id,
       timestamp: Date.now(),
       // R2：创建序**只增不减**（取现有最大值 +1），与插入位置/时间戳都解耦
@@ -2204,11 +2257,24 @@ export class MemoryService {
    * `status === "active"`），所以不存在"与注入口径不一致"这回事；它对时间字段的
    * 使用与界面标签（「最后修改时间」）也不矛盾。面板里的**主列表**（`listAll`）
    * 已经与注入同口径，判据 `MEM-CHECK-2c` 钉的就是那一条。
+   *
+   * ## ⚠️ 可见范围口径必须与 `listAll()` **同一份**（第 192 波实测发现的分叉）
+   *
+   * 待批准条目里有一类是**无归属**的（迁移后的旧 session 记忆就是这一形态：
+   * `conversation` 而没有 `sessionId`，或 `project` 而没有 `projectId`），
+   * 而 `visibleIn` 默认会把无归属条目挡掉。
+   *
+   * 旧写法直接用**裸 `ctx`** ⇒ 面板会**同时显示两个不同的待批准数**：
+   * 顶部那一格（`getStats` 走 `listAll`，`includeUnscoped: true`）算上无归属的，
+   * 而提示条与「待批准的自动记忆（N 条）」不算 —— 实测 **1 vs 0**（判据 `MEM-BADGE-1c`）。
+   * 更糟的是那些条目因此在界面上**根本不出现**：用户既看不到也批不了，
+   * 而它们一直占着「待批准」的位置（这正是 GAP-LIST 给 O-45 写的"与面板同一个数"要防的形态）。
    */
   listPending(scope?: MemoryScope, ctx?: MemoryScopeContext): MemoryEntry[] {
     if (!ctx) return [];
+    const base: MemoryScopeContext = { ...ctx, includePending: true, includeUnscoped: true };
     return Array.from(this.entries.values())
-      .filter((e) => (e.status ?? "active") === "pending" && (!scope || e.scope === scope) && visibleIn(e, ctx))
+      .filter((e) => isPendingMemoryEntry(e) && (!scope || e.scope === scope) && visibleIn(e, base))
       .sort((a, b) => b.timestamp - a.timestamp);
   }
 
@@ -2230,7 +2296,7 @@ export class MemoryService {
             : "来源未知（旧数据）的条目按受保护条目处理，不需要批准",
       };
     }
-    if ((entry.status ?? "active") !== "pending") {
+    if (!isPendingMemoryEntry(entry)) {
       return { ok: false, error: "invalid", message: "该条目不在待批准状态" };
     }
     const bucketCount = this.bucketCount(entry.scope, entry.projectId, entry.sessionId);
@@ -2252,7 +2318,7 @@ export class MemoryService {
   reject(id: string): boolean {
     const entry = this.entries.get(id);
     if (!entry) return false;
-    if ((entry.status ?? "active") !== "pending") return false;
+    if (!isPendingMemoryEntry(entry)) return false;
     return this.delete(id);
   }
 
@@ -2492,7 +2558,7 @@ export class MemoryService {
     const reasons = new Map<string, string>();
     for (const e of this.entries.values()) {
       if (plan.ids.has(e.id)) continue;
-      if ((e.status ?? "active") !== "active") {
+      if (isPendingMemoryEntry(e)) {
         reasons.set(e.id, "待批准（未批准不进上下文）");
         continue;
       }
@@ -2777,7 +2843,7 @@ export class MemoryService {
         ...entry,
         scope: nextScope,
         source,
-        status: entry.status ?? "active",
+        status: memoryStatusOf(entry),
         // 归属键**刻意不猜**：project/session 条目迁移后不带 projectId/sessionId
         projectId: entry.projectId,
         sessionId: legacyScope === "session" ? undefined : entry.sessionId,
@@ -3382,34 +3448,17 @@ export class MemoryService {
     newestEntry: number | null;
   } {
     const scoped = ctx ? this.listAll(ctx) : Array.from(this.entries.values());
-    const byScope: Record<MemoryScope, number> = { platform: 0, project: 0, conversation: 0 };
-    const bySource: Record<MemorySourceKind, number> = { manual: 0, auto: 0, unknown: 0 };
-    let pendingEntries = 0;
-    let unknownScope = 0;
-    let legacyPool = 0;
-
-    for (const entry of scoped) {
-      if (entry.scope === "platform" || entry.scope === "project" || entry.scope === "conversation") {
-        byScope[entry.scope]++;
-      } else {
-        unknownScope++;
-      }
-      // 三态口径（与注入文本、面板、体检、导出**同一个** `memorySourceOf`）
-      bySource[memorySourceOf(entry)]++;
-      if ((entry.status ?? "active") === "pending") pendingEntries++;
-      if (entry.legacyPool === true) legacyPool++;
-    }
-
+    const buckets = countMemoryBuckets(scoped);
     const timestamps = scoped.map((e) => e.timestamp).filter((t): t is number => typeof t === "number" && Number.isFinite(t));
 
     return {
       totalEntries: scoped.length,
-      byScope,
-      bySource,
-      pendingEntries,
+      byScope: buckets.byScope,
+      bySource: buckets.bySource,
+      pendingEntries: buckets.pendingEntries,
       notInjected: scoped.filter((e) => !ownedBySelf(e)).length,
-      unknownScope,
-      legacyPool,
+      unknownScope: buckets.unknownScope,
+      legacyPool: buckets.legacyPool,
       oldestEntry: timestamps.length > 0 ? Math.min(...timestamps) : null,
       newestEntry: timestamps.length > 0 ? Math.max(...timestamps) : null,
     };
@@ -3563,7 +3612,7 @@ export class MemoryService {
         // R4：**不自造来源** —— `undefined`（旧数据）保持 `undefined`，与迁移后的形态一致
         // （`normalizeLoadedEntry` 已经把 `null`/非法值收成 `undefined`；这里只做类型收窄）
         source: normalized.source as MemorySource,
-        status: normalized.status ?? "active",
+        status: memoryStatusOf(normalized),
         order,
         key: redactSecrets(normalized.key).substring(0, MEMORY_INJECT_KEY_MAX),
         content: safeContent.substring(0, this.config.maxContentLength),
@@ -3626,7 +3675,7 @@ export class MemoryService {
         .filter(e => e.scope === scope)
         .filter(e => memorySourceOf(e) === "auto")
         // B6：未批准（pending）的条目不该被自动流程合并/删除
-        .filter(e => (e.status ?? "active") === "active")
+        .filter(e => !isPendingMemoryEntry(e))
         .sort((a, b) => b.timestamp - a.timestamp); // Most recent first
 
       const toDelete = new Set<string>();
@@ -3690,7 +3739,7 @@ export class MemoryService {
       for (const [id, entry] of this.entries) {
         if (entry.scope === "conversation") continue; // Don't auto-clean conversation memories
         if (isProtectedMemoryEntry(entry)) continue; // 手动 + 来源未知（旧数据）永不被自动清理
-        if ((entry.status ?? "active") !== "active") continue; // B6：未批准的不动
+        if (isPendingMemoryEntry(entry)) continue; // B6：未批准的不动
         if (!Number.isFinite(entry.timestamp)) continue; // 时间未知 ⇒ 不据此删除
         if (now - entry.timestamp > maxAgeMs) {
           this.entries.delete(id);
@@ -3834,33 +3883,59 @@ export class MemoryService {
     const oldest = timestamps.length > 0 ? Math.min(...timestamps) : null;
     const oldestAge = oldest !== null ? Math.floor((now - oldest) / (24 * 60 * 60 * 1000)) : null;
 
-    const scopeBreakdown: Record<MemoryScope, number> = { platform: 0, project: 0, conversation: 0 };
-    let pendingEntries = 0;
-    let unknownScope = 0;
-    let legacyPool = 0;
-    for (const entry of allEntries) {
-      if (entry.scope === "platform" || entry.scope === "project" || entry.scope === "conversation") {
-        scopeBreakdown[entry.scope]++;
-      } else {
-        unknownScope++;
-      }
-      if ((entry.status ?? "active") === "pending") pendingEntries++;
-      if (entry.legacyPool === true) legacyPool++;
-    }
+    // 作用域/待批准/旧池这几项与 `getStats()` **同一份实现**（同一事实两处实现是本仓的定性缺陷）
+    const buckets = countMemoryBuckets(allEntries);
 
     return {
       totalEntries: allEntries.length,
       potentialDuplicates,
       oldestAge,
-      scopeBreakdown,
-      pendingEntries,
+      scopeBreakdown: buckets.byScope,
+      pendingEntries: buckets.pendingEntries,
       notInjected: this.countNotInjected(),
-      unknownScope,
-      legacyPool,
+      unknownScope: buckets.unknownScope,
+      legacyPool: buckets.legacyPool,
       readable: this.loadState.ok,
       loadFailureReason: this.loadState.ok ? undefined : this.loadState.reason,
     };
   }
+}
+
+/**
+ * 记忆条目的**分桶计数**（作用域 / 来源三态 / 待批准 / 作用域无法识别 / 旧版跨项目池）。
+ *
+ * 为什么单独一个函数：`getStats()`（面板与外壳角标用它）与 `getConsolidationStats()`
+ * （`/memory status` 命令用它）各自把这段循环抄了一遍 —— 而它们报的是**同一批事实**。
+ * 两处实现最容易出现的分叉恰恰是"待批准怎么算"（`?? "active"` 那个缺省值）：
+ * 分叉之后面板说 3 条、命令说 4 条，而用户无从判断哪个是真的。
+ */
+function countMemoryBuckets(entries: Iterable<MemoryEntry>): {
+  byScope: Record<MemoryScope, number>;
+  bySource: Record<MemorySourceKind, number>;
+  pendingEntries: number;
+  unknownScope: number;
+  legacyPool: number;
+} {
+  const byScope: Record<MemoryScope, number> = { platform: 0, project: 0, conversation: 0 };
+  const bySource: Record<MemorySourceKind, number> = { manual: 0, auto: 0, unknown: 0 };
+  let pendingEntries = 0;
+  let unknownScope = 0;
+  let legacyPool = 0;
+
+  for (const entry of entries) {
+    if (entry.scope === "platform" || entry.scope === "project" || entry.scope === "conversation") {
+      byScope[entry.scope]++;
+    } else {
+      // M-5：作用域不是三者之一的条目过去在所有界面都看不见，现在至少数得出来
+      unknownScope++;
+    }
+    // 三态口径（与注入文本、面板、体检、导出**同一个** `memorySourceOf`）
+    bySource[memorySourceOf(entry)]++;
+    if (isPendingMemoryEntry(entry)) pendingEntries++;
+    if (entry.legacyPool === true) legacyPool++;
+  }
+
+  return { byScope, bySource, pendingEntries, unknownScope, legacyPool };
 }
 
 // ========== Singleton ==========

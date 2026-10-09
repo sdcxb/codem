@@ -16,6 +16,8 @@ import {
   type MemorySourceKind,
   MEMORY_SOURCE_KIND_LABEL,
   memorySourceOf,
+  // S4 / O-45：待批准判据**全仓唯一一处**（本文件原来也在两处各写了一遍）
+  isPendingMemoryEntry,
   injectionScopeContext,
   type MemoryPayloadByteStats,
 } from "../core/memory/memory";
@@ -480,7 +482,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           <span className={`memory-source-badge ${sourceBadgeClass(entry.source)}`}>
             {sourceLabel(entry.source)}
           </span>
-          {(entry.status ?? "active") === "pending" && (
+          {isPendingMemoryEntry(entry) && (
             <span className="memory-source-badge pending">待批准</span>
           )}
           {!isInjected(entry) && <span className="memory-source-badge orphan">不进上下文</span>}
@@ -865,7 +867,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
               <div className="memory-detail-section">
                 <label>状态</label>
                 <span>
-                  {(selectedEntry.status ?? "active") === "pending"
+                  {isPendingMemoryEntry(selectedEntry)
                     ? "待批准（未进上下文）"
                     : isInjected(selectedEntry)
                       ? "已生效（参与上下文）"

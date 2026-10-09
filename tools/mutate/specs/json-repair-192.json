@@ -1,0 +1,57 @@
+{
+  "description": "第 192 波真机实测的第二个缺陷：模型返回的 JSON 里带**裸换行**（字符串内部的控制字符非法）⇒ 自动记忆被**整批丢掉**，而旧诊断只打输入前 120 字符（真机那次前 200 字符完全正常 ⇒ 现场无从定位）。判据 JSON-REPAIR-1..6。",
+  "mutations": [
+    {
+      "id": "MUT-1 去掉「字符串内裸控制字符」的两步修复",
+      "why": "JSON-REPAIR-1/2：Step 8 与 Step 9 都拆掉（只拆 Step 8 不够 —— Step 9 会把同一类修好，变异会假绿，本波第一次跑就是这么发现的）⇒ `content` 里带真实换行的数组又变回解析失败 ⇒ 整批记忆被丢掉 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/llm/output-parser.ts",
+          "from": "    // Step 8: 字符串内部的**裸控制字符**（真实换行/回车/制表）⇒ 转义（第 192 波真机实测的整批丢弃）\n    () => escapeRawControlCharsInStrings(text).replace(/,\\s*([\\]}])/g, '$1'),\n    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）\n    () => {\n      const firstBrace = text.search(/[{[]/);\n      const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));\n      if (firstBrace >= 0 && lastBrace > firstBrace) {\n        return escapeRawControlCharsInStrings(text.substring(firstBrace, lastBrace + 1)).replace(/,\\s*([\\]}])/g, '$1');\n      }\n      return null;\n    },\n",
+          "to": ""
+        }
+      ],
+      "tests": ["src/test/output-parser-json-repair.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 状态机不再区分「字符串内外」（结构字符也会被改）",
+      "why": "JSON-REPAIR-6/4：去掉 `inString` 守卫之后，字符串**外**的合法换行也会被转义（`{\\n \"a\": 1\\n}` 被改形）⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/llm/output-parser.ts",
+          "from": "      const code = ch.codePointAt(0) ?? 0;\n      if (code < 0x20) {\n        out += ch === \"\\n\" ? \"\\\\n\" : ch === \"\\r\" ? \"\\\\r\" : ch === \"\\t\" ? \"\\\\t\" : `\\\\u${code.toString(16).padStart(4, \"0\")}`;\n        continue;\n      }\n      out += ch;\n      continue;\n    }\n    out += ch;\n    if (ch === '\"') inString = true;",
+          "to": "      out += ch;\n      continue;\n    }\n    const code = ch.codePointAt(0) ?? 0;\n    if (code < 0x20) {\n      out += ch === \"\\n\" ? \"\\\\n\" : ch === \"\\r\" ? \"\\\\r\" : ch === \"\\t\" ? \"\\\\t\" : `\\\\u${code.toString(16).padStart(4, \"0\")}`;\n      continue;\n    }\n    out += ch;\n    if (ch === '\"') inString = true;"
+        }
+      ],
+      "tests": ["src/test/output-parser-json-repair.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 诊断退回「只打输入前 120 字符」",
+      "why": "JSON-REPAIR-5：真机那次的输入前 200 字符完全正常 ⇒ 退回去之后现场又无从定位 ⇒ 必须红",
+      "patches": [
+        {
+          "file": "src/core/llm/output-parser.ts",
+          "from": "  console.warn('[output-parser.ts] extractJSON failed:', diagnoseJsonFailure(text));",
+          "to": "  console.warn('[output-parser.ts] extractJSON failed:', text.slice(0, 120));"
+        }
+      ],
+      "tests": ["src/test/output-parser-json-repair.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 反向对照：多一个恒返回 null 的修复尝试",
+      "why": "反向对照：往 attempts 里插一个不匹配任何输入的分支，是真实的实现改动，但本波判据一条都不该因此变红",
+      "patches": [
+        {
+          "file": "src/core/llm/output-parser.ts",
+          "from": "    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）",
+          "to": "    // 反向对照：一个恒返回 null 的尝试\n    () => null,\n    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）"
+        }
+      ],
+      "tests": ["src/test/output-parser-json-repair.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

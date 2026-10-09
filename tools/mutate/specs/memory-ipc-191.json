@@ -33,8 +33,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    patchMemoryMirror(payload);\n    this.lastPersistedPayload = payload;\n    this.chainPersist(payload);\n    return true;",
-          "to": "    patchMemoryMirror(payload);\n    this.lastPersistedPayload = payload;\n    this.chainPersist(JSON.stringify({ version: 2, entries: { onlyOne: Array.from(this.entries.values()).pop() }, batches: [] }));\n    return true;"
+          "from": "    this.chainPersist(payload);",
+          "to": "    this.chainPersist(JSON.stringify({ version: 2, entries: { onlyOne: Array.from(this.entries.values()).pop() }, batches: [] }));"
         }
       ],
       "tests": ["src/test/memory-write-amplification.test.ts"],

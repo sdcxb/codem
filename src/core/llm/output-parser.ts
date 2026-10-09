@@ -6,6 +6,92 @@
  */
 
 /**
+ * 把**字符串字面量内部**的裸控制字符转义掉（真实换行 / 回车 / 制表等）。
+ *
+ * ## 为什么需要它（第 192 波**真机**实测）
+ *
+ * 记忆自动提取的分叉调用返回了一个**看起来完全正常**的 JSON 数组（真机控制台原文：
+ * `[{"key": "发布流程约定", "content": "本仓库的发布流程固定为三步：…"}]`），
+ * 却把整批记忆丢掉了 —— 两条警告同时出现：
+ *
+ * ```
+ * [output-parser.ts] extractJSON failed: [{"key": "发布流程约定", …
+ * [extractMemories] Failed to parse memories from forked agent response: […]
+ * ```
+ *
+ * 上面那 7 步修复**都不覆盖**这一类：它们只处理包裹、中文标点、尾逗号、前后文字。
+ * 而模型给的 `content` 是**整段散文**，很容易带**真实换行**而不是 `\n` 转义 ——
+ * 裸控制字符在 JSON 字符串里非法 ⇒ `JSON.parse` 直接拒绝 ⇒ 这一批自动记忆**整批消失**，
+ * 用户看到的现象正是"自动记忆不好使"（S4 / O-45 要治的那个病）。
+ *
+ * ## 口径：**只动字符串内部**
+ *
+ * 用一台引号状态机判断当前位置在不在字符串里；字符串之外**一个字节不改** ——
+ * 否则会把合法的结构（`{`、`,`、引号）改坏，那比不修更糟。
+ * 已经成对的转义（`\"`、`\\n`）原样保留（`escaped` 状态）。
+ */
+export function escapeRawControlCharsInStrings(text: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        out += ch;
+        inString = false;
+        continue;
+      }
+      const code = ch.codePointAt(0) ?? 0;
+      if (code < 0x20) {
+        out += ch === "\n" ? "\\n" : ch === "\r" ? "\\r" : ch === "\t" ? "\\t" : `\\u${code.toString(16).padStart(4, "0")}`;
+        continue;
+      }
+      out += ch;
+      continue;
+    }
+    out += ch;
+    if (ch === '"') inString = true;
+  }
+  return out;
+}
+
+/**
+ * 解析全失败时的**可诊断**说明。
+ *
+ * 旧写法只打 `raw.slice(0, 120)` —— 而真机那次失败的输入**前 200 字符完全正常**
+ * （见 `escapeRawControlCharsInStrings` 的说明），于是现场无法定位"到底哪一处不合法"，
+ * 只能等下一次再猜。这里给出三样能直接定位的东西：`JSON.parse` 的原话、出错位置附近的窗口、
+ * 以及"字符串里有没有裸控制字符"这个**最可能的原因**（用状态机精确判断，不是粗筛）。
+ */
+export function diagnoseJsonFailure(text: string): string {
+  let err: string;
+  let at = -1;
+  try {
+    JSON.parse(text);
+    err = "文本本身可解析（说明失败发生在某个修复分支上，请检查 attempts）";
+  } catch (e) {
+    err = e instanceof Error ? e.message : String(e);
+    const m = /position (\d+)/.exec(err);
+    at = m ? Number(m[1]) : -1;
+  }
+  const window = at >= 0 ? text.slice(Math.max(0, at - 60), at + 60) : text.slice(0, 160);
+  const rawCtrlInString = escapeRawControlCharsInStrings(text) !== text;
+  return `${err}${at >= 0 ? ` @${at}` : ""}；出错窗口=${JSON.stringify(window)}${
+    rawCtrlInString ? "；**字符串里有裸控制字符**（多为真实换行 ⇒ 整批结果会被丢掉）" : ""
+  }`;
+}
+
+/**
  * 从 LLM 响应中提取 JSON 对象或数组
  *
  * 处理以下常见模型行为:
@@ -16,6 +102,7 @@
  * 5. 中文标点（"" → ""，'' → ''）— 模型常在中文上下文中混淆标点
  * 6. 尾部逗号（JSON5 风格）— 模型常在最后一个元素后加逗号
  * 7. 单引号字符串 — 部分模型使用单引号而非双引号
+ * 8. **字符串内部的裸控制字符**（真实换行/回车/制表）— 第 192 波真机实测：整批记忆被丢掉
  *
  * @returns 解析后的对象，或 null（解析失败时）
  */
@@ -67,6 +154,17 @@ export function extractJSON<T = any>(raw: string): T | null {
       }
       return null;
     },
+    // Step 8: 字符串内部的**裸控制字符**（真实换行/回车/制表）⇒ 转义（第 192 波真机实测的整批丢弃）
+    () => escapeRawControlCharsInStrings(text).replace(/,\s*([\]}])/g, '$1'),
+    // Step 9: 先缩范围再转义（前后有说明文字 **且** 字符串里有裸换行 —— 两类叠加）
+    () => {
+      const firstBrace = text.search(/[{[]/);
+      const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        return escapeRawControlCharsInStrings(text.substring(firstBrace, lastBrace + 1)).replace(/,\s*([\]}])/g, '$1');
+      }
+      return null;
+    },
   ];
 
   for (const attempt of attempts) {
@@ -79,8 +177,8 @@ export function extractJSON<T = any>(raw: string): T | null {
     }
   }
 
-  // 全部失败：单次 warn（附输入预览），供诊断且不刷屏。
-  console.warn('[output-parser.ts] extractJSON failed:', raw.slice(0, 120));
+  // 全部失败：单次 warn（**可诊断**：解析错误 + 出错窗口 + 裸控制字符点名），供定位且不刷屏。
+  console.warn('[output-parser.ts] extractJSON failed:', diagnoseJsonFailure(text));
   return null;
 }
 

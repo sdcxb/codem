@@ -1,0 +1,103 @@
+{
+  "description": "O-43：`.cmd/.bat` 启动参数的放行面与拒绝面（CMD-ARG-1 / CMD-ARG-2，真 cmd.exe 端到端）。运行面是 cargo —— 本仓第一个 Rust 变异波次。",
+  "mutations": [
+    {
+      "id": "MUT-1 把 `%` 从拒绝名单里摘掉（放宽）",
+      "why": "CMD-ARG-1：名单少一个字符 ⇒ 它自动进入放行面对照表（语料是**现算的**）且不再被拒 ⇒ 逐字节表 + 「名单就是这一组」两条断言立刻红（`%` 的实测后果是静默吃字节/展开）",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "const CMD_ARG_FORBIDDEN: &[char] = &['\"', '%', '!', '\\r', '\\n', '\\0'];",
+          "to": "const CMD_ARG_FORBIDDEN: &[char] = &['\"', '!', '\\r', '\\n', '\\0'];"
+        }
+      ],
+      "tests": ["cmd_arg_1_allowed_forms_are_byte_exact_end_to_end"],
+      "runner": "cargo",
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 把 `\"` 从拒绝名单里摘掉（放宽）",
+      "why": "CMD-ARG-1：`\"` 是**实测会注入**的那一个（照原样拼法让参数尾部被当命令执行）；摘掉它之后它进入放行面对照表 ⇒ 逐字节表 + 名单断言立刻红",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "const CMD_ARG_FORBIDDEN: &[char] = &['\"', '%', '!', '\\r', '\\n', '\\0'];",
+          "to": "const CMD_ARG_FORBIDDEN: &[char] = &['%', '!', '\\r', '\\n', '\\0'];"
+        }
+      ],
+      "tests": ["cmd_arg_1_allowed_forms_are_byte_exact_end_to_end"],
+      "runner": "cargo",
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2b 往拒绝名单里加一个本来安全的字符（收紧）",
+      "why": "反向对照的另一半：**收紧**也必须被看见。把安全的 `@` 塞进名单后逐字节表照样绿（语料是现算的），只有「名单就是这一组」那条断言能抓住它 ⇒ 它必须红",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "const CMD_ARG_FORBIDDEN: &[char] = &['\"', '%', '!', '\\r', '\\n', '\\0'];",
+          "to": "const CMD_ARG_FORBIDDEN: &[char] = &['\"', '%', '!', '@', '\\r', '\\n', '\\0'];"
+        }
+      ],
+      "tests": ["cmd_arg_1_allowed_forms_are_byte_exact_end_to_end"],
+      "runner": "cargo",
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 收尾反斜杠不再翻倍",
+      "why": "CMD-ARG-1 的放行面：`quote_cmd_arg_for_wrapper` 只有这一处改写（结尾反斜杠翻倍）；去掉它以后 `C:\\dir\\` 会把收尾引号转义掉 ⇒ 逐字节表必须红",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "    let trailing = arg.chars().rev().take_while(|c| *c == '\\\\').count();\n    for _ in 0..trailing {\n        out.push('\\\\');\n    }\n    out.push('\"');\n    out",
+          "to": "    out.push('\"');\n    out"
+        }
+      ],
+      "tests": ["cmd_arg_1_allowed_forms_are_byte_exact_end_to_end"],
+      "runner": "cargo",
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 `%` 的替代提示改成空",
+      "why": "CMD-ARG-2：拒绝名单里的字符必须给**可操作**的替代办法；提示清空 ⇒ 用户只剩「不能用」⇒ 必须红",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "        '%' => \"。两条可操作的路：①若你想让 cmd 展开环境变量（例如 `%APPDATA%`），请在这里直接填**展开后的绝对路径**（在 cmd 里 `echo %APPDATA%` 就能看到它）；②若这个 `%` 是字面量（例如 `100%`），请改用 `.exe` 直启 —— 直启不经 cmd，`%` 就是普通字符。\",",
+          "to": "        '%' => \"\","
+        }
+      ],
+      "tests": ["cmd_arg_2_rejection_hints_are_actionable_and_specific"],
+      "runner": "cargo",
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 提示退化成一句万能套话",
+      "why": "CMD-ARG-2 的反向对照②：两个字符共用同一句提示 ⇒ 「用户看不出该改哪一处」必须红",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "        '!' => \"。请改用 `.exe` 直启（直启不经 cmd，不受延迟展开影响），或去掉参数里的 `!`。\",",
+          "to": "        '!' => \"。两条可操作的路：①若你想让 cmd 展开环境变量（例如 `%APPDATA%`），请在这里直接填**展开后的绝对路径**（在 cmd 里 `echo %APPDATA%` 就能看到它）；②若这个 `%` 是字面量（例如 `100%`），请改用 `.exe` 直启 —— 直启不经 cmd，`%` 就是普通字符。\","
+        }
+      ],
+      "tests": ["cmd_arg_2_rejection_hints_are_actionable_and_specific"],
+      "runner": "cargo",
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 给放行字符也发提示",
+      "why": "CMD-ARG-2 的反向对照①：`cmd_arg_probe_hint('a')` 不再是空串 ⇒ 「放行字符没有『改成什么』可言」这条对照必须红（它就是用来防「提示变成噪声」的）",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "        _ => \"\",\n    }\n}\n\n/// 引用一个实参",
+          "to": "        _ => \"。请改用 `.exe` 直启。\",\n    }\n}\n\n/// 引用一个实参"
+        }
+      ],
+      "tests": ["cmd_arg_2_rejection_hints_are_actionable_and_specific"],
+      "runner": "cargo",
+      "expectRed": true
+    }
+  ]
+}

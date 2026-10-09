@@ -2773,11 +2773,42 @@ fn find_codegraph_launcher(root: &std::path::Path) -> Option<String> {
 // | 实参内容 | 结果 | 依据 |
 // |---|---|---|
 // | `&` `\|` `^` `<` `>` `(` `)` `;` `,` `=` 空格、中文 | 逐字节保真 | 引号**内**在 cmd 里是字面量 |
-// | `!` | **拒绝** | `!VAR!` 是延迟展开面；"调用方没开延迟展开"是外部假设，不是我们能证的 |
-// | `%`（含 `%PATH%`、`%*`、`100%`、`C:\100%\docs`） | **拒绝** | 批处理里 `%` 的语义依赖上下文（`%%`/`%VAR%`/`%*`），跨层不可能证明逐字节 |
-// | `"` | **拒绝** | `%*` 展开后再转一跳时，`""` 与 CRT 的 `""` 不是同一语义 ⇒ 会被吃掉或分裂 |
+// | `!` | **拒绝** | 见下面 O-43 那一段：开不开延迟展开的脚本互为反例 |
+// | `%`（含 `%PATH%`、`%*`、`100%`、`C:\100%\docs`） | **拒绝** | 见下面 O-43 那一段：`%%` 双写在 `call` 型 shim 上失效 |
+// | `"` | **拒绝** | 见下面 O-43 那一段：四种拼法里没有一种既不被注入又逐字节保真 |
 // | CR / LF / NUL | **拒绝** | 单行批处理无法承载换行；CreateProcess 的整行以 NUL 结尾 |
 // | 结尾反斜杠 | 逐字节保真 | 收尾引号前翻倍反斜杠（`"C:\dir\\"`），CRT 与批处理两边都认 |
+//
+// ## 第 192 波（O-43）：上面那三条"拒绝"是**量出来的**，不是"说不清"
+//
+// 第 186 波给这三条写的理由是"跨层不可能证明"。第 192 波把"不可能"换成了**实测反例**
+// （判据 `harden_192_tests`，真 `cmd.exe` → 五种真实 shim 形态 → 探针逐字节 argv；
+// 另有一个"若放行会怎样"的实验台：直接按候选拼法拼 wrapper，量 argv 与**命令注入金丝雀**）。
+//
+// | 字符 | 「照原样」放行的后果 | 试过的"更聪明"拼法 | 为什么不能放行 |
+// |---|---|---|---|
+// | `%`  | **静默吃字节**：`100%`→`100`、`%*`→空串、`%PATH%`→展开成 1418 字节 | `%%` 双写 | 在最简 `%*` / npm 骨架 / 位置参数三种 shim 上双写**确实**逐字节 ✔，但在 `call "%exe%" %*` 型 shim 上**失效**：`%PATH%` 照旧展开，`%1` 甚至被换成该脚本自己的第一个实参 |
+// | `!`  | 普通 shim 下逐字节 ✔ | `^!` 转义 | 开 `EnableDelayedExpansion` 的 shim 恰好相反：照原样把 `!VAR!` 吃掉（`a!b!c`→`ac`），`^!` 才对 —— 两种 shim 互为反例，**没有一种拼法同时对** |
+// | `"`  | 引号被吃掉，**并且** `&` 跑到引号外被当命令执行 | CRT `\"` / 批处理 `""` / 混合A / **混合B** | `照原样` 与 CRT `\"` **实测会注入**（金丝雀文件真的出现）；`""` 不注入但吃掉紧邻引号的反斜杠；**混合B**（引号一律双写 + 紧邻引号的反斜杠翻倍）在本次语料上又干净又逐字节 —— 但它只是**样本**，CRT 那一层的结果无法从公开规则推出（见下），而写错的后果是任意命令执行 ⇒ 维持拒绝 |
+// | CR/LF | 在换行处**被截断**（`x\r\n…` 只剩 `x`），并且把生成的 wrapper 从 3 行变成更多行 | — | 换行改的是**脚本形状**而不是某个值；多一点的那一行会不会被执行取决于引号是否恰好平衡，我们**不把安全寄托在外部巧合上** |
+// | NUL | `CreateProcess` 的整行以 NUL 结尾 | — | 维持拒绝 |
+//
+// **为什么"换个拼法"对 `%` 与 `!` 走不通（结构理由，不是"我们没试够"）**：wrapper 把实参交给
+// `.cmd` 之后，还要经**目标脚本自己那一行**（`%*` / `%1` / `call … %*` / 是否延迟展开）
+// 再解析一轮，而目标脚本是**第三方文本**（npm shim 由 npm 生成，我们不掌握）。
+// 上表 `%` 与 `!` 两行给的都是"在 A 形态上对、在 B 形态上错"的**同一台机器上的实测反例** ⇒
+// 「wrapper + 目标 shim 逐字转发、两跳都不展开」这个前提**可证伪**。
+//
+// **`"` 是"差一步"的那一条，如实记在这里**（免得下一轮从头再走一遍）：
+// 候选拼法（混合B）的**批处理那一层是可证的**（每个 `"` 都成对 ⇒ 元字符永远在引号内，
+// 判据 `CMD-ARG-1f` 用引号状态机钉住）；**CRT 那一层证不动** ——
+// "2n 个反斜杠 + 引号"与"引号内 `""`"这两条规则正好在这一族上叠加，
+// 本机实测（1 个/2 个反斜杠、引号在首/中/尾）都对，但那是**样本**不是**证明**。
+// 代价那一侧也不支持冒险：参数本来就是**分开传**的，引号是多余的（报错文案已说清）。
+// ⇒ 维持拒绝，候选方案 + 实测边界留在 `spell_hybrid` 与 `cmd_arg_1d` 里。
+//
+// 代价与出路写在 `cmd_arg_probe_hint()` 里：报错必须给**可操作的**替代办法（判据 `CMD-ARG-2`），
+// 而不是让用户对着"不能用"发呆。
 //
 // ## 保真口径（判据真的在测什么）
 //
@@ -2814,13 +2845,15 @@ const CMD_PATH_FORBIDDEN: &[char] = &['"', '\r', '\n', '\0'];
 const CMD_ARG_FORBIDDEN: &[char] = &['"', '%', '!', '\r', '\n', '\0'];
 
 /// 被拒绝的字符在错误信息里的可读名字。
+///
+/// ⚠️ 措辞里的数字**全部来自实测**（`harden_192_tests` 的判据表）：改这些文案时要连判据一起看。
 fn cmd_forbidden_char_name(c: char) -> &'static str {
     match c {
-        '"' => "双引号「\"」（%* 展开后再转一跳时不再是字面引号：CRT 的 \"\" 与批处理的引号开关语义不同）",
-        '%' => "百分号「%」（批处理里 %%/%VAR%/%* 三种含义依赖上下文 ⇒ 跨层无法证明逐字节保真）",
-        '!' => "感叹号「!」（!VAR! 是延迟展开面，而「调用方没开延迟展开」是外部假设、不是我们能证的）",
-        '\r' => "回车 CR（单行批处理无法承载换行）",
-        '\n' => "换行 LF（单行批处理无法承载换行）",
+        '"' => "双引号「\"」（它会同时落在批处理的引号开关与 CRT 的引号规则上：实测「照原样」与 CRT `\\\"` 两种拼法都会让**参数尾部被当命令执行**，而唯一不注入的 `\"\"` 双写会在反斜杠紧邻引号时吃掉反斜杠 ⇒ 没有一条既安全又逐字节的**已证**路）",
+        '%' => "百分号「%」（wrapper 那一跳会展开 `%VAR%`、把落单的 `%` 吃掉：实测 `100%`→`100`、`%*`→空串、`%PATH%`→展开成 1418 字节；`%%` 双写在最简 `%*` 型脚本上能保真，但 `call` 型脚本会再解析一轮 ⇒ `%1` 会被换成脚本自己的第一个实参）",
+        '!' => "感叹号「!」（延迟展开面：实测开了 `EnableDelayedExpansion` 的脚本会把 `a!b!c` 吃成 `ac`、把 `!PATH!` 展开，而没开的脚本被 `^!` 转义改形 ⇒ 两种脚本互为反例，没有一种拼法同时对）",
+        '\r' => "回车 CR（换行把实参**在换行处截断**：实测 `x\\r\\n…` 到目标进程只剩 `x`；而且它把我们生成的 wrapper 从 3 行变成更多行 —— 改的是脚本形状，不是某个值）",
+        '\n' => "换行 LF（换行把实参**在换行处截断**：实测 `line\\nbreak` 到目标进程只剩 `line`；而且它会把生成的 wrapper 变成多行 —— 改的是脚本形状，不是某个值）",
         '\0' => "NUL（CreateProcess 的整行以 NUL 结尾）",
         _ => "不可在 cmd 层安全表达的字符",
     }
@@ -2896,13 +2929,22 @@ fn cmd_arg_rejection(idx: usize, arg: &str) -> Option<String> {
     })
 }
 
-/// 给用户的下一步提示：我们能说清"换成什么"的，就说清；说不清的不编。
+/// 给用户的下一步提示（判据 `CMD-ARG-2`：**必须可操作**）。
+///
+/// 三条口径：
+/// 1. 说清"改成什么"，而不是把问题重述一遍（重述是零信息量）；
+/// 2. 说不清的不编 —— 拒绝名单之外的字符返回**空串**（它们不会被拒绝，
+///    所以"改成什么"这个问题在这里不存在；判据用这一点当**反向对照**）；
+/// 3. 每条都尽量给出**保住原意**的那条路（例如 `%`：不是"删掉变量"，而是"填展开后的路径"）。
 fn cmd_arg_probe_hint(c: char) -> &'static str {
     match c {
-        '%' => "。如果这个参数是字面量（不是要 cmd 展开的变量），请让启动器改用 `.exe` 直启，或把 `%` 从参数里去掉。",
-        '!' => "。请去掉 `!`，或改用 `.exe` 直启（直启不经 cmd，不受延迟展开影响）。",
-        '"' => "。请去掉参数里的双引号，或改用 `.exe` 直启（直启时引号由 CRT 规则处理，是逐字节保真的）。",
-        _ => "。请改用 `.exe` 直启，或去掉该字符。",
+        '%' => "。两条可操作的路：①若你想让 cmd 展开环境变量（例如 `%APPDATA%`），请在这里直接填**展开后的绝对路径**（在 cmd 里 `echo %APPDATA%` 就能看到它）；②若这个 `%` 是字面量（例如 `100%`），请改用 `.exe` 直启 —— 直启不经 cmd，`%` 就是普通字符。",
+        '!' => "。请改用 `.exe` 直启（直启不经 cmd，不受延迟展开影响），或去掉参数里的 `!`。",
+        '"' => "。含空格或中文的参数**不需要**自己加引号（wrapper 会逐字引用），所以通常直接去掉引号即可；确实需要字面引号时请改用 `.exe` 直启。",
+        '\r' => "。请去掉回车（CR）：多行内容请先写进文件，再把**文件路径**作为参数传过去。",
+        '\n' => "。请去掉换行（LF）：多行内容请先写进文件，再把**文件路径**作为参数传过去。",
+        '\0' => "。请去掉 NUL 字符（它不是文本的一部分，无法出现在命令行里）。",
+        _ => "",
     }
 }
 
@@ -6276,13 +6318,16 @@ mod harden_185_tests {
         use super::*;
 
         /// 目标进程 argv 的逐字节期望表示（与探针 `escape_bytes` 同一口径）。
-        fn want_argv(i: usize, s: &str) -> String {
+        ///
+        /// `pub(super)`：O-43 的判据表（`harden_192_tests`）要用**同一套**口径与工具
+        /// （探针编译 / shim 生成 / wrapper 起法），不另写一份 —— 否则两边会各自漂。
+        pub(super) fn want_argv(i: usize, s: &str) -> String {
             format!("argv{}={}:{}", i, s.len(), escape_argv_bytes_for_test(s))
         }
 
         /// 与 `probe-src/argv_probe.rs::escape_bytes` 同一口径（判据侧独立实现一份：
         /// 如果哪天探针的转义口径变了，判据必须跟着红，而不是"两边一起改就永远绿"）。
-        fn escape_argv_bytes_for_test(s: &str) -> String {
+        pub(super) fn escape_argv_bytes_for_test(s: &str) -> String {
             let mut out = String::with_capacity(s.len());
             for b in s.as_bytes() {
                 if (0x20..0x7f).contains(b) && *b != b'\\' {
@@ -6301,7 +6346,7 @@ mod harden_185_tests {
         ///
         /// 路径**每个进程唯一**（带 pid + 启动纳秒）：固定路径会撞上"上一轮测试留下的
         /// 文件还被占着"⇒ `LNK1104: 无法打开文件`（实测踩到）。
-        fn build_probe() -> &'static std::path::Path {
+        pub(super) fn build_probe() -> &'static std::path::Path {
             static PROBE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
             PROBE.get_or_init(|| {
                 let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -6338,7 +6383,7 @@ mod harden_185_tests {
         }
 
         /// 起一个**真的** wrapper：`cmd.exe /d /s /c ""<wrapper>""`（生产那条 raw_arg 路径）。
-        async fn run_wrapper(text: &str) -> (std::process::Output, std::path::PathBuf) {
+        pub(super) async fn run_wrapper(text: &str) -> (std::process::Output, std::path::PathBuf) {
             let path = write_cmd_wrapper(text).expect("写 wrapper");
             let out = tokio::process::Command::new("cmd.exe")
                 .arg("/d")
@@ -6352,7 +6397,7 @@ mod harden_185_tests {
             (out, path)
         }
 
-        fn read_argv_dump(path: &std::path::Path) -> Vec<String> {
+        pub(super) fn read_argv_dump(path: &std::path::Path) -> Vec<String> {
             std::fs::read_to_string(path)
                 .unwrap_or_default()
                 .lines()
@@ -6361,7 +6406,8 @@ mod harden_185_tests {
         }
 
         /// 造一个 `.cmd` 启动器：把 `%*` 原样转发给目标 `.exe`（真实 npm cmd-shim 的形态）。
-        fn make_shim(dir: &std::path::Path, name: &str, exe: &std::path::Path) -> std::path::PathBuf {            let shim = dir.join(format!("{name}.cmd"));
+        pub(super) fn make_shim(dir: &std::path::Path, name: &str, exe: &std::path::Path) -> std::path::PathBuf {
+            let shim = dir.join(format!("{name}.cmd"));
             std::fs::write(
                 &shim,
                 format!(
@@ -6698,6 +6744,565 @@ mod harden_185_tests {
                 "魔法串不对时探针不许写文件（否则判据可能在看上一次的残留）"
             );
             let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    // ==================== R7 / O-43：放行面与拒绝面（真 cmd.exe + 真实 shim 形态） ====================
+    //
+    // 结论与理由写在 `CMD_ARG_FORBIDDEN` 上面那一段注释里（判据表 + 为什么"换个拼法"这条路走不通）。
+    // 这里只放判据：
+    //
+    // - `CMD-ARG-1`  ：放行面**逐字节**（语料从拒绝名单**现算** ⇒ 以后往放行面加字符会自动进表）
+    //                  + 拒绝面 fail-closed（把某个字符从名单里删掉 ⇒ 立刻红）；
+    // - `CMD-ARG-1b` ：`%` 的 `%%` 双写在 `call` 型 shim 上失效（"两跳都不展开"的前提可证伪）；
+    // - `CMD-ARG-1c` ：`!` 在开/不开延迟展开的脚本上互为反例（没有一种拼法同时对）；
+    // - `CMD-ARG-1d` ：`"` 的四种拼法里**没有一种**既不被注入又逐字节保真；
+    // - `CMD-ARG-1e` ：CR/LF 会被 cmd 当成新的一行执行（注入证据）；
+    // - `CMD-ARG-2`  ：仍被拒的形态必须给**可操作**的替代办法（配反向对照：放行字符不给提示）。
+    //
+    // ⚠️ 这五条 `1b`~`1e` 断言的是"**做不到**"——它们是维持拒绝的**依据**。
+    // 若哪天它们变红，说明 `cmd.exe` 或探针的行为变了：必须**重新评估拒绝名单**，
+    // 而不是把断言删掉（删掉等于把"为什么不放行"的唯一证据丢掉）。
+    mod harden_192_tests {
+        use super::harden_186_tests::{
+            build_probe, escape_argv_bytes_for_test, make_shim, read_argv_dump, run_wrapper, want_argv,
+        };
+        use super::scratch;
+        use super::*;
+
+        /// 目标 `.cmd` 的真实形态。每一种都必须能把探针要的三个实参原样转过去
+        /// （每个用到的形态都配了一条 "plain" 对照，否则"实验结果"可能只是实验台坏了）。
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        enum Shim {
+            /// 最简 `%*` 转发（与第 186 波判据表同一个实现）
+            PctStar,
+            /// npm 真 shim 的骨架（`goto` / `||` / `&` / `%COMSPEC%` 全在，末尾 `%*`）
+            Npm,
+            /// 位置参数转发（手写 shim 的常见形态，不用 `%*`）
+            Positional,
+            /// `call` 转发 —— `call` 会**再解析一轮**（批处理双重展开的经典入口）
+            Call,
+            /// `%*` + `EnableDelayedExpansion`（`!` 的展开面在这里被打开）
+            Delayed,
+        }
+
+        fn write_shim(dir: &std::path::Path, shim: Shim, exe: &std::path::Path) -> std::path::PathBuf {
+            let exe_s = exe.display().to_string();
+            let (name, text) = match shim {
+                // 与第 186 波判据表**同一份**实现（不另写一份，否则两边会各自漂）
+                Shim::PctStar => return make_shim(dir, "shim-pctstar", exe),
+                Shim::Npm => (
+                    "shim-npm.cmd",
+                    "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST \"@EXE@\" (\r\n  SET \"_prog=@EXE@\"\r\n) ELSE (\r\n  SET \"_prog=@EXE@\"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\" %*\r\n",
+                ),
+                Shim::Positional => ("shim-args.cmd", "@ECHO off\r\n\"@EXE@\" %1 %2 %3 %4\r\n"),
+                Shim::Call => ("shim-call.cmd", "@ECHO off\r\ncall \"@EXE@\" %*\r\n"),
+                Shim::Delayed => (
+                    "shim-delayed.cmd",
+                    "@ECHO off\r\nsetlocal EnableDelayedExpansion\r\n\"@EXE@\" %*\r\n",
+                ),
+            };
+            let p = dir.join(name);
+            // 占位符刻意不用 `%…%`：万一漏替换，批处理会把它展开成空串而**不报错**
+            std::fs::write(&p, text.replace("@EXE@", &exe_s)).expect("写 shim");
+            p
+        }
+
+        /// 按给定**拼法**直接拼 wrapper 行。
+        ///
+        /// 生产的 `build_cmd_wrapper` 会拒绝这些实参，所以"若放行会怎样"只能自己拼；
+        /// 行格式与 `@echo off` / `exit /b` 约定与生产**逐字相同**（形状取自 `cmd_wrapper_text`），
+        /// 只有实参那一段换成实验拼法。
+        fn wrapper_with(shim: &std::path::Path, spellings: &[String]) -> String {
+            let mut line = format!("\"{}\"", shim.display());
+            for s in spellings {
+                line.push(' ');
+                line.push_str(s);
+            }
+            format!("@echo off\r\n{line}\r\nexit /b %ERRORLEVEL%\r\n")
+        }
+
+        /// 起一次"假设性放行"，返回目标进程收到的 `argv0`（**与探针同口径的转义文本**）。
+        ///
+        /// 返回 `None` = 探针没写出东西（没跑起来 / 根本没收到实参）。
+        async fn lenient_arg0(
+            dir: &std::path::Path,
+            shim: &std::path::Path,
+            arg_spelling: &str,
+            tag: &str,
+        ) -> Option<String> {
+            let out = dir.join(format!("lenient-{tag}.txt"));
+            let text = wrapper_with(
+                shim,
+                &[
+                    quote_cmd_arg_for_wrapper(ARGV_DUMP_MAGIC),
+                    quote_cmd_arg_for_wrapper(&out.display().to_string()),
+                    arg_spelling.to_string(),
+                ],
+            );
+            let (_o, wrapper) = run_wrapper(&text).await;
+            let dump = read_argv_dump(&out);
+            let _ = std::fs::remove_file(&wrapper);
+            dump.iter().find_map(|l| {
+                let rest = l.strip_prefix("argv0=")?;
+                let (_len, escaped) = rest.split_once(':')?;
+                Some(escaped.to_string())
+            })
+        }
+
+        /// 与探针同口径的期望值（省掉到处 `.as_str()`）
+        fn want_arg0(s: &str) -> Option<String> {
+            Some(escape_argv_bytes_for_test(s))
+        }
+
+        /// 一个形态的"先跑通"对照：普通实参必须逐字节转过去，否则后面的 ❌ 是实验台坏了。
+        async fn assert_shim_works(dir: &std::path::Path, shim: &std::path::Path, tag: &str) {
+            let got = lenient_arg0(dir, shim, &quote_cmd_arg_for_wrapper("plain arg"), &format!("ctl-{tag}")).await;
+            assert_eq!(
+                got, want_arg0("plain arg"),
+                "对照失败：{tag} 这个 shim 连普通实参都没原样转过去 ⇒ 它的其它结论都不成立"
+            );
+        }
+
+        /* ---------- 拼法（`"` 的四种假设） ---------- */
+
+        fn spell_asis(a: &str) -> String {
+            quote_cmd_arg_for_wrapper(a)
+        }
+        fn spell_crt(a: &str) -> String {
+            quote_cmd_arg_for_wrapper(&a.replace('"', "\\\""))
+        }
+        fn spell_batch(a: &str) -> String {
+            quote_cmd_arg_for_wrapper(&a.replace('"', "\"\""))
+        }
+        /// 混合拼法：先按 CRT 的规则给"紧邻引号的反斜杠"翻倍，再把引号按批处理双写。
+        fn spell_hybrid(a: &str) -> String {
+            let mut out = String::new();
+            let mut backslashes = 0usize;
+            for c in a.chars() {
+                match c {
+                    '\\' => backslashes += 1,
+                    '"' => {
+                        out.push_str(&"\\".repeat(backslashes * 2));
+                        backslashes = 0;
+                        out.push_str("\"\"");
+                    }
+                    _ => {
+                        out.push_str(&"\\".repeat(backslashes));
+                        backslashes = 0;
+                        out.push(c);
+                    }
+                }
+            }
+            out.push_str(&"\\".repeat(backslashes));
+            quote_cmd_arg_for_wrapper(&out)
+        }
+
+        /// 判据 `CMD-ARG-1`：**放行面逐字节** + **拒绝面 fail-closed**。
+        ///
+        /// 语料是**现算的**：拒绝名单之外的每一个可打印 ASCII 各出一个"单字符"与"夹在中间"的实参。
+        /// 这样"以后往放行面里加一个字符"会自动进表 —— 不会出现"新放行的形态没人测"。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn cmd_arg_1_allowed_forms_are_byte_exact_end_to_end() {
+            let dir = scratch("192-allowed").join("dir with space");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = build_probe();
+            let shim = make_shim(&dir, "server shim", &exe);
+            let out = dir.join("argv-allowed.txt");
+
+            let mut corpus: Vec<String> = Vec::new();
+            for b in 0x21u8..=0x7e {
+                let c = b as char;
+                if CMD_ARG_FORBIDDEN.contains(&c) {
+                    continue;
+                }
+                corpus.push(c.to_string());
+                corpus.push(format!("a{c}b"));
+            }
+            // 复合样例：元字符 / 空格 / 中文 / 结尾反斜杠 / 空串（引号内 ⇒ 必须都是字面量）
+            for s in [
+                "amp & calc.exe",
+                "pipe | whoami",
+                "caret ^ & del",
+                "lt a<b>c gt",
+                "paren a(b)c",
+                "semi a;b,c=d",
+                "two words",
+                "中文 参数",
+                "trailing C:\\dir\\",
+                "",
+            ] {
+                corpus.push(s.to_string());
+            }
+
+            let args: Vec<String> = std::iter::once(ARGV_DUMP_MAGIC.to_string())
+                .chain(std::iter::once(out.display().to_string()))
+                .chain(corpus.iter().cloned())
+                .collect();
+            let spec = build_cmd_wrapper(&shim.display().to_string(), &args)
+                .expect("放行面的实参必须全部可证（拒绝名单之外的字符一个都不许被拒）");
+            let (o, wrapper) = run_wrapper(&spec.text).await;
+            let dump = read_argv_dump(&out);
+            let want: Vec<String> = corpus.iter().enumerate().map(|(i, a)| want_argv(i, a)).collect();
+            assert_eq!(
+                dump,
+                want,
+                "放行面的实参没有逐字节到目标进程（argv 判据口径，不是「起得来就算」）：\nstdout={}\nstderr={}\nwrapper={:?}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr),
+                spec.text
+            );
+            let _ = std::fs::remove_file(&wrapper);
+
+            // 拒绝名单**就是**这一组 —— 边界本身也是取证结论的一部分：
+            // 往名单里加字符是**收紧**（放行面变窄）、删字符是放宽（实测后果见上面的表），
+            // 两个方向都必须有人看着（只钉"被拒的确实被拒"挡不住"悄悄收紧"）。
+            let expected: &[char] = &['"', '%', '!', '\r', '\n', '\0'];
+            assert_eq!(
+                CMD_ARG_FORBIDDEN, expected,
+                "拒绝名单被改了 ⇒ O-43 的放行面/拒绝面取证表必须重跑（不许悄悄收紧或放宽）"
+            );
+
+            // 拒绝面：`CMD_ARG_FORBIDDEN` 里**每一个**字符都必须 fail-closed，且点名第几个参数。
+            // （把某个字符从名单里删掉 ⇒ 这一段立刻红 —— 这就是本条的变异敏感处。）
+            for c in CMD_ARG_FORBIDDEN {
+                for arg in [format!("{c}"), format!("a{c}b")] {
+                    match build_cmd_wrapper(&shim.display().to_string(), &[arg.clone()]) {
+                        Ok(_) => panic!("{arg:?} 含拒绝名单里的 {c:?}，必须被拒（不许静默改写后放行）"),
+                        Err(err) => assert!(
+                            err.contains("第 1 个参数"),
+                            "错误信息必须点名是第几个参数（{arg:?}）：{err}"
+                        ),
+                    }
+                }
+            }
+            let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        }
+
+        /// 判据 `CMD-ARG-1b`：**`%` 为什么仍然拒绝** —— `%%` 双写只在"目标脚本不再解析一轮"时才对。
+        ///
+        /// 三段：
+        /// ① 最简 `%*` / npm 骨架 / 位置参数三种 shim：双写**确实**逐字节
+        ///    ⇒ 反证"我们不是在打稻草人"（能对的情形我们找到了）；
+        /// ② `call` 型 shim：同一拼法不再保真（`%PATH%` 被展开成真 PATH）；
+        /// ③ 更狠的一条：`%1` 会被换成 shim **自己的**第一个实参 ⇒ 用户给的字符串变成了别人的参数。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn cmd_arg_1b_percent_doubling_is_shim_dependent() {
+            let dir = scratch("192-percent");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = build_probe();
+
+            // ① 双写在这三种真实形态上都**是**对的
+            for (tag, shim) in [
+                ("pctstar", Shim::PctStar),
+                ("npm", Shim::Npm),
+                ("positional", Shim::Positional),
+            ] {
+                let path = write_shim(&dir, shim, &exe);
+                assert_shim_works(&dir, &path, tag).await;
+                let spelled = quote_cmd_arg_for_wrapper("%PATH%".replace('%', "%%").as_str());
+                assert_eq!(
+                    lenient_arg0(&dir, &path, &spelled, &format!("ok-{tag}")).await,
+                    want_arg0("%PATH%"),
+                    "`%%` 双写在 {tag} 这个 shim 上应当逐字节（若这条红了，说明连『能对的情形』都没找对）"
+                );
+            }
+
+            // ②③ `call` 型 shim：会再解析一轮 ⇒ 双写失效，且 `%1` 会被换成脚本自己的实参
+            let called = write_shim(&dir, Shim::Call, &exe);
+            assert_shim_works(&dir, &called, "call").await;
+            let spelled = quote_cmd_arg_for_wrapper("%PATH%".replace('%', "%%").as_str());
+            let got = lenient_arg0(&dir, &called, &spelled, "call-pct").await;
+            assert_ne!(
+                got, want_arg0("%PATH%"),
+                "`call` 型 shim 会再解析一轮 ⇒ `%%` 双写不再保真（这正是不能放行的实测理由）"
+            );
+            assert!(
+                got.as_ref().map(|s| s.len()).unwrap_or(0) > "%PATH%".len(),
+                "被展开成真 PATH 时长这样才对（实测应远长于 6 个字符）：{got:?}"
+            );
+
+            let one = quote_cmd_arg_for_wrapper("%%1");
+            assert_eq!(
+                lenient_arg0(&dir, &called, &one, "call-one").await,
+                want_arg0(ARGV_DUMP_MAGIC),
+                "`%1` 在 `call` 型 shim 上必须被换成 shim **自己的**第一个实参（= 探针的魔法串）\
+                 ⇒ 用户给的字符串变成了别人的参数，这比「报错」严重得多"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        /// 判据 `CMD-ARG-1c`：**`!` 为什么仍然拒绝** —— 开/不开延迟展开的脚本互为反例。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn cmd_arg_1c_no_bang_spelling_works_for_both_scripts() {
+            let dir = scratch("192-bang");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = build_probe();
+            let plain = write_shim(&dir, Shim::PctStar, &exe);
+            let delayed = write_shim(&dir, Shim::Delayed, &exe);
+            assert_shim_works(&dir, &plain, "plain").await;
+            assert_shim_works(&dir, &delayed, "delayed").await;
+
+            let raw = quote_cmd_arg_for_wrapper("a!b!c");
+            let escaped = quote_cmd_arg_for_wrapper("a^!b^!c");
+
+            // 没开延迟展开的脚本：照原样对，`^!` 反而把 caret 变成了字面量
+            assert_eq!(
+                lenient_arg0(&dir, &plain, &raw, "plain-raw").await,
+                want_arg0("a!b!c"),
+                "没开延迟展开时 `a!b!c` 应当逐字节（这一列是对照：证明实验台没坏）"
+            );
+            assert_ne!(
+                lenient_arg0(&dir, &plain, &escaped, "plain-esc").await,
+                want_arg0("a!b!c"),
+                "`^!` 转义在没开延迟展开的脚本上会**改形**（caret 成了字面量）"
+            );
+
+            // 开了延迟展开的脚本：恰好相反 —— 照原样把 `!` 吃掉，`^!` 才是对的
+            assert_ne!(
+                lenient_arg0(&dir, &delayed, &raw, "delayed-raw").await,
+                want_arg0("a!b!c"),
+                "开了延迟展开时照原样会把 `!` 吃掉（实测 `a!b!c`→`ac`）"
+            );
+            assert_eq!(
+                lenient_arg0(&dir, &delayed, &escaped, "delayed-esc").await,
+                want_arg0("a!b!c"),
+                "开了延迟展开时 `^!` 才是对的 ⇒ 两种脚本互为反例，**没有一种拼法同时对**"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        /// 判据 `CMD-ARG-1d`：**`"` 为什么仍然拒绝** —— 已证的两条路都不合格，候选方案差"证明"这一步。
+        ///
+        /// 三段（全部真 `cmd.exe` + 探针逐字节 argv）：
+        /// ① **「照原样」与 CRT `\"` 会注入**：`x" & echo … & rem "y` 的**参数尾部真的被当命令执行**
+        ///    （金丝雀文件出现）。这就是"把 `"` 从拒绝名单里删掉、却不给转义方案"的真实后果 ——
+        ///    对 MCP 启动参数这种可来自市场配置的字段，等于任意命令执行；
+        /// ② **批处理 `""` 不注入，但不逐字节**：`a\"b` 的反斜杠被吃掉（静默改形）；
+        /// ③ **候选拼法（混合B：引号一律双写 + 紧邻引号的反斜杠翻倍）在本次语料上又干净又逐字节**
+        ///    —— 如实登记为"差一步就成立"的候选，**不**宣称"不可能"。
+        ///
+        /// 那为什么还不放行？因为 §3 拿到的是**样本**而不是**证明**：
+        /// CRT 那一层的结果无法从公开规则直接推出（"2n 个反斜杠 + 引号"与"引号内 `""`"两条规则
+        /// 恰好在这一族上叠加），而这条路上写错的后果是 ①（任意命令执行）。
+        /// 代价那一侧也不支持冒险：参数本来就是**分开传**的，引号是多余的，
+        /// 报错文案已经把"直接去掉引号"说清楚了（`CMD-ARG-2`）。
+        /// ⇒ **维持拒绝**，并把候选方案与它的实测边界留在这里，供下一轮从这一步接着走。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn cmd_arg_1d_quote_spellings_are_either_injectable_or_lossy() {
+            let dir = scratch("192-quote");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = build_probe();
+            let shim = write_shim(&dir, Shim::PctStar, &exe);
+            assert_shim_works(&dir, &shim, "quote").await;
+
+            let backslash_quote = "a\\\"b";
+            let inject = "x\" & echo PWNED> @CANARY@ & rem \"y";
+
+            // ① 会注入的两种拼法（安全级依据）
+            let injectable: Vec<(&str, fn(&str) -> String)> =
+                vec![("照原样", spell_asis as fn(&str) -> String), ("CRT \\\"", spell_crt)];
+            for (i, (name, spell)) in injectable.iter().enumerate() {
+                let canary = dir.join(format!("pwned-inject-{i}.txt"));
+                let _ = std::fs::remove_file(&canary);
+                let payload = inject.replace("@CANARY@", &canary.display().to_string());
+                let _ = lenient_arg0(&dir, &shim, &spell(&payload), &format!("inj-{i}")).await;
+                assert!(
+                    canary.exists(),
+                    "拼法「{name}」必须被证明**会注入** —— 金丝雀没出现说明这条安全级依据没了（cmd 行为变了？）"
+                );
+            }
+
+            // ② 批处理 `""`：不注入，但"反斜杠紧邻引号"这一族不逐字节
+            let canary = dir.join("pwned-batch.txt");
+            let _ = std::fs::remove_file(&canary);
+            let payload = inject.replace("@CANARY@", &canary.display().to_string());
+            let _ = lenient_arg0(&dir, &shim, &spell_batch(&payload), "batch-inj").await;
+            assert!(!canary.exists(), "批处理 `\"\"` 双写是**不注入**的那一种（这条是上面两条的对照）");
+            assert_ne!(
+                lenient_arg0(&dir, &shim, &spell_batch(backslash_quote), "batch-bs").await,
+                want_arg0(backslash_quote),
+                "`\"\"` 双写会吃掉紧邻引号的反斜杠 ⇒ 单靠它不能放行（静默改形，长度还可能不变）"
+            );
+
+            // ③ 候选拼法（混合B）的实测边界：必须又干净又逐字节（否则候选方案本身没了）
+            for (i, arg) in [backslash_quote, "a\\\\\"b", "end\\\""].iter().enumerate() {
+                let canary = dir.join(format!("pwned-hybrid-{i}.txt"));
+                let _ = std::fs::remove_file(&canary);
+                let payload = inject.replace("@CANARY@", &canary.display().to_string());
+                let _ = lenient_arg0(&dir, &shim, &spell_hybrid(&payload), &format!("hyb-inj-{i}")).await;
+                assert!(
+                    !canary.exists(),
+                    "候选拼法（混合B）必须**不注入** —— 若这条红了，候选方案本身没了（拒绝 `\"` 就更没有退路）"
+                );
+                assert_eq!(
+                    lenient_arg0(&dir, &shim, &spell_hybrid(arg), &format!("hyb-{i}")).await,
+                    want_arg0(arg),
+                    "候选拼法（混合B）的实测边界：{arg:?} 必须逐字节"
+                );
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        /// 判据 `CMD-ARG-1e`：**CR/LF 为什么仍然拒绝** —— 它不是"传不过去"，而是**改掉了脚本的形状**。
+        ///
+        /// 两条实测事实：
+        /// ① 实参在换行处**被截断**（`x\r\n…` 到目标进程只剩 `x`）—— 静默改形，不是报错；
+        /// ② 含换行的实参把**我们生成的 wrapper** 从 3 行变成更多行：换行改的是**脚本结构**，
+        ///    不是某个值。多出来的那一行会不会被执行取决于引号是否恰好平衡 ——
+        ///    我们**不打算**把"能不能安全"寄托在这种外部巧合上（所以这里只断言"形状被改了"，
+        ///    不断言"一定会执行"：本机实测那些载荷并没有被执行，这是如实留白）。
+        #[cfg(target_os = "windows")]
+        #[tokio::test]
+        async fn cmd_arg_1e_crlf_truncates_and_reshapes_the_script() {
+            let dir = scratch("192-crlf");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = build_probe();
+            let shim = write_shim(&dir, Shim::PctStar, &exe);
+            assert_shim_works(&dir, &shim, "crlf").await;
+
+            for payload in [
+                "x\r\necho PWNED> nowhere.txt\r\nrem y",
+                "x\" \r\necho PWNED> nowhere.txt \r\nrem \" y",
+                "line\nbreak",
+            ] {
+                // ① 生成的脚本形状变了（生产 wrapper 恒为 3 行）。
+                //    数 `\n` 而不是 `\r\n`：落单的 LF 也是一行（实测 `line\nbreak` 同样被截断）。
+                let text = wrapper_with(&shim, &[spell_asis(payload)]);
+                assert_eq!(
+                    cmd_wrapper_text("x.cmd", &[]).matches('\n').count(),
+                    3,
+                    "生产 wrapper 的形状假定是 3 行（判据的另一半靠这个数）"
+                );
+                assert!(
+                    text.matches('\n').count() > 3,
+                    "含换行的实参没有把脚本变成多行？（{payload:?}）⇒ 这条判据没在测它：{:?}",
+                    text
+                );
+                // ② 实参被截断 ⇒ 不可能逐字节
+                let got = lenient_arg0(&dir, &shim, &spell_asis(payload), &format!("crlf-{}", text.len())).await;
+                assert_ne!(got, want_arg0(payload), "换行不可能逐字节传过去（单行批处理承载不了）：{got:?}");
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        /// 判据 `CMD-ARG-1f`：候选拼法（混合B）的**批处理那一层是可证的** ——
+        /// 每个 `"` 都变成 `""` 之后，生成行里任意位置的引号数始终成对
+        /// ⇒ 元字符永远落在引号**内** ⇒ 不可能跳出引号去执行。
+        ///
+        /// 这一条**不碰 cmd.exe**（纯文本 + 一台引号状态机），所以它守的是"为什么这一层不需要样本"。
+        /// 生产**没有**采用这个拼法（理由见 `cmd_arg_1d`），所以它现在钉的是"候选方案"而不是线上行为；
+        /// 一旦哪天采用，这条自动变成线上判据。
+        #[test]
+        fn cmd_arg_1f_candidate_scheme_keeps_metacharacters_inside_quotes() {
+            let hostile = [
+                "a\"b",
+                "\"lead",
+                "trail\"",
+                "\"",
+                "\"\"",
+                "a\"b\"c",
+                "x\" & calc.exe",
+                "x\" | whoami",
+                "x\" ^ & del",
+                "x\" < a > b",
+                "a\\\"b",
+                "a\\\\\"b",
+                "end\\\"",
+                "C:\\dir\\\"",
+                "\" & \"",
+            ];
+            let shim = std::path::Path::new("x.cmd");
+            for arg in hostile {
+                let line = wrapper_with(shim, &[spell_hybrid(arg)]);
+                let mut in_quotes = false;
+                let mut escaped = Vec::new();
+                for c in line.chars() {
+                    match c {
+                        '"' => in_quotes = !in_quotes,
+                        '&' | '|' | '<' | '>' | '^' if !in_quotes => escaped.push(c),
+                        _ => {}
+                    }
+                }
+                assert!(
+                    escaped.is_empty(),
+                    "候选拼法把元字符落到了引号外（{arg:?}）⇒ 会被 cmd 当命令执行：{line:?}"
+                );
+                assert!(!in_quotes, "候选拼法生成的引号必须成对（{arg:?}）：{line:?}");
+            }
+            // 反向对照：生产的「照原样」拼法**没有**这个性质 —— 这正是 `"` 必须被拒的原因
+            assert!(
+                wrapper_with(shim, &[quote_cmd_arg_for_wrapper("x\" & calc.exe")])
+                    .chars()
+                    .fold((false, false), |(inq, bad), c| match c {
+                        '"' => (!inq, bad),
+                        '&' | '|' | '<' | '>' | '^' if !inq => (inq, true),
+                        _ => (inq, bad),
+                    })
+                    .1,
+                "反向对照失败：生产的照原样拼法本该把 `&` 落到引号外（否则上面那条判据是恒真的）"
+            );
+        }
+
+        /// 判据 `CMD-ARG-2`：**仍被拒的形态必须给可操作的替代办法**（不是"不能用"三个字）。
+        ///
+        /// 反向对照（两条，防恒真）：
+        /// ① **放行字符**返回空串 —— "改成什么"这个问题在它们身上不存在（提示不能是噪声）；
+        /// ② 每个拒绝字符的提示**互不相同** —— 否则就是一句万能套话，用户看不出该改哪一处。
+        #[test]
+        fn cmd_arg_2_rejection_hints_are_actionable_and_specific() {
+            let table: Vec<(char, &[&str])> = vec![
+                ('%', &[".exe", "展开后的绝对路径"]),
+                ('"', &[".exe", "不需要", "去掉"]),
+                ('!', &[".exe", "去掉"]),
+                ('\r', &["写进文件", "去掉"]),
+                ('\n', &["写进文件", "去掉"]),
+                ('\0', &["去掉"]),
+            ];
+            let mut hints: Vec<(char, &'static str)> = Vec::new();
+            for (c, needles) in table {
+                assert!(CMD_ARG_FORBIDDEN.contains(&c), "判据表里的字符必须在拒绝名单里：{c:?}");
+                let hint = cmd_arg_probe_hint(c);
+                assert!(!hint.is_empty(), "{c:?} 必须有提示（只报「不能用」等于把用户留在原地）");
+                assert!(
+                    needles.iter().any(|n| hint.contains(n)),
+                    "{c:?} 的提示必须给出具体动作之一 {needles:?}，实际是：{hint}"
+                );
+                hints.push((c, hint));
+            }
+            // 反向对照①：放行字符没有"改成什么"可言 ⇒ 空串
+            for c in ['a', '&', ' ', '中', '\\'] {
+                assert!(!CMD_ARG_FORBIDDEN.contains(&c), "{c:?} 是放行字符（判据表的前提）");
+                assert_eq!(
+                    cmd_arg_probe_hint(c),
+                    "",
+                    "{c:?} 不在拒绝名单里 ⇒ 不该有提示（否则提示本身成了噪声）"
+                );
+            }
+            // 反向对照②：提示逐字符不同
+            for i in 0..hints.len() {
+                for j in (i + 1)..hints.len() {
+                    assert_ne!(
+                        hints[i].1, hints[j].1,
+                        "{:?} 与 {:?} 的提示一模一样 ⇒ 不是针对性的",
+                        hints[i].0, hints[j].0
+                    );
+                }
+            }
+            // 端到端串联：真正抛给用户的那段文案必须**同时**有点名 + 动作
+            for c in CMD_ARG_FORBIDDEN {
+                let err = cmd_arg_rejection(0, &format!("a{c}b")).expect("拒绝名单里的字符必须被拒");
+                assert!(err.contains("第 1 个参数"), "必须点名第几个参数：{err}");
+                let hint = cmd_arg_probe_hint(*c);
+                assert!(
+                    !hint.is_empty() && err.contains(hint),
+                    "面向用户的错误文案必须带上可操作的提示（{c:?}）：{err}"
+                );
+            }
         }
     }
 

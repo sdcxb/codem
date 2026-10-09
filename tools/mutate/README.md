@@ -34,6 +34,20 @@ export default {
 };
 ```
 
+## 两种运行面（`runner`）
+
+| `runner` | 默认 | `tests` 是什么 | 怎么判「判据变红」 |
+| --- | --- | --- | --- |
+| `"vitest"` | ✅ | 测试文件路径 | `npx vitest run <files>` 退出码非 0 |
+| `"cargo"` | | 判据名（libtest 过滤串，逐个跑） | **只认** `test <路径> ... FAILED` 且路径含该过滤串 |
+
+Rust 侧判据（`src-tauri/src/lib.rs` 的 `harden_*_tests`）从第 192 波起可以用 `runner: "cargo"` 进变异波次
+（`cmd-arg-192` 是第一个）。两条硬规定：
+
+1. **编译错误不算「红」**：`cargo` 退出码非 0 若无点名失败（编译不过、或别的用例红了），
+   这条变异直接记 `error` ⇒ 闸门报问题。否则「把代码改到编译不过」会骗过每一条变异；
+2. **一个波次里不许混两种运行面**（`specRunner()` 会直接抛错）：变异与判据必须一一对应。
+
 ## 闸门（`MUTATE-ARTIFACT-1`）查五件事
 
 1. 登记波次有结果文件；

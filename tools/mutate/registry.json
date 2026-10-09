@@ -15,7 +15,11 @@
     "memory-ipc-191": "O-52 记忆整份写的放大倍数（量化 + 棘轮 + 无变化不写）",
     "bench-evidence-191": "O-54 对标取证带出处落进仓库（docs/BENCH-EVIDENCE.md）+ 判据 BENCH-EVIDENCE-1",
     "water-level-banner-191": "紧急修复：上下文水位提示条的回执与风险分离 + 点按钮立刻收起（真机报的两个缺陷）",
-    "skill-scripts-191": "同簇收口：技能脚本的退出不许硬 process.exit（Windows libuv 断言 + 退出码 0xC0000409）"
+    "skill-scripts-191": "同簇收口：技能脚本的退出不许硬 process.exit（Windows libuv 断言 + 退出码 0xC0000409）",
+    "memory-badge-192": "O-45 外壳级「待批准记忆」角标（MEM-BADGE-1/1b/2/3：数字 = 面板那个数、清零即消失、点角标进面板）",
+    "cmd-arg-192": "O-43 `.cmd/.bat` 启动参数的放行面/拒绝面（CMD-ARG-1/2；本仓第一个 cargo 运行面的变异波次）",
+    "index-call-192": "真机回归：消息查询索引的写穿丢了接收者 `this`（INDEX-CALL-1；含「假端口必须和真端口一样挑剔」的反向对照）",
+    "json-repair-192": "真机实测：模型 JSON 里带裸换行 ⇒ 自动记忆被整批丢掉（JSON-REPAIR-1..6，含可定位诊断）"
   },
   "waves": [
     "memory-budget-191",
@@ -32,6 +36,10 @@
     "memory-ipc-191",
     "bench-evidence-191",
     "water-level-banner-191",
-    "skill-scripts-191"
+    "skill-scripts-191",
+    "memory-badge-192",
+    "cmd-arg-192",
+    "index-call-192",
+    "json-repair-192"
   ]
 }

@@ -963,6 +963,30 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     return persist(command, params);
   }
 
+  /**
+   * **接收者检查**（判据 `INDEX-CALL-1`，第 192 波真机回归的产物）。
+   *
+   * ## 为什么假端口必须自己"挑剔"这件事
+   *
+   * 真端口 `RustDataPort.command/execute` 的第一句是 `this.traceDestructive(...)` ——
+   * 也就是说**它们依赖 `this`**。而假端口的方法是普通闭包转发，拆出来调用毫无问题。
+   * 于是「把方法拆进变量再脱离对象调用」这个形态在测试里**完全正常、在真机上必然抛**：
+   * 装机版 1.16.300 实测——每条消息的查询索引写入都抛
+   * `Cannot read properties of undefined (reading 'traceDestructive')`（13 条 console error +
+   * 用户可见的「数据保存失败」横幅），而全量单测 7882 条全绿。
+   *
+   * 这与文件头那条纪律是同一条：**测试双不得比实现宽松**。
+   * 现在两边都如实：拆出来调用 ⇒ 当场 TypeError（而不是"悄悄成功了"）。
+   */
+  const assertBoundToData = (self: unknown, method: string): void => {
+    if (self !== data) {
+      throw new TypeError(
+        `fake-port: data.${method} 必须带着端口对象调用（\`this\` 丢了）—— 真端口在这里会抛 ` +
+          `"Cannot read properties of undefined (reading 'traceDestructive')"`,
+      );
+    }
+  };
+
   const data: StorageDataPort = {
     async query<T>(command: string, params?: Record<string, unknown>, page?: PageRequest): Promise<Page<T>> {
       /**
@@ -1022,6 +1046,8 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       return { written };
     },
     async execute(command: string, params?: Record<string, unknown>) {
+      // `INDEX-CALL-1`：与真端口同形 —— 拆出来调用必须当场失败，不许"悄悄成功"
+      assertBoundToData(this, "execute");
       /*
        * ⚠️ **落库失败必须 reject，不能"记账 + 返回 {written:0}"**（第 20 轮修正）。
        *
@@ -1051,6 +1077,8 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
      * 于是"自检判据"这条最关键的逻辑**在测试基座里从来没有被真正执行过**。
      */
     async command<T = Record<string, unknown>>(command: string, params?: Record<string, unknown>): Promise<T> {
+      // `INDEX-CALL-1`：真端口的这一句就是 `this.traceDestructive(...)` ⇒ 接收者必须是端口对象
+      assertBoundToData(this, "command");
       /**
        * `tool_calls.list`：**读**命令（真实现见 `codem-db/src/repo.rs::tool_calls_list`）。
        *

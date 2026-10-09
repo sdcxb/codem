@@ -1,8 +1,8 @@
 {
   "wave": "memory-ipc-191",
   "description": "第 191 波 O-52：记忆整份写的放大倍数必须被量化（无变化不写这条防线不许丢；落库字节必须是整份）",
-  "runAt": "2026-10-09T00:43:48.055Z",
-  "specFingerprint": "a812c67dd57a8c1f44c40ca7e6358441b308226b",
+  "runAt": "2026-10-09T03:19:40.379Z",
+  "specFingerprint": "9030d2fdd78d30969402ed6980e4b3f84bb0a4e0",
   "files": [
     "src/core/memory/memory.ts"
   ],
@@ -24,11 +24,12 @@
       "tests": [
         "src/test/memory-write-amplification.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": true,
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2227
+      "ms": 2320
     },
     {
       "id": "MUT-1b 去掉「无变化不写」（同步那一处）",
@@ -43,11 +44,12 @@
       "tests": [
         "src/test/memory-write-amplification.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": true,
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2225
+      "ms": 2311
     },
     {
       "id": "MUT-2 只落「改动的那一条」而不是整份（伪增量）",
@@ -55,18 +57,19 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    patchMemoryMirror(payload);\n    this.lastPersistedPayload = payload;\n    this.chainPersist(payload);\n    return true;",
-          "to": "    patchMemoryMirror(payload);\n    this.lastPersistedPayload = payload;\n    this.chainPersist(JSON.stringify({ version: 2, entries: { onlyOne: Array.from(this.entries.values()).pop() }, batches: [] }));\n    return true;"
+          "from": "    this.chainPersist(payload);",
+          "to": "    this.chainPersist(JSON.stringify({ version: 2, entries: { onlyOne: Array.from(this.entries.values()).pop() }, batches: [] }));"
         }
       ],
       "tests": [
         "src/test/memory-write-amplification.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": true,
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2249
+      "ms": 2299
     },
     {
       "id": "MUT-3 反向对照：只改一处说明注释",
@@ -81,11 +84,12 @@
       "tests": [
         "src/test/memory-write-amplification.test.ts"
       ],
+      "runner": "vitest",
       "expectedRed": false,
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 2229
+      "ms": 2282
     }
   ]
 }

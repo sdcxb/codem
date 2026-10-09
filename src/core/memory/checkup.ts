@@ -25,7 +25,11 @@ import {
   getMemoryService,
   injectionScopeContext,
   isLegacyPoolInjectionPaused,
+  // S4 / O-45：待批准判据**全仓唯一一处**（旧写法在这里也抄了一遍 `?? "active"`）
+  isPendingMemoryEntry,
   memorySourceOf,
+  // 状态缺省值同样只有一处实现（体检视图把它直接展示出来）
+  memoryStatusOf,
   projectIdFromCwd,
   type MemoryEntry,
   type MemoryScope,
@@ -271,7 +275,7 @@ export function checkupSourceOf(entry: MemoryEntry): CheckupSource {
  * 体检视图用它显示"这条现在不生效"，所以必须用**用户当前位置**算，不能用条目自己的归属算。
  */
 function checkupInjected(entry: MemoryEntry, ctx: { projectId?: string; sessionId?: string }): boolean {
-  if ((entry.status ?? "active") !== "active") return false;
+  if (isPendingMemoryEntry(entry)) return false;
   if (entry.scope === "platform") return true;
   if (entry.scope === "project") return Boolean(entry.projectId) && entry.projectId === ctx.projectId;
   return Boolean(entry.sessionId) && entry.sessionId === ctx.sessionId;
@@ -362,7 +366,7 @@ export function createMemoryCheckup(
         : { injected: false, reason: plan.reasons.get(entry.id) ?? "不在当前项目/对话的作用域内" };
     }
     // 兜底分支：只给不带 injectionExplanations 的测试替身用（口径与注入侧一致）
-    if ((entry.status ?? "active") !== "active") return { injected: false, reason: "待批准（未批准不进上下文）" };
+    if (isPendingMemoryEntry(entry)) return { injected: false, reason: "待批准（未批准不进上下文）" };
     if (isLegacyPoolInjectionPaused() && entry.legacyPool === true) {
       return { injected: false, reason: "已打开「暂停注入旧版跨项目记忆」" };
     }
@@ -386,7 +390,7 @@ export function createMemoryCheckup(
   for (const e of entries) {
     const source = checkupSourceOf(e);
     sourceCounts[source]++;
-    if ((e.status ?? "active") === "pending") pendingCount++;
+    if (isPendingMemoryEntry(e)) pendingCount++;
 
     const verdict = checkupInjectedWithReason(e);
     if (verdict.injected) injectedCount++;
@@ -399,7 +403,7 @@ export function createMemoryCheckup(
       scope: e.scope,
       scopeRaw: typeof e.scope === "string" ? e.scope : "",
       source,
-      status: e.status ?? "active",
+      status: memoryStatusOf(e),
       /*
        * `injected` = "这条**现在**会不会进上下文" ⇒ 一律拿**当前位置**算
        * （当前项目 A 的用户看到项目 B 的条目时，它应当显示"不进上下文"，而不是"因为它属于 B 所以生效"）。

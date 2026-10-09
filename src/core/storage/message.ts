@@ -2294,7 +2294,22 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
   };
   const viaCommand = port.data.command;
   if (viaCommand) {
-    void viaCommand("messages.upsert_index", params).then(reconcileAuthoritativeCount, onIndexFailure);
+    /*
+     * ⚠️ 真机回归（第 192 波真机验证抓到）：这里原来写的是 `viaCommand(...)` ——
+     * **脱离对象调用**，而 `RustDataPort.command` 的第一句是 `this.traceDestructive(...)`
+     * ⇒ `this` 变成 undefined ⇒ 每一次索引写入都抛
+     * `TypeError: Cannot read properties of undefined (reading 'traceDestructive')`。
+     *
+     * 真机现场（装机版 1.16.300）：启动后 13 条 console error + 一条用户可见的
+     * 「数据保存失败（message.createMessage.index）…重启应用后会丢」横幅，
+     * 而**全量单测全绿** —— 因为测试替身（`fake-storage-port`）的方法不依赖 `this`，
+     * 拆出来照样能跑（"测试双比实现宽松"的又一例）。
+     *
+     * 现在两处都堵上：这里显式 `.call(port.data, …)`（与 `self-heal` / `secret-store` /
+     * 本文件 1384 行同一写法），并且假端口补了**接收者检查** ⇒ 再拆一次就在测试里当场红
+     * （判据 `INDEX-CALL-1`）。
+     */
+    void viaCommand.call(port.data, "messages.upsert_index", params).then(reconcileAuthoritativeCount, onIndexFailure);
   } else {
     void port.data.execute("messages.upsert_index", params).catch(onIndexFailure);
   }

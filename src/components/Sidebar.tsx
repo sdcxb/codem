@@ -19,6 +19,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { getDelegationOrchestrator } from "../core/session";
 import { getInboxManager } from "../core/inbox/inbox";
 import { ensureReadStateInitialized, computeUnreadBySession, markSessionRead } from "../core/session/session-read-state";
+// S4 / O-45：外壳级「待批准记忆」角标（数字与记忆面板同一个来源，见该 hook 的说明）
+import { useMemoryPendingCount } from "../hooks/useMemoryPendingCount";
 // 第 191 波：「今天」的边界必须与标题同口径（本地日 00:00），不再用滚动的 24h
 import { localDayStartMs } from "../core/time/local-time";
 import { ActionIcons } from "../core/icons/icon-map";
@@ -76,6 +78,27 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onP
     openProject, getProjectSessions, updateProject,
     renameSession,
   } = useProjectStore();
+  /**
+   * S4 / O-45：外壳级「待批准记忆」角标。
+   *
+   * 默认审批开启时自动提取的记忆先进待批准区、**不进上下文**（设计如此），
+   * 而「有一批待批准正等着」原来只在用户主动打开记忆面板（模态框）时才看得见
+   * ⇒ 用户会以为自动记忆不好使（这正是 S4 当初要治的病，只是当初只治了面板内部那一半）。
+   *
+   * 数字与记忆面板顶部「待批准」那一格**同一个来源**：`useMemoryPendingCount` 内部走
+   * `getStats(memoryPanelScope(…)).pendingEntries`，而 `memoryPanelScope()` 也是
+   * `App.tsx` 传给记忆面板的同一对键（全仓唯一实现）。
+   */
+  const memoryPending = useMemoryPendingCount(currentProject?.path, currentSession?.id);
+  /** 角标数字（>99 折叠成 99+，与既有未读徽标同一口径） */
+  const memoryBadgeText = memoryPending > 99 ? "99+" : String(memoryPending);
+  /** 入口的可访问名 / tooltip：有 pending 时必须把条数说出来（角标是 `aria-hidden` 的装饰） */
+  const memoryEntryLabel =
+    memoryPending > 0
+      ? lang === "zh"
+        ? `${S.sidebar.memory[lang]}（${memoryPending} 条待批准，未批准不进上下文）`
+        : `${S.sidebar.memory[lang]} (${memoryPending} pending approval, not injected yet)`
+      : S.sidebar.memory[lang];
   // 左下角用户头像 — 读 codem-user.avatar（与聊天消息用户头像同源）；
   // 监听保存/存储事件即时刷新（设置里选完头像并保存后立刻生效）
   const [userAvatar, setUserAvatar] = useState<string>("");
@@ -444,11 +467,19 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button aria-label={S.sidebar.memory[lang]} className="sidebar-rail-btn" onClick={onMemory}>
+            <button
+              aria-label={memoryEntryLabel}
+              className={`sidebar-rail-btn${memoryPending > 0 ? " has-badge" : ""}`}
+              onClick={onMemory}
+            >
               <Brain size={16} />
+              {/* S4 / O-45：待批准角标（点它 = 点这个按钮 ⇒ 进记忆面板；见 MEM-BADGE-3） */}
+              {memoryPending > 0 && (
+                <span className="memory-pending-badge" aria-hidden="true">{memoryBadgeText}</span>
+              )}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">{S.sidebar.memory[lang]}</TooltipContent>
+          <TooltipContent side="right">{memoryEntryLabel}</TooltipContent>
         </Tooltip>
         {onPlugins && (
           <Tooltip>
@@ -547,8 +578,14 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             <span className="sidebar-tool-item-icon"><BookMarked size={16} /></span>
             <span className="sidebar-tool-item-label">{S.sidebar.skills[lang]}</span>
           </button>
-          <button className="sidebar-tool-item" onClick={onMemory} title={S.sidebar.memory[lang]}>
-            <span className="sidebar-tool-item-icon"><Brain size={16} /></span>
+          <button className="sidebar-tool-item" onClick={onMemory} title={memoryEntryLabel}>
+            <span className="sidebar-tool-item-icon">
+              <Brain size={16} />
+              {/* S4 / O-45：展开态的同一条提示（两处都指向同一个 onMemory，不是两个入口） */}
+              {memoryPending > 0 && (
+                <span className="memory-pending-badge" aria-hidden="true">{memoryBadgeText}</span>
+              )}
+            </span>
             <span className="sidebar-tool-item-label">{S.sidebar.memory[lang]}</span>
           </button>
           {onAgents && (

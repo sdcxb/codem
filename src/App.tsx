@@ -275,6 +275,8 @@ import { PluginManager } from "./components/PluginManager";
 import { SkillManager } from "./components/SkillManager";
 import { MemoryManager } from "./components/MemoryManager";
 import { projectIdFromCwd, safeMemoryText } from "./core/memory/memory";
+// S4 / O-45：记忆面板与外壳角标的作用域**唯一实现**（两侧不可能读到不同的 ctx）
+import { memoryPanelScope } from "./core/memory/panel-scope";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { UsageStats } from "./components/UsageStats";
 import { TaskCenter, type TaskCenterTab } from "./components/TaskCenter";
@@ -472,6 +474,15 @@ function App() {
   useWindowState();
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages, loadedSessionId } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
+
+  /**
+   * S4 / O-45：记忆面板与侧栏角标读的**必须是同一对键**，否则会出现最坏的一类缺陷 ——
+   * 角标说「有 3 条待批准」，点进面板却是 0 条（或反过来）。
+   *
+   * 所以作用域只在这里推一次（`memoryPanelScope()` 是全仓唯一实现），面板与角标都从它取值。
+   * 角标那一侧在 `Sidebar` 内部自己也是同一条调用（同一个函数、同一对入参）。
+   */
+  const memoryScope = memoryPanelScope(currentProject?.path, currentSession?.id);
 
   /**
    * 第 47 轮（设置链路审计 D-20）：「上次打开的会话」恢复的**一次性闸门**与被占标志。
@@ -5348,8 +5359,8 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
               name="app.memory-manager"
               fallback={MemoryManager}
               onClose={() => setShowMemoryManager(false)}
-              sessionId={currentSession?.id}
-              projectId={projectIdFromCwd(currentProject?.path)}
+              sessionId={memoryScope.sessionId}
+              projectId={memoryScope.projectId}
             />
           </div>
         </div>

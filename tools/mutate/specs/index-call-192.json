@@ -1,0 +1,44 @@
+{
+  "description": "第 192 波真机验证抓到的回归：消息查询索引的写穿丢了接收者（`this`）—— 真机 1.16.300 上每条消息的索引写入都抛，而全量单测全绿。判据 INDEX-CALL-1（含「假端口必须和真端口一样挑剔接收者」的反向对照）。",
+  "mutations": [
+    {
+      "id": "MUT-1 把索引写穿改回「脱离对象调用」",
+      "why": "INDEX-CALL-1 的正身：`viaCommand.call(port.data, …)` 改回 `viaCommand(…)` ⇒ 假端口的接收者检查当场抛 ⇒ 索引表里没有那一行 ⇒ 必须红（这正是真机 1.16.300 的形态）",
+      "patches": [
+        {
+          "file": "src/core/storage/message.ts",
+          "from": "    void viaCommand.call(port.data, \"messages.upsert_index\", params).then(reconcileAuthoritativeCount, onIndexFailure);",
+          "to": "    void viaCommand(\"messages.upsert_index\", params).then(reconcileAuthoritativeCount, onIndexFailure);"
+        }
+      ],
+      "tests": ["src/test/message-index-port-binding.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 去掉假端口的接收者检查",
+      "why": "反向对照那一半：把 `assertBoundToData` 从假端口里去掉之后，「脱离对象调用必须抛」这条断言红 ⇒ 证明这条检查是**承重**的（它不承重的话，MUT-1 也就抓不到了）",
+      "patches": [
+        {
+          "file": "src/test/fake-storage-port.ts",
+          "from": "      // `INDEX-CALL-1`：真端口的这一句就是 `this.traceDestructive(...)` ⇒ 接收者必须是端口对象\n      assertBoundToData(this, \"command\");\n",
+          "to": ""
+        }
+      ],
+      "tests": ["src/test/message-index-port-binding.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 反向对照：只改一处说明注释",
+      "why": "反向对照：行为不变时判据不许红",
+      "patches": [
+        {
+          "file": "src/core/storage/message.ts",
+          "from": "  const reconcileAuthoritativeCount = (r: unknown): void => {",
+          "to": "  // 反向对照：只加一行注释\n  const reconcileAuthoritativeCount = (r: unknown): void => {"
+        }
+      ],
+      "tests": ["src/test/message-index-port-binding.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

@@ -20,6 +20,8 @@ import { useProjectStore } from "../core/store";
 import { confirmDialog } from "../core/ui/native-dialog";
 import {
   getMemoryService,
+  // S4 / O-45：待批准判据**全仓唯一一处**（本文件原来也自己写了一遍 `status === "pending"`）
+  isPendingMemoryEntry,
   isLegacyPoolInjectionPaused,
   MEMORY_SOURCE_KIND_LABEL,
   setLegacyPoolInjectionPaused,
@@ -295,7 +297,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
           </span>
           {/* M-2：旧版跨项目池的**可展示标记**（用户要能一眼认出"哪几条是被污染进来的"） */}
           {entry.legacyPool && <span className="mc-source-badge legacy-pool">旧版跨项目池</span>}
-          {entry.status === "pending" && <span className="mc-source-badge pending">待批准</span>}
+          {isPendingMemoryEntry(entry) && <span className="mc-source-badge pending">待批准</span>}
           {!entry.injected && <span className="mc-source-badge not-injected">不进上下文</span>}
         </div>
         <div className={`mc-entry-content ${expanded.has(entry.id) ? "expanded" : ""}`}>{entry.content}</div>
