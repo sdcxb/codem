@@ -1,15 +1,15 @@
 {
-  "version": "1.16.303",
-  "notes": "Codem v1.16.303 — 修掉自动记忆提取被整批丢掉的**真因**：模型返回的 JSON 正文里有未转义的双引号（1.16.302 修的那一类不是真因）。",
-  "pub_date": "2026-10-09T05:20:14Z",
+  "version": "1.16.304",
+  "notes": "Codem v1.16.304 — 记忆快照回退后的两处不一致（角标停在旧数字、提示指错组）；本版为跑满对标评测后发布的稳定版。",
+  "pub_date": "2026-10-09T05:54:30Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NXOEVlM08vTXpXWjFvbjVpYkZLdlBhRDgyYjJ4WXlwWHd4RjhWcDdNeVlhWnBUZHg5Snk5YUpRbTNTbGlpaTF1SXhvVEhEY0F5Qnp3R0JVTW83NkFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTIzMDkwCWZpbGU6Q29kZW1fMS4xNi4zMDNfeDY0LXNldHVwLmV4ZQpQUFRlSGxPQkJIOW4wQ0Rmdnp2SWpldEs5YzZHQjZVKzRyVWFMVXNlaVZ3b3ZDWlFjQnNEYUx3dCtCVG1zZnA2U09oOG5XTUJHcmY0anNoQ2NZLytCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.303/Codem_1.16.303_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NZTzF5L0RlQmdEUlNoanhpYkVGUlF3Rzd1ejV4aTV6L0l5THhZd3Yza0V3ZEZSc2diVkNtUG5zR0JTZUVETzk0aU85cTFsdzJ2WGhoZU9IWXMvb2djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTI1MjcwCWZpbGU6Q29kZW1fMS4xNi4zMDRfeDY0LXNldHVwLmV4ZQpISzZlVDZJRGkrWU9VSDJzME5CMUprRk1NWjZGTE1KVE1XSHBISmwvN1Y1VlU0QmV5L1VsRy8vV0ZvbWZNVmluQWpocWlvUTNBWFQ2bC9MRHNPN1BDUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.304/Codem_1.16.304_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NXOEVlM08vTXpXWjFvbjVpYkZLdlBhRDgyYjJ4WXlwWHd4RjhWcDdNeVlhWnBUZHg5Snk5YUpRbTNTbGlpaTF1SXhvVEhEY0F5Qnp3R0JVTW83NkFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTIzMDkwCWZpbGU6Q29kZW1fMS4xNi4zMDNfeDY0LXNldHVwLmV4ZQpQUFRlSGxPQkJIOW4wQ0Rmdnp2SWpldEs5YzZHQjZVKzRyVWFMVXNlaVZ3b3ZDWlFjQnNEYUx3dCtCVG1zZnA2U09oOG5XTUJHcmY0anNoQ2NZLytCUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.303/Codem_1.16.303_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NZTzF5L0RlQmdEUlNoanhpYkVGUlF3Rzd1ejV4aTV6L0l5THhZd3Yza0V3ZEZSc2diVkNtUG5zR0JTZUVETzk0aU85cTFsdzJ2WGhoZU9IWXMvb2djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTI1MjcwCWZpbGU6Q29kZW1fMS4xNi4zMDRfeDY0LXNldHVwLmV4ZQpISzZlVDZJRGkrWU9VSDJzME5CMUprRk1NWjZGTE1KVE1XSHBISmwvN1Y1VlU0QmV5L1VsRy8vV0ZvbWZNVmluQWpocWlvUTNBWFQ2bC9MRHNPN1BDUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.304/Codem_1.16.304_x64-setup.exe"
     }
   }
 }
