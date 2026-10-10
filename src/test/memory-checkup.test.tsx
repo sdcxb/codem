@@ -466,6 +466,79 @@ describe("MEM-CHECK-5：入口、归位与渲染", () => {
     spy.mockRestore();
   });
 
+  /**
+   * 第 197 波：**找出相似重复 + 人工清理**（用户要求"加一个去重重复类似记忆的按钮功能"）。
+   *
+   * 为什么必须有这条判据：真机库里 23 对近似重复**跨桶**散着（每次评测的工作目录不同 ⇒
+   * projectId 不同），自动流程按作用域隔离**不该**跨桶去猜 —— 所以"清一波"这件事
+   * 只能由界面给出候选 + 证据、用户逐组确认。这里钉的就是这条链路：
+   * 按钮存在 → 列出分组与相似度 → 「只留最早的一条」真的删掉其余（且落库）。
+   */
+  it("MEM-CHECK-DUP-1：找出相似重复 → 只留最早的一条 ⇒ 其余被删且落库", async () => {
+    saveMemory("");
+    const port = createFakeStoragePort({ seed: { settings: [{ key: "noop", value: "" }] } });
+    setStoragePort(port);
+    const svc = new MemoryService();
+    /* 真机形态：同一条事实被写进两个不同的 projectId（换了工作目录），一条 pending、一条已生效 */
+    const first = svc.add({
+      scope: "project",
+      projectId: PROJ_A_ID,
+      key: "Vitest 位置参数匹配语义",
+      content: "vitest 的位置参数按**路径子串**匹配（不是 glob），多个参数之间是**或**关系。",
+      source: "auto",
+      status: "pending",
+    });
+    const second = svc.add({
+      scope: "project",
+      projectId: projectIdFromCwd(PROJECT_B.path)!,
+      key: "vitest 路径参数按子串匹配、多参数为 OR",
+      content: "vitest 的位置参数是按路径子串匹配，多个参数之间为 OR 关系。",
+      source: "auto",
+      status: "pending",
+    });
+    expect(first.entry && second.entry).toBeTruthy();
+    await svc.flushPendingPersist();
+
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+    const { container } = render(<MemoryCheckupView />);
+
+    const findBtn = Array.from(container.querySelectorAll<HTMLButtonElement>(".mc-header-actions button")).find((b) =>
+      (b.textContent ?? "").includes("找出相似重复"),
+    );
+    expect(findBtn, "体检必须有「找出相似重复」按钮（这一波新增）").toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(findBtn!);
+      await Promise.resolve();
+    });
+
+    const groups = container.querySelectorAll(".mc-duplicate-group");
+    expect(groups, "这一对必须被列出来").toHaveLength(1);
+    expect(groups[0].querySelector(".mc-duplicate-similarity")?.textContent ?? "", "要给出可核对的相似度读数").toMatch(
+      /相似度 \d+%/,
+    );
+    expect(groups[0].querySelectorAll(".mc-duplicate-entry"), "组内两条都要显示").toHaveLength(2);
+
+    const keepOldest = Array.from(groups[0].querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+      (b.textContent ?? "").includes("只留最早的一条"),
+    );
+    expect(keepOldest, "必须有「只留最早的一条」").toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(keepOldest!);
+      await Promise.resolve();
+    });
+
+    expect(svc.get(second.entry!.id), "较晚的那条必须被删掉").toBeUndefined();
+    expect(svc.get(first.entry!.id), "最早的那条必须留下").toBeTruthy();
+    expect(
+      container.querySelector(".mc-notice")?.textContent ?? "",
+      "回执要说清删了几条且是否落库",
+    ).toContain("已落库");
+    spy.mockRestore();
+  });
+
   it("MEM-CHECK-5b：渲染出分组标题与来源标签，且不抛错", async () => {
     const svc = new MemoryService();
     svc.add({ scope: "platform", key: "平台条目", content: "PLATFORM_ITEM", source: "manual" });

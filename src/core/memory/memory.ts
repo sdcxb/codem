@@ -14,6 +14,11 @@ import { getStoragePort, hasStoragePort } from "../storage/port";
 // S4 / O-45：「记忆域变了」的**唯一**通知出口（外壳角标靠它自己亮起来，见该模块的说明）
 import { notifyMemoryChanged } from "./memory-changed";
 import {
+  clusterDuplicateMemories,
+  memoryLooksDuplicate,
+  type MemoryDuplicateGroup,
+} from "./similarity";
+import {
   reportAdvisory,
   reportPersistFailure,
   reportActionFailure,
@@ -1171,24 +1176,31 @@ export function approvalRequiredForScope(scope: MemoryScope): boolean {
  *
  * ## 规则（第 196 波：用户要求的「对话级默认直接生效」）
  *
- * - `"conversation"` ⇒ 对话级。它与 `approvalRequiredForScope` 的默认值
- *   （`conversation: false`）组合起来 = **直接生效、不进待批准区**；
- *   「只对这次对话成立」的约定因此不再打扰用户；
- * - **其它一切输入**（`"project"` / 缺省 / 大小写不同 / `"platform"` / 是数字或对象 / 模型编了个新词）
- *   ⇒ **项目级**。兜底方向刻意选"会问你一次"而不是"直接生效"：
- *   一条**没被核实过**的自动记忆悄悄进上下文，是这套审批机制存在的原因
- *   （与 `getWriteApprovalSetting()` 读不出来时一律按"需要批准"返回是同一条 fail-closed 纪律）。
- *   用户想要"全都别问我"时，把面板上「项目」那档切成**直接生效**即可（一行设置，无需改代码）。
+ * - `"project"` / `"platform"` ⇒ **项目级**：模型**明说了**这条事实跨对话仍然成立
+ *   （`platform` 也按项目级落 —— 平台级不许自动写，见下），因此它需要用户批准；
+ * - **其余一切**（`"conversation"` / 缺省 / 未知词 / 大小写不同 / 非字符串）⇒ **对话级**：
+ *   只对这次对话生效，默认**直接生效、不进待批准区**。
  *
- * ## 为什么**不**允许自动提取写平台级
+ * ## 兜底方向为什么是"对话级"（用户 2026-10-10 明确选的方向）
+ *
+ * 起初这里取的是 fail-closed（拿不准 ⇒ 项目级 ⇒ 会问用户一次）。用户看过两种取向后选了
+ * **「拿不准 ⇒ 对话级」**（少弹批准）。这个方向的**爆炸半径最小**：对话级条目只在那一个对话里
+ * 注入（且面板里可见/可编辑/可删），而项目级会对**这个项目以后的每个对话**生效。
+ * ⇒ "拿不准"时先只在它出现的场合生效；真要跨对话复用，由用户归位或由模型下一轮明确标成项目级。
+ *
+ * ⚠️ 这与「审批设置读不出来时一律按需要批准返回」（`getWriteApprovalSetting`）**不矛盾**：
+ * 那条守的是**开关本身**（安全开关读不到就少拦一道 = 放行），这条决定的是**一条自动记忆落哪个桶**。
+ *
+ * ## 为什么**不允许**自动提取写平台级
  *
  * 平台级 = 所有项目、所有对话都注入。跨项目共享必须是**显式**动作
- * （用户手写一条，或在面板里把某条归位成平台级）—— 这沿用既有设计，
+ * （用户手写一条，或在体检里把某条归位成平台级）—— 这沿用既有设计，
  * 不能让一次自动提取把"某个仓库里的约定"扩散成全局事实。所以模型即便说了 `platform`，
  * 也按**项目级**落（内容一条不丢，只是作用域更窄、需要批准）。
  */
 export function memoryScopeFromExtraction(raw: unknown): MemoryScope {
-  return raw === "conversation" ? "conversation" : "project";
+  if (raw === "project" || raw === "platform") return "project";
+  return "conversation";
 }
 
 // ========== 记忆 payload 的体积预算与可观测（O-36 / O-52，第 191 波） ==========
@@ -2534,6 +2546,91 @@ export class MemoryService {
     // Sort by score descending
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, limit);
+  }
+
+  /**
+   * **写入前查重**（第 197 波）：这条打算写入的记忆是不是已经存在了？
+   * 返回**挡住它的那一条**（调用方拿它写日志/取证），没有就返回 `undefined`。
+   *
+   * ## 为什么要有它（用户报的缺陷 + 真机取证）
+   *
+   * 旧实现把判重写在**提取循环里**，只有两条判据：`key` 逐字相等、`content` 前 50 字符逐字相等。
+   * 真机库（48 条记忆 / 1128 对配对）现存 **23 对近似重复**，全部被它放过去 ——
+   * 因为模型每轮换个说法（「Vitest 位置参数匹配语义」vs「vitest 路径参数按子串匹配、多参数为 OR」，
+   * 相似度 0.54 却一条都没挡住）。用户的原话是「已经有的类似的记忆，还是频繁写入并申请审批」。
+   *
+   * ## 比对范围（**归属策略**，与"像不像"分开：后者在 `similarity.ts`）
+   *
+   * ① **同一个桶**（`scope` + 归属键逐字相同）：这是主战场，重复写入几乎全在这里；
+   * ② **平台级条目**：平台记忆处处注入 ⇒ 同一个事实再写一份项目级/对话级纯属重复；
+   * ③ 候选是**对话级**时，还要比**同一 projectId 的项目级条目（含 pending）** ——
+   *    否则"对话级默认直接生效"会被用来**绕过审批**再插一份（项目级那条还在待批准，
+   *    对话级这份已经进上下文了，用户看到的是"我还没批，它怎么生效了"）。
+   *
+   * ## 刻意**不比**的范围（各有一条判据钉着，理由都是"作用域隔离"）
+   *
+   * - 别项目的项目级条目：项目 A 的事实不该挡住项目 B 记录同样的事实（`MEM-SCOPE-1` 的立场）；
+   * - 别的对话的对话级条目：不同对话各自成立；
+   * - **任何**待批准条目（除 ③ 以外）：跨桶拿"用户还没批"当理由挡住新记忆，会让另一个项目
+   *   永久记不下这条事实 —— 那属于"归属身份"问题（真机上 projectId 是每次评测新建的临时目录），
+   *   由「找出相似重复」这个**人工**入口去清，不由自动流程猜。
+   */
+  findDuplicateOf(
+    draft: { scope: MemoryScope; projectId?: string; sessionId?: string; key: string; content: string },
+    ctx?: { projectId?: string },
+  ): MemoryEntry | undefined {
+    const sameBucket = (entry: MemoryEntry): boolean => {
+      if (entry.scope !== draft.scope) return false;
+      if (draft.scope === "platform") return true;
+      if (draft.scope === "project") return entry.projectId === draft.projectId;
+      return entry.sessionId === draft.sessionId;
+    };
+    /** ③：候选是对话级时，同项目的项目级条目也算"这条事实已经有了" */
+    const sameProjectAsConversation = (entry: MemoryEntry): boolean =>
+      draft.scope === "conversation" &&
+      ctx?.projectId !== undefined &&
+      entry.scope === "project" &&
+      entry.projectId === ctx.projectId;
+
+    for (const entry of this.entries.values()) {
+      if (!sameBucket(entry) && entry.scope !== "platform" && !sameProjectAsConversation(entry)) continue;
+      if (memoryLooksDuplicate(draft, { key: entry.key, content: entry.content })) return entry;
+    }
+    return undefined;
+  }
+
+  /**
+   * **重复记忆分组**（界面"找出相似重复"用）：跨桶聚类，按证据强弱排序。
+   *
+   * 跨桶是刻意的：真机上同一事实散落在不同桶（每次评测的工作目录不同 ⇒ projectId 不同），
+   * 而那正是用户要清的那批。这里只**列出来给人看**，不做任何自动删除。
+   */
+  findDuplicateGroups(): Array<MemoryDuplicateGroup & { entries: MemoryEntry[] }> {
+    return clusterDuplicateMemories([...this.entries.values()]);
+  }
+
+  /**
+   * **提取提示词用**：当前"已经记住"的标题（有界）。
+   *
+   * 范围与 `findDuplicateOf` 的比对范围**故意一致**（平台级 ∪ 同项目 ∪ 同对话），
+   * 这样"给模型看的清单"就是"判重会挡它的那批" —— 两边口径分叉的话，
+   * 模型会以为某条没记过（清单里没有）而反复写（判重又把它挡掉），日志里只剩一串"跳过"。
+   *
+   * 有界（默认 40 条，按创建序倒序取最近的）：提示词是每轮都要发的，不能随记忆库无界增长。
+   */
+  existingMemoryKeys(ctx: { projectId?: string; sessionId?: string }, limit = 40): string[] {
+    const inScope: MemoryEntry[] = [];
+    for (const entry of this.entries.values()) {
+      const relevant =
+        entry.scope === "platform" ||
+        (entry.scope === "project" && ctx.projectId !== undefined && entry.projectId === ctx.projectId) ||
+        (entry.scope === "conversation" && ctx.sessionId !== undefined && entry.sessionId === ctx.sessionId);
+      if (relevant) inScope.push(entry);
+    }
+    return inScope
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, limit)
+      .map((e) => e.key);
   }
 
   /**

@@ -1,14 +1,14 @@
 {
-  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、拿不准归项目级）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
+  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
   "mutations": [
     {
-      "id": "MUT-1 提取的作用域兜底反过来（拿不准就归对话级）",
-      "why": "MAS-4 / MAS-5：兜底方向是这一波的**安全边界** —— 拿不准、或模型写了 platform/别的词时，必须归项目级（会问用户一次）。反过来就等于「没核实过的自动内容悄悄进上下文」，两条判据都会红",
+      "id": "MUT-1 提取的作用域兜底反过来（拿不准就归项目级）",
+      "why": "MAS-4 / MAS-5：兜底方向是用户选定的一条规则（拿不准 ⇒ 对话级、少弹批准，且爆炸半径只在一个对话里）。反过来（拿不准就归项目级 ⇒ 全都进待批准区）必须被抓住：MAS-4 直接红，MAS-5 里「没给 scope / 非字符串 / 大小写不同」那三行也红",
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "  return raw === \"conversation\" ? \"conversation\" : \"project\";",
-          "to": "  return raw === \"project\" ? \"project\" : \"conversation\";"
+          "from": "  if (raw === \"project\" || raw === \"platform\") return \"project\";\n  return \"conversation\";",
+          "to": "  if (raw === \"conversation\") return \"conversation\";\n  return \"project\";"
         }
       ],
       "tests": ["src/test/memory-approve-scope-batch.test.ts"],
@@ -142,8 +142,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "兜底方向刻意选\"会问你一次\"而不是\"直接生效\"：",
-          "to": "（反向对照：只改这一行注释，行为逐字不变）兜底方向刻意选「会问你一次」而不是「直接生效」："
+          "from": "起初这里取的是 fail-closed（拿不准 ⇒ 项目级 ⇒ 会问用户一次）。",
+          "to": "（反向对照：只改这一行注释，行为逐字不变）起初这里取的是 fail-closed（拿不准 ⇒ 项目级 ⇒ 会问用户一次）。"
         }
       ],
       "tests": [

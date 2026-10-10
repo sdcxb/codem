@@ -25,8 +25,13 @@ import {
   isLegacyPoolInjectionPaused,
   MEMORY_SOURCE_KIND_LABEL,
   setLegacyPoolInjectionPaused,
+  type MemoryEntry,
   type MemoryScope,
 } from "../core/memory/memory";
+import type { MemoryDuplicateGroup } from "../core/memory/similarity";
+
+/** 「找出相似重复」的一组候选（组内条目带着：界面要显示标题、作用域、待批准标记） */
+type DuplicateGroupView = MemoryDuplicateGroup & { entries: MemoryEntry[] };
 import {
   buildOwnershipIndexFrom,
   createMemoryCheckup,
@@ -81,6 +86,13 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
   const [retargetValue, setRetargetValue] = useState("");
   /** M-2：「暂停注入旧版跨项目记忆」开关（默认关 = 保持既有可见范围不变） */
   const [paused, setPaused] = useState(() => isLegacyPoolInjectionPaused());
+  /**
+   * 第 197 波「找出相似重复」的结果（`null` = 还没找过；空数组 = 找过但没有重复）。
+   *
+   * 刻意做成**按需计算**（用户点按钮才算）：聚类是 O(条数²)，而记忆库可以有上千条；
+   * 每次挂载都算一遍会让"打开记忆体检"变慢 —— 而这功能是"偶尔整理一次"的入口。
+   */
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroupView[] | null>(null);
 
   /**
    * 归属索引**批量**建一次（用 store 里已加载的项目/会话，不额外打存储）；
@@ -196,6 +208,52 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
       return;
     }
     void applyApprove(Array.from(selected), "批量同意");
+  };
+
+  /* ===== 第 197 波：找出相似重复（人工清理一波） ===== */
+
+  /**
+   * 跑一次聚类并展示。**只列出来给人看，绝不自动删** ——
+   * 真机上"同一条事实"会散落在不同桶（每次评测的工作目录不同 ⇒ projectId 不同），
+   * 自动流程按作用域隔离**不该**跨桶去猜；判断"这两条是不是同一件事"交给用户。
+   */
+  const handleFindDuplicates = () => {
+    const groups = getMemoryService().findDuplicateGroups();
+    setDuplicateGroups(groups);
+    const entries = groups.reduce((n, g) => n + g.ids.length, 0);
+    setNotice(
+      groups.length === 0
+        ? "没有找到相似重复的记忆（判定口径：标题+正文的 2-gram 相似度，详见「去重」那一节的说明）。"
+        : `找到 ${groups.length} 组相似重复，共 ${entries} 条。每组都给了相似度读数，删除由你逐组确认。`,
+    );
+  };
+
+  /**
+   * 组内**只留最早的一条**，删掉其余（第 197 波）。
+   *
+   * "最早"用组内顺序（`findDuplicateGroups` 给的 `ids` 就是创建序）——
+   * 保留最早的一条是"先记下的那条"，它已经被用户看过/批准过，语义上最稳。
+   */
+  const handleKeepOldest = (group: DuplicateGroupView) => {
+    const rest = group.ids.slice(1);
+    if (rest.length === 0) {
+      setNotice("这一组只剩一条了。");
+      return;
+    }
+    void applyDelete(rest, `去重（保留最早的一条「${group.entries[0]?.key ?? ""}」）`);
+    setDuplicateGroups(null);
+  };
+
+  /** 整组删掉（两条都不想要时用） */
+  const handleDeleteDuplicates = (group: DuplicateGroupView) => {
+    void applyDelete(group.ids, "去重（整组删除）");
+    setDuplicateGroups(null);
+  };
+
+  /** 把某一组从候选里划掉（"这两条我都要留着"）—— 只影响这次的结果列表，不动记忆 */
+  const handleDismissDuplicateGroup = (group: DuplicateGroupView) => {
+    setDuplicateGroups((prev) => (prev ? prev.filter((g) => g !== group) : prev));
+    setNotice("已把这一组从候选里划掉（**没有**改动任何记忆）。再点一次「找出相似重复」会重新找出来。");
   };
 
   const handleClearAll = async () => {
@@ -424,6 +482,10 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
           <button className="mc-action-btn" onClick={handleDeleteSelected}>
             批量删除选中（{selected.size}）
           </button>
+          {/* 第 197 波：找出相似重复（人工清理一波）。只列候选，删除仍要逐组确认 */}
+          <button className="mc-action-btn" onClick={handleFindDuplicates}>
+            找出相似重复
+          </button>
           <button className="mc-action-btn danger" onClick={handleClearAll}>清空全部</button>
         </div>
       </div>
@@ -465,6 +527,57 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
           打开后它们**停止进上下文**，直到你删除、归位或「保留为平台级」；其它记忆不受影响。
         </span>
       </div>
+
+      {/*
+        第 197 波：相似重复的**人工**清理入口。
+        为什么是人工而不是自动：同一条事实在真机上会散落在不同的桶（每次评测的工作目录不同 ⇒
+        projectId 不同），而作用域隔离是刻意的（项目 A 的事实不该挡住项目 B 记同样的事实）
+        —— 自动跨桶去重会误删"另一个项目里合法存在的那一份"。所以这里只给候选 + 证据，删不删由人定。
+      */}
+      {duplicateGroups !== null && (
+        <div className="mc-duplicates">
+          <div className="mc-duplicates-header">
+            <span className="mc-duplicates-title">
+              相似重复：{duplicateGroups.length === 0 ? "没有找到" : `${duplicateGroups.length} 组`}
+            </span>
+            <span className="mc-duplicates-hint">
+              判定口径：标题 + 正文的字符 2-gram 相似度（跨作用域一起找）。
+              「只留最早的一条」= 保留这一组里**先记下的**那条，删掉其余；删除会落库且不可撤销。
+            </span>
+          </div>
+          {duplicateGroups.map((group) => (
+            <div key={group.ids.join("|")} className="mc-duplicate-group">
+              <div className="mc-duplicate-group-head">
+                <span className="mc-duplicate-similarity">相似度 {Math.round(group.similarity * 100)}%</span>
+                <span className="mc-duplicate-pair">
+                  「{group.pair[0]}」／「{group.pair[1]}」
+                </span>
+                <span className="mc-duplicate-actions">
+                  <button className="mc-action-btn" onClick={() => handleKeepOldest(group)}>
+                    只留最早的一条
+                  </button>
+                  <button className="mc-action-btn danger" onClick={() => handleDeleteDuplicates(group)}>
+                    整组删除（{group.ids.length}）
+                  </button>
+                  <button className="mc-action-btn" onClick={() => handleDismissDuplicateGroup(group)}>
+                    都留着
+                  </button>
+                </span>
+              </div>
+              {group.entries.map((entry) => (
+                <div key={entry.id} className="mc-duplicate-entry">
+                  <span className="mc-duplicate-entry-key">{entry.key}</span>
+                  <span className={`mc-scope-badge ${entry.scope}`}>
+                    {entry.scope === "platform" ? "平台级" : entry.scope === "project" ? "项目级" : "对话级"}
+                  </span>
+                  {isPendingMemoryEntry(entry) && <span className="mc-source-badge pending">待批准</span>}
+                  <span className="mc-duplicate-entry-content">{String(entry.content).slice(0, 90)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* M-6：迁移前快照 —— 有快照才显示回退入口 */}
       {snapshot && (

@@ -256,8 +256,12 @@ describe("O-46：项目身份在 executor / 后台路径上必须来自 session 
     (engine as unknown as { config: { defaultProvider?: string; defaultModel?: string } }).config.defaultProvider = "id191-provider";
     (engine as unknown as { config: { defaultProvider?: string; defaultModel?: string } }).config.defaultModel = "id191-model";
     setSetting("codem-security-mode", "full");
-    /** 真发 LLM 请求的那一步压成桩：写入侧要跑**真实的**提取流程（建批次 → 落条目） */
-    vi.spyOn(engine, "spawnForked").mockResolvedValue(JSON.stringify([{ key: "worktree 事实", content: FACT, tags: [] }]));
+    /** 真发 LLM 请求的那一步压成桩：写入侧要跑**真实的**提取流程（建批次 → 落条目）
+     *  ⚠️ 第 196 波：显式 `"scope": "project"` —— 这条用例钉的是"**项目级**记忆的归属键走项目根"，
+     *  而同一波把兜底方向改成了**拿不准 ⇒ 对话级**（用户选定）⇒ 不带 scope 会绕开主语。 */
+    vi.spyOn(engine, "spawnForked").mockResolvedValue(
+      JSON.stringify([{ key: "worktree 事实", content: FACT, tags: [], scope: "project" }]),
+    );
 
     // 写入侧身份：生产路径真的把哪个 projectId 交给了提取（call-through，提取照常发生）
     const extractSpy = vi.spyOn(engine, "extractMemoriesFromSession");

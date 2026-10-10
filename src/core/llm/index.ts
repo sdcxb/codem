@@ -236,6 +236,23 @@ export function resolveMemoryProjectId(input: {
  */
 const degradedMemoryProjectIdKeys = new Set<string>();
 
+/**
+ * 一次自动提取**最多写入几条**（第 197 波，用户报的「每轮对话自动写入几十条记忆」）。
+ *
+ * 上限是**结构性**的：模型返回多少条都只取前 N 条（顺序即模型给的优先级，提示词里也写明了
+ * 「按重要性排序、最多 N 条」）。取 3 的理由：这一层的目标是"记住少数几条真正长期成立的事实"，
+ * 而不是"把这一轮的结论都存下来" —— 后者由会话历史/权威日志负责，记忆库不该是第二份日志。
+ * 撞到上限时**如实计数并写日志**（不静默截断），界面上那批条目的数量就是证据。
+ */
+const MEMORY_MAX_PER_EXTRACTION = 3;
+
+/**
+ * 同一会话两次提取之间**至少要新增多少条消息**（第 197 波）。
+ *
+ * 见 `extractMemoriesFromSession` 里那段注释：`onTurnComplete` 每轮都调，不限频就等于"每轮都写记忆"。
+ */
+const MEMORY_EXTRACTION_MIN_NEW_MESSAGES = 4;
+
 function reportMemoryProjectIdDegrade(sessionId: string | undefined, identity: string): void {
   const key = `${sessionId ?? "(无会话)"}|${identity}`;
   if (degradedMemoryProjectIdKeys.has(key)) return;
@@ -1121,6 +1138,14 @@ Report earlier as well whenever a partial finding changes what that agent should
    * "写进哪个桶"与"从哪个桶注入"永远同一个来源。worktree 会话因此能立刻看到自己提取的记忆。
    */
   private readonly sessionMemoryProjectId = new Map<string, string>();
+
+  /**
+   * 上一次跑自动提取时该会话的消息条数（第 197 波限频用的"水位"）。
+   *
+   * 只记在进程内（重启即失效）——理由写在 `extractMemoriesFromSession` 的限频注释里：
+   * 持久化限频会让"用户重开应用后新事实永远提不出来"。
+   */
+  private readonly memoryExtractionWatermark = new Map<string, number>();
 
   /** 登记某会话的记忆归属项目身份（`process()` 调；同一会话重复调用以最后一次为准） */
   setSessionMemoryProject(sessionId: string, projectId?: string): void {
@@ -2150,6 +2175,28 @@ return loop.hasPendingGuidance();
     if (messages.length < 10) return; // Too short to extract meaningful memories
 
     /**
+     * **限频：同一个会话里至少要再多 N 条消息才值得再跑一次提取**（第 197 波）。
+     *
+     * ## 被守的缺陷（用户报的）
+     *
+     * 「现在 codem 每轮对话自动写入几十条记忆」—— `loop.updateConfig({ onTurnComplete })`
+     * 是**每一轮**都调的（压缩完成时也调），而每调一次就发一次 LLM、把模型返回的**每一条**都写入。
+     * 于是一次长对话的每一轮都在写记忆 ⇒ 库里的量按"轮数 × 每轮条数"涨。
+     *
+     * ## 为什么是"消息数"而不是"轮数"
+     *
+     * `listMessages` 的长度是**可复算的事实**（同一份会话日志算两次结果一样），而且它天然
+     * 覆盖"压缩完成"那条路径（压缩会把多条消息并成一条 ⇒ 长度变化 ⇒ 门自然重开）。
+     * 阈值取 4：一次正常的"用户问 + 助手做几步 + 回执"大约就是这个量级，
+     * 而"每轮都跑"变成"每个来回跑一次"，写入量按数量级下降；提取本身仍有 ≥10 条消息的总门槛。
+     *
+     * ⚠️ 这份记账是**进程内**的：重启后第一次提取照常进行（不做跨进程的持久化限频 ——
+     * 那会让"用户重开应用后新事实永远提不出来"）。
+     */
+    const lastCount = this.memoryExtractionWatermark.get(sessionId);
+    if (lastCount !== undefined && messages.length - lastCount < MEMORY_EXTRACTION_MIN_NEW_MESSAGES) return;
+
+    /**
      * 自动提取的目标作用域：**由每条记忆自己决定**（第 196 波，用户要求的
      * 「对话级默认直接生效 / 项目与平台级默认需批准」）。
      *
@@ -2185,20 +2232,26 @@ return loop.hasPendingGuidance();
     // user closes the session or starts a new conversation.
     const forkedAbort = new AbortController();
 
-    const memoryExtractionPrompt = `请从以上对话中提取值得长期记住的事实。
+    const memoryExtractionPrompt = `请从以上对话中提取**值得长期记住**的事实。
 
-只提取以下类型的信息：
-- 用户偏好（语言、代码风格、工具选择、回复方式等）
-- 项目架构决策（技术栈选择、目录结构约定、设计模式偏好等）
-- 环境信息（操作系统、开发工具、运行时版本等）
-- 常见问题和解决方案
-- 重要的项目约定或规则
+## 门槛（宁缺勿滥：没有就返回空数组 []）
+只有同时满足下面三条的才值得写：
+1. **长期有效**（换一次对话、下次打开这个项目仍然成立）；
+2. **从仓库里看不出来**（读 package.json / 目录树 / 源码就能知道的东西不算）；
+3. **对以后有用**（能改变你下次的做法：命令怎么写、改哪里、避开什么坑）。
 
-不要提取：
-- 临时任务进度
-- 具体的代码实现细节
-- 一次性的问题和回答
-- 已经是常识的信息
+值得写：用户的长期偏好与约定；项目里**非显然**的约定或坑（反直觉、踩过一次的）；
+会导致命令写法不同的环境限制。
+**不要写**：
+- 从仓库里读得出来的（技术栈、目录结构、某文件怎么实现的、测试文件在哪）；
+- 一次性的东西（本次任务进度、待办、这一轮的结论、某个 bug 的临时处置）；
+- 工作纪律 / 评审口径 / 系统提示里的规则（那不是"这个项目的事实"）；
+- 已经是常识的（"要跑测试"、"要读文档"）；
+- **下面「已经记住的」清单里已有的**（换个说法也算已有）。
+
+## 条数上限
+**最多 ${MEMORY_MAX_PER_EXTRACTION} 条**，按重要性排序（只写最值得记的那几条）。
+返回更多也只会被截断 —— 所以请把位置留给最重要的。
 
 输出格式（JSON 数组，每个元素是一个记忆条目）：
 [{"key": "简短标题", "content": "具体内容", "tags": ["相关标签"], "scope": "conversation"}]
@@ -2207,17 +2260,30 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
 - "conversation"：只对**当前这次对话**成立的约定 / 偏好 / 临时要求（例如"这次先给方案再改代码"、
   "这次不要动测试文件"）。它**立即生效**，不会再问用户。
 - "project"：**换一次对话、下次打开这个项目仍然成立**的事实（技术栈、目录约定、构建/测试命令、
-  这个仓库里踩过的坑）。它需要用户批准后才生效。
-**判不准就写 "project"** —— 宁可多问用户一次，也不要让没核实过的内容悄悄进上下文。
+  这个仓库里踩过的坑）。它需要用户批准后才生效 —— 所以**只有你确信它跨对话仍然成立时才写它**。
+**判不准就写 "conversation"**（先只在这次对话里生效，不打扰用户）。
 不要写 "platform"（跨项目共享只能由用户手动决定）。
 
 如果没有值得提取的记忆，返回空数组 []`;
+
+    /**
+     * **每条都带上下文**：把"已经记住的标题"给模型看一眼。
+     *
+     * 这不是"再提醒模型一句"那种提示词治本 —— 那是**把数据给它**（和把当前目录、把工具清单
+     * 给它是同一类事）：模型看不到已有的记忆，就只能每轮把同一件事重新推导一遍，
+     * 然后写一份"换个说法"的重复条目（真机取证：48 条里 23 对近似重复，
+     * 「Vitest 位置参数」一条事实有 5 种写法）。有界（最多 40 条标题）。
+     */
+    const existingKeys = this.memory.existingMemoryKeys({ projectId, sessionId });
+    const existingBlock =
+      existingKeys.length > 0 ? `\n\n## 已经记住的（不要重复写；换个说法也算已有）\n${existingKeys.map((k) => `- ${k}`).join("\n")}` : "";
+    const extractionInput = `${memoryExtractionPrompt}${existingBlock}`;
 
     try {
       const responseText = await this.spawnForked(
         sessionId,
         "You are a memory extraction assistant.", // Minimal system prompt — parent messages provide context
-        memoryExtractionPrompt,
+        extractionInput,
         {
           temperature: 0.3,
           abortSignal: forkedAbort.signal,
@@ -2227,6 +2293,7 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
 
       if (!responseText || responseText.trim().length === 0) {
         this.memory.finalizeBatch(batchId, 0);
+        this.memoryExtractionWatermark.set(sessionId, messages.length);
         console.log("[extractMemories] Forked agent returned empty response");
         return;
       }
@@ -2238,6 +2305,12 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
         console.warn("[extractMemories] Failed to parse memories from forked agent response:", responseText.substring(0, 200));
         return;
       }
+      /**
+       * 走完一次 LLM 提取就更新水位（限频的那一半）：**在解析成功之后**才更新，
+       * 解析失败（模型没按格式回）**不更新** —— 否则一次坏响应会把接下来几轮都锁掉，
+       * 用户看到的是"记忆系统不工作了"。
+       */
+      this.memoryExtractionWatermark.set(sessionId, messages.length);
 
       // Save extracted memories
       let written = 0;
@@ -2246,16 +2319,30 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       let rejectedCapacity = 0;
       let blockedByManual = 0;
       let duplicates = 0;
+      /**
+       * **每轮条数上限**（第 197 波，用户报的「每轮对话自动写入几十条记忆」）。
+       *
+       * 只取前 `MEMORY_MAX_PER_EXTRACTION` 条**合格**的（`valid` 后才计数 ——
+       * 否则"模型返回 5 条垃圾 + 1 条好"会被垃圾占满名额而不写任何东西）。
+       * 截断**如实计数并写日志**：静默丢内容等于我们替用户决定了什么不重要。
+       */
+      let validSeen = 0;
+      let droppedByCap = 0;
       for (const mem of memories) {
         if (typeof mem?.key !== "string" || typeof mem?.content !== "string") continue;
         // F2.1: Redact sensitive data before saving
         const safeKey = redactSecrets(mem.key);
         const safeContent = redactSecrets(mem.content);
         if (safeContent.length <= 10) continue;
+        if (validSeen >= MEMORY_MAX_PER_EXTRACTION) {
+          droppedByCap++;
+          continue;
+        }
+        validSeen++;
 
         /**
          * **这一条自己的作用域**（第 196 波）——只可能是 `conversation` 或 `project`，
-         * 兜底方向与理由写在 `memoryScopeFromExtraction` 里。
+         * 规则与兜底方向（**拿不准 ⇒ 对话级**，用户 2026-10-10 选定）写在 `memoryScopeFromExtraction` 里。
          *
          * 审批与归属键都跟着**这一条**走（不是整轮一个值）：
          * 对话级 ⇒ 默认不审批、归属当前会话；项目级 ⇒ 默认待批准、归属当前项目。
@@ -2272,39 +2359,29 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
          * 第 189 波：受保护口径统一走 `isProtectedMemoryEntry`（手动 + **来源未知的旧数据**）
          * —— 旧数据按手动条目保护，否则存量用户手写的旧条目会被自动提取洗成"自动"。
          *
-         * ## B4：判重**不许**因为缺归属而恒空
-         *
-         * `visibleIn` 对"没有 projectId 的 project 条目"要求 `includeUnscoped === true`。
-         * `projectId` 缺省（全局对话 / 未落项目）时旧写法只传 `{ projectId: undefined }`
-         * ⇒ 查询恒为空 ⇒ `isDuplicate` 恒 false ⇒ **每一轮把同一条事实再写一遍**，
-         * 直到该桶撞上 maxEntries 之后变成每轮一串"容量已满"。
-         * 所以无归属时显式打开 `includeUnscoped`（"同一个无归属桶里的条目"正是要去重的那批）。
-         *
-         * 第 196 波：判重与同 key 检查**在条目自己的作用域桶里做**（对话级条目不该被
-         * 项目级同名条目挡住，反之亦然 —— 桶的键本来就是 (作用域, 归属键)）。
+         * 第 197 波：查重从"前 50 字符逐字相等"换成 `MemoryService.findDuplicateOf`
+         * （归一化 + 2-gram 相似度，阈值是拿真机 1128 对配对的分布量出来的；
+         * 比对范围是"同一个桶 + 平台级 + （对话级候选时的）同项目项目级"）。
+         * 旧口径在真机上 23 对近似重复**一对都没挡住**，用户的原话是
+         * 「已经有的类似的记忆，还是频繁写入并申请审批」。
          */
-        const sameBucket = this.memory.search(safeKey, itemScope, 5, {
-          ...ownership,
-          includeUnscoped: itemScope === "project" && projectId === undefined,
-        });
-        const manualSameKey = sameBucket.some(r =>
-          isProtectedMemoryEntry(r.entry) &&
-          r.entry.key === safeKey &&
-          (itemScope === "conversation" ? r.entry.sessionId === sessionId : r.entry.projectId === projectId)
+        const duplicateOf = this.memory.findDuplicateOf(
+          { scope: itemScope, ...ownership, key: safeKey, content: safeContent },
+          { projectId },
         );
-        if (manualSameKey) {
-          blockedByManual++;
-          console.log(`[extractMemories] 跳过（同 key 已有手动记忆，自动流程不得覆盖）：${safeKey}`);
-          continue;
-        }
-
-        // Check if similar memory already exists (avoid duplicates) — 只在**同一个桶**内判重
-        const isDuplicate = sameBucket.some(r =>
-          r.entry.key === safeKey ||
-          r.entry.content.substring(0, 50) === safeContent.substring(0, 50)
-        );
-        if (isDuplicate) {
-          duplicates++;
+        if (duplicateOf) {
+          if (isProtectedMemoryEntry(duplicateOf)) {
+            blockedByManual++;
+            console.log(
+              `[extractMemories] 跳过（已有手动记忆，自动流程不得覆盖）：${safeKey} ← 「${duplicateOf.key}」`,
+            );
+          } else {
+            duplicates++;
+            console.log(
+              `[extractMemories] 跳过（已有相似记忆，不重复写入）：${safeKey} ← 「${duplicateOf.key}」` +
+                `（scope=${duplicateOf.scope}, status=${duplicateOf.status ?? "active"}）`,
+            );
+          }
           continue;
         }
 
@@ -2343,7 +2420,8 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       console.log(
         `[extractMemories] Extracted ${memories.length} memories from session ${sessionId}：` +
           `写入 ${written} 条（直接生效 ${writtenActive} 条 / 待批准 ${writtenPending} 条）、` +
-          `同 key 手动条目拦下 ${blockedByManual} 条、重复跳过 ${duplicates} 条、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
+          `已有相似记忆跳过 ${duplicates} 条、已手动记住拦下 ${blockedByManual} 条、` +
+          `超过每轮上限（${MEMORY_MAX_PER_EXTRACTION} 条）丢弃 ${droppedByCap} 条、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
       );
 
       /**

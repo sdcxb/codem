@@ -1,14 +1,14 @@
 {
   "version": "1.16.306",
-  "notes": "Codem v1.16.306 — 自动记忆按作用域分档审批（对话级默认直接生效、项目级仍需批准）；待批准支持勾选批量同意/拒绝（含全选）。",
-  "pub_date": "2026-10-10T04:37:44Z",
+  "notes": "Codem v1.16.306 — 自动记忆：写入前查重（不再重复写入/重复请求批准）、记忆体检一键「找出相似重复」、每轮最多 3 条且提取限频；审批按作用域分档（对话级默认直接生效）+ 待批准勾选批量同意/拒绝。",
+  "pub_date": "2026-10-10T05:27:23Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lnYzA4bXc1YUZtZVhZd0g1VERWeHJHampuWUVKZ2gxY3Q1c2hIK1c2SFQ3dHhyQ0p6N1RUQVhhK1YxaFFQVHY3b2UrVkM5SW4xSlhtMXQ4TFB6cXdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjA3MDYxCWZpbGU6Q29kZW1fMS4xNi4zMDZfeDY0LXNldHVwLmV4ZQpXZ2Iwa24ycUVaT2VubGFacGFiejRaZytlS09yTDUveFlnUytYZjRwc2pITThFaFpSKy9LNVVMdEduT1IyaVp6N0t3SXZjNHBTS0FTL2RjTHdwUUpEQT09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2UveXh5ajlxejBxeWFYNVZxTW9mb3NPV2gzbm5XRmhxT3I2Q2FyYytCQ2dCbW41ZjhKQ2ZrZm5QNFZkNzA0eGNPd25IZHVJdWhyRDdNMXNsUE5Sb2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjEwMDQwCWZpbGU6Q29kZW1fMS4xNi4zMDZfeDY0LXNldHVwLmV4ZQp0UGFZT0t2YlBydDVwZmZLbnZoOGJZZXJkaVJXUlFXei85MSt4WmFRYjRmN29xNXlTRWIvZnI2Tmd0R2p6VlE4bWhWRkVvZ1V4b2NXcGFyWFJ2UkJEUT09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.306/Codem_1.16.306_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lnYzA4bXc1YUZtZVhZd0g1VERWeHJHampuWUVKZ2gxY3Q1c2hIK1c2SFQ3dHhyQ0p6N1RUQVhhK1YxaFFQVHY3b2UrVkM5SW4xSlhtMXQ4TFB6cXdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjA3MDYxCWZpbGU6Q29kZW1fMS4xNi4zMDZfeDY0LXNldHVwLmV4ZQpXZ2Iwa24ycUVaT2VubGFacGFiejRaZytlS09yTDUveFlnUytYZjRwc2pITThFaFpSKy9LNVVMdEduT1IyaVp6N0t3SXZjNHBTS0FTL2RjTHdwUUpEQT09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2UveXh5ajlxejBxeWFYNVZxTW9mb3NPV2gzbm5XRmhxT3I2Q2FyYytCQ2dCbW41ZjhKQ2ZrZm5QNFZkNzA0eGNPd25IZHVJdWhyRDdNMXNsUE5Sb2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjEwMDQwCWZpbGU6Q29kZW1fMS4xNi4zMDZfeDY0LXNldHVwLmV4ZQp0UGFZT0t2YlBydDVwZmZLbnZoOGJZZXJkaVJXUlFXei85MSt4WmFRYjRmN29xNXlTRWIvZnI2Tmd0R2p6VlE4bWhWRkVvZ1V4b2NXcGFyWFJ2UkJEUT09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.306/Codem_1.16.306_x64-setup.exe"
     }
   }

@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-196",
-  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、拿不准归项目级）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
-  "runAt": "2026-10-10T04:32:54.797Z",
-  "specFingerprint": "4be981e9929d3ced7fe03cf2fce4dd0a01811abf",
+  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
+  "runAt": "2026-10-10T05:12:01.880Z",
+  "specFingerprint": "70b7964d5b04ca096502949fdcf6b7f6293cd59c",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -17,13 +17,13 @@
   "restored": true,
   "results": [
     {
-      "id": "MUT-1 提取的作用域兜底反过来（拿不准就归对话级）",
-      "why": "MAS-4 / MAS-5：兜底方向是这一波的**安全边界** —— 拿不准、或模型写了 platform/别的词时，必须归项目级（会问用户一次）。反过来就等于「没核实过的自动内容悄悄进上下文」，两条判据都会红",
+      "id": "MUT-1 提取的作用域兜底反过来（拿不准就归项目级）",
+      "why": "MAS-4 / MAS-5：兜底方向是用户选定的一条规则（拿不准 ⇒ 对话级、少弹批准，且爆炸半径只在一个对话里）。反过来（拿不准就归项目级 ⇒ 全都进待批准区）必须被抓住：MAS-4 直接红，MAS-5 里「没给 scope / 非字符串 / 大小写不同」那三行也红",
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "  return raw === \"conversation\" ? \"conversation\" : \"project\";",
-          "to": "  return raw === \"project\" ? \"project\" : \"conversation\";"
+          "from": "  if (raw === \"project\" || raw === \"platform\") return \"project\";\n  return \"conversation\";",
+          "to": "  if (raw === \"conversation\") return \"conversation\";\n  return \"project\";"
         }
       ],
       "tests": [
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3457
+      "ms": 3380
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3573
+      "ms": 3369
     },
     {
       "id": "MUT-3 默认档改成「对话也需批准」",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3475
+      "ms": 3308
     },
     {
       "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3545
+      "ms": 3179
     },
     {
       "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3497
+      "ms": 3217
     },
     {
       "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3497
+      "ms": 3136
     },
     {
       "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3693
+      "ms": 3342
     },
     {
       "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
@@ -174,7 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3840
+      "ms": 3307
     },
     {
       "id": "MUT-9 界面：拆掉「选中集合随待批准列表收敛」这条能力（幽灵选中）",
@@ -199,7 +199,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3693
+      "ms": 3320
     },
     {
       "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
@@ -219,7 +219,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3782
+      "ms": 3426
     },
     {
       "id": "MUT-12 反向对照：只改一行说明注释",
@@ -227,8 +227,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "兜底方向刻意选\"会问你一次\"而不是\"直接生效\"：",
-          "to": "（反向对照：只改这一行注释，行为逐字不变）兜底方向刻意选「会问你一次」而不是「直接生效」："
+          "from": "起初这里取的是 fail-closed（拿不准 ⇒ 项目级 ⇒ 会问用户一次）。",
+          "to": "（反向对照：只改这一行注释，行为逐字不变）起初这里取的是 fail-closed（拿不准 ⇒ 项目级 ⇒ 会问用户一次）。"
         }
       ],
       "tests": [
@@ -241,7 +241,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3643
+      "ms": 3355
     }
   ]
 }

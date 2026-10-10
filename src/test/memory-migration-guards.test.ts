@@ -986,7 +986,9 @@ describe("I1 / I5 / I6 / S1 / S3 / S4：写路径与注入预算", () => {
     (engine as unknown as { providers: unknown }).providers = { get: () => ({ id: "t", isConfigured: () => true }) };
     (engine as unknown as { profileManager: unknown }).profileManager = { resolveSlot: () => null };
     vi.spyOn(engine, "spawnForked").mockResolvedValue(
-      JSON.stringify([{ key: "新事实", content: "CAP_REJECTED 足够长的一条内容", tags: [] }]),
+      // 第 196 波：显式 scope=project（这条用例钉的是"默认审批 ⇒ pending"与容量拒绝，
+      // 而兜底方向在同一波改成了对话级 ⇒ 不写 scope 就绕开了主语）
+      JSON.stringify([{ key: "新事实", content: "CAP_REJECTED 足够长的一条内容", tags: [], scope: "project" }]),
     );
 
     await engine.extractMemoriesFromSession("s-cap", PROJ_A);
@@ -1005,7 +1007,8 @@ describe("I1 / I5 / I6 / S1 / S3 / S4：写路径与注入预算", () => {
     (e2 as unknown as { profileManager: unknown }).profileManager = { resolveSlot: () => null };
     setSetting("memory-enabled-s-pending", "true");
     vi.spyOn(e2, "spawnForked").mockResolvedValue(
-      JSON.stringify([{ key: "待批准事实", content: "PENDING_VISIBLE 足够长的一条内容", tags: [] }]),
+      // 第 196 波：显式 scope=project（这一半钉的是"项目档需批准 ⇒ 写 pending 且界面数得出来"）
+      JSON.stringify([{ key: "待批准事实", content: "PENDING_VISIBLE 足够长的一条内容", tags: [], scope: "project" }]),
     );
     await e2.extractMemoriesFromSession("s-pending", PROJ_A);
 
@@ -1050,7 +1053,15 @@ describe("R3：写入侧与注入侧必须是**同一个项目身份**", () => {
 
     const svc = new MemoryService();
     setSetting("memory-enabled-s-wt", "true");
-    const engine = engineForIdentity(svc, JSON.stringify([{ key: "worktree 事实", content: "WT_FACT 足够长的一条自动提取内容", tags: [] }]));
+    /*
+     * ⚠️ 第 196 波：夹具显式写 `"scope": "project"` —— 这条用例钉的是"worktree 会话提取的**项目级**
+     * 记忆写进主工作区桶、批准后两侧同源"。同一波里兜底方向被改成**拿不准 ⇒ 对话级**（用户选定），
+     * 所以不带 scope 的老夹具会落成对话级、绕开这条用例的主语（兜底那一半由 MAS-4 钉）。
+     */
+    const engine = engineForIdentity(
+      svc,
+      JSON.stringify([{ key: "worktree 事实", content: "WT_FACT 足够长的一条自动提取内容", tags: [], scope: "project" }]),
+    );
 
     /*
      * ① `process()` 会做的登记（与写入侧同一个来源：`options.memoryProjectId ?? projectIdFromCwd(cwd)`）

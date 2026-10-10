@@ -1,0 +1,219 @@
+{
+  "wave": "memory-dedup-197",
+  "description": "第 197 波（用户报的三件事）：①写入前查重必须挡住「换了个说法」的重复（旧口径只剩 key 逐字/前 50 字符逐字相等，真机 23 对近似重复一对都没挡住）；②「找出相似重复」人工清理入口；③每轮条数上限 + 提取限频 + 提示词门槛（用户报的「每轮对话自动写入几十条」）。",
+  "runAt": "2026-10-10T05:22:11.761Z",
+  "specFingerprint": "bbf3c4ebb5667aaf2dca3b94a13d3b8f75c0be44",
+  "files": [
+    "src/core/memory/similarity.ts",
+    "src/core/memory/memory.ts",
+    "src/core/llm/index.ts"
+  ],
+  "tests": [
+    "src/test/memory-dedup.test.ts",
+    "src/test/memory-checkup.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 判重退回旧口径（key 逐字 + 前 50 字符逐字相等）",
+      "why": "MEM-DEDUP-1 / MEM-DEDUP-3：旧口径就是这一波要修的缺陷本身 —— 真机那三对（0.25~0.54）必须被判重，退回旧口径后一条都认不出来",
+      "patches": [
+        {
+          "file": "src/core/memory/similarity.ts",
+          "from": "  if (a.key === b.key) return true; // 标题逐字相同（旧口径保留，最便宜的一条）\n  const combined = memoryCombinedSimilarity(a, b);\n  if (combined >= MEMORY_DUPLICATE_THRESHOLD) return true;\n  const keySim = memorySimilarity(a.key, b.key);\n  if (combined >= MEMORY_DUPLICATE_KEY_ASSIST_MIN && keySim >= MEMORY_DUPLICATE_KEY_ASSIST_KEY) return true;\n  if (keySim >= MEMORY_DUPLICATE_SAME_TITLE_KEY && combined >= MEMORY_DUPLICATE_SAME_TITLE_MIN) return true;\n  return false;",
+          "to": "  return a.key === b.key || a.content.substring(0, 50) === b.content.substring(0, 50);"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3422
+    },
+    {
+      "id": "MUT-2 阈值降到 0（谁都算重复）",
+      "why": "MEM-DEDUP-2（反向对照 · 真机误报）：阈值清零会把「MCP 探针服务器」与「二进制 MCP 资源不内联」这两条**不同**的事实当成一条 ⇒ 新事实永远写不进去。这条判据存在的意义就是挡住这种「宁杀错」的取法",
+      "patches": [
+        {
+          "file": "src/core/memory/similarity.ts",
+          "from": "export const MEMORY_DUPLICATE_THRESHOLD = 0.3;",
+          "to": "export const MEMORY_DUPLICATE_THRESHOLD = 0;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3426
+    },
+    {
+      "id": "MUT-3 查重不再看平台级条目",
+      "why": "MEM-DEDUP-4：平台记忆处处注入，同一个事实再写一份项目级/对话级纯属重复；去掉这一条规则后判重放行",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "      if (!sameBucket(entry) && entry.scope !== \"platform\" && !sameProjectAsConversation(entry)) continue;",
+          "to": "      if (!sameBucket(entry) && !sameProjectAsConversation(entry)) continue;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3410
+    },
+    {
+      "id": "MUT-4 对话级候选不再比同项目的项目级条目（留出绕过审批的后门）",
+      "why": "MEM-DEDUP-5：项目级那条还在待批准时，对话级这一份会**直接生效** —— 等于绕过审批；这条规则就是堵它的",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    const sameProjectAsConversation = (entry: MemoryEntry): boolean =>\n      draft.scope === \"conversation\" &&\n      ctx?.projectId !== undefined &&\n      entry.scope === \"project\" &&\n      entry.projectId === ctx.projectId;",
+          "to": "    const sameProjectAsConversation = (_entry: MemoryEntry): boolean => false;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3367
+    },
+    {
+      "id": "MUT-5 查重不分桶（跨项目一起比）",
+      "why": "MEM-DEDUP-6（反向对照 · 作用域隔离）：项目 A 的事实不该挡住项目 B 记同样的事实 —— 跨项目去重会误删另一个项目里合法的那一份（本仓 MEM-SCOPE-1 的立场）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    const sameBucket = (entry: MemoryEntry): boolean => {\n      if (entry.scope !== draft.scope) return false;\n      if (draft.scope === \"platform\") return true;\n      if (draft.scope === \"project\") return entry.projectId === draft.projectId;\n      return entry.sessionId === draft.sessionId;\n    };",
+          "to": "    const sameBucket = (_entry: MemoryEntry): boolean => true;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3353
+    },
+    {
+      "id": "MUT-6 每轮条数上限失效",
+      "why": "MEM-EXTRACT-LIMIT-1：用户报的「每轮对话自动写入几十条记忆」—— 上限是结构性的那一半，失效就等于回到「模型返回多少写多少」",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        if (validSeen >= MEMORY_MAX_PER_EXTRACTION) {",
+          "to": "        if (validSeen >= 999) {"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3369
+    },
+    {
+      "id": "MUT-7 提取限频失效（每轮都跑）",
+      "why": "MEM-EXTRACT-LIMIT-2：`onTurnComplete` 每轮都调 —— 限频失效就回到「每轮都发一次 LLM 提取」",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "const MEMORY_EXTRACTION_MIN_NEW_MESSAGES = 4;",
+          "to": "const MEMORY_EXTRACTION_MIN_NEW_MESSAGES = 0;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3427
+    },
+    {
+      "id": "MUT-8 提示词里不再带「已经记住的」清单",
+      "why": "MEM-EXTRACT-LIMIT-4：模型看不到已有的记忆就只能每轮重新推导同一件事（真机：一条事实 5 种写法）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "    const existingKeys = this.memory.existingMemoryKeys({ projectId, sessionId });",
+          "to": "    const existingKeys: string[] = [];"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3387
+    },
+    {
+      "id": "MUT-9 「找出相似重复」只在同一个桶里找",
+      "why": "MEM-CHECK-DUP-1：真机上同一条事实**跨桶**散着（每次评测的工作目录不同 ⇒ projectId 不同），只在桶内找就等于永远找不到用户要清的那批",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "  findDuplicateGroups(): Array<MemoryDuplicateGroup & { entries: MemoryEntry[] }> {\n    return clusterDuplicateMemories([...this.entries.values()]);\n  }",
+          "to": "  findDuplicateGroups(): Array<MemoryDuplicateGroup & { entries: MemoryEntry[] }> {\n    const byBucket = new Map<string, MemoryEntry[]>();\n    for (const e of this.entries.values()) {\n      const k = `${e.scope}|${e.projectId ?? \"\"}|${e.sessionId ?? \"\"}`;\n      byBucket.set(k, [...(byBucket.get(k) ?? []), e]);\n    }\n    return [...byBucket.values()].flatMap((g) => clusterDuplicateMemories(g));\n  }"
+        }
+      ],
+      "tests": [
+        "src/test/memory-checkup.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3703
+    },
+    {
+      "id": "MUT-10 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波所有判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/memory/similarity.ts",
+          "from": " * ## 阈值是**量出来的**，不是拍的（真机 1128 对配对的分布）",
+          "to": " * ## 阈值是量出来的，不是拍的（真机 1128 对配对的分布；反向对照：只改这一行注释）"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts",
+        "src/test/memory-checkup.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 3462
+    }
+  ]
+}

@@ -16,8 +16,9 @@
  * - `MAS-1`：三档默认值 = 平台需批准 / 项目需批准 / **对话直接生效**；显式改过的值优先（反向对照）。
  * - `MAS-2`：提取里 `scope:"conversation"` ⇒ 对话级 + active（不进待批准、立刻进该对话上下文）。
  * - `MAS-3`：提取里 `scope:"project"` ⇒ 项目级 + pending（未批准不进上下文）。
- * - `MAS-4`（反向对照 / 兜底方向）：**没有 `scope` 字段**（老提示词产物）或写了别的值
- *   ⇒ 一律项目级 + pending —— 宁可多问一次，也不让没核实的内容悄悄进上下文。
+ * - `MAS-4`（兜底方向）：**没有 `scope` 字段**（老提示词产物）或写了别的词 ⇒
+ *   **对话级 + 直接生效** —— 拿不准时先只在这次对话里生效（用户 2026-10-10 选定的方向：
+ *   少弹批准，且爆炸半径比"归项目级"更小）；模型**明说** project 的那一半由 `MAS-3` 钉着。
  * - `MAS-5`：模型写了 `"platform"` ⇒ 落成**项目级**（自动提取不许写平台级；内容一条不丢）。
  * - `MAS-6`（反向对照）：用户把「对话」开关改成"需批准"后，对话级提取必须回到 pending。
  * - `MAS-7`（作用域隔离）：对话级自动记忆只进**那个对话**的上下文，别的对话看不到。
@@ -136,32 +137,46 @@ describe("MEM-APPROVE-SCOPE：自动提取按条目判作用域（对话级默�
     ).not.toContain("跑测试用 npx vitest run");
   });
 
-  it("MAS-4：没有 scope 字段（老提示词产物）/ 写了别的词 ⇒ 项目级 + 待批准（兜底方向）", async () => {
+  it("MAS-4：没有 scope 字段（老提示词产物）/ 写了别的词 ⇒ **对话级 + 直接生效**（兜底方向）", async () => {
     setSetting(MEMORY_WRITE_APPROVAL_KEY, JSON.stringify({ platform: true, project: true, conversation: false }));
     const svc = new MemoryService();
     await engineForExtraction(
       svc,
       SESSION,
       JSON.stringify([
-        { key: "没说作用域", content: "老提示词的产物，没有 scope 字段（应当仍需批准）" },
-        { key: "说了个新词", content: "scope 写成了别的词（应当仍需批准）", scope: "workspace" },
+        { key: "没说作用域", content: "老提示词的产物，没有 scope 字段（拿不准 ⇒ 对话级）" },
+        { key: "说了个新词", content: "scope 写成了别的词（同样拿不准 ⇒ 对话级）", scope: "workspace" },
       ]),
     ).extractMemoriesFromSession(SESSION, PROJ_A);
 
-    const pending = svc.listPending(undefined, { projectId: PROJ_A, sessionId: SESSION });
+    /*
+     * 兜底方向是**用户 2026-10-10 选定**的：拿不准 ⇒ 对话级（少弹批准）。
+     * 与"fail-closed 归项目级"相比，它的爆炸半径更小（只在那一个对话里注入），
+     * 且模型**明说** project 时仍然进待批准区（MAS-3 钉着那一半）。
+     */
     expect(
-      pending.map((p) => p.key).sort(),
-      "拿不准的一律归项目级（= 会问用户一次），不许悄悄直接生效",
-    ).toEqual(["没说作用域", "说了个新词"]);
+      svc.listPending(undefined, { projectId: PROJ_A, sessionId: SESSION }),
+      "拿不准的一律归对话级 ⇒ 不进待批准区",
+    ).toHaveLength(0);
+    const all = svc.listAllForPanel({ projectId: PROJ_A, sessionId: SESSION });
+    expect(all.map((e) => e.scope).sort(), "两条都应当落成对话级").toEqual(["conversation", "conversation"]);
+    expect(all.every((e) => e.sessionId === SESSION), "归属当前会话").toBe(true);
+    expect(
+      svc.buildMemoryPrompt("conversation", PROJ_A, SESSION),
+      "直接生效 ⇒ 立刻进这个对话的上下文",
+    ).toContain("拿不准 ⇒ 对话级");
   });
 
-  it("MAS-5：模型写了 `platform` ⇒ 落成项目级（自动提取不许写平台级）", async () => {
+  it("MAS-5：模型写了 `platform` ⇒ 落成项目级；其余拿不准的一律对话级", async () => {
     expect(memoryScopeFromExtraction("platform"), "平台级只能手写：自动提取即便说了 platform 也按项目级落").toBe(
       "project",
     );
+    expect(memoryScopeFromExtraction("project"), "模型明说跨对话仍成立 ⇒ 项目级（需批准）").toBe("project");
     expect(memoryScopeFromExtraction("conversation")).toBe("conversation");
-    expect(memoryScopeFromExtraction(undefined)).toBe("project");
-    expect(memoryScopeFromExtraction(42)).toBe("project");
+    /* 兜底：拿不准的一律对话级（用户选定；与"明说 project"那一半互为反向对照） */
+    expect(memoryScopeFromExtraction(undefined), "没给 scope ⇒ 对话级").toBe("conversation");
+    expect(memoryScopeFromExtraction(42), "不是字符串 ⇒ 对话级").toBe("conversation");
+    expect(memoryScopeFromExtraction("Platform"), "大小写不同（不是我们认的那个字面量）⇒ 对话级").toBe("conversation");
 
     setSetting(MEMORY_WRITE_APPROVAL_KEY, JSON.stringify({ platform: true, project: true, conversation: false }));
     const svc = new MemoryService();
@@ -181,18 +196,24 @@ describe("MEM-APPROVE-SCOPE：自动提取按条目判作用域（对话级默�
     ).toBe(false);
   });
 
-  it("MAS-6（反向对照）：用户把「对话」也改成需批准之后，对话级提取必须回到待批准区", async () => {
+  it("MAS-6（反向对照）：用户把「对话」也改成需批准之后，**连拿不准的那些**也要回到待批准区", async () => {
     setSetting(MEMORY_WRITE_APPROVAL_KEY, JSON.stringify({ platform: true, project: true, conversation: true }));
     const svc = new MemoryService();
     await engineForExtraction(
       svc,
       SESSION,
-      JSON.stringify([{ key: "这次先给方案", content: "用户关掉了对话级的免审批（必须问我一次）", scope: "conversation" }]),
+      JSON.stringify([
+        { key: "这次先给方案", content: "用户关掉了对话级的免审批（必须问我一次）", scope: "conversation" },
+        { key: "没说作用域", content: "拿不准 ⇒ 对话级（也要按对话档的开关走）" },
+      ]),
     ).extractMemoriesFromSession(SESSION, PROJ_A);
 
     const pending = svc.listPending(undefined, { projectId: PROJ_A, sessionId: SESSION });
-    expect(pending, "开关是用户手动打开的 ⇒ 必须尊重").toHaveLength(1);
-    expect(pending[0].scope).toBe("conversation");
+    expect(pending.map((p) => p.key).sort(), "开关是用户手动打开的 ⇒ 必须尊重（两条都进待批准）").toEqual([
+      "没说作用域",
+      "这次先给方案",
+    ]);
+    expect(pending.every((p) => p.scope === "conversation")).toBe(true);
     expect(svc.buildMemoryPrompt("conversation", PROJ_A, SESSION), "未批准不进上下文").not.toContain("必须问我一次");
   });
 

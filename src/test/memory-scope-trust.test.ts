@@ -185,10 +185,15 @@ describe("MEM-TRUST：自动流程不得改写/覆盖/删除手动条目", () =>
 
   it("MEM-TRUST-1b：没有同 key 手动条目时，自动条目正常写入并带 source=auto / batchId", async () => {
     const svc = new MemoryService();
+    /*
+     * ⚠️ 第 196 波：夹具显式写 `"scope": "project"`。这条用例钉的是"自动写进**项目作用域**时的
+     * 归属/来源/批次"，而"没给 scope 落哪一级"在同一波里被改成**对话级**（兜底方向，用户选定）
+     * ⇒ 不带 scope 的老夹具测的就不是这条用例的主语了（那一半由 MAS-4 钉）。
+     */
     const engine = engineForExtraction(
       svc,
       "s1",
-      JSON.stringify([{ key: "自动事实", content: "AUTO_WRITTEN 这是一条足够长的自动提取内容", tags: [] }]),
+      JSON.stringify([{ key: "自动事实", content: "AUTO_WRITTEN 这是一条足够长的自动提取内容", tags: [], scope: "project" }]),
     );
     await engine.extractMemoriesFromSession("s1", PROJ_A);
 
@@ -221,10 +226,15 @@ describe("MEM-TRUST：自动流程不得改写/覆盖/删除手动条目", () =>
 
   it("MEM-TRUST-1c：自动提取**无归属项目**时写入的条目任何项目都不注入（宁可不注入也不猜项目）", async () => {
     const svc = new MemoryService();
+    /*
+     * ⚠️ 第 196 波：同样显式写 `"scope": "project"` —— 这条用例的形态是
+     * "**项目级**条目但没有 projectId"（无归属）。不带 scope 时它会落成对话级（有 sessionId ⇒ 有归属），
+     * 那正是这条用例**不该**覆盖的另一种形态。
+     */
     const engine = engineForExtraction(
       svc,
       "s1",
-      JSON.stringify([{ key: "无归属", content: "NO_OWNER 没有归属项目的自动提取", tags: [] }]),
+      JSON.stringify([{ key: "无归属", content: "NO_OWNER 没有归属项目的自动提取", tags: [], scope: "project" }]),
     );
     await engine.extractMemoriesFromSession("s1");
 
@@ -326,10 +336,17 @@ describe("MEM-APPROVE：审批开启时自动条目未批准不进上下文", ()
   it("MEM-APPROVE-3：自动提取在审批开启时写 pending，关闭时写 active", async () => {
     setSetting(MEMORY_WRITE_APPROVAL_KEY, JSON.stringify({ platform: true, project: true, conversation: false }));
     const svcOn = new MemoryService();
+    /*
+     * ⚠️ 第 196 波：夹具**必须显式带 `"scope": "project"`**。
+     * 这条用例钉的是**审批开关**（开启 ⇒ pending / 关闭 ⇒ active），而"没给 scope 时落哪一级"
+     * 在同一波里被用户改成了**对话级**（少弹批准）⇒ 老夹具（不带 scope）会落成对话级 + 直接生效，
+     * 于是它测的就不再是开关、而是兜底方向（那是 `memory-approve-scope-batch.test.ts` 的 MAS-4 的事）。
+     * 判据的**主语**必须与它断言的东西一致，所以这里把作用域写死。
+     */
     await engineForExtraction(
       svcOn,
       "s-approve-on",
-      JSON.stringify([{ key: "审批开关事实", content: "APPROVAL_MODE 足够长的一条内容", tags: [] }]),
+      JSON.stringify([{ key: "审批开关事实", content: "APPROVAL_MODE 足够长的一条内容", tags: [], scope: "project" }]),
     ).extractMemoriesFromSession("s-approve-on", PROJ_A);
     expect(svcOn.listPending(undefined, { projectId: PROJ_A }), "审批开启 ⇒ 写 pending").toHaveLength(1);
     expect(svcOn.buildMemoryPrompt("project", PROJ_A), "未批准不进上下文").not.toContain("APPROVAL_MODE");
@@ -345,7 +362,7 @@ describe("MEM-APPROVE：审批开启时自动条目未批准不进上下文", ()
     await engineForExtraction(
       svcOff,
       "s-approve-off",
-      JSON.stringify([{ key: "审批开关事实", content: "APPROVAL_MODE 足够长的一条内容", tags: [] }]),
+      JSON.stringify([{ key: "审批开关事实", content: "APPROVAL_MODE 足够长的一条内容", tags: [], scope: "project" }]),
     ).extractMemoriesFromSession("s-approve-off", PROJ_A);
     expect(svcOff.listPending(undefined, { projectId: PROJ_A }), "审批关闭 ⇒ 不写 pending").toHaveLength(0);
     expect(svcOff.buildMemoryPrompt("project", PROJ_A)).toContain("APPROVAL_MODE");
