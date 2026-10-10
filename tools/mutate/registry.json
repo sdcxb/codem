@@ -1,6 +1,7 @@
 {
   "_how_to_triage": "本文件登记「必须留下变异证据」的波次（O-53 / MUTATE-ARTIFACT-1）。每登记一个波次，就必须有 tools/mutate/specs/<wave>.{json,mjs} 与 tools/mutate/results/<wave>.json，且结果里 restored===true、每条变异 ok===true、锚点未过期。新增判据而没登记波次 = 没留下变异证据。",
   "_waves": {
+    "system-injected-198": "系统提醒（nudge / 压缩标记）不许被当成用户自己说的话：id 前缀判定（八种提醒 + 两种压缩标记）+ 气泡/轮次边界/总览/滚动条标记四处同源 + 防「新加提醒没人认」的棘轮",
     "memory-dedup-197": "记忆写入质量（用户报的三件事）：写入前查重挡住「换了个说法」的重复（归一化 + 2-gram 相似度，阈值与误报对照都拿真机 1128 对配对量过）+ 人工「找出相似重复」入口 + 每轮条数上限与提取限频",
     "memory-approve-196": "记忆写入审批（用户要求）：自动提取按**条目**判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、拿不准归对话级）+ 待批准区勾选批量同意/拒绝（含全选，且批量只落库一次）",
     "lma-engine-195": "O-57 会话活动时间由引擎维护（消息写入 / 日志回放 / 打开时回填；语义 = MAX(messages.timestamp) 且只增不减）—— cargo 运行面，目标是 codem-db 的 tests/engine_tests.rs（LMA-1..5）",
@@ -27,6 +28,7 @@
     "json-repair-192": "真机实测：模型 JSON 里带裸换行 ⇒ 自动记忆被整批丢掉（JSON-REPAIR-1..6，含可定位诊断）"
   },
   "waves": [
+    "system-injected-198",
     "memory-dedup-197",
     "memory-approve-196",
     "lma-engine-195",

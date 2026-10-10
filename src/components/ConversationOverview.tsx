@@ -11,6 +11,7 @@ import { memo, useMemo } from "react";
 import { useAppStore, type Message } from "../store";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import { useLang } from "../core/i18n/lang";
+import { isMachineInjectedMessage } from "../core/storage/session";
 import { MessageSquare, Coins, Zap, Clock, Wrench } from "lucide-react";
 
 interface ConversationOverviewProps {
@@ -28,7 +29,9 @@ export const ConversationOverview = memo(function ConversationOverview({
   const messages = useAppStore((s) => s.messages);
 
   const stats = useMemo(() => {
-    const userMsgs = messages.filter((m) => m.role === "user");
+    /* 第 198 波：系统提醒（`verify-nudge-…` 等）是 user 角色但不是用户打的话 ⇒ */
+    /* 不排除就会在总览里多出"轮次"（假提问 + 假预览）。 */
+    const userMsgs = messages.filter((m) => m.role === "user" && !isMachineInjectedMessage(m));
     const assistantMsgs = messages.filter((m) => m.role === "assistant");
     const totalToolCalls = messages.reduce(
       (sum, m) => sum + (m.toolCalls?.length || 0),
@@ -161,7 +164,7 @@ export const ConversationOverview = memo(function ConversationOverview({
           </div>
           {messages
             .reduce((rounds: Message[][], msg) => {
-              if (msg.role === "user") {
+              if (msg.role === "user" && !isMachineInjectedMessage(msg)) {
                 rounds.push([msg]);
               } else if (rounds.length > 0) {
                 rounds[rounds.length - 1].push(msg);
@@ -170,7 +173,7 @@ export const ConversationOverview = memo(function ConversationOverview({
             }, [])
             .slice(0, 10)
             .map((round, idx) => {
-              const userMsg = round.find(m => m.role === "user");
+              const userMsg = round.find(m => m.role === "user" && !isMachineInjectedMessage(m));
               const preview = userMsg?.content?.substring(0, 40) || `Round ${idx + 1}`;
               const toolCount = round.reduce((s, m) => s + (m.toolCalls?.length || 0), 0);
               return (

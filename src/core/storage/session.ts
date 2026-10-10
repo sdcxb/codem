@@ -310,6 +310,74 @@ export function isDelegatedTaskMessage(m: { id?: unknown } | null | undefined): 
 }
 
 /**
+ * **系统提醒（nudge）类消息的 id 前缀** —— 循环在对话中间插进去、用来推着模型做事的那几句
+ * 「[SYSTEM] …」（第 198 波，用户真机直报）。
+ *
+ * ## 被修的缺陷（用户原话）
+ *
+ * > 对话完，重新打开对话，多了些以我为视角的信息，在我头像后面显示，就和我发的一样的格式，
+ * > 如「[SYSTEM] 你在这一轮里改动了文件，但最后一次改动之后没有再运行验证…」
+ *
+ * 那些提醒是**引擎**为了把活干完插进对话的（它们必须是 `role: "user"` —— 否则模型不会当成
+ * 操作方指令来回应；见 `agentic-loop.ts` 里两条收尾门的注释），但它们**不是用户打的话**。
+ * `MessageBubble` 原来只按 `role === "user"` 判断"这是用户说的" ⇒ 重开会话时它们**原样**渲染成
+ * 用户自己的消息（右侧气泡 + 用户头衔），而且带着"编辑并重发"入口（点下去会把提醒当用户提问重发）。
+ *
+ * ## 为什么判据落在 **id 前缀**上（与 O-56 委派注入同一条理由）
+ *
+ * id 是**唯一一条已经四处都在**的字段（权威日志 / 查询索引 / 读路径合并 / 界面），
+ * 给它加语义不用动表结构、不用改 Rust、不会漏掉某一条读路径；而内容前缀会随渲染/截断而变。
+ *
+ * ## 每个前缀的**唯一写入点**（新加一种提醒时**必须**往这里补一行，否则界面上又会多一条"用户消息"）
+ *
+ * | 前缀 | 写入点 | 这是什么提醒 |
+ * | --- | --- | --- |
+ * | `verify-nudge-` | `agentic-loop.ts` 收尾门 | 「改了文件但没验证」 |
+ * | `completion-nudges-` | `agentic-loop.ts` 收尾门 | 收尾前把几件事合并成一次提问 |
+ * | `red-test-nudge-` | `agentic-loop.ts` | 判据红了还不收尾 |
+ * | `regression-nudge-` | `agentic-loop.ts` | 把原本正常的检查改红了 |
+ * | `stall-ask-` | `agentic-loop.ts` | 停滞时的追问 |
+ * | `del-reminder-` | `agentic-loop.ts` | 删除提醒 |
+ * | `trunc-cont-` | `agentic-loop.ts` | 输出截断后的续跑 |
+ * | `guidance-carryover-` | `agentic-loop.ts` | 上一轮遗留的指导结转 |
+ * | `compact-` / `compact-manual-` | `agentic-loop.ts` / `ContextMonitor.tsx`（`nextCompactionMarkerId`） | 上下文压缩摘要标记（**同样是机器写的**：原来它也是"普通可见 user 行"⇒ 一并按系统说明渲染；"哪几行是摘要"这件事仍由 `isCompactionMarker` 按内容前缀回答，两个问题各有一个来源） |
+ *
+ * 判据 `SYSINJ-4` 是一道**棘轮**：扫 `agentic-loop.ts` 里所有 `role: "user"` 的 `createMessage`，
+ * 其 id 必须能被本判定认出来 —— 于是"新加一种提醒但没人认它"这件事在测试里就红了。
+ */
+export const SYSTEM_INJECTED_MESSAGE_ID_PREFIXES = [
+  "verify-nudge-",
+  "completion-nudges-",
+  "red-test-nudge-",
+  "regression-nudge-",
+  "stall-ask-",
+  "del-reminder-",
+  "trunc-cont-",
+  "guidance-carryover-",
+  /* 压缩标记：`nextCompactionMarkerId()` 生成 `compact-<ts>-<seq>` / `compact-manual-<ts>-<seq>` */
+  "compact-",
+  "compact-manual-",
+] as const;
+
+/** 这条消息是不是**引擎插进去的系统提醒**（不是用户打的话） */
+export function isSystemInjectedMessage(m: { id?: unknown } | null | undefined): boolean {
+  if (typeof m?.id !== "string") return false;
+  const id = m.id;
+  return SYSTEM_INJECTED_MESSAGE_ID_PREFIXES.some((prefix) => id.startsWith(prefix));
+}
+
+/**
+ * 这条消息是不是**机器写的**（系统提醒 ∪ 委派注入）—— 界面问"这是不是用户自己打的那句话"时
+ * **必须**用这个判定，别再用 `role === "user"`（那正是第 198 波缺陷的成因）。
+ *
+ * 委派注入有自己的渲染（第 194 波：「委派任务」记录），所以两者分开导出；
+ * 但"要不要按用户消息渲染"这件事上它们是同一类（都不是用户打的）。
+ */
+export function isMachineInjectedMessage(m: { id?: unknown } | null | undefined): boolean {
+  return isDelegatedTaskMessage(m) || isSystemInjectedMessage(m);
+}
+
+/**
  * 这个会话是不是**纯委派任务产物**（可以安全地不进对话目录）。
  *
  * **两条必须同时成立**（理由见 `isChildSession` 的长注释）：

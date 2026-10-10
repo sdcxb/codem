@@ -35,13 +35,13 @@
 import type { MemoryEntry } from "./memory";
 
 /** 合并（标题 + 正文）相似度达到这个值 ⇒ 直接判重（真机 0.31 起全是真重复） */
-export const MEMORY_DUPLICATE_THRESHOLD = 0.3;
+const MEMORY_DUPLICATE_THRESHOLD = 0.3;
 /** 低档：合并 ≥0.22 时，还必须"标题自己也像"（key ≥0.40）才判重 —— 用来挡开 0.23 那类误报 */
-export const MEMORY_DUPLICATE_KEY_ASSIST_MIN = 0.22;
-export const MEMORY_DUPLICATE_KEY_ASSIST_KEY = 0.4;
+const MEMORY_DUPLICATE_KEY_ASSIST_MIN = 0.22;
+const MEMORY_DUPLICATE_KEY_ASSIST_KEY = 0.4;
 /** 同一档：标题几乎逐字相同（key ≥0.60）且正文有一点重叠 ⇒ 判重 */
-export const MEMORY_DUPLICATE_SAME_TITLE_KEY = 0.6;
-export const MEMORY_DUPLICATE_SAME_TITLE_MIN = 0.15;
+const MEMORY_DUPLICATE_SAME_TITLE_KEY = 0.6;
+const MEMORY_DUPLICATE_SAME_TITLE_MIN = 0.15;
 
 /** 判重只看这两个字段（`MemoryEntry` 也满足这个形状） */
 export interface MemoryDuplicateShape {
@@ -77,7 +77,7 @@ export function memorySimilarity(a: string, b: string): number {
 }
 
 /** 合并相似度（标题 + 正文一起算；标题是模型对这条事实的概括，权重天然更高） */
-export function memoryCombinedSimilarity(a: MemoryDuplicateShape, b: MemoryDuplicateShape): number {
+function memoryCombinedSimilarity(a: MemoryDuplicateShape, b: MemoryDuplicateShape): number {
   return memorySimilarity(`${a.key}\n${a.content}`, `${b.key}\n${b.content}`);
 }
 
@@ -189,9 +189,4 @@ export function clusterDuplicateMemories<T extends MemoryDuplicateShape & { id: 
   // 证据最强的组排前面（用户先看最确定的）
   out.sort((a, b) => b.similarity - a.similarity);
   return out;
-}
-
-/** 形状收窄：任意带 key/content 的东西都能拿来比 */
-export function toDuplicateShape(entry: Pick<MemoryEntry, "key" | "content">): MemoryDuplicateShape {
-  return { key: entry.key, content: entry.content };
 }

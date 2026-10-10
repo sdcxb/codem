@@ -1,0 +1,83 @@
+{
+  "description": "第 198 波：系统提醒（nudge / 压缩标记等机器注入的 user 消息）不许被当成用户自己说的话 —— 用户真机直报「重开对话，它们在我头像后面、和我发的一样的格式」。判据 SYSINJ-1..5（含一道防止「新加提醒没人认」的棘轮）。",
+  "mutations": [
+    {
+      "id": "MUT-1 渲染退回只看 role === \"user\"（缺陷原样回来）",
+      "why": "SYSINJ-2 / SYSINJ-3 的反向对照：把界面判定退回旧写法，提醒立刻又变成用户气泡（真机症状）",
+      "patches": [
+        {
+          "file": "src/components/MessageBubble.tsx",
+          "from": "  const machineInjected = isMachineInjectedMessage(message);\n  const isUser = message.role === \"user\" && !machineInjected;",
+          "to": "  const machineInjected = isMachineInjectedMessage(message);\n  const isUser = message.role === \"user\";"
+        }
+      ],
+      "tests": ["src/test/system-injected-message.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 判定不认系统提醒（只认委派注入）",
+      "why": "SYSINJ-1 / SYSINJ-2：`isMachineInjectedMessage` 退化成只认委派 ⇒ 八种提醒全部又按用户消息渲染",
+      "patches": [
+        {
+          "file": "src/core/storage/session.ts",
+          "from": "export function isMachineInjectedMessage(m: { id?: unknown } | null | undefined): boolean {\n  return isDelegatedTaskMessage(m) || isSystemInjectedMessage(m);\n}",
+          "to": "export function isMachineInjectedMessage(m: { id?: unknown } | null | undefined): boolean {\n  return isDelegatedTaskMessage(m);\n}"
+        }
+      ],
+      "tests": ["src/test/system-injected-message.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 提醒名单里删掉一个前缀（新加提醒没人认的形态）",
+      "why": "SYSINJ-1 / SYSINJ-4：把 `verify-nudge-` 从名单里删掉 —— 这正是用户贴回来的那一条；棘轮也必须当场变红",
+      "patches": [
+        {
+          "file": "src/core/storage/session.ts",
+          "from": "  \"verify-nudge-\",\n  \"completion-nudges-\",",
+          "to": "  \"completion-nudges-\","
+        }
+      ],
+      "tests": ["src/test/system-injected-message.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 轮次边界又按 role === \"user\" 断轮（提醒被当成新一轮的开始）",
+      "why": "SYSINJ-5：`ChatPanel` 的轮次边界判定退回裸判据 ⇒ 提醒会把一个回合切成两段（收尾徽标位置错）",
+      "patches": [
+        {
+          "file": "src/components/ChatPanel.tsx",
+          "from": "} else if (displayMessages[effectiveIdx + 1]?.role === \"user\" && !isMachineInjectedMessage(displayMessages[effectiveIdx + 1])) {",
+          "to": "} else if (displayMessages[effectiveIdx + 1]?.role === \"user\") {"
+        }
+      ],
+      "tests": ["src/test/system-injected-message.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 滚动条标记又按 role === \"user\" 收（多出一串假的 User 标记）",
+      "why": "SYSINJ-5：滚动条标记退回裸判据 ⇒ 每个提醒都会在滚动条上多一个「User」点",
+      "patches": [
+        {
+          "file": "src/components/ScrollbarMarkers.tsx",
+          "from": "    const userIds = messages.filter((m) => m.role === \"user\" && !isMachineInjectedMessage(m)).map((m) => m.id);",
+          "to": "    const userIds = messages.filter((m) => m.role === \"user\").map((m) => m.id);"
+        }
+      ],
+      "tests": ["src/test/system-injected-message.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/storage/session.ts",
+          "from": " * ## 被修的缺陷（用户原话）",
+          "to": " * ## 被修的缺陷（用户原话；反向对照：只改这一行注释）"
+        }
+      ],
+      "tests": ["src/test/system-injected-message.test.ts"],
+      "expectRed": false
+    }
+  ]
+}

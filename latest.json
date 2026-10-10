@@ -1,15 +1,15 @@
 {
-  "version": "1.16.306",
-  "notes": "Codem v1.16.306 — 自动记忆：写入前查重（不再重复写入/重复请求批准）、记忆体检一键「找出相似重复」、每轮最多 3 条且提取限频；审批按作用域分档（对话级默认直接生效）+ 待批准勾选批量同意/拒绝。",
-  "pub_date": "2026-10-10T05:27:23Z",
+  "version": "1.16.307",
+  "notes": "Codem v1.16.307 — 系统提醒（引擎插进对话的 [SYSTEM] 提示）不再被渲染成你自己发的消息；同时修掉它对轮次边界、对话总览与滚动条标记的影响。",
+  "pub_date": "2026-10-10T06:55:06Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2UveXh5ajlxejBxeWFYNVZxTW9mb3NPV2gzbm5XRmhxT3I2Q2FyYytCQ2dCbW41ZjhKQ2ZrZm5QNFZkNzA0eGNPd25IZHVJdWhyRDdNMXNsUE5Sb2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjEwMDQwCWZpbGU6Q29kZW1fMS4xNi4zMDZfeDY0LXNldHVwLmV4ZQp0UGFZT0t2YlBydDVwZmZLbnZoOGJZZXJkaVJXUlFXei85MSt4WmFRYjRmN29xNXlTRWIvZnI2Tmd0R2p6VlE4bWhWRkVvZ1V4b2NXcGFyWFJ2UkJEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.306/Codem_1.16.306_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JTbC9JWUxrcDAvY3A1MlpQWmpxWFdsWU1zZDkzTkwvWCsyYjZCVW5RU3JYK2dHMUpFR0x5cjR4U1JKTlJsL2pyQ3BSQlM0ZUZFczI5U1ZvRHZraUFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjE1MzAzCWZpbGU6Q29kZW1fMS4xNi4zMDdfeDY0LXNldHVwLmV4ZQpUK2xlZkx2bW9oUWlsRFg3Z3hrUnR4VmNva0NPZmhTTVROTDVzWFNQQWxZV2tjVTNvbVVLSGlIbEd4ajdybWh4T1VXWWN2L2cxYXVQWmF0TldsZ3ZBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.307/Codem_1.16.307_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2UveXh5ajlxejBxeWFYNVZxTW9mb3NPV2gzbm5XRmhxT3I2Q2FyYytCQ2dCbW41ZjhKQ2ZrZm5QNFZkNzA0eGNPd25IZHVJdWhyRDdNMXNsUE5Sb2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjEwMDQwCWZpbGU6Q29kZW1fMS4xNi4zMDZfeDY0LXNldHVwLmV4ZQp0UGFZT0t2YlBydDVwZmZLbnZoOGJZZXJkaVJXUlFXei85MSt4WmFRYjRmN29xNXlTRWIvZnI2Tmd0R2p6VlE4bWhWRkVvZ1V4b2NXcGFyWFJ2UkJEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.306/Codem_1.16.306_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JTbC9JWUxrcDAvY3A1MlpQWmpxWFdsWU1zZDkzTkwvWCsyYjZCVW5RU3JYK2dHMUpFR0x5cjR4U1JKTlJsL2pyQ3BSQlM0ZUZFczI5U1ZvRHZraUFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjE1MzAzCWZpbGU6Q29kZW1fMS4xNi4zMDdfeDY0LXNldHVwLmV4ZQpUK2xlZkx2bW9oUWlsRFg3Z3hrUnR4VmNva0NPZmhTTVROTDVzWFNQQWxZV2tjVTNvbVVLSGlIbEd4ajdybWh4T1VXWWN2L2cxYXVQWmF0TldsZ3ZBUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.307/Codem_1.16.307_x64-setup.exe"
     }
   }
 }

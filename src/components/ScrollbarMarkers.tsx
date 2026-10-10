@@ -1,6 +1,7 @@
 import { memo, useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
 import type { Message } from "../store";
+import { isMachineInjectedMessage } from "../core/storage/session";
 
 interface ScrollbarMarkersProps {
   /** All messages in the current view */
@@ -103,7 +104,9 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
       return r.bottom > scrollerRect.top && r.top < scrollerRect.bottom;
     };
 
-    const userIds = messages.filter((m) => m.role === "user").map((m) => m.id);
+    /* 第 198 波：系统提醒（`verify-nudge-…` 等）也是 user 角色，但它们不是用户打的话 —— */
+    /* 把它们当用户消息会在滚动条上多出一串假的「User」标记（真机缺陷同源）。 */
+    const userIds = messages.filter((m) => m.role === "user" && !isMachineInjectedMessage(m)).map((m) => m.id);
     const newMarkers: MarkerPosition[] = [];
     for (const msgId of userIds) {
       const el = container.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`);
@@ -257,7 +260,7 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
           }}
         >
           <div className="scrollbar-marker-preview-role">
-            {hovered.role === "user" ? "User" : "📌"}
+            {hovered.role === "user" && !isMachineInjectedMessage(hovered) ? "User" : "📌"}
           </div>
           <div className="scrollbar-marker-preview-text">
             {(hovered.content || "").slice(0, 240) || "(no text)"}

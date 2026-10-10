@@ -20,7 +20,7 @@
       "patches": [
         {
           "file": "src/core/memory/similarity.ts",
-          "from": "export const MEMORY_DUPLICATE_THRESHOLD = 0.3;",
+          "from": "const MEMORY_DUPLICATE_THRESHOLD = 0.3;",
           "to": "export const MEMORY_DUPLICATE_THRESHOLD = 0;"
         }
       ],

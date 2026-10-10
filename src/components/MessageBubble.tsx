@@ -12,7 +12,7 @@ import { InlineMessageEdit } from "./InlineMessageEdit";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { getSubagentRuntime } from "../core/subagent/index";
 /* 第 194 波（O-56）：委派注入消息的**唯一判定**（id 前缀，定义在 storage/session.ts） */
-import { isDelegatedTaskMessage } from "../core/storage/session";
+import { isDelegatedTaskMessage, isMachineInjectedMessage } from "../core/storage/session";
 import { SlotBridge } from "../core/slots/SlotBridge";
 import { SourceReferences } from "./SourceReferences";
 // 第 191 波：字节数的人读形态走**唯一**实现（本文件原来自己抄了一份 `formatSize`）
@@ -348,8 +348,18 @@ const [galleryIndex, setGalleryIndex] = useState(0);
     }
   }, [message.id, message.content, isSpeaking, ttsMessageId, ttsCancel, ttsSpeak]);
 
-  const isUser = message.role === "user";
-  const isSystem = message.role === "system";
+  /**
+   * 「这是不是**用户自己打的那句话**」（第 198 波）。
+   *
+   * 只看 `role === "user"` 是不够的：引擎会把**系统提醒**（`verify-nudge-…` 等，见
+   * `storage/session.ts` 的 `SYSTEM_INJECTED_MESSAGE_ID_PREFIXES`）以 user 角色写进对话，
+   * 重开会话时它们会被渲染成"用户说的话"（用户真机直报：右侧气泡、用户头衔、
+   * 还带着"编辑并重发"——点下去会把提醒当成用户提问重发）。
+   */
+  const machineInjected = isMachineInjectedMessage(message);
+  const isUser = message.role === "user" && !machineInjected;
+  /** 机器注入的提醒按「系统说明」渲染（居中、无用户头衔、无编辑入口），但仍显示正文 */
+  const isSystem = message.role === "system" || (machineInjected && !isDelegatedTaskMessage(message));
   /**
    * 别的会话委派进来的任务记录（第 194 波，GAP-LIST O-56）。
    * 判据取 **id 前缀**（唯一写入点 `session/executor.ts`；见 `storage/session.ts` 的长注释）。

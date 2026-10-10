@@ -1,8 +1,8 @@
 {
   "wave": "memory-dedup-197",
   "description": "第 197 波（用户报的三件事）：①写入前查重必须挡住「换了个说法」的重复（旧口径只剩 key 逐字/前 50 字符逐字相等，真机 23 对近似重复一对都没挡住）；②「找出相似重复」人工清理入口；③每轮条数上限 + 提取限频 + 提示词门槛（用户报的「每轮对话自动写入几十条」）。",
-  "runAt": "2026-10-10T05:22:11.761Z",
-  "specFingerprint": "bbf3c4ebb5667aaf2dca3b94a13d3b8f75c0be44",
+  "runAt": "2026-10-10T06:47:06.860Z",
+  "specFingerprint": "5a4955ac0a9e22036755df59ba4d5ce81e7338f1",
   "files": [
     "src/core/memory/similarity.ts",
     "src/core/memory/memory.ts",
@@ -32,7 +32,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3422
+      "ms": 3399
     },
     {
       "id": "MUT-2 阈值降到 0（谁都算重复）",
@@ -40,7 +40,7 @@
       "patches": [
         {
           "file": "src/core/memory/similarity.ts",
-          "from": "export const MEMORY_DUPLICATE_THRESHOLD = 0.3;",
+          "from": "const MEMORY_DUPLICATE_THRESHOLD = 0.3;",
           "to": "export const MEMORY_DUPLICATE_THRESHOLD = 0;"
         }
       ],
@@ -52,7 +52,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3426
+      "ms": 3416
     },
     {
       "id": "MUT-3 查重不再看平台级条目",
@@ -72,7 +72,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3410
+      "ms": 3350
     },
     {
       "id": "MUT-4 对话级候选不再比同项目的项目级条目（留出绕过审批的后门）",
@@ -92,7 +92,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3367
+      "ms": 3386
     },
     {
       "id": "MUT-5 查重不分桶（跨项目一起比）",
@@ -112,7 +112,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3353
+      "ms": 3358
     },
     {
       "id": "MUT-6 每轮条数上限失效",
@@ -132,7 +132,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3369
+      "ms": 3430
     },
     {
       "id": "MUT-7 提取限频失效（每轮都跑）",
@@ -152,7 +152,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3427
+      "ms": 3454
     },
     {
       "id": "MUT-8 提示词里不再带「已经记住的」清单",
@@ -172,7 +172,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3387
+      "ms": 3389
     },
     {
       "id": "MUT-9 「找出相似重复」只在同一个桶里找",
@@ -192,7 +192,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3703
+      "ms": 3746
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -213,7 +213,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3462
+      "ms": 3529
     }
   ]
 }

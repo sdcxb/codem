@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
+import { isMachineInjectedMessage } from "../core/storage/session";
 import { InputArea } from "./InputArea";
 import { SelectionTooltip } from "./SelectionTooltip";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -1052,7 +1053,7 @@ setStepTooltipLocked(false);
             if (msg.role === "assistant") {
               isLastInTurn = true;
               for (let i = effectiveIdx + 1; i < displayMessages.length; i++) {
-                if (displayMessages[i].role === "user") break;
+                if (displayMessages[i].role === "user" && !isMachineInjectedMessage(displayMessages[i])) break;
                 if (displayMessages[i].role === "assistant") {
                   isLastInTurn = false;
                   break;
@@ -1066,14 +1067,14 @@ setStepTooltipLocked(false);
             let isTurnEnd = false;
             if (effectiveIdx === displayMessages.length - 1) {
               isTurnEnd = true;
-            } else if (displayMessages[effectiveIdx + 1]?.role === "user") {
+            } else if (displayMessages[effectiveIdx + 1]?.role === "user" && !isMachineInjectedMessage(displayMessages[effectiveIdx + 1])) {
               isTurnEnd = true;
             }
             // Check if this turn has any assistant response (walk backwards to find user start)
             let isTurnWithResponse = false;
             if (isTurnEnd) {
               for (let j = effectiveIdx; j >= 0; j--) {
-                if (displayMessages[j].role === "user") break;
+                if (displayMessages[j].role === "user" && !isMachineInjectedMessage(displayMessages[j])) break;
                 if (displayMessages[j].role === "assistant") { isTurnWithResponse = true; break; }
               }
             }
