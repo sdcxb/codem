@@ -1,0 +1,127 @@
+{
+  "description": "第 200 波：用户拒绝过的同类记忆不再自动写入、也不再请求批准；用户主动要求记住的放行（且直接生效）。判据 REJ-1..8 + MEM-CHECK-REJ-1：拒绝留痕（含批量拒绝/删除待批准）、全局按文本匹配挡住同类、explicit 放行、不同事实不误伤、删已生效不算拒绝、记录有界且落库仍在、可清空退路。",
+  "mutations": [
+    {
+      "id": "MUT-1 拒绝不留痕（拆掉「删待批准 ⇒ 记一条」这条能力）",
+      "why": "REJ-1 / REJ-2：旧实现的洞就是「删完不留痕 ⇒ 下一轮又问一次」。⚠️ 两处写入点（delete 与 rejectMany）必须**一起**拆：只拆一处时另一处会把行为兜住 ⇒ 判据照样绿（第一版就是这么漏网的）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "      if (entry && isPendingMemoryEntry(entry)) this.recordRejection(entry);\n      this.save();",
+          "to": "      this.save();"
+        },
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      this.entries.delete(id);",
+          "to": "      this.entries.delete(id);"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 提取循环不再查拒绝记录",
+      "why": "REJ-2 / REJ-7：判据的全部意义就是「写入前先查一下有没有拒绝过」；去掉查询后同类又被写进待批准",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        const explicitRequest = mem.explicit === true;\n        if (!explicitRequest) {\n          const rejected = this.memory.findRejectedSimilarTo({ key: safeKey, content: safeContent });",
+          "to": "        const explicitRequest = mem.explicit === true;\n        if (false) {\n          const rejected = this.memory.findRejectedSimilarTo({ key: safeKey, content: safeContent });"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 用户主动要求也不放行（连 explicit 一起挡）",
+      "why": "REJ-3：用户原话「我在聊天里主动让它记忆的放行」—— 把 explicit 的豁免去掉就是违逆这条要求",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        const explicitRequest = mem.explicit === true;",
+          "to": "        const explicitRequest = false;"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 用户主动要求的条目仍然按审批走（放行了但还要批准）",
+      "why": "REJ-3 的后半句：用户主动要求 = 已经批准 ⇒ 必须直接生效，否则用户会看到「我说了记住，它却还在等我批」",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        const statusForThisItem = explicitRequest ? \"active\" : approvalRequired ? \"pending\" : \"active\";",
+          "to": "        const statusForThisItem = approvalRequired ? \"pending\" : \"active\";"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 拒绝匹配扩成「永远命中」（把所有自动记忆都挡掉）",
+      "why": "REJ-4（反向对照）：不误伤 —— 与已拒绝记录不同的事实必须照常写入；恒真实现会把它一起挡掉",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "  findRejectedSimilarTo(draft: { key: string; content: string }): MemoryRejection | undefined {\n    for (const record of this.rejections.values()) {\n      if (memoryLooksDuplicate(draft, { key: record.key, content: record.content })) return record;\n    }\n    return undefined;\n  }",
+          "to": "  findRejectedSimilarTo(draft: { key: string; content: string }): MemoryRejection | undefined {\n    void draft;\n    return this.rejections.values().next().value;\n  }"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 删除已生效的记忆也记成拒绝（过度）",
+      "why": "REJ-5：那会让「删掉一条过时事实」变成「这类事实以后再也不许记」",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "      if (entry && isPendingMemoryEntry(entry)) this.recordRejection(entry);",
+          "to": "      if (entry) this.recordRejection(entry);"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-7 拒绝记录没有退路（清空不生效）",
+      "why": "REJ-7：一次误点拒绝不该永久锁死（用户只能靠改库恢复）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    const cleared = this.rejections.size;\n    if (cleared === 0) return { cleared: 0, persisted: true };\n    this.rejections.clear();\n    return { cleared, persisted: this.save() };",
+          "to": "    const cleared = 0;\n    return { cleared, persisted: true };"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-8 体检里不再显示已拒绝记录（用户看不到它为何不再问）",
+      "why": "MEM-CHECK-REJ-1：拒绝记录必须可审阅（否则用户会以为记忆系统坏了）",
+      "patches": [
+        {
+          "file": "src/components/MemoryCheckupView.tsx",
+          "from": "      {rejections.length > 0 && (\n        <div className=\"mc-rejections\">",
+          "to": "      {false && rejections.length > 0 && (\n        <div className=\"mc-rejections\">"
+        }
+      ],
+      "tests": ["src/test/memory-checkup.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-9 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": " * ## 为什么要有它（用户原话）\n *\n * > 记忆系统里我已经拒绝的类似记忆",
+          "to": " * ## 为什么要有它（用户原话；反向对照：只改这一行注释）\n *\n * > 记忆系统里我已经拒绝的类似记忆"
+        }
+      ],
+      "tests": ["src/test/memory-rejection.test.ts", "src/test/memory-checkup.test.tsx"],
+      "expectRed": false
+    }
+  ]
+}

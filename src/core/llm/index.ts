@@ -2253,9 +2253,6 @@ return loop.hasPendingGuidance();
 **最多 ${MEMORY_MAX_PER_EXTRACTION} 条**，按重要性排序（只写最值得记的那几条）。
 返回更多也只会被截断 —— 所以请把位置留给最重要的。
 
-输出格式（JSON 数组，每个元素是一个记忆条目）：
-[{"key": "简短标题", "content": "具体内容", "tags": ["相关标签"], "scope": "conversation"}]
-
 scope 只有两个取值，按这条事实**跨不跨对话**来判：
 - "conversation"：只对**当前这次对话**成立的约定 / 偏好 / 临时要求（例如"这次先给方案再改代码"、
   "这次不要动测试文件"）。它**立即生效**，不会再问用户。
@@ -2263,6 +2260,15 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
   这个仓库里踩过的坑）。它需要用户批准后才生效 —— 所以**只有你确信它跨对话仍然成立时才写它**。
 **判不准就写 "conversation"**（先只在这次对话里生效，不打扰用户）。
 不要写 "platform"（跨项目共享只能由用户手动决定）。
+
+另外每一项都要给一个 explicit 字段（true / false），它决定这条记忆**要不要再问用户批准**：
+- true：**用户在这一轮对话里明确要求记住它**（「记住…」「帮我记一下…」「以后都这样」「别再问了」这类
+  明确的指示，或用户在被问到"要不要记住"时明确说"要"）。这类**直接生效**，不会再走审批。
+- false：你自己从对话里推断出来的（绝大多数情况）。
+**只有用户真的说出口了才写 true**；拿不准一律 false（宁可按需要批准处理，也不要替用户表态）。
+
+输出格式（JSON 数组，每个元素是一个记忆条目）：
+[{"key": "简短标题", "content": "具体内容", "tags": ["相关标签"], "scope": "conversation", "explicit": false}]
 
 如果没有值得提取的记忆，返回空数组 []`;
 
@@ -2299,7 +2305,7 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       }
 
       // 健壮的 JSON 解析 — 使用 extractJSON 处理 markdown 包裹、中文标点、尾部逗号等
-      const memories = extractJSON<Array<{ key: string; content: string; tags?: string[]; scope?: string }>>(responseText);
+      const memories = extractJSON<Array<{ key: string; content: string; tags?: string[]; scope?: string; explicit?: boolean }>>(responseText);
       if (!Array.isArray(memories)) {
         this.memory.finalizeBatch(batchId, 0);
         console.warn("[extractMemories] Failed to parse memories from forked agent response:", responseText.substring(0, 200));
@@ -2319,6 +2325,8 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       let rejectedCapacity = 0;
       let blockedByManual = 0;
       let duplicates = 0;
+      /** 第 200 波：被"用户已拒绝过"挡下的条数（这一类**不进待批准、不打扰用户**） */
+      let rejectedByUser = 0;
       /**
        * **每轮条数上限**（第 197 波，用户报的「每轮对话自动写入几十条记忆」）。
        *
@@ -2354,6 +2362,31 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           itemScope === "conversation" ? { sessionId } : { projectId };
 
         /**
+         * **用户拒绝过的同类，不再自动写入**（第 200 波，用户要求）。
+         *
+         * > 记忆系统里我已经拒绝的类似记忆，不要再自动写入和让我审批，每次自动写入查一下
+         * > 是否有已经类似拒绝的。我在聊天里主动让它记忆的放行。
+         *
+         * 判据顺序是刻意的：**先看拒绝记录，再看查重**。
+         * - 拒绝记录 ≠ 条目（条目已经被删掉了），所以它必须是一次独立查询；
+         * - 命中时**不进待批准、不写入、不打扰用户**，只在日志里如实说明被哪条拒绝记录挡住了；
+         * - `mem.explicit === true`（用户在这一轮里**明确要求记住**）⇒ **跳过本判定**，
+         *   而且下面按"直接生效"写入（用户就是批准者，不必再问一次）。
+         */
+        const explicitRequest = mem.explicit === true;
+        if (!explicitRequest) {
+          const rejected = this.memory.findRejectedSimilarTo({ key: safeKey, content: safeContent });
+          if (rejected) {
+            rejectedByUser++;
+            console.log(
+              `[extractMemories] 跳过（用户拒绝过同类，不再写入也不再请求批准）：${safeKey} ← 「${rejected.key}」` +
+                `（拒绝于 ${new Date(rejected.rejectedAt).toLocaleString("zh-CN")}）`,
+            );
+            continue;
+          }
+        }
+
+        /**
          * 信任边界①：**同 key 的受保护条目永不被自动流程覆盖**。
          * 旧实现只做"相似即跳过"，而相似判定会漏（内容不同、key 相同）⇒ 今天这里显式查同 key。
          * 第 189 波：受保护口径统一走 `isProtectedMemoryEntry`（手动 + **来源未知的旧数据**）
@@ -2370,20 +2403,38 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           { projectId },
         );
         if (duplicateOf) {
-          if (isProtectedMemoryEntry(duplicateOf)) {
+          /*
+           * ⚠️ 显式请求的那一条**允许顶掉**已有的自动条目（用户刚说要记住它）：
+           * 否则"用户主动要求记住"会静默失败在查重上（而且他刚被拒过、旧的又没写进去，
+           * 这一条就成了谁都不记得）。手动条目仍然**永不**被覆盖。
+           */
+          if (explicitRequest && !isProtectedMemoryEntry(duplicateOf)) {
+            console.log(
+              `[extractMemories] 用户主动要求记住 ⇒ 用这一条替换已有的自动条目：「${duplicateOf.key}」`,
+            );
+            this.memory.removeMany([duplicateOf.id]);
+          } else if (isProtectedMemoryEntry(duplicateOf)) {
             blockedByManual++;
             console.log(
               `[extractMemories] 跳过（已有手动记忆，自动流程不得覆盖）：${safeKey} ← 「${duplicateOf.key}」`,
             );
+            continue;
           } else {
             duplicates++;
             console.log(
               `[extractMemories] 跳过（已有相似记忆，不重复写入）：${safeKey} ← 「${duplicateOf.key}」` +
                 `（scope=${duplicateOf.scope}, status=${duplicateOf.status ?? "active"}）`,
             );
+            continue;
           }
-          continue;
         }
+
+        /**
+         * 审批状态：**用户明确要求记住的 ⇒ 直接生效**（`explicitRequest`）。
+         * 理由：审批这一道闸门防的是"自动流程擅自把不确定的东西写进上下文"，
+         * 而"用户刚在对话里说了记住它"本身就是批准 —— 再问一次是打扰。
+         */
+        const statusForThisItem = explicitRequest ? "active" : approvalRequired ? "pending" : "active";
 
         const result = this.memory.add({
           scope: itemScope,
@@ -2392,8 +2443,9 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           content: safeContent,
           tags: mem.tags,
           source: "auto" as MemorySource,
-          // 审批开启 ⇒ 只暂存，未批准不进上下文（开关是**按作用域**判的）
-          status: approvalRequired ? "pending" : "active",
+          // 审批开启 ⇒ 只暂存，未批准不进上下文（开关是**按作用域**判的）；
+          // 用户明确要求记住的那条直接生效（见上面那段）
+          status: statusForThisItem,
           batchId,
         });
 
@@ -2407,12 +2459,13 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           continue;
         }
         written++;
-        if (approvalRequired) writtenPending++;
+        if (statusForThisItem === "pending") writtenPending++;
         else writtenActive++;
         console.log(
           `[extractMemories] Saved memory: ${safeKey}（source=auto, scope=${itemScope}, ` +
             `${itemScope === "conversation" ? `sessionId=${sessionId}` : `projectId=${projectId ?? "(无归属)"}`}, ` +
-            `status=${approvalRequired ? "pending（待批准）" : "active（已生效）"}, batch=${batchId}）`,
+            `status=${statusForThisItem === "pending" ? "pending（待批准）" : explicitRequest ? "active（用户主动要求，直接生效）" : "active（已生效）"}, ` +
+            `batch=${batchId}）`,
         );
       }
 
@@ -2420,7 +2473,7 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       console.log(
         `[extractMemories] Extracted ${memories.length} memories from session ${sessionId}：` +
           `写入 ${written} 条（直接生效 ${writtenActive} 条 / 待批准 ${writtenPending} 条）、` +
-          `已有相似记忆跳过 ${duplicates} 条、已手动记住拦下 ${blockedByManual} 条、` +
+          `已有相似记忆跳过 ${duplicates} 条、用户拒绝过同类跳过 ${rejectedByUser} 条、已手动记住拦下 ${blockedByManual} 条、` +
           `超过每轮上限（${MEMORY_MAX_PER_EXTRACTION} 条）丢弃 ${droppedByCap} 条、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
       );
 

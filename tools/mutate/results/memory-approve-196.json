@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-196",
   "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
-  "runAt": "2026-10-10T05:12:01.880Z",
-  "specFingerprint": "70b7964d5b04ca096502949fdcf6b7f6293cd59c",
+  "runAt": "2026-10-10T07:39:23.985Z",
+  "specFingerprint": "955bb2a4347ae937ebec7b7fd4f9289250dbcfdd",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3380
+      "ms": 3345
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3369
+      "ms": 3352
     },
     {
       "id": "MUT-3 默认档改成「对话也需批准」",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3308
+      "ms": 3385
     },
     {
       "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3179
+      "ms": 3369
     },
     {
       "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3217
+      "ms": 3349
     },
     {
       "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
@@ -122,8 +122,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      const entry = this.entries.get(id);\n      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);",
-          "to": "      const entry = this.entries.get(id);\n      if (!entry) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);"
+          "from": "      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      this.entries.delete(id);",
+          "to": "      if (!entry) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);"
         }
       ],
       "tests": [
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3136
+      "ms": 3347
     },
     {
       "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3342
+      "ms": 3548
     },
     {
       "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
@@ -174,7 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3307
+      "ms": 3603
     },
     {
       "id": "MUT-9 界面：拆掉「选中集合随待批准列表收敛」这条能力（幽灵选中）",
@@ -199,7 +199,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3320
+      "ms": 3566
     },
     {
       "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
@@ -219,7 +219,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3426
+      "ms": 3683
     },
     {
       "id": "MUT-12 反向对照：只改一行说明注释",
@@ -241,7 +241,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3355
+      "ms": 3565
     }
   ]
 }

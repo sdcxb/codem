@@ -19796,6 +19796,66 @@ html[data-contrast="high"] {
   background: var(--accent-muted);
 }
 
+/* ---- 第 200 波：已拒绝记录（挡住同类自动记忆，可审阅可清空） ---- */
+.mc-rejections {
+  padding: var(--space-6) var(--space-8);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.mc-rejections-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.mc-rejections-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.mc-rejections-hint {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.mc-rejection-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-2xs);
+}
+
+.mc-rejection-entry + .mc-rejection-entry {
+  border-top: 1px solid var(--border-secondary);
+}
+
+.mc-rejection-key {
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.mc-rejection-time {
+  color: var(--text-muted);
+}
+
+.mc-rejection-content {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- 第 197 波：找出相似重复（人工清理候选） ---- */
 .mc-duplicates {
   padding: var(--space-6) var(--space-8);

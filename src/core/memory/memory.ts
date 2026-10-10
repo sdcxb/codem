@@ -487,6 +487,40 @@ export interface MemorySearchResult {
   snippet: string;
 }
 
+/**
+ * **一条"已拒绝"记录**（第 200 波，用户要求）。
+ *
+ * ## 为什么要有它（用户原话）
+ *
+ * > 记忆系统里我已经拒绝的类似记忆，不要再自动写入和让我审批，每次自动写入查一下是否有
+ * > 已经类似拒绝的。我在聊天里主动让它记忆的放行。
+ *
+ * 旧实现里「拒绝 = 删除」——删完什么都不留，于是下一轮（或下一个对话、下一次评测换工作目录之后）
+ * 模型把同一件事重新推导出来，用户**又被问一次**（真机取证：同一条事实被写了 5 遍、
+ * 用户逐条拒绝过之后仍然换着说法回来）。
+ *
+ * ## 存什么、为什么是**文本摘要**而不是哈希
+ *
+ * 判"像不像同一条"用的是归一化 + 字符 2-gram 相似度（`similarity.ts`），它需要**文本**，
+ * 光有哈希比不出来（哈希只能挡逐字重复，而模型是换说法）。所以这里存 key + 正文的**有界摘要**
+ * （各截断到 `REJECTION_TEXT_MAX`），并**按条数有界**（`REJECTION_KEEP_MAX`，超了丢最旧的）
+ * —— 与 `batches` 的 `BATCH_KEEP_MAX` 同一条纪律：记忆 payload 是整份读写，不能无界增长。
+ */
+export interface MemoryRejection {
+  id: string;
+  /** 被拒绝条目的标题（截断到 `REJECTION_TEXT_MAX`） */
+  key: string;
+  /** 被拒绝条目的正文（截断到 `REJECTION_TEXT_MAX`） */
+  content: string;
+  /** 拒绝发生在哪个作用域（界面要能说明"你在哪儿拒绝过它"） */
+  scope: MemoryScope;
+  /** 拒绝时的归属键（仅用于展示/取证，**匹配时不看它** —— 见 `findRejectedSimilarTo`） */
+  projectId?: string;
+  sessionId?: string;
+  /** 拒绝时间（毫秒） */
+  rejectedAt: number;
+}
+
 export interface MemoryConfig {
   /** Root directory for memory files */
   rootDir: string;
@@ -651,6 +685,18 @@ export const MEMORY_INJECT_KEY_MAX = 120;
 
 /** 快照/批次参数 */
 const BATCH_KEEP_MAX = 50;
+
+/**
+ * 「已拒绝记录」的两条上界（第 200 波）。
+ *
+ * - `REJECTION_KEEP_MAX`：最多留多少条（超了丢**最旧**的）。取 60 的理由：它要覆盖
+ *   "用户最近拒绝过的那些事"，而 payload 是整份读写 —— 每条 ≈ 2×240 字节 ⇒ 满额约 29 KB，
+ *   相对 2 MB 的预算可以忽略，但也不能无界（无界就会被写放大拖住）。
+ * - `REJECTION_TEXT_MAX`：单条文本（标题 / 正文各自）截断到多少字符。240 足够覆盖
+ *   "同一条事实的两种说法"的判重（判重看的是字符 2-gram 重合度，前 240 字已包含标题与要点）。
+ */
+const REJECTION_KEEP_MAX = 60;
+const REJECTION_TEXT_MAX = 240;
 
 const DEFAULT_APPROVAL: ApprovalScopeSetting = { platform: true, project: true, conversation: false };
 
@@ -1023,9 +1069,34 @@ function looksLikeMemoryEntryValue(value: unknown): boolean {
   return "key" in raw || "content" in raw;
 }
 
+/**
+ * 读盘时**规范化一条已拒绝记录**（第 200 波）：坏值一律丢弃（返回 null），不抛、不牵连整份 payload。
+ *
+ * 判据只有两条硬的：`id` 非空字符串、`rejectedAt` 是有限数；文本缺失就按空串处理
+ * （空文本的记录匹配不到任何东西，等价于无效记录 —— 留着它只是占位，不如丢掉）。
+ */
+function normalizeLoadedRejection(raw: unknown): MemoryRejection | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Partial<MemoryRejection>;
+  if (typeof r.id !== "string" || r.id.length === 0) return null;
+  if (typeof r.rejectedAt !== "number" || !Number.isFinite(r.rejectedAt)) return null;
+  const key = typeof r.key === "string" ? r.key.slice(0, REJECTION_TEXT_MAX) : "";
+  const content = typeof r.content === "string" ? r.content.slice(0, REJECTION_TEXT_MAX) : "";
+  if (key.length === 0 && content.length === 0) return null;
+  return {
+    id: r.id,
+    key,
+    content,
+    scope: (r.scope ?? "project") as MemoryScope,
+    projectId: typeof r.projectId === "string" ? r.projectId : undefined,
+    sessionId: typeof r.sessionId === "string" ? r.sessionId : undefined,
+    rejectedAt: r.rejectedAt,
+  };
+}
+
 /** 一次容器解析的结果：要么给出可用的 (键, 值) 对，要么给出一句**用户可读**的拒绝原因 */
 type MemoryContainerRead =
-  | { ok: true; pairs: Array<[string, unknown]>; batches: unknown[] | null }
+  | { ok: true; pairs: Array<[string, unknown]>; batches: unknown[] | null; rejections: unknown[] | null }
   | { ok: false; reason: string };
 
 /**
@@ -1075,7 +1146,17 @@ function readMemoryContainer(parsed: unknown): MemoryContainerRead {
       ? (rawEntries as unknown[]).map((v, i) => [String(i), v])
       : Object.entries(rawEntries as Record<string, unknown>);
     const rawBatches = (parsed as { batches?: unknown }).batches;
-    return { ok: true, pairs, batches: Array.isArray(rawBatches) ? rawBatches : null };
+    /**
+     * 第 200 波：**已拒绝记录**（用户要求「拒绝过的类似记忆不要再自动写入、也不要再让我审批」）。
+     * 与 `batches` 同一形态：同层的一个可选数组，缺失 ⇒ null（老 payload 照常读，不需要迁移）。
+     */
+    const rawRejections = (parsed as { rejections?: unknown }).rejections;
+    return {
+      ok: true,
+      pairs,
+      batches: Array.isArray(rawBatches) ? rawBatches : null,
+      rejections: Array.isArray(rawRejections) ? rawRejections : null,
+    };
   }
 
   /*
@@ -1087,7 +1168,12 @@ function readMemoryContainer(parsed: unknown): MemoryContainerRead {
   const objectValues = values.filter((v) => !!v && typeof v === "object" && !Array.isArray(v));
   const entryLike = objectValues.filter(looksLikeMemoryEntryValue);
   if (entryLike.length > 0 && entryLike.length * 2 >= objectValues.length) {
-    return { ok: true, pairs: Object.entries(parsed as Record<string, unknown>), batches: null };
+    return {
+      ok: true,
+      pairs: Object.entries(parsed as Record<string, unknown>),
+      batches: null,
+      rejections: null,
+    };
   }
   return reject(`顶层是 ${typeof parsed}`);
 }
@@ -1287,6 +1373,12 @@ export class MemoryService {
   private config: MemoryConfig;
   private entries: Map<string, MemoryEntry> = new Map();
   private batches: Map<string, MemoryBatch> = new Map();
+  /**
+   * **已拒绝记录**（第 200 波）：用户拒过的那些"提议记忆"，用来在自动提取时把同类挡在门外
+   * （用户原话：「我已经拒绝的类似记忆，不要再自动写入和让我审批」）。
+   * 键是记录自己的 id（由来源条目 id 派生，于是"同一条被拒两次"不会留两条）。
+   */
+  private rejections: Map<string, MemoryRejection> = new Map();
   private migrationReport: MemoryMigrationReport | null = null;
   /**
    * 读盘状态（M-1）。
@@ -1479,6 +1571,16 @@ export class MemoryService {
       }
     }
     this.pruneBatches();
+
+    /* 第 200 波：已拒绝记录（老 payload 没有这一段 ⇒ 空表，照常读） */
+    this.rejections.clear();
+    if (container.rejections) {
+      for (const raw of container.rejections) {
+        const record = normalizeLoadedRejection(raw);
+        if (record) this.rejections.set(record.id, record);
+      }
+    }
+    this.pruneRejections();
 
     this.loadState = { ok: true, dropped, raw };
     this.lastPersistedPayload = raw;
@@ -1689,7 +1791,20 @@ export class MemoryService {
       obj[id] = entry;
     }
     this.pruneBatches();
-    const payload = JSON.stringify({ version: 2, entries: obj, batches: Array.from(this.batches.values()) });
+    const rejections = Array.from(this.rejections.values());
+    const payload = JSON.stringify({
+      version: 2,
+      entries: obj,
+      batches: Array.from(this.batches.values()),
+      /*
+       * 第 200 波：拒绝记录也要落库（否则重启后"拒过的不再写"这条承诺就失效了）。
+       *
+       * ⚠️ **空表就整个字段都不写**：payload 是**整份读写**的，而"从没拒绝过"是绝大多数用户的形态
+       * —— 给他们多带一个 `"rejections":[]` 等于让所有人替这个功能付字节（判据 `MEM-IPC-1b`
+       * 的体积棘轮只许降，当场抓住：400 条规模时多出 32 字节 ⇒ 红）。
+       */
+      ...(rejections.length > 0 ? { rejections } : {}),
+    });
     this.lastPayloadBytes = estimatePayloadBytes(payload);
     return payload;
   }
@@ -2163,8 +2278,17 @@ export class MemoryService {
 
   /** Delete a memory entry（用户显式删除 —— 手动条目也允许，这是用户的权力） */
   delete(id: string): boolean {
+    const entry = this.entries.get(id);
     const deleted = this.entries.delete(id);
-    if (deleted) this.save();
+    if (deleted) {
+      /*
+       * 第 200 波：**删掉一条"提议中"的条目也算拒绝**（用户意图相同：这条提议我不要）。
+       * 但删掉**已生效**的条目不算 —— 那是"我不想要这条了"，不是"拒绝这个提议"；
+       * 把它也记成拒绝会让"删掉一条过时事实"变成"这类事实以后再也不许记"（过度）。
+       */
+      if (entry && isPendingMemoryEntry(entry)) this.recordRejection(entry);
+      this.save();
+    }
     return deleted;
   }
 
@@ -2180,10 +2304,13 @@ export class MemoryService {
     const notFound: string[] = [];
     let removed = 0;
     for (const id of ids) {
-      if (!this.entries.has(id)) {
+      const entry = this.entries.get(id);
+      if (!entry) {
         notFound.push(id);
         continue;
       }
+      /* 第 200 波：与 `delete` 同一条口径 —— 只有"提议中"的条目被删才算拒绝 */
+      if (isPendingMemoryEntry(entry)) this.recordRejection(entry);
       this.entries.delete(id);
       removed++;
     }
@@ -2391,7 +2518,90 @@ export class MemoryService {
     const entry = this.entries.get(id);
     if (!entry) return false;
     if (!isPendingMemoryEntry(entry)) return false;
+    /*
+     * 第 200 波：**不在这里记拒绝** —— 「拒绝」与「删除一条待批准条目」是同一条规则，
+     * 唯一实现放在 `delete()`（它按"被删的是不是 pending"判定）。两处各记一次会出现
+     * "改了 A 忘了 B"的分叉（本仓吃过很多次这种亏），而且两处都记时变异只能拆掉一处 ⇒
+     * 判据看起来绿、其实挡不住（第 200 波的 MUT-1 第一次就是这么漏网的）。
+     */
     return this.delete(id);
+  }
+
+  /* ===== 第 200 波：已拒绝记录（用户要求「拒绝过的类似记忆不要再自动写入、不要再让我审批」） ===== */
+
+  /**
+   * 记一条"已拒绝"（**只对提议中的条目**即 `pending` 调用；已生效条目的删除不算拒绝 —— 见 `delete`）。
+   *
+   * 幂等：id 由来源条目 id 派生 ⇒ 同一条被拒两次不会留两条记录。
+   */
+  private recordRejection(entry: MemoryEntry): void {
+    this.rejections.set(`rej-${entry.id}`, {
+      id: `rej-${entry.id}`,
+      key: textOf(entry.key).slice(0, REJECTION_TEXT_MAX),
+      content: textOf(entry.content).slice(0, REJECTION_TEXT_MAX),
+      scope: entry.scope,
+      projectId: entry.projectId,
+      sessionId: entry.sessionId,
+      rejectedAt: Date.now(),
+    });
+    this.pruneRejections();
+  }
+
+  /**
+   * 已拒绝记录**有界修剪**（与 `pruneBatches` 同一条纪律：payload 是整份读写，不能无界）。
+   *
+   * ⚠️ **按 Map 的插入顺序丢最旧的，不按 `rejectedAt` 排序丢** —— `Date.now()` 只有毫秒粒度，
+   * 同一毫秒里连着拒一批（`rejectMany` 50 条就是这种形态）时，按时间排序是**并列**的，
+   * `slice()` 就会把**最新的**那几条丢掉（第一版就是这么写的，判据 `REJ-6` 当场抓住）。
+   * Map 的迭代顺序 = 插入顺序（落库时也是按这个顺序写数组、读回来还是这个顺序）⇒ 确定性。
+   * 这与本仓 `nextCompactionMarkerId` 那条教训同源："毫秒前缀不够，必须有进程内单调量"。
+   */
+  private pruneRejections(): void {
+    while (this.rejections.size > REJECTION_KEEP_MAX) {
+      const oldest = this.rejections.keys().next();
+      if (oldest.done) return;
+      this.rejections.delete(oldest.value);
+    }
+  }
+
+  /**
+   * 这条（打算自动写入的）记忆**是不是用户已经拒绝过的同类** —— 返回挡住它的那条记录。
+   *
+   * ## 匹配范围：**全局**（刻意不看作用域/归属）
+   *
+   * 用户要的是"我说过不要了，就别再拿它来问我"。真机上同一事实会散落在不同的桶里
+   * （每次评测换一个临时工作目录 ⇒ `projectId` 不同），只在同一个桶里比等于**拦不住**
+   * —— 那正是用户抱怨的形态。所以这里按**文本**比，不按归属比。
+   *
+   * 代价（如实写）：在另一个项目里，一条与"某个项目里被拒过的事实"很像的记忆也会被挡。
+   * 这是**用户明确要的取舍**（宁可少问，也不要重复问）；他若确实想在别处记下来，
+   * 可以在对话里**明确要求记住**（`explicit`）—— 那条路径会跳过本判定（见提取循环）。
+   *
+   * 阈值：沿用 `memoryLooksDuplicate` 的同一套规则（写死两条来源，避免"两处阈值"）。
+   */
+  findRejectedSimilarTo(draft: { key: string; content: string }): MemoryRejection | undefined {
+    for (const record of this.rejections.values()) {
+      if (memoryLooksDuplicate(draft, { key: record.key, content: record.content })) return record;
+    }
+    return undefined;
+  }
+
+  /** 已拒绝记录（界面展示用，新的在前） */
+  listRejections(): MemoryRejection[] {
+    return Array.from(this.rejections.values()).sort((a, b) => b.rejectedAt - a.rejectedAt);
+  }
+
+  /**
+   * 清空已拒绝记录（界面上的"给一条退路"）。
+   *
+   * 为什么要它：拒绝记录会**永久**挡住同类自动记忆，一旦用户误点拒绝就再也没有回头路
+   * —— 那与"记忆系统可以被用户完全控制"这条底线冲突。清空之后同类又能被自动提取（可能要重新批准一次）。
+   */
+  clearRejections(): { cleared: number; persisted: boolean } {
+    const cleared = this.rejections.size;
+    if (cleared === 0) return { cleared: 0, persisted: true };
+    this.rejections.clear();
+    return { cleared, persisted: this.save() };
   }
 
   /**
@@ -2480,6 +2690,8 @@ export class MemoryService {
         skipped++;
         continue;
       }
+      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */
+      this.recordRejection(entry);
       this.entries.delete(id);
       changed++;
     }

@@ -539,6 +539,55 @@ describe("MEM-CHECK-5：入口、归位与渲染", () => {
     spy.mockRestore();
   });
 
+  /**
+   * 第 200 波：「已拒绝」记录的可审阅 + 可清空（用户要求"拒过的不再自动写入、也不再问我"，
+   * 但一次误点不该永久锁死 ⇒ 界面必须给退路）。
+   */
+  it("MEM-CHECK-REJ-1：体检里显示已拒绝记录，且「清空已拒绝记录」真的清掉（之后同类又能被写入）", async () => {
+    saveMemory("");
+    const port = createFakeStoragePort({ seed: { settings: [{ key: "noop", value: "" }] } });
+    setStoragePort(port);
+    const svc = new MemoryService();
+    const pending = svc.add({
+      scope: "project",
+      projectId: PROJ_A_ID,
+      key: "拒绝过的提议",
+      content: "这条提议被用户拒绝过（内容足够长以便入库）",
+      source: "auto",
+      status: "pending",
+    });
+    expect(pending.ok).toBe(true);
+    expect(svc.reject(pending.entry!.id)).toBe(true);
+    await svc.flushPendingPersist();
+
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+    const { container } = render(<MemoryCheckupView />);
+
+    expect(container.textContent ?? "", "摘要里要能看出有几条已拒绝").toContain("已拒绝 1 条");
+    const section = container.querySelector(".mc-rejections");
+    expect(section, "要有「已拒绝」那一节（否则用户不知道它为什么不再问）").toBeTruthy();
+    expect(section!.textContent ?? "", "要列出被拒的标题").toContain("拒绝过的提议");
+
+    const clearBtn = Array.from(section!.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+      (b.textContent ?? "").includes("清空已拒绝记录"),
+    );
+    expect(clearBtn, "必须有清空入口（误点拒绝的退路）").toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(clearBtn!);
+      await Promise.resolve();
+    });
+
+    expect(svc.listRejections(), "点完必须真的清空").toHaveLength(0);
+    expect(container.querySelector(".mc-rejections"), "清空后那一节应当消失").toBeNull();
+    expect(
+      container.querySelector(".mc-notice")?.textContent ?? "",
+      "回执要说清后果（同类以后可以再被自动提取）",
+    ).toContain("已清空 1 条");
+    spy.mockRestore();
+  });
+
   it("MEM-CHECK-5b：渲染出分组标题与来源标签，且不抛错", async () => {
     const svc = new MemoryService();
     svc.add({ scope: "platform", key: "平台条目", content: "PLATFORM_ITEM", source: "manual" });

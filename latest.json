@@ -1,15 +1,15 @@
 {
-  "version": "1.16.307",
-  "notes": "Codem v1.16.307 — 待批准的自动记忆显示作用域（平台级/项目级/对话级，含无归属标记）；系统提醒不再被渲染成你自己发的消息。",
-  "pub_date": "2026-10-10T07:19:07Z",
+  "version": "1.16.308",
+  "notes": "Codem v1.16.308 — 拒绝过的记忆不再回来（不再自动写入、也不再请求批准）；在对话里明确要求记住的内容放行且直接生效；记忆体检可查看/清空已拒绝记录。",
+  "pub_date": "2026-10-10T07:55:30Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FHRjlIaDgzVzc1NE8vOGl2cktFSS83cHZ3MWNlai9WWFlhTDdsQk12SGRHVjJXaXFXUTB6RUlkdFNRUnZaZ0l1V01oUjdIbHhPT2Rab2pCcnhTcXdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjE2MjQwCWZpbGU6Q29kZW1fMS4xNi4zMDdfeDY0LXNldHVwLmV4ZQp5S1dkM1pQT01OOTlKQXNteHo5OFM0VDFua2t3WHVhVTlqR2pyYURsUG5oWWtBRWJmdzFzeUNFcVIyd2I4c0hDVGQ5OWFIYmZhMnY4MS9nb0tNSk1Cdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.307/Codem_1.16.307_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pzSllWSTQ4bnJFUFhGVTY4MUZITER1Z0cvQko1N3huQzRZT0ZFVkUzZDIzaFoyWWw1V1FaMzdZTlcvMGpDdnlaL1NNRXduQU9LL2Y1cHYyTzJoUFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjE4OTI2CWZpbGU6Q29kZW1fMS4xNi4zMDhfeDY0LXNldHVwLmV4ZQp2Rm1nS09tNkpLcWd0Qm5WVUNZd2NBdTNEYWd5KzN3VlRTeUh5b1RqUjNrOGlja3JwVGF4Y0IvQlRPYTZJMTh0WlJHNTJSQUY0bHgramRvZGdrTUlCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.308/Codem_1.16.308_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FHRjlIaDgzVzc1NE8vOGl2cktFSS83cHZ3MWNlai9WWFlhTDdsQk12SGRHVjJXaXFXUTB6RUlkdFNRUnZaZ0l1V01oUjdIbHhPT2Rab2pCcnhTcXdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjE2MjQwCWZpbGU6Q29kZW1fMS4xNi4zMDdfeDY0LXNldHVwLmV4ZQp5S1dkM1pQT01OOTlKQXNteHo5OFM0VDFua2t3WHVhVTlqR2pyYURsUG5oWWtBRWJmdzFzeUNFcVIyd2I4c0hDVGQ5OWFIYmZhMnY4MS9nb0tNSk1Cdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.307/Codem_1.16.307_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1pzSllWSTQ4bnJFUFhGVTY4MUZITER1Z0cvQko1N3huQzRZT0ZFVkUzZDIzaFoyWWw1V1FaMzdZTlcvMGpDdnlaL1NNRXduQU9LL2Y1cHYyTzJoUFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjE4OTI2CWZpbGU6Q29kZW1fMS4xNi4zMDhfeDY0LXNldHVwLmV4ZQp2Rm1nS09tNkpLcWd0Qm5WVUNZd2NBdTNEYWd5KzN3VlRTeUh5b1RqUjNrOGlja3JwVGF4Y0IvQlRPYTZJMTh0WlJHNTJSQUY0bHgramRvZGdrTUlCUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.308/Codem_1.16.308_x64-setup.exe"
     }
   }
 }

@@ -27,6 +27,7 @@ import {
   MEMORY_SCOPE_BADGE_LABEL,
   setLegacyPoolInjectionPaused,
   type MemoryEntry,
+  type MemoryRejection,
   type MemoryScope,
 } from "../core/memory/memory";
 import type { MemoryDuplicateGroup } from "../core/memory/similarity";
@@ -216,6 +217,29 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
   };
 
   /* ===== 第 197 波：找出相似重复（人工清理一波） ===== */
+
+  /**
+   * 第 200 波：已拒绝记录（用户拒过的"提议记忆"）。
+   *
+   * 显示 + **清空**这两件事都必须有：拒绝记录会挡住同类自动记忆（用户要的），
+   * 但误点一次就永久挡住也太霸道 ⇒ 给一条"清空已拒绝记录"的退路，并写清后果。
+   */
+  const [rejections, setRejections] = useState<MemoryRejection[]>(() => getMemoryService().listRejections());
+
+  const handleClearRejections = () => {
+    const before = rejections.length;
+    if (before === 0) {
+      setNotice("没有已拒绝记录。");
+      return;
+    }
+    const result = getMemoryService().clearRejections();
+    setRejections([]);
+    setNotice(
+      result.persisted
+        ? `已清空 ${result.cleared} 条「已拒绝」记录：同类事实以后**可以**再被自动提取（可能重新进入待批准）。`
+        : `已清空 ${result.cleared} 条，但**未落库**：${getMemoryService().getLastPersistError() ?? "未知原因"}（重启后这些记录会回来）。`,
+    );
+  };
 
   /**
    * 跑一次聚类并展示。**只列出来给人看，绝不自动删** ——
@@ -510,8 +534,40 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
         )}
         {checkup.legacyPoolCount > 0 && <span className="mc-summary-unknown">旧版跨项目池 {checkup.legacyPoolCount} 条</span>}
         {checkup.unknownScopeCount > 0 && <span className="mc-summary-unknown">作用域无法识别 {checkup.unknownScopeCount} 条</span>}
+        {/* 第 200 波：已拒绝记录（挡住同类自动记忆的那批） */}
+        <span className={rejections.length > 0 ? "mc-summary-unknown" : undefined}>已拒绝 {rejections.length} 条</span>
         <span>分组 {checkup.groupCount}</span>
       </div>
+
+      {/*
+        第 200 波：「已拒绝」记录的可审阅 + 可清空。
+        用户要的是"拒过的不再自动写入、也不再问我"，但一次误点不该永久锁死 ⇒ 这里给退路。
+      */}
+      {rejections.length > 0 && (
+        <div className="mc-rejections">
+          <div className="mc-rejections-head">
+            <span className="mc-rejections-title">已拒绝 {rejections.length} 条（同类事实不会再被自动写入，也不会再请你批准）</span>
+            <button className="mc-action-btn" onClick={handleClearRejections}>
+              清空已拒绝记录
+            </button>
+          </div>
+          <div className="mc-rejections-hint">
+            清空之后，这类事实**可以**重新被自动提取（可能再次进入待批准）。
+            在对话里**明确要求记住**的内容不受这里影响，会直接生效。
+          </div>
+          {rejections.slice(0, 10).map((r) => (
+            <div key={r.id} className="mc-rejection-entry">
+              <span className="mc-rejection-key">{r.key || "(无标题)"}</span>
+              <span className={`mc-scope-badge ${r.scope}`}>{scopeLabel(r.scope)}</span>
+              <span className="mc-rejection-time">{formatTime(r.rejectedAt)}</span>
+              <span className="mc-rejection-content">{r.content.slice(0, 80)}</span>
+            </div>
+          ))}
+          {rejections.length > 10 && (
+            <div className="mc-rejections-hint">（只列出最近 10 条，共 {rejections.length} 条）</div>
+          )}
+        </div>
+      )}
 
       {/*
         M-2：**暂停注入旧版跨项目记忆**开关。

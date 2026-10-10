@@ -11,7 +11,9 @@
           "to": "  if (raw === \"conversation\") return \"conversation\";\n  return \"project\";"
         }
       ],
-      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "tests": [
+        "src/test/memory-approve-scope-batch.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -24,7 +26,9 @@
           "to": "        const itemScope: MemoryScope = \"project\";"
         }
       ],
-      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "tests": [
+        "src/test/memory-approve-scope-batch.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -37,7 +41,9 @@
           "to": "const DEFAULT_APPROVAL: ApprovalScopeSetting = { platform: true, project: true, conversation: true };"
         }
       ],
-      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "tests": [
+        "src/test/memory-approve-scope-batch.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -50,7 +56,9 @@
           "to": "  return getWriteApprovalSetting().platform === true;"
         }
       ],
-      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "tests": [
+        "src/test/memory-approve-scope-batch.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -63,7 +71,9 @@
           "to": "      this.entries.set(id, { ...entry, status: \"active\" });\n      this.save();\n      changed++;"
         }
       ],
-      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "tests": [
+        "src/test/memory-approve-scope-batch.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -72,11 +82,13 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      const entry = this.entries.get(id);\n      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);",
-          "to": "      const entry = this.entries.get(id);\n      if (!entry) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);"
+          "from": "      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      /* 第 200 波：批量拒绝同样要留痕（逐条记，一次落库在下面） */\n      this.recordRejection(entry);\n      this.entries.delete(id);",
+          "to": "      if (!entry) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);"
         }
       ],
-      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "tests": [
+        "src/test/memory-approve-scope-batch.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -89,7 +101,9 @@
           "to": "            <button\n              className=\"memory-approve-btn\"\n              disabled={false}\n              title=\"批准所有勾选的条目：它们从现在起参与上下文\""
         }
       ],
-      "tests": ["src/test/memory-pending-batch.test.tsx"],
+      "tests": [
+        "src/test/memory-pending-batch.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -102,7 +116,9 @@
           "to": "      const all = prev.size > 0;"
         }
       ],
-      "tests": ["src/test/memory-pending-batch.test.tsx"],
+      "tests": [
+        "src/test/memory-pending-batch.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -120,7 +136,9 @@
           "to": "      return prev;"
         }
       ],
-      "tests": ["src/test/memory-pending-batch.test.tsx"],
+      "tests": [
+        "src/test/memory-pending-batch.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -133,7 +151,9 @@
           "to": "    const result = { changed: ids.length, skipped: 0, capacityBlocked: 0, persisted: true, message: \"\" };\n    const landed = true;"
         }
       ],
-      "tests": ["src/test/memory-checkup.test.tsx"],
+      "tests": [
+        "src/test/memory-checkup.test.tsx"
+      ],
       "expectRed": true
     },
     {
