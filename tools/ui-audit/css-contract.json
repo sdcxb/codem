@@ -14877,6 +14877,44 @@
     "gap": "var(--space-1)",
     "padding-left": "var(--space-9)"
   },
+  "sidebar-sort-check": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-shrink": "0",
+    "justify-content": "center",
+    "width": "12px"
+  },
+  "sidebar-sort-item": {
+    "align-items": "center",
+    "background": "none",
+    "border": "none",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
+    "cursor": "pointer",
+    "display": "flex",
+    "font-size": "var(--fs-xs)",
+    "gap": "var(--space-2)",
+    "padding": "var(--space-2) var(--space-3)",
+    "text-align": "left",
+    "transition": "var(--transition-color)",
+    "white-space": "nowrap",
+    "width": "100%"
+  },
+  "sidebar-sort-menu": {
+    "display": "flex",
+    "flex-direction": "column",
+    "min-width": "168px",
+    "padding": "var(--space-1)",
+    "position": "absolute",
+    "right": "0",
+    "top": "calc(100% + var(--space-1))",
+    "z-index": "var(--z-dropdown)"
+  },
+  "sidebar-sort-wrapper": {
+    "align-items": "center",
+    "display": "flex",
+    "position": "relative"
+  },
   "sidebar-toggle": {
     "background": "none",
     "border": "none",

@@ -29,6 +29,8 @@ pub struct SchemaReport {
     pub migrations_ignored: usize,
     /// 会话全文检索表使用的模块（fts4 / fts5 / none）
     pub fts_module: String,
+    /// 本次打开**回填**了 `last_message_at` 的会话行数（GAP-LIST `O-57`，见 `backfill_last_message_at`）
+    pub sessions_backfilled: usize,
 }
 
 /// 库里的表/视图数量（不含 SQLite 内部表与 FTS 影子表之外的内建项）。
@@ -124,6 +126,19 @@ pub fn apply(conn: &Connection) -> DbResult<SchemaReport> {
     )
     .map_err(DbError::from)?;
 
+    // 存量库的会话活动时间回填（GAP-LIST `O-57`）—— 必须在**任何读者**拿到这个库之前做完
+    let sessions_backfilled = backfill_last_message_at(conn)?;
+    if sessions_backfilled > 0 {
+        /*
+         * 打一行 stderr：这条回填是"用户看得见的排序被修正"的**唯一现场记录**
+         * （真机排障时 `codem-runtime-*.log` 只收 Rust 侧输出）。
+         * 数字必须打出来 —— "回填跑了但什么都没做"与"回填根本没跑"要分得开。
+         */
+        eprintln!(
+            "[schema] 会话活动时间回填：{sessions_backfilled} 个会话的 last_message_at 陈旧（已按 MAX(messages.timestamp) 修正）"
+        );
+    }
+
     Ok(SchemaReport {
         fresh,
         pre_existing_tables,
@@ -131,7 +146,52 @@ pub fn apply(conn: &Connection) -> DbResult<SchemaReport> {
         migrations: migrations.len(),
         migrations_ignored: ignored,
         fts_module: fts_module(conn)?,
+        sessions_backfilled,
     })
+}
+
+/// **存量库一次性回填** `sessions.last_message_at = MAX(messages.timestamp)`（GAP-LIST `O-57`）。
+///
+/// ## 为什么需要它（而不是"引擎以后会写对"）
+///
+/// 2026-10-10 的真机副本库对账：**561 个会话里 516 个**的 `last_message_at` 停在
+/// "第一次发送那一刻"（`lma == MAX(messages.timestamp)` 只有 12 个成立）——
+/// 侧栏按这一列倒序，于是"昨天建的会话今天又聊了"永远排在「更早」组里。
+/// 引擎侧的写入（`repo.rs::touch_session_on_message_write`）只修**以后**的消息；
+/// 已经躺在库里的那些陈旧值不会自己变新，所以这里补一次。
+///
+/// ## 为什么放在 `schema::apply`（而不是渲染侧的启动维护）
+///
+/// 侧栏在启动后**立刻**就会读这一列（`session.list` → `listSessions`），
+/// 而渲染侧的维护要过"空闲闸"（不许与第一个回合抢线程），可能几秒到几十秒之后才跑 ——
+/// 那意味着"重启之后侧栏顺序仍然错"。放在引擎打开时（任何读者之前）才是确定的。
+///
+/// ## 为什么"只改确实陈旧的"（`WHERE` 里的存在性判断）
+///
+/// `last_message_at` 的语义是**只增不减**（见 `touch_session_on_message_write`）。
+/// 无条件 `SET last_message_at = MAX(...)` 会把"比最后一条消息更新"的行
+/// 往回**拉**（例如用户刚改过名、或某条消息被删掉之后），那是**回退**，
+/// 与那一列的单调语义矛盾。所以只抬不降：只处理 `MAX(ts) > 当前值` 的行。
+///
+/// 代价：这一趟是"每个会话一次带索引的最大值查找"（`idx_messages_session_ts`），
+/// 561 个会话量级是毫秒级；而它**幂等**（第二趟开始 `WHERE` 一行都不命中），
+/// 所以不需要额外的"做过没有"标记 —— 标记反而会引入"标记写了但没做"的第二种真相。
+pub fn backfill_last_message_at(conn: &Connection) -> DbResult<usize> {
+    let changed = conn
+        .execute(
+            "UPDATE sessions \
+                SET last_message_at = (\
+                      SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = sessions.id\
+                    ) \
+              WHERE EXISTS (\
+                      SELECT 1 FROM messages m \
+                       WHERE m.session_id = sessions.id \
+                         AND m.timestamp > COALESCE(sessions.last_message_at, 0)\
+                    )",
+            [],
+        )
+        .map_err(DbError::from)?;
+    Ok(changed)
 }
 
 pub fn now_ms() -> i64 {

@@ -2536,6 +2536,246 @@ fn session_message_count_is_maintained_by_the_engine() {
     );
 }
 
+// ========== 会话活动时间 `sessions.last_message_at`（GAP-LIST `O-57`） ==========
+
+/// 该会话落盘的 `last_message_at`（**直接读库**：判据要落在真值上，不是返回值上）
+fn last_message_at_of(engine: &Engine, session_id: &str) -> i64 {
+    engine
+        .with_conn(|conn| {
+            conn.query_row(
+                "SELECT last_message_at FROM sessions WHERE id = ?1",
+                rusqlite::params![session_id],
+                |r| r.get(0),
+            )
+            .map_err(codem_db::DbError::from)
+        })
+        .unwrap()
+}
+
+/// **LMA-1**：`messages.upsert_index` 把会话的活动时间抬到这条消息的时间，并且**只增不减**。
+///
+/// 这条命令是**流式响应与引擎注入消息**（nudge / 后台续跑）的共同落点 —— 真机副本库对账
+/// （2026-10-10，561 个会话）显示：222 个多次发送的会话里只有 **6 个**的活动时间等于
+/// "最后一条消息的时间"，其余 216 个停在**第一次**发送那一刻（因为后续消息不走渲染侧那条
+/// 写路径）⇒ 侧栏按这一列倒序，把它们排进「更早」组。
+///
+/// 三条判据一起钉住这件事：抬得上去（100/200）、**覆盖写也要抬**（同 id 改内容）、
+/// 旧时间戳**不许把它拉回去**（150 < 200）。
+#[test]
+fn lma1_upsert_index_raises_session_activity_and_never_lowers_it() {
+    let (_d, e) = temp_engine("lma1");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "", "created_at": 10 }));
+    assert_eq!(last_message_at_of(&e, "s1"), 10, "前提：建会话时写的是 created_at");
+
+    let upsert = |id: &str, ts: i64| {
+        call(
+            &e,
+            "messages.upsert_index",
+            json!({ "id": id, "session_id": "s1", "role": "user", "content": "x", "timestamp": ts }),
+        )
+    };
+    upsert("m1", 100);
+    assert_eq!(last_message_at_of(&e, "s1"), 100, "新消息必须把活动时间抬到它的 timestamp");
+
+    upsert("m2", 200);
+    assert_eq!(last_message_at_of(&e, "s1"), 200, "更晚的消息必须继续抬高");
+
+    // 覆盖写（同一条消息被流式改内容，时间戳是**原来那个**更早的值）：
+    // 时间列不许被拉回去 —— 单调性是侧栏排序依赖的性质
+    upsert("m2", 150);
+    assert_eq!(
+        last_message_at_of(&e, "s1"),
+        200,
+        "更早的 timestamp 不许把活动时间拉回去（这一列只增不减）"
+    );
+
+    // 反向对照的另一半：这一列确实跟着走（不是"永远不动"）
+    upsert("m3", 300);
+    assert_eq!(last_message_at_of(&e, "s1"), 300, "又一条更晚的消息之后应当变成 300");
+}
+
+/// **LMA-2**：`messages.create` / `messages.create_many` 也走同一条规则（三处写入者一条规则）。
+#[test]
+fn lma2_create_paths_share_the_same_rule() {
+    let (_d, e) = temp_engine("lma2");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "", "created_at": 10 }));
+
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "a", "timestamp": 500 }),
+    );
+    assert_eq!(last_message_at_of(&e, "s1"), 500, "`messages.create` 也必须维护活动时间");
+
+    // 批量：一批里取**最大**的那个时间（不是最后一行的时间 —— 顺序不保证等于时间顺序）
+    call(
+        &e,
+        "messages.create_many",
+        json!({ "items": [
+            { "id": "m2", "session_id": "s1", "role": "user", "content": "b", "timestamp": 900 },
+            { "id": "m3", "session_id": "s1", "role": "assistant", "content": "c", "timestamp": 700 }
+        ] }),
+    );
+    assert_eq!(last_message_at_of(&e, "s1"), 900, "批量写入取最大值（900），不是数组里最后一个（700）");
+}
+
+/// **LMA-3**：删除**不**让活动时间回退（删掉最新一条消息不该把会话踢回「更早」组）。
+#[test]
+fn lma3_delete_never_rewinds_session_activity() {
+    let (_d, e) = temp_engine("lma3");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "", "created_at": 10 }));
+    for (id, ts) in [("m1", 100), ("m2", 200)] {
+        call(
+            &e,
+            "messages.create",
+            json!({ "id": id, "session_id": "s1", "role": "user", "content": "x", "timestamp": ts }),
+        );
+    }
+    assert_eq!(last_message_at_of(&e, "s1"), 200);
+
+    call(&e, "messages.delete", json!({ "ids": ["m2"], "confirm_bulk": true }));
+    assert_eq!(
+        last_message_at_of(&e, "s1"),
+        200,
+        "删掉最新那条消息**不许**把活动时间拉回去（这一列只增不减；回退会让会话掉回「更早」组）"
+    );
+}
+
+/// **LMA-5**：日志回放（`messages.rebuild_index`）也遵守"只增不减"，且取的是**最大**时间戳。
+///
+/// 这是同一列的第**三**个写入点（前两个：消息写入、打开时回填）。它的输入是权威 JSONL 日志 ——
+/// 而日志**可能比索引旧**（`rebuildSessionLogs` 只喂它读到的那些会话/条数），
+/// 无条件覆盖会把"今天真的聊过"的会话拉回日志那天的时刻（侧栏把它排进「更早」组）。
+/// 另外数组顺序**不保证**等于时间顺序（分叉/回退重放会把旧消息接到后面），
+/// 所以取"最后一个元素"也是错的 —— 必须取最大时间戳。
+#[test]
+fn lma5_rebuild_index_never_rewinds_and_takes_the_max_timestamp() {
+    let (_d, e) = temp_engine("lma5");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "project_id": "", "created_at": 1 }));
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "x", "timestamp": 1000 }),
+    );
+    assert_eq!(last_message_at_of(&e, "s1"), 1000);
+
+    // 日志里只有更早的消息（日志落后于索引）⇒ 不许把活动时间拉回去；
+    // 同时数组顺序是"新在前"，用来钉住"取最大而不是取最后一个"
+    call(
+        &e,
+        "messages.rebuild_index",
+        json!({ "sessions": [{ "id": "s1", "messages": [
+            { "id": "r-newer", "session_id": "s1", "role": "user", "content": "b", "timestamp": 400 },
+            { "id": "r-older", "session_id": "s1", "role": "user", "content": "a", "timestamp": 200 }
+        ] }] }),
+    );
+    assert_eq!(
+        last_message_at_of(&e, "s1"),
+        1000,
+        "日志比索引旧时**不许**回退活动时间（只增不减）"
+    );
+
+    // 反向对照：日志里确实有更新的消息时，必须跟着涨（不是"永远不动"）
+    call(
+        &e,
+        "messages.rebuild_index",
+        json!({ "sessions": [{ "id": "s1", "messages": [
+            { "id": "r1", "session_id": "s1", "role": "user", "content": "a", "timestamp": 5000 },
+            { "id": "r2", "session_id": "s1", "role": "user", "content": "b", "timestamp": 3000 }
+        ] }] }),
+    );
+    assert_eq!(
+        last_message_at_of(&e, "s1"),
+        5000,
+        "日志给出更新的消息时必须抬到其中**最大**的 timestamp（5000，不是最后一个的 3000）"
+    );
+}
+
+/// **LMA-4**：打开库时**回填**存量数据 —— 只改确实陈旧的，且**幂等**。
+///
+/// 这一条钉的是"已有会话永远排错"那半边：引擎的新规则只管**以后**的消息，
+/// 库里已经躺着的陈旧值必须补一次（`schema::backfill_last_message_at`）。
+///
+/// 三条一起（每条都配反向对照）：
+/// ① 陈旧行被抬到 `MAX(messages.timestamp)`；
+/// ② **比消息还新**的行**不许**被拉回去（那不是"陈旧"，回退违反单调性）；
+/// ③ 没有消息的会话不受影响；重开第二次数不到"又改了多少"（幂等 ⇒ 不需要一次性标记）。
+#[test]
+fn lma4_open_backfills_stale_activity_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lma4.bin");
+
+    {
+        let e = Engine::open(&path).unwrap();
+        for sid in ["stale", "ahead", "empty"] {
+            call(&e, "sessions.upsert", json!({ "id": sid, "project_id": "", "created_at": 1 }));
+        }
+        // 陈旧会话：最后一条消息在 900，而活动时间停在 100
+        for (id, ts) in [("a1", 100), ("a2", 900)] {
+            call(
+                &e,
+                "messages.create",
+                json!({ "id": id, "session_id": "stale", "role": "user", "content": "x", "timestamp": ts }),
+            );
+        }
+        call(
+            &e,
+            "messages.create",
+            json!({ "id": "b1", "session_id": "ahead", "role": "user", "content": "x", "timestamp": 300 }),
+        );
+
+        /*
+         * 造出"引擎之前的写入者留下的形态"：直接把两列改陈旧。
+         * ⚠️ 只能这样造 —— 走命令的话引擎现在**总是**把活动时间写对，
+         * 那就永远造不出"存量库"这个现场（判据会变成恒真）。
+         */
+        e.with_conn(|conn| {
+            conn.execute("UPDATE sessions SET last_message_at = 100 WHERE id = 'stale'", [])
+                .map_err(codem_db::DbError::from)?;
+            // 比它自己的消息（300）还新：这是"改名/附件"那类渲染侧写入留下的合法形态
+            conn.execute("UPDATE sessions SET last_message_at = 9999 WHERE id = 'ahead'", [])
+                .map_err(codem_db::DbError::from)?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(last_message_at_of(&e, "stale"), 100, "前提：已经造出陈旧现场");
+    }
+
+    // 重开：回填在这时发生（任何读者拿到库之前）
+    let e = Engine::open(&path).unwrap();
+    assert_eq!(
+        last_message_at_of(&e, "stale"),
+        900,
+        "陈旧会话必须被回填到 MAX(messages.timestamp)"
+    );
+    assert_eq!(
+        last_message_at_of(&e, "ahead"),
+        9999,
+        "比消息还新的值**不许**被拉回去（回填只抬不降 —— 否则改名/附件留下的更新值会被抹掉）"
+    );
+    assert_eq!(
+        last_message_at_of(&e, "empty"),
+        1,
+        "没有消息的会话不受影响（`MAX(NULL)` 不是 0，回填的 WHERE 也不会命中它）"
+    );
+    assert!(
+        e.schema_report().sessions_backfilled >= 1,
+        "回填了几行必须如实上报（诊断数字要能回答「这次修了多少」）：{:?}",
+        e.schema_report()
+    );
+    let first_backfill = e.schema_report().sessions_backfilled;
+    drop(e);
+
+    // 幂等：第二次数到的行数必须比第一次少（剩下的都是"没得可改"的行）
+    let again = Engine::open(&path).unwrap();
+    assert!(
+        again.schema_report().sessions_backfilled < first_backfill,
+        "回填必须幂等收敛（第一次 {}，第二次 {}）—— 否则每次启动都在改库",
+        first_backfill,
+        again.schema_report().sessions_backfilled
+    );
+}
+
 /// **D8**：`migration.auto` 是**唯一一条"整库重写"的命令**，而它原来**一条测试都没有**。
 /// 真机取证显示它在 11.8 小时内跑过 **16 次**，每次清空 3,838 行（当时全库内容，
 /// 占全部审计记录的 99.98%）。

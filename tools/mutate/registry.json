@@ -1,6 +1,8 @@
 {
   "_how_to_triage": "本文件登记「必须留下变异证据」的波次（O-53 / MUTATE-ARTIFACT-1）。每登记一个波次，就必须有 tools/mutate/specs/<wave>.{json,mjs} 与 tools/mutate/results/<wave>.json，且结果里 restored===true、每条变异 ok===true、锚点未过期。新增判据而没登记波次 = 没留下变异证据。",
   "_waves": {
+    "lma-engine-195": "O-57 会话活动时间由引擎维护（消息写入 / 日志回放 / 打开时回填；语义 = MAX(messages.timestamp) 且只增不减）—— cargo 运行面，目标是 codem-db 的 tests/engine_tests.rs（LMA-1..5）",
+    "session-sort-195": "O-57 侧栏显示排序（两种键 × 两种方向 + 持久化 + 反向对照：存储层 sort_order 与拖拽语义不被弄坏；含「替身与引擎同形」与「渲染侧不许当第二个写入者」）",
     "delegation-legibility-194": "O-56 委派注入的可辨认性与幂等：注入消息的 id 由委派任务 id 决定（同 id 覆盖，不再追加第二条）+ 界面渲染成「委派任务」记录 + 新会话标题去重",
     "memory-budget-191": "O-36 记忆 payload 字节预算 / O-37 order 补齐落库 / O-47 迁移被拒后的内存回滚",
     "memory-checkup-191": "O-44 记忆体检页签把当前项目 + 当前对话传进视图（行为判据）",
@@ -23,6 +25,8 @@
     "json-repair-192": "真机实测：模型 JSON 里带裸换行 ⇒ 自动记忆被整批丢掉（JSON-REPAIR-1..6，含可定位诊断）"
   },
   "waves": [
+    "lma-engine-195",
+    "session-sort-195",
     "memory-budget-191",
     "memory-checkup-191",
     "contrast-191",

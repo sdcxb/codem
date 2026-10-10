@@ -2,7 +2,7 @@ import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle, ArrowUpDown, Check } from "lucide-react";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
@@ -24,6 +24,16 @@ import { useMemoryPendingCount } from "../hooks/useMemoryPendingCount";
 // 第 191 波：「今天」的边界必须与标题同口径（本地日 00:00），不再用滚动的 24h
 import { localDayStartMs } from "../core/time/local-time";
 import { ActionIcons } from "../core/icons/icon-map";
+// GAP-LIST O-57：侧栏会话的**显示排序**（只重排渲染用的那份数组，不动存储层的 sort_order）
+import {
+  sortSessionsForDisplay,
+  readSessionSortPreference,
+  writeSessionSortPreference,
+  type SessionSortPref,
+  type SessionSortKey,
+  type SessionSortDir,
+  describeSessionSort,
+} from "../core/session/session-sort";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -45,6 +55,19 @@ interface SidebarProps {
   onToggleSidebar?: () => void;
   collapsed?: boolean;
 }
+
+/**
+ * 排序菜单的四个选项（**键 × 方向**的全部组合，GAP-LIST `O-57`）。
+ *
+ * 顺序刻意排成"先按时间、再按名称；每组先倒序后正序"——与菜单里读到的顺序一致，
+ * 也与默认值（`recent` × `desc`）在第一位一致：用户点开菜单第一眼看到的就是当前档。
+ */
+const SORT_OPTIONS: Array<{ key: SessionSortKey; dir: SessionSortDir; label: { zh: string; en: string } }> = [
+  { key: "recent", dir: "desc", label: S.sidebar.sortRecentDesc },
+  { key: "recent", dir: "asc", label: S.sidebar.sortRecentAsc },
+  { key: "name", dir: "asc", label: S.sidebar.sortNameAsc },
+  { key: "name", dir: "desc", label: S.sidebar.sortNameDesc },
+];
 
 export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onPlugins, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onCicd, onPerf, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   /* 第 166 轮 P1-3：分组标题吸顶（滚到顶时加 is-stuck，CSS 才画分隔线） */
@@ -171,6 +194,40 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
     const num = typeof w === "string" ? parseInt(w, 10) : (typeof w === "number" ? w : 0);
     return num > 0 ? num : 260;
   });
+  /**
+   * 会话显示排序（GAP-LIST `O-57`）。
+   *
+   * 初始值从设置面读（未预热/未设置 ⇒ 时间倒序 = 与升级前逐字一致的行为）。
+   * 改选择时**先**更新状态（用户当场看到顺序变化）**再**落库（失败只进日志，
+   * 见 `writeSessionSortPreference`）——顺序本身是可复现的偏好，不是一次性结论。
+   */
+  const [sessionSort, setSessionSort] = useState<SessionSortPref>(() => readSessionSortPreference());
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  /** 当前档的一句话（tooltip / 可访问名；与菜单文案同一份来源） */
+  const sortLabel = describeSessionSort(sessionSort);
+  /** 选一项：写状态 + 落库 + 收菜单 */
+  const applySessionSort = useCallback((key: SessionSortKey, dir: SessionSortDir) => {
+    const next: SessionSortPref = { key, dir };
+    setSessionSort(next);
+    writeSessionSortPreference(next);
+    setShowSortMenu(false);
+  }, []);
+  /* 排序菜单的关闭走共享 hook（Esc / 焦点归还 / inert），与右键菜单同一条实现 */
+  useDismissableLayer({ open: showSortMenu, onDismiss: () => setShowSortMenu(false) });
+  /*
+   * 点菜单**外面**关闭 —— 这一半不在 `useDismissableLayer` 里（它只管 Esc 与焦点），
+   * 与本文件「更多操作」菜单同一个分工与同一个形状（document 捕获阶段 + closest）。
+   */
+  useEffect(() => {
+    if (!showSortMenu) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".sidebar-sort-wrapper")) return;
+      setShowSortMenu(false);
+    };
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, [showSortMenu]);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(0);
@@ -179,16 +236,22 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
   const loadAllSessions = () => {
     const sessionsMap: Record<string, any[]> = {};
     // Load global sessions (projectId = "")
-    sessionsMap["__global__"] = SessionStorage.listSessions("");
+    sessionsMap["__global__"] = sortSessionsForDisplay(SessionStorage.listSessions(""), sessionSort);
     for (const p of projects) {
-      sessionsMap[p.id] = getProjectSessions(p.id);
+      sessionsMap[p.id] = sortSessionsForDisplay(getProjectSessions(p.id), sessionSort);
     }
     setAllSessions(sessionsMap);
   };
 
   useEffect(() => {
     loadAllSessions();
-  }, [projects.length, currentSession?.id, currentProject?.id]);
+    /*
+     * `sessionSort` **必须在依赖里**（GAP-LIST `O-57`）：换排序时只 `setSessionSort`
+     * 不会让上面这个 effect 重跑，而 `allSessions` 里存的是**已经排好的数组** ——
+     * 不重跑就表现为"菜单里选了没反应"（直到下次轮询才生效）。
+     * 它只在用户改选择时换一次身份，不会造成额外渲染。
+     */
+  }, [projects.length, currentSession?.id, currentProject?.id, sessionSort]);
 
   /**
    * 会话未读：① 首次运行做**一次性迁移**（把此刻已存在的会话标记为已读 —— 否则历史会话，
@@ -284,7 +347,9 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       if (next.has(projectId)) next.delete(projectId);
       else {
         next.add(projectId);
-        const sessions = getProjectSessions(projectId);
+        // ⚠️ 这里也要走**同一个**排序函数（O-57）：展开是第二条往 `allSessions` 里写数组的路径，
+        // 直接塞 `getProjectSessions()` 的原样返回会把显示排序绕过（同一规则两处实现的老坑）。
+        const sessions = sortSessionsForDisplay(getProjectSessions(projectId), sessionSort);
         setAllSessions((prev) => ({ ...prev, [projectId]: sessions }));
       }
       return next;
@@ -625,7 +690,12 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             : undefined;
         })()}>
           {(() => {
-            const globalSessions = (allSessions["__global__"] || []).slice().sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+            /*
+             * ⚠️ 这里**不再**自己按置顶排一次（O-57）：`loadAllSessions` 用的是唯一的
+             * `sortSessionsForDisplay`（置顶 + 选的键 × 方向），第二处排序就是
+             * "同一规则两份实现" —— 排序键一变，这一份会把它盖掉（只剩置顶顺序）。
+             */
+            const globalSessions = allSessions["__global__"] || [];
             const { today, earlier } = groupSessionsByTime(globalSessions);
             if (globalSessions.length === 0) {
               return <div className="empty-hint is-compact">{S.sidebar.noSessions[lang]}</div>;
@@ -691,6 +761,51 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       <div className="sidebar-section sidebar-projects-section">
         <div className="sidebar-section-header">
           <span>{S.sidebar.projects[lang]}</span>
+          {/*
+            * GAP-LIST `O-57` 的排序入口（用户要的：「最近对话 / 名称」×「正序 / 倒序」）。
+            *
+            * 形态说明（三条都是有意的）：
+            * 1. 它是**一个按钮 + 一个四项菜单**，不是两个下拉：四种组合一次看全，
+            *    当前选中项用 `aria-checked` 与勾号**同时**表达（读屏与肉眼都能看出来）；
+            * 2. `aria-haspopup` + `aria-expanded` 是给读屏的（这个按钮只有图标）；
+            * 3. 菜单的展开/收起走共享的 `useDismissableLayer`（Esc / 点外面都关，
+            *    与右键菜单、更多菜单同一条实现，不再手写一套 document 监听）。
+            */}
+          <div className="sidebar-sort-wrapper">
+            <button
+              className={`sidebar-section-btn sidebar-sort-btn${showSortMenu ? " is-open" : ""}`}
+              onClick={() => setShowSortMenu((v) => !v)}
+              title={`${S.sidebar.sortSessions[lang]}：${sortLabel[lang]}`}
+              aria-label={`${S.sidebar.sortSessions[lang]}：${sortLabel[lang]}`}
+              aria-haspopup="menu"
+              aria-expanded={showSortMenu}
+              data-session-sort={sessionSort.key === "recent" ? "recent" : "name"}
+              data-session-sort-dir={sessionSort.dir}
+            >
+              {/* 尺寸走语义类（`icon-sm` = 14px、`icon-xs` = 12px 的刻度），不写字面 `size` —— ICON-1 是棘轮 */}
+              <ArrowUpDown className="icon-sm" />
+            </button>
+            {showSortMenu && (
+              <div className="sidebar-sort-menu popover-shell" role="menu" aria-label={S.sidebar.sortSessions[lang]}>
+                {SORT_OPTIONS.map((opt) => {
+                  const active = sessionSort.key === opt.key && sessionSort.dir === opt.dir;
+                  return (
+                    <button
+                      key={`${opt.key}-${opt.dir}`}
+                      role="menuitemradio"
+                      aria-checked={active}
+                      className={`sidebar-sort-item${active ? " is-active" : ""}`}
+                      data-sort-option={`${opt.key}-${opt.dir}`}
+                      onClick={() => applySessionSort(opt.key, opt.dir)}
+                    >
+                      <span className="sidebar-sort-check">{active ? <Check className="icon-xs" /> : null}</span>
+                      <span>{opt.label[lang]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <button className="sidebar-section-btn" onClick={onProjects} title={S.sidebar.addProject[lang]}>+</button>
         </div>
         <div className="sidebar-projects" style={{ flex: 1, overflowY: "auto" }}>

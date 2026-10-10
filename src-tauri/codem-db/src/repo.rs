@@ -972,7 +972,30 @@ fn hidden_write_clause(idx: usize) -> String {
 /// 于是这个列一直停在上一次有人记得写它的时刻，而侧边栏就把它显示给用户。
 /// **一个由多个写入者"有空才更新"的计数列，必然会漂移**；要么让它只有一个写入者，
 /// 要么不要有这一列。这里选前者：**引擎是唯一的写入者**，因为只有引擎知道
-/// 每一行消息的生死（`messages.create` / `create_many` / `upsert_index` / `delete` 全都经过它）。
+/// 消息写入时的**会话行维护**（引擎是这两列的唯一写入者）。
+///
+/// 一次 UPDATE 同时维护两列：
+/// - `message_count`：按调用方给的增量加减（见下面"为什么是增量"）；
+/// - `last_message_at`：**只增不减**地抬到 `message_at`
+///   （`MAX(COALESCE(旧值, 0), 消息 timestamp)`）—— 侧栏按它倒序
+///   （`src/core/storage/session.ts::listSessions` 的 `pinned DESC, sort_order ASC,
+///   last_message_at DESC`），所以它必须跟着**消息**走（GAP-LIST `O-57`）。
+///
+/// ## 为什么时间列要在这里维护（真机库对账定下来的）
+///
+/// 这一列过去**只有渲染侧**在写（`App.tsx` 的发送路径 / `store.ts::updateSession`），
+/// 而引擎写入的消息里有一大类**不经过**那条路径：引擎自己注入的 nudge、后台委派的续跑、
+/// 工具结果与助手的流式写入 —— 于是"昨天建的会话今天又聊了"这一列纹丝不动，
+/// 侧栏把它排到「更早」组里（用户报的就是这个）。
+/// 真机副本库（2026-10-10，561 个会话）对账：**222 个多次发送的会话里只有 6 个**
+/// 的 `last_message_at` 等于"最后一条消息的时间"，其余 216 个停在**第一次**发送那一刻
+/// —— 因为后续那些消息是 nudge / 后台续跑写进去的，渲染侧那条写路径根本没被走到。
+/// ⇒ 归属只有一个：**引擎在消息写入的同一个事务里维护它**。
+///
+/// `message_at` 为 `None` = 这次调用没有可用的消息时间（只有 `messages.delete`）：
+/// 删除**不**让时间列回退 —— 回退要现算 `MAX(messages.timestamp)`，而"最后消息时间"
+/// 的单调性正是读侧（侧栏排序）需要的东西（删掉最新一条消息把会话踢回「更早」组，
+/// 不是任何人想要的语义）。所以这一列**只增不减**，全部写入点共用这一条规则。
 ///
 /// ## 为什么是增量而不是每次 COUNT(*)
 ///
@@ -995,12 +1018,13 @@ fn hidden_write_clause(idx: usize) -> String {
 /// 所以返回值里带 `clamped`：调用方把它转发到结果里（见 `messages.delete` 的 `count_clamped`），
 /// 维护对账（`maintenance.ts` 的 `reconcileMessageCounts`）也正是靠这个信号
 /// 知道"这个会话的计数不可信，该按索引真值重算一次"。
-fn bump_session_message_count(
+fn touch_session_on_message_write(
     tx: &rusqlite::Transaction<'_>,
     session_id: &str,
-    delta: i64,
+    count_delta: i64,
+    message_at: Option<i64>,
 ) -> DbResult<bool> {
-    if delta == 0 {
+    if count_delta == 0 && message_at.is_none() {
         return Ok(false);
     }
     // 先取现值：`MAX(0, x + d)` 到底夹断了没有，只有拿 x 比一次才知道
@@ -1013,10 +1037,22 @@ fn bump_session_message_count(
         .optional()
         .map_err(DbError::from)?
         .flatten();
-    let clamped = matches!(before, Some(b) if b + delta < 0);
+    let clamped = matches!(before, Some(b) if b + count_delta < 0);
+    /*
+     * 两列一次 UPDATE（流式响应里这条语句**逐 token** 跑，见上面"为什么是增量"）：
+     * - 计数：`MAX(0, COALESCE(计数, 0) + 增量)`；
+     * - 时间：`MAX(COALESCE(旧值, 0), COALESCE(?3, 旧值, 0))`。
+     *
+     * ⚠️ 时间那一列**必须**用 `COALESCE` 兜住 NULL 再做 `MAX`：
+     * SQLite 的标量 `max(a, b)` 只要有一个参数是 NULL 就返回 NULL ——
+     * 不兜的话，"老库里这一列是 NULL"的那一行会被 `?3` 为 NULL 的调用（删除路径）
+     * 写成 NULL，而这一列是 `NOT NULL`（写进去当场报约束错）。
+     */
     tx.execute(
-        "UPDATE sessions SET message_count = MAX(0, COALESCE(message_count, 0) + ?2) WHERE id = ?1",
-        params![session_id, delta],
+        "UPDATE sessions SET message_count = MAX(0, COALESCE(message_count, 0) + ?2), \
+           last_message_at = MAX(COALESCE(last_message_at, 0), COALESCE(?3, last_message_at, 0)) \
+         WHERE id = ?1",
+        params![session_id, count_delta, message_at],
     )
     .map_err(DbError::from)?;
     Ok(clamped)
@@ -1043,7 +1079,7 @@ pub fn messages_create(engine: &Engine, p: &Value) -> DbResult<Value> {
                 params![f.id, f.session_id, f.role, f.content, f.reasoning, f.timestamp, f.model, f.status, f.hidden],
             )
             .map_err(DbError::from)?;
-        bump_session_message_count(tx, &f.session_id, if is_new { 1 } else { 0 })?;
+        touch_session_on_message_write(tx, &f.session_id, if is_new { 1 } else { 0 }, Some(f.timestamp))?;
         Ok(json!({ "written": n, "id": f.id }))
     })
 }
@@ -1069,6 +1105,12 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
         let mut n = 0usize;
         // 每个会话的**新增**行数（覆盖写不该让计数变大）
         let mut new_per_session: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        /*
+         * 每个会话写入行里的**最大**消息时间（`messages.create_many` 是导入/重建的主路径，
+         * 一批里可能有多条新消息）。与计数一样按会话聚合，最后逐会话一次 UPDATE ——
+         * 逐行 UPDATE 会让"导入 10 万条"多出 10 万条语句。
+         */
+        let mut max_at_per_session: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
         for f in &parsed {
             let already: i64 = exists_stmt
                 .query_row(params![f.id], |r| r.get(0))
@@ -1088,12 +1130,25 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
             if already == 0 {
                 *new_per_session.entry(f.session_id.clone()).or_insert(0) += 1;
             }
+            // 覆盖写也带上时间：它与计数不同（计数只在新增时涨），而"这一行最近被谁写过"
+            // 对排序没有意义 —— 排序要的是**消息自己的时间戳**，覆盖写不改它。
+            let slot = max_at_per_session.entry(f.session_id.clone()).or_insert(f.timestamp);
+            if f.timestamp > *slot {
+                *slot = f.timestamp;
+            }
             n += 1;
         }
         drop(stmt);
         drop(exists_stmt);
-        for (sid, delta) in &new_per_session {
-            bump_session_message_count(tx, sid, *delta)?;
+        /*
+         * 逐会话维护（一次一条 UPDATE）——遍历 `max_at_per_session` 而不是 `new_per_session`：
+         * 每个被写到的会话在这一张表里都有一条（每一行都有自己的 `timestamp`），
+         * 所以它同时覆盖"只新增""只覆盖""两者都有"三种形态；
+         * 计数增量从 `new_per_session` 取（只覆盖的会话取不到 ⇒ 0，正是"计数不变"）。
+         */
+        for (sid, at) in &max_at_per_session {
+            let delta = new_per_session.get(sid).copied().unwrap_or(0);
+            touch_session_on_message_write(tx, sid, delta, Some(*at))?;
         }
         Ok(json!({ "written": n, "count": parsed.len() }))
     })
@@ -1344,16 +1399,29 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
             }
         }
 
-        // 3) 会话计数（第 44 轮）：**只有真正新增行时**才 +1（覆盖写不该让计数变大）
-        if exists == 0 {
-            bump_session_message_count(tx, &f.session_id, 1)?;
-        }
+        /*
+         * 3) 会话行（第 44 轮 + GAP-LIST `O-57`）：**计数只在真正新增行时** +1
+         *    （覆盖写不该让计数变大）；而 `last_message_at` **每一次**都要抬到这条消息的
+         *    `timestamp`（只增不减）。
+         *
+         *    为什么时间不受"是否新增"约束：这条命令是**流式响应与引擎注入消息**的共同落点
+         *    （助手逐 token 更新同一条行、nudge / 后台续跑写新行），而侧栏排序要的正是
+         *    "这个会话最近一次真的动过是什么时候"。真机库对账（第 195 波）显示：
+         *    只按新增行处理时，222 个多次发送的会话里只有 6 个的时间列跟上了最后一条消息
+         *    —— 剩下的全停在**第一次**发送，因为后续那些消息不走渲染侧那条写路径。
+         */
+        touch_session_on_message_write(
+            tx,
+            &f.session_id,
+            if exists == 0 { 1 } else { 0 },
+            Some(f.timestamp),
+        )?;
 
         /*
          * ## GAP-LIST `O-42`：把**权威计数**随结果回传（渲染侧读模型不再需要猜）
          *
          * 渲染侧（`src/core/storage/session.ts::getSession`）要回答的是"这个会话现在有几条消息"，
-         * 而这一列**只有引擎知道**（`bump_session_message_count` 的注释：引擎是唯一写入者）。
+         * 而这一列**只有引擎知道**（`touch_session_on_message_write` 的注释：引擎是唯一写入者）。
          * 渲染侧镜像隔着一次 IPC，于是"刚写进去的这条算进去了没有"在写路径上看不出来 ——
          * 未读徽标只能靠"宁可多显示 1 条"兜住（`session-read-state.ts` 的长注释记的就是这个取舍）。
          *
@@ -1620,7 +1688,7 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
     let soft = soft || trim;
     let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
-        // 会话计数是否被 `MAX(0, …)` 夹断过（见 `bump_session_message_count` 的说明）
+        // 会话计数是否被 `MAX(0, …)` 夹断过（见 `touch_session_on_message_write` 的说明）
         let mut count_clamped = false;
         /*
          * 硬删除的两件事（第 44 轮）：
@@ -1724,9 +1792,10 @@ pub fn messages_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
                 impact,
                 confirmed,
             )?;
-            // 会话计数按会话逐个减（`per_session` 是在删除**之前**采集的）
+            // 会话计数按会话逐个减（`per_session` 是在删除**之前**采集的）。
+            // `message_at` 传 `None`：删除不让"最后消息时间"回退（见该函数的说明）。
             for (sid, delta) in &per_session {
-                if bump_session_message_count(tx, sid, -*delta)? {
+                if touch_session_on_message_write(tx, sid, -*delta, None)? {
                     count_clamped = true;
                 }
             }
@@ -1869,7 +1938,15 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
             .collect::<String>();
         let title = if title.trim().is_empty() { format!("会话 {sid}") } else { title };
         let first_ts = msgs.first().map(|(f, _)| f.timestamp).unwrap_or_else(now_ms);
-        let last_ts = msgs.last().map(|(f, _)| f.timestamp).unwrap_or(first_ts);
+        /*
+         * `last_ts` 取这一批消息里**最大**的 `timestamp`（不是数组里最后一个）：
+         * 日志重放是"从权威副本恢复索引"，而这条列的定义是
+         * "`MAX(messages.timestamp)`，只增不减"（唯一规则写在
+         * `touch_session_on_message_write` 与 `schema::backfill_last_message_at` 上）。
+         * 数组顺序不保证等于时间顺序（分叉 / 回退重放会把旧消息接到后面），
+         * 取"最后一个"会在那种日志上把时间列**往回**写。
+         */
+        let last_ts = msgs.iter().map(|(f, _)| f.timestamp).max().unwrap_or(first_ts);
         parsed.push(Parsed {
             id: sid,
             project_id,
@@ -1904,10 +1981,17 @@ pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                  * 注意：**这次重放了多少条**仍然在返回值 `messages` 里如实汇报
                  * （另加 `index_message_count` 给出引擎看到的索引总行数），
                  * 调用方想知道"日志给了多少"看返回值，不要看这一列。
+                 *
+                 * ⚠️ `last_message_at` 与上面相反，**不能**无条件覆盖（第 195 波，O-57）：
+                 * 它的唯一规则是"`MAX(messages.timestamp)`，只增不减"
+                 * （见 `touch_session_on_message_write`）。日志只是**索引的一个副本**，
+                 * 可能比索引旧（`rebuildSessionLogs` 只喂它读到的那些会话/条数），
+                 * 无条件覆盖会把"今天真的聊过"的会话拉回日志那天的时刻 ——
+                 * 那正是侧栏把它排进「更早」组的原因。所以这里取两边的较大值。
                  */
                 "INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count, pinned) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0) \
-                 ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at, \
+                 ON CONFLICT(id) DO UPDATE SET last_message_at = MAX(last_message_at, excluded.last_message_at), \
                    message_count = excluded.message_count",
             )
             .map_err(DbError::from)?;

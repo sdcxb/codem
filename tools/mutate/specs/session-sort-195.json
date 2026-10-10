@@ -1,0 +1,148 @@
+{
+  "description": "O-57 的第三件事：侧栏会话的显示排序（两种键 × 两种方向 + 持久化 + 反向对照「不弄坏存储层的 sort_order」），以及它依赖的两条实现约束（引擎/替身维护活动时间、渲染侧不许当第二个写入者）。",
+  "mutations": [
+    {
+      "id": "MUT-1 比较器忽略方向（最近对话永远时间倒序）",
+      "why": "SORT-1 / SORT-UI-1：`dir` 不参与时间比较 ⇒ 「正序」档位没有效果（四种组合只实现了一半）",
+      "patches": [
+        {
+          "file": "src/core/session/session-sort.ts",
+          "from": "      if (ta !== tb) return dir * (ta - tb);",
+          "to": "      if (ta !== tb) return ta - tb;"
+        }
+      ],
+      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 比较器不再让置顶优先",
+      "why": "SORT-2 / SORT-UI-6：置顶是用户显式的分组意图，不是排序键；去掉它之后「选了名称就把置顶淹掉」",
+      "patches": [
+        {
+          "file": "src/core/session/session-sort.ts",
+          "from": "    const pa = isPinned(a) ? 1 : 0;\n    const pb = isPinned(b) ? 1 : 0;\n    if (pa !== pb) return pb - pa;",
+          "to": "    const pa = 0;\n    const pb = 0;\n    if (pa !== pb) return pb - pa;"
+        }
+      ],
+      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 名称比较退化成码点比较（去掉 numeric）",
+      "why": "SORT-4：`localeCompare` 的 `numeric` 语义没了之后，「对话 10」会排到「对话 2」前面",
+      "patches": [
+        {
+          "file": "src/core/session/session-sort.ts",
+          "from": "      const cmp = String(a.title ?? \"\").localeCompare(String(b.title ?? \"\"), undefined, { numeric: true });",
+          "to": "      const cmp = String(a.title ?? \"\") < String(b.title ?? \"\") ? -1 : String(a.title ?? \"\") > String(b.title ?? \"\") ? 1 : 0;"
+        }
+      ],
+      "tests": ["src/test/session-display-sort.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 解析偏好时不校验（坏值当合法值用）",
+      "why": "SORT-7：`{\"key\":\"nope\"}` 这类坏值必须回默认；不校验就会把未知档当成合法值渲染成乱序（而且下一次写回还会把它固化）",
+      "patches": [
+        {
+          "file": "src/core/session/session-sort.ts",
+          "from": "  if (!validKey || !validDir) return DEFAULT_SESSION_SORT;\n  return { key, dir } as SessionSortPref;",
+          "to": "  void validKey;\n  void validDir;\n  return { key: (key ?? \"recent\") as SessionSortKey, dir: (dir ?? \"desc\") as SessionSortDir };"
+        }
+      ],
+      "tests": ["src/test/session-display-sort.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 偏好写进设置时写成默认值",
+      "why": "SORT-7 / SORT-UI-4：选择没真的落库 ⇒ 重启就回默认（用户的选择只在本次会话里有效）",
+      "patches": [
+        {
+          "file": "src/core/session/session-sort.ts",
+          "from": "    setSetting(SESSION_SORT_SETTING_KEY, JSON.stringify(pref));",
+          "to": "    setSetting(SESSION_SORT_SETTING_KEY, JSON.stringify(DEFAULT_SESSION_SORT));"
+        }
+      ],
+      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 侧栏装载会话时不排序",
+      "why": "SORT-UI-2/3/4：`loadAllSessions` 是渲染数据的唯一来源；不排序 ⇒ 菜单点了没反应（显示顺序仍按存储层的时间序）",
+      "patches": [
+        {
+          "file": "src/components/Sidebar.tsx",
+          "from": "      sessionsMap[p.id] = sortSessionsForDisplay(getProjectSessions(p.id), sessionSort);",
+          "to": "      sessionsMap[p.id] = getProjectSessions(p.id);"
+        }
+      ],
+      "tests": ["src/test/sidebar-session-sort.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-7 展开项目时绕过排序函数",
+      "why": "SORT-UI-7：`toggleExpand` 是第二条往 `allSessions` 写数组的路径；漏掉它就是「同一规则两处实现」——折叠再展开一次就把用户的选择丢掉",
+      "patches": [
+        {
+          "file": "src/components/Sidebar.tsx",
+          "from": "        const sessions = sortSessionsForDisplay(getProjectSessions(projectId), sessionSort);",
+          "to": "        const sessions = getProjectSessions(projectId);"
+        }
+      ],
+      "tests": ["src/test/sidebar-session-sort.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-8 换排序时不重算 allSessions（依赖数组少一项）",
+      "why": "SORT-UI-2：`allSessions` 里存的是**排好的数组**，换档位必须重算；少了这个依赖就表现为「菜单里选了没反应」",
+      "patches": [
+        {
+          "file": "src/components/Sidebar.tsx",
+          "from": "  }, [projects.length, currentSession?.id, currentProject?.id, sessionSort]);",
+          "to": "  }, [projects.length, currentSession?.id, currentProject?.id]);"
+        }
+      ],
+      "tests": ["src/test/sidebar-session-sort.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-9 假端口不再与引擎同形（不维护活动时间）",
+      "why": "FID-6 / LMA-ACT-1：替身比实现狭窄 ⇒ 「写完消息 ⇒ 侧栏顺序跟着走」在 CI 里结构上不可见（第 192 波那条教训）",
+      "patches": [
+        {
+          "file": "src/test/fake-storage-port.ts",
+          "from": "          sessRow.last_message_at = Math.max(Number(sessRow.last_message_at ?? 0), ts);",
+          "to": "          sessRow.last_message_at = Number(sessRow.last_message_at ?? 0);"
+        }
+      ],
+      "tests": ["src/test/fake-port-fidelity.test.ts", "src/test/session-activity-time.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-10 渲染侧又变成第二个写入者（改名顺手盖 Date.now()）",
+      "why": "LMA-ACT-2：`store.updateSession` 隐式盖 `lastMessageAt` 就是第二个写入者（第 191 波对 `messageCount` 处理过同一件事）——后果是改名/加附件把旧会话顶到最上面",
+      "patches": [
+        {
+          "file": "src/core/store.ts",
+          "from": "    try { SessionStorage.updateSession(sessionId, update); } catch (e) { reportPersistFailure(\"store.updateSession\", e); }",
+          "to": "    try { SessionStorage.updateSession(sessionId, { ...update, lastMessageAt: Date.now() }); } catch (e) { reportPersistFailure(\"store.updateSession\", e); }"
+        }
+      ],
+      "tests": ["src/test/session-activity-time.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-11 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 上面那些判据一条都不许红（证明红是行为造成的）",
+      "patches": [
+        {
+          "file": "src/core/session/session-sort.ts",
+          "from": " * 否则「选了按名称排」会把置顶会话淹掉 —— 那是把用户的显式意图吃掉。",
+          "to": " * （反向对照：只改这一行注释，行为逐字不变）\n * 否则「选了按名称排」会把置顶会话淹掉 —— 那是把用户的显式意图吃掉。"
+        }
+      ],
+      "tests": ["src/test/session-display-sort.test.ts", "src/test/sidebar-session-sort.test.tsx"],
+      "expectRed": false
+    }
+  ]
+}

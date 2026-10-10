@@ -1,15 +1,15 @@
 {
-  "version": "1.16.304",
-  "notes": "Codem v1.16.304 — 记忆快照回退后的两处不一致（角标停在旧数字、提示指错组）；本版为跑满对标评测后发布的稳定版。",
-  "pub_date": "2026-10-09T05:54:30Z",
+  "version": "1.16.305",
+  "notes": "Codem v1.16.305 — 侧栏按「最新聊天时间」排序（修掉只更新「手发的那条」的缺陷 + 存量回填一次）；新增会话排序：最近对话 / 名称 × 正序 / 倒序。",
+  "pub_date": "2026-10-10T02:59:56Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NZTzF5L0RlQmdEUlNoanhpYkVGUlF3Rzd1ejV4aTV6L0l5THhZd3Yza0V3ZEZSc2diVkNtUG5zR0JTZUVETzk0aU85cTFsdzJ2WGhoZU9IWXMvb2djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTI1MjcwCWZpbGU6Q29kZW1fMS4xNi4zMDRfeDY0LXNldHVwLmV4ZQpISzZlVDZJRGkrWU9VSDJzME5CMUprRk1NWjZGTE1KVE1XSHBISmwvN1Y1VlU0QmV5L1VsRy8vV0ZvbWZNVmluQWpocWlvUTNBWFQ2bC9MRHNPN1BDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.304/Codem_1.16.304_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RHZm9rQmY5YzhnK2NtMUFSbnFIWUtJQ0NWUVdka0JPWk9zVk16ZzNqYm5XSWpkNFdHV3NqTk9IbGR5T01hOGVjaEs4RVZCQ2x5b2FnSGhUT09YT0FJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjAwMTIxCWZpbGU6Q29kZW1fMS4xNi4zMDVfeDY0LXNldHVwLmV4ZQpwNGtTMHZUMEgyVjJBMTMxNnJjZFhBczdkZUhMYlRnTWRFcTl4c2pwcCt1QzF6Tkg3blU0aTlrZHlKZVl0UjJkclJUU3RpTnpuQmwwajZ4SWwxcEtCQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.305/Codem_1.16.305_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NZTzF5L0RlQmdEUlNoanhpYkVGUlF3Rzd1ejV4aTV6L0l5THhZd3Yza0V3ZEZSc2diVkNtUG5zR0JTZUVETzk0aU85cTFsdzJ2WGhoZU9IWXMvb2djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTI1MjcwCWZpbGU6Q29kZW1fMS4xNi4zMDRfeDY0LXNldHVwLmV4ZQpISzZlVDZJRGkrWU9VSDJzME5CMUprRk1NWjZGTE1KVE1XSHBISmwvN1Y1VlU0QmV5L1VsRy8vV0ZvbWZNVmluQWpocWlvUTNBWFQ2bC9MRHNPN1BDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.304/Codem_1.16.304_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RHZm9rQmY5YzhnK2NtMUFSbnFIWUtJQ0NWUVdka0JPWk9zVk16ZzNqYm5XSWpkNFdHV3NqTk9IbGR5T01hOGVjaEs4RVZCQ2x5b2FnSGhUT09YT0FJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNjAwMTIxCWZpbGU6Q29kZW1fMS4xNi4zMDVfeDY0LXNldHVwLmV4ZQpwNGtTMHZUMEgyVjJBMTMxNnJjZFhBczdkZUhMYlRnTWRFcTl4c2pwcCt1QzF6Tkg3blU0aTlrZHlKZVl0UjJkclJUU3RpTnpuQmwwajZ4SWwxcEtCQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.305/Codem_1.16.305_x64-setup.exe"
     }
   }
 }

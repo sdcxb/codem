@@ -407,6 +407,27 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
           for (const c of calls) table("tool_calls").push({ ...cloneRow(c), message_id: id });
         }
       }
+      /**
+       * 会话行的**活动时间**：与引擎同形（GAP-LIST `O-57`）。
+       *
+       * 真实现是 `repo.rs::touch_session_on_message_write`：消息写入的**同一个事务**里
+       * `sessions.last_message_at = MAX(旧值, 这条消息的 timestamp)`（只增不减）。
+       * 假端口原来完全不碰这一列 —— 那是"替身比实现更狭窄"，会让
+       * "写完消息 ⇒ 侧栏顺序/活动时间跟着走"这类判据在 CI 里**结构上不可见**
+       * （第 192 波那条教训：替身不同形 ⇒ 缺陷只在真机上出现）。
+       *
+       * ⚠️ 刻意**只补时间列，不补 `message_count`**：那一列的替身差异是**登记过的**
+       * （见下面 `command()` 里 `messages.upsert_index` 的注释，`session-unread-count-visibility`
+       * 的 UNREAD 家族正建立在"替身不维护计数"之上）。两列虽是同一条命令维护的，
+       * 但改计数会同时改掉一批既有判据的前提 —— 那属于另一个波次要单独处理的事。
+       */
+      const sessRow = table("sessions").find((r) => r.id === merged.session_id);
+      if (sessRow) {
+        const ts = Number(merged.timestamp);
+        if (Number.isFinite(ts)) {
+          sessRow.last_message_at = Math.max(Number(sessRow.last_message_at ?? 0), ts);
+        }
+      }
       return 1;
     }
     /**

@@ -2082,6 +2082,70 @@ font-size: var(--fs-base);
   color: var(--text-on-accent);
 }
 
+/* ===== GAP-LIST O-57：侧栏会话排序入口（「项目」小节头） =====
+   菜单**相对这个包裹层**定位（不用 portal）：只有 4 项、不滚动，
+   而且它必须留在 `.sidebar` 的盒子里 —— 侧栏是 `overflow: hidden`，
+   越界会被裁掉（`.sidebar-project-more-menu` 走 portal 是因为它要跟着鼠标位置跑）。
+   表面（背景/圆角/阴影/模糊）由共用的 `.popover-shell` 给，这里只管**布局**。 */
+.sidebar-sort-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-sort-btn.is-open {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.sidebar-sort-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 168px;
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-sort-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+
+.sidebar-sort-item:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-sort-item.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 勾号占位**恒定宽度**：选中与未选中的两行文字必须左对齐（否则点一下会左右跳） */
+.sidebar-sort-check {
+  width: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .sidebar-section h4 {
   font-size: var(--fs-2xs);
   text-transform: uppercase;

@@ -2,8 +2,8 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 248,
-    "triaged": 248,
+    "total": 249,
+    "triaged": 249,
     "pending": 0
   },
   "sites": [
@@ -769,6 +769,13 @@
       "status": "triaged",
       "reason": "已读水位没保存 ⇒ persist（重启后可能多一个未读徽标）。",
       "round": 104
+    },
+    {
+      "site": "src/core/session/session-sort.ts::session.sortPreference::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "会话排序偏好没保存 ⇒ persist：用户的选择重启后回默认（本次仍按所选顺序渲染）。为什么不是 advisory：这是**用户自己发起的动作**没落盘，用户有可介入动作（重选一次 / 看持久化失败提示），不是自检发现。（本处：writeSessionSortPreference，第 96 行）",
+      "round": 195
     },
     {
       "site": "src/core/settings/settings.ts::settings.saveFile::#1",

@@ -190,4 +190,39 @@ describe("FID：假端口 = 引擎语义（双向都不许偏）", () => {
       "预热后替身必须真的写进去",
     ).toBe(true);
   });
+
+  /**
+   * ★ 第 195 波（GAP-LIST `O-57`）：**消息写入要维护会话的活动时间**，替身必须与引擎同形。
+   *
+   * 引擎真源：`repo.rs::touch_session_on_message_write`（判据是 Rust 侧的 `LMA-1..4`）——
+   * 消息写入的**同一个事务**里 `sessions.last_message_at = MAX(旧值, 这条消息的 timestamp)`，
+   * 只增不减。假端口原来**完全不碰**这一列：那是"替身比实现更狭窄"，
+   * 后果正是第 192 波记下的那类 —— "写完消息 ⇒ 侧栏顺序跟着走"在 CI 里**结构上不可见**
+   * （真机上才会出现"昨天建的会话不排最上面"，因为引擎写入的消息有一大类不经过渲染侧）。
+   *
+   * 反向对照也在这条里：**更早的 timestamp 不许把它拉回去**（单调性）。
+   */
+  it("FID-6: 替身与引擎同形 —— `messages.upsert_index` 也要把会话活动时间抬到 `MAX`", async () => {
+    const p = createFakeStoragePort({
+      seed: {
+        sessions: [
+          { id: "s-lma", project_id: "p1", title: "t", created_at: 1, last_message_at: 1, message_count: 0, pinned: 0 },
+        ],
+      },
+    });
+    const activity = () => Number(p.__table("sessions").find((r) => r.id === "s-lma")?.last_message_at);
+
+    await p.data.execute("messages.upsert_index", {
+      id: "m1", session_id: "s-lma", role: "user", content: "a", timestamp: 500,
+    });
+    expect(activity(), "写一条新消息必须把活动时间抬到它的 timestamp").toBe(500);
+
+    await p.data.execute("messages.upsert_index", {
+      id: "m1", session_id: "s-lma", role: "user", content: "a2", timestamp: 300,
+    });
+    expect(
+      activity(),
+      "更早的 timestamp（覆盖写）不许把它拉回去 —— 引擎那边是 `MAX(旧值, 消息 timestamp)`",
+    ).toBe(500);
+  });
 });

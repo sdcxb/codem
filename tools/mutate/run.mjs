@@ -51,6 +51,22 @@ export function specFingerprint(spec) {
      */
     ...(m.runner && m.runner !== "vitest" ? { runner: m.runner } : {}),
   }));
+  /*
+   * **cargo 的运行目标**（第 195 波补）：`manifest` / `target` 决定"判据住在哪个 crate 的
+   * 哪个测试目标里"。它们与运行面同理，只在**显式给出**时进指纹 ——
+   * 老的 cargo 波次（`cmd-arg-192`：`src-tauri` 的 lib 单测）不写这两个键，指纹因此逐字不变
+   * （**追加**到 `shape` 数组末尾、而不是把数组包成对象：包起来会把全部 19 个旧波次的
+   * 指纹都改掉，旧结果一律作废，而那与"变异的形状变了没有"毫无关系）。
+   * 不把它们算进指纹的后果很具体：把 manifest 从 `codem-db` 换回 `src-tauri` 之后，
+   * 跑出来的"红"其实是另一个 crate 的判据，而旧结果照样通过闸门。
+   */
+  const cargoTargetShape = {
+    ...(spec.cargoManifest ? { cargoManifest: spec.cargoManifest } : {}),
+    ...(spec.cargoTarget ? { cargoTarget: spec.cargoTarget } : {}),
+  };
+  if (Object.keys(cargoTargetShape).length > 0) {
+    shape.push(cargoTargetShape);
+  }
   return createHash("sha1").update(JSON.stringify(shape)).digest("hex");
 }
 
@@ -161,14 +177,22 @@ function runVitest(tests, extra = []) {
  * libtest 只接受**一个**位置过滤串（`cargo test -- a b` 会被它当非法选项拒掉），
  * 所以 `tests` 数组在这里是"逐个跑，任一点名失败即红"。
  */
-function runCargo(filters, logName) {
+function runCargo(filters, logName, spec = {}) {
   const started = Date.now();
   const logFile = path.join(ROOT, ".preview-shot", `mutate-cargo-${logName}.log`);
   mkdirSync(path.dirname(logFile), { recursive: true });
+  /*
+   * 运行目标（第 195 波补）：默认是 `src-tauri` 的 lib 单测；波次可以用
+   * `cargoManifest` / `cargoTarget` 指到别的 crate 的测试目标 ——
+   * 存储引擎的判据住在 `src-tauri/codem-db/tests/engine_tests.rs`（独立 crate），
+   * 而 "`--lib` + `src-tauri/Cargo.toml`" 根本跑不到它（会以"没点名失败"记成 error）。
+   */
+  const manifest = spec.cargoManifest ?? "src-tauri/Cargo.toml";
+  const target = spec.cargoTarget ? spec.cargoTarget.join(" ") : "--lib";
   const outcomes = [];
   for (const f of filters) {
     const r = spawnSync(
-      `cargo test --lib --manifest-path src-tauri/Cargo.toml -- ${f} > "${logFile}" 2>&1`,
+      `cargo test ${target} --manifest-path ${manifest} -- ${f} > "${logFile}" 2>&1`,
       { cwd: ROOT, shell: true, stdio: "inherit" },
     );
     const status = r.status ?? -1;
@@ -235,7 +259,9 @@ async function main() {
       for (const p of mut.patches ?? []) {
         writeUtf8(p.file, patchText(readUtf8(p.file), p.from, p.to));
       }
-      const run = useCargo ? runCargo(mut.tests ?? [], `${wave}-${results.length}`) : runVitest(mut.tests ?? []);
+      const run = useCargo
+        ? runCargo(mut.tests ?? [], `${wave}-${results.length}`, spec)
+        : runVitest(mut.tests ?? []);
       entry.exitCode = run.status ?? -1;
       entry.ms = run.ms;
       if (run.error) {
@@ -264,7 +290,7 @@ async function main() {
   if (allTests.length === 0) {
     restore = { red: false };
   } else if (useCargo) {
-    const r = runCargo(allTests, `${wave}-restore`);
+    const r = runCargo(allTests, `${wave}-restore`, spec);
     // 还原后**恰好相反**：判据全绿才算还原成功（点名失败 ⇒ 没还原干净）
     restore = { red: r.red || Boolean(r.error) };
   } else {

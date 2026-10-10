@@ -536,8 +536,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setSessions: (sessions) => set({ sessions }),
 
   updateSession: (sessionId, update) => {
-    try { SessionStorage.updateSession(sessionId, { ...update, lastMessageAt: Date.now() }); } catch (e) { reportPersistFailure("store.updateSession", e); }
-    const updated = get().sessions.map((s) => s.id === sessionId ? { ...s, ...update, lastMessageAt: Date.now() } : s);
+    /*
+     * ⚠️ 第 195 波（GAP-LIST `O-57`）：**不许**在这里顺手盖 `lastMessageAt: Date.now()`。
+     *
+     * 这一列现在是**引擎的列**：消息写入的同一个事务里由
+     * `repo.rs::touch_session_on_message_write` 维护
+     * （规则 = `MAX(旧值, 消息 timestamp)`，只增不减），侧栏按它倒序。
+     * 渲染侧在这里再盖一个 `Date.now()` 就是**第二个写入者** ——
+     * 后果是"改名 / 加附件 / 写 worktree 路径"这类**与聊天无关**的动作
+     * 把会话抬到最上面，而且让这一列不再等于 `MAX(messages.timestamp)`。
+     *
+     * 这与第 191 波对 `messageCount` 的处置是同一件事（那次删掉的是
+     * "读到的值 + 1" 四处副本，见 `session-count-single-writer.test.ts`）：
+     * **归属只有一个**。调用方**显式**传 `lastMessageAt` 时照写
+     * （App.tsx / NotebookWorkspace 的发送路径就是这么用的 —— 它让侧栏在
+     * "消息还没落库"的那一瞬间也能立刻反映顺序；值本身 ≤ 随后的消息时间戳，
+     * 于是引擎的 `MAX` 会把它吸收掉）。
+     */
+    try { SessionStorage.updateSession(sessionId, update); } catch (e) { reportPersistFailure("store.updateSession", e); }
+    const updated = get().sessions.map((s) => s.id === sessionId ? { ...s, ...update } : s);
     set({ sessions: updated, currentSession: get().currentSession?.id === sessionId ? { ...get().currentSession!, ...update } : get().currentSession });
   },
 

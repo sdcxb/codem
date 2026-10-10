@@ -1,0 +1,222 @@
+{
+  "wave": "lma-engine-195",
+  "description": "O-57：会话活动时间 `sessions.last_message_at` 由引擎维护（消息写入 / 日志回放 / 打开时回填三条路径），语义是 `MAX(messages.timestamp)` 且只增不减。运行面是 cargo，目标是 `codem-db` 的 `tests/engine_tests.rs`（引擎判据住在那条 crate 里，不是 src-tauri 的 lib 单测）。",
+  "runAt": "2026-10-10T01:58:44.928Z",
+  "specFingerprint": "408441c4e6e019bcac4e8e512e2ec6533943bbd0",
+  "files": [
+    "src-tauri/codem-db/src/repo.rs",
+    "src-tauri/codem-db/src/schema.rs"
+  ],
+  "tests": [
+    "lma1_upsert_index_raises_session_activity_and_never_lowers_it",
+    "lma2_create_paths_share_the_same_rule",
+    "lma5_rebuild_index_never_rewinds_and_takes_the_max_timestamp",
+    "lma3_delete_never_rewinds_session_activity",
+    "lma4_open_backfills_stale_activity_only"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 消息写入不再维护活动时间（回到修复前）",
+      "why": "LMA-1：`messages.upsert_index` 是引擎注入消息（nudge / 后台续跑）与流式写入的落点；把时间参数传成 None 就等于「只有渲染侧那条写路径能改这一列」——真机 561 个会话里 216 个多次发送的会话就是这么停在第一次发送的 ⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "        touch_session_on_message_write(\n            tx,\n            &f.session_id,\n            if exists == 0 { 1 } else { 0 },\n            Some(f.timestamp),\n        )?;",
+          "to": "        touch_session_on_message_write(\n            tx,\n            &f.session_id,\n            if exists == 0 { 1 } else { 0 },\n            None,\n        )?;"
+        }
+      ],
+      "tests": [
+        "lma1_upsert_index_raises_session_activity_and_never_lowers_it"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1738
+    },
+    {
+      "id": "MUT-2 `messages.create` 不再维护活动时间",
+      "why": "LMA-2：三个写入者一条规则；单条写入这条路（导入 / 恢复 / 重建）漏掉时，`messages.create` 写进去的会话永远排错",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "        touch_session_on_message_write(tx, &f.session_id, if is_new { 1 } else { 0 }, Some(f.timestamp))?;",
+          "to": "        touch_session_on_message_write(tx, &f.session_id, if is_new { 1 } else { 0 }, None)?;"
+        }
+      ],
+      "tests": [
+        "lma2_create_paths_share_the_same_rule"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1710
+    },
+    {
+      "id": "MUT-3 批量写入取「最后一行」的时间而不是最大值",
+      "why": "LMA-2 的反向对照：`create_many` 的数组顺序不保证等于时间顺序，取最后一个会把时间列写小（这一条钉住「取最大」这个具体口径）",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "            let slot = max_at_per_session.entry(f.session_id.clone()).or_insert(f.timestamp);\n            if f.timestamp > *slot {\n                *slot = f.timestamp;\n            }",
+          "to": "            max_at_per_session.insert(f.session_id.clone(), f.timestamp);"
+        }
+      ],
+      "tests": [
+        "lma2_create_paths_share_the_same_rule"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1821
+    },
+    {
+      "id": "MUT-4 时间列从 `MAX` 改成「照写」（可回退）",
+      "why": "LMA-1/LMA-5：单调性是侧栏排序依赖的性质；改成 `COALESCE(?3, 旧值, 0)` 之后，覆盖写与日志回放都能把活动时间往回拉 ⇒ 两条判据都红",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "           last_message_at = MAX(COALESCE(last_message_at, 0), COALESCE(?3, last_message_at, 0)) \\\n         WHERE id = ?1\",",
+          "to": "           last_message_at = COALESCE(?3, last_message_at, 0) \\\n         WHERE id = ?1\","
+        }
+      ],
+      "tests": [
+        "lma1_upsert_index_raises_session_activity_and_never_lowers_it",
+        "lma5_rebuild_index_never_rewinds_and_takes_the_max_timestamp"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2054
+    },
+    {
+      "id": "MUT-5 删除路径改成「按剩下的消息重算」（会把时间往回拉）",
+      "why": "LMA-3：删除**不**该让这一列回退。「删了就按剩下的重算」是一个看起来更自然、但会把会话踢回「更早」组的实现（删掉最新一条消息的后果最直观）⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "                if touch_session_on_message_write(tx, sid, -*delta, None)? {",
+          "to": "                tx.execute(\n                    \"UPDATE sessions SET last_message_at = COALESCE((SELECT MAX(timestamp) FROM messages WHERE session_id = ?1), 0) WHERE id = ?1\",\n                    params![sid],\n                )\n                .map_err(DbError::from)?;\n                if touch_session_on_message_write(tx, sid, -*delta, None)? {"
+        }
+      ],
+      "tests": [
+        "lma3_delete_never_rewinds_session_activity"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1778
+    },
+    {
+      "id": "MUT-6 回填不再「只改陈旧的」（无条件覆盖）",
+      "why": "LMA-4 的反向对照：无条件 `SET last_message_at = MAX(...)` 会把「比消息还新」的行往回**拉**（改名 / 附件留下的合法更新值被抹掉）⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/schema.rs",
+          "from": "            \"UPDATE sessions \\\n                SET last_message_at = (\\\n                      SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = sessions.id\\\n                    ) \\\n              WHERE EXISTS (\\\n                      SELECT 1 FROM messages m \\\n                       WHERE m.session_id = sessions.id \\\n                         AND m.timestamp > COALESCE(sessions.last_message_at, 0)\\\n                    )\",",
+          "to": "            \"UPDATE sessions \\\n                SET last_message_at = (\\\n                      SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = sessions.id\\\n                    )\\\n               WHERE EXISTS (SELECT 1 FROM messages m WHERE m.session_id = sessions.id)\","
+        }
+      ],
+      "tests": [
+        "lma4_open_backfills_stale_activity_only"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1799
+    },
+    {
+      "id": "MUT-7 打开库时不做回填",
+      "why": "LMA-4：引擎的新规则只管以后的消息，存量库的陈旧值必须补一次；把调用摘掉 ⇒ 「陈旧行被抬到 MAX(timestamp)」与上报的行数都红",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/schema.rs",
+          "from": "    let sessions_backfilled = backfill_last_message_at(conn)?;",
+          "to": "    let sessions_backfilled: usize = 0;"
+        }
+      ],
+      "tests": [
+        "lma4_open_backfills_stale_activity_only"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1586
+    },
+    {
+      "id": "MUT-8 日志回放又变回无条件覆盖",
+      "why": "LMA-5：`messages.rebuild_index` 是这一列的第三个写入点，而日志可能比索引旧（`rebuildSessionLogs` 只喂它读到的那些会话）⇒ 无条件覆盖会把「今天聊过」的会话拉回日志那天的时刻",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "                 ON CONFLICT(id) DO UPDATE SET last_message_at = MAX(last_message_at, excluded.last_message_at), \\",
+          "to": "                 ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at, \\"
+        }
+      ],
+      "tests": [
+        "lma5_rebuild_index_never_rewinds_and_takes_the_max_timestamp"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1759
+    },
+    {
+      "id": "MUT-9 日志回放取「最后一个元素」的时间",
+      "why": "LMA-5 的另一半：数组顺序不保证等于时间顺序（分叉 / 回退重放会把旧消息接到后面）⇒ 取最后一个会把时间列写小",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "        let last_ts = msgs.iter().map(|(f, _)| f.timestamp).max().unwrap_or(first_ts);",
+          "to": "        let last_ts = msgs.last().map(|(f, _)| f.timestamp).unwrap_or(first_ts);"
+        }
+      ],
+      "tests": [
+        "lma5_rebuild_index_never_rewinds_and_takes_the_max_timestamp"
+      ],
+      "runner": "cargo",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2647
+    },
+    {
+      "id": "MUT-10 反向对照：只改一行说明注释",
+      "why": "反向对照：注释里那行「只增不减」被改写，而**行为逐字不变** ⇒ 判据一条都不许红（证明上面那些红是行为造成的，不是「碰一下就红」）",
+      "patches": [
+        {
+          "file": "src-tauri/codem-db/src/repo.rs",
+          "from": "/// `message_at` 为 `None` = 这次调用没有可用的消息时间（只有 `messages.delete`）：",
+          "to": "/// （反向对照：只改这一行注释，行为逐字不变）\n/// `message_at` 为 `None` = 这次调用没有可用的消息时间（只有 `messages.delete`）："
+        }
+      ],
+      "tests": [
+        "lma1_upsert_index_raises_session_activity_and_never_lowers_it",
+        "lma4_open_backfills_stale_activity_only"
+      ],
+      "runner": "cargo",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 3100
+    }
+  ]
+}
