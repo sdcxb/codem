@@ -368,6 +368,12 @@ async function pausePlugin(): Promise<{ ok: boolean; message: string }> {
   const stopped = await stopPlugin();
   /* 暂停 ⇒ 托管供应商条目也要撤掉（否则供应商列表里留一条永远打不通的） */
   const unregistered = removeManagedProvider();
+  /*
+   * ★ 还要**立刻**清掉模型缓存（真机上被问到才发现的缺口）：缓存有 60 秒 TTL，不主动清的话，
+   * 暂停之后最长一分钟里模型列表仍会列出那些**已经调不通**的免费模型 —— 用户点了只会失败，
+   * 还会以为「暂停没生效」。
+   */
+  __resetPluginModelsCacheForTests();
   writePluginSetting({ enabled: false, pausedAt: Date.now() });
   if (!stopped.ok) return stopped;
   return {
@@ -384,6 +390,7 @@ async function removePlugin(): Promise<{ ok: boolean; message: string }> {
     const dir = await invoke<string>("ofm_extension_dir");
     if (await exists(dir)) await deleteDirectoryPermanent(dir);
     removeManagedProvider();
+    __resetPluginModelsCacheForTests();
     writePluginSetting({ enabled: false, pausedAt: Date.now() });
     return { ok: true, message: "插件已删除（数据目录已清空；重新启用会重新安装并重新拉取模型清单）" };
   } catch (e) {

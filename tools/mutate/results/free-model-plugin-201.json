@@ -1,8 +1,8 @@
 {
   "wave": "free-model-plugin-201",
   "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。",
-  "runAt": "2026-10-10T11:13:33.303Z",
-  "specFingerprint": "0afcccf65a64fe16725eb0b3f86b010e4b0b6f93",
+  "runAt": "2026-10-10T12:37:55.725Z",
+  "specFingerprint": "d3b44390f9cd0df85ce20910221a2bf0c92965a9",
   "files": [
     "src/core/free-model-plugin/service.ts",
     "src/core/model-config.ts",
@@ -33,7 +33,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3545
+      "ms": 3708
     },
     {
       "id": "MUT-2 暂停顺手把数据删了",
@@ -53,7 +53,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3555
+      "ms": 3689
     },
     {
       "id": "MUT-3 删除不清扩展目录（假卸载）",
@@ -73,7 +73,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3523
+      "ms": 3614
     },
     {
       "id": "MUT-4 模型清单不丢坏条目（把没有 id 的也塞进列表）",
@@ -93,7 +93,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3681
+      "ms": 3750
     },
     {
       "id": "MUT-5 关掉插件之后仍然往模型列表里塞它的模型",
@@ -113,7 +113,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3540
+      "ms": 3620
     },
     {
       "id": "MUT-6 没有 Node 也假装启动成功",
@@ -133,7 +133,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3542
+      "ms": 3646
     },
     {
       "id": "MUT-7 模型列表不再优先来自插件（挪到末尾）",
@@ -158,7 +158,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3574
+      "ms": 3619
     },
     {
       "id": "MUT-8 启用后不登记托管供应商（模型看得见但没路可走）",
@@ -178,7 +178,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3555
+      "ms": 3622
     },
     {
       "id": "MUT-9 暂停后不移除供应商条目（留一条永远打不通的）",
@@ -198,7 +198,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3535
+      "ms": 3759
     },
     {
       "id": "MUT-11 起进程前不清死锁（崩溃一次之后插件永久起不来）",
@@ -218,7 +218,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1721
+      "ms": 1726
     },
     {
       "id": "MUT-12 路径不去逐字前缀（Node 解析入口崩 EISDIR）",
@@ -243,7 +243,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1708
+      "ms": 1752
     },
     {
       "id": "MUT-13 退出时不收插件（攒孤儿 node 进程）",
@@ -263,7 +263,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1696
+      "ms": 1705
+    },
+    {
+      "id": "MUT-14 暂停后不清模型缓存（最长 60 秒里列表仍列着调不通的免费模型）",
+      "why": "OFM-9：缓存 TTL 60 秒，暂停不主动清 ⇒ 用户点了那些模型只会失败，还会以为「暂停没生效」（真机上被问到才发现的缺口）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  __resetPluginModelsCacheForTests();\n  writePluginSetting({ enabled: false, pausedAt: Date.now() });",
+          "to": "  writePluginSetting({ enabled: false, pausedAt: Date.now() });"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3659
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -283,7 +303,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3510
+      "ms": 3639
     }
   ]
 }

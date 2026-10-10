@@ -194,6 +194,34 @@ describe("OFM：免费模型插件的独立扩展语义", () => {
     expect(mockInvoke, "失败路径不许去调起进程").not.toHaveBeenCalledWith("ofm_start", expect.anything());
   });
 
+  it("OFM-9：暂停/删除后模型清单**立刻**消失（不等 60 秒 TTL），原有列表原样回来", async () => {
+    /* 用户真机提问引出来的缺口：缓存 TTL 60 秒，不主动清的话暂停后列表还挂着调不通的模型 */
+    settingStore["codem-settings"] = { providers: [{ id: "deepseek", name: "DeepSeek", apiKey: "sk-real" }] };
+    mockReadFile.mockImplementation(async (p: string) =>
+      String(p).endsWith("settings.json") ? JSON.stringify({ standalonePort: 18937, forwardKey: "k" }) : "",
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ id: "free-1", name: "Free 1" }] }) })));
+
+    const started = await freeModelPlugin.start();
+    expect(started.ok).toBe(true);
+    expect(await freeModelPlugin.models.refresh(), "前提：启用时清单非空").toEqual([{ id: "free-1", name: "Free 1" }]);
+    expect(freeModelPlugin.models.cached(), "前提：同步缓存里也有").toHaveLength(1);
+
+    await freeModelPlugin.pause();
+    expect(
+      freeModelPlugin.models.cached(),
+      "暂停后必须**立刻**空（否则最长一分钟里列表还列着已经调不通的免费模型）",
+    ).toEqual([]);
+
+    /* 删除同理 */
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ id: "free-2", name: "Free 2" }] }) })));
+    settingStore[freeModelPlugin.settingKey] = { enabled: true };
+    await freeModelPlugin.models.refresh();
+    expect(freeModelPlugin.models.cached(), "前提：重新启用后缓存又有").toHaveLength(1);
+    await freeModelPlugin.remove();
+    expect(freeModelPlugin.models.cached(), "删除后也必须立刻空").toEqual([]);
+  });
+
   it("OFM-8：启用成功后**登记托管供应商**（落库不带密钥、暂停时干净移除、别人的条目不动）", async () => {
     /* 用户本来就有两条供应商 —— 全程都必须原样在 */
     settingStore["codem-settings"] = {

@@ -192,6 +192,21 @@
       "expectRed": true
     },
     {
+      "id": "MUT-14 暂停后不清模型缓存（最长 60 秒里列表仍列着调不通的免费模型）",
+      "why": "OFM-9：缓存 TTL 60 秒，暂停不主动清 ⇒ 用户点了那些模型只会失败，还会以为「暂停没生效」（真机上被问到才发现的缺口）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  __resetPluginModelsCacheForTests();\n  writePluginSetting({ enabled: false, pausedAt: Date.now() });",
+          "to": "  writePluginSetting({ enabled: false, pausedAt: Date.now() });"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
       "id": "MUT-10 反向对照：只改一行说明注释",
       "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
       "patches": [
