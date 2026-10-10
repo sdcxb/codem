@@ -7,6 +7,8 @@
 
 import { getSettingJSON } from "./storage/settings";
 import { getMergedDynamicModels } from "./llm/model-catalog";
+// 第 201 波：免费模型插件的清单（同步读缓存；取不到就返回空 ⇒ 原样回退）
+import { freeModelPlugin } from "./free-model-plugin/service";
 
 export interface ModelOption {
   id: string;
@@ -65,6 +67,18 @@ export function getConfiguredApiModels(): ModelOption[] {
     const dynamicModels = getMergedDynamicModels();
 
     const result: ModelOption[] = [];
+    /**
+     * 第 201 波（用户要求「开启后对话优先从这个插件里获取模型列表服务」）：
+     * **免费模型插件**的清单排在最前 —— 它是"本机现在就可用、不需要 key"的那批，
+     * 用户最可能想先看到它们。
+     *
+     * 取不到（没启用 / 没起来 / 没装 Node / 缓存过期）⇒ `cachedPluginModels()` 返回空数组
+     * ⇒ **列表原样回退**，绝不让模型选择器空掉（这是这条集成最要紧的一条纪律）。
+     */
+    for (const m of freeModelPlugin.models.cached()) {
+      result.push({ id: m.id, name: m.name });
+    }
+
     for (const p of providers) {
       if (!p.apiKey || p.id === "mimo") continue;
 

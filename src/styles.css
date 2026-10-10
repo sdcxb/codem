@@ -19796,7 +19796,175 @@ html[data-contrast="high"] {
   background: var(--accent-muted);
 }
 
-/* ---- 第 200 波：已拒绝记录（挡住同类自动记忆，可审阅可清空） ---- */
+/* ---- 第 201 波：免费模型插件卡片（独立本地服务的控制面） ---- */
+.ofm-card {
+  margin: var(--space-6) var(--space-8) 0;
+  padding: var(--space-6);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+
+.ofm-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.ofm-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.ofm-card-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: var(--fs-2xs);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+}
+
+.ofm-card-state.is-ok {
+  color: var(--success-content);
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
+.ofm-card-state.is-warn {
+  color: var(--warning-content);
+  background: var(--warning-surface);
+}
+
+.ofm-card-state.is-off {
+  color: var(--text-muted);
+}
+
+.ofm-card-note {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.ofm-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.ofm-btn {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--fs-2xs);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ofm-btn:is(:hover, :focus-visible):not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ofm-btn.primary {
+  color: var(--success-content);
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
+.ofm-btn.danger {
+  color: var(--error-content);
+  background: var(--error-surface);
+  border-color: var(--error-border);
+}
+
+.ofm-btn:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.ofm-card-notice {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--success-content);
+}
+
+.ofm-card-error {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--error-content);
+}
+
+.ofm-card-log {
+  margin-bottom: var(--space-3);
+}
+
+.ofm-card-log-title {
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.ofm-card-log-body {
+  max-height: 160px;
+  padding: var(--space-3);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.ofm-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.ofm-card-models {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-secondary);
+}
+
+.ofm-card-models-title {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.ofm-card-models-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ofm-model-chip {
+  padding: 0 var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-full);
+}
+
 .mc-rejections {
   padding: var(--space-6) var(--space-8);
   background: var(--bg-tertiary);

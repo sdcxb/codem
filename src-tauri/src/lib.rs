@@ -32,6 +32,8 @@ mod phone;
 mod secret;
 use crate::secret::{secret_backend_available, secret_seal, secret_unseal};
 mod storage;
+/// 「免费模型插件」（dsh-our-free-model 的 standalone 本地服务）的独立进程生命周期。
+mod ofm;
 
 // ========== PTY Manager ==========
 // Interactive terminal support using portable-pty.
@@ -4449,6 +4451,8 @@ let app = tauri::Builder::default()
         .manage(js_sandbox::PendingHostCalls::default())
         // 动态插件的沙箱会话（持久环境 + 宿主回调 guest 函数）
         .manage(js_sandbox_session::SandboxSessions::default())
+        // 「免费模型插件」的独立进程句柄：起 / 停 / 查都走 `ofm.rs`（与 MCP 同一条模式）
+        .manage(ofm::OfmState::default())
         .manage(AppState {
             providers: Mutex::new(vec![
                 ProviderConfig {
@@ -4516,6 +4520,13 @@ codegraph_install,
 path_exists,
             file_version,
             mcp_stdio_connect,
+            // 「免费模型插件」的进程生命周期（独立扩展：起 / 停 / 查；路径由宿主给）
+            ofm::ofm_extension_dir,
+            ofm::ofm_bundled_dir,
+            ofm::ofm_start,
+            ofm::ofm_stop,
+            ofm::ofm_state,
+            ofm::ofm_log_tail,
             mcp_stdio_request,
             mcp_stdio_disconnect,
             glob_search,
@@ -4822,6 +4833,14 @@ path_exists,
                 // 第 185 波：返回值必须被消费 —— `LockBusy` 表示**没能回收**，
                 // 函数内部已经按结局落了日志（见 mcp_shutdown_log_line）。
                 let _ = kill_all_mcp_processes(&app_handle.state::<AppState>());
+                /*
+                 * 第 201 波：**免费模型插件也要跟着退**。
+                 *
+                 * 它是我们 spawn 的长驻 Node 服务；不在这里收掉就会变成孤儿进程 ——
+                 * 真机上当场见过：重装之后旧实例还占着 18937，新实例只能换到 18938
+                 * （插件自己会自愈，但用户机器上就会攒下一串看不见的 node）。
+                 */
+                ofm::shutdown_ofm(&app_handle.state::<ofm::OfmState>());
                 clear_active_run_marker(app_handle);
             }
             tauri::RunEvent::Exit => {
@@ -4830,6 +4849,7 @@ path_exists,
                 runtime_log::append_line("INFO", "process exit (RunEvent::Exit)");
                 // 兜底：ExitRequested 没走到（或之后又有连接建立）时，这里再收一次。
                 let _ = kill_all_mcp_processes(&app_handle.state::<AppState>());
+                ofm::shutdown_ofm(&app_handle.state::<ofm::OfmState>());
             }
             tauri::RunEvent::WindowEvent {
                 label,

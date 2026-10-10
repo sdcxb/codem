@@ -35,6 +35,8 @@ import {
 import { tryGetCtx } from '../core/consumer'
 import { runtimePluginList } from '../core/provider/plugin-registry-provider'
 import { PluginMarketTab } from './plugin-market/PluginMarketTab'
+// 第 201 波：免费模型插件（独立本地服务）的控制卡片
+import { FreeModelPluginCard } from './FreeModelPluginCard'
 // P2-15: 初始化失败要经既有上报通道（并配 setToast 的可见提示），不再静默吞掉
 import { reportActionFailure } from '../core/storage/persist-failure'
 
@@ -685,13 +687,21 @@ export function PluginManager({ onClose }: PluginManagerProps) {
 
       {/* 插件市场 Tab：加载 dsh 插件市场（浏览/评估/安装等价） */}
       {tab === 'market' ? (
-        <PluginMarketTab
-          manager={manager}
-          stateVersion={stateVersion}
-          zh={zh}
-          onToggle={handleToggle}
-          notify={(msg, type) => setToast({ msg, type })}
-        />
+        <>
+          {/*
+            第 201 波：「免费模型插件」（dsh-our-free-model 的 standalone 本地服务）的独立控制卡片。
+            它**不是** cordis 插件（不受这里的启用/禁用注册表管），所以单独一张卡片、单独三个动作 ——
+            用户的要求就是"独立存在、可开启/暂停/删除、不影响 codem"。
+          */}
+          <FreeModelPluginCard />
+          <PluginMarketTab
+            manager={manager}
+            stateVersion={stateVersion}
+            zh={zh}
+            onToggle={handleToggle}
+            notify={(msg, type) => setToast({ msg, type })}
+          />
+        </>
       ) : (
         <>
       {/* Search */}

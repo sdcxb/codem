@@ -157,3 +157,7 @@ codem-runtime-*.log
 # 覆盖率与重复率报告（npm run verify 的产物，体积大且每次重新生成）
 /coverage/
 /jscpd-report/
+
+# 第 201 波：免费模型插件的内置副本（构建时按 tools/vendor/ofm/VENDOR.json 的 commit 现拉；
+# 上游渠道包里内嵌了 Google OAuth 凭据，GitHub 推送保护会拦下，故不进仓库）
+src-tauri/resources/ofm/

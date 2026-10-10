@@ -10945,6 +10945,121 @@
     "font-weight": "600",
     "margin": "0"
   },
+  "ofm-btn": {
+    "background": "var(--bg-tertiary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-primary)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-2xs)",
+    "padding": "var(--space-2) var(--space-5)"
+  },
+  "ofm-card": {
+    "background": "var(--bg-secondary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-md)",
+    "margin": "var(--space-6) var(--space-8) 0",
+    "padding": "var(--space-6)"
+  },
+  "ofm-card-actions": {
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-3)",
+    "margin-bottom": "var(--space-4)"
+  },
+  "ofm-card-error": {
+    "color": "var(--error-content)",
+    "font-size": "var(--fs-2xs)",
+    "margin-bottom": "var(--space-3)"
+  },
+  "ofm-card-head": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-4)",
+    "margin-bottom": "var(--space-4)"
+  },
+  "ofm-card-log": {
+    "margin-bottom": "var(--space-3)"
+  },
+  "ofm-card-log-body": {
+    "background": "var(--bg-tertiary)",
+    "border": "1px solid var(--border-secondary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
+    "font-family": "var(--font-mono)",
+    "font-size": "var(--fs-2xs)",
+    "max-height": "160px",
+    "overflow": "auto",
+    "overflow-wrap": "anywhere",
+    "padding": "var(--space-3)",
+    "white-space": "pre-wrap"
+  },
+  "ofm-card-log-title": {
+    "color": "var(--text-primary)",
+    "font-size": "var(--fs-2xs)",
+    "font-weight": "var(--weight-medium)",
+    "margin-bottom": "var(--space-2)"
+  },
+  "ofm-card-meta": {
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "font-size": "var(--fs-2xs)",
+    "gap": "var(--space-4)",
+    "margin-bottom": "var(--space-4)"
+  },
+  "ofm-card-models": {
+    "border-top": "1px solid var(--border-secondary)",
+    "padding-top": "var(--space-3)"
+  },
+  "ofm-card-models-list": {
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-2)"
+  },
+  "ofm-card-models-title": {
+    "color": "var(--text-primary)",
+    "font-size": "var(--fs-2xs)",
+    "font-weight": "var(--weight-medium)",
+    "margin-bottom": "var(--space-3)"
+  },
+  "ofm-card-note": {
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-2xs)",
+    "margin-bottom": "var(--space-4)"
+  },
+  "ofm-card-notice": {
+    "color": "var(--success-content)",
+    "font-size": "var(--fs-2xs)",
+    "margin-bottom": "var(--space-3)"
+  },
+  "ofm-card-state": {
+    "align-items": "center",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-full)",
+    "color": "var(--text-secondary)",
+    "display": "flex",
+    "font-size": "var(--fs-2xs)",
+    "gap": "var(--space-2)",
+    "padding": "0 var(--space-3)"
+  },
+  "ofm-card-title": {
+    "align-items": "center",
+    "color": "var(--text-primary)",
+    "display": "flex",
+    "font-size": "var(--fs-sm)",
+    "font-weight": "var(--weight-semibold)",
+    "gap": "var(--space-2)"
+  },
+  "ofm-model-chip": {
+    "background": "var(--bg-tertiary)",
+    "border": "1px solid var(--border-secondary)",
+    "border-radius": "var(--radius-full)",
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-2xs)",
+    "padding": "0 var(--space-3)"
+  },
   "onboarding-tour": {
     "inset": "0",
     "position": "fixed",

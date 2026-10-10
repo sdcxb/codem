@@ -1,0 +1,11 @@
+{
+  "note": "我们对内置副本施加的补丁（构建时由 tools/vendor/fetch-ofm.mjs 自动施加并断言生效）。改这里等于改产品行为，请连同判据 OFM-VENDOR-1 一起看。",
+  "patches": [
+    {
+      "file": "src/forward.js",
+      "why": "上游只在 OPTIONS 预检与 SSE 流式响应里发 CORS 头，**普通 JSON 响应（/health、/v1/models、错误应答）没有** ⇒ Codem 的界面（WebView2，跨源）会被浏览器拦下，报 Failed to fetch；而预检是通的，所以真机表现极像「服务没起来」。补丁把上游自己的 corsHeaders() 补齐到 JSON 这条路，没有引入新的信任面（服务只监听回环地址，/v1/* 仍要 Bearer Key）。",
+      "from": "function json(res, status, payload) {\n  const body = JSON.stringify(payload)\n  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), 'cache-control': 'no-store' })",
+      "to": "function json(res, status, payload) {\n  const body = JSON.stringify(payload)\n  res.writeHead(status, { ...corsHeaders(), 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), 'cache-control': 'no-store' })"
+    }
+  ]
+}

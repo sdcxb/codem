@@ -2,8 +2,8 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 249,
-    "triaged": 249,
+    "total": 251,
+    "triaged": 251,
     "pending": 0
   },
   "sites": [
@@ -1732,6 +1732,20 @@
       "status": "triaged",
       "reason": "反馈写入抛错 ⇒ 未保存",
       "family": "前端 store 的读/写失败：历史读不出来（**本次读失败**）与消息/反馈写不进去（**写盘失败**）"
+    },
+    {
+      "site": "src/App.tsx::freeModelPlugin.start::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "免费模型插件**没启动起来**（没装 Node / 端口被占 / 上游取不到清单）⇒ advisory：这不是「Codem 的某次操作失败」，而是**另一个独立扩展的状态发现** —— 用户可以去装 Node 或到插件卡片上重试，而 Codem 自身功能完全不受影响（这正是「独立存在、不影响 codem」那条要求）。用 action 的语气会让用户以为 Codem 坏了。",
+      "round": 201
+    },
+    {
+      "site": "src/App.tsx::freeModelPlugin.start::#2",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "启动钩子里起插件时**抛了异常**（文件系统/进程权限/宿主命令不可用）⇒ advisory，理由同上：受影响的只有那个独立扩展，用户的应对是「到插件卡片看状态/手动开启」，Codem 自己照常可用。",
+      "round": 201
     }
   ],
   "_families": {

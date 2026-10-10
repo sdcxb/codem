@@ -1,0 +1,19 @@
+{
+  "name": "dsh-our-free-model（standalone 本地服务）",
+  "upstream": "https://github.com/Ebony-Vinyl/dsh-our-free-model",
+  "commit": "f9cdb664f00738e14106290ff511f34455904122",
+  "license": "MIT",
+  "whyNotCommitted": "⚠️ 内置副本**不进 git**：上游两个渠道包里内嵌了 Google OAuth 的 client id / client secret（packages/standalone/channels/business.mjs 与 vendor/channel-pack/pack.js 各一处），GitHub 推送保护（GH013）会拦下 —— 那是上游为 Google Code Assist 渠道内嵌的公共客户端凭据，不该由 Codem 的仓库保管。改成构建时按本文件的 commit 现拉（tools/vendor/fetch-ofm.mjs，逐文件比对 closure.json 的 sha256）。",
+  "how": "整棵运行树减去纯开发产物（.git/.github/docs/scripts/packages/standalone/frontend 源码/vendor 的 TS 源码/node_modules/*.map）；不用上游过期的 scripts/pack-standalone.mjs sourceFiles 清单",
+  "excluded": [
+    ".git",
+    ".github",
+    "docs",
+    ".trae-html-share-packages",
+    "scripts",
+    "packages/standalone/frontend",
+    "vendor/channel-pack/src",
+    "node_modules"
+  ],
+  "note": "Codem 以**独立扩展**方式运行它：数据目录独立、可暂停/删除；对话是否走它由用户在插件卡片里决定。"
+}

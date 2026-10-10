@@ -4566,25 +4566,50 @@ node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑
 
 ### 一、本轮状态（已提交 / 已发版 / 工作区还留着什么）
 
-- **最新波（第 200 波，2026-10-10）**：**已拒绝的类似记忆不再回来**（用户真机直报：「我已经拒绝的类似
-  记忆，不要再自动写入和让我审批…我在聊天里主动让它记忆的放行」）。①拒绝/删除**待批准**条目时留一条
-  `MemoryRejection`（存进 payload 的新 `rejections` 段，**空表时不写该字段** —— 体积棘轮 `MEM-IPC-1b`
-  当场抓住了多出的 32 字节）；②提取时在查重**之前**先按文本全局匹配已拒绝记录（真机上同一事实跨桶散着，
-  按桶比拦不住），命中 ⇒ 不写入、不进待批准；③提示词新增 `explicit` 字段，用户**明确要求记住**的
-  跳过拒绝判定、可顶掉已有自动条目、且**直接生效**；④体检显示「已拒绝 N 条」+ 列表 + 「清空已拒绝记录」
-  （误点不该永久锁死）；记录有界 60 条、**按 Map 插入顺序丢最旧**（不按时间 —— 毫秒并列时会把最新的丢掉）。
-  判据 `REJ-1..8` + `MEM-CHECK-REJ-1`；变异波次 `memory-rejection-200`（9 条）。
-  钻取复核（装机版 1.16.308 + 副本）：面板点「拒绝」⇒ 回执「已拒绝并删除 …」、待批准归零 ⇒
-  体检「已拒绝 1 条」+ 列表里有那条标题 ⇒ 点「清空已拒绝记录」⇒ 那一节消失、摘要回「已拒绝 0 条」、
-  控制台 error 0；副本 49→48 条、待批准 28→27，**真库 48/27 一个字节没动**。
-  - **如实留白**：真机上**没有**跑一次真实的自动提取回合（要一次 LLM 调用）⇒「同类不再被写入」这一步
-    由 9 条判据 + 9 条变异覆盖，真机验的是"拒绝留痕 / 可见 / 可清空"这条界面链路。
-  - **门禁读数**：`tsc` **0**；全量 **656 文件 / 7975 通过 / 17 跳过 / 0 红**；`audit`/`verify`/`gaplist`/
-    变异产物全 **0**；变异波次 **26 个全部 `restored:true`**。
-  - **版本号**：**1.16.308** —— **已发布**（用户 2026-10-10 拍板「发版吧」）：`v1.16.308` 已建 release、
-    5 个资产、`Latest` 已确认、`verify-update-manifest.mjs --remote` **7 项全过**、更新器入口隔 50 秒后
-    实测返回 **1.16.308**（两个平台键都在）；发布说明按标准样式（不写波次号/内部编号），对标数字沿用
-    上一稳定版并注明本版未重跑；说明原文归档到 `docs/releases/v1.16.308.md`。
+- **最新波（第 201 波，2026-10-10）**：**免费模型插件（dsh-our-free-model）以"独立扩展"集成进 Codem**
+  （用户要求：「咱们 codem 集成这个插件，注意这个插件要独立存在，可以开启、暂停、删除，不影响 codem
+  的使用。集成后，默认开启，开启后对话优先从这个插件里获取模型列表服务」）。
+  - **集成的对象是它的 standalone 本地服务**（`packages/standalone/cli.mjs`），**不是**它的 DSH 插件入口
+    —— 后者是 cordis 插件、依赖 `@deepseek-ai/dsh-*`，Codem 用不了。standalone 是个只监听回环地址的
+    Node HTTP 服务（`GET /v1/models`、`POST /v1/chat/completions`，OpenAI 兼容含 SSE），**零运行时依赖**。
+  - **内置**：`src-tauri/resources/ofm/`（100 文件 / 7.87 MB，MIT，`VENDOR.json` 锚定上游 commit
+    `f9cdb66`，`PATCHES.md` 记录我们打的 1 行补丁）；`bundle.resources` 随安装包走。
+    ⚠️ 上游 `scripts/pack-standalone.mjs` 的 `sourceFiles` 清单**已过期**（照它拷 ⇒ 启动即
+    `ERR_MODULE_NOT_FOUND: src/image-pricing.js`）⇒ 改成"整棵运行树减去纯开发产物"。
+  - **生命周期**：`src-tauri/src/ofm.rs`（起/停/查/日志；`RunEvent::ExitRequested|Exit` 里 `shutdown_ofm`
+    兜住孤儿）+ `src/core/free-model-plugin/service.ts`（默认开启、Node 解析复用 zvec-grep、
+    读插件的 `forwardKey` 与**真实端口**、模型清单进程内缓存给同步路径用）。
+  - **模型列表优先**：`model-config.ts` 把插件清单排最前，取不到原样回退（`OFM-7`）。
+  - **托管供应商**：落库只写 `id/name/baseUrl/custom/managedBy`（**不带密钥**），密钥在启动时
+    **运行时注册**进引擎（`registerProviderInEngine`）；暂停/删除两边一起撤（`OFM-8`）。
+  - **真机踩到并修掉的三件（都写进代码注释了）**：
+    (a) Tauri `resource_dir()` 给的是**逐字路径** `\\?\C:\…` ⇒ 交给 Node 当入口路径会在 `resolveMainPath`
+        崩成 `EISDIR: lstat 'C:'`（症状极误导：`ofm_start` 报成功、12 秒后进程已死、`/health` 永不通）
+        ⇒ `strip_verbatim()`；
+    (b) 子进程 stdout/stderr 原本 `eprintln!` ⇒ GUI 里等于丢掉 ⇒ 落盘 `plugin.log` + `ofm_log_tail`
+        （**正是它把 (a) 定性的**，卡片上"可看运行日志"那句话也靠它兑现）；
+    (c) 上游只在 `OPTIONS` 预检与 SSE 里发 CORS 头，**JSON 响应没有** ⇒ 浏览器侧 `Failed to fetch`
+        （预检却通，最容易被误判成"服务没起来"）⇒ 内置副本打 1 行补丁 + `OFM-VENDOR-1` 守住。
+    (d) 供应商密钥写进 `settings.providers` 会被本仓的**凭据脱敏**清成占位符（真机实测长度 0）⇒ 改成
+        运行时注册（不落盘）。
+  - **判据**：`OFM-1..8` + `OFM-VENDOR-1..3`；变异波次 `free-model-plugin-201`（**10 条全红**，含反向对照）。
+  - **真机（装机版 1.16.309）**：卡片「运行中 · 端口 18937 · 28 个模型」；渲染侧跨源 `fetch /health` 200、
+    `/v1/models` 200（28 条）；**真发对话**：`mimo-v2.6-flash-free` → 200「收到」(2.99s)、
+    `nemotron-3-ultra-free` → 200「收到」(1.29s)、`jev-1.13-free` → 502「Model does not support this
+    protocol.」（该模型不吃 chat/completions，属上游模型属性，插件仍把它列在选择器里）；
+    数据库核对：`codem-settings.providers` 里托管条目 1 条（`id=free-model`、baseUrl 用当下端口、
+    `custom=true`），其它 6 条供应商（mimo/openai/anthropic/deepseek/moonshot/gemini）原样未动。
+  - **如实留白**：卡片里那个"模型下拉"是**只读展示**（本仓现状：`ModelSelector` 没有 `onModelChange`
+    时不可点，对话按**档案槽位**的 provider+model 发请求）⇒"对话优先拿到它的模型清单"是达成了
+    （列表优先 + 供应商注册），"在输入框里点一下就把当前对话切到某个免费模型"需要另外一波动档案选择 UX。
+  - **门禁读数**：`tsc` **0**；全量 **658 文件 / 7986 通过 / 17 跳过 / 0 红**；`audit`/`verify`/`gaplist`/
+    变异产物/UI 一致性全 **0**；变异波次 **27 个全部 `restored:true`**。
+  - **版本号**：**1.16.309**（已构建 + 签名 + 静默安装 + 钻取复核；**尚未发版**，发版前问用户）。
+
+- **上一波（第 200 波，2026-10-10）**：**已拒绝的类似记忆不再回来**（用户真机直报）。留痕 + 写入前全局
+  匹配 + `explicit` 放行 + 体检可审阅可清空；判据 `REJ-1..8` + `MEM-CHECK-REJ-1`，变异波次
+  `memory-rejection-200`（9 条）；已发布为 `v1.16.308`（5 个资产、`Latest`、远端清单 7/7、更新器入口
+  实测返回 1.16.308）。
 - **上一波（第 199 波，2026-10-10）**：**待批准条目显示作用域**（用户真机直报「没显示类型是平台级、
   项目级、还是对话级，导致我没法判断是否批准」）。面板待批准区每条加作用域徽标（三色 + 悬停说明
   「批准之后会怎样」）、未知作用域原样显示、无归属键的额外标「无归属」；文案收敛到唯一一份

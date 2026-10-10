@@ -1,0 +1,210 @@
+{
+  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。",
+  "mutations": [
+    {
+      "id": "MUT-1 默认开启失效（没有设置时按关闭处理）",
+      "why": "OFM-1：用户要求「集成后默认开启」；返回 false 会让插件在装完之后一声不响地不启用",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  if (!raw || typeof raw !== \"object\") return { enabled: true };",
+          "to": "  if (!raw || typeof raw !== \"object\") return { enabled: false };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 暂停顺手把数据删了",
+      "why": "OFM-2：暂停 ≠ 卸载 —— 删数据会让用户下次启用时账号/缓存全丢",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  const stopped = await stopPlugin();\n  /* 暂停 ⇒ 托管供应商条目也要撤掉（否则供应商列表里留一条永远打不通的） */\n  const unregistered = removeManagedProvider();",
+          "to": "  const stopped = await stopPlugin();\n  await deleteDirectoryPermanent(await invoke<string>(\"ofm_extension_dir\"));\n  const unregistered = removeManagedProvider();"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 删除不清扩展目录（假卸载）",
+      "why": "OFM-3：删除必须把扩展目录清掉，否则「删除」只是关了个开关（用户以为卸载干净了）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "    if (await exists(dir)) await deleteDirectoryPermanent(dir);",
+          "to": "    void dir;"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 模型清单不丢坏条目（把没有 id 的也塞进列表）",
+      "why": "OFM-4：坏条目进列表会让模型选择器出现一个选不中的空项",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "      .filter((m): m is { id: string; name?: unknown } => typeof m?.id === \"string\" && m.id.length > 0)\n      .map((m) => ({ id: m.id, name: typeof m.name === \"string\" && m.name.length > 0 ? m.name : m.id }));",
+          "to": "      .map((m) => ({ id: String((m as { id?: unknown })?.id ?? \"\"), name: String((m as { id?: unknown })?.id ?? \"\") }));"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 关掉插件之后仍然往模型列表里塞它的模型",
+      "why": "OFM-5：用户关了它，列表就不该再出现那些模型（否则点了也调不通）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  const models = readPluginSetting().enabled ? await listPluginModels() : [];",
+          "to": "  const models = await listPluginModels();"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 没有 Node 也假装启动成功",
+      "why": "OFM-6：这条集成最怕的就是「界面说已启用、实际什么都没跑」",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  const node = await resolvePluginNode();\n  if (!node.exe) {\n    return {\n      ok: false,\n      message: \"没有找到可用的 Node.js（需要 22 或更高）⇒ 插件无法启动。装一个 Node 之后重试即可。\",\n    };\n  }",
+          "to": "  const node = await resolvePluginNode();\n  if (!node.exe) {\n    return { ok: true, message: \"插件已启动（未检测到 Node，跳过启动）\" };\n  }"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-7 模型列表不再优先来自插件（挪到末尾）",
+      "why": "OFM-7：用户要求「开启后对话优先从这个插件里获取模型列表服务」",
+      "patches": [
+        {
+          "file": "src/core/model-config.ts",
+          "from": "    for (const m of freeModelPlugin.models.cached()) {\n      result.push({ id: m.id, name: m.name });\n    }\n\n    for (const p of providers) {",
+          "to": "    for (const p of providers) {"
+        },
+        {
+          "file": "src/core/model-config.ts",
+          "from": "    return result;\n  } catch {\n    return [];\n  }\n}",
+          "to": "    for (const m of freeModelPlugin.models.cached()) {\n      result.push({ id: m.id, name: m.name });\n    }\n    return result;\n  } catch {\n    return [];\n  }\n}"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-8 启用后不登记托管供应商（模型看得见但没路可走）",
+      "why": "OFM-8：只在模型列表里塞名字、不登记供应商 ⇒ 对话那条路根本发不出请求（用户以为选上就能用）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "    const registered = upsertManagedProvider({ port, key: runtime.key });",
+          "to": "    const registered = { ok: true, message: \"（变异：跳过供应商登记）\" };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-9 暂停后不移除供应商条目（留一条永远打不通的）",
+      "why": "OFM-8 的后半句：暂停必须把托管条目撤掉，否则供应商列表里留一条死的（还会被当成已配置）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  const unregistered = removeManagedProvider();",
+          "to": "  const unregistered = { ok: true, message: \"（变异：不移除）\" };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-11 起进程前不清死锁（崩溃一次之后插件永久起不来）",
+      "why": "OFM-HOST-2：真机上正是这个 service.lock 残留把新实例挡在门外（界面只说「已启用，尚未启动」）",
+      "patches": [
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "    clear_stale_lock(&data_dir);\n",
+          "to": ""
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-12 路径不去逐字前缀（Node 解析入口崩 EISDIR）",
+      "why": "OFM-HOST-1：真机上就是这条让 ofm_start 报成功、进程却立刻死掉。⚠️ 两个调用点（bundled 里的 resource/dev 分支）必须**一起**拆：只拆一处时另一处会把行为兜住 ⇒ 判据照样绿",
+      "patches": [
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "        return Ok(strip_verbatim(resource));",
+          "to": "        return Ok(resource.to_string_lossy().to_string());"
+        },
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "        return Ok(strip_verbatim(dev));",
+          "to": "        return Ok(dev.to_string_lossy().to_string());"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-13 退出时不收插件（攒孤儿 node 进程）",
+      "why": "OFM-HOST-3：真机上见过旧实例占着 18937、新实例只能换端口",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "                 * 真机上当场见过：重装之后旧实例还占着 18937，新实例只能换到 18938\n                 * （插件自己会自愈，但用户机器上就会攒下一串看不见的 node）。\n                 */\n                ofm::shutdown_ofm(&app_handle.state::<ofm::OfmState>());\n",
+          "to": "                 * 真机上当场见过：重装之后旧实例还占着 18937，新实例只能换到 18938\n                 * （插件自己会自愈，但用户机器上就会攒下一串看不见的 node）。\n                 */\n"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-10 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": " * ## 它是什么",
+          "to": " * ## 它是什么（反向对照：只改这一行注释）"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": false
+    }
+  ]
+}

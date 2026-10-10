@@ -275,6 +275,8 @@ import { PluginManager } from "./components/PluginManager";
 import { SkillManager } from "./components/SkillManager";
 import { MemoryManager } from "./components/MemoryManager";
 import { projectIdFromCwd, safeMemoryText } from "./core/memory/memory";
+// 第 201 波：免费模型插件（dsh-our-free-model standalone）—— 独立本地服务 + 模型清单优先
+import { freeModelPlugin } from "./core/free-model-plugin/service";
 // S4 / O-45：记忆面板与外壳角标的作用域**唯一实现**（两侧不可能读到不同的 ctx）
 import { memoryPanelScope } from "./core/memory/panel-scope";
 import { SessionRecovery } from "./components/SessionRecovery";
@@ -369,7 +371,7 @@ import { deliverOwnedMessage } from "./core/ui/loop-owned-message";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
 import { debugLog } from "./core/debug";
-import { composePersistAlertText, reportActionFailure, PERSIST_WITHDRAWN_EVENT } from "./core/storage/persist-failure";
+import { composePersistAlertText, reportActionFailure, reportAdvisory, PERSIST_WITHDRAWN_EVENT } from "./core/storage/persist-failure";
 import { ensureSecretsHydrated, migrateProviderKeysToSealed, reclaimSealedPlaintextResidue } from "./core/storage/secret-store";
 import { reportCredentialStartupIssues } from "./core/storage/credential-startup-report";
 import { installRendererEvidence, reportRendererCrashIfAny } from "./core/diagnostics/renderer-evidence";
@@ -529,6 +531,38 @@ setGlobalCwd(currentProject?.path || "");
       // 即使 Cordis 初始化失败，也继续运行现有功能
       setCordisReady(true);
     });
+  }, []);
+
+  /**
+   * 第 201 波：**免费模型插件默认开启** —— 启动时若它是启用状态（没有设置也算启用），
+   * 就把它的本地服务带起来，并把模型清单刷进缓存（于是模型列表优先显示它的模型）。
+   *
+   * 三条纪律：
+   * 1. **不阻塞启动**（`void` + 内部自己 catch）：它起不来绝不能影响 Codem 自己用；
+   * 2. **失败要说出去**：走 advisory（"发现 + 建议"）通道，日志里留下真原因，
+   *    不用 `console.warn` 静默吞掉（本仓的 `audit:false-success` 盯的就是这个）；
+   * 3. **不改任何 Codem 侧的状态**：只是起它、读它的清单（用户删了/暂停了都不受影响）。
+   */
+  useEffect(() => {
+    void (async () => {
+      try {
+        if (!freeModelPlugin.readSetting().enabled) return;
+        const started = await freeModelPlugin.start();
+        if (!started.ok) {
+          reportAdvisory("freeModelPlugin.start", started.message, {
+            title: "免费模型插件没有启动起来",
+            nextStep: "到「插件管理 → 插件市场」那张卡片上点「刷新状态」看真实原因；装一个 Node.js 22+ 之后重试即可。",
+          });
+          return;
+        }
+        await freeModelPlugin.models.refresh();
+      } catch (e) {
+        reportAdvisory("freeModelPlugin.start", e instanceof Error ? e.message : String(e), {
+          title: "免费模型插件启动时出错",
+          nextStep: "到「插件管理 → 插件市场」手动开启；这不会影响 Codem 自身的模型。",
+        });
+      }
+    })();
   }, []);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
