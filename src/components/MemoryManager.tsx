@@ -121,6 +121,15 @@ const DeleteIcon = ActionIcons.delete;
 export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerProps) {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [pending, setPending] = useState<MemoryEntry[]>([]);
+  /**
+   * 待批准区里**被勾选**的条目 id（第 196 波新增的批量同意/拒绝）。
+   *
+   * 为什么不放在 `pending` 数组里当字段：勾选是**界面瞬态**（不是记忆数据），
+   * 不该进 payload、也不该在刷新时被"读回来"。
+   * 它必须跟着 `pending` 一起收敛（见下面的 `useEffect`）—— 否则批处理完/条目被别处删掉后，
+   * 一个已经不存在的 id 留在选中集合里，下一次点「批量拒绝」就会带着它去算数（"幽灵选中"）。
+   */
+  const [selectedPending, setSelectedPending] = useState<Set<string>>(new Set());
   const [batches, setBatches] = useState<MemoryBatch[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MemorySearchResult[]>([]);
@@ -243,6 +252,58 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
   const handleReject = (id: string) => {
     const removed = getMemoryService().reject(id);
     setNotice(removed ? `已拒绝并删除 ${id}。` : `拒绝失败：未找到或不在待批准状态。`);
+    loadEntries();
+  };
+
+  /* ===== 第 196 波：勾选 + 批量同意 / 批量拒绝（含全选） ===== */
+
+  /** 勾选/取消勾选一条 */
+  const togglePendingSelected = (id: string) => {
+    setSelectedPending((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  /** 全选 / 全不选（判据是"当前是不是全选中"，不是"集合非空"） */
+  const toggleSelectAllPending = () => {
+    setSelectedPending((prev) => {
+      const all = pending.length > 0 && pending.every((p) => prev.has(p.id));
+      return all ? new Set() : new Set(pending.map((p) => p.id));
+    });
+  };
+
+  /**
+   * 选中集合必须**跟着待批准列表收敛**。
+   *
+   * 两条都要挡住：① 批处理之后（那些 id 已经不在待批准区了）选中状态必须清掉；
+   * ② 条目在别处被批/删/改（例如体检那边处置过）时，同一个 id 不许继续挂在这里。
+   * 返回同一个 Set 引用（内容没变时）以免无谓重渲染 —— 这个 effect 在每次 loadEntries 后都会跑。
+   */
+  useEffect(() => {
+    setSelectedPending((prev) => {
+      if (prev.size === 0) return prev;
+      const alive = new Set(pending.map((p) => p.id));
+      const next = new Set([...prev].filter((id) => alive.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [pending]);
+
+  const handleApproveSelected = () => {
+    const ids = [...selectedPending];
+    const result = getMemoryService().approveMany(ids);
+    setNotice(result.message);
+    setSelectedPending(new Set());
+    loadEntries();
+  };
+
+  const handleRejectSelected = () => {
+    const ids = [...selectedPending];
+    const result = getMemoryService().rejectMany(ids);
+    setNotice(result.message);
+    setSelectedPending(new Set());
     loadEntries();
   };
 
@@ -626,8 +687,8 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
       */}
       <div className={`memory-pending-hint ${pending.length > 0 ? "active" : ""}`}>
         {pending.length > 0
-          ? `有 ${pending.length} 条自动记忆等待批准：它们**现在不会进上下文**，批准后才生效（手动条目不受影响）。`
-          : `自动提取的记忆按上面「写入审批」的开关处理：开启的作用域会先进待批准区、批准后才进上下文。`}
+          ? `有 ${pending.length} 条自动记忆等待批准：它们**现在不会进上下文**，批准后才生效（手动条目不受影响）。可以逐条批准/拒绝，也可以勾选后批量处置（含全选）。`
+          : `自动提取的记忆按上面「写入审批」的开关处理：**对话级默认直接生效**（只跟本次对话有关的事实不再打扰你），项目级 / 平台级默认先进待批准区、批准后才进上下文。`}
       </div>
 
       {/* 写入审批开关（对标 Hermes write approval）：开启 ⇒ 自动提取只进待批准区 */}
@@ -645,7 +706,8 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           </button>
         ))}
         <span className="memory-approval-hint">
-          未批准的自动记忆不进上下文；手动条目永不被自动流程改写。
+          未批准的自动记忆不进上下文；**对话级默认直接生效**（自动提取里"只跟本次对话有关"的那些）；
+          手动条目永不被自动流程改写。
         </span>
       </div>
 
@@ -655,8 +717,53 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
       {pending.length > 0 && (
         <div className="memory-pending-section">
           <div className="memory-pending-title">待批准的自动记忆（{pending.length} 条，未批准不进上下文）</div>
+          {/*
+            第 196 波：勾选 + 批量同意/拒绝（用户要求「含全选」）。
+            三个细节是刻意的：
+            ① 「全选」复选框的可访问名说清**它管的是哪一批**（不是光秃秃一个勾选框）；
+            ② 两个批量按钮在没有勾选时 **disabled**（点了也不会误伤，避免"空批量"看起来像生效了）；
+            ③ 按钮上的数字是**当前勾选数**（用户勾几条就等于知道自己要动几条）。
+          */}
+          <div className="memory-pending-batch-bar">
+            <label className="memory-pending-check memory-pending-check-all">
+              <input
+                type="checkbox"
+                checked={pending.every((p) => selectedPending.has(p.id))}
+                onChange={toggleSelectAllPending}
+                aria-label={`全选当前 ${pending.length} 条待批准记忆`}
+              />
+              <span>全选</span>
+            </label>
+            <span className="memory-pending-selected-hint">
+              {selectedPending.size > 0 ? `已勾选 ${selectedPending.size} / ${pending.length} 条` : "勾选后可批量处置"}
+            </span>
+            <button
+              className="memory-approve-btn"
+              disabled={selectedPending.size === 0}
+              title="批准所有勾选的条目：它们从现在起参与上下文"
+              onClick={handleApproveSelected}
+            >
+              批量同意（{selectedPending.size}）
+            </button>
+            <button
+              className="memory-reject-btn"
+              disabled={selectedPending.size === 0}
+              title="拒绝并删除所有勾选的条目"
+              onClick={handleRejectSelected}
+            >
+              批量拒绝（{selectedPending.size}）
+            </button>
+          </div>
           {pending.map((entry) => (
             <div key={entry.id} className="memory-pending-item">
+              <label className="memory-pending-check">
+                <input
+                  type="checkbox"
+                  checked={selectedPending.has(entry.id)}
+                  onChange={() => togglePendingSelected(entry.id)}
+                  aria-label={`勾选「${entry.key}」`}
+                />
+              </label>
               <span className="memory-pending-key">{entry.key}</span>
               <span className="memory-pending-content">{entry.content.substring(0, 80)}</span>
               <div className="memory-pending-actions">

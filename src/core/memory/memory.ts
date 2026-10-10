@@ -1166,6 +1166,31 @@ export function approvalRequiredForScope(scope: MemoryScope): boolean {
   return getWriteApprovalSetting()[scope] === true;
 }
 
+/**
+ * 自动提取返回的 `scope` → **真正写入的作用域**（只可能是 `conversation` / `project`）。
+ *
+ * ## 规则（第 196 波：用户要求的「对话级默认直接生效」）
+ *
+ * - `"conversation"` ⇒ 对话级。它与 `approvalRequiredForScope` 的默认值
+ *   （`conversation: false`）组合起来 = **直接生效、不进待批准区**；
+ *   「只对这次对话成立」的约定因此不再打扰用户；
+ * - **其它一切输入**（`"project"` / 缺省 / 大小写不同 / `"platform"` / 是数字或对象 / 模型编了个新词）
+ *   ⇒ **项目级**。兜底方向刻意选"会问你一次"而不是"直接生效"：
+ *   一条**没被核实过**的自动记忆悄悄进上下文，是这套审批机制存在的原因
+ *   （与 `getWriteApprovalSetting()` 读不出来时一律按"需要批准"返回是同一条 fail-closed 纪律）。
+ *   用户想要"全都别问我"时，把面板上「项目」那档切成**直接生效**即可（一行设置，无需改代码）。
+ *
+ * ## 为什么**不**允许自动提取写平台级
+ *
+ * 平台级 = 所有项目、所有对话都注入。跨项目共享必须是**显式**动作
+ * （用户手写一条，或在面板里把某条归位成平台级）—— 这沿用既有设计，
+ * 不能让一次自动提取把"某个仓库里的约定"扩散成全局事实。所以模型即便说了 `platform`，
+ * 也按**项目级**落（内容一条不丢，只是作用域更窄、需要批准）。
+ */
+export function memoryScopeFromExtraction(raw: unknown): MemoryScope {
+  return raw === "conversation" ? "conversation" : "project";
+}
+
 // ========== 记忆 payload 的体积预算与可观测（O-36 / O-52，第 191 波） ==========
 
 /**
@@ -2332,6 +2357,114 @@ export class MemoryService {
     if (!entry) return false;
     if (!isPendingMemoryEntry(entry)) return false;
     return this.delete(id);
+  }
+
+  /**
+   * **批量批准**（面板的「勾选 + 批量同意」）。
+   *
+   * ## 为什么必须是一条服务方法，而不是在界面里 `for (id) approve(id)`
+   *
+   * `approve()` 每次都走 `save()`，而 `save()` 是**整份 payload 的确认式写**
+   * （O-36 / O-52 量的就是这个放大倍数）。27 条待批准 = 27 次整份序列化 + 27 次 IPC
+   * + 27 次落库；用户点一下"全部同意"不该产生这种写放大。
+   * 所以：**先在内存里把这一批全部改完，再落库一次**（与 `undoBatch` 同一条纪律）。
+   *
+   * ## 逐条语义与单条版本**完全一致**（不发明第二套规则）
+   *
+   * - 受保护条目（手动 / 来源未知的旧数据）不需要批准 ⇒ 跳过并计数；
+   * - 不在 `pending` 状态的 ⇒ 跳过并计数（幂等：重复点不会报错，也不会重复计数）；
+   * - 容量：桶计数超过上限 ⇒ **这一条**被拒（其余照常批准），与 `approve` 同一个判据；
+   * - 一条都没改动 ⇒ **不落库**（空操作不该写库），返回值如实说明。
+   */
+  approveMany(ids: readonly string[]): {
+    changed: number;
+    skipped: number;
+    capacityBlocked: number;
+    persisted: boolean;
+    message: string;
+  } {
+    let changed = 0;
+    let skipped = 0;
+    let capacityBlocked = 0;
+    for (const id of ids) {
+      const entry = this.entries.get(id);
+      if (!entry || isProtectedMemoryEntry(entry) || !isPendingMemoryEntry(entry)) {
+        skipped++;
+        continue;
+      }
+      const bucketCount = this.bucketCount(entry.scope, entry.projectId, entry.sessionId);
+      if (bucketCount > this.config.maxEntries) {
+        capacityBlocked++;
+        continue;
+      }
+      this.entries.set(id, { ...entry, status: "active" });
+      changed++;
+    }
+    if (changed === 0) {
+      return {
+        changed: 0,
+        skipped,
+        capacityBlocked,
+        persisted: true, // 没有要写的东西 ⇒ 不存在"落库失败"
+        message:
+          capacityBlocked > 0
+            ? `批量批准：${capacityBlocked} 条因子记忆容量已满被拒绝（请先清理对应作用域，其余 ${skipped} 条不需要批准）。`
+            : `批量批准：没有可批准的条目（${skipped} 条不在待批准状态或不需要批准）。`,
+      };
+    }
+    const persisted = this.save();
+    const parts = [`批量批准 ${changed} 条`];
+    if (capacityBlocked > 0) parts.push(`${capacityBlocked} 条因子记忆容量已满被拒绝`);
+    if (skipped > 0) parts.push(`${skipped} 条不在待批准状态（已跳过）`);
+    return {
+      changed,
+      skipped,
+      capacityBlocked,
+      persisted,
+      message: persisted
+        ? `${parts.join("；")}：这些自动记忆从现在起参与上下文。`
+        : `${parts.join("；")}，但**写入数据库失败**（本次改动只在内存里，重启后会丢）：${this.lastPersistError}`,
+    };
+  }
+
+  /**
+   * **批量拒绝**（删除这一批待审条目）—— 与 `approveMany` 同一条纪律：
+   * 内存里改完再落库一次；逐条语义与 `reject()` 一致（不在 `pending` 的跳过并计数）。
+   */
+  rejectMany(ids: readonly string[]): {
+    changed: number;
+    skipped: number;
+    persisted: boolean;
+    message: string;
+  } {
+    let changed = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const entry = this.entries.get(id);
+      if (!entry || !isPendingMemoryEntry(entry)) {
+        skipped++;
+        continue;
+      }
+      this.entries.delete(id);
+      changed++;
+    }
+    if (changed === 0) {
+      return {
+        changed: 0,
+        skipped,
+        persisted: true,
+        message: `批量拒绝：没有可拒绝的条目（${skipped} 条不在待批准状态）。`,
+      };
+    }
+    const persisted = this.save();
+    return {
+      changed,
+      skipped,
+      persisted,
+      message: persisted
+        ? `批量拒绝 ${changed} 条：这些自动记忆已删除${skipped > 0 ? `（另 ${skipped} 条不在待批准状态，已跳过）` : ""}。`
+        : `批量拒绝 ${changed} 条，但**写入数据库失败**（重启后可能重新出现）：${this.lastPersistError}`,
+    };
   }
 
   /** List entries by tag */

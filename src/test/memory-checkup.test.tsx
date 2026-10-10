@@ -14,7 +14,7 @@
  * 组件层再断言"勾选删除只影响勾选项、清空全部要二次确认"。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, fireEvent, act } from "@testing-library/react";
 
 /**
  * 二次确认一律走原生 helper（NC-1 禁止裸 `window.confirm`：Tauri dialog 下它返回 Promise ⇒ 闸门静默失效）。
@@ -398,6 +398,72 @@ describe("MEM-CHECK-5：入口、归位与渲染", () => {
     const renderSegment = src.slice(renderAnchor, renderAnchor + 900);
     expect(renderSegment, "页签必须复用同一套数据层的体检视图").toContain("MemoryCheckupView");
     expect(renderSegment.includes("new MemoryService"), "不许另写第二套记忆读写").toBe(false);
+  });
+
+  /**
+   * 第 196 波：体检里的**批量同意选中**。
+   *
+   * 为什么这条判据落在体检而不是记忆面板：待批准条目在面板里按当前位置过滤
+   * （`listPending(ctx)`），而「归属已失效」的那些（自动提取时的工作目录是临时目录、后来没了）
+   * **只有体检看得到**（跨项目全量）—— 真机上就是这种形态（27 条待批准，归属全是已删的临时工作目录）。
+   * 所以"批量同意"必须在这条视图上也能用。
+   */
+  it("MEM-CHECK-BATCH-1：勾选待批准条目 → 「批量同意选中」⇒ 它们变成已生效并落库", async () => {
+    saveMemory("");
+    const port = createFakeStoragePort({ seed: { settings: [{ key: "noop", value: "" }] } });
+    setStoragePort(port);
+    const svc = new MemoryService();
+    svc.add({
+      scope: "project",
+      projectId: PROJ_A_ID,
+      key: "待审一",
+      content: "PENDING_ONE 待批准的自动记忆",
+      source: "auto",
+      status: "pending",
+    });
+    svc.add({
+      scope: "project",
+      projectId: PROJ_A_ID,
+      key: "待审二",
+      content: "PENDING_TWO 待批准的自动记忆",
+      source: "auto",
+      status: "pending",
+    });
+    await svc.flushPendingPersist();
+
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+    const { container } = render(<MemoryCheckupView />);
+
+    const checks = Array.from(container.querySelectorAll<HTMLInputElement>(".mc-entry-check input[type=checkbox]"));
+    expect(checks, "两条待批准条目都要有勾选框").toHaveLength(2);
+    for (const c of checks) {
+      await act(async () => {
+        fireEvent.click(c);
+      });
+    }
+
+    const approveBtn = Array.from(container.querySelectorAll<HTMLButtonElement>(".mc-header-actions button")).find((b) =>
+      (b.textContent ?? "").includes("批量同意选中"),
+    );
+    expect(approveBtn, "体检必须有「批量同意选中」按钮（这一波新增）").toBeTruthy();
+    expect(approveBtn!.textContent).toContain("（2）");
+
+    await act(async () => {
+      fireEvent.click(approveBtn!);
+      await Promise.resolve();
+    });
+
+    expect(svc.listPending(undefined, { showAllProjects: true, includeUnscoped: true }), "批准后不该再有待批准").toHaveLength(0);
+    expect(
+      svc.buildMemoryPrompt("project", PROJ_A_ID),
+      "批准之后必须真的进上下文（否则「批量同意」是假动作）",
+    ).toContain("PENDING_ONE");
+    expect(
+      decodeURIComponent(encodeURIComponent(String(container.querySelector(".mc-notice")?.textContent ?? ""))),
+      "回执要说清批准了几条且已落库",
+    ).toContain("已落库");
+    spy.mockRestore();
   });
 
   it("MEM-CHECK-5b：渲染出分组标题与来源标签，且不抛错", async () => {

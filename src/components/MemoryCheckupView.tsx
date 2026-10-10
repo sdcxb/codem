@@ -155,6 +155,49 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     void applyDelete(Array.from(selected), "批量删除");
   };
 
+  /**
+   * **批量同意选中**（第 196 波）。
+   *
+   * ## 为什么体检这边也要有（而不只是记忆面板）
+   *
+   * 待批准条目在**两个**地方出现，而它们的可见范围不同：
+   * - 记忆面板的待批准区按当前位置过滤（`listPending(ctx)`：项目级条目必须 `projectId` 相等）
+   *   ⇒ 「归属已失效」那些（例如自动提取时的工作目录是临时目录、后来没了）**面板里看不到**；
+   * - 体检是**跨项目全量**视图（`showAllProjects`）⇒ 这些条目只在这里出现。
+   * 用户机器上真实存在这种形态（27 条待批准的项目级记忆，归属全是已经删掉的临时工作目录）
+   * ⇒ 批量同意只做在面板里，等于对这些条目**做不到**。
+   *
+   * ## 与「批量删除选中」同一条纪律
+   *
+   * 走服务层的**一次落库**（`approveMany`，不是逐条 `approve`），并**等确认落库**
+   * 再给回执 —— 否则库写不进去时界面那句「批准 N 条」是假成功。
+   * 选中集合里混进了非待批准条目（体检里可以随便勾）时，服务层会**跳过并计数**，回执如实写出来。
+   */
+  const applyApprove = async (ids: string[], what: string) => {
+    const service = getMemoryService();
+    const result = service.approveMany(ids);
+    const landed = await service.flushPendingPersist();
+    setSelected(new Set());
+    setNotice(
+      `${what}：批准 ${result.changed} 条` +
+        (result.capacityBlocked > 0 ? `（${result.capacityBlocked} 条因子记忆容量已满被拒绝，未改动）` : "") +
+        (result.skipped > 0 ? `（${result.skipped} 条不在待批准状态，未改动）` : "") +
+        (landed
+          ? "，已落库；它们从现在起参与上下文。"
+          : `，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些批准会失效）。`) +
+        `未勾选的条目一条都没动。`,
+    );
+    setVersion((v) => v + 1);
+  };
+
+  const handleApproveSelected = () => {
+    if (selected.size === 0) {
+      setNotice("没有勾选任何条目。批准只作用于你勾选的待批准记忆。");
+      return;
+    }
+    void applyApprove(Array.from(selected), "批量同意");
+  };
+
   const handleClearAll = async () => {
     const all = checkup.groups.flatMap((g) => g.entries.map((e) => e.id));
     if (all.length === 0) {
@@ -374,6 +417,10 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
       <div className="mc-header">
         <div className="mc-title">记忆体检</div>
         <div className="mc-header-actions">
+          {/* 第 196 波：批量同意选中（待批准 → 生效）。与「批量删除选中」并排，语义相反 */}
+          <button className="mc-action-btn" onClick={handleApproveSelected}>
+            批量同意选中（{selected.size}）
+          </button>
           <button className="mc-action-btn" onClick={handleDeleteSelected}>
             批量删除选中（{selected.size}）
           </button>

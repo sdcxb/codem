@@ -20197,6 +20197,50 @@ html[data-contrast="high"] {
   color: var(--warning-content);
 }
 
+/* ---- 第 196 波：勾选 + 批量同意/拒绝 ---- */
+.memory-pending-batch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+/*
+ * 复选框的**可点范围**：原生 13×13 太小（WCAG 2.5.8），所以 label 给足 24×24 的命中区
+ * （`scan-labeled-inputs.mjs` 要求复选框有可访问名；这里 label + 内层 `aria-label` 双保险）。
+ */
+.memory-pending-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--icon-xl);
+  min-height: var(--icon-xl);
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.memory-pending-check-all {
+  min-width: auto;
+  padding-inline: var(--space-2);
+  font-size: var(--fs-2xs);
+  color: var(--text-primary);
+}
+
+.memory-pending-selected-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  color: var(--warning-content);
+}
+
+/* 没勾选时两个批量按钮是禁用的：视觉上必须一眼看出来（否则用户会以为点了没反应） */
+.memory-pending-batch-bar .memory-approve-btn:disabled,
+.memory-pending-batch-bar .memory-reject-btn:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
 .memory-pending-item {
   display: flex;
   flex-wrap: wrap;

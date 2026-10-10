@@ -18,6 +18,7 @@ import {
   getMemoryService,
   projectIdFromCwd,
   approvalRequiredForScope,
+  memoryScopeFromExtraction,
   getWriteApprovalSetting,
   setWriteApprovalSetting,
   composeMemoryBlock,
@@ -2149,12 +2150,18 @@ return loop.hasPendingGuidance();
     if (messages.length < 10) return; // Too short to extract meaningful memories
 
     /**
-     * 自动提取的目标作用域。
-     * 保持 `project`（而不是降级成 `platform`）：用户期望的是"这个项目里学到的东西"，
-     * 跨项目共享必须是**显式**动作（手动写一条 platform 记忆），不能由自动流程代劳。
+     * 自动提取的目标作用域：**由每条记忆自己决定**（第 196 波，用户要求的
+     * 「对话级默认直接生效 / 项目与平台级默认需批准」）。
+     *
+     * - 模型给出 `"conversation"` ⇒ 对话级：只对这次对话成立，默认**直接生效**
+     *   （不进待批准区、不打扰用户）；
+     * - 其它一切（`"project"` / 没给 / 给了 `"platform"` / 给了别的词）⇒ 项目级：
+     *   跨对话仍然成立，默认**待批准**（兜底方向见 `memoryScopeFromExtraction`）。
+     *
+     * 平台级仍然**只能手写**：一次自动提取不该把"某个仓库里的约定"扩散成全局事实。
+     * `defaultScope` 只作批次标签与兜底值用 —— 批次是一次提取的记账单位，条目各自带真实作用域。
      */
-    const targetScope: MemoryScope = "project";
-    const approvalRequired = approvalRequiredForScope(targetScope);
+    const defaultScope: MemoryScope = "project";
 
     // M1: Use "memory" slot from active profile (falls back to subagent → chat)
     const resolved = this.resolveSlot("memory");
@@ -2169,7 +2176,7 @@ return loop.hasPendingGuidance();
     if (!provider || !provider.isConfigured()) return;
 
     // 批次号：含时间与来源会话 ⇒ `/memory undo <batchId>` 能只回滚这一批
-    const batchId = this.memory.beginBatch(sessionId, targetScope);
+    const batchId = this.memory.beginBatch(sessionId, defaultScope);
 
     // P1-9: Use forked agent instead of independent API call.
     // This reuses the parent conversation's messages → provider's prompt cache
@@ -2194,7 +2201,15 @@ return loop.hasPendingGuidance();
 - 已经是常识的信息
 
 输出格式（JSON 数组，每个元素是一个记忆条目）：
-[{"key": "简短标题", "content": "具体内容", "tags": ["相关标签"]}]
+[{"key": "简短标题", "content": "具体内容", "tags": ["相关标签"], "scope": "conversation"}]
+
+scope 只有两个取值，按这条事实**跨不跨对话**来判：
+- "conversation"：只对**当前这次对话**成立的约定 / 偏好 / 临时要求（例如"这次先给方案再改代码"、
+  "这次不要动测试文件"）。它**立即生效**，不会再问用户。
+- "project"：**换一次对话、下次打开这个项目仍然成立**的事实（技术栈、目录约定、构建/测试命令、
+  这个仓库里踩过的坑）。它需要用户批准后才生效。
+**判不准就写 "project"** —— 宁可多问用户一次，也不要让没核实过的内容悄悄进上下文。
+不要写 "platform"（跨项目共享只能由用户手动决定）。
 
 如果没有值得提取的记忆，返回空数组 []`;
 
@@ -2217,7 +2232,7 @@ return loop.hasPendingGuidance();
       }
 
       // 健壮的 JSON 解析 — 使用 extractJSON 处理 markdown 包裹、中文标点、尾部逗号等
-      const memories = extractJSON<Array<{ key: string; content: string; tags?: string[] }>>(responseText);
+      const memories = extractJSON<Array<{ key: string; content: string; tags?: string[]; scope?: string }>>(responseText);
       if (!Array.isArray(memories)) {
         this.memory.finalizeBatch(batchId, 0);
         console.warn("[extractMemories] Failed to parse memories from forked agent response:", responseText.substring(0, 200));
@@ -2226,6 +2241,8 @@ return loop.hasPendingGuidance();
 
       // Save extracted memories
       let written = 0;
+      let writtenActive = 0;
+      let writtenPending = 0;
       let rejectedCapacity = 0;
       let blockedByManual = 0;
       let duplicates = 0;
@@ -2235,6 +2252,19 @@ return loop.hasPendingGuidance();
         const safeKey = redactSecrets(mem.key);
         const safeContent = redactSecrets(mem.content);
         if (safeContent.length <= 10) continue;
+
+        /**
+         * **这一条自己的作用域**（第 196 波）——只可能是 `conversation` 或 `project`，
+         * 兜底方向与理由写在 `memoryScopeFromExtraction` 里。
+         *
+         * 审批与归属键都跟着**这一条**走（不是整轮一个值）：
+         * 对话级 ⇒ 默认不审批、归属当前会话；项目级 ⇒ 默认待批准、归属当前项目。
+         */
+        const itemScope = memoryScopeFromExtraction(mem.scope);
+        const approvalRequired = approvalRequiredForScope(itemScope);
+        /** 归属键只带与作用域匹配的那一个（避免条目上挂着一个用不到的归属，界面会看不懂） */
+        const ownership: { projectId?: string; sessionId?: string } =
+          itemScope === "conversation" ? { sessionId } : { projectId };
 
         /**
          * 信任边界①：**同 key 的受保护条目永不被自动流程覆盖**。
@@ -2249,13 +2279,18 @@ return loop.hasPendingGuidance();
          * ⇒ 查询恒为空 ⇒ `isDuplicate` 恒 false ⇒ **每一轮把同一条事实再写一遍**，
          * 直到该桶撞上 maxEntries 之后变成每轮一串"容量已满"。
          * 所以无归属时显式打开 `includeUnscoped`（"同一个无归属桶里的条目"正是要去重的那批）。
+         *
+         * 第 196 波：判重与同 key 检查**在条目自己的作用域桶里做**（对话级条目不该被
+         * 项目级同名条目挡住，反之亦然 —— 桶的键本来就是 (作用域, 归属键)）。
          */
-        const sameBucket = this.memory.search(safeKey, targetScope, 5, {
-          projectId,
-          includeUnscoped: projectId === undefined,
+        const sameBucket = this.memory.search(safeKey, itemScope, 5, {
+          ...ownership,
+          includeUnscoped: itemScope === "project" && projectId === undefined,
         });
         const manualSameKey = sameBucket.some(r =>
-          isProtectedMemoryEntry(r.entry) && r.entry.key === safeKey && r.entry.projectId === projectId
+          isProtectedMemoryEntry(r.entry) &&
+          r.entry.key === safeKey &&
+          (itemScope === "conversation" ? r.entry.sessionId === sessionId : r.entry.projectId === projectId)
         );
         if (manualSameKey) {
           blockedByManual++;
@@ -2263,7 +2298,7 @@ return loop.hasPendingGuidance();
           continue;
         }
 
-        // Check if similar memory already exists (avoid duplicates) — 只在**同一项目**内判重
+        // Check if similar memory already exists (avoid duplicates) — 只在**同一个桶**内判重
         const isDuplicate = sameBucket.some(r =>
           r.entry.key === safeKey ||
           r.entry.content.substring(0, 50) === safeContent.substring(0, 50)
@@ -2274,14 +2309,13 @@ return loop.hasPendingGuidance();
         }
 
         const result = this.memory.add({
-          scope: targetScope,
-          projectId,
-          sessionId,
+          scope: itemScope,
+          ...ownership,
           key: safeKey,
           content: safeContent,
           tags: mem.tags,
           source: "auto" as MemorySource,
-          // 审批开启 ⇒ 只暂存，未批准不进上下文
+          // 审批开启 ⇒ 只暂存，未批准不进上下文（开关是**按作用域**判的）
           status: approvalRequired ? "pending" : "active",
           batchId,
         });
@@ -2296,17 +2330,20 @@ return loop.hasPendingGuidance();
           continue;
         }
         written++;
+        if (approvalRequired) writtenPending++;
+        else writtenActive++;
         console.log(
-          `[extractMemories] Saved memory: ${safeKey}（source=auto, projectId=${projectId ?? "(无归属)"}, ` +
-            `status=${approvalRequired ? "pending（待批准）" : "active"}, batch=${batchId}）`,
+          `[extractMemories] Saved memory: ${safeKey}（source=auto, scope=${itemScope}, ` +
+            `${itemScope === "conversation" ? `sessionId=${sessionId}` : `projectId=${projectId ?? "(无归属)"}`}, ` +
+            `status=${approvalRequired ? "pending（待批准）" : "active（已生效）"}, batch=${batchId}）`,
         );
       }
 
       this.memory.finalizeBatch(batchId, written);
       console.log(
         `[extractMemories] Extracted ${memories.length} memories from session ${sessionId}：` +
-          `写入 ${written} 条（${approvalRequired ? "待批准" : "直接生效"}）、同 key 手动条目拦下 ${blockedByManual} 条、` +
-          `重复跳过 ${duplicates} 条、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
+          `写入 ${written} 条（直接生效 ${writtenActive} 条 / 待批准 ${writtenPending} 条）、` +
+          `同 key 手动条目拦下 ${blockedByManual} 条、重复跳过 ${duplicates} 条、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
       );
 
       /**
@@ -2321,7 +2358,7 @@ return loop.hasPendingGuidance();
           {
             title: "自动记忆写入被容量上限拒绝",
             nextStep: `请到「记忆系统」删掉不再需要的条目，或调大上限后重试（上限：${this.memory.getMaxEntries()} 条/作用域）。`,
-            sample: `session=${sessionId} role=${targetScope} project=${projectId ?? "(无归属)"}`,
+            sample: `session=${sessionId} scope=${defaultScope} project=${projectId ?? "(无归属)"}`,
           },
         );
       }

@@ -462,7 +462,7 @@ describe("XSESS-5 源码级：handleSend 的归属投递清单（按锚点取段
     "写入审批已全部", // /memory approval on|off（同步）
     "用法：/memory approval <platform", // /memory approval 参数校验（同步）
     "写入审批设置已更新：平台", // /memory approval 状态回执（同步，可复现）
-    "写入审批（默认：平台/项目开启，对话关闭）", // /memory approval 状态与用法（同步）
+    "写入审批（默认：平台 / 项目开启 = 需批准，对话关闭 = 直接生效）", // /memory approval 状态与用法（同步）
     "/memory status — 查看记忆状态（含待批准数与未归属数）", // /memory 用法与子命令清单（同步）
     "未找到项目路径",
     "正在分析项目结构并生成 AGENTS.md",

@@ -7693,6 +7693,28 @@
     "min-width": "16px",
     "padding": "0 var(--space-2)"
   },
+  "memory-pending-batch-bar": {
+    "align-items": "center",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-4)",
+    "margin-bottom": "var(--space-4)"
+  },
+  "memory-pending-check": {
+    "align-items": "center",
+    "cursor": "pointer",
+    "display": "flex",
+    "gap": "var(--space-2)",
+    "justify-content": "center",
+    "min-height": "var(--icon-xl)",
+    "min-width": "var(--icon-xl)"
+  },
+  "memory-pending-check-all": {
+    "color": "var(--text-primary)",
+    "font-size": "var(--fs-2xs)",
+    "min-width": "auto",
+    "padding-inline": "var(--space-2)"
+  },
   "memory-pending-content": {
     "color": "var(--text-secondary)",
     "flex": "1",
@@ -7727,6 +7749,12 @@
     "background": "var(--warning-surface)",
     "border-bottom": "1px solid var(--border-primary)",
     "padding": "var(--space-6) var(--space-8)"
+  },
+  "memory-pending-selected-hint": {
+    "color": "var(--warning-content)",
+    "flex": "1",
+    "font-size": "var(--fs-2xs)",
+    "min-width": "0"
   },
   "memory-pending-title": {
     "color": "var(--warning-content)",

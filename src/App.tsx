@@ -2923,8 +2923,8 @@ if (!session) {
           id: `system-${Date.now()}`,
           role: "system",
           content: pending.length === 0
-            ? "没有待批准的记忆。（写入审批开启时，自动提取的条目会先进入待批准区，未批准不进上下文。）"
-            : `待批准记忆 ${pending.length} 条（未批准不进上下文）：\n${lines.join("\n")}\n\n用 /memory approve <id> 批准，/memory reject <id> 拒绝。`,
+            ? "没有待批准的记忆。（对话级自动记忆默认直接生效；项目级/平台级开启写入审批时会先进待批准区，未批准不进上下文。）"
+            : `待批准记忆 ${pending.length} 条（未批准不进上下文）：\n${lines.join("\n")}\n\n用 /memory approve <id> 批准，/memory reject <id> 拒绝；面板里可以勾选后批量处置（含全选）。`,
           timestamp: Date.now(),
           status: "done",
         });
@@ -3042,8 +3042,9 @@ if (!session) {
           id: `system-${Date.now()}`,
           role: "system",
           content:
-            `写入审批（默认：平台/项目开启，对话关闭）\n` +
+            `写入审批（默认：平台 / 项目开启 = 需批准，对话关闭 = 直接生效）\n` +
             `平台=${current.platform ? "开" : "关"}, 项目=${current.project ? "开" : "关"}, 对话=${current.conversation ? "开" : "关"}\n` +
+            `自动提取按**每条事实**的作用域判定：只跟本次对话有关的写对话级（默认直接生效），跨对话仍成立的写项目级（默认待批准）；平台级只能手写。\n` +
             `用法：/memory approval on|off 或 /memory approval <platform|project|conversation> <on|off>`,
           timestamp: Date.now(),
           status: "done",

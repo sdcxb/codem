@@ -1,0 +1,157 @@
+{
+  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、拿不准归项目级）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
+  "mutations": [
+    {
+      "id": "MUT-1 提取的作用域兜底反过来（拿不准就归对话级）",
+      "why": "MAS-4 / MAS-5：兜底方向是这一波的**安全边界** —— 拿不准、或模型写了 platform/别的词时，必须归项目级（会问用户一次）。反过来就等于「没核实过的自动内容悄悄进上下文」，两条判据都会红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "  return raw === \"conversation\" ? \"conversation\" : \"project\";",
+          "to": "  return raw === \"project\" ? \"project\" : \"conversation\";"
+        }
+      ],
+      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
+      "why": "MAS-2 / MAS-7：这一波的核心就是「每条记忆自己决定作用域」；写死 project 之后对话级永远不会出现（用户要的「对话级默认直接生效」整条失效）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        const itemScope = memoryScopeFromExtraction(mem.scope);",
+          "to": "        const itemScope: MemoryScope = \"project\";"
+        }
+      ],
+      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 默认档改成「对话也需批准」",
+      "why": "MAS-1：用户明确要求对话级默认直接生效；改掉默认值（或改回全开）必须被抓住",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "const DEFAULT_APPROVAL: ApprovalScopeSetting = { platform: true, project: true, conversation: false };",
+          "to": "const DEFAULT_APPROVAL: ApprovalScopeSetting = { platform: true, project: true, conversation: true };"
+        }
+      ],
+      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
+      "why": "MAS-2：`approvalRequiredForScope(scope)` 必须看**这一条自己的**作用域；只看平台那档就等于「对话级的免审批」是假的（对话级条目照样进待批准区）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "  return getWriteApprovalSetting()[scope] === true;",
+          "to": "  return getWriteApprovalSetting().platform === true;"
+        }
+      ],
+      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
+      "why": "MB-1：批量操作只许落库一次；逐条 save 就是 27 次整份写那种放大（O-36/O-52 量的正是它）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "      this.entries.set(id, { ...entry, status: \"active\" });\n      changed++;",
+          "to": "      this.entries.set(id, { ...entry, status: \"active\" });\n      this.save();\n      changed++;"
+        }
+      ],
+      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
+      "why": "MB-3（反向对照）：批量拒绝必须只碰待批准条目；去掉守卫之后「已生效的自动条目 / 手动条目」会被一起删掉 —— 这正是最危险的形态",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "      const entry = this.entries.get(id);\n      if (!entry || !isPendingMemoryEntry(entry)) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);",
+          "to": "      const entry = this.entries.get(id);\n      if (!entry) {\n        skipped++;\n        continue;\n      }\n      this.entries.delete(id);"
+        }
+      ],
+      "tests": ["src/test/memory-approve-scope-batch.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
+      "why": "MB-UI-1：没勾选时按钮必须禁用（否则用户点下去是空操作，看起来像「点了没反应」）",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "            <button\n              className=\"memory-approve-btn\"\n              disabled={selectedPending.size === 0}\n              title=\"批准所有勾选的条目：它们从现在起参与上下文\"",
+          "to": "            <button\n              className=\"memory-approve-btn\"\n              disabled={false}\n              title=\"批准所有勾选的条目：它们从现在起参与上下文\""
+        }
+      ],
+      "tests": ["src/test/memory-pending-batch.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
+      "why": "MB-UI-3：`全选` 的判据必须是「是不是**全都**选中了」。按「集合非空」判时，只勾了一条再点全选会被**清空** —— 用户看到「我点全选，结果全没了」",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "      const all = pending.length > 0 && pending.every((p) => prev.has(p.id));",
+          "to": "      const all = prev.size > 0;"
+        }
+      ],
+      "tests": ["src/test/memory-pending-batch.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-9 界面：拆掉「选中集合随待批准列表收敛」这条能力（幽灵选中）",
+      "why": "MB-UI-2：选中集合必须跟着待批准列表收敛。**两处实现都要动**才看得出行为差异（处理完显式清空 + 列表变化时过滤）—— 只去掉一处，另一处会把它兜住：这正是「变异要拆够、要写在能力上而不是某一行上」那条教训的又一例",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "    const result = getMemoryService().approveMany(ids);\n    setNotice(result.message);\n    setSelectedPending(new Set());",
+          "to": "    const result = getMemoryService().approveMany(ids);\n    setNotice(result.message);"
+        },
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "      const alive = new Set(pending.map((p) => p.id));\n      const next = new Set([...prev].filter((id) => alive.has(id)));\n      return next.size === prev.size ? prev : next;",
+          "to": "      return prev;"
+        }
+      ],
+      "tests": ["src/test/memory-pending-batch.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
+      "why": "MEM-CHECK-BATCH-1：体检那边的批量同意也必须真的走服务层并落库。把服务调用换成「看起来成功」的常量 ⇒ 界面说批准了、条目其实还在待批准（本仓最忌讳的假成功），判据必须红",
+      "patches": [
+        {
+          "file": "src/components/MemoryCheckupView.tsx",
+          "from": "    const result = service.approveMany(ids);\n    const landed = await service.flushPendingPersist();",
+          "to": "    const result = { changed: ids.length, skipped: 0, capacityBlocked: 0, persisted: true, message: \"\" };\n    const landed = true;"
+        }
+      ],
+      "tests": ["src/test/memory-checkup.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-12 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波所有判据一条都不许红（证明上面的红是行为造成的）",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "兜底方向刻意选\"会问你一次\"而不是\"直接生效\"：",
+          "to": "（反向对照：只改这一行注释，行为逐字不变）兜底方向刻意选「会问你一次」而不是「直接生效」："
+        }
+      ],
+      "tests": [
+        "src/test/memory-approve-scope-batch.test.ts",
+        "src/test/memory-pending-batch.test.tsx",
+        "src/test/memory-checkup.test.tsx"
+      ],
+      "expectRed": false
+    }
+  ]
+}
