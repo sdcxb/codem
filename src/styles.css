@@ -20355,6 +20355,25 @@ html[data-contrast="high"] {
   color: var(--text-primary);
 }
 
+/* 第 199 波：待批准条目的**作用域徽标**（用户说没它就判断不了该不该批准） */
+.memory-pending-scope {
+  flex: none;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-2xs);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+}
+
+/* 没有归属键的待批准条目：批准也不会进上下文 ⇒ 必须显式标出来 */
+.memory-pending-noowner {
+  flex: none;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-2xs);
+  color: var(--warning-content);
+  background: var(--warning-surface-strong);
+  border-radius: var(--radius-full);
+}
+
 .memory-pending-content {
   flex: 1;
   min-width: 0;

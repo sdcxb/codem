@@ -24,6 +24,7 @@ import {
   isPendingMemoryEntry,
   isLegacyPoolInjectionPaused,
   MEMORY_SOURCE_KIND_LABEL,
+  MEMORY_SCOPE_BADGE_LABEL,
   setLegacyPoolInjectionPaused,
   type MemoryEntry,
   type MemoryScope,
@@ -60,11 +61,15 @@ interface MemoryCheckupViewProps {
  */
 const SOURCE_LABEL: Record<CheckupSource, string> = MEMORY_SOURCE_KIND_LABEL;
 
-/** 作用域徽标文案（M-5：不认识的词要**原样**显示，不许假装它是三者之一） */
+/**
+ * 作用域徽标文案（M-5：不认识的词要**原样**显示，不许假装它是三者之一）。
+ *
+ * 第 199 波：三态文案收敛到 `memory.ts` 的 `MEMORY_SCOPE_BADGE_LABEL`
+ * —— 面板的待批准区也要显示同一件事，两处各写一遍必然分叉（用户看到的会是"同一条记忆两个说法"）。
+ */
 function scopeBadgeLabel(entry: CheckupGroup["entries"][number]): string {
-  if (entry.scope === "platform") return "平台级";
-  if (entry.scope === "project") return "项目级";
-  if (entry.scope === "conversation") return "对话级";
+  const known = MEMORY_SCOPE_BADGE_LABEL[entry.scope as MemoryScope];
+  if (known) return known;
   return `作用域：${entry.scopeRaw || "（空）"}`;
 }
 
@@ -567,9 +572,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
               {group.entries.map((entry) => (
                 <div key={entry.id} className="mc-duplicate-entry">
                   <span className="mc-duplicate-entry-key">{entry.key}</span>
-                  <span className={`mc-scope-badge ${entry.scope}`}>
-                    {entry.scope === "platform" ? "平台级" : entry.scope === "project" ? "项目级" : "对话级"}
-                  </span>
+                  <span className={`mc-scope-badge ${entry.scope}`}>{scopeLabel(entry.scope)}</span>
                   {isPendingMemoryEntry(entry) && <span className="mc-source-badge pending">待批准</span>}
                   <span className="mc-duplicate-entry-content">{String(entry.content).slice(0, 90)}</span>
                 </div>
@@ -642,9 +645,12 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
   );
 }
 
-/** 供设置面板/测试复用的作用域文案（与 MemoryManager 的措辞保持一致） */
+/**
+ * 供设置面板/测试复用的作用域文案（与 MemoryManager 的措辞保持一致）。
+ *
+ * 第 199 波：措辞收敛到 `MEMORY_SCOPE_BADGE_LABEL` —— 原来这里是**第二份**字面量，
+ * 而"与面板保持一致"这句话靠人肉维持（改了一处忘了另一处就是两种说法）。
+ */
 function scopeLabel(scope: MemoryScope): string {
-  if (scope === "platform") return "平台级";
-  if (scope === "project") return "项目级";
-  return "对话级";
+  return MEMORY_SCOPE_BADGE_LABEL[scope] ?? `作用域：${String(scope)}`;
 }

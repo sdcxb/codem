@@ -25,9 +25,11 @@
     "memory-badge-192": "O-45 外壳级「待批准记忆」角标（MEM-BADGE-1/1b/2/3：数字 = 面板那个数、清零即消失、点角标进面板）",
     "cmd-arg-192": "O-43 `.cmd/.bat` 启动参数的放行面/拒绝面（CMD-ARG-1/2；本仓第一个 cargo 运行面的变异波次）",
     "index-call-192": "真机回归：消息查询索引的写穿丢了接收者 `this`（INDEX-CALL-1；含「假端口必须和真端口一样挑剔」的反向对照）",
-    "json-repair-192": "真机实测：模型 JSON 里带裸换行 ⇒ 自动记忆被整批丢掉（JSON-REPAIR-1..6，含可定位诊断）"
+    "json-repair-192": "真机实测：模型 JSON 里带裸换行 ⇒ 自动记忆被整批丢掉（JSON-REPAIR-1..6，含可定位诊断）",
+    "pending-scope-199": "待批准条目的作用域徽标（用户直报「看不出是平台级/项目级/对话级，没法判断是否批准」）：面板补齐徽标 + 文案收敛到唯一一份表（MEMORY_SCOPE_BADGE_LABEL）+ 未知作用域原样显示 + 无归属键显式标出"
   },
   "waves": [
+    "pending-scope-199",
     "system-injected-198",
     "memory-dedup-197",
     "memory-approve-196",

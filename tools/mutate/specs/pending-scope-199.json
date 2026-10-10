@@ -1,0 +1,83 @@
+{
+  "description": "第 199 波：待批准条目必须显示作用域（用户真机直报「没显示类型是平台级、项目级还是对话级，我没法判断是否批准」）—— 面板补齐作用域徽标，文案收敛到唯一一份表（MEMORY_SCOPE_BADGE_LABEL），未知作用域原样显示，无归属键显式标出。判据 PENDSCOPE-1..5。",
+  "mutations": [
+    {
+      "id": "MUT-1 待批准区不再显示作用域（用户报的缺陷原样回来）",
+      "why": "PENDSCOPE-1 / PENDSCOPE-2：把徽标整段删掉，用户又变成「看不出类型」",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "              <span\n                className=\"memory-pending-scope\"\n                style={{ color: getScopeColor(entry.scope) }}\n                title={pendingScopeTitle(entry)}\n              >\n                {pendingScopeLabel(entry)}\n              </span>",
+          "to": "              <span className=\"memory-pending-scope\" style={{ color: getScopeColor(entry.scope) }} />"
+        }
+      ],
+      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 徽标写死成常量（不管条目是什么作用域）",
+      "why": "PENDSCOPE-2（反向对照）：写死常量时「三条不同作用域显示同一个词」，用户在界面上依然判断不了",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "  const known = MEMORY_SCOPE_BADGE_LABEL[entry.scope as MemoryScope];\n  if (known) return known;\n  return `作用域：${entry.scope ? String(entry.scope) : \"（空）\"}`;",
+          "to": "  return MEMORY_SCOPE_BADGE_LABEL.project;"
+        }
+      ],
+      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 认不出的作用域猜成对话级",
+      "why": "PENDSCOPE-3：把旧作用域默认成三者之一，等于替用户把不确定当成确定",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "  const known = MEMORY_SCOPE_BADGE_LABEL[entry.scope as MemoryScope];\n  if (known) return known;\n  return `作用域：${entry.scope ? String(entry.scope) : \"（空）\"}`;",
+          "to": "  return MEMORY_SCOPE_BADGE_LABEL[entry.scope as MemoryScope] ?? MEMORY_SCOPE_BADGE_LABEL.conversation;"
+        }
+      ],
+      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 无归属的待批准条目不标记",
+      "why": "PENDSCOPE-4：批准也进不了上下文的条目必须写在脸上（否则用户白批准一次）",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "              {!hasPendingOwner(entry) && (",
+          "to": "              {false && hasPendingOwner(entry) && ("
+        }
+      ],
+      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 体检那边又写一份作用域字面量（两处说法分叉）",
+      "why": "PENDSCOPE-5：文案表的唯一性 —— 体检的徽标退回自己写一份，两处就会各说各的",
+      "patches": [
+        {
+          "file": "src/components/MemoryCheckupView.tsx",
+          "from": "  const known = MEMORY_SCOPE_BADGE_LABEL[entry.scope as MemoryScope];\n  if (known) return known;\n  return `作用域：${entry.scopeRaw || \"（空）\"}`;",
+          "to": "  if (entry.scope === \"platform\") return \"平台级\";\n  if (entry.scope === \"project\") return \"项目级\";\n  return \"对话级\";"
+        }
+      ],
+      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": " * ## 为什么要有它（用户真机直报）",
+          "to": " * ## 为什么要有它（用户真机直报；反向对照：只改这一行注释）"
+        }
+      ],
+      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "expectRed": false
+    }
+  ]
+}

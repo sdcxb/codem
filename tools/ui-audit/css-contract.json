@@ -7818,6 +7818,21 @@
     "font-size": "var(--fs-2xs)",
     "font-weight": "var(--weight-medium)"
   },
+  "memory-pending-noowner": {
+    "background": "var(--warning-surface-strong)",
+    "border-radius": "var(--radius-full)",
+    "color": "var(--warning-content)",
+    "flex": "none",
+    "font-size": "var(--fs-2xs)",
+    "padding": "0 var(--space-2)"
+  },
+  "memory-pending-scope": {
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-full)",
+    "flex": "none",
+    "font-size": "var(--fs-2xs)",
+    "padding": "0 var(--space-2)"
+  },
   "memory-pending-section": {
     "background": "var(--warning-surface)",
     "border-bottom": "1px solid var(--border-primary)",

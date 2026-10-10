@@ -19,6 +19,8 @@ import {
   // S4 / O-45：待批准判据**全仓唯一一处**（本文件原来也在两处各写了一遍）
   isPendingMemoryEntry,
   injectionScopeContext,
+  // 第 199 波：作用域徽标文案的唯一来源（与三态表同一条纪律）
+  MEMORY_SCOPE_BADGE_LABEL,
   type MemoryPayloadByteStats,
 } from "../core/memory/memory";
 import { formatMemoryImportReceipt } from "../core/memory/checkup";
@@ -58,6 +60,35 @@ function getScopeColor(scope: MemoryScope): string {
     case "platform": return "var(--warning)";
     default: return "var(--text-muted)";
   }
+}
+
+/**
+ * 待批准条目的**作用域徽标文案**（第 199 波）。
+ *
+ * 三态取自唯一一份表；认不出来的旧作用域**原样显示**并加「作用域：」前缀 ——
+ * 不许默认成三者之一（那是"把不确定当成确定"，本仓在归属上是明确禁止的）。
+ */
+function pendingScopeLabel(entry: MemoryEntry): string {
+  const known = MEMORY_SCOPE_BADGE_LABEL[entry.scope as MemoryScope];
+  if (known) return known;
+  return `作用域：${entry.scope ? String(entry.scope) : "（空）"}`;
+}
+
+/** 徽标上那句"批准之后会怎样"（用户判断的依据就在这句话里） */
+function pendingScopeTitle(entry: MemoryEntry): string {
+  switch (entry.scope) {
+    case "platform": return "平台级：批准后对**所有项目、所有对话**生效";
+    case "project": return "项目级：批准后对**这个项目以后的每个对话**生效";
+    case "conversation": return "对话级：批准后只对**当前这个对话**生效";
+    default: return "作用域无法识别：批准后也不会进上下文（可先归位或删除）";
+  }
+}
+
+/** 这条待批准条目有没有归属键（没有 ⇒ 任何上下文都不注入，批准也没用） */
+function hasPendingOwner(entry: MemoryEntry): boolean {
+  if (entry.scope === "platform") return true;
+  if (entry.scope === "project") return Boolean(entry.projectId);
+  return Boolean(entry.sessionId);
 }
 
 /** 作用域 → 生效范围的一句话说明（界面要能自证"这条会/不会被注入"） */
@@ -765,6 +796,24 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
                 />
               </label>
               <span className="memory-pending-key">{entry.key}</span>
+              {/*
+                第 199 波（用户直报：待批准区没显示类型，没法判断该不该批准）：
+                **作用域**是批准与否的第一依据 —— 平台级处处生效、项目级对这个项目以后的每个对话生效、
+                对话级只影响当前对话。徽标文案取自唯一一份表（`MEMORY_SCOPE_BADGE_LABEL`），
+                认不出来的旧作用域**原样显示**（不许猜成三者之一，那正是"归属未知"要防的事）。
+              */}
+              <span
+                className="memory-pending-scope"
+                style={{ color: getScopeColor(entry.scope) }}
+                title={pendingScopeTitle(entry)}
+              >
+                {pendingScopeLabel(entry)}
+              </span>
+              {!hasPendingOwner(entry) && (
+                <span className="memory-pending-noowner" title="这条没有归属键 ⇒ 任何上下文都不会注入它">
+                  无归属
+                </span>
+              )}
               <span className="memory-pending-content">{entry.content.substring(0, 80)}</span>
               <div className="memory-pending-actions">
                 <button className="memory-approve-btn" onClick={() => handleApprove(entry.id)}>批准</button>
