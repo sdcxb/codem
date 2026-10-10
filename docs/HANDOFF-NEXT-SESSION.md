@@ -4607,6 +4607,33 @@ node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑
 
 ### 三、下一轮的活（**一次性做完，再审计到 0**；不要分阶段）
 
+#### ★★ 第一件（**用户直接点的活**，2026-10-09）：GAP-LIST `O-57` —— 侧栏对话没按「最新聊天时间」倒序 + 新增排序功能
+
+> 优先级**高于下面所有条目**。根因已经查清（见 `docs/GAP-LIST.md` 的 O-57 行，含真机库对账数据），
+> **不要从零重查**，尤其**不要去改排序函数**（那个是对的）。
+
+**已证事实（直接采信）**
+
+- 排序口径本身正确：`storage/session.ts::listSessions` = `pinned DESC, sort_order ASC, last_message_at DESC`；
+  侧栏（`components/Sidebar.tsx` 的 `loadAllSessions` / `getProjectSessions`）与 store 都走它。
+- **真根因**：`sessions.last_message_at` **基本上就是会话创建时间**（`lma ≈ 会话 id 前缀 + 1.4s`）——
+  真机副本库对账：**561 个会话里 518 个**存在比它新 60 秒以上的消息；而 `message_count` 是**准的**
+  ⇒ **引擎的消息写入只补了计数、漏了这一列**。应用内看着对（内存 store 顺序对），**重启后按库里的旧值排**
+  ⇒ 昨天新建、今天继续聊的会话落到中间／「更早」组（用户原话：不在最上面，而在更早靠中间的地方）。
+- 要重新对账：把 `%APPDATA%\com.codem.app\codem-db-rust.bin{,-wal,-shm}` 复制一份再查
+  （本轮副本在 `%TEMP%\codem-dbq`）。
+
+**要做的三件事**
+
+1. **引擎的消息写入**那一段（与 `message_count` 同一个写入者）把 `last_message_at = max(旧值, 消息 timestamp)`；
+2. **存量库一次性回填** `last_message_at = MAX(messages.timestamp)`（只改确实陈旧的）——否则已有会话永远排错；
+3. **排序功能**：侧栏「项目」小节头加排序入口（`最近对话 / 名称` × `正序 / 倒序`），选择存进设置，
+   **只影响渲染顺序** —— 不许动 `sort_order` 的拖拽语义（那条语义有既有判据，见 `listSessions` 的长注释）。
+
+**判据要求**：两种键 × 两种方向 + 持久化 + 反向对照（选了「名称」不许再被时间覆盖；不许把拖拽的 `sort_order` 弄坏）；
+真机复核 = 出包装机、**重启应用**后侧栏顺序 = 按最新消息时间倒序，并用副本库对账 `lma == MAX(messages.timestamp)`。
+
+
 #### A. 真机验证还没做完的三件（都**不是**"没空做"，是"现场不存在或要花一次真机回合"）
 
 1. **待批准角标在真机上"亮起来"的读数（O-45 的真机那一半）**：要让它亮，需要一次**落在
