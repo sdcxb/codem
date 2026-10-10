@@ -62,6 +62,9 @@ node tools/audit/scan-report-sites.mjs --check     # 上报点分诊闸门（应
 # 可达性门禁由 src/test/reachability-gate.test.ts 守：新增但未接线的文件必须登记进
 #   tools/audit/reachability-allowlist.json 并在文件头写 `* @unwired` 理由
 
+# 打包前先拉「免费模型插件」的内置副本（第 201 波：运行树不进 git，按固定 commit 现拉 + 校验 sha256）
+node tools/vendor/fetch-ofm.mjs            # 需要联网（浅拉上游那一个 commit）；--check 只校验现有副本
+
 # 构建 + 签名（⚠️ 必须带签名环境变量，否则 CLI 会卡在交互输密码）
 $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content .tauri\codem-updater.key -Raw).Trim()
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "dummy"
