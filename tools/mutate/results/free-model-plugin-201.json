@@ -1,15 +1,16 @@
 {
   "wave": "free-model-plugin-201",
   "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。 第 203 波（方案 A）：便携 Node **随安装包内置**（按官方 SHASUMS256.txt 校验 sha256、只取 node.exe、解析顺序内置优先）—— 对应变异：不优先用内置 / 不过 strip_verbatim / 不打进安装包。",
-  "runAt": "2026-10-11T05:03:45.464Z",
-  "specFingerprint": "73b101ad96cf7923bec859a11b96da5a7d15ca30",
+  "runAt": "2026-10-11T06:10:41.303Z",
+  "specFingerprint": "cb0f602f28f57a6b08761aa0915f4c6b51d82e8c",
   "files": [
     "src/core/free-model-plugin/service.ts",
     "src/core/model-config.ts",
     "src-tauri/src/ofm.rs",
     "src-tauri/src/lib.rs",
     "src/core/portable-node/index.ts",
-    "src-tauri/tauri.conf.json"
+    "src-tauri/tauri.conf.json",
+    "src/components/FreeModelPluginCard.tsx"
   ],
   "tests": [
     "src/test/free-model-plugin.test.ts",
@@ -36,7 +37,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3611
+      "ms": 3628
     },
     {
       "id": "MUT-2 暂停顺手把数据删了",
@@ -56,7 +57,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3614
+      "ms": 3640
     },
     {
       "id": "MUT-3 删除不清扩展目录（假卸载）",
@@ -76,7 +77,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3618
+      "ms": 3635
     },
     {
       "id": "MUT-4 模型清单不丢坏条目（把没有 id 的也塞进列表）",
@@ -96,7 +97,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3579
+      "ms": 3635
     },
     {
       "id": "MUT-5 关掉插件之后仍然往模型列表里塞它的模型",
@@ -116,7 +117,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3583
+      "ms": 3619
     },
     {
       "id": "MUT-6 没有 Node 也假装启动成功",
@@ -136,7 +137,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3579
+      "ms": 3640
     },
     {
       "id": "MUT-7 模型列表不再优先来自插件（挪到末尾）",
@@ -161,7 +162,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3684
+      "ms": 3609
     },
     {
       "id": "MUT-8 启用后不登记托管供应商（模型看得见但没路可走）",
@@ -181,7 +182,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3582
+      "ms": 3540
     },
     {
       "id": "MUT-9 暂停后不移除供应商条目（留一条永远打不通的）",
@@ -201,7 +202,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3585
+      "ms": 3570
     },
     {
       "id": "MUT-11 起进程前不清死锁（崩溃一次之后插件永久起不来）",
@@ -221,7 +222,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1709
+      "ms": 1698
     },
     {
       "id": "MUT-12 路径不去逐字前缀（Node 解析入口崩 EISDIR）",
@@ -246,7 +247,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1733
+      "ms": 1711
     },
     {
       "id": "MUT-13 退出时不收插件（攒孤儿 node 进程）",
@@ -266,7 +267,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1708
+      "ms": 1721
     },
     {
       "id": "MUT-14 暂停后不清模型缓存（最长 60 秒里列表仍列着调不通的免费模型）",
@@ -286,7 +287,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3543
+      "ms": 3661
     },
     {
       "id": "MUT-15 自动装 Node 装到别处（装完还是找不到 ⇒ 用户点了也白点）",
@@ -306,7 +307,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3584
+      "ms": 3579
     },
     {
       "id": "MUT-16 装 Node 失败也报成功（用户以为装好了，其实什么都没发生）",
@@ -326,7 +327,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3595
+      "ms": 3590
     },
     {
       "id": "MUT-17 「以后再说」不记住（每次开都再问一遍）",
@@ -346,7 +347,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3622
+      "ms": 3587
     },
     {
       "id": "MUT-18 少了兜底候选与补一轮（一次抖动就整体失败，用户白点一次）",
@@ -371,7 +372,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1729
+      "ms": 1749
     },
     {
       "id": "MUT-19 下不到也当成功（解压一个不存在的 zip）",
@@ -391,16 +392,16 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1738
+      "ms": 1753
     },
     {
-      "id": "MUT-20 不优先用内置 Node（明明带着它，却还去看系统 node / 去下载）",
-      "why": "OFM-13：方案 A 的全部意义就是「装完就能跑、不看环境也不看下载源」；顺序错了等于白内置",
+      "id": "MUT-20 系统 Node 够新也不用它（总是用内置 —— 不听用户的选择、也白占磁盘）",
+      "why": "OFM-13：用户拍板的顺序是「系统够新用系统、内置兜底」；把内置提前就等于无视这个选择",
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "  try {\n    const bundled = await invoke<string | null>(\"ofm_bundled_node\");\n    if (bundled) return { exe: bundled, via: \"bundled\" };\n  } catch {",
-          "to": "  try {\n    const bundled = await invoke<string | null>(\"ofm_bundled_node\");\n    void bundled;\n  } catch {"
+          "from": "  /* ① 系统 Node 够新 ⇒ 用它（不浪费机器上已有的） */\n  const sys = await detectSystem();\n  if (sys.ok && sys.version && sys.version[0] >= 22) {\n    return { exe: \"node\", via: \"system\" };\n  }\n  /* ② 没有够新的系统 Node ⇒ 用安装包内置的那份（\"没装也能跑\"的保证） */\n  const bundled = await bundledExe();\n  if (bundled) return { exe: bundled, via: \"bundled\" };",
+          "to": "  const sys = await detectSystem();\n  void sys;\n  /* 变异：内置提前，系统够新也不用 */\n  const bundled = await bundledExe();\n  if (bundled) return { exe: bundled, via: \"bundled\" };"
         }
       ],
       "tests": [
@@ -411,7 +412,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3566
+      "ms": 3589
     },
     {
       "id": "MUT-21 内置 Node 的路径不过 strip_verbatim（逐字前缀又会让它崩）",
@@ -431,7 +432,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1734
+      "ms": 1710
     },
     {
       "id": "MUT-22 内置 Node 不打进安装包（装完照样找不到）",
@@ -451,7 +452,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1722
+      "ms": 1727
+    },
+    {
+      "id": "MUT-23 卡片把「内置」说成「系统」（不如实）",
+      "why": "OFM-HOST-8：来源三态各说各的；把内置标成系统会让用户以为机器上装了 Node（据此判断要不要清理/去装）",
+      "patches": [
+        {
+          "file": "src/components/FreeModelPluginCard.tsx",
+          "from": "  bundled: \"安装包内置的\",",
+          "to": "  bundled: \"系统安装的\","
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1715
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -471,7 +492,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3595
+      "ms": 3602
     }
   ]
 }

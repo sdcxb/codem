@@ -4596,8 +4596,8 @@ node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑
   - **方案 A（用户拍板）**：把便携 Node **随安装包内置**。`tools/vendor/fetch-node.mjs` 按
     `tools/vendor/node/VENDOR.json` 的固定版本（24.19.0）拉官方发行包、**按官方 `SHASUMS256.txt`
     校验 sha256**（实测 `57f71ab3…`）、只取 `node.exe`（88.5MB）+ LICENSE（进 `.gitignore`；
-    `bundle.resources` 打进安装包 ⇒ **安装包 46MB → 68MB**）。解析顺序改成**内置 → 系统 Node →
-    便携 Node →（都没有才）下载**；Rust 新增 `ofm_bundled_node`（同样过 `strip_verbatim`）。
+    `bundle.resources` 打进安装包 ⇒ **安装包 46MB → 68MB**）。解析顺序**先按用户拍板做成「内置优先」，随后按他的新要求改成「系统 Node（够新）优先、内置兜底」**
+    （系统够新 ⇒ 用系统、不白占磁盘；没有够新的系统 Node ⇒ 用内置；卡片来源三态如实标注 `OFM-HOST-8`）；Rust 新增 `ofm_bundled_node`（同样过 `strip_verbatim`）。
     兜底的一键安装与通知里的选择仍在（判据 `OFM-13` + `OFM-HOST-6..7` + 3 条变异）。
   - **真机（1.16.310，故意把 PATH 里的 Node 摘掉启动）**：提示框**不出现** ✓、插件用**内置** node 起来
     （`%LOCALAPPDATA%\Codem\resources\node\node.exe`）✓、端口 18937 LISTENING ✓、

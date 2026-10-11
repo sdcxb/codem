@@ -201,18 +201,27 @@ describe("OFM：免费模型插件的独立扩展语义", () => {
     expect(mockInvoke, "失败路径不许去调起进程").not.toHaveBeenCalledWith("ofm_start", expect.anything());
   });
 
-  it("OFM-13：内置 Node 存在时**优先用它**（不看系统 node、更不去下载）", async () => {
+  it("OFM-13：Node 解析顺序 = **系统（够新）→ 内置 → 便携 → 下载**", async () => {
     /*
-     * 第 203 波（用户选的方案 A）：安装包里带一份自己的 Node。
-     * 有它 ⇒ 插件不依赖用户机器上的 PATH，也不依赖任何下载源（真机上那些源会成片瞬时 404）。
+     * 第 203 波（用户拍板）：系统 Node 够新就用系统（尊重机器上已有的、不白占磁盘），
+     * 内置那份作为**兜底**保证"没装 Node 的机器也能跑"。而"现场下载"在真机上被证明不可靠
+     * （官方与 4 个国内镜像会成片瞬时 404）⇒ 只要前两者有一个在，就绝不该去下载。
      */
     installTauriHost({ ofm_bundled_node: () => "C:\\Codem\\resources\\node\\node.exe" });
-    mockExecuteCommand.mockResolvedValue({ stdout: "v18.0.0\n", stderr: "", exitCode: 0 }); // 系统 node 太旧也不管
 
-    const status = await freeModelPlugin.status();
-    expect(status.nodeExe, "要用内置那一份").toBe("C:\\Codem\\resources\\node\\node.exe");
-    expect(status.nodeVia).toBe("bundled");
-    expect(installPortableNodeMock, "有内置就绝不该去下载").not.toHaveBeenCalled();
+    /* ① 系统 Node 够新（22+）⇒ 用系统，即使内置也在 */
+    mockExecuteCommand.mockResolvedValue({ stdout: "v24.19.0\n", stderr: "", exitCode: 0 });
+    const withSystem = await freeModelPlugin.status();
+    expect(withSystem.nodeExe, "系统够新就用系统（内置只作兜底）").toBe("node");
+    expect(withSystem.nodeVia).toBe("system");
+
+    /* ② 系统 Node 太旧（或没有）⇒ 用内置那份 */
+    mockExecuteCommand.mockResolvedValue({ stdout: "v18.0.0\n", stderr: "", exitCode: 0 });
+    const withBundled = await freeModelPlugin.status();
+    expect(withBundled.nodeExe, "系统太旧时才回落到内置").toBe("C:\\Codem\\resources\\node\\node.exe");
+    expect(withBundled.nodeVia).toBe("bundled");
+
+    expect(installPortableNodeMock, "两种情况都绝不该去下载").not.toHaveBeenCalled();
   });
 
   it("OFM-10：没有 Node 时，**应用内一键装**（装进插件自己的目录、装完顺手把插件带起来）", async () => {

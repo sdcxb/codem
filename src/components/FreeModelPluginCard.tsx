@@ -26,6 +26,18 @@ import { freeModelPlugin } from "../core/free-model-plugin/service";
 
 type PluginStatus = Awaited<ReturnType<typeof freeModelPlugin.status>>;
 
+/**
+ * Node 来源的唯一文案表（三态各一句）。
+ *
+ * 第 203 波：顺序是「系统（够新）→ 安装包内置 → 插件自己下载的」。三态必须各说各的 ——
+ * 把"内置"显示成"系统"就是不如实（用户据此判断要不要去装/去清）。
+ */
+const NODE_VIA_LABEL: Record<"bundled" | "system" | "portable", string> = {
+  system: "系统安装的",
+  bundled: "安装包内置的",
+  portable: "插件自己下载的",
+};
+
 export function FreeModelPluginCard() {
   const [status, setStatus] = useState<PluginStatus | null>(null);
   const [busy, setBusy] = useState<"none" | "enable" | "pause" | "remove">("none");
@@ -176,7 +188,7 @@ export function FreeModelPluginCard() {
       )}
 
       <div className="ofm-card-meta">
-        <span>Node：{status.nodeExe ? `${status.nodeExe}（${status.nodeVia === "portable" ? "内置便携版" : "系统"}）` : "未找到"}</span>
+        <span>Node：{status.nodeExe ? `${status.nodeExe}（${NODE_VIA_LABEL[status.nodeVia ?? "system"]}）` : "未找到"}</span>
         <span>数据目录：{status.dataDir ?? "（未知）"}</span>
         {status.pid !== null && <span>进程号：{status.pid}</span>}
       </div>

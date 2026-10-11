@@ -91,6 +91,20 @@ describe("OFM-HOST：免费模型插件的宿主接线棘轮", () => {
     expect(vendor.shasums, "要有官方 SHASUMS256.txt 的地址（校验凭据来自来源侧）").toContain("SHASUMS256.txt");
   });
 
+  it("OFM-HOST-8：卡片上的 Node 来源必须**三态各说各的**（内置不许说成系统）", () => {
+    const card = readFileSync(path.join(root, "src/components/FreeModelPluginCard.tsx"), "utf8");
+    const table = card.match(/const NODE_VIA_LABEL[\s\S]{0,400}?\};/);
+    expect(table, "卡片里要有唯一的来源文案表").toBeTruthy();
+    for (const [key, label] of [
+      ["system", "系统安装的"],
+      ["bundled", "安装包内置的"],
+      ["portable", "插件自己下载的"],
+    ] as const) {
+      expect(table![0], `来源 ${key} 的文案要在表里`).toContain(`${key}: "${label}"`);
+    }
+    expect(card, "渲染时必须走这张表（不许再写死三元）").toContain("NODE_VIA_LABEL[status.nodeVia");
+  });
+
   it("OFM-HOST-7：本机若已内置 Node，它必须完整且与溯源一致", () => {
     const exe = path.join(root, "src-tauri/resources/node/node.exe");
     if (!existsSync(exe)) {

@@ -186,19 +186,6 @@ async function resolvePluginNode(): Promise<{
   exe: string | null;
   via: "bundled" | "system" | "portable" | null;
 }> {
-  /*
-   * ① **内置优先**（第 203 波，用户选的方案 A）。
-   *
-   * 用户的机器上不一定有 Node；而"现场下载"在真机上被证明**不可靠**（官方与 4 个国内镜像会成片
-   * 瞬时 404）。安装包里带一份自己的 Node ⇒ 既不依赖用户环境，也不依赖任何下载源，
-   * 插件第一次启动就能跑。系统 Node 仍然被认可（够新就用它，不浪费机器上已有的东西）。
-   */
-  try {
-    const bundled = await invoke<string | null>("ofm_bundled_node");
-    if (bundled) return { exe: bundled, via: "bundled" };
-  } catch {
-    /* 没有内置（开发态没跑 fetch-node.mjs）⇒ 继续往下找 */
-  }
   const detectSystem = async () => {
     try {
       const r = await executeCommand("node -v", undefined, 15_000);
@@ -208,6 +195,21 @@ async function resolvePluginNode(): Promise<{
       return { ok: false, version: null };
     }
   };
+  /*
+   * 顺序：**系统 Node（够新）→ 内置 → 便携 →（都没有才）下载**（第 203 波，用户拍板）。
+   *
+   * 为什么系统优先：尊重用户机器上已经有的东西（不白占磁盘与内存），也顺带用上更新的版本。
+   * 为什么内置是兜底：用户的机器上**不一定**有 Node，而"现场下载"在真机上被证明不可靠
+   * （官方与 4 个国内镜像会成片瞬时 404）⇒ 安装包里带一份自己的 Node，"没装也能跑"才有保证。
+   */
+  const bundledExe = async (): Promise<string | null> => {
+    try {
+      return await invoke<string | null>("ofm_bundled_node");
+    } catch {
+      return null; /* 开发态没跑 fetch-node.mjs 的情形 */
+    }
+  };
+
   const findPortable = async (): Promise<string | null> => {
     try {
       const base = await getAppDataDir();
@@ -221,7 +223,16 @@ async function resolvePluginNode(): Promise<{
     }
     return null;
   };
-  const r = await resolveNodeExe(detectSystem, findPortable, 22);
+  /* ① 系统 Node 够新 ⇒ 用它（不浪费机器上已有的） */
+  const sys = await detectSystem();
+  if (sys.ok && sys.version && sys.version[0] >= 22) {
+    return { exe: "node", via: "system" };
+  }
+  /* ② 没有够新的系统 Node ⇒ 用安装包内置的那份（"没装也能跑"的保证） */
+  const bundled = await bundledExe();
+  if (bundled) return { exe: bundled, via: "bundled" };
+  /* ③ 内置没有（开发态/被删）⇒ 退回便携 Node，最后才是下载 */
+  const r = await resolveNodeExe(async () => sys, findPortable, 22);
   return { exe: r.exe, via: r.via };
 }
 
