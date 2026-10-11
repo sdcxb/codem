@@ -143,18 +143,23 @@ describe("更新包下载：有界重试 + 可读错误（第 82 轮）", () => 
      * ⚠️ 判据必须**锚在行首的 `await`** 上：第一版写成"文本里出现 `downloadWithRetry(() => …)` 即可"，
      * 于是把那一行改成 `if (false) await downloadWithRetry(...)`（等于没走这条路径）
      * 判据**照样绿**（Mutation M6 未被抓住）。锚行首之后，"被 if/注释/别的前缀包起来"就红。
+     *
+     * 第 204 波：下载时要**接事件回调**（进度条的数据源），形态由单行
+     * `downloadWithRetry(() => update.downloadAndInstall(), {` 变成多行的
+     * `downloadWithRetry(\n  () =>\n    update.downloadAndInstall((event) => { … }),\n  {`。
+     * 这条判据同步到新形态，并**继续**要求它是独立语句（行首 await）、继续禁止裸调用。
      */
-    expect(src, "必须有一条**独立语句**形态的 `await downloadWithRetry(...)`").toMatch(
-      /\n\s*await downloadWithRetry\(\(\) => update\.downloadAndInstall\(\), \{/,
-    );
+    expect(src, "必须有一条**独立语句**形态的 `await downloadWithRetry(`").toMatch(/\n\s*await downloadWithRetry\(/);
+    expect(src, "下载必须走 update.downloadAndInstall").toContain("update.downloadAndInstall(");
+    expect(src, "第 204 波起还要把进度事件接进状态（否则进度条没有数据源）").toContain("applyProgressEvent(");
     expect(src, "不许再有裸的 `await update.downloadAndInstall()`（那是一次失败就放弃的旧写法）").not.toMatch(
       /await\s+update\.downloadAndInstall\(\)/,
     );
     expect(src, "错误措辞必须走 describeUpdateError").toContain("describeUpdateError(");
     // 反向对照：确认这个正则真的在判（把前缀加上就该匹配不上）
     expect(
-      "              if (false) await downloadWithRetry(() => update.downloadAndInstall(), {",
+      "              if (false) await downloadWithRetry(",
       "对照项：带前缀的形态必须判不通过",
-    ).not.toMatch(/\n\s*await downloadWithRetry\(\(\) => update\.downloadAndInstall\(\), \{/);
+    ).not.toMatch(/\n\s*await downloadWithRetry\(/);
   });
 });

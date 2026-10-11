@@ -16801,6 +16801,27 @@
     "transition": "left var(--duration-normal) var(--ease-out)",
     "width": "18px"
   },
+  "sp-update-progress": {
+    "margin-top": "var(--space-3)"
+  },
+  "sp-update-progress-fill": {
+    "background": "var(--accent)",
+    "border-radius": "var(--radius-full)",
+    "height": "100%",
+    "transition": "width var(--duration-fast) linear"
+  },
+  "sp-update-progress-label": {
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-2xs)",
+    "margin-top": "var(--space-2)"
+  },
+  "sp-update-progress-track": {
+    "background": "var(--bg-tertiary)",
+    "border": "1px solid var(--border-secondary)",
+    "border-radius": "var(--radius-full)",
+    "height": "var(--space-2)",
+    "overflow": "hidden"
+  },
   "sp-weight-value": {
     "color": "var(--text-secondary)",
     "font-family": "var(--font-ui)",

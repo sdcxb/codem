@@ -1,0 +1,116 @@
+{
+  "wave": "update-progress-204",
+  "description": "第 204 波：检查更新的下载进度（用户实报「正在下载，看不到进度条，进度条一直不动」）—— 事件回调必须接、进度条必须渲染、百分比口径（总量未知不编百分比 / 封顶 100% / 重试归零）必须成立。",
+  "runAt": "2026-10-11T06:38:56.808Z",
+  "specFingerprint": "883ed7f7a91548946a982f4ac03a5cce196997e5",
+  "files": [
+    "src/components/SettingsPanel.tsx",
+    "src/core/update/download-progress.ts"
+  ],
+  "tests": [
+    "src/test/update-download-progress.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 不接事件回调（退回空参调用：进度永远为零）",
+      "why": "UPD-PROGRESS-5：这正是用户报的 bug 根因 —— 调用时不传回调，插件发的 Progress 全被丢掉",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "                () =>\n                  update.downloadAndInstall((event: { event: string; data?: { contentLength?: number; chunkLength?: number } }) => {\n                    /* 每个事件都并进状态 ⇒ 进度条会动；总量未知时界面走不确定态（不编百分比） */\n                    setUpdateProgress((prev) => applyProgressEvent(prev ?? emptyProgress(), event));\n                  }),",
+          "to": "                () =>\n                  update.downloadAndInstall(),"
+        }
+      ],
+      "tests": [
+        "src/test/update-download-progress.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1904
+    },
+    {
+      "id": "MUT-2 进度条不渲染（接线都对，但用户看不见）",
+      "why": "UPD-PROGRESS-6：修了数据源却不给界面，等于还是「看不到进度」",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "      {updateProgress && (\n        <div className=\"sp-update-progress\">",
+          "to": "      {false && updateProgress && (\n        <div className=\"sp-update-progress\">"
+        }
+      ],
+      "tests": [
+        "src/test/update-download-progress.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1816
+    },
+    {
+      "id": "MUT-3 分块不累加（每块都当成总量 ⇒ 百分比乱跳）",
+      "why": "UPD-PROGRESS-1：Progress 的语义是「这一块多少字节」，覆盖而不是累加就完全错了",
+      "patches": [
+        {
+          "file": "src/core/update/download-progress.ts",
+          "from": "    const downloaded = state.downloadedBytes + step;",
+          "to": "    const downloaded = step;"
+        }
+      ],
+      "tests": [
+        "src/test/update-download-progress.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1783
+    },
+    {
+      "id": "MUT-4 总量未知也编一个百分比",
+      "why": "UPD-PROGRESS-2：没有 Content-Length 时编百分比是假数据（界面该走不确定态）",
+      "patches": [
+        {
+          "file": "src/core/update/download-progress.ts",
+          "from": "      return { ...state, downloadedBytes: downloaded, label: describe(downloaded, null) };",
+          "to": "      return { ...state, downloadedBytes: downloaded, percent: 50, label: describe(downloaded, null) };"
+        }
+      ],
+      "tests": [
+        "src/test/update-download-progress.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1737
+    },
+    {
+      "id": "MUT-5 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/update/download-progress.ts",
+          "from": " * ## 用户报的是什么",
+          "to": " * ## 用户报的是什么（反向对照：只改这一行注释）"
+        }
+      ],
+      "tests": [
+        "src/test/update-download-progress.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 1734
+    }
+  ]
+}

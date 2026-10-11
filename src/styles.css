@@ -12585,6 +12585,47 @@ border-color: var(--text-muted);
 }
 
 /* Progress */
+/* ---- 第 204 波：检查更新的下载进度条（用户实报：以前只有静态文案，进度根本不动） ---- */
+.sp-update-progress {
+  margin-top: var(--space-3);
+}
+
+.sp-update-progress-track {
+  height: var(--space-2);
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-full);
+}
+
+.sp-update-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transition: width var(--duration-fast) linear;
+}
+
+/* 总量未知 ⇒ 不确定态（来回走的条），绝不假装一个百分比出来 */
+.sp-update-progress-track.is-indeterminate .sp-update-progress-fill {
+  width: 30%;
+  animation: sp-update-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes sp-update-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+.sp-update-progress-label {
+  margin-top: var(--space-2);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
 .progress-bar {
   width: 100%;
   height: 22px;
@@ -13644,6 +13685,13 @@ line-height: var(--lh-compact);
 @media (prefers-reduced-motion: reduce) {
   .pet-sprite-card-inner {
     animation: none;
+  }
+
+  /* 第 204 波：进度条的不确定态也是循环动画 —— 用户要求减少动效时要关掉
+     （确定态那条只改 width，不是动画，保留即可） */
+  .sp-update-progress-track.is-indeterminate .sp-update-progress-fill {
+    animation: none;
+    width: 100%;
   }
 }
 

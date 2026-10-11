@@ -600,6 +600,18 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
    */
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
+  /**
+   * 第 204 波（用户实报「正在下载，看不到进度条，进度条一直不动」）：更新下载的进度状态。
+   *
+   * **以前根本没有这个 state** —— 当时调 downloadAndInstall 连事件回调都没传（空参），插件发的
+   * Started/Progress/Finished 全被丢掉，界面只有一句静态文案。
+   */
+  const [updateProgress, setUpdateProgress] = useState<null | {
+    downloadedBytes: number;
+    totalBytes: number | null;
+    percent: number | null;
+    label: { zh: string; en: string };
+  }>(null);
 
   // D2: 设置分组搜索元数据（id → [中文名, 英文名, 别名...]）
   const SETTINGS_TAB_INDEX: Array<[string, string[]]> = [
@@ -2231,11 +2243,23 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                * - **签名/校验类错误一次就抛**（重试没有意义，还会把严重问题稀释成"网络不好"）；
                * - 次数用尽后由 `describeUpdateError` 翻成"发生了什么 + 下一步"，并保留原文。
                */
-              await downloadWithRetry(() => update.downloadAndInstall(), {
+              const { applyProgressEvent, emptyProgress } = await import("../core/update/download-progress");
+              setUpdateProgress(emptyProgress());
+              await downloadWithRetry(
+                () =>
+                  update.downloadAndInstall((event: { event: string; data?: { contentLength?: number; chunkLength?: number } }) => {
+                    /* 每个事件都并进状态 ⇒ 进度条会动；总量未知时界面走不确定态（不编百分比） */
+                    setUpdateProgress((prev) => applyProgressEvent(prev ?? emptyProgress(), event));
+                  }),
+                {
                 attempts: 3,
                 baseDelayMs: 800,
                 onAttempt: ({ attempt, total, waitedMs }) => {
                   if (attempt === 1) return; // 第一次沿用上面那句"正在下载"
+                  /* 重试 ⇒ 进度归零重算（否则会出现 80% 又跳回 10% 的假动作） */
+                  setUpdateProgress((prev) =>
+                    prev ? { ...prev, downloadedBytes: 0, percent: prev.totalBytes ? 0 : null } : null,
+                  );
                   setUpdateMsg(
                     lang === "zh"
                       ? `下载中断，正在重试（第 ${attempt}/${total} 次${waitedMs ? `，等了 ${Math.round(waitedMs / 1000)}s` : ""}）…`
@@ -2244,6 +2268,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 },
               });
               setUpdateMsg(lang === "zh" ? "安装完成，即将重启…" : "Installed, relaunching…");
+              setUpdateProgress(null);
               await relaunch();
             } else {
               console.warn(`[updater] 未安装更新：${decision.kind}（清单版本 ${decision.offered ?? "无"}）`);
@@ -2287,6 +2312,35 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       >
         {updateMsg ?? (lang === "zh" ? "检查更新" : "Check for Updates")}
       </button>
+
+      {/*
+        第 204 波（用户实报「正在下载，看不到进度条，进度条一直不动」）：下载时给一根**真的**进度条。
+        以前这里什么都没有 —— 只有上面按钮里那句静态文案，而事件回调也没接（进度无从谈起）。
+
+        两种形态都如实呈现：
+        - 知道总量 ⇒ 有百分比的确定态（`aria-valuenow` 也跟着走，读屏可感知）；
+        - 不知道总量（有些源不回 Content-Length）⇒ **不确定态**，只报"已下载 x"，不编百分比。
+      */}
+      {updateProgress && (
+        <div className="sp-update-progress">
+          <div
+            className={`sp-update-progress-track${updateProgress.percent === null ? " is-indeterminate" : ""}`}
+            role="progressbar"
+            aria-label={lang === "zh" ? "更新下载进度" : "Update download progress"}
+            {...(updateProgress.percent === null
+              ? {}
+              : { "aria-valuenow": updateProgress.percent, "aria-valuemin": 0, "aria-valuemax": 100 })}
+          >
+            <div
+              className="sp-update-progress-fill"
+              style={updateProgress.percent === null ? undefined : { width: `${updateProgress.percent}%` }}
+            />
+          </div>
+          <div className="sp-update-progress-label">
+            {lang === "zh" ? updateProgress.label.zh : updateProgress.label.en}
+          </div>
+        </div>
+      )}
     </div>
   </div>
 )}
