@@ -29,6 +29,8 @@
 import { executeCommand, exists, getAppDataDir, listDirectory, deleteDirectoryPermanent, readFile } from "../file-api";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { parseNodeVersion, resolveNodeExe } from "../zvec-grep/runtime";
+// 第 202 波：便携版 Node 的下载/解压与 zvec-grep **共用同一份实现**（不要各写一份）
+import { installPortableNode } from "../portable-node";
 
 /** 设置键（界面上的开关就写它） */
 const FREE_MODEL_PLUGIN_SETTING_KEY = "codem-free-model-plugin";
@@ -45,6 +47,13 @@ const PREFERRED_PORT = 18937;
 
 /** 插件设置 */
 interface FreeModelPluginSetting {
+  /**
+   * 用户对"要不要自动安装 Node"这件事说过"以后再说"吗（第 202 波）。
+   *
+   * 为什么要记住：真机上用户收到的是「没有找到可用的 Node.js」这种**只能自己去装**的通知；
+   * 现在改成能在应用里一键装，但**绝不能每开一次就问一次** —— 问过、用户说以后再说，就不再问。
+   */
+  nodePromptDismissedAt?: number;
   /**
    * 是否启用。**缺省 = 启用**（用户要求「集成后默认开启」）；
    * 显式 `false` = 用户自己关的（暂停），必须尊重。
@@ -101,6 +110,8 @@ function readPluginSetting(): FreeModelPluginSetting {
   return {
     enabled: raw.enabled !== false,
     pausedAt: typeof raw.pausedAt === "number" ? raw.pausedAt : undefined,
+    nodePromptDismissedAt:
+      typeof raw.nodePromptDismissedAt === "number" ? raw.nodePromptDismissedAt : undefined,
   };
 }
 
@@ -122,6 +133,52 @@ async function pluginBundledDir(): Promise<string> {
 /** 插件入口脚本的绝对路径 */
 async function pluginScriptPath(): Promise<string> {
   return `${await pluginBundledDir()}\\packages\\standalone\\cli.mjs`;
+}
+
+/**
+ * 插件自己那份便携 Node 的落地目录（第 202 波）。
+ *
+ * 为什么装在**扩展目录里**而不是共享目录：这份 Node 是插件的一部分，
+ * "删除扩展"应当能把它一起清掉，不留下来历不明的几百 MB。
+ * 已经装过 zvec-grep 的便携版时不会重复下载（下面的 resolvePluginNode 会先找到它）。
+ */
+async function pluginRuntimeDir(): Promise<string> {
+  const dir = await invoke<string>("ofm_extension_dir");
+  return `${dir}\\runtime`;
+}
+
+/**
+ * **自动安装 Node**（用户要求：不要让用户自己去官网下）。
+ *
+ * 下载/解压/多源回退全部委托给 `core/portable-node`（与 zvec-grep 同一份实现）；
+ * 装完**顺手把插件启动起来**并把清单刷进缓存 —— 用户点一下就该能用上，不用再点第二次。
+ */
+async function installNode(
+  onPhase?: (phase: string, message: string) => void,
+): Promise<{ ok: boolean; message: string; exe: string | null }> {
+  try {
+    const target = await pluginRuntimeDir();
+    const exe = await installPortableNode(
+      target,
+      (phase, message) => onPhase?.(phase, message),
+      "可以稍后重试；也可以到 https://nodejs.org 自行安装 22 或更高版本",
+    );
+    /* 直接用刚装好的那个 node 启动（不再让解析器去猜一遍） */
+    const started = await startPluginWithNode(exe);
+    return {
+      ok: true,
+      message: `Node 已装好（${exe}）；${started.message}`,
+      exe,
+    };
+  } catch (e) {
+    return { ok: false, message: `安装 Node 失败：${e instanceof Error ? e.message : String(e)}`, exe: null };
+  }
+}
+
+/** 用户对"要不要自动安装 Node"选了"以后再说" ⇒ 记住，不再重复打扰 */
+function dismissNodePrompt(): void {
+  const current = readPluginSetting();
+  writePluginSetting({ ...current, nodePromptDismissedAt: Date.now() });
 }
 
 /** 找 Node（复用 zvec-grep 的同一套判定：系统 node → 便携 node → 都没有就 null） */
@@ -226,9 +283,21 @@ async function startPlugin(): Promise<{ ok: boolean; message: string; port?: num
   if (!node.exe) {
     return {
       ok: false,
-      message: "没有找到可用的 Node.js（需要 22 或更高）⇒ 插件无法启动。装一个 Node 之后重试即可。",
+      message: "没有找到可用的 Node.js（需要 22 或更高）⇒ 插件还没启动。可以在插件卡片上点「自动安装 Node」，由 Codem 直接装好（约 30MB），不用自己去官网下载。",
     };
   }
+  return startPluginWithNode(node.exe);
+}
+
+/**
+ * 用**指定的** node 可执行文件启动插件（第 202 波拆出来的一层）。
+ *
+ * 为什么要有这一层：自动安装 Node 之后我们**手里就有那个路径**，
+ * 再让 `resolvePluginNode()` 去文件系统里找一遍是多余的（而且"刚装好却找不到"是最冤的一种失败）。
+ * 直接用安装返回值启动，用户点「现在安装」之后一次成功。
+ */
+async function startPluginWithNode(nodeExe: string): Promise<{ ok: boolean; message: string; port?: number }> {
+  const node = { exe: nodeExe };
   const script = await pluginScriptPath();
   const dataDir = await pluginDataDir();
 
@@ -541,8 +610,11 @@ export const freeModelPlugin = {
     cached: cachedPluginModels,
     refresh: refreshPluginModelsCache,
   },
+  installNode,
+  dismissNodePrompt,
   diagnostics: {
     logTail: readLogTail,
+    runtimeDir: pluginRuntimeDir,
     dataDir: pluginDataDir,
     bundledDir: pluginBundledDir,
     scriptPath: pluginScriptPath,

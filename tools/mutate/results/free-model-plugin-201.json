@@ -1,17 +1,19 @@
 {
   "wave": "free-model-plugin-201",
-  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。",
-  "runAt": "2026-10-10T12:37:55.725Z",
-  "specFingerprint": "d3b44390f9cd0df85ce20910221a2bf0c92965a9",
+  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。",
+  "runAt": "2026-10-11T03:48:18.827Z",
+  "specFingerprint": "13398878d9577a224f6d7cc4fb507733eab9e45e",
   "files": [
     "src/core/free-model-plugin/service.ts",
     "src/core/model-config.ts",
     "src-tauri/src/ofm.rs",
-    "src-tauri/src/lib.rs"
+    "src-tauri/src/lib.rs",
+    "src/core/portable-node/index.ts"
   ],
   "tests": [
     "src/test/free-model-plugin.test.ts",
-    "src/test/free-model-plugin-host.test.ts"
+    "src/test/free-model-plugin-host.test.ts",
+    "src/test/portable-node.test.ts"
   ],
   "restored": true,
   "results": [
@@ -33,7 +35,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3708
+      "ms": 3540
     },
     {
       "id": "MUT-2 暂停顺手把数据删了",
@@ -53,7 +55,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3689
+      "ms": 3533
     },
     {
       "id": "MUT-3 删除不清扩展目录（假卸载）",
@@ -73,7 +75,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3614
+      "ms": 3530
     },
     {
       "id": "MUT-4 模型清单不丢坏条目（把没有 id 的也塞进列表）",
@@ -93,7 +95,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3750
+      "ms": 3498
     },
     {
       "id": "MUT-5 关掉插件之后仍然往模型列表里塞它的模型",
@@ -113,7 +115,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3620
+      "ms": 3494
     },
     {
       "id": "MUT-6 没有 Node 也假装启动成功",
@@ -121,8 +123,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "  const node = await resolvePluginNode();\n  if (!node.exe) {\n    return {\n      ok: false,\n      message: \"没有找到可用的 Node.js（需要 22 或更高）⇒ 插件无法启动。装一个 Node 之后重试即可。\",\n    };\n  }",
-          "to": "  const node = await resolvePluginNode();\n  if (!node.exe) {\n    return { ok: true, message: \"插件已启动（未检测到 Node，跳过启动）\" };\n  }"
+          "from": "    return {\n      ok: false,\n      message: \"没有找到可用的 Node.js（需要 22 或更高）⇒ 插件还没启动。可以在插件卡片上点「自动安装 Node」，由 Codem 直接装好（约 30MB），不用自己去官网下载。\",\n    };",
+          "to": "    return { ok: true, message: \"插件已启动（未检测到 Node，跳过启动）\" };"
         }
       ],
       "tests": [
@@ -133,7 +135,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3646
+      "ms": 3528
     },
     {
       "id": "MUT-7 模型列表不再优先来自插件（挪到末尾）",
@@ -158,7 +160,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3619
+      "ms": 3514
     },
     {
       "id": "MUT-8 启用后不登记托管供应商（模型看得见但没路可走）",
@@ -178,7 +180,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3622
+      "ms": 3508
     },
     {
       "id": "MUT-9 暂停后不移除供应商条目（留一条永远打不通的）",
@@ -198,7 +200,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3759
+      "ms": 3517
     },
     {
       "id": "MUT-11 起进程前不清死锁（崩溃一次之后插件永久起不来）",
@@ -218,7 +220,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1726
+      "ms": 1689
     },
     {
       "id": "MUT-12 路径不去逐字前缀（Node 解析入口崩 EISDIR）",
@@ -243,7 +245,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1752
+      "ms": 1688
     },
     {
       "id": "MUT-13 退出时不收插件（攒孤儿 node 进程）",
@@ -263,7 +265,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1705
+      "ms": 1679
     },
     {
       "id": "MUT-14 暂停后不清模型缓存（最长 60 秒里列表仍列着调不通的免费模型）",
@@ -283,7 +285,112 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3659
+      "ms": 3470
+    },
+    {
+      "id": "MUT-15 自动装 Node 装到别处（装完还是找不到 ⇒ 用户点了也白点）",
+      "why": "OFM-10：必须装进插件自己的扩展目录（resolvePluginNode 就在那里找；也才能随删除一起清掉）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  const dir = await invoke<string>(\"ofm_extension_dir\");\n  return `${dir}\\\\runtime`;",
+          "to": "  return \"C:\\\\Windows\\\\Temp\\\\ofm-runtime\";"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3552
+    },
+    {
+      "id": "MUT-16 装 Node 失败也报成功（用户以为装好了，其实什么都没发生）",
+      "why": "OFM-11：这条集成最怕的就是「界面说成功、实际没装」",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "    return { ok: false, message: `安装 Node 失败：${e instanceof Error ? e.message : String(e)}`, exe: null };",
+          "to": "    return { ok: true, message: \"Node 已装好（变异：其实失败了）\", exe: null };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3535
+    },
+    {
+      "id": "MUT-17 「以后再说」不记住（每次开都再问一遍）",
+      "why": "OFM-12：用户说了以后再说就该停；反复弹窗比不装更烦人",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  const current = readPluginSetting();\n  writePluginSetting({ ...current, nodePromptDismissedAt: Date.now() });",
+          "to": "  void readPluginSetting();"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3477
+    },
+    {
+      "id": "MUT-18 少了兜底候选与补一轮（一次抖动就整体失败，用户白点一次）",
+      "why": "PN-2/PN-4：真机上同一批 URL 会成片瞬时 404；没有换候选/换源/补一轮，用户就只能自己去官网装（正是他要我们避免的）",
+      "patches": [
+        {
+          "file": "src/core/portable-node/index.ts",
+          "from": "    if (!downloaded) {\n      onPhase(\"downloading\", \"刚才那批源都没成功，等 15 秒再补一轮...\");",
+          "to": "    if (!downloaded) {\n      onPhase(\"downloading\", \"（变异：不补一轮）\");"
+        },
+        {
+          "file": "src/core/portable-node/index.ts",
+          "from": "      candidates.push({\n        url: `${base}/v${NODE_FALLBACK_VERSION}/node-${NODE_FALLBACK_VERSION}-win-x64.zip`,\n        what: `兜底 v${NODE_FALLBACK_VERSION}`,\n      });\n",
+          "to": ""
+        }
+      ],
+      "tests": [
+        "src/test/portable-node.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1704
+    },
+    {
+      "id": "MUT-19 下不到也当成功（解压一个不存在的 zip）",
+      "why": "PN-4：装 Node 这条路上最怕「界面说装好了、其实什么都没有」",
+      "patches": [
+        {
+          "file": "src/core/portable-node/index.ts",
+          "from": "    if (!downloaded) throw new Error(`所有下载源都失败了：\\n${failures.join(\"\\n\")}`);",
+          "to": "    if (!downloaded) failures.length = 0;"
+        }
+      ],
+      "tests": [
+        "src/test/portable-node.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1692
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -303,7 +410,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3639
+      "ms": 3469
     }
   ]
 }

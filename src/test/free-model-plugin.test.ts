@@ -29,6 +29,13 @@ const mockExecuteCommand = vi.fn();
 const mockGetAppDataDir = vi.fn();
 const settingStore: Record<string, unknown> = {};
 
+const installPortableNodeMock = vi.fn();
+
+vi.mock("../core/portable-node", () => ({
+  installPortableNode: (...a: unknown[]) => installPortableNodeMock(...a),
+  findPortableNode: async () => null,
+}));
+
 vi.mock("../core/file-api", () => ({
   exists: (...a: unknown[]) => mockExists(...a),
   listDirectory: (...a: unknown[]) => mockListDirectory(...a),
@@ -192,6 +199,50 @@ describe("OFM：免费模型插件的独立扩展语义", () => {
     expect(r.ok, "起不来就必须说失败").toBe(false);
     expect(r.message, "原因要写清楚（用户能据此去装 Node）").toContain("Node");
     expect(mockInvoke, "失败路径不许去调起进程").not.toHaveBeenCalledWith("ofm_start", expect.anything());
+  });
+
+  it("OFM-10：没有 Node 时，**应用内一键装**（装进插件自己的目录、装完顺手把插件带起来）", async () => {
+    /* 用户实报：通知只说"装一个 Node 之后重试即可" ⇒ 用户要求「不要让用户自己再去安装」 */
+    mockExecuteCommand.mockResolvedValue({ stdout: "v18.0.0\n", stderr: "", exitCode: 0 }); // 太旧 = 等于没有
+    mockListDirectory.mockResolvedValue([]);
+    const installed: Array<{ dir: string }> = [];
+    installPortableNodeMock.mockImplementation(async (dir: string) => {
+      installed.push({ dir });
+      return `${dir}\\node-v22.19.0-win-x64\\node.exe`;
+    });
+    mockReadFile.mockImplementation(async (p: string) =>
+      String(p).endsWith("settings.json") ? JSON.stringify({ standalonePort: 18937, forwardKey: "k" }) : "",
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, data: [{ id: "free-1", name: "F" }] }) })));
+
+    const result = await freeModelPlugin.installNode();
+    expect(result.ok, "应当装成功").toBe(true);
+    expect(installed, "必须调用共享的便携 Node 安装实现（与 zvec-grep 同一份）").toHaveLength(1);
+    expect(installed[0].dir, "装进**插件自己的扩展目录**（删除扩展时能一起清掉）").toContain("our-free-model");
+    expect(installed[0].dir.endsWith("runtime"), "落在 runtime 子目录（resolvePluginNode 就在这里找）").toBe(true);
+    expect(mockInvoke, "装完要顺手把插件启动起来（用户点一下就该能用）").toHaveBeenCalledWith(
+      "ofm_start",
+      expect.objectContaining({ nodeExe: expect.stringContaining("node.exe") }),
+    );
+  });
+
+  it("OFM-11：装 Node 失败要如实回报（不假装成功、也不去启动）", async () => {
+    mockExecuteCommand.mockResolvedValue({ stdout: "v18.0.0\n", stderr: "", exitCode: 0 });
+    mockListDirectory.mockResolvedValue([]);
+    installPortableNodeMock.mockRejectedValue(new Error("官方与镜像均下载失败：断网"));
+
+    const result = await freeModelPlugin.installNode();
+    expect(result.ok, "失败必须说失败").toBe(false);
+    expect(result.message, "原因与出路都要带上").toContain("下载失败");
+    expect(mockInvoke, "失败路径不许去启动").not.toHaveBeenCalledWith("ofm_start", expect.anything());
+  });
+
+  it("OFM-12：「以后再说」要记住（不再反复打扰），且随时可以去卡片上再装", () => {
+    expect(freeModelPlugin.readSetting().nodePromptDismissedAt, "默认没忽略过，该提示就提示").toBeUndefined();
+    freeModelPlugin.dismissNodePrompt();
+    const after = freeModelPlugin.readSetting();
+    expect(after.nodePromptDismissedAt, "忽略时间要落进设置").toBeGreaterThan(0);
+    expect(after.enabled, "忽略提示**不等于**关掉插件（两件事）").toBe(true);
   });
 
   it("OFM-9：暂停/删除后模型清单**立刻**消失（不等 60 秒 TTL），原有列表原样回来", async () => {

@@ -32,6 +32,8 @@ export function FreeModelPluginCard() {
   const [notice, setNotice] = useState("");
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [logTail, setLogTail] = useState("");
+  const [installingNode, setInstallingNode] = useState(false);
+  const [nodePhase, setNodePhase] = useState("");
 
   const refresh = useCallback(async () => {
     const next = await freeModelPlugin.status();
@@ -43,6 +45,24 @@ export function FreeModelPluginCard() {
      */
     setLogTail(next.enabled && !next.health ? await freeModelPlugin.diagnostics.logTail(12) : "");
   }, []);
+
+  /**
+   * 一键装 Node（第 202 波）：装完 `installNode` 内部会把插件启动起来，
+   * 所以这里只需刷新状态与清单（**不用**再让用户点一次「开启」）。
+   */
+  const installNode = useCallback(async () => {
+    setInstallingNode(true);
+    setNotice("");
+    try {
+      const result = await freeModelPlugin.installNode((_phase, message) => setNodePhase(message));
+      setNotice(result.message);
+      if (result.ok) await freeModelPlugin.models.refresh();
+    } finally {
+      setInstallingNode(false);
+      setNodePhase("");
+      await refresh();
+    }
+  }, [refresh]);
 
   useEffect(() => {
     void refresh();
@@ -130,6 +150,22 @@ export function FreeModelPluginCard() {
 
       {notice && <div className="ofm-card-notice">{notice}</div>}
       {status.lastError && <div className="ofm-card-error">最后一条错误：{status.lastError}</div>}
+
+      {/*
+        第 202 波（用户实报）：没有 Node 时不要只报"起不来"，直接给一键安装 ——
+        用户明确要求「不要让用户自己再去安装」。装完会自动把插件启动起来。
+      */}
+      {status.enabled && status.codePresent && !status.nodeExe && (
+        <div className="ofm-card-actions">
+          <button
+            className="ofm-btn primary"
+            disabled={busy !== "none" || installingNode}
+            onClick={() => void installNode()}
+          >
+            {installingNode ? `正在安装…（${nodePhase || "准备中"}）` : "自动安装 Node（约 30MB）"}
+          </button>
+        </div>
+      )}
 
       {/* 没起来的时候，把插件自己的输出摆出来 —— 这是"可看运行日志"那句话的兑现 */}
       {logTail && (

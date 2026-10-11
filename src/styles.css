@@ -19796,6 +19796,58 @@ html[data-contrast="high"] {
   background: var(--accent-muted);
 }
 
+/* ---- 第 202 波：缺 Node 时的「现在安装 / 以后再说」选择框（用户实报：别让用户自己去装） ---- */
+.ofm-node-prompt {
+  position: fixed;
+  top: var(--space-6);
+  left: 50%;
+  z-index: var(--z-toast);
+  width: min(560px, calc(100vw - var(--space-8)));
+  padding: var(--space-6);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+}
+
+.ofm-node-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.ofm-node-prompt-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.ofm-node-prompt-body {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.ofm-node-prompt-phase {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--accent);
+}
+
+.ofm-node-prompt-notice {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-primary);
+}
+
+.ofm-node-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 /* ---- 第 201 波：免费模型插件卡片（独立本地服务的控制面） ---- */
 .ofm-card {
   margin: var(--space-6) var(--space-8) 0;

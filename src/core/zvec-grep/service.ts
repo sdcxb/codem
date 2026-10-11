@@ -14,16 +14,12 @@ import {
   zgCliPathOf,
   resolveNodeExe,
   parseNodeVersion,
-  pickNodeLtsVersion,
   type ZvecPaths,
 } from "./runtime";
 import { exists, executeCommand, listDirectory, deleteDirectoryPermanent, readFile, writeFile } from "../file-api";
 import {
   ZVEC_MCP_SERVER,
   ZVEC_PACK_URL,
-  NODE_OFFICIAL_DIST,
-  NODE_MIRROR_DIST,
-  NODE_FALLBACK_VERSION,
   ZVEC_MIN_NODE_MAJOR,
   ZVEC_MODELS,
   ZVEC_EVENT_CHANGED,
@@ -31,6 +27,8 @@ import {
   type ZvecInstallPhase,
 } from "./types";
 import { getSettingJSON } from "../storage/settings";
+// 第 202 波：便携版 Node 的下载/回退只有一份实现（插件也用同一份）
+import { installPortableNode } from "../portable-node";
 
 // ========== 内部工具 ==========
 
@@ -252,73 +250,21 @@ export function errMsg(e: unknown): string {
 }
 
 /**
- * 拉取 node 官方/镜像 index.json 并解析最新 LTS 的 win-x64 zip 地址。
- * index.json 较大（全版本列表），用长超时下载落盘再读取（http_get 15s 会超时）。
- */
-async function fetchNodeZipUrl(base: string, paths: ZvecPaths): Promise<string> {
-  const idxPath = `${paths.baseDir}/.tmp-node-index.json`;
-  await downloadFileExt(`${base}/index.json`, idxPath, 300);
-  const text = await readFile(idxPath);
-  const index = JSON.parse(text);
-  const v = pickNodeLtsVersion(index);
-  if (!v) throw new Error("index.json 中未找到 LTS 版本");
-  return `${base}/v${v}/node-${v}-win-x64.zip`;
-}
-
-/**
- * 下载 portable node：
- * 1) 每个源先试 index.json 动态解析的最新 LTS；
- * 2) 404/失败则回退该源的固定兜底版本（NODE_FALLBACK_VERSION，官方/镜像长期保留）；
- * 3) 官方源全失败切 npmmirror 镜像重复上述两步。
- * 这样同时覆盖「国内直连官方不可达」与「最新版本发布窗口 zip 未就绪」两种场景。
+ * 确保有一个便携版 node（第 202 波起**委托给共享实现** `core/portable-node`）。
+ *
+ * 为什么改成委托：免费模型插件也要 Node（用户真机收到「没有找到可用的 Node.js」的通知）。
+ * 下载/回退逻辑各写一份迟早分叉 —— 现在只有一份，两边对「有没有 Node」永远给同一个答案。
+ * 这里保留 zvec 自己的失败提示（引导导入离线包）。
  */
 async function downloadNodeIfNeeded(paths: ZvecPaths, onPhase: PhaseCb): Promise<string> {
   const existing = await findPortableNode(paths.nodeDir);
   if (existing) return existing;
-  onPhase("downloading-node", "解析 Node 下载地址（官方/镜像）...");
-  const zipPath = `${paths.baseDir}/.tmp-node.zip`;
-  const failures: string[] = [];
-  let downloaded = false;
-  try {
-    for (const base of [NODE_OFFICIAL_DIST, NODE_MIRROR_DIST]) {
-      const urls: Array<{ u: string; what: string }> = [];
-      try {
-        urls.push({ u: await fetchNodeZipUrl(base, paths), what: "最新 LTS" });
-      } catch (e) {
-        failures.push(`${base} index: ${errMsg(e)}`);
-      }
-      // 固定兜底版本（跳过 index，直连其 dist 目录）
-      urls.push({
-        u: `${base}/v${NODE_FALLBACK_VERSION}/node-${NODE_FALLBACK_VERSION}-win-x64.zip`,
-        what: `兜底 v${NODE_FALLBACK_VERSION}`,
-      });
-      for (const { u, what } of urls) {
-        if (downloaded) break;
-        try {
-          onPhase("downloading-node", `下载 Node 运行时（${what}）...`);
-          await downloadFileExt(u, zipPath, 1200);
-          downloaded = true;
-        } catch (e) {
-          failures.push(`${base} ${what}: ${errMsg(e)}`);
-        }
-      }
-      if (downloaded) break;
-    }
-    if (!downloaded) {
-      throw new Error(`官方与镜像均下载失败：\n${failures.join("\n")}`);
-    }
-  } catch (e) {
-    throw new Error(
-      `下载 Node 失败：${errMsg(e)}。可先自行安装 Node.js ≥22（https://nodejs.org）后重试，或改用「导入离线包」。`,
-    );
-  }
-  onPhase("extracting-node", "解压 Node 运行时...");
-  await extractZip(zipPath, paths.nodeDir);
-  const node = await findPortableNode(paths.nodeDir);
-  if (!node) throw new Error("Node 解压后未找到 node.exe");
-  return node;
+  return installPortableNode(
+    paths.nodeDir,
+    (phase, message) => onPhase(phase === "downloading" ? "downloading-node" : "extracting-node", message),
+    "可先自行安装 Node.js ≥22（https://nodejs.org）后重试，或改用「导入离线包」。",
+  );
 }
-
 type PhaseCb = (phase: ZvecInstallPhase, message: string) => void;
 
 /**

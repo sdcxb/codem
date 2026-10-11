@@ -343,6 +343,8 @@ import { DreamLayout } from "./components/DreamLayout";
 import { OnboardingTour } from "./components/OnboardingTour";
 // 第 47 轮补：写盘/操作失败的常驻提示（原来那条通道只在流式期间渲染）
 import { PersistFailureBanner } from "./components/PersistFailureBanner";
+// 第 202 波：免费模型插件缺 Node 时的「现在安装 / 以后再说」选择框
+import { FreeModelNodePrompt } from './components/FreeModelNodePrompt';
 // 第 47 轮（D-19）：`QuickAccessCards` 的 App 级死 UI 已删除（理由见原渲染点注释），
 // 该组件仍由 `ChatPanel.tsx` 通过 `chat-panel-quick-access` 槽位真实渲染，故组件本身保留。
 import { CorrectionResultPanel } from "./components/CorrectionResultPanel";
@@ -5893,6 +5895,13 @@ onClose={() => setCitationViewer(null)}
         只在流式期间渲染，于是空闲时界面什么都不显示，违反"失败必须可见"这条仓库级契约。
       */}
       <PersistFailureBanner />
+
+      {/*
+        第 202 波（用户实报）：免费模型插件需要 Node 时，**在这里给一个选择** ——
+        「现在安装」由 Codem 自己下便携版（约 30MB），「以后再说」就不再打扰。
+        以前那条通知只说"装一个 Node 之后重试即可"，等于把活儿留给用户，用户明确要求改掉。
+      */}
+      <FreeModelNodePrompt />
 
       {/* P2: Onboarding tour for first-time users or replay from Help */}
       {(showOnboarding || showOnboardingReplay) && (
