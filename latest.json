@@ -1,14 +1,14 @@
 {
   "version": "1.16.310",
-  "notes": "Codem v1.16.310 — 免费模型插件：便携 Node 随安装包内置（装完即用，不必自己装 Node）；可暂停/删除，模型列表优先显示免费模型。",
-  "pub_date": "2026-10-11T06:27:04Z",
+  "notes": "Codem v1.16.310 — 内置免费模型插件（Our Free Model）：装好即用、默认开启，无需登录或 API Key，模型列表优先显示它的免费模型；运行环境随安装包自带，不用自己装 Node；可随时暂停或删除。并修复了检查更新时看不到下载进度的问题。",
+  "pub_date": "2026-10-11T08:41:38Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JtOWdCYUdkZW8zMVdxV0FEaEM4eVE1WEMzWnZkaGxyRGlTcGpuNjhVSHg2d3ZFRTFKaFQwZlZXK0lpY29KbnhjLzZzcjNWZktidnNiRXllWTgveHdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzAwMDI0CWZpbGU6Q29kZW1fMS4xNi4zMTBfeDY0LXNldHVwLmV4ZQpuYWhBZEdRNlNnaHhvY0R0QWtJYlIwWmhPMFZDSUswQWI1bFhtZlNhVFlXQnJEekZkU3FPOGNJUEovd1VGNEo5UDA4U010K3g2MGtVTWRhcmNodHJEZz09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hFbDB2N2s2U20vU3RFVnl3eDJ5Uit3R3VWYWJNZmswclRjL3dLY09NQUE4T2JYc0phRnJoc3EvL3VBV3FxU3BxbDZERmpqZ295TEZxZW5IYytIeWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzA4MDk0CWZpbGU6Q29kZW1fMS4xNi4zMTBfeDY0LXNldHVwLmV4ZQovclNFMWZOcnNpd1YxakF3VzNyT2FyazM4OXZiTFRBZTRjYzlrenJHVUtQK3RJSGQxRGswOGFaOGU5V2NSQnl1MVd6ZDNEcEU3MUFTWFJLL2UzUEZEZz09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.310/Codem_1.16.310_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JtOWdCYUdkZW8zMVdxV0FEaEM4eVE1WEMzWnZkaGxyRGlTcGpuNjhVSHg2d3ZFRTFKaFQwZlZXK0lpY29KbnhjLzZzcjNWZktidnNiRXllWTgveHdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzAwMDI0CWZpbGU6Q29kZW1fMS4xNi4zMTBfeDY0LXNldHVwLmV4ZQpuYWhBZEdRNlNnaHhvY0R0QWtJYlIwWmhPMFZDSUswQWI1bFhtZlNhVFlXQnJEekZkU3FPOGNJUEovd1VGNEo5UDA4U010K3g2MGtVTWRhcmNodHJEZz09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hFbDB2N2s2U20vU3RFVnl3eDJ5Uit3R3VWYWJNZmswclRjL3dLY09NQUE4T2JYc0phRnJoc3EvL3VBV3FxU3BxbDZERmpqZ295TEZxZW5IYytIeWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzA4MDk0CWZpbGU6Q29kZW1fMS4xNi4zMTBfeDY0LXNldHVwLmV4ZQovclNFMWZOcnNpd1YxakF3VzNyT2FyazM4OXZiTFRBZTRjYzlrenJHVUtQK3RJSGQxRGswOGFaOGU5V2NSQnl1MVd6ZDNEcEU3MUFTWFJLL2UzUEZEZz09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.310/Codem_1.16.310_x64-setup.exe"
     }
   }
