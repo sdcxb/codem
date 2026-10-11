@@ -35,7 +35,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "resources/ofm/**/*"
+      "resources/ofm/**/*",
+      "resources/node/**/*"
     ],
     "icon": [
       "icons/32x32.png",

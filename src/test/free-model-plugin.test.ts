@@ -201,6 +201,20 @@ describe("OFM：免费模型插件的独立扩展语义", () => {
     expect(mockInvoke, "失败路径不许去调起进程").not.toHaveBeenCalledWith("ofm_start", expect.anything());
   });
 
+  it("OFM-13：内置 Node 存在时**优先用它**（不看系统 node、更不去下载）", async () => {
+    /*
+     * 第 203 波（用户选的方案 A）：安装包里带一份自己的 Node。
+     * 有它 ⇒ 插件不依赖用户机器上的 PATH，也不依赖任何下载源（真机上那些源会成片瞬时 404）。
+     */
+    installTauriHost({ ofm_bundled_node: () => "C:\\Codem\\resources\\node\\node.exe" });
+    mockExecuteCommand.mockResolvedValue({ stdout: "v18.0.0\n", stderr: "", exitCode: 0 }); // 系统 node 太旧也不管
+
+    const status = await freeModelPlugin.status();
+    expect(status.nodeExe, "要用内置那一份").toBe("C:\\Codem\\resources\\node\\node.exe");
+    expect(status.nodeVia).toBe("bundled");
+    expect(installPortableNodeMock, "有内置就绝不该去下载").not.toHaveBeenCalled();
+  });
+
   it("OFM-10：没有 Node 时，**应用内一键装**（装进插件自己的目录、装完顺手把插件带起来）", async () => {
     /* 用户实报：通知只说"装一个 Node 之后重试即可" ⇒ 用户要求「不要让用户自己再去安装」 */
     mockExecuteCommand.mockResolvedValue({ stdout: "v18.0.0\n", stderr: "", exitCode: 0 }); // 太旧 = 等于没有

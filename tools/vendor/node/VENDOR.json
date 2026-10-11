@@ -1,0 +1,10 @@
+{
+  "name": "便携版 Node（随安装包内置，第 203 波）",
+  "why": "免费模型插件是个 Node 程序。此前是「缺 Node 就现场下载」——真机上遇到 5 个下载源同时成片 404，用户会看到「安装失败、请自行安装」⇒ 方案 A：把 Node 直接放进安装包，从此不存在「缺 Node」这件事，也不受任何网络环境影响。",
+  "version": "24.19.0",
+  "source": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip",
+  "shasums": "https://nodejs.org/dist/v24.19.0/SHASUMS256.txt",
+  "what": "只取包里的 node.exe（插件只需要它；npm/头文件等一概不进安装包）",
+  "license": "Node.js 为 MIT 许可（同目录 LICENSE 取自发行包）",
+  "whyNotCommitted": "解压后的 node.exe 约 100MB，不进 git（与插件内置同一套做法：仓库只留版本与 sha256，构建时按 tools/vendor/fetch-node.mjs 现取现校验）。"
+}

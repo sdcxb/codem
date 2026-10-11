@@ -79,7 +79,7 @@ interface FreeModelPluginStatus {
   /** Node 可执行文件（`null` = 没找到，插件起不来） */
   nodeExe: string | null;
   /** Node 从哪儿来的（system / portable） */
-  nodeVia: "system" | "portable" | null;
+  nodeVia: "bundled" | "system" | "portable" | null;
   /** 进程在不在（我们自己起的那个） */
   running: boolean;
   pid: number | null;
@@ -182,7 +182,23 @@ function dismissNodePrompt(): void {
 }
 
 /** 找 Node（复用 zvec-grep 的同一套判定：系统 node → 便携 node → 都没有就 null） */
-async function resolvePluginNode(): Promise<{ exe: string | null; via: "system" | "portable" | null }> {
+async function resolvePluginNode(): Promise<{
+  exe: string | null;
+  via: "bundled" | "system" | "portable" | null;
+}> {
+  /*
+   * ① **内置优先**（第 203 波，用户选的方案 A）。
+   *
+   * 用户的机器上不一定有 Node；而"现场下载"在真机上被证明**不可靠**（官方与 4 个国内镜像会成片
+   * 瞬时 404）。安装包里带一份自己的 Node ⇒ 既不依赖用户环境，也不依赖任何下载源，
+   * 插件第一次启动就能跑。系统 Node 仍然被认可（够新就用它，不浪费机器上已有的东西）。
+   */
+  try {
+    const bundled = await invoke<string | null>("ofm_bundled_node");
+    if (bundled) return { exe: bundled, via: "bundled" };
+  } catch {
+    /* 没有内置（开发态没跑 fetch-node.mjs）⇒ 继续往下找 */
+  }
   const detectSystem = async () => {
     try {
       const r = await executeCommand("node -v", undefined, 15_000);

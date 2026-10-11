@@ -145,6 +145,25 @@ pub async fn ofm_bundled_dir(app: AppHandle) -> Result<String, String> {
     Err("内置的插件代码不存在（安装包不完整？）".to_string())
 }
 
+/// 内置便携 Node 的绝对路径（第 203 波，方案 A）。
+///
+/// 有了它，"缺 Node"这件事根本不会发生：渲染侧的解析顺序把**内置**排在最前，
+/// 于是插件不依赖用户机器上的 PATH、也不依赖任何下载源（真机上那些源会成片瞬时 404）。
+/// 没有内置（开发态没跑过 fetch-node.mjs）时返回 null，让调用方继续用系统/便携 Node。
+#[tauri::command]
+pub async fn ofm_bundled_node(app: AppHandle) -> Result<Option<String>, String> {
+    let candidates = [
+        app.path().resource_dir().ok().map(|d| d.join("resources").join("node").join("node.exe")),
+        Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("node").join("node.exe")),
+    ];
+    for candidate in candidates.into_iter().flatten() {
+        if candidate.exists() {
+            return Ok(Some(strip_verbatim(candidate)));
+        }
+    }
+    Ok(None)
+}
+
 /// 起服务。**端口由调用方决定**（渲染侧先探一个空闲端口再传进来）——
 /// 这样"服务在哪个端口"是确定的，不必去解析子进程的 stdout（那是最脆的一种做法）。
 #[tauri::command]

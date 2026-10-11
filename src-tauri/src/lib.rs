@@ -4523,6 +4523,7 @@ path_exists,
             // 「免费模型插件」的进程生命周期（独立扩展：起 / 停 / 查；路径由宿主给）
             ofm::ofm_extension_dir,
             ofm::ofm_bundled_dir,
+            ofm::ofm_bundled_node,
             ofm::ofm_start,
             ofm::ofm_stop,
             ofm::ofm_state,

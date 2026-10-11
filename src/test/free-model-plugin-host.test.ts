@@ -11,7 +11,7 @@
  *
  * 真机证据（装机版 1.16.309）记在 `docs/HANDOFF-NEXT-SESSION.md` 第 201 波一节。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 
@@ -70,6 +70,43 @@ describe("OFM-HOST：免费模型插件的宿主接线棘轮", () => {
     expect(conf.app?.security?.csp ?? "", "CSP 必须放行 127.0.0.1（否则渲染侧 fetch 插件一律被拦）").toContain(
       "http://127.0.0.1:*",
     );
+  });
+
+  it("OFM-HOST-6：内置便携 Node 的接线（命令 / 安装包资源 / 溯源）", () => {
+    expect(ofmRs, "Rust 侧要有取内置 node.exe 的命令").toContain("pub async fn ofm_bundled_node");
+    expect(ofmRs, "它也要过 strip_verbatim（\"\\?\" 前缀会让 Node 崩）").toMatch(
+      /ofm_bundled_node[\s\S]{0,600}?strip_verbatim/,
+    );
+    expect(libRs, "命令要注册进 invoke_handler").toContain("ofm::ofm_bundled_node");
+    const conf = JSON.parse(tauriConf) as { bundle?: { resources?: string[] } };
+    expect(
+      conf.bundle?.resources?.some((r) => r.includes("resources/node")),
+      "bundle.resources 里没有内置 Node ⇒ 装完之后还是找不到它",
+    ).toBe(true);
+    const vendor = JSON.parse(
+      readFileSync(path.join(root, "tools/vendor/node/VENDOR.json"), "utf8"),
+    ) as { version?: string; source?: string; shasums?: string };
+    expect(vendor.version, "要固定版本（否则每次构建装的东西不一样）").toMatch(/^\d+\.\d+\.\d+$/);
+    expect(vendor.source, "要写明来源（官方发行包）").toContain("nodejs.org/dist");
+    expect(vendor.shasums, "要有官方 SHASUMS256.txt 的地址（校验凭据来自来源侧）").toContain("SHASUMS256.txt");
+  });
+
+  it("OFM-HOST-7：本机若已内置 Node，它必须完整且与溯源一致", () => {
+    const exe = path.join(root, "src-tauri/resources/node/node.exe");
+    if (!existsSync(exe)) {
+      /* 干净克隆（含 CI）：只校验上面的接线，这是设计如此 */
+      expect(existsSync(path.join(root, "tools/vendor/node/VENDOR.json"))).toBe(true);
+      return;
+    }
+    const meta = JSON.parse(
+      readFileSync(path.join(root, "src-tauri/resources/node/NODE.json"), "utf8"),
+    ) as { version?: string; sizeBytes?: number };
+    expect(statSync(exe).size, "内置的 node.exe 要足够大（半个文件就是坏的）").toBeGreaterThan(50 * 1024 * 1024);
+    expect(meta.sizeBytes, "NODE.json 记的大小要与实际一致").toBe(statSync(exe).size);
+    const vendor = JSON.parse(
+      readFileSync(path.join(root, "tools/vendor/node/VENDOR.json"), "utf8"),
+    ) as { version?: string };
+    expect(meta.version, "内置版本要与溯源一致").toBe(vendor.version);
   });
 
   it("OFM-HOST-5：子进程输出必须落盘（GUI 里 eprintln 等于丢掉，错误就查不到了）", () => {

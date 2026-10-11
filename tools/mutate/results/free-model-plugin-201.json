@@ -1,14 +1,15 @@
 {
   "wave": "free-model-plugin-201",
-  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。",
-  "runAt": "2026-10-11T03:48:18.827Z",
-  "specFingerprint": "13398878d9577a224f6d7cc4fb507733eab9e45e",
+  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。 第 203 波（方案 A）：便携 Node **随安装包内置**（按官方 SHASUMS256.txt 校验 sha256、只取 node.exe、解析顺序内置优先）—— 对应变异：不优先用内置 / 不过 strip_verbatim / 不打进安装包。",
+  "runAt": "2026-10-11T05:03:45.464Z",
+  "specFingerprint": "73b101ad96cf7923bec859a11b96da5a7d15ca30",
   "files": [
     "src/core/free-model-plugin/service.ts",
     "src/core/model-config.ts",
     "src-tauri/src/ofm.rs",
     "src-tauri/src/lib.rs",
-    "src/core/portable-node/index.ts"
+    "src/core/portable-node/index.ts",
+    "src-tauri/tauri.conf.json"
   ],
   "tests": [
     "src/test/free-model-plugin.test.ts",
@@ -35,7 +36,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3540
+      "ms": 3611
     },
     {
       "id": "MUT-2 暂停顺手把数据删了",
@@ -55,7 +56,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3533
+      "ms": 3614
     },
     {
       "id": "MUT-3 删除不清扩展目录（假卸载）",
@@ -75,7 +76,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3530
+      "ms": 3618
     },
     {
       "id": "MUT-4 模型清单不丢坏条目（把没有 id 的也塞进列表）",
@@ -95,7 +96,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3498
+      "ms": 3579
     },
     {
       "id": "MUT-5 关掉插件之后仍然往模型列表里塞它的模型",
@@ -115,7 +116,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3494
+      "ms": 3583
     },
     {
       "id": "MUT-6 没有 Node 也假装启动成功",
@@ -135,7 +136,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3528
+      "ms": 3579
     },
     {
       "id": "MUT-7 模型列表不再优先来自插件（挪到末尾）",
@@ -160,7 +161,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3514
+      "ms": 3684
     },
     {
       "id": "MUT-8 启用后不登记托管供应商（模型看得见但没路可走）",
@@ -180,7 +181,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3508
+      "ms": 3582
     },
     {
       "id": "MUT-9 暂停后不移除供应商条目（留一条永远打不通的）",
@@ -200,7 +201,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3517
+      "ms": 3585
     },
     {
       "id": "MUT-11 起进程前不清死锁（崩溃一次之后插件永久起不来）",
@@ -220,7 +221,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1689
+      "ms": 1709
     },
     {
       "id": "MUT-12 路径不去逐字前缀（Node 解析入口崩 EISDIR）",
@@ -245,7 +246,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1688
+      "ms": 1733
     },
     {
       "id": "MUT-13 退出时不收插件（攒孤儿 node 进程）",
@@ -265,7 +266,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1679
+      "ms": 1708
     },
     {
       "id": "MUT-14 暂停后不清模型缓存（最长 60 秒里列表仍列着调不通的免费模型）",
@@ -285,7 +286,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3470
+      "ms": 3543
     },
     {
       "id": "MUT-15 自动装 Node 装到别处（装完还是找不到 ⇒ 用户点了也白点）",
@@ -305,7 +306,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3552
+      "ms": 3584
     },
     {
       "id": "MUT-16 装 Node 失败也报成功（用户以为装好了，其实什么都没发生）",
@@ -325,7 +326,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3535
+      "ms": 3595
     },
     {
       "id": "MUT-17 「以后再说」不记住（每次开都再问一遍）",
@@ -345,7 +346,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3477
+      "ms": 3622
     },
     {
       "id": "MUT-18 少了兜底候选与补一轮（一次抖动就整体失败，用户白点一次）",
@@ -370,7 +371,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1704
+      "ms": 1729
     },
     {
       "id": "MUT-19 下不到也当成功（解压一个不存在的 zip）",
@@ -390,7 +391,67 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1692
+      "ms": 1738
+    },
+    {
+      "id": "MUT-20 不优先用内置 Node（明明带着它，却还去看系统 node / 去下载）",
+      "why": "OFM-13：方案 A 的全部意义就是「装完就能跑、不看环境也不看下载源」；顺序错了等于白内置",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  try {\n    const bundled = await invoke<string | null>(\"ofm_bundled_node\");\n    if (bundled) return { exe: bundled, via: \"bundled\" };\n  } catch {",
+          "to": "  try {\n    const bundled = await invoke<string | null>(\"ofm_bundled_node\");\n    void bundled;\n  } catch {"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3566
+    },
+    {
+      "id": "MUT-21 内置 Node 的路径不过 strip_verbatim（逐字前缀又会让它崩）",
+      "why": "OFM-HOST-6：这条路径与插件入口是同一类坑 —— 逐字前缀交给 Node 会在 resolveMainPath 崩成 EISDIR",
+      "patches": [
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "        if candidate.exists() {\n            return Ok(Some(strip_verbatim(candidate)));\n        }",
+          "to": "        if candidate.exists() {\n            return Ok(Some(candidate.to_string_lossy().to_string()));\n        }"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1734
+    },
+    {
+      "id": "MUT-22 内置 Node 不打进安装包（装完照样找不到）",
+      "why": "OFM-HOST-6：bundle.resources 少了它，开发态一切正常、装机版直接「缺 Node」",
+      "patches": [
+        {
+          "file": "src-tauri/tauri.conf.json",
+          "from": "      \"resources/ofm/**/*\",\n      \"resources/node/**/*\"",
+          "to": "      \"resources/ofm/**/*\""
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1722
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -410,7 +471,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3469
+      "ms": 3595
     }
   ]
 }

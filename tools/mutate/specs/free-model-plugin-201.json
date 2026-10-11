@@ -1,5 +1,5 @@
 {
-  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。",
+  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。 第 203 波（方案 A）：便携 Node **随安装包内置**（按官方 SHASUMS256.txt 校验 sha256、只取 node.exe、解析顺序内置优先）—— 对应变异：不优先用内置 / 不过 strip_verbatim / 不打进安装包。",
   "mutations": [
     {
       "id": "MUT-1 默认开启失效（没有设置时按关闭处理）",
@@ -283,6 +283,51 @@
       ],
       "tests": [
         "src/test/portable-node.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-20 不优先用内置 Node（明明带着它，却还去看系统 node / 去下载）",
+      "why": "OFM-13：方案 A 的全部意义就是「装完就能跑、不看环境也不看下载源」；顺序错了等于白内置",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  try {\n    const bundled = await invoke<string | null>(\"ofm_bundled_node\");\n    if (bundled) return { exe: bundled, via: \"bundled\" };\n  } catch {",
+          "to": "  try {\n    const bundled = await invoke<string | null>(\"ofm_bundled_node\");\n    void bundled;\n  } catch {"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-21 内置 Node 的路径不过 strip_verbatim（逐字前缀又会让它崩）",
+      "why": "OFM-HOST-6：这条路径与插件入口是同一类坑 —— 逐字前缀交给 Node 会在 resolveMainPath 崩成 EISDIR",
+      "patches": [
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "        if candidate.exists() {\n            return Ok(Some(strip_verbatim(candidate)));\n        }",
+          "to": "        if candidate.exists() {\n            return Ok(Some(candidate.to_string_lossy().to_string()));\n        }"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-22 内置 Node 不打进安装包（装完照样找不到）",
+      "why": "OFM-HOST-6：bundle.resources 少了它，开发态一切正常、装机版直接「缺 Node」",
+      "patches": [
+        {
+          "file": "src-tauri/tauri.conf.json",
+          "from": "      \"resources/ofm/**/*\",\n      \"resources/node/**/*\"",
+          "to": "      \"resources/ofm/**/*\""
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
       ],
       "expectRed": true
     },
