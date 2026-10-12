@@ -1,0 +1,389 @@
+﻿URL: https://docs.trae.cn/ide_subagents
+STATUS: 200
+TITLE-CHARS: 9557
+=====
+TRAE
+TRAE TraeWork TRAE Plugin TRAE CLI 企业版
+AI 助手
+TRAE 智能问答助手 
+ 你好，我是 TRAE 文档问答助手 🎉
+你在阅读当前文档的过程中，无论对文档概念的解释，还是文档内容方面的疑问，都可以随时向我提问，我会全力为你解答
+推荐问题
+TRAE IDE 里最热门的 Skill 是哪些？
+如何创建自定义智能体？
+如何配置 Rules？
+新对话
+文档反馈
+TRAE 概览 
+ 重磅更新：TraeCode 与 TraeWork 已融合为全新的 TRAE 
+ 入门
+教程 & 最佳实践
+AI 编程核心 
+ 对话 
+ 模型
+上下文
+智能体（Agent） 
+ 智能体概述 
+ 内置智能体：Agent 
+ 创建并管理自定义智能体 
+ 子智能体（Subagent）
+技能（Skill） 
+ 规则（Rule） 
+ 记忆 
+ 命令 
+ 钩子（Hook）
+超级代码补全：CUE 
+ 智能体审查 
+ 内置工作流：Plan、Spec 与 Goal 
+ Beta 功能 
+ （暂时下线）重构洞察
+Agent 窗口
+SOLO 模式
+工具与扩展
+开发环境
+系统设置
+会员套餐
+官方活动
+问题排查
+联系我们 
+ 相关协议
+TRAE / AI 编程核心 / 智能体（Agent） / 子智能体（Subagent） 
+ 子智能体（Subagent）
+ 复制页面
+子智能体（Subagent）是一种通过 Markdown 文件定义的专用智能体。内置智能体 “Agent“ 会在识别到合适任务时自动调用对应的 Subagent。
+Subagent 拥有独立的上下文窗口。它的中间推理和执行过程不会污染 “Agent” 的对话历史，因此适合处理需要大量检索、分析或推理，但最终只需要返回结果的任务。
+了解 Subagent
+调用机制
+“Agent” 调用 Subagent 的流程如下：
+用户发送消息 ：用户发送消息后，“Agent” 判断当前任务类型。
+匹配 description ：“Agent” 将用户意图与所有可用 Subagent 的 description 字段进行匹配。
+决定是否调用 ：如果某个 Subagent 的 description 与任务高度相关，“Agent” 会自动将任务委派给它。
+执行任务 ：Subagent 在自己的上下文窗口和工具权限范围内完成任务。
+返回结果 ：Subagent 将结果返回给 “Agent”，由 “Agent” 汇总并呈现给用户。
+Subagent 类型
+类型 | 
+ 作用范围 | 
+ 配置文件路径 |
+用户级 Subagent
+|
+用户级 Subagent 对当前设备上的所有项目生效。
+|
+macOS & Linux： ~/.trae-cn/agents/{my_agent}.md
+Windows： %userprofile%/.trae-cn/agents/{my_agent}.md
+|
+项目级 Subagent | 
+ 项目级 Subagent 跟随当前项目的代码仓库，因此仅对当前项目生效。 | 
+ {project_folder}/.trae/agents/{my_agent}.md |
+Subagent 覆盖规则
+如果多个 {my_agent}.md 文件中定义了同名的 Subagent，将遵循以下覆盖规则：
+项目级 Subagent 会覆盖同名的用户级 Subagent。
+对于同一类型（用户级或项目级）的多个同名 Subagent，只有最先被加载的会生效，其后的将被忽略。
+适用场景
+你可以将高频、重复、边界清晰的工作流封装为可复用的 Subagent，例如：
+重复性流程 ：如固定格式的代码审查、测试生成、文档检查。
+专业任务 ：如安全审计、性能分析、依赖风险检查。
+上下文隔离 ：任务需要读取大量文件或进行多轮分析，但不希望占用主对话上下文。
+固化团队规范 ：将团队约定、检查清单和输出格式固化为项目级 Subagent。
+使用限制
+仅内置智能体 “Agent” 可调用 Subagent。
+创建 Subagent
+启用 Subagent 功能
+Subagent 功能通常已默认开启。若未开启，可通过以下步骤开启：
+前往 设置 > Beta 。
+在 Subagents 处，打开 启用 Subagents 目录 开关。
+编写 Subagent 文件
+Subagent 配置文件使用 Markdown 格式，由两部分组成：
+YAML frontmatter ：定义 Subagent 的基础元信息，例如名称、描述、可用的工具和 MCP Server。
+系统提示词 ：定义 Subagent 的角色、工作流程、行为边界和输出格式等。
+基础结构如下：
+---
+name: {my-agent}
+description: {Describe when "Agent" should invoke this Subagent}
+model: {modelName}
+tools: {toolName}, {toolName}, {toolName}
+disallowedTools: {toolName}, {toolName}, {toolName}
+mcpServers:
+ - {mcpServerName}
+ - {mcpServerName}
+---
+{systemPrompt}
+frontmatter 字段说明如下：
+字段 | 
+ 类型 | 
+ 是否必填 | 
+ 描述 |
+name
+|
+string
+|
+是
+|
+Subagent 的唯一标识。
+必须以字母开头，中间可包含字母、数字和连字符 - ，以字母或数字结尾，长度不超过 50 个字符。建议使用清晰、唯一的名称，例如 code-reviewer 、 unit-test-writer 。
+|
+description
+|
+string
+|
+是
+|
+描述 “Agent” 应在什么场景下调用该 Subagent。
+描述越具体，调度越准确；过于模糊可能导致应调用时未调用，或不该调用时误触发。
+|
+model
+|
+string
+|
+否
+|
+指定该 Subagent 使用的模型。
+仅支持指定 TRAE 提供的内置模型，不支持自定义模型。详情参考下文 “可用模型” 列表。
+若不配置该字段，则默认使用你在 TRAE 的 AI 对话输入框中为 “Agent” 所选择的模型。
+|
+tools
+|
+string
+|
+否
+|
+允许该 Subagent 使用的工具，多个工具用英文逗号分隔。详情参考下文 “可用工具” 列表。
+若不配置，默认加载全部可用工具；若不希望调用任何工具，可设置为 "" 。
+|
+disallowedTools
+|
+string
+|
+否
+|
+禁止该 Subagent 使用的工具，多个工具用英文逗号分隔。
+若某个工具同时出现在 tools 和 disallowedTools 中， disallowedTools 优先级更高。
+|
+mcpServers | 
+ list | 
+ 否 | 
+ 允许该 Subagent 调用的 MCP Server 的名称。填写前需确认对应 MCP Server 已在 TRAE 中配置并启用。 |
+可用模型
+Subagent 可调用的模型如下：
+模型名称 | 
+ 应在 model 字段中填入的值 |
+Seed-Evolving | 
+ Doubao-Seed-Evolving |
+Seed-2.1-Pro | 
+ Doubao-Seed-2.1-Pro |
+Seed-2.1-Turbo | 
+ Doubao-Seed-2.1-Turbo |
+Seed-Code | 
+ Doubao_1_6 |
+GLM-5.3-Flash | 
+ glm-5.3-flash |
+GLM-5.3 | 
+ glm-5.3 |
+GLM-5.2 | 
+ glm-5.2 |
+DeepSeek-V4-Flash 正式版 | 
+ DeepSeek-V4-Flash-Official |
+DeepSeek-V4-Flash | 
+ DeepSeek-V4-Flash |
+DeepSeek-V4-Pro 正式版 | 
+ DeepSeek-V4-Pro-Official |
+DeepSeek-V4-Pro | 
+ DeepSeek-V4-Pro |
+Kimi-K3 | 
+ kimi-k3 |
+Kimi-K2.7-Code | 
+ kimi-k2.7-code |
+MiniMax-M3 | 
+ minimax-m3 |
+Qwen3.8-Flash | 
+ qwen-3.8-flash |
+Qwen3.8-Max | 
+ qwen-3.8-max |
+Qwen3.7-Plus | 
+ qwen-3.7-plus |
+可用工具
+Subagent 可调用的工具如下：
+工具名称 | 
+ 功能 |
+Bash | 
+ 运行终端命令。 |
+Edit | 
+ 编辑或删除文件。 |
+Glob | 
+ 按文件名模式搜索文件。 |
+Grep | 
+ 按内容正则搜索。 |
+Read | 
+ 读取文件或目录。 |
+Skill | 
+ 调用 Skill。 |
+TodoWrite | 
+ 管理任务清单。 |
+WebFetch | 
+ 抓取网页内容。 |
+WebSearch | 
+ 在网络上搜索。 |
+Write | 
+ 创建或覆写文件。 |
+LSP | 
+ 通过 Language Server 检查语法问题。 |
+mcp__<server_name>__<tool_name> | 
+ 限定调用某个 MCP Server 下的指定工具，需配合 mcpServers 字段一起使用，例如 mcp__github__get_issue （限定调用 GitHub MCP 中的 get_issue 工具）。 |
+最佳实践
+description 编写范例
+✅ 推荐写法 | 
+ ❌ 不推荐写法 |
+“Reviews code for quality and best practices when user asks for code review” | 
+ “Code reviewer” |
+“Generates unit tests for TypeScript files using Jest framework” | 
+ “Write tests” |
+“Analyzes and explains complex Go code when user asks ‘what does this do’” | 
+ “Helper” |
+Prompt 编写建议
+明确角色定位 ：开头说明 Subagent 的身份和专业领域。
+定义工作流程 ：使用编号列表描述执行步骤。
+约束输出格式 ：如果期望输出特定格式（如 JSON、表格）的内容，应明确说明。
+设定行为边界 ：说明哪些事情不应做，例如 “只读，不修改文件”。
+保持简洁 ：Prompt 越短，调用成本越低，执行也更稳定。
+调试与排查
+Subagent 没有被调用？
+检查项 | 
+ 排查方法 |
+功能开关 | 
+ 前往 设置 > Beta > Subagents ，确认 启用 Subagents 目录 开关已打开。 |
+文件路径 | 
+ 确认用户级和项目级 Subagent 的配置文件都位于正确的目录。 |
+name 的合法性 | 
+ 确认 name 以字母开头，只包含字母、数字和连字符，并以字母或数字结尾，长度不超过 50。 |
+description 是否存在 | 
+ 缺少 description 的文件不会被正常解析。 |
+frontmatter 格式 | 
+ 确认 frontmatter 部分为标准 YAML：以 --- 开头和结束，且没有 BOM。 |
+description 的匹配度 | 
+ 尝试在指令中使用 description 里的关键词，验证该 Subagent 是否能被调用。 |
+Subagent 被调用但行为不符合预期？
+检查 tools 字段中添加的工具是否过多或不足，必要时遵循最小权限原则。
+检查 Prompt 是否存在歧义，尤其是任务边界、输出格式和禁止事项。
+检查是否存在同名 Subagent，导致当前 Subagent 被覆盖。
+检查是否需要补充项目背景、技术栈、代码风格或示例输出。
+如果涉及 MCP 调用，确认 mcpServers 字段中添加的 MCP Server 名称与 TRAE 中配置的名称一致。
+示例
+代码审查专家
+该示例适用于代码审查场景，可用于检查代码质量、识别潜在风险，并评估实现是否符合最佳实践。该示例中， code-reviewer 仅可以调用读取和检索类工具。因此，它可以在不修改仓库内容的前提下分析目标文件，并按固定格式输出审查结论，适合作为合并前检查或日常 CR 辅助工具。
+---
+name: code-reviewer
+description: Reviews code for quality, security, and best practices when user asks for code review or CR
+ tools: Read, Glob, Grep
+---
+You are a senior code reviewer with expertise in TypeScript and React.
+When invoked, follow this workflow:
+ 1. Identify the files to review (from user context or recent changes)
+ 2. Read each file carefully
+ 3. Analyze for: logic errors, security vulnerabilities, performance issues, code style
+Output format:
+ - Use a table with columns: File | Line | Severity | Issue | Suggestion
+ - Severity levels: 🔴 Critical, 🟡 Warning, 🔵 Info
+ - End with a summary: total issues found, overall assessment
+单测生成器
+该示例适用于为指定函数、模块或文件补充单元测试。 unit-test-writer 会先读取目标源码，并参考项目中已有的测试风格，再生成覆盖正常路径、边界条件和异常分支的测试用例，适合用于提升测试覆盖率，或为新功能快速补齐基础验证。
+---
+name: unit-test-writer
+description: Generates unit tests for specified functions or files when user asks to write or generate tests
+ tools: Read, Glob, Grep, Write
+---
+You are a test engineer specializing in unit test generation.
+When invoked:
+ 1. Read the target file to understand the functions and their signatures
+ 2. Identify edge cases, boundary conditions, and error paths
+ 3. Generate comprehensive test cases using the project's testing framework
+Rules:
+ - Match the project's existing test style (check existing test files first)
+ - Cover: happy path, edge cases, error handling
+ - Use descriptive test names that explain the scenario
+ - Do NOT modify the source code, only create/edit test files
+项目引导员
+该示例适用于项目成员快速了解代码仓库结构、研发规范和关键流程。 project-guide 会以只读方式检索仓库文档和源码信息，帮助新成员定位模块边界、构建流程和约定说明，从而减少重复沟通成本。
+---
+name: project-guide
+description: Answers questions about project architecture, conventions, and onboarding when new members ask about the project
+model: minimax-m3
+ tools: Read, Glob, Grep
+---
+You are a project guide for this repository. Your job is to help team members
+understand the codebase structure, conventions, and architecture decisions.
+When answering questions:
+ 1. First search for relevant files and documentation
+ 2. Provide concise, accurate answers with file path references
+ 3. If unsure, say so and suggest where to look
+Key areas you should know:
+ - Project structure and module boundaries
+ - Naming conventions and code style
+ - Build and deployment process
+ - Key dependencies and their roles
+MCP 集成：GitHub Issue 分类
+该示例适用于将 Subagent 接入外部平台能力，完成自动化协作任务。通过配置指定的 MCP Server 和工具白名单， github-issue-triager 可以读取 GitHub Issue 内容，并按照预设规则完成分类、打标和回复草稿生成，适合用于规范和统一 Issue 处理流程。
+---
+name: github-issue-triager
+description: Automatically triages, labels, and responds to GitHub issues when user asks to handle or triage issues
+tools: Read, mcp __github__ get _issue, mcp __github__ update_ issue, mcp __github__ add _issue_ comment
+mcpServers:
+ - GitHub
+---
+You are a GitHub issue triage specialist.
+When invoked with an issue number or URL:
+ 1. Fetch the issue details
+ 2. Analyze the content to determine: type (bug/feature/question), priority, affected area
+ 3. Apply appropriate labels
+ 4. If it's a question with an obvious answer, draft a helpful response
+Label mapping:
+ - Bug reports → "bug" + severity label
+ - Feature requests → "enhancement"
+ - Questions → "question"
+安全审计（只读）
+该示例适用于对代码仓库进行安全风险排查。 security-auditor 仅具备读取和检索权限，可用于识别硬编码密钥、注入风险、XSS 攻击面等问题，并输出包含风险等级、文件位置和修复建议的安全报告。
+---
+name: security-auditor
+description: Performs security audit on code looking for vulnerabilities, secrets, and unsafe patterns
+model: glm-5.2
+ tools: Read, Glob, Grep
+---
+You are a security auditor. Scan code for:
+ - Hardcoded secrets (API keys, passwords, tokens)
+ - SQL injection vulnerabilities
+ - XSS attack vectors
+ - Unsafe deserialization
+ - Insecure dependencies
+Output a security report with:
+ - Risk level (Critical/High/Medium/Low)
+ - File and line reference
+ - Description of the vulnerability
+ - Recommended fix
+IMPORTANT: You are read-only. Do NOT modify any files.
+文档对您有帮助吗?
+ 有帮助 无帮助
+上一篇 
+ 创建并管理自定义智能体
+ 下一篇 
+ 技能（Skill）
+了解 Subagent 
+ 调用机制 
+ Subagent 类型 
+ Subagent 覆盖规则 
+ 适用场景 
+ 使用限制 
+ 创建 Subagent 
+ 启用 Subagent 功能 
+ 编写 Subagent 文件 
+ 可用模型 
+ 可用工具 
+ 最佳实践 
+ description 编写范例 
+ Prompt 编写建议 
+ 调试与排查 
+ Subagent 没有被调用？ 
+ Subagent 被调用但行为不符合预期？ 
+ 示例 
+ 代码审查专家 
+ 单测生成器 
+ 项目引导员 
+ MCP 集成：GitHub Issue 分类 
+ 安全审计（只读）

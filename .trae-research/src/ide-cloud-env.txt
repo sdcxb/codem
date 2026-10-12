@@ -1,0 +1,288 @@
+﻿URL: https://docs.trae.cn/ide_set-up-your-cloud-environment?lang=zh
+STATUS: 200
+TITLE-CHARS: 5333
+=====
+TRAE
+TRAE TraeWork TRAE Plugin TRAE CLI 企业版
+AI 助手
+TRAE 智能问答助手 
+ 你好，我是 TRAE 文档问答助手 🎉
+你在阅读当前文档的过程中，无论对文档概念的解释，还是文档内容方面的疑问，都可以随时向我提问，我会全力为你解答
+推荐问题
+TRAE IDE 里最热门的 Skill 是哪些？
+如何创建自定义智能体？
+如何配置 Rules？
+新对话
+文档反馈
+TRAE 概览 
+ 重磅更新：TraeCode 与 TraeWork 已融合为全新的 TRAE 
+ 入门
+教程 & 最佳实践
+AI 编程核心
+Agent 窗口 
+ Agent 窗口快速开始 
+ 自动化任务 
+ 产物空间 
+ 办公助理 
+ 云端运行环境配置 
+ 语音讨论 
+ 工作树
+SOLO 模式
+工具与扩展
+开发环境
+系统设置
+会员套餐
+官方活动
+问题排查
+联系我们 
+ 相关协议
+TRAE / Agent 窗口 / 云端运行环境配置 
+ 云端运行环境配置
+ 复制页面
+为了提供基于云的代码分析、执行和调试，云端智能体需要在你的活动会话期间临时存储和处理与会话相关的代码、配置和对话上下文。为此，你需要配置自定义云端运行环境。
+该功能适用于需要在云端隔离环境中运行代码、管理项目依赖或与 AI 协作进行复杂调试等场景。这解决了本地环境不一致、资源受限等问题，让你能随时随地在统一的云端环境中进行开发和调试。
+适用范围
+自定义云端环境配置仅可在 Agent 窗口的 “云端” 任务中使用。
+配置自定义云端运行环境
+打开 Agent 窗口。
+前往 设置 > 云端运行环境 。
+你将进入云端环境配置面板。
+在面板右上角，点击 创建 按钮。
+页面上显示云端环境配置窗口。
+配置云端环境，然后点击 确认 按钮。
+参数说明如下：
+参数 | 
+ 描述 |
+环境名称 | 
+ 环境的基本信息，用于标识和区分不同的开发环境。 |
+预装依赖 | 
+ 定义基础镜像和预装的语言版本，是云端环境的基础系统。你可以指定项目所需的编程语言版本，默认使用最新版本。详情参考 运行环境配置 。 |
+环境变量 | 
+ 程序运行时的配置，用来保存普通配置，比如接口地址或运行模式。 |
+敏感变量
+|
+用于存储敏感信息。
+提示 ：所有敏感变量都会被加密存储，仅在运行时使用。
+|
+运行方式 | 
+ 如果你的项目需要指定启动命令，可以在这里设置。例如，需要执行 npm run dev 。详情参考 运行时配置 。 |
+使用自定义云端运行环境
+TRAE 中的 Agent 窗口支持运行本地和云端任务。在运行云端任务前，你可以选择使用自定义云端环境配置，步骤如下：
+在对话输入框左下角，将运行环境设置为 云端 。
+在对话输入框左下角，选择所需的自定义云端运行环境。
+云端环境配置详解
+运行环境配置
+预装依赖提供了一个可复现、可分发的应用运行环境模板。它把应用运行所需的一切打包在一起，使应用能够在任何支持容器的平台上以一致的方式运行。
+基础容器镜像
+TRAE 官方构建并维护了一个 all-in-one 通用容器镜像，其中预装了常见的工具链和语言生态系统。 提示
+暂不支持由用户自定义容器镜像，例如通过 container_image 字段来自定义容器镜像地址（如 universal:latest ）。
+预装语言和版本
+通过 preinstalled_packages 配置项目所需的编程语言版本。
+预装包中包含的语言和版本如下：
+语言 | 
+ 字段 | 
+ 支持的版本 |
+Python | 
+ python_version | 
+ 3.10、3.11、3.12、3.13、3.14 |
+Node.js | 
+ node_version | 
+ 18、20、22、24 |
+Go | 
+ go_version | 
+ 1.22.12、1.23.8、1.24.3、1.25.1 |
+Rust | 
+ rust_version | 
+ 1.83.0 ~ 1.92.0 |
+Java | 
+ java_version | 
+ 11、17、21、22、23、24、25 |
+Ruby | 
+ ruby_version | 
+ 3.2.3、3.3.8、3.4.4 |
+PHP | 
+ php_version | 
+ 8.2、8.3、8.4、8.5 |
+Swift | 
+ swift_version | 
+ 5.10、6.1、6.2 |
+需注意：
+若未手动指定语言的版本，则默认使用最新版本。
+你可以通过 GET /api/v1/environment_configs/supported_versions 获取最新支持的版本列表。
+手动指定的版本必须为 TRAE 支持的版本（参考上表）。
+敏感变量 vs 环境变量
+敏感变量和环境变量用于存储敏感信息和普通配置参数。两者的区别如下：
+| 
+ 敏感变量 | 
+ 环境变量 |
+存储方式 | 
+ KMS 加密存储 | 
+ 明文 JSON 存储 |
+API 返回 | 
+ 仅返回 key 列表，不返回值 | 
+ 返回完整 key-value |
+适用内容 | 
+ API 密钥、数据库密码、访问令牌 | 
+ DEBUG 开关、LOG_LEVEL、端口号 |
+安全级别 | 
+ 高 | 
+ 低 |
+数量限制 | 
+ 最多 50 个 | 
+ 最多 100 个 |
+使用建议：
+敏感信息（如密码），使用敏感变量来存储。
+普通配置（如开关、日志级别），使用环境变量来存储。
+运行时配置
+在运行时配置中，你可以通过脚本来自定义环境的安装和启动过程。
+参数说明
+参数 | 
+ 作用 | 
+ 相关限制 | 
+ 执行方式 |
+安装脚本 / Install Script | 
+ 环境启动时自动执行的命令，通常用于安装依赖。 | 
+ install 命令长度不得超过 10KB | 
+ 触发时机：代码 clone 完成后，阻塞执行，等待完成。 |
+启动脚本 / Start Script
+|
+依赖安装完成后执行的命令，用来启动项目，比如 npm run dev 这类命令。
+在一些前后端分离的项目里，启动脚本可以用来启动数据库（ db ）或者后端服务器（ server ）。
+|
+start 命令长度不得超过 10KB
+|
+触发时机：安装脚本执行完，后台执行，不阻塞。
+|
+默认命令行 / Default Shell
+|
+配置与主程序并行运行的后台任务（如数据库、测试监听、日志监控）。
+|
+最多同时打开 10 个终端
+terminals 命令长度不得超过 4KB
+|
+并行打开所有终端。
+|
+使用场景和示例
+场景 1：简单项目（单一服务）
+适用于前端项目、简单 API 服务。例如：
+{ 
+ "install" : "npm install" , 
+ "start" : "npm run dev" 
+ }
+场景 2：全栈项目（多服务）
+适用于需要同时启动多个服务的项目。例如：
+{ 
+ "install" : "npm install && pip install -r requirements.txt" , 
+ "terminals" : [ 
+ { "name" : "Frontend" , "command" : "npm run dev" } , 
+ { "name" : "Backend" , "command" : "uvicorn main:app --reload" } 
+ ] 
+ }
+场景 3：开发辅助（监控任务）
+适用于需要持续运行测试或类型检查的项目。
+{ 
+ "install" : "npm install" , 
+ "start" : "npm run dev" , 
+ "terminals" : [ 
+ { "name" : "Test Watcher" , "command" : "npm run test:watch" } , 
+ { "name" : "Type Check" , "command" : "npm run typecheck -- --watch" } 
+ ] 
+ }
+脚本执行时机和顺序
+install 、 start 和 terminals 脚本的执行时机和顺序如下：
+环境启动
+ │
+ ▼
+┌─────────────────────────────────────┐
+│ 1. 执行 install 命令 │ ← 阻塞等待，必须完成后才继续
+│ (安装项目依赖) │
+└─────────────────────────────────────┘
+ │
+ ▼
+┌─────────────────────────────────────┐
+│ 2. 执行 start 命令 │ ← 后台运行，不阻塞
+│ (启动主进程) │
+└─────────────────────────────────────┘
+ │
+ ▼
+┌─────────────────────────────────────┐
+│ 3. 打开 terminals │ ← 并行打开所有终端
+│ (启动辅助服务/监控任务/测试/DB) │
+└─────────────────────────────────────┘
+ │
+ ▼
+ 环境就绪
+需注意：
+install 失败会阻断后续步骤。
+start 和 terminals 都是长时间运行的进程。
+所有 terminals 并行启动，无先后顺序。
+网络策略配置
+提示
+暂不支持由用户自定义网络策略。
+网络策略用于控制沙箱的网络访问权限。
+目前，你可以通过配置 network_policy 对象来限制出站流量，仅允许环境访问指定的常用依赖源。该配置块为固定模式，参数说明如下：
+参数 | 
+ 描述 |
+mode | 
+ 网络策略开关，固定设置为 1 ，表示启用。 |
+allowlist_policy | 
+ 白名单策略模式，固定设置为 0 ，表示使用 common_dependencies 列表作为白名单。 |
+common_dependencies
+|
+一个包含字符串的数组，用于指定允许访问的依赖源。
+常用依赖源： npm 、 pypi 、 maven 、 goproxy 、 rubygems 、 packagist 、 crates 、 docker 、 github 、 gitlab 。
+|
+完整示例
+一个完整的云端运行环境配置示例如下：
+{ 
+ "name" : "Full Stack Dev Environment" , 
+ "description" : "React + FastAPI 全栈开发环境" , 
+ "preinstalled_packages" : { 
+ "python_version" : "3.12" , 
+ "node_version" : "20" 
+ } , 
+ "runtime_config" : { 
+ "install" : "npm install && pip install -r requirements.txt" , 
+ "start" : "npm run dev" , 
+ "terminals" : [ 
+ { 
+ "name" : "Backend Server" , 
+ "command" : "uvicorn main:app --reload --port 8000" , 
+ "description" : "FastAPI 后端服务" 
+ } , 
+ { 
+ "name" : "Test Runner" , 
+ "command" : "pytest --watch" , 
+ "description" : "Python 测试监听" 
+ } 
+ ] 
+ } , 
+ "secrets" : { 
+ "API_KEY" : "your_api_key" , // 替换成实际 API Key 
+ "DB_PASSWORD" : "your_db_password" // 替换成实际密码 
+ } , 
+ "environment_variables" : { 
+ "DEBUG" : "true" , 
+ "LOG_LEVEL" : "info" 
+ } , 
+ "network_policy" : { 
+ "mode" : 1 , 
+ "allowlist_policy" : 0 , 
+ "common_dependencies" : [ "npm" , "pypi" , "github" ] 
+ } 
+ }
+文档对您有帮助吗?
+ 有帮助 无帮助
+上一篇 
+ 办公助理
+ 下一篇 
+ 语音讨论
+适用范围 
+ 配置自定义云端运行环境 
+ 使用自定义云端运行环境 
+ 云端环境配置详解 
+ 运行环境配置 
+ 敏感变量 vs 环境变量 
+ 运行时配置 
+ 网络策略配置 
+ 完整示例

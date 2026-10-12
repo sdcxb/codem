@@ -1,0 +1,71 @@
+﻿URL: https://docs.trae.cn/cli_memories?lang=zh
+STATUS: 200
+TITLE-CHARS: 1389
+=====
+TRAE
+TRAE TraeWork TRAE Plugin TRAE CLI 企业版
+AI 助手
+TRAE 智能问答助手 
+ 你好，我是 TRAE 文档问答助手 🎉
+你在阅读当前文档的过程中，无论对文档概念的解释，还是文档内容方面的疑问，都可以随时向我提问，我会全力为你解答
+推荐问题
+TRAE IDE 里最热门的 Skill 是哪些？
+如何创建自定义智能体？
+如何配置 Rules？
+新对话
+文档反馈
+什么是 TRAE CLI？ 
+ TRAE CLI 快速开始 
+ 使用场景 
+ 斜杠命令 
+ 全局设置 
+ 自定义智能体 
+ 模型 
+ 模型上下文协议（MCP） 
+ 技能 
+ 记忆 
+ 工具使用权限 
+ 权限模式 
+ 大模型的回复语言 
+ Agent Client Protocol (ACP) 
+ CLI 登录令牌 
+ TRAE CLI 开源软件协议
+TRAE CLI 1.0 / 记忆 
+ 记忆
+ 复制页面
+TRAE CLI 使用 AGENTS.md 作为项目记忆的配置文件，你可以在其中配置 TRAE CLI 需了解的项目信息。
+# AGENTS.md
+## Project Overview 
+项目的整体目标与架构简介
+## Build & Commands 
+用于开发、测试与部署的常用命令
+## Code Style 
+格式化规则、命名规范与最佳实践
+## Testing 
+测试框架、约定及执行指南
+## Security 
+安全注意事项与数据保护策略
+## Configuration 
+环境配置方式与配置管理说明
+AGENTS.md 的加载机制
+当前目录与上级目录中的 AGENTS.md 会始终被加入上下文。
+下级目录中的 AGENTS.md 仅会在 TRAE CLI 读取该目录或其子目录文件时被加入上下文。
+你还可以在 AGENTS.md 中使用 @file.md 引用其他文件，TRAE CLI 会自动加载这些被引用的文件。但是，位于代码块和行内代码中的引用不会被加载。
+生成默认 AGENTS.md 配置
+进入目标项目并启动 TRAE CLI 后，你可以使用 /init 命令为当前项目生成一个携带默认配置的 AGENTS.md。
+TRAE CLI 是否可以运行 TRAE 中的 AGENTS.md？
+TRAE CLI 兼容 TRAE 中的 AGENTS.md。
+TRAE 将 AGENTS.md 存储在项目的根目录 {$Project}/AGENTS.md 中。TRAE CLI 可以读取和运行该目录下的 AGENTS.md。
+TRAE CLI 是否可以运行 TRAE 中的规则？
+TRAE CLI 兼容 TRAE 中的项目规则和个人规则。
+TRAE 存储项目规则的目录是 {$Project}/.trae/rules ，存储个人规则的目录是本地根目录 {$HOME}/.trae-cn/rules 。TRAE CLI 可以读取和运行这两个目录下的规则。
+文档对您有帮助吗?
+ 有帮助 无帮助
+上一篇 
+ 技能
+ 下一篇 
+ 工具使用权限
+AGENTS.md 的加载机制 
+ 生成默认 AGENTS.md 配置 
+ TRAE CLI 是否可以运行 TRAE 中的 AGENTS.md？ 
+ TRAE CLI 是否可以运行 TRAE 中的规则？
