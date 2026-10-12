@@ -8537,6 +8537,11 @@
   "model-option-name": {
     "flex": "1"
   },
+  "model-option-note": {
+    "color": "var(--warning)",
+    "font-size": "var(--fs-2xs)",
+    "margin-left": "var(--space-2)"
+  },
   "model-option-tag": {
     "border-radius": "var(--radius-sm)",
     "font-size": "var(--fs-xs)",

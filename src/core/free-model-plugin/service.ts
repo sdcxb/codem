@@ -36,7 +36,17 @@ import { installPortableNode } from "../portable-node";
  * （用户选了 free 模型却发去 openai 的那个 bug，根因就是没人告诉引擎这些模型归谁）。
  * 托管供应商的 id 也放在同一个模块里，避免引擎与插件各写一个字符串。
  */
-import { MANAGED_FREE_MODEL_PROVIDER_ID, setFreeModelIds } from "./model-index";
+import {
+  MANAGED_FREE_MODEL_PROVIDER_ID,
+  clearFreeModelHealth,
+  freeModelUnavailableSuffix,
+  freeModelHealthSnapshot,
+  markFreeModelAvailable,
+  recordFreeModelHealth,
+  setFreeModelIds,
+  summarizeProbe,
+  type ProbeResult,
+} from "./model-index";
 
 /** 设置键（界面上的开关就写它） */
 const FREE_MODEL_PLUGIN_SETTING_KEY = "codem-free-model-plugin";
@@ -681,6 +691,107 @@ function __resetPluginModelsCacheForTests(): void {
 }
 
 /**
+ * 主动探测可用性（第 215 波，用户实报）。
+ *
+ * 用户的原话：`如果失败，为什么刷新还能从列表里刷出来？刷新不应该测一下能否通，是不是真的存在？`
+ * —— 对。刷新只拉目录（`catalog.json` 里**没有**任何可用性字段），所以必须**单独探测**。
+ *
+ * 口径：
+ * - 每个模型发一条**最小请求**（`max_tokens: 1`，非流式）——它不等同于跑一次真实任务；
+ * - **每个请求都有超时**（`AbortController`）——否则一个卡死的模型会把整轮检测拖住；
+ * - **并发有上限**（默认 6）——几十个模型一起打会触发上游限量，反而全失败；
+ * - 结果**带时间戳**写进健康缓存并落盘（上游会恢复，旧结论不许长期劝退用户）。
+ */
+const PROBE_TIMEOUT_MS = 12_000;
+const PROBE_CONCURRENCY = 6;
+const PROBE_MAX_MODELS = 60;
+
+async function probePluginModels(options?: { concurrency?: number }): Promise<{
+  total: number;
+  ok: number;
+  failed: number;
+  unavailable: string[];
+  text: { zh: string; en: string };
+  /* 结论有没有真的存盘（false ⇒ 重启后会丢，界面必须如实说） */
+  saved: boolean;
+}> {
+  const runtime = await readPluginRuntime();
+  const models = await listPluginModels();
+  const ids = models.map((m) => m.id).slice(0, PROBE_MAX_MODELS);
+  if (!runtime.port || !runtime.key) {
+    return { ...summarizeProbe(ids.map((id) => ({ id, ok: false, error: "插件未运行" }))), saved: false };
+  }
+  const base = "http://127.0.0.1:" + runtime.port + "/v1";
+  const results: ProbeResult[] = [];
+  const concurrency = Math.max(1, Math.min(PROBE_CONCURRENCY, options?.concurrency ?? PROBE_CONCURRENCY));
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < ids.length) {
+      const id = ids[cursor++];
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      try {
+        const res = await fetch(base + "/chat/completions", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer " + runtime.key },
+          body: JSON.stringify({ model: id, messages: [{ role: "user", content: "hi" }], max_tokens: 1, stream: false }),
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          markFreeModelAvailable(id);
+          results.push({ id, ok: true });
+        } else {
+          const text = await res.text().catch(() => "");
+          const error = text.replace(/\s+/g, " ").slice(0, 160) || "HTTP " + res.status;
+          recordFreeModelHealth(id, { ok: false, at: Date.now(), error });
+          results.push({ id, ok: false, error });
+        }
+      } catch (e) {
+        const aborted = (e as Error)?.name === "AbortError";
+        const error = aborted
+          ? "超时（>" + PROBE_TIMEOUT_MS / 1000 + "s）"
+          : String((e as Error)?.message ?? e).slice(0, 160);
+        recordFreeModelHealth(id, { ok: false, at: Date.now(), error });
+        results.push({ id, ok: false, error });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  const summary = summarizeProbe(results);
+  const saved = await persistHealth();
+  return { ...summary, saved };
+}
+
+/** 探测结果落盘（重启后仍能标注"上次检测：不可用"） */
+const HEALTH_SETTING_KEY = "codem-free-model-health";
+async function persistHealth(): Promise<boolean> {
+  try {
+    setSettingJSON(HEALTH_SETTING_KEY, freeModelHealthSnapshot());
+    return true;
+  } catch (e) {
+    /* 被本仓「假成功」门禁当场抓出来（GATE-1）：原来只 warn 就让调用方当我存好了 ✗ ——
+       落盘失败必须**如实返回 false**，由调用方把"这次结论没保存（重启后会丢）"告诉用户。 */
+    console.warn("[free-model-plugin] 可用性结果落盘失败（内存里的结论仍有效，但重启后会丢）", e);
+    return false;
+  }
+}
+
+/** 启动时把上次的可用性结论回灌进内存（过期的会被 `freeModelHealthOf` 自动忽略） */
+async function loadPersistedHealth(): Promise<void> {
+  try {
+    const saved = getSettingJSON<Record<string, { ok?: boolean; at?: number; error?: string }>>(HEALTH_SETTING_KEY, {});
+    clearFreeModelHealth();
+    for (const [id, entry] of Object.entries(saved ?? {})) {
+      if (entry && typeof entry.at === "number") recordFreeModelHealth(id, { ok: !!entry.ok, at: entry.at, error: entry.error });
+    }
+  } catch (e) {
+    console.warn("[free-model-plugin] 可用性结果回灌失败", e);
+  }
+}
+
+/**
  * **本模块唯一的导出面**（第 201 波）。
  *
  * ## 为什么收成一个对象而不是十几个具名导出
@@ -703,6 +814,12 @@ export const freeModelPlugin = {
   stop: stopPlugin,
   models: {
     list: listPluginModels,
+    /* 第 215 波：主动探测可用性（用户点「检测可用性」）+ 读健康快照（界面标注用） */
+    probe: probePluginModels,
+    /* 界面标注：给「当前不可用」的模型加后缀（设置列表与对话选择器共用同一口径） */
+    unavailableSuffix: freeModelUnavailableSuffix,
+    health: freeModelHealthSnapshot,
+    loadHealth: loadPersistedHealth,
     ensureRefreshLoop: ensureModelRefreshLoop,
     stopRefreshLoop: stopModelRefreshLoop,
     cached: cachedPluginModels,
@@ -723,3 +840,5 @@ export const freeModelPlugin = {
   /** 判据用：清掉模型缓存（用例之间不许串味） */
   resetCacheForTests: __resetPluginModelsCacheForTests,
 } as const;
+
+

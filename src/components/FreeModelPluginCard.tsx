@@ -40,6 +40,8 @@ const NODE_VIA_LABEL: Record<"bundled" | "system" | "portable", string> = {
 
 export function FreeModelPluginCard() {
   const [status, setStatus] = useState<PluginStatus | null>(null);
+  /* 第 215 波：可用性检测的进度/结论文案（null=没在检测也没结论） */
+  const [probe, setProbe] = useState<string | null>(null);
   const [busy, setBusy] = useState<"none" | "enable" | "pause" | "remove">("none");
   const [notice, setNotice] = useState("");
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
@@ -101,6 +103,27 @@ export function FreeModelPluginCard() {
     [refresh],
   );
 
+  /**
+   * 第 215 波：「检测可用性」——逐个模型发一条最小请求（service 里做，带超时与并发上限），
+   * 结果写进健康缓存并落盘 ⇒ 模型列表上会出现「（当前不可用 · N 分钟前检测）」。
+   * 界面上如实显示进度与结论，不谎报"全部可用"。
+   */
+  const runProbe = useCallback(async () => {
+    setProbe("检测中…（逐个试一轮，通常十几到几十秒）");
+    try {
+      const summary = await freeModelPlugin.models.probe();
+      /* 第 215 波（被「假成功」门禁 GATE-1 抓出来的）：落盘失败必须说出来 —— 结论此刻有效，
+         只是重启后会丢；不许显示成"检测完成、已经记住"。 */
+      setProbe(summary.saved ? summary.text.zh : `${summary.text.zh}（结论未能保存，重启后需要重新检测）`);
+      if (summary.failed > 0) {
+        setNotice(`当前不可用：${summary.unavailable.slice(0, 5).join("、")}${summary.unavailable.length > 5 ? " 等" : ""}`);
+      }
+      await refresh();
+    } catch (e) {
+      setProbe(`检测失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [refresh]);
+
   if (!status) {
     return (
       <div className="ofm-card">
@@ -158,7 +181,25 @@ export function FreeModelPluginCard() {
         <button className="ofm-btn" disabled={busy !== "none"} onClick={() => void refresh()}>
           刷新状态
         </button>
+        {/*
+          第 215 波（用户实报：「如果失败，为什么刷新还能从列表里刷出来？刷新不应该测一下能否通」）：
+          **刷新 ≠ 检测**。刷新只把上游目录拉回来（`catalog.json` 里没有可用性字段），
+          所以这里单独给一个「检测可用性」：逐个发一条最小请求，结果带时间戳标注到模型列表上。
+          为什么不做成自动的：几十个模型并发探测要十几到几十秒，塞进"刷新"会让每次刷新都卡住。
+        */}
+        <button
+          className="ofm-btn"
+          disabled={busy !== "none" || !status.enabled || probe !== null}
+          onClick={() => void runProbe()}
+        >
+          {probe ? "检测中…" : "检测可用性"}
+        </button>
       </div>
+      {probe && (
+        <div className="ofm-card-note" data-testid="ofm-probe-status">
+          {probe}
+        </div>
+      )}
 
       {notice && <div className="ofm-card-notice">{notice}</div>}
       {status.lastError && <div className="ofm-card-error">最后一条错误：{status.lastError}</div>}
@@ -211,3 +252,5 @@ export function FreeModelPluginCard() {
     </div>
   );
 }
+
+

@@ -565,6 +565,11 @@ setGlobalCwd(currentProject?.path || "");
          * 「刚才还有 free 模型，过一会儿就没了」（真机实报）。
          */
         freeModelPlugin.models.ensureRefreshLoop();
+        /*
+         * 第 215 波：把上次的**可用性结论**回灌（过期的会被自动忽略）
+         * ⇒ 重启之后「当前不可用」的标注仍然在，不用重新检测一遍。
+         */
+        await freeModelPlugin.models.loadHealth();
       } catch (e) {
         reportAdvisory("freeModelPlugin.start", e instanceof Error ? e.message : String(e), {
           title: "免费模型插件启动时出错",

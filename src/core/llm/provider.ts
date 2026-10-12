@@ -1,3 +1,4 @@
+import { markFreeModelUnavailableFromError } from "../free-model-plugin/model-index";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -652,6 +653,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
               const upstreamFreeModelFailure = /endpoint is unavailable|access has been restricted|does not support this protocol|upstream request failed/i.test(
                 rawMessage,
               );
+              /*
+               * 第 215 波：真实调用撞到"上游模型不可用"时**顺手回写**健康缓存 ——
+               * 零成本，且让"检测可用性"的结果越用越准（用户不必手动点也能看到标注）。
+               * 只认上游模型级失败（`isUpstreamModelFailure` 同一套判据），
+               * 免得把用户自己的网络抖动算到模型头上。
+               */
+              markFreeModelUnavailableFromError(request.model, rawMessage);
               const message = upstreamFreeModelFailure
                 ? `${rawMessage}（该失败来自上游免费模型侧，不是 Codem；免费池里其它模型通常仍可用 —— 在模型列表里换一个「-free」模型再试。当前模型：${request.model}）`
                 : rawMessage;

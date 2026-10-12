@@ -75,3 +75,142 @@ export function resolveModelSelection(
 export function freeModelIdSnapshot(): string[] {
   return [...freeModelIds];
 }
+
+/* ==========================================================================
+ * 第 215 波：**模型可用性**（用户实报）
+ *
+ * > 我刷新了【Our Free Model（免费模型插件）】模型列表选择 ling-3.1-flash-free 并对话，提示执行出错…
+ * > 如果失败，为什么刷新还能从列表里刷出来？刷新不应该测一下能否通，是不是真的存在？
+ *
+ * 事实：`catalog.json`（刷新的数据源）只有目录，**没有任何"能不能通"的字段**；插件自己的
+ * `stats.json` 只记**事后**的 calls/failed。所以"刷出来"从来只等于"上游目录里有它"，不等于"它能用"。
+ *
+ * 这一节提供**可用性事实的来源**（都在这里、都可判据）：
+ * ① 主动探测的结果（用户点「检测可用性」）；
+ * ② 真实调用撞到"上游模型不可用"时的回写（零成本，越用越准）。
+ *
+ * ## 为什么必须带时间戳（这条是设计约束，不是细节）
+ *
+ * "能不能通"**随时间变**（上游端点会挂、也会恢复）。把某次结果当成**永久属性**就会出现
+ * "明明恢复了却永远标着不可用" ✗。所以每条记录都带 `at`，并且只有 **N 分钟内的**结论才作数
+ * （`HEALTH_TTL_MS`），过期一律视为"未知"（不标注、不劝退）。
+ * ========================================================================== */
+
+/** 可用性结论的新鲜期：超过它就视为"未知"（上游会恢复，旧结论不该继续劝退用户） */
+export const HEALTH_TTL_MS = 30 * 60 * 1000;
+
+export interface FreeModelHealth {
+  /** true=最近一次探测/调用成功；false=最近一次失败 */
+  ok: boolean;
+  /** 结论时间（毫秒时间戳）—— 过期即"未知" */
+  at: number;
+  /** 失败原因（截断保存，便于界面告知） */
+  error?: string;
+}
+
+const health = new Map<string, FreeModelHealth>();
+
+/** 记一条结论（探测与真实调用都走这里；同时用于持久化回灌） */
+export function recordFreeModelHealth(modelId: string, entry: FreeModelHealth): void {
+  if (typeof modelId !== "string" || !modelId) return;
+  health.set(modelId, { ok: !!entry.ok, at: Number(entry.at) || Date.now(), ...(entry.error ? { error: String(entry.error).slice(0, 200) } : {}) });
+}
+
+/**
+ * 从**错误文案**记一条"不可用"（真实调用失败时调用，零成本）。
+ *
+ * 只在文案命中"上游模型级失败"时才记 —— 否则用户自己的网络抖动、Key 配错都会被记成
+ * "这个模型不可用"，那是**把别人的问题算到模型头上** ✗。
+ */
+export function markFreeModelUnavailableFromError(modelId: string, message: string): boolean {
+  if (!isFreeModelId(modelId)) return false;
+  if (!isUpstreamModelFailure(message)) return false;
+  recordFreeModelHealth(modelId, { ok: false, at: Date.now(), error: message.slice(0, 200) });
+  return true;
+}
+
+/** 记一条"可用"（探测成功时调用） */
+export function markFreeModelAvailable(modelId: string): void {
+  recordFreeModelHealth(modelId, { ok: true, at: Date.now() });
+}
+
+/** 上游**模型级**失败的原话特征（探测与真实调用共用同一套判据，避免两处口径分叉） */
+const UPSTREAM_MODEL_FAILURE_MARKERS = [
+  /endpoint is unavailable/i,
+  /access has been restricted due to repeated policy violations/i,
+  /model does not support this protocol/i,
+  /upstream request failed/i,
+];
+
+/** 这段文案是不是"上游那个模型此刻不可用"（纯函数） */
+export function isUpstreamModelFailure(message: string): boolean {
+  if (typeof message !== "string" || !message) return false;
+  return UPSTREAM_MODEL_FAILURE_MARKERS.some((re) => re.test(message));
+}
+
+/** 读某模型**此刻有效**的结论（过期 ⇒ null=未知，界面就不标注、不劝退） */
+export function freeModelHealthOf(modelId: string, now = Date.now()): FreeModelHealth | null {
+  const entry = health.get(modelId);
+  if (!entry) return null;
+  if (!Number.isFinite(entry.at) || now - entry.at > HEALTH_TTL_MS) return null;
+  return entry;
+}
+
+/** 界面用：这个模型此刻是否**已知不可用**（过期或没结论都返回 false） */
+export function isFreeModelKnownUnavailable(modelId: string, now = Date.now()): boolean {
+  const entry = freeModelHealthOf(modelId, now);
+  return !!entry && entry.ok === false;
+}
+
+/**
+ * 界面用：给模型名加"当前不可用"后缀（没有结论或结论过期 ⇒ 返回空串，**不标注也不劝退**）。
+ *
+ * 抽成一个函数是为了让**设置里的模型列表**与**对话里的模型选择器**用同一口径 ——
+ * 两处各写一份判断，迟早会出现"一个说不可用、一个说可用" ✗。
+ */
+export function freeModelUnavailableSuffix(modelId: string, lang: "zh" | "en" = "zh", now = Date.now()): string {
+  if (!isFreeModelKnownUnavailable(modelId, now)) return "";
+  const entry = freeModelHealthOf(modelId, now);
+  const minutes = entry ? Math.max(0, Math.round((now - entry.at) / 60000)) : 0;
+  return lang === "zh" ? `（当前不可用 · ${minutes} 分钟前检测）` : ` (unavailable · checked ${minutes}m ago)`;
+}
+
+/** 判据/持久化用：读全部记录（含过期的，便于原样存盘） */
+export function freeModelHealthSnapshot(): Record<string, FreeModelHealth> {
+  return Object.fromEntries(health.entries());
+}
+
+/** 判据/AI 主机用：清空（用例之间不许串味） */
+export function clearFreeModelHealth(): void {
+  health.clear();
+}
+
+export interface ProbeResult {
+  id: string;
+  ok: boolean;
+  error?: string;
+}
+
+/** 把一批探测结果汇总成一句人读的话（纯函数：界面与判据共用同一口径） */
+export function summarizeProbe(results: readonly ProbeResult[]): {
+  total: number;
+  ok: number;
+  failed: number;
+  unavailable: string[];
+  text: { zh: string; en: string };
+} {
+  const ok = results.filter((r) => r.ok).length;
+  const failed = results.length - ok;
+  const unavailable = results.filter((r) => !r.ok).map((r) => r.id);
+  return {
+    total: results.length,
+    ok,
+    failed,
+    unavailable,
+    text: {
+      zh: failed === 0 ? `检测完成：${ok} 个模型全部可用` : `检测完成：${ok}/${results.length} 个可用，${failed} 个当前不可用`,
+      en: failed === 0 ? `Checked: all ${ok} models are available` : `Checked: ${ok}/${results.length} available, ${failed} unavailable`,
+    },
+  };
+}
+

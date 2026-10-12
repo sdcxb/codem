@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
+/* 第 215 波：模型选择器要能标出「当前不可用」的免费模型（判定与文案都在 model-index / service 里） */
+import { isFreeModelId } from "../core/free-model-plugin/model-index";
+import { freeModelPlugin } from "../core/free-model-plugin/service";
 import { MessageBubble } from "./MessageBubble";
 import { isMachineInjectedMessage } from "../core/storage/session";
 import { InputArea } from "./InputArea";
@@ -636,6 +639,14 @@ setStepTooltipLocked(false);
                   onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
                 >
                   <span className="model-option-name">{m.name}</span>
+                  {/* 第 215 波（用户实报：刷出来的模型一调就报"上游不可用"）：
+                      对话里的模型选择器也要标出**已知不可用**的免费模型 ——
+                      否则用户只能靠"选一次、报一次错"来发现。结论带时间戳，过期不标。 */}
+                  {isFreeModelId(m.id) && freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en") ? (
+                    <span className="model-option-note">
+                      {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
+                    </span>
+                  ) : null}
                 </div>
               ))}
               {/* Reasoning effort divider + selector */}

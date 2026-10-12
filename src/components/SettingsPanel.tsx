@@ -1328,6 +1328,10 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                         title="来自内置的免费模型插件（Our Free Model）：不需要 API Key，由插件在本地提供；选中后会走插件的本地网关。"
                       >
                         {freeModelPlugin.name} - {m.name}
+                        {/* 第 215 波（用户实报：刷出来的模型一调就报"上游不可用"）：
+                            「刷得出来」不等于「能用」—— catalog 里没有可用性字段。
+                            这里把**探测 / 真实调用**得到的结论标在名字上（结论过期就不标）。 */}
+                        {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
                       </option>
                     ))}
                   {settings.providers.filter(p => p.apiKey).map(p => {

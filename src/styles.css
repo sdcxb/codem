@@ -12627,6 +12627,13 @@ border-color: var(--text-muted);
   color: var(--text-secondary);
 }
 
+/* 第 215 波：模型选项里「当前不可用」的标注（UI 一致性门禁要求类名在样式表里有定义） */
+.model-option-note {
+  margin-left: var(--space-2);
+  color: var(--warning);
+  font-size: var(--fs-2xs);
+}
+
 .progress-bar {
   width: 100%;
   height: 22px;
@@ -20992,3 +20999,4 @@ html[data-contrast="high"] {
 }
 
 /* ===== CSS-CHECKUP-END ===== */
+
