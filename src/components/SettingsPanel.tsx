@@ -1264,6 +1264,18 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   // 保存时这一项以面板为准，而不是被库里的更晚写入顶掉（反之亦然）。
                   dirtyLocalFields.current.add("model");
                   setSettings({ ...settings, model: e.target.value });
+                  /*
+                   * 第 208 波（用户实报「选了 free 模型，对话却报 openai not configured」）：
+                   * 在「等面板保存」这条路上，用户选了之后**没保存 / 找不到保存按钮**就什么都没发生，
+                   * 而引擎手里那份默认模型还是启动时抄下来的旧副本 ⇒ 请求发去了老供应商。
+                   * 现在**这个字段选中即落盘**（设置是唯一真相、引擎现读现用）；面板保存照旧可用。
+                   */
+                  try {
+                    const current = getSettingJSON<Record<string, unknown>>("codem-settings", {}) || {};
+                    setSettingJSON("codem-settings", { ...current, model: e.target.value });
+                  } catch (err) {
+                    console.warn("[SettingsPanel] 模型选择没能立刻落盘（面板保存仍可兜住）", err);
+                  }
                 }}
                 className="sp-select-flex"
               >

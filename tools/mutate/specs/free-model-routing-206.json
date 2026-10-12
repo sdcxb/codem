@@ -1,5 +1,5 @@
 {
-  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。",
+  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。",
   "mutations": [
     {
       "id": "MUT-1 不做归属覆盖（选了 free 模型照样发去 openai）",
@@ -39,6 +39,36 @@
           "file": "src/components/SettingsPanel.tsx",
           "from": "                        ? \"内置免费模型插件已在运行：它的模型无需 API Key（在模型列表里直接选）\"",
           "to": "                        ? \"请先配置 API Key\""
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
+      "why": "FREE-ROUTE-6/8：这就是用户报的「选了 free 模型却发去 deepseek/openai」的另一半",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        return resolveModelSelection(s?.model, this.providers.getAll().map((p: { id: string }) => p.id), {",
+          "to": "        void s;\n        return resolveModelSelection(\"\", this.providers.getAll().map((p: { id: string }) => p.id), {"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
+      "why": "FREE-ROUTE-6：isFreeModelId 一旦失灵，用户选了免费模型又会发去 deepseek/openai",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/model-index.ts",
+          "from": "  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };",
+          "to": "  if (false) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };"
         }
       ],
       "tests": [

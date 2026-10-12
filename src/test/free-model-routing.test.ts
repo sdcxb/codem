@@ -17,6 +17,7 @@ import {
   MANAGED_FREE_MODEL_PROVIDER_ID,
   freeModelIdSnapshot,
   isFreeModelId,
+  resolveModelSelection,
   routeProviderForModel,
   setFreeModelIds,
 } from "../core/free-model-plugin/model-index";
@@ -87,5 +88,44 @@ describe("FREE-ROUTE：按模型归属覆盖 provider（行为）", () => {
     /* 插件没起来 / 清单为空时不许乱认领 */
     setFreeModelIds([]);
     expect(routeProviderForModel({ providerId: "openai", modelId: "mimo-v2.6-flash-free" }).providerId).toBe("openai");
+  });
+});
+
+/**
+ * 第 208 波：引擎兜底必须**现读设置**（用户实报的另一半 —— 选了 free 模型却不生效）。
+ * 真机证据：设置里已改成免费模型，引擎仍打 `fallback: provider=deepseek, model=deepseek-flash`
+ * （它手里那份 config.defaultModel 是启动时抄的旧副本）。
+ */
+describe("FREE-ROUTE：引擎兜底按当前设置算", () => {
+  const fallback = { providerId: "deepseek", modelId: "deepseek-flash" };
+
+  it("FREE-ROUTE-6：设置里选了插件模型 ⇒ 就用它、且供应商是插件（不听旧副本）", () => {
+    setFreeModelIds(["ling-3.1-flash-free"]);
+    const r = resolveModelSelection("ling-3.1-flash-free", ["deepseek", "openai"], fallback);
+    expect(r, "设置里选的模型必须赢过引擎的旧副本").toEqual({
+      providerId: MANAGED_FREE_MODEL_PROVIDER_ID,
+      modelId: "ling-3.1-flash-free",
+    });
+  });
+
+  it("FREE-ROUTE-7：设置里选了普通供应商的模型 ⇒ 供应商跟着模型走；设置里没有就沿用兜底", () => {
+    setFreeModelIds([]);
+    const owned = resolveModelSelection("moonshot-v1-32k", ["deepseek", "moonshot"], fallback);
+    expect(owned.providerId, "按模型特征认出供应商").toBe("moonshot");
+    expect(owned.modelId).toBe("moonshot-v1-32k");
+
+    expect(resolveModelSelection("", ["deepseek"], fallback), "设置为空 ⇒ 原样兜底").toEqual(fallback);
+    expect(resolveModelSelection(null, ["deepseek"], fallback)).toEqual(fallback);
+    expect(resolveModelSelection("totally-unknown", ["deepseek"], fallback)).toEqual({
+      providerId: "deepseek",
+      modelId: "totally-unknown",
+    });
+  });
+
+  it("FREE-ROUTE-8（结构棘轮）：引擎的兜底分支不许再直接返回 config 里那份副本", () => {
+    const engine = readFileSync(path.join(root, "src/core/llm/index.ts"), "utf8");
+    expect(engine, "兜底要调 resolveModelSelection").toContain("resolveModelSelection(");
+    expect(engine, "要现读设置（codem-settings）").toMatch(/resolveModelSelection\(s\?\.model/);
+    expect(engine, "日志要标明是现读的（便于真机取证）").toContain("（现读设置）");
   });
 });

@@ -46,6 +46,31 @@ export function routeProviderForModel<T extends { providerId: string; modelId: s
   return resolved;
 }
 
+/**
+ * **从"当前设置 + 已登记的供应商"算出这次该用哪个模型 / 哪个供应商**（纯函数，第 208 波）。
+ *
+ * 为什么要有它：用户选了免费模型却发去 deepseek/openai —— 因为引擎手里那份 `config.defaultModel`
+ * 是**启动时抄下来的副本**，设置里改了它并不知道（真机日志：`slot=chat → fallback:
+ * provider=deepseek, model=deepseek-flash`，而设置里已经被改成免费模型）。设置是**唯一真相**，
+ * 引擎每次兜底都该现读现算，而不是信自己的旧副本。
+ *
+ * @param model 设置里的模型 id（用户在模型管理 / 选择器里选的）
+ * @param providers 已登记的供应商 id 列表（用于判断"这个模型属于哪家"）
+ * @param fallback 设置里没有模型时的兜底（保持原行为）
+ */
+export function resolveModelSelection(
+  model: string | null | undefined,
+  providers: readonly string[],
+  fallback: { providerId: string; modelId: string },
+): { providerId: string; modelId: string } {
+  if (typeof model !== "string" || !model) return fallback;
+  /* ① 插件提供的免费模型 ⇒ 走插件（不需要任何 Key） */
+  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };
+  /* ② 否则按"哪个供应商认得这个模型"来定；认不出就沿用兜底的供应商（模型仍然要听设置的） */
+  const owned = providers.find((p) => model.startsWith(`${p}-`) || model.includes(p));
+  return { providerId: owned ?? fallback.providerId, modelId: model };
+}
+
 /** 判据用：读当前索引（只读快照） */
 export function freeModelIdSnapshot(): string[] {
   return [...freeModelIds];

@@ -142,7 +142,7 @@ import { reportActionFailure, reportAdvisory } from "../storage/persist-failure"
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 // 第 206 波：按模型归属路由（内置免费模型插件提供的模型 ⇒ 走 free-model 供应商）
-import { routeProviderForModel } from "../free-model-plugin/model-index";
+import { resolveModelSelection, routeProviderForModel } from "../free-model-plugin/model-index";
 import { getEventLog } from "../storage/event-log";
 import { extractJSON } from "./output-parser";
 import { resolveMaxOutputTokens } from "./model-output-limit";
@@ -545,12 +545,31 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       }
       console.log(`[LLMEngine.resolveSlot] slot=${slot} → profile found but provider not ready: ${slotConfig.provider} (exists=${!!provider}, configured=${provider?.isConfigured?.()})`);
     }
-    // Fallback to engine default
-    console.log(`[LLMEngine.resolveSlot] slot=${slot} → fallback: provider=${this.config.defaultProvider}, model=${this.config.defaultModel}`);
-    return {
-      providerId: this.config.defaultProvider || "openai",
-      modelId: this.config.defaultModel || "gpt-4o",
-    };
+    /*
+     * Fallback to engine default —— 第 208 波：**现读当前设置**，不信自己那份旧副本。
+     *
+     * 真机现场：设置里把模型改成免费模型之后，这里仍然打 `provider=deepseek, model=deepseek-flash`
+     * （副本是启动时抄下来的）⇒ 用户的「选了 free 模型」根本没生效，请求又按老 provider 发出去，
+     * 于是报 openai not configured。设置是唯一真相：每次兜底都现读，并按模型归属定供应商。
+     */
+    const live = (() => {
+      try {
+        const s = getSettingJSON<{ model?: string }>("codem-settings", {});
+        return resolveModelSelection(s?.model, this.providers.getAll().map((p: { id: string }) => p.id), {
+          providerId: this.config.defaultProvider || "openai",
+          modelId: this.config.defaultModel || "gpt-4o",
+        });
+      } catch {
+        return {
+          providerId: this.config.defaultProvider || "openai",
+          modelId: this.config.defaultModel || "gpt-4o",
+        };
+      }
+    })();
+    console.log(
+      `[LLMEngine.resolveSlot] slot=${slot} → fallback: provider=${live.providerId}, model=${live.modelId}（现读设置）`,
+    );
+    return live;
   }
 
   /** Get or create an agentic loop (per-session for parallel execution) */

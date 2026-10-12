@@ -1,11 +1,12 @@
 {
   "wave": "free-model-routing-206",
-  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。",
-  "runAt": "2026-10-12T01:05:24.614Z",
-  "specFingerprint": "5134f64f78e6daff4f6c27c01b5851d55b696427",
+  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。",
+  "runAt": "2026-10-12T02:51:38.954Z",
+  "specFingerprint": "6d089e50444fa9fc1519cfd559ecad71ec50ffca",
   "files": [
     "src/core/free-model-plugin/model-index.ts",
-    "src/components/SettingsPanel.tsx"
+    "src/components/SettingsPanel.tsx",
+    "src/core/llm/index.ts"
   ],
   "tests": [
     "src/test/free-model-routing.test.ts"
@@ -30,7 +31,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1687
+      "ms": 1655
     },
     {
       "id": "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
@@ -50,7 +51,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1656
+      "ms": 1692
     },
     {
       "id": "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
@@ -70,7 +71,47 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1677
+      "ms": 1650
+    },
+    {
+      "id": "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
+      "why": "FREE-ROUTE-6/8：这就是用户报的「选了 free 模型却发去 deepseek/openai」的另一半",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        return resolveModelSelection(s?.model, this.providers.getAll().map((p: { id: string }) => p.id), {",
+          "to": "        void s;\n        return resolveModelSelection(\"\", this.providers.getAll().map((p: { id: string }) => p.id), {"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1648
+    },
+    {
+      "id": "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
+      "why": "FREE-ROUTE-6：isFreeModelId 一旦失灵，用户选了免费模型又会发去 deepseek/openai",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/model-index.ts",
+          "from": "  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };",
+          "to": "  if (false) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1629
     },
     {
       "id": "MUT-4 反向对照：只改一行说明注释",
@@ -90,7 +131,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 1660
+      "ms": 1632
     }
   ]
 }
