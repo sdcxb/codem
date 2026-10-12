@@ -164,6 +164,45 @@ pub async fn ofm_bundled_node(app: AppHandle) -> Result<Option<String>, String> 
     Ok(None)
 }
 
+/// 把**内置 Node 复制到数据目录**再运行（第 212 波，用户实报）。
+///
+/// ## 为什么必须这么做
+///
+/// 内置的 `node.exe` 在**安装目录**里（`%LOCALAPPDATA%\Codem\resources\node\node.exe`）。
+/// 没有够新的系统 Node 时，插件会直接运行它 ⇒ **安装目录被一个活进程占住**
+/// ⇒ 升级安装写入该文件时报：`无法打开要写入的文件：…\resources\node\node.exe`（用户实报原文）。
+///
+/// 复制一份到数据目录（`<data_dir>/runtime/node.exe`）之后：
+/// - 安装目录里只剩**只读资源**，升级随时可覆盖 ✓；
+/// - 插件用的是可写目录里的副本，被强杀留下的孤儿进程也**不会**再挡住升级 ✓；
+/// - 删除插件时随数据目录一起清掉 ✓。
+///
+/// 幂等：目标已存在且**大小一致**就直接复用（Node 版本变化必然改变大小 ⇒ 能被察觉）；
+/// 写入走 `node.exe.new` + 改名，避免"复制到一半的 exe"被执行。
+#[tauri::command]
+pub async fn ofm_stage_node(bundled: String, data_dir: String) -> Result<String, String> {
+    let src = PathBuf::from(&bundled);
+    if !src.exists() {
+        return Err(format!("内置 Node 不存在：{bundled}"));
+    }
+    let runtime_dir = PathBuf::from(&data_dir).join("runtime");
+    let target = runtime_dir.join("node.exe");
+    let src_len = std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0);
+    if let Ok(meta) = std::fs::metadata(&target) {
+        if src_len > 0 && meta.len() == src_len {
+            return Ok(strip_verbatim(target));
+        }
+    }
+    std::fs::create_dir_all(&runtime_dir).map_err(|e| format!("建目录失败：{e}"))?;
+    let staging = runtime_dir.join("node.exe.new");
+    std::fs::copy(&src, &staging).map_err(|e| format!("复制内置 Node 失败：{e}"))?;
+    std::fs::rename(&staging, &target).map_err(|e| {
+        let _ = std::fs::remove_file(&staging);
+        format!("落位内置 Node 失败：{e}")
+    })?;
+    Ok(strip_verbatim(target))
+}
+
 /// 起服务。**端口由调用方决定**（渲染侧先探一个空闲端口再传进来）——
 /// 这样"服务在哪个端口"是确定的，不必去解析子进程的 stdout（那是最脆的一种做法）。
 #[tauri::command]

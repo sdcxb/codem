@@ -122,6 +122,51 @@
       "expectRed": true
     },
     {
+      "id": "MUT-13 内置 Node 不落位（又直接运行安装目录里那份 ⇒ 升级时文件被占用）",
+      "why": "OFM-UPGRADE-1：这正是用户实报的「无法打开要写入的文件：…resources\\node\\node.exe」",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "      const staged = await invoke<string>(\"ofm_stage_node\", { bundled, dataDir: await pluginDataDir() });\n      if (staged) return { exe: staged, via: \"bundled\" };",
+          "to": "      const staged = await invoke<string>(\"ofm_stage_node\", { bundled, dataDir: await pluginDataDir() });\n      if (staged) return { exe: bundled, via: \"bundled\" };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-upgrade-lock.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-15 安装前不停插件（句柄不释放）",
+      "why": "OFM-UPGRADE-3：应用侧那一层保障被去掉",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "              try {\n                await freeModelPlugin.stop();",
+          "to": "              try {\n                await Promise.resolve();"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-upgrade-lock.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-16 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": " * ⚠️ 第 212 波（用户实报）：内置的 node.exe 在**安装目录**里",
+          "to": " * ⚠️ 第 212 波（用户实报，反向对照：只改这行注释）：内置的 node.exe 在**安装目录**里"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-upgrade-lock.test.ts"
+      ],
+      "expectRed": false
+    },
+    {
       "id": "MUT-11 又给父级画一圈（用户报的双层紫框回来了）",
       "why": "FOCUS-RING-1：这个 UI bug 的原样复现",
       "patches": [

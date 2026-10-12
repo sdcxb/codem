@@ -2310,6 +2310,19 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                */
               const { applyProgressEvent, emptyProgress } = await import("../core/update/download-progress");
               setUpdateProgress(emptyProgress());
+              /*
+               * 第 212 波：安装前**先把内置插件停掉**。
+               *
+               * 没有够新的系统 Node 时，插件会运行**安装目录里**那份内置 Node
+               * ⇒ 安装程序覆盖该文件时报「无法打开要写入的文件」（用户实报）。
+               * 停掉它既释放句柄，也让升级过程中没有任何属于我们的进程占着安装目录。
+               * 停掉 ≠ 禁用：`enabled` 设置保持 true，重装重启后启动钩子会把它再带起来。
+               */
+              try {
+                await freeModelPlugin.stop();
+              } catch (e) {
+                console.warn("[updater] 安装前停止内置插件失败（继续安装：安装钩子还会再收一次）", e);
+              }
               await downloadWithRetry(
                 () =>
                   update.downloadAndInstall((event: { event: string; data?: { contentLength?: number; chunkLength?: number } }) => {

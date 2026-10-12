@@ -4524,6 +4524,8 @@ path_exists,
             ofm::ofm_extension_dir,
             ofm::ofm_bundled_dir,
             ofm::ofm_bundled_node,
+            /* 第 212 波：把内置 Node 复制到数据目录再跑（否则安装目录被活进程占住、升级写不进去） */
+            ofm::ofm_stage_node,
             ofm::ofm_start,
             ofm::ofm_stop,
             ofm::ofm_state,

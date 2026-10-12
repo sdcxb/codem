@@ -1,8 +1,8 @@
 {
   "wave": "free-model-plugin-201",
   "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。 第 203 波（方案 A）：便携 Node **随安装包内置**（按官方 SHASUMS256.txt 校验 sha256、只取 node.exe、解析顺序内置优先）—— 对应变异：不优先用内置 / 不过 strip_verbatim / 不打进安装包。 第 205 波（用户实报）：① 模型缓存 60 秒 TTL 过期后没人刷 ⇒ free 模型从对话模型列表里消失（改成周期自刷新 + 启用时暖一次 + 卡片刷新也暖）；② 卡片只在「插件市场」页签 ⇒ 默认页搜 free/model 搜不到（挪到已安装页 + 参与搜索关键词）。",
-  "runAt": "2026-10-12T00:47:41.721Z",
-  "specFingerprint": "f26b0ad2b1a73dcab39398fd6c57193745c1355f",
+  "runAt": "2026-10-12T06:02:46.708Z",
+  "specFingerprint": "08c53cd6a3a85d546a78bb8322cfccc4a6dd8553",
   "files": [
     "src/core/free-model-plugin/service.ts",
     "src/core/model-config.ts",
@@ -38,7 +38,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3312
+      "ms": 4052
     },
     {
       "id": "MUT-2 暂停顺手把数据删了",
@@ -58,7 +58,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3342
+      "ms": 4276
     },
     {
       "id": "MUT-3 删除不清扩展目录（假卸载）",
@@ -78,7 +78,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3419
+      "ms": 4431
     },
     {
       "id": "MUT-4 模型清单不丢坏条目（把没有 id 的也塞进列表）",
@@ -98,7 +98,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3325
+      "ms": 4194
     },
     {
       "id": "MUT-5 关掉插件之后仍然往模型列表里塞它的模型",
@@ -118,7 +118,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3342
+      "ms": 4501
     },
     {
       "id": "MUT-6 没有 Node 也假装启动成功",
@@ -138,7 +138,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3432
+      "ms": 4060
     },
     {
       "id": "MUT-7 模型列表不再优先来自插件（挪到末尾）",
@@ -163,7 +163,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3451
+      "ms": 4561
     },
     {
       "id": "MUT-8 启用后不登记托管供应商（模型看得见但没路可走）",
@@ -183,7 +183,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3401
+      "ms": 4451
     },
     {
       "id": "MUT-9 暂停后不移除供应商条目（留一条永远打不通的）",
@@ -203,7 +203,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3402
+      "ms": 4050
     },
     {
       "id": "MUT-11 起进程前不清死锁（崩溃一次之后插件永久起不来）",
@@ -223,7 +223,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1609
+      "ms": 2026
     },
     {
       "id": "MUT-12 路径不去逐字前缀（Node 解析入口崩 EISDIR）",
@@ -248,7 +248,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1569
+      "ms": 2050
     },
     {
       "id": "MUT-13 退出时不收插件（攒孤儿 node 进程）",
@@ -268,7 +268,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1597
+      "ms": 2171
     },
     {
       "id": "MUT-14 暂停后不清模型缓存（最长 60 秒里列表仍列着调不通的免费模型）",
@@ -288,7 +288,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3449
+      "ms": 4136
     },
     {
       "id": "MUT-15 自动装 Node 装到别处（装完还是找不到 ⇒ 用户点了也白点）",
@@ -308,7 +308,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3485
+      "ms": 4047
     },
     {
       "id": "MUT-16 装 Node 失败也报成功（用户以为装好了，其实什么都没发生）",
@@ -328,7 +328,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3500
+      "ms": 4044
     },
     {
       "id": "MUT-17 「以后再说」不记住（每次开都再问一遍）",
@@ -348,7 +348,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3484
+      "ms": 3685
     },
     {
       "id": "MUT-18 少了兜底候选与补一轮（一次抖动就整体失败，用户白点一次）",
@@ -373,7 +373,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1626
+      "ms": 1882
     },
     {
       "id": "MUT-19 下不到也当成功（解压一个不存在的 zip）",
@@ -393,7 +393,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1659
+      "ms": 1956
     },
     {
       "id": "MUT-20 系统 Node 够新也不用它（总是用内置 —— 不听用户的选择、也白占磁盘）",
@@ -401,8 +401,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "  /* ① 系统 Node 够新 ⇒ 用它（不浪费机器上已有的） */\n  const sys = await detectSystem();\n  if (sys.ok && sys.version && sys.version[0] >= 22) {\n    return { exe: \"node\", via: \"system\" };\n  }\n  /* ② 没有够新的系统 Node ⇒ 用安装包内置的那份（\"没装也能跑\"的保证） */\n  const bundled = await bundledExe();\n  if (bundled) return { exe: bundled, via: \"bundled\" };",
-          "to": "  const sys = await detectSystem();\n  void sys;\n  /* 变异：内置提前，系统够新也不用 */\n  const bundled = await bundledExe();\n  if (bundled) return { exe: bundled, via: \"bundled\" };"
+          "from": "  /* ① 系统 Node 够新 ⇒ 用它（不浪费机器上已有的） */\n  const sys = await detectSystem();\n  if (sys.ok && sys.version && sys.version[0] >= 22) {\n    return { exe: \"node\", via: \"system\" };\n  }",
+          "to": "  const sys = await detectSystem();\n  void sys;\n  /* 变异：系统够新也不用（直接落到下面的内置分支） */"
         }
       ],
       "tests": [
@@ -413,7 +413,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3458
+      "ms": 3730
     },
     {
       "id": "MUT-21 内置 Node 的路径不过 strip_verbatim（逐字前缀又会让它崩）",
@@ -433,7 +433,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1702
+      "ms": 1855
     },
     {
       "id": "MUT-22 内置 Node 不打进安装包（装完照样找不到）",
@@ -453,7 +453,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1648
+      "ms": 1885
     },
     {
       "id": "MUT-23 卡片把「内置」说成「系统」（不如实）",
@@ -473,7 +473,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1678
+      "ms": 1815
     },
     {
       "id": "MUT-24 缓存不自刷新（60 秒后 free 模型从对话列表里凭空消失）",
@@ -493,7 +493,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3461
+      "ms": 3686
     },
     {
       "id": "MUT-25 卡片只在市场页渲染（默认页搜 free / model 搜不到）",
@@ -513,7 +513,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1653
+      "ms": 1849
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -533,7 +533,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3526
+      "ms": 3678
     }
   ]
 }

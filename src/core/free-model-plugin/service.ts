@@ -235,9 +235,23 @@ async function resolvePluginNode(): Promise<{
   if (sys.ok && sys.version && sys.version[0] >= 22) {
     return { exe: "node", via: "system" };
   }
-  /* ② 没有够新的系统 Node ⇒ 用安装包内置的那份（"没装也能跑"的保证） */
+  /* ② 没有够新的系统 Node ⇒ 用安装包内置的那份（"没装也能跑"的保证）。
+   *
+   * ⚠️ 第 212 波（用户实报）：内置的 node.exe 在**安装目录**里，直接运行它会把安装目录锁住，
+   * 于是升级安装写入该文件时报「无法打开要写入的文件：…\resources\node\node.exe」。
+   * 现在先把它**复制到数据目录**（`<dataDir>/runtime/node.exe`）再运行 —— 安装目录只剩只读资源；
+   * 复制失败时如实降级为直接用内置路径（能用优先，但会记一条警告）。
+   */
   const bundled = await bundledExe();
-  if (bundled) return { exe: bundled, via: "bundled" };
+  if (bundled) {
+    try {
+      const staged = await invoke<string>("ofm_stage_node", { bundled, dataDir: await pluginDataDir() });
+      if (staged) return { exe: staged, via: "bundled" };
+    } catch (e) {
+      console.warn("[free-model-plugin] 内置 Node 落位到数据目录失败，退回直接用安装目录里的那份", e);
+    }
+    return { exe: bundled, via: "bundled" };
+  }
   /* ③ 内置没有（开发态/被删）⇒ 退回便携 Node，最后才是下载 */
   const r = await resolveNodeExe(async () => sys, findPortable, 22);
   return { exe: r.exe, via: r.via };

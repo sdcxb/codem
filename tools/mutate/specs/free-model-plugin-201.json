@@ -292,8 +292,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "  /* ① 系统 Node 够新 ⇒ 用它（不浪费机器上已有的） */\n  const sys = await detectSystem();\n  if (sys.ok && sys.version && sys.version[0] >= 22) {\n    return { exe: \"node\", via: \"system\" };\n  }\n  /* ② 没有够新的系统 Node ⇒ 用安装包内置的那份（\"没装也能跑\"的保证） */\n  const bundled = await bundledExe();\n  if (bundled) return { exe: bundled, via: \"bundled\" };",
-          "to": "  const sys = await detectSystem();\n  void sys;\n  /* 变异：内置提前，系统够新也不用 */\n  const bundled = await bundledExe();\n  if (bundled) return { exe: bundled, via: \"bundled\" };"
+          "from": "  /* ① 系统 Node 够新 ⇒ 用它（不浪费机器上已有的） */\n  const sys = await detectSystem();\n  if (sys.ok && sys.version && sys.version[0] >= 22) {\n    return { exe: \"node\", via: \"system\" };\n  }",
+          "to": "  const sys = await detectSystem();\n  void sys;\n  /* 变异：系统够新也不用（直接落到下面的内置分支） */"
         }
       ],
       "tests": [
