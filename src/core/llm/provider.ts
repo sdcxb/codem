@@ -632,10 +632,29 @@ export class OpenAICompatibleProvider implements LLMProvider {
              */
             const streamError = parsed.error;
             if (streamError) {
-              const message =
+              const rawMessage =
                 typeof streamError === "string"
                   ? streamError
                   : streamError.message || streamError.type || JSON.stringify(streamError).slice(0, 300);
+              /*
+               * 第 208 波（用户实报）：内置免费模型插件把上游的失败**原样**转达，
+               * 于是用户看到的是 `Provider stream error: Upstream request failed: Endpoint is unavailable.` ——
+               * 读不出"这跟我没关系、我该换个模型"。
+               *
+               * 实测（第 208 波真机，25 个免费模型里逐个体测）：同一次会话里
+               * `mimo-v2.6-flash-free` / `nemotron-3.5-lightning-free` / `longcat-2.5-preview-free`
+               * 都能正常答出，而个别模型的失败原因各不相同（端点临时不可用 / 上游账号级限制 /
+               * 该模型不支持这个协议）⇒ 这类失败**换一个模型通常就好了**。
+               *
+               * 所以这里给**可操作的下一步**（并点名是上游侧，不让用户去查自己的 Key / 网络）：
+               * 触发条件只看上游那几种原话，避免误伤普通供应商的错误文案。
+               */
+              const upstreamFreeModelFailure = /endpoint is unavailable|access has been restricted|does not support this protocol|upstream request failed/i.test(
+                rawMessage,
+              );
+              const message = upstreamFreeModelFailure
+                ? `${rawMessage}（该失败来自上游免费模型侧，不是 Codem；免费池里其它模型通常仍可用 —— 在模型列表里换一个「-free」模型再试。当前模型：${request.model}）`
+                : rawMessage;
               const err = new Error(`Provider stream error: ${message}`) as Error & {
                 code?: string;
                 status?: number;

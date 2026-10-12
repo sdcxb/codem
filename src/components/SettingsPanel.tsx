@@ -861,8 +861,34 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
   /** Fetch models from the provider's /models endpoint and cache them */
   const refreshProviderModels = async (providerId: string) => {
     const provider = settings.providers.find((p) => p.id === providerId);
-    if (!provider || !provider.apiKey) {
+    /*
+     * 第 208 波（用户实报：设置里点「Our Free Model（免费模型插件）」的『刷新模型列表』，
+     * 仍然提示「请先配置 API Key」）：内置插件的托管条目是**故意不落盘密钥**的
+     * （密钥由插件启动时运行时注册），而这道闸只认 apiKey ⇒ 永远刷不了。
+     *
+     * 第 209 波修正（同一个用户接着报：放行之后变成「获取失败，使用内置列表」）：
+     * 那个本机服务**确实要 Key** —— 真机实测不带 Authorization 就是 **401**
+     * （`Invoke-WebRequest http://127.0.0.1:18937/v1/models` ⇒ 401；带 `Bearer ofm-S-…` ⇒ 200）。
+     * 密钥在插件自己的 settings.json 里（`forwardKey`）⇒ 从插件的诊断口**现读**它，
+     * 而不是想当然地省略 Authorization。
+     */
+    const isManagedFreeModel = (provider as { managedBy?: string } | undefined)?.managedBy === "free-model-plugin";
+    let authKey = provider?.apiKey ?? "";
+    if (isManagedFreeModel && !authKey) {
+      try {
+        const runtime = await freeModelPlugin.diagnostics.runtime();
+        authKey = runtime.key ?? "";
+      } catch (e) {
+        console.warn("[SettingsPanel] 读插件运行时密钥失败", e);
+      }
+    }
+    if (!provider || (!authKey && !isManagedFreeModel)) {
       setRefreshStatus((prev) => ({ ...prev, [providerId]: "请先配置 API Key" }));
+      return;
+    }
+    if (isManagedFreeModel && !authKey) {
+      /* 读不到密钥 = 插件没跑起来。**不许**说"请先配置 API Key" —— 那个 Key 用户根本配不出来 */
+      setRefreshStatus((prev) => ({ ...prev, [providerId]: "插件未运行：先到「插件管理 → 插件市场」里把它开启" }));
       return;
     }
 
@@ -872,7 +898,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     const baseUrl = (provider.baseUrl || "").replace(/\/+$/, "");
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${provider.apiKey}`,
+      Authorization: `Bearer ${authKey}`,
     };
 
     // Try /models and /v1/models endpoints
