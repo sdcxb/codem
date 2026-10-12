@@ -277,6 +277,8 @@ import { MemoryManager } from "./components/MemoryManager";
 import { projectIdFromCwd, safeMemoryText } from "./core/memory/memory";
 // 第 201 波：免费模型插件（dsh-our-free-model standalone）—— 独立本地服务 + 模型清单优先
 import { freeModelPlugin } from "./core/free-model-plugin/service";
+// 第 208 波：判断"这个模型是不是内置免费模型插件提供的"（发消息前定供应商要用它）
+import { isFreeModelId, MANAGED_FREE_MODEL_PROVIDER_ID } from "./core/free-model-plugin/model-index";
 // S4 / O-45：记忆面板与外壳角标的作用域**唯一实现**（两侧不可能读到不同的 ctx）
 import { memoryPanelScope } from "./core/memory/panel-scope";
 import { SessionRecovery } from "./components/SessionRecovery";
@@ -1475,8 +1477,23 @@ abortControllersRef.current.clear();
     let provider = "openai";
     if (mode === "api") {
       if (model) {
-        const resolved = resolveProviderForModel(model);
-        if (resolved) provider = resolved;
+        /*
+         * ★ 第 208 波（用户实报的**真正根因**）：
+         * > 选择其中一个 free 模型，对话，提示：执行出错 [Error] openai not configured.
+         *
+         * 内置免费模型插件给的模型 id **不在任何供应商的清单里** ⇒ `resolveProviderForModel(model)`
+         * 返回 undefined ⇒ provider 保持上面那个默认值 `"openai"` ⇒ 发消息前的检查
+         * `providers.get("openai").isConfigured()` 为 false ⇒ 直接报错、这一轮根本没发出去。
+         *
+         * 修法：先按**模型归属**判定 —— 插件提供的模型走 `free-model`（它的密钥由插件启动时
+         * 运行时注册，用户不需要配任何 Key），判不出来才退回原来的解析。
+         */
+        if (isFreeModelId(model)) {
+          provider = MANAGED_FREE_MODEL_PROVIDER_ID;
+        } else {
+          const resolved = resolveProviderForModel(model);
+          if (resolved) provider = resolved;
+        }
       }
       setCurrentProvider(provider);
       console.log(`[ModelChange] model=${model}, provider=${provider}`);

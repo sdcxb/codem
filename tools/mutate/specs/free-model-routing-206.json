@@ -1,5 +1,5 @@
 {
-  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。",
+  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。",
   "mutations": [
     {
       "id": "MUT-1 不做归属覆盖（选了 free 模型照样发去 openai）",
@@ -69,6 +69,21 @@
           "file": "src/core/free-model-plugin/model-index.ts",
           "from": "  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };",
           "to": "  if (false) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-7 发消息前不按归属判（free 模型落成 openai ⇒ 用户报的那条错误原样复现）",
+      "why": "FREE-ROUTE-9：这是用户报的错误的**真正出处**（App 侧发消息前检查，比引擎更早）",
+      "patches": [
+        {
+          "file": "src/App.tsx",
+          "from": "        if (isFreeModelId(model)) {\n          provider = MANAGED_FREE_MODEL_PROVIDER_ID;\n        } else {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }",
+          "to": "        {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }"
         }
       ],
       "tests": [

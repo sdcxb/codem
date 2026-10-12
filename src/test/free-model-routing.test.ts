@@ -129,3 +129,33 @@ describe("FREE-ROUTE：引擎兜底按当前设置算", () => {
     expect(engine, "日志要标明是现读的（便于真机取证）").toContain("（现读设置）");
   });
 });
+
+/**
+ * 第 208 波**真正根因**（用户实报的原文错误就是从这里出来的）：
+ *
+ * `handleModelChange` 里 `let provider = "openai";` + `resolveProviderForModel(model)` ——
+ * 内置免费模型的 id **不在任何供应商清单里** ⇒ 解析返回 undefined ⇒ provider 保持 "openai"
+ * ⇒ 发消息前的检查 `providers.get("openai").isConfigured()` 为 false ⇒
+ * 「执行出错 [Error] openai not configured. Debug: DB has settings=true, providers=7, openai hasKey=false」
+ * 且这一轮**根本没发出去**。
+ *
+ * 这条判据把"必须先按模型归属判定"锁住 —— 光在引擎里做事前检查是**盖不住**这条路径的
+ * （那是发消息前在 App 里判的，比引擎早）。
+ */
+describe("FREE-ROUTE：发消息前的供应商判定（App 侧）", () => {
+  const app = readFileSync(path.join(root, "src/App.tsx"), "utf8");
+
+  it("FREE-ROUTE-9（结构棘轮）：handleModelChange 必须先按归属判 provider，再退回解析", () => {
+    const start = app.indexOf("const handleModelChange = useCallback");
+    expect(start, "找不到 handleModelChange").toBeGreaterThan(0);
+    const body = app.slice(start, start + 2600);
+    expect(body, "要按模型归属判定").toContain("isFreeModelId(model)");
+    expect(body, "命中归属 ⇒ 供应商是插件（不是 openai）").toMatch(
+      /isFreeModelId\(model\)[\s\S]{0,200}?MANAGED_FREE_MODEL_PROVIDER_ID/,
+    );
+    expect(body, "判不出来才退回原来的解析（顺序不许反）").toMatch(
+      /isFreeModelId\(model\)[\s\S]{0,400}?resolveProviderForModel\(model\)/,
+    );
+    expect(body, "默认值仍然保留（非 API 模式/空模型时的原行为）").toContain('let provider = "openai"');
+  });
+});

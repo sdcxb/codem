@@ -1,12 +1,13 @@
 {
   "wave": "free-model-routing-206",
-  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。",
-  "runAt": "2026-10-12T02:51:38.954Z",
-  "specFingerprint": "6d089e50444fa9fc1519cfd559ecad71ec50ffca",
+  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。",
+  "runAt": "2026-10-12T03:28:28.007Z",
+  "specFingerprint": "6aa3e5047d52e91469743aac9296517818a725fd",
   "files": [
     "src/core/free-model-plugin/model-index.ts",
     "src/components/SettingsPanel.tsx",
-    "src/core/llm/index.ts"
+    "src/core/llm/index.ts",
+    "src/App.tsx"
   ],
   "tests": [
     "src/test/free-model-routing.test.ts"
@@ -31,7 +32,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1655
+      "ms": 1704
     },
     {
       "id": "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
@@ -51,7 +52,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1692
+      "ms": 1707
     },
     {
       "id": "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
@@ -71,7 +72,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1650
+      "ms": 1747
     },
     {
       "id": "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
@@ -91,7 +92,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1648
+      "ms": 1714
     },
     {
       "id": "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
@@ -111,7 +112,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1629
+      "ms": 1704
+    },
+    {
+      "id": "MUT-7 发消息前不按归属判（free 模型落成 openai ⇒ 用户报的那条错误原样复现）",
+      "why": "FREE-ROUTE-9：这是用户报的错误的**真正出处**（App 侧发消息前检查，比引擎更早）",
+      "patches": [
+        {
+          "file": "src/App.tsx",
+          "from": "        if (isFreeModelId(model)) {\n          provider = MANAGED_FREE_MODEL_PROVIDER_ID;\n        } else {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }",
+          "to": "        {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1659
     },
     {
       "id": "MUT-4 反向对照：只改一行说明注释",
@@ -131,7 +152,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 1632
+      "ms": 1726
     }
   ]
 }
