@@ -20,6 +20,8 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 use serde::Serialize;
 use tokio::process::Child;
@@ -104,6 +106,7 @@ fn clear_stale_lock(data_dir: &str) {
             .arg("/FI")
             .arg(format!("PID eq {pid}"))
             .arg("/NH")
+            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW：查进程也不许闪黑框 */
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .output()
@@ -331,6 +334,7 @@ pub async fn ofm_stop(state: State<'_, OfmState>) -> Result<(), String> {
             .arg(pid.to_string())
             .arg("/T")
             .arg("/F")
+            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW */
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -396,6 +400,7 @@ pub fn shutdown_ofm(state: &OfmState) {
             .arg(pid.to_string())
             .arg("/T")
             .arg("/F")
+            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW */
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();

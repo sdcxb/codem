@@ -165,6 +165,19 @@
       "expectRed": true
     },
     {
+      "id": "MUT-19 查残留进程的 tasklist 不加不闪窗标记（每次启动闪一下黑框）",
+      "why": "NO-CONSOLE-2：用户实报的「自从自带 node 后，每次启动都会弹个黑窗口，然后瞬间消失」",
+      "patches": [
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW：查进程也不许闪黑框 */\n",
+          "to": ""
+        }
+      ],
+      "tests": ["src/test/no-console-window.test.ts"],
+      "expectRed": true
+    },
+    {
       "id": "MUT-18 顺手把持久偏好也收掉（修 bug 改坏了正常行为）",
       "why": "CHAT-OVERLAY-4：右侧栏/快捷入口是用户显式设置的常驻状态，切会话不该收",
       "patches": [

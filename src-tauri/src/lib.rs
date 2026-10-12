@@ -1395,6 +1395,8 @@ async fn get_default_cwd(app: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn get_installer_default_lang() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt; /* 第 214 波：给 std 的 Command 加 creation_flags */
     // Detect installer type via Windows registry:
     // - NSIS installer (Chinese .exe) → default "zh"
     // - MSI installer (English .msi) → default "en"
@@ -1404,6 +1406,7 @@ async fn get_installer_default_lang() -> Result<String, String> {
         // NSIS creates: HKCU\Software\Codem with UninstallString value
         let nsis_check = std::process::Command::new("reg")
             .args(["query", "HKCU\\Software\\Codem"])
+            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
             .output();
         
         if let Ok(output) = nsis_check {
@@ -1421,6 +1424,7 @@ async fn get_installer_default_lang() -> Result<String, String> {
             let path = format!("{}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall", hive);
             if let Ok(output) = std::process::Command::new("reg")
                 .args(["query", &path, "/s", "/f", "Codem"])
+            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
                 .output()
             {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1435,6 +1439,7 @@ async fn get_installer_default_lang() -> Result<String, String> {
             let path_wow64 = format!("{}\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall", hive);
             if let Ok(output) = std::process::Command::new("reg")
                 .args(["query", &path_wow64, "/s", "/f", "Codem"])
+            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
                 .output()
             {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1895,6 +1900,8 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 /// shell inherit the group; SIGKILL ensures descendants die even if they
 /// ignore SIGTERM. Mirrors dsh subprocess-local tree-level kill semantics.
 fn kill_process_tree(pid: Option<u32>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt; /* 第 214 波：给 std 的 Command 加 creation_flags */
     let Some(pid) = pid else {
         return Ok(());
     };
@@ -1904,6 +1911,7 @@ fn kill_process_tree(pid: Option<u32>) -> Result<(), String> {
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
+            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
             .status()
             .map_err(|e| format!("taskkill failed: {}", e))?;
         // Exit code 128 = process not found (already dead) — treat as success.
@@ -2523,10 +2531,13 @@ async fn check_path_in_workspace(path: String, workspace: String) -> Result<bool
 #[cfg(target_os = "windows")]
 #[tauri::command]
 async fn get_process_token_info() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt; /* 第 214 波：给 std 的 Command 加 creation_flags */
     // On Windows, we can check if the process is running elevated
     // This is a simple check — full ACL manipulation requires the windows-sys crate
     match std::process::Command::new("whoami")
         .arg("/groups")
+            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：GUI 里不许弹黑框 */
         .output()
     {
         Ok(output) => {
@@ -2544,6 +2555,8 @@ async fn get_process_token_info() -> Result<String, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 async fn get_process_token_info() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt; /* 第 214 波：给 std 的 Command 加 creation_flags */
     Ok("Process token info not available on this platform".to_string())
 }
 

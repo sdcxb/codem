@@ -1,8 +1,8 @@
 {
   "wave": "free-model-routing-206",
   "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。 第 210 波：焦点环去重（一个焦点目标只画一个环）—— 父级不再因「里面有焦点」而画环，控件自己补主题色环。 第 211 波：输入框/文本域不许再叠 outline（它们已有内嵌环）—— 只给 <select> 补主题环。",
-  "runAt": "2026-10-12T07:04:14.326Z",
-  "specFingerprint": "e9b8a59f77fd94c4cfdcabedba1def2684735f50",
+  "runAt": "2026-10-12T08:11:38.381Z",
+  "specFingerprint": "43bdd8ffaf52383578708569af4a978439a08f74",
   "files": [
     "src/core/free-model-plugin/model-index.ts",
     "src/components/SettingsPanel.tsx",
@@ -11,6 +11,7 @@
     "src/core/llm/provider.ts",
     "src/core/free-model-plugin/service.ts",
     "src/components/ChatPanel.tsx",
+    "src-tauri/src/ofm.rs",
     "src/styles.css"
   ],
   "tests": [
@@ -18,6 +19,7 @@
     "src/test/free-model-refresh-and-hint.test.ts",
     "src/test/free-model-upgrade-lock.test.ts",
     "src/test/chatpanel-overlay-close.test.ts",
+    "src/test/no-console-window.test.ts",
     "src/test/focus-ring-single.test.ts"
   ],
   "restored": true,
@@ -40,7 +42,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1819
+      "ms": 1900
     },
     {
       "id": "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
@@ -60,7 +62,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1783
+      "ms": 1878
     },
     {
       "id": "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
@@ -80,7 +82,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1814
+      "ms": 1918
     },
     {
       "id": "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
@@ -100,7 +102,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1783
+      "ms": 1907
     },
     {
       "id": "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
@@ -120,7 +122,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1764
+      "ms": 1880
     },
     {
       "id": "MUT-7 发消息前不按归属判（free 模型落成 openai ⇒ 用户报的那条错误原样复现）",
@@ -140,7 +142,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1793
+      "ms": 1910
     },
     {
       "id": "MUT-8 刷新时不带插件的 Key（真机实测：401 ⇒「获取失败，使用内置列表」）",
@@ -160,7 +162,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1750
+      "ms": 1890
     },
     {
       "id": "MUT-9 上游失败不给可操作提示（用户只能看到 Endpoint is unavailable）",
@@ -180,7 +182,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1750
+      "ms": 1932
     },
     {
       "id": "MUT-13 内置 Node 不落位（又直接运行安装目录里那份 ⇒ 升级时文件被占用）",
@@ -200,7 +202,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1755
+      "ms": 1885
     },
     {
       "id": "MUT-15 安装前不停插件（句柄不释放）",
@@ -220,7 +222,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1769
+      "ms": 1869
     },
     {
       "id": "MUT-17 切会话不收起浮层（用户实报：模型列表贴到新会话上）",
@@ -240,7 +242,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1738
+      "ms": 1866
+    },
+    {
+      "id": "MUT-19 查残留进程的 tasklist 不加不闪窗标记（每次启动闪一下黑框）",
+      "why": "NO-CONSOLE-2：用户实报的「自从自带 node 后，每次启动都会弹个黑窗口，然后瞬间消失」",
+      "patches": [
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW：查进程也不许闪黑框 */\n",
+          "to": ""
+        }
+      ],
+      "tests": [
+        "src/test/no-console-window.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1882
     },
     {
       "id": "MUT-18 顺手把持久偏好也收掉（修 bug 改坏了正常行为）",
@@ -260,7 +282,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1745
+      "ms": 1911
     },
     {
       "id": "MUT-16 反向对照：只改一行说明注释",
@@ -280,7 +302,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 1732
+      "ms": 1894
     },
     {
       "id": "MUT-11 又给父级画一圈（用户报的双层紫框回来了）",
@@ -300,7 +322,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1755
+      "ms": 1861
     },
     {
       "id": "MUT-12 又给输入框加一层 outline（用户报的「很粗的紫框」= 两三层叠一起）",
@@ -320,7 +342,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1813
+      "ms": 1959
     },
     {
       "id": "MUT-4 反向对照：只改一行说明注释",
@@ -340,7 +362,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 1766
+      "ms": 1878
     }
   ]
 }
