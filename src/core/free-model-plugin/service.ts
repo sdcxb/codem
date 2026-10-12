@@ -40,6 +40,7 @@ import {
   MANAGED_FREE_MODEL_PROVIDER_ID,
   clearFreeModelHealth,
   freeModelUnavailableSuffix,
+  isFreeModelKnownUnavailable,
   freeModelHealthSnapshot,
   markFreeModelAvailable,
   recordFreeModelHealth,
@@ -821,6 +822,8 @@ export const freeModelPlugin = {
     probe: probePluginModels,
     /* 界面标注：给「当前不可用」的模型加后缀（设置列表与对话选择器共用同一口径） */
     unavailableSuffix: freeModelUnavailableSuffix,
+    /* 第 218 波（用户实报：既然不行为什么刷新还列出来）——界面据此**隐藏**已知不可用的模型 */
+    isUnavailable: isFreeModelKnownUnavailable,
     health: freeModelHealthSnapshot,
     loadHealth: loadPersistedHealth,
     ensureRefreshLoop: ensureModelRefreshLoop,
@@ -843,5 +846,7 @@ export const freeModelPlugin = {
   /** 判据用：清掉模型缓存（用例之间不许串味） */
   resetCacheForTests: __resetPluginModelsCacheForTests,
 } as const;
+
+
 
 

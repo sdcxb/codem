@@ -153,3 +153,43 @@ describe("AVAIL：慢/超时与不可用必须分开（第 216 波）", () => {
     );
   });
 });
+
+/**
+ * 第 218 波（用户实报）：
+ * > 选择 ling-3.1-flash-free 模型，还是报错，既然不行为什么设置里刷新模型的时候，还是会出现这个模型
+ *
+ * 口径修正：**只标注不够** —— 已知不可用的免费模型必须**从列表里拿掉**（别让用户再踩一次），
+ * 但**当前选中的那个要留着**（并带「当前不可用」后缀），否则用户不知道自己在用什么 ✗；
+ * 而且隐藏必须**如实说出来**（静默消失比看到不可用的模型更糟 —— 用户会以为模型丢了）。
+ */
+describe("AVAIL：已知不可用的模型要从列表里消失（第 218 波）", () => {
+  const panel = readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf8");
+  const chat = readFileSync(path.resolve(__dirname, "../components/ChatPanel.tsx"), "utf8");
+
+  it("AVAIL-7：两处列表都要**过滤掉**已知不可用的（当前选中的除外）", () => {
+    expect(panel, "设置里的模型列表要过滤").toMatch(
+      /isUnavailable\(m\.id\)[\s\S]{0,120}?\.map\(/,
+    );
+    expect(panel, "当前选中的那个要留着（否则用户不知道在用哪个）").toMatch(
+      /filter\(\(m\) => m\.id === settings\.model \|\| !freeModelPlugin\.models\.isUnavailable\(m\.id\)\)/,
+    );
+    expect(chat, "对话里的模型选择器也要过滤").toMatch(
+      /filter\(\(m\) => m\.id === model \|\| !freeModelPlugin\.models\.isUnavailable\(m\.id\)\)/,
+    );
+  });
+
+  it("AVAIL-8：隐藏必须**如实说明**（不许静默消失）", () => {
+    expect(panel, "要告诉用户隐藏了几个").toMatch(/已隐藏 \$\{hidden\} 个当前不可用的免费模型/);
+    expect(panel, "并给出刷新结论的入口").toContain("检测可用性");
+  });
+
+  it("AVAIL-9（反向对照）：过期结论不许继续隐藏（上游恢复了模型要自己回来）", () => {
+    /* 隐藏依赖 isUnavailable ⇒ 它依赖 freeModelHealthOf 的 TTL ⇒ 过期即 false（AVAIL-2 已钉住） */
+    const now = Date.now();
+    setFreeModelIds(["ling-3.1-flash-free"]);
+    markFreeModelUnavailableFromError("ling-3.1-flash-free", "Endpoint is unavailable.");
+    expect(isFreeModelKnownUnavailable("ling-3.1-flash-free", now), "刚失败 ⇒ 隐藏").toBe(true);
+    expect(isFreeModelKnownUnavailable("ling-3.1-flash-free", now + HEALTH_TTL_MS + 1), "过期 ⇒ 放回来").toBe(false);
+  });
+});
+

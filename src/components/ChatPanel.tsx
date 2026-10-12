@@ -632,7 +632,11 @@ setStepTooltipLocked(false);
           <span className="model-arrow"><ChevronDown size={10} /></span>
           {showModelPicker && (
             <div className="model-picker" onClick={(e) => e.stopPropagation()}>
-              {models.map((m) => (
+              {/* 第 218 波（用户实报）：已知不可用的免费模型**不列出来**
+                  （当前选中的那个除外 —— 否则用户不知道自己在用哪个）。 */}
+              {models
+                .filter((m) => m.id === model || !freeModelPlugin.models.isUnavailable(m.id))
+                .map((m) => (
                 <div
                   key={m.id}
                   className={`model-option ${model === m.id ? "active" : ""}`}

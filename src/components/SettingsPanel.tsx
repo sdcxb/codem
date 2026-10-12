@@ -1320,8 +1320,16 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     （密钥由插件在启动时运行时注册）⇒ 它被整个跳过，用户既选不到免费模型，
                     又会看到「请先配置 API Key」这句误导的话（免费模型本来就不需要 Key）。
                   */}
+                  {/*
+                    第 218 波（用户实报：「既然不行为什么设置里刷新模型的时候，还会出现这个模型」）：
+                    只标注不够 —— 已知不可用的**直接从列表里拿掉**，别让用户再踩一次。
+                    例外：**当前选中的那个要留着**（它带「当前不可用」后缀），否则用户不知道自己在用什么 ✗。
+                  */}
                   {freeModelPlugin.readSetting().enabled &&
-                    freeModelPlugin.models.cached().map((m) => (
+                    freeModelPlugin.models
+                      .cached()
+                      .filter((m) => m.id === settings.model || !freeModelPlugin.models.isUnavailable(m.id))
+                      .map((m) => (
                       <option
                         key={`ofm-${m.id}`}
                         value={m.id}
@@ -1334,6 +1342,23 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                         {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
                       </option>
                     ))}
+                  {/*
+                    第 218 波：隐藏了就要**如实说**（静默消失比看到不可用的模型更糟 —— 用户会以为模型丢了）。
+                    结论带时间戳，过期就自动回来；点插件卡片上的「检测可用性」可随时刷新结论。
+                  */}
+                  {freeModelPlugin.readSetting().enabled &&
+                    (() => {
+                      const hidden = freeModelPlugin.models
+                        .cached()
+                        .filter((m) => m.id !== settings.model && freeModelPlugin.models.isUnavailable(m.id)).length;
+                      return hidden > 0 ? (
+                        <option value="" disabled>
+                          {lang === "zh"
+                            ? `（已隐藏 ${hidden} 个当前不可用的免费模型 —— 点插件卡片上的「检测可用性」可刷新结论）`
+                            : `(${hidden} unavailable free models hidden — run "Check availability" on the plugin card to refresh)`}
+                        </option>
+                      ) : null;
+                    })()}
                   {settings.providers.filter(p => p.apiKey).map(p => {
                     // Use dynamic models if available, otherwise fall back to static list
                     const dynModels = dynamicModels[p.id];
