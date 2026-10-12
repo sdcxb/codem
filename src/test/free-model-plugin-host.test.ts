@@ -91,6 +91,26 @@ describe("OFM-HOST：免费模型插件的宿主接线棘轮", () => {
     expect(vendor.shasums, "要有官方 SHASUMS256.txt 的地址（校验凭据来自来源侧）").toContain("SHASUMS256.txt");
   });
 
+  it("OFM-HOST-9：插件管理里**搜得到**这张卡片（默认页签 + 关键词），卡片刷新也会暖缓存", () => {
+    /*
+     * 用户实报「在插件管理里搜 free 或者 model 都找不到这个插件」：那张卡片原来只渲染在
+     * 「插件市场」页签，而搜索框在默认的「已安装」页签 ⇒ 搜不到。这条判据把两件事锁住。
+     */
+    const manager = readFileSync(path.join(root, "src/components/PluginManager.tsx"), "utf8");
+    expect(manager, "要有参与搜索的关键词表").toContain("FREE_MODEL_CARD_KEYWORDS");
+    expect(manager, "关键词要覆盖用户会搜的词（free / model / 免费 / 模型）").toMatch(
+      /FREE_MODEL_CARD_KEYWORDS = \[[^\]]*"free"[^\]]*"model"[^\]]*"免费"[^\]]*"模型"/,
+    );
+    /* 默认页签（非 market 分支）里也要渲染它 —— 渲染点至少两处（market + installed） */
+    const renders = manager.match(/<FreeModelPluginCard \/>/g) ?? [];
+    expect(renders.length, "卡片要在市场页与已安装页**各渲染一次**（否则默认页搜不到）").toBeGreaterThanOrEqual(2);
+
+    const card = readFileSync(path.join(root, "src/components/FreeModelPluginCard.tsx"), "utf8");
+    expect(card, "卡片打开时也要暖一次模型缓存（用户点开插件管理就该恢复显示）").toContain(
+      "freeModelPlugin.models.refresh()",
+    );
+  });
+
   it("OFM-HOST-8：卡片上的 Node 来源必须**三态各说各的**（内置不许说成系统）", () => {
     const card = readFileSync(path.join(root, "src/components/FreeModelPluginCard.tsx"), "utf8");
     const table = card.match(/const NODE_VIA_LABEL[\s\S]{0,400}?\};/);

@@ -1,5 +1,5 @@
 {
-  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。 第 203 波（方案 A）：便携 Node **随安装包内置**（按官方 SHASUMS256.txt 校验 sha256、只取 node.exe、解析顺序内置优先）—— 对应变异：不优先用内置 / 不过 strip_verbatim / 不打进安装包。",
+  "description": "第 201 波：免费模型插件（dsh-our-free-model standalone）作为独立扩展集成进 Codem —— 默认开启、可暂停（留数据）、可删除（清目录）、没有 Node 时如实失败、模型列表优先来自插件且取不到时原样回退。判据 OFM-1..7。 第 202 波补：缺 Node 时**应用内一键安装**（装进插件扩展目录、装完直接用刚装好的那个 node 启动、失败如实回报、选「以后再说」要记住）。 另含便携 Node 下载契约（PN-1..4 对应变异：不重试 / 下不到当成功）。 第 203 波（方案 A）：便携 Node **随安装包内置**（按官方 SHASUMS256.txt 校验 sha256、只取 node.exe、解析顺序内置优先）—— 对应变异：不优先用内置 / 不过 strip_verbatim / 不打进安装包。 第 205 波（用户实报）：① 模型缓存 60 秒 TTL 过期后没人刷 ⇒ free 模型从对话模型列表里消失（改成周期自刷新 + 启用时暖一次 + 卡片刷新也暖）；② 卡片只在「插件市场」页签 ⇒ 默认页搜 free/model 搜不到（挪到已安装页 + 参与搜索关键词）。",
   "mutations": [
     {
       "id": "MUT-1 默认开启失效（没有设置时按关闭处理）",
@@ -197,8 +197,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "  __resetPluginModelsCacheForTests();\n  writePluginSetting({ enabled: false, pausedAt: Date.now() });",
-          "to": "  writePluginSetting({ enabled: false, pausedAt: Date.now() });"
+          "from": "  __resetPluginModelsCacheForTests();\n  stopModelRefreshLoop();\n  writePluginSetting({ enabled: false, pausedAt: Date.now() });",
+          "to": "  stopModelRefreshLoop();\n  writePluginSetting({ enabled: false, pausedAt: Date.now() });"
         }
       ],
       "tests": [
@@ -339,6 +339,36 @@
           "file": "src/components/FreeModelPluginCard.tsx",
           "from": "  bundled: \"安装包内置的\",",
           "to": "  bundled: \"系统安装的\","
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin-host.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-24 缓存不自刷新（60 秒后 free 模型从对话列表里凭空消失）",
+      "why": "OFM-14：用户实报的就是这个 —— 启动时看得见，过一会儿就没了（他是在点开插件管理时注意到的）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "  modelRefreshTimer = setInterval(() => {",
+          "to": "  modelRefreshTimer = setInterval(() => {\n    if (true) return;"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-plugin.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-25 卡片只在市场页渲染（默认页搜 free / model 搜不到）",
+      "why": "OFM-HOST-9：用户实报「在插件管理里搜 free 或者 model 都找不到这个插件」",
+      "patches": [
+        {
+          "file": "src/components/PluginManager.tsx",
+          "from": "      {(searchQuery.trim() === '' || FREE_MODEL_CARD_KEYWORDS.some(k => searchQuery.trim().toLowerCase().includes(k))) && (\n        <FreeModelPluginCard />\n      )}\n",
+          "to": ""
         }
       ],
       "tests": [

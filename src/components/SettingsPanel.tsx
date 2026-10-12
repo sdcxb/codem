@@ -1328,8 +1328,17 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       </option>
                     ));
                   })}
+                  {/*
+                    第 206 波（用户实报）：这些选项原来只按"有没有 apiKey"筛，于是内置免费模型插件
+                    那条（**故意不落盘密钥**，密钥在运行时注册）会显示成「请先配置 API Key」——
+                    而免费模型**本来就不需要 Key**。这里把它单独说清楚。
+                  */}
                   {!settings.providers.some(p => p.apiKey && p.id !== "mimo") && (
-                    <option value="" disabled>请先配置 API Key</option>
+                    <option value="" disabled>
+                      {settings.providers.some((p) => (p as { managedBy?: string }).managedBy === "free-model-plugin")
+                        ? "内置免费模型插件已在运行：它的模型无需 API Key（在模型列表里直接选）"
+                        : "请先配置 API Key"}
+                    </option>
                   )}
                 </>
               )}

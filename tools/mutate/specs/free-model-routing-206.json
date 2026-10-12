@@ -1,0 +1,65 @@
+{
+  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。",
+  "mutations": [
+    {
+      "id": "MUT-1 不做归属覆盖（选了 free 模型照样发去 openai）",
+      "why": "FREE-ROUTE-3：这正是用户报的错误（openai not configured）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/model-index.ts",
+          "from": "export function routeProviderForModel<T extends { providerId: string; modelId: string }>(resolved: T): T {\n  if (isFreeModelId(resolved.modelId) && resolved.providerId !== MANAGED_FREE_MODEL_PROVIDER_ID) {\n    return { ...resolved, providerId: MANAGED_FREE_MODEL_PROVIDER_ID };\n  }\n  return resolved;\n}",
+          "to": "export function routeProviderForModel<T extends { providerId: string; modelId: string }>(resolved: T): T {\n  return resolved;\n}"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
+      "why": "FREE-ROUTE-1：清单刷新后旧模型可能已经不可用，认领它就会把请求发去一个不存在的模型",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/model-index.ts",
+          "from": "  freeModelIds.clear();\n",
+          "to": ""
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
+      "why": "FREE-ROUTE-4：用户就是被这句话误导的（免费模型不该要 Key）",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "                        ? \"内置免费模型插件已在运行：它的模型无需 API Key（在模型列表里直接选）\"",
+          "to": "                        ? \"请先配置 API Key\""
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/model-index.ts",
+          "from": " * ## 为什么单独一个模块（而不是放进 service.ts）",
+          "to": " * ## 为什么单独一个模块（反向对照：只改这一行注释）"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-routing.test.ts"
+      ],
+      "expectRed": false
+    }
+  ]
+}

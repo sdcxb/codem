@@ -558,6 +558,11 @@ setGlobalCwd(currentProject?.path || "");
           return;
         }
         await freeModelPlugin.models.refresh();
+        /*
+         * 第 205 波：把**自刷新循环**带起来 —— 否则 60 秒后缓存过期，用户会看到
+         * 「刚才还有 free 模型，过一会儿就没了」（真机实报）。
+         */
+        freeModelPlugin.models.ensureRefreshLoop();
       } catch (e) {
         reportAdvisory("freeModelPlugin.start", e instanceof Error ? e.message : String(e), {
           title: "免费模型插件启动时出错",

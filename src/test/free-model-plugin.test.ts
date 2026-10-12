@@ -268,6 +268,43 @@ describe("OFM：免费模型插件的独立扩展语义", () => {
     expect(after.enabled, "忽略提示**不等于**关掉插件（两件事）").toBe(true);
   });
 
+  it("OFM-14：启用状态下**缓存会自刷新**（60 秒 TTL 过期不再把 free 模型从列表里抹掉）", async () => {
+    /*
+     * 用户实报：「启动后在对话模型列表里看到 free 模型了，但是一点插件管理，列表里就没有 free 模型了」。
+     * 根因是**时间**：缓存 60 秒 TTL，而此前只在启动/启用时刷过一次 ⇒ 跑过一分钟就空。
+     * 这条判据用假定时器把时间推过 TTL，断言"仍然拿得到清单"。
+     */
+    vi.useFakeTimers();
+    try {
+      mockReadFile.mockImplementation(async (p: string) =>
+        String(p).endsWith("settings.json") ? JSON.stringify({ standalonePort: 18937, forwardKey: "k" }) : "",
+      );
+      vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ id: "free-1", name: "Free 1" }] }) })));
+      installTauriHost({ ofm_bundled_node: () => "C:\\node.exe" });
+      mockExecuteCommand.mockResolvedValue({ stdout: "v24.19.0\n", stderr: "", exitCode: 0 });
+
+      await freeModelPlugin.enable(); // enable 内部应当把自刷新循环带起来
+      await vi.advanceTimersByTimeAsync(200);
+      expect(freeModelPlugin.models.cached(), "启用之后清单在").toHaveLength(1);
+
+      /* 推过 TTL（60s）+ 一个刷新周期（45s）⇒ 循环应当已经把它刷回来了 */
+      await vi.advanceTimersByTimeAsync(70_000);
+      expect(
+        freeModelPlugin.models.cached(),
+        "过了 TTL 之后仍然要有（否则用户就会看到 free 模型凭空消失）",
+      ).toHaveLength(1);
+
+      /* 暂停 ⇒ 循环停掉、缓存清空、后续也不再刷 */
+      await freeModelPlugin.pause();
+      expect(freeModelPlugin.models.cached(), "暂停后立刻空").toEqual([]);
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(freeModelPlugin.models.cached(), "暂停之后不该再被刷回来").toEqual([]);
+    } finally {
+      freeModelPlugin.models.stopRefreshLoop();
+      vi.useRealTimers();
+    }
+  });
+
   it("OFM-9：暂停/删除后模型清单**立刻**消失（不等 60 秒 TTL），原有列表原样回来", async () => {
     /* 用户真机提问引出来的缺口：缓存 TTL 60 秒，不主动清的话暂停后列表还挂着调不通的模型 */
     settingStore["codem-settings"] = { providers: [{ id: "deepseek", name: "DeepSeek", apiKey: "sk-real" }] };

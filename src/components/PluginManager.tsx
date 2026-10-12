@@ -45,6 +45,14 @@ interface PluginManagerProps {
 }
 
 /** 类型标签的显示配置 */
+/**
+ * 「免费模型插件」卡片参与搜索的关键词（第 205 波）。
+ *
+ * 用户实报「在插件管理里搜 free 或者 model 都找不到这个插件」—— 它**不是** cordis 插件，
+ * 不在 `manager.getPluginStates()` 里，所以搜索那个列表永远搜不到它。这些关键词让它能被搜出来。
+ */
+const FREE_MODEL_CARD_KEYWORDS = ["free", "model", "免费", "模型", "our free model", "插件"];
+
 const TAG_CONFIG: Record<PluginTag, { label: string; variant: 'default' | 'success' | 'warning' | 'info' | 'muted' }> = {
   service:   { label: '服务定义', variant: 'info' },
   provider:  { label: '服务实现', variant: 'success' },
@@ -717,6 +725,18 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           />
         </div>
       </div>
+
+      {/*
+        第 205 波（用户实报「在插件管理里搜 free 或者 model 都找不到这个插件」）：
+        免费模型插件**不是** cordis 插件（它不受这里的启用/禁用注册表管），所以它不在
+        `manager.getPluginStates()` 里 —— 搜索只过滤那个列表，自然搜不到它。
+
+        修法：把那张卡片也放到**默认的「已安装」页签**里，并且让它**参与搜索**
+        （关键词命中就显示：free / model / 免费 / 模型 …）。市场页签仍然常驻它。
+      */}
+      {(searchQuery.trim() === '' || FREE_MODEL_CARD_KEYWORDS.some(k => searchQuery.trim().toLowerCase().includes(k))) && (
+        <FreeModelPluginCard />
+      )}
 
       {/* 分类过滤（动态：只显示实际存在插件的分类 + 全部，避免恒 0 的空分类按钮） */}
       <div className="skill-manager-filters">

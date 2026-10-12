@@ -31,6 +31,12 @@ import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { parseNodeVersion, resolveNodeExe } from "../zvec-grep/runtime";
 // 第 202 波：便携版 Node 的下载/解压与 zvec-grep **共用同一份实现**（不要各写一份）
 import { installPortableNode } from "../portable-node";
+/*
+ * 第 206 波：把「哪些模型由插件提供」同步给引擎 —— 它要在**同步路径**上按模型归属选 provider
+ * （用户选了 free 模型却发去 openai 的那个 bug，根因就是没人告诉引擎这些模型归谁）。
+ * 托管供应商的 id 也放在同一个模块里，避免引擎与插件各写一个字符串。
+ */
+import { MANAGED_FREE_MODEL_PROVIDER_ID, setFreeModelIds } from "./model-index";
 
 /** 设置键（界面上的开关就写它） */
 const FREE_MODEL_PLUGIN_SETTING_KEY = "codem-free-model-plugin";
@@ -39,7 +45,8 @@ const FREE_MODEL_PLUGIN_SETTING_KEY = "codem-free-model-plugin";
 const FREE_MODEL_PLUGIN_NAME = "Our Free Model（免费模型插件）";
 
 /** 托管供应商的 id 与标记（用于在 `settings.providers` 里认出"这条是我们写的"） */
-const MANAGED_PROVIDER_ID = "free-model";
+/* 托管供应商 id 的唯一来源在 model-index（引擎也要用同一个值） */
+const MANAGED_PROVIDER_ID = MANAGED_FREE_MODEL_PROVIDER_ID;
 const MANAGED_PROVIDER_TAG = "free-model-plugin";
 
 /** 起服务时优先用的端口（被占的话插件会自己换一个，我们再把真实端口读回来） */
@@ -456,6 +463,14 @@ async function stopPlugin(): Promise<{ ok: boolean; message: string }> {
 async function enablePlugin(): Promise<{ ok: boolean; message: string }> {
   writePluginSetting({ enabled: true });
   const started = await startPlugin();
+  if (started.ok) {
+    /*
+     * 起来之后**立刻暖一次缓存**（用户点了「开启」，模型列表应当马上就有 free 模型），
+     * 再由自刷新循环保持新鲜（第 205 波：只刷一次的话，60 秒 TTL 一过列表里就没了）。
+     */
+    await refreshPluginModelsCache();
+    ensureModelRefreshLoop();
+  }
   return { ok: started.ok, message: started.message };
 }
 
@@ -470,6 +485,7 @@ async function pausePlugin(): Promise<{ ok: boolean; message: string }> {
    * 还会以为「暂停没生效」。
    */
   __resetPluginModelsCacheForTests();
+  stopModelRefreshLoop();
   writePluginSetting({ enabled: false, pausedAt: Date.now() });
   if (!stopped.ok) return stopped;
   return {
@@ -487,6 +503,7 @@ async function removePlugin(): Promise<{ ok: boolean; message: string }> {
     if (await exists(dir)) await deleteDirectoryPermanent(dir);
     removeManagedProvider();
     __resetPluginModelsCacheForTests();
+    stopModelRefreshLoop();
     writePluginSetting({ enabled: false, pausedAt: Date.now() });
     return { ok: true, message: "插件已删除（数据目录已清空；重新启用会重新安装并重新拉取模型清单）" };
   } catch (e) {
@@ -603,7 +620,45 @@ function cachedPluginModels(): Array<{ id: string; name: string }> {
 async function refreshPluginModelsCache(): Promise<Array<{ id: string; name: string }>> {
   const models = readPluginSetting().enabled ? await listPluginModels() : [];
   pluginModelsCache = { at: Date.now(), models };
+  /* 引擎要按模型归属路由 ⇒ 每次刷新都把归属索引同步一次（清空 + 重建，不留已下线的 id） */
+  setFreeModelIds(models.map((m) => m.id));
   return models;
+}
+
+/**
+ * **缓存自刷新循环**（第 205 波，用户实报）。
+ *
+ * ## 用户报的是什么
+ *
+ * > 启动后在对话模型列表里，看到 free 模型了，但是一点插件管理，对话模型列表里就没有 free 模型了
+ *
+ * 根因不是"点插件管理"这个动作，而是**时间**：缓存只有 60 秒 TTL，而此前**只在启动/启用时刷过一次**
+ * （App 启动钩子、enable、一键装完各一次）⇒ 跑过一分钟后缓存过期、`cachedPluginModels()` 返回空，
+ * 模型列表里的 free 模型就消失了（点开插件管理只是他注意到这件事的时刻）。
+ *
+ * 修法：**启用状态下自己保持新鲜** —— 每 45 秒刷一次（比 TTL 短，留出余量）；暂停/删除时停掉循环，
+ * 让缓存自然过期（那时列表**应当**回退，因为插件真的不在了）。
+ */
+let modelRefreshTimer: ReturnType<typeof setInterval> | null = null;
+const MODEL_REFRESH_INTERVAL_MS = 45_000;
+
+/** 启动自刷新循环（幂等；启用状态才刷，停了就自己收摊） */
+function ensureModelRefreshLoop(): void {
+  if (modelRefreshTimer !== null) return;
+  modelRefreshTimer = setInterval(() => {
+    if (!readPluginSetting().enabled) {
+      stopModelRefreshLoop();
+      return;
+    }
+    void refreshPluginModelsCache();
+  }, MODEL_REFRESH_INTERVAL_MS);
+}
+
+/** 停掉自刷新循环（暂停 / 删除 / 判据收尾时调用） */
+function stopModelRefreshLoop(): void {
+  if (modelRefreshTimer === null) return;
+  clearInterval(modelRefreshTimer);
+  modelRefreshTimer = null;
 }
 
 /** 判据用：把缓存清掉（测试之间不许串味） */
@@ -634,6 +689,8 @@ export const freeModelPlugin = {
   stop: stopPlugin,
   models: {
     list: listPluginModels,
+    ensureRefreshLoop: ensureModelRefreshLoop,
+    stopRefreshLoop: stopModelRefreshLoop,
     cached: cachedPluginModels,
     refresh: refreshPluginModelsCache,
   },

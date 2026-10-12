@@ -141,6 +141,8 @@ import { loadAppIdentity, loadUserConfig } from "../config/loader";
 import { reportActionFailure, reportAdvisory } from "../storage/persist-failure";
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+// 第 206 波：按模型归属路由（内置免费模型插件提供的模型 ⇒ 走 free-model 供应商）
+import { routeProviderForModel } from "../free-model-plugin/model-index";
 import { getEventLog } from "../storage/event-log";
 import { extractJSON } from "./output-parser";
 import { resolveMaxOutputTokens } from "./model-output-limit";
@@ -484,8 +486,49 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
    * M1: Resolve provider + model for a task slot.
    * Uses the active ModelProfile, with fallback chain.
    * Falls back to engine default if no slot is configured.
+   *
+   * 第 206 波（用户实报「选择其中一个 free 模型，对话，提示：执行出错 [Error] openai not configured」）：
+   * 档案槽位里记的供应商仍是 `openai`，而用户选的模型是内置免费模型插件给的 ⇒ 请求发错了地方。
+   * 对外入口先做一次**按模型归属覆盖供应商**（模型属于插件 ⇒ provider 换成 `free-model`，
+   * 它的密钥由插件在启动时运行时注册，用户不需要配任何 Key）。
+   *
+   * 为什么包一层而不是在每条 return 里改：`resolveSlotRaw` 有多条返回路径，逐条改最容易漏
+   * （漏掉的那条就会静默发错 provider）；入口处覆盖一次，路径再多也盖得住。
    */
-  resolveSlot(slot: TaskSlot): { providerId: string; modelId: string; reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max"; temperature?: number; maxTokens?: number } {
+  resolveSlot(slot: TaskSlot): {
+    providerId: string;
+    modelId: string;
+    reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+    temperature?: number;
+    maxTokens?: number;
+  } {
+    const resolved = this.resolveSlotRaw(slot);
+    try {
+      /*
+       * 第 206 波：覆盖逻辑抽成了**纯函数** `routeProviderForModel`（在 model-index 里）。
+       * 抽出来的理由：原来这段判断只能靠"扫源码里有没有这段字"来守，而那是抓不住行为退化的
+       * （给它加个 `false &&`，字符串仍在、判据照样绿 —— 第 206 波的 MUT-1 就是这么漏网的）。
+       */
+      const routed = routeProviderForModel(resolved);
+      if (routed.providerId !== resolved.providerId) {
+        console.log(
+          `[LLMEngine.resolveSlot] 模型 ${resolved.modelId} 由内置免费模型插件提供 ⇒ provider ${resolved.providerId} → ${routed.providerId}`,
+        );
+      }
+      return routed;
+    } catch {
+      /* 插件模块不可用（未接线/被删）⇒ 保持原样，绝不影响普通对话 */
+      return resolved;
+    }
+  }
+
+  private resolveSlotRaw(slot: TaskSlot): {
+    providerId: string;
+    modelId: string;
+    reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+    temperature?: number;
+    maxTokens?: number;
+  } {
     const slotConfig = this.profileManager.resolveSlot(slot);
     if (slotConfig) {
       // Verify provider exists
