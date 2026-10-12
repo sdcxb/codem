@@ -32,10 +32,24 @@ describe("FOCUS-RING：一个焦点目标只许一个环", () => {
   });
 
   it("FOCUS-RING-2：控件自己要有一个**主题色**的环（别露浏览器默认色，也别没有环）", () => {
-    expect(css, "原生控件要有主题环").toMatch(
-      /:is\(select, input[^{]*\):focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring-width\) solid var\(--focus-ring-color\)/s,
+    expect(css, "<select> 要有主题环（它历史上是唯一被漏掉的）").toMatch(
+      /select:focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring-width\) solid var\(--focus-ring-color\)/s,
     );
     expect(css, "偏移也要统一").toMatch(/outline-offset:\s*var\(--focus-ring-offset\)/);
+  });
+
+  it("FOCUS-RING-2b：输入框/文本域**不许**再加一层 outline（叠一起就是「很粗的紫框」）", () => {
+    /*
+     * 第 211 波：用户接着报「编辑框周围这个紫色框很粗…排查为什么有两个框」。
+     * 真机实测那个输入框身上同时有：outline 2px(offset 2px) + box-shadow 2px + 主题边框 ⇒ 三处叠一起。
+     * 输入框的正确形态是既有规则的内嵌环（outline: none + box-shadow），不许再被 outline 覆盖。
+     */
+    expect(css, "不许有把 outline 加给 input/textarea 的规则").not.toMatch(
+      /:is\(select,\s*input[^{]*\):focus-visible\s*\{[^}]*outline:/s,
+    );
+    expect(css, "输入框要有内嵌环（键盘用户仍看得见焦点）").toMatch(
+      /input:focus-visible,\s*\n?\s*textarea:focus-visible[\s\S]{0,240}?box-shadow:\s*0 0 0 var\(--focus-ring-width\) var\(--focus-ring-color\)/,
+    );
   });
 
   it("FOCUS-RING-3（反向对照）：父级的「无效态标红」这类**没有重复**的状态必须保留", () => {

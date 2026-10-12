@@ -19177,10 +19177,17 @@ textarea {
       用户的原话是"外层会出来紫色的框，弄得平台很丑"。
       现在**一个焦点目标只画一个环**（控件自己那个），可靠性由 `focus-outline-none` 门禁继续守。 */
 
-/* 8b) 补齐控件自己的环（第 210 波）：`<select>` 原来既没有主题色环、又被父级环"代偿"，
-      聚焦时露出的是**浏览器默认色**（实测 `rgb(101,85,224)`，与主题的半透明主题色不一致）。
-      这里给原生控件一个统一的主题环 —— 一个焦点目标一圈，颜色/宽度/偏移与全局规则一致。 */
-:is(select, input:not([type="checkbox"]):not([type="radio"]), textarea):focus-visible {
+/* 8b) 补齐控件自己的环（第 210 波）：**只给真正没有焦点环的那一类** —— `<select>`。
+      历史缺口：全局环规则（`:is(a, button, [role], [tabindex])`）没覆盖 `<select>`，
+      它聚焦时露的是浏览器默认色（实测 `rgb(101,85,224)`，与主题不一致）。
+
+      ⚠️ 第 211 波（用户接着报「编辑框周围这个紫色框很粗，排查为什么有两个框」）：
+      **输入框/文本域不在本规则里** —— 它们已经有规则 7 的内嵌环
+      （`input:focus-visible { outline: none; box-shadow: 0 0 0 var(--focus-ring-width) … }`）。
+      本规则若也覆盖 input，就会叠成 **outline + box-shadow + 主题边框三层**
+      （真机实测：2px outline（offset 2px）+ 2px box-shadow + 1px 主题边框 ⇒ 看着就是"很粗的紫框"）。
+      一个控件只留**一层**指示。 */
+select:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
