@@ -277,6 +277,35 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
       setShowSideSession(false);
     }
   }, [currentSessionId]);
+
+  /**
+   * ★ 第 213 波（用户实报）：
+   * > 对话里模型列表打开的时候，切换对话没自动关闭列表，导致新切换打开的对话顶上去了。
+   *
+   * 根因：这些浮层（模型列表 / 推理强度 / 各种面板）都是**组件内的布尔状态**，
+   * 而它们只在"点自己那个按钮"时才切换 —— **切换会话不是它们关心的事件** ⇒ 旧会话的浮层
+   * 会原样"贴"到刚切过来的新会话上面（截图里就是模型列表盖住了新对话）。
+   *
+   * 修法：会话/笔记本一变，**把所有"瞬时浮层"一次性收起**。
+   * 为什么一次收全部而不是只收模型列表：它们是同一类东西（同一次点击打开、同一次切换该消失），
+   * 只修一个，下次就会以"面板也浮上来了"再报一次 ✗。
+   * 注意**不碰** `showRightSidebar` / `showQuickAccess` / `showReasoning` 这类**持久偏好**：
+   * 它们是用户显式设置的常驻状态，切换会话时收起来反而是 bug。
+   */
+  useEffect(() => {
+    setShowModelPicker(false);
+    setShowEffortPicker(false);
+    setShowAgentPanel(false);
+    setShowSideSession(false);
+    setShowSnapshotPanel(false);
+    setShowContextMonitor(false);
+    setShowTrajectoryPanel(false);
+    setShowGitPanel(false);
+    setShowSearch(false);
+    setShowQuickPhrase(false);
+    setShowDraftPicker(false);
+    setShowTitleDropdown(false);
+  }, [currentSessionId, notebookId]);
   // P1: Correction mode toggle
   // Correction/Clarification removed from main UI — correction config moved to Settings, clarification auto-triggers
   // P1: Workbench panel

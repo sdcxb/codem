@@ -152,6 +152,32 @@
       "expectRed": true
     },
     {
+      "id": "MUT-17 切会话不收起浮层（用户实报：模型列表贴到新会话上）",
+      "why": "CHAT-OVERLAY-2/3：这个 UI bug 的原样复现",
+      "patches": [
+        {
+          "file": "src/components/ChatPanel.tsx",
+          "from": "  useEffect(() => {\n    setShowModelPicker(false);\n    setShowEffortPicker(false);",
+          "to": "  useEffect(() => {\n    void 0;\n    setShowEffortPicker(false);"
+        }
+      ],
+      "tests": ["src/test/chatpanel-overlay-close.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-18 顺手把持久偏好也收掉（修 bug 改坏了正常行为）",
+      "why": "CHAT-OVERLAY-4：右侧栏/快捷入口是用户显式设置的常驻状态，切会话不该收",
+      "patches": [
+        {
+          "file": "src/components/ChatPanel.tsx",
+          "from": "    setShowTitleDropdown(false);\n  }, [currentSessionId, notebookId]);",
+          "to": "    setShowTitleDropdown(false);\n    setShowRightSidebar(false);\n  }, [currentSessionId, notebookId]);"
+        }
+      ],
+      "tests": ["src/test/chatpanel-overlay-close.test.ts"],
+      "expectRed": true
+    },
+    {
       "id": "MUT-16 反向对照：只改一行说明注释",
       "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
       "patches": [
