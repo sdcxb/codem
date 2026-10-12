@@ -164,3 +164,6 @@ src-tauri/resources/ofm/
 # 第 203 波（方案 A）：内置便携 Node（node.exe 约 88MB）。构建时由 tools/vendor/fetch-node.mjs
 # 按 tools/vendor/node/VENDOR.json 的固定版本拉取、并**按官方 SHASUMS256.txt 校验** sha256；不进仓库。
 src-tauri/resources/node/
+
+# 调研中间产物（子代理抓的网页与笔记，不进仓库）
+.trae-research/
