@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+// 第 207 波：模型管理里要把内置免费模型插件的模型也列出来（它们不需要 API Key）
+import { freeModelPlugin } from "../core/free-model-plugin/service";
 import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { version as APP_VERSION } from "../../package.json";
@@ -1274,6 +1276,22 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 </>
               ) : (
                 <>
+                  {/*
+                    第 207 波（用户实报）：**把内置免费模型插件的模型也列进来**。
+                    这里原来只列"有 apiKey 的供应商"，而托管那条供应商是**故意不落盘密钥**的
+                    （密钥由插件在启动时运行时注册）⇒ 它被整个跳过，用户既选不到免费模型，
+                    又会看到「请先配置 API Key」这句误导的话（免费模型本来就不需要 Key）。
+                  */}
+                  {freeModelPlugin.readSetting().enabled &&
+                    freeModelPlugin.models.cached().map((m) => (
+                      <option
+                        key={`ofm-${m.id}`}
+                        value={m.id}
+                        title="来自内置的免费模型插件（Our Free Model）：不需要 API Key，由插件在本地提供；选中后会走插件的本地网关。"
+                      >
+                        {freeModelPlugin.name} - {m.name}
+                      </option>
+                    ))}
                   {settings.providers.filter(p => p.apiKey).map(p => {
                     // Use dynamic models if available, otherwise fall back to static list
                     const dynModels = dynamicModels[p.id];

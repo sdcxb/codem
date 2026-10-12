@@ -1,14 +1,14 @@
 {
   "version": "1.16.311",
-  "notes": "Codem v1.16.311 — 修复：选中内置免费模型后对话报 openai not configured（现在按模型归属自动走插件）；免费模型不再被提示「请先配置 API Key」；插件管理默认页可直接搜到免费模型插件；模型列表里的免费模型不会再凭空消失。",
-  "pub_date": "2026-10-12T01:57:04Z",
+  "notes": "Codem v1.16.311 — 修复：选中内置免费模型后对话报 openai not configured（按模型归属自动走插件）；免费模型在模型管理里可选、不再被提示「请先配置 API Key」；插件管理默认页可直接搜到免费模型插件；免费模型不会再凭空消失。",
+  "pub_date": "2026-10-12T02:26:11Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1F4NGgyRTFpN0xZeTFuRStvVWZHeG5xZWdvc1BmamsrT0RvTjlaTjJVQ1RTQndITU1kVC9YN2Fkb01tL3Zna3J1WkJ5ZTZ2dGRRUHNNbTI1NUh2endvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzcwMjI0CWZpbGU6Q29kZW1fMS4xNi4zMTFfeDY0LXNldHVwLmV4ZQp6a2RiOUNHdUZqTzhWMWxNUUd3TDJqb2ozcndIbHZrZURncGlCMjdKcG1jSjl4dUVHQlVxQnptdEFQbmRPZUhiQU04VVdZVEdUL3ZzZlBQcnBzekxBQT09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lZZkI3YUM0SlNTQU9rUEx0T25yRnRzb2ovU2hsQnFjcTNteUYwZnFaOG5hRjhqTitpV084eFBEYWRTOXJkV0hERWNlaUw0akxHcHRVNzJHbWxzK2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzcxOTcwCWZpbGU6Q29kZW1fMS4xNi4zMTFfeDY0LXNldHVwLmV4ZQpMdXE2eWpobGM0YmtSeUUyTnQ1eEJBV2wzOWl6OGM2OHZSdFlPd2MydEI1R1lBcVZoeFh3VE4vTjRxRTg1YkZ5b0F4QVp5RHVkYkE5bVJXazVjemdDUT09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.311/Codem_1.16.311_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1F4NGgyRTFpN0xZeTFuRStvVWZHeG5xZWdvc1BmamsrT0RvTjlaTjJVQ1RTQndITU1kVC9YN2Fkb01tL3Zna3J1WkJ5ZTZ2dGRRUHNNbTI1NUh2endvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzcwMjI0CWZpbGU6Q29kZW1fMS4xNi4zMTFfeDY0LXNldHVwLmV4ZQp6a2RiOUNHdUZqTzhWMWxNUUd3TDJqb2ozcndIbHZrZURncGlCMjdKcG1jSjl4dUVHQlVxQnptdEFQbmRPZUhiQU04VVdZVEdUL3ZzZlBQcnBzekxBQT09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1lZZkI3YUM0SlNTQU9rUEx0T25yRnRzb2ovU2hsQnFjcTNteUYwZnFaOG5hRjhqTitpV084eFBEYWRTOXJkV0hERWNlaUw0akxHcHRVNzJHbWxzK2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzcxOTcwCWZpbGU6Q29kZW1fMS4xNi4zMTFfeDY0LXNldHVwLmV4ZQpMdXE2eWpobGM0YmtSeUUyTnQ1eEJBV2wzOWl6OGM2OHZSdFlPd2MydEI1R1lBcVZoeFh3VE4vTjRxRTg1YkZ5b0F4QVp5RHVkYkE5bVJXazVjemdDUT09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.311/Codem_1.16.311_x64-setup.exe"
     }
   }
