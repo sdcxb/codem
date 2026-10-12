@@ -100,10 +100,17 @@ export function freeModelIdSnapshot(): string[] {
 export const HEALTH_TTL_MS = 30 * 60 * 1000;
 
 export interface FreeModelHealth {
-  /** true=最近一次探测/调用成功；false=最近一次失败 */
+  /** true=最近一次探测/调用成功；false=最近一次没成功（见 reason 区分"不可用"与"慢/超时"） */
   ok: boolean;
   /** 结论时间（毫秒时间戳）—— 过期即"未知" */
   at: number;
+  /**
+   * 没成功的原因类别（第 216 波）：
+   * - `unavailable`：上游明确说这个模型不可用（探测失败 / 上游模型级错误）；
+   * - `slow`：**只是慢/超时** —— 真机实测 `nemotron-3.5-lightning-free` 的 1-token 探测通过（2.6s），
+   *   但真聊天 60 秒没答完。把这种也标成"当前不可用"是**过度断言** ✗ ⇒ 单独一类、文案也不同。
+   */
+  reason?: "unavailable" | "slow";
   /** 失败原因（截断保存，便于界面告知） */
   error?: string;
 }
@@ -113,7 +120,34 @@ const health = new Map<string, FreeModelHealth>();
 /** 记一条结论（探测与真实调用都走这里；同时用于持久化回灌） */
 export function recordFreeModelHealth(modelId: string, entry: FreeModelHealth): void {
   if (typeof modelId !== "string" || !modelId) return;
-  health.set(modelId, { ok: !!entry.ok, at: Number(entry.at) || Date.now(), ...(entry.error ? { error: String(entry.error).slice(0, 200) } : {}) });
+  health.set(modelId, {
+    ok: !!entry.ok,
+    at: Number(entry.at) || Date.now(),
+    ...(entry.reason ? { reason: entry.reason } : {}),
+    ...(entry.error ? { error: String(entry.error).slice(0, 200) } : {}),
+  });
+}
+
+/** "慢/超时"类失败的原话特征（与"不可用"分开判，见 FreeModelHealth.reason 的注释） */
+const TIMEOUT_MARKERS = [/timeout/i, /timed out/i, /超时/, /aborted/i, /AbortError/, /request was aborted/i];
+
+/** 这段文案是不是"慢了/超时了"（纯函数） */
+export function isTimeoutFailure(message: string): boolean {
+  if (typeof message !== "string" || !message) return false;
+  return TIMEOUT_MARKERS.some((re) => re.test(message));
+}
+
+/**
+ * 从**错误文案**记一条"慢/超时"（真实调用超时时调用）。
+ *
+ * 为什么不记成"不可用"：慢 ≠ 不可用 —— 同一个模型下次可能就答出来了（真机实测过）。
+ * 记成不可用会让用户永久避开一个其实可用的模型 ✗。
+ */
+export function markFreeModelSlowFromError(modelId: string, message: string): boolean {
+  if (!isFreeModelId(modelId)) return false;
+  if (!isTimeoutFailure(message)) return false;
+  recordFreeModelHealth(modelId, { ok: false, at: Date.now(), reason: "slow", error: message.slice(0, 200) });
+  return true;
 }
 
 /**
@@ -125,7 +159,7 @@ export function recordFreeModelHealth(modelId: string, entry: FreeModelHealth): 
 export function markFreeModelUnavailableFromError(modelId: string, message: string): boolean {
   if (!isFreeModelId(modelId)) return false;
   if (!isUpstreamModelFailure(message)) return false;
-  recordFreeModelHealth(modelId, { ok: false, at: Date.now(), error: message.slice(0, 200) });
+  recordFreeModelHealth(modelId, { ok: false, at: Date.now(), reason: "unavailable", error: message.slice(0, 200) });
   return true;
 }
 
@@ -163,16 +197,31 @@ export function isFreeModelKnownUnavailable(modelId: string, now = Date.now()): 
 }
 
 /**
- * 界面用：给模型名加"当前不可用"后缀（没有结论或结论过期 ⇒ 返回空串，**不标注也不劝退**）。
+ * 界面用：给模型名加后缀（没有结论或结论过期 ⇒ 返回空串，**不标注也不劝退**）。
+ *
+ * 两种没成功的口径**必须分开**（第 216 波，真机实测逼出来的）：
+ * - 上游说它不可用 ⇒ 「（当前不可用 · N 分钟前检测）」；
+ * - 只是慢/超时 ⇒ 「（最近一次调用超时 · N 分钟前）」—— **不许**说成"不可用"：
+ *   `nemotron-3.5-lightning-free` 的 1-token 探测通过（2.6s），真聊天 60 秒没答完，
+ *   把它标成"不可用"就是**过度断言**，会让用户永久避开一个其实能用的模型 ✗。
  *
  * 抽成一个函数是为了让**设置里的模型列表**与**对话里的模型选择器**用同一口径 ——
  * 两处各写一份判断，迟早会出现"一个说不可用、一个说可用" ✗。
  */
 export function freeModelUnavailableSuffix(modelId: string, lang: "zh" | "en" = "zh", now = Date.now()): string {
-  if (!isFreeModelKnownUnavailable(modelId, now)) return "";
   const entry = freeModelHealthOf(modelId, now);
-  const minutes = entry ? Math.max(0, Math.round((now - entry.at) / 60000)) : 0;
+  if (!entry || entry.ok) return "";
+  const minutes = Math.max(0, Math.round((now - entry.at) / 60000));
+  if (entry.reason === "slow") {
+    return lang === "zh" ? `（最近一次调用超时 · ${minutes} 分钟前）` : ` (last call timed out · ${minutes}m ago)`;
+  }
   return lang === "zh" ? `（当前不可用 · ${minutes} 分钟前检测）` : ` (unavailable · checked ${minutes}m ago)`;
+}
+
+/** 界面/判据用：这个模型此刻是否**已知"慢/超时"**（与"不可用"分开） */
+export function isFreeModelKnownSlow(modelId: string, now = Date.now()): boolean {
+  const entry = freeModelHealthOf(modelId, now);
+  return !!entry && entry.ok === false && entry.reason === "slow";
 }
 
 /** 判据/持久化用：读全部记录（含过期的，便于原样存盘） */

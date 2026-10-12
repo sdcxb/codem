@@ -1,4 +1,5 @@
 import { markFreeModelUnavailableFromError } from "../free-model-plugin/model-index";
+import { markFreeModelSlowFromError } from "../free-model-plugin/model-index";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -660,6 +661,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
                * 免得把用户自己的网络抖动算到模型头上。
                */
               markFreeModelUnavailableFromError(request.model, rawMessage);
+              /* 第 216 波：**慢/超时**是另一类 —— 真机实测有模型探测通过但真聊天 60 秒没答完，
+                 把它记成「最近一次调用超时」而不是「不可用」（后者是过度断言，会让用户永久避开它）。 */
+              markFreeModelSlowFromError(request.model, rawMessage);
               const message = upstreamFreeModelFailure
                 ? `${rawMessage}（该失败来自上游免费模型侧，不是 Codem；免费池里其它模型通常仍可用 —— 在模型列表里换一个「-free」模型再试。当前模型：${request.model}）`
                 : rawMessage;

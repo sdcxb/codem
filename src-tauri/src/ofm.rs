@@ -403,6 +403,12 @@ pub fn shutdown_ofm(state: &OfmState) {
             .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW */
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status();
+            /* 第 217 波（用户实报「点右键退出卡了一下、要按两次才退出」）：**发出去就不等** ——
+               原来是 `.status()`（同步等 taskkill 收完整棵 node 树），而它跑在**退出路径**上：
+               收树要几百毫秒到几秒 ⇒ 界面卡住、退出流程被堵 ⇒ 第一下没退成。
+               现在改成 `.spawn()`：回收交给系统继续做（taskkill 是独立进程），万一没做完，
+               下次启动还有 `clear_stale_lock`（按 pid 确认"锁的主人确实不在了"）兜底 ✓。
+               这笔买卖很划算：**退出必须立刻响应**，而"有没有残留进程"本来就有第二道保障。 */
+            .spawn();
     }
 }

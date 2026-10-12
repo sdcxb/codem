@@ -12,8 +12,8 @@
 （所以仓库里**大量中文注释在解释"为什么"** ✓ —— 改动前先读注释，很多坑已经写在那里了 ✓）。
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
-- 当前版本：**1.16.312**（已发布，GitHub Releases 的 `Latest`；修复：升级时内置 Node 被占用导致文件写不进去、切换对话时浮层不自动收起。上一版：内置免费模型插件整条链打通、设置界面焦点环去重）
-- 测试规模：**666 个测试文件 / 8034 个用例全绿**，`tsc` 零错误
+- 当前版本：**1.16.313**（已发布，GitHub Releases 的 `Latest`；免费模型「检测可用性」+ 修掉启动闪黑窗与退出卡顿。上一版：升级占用修复、浮层收起）
+- 测试规模：**668 个测试文件 / 8044 个用例全绿**，`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
 ## 1. 先读哪几个文件（按这个顺序）
@@ -40,7 +40,7 @@ src/core/environment/ 工作区变更追踪（file-change-tracker.ts）
 src/core/prompt/      系统提示词与外置模板
 src/core/knowledge/   知识与动画类小工具（字体/嵌入/PPT 生成等）
 src/components/       React 界面组件（含技能管理、设置面板、任务中心等）
-src/test/             666 个测试文件（判据都写在这里）
+src/test/             668 个测试文件（判据都写在这里）
 tools/eval/           评测口径（配对报告、去重）
 tools/audit/          结构审计（上报点分诊、可达性门禁等）
 .preview-shot/        评测脚手架与运行产物（**已被 .gitignore 忽略**，不进仓库）
@@ -52,7 +52,7 @@ docs/releases/        1.0 前 26 版发布说明（留档）
 ```powershell
 # 开发 / 检查 / 测试
 npx tsc --noEmit                        # 类型检查（必须 0 错误）
-npx vitest run                          # 全量测试（约 2 分钟；666 文件 / 8034 用例）
+npx vitest run                          # 全量测试（约 2 分钟；668 文件 / 8044 用例）
 npx vitest run src/test/<某个>.test.ts  # 单跑一个判据文件
 
 # 结构审计（动过上报点/新增未接线文件后要跑）
@@ -163,3 +163,4 @@ node .preview-shot\_gate-evidence.mjs                                  # 收尾�
   用 grep 检索关键词即可 ✓，不要通读 ✗。
 - **历史版本说明**：`docs/releases/<tag>.md`（1.0 前 26 版 ✓，与 GitHub Releases 同步 ✓）。
 - **改完就走完流程**：`tsc` 0 ✓ → 相关判据 + 全量测试 ✓ → 需要时真机验证（构建 + 静默安装 + 取日志）✓ → 提交推送 ✓。
+

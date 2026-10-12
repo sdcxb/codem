@@ -743,7 +743,7 @@ async function probePluginModels(options?: { concurrency?: number }): Promise<{
         } else {
           const text = await res.text().catch(() => "");
           const error = text.replace(/\s+/g, " ").slice(0, 160) || "HTTP " + res.status;
-          recordFreeModelHealth(id, { ok: false, at: Date.now(), error });
+          recordFreeModelHealth(id, { ok: false, at: Date.now(), reason: "unavailable", error });
           results.push({ id, ok: false, error });
         }
       } catch (e) {
@@ -751,7 +751,7 @@ async function probePluginModels(options?: { concurrency?: number }): Promise<{
         const error = aborted
           ? "超时（>" + PROBE_TIMEOUT_MS / 1000 + "s）"
           : String((e as Error)?.message ?? e).slice(0, 160);
-        recordFreeModelHealth(id, { ok: false, at: Date.now(), error });
+        recordFreeModelHealth(id, { ok: false, at: Date.now(), reason: "unavailable", error });
         results.push({ id, ok: false, error });
       } finally {
         clearTimeout(timer);
@@ -781,10 +781,13 @@ async function persistHealth(): Promise<boolean> {
 /** 启动时把上次的可用性结论回灌进内存（过期的会被 `freeModelHealthOf` 自动忽略） */
 async function loadPersistedHealth(): Promise<void> {
   try {
-    const saved = getSettingJSON<Record<string, { ok?: boolean; at?: number; error?: string }>>(HEALTH_SETTING_KEY, {});
+    const saved = getSettingJSON<Record<string, { ok?: boolean; at?: number; reason?: "unavailable" | "slow"; error?: string }>>(
+      HEALTH_SETTING_KEY,
+      {},
+    );
     clearFreeModelHealth();
     for (const [id, entry] of Object.entries(saved ?? {})) {
-      if (entry && typeof entry.at === "number") recordFreeModelHealth(id, { ok: !!entry.ok, at: entry.at, error: entry.error });
+      if (entry && typeof entry.at === "number") recordFreeModelHealth(id, { ok: !!entry.ok, at: entry.at, reason: entry.reason, error: entry.error });
     }
   } catch (e) {
     console.warn("[free-model-plugin] 可用性结果回灌失败", e);

@@ -1,290 +1,320 @@
 {
-  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。 第 210 波：焦点环去重（一个焦点目标只画一个环）—— 父级不再因「里面有焦点」而画环，控件自己补主题色环。 第 211 波：输入框/文本域不许再叠 outline（它们已有内嵌环）—— 只给 <select> 补主题环。 第 215 波（用户问「刷新不应该测一下能否通」）：新增主动探测可用性（带超时 + 并发上限 + 结果带时间戳落盘）+ 真实调用失败回写 + 两处模型列表标注。",
-  "mutations": [
-    {
-      "id": "MUT-1 不做归属覆盖（选了 free 模型照样发去 openai）",
-      "why": "FREE-ROUTE-3：这正是用户报的错误（openai not configured）",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/model-index.ts",
-          "from": "export function routeProviderForModel<T extends { providerId: string; modelId: string }>(resolved: T): T {\n  if (isFreeModelId(resolved.modelId) && resolved.providerId !== MANAGED_FREE_MODEL_PROVIDER_ID) {\n    return { ...resolved, providerId: MANAGED_FREE_MODEL_PROVIDER_ID };\n  }\n  return resolved;\n}",
-          "to": "export function routeProviderForModel<T extends { providerId: string; modelId: string }>(resolved: T): T {\n  return resolved;\n}"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-routing.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
-      "why": "FREE-ROUTE-1：清单刷新后旧模型可能已经不可用，认领它就会把请求发去一个不存在的模型",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/model-index.ts",
-          "from": "  freeModelIds.clear();\n",
-          "to": ""
-        }
-      ],
-      "tests": [
-        "src/test/free-model-routing.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
-      "why": "FREE-ROUTE-4：用户就是被这句话误导的（免费模型不该要 Key）",
-      "patches": [
-        {
-          "file": "src/components/SettingsPanel.tsx",
-          "from": "                        ? \"内置免费模型插件已在运行：它的模型无需 API Key（在模型列表里直接选）\"",
-          "to": "                        ? \"请先配置 API Key\""
-        }
-      ],
-      "tests": [
-        "src/test/free-model-routing.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
-      "why": "FREE-ROUTE-6/8：这就是用户报的「选了 free 模型却发去 deepseek/openai」的另一半",
-      "patches": [
-        {
-          "file": "src/core/llm/index.ts",
-          "from": "        return resolveModelSelection(s?.model, this.providers.getAll().map((p: { id: string }) => p.id), {",
-          "to": "        void s;\n        return resolveModelSelection(\"\", this.providers.getAll().map((p: { id: string }) => p.id), {"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-routing.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
-      "why": "FREE-ROUTE-6：isFreeModelId 一旦失灵，用户选了免费模型又会发去 deepseek/openai",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/model-index.ts",
-          "from": "  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };",
-          "to": "  if (false) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-routing.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-7 发消息前不按归属判（free 模型落成 openai ⇒ 用户报的那条错误原样复现）",
-      "why": "FREE-ROUTE-9：这是用户报的错误的**真正出处**（App 侧发消息前检查，比引擎更早）",
-      "patches": [
-        {
-          "file": "src/App.tsx",
-          "from": "        if (isFreeModelId(model)) {\n          provider = MANAGED_FREE_MODEL_PROVIDER_ID;\n        } else {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }",
-          "to": "        {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-routing.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-8 刷新时不带插件的 Key（真机实测：401 ⇒「获取失败，使用内置列表」）",
-      "why": "OFM-REFRESH-HINT-1：用户报的那一步 —— 放行了却没带 Key，于是拿不到真实列表",
-      "patches": [
-        {
-          "file": "src/components/SettingsPanel.tsx",
-          "from": "      Authorization: `Bearer ${authKey}`,\n    };",
-          "to": "      ...(authKey && provider.apiKey ? { Authorization: `Bearer ${authKey}` } : {}),\n    };"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-refresh-and-hint.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-9 上游失败不给可操作提示（用户只能看到 Endpoint is unavailable）",
-      "why": "OFM-REFRESH-HINT-2：真机体测证明换个模型通常就好，文案必须说出来",
-      "patches": [
-        {
-          "file": "src/core/llm/provider.ts",
-          "from": "              const message = upstreamFreeModelFailure\n                ? `${rawMessage}（该失败来自上游免费模型侧，不是 Codem；免费池里其它模型通常仍可用 —— 在模型列表里换一个「-free」模型再试。当前模型：${request.model}）`\n                : rawMessage;",
-          "to": "              const message = rawMessage;"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-refresh-and-hint.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-13 内置 Node 不落位（又直接运行安装目录里那份 ⇒ 升级时文件被占用）",
-      "why": "OFM-UPGRADE-1：这正是用户实报的「无法打开要写入的文件：…resources\\node\\node.exe」",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/service.ts",
-          "from": "      const staged = await invoke<string>(\"ofm_stage_node\", { bundled, dataDir: await pluginDataDir() });\n      if (staged) return { exe: staged, via: \"bundled\" };",
-          "to": "      const staged = await invoke<string>(\"ofm_stage_node\", { bundled, dataDir: await pluginDataDir() });\n      if (staged) return { exe: bundled, via: \"bundled\" };"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-upgrade-lock.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-15 安装前不停插件（句柄不释放）",
-      "why": "OFM-UPGRADE-3：应用侧那一层保障被去掉",
-      "patches": [
-        {
-          "file": "src/components/SettingsPanel.tsx",
-          "from": "              try {\n                await freeModelPlugin.stop();",
-          "to": "              try {\n                await Promise.resolve();"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-upgrade-lock.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-17 切会话不收起浮层（用户实报：模型列表贴到新会话上）",
-      "why": "CHAT-OVERLAY-2/3：这个 UI bug 的原样复现",
-      "patches": [
-        {
-          "file": "src/components/ChatPanel.tsx",
-          "from": "  useEffect(() => {\n    setShowModelPicker(false);\n    setShowEffortPicker(false);",
-          "to": "  useEffect(() => {\n    void 0;\n    setShowEffortPicker(false);"
-        }
-      ],
-      "tests": [
-        "src/test/chatpanel-overlay-close.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-19 查残留进程的 tasklist 不加不闪窗标记（每次启动闪一下黑框）",
-      "why": "NO-CONSOLE-2：用户实报的「自从自带 node 后，每次启动都会弹个黑窗口，然后瞬间消失」",
-      "patches": [
-        {
-          "file": "src-tauri/src/ofm.rs",
-          "from": "            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW：查进程也不许闪黑框 */\n",
-          "to": ""
-        }
-      ],
-      "tests": [
-        "src/test/no-console-window.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-18 顺手把持久偏好也收掉（修 bug 改坏了正常行为）",
-      "why": "CHAT-OVERLAY-4：右侧栏/快捷入口是用户显式设置的常驻状态，切会话不该收",
-      "patches": [
-        {
-          "file": "src/components/ChatPanel.tsx",
-          "from": "    setShowTitleDropdown(false);\n  }, [currentSessionId, notebookId]);",
-          "to": "    setShowTitleDropdown(false);\n    setShowRightSidebar(false);\n  }, [currentSessionId, notebookId]);"
-        }
-      ],
-      "tests": [
-        "src/test/chatpanel-overlay-close.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-20 可用性结论永不过期（上游恢复了还一直标着不可用）",
-      "why": "AVAIL-2：把一次结果当成永久属性，就会出现「明明恢复了却永远劝退用户」",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/model-index.ts",
-          "from": "  if (!Number.isFinite(entry.at) || now - entry.at > HEALTH_TTL_MS) return null;",
-          "to": "  if (!Number.isFinite(entry.at)) return null;"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-availability.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-21 探测不带超时（一个卡死的模型能把整轮检测拖住）",
-      "why": "AVAIL-4：并发探测必须有超时，否则「检测可用性」会变成「永远转圈」",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/service.ts",
-          "from": "      const controller = new AbortController();",
-          "to": "      const controller = { signal: undefined } as AbortController;"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-availability.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-16 反向对照：只改一行说明注释",
-      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/service.ts",
-          "from": " * ⚠️ 第 212 波（用户实报）：内置的 node.exe 在**安装目录**里",
-          "to": " * ⚠️ 第 212 波（用户实报，反向对照：只改这行注释）：内置的 node.exe 在**安装目录**里"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-upgrade-lock.test.ts"
-      ],
-      "expectRed": false
-    },
-    {
-      "id": "MUT-11 又给父级画一圈（用户报的双层紫框回来了）",
-      "why": "FOCUS-RING-1：这个 UI bug 的原样复现",
-      "patches": [
-        {
-          "file": "src/styles.css",
-          "from": "/* 8b) 补齐控件自己的环（第 210 波）",
-          "to": ".sp-row:has(:focus-visible) { outline: var(--focus-ring-width) solid var(--focus-ring-color); }\n\n/* 8b) 补齐控件自己的环（第 210 波）"
-        }
-      ],
-      "tests": [
-        "src/test/focus-ring-single.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-12 又给输入框加一层 outline（用户报的「很粗的紫框」= 两三层叠一起）",
-      "why": "FOCUS-RING-2b：输入框已有内嵌环，再加 outline 就是这次用户看到的粗紫框",
-      "patches": [
-        {
-          "file": "src/styles.css",
-          "from": "select:focus-visible {\n  outline: var(--focus-ring-width) solid var(--focus-ring-color);\n  outline-offset: var(--focus-ring-offset);\n}",
-          "to": ":is(select, input, textarea):focus-visible {\n  outline: var(--focus-ring-width) solid var(--focus-ring-color);\n  outline-offset: var(--focus-ring-offset);\n}"
-        }
-      ],
-      "tests": [
-        "src/test/focus-ring-single.test.ts"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "MUT-4 反向对照：只改一行说明注释",
-      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
-      "patches": [
-        {
-          "file": "src/core/free-model-plugin/model-index.ts",
-          "from": " * ## 为什么单独一个模块（而不是放进 service.ts）",
-          "to": " * ## 为什么单独一个模块（反向对照：只改这一行注释）"
-        }
-      ],
-      "tests": [
-        "src/test/free-model-routing.test.ts"
-      ],
-      "expectRed": false
-    }
-  ]
+    "description":  "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。 第 210 波：焦点环去重（一个焦点目标只画一个环）—— 父级不再因「里面有焦点」而画环，控件自己补主题色环。 第 211 波：输入框/文本域不许再叠 outline（它们已有内嵌环）—— 只给 \u003cselect\u003e 补主题环。 第 215 波（用户问「刷新不应该测一下能否通」）：新增主动探测可用性（带超时 + 并发上限 + 结果带时间戳落盘）+ 真实调用失败回写 + 两处模型列表标注。 第 216 波：慢/超时与不可用分开（真实调用超时标「最近一次调用超时」，不标「不可用」）。 第 217 波：退出路径不许同步等收树（用户报「卡一下、要按两次才退出」）。",
+    "mutations":  [
+                      {
+                          "id":  "MUT-1 不做归属覆盖（选了 free 模型照样发去 openai）",
+                          "why":  "FREE-ROUTE-3：这正是用户报的错误（openai not configured）",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/model-index.ts",
+                                              "from":  "export function routeProviderForModel\u003cT extends { providerId: string; modelId: string }\u003e(resolved: T): T {\n  if (isFreeModelId(resolved.modelId) \u0026\u0026 resolved.providerId !== MANAGED_FREE_MODEL_PROVIDER_ID) {\n    return { ...resolved, providerId: MANAGED_FREE_MODEL_PROVIDER_ID };\n  }\n  return resolved;\n}",
+                                              "to":  "export function routeProviderForModel\u003cT extends { providerId: string; modelId: string }\u003e(resolved: T): T {\n  return resolved;\n}"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-routing.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
+                          "why":  "FREE-ROUTE-1：清单刷新后旧模型可能已经不可用，认领它就会把请求发去一个不存在的模型",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/model-index.ts",
+                                              "from":  "  freeModelIds.clear();\n",
+                                              "to":  ""
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-routing.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
+                          "why":  "FREE-ROUTE-4：用户就是被这句话误导的（免费模型不该要 Key）",
+                          "patches":  [
+                                          {
+                                              "file":  "src/components/SettingsPanel.tsx",
+                                              "from":  "                        ? \"内置免费模型插件已在运行：它的模型无需 API Key（在模型列表里直接选）\"",
+                                              "to":  "                        ? \"请先配置 API Key\""
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-routing.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
+                          "why":  "FREE-ROUTE-6/8：这就是用户报的「选了 free 模型却发去 deepseek/openai」的另一半",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/llm/index.ts",
+                                              "from":  "        return resolveModelSelection(s?.model, this.providers.getAll().map((p: { id: string }) =\u003e p.id), {",
+                                              "to":  "        void s;\n        return resolveModelSelection(\"\", this.providers.getAll().map((p: { id: string }) =\u003e p.id), {"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-routing.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
+                          "why":  "FREE-ROUTE-6：isFreeModelId 一旦失灵，用户选了免费模型又会发去 deepseek/openai",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/model-index.ts",
+                                              "from":  "  if (isFreeModelId(model)) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };",
+                                              "to":  "  if (false) return { providerId: MANAGED_FREE_MODEL_PROVIDER_ID, modelId: model };"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-routing.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-7 发消息前不按归属判（free 模型落成 openai ⇒ 用户报的那条错误原样复现）",
+                          "why":  "FREE-ROUTE-9：这是用户报的错误的**真正出处**（App 侧发消息前检查，比引擎更早）",
+                          "patches":  [
+                                          {
+                                              "file":  "src/App.tsx",
+                                              "from":  "        if (isFreeModelId(model)) {\n          provider = MANAGED_FREE_MODEL_PROVIDER_ID;\n        } else {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }",
+                                              "to":  "        {\n          const resolved = resolveProviderForModel(model);\n          if (resolved) provider = resolved;\n        }"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-routing.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-8 刷新时不带插件的 Key（真机实测：401 ⇒「获取失败，使用内置列表」）",
+                          "why":  "OFM-REFRESH-HINT-1：用户报的那一步 —— 放行了却没带 Key，于是拿不到真实列表",
+                          "patches":  [
+                                          {
+                                              "file":  "src/components/SettingsPanel.tsx",
+                                              "from":  "      Authorization: `Bearer ${authKey}`,\n    };",
+                                              "to":  "      ...(authKey \u0026\u0026 provider.apiKey ? { Authorization: `Bearer ${authKey}` } : {}),\n    };"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-refresh-and-hint.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-9 上游失败不给可操作提示（用户只能看到 Endpoint is unavailable）",
+                          "why":  "OFM-REFRESH-HINT-2：真机体测证明换个模型通常就好，文案必须说出来",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/llm/provider.ts",
+                                              "from":  "              const message = upstreamFreeModelFailure\n                ? `${rawMessage}（该失败来自上游免费模型侧，不是 Codem；免费池里其它模型通常仍可用 —— 在模型列表里换一个「-free」模型再试。当前模型：${request.model}）`\n                : rawMessage;",
+                                              "to":  "              const message = rawMessage;"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-refresh-and-hint.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-13 内置 Node 不落位（又直接运行安装目录里那份 ⇒ 升级时文件被占用）",
+                          "why":  "OFM-UPGRADE-1：这正是用户实报的「无法打开要写入的文件：…resources\\node\\node.exe」",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/service.ts",
+                                              "from":  "      const staged = await invoke\u003cstring\u003e(\"ofm_stage_node\", { bundled, dataDir: await pluginDataDir() });\n      if (staged) return { exe: staged, via: \"bundled\" };",
+                                              "to":  "      const staged = await invoke\u003cstring\u003e(\"ofm_stage_node\", { bundled, dataDir: await pluginDataDir() });\n      if (staged) return { exe: bundled, via: \"bundled\" };"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-upgrade-lock.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-15 安装前不停插件（句柄不释放）",
+                          "why":  "OFM-UPGRADE-3：应用侧那一层保障被去掉",
+                          "patches":  [
+                                          {
+                                              "file":  "src/components/SettingsPanel.tsx",
+                                              "from":  "              try {\n                await freeModelPlugin.stop();",
+                                              "to":  "              try {\n                await Promise.resolve();"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-upgrade-lock.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-17 切会话不收起浮层（用户实报：模型列表贴到新会话上）",
+                          "why":  "CHAT-OVERLAY-2/3：这个 UI bug 的原样复现",
+                          "patches":  [
+                                          {
+                                              "file":  "src/components/ChatPanel.tsx",
+                                              "from":  "  useEffect(() =\u003e {\n    setShowModelPicker(false);\n    setShowEffortPicker(false);",
+                                              "to":  "  useEffect(() =\u003e {\n    void 0;\n    setShowEffortPicker(false);"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/chatpanel-overlay-close.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-19 查残留进程的 tasklist 不加不闪窗标记（每次启动闪一下黑框）",
+                          "why":  "NO-CONSOLE-2：用户实报的「自从自带 node 后，每次启动都会弹个黑窗口，然后瞬间消失」",
+                          "patches":  [
+                                          {
+                                              "file":  "src-tauri/src/ofm.rs",
+                                              "from":  "            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW：查进程也不许闪黑框 */\n",
+                                              "to":  ""
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/no-console-window.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-18 顺手把持久偏好也收掉（修 bug 改坏了正常行为）",
+                          "why":  "CHAT-OVERLAY-4：右侧栏/快捷入口是用户显式设置的常驻状态，切会话不该收",
+                          "patches":  [
+                                          {
+                                              "file":  "src/components/ChatPanel.tsx",
+                                              "from":  "    setShowTitleDropdown(false);\n  }, [currentSessionId, notebookId]);",
+                                              "to":  "    setShowTitleDropdown(false);\n    setShowRightSidebar(false);\n  }, [currentSessionId, notebookId]);"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/chatpanel-overlay-close.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-20 可用性结论永不过期（上游恢复了还一直标着不可用）",
+                          "why":  "AVAIL-2：把一次结果当成永久属性，就会出现「明明恢复了却永远劝退用户」",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/model-index.ts",
+                                              "from":  "  if (!Number.isFinite(entry.at) || now - entry.at \u003e HEALTH_TTL_MS) return null;",
+                                              "to":  "  if (!Number.isFinite(entry.at)) return null;"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-availability.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-21 探测不带超时（一个卡死的模型能把整轮检测拖住）",
+                          "why":  "AVAIL-4：并发探测必须有超时，否则「检测可用性」会变成「永远转圈」",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/service.ts",
+                                              "from":  "      const controller = new AbortController();",
+                                              "to":  "      const controller = { signal: undefined } as AbortController;"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-availability.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-22 超时也标成「当前不可用」（过度断言：用户会永久避开一个其实能用的模型）",
+                          "why":  "AVAIL-5：真机实测 nemotron-3.5-lightning-free 探测通过但真聊天 60 秒没答完",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/model-index.ts",
+                                              "from":  "  if (entry.reason === \"slow\") {",
+                                              "to":  "  if (false) {"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-availability.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-23 退出时又同步等 taskkill（用户报的「卡一下、要按两次才退出」）",
+                          "why":  "QUIT-NO-WAIT-1：退出路径必须立刻响应；同步等一棵 node 进程树会堵住它",
+                          "patches":  [
+                                          {
+                                              "file":  "src-tauri/src/ofm.rs",
+                                              "from":  "               这笔买卖很划算：**退出必须立刻响应**，而\"有没有残留进程\"本来就有第二道保障。 */\n            .spawn();",
+                                              "to":  "               这笔买卖很划算：**退出必须立刻响应**，而\"有没有残留进程\"本来就有第二道保障。 */\n            .status();"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/no-console-window.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-16 反向对照：只改一行说明注释",
+                          "why":  "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/service.ts",
+                                              "from":  " * ⚠️ 第 212 波（用户实报）：内置的 node.exe 在**安装目录**里",
+                                              "to":  " * ⚠️ 第 212 波（用户实报，反向对照：只改这行注释）：内置的 node.exe 在**安装目录**里"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-upgrade-lock.test.ts"
+                                    ],
+                          "expectRed":  false
+                      },
+                      {
+                          "id":  "MUT-11 又给父级画一圈（用户报的双层紫框回来了）",
+                          "why":  "FOCUS-RING-1：这个 UI bug 的原样复现",
+                          "patches":  [
+                                          {
+                                              "file":  "src/styles.css",
+                                              "from":  "/* 8b) 补齐控件自己的环（第 210 波）",
+                                              "to":  ".sp-row:has(:focus-visible) { outline: var(--focus-ring-width) solid var(--focus-ring-color); }\n\n/* 8b) 补齐控件自己的环（第 210 波）"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/focus-ring-single.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-12 又给输入框加一层 outline（用户报的「很粗的紫框」= 两三层叠一起）",
+                          "why":  "FOCUS-RING-2b：输入框已有内嵌环，再加 outline 就是这次用户看到的粗紫框",
+                          "patches":  [
+                                          {
+                                              "file":  "src/styles.css",
+                                              "from":  "select:focus-visible {\n  outline: var(--focus-ring-width) solid var(--focus-ring-color);\n  outline-offset: var(--focus-ring-offset);\n}",
+                                              "to":  ":is(select, input, textarea):focus-visible {\n  outline: var(--focus-ring-width) solid var(--focus-ring-color);\n  outline-offset: var(--focus-ring-offset);\n}"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/focus-ring-single.test.ts"
+                                    ],
+                          "expectRed":  true
+                      },
+                      {
+                          "id":  "MUT-4 反向对照：只改一行说明注释",
+                          "why":  "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+                          "patches":  [
+                                          {
+                                              "file":  "src/core/free-model-plugin/model-index.ts",
+                                              "from":  " * ## 为什么单独一个模块（而不是放进 service.ts）",
+                                              "to":  " * ## 为什么单独一个模块（反向对照：只改这一行注释）"
+                                          }
+                                      ],
+                          "tests":  [
+                                        "src/test/free-model-routing.test.ts"
+                                    ],
+                          "expectRed":  false
+                      }
+                  ]
 }

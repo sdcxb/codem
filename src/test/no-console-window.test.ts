@@ -68,3 +68,40 @@ describe("NO-CONSOLE：spawn 不许弹控制台窗口（第 214 波）", () => {
     );
   });
 });
+
+/**
+ * 第 217 波（用户实报）：
+ * > 点右键退出，卡了一下，然后弹出黑框（后自己消失）然后再次点退出才退出。
+ *
+ * 两件事，分开判：
+ * ① **黑框**：退出时会用 taskkill 收插件/终端进程树，那也是控制台程序 ⇒ 与启动闪窗同一根因
+ *    （`creation_flags` 那条棘轮已经盖住 ✓）；
+ * ② **卡一下 + 要按两次**：退出路径在**同步等** taskkill（`.status()`）⇒ 退出流程被堵住 ✗。
+ *    这一条单独钉：退出路径上只许**发出去不等**（`.spawn()`）。
+ */
+describe("QUIT-NO-WAIT：退出路径不许同步等收树（第 217 波）", () => {
+  const ofm = readFileSync(path.resolve(__dirname, "../../src-tauri/src/ofm.rs"), "utf8");
+  const lib = readFileSync(path.resolve(__dirname, "../../src-tauri/src/lib.rs"), "utf8");
+
+  it("QUIT-NO-WAIT-1：插件收尾（shutdown_ofm）只许 spawn，不许 status（同步等待）", () => {
+    const start = ofm.indexOf("pub fn shutdown_ofm");
+    expect(start, "找不到 shutdown_ofm").toBeGreaterThan(0);
+    const body = ofm.slice(start, start + 1600);
+    expect(body, "收树要带上不闪窗标记（黑框那条）").toContain("creation_flags(0x0800_0000)");
+    expect(body, "要发出去不等").toContain(".spawn()");
+    /* 只看**实调用**（带分号）：注释里也会提到 `.status()`（解释为什么要改掉它） */
+    expect(body, "**不许**同步等待（用户的「卡一下、要按两次」就是它）").not.toMatch(/\.status\(\);/);
+  });
+
+  it("QUIT-NO-WAIT-2：退出路径的进程树回收必须走 no_wait 版本", () => {
+    expect(lib, "要有非阻塞收树助手").toContain("fn kill_process_tree_no_wait");
+    expect(lib, "终端会话收尾要用它（否则会话一多就堵住退出）").toMatch(
+      /pty cleanup killing[\s\S]{0,800}?kill_process_tree_no_wait\(/,
+    );
+    /* 同步版仍允许少量在用（MCP 收尾要聚合"杀掉了几个"的结果）—— 但数量要少，防止回流 */
+    const blocking = (lib.match(/let _ = kill_process_tree\(/g) ?? []).length;
+    expect(blocking, "同步版仍在用的地方应当很少（4 处：spawn 回收 / execute_command / mcp_stdio_disconnect / 一处启动清理）").toBeLessThanOrEqual(5);
+  });
+});
+
+

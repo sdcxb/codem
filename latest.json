@@ -1,15 +1,15 @@
 {
-  "version": "1.16.312",
-  "notes": "Codem v1.16.312 — 修复：切换对话时浮层（模型列表/推理强度/各面板）不会自动收起，导致旧会话的列表贴到新会话上面；另修复应用内升级报「无法打开要写入的文件：…resources\\node\\node.exe」（内置 Node 不再从安装目录运行）。",
-  "pub_date": "2026-10-12T07:21:12Z",
+  "version": "1.16.313",
+  "notes": "Codem v1.16.313 — 新增免费模型「检测可用性」（刷得出来 ≠ 能用：逐个探测、带时间戳标注，且把「不可用」与「慢/超时」分开）；修掉每次启动闪一下黑窗口，以及退出时卡一下、要按两次才退出的问题。",
+  "pub_date": "2026-10-12T10:13:15Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NOeDZBNW9uY1R3dWQzbWxnVzRUdTAzMkV1eFRnK3VML1A0UmJRdkk5V2UvSHpnVGswT2c0dXkzWW5Qb2Zsa05JV2NoaktlV2l5clhzMFd4N2NQN1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzg5NjcyCWZpbGU6Q29kZW1fMS4xNi4zMTJfeDY0LXNldHVwLmV4ZQplQXFUaHdKdVF6ckZEc1BFWGZxSDNaMkkyZ08vVlB6MlJ4Q3FkYVFDSk1EYkYrZGQ4SUdJSE5nc3kvVksyYkRhbE5FM25EaVlFeWlaSjJsUXJIRVNEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.312/Codem_1.16.312_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxQmoxMWdvS2ZuVkVIRGdWWHdDbVpvY0x4NVV5MGNuT1pvc2t1MUFBbXJaYlVZZk9mQStoV1lLTHJNOXJPanh5bGZFWDdhbDg5Q1NENURrUXBmRFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzk5OTk1CWZpbGU6Q29kZW1fMS4xNi4zMTNfeDY0LXNldHVwLmV4ZQpla1JHaGFQekZydVdpM2JIVEdxa0FXV3BWTE9PWFptUkUyK0x4bDVvSldxNnBxOGVEamNCbHBQYXpZNGFFKzNvQ3RaUzFHS0tZMWZHWXlvU2N6YWtEdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.313/Codem_1.16.313_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1NOeDZBNW9uY1R3dWQzbWxnVzRUdTAzMkV1eFRnK3VML1A0UmJRdkk5V2UvSHpnVGswT2c0dXkzWW5Qb2Zsa05JV2NoaktlV2l5clhzMFd4N2NQN1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzg5NjcyCWZpbGU6Q29kZW1fMS4xNi4zMTJfeDY0LXNldHVwLmV4ZQplQXFUaHdKdVF6ckZEc1BFWGZxSDNaMkkyZ08vVlB6MlJ4Q3FkYVFDSk1EYkYrZGQ4SUdJSE5nc3kvVksyYkRhbE5FM25EaVlFeWlaSjJsUXJIRVNEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.312/Codem_1.16.312_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxQmoxMWdvS2ZuVkVIRGdWWHdDbVpvY0x4NVV5MGNuT1pvc2t1MUFBbXJaYlVZZk9mQStoV1lLTHJNOXJPanh5bGZFWDdhbDg5Q1NENURrUXBmRFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzk5OTk1CWZpbGU6Q29kZW1fMS4xNi4zMTNfeDY0LXNldHVwLmV4ZQpla1JHaGFQekZydVdpM2JIVEdxa0FXV3BWTE9PWFptUkUyK0x4bDVvSldxNnBxOGVEamNCbHBQYXpZNGFFKzNvQ3RaUzFHS0tZMWZHWXlvU2N6YWtEdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.313/Codem_1.16.313_x64-setup.exe"
     }
   }
 }

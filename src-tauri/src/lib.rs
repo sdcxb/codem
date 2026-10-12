@@ -1899,6 +1899,32 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 /// Unix: kill the negative PGID (process group) — children spawned by the
 /// shell inherit the group; SIGKILL ensures descendants die even if they
 /// ignore SIGTERM. Mirrors dsh subprocess-local tree-level kill semantics.
+/// 第 217 波：**退出路径专用**的非阻塞版收树。
+///
+/// 用户实报：「点右键退出，卡了一下，然后弹出黑框，然后再次点退出才退出」——
+/// `kill_process_tree` 内部是 `.status()`（**同步等 taskkill 收完整棵树**），
+/// 而退出路径上（`quit_app` / MCP 收尾）串行等它 ⇒ 退出被堵住、要点第二次 ✗。
+/// 这里 `spawn()` 发出去就不等：进程树的回收由系统继续做，
+/// 万一没做完，下次启动还有各自的"锁主人确认"兜底 ✓。
+fn kill_process_tree_no_wait(pid: Option<u32>) {
+    let Some(pid) = pid else { return };
+    #[cfg(target_os = "windows")]
+    {
+        #[cfg(target_os = "windows")]
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x08000000) /* CREATE_NO_WINDOW：退出时也不许闪黑框 */
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("kill").args(["-KILL", &format!("-{pid}")]).status();
+    }
+}
+
 fn kill_process_tree(pid: Option<u32>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt; /* 第 214 波：给 std 的 Command 加 creation_flags */
@@ -3896,7 +3922,10 @@ async fn quit_app(app: AppHandle, pty_map: State<'_, PtyMap>) -> Result<(), Stri
             runtime_log::append_line("INFO", &format!("pty cleanup killing id={}", id));
             // 杀整树：退出时若终端里正跑长命令（npm test 等），单 kill 会留下孤儿进程。
             if let Some(pid) = session._child.process_id() {
-                let _ = kill_process_tree(Some(pid));
+                /* 第 217 波（用户实报「点退出卡了一下、要按两次才退出」）：
+                   退出路径上**不许同步等**收树 —— 每个终端会话串行 `taskkill`（几百毫秒到几秒），
+                   会话一多就把退出流程堵住。改成发出去不等；孤儿进程由各自的清理兜底。 */
+                kill_process_tree_no_wait(Some(pid));
             }
             let _ = session._child.kill();
             drop(session);
@@ -7586,3 +7615,4 @@ mod harden_185_tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 }
+

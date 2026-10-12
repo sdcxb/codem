@@ -20,7 +20,10 @@ import {
   freeModelHealthOf,
   freeModelUnavailableSuffix,
   isFreeModelKnownUnavailable,
+  isFreeModelKnownSlow,
+  isTimeoutFailure,
   isUpstreamModelFailure,
+  markFreeModelSlowFromError,
   markFreeModelAvailable,
   markFreeModelUnavailableFromError,
   recordFreeModelHealth,
@@ -106,3 +109,47 @@ describe("AVAIL：模型可用性（第 215 波）", () => {
 });
 
 
+
+/**
+ * 第 216 波（用户要求：「把"超时也标注"那条也做了」）：
+ *
+ * 真机实测逼出来的区分 —— `nemotron-3.5-lightning-free` 的 1-token 探测**通过**（2.6s），
+ * 但真聊天 **60 秒没答完**。这种情形如果标成"当前不可用"，就是**过度断言**：
+ * 用户会永久避开一个其实能用的模型 ✗。所以"慢/超时"必须单独一类、文案也不同。
+ */
+describe("AVAIL：慢/超时与不可用必须分开（第 216 波）", () => {
+  it("AVAIL-5：真实调用超时 ⇒ 标「最近一次调用超时」，**不许**说成「当前不可用」", () => {
+    /* 这条用例覆盖三个模型：先把它们放进「插件提供的模型」集合（否则回写会被"不是插件的模型"挡掉） */
+    setFreeModelIds(["ling-3.1-flash-free", "mimo-v2.6-flash-free", "nemotron-3.5-lightning-free"]);
+    const now = Date.now();
+    expect(isTimeoutFailure("Provider stream error: request timed out after 60s"), "超时要认得出来").toBe(true);
+    expect(isTimeoutFailure("AbortError: The operation was aborted"), "中止也算超时").toBe(true);
+    expect(isTimeoutFailure("Endpoint is unavailable."), "上游说不可用不是超时").toBe(false);
+
+    expect(markFreeModelSlowFromError("nemotron-3.5-lightning-free", "request timed out"), "该记").toBe(true);
+    expect(isFreeModelKnownSlow("nemotron-3.5-lightning-free", now), "要能读出「慢」").toBe(true);
+
+    const suffix = freeModelUnavailableSuffix("nemotron-3.5-lightning-free", "zh", now);
+    expect(suffix, "要说清楚是超时").toContain("最近一次调用超时");
+    expect(suffix, "**不许**说不可用（过度断言）").not.toContain("当前不可用");
+
+    markFreeModelUnavailableFromError("ling-3.1-flash-free", "Upstream request failed: Endpoint is unavailable.");
+    expect(freeModelUnavailableSuffix("ling-3.1-flash-free", "zh", now), "不可用照旧").toContain("当前不可用");
+    expect(isFreeModelKnownSlow("ling-3.1-flash-free", now), "不可用不算「慢」").toBe(false);
+
+    expect(markFreeModelSlowFromError("mimo-v2.6-flash-free", "socket hang up"), "网络抖动不算超时").toBe(false);
+    expect(freeModelUnavailableSuffix("mimo-v2.6-flash-free", "zh", now), "什么都不标").toBe("");
+  });
+
+  it("AVAIL-6（结构棘轮）：真实调用要**同时**回写这两类；探测失败记「不可用」；回灌保留类别", () => {
+    const provider = readFileSync(path.join(root, "src/core/llm/provider.ts"), "utf8");
+    expect(provider, "不可用回写").toContain("markFreeModelUnavailableFromError(request.model");
+    expect(provider, "超时回写").toContain("markFreeModelSlowFromError(request.model");
+    expect(service, "探测失败记为「不可用」（1 个 token 都要 12 秒 = 不能用）").toMatch(
+      /recordFreeModelHealth\(id, \{ ok: false, at: Date\.now\(\), reason: "unavailable"/,
+    );
+    expect(service, "回灌必须保留 reason（否则重启后「超时」会被读成「不可用」）").toMatch(
+      /recordFreeModelHealth\(id, \{ ok: !!entry\.ok, at: entry\.at, reason: entry\.reason/,
+    );
+  });
+});
