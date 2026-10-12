@@ -1,15 +1,15 @@
 {
-  "version": "1.16.313",
-  "notes": "Codem v1.16.313 — 新增免费模型「检测可用性」（刷得出来 ≠ 能用：逐个探测、带时间戳标注，且把「不可用」与「慢/超时」分开）；修掉每次启动闪一下黑窗口，以及退出时卡一下、要按两次才退出的问题。",
-  "pub_date": "2026-10-12T10:13:15Z",
+  "version": "1.16.314",
+  "notes": "Codem v1.16.314 — 免费模型：不可用的模型不再出现在列表里（隐藏 + 如实说明隐藏数量，结论 30 分钟过期自动放回），并把「不可用」与「慢/超时」分开；另修掉每次启动闪一下黑窗口。",
+  "pub_date": "2026-10-12T10:58:38Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxQmoxMWdvS2ZuVkVIRGdWWHdDbVpvY0x4NVV5MGNuT1pvc2t1MUFBbXJaYlVZZk9mQStoV1lLTHJNOXJPanh5bGZFWDdhbDg5Q1NENURrUXBmRFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzk5OTk1CWZpbGU6Q29kZW1fMS4xNi4zMTNfeDY0LXNldHVwLmV4ZQpla1JHaGFQekZydVdpM2JIVEdxa0FXV3BWTE9PWFptUkUyK0x4bDVvSldxNnBxOGVEamNCbHBQYXpZNGFFKzNvQ3RaUzFHS0tZMWZHWXlvU2N6YWtEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.313/Codem_1.16.313_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1UvQVRMVUMyYWUzckxxRnNrVWpyQWdOSW1UZWlGSEhUK0xuQmdCTThrcUNPTGNZd1ZjakVpK2hPTHU0Z08vUXNTRFVndkppcFFKMDBSKzhRQjRtMlFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODAyNzE4CWZpbGU6Q29kZW1fMS4xNi4zMTRfeDY0LXNldHVwLmV4ZQpYaFYxa082dFhhWjJ2QVZxZFJVS1N5MjUwdU5HYXdIN1l0NGVjQ0ZCQlF0SUJueUFuY0J2K09TL1hzbzE3UHFwQ3hrc3BsT0hpL0srWktNNUIyR2ZEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.314/Codem_1.16.314_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RxQmoxMWdvS2ZuVkVIRGdWWHdDbVpvY0x4NVV5MGNuT1pvc2t1MUFBbXJaYlVZZk9mQStoV1lLTHJNOXJPanh5bGZFWDdhbDg5Q1NENURrUXBmRFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzk5OTk1CWZpbGU6Q29kZW1fMS4xNi4zMTNfeDY0LXNldHVwLmV4ZQpla1JHaGFQekZydVdpM2JIVEdxa0FXV3BWTE9PWFptUkUyK0x4bDVvSldxNnBxOGVEamNCbHBQYXpZNGFFKzNvQ3RaUzFHS0tZMWZHWXlvU2N6YWtEdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.313/Codem_1.16.313_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1UvQVRMVUMyYWUzckxxRnNrVWpyQWdOSW1UZWlGSEhUK0xuQmdCTThrcUNPTGNZd1ZjakVpK2hPTHU0Z08vUXNTRFVndkppcFFKMDBSKzhRQjRtMlFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODAyNzE4CWZpbGU6Q29kZW1fMS4xNi4zMTRfeDY0LXNldHVwLmV4ZQpYaFYxa082dFhhWjJ2QVZxZFJVS1N5MjUwdU5HYXdIN1l0NGVjQ0ZCQlF0SUJueUFuY0J2K09TL1hzbzE3UHFwQ3hrc3BsT0hpL0srWktNNUIyR2ZEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.314/Codem_1.16.314_x64-setup.exe"
     }
   }
 }
