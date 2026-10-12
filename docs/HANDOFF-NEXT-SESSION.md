@@ -5205,3 +5205,24 @@ node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑
 - 变异波次 **24 个**全部 `restored: true`（本波新增 `system-injected-198` **6 条**）；
 - 版本号 **1.16.307**（已构建 + 签名 + 静默安装 + 真机/钻取复核）。**用户 2026-10-10 拍板：先不发布** ⇒ `Latest` 仍是 `v1.16.306`，产物与 `latest.json`（1.16.307）都已就位，要发时执行 `gh release create v1.16.307 --title "Codem v1.16.307" --notes-file <说明> ` + 上传 5 个资产即可（发布说明的「对标结果」按既有做法沿用上一稳定版并注明未重跑）。- **真机上还没跑过一次真实的自动提取回合**（要花一次 LLM 调用）：查重 / 上限 / 限频由判据 + 变异覆盖，
   下一次真机验证时顺手看一眼控制台的 `[extractMemories] … 写入 N 条`（N 应 ≤3）与「已有相似记忆跳过 M 条」。
+  - **第 208 波（免费模型「选了不生效」的真正根因，用户实测确认修好）**：用户报
+    `执行出错 [Error] openai not configured. Debug: DB has settings=true, providers=7, openai hasKey=false`。
+    根因**不在引擎**，在 `App.tsx` 的 `handleModelChange`：`let provider = "openai"` +
+    `resolveProviderForModel(model)` —— 免费模型 id 不在任何供应商清单里 ⇒ 解析不出 ⇒ provider 落成
+    **openai** ⇒ 发消息前的检查 `providers.get("openai").isConfigured()` 为 false ⇒ 报错**且这一轮没发出去**
+    （这道检查在 App 侧、**比引擎更早**，所以只改引擎内部盖不住 —— 前两波都改错了层）。
+    修法：**先按模型归属判定**（`isFreeModelId(model)` ⇒ `free-model`），判不出来才退回原解析；
+    同批：引擎兜底**现读设置**（原来用启动时抄的旧 `config.defaultModel`）、设置面板模型下拉
+    **选中即落盘**、模型管理里**列出插件模型**（原来只列"有 apiKey 的供应商"，而托管条目故意不落盘密钥）、
+    清单缓存 45 秒自续、插件管理默认页可搜。
+    判据 `FREE-ROUTE-1..9`（含两条结构棘轮：引擎兜底不许返回旧副本、**App 侧必须先按归属判定**）；
+    变异波次 `free-model-routing-206` **7 条全红**（新增"发消息前不按归属判"直接复现用户那条错误）。
+    真机验收（**真实点击**输入框徽标 → 点 `div.model-option` 里的免费模型 → 发消息）：
+    `[ModelChange] model=ling-3.1-flash-free, provider=free-model` +
+    `[runAgenticLoop] provider=free-model, isConfigured=true` ✓；用户本机复测「free 模型可以用了」✓。
+    教训（下次别再犯）：①**发消息前的检查在 App 侧、比引擎更早** ⇒ 改引擎内部盖不住；
+    ②把"模型列表里只有 MiMo"推断成 CLI 模式 ⇒ **错**（实际 API 模式，`mode-btn active` 一看便知）；
+    ③CDP **合成 `change` 事件**驱动 React 受控下拉**不可靠**（没能落盘、害我误判"选择没生效"）；
+    ④输入框那枚徽标**本来就有真 picker**（`div.model-option`），是我选择器写错才误判为"只读"。
+    版本 **1.16.311** 已构建 + 签名 + 静默安装；**用户尚未拍板发版**。
+
