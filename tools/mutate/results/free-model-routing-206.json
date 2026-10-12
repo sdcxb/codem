@@ -1,18 +1,20 @@
 {
   "wave": "free-model-routing-206",
-  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。",
-  "runAt": "2026-10-12T04:18:18.265Z",
-  "specFingerprint": "a7a4caec69b9d308a07af823f2ffac9c419f3eed",
+  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。 第 210 波：焦点环去重（一个焦点目标只画一个环）—— 父级不再因「里面有焦点」而画环，控件自己补主题色环。",
+  "runAt": "2026-10-12T04:46:30.916Z",
+  "specFingerprint": "fbaf60b2c5a4f23742fe342157679d3230ae3de9",
   "files": [
     "src/core/free-model-plugin/model-index.ts",
     "src/components/SettingsPanel.tsx",
     "src/core/llm/index.ts",
     "src/App.tsx",
-    "src/core/llm/provider.ts"
+    "src/core/llm/provider.ts",
+    "src/styles.css"
   ],
   "tests": [
     "src/test/free-model-routing.test.ts",
-    "src/test/free-model-refresh-and-hint.test.ts"
+    "src/test/free-model-refresh-and-hint.test.ts",
+    "src/test/focus-ring-single.test.ts"
   ],
   "restored": true,
   "results": [
@@ -34,7 +36,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2043
+      "ms": 1899
     },
     {
       "id": "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
@@ -54,7 +56,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2007
+      "ms": 1860
     },
     {
       "id": "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
@@ -74,7 +76,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2016
+      "ms": 1905
     },
     {
       "id": "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
@@ -94,7 +96,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2081
+      "ms": 1907
     },
     {
       "id": "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
@@ -114,7 +116,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2053
+      "ms": 1912
     },
     {
       "id": "MUT-7 发消息前不按归属判（free 模型落成 openai ⇒ 用户报的那条错误原样复现）",
@@ -134,7 +136,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2006
+      "ms": 2019
     },
     {
       "id": "MUT-8 刷新时不带插件的 Key（真机实测：401 ⇒「获取失败，使用内置列表」）",
@@ -154,7 +156,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2049
+      "ms": 1877
     },
     {
       "id": "MUT-9 上游失败不给可操作提示（用户只能看到 Endpoint is unavailable）",
@@ -174,7 +176,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1992
+      "ms": 1821
+    },
+    {
+      "id": "MUT-11 又给父级画一圈（用户报的双层紫框回来了）",
+      "why": "FOCUS-RING-1：这个 UI bug 的原样复现",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": "/* 8b) 补齐控件自己的环（第 210 波）",
+          "to": ".sp-row:has(:focus-visible) { outline: var(--focus-ring-width) solid var(--focus-ring-color); }\n\n/* 8b) 补齐控件自己的环（第 210 波）"
+        }
+      ],
+      "tests": [
+        "src/test/focus-ring-single.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1880
     },
     {
       "id": "MUT-4 反向对照：只改一行说明注释",
@@ -194,7 +216,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 2113
+      "ms": 1844
     }
   ]
 }

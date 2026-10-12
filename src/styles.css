@@ -7592,7 +7592,8 @@ color: var(--text-on-accent);
   transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.skill-search-box:focus-within {
+/* 第 210 波：`:focus-within` 会在**鼠标点击**时也常亮（本仓既有的 187 轮结论）⇒ 改成只认键盘可见焦点 */
+.skill-search-box:has(.skill-search-input:focus-visible) {
   border-color: var(--accent);
 }
 
@@ -19065,13 +19066,13 @@ textarea {
 
 /* 12. 用 :has() 做父级状态（第 32 波）：参考实现大量使用（41 处）。
       两个真实用途：① 卡片里有元素获得焦点时，整张卡片给出描边（焦点在子元素但反馈在父级，
-      键盘用户一眼看出"我在哪个卡片里"）；② 输入框非法时，所在的字段行整行标红。 */
-.sp-card:has(:focus-visible),
-.tool-card:has(:focus-visible),
-.market-skill-card:has(:focus-visible) {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
-}
+      键盘用户一眼看出"我在哪个卡片里"）；② 输入框非法时，所在的字段行整行标红。
+
+      ⚠️ 第 210 波（用户实报 UI bug：设置里选择框/编辑框**外面还套一个紫框**，"弄得平台很丑"）：
+      ① 的"父级再画一圈"是**重复指示** —— 卡片里的按钮/输入框**自己就有环**，
+      两圈叠在一起就是没人想要的双层紫框（真机实测：聚焦设置里的模型下拉时，
+      同时有 2 个元素在画环，且两个环颜色还不一样：外层是半透明主题色、控件是浏览器默认色）。
+      所以**父级不再画环**，只保留"整行标红"这类**没有重复**的父级状态。 */
 .setting-group:has(input:user-invalid) > label,
 .mcp-form-row:has(input:user-invalid) > label,
 .tc-field:has(select:user-invalid) {
@@ -19169,15 +19170,19 @@ textarea {
   border-color: color-mix(in srgb, var(--error) 35%, transparent);
 }
 
-/* 8) 焦点父级：焦点落在行内的控件上时，整行给出环（键盘用户不必找"我在哪一格"）——
-      .setting-group / .mcp-form-row / .sp-row / .plugin-mgr-dialog-item 都含可聚焦控件 */
-.setting-group:has(:focus-visible),
-.mcp-form-row:has(:focus-visible),
-.sp-row:has(:focus-visible),
-.plugin-mgr-dialog-item:has(:focus-visible) {
+/* 8) 焦点父级：第 210 波**已删除**（用户实报的 UI bug）。
+      原规则给 `.setting-group / .mcp-form-row / .sp-row / .plugin-mgr-dialog-item` 在
+      "内部有 :focus-visible" 时整行画一圈 —— 但行内的控件（下拉/输入框/按钮）**自己就画环**，
+      于是聚焦设置里的模型下拉时同时出现 **2 个环**（真机实测：外层半透明主题色 + 控件浏览器默认色），
+      用户的原话是"外层会出来紫色的框，弄得平台很丑"。
+      现在**一个焦点目标只画一个环**（控件自己那个），可靠性由 `focus-outline-none` 门禁继续守。 */
+
+/* 8b) 补齐控件自己的环（第 210 波）：`<select>` 原来既没有主题色环、又被父级环"代偿"，
+      聚焦时露出的是**浏览器默认色**（实测 `rgb(101,85,224)`，与主题的半透明主题色不一致）。
+      这里给原生控件一个统一的主题环 —— 一个焦点目标一圈，颜色/宽度/偏移与全局规则一致。 */
+:is(select, input:not([type="checkbox"]):not([type="radio"]), textarea):focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
-  border-radius: var(--radius-sm);
 }
 
 /* 9) 活跃项：子智能体活动项里有 spinner 时整行提亮（AgentDetail） *//* ==========================================================================
