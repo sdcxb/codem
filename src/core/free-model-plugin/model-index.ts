@@ -327,10 +327,8 @@ export function setModelModalities(rows: ReadonlyArray<{ id?: unknown; vision?: 
   }
 }
 
-/** 判据用：读当前模态表（只读快照） */
-export function modelModalitySnapshot(): Record<string, boolean> {
-  return Object.fromEntries(modelVision.entries());
-}
+/* 注：曾加过 modelModalitySnapshot()（只读快照），因**无人使用**被 knip 门禁抓出
+   （未使用导出 49 → 50）⇒ 按本仓纪律**删除**而不是加进 ignore ✓。 */
 
 /** 这个模型**能确定**的模态（没有依据 ⇒ "unknown"，绝不用名字猜） */
 export function modelModalityOf(modelId: string | null | undefined): ModelModality {
