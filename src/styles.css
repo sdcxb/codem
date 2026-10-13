@@ -2252,12 +2252,22 @@ font-size: var(--fs-base);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
   padding: var(--space-2);
-  min-width: 160px;
+  /* 第 224 波（用户实报：「列表换行比较严重，适当放宽列表宽度」）：
+     原来固定 160px 太窄 ⇒ 模型名一行放不下就折成两三行，列表又高又难读 ✗。
+     改成按内容撑开（max-content）+ 上下限：下限够放常见模型名，上限不溢出小窗口。 */
+  min-width: 320px;
+  width: max-content;
+  max-width: min(560px, 92vw);
   z-index: var(--z-modal);
   box-shadow: var(--shadow-raise-3);
 }
 
 .model-option {
+  /* 第 224 波：一行放完（名字过长由 .model-option-name 省略号截断，悬停 title 看全称） */
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  white-space: nowrap;
   padding: var(--space-4) var(--space-6);
   font-size: var(--fs-base);
   border-radius: var(--radius-sm);
@@ -2275,7 +2285,18 @@ font-size: var(--fs-base);
 }
 
 .model-option-name {
-  flex: 1;
+  /* 第 224 波：名字可伸缩 + 过长省略号（悬停看全称） */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 第 224 波：标注（可用性 / 模态）是标签不是名字 —— 不许被省略号吃掉、也不许被压缩换行 */
+.model-option .model-option-note {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .model-option-tag {

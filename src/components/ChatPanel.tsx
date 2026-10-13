@@ -666,7 +666,10 @@ setStepTooltipLocked(false);
                   className={`model-option ${model === m.id ? "active" : ""}`}
                   onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
                 >
-                  <span className="model-option-name">{m.name}</span>
+                  {/* 第 224 波：名字过长由 CSS 截断，这里把全称放进 title ⇒ 悬停显示完整模型名 */}
+                  <span className="model-option-name" title={m.name}>
+                    {m.name}
+                  </span>
                   {/* 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据就如实标未知，不许用名字猜 */}
                   {isFreeModelId(m.id) && (
                     <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>

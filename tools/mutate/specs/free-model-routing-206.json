@@ -347,6 +347,21 @@
       "expectRed": true
     },
     {
+      "id": "MUT-30 下拉又窄成 160px（用户实报：模型名被折成两三行）",
+      "why": "CHAT-OVERLAY-7：窄下拉会把模型名挤成多行，列表又高又难读",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": "  min-width: 320px;\n  width: max-content;\n  max-width: min(560px, 92vw);",
+          "to": "  min-width: 160px;"
+        }
+      ],
+      "tests": [
+        "src/test/chatpanel-overlay-close.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
       "id": "MUT-16 反向对照：只改一行说明注释",
       "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
       "patches": [

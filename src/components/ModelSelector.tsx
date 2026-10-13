@@ -168,7 +168,7 @@ export function ModelSelector({ model: modelProp, models: modelsProp, onModelCha
               <span style={{ fontSize: 'var(--fs-md)', display: 'flex', alignItems: 'center' }}>
                 {model === m.id ? <Check size={14} /> : <Cpu size={14} />}
               </span>
-              <span style={{ fontSize: 'var(--fs-sm)' }}>{m.name}</span>
+              <span className="model-option-name" style={{ fontSize: 'var(--fs-sm)' }} title={m.name}>{m.name}</span>
               {/* 第 222 波：模态标注只加在**显示文本**上（点击仍然传 m.id —— 标签绝不许进模型名） */}
               {isFreeModelId(m.id) && (
                 <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, "zh")}</span>

@@ -8528,14 +8528,22 @@
     "padding": "var(--space-1) var(--space-4)"
   },
   "model-option": {
+    "align-items": "baseline",
     "border-radius": "var(--radius-sm)",
     "cursor": "pointer",
+    "display": "flex",
     "font-size": "var(--fs-base)",
+    "gap": "var(--space-2)",
     "padding": "var(--space-4) var(--space-6)",
-    "transition": "background var(--duration-press) var(--ease-out)"
+    "transition": "background var(--duration-press) var(--ease-out)",
+    "white-space": "nowrap"
   },
   "model-option-name": {
-    "flex": "1"
+    "flex": "1 1 auto",
+    "min-width": "0",
+    "overflow": "hidden",
+    "text-overflow": "ellipsis",
+    "white-space": "nowrap"
   },
   "model-option-note": {
     "color": "var(--warning)",
@@ -8558,12 +8566,14 @@
     "left": "0",
     "margin-top": "var(--space-2)",
     "max-height": "min(52vh, 420px)",
-    "min-width": "160px",
+    "max-width": "min(560px, 92vw)",
+    "min-width": "320px",
     "overflow-y": "auto",
     "overscroll-behavior": "contain",
     "padding": "var(--space-2)",
     "position": "absolute",
     "top": "100%",
+    "width": "max-content",
     "z-index": "var(--z-modal)"
   },
   "model-picker-hint": {
