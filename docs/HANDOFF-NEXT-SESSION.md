@@ -5409,3 +5409,16 @@ node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑
     `DOCS-6` 扩成**三份**关键文档（用 `git check-ignore` 退出码直接问 git，不靠人记得），并 `git add -f`。
     ⚠️ 教训：**「我提交了」要以 `git show --stat` / `git status` 的读数为准**，不能以自己敲的 commit 信息为准 ✗。
 
+
+  - **1.16.317 已发布**（用户拍板「发版」，2026-10-13）：本版 = **记忆审批双击展开全文**
+    （用户直报「审批的时候看不到详细信息，无法评估审批是否通过」）—— 完整内容一字不截断 +
+    作用域与生效范围 + 归属（含「就是当前项目/对话」与「无归属 ⇒ 批准也不会进上下文」）+
+    来源 + 状态 + 批次 + 最后修改时间 + 标签；摘要态照旧 80 字；双击控件区不展开；
+    待批准区上方有常驻提示写明手势。发布核对：5 个资产 + `Latest` 已确认 + 远端清单 **7/7**
+    （远端资产 sha256 与本地产物一致）+ 更新器入口 `releases/latest/download/latest.json`
+    实测返回 **1.16.317**（两个平台键都在）；说明标准样式归档 `docs/releases/v1.16.317.md`；
+    `AGENTS.md` 与 `docs/NEW-SESSION-START.md` 的版本/测试规模同步更新。
+    门禁读数：tsc 0；**669 文件 / 8072 用例**（17 skipped）0 红；`npm run audit` exit 0；
+    新波次 `memory-approve-detail-226` 7 条 + 重新锚定后的 `memory-approve-196` 11 条全过。
+    ⚠️ 发布后**不要立刻用「检查更新」下结论**（CDN 传播有秒到分钟级滞后，见 `docs/RELEASE-GUIDE.md` 第 6 节）。
+
