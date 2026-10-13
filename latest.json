@@ -1,7 +1,7 @@
 {
   "version": "1.16.314",
-  "notes": "Codem v1.16.314 — 免费模型：不可用的模型不再出现在列表里（隐藏 + 如实说明隐藏数量，结论 30 分钟过期自动放回），并把「不可用」与「慢/超时」分开；另修掉每次启动闪一下黑窗口。",
-  "pub_date": "2026-10-12T10:58:38Z",
+  "notes": "Codem v1.16.314 — 免费模型：刷新模型列表后不可用的模型也会被隐藏（修复 314 漏掉的那条渲染分支），并去除产品界面里的旧名称。",
+  "pub_date": "2026-10-13T01:26:25Z",
   "platforms": {
     "windows-x86_64-nsis": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1UvQVRMVUMyYWUzckxxRnNrVWpyQWdOSW1UZWlGSEhUK0xuQmdCTThrcUNPTGNZd1ZjakVpK2hPTHU0Z08vUXNTRFVndkppcFFKMDBSKzhRQjRtMlFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODAyNzE4CWZpbGU6Q29kZW1fMS4xNi4zMTRfeDY0LXNldHVwLmV4ZQpYaFYxa082dFhhWjJ2QVZxZFJVS1N5MjUwdU5HYXdIN1l0NGVjQ0ZCQlF0SUJueUFuY0J2K09TL1hzbzE3UHFwQ3hrc3BsT0hpL0srWktNNUIyR2ZEQT09Cg==",

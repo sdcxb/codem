@@ -41,6 +41,7 @@ import {
   clearFreeModelHealth,
   freeModelUnavailableSuffix,
   isFreeModelKnownUnavailable,
+  shouldAutoProbe,
   freeModelHealthSnapshot,
   markFreeModelAvailable,
   recordFreeModelHealth,
@@ -806,6 +807,26 @@ async function loadPersistedHealth(): Promise<void> {
  * 「import { freeModelPlugin } from "../core/free-model-plugin/service"」，判据侧用同一份 API
  * —— 于是「判据测的就是产品面」，不会出现两套入口。
  */
+/** 第 220 波：结论过期（或没有）时自动测一次；**不阻塞调用方**（刷新按钮点完立刻可用） */
+let autoProbeInFlight: Promise<unknown> | null = null;
+function autoProbeIfStale(onDone?: () => void): boolean {
+  if (autoProbeInFlight) return false;
+  if (!shouldAutoProbe(freeModelHealthSnapshot())) return false;
+  autoProbeInFlight = probePluginModels()
+    .catch((e) => {
+      /* 自动探测失败**只记日志**：它是后台自检，用户没法介入，不该弹错误（本仓既有口径） */
+      console.warn("【free-model-plugin】后台自动检测可用性失败", e);
+    })
+    .finally(() => {
+      autoProbeInFlight = null;
+      try { onDone?.(); } catch { /* 回调只是让界面重渲染，不许影响探测本身 */ }
+    });
+  return true;
+}
+
+/** 判据用：探测实现（用例之间不许串味） */
+function __resetAutoProbeForTests(): void { autoProbeInFlight = null; }
+
 export const freeModelPlugin = {
   settingKey: FREE_MODEL_PLUGIN_SETTING_KEY,
   name: FREE_MODEL_PLUGIN_NAME,
@@ -820,6 +841,8 @@ export const freeModelPlugin = {
     list: listPluginModels,
     /* 第 215 波：主动探测可用性（用户点「检测可用性」）+ 读健康快照（界面标注用） */
     probe: probePluginModels,
+    /* 第 220 波：结论过期时自动补一次探测（刷新后 / 启动时调用；**非阻塞**） */
+    autoProbeIfStale: autoProbeIfStale,
     /* 界面标注：给「当前不可用」的模型加后缀（设置列表与对话选择器共用同一口径） */
     unavailableSuffix: freeModelUnavailableSuffix,
     /* 第 218 波（用户实报：既然不行为什么刷新还列出来）——界面据此**隐藏**已知不可用的模型 */
@@ -846,6 +869,7 @@ export const freeModelPlugin = {
   /** 判据用：清掉模型缓存（用例之间不许串味） */
   resetCacheForTests: __resetPluginModelsCacheForTests,
 } as const;
+
 
 
 

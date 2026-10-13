@@ -28,6 +28,7 @@ import {
   markFreeModelUnavailableFromError,
   recordFreeModelHealth,
   setFreeModelIds,
+  shouldAutoProbe,
   summarizeProbe,
 } from "../core/free-model-plugin/model-index";
 
@@ -192,4 +193,68 @@ describe("AVAIL：已知不可用的模型要从列表里消失（第 218 波）
     expect(isFreeModelKnownUnavailable("ling-3.1-flash-free", now + HEALTH_TTL_MS + 1), "过期 ⇒ 放回来").toBe(false);
   });
 });
+
+
+/**
+ * 第 219 波（用户实报：升级到 314 后「刷新模型列表」**还是**列出 25 个，不能用的照样出现）：
+ *
+ * 我上一波只给"插件目录"那条渲染分支加了过滤 ✗，而**刷新之后**模型来自
+ * `dynamicModels` 那条分支 ⇒ 过滤被绕过（用户看到的就是这条）。
+ *
+ * 教训落成判据：**同一个口径必须在所有渲染模型选项的地方生效** ——
+ * 设置面板里至少有三条分支（插件目录 / 刷新后的 dynamicModels / 内置兜底），
+ * 每条都要过滤 + 带后缀；少一条，用户就还能看到"刷得出来但不能用"的模型 ✗。
+ */
+describe("AVAIL：所有渲染模型选项的分支都要同一口径（第 219 波）", () => {
+  const panel = readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf8");
+
+  it("AVAIL-10：三条分支都要过滤（插件目录 / 刷新后的 dynamicModels / 内置兜底）", () => {
+    /* 三条分支的写法本来就不同（单行/多行），所以按**过滤调用**计数，而不是某种固定写法 */
+    const filters = panel.match(/models\.isUnavailable\(m\.id\)/g) ?? [];
+    expect(filters.length, "至少三条渲染分支都要有这条过滤（少一条就会漏出刷得出来但不能用的模型）").toBeGreaterThanOrEqual(3);
+    /* 刷新后的那条分支（dynamicModels）单独点名：用户实报的就是它 */
+    const dynStart = panel.indexOf("orderModelsByHealth(p.id, dynModels)");
+    const dynBranch = panel.slice(dynStart, dynStart + 1600);
+    expect(dynStart, "找不到刷新后的 dynamicModels 分支").toBeGreaterThan(0);
+    expect(dynBranch, "该分支必须过滤掉已知不可用的免费模型").toContain(".filter(");
+    expect(dynBranch, "过滤条件要看可用性").toContain("isUnavailable(m.id)");
+    expect(panel, "并且要带可用性后缀（慢/超时与不可用分开）").toMatch(
+      /isFreeModelId\(m\.id\) \? freeModelPlugin\.models\.unavailableSuffix\(m\.id/,
+    );
+  });
+});
+
+
+/**
+ * 第 220 波（用户实报：升级到 314 后点「刷新模型列表」**还是**列出 25 个、不能用的照样出现）：
+ *
+ * 根因是**设计缺口**而不是渲染漏了 —— 可用性结论只由「检测可用性」或真实调用失败产生，
+ * 而过期（>30 分钟）就一律当"未知" ⇒ **刷新之后如果没人测，列表就是错的** ✗。
+ * 用户的期待是"刷新完就该反映真实可用性" ⇒ 所以：**刷新完在后台自动测一遍**、**启动时结论过期也自动测**。
+ */
+describe("AVAIL：过期就自动补测（第 220 波）", () => {
+  it("AVAIL-11（纯函数）：没有结论 / 结论过期 ⇒ 该自动测；结论新鲜 ⇒ 不重复测", () => {
+    const now = Date.now();
+    expect(shouldAutoProbe({}, now), "从没测过 ⇒ 该测").toBe(true);
+    expect(shouldAutoProbe({ a: { ok: true, at: now - 1000 } }, now), "刚测过 ⇒ 不重复测").toBe(false);
+    expect(
+      shouldAutoProbe({ a: { ok: false, at: now - HEALTH_TTL_MS - 1 } }, now),
+      "结论过期 ⇒ 该测（这正是用户遇到的：昨天测过、今天列表还是错的）",
+    ).toBe(true);
+  });
+
+  it("AVAIL-12（结构棘轮）：刷新（托管供应商）与启动都要触发它，且**不许阻塞**", () => {
+    const panel = readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf8");
+    const app = readFileSync(path.resolve(__dirname, "../App.tsx"), "utf8");
+    expect(panel, "刷新后要自动补测").toMatch(/if \(isManagedFreeModel\) \{[\s\S]{0,200}?autoProbeIfStale\(/);
+    expect(panel, "补测完要让界面重渲染（否则列表不会更新）").toMatch(/autoProbeIfStale\(\(\) => setDynamicModels\(/);
+    expect(panel, "**不许** await（刷新按钮不能卡住）").not.toMatch(/await freeModelPlugin\.models\.autoProbeIfStale/);
+    expect(app, "启动时也要补测（结论过期的情况）").toContain("autoProbeIfStale()");
+
+    const service = readFileSync(path.resolve(__dirname, "../../src/core/free-model-plugin/service.ts"), "utf8");
+    expect(service, "并发只允许一个自动探测（否则刷新连点会打爆上游）").toMatch(/if \(autoProbeInFlight\) return false;/);
+    expect(service, "自动探测失败只记日志（后台自检不该弹错误）").toMatch(/console\.warn\([\s\S]{0,120}?后台自动检测可用性失败/);
+  });
+});
+
 

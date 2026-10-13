@@ -224,6 +224,22 @@ export function isFreeModelKnownSlow(modelId: string, now = Date.now()): boolean
   return !!entry && entry.ok === false && entry.reason === "slow";
 }
 
+/**
+ * 第 220 波（用户实报：升级后点「刷新模型列表」**还是**列出 25 个、不能用的照样出现）：
+ *
+ * 根因是**设计缺口**，不是渲染漏了：可用性结论只由「检测可用性」或真实调用失败产生，
+ * 而过期（>30 分钟）就一律当"未知" ⇒ **刷新之后如果没人测，列表就是错的** ✗。
+ * 用户的期待是"刷新完就该反映真实可用性" ⇒ 所以：**刷新完在后台自动测一遍**、**启动时结论过期也自动测**。
+ *
+ * 这个纯函数决定"该不该自动测"：没有结论、或最近一条结论已经过期 ⇒ 该测。
+ */
+export function shouldAutoProbe(snapshot: Record<string, FreeModelHealth>, now = Date.now()): boolean {
+  const entries = Object.values(snapshot ?? {});
+  if (entries.length === 0) return true;
+  const newest = entries.reduce((max, e) => (Number.isFinite(e?.at) && e.at > max ? e.at : max), 0);
+  return now - newest > HEALTH_TTL_MS;
+}
+
 /** 判据/持久化用：读全部记录（含过期的，便于原样存盘） */
 export function freeModelHealthSnapshot(): Record<string, FreeModelHealth> {
   return Object.fromEntries(health.entries());
@@ -262,4 +278,5 @@ export function summarizeProbe(results: readonly ProbeResult[]): {
     },
   };
 }
+
 

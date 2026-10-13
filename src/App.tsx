@@ -570,6 +570,13 @@ setGlobalCwd(currentProject?.path || "");
          * ⇒ 重启之后「当前不可用」的标注仍然在，不用重新检测一遍。
          */
         await freeModelPlugin.models.loadHealth();
+        /*
+         * 第 220 波（用户实报：升级后点「刷新模型列表」**还是**列出 25 个、不能用的照样出现）：
+         * 可用性结论过期（>30 分钟）就一律当"未知" ⇒ 如果没人在测，列表就永远是错的 ✗。
+         * 所以启动时**在后台**自动补一次探测：不阻塞界面，失败只进日志
+         * （后台自检用户无法介入，按本仓既有口径不该弹错误）。
+         */
+        freeModelPlugin.models.autoProbeIfStale();
       } catch (e) {
         reportAdvisory("freeModelPlugin.start", e instanceof Error ? e.message : String(e), {
           title: "免费模型插件启动时出错",
