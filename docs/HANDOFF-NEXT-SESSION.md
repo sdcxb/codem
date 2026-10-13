@@ -5466,3 +5466,16 @@ node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑
     `startPlugin()`（补 `nextStep`）与 `startPluginWithNode()`（拆 `attempt()`、变量改名）而命中 0 次
     ⇒ **按新形态重新锚定并重跑该波次**（25 条全红、restored=true）。
 
+
+  - **1.16.318 已发布**（用户拍板「发版」，2026-10-13）：本版 = **①插件起不来时给真原因 + 可点的出口**
+    （用户实报那句提示指错地方/给错动作/没给真原因；真机原因是「上一次留下的插件进程占着数据目录」⇒
+    自动清一次再重试 + 卡片「结束残留进程并重试」，且只结束能证明是本插件的那个 pid）
+    **②压缩上下文看得见**（进度帧真的能被画出来 + 常驻回执 + 8 秒冷却防重复点）。
+    发布核对：5 个资产 + `Latest` 已确认 + 远端清单 **7/7**（远端资产 sha256 与本地产物一致）
+    + 更新器入口 `releases/latest/download/latest.json` 实测返回 **1.16.318**（两个平台键都在）；
+    说明标准样式归档 `docs/releases/v1.16.318.md`；`AGENTS.md` / `docs/NEW-SESSION-START.md` 的
+    版本与测试规模同步（671 文件 / 8089 用例通过、17 skipped）。
+    门禁读数：tsc 0；`npm run audit` exit 0（变异产物闸门 **31 个波次**全过）；新波次
+    `ofm-start-failure-227` 13 条 + 重新锚定后的 `free-model-plugin-201` 25 条全过；`cargo check` 0。
+    ⚠️ 发布后**不要立刻用「检查更新」下结论**（CDN 传播有秒到分钟级滞后，见 `docs/RELEASE-GUIDE.md` 第 6 节）。
+
