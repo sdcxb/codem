@@ -2,7 +2,7 @@
   "meta": {
     "id": "island",
     "name": "海岛假期",
-    "author": "mimo-gui",
+    "author": "Codem",
     "version": "1.0.0",
     "description": "碧海蓝天的度假胜地，32块地产+11设施",
     "backgroundTheme": "ocean"
@@ -1057,3 +1057,4 @@
     }
   ]
 }
+

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 // 第 207 波：模型管理里要把内置免费模型插件的模型也列出来（它们不需要 API Key）
 import { freeModelPlugin } from "../core/free-model-plugin/service";
+/* 第 219 波：所有渲染模型选项的分支都必须用同一套「免费模型可用性」口径 */
+import { isFreeModelId } from "../core/free-model-plugin/model-index";
 import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { version as APP_VERSION } from "../../package.json";
@@ -942,6 +944,18 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             `✓ 获取到 ${models.length} 个模型` +
             (catalogOnly > 0 ? `（服务器 ${serverList.length} + 内置目录 ${catalogOnly}）` : ""),
         }));
+        /*
+         * ★ 第 220 波（用户实报：点「刷新模型列表」后**还是**列出 25 个、不能用的照样出现）：
+         * 「刷新」只拉目录，**不测可用性**；而可用性结论过期就当"未知" ⇒ 列表里就会出现不能用的模型 ✗。
+         * 用户的期待是"刷新完就该反映真实可用性" ⇒ 这里**在后台自动补测一次**：
+         * 不阻塞（刷新按钮点完立刻可用），测完再让界面重渲染，把不可用的模型隐掉 ✓。
+         */
+        if (isManagedFreeModel) {
+          const started = freeModelPlugin.models.autoProbeIfStale(() => setDynamicModels(getMergedDynamicModels()));
+          if (started) {
+            setRefreshStatus((prev) => ({ ...prev, [providerId]: `${prev[providerId]} · 正在后台检测可用性…` }));
+          }
+        }
 
         // Persist to DB cache (merge with existing)
         // 只落盘**服务器事实**，不落盘内置目录条目 —— 目录在读取处再做并集
@@ -1367,7 +1381,24 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       // 被服务器拒绝过的条目沉到末尾并如实标注 —— 不删除，供应商可能改回来。
                       const health = getCatalogHealthFor(p.id);
                       const ordered = orderModelsByHealth(p.id, dynModels);
-                      return ordered.map(m => {
+                      /*
+                       * ★ 第 219 波（用户实报：升级到 314 后「刷新模型列表」**还是**列出 25 个、
+                       *   不能用的照样出现）：我上一波只给"插件目录"那条渲染分支加了过滤 ✗，
+                       *   而**刷新之后**模型来自这条 `dynamicModels` 分支 ⇒ 过滤被绕过。
+                       *   教训：**同一个口径要在所有渲染模型选项的地方生效** —— 这里补上：
+                       *   ① 已知不可用的免费模型不列出来（当前选中的除外，否则用户不知道在用哪个）；
+                       *   ② 列出来的免费模型带上可用性后缀（「慢/超时」与「不可用」分开）。
+                       */
+                      return ordered
+                        .filter(
+                          (m) =>
+                            !(
+                              isFreeModelId(m.id) &&
+                              freeModelPlugin.models.isUnavailable(m.id) &&
+                              m.id !== settings.model
+                            ),
+                        )
+                        .map(m => {
                         const h = health[m.id.toLowerCase()];
                         const rejected = h?.status === "rejected";
                         // 措辞必须区分来源：服务器**自己列出来**的模型也可能被拒（改名/灰度），
@@ -1385,6 +1416,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                           <option key={m.id} value={m.id} title={title}>
                             {p.name} - {m.name}
                             {suffix}
+                            {/* 第 219 波：本条分支（刷新后的 dynamicModels）也要带可用性后缀 */}
+                            {isFreeModelId(m.id) ? freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en") : ""}
                           </option>
                         );
                       });
@@ -1403,7 +1436,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       gemini: [{id:"gemini-2.5-flash",name:"Gemini 2.5 Flash"},{id:"gemini-2.5-pro",name:"Gemini 2.5 Pro"},{id:"gemini-2.0-flash",name:"Gemini 2.0 Flash"}],
                     };
                     const fallbackModels = catalogFor(p.id).length > 0 ? catalogFor(p.id) : staticModels[p.id] || [];
-                    return fallbackModels.map(m => (
+                    return fallbackModels.filter((m) => !(isFreeModelId(m.id) && freeModelPlugin.models.isUnavailable(m.id) && m.id !== settings.model)).map(m => (
                       <option
                         key={m.id}
                         value={m.id}
@@ -2297,7 +2330,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     <div className="setting-group">
       <label className="sp-label-md">{lang === "zh" ? "关于" : "About"}</label>
       <div className="sp-hint sp-hint--relaxed-16">
-        Codem (mimo-gui) v{APP_VERSION}
+        Codem v{APP_VERSION}
         <br />
         {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
       </div>
@@ -3671,3 +3704,5 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
     </div>
   );
 }
+
+

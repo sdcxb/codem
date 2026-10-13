@@ -2,7 +2,7 @@
   "meta": {
     "id": "prosperous-city",
     "name": "繁华都市",
-    "author": "mimo-gui",
+    "author": "Codem",
     "version": "1.0.0",
     "description": "繁华的大都市地图，90个节点，涵盖所有设施类型。外环56节点+南北纵贯线+4条分支路。",
     "backgroundTheme": "city"

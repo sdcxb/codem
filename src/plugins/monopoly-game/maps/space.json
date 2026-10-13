@@ -2,7 +2,7 @@
   "meta": {
     "id": "space",
     "name": "太空站",
-    "author": "mimo-gui",
+    "author": "Codem",
     "version": "1.0.0",
     "description": "未来太空站地图，38块地产+11设施",
     "backgroundTheme": "space"
@@ -1206,3 +1206,4 @@
     }
   ]
 }
+

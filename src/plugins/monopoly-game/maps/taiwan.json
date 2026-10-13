@@ -2,7 +2,7 @@
   "meta": {
     "id": "taiwan",
     "name": "宝岛之旅",
-    "author": "mimo-gui",
+    "author": "Codem",
     "version": "3.0.0",
     "description": "对标大富翁4的经典矩形环形棋盘，40个外圈地块+中央捷径",
     "backgroundTheme": "island"
@@ -118,3 +118,4 @@
     { "id": 48, "name": "101大楼", "x": 8, "y": 6 }
   ]
 }
+

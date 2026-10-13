@@ -2,7 +2,7 @@
   "meta": {
     "id": "ancient",
     "name": "古镇风情",
-    "author": "mimo-gui",
+    "author": "Codem",
     "version": "1.0.0",
     "description": "古色古香的小镇地图，30块地产+11设施",
     "backgroundTheme": "wood"
@@ -1006,3 +1006,4 @@
     }
   ]
 }
+
