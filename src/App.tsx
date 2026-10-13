@@ -577,6 +577,8 @@ setGlobalCwd(currentProject?.path || "");
          * （后台自检用户无法介入，按本仓既有口径不该弹错误）。
          */
         freeModelPlugin.models.autoProbeIfStale();
+        /* 第 222 波：读取模态依据（插件目录里带 vision 布尔值的那些模型才能确定标注，其余标【未知】） */
+        await freeModelPlugin.models.loadModalities();
       } catch (e) {
         reportAdvisory("freeModelPlugin.start", e instanceof Error ? e.message : String(e), {
           title: "免费模型插件启动时出错",

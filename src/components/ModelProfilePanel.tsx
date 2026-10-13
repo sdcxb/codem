@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { isFreeModelId } from "../core/free-model-plugin/model-index";
+import { freeModelPlugin } from "../core/free-model-plugin/service";
 import { createPortal } from "./ui/portal";
 import { useLang } from "../core/i18n/lang";
 import {
@@ -584,9 +586,15 @@ function SlotConfigRow({
             onChange={(e) => handleModelChange(e.target.value)}
             className="mp-select"
           >
+            {/*
+              第 222 波（用户要求：模型列表的**几个地方都标**）：档案/模型管理这里也要标模态。
+              ⚠️ 标签只加在**显示文本**里，`value={m.id}` 保持原样 —— 标签混进模型名会让请求直接失败 ✗
+              （这条有判据 MODALITY-4 钉着）。
+            */}
             {providerModels.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
+                {isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, "zh") : ""}
               </option>
             ))}
           </select>

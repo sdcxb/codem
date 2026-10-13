@@ -47,6 +47,9 @@ import {
   markFreeModelAvailable,
   recordFreeModelHealth,
   setFreeModelIds,
+  setModelModalities,
+  modalityLabel,
+  countUnknownModality,
   summarizeProbe,
   type ProbeResult,
 } from "./model-index";
@@ -768,6 +771,28 @@ async function probePluginModels(options?: { concurrency?: number }): Promise<{
 }
 
 /** 探测结果落盘（重启后仍能标注"上次检测：不可用"） */
+/**
+ * 第 222 波：从插件自己的目录（catalog.json → kiloRows）读出**模态**依据。
+ *
+ * 为什么读插件文件而不是接口：面向 Codem 的 `/v1/models` **不带模态字段**（真机核实：只有
+ * id/object/created/owned_by/context_window），而插件内部那份目录带 `vision: true|false`
+ * ⇒ 只能从这里取，而且它只覆盖一部分模型（其余一律【未知】）✓。
+ */
+async function loadModelModalities(): Promise<number> {
+  try {
+    const raw = await readFile(`${await pluginDataDir()}\\catalog.json`);
+    const parsed = JSON.parse(raw) as { kiloRows?: Array<{ id?: unknown; vision?: unknown }> };
+    const rows = Array.isArray(parsed?.kiloRows) ? parsed.kiloRows : [];
+    setModelModalities(rows);
+    return rows.length;
+  } catch (e) {
+    /* 读不到目录 ⇒ 模态一律【未知】（如实，不猜） */
+    console.warn("[free-model-plugin] 读取模态目录失败（界面将标【未知】）", e);
+    setModelModalities([]);
+    return 0;
+  }
+}
+
 const HEALTH_SETTING_KEY = "codem-free-model-health";
 async function persistHealth(): Promise<boolean> {
   try {
@@ -848,6 +873,10 @@ export const freeModelPlugin = {
     unavailableSuffix: freeModelUnavailableSuffix,
     /* 第 218 波（用户实报：既然不行为什么刷新还列出来）——界面据此**隐藏**已知不可用的模型 */
     isUnavailable: isFreeModelKnownUnavailable,
+    /* 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）+ 从插件目录读依据 */
+    modalityLabel: modalityLabel,
+    countUnknownModality: countUnknownModality,
+    loadModalities: loadModelModalities,
     /* 第 221 波：刷新提示要用它（提示必须与列表里真实可见的数量一致） */
     summarizeList: summarizeManagedModelList,
     health: freeModelHealthSnapshot,
@@ -872,6 +901,7 @@ export const freeModelPlugin = {
   /** 判据用：清掉模型缓存（用例之间不许串味） */
   resetCacheForTests: __resetPluginModelsCacheForTests,
 } as const;
+
 
 
 

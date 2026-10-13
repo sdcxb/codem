@@ -282,6 +282,30 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   }, [currentSessionId]);
 
   /**
+   * 第 223 波（用户实报：「这个列表展开的时候，点设置或者点其他按钮弹出窗口，这个列表不自动收起来」）：
+   *
+   * 只处理「切会话」是不够的 —— 用户点设置/其它面板时，模型列表还挂在那儿、盖住新开的面板 ✗。
+   * 通用修法：**点在任何非本下拉的地方就收起**（pointerdown 捕获阶段，先于按钮自己的 onClick），
+   * 于是「点设置」天然就把列表收掉了，不必给每个按钮都加一行「记得关列表」。
+   */
+  useEffect(() => {
+    if (!showModelPicker) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest(".model-picker") || target.closest(".model-selector")) return;
+      setShowModelPicker(false);
+    };
+    /* pointerdown 捕获阶段就能收起（真实鼠标）；再挂一个 click 兜住"程序化点击/键盘触发"的情况 */
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("click", onPointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("click", onPointerDown, true);
+    };
+  }, [showModelPicker]);
+
+  /**
    * ★ 第 213 波（用户实报）：
    * > 对话里模型列表打开的时候，切换对话没自动关闭列表，导致新切换打开的对话顶上去了。
    *
@@ -643,6 +667,10 @@ setStepTooltipLocked(false);
                   onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
                 >
                   <span className="model-option-name">{m.name}</span>
+                  {/* 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据就如实标未知，不许用名字猜 */}
+                  {isFreeModelId(m.id) && (
+                    <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
+                  )}
                   {/* 第 215 波（用户实报：刷出来的模型一调就报"上游不可用"）：
                       对话里的模型选择器也要标出**已知不可用**的免费模型 ——
                       否则用户只能靠"选一次、报一次错"来发现。结论带时间戳，过期不标。 */}
@@ -1598,3 +1626,4 @@ function StreamingTimer({ startTime, lang, llmStatus }: {
     </div>
   );
 }
+

@@ -2237,6 +2237,12 @@ font-size: var(--fs-base);
   top: 100%;
   left: 0;
   margin-top: var(--space-2);
+  /* 第 223 波（用户实报：「模型列表太长导致下面的模型配置看不到了」）：
+     限高 + 自己滚动 —— 免费池有 25+ 个模型，不限高就会把下面的面板整片盖住 ✗。
+     用 vh 而不是固定 px：小窗口下也不会顶到底；overscroll-behavior 防止滚动穿透到背后。 */
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   /* 第 156 轮：从 `--bg-secondary` 换成 `--dropdown-bg`（= 94% 玻璃面）+ 中号模糊
      —— 它就是一个下拉菜单，走和 `.popover-shell` / `.slash-command-menu` 同一套浮层配方；
      改动前它是"实色面板"，在白色内容面上看着像贴上去的，玻璃后才真的浮起来。 */

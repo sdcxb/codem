@@ -965,6 +965,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
          * 不阻塞（刷新按钮点完立刻可用），测完再让界面重渲染，把不可用的模型隐掉 ✓。
          */
         if (isManagedFreeModel) {
+          /* 第 222 波：刷新后重读**模态依据**（上游可能改了某模型的模态；读不到就一律【未知】） */
+          void freeModelPlugin.models.loadModalities();
           const started = freeModelPlugin.models.autoProbeIfStale(() => {
             setDynamicModels(getMergedDynamicModels());
             /* 第 221 波：后台测完把提示里的数字也刷新成最新的（否则又和列表对不上） */
@@ -1372,11 +1374,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                             「刷得出来」不等于「能用」—— catalog 里没有可用性字段。
                             这里把**探测 / 真实调用**得到的结论标在名字上（结论过期就不标）。 */}
                         {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
+{isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en") : ""}
                       </option>
                     ))}
                   {/*
                     第 218 波：隐藏了就要**如实说**（静默消失比看到不可用的模型更糟 —— 用户会以为模型丢了）。
-                    结论带时间戳，过期就自动回来；点插件卡片上的「检测可用性」可随时刷新结论。
+                    结论带时间戳，过期就自动回来；点上面的【刷新模型列表】即可重新检测。
                   */}
                   {freeModelPlugin.readSetting().enabled &&
                     (() => {
@@ -1386,7 +1389,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       return hidden > 0 ? (
                         <option value="" disabled>
                           {lang === "zh"
-                            ? `（已隐藏 ${hidden} 个当前不可用的免费模型 —— 点插件卡片上的「检测可用性」可刷新结论）`
+                            ? `（已隐藏 ${hidden} 个当前不可用的免费模型 —— 点上面的【刷新模型列表】会重新检测）`
                             : `(${hidden} unavailable free models hidden — run "Check availability" on the plugin card to refresh)`}
                         </option>
                       ) : null;
@@ -1436,6 +1439,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                             {suffix}
                             {/* 第 219 波：本条分支（刷新后的 dynamicModels）也要带可用性后缀 */}
                             {isFreeModelId(m.id) ? freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en") : ""}
+{isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en") : ""}
                           </option>
                         );
                       });
@@ -1461,6 +1465,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                         title="Codem 内置名单：还没有从服务器取到模型列表（或上次获取失败）。点这一行的『刷新』按钮按服务器实际返回的列表更新；内置名单可能已过期。"
                       >
                         {p.name} - {m.name}（内置目录，服务器列表未获取）
+{isFreeModelId(m.id) ? freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en") : ""}
                       </option>
                     ));
                   })}

@@ -28,6 +28,10 @@ import {
   markFreeModelUnavailableFromError,
   recordFreeModelHealth,
   setFreeModelIds,
+  modelModalityOf,
+  modalityLabel,
+  setModelModalities,
+  countUnknownModality,
   shouldAutoProbe,
   summarizeManagedModelList,
   summarizeProbe,
@@ -287,3 +291,109 @@ describe("AVAIL：刷新提示要和列表里可见的数量一致（第 221 波
 });
 
 
+
+/**
+ * 第 222 波（用户要求）：
+ * > 模型列表里，能识别出哪些是多模态，哪些是纯文本模型，并进行标示吗？一定要确定后标示，
+ * > 如果不能确定，如实告知我。 → 三态：【多模态】【文本】【未知】
+ *
+ * 数据来源（真机侦察）：插件内部目录 `catalog.json` 的 `kiloRows` 带 `vision: true|false`（权威），
+ * 但**只覆盖 25 个里的 16 个**；面向 Codem 的 `/v1/models` **不带任何模态字段** ⇒ 剩下 9 个没有依据。
+ *
+ * 判据守住两件事：①有依据才标"多模态/文本"；②**没有依据必须标【未知】**（不许猜、也不许沉默）。
+ */
+describe("MODALITY：模态三态标注（第 222 波）", () => {
+  const panel = readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf8");
+  const chat = readFileSync(path.resolve(__dirname, "../components/ChatPanel.tsx"), "utf8");
+  const service = readFileSync(path.resolve(__dirname, "../../src/core/free-model-plugin/service.ts"), "utf8");
+
+  it("MODALITY-1（纯函数）：true ⇒ 多模态；false ⇒ 文本；**没有依据 ⇒ 未知**（不许猜）", () => {
+    setModelModalities([
+      { id: "vision-model", vision: true },
+      { id: "text-model", vision: false },
+      { id: "no-vision-field" },
+      { id: "bad-vision", vision: "yes" },
+    ]);
+    expect(modelModalityOf("vision-model")).toBe("multimodal");
+    expect(modelModalityOf("text-model")).toBe("text");
+    expect(modelModalityOf("no-vision-field"), "上游没给字段 ⇒ 未知，不许当纯文本").toBe("unknown");
+    expect(modelModalityOf("bad-vision"), "字段类型不对 ⇒ 未知（不许当真）").toBe("unknown");
+    expect(modelModalityOf("never-heard-of-it"), "目录里没有 ⇒ 未知").toBe("unknown");
+    /* 用户点名的那个模型：名字里有 flash 不代表任何模态信息 ⇒ 必须未知 */
+    expect(modelModalityOf("mimo-v2.6-flash-free"), "名字猜不出模态 ⇒ 未知").toBe("unknown");
+
+    expect(modalityLabel("vision-model", "zh")).toBe("【多模态】");
+    expect(modalityLabel("text-model", "zh")).toBe("【文本】");
+    expect(modalityLabel("mimo-v2.6-flash-free", "zh"), "没有依据就如实标未知").toBe("【未知】");
+    expect(modalityLabel("text-model", "en")).toBe(" [Text]");
+
+    /* 刷新是"清空 + 重建"：上游改了模态要能反映出来 */
+    setModelModalities([{ id: "vision-model", vision: false }]);
+    expect(modelModalityOf("vision-model"), "同一 id 改判要生效").toBe("text");
+    expect(modelModalityOf("text-model"), "重建后旧条目必须消失（否则会拿旧结论骗人）").toBe("unknown");
+    expect(countUnknownModality(["text-model", "never-heard-of-it"])).toBe(2);
+  });
+
+  it("MODALITY-2（结构棘轮）：四处列表都要标注（设置三条分支 + 对话选择器）", () => {
+    const inPanel = (panel.match(/modalityLabel\(m\.id/g) ?? []).length;
+    expect(inPanel, "设置里的三条渲染分支都要标注").toBeGreaterThanOrEqual(3);
+    expect(chat, "对话里的模型选择器也要标注").toMatch(/isFreeModelId\(m\.id\)[\s\S]{0,120}?modalityLabel\(m\.id/);
+  });
+
+  it("MODALITY-3：依据来自插件目录（读不到就一律未知），且在启动与刷新后各读一次", () => {
+    expect(service, "要读插件的 catalog.json（接口不带模态字段）").toContain("catalog.json");
+    expect(service, "只认 kiloRows 里的布尔 vision").toMatch(/kiloRows[\s\S]{0,200}?setModelModalities/);
+    expect(service, "读不到要如实清空（⇒ 全部未知）").toMatch(/catch[\s\S]{0,200}?setModelModalities\(\[\]\)/);
+    expect(panel, "刷新后重读模态依据").toContain("models.loadModalities()");
+    const app = readFileSync(path.resolve(__dirname, "../App.tsx"), "utf8");
+    expect(app, "启动时读一次").toContain("models.loadModalities()");
+  });
+});
+
+
+
+/**
+ * 第 222 波（用户补充要求）：
+ * > 记得模型列表的几个地方都标。还有标了之后，用模型对话一下，看能否对标，
+ * > 别把标签当成了模型名，导致对话失败。
+ *
+ * 这两条都是"会被用户直接撞上"的：
+ * ① 标注**只加在显示文本**里，模型 id 必须原样传给接口（标签混进 id ⇒ 请求带着「【未知】」发出去 ⇒ 直接失败 ✗）；
+ * ② 列表的**每一处**渲染都要标（设置三条分支 + 对话选择器 + 档案面板 + ModelSelector）。
+ */
+describe("MODALITY：标注不许进模型名 + 每处列表都要标（第 222 波）", () => {
+  const files = [
+    "../components/SettingsPanel.tsx",
+    "../components/ChatPanel.tsx",
+    "../components/ModelProfilePanel.tsx",
+    "../components/ModelSelector.tsx",
+  ].map((f) => ({ name: f, text: readFileSync(path.resolve(__dirname, f), "utf8") }));
+
+  it("MODALITY-4：标注只能出现在**显示文本**里，模型 id 一律原样（防止把标签当模型名）", () => {
+    for (const f of files) {
+      /* 每个 modalityLabel 调用附近不许出现 value= / onModelChange( / key= 这些"用 id 的地方" */
+      const lines = f.text.split("\n");
+      lines.forEach((line, i) => {
+        if (!line.includes("modalityLabel(")) return;
+        const ctx = lines.slice(Math.max(0, i - 3), i + 3).join("\n");
+        expect(ctx, `${f.name}:${i + 1} 标注附近不许出现 value={m.id} / onModelChange(m.id)`).not.toMatch(
+          /value=\{[^}]*modalityLabel|onModelChange\([^)]*modalityLabel|key=\{[^}]*modalityLabel/,
+        );
+      });
+      /* 选模型的地方必须仍然用 m.id */
+      if (f.name.includes("SettingsPanel") || f.name.includes("ModelProfilePanel")) {
+        /* 写法可能多行，只要"值仍然是 m.id"即可（关键是不能变成标签） */
+        expect(f.text, `${f.name} 的 option 仍然用 m.id 作为值`).toContain("value={m.id}");
+        expect(f.text, `${f.name} 的 option 值里不许出现标签`).not.toMatch(/value=\{[^}]*modalityLabel/);
+      }
+      if (f.name.includes("ModelSelector")) {
+        expect(f.text, "点击仍然传 m.id").toContain("onModelChange(m.id)");
+      }
+    }
+  });
+
+  it("MODALITY-5：列表的每一处都要标（设置三条 + 对话 + 档案 + ModelSelector ≥ 6 处）", () => {
+    const sites = files.reduce((sum, f) => sum + (f.text.match(/modalityLabel\(m\.id/g) ?? []).length, 0);
+    expect(sites, "少标一处，用户就会觉得'有的地方标了有的没标'").toBeGreaterThanOrEqual(6);
+  });
+});

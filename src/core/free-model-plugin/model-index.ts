@@ -295,5 +295,62 @@ export function summarizeProbe(results: readonly ProbeResult[]): {
   };
 }
 
+/* ==========================================================================
+ * 第 222 波：**模态标注**（用户要求：能确定才标，不能确定如实说）
+ *
+ * > 模型列表里，能识别出哪些是多模态，哪些是纯文本模型，并进行标示吗？一定要确定后标示，
+ * > 如果不能确定，如实告知我。
+ *
+ * 数据来源（真机侦察结论）：
+ * - 插件内部从上游拿到的目录（`catalog.json` → `kiloRows`）**带 `vision: true|false` 布尔值** ⇒
+ *   这是**权威**依据：true ⇒ 多模态、false ⇒ 纯文本；
+ * - 但**面向 Codem 的 `/v1/models` 不带任何模态字段**（只有 id/object/created/owned_by/context_window），
+ *   而那份目录只覆盖 25 个里的 **16 个** ⇒ 剩下 9 个**没有任何依据**。
+ *
+ * 口径（用户明确要求）：
+ * - 有依据 ⇒ 标【多模态】/【文本】；
+ * - **没有依据 ⇒ 标【未知】** —— 不许用名字猜（名字带 vl/vision 就当成多模态是猜测，不是确定 ✗），
+ *   也不许沉默（用户要的是"如实告知"）。
+ * ========================================================================== */
 
+export type ModelModality = "multimodal" | "text" | "unknown";
 
+/** 上游目录给的 `vision` 布尔值（true=支持图像输入）；没有条目的模型**不在表里** ⇒ 未知 */
+const modelVision = new Map<string, boolean>();
+
+/** 用上游目录刷新模态表（清空 + 重建：上游改了模态要能反映出来） */
+export function setModelModalities(rows: ReadonlyArray<{ id?: unknown; vision?: unknown }>): void {
+  modelVision.clear();
+  for (const row of rows ?? []) {
+    if (!row || typeof row.id !== "string" || !row.id) continue;
+    if (typeof row.vision === "boolean") modelVision.set(row.id, row.vision);
+  }
+}
+
+/** 判据用：读当前模态表（只读快照） */
+export function modelModalitySnapshot(): Record<string, boolean> {
+  return Object.fromEntries(modelVision.entries());
+}
+
+/** 这个模型**能确定**的模态（没有依据 ⇒ "unknown"，绝不用名字猜） */
+export function modelModalityOf(modelId: string | null | undefined): ModelModality {
+  if (typeof modelId !== "string" || !modelId) return "unknown";
+  const vision = modelVision.get(modelId);
+  if (vision === true) return "multimodal";
+  if (vision === false) return "text";
+  return "unknown";
+}
+
+/** 界面用：三态标签（【多模态】/【文本】/【未知】），与用户给的措辞一致 */
+export function modalityLabel(modelId: string, lang: "zh" | "en" = "zh"): string {
+  const modality = modelModalityOf(modelId);
+  if (lang === "en") {
+    return modality === "multimodal" ? " [Multimodal]" : modality === "text" ? " [Text]" : " [Unknown modality]";
+  }
+  return modality === "multimodal" ? "【多模态】" : modality === "text" ? "【文本】" : "【未知】";
+}
+
+/** 界面用：这批模型里有多少是"未知模态"（列表末尾要如实说明，别让用户以为都标清了） */
+export function countUnknownModality(modelIds: readonly string[]): number {
+  return modelIds.filter((id) => modelModalityOf(id) === "unknown").length;
+}

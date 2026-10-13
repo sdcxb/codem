@@ -9,6 +9,8 @@
  * 使其可以独立注册到 Slot Registry。
  */
 
+import { isFreeModelId } from "../core/free-model-plugin/model-index";
+import { freeModelPlugin } from "../core/free-model-plugin/service";
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Cpu, ChevronDown, Check, ChevronRight } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
@@ -167,6 +169,10 @@ export function ModelSelector({ model: modelProp, models: modelsProp, onModelCha
                 {model === m.id ? <Check size={14} /> : <Cpu size={14} />}
               </span>
               <span style={{ fontSize: 'var(--fs-sm)' }}>{m.name}</span>
+              {/* 第 222 波：模态标注只加在**显示文本**上（点击仍然传 m.id —— 标签绝不许进模型名） */}
+              {isFreeModelId(m.id) && (
+                <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, "zh")}</span>
+              )}
             </button>
           ))}
 

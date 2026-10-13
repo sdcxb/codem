@@ -1,5 +1,5 @@
 {
-  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。 第 210 波：焦点环去重（一个焦点目标只画一个环）—— 父级不再因「里面有焦点」而画环，控件自己补主题色环。 第 211 波：输入框/文本域不许再叠 outline（它们已有内嵌环）—— 只给 <select> 补主题环。 第 215 波（用户问「刷新不应该测一下能否通」）：新增主动探测可用性（带超时 + 并发上限 + 结果带时间戳落盘）+ 真实调用失败回写 + 两处模型列表标注。 第 216 波：慢/超时与不可用分开（真实调用超时标「最近一次调用超时」，不标「不可用」）。 第 217 波：退出路径不许同步等收树（用户报「卡一下、要按两次才退出」）。 第 218 波：已知不可用的免费模型从设置列表与对话选择器里隐藏（当前选中的除外），并如实说明隐藏数量。 第 219 波：所有渲染模型选项的分支（插件目录 / 刷新后的 dynamicModels / 内置兜底）都要过滤已知不可用的免费模型。 第 220 波：刷新后 / 启动时结论过期就**自动**在后台补测一次（用户的期待：刷新完就该反映真实可用性）。 第 221 波：刷新提示与列表里可见数量一致（报出隐藏了几个）。",
+  "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。 第 210 波：焦点环去重（一个焦点目标只画一个环）—— 父级不再因「里面有焦点」而画环，控件自己补主题色环。 第 211 波：输入框/文本域不许再叠 outline（它们已有内嵌环）—— 只给 <select> 补主题环。 第 215 波（用户问「刷新不应该测一下能否通」）：新增主动探测可用性（带超时 + 并发上限 + 结果带时间戳落盘）+ 真实调用失败回写 + 两处模型列表标注。 第 216 波：慢/超时与不可用分开（真实调用超时标「最近一次调用超时」，不标「不可用」）。 第 217 波：退出路径不许同步等收树（用户报「卡一下、要按两次才退出」）。 第 218 波：已知不可用的免费模型从设置列表与对话选择器里隐藏（当前选中的除外），并如实说明隐藏数量。 第 219 波：所有渲染模型选项的分支（插件目录 / 刷新后的 dynamicModels / 内置兜底）都要过滤已知不可用的免费模型。 第 220 波：刷新后 / 启动时结论过期就**自动**在后台补测一次（用户的期待：刷新完就该反映真实可用性）。 第 221 波：刷新提示与列表里可见数量一致（报出隐藏了几个）。 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据必须标未知，且标注只进显示文本、不许进模型名。",
   "mutations": [
     {
       "id": "MUT-1 不做归属覆盖（选了 free 模型照样发去 openai）",
@@ -291,9 +291,9 @@
       "why": "第 220 波：可用性结论过期即未知 ⇒ 没人测，列表就是错的",
       "patches": [
         {
-          "file": "src/components/SettingsPanel.tsx",
-          "from": "        if (isManagedFreeModel) {\n          const started = freeModelPlugin.models.autoProbeIfStale(() => {",
-          "to": "        if (false && isManagedFreeModel) {\n          const started = freeModelPlugin.models.autoProbeIfStale(() => {"
+          "file": "src/core/free-model-plugin/model-index.ts",
+          "from": "  if (entries.length === 0) return true;",
+          "to": "  if (entries.length === 0) return true;\n  return false;"
         }
       ],
       "tests": [
@@ -313,6 +313,36 @@
       ],
       "tests": [
         "src/test/free-model-availability.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-28 没有依据也标成【文本】（用名字/猜测代替确定 —— 用户明确禁止）",
+      "why": "MODALITY-1：没有上游依据时必须标【未知】，不许猜",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/model-index.ts",
+          "from": "  const vision = modelVision.get(modelId);\n  if (vision === true) return \"multimodal\";\n  if (vision === false) return \"text\";\n  return \"unknown\";",
+          "to": "  const vision = modelVision.get(modelId);\n  if (vision === true) return \"multimodal\";\n  if (vision === false) return \"text\";\n  return \"text\";"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-availability.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-29 模型下拉不再限高（用户实报：列表太长把下面的模型配置盖住）",
+      "why": "CHAT-OVERLAY-5：免费池 25+ 个模型，不限高就会盖住下面的面板",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": "  max-height: min(52vh, 420px);\n  overflow-y: auto;",
+          "to": "  overflow-y: visible;"
+        }
+      ],
+      "tests": [
+        "src/test/chatpanel-overlay-close.test.ts"
       ],
       "expectRed": true
     },

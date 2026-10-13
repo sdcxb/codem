@@ -60,3 +60,31 @@ describe("CHAT-OVERLAY：切换会话要收起浮层（第 213 波）", () => {
     }
   });
 });
+
+/**
+ * 第 223 波（用户实报两条 UI 问题）：
+ * > 模型列表太长导致，下面的模型配置看不到了，优化它。
+ * > 这个列表展开的时候，点设置或者点其他按钮弹出窗口，这个列表不自动收起来。
+ */
+describe("CHAT-OVERLAY：下拉限高 + 点外面收起（第 223 波）", () => {
+  it("CHAT-OVERLAY-5：模型下拉要限高并自己滚动（否则盖住下面的模型配置）", () => {
+    const css = readFileSync(path.resolve(__dirname, "../../src/styles.css"), "utf8");
+    const start = css.indexOf(".model-picker {");
+    expect(start, "找不到 .model-picker").toBeGreaterThan(0);
+    const block = css.slice(start, start + 700);
+    expect(block, "要限高").toMatch(/max-height:\s*min\([^)]+\)/);
+    expect(block, "要自己滚动").toContain("overflow-y: auto");
+    expect(block, "别让滚动穿透到背后").toContain("overscroll-behavior: contain");
+  });
+
+  it("CHAT-OVERLAY-6：点任何非本下拉的地方（含「设置」按钮）都要收起", () => {
+    const chat = readFileSync(path.resolve(__dirname, "../components/ChatPanel.tsx"), "utf8");
+    expect(chat, "要有基于 pointerdown 的点外面收起").toMatch(
+      /addEventListener\("pointerdown",\s*onPointerDown,\s*true\)/,
+    );
+    expect(chat, "下拉自身与打开它的按钮不算外面").toMatch(/closest\("\.model-picker"\)[\s\S]{0,80}?closest\("\.model-selector"\)/);
+    expect(chat, "命中外面就关掉").toMatch(/setShowModelPicker\(false\)/);
+    expect(chat, "监听器要在关闭/卸载时摘掉（否则会泄漏）").toMatch(/removeEventListener\("pointerdown",\s*onPointerDown,\s*true\)/);
+  });
+});
+
