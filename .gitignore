@@ -68,6 +68,13 @@ docs/*.docx
 #   没有这条白名单，clone 下来的人只能看到 HANDOFF 第 189 波 §二 的摘要，
 #   「结论可复核」就不成立（门禁 `BE-5` 用 `git check-ignore` 退出码直接问 git）。
 !docs/BENCH-EVIDENCE.md
+# 第 226 波新增：`docs/NEW-SESSION-START.md`（新会话一屏开工说明）必须进仓库。
+#   ⚠️ 它是**同一个坑的第二次**：上一轮的 commit 信息写着"新增 docs/NEW-SESSION-START.md"，
+#   但文件被上面的 `docs/*.md` 吞掉 ⇒ 实际只提交了两行指针；而 `git status` **不会**提示
+#   （被忽略的文件既不显示未跟踪、也不显示已修改），`git show --stat` 里也看不到它。
+#   后果：AGENTS.md 让每个新会话"先读它"，clone 下来的人却没有这份文件。
+#   判据 `DOCS-6`（`src/test/docs-current-gap-list.test.ts`）用 `git check-ignore` 直接问 git 钉住。
+!docs/NEW-SESSION-START.md
 !docs/AlimamaFangYuanTiVF-Thin.ttf
 !docs/26720-1.png
 !docs/26720-2.png

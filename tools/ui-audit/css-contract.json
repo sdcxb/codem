@@ -7844,6 +7844,17 @@
     "text-overflow": "ellipsis",
     "white-space": "nowrap"
   },
+  "memory-pending-detail": {
+    "border-top": "1px dashed var(--border-primary)",
+    "flex": "1 0 100%",
+    "min-width": "0",
+    "padding-top": "var(--space-4)"
+  },
+  "memory-pending-expand-hint": {
+    "color": "var(--text-muted)",
+    "font-size": "var(--fs-2xs)",
+    "padding": "0 var(--space-4) var(--space-3)"
+  },
   "memory-pending-hint": {
     "border-left": "2px solid var(--border-strong)",
     "color": "var(--text-muted)",

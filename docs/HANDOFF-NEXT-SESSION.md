@@ -5337,3 +5337,75 @@ node .preview-shot/_handoff-diagnose.mjs        # 在出问题那台机器上跑
     ⚠️ **如实记（下轮先做这条）**：改完之后"列表是否补齐到 26 个 + 【未知】是否真的出现"的
     **真机复查没跑成**（CDP 连接被拒多次，应用被回收）⇒ 目前只有判据层证据，不许当已验证 ✓。
 
+
+  - **第 226 波（用户直报：「记忆系统中，审批的时候，看不到详细信息无法评估审批是否通过，增加个双击展开详细信息的功能」）**：
+
+    **① 用户报的那条已修（本波的主改动）**：待批准区原来只渲染 `entry.content.substring(0, 80)`，
+    而「该不该批准」要同时看**完整内容 + 作用域/生效范围 + 归属 + 来源** —— 自动提取的长条目里
+    前 80 字常常只是铺垫 ⇒ 只能盲批或盲拒。修法：**双击任意一条待批准记忆**就地展开详情块
+    （完整内容一字不截断 / 键 / 作用域与生效范围 / 归属 / 来源 / 状态 / 批次 / 最后修改时间 / 标签），
+    再双击收起；摘要态照旧 80 字；双击落在勾选框/批准/拒绝上**不展开**（`closest("button, input, label, select, a")` 排除）；
+    待批准区上方加一句常驻提示写明这个手势（双击没有可点的外观，不写出来没人知道）。
+    判据 `MD-1..MD-8`（新文件 `src/test/memory-pending-detail.test.tsx`，真渲染 + 真 DOM）：
+    折叠态不含全文（反向对照）、展开即逐字全文 + 八项依据齐、再双击收起、只影响被双击那条、
+    控件区不受影响、收敛不许过头（列表一变就清空 = 用户刚点开就被合上）、手势必须写在界面上、接线棘轮。
+    新变异波次 **`memory-approve-detail-226`（7 条：6 红 + 1 反向对照）**，登记进 `tools/mutate/registry.json`。
+
+    **② 顺手收敛了两处口径（本仓最看重的形态）**：
+    - `entryStatusText()` —— 「这条会不会进上下文」这句话原来只在详情面板里现写一个三元表达式，
+      现在两处渲染（详情面板 + 双击展开）共用同一句（判据钉住 `entryStatusText(` 至少三处调用）；
+    - `pruneAliveIds()` —— 「界面瞬态集合随待批准列表收敛」从**两处重复实现**收敛成**一条共用能力**
+      （勾选集合 + 展开集合都用它）。⚠️ 这动到了第 196 波的变异锚点
+      （`memory-approve-196 / MUT-9` 第二个 patch 原来锚在那段重复代码上）⇒ 按新形态**重新锚定**
+      （改成锚那条能力本身）并**重跑该波次**（11 条全红、restored=true）—— 这正是「改代码会让别的波次锚点失效」的又一例。
+
+    **③ 真机验收（1.16.317，构建 + 静默安装 + CDP 真实鼠标事件）**：
+    侧栏真点「记忆」→ 面板里当前项目**没有**待批准条目 ⇒ 用面板自己的「导入 JSON」（CDP
+    `DOM.setFileInputFiles`，platform 级 pending 夹具）造一条 → ①提示文案在 ✓
+    ②**真双击**（`Input.dispatchMouseEvent` 第二下带 `clickCount: 2`）⇒ `.memory-pending-detail` 出现，
+    `全文一字不少: true`（与人库文本逐字相等）、行类名 `memory-pending-item expanded` ✓
+    ③再双击 ⇒ 收起、全文从页面消失 ✓ ④双击「拒绝」按钮 ⇒ **不展开**、该条被处置（= 清理掉夹具）✓
+    ⑤页面上无残留、控制台 0 error / 0 exception ✓。探针：`.preview-shot/_verify226-memory-dblclick.mjs`。
+    ⚠️ 如实记：清理走的是「拒绝」⇒ 会留下一条**已拒绝记录**（第 200 波的有界留痕，内容是虚构的验收串，
+    对用户无影响）；夹具条目本身已从待批准区与记忆里删除（收尾读数：待批准 0、页面无标记）。
+
+    **④ 上轮未跑成的那条真机复查，本轮补上了（顺带更正一个此前的误判）**：
+    - **① 列表是否补齐 ⇒ 补齐 ✓，但「看得见几个」由上游决定**：插件 `/v1/models` 给 **26** 个，
+      应用侧缓存也是 **26**（316 的并集修复没被破坏）；**可见** 13 个（另 13 个被可用性结论隐藏，
+      设置里如实写着「已隐藏 13 个当前不可用的（可见 13 个）」）。
+      隐藏的那批里 **10 个是上游硬拒**，原文一字不差：
+      `OpenCode's free tier can only be used from within OpenCode. Download it at https://opencode.ai and keep building.`
+      （逐条实测：`ling-3.1-flash-free`/`cat-jam-free`/`mimo-v2.6-flash-free`/`muse-spark-1.2`/`muse-spark-1.3`/
+      `nemotron-3.5-lightning-free`/`jev-1.13-free`/`step-5-preview-free`/`longcat-2.5-preview-free`/`space-bunny-free`
+      —— 即 `catalog.json` 的 `entries` 那 10 条 「OpenCode 免费车道」，**上游政策变化，非本仓可修**；
+      查过上游 `dsh-our-free-model` 的最新 commit（HEAD `ddb451c`，我们钉的是 `f9cdb66`），
+      UA/指纹逻辑逐字相同 ⇒ **上游也还没修**）。
+    - **② 【未知】标注在真机上「看不到」，原因是结构性的**：`catalog.json` 只对 `kiloRows` 那 16 条给
+      `vision` 依据，**恰好那 10 个没有模态依据的模型 = 被上游硬拒、从列表里隐藏的那 10 个**
+      ⇒ 列表里可见的每个都有依据（4 多模态 + 9 文本），【未知】自然不出现。
+      要看到它只有两条路：这些模型重新可用，或把它们设为**当前选中**（选中的那条即使不可用也保留并带标注）。
+      判据层（`MODALITY-1..5`）仍绿 ⇒ **不许写成「【未知】已验证」**。
+    - **顺带纠正一处此前的过度断言**：用户已明确「**超时标成不可用没问题**」⇒ 本轮不再按"瞬时失败被当成
+      不可用"去改探测口径（我一度把 `kilo-auto/free`/`stepfun/step-5-preview-free`/`stealth/glyph-cluster`
+      被隐藏当成假阴性；本轮 1.16.317 上这三条又自己回到了列表里 —— 与「结论 30 分钟过期 + 自动补测」一致）。
+    - ⚠️ **探针教训（第 5 次踩同一类）**：注释里写了反引号 `.sidebar-rail-btn` ⇒ **模板字符串里的注释**
+      遇到反引号会提前结束整个 evaluate 串（`vm`/Node 直接语法错）。写 CDP 探针时注释里**不许出现反引号**。
+      另：侧栏入口类名已经从 `.sidebar-rail-btn` 变成 `.sidebar-tool-item`（本轮改了两次才发现），
+      探针应按**可见文字**认入口（「记忆」），别绑类名。
+
+    **⑤ 门禁读数（1.16.317）**：`npx tsc --noEmit` **0**；全量 **669 文件 / 8072 用例通过（17 skipped）0 红**；
+    `npm run audit` **exit 0**（含变异产物闸门 30 个波次全过 + 控制字节 0）；
+    `knip` 棘轮 exports 49/49 未增长；`ui-audit/scan-ui` 未定义类名 0（CSS 契约 2865 → **2867** 类，已 `--write`）；
+    新变异波次 `memory-approve-detail-226` 7 条自证通过，`memory-approve-196` 重新锚定后重跑通过。
+    **本版尚未发版**（按用户要求：发版前先问）。
+
+
+    **⑥ 顺带修掉一个「静默失败」级的仓库问题（同一个坑第二次）**：
+    `docs/NEW-SESSION-START.md` **根本没进仓库** —— 上一轮的 commit 信息写着「新增 docs/NEW-SESSION-START.md」，
+    但它被 `.gitignore` 的 `docs/*.md` 吞掉，实际只提交了 `AGENTS.md` / `HANDOFF` 里的两行指针
+    （`git show --stat` 里看不到这个文件，而 `git status` **也不提示**：被忽略的文件既不显示未跟踪、也不显示已修改）。
+    后果很具体：`AGENTS.md` 让每个新会话「先读它」，clone 下来的人却没有这份文件 ✗。
+    修法：`.gitignore` 加 `!docs/NEW-SESSION-START.md` 白名单（含「为什么」的注释）+ 判据
+    `DOCS-6` 扩成**三份**关键文档（用 `git check-ignore` 退出码直接问 git，不靠人记得），并 `git add -f`。
+    ⚠️ 教训：**「我提交了」要以 `git show --stat` / `git status` 的读数为准**，不能以自己敲的 commit 信息为准 ✗。
+

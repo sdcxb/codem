@@ -20763,6 +20763,37 @@ html[data-contrast="high"] {
   gap: var(--space-2);
 }
 
+/*
+ * 第 226 波（用户要求）：待批准条目**双击展开**完整内容与判断依据
+ * （原话：「审批的时候，看不到详细信息无法评估审批是否通过」）。
+ *
+ * 展开块必须**独占一行**：这一行是 `flex-wrap: wrap` 的（勾选框 / 键 / 作用域徽标 /
+ * 前 80 字摘要 / 批准 / 拒绝都在第一行），长文本如果只当普通 flex 孩子，
+ * 会被塞进第一行把批准/拒绝按钮挤出可视区 —— 那就成了"为了看清内容而点不到按钮"。
+ */
+.memory-pending-item.expanded {
+  align-items: flex-start;
+}
+
+.memory-pending-detail {
+  flex: 1 0 100%;
+  min-width: 0;
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--border-primary);
+}
+
+/* 展开块沿用详情面板的 `.memory-detail-section`（同一套视觉与排版），只把行距按行内密度收紧 */
+.memory-pending-detail .memory-detail-section {
+  margin-bottom: var(--space-4);
+}
+
+/* 双击是**手势**：没有可点的外观，必须有一句常驻提示（否则用户永远不知道有这个功能） */
+.memory-pending-expand-hint {
+  padding: 0 var(--space-4) var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
 .memory-approve-btn,
 .memory-reject-btn,
 .memory-undo-btn {

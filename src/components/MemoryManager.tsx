@@ -91,6 +91,64 @@ function hasPendingOwner(entry: MemoryEntry): boolean {
   return Boolean(entry.sessionId);
 }
 
+/**
+ * 把「已经处置掉的条目」从界面瞬态集合里剔掉 —— 勾选集合与展开集合**共用这一条能力**。
+ *
+ * 为什么不各写一份（第 226 波收敛）：两个集合的失效形态**完全一样** —— 条目被批准/拒绝/
+ * 在别处（记忆体检）处理掉之后，它的 id 已经从 `pending` 里消失，而集合里还留着它。
+ * 后果也一样：下一次批量动作会带着不存在的 id 去算数（"幽灵选中"，第 196 波），
+ * 或者哪天同一 id 再出现时用户看到一条**自己从没双击过**的记忆是展开的（"幽灵展开"，第 226 波）。
+ * 本仓在"同一件事两处实现"上吃过太多次亏（修一处漏一处），所以这里只留一处。
+ *
+ * 返回**同一个引用**（内容没变时）以免每次 `loadEntries` 都无谓重渲染
+ * —— 这个 effect 每次刷新列表后都会跑。
+ */
+function pruneAliveIds(previous: Set<string>, alive: readonly { id: string }[]): Set<string> {
+  if (previous.size === 0) return previous;
+  const aliveIds = new Set(alive.map((entry) => entry.id));
+  const next = new Set([...previous].filter((id) => aliveIds.has(id)));
+  return next.size === previous.size ? previous : next;
+}
+
+/**
+ * 一条记忆的**状态文案** —— 本屏唯一一处（第 226 波收敛）。
+ *
+ * 为什么必须收敛成一份：这句话是用户"要不要批准/留下它"的直接依据，而它现在要出现在
+ * **两个**地方 —— 右侧详情面板（点列表里的条目）与**待批准条目的双击展开**（第 226 波，
+ * 用户报「审批时看不到详细信息，没法判断该不该通过」）。两处各写一份三元表达式，
+ * 迟早会出现「一处说会进上下文、另一处说不进」—— 那正是本仓在"同一件事两套说法"上
+ * 反复吃过亏的形态（见 `MEMORY_SOURCE_KIND_LABEL` 那一段注释）。
+ */
+function entryStatusText(entry: MemoryEntry, injected: boolean, notInjectedReason?: string): string {
+  if (isPendingMemoryEntry(entry)) return "待批准（未进上下文）";
+  if (injected) return "已生效（参与上下文）";
+  return `不进上下文${notInjectedReason ? `：${notInjectedReason}` : ""}`;
+}
+
+/**
+ * 待批准条目的**归属**（批准之后它会在哪些项目/对话里生效 —— 判断该不该批准的第二依据）。
+ *
+ * 三条纪律：
+ * ① 认不出来或归属键为空 ⇒ **如实说**「批准也不会进上下文」，不许猜成当前项目/当前对话；
+ * ② 与当前位置一致时**显式说出来** —— 用户最常问的就是"这条是不是就管我现在这个对话"；
+ * ③ 只显示**原始归属键**：这一屏没有项目/会话登记表（那在记忆体检视图里），
+ *    与其猜一个好听的名字，不如给一个可核对的 id。
+ */
+function pendingOwnerText(entry: MemoryEntry, projectId?: string, sessionId?: string): string {
+  if (entry.scope === "platform") return "所有项目、所有对话（平台级没有归属键）";
+  if (entry.scope === "project") {
+    if (!entry.projectId) return "无归属项目 ⇒ 即使批准也不会进任何上下文（先用「归位」指定项目，或直接拒绝）";
+    return `${entry.projectId}${entry.projectId === projectId ? "（就是当前项目）" : "（不是当前项目：批准后在你打开那个项目时生效）"}`;
+  }
+  if (entry.scope === "conversation") {
+    if (!entry.sessionId) return "无归属对话 ⇒ 即使批准也不会进任何上下文（先用「归位」指定对话，或直接拒绝）";
+    return `${entry.sessionId}${entry.sessionId === sessionId ? "（就是当前对话）" : "（不是当前对话：批准后在那个对话里生效）"}`;
+  }
+  return hasPendingOwner(entry)
+    ? "作用域无法识别：批准后会不会生效无法确定，建议先归位"
+    : "作用域无法识别且没有归属键 ⇒ 即使批准也不会进上下文";
+}
+
 /** 作用域 → 生效范围的一句话说明（界面要能自证"这条会/不会被注入"） */
 function getScopeHint(scope: MemoryScope, entry?: MemoryEntry): string {
   switch (scope) {
@@ -161,6 +219,19 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
    * 一个已经不存在的 id 留在选中集合里，下一次点「批量拒绝」就会带着它去算数（"幽灵选中"）。
    */
   const [selectedPending, setSelectedPending] = useState<Set<string>>(new Set());
+  /**
+   * 待批准区里**被双击展开**的条目 id（第 226 波，用户要求）。
+   *
+   * 用户原话：「记忆系统中，审批的时候，看不到详细信息无法评估审批是否通过，
+   * 增加个双击展开详细信息的功能。」—— 待批准区原来只给 `content` 的**前 80 字**，
+   * 而"该不该批准"要靠 完整内容 + 作用域/生效范围 + 归属 + 来源 一起判断，
+   * 光看摘要只能猜（尤其自动提取的长条目，前 80 字常常只是铺垫）。
+   *
+   * 与 `selectedPending` 同为**界面瞬态**（不进 payload、不落库、刷新即重来），
+   * 并且同样必须跟着待批准列表收敛（见下面的 effect）—— 否则一个已经被批准/拒绝的 id
+   * 留在集合里，等哪天有同名 id 出现时会被莫名其妙地展开（"幽灵展开"）。
+   */
+  const [expandedPending, setExpandedPending] = useState<Set<string>>(new Set());
   const [batches, setBatches] = useState<MemoryBatch[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MemorySearchResult[]>([]);
@@ -307,19 +378,33 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
   };
 
   /**
-   * 选中集合必须**跟着待批准列表收敛**。
+   * 双击一条待批准记忆 ⇒ 展开/收起它的**完整内容与判断依据**（第 226 波，用户要求）。
    *
-   * 两条都要挡住：① 批处理之后（那些 id 已经不在待批准区了）选中状态必须清掉；
+   * 为什么是"双击"而不是再塞一个「详情」按钮：这一行已经有勾选框 + 批准 + 拒绝三个控件，
+   * 真机上面板宽度有限，再加一个按钮会把内容摘要挤到看不见（而摘要正是"要不要展开"的依据）。
+   * 手势落在行的**非控件区**（见下面的 `onDoubleClick`）：点按钮连点两下时不许顺手展开这一行
+   * —— 那时它可能已经被批准/拒绝、根本不在待批准区里了。
+   */
+  const togglePendingExpanded = (id: string) => {
+    setExpandedPending((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  /**
+   * 两个界面瞬态集合（**勾选**、**展开**）都必须跟着待批准列表收敛。
+   *
+   * 两条都要挡住：① 批处理之后（那些 id 已经不在待批准区了）状态必须清掉；
    * ② 条目在别处被批/删/改（例如体检那边处置过）时，同一个 id 不许继续挂在这里。
-   * 返回同一个 Set 引用（内容没变时）以免无谓重渲染 —— 这个 effect 在每次 loadEntries 后都会跑。
+   * 两件事是**同一条能力**（`pruneAliveIds`），所以只有一个 effect、一处实现 ——
+   * 展开集合那条是第 226 波加进来的，与勾选集合逐字同源（判据 MD-8 钉住它）。
    */
   useEffect(() => {
-    setSelectedPending((prev) => {
-      if (prev.size === 0) return prev;
-      const alive = new Set(pending.map((p) => p.id));
-      const next = new Set([...prev].filter((id) => alive.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
+    setSelectedPending((prev) => pruneAliveIds(prev, pending));
+    setExpandedPending((prev) => pruneAliveIds(prev, pending));
   }, [pending]);
 
   const handleApproveSelected = () => {
@@ -594,6 +679,76 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     </div>
   );
 
+  /**
+   * 待批准条目的**判断依据**（第 226 波，用户要求：审批时看不到详细信息）。
+   *
+   * 内容 = 「这条记忆是什么」+「批准它会发生什么」，两半都必须有：
+   * - **完整内容**（一个字符都不截断 —— 摘要里常常只剩铺垫，正是用户判断不了的原因）；
+   * - **作用域 + 生效范围 + 归属**（批准后它会在哪些项目/对话里生效，还是**哪都不会**）；
+   * - **来源**（自动提取的条目要单独标注，用户据此决定信任度）；
+   * - **状态**（走 `entryStatusText`，与详情面板同一句话）；
+   * - 批次 / 最后修改时间 / 标签（可核对、可追溯）。
+   *
+   * ⚠️ 文案一律取上面那些 helper（`pendingScopeLabel` / `pendingScopeTitle` / `getScopeHint` /
+   * `pendingOwnerText` / `sourceLabel` / `sourceHint` / `entryStatusText` /
+   * `MemoryService.PANEL_TIMESTAMP_LABEL`）—— **不在这里硬编码任何一句判断口径**，
+   * 否则详情面板改了说法、这里还是旧的（本仓"两套说法"的经典形态）。
+   */
+  const renderPendingDetail = (entry: MemoryEntry) => (
+    <div className="memory-pending-detail" data-testid="memory-pending-detail">
+      <div className="memory-detail-section">
+        <label>完整内容（不截断）</label>
+        <pre className="memory-detail-content">{entry.content}</pre>
+      </div>
+      <div className="memory-detail-section">
+        <label>键</label>
+        <span className="memory-detail-mono">{entry.key}</span>
+      </div>
+      <div className="memory-detail-section">
+        <label>作用域与生效范围</label>
+        <span>
+          {pendingScopeLabel(entry)} · {pendingScopeTitle(entry)}；生效范围：{getScopeHint(entry.scope, entry)}
+        </span>
+      </div>
+      <div className="memory-detail-section">
+        <label>归属</label>
+        <span>{pendingOwnerText(entry, projectId, sessionId)}</span>
+      </div>
+      <div className="memory-detail-section">
+        <label>来源</label>
+        <span>
+          {sourceLabel(entry.source)}（{sourceHint(entry.source)}）
+        </span>
+      </div>
+      <div className="memory-detail-section">
+        <label>状态</label>
+        <span>{entryStatusText(entry, isInjected(entry), notInjectedReason(entry))}</span>
+      </div>
+      {entry.batchId && (
+        <div className="memory-detail-section">
+          <label>批次</label>
+          <span className="memory-detail-mono">{entry.batchId}</span>
+        </div>
+      )}
+      <div className="memory-detail-section">
+        <label>{MemoryService.PANEL_TIMESTAMP_LABEL}</label>
+        <span>{formatTime(entry.timestamp)}</span>
+      </div>
+      {entry.tags && entry.tags.length > 0 && (
+        <div className="memory-detail-section">
+          <label>标签</label>
+          <div className="memory-detail-tags">
+            {entry.tags.map((tag) => (
+              <span key={tag} className="memory-detail-tag">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="memory-manager">
       <div className="memory-manager-header">
@@ -749,6 +904,15 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
         <div className="memory-pending-section">
           <div className="memory-pending-title">待批准的自动记忆（{pending.length} 条，未批准不进上下文）</div>
           {/*
+            第 226 波（用户报「审批时看不到详细信息，没法判断该不该通过」）：
+            **双击任意一条**即可展开它的完整内容与判断依据（作用域 / 归属 / 来源 / 是否会进上下文）。
+            这句提示是功能的一部分 —— 手势类交互没有可点的外观，不写出来用户就永远不知道有它
+            （判据 MEM-APPROVE-DETAIL-7 钉住它必须在界面上）。
+          */}
+          <div className="memory-pending-expand-hint">
+            双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。
+          </div>
+          {/*
             第 196 波：勾选 + 批量同意/拒绝（用户要求「含全选」）。
             三个细节是刻意的：
             ① 「全选」复选框的可访问名说清**它管的是哪一批**（不是光秃秃一个勾选框）；
@@ -785,8 +949,29 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
               批量拒绝（{selectedPending.size}）
             </button>
           </div>
-          {pending.map((entry) => (
-            <div key={entry.id} className="memory-pending-item">
+          {pending.map((entry) => {
+            const expanded = expandedPending.has(entry.id);
+            return (
+            <div
+              key={entry.id}
+              className={`memory-pending-item${expanded ? " expanded" : ""}`}
+              /*
+               * 第 226 波：**双击展开**（用户要求的手势）。
+               * 只在"非控件区"生效：点在勾选框/批准/拒绝上连点两下时不许顺手展开这一行
+               * —— 那时它多半已经被批准/拒绝了，展开一个马上要消失的行毫无意义，
+               * 反而会让按钮的连点行为看起来"多做了一件事"。
+               */
+              onDoubleClick={(event) => {
+                const target = event.target as HTMLElement | null;
+                if (target?.closest("button, input, label, select, a")) return;
+                togglePendingExpanded(entry.id);
+              }}
+              title={
+                expanded
+                  ? "双击收起详细信息"
+                  : "双击展开完整内容与判断依据（作用域 / 归属 / 来源 / 是否会进上下文）"
+              }
+            >
               <label className="memory-pending-check">
                 <input
                   type="checkbox"
@@ -819,8 +1004,11 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
                 <button className="memory-approve-btn" onClick={() => handleApprove(entry.id)}>批准</button>
                 <button className="memory-reject-btn" onClick={() => handleReject(entry.id)}>拒绝</button>
               </div>
+              {/* 第 226 波：双击展开的判断依据（独占一行，见 CSS 的 flex: 1 0 100%） */}
+              {expanded && renderPendingDetail(entry)}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1022,13 +1210,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
 
               <div className="memory-detail-section">
                 <label>状态</label>
-                <span>
-                  {isPendingMemoryEntry(selectedEntry)
-                    ? "待批准（未进上下文）"
-                    : isInjected(selectedEntry)
-                      ? "已生效（参与上下文）"
-                      : `不进上下文${notInjectedReason(selectedEntry) ? `：${notInjectedReason(selectedEntry)}` : ""}`}
-                </span>
+                <span>{entryStatusText(selectedEntry, isInjected(selectedEntry), notInjectedReason(selectedEntry))}</span>
               </div>
 
               {selectedEntry.batchId && (

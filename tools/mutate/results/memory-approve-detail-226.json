@@ -1,0 +1,155 @@
+{
+  "wave": "memory-approve-detail-226",
+  "description": "第 226 波（用户直报「记忆系统里审批时看不到详细信息，没法判断该不该通过」）：待批准条目**双击展开**完整内容与判断依据（作用域/生效范围/归属/来源/状态/批次/时间/标签），摘要态照旧只给前 80 字，控件区的行为不受这个手势影响。",
+  "runAt": "2026-10-13T08:50:44.382Z",
+  "specFingerprint": "95a9fbbaee5d9223e0cc5812fb681922b942f27c",
+  "files": [
+    "src/components/MemoryManager.tsx"
+  ],
+  "tests": [
+    "src/test/memory-pending-detail.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 双击不再展开（手势挂着但什么也不做）",
+      "why": "MD-2 / MD-8：这条判据要抓的就是「用户双击了，界面没反应」——功能没做成的原样复现",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "                togglePendingExpanded(entry.id);",
+          "to": "                void entry.id; /* 变异：双击不再展开 */"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-detail.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3911
+    },
+    {
+      "id": "MUT-2 详情块里的内容又被截断（展开等于没展开）",
+      "why": "MD-2：展开块必须给**全文**。再截断一次，用户看到的还是那 80 字（这次连「下面还有」的暗示都没有了）",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "        <pre className=\"memory-detail-content\">{entry.content}</pre>",
+          "to": "        <pre className=\"memory-detail-content\">{entry.content.substring(0, 80)}</pre>"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-detail.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4082
+    },
+    {
+      "id": "MUT-3 展开集合不再走那条收敛能力（幽灵展开：接线被拆掉）",
+      "why": "MD-8：与既有的「幽灵选中」同一个成因（第 196 波），只是换成展开集合。这条状态**无法从 DOM 直接观察**（那个 id 已经不在列表里了）⇒ 判据断言的是接线本身：两个 setter 都必须走 `pruneAliveIds`",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "    setExpandedPending((prev) => pruneAliveIds(prev, pending));",
+          "to": "    setExpandedPending((prev) => prev);"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-detail.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4044
+    },
+    {
+      "id": "MUT-4 双击落在按钮/勾选框上也展开（控件区被手势抢走）",
+      "why": "MD-5（反向对照）：批准/拒绝按钮上连点两下时那一行多半马上就要消失，展开它毫无意义；勾选框的双击更不该顺手改状态 —— 这条变异证明判据确实盯着「手势只落在非控件区」",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "                if (target?.closest(\"button, input, label, select, a\")) return;",
+          "to": "                void target; /* 变异：不再排除控件区 */"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-detail.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4064
+    },
+    {
+      "id": "MUT-5 界面上不写「双击」提示（手势没有可点的外观 ⇒ 用户永远不知道）",
+      "why": "MD-7：手势类交互必须自己说出来。把提示整块拿掉，功能还在但**没人会发现**（这正是「功能做了等于没做」的形态）",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "          <div className=\"memory-pending-expand-hint\">\n            双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。\n          </div>",
+          "to": "          {null}"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-detail.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4025
+    },
+    {
+      "id": "MUT-6 收敛过头：列表一变就把展开集合整个清空",
+      "why": "MD-6（反向对照）：真实形态是「用户展开 A → 处置 B（列表随之刷新）→ 自己刚点开的 A 反而被合上了」。清空看起来更\"干净\"，但它把用户正在看的内容抢走了 —— 这条判据正盯着它",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "    setExpandedPending((prev) => pruneAliveIds(prev, pending));",
+          "to": "    setExpandedPending(() => new Set());"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-detail.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4110
+    },
+    {
+      "id": "MUT-7 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红（证明上面那些红是行为造成的，不是噪声）",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "   * 为什么是\"双击\"而不是再塞一个「详情」按钮：这一行已经有勾选框 + 批准 + 拒绝三个控件，",
+          "to": "   * （反向对照：只改这一行注释，行为逐字不变）为什么是\"双击\"而不是再塞一个「详情」按钮：这一行已经有勾选框 + 批准 + 拒绝三个控件，"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-detail.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 4090
+    }
+  ]
+}

@@ -97,16 +97,23 @@ describe("当前缺口清单只有一份（第 72 轮审计）", () => {
     expect(guide, "推荐阅读里不许再说『TODO.md — 了解当前待办』").not.toContain("了解当前待办");
   });
 
-  it("DOCS-6: 两份关键文档必须**真的在仓库里**（不许被 .gitignore 吞掉）", () => {
+  it("DOCS-6: 三份关键文档必须**真的在仓库里**（不许被 .gitignore 吞掉）", () => {
     /*
      * 第 81 轮实查出来的坑：`.gitignore` 里有一条 `docs/*.md`（只放行少数几份），
      * 于是新建的 `docs/GAP-LIST.md` 与 `docs/ui-walk-round72.md` **根本没进仓库** ——
      * 本机跑得好好的（文件在磁盘上），而别人 clone 下来：
      *   · DOCS-1 会因为"当前清单不存在"直接失败；
      *   · CHANGELOG / GAP-LIST 里"报告见 docs/ui-walk-round72.md"这句话指向一个不存在的文件。
-     * 所以这里用 `git check-ignore` 直接问 git：这两份是不是被忽略了。
+     * 所以这里用 `git check-ignore` 直接问 git：这几份是不是被忽略了。
+     *
+     * ★ 第 226 波补第三份 `docs/NEW-SESSION-START.md`：**同一个坑又踩了一次**，而且形态更隐蔽 ——
+     *   上一轮的 commit 信息写着"新增 docs/NEW-SESSION-START.md"，但该文件被 `docs/*.md` 吞掉，
+     *   实际只提交了 AGENTS.md / HANDOFF 里的两行指针 ⇒ `git show --stat` 里根本看不到这个文件，
+     *   而 `git status` 也不会提示（被忽略的文件既不显示为未跟踪、也不显示为已修改）。
+     *   后果很具体：AGENTS.md 让每个新会话"先读它"，clone 下来的人却没有这份文件 ✗。
+     *   ⇒ 加白名单 + 在这里钉住（判据会直接问 git，不靠人记得）。
      */
-    const files = ["docs/GAP-LIST.md", "docs/ui-walk-round72.md"];
+    const files = ["docs/GAP-LIST.md", "docs/ui-walk-round72.md", "docs/NEW-SESSION-START.md"];
     for (const f of files) {
       expect(fs.existsSync(path.join(ROOT, f)), `${f} 必须存在于工作区`).toBe(true);
       /*

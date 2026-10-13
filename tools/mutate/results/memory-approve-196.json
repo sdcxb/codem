@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-196",
   "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
-  "runAt": "2026-10-10T07:39:23.985Z",
-  "specFingerprint": "955bb2a4347ae937ebec7b7fd4f9289250dbcfdd",
+  "runAt": "2026-10-13T08:51:44.847Z",
+  "specFingerprint": "aa34a20c45ebeeedf2fa7ce6e3e8f69850a97dc5",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3345
+      "ms": 3833
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3352
+      "ms": 3797
     },
     {
       "id": "MUT-3 默认档改成「对话也需批准」",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3385
+      "ms": 3811
     },
     {
       "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3369
+      "ms": 3869
     },
     {
       "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3349
+      "ms": 3865
     },
     {
       "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3347
+      "ms": 3854
     },
     {
       "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3548
+      "ms": 4046
     },
     {
       "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
@@ -174,11 +174,11 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3603
+      "ms": 4001
     },
     {
-      "id": "MUT-9 界面：拆掉「选中集合随待批准列表收敛」这条能力（幽灵选中）",
-      "why": "MB-UI-2：选中集合必须跟着待批准列表收敛。**两处实现都要动**才看得出行为差异（处理完显式清空 + 列表变化时过滤）—— 只去掉一处，另一处会把它兜住：这正是「变异要拆够、要写在能力上而不是某一行上」那条教训的又一例",
+      "id": "界面：拆掉「选中集合随待批准列表收敛」这条能力（幽灵选中）",
+      "why": "MB-UI-2：选中集合必须跟着待批准列表收敛。**两处实现都要动**才看得出行为差异（处理完显式清空 + 列表变化时过滤）—— 只去掉一处，另一处会把它兜住：这正是「变异要拆够、要写在能力上而不是某一行上」那条教训的又一例。⚠️ 第 226 波把「随列表收敛」收敛成**一条共用能力**（`pruneAliveIds`，勾选集合与展开集合共用）⇒ 第二个锚点改成那条能力本身（去掉它 = 两个集合都不再收敛）",
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
@@ -187,8 +187,8 @@
         },
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "      const alive = new Set(pending.map((p) => p.id));\n      const next = new Set([...prev].filter((id) => alive.has(id)));\n      return next.size === prev.size ? prev : next;",
-          "to": "      return prev;"
+          "from": "  const aliveIds = new Set(alive.map((entry) => entry.id));\n  const next = new Set([...previous].filter((id) => aliveIds.has(id)));\n  return next.size === previous.size ? previous : next;",
+          "to": "  return previous;"
         }
       ],
       "tests": [
@@ -199,7 +199,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3566
+      "ms": 4114
     },
     {
       "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
@@ -219,7 +219,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3683
+      "ms": 4245
     },
     {
       "id": "MUT-12 反向对照：只改一行说明注释",
@@ -241,7 +241,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3565
+      "ms": 4049
     }
   ]
 }
