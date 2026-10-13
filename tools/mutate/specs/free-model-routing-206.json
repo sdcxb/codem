@@ -362,6 +362,21 @@
       "expectRed": true
     },
     {
+      "id": "MUT-31 清单只读内存缓存（真机实测：插件给 26 个，界面只剩 12 个）",
+      "why": "FREE-LIST-1：缓存偏短时会把模型整批藏掉，比\"刷得出来不能用\"更误导",
+      "patches": [
+        {
+          "file": "src/core/model-config.ts",
+          "from": "    for (const m of getMergedDynamicModels()[\"free-model\"] ?? []) {\n      if (seenFreeIds.has(m.id)) continue;\n      seenFreeIds.add(m.id);\n      freeModelOptions.push({ id: m.id, name: m.name });\n    }",
+          "to": "    /* 变异：不读落盘动态列表 */"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-availability.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
       "id": "MUT-16 反向对照：只改一行说明注释",
       "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
       "patches": [

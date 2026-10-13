@@ -97,13 +97,13 @@
       "patches": [
         {
           "file": "src/core/model-config.ts",
-          "from": "    for (const m of freeModelPlugin.models.cached()) {\n      result.push({ id: m.id, name: m.name });\n    }\n\n    for (const p of providers) {",
+          "from": "    const freeModelOptions: Array<{ id: string; name: string }> = [];\n    const seenFreeIds = new Set<string>();\n    for (const m of freeModelPlugin.models.cached()) {\n      if (seenFreeIds.has(m.id)) continue;\n      seenFreeIds.add(m.id);\n      freeModelOptions.push({ id: m.id, name: m.name });\n    }\n    for (const m of getMergedDynamicModels()[\"free-model\"] ?? []) {\n      if (seenFreeIds.has(m.id)) continue;\n      seenFreeIds.add(m.id);\n      freeModelOptions.push({ id: m.id, name: m.name });\n    }\n    for (const m of freeModelOptions) {\n      result.push({ id: m.id, name: m.name });\n    }\n\n    for (const p of providers) {",
           "to": "    for (const p of providers) {"
         },
         {
           "file": "src/core/model-config.ts",
           "from": "    return result;\n  } catch {\n    return [];\n  }\n}",
-          "to": "    for (const m of freeModelPlugin.models.cached()) {\n      result.push({ id: m.id, name: m.name });\n    }\n    return result;\n  } catch {\n    return [];\n  }\n}"
+          "to": "    for (const m of freeModelOptions) {\n      result.push({ id: m.id, name: m.name });\n    }\n    return result;\n  } catch {\n    return [];\n  }\n}"
         }
       ],
       "tests": [

@@ -75,7 +75,30 @@ export function getConfiguredApiModels(): ModelOption[] {
      * 取不到（没启用 / 没起来 / 没装 Node / 缓存过期）⇒ `cachedPluginModels()` 返回空数组
      * ⇒ **列表原样回退**，绝不让模型选择器空掉（这是这条集成最要紧的一条纪律）。
      */
+    /*
+     * ★ 第 225 波（用户实报的延伸问题）：模型列表**只剩 12 个**，而插件接口当时返回 **26 个** ✗。
+     *
+     * 根因：这里原来只用 `cached()`（**内存缓存**，TTL 内不刷新）。缓存是在某次较早的刷新里建的
+     * （那次服务器只列出了一部分）⇒ 只要没到 TTL，界面就一直显示那份**短列表**，
+     * 连"插件实际提供的模型"都看不到 ✗ —— 这比"刷得出来不能用"更误导。
+     *
+     * 修法：**并集** —— 内存缓存 ∪ 落盘动态列表（`codem-dynamic-models`，刷新时写的服务器事实）。
+     * 两者都是"服务器曾经列出来的真实模型"，取并集不会凭空造模型 ✓，却能防止任何一侧偏短时藏掉模型 ✓。
+     * 顺序保持"插件缓存优先"（它最新），落盘里多出来的补在后面。
+     */
+    const freeModelOptions: Array<{ id: string; name: string }> = [];
+    const seenFreeIds = new Set<string>();
     for (const m of freeModelPlugin.models.cached()) {
+      if (seenFreeIds.has(m.id)) continue;
+      seenFreeIds.add(m.id);
+      freeModelOptions.push({ id: m.id, name: m.name });
+    }
+    for (const m of getMergedDynamicModels()["free-model"] ?? []) {
+      if (seenFreeIds.has(m.id)) continue;
+      seenFreeIds.add(m.id);
+      freeModelOptions.push({ id: m.id, name: m.name });
+    }
+    for (const m of freeModelOptions) {
       result.push({ id: m.id, name: m.name });
     }
 

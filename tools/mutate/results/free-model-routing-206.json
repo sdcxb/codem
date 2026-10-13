@@ -1,8 +1,8 @@
 {
   "wave": "free-model-routing-206",
   "description": "第 206 波（用户实报）：按模型归属把请求路由到内置免费模型插件（否则选了 free 模型却发去 openai ⇒ openai not configured）；归属索引刷新即重建；界面不许因为托管条目没有落盘密钥就喊「请先配置 API Key」。 第 208 波：引擎兜底**现读设置**并按模型归属定供应商（用户报的「选了 free 模型不生效」的结构性根治）。 第 208 波真正根因：App 侧 handleModelChange 必须先按模型归属判 provider（否则 free 模型落成 openai ⇒ 用户实报的 openai not configured）。 收尾：托管供应商的『刷新模型列表』放行（它没有、也不该有 Key）+ 上游免费模型失败给出「换一个」的可操作提示。 第 209 波：上游免费模型的模型级失败（端点不可用/账号限制/不支持协议）判定为不可重试 —— 换模型才有意义，后台反复重试只会一直冒错误。 第 210 波：焦点环去重（一个焦点目标只画一个环）—— 父级不再因「里面有焦点」而画环，控件自己补主题色环。 第 211 波：输入框/文本域不许再叠 outline（它们已有内嵌环）—— 只给 <select> 补主题环。 第 215 波（用户问「刷新不应该测一下能否通」）：新增主动探测可用性（带超时 + 并发上限 + 结果带时间戳落盘）+ 真实调用失败回写 + 两处模型列表标注。 第 216 波：慢/超时与不可用分开（真实调用超时标「最近一次调用超时」，不标「不可用」）。 第 217 波：退出路径不许同步等收树（用户报「卡一下、要按两次才退出」）。 第 218 波：已知不可用的免费模型从设置列表与对话选择器里隐藏（当前选中的除外），并如实说明隐藏数量。 第 219 波：所有渲染模型选项的分支（插件目录 / 刷新后的 dynamicModels / 内置兜底）都要过滤已知不可用的免费模型。 第 220 波：刷新后 / 启动时结论过期就**自动**在后台补测一次（用户的期待：刷新完就该反映真实可用性）。 第 221 波：刷新提示与列表里可见数量一致（报出隐藏了几个）。 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据必须标未知，且标注只进显示文本、不许进模型名。",
-  "runAt": "2026-10-13T05:06:07.957Z",
-  "specFingerprint": "31af28594692253925549bef5f94a5b05707ef63",
+  "runAt": "2026-10-13T05:51:07.625Z",
+  "specFingerprint": "b539483ca50a2bc24f528239e723b1ee57cd4742",
   "files": [
     "src/core/free-model-plugin/model-index.ts",
     "src/components/SettingsPanel.tsx",
@@ -12,7 +12,8 @@
     "src/core/free-model-plugin/service.ts",
     "src/components/ChatPanel.tsx",
     "src-tauri/src/ofm.rs",
-    "src/styles.css"
+    "src/styles.css",
+    "src/core/model-config.ts"
   ],
   "tests": [
     "src/test/free-model-routing.test.ts",
@@ -43,7 +44,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1963
+      "ms": 1865
     },
     {
       "id": "MUT-2 归属索引只加不清（已下线的旧 id 仍被认领）",
@@ -63,7 +64,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1952
+      "ms": 1847
     },
     {
       "id": "MUT-3 界面仍然喊「请先配置 API Key」（免费模型被当成没配 Key）",
@@ -83,7 +84,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1960
+      "ms": 1879
     },
     {
       "id": "MUT-5 兜底仍用引擎那份旧副本（设置里改了模型也不生效）",
@@ -103,7 +104,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1972
+      "ms": 1926
     },
     {
       "id": "MUT-6 归属判定失效（插件模型被当成普通模型 ⇒ 供应商留在旧的那家）",
@@ -123,7 +124,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1934
+      "ms": 1848
     },
     {
       "id": "MUT-7 发消息前不按归属判（free 模型落成 openai ⇒ 用户报的那条错误原样复现）",
@@ -143,7 +144,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1972
+      "ms": 1840
     },
     {
       "id": "MUT-8 刷新时不带插件的 Key（真机实测：401 ⇒「获取失败，使用内置列表」）",
@@ -163,7 +164,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1941
+      "ms": 1843
     },
     {
       "id": "MUT-9 上游失败不给可操作提示（用户只能看到 Endpoint is unavailable）",
@@ -183,7 +184,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1958
+      "ms": 1848
     },
     {
       "id": "MUT-13 内置 Node 不落位（又直接运行安装目录里那份 ⇒ 升级时文件被占用）",
@@ -203,7 +204,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2049
+      "ms": 1831
     },
     {
       "id": "MUT-15 安装前不停插件（句柄不释放）",
@@ -223,7 +224,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1969
+      "ms": 1821
     },
     {
       "id": "MUT-17 切会话不收起浮层（用户实报：模型列表贴到新会话上）",
@@ -243,7 +244,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2035
+      "ms": 1815
     },
     {
       "id": "MUT-19 查残留进程的 tasklist 不加不闪窗标记（每次启动闪一下黑框）",
@@ -263,7 +264,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1946
+      "ms": 1872
     },
     {
       "id": "MUT-18 顺手把持久偏好也收掉（修 bug 改坏了正常行为）",
@@ -283,7 +284,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1977
+      "ms": 1816
     },
     {
       "id": "MUT-20 可用性结论永不过期（上游恢复了还一直标着不可用）",
@@ -303,7 +304,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2005
+      "ms": 1874
     },
     {
       "id": "MUT-21 探测不带超时（一个卡死的模型能把整轮检测拖住）",
@@ -323,7 +324,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1975
+      "ms": 1905
     },
     {
       "id": "MUT-22 超时也标成「当前不可用」（过度断言：用户会永久避开一个其实能用的模型）",
@@ -343,7 +344,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2037
+      "ms": 1863
     },
     {
       "id": "MUT-23 退出时又同步等 taskkill（用户报的「卡一下、要按两次才退出」）",
@@ -363,7 +364,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1945
+      "ms": 1819
     },
     {
       "id": "MUT-24 不可用的模型又出现在列表里（用户实报：「既然不行为什么刷新还会出现」）",
@@ -383,7 +384,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1965
+      "ms": 1922
     },
     {
       "id": "MUT-25 刷新后的那条分支又不过滤（用户实报：刷新后 25 个不能用的照样出现）",
@@ -403,7 +404,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1921
+      "ms": 1835
     },
     {
       "id": "MUT-26 刷新后不自动测可用性（用户实报：刷新完还是列出不能用的模型）",
@@ -423,7 +424,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1989
+      "ms": 1835
     },
     {
       "id": "MUT-27 汇总永远报「隐藏 0 个」（用户看到 25 以为都能用，其实一批已被隐藏）",
@@ -443,7 +444,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1988
+      "ms": 1836
     },
     {
       "id": "MUT-28 没有依据也标成【文本】（用名字/猜测代替确定 —— 用户明确禁止）",
@@ -463,7 +464,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1959
+      "ms": 1849
     },
     {
       "id": "MUT-29 模型下拉不再限高（用户实报：列表太长把下面的模型配置盖住）",
@@ -483,7 +484,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1937
+      "ms": 1841
     },
     {
       "id": "MUT-30 下拉又窄成 160px（用户实报：模型名被折成两三行）",
@@ -503,7 +504,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1936
+      "ms": 1863
+    },
+    {
+      "id": "MUT-31 清单只读内存缓存（真机实测：插件给 26 个，界面只剩 12 个）",
+      "why": "FREE-LIST-1：缓存偏短时会把模型整批藏掉，比\"刷得出来不能用\"更误导",
+      "patches": [
+        {
+          "file": "src/core/model-config.ts",
+          "from": "    for (const m of getMergedDynamicModels()[\"free-model\"] ?? []) {\n      if (seenFreeIds.has(m.id)) continue;\n      seenFreeIds.add(m.id);\n      freeModelOptions.push({ id: m.id, name: m.name });\n    }",
+          "to": "    /* 变异：不读落盘动态列表 */"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-availability.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 1869
     },
     {
       "id": "MUT-16 反向对照：只改一行说明注释",
@@ -523,7 +544,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 1943
+      "ms": 1845
     },
     {
       "id": "MUT-11 又给父级画一圈（用户报的双层紫框回来了）",
@@ -543,7 +564,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1966
+      "ms": 1868
     },
     {
       "id": "MUT-12 又给输入框加一层 outline（用户报的「很粗的紫框」= 两三层叠一起）",
@@ -563,7 +584,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1974
+      "ms": 1894
     },
     {
       "id": "MUT-4 反向对照：只改一行说明注释",
@@ -583,7 +604,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 1973
+      "ms": 1813
     }
   ]
 }

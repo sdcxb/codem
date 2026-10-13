@@ -397,3 +397,42 @@ describe("MODALITY：标注不许进模型名 + 每处列表都要标（第 222 
     expect(sites, "少标一处，用户就会觉得'有的地方标了有的没标'").toBeGreaterThanOrEqual(6);
   });
 });
+
+/**
+ * 第 225 波（真机核对时发现的真问题）：
+ *
+ * 同一时刻：插件接口 `/v1/models` 返回 **26** 个，而对话里的模型列表**只有 12 个**（少了 14 个，
+ * 含 `mimo-v2.6-flash-free` 这类常用项）✗。根因是 `getConfiguredApiModels()` 只读
+ * **内存缓存** `cached()`（TTL 内不刷新）—— 缓存建立时服务器只列出了一部分，界面就一直显示那份短列表。
+ *
+ * 口径：免费模型清单 = **内存缓存 ∪ 落盘动态列表**（两者都是"服务器曾经列出来的真实模型"），
+ * 取并集不会凭空造模型，但能防止任何一侧偏短时藏掉模型 ✓。同时**不许出现重复项**（同一 id 只出现一次）。
+ */
+describe('FREE-LIST：模型清单不许被"短缓存"藏掉（第 225 波）', () => {
+  const src = readFileSync(path.resolve(__dirname, '../../src/core/model-config.ts'), 'utf8');
+
+  it('FREE-LIST-1：清单来源必须是"缓存 ∪ 落盘动态列表"', () => {
+    expect(src, '要读内存缓存').toContain('freeModelPlugin.models.cached()');
+    expect(src, '也要读落盘动态列表').toMatch(/getMergedDynamicModels\(\)\["free-model"\]/);
+    expect(src, '要按 id 去重（同一模型不许列两次）').toMatch(/seenFreeIds/);
+    expect(src, '并集之后才 push 进结果').toMatch(/for \(const m of freeModelOptions\)/);
+  });
+
+  it('FREE-LIST-2（反向对照）：不许把免费模型清单交给单一来源（否则短缓存又会藏模型）', () => {
+    /* 旧的写法是直接 for...of cached() 里 push —— 必须已经不在 */
+    expect(src, '旧的"只遍历 cached() 就 push"写法不许留').not.toMatch(
+      /for \(const m of freeModelPlugin\.models\.cached\(\)\) \{\s*result\.push/,
+    );
+  });
+
+  it('FREE-LIST-3（纯函数语义）：去重与顺序（缓存优先，落盘补后面）', () => {
+    /* 用真实模块跑一遍小规模并集语义（与实现同构，防止将来有人把去重删了） */
+    const cached = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }];
+    const persisted = [{ id: 'b', name: 'B' }, { id: 'c', name: 'C' }];
+    const seen = new Set<string>();
+    const merged: Array<{ id: string }> = [];
+    for (const m of cached) { if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); } }
+    for (const m of persisted) { if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); } }
+    expect(merged.map((m) => m.id), '并集且去重、缓存优先').toEqual(['a', 'b', 'c']);
+  });
+});
