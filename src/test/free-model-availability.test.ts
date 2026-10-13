@@ -29,6 +29,7 @@ import {
   recordFreeModelHealth,
   setFreeModelIds,
   shouldAutoProbe,
+  summarizeManagedModelList,
   summarizeProbe,
 } from "../core/free-model-plugin/model-index";
 
@@ -247,13 +248,41 @@ describe("AVAIL：过期就自动补测（第 220 波）", () => {
     const panel = readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf8");
     const app = readFileSync(path.resolve(__dirname, "../App.tsx"), "utf8");
     expect(panel, "刷新后要自动补测").toMatch(/if \(isManagedFreeModel\) \{[\s\S]{0,200}?autoProbeIfStale\(/);
-    expect(panel, "补测完要让界面重渲染（否则列表不会更新）").toMatch(/autoProbeIfStale\(\(\) => setDynamicModels\(/);
+    expect(panel, "补测完要让界面重渲染（否则列表不会更新）").toMatch(/autoProbeIfStale\(\(\) => \{[\s\S]{0,200}?setDynamicModels\(/);
     expect(panel, "**不许** await（刷新按钮不能卡住）").not.toMatch(/await freeModelPlugin\.models\.autoProbeIfStale/);
     expect(app, "启动时也要补测（结论过期的情况）").toContain("autoProbeIfStale()");
 
     const service = readFileSync(path.resolve(__dirname, "../../src/core/free-model-plugin/service.ts"), "utf8");
     expect(service, "并发只允许一个自动探测（否则刷新连点会打爆上游）").toMatch(/if \(autoProbeInFlight\) return false;/);
     expect(service, "自动探测失败只记日志（后台自检不该弹错误）").toMatch(/console\.warn\([\s\S]{0,120}?后台自动检测可用性失败/);
+  });
+});
+
+
+
+/**
+ * 第 221 波（用户实报：清单里过滤了，但刷新提示还写着「✓ 获取到 25 个模型」）：
+ * 提示必须和**列表里真实可见的数量**一致 —— 只报"拉回来多少"是误导。
+ */
+describe("AVAIL：刷新提示要和列表里可见的数量一致（第 221 波）", () => {
+  const panel = readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf8");
+
+  it("AVAIL-13（纯函数）：汇总口径 = 总数 / 隐藏数 / 可见数（当前选中的不算隐藏）", () => {
+    const models = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const bad = (id: string) => id === "b" || id === "c";
+    expect(summarizeManagedModelList(models, bad), "两个不可用都被藏起来").toEqual({ total: 3, hidden: 2, visible: 1 });
+    expect(summarizeManagedModelList(models, bad, "b"), "当前选中的那个不算隐藏（它要留着）").toEqual({
+      total: 3,
+      hidden: 1,
+      visible: 2,
+    });
+    expect(summarizeManagedModelList(models, () => false), "都可用 ⇒ 隐藏 0").toEqual({ total: 3, hidden: 0, visible: 3 });
+  });
+
+  it("AVAIL-14（结构棘轮）：刷新提示要用这个口径，且后台测完要刷新提示里的数字", () => {
+    expect(panel, "提示要报总数").toContain("✓ 获取到 ${s.total} 个模型");
+    expect(panel, "并且要报隐藏了几个（不能只报拉回来多少）").toMatch(/已隐藏 \$\{s\.hidden\} 个当前不可用的（可见 \$\{s\.visible\} 个）/);
+    expect(panel, "后台测完要刷新提示").toMatch(/autoProbeIfStale\(\(\) => \{[\s\S]{0,300}?setRefreshStatus/);
   });
 });
 

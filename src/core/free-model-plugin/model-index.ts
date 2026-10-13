@@ -250,6 +250,22 @@ export function clearFreeModelHealth(): void {
   health.clear();
 }
 
+/**
+ * 第 221 波（用户实报：清单里过滤了，但刷新提示还写着「获取到 25 个模型」）：
+ *
+ * 提示必须和**列表里真实可见的数量**一致 —— 只报"拉回来多少"是**误导**：用户看到 25 会以为
+ * "25 个都能用"，而实际上其中一批已经被隐藏了 ✗。
+ * 这个纯函数同时给"刷新提示"和"渲染过滤"用，保证两处口径永远一致。
+ */
+export function summarizeManagedModelList(
+  models: readonly { id: string }[],
+  isUnavailable: (id: string) => boolean,
+  selectedId?: string | null,
+): { total: number; hidden: number; visible: number } {
+  const hidden = models.filter((m) => m.id !== selectedId && isUnavailable(m.id)).length;
+  return { total: models.length, hidden, visible: models.length - hidden };
+}
+
 export interface ProbeResult {
   id: string;
   ok: boolean;
@@ -278,5 +294,6 @@ export function summarizeProbe(results: readonly ProbeResult[]): {
     },
   };
 }
+
 
 

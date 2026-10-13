@@ -938,12 +938,26 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
         // Update state
         setDynamicModels((prev) => ({ ...prev, [providerId]: models }));
-        setRefreshStatus((prev) => ({
-          ...prev,
-          [providerId]:
-            `✓ 获取到 ${models.length} 个模型` +
-            (catalogOnly > 0 ? `（服务器 ${serverList.length} + 内置目录 ${catalogOnly}）` : ""),
-        }));
+        /*
+         * ★ 第 221 波（用户实报：清单里过滤了，但刷新提示还写着「✓ 获取到 25 个模型」）：
+         * 提示必须和**列表里真实可见的数量**一致 —— 只报"拉回来多少"是误导：
+         * 用户看到 25 会以为这 25 个都能用，而其中一批已经被隐藏了 ✗。
+         */
+        const summarize = () =>
+          freeModelPlugin.models.summarizeList(isManagedFreeModel ? models : [], (id) =>
+            freeModelPlugin.models.isUnavailable(id),
+          );
+        const describeRefresh = (probeNote?: string) => {
+          const s = summarize();
+          const parts = [`✓ 获取到 ${s.total} 个模型`];
+          if (catalogOnly > 0) parts.push(`（服务器 ${serverList.length} + 内置目录 ${catalogOnly}）`);
+          if (isManagedFreeModel && s.hidden > 0) {
+            parts.push(` · 已隐藏 ${s.hidden} 个当前不可用的（可见 ${s.visible} 个）`);
+          }
+          if (probeNote) parts.push(` · ${probeNote}`);
+          return parts.join("");
+        };
+        setRefreshStatus((prev) => ({ ...prev, [providerId]: describeRefresh() }));
         /*
          * ★ 第 220 波（用户实报：点「刷新模型列表」后**还是**列出 25 个、不能用的照样出现）：
          * 「刷新」只拉目录，**不测可用性**；而可用性结论过期就当"未知" ⇒ 列表里就会出现不能用的模型 ✗。
@@ -951,9 +965,13 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
          * 不阻塞（刷新按钮点完立刻可用），测完再让界面重渲染，把不可用的模型隐掉 ✓。
          */
         if (isManagedFreeModel) {
-          const started = freeModelPlugin.models.autoProbeIfStale(() => setDynamicModels(getMergedDynamicModels()));
+          const started = freeModelPlugin.models.autoProbeIfStale(() => {
+            setDynamicModels(getMergedDynamicModels());
+            /* 第 221 波：后台测完把提示里的数字也刷新成最新的（否则又和列表对不上） */
+            setRefreshStatus((prev) => ({ ...prev, [providerId]: describeRefresh() }));
+          });
           if (started) {
-            setRefreshStatus((prev) => ({ ...prev, [providerId]: `${prev[providerId]} · 正在后台检测可用性…` }));
+            setRefreshStatus((prev) => ({ ...prev, [providerId]: describeRefresh("正在后台检测可用性…") }));
           }
         }
 

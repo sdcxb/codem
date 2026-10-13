@@ -41,6 +41,7 @@ import {
   clearFreeModelHealth,
   freeModelUnavailableSuffix,
   isFreeModelKnownUnavailable,
+  summarizeManagedModelList,
   shouldAutoProbe,
   freeModelHealthSnapshot,
   markFreeModelAvailable,
@@ -847,6 +848,8 @@ export const freeModelPlugin = {
     unavailableSuffix: freeModelUnavailableSuffix,
     /* 第 218 波（用户实报：既然不行为什么刷新还列出来）——界面据此**隐藏**已知不可用的模型 */
     isUnavailable: isFreeModelKnownUnavailable,
+    /* 第 221 波：刷新提示要用它（提示必须与列表里真实可见的数量一致） */
+    summarizeList: summarizeManagedModelList,
     health: freeModelHealthSnapshot,
     loadHealth: loadPersistedHealth,
     ensureRefreshLoop: ensureModelRefreshLoop,
@@ -869,6 +872,7 @@ export const freeModelPlugin = {
   /** 判据用：清掉模型缓存（用例之间不许串味） */
   resetCacheForTests: __resetPluginModelsCacheForTests,
 } as const;
+
 
 
 
