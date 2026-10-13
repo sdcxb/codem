@@ -35,6 +35,15 @@ const DEFAULT_BUDGET: TokenBudget = {
   remaining: 121904,
 };
 
+/**
+ * 压缩完成后的**冷却期**（第 227 波，用户实报「没出现进度也没出现压缩提示 ⇒ 很容易重复点」）。
+ *
+ * 为什么需要它：`manualCompact()` 很快（同步、不调模型），原来的守卫在动作结束的同一刻就放开了
+ * ⇒ 用户连点两下真的会压两次（第二次删的是刚保留下来的那批旧消息，多丢一批上下文）。
+ * 冷却期内按钮**禁用 + 写明刚刚压缩过**，让"已经发生过了"这件事有可点的证据。
+ */
+const COMPACT_COOLDOWN_MS = 8000;
+
 interface ProviderBalance {
   provider: string;
   balance: string | null;
@@ -225,6 +234,23 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   /** 压缩失败的可见提示（原来只 console.error，界面完全看不出失败）。 */
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<{ removed: number; kept: number } | null>(null);
+  /**
+   * ★ 第 227 波（用户实报）：
+   *
+   * > 弹出上下文窗口，我点了压缩上下文按钮，没出现进度也没出现压缩提示。
+   * > 这样很容易让人误操作，以为没压缩重复点。
+   *
+   * 两个真正的缺陷：
+   * ① **进度永远画不出来**：`manualCompact()` 是**同步**动作，而 `setCompacting(true/false)`
+   *    会被 React 批到同一帧里 ⇒ 「⏳ 压缩中…」这一帧从来没有被 paint 过；
+   * ② **回执 3 秒就消失**：`setTimeout(() => setCompactResult(null), 3000)` —— 用户在面板上
+   *    找"压缩完了吗"的时候它已经没了，于是他会**再点一次**（而且真会再压一次）。
+   *
+   * 现在的口径：**回执留着**（会话变了 / 下一次压缩才换），**完成后进冷却期**（按钮禁用并写明
+   * 刚刚压缩过），并且在真正动手之前**让出一帧**把"压缩中"画出来。
+   */
+  const [compactCooldown, setCompactCooldown] = useState(false);
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [ctxConfig, setCtxConfig] = useState<CompactionConfig | null>(null);
   const [savedConfig, setSavedConfig] = useState(false);
@@ -302,10 +328,36 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     return () => clearInterval(interval);
   }, [sessionId, visible]);
 
+  /**
+   * 第 227 波：换会话时把**压缩回执与冷却期**清掉。
+   *
+   * 为什么必须清：回执现在会一直留着（不再 3 秒消失）—— 留着的前提是它说的必须是**这个会话**的事。
+   * 换了会话还挂着"移除 120 条"就是假信息（用户会以为新会话也被压过）。
+   * 卸载时同时把冷却期的定时器收掉，避免对已卸载组件 setState。
+   */
+  useEffect(() => {
+    setCompactResult(null);
+    setCompactError(null);
+    setCompactCooldown(false);
+    if (cooldownTimerRef.current !== null) {
+      clearTimeout(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+  }, [sessionId]);
+
+  useEffect(
+    () => () => {
+      if (cooldownTimerRef.current !== null) {
+        clearTimeout(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
   // 查询余额（面板打开时和每 60 秒刷新一次）
   useEffect(() => {
     if (!visible) return;
-
     const fetchBalances = async () => {
       setBalanceLoading(true);
       /**
@@ -405,21 +457,41 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
 
   const handleManualCompact = async (): Promise<void> => {
     // P1-8：守卫必须"同步生效"——用 ref 而不是 state（state 在同一批里会被 finally 复位）
-    if (!sessionId || compactingRef.current) return;
+    if (!sessionId || compactingRef.current || compactCooldown) return;
     if (messageCount <= 2) {
+      // 回执**不再 3 秒后自动消失**（第 227 波）：它是"这次点了有没有发生"的唯一证据
+      setCompactError(null);
       setCompactResult({ removed: 0, kept: messageCount });
-      setTimeout(() => setCompactResult(null), 3000);
       return;
     }
     compactingRef.current = true;
     setCompacting(true);
     setCompactError(null);
+    setCompactResult(null);
     try {
-      // 让出一次微任务：守卫在整个动作期间是真的"held"（否则同步动作一返回守卫就放开了，
-      // 同一 tick 内到达的第二次点击照样能进来）
-      await Promise.resolve();
+      /*
+       * 让出**一帧**（不是微任务，第 227 波）：`manualCompact()` 是同步动作，
+       * React 会把 `setCompacting(true)` 与随后的 `false` 批进同一帧 ⇒
+       * 「⏳ 压缩中…」这一帧**永远不会被画出来** —— 用户看到的就是"点了没反应"。
+       * 16ms 足够浏览器画一帧；对几百条消息的结构化摘要来说这点开销可忽略。
+       * （守卫 `compactingRef` 在这一帧里也是 held 的 ⇒ 同一 tick 的第二次点击照样被挡。）
+       */
+      await new Promise((resolve) => setTimeout(resolve, 16));
       const result = manualCompact(sessionId);
       setCompactResult(result);
+      /*
+       * 真的压缩过 ⇒ 进**冷却期**：按钮禁用并写明"刚刚已压缩（移除 N 条）"。
+       * 这是"以为没压缩、重复点"的直接解药 —— 原来的守卫是同步的，压缩一结束就放开了，
+       * 用户连点两下真的会压两次（第二次删的是刚保留下来的那批旧消息）。
+       */
+      if (result.removed > 0) {
+        setCompactCooldown(true);
+        if (cooldownTimerRef.current !== null) clearTimeout(cooldownTimerRef.current);
+        cooldownTimerRef.current = setTimeout(() => {
+          cooldownTimerRef.current = null;
+          setCompactCooldown(false);
+        }, COMPACT_COOLDOWN_MS);
+      }
       // Trigger a refresh —— 与上面 update() 同一口径（可见消息 + 模型侧选择，P2-D12）
       const visible = listVisibleMessages(sessionId);
       setMessageCount(visible.length);
@@ -446,7 +518,11 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       // finally 里复位：无论成功失败，下一次仍然可以尝试
       compactingRef.current = false;
       setCompacting(false);
-      setTimeout(() => setCompactResult(null), 3000);
+      /*
+       * 第 227 波：这里原来还有一句 `setTimeout(() => setCompactResult(null), 3000)`。
+       * 它正是用户"以为没压缩"的另一半原因 —— 回执只活 3 秒，而用户是**先看数字、再找提示**，
+       * 找的时候它已经没了。现在回执**留着**：换会话、或者下一次压缩时才被替换。
+       */
     }
   };
 
@@ -498,17 +574,36 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
             <button
               className="context-compact-btn"
               onClick={handleManualCompact}
-              disabled={compacting}
-              title="压缩上下文：移除旧消息并生成摘要"
+              disabled={compacting || compactCooldown}
+              title={
+                compactCooldown
+                  ? `刚刚压缩过（${Math.round(COMPACT_COOLDOWN_MS / 1000)} 秒冷却，避免重复点击 —— 压缩很快，连点两下真的会压两次）`
+                  : "压缩上下文：移除旧消息并生成摘要"
+              }
             >
-              {compacting ? "⏳ 压缩中..." : "▼ 压缩上下文"}
+              {compacting
+                ? "⏳ 压缩中..."
+                : compactCooldown && compactResult && compactResult.removed > 0
+                  ? `✅ 已压缩（移除 ${compactResult.removed} 条）`
+                  : "▼ 压缩上下文"}
             </button>
+            {/*
+              第 227 波（用户实报「点了压缩但没出现任何提示」）：
+              回执从"3 秒就消失的一行小字"改成**常驻的状态条**，并且把"发生了什么"写清楚 ——
+              成功要说清移除了多少、保留了多少、对话里多了什么；没得压也要说清**为什么**
+              （否则用户看到数字没变，只会以为按钮坏了）。
+            */}
             {compactResult && (
-              <span className={`context-compact-result ${compactResult.removed > 0 ? "success" : "info"}`}>
+              <StatusBanner
+                tone={compactResult.removed > 0 ? "success" : "info"}
+                data-testid="compact-result"
+              >
                 {compactResult.removed > 0
-                  ? `✅ 移除 ${compactResult.removed} 条，保留 ${compactResult.kept} 条`
-                  : "消息太少，无需压缩"}
-              </span>
+                  ? `压缩完成：移除 ${compactResult.removed} 条旧消息，保留最近 ${compactResult.kept} 条；` +
+                    `本对话里已插入一条「[上下文已手动压缩]」摘要（老对话细节变成摘要，仍在本对话继续）。`
+                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 20 条 ⇒ 不足 20 条时不压缩）。` +
+                    `上下文占用主要来自系统提示与工具定义，压缩对话不会让它降下来。`}
+              </StatusBanner>
             )}
             {compactError && (
               <StatusBanner tone="error" data-testid="compact-error">

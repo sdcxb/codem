@@ -52,6 +52,7 @@ import {
   countUnknownModality,
   summarizeProbe,
   type ProbeResult,
+  describePluginStartFailure,
 } from "./model-index";
 
 /** 设置键（界面上的开关就写它） */
@@ -103,8 +104,16 @@ interface FreeModelPluginStatus {
   nodeExe: string | null;
   /** Node 从哪儿来的（system / portable） */
   nodeVia: "bundled" | "system" | "portable" | null;
-  /** 进程在不在（我们自己起的那个） */
+  /** 进程在不在（本进程起的那个；第 227 波起：**接手来的实例也算在跑**，见 `adopted`） */
   running: boolean;
+  /**
+   * ★ 第 227 波：这个实例**不是本进程起的**，而是"上一次运行留下的"那个（本进程接手认领）。
+   *
+   * 为什么要如实标出来：那种形态下界面原来会写「已启用，尚未启动」，而 18937 上其实有服务在答
+   * —— 用户看到的是自相矛盾（卡片说没起来、模型列表里却有免费模型）。
+   * 接手认领之后，卡片如实说"运行中（上一次启动的实例）"，并且「暂停」会真的把它收掉。
+   */
+  adopted?: boolean;
   pid: number | null;
   /** 服务端口（起来之后才有） */
   port: number | null;
@@ -341,13 +350,57 @@ async function waitForRuntime(timeoutMs = 20_000): Promise<{ port: number | null
   return last;
 }
 
+/**
+ * 读 `<dataDir>/service.lock` 里的持有者 pid（第 227 波）。
+ *
+ * 只用于**说明原因**（"上一次运行留下的进程 N 还占着数据目录"）—— 真正决定杀不杀的是
+ * Rust 侧那条更严的判据（必须能证明那个 pid 就是本插件的进程）。
+ */
+async function readLockHolderPid(): Promise<number | null> {
+  try {
+    const raw = await readFile(`${await pluginDataDir()}\\service.lock`);
+    const parsed = JSON.parse(raw) as { pid?: unknown };
+    return typeof parsed?.pid === "number" && Number.isFinite(parsed.pid) ? parsed.pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 结束**卡住的**锁持有者（第 227 波，用户实报）。
+ *
+ * 为什么必须有这一层：真机形态是"上一次运行留下的插件进程还活着，占着数据目录"——
+ * 新实例起来立刻退出（`plugin.log` 里写着「数据目录已被服务占用」），而 `clear_stale_lock`
+ * 看到 pid 还活着就不删锁（设计如此）。于是插件**永远起不来**，出路只有上游 README 写的
+ * "手工结束 node 进程 + 删 service.lock" —— 普通用户做不到。
+ *
+ * Rust 侧只在**能证明那个 pid 就是本插件进程**时才结束它（见 `ofm_kill_lock_holder`），
+ * 读不出命令行/不像本插件时它什么都不做 ⇒ 这里如实返回 null，绝不假装"已经清干净了"。
+ */
+async function killStuckLockHolder(excludePid?: number | null): Promise<number | null> {
+  if (!isTauri()) return null;
+  try {
+    const dataDir = await pluginDataDir();
+    const killed = await invoke<number | null>("ofm_kill_lock_holder", {
+      dataDir,
+      excludePid: excludePid ?? null,
+    });
+    return typeof killed === "number" ? killed : null;
+  } catch (e) {
+    /* 回收失败不致命（还有"重试一次"那条路）；但必须留痕，不许静默 */
+    console.warn("[free-model-plugin] 结束卡住的残留进程失败", e);
+    return null;
+  }
+}
+
 /** 起服务（幂等：已经在跑就直接返回当前状态） */
-async function startPlugin(): Promise<{ ok: boolean; message: string; port?: number }> {
+async function startPlugin(): Promise<{ ok: boolean; message: string; port?: number; nextStep?: string }> {
   const node = await resolvePluginNode();
   if (!node.exe) {
     return {
       ok: false,
       message: "没有找到可用的 Node.js（需要 22 或更高）⇒ 插件还没启动。可以在插件卡片上点「自动安装 Node」，由 Codem 直接装好（约 30MB），不用自己去官网下载。",
+      nextStep: "在「插件管理 → Our Free Model」卡片上点「自动安装 Node（约 30MB）」，装完它会自动启动。",
     };
   }
   return startPluginWithNode(node.exe);
@@ -359,13 +412,21 @@ async function startPlugin(): Promise<{ ok: boolean; message: string; port?: num
  * 为什么要有这一层：自动安装 Node 之后我们**手里就有那个路径**，
  * 再让 `resolvePluginNode()` 去文件系统里找一遍是多余的（而且"刚装好却找不到"是最冤的一种失败）。
  * 直接用安装返回值启动，用户点「现在安装」之后一次成功。
+ *
+ * ## 第 227 波：起不来时**先把卡住的残留进程清掉再试一次**
+ *
+ * 用户实报的那条提示（"服务 30 秒内没有就绪"）背后几乎总是同一个死局：上一次运行留下的
+ * 插件进程占着数据目录 ⇒ 新实例立刻退出。用户自己没有任何办法解决它（上游 README 让人手工
+ * 结束进程 + 删锁）。所以这里在**第一次没就绪之后**自动清一次（只清能证明是本插件的那个 pid），
+ * 然后再起一次；两次都失败才如实报"起不来"，并把插件自己的原话带进消息里。
  */
-async function startPluginWithNode(nodeExe: string): Promise<{ ok: boolean; message: string; port?: number }> {
+async function startPluginWithNode(nodeExe: string): Promise<{ ok: boolean; message: string; port?: number; nextStep?: string }> {
   const node = { exe: nodeExe };
   const script = await pluginScriptPath();
   const dataDir = await pluginDataDir();
 
-  try {
+  /** 起一次 + 等就绪（返回这一轮的全部读数，供失败时如实说明） */
+  const attempt = async () => {
     const state = await invoke<OfmProcessState>("ofm_start", {
       nodeExe: node.exe,
       script,
@@ -376,20 +437,40 @@ async function startPluginWithNode(nodeExe: string): Promise<{ ok: boolean; mess
     const runtime = await waitForRuntime();
     const port = runtime.port ?? state.port ?? PREFERRED_PORT;
     const health = await waitForHealth(port);
-    if (!health) {
-      return { ok: false, message: `插件进程起来了，但 ${port} 上的服务在 30 秒内没有就绪（可看运行日志）。`, port };
+    return { state, runtime, port, health };
+  };
+
+  try {
+    let run = await attempt();
+    let killedPid: number | null = null;
+    if (!run.health) {
+      /*
+       * 先试着清掉"卡住的锁持有者"，再起一次。`excludePid` 传我们自己刚起的那个 pid ——
+       * 万一它其实还活着（只是慢），也绝不能被我们自己的回收动作杀掉。
+       */
+      killedPid = await killStuckLockHolder(run.state.pid ?? null);
+      if (killedPid !== null) run = await attempt();
+    }
+    if (!run.health) {
+      const { message, nextStep } = describePluginStartFailure({
+        logTail: await readLogTail(8),
+        lockPid: killedPid ?? (await readLockHolderPid()),
+        port: run.port,
+      });
+      return { ok: false, message, nextStep };
     }
     /*
      * 起来了 ⇒ 登记成 Codem 的托管供应商（否则"模型列表里看得见"却没路可走：
      * Codem 的对话是**按供应商**发请求的，见 `App.tsx` 的 `settings.providers` 注册路径）。
      */
-    const registered = upsertManagedProvider({ port, key: runtime.key });
-    const inEngine = await registerProviderInEngine({ port, key: runtime.key });
+    const registered = upsertManagedProvider({ port: run.port, key: run.runtime.key });
+    const inEngine = await registerProviderInEngine({ port: run.port, key: run.runtime.key });
     const parts = [registered.message, inEngine.message];
+    const recovered = killedPid !== null ? `已结束上一次留下的残留插件进程（进程号 ${killedPid}）；` : "";
     return {
       ok: true,
-      message: `插件已启动（端口 ${port}）；${parts.join("；")}`,
-      port,
+      message: `${recovered}插件已启动（端口 ${run.port}）；${parts.join("；")}`,
+      port: run.port,
     };
   } catch (e) {
     return { ok: false, message: `启动失败：${e instanceof Error ? e.message : String(e)}` };
@@ -465,8 +546,7 @@ async function registerProviderInEngine(runtime: { port: number | null; key: str
   }
 }
 
-/** 移除托管供应商条目（暂停/删除时调用；别人的条目不动） */
-function removeManagedProvider(): { ok: boolean; message: string } {
+/** 移除托管供应商条目（暂停/删除时调用；别人的条目不动） */function removeManagedProvider(): { ok: boolean; message: string } {
   try {
     const settings = getSettingJSON<{ providers?: Array<Record<string, unknown>> }>("codem-settings", {});
     const list = Array.isArray(settings.providers) ? settings.providers : [];
@@ -483,10 +563,41 @@ function removeManagedProvider(): { ok: boolean; message: string } {
 async function stopPlugin(): Promise<{ ok: boolean; message: string }> {
   try {
     await invoke<void>("ofm_stop");
-    return { ok: true, message: "插件已暂停（数据保留，重新启用即可继续）" };
+    /*
+     * 第 227 波：**还要收掉"不是本进程起的"那个实例**。
+     *
+     * 真机形态：上一次运行留下的插件进程还活着（`ofm_state` 里没有它 ⇒ `ofm_stop` 管不到它），
+     * 于是用户点「暂停」，界面说"已暂停"，而那个进程**照样在 18937 上服务** —— 假动作 ✗。
+     * Rust 侧只在能证明那个 pid 是本插件时才结束它，其它情况什么都不做（返回 null）。
+     */
+    const killed = await killStuckLockHolder(null);
+    return {
+      ok: true,
+      message: killed !== null
+        ? `插件已暂停（数据保留，重新启用即可继续）；顺带结束了上一次留下的实例（进程号 ${killed}）`
+        : "插件已暂停（数据保留，重新启用即可继续）",
+    };
   } catch (e) {
     return { ok: false, message: `暂停失败：${e instanceof Error ? e.message : String(e)}` };
   }
+}
+
+/**
+ * 第 227 波（用户实报的那条提示的**可执行出口**）：结束卡住的残留进程并重新启动插件。
+ *
+ * 卡片上的「结束残留进程并重试」按钮就调它。为什么值得单独有一个入口：
+ * 上游 README 给用户的办法是"手工结束那个 node 进程、删 `service.lock`"——普通用户做不到，
+ * 于是插件一旦进入那个状态就**永久起不来**（真机上正是如此：锁里的进程从 10-12 一直活到 10-13）。
+ */
+async function recoverAndRestart(): Promise<{ ok: boolean; message: string }> {
+  const killed = await killStuckLockHolder(null);
+  const started = await startPlugin();
+  if (started.ok) await refreshPluginModelsCache();
+  const prefix =
+    killed !== null
+      ? `已结束卡住的残留插件进程（进程号 ${killed}）。`
+      : "（没找到可结束的残留进程 —— 如果它确实还在，说明它不属于本插件的目录，Codem 不会去动别人的进程。）";
+  return { ok: started.ok, message: `${prefix}${started.message}` };
 }
 
 /** 启用（写设置 + 起进程） */
@@ -598,6 +709,27 @@ async function readPluginStatus(): Promise<FreeModelPluginStatus> {
     base.pid = state.pid;
     const runtime = await readPluginRuntime();
     base.port = runtime.port ?? state.port;
+    /**
+     * 第 227 波（用户实报的那条提示的**另一半**）：本进程没起过它，但 18937 上确实有服务在答。
+     *
+     * 真机形态：上一次运行留下的插件进程还活着、还在服务 —— `ofm_state` 只看**我们自己起的**
+     * 子进程，于是卡片会写「已启用，尚未启动」，而模型列表里其实有免费模型（用户看到的是自相矛盾）。
+     * 现在如实认下来：`running = true` + `pid` = 锁里那个持有者 + `adopted = true`
+     * （文案上标"上一次启动的实例"，并且「暂停」会真的把它收掉 —— 见 `stopPlugin`）。
+     */
+    if (!base.running && base.port) {
+      const health = await probeHealth(base.port);
+      if (health) {
+        const holder = await readLockHolderPid();
+        base.running = true;
+        base.pid = holder;
+        base.adopted = true;
+        base.health = health;
+        const models = await listPluginModels();
+        base.modelCount = models.length;
+        return base;
+      }
+    }
     if (base.running && base.port) {
       base.health = await probeHealth(base.port);
       if (base.health) {
@@ -863,6 +995,11 @@ export const freeModelPlugin = {
   remove: removePlugin,
   start: startPlugin,
   stop: stopPlugin,
+  /**
+   * 第 227 波：结束卡住的残留插件进程 + 重新启动（卡片上的「结束残留进程并重试」）。
+   * 只在**能证明那个 pid 是本插件进程**时才结束它 —— 判据 `OFM-RECOVER-*` 钉住这条边界。
+   */
+  recoverAndRestart,
   models: {
     list: listPluginModels,
     /* 第 215 波：主动探测可用性（用户点「检测可用性」）+ 读健康快照（界面标注用） */

@@ -296,6 +296,84 @@ export function summarizeProbe(results: readonly ProbeResult[]): {
 }
 
 /* ==========================================================================
+ * 第 227 波：**插件"起不来"时到底该说什么**（用户实报）
+ *
+ * > 更新后重启提示【免费模型插件没有启动起来：插件进程起来了，但 18937 上的服务在 30 秒内没有就绪
+ * > （可看运行日志）。到「插件管理 → 插件市场」那张卡片上点「刷新状态」看真实原因；
+ * > 装一个 Node.js 22+ 之后重试即可。】
+ *
+ * 这句话有三个毛病，都是用户直接指出的：
+ * 1. **指错地方**：那张卡片在「插件管理 → Our Free Model」，而「插件市场」是另一个页签；
+ * 2. **给错动作**：Node 明明装着（这条分支根本不是"没 Node"那条，那条有它自己的文案）；
+ * 3. **没给真原因**：插件自己的最后一行输出（`plugin.log`，卡片上就有）才是答案 ——
+ *    真机上它是「启动失败：数据目录已被服务占用，请检查 service.lock 中的进程」，
+ *    也就是**上一次运行残留的插件进程还占着数据目录**。
+ *
+ * 这个纯函数把（日志尾部 + 锁里的 pid + 端口）翻译成**人读的原因 + 可执行的下一步**；
+ * 界面与判据共用同一份口径（散装文案迟早分叉，本仓吃过太多次）。
+ * ========================================================================== */
+
+/** 日志里"数据目录被占用"的原话特征（插件自己打的） */
+const LOCK_CONFLICT_MARKERS = [/数据目录已被服务占用/, /service\.lock/];
+
+/** 取日志尾部最后一条**有内容**的行（`[stderr] ` 前缀去掉） */
+export function lastMeaningfulLogLine(logTail: string): string {
+  const lines = String(logTail ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\[(stderr|stdout)\]\s*/, "").trim())
+    .filter((l) => l.length > 0);
+  return lines.length > 0 ? lines[lines.length - 1] : "";
+}
+
+/**
+ * 插件没起来时的**原因 + 下一步**（纯函数）。
+ *
+ * 三条纪律：
+ * - 只写**已知**的事：日志里有原话就引原话，没有就说"它什么都没来得及输出"；
+ * - 下一步必须**用户做得到**：能点的按钮名要说出来，且位置写对；
+ * - **不许**在"不是缺 Node"的时候提 Node（那正是用户被误导的地方）。
+ */
+export function describePluginStartFailure(input: {
+  /** 插件自己的输出（`plugin.log` 尾部） */
+  logTail: string;
+  /** `service.lock` 里那个 pid（没有锁 ⇒ null） */
+  lockPid: number | null;
+  /** 期望端口（消息里要说清是哪个端口没就绪） */
+  port: number;
+}): { message: string; nextStep: string } {
+  const lastLine = lastMeaningfulLogLine(input.logTail);
+  const lockConflict = LOCK_CONFLICT_MARKERS.some((re) => re.test(input.logTail));
+
+  if (lockConflict) {
+    const who = input.lockPid !== null ? `（进程号 ${input.lockPid}）` : "";
+    return {
+      message:
+        `插件没能启动：上一次运行留下的插件进程${who}还占着它的数据目录 —— ` +
+        `新实例起来后立刻退出，所以 ${input.port} 上一直没有服务。插件自己的原话：${lastLine}`,
+      nextStep:
+        "在这张卡片上点「结束残留进程并重试」即可（Codem 只结束它自己那个插件进程，然后重新启动它）；" +
+        "还不行就点「暂停」再「开启」。",
+    };
+  }
+
+  if (lastLine === "") {
+    return {
+      message:
+        `插件进程起来了，但 ${input.port} 上的服务在 30 秒内没有就绪 —— 而且插件**一行输出都没有**` +
+        "（连错误都没来得及写就退出了：通常是插件入口文件缺失、或这个端口被别的程序占着）。",
+      nextStep:
+        "在「插件管理 → Our Free Model」卡片上点「刷新状态」看「插件运行日志」；" +
+        "若卡片上写着「没找到 Node.js」，那一点「自动安装 Node（约 30MB）」即可。",
+    };
+  }
+
+  return {
+    message: `插件进程起来了，但 ${input.port} 上的服务在 30 秒内没有就绪。插件自己的最后一行输出：${lastLine}`,
+    nextStep: "在「插件管理 → Our Free Model」卡片上点「刷新状态」，看下面「插件运行日志（最后几行）」的完整内容。",
+  };
+}
+
+/* ==========================================================================
  * 第 222 波：**模态标注**（用户要求：能确定才标，不能确定如实说）
  *
  * > 模型列表里，能识别出哪些是多模态，哪些是纯文本模型，并进行标示吗？一定要确定后标示，

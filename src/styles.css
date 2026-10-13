@@ -8995,24 +8995,12 @@ color: var(--text-on-accent);
   cursor: not-allowed;
 }
 
-.context-compact-result {
-  font-size: var(--fs-xs);
-  font-weight: 500;
-}
-
-.context-compact-result.success {
-  color: var(--success);
-}
-
-.context-compact-result.info {
-  color: var(--text-muted);
-}
-
-/* P1-8：手动压缩失败必须是可见的错误态（原来只 console.error，界面完全看不出失败） */
-.context-compact-result.error {
-  color: var(--error);
-  font-weight: 600;
-}
+/*
+ * 第 227 波（用户实报「点了压缩没出现任何提示」）：压缩回执改用既有的
+ * `.status-banner`（`StatusBanner` 组件）—— 它自带四档色调、`role="alert"` 与内边距，
+ * 比原来那行 3 秒就消失的小字可见得多。原来是给那行小字写的 `.context-compact-result*`
+ * 四条规则，现在**已无引用** ⇒ 按"不留死样式"删掉（CSS 契约随之刷新）。
+ */
 
 .context-pressure-warning {
   margin-top: var(--space-4);

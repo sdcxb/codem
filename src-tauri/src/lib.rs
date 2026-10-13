@@ -4571,6 +4571,10 @@ path_exists,
             ofm::ofm_start,
             ofm::ofm_stop,
             ofm::ofm_state,
+            /* 第 227 波（用户实报「插件进程起来了但服务 30 秒没就绪」）：结束**卡住的**锁持有者。
+               它是那个死局的唯一出口 —— 上游 README 让用户手工结束 node 进程 + 删 service.lock，
+               普通用户做不到。安全边界（只杀能证明是本插件的那个 pid）见 ofm.rs 的实现注释。 */
+            ofm::ofm_kill_lock_holder,
             ofm::ofm_log_tail,
             mcp_stdio_request,
             mcp_stdio_disconnect,

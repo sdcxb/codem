@@ -1,0 +1,201 @@
+{
+  "description": "第 227 波（用户连报两条）：①「免费模型插件没有启动起来」那句提示**指错地方 + 给错动作 + 不给真原因**，而真机形态是「上一次运行留下的插件进程占着数据目录 ⇒ 新实例一起就退」（自动清一次 + 卡片上一颗可点的「结束残留进程并重试」把它变成可恢复的）；②手动压缩「没出现进度也没出现压缩提示」（进度帧从来没被画出来 + 回执 3 秒就消失 + 冷却缺失 ⇒ 用户重复点真的会再压一次）。",
+  "mutations": [
+    {
+      "id": "MUT-1 用回那句旧兜底（指去「插件市场」+ 让人去装 Node）",
+      "why": "OFM-START-FAIL-10：这句正是用户读出来并报给我们的原文，两种毛病（指错地方、给错动作）都要被挡住",
+      "patches": [
+        {
+          "file": "src/App.tsx",
+          "from": "              \"在「插件管理 → Our Free Model」卡片上点「刷新状态」，下面会显示「插件运行日志（最后几行）」。\",",
+          "to": "              \"到「插件管理 → 插件市场」那张卡片上点「刷新状态」看真实原因；装一个 Node.js 22+ 之后重试即可。\","
+        }
+      ],
+      "tests": [
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 起不来时**不再尝试**回收残留进程（死局原样保留）",
+      "why": "OFM-START-FAIL-6：真机上插件**永久起不来**就是因为没人清那个占着数据目录的进程；去掉这一步等于把活儿还给用户",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "      killedPid = await killStuckLockHolder(run.state.pid ?? null);",
+          "to": "      killedPid = null; /* 变异：不尝试回收 */"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 回收成功却**不再重试**（等于没救）",
+      "why": "OFM-START-FAIL-6：清掉占用者之后必须再起一次 —— 只清不起，用户看到的还是「没就绪」",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "      if (killedPid !== null) run = await attempt();",
+          "to": "      void killedPid; /* 变异：清掉了却不重试 */"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 不看命令行就结束那个 pid（会误杀别人的进程）",
+      "why": "OFM-START-FAIL-7（安全边界）：锁里的 pid 可能已被系统复用成**别人的**进程；不看命令行就 taskkill 是不可接受的",
+      "patches": [
+        {
+          "file": "src-tauri/src/ofm.rs",
+          "from": "    if !is_our_plugin_command(&command_line, &data_dir) {",
+          "to": "    if false { /* 变异：不检查它是不是本插件的进程 */"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 失败消息不再带插件自己的输出（又变成只能猜）",
+      "why": "OFM-START-FAIL-6：真原因就写在 plugin.log 的最后一行（真机上是「数据目录已被服务占用」）；不带上它，用户与客服都无从判断",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "        logTail: await readLogTail(8),",
+          "to": "        logTail: \"\", /* 变异：不读插件自己的输出 */"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 卡片上那颗「结束残留进程并重试」变成假动作（没接服务层）",
+      "why": "OFM-START-FAIL-8：按钮在、点了却什么都不做 —— 本仓最忌讳的假成功形态（用户会以为「我点过了，还是不行」）",
+      "patches": [
+        {
+          "file": "src/components/FreeModelPluginCard.tsx",
+          "from": "      const result = await freeModelPlugin.recoverAndRestart();",
+          "to": "      const result = { ok: false, message: \"变异：没接上服务层\" };"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-7 不认领「上一次启动的实例」（界面又说「尚未启动」而服务在答）",
+      "why": "OFM-START-FAIL-9：这正是用户看到的自相矛盾（卡片说没起来、模型列表里却有免费模型）",
+      "patches": [
+        {
+          "file": "src/core/free-model-plugin/service.ts",
+          "from": "        base.adopted = true;",
+          "to": "        /* 变异：不认领这个实例 */;"
+        }
+      ],
+      "tests": [
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-8 压缩回执又 3 秒后自己消失（用户以为没压缩）",
+      "why": "CB-2 / CB-7：用户的原话就是「没出现压缩提示」—— 回执必须留着，直到换会话或下一次压缩",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "      setCompactResult(result);",
+          "to": "      setCompactResult(result);\n      setTimeout(() => setCompactResult(null), 3000);"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-9 拆掉压缩冷却期（完成后按钮立刻又能点 ⇒ 重复点真的再压一次）",
+      "why": "CB-3 / CB-4 / CB-7：用户报的「很容易让人误操作，以为没压缩重复点」正是它；第二次压缩删的是刚保留下来的那批旧消息",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "              disabled={compacting || compactCooldown}",
+          "to": "              disabled={compacting}"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-10 「没有可移除的消息」不再说为什么（数字没变、用户以为按钮坏了）",
+      "why": "CB-5：如实说明是这一波的口径 —— 没得压要说清原因（保留最近 20 条）以及为什么占用不会降",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 20 条 ⇒ 不足 20 条时不压缩）。` +\n                    `上下文占用主要来自系统提示与工具定义，压缩对话不会让它降下来。`}",
+          "to": "                  : \"消息太少，无需压缩\"}"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-11 压缩前不让出那一帧（「压缩中」永远画不出来）",
+      "why": "CB-7：同步动作 + React 批处理 ⇒ 进度态从来没被 paint 过，这正是用户说「没出现进度」的机制",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "      await new Promise((resolve) => setTimeout(resolve, 16));",
+          "to": "      await Promise.resolve();"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-12 换会话不清压缩回执（上一条会话的读数挂到新会话上）",
+      "why": "CB-6：回执不再自动消失之后，它必须**跟着会话**清理，否则就是一条假信息",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "  useEffect(() => {\n    setCompactResult(null);\n    setCompactError(null);\n    setCompactCooldown(false);",
+          "to": "  useEffect(() => {\n    /* 变异：换会话不清回执 */\n    setCompactCooldown(false);"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-13 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红（证明上面那些红是行为造成的）",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "const COMPACT_COOLDOWN_MS = 8000;",
+          "to": "const COMPACT_COOLDOWN_MS = 8000; /* 反向对照：行为逐字不变 */"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx",
+        "src/test/free-model-start-failure.test.ts"
+      ],
+      "expectRed": false
+    }
+  ]
+}

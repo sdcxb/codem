@@ -2573,10 +2573,6 @@
     "padding": "var(--space-2) var(--space-6)",
     "transition": "var(--transition-color)"
   },
-  "context-compact-result": {
-    "font-size": "var(--fs-xs)",
-    "font-weight": "500"
-  },
   "context-compact-section": {
     "align-items": "center",
     "display": "flex",

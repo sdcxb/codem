@@ -553,9 +553,18 @@ setGlobalCwd(currentProject?.path || "");
         if (!freeModelPlugin.readSetting().enabled) return;
         const started = await freeModelPlugin.start();
         if (!started.ok) {
+          /*
+           * 第 227 波（用户实报）：这里原来写死了一句**指错地方 + 给错动作**的兜底
+           * （「到插件管理 → 插件市场…装一个 Node.js 22+ 之后重试即可」，而那张卡片在
+           * 「插件管理 → Our Free Model」，「插件市场」是另一个页签；Node 也早就装着）。
+           * 现在由 `startPluginWithNode` 按**真实原因**给出下一步（它读过插件自己的输出与
+           * `service.lock` 里那个 pid），这里只兜底一个中性的去处。
+           */
           reportAdvisory("freeModelPlugin.start", started.message, {
             title: "免费模型插件没有启动起来",
-            nextStep: "到「插件管理 → 插件市场」那张卡片上点「刷新状态」看真实原因；装一个 Node.js 22+ 之后重试即可。",
+            nextStep:
+              started.nextStep ??
+              "在「插件管理 → Our Free Model」卡片上点「刷新状态」，下面会显示「插件运行日志（最后几行）」。",
           });
           return;
         }
@@ -582,7 +591,7 @@ setGlobalCwd(currentProject?.path || "");
       } catch (e) {
         reportAdvisory("freeModelPlugin.start", e instanceof Error ? e.message : String(e), {
           title: "免费模型插件启动时出错",
-          nextStep: "到「插件管理 → 插件市场」手动开启；这不会影响 Codem 自身的模型。",
+          nextStep: "在「插件管理 → Our Free Model」卡片上点「刷新状态」看「插件运行日志」；这不会影响 Codem 自身的模型。",
         });
       }
     })();

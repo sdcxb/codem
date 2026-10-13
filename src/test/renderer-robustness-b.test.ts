@@ -60,8 +60,16 @@ function silenceConsole() {
 
 /** 等所有已排队的微任务与一轮宏任务（让 `await Promise.resolve()` 之后的收尾跑完）。 */
 async function settle() {
+  /**
+   * ⚠️ 第 227 波：这里原来是 `setTimeout(resolve, 0)`。
+   *
+   * `ContextMonitor` 的手动压缩现在**先让出一帧**（`setTimeout(16)`）再动手 ——
+   * 因为 `manualCompact()` 是同步的，React 会把 `setCompacting(true/false)` 批进同一帧，
+   * 「⏳ 压缩中…」这一帧**从来没有被画出来**（用户看到的就是"点了没反应"，实报）。
+   * 所以等 0ms 已经等不到压缩发生，这里放宽到 40ms（比那一帧多留些余量）。
+   */
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 40));
   });
 }
 

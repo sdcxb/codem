@@ -82,8 +82,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "    return {\n      ok: false,\n      message: \"没有找到可用的 Node.js（需要 22 或更高）⇒ 插件还没启动。可以在插件卡片上点「自动安装 Node」，由 Codem 直接装好（约 30MB），不用自己去官网下载。\",\n    };",
-          "to": "    return { ok: true, message: \"插件已启动（未检测到 Node，跳过启动）\" };"
+          "from": "      ok: false,\n      message: \"没有找到可用的 Node.js（需要 22 或更高）⇒ 插件还没启动。可以在插件卡片上点「自动安装 Node」，由 Codem 直接装好（约 30MB），不用自己去官网下载。\",",
+          "to": "      ok: true,\n      message: \"没有找到可用的 Node.js（需要 22 或更高）⇒ 插件还没启动。可以在插件卡片上点「自动安装 Node」，由 Codem 直接装好（约 30MB），不用自己去官网下载。\","
         }
       ],
       "tests": [
@@ -117,8 +117,8 @@
       "patches": [
         {
           "file": "src/core/free-model-plugin/service.ts",
-          "from": "    const registered = upsertManagedProvider({ port, key: runtime.key });",
-          "to": "    const registered = { ok: true, message: \"（变异：跳过供应商登记）\" };"
+          "from": "    const registered = upsertManagedProvider({ port: run.port, key: run.runtime.key });",
+          "to": "    const registered = { ok: true, message: \"（变异：不登记托管供应商）\" };"
         }
       ],
       "tests": [

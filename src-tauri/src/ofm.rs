@@ -100,9 +100,19 @@ fn clear_stale_lock(data_dir: &str) {
         let _ = std::fs::remove_file(&lock);
         return;
     };
+    if !pid_alive(pid as u32) {
+        let _ = std::fs::remove_file(&lock);
+    }
+}
+
+/// 这个 pid 还在不在跑（`tasklist /FI "PID eq N" /NH`；**问不出来时保守当作还活着**）。
+///
+/// 抽出来是因为它现在有三处消费者：清陈旧锁、结束卡住的锁持有者、以及"等它真的退出"。
+/// 第 214 波的棘轮要求：**任何 spawn 控制台程序都必须带 CREATE_NO_WINDOW**（否则每次启动闪黑框）。
+fn pid_alive(pid: u32) -> bool {
     #[cfg(target_os = "windows")]
     {
-        let alive = std::process::Command::new("tasklist")
+        std::process::Command::new("tasklist")
             .arg("/FI")
             .arg(format!("PID eq {pid}"))
             .arg("/NH")
@@ -114,16 +124,133 @@ fn clear_stale_lock(data_dir: &str) {
                 /* /NH 关掉表头：还活着时输出里有那一行 pid；不在时输出是「信息: 没有运行的任务匹配指定标准。」 */
                 String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
             })
-            .unwrap_or(true); /* 问不出来 ⇒ **保守**当作还活着（宁可不删） */
-        if !alive {
-            let _ = std::fs::remove_file(&lock);
+            .unwrap_or(true) /* 问不出来 ⇒ **保守**当作还活着（宁可不删） */
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
+/// 读 `<dataDir>/service.lock` 里的持有者 pid（没有/坏了/没写 pid ⇒ None）
+fn lock_holder_pid(data_dir: &str) -> Option<u32> {
+    let text = std::fs::read_to_string(std::path::Path::new(data_dir).join("service.lock")).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
+    parsed.get("pid").and_then(|v| v.as_u64()).and_then(|v| u32::try_from(v).ok())
+}
+
+/// 一个进程的**命令行**（读不出来 ⇒ `None` = 不知道，调用方必须保守处理）。
+///
+/// 为什么要问命令行：锁里的 pid **可能已经被系统复用**给了别的进程 ——
+/// 陈旧的锁只值得"删锁"，绝不值得"杀掉那个 pid"。只有能证明"它确实是本插件的进程"
+/// 才允许结束它（`is_our_plugin_command`）。
+fn process_command_line(pid: u32) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        /* 用 CIM 取**结构化字段**（不解析本地化的 tasklist 输出） */
+        let script = format!("(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine");
+        let out = std::process::Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW */
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = pid;
+        None
     }
 }
+
+/// 命令行是不是**本插件**的进程？（只有能证明才允许杀）
+///
+/// 判据是命令行里出现了**这个数据目录**（唯一标识这一次安装；插件是被这样启动的：
+/// `node.exe <...>/cli.mjs --port N --data-dir <dataDir>`）。
+/// 归一化：`/` 与 `\` 统一、忽略大小写 —— 真机上插件的命令行里两种分隔符混着出现。
+fn is_our_plugin_command(command_line: &str, data_dir: &str) -> bool {
+    let norm = |s: &str| s.replace('/', "\\").to_lowercase();
+    let dir = norm(data_dir);
+    if dir.is_empty() {
+        return false;
+    }
+    norm(command_line).contains(&dir)
+}
+
+/// 结束**卡住的**锁持有者（第 227 波，用户实报）。
+///
+/// ## 为什么需要它
+///
+/// 真机形态：上一次运行留下的插件进程**还活着**（甚至还在服务），于是：
+/// - `ofm_start` 起的新实例因为"数据目录已被服务占用"**立刻退出**；
+/// - `clear_stale_lock` 看到锁里的 pid 还活着 ⇒ **不删锁**（设计如此，怕踩到别人的进程）；
+/// - 结果：服务没就绪（30 秒超时）⇒ 用户看到「插件进程起来了，但 18937 上的服务在 30 秒内没有就绪」，
+///   而唯一的出路（手工结束那个 node 进程、删 `service.lock`）写在**上游 README** 里 —— 普通用户做不到。
+///
+/// ## 安全边界（三条，缺一不可）
+///
+/// 1. **只有能证明是本插件的进程才杀**：命令行里必须出现这个数据目录；读不出命令行 ⇒ **不动手**；
+/// 2. **绝不杀调用方自己刚起的那个**（`exclude_pid`）；
+/// 3. 命令行不像本插件（pid 被复用）⇒ 只**删锁**（锁确实是陈旧的观测），不碰那个进程。
+///
+/// 返回被结束的 pid；`None` = 什么都没做（调用方按"没救回来"处理，别假装成功）。
+#[tauri::command]
+pub async fn ofm_kill_lock_holder(data_dir: String, exclude_pid: Option<u32>) -> Result<Option<u32>, String> {
+    let Some(pid) = lock_holder_pid(&data_dir) else { return Ok(None) };
+    if exclude_pid == Some(pid) {
+        return Ok(None);
+    }
+    let lock = std::path::Path::new(&data_dir).join("service.lock");
+    let Some(command_line) = process_command_line(pid) else {
+        /* 读不出来 ⇒ 保守：不动手、也不删锁（交由用户/下一次判） */
+        return Ok(None);
+    };
+    if !is_our_plugin_command(&command_line, &data_dir) {
+        /* pid 被复用成别人的进程 ⇒ 锁是陈旧观测：删锁，但**不杀** */
+        let _ = std::fs::remove_file(&lock);
+        return Ok(None);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        /* node 会派生子进程 ⇒ 收整棵树（与 ofm_stop 同一条纪律） */
+        let _ = tokio::process::Command::new("taskkill")
+            .arg("/PID")
+            .arg(pid.to_string())
+            .arg("/T")
+            .arg("/F")
+            .creation_flags(0x0800_0000) /* CREATE_NO_WINDOW */
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .await;
+        /* 等它真的退出（最多 3 秒）：不等的话下一个实例仍可能撞上"数据目录已被服务占用" */
+        for _ in 0..30 {
+            if !pid_alive(pid) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let _ = std::fs::remove_file(&lock);
+        Ok(Some(pid))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = pid;
+        Ok(None)
+    }
+}
+
 
 /// 内置插件代码所在目录（打包后是 resource 目录里的 `resources/ofm`；开发时是仓库里的同一条路径）
 ///

@@ -42,7 +42,7 @@ export function FreeModelPluginCard() {
   const [status, setStatus] = useState<PluginStatus | null>(null);
   /* 第 215 波：可用性检测的进度/结论文案（null=没在检测也没结论） */
   const [probe, setProbe] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"none" | "enable" | "pause" | "remove">("none");
+  const [busy, setBusy] = useState<"none" | "enable" | "pause" | "remove" | "recover">("none");
   const [notice, setNotice] = useState("");
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [logTail, setLogTail] = useState("");
@@ -74,6 +74,26 @@ export function FreeModelPluginCard() {
     } finally {
       setInstallingNode(false);
       setNodePhase("");
+      await refresh();
+    }
+  }, [refresh]);
+
+  /**
+   * 第 227 波（用户实报「插件进程起来了但服务 30 秒没就绪」）：**结束卡住的残留进程并重试**。
+   *
+   * 为什么必须做成可点的按钮：那种状态下插件**永久起不来**（上一次运行留下的进程占着数据目录，
+   * 新实例一起就退），而唯一的出路写在上游 README 里（手工结束 node 进程 + 删 `service.lock`）——
+   * 普通用户做不到。`recoverAndRestart()` 在 Rust 侧只在**能证明那个 pid 是本插件进程**时才结束它。
+   */
+  const recover = useCallback(async () => {
+    setBusy("recover");
+    setNotice("");
+    try {
+      const result = await freeModelPlugin.recoverAndRestart();
+      setNotice(result.message);
+      if (result.ok) await freeModelPlugin.models.refresh();
+    } finally {
+      setBusy("none");
       await refresh();
     }
   }, [refresh]);
@@ -143,7 +163,9 @@ export function FreeModelPluginCard() {
       : !status.nodeExe
         ? "已启用，但没找到 Node.js（需要 22+）"
         : status.health
-          ? `运行中 · 端口 ${status.port} · ${status.modelCount ?? 0} 个模型`
+          ? `运行中 · 端口 ${status.port} · ${status.modelCount ?? 0} 个模型${
+              status.adopted ? "（上一次启动的实例）" : ""
+            }`
           : status.running
             ? "进程在跑，但服务没就绪"
             : "已启用，尚未启动";
@@ -181,6 +203,22 @@ export function FreeModelPluginCard() {
         <button className="ofm-btn" disabled={busy !== "none"} onClick={() => void refresh()}>
           刷新状态
         </button>
+        {/*
+          第 227 波（用户实报的那条提示的可执行出口）：**没就绪**（或压根没起来）时给出这一颗按钮。
+          它做的事：结束"能证明是本插件"的残留进程（上一次运行留下的那个，占着数据目录 ⇒
+          新实例一起就退）→ 重新启动 → 刷新状态。没有残留可结束时它也不会乱杀别人的进程，
+          只会在结果里如实说明。
+        */}
+        {status.enabled && status.codePresent && !!status.nodeExe && !status.health && (
+          <button
+            className="ofm-btn primary"
+            disabled={busy !== "none"}
+            onClick={() => void recover()}
+            title="结束上一次留下的插件进程（Codem 只结束它自己那个插件进程），然后重新启动它"
+          >
+            {busy === "recover" ? "正在结束残留进程并重启…" : "结束残留进程并重试"}
+          </button>
+        )}
         {/*
           第 215 波（用户实报：「如果失败，为什么刷新还能从列表里刷出来？刷新不应该测一下能否通」）：
           **刷新 ≠ 检测**。刷新只把上游目录拉回来（`catalog.json` 里没有可用性字段），

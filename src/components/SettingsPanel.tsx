@@ -889,8 +889,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       return;
     }
     if (isManagedFreeModel && !authKey) {
-      /* 读不到密钥 = 插件没跑起来。**不许**说"请先配置 API Key" —— 那个 Key 用户根本配不出来 */
-      setRefreshStatus((prev) => ({ ...prev, [providerId]: "插件未运行：先到「插件管理 → 插件市场」里把它开启" }));
+      /* 读不到密钥 = 插件没跑起来。**不许**说"请先配置 API Key" —— 那个 Key 用户根本配不出来。
+         第 227 波（用户实报）：原来这里指向「插件管理 → 插件市场」，而那张卡片在
+         「插件管理 → Our Free Model」；「插件市场」是另一个页签（那里是 dsh 插件目录）。
+         指错地方比不说更糟：用户会去一个永远找不到这张卡片的地方找。 */
+      setRefreshStatus((prev) => ({
+        ...prev,
+        [providerId]: "插件未运行：到「插件管理 → Our Free Model」卡片上点「刷新状态」；若它写着「进程在跑，但服务没就绪」，点同一张卡片上的「结束残留进程并重试」",
+      }));
       return;
     }
 

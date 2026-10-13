@@ -30,8 +30,17 @@ describe("OFM-REFRESH-HINT：刷新按钮与上游失败的文案", () => {
     expect(panel, "托管那次刷新必须**无条件**带 Authorization").not.toMatch(
       /authKey && provider\.apiKey \? \{ Authorization/,
     );
+    /*
+     * 第 227 波（用户实报）：这里原来断言的是「插件未运行…插件市场」—— 而那张卡片**不在**
+     * 插件市场页签里（它在「插件管理 → Our Free Model」）。判据跟着改成"必须指向真实位置"，
+     * 并**反向**钉住"不许再提插件市场"（指错地方比不说更糟：用户会去一个找不到卡片的地方找）。
+     */
     expect(panel, "读不到密钥时说「插件未运行」，不许让用户去配一个配不出来的 Key").toMatch(
-      /插件未运行[\s\S]{0,80}插件市场/,
+      /插件未运行[\s\S]{0,120}Our Free Model/,
+    );
+    expect(panel, "并且要给出那颗真的能解决问题的按钮名").toContain("结束残留进程并重试");
+    expect(panel, "**不许**再把用户指去「插件市场」（那张卡片不在那儿）").not.toMatch(
+      /插件未运行[\s\S]{0,120}插件市场/,
     );
   });
 
