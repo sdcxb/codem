@@ -1,15 +1,15 @@
 {
-  "version": "1.16.314",
-  "notes": "Codem v1.16.314 — 免费模型：刷新后自动在后台检测可用性，且刷新提示如实报出「已隐藏 N 个当前不可用的（可见 M 个）」；关于页去掉旧名。",
-  "pub_date": "2026-10-13T02:25:48Z",
+  "version": "1.16.315",
+  "notes": "Codem v1.16.315 — 免费模型：刷新后自动在后台检测可用性（不能用的不再出现在列表里），刷新提示如实报出「已隐藏 N 个（可见 M 个）」；「关于」里的旧名称已修正。",
+  "pub_date": "2026-10-13T02:42:30Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JzU1ZWR2ZqZDBQK3BXZU9QY0V1dUZnTFloL0VHNml3YSttOWFRcVgzV0hBYThKYVMvK28wM2pKazBBc0g3MjFsU2J3WEI4WHd3VG4vbFNSeHRJL3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODU4MzQ4CWZpbGU6Q29kZW1fMS4xNi4zMTRfeDY0LXNldHVwLmV4ZQp0c2J6amZSY3ljVFUwUEI2azlSbm1UbVdna0JjMDU2TWlhbXQ2OUhaSDFzN0NZbHlTMTlWanV0U0tPQ1h5aWpNdTVYa3UrQloxcFRadnVoMkJYSVBEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.314/Codem_1.16.314_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZodThnM2N6bnpBVlAxS2RWRVF5dldzVGd2dlc0L0tkUmF0RWhrcmQ4R3M0Smh0dEJaYWhlaGd3Vm5ZT1pnUXNORXFHZzR1MTVnK3M5VDduVUk5MGdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODU5MzUwCWZpbGU6Q29kZW1fMS4xNi4zMTVfeDY0LXNldHVwLmV4ZQp4WmJhQ0x1YlkxeUxZTWo0R3dpTUxoN1JjS25YWSt1NmRZU3R4bEpRa2J5RG1ON0wzeFZWR3ZGUnR4dHI1QVREQ1BLamZzVkRtbytPLzVwa0xtbXdEdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.315/Codem_1.16.315_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2JzU1ZWR2ZqZDBQK3BXZU9QY0V1dUZnTFloL0VHNml3YSttOWFRcVgzV0hBYThKYVMvK28wM2pKazBBc0g3MjFsU2J3WEI4WHd3VG4vbFNSeHRJL3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODU4MzQ4CWZpbGU6Q29kZW1fMS4xNi4zMTRfeDY0LXNldHVwLmV4ZQp0c2J6amZSY3ljVFUwUEI2azlSbm1UbVdna0JjMDU2TWlhbXQ2OUhaSDFzN0NZbHlTMTlWanV0U0tPQ1h5aWpNdTVYa3UrQloxcFRadnVoMkJYSVBEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.314/Codem_1.16.314_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZodThnM2N6bnpBVlAxS2RWRVF5dldzVGd2dlc0L0tkUmF0RWhrcmQ4R3M0Smh0dEJaYWhlaGd3Vm5ZT1pnUXNORXFHZzR1MTVnK3M5VDduVUk5MGdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODU5MzUwCWZpbGU6Q29kZW1fMS4xNi4zMTVfeDY0LXNldHVwLmV4ZQp4WmJhQ0x1YlkxeUxZTWo0R3dpTUxoN1JjS25YWSt1NmRZU3R4bEpRa2J5RG1ON0wzeFZWR3ZGUnR4dHI1QVREQ1BLamZzVkRtbytPLzVwa0xtbXdEdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.315/Codem_1.16.315_x64-setup.exe"
     }
   }
 }
