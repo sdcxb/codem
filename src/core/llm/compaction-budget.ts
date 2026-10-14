@@ -243,6 +243,77 @@ export const COMPACTION_MARKER_PREFIXES = ["[上下文已自动压缩]", "[上�
  * 一条带图片（`content` 是 ContentBlock[]）或 content 为空但工具结果 40 万字符的消息被算成 0，
  * 于是「本来就超预算」的会话被判成「已进预算」，压缩既不触发也压不动。
  */
+/**
+ * **估算前的工具结果裁剪**（存储行口径）。
+ *
+ * ★ 全量审计（高）：真实请求走 `pruneStaleToolResults`（只认展开后的 `role:"tool"` 行），
+ * 而压缩侧拿到的是**存储行**（工具结果在 `assistant.toolCalls[].result`）——
+ * 直接把前者套在后者上是空操作（实测 `pruneStaleToolResults(rows) === rows`）。
+ * 这里按**单个 toolCall** 等价复现：保留最近 `keepRecent` 个结果的完整正文，
+ * 更早的只算头尾各 `TAIL_KEEP_CHARS` 字符（与 `TOOL_RESULT_PRUNE_THRESHOLD` 同量级）。
+ */
+const ESTIMATE_TOOL_RESULT_KEEP_RECENT = 2;
+const ESTIMATE_TOOL_RESULT_TAIL_CHARS = 2048;
+
+/** 估算时一条消息的「有效字符数」（工具结果按上面的规则裁剪过） */
+export function messageCharSizeForEstimate(
+  m: { content?: unknown; toolCalls?: Array<{ result?: unknown; args?: unknown }> },
+  recentResultIds: Set<string>,
+): number {
+  let chars = 0;
+  const content = m?.content;
+  if (typeof content === "string") chars += content.length;
+  else if (content !== undefined && content !== null) {
+    try {
+      chars += JSON.stringify(content).length;
+    } catch {
+      /* 不可序列化时按 0 计 */
+    }
+  }
+  if (Array.isArray(m?.toolCalls)) {
+    for (const tc of m.toolCalls) {
+      const id = typeof (tc as { id?: unknown })?.id === "string" ? (tc as { id: string }).id : "";
+      if (typeof tc?.result === "string") {
+        const full = tc.result.length;
+        if (recentResultIds.has(id) || full <= ESTIMATE_TOOL_RESULT_TAIL_CHARS * 2) chars += full;
+        else chars += ESTIMATE_TOOL_RESULT_TAIL_CHARS * 2;
+      }
+      if (tc?.args !== undefined) {
+        try {
+          chars += JSON.stringify(tc.args).length;
+        } catch {
+          /* 同上 */
+        }
+      }
+    }
+  }
+  return chars;
+}
+
+/**
+ * 从一批消息里挑出**最近 N 个工具结果**的 id（按消息顺序从后往前扫）。
+ * 与 `pruneStaleToolResults` 的「最近 2 条 tool 行」同语义，只是在存储行上按 toolCall 计。
+ */
+export function recentToolResultIds(
+  messages: Array<{ toolCalls?: Array<{ id?: unknown }> }>,
+  keepRecent: number = ESTIMATE_TOOL_RESULT_KEEP_RECENT,
+): Set<string> {
+  const ids = new Set<string>();
+  let found = 0;
+  for (let i = messages.length - 1; i >= 0 && found < keepRecent; i--) {
+    const calls = messages[i]?.toolCalls;
+    if (!Array.isArray(calls)) continue;
+    for (let j = calls.length - 1; j >= 0 && found < keepRecent; j--) {
+      const id = calls[j]?.id;
+      if (typeof id === "string") {
+        ids.add(id);
+        found += 1;
+      }
+    }
+  }
+  return ids;
+}
+
 export function messageCharSize(m: { content?: unknown; toolCalls?: Array<{ result?: unknown; args?: unknown }> }): number {
   let chars = 0;
   const content = m?.content;
@@ -605,9 +676,29 @@ export function summarizeModelContext(
   const estimate = estimateTokensFn ?? estimateTokens;
   const budgetTokens = Math.max(16_000, Math.round(contextWindow * 0.9));
   const selected = selectMessagesByPriority(messages, budgetTokens, estimate);
+  /**
+   * ★ 全量审计（中·**这一版才是真的**）：用量也要计工具结果 ——
+   * 上一版只把工具结果加进了 `selectMessagesByPriority` 的优先级计算，而这里重算了一遍 usedTokens
+   * （只读 content）⇒ 工具结果占主导的会话里，面板「占用」显示个位数百分比、压力显示「正常」，
+   * 而同一次调用里的选择早已按工具结果把消息丢掉（自相矛盾）。
+   */
   const usedTokens = selected.reduce((sum, m) => {
     const content = typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "");
-    return sum + Math.max(1, Math.ceil(estimate(content)));
+    let total = estimate(content);
+    const calls = (m as { toolCalls?: Array<{ result?: unknown; args?: unknown }> })?.toolCalls;
+    if (Array.isArray(calls)) {
+      for (const tc of calls) {
+        if (typeof tc?.result === "string") total += estimate(tc.result);
+        if (tc?.args !== undefined) {
+          try {
+            total += estimate(JSON.stringify(tc.args));
+          } catch {
+            /* 参数不可序列化时忽略 */
+          }
+        }
+      }
+    }
+    return sum + Math.max(1, Math.ceil(total));
   }, 0);
   return { selected, usedTokens, budgetTokens };
 }

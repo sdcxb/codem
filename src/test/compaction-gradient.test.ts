@@ -41,6 +41,8 @@ vi.mock("../core/storage/message", () => ({
   listMessages: (...a: unknown[]) => listMessagesMock(...a),
   listVisibleMessages: (...a: unknown[]) => listMessagesMock(...a),
   deleteMessagesByIds: (...a: unknown[]) => deleteMessagesByIdsMock(...a),
+  /** ★ 全量审计：手动压缩回执会读它（mock 必须覆盖被消费的公开面） */
+  getLastDeleteReport: vi.fn(() => ({ requested: 0, unresolved: 0, sessions: [], softDeleteResponded: true })),
   createMessage: (...a: unknown[]) => createMessageMock(...a),
   getLastPersistError: () => null,
   flushPendingPersist: async () => true,
@@ -232,7 +234,7 @@ describe("CG：按距离分档的压缩（第 228 波）", () => {
     expect(loopSrc, "待压集要切成中间档 + 更早两段").toMatch(/middleBand = messagesToRemove\.slice\(middleStart\)/);
     expect(loopSrc, "摘要要逐块滚动（全覆盖，不再掐中段）").toMatch(/for \(const chunk of packed\.chunks\)/);
     expect(loopSrc, "中间档走确定性渲染器（与手动压缩同一份实现）").toMatch(
-      /renderStructuredHistorySummary\(middleForDigest as never\[\]/,
+      /renderStructuredHistorySummary\(\s*middleForDigest as never\[\]/,
     );
     expect(loopSrc, "中间档要点必须过滤压缩标记（否则同一份旧摘要进上下文两遍）").toContain(
       "middleBand.filter((m: any) => !isCompactionMarker(m))",

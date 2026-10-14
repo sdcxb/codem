@@ -31,6 +31,8 @@ vi.mock("../core/storage/message", () => ({
   listMessages: (...args: unknown[]) => listVisibleMessagesMock(...args),
   listVisibleMessages: (...args: unknown[]) => listVisibleMessagesMock(...args),
   deleteMessagesByIds: (...args: unknown[]) => deleteMessagesByIdsMock(...args),
+  /** ★ 全量审计：手动压缩回执会读它（mock 必须覆盖被消费的公开面） */
+  getLastDeleteReport: vi.fn(() => ({ requested: 0, unresolved: 0, sessions: [], softDeleteResponded: true })),
   createMessage: (...args: unknown[]) => createMessageMock(...args),
 }));
 
@@ -133,6 +135,26 @@ describe("CB：手动压缩的**可见反馈**与防重复点（第 227 波）",
       vi.advanceTimersByTime(100);
     });
     expect(deleteMessagesByIdsMock, "冷却期内的点击必须被挡住").toHaveBeenCalledTimes(1);
+  });
+
+  it("CB-9（全量审计）：回执要用真实删除结果 —— 索引没回应或有条目查不到归属时必须说明", async () => {
+    /*
+     * 被守的缺陷：`deleteMessagesByIds` 恒返回「计划删多少」，而索引侧可能没回应（端口缺能力）
+     * 或有若干 id 查不到归属 ⇒ 回执那句「移除 N 条」会高于真实值，且没有任何提示。
+     */
+    const messageModule = await import("../core/storage/message");
+    (messageModule.getLastDeleteReport as unknown as { mockReturnValue: (v: unknown) => void }).mockReturnValue({
+      requested: 30,
+      unresolved: 3,
+      sessions: ["s1"],
+      softDeleteResponded: true,
+    });
+    render(createElement(ContextMonitor, { sessionId: "s1", visible: true }));
+    await letFramePass();
+    fireEvent.click(compactButton());
+    await letFramePass();
+    const text = receipt()?.textContent ?? "";
+    expect(text, "要写明有几条查不到归属（实际没被隐藏）").toContain("3 条查不到归属");
   });
 
   it("CB-5：没有可移除的消息时也要说清**为什么**（不许只是默默无事发生）", async () => {

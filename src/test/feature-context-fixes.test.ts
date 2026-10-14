@@ -1215,8 +1215,15 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
 
   it("FC-D5j（源码级棘轮）：段头条数要与实际渲染进标记的内容一致", () => {
     const loop = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
-    expect(loop, "中间档计数要用**过滤掉标记之后**的那批（否则与同节「共 N 条」自相矛盾）").toContain(
-      "middleCount: middleForDigest.length",
+    /*
+     * ★ 全量审计（低）：中间档现在也走渲染器的 renderedCount（实际渲染条数），
+     * 回退值仍是那批过滤掉标记之后的消息数 ⇒ 这里改成同时钉这两点。
+     */
+    expect(loop, "中间档计数要用渲染器回填的实际渲染条数（回退到计划条数）").toContain(
+      "middleCount: middleOut.renderedCount ?? middleForDigest.length",
+    );
+    expect(loop, "中间档那批必须是**过滤掉标记之后**的（否则与同节「共 N 条」自相矛盾）").toContain(
+      "middleCount: middleOut.renderedCount ?? middleForDigest.length",
     );
     expect(loop, "摘要档计数要用 LLM 真正看到的条数（packed.consumed），不是整段 oldBand").toContain(
       "summarizedCount: packed.consumed",

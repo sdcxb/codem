@@ -784,7 +784,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
         自动提取流程**不会**在后台自动删除或改写任何条目（整合只在你显式点「整合」或跑 /memory consolidate 时发生）。
       </div>
 
-      {migrationReport && (
+      {migrationReport && !(migrationReport.alreadyMigrated && !migrationReport.aborted) && (
         <div className="mc-migration-note">
           {/*
             ★ 全量审计（中）：**只判 ran 会撒谎** ——
@@ -799,7 +799,9 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
                 `旧「会话级」${migrationReport.sessionToConversation ?? 0} 条改为对话级（无归属）` +
                 (migrationReport.droppedEntries ? `，读入时跳过 ${migrationReport.droppedEntries} 条非法条目` : "") +
                 "。可在「记忆体检」逐条归位或删除。"
-            : `记忆迁移已推迟，尚未执行：${migrationReport.deferredReason ?? "未知原因"}。`}
+            : migrationReport.alreadyMigrated
+              ? null
+              : `记忆迁移已推迟，尚未执行：${migrationReport.deferredReason ?? "未知原因"}。`}
         </div>
       )}
       {notice && <div className="mc-notice">{notice}</div>}

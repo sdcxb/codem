@@ -43,6 +43,8 @@ import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS, messageCharSize,
+  messageCharSizeForEstimate,
+  recentToolResultIds,
 } from "./compaction-budget";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
@@ -4298,8 +4300,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             skipReason: compacted < 0 ? skipReasonFor(compacted) : undefined,
           };
           if (compacted === -4) {
-            /* ★ 全量审计：消息太少的稳态也要计数（否则熔断不可达） */
-            this.state.consecutiveCompactions++;
+            /*
+             * ★ 全量审计（中低）：这条分支**不再自己自增** ——
+             * 本路径末尾本来就会 `consecutiveCompactions++`（压缩确实跑过），
+             * 我上一版在这里再加一次 ⇒ 一次 -4 记 2 ⇒ 熔断「连压 3 次」实际按 2 次触发。
+             */
           } else if (compacted < 0) {
             /* 被跳过（同一会话已有压缩在跑）⇒ 什么都不算，等下一轮重试 */
             return;
@@ -5837,29 +5842,21 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * ⇒ 「装得下也收缩」（白删最近几轮）+ `plan.overBudget` 把 consecutiveCompactions 直接顶到 3
      * ⇒ 下一轮给出假结论「上下文窗口已满，即使压缩后仍无法继续。请开启新对话。」
      */
-    const messagesForEstimate = pruneStaleToolResults(messages as never[]) as unknown as typeof messages;
+    /**
+     * ★ 全量审计（高·**这一版才是真的**）：上一版把 `pruneStaleToolResults(messages)` 直接套在
+     * **存储行**上 —— 那是**空操作**：它只认展开后的 role=tool 行，而存储行把工具结果放在
+     * `assistant.toolCalls[].result`（实测 `pruneStaleToolResults(rows) === rows`）。
+     * 现在用存储行口径的等价裁剪：保留最近 2 个结果完整，更早的只算头尾。
+     */
+    const recentResultIds = recentToolResultIds(messages as never[]);
     const estimateKeepTokens = (count: number): number =>
-      messagesForEstimate.slice(-count).reduce((sum: number, m: any) => {
+      messages.slice(-count).reduce((sum: number, m: any) => {
         /**
-         * ★ 全量审计：多模态（content 是 ContentBlock[]）也要算 —— 原来 String(m.content ?? "")
-         * 会退化成 "[object Object]"，一张大图只算十几个字符。
-         * ⚠️ 估的是内容本身的 token，不是「字符数那个数字」的 token。
+         * ★ 全量审计：多模态（content 是 ContentBlock[]）与工具结果都要算，
+         * 且**按将要发出的形态**算（陈旧工具结果只算头尾，与真实请求的裁剪同量级）。
          */
-        const contentForTokens = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
-        let tokens = estimateTokens(contentForTokens);
-        if (Array.isArray(m.toolCalls)) {
-          for (const tc of m.toolCalls) {
-            if (typeof tc?.result === "string") tokens += estimateTokens(tc.result);
-            if (tc?.args !== undefined) {
-              try {
-                tokens += estimateTokens(JSON.stringify(tc.args));
-              } catch {
-                /* 参数不可序列化时忽略（只影响估算，不影响正确性） */
-              }
-            }
-          }
-        }
-        return sum + tokens;
+        const chars = messageCharSizeForEstimate(m, recentResultIds);
+        return sum + estimateTokens("x".repeat(chars));
       }, 0);
     const plan = planCompactionKeep({
       totalMessages: messages.length,
@@ -6067,8 +6064,10 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * 工具结果与参数也一起算（它们同样是"被移除的上下文"）。
      */
     /* ★ 全量审计：同样按"将要发出的形态"量（与 estimateKeepTokens 同一把裁剪） */
-    const removedChars = (pruneStaleToolResults(messagesToRemove as never[]) as unknown as typeof messagesToRemove).reduce(
-      (sum: number, m: any) => sum + messageCharSize(m),
+    /* ★ 全量审计（高）：同一把裁剪口径（存储行里的陈旧工具结果只算头尾） */
+    const removedRecentIds = recentToolResultIds(messagesToRemove as never[]);
+    const removedChars = (messagesToRemove as any[]).reduce(
+      (sum: number, m: any) => sum + messageCharSizeForEstimate(m, removedRecentIds),
       0,
     );
     /**
@@ -6174,8 +6173,14 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * ⇒ 同一份旧摘要进上下文两遍（手动路径早就过滤了，自动路径漏了）。
      */
     const middleForDigest = middleBand.filter((m: any) => !isCompactionMarker(m));
+    /* ★ 全量审计（低）：中间档段头也要用**实际渲染条数**（原来只有溢出档改了） */
+    const middleOut: { renderedCount?: number } = {};
     const middleDigest = middleForDigest.length > 0
-      ? renderStructuredHistorySummary(middleForDigest as never[], { userChars: 1200, assistantChars: 900, toolChars: 300, totalChars: 12000 })
+      ? renderStructuredHistorySummary(
+          middleForDigest as never[],
+          { userChars: 1200, assistantChars: 900, toolChars: 300, totalChars: 12000 },
+          middleOut,
+        )
       : "";
     /**
      * ★ 全量审计（中）：**下标空间必须一致** —— packed.consumed 是「过滤掉压缩标记之后」
@@ -6242,7 +6247,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
          middleCount 原来是未过滤的 middleBand（含被过滤掉的旧标记 ⇒ 与同节"共 N 条"自相矛盾）。 */
       summarizedCount: packed.consumed,
       summaryInterrupted,
-      middleCount: middleForDigest.length,
+      middleCount: middleOut.renderedCount ?? middleForDigest.length,
       /* 段头写真话：这是**实际渲染出要点**的条数（不是裁剪前的数） */
       overflowCount: overflowOut.renderedCount ?? overflowSelected.length,
       /* ★ 第 228 波审计：**压缩不许让上下文变大** —— 标记 ≤ max(800, 待压内容字符数) */

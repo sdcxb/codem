@@ -752,6 +752,11 @@ export interface MemoryMigrationReport {
   deferredReason?: string;
   /** 读入时被丢弃的非法条目数（M-4 条目级校验：缺 id/key/content 或类型不对） */
   droppedEntries?: number;
+  /**
+   * ★ 全量审计（中）：**本机已经迁移过**（标记已写、本次无需迁移）。
+   * 界面必须把它与「推迟」区分开 —— 否则第二次启动会把正常状态说成「尚未执行：未知原因」。
+   */
+  alreadyMigrated?: boolean;
   /** 本次迁移打上 `legacyPool` 标记的条数（M-2：旧 `project` 池） */
   projectToLegacyPool?: number;
   /**
@@ -2065,6 +2070,16 @@ export class MemoryService {
            */
           this.lastPersistedPayload = null;
           this.lastPersistError = "存储端口已切换，本次写入被放弃（改动仍在内存里，请重试）";
+          /**
+           * ★ 全量审计（高·补完）：迁移提交走到这里意味着**迁移后的形态只在内存里**
+           * （快照与迁移标记都没写）⇒ 不许让它自称「已迁移」：
+           * 置 aborted 让界面如实说「没有生效」，并复位 migratedThisProcess 让本进程内能重跑。
+           */
+          if (this.migrationReport) {
+            this.migrationReport.aborted = "存储端口在迁移提交前被替换";
+            this.migrationReport.abortedEntries = this.migrationReport.abortedEntries ?? 0;
+          }
+          this.migratedThisProcess = false;
           reportPersistFailure(
             "memory.portChanged",
             new Error("存储端口在确认链执行前被替换"),
@@ -3647,6 +3662,11 @@ export class MemoryService {
     if (!opts?.force && (this.migratedThisProcess || getSetting(MEMORY_MIGRATED_KEY) === "1")) {
       const done: MemoryMigrationReport = {
         ran: false,
+        /**
+         * ★ 全量审计（中·新回归修复）：**「已经迁移过」不是「推迟」** ——
+         * 界面原来只按 ran 判，于是第二次启动打开体检会看到「记忆迁移已推迟，尚未执行：未知原因」。
+         */
+        alreadyMigrated: true,
         droppedEntries: this.loadState.dropped,
         snapshotWritten: false,
         ...zero,
@@ -3893,6 +3913,16 @@ export class MemoryService {
            */
           this.lastPersistedPayload = null;
           this.lastPersistError = "存储端口已切换，本次写入被放弃（改动仍在内存里，请重试）";
+          /**
+           * ★ 全量审计（高·补完）：迁移提交走到这里意味着**迁移后的形态只在内存里**
+           * （快照与迁移标记都没写）⇒ 不许让它自称「已迁移」：
+           * 置 aborted 让界面如实说「没有生效」，并复位 migratedThisProcess 让本进程内能重跑。
+           */
+          if (this.migrationReport) {
+            this.migrationReport.aborted = "存储端口在迁移提交前被替换";
+            this.migrationReport.abortedEntries = this.migrationReport.abortedEntries ?? 0;
+          }
+          this.migratedThisProcess = false;
           reportPersistFailure(
             "memory.portChanged",
             new Error("存储端口在确认链执行前被替换"),

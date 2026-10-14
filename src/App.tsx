@@ -4279,6 +4279,8 @@ flushReasoningBuffer(session.id);
 
           case "compaction_start": {
             /* ★ 全量审计（高）：必须带会话归属 —— 三处横幅都按它筛，漏了就一条都不渲染（我的回归） */
+            /* ★ 全量审计（中）：开始也要自增代次，否则 3 秒前的旧定时器会把新开始的 active 清成 null */
+            compactionStatusGeneration.current += 1;
             setCompactionStatus({ active: true, sessionId: session.id });
             // P1-8: 宠物切到 waiting 状态 + 压缩提示气泡
             getPet().setPetState("waiting");

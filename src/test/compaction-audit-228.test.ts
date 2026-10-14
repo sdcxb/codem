@@ -17,6 +17,8 @@ import {
   composeCompactionMarkerText,
   packPartsForSummary,
   planCompactionKeep,
+  messageCharSizeForEstimate,
+  recentToolResultIds,
 } from "../core/llm/compaction-budget";
 
 const listMessagesMock = vi.fn();
@@ -31,6 +33,8 @@ vi.mock("../core/storage/message", async (importOriginal) => {
     listMessages: (...a: unknown[]) => listMessagesMock(...a),
     listVisibleMessages: (...a: unknown[]) => listMessagesMock(...a),
     deleteMessagesByIds: (...a: unknown[]) => deleteMessagesByIdsMock(...a),
+    /** ★ 全量审计：手动压缩回执会读它（mock 必须覆盖被消费的公开面） */
+    getLastDeleteReport: vi.fn(() => ({ requested: 0, unresolved: 0, sessions: [], softDeleteResponded: true })),
     createMessage: (...a: unknown[]) => createMessageMock(...a),
     getLastPersistError: () => null,
     flushPendingPersist: async () => true,
@@ -509,13 +513,29 @@ describe("CA：压缩审计修复（第 228 波）", () => {
      * （>8192 只留头尾、只保留最近 2 条完整）⇒ 单条陈旧大结果可差 ~40× ⇒ 误判 overBudget ⇒
      * 把 consecutiveCompactions 顶到 3 并给出假结论「上下文窗口已满」。
      */
-    const messages: any[] = makeMessages(30);
-    /* 最老的那条带一个 40 万字符的工具结果（早已不在「最近 2 条」里 ⇒ 会被裁剪成头尾） */
-    messages[0].toolCalls = [{ id: "huge-old", tool: "read", args: {}, result: "巨".repeat(400_000) }];
-    listMessagesMock.mockReturnValue(messages);
-    const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
-    const removed = await loop.compactMessages("s-ca31");
-    expect(removed, "陈旧大结果被裁剪后不该把这一轮逼进「压缩无效」的硬停").toBeGreaterThan(0);
+    /**
+     * ⚠️ 夹具必须能**真的进到估算路径**：上一版把大结果挂在 messages[0]，而估算只量 slice(-count)
+     * ⇒ 永远取样不到，而断言 toBeGreaterThan(0) 又恒真 ⇒ 那是**假绿**（审计实测：撤掉裁剪它照样绿）。
+     * 现在用纯函数直钉口径（recentToolResultIds + messageCharSizeForEstimate）。
+     */
+    const oldHuge = { id: "huge-old", result: "巨".repeat(400_000) };
+    const recentHuge = { id: "huge-recent", result: "近".repeat(400_000) };
+    const rows: any[] = [
+      { id: "a0", role: "assistant", content: "", toolCalls: [oldHuge] },
+      { id: "a1", role: "assistant", content: "", toolCalls: [{ id: "small", result: "小" }] },
+      { id: "a2", role: "assistant", content: "", toolCalls: [recentHuge] },
+    ];
+    const recentIds = recentToolResultIds(rows);
+    expect(recentIds.has("huge-recent"), "最近的结果必须在保留集里").toBe(true);
+    expect(recentIds.has("huge-old"), "更早的结果不该被算作「最近」").toBe(false);
+    expect(
+      messageCharSizeForEstimate(rows[0], recentIds),
+      "陈旧的大工具结果只算头尾（否则估算高出约 40 倍 ⇒ 误判 overBudget ⇒ 假结论「窗口已满」）",
+    ).toBeLessThan(10_000);
+    expect(
+      messageCharSizeForEstimate(rows[2], recentIds),
+      "最近的结果必须完整计入（不许把新结果也砍掉）",
+    ).toBeGreaterThan(300_000);
   });
 
   it("CA-15（反向对照）：这些修复不许把「压缩无效」路径删掉（仍要如实上报）", () => {

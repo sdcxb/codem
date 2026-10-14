@@ -2,7 +2,7 @@
 import { StatusBanner } from "./ui/StatusBanner";
 import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
-import { listVisibleMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
+import { listVisibleMessages, deleteMessagesByIds, createMessage, getLastDeleteReport } from "../core/storage/message";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
 import {
@@ -137,7 +137,14 @@ async function fetchDeepSeekBalance(apiKey: string, baseUrl: string): Promise<{ 
  * 但两者的**渲染契约**（段名、显式上限、不丢路径/错误/待办）已经统一，
  * 且这里的摘要会作为级联输入带进下一次自动压缩（`folded.existingSummary`）。
  */
-export function manualCompact(sessionId: string): { removed: number; kept: number; skipped?: string } {
+export function manualCompact(sessionId: string): {
+  removed: number;
+  kept: number;
+  skipped?: string;
+  /** ★ 全量审计：真实删除结果带来的补充说明（索引没回应 / 有条目查不到归属） */
+  receiptNote?: string;
+  softDeleteIncomplete?: boolean;
+} {
   /**
    * P2-D12：可见消息的**唯一读法**是 `listVisibleMessages` ——
    * `listMessages` 会把软删（压缩隐藏）的历史也带回来，用它算"要压缩多少条／
@@ -398,7 +405,23 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
     setCompactionInProgress(sessionId, false);
   }
 
-    return { removed: messagesToRemove.length, kept: keepCount };
+    /**
+     * ★ 全量审计（中）：回执要用**真实删除结果**，不是计划值 ——
+     * `deleteMessagesByIds` 恒返回「计划删多少」，而索引侧可能没回应（端口缺能力）或
+     * 有若干 id 查不到归属（`unresolved`）⇒ 原来那句「移除 N 条」会高于真实值。
+     */
+    const report = getLastDeleteReport();
+    const reallyUnresolved = report.unresolved > 0 || !report.softDeleteResponded;
+    return {
+      removed: messagesToRemove.length,
+      kept: keepCount,
+      receiptNote: !report.softDeleteResponded
+        ? "（注意：索引侧这次没有回应，旧消息可能仍然留在索引里，重启后请确认）"
+        : report.unresolved > 0
+          ? `（其中 ${report.unresolved} 条查不到归属，实际没有隐藏）`
+          : undefined,
+      ...(reallyUnresolved ? { softDeleteIncomplete: true } : {}),
+    };
   } finally {
     /* ★ 第 228 波审计修复：锁必须在所有出口释放（含中途抛错） */
     releaseCompactionLock(sessionId);
@@ -438,7 +461,13 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const compactingRef = useRef(false);
   /** 压缩失败的可见提示（原来只 console.error，界面完全看不出失败）。 */
   const [compactError, setCompactError] = useState<string | null>(null);
-  const [compactResult, setCompactResult] = useState<{ removed: number; kept: number; skipped?: string } | null>(null);
+  const [compactResult, setCompactResult] = useState<{
+    removed: number;
+    kept: number;
+    skipped?: string;
+    receiptNote?: string;
+    softDeleteIncomplete?: boolean;
+  } | null>(null);
   /**
    * ★ 第 227 波（用户实报）：
    *
@@ -848,7 +877,9 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                   ? `没有压缩：${compactResult.skipped}`
                   : compactResult.removed > 0
                   ? `压缩完成：移除 ${compactResult.removed} 条旧消息，保留最近 ${compactResult.kept} 条；` +
-                    `本对话里已插入一条「[上下文已手动压缩]」摘要（老对话细节变成摘要，仍在本对话继续）。`
+                    `本对话里已插入一条「[上下文已手动压缩]」摘要（老对话细节变成摘要，仍在本对话继续）。` +
+                    /* ★ 全量审计（中）：真实删除结果的补充说明（索引没回应 / 有条目查不到归属） */
+                    (compactResult.receiptNote ?? "")
                   : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 ${MANUAL_KEEP_MESSAGES} 条，` +
                     `并且最近 ${COMPACTION_MIN_KEEP_TURNS} 轮绝不切断 ⇒ 可压缩的部分不足）。` +
                     `上下文占用主要来自系统提示与工具定义，压缩对话不会让它降下来。`}

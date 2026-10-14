@@ -596,6 +596,8 @@ vi.mock("../core/storage/message", () => ({
    */
   listVisibleMessages: (...args: any[]) => listMessagesMock(...args),
   deleteMessagesByIds: (...args: any[]) => deleteMessagesByIdsMock(...args),
+  /** ★ 全量审计：手动压缩回执会读它（mock 必须覆盖被消费的公开面） */
+  getLastDeleteReport: vi.fn(() => ({ requested: 0, unresolved: 0, sessions: [], softDeleteResponded: true })),
   createMessage: (...args: any[]) => createMessageMock(...args),
 }));
 

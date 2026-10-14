@@ -52,8 +52,8 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "      summarizedCount: packed.consumed,\n      summaryInterrupted,\n      middleCount: middleForDigest.length,",
-          "to": "      summarizedCount: oldBand.length,\n      middleCount: middleBand.length,"
+          "from": "      summarizedCount: packed.consumed,\n      summaryInterrupted,\n      middleCount: middleOut.renderedCount ?? middleForDigest.length,",
+          "to": "      summarizedCount: oldBand.length,\n      summaryInterrupted,\n      middleCount: middleBand.length,"
         }
       ],
       "tests": [

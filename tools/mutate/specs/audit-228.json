@@ -7,8 +7,8 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "          for (const tc of m.toolCalls) {\n            if (typeof tc?.result === \"string\") tokens += estimateTokens(tc.result);",
-          "to": "          for (const tc of m.toolCalls) {\n            if (false && typeof tc?.result === \"string\") tokens += estimateTokens(tc.result);"
+          "from": "        const chars = messageCharSizeForEstimate(m, recentResultIds);\n        return sum + estimateTokens(\"x\".repeat(chars));",
+          "to": "        const contentOnly = typeof m?.content === \"string\" ? m.content.length : 0;\n        return sum + estimateTokens(\"x\".repeat(contentOnly));"
         }
       ],
       "tests": [
