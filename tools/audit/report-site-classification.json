@@ -2,8 +2,8 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 251,
-    "triaged": 251,
+    "total": 252,
+    "triaged": 252,
     "pending": 0
   },
   "sites": [
@@ -1314,6 +1314,13 @@
       "kind": "persist",
       "status": "triaged",
       "reason": "缺 messages 能力 ⇒ 无法判定消息归属（本次跳过）",
+      "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
+    },
+    {
+      "site": "src/core/storage/message.ts::message.sessionIdsForMessages::#2",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "镜像被逐出后查不到会话归属、且调用方也没给会话 ⇒ 墓碑不写、消息会在读路径复活（第 228 波审计新增的上报点）",
       "family": "消息与索引写入/读取失败（权威日志已写但索引没跟上、索引裁剪跳过、FTS 未更新、计数未重算）—— **写盘失败**；索引可由日志重建，但仍属失败"
     },
     {

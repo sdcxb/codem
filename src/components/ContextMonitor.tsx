@@ -13,7 +13,11 @@ import {
   /* 第 228 波：保留集的"最近 3 轮不切断"与自动压缩共用同一条口径 */
   compactionMinKeep,
   COMPACTION_MIN_KEEP_TURNS,
+  /* 第 228 波审计：识别"上一次的摘要标记"，避免它被渲染第二遍（会让上下文变大） */
+  isCompactionMarker,
 } from "../core/llm/compaction-budget";
+/* 第 228 波审计：手动与自动压缩必须互斥（共用同一把按会话的锁） */
+import { acquireCompactionLock, releaseCompactionLock } from "../core/llm/compaction-control";
 import { getTokenTracker } from "../core/llm/token-tracker";
 import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
@@ -133,7 +137,7 @@ async function fetchDeepSeekBalance(apiKey: string, baseUrl: string): Promise<{ 
  * 但两者的**渲染契约**（段名、显式上限、不丢路径/错误/待办）已经统一，
  * 且这里的摘要会作为级联输入带进下一次自动压缩（`folded.existingSummary`）。
  */
-export function manualCompact(sessionId: string): { removed: number; kept: number } {
+export function manualCompact(sessionId: string): { removed: number; kept: number; skipped?: string } {
   /**
    * P2-D12：可见消息的**唯一读法**是 `listVisibleMessages` ——
    * `listMessages` 会把软删（压缩隐藏）的历史也带回来，用它算"要压缩多少条／
@@ -142,6 +146,19 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
    */
   const messages = listVisibleMessages(sessionId);
   if (messages.length <= 2) return { removed: 0, kept: messages.length };
+
+  /**
+   * ★ 第 228 波审计修复（中）：**手动压缩也要取同一把压缩锁**。
+   *
+   * 被守的缺陷：锁此前只覆盖"自动 → 自动"，手动路径既不取锁也不看标志
+   * ⇒ 自动压缩正在**等摘要**（锁内有一段 LLM await）时用户点一下，两条路径各写一条标记
+   * （两条标记的时间戳算法逐字相同），而折叠只带走"最靠后"的那一条 ⇒ 另一份摘要只能以
+   * 被裁剪后的形态存活。现在拿不到锁就直接返回 `skipped`（有回执，不静默）。
+   */
+  if (!acquireCompactionLock(sessionId)) {
+    return { removed: 0, kept: messages.length, skipped: "另一次压缩正在进行，请稍后再试" };
+  }
+  try {
 
   /**
    * ★ 第 228 波（用户要求，对标「最近 5–6 轮 100% 保留」）：
@@ -160,20 +177,83 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
    * 否则手动压缩会把上一次的摘要块永久留在上下文里。
    */
   const folded = foldStaleCompactionMarkers(messages, keepCountPlanned);
-  const keepCount = folded.keepCount;
-  const messagesToKeep = messages.slice(-keepCount);
-  const messagesToRemove = messages.slice(0, messages.length - keepCount);
+  let keepCount = folded.keepCount;
+  let messagesToKeep = messages.slice(-keepCount);
+  let messagesToRemove = messages.slice(0, messages.length - keepCount);
+
+  /**
+   * ★ 第 228 波审计修复：**"旧标记正好是最后一条"**那种形态下，旧标记会被下限钉在保留集里，
+   * 而它的正文已经作为 `folded.existingSummary` 级联进新摘要 ⇒ 不额外删掉的话，同一份摘要
+   * 会在上下文里出现两遍（新标记内含 + 旧标记原文）。这里按 id 并进待删集
+   * （不能用 `slice(-0)` 表达，那会把整段历史都算进来 —— `foldStaleCompactionMarkers` 里的警告守的就是它）。
+   */
+  if (folded.staleMarkerIds.length > 0) {
+    const staleSet = new Set(folded.staleMarkerIds);
+    const extra = messagesToKeep.filter((m) => staleSet.has(m.id));
+    if (extra.length > 0) {
+      messagesToKeep = messagesToKeep.filter((m) => !staleSet.has(m.id));
+      messagesToRemove = [...messagesToRemove, ...extra].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+      keepCount = messagesToKeep.length;
+    }
+  }
 
   if (messagesToRemove.length === 0) return { removed: 0, kept: messages.length };
 
-  // Build summary —— 见函数头第 47 轮说明：共享的结构化渲染器（不再 100 字符截断拼接）
-  let summary = renderStructuredHistorySummary(messagesToRemove);
+  /**
+   * ★ 第 228 波审计修复：手动压缩同样**不许让上下文变大** ——
+   * 摘要的字符上限按"这次要移除多少字符"给（下界 800、上界沿用 8000）。
+   * 原来的固定 8000 在"移除几百字符"的会话上会让上下文变大（用户看到"点了压缩，占用没降"）。
+   */
+  const removedChars = messagesToRemove.reduce((sum, m) => {
+    let chars = typeof m.content === "string" ? m.content.length : 0;
+    if (Array.isArray(m.toolCalls)) {
+      for (const tc of m.toolCalls) {
+        chars += typeof tc?.result === "string" ? tc.result.length : 0;
+        if (tc?.args !== undefined) {
+          try {
+            chars += JSON.stringify(tc.args).length;
+          } catch {
+            /* 参数不可序列化时忽略（只影响预算，不影响正确性） */
+          }
+        }
+      }
+    }
+    return sum + chars;
+  }, 0);
+  /**
+   * ★ 第 228 波审计修复（中）：**旧标记不再被渲染第二遍**。
+   *
+   * 被守的缺陷：`messagesToRemove` 里可能含上一次的摘要标记（最常见形态就是"刚自动压缩完
+   * 只剩标记 + 20 条"），而 `renderStructuredHistorySummary` 把它当普通 user 请求再渲染一遍
+   * ⇒ 旧摘要同时以"原文"（`existingSummary`）和"本次新增历史"两种形态进了新标记
+   * ⇒ 用户连按两次手动压缩，标记长度近似翻倍（**上下文变大**，与本节承诺相反）。
+   * 标记的正文已经原样保留在下面那段"以下是之前的摘要"里，无需重复收录。
+   */
+  const historyForSummary = messagesToRemove.filter((m) => !isCompactionMarker(m));
+  let summary = renderStructuredHistorySummary(historyForSummary, {
+    userChars: 2000,
+    assistantChars: 1500,
+    toolChars: 400,
+    totalChars: Math.max(800, Math.min(8000, removedChars)),
+  });
   /**
    * 上一次压缩的摘要必须**原样带进新摘要**（级联），否则手动压缩第二次开始就把
    * 前一次的结论丢掉。折叠逻辑已经把它取出来了（`folded.existingSummary`）。
    */
   if (folded.existingSummary) {
     summary = `以下是之前的摘要（继续保留）：\n${folded.existingSummary}\n\n本次新增历史：\n${summary}`;
+  }
+  /**
+   * ★ 第 228 波审计修复：**手动压缩同样不许让上下文变大** —— 整条标记的字符上限按
+   * "这次移除的内容有多少字符"给（下界 800）。超限时只裁"本次新增历史"那段，
+   * 旧摘要（级联）与"已移除/保留"收尾一律保留，并如实写出裁剪量。
+   */
+  const markerBudget = Math.max(800, removedChars);
+  const fixedLen = `[上下文已手动压缩]\n\n以下是之前对话的摘要：\n\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`.length;
+  const historyBudget = Math.max(0, markerBudget - fixedLen - (folded.existingSummary?.length ?? 0));
+  if (summary.length > historyBudget) {
+    const dropped = summary.length - historyBudget;
+    summary = `${summary.slice(0, historyBudget)}\n（本次新增历史已按压缩预算裁剪 ${dropped} 字符）`;
   }
 
   const removedIds = messagesToRemove.map(m => m.id);
@@ -190,12 +270,15 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
   const messagesAfter = keepCount + 1;
 
   // 见函数头第 1 点：手动压缩也必须挂闸门（否则 UI 自动保存会把被软删的消息写回来）
-  setCompactionInProgress(true);
+  setCompactionInProgress(sessionId, true);
   try {
-    // Delete old messages
-    deleteMessagesByIds(removedIds);
-
-    // Insert compaction marker
+    /**
+     * ★ 第 228 波审计修复（中/高）：**先写标记，再删旧消息**（原来反着写）。
+     *
+     * 两步都不会抛（日志追加是 best-effort、索引失败被吞成上报）⇒ 旧顺序下"旧消息已永久隐藏、
+     * 摘要却没落盘"是可达的，而且没有补偿路径。反过来写，最坏只是"多一条摘要 + 旧消息还在"
+     * （下次压缩会折叠掉）。
+     */
     createMessage({
       id: markerId,
       role: "user",
@@ -203,6 +286,9 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
       timestamp: markerTs - 1,
       status: "done",
     }, sessionId);
+
+    // Delete old messages —— 传 sessionId：镜像被逐出时也能判归属（否则墓碑不写、消息会复活）
+    deleteMessagesByIds(removedIds, sessionId);
 
     // 见函数头第 2 点：事件日志里必须留下"这次压缩发生过"
     try {
@@ -218,10 +304,14 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
       console.warn("[ContextMonitor] 手动压缩的事件写入失败（非致命）:", eventErr);
     }
   } finally {
-    setCompactionInProgress(false);
+    setCompactionInProgress(sessionId, false);
   }
 
-  return { removed: messagesToRemove.length, kept: keepCount };
+    return { removed: messagesToRemove.length, kept: keepCount };
+  } finally {
+    /* ★ 第 228 波审计修复：锁必须在所有出口释放（含中途抛错） */
+    releaseCompactionLock(sessionId);
+  }
 }
 
 export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
@@ -273,6 +363,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
    */
   const [compactCooldown, setCompactCooldown] = useState(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 第 228 波审计：当前会话（供异步续体判断"用户是否已切走"） */
+  const sessionIdRef = useRef<string>(sessionId);
   const [showConfig, setShowConfig] = useState(false);
   const [ctxConfig, setCtxConfig] = useState<CompactionConfig | null>(null);
   const [savedConfig, setSavedConfig] = useState(false);
@@ -358,6 +450,11 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
    * 卸载时同时把冷却期的定时器收掉，避免对已卸载组件 setState。
    */
   useEffect(() => {
+    /**
+     * ★ 第 228 波审计：把"当前会话"记进 ref —— 手动压缩的续体在**让出一帧之后**
+     * 必须能判断"用户是不是已经切走了"（否则会把旧会话的读数与冷却写到新会话上）。
+     */
+    sessionIdRef.current = sessionId;
     setCompactResult(null);
     setCompactError(null);
     setCompactCooldown(false);
@@ -499,6 +596,15 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
        * （守卫 `compactingRef` 在这一帧里也是 held 的 ⇒ 同一 tick 的第二次点击照样被挡。）
        */
       await new Promise((resolve) => setTimeout(resolve, 16));
+      /**
+       * ★ 第 228 波审计修复（中）：这一帧里**用户可能已经切了会话**。
+       *
+       * 被守的缺陷：下面的续体用的是**捕获的** `sessionId`，而"切会话就清回执/清冷却"的
+       * effect 是先跑的 ⇒ 续体把**旧会话**的读数与 8 秒冷却写到**新会话**的面板上
+       * （用户看到的形态：刚切过去，按钮就处于"刚刚已压缩（移除 12 条）"的禁用态）。
+       * 会话已经变了就什么都别写 —— 那次压缩的归属会话自己看得到结果。
+       */
+      if (sessionIdRef.current !== sessionId) return;
       const result = manualCompact(sessionId);
       setCompactResult(result);
       /*
@@ -535,7 +641,12 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       } catch {
         // 二次上报失败不影响主流程
       }
-      setCompactError(`压缩失败：${detail}（旧消息未被完整删除，请重试）`);
+      /**
+       * ★ 第 228 波审计修复：文案必须与**新的写入顺序**一致。
+       * 现在先写标记、再删旧消息 ⇒ 失败时真实状态是"摘要已写入（或未写入）、旧消息没被删"，
+       * 而老文案说的是"旧消息未被完整删除"（在旧顺序下恰恰相反：旧消息已经删了、摘要没有）。
+       */
+      setCompactError(`压缩失败：${detail}（摘要标记已先写入，旧消息未被删除；可直接重试）`);
     } finally {
       // finally 里复位：无论成功失败，下一次仍然可以尝试
       compactingRef.current = false;

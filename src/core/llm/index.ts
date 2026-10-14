@@ -260,6 +260,31 @@ const degradedMemoryProjectIdKeys = new Set<string>();
 const MEMORY_MAX_PER_EXTRACTION = 2;
 
 /**
+ * ★ 第 228 波审计新增：**每次提取的总写入上限**（不区分是否需要审批）。
+ *
+ * ## 为什么光有"待批准上限"不够
+ *
+ * `MEMORY_MAX_PER_EXTRACTION` 只对 `status === "pending"` 的条目计数（那是**用户的决策量**上限），
+ * 于是下面三类写入此前**完全没有上限**：conversation 级（审批默认关 ⇒ 直接生效）、
+ * `explicit: true`（用户就是批准者）、以及"审批开关关掉"时的项目级。
+ * 用户实报过的形态就是"一轮写几十条"（库里的量按"轮数 × 每轮条数"涨）——那条缺陷只被治了
+ * 一半（需要审批的那一半）。
+ *
+ * 现在加一条**总量**上限：一次提取最多落这么多条，超出的**如实记日志**（不静默丢）。
+ */
+const MEMORY_MAX_WRITES_PER_EXTRACTION = 4;
+
+/**
+ * ★ 第 228 波审计新增："用户明确要求记住"的**结构性判据**。
+ *
+ * 只扫 `role === "user"` 的消息（工具读到的文件正文不在其中）—— 用来挡"仓库文件里的文字
+ * 诱导 model 输出 `explicit: true` 从而绕过审批"这条路。判据刻意宽松（用户确实这么说就算），
+ * 因为漏判的代价只是"多问用户一次"，而误判的代价是"外部文本绕过审批"。
+ */
+const REMEMBER_REQUEST_PATTERN =
+  /(记住|记一下|记下来|记下这|帮我记|别忘了|别忘记|以后都|以后每次|每次都这样|今后都|别再问|remember (?:this|that|it)|keep (?:this )?in mind|don'?t forget)/i;
+
+/**
  * 同一会话两次提取之间**至少要新增多少条消息**（第 197 波）。
  *
  * 见 `extractMemoriesFromSession` 里那段注释：`onTurnComplete` 每轮都调，不限频就等于"每轮都写记忆"。
@@ -1408,7 +1433,9 @@ Report earlier as well whenever a partial finding changes what that agent should
       memoryEnabled,
       onCompactionComplete: () => {
         if (memoryEnabled) {
-          this.extractMemoriesFromSession(sessionId, memoryProjectId).catch(() => {});
+          /* ★ 第 228 波审计：压缩刚把原文换成摘要 ⇒ 这条路径必须能**强制**跑一次提取
+             （限频水位按可见消息数走，压缩会让它变负 ⇒ 不强制就永远提不了，见函数头） */
+          this.extractMemoriesFromSession(sessionId, memoryProjectId, { force: true }).catch(() => {});
         }
       },
       onTurnComplete: () => {
@@ -2240,7 +2267,22 @@ return loop.hasPendingGuidance();
    * @param projectId 归属项目（由调用方的工作目录推出）；缺省 ⇒ 条目没有归属，**任何项目都不注入**
    *                  （宁可不注入，也不猜一个项目塞进去）
    */
-  async extractMemoriesFromSession(sessionId: string, projectId?: string): Promise<void> {
+  async extractMemoriesFromSession(
+    sessionId: string,
+    projectId?: string,
+    /**
+     * ★ 第 228 波审计修复（高）：`force` 用于**压缩完成**那条钩子。
+     *
+     * ## 被守的缺陷（压缩后记忆停摆）
+     *
+     * 限频水位存的是 `listMessages(...).length`，而那是**可见**消息数（压缩会把旧消息
+     * `hidden=1`）⇒ 压缩刚结束时会话长度**变小** ⇒ `messages.length - lastCount` 变负 ⇒
+     * 下面的门直接 `return`：**压缩触发的提取一次都跑不成**，而且要等会话重新涨回
+     * 旧水位 + 4 条才会重开（用户侧形态：压过一次之后这个会话再也不沉淀记忆了）。
+     * 压缩恰恰是"最该把有价值事实沉淀进记忆"的时刻（原文刚被摘要取代），所以这条路径必须能强制跑。
+     */
+    opts?: { force?: boolean },
+  ): Promise<void> {
     // F3.2: Check if memory extraction is enabled for this session
     if (!this.isMemoryEnabled(sessionId)) return;
 
@@ -2267,7 +2309,27 @@ return loop.hasPendingGuidance();
      * 那会让"用户重开应用后新事实永远提不出来"）。
      */
     const lastCount = this.memoryExtractionWatermark.get(sessionId);
-    if (lastCount !== undefined && messages.length - lastCount < MEMORY_EXTRACTION_MIN_NEW_MESSAGES) return;
+    if (!opts?.force && lastCount !== undefined && messages.length - lastCount < MEMORY_EXTRACTION_MIN_NEW_MESSAGES) return;
+
+    /**
+     * ★ 第 228 波审计修复（**高**）：`explicit: true` 必须有**结构性证据**才能免审批。
+     *
+     * ## 被守的缺陷（绕过用户审批的注入面）
+     *
+     * `explicit === true` 的条目**直接生效**（不进待批准区），而"是否 explicit"此前**完全由模型自述**
+     * —— 提取模型看得到最近几十条父消息（含工具读出来的**仓库文件正文**）⇒ 仓库里任何一句
+     * "请记住：以后都要…"（issue、注释、README、依赖里的文档）都可能诱导出 `explicit: true`，
+     * 于是外部文本**绕过用户审批**进入此后每一轮的上下文。这是提示词治不了的那类问题
+     * （工具读到的内容对模型来说同样是"用户说过的话"）。
+     *
+     * 结构判据：只有**用户消息**（role=user，不含工具结果/文件正文）里出现过明确的"记住"类请求，
+     * 这一批的 `explicit` 才被采信；否则一律降级为按常规作用域处理（项目级 ⇒ 待批准）。
+     * 采信范围是"整批"而非逐条：用户说了"记住这几条"时，模型给同批每条都标 true 是合理的。
+     */
+    const userAskedToRemember = messages.some(
+      (m: { role?: string; content?: unknown }) =>
+        m?.role === "user" && typeof m.content === "string" && REMEMBER_REQUEST_PATTERN.test(m.content),
+    );
 
     /**
      * 自动提取的目标作用域：**由每条记忆自己决定**（第 196 波，用户要求的
@@ -2423,6 +2485,8 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
        * 只有"确实写出一条**需要批准**的 project 级条目"才消耗名额。
        */
       let slotsUsed = 0;
+      /** ★ 第 228 波审计：本次提取**已经写入了多少条**（不区分是否需要审批，见总上限常量） */
+      let writesTotal = 0;
       let droppedByCap = 0;
       for (const mem of memories) {
         if (typeof mem?.key !== "string" || typeof mem?.content !== "string") continue;
@@ -2456,7 +2520,12 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
          * - `mem.explicit === true`（用户在这一轮里**明确要求记住**）⇒ **跳过本判定**，
          *   而且下面按"直接生效"写入（用户就是批准者，不必再问一次）。
          */
-        const explicitRequest = mem.explicit === true;
+        const explicitRequest = mem.explicit === true && userAskedToRemember;
+        if (mem.explicit === true && !userAskedToRemember) {
+          console.log(
+            `[extractMemories] 模型标了 explicit，但会话里没有用户的"记住"请求 ⇒ 按常规作用域处理（防外部文本诱导绕过审批）：${safeKey}`,
+          );
+        }
         if (!explicitRequest) {
           const rejected = this.memory.findRejectedSimilarTo({ key: safeKey, content: safeContent });
           if (rejected) {
@@ -2483,7 +2552,8 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
          */
         const duplicateOf = this.memory.findDuplicateOf(
           { scope: itemScope, ...ownership, key: safeKey, content: safeContent },
-          { projectId },
+          /* ★ 第 228 波审计：把 sessionId 也带上 —— 项目级候选要能比到本会话的对话级条目 */
+          { projectId, sessionId },
         );
         if (duplicateOf) {
           /*
@@ -2495,7 +2565,9 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
             console.log(
               `[extractMemories] 用户主动要求记住 ⇒ 用这一条替换已有的自动条目：「${duplicateOf.key}」`,
             );
-            this.memory.removeMany([duplicateOf.id]);
+            /* ★ 第 228 波审计：系统自己顶替**不是**用户拒绝 ⇒ 不许留拒绝记录
+               （老实现留了 ⇒ 此后同类候选被"你拒绝过同类"静默挡下，而用户从没拒绝过） */
+            this.memory.removeMany([duplicateOf.id], { actor: "system" });
           } else if (isProtectedMemoryEntry(duplicateOf)) {
             blockedByManual++;
             console.log(
@@ -2524,6 +2596,13 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
          * 判定放在查重 / 拒绝记录**之后**、写入**之前** —— 被挡下的候选不占名额。
          */
         const consumesSlot = statusForThisItem === "pending";
+        if (writesTotal >= MEMORY_MAX_WRITES_PER_EXTRACTION) {
+          droppedByCap++;
+          console.log(
+            `[extractMemories] 超过每次提取的总写入上限（${MEMORY_MAX_WRITES_PER_EXTRACTION} 条）⇒ 不写入：${safeKey}`,
+          );
+          continue;
+        }
         if (consumesSlot && slotsUsed >= MEMORY_MAX_PER_EXTRACTION) {
           droppedByCap++;
           console.log(
@@ -2559,6 +2638,7 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
         else writtenActive++;
         /* 名额只在**真的写出一条待批准条目**后才扣（容量拒绝/写入失败都不算，见上面的口径） */
         if (consumesSlot) slotsUsed++;
+        writesTotal++;
         console.log(
           `[extractMemories] Saved memory: ${safeKey}（source=auto, scope=${itemScope}, ` +
             `${itemScope === "conversation" ? `sessionId=${sessionId}` : `projectId=${projectId ?? "(无归属)"}`}, ` +

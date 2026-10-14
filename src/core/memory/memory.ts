@@ -2004,6 +2004,14 @@ export class MemoryService {
       await this.flushPendingPersist();
       return this.lastPersistError === null;
     }
+    /**
+     * ★ 第 228 波审计修复（**高**）：直写前先让在途队列落地。
+     *
+     * `save()` 走 `chainPersist`（异步队列 + 重试退避），而这里是直写 ⇒ 队列里压着的旧 payload
+     * 可能**晚于**本次确认式写入落盘（同一字段、两条互不排序的路径）⇒ 磁盘最终是旧内容，
+     * 而 `lastPersistedPayload` 记的是新内容 ⇒「无变化不写」短路让分叉一直保持到下一次真实改动。
+     */
+    await this.flushPendingPersist();
     const result = await saveMemoryConfirmed(payload);
     if (result.ok) {
       this.lastPersistedPayload = payload;
@@ -2299,18 +2307,28 @@ export class MemoryService {
    * - **只删传进来的 id** —— 调用方没勾的条目一条都不许动；
    * - 返回 `{ requested, removed, notFound }`，让界面能如实报告"要删 N 条、实删 M 条"；
    * - 不做任何"看起来像自动提取就顺手删掉"的推断（信任边界：自动判断只能用于展示）。
+   *
+   * ★ 第 228 波审计修复：`opts.actor` 区分**谁在删**。
+   * 被守的缺陷：提取流程里"用 explicit 那条顶掉已有自动条目"会走 `removeMany([oldId])`，
+   * 而 `removeMany` 把"删一条 pending"计成**用户拒绝了它** ⇒ 库里长出一条**伪造的拒绝记录**，
+   * 此后同类候选会被"你拒绝过同类"静默挡下（用户从没拒绝过任何东西）。
+   * 只有 `actor: "user"`（界面/CLI 的用户动作）才留拒绝记录。
    */
-  removeMany(ids: string[]): { requested: number; removed: number; notFound: string[] } {
+  removeMany(
+    ids: string[],
+    opts?: { actor?: "user" | "system" },
+  ): { requested: number; removed: number; notFound: string[] } {
     const notFound: string[] = [];
     let removed = 0;
+    const byUser = (opts?.actor ?? "user") === "user";
     for (const id of ids) {
       const entry = this.entries.get(id);
       if (!entry) {
         notFound.push(id);
         continue;
       }
-      /* 第 200 波：与 `delete` 同一条口径 —— 只有"提议中"的条目被删才算拒绝 */
-      if (isPendingMemoryEntry(entry)) this.recordRejection(entry);
+      /* 第 200 波：与 `delete` 同一条口径 —— 只有"提议中"的条目被删才算拒绝（且必须是人删的） */
+      if (byUser && isPendingMemoryEntry(entry)) this.recordRejection(entry);
       this.entries.delete(id);
       removed++;
     }
@@ -2812,7 +2830,7 @@ export class MemoryService {
    */
   findDuplicateOf(
     draft: { scope: MemoryScope; projectId?: string; sessionId?: string; key: string; content: string },
-    ctx?: { projectId?: string },
+    ctx?: { projectId?: string; sessionId?: string },
   ): MemoryEntry | undefined {
     const sameBucket = (entry: MemoryEntry): boolean => {
       if (entry.scope !== draft.scope) return false;
@@ -2826,9 +2844,30 @@ export class MemoryService {
       ctx?.projectId !== undefined &&
       entry.scope === "project" &&
       entry.projectId === ctx.projectId;
+    /**
+     * ★ 第 228 波审计修复（中）：**反向也要比** —— 候选是项目级时，**本会话**的对话级条目
+     * 也算"这条事实已经有了"。
+     *
+     * 被守的缺陷：只有"对话级候选 vs 项目级条目"这一个方向。于是同一条事实先以对话级写进去
+     * （对话级默认**免审批、直接生效**），下一轮模型再以项目级提一次 ⇒ 判重放行 ⇒ 又多一条
+     * 待批准 ⇒ **用户被问第二次**（而且面板/注入里同一件事两份）。
+     * 比对范围限定"本会话的对话级条目"，不跨会话（别的对话里的事实不该挡住这个项目的记忆）。
+     */
+    const sameSessionAsProject = (entry: MemoryEntry): boolean =>
+      draft.scope === "project" &&
+      ctx?.sessionId !== undefined &&
+      entry.scope === "conversation" &&
+      entry.sessionId === ctx.sessionId;
 
     for (const entry of this.entries.values()) {
-      if (!sameBucket(entry) && entry.scope !== "platform" && !sameProjectAsConversation(entry)) continue;
+      if (
+        !sameBucket(entry) &&
+        entry.scope !== "platform" &&
+        !sameProjectAsConversation(entry) &&
+        !sameSessionAsProject(entry)
+      ) {
+        continue;
+      }
       if (memoryLooksDuplicate(draft, { key: entry.key, content: entry.content })) return entry;
     }
     return undefined;
@@ -3597,6 +3636,17 @@ export class MemoryService {
     if (!snap) {
       return { ok: false, restored: 0, message: "没有可用的迁移前快照（本机从未执行过迁移，或快照已被清理）" };
     }
+    /**
+     * ★ 第 228 波审计修复（**高**）：回退前必须**等在途的普通保存落地**。
+     *
+     * 被守的缺陷：`memory` 字段有两条互不排序的写入路径 —— `save()` 走 `chainPersist` 队列
+     * （异步、带重试退避），而这里的 `saveMemoryConfirmed(snap.raw)` 是**直写**。
+     * 若此刻队列里还压着一次改动（例如用户刚编辑了一条），它会**晚于回退落盘** ⇒
+     * 磁盘最终是"回退前的 payload"、而 `lastPersistedPayload` 已被设成 `snap.raw`
+     * ⇒ 「无变化不写」短路让这次分叉**一直保持**到下一次真实改动：
+     * 界面说"已回退"，重启之后回退不存在。
+     */
+    await this.flushPendingPersist();
     const result = await saveMemoryConfirmed(snap.raw);
     if (!result.ok) {
       const message = `回退失败：写回库未成功（${result.reason ?? "未知原因"}）—— 库内容未改动，请重试`;

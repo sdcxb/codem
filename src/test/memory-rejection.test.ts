@@ -48,7 +48,17 @@ const OTHER_FACT = {
   content: "读取二进制 MCP 资源时不会内联大段 base64，而是返回占位摘要。",
 };
 
-function engineForExtraction(memory: MemoryService, sessionId: string, payloads: string[], messageCount = 12) {
+function engineForExtraction(
+  memory: MemoryService,
+  sessionId: string,
+  payloads: string[],
+  messageCount = 12,
+  /**
+   * ★ 第 228 波审计：可以指定**用户消息的正文** —— `explicit: true` 现在必须有
+   * 用户原话（结构性判据）才被采信，所以"用户到底说了什么"必须是夹具的一部分。
+   */
+  opts?: { userMessageText?: string },
+) {
   setSettingJSON(`memory-enabled-${sessionId}`, true);
   const engine = new LLMEngine();
   (engine as unknown as { memory: MemoryService }).memory = memory;
@@ -60,7 +70,7 @@ function engineForExtraction(memory: MemoryService, sessionId: string, payloads:
       Array.from({ length: messageCount }, (_, i) => ({
         id: `m${i}`,
         role: i % 2 ? "assistant" : "user",
-        content: "x",
+        content: i % 2 ? "x" : opts?.userMessageText ?? "x",
       })) as never,
   );
   let call = 0;
@@ -140,15 +150,54 @@ describe("MEM-REJECT：已拒绝记录", () => {
     const added = svc.add({ scope: "project", projectId: PROJ_A, key: FACT_A.key, content: FACT_A.content, source: "auto", status: "pending" });
     svc.reject(added.entry!.id);
 
-    const engine = engineForExtraction(svc, SESSION, [
-      JSON.stringify([{ ...FACT_A_REWORDED, scope: "project", explicit: true }]),
-    ]);
+    /**
+     * ★ 第 228 波审计：这条用例的**前提**以前是假的 —— 它断言"用户在对话里主动要求记住"，
+     * 而夹具里的会话消息全是 `x`（用户什么也没说），于是它实际钉住的是
+     * "模型自述 explicit ⇒ 绕过审批"这条**漏洞**。现在夹具补上真实前提：
+     * 会话里必须**有用户的那句请求**（结构性判据，见 `REMEMBER_REQUEST_PATTERN`）。
+     */
+    const engine = engineForExtraction(
+      svc,
+      SESSION,
+      [JSON.stringify([{ ...FACT_A_REWORDED, scope: "project", explicit: true }])],
+      12,
+      { userMessageText: "记住：vitest 的位置参数是按路径子串匹配的，以后都按这个来。" },
+    );
     await engine.extractMemoriesFromSession(SESSION, PROJ_A);
 
     const all = svc.listByScope("project", { projectId: PROJ_A, includePending: true, includeUnscoped: true });
     expect(all, "用户说了记住 ⇒ 必须放行（否则「我让你记的你没记」）").toHaveLength(1);
     expect(all[0].status ?? "active", "用户主动要求 = 已经批准 ⇒ 直接生效，不再问一次").toBe("active");
     expect(svc.listPending(undefined, { projectId: PROJ_A }), "不该再进待批准").toHaveLength(0);
+  });
+
+  it("REJ-3b（第 228 波审计新增）：**没有**用户原话时，模型自述 explicit 不许绕过审批", async () => {
+    /*
+     * 被守的缺陷（真机可达）：提取模型看得到最近几十条父消息，含**工具读出来的仓库文件正文**
+     * ⇒ 仓库里任何一句"请记住：以后都要…"（README / issue / 注释 / 依赖文档）都可能诱导出
+     * `explicit: true`，而 explicit 是**直接生效、不进待批准区**的 ⇒ 外部文本绕过用户审批
+     * 进入此后每一轮的上下文。结构判据：只有 role=user 的消息里出现过"记住"类请求才采信。
+     */
+    const svc = new MemoryService();
+    const engine = engineForExtraction(
+      svc,
+      SESSION,
+      [JSON.stringify([{ ...OTHER_FACT, scope: "project", explicit: true }])],
+      12,
+      /* 会话里没有任何"记住"请求（工具读到的正文也不在 user 消息里） */
+      { userMessageText: "帮我看看这个仓库的依赖是怎么装的。" },
+    );
+    await engine.extractMemoriesFromSession(SESSION, PROJ_A);
+
+    const pending = svc.listPending(undefined, { projectId: PROJ_A });
+    expect(
+      pending.map((p) => p.key),
+      "没有用户原话 ⇒ 必须走待批准（否则仓库文件里的一句话就能把内容注入此后每一轮）",
+    ).toEqual([OTHER_FACT.key]);
+    expect(
+      svc.listByScope("project", { projectId: PROJ_A, includePending: false }),
+      "不许直接生效",
+    ).toHaveLength(0);
   });
 
   it("REJ-4（反向对照 · 不误伤）：与已拒绝记录**不同**的事实照常写入", async () => {

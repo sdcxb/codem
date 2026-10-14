@@ -37,8 +37,8 @@
       "patches": [
         {
           "file": "src/core/llm/compaction-budget.ts",
-          "from": "  const consumed = chunkParts.slice(0, chunkBudget).reduce((s, n) => s + n, 0);\n  return { chunks: chunks.slice(0, chunkBudget), overflow: chunks.slice(chunkBudget), consumed };",
-          "to": "  return { chunks: chunks.slice(0, chunkBudget), overflow: [], consumed: parts.length };"
+          "from": "  return {\n    chunks: chunks.slice(0, chunkBudget),\n    overflow: chunks.slice(chunkBudget),\n    consumed: countPartsInFirstChunks(parts, chunkPartCounts, chunkBudget),\n  };",
+          "to": "  return {\n    chunks: chunks.slice(0, chunkBudget),\n    overflow: [],\n    consumed: parts.length,\n  };"
         }
       ],
       "tests": [
@@ -52,8 +52,8 @@
       "patches": [
         {
           "file": "src/core/llm/compaction-budget.ts",
-          "from": "      `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条；确定性渲染，不是逐字原文）`,",
-          "to": "      `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条）`,"
+          "from": "    middle: `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条；确定性渲染，不是逐字原文）`,",
+          "to": "    middle: `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条）`,"
         }
       ],
       "tests": [

@@ -3263,10 +3263,10 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
  * **删除必须同时落到索引与权威日志**（墓碑 + 后写者胜），并且把内存镜像里的同 id 记录清掉 ——
  * 镜像不刷新的话，本进程内的合并仍会从缓存里"复活"这些消息。
  */
-export function deleteMessagesByIds(ids: string[]): number {
+export function deleteMessagesByIds(ids: string[], knownSessionId?: string): number {
   if (ids.length === 0) return 0;
   // 先按会话分组（墓碑要写进对应会话的日志），再软删除索引行
-  const bySession = sessionIdsForMessages(ids);
+  const bySession = sessionIdsForMessages(ids, knownSessionId);
 
   /**
    * **端口优先**（第 39 轮修复）：rust 模式下旧库刻意不存在，原来的
@@ -3333,8 +3333,33 @@ export function deleteMessagesByIds(ids: string[]): number {
   return ids.length;
 }
 
-/** 把一批消息 id 按所属会话分组（分块查询，避免超长 IN 子句） */
-function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
+/**
+ * 把一批消息 id 按所属会话分组（分块查询，避免超长 IN 子句）
+ *
+ * ★ 第 228 波审计修复：`knownSessionId`（**调用方已知的会话**）作为**兜底归属**。
+ *
+ * ## 被守的缺陷（"删了等于没删" ⇒ 压缩假成功）
+ *
+ * 会话镜像按 LRU 逐出（`rust-port.ts` 的行/字节预算 + `MIRROR_KEEP_SESSIONS`），逐出时
+ * `byId` 一起清空 ⇒ `byIdLookup(id)` 全返回 undefined ⇒ 这里**一个 id 都分不出会话**，
+ * 而下面三条链（写墓碑 / 剔除日志镜像 / 记 `localHiddenIds`）**全部按会话遍历** ⇒
+ * 整条删除链空转：索引里 hidden 是改了，但读路径会从日志镜像把这些消息**复活**回来，
+ * 于是"压缩移除了 N 条"在上下文里看不出变化 ⇒ 下一轮再压 ⇒ `consecutiveCompactions`
+ * 到 3 ⇒ 假结论「上下文窗口已满，请开启新对话」。
+ *
+ * 压缩是**在某个会话里发生的**，它当然知道自己的 sessionId ⇒ 把查不到归属的 id 记到
+ * 这个会话上，是唯一不需要额外查询、也不会猜错的兜底。
+ */
+/**
+ * ⚠️ **仅供测试**：把会话归属分组暴露出来 —— 第 228 波审计的判据要直接验
+ * "镜像被逐出 + 调用方给了会话"这一条路径。从公开入口 `deleteMessagesByIds` 观测不到它：
+ * 假端口是按 id 隐藏的，而真机上的"复活"发生在**日志镜像读路径**上（需要真端口夹具才复现）。
+ */
+export function sessionIdsForMessagesForTests(ids: string[], knownSessionId?: string): Map<string, string[]> {
+  return sessionIdsForMessages(ids, knownSessionId);
+}
+
+function sessionIdsForMessages(ids: string[], knownSessionId?: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
 
   /**
@@ -3350,15 +3375,33 @@ function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
    */
   const port = rustMessagePort();
   if (port?.messages) {
+    let unresolved = 0;
     for (const id of ids) {
       const row = port.messages.byIdLookup(id);
       const sid = row?.session_id ? String(row.session_id) : "";
-      if (!sid) continue;
+      if (!sid) {
+        unresolved += 1;
+        /* 镜像被逐出（查不到归属）⇒ 用调用方给的会话兜底，而不是静默丢掉这个 id */
+        if (!knownSessionId) continue;
+        const fallback = out.get(knownSessionId);
+        if (fallback) fallback.push(id);
+        else out.set(knownSessionId, [id]);
+        continue;
+      }
       const list = out.get(sid);
       if (list) list.push(id);
       else out.set(sid, [id]);
     }
-    return out; // 端口在但查不到归属：不再退回旧库（旧库本来就不存在）
+    /* 查不到归属**且调用方也没给会话** ⇒ 如实说出去（老实现这里静默 continue） */
+    if (unresolved > 0 && !knownSessionId) {
+      reportPersistFailure(
+        "message.sessionIdsForMessages",
+        new Error("镜像里查不到会话归属（会话可能已被逐出）"),
+        `本次 ${unresolved} / ${ids.length} 条消息未能判定归属：权威日志的墓碑不会写入 —— ` +
+          "这些消息在下次从日志重建时会复活（调用方应传 knownSessionId）",
+      );
+    }
+    return out;
   }
   /**
    * ⚠️ **这一支的注释原来是不实之词（B-5）**：它写着"让'没写墓碑'成为一个可见的、

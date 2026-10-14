@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 压缩互斥标志（第 18 轮从 `database.ts` 搬出来）。
  *
  * ## 为什么它不该住在 `database.ts`
@@ -16,14 +16,28 @@
  * （压缩会整段替换消息集合，插进去的自动保存会被后来的写覆盖或反过来覆盖它）。
  */
 
-let compactionInProgress = false;
+let compactionInProgress = new Set<string>();
 
-/** 当前是否处于压缩过程中（UI 自动保存据此退让）。 */
-export function isCompactionInProgress(): boolean {
-  return compactionInProgress;
+/**
+ * 当前是否处于压缩过程中（UI 自动保存据此退让）。
+ *
+ * ★ 第 228 波审计修复：改成**按会话**（原来是进程级单布尔）。
+ *
+ * 被守的缺陷：会话 A 的压缩会让**会话 B** 的 UI 自动保存被静默丢弃
+ * （`store.ts::saveMessages` 只看一个全局布尔，直接 `return`，不排队不重试）。
+ * 多会话并行时这是真实的丢消息路径，而"压缩期间不要插入自动保存"这条不变量
+ * 本来就只对**同一个会话**成立（压缩整段替换的是那一个会话的消息集合）。
+ *
+ * @param sessionId 传了就只问这个会话；不传 = "任何会话在压缩中"（给不关心归属的老调用方）
+ */
+export function isCompactionInProgress(sessionId?: string): boolean {
+  if (sessionId === undefined) return compactionInProgress.size > 0;
+  return compactionInProgress.has(sessionId);
 }
 
-/** 由 `AgenticLoop.compactMessages` 设置。 */
-export function setCompactionInProgress(value: boolean): void {
-  compactionInProgress = value;
+/** 由 `AgenticLoop.compactMessages` / 手动压缩设置。 */
+export function setCompactionInProgress(sessionId: string, value: boolean): void {
+  if (value) compactionInProgress.add(sessionId);
+  else compactionInProgress.delete(sessionId);
 }
+

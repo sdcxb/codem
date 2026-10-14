@@ -1,8 +1,8 @@
 {
   "wave": "memory-rejection-200",
   "description": "第 200 波：用户拒绝过的同类记忆不再自动写入、也不再请求批准；用户主动要求记住的放行（且直接生效）。判据 REJ-1..8 + MEM-CHECK-REJ-1：拒绝留痕（含批量拒绝/删除待批准）、全局按文本匹配挡住同类、explicit 放行、不同事实不误伤、删已生效不算拒绝、记录有界且落库仍在、可清空退路。",
-  "runAt": "2026-10-10T07:35:56.129Z",
-  "specFingerprint": "bcc3d3d03a66b9a991260110192aae6233c6e3bd",
+  "runAt": "2026-10-14T02:40:28.350Z",
+  "specFingerprint": "662d5a3d72b1c5b958c640eadf5943d704dc7672",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -37,7 +37,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3353
+      "ms": 4091
     },
     {
       "id": "MUT-2 提取循环不再查拒绝记录",
@@ -45,8 +45,8 @@
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "        const explicitRequest = mem.explicit === true;\n        if (!explicitRequest) {\n          const rejected = this.memory.findRejectedSimilarTo({ key: safeKey, content: safeContent });",
-          "to": "        const explicitRequest = mem.explicit === true;\n        if (false) {\n          const rejected = this.memory.findRejectedSimilarTo({ key: safeKey, content: safeContent });"
+          "from": "          const rejected = this.memory.findRejectedSimilarTo({ key: safeKey, content: safeContent });",
+          "to": "          const rejected = undefined;"
         }
       ],
       "tests": [
@@ -57,7 +57,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3385
+      "ms": 4138
     },
     {
       "id": "MUT-3 用户主动要求也不放行（连 explicit 一起挡）",
@@ -65,7 +65,7 @@
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "        const explicitRequest = mem.explicit === true;",
+          "from": "        const explicitRequest = mem.explicit === true && userAskedToRemember;",
           "to": "        const explicitRequest = false;"
         }
       ],
@@ -77,7 +77,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3418
+      "ms": 4055
     },
     {
       "id": "MUT-4 用户主动要求的条目仍然按审批走（放行了但还要批准）",
@@ -97,7 +97,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3381
+      "ms": 4151
     },
     {
       "id": "MUT-5 拒绝匹配扩成「永远命中」（把所有自动记忆都挡掉）",
@@ -117,7 +117,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3402
+      "ms": 4199
     },
     {
       "id": "MUT-6 删除已生效的记忆也记成拒绝（过度）",
@@ -137,7 +137,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3368
+      "ms": 4292
     },
     {
       "id": "MUT-7 拒绝记录没有退路（清空不生效）",
@@ -157,7 +157,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3432
+      "ms": 4429
     },
     {
       "id": "MUT-8 体检里不再显示已拒绝记录（用户看不到它为何不再问）",
@@ -177,7 +177,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3721
+      "ms": 4640
     },
     {
       "id": "MUT-9 反向对照：只改一行说明注释",
@@ -198,7 +198,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3526
+      "ms": 4275
     }
   ]
 }

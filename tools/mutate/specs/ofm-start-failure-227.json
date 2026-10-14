@@ -172,8 +172,8 @@
       "patches": [
         {
           "file": "src/components/ContextMonitor.tsx",
-          "from": "  useEffect(() => {\n    setCompactResult(null);\n    setCompactError(null);\n    setCompactCooldown(false);",
-          "to": "  useEffect(() => {\n    /* 变异：换会话不清回执 */\n    setCompactCooldown(false);"
+          "from": "    sessionIdRef.current = sessionId;",
+          "to": "    sessionIdRef.current = \"常量（变异：换会话不清回执）\";"
         }
       ],
       "tests": [

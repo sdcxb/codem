@@ -68,9 +68,62 @@ export interface CompactionKeepPlan {
  * 为什么是"成半"而不是"每次减一条"：整个会话可能有上千条消息，一条一条试会在大会话上
  * 反复估算（每次估算都要遍历保留集），成半收敛是 O(log n) 次估算。
  */
+export interface CompactionKeepPlanParams {
+  totalMessages: number;
+  desiredKeep: number;
+  /** 保留集的 token 预算（= 窗口的一半，另一半点留给系统提示/工具/输出） */
+  budget: number;
+  /** 最少保留条数（下限，避免把正在进行的上下文全丢掉） */
+  minKeep: number;
+  /** 估算"保留最后 N 条"的 token 数 */
+  estimate: (keepCount: number) => number;
+  /** 把"保留最后 N 条"对齐到安全轮次边界（返回对齐后的条数；**可能变大**） */
+  align: (desired: number) => number;
+  /**
+   * ★ 第 228 波审计新增：把条数**向下**对齐到安全轮次边界（返回 **≤ desired** 的安全条数）。
+   *
+   * ## 为什么必须有它（真缺陷）
+   *
+   * 收缩循环里原来写的是：对齐结果不减反增时**直接采用未对齐的 `next`**
+   * （`keepCount = aligned >= keepCount ? next : aligned`）。
+   * 保留集若因此从**工具结果中间**开始，那几条 `role=tool` 消息在前置 assistant 之外，
+   * `buildMessages` 会把它们当"孤儿工具结果"**丢掉**（`agentic-loop.ts:5428`），
+   * 而那条 assistant 的 `tool_calls` 又会被剥掉 ⇒ 模型看到"调过工具但没有结果"，
+   * 真机上的形态就是**重跑一遍同一批工具**（本波要保住的正是"最近几轮逐字"）。
+   *
+   * 传了它就永远只走"安全边界"；没传（例如只关心条数的老调用方）退回"至少严格变小"，
+   * 行为与老版本一致但不会死循环。
+   */
+  alignDown?: (desired: number) => number;
+}
+
+/**
+ * 规划保留集：先按期望条数，超预算就**成半收缩**（每次至少减到一半，且不越过下限），
+ * 直到进预算或触到 `minKeep`。
+ *
+ * 为什么是"成半"而不是"每次减一条"：整个会话可能有上千条消息，一条一条试会在大会话上
+ * 反复估算（每次估算都要遍历保留集），成半收敛是 O(log n) 次估算。
+ */
 export function planCompactionKeep(params: CompactionKeepPlanParams): CompactionKeepPlan {
-  const { totalMessages, budget, minKeep, estimate, align } = params;
-  const initialKeep = align(Math.max(1, Math.min(params.desiredKeep, totalMessages)));
+  const { totalMessages, budget, minKeep, estimate, align, alignDown } = params;
+  const total = Math.max(0, Math.floor(totalMessages));
+  if (total === 0) {
+    /* ★ 第 228 波审计：原来这里会返回 keepCount=1（> 总条数），把"保留条数"这件事说成假的 */
+    return { keepCount: 0, estimated: 0, shrunk: false, overBudget: false, initialKeep: 0 };
+  }
+  /**
+   * ★ 第 228 波审计修复（**中**）：`minKeep` 是**下限**，不只是循环的停止条件。
+   *
+   * 老实现：`initialKeep = min(total, align(min(desiredKeep, total)))` —— 当"最近 3 轮保底"
+   * （例如 60 条）**大于**期望保留条数（20 条）时，`while (keepCount > minKeep …)` 一次都不进，
+   * 实际只保留 20 条 ⇒ **轮次保底静默失效**，而调用方还在日志里宣称"按上限保留 60 条"
+   * （越界的那条 user 请求于是只以摘要形态存在，与"最近几轮不切断"的契约相反）。
+   * 现在把下限并进初始值：`initialKeep = max(minKeep, desiredKeep)`（再对齐、再夹到总数）。
+   */
+  const initialKeep = Math.min(
+    total,
+    align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total)))),
+  );
   let keepCount = initialKeep;
   let estimated = estimate(keepCount);
 
@@ -81,8 +134,21 @@ export function planCompactionKeep(params: CompactionKeepPlanParams): Compaction
   while (keepCount > minKeep && estimated > budget) {
     const next = Math.max(minKeep, Math.floor(keepCount / 2));
     const aligned = align(next);
-    // 对齐可能因为边界回退而不减反增；保底直接砍到 next，避免死循环
-    keepCount = aligned >= keepCount ? next : aligned;
+    /**
+     * ★ 第 228 波审计修复：对齐**只能往回扩**（保留更多），所以它可能比当前还大。
+     * 原来那种情况直接采用未对齐的 `next` ⇒ 保留集从工具结果中间开始
+     * （下游会把这几条当孤儿丢掉 ⇒ 模型重跑工具）。现在改为：向下对齐到 ≤ keepCount-1 的安全边界；
+     * 调用方没给 `alignDown` 时退回"严格变小"（至少保证收敛）。
+     */
+    const candidate =
+      aligned >= keepCount
+        ? alignDown
+          ? alignDown(keepCount - 1)
+          : keepCount - 1
+        : aligned;
+    const bounded = Math.max(minKeep, Math.min(candidate, keepCount - 1));
+    if (bounded >= keepCount) break; // 兜底：确实降不下去（minKeep 已触底）就停，避免死循环
+    keepCount = bounded;
     estimated = estimate(keepCount);
   }
 
@@ -116,6 +182,38 @@ export function alignKeepToRoundBoundary(
     boundary--;
   }
   return messages.length - boundary;
+}
+
+/**
+ * ★ 第 228 波审计新增：把"保留最后 N 条"**向下**对齐到安全边界（返回 **≤ desiredCount**）。
+ *
+ * 与 `alignKeepToRoundBoundary` 的区别（两份都必须存在，解决的是相反方向的问题）：
+ * - 向上版（往回扩）：期望位置落在工具结果里时**多保留**几条，保证 assistant↔tool 不被切开；
+ * - 向下版：期望位置落在工具结果里时**少保留**几条，保证"缩小保留集"这一步也不会切进工具块。
+ *
+ * 收缩循环必须用向下版：向上版在"收缩"语境下会变大，而变大之后若被直接采用
+ * （老实现就是 `keepCount = next`），保留集就从工具结果中间开始 ⇒ 下游按孤儿丢掉
+ * （`agentic-loop.ts:5428`）⇒ 模型看到"调了工具却没有结果"，可能重跑一遍。
+ */
+export function alignKeepToRoundBoundaryDown(
+  messages: Array<{ role?: string }>,
+  desiredCount: number,
+): number {
+  if (!Array.isArray(messages) || messages.length === 0) return 0;
+  const keep = Math.max(1, Math.min(desiredCount, messages.length));
+  let boundary = messages.length - keep;
+  while (boundary < messages.length && messages[boundary].role !== "assistant" && messages[boundary].role !== "user") {
+    boundary++;
+  }
+  /**
+   * ⚠️ **返回 0 表示"这一侧不存在安全边界"**（例如整条尾巴都是工具结果）——
+   * 调用方必须把它当作"不能往这个方向缩"，改用下限（`minKeep`，由调用方保证它本身是安全边界）
+   * 或放弃这次收缩。**绝不能把 0 当保留条数用**：`messages.slice(-0)` 在 JS 里等于
+   * `slice(0)`（保留全部），而 `messages.slice(0, len - 0)` 会删掉全部
+   * —— 这正是 `foldStaleCompactionMarkers` 里那条警告守的灾难形态。
+   */
+  if (boundary >= messages.length) return 0;
+  return Math.max(1, messages.length - boundary);
 }
 
 // ========== 压缩标记的折叠（第 45 轮：摘要累积 P1-D4） ==========
@@ -190,6 +288,14 @@ export interface CompactionBoundaryPlan {
   foldedMarkers: number;
   /** 待删集里**最新**那条摘要标记的正文（用于级联摘要），没有则为空串 */
   existingSummary: string;
+  /**
+   * ★ 第 228 波审计新增：**保留集里也必须删掉**的旧标记 id（"标记正好是最后一条"那种形态）。
+   *
+   * 为什么不能只靠 `keepCount` 表达：那种形态下 keep 会被下限钉成 1、而"要删的那条"就是这 1 条
+   * ⇒ 只能用 id 精确表达。调用方**必须**把这些 id 与待删集合并，否则新标记（内含旧摘要）
+   * 与旧标记（原文）会同时留在上下文里（同一份摘要重复一遍）。
+   */
+  staleMarkerIds: string[];
 }
 
 /**
@@ -221,9 +327,11 @@ export function foldStaleCompactionMarkers(
   keepCount: number,
 ): CompactionBoundaryPlan {
   if (!Array.isArray(messages) || messages.length === 0) {
-    return { keepCount: 0, foldedMarkers: 0, existingSummary: "" };
+    return { keepCount: 0, foldedMarkers: 0, existingSummary: "", staleMarkerIds: [] };
   }
   let keep = Math.max(1, Math.min(keepCount, messages.length));
+  /** 保留集里也必须删掉的旧标记 id（见类型注释；只有"标记正好是最后一条"那种形态会用到） */
+  const staleMarkerIds: string[] = [];
 
   /**
    * 找保留集里**最靠后**的标记：它是最新的一次压缩留下的，
@@ -273,6 +381,17 @@ export function foldStaleCompactionMarkers(
       "[compaction] 保留数为 0（标记正好是最后一条）→ 收敛为 1：保留摘要本身，" +
         "否则 slice(-0) 会把整段历史都算进待删集（一次压缩清空会话）",
     );
+    /**
+     * ★ 第 228 波审计补：这种形态下"保留的那一条"**就是旧标记本身**，而它的正文已经
+     * 作为 `existingSummary` 进了新标记（级联）⇒ 不额外处理的话，上下文里会**同时**出现
+     * 新标记（内含旧摘要）与旧标记（原文），同一份摘要重复一遍（最坏两万字符）。
+     * 所以把它登记进 `staleMarkerIds`：调用方必须把它**和待删集一起**移除
+     * （不能靠 `slice(-0)` 去表达"删掉它"，那正是上面这条警告守的灾难）。
+     */
+    const tail = messages[messages.length - 1];
+    if (isCompactionMarker(tail) && typeof (tail as { id?: string }).id === "string") {
+      staleMarkerIds.push((tail as { id: string }).id);
+    }
   }
 
   // 折叠后的新入口若正好落在孤儿 tool 结果上，向后推（= 多删）到安全边界
@@ -280,7 +399,7 @@ export function foldStaleCompactionMarkers(
   while (start < messages.length && messages[start].role === "tool") start++;
   keep = messages.length - start;
 
-  return { keepCount: keep, foldedMarkers, existingSummary };
+  return { keepCount: keep, foldedMarkers, existingSummary, staleMarkerIds };
 }
 
 // ========== 送往模型的消息选择（第 47 轮：从 AgenticLoop 抽出，两处共用一份） ==========
@@ -495,11 +614,12 @@ export function packPartsForSummary(
 ): { chunks: string[]; overflow: string[]; consumed: number } {
   const limit = Math.max(1, Math.floor(cap));
   const chunkBudget = Math.max(1, Math.floor(maxChunks));
+  /** 每一块装了哪几个**非空**分片（空分片不占地方，但仍占"消息下标"） */
+  const chunkPartCounts: number[] = [];
   const chunks: string[] = [];
-  /** 每一块吃掉了哪几个分片（`consumed` 要如实回给调用方，它据此找出"溢出的是哪几条消息"） */
-  const chunkParts: number[] = [];
   let current = "";
   let currentCount = 0;
+
   for (const part of parts) {
     const piece = String(part ?? "");
     if (piece.length === 0) continue;
@@ -507,17 +627,17 @@ export function packPartsForSummary(
     if (piece.length > limit) {
       if (current) {
         chunks.push(current);
-        chunkParts.push(currentCount);
+        chunkPartCounts.push(currentCount);
         current = "";
         currentCount = 0;
       }
       chunks.push(piece);
-      chunkParts.push(1);
+      chunkPartCounts.push(1);
       continue;
     }
     if (current && current.length + piece.length + 2 > limit) {
       chunks.push(current);
-      chunkParts.push(currentCount);
+      chunkPartCounts.push(currentCount);
       current = "";
       currentCount = 0;
     }
@@ -526,13 +646,45 @@ export function packPartsForSummary(
   }
   if (current) {
     chunks.push(current);
-    chunkParts.push(currentCount);
+    chunkPartCounts.push(currentCount);
   }
+
   if (chunks.length <= chunkBudget) {
     return { chunks, overflow: [], consumed: parts.length };
   }
-  const consumed = chunkParts.slice(0, chunkBudget).reduce((s, n) => s + n, 0);
-  return { chunks: chunks.slice(0, chunkBudget), overflow: chunks.slice(chunkBudget), consumed };
+  return {
+    chunks: chunks.slice(0, chunkBudget),
+    overflow: chunks.slice(chunkBudget),
+    consumed: countPartsInFirstChunks(parts, chunkPartCounts, chunkBudget),
+  };
+}
+
+/**
+ * ★ 第 228 波审计修复：数出"前 N 块一共盖住了**多少个分片（含空分片）**"。
+ *
+ * ## 为什么不能只数非空分片（真缺陷）
+ *
+ * 调用方把这个数当**消息下标**用（`oldBand.slice(packed.consumed)` 找"溢出的是哪几条消息"）。
+ * `buildConversationTextParts` 保证"一条消息一段"，但**空内容的消息也占一段**（空串）。
+ * 老实现只给非空分片计数 ⇒ 返回值偏小 ⇒ 溢出档把**已经进过摘要的消息**又渲染一遍
+ * （同一段内容在标记里出现两次，且表头写的覆盖条数是假的）。
+ * 这里按"分片下标"数：空分片也算一位，于是返回值与消息一一对应。
+ */
+function countPartsInFirstChunks(parts: readonly string[], chunkPartCounts: readonly number[], chunkBudget: number): number {
+  const wanted = chunkPartCounts.slice(0, chunkBudget).reduce((s, n) => s + n, 0);
+  if (wanted <= 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < parts.length; i++) {
+    if (String(parts[i] ?? "").length === 0) continue;
+    seen += 1;
+    if (seen === wanted) {
+      /* 这一条属于已摘要的部分；它**后面**的空消息没有任何内容可渲染 ⇒ 一并算作已覆盖 */
+      let cursor = i + 1;
+      while (cursor < parts.length && String(parts[cursor] ?? "").length === 0) cursor += 1;
+      return cursor;
+    }
+  }
+  return parts.length;
 }
 
 /**
@@ -560,35 +712,69 @@ export function composeCompactionMarkerText(input: {
   summarizedCount: number;
   middleCount: number;
   overflowCount: number;
+  /**
+   * ★ 第 228 波审计新增：**标记的字符预算**（= 这次要移除的内容有多少字符，见调用方）。
+   *
+   * ## 被守的缺陷（真机可复现的形状）
+   *
+   * 三档标记最坏情况约 2.3 万字符（≈5.8k token，见审计读数）。而"待压内容"可能很小：
+   * 手动压缩一个只有几十条短消息的会话时，移除 200 字符却插进 12000 字符 ⇒ **上下文反而变大**，
+   * 压力不降反升 ⇒ 立刻再次压缩（用户看到的是"点了压缩，占用没降甚至更高"）。
+   *
+   * 规则：**压缩不许让上下文变大** —— 标记 ≤ `max(800, 待压内容字符数)`，
+   * 超过就按"先裁保真度最低的两档、最后才裁检查点摘要"的顺序裁剪，并把裁剪量写在段头（可见）。
+   * 不传这个参数时不做裁剪（老调用方/纯函数用例）。
+   */
+  charBudget?: number;
 }): string {
-  const sections: string[] = ["[上下文已自动压缩]", ""];
-  if (input.summary.trim()) {
-    sections.push(`## 检查点摘要（覆盖较早的 ${input.summarizedCount} 条）`, "", input.summary.trim(), "");
-  }
-  if (input.priorSummary && input.priorSummary.trim()) {
-    sections.push("## 之前的摘要（继续保留）", "", input.priorSummary.trim(), "");
-  }
-  if (input.middleDigest && input.middleDigest.trim()) {
-    sections.push(
-      `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条；确定性渲染，不是逐字原文）`,
-      "",
-      input.middleDigest.trim(),
-      "",
-    );
-  }
-  if (input.overflowDigest && input.overflowDigest.trim()) {
-    sections.push(
-      `## 更早的历史（${input.overflowCount} 条，保真度最低：只保留可检索的要点，原文已不再逐条保留）`,
-      "",
-      input.overflowDigest.trim(),
-      "",
-    );
-  }
-  sections.push(
-    "---",
+  const budget = input.charBudget === undefined ? Number.POSITIVE_INFINITY : Math.max(800, Math.floor(input.charBudget));
+  /**
+   * 固定开销（三段的标题、段间空行、收尾说明）**先量再分配** —— 这样"裁剪后的总长 ≤ 预算"
+   * 是一个能断言的硬事实，而不是估算。
+   */
+  const tailLine =
+    "---\n" +
     `已移除 ${input.removedCount} 条旧消息，保留最近 ${input.keptCount} 条（按轮次边界对齐：最近几轮不切断）。` +
-      "请基于以上内容继续工作；如需之前的文件内容或命令输出，请用工具重新获取。",
-  );
+    "请基于以上内容继续工作；如需之前的文件内容或命令输出，请用工具重新获取。";
+  const headingOf = {
+    summary: `## 检查点摘要（覆盖较早的 ${input.summarizedCount} 条）`,
+    prior: "## 之前的摘要（继续保留）",
+    middle: `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条；确定性渲染，不是逐字原文）`,
+    overflow: `## 更早的历史（${input.overflowCount} 条，保真度最低：只保留可检索的要点，原文已不再逐条保留）`,
+  } as const;
+  const wanted = {
+    summary: input.summary.trim(),
+    prior: (input.priorSummary ?? "").trim(),
+    middle: (input.middleDigest ?? "").trim(),
+    overflow: (input.overflowDigest ?? "").trim(),
+  };
+  const clipNote = (label: string, dropped: number) => `\n（${label}已按压缩预算裁剪 ${dropped} 字符）`;
+  const fixedLen =
+    "[上下文已自动压缩]".length +
+    2 +
+    tailLine.length +
+    2 +
+    (wanted.summary ? headingOf.summary.length + 4 + clipNote("本段", 100000).length : 0) +
+    (wanted.prior ? headingOf.prior.length + 4 + clipNote("本段", 100000).length : 0) +
+    (wanted.middle ? headingOf.middle.length + 4 + clipNote("本段", 100000).length : 0) +
+    (wanted.overflow ? headingOf.overflow.length + 4 + clipNote("本段", 100000).length : 0);
+  const usable = Math.max(0, budget - fixedLen);
+  /** 三段按"保真度从低到高"分预算：更早档 1/6、中间档 2/6、检查点摘要 3/6 */
+  const overflowMax = Math.floor(usable / 6);
+  const middleMax = Math.floor(usable / 3);
+  const summaryMax = Math.max(0, usable - overflowMax - middleMax);
+  const clip = (text: string, max: number): string => {
+    if (text.length <= max) return text;
+    const dropped = text.length - max;
+    return `${text.slice(0, max)}${clipNote("本段", dropped)}`;
+  };
+
+  const sections: string[] = ["[上下文已自动压缩]", ""];
+  if (wanted.summary) sections.push(headingOf.summary, "", clip(wanted.summary, summaryMax), "");
+  if (wanted.prior) sections.push(headingOf.prior, "", clip(wanted.prior, summaryMax), "");
+  if (wanted.middle) sections.push(headingOf.middle, "", clip(wanted.middle, middleMax), "");
+  if (wanted.overflow) sections.push(headingOf.overflow, "", clip(wanted.overflow, overflowMax), "");
+  sections.push(tailLine);
   return sections.join("\n");
 }
 

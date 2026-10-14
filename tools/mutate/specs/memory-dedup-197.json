@@ -37,8 +37,8 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "      if (!sameBucket(entry) && entry.scope !== \"platform\" && !sameProjectAsConversation(entry)) continue;",
-          "to": "      if (!sameBucket(entry) && !sameProjectAsConversation(entry)) continue;"
+          "from": "        !sameBucket(entry) &&\n        entry.scope !== \"platform\" &&\n        !sameProjectAsConversation(entry) &&\n        !sameSessionAsProject(entry)",
+          "to": "        !sameBucket(entry) &&\n        !sameProjectAsConversation(entry) &&\n        !sameSessionAsProject(entry)"
         }
       ],
       "tests": [

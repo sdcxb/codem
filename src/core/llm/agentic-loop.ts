@@ -42,7 +42,7 @@ import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearing
 import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
-import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS } from "./compaction-budget";
+import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS } from "./compaction-budget";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
@@ -2545,28 +2545,40 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         }
         yield { type: "compaction_start" };
         const compacted = await this.compactMessages(sessionId);
-        yield { type: "compaction_end", messagesRemoved: compacted };
-        // P1-6: Clear transcript cache on compaction (cached responses no longer valid)
-        TranscriptCache.clear();
+        /**
+         * ★ 第 228 波审计修复（中）：**"被跳过"与"压不动"必须分开记**。
+         *
+         * `compactMessages` 拿不到压缩锁时返回 **-1**（老实现返回 0，与"没有可移除的消息"
+         * 同值）⇒ 调用方把 skip 计成一次"压缩成功"，连跳 3 次就以
+         * 「上下文窗口已满，即使压缩后仍无法继续」结束本轮 —— 而**一次压缩都没真正发生**。
+         * 跳过的语义是"这次不算"：既不记账、也不清缓存（什么都没变）。
+         */
+        yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted };
+        if (compacted < 0) {
+          /* 被跳过：什么都不变 ⇒ 不清缓存、不计连压次数 */
+        } else {
+          // P1-6: Clear transcript cache on compaction (cached responses no longer valid)
+          TranscriptCache.clear();
 
-        // P2-C: Post-compaction cleanup — clear stale caches
-        // After compaction, old file read/write caches are stale because the
-        // conversation history they were based on has been summarized.
-        // The LLM may re-read files it needs, so we clear caches to prevent
-        // false cache hits on files that may have changed context.
-        this.readCache?.clear();
-        this.writeCache?.clear();
-        this.msgCache = null;
-        this.state.microCompactedThisRun = false;
-        // F1.2: Trigger memory extraction after compaction
-        if (this.config.memoryEnabled && this.config.onCompactionComplete) {
-          try { this.config.onCompactionComplete(); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          // P2-C: Post-compaction cleanup — clear stale caches
+          // After compaction, old file read/write caches are stale because the
+          // conversation history they were based on has been summarized.
+          // The LLM may re-read files it needs, so we clear caches to prevent
+          // false cache hits on files that may have changed context.
+          this.readCache?.clear();
+          this.writeCache?.clear();
+          this.msgCache = null;
+          this.state.microCompactedThisRun = false;
+          // F1.2: Trigger memory extraction after compaction
+          if (this.config.memoryEnabled && this.config.onCompactionComplete) {
+            try { this.config.onCompactionComplete(); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          }
+          messagesForIteration = await this.buildMessages(sessionId);
+          /** 第 182 波：记下重建返回的时刻 ✓ ⇒ 把 ctx= 切成 tail(内部) 与 prep(之后) ✓。 */
+          this.lastBuildReturnAt = Date.now();
+          this.state.compactedThisIteration = true;
+          this.state.consecutiveCompactions++;
         }
-        messagesForIteration = await this.buildMessages(sessionId);
-      /** 第 182 波：记下重建返回的时刻 ✓ ⇒ 把 ctx= 切成 tail(内部) 与 prep(之后) ✓。 */
-      this.lastBuildReturnAt = Date.now();
-        this.state.compactedThisIteration = true;
-        this.state.consecutiveCompactions++;
       } else {
         // Reset consecutive compactions if no compaction needed
         this.state.consecutiveCompactions = 0;
@@ -4255,7 +4267,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         if (this.config.enableReactiveCompaction) {
           yield { type: "compaction_start" };
           const compacted = await this.compactMessages(sessionId);
-          yield { type: "compaction_end", messagesRemoved: compacted };
+          yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted };
+          if (compacted < 0) {
+            /* 被跳过（同一会话已有压缩在跑）⇒ 什么都不算，等下一轮重试 */
+            return;
+          }
           // P2-C: Clear stale caches on reactive compaction too
           this.readCache?.clear();
           this.writeCache?.clear();
@@ -5693,8 +5709,16 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const { acquireCompactionLock, releaseCompactionLock } =
       await import("./compaction-control");
     if (!acquireCompactionLock(sessionId)) {
-      console.log("[compactMessages] Compaction already in progress, skipping");
-      return 0;
+      /**
+       * ★ 第 228 波审计修复（中）：**-1 = 被跳过**（老实现返回 0，与"没有可移除的消息"同值）。
+       *
+       * 调用方原来无条件 `consecutiveCompactions++` ⇒ 连跳 3 次就以
+       * 「上下文窗口已满，即使压缩后仍无法继续」结束本轮，而**一次压缩都没真正发生**。
+       * 手动压缩现在也走同一把锁（`ContextMonitor.manualCompact`），所以这条路径
+       * 在"用户点了压缩、自动压缩正好在等摘要"时是可达的。
+       */
+      console.log("[compactMessages] Compaction already in progress, skipping（不计入连压次数）");
+      return -1;
     }
 
     try {
@@ -5750,10 +5774,38 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const windowTokens = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
     // 预算：窗口的一半。留一半给系统提示、工具 schema、以及模型输出。
     const keepBudget = Math.max(8000, Math.floor(windowTokens * 0.5));
+    /**
+     * ★ 第 228 波审计修复（**高**）：估算保留集时必须算上**工具结果**。
+     *
+     * ## 被守的缺陷（"该收缩时永远不收缩" ⇒ 空转到假死）
+     *
+     * 存储行里工具结果住在 `assistant.toolCalls[].result`（请求里才展开成独立的 `role=tool`
+     * 消息，见 `message.ts` 的 `listMessages` 投影）。老实现只累加 `m.content` ⇒
+     * 对"一屏工具输出"的会话估算出来接近 0 ⇒ `planCompactionKeep` 判"已进预算"、**一次都不收缩**
+     * ⇒ 压缩后压力不降（压力是按真实请求侧 token 算的）⇒ 下一轮再压，而此时可见消息只剩
+     * 「标记 + 20 条」，`keepCount=20` 使待压集只剩那条旧标记 ⇒ 每轮只删 1 条、写回等长标记
+     * （空转）⇒ `consecutiveCompactions` 到 3 ⇒ 假结论「上下文窗口已满，请开启新对话」。
+     *
+     * ⚠️ 这是**同一个坑的第二个入口**：`removedChars`（本波新增）已经算过 `tc.result`，
+     * 保留集预算这一处此前是瞎的。
+     */
     const estimateKeepTokens = (count: number): number =>
-      messages
-        .slice(-count)
-        .reduce((sum: number, m: any) => sum + estimateTokens(String(m.content ?? "")), 0);
+      messages.slice(-count).reduce((sum: number, m: any) => {
+        let tokens = estimateTokens(String(m.content ?? ""));
+        if (Array.isArray(m.toolCalls)) {
+          for (const tc of m.toolCalls) {
+            if (typeof tc?.result === "string") tokens += estimateTokens(tc.result);
+            if (tc?.args !== undefined) {
+              try {
+                tokens += estimateTokens(JSON.stringify(tc.args));
+              } catch {
+                /* 参数不可序列化时忽略（只影响估算，不影响正确性） */
+              }
+            }
+          }
+        }
+        return sum + tokens;
+      }, 0);
     const plan = planCompactionKeep({
       totalMessages: messages.length,
       desiredKeep: maxKeepCount,
@@ -5775,6 +5827,9 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       })(),
       estimate: estimateKeepTokens,
       align: (desired) => this.alignKeepBoundary(messages, desired),
+      /* ★ 第 228 波审计：收缩必须走"向下对齐"的安全边界，否则保留集会从工具结果中间开始
+         （下游按孤儿丢掉那几条 ⇒ 模型看到"调过工具却没有结果"，可能重跑一遍） */
+      alignDown: (desired) => alignKeepToRoundBoundaryDown(messages, desired),
     });
     keepCount = plan.keepCount;
     if (plan.shrunk) {
@@ -5812,14 +5867,62 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * 折叠规则与理由见 `foldStaleCompactionMarkers`（纯函数，有用例守着）。
      */
     const folded = foldStaleCompactionMarkers(messages, keepCount);
-    if (folded.foldedMarkers > 0) {
+    if (folded.foldedMarkers > 0 || folded.staleMarkerIds.length > 0) {
       console.log(
         `[compactMessages] 折叠保留集里的旧摘要标记 ${folded.foldedMarkers} 条：保留 ${keepCount} → ${folded.keepCount} 条（否则摘要永远累积、级联永远失效）`,
       );
       keepCount = folded.keepCount;
       messagesToKeep = messages.slice(-keepCount);
       messagesToRemove = messages.slice(0, messages.length - keepCount);
+      /**
+       * ★ 第 228 波审计修复：**"旧标记正好是最后一条"**那种形态下，旧标记会被下限钉在保留集里，
+       * 而它的正文已经作为 `existingSummary` 进了新标记 ⇒ 不额外删掉的话，同一份摘要会在上下文里
+       * 出现两遍（新标记内含 + 旧标记原文）。这里按 id 把它并进待删集（不能用 `slice(-0)` 表达，
+       * 那会把整段历史都算进来 —— `foldStaleCompactionMarkers` 里那条警告守的就是它）。
+       */
+      if (folded.staleMarkerIds.length > 0) {
+        const staleSet = new Set(folded.staleMarkerIds);
+        const extra = messagesToKeep.filter((m: any) => staleSet.has(m.id));
+        if (extra.length > 0) {
+          messagesToKeep = messagesToKeep.filter((m: any) => !staleSet.has(m.id));
+          messagesToRemove = [...messagesToRemove, ...extra].sort((a: any, b: any) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+          console.log(`[compactMessages] 旧标记落在保留集末尾 ⇒ 按 id 一并移除 ${extra.length} 条（避免摘要重复一遍）`);
+        }
+      }
       if (messagesToRemove.length === 0) return 0;
+    }
+
+    /**
+     * ★ 第 228 波审计修复（中）：**折叠之后必须把轮次保底重新夹一遍**。
+     *
+     * 折叠的语义是"保留集从最后一个旧标记之后开始"，于是当那条旧标记**正好是最后一条**时
+     * 折叠结果会坍缩到 1（`foldStaleCompactionMarkers` 的下限）—— 于是"最近 3 轮绝不切断"
+     * 这条本波刚立下的契约被静默撕毁（那 6 条真实消息全被软删）。
+     * 旧标记的正文已经进了 `existingSummary`（不会丢），所以这里可以只按"标记之外的真实消息"
+     * 重新满足保底：把保留集往回扩到保底条数，再按 id 剔掉旧标记。
+     */
+    if (folded.foldedMarkers > 0 || folded.staleMarkerIds.length > 0) {
+      const staleSet = new Set(folded.staleMarkerIds);
+      /**
+       * ⚠️ 两个都要在**真实消息**上算（先把待删的旧标记剔除）：
+       * ① 那条标记也是 `role=user` ⇒ 它会白占"最近 3 轮"里的一个轮次名额（保底算小）；
+       * ② 它也占保留集的一个名额 ⇒ `slice(-floor)` 会把最近 3 轮的**第一条**挤出去
+       *    （形态：本该保 `u37,a37,u38,a38,u39,a39`，实际只保住 `a37,u38,a38,u39,a39`）。
+       */
+      const realMessages = messages.filter((m: any) => !staleSet.has(m.id));
+      const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES).minKeep;
+      if (keepCount < floor) {
+        const restored = realMessages.slice(-floor);
+        const restoredIds = new Set(restored.map((m: any) => m.id));
+        const extraRemove = messagesToKeep.filter((m: any) => !restoredIds.has(m.id));
+        messagesToKeep = restored;
+        messagesToRemove = [...messagesToRemove.filter((m: any) => !restoredIds.has(m.id)), ...extraRemove]
+          .sort((a: any, b: any) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+        keepCount = messagesToKeep.length;
+        console.log(
+          `[compactMessages] 折叠把保留集压到 ${floor} 条以下 ⇒ 按轮次保底重新夹到 ${keepCount} 条（最近几轮不切断）`,
+        );
+      }
     }
 
     // Verify tool_use/tool_result pairing integrity in the keep set
@@ -5868,6 +5971,30 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const middleStart = Math.max(0, messagesToRemove.length - COMPACTION_MIDDLE_BAND_SIZE);
     const middleBand = messagesToRemove.slice(middleStart);
     const oldBand = messagesToRemove.slice(0, middleStart);
+    /**
+     * ★ 第 228 波审计新增：**这次要移除的内容一共有多少字符**（标记的字符预算就取它）。
+     *
+     * 为什么必须量：三档标记最坏约 2.3 万字符（段头 + 三段要点 + 收尾）。而"待压内容"可能很小
+     * （手动压缩一个只有几十条短消息的会话）⇒ 不加约束就会出现"移除 200 字符、插进 12000 字符"，
+     * 上下文**反而变大**、压力不降反升 ⇒ 立刻再次压缩（用户看到"点了压缩，占用没降甚至更高"）。
+     * 工具结果与参数也一起算（它们同样是"被移除的上下文"）。
+     */
+    const removedChars = messagesToRemove.reduce((sum: number, m: any) => {
+      let chars = typeof m.content === "string" ? m.content.length : 0;
+      if (Array.isArray(m.toolCalls)) {
+        for (const tc of m.toolCalls) {
+          chars += typeof tc?.result === "string" ? tc.result.length : 0;
+          if (tc?.args !== undefined) {
+            try {
+              chars += JSON.stringify(tc.args).length;
+            } catch {
+              /* 参数不可序列化时忽略（只影响预算，不影响正确性） */
+            }
+          }
+        }
+      }
+      return sum + chars;
+    }, 0);
     const oldParts = this.buildConversationTextParts(oldBand);
     const packed = packPartsForSummary(oldParts, SUMMARY_CONVERSATION_CHAR_CAP, MAX_SUMMARY_CHUNKS);
     const conversationText = packed.chunks.join("\n\n");
@@ -5888,7 +6015,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // (saveMessages → createMessage → db.run) between our compaction DB
     // operations, which corrupted sql.js state and caused
     // "bad parameter or other API misuse" errors.
-    let summary: string;
+    /* ★ 第 228 波审计：显式初始化 —— 兜底分支（catch）要用它判断"有没有拿到部分摘要" */
+    let summary = "";
     /** 这次**没有走 LLM 摘要**时，旧摘要要原样带进新标记（级联不许断，见 `composeCompactionMarkerText`） */
     let priorSummaryCarried = "";
     try {
@@ -5913,8 +6041,26 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       }
       if (packed.chunks.length === 0 && existingSummary) priorSummaryCarried = existingSummary;
     } catch (err) {
+      /**
+       * ★ 第 228 波审计修复（**高**）：兜底路径**绝不能丢掉累积摘要**。
+       *
+       * 被守的缺陷：老实现 `summary = fallbackSummary(...)` 是**覆盖赋值**，而
+       * ① `fallbackSummary` 是旧的 100 字实现、还**显式跳过**压缩标记行
+       * （`!snippet.startsWith("[上下文已自动压缩]")`）；② 旧标记这一轮已经在
+       * `messagesToRemove` 里、马上会被软删。两条叠加 ⇒ **整段累积摘要不可恢复地消失**
+       * （分块摘要已经成功的部分也一起丢），用户只看到一行 `console.warn`。
+       *
+       * 现在的口径：已经拿到的部分摘要（哪怕只成功了一块，它里面就有旧摘要的合并结果）
+       * 一律保留；一块都没成功时，把旧摘要**原样**交给 `priorSummaryCarried`（与
+       * "待压集 ≤ 中间档 ⇒ 不调 LLM"那条路完全一致的兜底）。
+       */
       console.warn("[compactMessages] LLM summary failed, falling back to snippet extraction:", err);
-      summary = this.fallbackSummary(messagesToRemove);
+      const partial = summary.trim();
+      if (!partial && existingSummary) priorSummaryCarried = existingSummary;
+      const snippetFallback = this.fallbackSummary(messagesToRemove);
+      summary = partial
+        ? `${partial}\n\n（本次摘要调用中断；以下是剩余历史的片段）\n${snippetFallback}`
+        : snippetFallback;
     }
 
     /**
@@ -5925,8 +6071,30 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       ? renderStructuredHistorySummary(middleBand as never[], { userChars: 1200, assistantChars: 900, toolChars: 300, totalChars: 12000 })
       : "";
     const overflowMessages = packed.overflow.length > 0 ? oldBand.slice(packed.consumed) : [];
-    const overflowDigest = overflowMessages.length > 0
-      ? renderStructuredHistorySummary(overflowMessages as never[], { userChars: 300, assistantChars: 200, toolChars: 120, totalChars: 8000 })
+    /**
+     * ★ 第 228 波审计修复（低/中）：溢出档要**保"离现在最近"的那一批**，并如实报覆盖条数。
+     *
+     * 被守的缺陷：`renderStructuredHistorySummary` 超限时裁掉的是**尾部**（它按"最老在前"
+     * 逐条 push，最后统一 `slice(0, totalChars)`），而 `overflowMessages` 也是"最老在前"
+     * ⇒ 被裁掉的恰好是**离现在最近**的那几条（与"压缩率随距离上升"的取向相反），
+     * 而段头写的还是**裁剪前**的条数（虚的）。
+     *
+     * 现在自己按字符预算从**最新**往回取（保留最近的一批），并把真正渲染的条数交给段头。
+     */
+    const OVERFLOW_DIGEST_CHAR_BUDGET = 8000;
+    const overflowSelected: any[] = [];
+    let overflowChars = 0;
+    for (let i = overflowMessages.length - 1; i >= 0; i--) {
+      const m: any = overflowMessages[i];
+      const chars = typeof m?.content === "string" ? m.content.length : 0;
+      if (overflowChars + chars > OVERFLOW_DIGEST_CHAR_BUDGET && overflowSelected.length > 0) break;
+      overflowSelected.unshift(m);
+      overflowChars += chars;
+    }
+    const overflowDropped = overflowMessages.length - overflowSelected.length;
+    const overflowDigest = overflowSelected.length > 0
+      ? renderStructuredHistorySummary(overflowSelected as never[], { userChars: 300, assistantChars: 200, toolChars: 120, totalChars: 8000 }) +
+        (overflowDropped > 0 ? `\n（另有更早的 ${overflowDropped} 条未保留要点，原文已不在上下文里）` : "")
       : "";
 
     // ========== ATOMIC DB COMMIT (no `await` from here to the end) ==========
@@ -5946,7 +6114,10 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       keptCount: keepCount,
       summarizedCount: oldBand.length,
       middleCount: middleBand.length,
-      overflowCount: overflowMessages.length,
+      /* 段头写真话：这是**实际渲染出要点**的条数（不是裁剪前的数） */
+      overflowCount: overflowSelected.length,
+      /* ★ 第 228 波审计：**压缩不许让上下文变大** —— 标记 ≤ max(800, 待压内容字符数) */
+      charBudget: removedChars,
     });
     const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
     /**
@@ -5965,12 +6136,22 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // Set the compaction flag — UI auto-save (saveMessages) will skip while
     // this is active. This is a defense-in-depth measure; the primary fix is
     // that all DB operations below are synchronous with no `await` gaps.
-    setCompactionInProgress(true);
+    setCompactionInProgress(sessionId, true);
     try {
-      // Step 1: Soft-delete old messages (mark hidden=1)
-      messageStorage.deleteMessagesByIds(removedIds);
-
-      // Step 2: Insert compaction marker message
+      /**
+       * ★ 第 228 波审计修复（中/高）：**先写标记，再删旧消息**（原来是反的）。
+       *
+       * ## 被守的缺陷（"删了但没摘要"且没有补偿）
+       *
+       * 旧顺序：先 `deleteMessagesByIds`（权威日志里逐条写墓碑、索引置 hidden）→ 后插标记。
+       * 而**这一步两者都不会抛**（日志追加是 `void appendSessionMessage`，契约是"失败只记日志"；
+       * 索引失败被吞成 `reportPersistFailure`）⇒ 一旦插标记那一步没落盘（进程结束、
+       * 追加失败），结果是**旧消息已经永久隐藏、摘要却不存在**，且没有任何补偿路径
+       * （`repairCrashedSession` 只修工具配对，不恢复被隐藏的消息）。
+       *
+       * 反过来写就安全：**标记先落**（此时什么都没删，最坏是"多一条摘要 + 旧消息还在"，
+       * 下一次压缩会把它折叠掉），删除在后。失败模式从"净丢摘要"变成"净多摘要"。
+       */
       messageStorage.createMessage({
         id: markerId,
         role: "user",
@@ -5978,6 +6159,9 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
         timestamp: markerTs - 1,
         status: "done",
       }, sessionId);
+
+      // Step 2: Soft-delete old messages (mark hidden=1) —— 传 sessionId，镜像被逐出也能判归属
+      messageStorage.deleteMessagesByIds(removedIds, sessionId);
 
       // Step 3: Append compaction event to the event log
       try {
@@ -5992,7 +6176,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       }
     } finally {
       // Release the compaction flag — UI auto-save can resume
-      setCompactionInProgress(false);
+      setCompactionInProgress(sessionId, false);
     }
 
     console.log(`[compactMessages] Removed ${messagesToRemove.length} old messages, kept ${keepCount}, inserted LLM compaction marker (summary length: ${summary.length})`);

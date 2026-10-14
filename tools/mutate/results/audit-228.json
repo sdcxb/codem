@@ -1,0 +1,395 @@
+{
+  "wave": "audit-228",
+  "description": "第 228 波·审计轮：四个独立审计（压缩核心 / 压缩生命周期 / 记忆提取 / 记忆注入）挖出的真缺陷的修复自证。压缩侧：保留集预算必须看得见工具结果、摘要兜底不许丢累积摘要、先写标记再删旧消息、跳过不许记成成功压缩、折叠后要重新夹回轮次保底、软删要带会话 id（镜像被逐出时判归属）、手动与自动共用压缩锁、手动续体要判会话、压缩标志按会话、consumed 含空分片、minKeep 是下限、标记有字符预算。记忆侧：explicit 必须有用户原话、压缩后强制提炼、每次提取有总写入上限、系统顶替不留伪造拒绝记录、查重双向。",
+  "runAt": "2026-10-14T02:38:42.492Z",
+  "specFingerprint": "33dd736d75868eb09f290f59f05303fdf925cfbf",
+  "files": [
+    "src/core/llm/agentic-loop.ts",
+    "src/core/storage/message.ts",
+    "src/components/ContextMonitor.tsx",
+    "src/core/storage/compaction-state.ts",
+    "src/core/llm/compaction-budget.ts",
+    "src/core/llm/index.ts",
+    "src/core/memory/memory.ts"
+  ],
+  "tests": [
+    "src/test/compaction-audit-228.test.ts",
+    "src/test/feature-context-fixes.test.ts",
+    "src/test/audit47-regressions.test.ts",
+    "src/test/context-compact-feedback.test.tsx",
+    "src/test/compaction-gradient.test.ts",
+    "src/test/memory-rejection.test.ts",
+    "src/test/memory-audit-228.test.ts",
+    "src/test/memory-dedup.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 保留集预算又看不见工具结果（该收缩时永远不收缩 ⇒ 空转到假死）",
+      "why": "CA-5：真机形态「一屏工具输出」，估算≈0 ⇒ 判已进预算、一次都不收缩 ⇒ 压缩后压力不降 ⇒ 下一轮只删得掉上一条标记 ⇒ 连压 3 次后误报「窗口已满」",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "          for (const tc of m.toolCalls) {\n            if (typeof tc?.result === \"string\") tokens += estimateTokens(tc.result);",
+          "to": "          for (const tc of m.toolCalls) {\n            if (false && typeof tc?.result === \"string\") tokens += estimateTokens(tc.result);"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4099
+    },
+    {
+      "id": "MUT-2 摘要失败时用兜底覆盖累积摘要（结论不可恢复地消失）",
+      "why": "CA-6：老实现 `summary = fallbackSummary(...)` 是覆盖赋值，而兜底显式跳过压缩标记 ⇒ 旧标记刚被软删 ⇒ 净丢全部累积摘要",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      const partial = summary.trim();\n      if (!partial && existingSummary) priorSummaryCarried = existingSummary;",
+          "to": "      const partial = \"\";\n      if (false && existingSummary) priorSummaryCarried = existingSummary;"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4137
+    },
+    {
+      "id": "MUT-3 恢复「先删旧消息、再写标记」的旧顺序（失败时净丢摘要）",
+      "why": "CA-7：两步都不会抛（日志追加 best-effort、索引失败被吞）⇒ 「旧消息已隐藏、摘要却没落盘」可达且无补偿",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      messageStorage.createMessage({\n        id: markerId,\n        role: \"user\",\n        content: markerContent,\n        timestamp: markerTs - 1,\n        status: \"done\",\n      }, sessionId);\n\n      // Step 2: Soft-delete old messages (mark hidden=1) —— 传 sessionId，镜像被逐出也能判归属\n      messageStorage.deleteMessagesByIds(removedIds, sessionId);",
+          "to": "      messageStorage.deleteMessagesByIds(removedIds, sessionId);\n      messageStorage.createMessage({\n        id: markerId,\n        role: \"user\",\n        content: markerContent,\n        timestamp: markerTs - 1,\n        status: \"done\",\n      }, sessionId);"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/feature-context-fixes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4131
+    },
+    {
+      "id": "MUT-4 跳过压缩又返回 0（被记成一次成功压缩 ⇒ 连跳 3 次误报窗口已满）",
+      "why": "CA-8：``0` 与「没有可移除的消息」同值 ⇒ 调用方无条件 `consecutiveCompactions++`",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      console.log(\"[compactMessages] Compaction already in progress, skipping（不计入连压次数）\");\n      return -1;",
+          "to": "      console.log(\"[compactMessages] Compaction already in progress, skipping（不计入连压次数）\");\n      return 0;"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4158
+    },
+    {
+      "id": "MUT-5 折叠后不重新夹轮次保底（最近 3 轮被静默切掉）",
+      "why": "CA-9：旧标记正好是最后一条时 keep 被钉成 1 ⇒ 其余真实消息全被软删，与本波立的「最近 3 轮绝不切断」冲突",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES).minKeep;\n      if (keepCount < floor) {",
+          "to": "      const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES).minKeep;\n      if (false && keepCount < floor) {"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/audit47-regressions.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4226
+    },
+    {
+      "id": "MUT-6 软删忽略调用方给的会话（镜像被逐出 ⇒ 消息复活、压缩假成功）",
+      "why": "CA-10：三条链（墓碑 / 日志镜像剔除 / localHiddenIds）全按会话遍历 ⇒ 分不出会话就整条链空转",
+      "patches": [
+        {
+          "file": "src/core/storage/message.ts",
+          "from": "        if (!knownSessionId) continue;",
+          "to": "        if (true) continue;"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4251
+    },
+    {
+      "id": "MUT-7 手动压缩不取压缩锁（自动在等摘要时双写标记）",
+      "why": "CA-12：两条路径写出的标记时间戳算法逐字相同，折叠只带走最靠后的一条 ⇒ 另一份摘要只能以被裁剪后的形态存活",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "  if (!acquireCompactionLock(sessionId)) {",
+          "to": "  if (false && !acquireCompactionLock(sessionId)) {"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4134
+    },
+    {
+      "id": "MUT-8 手动压缩的续体不判会话归属（旧会话的回执与冷却落到新会话）",
+      "why": "CA-13：切会话的清空 effect 先跑、续体后跑 ⇒ 重置被覆盖",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "      if (sessionIdRef.current !== sessionId) return;",
+          "to": "      if (false) return;"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4161
+    },
+    {
+      "id": "MUT-9 压缩标志退回进程级单布尔（会话 A 的压缩丢掉会话 B 的自动保存）",
+      "why": "CA-14：`store.ts::saveMessages` 只看一个全局布尔，直接 return、不排队不重试",
+      "patches": [
+        {
+          "file": "src/core/storage/compaction-state.ts",
+          "from": "export function isCompactionInProgress(sessionId?: string): boolean {\n  if (sessionId === undefined) return compactionInProgress.size > 0;\n  return compactionInProgress.has(sessionId);\n}",
+          "to": "export function isCompactionInProgress(sessionId?: string): boolean {\n  return compactionInProgress.size > 0;\n}"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4357
+    },
+    {
+      "id": "MUT-10 consumed 又只数非空分片（溢出档把已进摘要的消息再渲染一遍）",
+      "why": "CA-1：调用方把它当**消息下标**用（`oldBand.slice(consumed)`）⇒ 空内容消息会错位",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "    consumed: countPartsInFirstChunks(parts, chunkPartCounts, chunkBudget),",
+          "to": "    consumed: chunkPartCounts.slice(0, chunkBudget).reduce((s, n) => s + n, 0),"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/compaction-gradient.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4453
+    },
+    {
+      "id": "MUT-11 minKeep 又只是循环停止条件（轮次保底静默失效）",
+      "why": "CA-2：`desiredKeep=20` 而保底 60 时 while 一次都不进 ⇒ 实际只保留 20 条，而日志宣称保了 60",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "    align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total)))),",
+          "to": "    align(Math.max(1, Math.min(params.desiredKeep, total))),"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4349
+    },
+    {
+      "id": "MUT-12 标记忽略字符预算（压缩可能让上下文变大）",
+      "why": "CA-4：三档标记最坏约 2.3 万字符，而「待压内容」可能只有几百字符",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "  const budget = input.charBudget === undefined ? Number.POSITIVE_INFINITY : Math.max(800, Math.floor(input.charBudget));",
+          "to": "  const budget = Number.POSITIVE_INFINITY;"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4348
+    },
+    {
+      "id": "MUT-13 explicit 又只信模型自述（仓库文件里的一句话就能绕过审批）",
+      "why": "REJ-3b：提取模型看得到工具读出来的文件正文 ⇒ 外部文本可诱导 `explicit: true` ⇒ 直接注入此后每一轮",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        const explicitRequest = mem.explicit === true && userAskedToRemember;",
+          "to": "        const explicitRequest = mem.explicit === true;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-rejection.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4254
+    },
+    {
+      "id": "MUT-14 压缩钩子不再强制提炼（压缩后该会话再也不沉淀记忆）",
+      "why": "MA-2：水位按可见消息数走，压缩让它变负 ⇒ 不强制就永远提不了",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "          this.extractMemoriesFromSession(sessionId, memoryProjectId, { force: true }).catch(() => {});",
+          "to": "          this.extractMemoriesFromSession(sessionId, memoryProjectId).catch(() => {});"
+        }
+      ],
+      "tests": [
+        "src/test/memory-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4099
+    },
+    {
+      "id": "MUT-15 总写入上限失效（conversation 级与 explicit 无上限）",
+      "why": "MA-3：`MEMORY_MAX_PER_EXTRACTION` 只数 pending ⇒ 免审批的那些完全没有上限（用户实报过「一轮几十条」）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        if (writesTotal >= MEMORY_MAX_WRITES_PER_EXTRACTION) {",
+          "to": "        if (false && writesTotal >= MEMORY_MAX_WRITES_PER_EXTRACTION) {"
+        }
+      ],
+      "tests": [
+        "src/test/memory-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3976
+    },
+    {
+      "id": "MUT-16 系统顶替又留伪造的「用户拒绝记录」",
+      "why": "MA-4：此后同类候选被「你拒绝过同类」静默挡下，而用户从没拒绝过任何东西",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "            this.memory.removeMany([duplicateOf.id], { actor: \"system\" });",
+          "to": "            this.memory.removeMany([duplicateOf.id]);"
+        }
+      ],
+      "tests": [
+        "src/test/memory-audit-228.test.ts",
+        "src/test/memory-rejection.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4134
+    },
+    {
+      "id": "MUT-17 查重又单向（同一事实先对话级生效、下一轮又写项目级并再问一次）",
+      "why": "MA-5：只有「对话级候选 vs 项目级条目」一个方向",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "        !sameProjectAsConversation(entry) &&\n        !sameSessionAsProject(entry)",
+          "to": "        !sameProjectAsConversation(entry)"
+        }
+      ],
+      "tests": [
+        "src/test/memory-audit-228.test.ts",
+        "src/test/memory-dedup.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4009
+    },
+    {
+      "id": "MUT-18 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "export const COMPACTION_MIDDLE_BAND_SIZE = 20;",
+          "to": "export const COMPACTION_MIDDLE_BAND_SIZE = 20; /* 反向对照：行为逐字不变 */"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/memory-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 3910
+    }
+  ]
+}

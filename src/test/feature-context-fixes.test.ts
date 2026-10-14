@@ -61,14 +61,15 @@ vi.mock("../core/environment", async (importOriginal) => {
 /** `compaction-state` 的调用记录包装（真实现照旧生效，只是多记一笔） */
 vi.mock("../core/storage/compaction-state", async (importOriginal) => {
   const actual = await importOriginal<{
-    isCompactionInProgress: () => boolean;
-    setCompactionInProgress: (v: boolean) => void;
+    isCompactionInProgress: (sessionId?: string) => boolean;
+    setCompactionInProgress: (sessionId: string, v: boolean) => void;
   }>();
   return {
     ...actual,
-    setCompactionInProgress: (v: boolean) => {
+    /* ★ 第 228 波审计：闸门按会话（签名变成两个参数）—— 这里原样转发，否则前面那条用例会假红 */
+    setCompactionInProgress: (sessionId: string, v: boolean) => {
       hoisted.compactionGateCalls.push(v);
-      actual.setCompactionInProgress(v);
+      actual.setCompactionInProgress(sessionId, v);
     },
   };
 });
@@ -1096,13 +1097,28 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     expect(rowsOf("messages").filter((r) => r.session_id === S).find((r) => r.id === "marker-auto")?.hidden).toBe(1);
   });
 
-  it("FC-D5d: 手动压缩的实现里闸门与事件都在（源码级，防止后续被删掉）", () => {
+  it("FC-D5d: 手动压缩的实现里闸门、压缩锁与事件都在（源码级，防止后续被删掉）", () => {
     const src = contextMonitorSource();
     const idx = src.indexOf("export function manualCompact");
     const body = src.slice(idx, src.indexOf("export function ContextMonitor"));
-    expect(body).toContain("setCompactionInProgress(true)");
-    expect(body).toContain("setCompactionInProgress(false)");
+    expect(body).toContain("setCompactionInProgress(sessionId, true)");
+    expect(body).toContain("setCompactionInProgress(sessionId, false)");
     expect(body).toContain('getEventLog().append(sessionId, "compaction"');
     expect(body).toContain("foldStaleCompactionMarkers");
+    /**
+     * ★ 第 228 波审计新增：手动压缩必须与自动压缩**互斥**（共用按会话的锁），
+     * 否则"自动在等摘要时用户点一下"会写出两条标记（时间戳逐字相同），
+     * 而折叠只带走最靠后的一条 ⇒ 另一份摘要只能以被裁剪后的形态存活。
+     */
+    expect(body, "手动压缩要取压缩锁").toContain("acquireCompactionLock(sessionId)");
+    expect(body, "拿了锁必须释放（含抛错路径）").toContain("releaseCompactionLock(sessionId)");
+    /**
+     * ★ 第 228 波审计新增：**先写标记、再删旧消息**（失败模式从"净丢摘要"变成"净多摘要"）。
+     * 源码级断言顺序：createMessage 必须出现在 deleteMessagesByIds 之前。
+     */
+    const markerAt = body.indexOf("createMessage({");
+    const deleteAt = body.indexOf("deleteMessagesByIds(removedIds");
+    expect(markerAt, "标记写入必须在待删集删除之前（否则失败时旧消息已隐藏、摘要却没有）").toBeGreaterThan(-1);
+    expect(deleteAt).toBeGreaterThan(markerAt);
   });
 });

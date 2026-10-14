@@ -1,4 +1,4 @@
-import { create } from "zustand";
+﻿import { create } from "zustand";
 import * as MessageStorage from "./core/storage/message";
 import type { FeedbackType } from "./core/storage/message";
 import { putMessageFeedback } from "./core/llm/feedback";
@@ -754,7 +754,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // The agentic-loop sets this flag during its synchronous DB commit block
     // to prevent UI auto-save from interleaving db.run calls that corrupt
     // sql.js state ("bad parameter or other API misuse").
-    if (isCompactionInProgress()) {
+    if (isCompactionInProgress(sessionId)) {
       console.log("[Store] saveMessages skipped — compaction in progress");
       return;
     }
