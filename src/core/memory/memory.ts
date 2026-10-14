@@ -721,8 +721,7 @@ export function injectionTruncationNote(
 }
 
 /** 快照/批次参数 */
-/** ★ 全量审计：批次修剪披露的节流（避免每次写盘都弹一条） */
-let lastBatchPruneAdvisoryAt = 0;
+/** ★ 全量审计：批次修剪披露的节流间隔（节流状态在**实例字段**上，见 batchPruneAdvisoryAt） */
 const BATCH_PRUNE_ADVISORY_INTERVAL_MS = 10 * 60 * 1000;
 const BATCH_KEEP_MAX = 50;
 
@@ -1474,6 +1473,8 @@ export class MemoryService {
    * 键是记录自己的 id（由来源条目 id 派生，于是"同一条被拒两次"不会留两条）。
    */
   private rejections: Map<string, MemoryRejection> = new Map();
+  /** ★ 全量审计（中低）：批次裁剪披露的节流时间（实例级 —— 模块级会让同进程多实例互相压制） */
+  private batchPruneAdvisoryAt = 0;
   private migrationReport: MemoryMigrationReport | null = null;
   /**
    * 读盘状态（M-1）。
@@ -2191,8 +2192,8 @@ export class MemoryService {
      * 用模块级节流：`pruneBatches` 在每次写盘路径都可能被调用，不能每次弹一条。
      */
     const now = Date.now();
-    if (now - lastBatchPruneAdvisoryAt > BATCH_PRUNE_ADVISORY_INTERVAL_MS) {
-      lastBatchPruneAdvisoryAt = now;
+    if (now - this.batchPruneAdvisoryAt > BATCH_PRUNE_ADVISORY_INTERVAL_MS) {
+      this.batchPruneAdvisoryAt = now;
       reportAdvisory("memory.batchesPruned", `撤销凭据超出上限，丢弃了 ${dropped.length} 条较早批次的撤销入口`, {
         title: "部分批次不能再整批撤销",
         nextStep: "这些批次里的条目仍然在，只是不能再「整批撤销」；需要的话请在记忆面板里逐条删除。",
@@ -4477,6 +4478,8 @@ export class MemoryService {
     const data = {
       version: 2,
       exportedAt: new Date().toISOString(),
+      /** ★ 全量审计：告诉读文件的人「凭据已脱敏」（原来静默改写且零说明） */
+      redacted: "凭据类内容已脱敏（key/content 过 redactSecrets）",
       /**
        * ★ 全量审计（中·安全）：**导出也脱敏** —— 写入/导入/注入三处都过 redactSecrets，只有导出漏了；
        * 而「读失败时建议导出 JSON 留档并把原文反馈给我们」恰恰会把这些明文带走。
@@ -4501,7 +4504,7 @@ export class MemoryService {
 
   /** Export all memories as Markdown */
   exportAsMarkdown(): string {
-    const lines: string[] = ["# Codem Memory Export", ""];
+    const lines: string[] = ["# Codem Memory Export", "", "> 凭据类内容已脱敏（与 JSON 导出同一口径）。", ""];
     lines.push(`Exported: ${new Date().toISOString()}`);
     lines.push("");
 
@@ -4512,7 +4515,8 @@ export class MemoryService {
       lines.push("");
       for (const e of entries) {
         const date = safeDate(e.timestamp);
-        lines.push(`### ${textOf(e.key)}`);
+        /* ★ 全量审计（中低）：**与 JSON 导出同口径**（脱敏）——两个按钮都叫「导出」，口径不能相反 */
+        lines.push(`### ${redactSecrets(textOf(e.key))}`);
         lines.push(`- **ID**: ${e.id}`);
         lines.push(`- **Date**: ${date}`);
         lines.push(`- **来源**: ${MEMORY_SOURCE_KIND_LABEL[memorySourceOf(e)]}`);
@@ -4525,7 +4529,7 @@ export class MemoryService {
           lines.push(`- **File**: ${e.filePath}`);
         }
         lines.push("");
-        lines.push(textOf(e.content));
+        lines.push(redactSecrets(textOf(e.content)));
         lines.push("");
       }
     }
@@ -4727,7 +4731,14 @@ export class MemoryService {
     similarityThreshold?: number; // Default: 0.7 (70% content similarity)
     /** 是否做按时间的过期清理（默认 true；自动路径若以后复用必须显式传 false） */
     removeStale?: boolean;
-  }): { duplicatesMerged: number; staleRemoved: number; capacityTrimmed: number; capacityBlocked: number } {
+  }): {
+    duplicatesMerged: number;
+    staleRemoved: number;
+    capacityTrimmed: number;
+    capacityBlocked: number;
+    /** ★ 全量审计：因合并后会超长而**放弃**合并的条数（原文都保住了） */
+    mergeSkippedOverLong: number;
+  } {
     const maxAgeDays = options?.maxAgeDays ?? 90;
     const maxPerScope = options?.maxEntriesPerScope;
     const similarityThreshold = options?.similarityThreshold ?? 0.7;
@@ -4895,7 +4906,8 @@ export class MemoryService {
       }
     }
 
-    if (duplicatesMerged > 0 || staleRemoved > 0 || capacityTrimmed > 0) {
+    /* ★ 全量审计（中）：「放弃了 k 条合并」本身也是结果 ⇒ 它必须能单独触发上报（否则用户点了整合零反馈） */
+    if (duplicatesMerged > 0 || staleRemoved > 0 || capacityTrimmed > 0 || mergeSkippedOverLong > 0) {
       this.save();
       console.log(`[F3.1] Memory consolidation: ${duplicatesMerged} duplicates merged, ${staleRemoved} stale removed, ${capacityTrimmed} capacity trimmed, ${capacityBlocked} capacity blocked`);
       /*
@@ -4925,7 +4937,7 @@ export class MemoryService {
       );
     }
 
-    return { duplicatesMerged, staleRemoved, capacityTrimmed, capacityBlocked };
+    return { duplicatesMerged, staleRemoved, capacityTrimmed, capacityBlocked, mergeSkippedOverLong };
   }
 
   /**

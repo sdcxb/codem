@@ -18,6 +18,9 @@ import {
 } from "../core/llm/compaction-budget";
 /* 第 228 波审计：手动与自动压缩必须互斥（共用同一把按会话的锁） */
 import { acquireCompactionLock, releaseCompactionLock } from "../core/llm/compaction-control";
+/** 引擎真实的自动压缩阈值（与 AgenticLoop 默认值同源；设置面板那一档尚未接进引擎） */
+const ENGINE_COMPACTION_THRESHOLD = 0.8;
+
 import { getTokenTracker } from "../core/llm/token-tracker";
 import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
@@ -430,6 +433,9 @@ export function manualCompact(sessionId: string): {
 
 export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [budget, setBudget] = useState<TokenBudget>(DEFAULT_BUDGET);
+  /**
+   * ★ 全量审计：引擎真实的自动压缩阈值（与 `AgenticLoop` 的默认值同源；滑块那一档尚未接进引擎）
+   */
   /** ★ 全量审计：自动压缩阈值按**同一个窗口**算（默认 128k），显示用 */
   const [contextWindowTokens, setContextWindowTokens] = useState(DEFAULT_BUDGET.total);
   /*
@@ -829,8 +835,14 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               自动压缩阈值
             </span>
             <span className="context-stat-value">
-              {Math.round(contextWindowTokens * (ctxConfig?.compactionThreshold ?? 0.8)).toLocaleString()} tokens
-              {`（窗口 ${Math.round((ctxConfig?.compactionThreshold ?? 0.8) * 100)}%）`}
+              {/**
+               * ★ 全量审计（中）：显示**引擎真实阈值**。
+               * 被守的缺陷：上一版我按 `ctxConfig.compactionThreshold` 显示，而循环构造时从不读它
+               * （全仓只有 agentic-loop 的默认 0.8 与判定处）⇒ 用户把滑块拉到 90% 时面板写「窗口 90%」，
+               * 引擎仍按 0.8 触发 —— 那是我引入的一句假陈述。
+               */}
+              {Math.round(contextWindowTokens * ENGINE_COMPACTION_THRESHOLD).toLocaleString()} tokens
+              {`（窗口 ${Math.round(ENGINE_COMPACTION_THRESHOLD * 100)}%，与引擎判定同源）`}
             </span>
           </div>
           <div className="context-stat">
