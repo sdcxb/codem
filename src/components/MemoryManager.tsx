@@ -19,6 +19,8 @@ import {
   // S4 / O-45：待批准判据**全仓唯一一处**（本文件原来也在两处各写了一遍）
   isPendingMemoryEntry,
   injectionScopeContext,
+  /* ★ 第 228 波审计：注入截断的如实披露（条目 10000 字符上限 vs 每行注入只取前 200） */
+  injectionTruncationNote,
   // 第 199 波：作用域徽标文案的唯一来源（与三态表同一条纪律）
   MEMORY_SCOPE_BADGE_LABEL,
   type MemoryPayloadByteStats,
@@ -121,7 +123,15 @@ function pruneAliveIds(previous: Set<string>, alive: readonly { id: string }[]):
  */
 function entryStatusText(entry: MemoryEntry, injected: boolean, notInjectedReason?: string): string {
   if (isPendingMemoryEntry(entry)) return "待批准（未进上下文）";
-  if (injected) return "已生效（参与上下文）";
+  if (injected) {
+    /**
+     * ★ 第 228 波审计修复（低）：**注入时截断要披露**。
+     * 条目允许 10000 字符而每行注入只取前 200 —— 此前界面照样写「已生效（参与上下文）」，
+     * 用户以为整条都在上下文里（条数上限与字符预算都有披露，唯独这一处没有）。
+     */
+    const note = injectionTruncationNote(entry);
+    return note ? `已生效（参与上下文；${note}）` : "已生效（参与上下文）";
+  }
   return `不进上下文${notInjectedReason ? `：${notInjectedReason}` : ""}`;
 }
 
@@ -336,25 +346,48 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     setSearchResults(results);
   };
 
+  /**
+   * ★ 第 228 波审计修复（中）：单条动作也要**看落库结果**。
+   *
+   * 被守的缺陷：面板的单条删除/批准/拒绝此前只改内存 + `loadEntries()`（列表里立刻没了/变了），
+   * 而 `save()` 的返回值语义是"这次写入**已被接受**"，**不等于已落库**（它自己的注释就这么写）。
+   * 落库失败时用户看到"条目已消失"、该动作**零回执**，重启后条目又回来 —— 而同仓的
+   * 编辑/新建/导入/体检批量都等 `flushPendingPersist()` 并如实回执（口径不一致）。
+   */
+  const settlePersist = async (what: string): Promise<void> => {
+    const service = getMemoryService();
+    const landed = await service.flushPendingPersist();
+    if (!landed) {
+      setNotice(`${what}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这次改动会失效）。`);
+    }
+  };
+
   const handleDelete = (id: string) => {
     const service = getMemoryService();
-    service.delete(id);
+    const deleted = service.delete(id);
     loadEntries();
     if (selectedEntry?.id === id) {
       setSelectedEntry(null);
     }
+    if (!deleted) {
+      setNotice(`删除失败：未找到记忆 ${id}。`);
+      return;
+    }
+    void settlePersist(`已删除 ${id}。`);
   };
 
   const handleApprove = (id: string) => {
     const result = getMemoryService().approve(id);
     setNotice(result.ok ? `已批准 ${id}：该自动记忆从现在起参与上下文。` : `批准失败：${result.message ?? "未知原因"}`);
     loadEntries();
+    if (result.ok) void settlePersist(`已批准 ${id}。`);
   };
 
   const handleReject = (id: string) => {
     const removed = getMemoryService().reject(id);
     setNotice(removed ? `已拒绝并删除 ${id}。` : `拒绝失败：未找到或不在待批准状态。`);
     loadEntries();
+    if (removed) void settlePersist(`已拒绝并删除 ${id}。`);
   };
 
   /* ===== 第 196 波：勾选 + 批量同意 / 批量拒绝（含全选） ===== */

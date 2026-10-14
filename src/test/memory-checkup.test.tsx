@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 记忆体检视图判据（MEM-CHECK-1 ~ MEM-CHECK-5）。
  *
  * ## 这组判据针对的缺陷/风险
@@ -341,8 +341,41 @@ describe("MEM-CHECK-3：批量删除只删勾选的；清空全部要二次确�
     spy.mockRestore();
   });
 
-  it("MEM-CHECK-3d：清空全部必须先二次确认，取消后一条都不删", async () => {
+  it("MEM-CHECK-3e（第 228 波审计）：批量同意的回执对「归属已失效」条目必须说实话", async () => {
+    /*
+     * 被守的缺陷：批准只把 `status` 从 pending 改成 active，能不能进上下文还取决于**归属键**
+     * （注入侧 `visibleIn`）。真机上「归属已失效（目标项目/对话不存在）」那一组（29 条，
+     * projectId 指向已删除的临时工作区）批准之后**一条都进不了任何上下文**，
+     * 而回执写着"它们从现在起参与上下文" —— 同屏的组徽标还写着「不进上下文」（自相矛盾）。
+     */
     const svc = new MemoryService();
+    svc.add({
+      scope: "project",
+      projectId: "c:\\deleted-ws", // 解析不到（不在 PROJECT_A/B 里）⇒ 归属已失效
+      key: "归属没了的待批准条目",
+      content: "内容",
+      source: "auto",
+      status: "pending",
+    });
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+
+    const { container } = render(<MemoryCheckupView />);
+    const box = container.querySelector('input[aria-label="勾选记忆 归属没了的待批准条目"]') as HTMLInputElement;
+    expect(box, "前提：这一条出现在体检里（面板按当前位置过滤，看不到它）").toBeTruthy();
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    fireEvent.click(box);
+    fireEvent.click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("批量同意"))!);
+
+    await waitFor(() => {
+      const notice = container.querySelector(".mc-notice")?.textContent ?? "";
+      expect(notice, "必须数出这类条目（否则用户以为批准生效了，实际永远不会进上下文）").toContain("归属已失效");
+      expect(notice).toContain("仍不会进任何上下文");
+    });
+    spy.mockRestore();
+  });
+
+  it("MEM-CHECK-3d：清空全部必须先二次确认，取消后一条都不删", async () => {    const svc = new MemoryService();
     svc.add({ scope: "platform", key: "A", content: "A", source: "manual" });
     svc.add({ scope: "platform", key: "B", content: "B", source: "manual" });
     const memoryModule = await import("../core/memory/memory");

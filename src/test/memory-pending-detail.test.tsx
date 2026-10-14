@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 第 226 波（用户直报）：
  *
  * > 记忆系统中，审批的时候，看不到详细信息无法评估审批是否通过，增加个双击展开详细信息的功能。
@@ -285,5 +285,53 @@ describe("MEM-APPROVE-DETAIL：接线与可发现性（第 226 波结构棘轮�
     );
     const statusCalls = src.match(/entryStatusText\(/g) ?? [];
     expect(statusCalls.length, "两处渲染都要用它（自己再写一份三元表达式就是两套说法）").toBeGreaterThanOrEqual(3);
+  });
+
+  /**
+   * ★ 第 228 波审计新增：**单条动作也要看落库结果**。
+   *
+   * 被守的缺陷：面板的单条删除/批准/拒绝只改内存 + 刷新列表，而 `save()` 的返回值语义是
+   * "本次写入已被接受"，**不等于已落库**（它自己的注释就这么写）⇒ 落库失败时用户在列表里看到
+   * 条目已经消失、**该动作零回执**，重启后条目又回来。同仓的编辑/新建/导入/体检批量都等
+   * `flushPendingPersist()` 并如实回执（口径不一致）。
+   */
+  it("MD-9：面板单条动作要等确认落库并如实回执（落库失败不许显示成「已经删掉了」）", async () => {
+    /* 落库失败：`memory.set` 一直失败 ⇒ 面板必须说"未落库"而不是静默 */
+    const failing = createFakeStoragePort({
+      seed: { settings: [{ key: "noop", value: "" }] },
+      failCommands: ["memory.set"],
+    });
+    setStoragePort(failing);
+    const service = new MemoryService();
+    service.add({ scope: "project", projectId: PROJ, key: "要删的条目", content: "内容", source: "manual" });
+
+    const container = render(
+      createElement(MemoryManager, { onClose: () => {}, projectId: PROJ, sessionId: SESSION } as never),
+    ).container;
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    /* `.memory-delete-btn` 只在"详情面板里选中了某一条"时出现 ⇒ 先点开一条 */
+    const firstRow = container.querySelector(".memory-item") as HTMLElement | null;
+    if (firstRow) {
+      await act(async () => {
+        fireEvent.click(firstRow);
+        await Promise.resolve();
+      });
+    }
+    const delBtn = container.querySelector(".memory-delete-btn");
+    expect(delBtn, "前提：详情面板里有一个删除按钮（只对已选中的那一条出现）").toBeTruthy();
+    await act(async () => {
+      fireEvent.click(delBtn as HTMLElement);
+      await Promise.resolve();
+      await Promise.resolve();
+      /* 等"确认落库"那条异步链跑完（失败命令要重试若干次，所以多让几轮宏任务） */
+      await new Promise((r) => setTimeout(r, 30));
+      await Promise.resolve();
+    });
+
+    const notice = container.querySelector(".memory-notice")?.textContent ?? "";
+    expect(notice, "动作回执必须写出「未落库」（否则用户以为删掉了，重启后又回来）").toContain("未落库");
   });
 });

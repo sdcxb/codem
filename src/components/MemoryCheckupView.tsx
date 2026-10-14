@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 「记忆体检」视图（设置 → 记忆体检）。
  *
  * ## 这个视图存在的理由
@@ -25,8 +25,7 @@ import {
   isLegacyPoolInjectionPaused,
   MEMORY_SOURCE_KIND_LABEL,
   MEMORY_SCOPE_BADGE_LABEL,
-  setLegacyPoolInjectionPaused,
-  type MemoryEntry,
+  setLegacyPoolInjectionPausedConfirmed,  type MemoryEntry,
   type MemoryRejection,
   type MemoryScope,
 } from "../core/memory/memory";
@@ -354,13 +353,21 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
    */
   const handleTogglePause = () => {
     const next = !paused;
-    setLegacyPoolInjectionPaused(next);
+    /**
+     * ★ 第 228 波审计修复（中）：**开关必须确认式落库**再给回执。
+     * 旧实现走 `setSetting`（先改内存镜像、异步落库、失败只发全局横幅）⇒ 界面立刻显示
+     * "已暂停"而磁盘可能没写 ⇒ **重启后静默恢复注入**（旧池默认对所有项目注入）。
+     */
     setPaused(next);
-    setNotice(
-      next
-        ? "已暂停注入旧版跨项目记忆：这些条目现在**不进上下文**（其它记忆不受影响）。处置完可再关掉开关。"
-        : "已恢复注入旧版跨项目记忆：它们重新参与所有项目的上下文（与升级前一致）。",
-    );
+    void (async () => {
+      const landed = await setLegacyPoolInjectionPausedConfirmed(next);
+      setNotice(
+        (next
+          ? "已暂停注入旧版跨项目记忆：这些条目现在**不进上下文**（其它记忆不受影响）。处置完可再关掉开关。"
+          : "已恢复注入旧版跨项目记忆：它们重新参与所有项目的上下文（与升级前一致）。") +
+          (landed ? "（已确认落库）" : "，但**未落库**：重启后会回到原来的状态。"),
+      );
+    })();
     setVersion((v) => v + 1);
   };
 

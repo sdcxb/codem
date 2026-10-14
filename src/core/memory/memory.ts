@@ -524,8 +524,10 @@ export interface MemoryRejection {
 export interface MemoryConfig {
   /** Root directory for memory files */
   rootDir: string;
-  /** Maximum entries per scope */
+  /** Maximum entries per**桶**（platform / 每个项目 / 每个会话各一份配额） */
   maxEntries: number;
+  /** ★ 第 228 波审计：**跨所有桶**的总量上限（桶的个数本身没有上限 ⇒ 光有 per-scope 配额等于无界） */
+  maxTotalEntries: number;
   /** Maximum content length per entry */
   maxContentLength: number;
 }
@@ -683,6 +685,28 @@ export const MEMORY_INJECT_CHAR_BUDGET = 12000;
 /** 单条注入行的 key 上限（S1：key 原来原样注入 ⇒ 超长 key 会全额进每轮提示） */
 export const MEMORY_INJECT_KEY_MAX = 120;
 
+/**
+ * ★ 第 228 波审计：**单条 content 的注入上限**（原来是个裸的 `200` 字面量）。
+ *
+ * 为什么要有名字 + 披露：条目允许 10000 字符，而注入只取前 200 —— 也就是说**最多 9800 字符
+ * 从未进过模型上下文**，而"条数上限"与"12000 字符预算"都有披露与对账判据，唯独这一处没有：
+ * 面板照样把它标成「已生效（参与上下文）」。用户以为整条都在上下文里。
+ * 数值不变（它是"每轮都要发的提示"的成本控制），**补的是披露**（见 `injectionTruncationNote`）。
+ */
+export const MEMORY_INJECT_LINE_MAX = 200;
+
+/**
+ * 这条记忆注入时**会不会被截断**（给界面用的如实披露；不会截断返回 `null`）。
+ *
+ * 判据与 `formatLine` 用的是同一个常量 —— 两处口径不会分叉。
+ */
+export function injectionTruncationNote(entry: Pick<MemoryEntry, "content">): string | null {
+  const content = textOf(entry.content);
+  const shown = Math.min(content.length, MEMORY_INJECT_LINE_MAX);
+  if (content.length <= MEMORY_INJECT_LINE_MAX) return null;
+  return `注入时只取前 ${MEMORY_INJECT_LINE_MAX} 字符（本条 ${content.length} 字符，其余 ${content.length - shown} 字符不会进上下文）`;
+}
+
 /** 快照/批次参数 */
 const BATCH_KEEP_MAX = 50;
 
@@ -798,6 +822,8 @@ export interface MemoryLoadState {
 const DEFAULT_CONFIG: MemoryConfig = {
   rootDir: ".codem-memory",
   maxEntries: 1000,
+  /* ★ 第 228 波审计：跨所有桶的总量上限（默认 5000；自动写入才会被它拦住） */
+  maxTotalEntries: 5000,
   maxContentLength: 10000,
 };
 
@@ -889,6 +915,37 @@ export function setLegacyPoolInjectionPaused(paused: boolean): void {
       e,
       "「暂停注入旧版跨项目记忆」开关未保存（本次运行内仍按新设置生效，重启后会回到旧值）",
     );
+  }
+}
+
+/**
+ * ★ 第 228 波审计修复（中）：**确认式**写这个开关，并把"到底落没落"回给界面。
+ *
+ * ## 被守的缺陷
+ *
+ * 旧池（"旧版跨项目记忆"，真机 21 条）**默认对所有项目注入**，而这个开关是唯一能拦住它的东西。
+ * 旧实现走 `setSetting`：它**先改内存镜像再异步落库**，失败只发一条全局横幅 ——
+ * 界面在同一个 tick 里已经把开关画成"已暂停"并给出「已暂停注入」回执 ⇒
+ * **用户以为关掉了，重启后它会静默恢复**（继续把可能被别的项目污染的内容注入每个项目）。
+ */
+export async function setLegacyPoolInjectionPausedConfirmed(paused: boolean): Promise<boolean> {
+  try {
+    const ok = await setSettingConfirmed(MEMORY_PAUSE_LEGACY_POOL_KEY, paused ? "1" : "0");
+    if (!ok) {
+      reportPersistFailure(
+        "memory.legacyPoolPause",
+        new Error("确认式写入未成功"),
+        "「暂停注入旧版跨项目记忆」开关未落库（重启后会恢复注入）",
+      );
+    }
+    return ok;
+  } catch (e) {
+    reportPersistFailure(
+      "memory.legacyPoolPause",
+      e,
+      "「暂停注入旧版跨项目记忆」开关未保存（本次运行内仍按新设置生效，重启后会回到旧值）",
+    );
+    return false;
   }
 }
 
@@ -2139,6 +2196,39 @@ export class MemoryService {
       return { ok: false, error: "capacity", message };
     }
 
+    /**
+     * ★ 第 228 波审计修复（中）：**全局总量上限** + **体积上限的强制**。
+     *
+     * ## 被守的缺陷（结构性无界）
+     *
+     * 容量是**按桶**算的（`platform` / `project:<id>` / `conversation:<sessionId>`），而桶的个数
+     * **没有上限**（每个项目、每个会话一个桶）⇒ "每个桶 1000 条"= 总量无界；而 payload 是**单个字符串**
+     * 存在配置域、每次改动整份写 ⇒ 一条记忆的改动要落盘整份 payload（真机读数：
+     * 400 条 × 300 字符时"改 1 条"要落 392,216 字节 ≈ 590×）。
+     * 体积此前**只上报不拒绝**（`checkPayloadBudget` 全仓只有上报），所以"无界"是真的无界。
+     *
+     * 现在的口径（与"容量满时可见拒绝、绝不静默驱逐"同一纪律）：
+     * - `maxTotalEntries`（默认 5000，跨所有桶）用满 ⇒ **拒绝新的自动写入**并如实说明；
+     * - payload 已超 `MEMORY_PAYLOAD_BUDGET_BYTES` ⇒ 同样拒绝**新的自动写入**；
+     * - 两种情况都**只拦自动写入**：用户手写/导入/明确要求记住的照旧放行
+     *   （否则用户会被一个自己看不见的自动条目池卡住，且没有任何自救路径）。
+     */
+    const isAutoWrite = (entry.source ?? "manual") === "auto";
+    if (isAutoWrite && this.entries.size >= this.config.maxTotalEntries) {
+      const message =
+        `记忆总量已满（跨所有作用域上限 ${this.config.maxTotalEntries} 条，当前 ${this.entries.size} 条）：` +
+        `本次**自动**写入被拒绝，已有条目一条未动。请到「记忆体检」清理不再需要的条目。`;
+      console.warn(`[MemoryService] ${message}`);
+      return { ok: false, error: "capacity", message };
+    }
+    if (isAutoWrite && this.lastPayloadBytes > MEMORY_PAYLOAD_BUDGET_BYTES) {
+      const message =
+        `记忆体积已超过预算（${formatBytes(this.lastPayloadBytes)} > ${formatBytes(MEMORY_PAYLOAD_BUDGET_BYTES)}）：` +
+        `本次**自动**写入被拒绝（体积无界会拖慢每次改动）。请到「记忆体检」删掉不再需要的条目。`;
+      console.warn(`[MemoryService] ${message}`);
+      return { ok: false, error: "capacity", message };
+    }
+
     const id = `mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     /*
      * 手动写入也过一遍脱敏（既有缺口，第 187 波按"同一波处理"收口）：
@@ -2212,6 +2302,41 @@ export class MemoryService {
    * （返回 false，原因在 `getLastWriteError()`）。
    */
   update(id: string, updates: Partial<MemoryEntry>, opts: { actor: "user" | "auto" }): boolean {
+    const applied = this.applyUpdate(id, updates, opts);
+    if (applied) this.save();
+    return applied;
+  }
+
+  /**
+   * ★ 第 228 波审计新增：**批量更新只落一次库**。
+   *
+   * ## 为什么必须有它（而不是在调用方循环 `update`）
+   *
+   * `update()` 每次都以 `this.save()` 收尾，而 `save()` 走的是"整份 payload 序列化 + 一次确认式 IPC"
+   * ⇒ 循环里调 N 次 = N 次整份写。真机上「批量保留为平台级」正好是这个形态（29 条旧池条目
+   * = 29 次整份序列化 + 29 次 IPC），而同文件的 `approveMany` 早就为同一个理由做成了批量
+   * （注释原文：「27 条待批准 = 27 次整份序列化 + 27 次 IPC + 27 次落库；用户点一下『全部同意』
+   * 不该产生这种写放大」）⇒ 这里把那条纪律补到更新路径上。
+   *
+   * @returns 每条的成功与否（顺序与入参一致）—— 调用方据此如实报"N 条生效、M 条失败"
+   */
+  updateMany(
+    ids: readonly string[],
+    updates: Partial<MemoryEntry>,
+    opts: { actor: "user" | "auto" },
+  ): { applied: string[]; rejected: string[] } {
+    const applied: string[] = [];
+    const rejected: string[] = [];
+    for (const id of ids) {
+      if (this.applyUpdate(id, updates, opts)) applied.push(id);
+      else rejected.push(id);
+    }
+    if (applied.length > 0) this.save();
+    return { applied, rejected };
+  }
+
+  /** `update` 的**内存部分**（校验 + 容量 + 写入镜像），不落库 —— 供批量路径复用同一套规则 */
+  private applyUpdate(id: string, updates: Partial<MemoryEntry>, opts: { actor: "user" | "auto" }): boolean {
     const entry = this.entries.get(id);
     if (!entry) return false;
 
@@ -2273,7 +2398,6 @@ export class MemoryService {
     }
 
     this.entries.set(id, next);
-    this.save();
     return true;
   }
 
@@ -2965,7 +3089,7 @@ export class MemoryService {
     // P-Link: Resolve [[name]] links to show related memory references
     const resolvedContent = this.resolveLinks(e);
     const key = textOf(e.key).substring(0, MEMORY_INJECT_KEY_MAX);
-    return `- [${date}] ${key}: ${resolvedContent.substring(0, 200)}`;
+    return `- [${date}] ${key}: ${resolvedContent.substring(0, MEMORY_INJECT_LINE_MAX)}`;
   }
 
   /**

@@ -700,17 +700,43 @@ export async function keepManyAsPlatform(ids: string[]): Promise<{ kept: number;
    * - 逐条的失败原因**收集并带回**（`failures`），界面能说清是哪一条、为什么；
    * - 循环结束后再 `flushPendingPersist()` 一次：把**整个批次**在途的确认都等完，
    *   并把"库层面到底落没落"作为 `ok` 一并回传（不再是"每条自己说自己成功"）。
+   *
+   * ★ 第 228 波审计修复（中）：**内存里改完只落库一次**。
+   * 原来循环里调的是 `keepAsPlatformPool(id)`，而那一条内部**每次都 `update` + `flushPendingPersist`**
+   * ⇒ N 条旧池条目 = N 次整份序列化 + N 次 IPC + N 次落库（真机那组是 29 条）。
+   * 同一个文件里的 `approveMany` 早就为这个理由做了批量（"用户点一下『全部同意』不该产生这种写放大"）
+   * ⇒ 这里与它对齐：逐条只改内存，末尾一次 flush。
    */
   let kept = 0;
   let failed = 0;
   const failures: string[] = [];
+  /**
+   * ★ 第 228 波审计修复（中）：**内存里改完只落库一次**。
+   * 原来循环里调的是 `keepAsPlatformPool(id)`，而那一条内部**每次都 `update` + `flushPendingPersist`**
+   * ⇒ N 条旧池条目 = N 次整份序列化 + N 次 IPC + N 次落库（真机那组是 29 条）。
+   * 同一个文件里的 `approveMany` 早就为这个理由做了批量（"用户点一下『全部同意』不该产生这种写放大"）
+   * ⇒ 这里改走 `updateMany`（一次 save），与它对齐。
+   */
+  const candidates: string[] = [];
   for (const id of ids) {
-    const result = await keepAsPlatformPool(id);
-    if (result.ok) kept++;
-    else {
+    const entry = service.get(id);
+    if (!entry) {
       failed++;
-      if (failures.length < 5) failures.push(result.message);
+      if (failures.length < 5) failures.push(`未找到记忆：${id}`);
+      continue;
     }
+    if (entry.legacyPool !== true) {
+      failed++;
+      if (failures.length < 5) failures.push(`「${entry.key}」不属于「旧版跨项目记忆」组（无需保留）`);
+      continue;
+    }
+    candidates.push(id);
+  }
+  const batch = service.updateMany(candidates, { legacyPool: undefined }, { actor: "user" });
+  kept = batch.applied.length;
+  for (const id of batch.rejected) {
+    failed++;
+    if (failures.length < 5) failures.push(`保留失败：${service.getLastWriteError() ?? id}`);
   }
   const landed = await service.flushPendingPersist();
   const landedNote = landed ? "已确认落库" : `但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些保留会失效）`;
