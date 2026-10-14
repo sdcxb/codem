@@ -3528,9 +3528,14 @@ export class MemoryService {
        * 或 `add` 因落库失败而没把 written 加上去）⇒ 批次记录被删 ⇒ `listBatches()`（撤销的界面入口）
        * 从此看不到这一批，而条目还在。这里改成：有活条目就保留凭据（count 记 0 也无妨）。
        */
-      const hasLiveEntries = Array.from(this.entries.values()).some((e) => e.batchId === batchId);
-      if (hasLiveEntries) {
-        batch.count = 0;
+      const liveEntries = Array.from(this.entries.values()).filter((e) => e.batchId === batchId);
+      if (liveEntries.length > 0) {
+        /**
+         * ★ 全量审计（中）：count 必须是**存活条目数**，不是 0 ——
+         * 被守的缺陷：写 0 会让面板显示「0 条 · 撤销该批」，点下去却真删 N 条（且没有二次确认），
+         * 而且导入侧的 `count <= 0` 过滤会把这条凭据静默丢掉（往返保真失效）。
+         */
+        batch.count = liveEntries.length;
         this.batches.set(batchId, batch);
         this.pruneBatches();
         this.save();
@@ -4659,7 +4664,8 @@ export class MemoryService {
       const rec = b as { id?: unknown; createdAt?: unknown; count?: unknown };
       if (typeof rec?.id !== "string" || rec.id.length === 0) continue;
       if (typeof rec.createdAt !== "number" || !Number.isFinite(rec.createdAt)) continue;
-      if (typeof rec.count !== "number" || !Number.isFinite(rec.count) || rec.count <= 0) continue;
+      /* ★ 全量审计：`count < 0` 才算坏（0 也允许 —— 曾见过 count:0 的凭据，丢掉它等于丢撤销入口） */
+      if (typeof rec.count !== "number" || !Number.isFinite(rec.count) || rec.count < 0) continue;
       this.batches.set(rec.id, b as never);
       result.restoredBatches += 1;
     }

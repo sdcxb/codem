@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import {
   getMemoryService,
@@ -31,7 +31,7 @@ import { localDateString } from "../core/time/local-time";
 // O-36：体积读数的人读形态走**唯一**实现（第 191 波把 4 份字节格式化副本收敛成一份）
 import { formatBytes } from "../core/utils/bytes";
 import { getLLMEngine } from "../core/llm";
-import { alertDialog } from "../core/ui/native-dialog";
+import { alertDialog, confirmDialog } from "../core/ui/native-dialog";
 
 interface MemoryManagerProps {
   onClose: () => void;
@@ -484,6 +484,18 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
   };
 
   const handleUndoBatch = async (batchId: string) => {
+    /**
+     * ★ 全量审计（中）：**一次删 N 条要有二次确认**（与体检的删除动作同一道闸）。
+     */
+    const batch = getMemoryService().listBatches().find((b) => b.id === batchId);
+    const confirmed = await confirmDialog(
+      `确定撤销这一批（${batch?.count ?? 0} 条自动记忆）？此操作不可撤销。` +
+        "手动记忆与其它批次不受影响。",
+    );
+    if (!confirmed) {
+      setNotice("已取消撤销该批（没有删除任何条目）。");
+      return;
+    }
     const service = getMemoryService();
     const result = service.undoBatch(batchId);
     const landed = await service.flushPendingPersist();
