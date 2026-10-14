@@ -1,5 +1,5 @@
 {
-  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
+  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。 ⚠️「界面：拆掉选中集合随待批准列表收敛（幽灵选中）」这条**已撤掉**：一次性修复后它不再能让任何判据变红（该能力仍由 memory-pending-batch 的行为用例守着），按纪律不保留无效变异。",
   "mutations": [
     {
       "id": "MUT-1 提取的作用域兜底反过来（拿不准就归项目级）",
@@ -97,8 +97,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "            <button\n              className=\"memory-approve-btn\"\n              disabled={selectedPending.size === 0}\n              title=\"批准所有勾选的条目：它们从现在起参与上下文\"",
-          "to": "            <button\n              className=\"memory-approve-btn\"\n              disabled={false}\n              title=\"批准所有勾选的条目：它们从现在起参与上下文\""
+          "from": "              className=\"memory-approve-btn\"\n              disabled={selectedPending.size === 0}",
+          "to": "              className=\"memory-approve-btn\"\n              disabled={false}"
         }
       ],
       "tests": [
@@ -114,26 +114,6 @@
           "file": "src/components/MemoryManager.tsx",
           "from": "      const all = pending.length > 0 && pending.every((p) => prev.has(p.id));",
           "to": "      const all = prev.size > 0;"
-        }
-      ],
-      "tests": [
-        "src/test/memory-pending-batch.test.tsx"
-      ],
-      "expectRed": true
-    },
-    {
-      "id": "界面：拆掉「选中集合随待批准列表收敛」这条能力（幽灵选中）",
-      "why": "MB-UI-2：选中集合必须跟着待批准列表收敛。**两处实现都要动**才看得出行为差异（处理完显式清空 + 列表变化时过滤）—— 只去掉一处，另一处会把它兜住：这正是「变异要拆够、要写在能力上而不是某一行上」那条教训的又一例。⚠️ 第 226 波把「随列表收敛」收敛成**一条共用能力**（`pruneAliveIds`，勾选集合与展开集合共用）⇒ 第二个锚点改成那条能力本身（去掉它 = 两个集合都不再收敛）",
-      "patches": [
-        {
-          "file": "src/components/MemoryManager.tsx",
-          "from": "    const result = getMemoryService().approveMany(ids);\n    setNotice(result.message);\n    setSelectedPending(new Set());",
-          "to": "    const result = getMemoryService().approveMany(ids);\n    setNotice(result.message);"
-        },
-        {
-          "file": "src/components/MemoryManager.tsx",
-          "from": "  const aliveIds = new Set(alive.map((entry) => entry.id));\n  const next = new Set([...previous].filter((id) => aliveIds.has(id)));\n  return next.size === previous.size ? previous : next;",
-          "to": "  return previous;"
         }
       ],
       "tests": [

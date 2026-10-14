@@ -398,8 +398,18 @@ describe("CA：压缩审计修复（第 228 波）", () => {
      * 所以那个分支在现有实现里走不到；一旦有人改掉那个早返回，它就是最后一道闸。
      */
     const src = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
-    expect(src, "keepCount<=0 要当场退出").toMatch(/if \(keepCount <= 0\) \{[\s\S]{0,200}?return 0;/);
+    /**
+     * ★ 第六批（审计）：**返回值必须是 -1（skipped）而不是 0**。
+     * 调用方把 `>= 0` 一律当作"压缩成功"（清缓存 + consecutiveCompactions++），
+     * 三次之后就误报「上下文窗口已满，即使压缩后仍无法继续」并中止本回合 ——
+     * 而这三次里一次压缩都没发生。0 与"移除了 0 条"同值，正是这条误报的入口。
+     */
+    expect(src, "keepCount<=0 要当场退出，且返回 -1（没压 ≠ 压了 0 条）").toMatch(
+      /if \(keepCount <= 0\) \{[\s\S]{0,240}?return -3;/,
+    );
     expect(src, "并说明为什么（slice(-0) 会取全部）").toContain("slice(-0)");
+    const noopReturns = (src.match(/if \(messagesToRemove\.length === 0\) return -2;/g) ?? []).length;
+    expect(noopReturns, "「没有可移除的消息」的两处出口也必须是 -1").toBe(2);
   });
 
   it("CA-20（第三轮自查）：轮次保底要在真实消息上数（压缩标记也是 role=user）", () => {
@@ -440,6 +450,44 @@ describe("CA：压缩审计修复（第 228 波）", () => {
       removedIds.filter((id) => ["u17", "a17"].includes(id)),
       "标记不许顶掉一个真实轮次：最近 3 轮（u17..a19 里剔除标记）里的真实消息一条都不许删",
     ).toEqual([]);
+  });
+
+  it("CA-28（第六批）：没压成时必须返回 -1（0 会被调用方当成一次「压缩成功」）", async () => {
+    /*
+     * 被守的缺陷：调用方把 compacted >= 0 一律当作压缩成功（清缓存 + consecutiveCompactions++），
+     * 连续三次就以「上下文窗口已满，即使压缩后仍无法继续」中止本回合 —— 而那三次里一次都没压。
+     * 这里用"可见消息很少"的形态（没有任何可移除的）复现：返回值必须是 -1（skipped）。
+     */
+    listMessagesMock.mockReturnValue(makeMessages(4));
+    const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
+    const removed = await loop.compactMessages("s-ca28");
+    expect(removed, "没有可移除的消息 ⇒ -2（skipped 的一种），不是 0（压了 0 条）").toBe(-2);
+
+    const src = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
+    expect(
+      (src.match(/if \(messagesToRemove\.length === 0\) return -2;/g) ?? []).length,
+      "两处「没有可移除的消息」出口都要返回 -1",
+    ).toBe(2);
+  });
+
+  it("CA-29（全量审计）：片段兜底时，段头不许断言「覆盖较早的 N 条」", async () => {
+    /*
+     * 被守的缺陷：摘要调用抛错时正文是 100 字片段兜底，而段头仍写
+     * 「## 检查点摘要（覆盖较早的 <packed.consumed> 条）」—— 那个数是**计划**要送的条数，
+     * 模型从未看到它们的摘要（对模型是一句假陈述，它会以为细节都在别处）。
+     */
+    listMessagesMock.mockReturnValue(makeMessages(40));
+    summaryShouldThrow = true;
+    const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
+    await loop.compactMessages("s-ca29");
+
+    const marker = String(createMessageMock.mock.calls[0][0].content);
+    expect(marker, "前提：确实写了标记").toContain("[上下文已自动压缩]");
+    expect(marker, "兜底时要写明「本次摘要调用中断」").toContain("摘要调用中断");
+    expect(
+      /检查点摘要（覆盖较早的 \d+ 条）/.test(marker),
+      "兜底时不许再断言覆盖条数（那是计划数，不是事实）",
+    ).toBe(false);
   });
 
   it("CA-15（反向对照）：这些修复不许把「压缩无效」路径删掉（仍要如实上报）", () => {

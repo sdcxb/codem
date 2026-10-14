@@ -663,7 +663,15 @@ export async function keepAsPlatformPool(id: string): Promise<{ ok: boolean; mes
  *   是这次导入坏了）。
  */
 export function formatMemoryImportReceipt(
-  result: { imported: number; rejectedCapacity: number; rejectedInvalid: number; truncated: number },
+  result: {
+    imported: number;
+    rejectedCapacity: number;
+    rejectedInvalid: number;
+    truncated: number;
+    /** ★ 第六批（审计·低）：导入后是否已越过总量/体积闸 ⇒ 此后的**自动**写入会被拒 */
+    overTotalCap?: boolean;
+    overPayloadBudget?: boolean;
+  },
   landed: boolean,
   lastPersistError: string | null,
 ): string {
@@ -671,6 +679,14 @@ export function formatMemoryImportReceipt(
     result.rejectedCapacity > 0 ? `${result.rejectedCapacity} 条因目标作用域已达容量上限被拒绝` : "",
     result.rejectedInvalid > 0 ? `${result.rejectedInvalid} 条格式不合法（缺 id/key/content）被跳过` : "",
     result.truncated > 0 ? `${result.truncated} 条内容超长已截断` : "",
+    /**
+     * ★ 第六批（审计·低）：导入是用户动作（放行），但**越界必须说给用户听** ——
+     * 只写 console.warn 等于没说（渲染侧 console 只能靠 CDP 抓）。越界之后**自动**记忆
+     * 会被闸门拒绝，用户只会看到「自动记忆不写了」，因果链接不到这次导入。
+     */
+    result.overTotalCap || result.overPayloadBudget
+      ? "导入后已越过记忆的容量闸（跨所有作用域总条数 / 体积预算）⇒ **此后的自动记忆写入会被拒绝**，建议到「记忆体检」清理不再需要的条目"
+      : "",
   ].filter(Boolean);
   const tail = extras.length > 0 ? `\n${extras.join("；")}。` : "";
   if (result.imported > 0 && !landed) {

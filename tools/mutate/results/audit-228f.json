@@ -1,14 +1,15 @@
 {
   "wave": "audit-228f",
-  "description": "第 228 波·审计轮第五批（第四轮审计抓到的真实缺陷）：手动压缩在「最后一条是压缩标记」时会把整段可见历史（含最近 3 轮）一次性删光（折叠把保留集清空、而手动路径没有重夹保底）；手动压缩的标记预算不含级联段（旧摘要 > 733 字符时界失效）；锁被占而跳过的回执被丢掉（界面显示成「本次没有可移除的消息」）；自动路径的 stale-id 合并没同步 keepCount、段头条数与实际渲染内容不符、溢出档预算漏算工具结果。  ⚠️ 「自动路径 stale-id 合并后同步 keepCount」这条**撤掉了**：它在现有夹具下没有区分性（重夹保底会把两种写法收敛到同一结果），按本仓纪律**不伪造**一个能变红的形态，如实记在交接里（缺陷本身已修，判据待有形态时再补）。  ⚠️ 「跳过回执」那条也**撤掉了**：它的真渲染判据需要驱动「点按钮 → 让出一帧 → 读回执」，本轮没跑通；源码级判据无法把「分支被删」与「分支被短路」区分开 ⇒ 按纪律不伪造能变红的形态（改动本身保留，已如实记在交接里）。",
-  "runAt": "2026-10-14T05:10:51.859Z",
-  "specFingerprint": "219ca51c98652321c412d372d1ecff35da62cea0",
+  "description": "第 228 波·审计轮第五批（第四轮审计抓到的高危形态）：手动压缩在「最后一条是压缩标记」时会把整段可见历史（含最近 3 轮）删光（折叠把保留集清空而手动路径没有重夹保底）、手动标记预算不含级联段（旧摘要很长时新增历史被整段裁掉）、锁被占而跳过的回执被丢掉（面板说成「本次没有可移除的消息」）、段头条数与实际渲染内容不符 —— 5 条变异（4 红 + 1 反向对照）。⚠️「自动路径 stale-id 合并后同步 keepCount」那条撤掉了：现有夹具下两种写法被重夹收敛到同一结果 ⇒ 无区分性判据，按纪律不伪造（已如实记在交接里）。",
+  "runAt": "2026-10-14T06:31:19.635Z",
+  "specFingerprint": "3c8271047dec4c2ed44ebbc6bd21dfa7c37fc1a7",
   "files": [
     "src/components/ContextMonitor.tsx",
     "src/core/llm/agentic-loop.ts"
   ],
   "tests": [
     "src/test/feature-context-fixes.test.ts",
+    "src/test/context-compact-feedback.test.tsx",
     "src/test/compaction-audit-228.test.ts"
   ],
   "restored": true,
@@ -31,7 +32,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3727
+      "ms": 4200
     },
     {
       "id": "MUT-2 手动压缩的标记预算又不含级联段（旧摘要很长时界失效）",
@@ -51,7 +52,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3828
+      "ms": 4191
+    },
+    {
+      "id": "MUT-3 手动压缩「锁被占而跳过」又不给可见回执（显示成「本次没有可移除的消息」）",
+      "why": "FC-D5k：skipped 曾被 state 类型丢掉 ⇒ 面板说成「没有可移除的消息」（假），而其实只是锁被占",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "                {compactResult.skipped\n                  ? `没有压缩：${compactResult.skipped}`\n                  : compactResult.removed > 0",
+          "to": "                {false && compactResult.skipped\n                  ? `没有压缩：${compactResult.skipped}`\n                  : compactResult.removed > 0"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2313
     },
     {
       "id": "MUT-5 段头条数又与实际渲染内容不符（中间档未过滤标记 + 摘要档把溢出档重复计数）",
@@ -59,7 +80,7 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "      summarizedCount: packed.consumed,\n      middleCount: middleForDigest.length,",
+          "from": "      summarizedCount: packed.consumed,\n      summaryInterrupted,\n      middleCount: middleForDigest.length,",
           "to": "      summarizedCount: oldBand.length,\n      middleCount: middleBand.length,"
         }
       ],
@@ -72,7 +93,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3863
+      "ms": 4180
     },
     {
       "id": "MUT-6 反向对照：只改一行说明注释",
@@ -92,7 +113,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3702
+      "ms": 4159
     }
   ]
 }

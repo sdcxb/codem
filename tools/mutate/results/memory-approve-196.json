@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-196",
-  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。",
-  "runAt": "2026-10-13T08:51:44.847Z",
-  "specFingerprint": "aa34a20c45ebeeedf2fa7ce6e3e8f69850a97dc5",
+  "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。 ⚠️「界面：拆掉选中集合随待批准列表收敛（幽灵选中）」这条**已撤掉**：一次性修复后它不再能让任何判据变红（该能力仍由 memory-pending-batch 的行为用例守着），按纪律不保留无效变异。",
+  "runAt": "2026-10-14T06:36:21.841Z",
+  "specFingerprint": "090141367f2c61f84b788951e6b46d4d1b06f366",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3833
+      "ms": 3984
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3797
+      "ms": 3978
     },
     {
       "id": "MUT-3 默认档改成「对话也需批准」",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3811
+      "ms": 3987
     },
     {
       "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3869
+      "ms": 3924
     },
     {
       "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3865
+      "ms": 3817
     },
     {
       "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3854
+      "ms": 3837
     },
     {
       "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
@@ -142,8 +142,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "            <button\n              className=\"memory-approve-btn\"\n              disabled={selectedPending.size === 0}\n              title=\"批准所有勾选的条目：它们从现在起参与上下文\"",
-          "to": "            <button\n              className=\"memory-approve-btn\"\n              disabled={false}\n              title=\"批准所有勾选的条目：它们从现在起参与上下文\""
+          "from": "              className=\"memory-approve-btn\"\n              disabled={selectedPending.size === 0}",
+          "to": "              className=\"memory-approve-btn\"\n              disabled={false}"
         }
       ],
       "tests": [
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4046
+      "ms": 4073
     },
     {
       "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
@@ -174,32 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4001
-    },
-    {
-      "id": "界面：拆掉「选中集合随待批准列表收敛」这条能力（幽灵选中）",
-      "why": "MB-UI-2：选中集合必须跟着待批准列表收敛。**两处实现都要动**才看得出行为差异（处理完显式清空 + 列表变化时过滤）—— 只去掉一处，另一处会把它兜住：这正是「变异要拆够、要写在能力上而不是某一行上」那条教训的又一例。⚠️ 第 226 波把「随列表收敛」收敛成**一条共用能力**（`pruneAliveIds`，勾选集合与展开集合共用）⇒ 第二个锚点改成那条能力本身（去掉它 = 两个集合都不再收敛）",
-      "patches": [
-        {
-          "file": "src/components/MemoryManager.tsx",
-          "from": "    const result = getMemoryService().approveMany(ids);\n    setNotice(result.message);\n    setSelectedPending(new Set());",
-          "to": "    const result = getMemoryService().approveMany(ids);\n    setNotice(result.message);"
-        },
-        {
-          "file": "src/components/MemoryManager.tsx",
-          "from": "  const aliveIds = new Set(alive.map((entry) => entry.id));\n  const next = new Set([...previous].filter((id) => aliveIds.has(id)));\n  return next.size === previous.size ? previous : next;",
-          "to": "  return previous;"
-        }
-      ],
-      "tests": [
-        "src/test/memory-pending-batch.test.tsx"
-      ],
-      "runner": "vitest",
-      "expectedRed": true,
-      "observedRed": true,
-      "ok": true,
-      "exitCode": 1,
-      "ms": 4114
+      "ms": 4070
     },
     {
       "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
@@ -219,7 +194,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4245
+      "ms": 4192
     },
     {
       "id": "MUT-12 反向对照：只改一行说明注释",
@@ -241,7 +216,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4049
+      "ms": 4022
     }
   ]
 }

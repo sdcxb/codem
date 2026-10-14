@@ -565,7 +565,24 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
     });
   const fromIndex = listMessagesFromIndex(sessionId, limit);
   const cached = cachedLogMessages.get(sessionId);
-  if (!cached || cached.length === 0) return withToolCalls(fromIndex);
+  /**
+   * ★ 全量审计（2026-10，高）：**日志镜像为空时也必须过一遍"本进程隐藏过的 id"**。
+   *
+   * 被守的缺陷：这条短路原来直接 `return withToolCalls(fromIndex)`，而 `hiddenMessageIds()` 是
+   * `localHiddenIds`（本进程记住的软删 id）的**唯一**消费点 ⇒ 对"本进程新建、日志镜像读到 0 条"
+   * 的会话（新会话必属此列，且 `ensureSessionLogHydrated` 见到空数组就早退、一个进程内钉死），
+   * 压缩软删掉的消息会被原样读回来 —— **压缩等于没做**（用户看到"移除了 N 条"，上下文一点没小）。
+   *
+   * 顺带修同一处的另一半：插入序 vs 时间戳序。镜像为空时返回的是端口的**插入序**
+   * （`rust-port` 的镜像写入是 `push`），于是压缩标记（最后写入）会变成"最新的那条 user 消息"，
+   * 而不是像排序分支那样落在保留集**之前**。两条路径统一按 `timestamp` 稳定排序。
+   */
+  if (!cached || cached.length === 0) {
+    const hiddenIds = hiddenMessageIds(sessionId);
+    const visible = hiddenIds.size === 0 ? fromIndex : fromIndex.filter((m) => !hiddenIds.has(m.id));
+    const sorted = [...visible].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    return withToolCalls(sorted);
+  }
 
   /**
    * 第 83 波：**索引里的 hidden 状态也是权威**（软删除行只在索引里）。
@@ -3267,6 +3284,8 @@ export function deleteMessagesByIds(ids: string[], knownSessionId?: string): num
   if (ids.length === 0) return 0;
   // 先按会话分组（墓碑要写进对应会话的日志），再软删除索引行
   const bySession = sessionIdsForMessages(ids, knownSessionId);
+  /** ★ 全量审计：镜像里查不到归属、且调用方没给会话 ⇒ 这些 id 什么都没发生（要如实告诉调用方） */
+  const unresolved = ids.filter((id) => ![...bySession.values()].some((sids) => sids.includes(id))).length;
 
   /**
    * **端口优先**（第 39 轮修复）：rust 模式下旧库刻意不存在，原来的
@@ -3288,7 +3307,10 @@ export function deleteMessagesByIds(ids: string[], knownSessionId?: string): num
    * "参数里看不出规模、实际级联删掉一大堆"，而这里根本没有删除。
    */
   const port = rustMessagePort();
+  /** ★ 全量审计：这次软删是否真的在索引侧落地（false = 端口缺 messages 能力 / 旧库路径） */
+  let softDeleteResponded = false;
   if (port) {
+    softDeleteResponded = true;
     /*
      * P2-4：软删除（压缩隐藏）**不删行**，所以引擎回报里 `count_clamped` 恒 false
      * （行没少 → 计数不可能被夹断）。走统一入口仍然有意义：`missing` 会告诉我们
@@ -3330,7 +3352,47 @@ export function deleteMessagesByIds(ids: string[], knownSessionId?: string): num
     // 内存镜像同步剔除：否则本次进程内的 listMessages 仍会从镜像复活这些消息
     dropFromLogMirror(sid, sids);
   }
+  /**
+   * ★ 全量审计（2026-10，低）：把这次软删的**真实结果**留给调用方。
+   *
+   * 被守的缺陷：这里恒返回 `ids.length`（"计划删多少"），而索引侧的真实回报
+   * （`written` / `missing`）只进了 `console.warn`；`unresolved`（镜像被逐出且调用方没给会话）
+   * 更是什么都没留下 ⇒ 压缩的"移除 N 条"、事件里的 `removedMessageIds`、
+   * 面板回执全都可能高于真实值。调用方现在可以读这个报告并如实修正措辞。
+   */
+  lastDeleteReport = {
+    requested: ids.length,
+    unresolved,
+    sessions: [...bySession.keys()],
+    softDeleteResponded: softDeleteResponded,
+  };
   return ids.length;
+}
+
+/**
+ * 最近一次 `deleteMessagesByIds` 的真实结果（全量审计新增；见那里的注释）。
+ * `unresolved > 0` 表示这些 id 既没进任何会话的墓碑、也没写进索引 —— 调用方必须如实说明。
+ */
+export interface MessageDeleteReport {
+  requested: number;
+  /** 镜像里查不到归属、且调用方没给 `knownSessionId` 的条数（这些 id 什么都没发生） */
+  unresolved: number;
+  /** 这次真正写进索引/日志的会话 */
+  sessions: string[];
+  /** 索引侧是否真的回应了（false = 端口缺能力 / 旧库路径） */
+  softDeleteResponded: boolean;
+}
+
+let lastDeleteReport: MessageDeleteReport = {
+  requested: 0,
+  unresolved: 0,
+  sessions: [],
+  softDeleteResponded: false,
+};
+
+/** 读最近一次软删的真实结果（压缩路径用它修正"移除 N 条"的措辞）。 */
+export function getLastDeleteReport(): MessageDeleteReport {
+  return { ...lastDeleteReport };
 }
 
 /**

@@ -462,8 +462,14 @@ export function selectMessagesByPriority(
     const content = typeof msg.content === "string" ? msg.content : "";
     const isRecent = i >= recencyThreshold ? 1 : 0;
 
-    // Compaction markers — CRITICAL
-    if (msg.role === "user" && content.startsWith("[上下文已自动压缩]")) return 4;
+    /**
+     * Compaction markers — CRITICAL
+     *
+     * ★ 全量审计：原来**硬编码只认自动前缀**，而手动压缩写的 `[上下文已手动压缩]` 同样是
+     * 「原文已被软删、标记是唯一副本」，却被当成普通 user 消息（优先级 3）⇒ 预算不足时最先被丢。
+     * 这里改用共享判定（两个前缀都认）。
+     */
+    if (isCompactionMarker({ role: msg.role, content })) return 4;
     // User messages — HIGH
     if (msg.role === "user") return 3;
     // Assistant with tool calls — MEDIUM
@@ -732,6 +738,11 @@ export function composeCompactionMarkerText(input: {
   removedCount: number;
   keptCount: number;
   summarizedCount: number;
+  /**
+   * ★ 全量审计（2026-10）：**这一段的正文不是 LLM 摘要**（摘要调用抛错/中断，正文是片段兜底）。
+   * 段头因此**不许**断言「覆盖较早的 N 条」—— 那个 N 是**计划**要送的条数，模型从未看到它们的摘要。
+   */
+  summaryInterrupted?: boolean;
   middleCount: number;
   overflowCount: number;
   /**
@@ -759,7 +770,9 @@ export function composeCompactionMarkerText(input: {
     `已移除 ${input.removedCount} 条旧消息，保留最近 ${input.keptCount} 条（按轮次边界对齐：最近几轮不切断）。` +
     "请基于以上内容继续工作；如需之前的文件内容或命令输出，请用工具重新获取。";
   const headingOf = {
-    summary: `## 检查点摘要（覆盖较早的 ${input.summarizedCount} 条）`,
+    summary: input.summaryInterrupted
+      ? "## 检查点摘要（本次摘要调用中断：以下是片段兜底，不是完整摘要）"
+      : `## 检查点摘要（覆盖较早的 ${input.summarizedCount} 条）`,
     prior: "## 之前的摘要（继续保留）",
     middle: `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条；确定性渲染，不是逐字原文）`,
     overflow: `## 更早的历史（${input.overflowCount} 条，保真度最低：只保留可检索的要点，原文已不再逐条保留）`,

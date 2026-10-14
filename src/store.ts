@@ -326,6 +326,60 @@ interface AppState {
   setHasUnreadMessages: (v: boolean) => void;
 }
 
+/**
+ * ★ 全量审计（2026-10）新增：**压缩期间的延迟落库队列**。
+ *
+ * 为什么不是「直接写」：压缩期间禁止并发写库是为 sql.js/WASM 安全加的防御（见 saveMessages），
+ * 这条防御要保留；但「丢掉用户刚发的话」不可接受（模型这一轮就看不到它了）。
+ * 所以压缩期间把写入请求排队，压缩一结束就补写（同一会话的多次请求合并成一次）。
+ *
+ * 失败处理：补写时若仍处于压缩中则重新排队，最多 20 次；超限走**可见的失败上报**（绝不静默丢）。
+ */
+const deferredSaves = new Map<string, { attempts: number }>();
+let deferredFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function queueCompactionDeferredSave(sessionId: string): void {
+  const prev = deferredSaves.get(sessionId);
+  deferredSaves.set(sessionId, { attempts: prev?.attempts ?? 0 });
+  if (deferredFlushTimer !== null) return;
+  /* 压缩是秒级动作 ⇒ 每 250ms 试一次；真正的写仍走 saveMessages（同一份实现） */
+  deferredFlushTimer = setTimeout(flushDeferredSaves, 250);
+}
+
+function flushDeferredSaves(): void {
+  deferredFlushTimer = null;
+  for (const [sessionId, entry] of [...deferredSaves.entries()]) {
+    if (isCompactionInProgress(sessionId)) {
+      if (entry.attempts >= 20) {
+        deferredSaves.delete(sessionId);
+        reportPersistFailure(
+          "store.saveMessagesDeferred",
+          new Error("压缩持续进行，推迟的消息写入多次未落地"),
+          "压缩期间发送的消息可能未能落库（请检查这一轮对话是否完整）",
+        );
+        continue;
+      }
+      deferredSaves.set(sessionId, { attempts: entry.attempts + 1 });
+      continue;
+    }
+    deferredSaves.delete(sessionId);
+    /* 写仍走同一份实现；不传消息数组 ⇒ 它自己从 state 取这份会话的消息 */
+    useAppStore.getState().saveMessages(sessionId);
+  }
+  if (deferredSaves.size > 0 && deferredFlushTimer === null) {
+    deferredFlushTimer = setTimeout(flushDeferredSaves, 250);
+  }
+}
+
+/** 测试钩子：清空推迟队列（判据用，避免跨用例串味） */
+export function __resetDeferredSavesForTests(): void {
+  deferredSaves.clear();
+  if (deferredFlushTimer !== null) {
+    clearTimeout(deferredFlushTimer);
+    deferredFlushTimer = null;
+  }
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   loadedSessionId: null,
@@ -755,7 +809,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     // to prevent UI auto-save from interleaving db.run calls that corrupt
     // sql.js state ("bad parameter or other API misuse").
     if (isCompactionInProgress(sessionId)) {
-      console.log("[Store] saveMessages skipped — compaction in progress");
+      /**
+       * ★ 全量审计（高）修复：**排队，不丢弃**。
+       *
+       * 被守的缺陷：这里原来直接 return，而"用户发的消息"正是从这条路上落的库，
+       * 主循环又只认库里的消息 ⇒ 压缩那几秒里用户发的话既没进库也没进模型，
+       * 界面却显示已发送；自动保存也不会因为"被跳过"而重跑。
+       */
+      queueCompactionDeferredSave(sessionId);
+      console.log("[Store] saveMessages 推迟到压缩结束（已排队，不丢）");
       return;
     }
     /**

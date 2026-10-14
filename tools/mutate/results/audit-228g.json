@@ -1,0 +1,119 @@
+{
+  "wave": "audit-228g",
+  "description": "第 228 波·审计轮第六批（第五轮审计的 7 条里可复现的部分）：自动路径所有「没压成」的出口统一返回 -1（原来返回 0 被调用方当成一次成功压缩 ⇒ 连记 3 次误报「上下文窗口已满」并中止回合）、手动末位闸带 skipped 的真实原因、裁剪注记放不下时不追加（不许突破自己的预算）、导入回执要讲越界。",
+  "runAt": "2026-10-14T06:31:44.111Z",
+  "specFingerprint": "72fbfc75b5b58e6ac047829e52627291b31c3bb3",
+  "files": [
+    "src/core/llm/agentic-loop.ts",
+    "src/components/ContextMonitor.tsx",
+    "src/core/memory/checkup.ts"
+  ],
+  "tests": [
+    "src/test/compaction-audit-228.test.ts",
+    "src/test/feature-context-fixes.test.ts",
+    "src/test/audit-228d.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 没压成又返回 0（被当成一次成功压缩 ⇒ 连记 3 次误报窗口已满）",
+      "why": "CA-28：调用方把 >= 0 一律当压缩成功（清缓存 + consecutiveCompactions++）",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "    /* ★ 全量审计：没有可移除的消息 ⇒ -2（与\"锁被占\"分开，UI 文案才说得对） */\n    if (messagesToRemove.length === 0) return -2;",
+          "to": "    if (messagesToRemove.length === 0) return 0;"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4193
+    },
+    {
+      "id": "MUT-2 手动末位闸又不带原因（面板编造「可压缩的部分不足」）",
+      "why": "FC-D5m：真因是「可见消息只剩压缩摘要标记，没有真实历史」",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "      skipped: \"可见消息只剩压缩摘要标记，没有可压缩的真实历史\",",
+          "to": "      skipped: undefined,"
+        }
+      ],
+      "tests": [
+        "src/test/feature-context-fixes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4153
+    },
+    {
+      "id": "MUT-3 裁剪注记又整条追加（标记突破自己的预算）",
+      "why": "FC-D5n：historyBudget 放不下注记时仍旧追加 ⇒ 超出预算约 26 字符，而这条预算正是「压缩不许让上下文变大」的唯一依据",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "    if (historyBudget > note.length) {",
+          "to": "    if (false) {"
+        }
+      ],
+      "tests": [
+        "src/test/feature-context-fixes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4145
+    },
+    {
+      "id": "MUT-4 导入回执又不讲越界（只写 console.warn = 没说）",
+      "why": "MA-21：渲染侧 console 只能靠 CDP 抓 ⇒ 用户看不到「此后的自动写入会被拒」",
+      "patches": [
+        {
+          "file": "src/core/memory/checkup.ts",
+          "from": "    result.overTotalCap || result.overPayloadBudget",
+          "to": "    false"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3893
+    },
+    {
+      "id": "MUT-5 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "const MIN_KEEP_MESSAGES = 4;",
+          "to": "const MIN_KEEP_MESSAGES = 4; /* 反向对照：行为逐字不变 */"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 4086
+    }
+  ]
+}

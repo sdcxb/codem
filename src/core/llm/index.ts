@@ -291,8 +291,29 @@ const MEMORY_MAX_WRITES_PER_EXTRACTION = 4;
  */
 const MEMORY_EXTRACTION_WINDOW = 50;
 
+/**
+ * 「用户明确要求记住」的措辞（`explicit` 的结构证据）。
+ *
+ * ★ 全量审计（高）：这里**只认明确的记住请求**。原来还包含「以后都 / 以后每次 / 每次都这样 /
+ * 今后都 / 别再问 / 别忘了」这些与「记住」无关的措辞 —— 而附件正文会落进 user 消息，
+ * 于是一份外部文档里的一句「以后都用 pnpm」就能让整批候选**免审批**进上下文。
+ */
 const REMEMBER_REQUEST_PATTERN =
-  /(记住|记一下|记下来|记下这|帮我记|别忘了|别忘记|以后都|以后每次|每次都这样|今后都|别再问|remember (?:this|that|it)|keep (?:this )?in mind|don'?t forget)/i;
+  /(请?记住|记一下|记下来|记下这|帮我记|remember (?:this|that|it)|keep (?:this )?in mind)/i;
+
+/**
+ * 把**附件正文**从待匹配的文本里剥掉（只留用户自己键入的部分）。
+ *
+ * `App.handleSend` 把 `formatAttachmentsInline(...)` 拼在用户消息前面 ⇒ 外部文件的内容
+ * 与用户原话在同一字段里；判「这是不是用户说的」时必须把它们分开。
+ */
+export function stripAttachmentText(content: string): string {
+  return content
+    .replace(/<attachment[\s\S]*?<\/attachment>/gi, " ")
+    .replace(/<file[\s\S]*?<\/file>/gi, " ")
+    .replace(/^[\s\S]*?\n\n(?=[^\n]*$)/, (m) => (m.length > 400 ? "" : m))
+    .trim();
+}
 
 /**
  * 同一会话两次提取之间**至少要新增多少条消息**（第 197 波）。
@@ -2350,7 +2371,8 @@ return loop.hasPendingGuidance();
         m?.role === "user" &&
         typeof m.content === "string" &&
         !isMachineInjectedMessage(m) &&
-        REMEMBER_REQUEST_PATTERN.test(m.content),
+        /* ★ 全量审计：附件正文不算"用户原话"（先把附件块剥掉再匹配） */
+        REMEMBER_REQUEST_PATTERN.test(stripAttachmentText(m.content)),
     );
 
     /**

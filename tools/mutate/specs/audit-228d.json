@@ -98,7 +98,7 @@
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "        !isMachineInjectedMessage(m) &&\n        REMEMBER_REQUEST_PATTERN.test(m.content),",
+          "from": "        !isMachineInjectedMessage(m) &&\n        /* ★ 全量审计：附件正文不算\"用户原话\"（先把附件块剥掉再匹配） */\n        REMEMBER_REQUEST_PATTERN.test(stripAttachmentText(m.content)),",
           "to": "        REMEMBER_REQUEST_PATTERN.test(m.content),"
         }
       ],

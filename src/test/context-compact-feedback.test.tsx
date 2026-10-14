@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 第 227 波 · 界面那一半（用户直报）：
  *
  * > 弹出上下文窗口，我点了压缩上下文按钮，没出现进度也没出现压缩提示。
@@ -185,15 +185,21 @@ describe("CB：手动压缩的**可见反馈**与防重复点（第 227 波）",
 });
 
 describe("FC-D5k（第 228 波审计）：锁被占而跳过的回执", () => {
-  it("源码级棘轮：状态类型要带 skipped，回执要先判 skipped（否则会说成没有可移除的消息）", () => {
+  it("必须说清是「没有压缩：另一次压缩正在进行」，不许说成「本次没有可移除的消息」", async () => {
     /*
-     * 被守的缺陷：manualCompact 返回值里的 skipped 曾被 state 类型丢掉 ⇒ 面板走 removed>0 的
-     * else 分支，显示「本次没有可移除的消息（可压缩的部分不足）」—— 而其实有几十条可压，只是锁被占。
-     * ⚠️ 如实记：这是**源码级**判据（真渲染版需要「点按钮 → 让出一帧 → 读回执」，本轮预算内没跑通，
-     * 已写进交接）；它挡的是「把 skipped 分支整段删掉」。
+     * 被守的缺陷：manualCompact 返回值里的 skipped 被 state 类型丢掉 ⇒ 面板走 removed>0 的 else 分支，
+     * 显示「本次没有可移除的消息（可压缩的部分不足）」—— 而其实有几十条可压，只是锁被占。
+     * ⚠️ 这个文件用**假定时器**（为了等 3.5s/8s 而不真等）⇒ 让帧必须用 advanceTimersByTimeAsync。
      */
-    const src = readFileSync(path.resolve(__dirname, "../components/ContextMonitor.tsx"), "utf8");
-    expect(src, "状态类型要带 skipped（否则返回值里那个字段被静默丢弃）").toContain("skipped?: string");
-    expect(src, "回执要按 skipped 分支").toMatch(/compactResult\.skipped[\s\S]{0,40}?没有压缩/);
+    const lock = await import("../core/llm/compaction-control");
+    const spy = vi.spyOn(lock, "acquireCompactionLock").mockReturnValue(false);
+    render(createElement(ContextMonitor, { sessionId: "s-skip", visible: true }));
+    await letFramePass();
+    fireEvent.click(compactButton());
+    await letFramePass();
+    const text = receipt()?.textContent ?? "";
+    expect(text, "必须说清是**跳过**").toContain("另一次压缩正在进行");
+    expect(text, "不许把它说成「没有可移除的消息」").not.toContain("本次没有可移除的消息");
+    spy.mockRestore();
   });
 });

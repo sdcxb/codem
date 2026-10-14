@@ -733,7 +733,7 @@ const BATCH_KEEP_MAX = 50;
  *   "同一条事实的两种说法"的判重（判重看的是字符 2-gram 重合度，前 240 字已包含标题与要点）。
  */
 const REJECTION_KEEP_MAX = 60;
-const REJECTION_TEXT_MAX = 240;
+const REJECTION_TEXT_MAX = 2000;
 
 const DEFAULT_APPROVAL: ApprovalScopeSetting = { platform: true, project: true, conversation: false };
 
@@ -1314,6 +1314,23 @@ export function getWriteApprovalSetting(): ApprovalScopeSetting {
   const pick = (k: keyof ApprovalScopeSetting) =>
     typeof parsed[k] === "boolean" ? (parsed[k] as boolean) : DEFAULT_APPROVAL[k];
   return { platform: pick("platform"), project: pick("project"), conversation: pick("conversation") };
+}
+
+/**
+ * ★ 全量审计（高）：写入审批开关的**确认式**写入。
+ *
+ * 被守的缺陷：原来只 setSetting（void，失败只发一条全局横幅）⇒ 界面立刻宣布
+ * 「写入审批已更新」，而磁盘可能没写 ⇒ 重启后静默回到旧值（甚至回到「直接生效」）。
+ * 这是个**安全开关**（关掉审批 = 自动记忆直接进上下文），必须和旧池暂停开关同一口径。
+ */
+export async function setWriteApprovalSettingConfirmed(next: Partial<ApprovalScopeSetting>): Promise<boolean> {
+  const merged = { ...getWriteApprovalSetting(), ...next };
+  try {
+    return await setSettingConfirmed(MEMORY_WRITE_APPROVAL_KEY, JSON.stringify(merged));
+  } catch (e) {
+    reportPersistFailure("memory.setWriteApproval", e, "写入审批设置未保存（重启后会回到旧值）");
+    return false;
+  }
 }
 
 export function setWriteApprovalSetting(next: Partial<ApprovalScopeSetting>): ApprovalScopeSetting {
@@ -2410,9 +2427,34 @@ export class MemoryService {
       return false;
     }
 
+    /**
+     * ★ 全量审计（中）：**字段白名单**。
+     *
+     * 被守的缺陷：原来 `...updates` 让 order / status 直接穿透 ⇒
+     * ① update(id, { order: -12345 }) 能改排序（文档明写「update 永不动 order」）；
+     * ② update(pendingId, { status: active }, { actor: auto }) 能**绕过审批闸**，
+     *    把未批准的条目直接放进注入集合（approve() 才是唯一合法入口）。
+     * 现在只接受内容类字段，归属/排序/审批状态一律走各自的正规入口。
+     */
+    const allowed: Partial<MemoryEntry> = {};
+    /**
+     * ⚠️ 用 hasOwnProperty 判「调用方有没有提到这个字段」——
+     * `{ legacyPool: undefined }` / `{ sessionId: undefined }` 是**清除**，不是缺席
+     * （「保留为平台级」与「归位」正是靠这个把标记/旧归属摘掉的）。
+     */
+    const has = (k: keyof MemoryEntry): boolean => Object.prototype.hasOwnProperty.call(updates, k);
+    if (has("key")) allowed.key = updates.key;
+    if (has("content")) allowed.content = updates.content;
+    if (has("tags")) allowed.tags = updates.tags;
+    if (has("scope")) allowed.scope = updates.scope;
+    if (has("projectId")) allowed.projectId = updates.projectId;
+    if (has("sessionId")) allowed.sessionId = updates.sessionId;
+    if (has("legacyPool")) allowed.legacyPool = updates.legacyPool;
+    if (has("source")) allowed.source = updates.source;
+    if (has("timestamp")) allowed.timestamp = updates.timestamp;
     const next: MemoryEntry = {
       ...entry,
-      ...updates,
+      ...allowed,
       id, // Prevent id change
       // 来源与批次归属**不可被改写**（自动流程不得把手工条目洗成自动，反之亦然）
       source,
@@ -2438,12 +2480,13 @@ export class MemoryService {
       }
     }
 
-    if (updates.content !== undefined && updates.content.length > this.config.maxContentLength) {
-      // 截断如实记录（与 add 同口径），界面在回执里显示
-      this.lastWriteError = `content 超过 ${this.config.maxContentLength} 字符，已截断`;
-    } else {
-      this.lastWriteError = null;
-    }
+    /* ★ 全量审计：key 的截断也要和 add 同口径披露（原来静默截断、lastWriteError 还是 null） */
+    const truncatedContent = updates.content !== undefined && updates.content.length > this.config.maxContentLength;
+    const truncatedKey = typeof updates.key === "string" && redactSecrets(updates.key).length > MEMORY_INJECT_KEY_MAX;
+    const parts: string[] = [];
+    if (truncatedContent) parts.push(`content 超过 ${this.config.maxContentLength} 字符，已截断`);
+    if (truncatedKey) parts.push(`key 超过 ${MEMORY_INJECT_KEY_MAX} 字符，已截断（注入按此长度截断）`);
+    this.lastWriteError = parts.length > 0 ? parts.join("；") : null;
 
     this.entries.set(id, next);
     return true;
@@ -4402,6 +4445,8 @@ export class MemoryService {
     let staleRemoved = 0;
     let capacityTrimmed = 0;
     let capacityBlocked = 0;
+    /** ★ 全量审计：因合并后会超长而**放弃**合并的条目数（要如实上报，不许静默丢） */
+    let mergeSkippedOverLong = 0;
 
     const allEntries = Array.from(this.entries.values());
 

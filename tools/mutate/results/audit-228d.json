@@ -1,8 +1,8 @@
 {
   "wave": "audit-228d",
   "description": "第 228 波·审计轮第三批（对改动过的代码再审计一轮）：压缩侧 —— 手动压缩的级联摘要永不参与裁剪（唯一副本，原来会被裁到 0）、标记预算按在场段数归一化（原来 summary/prior 各拿一份 ⇒ 1.5 倍）、折叠后的保留数不许是 0（slice(-0) 同时表示保留全部与删掉全部）、minKeep 不依赖 align 的隐含契约、自动路径的中间档与兜底摘要都要认全部压缩标记；记忆侧 —— 顶替旧条目必须在新条目写入成功之后、explicit 的结构证据只认窗口内用户亲手打的字（排除机器注入）、两个上限分开计数、注入截断披露按展开后文本判定、内存上限读数给三道闸。",
-  "runAt": "2026-10-14T03:57:43.303Z",
-  "specFingerprint": "36e4f8c2538a96aff21b909b66b90c0e196e4bc6",
+  "runAt": "2026-10-14T06:30:56.228Z",
+  "specFingerprint": "415d1d386813b867cc6bc79e3137beb9ee542531",
   "files": [
     "src/components/ContextMonitor.tsx",
     "src/core/llm/compaction-budget.ts",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4097
+      "ms": 4108
     },
     {
       "id": "MUT-2 标记预算又给 summary 与 priorSummary 各发一份（四段同时在 ⇒ 1.5 倍预算）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4069
+      "ms": 3926
     },
     {
       "id": "MUT-3 折叠后的保留数可以是 0（slice(-0) 同时表示保留全部与删掉全部）",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4053
+      "ms": 3904
     },
     {
       "id": "MUT-4 minKeep 又依赖 align 的隐含契约（向下对齐时保底静默失效）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4026
+      "ms": 3952
     },
     {
       "id": "MUT-5 中间档又把压缩标记渲染一遍（同一份旧摘要进上下文两遍）",
@@ -115,7 +115,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3983
+      "ms": 3938
     },
     {
       "id": "MUT-6 顶替旧条目又排在新条目写入之前（旧条目被删、新条目被上限挡下）",
@@ -135,7 +135,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4010
+      "ms": 3980
     },
     {
       "id": "MUT-7 explicit 的证据又只看 role=user（机器注入的委派消息算用户原话）",
@@ -143,7 +143,7 @@
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "        !isMachineInjectedMessage(m) &&\n        REMEMBER_REQUEST_PATTERN.test(m.content),",
+          "from": "        !isMachineInjectedMessage(m) &&\n        /* ★ 全量审计：附件正文不算\"用户原话\"（先把附件块剥掉再匹配） */\n        REMEMBER_REQUEST_PATTERN.test(stripAttachmentText(m.content)),",
           "to": "        REMEMBER_REQUEST_PATTERN.test(m.content),"
         }
       ],
@@ -155,7 +155,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4015
+      "ms": 3877
     },
     {
       "id": "MUT-8 两个上限又混成一个计数（日志把总量上限说成待批准上限）",
@@ -175,7 +175,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4054
+      "ms": 3912
     },
     {
       "id": "MUT-9 注入截断披露又只看原始 content（展开后超长时漏报）",
@@ -195,7 +195,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3968
+      "ms": 3989
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -215,7 +215,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4030
+      "ms": 4026
     }
   ]
 }

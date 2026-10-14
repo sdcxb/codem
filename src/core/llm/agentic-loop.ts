@@ -1,4 +1,4 @@
-import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
+﻿import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
@@ -185,6 +185,20 @@ export interface TodoItem {
   order: number;
 }
 
+/**
+ * ★ 全量审计（2026-10）：`compactMessages` 的负返回值 → **给用户看的原因**。
+ *
+ * 被守的缺陷：原来 5 种「没压成」（锁被占 / 没可移除的 / 保留集为空 / 消息太少 / 保留数为 0）
+ * 全被 UI 渲染成「另一次压缩正在进行，稍后会自动重试」—— 在多数分支上这句话是假的，
+ * 而「稍后重试」也不会改变结果（例如「可见消息只剩标记」是稳态）。
+ */
+function skipReasonFor(code: number): string {
+  if (code === -1) return "另一次压缩正在进行，稍后会自动重试";
+  if (code === -2) return "当前没有可移除的旧消息（保留集已覆盖全部可见消息）";
+  if (code === -3) return "保留集为空（可见消息只剩压缩摘要标记），本次不压缩";
+  return "当前没有可压缩的内容";
+}
+
 export interface LoopState {
   iteration: number;
   /**
@@ -201,13 +215,11 @@ export interface LoopState {
   lastError?: string;
   contextPressure: number;
   isCompacting: boolean;
-  /** True if compaction happened during the current iteration (prevents premature stop) */
+  /** 本轮是否已经压缩过（避免同一轮重复压） */
   compactedThisIteration: boolean;
-  /** Count of consecutive compactions to prevent infinite loops */
+  /** 连续压缩次数（≥3 就认为"压了也没用"，按"压缩无效"上报并中止本轮） */
   consecutiveCompactions: number;
-  /** P0-3: True if micro-compact has been applied in this run (prevents re-compacting) */
-  microCompactedThisRun: boolean;
-  /** E8: True if cost degradation has been activated (switched to cheaper model) */
+  /* （全量审计）microCompactedThisRun 是死状态（多处赋值、0 处读取）⇒ 已删除 */
   costDegraded: boolean;
   /** S4: True if a write confirmation was rejected by the user — stops the loop to prevent retries */
   writeRejected: boolean;
@@ -547,7 +559,7 @@ export type LoopEvent =
   | { type: "tool_error"; toolCall: StreamingToolCall; error: string }
   | { type: "permission_request"; request: PermissionRequest; resolve: (result: PermissionResult) => void }
   | { type: "compaction_start" }
-  | { type: "compaction_end"; messagesRemoved: number; skipped?: boolean }
+  | { type: "compaction_end"; messagesRemoved: number; skipped?: boolean; skipReason?: string }
   | { type: "retry"; attempt: number; delay: number; error: string; errorType: string | null }
   | { type: "usage"; usage: TokenUsage }
   | { type: "guidance_received"; message: string; guidanceId: string }
@@ -1647,7 +1659,6 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
       isCompacting: false,
       compactedThisIteration: false,
       consecutiveCompactions: 0,
-      microCompactedThisRun: false,
       costDegraded: false,
       writeRejected: false,
       consecutiveNoProgress: 0,
@@ -1984,7 +1995,6 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.writeCache.clear();
     this.waitedSubagents.clear();
     this.spawnedSubagents.clear(); // no-op: 旧模式遗留
-    this.state.microCompactedThisRun = false;
     console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
 
     // P0-2: Initialize tool pipeline with 5-layer middlewares
@@ -2554,7 +2564,13 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
          * 跳过的语义是"这次不算"：既不记账、也不清缓存（什么都没变）。
          */
         /* ★ 第 228 波审计（第三轮）：把"被跳过"带出去 —— 折成 0 会让界面把跳过显示成"已压缩" */
-        yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted, skipped: compacted < 0 };
+        yield {
+          type: "compaction_end",
+          messagesRemoved: compacted < 0 ? 0 : compacted,
+          skipped: compacted < 0,
+          /* ★ 全量审计：把**真实原因**带出去（原来 5 种结局都显示"另一次压缩正在进行"） */
+          skipReason: compacted < 0 ? skipReasonFor(compacted) : undefined,
+        };
         if (compacted < 0) {
           /* 被跳过：什么都不变 ⇒ 不清缓存、不计连压次数 */
         } else {
@@ -2569,7 +2585,6 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           this.readCache?.clear();
           this.writeCache?.clear();
           this.msgCache = null;
-          this.state.microCompactedThisRun = false;
           // F1.2: Trigger memory extraction after compaction
           if (this.config.memoryEnabled && this.config.onCompactionComplete) {
             try { this.config.onCompactionComplete(); } catch (e) { console.warn('[agentic-loop.ts]', e) }
@@ -4268,7 +4283,12 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         if (this.config.enableReactiveCompaction) {
           yield { type: "compaction_start" };
           const compacted = await this.compactMessages(sessionId);
-          yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted, skipped: compacted < 0 };
+          yield {
+            type: "compaction_end",
+            messagesRemoved: compacted < 0 ? 0 : compacted,
+            skipped: compacted < 0,
+            skipReason: compacted < 0 ? skipReasonFor(compacted) : undefined,
+          };
           if (compacted < 0) {
             /* 被跳过（同一会话已有压缩在跑）⇒ 什么都不算，等下一轮重试 */
             return;
@@ -4279,11 +4299,10 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           this.msgCache = null;
           TranscriptCache.clear();
 
-          this.state.microCompactedThisRun = false;
           // After compaction, the main loop will rebuild messages and retry.
           // We return from executeIteration so the main while loop continues.
           // Set a flag so the main loop knows we compacted and should retry.
-          this.state.contextPressure = 0; // Reset pressure so it doesn't immediately re-trigger
+          /* ★ 全量审计：这句是**死写入**（下一轮开头必被重算覆盖）⇒ 删掉，别让注释撒谎 */
           this.state.compactedThisIteration = true;
           this.state.consecutiveCompactions++;
           return;
@@ -5545,7 +5564,6 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         const microResult = microCompact(valid);
         if (microResult.compactedCount > 0) {
           finalMessages = microResult.messages;
-          this.state.microCompactedThisRun = true;
         }
       }
     }
@@ -5750,7 +5768,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const allMessages = this.getMessageStorage().listMessages(sessionId);
     // Only consider visible (non-hidden) messages for compaction
     const messages = allMessages.filter((m: any) => !m.hidden);
-    if (messages.length <= 2) return 0;
+    /* ★ 全量审计：消息太少也是一种"没压成" ⇒ -1（原来返回 0 被当成成功压缩，连记 3 次后误报窗口已满） */
+    if (messages.length <= 2) return -1;
 
     // API-Round aware boundary detection:
     // Instead of a fixed keepCount, find a safe boundary that doesn't
@@ -5847,7 +5866,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      */
     if (keepCount <= 0) {
       console.warn("[compactMessages] 保留条数为 0（没有可保留的消息）⇒ 本次不压缩（slice(-0) 会取全部）");
-      return 0;
+      /* ★ 全量审计：保留条数为 0 ⇒ -3 */
+      return -3;
     }
     if (plan.shrunk) {
       console.log(
@@ -5870,7 +5890,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     let messagesToKeep = messages.slice(-keepCount);
     let messagesToRemove = messages.slice(0, messages.length - keepCount);
 
-    if (messagesToRemove.length === 0) return 0;
+    /* ★ 全量审计：没有可移除的消息 ⇒ -2（与"锁被占"分开，UI 文案才说得对） */
+    if (messagesToRemove.length === 0) return -2;
 
     /**
      * 第 45 轮（功能上下文审计 P1-D4 / C13）：**把保留集里的旧摘要标记折叠进待删集。**
@@ -5913,7 +5934,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
           console.log(`[compactMessages] 旧标记落在保留集末尾 ⇒ 按 id 一并移除 ${extra.length} 条（避免摘要重复一遍）`);
         }
       }
-      if (messagesToRemove.length === 0) return 0;
+      /* ★ 全量审计：同上 —— 重夹之后没有可移除的了 ⇒ -2 */
+      if (messagesToRemove.length === 0) return -2;
     }
 
     /**
@@ -5957,21 +5979,15 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
        */
       if (messagesToKeep.length === 0) {
         console.warn("[compactMessages] 保留集为空 ⇒ 本次不压缩（不许删光可见历史）");
-        return 0;
+        /* ★ 全量审计：保留集为空 ⇒ -3（UI 说得清是哪一种"没压"） */
+        return -3;
       }
     }
 
     // Verify tool_use/tool_result pairing integrity in the keep set
     // If a tool_result in keep references a tool_use in remove, we need to
     // also keep that tool_use (or remove the orphan tool_result)
-    const removeToolCallIds = new Set<string>();
-    for (const msg of messagesToRemove) {
-      if (msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
-          if (tc.id) removeToolCallIds.add(tc.id);
-        }
-      }
-    }
+    /* （全量审计）这里原来算了 removeToolCallIds，全程没人读 ⇒ 已删除（真正的配对保护在下游 buildMessages） */
     // Check if any kept message references a removed tool_use
     // (This is rare with proper boundary detection, but serves as a safety net)
 
@@ -6031,9 +6047,13 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       }
       return sum + chars;
     }, 0);
-    const oldParts = this.buildConversationTextParts(oldBand);
+    /**
+     * ★ 全量审计：摘要请求里**不许**再带旧标记的正文 —— 它已经作为级联前缀给了模型，
+     * 再进一次等于同一份旧摘要送两遍（模型会把重复当强调，还白烧 token）。
+     */
+    const oldParts = this.buildConversationTextParts(oldBand.filter((m: any) => !isCompactionMarker(m)));
     const packed = packPartsForSummary(oldParts, SUMMARY_CONVERSATION_CHAR_CAP, MAX_SUMMARY_CHUNKS);
-    const conversationText = packed.chunks.join("\n\n");
+    /* （全量审计）这里原来算了一份 conversationText，全程没人读 ⇒ 已删除 */
 
     // 压缩调用的**实际**请求形态（照实写，第 189 波改掉不实叙述）：
     // 它的 system 只有一句「你是一个对话摘要专家。」，user = 已有摘要 + 待压缩的**存储层历史** +
@@ -6053,6 +6073,10 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // "bad parameter or other API misuse" errors.
     /* ★ 第 228 波审计：显式初始化 —— 兜底分支（catch）要用它判断"有没有拿到部分摘要" */
     let summary = "";
+    /** ★ 全量审计：本次摘要是否走了片段兜底（见 catch 分支） */
+    let summaryInterrupted = false;
+    /** ★ 全量审计：**任意一块**分块摘要失败（第 2 块抛错也算"摘要不完整"） */
+    let summaryIncomplete = false;
     /** 这次**没有走 LLM 摘要**时，旧摘要要原样带进新标记（级联不许断，见 `composeCompactionMarkerText`） */
     let priorSummaryCarried = "";
     try {
@@ -6066,8 +6090,17 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
        * 那种情况下旧摘要由 `priorSummaryCarried` 原样带过去（下面的标记里单独一段）。
        */
       summary = "";
+      /**
+       * ★ 全量审计：**任意一块失败**都算「这次摘要不完整」 —— 原来只有「一块都没成功」才标 interrupted，
+       * 于是第 1 块成功、第 2 块抛错时，段头仍宣称「覆盖较早的 N 条」（后面那些只有 100 字片段兜底）。
+       */
       for (const chunk of packed.chunks) {
-        summary = await this.generateCompactionSummaryCacheAware(chunk, summary || existingSummary, compactionInstruction);
+        try {
+          summary = await this.generateCompactionSummaryCacheAware(chunk, summary || existingSummary, compactionInstruction);
+        } catch (chunkErr) {
+          summaryIncomplete = true;
+          throw chunkErr;
+        }
       }
       if (packed.chunks.length > 1) {
         console.log(
@@ -6097,6 +6130,11 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       summary = partial
         ? `${partial}\n\n（本次摘要调用中断；以下是剩余历史的片段）\n${snippetFallback}`
         : snippetFallback;
+      /**
+       * ★ 全量审计：**没拿到 LLM 摘要**（正文是片段兜底）⇒ 段头不许写"覆盖较早的 N 条"。
+       * 那个 N 是计划送的条数，而模型从未看到它们的摘要 —— 对模型是一句假陈述。
+       */
+      summaryInterrupted = !partial || summaryIncomplete;
     }
 
     /**
@@ -6177,6 +6215,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
          summarizedCount 原来是 oldBand.length（含 LLM 从未看到的溢出档 ⇒ 与溢出档重复计数），
          middleCount 原来是未过滤的 middleBand（含被过滤掉的旧标记 ⇒ 与同节"共 N 条"自相矛盾）。 */
       summarizedCount: packed.consumed,
+      summaryInterrupted,
       middleCount: middleForDigest.length,
       /* 段头写真话：这是**实际渲染出要点**的条数（不是裁剪前的数） */
       overflowCount: overflowSelected.length,

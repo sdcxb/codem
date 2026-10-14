@@ -4,6 +4,7 @@ import {
   getMemoryService,
   getWriteApprovalSetting,
   setWriteApprovalSetting,
+  setWriteApprovalSettingConfirmed,
   MEMORY_AUTO_GROUP_HINT,
   MEMORY_INJECT_KEY_MAX,
   MemoryService,
@@ -446,10 +447,20 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     setExpandedPending((prev) => pruneAliveIds(prev, pending));
   }, [pending]);
 
-  const handleApproveSelected = () => {
+  const handleApproveSelected = async () => {
     const ids = [...selectedPending];
-    const result = getMemoryService().approveMany(ids);
-    setNotice(result.message);
+    const service = getMemoryService();
+    const result = service.approveMany(ids);
+    /**
+     * ★ 全量审计（中）：save() 的语义是「已被接受」，**不等于已落库** ⇒ 必须等确认再回执
+     * （单条路径早就这么做，批量路径漏了：落库失败时它会宣布「从现在起参与上下文」）。
+     */
+    const landed = await service.flushPendingPersist();
+    setNotice(
+      landed
+        ? result.message
+        : `${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些改动会失效）。`,
+    );
     setSelectedPending(new Set());
     loadEntries();
   };
@@ -462,18 +473,34 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     loadEntries();
   };
 
-  const handleUndoBatch = (batchId: string) => {
-    const result = getMemoryService().undoBatch(batchId);
-    setNotice(result.message);
+  const handleUndoBatch = async (batchId: string) => {
+    const service = getMemoryService();
+    const result = service.undoBatch(batchId);
+    const landed = await service.flushPendingPersist();
+    setNotice(
+      landed
+        ? result.message
+        : `${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
+    );
     loadEntries();
   };
 
-  const handleToggleApproval = (scope: keyof ApprovalScopeSetting) => {
-    const next = setWriteApprovalSetting({ [scope]: !approval[scope] });
+  const handleToggleApproval = async (scope: keyof ApprovalScopeSetting) => {
+    /**
+     * ★ 全量审计（高）：这个开关是**安全开关**（关掉审批 = 自动记忆直接进上下文），
+     * 所以必须走确认式写入并如实回执 —— 原来只改内存/镜像就宣布「已更新」，
+     * 磁盘可能没写 ⇒ 重启后静默回到旧值（甚至回到「直接生效」），用户以为审批开着。
+     */
+    const desired = { [scope]: !approval[scope] } as Partial<ApprovalScopeSetting>;
+    const landed = await setWriteApprovalSettingConfirmed(desired);
+    const next = setWriteApprovalSetting(desired);
     setApproval(next);
+    const state =
+      `平台=${next.platform ? "开" : "关"}, 项目=${next.project ? "开" : "关"}, 对话=${next.conversation ? "开" : "关"}`;
     setNotice(
-      `写入审批已更新：平台=${next.platform ? "开" : "关"}, 项目=${next.project ? "开" : "关"}, 对话=${next.conversation ? "开" : "关"}。` +
-      `开启时自动提取只写入待批准区，未批准不进上下文。`,
+      landed
+        ? `写入审批已更新（已确认落库）：${state}。开启时自动提取只写入待批准区，未批准不进上下文。`
+        : `写入审批${state}，但**未落库**（重启后会回到原来的设置）。请检查存储是否可用后重试。`,
     );
   };
 

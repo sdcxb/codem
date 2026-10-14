@@ -11,7 +11,9 @@
           "to": "      const realMessages = messages.filter((m: any) => true);"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -20,11 +22,13 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "    if (keepCount <= 0) {\n      console.warn(\"[compactMessages] 保留条数为 0（没有可保留的消息）⇒ 本次不压缩（slice(-0) 会取全部）\");\n      return 0;\n    }",
-          "to": "    if (false && keepCount <= 0) {\n      return 0;\n    }"
+          "from": "    if (keepCount <= 0) {\n      console.warn(\"[compactMessages] 保留条数为 0（没有可保留的消息）⇒ 本次不压缩（slice(-0) 会取全部）\");\n      /* ★ 全量审计：保留条数为 0 ⇒ -3 */\n      return -3;\n    }",
+          "to": "    if (false) {\n      return -3;\n    }"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -37,7 +41,9 @@
           "to": "    const pendingBeforeApproval = ids;"
         }
       ],
-      "tests": ["src/test/memory-checkup.test.tsx"],
+      "tests": [
+        "src/test/memory-checkup.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -50,7 +56,10 @@
           "to": "    /* 反向对照：行为逐字不变 */ if (plan.shrunk) {"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts", "src/test/memory-checkup.test.tsx"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/memory-checkup.test.tsx"
+      ],
       "expectRed": false
     }
   ]

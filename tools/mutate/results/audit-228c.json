@@ -1,8 +1,8 @@
 {
   "wave": "audit-228c",
   "description": "第 228 波·审计轮第三批（自查改动过的代码）：压缩侧的「最近 3 轮」保底又被标记顶替（任何压缩标记都不算一轮）、保留条数为 0 时的防御闸（slice(-0) 会取全部）；记忆侧的「归属已失效」回执数字只许数真正被批准的那批。逐条变异自证。",
-  "runAt": "2026-10-14T03:34:16.020Z",
-  "specFingerprint": "bbbf43becf11864d9453816c741fc297e44b725d",
+  "runAt": "2026-10-14T06:30:12.444Z",
+  "specFingerprint": "9059a7a321618c2d8f85c3f19a41024b428fe0da",
   "files": [
     "src/core/llm/agentic-loop.ts",
     "src/components/MemoryCheckupView.tsx"
@@ -31,7 +31,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4220
+      "ms": 4080
     },
     {
       "id": "MUT-2 保留条数为 0 的防御闸被拆掉（slice(-0) 等于取全部）",
@@ -39,8 +39,8 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "    if (keepCount <= 0) {\n      console.warn(\"[compactMessages] 保留条数为 0（没有可保留的消息）⇒ 本次不压缩（slice(-0) 会取全部）\");\n      return 0;\n    }",
-          "to": "    if (false && keepCount <= 0) {\n      return 0;\n    }"
+          "from": "    if (keepCount <= 0) {\n      console.warn(\"[compactMessages] 保留条数为 0（没有可保留的消息）⇒ 本次不压缩（slice(-0) 会取全部）\");\n      /* ★ 全量审计：保留条数为 0 ⇒ -3 */\n      return -3;\n    }",
+          "to": "    if (false) {\n      return -3;\n    }"
         }
       ],
       "tests": [
@@ -51,7 +51,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4243
+      "ms": 4089
     },
     {
       "id": "MUT-3 「归属已失效」的条数把被跳过的条目也数进去（回执数字比实际多）",
@@ -71,7 +71,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 5347
+      "ms": 5390
     },
     {
       "id": "MUT-4 反向对照：只改一行说明注释",
@@ -92,7 +92,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4138
+      "ms": 3885
     }
   ]
 }

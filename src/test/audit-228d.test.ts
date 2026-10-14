@@ -272,6 +272,23 @@ describe("MA（第三批）：记忆侧", () => {
     void bad;
   });
 
+  it("MA-21：导入回执要讲越界（只写 console.warn 等于没说 —— 渲染侧 console 只能靠 CDP 抓）", async () => {
+    const { formatMemoryImportReceipt } = await import("../core/memory/checkup");
+    const text = formatMemoryImportReceipt(
+      { imported: 5000, rejectedCapacity: 0, rejectedInvalid: 0, truncated: 0, overTotalCap: true, overPayloadBudget: true },
+      true,
+      null,
+    );
+    expect(text, "要讲清后果（此后的自动写入会被拒）").toContain("自动记忆写入会被拒绝");
+    expect(text, "还要给出可操作的下一步").toContain("记忆体检");
+    const ok = formatMemoryImportReceipt(
+      { imported: 3, rejectedCapacity: 0, rejectedInvalid: 0, truncated: 0 },
+      true,
+      null,
+    );
+    expect(ok, "没越界就不许提这件事（噪音）").not.toContain("容量闸");
+  });
+
   it("MA-18：内存上限的读数要给出**三道闸**（而不是只有 per-scope）", () => {
     const limits = new MemoryService().getMemoryLimits();
     expect(limits.maxEntriesPerScope, "每个作用域条数").toBeGreaterThan(0);

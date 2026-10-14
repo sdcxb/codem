@@ -1164,10 +1164,15 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
      * 老实现把级联段在 fixedLen 里又算掉一次 ⇒ 新增历史那段恒被裁到 0（靠巧合），
      * 而裁剪注记本身不计入预算 ⇒ 仍会小幅超出；这里钉住的是"标记 ≤ 级联段 + 一个固定余量"。
      */
+    /**
+     * 诚实的不变量：级联段整段保留（旧标记这一轮会被删、它是唯一副本）⇒ 净增**有界但恒为正**：
+     * 裁剪生效时 ≈ 26 字符（两个固定串），受 800 下界支配时最多 ≈ +120。
+     * 这里钉的是"有界"：一旦有人把预算逻辑改坏（例如把级联段重复计入），净增会随级联长度增长 ⇒ 变红。
+     */
     expect(
-      String(marker).length,
-      "整条标记不许超过「级联段 + 固定开销」",
-    ).toBeLessThanOrEqual(longOld.length + 200);
+      String(marker).length - longOld.length,
+      "净增必须有界（级联段 + 固定开销；老实现的净增会随级联长度增长）",
+    ).toBeLessThanOrEqual(200);
     void realChars;
   });
 
@@ -1215,6 +1220,44 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     );
     expect(loop, "摘要档计数要用 LLM 真正看到的条数（packed.consumed），不是整段 oldBand").toContain(
       "summarizedCount: packed.consumed",
+    );
+  });
+
+  it("FC-D5m: 可见消息全是压缩标记时，回执要说真原因（不许编造「可压缩的部分不足」）", () => {
+    /*
+     * 被守的缺陷：那条"保留集为空 ⇒ 不压缩"的末位闸原来不带 skipped，
+     * 面板于是落到 removed===0 的分支，说"当前可见消息只有 N 条（保留最近 20 条…可压缩的部分不足）" ——
+     * 而真因是"所有可见消息都是摘要标记，没有真实历史可压"。
+     */
+    const S = sid("d5m");
+    seedSession(S);
+    for (let i = 0; i < 3; i++) {
+      seedMessage(
+        {
+          id: `marker-${i}`,
+          role: "user",
+          content: `[上下文已手动压缩]\n第 ${i} 份旧摘要`,
+          timestamp: 10 + i,
+          status: "done",
+        },
+        S,
+      );
+    }
+    const result = manualCompact(S);
+    expect(result.removed, "什么都不该删").toBe(0);
+    expect(String(result.skipped ?? ""), "必须带真原因（skipped 文案由面板显示）").toContain(
+      "只剩压缩摘要标记",
+    );
+  });
+
+  it("FC-D5n: 注记放不下时不许追加（标记不许突破自己的预算）", () => {
+    /*
+     * 被守的缺陷：裁剪注记在 bodyBudget 已经为 0 之后仍被整条追加 ⇒ 标记超出预算约 26 字符，
+     * 而这条预算正是"手动压缩不许让上下文变大"的唯一依据。
+     */
+    const monitor = readFileSync(path.resolve(__dirname, "../components/ContextMonitor.tsx"), "utf8");
+    expect(monitor, "注记要先看放不放得下").toMatch(
+      /if \(historyBudget > note\.length\) \{[\s\S]{0,220}?\} else \{\s*summary = summary\.slice\(0, historyBudget\);/,
     );
   });
 

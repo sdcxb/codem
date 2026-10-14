@@ -218,7 +218,7 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
   if (messagesToKeep.length < floorAfterFold) {
     const restored = realForFloor.slice(-floorAfterFold);
     const restoredIds = new Set(restored.map((m) => m.id));
-    const keepIds = new Set(messagesToKeep.map((m) => m.id));
+    /* （全量审计）这里原来算了 keepIds，全程没人读 ⇒ 已删除 */
     /* 被重夹回来的那些要从待删集里摘掉；原本被挤出保留集的补进待删集（双向 filter = 严格划分） */
     const newlyRemoved = messagesToKeep.filter((m) => !restoredIds.has(m.id));
     messagesToKeep = restored;
@@ -232,8 +232,18 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
   }
   /* 兜底：一条都保不住就**什么都不做**（`slice(-0)` 会取全部，绝不能让它走到删除那一步） */
   if (messagesToKeep.length === 0) {
+    /*
+     * ★ 第六批（审计·低-中）：**必须带 skipped 的真实原因**。
+     * 该闸唯一可达态是"可见消息全是压缩标记"（realForFloor 为空 ⇒ floor=1 ⇒ slice(-1)=[]），
+     * 而面板在没有 skipped 时会编造"可压缩的部分不足 / 保留最近 20 条"——
+     * 真因是"没有真实历史可压"，两句话指的不是一回事。
+     */
     console.warn("[manualCompact] 保留集为空 ⇒ 本次不压缩（否则会把整段可见历史删光）");
-    return { removed: 0, kept: messages.length };
+    return {
+      removed: 0,
+      kept: messages.length,
+      skipped: "可见消息只剩压缩摘要标记，没有可压缩的真实历史",
+    };
   }
 
   if (messagesToRemove.length === 0) return { removed: 0, kept: messages.length };
@@ -296,6 +306,9 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
     : "";
   /**
    * ★ 第 228 波审计（第四轮·中）：预算要**含级联段**。
+   * ⚠️ 第六批（审计员复算）：这条界**不保证"净增 ≤ 0"** —— 级联段是新标记必须整段保留的内容
+   * （旧标记这一轮被删、它是唯一副本），所以净增**有界但恒为正**：
+   * 裁剪生效时净增 ≈ 26 字符（级联标题 + "本次新增历史"这两个固定串），受 800 下界支配时最多 ≈ +120。
    * 被守的缺陷：级联的旧摘要（这一轮会被软删 ⇒ 是唯一副本）本来就整段保留，
    * 而 `fixedLen` 里又把它算掉了 ⇒ 旧摘要 > 733 字符时 `historyBudget` 恒为 0，
    * 「整条标记 ≤ max(800, removedChars)」这条不变量整段失效；removedChars < 106 时还**严格变大**。
@@ -306,10 +319,17 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
   const historyBudget = Math.max(0, markerBudget - fixedLen);
   if (summary.length > historyBudget) {
     const dropped = summary.length - historyBudget;
-    /* 注记本身也在预算里：先减掉它的长度，再裁正文（否则裁完仍超预算 25~30 字符） */
     const note = `\n（本次新增历史已按压缩预算裁剪 ${dropped} 字符）`;
-    const bodyBudget = Math.max(0, historyBudget - note.length);
-    summary = `${summary.slice(0, bodyBudget)}${note}`;
+    /**
+     * ★ 第六批（审计·中）：注记本身也要放得进预算 —— 放不下就**不追加注记**。
+     * 老写法在 `historyBudget < note.length` 时仍然整条追加 ⇒ 标记突破自己的预算（实测 +26 字符），
+     * 而这条预算正是"压缩不许让上下文变大"的唯一依据。
+     */
+    if (historyBudget > note.length) {
+      summary = `${summary.slice(0, historyBudget - note.length)}${note}`;
+    } else {
+      summary = summary.slice(0, historyBudget);
+    }
   }
   summary = `${cascadePrefix}${summary}`;
 
