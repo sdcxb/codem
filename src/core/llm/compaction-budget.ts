@@ -974,7 +974,16 @@ export function renderStructuredHistorySummary(
 
   let summary = sections.join("\n\n");
   if (summary.length > caps.totalChars) {
-    summary = `${summary.slice(0, caps.totalChars)}\n…（摘要超出上限 ${summary.length - caps.totalChars} 字符已省略）`;
+    /**
+     * ★ 全量审计（中）：超限时**保尾部**（= 离现在最近的那批 + 涉及文件/错误/待办三段）。
+     * 被守的缺陷：原来 `slice(0, totalChars)` 裁掉的正是尾部 —— 用户最近做的事先丢，
+     * 留着的反而是最早的历史（与「压缩按距离分档」的整个设计相反）。
+     * 头部保留一小段（让模型知道更早还有内容），其余额度全部给尾部。
+     */
+    const note = `\n…（摘要超出上限 ${summary.length - caps.totalChars} 字符已省略，下面保留的是**较近**的部分）\n`;
+    const headKeep = 300;
+    const tailBudget = Math.max(0, caps.totalChars - note.length - headKeep);
+    summary = `${summary.slice(0, headKeep)}${note}${summary.slice(-tailBudget)}`;
   }
   return `（共 ${messages.length} 条消息，正文字符合计 ${bodyChars}）\n\n${summary}`;
 }

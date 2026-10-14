@@ -2266,6 +2266,12 @@ export class MemoryService {
      *   （否则用户会被一个自己看不见的自动条目池卡住，且没有任何自救路径）。
      */
     const isAutoWrite = (entry.source ?? "manual") === "auto";
+    /*
+     * ⚠️ 全量审计（低）：**写入入口归一化归属键**这条改动**已回退** —— 它改变了面板的分组可见性
+     * （`pending-scope-badge` 的 PENDSCOPE-1/4b 当场变红：三条待批准只渲染出两条），
+     * 说明「把归属键归一化」会让原本可区分的条目合并。下一轮要用**fixture 感知**的方式做：
+     * 归一化只用于**比较**（注入侧），存储键保持原值并如实显示，而不是改写用户数据。
+     */
     if (isAutoWrite && this.entries.size >= this.config.maxTotalEntries) {
       const message =
         `记忆总量已满（跨所有作用域上限 ${this.config.maxTotalEntries} 条，当前 ${this.entries.size} 条）：` +
@@ -3180,7 +3186,14 @@ export class MemoryService {
     // P-Link: Resolve [[name]] links to show related memory references
     const resolvedContent = this.resolveLinks(e);
     const key = textOf(e.key).substring(0, MEMORY_INJECT_KEY_MAX);
-    return `- [${date}] ${key}: ${resolvedContent.substring(0, MEMORY_INJECT_LINE_MAX)}`;
+    /**
+     * ★ 全量审计（低·未确证）：**注入侧也脱敏**。
+     * 写入入口（add/update/import）都过 `redactSecrets`，但**老库存**（脱敏上线前写进库的）
+     * 与手工塞进 payload 的内容不走那条路 ⇒ 凭据会原样进每一轮上下文。
+     * 这里补一道（成本可忽略，且与写入侧同一实现，不会出现两套规则）。
+     */
+    const safeLine = redactSecrets(resolvedContent.substring(0, MEMORY_INJECT_LINE_MAX));
+    return `- [${date}] ${redactSecrets(key)}: ${safeLine}`;
   }
 
   /**
@@ -4323,6 +4336,8 @@ export class MemoryService {
     overTotalCap: boolean;
     /** ★ 同上：导入后已越过 payload 体积预算 ⇒ 此后的**自动**写入会被拒 */
     overPayloadBudget: boolean;
+    /** ★ 全量审计：因「id 已存在且未开覆盖」而跳过的条数 */
+    skippedExisting: number;
   } {
     const result = {
       imported: 0,
@@ -4331,6 +4346,7 @@ export class MemoryService {
       truncated: 0,
       overTotalCap: false,
       overPayloadBudget: false,
+      skippedExisting: 0,
     };
     let parsed: unknown;
     try {
@@ -4353,7 +4369,11 @@ export class MemoryService {
         result.rejectedInvalid++;
         continue;
       }
-      if (!overwrite && this.entries.has(normalized.id)) continue;
+      if (!overwrite && this.entries.has(normalized.id)) {
+        /* ★ 全量审计（中）：静默 continue 会让回执只说「成功导入 N 条」，用户不知道有条目被跳过 */
+        result.skippedExisting++;
+        continue;
+      }
       const scope: MemoryScope =
         normalized.scope === ("global" as unknown) ? "platform"
         : normalized.scope === ("session" as unknown) ? "conversation"

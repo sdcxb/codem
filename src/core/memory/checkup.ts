@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 记忆体检（Memory Checkup）—— 「设置 → 记忆体检」视图的**数据层**。
  *
  * ## 为什么单独一个模块
@@ -671,6 +671,8 @@ export function formatMemoryImportReceipt(
     /** ★ 第六批（审计·低）：导入后是否已越过总量/体积闸 ⇒ 此后的**自动**写入会被拒 */
     overTotalCap?: boolean;
     overPayloadBudget?: boolean;
+    /** ★ 全量审计：因「id 已存在且未开覆盖」被跳过的条数（回执要如实说） */
+    skippedExisting?: number;
   },
   landed: boolean,
   lastPersistError: string | null,
@@ -684,6 +686,9 @@ export function formatMemoryImportReceipt(
      * 只写 console.warn 等于没说（渲染侧 console 只能靠 CDP 抓）。越界之后**自动**记忆
      * 会被闸门拒绝，用户只会看到「自动记忆不写了」，因果链接不到这次导入。
      */
+    result.skippedExisting && result.skippedExisting > 0
+      ? `${result.skippedExisting} 条因 id 已存在被跳过（导入未开覆盖模式）`
+      : "",
     result.overTotalCap || result.overPayloadBudget
       ? "导入后已越过记忆的容量闸（跨所有作用域总条数 / 体积预算）⇒ **此后的自动记忆写入会被拒绝**，建议到「记忆体检」清理不再需要的条目"
       : "",
