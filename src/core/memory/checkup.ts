@@ -673,6 +673,9 @@ export function formatMemoryImportReceipt(
     overPayloadBudget?: boolean;
     /** ★ 全量审计：因「id 已存在且未开覆盖」被跳过的条数（回执要如实说） */
     skippedExisting?: number;
+    /** ★ 全量审计：随文件恢复的撤销凭据 / 拒绝记录条数（往返保真，回执必须提） */
+    restoredBatches?: number;
+    restoredRejections?: number;
   },
   landed: boolean,
   lastPersistError: string | null,
@@ -703,10 +706,21 @@ export function formatMemoryImportReceipt(
   if (result.imported === 0 && !landed) {
     return (
       `未导入任何记忆（可能所有记忆已存在）。` +
-      `另有一次**上一次**写入数据库的失败仍未消除：${lastPersistError ?? "未知原因"}（与本次导入无关）${tail}`
+      `另有**本次导入之前**遗留的写入失败仍未消除：${lastPersistError ?? "未知原因"}${tail}`
     );
   }
-  return (result.imported > 0 ? `成功导入 ${result.imported} 条记忆` : "未导入任何记忆（可能所有记忆已存在）") + tail;
+  /**
+   * ★ 全量审计（中）：**只要有东西被写进库（含恢复的撤销凭据 / 拒绝记录），就不许说「未导入任何记忆」** ——
+   * 那会让用户以为这次导入什么都没发生，而库已经被改过（拒绝记录一进库，同类自动记忆此后会被静默跳过）。
+   */
+  const restoredSomething = (result.restoredBatches ?? 0) + (result.restoredRejections ?? 0) > 0;
+  return (
+    result.imported > 0
+      ? `成功导入 ${result.imported} 条记忆`
+      : restoredSomething
+        ? "没有新增记忆条目"
+        : "未导入任何记忆（可能所有记忆已存在）"
+  ) + tail;
 }
 
 /** 批量「保留为平台级」（M-2 的批量处置入口） */

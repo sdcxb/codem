@@ -308,11 +308,19 @@ const REMEMBER_REQUEST_PATTERN =
  * 与用户原话在同一字段里；判「这是不是用户说的」时必须把它们分开。
  */
 export function stripAttachmentText(content: string): string {
-  return content
-    .replace(/<attachment[\s\S]*?<\/attachment>/gi, " ")
-    .replace(/<file[\s\S]*?<\/file>/gi, " ")
-    .replace(/^[\s\S]*?\n\n(?=[^\n]*$)/, (m) => (m.length > 400 ? "" : m))
-    .trim();
+  /**
+   * ★ 全量审计（高）：**配对剥离可以被正文里的 `</attachment>` 骗过** ——
+   * 附件正文是逐字内联的（attachment-formatter），它里面完全可以出现 `</attachment>` 字样 ⇒
+   * 正则在那里提前收尾，附件后半段（可能含「请记住…」）就留在待匹配文本里。
+   * 现在改成 **fail-closed**：一旦出现附件起始标签，就把它**之后**的内容整体剥掉。
+   * 依据：`formatAttachmentsInline` 生成的附件块永远拼在用户消息**前面**（App.handleSend），
+   * 用户自己打的字在后面 ⇒ 多删附件段是安全的，漏删不是。
+   */
+  const startMatch = /<(attachment|file)\b/i.exec(content);
+  if (startMatch) {
+    return content.slice(0, startMatch.index).trim();
+  }
+  return content.trim();
 }
 
 /**

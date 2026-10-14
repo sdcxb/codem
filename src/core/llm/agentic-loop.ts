@@ -1,4 +1,4 @@
-import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
+﻿import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
@@ -197,6 +197,7 @@ function skipReasonFor(code: number): string {
   if (code === -1) return "另一次压缩正在进行，稍后会自动重试";
   if (code === -2) return "当前没有可移除的旧消息（保留集已覆盖全部可见消息）";
   if (code === -3) return "保留集为空（可见消息只剩压缩摘要标记），本次不压缩";
+  if (code === -4) return "可见消息太少（≤2 条），压缩无法减小上下文";
   return "当前没有可压缩的内容";
 }
 
@@ -2572,7 +2573,13 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           /* ★ 全量审计：把**真实原因**带出去（原来 5 种结局都显示"另一次压缩正在进行"） */
           skipReason: compacted < 0 ? skipReasonFor(compacted) : undefined,
         };
-        if (compacted < 0) {
+        if (compacted === -4) {
+          /**
+           * ★ 全量审计：**消息太少**不是"另一次压缩在跑"，它是稳态 ⇒ 计入连压次数，
+           * 这样"连压 3 次"的熔断能给出诚实结论（而不是无限重试同一份注定失败的请求）。
+           */
+          this.state.consecutiveCompactions++;
+        } else if (compacted < 0) {
           /* 被跳过：什么都不变 ⇒ 不清缓存、不计连压次数 */
         } else {
           // P1-6: Clear transcript cache on compaction (cached responses no longer valid)
@@ -4290,7 +4297,10 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             skipped: compacted < 0,
             skipReason: compacted < 0 ? skipReasonFor(compacted) : undefined,
           };
-          if (compacted < 0) {
+          if (compacted === -4) {
+            /* ★ 全量审计：消息太少的稳态也要计数（否则熔断不可达） */
+            this.state.consecutiveCompactions++;
+          } else if (compacted < 0) {
             /* 被跳过（同一会话已有压缩在跑）⇒ 什么都不算，等下一轮重试 */
             return;
           }
@@ -5725,6 +5735,11 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
    * key context across many days of conversation.
    */
   private async compactMessages(sessionId: string): Promise<number> {
+    /**
+     * ⚠️ 这里**不再**额外读一次消息来判「太少」：第 144 波的 SYNC-2 门禁（数据层以外不许使用
+     * 同步整会话读，基线只许变小）把它记成 agentic-loop.ts 的 +1。
+     * 判定在 `doCompactMessages` 开头（同一个读源、同一个前提）⇒ 语义一样，且不多一次整会话读。
+     */
     // R3-3.3: Acquire compaction lock — prevent concurrent compaction
     const { acquireCompactionLock, releaseCompactionLock } =
       await import("./compaction-control");
@@ -5769,8 +5784,12 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const allMessages = this.getMessageStorage().listMessages(sessionId);
     // Only consider visible (non-hidden) messages for compaction
     const messages = allMessages.filter((m: any) => !m.hidden);
-    /* ★ 全量审计：消息太少也是一种"没压成" ⇒ -1（原来返回 0 被当成成功压缩，连记 3 次后误报窗口已满） */
-    if (messages.length <= 2) return -1;
+    /**
+     * ★ 全量审计（高）：消息太少**单独一个返回码**。
+     * 被守的缺陷：它与"锁被占"共用 -1 ⇒ 界面说"另一次压缩正在进行，稍后会自动重试"，
+     * 而这是稳态（重试永不改变结果）；而且负返回一律不计入 consecutiveCompactions ⇒ 熔断不可达。
+     */
+    if (messages.length <= 2) return -4;
 
     // API-Round aware boundary detection:
     // Instead of a fixed keepCount, find a safe boundary that doesn't
@@ -5810,8 +5829,17 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * ⚠️ 这是**同一个坑的第二个入口**：`removedChars`（本波新增）已经算过 `tc.result`，
      * 保留集预算这一处此前是瞎的。
      */
+    /**
+     * ★ 全量审计（高）：**估算必须按"将要发出的形态"量**。
+     *
+     * 被守的缺陷：这里读的是完整的 toolCalls[].result，而真正发出去的请求走
+     * `pruneStaleToolResults`（>8192 只留头尾、只保留最近 2 条完整）⇒ 单条陈旧大结果可差 ~40×
+     * ⇒ 「装得下也收缩」（白删最近几轮）+ `plan.overBudget` 把 consecutiveCompactions 直接顶到 3
+     * ⇒ 下一轮给出假结论「上下文窗口已满，即使压缩后仍无法继续。请开启新对话。」
+     */
+    const messagesForEstimate = pruneStaleToolResults(messages as never[]) as unknown as typeof messages;
     const estimateKeepTokens = (count: number): number =>
-      messages.slice(-count).reduce((sum: number, m: any) => {
+      messagesForEstimate.slice(-count).reduce((sum: number, m: any) => {
         /**
          * ★ 全量审计：多模态（content 是 ContentBlock[]）也要算 —— 原来 String(m.content ?? "")
          * 会退化成 "[object Object]"，一张大图只算十几个字符。
@@ -6038,10 +6066,11 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * 上下文**反而变大**、压力不降反升 ⇒ 立刻再次压缩（用户看到"点了压缩，占用没降甚至更高"）。
      * 工具结果与参数也一起算（它们同样是"被移除的上下文"）。
      */
-    const removedChars = messagesToRemove.reduce((sum: number, m: any) => {
-      /* ★ 全量审计：统一走 messageCharSize（多模态块与工具结果同口径） */
-      return sum + messageCharSize(m);
-    }, 0);
+    /* ★ 全量审计：同样按"将要发出的形态"量（与 estimateKeepTokens 同一把裁剪） */
+    const removedChars = (pruneStaleToolResults(messagesToRemove as never[]) as unknown as typeof messagesToRemove).reduce(
+      (sum: number, m: any) => sum + messageCharSize(m),
+      0,
+    );
     /**
      * ★ 全量审计：摘要请求里**不许**再带旧标记的正文 —— 它已经作为级联前缀给了模型，
      * 再进一次等于同一份旧摘要送两遍（模型会把重复当强调，还白烧 token）。

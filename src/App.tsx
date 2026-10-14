@@ -4276,7 +4276,8 @@ flushReasoningBuffer(session.id);
           }
 
           case "compaction_start": {
-            setCompactionStatus({ active: true });
+            /* ★ 全量审计（高）：必须带会话归属 —— 三处横幅都按它筛，漏了就一条都不渲染（我的回归） */
+            setCompactionStatus({ active: true, sessionId: session.id });
             // P1-8: 宠物切到 waiting 状态 + 压缩提示气泡
             getPet().setPetState("waiting");
             getPet().showRawBubble("正在压缩上下文…", 5000);
@@ -4289,7 +4290,7 @@ flushReasoningBuffer(session.id);
             const skipped = "skipped" in event ? Boolean(event.skipped) : false;
             /* ★ 全量审计：把**真实原因**带进状态（原来 5 种「没压成」共用一句「另一次压缩正在进行」） */
             const skipReason = "skipReason" in event ? (event.skipReason as string | undefined) : undefined;
-            setCompactionStatus({ active: false, messagesRemoved: removed, skipped, skipReason });
+            setCompactionStatus({ active: false, messagesRemoved: removed, skipped, skipReason, sessionId: session.id });
             // Reload messages from DB since old ones were soft-deleted by compaction.
             // Do NOT call saveMessages here — the UI store's message list is stale
             // (it still contains the pre-compaction messages), and writing it back

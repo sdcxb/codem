@@ -2514,7 +2514,14 @@ export class MemoryService {
     }
 
     /* ★ 全量审计：key 的截断也要和 add 同口径披露（原来静默截断、lastWriteError 还是 null） */
-    const truncatedContent = updates.content !== undefined && updates.content.length > this.config.maxContentLength;
+    /**
+     * ★ 全量审计（中）：截断判定要用**脱敏后**的长度（与 add 同一口径）。
+     * 被守的缺陷：原来用原始长度 ⇒ 脱敏把正文变长时（占位符比原文长）会**静默截断并毁坏正文**
+     * （实测尾部变成 "[REDA"，14 字符无声丢失），而 lastWriteError 还是 null。
+     */
+    const truncatedContent =
+      typeof updates.content === "string" &&
+      redactSecrets(updates.content).length > this.config.maxContentLength;
     const truncatedKey = typeof updates.key === "string" && redactSecrets(updates.key).length > MEMORY_INJECT_KEY_MAX;
     const parts: string[] = [];
     if (truncatedContent) parts.push(`content 超过 ${this.config.maxContentLength} 字符，已截断`);
@@ -3219,7 +3226,14 @@ export class MemoryService {
      * 与手工塞进 payload 的内容不走那条路 ⇒ 凭据会原样进每一轮上下文。
      * 这里补一道（成本可忽略，且与写入侧同一实现，不会出现两套规则）。
      */
-    const safeLine = redactSecrets(resolvedContent.substring(0, MEMORY_INJECT_LINE_MAX));
+    /**
+     * ★ 全量审计（中·安全）：**必须先脱敏、后截断**。
+     *
+     * 被守的缺陷：原来先截断再脱敏 ⇒ 凭据正好跨在 200 字符边界上时被切成 "sk-aa" 这种
+     * 不满足凭据形状的片段，脱敏正则不命中 ⇒ **明文片段进每一轮上下文**（正是它要救的老库存数据）。
+     * 先脱敏的代价只是占位符可能被切短（信息损失方向安全）。
+     */
+    const safeLine = redactSecrets(resolvedContent).substring(0, MEMORY_INJECT_LINE_MAX);
     return `- [${date}] ${redactSecrets(key)}: ${safeLine}`;
   }
 
@@ -3466,6 +3480,21 @@ export class MemoryService {
      * 现在：0 条直接丢弃（内存里也删掉），并且**不落库**。
      */
     if (written <= 0) {
+      /**
+       * ★ 全量审计（中）：**有活条目带这个 batchId 时不许删凭据**。
+       *
+       * 被守的缺陷：`llm` 侧的 catch 会无条件 `finalizeBatch(batchId, 0)`（哪怕本轮已写过若干条，
+       * 或 `add` 因落库失败而没把 written 加上去）⇒ 批次记录被删 ⇒ `listBatches()`（撤销的界面入口）
+       * 从此看不到这一批，而条目还在。这里改成：有活条目就保留凭据（count 记 0 也无妨）。
+       */
+      const hasLiveEntries = Array.from(this.entries.values()).some((e) => e.batchId === batchId);
+      if (hasLiveEntries) {
+        batch.count = 0;
+        this.batches.set(batchId, batch);
+        this.pruneBatches();
+        this.save();
+        return batch;
+      }
       this.batches.delete(batchId);
       /**
        * 仍要有界（修剪旧批次），并**照常落一次库**：
@@ -3965,6 +3994,11 @@ export class MemoryService {
      * 否则回退之后 getByteStats() 还在报回退前那个数（面板显示假读数）。
      */
     this.lastPayloadBytes = estimatePayloadBytes(this.serialize());
+    /**
+     * ★ 全量审计（中）：回退**确认落库成功** ⇒ 必须清掉上一次的失败残迹，
+     * 否则 `flushPendingPersist()` 会因粘性残迹返回 false，把这次成功报成失败。
+     */
+    this.lastPersistError = null;
     const restored = this.entries.size;
     /*
      * ⚠️ 必须在这里发一次「记忆域变了」（第 192 波真机实测的缺口）：
@@ -4030,10 +4064,30 @@ export class MemoryService {
     this.rejections.clear();
     if (Array.isArray(container.rejections)) {
       for (const r of container.rejections) {
-        /* 键与 recordRejection 一致：记录自身的 id（形如 rej-<entryId>） */
-        const id = (r as { id?: unknown })?.id;
-        if (typeof id === "string" && id.length > 0) this.rejections.set(id, r as never);
+        /**
+         * ★ 全量审计（中）：**与正常 load 同一套口径**（形状校验 + 有界修剪）。
+         * 被守的缺陷：回退这条入口原来只查 id 是不是字符串 ⇒ 同一份磁盘数据，
+         * 走回退得到的拒绝记录数与走正常 load 不同（实测 101 vs 60，且坏记录留在内存里）。
+         */
+        const rec = r as { id?: unknown; key?: unknown; content?: unknown; rejectedAt?: unknown };
+        if (typeof rec?.id !== "string" || rec.id.length === 0) { dropped += 1; continue; }
+        if (typeof rec.key !== "string" || typeof rec.content !== "string") { dropped += 1; continue; }
+        if (typeof rec.rejectedAt !== "number" || !Number.isFinite(rec.rejectedAt)) { dropped += 1; continue; }
+        this.rejections.set(rec.id, r as never);
       }
+    }
+    /* 与正常 load 同一条纪律：这两段都进整份 payload，必须有界 */
+    this.pruneBatches();
+    this.pruneRejections();
+    /**
+     * ★ 全量审计（中）：读入丢弃**要如实上报**（与 `loadFromStorage` 的 memory.entriesDropped 同一口径）——
+     * 否则用户看到「写回 N 条」而磁盘 raw 里是 N+M 条，两个数字对不上却无人解释。
+     */
+    if (dropped > 0) {
+      reportAdvisory("memory.entriesDropped", `回退时跳过 ${dropped} 条形状不合法（缺 id/key/content 或类型不对）的记忆条目`, {
+        title: "回退时跳过了不合法的条目",
+        nextStep: "这些条目在库里的原文仍然保留（本次只把它们挡在内存之外）；可用导出 JSON 查看原文。",
+      });
     }
     this.loadState = { ok: true, dropped, raw };
   }
@@ -4531,21 +4585,30 @@ export class MemoryService {
       });
       result.imported++;
     }
-    /* ★ 全量审计：撤销凭据与拒绝记录随文件一起恢复（同名项以文件为准） */
+    /**
+     * ★ 全量审计（自查加固）：撤销凭据与拒绝记录随文件一起恢复（同名项以文件为准），
+     * 但**形状要校验、且要有界** —— 否则一份被改动过的导出文件就能把坏数据写盘、把内存撑爆
+     * （payload 是整份读写，这两段都直接进 payload）。
+     */
     for (const b of extraBatches) {
-      const id = typeof b?.id === "string" ? b.id : null;
-      if (id) {
-        this.batches.set(id, b as never);
-        result.restoredBatches += 1;
-      }
+      const rec = b as { id?: unknown; createdAt?: unknown; count?: unknown };
+      if (typeof rec?.id !== "string" || rec.id.length === 0) continue;
+      if (typeof rec.createdAt !== "number" || !Number.isFinite(rec.createdAt)) continue;
+      if (typeof rec.count !== "number" || !Number.isFinite(rec.count) || rec.count <= 0) continue;
+      this.batches.set(rec.id, b as never);
+      result.restoredBatches += 1;
     }
     for (const r of extraRejections) {
-      const id = typeof r?.id === "string" ? r.id : null;
-      if (id) {
-        this.rejections.set(id, r as never);
-        result.restoredRejections += 1;
-      }
+      const rec = r as { id?: unknown; key?: unknown; content?: unknown; rejectedAt?: unknown };
+      if (typeof rec?.id !== "string" || rec.id.length === 0) continue;
+      if (typeof rec.key !== "string" || typeof rec.content !== "string") continue;
+      if (typeof rec.rejectedAt !== "number" || !Number.isFinite(rec.rejectedAt)) continue;
+      this.rejections.set(rec.id, r as never);
+      result.restoredRejections += 1;
     }
+    /* 有界：这两段都进整份 payload，导入不许把它们撑到无界 */
+    this.pruneBatches();
+    this.pruneRejections();
     if (result.imported > 0 || result.restoredBatches > 0 || result.restoredRejections > 0) this.save();
     /**
      * ★ 第 228 波审计（第四批）：导入是**用户显式动作**（照旧放行，不做自动拒绝），
@@ -4665,9 +4728,16 @@ export class MemoryService {
         for (const dupId of dupIds) {
           const dup = this.entries.get(dupId);
           if (dup) {
-            // Append content that's not already in the keeper
-            if (!keeper.content.includes(dup.content.substring(0, 50))) {
-              dupContents.push(dup.content);
+            /**
+             * ★ 全量审计（高）：**「前 50 字符相同」不等于「内容是重复的」**。
+             *
+             * 被守的缺陷：原来只看前 50 字符就跳过收录 ⇒ 两条正文只有尾部长尾不同时，
+             * 尾部**静默丢失**，而源条目照样被删（回执还说「正文已合并」）。
+             * 现在只有整条正文都被保留的那条覆盖才算真冗余；否则交给长度闸决定（超长就不合并、两条都留）。
+             */
+            const dupBody = textOf(dup.content);
+            if (!keeper.content.includes(dupBody)) {
+              dupContents.push(dupBody);
             }
             // Merge tags
             if (dup.tags) {
@@ -4684,6 +4754,14 @@ export class MemoryService {
            * 超出部分**不可恢复**，而上报还写"正文已合并到保留的那条"（假回执）。
            */
           if (merged.length > this.config.maxContentLength) {
+            /**
+             * ★ 全量审计（高）：**放弃合并就要连删除一起放弃**。
+             *
+             * 被守的缺陷（上一版我的修复不完整）：`continue` 只跳过了正文合并，
+             * 而 `toDelete` 是在配对阶段就填好的 ⇒ 源条目照样被删（内存 + 落盘），
+             * 回执却写「原文都保住了」。这里把这些 id 从 toDelete 里撤回。
+             */
+            for (const dupId of dupIds) toDelete.delete(dupId);
             mergeSkippedOverLong += dupIds.length;
             continue;
           }

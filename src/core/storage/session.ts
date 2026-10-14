@@ -357,6 +357,14 @@ export const SYSTEM_INJECTED_MESSAGE_ID_PREFIXES = [
   /* 压缩标记：`nextCompactionMarkerId()` 生成 `compact-<ts>-<seq>` / `compact-manual-<ts>-<seq>` */
   "compact-",
   "compact-manual-",
+  /**
+   * ★ 全量审计（高）：**子智能体运行时写进父会话的两类通知**（runtime.ts 里的
+   * settlement-<childId>-<ts> 与 report-<childId>-<ts>，role=user，正文是子代理的结束语/汇报）。
+   * 被守的缺陷：它们不在清单里 ⇒ isMachineInjectedMessage 返回 false ⇒
+   * 子代理汇报里的一句「记住…」就能充当 explicit 的结构证据，让整批候选免审批写成 active。
+   */
+  "settlement-",
+  "report-",
 ] as const;
 
 /** 这条消息是不是**引擎插进去的系统提醒**（不是用户打的话） */

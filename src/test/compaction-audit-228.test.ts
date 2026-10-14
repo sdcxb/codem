@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 第 228 波·**审计轮**判据：四个独立审计（压缩核心 / 压缩生命周期 / 记忆提取 / 记忆注入）
  * 挖出的真缺陷，逐条钉住。每条都写明「被守的缺陷形态」，实现改坏必须变红。
  *
@@ -488,6 +488,34 @@ describe("CA：压缩审计修复（第 228 波）", () => {
       /检查点摘要（覆盖较早的 \d+ 条）/.test(marker),
       "兜底时不许再断言覆盖条数（那是计划数，不是事实）",
     ).toBe(false);
+  });
+
+  it("CA-30（全量审计·高）：可见消息 ≤2 时返回 -4，且原因不许说成「另一次压缩正在进行」", async () => {
+    /*
+     * 被守的缺陷：它与「锁被占」共用 -1 ⇒ 界面对一个**稳态**说「稍后会自动重试」（重试永不改变结果）。
+     */
+    /* ⚠️ makeMessages(n) 返回 **2n** 条（n 轮）⇒ 造「≤2 条可见消息」要传 1 */
+    listMessagesMock.mockReturnValue(makeMessages(1));
+    const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
+    const removed = await loop.compactMessages("s-ca30");
+    expect(removed, "消息太少的独立返回码").toBe(-4);
+    const src = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
+    expect(src, "原因要单独成档（-4）").toMatch(/if \(code === -4\) return "[^"]*太少[^"]*";/);
+  });
+
+  it("CA-31（全量审计·高）：陈旧的大工具结果经裁剪后不许再顶爆保留集预算", async () => {
+    /*
+     * 被守的缺陷：`estimateKeepTokens` 读完整 toolCalls[].result，而真实请求只发送裁剪后的形态
+     * （>8192 只留头尾、只保留最近 2 条完整）⇒ 单条陈旧大结果可差 ~40× ⇒ 误判 overBudget ⇒
+     * 把 consecutiveCompactions 顶到 3 并给出假结论「上下文窗口已满」。
+     */
+    const messages: any[] = makeMessages(30);
+    /* 最老的那条带一个 40 万字符的工具结果（早已不在「最近 2 条」里 ⇒ 会被裁剪成头尾） */
+    messages[0].toolCalls = [{ id: "huge-old", tool: "read", args: {}, result: "巨".repeat(400_000) }];
+    listMessagesMock.mockReturnValue(messages);
+    const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
+    const removed = await loop.compactMessages("s-ca31");
+    expect(removed, "陈旧大结果被裁剪后不该把这一轮逼进「压缩无效」的硬停").toBeGreaterThan(0);
   });
 
   it("CA-15（反向对照）：这些修复不许把「压缩无效」路径删掉（仍要如实上报）", () => {
