@@ -1,0 +1,75 @@
+{
+  "wave": "audit-228e",
+  "description": "第 228 波·审计轮第四批：导入越过闸门要如实告知（导入是用户动作 ⇒ 放行，但必须说清此后的自动写入会被拒）、批量更新逐条带回失败原因（单值 lastWriteError 会被覆盖/清空；「条目不存在」与「被校验拒绝」分开说）。",
+  "runAt": "2026-10-14T04:59:52.048Z",
+  "specFingerprint": "593b69fdc17fb88f26114da5136abf3b04f49f53",
+  "files": [
+    "src/core/memory/memory.ts"
+  ],
+  "tests": [
+    "src/test/audit-228d.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 导入越过闸门又不告知（用户只看到「自动记忆不写了」）",
+      "why": "MA-19：总量/体积闸只拦自动写入，而「导出留档 → 再导入」是本仓推荐的常规操作 ⇒ 导入一次就能推过闸",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    result.overTotalCap = this.entries.size >= this.config.maxTotalEntries;",
+          "to": "    result.overTotalCap = false;"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3922
+    },
+    {
+      "id": "MUT-2 批量更新又只回 id、不回原因（原因被后一条覆盖/清空）",
+      "why": "MA-20：lastWriteError 是单值，成功那条会把它清成 null ⇒ 调用方只能写「保留失败：<id>」",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "        failures.push({\n          id,\n          reason: this.entries.has(id) ? (this.lastWriteError ?? \"未知原因\") : \"条目不存在\",\n        });",
+          "to": "        failures.push({ id, reason: this.lastWriteError ?? \"未知原因\" });"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3887
+    },
+    {
+      "id": "MUT-3 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "const MEMORY_INJECT_KEY_MAX = 120;",
+          "to": "const MEMORY_INJECT_KEY_MAX = 120; /* 反向对照：行为逐字不变 */"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 3865
+    }
+  ]
+}

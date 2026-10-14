@@ -2359,15 +2359,28 @@ export class MemoryService {
     ids: readonly string[],
     updates: Partial<MemoryEntry>,
     opts: { actor: "user" | "auto" },
-  ): { applied: string[]; rejected: string[] } {
+  ): { applied: string[]; rejected: string[]; failures: Array<{ id: string; reason: string }> } {
     const applied: string[] = [];
     const rejected: string[] = [];
+    /**
+     * ★ 第 228 波审计（第四批）：**逐条**带回失败原因。
+     * 被守的缺陷：lastWriteError 是**单值**，循环里会被后一条覆盖（成功的那条还会把它清成 null）
+     * ⇒ 调用方的回执只能写「保留失败：条目 id」（真实原因丢了）。这里在每条失败**当场**取原因。
+     */
+    const failures: Array<{ id: string; reason: string }> = [];
     for (const id of ids) {
       if (this.applyUpdate(id, updates, opts)) applied.push(id);
-      else rejected.push(id);
+      else {
+        rejected.push(id);
+        /* 「条目不存在」与「被校验拒绝」要分开说 —— 前者 lastWriteError 是 null，写"未知原因"不诚实 */
+        failures.push({
+          id,
+          reason: this.entries.has(id) ? (this.lastWriteError ?? "未知原因") : "条目不存在",
+        });
+      }
     }
     if (applied.length > 0) this.save();
-    return { applied, rejected };
+    return { applied, rejected, failures };
   }
 
   /** `update` 的**内存部分**（校验 + 容量 + 写入镜像），不落库 —— 供批量路径复用同一套规则 */
@@ -4258,8 +4271,24 @@ export class MemoryService {
    * **显式写成 `null`**（见 `exportAsJSON`）—— 于是往返逐条保真，判据 `MEM-PLACE-21`。
    * 形态确无法保真的只有"由 `add()` 新写入的条目"（新写入从来都有来源，不存在未知态）。
    */
-  importFromJSON(jsonStr: string, overwrite = false): { imported: number; rejectedCapacity: number; rejectedInvalid: number; truncated: number } {
-    const result = { imported: 0, rejectedCapacity: 0, rejectedInvalid: 0, truncated: 0 };
+  importFromJSON(jsonStr: string, overwrite = false): {
+    imported: number;
+    rejectedCapacity: number;
+    rejectedInvalid: number;
+    truncated: number;
+    /** ★ 第 228 波审计（第四批）：导入后已越过总量闸 ⇒ 此后的**自动**写入会被拒 */
+    overTotalCap: boolean;
+    /** ★ 同上：导入后已越过 payload 体积预算 ⇒ 此后的**自动**写入会被拒 */
+    overPayloadBudget: boolean;
+  } {
+    const result = {
+      imported: 0,
+      rejectedCapacity: 0,
+      rejectedInvalid: 0,
+      truncated: 0,
+      overTotalCap: false,
+      overPayloadBudget: false,
+    };
     let parsed: unknown;
     try {
       parsed = JSON.parse(jsonStr);
@@ -4313,6 +4342,20 @@ export class MemoryService {
       result.imported++;
     }
     if (result.imported > 0) this.save();
+    /**
+     * ★ 第 228 波审计（第四批）：导入是**用户显式动作**（照旧放行，不做自动拒绝），
+     * 但导入后越过总量/体积闸时必须**如实告知** —— 否则用户只会看到「自动记忆不写了」，
+     * 却不知道为什么（自动写入会在 createEntry 里被这两道闸挡住）。
+     */
+    result.overTotalCap = this.entries.size >= this.config.maxTotalEntries;
+    result.overPayloadBudget = this.lastPayloadBytes > MEMORY_PAYLOAD_BUDGET_BYTES;
+    if (result.overTotalCap || result.overPayloadBudget) {
+      console.warn(
+        `[importFromJSON] 导入后已越过闸门（总量 ${this.entries.size}/${this.config.maxTotalEntries}，` +
+          `payload ${formatBytes(this.lastPayloadBytes)}/${formatBytes(MEMORY_PAYLOAD_BUDGET_BYTES)}）：` +
+          "此后的**自动**写入会被拒绝，请到「记忆体检」清理不再需要的条目。",
+      );
+    }
     return result;
   }
 

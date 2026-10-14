@@ -5903,6 +5903,13 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
         if (extra.length > 0) {
           messagesToKeep = messagesToKeep.filter((m: any) => !staleSet.has(m.id));
           messagesToRemove = [...messagesToRemove, ...extra].sort((a: any, b: any) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+          /**
+           * ★ 第 228 波审计（第四轮·低）：**必须同步 keepCount**。
+           * 被守的缺陷：把旧标记移出保留集之后 keepCount 还停在旧值 ⇒ 后面"重夹轮次保底"的比较
+           * 用的是假数字（保留集可能已经是空的，而 keepCount 还写着 1），标记正文与事件里的
+           * `keptCount`/`messagesAfter` 也跟着失真。
+           */
+          keepCount = messagesToKeep.length;
           console.log(`[compactMessages] 旧标记落在保留集末尾 ⇒ 按 id 一并移除 ${extra.length} 条（避免摘要重复一遍）`);
         }
       }
@@ -5942,6 +5949,15 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
         console.log(
           `[compactMessages] 折叠把保留集压到 ${floor} 条以下 ⇒ 按轮次保底重新夹到 ${keepCount} 条（最近几轮不切断）`,
         );
+      }
+      /**
+       * ★ 第 228 波审计（第四轮·低）：**重夹之后**仍然一条都保不住 ⇒ 本次不压缩。
+       * 顺序很重要：这道闸必须放在重夹**之后** —— 放到它之前，上面那种"折叠把保留集清空"的形态
+       * 就会直接不压缩（CA-9 期望的是"重夹回最近几轮"），等于把保底能力让给了闸门。
+       */
+      if (messagesToKeep.length === 0) {
+        console.warn("[compactMessages] 保留集为空 ⇒ 本次不压缩（不许删光可见历史）");
+        return 0;
       }
     }
 
@@ -6114,7 +6130,24 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     let overflowChars = 0;
     for (let i = overflowMessages.length - 1; i >= 0; i--) {
       const m: any = overflowMessages[i];
-      const chars = typeof m?.content === "string" ? m.content.length : 0;
+      /**
+       * ★ 第 228 波审计（第四轮·低）：与同批另外三处（estimateKeepTokens / removedChars /
+       * messageChars）**同口径** —— 工具结果与参数也要算进去。原实现只算 content ⇒
+       * content 为空而工具结果 40 万字符的消息算 0 字符、必然入选，段头条数也随之失真。
+       */
+      let chars = typeof m?.content === "string" ? m.content.length : 0;
+      if (Array.isArray(m?.toolCalls)) {
+        for (const tc of m.toolCalls) {
+          if (typeof tc?.result === "string") chars += tc.result.length;
+          if (tc?.args !== undefined) {
+            try {
+              chars += JSON.stringify(tc.args).length;
+            } catch {
+              /* 参数不可序列化时忽略（只影响预算，不影响正确性） */
+            }
+          }
+        }
+      }
       if (overflowChars + chars > OVERFLOW_DIGEST_CHAR_BUDGET && overflowSelected.length > 0) break;
       overflowSelected.unshift(m);
       overflowChars += chars;
@@ -6140,8 +6173,11 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       overflowDigest,
       removedCount: messagesToRemove.length,
       keptCount: keepCount,
-      summarizedCount: oldBand.length,
-      middleCount: middleBand.length,
+      /* ★ 第 228 波审计（第四轮·低）：两个计数都要与**实际渲染进标记的内容**一致 ——
+         summarizedCount 原来是 oldBand.length（含 LLM 从未看到的溢出档 ⇒ 与溢出档重复计数），
+         middleCount 原来是未过滤的 middleBand（含被过滤掉的旧标记 ⇒ 与同节"共 N 条"自相矛盾）。 */
+      summarizedCount: packed.consumed,
+      middleCount: middleForDigest.length,
       /* 段头写真话：这是**实际渲染出要点**的条数（不是裁剪前的数） */
       overflowCount: overflowSelected.length,
       /* ★ 第 228 波审计：**压缩不许让上下文变大** —— 标记 ≤ max(800, 待压内容字符数) */

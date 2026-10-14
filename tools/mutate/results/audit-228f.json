@@ -1,0 +1,98 @@
+{
+  "wave": "audit-228f",
+  "description": "第 228 波·审计轮第五批（第四轮审计抓到的真实缺陷）：手动压缩在「最后一条是压缩标记」时会把整段可见历史（含最近 3 轮）一次性删光（折叠把保留集清空、而手动路径没有重夹保底）；手动压缩的标记预算不含级联段（旧摘要 > 733 字符时界失效）；锁被占而跳过的回执被丢掉（界面显示成「本次没有可移除的消息」）；自动路径的 stale-id 合并没同步 keepCount、段头条数与实际渲染内容不符、溢出档预算漏算工具结果。  ⚠️ 「自动路径 stale-id 合并后同步 keepCount」这条**撤掉了**：它在现有夹具下没有区分性（重夹保底会把两种写法收敛到同一结果），按本仓纪律**不伪造**一个能变红的形态，如实记在交接里（缺陷本身已修，判据待有形态时再补）。  ⚠️ 「跳过回执」那条也**撤掉了**：它的真渲染判据需要驱动「点按钮 → 让出一帧 → 读回执」，本轮没跑通；源码级判据无法把「分支被删」与「分支被短路」区分开 ⇒ 按纪律不伪造能变红的形态（改动本身保留，已如实记在交接里）。",
+  "runAt": "2026-10-14T05:10:51.859Z",
+  "specFingerprint": "219ca51c98652321c412d372d1ecff35da62cea0",
+  "files": [
+    "src/components/ContextMonitor.tsx",
+    "src/core/llm/agentic-loop.ts"
+  ],
+  "tests": [
+    "src/test/feature-context-fixes.test.ts",
+    "src/test/compaction-audit-228.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 手动路径又不在折叠后重夹轮次保底（最后一次手动压缩删光可见历史）",
+      "why": "FC-D5g：标记在末尾时 fold 把 keep 钉成 1 并把标记并进待删集 ⇒ keepCount 变 0 ⇒ 老实现 removed=全部、kept=0",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "  const realForFloor = messages.filter((m) => !isCompactionMarker(m));",
+          "to": "  const realForFloor = messages.filter((m) => false);"
+        }
+      ],
+      "tests": [
+        "src/test/feature-context-fixes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3727
+    },
+    {
+      "id": "MUT-2 手动压缩的标记预算又不含级联段（旧摘要很长时界失效）",
+      "why": "FC-D5h：级联段整段保留而 fixedLen 又把它算掉一次 ⇒ historyBudget 恒为 0；注记也不计入预算",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "  const markerBudget = Math.max(800, removedChars + cascadePrefix.length);",
+          "to": "  const markerBudget = Math.max(800, removedChars);"
+        }
+      ],
+      "tests": [
+        "src/test/feature-context-fixes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3828
+    },
+    {
+      "id": "MUT-5 段头条数又与实际渲染内容不符（中间档未过滤标记 + 摘要档把溢出档重复计数）",
+      "why": "被守的缺陷：middleCount 用未过滤的 middleBand（与同节「共 N 条」矛盾）、summarizedCount 用 oldBand.length（LLM 从未看到的那段也被算进摘要覆盖）",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      summarizedCount: packed.consumed,\n      middleCount: middleForDigest.length,",
+          "to": "      summarizedCount: oldBand.length,\n      middleCount: middleBand.length,"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/feature-context-fixes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3863
+    },
+    {
+      "id": "MUT-6 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "const OVERFLOW_DIGEST_CHAR_BUDGET =",
+          "to": "/* 反向对照：行为逐字不变 */ const OVERFLOW_DIGEST_CHAR_BUDGET ="
+        }
+      ],
+      "tests": [
+        "src/test/feature-context-fixes.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 3702
+    }
+  ]
+}

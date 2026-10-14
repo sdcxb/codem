@@ -325,13 +325,16 @@ describe("MEM-APPROVE-DETAIL：接线与可发现性（第 226 波结构棘轮�
     await act(async () => {
       fireEvent.click(delBtn as HTMLElement);
       await Promise.resolve();
-      await Promise.resolve();
-      /* 等"确认落库"那条异步链跑完（失败命令要重试若干次，所以多让几轮宏任务） */
-      await new Promise((r) => setTimeout(r, 30));
-      await Promise.resolve();
     });
 
-    const notice = container.querySelector(".memory-notice")?.textContent ?? "";
-    expect(notice, "动作回执必须写出「未落库」（否则用户以为删掉了，重启后又回来）").toContain("未落库");
+    /* ★ 用 waitFor 而不是固定 sleep：落库失败链里有**重试退避**，固定等待会偶发假红 */
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(
+      () => {
+        const notice = container.querySelector(".memory-notice")?.textContent ?? "";
+        expect(notice, "动作回执必须写出「未落库」（否则用户以为删掉了，重启后又回来）").toContain("未落库");
+      },
+      { timeout: 5000 },
+    );
   });
 });

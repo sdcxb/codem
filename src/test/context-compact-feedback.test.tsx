@@ -183,3 +183,17 @@ describe("CB：手动压缩的**可见反馈**与防重复点（第 227 波）",
     expect(src, "回执要有可断言的测试钩子").toContain('data-testid="compact-result"');
   });
 });
+
+describe("FC-D5k（第 228 波审计）：锁被占而跳过的回执", () => {
+  it("源码级棘轮：状态类型要带 skipped，回执要先判 skipped（否则会说成没有可移除的消息）", () => {
+    /*
+     * 被守的缺陷：manualCompact 返回值里的 skipped 曾被 state 类型丢掉 ⇒ 面板走 removed>0 的
+     * else 分支，显示「本次没有可移除的消息（可压缩的部分不足）」—— 而其实有几十条可压，只是锁被占。
+     * ⚠️ 如实记：这是**源码级**判据（真渲染版需要「点按钮 → 让出一帧 → 读回执」，本轮预算内没跑通，
+     * 已写进交接）；它挡的是「把 skipped 分支整段删掉」。
+     */
+    const src = readFileSync(path.resolve(__dirname, "../components/ContextMonitor.tsx"), "utf8");
+    expect(src, "状态类型要带 skipped（否则返回值里那个字段被静默丢弃）").toContain("skipped?: string");
+    expect(src, "回执要按 skipped 分支").toMatch(/compactResult\.skipped[\s\S]{0,40}?没有压缩/);
+  });
+});

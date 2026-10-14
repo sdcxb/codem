@@ -202,6 +202,40 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
     }
   }
 
+  /**
+   * ★ 第 228 波审计（第四轮·**高**）：手动路径同样必须**折叠后重夹轮次保底**。
+   *
+   * 被守的缺陷（自动路径 CA-9 守的是同一形态，手动路径漏了）：当**最后一条就是压缩标记**时
+   * （`listMessagesMerged` 在镜像缺失/为空时返回**插入序**，而标记是追加写入的 ⇒ 它就在末尾），
+   * `foldStaleCompactionMarkers` 会把 keep 钉成 1，再把那条标记记进 `staleMarkerIds`；
+   * 上面那段合并把标记移进待删集并 `keepCount = messagesToKeep.length` ⇒ **keepCount 变成 0**
+   * ⇒ `messagesToKeep` 空、`messagesToRemove` 是**全部 81 条**（含最近 3 轮）
+   * ⇒ 一次手动压缩把整段可见历史软删（用户看到"压缩完成：移除 81 条"，而刚聊的东西没了）。
+   * 这里按与自动路径**同一条规则**重夹：保底在真实消息（排除所有压缩标记）上算。
+   */
+  const realForFloor = messages.filter((m) => !isCompactionMarker(m));
+  const floorAfterFold = compactionMinKeep(realForFloor, 4).minKeep;
+  if (messagesToKeep.length < floorAfterFold) {
+    const restored = realForFloor.slice(-floorAfterFold);
+    const restoredIds = new Set(restored.map((m) => m.id));
+    const keepIds = new Set(messagesToKeep.map((m) => m.id));
+    /* 被重夹回来的那些要从待删集里摘掉；原本被挤出保留集的补进待删集（双向 filter = 严格划分） */
+    const newlyRemoved = messagesToKeep.filter((m) => !restoredIds.has(m.id));
+    messagesToKeep = restored;
+    messagesToRemove = [...messagesToRemove.filter((m) => !restoredIds.has(m.id)), ...newlyRemoved].sort(
+      (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0),
+    );
+    keepCount = messagesToKeep.length;
+    console.log(
+      `[manualCompact] 折叠后保留集少于轮次保底 ⇒ 重新夹回最近 ${keepCount} 条（真实消息，排除旧标记）`,
+    );
+  }
+  /* 兜底：一条都保不住就**什么都不做**（`slice(-0)` 会取全部，绝不能让它走到删除那一步） */
+  if (messagesToKeep.length === 0) {
+    console.warn("[manualCompact] 保留集为空 ⇒ 本次不压缩（否则会把整段可见历史删光）");
+    return { removed: 0, kept: messages.length };
+  }
+
   if (messagesToRemove.length === 0) return { removed: 0, kept: messages.length };
 
   /**
@@ -260,12 +294,22 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
   const cascadePrefix = folded.existingSummary
     ? `以下是之前的摘要（继续保留）：\n${folded.existingSummary}\n\n本次新增历史：\n`
     : "";
-  const markerBudget = Math.max(800, removedChars);
+  /**
+   * ★ 第 228 波审计（第四轮·中）：预算要**含级联段**。
+   * 被守的缺陷：级联的旧摘要（这一轮会被软删 ⇒ 是唯一副本）本来就整段保留，
+   * 而 `fixedLen` 里又把它算掉了 ⇒ 旧摘要 > 733 字符时 `historyBudget` 恒为 0，
+   * 「整条标记 ≤ max(800, removedChars)」这条不变量整段失效；removedChars < 106 时还**严格变大**。
+   * 现在的界是：整条标记 ≤ max(800, removedChars + 级联段长度)，且裁剪注记也计入预算。
+   */
+  const markerBudget = Math.max(800, removedChars + cascadePrefix.length);
   const fixedLen = `[上下文已手动压缩]\n\n以下对话的摘要：\n${cascadePrefix}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`.length;
   const historyBudget = Math.max(0, markerBudget - fixedLen);
   if (summary.length > historyBudget) {
     const dropped = summary.length - historyBudget;
-    summary = `${summary.slice(0, historyBudget)}\n（本次新增历史已按压缩预算裁剪 ${dropped} 字符）`;
+    /* 注记本身也在预算里：先减掉它的长度，再裁正文（否则裁完仍超预算 25~30 字符） */
+    const note = `\n（本次新增历史已按压缩预算裁剪 ${dropped} 字符）`;
+    const bodyBudget = Math.max(0, historyBudget - note.length);
+    summary = `${summary.slice(0, bodyBudget)}${note}`;
   }
   summary = `${cascadePrefix}${summary}`;
 
@@ -358,7 +402,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const compactingRef = useRef(false);
   /** 压缩失败的可见提示（原来只 console.error，界面完全看不出失败）。 */
   const [compactError, setCompactError] = useState<string | null>(null);
-  const [compactResult, setCompactResult] = useState<{ removed: number; kept: number } | null>(null);
+  const [compactResult, setCompactResult] = useState<{ removed: number; kept: number; skipped?: string } | null>(null);
   /**
    * ★ 第 227 波（用户实报）：
    *
@@ -744,7 +788,9 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 tone={compactResult.removed > 0 ? "success" : "info"}
                 data-testid="compact-result"
               >
-                {compactResult.removed > 0
+                {compactResult.skipped
+                  ? `没有压缩：${compactResult.skipped}`
+                  : compactResult.removed > 0
                   ? `压缩完成：移除 ${compactResult.removed} 条旧消息，保留最近 ${compactResult.kept} 条；` +
                     `本对话里已插入一条「[上下文已手动压缩]」摘要（老对话细节变成摘要，仍在本对话继续）。`
                   : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 ${MANUAL_KEEP_MESSAGES} 条，` +

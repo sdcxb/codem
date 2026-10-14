@@ -734,9 +734,10 @@ export async function keepManyAsPlatform(ids: string[]): Promise<{ kept: number;
   }
   const batch = service.updateMany(candidates, { legacyPool: undefined }, { actor: "user" });
   kept = batch.applied.length;
-  for (const id of batch.rejected) {
+  /* 逐条原因（不再读单值 lastWriteError —— 它会被后一条覆盖、被成功那条清空） */
+  for (const f of batch.failures) {
     failed++;
-    if (failures.length < 5) failures.push(`保留失败：${service.getLastWriteError() ?? id}`);
+    if (failures.length < 5) failures.push(`${f.id}：${f.reason}`);
   }
   const landed = await service.flushPendingPersist();
   const landedNote = landed ? "已确认落库" : `但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些保留会失效）`;

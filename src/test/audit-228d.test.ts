@@ -233,6 +233,45 @@ describe("MA（第三批）：记忆侧", () => {
     ).not.toBeNull();
   });
 
+  it("MA-19：导入越过闸门要如实告知（导入是用户动作 ⇒ 放行，但不能让他蒙在鼓里）", () => {
+    /*
+     * 被守的缺陷：新增的总量/体积闸只拦**自动**写入，而"导出留档 → 再导入"是本仓推荐的常规操作
+     * ⇒ 导入一次就能把总量推过闸，此后所有自动写入被拒，而用户只会看到「自动记忆不写了」。
+     */
+    const svc = new MemoryService({ maxTotalEntries: 2 } as never);
+    const json = JSON.stringify({
+      entries: [
+        { id: "i1", key: "一", content: "导入的第一条内容。", scope: "platform" },
+        { id: "i2", key: "二", content: "导入的第二条内容。", scope: "platform" },
+        { id: "i3", key: "三", content: "导入的第三条内容。", scope: "platform" },
+      ],
+    });
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warned.push(args.map(String).join(" "));
+    });
+    const result = svc.importFromJSON(json);
+    expect(result.imported, "导入是用户显式动作 ⇒ 照旧全放行（不做自动拒绝）").toBe(3);
+    expect(result.overTotalCap, "导入后 3 条 > 上限 2 条 ⇒ 必须标记越界").toBe(true);
+    expect(warned.join("\n"), "并且要写清后果（此后的自动写入会被拒）").toContain("自动**写入会被拒绝");
+    spy.mockRestore();
+  });
+
+  it("MA-20：批量更新要**逐条**带回失败原因（单值 lastWriteError 会被覆盖/清空）", () => {
+    const svc = new MemoryService();
+    const bad = svc.add({ scope: "platform", key: "会被拒的条目", content: "内容", source: "manual" });
+    const ok = svc.add({ scope: "platform", key: "能改的条目", content: "内容", source: "manual" });
+    /*
+     * 同一批量补丁对所有 id 一样 ⇒ 用**不存在的 id** 造"一成功一失败"最干净；
+     * 成功那条会把 lastWriteError 清成 null，所以失败原因必须**当场**取。
+     */
+    const batch = svc.updateMany([ok.entry!.id, "mem-不存在"], { key: "改过的键" }, { actor: "user" });
+    expect(batch.applied).toEqual([ok.entry!.id]);
+    expect(batch.failures.map((f) => f.id), "失败的是不存在的那条").toEqual(["mem-不存在"]);
+    expect(batch.failures[0].reason, "原因必须逐条带回来（不许只给 id，也不许写成未知原因）").toBe("条目不存在");
+    void bad;
+  });
+
   it("MA-18：内存上限的读数要给出**三道闸**（而不是只有 per-scope）", () => {
     const limits = new MemoryService().getMemoryLimits();
     expect(limits.maxEntriesPerScope, "每个作用域条数").toBeGreaterThan(0);

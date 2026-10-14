@@ -1097,6 +1097,127 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     expect(rowsOf("messages").filter((r) => r.session_id === S).find((r) => r.id === "marker-auto")?.hidden).toBe(1);
   });
 
+  it("FC-D5g: 最后一条是压缩标记时，折叠不许把手动压缩变成\"删光可见历史\"", () => {
+    /*
+     * 被守的缺陷（第四轮审计·高危）：标记在**末尾**（镜像缺失时 listMessages 返回插入序）⇒
+     * foldStaleCompactionMarkers 把 keep 钉成 1 并把标记记进 staleMarkerIds ⇒
+     * 手动路径的合并把标记移进待删集后 keepCount 变成 0 ⇒ messagesToKeep 空、
+     * messagesToRemove 是全部 ⇒ 一次手动压缩把整段可见历史（含最近 3 轮）软删。
+     */
+    const S = sid("d5g");
+    seedSession(S);
+    /* 先铺 40 条真实消息（20 轮），最后追加一条压缩标记 —— 模拟"镜像为空 ⇒ 插入序"的形态 */
+    for (let i = 0; i < 40; i++) {
+      seedMessage(
+        { id: `r${i}`, role: i % 2 === 0 ? "user" : "assistant", content: `真实历史 ${i}`, timestamp: 10 + i, status: "done" },
+        S,
+      );
+    }
+    seedMessage(
+      { id: "marker-tail", role: "user", content: "[上下文已手动压缩]\n旧手动摘要：方案是 Z", timestamp: 9999, status: "done" },
+      S,
+    );
+
+    const result = manualCompact(S);
+
+    const removedIds = rowsOf("messages")
+      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 1)
+      .map((r) => String(r.id));
+    /* 最近 3 轮 = r34..r39（真实消息），一条都不许被删 */
+    expect(
+      removedIds.filter((id) => ["r34", "r35", "r36", "r37", "r38", "r39"].includes(id)),
+      "折叠之后必须按轮次保底重夹：最近 3 轮的真实消息一条都不许删（老实现会把 41 条全删光）",
+    ).toEqual([]);
+    expect(result.kept, "保留集绝不许为空").toBeGreaterThanOrEqual(6);
+    expect(removedIds, "旧标记该删（它的正文已级联进新标记）").toContain("marker-tail");
+    const marker = rowsOf("messages")
+      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 0)
+      .map((r) => String(r.content ?? ""))
+      .find((c) => isCompactionMarker({ role: "user", content: c }));
+    expect(String(marker), "级联的旧摘要必须在").toContain("方案是 Z");
+  });
+
+  it("FC-D5h: 标记的字符预算要含级联的旧摘要（否则小内容压缩反而让上下文变大）", () => {
+    /*
+     * 被守的缺陷：markerBudget 只由"真实内容"决定，而 fixedLen 里又把级联段算掉一次 ⇒
+     * 旧摘要 > 733 字符时 historyBudget 恒为 0，标记长度 ≈ 旧标记长度 + 106（不受预算约束）。
+     */
+    const S = sid("d5h");
+    seedSession(S);
+    const longOld = "[上下文已手动压缩]\n" + "旧".repeat(2000);
+    seedMessage({ id: "old-marker", role: "user", content: longOld, timestamp: 0, status: "done" }, S);
+    /* 后面只跟 3 条很短的真实消息（真实内容极少 ⇒ 老实现下预算必破） */
+    for (let i = 0; i < 3; i++) {
+      seedMessage({ id: `t${i}`, role: i % 2 === 0 ? "assistant" : "user", content: "短", timestamp: 10 + i, status: "done" }, S);
+    }
+    const realChars = 3; /* 三条"短" */
+    manualCompact(S);
+
+    const marker = rowsOf("messages")
+      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 0)
+      .map((r) => String(r.content ?? ""))
+      .find((c) => c.startsWith("[上下文已手动压缩]"));
+    expect(String(marker), "前提：这次确实写了新标记").toBeTruthy();
+    /*
+     * 诚实的不变量（不是"≤ 被删内容"—— 级联段必须整段保留：它这一轮会被软删、是唯一副本）：
+     * 整条标记 ≈ 级联段 + 固定开销（标题/收尾/注记，约 100 字符），**不再随本次新增历史增长**。
+     * 老实现把级联段在 fixedLen 里又算掉一次 ⇒ 新增历史那段恒被裁到 0（靠巧合），
+     * 而裁剪注记本身不计入预算 ⇒ 仍会小幅超出；这里钉住的是"标记 ≤ 级联段 + 一个固定余量"。
+     */
+    expect(
+      String(marker).length,
+      "整条标记不许超过「级联段 + 固定开销」",
+    ).toBeLessThanOrEqual(longOld.length + 200);
+    void realChars;
+  });
+
+  it("FC-D5i: 级联段很长时，本次新增历史仍要按预算写进去（不许被整段裁掉）", () => {
+    /*
+     * 被守的缺陷（第四轮审计）：markerBudget 只由"真实内容"决定，而 fixedLen 里又把级联段算掉一次 ⇒
+     * 两者都很大时 historyBudget 恒为 0，本次新增的历史被**整段**裁掉（用户刚聊的内容一条都不进新标记）。
+     */
+    const S = sid("d5i");
+    seedSession(S);
+    const longOld = "[上下文已手动压缩]\n" + "旧".repeat(1000);
+    /* 24 条真实消息（12 轮），每条约 50 字符且带独特串 ⇒ 折叠后会被移除约 18 条（~900 字符） */
+    for (let i = 0; i < 24; i++) {
+      seedMessage(
+        {
+          id: `n${i}`,
+          role: i % 2 === 0 ? "user" : "assistant",
+          content: `第 ${i} 条：独特标记UNIQ${i} 加上一些填充文字让字符量足够大一些。`,
+          timestamp: 10 + i,
+          status: "done",
+        },
+        S,
+      );
+    }
+    /* 标记放在**末尾**：折叠会把它取出（级联）并移进待删集 —— 这正是"级联很长"的形态 */
+    seedMessage({ id: "old-marker", role: "user", content: longOld, timestamp: 9999, status: "done" }, S);
+    manualCompact(S);
+
+    const marker = rowsOf("messages")
+      .filter((r) => r.session_id === S && Number(r.hidden ?? 0) === 0)
+      .map((r) => String(r.content ?? ""))
+      .find((c) => c.startsWith("[上下文已手动压缩]"));
+    expect(String(marker), "前提：这次确实写了新标记").toBeTruthy();
+    expect(String(marker), "级联的旧摘要要在").toContain("旧旧旧");
+    expect(
+      /UNIQ\d+/.test(String(marker)),
+      "本次新增历史必须按预算写进去（老实现把整段裁掉 ⇒ 新标记里连一条 UNIQ 都没有）",
+    ).toBe(true);
+  });
+
+  it("FC-D5j（源码级棘轮）：段头条数要与实际渲染进标记的内容一致", () => {
+    const loop = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
+    expect(loop, "中间档计数要用**过滤掉标记之后**的那批（否则与同节「共 N 条」自相矛盾）").toContain(
+      "middleCount: middleForDigest.length",
+    );
+    expect(loop, "摘要档计数要用 LLM 真正看到的条数（packed.consumed），不是整段 oldBand").toContain(
+      "summarizedCount: packed.consumed",
+    );
+  });
+
   it("FC-D5d: 手动压缩的实现里闸门、压缩锁与事件都在（源码级，防止后续被删掉）", () => {
     const src = contextMonitorSource();
     const idx = src.indexOf("export function manualCompact");

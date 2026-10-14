@@ -1,10 +1,11 @@
 {
   "wave": "audit-228b",
   "description": "第 228 波·审计轮第二批：把审计报告里「已定位待修」的五条 + 两处诚实性缺口修掉并自证 —— 跨所有桶的总量上限、payload 超预算拒绝自动写入、「批量保留为平台级」只落一次库（新增 MemoryService.updateMany）、注入截断披露、回退到迁移前先等在途队列、面板单条动作如实回执、体检批量同意的「归属已失效」回执、旧池暂停开关确认式落库。",
-  "runAt": "2026-10-14T04:01:10.017Z",
-  "specFingerprint": "ad0f762cbdbe4573e5c9f8234f636532b8b788ed",
+  "runAt": "2026-10-14T05:11:42.022Z",
+  "specFingerprint": "c51aee1575fa731aa6c583b1e01eacb8505d26bd",
   "files": [
     "src/core/memory/memory.ts",
+    "src/core/memory/checkup.ts",
     "src/components/MemoryManager.tsx",
     "src/components/MemoryCheckupView.tsx"
   ],
@@ -33,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2281
+      "ms": 2134
     },
     {
       "id": "MUT-2 payload 超预算又只上报不拒绝（体积无界）",
@@ -53,16 +54,16 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2367
+      "ms": 2240
     },
     {
       "id": "MUT-3 批量保留为平台级又逐条落库（29 条 = 29 次整份写）",
       "why": "MA-9：`updateMany` 的意义就是「内存里改完只落一次库」；退回逐条 save 就是退回写放大",
       "patches": [
         {
-          "file": "src/core/memory/memory.ts",
-          "from": "    if (applied.length > 0) this.save();\n    return { applied, rejected };",
-          "to": "    return { applied, rejected };"
+          "file": "src/core/memory/checkup.ts",
+          "from": "  const batch = service.updateMany(candidates, { legacyPool: undefined }, { actor: \"user\" });",
+          "to": "  const batch = { applied: candidates.filter((id) => service.update(id, { legacyPool: undefined }, { actor: \"user\" })), rejected: [], failures: [] };"
         }
       ],
       "tests": [
@@ -73,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2229
+      "ms": 2172
     },
     {
       "id": "MUT-4 注入截断又不披露（界面写「已生效（参与上下文）」而 9800 字符没进上下文）",
@@ -93,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2263
+      "ms": 2117
     },
     {
       "id": "MUT-5 回退到迁移前不等在途队列（界面说已回退、重启后回退不存在）",
@@ -113,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2210
+      "ms": 2144
     },
     {
       "id": "MUT-6 面板单条动作又不等落库（界面显示已删除、重启后回来）",
@@ -121,8 +122,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "    const landed = await service.flushPendingPersist();\n    if (!landed) {",
-          "to": "    const landed = true;\n    if (!landed) {"
+          "from": "  const settlePersist = async (what: string): Promise<void> => {\n    const service = getMemoryService();\n    const landed = await service.flushPendingPersist();",
+          "to": "  const settlePersist = async (what: string): Promise<void> => {\n    const service = getMemoryService();\n    const landed = true;"
         }
       ],
       "tests": [
@@ -133,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3958
+      "ms": 8830
     },
     {
       "id": "MUT-7 体检批量同意的回执不再数「归属已失效」（回执承诺做不到的事）",
@@ -153,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 5003
+      "ms": 5061
     },
     {
       "id": "MUT-8 旧池暂停开关退回非确认式写入（界面说已暂停、磁盘没写）",
@@ -173,7 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2327
+      "ms": 2260
     },
     {
       "id": "MUT-9 反向对照：只改一行说明注释",
@@ -194,7 +195,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3835
+      "ms": 3710
     }
   ]
 }

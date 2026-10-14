@@ -36,9 +36,9 @@
       "why": "MA-9：`updateMany` 的意义就是「内存里改完只落一次库」；退回逐条 save 就是退回写放大",
       "patches": [
         {
-          "file": "src/core/memory/memory.ts",
-          "from": "    if (applied.length > 0) this.save();\n    return { applied, rejected };",
-          "to": "    return { applied, rejected };"
+          "file": "src/core/memory/checkup.ts",
+          "from": "  const batch = service.updateMany(candidates, { legacyPool: undefined }, { actor: \"user\" });",
+          "to": "  const batch = { applied: candidates.filter((id) => service.update(id, { legacyPool: undefined }, { actor: \"user\" })), rejected: [], failures: [] };"
         }
       ],
       "tests": [
@@ -82,8 +82,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "    const landed = await service.flushPendingPersist();\n    if (!landed) {",
-          "to": "    const landed = true;\n    if (!landed) {"
+          "from": "  const settlePersist = async (what: string): Promise<void> => {\n    const service = getMemoryService();\n    const landed = await service.flushPendingPersist();",
+          "to": "  const settlePersist = async (what: string): Promise<void> => {\n    const service = getMemoryService();\n    const landed = true;"
         }
       ],
       "tests": [
