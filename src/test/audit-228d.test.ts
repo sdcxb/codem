@@ -17,7 +17,12 @@ import {
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort } from "./fake-storage-port";
 import { saveMemory, setSetting } from "../core/storage/settings";
-import { MEMORY_WRITE_APPROVAL_KEY, MemoryService, injectionTruncationNote } from "../core/memory/memory";
+import {
+  MEMORY_PRE_MIGRATION_KEY,
+  MEMORY_WRITE_APPROVAL_KEY,
+  MemoryService,
+  injectionTruncationNote,
+} from "../core/memory/memory";
 import { LLMEngine } from "../core/llm/index";
 import * as MessageStorage from "../core/storage/message";
 
@@ -287,6 +292,96 @@ describe("MA（第三批）：记忆侧", () => {
       null,
     );
     expect(ok, "没越界就不许提这件事（噪音）").not.toContain("容量闸");
+  });
+
+  it("MA-22（全量审计）：回退到迁移前之后，内存态必须等于写回的那份快照", async () => {
+    /*
+     * 被守的缺陷：原来只把 entries 灌回去，而 batches 被清空、rejections 原样保留、
+     * dropped 硬编码 0、体积读数不刷新 ⇒ 回退后的内存态与磁盘上刚写回的 raw 不是同一份数据：
+     * 撤销凭据丢了、拒绝记录却还在（下次任意一次改动落盘就把它写进「回退后的原文」）。
+     */
+    const raw = JSON.stringify({
+      version: 1,
+      entries: { legacy1: { scope: "project", key: "迁移前", content: "旧数据" } },
+      batches: [{ id: "batch-snap", sessionId: "s1", scope: "project", count: 3, createdAt: 1 }],
+      rejections: [{ id: "rej-legacy1", key: "k", content: "c", scope: "platform", rejectedAt: 1 }],
+    });
+    setSetting(MEMORY_PRE_MIGRATION_KEY, JSON.stringify({ takenAt: Date.now(), entries: 1, raw }));
+    const svc = new MemoryService();
+    /* 先造一条「回退前多出来的」拒绝记录与批次：回退必须把它们换成快照里的那份 */
+    svc.add({ scope: "platform", key: "回退前的条目", content: "内容", source: "manual" });
+    expect(svc.getPreMigrationSnapshot(), "前提：能读到迁移前快照").not.toBeNull();
+
+    const restored = await svc.restorePreMigrationSnapshot();
+    expect(restored.ok).toBe(true);
+    expect(svc.listBatches().map((b) => b.id), "批次要按快照恢复（撤销凭据不许丢）").toEqual(["batch-snap"]);
+    expect(
+      svc.listRejections().map((r) => r.id),
+      "拒绝记录也要按快照恢复（不许把回退前那条留在内存里）",
+    ).toEqual(["rej-legacy1"]);
+    expect(svc.getByteStats().payloadBytes, "体积读数要当场刷新成快照的大小").toBeGreaterThan(0);
+  });
+
+  it("MA-23（全量审计）：导出 → 回灌必须保真（撤销凭据与拒绝记录都要回来）", async () => {
+    /*
+     * 被守的缺陷：导出漏了 rejections、导入只读 entries ⇒ 回灌后「整批撤销」失效、
+     * 拒绝记录清零（同类事实会重新被自动提取并再次请用户批准）。
+     */
+    const source = new MemoryService();
+    const batchId = source.beginBatch("s1", "project");
+    const entry = source.add({
+      scope: "platform",
+      key: "会被拒绝的条目",
+      content: "内容内容内容内容内容",
+      source: "auto",
+      status: "pending",
+      batchId,
+    });
+    source.finalizeBatch(batchId, 1);
+    /* 再放一条"留下的"条目 —— 被拒绝的那条会被删掉，不能是唯一一条（否则导出里没有 entries） */
+    source.add({ scope: "platform", key: "留下来的条目", content: "留下", source: "manual" });
+    source.removeMany([entry.entry!.id]);
+    expect(source.listRejections().length, "前提：源实例有拒绝记录").toBeGreaterThan(0);
+    expect(source.listBatches().length, "前提：源实例有批次").toBeGreaterThan(0);
+
+    const exported = source.exportAsJSON();
+    /* 换一块**独立**的存储：否则目标实例会从同一端口把源实例的条目读进来 ⇒ 导入全被判"已存在" */
+    setStoragePort(createFakeStoragePort({ seed: { settings: [{ key: "noop", value: "" }] } }));
+    saveMemory("");
+    const target = new MemoryService();
+    const result = target.importFromJSON(exported);
+    expect(result.imported, "条目本身照旧导入").toBeGreaterThan(0);
+    expect(
+      target.listRejections().length,
+      "拒绝记录必须随导出/导入往返（否则同类事实会重新被提取、反复打扰用户）",
+    ).toBe(source.listRejections().length);
+    expect(
+      target.listBatches().filter((b) => !b.undone).length,
+      "撤销凭据（批次）也必须往返（否则「整批撤销」在回灌后失效）",
+    ).toBeGreaterThan(0);
+  });
+
+  it("MA-24（全量审计）：批次被有界修剪丢弃时要披露（撤销凭据不许静默消失）", () => {
+    /*
+     * 被守的缺陷：`pruneBatches()` 在 `serialize()` 里静默丢掉超出上限的批次 ——
+     * 那是「整批撤销」的唯一凭据，用户点撤销时只会看到「未找到批次」。
+     */
+    const svc = new MemoryService();
+    const warnings: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    });
+    for (let i = 0; i < 80; i++) {
+      const id = svc.beginBatch(`s${i}`, "project");
+      svc.add({ scope: "conversation", sessionId: `s${i}`, key: `k${i}`, content: "内容内容内容", source: "auto", batchId: id });
+      svc.finalizeBatch(id, 1);
+    }
+    expect(svc.listBatches().length, "批次必须有界").toBeLessThanOrEqual(60);
+    expect(
+      warnings.join("\n"),
+      "丢弃撤销凭据必须留下披露（否则用户点撤销只会看到「未找到批次」）",
+    ).toContain("批次");
+    spy.mockRestore();
   });
 
   it("MA-18：内存上限的读数要给出**三道闸**（而不是只有 per-scope）", () => {

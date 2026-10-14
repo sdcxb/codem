@@ -19826,6 +19826,21 @@ html[data-contrast="high"] {
   border-radius: var(--radius-sm);
 }
 
+/**
+ * 「升级时迁移过记忆」的说明行（全量审计新增）。
+ *
+ * 它讲的是「用户数据被迁移改写过」这件事实（旧 project→platform、旧 session→无归属），
+ * 所以要克制但**必须可见**：中性底色 + 次要文字色，不与错误/警告争注意力。
+ */
+.mc-migration-note {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--fs-2xs);
+  /* 与同屏的 .mc-notice 同一族角色（已登记的前景/背景对，避免自造组合） */
+  color: var(--info-content);
+  background: var(--info-surface);
+  border-bottom: 1px solid var(--info-border);
+}
+
 .mc-notice {
   padding: var(--space-4) var(--space-6);
   font-size: var(--fs-2xs);

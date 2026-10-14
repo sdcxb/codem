@@ -393,6 +393,8 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
 
 export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [budget, setBudget] = useState<TokenBudget>(DEFAULT_BUDGET);
+  /** ★ 全量审计：自动压缩阈值按**同一个窗口**算（默认 128k），显示用 */
+  const [contextWindowTokens, setContextWindowTokens] = useState(DEFAULT_BUDGET.total);
   /*
    * ⚠️ 第 72 轮：这里原来还有一个 `pressure` state（由 `setPressure(...)` 写两次）。
    * 它和进度条用的 `budget` 是**两套口径**，于是真机上出现"21% 却显示临界"的自相矛盾。
@@ -488,6 +490,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
         setMessageCount(visible.length);
 
         const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
+        setContextWindowTokens(contextWindow);
         const { usedTokens, budgetTokens } = summarizeModelContext(
           pruneStaleToolResults(visible as any[]),
           contextWindow,
@@ -765,8 +768,24 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
             </span>
           </div>
           <div className="context-stat">
-            <span className="context-stat-label">剩余</span>
+            <span className="context-stat-label" title="窗口 × 0.9 的安全预算（进度条分母）">
+              剩余
+            </span>
             <span className="context-stat-value">{budget.remaining.toLocaleString()} tokens</span>
+          </div>
+          {/* ★ 全量审计（中）：把自动压缩的**触发阈值**也显示出来 ——
+              它与上面那条进度条的分母不是一对数字（阈值按窗口 80%、含系统提示与工具定义），
+              不写出来用户会看到「占用不高却已经压缩了/一直不压缩」。 */}
+          <div className="context-stat">
+            <span
+              className="context-stat-label"
+              title="模型侧压力（含系统提示与工具定义）超过它就会自动压缩，与上面的安全预算不是一对数字"
+            >
+              自动压缩阈值
+            </span>
+            <span className="context-stat-value">
+              {Math.round(contextWindowTokens * 0.8).toLocaleString()} tokens（窗口 80%）
+            </span>
           </div>
           <div className="context-stat">
             <span className="context-stat-label" title="与模型侧同一口径：listVisibleMessages（不含压缩隐藏的历史）">消息数</span>

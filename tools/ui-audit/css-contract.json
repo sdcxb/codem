@@ -6815,6 +6815,13 @@
     "display": "flex",
     "gap": "var(--space-3)"
   },
+  "mc-migration-note": {
+    "background": "var(--info-surface)",
+    "border-bottom": "1px solid var(--info-border)",
+    "color": "var(--info-content)",
+    "font-size": "var(--fs-2xs)",
+    "padding": "var(--space-3) var(--space-6)"
+  },
   "mc-note": {
     "background": "var(--bg-tertiary)",
     "border-left": "2px solid var(--border-strong)",

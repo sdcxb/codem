@@ -333,8 +333,13 @@ describe("MEM-CHECK-3：批量删除只删勾选的；清空全部要二次确�
     fireEvent.click(box);
 
     const removeMany = vi.spyOn(svc, "removeMany");
+    /* ★ 全量审计：批量删除现在是 fail-closed 的二次确认动作 ⇒ 夹具要先答应确认 */
+    confirmSpy.mockReset();
+    confirmSpy.mockResolvedValue(true);
     fireEvent.click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("批量删除选中"))!);
-    expect(removeMany).toHaveBeenCalledWith([expect.any(String)]);
+    /* ★ 全量审计：删除现在先等确认（async）⇒ 断言要等它落地 */
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(removeMany).toHaveBeenCalledWith([expect.any(String)]));
 
     const remaining = svc.listAll();
     expect(remaining.map((e) => e.key)).toEqual(["要留"]);
@@ -389,6 +394,59 @@ describe("MEM-CHECK-3：批量删除只删勾选的；清空全部要二次确�
         notice,
         "被跳过（非待批准）的条目不进这个数字 —— 回执里的数必须只数真正被批准的那批",
       ).toContain("其中 1 条");
+    });
+    spy.mockRestore();
+  });
+
+  it("MEM-CHECK-7a（全量审计）：批量删除后同屏「已拒绝」数字必须跟着真实拒绝记录走", async () => {
+    /*
+     * 被守的缺陷：拒绝记录列表曾是**挂载时的快照** ⇒ 用户刚因批量删除多出一批「已拒绝同类」记录，
+     * 屏幕上还是旧数字（通常 0），而此后同类的自动记忆会在**全局**范围内被静默挡下。
+     */
+    const svc = new MemoryService();
+    svc.add({ scope: "project", projectId: PROJ_A_ID, key: "要删的待批准", content: "内容", source: "auto", status: "pending" });
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+
+    const { container } = render(<MemoryCheckupView />);
+    const box = container.querySelector('input[aria-label="勾选记忆 要删的待批准"]') as HTMLInputElement;
+    expect(box, "前提：待批准条目渲染出来了").toBeTruthy();
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    fireEvent.click(box);
+    confirmSpy.mockReset();
+    confirmSpy.mockResolvedValue(true);
+    fireEvent.click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("批量删除选中"))!);
+
+    await waitFor(() => {
+      expect(svc.listRejections().length, "前提：这次删除确实留了一条拒绝记录").toBe(1);
+      const shown = (container.textContent ?? "").match(/已拒绝\s*(\d+)\s*条/);
+      expect(shown, "前提：屏幕上显示「已拒绝 N 条」").toBeTruthy();
+      expect(
+        Number(shown![1]),
+        "屏幕数字必须等于真实拒绝记录数（原来它是挂载快照，删完还显示 0）",
+      ).toBe(svc.listRejections().length);
+    });
+    spy.mockRestore();
+  });
+
+  it("MEM-CHECK-7b（全量审计）：批量删除的二次确认要写明「会被记为已拒绝同类」与「匹配是全局的」", async () => {
+    const svc = new MemoryService();
+    svc.add({ scope: "project", projectId: PROJ_A_ID, key: "另一条待批准", content: "内容", source: "auto", status: "pending" });
+    const memoryModule = await import("../core/memory/memory");
+    const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
+
+    const { container } = render(<MemoryCheckupView />);
+    const box = container.querySelector('input[aria-label="勾选记忆 另一条待批准"]') as HTMLInputElement;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    fireEvent.click(box);
+    confirmSpy.mockReset();
+    confirmSpy.mockResolvedValue(true);
+    fireEvent.click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("批量删除选中"))!);
+
+    await waitFor(() => {
+      const text = String(confirmSpy.mock.calls.at(-1)?.[0] ?? "");
+      expect(text, "必须写明后果：此后同类自动记忆会被挡下").toContain("同类");
+      expect(text, "还要写明匹配范围是全局").toContain("全局");
     });
     spy.mockRestore();
   });

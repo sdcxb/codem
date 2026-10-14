@@ -235,6 +235,40 @@ export function alignKeepToRoundBoundaryDown(
 export const COMPACTION_MARKER_PREFIXES = ["[上下文已自动压缩]", "[上下文已手动压缩]"] as const;
 
 /** 这一行是不是压缩摘要标记（role=user + 已知前缀） */
+/**
+ * **一条消息占多少字符**（压缩预算的唯一口径）。
+ *
+ * ★ 全量审计（中）：多模态与工具结果都要算进去 ——
+ * 被守的缺陷：压缩侧两处估算原来只读「content 是字符串」的长度 ⇒
+ * 一条带图片（`content` 是 ContentBlock[]）或 content 为空但工具结果 40 万字符的消息被算成 0，
+ * 于是「本来就超预算」的会话被判成「已进预算」，压缩既不触发也压不动。
+ */
+export function messageCharSize(m: { content?: unknown; toolCalls?: Array<{ result?: unknown; args?: unknown }> }): number {
+  let chars = 0;
+  const content = m?.content;
+  if (typeof content === "string") chars += content.length;
+  else if (content !== undefined && content !== null) {
+    try {
+      chars += JSON.stringify(content).length;
+    } catch {
+      /* 不可序列化（循环引用等）时按 0 计：只影响预算，不影响正确性 */
+    }
+  }
+  if (Array.isArray(m?.toolCalls)) {
+    for (const tc of m.toolCalls) {
+      if (typeof tc?.result === "string") chars += tc.result.length;
+      if (tc?.args !== undefined) {
+        try {
+          chars += JSON.stringify(tc.args).length;
+        } catch {
+          /* 同上 */
+        }
+      }
+    }
+  }
+  return chars;
+}
+
 export function isCompactionMarker(message: { role?: string; content?: unknown }): boolean {
   if (!message || message.role !== "user") return false;
   const content = typeof message.content === "string" ? message.content : "";
@@ -888,6 +922,12 @@ export function renderStructuredHistorySummary(
     toolCalls?: Array<{ tool?: string; args?: unknown; result?: unknown; status?: string }>;
   }>,
   caps: HistorySummaryCaps = DEFAULT_HISTORY_SUMMARY_CAPS,
+  /**
+   * ★ 全量审计（中）：把**实际渲染进摘要的条数**回填给调用方。
+   * 被守的缺陷：段头写的是"计划覆盖 N 条"，而渲染器还会按 totalChars 再裁一次尾部 ⇒
+   * 对模型断言了它没看到的条数（保守方向反了：模型以为细节都在）。
+   */
+  out?: { renderedCount?: number },
 ): string {
   const clip = (text: string, max: number): string => {
     const s = String(text ?? "");
@@ -973,6 +1013,7 @@ export function renderStructuredHistorySummary(
   if (todos.size > 0) sections.push(`## 待办\n${[...todos].map((t) => `- ${t}`).join("\n")}`);
 
   let summary = sections.join("\n\n");
+  if (out) out.renderedCount = messages.length;
   if (summary.length > caps.totalChars) {
     /**
      * ★ 全量审计（中）：超限时**保尾部**（= 离现在最近的那批 + 涉及文件/错误/待办三段）。
@@ -984,6 +1025,15 @@ export function renderStructuredHistorySummary(
     const headKeep = 300;
     const tailBudget = Math.max(0, caps.totalChars - note.length - headKeep);
     summary = `${summary.slice(0, headKeep)}${note}${summary.slice(-tailBudget)}`;
+    /**
+     * 保留的尾部是按字符抓的 ⇒ 只能**估**"少了几条"：按每条平均字符数折算，并向下取整
+     * （宁可少报覆盖条数，也不许多报 —— 段头是给模型的覆盖声明）。
+     */
+    if (out) {
+      const perMessage = messages.length > 0 ? Math.ceil(summary.length / messages.length) : 0;
+      const kept = Math.max(0, Math.floor(tailBudget / Math.max(1, perMessage)));
+      out.renderedCount = Math.min(messages.length, headKeep > 0 ? kept + 1 : kept);
+    }
   }
   return `（共 ${messages.length} 条消息，正文字符合计 ${bodyChars}）\n\n${summary}`;
 }

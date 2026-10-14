@@ -1,4 +1,4 @@
-﻿import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
+import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
@@ -42,7 +42,8 @@ import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearing
 import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
-import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS } from "./compaction-budget";
+import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryDown, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS, messageCharSize,
+} from "./compaction-budget";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
@@ -5811,7 +5812,13 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      */
     const estimateKeepTokens = (count: number): number =>
       messages.slice(-count).reduce((sum: number, m: any) => {
-        let tokens = estimateTokens(String(m.content ?? ""));
+        /**
+         * ★ 全量审计：多模态（content 是 ContentBlock[]）也要算 —— 原来 String(m.content ?? "")
+         * 会退化成 "[object Object]"，一张大图只算十几个字符。
+         * ⚠️ 估的是内容本身的 token，不是「字符数那个数字」的 token。
+         */
+        const contentForTokens = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
+        let tokens = estimateTokens(contentForTokens);
         if (Array.isArray(m.toolCalls)) {
           for (const tc of m.toolCalls) {
             if (typeof tc?.result === "string") tokens += estimateTokens(tc.result);
@@ -6032,20 +6039,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * 工具结果与参数也一起算（它们同样是"被移除的上下文"）。
      */
     const removedChars = messagesToRemove.reduce((sum: number, m: any) => {
-      let chars = typeof m.content === "string" ? m.content.length : 0;
-      if (Array.isArray(m.toolCalls)) {
-        for (const tc of m.toolCalls) {
-          chars += typeof tc?.result === "string" ? tc.result.length : 0;
-          if (tc?.args !== undefined) {
-            try {
-              chars += JSON.stringify(tc.args).length;
-            } catch {
-              /* 参数不可序列化时忽略（只影响预算，不影响正确性） */
-            }
-          }
-        }
-      }
-      return sum + chars;
+      /* ★ 全量审计：统一走 messageCharSize（多模态块与工具结果同口径） */
+      return sum + messageCharSize(m);
     }, 0);
     /**
      * ★ 全量审计：摘要请求里**不许**再带旧标记的正文 —— 它已经作为级联前缀给了模型，
@@ -6173,26 +6168,21 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
        * messageChars）**同口径** —— 工具结果与参数也要算进去。原实现只算 content ⇒
        * content 为空而工具结果 40 万字符的消息算 0 字符、必然入选，段头条数也随之失真。
        */
-      let chars = typeof m?.content === "string" ? m.content.length : 0;
-      if (Array.isArray(m?.toolCalls)) {
-        for (const tc of m.toolCalls) {
-          if (typeof tc?.result === "string") chars += tc.result.length;
-          if (tc?.args !== undefined) {
-            try {
-              chars += JSON.stringify(tc.args).length;
-            } catch {
-              /* 参数不可序列化时忽略（只影响预算，不影响正确性） */
-            }
-          }
-        }
-      }
+      /* ★ 全量审计：统一走 messageCharSize（多模态块与工具结果同口径，唯一实现） */
+      const chars = messageCharSize(m);
       if (overflowChars + chars > OVERFLOW_DIGEST_CHAR_BUDGET && overflowSelected.length > 0) break;
       overflowSelected.unshift(m);
       overflowChars += chars;
     }
     const overflowDropped = overflowMessages.length - overflowSelected.length;
+    /* ★ 全量审计：段头写实际渲染条数（渲染器还会按 totalChars 裁一次） */
+    const overflowOut: { renderedCount?: number } = {};
     const overflowDigest = overflowSelected.length > 0
-      ? renderStructuredHistorySummary(overflowSelected as never[], { userChars: 300, assistantChars: 200, toolChars: 120, totalChars: 8000 }) +
+      ? renderStructuredHistorySummary(
+          overflowSelected as never[],
+          { userChars: 300, assistantChars: 200, toolChars: 120, totalChars: 8000 },
+          overflowOut,
+        ) +
         (overflowDropped > 0 ? `\n（另有更早的 ${overflowDropped} 条未保留要点，原文已不在上下文里）` : "")
       : "";
 
@@ -6218,7 +6208,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       summaryInterrupted,
       middleCount: middleForDigest.length,
       /* 段头写真话：这是**实际渲染出要点**的条数（不是裁剪前的数） */
-      overflowCount: overflowSelected.length,
+      overflowCount: overflowOut.renderedCount ?? overflowSelected.length,
       /* ★ 第 228 波审计：**压缩不许让上下文变大** —— 标记 ≤ max(800, 待压内容字符数) */
       charBudget: removedChars,
     });

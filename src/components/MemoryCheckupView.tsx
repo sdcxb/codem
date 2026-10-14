@@ -15,7 +15,7 @@
  * 2. **归属解析失败一律显示"未知"**：不许猜、更不许把"归属未知"静默归到平台级；
  * 3. **不 N+1**：项目/会话名**批量**取一次（`buildOwnershipIndexFrom`），渲染几百条也只有一次解析。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useProjectStore } from "../core/store";
 import { confirmDialog } from "../core/ui/native-dialog";
 import {
@@ -165,9 +165,24 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     setVersion((v) => v + 1);
   };
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     if (selected.size === 0) {
       setNotice("没有勾选任何条目。体检的标注只用于展示，删除必须由你勾选确认。");
+      return;
+    }
+    /**
+     * ★ 全量审计（中）：批量删除是「一次点击删 N 条」的破坏性动作，与「清空全部」同一条纪律：
+     *  ① 二次确认（拿不到答案按取消 = fail-closed）；
+     *  ② 确认文案写明**副作用**：服务层会把每条待批准条目记为「已拒绝同类」，
+     *     且匹配范围是**全局**的（不看作用域/归属）⇒ 别的项目里同类自动记忆此后会被静默挡下。
+     */
+    const confirmed = await confirmDialog(
+      `确定删除选中的 ${selected.size} 条记忆？此操作不可撤销。` +
+        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是**全局**的" +
+        "（不限于本项目/本对话）—— 此后相似的自动记忆会被静默跳过。误点可用「清空已拒绝记录」补救。",
+    );
+    if (!confirmed) {
+      setNotice("已取消批量删除（没有删除任何条目）。");
       return;
     }
     void applyDelete(Array.from(selected), "批量删除");
@@ -273,6 +288,27 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
    * 但误点一次就永久挡住也太霸道 ⇒ 给一条"清空已拒绝记录"的退路，并写清后果。
    */
   const [rejections, setRejections] = useState<MemoryRejection[]>(() => getMemoryService().listRejections());
+  /**
+   * ★ 全量审计（中）：**升级时改了什么**要能在界面上看到。
+   * 被守的缺陷：迁移会改写用户条目的 scope/source（旧 project→platform 并打 legacyPool 等），
+   * 而承载这些事实的 migrationReport 全仓**零界面消费方** ⇒ 用户只看到结果，看不到发生了什么。
+   */
+  const migrationReport = useMemo(() => {
+    try {
+      return getMemoryService().getMigrationReport();
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
+  /**
+   * ★ 全量审计（中）：拒绝记录**跟着 version 重算**（原来只在挂载与清空时更新）。
+   * 被守的缺陷：批量删除会把每条待批准条目记为「用户拒绝过同类」，而屏幕上的数字还停在删除前
+   * ⇒ 用户看不到「我刚才多挡下了一批同类」，而这件事此后会在**全局**范围内生效。
+   */
+  useEffect(() => {
+    setRejections(getMemoryService().listRejections());
+  }, [version]);
 
   const handleClearRejections = () => {
     const before = rejections.length;
@@ -718,6 +754,14 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
         自动提取流程**不会**在后台自动删除或改写任何条目（整合只在你显式点「整合」或跑 /memory consolidate 时发生）。
       </div>
 
+      {migrationReport && migrationReport.ran && (
+        <div className="mc-migration-note">
+          {`升级时迁移过记忆：旧「项目级」${migrationReport.projectToLegacyPool ?? 0} 条改为平台级（旧版跨项目池）、` +
+            `旧「会话级」${migrationReport.sessionToConversation ?? 0} 条改为对话级（无归属）` +
+            (migrationReport.droppedEntries ? `，读入时跳过 ${migrationReport.droppedEntries} 条非法条目` : "") +
+            "。可在「记忆体检」逐条归位或删除。"}
+        </div>
+      )}
       {notice && <div className="mc-notice">{notice}</div>}
 
       {checkup.total === 0 && <div className="empty-hint">暂无记忆条目</div>}

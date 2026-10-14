@@ -2053,7 +2053,22 @@ export class MemoryService {
     this.pendingPersist = previous
       .catch(() => undefined)
       .then(async () => {
-        if (!this.isStillSamePort(port)) return;
+        if (!this.isStillSamePort(port)) {
+          /**
+           * ★ 全量审计（低）：**放弃写入必须留痕**（原来直接 return ⇒ `flushPendingPersist()` 照报成功、
+           * 而 `lastPersistedPayload` 已被设成这份 payload ⇒ 「无变化不写」短路让这次分叉一直保持下去）。
+           * 生产路径当前不可达（端口只在 bootstrap 注册一次），但它是「静默放弃写入」的模板；
+           * 普通保存与迁移提交两条路同形，这里一并处理。
+           */
+          this.lastPersistedPayload = null;
+          this.lastPersistError = "存储端口已切换，本次写入被放弃（改动仍在内存里，请重试）";
+          reportPersistFailure(
+            "memory.portChanged",
+            new Error("存储端口在确认链执行前被替换"),
+            "本次记忆写入被放弃（端口已切换）—— 请重试这次改动",
+          );
+          return;
+        }
         const result = await writeMemoryConfirmed(payload);
         if (result.ok) {
           this.lastPersistError = null;
@@ -2140,7 +2155,19 @@ export class MemoryService {
   private pruneBatches(): void {
     if (this.batches.size <= BATCH_KEEP_MAX) return;
     const sorted = Array.from(this.batches.values()).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-    for (const stale of sorted.slice(BATCH_KEEP_MAX)) this.batches.delete(stale.id);
+    const dropped = sorted.slice(BATCH_KEEP_MAX);
+    for (const stale of dropped) this.batches.delete(stale.id);
+    /**
+     * ★ 全量审计（中）：**丢掉撤销凭据必须披露**。
+     *
+     * 被守的缺陷：批次是「整批撤销」的唯一凭据，而它是在 `serialize()` 里被静默修剪的 ⇒
+     * 用户过一阵子点「撤销该批」只会看到「未找到批次」，完全不知道是产品把凭据丢了。
+     * 只进日志（这条是「用户即使知道也没有可介入动作」的形态：凭据已经没了）—— 但**不许沉默**。
+     */
+    console.warn(
+      `[memory] 批次超出上限（${BATCH_KEEP_MAX}）⇒ 丢弃了 ${dropped.length} 条较早的撤销凭据` +
+        "（这些批次里的条目仍然在，但不能再整批撤销）",
+    );
   }
 
   /**
@@ -3487,7 +3514,21 @@ export class MemoryService {
       batch.undoneAt = Date.now();
       this.batches.set(batchId, batch);
     }
-    this.save();
+    /**
+     * ★ 全量审计（中）：回执要含**落库结论**。
+     * `save()` 的语义是「已被接受」，不等于已落库 ⇒ 写不进去时这句「已撤销」是假成功
+     * （同族的 approve/rejectMany/removeMany 都等 `flushPendingPersist()` 后再下结论）。
+     */
+    const persisted = this.save();
+    if (!persisted) {
+      return {
+        ok: true,
+        removed,
+        message:
+          `批次 ${batchId} 已撤销：删除 ${removed} 条自动记忆，但**未落库**（${this.lastPersistError ?? "未知原因"}）` +
+          "—— 重启后这些条目会回来。",
+      };
+    }
     return { ok: true, removed, message: `批次 ${batchId} 已撤销：删除 ${removed} 条自动记忆（手动条目与其它批次未受影响）` };
   }
 
@@ -3789,7 +3830,22 @@ export class MemoryService {
     this.pendingPersist = previous
       .catch(() => undefined)
       .then(async () => {
-        if (!this.isStillSamePort(port)) return; // 端口换了 ⇒ 这次迁移写入已无意义（同 chainPersist）
+        if (!this.isStillSamePort(port)) {
+          /**
+           * ★ 全量审计（低）：**放弃写入必须留痕**（原来直接 return ⇒ `flushPendingPersist()` 照报成功、
+           * 而 `lastPersistedPayload` 已被设成这份 payload ⇒ 「无变化不写」短路让这次分叉一直保持下去）。
+           * 生产路径当前不可达（端口只在 bootstrap 注册一次），但它是「静默放弃写入」的模板；
+           * 普通保存与迁移提交两条路同形，这里一并处理。
+           */
+          this.lastPersistedPayload = null;
+          this.lastPersistError = "存储端口已切换，本次写入被放弃（改动仍在内存里，请重试）";
+          reportPersistFailure(
+            "memory.portChanged",
+            new Error("存储端口在确认链执行前被替换"),
+            "本次记忆写入被放弃（端口已切换）—— 请重试这次改动",
+          );
+          return;
+        } // 端口换了 ⇒ 这次迁移写入已无意义（同 chainPersist）
         /*
          * ① 快照（F4）：**先于数据**确认落库。没有它，后面两步就是"迁了但没法回退"。
          */
@@ -3902,8 +3958,13 @@ export class MemoryService {
     }
     this.lastPersistedPayload = snap.raw;
     this.entries.clear();
-    this.batches.clear();
+    /* ⚠️ 不再在这里清 batches —— ingestRawForRestore 会按快照恢复它们（见那里的注释） */
     this.ingestRawForRestore(snap.raw);
+    /**
+     * ★ 全量审计（中）：体积读数当场刷新（它是「最近一次真正序列化」的缓存）——
+     * 否则回退之后 getByteStats() 还在报回退前那个数（面板显示假读数）。
+     */
+    this.lastPayloadBytes = estimatePayloadBytes(this.serialize());
     const restored = this.entries.size;
     /*
      * ⚠️ 必须在这里发一次「记忆域变了」（第 192 波真机实测的缺口）：
@@ -3944,11 +4005,37 @@ export class MemoryService {
      */
     const container = readMemoryContainer(parsed);
     if (!container.ok) return;
+    /**
+     * ★ 全量审计（中）：内存态必须**等于**写回的那份快照。
+     *
+     * 被守的缺陷：原来这里只灌 entries，而调用方已经清空 batches、rejections 原样保留 ⇒
+     * 回退后的内存态与磁盘上刚写回的 raw 不是同一份数据：撤销凭据丢了、
+     * 拒绝记录却还在（下次任意一次改动落盘就把它写进「回退后的原文」）。
+     * 这里按**同一个容器口径**把三段都恢复（旧版 payload 没有这两段 ⇒ 那就是空）。
+     */
+    let dropped = 0;
     for (const [key, value] of container.pairs) {
       const normalized = normalizeLoadedEntry(key, value);
       if (normalized) this.entries.set(normalized.id, normalized);
+      else dropped += 1;
     }
-    this.loadState = { ok: true, dropped: 0, raw };
+    this.batches.clear();
+    if (Array.isArray(container.batches)) {
+      for (const b of container.batches) {
+        if (b && typeof b === "object" && typeof (b as { id?: unknown }).id === "string") {
+          this.batches.set((b as { id: string }).id, b as never);
+        }
+      }
+    }
+    this.rejections.clear();
+    if (Array.isArray(container.rejections)) {
+      for (const r of container.rejections) {
+        /* 键与 recordRejection 一致：记录自身的 id（形如 rej-<entryId>） */
+        const id = (r as { id?: unknown })?.id;
+        if (typeof id === "string" && id.length > 0) this.rejections.set(id, r as never);
+      }
+    }
+    this.loadState = { ok: true, dropped, raw };
   }
 
   /**
@@ -4287,6 +4374,12 @@ export class MemoryService {
         source: e.source ?? null,
       })),
       batches: Array.from(this.batches.values()),
+      /**
+       * ★ 全量审计（中）：**拒绝记录也要导出**。
+       * 被守的缺陷：它在落库 payload 里是有的，导出却没有 ⇒ 导出→回灌之后「整批撤销」失效、
+       * 拒过的同类会重新被自动提取并再次请用户批准（往返不保真）。
+       */
+      rejections: this.listRejections(),
     };
     return JSON.stringify(data, null, 2);
   }
@@ -4357,6 +4450,9 @@ export class MemoryService {
     overPayloadBudget: boolean;
     /** ★ 全量审计：因「id 已存在且未开覆盖」而跳过的条数 */
     skippedExisting: number;
+    /** ★ 全量审计：随文件一起读回来的撤销凭据 / 拒绝记录条数（往返保真） */
+    restoredBatches: number;
+    restoredRejections: number;
   } {
     const result = {
       imported: 0,
@@ -4366,6 +4462,8 @@ export class MemoryService {
       overTotalCap: false,
       overPayloadBudget: false,
       skippedExisting: 0,
+      restoredBatches: 0,
+      restoredRejections: 0,
     };
     let parsed: unknown;
     try {
@@ -4380,6 +4478,16 @@ export class MemoryService {
         ? ((parsed as { entries?: unknown }).entries ?? [])
         : [];
     const list: unknown[] = Array.isArray(raw) ? raw : Object.values(raw as Record<string, unknown>);
+    /**
+     * ★ 全量审计（中）：**往返保真** —— 导出的 batches / rejections 要能读回来。
+     * 被守的缺陷：原来只读 entries ⇒ 回灌后「整批撤销」失效、拒绝记录清零（同类事实会重新被提取）。
+     */
+    const extraBatches = Array.isArray((parsed as { batches?: unknown }).batches)
+      ? ((parsed as { batches: unknown[] }).batches as Array<{ id?: unknown }>)
+      : [];
+    const extraRejections = Array.isArray((parsed as { rejections?: unknown }).rejections)
+      ? ((parsed as { rejections: unknown[] }).rejections as Array<{ id?: unknown }>)
+      : [];
     // R2：缺 `order` 的导入条目按**导入顺序**补齐（接在现有最大 order 之后，只增不减）
     let nextOrder = this.nextCreationOrder();
     for (const item of list) {
@@ -4423,7 +4531,22 @@ export class MemoryService {
       });
       result.imported++;
     }
-    if (result.imported > 0) this.save();
+    /* ★ 全量审计：撤销凭据与拒绝记录随文件一起恢复（同名项以文件为准） */
+    for (const b of extraBatches) {
+      const id = typeof b?.id === "string" ? b.id : null;
+      if (id) {
+        this.batches.set(id, b as never);
+        result.restoredBatches += 1;
+      }
+    }
+    for (const r of extraRejections) {
+      const id = typeof r?.id === "string" ? r.id : null;
+      if (id) {
+        this.rejections.set(id, r as never);
+        result.restoredRejections += 1;
+      }
+    }
+    if (result.imported > 0 || result.restoredBatches > 0 || result.restoredRejections > 0) this.save();
     /**
      * ★ 第 228 波审计（第四批）：导入是**用户显式动作**（照旧放行，不做自动拒绝），
      * 但导入后越过总量/体积闸时必须**如实告知** —— 否则用户只会看到「自动记忆不写了」，
