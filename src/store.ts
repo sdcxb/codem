@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import * as MessageStorage from "./core/storage/message";
 import type { FeedbackType } from "./core/storage/message";
 import { putMessageFeedback } from "./core/llm/feedback";
@@ -327,59 +327,15 @@ interface AppState {
 }
 
 /**
- * ★ 全量审计（2026-10）新增：**压缩期间的延迟落库队列**。
+ * ★ 全量审计（2026-10）**撤销**：这里原来有一套「压缩期间的延迟落库队列」。
  *
- * 为什么不是「直接写」：压缩期间禁止并发写库是为 sql.js/WASM 安全加的防御（见 saveMessages），
- * 这条防御要保留；但「丢掉用户刚发的话」不可接受（模型这一轮就看不到它了）。
- * 所以压缩期间把写入请求排队，压缩一结束就补写（同一会话的多次请求合并成一次）。
- *
- * 失败处理：补写时若仍处于压缩中则重新排队，最多 20 次；超限走**可见的失败上报**（绝不静默丢）。
+ * 撤销理由（审计实测）：压缩标志只在**全同步**的原子提交块里为 true
+ * （`agentic-loop` 的 DB COMMIT 段与面板的手动压缩段里都没有 await）⇒ 事件回调不可能排进那个窗口
+ * ⇒ 队列在生产里**不可达**；而它一旦被触发就带着两个真缺陷：只存 attempts、不存调用方的 explicit
+ * 消息数组（flush 时若已切会话会被归属守卫拒绝且不留重试），以及 5 秒（20×250ms）后直接丢弃。
+ * 「看着安全、实际会咬人」的死代码不如没有：压缩期间仍然不写（sql.js/WASM 安全），
+ * 但由调用点**如实上报**这件事（不再有「已排队，不丢」的假承诺）。
  */
-const deferredSaves = new Map<string, { attempts: number }>();
-let deferredFlushTimer: ReturnType<typeof setTimeout> | null = null;
-
-function queueCompactionDeferredSave(sessionId: string): void {
-  const prev = deferredSaves.get(sessionId);
-  deferredSaves.set(sessionId, { attempts: prev?.attempts ?? 0 });
-  if (deferredFlushTimer !== null) return;
-  /* 压缩是秒级动作 ⇒ 每 250ms 试一次；真正的写仍走 saveMessages（同一份实现） */
-  deferredFlushTimer = setTimeout(flushDeferredSaves, 250);
-}
-
-function flushDeferredSaves(): void {
-  deferredFlushTimer = null;
-  for (const [sessionId, entry] of [...deferredSaves.entries()]) {
-    if (isCompactionInProgress(sessionId)) {
-      if (entry.attempts >= 20) {
-        deferredSaves.delete(sessionId);
-        reportPersistFailure(
-          "store.saveMessagesDeferred",
-          new Error("压缩持续进行，推迟的消息写入多次未落地"),
-          "压缩期间发送的消息可能未能落库（请检查这一轮对话是否完整）",
-        );
-        continue;
-      }
-      deferredSaves.set(sessionId, { attempts: entry.attempts + 1 });
-      continue;
-    }
-    deferredSaves.delete(sessionId);
-    /* 写仍走同一份实现；不传消息数组 ⇒ 它自己从 state 取这份会话的消息 */
-    useAppStore.getState().saveMessages(sessionId);
-  }
-  if (deferredSaves.size > 0 && deferredFlushTimer === null) {
-    deferredFlushTimer = setTimeout(flushDeferredSaves, 250);
-  }
-}
-
-/** 测试钩子：清空推迟队列（判据用，避免跨用例串味） */
-export function __resetDeferredSavesForTests(): void {
-  deferredSaves.clear();
-  if (deferredFlushTimer !== null) {
-    clearTimeout(deferredFlushTimer);
-    deferredFlushTimer = null;
-  }
-}
-
 export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   loadedSessionId: null,
@@ -810,14 +766,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     // sql.js state ("bad parameter or other API misuse").
     if (isCompactionInProgress(sessionId)) {
       /**
-       * ★ 全量审计（高）修复：**排队，不丢弃**。
+       * ★ 全量审计（2026-10）：这里是**同步窗口**，所以"跳过"不会真的丢东西。
        *
-       * 被守的缺陷：这里原来直接 return，而"用户发的消息"正是从这条路上落的库，
-       * 主循环又只认库里的消息 ⇒ 压缩那几秒里用户发的话既没进库也没进模型，
-       * 界面却显示已发送；自动保存也不会因为"被跳过"而重跑。
+       * 压缩标志只在**全同步**的原子提交块里为 true（`agentic-loop` 的 DB COMMIT 段与面板的
+       * 手动压缩段里都没有 await）⇒ 事件循环不可能把"用户发消息"这类回调排进这个窗口
+       * ⇒ 这条分支在正常事件序列下不可达。
+       *
+       * 之所以不再"排队补写"（上一版我加过）：那套队列在生产里不可达，而一旦被触发就会
+       * 丢 explicit 消息数组、并在 5 秒后放弃 —— 看着安全、实际会咬人。现在改成**如实上报**，
+       * 既不写库（sql.js/WASM 安全），也不假装"已排队不丢"。
        */
-      queueCompactionDeferredSave(sessionId);
-      console.log("[Store] saveMessages 推迟到压缩结束（已排队，不丢）");
+      reportPersistFailure(
+        "store.saveMessagesDuringCompaction",
+        new Error("压缩窗口内收到写入请求"),
+        `压缩进行中：这次消息保存被跳过（会话 ${sessionId}）—— 压缩是同步窗口，正常不会发生；若反复出现请反馈`,
+      );
+      console.warn("[Store] saveMessages 在压缩窗口内被跳过（已上报）");
       return;
     }
     /**

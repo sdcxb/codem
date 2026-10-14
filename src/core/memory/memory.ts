@@ -721,6 +721,9 @@ export function injectionTruncationNote(
 }
 
 /** 快照/批次参数 */
+/** ★ 全量审计：批次修剪披露的节流（避免每次写盘都弹一条） */
+let lastBatchPruneAdvisoryAt = 0;
+const BATCH_PRUNE_ADVISORY_INTERVAL_MS = 10 * 60 * 1000;
 const BATCH_KEEP_MAX = 50;
 
 /**
@@ -2168,6 +2171,18 @@ export class MemoryService {
       `[memory] 批次超出上限（${BATCH_KEEP_MAX}）⇒ 丢弃了 ${dropped.length} 条较早的撤销凭据` +
         "（这些批次里的条目仍然在，但不能再整批撤销）",
     );
+    /**
+     * ★ 全量审计（低）：**渲染侧 console 用户看不到**（只有 CDP 能抓）⇒ 这条披露必须进 advisory。
+     * 用模块级节流：`pruneBatches` 在每次写盘路径都可能被调用，不能每次弹一条。
+     */
+    const now = Date.now();
+    if (now - lastBatchPruneAdvisoryAt > BATCH_PRUNE_ADVISORY_INTERVAL_MS) {
+      lastBatchPruneAdvisoryAt = now;
+      reportAdvisory("memory.batchesPruned", `撤销凭据超出上限，丢弃了 ${dropped.length} 条较早批次的撤销入口`, {
+        title: "部分批次不能再整批撤销",
+        nextStep: "这些批次里的条目仍然在，只是不能再「整批撤销」；需要的话请在记忆面板里逐条删除。",
+      });
+    }
   }
 
   /**
@@ -2870,11 +2885,21 @@ export class MemoryService {
    * 为什么要它：拒绝记录会**永久**挡住同类自动记忆，一旦用户误点拒绝就再也没有回头路
    * —— 那与"记忆系统可以被用户完全控制"这条底线冲突。清空之后同类又能被自动提取（可能要重新批准一次）。
    */
-  clearRejections(): { cleared: number; persisted: boolean } {
+  /**
+   * ★ 全量审计（中）：返回值区分「已被接受」（persisted）与「已落库」（landed）——
+   * 界面必须拿 landed 下结论（persisted 只是队列收下了）。
+   */
+  clearRejections(): { cleared: number; persisted: boolean; landed: boolean } {
     const cleared = this.rejections.size;
-    if (cleared === 0) return { cleared: 0, persisted: true };
+    if (cleared === 0) return { cleared: 0, persisted: true, landed: true };
     this.rejections.clear();
-    return { cleared, persisted: this.save() };
+    /**
+     * ★ 全量审计（中）：回执要含**落库结论** —— `save()` 只表示「已被接受」，不等于已落库；
+     * 界面原来直接拿它宣布「已清空 N 条…同类事实以后可以再被自动提取」（写不进去时是假成功）。
+     */
+    const accepted = this.save();
+    const landed = accepted && this.lastPersistError === null;
+    return { cleared, persisted: accepted, landed };
   }
 
   /**
@@ -4422,8 +4447,14 @@ export class MemoryService {
     const data = {
       version: 2,
       exportedAt: new Date().toISOString(),
+      /**
+       * ★ 全量审计（中·安全）：**导出也脱敏** —— 写入/导入/注入三处都过 redactSecrets，只有导出漏了；
+       * 而「读失败时建议导出 JSON 留档并把原文反馈给我们」恰恰会把这些明文带走。
+       */
       entries: Array.from(this.entries.values()).map((e) => ({
         ...e,
+        key: redactSecrets(textOf(e.key)),
+        content: redactSecrets(textOf(e.content)),
         // `undefined` ⇒ `null`（**显式**表示"来源未知"，不是"字段缺失"）
         source: e.source ?? null,
       })),
@@ -4609,6 +4640,12 @@ export class MemoryService {
     /* 有界：这两段都进整份 payload，导入不许把它们撑到无界 */
     this.pruneBatches();
     this.pruneRejections();
+    /**
+     * ★ 全量审计（低）：回执要报**修剪后实际存活**的数 ——
+     * 原来报的是修剪前（实测导入 200 批次/300 拒绝 ⇒ 报 200/300，实际只留 50/60，4~5 倍虚报）。
+     */
+    result.restoredBatches = this.batches.size;
+    result.restoredRejections = this.rejections.size;
     if (result.imported > 0 || result.restoredBatches > 0 || result.restoredRejections > 0) this.save();
     /**
      * ★ 第 228 波审计（第四批）：导入是**用户显式动作**（照旧放行，不做自动拒绝），

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { StatusBanner } from "./ui/StatusBanner";
 import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
@@ -145,7 +145,16 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
    * `filter(!hidden)`，见 `agentic-loop.ts::buildMessages`）。
    */
   const messages = listVisibleMessages(sessionId);
-  if (messages.length <= 2) return { removed: 0, kept: messages.length };
+  /*
+   * ★ 全量审计（低）：这个「没压成」必须带真实原因 ——
+   * 不带 skipped 时面板会按模板写成「没有可移除的消息…保留最近 20 条」，与真因不符。
+   */
+  if (messages.length <= 2)
+    return {
+      removed: 0,
+      kept: messages.length,
+      skipped: "可见消息太少（不多于 2 条），压缩无法减小上下文",
+    };
 
   /**
    * ★ 第 228 波审计修复（中）：**手动压缩也要取同一把压缩锁**。
@@ -246,6 +255,11 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
     };
   }
 
+  /*
+   * ⚠️ 这一档**不加** skipped：既有判据 CB-5 明确要求这里说成
+   * 「没有可移除的消息…保留最近 20 条…占用没降是因为系统提示与工具定义」——
+   * 那几句对本形态（12 条 ≤ 保留 20 条）是**准确**的，比换一句新话更好。
+   */
   if (messagesToRemove.length === 0) return { removed: 0, kept: messages.length };
 
   /**
@@ -460,6 +474,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
         if (!sessionId) {
           setBudget(DEFAULT_BUDGET);
           setMessageCount(0);
+          /* ★ 全量审计（低）：没有会话时窗口也要复位（否则显示的是上一个会话的窗口） */
+          setContextWindowTokens(DEFAULT_BUDGET.total);
           return;
         }
 
@@ -784,7 +800,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               自动压缩阈值
             </span>
             <span className="context-stat-value">
-              {Math.round(contextWindowTokens * 0.8).toLocaleString()} tokens（窗口 80%）
+              {Math.round(contextWindowTokens * (ctxConfig?.compactionThreshold ?? 0.8)).toLocaleString()} tokens
+              {`（窗口 ${Math.round((ctxConfig?.compactionThreshold ?? 0.8) * 100)}%）`}
             </span>
           </div>
           <div className="context-stat">

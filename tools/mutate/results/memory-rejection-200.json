@@ -1,8 +1,8 @@
 {
   "wave": "memory-rejection-200",
   "description": "第 200 波：用户拒绝过的同类记忆不再自动写入、也不再请求批准；用户主动要求记住的放行（且直接生效）。判据 REJ-1..8 + MEM-CHECK-REJ-1：拒绝留痕（含批量拒绝/删除待批准）、全局按文本匹配挡住同类、explicit 放行、不同事实不误伤、删已生效不算拒绝、记录有界且落库仍在、可清空退路。",
-  "runAt": "2026-10-14T02:40:28.350Z",
-  "specFingerprint": "662d5a3d72b1c5b958c640eadf5943d704dc7672",
+  "runAt": "2026-10-14T12:05:36.177Z",
+  "specFingerprint": "88d17f57ab5a2452e1b0d07e3dca2e6511f5dda4",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -37,7 +37,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4091
+      "ms": 3908
     },
     {
       "id": "MUT-2 提取循环不再查拒绝记录",
@@ -57,7 +57,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4138
+      "ms": 4033
     },
     {
       "id": "MUT-3 用户主动要求也不放行（连 explicit 一起挡）",
@@ -77,7 +77,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4055
+      "ms": 3940
     },
     {
       "id": "MUT-4 用户主动要求的条目仍然按审批走（放行了但还要批准）",
@@ -97,7 +97,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4151
+      "ms": 3943
     },
     {
       "id": "MUT-5 拒绝匹配扩成「永远命中」（把所有自动记忆都挡掉）",
@@ -117,7 +117,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4199
+      "ms": 3955
     },
     {
       "id": "MUT-6 删除已生效的记忆也记成拒绝（过度）",
@@ -137,7 +137,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4292
+      "ms": 3882
     },
     {
       "id": "MUT-7 拒绝记录没有退路（清空不生效）",
@@ -145,7 +145,7 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    const cleared = this.rejections.size;\n    if (cleared === 0) return { cleared: 0, persisted: true };\n    this.rejections.clear();\n    return { cleared, persisted: this.save() };",
+          "from": "    const cleared = this.rejections.size;\n    if (cleared === 0) return { cleared: 0, persisted: true, landed: true };\n    this.rejections.clear();\n    /**\n     * ★ 全量审计（中）：回执要含**落库结论** —— `save()` 只表示「已被接受」，不等于已落库；\n     * 界面原来直接拿它宣布「已清空 N 条…同类事实以后可以再被自动提取」（写不进去时是假成功）。\n     */\n    const accepted = this.save();\n    const landed = accepted && this.lastPersistError === null;\n    return { cleared, persisted: accepted, landed };",
           "to": "    const cleared = 0;\n    return { cleared, persisted: true };"
         }
       ],
@@ -157,7 +157,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4429
+      "ms": 3889
     },
     {
       "id": "MUT-8 体检里不再显示已拒绝记录（用户看不到它为何不再问）",
@@ -177,7 +177,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4640
+      "ms": 4338
     },
     {
       "id": "MUT-9 反向对照：只改一行说明注释",
@@ -198,7 +198,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4275
+      "ms": 4119
     }
   ]
 }

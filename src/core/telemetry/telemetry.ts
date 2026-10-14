@@ -584,15 +584,19 @@ class TelemetryCollector {
     // and can otherwise land inside a compaction window.
     /**
      * ★ 全量审计（低）：闸门按**会话**判（原来无参 = 「任何会话在压缩中」⇒
-     * A 会话的压缩会把 B 会话的遥测一起挡住，只是延迟到下个 tick）。
-     * 这里只挡「正在压缩的那些会话」的分片，其余照写。
+     * A 会话的压缩会把 B 会话的遥测一起挡住）。
+     *
+     * ⚠️ **取舍写在这里**：只要缓冲里**存在**正在压缩的会话分片，这一轮就整批推迟（下个 5s tick 再写）。
+     * 之所以不「只把压缩中会话的分片留下、其余照写」：那需要在 flush 之后把留下的分片**合并回**缓冲
+     * （flush 的清理逻辑是整批语义），改错就会**静默丢事件**——而迟一拍写入是无害的，
+     * 写进压缩窗口才是有害的（这正是这个闸门存在的理由）。
      */
     const compactingSessions = new Set(
       Array.from(new Set(this.events.map((e) => (e as { sessionId?: string }).sessionId ?? ""))).filter((sid) =>
         isCompactionInProgress(sid),
       ),
     );
-    if (compactingSessions.size > 0 && this.events.every((e) => compactingSessions.has((e as { sessionId?: string }).sessionId ?? ""))) {
+    if (compactingSessions.size > 0) {
       // 全部都落在正在压缩的会话上 ⇒ 整批推迟（保持原来的语义，只是不再牵连别的会话）
       if (!this.flushTimer) {
         this.flushTimer = setTimeout(() => this.flush(), this.flushIntervalMs);

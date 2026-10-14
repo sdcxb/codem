@@ -6075,7 +6075,8 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * ★ 全量审计：摘要请求里**不许**再带旧标记的正文 —— 它已经作为级联前缀给了模型，
      * 再进一次等于同一份旧摘要送两遍（模型会把重复当强调，还白烧 token）。
      */
-    const oldParts = this.buildConversationTextParts(oldBand.filter((m: any) => !isCompactionMarker(m)));
+    const oldBandForSummary = oldBand.filter((m: any) => !isCompactionMarker(m));
+    const oldParts = this.buildConversationTextParts(oldBandForSummary);
     const packed = packPartsForSummary(oldParts, SUMMARY_CONVERSATION_CHAR_CAP, MAX_SUMMARY_CHUNKS);
     /* （全量审计）这里原来算了一份 conversationText，全程没人读 ⇒ 已删除 */
 
@@ -6176,7 +6177,13 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const middleDigest = middleForDigest.length > 0
       ? renderStructuredHistorySummary(middleForDigest as never[], { userChars: 1200, assistantChars: 900, toolChars: 300, totalChars: 12000 })
       : "";
-    const overflowMessages = packed.overflow.length > 0 ? oldBand.slice(packed.consumed) : [];
+    /**
+     * ★ 全量审计（中）：**下标空间必须一致** —— packed.consumed 是「过滤掉压缩标记之后」
+     * 那份数组的下标，而这里原来拿它切**未过滤**的 oldBand ⇒ 待压集里一旦有旧标记
+     * （稳态常见：它漂出保留窗口后落进 oldBand），溢出档就会多渲染一条已经进过摘要的消息
+     * （同一内容在标记里出现两次），段头条数跟着偏大。
+     */
+    const overflowMessages = packed.overflow.length > 0 ? oldBandForSummary.slice(packed.consumed) : [];
     /**
      * ★ 第 228 波审计修复（低/中）：溢出档要**保"离现在最近"的那一批**，并如实报覆盖条数。
      *

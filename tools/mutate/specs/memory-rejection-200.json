@@ -102,7 +102,7 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    const cleared = this.rejections.size;\n    if (cleared === 0) return { cleared: 0, persisted: true };\n    this.rejections.clear();\n    return { cleared, persisted: this.save() };",
+          "from": "    const cleared = this.rejections.size;\n    if (cleared === 0) return { cleared: 0, persisted: true, landed: true };\n    this.rejections.clear();\n    /**\n     * ★ 全量审计（中）：回执要含**落库结论** —— `save()` 只表示「已被接受」，不等于已落库；\n     * 界面原来直接拿它宣布「已清空 N 条…同类事实以后可以再被自动提取」（写不进去时是假成功）。\n     */\n    const accepted = this.save();\n    const landed = accepted && this.lastPersistError === null;\n    return { cleared, persisted: accepted, landed };",
           "to": "    const cleared = 0;\n    return { cleared, persisted: true };"
         }
       ],

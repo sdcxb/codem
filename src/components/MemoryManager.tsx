@@ -465,10 +465,20 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     loadEntries();
   };
 
-  const handleRejectSelected = () => {
+  const handleRejectSelected = async () => {
     const ids = [...selectedPending];
-    const result = getMemoryService().rejectMany(ids);
-    setNotice(result.message);
+    const service = getMemoryService();
+    const result = service.rejectMany(ids);
+    /**
+     * ★ 全量审计（中）：回执要等**落库确认** —— `rejectMany` 的 message 只是「已被接受」，
+     * 写不进去时那句「已删除」是假成功（同族的「撤销该批」早就等了 flushPendingPersist）。
+     */
+    const landed = await service.flushPendingPersist();
+    setNotice(
+      landed
+        ? result.message
+        : `${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
+    );
     setSelectedPending(new Set());
     loadEntries();
   };

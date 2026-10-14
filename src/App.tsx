@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "./components/ui/portal";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -1538,6 +1538,8 @@ abortControllersRef.current.clear();
     }
   }, [currentMode]);
 const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number; skipped?: boolean; skipReason?: string; sessionId?: string } | null>(null);
+/** ★ 全量审计（低）：压缩状态清除的代次（防止旧定时器清掉后发生的新状态） */
+const compactionStatusGeneration = useRef(0);
 const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
     resolve: (result: PermissionResult) => void;
@@ -4308,8 +4310,15 @@ flushReasoningBuffer(session.id);
             if (removed > 0) {
               getPet().showRawBubble(`已压缩 ${removed} 条消息`, 3000);
             }
-            // Auto-clear compaction status after 3 seconds
-            setTimeout(() => setCompactionStatus(null), 3000);
+            /**
+             * ★ 全量审计（低）：清除定时器要带**代次** ——
+             * 原来一个无登记的 setTimeout 会把**后发生**的 compaction_start 状态一起清掉
+             * （t0 结束 → t0+1s 又开始 → t0+3s 旧定时器把新的 active 清成 null）。
+             */
+            const generation = ++compactionStatusGeneration.current;
+            setTimeout(() => {
+              if (compactionStatusGeneration.current === generation) setCompactionStatus(null);
+            }, 3000);
             break;
           }
 

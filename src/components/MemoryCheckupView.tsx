@@ -319,7 +319,8 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     const result = getMemoryService().clearRejections();
     setRejections([]);
     setNotice(
-      result.persisted
+      /* ★ 全量审计：拿 landed（已落库）下结论，persisted 只是队列收下了 */
+      result.landed
         ? `已清空 ${result.cleared} 条「已拒绝」记录：同类事实以后**可以**再被自动提取（可能重新进入待批准）。`
         : `已清空 ${result.cleared} 条，但**未落库**：${getMemoryService().getLastPersistError() ?? "未知原因"}（重启后这些记录会回来）。`,
     );
@@ -347,10 +348,23 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
    * "最早"用组内顺序（`findDuplicateGroups` 给的 `ids` 就是创建序）——
    * 保留最早的一条是"先记下的那条"，它已经被用户看过/批准过，语义上最稳。
    */
-  const handleKeepOldest = (group: DuplicateGroupView) => {
+  const handleKeepOldest = async (group: DuplicateGroupView) => {
     const rest = group.ids.slice(1);
     if (rest.length === 0) {
       setNotice("这一组只剩一条了。");
+      return;
+    }
+    /**
+     * ★ 全量审计（低）：去重删除也必须二次确认 ——
+     * 它和「批量删除选中」一样是**一次点击删 N 条**，而且会把待批准条目写成**全局**拒绝记录；
+     * 而同屏文案却写着"删除由你逐组确认"，原来其实一道确认都没有。
+     */
+    const confirmed = await confirmDialog(
+      `确定删除这一组里除最早一条之外的 ${rest.length} 条？此操作不可撤销。` +
+        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是**全局**的——此后相似的自动记忆会被静默跳过。",
+    );
+    if (!confirmed) {
+      setNotice("已取消去重删除（没有删除任何条目）。");
       return;
     }
     void applyDelete(rest, `去重（保留最早的一条「${group.entries[0]?.key ?? ""}」）`);
@@ -358,7 +372,16 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
   };
 
   /** 整组删掉（两条都不想要时用） */
-  const handleDeleteDuplicates = (group: DuplicateGroupView) => {
+  const handleDeleteDuplicates = async (group: DuplicateGroupView) => {
+    /* ★ 全量审计（低）：整组删除同样是破坏性动作 ⇒ 同一道二次确认闸 */
+    const confirmed = await confirmDialog(
+      `确定删除这一组的全部 ${group.ids.length} 条？此操作不可撤销。` +
+        "其中处于待批准的条目会被记为「已拒绝同类」，且匹配范围是**全局**的——此后相似的自动记忆会被静默跳过。",
+    );
+    if (!confirmed) {
+      setNotice("已取消整组删除（没有删除任何条目）。");
+      return;
+    }
     void applyDelete(group.ids, "去重（整组删除）");
     setDuplicateGroups(null);
   };
@@ -448,7 +471,14 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
      * 这里不再自己拼一遍（自己拼就会把"未落库"说成"N 条失败"，或者把失败吞掉）。
      */
     setNotice(
-      `${result.message}。可见范围不变（仍对所有项目生效），它们已移入普通「平台级」组、不再受暂停开关影响。`,
+      /**
+       * ★ 全量审计（低）：**只在实际生效时**才追加后半句 ——
+       * kept=0 时 result.message 已经写着「0 条 / N 条没有生效」，再补一句「它们已移入普通平台级组」
+       * 就是自相矛盾（用户会以为操作生效了）。
+       */
+      result.kept > 0
+        ? `${result.message}。可见范围不变（仍对所有项目生效），它们已移入普通「平台级」组、不再受暂停开关影响。`
+        : result.message,
     );
     setVersion((v) => v + 1);
   };
@@ -754,12 +784,22 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
         自动提取流程**不会**在后台自动删除或改写任何条目（整合只在你显式点「整合」或跑 /memory consolidate 时发生）。
       </div>
 
-      {migrationReport && migrationReport.ran && (
+      {migrationReport && (
         <div className="mc-migration-note">
-          {`升级时迁移过记忆：旧「项目级」${migrationReport.projectToLegacyPool ?? 0} 条改为平台级（旧版跨项目池）、` +
-            `旧「会话级」${migrationReport.sessionToConversation ?? 0} 条改为对话级（无归属）` +
-            (migrationReport.droppedEntries ? `，读入时跳过 ${migrationReport.droppedEntries} 条非法条目` : "") +
-            "。可在「记忆体检」逐条归位或删除。"}
+          {/*
+            ★ 全量审计（中）：**只判 ran 会撒谎** ——
+            ① 快照确认失败时迁移会逐条回滚（aborted/abortedEntries），而 ran 仍为 true；
+            ② 迁移**推迟**（读失败/形状不认识）时 ran=false，以前整行都不显示 ⇒ 用户零说明。
+          */}
+          {migrationReport.ran
+            ? migrationReport.aborted
+              ? `升级时的记忆迁移**没有生效**：快照确认写入失败（${migrationReport.aborted}），` +
+                `已逐条回滚 ${migrationReport.abortedEntries ?? 0} 条，磁盘与内存都还是迁移前的形态。`
+              : `升级时迁移过记忆：旧「项目级」${migrationReport.projectToLegacyPool ?? 0} 条改为平台级（旧版跨项目池）、` +
+                `旧「会话级」${migrationReport.sessionToConversation ?? 0} 条改为对话级（无归属）` +
+                (migrationReport.droppedEntries ? `，读入时跳过 ${migrationReport.droppedEntries} 条非法条目` : "") +
+                "。可在「记忆体检」逐条归位或删除。"
+            : `记忆迁移已推迟，尚未执行：${migrationReport.deferredReason ?? "未知原因"}。`}
         </div>
       )}
       {notice && <div className="mc-notice">{notice}</div>}

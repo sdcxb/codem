@@ -483,8 +483,28 @@ export function selectMessagesByPriority(
 
   // Estimate tokens for each message with the shared estimator (CJK-aware).
   const tokens = messages.map((msg) => {
+    /**
+     * ★ 全量审计（中）：**存储行的工具结果也要算** ——
+     * 存储形状里工具结果在 `toolCalls[].result`（不是 `role: tool` 的独立行），原来这里只读 content ⇒
+     * 编码会话的主要占用（几十万字符的工具结果）在面板里算 0，面板数字系统性偏低。
+     * ⚠️ 必须对**内容本身**估 token（不是对字符数那个数字估）。
+     */
     const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
-    return Math.max(1, Math.ceil(estimate(content)));
+    let total = estimate(content);
+    const toolCalls = (msg as { toolCalls?: Array<{ result?: unknown; args?: unknown }> }).toolCalls;
+    if (Array.isArray(toolCalls)) {
+      for (const tc of toolCalls) {
+        if (typeof tc?.result === "string") total += estimate(tc.result);
+        if (tc?.args !== undefined) {
+          try {
+            total += estimate(JSON.stringify(tc.args));
+          } catch {
+            /* 参数不可序列化时忽略（只影响估算） */
+          }
+        }
+      }
+    }
+    return Math.max(1, Math.ceil(total));
   });
 
   const totalTokens = tokens.reduce((a, b) => a + b, 0);
@@ -1013,6 +1033,8 @@ export function renderStructuredHistorySummary(
   if (todos.size > 0) sections.push(`## 待办\n${[...todos].map((t) => `- ${t}`).join("\n")}`);
 
   let summary = sections.join("\n\n");
+  /* ★ 全量审计：裁剪前的真实长度（renderedCount 的折算基数） */
+  const rawSummaryLength = summary.length;
   if (out) out.renderedCount = messages.length;
   if (summary.length > caps.totalChars) {
     /**
@@ -1030,7 +1052,13 @@ export function renderStructuredHistorySummary(
      * （宁可少报覆盖条数，也不许多报 —— 段头是给模型的覆盖声明）。
      */
     if (out) {
-      const perMessage = messages.length > 0 ? Math.ceil(summary.length / messages.length) : 0;
+      /**
+       * ★ 全量审计（中）：用**裁剪前**的长度算「每条平均字符」——
+       * 原来用裁剪后的 summary.length（≈ totalChars）反算 ⇒ N ≤ 45 时 renderedCount 精确等于计划条数，
+       * 「宁可少报」没有发生（诚实性修复成了空操作）。现在按裁剪前的真实平均长度折算，并向下取整。
+       */
+      const rawLength = rawSummaryLength > 0 ? rawSummaryLength : summary.length;
+      const perMessage = messages.length > 0 ? Math.ceil(rawLength / messages.length) : 0;
       const kept = Math.max(0, Math.floor(tailBudget / Math.max(1, perMessage)));
       out.renderedCount = Math.min(messages.length, headKeep > 0 ? kept + 1 : kept);
     }
