@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆体检视图判据（MEM-CHECK-1 ~ MEM-CHECK-5）。
  *
  * ## 这组判据针对的缺陷/风险
@@ -357,6 +357,14 @@ describe("MEM-CHECK-3：批量删除只删勾选的；清空全部要二次确�
       source: "auto",
       status: "pending",
     });
+    svc.add({
+      scope: "project",
+      projectId: "c:\\deleted-ws",
+      key: "归属没了但已生效的条目",
+      content: "内容",
+      source: "auto",
+      status: "active",
+    });
     const memoryModule = await import("../core/memory/memory");
     const spy = vi.spyOn(memoryModule, "getMemoryService").mockReturnValue(svc);
 
@@ -365,12 +373,22 @@ describe("MEM-CHECK-3：批量删除只删勾选的；清空全部要二次确�
     expect(box, "前提：这一条出现在体检里（面板按当前位置过滤，看不到它）").toBeTruthy();
     const { fireEvent, waitFor } = await import("@testing-library/react");
     fireEvent.click(box);
+    /* ★ 第三轮自查：**已生效**的那条也勾上 —— 它会被"批量同意"跳过（不在待批准状态），
+       因此不许被算进"归属已失效"的条数里（否则回执里的数字比实际多） */
+    const activeBox = container.querySelector(
+      'input[aria-label="勾选记忆 归属没了但已生效的条目"]',
+    ) as HTMLInputElement | null;
+    if (activeBox) fireEvent.click(activeBox);
     fireEvent.click(Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("批量同意"))!);
 
     await waitFor(() => {
       const notice = container.querySelector(".mc-notice")?.textContent ?? "";
       expect(notice, "必须数出这类条目（否则用户以为批准生效了，实际永远不会进上下文）").toContain("归属已失效");
       expect(notice).toContain("仍不会进任何上下文");
+      expect(
+        notice,
+        "被跳过（非待批准）的条目不进这个数字 —— 回执里的数必须只数真正被批准的那批",
+      ).toContain("其中 1 条");
     });
     spy.mockRestore();
   });

@@ -129,7 +129,13 @@ function entryStatusText(entry: MemoryEntry, injected: boolean, notInjectedReaso
      * 条目允许 10000 字符而每行注入只取前 200 —— 此前界面照样写「已生效（参与上下文）」，
      * 用户以为整条都在上下文里（条数上限与字符预算都有披露，唯独这一处没有）。
      */
-    const note = injectionTruncationNote(entry);
+    /* 用**真正会被注入的那段文本**判定（链接展开后长度会变，只看原文会漏报） */
+    const injectedText = getMemoryService().injectionTextFor({
+      id: entry.id,
+      key: entry.key,
+      content: entry.content,
+    } as MemoryEntry);
+    const note = injectionTruncationNote(entry, injectedText);
     return note ? `已生效（参与上下文；${note}）` : "已生效（参与上下文）";
   }
   return `不进上下文${notInjectedReason ? `：${notInjectedReason}` : ""}`;

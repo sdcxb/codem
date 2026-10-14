@@ -122,7 +122,13 @@ export function planCompactionKeep(params: CompactionKeepPlanParams): Compaction
    */
   const initialKeep = Math.min(
     total,
-    align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total)))),
+    /**
+     * ★ 第 228 波审计（第三轮·低）：`minKeep` 是**下限**，所以 `align` 之后还要再夹一次。
+     * 被守的缺陷：`align` 的契约只写"可能变大"（没写"不会变小"），而当前唯一的生产实现恰好
+     * 不会变小 ⇒ 一旦换成"向下对齐"的 align，保底会静默失效（实测 `align: () => 1` 配
+     * `minKeep: 60` ⇒ `keepCount = 1`，返回值里没有任何信号）。
+     */
+    Math.max(minKeep, align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total))))),
   );
   let keepCount = initialKeep;
   let estimated = estimate(keepCount);
@@ -398,6 +404,22 @@ export function foldStaleCompactionMarkers(
   let start = messages.length - keep;
   while (start < messages.length && messages[start].role === "tool") start++;
   keep = messages.length - start;
+
+  /**
+   * ★ 第 228 波审计（第三轮·低）：**上面那个"向后推"可能把 keep 推成 0**（唯一的下限守卫在它
+   * 之前）。而 0 是灾难值：调用方写的是 `messages.slice(-keepCount)` —— **JS 里 `slice(-0)` 等于
+   * `slice(0)`（保留全部）**，而 `messages.slice(0, len - 0)` 又会算成"删掉全部"，两个集合完全重叠，
+   * 随后的重夹会把待删集去重成两份并集（真机形态：42 条输入 ⇒ removedIds 70 条 / 去重 35 条，
+   * 计数、日志、事件日志里的 removedMessageIds 全部翻倍）。这里补一道**末位**守卫。
+   * （可达性：需要可见集里有 `role="tool"` 的**存储行**，当前全仓没有这种写路径 ⇒ 属防御性修复。）
+   */
+  if (keep <= 0 && messages.length > 0) {
+    keep = 1;
+    console.warn(
+      "[compaction] 折叠后的保留数又被推到 0（尾部是工具结果）→ 收敛为 1：" +
+        "否则 slice(-0) 会同时表示「保留全部」与「删掉全部」（计数会翻倍）",
+    );
+  }
 
   return { keepCount: keep, foldedMarkers, existingSummary, staleMarkerIds };
 }
@@ -759,10 +781,31 @@ export function composeCompactionMarkerText(input: {
     (wanted.middle ? headingOf.middle.length + 4 + clipNote("本段", 100000).length : 0) +
     (wanted.overflow ? headingOf.overflow.length + 4 + clipNote("本段", 100000).length : 0);
   const usable = Math.max(0, budget - fixedLen);
-  /** 三段按"保真度从低到高"分预算：更早档 1/6、中间档 2/6、检查点摘要 3/6 */
-  const overflowMax = Math.floor(usable / 6);
-  const middleMax = Math.floor(usable / 3);
-  const summaryMax = Math.max(0, usable - overflowMax - middleMax);
+  /**
+   * ★ 第 228 波审计（第三轮·中）：分配必须**按在场段数**分，不能给两段各发同一份配额。
+   *
+   * 被守的缺陷：原来 `summary` 与 `priorSummary` **各拿 `summaryMax`** ⇒ 四段同时在时内容配额
+   * = `1.5 × usable`，标记突破自己的字符预算（实测 `charBudget=20000` ⇒ 29839）。
+   * 可达形态：LLM 摘要抛错且没拿到部分摘要（`fallbackSummary` 与 `existingSummary` 同时非空）。
+   * 现在按权重（检查点 3 / 之前的摘要 2 / 中间档 2 / 更早档 1）**归一化到 usable**。
+   */
+  const weights = { summary: 3, prior: 2, middle: 2, overflow: 1 } as const;
+  const present = {
+    summary: wanted.summary.length > 0,
+    prior: wanted.prior.length > 0,
+    middle: wanted.middle.length > 0,
+    overflow: wanted.overflow.length > 0,
+  };
+  const totalWeight =
+    (present.summary ? weights.summary : 0) +
+    (present.prior ? weights.prior : 0) +
+    (present.middle ? weights.middle : 0) +
+    (present.overflow ? weights.overflow : 0);
+  const share = (w: number): number => (totalWeight === 0 ? 0 : Math.floor((usable * w) / totalWeight));
+  const summaryMax = present.summary ? share(weights.summary) : 0;
+  const priorMax = present.prior ? share(weights.prior) : 0;
+  const middleMax = present.middle ? share(weights.middle) : 0;
+  const overflowMax = present.overflow ? share(weights.overflow) : 0;
   const clip = (text: string, max: number): string => {
     if (text.length <= max) return text;
     const dropped = text.length - max;
@@ -770,10 +813,10 @@ export function composeCompactionMarkerText(input: {
   };
 
   const sections: string[] = ["[上下文已自动压缩]", ""];
-  if (wanted.summary) sections.push(headingOf.summary, "", clip(wanted.summary, summaryMax), "");
-  if (wanted.prior) sections.push(headingOf.prior, "", clip(wanted.prior, summaryMax), "");
-  if (wanted.middle) sections.push(headingOf.middle, "", clip(wanted.middle, middleMax), "");
-  if (wanted.overflow) sections.push(headingOf.overflow, "", clip(wanted.overflow, overflowMax), "");
+  if (present.summary) sections.push(headingOf.summary, "", clip(wanted.summary, summaryMax), "");
+  if (present.prior) sections.push(headingOf.prior, "", clip(wanted.prior, priorMax), "");
+  if (present.middle) sections.push(headingOf.middle, "", clip(wanted.middle, middleMax), "");
+  if (present.overflow) sections.push(headingOf.overflow, "", clip(wanted.overflow, overflowMax), "");
   sections.push(tailLine);
   return sections.join("\n");
 }

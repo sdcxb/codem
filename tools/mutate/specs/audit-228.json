@@ -11,7 +11,9 @@
           "to": "          for (const tc of m.toolCalls) {\n            if (false && typeof tc?.result === \"string\") tokens += estimateTokens(tc.result);"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -24,7 +26,9 @@
           "to": "      const partial = \"\";\n      if (false && existingSummary) priorSummaryCarried = existingSummary;"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -37,7 +41,10 @@
           "to": "      messageStorage.deleteMessagesByIds(removedIds, sessionId);\n      messageStorage.createMessage({\n        id: markerId,\n        role: \"user\",\n        content: markerContent,\n        timestamp: markerTs - 1,\n        status: \"done\",\n      }, sessionId);"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts", "src/test/feature-context-fixes.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/feature-context-fixes.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -50,7 +57,9 @@
           "to": "      console.log(\"[compactMessages] Compaction already in progress, skipping（不计入连压次数）\");\n      return 0;"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -63,7 +72,10 @@
           "to": "      const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES).minKeep;\n      if (false && keepCount < floor) {"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts", "src/test/audit47-regressions.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/audit47-regressions.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -76,7 +88,9 @@
           "to": "        if (true) continue;"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -89,7 +103,9 @@
           "to": "  if (false && !acquireCompactionLock(sessionId)) {"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -102,7 +118,10 @@
           "to": "      if (false) return;"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts", "src/test/context-compact-feedback.test.tsx"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/context-compact-feedback.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -115,7 +134,9 @@
           "to": "export function isCompactionInProgress(sessionId?: string): boolean {\n  return compactionInProgress.size > 0;\n}"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -128,7 +149,10 @@
           "to": "    consumed: chunkPartCounts.slice(0, chunkBudget).reduce((s, n) => s + n, 0),"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts", "src/test/compaction-gradient.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/compaction-gradient.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -137,11 +161,14 @@
       "patches": [
         {
           "file": "src/core/llm/compaction-budget.ts",
-          "from": "    align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total)))),",
-          "to": "    align(Math.max(1, Math.min(params.desiredKeep, total))),"
+          "from": "    Math.max(minKeep, align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total))))),",
+          "to": "    align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total)))),"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/audit-228d.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -154,7 +181,9 @@
           "to": "  const budget = Number.POSITIVE_INFINITY;"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -167,7 +196,9 @@
           "to": "        const explicitRequest = mem.explicit === true;"
         }
       ],
-      "tests": ["src/test/memory-rejection.test.ts"],
+      "tests": [
+        "src/test/memory-rejection.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -180,7 +211,9 @@
           "to": "          this.extractMemoriesFromSession(sessionId, memoryProjectId).catch(() => {});"
         }
       ],
-      "tests": ["src/test/memory-audit-228.test.ts"],
+      "tests": [
+        "src/test/memory-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -193,7 +226,9 @@
           "to": "        if (false && writesTotal >= MEMORY_MAX_WRITES_PER_EXTRACTION) {"
         }
       ],
-      "tests": ["src/test/memory-audit-228.test.ts"],
+      "tests": [
+        "src/test/memory-audit-228.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -202,11 +237,15 @@
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "            this.memory.removeMany([duplicateOf.id], { actor: \"system\" });",
-          "to": "            this.memory.removeMany([duplicateOf.id]);"
+          "from": "        let supersedeId: string | null = null;",
+          "to": "        let supersedeId: string | null = null;\n        if (duplicateOf && explicitRequest) { this.memory.removeMany([duplicateOf.id], { actor: \"system\" }); }"
         }
       ],
-      "tests": ["src/test/memory-audit-228.test.ts", "src/test/memory-rejection.test.ts"],
+      "tests": [
+        "src/test/memory-audit-228.test.ts",
+        "src/test/memory-rejection.test.ts",
+        "src/test/audit-228d.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -219,7 +258,10 @@
           "to": "        !sameProjectAsConversation(entry)"
         }
       ],
-      "tests": ["src/test/memory-audit-228.test.ts", "src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-audit-228.test.ts",
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -232,7 +274,10 @@
           "to": "export const COMPACTION_MIDDLE_BAND_SIZE = 20; /* 反向对照：行为逐字不变 */"
         }
       ],
-      "tests": ["src/test/compaction-audit-228.test.ts", "src/test/memory-audit-228.test.ts"],
+      "tests": [
+        "src/test/compaction-audit-228.test.ts",
+        "src/test/memory-audit-228.test.ts"
+      ],
       "expectRed": false
     }
   ]

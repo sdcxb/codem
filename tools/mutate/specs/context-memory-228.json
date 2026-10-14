@@ -7,7 +7,7 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "        const floor = compactionMinKeep(messages, MIN_KEEP_MESSAGES);",
+          "from": "        const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES);",
           "to": "        const floor = { minKeep: MIN_KEEP_MESSAGES, turnsCovered: 0, cappedByMax: false };"
         }
       ],
@@ -22,8 +22,8 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "    const middleDigest = middleBand.length > 0",
-          "to": "    const middleDigest = false && middleBand.length > 0"
+          "from": "    const middleForDigest = middleBand.filter((m: any) => !isCompactionMarker(m));",
+          "to": "    const middleForDigest = middleBand.slice(0, 0);"
         }
       ],
       "tests": [
@@ -112,8 +112,8 @@
       "patches": [
         {
           "file": "src/components/ContextMonitor.tsx",
-          "from": "    Math.max(Math.min(MANUAL_KEEP_MESSAGES, messages.length), compactionMinKeep(messages, 4).minKeep),",
-          "to": "    Math.min(MANUAL_KEEP_MESSAGES, messages.length),"
+          "from": "      compactionMinKeep(messages.filter((m) => !isCompactionMarker(m)), 4).minKeep,",
+          "to": "      compactionMinKeep(messages, 4).minKeep,"
         }
       ],
       "tests": [

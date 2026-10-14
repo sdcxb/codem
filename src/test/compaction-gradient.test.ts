@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 第 228 波（用户要求，对标「最近 5–6 轮 100% 保留 + 压缩率随距离上升」）：
  * 把压缩从「近端一段逐字 + 其余**一律**压成一条摘要」改成**按距离分三档**。
  *
@@ -228,14 +228,17 @@ describe("CG：按距离分档的压缩（第 228 波）", () => {
     const budgetSrc = readFileSync(path.resolve(__dirname, "../core/llm/compaction-budget.ts"), "utf8");
     const monitorSrc = readFileSync(path.resolve(__dirname, "../components/ContextMonitor.tsx"), "utf8");
 
-    expect(loopSrc, "自动压缩要用轮次保底算 minKeep").toContain("compactionMinKeep(messages, MIN_KEEP_MESSAGES)");
+    expect(loopSrc, "自动压缩要用轮次保底算 minKeep（且要在**真实消息**上数：压缩标记也是 role=user）").toContain("compactionMinKeep(realMessages, MIN_KEEP_MESSAGES)");
     expect(loopSrc, "待压集要切成中间档 + 更早两段").toMatch(/middleBand = messagesToRemove\.slice\(middleStart\)/);
     expect(loopSrc, "摘要要逐块滚动（全覆盖，不再掐中段）").toMatch(/for \(const chunk of packed\.chunks\)/);
     expect(loopSrc, "中间档走确定性渲染器（与手动压缩同一份实现）").toMatch(
-      /renderStructuredHistorySummary\(middleBand as never\[\]/,
+      /renderStructuredHistorySummary\(middleForDigest as never\[\]/,
+    );
+    expect(loopSrc, "中间档要点必须过滤压缩标记（否则同一份旧摘要进上下文两遍）").toContain(
+      "middleBand.filter((m: any) => !isCompactionMarker(m))",
     );
     expect(loopSrc, "标记排版收敛到 composeCompactionMarkerText（不许再手拼字符串）").toContain("composeCompactionMarkerText({");
     expect(budgetSrc, "分块函数必须把溢出**返回**而不是丢掉").toMatch(/overflow: chunks\.slice\(chunkBudget\)/);
-    expect(monitorSrc, "手动压缩同样要按轮次保底（两处一条口径）").toContain("compactionMinKeep(messages, 4)");
+    expect(monitorSrc, "手动压缩同样要按轮次保底（两处一条口径），且要在**真实消息**上数（压缩标记不算一轮）").toContain("compactionMinKeep(messages.filter((m) => !isCompactionMarker(m)), 4)");
   });
 });

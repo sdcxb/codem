@@ -5816,7 +5816,13 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
        * （用户要求：对标"最近 5–6 轮 100% 保留"那套规律；极端超长轮次按上限 60 条截断并记日志）。
        */
       minKeep: (() => {
-        const floor = compactionMinKeep(messages, MIN_KEEP_MESSAGES);
+        /**
+         * ★ 第 228 波审计（第三轮自查）：保底要在**真实消息**上数。
+         * 压缩标记也是 `role=user`（`isCompactionMarker` 就是这么判的）⇒ 把它算作一轮，
+         * "最近 3 轮"就会少算一整轮真实对话（保底偏小 ⇒ 该保的那一轮被切掉）。
+         */
+        const realMessages = messages.filter((m: any) => !isCompactionMarker(m));
+        const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES);
         if (floor.cappedByMax) {
           console.warn(
             `[compactMessages] 轮次保底被上限截断：最近 ${COMPACTION_MIN_KEEP_TURNS} 轮共 ${floor.turnsCovered} 条 > 上限 ` +
@@ -5832,6 +5838,16 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       alignDown: (desired) => alignKeepToRoundBoundaryDown(messages, desired),
     });
     keepCount = plan.keepCount;
+    /**
+     * ★ 第 228 波审计（第三轮自查）：`plan.keepCount === 0` 是**必须当场退出**的形态 ——
+     * `messages.slice(-0)` 在 JS 里等于 `slice(0)`（**取全部**），而 `messages.slice(0, len - 0)`
+     * 会算成「删掉全部」：那正是 `foldStaleCompactionMarkers` 里那条警告守的灾难。
+     * 纯函数在 `totalMessages === 0` 时返回 0 是对的，但调用方必须先拦。
+     */
+    if (keepCount <= 0) {
+      console.warn("[compactMessages] 保留条数为 0（没有可保留的消息）⇒ 本次不压缩（slice(-0) 会取全部）");
+      return 0;
+    }
     if (plan.shrunk) {
       console.log(
         `[compactMessages] 保留集按体积收缩：${plan.initialKeep} → ${plan.keepCount} 条（估算 ${plan.estimated} tokens，预算 ${keepBudget}，窗口 ${windowTokens}）`,
@@ -5904,12 +5920,15 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     if (folded.foldedMarkers > 0 || folded.staleMarkerIds.length > 0) {
       const staleSet = new Set(folded.staleMarkerIds);
       /**
-       * ⚠️ 两个都要在**真实消息**上算（先把待删的旧标记剔除）：
+       * ⚠️ 三个都要在**真实消息**上算（把待删的旧标记剔除）：
        * ① 那条标记也是 `role=user` ⇒ 它会白占"最近 3 轮"里的一个轮次名额（保底算小）；
-       * ② 它也占保留集的一个名额 ⇒ `slice(-floor)` 会把最近 3 轮的**第一条**挤出去
-       *    （形态：本该保 `u37,a37,u38,a38,u39,a39`，实际只保住 `a37,u38,a38,u39,a39`）。
+       * ② 它也占保留集的一个名额 ⇒ `slice(-floor)` 会把最近 3 轮的**第一条**挤出去；
+       * ③ **任何**压缩标记都算不上一轮对话 —— 不只 `staleMarkerIds` 里那条
+       *    （第三轮自查抓到：只过滤 `staleSet` 时，落在保留集里的旧标记仍会被算成一轮 ⇒ 保底偏小）。
        */
-      const realMessages = messages.filter((m: any) => !staleSet.has(m.id));
+      const realMessages = messages.filter(
+        (m: any) => !staleSet.has(m.id) && !isCompactionMarker(m),
+      );
       const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES).minKeep;
       if (keepCount < floor) {
         const restored = realMessages.slice(-floor);
@@ -6067,8 +6086,16 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      * 中间档：确定性结构化要点（不调 LLM）；最老溢出的那段（`packed.consumed` 之后的消息）：
      * 同样用确定性渲染，但**明写保真度最低**（模型据此知道"这段只有清单，细节要用工具重新取"）。
      */
-    const middleDigest = middleBand.length > 0
-      ? renderStructuredHistorySummary(middleBand as never[], { userChars: 1200, assistantChars: 900, toolChars: 300, totalChars: 12000 })
+    /**
+     * ★ 第 228 波审计（第三轮·中）：中间档要点**必须过滤压缩标记**。
+     *
+     * 被守的缺陷：旧标记的时间戳最大 ⇒ 通常落在待删集的最新一端 ⇒ 进 middleBand；
+     * 而它的正文**同时**经 existingSummary 进 LLM 级联输入（或 priorSummaryCarried）
+     * ⇒ 同一份旧摘要进上下文两遍（手动路径早就过滤了，自动路径漏了）。
+     */
+    const middleForDigest = middleBand.filter((m: any) => !isCompactionMarker(m));
+    const middleDigest = middleForDigest.length > 0
+      ? renderStructuredHistorySummary(middleForDigest as never[], { userChars: 1200, assistantChars: 900, toolChars: 300, totalChars: 12000 })
       : "";
     const overflowMessages = packed.overflow.length > 0 ? oldBand.slice(packed.consumed) : [];
     /**
@@ -6334,7 +6361,9 @@ ${truncatedConv}`;
     for (const msg of messages) {
       if (msg.role === "user") {
         const snippet = (msg.content || "").substring(0, 100);
-        if (snippet.trim() && !snippet.startsWith("[上下文已自动压缩]")) {
+        /* ★ 第 228 波审计（第三轮）：手动标记也要跳过 —— 原来只认自动前缀，
+           LLM 摘要失败时旧的手动摘要会被兜底再渲染一遍（同一份摘要的第三份副本） */
+        if (snippet.trim() && !isCompactionMarker(msg)) {
           summaryParts.push(`- 用户请求: ${snippet}`);
         }
       } else if (msg.role === "assistant") {

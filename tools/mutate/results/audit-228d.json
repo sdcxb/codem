@@ -1,0 +1,221 @@
+{
+  "wave": "audit-228d",
+  "description": "第 228 波·审计轮第三批（对改动过的代码再审计一轮）：压缩侧 —— 手动压缩的级联摘要永不参与裁剪（唯一副本，原来会被裁到 0）、标记预算按在场段数归一化（原来 summary/prior 各拿一份 ⇒ 1.5 倍）、折叠后的保留数不许是 0（slice(-0) 同时表示保留全部与删掉全部）、minKeep 不依赖 align 的隐含契约、自动路径的中间档与兜底摘要都要认全部压缩标记；记忆侧 —— 顶替旧条目必须在新条目写入成功之后、explicit 的结构证据只认窗口内用户亲手打的字（排除机器注入）、两个上限分开计数、注入截断披露按展开后文本判定、内存上限读数给三道闸。",
+  "runAt": "2026-10-14T03:57:43.303Z",
+  "specFingerprint": "36e4f8c2538a96aff21b909b66b90c0e196e4bc6",
+  "files": [
+    "src/components/ContextMonitor.tsx",
+    "src/core/llm/compaction-budget.ts",
+    "src/core/llm/agentic-loop.ts",
+    "src/core/llm/index.ts",
+    "src/core/memory/memory.ts"
+  ],
+  "tests": [
+    "src/test/audit-228d.test.ts",
+    "src/test/compaction-audit-228.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 手动压缩的级联摘要被算进预算（待删集只剩旧标记时 budget 恒为 0 ⇒ 累积摘要被裁光）",
+      "why": "CA-26：旧标记的正文既要级联保留、又被算作「被压缩的内容」⇒ 预算被自己吃掉一次；阈值只要旧标记 > 733 字符就必然归零",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "  const compressibleMessages = messagesToRemove.filter((m) => !isCompactionMarker(m));",
+          "to": "  const compressibleMessages = messagesToRemove;"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4097
+    },
+    {
+      "id": "MUT-2 标记预算又给 summary 与 priorSummary 各发一份（四段同时在 ⇒ 1.5 倍预算）",
+      "why": "CA-22：LLM 抛错且没拿到部分摘要时两段同时非空 ⇒ 标记突破自己的字符预算（压缩可能让上下文变大）",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "  const priorMax = present.prior ? share(weights.prior) : 0;",
+          "to": "  const priorMax = present.prior ? summaryMax : 0;"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4069
+    },
+    {
+      "id": "MUT-3 折叠后的保留数可以是 0（slice(-0) 同时表示保留全部与删掉全部）",
+      "why": "CA-23：尾部是工具结果时那个「向后推」的循环会把 keep 推成 0 ⇒ 两个集合完全重叠、计数翻倍",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "  if (keep <= 0 && messages.length > 0) {\n    keep = 1;\n    console.warn(\n      \"[compaction] 折叠后的保留数又被推到 0（尾部是工具结果）→ 收敛为 1：\" +",
+          "to": "  if (false && keep <= 0 && messages.length > 0) {\n    keep = 1;\n    console.warn(\n      \"[compaction] 折叠后的保留数又被推到 0（尾部是工具结果）→ 收敛为 1：\" +"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4053
+    },
+    {
+      "id": "MUT-4 minKeep 又依赖 align 的隐含契约（向下对齐时保底静默失效）",
+      "why": "CA-24：align 的契约只写「可能变大」，一旦换成向下对齐的 align，minKeep 就不再是下限",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "    Math.max(minKeep, align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total))))),",
+          "to": "    align(Math.max(1, Math.max(minKeep, Math.min(params.desiredKeep, total)))),"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4026
+    },
+    {
+      "id": "MUT-5 中间档又把压缩标记渲染一遍（同一份旧摘要进上下文两遍）",
+      "why": "CA-9/CA-25：旧标记时间戳最大 ⇒ 落在待删集最新一端 ⇒ 进中间档；而它的正文同时经级联进来",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "    const middleForDigest = middleBand.filter((m: any) => !isCompactionMarker(m));",
+          "to": "    const middleForDigest = middleBand;"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts",
+        "src/test/compaction-audit-228.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3983
+    },
+    {
+      "id": "MUT-6 顶替旧条目又排在新条目写入之前（旧条目被删、新条目被上限挡下）",
+      "why": "MA-14：任何可能 continue 的判定（总上限 / 待批准上限 / add 失败）都必须排在删除之前",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        let supersedeId: string | null = null;",
+          "to": "        let supersedeId: string | null = duplicateOf?.id ?? null; if (duplicateOf && explicitRequest) { this.memory.removeMany([duplicateOf.id], { actor: \"system\" }); } void supersedeId; supersedeId = null;"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4010
+    },
+    {
+      "id": "MUT-7 explicit 的证据又只看 role=user（机器注入的委派消息算用户原话）",
+      "why": "MA-15：委派交接与系统提醒都是 role=user，本仓有唯一权威判据 isMachineInjectedMessage",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        !isMachineInjectedMessage(m) &&\n        REMEMBER_REQUEST_PATTERN.test(m.content),",
+          "to": "        REMEMBER_REQUEST_PATTERN.test(m.content),"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4015
+    },
+    {
+      "id": "MUT-8 两个上限又混成一个计数（日志把总量上限说成待批准上限）",
+      "why": "MA-16：按那句日志去调「待批准上限」完全无效（真正 binding 的是每次提取总上限）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        if (writesTotal >= MEMORY_MAX_WRITES_PER_EXTRACTION) {\n          droppedByCap++;\n          droppedByTotalCap++;",
+          "to": "        if (writesTotal >= MEMORY_MAX_WRITES_PER_EXTRACTION) {\n          droppedByCap++;\n          droppedByTotalCap++;\n          droppedByApprovalCap++;"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4054
+    },
+    {
+      "id": "MUT-9 注入截断披露又只看原始 content（展开后超长时漏报）",
+      "why": "MA-17：注入走 resolveLinks 展开后的文本，[[X]] 会变长 ⇒ 只看原文会写「已生效」而那一行其实被截",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "  const content = textOf(injectedText ?? entry.content);",
+          "to": "  const content = textOf(entry.content);"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3968
+    },
+    {
+      "id": "MUT-10 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "export const COMPACTION_MIN_KEEP_TURNS = 3;",
+          "to": "export const COMPACTION_MIN_KEEP_TURNS = 3; /* 反向对照：行为逐字不变 */"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 4030
+    }
+  ]
+}

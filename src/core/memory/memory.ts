@@ -700,11 +700,24 @@ export const MEMORY_INJECT_LINE_MAX = 200;
  *
  * 判据与 `formatLine` 用的是同一个常量 —— 两处口径不会分叉。
  */
-export function injectionTruncationNote(entry: Pick<MemoryEntry, "content">): string | null {
-  const content = textOf(entry.content);
-  const shown = Math.min(content.length, MEMORY_INJECT_LINE_MAX);
+export function injectionTruncationNote(
+  entry: Pick<MemoryEntry, "content">,
+  /**
+   * ★ 第 228 波审计（第三轮·低）：判定要用**真正会被注入的那段文本**。
+   * 注入走的是 `resolveLinks()` **展开后**的文本（`[[X]]` 会替换成一段引用，长度会变），
+   * 而这里原来读的是原始 content ⇒ content ≤ 200 但展开后 > 200 时**漏报**（界面写"已生效"，
+   * 而那一行其实被截过）。默认参数保持"只看原文"，调用方（面板）传展开后的文本。
+   */
+  injectedText?: string,
+): string | null {
+  const content = textOf(injectedText ?? entry.content);
   if (content.length <= MEMORY_INJECT_LINE_MAX) return null;
-  return `注入时只取前 ${MEMORY_INJECT_LINE_MAX} 字符（本条 ${content.length} 字符，其余 ${content.length - shown} 字符不会进上下文）`;
+  /**
+   * ⚠️ 措辞刻意**不报精确字符数**：注入用的是 `resolveLinks()` 处理**之后**的文本
+   * （`[[链接]]` 会被替换，长度可能与这里读到的 `content` 不同）⇒ 报具体数字反而可能不准。
+   * 这条披露要守的是"用户以为整条都进了上下文"这件事，说清规则即可。
+   */
+  return `注入时只取前 ${MEMORY_INJECT_LINE_MAX} 字符（本条内容更长，超出部分不会进上下文）`;
 }
 
 /** 快照/批次参数 */
@@ -2131,6 +2144,28 @@ export class MemoryService {
   }
 
   /** 容量上限（界面/命令用它如实报告"为什么写不进去"） */
+  /**
+   * ★ 第 228 波审计（第三轮·中）：把**三道闸的真实读数**一次给出去。
+   * 被守的缺陷：容量有三种闸（per-scope 条数 / 跨桶总量 / payload 体积），而给用户的补救建议
+   * 只报 per-scope 上限（"调大上限后重试（上限：1000 条/作用域）"）—— 当真正 binding 的是总量或
+   * 体积时，按那句话操作完全无效。
+   */
+  /**
+   * ★ 第 228 波审计（第三轮）：**这条记忆真正会被注入的正文**（链接展开之后）。
+   * 界面用它做截断披露 —— 披露必须与注入用同一段文本，否则会漏报（content ≤ 200 但展开后 > 200）。
+   */
+  injectionTextFor(entry: Pick<MemoryEntry, "content" | "key" | "id">): string {
+    return this.resolveLinks(entry as MemoryEntry);
+  }
+
+  getMemoryLimits(): { maxEntriesPerScope: number; maxTotalEntries: number; payloadBudgetBytes: number } {
+    return {
+      maxEntriesPerScope: this.config.maxEntries,
+      maxTotalEntries: this.config.maxTotalEntries,
+      payloadBudgetBytes: MEMORY_PAYLOAD_BUDGET_BYTES,
+    };
+  }
+
   getMaxEntries(): number {
     return this.config.maxEntries;
   }

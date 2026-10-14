@@ -170,7 +170,12 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
    */
   const keepCountPlanned = Math.min(
     messages.length,
-    Math.max(Math.min(MANUAL_KEEP_MESSAGES, messages.length), compactionMinKeep(messages, 4).minKeep),
+    Math.max(
+      Math.min(MANUAL_KEEP_MESSAGES, messages.length),
+      /* ★ 第 228 波审计（第三轮）：保底要在**真实消息**上数 —— 压缩标记也是 role=user，
+         把它算作一轮会让"最近 3 轮"少算一整轮真实对话（自动路径已同样处理） */
+      compactionMinKeep(messages.filter((m) => !isCompactionMarker(m)), 4).minKeep,
+    ),
   );
   /**
    * 折叠保留集里的旧摘要标记（见函数头第 3 点）：保留集要从"最后一个旧标记"之后开始，
@@ -204,7 +209,17 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
    * 摘要的字符上限按"这次要移除多少字符"给（下界 800、上界沿用 8000）。
    * 原来的固定 8000 在"移除几百字符"的会话上会让上下文变大（用户看到"点了压缩，占用没降"）。
    */
-  const removedChars = messagesToRemove.reduce((sum, m) => {
+  /**
+   * ★ 第 228 波审计（第三轮·高）：**旧标记的字符不能算进"被压缩的内容"**。
+   *
+   * 被守的缺陷：`removedChars` 原来把待删集里那条旧标记的正文也算进去，而它的正文同时又要
+   * 作为**级联摘要**原样保留（且它这一轮会被软删 ⇒ 那是唯一的副本）⇒ 预算被"自己"吃掉一次，
+   * 待删集只剩一条旧标记时 `historyBudget` 恒为 0 ⇒ `summary.slice(0, 0)` 把级联整段删掉
+   * ⇒ **累积摘要静默、不可恢复地消失**（而代码注释还承诺"旧摘要一律保留"）。
+   * 现在：预算只由**真实内容**（非标记）决定，级联段永不参与裁剪。
+   */
+  const compressibleMessages = messagesToRemove.filter((m) => !isCompactionMarker(m));
+  const messageChars = (m: (typeof messagesToRemove)[number]): number => {
     let chars = typeof m.content === "string" ? m.content.length : 0;
     if (Array.isArray(m.toolCalls)) {
       for (const tc of m.toolCalls) {
@@ -218,8 +233,9 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
         }
       }
     }
-    return sum + chars;
-  }, 0);
+    return chars;
+  };
+  const removedChars = compressibleMessages.reduce((sum, m) => sum + messageChars(m), 0);
   /**
    * ★ 第 228 波审计修复（中）：**旧标记不再被渲染第二遍**。
    *
@@ -229,7 +245,7 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
    * ⇒ 用户连按两次手动压缩，标记长度近似翻倍（**上下文变大**，与本节承诺相反）。
    * 标记的正文已经原样保留在下面那段"以下是之前的摘要"里，无需重复收录。
    */
-  const historyForSummary = messagesToRemove.filter((m) => !isCompactionMarker(m));
+  const historyForSummary = compressibleMessages;
   let summary = renderStructuredHistorySummary(historyForSummary, {
     userChars: 2000,
     assistantChars: 1500,
@@ -237,24 +253,21 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
     totalChars: Math.max(800, Math.min(8000, removedChars)),
   });
   /**
-   * 上一次压缩的摘要必须**原样带进新摘要**（级联），否则手动压缩第二次开始就把
-   * 前一次的结论丢掉。折叠逻辑已经把它取出来了（`folded.existingSummary`）。
-   */
-  if (folded.existingSummary) {
-    summary = `以下是之前的摘要（继续保留）：\n${folded.existingSummary}\n\n本次新增历史：\n${summary}`;
-  }
-  /**
    * ★ 第 228 波审计修复：**手动压缩同样不许让上下文变大** —— 整条标记的字符上限按
-   * "这次移除的内容有多少字符"给（下界 800）。超限时只裁"本次新增历史"那段，
-   * 旧摘要（级联）与"已移除/保留"收尾一律保留，并如实写出裁剪量。
+   * "这次移除的**真实内容**有多少字符"给（下界 800）。超限时只裁"本次新增历史"那段，
+   * **级联的旧摘要一律保留**（它这一轮要被删掉，是唯一副本），并如实写出裁剪量。
    */
+  const cascadePrefix = folded.existingSummary
+    ? `以下是之前的摘要（继续保留）：\n${folded.existingSummary}\n\n本次新增历史：\n`
+    : "";
   const markerBudget = Math.max(800, removedChars);
-  const fixedLen = `[上下文已手动压缩]\n\n以下是之前对话的摘要：\n\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`.length;
-  const historyBudget = Math.max(0, markerBudget - fixedLen - (folded.existingSummary?.length ?? 0));
+  const fixedLen = `[上下文已手动压缩]\n\n以下对话的摘要：\n${cascadePrefix}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`.length;
+  const historyBudget = Math.max(0, markerBudget - fixedLen);
   if (summary.length > historyBudget) {
     const dropped = summary.length - historyBudget;
     summary = `${summary.slice(0, historyBudget)}\n（本次新增历史已按压缩预算裁剪 ${dropped} 字符）`;
   }
+  summary = `${cascadePrefix}${summary}`;
 
   const removedIds = messagesToRemove.map(m => m.id);
   const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
@@ -265,7 +278,7 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
    * 连同归属一起被抢走。
    */
   const markerId = nextCompactionMarkerId("manual");
-  const markerContent = `[上下文已手动压缩]\n\n以下是之前对话的摘要：\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`;
+  const markerContent = `[上下文已手动压缩]\n\n以下对话的摘要：\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`;
   const messagesBefore = messages.length;
   const messagesAfter = keepCount + 1;
 

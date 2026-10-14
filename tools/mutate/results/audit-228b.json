@@ -1,8 +1,8 @@
 {
   "wave": "audit-228b",
   "description": "第 228 波·审计轮第二批：把审计报告里「已定位待修」的五条 + 两处诚实性缺口修掉并自证 —— 跨所有桶的总量上限、payload 超预算拒绝自动写入、「批量保留为平台级」只落一次库（新增 MemoryService.updateMany）、注入截断披露、回退到迁移前先等在途队列、面板单条动作如实回执、体检批量同意的「归属已失效」回执、旧池暂停开关确认式落库。",
-  "runAt": "2026-10-14T03:15:41.609Z",
-  "specFingerprint": "2dc0a6e42d0cd2496e42aa902ec496b07a3fe2e5",
+  "runAt": "2026-10-14T04:01:10.017Z",
+  "specFingerprint": "ad0f762cbdbe4573e5c9f8234f636532b8b788ed",
   "files": [
     "src/core/memory/memory.ts",
     "src/components/MemoryManager.tsx",
@@ -33,7 +33,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2416
+      "ms": 2281
     },
     {
       "id": "MUT-2 payload 超预算又只上报不拒绝（体积无界）",
@@ -53,7 +53,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2503
+      "ms": 2367
     },
     {
       "id": "MUT-3 批量保留为平台级又逐条落库（29 条 = 29 次整份写）",
@@ -73,7 +73,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2357
+      "ms": 2229
     },
     {
       "id": "MUT-4 注入截断又不披露（界面写「已生效（参与上下文）」而 9800 字符没进上下文）",
@@ -93,7 +93,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2361
+      "ms": 2263
     },
     {
       "id": "MUT-5 回退到迁移前不等在途队列（界面说已回退、重启后回退不存在）",
@@ -113,7 +113,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2439
+      "ms": 2210
     },
     {
       "id": "MUT-6 面板单条动作又不等落库（界面显示已删除、重启后回来）",
@@ -133,7 +133,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4215
+      "ms": 3958
     },
     {
       "id": "MUT-7 体检批量同意的回执不再数「归属已失效」（回执承诺做不到的事）",
@@ -141,8 +141,8 @@
       "patches": [
         {
           "file": "src/components/MemoryCheckupView.tsx",
-          "from": "    const ownerGone = ids.reduce((n, id) => {",
-          "to": "    const ownerGone = 0; const _unusedOwnerGone = (ids.reduce as never as (f: unknown, init: number) => number); void _unusedOwnerGone; const _skip = ((n: number, id: string) => {"
+          "from": "    const ownerGone = countOwner.stale;",
+          "to": "    const ownerGone = 0;"
         }
       ],
       "tests": [
@@ -153,7 +153,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 5322
+      "ms": 5003
     },
     {
       "id": "MUT-8 旧池暂停开关退回非确认式写入（界面说已暂停、磁盘没写）",
@@ -173,7 +173,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2362
+      "ms": 2327
     },
     {
       "id": "MUT-9 反向对照：只改一行说明注释",
@@ -194,7 +194,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4176
+      "ms": 3835
     }
   ]
 }

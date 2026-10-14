@@ -1,0 +1,57 @@
+{
+  "description": "第 228 波·审计轮第三批（自查改动过的代码）：压缩侧的「最近 3 轮」保底又被标记顶替（任何压缩标记都不算一轮）、保留条数为 0 时的防御闸（slice(-0) 会取全部）；记忆侧的「归属已失效」回执数字只许数真正被批准的那批。逐条变异自证。",
+  "mutations": [
+    {
+      "id": "MUT-1 保底又把压缩标记当成一轮（最近 3 轮少算一整轮真实对话）",
+      "why": "CA-21：标记是 role=user ⇒ 只过滤 staleSet 时，落在保留集里的旧标记仍被算成一轮 ⇒ `slice(-floor)` 把最近 3 轮的第一条挤出去",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      const realMessages = messages.filter(\n        (m: any) => !staleSet.has(m.id) && !isCompactionMarker(m),\n      );",
+          "to": "      const realMessages = messages.filter((m: any) => true);"
+        }
+      ],
+      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 保留条数为 0 的防御闸被拆掉（slice(-0) 等于取全部）",
+      "why": "CA-19：纯函数在 totalMessages=0 时返回 keepCount=0，而调用方写的是 slice(-keepCount)",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "    if (keepCount <= 0) {\n      console.warn(\"[compactMessages] 保留条数为 0（没有可保留的消息）⇒ 本次不压缩（slice(-0) 会取全部）\");\n      return 0;\n    }",
+          "to": "    if (false && keepCount <= 0) {\n      return 0;\n    }"
+        }
+      ],
+      "tests": ["src/test/compaction-audit-228.test.ts"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 「归属已失效」的条数把被跳过的条目也数进去（回执数字比实际多）",
+      "why": "MEM-CHECK-3e：批准之后 status 已变，再按所有勾选 id 数会把「本来就不在待批准状态」的条目算进来",
+      "patches": [
+        {
+          "file": "src/components/MemoryCheckupView.tsx",
+          "from": "    const pendingBeforeApproval = ids.filter((id) => {\n      const entry = service.get(id);\n      return !!entry && isPendingMemoryEntry(entry);\n    });",
+          "to": "    const pendingBeforeApproval = ids;"
+        }
+      ],
+      "tests": ["src/test/memory-checkup.test.tsx"],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "    if (plan.shrunk) {",
+          "to": "    /* 反向对照：行为逐字不变 */ if (plan.shrunk) {"
+        }
+      ],
+      "tests": ["src/test/compaction-audit-228.test.ts", "src/test/memory-checkup.test.tsx"],
+      "expectRed": false
+    }
+  ]
+}

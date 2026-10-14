@@ -1,8 +1,8 @@
 {
   "wave": "context-memory-228",
   "description": "第 228 波（用户要求）：①压缩改成**按距离分档** —— 近端最近 3 轮绝不切断（token 收缩只许切更老的部分）、中间档走确定性结构化要点（不调 LLM）、更早的才交给 LLM 检查点且**分块全覆盖**（不再掐中段），连分块都装不下的最老部分降级成最低保真清单并明写出来；②记忆自动提取降噪与去自相矛盾 —— project 的例子不再列技术栈/目录/构建命令（守住与门槛的一致性）、每轮待批准上限 3→2、**名额只在真写出一条待批准条目时扣**（重复项与已拒绝项不再占名额）。",
-  "runAt": "2026-10-14T02:39:45.443Z",
-  "specFingerprint": "d73619ffc5f6c17e8fa2a574e6a2d84f43579017",
+  "runAt": "2026-10-14T04:00:28.599Z",
+  "specFingerprint": "41de1a5dbed544af7afc2fc5c23842a5620fab00",
   "files": [
     "src/core/llm/agentic-loop.ts",
     "src/core/llm/compaction-budget.ts",
@@ -21,7 +21,7 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "        const floor = compactionMinKeep(messages, MIN_KEEP_MESSAGES);",
+          "from": "        const floor = compactionMinKeep(realMessages, MIN_KEEP_MESSAGES);",
           "to": "        const floor = { minKeep: MIN_KEEP_MESSAGES, turnsCovered: 0, cappedByMax: false };"
         }
       ],
@@ -33,7 +33,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4429
+      "ms": 3661
     },
     {
       "id": "MUT-2 中间档被整个丢掉（那 20 条直接消失）",
@@ -41,8 +41,8 @@
       "patches": [
         {
           "file": "src/core/llm/agentic-loop.ts",
-          "from": "    const middleDigest = middleBand.length > 0",
-          "to": "    const middleDigest = false && middleBand.length > 0"
+          "from": "    const middleForDigest = middleBand.filter((m: any) => !isCompactionMarker(m));",
+          "to": "    const middleForDigest = middleBand.slice(0, 0);"
         }
       ],
       "tests": [
@@ -53,7 +53,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4063
+      "ms": 3661
     },
     {
       "id": "MUT-3 分块装不下的部分**静默丢掉**（回到「掐中段」）",
@@ -73,7 +73,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4085
+      "ms": 3661
     },
     {
       "id": "MUT-4 标记不再写保真度（模型会把最低保真的清单当成完整事实）",
@@ -93,7 +93,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4148
+      "ms": 3846
     },
     {
       "id": "MUT-5 每轮待批准上限退回 3（用户的决策量回到上限）",
@@ -113,7 +113,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4553
+      "ms": 3629
     },
     {
       "id": "MUT-6 重复项又占名额（真缺陷回归：3 条重复把名额占满）",
@@ -133,7 +133,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4461
+      "ms": 3642
     },
     {
       "id": "MUT-7 提示词又拿「技术栈/目录约定/构建测试命令」当 project 的例子（自相矛盾回来了）",
@@ -153,7 +153,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4089
+      "ms": 3632
     },
     {
       "id": "MUT-8 手动压缩不按轮次保底（两处口径分叉）",
@@ -161,8 +161,8 @@
       "patches": [
         {
           "file": "src/components/ContextMonitor.tsx",
-          "from": "    Math.max(Math.min(MANUAL_KEEP_MESSAGES, messages.length), compactionMinKeep(messages, 4).minKeep),",
-          "to": "    Math.min(MANUAL_KEEP_MESSAGES, messages.length),"
+          "from": "      compactionMinKeep(messages.filter((m) => !isCompactionMarker(m)), 4).minKeep,",
+          "to": "      compactionMinKeep(messages, 4).minKeep,"
         }
       ],
       "tests": [
@@ -173,7 +173,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3971
+      "ms": 3646
     },
     {
       "id": "MUT-9 分块只摘要第一块（覆盖不全 = 又回到「后面的历史没人看」）",
@@ -193,7 +193,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4025
+      "ms": 3617
     },
     {
       "id": "MUT-10 反向对照：只改一行说明注释",
@@ -214,7 +214,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3696
+      "ms": 3440
     }
   ]
 }

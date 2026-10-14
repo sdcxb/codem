@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 第 228 波·**审计轮**判据：四个独立审计（压缩核心 / 压缩生命周期 / 记忆提取 / 记忆注入）
  * 挖出的真缺陷，逐条钉住。每条都写明「被守的缺陷形态」，实现改坏必须变红。
  *
@@ -69,6 +69,8 @@ function makeMessages(turns: number) {
 
 let summaryCalls = 0;
 let summaryShouldThrow = false;
+/** 回声模式（见 makeLoop）：把摘要输入原样返回，便于断言"级联进没进 LLM 的输入" */
+let summaryShouldEcho = false;
 
 function makeLoop() {
   const provider = {
@@ -77,9 +79,18 @@ function makeLoop() {
     async *stream() {
       yield { type: "text_end", text: "" };
     },
-    async complete() {
+    async complete(req: { messages?: Array<{ role?: string; content?: string }> }) {
       summaryCalls += 1;
       if (summaryShouldThrow) throw new Error("provider down");
+      /**
+       * ★ 第 228 波审计（第三轮）：**回声模式** —— 把收到的摘要输入原样返回。
+       * 这样"旧摘要有没有作为级联输入进到 LLM"就是可断言的**产物**（而不是读代码推定），
+       * 同时能数它在新标记里出现了几次（重复 = 中间档又把旧标记渲染了一遍）。
+       */
+      if (summaryShouldEcho) {
+        const input = String(req?.messages?.find((m) => m.role === "user")?.content ?? "");
+        return { content: input, usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, finishReason: "stop" };
+      }
       return { content: `检查点#${summaryCalls}`, usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, finishReason: "stop" };
     },
     async listModels() {
@@ -100,6 +111,7 @@ beforeEach(() => {
   appendTombstoneMock.mockReset();
   summaryCalls = 0;
   summaryShouldThrow = false;
+  summaryShouldEcho = false;
 });
 
 afterEach(() => {
@@ -260,6 +272,8 @@ describe("CA：压缩审计修复（第 228 波）", () => {
       timestamp: 999,
     });
     listMessagesMock.mockReturnValue(messages);
+    /* 回声模式：把 LLM 收到的摘要输入原样返回 ⇒ "级联有没有进 LLM"成为可断言的产物 */
+    summaryShouldEcho = true;
     const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
     await loop.compactMessages("s-ca9");
 
@@ -269,7 +283,12 @@ describe("CA：压缩审计修复（第 228 波）", () => {
       "最近 3 轮的真实消息一条都不许删（折叠后必须重新夹回轮次保底）",
     ).toEqual([]);
     expect(removedIds, "该删的是那条旧标记（它的正文已经级联进新标记）").toContain("marker-tail");
-    expect(String(createMessageMock.mock.calls[0][0].content), "旧摘要内容要级联进新标记").toContain("关键约束是 W");
+    const ca9Marker = String(createMessageMock.mock.calls[0][0].content);
+    expect(ca9Marker, "旧摘要必须作为级联输入进到 LLM（回声模式下能看到它）").toContain("关键约束是 W");
+    expect(
+      ca9Marker.split("关键约束是 W").length - 1,
+      "而且只许出现一次 —— 中间档要点不许把旧标记再渲染一遍（第三轮审计抓到的重复）",
+    ).toBe(1);
   });
 
   it("CA-10（行为）：软删要带上会话 id —— 镜像被逐出时也要能判归属（否则消息会复活）", () => {
@@ -368,6 +387,59 @@ describe("CA：压缩审计修复（第 228 波）", () => {
     expect(isCompactionInProgress("B"), "A 结束不影响 B").toBe(true);
     setCompactionInProgress("B", false);
     expect(isCompactionInProgress(), "全部结束 ⇒ 不传参的「任何会话在压缩中」也为假").toBe(false);
+  });
+
+  it("CA-19（第三轮自查）：保留条数为 0 时必须当场退出（`slice(-0)` 等于取全部）", () => {
+    /*
+     * 纯函数在 `totalMessages === 0` 时返回 `keepCount: 0`（这是对的，见 CA-2），
+     * 而调用方紧接着写的是 `messages.slice(-keepCount)` —— **JS 里 `slice(-0) === slice(0)`**，
+     * 于是"保留 0 条"会变成"保留全部"，`messages.slice(0, len - 0)` 又会算成"删掉全部"。
+     * ⚠️ 如实记：这条是**防御性**断言（源码级）—— 当前 `messages.length <= 2` 会先返回，
+     * 所以那个分支在现有实现里走不到；一旦有人改掉那个早返回，它就是最后一道闸。
+     */
+    const src = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
+    expect(src, "keepCount<=0 要当场退出").toMatch(/if \(keepCount <= 0\) \{[\s\S]{0,200}?return 0;/);
+    expect(src, "并说明为什么（slice(-0) 会取全部）").toContain("slice(-0)");
+  });
+
+  it("CA-20（第三轮自查）：轮次保底要在真实消息上数（压缩标记也是 role=user）", () => {
+    const src = readFileSync(path.resolve(__dirname, "../core/llm/agentic-loop.ts"), "utf8");
+    expect(
+      src,
+      "压缩标记会被 `compactionMinKeep` 当成一轮 ⇒ 「最近 3 轮」少算一整轮真实对话（保底偏小）",
+    ).toMatch(/const realMessages = messages\.filter\(\(m: any\) => !isCompactionMarker\(m\)\);\s*\n\s*const floor = compactionMinKeep\(realMessages, MIN_KEEP_MESSAGES\)/);
+  });
+
+  it("CA-21（第三轮自查·行为）：压缩标记不许顶替「最近 3 轮」里的一个真实轮次", async () => {
+    /*
+     * 形态：尾部有一条**用户粘回来的**压缩标记（`role=user` + 前缀），
+     * 而 `compactionMinKeep` 是按 `role === "user"` 数轮次的 ⇒ 它会把标记当成一轮，
+     * 「最近 3 轮」于是少算一整轮真实对话（保底偏小 ⇒ 那一轮的真实消息被删掉）。
+     */
+    const messages = makeMessages(20); // 40 条真消息（20 轮）
+    messages.splice(37, 0, {
+      id: "marker-in-tail",
+      role: "user",
+      content: "[上下文已自动压缩]\n\n旧摘要：方案是 Y",
+      timestamp: 999,
+    }); // 41 条：u18 在 36、标记在 37、a18 在 38、u19 在 39、a19 在 40
+    /* 尾部几条放大，逼着「按体积收缩」一路收缩到轮次保底 */
+    for (const m of messages) {
+      if (["a18", "a19", "u19"].includes(String(m.id))) {
+        (m as { toolCalls: Array<{ result: string }> }).toolCalls = [
+          { id: "huge", tool: "read", args: {}, result: "巨".repeat(400_000) },
+        ];
+      }
+    }
+    listMessagesMock.mockReturnValue(messages);
+    const loop = makeLoop() as never as { compactMessages: (s: string) => Promise<number> };
+    await loop.compactMessages("s-ca21");
+
+    const removedIds: string[] = deleteMessagesByIdsMock.mock.calls[0][0];
+    expect(
+      removedIds.filter((id) => ["u17", "a17"].includes(id)),
+      "标记不许顶掉一个真实轮次：最近 3 轮（u17..a19 里剔除标记）里的真实消息一条都不许删",
+    ).toEqual([]);
   });
 
   it("CA-15（反向对照）：这些修复不许把「压缩无效」路径删掉（仍要如实上报）", () => {

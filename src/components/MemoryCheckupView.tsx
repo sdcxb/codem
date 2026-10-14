@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 「记忆体检」视图（设置 → 记忆体检）。
  *
  * ## 这个视图存在的理由
@@ -193,6 +193,15 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
    */
   const applyApprove = async (ids: string[], what: string) => {
     const service = getMemoryService();
+    /**
+     * ★ 第 228 波审计（第三轮自查）：归属判定要在**批准之前**先把"确实处于待批准"的 id 圈出来 ——
+     * `approveMany` 之后 status 已经变了，此时再按"所有勾选的 id"数，会把**本来就不在待批准状态**
+     * （被跳过、没被批准）的条目也算进"归属已失效"，回执里那个数字就不准了。
+     */
+    const pendingBeforeApproval = ids.filter((id) => {
+      const entry = service.get(id);
+      return !!entry && isPendingMemoryEntry(entry);
+    });
     const result = service.approveMany(ids);
     const landed = await service.flushPendingPersist();
     /**
@@ -203,24 +212,43 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
      * 「归属已失效（目标项目/对话不存在）」那一组（projectId 指向已删除的临时工作区）批准之后
      * **一条都进不了任何上下文**，而回执写着"它们从现在起参与上下文" —— 同屏的组徽标还写着
      * 「不进上下文：不在当前项目/对话的作用域内」（自相矛盾，用户会以为批准没生效）。
-     * 这里按**同一份归属索引**（`buildOwnershipIndex`，体检分组用的就是它）把这类条目数出来。
+     * 这里按**同一份归属索引**（`ownershipIndex`，体检分组用的就是它）把这类条目数出来。
      */
-    /* 复用上面那份 useMemo 建的归属索引（不额外打存储、与分组同一口径） */
-    const index = ownershipIndex;    const ownerGone = ids.reduce((n, id) => {
-      const entry = service.get(id);
-      if (!entry || entry.scope === "platform") return n;
-      const resolved =
-        entry.scope === "project" ? index.resolveProject(entry.projectId) : index.resolveSession(entry.sessionId);
-      return resolved.ok ? n : n + 1;
-    }, 0);
+    const index = ownershipIndex;
+    /**
+     * ★ 第 228 波审计（第三轮·中）：口径必须与**分组**一致。
+     * 「归属已失效」在体检里的定义是「**有**归属键、但目标解析不到」（见 checkup.ts 的分组），
+     * 而**没有归属键**的旧数据是另一组「归属未知（从来没有归属）」——
+     * 把两者混成一个数字，回执就会与同屏的组头自相矛盾。
+     */
+    const countOwner = pendingBeforeApproval.reduce(
+      (acc, id) => {
+        const entry = service.get(id);
+        if (!entry || entry.scope === "platform") return acc;
+        const rawOwner = entry.scope === "project" ? entry.projectId : entry.sessionId;
+        if (!rawOwner) {
+          acc.missing += 1;
+          return acc;
+        }
+        const resolved =
+          entry.scope === "project" ? index.resolveProject(rawOwner) : index.resolveSession(rawOwner);
+        if (!resolved.ok) acc.stale += 1;
+        return acc;
+      },
+      { stale: 0, missing: 0 },
+    );
+    const ownerGone = countOwner.stale;
+    const ownerMissing = countOwner.missing;
     setSelected(new Set());
     setNotice(
       `${what}：批准 ${result.changed} 条` +
         (result.capacityBlocked > 0 ? `（${result.capacityBlocked} 条因子记忆容量已满被拒绝，未改动）` : "") +
         (result.skipped > 0 ? `（${result.skipped} 条不在待批准状态，未改动）` : "") +
         (landed
-          ? ownerGone > 0
-            ? `，已落库；但其中 ${ownerGone} 条**归属已失效**（目标项目/对话不存在）⇒ 仍不会进任何上下文，建议删除。`
+          ? ownerGone > 0 || ownerMissing > 0
+            ? `，已落库；但其中 ${ownerGone > 0 ? `${ownerGone} 条**归属已失效**（目标项目/对话不存在）` : ""}` +
+              `${ownerGone > 0 && ownerMissing > 0 ? "、" : ""}` +
+              `${ownerMissing > 0 ? `${ownerMissing} 条**从来没有归属键**` : ""}⇒ 仍不会进任何上下文，建议删除。`
             : "，已落库；它们从现在起参与上下文。"
           : `，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些批准会失效）。`) +
         `未勾选的条目一条都没动。`,
