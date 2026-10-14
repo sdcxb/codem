@@ -384,6 +384,41 @@ describe("MA（第三批）：记忆侧", () => {
     spy.mockRestore();
   });
 
+  it("MA-25（全量审计·高）：consolidate 的配对只在同一归属键内（跨项目不许互相吞）", () => {
+    /*
+     * 被守的缺陷：原来只按 scope 分组 ⇒ 项目 A 与项目 B 的同名条目互相配对，
+     * 一条被删、正文搬进另一条（B 的事实开始在 A 里注入、B 自己没了），而回执说「对话级一条未动」。
+     */
+    const svc = new MemoryService();
+    const alpha = svc.add({
+      scope: "project",
+      projectId: "c:\\work\\alpha",
+      key: "重复项",
+      content: "ALPHA_SAME_CONTENT 自动条目正文",
+      source: "auto",
+    });
+    const beta = svc.add({
+      scope: "project",
+      projectId: "c:\\work\\beta",
+      key: "重复项",
+      content: "BETA_SAME_CONTENT 自动条目正文",
+      source: "auto",
+    });
+    svc.consolidate({ maxAgeDays: 90 });
+    expect(svc.get(alpha.entry!.id), "A 项目的条目必须在").toBeDefined();
+    expect(svc.get(beta.entry!.id), "B 项目的条目也必须在（不许被 A 吞掉）").toBeDefined();
+  });
+
+  it("MA-26（全量审计·高）：合并后会超长 ⇒ 放弃合并（不许静默截断后删源条目）", () => {
+    const svc = new MemoryService({ maxContentLength: 200 } as never);
+    const a = svc.add({ scope: "platform", key: "长条目", content: "A".repeat(150), source: "auto" });
+    const b = svc.add({ scope: "platform", key: "长条目", content: "B".repeat(150), source: "auto" });
+    svc.consolidate({ maxAgeDays: 90 });
+    const alive = [svc.get(a.entry!.id), svc.get(b.entry!.id)].filter(Boolean);
+    expect(alive.length, "超长就不合并 ⇒ 两条原文都要在（不许删掉源条目）").toBe(2);
+    expect(alive.map((e) => e!.content.length), "两条都保持原长（没被截断）").toEqual([150, 150]);
+  });
+
   it("MA-18：内存上限的读数要给出**三道闸**（而不是只有 per-scope）", () => {
     const limits = new MemoryService().getMemoryLimits();
     expect(limits.maxEntriesPerScope, "每个作用域条数").toBeGreaterThan(0);

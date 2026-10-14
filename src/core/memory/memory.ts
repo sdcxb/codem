@@ -4613,9 +4613,24 @@ export class MemoryService {
     const allEntries = Array.from(this.entries.values());
 
     // --- 1. Deduplication（自动**且已批准**的条目之间；手动与 pending 都不参与） ---
-    for (const scope of ["platform", "project", "conversation"] as MemoryScope[]) {
-      const scopedEntries = allEntries
-        .filter(e => e.scope === scope)
+    /**
+     * ★ 全量审计（高）：配对**必须在同一归属键内**。
+     *
+     * 被守的缺陷：原来只按 scope 分组 ⇒ 项目 A 的条目与项目 B 的条目会互相配对，
+     * 一条被删、正文搬进另一条 ⇒ B 的事实开始在 A 里注入、B 自己彻底没了（跨项目串味），
+     * 而回执还写着"对话级条目一条未动"。分组键 = scope + 归属键（platform 无归属键，自成一组）。
+     */
+    const consolidationBuckets = new Map<string, typeof allEntries>();
+    for (const e of allEntries) {
+      const ownerKey = e.scope === "project" ? e.projectId ?? "" : e.scope === "conversation" ? e.sessionId ?? "" : "";
+      const groupKey = `${e.scope}::${ownerKey}`;
+      const list = consolidationBuckets.get(groupKey);
+      if (list) list.push(e);
+      else consolidationBuckets.set(groupKey, [e]);
+    }
+
+    for (const scopedEntriesAll of consolidationBuckets.values()) {
+      const scopedEntries = scopedEntriesAll
         .filter(e => memorySourceOf(e) === "auto")
         // B6：未批准（pending）的条目不该被自动流程合并/删除
         .filter(e => !isPendingMemoryEntry(e))
@@ -4662,7 +4677,17 @@ export class MemoryService {
         }
 
         if (dupContents.length > 0) {
-          keeper.content = (keeper.content + "\n\n" + dupContents.join("\n\n")).substring(0, this.config.maxContentLength);
+          const merged = `${keeper.content}\n\n${dupContents.join("\n\n")}`;
+          /**
+           * ★ 全量审计（高）：**超长就不合并**（不许静默截断）。
+           * 被守的缺陷：原来 `.substring(0, maxContentLength)` 截断后照样删源条目 ⇒
+           * 超出部分**不可恢复**，而上报还写"正文已合并到保留的那条"（假回执）。
+           */
+          if (merged.length > this.config.maxContentLength) {
+            mergeSkippedOverLong += dupIds.length;
+            continue;
+          }
+          keeper.content = merged;
         }
 
         this.entries.set(keeperId, keeper);
@@ -4737,7 +4762,15 @@ export class MemoryService {
       reportAdvisory(
         "memory.consolidate",
         `记忆整合：合并 ${duplicatesMerged} 条重复的自动记忆（正文已合并到保留的那条）、` +
-          `按时间清理 ${staleRemoved} 条超过 ${maxAgeDays} 天的自动记忆、按容量裁剪 ${capacityTrimmed} 条。`,
+          `按时间清理 ${staleRemoved} 条超过 ${maxAgeDays} 天的自动记忆、按容量裁剪 ${capacityTrimmed} 条。` +
+          /**
+           * ★ 全量审计（中）：**放弃的合并必须报出来** ——
+           * "合并后会超长"时我们选择不合并（避免不可恢复的截断），
+           * 但用户点了整合却什么都没发生，得让他知道原因。
+           */
+          (mergeSkippedOverLong > 0
+            ? `另有 ${mergeSkippedOverLong} 条因为「合并后会超过单条内容上限」而**没有**合并（原文都保住了，可手工整理）。`
+            : ""),
         {
           title: "记忆整合结果",
           nextStep:
