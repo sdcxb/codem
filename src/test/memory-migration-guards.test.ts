@@ -881,9 +881,16 @@ describe("I1 / I5 / I6 / S1 / S3 / S4：写路径与注入预算", () => {
     expect(memoryWrites(port).length, "批次本身还没落库（无变化不写）").toBe(before);
     target.finalizeBatch(batch, 0);
 
-    // 幽灵批次：provider 未配置时**不建批次**（llm 侧早退），这里直接验证"没有可撤销的批次列表里不该有 0 条空批次"
+    /**
+     * ★ 全量审计（2026-10）：这条原来是**恒真断言**（`b.count === 0 ? true : true`）——
+     * 也就是说"幽灵批次"这件事从来没被真正钉住过。现在改成真断言：
+     * 可撤销列表里**不许出现 count === 0 的批次**（它既没写成任何条目，也不该占一个"可撤销"位）。
+     */
     const all = target.listBatches();
-    expect(all.every((b) => b.count === 0 ? true : true), "结构性断言见下一条").toBe(true);
+    expect(
+      all.filter((b) => b.count === 0).length,
+      "不许有 0 条的空批次（早退路径不该产生幽灵批次）",
+    ).toBe(0);
 
     // 批次有界修剪：塞 200 个批次 ⇒ 库里只留最近 N 个
     for (let i = 0; i < 200; i++) target.beginBatch(`s${i}`, "project");

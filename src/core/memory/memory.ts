@@ -3430,6 +3430,25 @@ export class MemoryService {
   finalizeBatch(batchId: string, written: number): MemoryBatch | undefined {
     const batch = this.batches.get(batchId);
     if (!batch) return undefined;
+    /**
+     * ★ 全量审计（中）：**写 0 条就不是一个批次**。
+     *
+     * 被守的缺陷：早退路径（模型返回空 / 解析失败 / 候选全被查重挡下）也会 `finalizeBatch(id, 0)` ⇒
+     * 库里留下一堆 `count: 0` 的「可撤销批次」，面板渲染成「0 条 · 撤销该批」，用户点它什么也不会发生；
+     * 而且每次都要整份写一次 payload（白烧写放大）。
+     * 现在：0 条直接丢弃（内存里也删掉），并且**不落库**。
+     */
+    if (written <= 0) {
+      this.batches.delete(batchId);
+      /**
+       * 仍要有界（修剪旧批次），并**照常落一次库**：
+       * 调用方用 `finalizeBatch(id, 0)` 当「把内存改动提交下去」的把手（既有判据依赖这一点），
+       * 而「幽灵批次」要修的是「别把 count: 0 的批次写进 payload」 —— 删掉批次再 save 两件事都成立。
+       */
+      this.pruneBatches();
+      this.save();
+      return undefined;
+    }
     batch.count = written;
     this.batches.set(batchId, batch);
     this.save();
