@@ -9036,6 +9036,18 @@ border-bottom: 1px solid var(--accent);
   border-bottom: 1px solid var(--success-surface-strong);
 }
 
+/**
+ * 「这一次压缩被跳过」的提示（第 228 波审计）。
+ *
+ * 为什么要单独一条：跳过（另一次压缩正在进行）与"压过了，移除 0 条"是**两件事** ——
+ * 用同一个绿色"已压缩"横幅会把前者说成后者（用户以为压过了）。
+ * 这里用与"进行中"同色系的克制样式：它是一个**中性**状态，不是成功也不是失败。
+ */
+.compaction-banner .compaction-skipped-hint {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 .compaction-spinner {
   display: inline-block;
   width: 12px;

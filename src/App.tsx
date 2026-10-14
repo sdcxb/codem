@@ -1537,7 +1537,7 @@ abortControllersRef.current.clear();
       console.warn("[ModelChange] Failed to persist model:", e);
     }
   }, [currentMode]);
-const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number } | null>(null);
+const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number; skipped?: boolean } | null>(null);
 const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
     resolve: (result: PermissionResult) => void;
@@ -4285,7 +4285,9 @@ flushReasoningBuffer(session.id);
 
           case "compaction_end": {
             const removed = "messagesRemoved" in event ? event.messagesRemoved : 0;
-            setCompactionStatus({ active: false, messagesRemoved: removed });
+            /* ★ 第 228 波审计（第三轮）：被跳过（另一次压缩在跑）不许显示成"已压缩" */
+            const skipped = "skipped" in event ? Boolean(event.skipped) : false;
+            setCompactionStatus({ active: false, messagesRemoved: removed, skipped });
             // Reload messages from DB since old ones were soft-deleted by compaction.
             // Do NOT call saveMessages here — the UI store's message list is stale
             // (it still contains the pre-compaction messages), and writing it back
@@ -5012,7 +5014,11 @@ onRemoveProject={(id, name, path) => {
                           {compactionStatus.active ? (
                             <><span className="compaction-spinner" /> 正在压缩上下文...</>
                           ) : (
-                            <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                            compactionStatus.skipped ? (
+                              <div className="compaction-skipped-hint">上下文压缩已跳过（另一次压缩正在进行，稍后会自动重试）</div>
+                            ) : (
+                              <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                            )
                           )}
                         </div>
                       )}
@@ -5115,7 +5121,11 @@ onRemoveProject={(id, name, path) => {
                         {compactionStatus.active ? (
                           <><span className="compaction-spinner" /> 正在压缩上下文...</>
                         ) : (
-                          <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                          compactionStatus.skipped ? (
+                            <div className="compaction-skipped-hint">上下文压缩已跳过（另一次压缩正在进行，稍后会自动重试）</div>
+                          ) : (
+                            <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                          )
                         )}
                       </div>
                     )}
@@ -5241,7 +5251,11 @@ onRemoveProject={(id, name, path) => {
                 {compactionStatus.active ? (
                   <><span className="compaction-spinner" /> 正在压缩上下文...</>
                 ) : (
-                  <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                  compactionStatus.skipped ? (
+                    <div className="compaction-skipped-hint">上下文压缩已跳过（另一次压缩正在进行，稍后会自动重试）</div>
+                  ) : (
+                    <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                  )
                 )}
               </div>
             )}

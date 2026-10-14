@@ -547,7 +547,7 @@ export type LoopEvent =
   | { type: "tool_error"; toolCall: StreamingToolCall; error: string }
   | { type: "permission_request"; request: PermissionRequest; resolve: (result: PermissionResult) => void }
   | { type: "compaction_start" }
-  | { type: "compaction_end"; messagesRemoved: number }
+  | { type: "compaction_end"; messagesRemoved: number; skipped?: boolean }
   | { type: "retry"; attempt: number; delay: number; error: string; errorType: string | null }
   | { type: "usage"; usage: TokenUsage }
   | { type: "guidance_received"; message: string; guidanceId: string }
@@ -2553,7 +2553,8 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
          * 「上下文窗口已满，即使压缩后仍无法继续」结束本轮 —— 而**一次压缩都没真正发生**。
          * 跳过的语义是"这次不算"：既不记账、也不清缓存（什么都没变）。
          */
-        yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted };
+        /* ★ 第 228 波审计（第三轮）：把"被跳过"带出去 —— 折成 0 会让界面把跳过显示成"已压缩" */
+        yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted, skipped: compacted < 0 };
         if (compacted < 0) {
           /* 被跳过：什么都不变 ⇒ 不清缓存、不计连压次数 */
         } else {
@@ -4267,7 +4268,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         if (this.config.enableReactiveCompaction) {
           yield { type: "compaction_start" };
           const compacted = await this.compactMessages(sessionId);
-          yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted };
+          yield { type: "compaction_end", messagesRemoved: compacted < 0 ? 0 : compacted, skipped: compacted < 0 };
           if (compacted < 0) {
             /* 被跳过（同一会话已有压缩在跑）⇒ 什么都不算，等下一轮重试 */
             return;

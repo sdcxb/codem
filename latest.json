@@ -1,14 +1,14 @@
 {
   "version": "1.16.319",
-  "notes": "Codem v1.16.319 — 压缩按距离分档（最近 3 轮逐字不切断 / 中间档结构化要点 / 更早的检查点摘要分块全覆盖，不再掐中段）；自动记忆降噪（每轮待批准上限 2、名额只在真写入时扣、提示词去自相矛盾）；并修完一轮压缩与记忆的深度审计（压缩不会",
-  "pub_date": "2026-10-14T03:02:29Z",
+  "notes": "Codem v1.16.319 — 压缩按距离分档（最近 3 轮逐字不切断 / 中间档结构化要点 / 更早的检查点摘要分块全覆盖）；自动记忆降噪；并修完三轮压缩与记忆的深度审计（压缩不会该收缩时不动、不会净丢摘要、手动压缩不再把级联摘要裁掉；记忆的 explicit 不再能被仓库文件或委派文本诱导绕过审批，写入量有硬上限）。",
+  "pub_date": "2026-10-14T04:30:36Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1YxUUZwSUIveHdnMUJYemxlZHVpWXJkU1VXZlcyeGRwbGk0N2duekx3NEJoWXZ4bERha2ZGZ3RXMEZwNCtiUW5tM0xhblBrcURUT204MUMxdm90alFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTQ2OTQ1CWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQpuK3Y4eVI3SndMUjVHQ05TNk5HL0dxanQ1dGpwM0hLWmc1V3o0dHlqcndWY1N5RW5ycE5rNk5RTURPSVdpNTNodXFZekRJQitPeEtQMWVnbUZCZkhEQT09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1EyVmpZeWNWN3hHNk4za0xKdnVPN0Q4ZEFIanNEOWNYVHpIQmlubmpNc2lNTGQzR3FJV1RrTlZaMUcwb0pJNm4xU2xnc2xONXlhYUZ3V0NuTmZJL3dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTUyMjMxCWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQozT2srUEpLWkZPYWJYcU9weEVTMXJWNkFmRHp4dUNlVVVNQlpZRElrYzBaS3c5anYxcWZrd1hGcDlxWEhPY2dpSEhOdTZJdHYvOWRNZWM4K0FMN25Ddz09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.319/Codem_1.16.319_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1YxUUZwSUIveHdnMUJYemxlZHVpWXJkU1VXZlcyeGRwbGk0N2duekx3NEJoWXZ4bERha2ZGZ3RXMEZwNCtiUW5tM0xhblBrcURUT204MUMxdm90alFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTQ2OTQ1CWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQpuK3Y4eVI3SndMUjVHQ05TNk5HL0dxanQ1dGpwM0hLWmc1V3o0dHlqcndWY1N5RW5ycE5rNk5RTURPSVdpNTNodXFZekRJQitPeEtQMWVnbUZCZkhEQT09Cg==",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1EyVmpZeWNWN3hHNk4za0xKdnVPN0Q4ZEFIanNEOWNYVHpIQmlubmpNc2lNTGQzR3FJV1RrTlZaMUcwb0pJNm4xU2xnc2xONXlhYUZ3V0NuTmZJL3dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTUyMjMxCWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQozT2srUEpLWkZPYWJYcU9weEVTMXJWNkFmRHp4dUNlVVVNQlpZRElrYzBaS3c5anYxcWZrd1hGcDlxWEhPY2dpSEhOdTZJdHYvOWRNZWM4K0FMN25Ddz09Cg==",
       "url": "https://github.com/sdcxb/codem/releases/download/v1.16.319/Codem_1.16.319_x64-setup.exe"
     }
   }
