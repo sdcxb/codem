@@ -3366,6 +3366,16 @@ export function deleteMessagesByIds(ids: string[], knownSessionId?: string): num
     sessions: [...bySession.keys()],
     softDeleteResponded: softDeleteResponded,
   };
+  /**
+   * ★ 全量审计（低）：**未确认归属的条数要在这一层就如实告警**（调用方拿到的
+   * `ids.length` 是"计划删多少"，而这些 id 什么都没发生 ⇒ 「移除 N 条」会高于真实值）。
+   */
+  if (unresolved > 0) {
+    console.warn(
+      `[deleteMessagesByIds] ${unresolved}/${ids.length} 条查不到归属（镜像已逐出且没给 knownSessionId）` +
+        "：这些 id 既没写墓碑也没隐藏 ⇒ 下次从日志重建时可能复活（调用方应传会话 id）",
+    );
+  }
   return ids.length;
 }
 

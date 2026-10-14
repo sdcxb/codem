@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
+﻿import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "./components/ui/portal";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -1537,7 +1537,7 @@ abortControllersRef.current.clear();
       console.warn("[ModelChange] Failed to persist model:", e);
     }
   }, [currentMode]);
-const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number; skipped?: boolean; skipReason?: string } | null>(null);
+const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number; skipped?: boolean; skipReason?: string; sessionId?: string } | null>(null);
 const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
     resolve: (result: PermissionResult) => void;
@@ -5012,7 +5012,7 @@ onRemoveProject={(id, name, path) => {
 <SlotListBridge name="bottom-panel.tabs" />
 </div>
                     <div className="panel-content">
-                      {compactionStatus && (
+                      {compactionStatus && compactionStatus.sessionId === uiSessionId && (
                         <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
                           {compactionStatus.active ? (
                             <><span className="compaction-spinner" /> 正在压缩上下文...</>
@@ -5119,7 +5119,7 @@ onRemoveProject={(id, name, path) => {
                 <div className="panel-right">
                   <div className="panel-tabs" style={{ display: "none" }}></div>
                   <div className="panel-content">
-                    {compactionStatus && (
+                    {compactionStatus && compactionStatus.sessionId === uiSessionId && (
                       <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
                         {compactionStatus.active ? (
                           <><span className="compaction-spinner" /> 正在压缩上下文...</>
@@ -5249,7 +5249,7 @@ onRemoveProject={(id, name, path) => {
           <div className="panel-tabs" style={{ display: "none" }}></div>
 
           <div className="panel-content">
-            {compactionStatus && (
+            {compactionStatus && compactionStatus.sessionId === uiSessionId && (
               <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
                 {compactionStatus.active ? (
                   <><span className="compaction-spinner" /> 正在压缩上下文...</>
