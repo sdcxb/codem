@@ -869,16 +869,26 @@ describe("FC-D4：压缩摘要累积（P1-D4 / C13）", () => {
 
     const removed = await (loop as any).doCompactMessages(S, () => ({ safe: true }));
     expect(removed, "22 条里应移除超过 20 条的那部分").toBeGreaterThan(0);
-    expect(seenRequest, "旧的手动摘要必须作为'已有摘要'进入摘要请求（改前 existingSummary 恒为空）").toContain(
-      "这是之前对话的已有摘要",
-    );
-    expect(seenRequest).toContain("必须在 Windows 上跑");
+    /*
+     * ⚠️ 第 228 波更新（行为改动，如实记）：待压集只有 2 条（< 中间档的 20 条）⇒
+     * 现在**不调 LLM 摘要**（确定性结构化要点已经全覆盖，再调一次只会更糊）——
+     * 所以"摘要请求里有没有旧摘要"这件事只在真的走摘要时才有意义。
+     * 级联本身**没有放松**：旧摘要现在由 `priorSummary` 原样写进新标记（断言在下面那条 marker 上）。
+     */
+    expect(
+      seenRequest === "" || seenRequest.includes("这是之前对话的已有摘要"),
+      "走了 LLM 摘要 ⇒ 旧摘要必须作为级联输入进请求",
+    ).toBe(true);
+    if (seenRequest) expect(seenRequest).toContain("必须在 Windows 上跑");
 
     const marker = rowsOf("messages")
       .filter((r) => r.session_id === S && String(r.content ?? "").startsWith("[上下文已自动压缩]"))
       .map((r) => String(r.content));
     expect(marker, "恰好写一条新的自动标记").toHaveLength(1);
-    expect(marker[0], "级联必须带上旧的手动摘要（改前 existingSummary 恒为空）").toContain("级联成功");
+    expect(
+      marker[0],
+      "级联必须成立：旧的手动摘要必须出现在新标记里（走摘要时由模型合并；没走摘要时我们原样带过去）",
+    ).toContain("必须在 Windows 上跑");
 
     const visible = listVisibleMessages(S).map((m) => m.id);
     expect(visible, "旧的手动标记必须被软删（不再留在上下文里）").not.toContain("marker-manual");

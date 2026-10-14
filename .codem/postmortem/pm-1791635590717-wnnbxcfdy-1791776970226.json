@@ -1,0 +1,139 @@
+{
+  "id": "pm-1791635590717-wnnbxcfdy-1791776970226",
+  "sessionId": "1791635590717-wnnbxcfdy",
+  "timestamp": 1791776970226,
+  "error": "Provider stream error: Upstream request failed: Endpoint is unavailable.",
+  "eventsReadable": true,
+  "eventSummary": {
+    "totalEvents": 83,
+    "lastEvents": [
+      {
+        "seq": 166858,
+        "type": "trajectory_step",
+        "timestamp": 1791774799264,
+        "payloadPreview": "{\"step\":{\"data\":{\"content\":\"只回答两个字：收到\"},\"id\":\"09d85ef2-2a40-47b3-a914-98775d9bfa72\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"timestamp\":1791774797720,\"type\":\"user_input\"}}"
+      },
+      {
+        "seq": 166859,
+        "type": "trajectory_step",
+        "timestamp": 1791774799264,
+        "payloadPreview": "{\"step\":{\"data\":{\"iteration\":1,\"model\":\"deepseek-flash\",\"provider\":\"deepseek\",\"toolCallCount\":0,\"usage\":{\"cacheHitTokens\":11264,\"completionTokens\":14,\"promptTokens\":22621,\"totalTokens\":22635,\"uncached"
+      },
+      {
+        "seq": 166860,
+        "type": "trajectory_step",
+        "timestamp": 1791774799264,
+        "payloadPreview": "{\"step\":{\"data\":{\"content\":\"收到\",\"iteration\":1},\"id\":\"ba102de8-9f81-4a21-adfe-f5108a2fd1b0\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"timestamp\":1791774798853,\"type\":\"assistant_output\"}}"
+      },
+      {
+        "seq": 166861,
+        "type": "user_message",
+        "timestamp": 1791775045090,
+        "payloadPreview": "{\"content\":\"你用的什么模型？1+4=？\",\"messageId\":\"user-1791775045090\"}"
+      },
+      {
+        "seq": 166862,
+        "type": "user_message",
+        "timestamp": 1791775518741,
+        "payloadPreview": "{\"content\":\"你用的什么模型？2+4=？\",\"messageId\":\"user-1791775518741\"}"
+      },
+      {
+        "seq": 166863,
+        "type": "loop_stopped",
+        "timestamp": 1791775518911,
+        "payloadPreview": "{\"iteration\":0,\"phase\":\"heartbeat\",\"reason\":\"turn_heartbeat\"}"
+      },
+      {
+        "seq": 166864,
+        "type": "trajectory_step",
+        "timestamp": 1791775520272,
+        "payloadPreview": "{\"step\":{\"data\":{\"content\":\"你用的什么模型？2+4=？\"},\"id\":\"a7909609-1081-4abd-a26c-7c8991c5484a\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"timestamp\":1791775518910,\"type\":\"user_input\"}}"
+      },
+      {
+        "seq": 166865,
+        "type": "assistant_text",
+        "timestamp": 1791775520990,
+        "payloadPreview": "{\"content\":\"我运行的模型是 `deepseek/deepseek-flash`（配置里显示的模型标识）。\\n\\n1+4 = 5。\",\"messageId\":\"assistant-1791775518764\"}"
+      },
+      {
+        "seq": 166866,
+        "type": "trajectory_step",
+        "timestamp": 1791775522272,
+        "payloadPreview": "{\"step\":{\"data\":{\"iteration\":1,\"model\":\"deepseek-flash\",\"provider\":\"deepseek\",\"toolCallCount\":0,\"usage\":{\"cacheHitTokens\":11264,\"completionTokens\":79,\"promptTokens\":22648,\"totalTokens\":22727,\"uncached"
+      },
+      {
+        "seq": 166867,
+        "type": "trajectory_step",
+        "timestamp": 1791775522272,
+        "payloadPreview": "{\"step\":{\"data\":{\"content\":\"我运行的模型是 `deepseek/deepseek-flash`（配置里显示的模型标识）。\\n\\n1+4 = 5。\",\"iteration\":1},\"id\":\"96e98143-522a-48d5-b89e-3e9a8302cb25\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"timestamp\":179"
+      },
+      {
+        "seq": 166868,
+        "type": "user_message",
+        "timestamp": 1791775547056,
+        "payloadPreview": "{\"content\":\"我切换了模型，你现在用的什么模型？2+4=？\",\"messageId\":\"user-1791775546963\"}"
+      },
+      {
+        "seq": 166869,
+        "type": "user_message",
+        "timestamp": 1791776911768,
+        "payloadPreview": "{\"messageId\":\"user-1791776911699\",\"content\":\"我切换了模型，你现在用的什么模型？2+4=？\"}"
+      },
+      {
+        "seq": 166870,
+        "type": "loop_stopped",
+        "timestamp": 1791776911816,
+        "payloadPreview": "{\"reason\":\"turn_heartbeat\",\"phase\":\"heartbeat\",\"iteration\":0}"
+      },
+      {
+        "seq": 166871,
+        "type": "trajectory_step",
+        "timestamp": 1791776913237,
+        "payloadPreview": "{\"step\":{\"id\":\"123e2603-b795-4d07-9b56-905be7612d6a\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"type\":\"user_input\",\"data\":{\"content\":\"我切换了模型，你现在用的什么模型？2+4=？\"},\"timestamp\":1791776911815}}"
+      },
+      {
+        "seq": 166872,
+        "type": "assistant_text",
+        "timestamp": 1791776919268,
+        "payloadPreview": "{\"messageId\":\"assistant-1791776911725\",\"content\":\"我现在用的模型标识是 `free-model/mimo-v2.6-flash-free`（会话环境里记录的模型名）——你切换后的模型应该是这个。\\n\\n2+4 = 6。\"}"
+      },
+      {
+        "seq": 166873,
+        "type": "trajectory_step",
+        "timestamp": 1791776921246,
+        "payloadPreview": "{\"step\":{\"id\":\"10331901-1207-4fa1-84f4-0eea27b71457\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"type\":\"llm_call\",\"data\":{\"provider\":\"free-model\",\"model\":\"mimo-v2.6-flash-free\",\"iteration\":1,\"usage\":{\"prom"
+      },
+      {
+        "seq": 166874,
+        "type": "trajectory_step",
+        "timestamp": 1791776921246,
+        "payloadPreview": "{\"step\":{\"id\":\"6f34184c-15ec-40fb-9a36-91eea83b145d\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"type\":\"assistant_output\",\"data\":{\"content\":\"我现在用的模型标识是 `free-model/mimo-v2.6-flash-free`（会话环境里记录的模型名）——你切换后的"
+      },
+      {
+        "seq": 166875,
+        "type": "user_message",
+        "timestamp": 1791776968319,
+        "payloadPreview": "{\"messageId\":\"user-1791776968318\",\"content\":\"只回答两个字：收到\"}"
+      },
+      {
+        "seq": 166876,
+        "type": "loop_stopped",
+        "timestamp": 1791776968433,
+        "payloadPreview": "{\"reason\":\"turn_heartbeat\",\"phase\":\"heartbeat\",\"iteration\":0}"
+      },
+      {
+        "seq": 166877,
+        "type": "trajectory_step",
+        "timestamp": 1791776969247,
+        "payloadPreview": "{\"step\":{\"id\":\"103f4e43-db6c-48e1-8be2-f20e8cc82da0\",\"sessionId\":\"1791635590717-wnnbxcfdy\",\"type\":\"user_input\",\"data\":{\"content\":\"只回答两个字：收到\"},\"timestamp\":1791776968432}}"
+      }
+    ]
+  },
+  "toolCallStats": {
+    "totalCalls": 0,
+    "successfulCalls": 0,
+    "failedCalls": 0,
+    "toolBreakdown": {}
+  },
+  "possibleCauses": []
+}

@@ -1,0 +1,142 @@
+{
+  "id": "pm-1790321619466-ja47ponrm-1791797666321",
+  "sessionId": "1790321619466-ja47ponrm",
+  "timestamp": 1791797666321,
+  "error": "Provider stream error: Upstream request failed: Endpoint is unavailable.（该失败来自上游免费模型侧，不是 Codem；免费池里其它模型通常仍可用 —— 在模型列表里换一个「-free」模型再试。当前模型：ling-3.1-flash-free）",
+  "eventsReadable": true,
+  "eventSummary": {
+    "totalEvents": 26,
+    "lastEvents": [
+      {
+        "seq": 9095,
+        "type": "trajectory_step",
+        "timestamp": 1790321626000,
+        "payloadPreview": "{\"step\":{\"data\":{\"iteration\":1,\"name\":\"delegate_to_session\",\"result\":\"{\\\"id\\\":\\\"\\\",\\\"name\\\":\\\"delegate_to_session\\\",\\\"input\\\":{\\\"target_session_id\\\":\\\"1790321574580-ol6lf7mk3\\\",\\\"task\\\":\\\"【会话交接】\\\\n1. "
+      },
+      {
+        "seq": 9097,
+        "type": "user_message",
+        "timestamp": 1790321626604,
+        "payloadPreview": "{\"content\":\"[SYSTEM REMINDER] You have 1 delegation task(s) that were sent but NOT collected. You MUST call wait_for_delegation for each task ID below to collect their results.\\n\\nUn-waited delegation"
+      },
+      {
+        "seq": 9098,
+        "type": "trajectory_step",
+        "timestamp": 1790321627997,
+        "payloadPreview": "{\"step\":{\"data\":{\"iteration\":2,\"model\":\"deepseek-v4-flash\",\"provider\":\"deepseek\",\"toolCallCount\":0,\"usage\":{\"cacheHitTokens\":8064,\"completionTokens\":4,\"promptTokens\":17499,\"totalTokens\":17503,\"uncache"
+      },
+      {
+        "seq": 9099,
+        "type": "trajectory_step",
+        "timestamp": 1790321627997,
+        "payloadPreview": "{\"step\":{\"data\":{\"content\":\"已派发\",\"iteration\":2},\"id\":\"6e617563-cf52-431e-aabc-4e119249c339\",\"sessionId\":\"1790321619466-ja47ponrm\",\"timestamp\":1790321626603,\"type\":\"assistant_output\"}}"
+      },
+      {
+        "seq": 9100,
+        "type": "trajectory_step",
+        "timestamp": 1790321629997,
+        "payloadPreview": "{\"step\":{\"data\":{\"iteration\":3,\"model\":\"deepseek-v4-flash\",\"provider\":\"deepseek\",\"toolCallCount\":1,\"usage\":{\"cacheHitTokens\":17408,\"completionTokens\":232,\"promptTokens\":17594,\"totalTokens\":17826,\"unca"
+      },
+      {
+        "seq": 9101,
+        "type": "trajectory_step",
+        "timestamp": 1790321629997,
+        "payloadPreview": "{\"step\":{\"data\":{\"args\":\"{\\\"task_id\\\":\\\"del-1790321625290-9w3a93myg\\\"}\",\"iteration\":3,\"name\":\"wait_for_delegation\"},\"id\":\"9b7df38a-6356-49e1-b946-0f7904632b3a\",\"sessionId\":\"1790321619466-ja47ponrm\",\"t"
+      },
+      {
+        "seq": 9102,
+        "type": "assistant_text",
+        "timestamp": 1790321630260,
+        "payloadPreview": "{\"content\":\"已派发\",\"messageId\":\"assistant-1790321625304-2\"}"
+      },
+      {
+        "seq": 9104,
+        "type": "tool_call",
+        "timestamp": 1790321635286,
+        "payloadPreview": "{\"args\":{\"task_id\":\"del-1790321625290-9w3a93myg\"},\"messageId\":\"assistant-1790321626605-3\",\"status\":\"completed\",\"tool\":\"wait_for_delegation\",\"toolCallId\":\"call_00_hNYbVw6b6CmI6cz0BDn62681\"}"
+      },
+      {
+        "seq": 9105,
+        "type": "tool_result",
+        "timestamp": 1790321635287,
+        "payloadPreview": "{\"messageId\":\"assistant-1790321626605-3\",\"result\":\"状态: completed\\n来源会话: 1790321574580-ol6lf7mk3\\n结果:\\n直接回报上一步已获取的 `C:\\\\mimo-gui` 只读列举结果（数据来自本会话前述的 `Get-ChildItem -Force`，含隐藏项；未再次枚举，未做任何写入）。\\n\\n**路径**："
+      },
+      {
+        "seq": 9108,
+        "type": "trajectory_step",
+        "timestamp": 1790321636003,
+        "payloadPreview": "{\"step\":{\"data\":{\"iteration\":3,\"name\":\"wait_for_delegation\",\"result\":\"{\\\"id\\\":\\\"\\\",\\\"name\\\":\\\"wait_for_delegation\\\",\\\"input\\\":{\\\"task_id\\\":\\\"del-1790321625290-9w3a93myg\\\"},\\\"output\\\":\\\"状态: completed\\\\"
+      },
+      {
+        "seq": 9109,
+        "type": "assistant_text",
+        "timestamp": 1790321638725,
+        "payloadPreview": "{\"content\":\"已派发（结果已取回）。\\n\\n`C:\\\\mimo-gui` 存在且非空：**33 个子目录 + 47 个文件**。\\n\\n子目录：`.art-inbox`、`.codem-cache`、`.codem-snapshots`、`.codem-tool-results`、`.deepseek-harness-ref`、`.dsh-desktop-ref`、`.eac-analy"
+      },
+      {
+        "seq": 9110,
+        "type": "trajectory_step",
+        "timestamp": 1790321640009,
+        "payloadPreview": "{\"step\":{\"data\":{\"iteration\":4,\"model\":\"deepseek-v4-flash\",\"provider\":\"deepseek\",\"toolCallCount\":0,\"usage\":{\"cacheHitTokens\":8064,\"completionTokens\":702,\"promptTokens\":18679,\"totalTokens\":19381,\"uncac"
+      },
+      {
+        "seq": 9111,
+        "type": "trajectory_step",
+        "timestamp": 1790321640009,
+        "payloadPreview": "{\"step\":{\"data\":{\"content\":\"已派发（结果已取回）。\\n\\n`C:\\\\mimo-gui` 存在且非空：**33 个子目录 + 47 个文件**。\\n\\n子目录：`.art-inbox`、`.codem-cache`、`.codem-snapshots`、`.codem-tool-results`、`.deepseek-harness-ref`、`.dsh-desktop-"
+      },
+      {
+        "seq": 166891,
+        "type": "user_message",
+        "timestamp": 1791797594599,
+        "payloadPreview": "{\"messageId\":\"user-1791797594544\",\"content\":\"只回答两个字：收到\"}"
+      },
+      {
+        "seq": 166892,
+        "type": "loop_stopped",
+        "timestamp": 1791797594630,
+        "payloadPreview": "{\"reason\":\"turn_heartbeat\",\"phase\":\"heartbeat\",\"iteration\":0}"
+      },
+      {
+        "seq": 166893,
+        "type": "trajectory_step",
+        "timestamp": 1791797596422,
+        "payloadPreview": "{\"step\":{\"id\":\"acf6a570-da4d-49c3-a940-067ed1870ba5\",\"sessionId\":\"1790321619466-ja47ponrm\",\"type\":\"user_input\",\"data\":{\"content\":\"只回答两个字：收到\"},\"timestamp\":1791797594630}}"
+      },
+      {
+        "seq": 166894,
+        "type": "user_message",
+        "timestamp": 1791797664282,
+        "payloadPreview": "{\"messageId\":\"user-1791797664281\",\"content\":\"只回答两个字：收到\"}"
+      },
+      {
+        "seq": 166895,
+        "type": "user_message",
+        "timestamp": 1791797664350,
+        "payloadPreview": "{\"messageId\":\"guidance-carryover-guide-1791797601469-0\",\"content\":\"[Runtime guidance from the user]\\nUse this as an in-progress instruction for the current run. Do not treat it as a normal chat messag"
+      },
+      {
+        "seq": 166896,
+        "type": "loop_stopped",
+        "timestamp": 1791797664357,
+        "payloadPreview": "{\"reason\":\"turn_heartbeat\",\"phase\":\"heartbeat\",\"iteration\":0}"
+      },
+      {
+        "seq": 166897,
+        "type": "trajectory_step",
+        "timestamp": 1791797664424,
+        "payloadPreview": "{\"step\":{\"id\":\"c1b8e05b-9dcf-42f7-9e50-222c6c88b2ae\",\"sessionId\":\"1790321619466-ja47ponrm\",\"type\":\"user_input\",\"data\":{\"content\":\"只回答两个字：收到\"},\"timestamp\":1791797664356}}"
+      }
+    ]
+  },
+  "toolCallStats": {
+    "totalCalls": 2,
+    "successfulCalls": 2,
+    "failedCalls": 0,
+    "toolBreakdown": {
+      "delegate_to_session": 1,
+      "wait_for_delegation": 1
+    }
+  },
+  "possibleCauses": []
+}

@@ -142,8 +142,8 @@
       "patches": [
         {
           "file": "src/components/ContextMonitor.tsx",
-          "from": "                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 20 条 ⇒ 不足 20 条时不压缩）。` +\n                    `上下文占用主要来自系统提示与工具定义，压缩对话不会让它降下来。`}",
-          "to": "                  : \"消息太少，无需压缩\"}"
+          "from": "                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 ${MANUAL_KEEP_MESSAGES} 条，` +\n                    `并且最近 ${COMPACTION_MIN_KEEP_TURNS} 轮绝不切断 ⇒ 可压缩的部分不足）。` +",
+          "to": "                  : \"消息太少，无需压缩\" +"
         }
       ],
       "tests": [

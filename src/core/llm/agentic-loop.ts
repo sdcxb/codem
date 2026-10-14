@@ -42,7 +42,7 @@ import { buildUnparsableArgsError, buildTruncatedToolCallError, isContentBearing
 import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
-import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority } from "./compaction-budget";
+import { planCompactionKeep, alignKeepToRoundBoundary, foldStaleCompactionMarkers, isCompactionMarker, nextCompactionMarkerId, selectMessagesByPriority, compactionMinKeep, packPartsForSummary, composeCompactionMarkerText, renderStructuredHistorySummary, COMPACTION_MIDDLE_BAND_SIZE, COMPACTION_MIN_KEEP_TURNS } from "./compaction-budget";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
@@ -420,6 +420,16 @@ export function boundOne(text: string, cap: number): string {
 
 /** 摘要输入的整体上限（字符）。60000 ≈ 15k token，比原来的 12000 宽 5 倍且仍有界。 */
 const SUMMARY_CONVERSATION_CHAR_CAP = 60000;
+
+/**
+ * 一次压缩最多做几次摘要调用（第 228 波）。
+ *
+ * 为什么要分块：原先超限是 `head 40% + tail 60%`、**中间整段省略** ——
+ * 一批几百条的历史里，中段**连摘要器都没看到**。分块之后每块 ≤ 60000 字符 ⇒ 全覆盖；
+ * 块数封顶 3 次（控制费用），超出的**最老**那部分降到"最低保真清单"（`overflowDigest`），
+ * 而不是静默丢掉。
+ */
+const MAX_SUMMARY_CHUNKS = 3;
 
 /**
  * 摘要输入的整体边界。
@@ -5748,7 +5758,21 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       totalMessages: messages.length,
       desiredKeep: maxKeepCount,
       budget: keepBudget,
-      minKeep: MIN_KEEP_MESSAGES,
+      /**
+       * ★ 第 228 波：下限不再只是"4 条"，而是**"最近 N 轮"**（`compactionMinKeep`）。
+       * 于是 token 成半收缩最多压到"最近 3 轮的开头"，绝不会切进最近几轮
+       * （用户要求：对标"最近 5–6 轮 100% 保留"那套规律；极端超长轮次按上限 60 条截断并记日志）。
+       */
+      minKeep: (() => {
+        const floor = compactionMinKeep(messages, MIN_KEEP_MESSAGES);
+        if (floor.cappedByMax) {
+          console.warn(
+            `[compactMessages] 轮次保底被上限截断：最近 ${COMPACTION_MIN_KEEP_TURNS} 轮共 ${floor.turnsCovered} 条 > 上限 ` +
+              `${floor.minKeep} 条 ⇒ 按上限保留（否则保留集本身会超过窗口、压缩永远压不进）`,
+          );
+        }
+        return floor.minKeep;
+      })(),
       estimate: estimateKeepTokens,
       align: (desired) => this.alignKeepBoundary(messages, desired),
     });
@@ -5827,7 +5851,26 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     }
 
     // Build conversation text for the LLM to summarize
-    const conversationText = this.buildConversationText(messagesToRemove);
+    /**
+     * ★ 第 228 波（用户要求：压缩率应随"离现在的距离"上升）——把待压集**分三档**：
+     *
+     * - 近端（最近 `COMPACTION_MIN_KEEP_TURNS` 轮）**根本不在这里**（它是保留集，逐字留着）；
+     * - **中间档**（待压集最新的一端，最多 `COMPACTION_MIDDLE_BAND_SIZE` 条）：
+     *   用**确定性结构化要点**（`renderStructuredHistorySummary`，不调 LLM）保留 ——
+     *   比"一行摘要"保真高（保留路径/命令/错误/待办），比逐字便宜得多；
+     * - **更早**：交给 LLM 检查点摘要；文本按 `packPartsForSummary` **分块全覆盖**
+     *   （连分块都装不下的最老部分再降到"最低保真清单"，并**明写**它保真最低）。
+     *
+     * 为什么必须改（原实现的缺陷）：待压集**整段**喂给摘要器、超限时 `head 40% + tail 60%`
+     * **中间整段省略** —— 丢多少取决于"这次压了多少"而不是"多老"，而且丢掉的那批
+     * 连摘要器都没看到（用户看到的形态：压缩之后久远的事彻底消失、近期的事也一起糊了）。
+     */
+    const middleStart = Math.max(0, messagesToRemove.length - COMPACTION_MIDDLE_BAND_SIZE);
+    const middleBand = messagesToRemove.slice(middleStart);
+    const oldBand = messagesToRemove.slice(0, middleStart);
+    const oldParts = this.buildConversationTextParts(oldBand);
+    const packed = packPartsForSummary(oldParts, SUMMARY_CONVERSATION_CHAR_CAP, MAX_SUMMARY_CHUNKS);
+    const conversationText = packed.chunks.join("\n\n");
 
     // 压缩调用的**实际**请求形态（照实写，第 189 波改掉不实叙述）：
     // 它的 system 只有一句「你是一个对话摘要专家。」，user = 已有摘要 + 待压缩的**存储层历史** +
@@ -5846,14 +5889,45 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // operations, which corrupted sql.js state and caused
     // "bad parameter or other API misuse" errors.
     let summary: string;
+    /** 这次**没有走 LLM 摘要**时，旧摘要要原样带进新标记（级联不许断，见 `composeCompactionMarkerText`） */
+    let priorSummaryCarried = "";
     try {
-      summary = await this.generateCompactionSummaryCacheAware(
-        conversationText, existingSummary, compactionInstruction,
-      );
+      /**
+       * **滚动摘要**（第 228 波）：`packPartsForSummary` 可能给出多块（每块 ≤ 60K 字符）——
+       * 逐块摘要、每块都把上一块的结果当作 `existingSummary` 带进去 ⇒ **全覆盖、不掐中段**。
+       * 块数有上限（`MAX_SUMMARY_CHUNKS`），装不下的最老块走下面的最低保真清单。
+       *
+       * ⚠️ 待压集很小（≤ 中间档条数）时 `packed.chunks` 为空 ⇒ **一次 LLM 都不调**：
+       * 那批消息已经由中间档的确定性要点全覆盖了，再花一次调用只会更糊。
+       * 那种情况下旧摘要由 `priorSummaryCarried` 原样带过去（下面的标记里单独一段）。
+       */
+      summary = "";
+      for (const chunk of packed.chunks) {
+        summary = await this.generateCompactionSummaryCacheAware(chunk, summary || existingSummary, compactionInstruction);
+      }
+      if (packed.chunks.length > 1) {
+        console.log(
+          `[compactMessages] 摘要分 ${packed.chunks.length} 块全覆盖（每块 ≤ ${SUMMARY_CONVERSATION_CHAR_CAP} 字符）：` +
+            `待压 ${messagesToRemove.length} 条 = 更早 ${oldBand.length} 条 + 中间档 ${middleBand.length} 条`,
+        );
+      }
+      if (packed.chunks.length === 0 && existingSummary) priorSummaryCarried = existingSummary;
     } catch (err) {
       console.warn("[compactMessages] LLM summary failed, falling back to snippet extraction:", err);
       summary = this.fallbackSummary(messagesToRemove);
     }
+
+    /**
+     * 中间档：确定性结构化要点（不调 LLM）；最老溢出的那段（`packed.consumed` 之后的消息）：
+     * 同样用确定性渲染，但**明写保真度最低**（模型据此知道"这段只有清单，细节要用工具重新取"）。
+     */
+    const middleDigest = middleBand.length > 0
+      ? renderStructuredHistorySummary(middleBand as never[], { userChars: 1200, assistantChars: 900, toolChars: 300, totalChars: 12000 })
+      : "";
+    const overflowMessages = packed.overflow.length > 0 ? oldBand.slice(packed.consumed) : [];
+    const overflowDigest = overflowMessages.length > 0
+      ? renderStructuredHistorySummary(overflowMessages as never[], { userChars: 300, assistantChars: 200, toolChars: 120, totalChars: 8000 })
+      : "";
 
     // ========== ATOMIC DB COMMIT (no `await` from here to the end) ==========
     // Pre-resolve all dynamic imports so we never yield during DB mutation.
@@ -5863,7 +5937,17 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const eventLog = this.getEventLog();
     const messageStorage = this.getMessageStorage();
     const removedIds = messagesToRemove.map((m: any) => m.id);
-    const markerContent = `[上下文已自动压缩]\n\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条（API-Round 边界对齐）。请基于以上摘要和后续消息继续工作。不要重复已摘要中记录为完成的工作。如需之前的文件内容或命令输出，请使用工具重新获取。`;
+    const markerContent = composeCompactionMarkerText({
+      summary,
+      priorSummary: priorSummaryCarried,
+      middleDigest,
+      overflowDigest,
+      removedCount: messagesToRemove.length,
+      keptCount: keepCount,
+      summarizedCount: oldBand.length,
+      middleCount: middleBand.length,
+      overflowCount: overflowMessages.length,
+    });
     const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
     /**
      * ⚠️ 主键**必须**由 `nextCompactionMarkerId()` 生成，不能退回 `compact-${Date.now()}`。
@@ -5916,39 +6000,54 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
   }
 
   /**
-   * Build readable conversation text from messages for LLM summarization.
+   * 把**一条消息**渲染成摘要输入的一段（`buildConversationTextParts` 与 `buildConversationText` 共用）。
+   *
+   * ⚠️ 第 228 波：**一条消息恰好一段** —— 分块覆盖（`packPartsForSummary`）要靠这个 1:1
+   * 才能把"溢出的是哪几条消息"精确落回消息上（否则只能给出文本块，找不回消息）。
    */
-  private buildConversationText(messages: any[]): string {
-    const parts: string[] = [];
-    for (const msg of messages) {
-      if (msg.role === "user") {
-        const content = msg.content || "";
-        /**
-         * 摘要标记整体带进摘要输入（不做 500 字截断）：它是"已经压缩过一次"的完整结论，
-         * 截断会让级联摘要丢内容。两种前缀都认（自动 / 手动，见
-         * `compaction-budget.ts` 的 `COMPACTION_MARKER_PREFIXES`）。
-         */
-        if (isCompactionMarker(msg)) {
-          // Include existing summary as-is for cascading
-          parts.push(`[已有摘要]\n${content}`);
-        } else if (content.trim()) {
-          parts.push(`用户: ${boundOne(content, LLMEngineTextBounds.USER)}`);
-        }
-      } else if (msg.role === "assistant") {
-        const content = boundOne(msg.content || "", LLMEngineTextBounds.ASSISTANT);
-        if (content.trim()) parts.push(`AI: ${content}`);
-        if (msg.toolCalls) {
-          for (const tc of msg.toolCalls) {
-            const argsStr = tc.args ? boundOne(JSON.stringify(tc.args), LLMEngineTextBounds.TOOL_ARGS) : "";
-            const resultStr = tc.result
-              ? (typeof tc.result === "string" ? boundOne(tc.result, LLMEngineTextBounds.TOOL_RESULT) : "")
-              : "";
-            parts.push(`工具[${tc.tool}]: ${argsStr} → ${resultStr}`);
-          }
+  private conversationPartForMessage(msg: any): string {
+    const lines: string[] = [];
+    if (msg.role === "user") {
+      const content = msg.content || "";
+      /**
+       * 摘要标记整体带进摘要输入（不做 500 字截断）：它是"已经压缩过一次"的完整结论，
+       * 截断会让级联摘要丢内容。两种前缀都认（自动 / 手动，见
+       * `compaction-budget.ts` 的 `COMPACTION_MARKER_PREFIXES`）。
+       */
+      if (isCompactionMarker(msg)) {
+        lines.push(`[已有摘要]\n${content}`);
+      } else if (String(content).trim()) {
+        lines.push(`用户: ${boundOne(content, LLMEngineTextBounds.USER)}`);
+      }
+    } else if (msg.role === "assistant") {
+      const content = boundOne(msg.content || "", LLMEngineTextBounds.ASSISTANT);
+      if (content.trim()) lines.push(`AI: ${content}`);
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          const argsStr = tc.args ? boundOne(JSON.stringify(tc.args), LLMEngineTextBounds.TOOL_ARGS) : "";
+          const resultStr = tc.result
+            ? (typeof tc.result === "string" ? boundOne(tc.result, LLMEngineTextBounds.TOOL_RESULT) : "")
+            : "";
+          lines.push(`工具[${tc.tool}]: ${argsStr} → ${resultStr}`);
         }
       }
     }
-    return parts.join("\n\n");
+    return lines.join("\n");
+  }
+
+  /**
+   * 摘要输入的**分段**形态（第 228 波）：**一条消息一段**，供分块全覆盖使用。
+   * 返回的数组与传入的消息**一一对应**（空消息也占一位，位置不能错位）。
+   */
+  private buildConversationTextParts(messages: any[]): string[] {
+    return messages.map((msg) => this.conversationPartForMessage(msg));
+  }
+
+  /**
+   * Build readable conversation text from messages for LLM summarization.
+   */
+  private buildConversationText(messages: any[]): string {
+    return this.buildConversationTextParts(messages).filter((p) => p.trim().length > 0).join("\n\n");
   }
 
   /**

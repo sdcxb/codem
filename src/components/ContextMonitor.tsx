@@ -10,6 +10,9 @@ import {
   nextCompactionMarkerId,
   renderStructuredHistorySummary,
   summarizeModelContext,
+  /* 第 228 波：保留集的"最近 3 轮不切断"与自动压缩共用同一条口径 */
+  compactionMinKeep,
+  COMPACTION_MIN_KEEP_TURNS,
 } from "../core/llm/compaction-budget";
 import { getTokenTracker } from "../core/llm/token-tracker";
 import { pruneStaleToolResults } from "../core/llm/context-fold";
@@ -43,6 +46,14 @@ const DEFAULT_BUDGET: TokenBudget = {
  * 冷却期内按钮**禁用 + 写明刚刚压缩过**，让"已经发生过了"这件事有可点的证据。
  */
 const COMPACT_COOLDOWN_MS = 8000;
+
+/**
+ * 手动压缩**逐字保留的条数上限**（第 228 波）。
+ *
+ * 它不再是唯一条件：还会叠加"最近 `COMPACTION_MIN_KEEP_TURNS` 轮绝不切断"这条保底
+ * （见 `manualCompact`）—— 于是"最近几轮"在大消息刷屏时也不会被切进中间。
+ */
+const MANUAL_KEEP_MESSAGES = 20;
 
 interface ProviderBalance {
   provider: string;
@@ -132,7 +143,18 @@ export function manualCompact(sessionId: string): { removed: number; kept: numbe
   const messages = listVisibleMessages(sessionId);
   if (messages.length <= 2) return { removed: 0, kept: messages.length };
 
-  const keepCountPlanned = Math.min(20, messages.length);
+  /**
+   * ★ 第 228 波（用户要求，对标「最近 5–6 轮 100% 保留」）：
+   * 保留集要**同时**满足两个条件 —— 条数上限 20，以及**最近 3 轮绝不切断**。
+   *
+   * 原实现只有「最近 20 条」这一个条件：一条大文件读取 / 一段大粘贴就能让最近几轮
+   * **装不满 20 条**，于是手动压缩会切进最近几轮（用户那边的形态：压完连"刚才在干什么"
+   * 都答不上来）。轮次保底的实现是**共享的**（`compactionMinKeep`，自动压缩走同一条规则）。
+   */
+  const keepCountPlanned = Math.min(
+    messages.length,
+    Math.max(Math.min(MANUAL_KEEP_MESSAGES, messages.length), compactionMinKeep(messages, 4).minKeep),
+  );
   /**
    * 折叠保留集里的旧摘要标记（见函数头第 3 点）：保留集要从"最后一个旧标记"之后开始，
    * 否则手动压缩会把上一次的摘要块永久留在上下文里。
@@ -601,7 +623,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 {compactResult.removed > 0
                   ? `压缩完成：移除 ${compactResult.removed} 条旧消息，保留最近 ${compactResult.kept} 条；` +
                     `本对话里已插入一条「[上下文已手动压缩]」摘要（老对话细节变成摘要，仍在本对话继续）。`
-                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 20 条 ⇒ 不足 20 条时不压缩）。` +
+                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 ${MANUAL_KEEP_MESSAGES} 条，` +
+                    `并且最近 ${COMPACTION_MIN_KEEP_TURNS} 轮绝不切断 ⇒ 可压缩的部分不足）。` +
                     `上下文占用主要来自系统提示与工具定义，压缩对话不会让它降下来。`}
               </StatusBanner>
             )}

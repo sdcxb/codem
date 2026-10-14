@@ -11,7 +11,9 @@
           "to": "  return a.key === b.key || a.content.substring(0, 50) === b.content.substring(0, 50);"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -24,7 +26,9 @@
           "to": "export const MEMORY_DUPLICATE_THRESHOLD = 0;"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -37,7 +41,9 @@
           "to": "      if (!sameBucket(entry) && !sameProjectAsConversation(entry)) continue;"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -50,7 +56,9 @@
           "to": "    const sameProjectAsConversation = (_entry: MemoryEntry): boolean => false;"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -63,7 +71,9 @@
           "to": "    const sameBucket = (_entry: MemoryEntry): boolean => true;"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -72,11 +82,13 @@
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "        if (validSeen >= MEMORY_MAX_PER_EXTRACTION) {",
-          "to": "        if (validSeen >= 999) {"
+          "from": "        if (consumesSlot && slotsUsed >= MEMORY_MAX_PER_EXTRACTION) {",
+          "to": "        if (false && slotsUsed >= MEMORY_MAX_PER_EXTRACTION) {"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -89,7 +101,9 @@
           "to": "const MEMORY_EXTRACTION_MIN_NEW_MESSAGES = 0;"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -102,7 +116,9 @@
           "to": "    const existingKeys: string[] = [];"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts"],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
       "expectRed": true
     },
     {
@@ -115,7 +131,9 @@
           "to": "  findDuplicateGroups(): Array<MemoryDuplicateGroup & { entries: MemoryEntry[] }> {\n    const byBucket = new Map<string, MemoryEntry[]>();\n    for (const e of this.entries.values()) {\n      const k = `${e.scope}|${e.projectId ?? \"\"}|${e.sessionId ?? \"\"}`;\n      byBucket.set(k, [...(byBucket.get(k) ?? []), e]);\n    }\n    return [...byBucket.values()].flatMap((g) => clusterDuplicateMemories(g));\n  }"
         }
       ],
-      "tests": ["src/test/memory-checkup.test.tsx"],
+      "tests": [
+        "src/test/memory-checkup.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -128,7 +146,10 @@
           "to": " * ## 阈值是量出来的，不是拍的（真机 1128 对配对的分布；反向对照：只改这一行注释）"
         }
       ],
-      "tests": ["src/test/memory-dedup.test.ts", "src/test/memory-checkup.test.tsx"],
+      "tests": [
+        "src/test/memory-dedup.test.ts",
+        "src/test/memory-checkup.test.tsx"
+      ],
       "expectRed": false
     }
   ]

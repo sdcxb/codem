@@ -274,11 +274,42 @@ describe("MEM-EXTRACT-LIMIT：每轮条数上限 + 限频（用户报的「每�
 
     await engine.extractMemoriesFromSession(SESSION, PROJ_A);
 
-    expect(bucket(svc, PROJ_A), "每轮最多写 3 条（上限是结构性的，不看模型返回多少）").toHaveLength(3);
+    /* 第 228 波：上限由 3 降到 2（project 级每条都要用户点一次批准 ⇒ 上限就是用户的决策量上限） */
+    expect(bucket(svc, PROJ_A), "每轮最多写 2 条（上限是结构性的，不看模型返回多少）").toHaveLength(2);
     expect(
-      logs.some((l) => l.includes("丢弃 5 条")),
-      "被上限丢掉 5 条这件事必须如实写进日志（静默丢内容等于替用户决定什么不重要）",
+      logs.some((l) => l.includes("丢弃 6 条")),
+      "被上限丢掉 6 条这件事必须如实写进日志（静默丢内容等于替用户决定什么不重要）",
     ).toBe(true);
+  });
+
+  it("MEM-EXTRACT-LIMIT-1b（第 228 波）：**被查重挡下的候选不许占名额**（真缺陷）", async () => {
+    /*
+     * 缺陷形态（真机常见）：模型一次给 3 条候选，其中第 1 条是**已有事实的换个说法**，
+     * 旧实现的名额在"形状合法"处就扣掉了 ⇒ 重复项把名额占满，后面两条真正新的反而写不进来。
+     * 现在的口径：名额只在"确实写出一条待批准条目"时扣。
+     */
+    const svc = new MemoryService();
+    svc.add({
+      scope: "project",
+      projectId: PROJ_A,
+      key: "Vitest 位置参数匹配语义",
+      content: "vitest 的位置参数按**路径子串**匹配（不是 glob），多个参数之间是**或**关系。",
+      source: "manual",
+    });
+    const candidates = [
+      /* ① 已有事实的换个说法（会被查重挡下 —— 它不该消耗名额） */
+      { key: "vitest 路径参数匹配", content: "vitest 的位置参数是按路径子串匹配，多个参数之间为 OR 关系。", scope: "project" },
+      /* ②③ 两条真正新的（都该写进去） */
+      { key: "构建入口", content: "构建走 tauri build，签名私钥从 .tauri 目录读取。", scope: "project" },
+      { key: "样式约定", content: "样式一律走 styles.css 里的语义变量，不许写裸色值。", scope: "project" },
+    ];
+    const { engine } = engineForExtraction(svc, SESSION, [JSON.stringify(candidates)]);
+    await engine.extractMemoriesFromSession(SESSION, PROJ_A);
+
+    const keys = bucket(svc, PROJ_A).map((e) => e.key);
+    expect(keys, "另有两条新事实 ⇒ 两条都该写进来（名额没被重复项吃掉）").toContain("构建入口");
+    expect(keys, "第二条新事实同样要写进来").toContain("样式约定");
+    expect(keys.filter((k) => /vitest/i.test(k)), "原有的那条不许被重复写一次").toHaveLength(1);
   });
 
   it("MEM-EXTRACT-LIMIT-2：消息没涨够 ⇒ 不再跑第二次（旧实现每轮都跑）", async () => {
@@ -316,6 +347,20 @@ describe("MEM-EXTRACT-LIMIT：每轮条数上限 + 限频（用户报的「每�
     expect(prompt, "已经记住的清单要发给模型（看不见已有的记忆就只能每轮重复推导）").toContain("平台级已有事实");
     expect(prompt).toContain("本项目已有事实");
     expect(prompt, "别的项目的记忆不许出现在清单里（作用域隔离）").not.toContain("别的项目的事实");
-    expect(prompt, "每轮条数上限要写进提示词（模型自己排序，比我们随机截断更合理）").toContain("最多 3 条");
+    expect(prompt, "每轮条数上限要写进提示词（模型自己排序，比我们随机截断更合理）").toContain("最多 2 条");
+    /*
+     * 第 228 波（用户实报"审批太频繁"）：**不许再自相矛盾** ——
+     * 「技术栈 / 目录结构 / 构建测试命令」既在门槛的"不要写"里，就不能同时当 project 的正面例子
+     * （真机取证：26 条待批准里约 10 条正是这些被禁的类别，每一条都要用户点一次批准）。
+     */
+    expect(prompt, "project 的例子不许再列技术栈/目录约定/构建测试命令").not.toMatch(
+      /"project"：[^\n]*技术栈/,
+    );
+    expect(prompt, "要把被禁的类别在 scope 段**再点一次**（防止模型拿它们当 project）").toMatch(
+      /不要写成 project[\s\S]{0,200}技术栈/,
+    );
+    expect(prompt, "工作纪律/评审口径也要点名（真机里它们被当成 project 写了进来）").toMatch(
+      /工作纪律与评审口径/,
+    );
   });
 });

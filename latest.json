@@ -1,15 +1,15 @@
 {
-  "version": "1.16.318",
-  "notes": "Codem v1.16.318 — 插件起不来时给出真实原因与可点的出口（自动结束残留插件进程并重试，只结束属于本插件的那个进程）；压缩上下文现在看得见（进度、常驻回执、8 秒冷却防重复点）。",
-  "pub_date": "2026-10-13T10:37:38Z",
+  "version": "1.16.319",
+  "notes": "Codem v1.16.319 — 压缩按距离分档（最近 3 轮逐字不切断 / 中间档结构化要点 / 更早的检查点摘要分块全覆盖，不再掐中段）；自动记忆降噪（每轮待批准上限 3→2、名额只在真写入时扣、提示词去掉『技术栈当项目级例子』的自相矛盾）。",
+  "pub_date": "2026-10-14T01:54:20Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VscEFIbi9OWVhtY3FuU2o5WXVrYTdSY1FzdXFTakxKaFJvOVQ2d0Zwcnl2MU12dGRqaTlpUk9hbWh6YjVOTGxQbjJ4M0dzTjFVSkk5aFhNMERwbXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODg3NjI5CWZpbGU6Q29kZW1fMS4xNi4zMThfeDY0LXNldHVwLmV4ZQpZYm5ERGVGSEMreWJUUkY3blBJVlRCcjZ1c0VHOUwyMzhycWxTck4rWFdLREZibVB2QkFFYmtUS3lzaFRTTXYydWdieXE1R3Y3d3RwTFc4SVV3NklBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.318/Codem_1.16.318_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1cwM1Y2cEhNc0lNWHJyZ0JUWC9nTVVGdUNodEZ6Z3o0MDV3aWYrOHhoZnAxbURrSjIycVRjeForUlRkSXlMVStFUUJoK0VncFo2NlJnUXhxbVE0dXdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTQyNzQ2CWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQpLOXpYOTZJaDBxNGpyODM1ZUtQai9VN081RVg5Um82RkFZNWg2TmRlWDVoVVZtSXZhTmt5VzZ3aXplUTJsQkVwMWxqeGU0VDZmZlNkNC9raEVxYU9DUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.319/Codem_1.16.319_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2VscEFIbi9OWVhtY3FuU2o5WXVrYTdSY1FzdXFTakxKaFJvOVQ2d0Zwcnl2MU12dGRqaTlpUk9hbWh6YjVOTGxQbjJ4M0dzTjFVSkk5aFhNMERwbXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxODg3NjI5CWZpbGU6Q29kZW1fMS4xNi4zMThfeDY0LXNldHVwLmV4ZQpZYm5ERGVGSEMreWJUUkY3blBJVlRCcjZ1c0VHOUwyMzhycWxTck4rWFdLREZibVB2QkFFYmtUS3lzaFRTTXYydWdieXE1R3Y3d3RwTFc4SVV3NklBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.318/Codem_1.16.318_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1cwM1Y2cEhNc0lNWHJyZ0JUWC9nTVVGdUNodEZ6Z3o0MDV3aWYrOHhoZnAxbURrSjIycVRjeForUlRkSXlMVStFUUJoK0VncFo2NlJnUXhxbVE0dXdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxOTQyNzQ2CWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQpLOXpYOTZJaDBxNGpyODM1ZUtQai9VN081RVg5Um82RkFZNWg2TmRlWDVoVVZtSXZhTmt5VzZ3aXplUTJsQkVwMWxqeGU0VDZmZlNkNC9raEVxYU9DUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.319/Codem_1.16.319_x64-setup.exe"
     }
   }
 }

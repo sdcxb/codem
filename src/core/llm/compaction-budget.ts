@@ -411,6 +411,187 @@ export function summarizeModelContext(
   return { selected, usedTokens, budgetTokens };
 }
 
+// ========== 保留集的"轮次保底"与"按距离降保真"（第 228 波） ==========
+
+/**
+ * ★ 第 228 波（用户要求，对标"最近 5–6 轮 100% 保留"那套规律）：
+ * **近端至少要保住最近几"轮"** —— 轮 = 一条 user 消息到下一轮之前。
+ *
+ * ## 被守的缺陷
+ *
+ * 原先的保留集是**按条数**的（`min(20, 总数)`），而条数会被"一条大消息"吃光：
+ * 一次大文件读取 + 一段大粘贴就能让 20 条里装不满 2 轮 ⇒ 压缩会**切进最近几轮**
+ * （真机形态：压缩后模型连"刚才在干什么"都答不上来，因为那几轮被摘要糊掉了）。
+ *
+ * 轮次保底把语义钉成用户能理解的那句话：**最近几轮绝不切断**；
+ * token 预算的成半收缩只允许发生在更老的部分（见 `planCompactionKeep` 的 `minKeep`）。
+ */
+export const COMPACTION_MIN_KEEP_TURNS = 3;
+
+/**
+ * 轮次保底的**极端情况上限**（条数）。
+ *
+ * 为什么需要它：如果最近 3 轮本身就是几百条消息（超长工具输出刷屏），
+ * 无上限的保底会让"保留集"超过窗口 ⇒ 压缩永远压不进窗口、只剩白烧摘要调用。
+ * 到这条上限时**按上限切**（并在日志里如实说明"轮次保底被上限截断"），
+ * 而不是假装保住了整轮。
+ */
+export const COMPACTION_MIN_KEEP_MAX = 60;
+
+/**
+ * 中间档覆盖的条数（从**待压集的最新一端**数）。
+ *
+ * 第 228 波的"按距离降保真"分三档：
+ * ① 近端（最近 `COMPACTION_MIN_KEEP_TURNS` 轮）：**逐字**保留，不动；
+ * ② 中间档（本常量条）：用**确定性结构化要点**保留（不调 LLM，`renderStructuredHistorySummary`）；
+ * ③ 更早：交给 LLM 检查点摘要（分块全覆盖；连分块都装不下的最老部分再降到最低保真清单）。
+ */
+export const COMPACTION_MIDDLE_BAND_SIZE = 20;
+
+/**
+ * 数出"最近 N 轮"覆盖多少条消息（返回条数，供 `planCompactionKeep` 的 `minKeep` 用）。
+ *
+ * 轮边界取 **user 消息**（与 `alignKeepToRoundBoundary` 同一套语义：一轮从用户发话开始）。
+ * user 消息不足 N 条 ⇒ 返回全部（保守：全都留着；调用方再按 `COMPACTION_MIN_KEEP_MAX` 夹一次）。
+ */
+export function countMessagesForRecentTurns(
+  messages: ReadonlyArray<{ role?: string }>,
+  turns: number = COMPACTION_MIN_KEEP_TURNS,
+): number {
+  if (!Array.isArray(messages) || messages.length === 0) return 0;
+  const want = Math.max(1, Math.floor(turns));
+  let seen = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role !== "user") continue;
+    seen += 1;
+    if (seen >= want) return messages.length - i;
+  }
+  return messages.length;
+}
+
+/** 轮次保底 + 条数下限 + 极端情况上限，三者合成真正的 `minKeep`（唯一口径，两处调用共用） */
+export function compactionMinKeep(
+  messages: ReadonlyArray<{ role?: string }>,
+  hardMin: number = 4,
+): { minKeep: number; turnsCovered: number; cappedByMax: boolean } {
+  const turnsCovered = countMessagesForRecentTurns(messages, COMPACTION_MIN_KEEP_TURNS);
+  const cappedByMax = turnsCovered > COMPACTION_MIN_KEEP_MAX;
+  const minKeep = Math.max(hardMin, Math.min(turnsCovered, COMPACTION_MIN_KEEP_MAX), 1);
+  return { minKeep: Math.min(minKeep, messages.length || 1), turnsCovered, cappedByMax };
+}
+
+/**
+ * 把"待压缩文本"的**分片**打成不超过 `maxChunks` 个块（每块 ≤ cap 字符），
+ * 装不下的部分原样返回（调用方把它们降级成"最低保真清单"，**绝不再掐中段**）。
+ *
+ * 为什么要有它（第 228 波）：原先超限是 `head 40% + tail 60%`、**中间整段省略** ——
+ * 于是"一次压缩吃掉多少"决定了丢多少，而丢掉的那批**连摘要器都没看到**。
+ * 现在改成：分块全覆盖（最老的部分用确定性清单兜底），丢什么都写在标记里。
+ */
+export function packPartsForSummary(
+  parts: readonly string[],
+  cap: number,
+  maxChunks: number,
+): { chunks: string[]; overflow: string[]; consumed: number } {
+  const limit = Math.max(1, Math.floor(cap));
+  const chunkBudget = Math.max(1, Math.floor(maxChunks));
+  const chunks: string[] = [];
+  /** 每一块吃掉了哪几个分片（`consumed` 要如实回给调用方，它据此找出"溢出的是哪几条消息"） */
+  const chunkParts: number[] = [];
+  let current = "";
+  let currentCount = 0;
+  for (const part of parts) {
+    const piece = String(part ?? "");
+    if (piece.length === 0) continue;
+    /* 单条本身超限 ⇒ 自己成一块（交给下游的安全网按条截断，不牵连别的消息） */
+    if (piece.length > limit) {
+      if (current) {
+        chunks.push(current);
+        chunkParts.push(currentCount);
+        current = "";
+        currentCount = 0;
+      }
+      chunks.push(piece);
+      chunkParts.push(1);
+      continue;
+    }
+    if (current && current.length + piece.length + 2 > limit) {
+      chunks.push(current);
+      chunkParts.push(currentCount);
+      current = "";
+      currentCount = 0;
+    }
+    current = current ? `${current}\n\n${piece}` : piece;
+    currentCount += 1;
+  }
+  if (current) {
+    chunks.push(current);
+    chunkParts.push(currentCount);
+  }
+  if (chunks.length <= chunkBudget) {
+    return { chunks, overflow: [], consumed: parts.length };
+  }
+  const consumed = chunkParts.slice(0, chunkBudget).reduce((s, n) => s + n, 0);
+  return { chunks: chunks.slice(0, chunkBudget), overflow: chunks.slice(chunkBudget), consumed };
+}
+
+/**
+ * 压缩标记的**唯一排版处**（自动路径用）。
+ *
+ * 三段与三档一一对应，且**每段都写明它覆盖了多少条 / 保真度高低** ——
+ * 模型读得到"哪一段是逐字、哪一段是确定性要点、哪一段只是清单"，
+ * 就不会把最低保真的清单当成完整事实（这是"按距离降保真"必须付的诚实成本）。
+ */
+export function composeCompactionMarkerText(input: {
+  summary: string;
+  /**
+   * **上一次压缩留下的摘要**（这次没走 LLM 摘要时由我们原样带过去）。
+   *
+   * 第 228 波：待压集很小（≤ 中间档条数）时不再调 LLM（确定性要点已经覆盖得住），
+   * 但"级联"这条契约**不能因此断掉** —— 旧摘要必须照样进新标记，否则第二次压缩就把
+   * 上一次的结论丢了（`FC-D4` 那一族守的正是它）。走 LLM 时旧摘要已被合并进 `summary`，
+   * 这条传空串（避免同一段文字出现两遍）。
+   */
+  priorSummary?: string;
+  middleDigest?: string;
+  overflowDigest?: string;
+  removedCount: number;
+  keptCount: number;
+  summarizedCount: number;
+  middleCount: number;
+  overflowCount: number;
+}): string {
+  const sections: string[] = ["[上下文已自动压缩]", ""];
+  if (input.summary.trim()) {
+    sections.push(`## 检查点摘要（覆盖较早的 ${input.summarizedCount} 条）`, "", input.summary.trim(), "");
+  }
+  if (input.priorSummary && input.priorSummary.trim()) {
+    sections.push("## 之前的摘要（继续保留）", "", input.priorSummary.trim(), "");
+  }
+  if (input.middleDigest && input.middleDigest.trim()) {
+    sections.push(
+      `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条；确定性渲染，不是逐字原文）`,
+      "",
+      input.middleDigest.trim(),
+      "",
+    );
+  }
+  if (input.overflowDigest && input.overflowDigest.trim()) {
+    sections.push(
+      `## 更早的历史（${input.overflowCount} 条，保真度最低：只保留可检索的要点，原文已不再逐条保留）`,
+      "",
+      input.overflowDigest.trim(),
+      "",
+    );
+  }
+  sections.push(
+    "---",
+    `已移除 ${input.removedCount} 条旧消息，保留最近 ${input.keptCount} 条（按轮次边界对齐：最近几轮不切断）。` +
+      "请基于以上内容继续工作；如需之前的文件内容或命令输出，请用工具重新获取。",
+  );
+  return sections.join("\n");
+}
+
 // ========== 历史摘要的结构化渲染（第 47 轮：手动压缩与自动路径共用） ==========
 
 /** 结构化历史摘要的渲染上限（每条 / 每段） */

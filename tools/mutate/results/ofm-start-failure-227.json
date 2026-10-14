@@ -1,8 +1,8 @@
 {
   "wave": "ofm-start-failure-227",
   "description": "第 227 波（用户连报两条）：①「免费模型插件没有启动起来」那句提示**指错地方 + 给错动作 + 不给真原因**，而真机形态是「上一次运行留下的插件进程占着数据目录 ⇒ 新实例一起就退」（自动清一次 + 卡片上一颗可点的「结束残留进程并重试」把它变成可恢复的）；②手动压缩「没出现进度也没出现压缩提示」（进度帧从来没被画出来 + 回执 3 秒就消失 + 冷却缺失 ⇒ 用户重复点真的会再压一次）。",
-  "runAt": "2026-10-13T10:15:23.995Z",
-  "specFingerprint": "34c210a83d32bc0011cff74a8639583ccbc14439",
+  "runAt": "2026-10-14T01:47:04.076Z",
+  "specFingerprint": "2de97ed4315c2839a2b440fbe2e3017b3c1cc176",
   "files": [
     "src/App.tsx",
     "src/core/free-model-plugin/service.ts",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1929
+      "ms": 1957
     },
     {
       "id": "MUT-2 起不来时**不再尝试**回收残留进程（死局原样保留）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1933
+      "ms": 1926
     },
     {
       "id": "MUT-3 回收成功却**不再重试**（等于没救）",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1930
+      "ms": 1914
     },
     {
       "id": "MUT-4 不看命令行就结束那个 pid（会误杀别人的进程）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1864
+      "ms": 1975
     },
     {
       "id": "MUT-5 失败消息不再带插件自己的输出（又变成只能猜）",
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2008
+      "ms": 1968
     },
     {
       "id": "MUT-6 卡片上那颗「结束残留进程并重试」变成假动作（没接服务层）",
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1872
+      "ms": 1931
     },
     {
       "id": "MUT-7 不认领「上一次启动的实例」（界面又说「尚未启动」而服务在答）",
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 1867
+      "ms": 1946
     },
     {
       "id": "MUT-8 压缩回执又 3 秒后自己消失（用户以为没压缩）",
@@ -174,7 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2245
+      "ms": 2457
     },
     {
       "id": "MUT-9 拆掉压缩冷却期（完成后按钮立刻又能点 ⇒ 重复点真的再压一次）",
@@ -194,7 +194,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2203
+      "ms": 2281
     },
     {
       "id": "MUT-10 「没有可移除的消息」不再说为什么（数字没变、用户以为按钮坏了）",
@@ -202,8 +202,8 @@
       "patches": [
         {
           "file": "src/components/ContextMonitor.tsx",
-          "from": "                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 20 条 ⇒ 不足 20 条时不压缩）。` +\n                    `上下文占用主要来自系统提示与工具定义，压缩对话不会让它降下来。`}",
-          "to": "                  : \"消息太少，无需压缩\"}"
+          "from": "                  : `本次没有可移除的消息：当前可见消息只有 ${compactResult.kept} 条（保留最近 ${MANUAL_KEEP_MESSAGES} 条，` +\n                    `并且最近 ${COMPACTION_MIN_KEEP_TURNS} 轮绝不切断 ⇒ 可压缩的部分不足）。` +",
+          "to": "                  : \"消息太少，无需压缩\" +"
         }
       ],
       "tests": [
@@ -214,7 +214,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2210
+      "ms": 2269
     },
     {
       "id": "MUT-11 压缩前不让出那一帧（「压缩中」永远画不出来）",
@@ -234,7 +234,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2374
+      "ms": 2396
     },
     {
       "id": "MUT-12 换会话不清压缩回执（上一条会话的读数挂到新会话上）",
@@ -254,7 +254,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2236
+      "ms": 2330
     },
     {
       "id": "MUT-13 反向对照：只改一行说明注释",
@@ -275,7 +275,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 2260
+      "ms": 2303
     }
   ]
 }

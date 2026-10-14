@@ -1,0 +1,156 @@
+{
+  "description": "第 228 波（用户要求）：①压缩改成**按距离分档** —— 近端最近 3 轮绝不切断（token 收缩只许切更老的部分）、中间档走确定性结构化要点（不调 LLM）、更早的才交给 LLM 检查点且**分块全覆盖**（不再掐中段），连分块都装不下的最老部分降级成最低保真清单并明写出来；②记忆自动提取降噪与去自相矛盾 —— project 的例子不再列技术栈/目录/构建命令（守住与门槛的一致性）、每轮待批准上限 3→2、**名额只在真写出一条待批准条目时扣**（重复项与已拒绝项不再占名额）。",
+  "mutations": [
+    {
+      "id": "MUT-1 自动压缩不再按轮次保底（token 收缩又切进最近几轮）",
+      "why": "CG-7（接线）/ CG-8（行为）：真机上形态是「最近几轮里有大文件读取 ⇒ 保留集自己吃光预算 ⇒ 收缩到 4 条 ⇒ 切进第 3 轮」，用户那边的表现就是「压完连刚才在干什么都答不上来」",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "        const floor = compactionMinKeep(messages, MIN_KEEP_MESSAGES);",
+          "to": "        const floor = { minKeep: MIN_KEEP_MESSAGES, turnsCovered: 0, cappedByMax: false };"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-gradient.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 中间档被整个丢掉（那 20 条直接消失）",
+      "why": "CG-6：中间档是「比一行摘要保真高、比逐字便宜」的那一档；丢掉它 = 这批消息既没进逐字保留、也没进任何摘要",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "    const middleDigest = middleBand.length > 0",
+          "to": "    const middleDigest = false && middleBand.length > 0"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-gradient.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-3 分块装不下的部分**静默丢掉**（回到「掐中段」）",
+      "why": "CG-4 / CG-9：这正是被修掉的缺陷形态 —— 丢多少取决于「这次压了多少」而不是「多老」，而且丢掉的那批连摘要器都没看到",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "  const consumed = chunkParts.slice(0, chunkBudget).reduce((s, n) => s + n, 0);\n  return { chunks: chunks.slice(0, chunkBudget), overflow: chunks.slice(chunkBudget), consumed };",
+          "to": "  return { chunks: chunks.slice(0, chunkBudget), overflow: [], consumed: parts.length };"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-gradient.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-4 标记不再写保真度（模型会把最低保真的清单当成完整事实）",
+      "why": "CG-5 / CG-6：按距离降保真必须付「诚实成本」—— 每一档都要写明它覆盖多少条、是不是逐字原文",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "      `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条；确定性渲染，不是逐字原文）`,",
+          "to": "      `## 中间档结构化要点（覆盖较近的 ${input.middleCount} 条）`,"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-gradient.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-5 每轮待批准上限退回 3（用户的决策量回到上限）",
+      "why": "MEM-EXTRACT-LIMIT-1 / LIMIT-4：project 级每条都要用户点一次批准 ⇒ 上限就是用户的决策量上限（主力机上「产量非常非常高」说的就是它）",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "const MEMORY_MAX_PER_EXTRACTION = 2;",
+          "to": "const MEMORY_MAX_PER_EXTRACTION = 3;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-6 重复项又占名额（真缺陷回归：3 条重复把名额占满）",
+      "why": "MEM-EXTRACT-LIMIT-1b：名额若在查重之前就扣掉，模型一次给几条「换个说法」的重复就会把名额吃光，真正新的那条写不进来",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "        const duplicateOf = this.memory.findDuplicateOf(",
+          "to": "        slotsUsed++; /* 变异：重复项也占名额 */\n        const duplicateOf = this.memory.findDuplicateOf("
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-7 提示词又拿「技术栈/目录约定/构建测试命令」当 project 的例子（自相矛盾回来了）",
+      "why": "MEM-EXTRACT-LIMIT-4：真机取证的 26 条待批准里约 10 条正是这些被门槛禁止的类别 —— 门槛说「不要写」而 scope 段说「这是 project 的例子」，模型当然会写",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "- \"project\"：**换一次对话、下次打开这个项目仍然成立**、**并且过了上面三条门槛**的事实。",
+          "to": "- \"project\"：**换一次对话、下次打开这个项目仍然成立**的事实（技术栈、目录约定、构建/测试命令）。"
+        }
+      ],
+      "tests": [
+        "src/test/memory-dedup.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-8 手动压缩不按轮次保底（两处口径分叉）",
+      "why": "CG-7：手动与自动必须同一条口径（`compactionMinKeep`）—— 只改一处，用户点「压缩上下文」时照样会切进最近几轮",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "    Math.max(Math.min(MANUAL_KEEP_MESSAGES, messages.length), compactionMinKeep(messages, 4).minKeep),",
+          "to": "    Math.min(MANUAL_KEEP_MESSAGES, messages.length),"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-gradient.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-9 分块只摘要第一块（覆盖不全 = 又回到「后面的历史没人看」）",
+      "why": "CG-9：滚动摘要的意义是**每一块都进摘要**；只摘要第一块等于把较新的那批历史丢掉（而它们恰恰最该保留）",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      for (const chunk of packed.chunks) {",
+          "to": "      for (const chunk of packed.chunks.slice(0, 1)) {"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-gradient.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-10 反向对照：只改一行说明注释",
+      "why": "反向对照：注释改写而行为逐字不变 ⇒ 本波判据一条都不许红",
+      "patches": [
+        {
+          "file": "src/core/llm/compaction-budget.ts",
+          "from": "export const COMPACTION_MIDDLE_BAND_SIZE = 20;",
+          "to": "export const COMPACTION_MIDDLE_BAND_SIZE = 20; /* 反向对照：行为逐字不变 */"
+        }
+      ],
+      "tests": [
+        "src/test/compaction-gradient.test.ts",
+        "src/test/memory-dedup.test.ts"
+      ],
+      "expectRed": false
+    }
+  ]
+}

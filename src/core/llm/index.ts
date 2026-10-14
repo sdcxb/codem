@@ -246,7 +246,18 @@ const degradedMemoryProjectIdKeys = new Set<string>();
  * 而不是"把这一轮的结论都存下来" —— 后者由会话历史/权威日志负责，记忆库不该是第二份日志。
  * 撞到上限时**如实计数并写日志**（不静默截断），界面上那批条目的数量就是证据。
  */
-const MEMORY_MAX_PER_EXTRACTION = 3;
+/**
+ * 每次自动提取**最多让几条进入待批准区**（第 197 波引入，第 228 波由 3 降到 2）。
+ *
+ * 为什么还要再降（用户实报，主力机上"产量非常非常高"）：project 级条目**每一条都要用户点一次批准**
+ * ⇒ 上限就是用户的**决策量上限**。3 条/次 × 一轮可能触发两次（回合结束 + 压缩完成）＝ 一轮最多 6 条，
+ * 而待批准区是**累积**的（用户不立刻处理就叠到 7–8 条甚至更多）。
+ * 降到 2 之后把"最值得记的"留给用户，其余由模型按重要性排序（提示词里已写明"返回更多只会被截断"）。
+ *
+ * ⚠️ 这个名额**只针对"要用户批准"的条目**：`explicit: true`（用户在对话里明确要求记住）不占名额、
+ * 也不进待批准区（见下面的循环）—— 那是用户自己的请求，不该被我们的预算丢掉。
+ */
+const MEMORY_MAX_PER_EXTRACTION = 2;
 
 /**
  * 同一会话两次提取之间**至少要新增多少条消息**（第 197 波）。
@@ -2318,8 +2329,14 @@ return loop.hasPendingGuidance();
 scope 只有两个取值，按这条事实**跨不跨对话**来判：
 - "conversation"：只对**当前这次对话**成立的约定 / 偏好 / 临时要求（例如"这次先给方案再改代码"、
   "这次不要动测试文件"）。它**立即生效**，不会再问用户。
-- "project"：**换一次对话、下次打开这个项目仍然成立**的事实（技术栈、目录约定、构建/测试命令、
-  这个仓库里踩过的坑）。它需要用户批准后才生效 —— 所以**只有你确信它跨对话仍然成立时才写它**。
+- "project"：**换一次对话、下次打开这个项目仍然成立**、**并且过了上面三条门槛**的事实。
+  它需要用户批准后才生效 —— 所以**只有你确信它同时满足这两条时才写它**。典型只有两类：
+  ① **用户在这个项目里的偏好 / 约定**（例如"提交信息用中文"、"改动一律先跑 vitest"）；
+  ② **仓库里看不出来、但换个对话仍然成立的环境限制或踩过的坑**（例如"本机 PowerShell 不支持 &&"、
+     "这个上游网关会按客户端指纹拒绝"）。
+  ⚠️ **下面这些一律不要写成 project**（它们连门槛都过不了；写了只会让用户多点一次审批）：
+  技术栈、目录结构、依赖清单、构建/测试命令**本身**怎么写、某个文件或函数**怎么实现的**、
+  以及工作纪律与评审口径（"必须跑测试"、"收尾要点名红"、"用 git stash 做基线对比"这类）。
 **判不准就写 "conversation"**（先只在这次对话里生效，不打扰用户）。
 不要写 "platform"（跨项目共享只能由用户手动决定）。
 
@@ -2390,13 +2407,22 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
       /** 第 200 波：被"用户已拒绝过"挡下的条数（这一类**不进待批准、不打扰用户**） */
       let rejectedByUser = 0;
       /**
-       * **每轮条数上限**（第 197 波，用户报的「每轮对话自动写入几十条记忆」）。
+       * **每轮条数上限**（第 197 波引入，第 228 波改口径）。
        *
-       * 只取前 `MEMORY_MAX_PER_EXTRACTION` 条**合格**的（`valid` 后才计数 ——
-       * 否则"模型返回 5 条垃圾 + 1 条好"会被垃圾占满名额而不写任何东西）。
-       * 截断**如实计数并写日志**：静默丢内容等于我们替用户决定了什么不重要。
+       * ## 第 228 波修的是什么（真缺陷）
+       *
+       * 原来这里 `validSeen++` 紧跟在"形状合法"之后 —— 而**查重与"用户拒绝过"的判定在它后面** ⇒
+       * 模型一次给 3 条**互相重复**的候选（真机上很常见：同一条 vitest 事实写 3 遍），
+       * 3 个名额会被重复项**全部占满**，第 4 条真正有价值的一条也写不进来 ✗。
+       *
+       * 现在只有**真正要占用用户注意力**的条目才计数：
+       * - 被「用户拒绝过同类」挡下的 ⇒ 不计数（用户已经表过态，不该再花他的名额）；
+       * - 被查重挡下的（含同一批次内部的重复 —— 每条写入后立刻可被后续候选查到）⇒ 不计数；
+       * - 容量拒绝 / 写入失败 ⇒ 不计数（没形成待批准条目）；
+       * - `explicit: true`（用户明确要求记住）⇒ **不占名额**（用户就是批准者，不产生审批噪音）。
+       * 只有"确实写出一条**需要批准**的 project 级条目"才消耗名额。
        */
-      let validSeen = 0;
+      let slotsUsed = 0;
       let droppedByCap = 0;
       for (const mem of memories) {
         if (typeof mem?.key !== "string" || typeof mem?.content !== "string") continue;
@@ -2404,11 +2430,6 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
         const safeKey = redactSecrets(mem.key);
         const safeContent = redactSecrets(mem.content);
         if (safeContent.length <= 10) continue;
-        if (validSeen >= MEMORY_MAX_PER_EXTRACTION) {
-          droppedByCap++;
-          continue;
-        }
-        validSeen++;
 
         /**
          * **这一条自己的作用域**（第 196 波）——只可能是 `conversation` 或 `project`，
@@ -2498,6 +2519,19 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
          */
         const statusForThisItem = explicitRequest ? "active" : approvalRequired ? "pending" : "active";
 
+        /**
+         * ★ 第 228 波：**名额只在"真要让用户批准"时扣**（见上面那段说明）。
+         * 判定放在查重 / 拒绝记录**之后**、写入**之前** —— 被挡下的候选不占名额。
+         */
+        const consumesSlot = statusForThisItem === "pending";
+        if (consumesSlot && slotsUsed >= MEMORY_MAX_PER_EXTRACTION) {
+          droppedByCap++;
+          console.log(
+            `[extractMemories] 超过每轮待批准上限（${MEMORY_MAX_PER_EXTRACTION} 条）⇒ 不写入也不打扰用户：${safeKey}`,
+          );
+          continue;
+        }
+
         const result = this.memory.add({
           scope: itemScope,
           ...ownership,
@@ -2523,6 +2557,8 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
         written++;
         if (statusForThisItem === "pending") writtenPending++;
         else writtenActive++;
+        /* 名额只在**真的写出一条待批准条目**后才扣（容量拒绝/写入失败都不算，见上面的口径） */
+        if (consumesSlot) slotsUsed++;
         console.log(
           `[extractMemories] Saved memory: ${safeKey}（source=auto, scope=${itemScope}, ` +
             `${itemScope === "conversation" ? `sessionId=${sessionId}` : `projectId=${projectId ?? "(无归属)"}`}, ` +
