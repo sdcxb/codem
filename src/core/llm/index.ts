@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 提示里的 `# Current Date` 文本现在由 `core/prompt/prompt.ts` 提供
  * （`minutePrecisionDate()`：分钟精度 + **本地时区真实偏移**，可注入时钟）。
  * 第 189 波把它搬过去的原因：旧实现在这里取**本地**时间却硬编码 `Z` 后缀（标注不实），
@@ -736,18 +736,25 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
  * ★ 全量审计（中）：压缩阈值的**唯一口径** —— 设置面板的 `codem-context-config`；
  * 读不到/非法时回落到引擎默认 0.8（与 `AgenticLoopConfig` 的默认值一致）。
  */
+/**
+ * ★ 全量审计（真机缺陷②）：**唯一口径** —— 走 `ContextManager`，不再自己读一遍设置。
+ *
+ * 为什么必须这样：这个键原来有两个读点（这里直读 `getSettingJSON`，面板走 `getContextManager()`），
+ * 而单例那次读**只在首次构造时发生**、那时端口往往还没预热 ⇒ 两边可能各拿一个值。
+ * 现在两处共用同一个会「就绪后补读」的源（`ContextManager.getConfig()`），并在这里做同一把钳制：
+ * 上界严格小于 1（压力被 `Math.min(1, …)` 钳到 1、判定用严格大于 ⇒ 写 1 等于「压力触发永不成立」）。
+ */
 function readContextCompactionThreshold(): number {
   try {
-    const raw = getSettingJSON<{ compactionThreshold?: unknown }>("codem-context-config", {});
-    const v = raw?.compactionThreshold;
-    /**
-     * ★ 全量审计（第三轮·中）：上界要**严格小于 1** ——
-     * 压力被 `Math.min(1, …)` 钳到 1、而判定用严格大于 ⇒ 写 1 等于「压力触发永不成立」
-     * （只剩反应式溢出压缩）。这里与设置面板滑块的上界一致（0.95）。
-     */
+    const v = getContextManager().getConfig().compactionThreshold;
     if (typeof v === "number" && Number.isFinite(v) && v > 0.1 && v <= 0.95) return v;
-  } catch {
-    /* 配置读不到 ⇒ 用默认值（引擎行为与改之前一致） */
+  } catch (e) {
+    /* 配置读不到不是致命：用默认值继续（但要留痕，别静默） */
+    reportAdvisory("engine.readCompactionThreshold", "读取压缩阈值失败，本次用默认值 0.8", {
+      title: "压缩阈值读取失败",
+      nextStep: "若你改过压缩阈值，请重开设置面板确认；引擎本次按默认 80% 触发。",
+    });
+    void e;
   }
   return 0.8;
 }

@@ -1,5 +1,6 @@
-import type { MessageV2 } from "../llm/session";
+﻿import type { MessageV2 } from "../llm/session";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { reportPersistFailure } from "../storage/persist-failure";
 /**
  * 第 184 波（G6）：**唯一一份 token 估算真值**（CJK 感知）。
  *
@@ -104,6 +105,8 @@ const DEFAULT_CONFIG: CompactionConfig = {
 // ========== Context Manager ==========
 export class ContextManager {
   private config: CompactionConfig;
+  /** ★ 全量审计（真机缺陷②）：是否已成功从存储读到过配置（成功一次即停，避免反复回读） */
+  private loadedFromStorage = false;
 
   constructor(config?: Partial<CompactionConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -322,18 +325,58 @@ export class ContextManager {
     };
   }
 
-  /** Update config and persist */
+  /**
+   * Update config and persist
+   *
+   * ★ 全量审计（真机缺陷②）：落盘失败**不许被吞** —— 原来这里是 `try { … } catch {}`，
+   * 于是「保存没成功」在界面上长得和「保存成功」一模一样（本仓 `audit:false-success` 要抓的形状）。
+   */
   updateConfig(config: Partial<CompactionConfig>) {
     this.config = { ...this.config, ...config };
-    // Persist to settings
+    /* 我们自己写进去的值就是当前真相 ⇒ 标记已加载，后续 getConfig() 不必再回读（避免读到旧盘值覆盖内存新值） */
+    this.loadedFromStorage = true;
     try {
       setSettingJSON("codem-context-config", this.config);
-    } catch {}
+    } catch (e) {
+      reportPersistFailure("context.updateConfig", e, "上下文配置未保存（重启后会回到上一次的值）");
+    }
   }
 
-  /** Get current config */
+  /**
+   * ★ 全量审计（真机缺陷②）：存储就绪后**重读一次**已保存的配置。
+   *
+   * 被守的缺陷（1.16.319 真机形态）：单例的首次构造常常发生在**存储端口预热之前**
+   * （`getSetting` 那时返回 null 并留痕），于是配置退回默认值（0.8）且此后**永不重读** ——
+   * 用户在设置里把阈值改成 0.5、写盘也成功了（设置表里确实是 0.5），
+   * 但面板与引擎永远按 0.8 走（真机实测：重载后面板仍显示 80%）。
+   *
+   * 读法：只在**还没成功读到过**时回读（成功一次即停），读不到不算错（端口可能仍未就绪）。
+   */
+  refreshFromStorage(): boolean {
+    if (this.loadedFromStorage) return false;
+    try {
+      const saved = getSettingJSON<Partial<CompactionConfig> | null>("codem-context-config", null);
+      if (saved && typeof saved === "object") {
+        this.config = { ...this.config, ...(saved as Partial<CompactionConfig>) };
+        this.loadedFromStorage = true;
+        return true;
+      }
+    } catch (e) {
+      /* 读失败要如实上报（但不是致命：本次仍可用默认值继续） */
+      reportPersistFailure("context.refreshFromStorage", e, "上下文配置没能从设置里读出来（本次用默认值）");
+    }
+    return false;
+  }
+
+  /** Get current config（★ 真机缺陷②：每次取用时都尝试补读一次，直到成功） */
   getConfig(): CompactionConfig {
+    this.refreshFromStorage();
     return { ...this.config };
+  }
+
+  /** ★ 全量审计：是否已经成功从存储读到过配置（判据用） */
+  isLoadedFromStorage(): boolean {
+    return this.loadedFromStorage;
   }
 }
 
@@ -343,13 +386,13 @@ let instance: ContextManager | null = null;
 export function getContextManager(): ContextManager {
   if (!instance) {
     instance = new ContextManager();
-    // Load persisted config
-    try {
-      const saved = getSettingJSON("codem-context-config", null);
-      if (saved && typeof saved === 'object') {
-        (instance as any).config = { ...(instance as any).config, ...(saved as object) };
-      }
-    } catch {}
+    /*
+     * ★ 全量审计（真机缺陷②）：构造时读一次**只是尽力而为** —— 那一刻端口常常还没预热，
+     * `getSetting` 会返回 null。真正的保证在 `refreshFromStorage()`：它会在端口就绪后补读，
+     * 并且 `getConfig()` 每次取用都会再试一次，直到成功一次为止。
+     * （这里也不再吞异常：读不出来要有痕迹，见 refreshFromStorage 内的上报。）
+     */
+    instance.refreshFromStorage();
   }
   return instance;
 }

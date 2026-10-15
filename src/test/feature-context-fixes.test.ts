@@ -1,4 +1,4 @@
-﻿/**
+/**
  * FC-*：功能上下文链路的回归（第 45 轮审计 `.preview-shot/_audit/FEATURE-CONTEXT.md`）
  *
  * 覆盖的条目（每条都在文件里有对应用例）：
@@ -75,6 +75,7 @@ vi.mock("../core/storage/compaction-state", async (importOriginal) => {
 });
 
 import { setStoragePort } from "../core/storage/port";
+import { getContextManager } from "../core/context/context";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
 import { resetPersistFailures } from "../core/storage/persist-failure";
 import {
@@ -1212,6 +1213,34 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
       /UNIQ\d+/.test(String(marker)),
       "本次新增历史必须按预算写进去（老实现把整段裁掉 ⇒ 新标记里连一条 UNIQ 都没有）",
     ).toBe(true);
+  });
+
+  it("FC-D15（真机缺陷②）：启动早期构造的单例，必须在存储就绪后读到已保存的压缩阈值", async () => {
+    /*
+     * 真机形态（1.16.319）：设置表里 compactionThreshold=0.5（写进去了），重载后面板仍显示 80%。
+     * 根因：单例首次构造时端口未预热 ⇒ getSettingJSON 返回 null ⇒ 用默认值且**永不重读**。
+     */
+    /* ① 端口不可用时就先摸一次单例（模拟启动早期其它模块抢先取用） */
+    setStoragePort(null);
+    const early = getContextManager();
+    expect(early.getConfig().compactionThreshold, "端口没就绪时用默认值（这一步不是缺陷）").toBe(0.8);
+    /* ② 端口接上，磁盘里已有用户保存的 0.55（设置面按 settings 表 seed：列名 key/value） */
+    const port2 = createFakeStoragePort({
+      seed: {
+        settings: [
+          {
+            key: "codem-context-config",
+            value: JSON.stringify({ compactionThreshold: 0.55, maxContextWindow: 128000 }),
+          },
+        ],
+      },
+    });
+    setStoragePort(port2);
+    /* ③ 同一个单例必须能读到保存值（现在恒为 0.8 ⇒ 红） */
+    expect(
+      getContextManager().getConfig().compactionThreshold,
+      "存储就绪后必须重读一次（否则用户改了阈值、引擎永远按 0.8 触发）",
+    ).toBe(0.55);
   });
 
   it("FC-D14（真机缺陷①）：软删之后**本进程**立刻读不到那些消息（不许等重载）", () => {

@@ -2,8 +2,8 @@
   "_note": "上报点分诊登记表（第 90 轮）。每条 = 一个 `report<Kind>` 调用点（key 为 `文件::area::#第几次出现`，由 tools/audit/scan-report-sites.mjs --json 的 `key` 字段给出，**别自己拼**）。`status: triaged` = 逐处看过并写了理由；`status: pending` = 还没逐处分诊（只记当前实际通道）。闸门 tools/audit/scan-report-sites.mjs --check 要求：新站点必须登记、kind 必须与实际一致、登记不许过期、`_counts` 必须与 `sites` 现算一致；pending 数量在用例里做**棘轮（只许降不许升）**。",
   "_how_to_triage": "真失败 ⇒ persist（写盘）/ action（功能没生效）；自检、普查、对账、自愈的**发现** ⇒ advisory —— ★ 但第 50 波起多一步：**先问「用户有没有可介入的动作」**。有（如凭据普查 ⇒ 轮换密钥）⇒ advisory（用户可见）；没有（已自动修好、要我们自己看）⇒ **只进日志**（console.log/warn，别进上报通道）。判完把这行改成 status: triaged + 一句真实理由（写清「为什么它不是另一种」）。★ 补站点后 `_counts` 一律**从 sites 现算**（第 188 波手写漏记 2 条 ⇒ 扫描 247 / 缓存 245 两个数字并存）。",
   "_counts": {
-    "total": 264,
-    "triaged": 264,
+    "total": 267,
+    "triaged": 267,
     "pending": 0
   },
   "sites": [
@@ -1836,6 +1836,27 @@
       "kind": "advisory",
       "status": "triaged",
       "reason": "「已拒绝」记录超出上限被丢弃 ⇒ 此后同类事实可能重新被提取并再次请用户批准，属自检发现，advisory",
+      "round": 122
+    },
+    {
+      "site": "src/core/context/context.ts::context.updateConfig::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "用户改了压缩配置但没保存成功（重启后回退）⇒ 真失败，persist",
+      "round": 104
+    },
+    {
+      "site": "src/core/context/context.ts::context.refreshFromStorage::#1",
+      "kind": "persist",
+      "status": "triaged",
+      "reason": "启动时没能从存储读到压缩配置（会退回默认值 0.8，与用户保存的不一致）⇒ 真失败，persist",
+      "round": 104
+    },
+    {
+      "site": "src/core/llm/index.ts::engine.readCompactionThreshold::#1",
+      "kind": "advisory",
+      "status": "triaged",
+      "reason": "读取压缩阈值失败时用默认值继续 ⇒ 属自检发现，advisory",
       "round": 122
     }
   ],
