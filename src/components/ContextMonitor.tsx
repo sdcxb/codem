@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { StatusBanner } from "./ui/StatusBanner";
 import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
@@ -34,7 +34,7 @@ import { getTokenTracker, estimateTokens } from "../core/llm/token-tracker";
 import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
-import { FALLBACK_CONTEXT_WINDOW } from "../core/context/water-level";
+import { FALLBACK_CONTEXT_WINDOW, readContextWaterLevel } from "../core/context/water-level";
 
 interface ContextMonitorProps {
   sessionId: string;
@@ -502,6 +502,8 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
    */
   const [todayCost, setTodayCost] = useState(0);
   const [messageCount, setMessageCount] = useState(0);
+  /** ★ 折叠阶梯痕迹：本轮静默折叠了多少条较远的工具输出（0 = 没折，不显示这一行） */
+  const [foldedToolOutputs, setFoldedToolOutputs] = useState(0);
   const [balances, setBalances] = useState<ProviderBalance[]>([]);
   const [balanceLoading, setBalanceLoading] = useState(false);
   /**
@@ -601,6 +603,17 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
          */
         const visible = listVisibleMessages(sessionId);
         setMessageCount(visible.length);
+        /**
+         * ★ 折叠阶梯的**一行痕迹**（用户提的机制）：
+         * 水位到 0.5 时程序会**静默**折叠较远的大段工具输出 —— 静默不等于无声，
+         * 否则用户只会觉得「数字怎么自己变了」。这里把条数带出来渲染一行说明（不弹窗、不打断），
+         * 并写明"最近几轮未动、原文可重跑工具取回"，让人知道发生了什么、以及怎么拿回来。
+         */
+        try {
+          setFoldedToolOutputs(readContextWaterLevel(sessionId).foldedToolOutputs ?? 0);
+        } catch {
+          setFoldedToolOutputs(0);
+        }
 
         const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
         setContextWindowTokens(contextWindow);
@@ -913,6 +926,22 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
             <span className="context-stat-label" title="与模型侧同一口径：listVisibleMessages（不含压缩隐藏的历史）">消息数</span>
             <span className="context-stat-value" title="送往模型的消息条数（与模型的可见集合一致）">{messageCount}</span>
           </div>
+          {foldedToolOutputs > 0 && (
+            /**
+             * ★ 折叠阶梯的**一行痕迹**（用户提的机制）：静默折叠必须留痕，否则用户只会觉得
+             * 「数字怎么自己变了」。这里刻意只写一行、不弹窗、不打断，并说清两件事：
+             * ① 最近几轮没动（当前在干的事没受影响）；② 原文没删、重跑工具就能取回。
+             */
+            <div className="context-stat" title="水位临近提示线时，程序会先自动折叠较远的大段工具输出，尽量不打扰你；最近几轮与最近两条工具结果不会被动">
+              <span className="context-stat-label">已自动折叠</span>
+              <span className="context-stat-value">
+                {foldedToolOutputs} 条较远的工具输出
+                <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-xs)" }}>
+                  （最近几轮未动；原文未删，重跑工具即可取回）
+                </span>
+              </span>
+            </div>
+          )}
           <div className="context-stat">
             <span className="context-stat-label">今日费用</span>
             <span className="context-stat-value">${todayCost.toFixed(4)}</span>
