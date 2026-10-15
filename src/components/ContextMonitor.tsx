@@ -19,7 +19,7 @@ import {
 } from "../core/llm/compaction-budget";
 /* 第 228 波审计：手动与自动压缩必须互斥（共用同一把按会话的锁） */
 import { acquireCompactionLock, releaseCompactionLock } from "../core/llm/compaction-control";
-/** 引擎真实的自动压缩阈值（与 AgenticLoop 默认值同源；设置面板那一档尚未接进引擎） */
+/** 自动压缩阈值的兜底默认（与 AgenticLoop 默认值同源；设置面板那一档已接进引擎，这里只做兜底） */
 const ENGINE_COMPACTION_THRESHOLD = 0.8;
 
 import { getTokenTracker } from "../core/llm/token-tracker";
@@ -445,7 +445,8 @@ export function manualCompact(sessionId: string): {
 export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [budget, setBudget] = useState<TokenBudget>(DEFAULT_BUDGET);
   /**
-   * ★ 全量审计：引擎真实的自动压缩阈值（与 `AgenticLoop` 的默认值同源；滑块那一档尚未接进引擎）
+   * ★ 全量审计：自动压缩阈值的**兜底默认**（与 `AgenticLoop` 的默认值同源）。
+   * 设置面板那一档已经真的接进引擎（构造时读 + 保存时推送），这里只在配置读不到时兜底。
    */
   /** ★ 全量审计：自动压缩阈值按**同一个窗口**算（默认 128k），显示用 */
   const [contextWindowTokens, setContextWindowTokens] = useState(DEFAULT_BUDGET.total);
