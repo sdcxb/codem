@@ -14,6 +14,7 @@ import { getLLMEngine } from "../core/llm";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
 import { pruneLargeToolResult } from "../core/llm/context-fold";
+import { foldForLevelIfNeeded } from "../core/llm/tool-output-fold";
 import {
   foldStaleCompactionMarkers,
   nextCompactionMarkerId,
@@ -617,10 +618,21 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
 
         const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
         setContextWindowTokens(contextWindow);
-        const { usedTokens, budgetTokens } = summarizeModelContext(
-          pruneStaleToolResults(visible as any[]),
-          contextWindow,
-        );
+        /**
+         * ★ 真机缺陷修复（第三处口径）：面板的"占用"必须与**引擎实际发出去的那一份**同一把尺子 ——
+         * 引擎在 `buildMessages` 里先走**折叠阶梯**（水位 ≥0.5 时把远处的大工具结果压成 head+tail），
+         * 而面板原来只做 `pruneStaleToolResults`（它只认 `role: "tool"`，对存储形状的 `toolCalls[].result` 无感）
+         * ⇒ 真机实测：引擎侧已折叠、水位正常，面板却报 84%（选择器把未折叠的巨量结果截到塞满预算）。
+         * 这里改成与水位同一个共享入口（`foldForLevelIfNeeded`），三处口径归一。
+         */
+        const prunedForPanel = pruneStaleToolResults(visible as any[]);
+        const budgetTokens = summarizeModelContext(prunedForPanel as never[], contextWindow).budgetTokens;
+        const estimateForPanel = (ms: any[]) => summarizeModelContext(ms as never[], contextWindow).usedTokens;
+        const foldedForPanel = foldForLevelIfNeeded(prunedForPanel, {
+          available: budgetTokens,
+          estimate: estimateForPanel,
+        });
+        const usedTokens = Math.round(foldedForPanel.ratioAfter * budgetTokens);
         /**
          * `calculateBudgetFromMessages` 仍然用**同一份可见列表**计算（它读的是"消息集合"，
          * 不是"库里有多少行"）—— 只是它的 `used/available` 会被下面的模型侧口径覆盖。

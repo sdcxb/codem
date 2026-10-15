@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FD-7（接线棘轮）：**水位 / 面板 / 引擎三处必须共用同一把尺子**。
  *
  * 为什么必须有这条判据：折叠是"读时视图"，如果只有引擎折了、水位没折，就会出现
@@ -23,6 +23,11 @@ describe("FD-7 折叠阶梯接线：三处同一把尺子", () => {
     const src = read("src/core/context/water-level.ts");
     expect(src, "水位必须走共享入口（否则与引擎口径不一致）").toMatch(/foldForLevelIfNeeded\(/);
     expect(src, "必须带出折叠条数供界面留一行痕迹").toMatch(/foldedToolOutputs/);
+  });
+
+  it("面板（ContextMonitor）也必须走同一个共享入口 —— 三处口径归一（真机实测过不一致：引擎已折叠、面板报 84%）", () => {
+    const src = read("src/components/ContextMonitor.tsx");
+    expect(src, "面板的占用必须与引擎同一把尺子").toMatch(/foldForLevelIfNeeded\(/);
   });
 
   it("共享入口本身只用一处折叠阈值来源（不许把 0.5/0.45 再写一遍）", () => {

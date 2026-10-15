@@ -553,13 +553,11 @@ export function selectMessagesByPriority(
   const estimate = estimateTokensFn ?? estimateTokens;
 
   // Estimate tokens for each message with the shared estimator (CJK-aware).
-  const tokens = messages.map((msg) => {
-    /**
-     * ★ 全量审计（中）：**存储行的工具结果也要算** ——
-     * 存储形状里工具结果在 `toolCalls[].result`（不是 `role: tool` 的独立行），原来这里只读 content ⇒
-     * 编码会话的主要占用（几十万字符的工具结果）在面板里算 0，面板数字系统性偏低。
-     * ⚠️ 必须对**内容本身**估 token（不是对字符数那个数字估）。
-     */
+  /**
+   * ★ 真机缺陷修复：把"一条消息占多少 token"抽成**唯一实现** ——
+   * 初算与"裁剪后重算"必须是同一把尺子，否则用量会漂移（这正是本仓反复踩过的"同一口径写两遍"）。
+   */
+  const sizeOfTokens = (msg: any): number => {
     const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
     let total = estimate(content);
     const toolCalls = (msg as { toolCalls?: Array<{ result?: unknown; args?: unknown }> }).toolCalls;
@@ -576,6 +574,9 @@ export function selectMessagesByPriority(
       }
     }
     return Math.max(1, Math.ceil(total));
+  };
+  const tokens = messages.map((msg) => {
+    return sizeOfTokens(msg);
   });
 
   const totalTokens = tokens.reduce((a, b) => a + b, 0);
@@ -598,7 +599,18 @@ export function selectMessagesByPriority(
     // User messages — HIGH
     if (msg.role === "user") return 3;
     // Assistant with tool calls — MEDIUM
-    if (msg.role === "assistant" && (msg as any).tool_calls) return 2 + isRecent;
+    /**
+     * ★ 全量审计（真机缺陷）：**两种形状都要认** ——
+     * 存储形状是 `toolCalls`（驼峰，与上面算 token 时读的是同一个字段），
+     * 原始行形状才是 `tool_calls`（蛇形）。原来这里只判蛇形 ⇒ 存储形状下**恒不成立**，
+     * 带工具结果的助手消息被打成最低优先级（1），预算一紧就最先被丢掉 ——
+     * 而它们承载的正是上下文的大头（真机实测：两条 25 万字符工具结果在 115,200 预算下「一条都没入选」，
+     * 面板于是报「占用 1%」，自动压缩/折叠的触发依据全部失真）。
+     */
+    const hasToolResults =
+      (Array.isArray((msg as any).toolCalls) && (msg as any).toolCalls.length > 0) ||
+      (Array.isArray((msg as any).tool_calls) && (msg as any).tool_calls.length > 0);
+    if (msg.role === "assistant" && hasToolResults) return 2 + isRecent;
     // Tool results — LOW-MEDIUM
     if (msg.role === "tool") return 1 + isRecent;
     // Assistant text-only — LOW
@@ -618,30 +630,87 @@ export function selectMessagesByPriority(
   }
 
   // Tier 2: MEDIUM (most recent first)
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (priorities[i] >= 2 && !selected.has(i)) {
-      if (usedTokens + tokens[i] <= maxTokens) {
-        selected.add(i);
-        usedTokens += tokens[i];
+  /**
+   * ★ 真机缺陷修复：**放不下就截短塞进去，而不是整条丢掉**。
+   *
+   * 被守的形态（真机实测）：一条远处的助手消息正文只有几十字符、却挂着 25 万字符的工具结果 ——
+   * 原来的选择器"装不下就跳过"⇒ 这条消息**整条消失** ⇒ 它的工具结果既不进发送集合、
+   * 也不进用量（面板于是报「占用 1%」），自动压缩/折叠的触发依据全部失真。
+   * 丢证据换预算不划算：保留 head + 说明，模型需要时还能重跑工具取回（与折叠阶梯同一条纪律）。
+   */
+  const trimmedVariants = new Map<number, any>();
+  const tryAdd = (i: number): boolean => {
+    if (selected.has(i)) return true;
+    const msg = messages[i];
+    if (usedTokens + tokens[i] <= maxTokens) {
+      selected.add(i);
+      usedTokens += tokens[i];
+      return true;
+    }
+    if (i < recencyThreshold && Array.isArray((msg as any).toolCalls)) {
+      const calls = (msg as any).toolCalls as Array<{ result?: unknown }>;
+      const oversized = calls.filter((tc) => typeof tc?.result === "string" && (tc.result as string).length > 2000);
+      if (oversized.length > 0) {
+        const room = maxTokens - usedTokens;
+        if (room > 500) {
+          /* 给每条超长结果分一份额度（至少留 500 字符说明余量） */
+          const quota = Math.max(500, Math.floor(room / Math.max(1, oversized.length)) - 100);
+          const trimmed = { ...(msg as any) };
+          trimmed.toolCalls = calls.map((tc) => {
+            const r = typeof tc?.result === "string" ? tc.result : "";
+            if (r.length <= quota) return tc;
+            return { ...tc, result: r.substring(0, quota) + "\n...(truncated for context budget)" };
+          });
+          const cost = sizeOfTokens(trimmed);
+          if (usedTokens + cost <= maxTokens) {
+            selected.add(i);
+            usedTokens += cost;
+            trimmedVariants.set(i, trimmed);
+            return true;
+          }
+        }
       }
     }
+    return false;
+  };
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (priorities[i] >= 2) tryAdd(i);
   }
 
   // Tier 3: LOW (most recent first)
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (!selected.has(i)) {
-      if (usedTokens + tokens[i] <= maxTokens) {
-        selected.add(i);
-        usedTokens += tokens[i];
-      }
-    }
+    tryAdd(i);
   }
 
   // Build result preserving order, with truncation for oversized tool results
   const result: any[] = [];
   for (let i = 0; i < messages.length; i++) {
     if (!selected.has(i)) continue;
-    let msg = messages[i];
+    let msg = trimmedVariants.get(i) ?? messages[i];
+    /**
+     * ★ 全量审计（真机缺陷）：超预算时**存储形状也要裁** ——
+     * 工具结果在存储形状里是 `toolCalls[].result`（不是 `role: "tool"` 的正文行），
+     * 原来只截后者 ⇒ 被选中的巨型工具结果能把预算直接顶穿（「面板 130%、模型只收到一半」那一族）。
+     */
+    if (usedTokens > maxTokens * 0.9 && i < recencyThreshold && Array.isArray((msg as any).toolCalls)) {
+      const calls = (msg as any).toolCalls as Array<{ result?: unknown }>;
+      const oversized = calls.filter((tc) => typeof tc?.result === "string" && (tc.result as string).length > 5000);
+      if (oversized.length > 0) {
+        const trimmedCalls = calls.map((tc) => {
+          const r = typeof tc?.result === "string" ? tc.result : "";
+          if (r.length <= 5000) return tc;
+          return { ...tc, result: r.substring(0, 2000) + "\n...(truncated for context budget)" };
+        });
+        const nextMsg = { ...msg, toolCalls: trimmedCalls };
+        /* 用量按**同一把尺子**重算（与上面 tokens[] 的口径一致，避免两份实现漂移） */
+        const resized = sizeOfTokens(nextMsg as never);
+        usedTokens -= tokens[i];
+        usedTokens += resized;
+        result.push(nextMsg);
+        continue;
+      }
+    }
     // Truncate very large tool results if over 90% budget
     if (msg.role === "tool" && usedTokens > maxTokens * 0.9) {
       const content = typeof msg.content === "string" ? msg.content : "";
