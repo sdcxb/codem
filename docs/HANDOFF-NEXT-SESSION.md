@@ -5872,3 +5872,55 @@ knip 棘轮 ✓（去掉了一个多余 export）；css-contract 2866 类无变�
 3. **审计建议要过既有判据这一关**：C13（真实 usage 当下限）就是被一条老判据否决的，
    正确做法是**写明权衡并回退**，而不是把新口径强加上去。
 4. 临时补丁脚本里的反引号/半角引号又崩了 4 次（PS-1 门禁抓到 2 个坏脚本）⇒ 已删。
+
+---
+
+## 压缩 + 记忆：三轮全量审计与修复（2026-10，一次性做完 + 审计循环）
+
+> 起因：用户要求「把未修的一次性修完 → 全量审计 → 发现问题修复（不论新旧）→ 再审计」。
+> 过程：**未修清单 10 项一次做完 → 第一轮全量审计（4 路，40 条）→ 修 → 第二轮（2 路，16 条）→ 修 → 第三轮（2 路，追验 + 挖新）**。
+
+### 本轮最值得记住的两条教训（**我自己犯的**）
+
+1. **「脚本报成功」≠「代码真的改了」**：两次在**锚点不唯一**时脚本 `throw` 或打印「跳过」，而我照旧把修复写进提交信息 ⇒ 审计用真实执行抓出来（`consolidate` 的 M1/M2、迁移端口变更的 `aborted`）。
+   ⇒ 纪律：脚本里凡 `if (hits !== 1) throw` 失败，**先看输出再提交**；提交信息里的每条修复都要能用 `grep` 指到代码行。
+2. **判据必须能红**：我写过两条**假绿**判据 —— `MA-26`（夹具相似度 0.6 < 阈值 0.7 ⇒ 从未进分支）与 `CA-31`（大结果挂在取样窗口外 + 断言恒真）。
+   ⇒ 纪律：新判据写完**先让它红**（把实现改坏 / 用能进分支的夹具），再改回来看它绿。
+
+### 已修（按主题，全部有判据 + 变异自证）
+
+- **压缩归属与可见性**：三条横幅拿 `sessionId` 筛而赋值处从不带它（横幅全灰）；`compaction_start` 也自增代次；手动压缩完成后广播 `codem:compaction-applied` 让外壳重载聊天区。
+- **压缩估算口径**：`pruneStaleToolResults` 对**存储行**是空操作（结果在 `assistant.toolCalls[].result`）⇒ 新增 `recentToolResultIds` + `messageCharSizeForEstimate` 做存储行口径裁剪；`summarizeModelContext` 的 `usedTokens` 也计工具结果。
+- **跳过码语义**：`-4` = 可见消息太少（原来与「锁被占」共用 `-1` ⇒ 界面对稳态说「稍后会自动重试」）；反应式路径不再重复计连压次数。
+- **段头诚实性**：中间档/溢出档都用渲染器回填的 `renderedCount`；`rawSummaryLength` 作为折算基数（原来用裁剪后的长度反算 ⇒ 恒等于计划值）。
+- **软删回执**：手动压缩与自动压缩都读 `getLastDeleteReport()`，索引没回应 / 有 `unresolved` 时如实说（自动路径同时 `reportPersistFailure`）。
+- **压缩阈值接线**：`readContextCompactionThreshold()`（读 `codem-context-config`，钳制 (0.1,1]）+ `LLMEngine.updateLoopConfig()` 推送给池里的 loop ⇒ 面板滑块真的生效（上一版面板显示配置值而引擎从不读它 = 假陈述）。
+- **记忆批次凭据**：`finalizeBatch(id, ≤0)` 有活条目时保留凭据并写**存活条目数**（原来写 0 ⇒ 面板「0 条 · 撤销该批」点下去真删 N 条，且被导入过滤丢掉）；导入过滤放宽到 `count < 0`；面板撤销补二次确认。
+- **记忆回退**：`ingestRawForRestore` 用 load 的同一套 `normalizeLoadedRejection`，`dropped` 拆成条目/拒绝记录两个计数；成功后清 `lastPersistError`；快照里的 batches/rejections 一并恢复。
+- **导入/导出保真**：导出含 batches + rejections（且脱敏，Markdown 与 JSON 同口径 + 文件自带「已脱敏」说明）；导入回执区分「从文件恢复」与「修剪后存活」。
+- **consolidate**：按 `scope::归属键` 分桶（不再跨项目互相吞并）；超长**放弃合并并撤回删除**（原来只跳正文合并、源条目照样删）；去掉「前 50 字符相同即重复」的捷径；`mergeSkippedOverLong` 进返回值并能单独触发上报。
+- **脱敏顺序**：`formatLine` 先脱敏后截断（凭据跨 200 字符边界时原来会漏明文片段）；`applyUpdate` 截断判定用脱敏后长度。
+- **审批边界**：`settlement-`/`report-`（子代理写进父会话的通知）纳入机器消息清单（否则汇报里的「记住」能当 explicit 证据免审批）；`stripAttachmentText` 改 fail-closed（正文里的 `</attachment>` 曾能骗过配对剥离）。
+- **迁移态**：端口变更/写回失败都置 `report.aborted` + 复位 `migratedThisProcess`；新增 `alreadyMigrated` 区分「已迁移过」与「推迟」（否则第二次启动会说「已推迟：未知原因」）。
+- **死代码**：删掉「压缩期间排队补写」队列（压缩窗口是全同步的 ⇒ 不可达，而它一旦触发就丢 explicit 数组并在 5 秒后放弃），改成如实上报。
+
+### 明确**不改**（有意的取舍，不是遗漏）
+
+- `estimatePressure` 的 baseline 夹断保留（真实用量下限 vs 「压缩后压力必须下降」两者不可兼得，冲突已在注释里写明）。
+- 写入入口的 projectId 归一化保留原样（做过一次会让面板分组从 3 组变 2 组 ⇒ 破坏既有判据）。
+- 遥测闸门在「缓冲里有压缩中会话」时**整批推迟**（按分片写需要新的持有区，丢事件的代价大于迟一拍）。
+- 子代理会话写的是 `user-<ts>` 形态 id（今天子会话不跑提取 ⇒ 只是潜伏，改它要动会话 id 语义）。
+
+### 已知仍未做（下一轮的起点）
+
+- `composeCompactionMarkerText` 的**段级 clip** 会在 `renderedCount` 之后再裁一次字符 ⇒ 段头「覆盖 N 条」仍可能略高于正文实列条数（要让渲染器回填每段实际条数才行）。
+- `pruneBatches`/`pruneRejections` 的丢弃披露覆盖面（advisory 有节流，极端频繁修剪时会被压掉）。
+- 真机未验证：自动压缩在 0.8 压力的完整形态、托盘「退出」、压缩冷却期。
+
+### 门禁（每批都跑）
+
+`npx tsc --noEmit` 0 / `npx vitest run` **676 文件 8168 通过 17 skipped** / `npm run audit` 0 /
+`node tools/audit/knip-gate.mjs` 49-49 无增长 / `node tools/audit/scan-report-sites.mjs --check` 262 = 262 /
+`node tools/mutate/check-artifacts.mjs` 39 波次全过（代码变化时按纪律**重锚 + 重跑**：`audit-228`、`audit-228f`、`memory-rejection-200`）。
+
+**发版仍等用户点头**（当前已装构建早于本轮 6 个提交，发版前必须重建 + 静默安装验证）。
