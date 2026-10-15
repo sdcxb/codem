@@ -2440,7 +2440,16 @@ export class MemoryService {
     ids: readonly string[],
     updates: Partial<MemoryEntry>,
     opts: { actor: "user" | "auto" },
-  ): { applied: string[]; rejected: string[]; failures: Array<{ id: string; reason: string }> } {
+  ): {
+    applied: string[];
+    rejected: string[];
+    failures: Array<{ id: string; reason: string }>;
+    /**
+     * ★ 全量审计（中）：**被截断的 id 列表**（截断是"成功但有损"，原来只在 `lastWriteError` 里，
+     * 而那是单值、会被循环里后一条覆盖或清空 ⇒ 批量路径的截断披露整个丢失）。
+     */
+    truncated: string[];
+  } {
     const applied: string[] = [];
     const rejected: string[] = [];
     /**
@@ -2449,9 +2458,13 @@ export class MemoryService {
      * ⇒ 调用方的回执只能写「保留失败：条目 id」（真实原因丢了）。这里在每条失败**当场**取原因。
      */
     const failures: Array<{ id: string; reason: string }> = [];
+    const truncated: string[] = [];
     for (const id of ids) {
-      if (this.applyUpdate(id, updates, opts)) applied.push(id);
-      else {
+      if (this.applyUpdate(id, updates, opts)) {
+        applied.push(id);
+        /* ★ 全量审计：成功但被截断 ⇒ 单独记下来（当场取，避免被下一条覆盖） */
+        if (this.lastWriteError && /截断/.test(this.lastWriteError)) truncated.push(id);
+      } else {
         rejected.push(id);
         /* 「条目不存在」与「被校验拒绝」要分开说 —— 前者 lastWriteError 是 null，写"未知原因"不诚实 */
         failures.push({
@@ -2461,7 +2474,7 @@ export class MemoryService {
       }
     }
     if (applied.length > 0) this.save();
-    return { applied, rejected, failures };
+    return { applied, rejected, failures, truncated };
   }
 
   /** `update` 的**内存部分**（校验 + 容量 + 写入镜像），不落库 —— 供批量路径复用同一套规则 */
@@ -4108,11 +4121,13 @@ export class MemoryService {
      * 拒绝记录却还在（下次任意一次改动落盘就把它写进「回退后的原文」）。
      * 这里按**同一个容器口径**把三段都恢复（旧版 payload 没有这两段 ⇒ 那就是空）。
      */
-    let dropped = 0;
+    /* ★ 全量审计（中）：条目与拒绝记录**分开计数**（原来混在一个 dropped 里，文案却只说「记忆条目」） */
+    let droppedEntries = 0;
+    let droppedRejections = 0;
     for (const [key, value] of container.pairs) {
       const normalized = normalizeLoadedEntry(key, value);
       if (normalized) this.entries.set(normalized.id, normalized);
-      else dropped += 1;
+      else droppedEntries += 1;
     }
     this.batches.clear();
     if (Array.isArray(container.batches)) {
@@ -4126,15 +4141,13 @@ export class MemoryService {
     if (Array.isArray(container.rejections)) {
       for (const r of container.rejections) {
         /**
-         * ★ 全量审计（中）：**与正常 load 同一套口径**（形状校验 + 有界修剪）。
-         * 被守的缺陷：回退这条入口原来只查 id 是不是字符串 ⇒ 同一份磁盘数据，
-         * 走回退得到的拒绝记录数与走正常 load 不同（实测 101 vs 60，且坏记录留在内存里）。
+         * ★ 全量审计（中）：**与正常 load 用同一套规范化**（`normalizeLoadedRejection` 是唯一口径）——
+         * 原来回退自己写了一套更严的校验（还会保留 key/content 都为空的记录）⇒
+         * 同一份磁盘数据，走回退与走 load 得到两个数字。
          */
-        const rec = r as { id?: unknown; key?: unknown; content?: unknown; rejectedAt?: unknown };
-        if (typeof rec?.id !== "string" || rec.id.length === 0) { dropped += 1; continue; }
-        if (typeof rec.key !== "string" || typeof rec.content !== "string") { dropped += 1; continue; }
-        if (typeof rec.rejectedAt !== "number" || !Number.isFinite(rec.rejectedAt)) { dropped += 1; continue; }
-        this.rejections.set(rec.id, r as never);
+        const normalized = normalizeLoadedRejection(r);
+        if (normalized) this.rejections.set(normalized.id, normalized);
+        else droppedRejections += 1;
       }
     }
     /* 与正常 load 同一条纪律：这两段都进整份 payload，必须有界 */
@@ -4144,13 +4157,19 @@ export class MemoryService {
      * ★ 全量审计（中）：读入丢弃**要如实上报**（与 `loadFromStorage` 的 memory.entriesDropped 同一口径）——
      * 否则用户看到「写回 N 条」而磁盘 raw 里是 N+M 条，两个数字对不上却无人解释。
      */
-    if (dropped > 0) {
-      reportAdvisory("memory.entriesDropped", `回退时跳过 ${dropped} 条形状不合法（缺 id/key/content 或类型不对）的记忆条目`, {
-        title: "回退时跳过了不合法的条目",
-        nextStep: "这些条目在库里的原文仍然保留（本次只把它们挡在内存之外）；可用导出 JSON 查看原文。",
-      });
+    if (droppedEntries > 0 || droppedRejections > 0) {
+      reportAdvisory(
+        "memory.entriesDropped",
+        `回退时跳过 ${droppedEntries} 条形状不合法（缺 id/key/content 或类型不对）的记忆条目` +
+          (droppedRejections > 0 ? `，另有 ${droppedRejections} 条「已拒绝」记录不合法被跳过` : ""),
+        {
+          title: "回退时跳过了不合法的条目",
+          nextStep: "这些条目在库里的原文仍然保留（本次只把它们挡在内存之外）；可用导出 JSON 查看原文。",
+        },
+      );
     }
-    this.loadState = { ok: true, dropped, raw };
+    /* loadState.dropped 保持「条目」口径（与 load 一致）；拒绝记录的丢弃单独披露 */
+    this.loadState = { ok: true, dropped: droppedEntries, raw };
   }
 
   /**
@@ -4574,9 +4593,12 @@ export class MemoryService {
     overPayloadBudget: boolean;
     /** ★ 全量审计：因「id 已存在且未开覆盖」而跳过的条数 */
     skippedExisting: number;
-    /** ★ 全量审计：随文件一起读回来的撤销凭据 / 拒绝记录条数（往返保真） */
+    /** ★ 全量审计：随文件一起读回来的撤销凭据 / 拒绝记录条数（往返保真，**修剪前**） */
     restoredBatches: number;
     restoredRejections: number;
+    /** ★ 全量审计：修剪后**实际存活**的条数（回执要能说清「恢复了多少、留下了多少」） */
+    restoredBatchesKept?: number;
+    restoredRejectionsKept?: number;
   } {
     const result = {
       imported: 0,
@@ -4588,6 +4610,8 @@ export class MemoryService {
       skippedExisting: 0,
       restoredBatches: 0,
       restoredRejections: 0,
+      restoredBatchesKept: 0,
+      restoredRejectionsKept: 0,
     };
     let parsed: unknown;
     try {
@@ -4681,11 +4705,13 @@ export class MemoryService {
     this.pruneBatches();
     this.pruneRejections();
     /**
-     * ★ 全量审计（低）：回执要报**修剪后实际存活**的数 ——
-     * 原来报的是修剪前（实测导入 200 批次/300 拒绝 ⇒ 报 200/300，实际只留 50/60，4~5 倍虚报）。
+     * ★ 全量审计（中）：两个口径都要如实给 ——
+     *  - `restored*` = **本次从文件恢复**的条数（上面已经累加，修剪前）；
+     *  - `restored*Kept` = 修剪后**实际存活**的条数（原来我把它写回 restored* ⇒ 又变成虚报）。
+     * ⚠️ 不许用「内存总数」：那会把**导入前既有**的批次算成本次导入的结果。
      */
-    result.restoredBatches = this.batches.size;
-    result.restoredRejections = this.rejections.size;
+    result.restoredBatchesKept = this.batches.size;
+    result.restoredRejectionsKept = this.rejections.size;
     if (result.imported > 0 || result.restoredBatches > 0 || result.restoredRejections > 0) this.save();
     /**
      * ★ 第 228 波审计（第四批）：导入是**用户显式动作**（照旧放行，不做自动拒绝），

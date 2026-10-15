@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆体检（Memory Checkup）—— 「设置 → 记忆体检」视图的**数据层**。
  *
  * ## 为什么单独一个模块
@@ -676,6 +676,9 @@ export function formatMemoryImportReceipt(
     /** ★ 全量审计：随文件恢复的撤销凭据 / 拒绝记录条数（往返保真，回执必须提） */
     restoredBatches?: number;
     restoredRejections?: number;
+    /** ★ 全量审计：修剪后实际存活的条数（回执要说清「恢复了多少、留下多少」） */
+    restoredBatchesKept?: number;
+    restoredRejectionsKept?: number;
   },
   landed: boolean,
   lastPersistError: string | null,
@@ -694,6 +697,22 @@ export function formatMemoryImportReceipt(
       : "",
     result.overTotalCap || result.overPayloadBudget
       ? "导入后已越过记忆的容量闸（跨所有作用域总条数 / 体积预算）⇒ **此后的自动记忆写入会被拒绝**，建议到「记忆体检」清理不再需要的条目"
+      : "",
+    /**
+     * ★ 全量审计（中）：**从文件恢复了什么**要说清（含被上限丢掉的差额）——
+     * 只带 rejections 的文件会让此后同类自动记忆被静默挡下，而回执原来一字不提。
+     */
+    result.restoredBatches && result.restoredBatches > 0
+      ? `从文件恢复了 ${result.restoredBatches} 个撤销凭据（批次）` +
+        (result.restoredBatchesKept !== undefined && result.restoredBatchesKept < result.restoredBatches
+          ? `，其中 ${result.restoredBatches - result.restoredBatchesKept} 个因超出上限被丢弃`
+          : "")
+      : "",
+    result.restoredRejections && result.restoredRejections > 0
+      ? `从文件恢复了 ${result.restoredRejections} 条「已拒绝同类」记录（此后同类自动记忆会被跳过）` +
+        (result.restoredRejectionsKept !== undefined && result.restoredRejectionsKept < result.restoredRejections
+          ? `，其中 ${result.restoredRejections - result.restoredRejectionsKept} 条因超出上限被丢弃`
+          : "")
       : "",
   ].filter(Boolean);
   const tail = extras.length > 0 ? `\n${extras.join("；")}。` : "";

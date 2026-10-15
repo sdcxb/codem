@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
+﻿import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "./components/ui/portal";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -1540,6 +1540,20 @@ abortControllersRef.current.clear();
 const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number; skipped?: boolean; skipReason?: string; sessionId?: string } | null>(null);
 /** ★ 全量审计（低）：压缩状态清除的代次（防止旧定时器清掉后发生的新状态） */
 const compactionStatusGeneration = useRef(0);
+/**
+ * ★ 全量审计（中）：**手动压缩完成后重载聊天区** ——
+ * 面板压缩会软删旧消息，但只有自动路径会 loadMessages；不重载时列表里那些消息还在（界面不一致）。
+ */
+useEffect(() => {
+  const onApplied = (e: Event) => {
+    const sid = (e as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+    if (!sid) return;
+    if (sid !== uiSessionId) return;
+    loadMessages(sid);
+  };
+  window.addEventListener("codem:compaction-applied", onApplied);
+  return () => window.removeEventListener("codem:compaction-applied", onApplied);
+}, [uiSessionId]);
 const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
     resolve: (result: PermissionResult) => void;

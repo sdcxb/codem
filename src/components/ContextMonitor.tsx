@@ -3,6 +3,7 @@ import { StatusBanner } from "./ui/StatusBanner";
 import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import { listVisibleMessages, deleteMessagesByIds, createMessage, getLastDeleteReport } from "../core/storage/message";
+import { getLLMEngine } from "../core/llm";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
 import {
@@ -413,6 +414,16 @@ export function manualCompact(sessionId: string): {
      * `deleteMessagesByIds` 恒返回「计划删多少」，而索引侧可能没回应（端口缺能力）或
      * 有若干 id 查不到归属（`unresolved`）⇒ 原来那句「移除 N 条」会高于真实值。
      */
+    /**
+     * ★ 全量审计（中）：**通知外壳重载聊天区** ——
+     * 自动路径在 `compaction_end` 后调 `loadMessages`，手动路径原来只刷新自己面板的数字 ⇒
+     * 用户看到「移除 N 条」而对话列表里一条没少（界面自相矛盾）。
+     */
+    try {
+      window.dispatchEvent(new CustomEvent("codem:compaction-applied", { detail: { sessionId } }));
+    } catch {
+      /* 事件广播失败不影响压缩本身（消息已落地） */
+    }
     const report = getLastDeleteReport();
     const reallyUnresolved = report.unresolved > 0 || !report.softDeleteResponded;
     return {
@@ -841,8 +852,10 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                * （全仓只有 agentic-loop 的默认 0.8 与判定处）⇒ 用户把滑块拉到 90% 时面板写「窗口 90%」，
                * 引擎仍按 0.8 触发 —— 那是我引入的一句假陈述。
                */}
-              {Math.round(contextWindowTokens * ENGINE_COMPACTION_THRESHOLD).toLocaleString()} tokens
-              {`（窗口 ${Math.round(ENGINE_COMPACTION_THRESHOLD * 100)}%，与引擎判定同源）`}
+              {Math.round(
+                contextWindowTokens * (ctxConfig?.compactionThreshold ?? ENGINE_COMPACTION_THRESHOLD),
+              ).toLocaleString()} tokens
+              {`（窗口 ${Math.round((ctxConfig?.compactionThreshold ?? ENGINE_COMPACTION_THRESHOLD) * 100)}%，已在构造时接进引擎）`}
             </span>
           </div>
           <div className="context-stat">
@@ -1028,6 +1041,16 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 onClick={() => {
                   const cm = getContextManager();
                   cm.updateConfig(ctxConfig);
+                  /**
+                   * ★ 全量审计（中）：**同步给正在跑的循环** ——
+                   * 阈值是在构造 `AgenticLoop` 时读进配置的，不推送的话改了滑块要重启才生效
+                   * （那又变成「面板与引擎两套数字」）。
+                   */
+                  try {
+                    getLLMEngine().updateLoopConfig({ compactionThreshold: ctxConfig.compactionThreshold });
+                  } catch {
+                    /* 引擎还没起来/已销毁 ⇒ 下次构造时会读到新配置 */
+                  }
                   setSavedConfig(true);
                   setTimeout(() => setSavedConfig(false), 2000);
                 }}

@@ -142,7 +142,7 @@ export { redactSecrets, redactSecretsDeep } from "../utils/redact";
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 import { loadAppIdentity, loadUserConfig } from "../config/loader";
-import { reportActionFailure, reportAdvisory } from "../storage/persist-failure";
+import { reportActionFailure, reportAdvisory, reportPersistFailure } from "../storage/persist-failure";
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 // 第 206 波：按模型归属路由（内置免费模型插件提供的模型 ⇒ 走 free-model 供应商）
@@ -363,6 +363,34 @@ export class LLMEngine {
 private agenticLoop: AgenticLoop | null = null;
 /** Per-session agentic loop pool for parallel execution */
 private loopPool: Map<string, AgenticLoop> = new Map();
+
+  /**
+   * ★ 全量审计（中）：把**压缩阈值**这类循环级配置推给池里所有已存在的 loop。
+   *
+   * 为什么需要它：阈值在构造 AgenticLoop 时读进配置 ⇒ 用户在设置面板改滑块后
+   * 若不推送，引擎仍用旧值（面板与引擎两套数字）。只接受窄字段，避免变成万能后门。
+   */
+  updateLoopConfig(next: { compactionThreshold?: number }): { applied: number; failed: number } {
+    let applied = 0;
+    let failed = 0;
+    const push = (loop: { updateConfig: (c: unknown) => void } | null | undefined) => {
+      if (!loop) return;
+      try {
+        loop.updateConfig(next);
+        applied += 1;
+      } catch (e) {
+        failed += 1;
+        /**
+         * ★ 全量审计：**配置没推成功是真实失败**（用户改了阈值却仍按旧值压缩）——
+         * 只 console.warn 会被 `audit:false-success` 的 B 类扫描判成假成功（它当场就抓到了我这一版）。
+         */
+        reportPersistFailure("engine.updateLoopConfig", e, "压缩阈值没能推给正在跑的循环（仍按旧值生效）");
+      }
+    };
+    for (const loop of this.loopPool.values()) push(loop as never);
+    push(this.agenticLoop as never);
+    return { applied, failed };
+  }
 /**
  * 子智能体 scoped loop 的引用（sessionId → loop）：**只用于 abort，不复用**。
  * 见 getAgenticLoop 中第 84 波的说明。
@@ -704,6 +732,20 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       if (modelMatch?.contextWindow) contextWindow = modelMatch.contextWindow;
     } catch { /* fall back to run() resolution */ }
 
+/**
+ * ★ 全量审计（中）：压缩阈值的**唯一口径** —— 设置面板的 `codem-context-config`；
+ * 读不到/非法时回落到引擎默认 0.8（与 `AgenticLoopConfig` 的默认值一致）。
+ */
+function readContextCompactionThreshold(): number {
+  try {
+    const raw = getSettingJSON<{ compactionThreshold?: unknown }>("codem-context-config", {});
+    const v = raw?.compactionThreshold;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0.1 && v <= 1) return v;
+  } catch {
+    /* 配置读不到 ⇒ 用默认值（引擎行为与改之前一致） */
+  }
+  return 0.8;
+}
     const loop = new AgenticLoop(
       provider,
       toolRegistryOverride ?? this.tools,
@@ -719,6 +761,12 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
         }).maxTokens,
         model,
         contextWindow,
+        /**
+         * ★ 全量审计（中）：**把设置面板里的压缩阈值真的接进引擎** ——
+         * 被守的缺陷：面板（codem-context-config）能改它，而循环构造时从不读 ⇒
+         * 用户把滑块拉到 90% 时面板写「窗口 90%」、引擎仍按默认 0.8 触发（滑块是装饰）。
+         */
+        compactionThreshold: readContextCompactionThreshold(),
         // Pass through agent-level overrides (Phase 0 fields)
         reasoningEffort: agent?.reasoningEffort || resolved.reasoningEffort,
         collaborationMode: agent?.collaborationMode,
