@@ -5924,3 +5924,43 @@ knip 棘轮 ✓（去掉了一个多余 export）；css-contract 2866 类无变�
 `node tools/mutate/check-artifacts.mjs` 39 波次全过（代码变化时按纪律**重锚 + 重跑**：`audit-228`、`audit-228f`、`memory-rejection-200`）。
 
 **发版仍等用户点头**（当前已装构建早于本轮 6 个提交，发版前必须重建 + 静默安装验证）。
+
+### 第三轮全量审计（2 路：压缩 8 条 / 记忆 8 条）——**又抓到两处「声称已修但没生效」**
+
+#### 本轮最重的两条（都是我的）
+1. **A1 的判据恒 false（等于没有）**：`softDeleteResponded` 在 `message.ts` 里写的是 `if (port) true`，
+   只表示「端口对象在」，与它自己的文档相反；而压缩侧据此判断「软删是否落地」⇒ 那条新加的
+   `loop.compactionDeleteIncomplete` 上报**永不触发**。已改成**能力探测**（看 `port.messages` 是否存在）+
+   两条失败分支各自说准原因（端口在但缺能力 / 根本没有端口），并加 `MA-29` 钉住（改坏即红）。
+2. **迁移「数据写回失败」分支仍然没有 `aborted`**：上一批提交信息声称「端口变更/写回失败两条分支都补了」，
+   实际只有端口那条。已补 `aborted` + 复位 `migratedThisProcess`，并把界面文案从硬编码的
+   「快照确认写入失败」改成按 `aborted` 文本归因。
+
+#### 其余已修
+- **A2**：手动压缩后的重载改用**唯一活判据** `isSessionOnScreen`（原来比的是渲染闭包里的 `uiSessionId`，
+  切会话后同一 commit 内已过期，且是本仓第二份「在屏会话」判据）；`MA-30` 用结构棘轮 + 语义双向钉住。
+- **A3**：阈值钳制上界从 1 收到 **0.95** —— 压力被 `Math.min(1, …)` 钳到 1 而判定用严格大于 ⇒ 写 1 等于
+  「压力触发永不发生」（只剩反应式溢出压缩）。另在 `ContextManager.needsCompaction` 上写明它与引擎口径
+  **分母与比较符都不同**（同名不同义，将来要它做触发必须先统一）。
+- **restored\*Kept**：改成**按文件里的 id 数存活**（上一版用内存总数 ⇒ 已有 50 个批次时导入 5 个较旧批次，
+  5 个全被修剪丢弃而回执照说「恢复了 5 个」）。回执措辞也从因果句改成非因果（重名 id 也会造成差额）。
+- **pruneRejections**：被丢弃的「已拒绝」记录原来**零披露**（用户明确拒过的事实被丢掉后会重新被提取、再次
+  请求批准）⇒ 补 advisory，且用**独立 area**（共用 area 会被 App 的按-area 去重挡掉）+ 独立实例级节流。
+- **导入的拒绝记录**：原来是自己写的**第三套**校验（无 2000 上限、无 scope 兜底）⇒ 一份被改动过的导出文件
+  可把任意长度记录塞进整份读写 payload；已统一到 `normalizeLoadedRejection`（唯一口径）。
+- **`clearRejections().landed` 删掉**：`save()` 只入队、`lastPersistError` 是**粘性**的 ⇒ 那个「落库结论」读到的
+  必然是**上一次**的结果（双向撒谎）；界面改成 `await flushPendingPersist()` 后下结论。
+- **`finalizeBatch` 的 count 一律按存活条目数**（同批次内「明确要求记住」顶替刚写入那条时，调用方报的数会偏大）。
+- **`updateMany.truncated` 有了消费方**（体检「整组保留为平台级」的回执会写「其中 N 条因超长被截短」）。
+- **拒绝记录被截断也披露**：`normalizeLoadedRejection` 的 2000 截断是**永久缩水**（`serialize()` 原样写回）⇒
+  读盘与回退两条路径都上报被截断的条数。
+- **`@codem/compaction` 插件的休眠地雷**：它暴露的 4 个方法里 3 个在 `ContextManager` 上根本不存在
+  （`shouldCompact` / `estimateTokens(text)` / `getTokenLimit`）⇒ 循环只做存在性检查 ⇒ 服务「在」、一调就
+  TypeError。已对齐真实 API（`needsCompaction` / `compact` / `estimateTokens(messages)` / `getContextWindow`）。
+
+#### 明确**不改**（本轮新增的取舍）
+- **压缩标记正文的「已移除 N 条」仍是计划值**：标记必须在删除**之前**写（这是刻意的原子性取舍 —— 崩溃时
+  宁可多一份摘要，不能丢历史），所以那个数只能按计划写；异常情形（查询索引未回应）现在有独立告警覆盖。
+  要改成真值就必须「删后改写」，那是拿数据安全换一句话的精确度 ⇒ 不换。
+- 压缩事件的 `deleteUnresolved` / `softDeleteResponded` 字段**暂无读取方**（诊断字段，留给排障与将来）。
+

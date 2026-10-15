@@ -156,7 +156,18 @@ export class ContextManager {
     };
   }
 
-  /** Check if compaction is needed */
+  /**
+   * Check if compaction is needed
+   *
+   * ★ 全量审计（第三轮）：**这里的口径与引擎实际触发压缩的口径不同**，不要当成同一件事 ——
+   *  - 引擎（`AgenticLoop`，真正决定压缩的那条）：`contextPressure > compactionThreshold`（严格大于），
+   *    分母是**上下文窗口**，阈值来自 `codem-context-config`（钳制 (0.1, 0.95]）；
+   *  - 这里：`used >= compactionThreshold`（大于等于），分母是
+   *    `available = maxContextWindow − systemPromptTokens − outputReserve`（扣掉系统提示与输出预留）。
+   *  两者读的是**同一个配置键**，但分母与比较符都不同 ⇒ 同一个阈值会得出不同结论。
+   *  该方法目前只经 `@codem/compaction` 插件对外暴露（引擎不用它）；若将来要它做触发判定，
+   *  必须先统一口径（否则又是一处「同名不同义」）。
+   */
   needsCompaction(messages: MessageV2[]): boolean {
     const budget = this.calculateBudget(messages);
     const usageRatio = budget.used / budget.available;
