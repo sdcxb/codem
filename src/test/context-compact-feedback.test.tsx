@@ -27,7 +27,8 @@ const listVisibleMessagesMock = vi.fn();
 const deleteMessagesByIdsMock = vi.fn();
 const createMessageMock = vi.fn();
 
-vi.mock("../core/storage/message", () => ({
+vi.mock("../core/storage/message", () => ({  isHiddenStateAuthoritative: () => true,
+
   listMessages: (...args: unknown[]) => listVisibleMessagesMock(...args),
   listVisibleMessages: (...args: unknown[]) => listVisibleMessagesMock(...args),
   deleteMessagesByIds: (...args: unknown[]) => deleteMessagesByIdsMock(...args),

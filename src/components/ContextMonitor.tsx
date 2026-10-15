@@ -2,10 +2,18 @@
 import { StatusBanner } from "./ui/StatusBanner";
 import { getContextManager, summarizeDisplayPressure, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
-import { listVisibleMessages, deleteMessagesByIds, createMessage, getLastDeleteReport } from "../core/storage/message";
+import {
+  listVisibleMessages,
+  deleteMessagesByIds,
+  createMessage,
+  getLastDeleteReport,
+  isHiddenStateAuthoritative,
+  updateMessage,
+} from "../core/storage/message";
 import { getLLMEngine } from "../core/llm";
 import { getEventLog } from "../core/storage/event-log";
 import { setCompactionInProgress } from "../core/storage/compaction-state";
+import { pruneLargeToolResult } from "../core/llm/context-fold";
 import {
   foldStaleCompactionMarkers,
   nextCompactionMarkerId,
@@ -22,7 +30,7 @@ import { acquireCompactionLock, releaseCompactionLock } from "../core/llm/compac
 /** 自动压缩阈值的兜底默认（与 AgenticLoop 默认值同源；设置面板那一档已接进引擎，这里只做兜底） */
 const ENGINE_COMPACTION_THRESHOLD = 0.8;
 
-import { getTokenTracker } from "../core/llm/token-tracker";
+import { getTokenTracker, estimateTokens } from "../core/llm/token-tracker";
 import { pruneStaleToolResults } from "../core/llm/context-fold";
 import { getSettingJSON } from "../core/storage/settings";
 import { reportActionFailure, reportPersistFailure } from "../core/storage/persist-failure";
@@ -62,6 +70,14 @@ const COMPACT_COOLDOWN_MS = 8000;
  * （见 `manualCompact`）—— 于是"最近几轮"在大消息刷屏时也不会被切进中间。
  */
 const MANUAL_KEEP_MESSAGES = 20;
+
+/** 一条消息里工具结果的字符总量（排序用：先裁最大的那条） */
+function toolCharsOf(m: any): number {
+  if (!Array.isArray(m?.toolCalls)) return 0;
+  let n = 0;
+  for (const tc of m.toolCalls) n += typeof tc?.result === "string" ? tc.result.length : 0;
+  return n;
+}
 
 interface ProviderBalance {
   provider: string;
@@ -148,6 +164,12 @@ export function manualCompact(sessionId: string): {
   /** ★ 全量审计：真实删除结果带来的补充说明（索引没回应 / 有条目查不到归属） */
   receiptNote?: string;
   softDeleteIncomplete?: boolean;
+  /** ★ 用户现场：为落到提示线以下而裁剪的**超大工具输出**条数（已落库） */
+  trimmedToolResults?: number;
+  /** ★ 用户现场：压缩后的水位百分比（常驻提示线 70 / 紧急线 90） */
+  percentAfter?: number;
+  /** ★ 用户现场：即便裁剪过仍高于目标线（回执必须如实说，并指向开启新对话） */
+  overTarget?: boolean;
 } {
   /**
    * P2-D12：可见消息的**唯一读法**是 `listVisibleMessages` ——
@@ -155,6 +177,15 @@ export function manualCompact(sessionId: string): {
    * 压缩后剩多少条"口径就与模型看到的集合不一致（模型侧读的是 `listMessages` 后
    * `filter(!hidden)`，见 `agentic-loop.ts::buildMessages`）。
    */
+  /**
+   * ★ 全量审计（用户现场）：**权威隐藏状态没就绪时不许压缩** ——
+   * 那一刻可见集里混着「已被压缩隐藏的历史」（真机：149 条 vs 索引侧 21 条），
+   * 据此算出的计划会把已经隐藏的记录再「移除」一次（回执与摘要都失真）。
+   * 宁可让用户等一拍，也不许给出一个看起来成功、实际基于错集合的结果。
+   */
+  if (!isHiddenStateAuthoritative(sessionId)) {
+    return { removed: 0, kept: 0, skipped: "消息索引正在载入（还没就绪）—— 请稍等片刻再压缩" };
+  }
   const messages = listVisibleMessages(sessionId);
   /*
    * ★ 全量审计（低）：这个「没压成」必须带真实原因 ——
@@ -367,6 +398,12 @@ export function manualCompact(sessionId: string): {
    * 连同归属一起被抢走。
    */
   const markerId = nextCompactionMarkerId("manual");
+  /* ★ 用户现场：压缩后要如实报出「压到什么水平」（折叠阶梯已在读路径上处理远处的工具输出） */
+  const windowForTarget = getTokenTracker().getContextWindow() || 128000;
+  const availableForTarget = Math.max(16000, Math.round(windowForTarget * 0.9));
+  const targetTokens = Math.floor(availableForTarget * 0.65);
+  const keepTokensNow = () =>
+    summarizeModelContext(messagesToKeep as never[], windowForTarget).usedTokens;
   const markerContent = `[上下文已手动压缩]\n\n以下对话的摘要：\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。`;
   const messagesBefore = messages.length;
   const messagesAfter = keepCount + 1;
@@ -426,9 +463,16 @@ export function manualCompact(sessionId: string): {
     }
     const report = getLastDeleteReport();
     const reallyUnresolved = report.unresolved > 0 || !report.softDeleteResponded;
+    /* ★ 用户现场：回执要说清「压到什么水平」（以及裁剪了什么） */
+    const afterTokens = keepTokensNow() + estimateTokens(markerContent);
+    const afterPercent = summarizeDisplayPressure(afterTokens, availableForTarget).percent;
+    const overTarget = afterTokens > targetTokens;
     return {
       removed: messagesToRemove.length,
       kept: keepCount,
+      trimmedToolResults: 0,
+      percentAfter: afterPercent,
+      overTarget,
       receiptNote: !report.softDeleteResponded
         ? "（注意：索引侧这次没有回应，旧消息可能仍然留在索引里，重启后请确认）"
         : report.unresolved > 0
@@ -485,6 +529,12 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     skipped?: string;
     receiptNote?: string;
     softDeleteIncomplete?: boolean;
+    /** ★ 用户现场：为落到提示线以下而裁剪的**超大工具输出**条数（已落库） */
+    trimmedToolResults?: number;
+    /** ★ 用户现场：压缩后的水位百分比（常驻提示线 70 / 紧急线 90） */
+    percentAfter?: number;
+    /** ★ 用户现场：即便裁剪过仍高于目标线（回执必须如实说，并指向开启新对话） */
+    overTarget?: boolean;
   } | null>(null);
   /**
    * ★ 第 227 波（用户实报）：

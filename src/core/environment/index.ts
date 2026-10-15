@@ -3,7 +3,6 @@ export {
   runCleanupScript,
   runCustomOperation,
   getCustomOperations,
-  getEnvironmentConfig,
   type ScriptRunResult,
 } from "./environment-runner";
 

@@ -1,4 +1,4 @@
-﻿import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
+import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
@@ -47,6 +47,13 @@ import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryD
   messageCharSizeForEstimate,
   recentToolResultIds,
 } from "./compaction-budget";
+import { summarizeModelContext } from "./compaction-budget";
+import {
+  FOLD_TARGET_RATIO,
+  foldToolOutputsUnderTarget,
+  protectedFromIndexForTurns,
+  shouldFoldToolOutputs,
+} from "./tool-output-fold";
 import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
@@ -2545,7 +2552,22 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
        * 这一步判定它是否在 `compactMessages` 里（继续「只量不猜」✓）。
        */
       debugLog("agent-loop", `prep打点 compactionIn t=${Date.now()}`);
-      if (this.state.contextPressure > this.config.compactionThreshold && this.config.enableCompaction) {
+      /**
+     * ★ 全量审计（用户现场）：**权威隐藏状态没就绪 ⇒ 不触发压力压缩** ——
+     * 那一刻可见集里混着已被压缩隐藏的历史（真机：149 条 vs 索引侧 21 条 ⇒ 水位假报 99%），
+     * 据此压缩会白烧一次摘要调用、还会写出一个基于错集合的标记。等镜像就绪后的下一轮再压。
+     */
+    const hiddenStateReady = (() => {
+      try {
+        return MessageStorage.isHiddenStateAuthoritative(sessionId);
+      } catch {
+        return false;
+      }
+    })();
+    if (!hiddenStateReady) {
+      console.log("[compactMessages] 跳过压力压缩：消息索引镜像还没就绪（可见集可能含已隐藏的历史）");
+    }
+    if (hiddenStateReady && this.state.contextPressure > this.config.compactionThreshold && this.config.enableCompaction) {
         // Prevent infinite compaction loops (max 3 consecutive compactions)
         if (this.state.consecutiveCompactions >= 3) {
           console.warn("[AgenticLoop] Too many consecutive compactions, forcing stop");
@@ -5363,7 +5385,40 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     messages = messages.filter((m: any) => !m.hidden);
     phase("filter");
 
-    // --- E3: Incremental message building ---
+    /**
+     * ★ 工具输出折叠阶梯（用户提的机制，本轮落地）：
+     * **先静默折远处的大工具结果，还高才提示用户** ——
+     * 真机数据支持这条：会话里工具结果占 74% 的 token，而它们的原文**大多可以重跑工具再取**。
+     *
+     * 三条纪律：① 这是**读时视图**（库里原文一字不动，"取回"就是重跑工具）；
+     * ② 最近 3 轮、最近 2 条工具结果**绝不折**（当前正在干的事依赖它们）；
+     * ③ 只有水位真的到 `FOLD_TRIGGER_RATIO`（0.5）才折 —— 与横幅**同一把尺子**，
+     *    否则就是"水位没超却动了上下文"的无谓改动。
+     */
+    let foldedToolOutputs = 0;
+    try {
+      const windowTokens = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
+      const available = Math.max(16000, Math.round(windowTokens * 0.9));
+      const before = summarizeModelContext(messages as never[], windowTokens).usedTokens;
+      if (shouldFoldToolOutputs(before / available)) {
+        const fold = foldToolOutputsUnderTarget(messages, {
+          protectedFromIndex: protectedFromIndexForTurns(messages),
+          targetTokens: Math.floor(available * FOLD_TARGET_RATIO),
+          estimate: (ms) => summarizeModelContext(ms as never[], windowTokens).usedTokens,
+        });
+        if (fold.candidates.length > 0) {
+          messages = fold.messages;
+          foldedToolOutputs = fold.candidates.length;
+          console.log(
+            `[fold] 已折叠 ${foldedToolOutputs} 条较远的工具输出（省 ${fold.savedChars} 字符；最近 3 轮未动）`,
+          );
+        }
+      }
+    } catch (e) {
+      /* 折叠失败不许影响正常请求：如实上报，按未折叠继续 */
+      reportPersistFailure("loop.foldToolOutputs", e, "工具输出折叠失败（本次未折叠，上下文可能偏高）");
+    }
+
     // Fingerprint MUST include tool call statuses + result presence, because
     // tool calls transition from "running" → "done" without changing message count,
     // content length, or toolCalls.length. Without this, the cache returns stale

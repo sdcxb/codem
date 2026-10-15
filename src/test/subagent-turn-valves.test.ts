@@ -15,7 +15,8 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("../core/storage/message", () => ({
+vi.mock("../core/storage/message", () => ({  isHiddenStateAuthoritative: () => true,
+
   createMessage: vi.fn(),
   listMessages: vi.fn(() => []),
 }));

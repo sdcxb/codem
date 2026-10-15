@@ -64,7 +64,8 @@ vi.mock("../core/store", () => ({
 }));
 
 // ========== Mock：附件持久层（只测"内存里没有内容 → 走磁盘"这条路） ==========
-vi.mock("../core/storage/message", () => ({
+vi.mock("../core/storage/message", () => ({  isHiddenStateAuthoritative: () => true,
+
   listAllAttachments: () => [],
   listMessages: () => [],
   getAttachmentContent: () => null,

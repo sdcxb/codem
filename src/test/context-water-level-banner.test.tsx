@@ -34,7 +34,8 @@ const SESSION = "s-water";
 // ---------- 1. 计算层用的 mock（真实数据、真实链路）----------
 let mockMessages: any[] = [];
 
-vi.mock("../core/storage/message", () => ({
+vi.mock("../core/storage/message", () => ({  isHiddenStateAuthoritative: () => true,
+
   listVisibleMessages: (sid: string) => (sid === SESSION ? mockMessages.filter((m) => !m.hidden) : []),
   listMessages: (sid: string) => (sid === SESSION ? mockMessages.slice() : []),
 }));

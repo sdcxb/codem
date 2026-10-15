@@ -28,7 +28,8 @@ const appendTombstoneMock = vi.fn();
 
 vi.mock("../core/storage/message", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../core/storage/message")>();
-  return {
+  return {  isHiddenStateAuthoritative: () => true,
+
     ...actual,
     listMessages: (...a: unknown[]) => listMessagesMock(...a),
     listVisibleMessages: (...a: unknown[]) => listMessagesMock(...a),

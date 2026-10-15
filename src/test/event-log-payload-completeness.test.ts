@@ -25,7 +25,8 @@ const store = vi.hoisted(() => ({ messages: [] as any[] }));
 
 vi.mock("../core/storage/message", async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>();
-  return { ...real, listMessages: () => store.messages };
+  return {
+  isHiddenStateAuthoritative: () => true, ...real, listMessages: () => store.messages };
 });
 
 import { initDefaultPipeline, getToolPipeline } from "../core/llm/tool-pipeline";

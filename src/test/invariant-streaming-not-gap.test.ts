@@ -29,7 +29,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 const messages: Array<Record<string, unknown>> = [];
-vi.mock("../core/storage/message", () => ({
+vi.mock("../core/storage/message", () => ({  isHiddenStateAuthoritative: () => true,
+
   listMessages: () => messages,
 }));
 vi.mock("../core/storage/event-log", () => ({

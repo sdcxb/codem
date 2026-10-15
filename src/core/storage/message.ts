@@ -2078,6 +2078,37 @@ function rustMessageSource(sessionId: string): RustMessagePortLike | null {
  * 而 store 里那条"空结果就订阅镜像就绪后重读"的补丁正是为它准备的。
  * 要彻底消掉这个缺口得让 `listMessages` 自己区分三态，那是另一次改造。
  */
+/**
+ * ★ 全量审计（用户现场）：**权威隐藏状态是否已就绪**。
+ *
+ * 为什么必须有这个判据：软删（压缩隐藏）的真相只在**索引镜像**里。日志侧只有墓碑，
+ * 而「日志已 hydrate、索引镜像还没加载」的那个窗口里，`hiddenMessageIds()` 拿不到任何 id ⇒
+ * 已被隐藏的历史会被整批当成可见 —— 真机实测：同一会话在索引侧可见 21 条（5,690 token ≈ 5%），
+ * 而日志视图是 149 条（102,317 token ≈ 99%，剩 1,363 token）。用户看到的正是那条 99% 横幅，
+ * 镜像就绪后它自己消失。
+ *
+ * 语义：没有端口（旧库路径自洽）⇒ true；有端口但镜像未加载/被截断 ⇒ false（未知）。
+ */
+export function isHiddenStateAuthoritative(sessionId: string): boolean {
+  try {
+    /* 没有端口：旧库/内存路径自洽（hidden 就在那份数据里）⇒ 权威 */
+    if (!hasStoragePort()) return true;
+    const raw = rustMessagePort();
+    /**
+     * 端口在但**没有 messages 能力**：这条路上隐藏状态由旧库那份数据表达，同样自洽 ⇒ 权威。
+     * （只有「端口在、messages 也在、但这个会话的镜像还没加载完」才是我们要等的那个窗口。）
+     */
+    if (!raw?.messages) return true;
+    const src = rustMessageSource(sessionId);
+    if (!src?.messages) return false;
+    if (typeof src.messages.isTruncated === "function" && src.messages.isTruncated(sessionId)) return false;
+    return true;
+  } catch {
+    /* 判据本身出错 ⇒ 按未知处理（宁可晚一拍弹横幅，也不许误报「快满了」） */
+    return false;
+  }
+}
+
 export function isMessagesReadUnavailable(sessionId: string): boolean {
   let unavailable = false;
   try {

@@ -26,7 +26,8 @@ vi.mock("../core/storage/settings", async () => (await import("./settings-mock")
 
 // Mock storage/database
 
-vi.mock("../core/storage/message", () => ({
+vi.mock("../core/storage/message", () => ({  isHiddenStateAuthoritative: () => true,
+
   listMessages: vi.fn().mockReturnValue([
     { id: "msg-1", role: "user", content: "Hello", timestamp: Date.now() },
     { id: "msg-2", role: "assistant", content: "Hi there!", timestamp: Date.now() },

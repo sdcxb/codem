@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FC-*：功能上下文链路的回归（第 45 轮审计 `.preview-shot/_audit/FEATURE-CONTEXT.md`）
  *
  * 覆盖的条目（每条都在文件里有对应用例）：
@@ -97,6 +97,8 @@ import {
 import { AgenticLoop } from "../core/llm/agentic-loop";
 import { createDefaultToolRegistry } from "../core/llm/tools";
 import { manualCompact } from "../components/ContextMonitor";
+import { readContextWaterLevel } from "../core/context/water-level";
+import { getTokenTracker } from "../core/llm/token-tracker";
 import { isCompactionInProgress } from "../core/storage/compaction-state";
 import {
   isSessionExecuting,
@@ -1242,6 +1244,45 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
       "存储就绪后必须重读一次（否则用户改了阈值、引擎永远按 0.8 触发）",
     ).toBe(0.55);
   });
+
+  it("FC-D17（用户现场·真 bug）：索引镜像未就绪时，水位不许报「上下文即将满」", async () => {
+    /*
+     * 真机形态（用户另一台机器，导库复核过）：日志已 hydrate（149 条，含 6 万字符级工具输出）
+     * 而索引镜像还没加载 ⇒ 隐藏集拿不到 ⇒ 149 条全被当成可见 ⇒ 水位 99%（剩 1,363 ≈ 横幅上的 1,553）
+     * ⇒ 弹「上下文即将满」；镜像一就绪，store 重读成 21 条 ⇒ 6% ⇒ 横幅自己消失
+     *（用户原话：「过了会儿它自己消失了」）。
+     *
+     * 纪律：读不到 ≠ 快满了 ⇒ 这一刻**不报**（等级 NORMAL、百分比不虚高），
+     * 而不是报一个错的数，也不是显示一句没用的「未知」。
+     */
+    const S = sid("d17");
+    seedSession(S);
+    for (let i = 0; i < 40; i++) {
+      createMessage(
+        { id: `d17-${i}`, role: i % 2 === 0 ? "user" : "assistant", content: "长".repeat(4000), timestamp: 10 + i, status: "done" },
+        S,
+      );
+    }
+    getTokenTracker().setContextWindow(128000);
+    /* 真端口启动后一两秒就是这个「镜像在途」态；假端口用 asyncLoad 同形复现 */
+    const asyncPort = createFakeStoragePort({ asyncLoad: true });
+    await asyncPort.data.execute("messages.upsert_index", {
+      id: "d17-x",
+      session_id: S,
+      role: "assistant",
+      content: "长".repeat(4000),
+      timestamp: 900,
+      status: "done",
+    });
+    setStoragePort(asyncPort);
+    const level = readContextWaterLevel(S);
+    expect(level.level, "未就绪时不弹提示条（等级 NORMAL，不是 HIGH/CRITICAL）").toBe(0);
+    expect(level.percent, "也不许报一个高百分比（读不到 ≠ 快满了）").toBeLessThan(70);
+  });
+
+  /* FC-D16（"一次压缩必须压到提示线以下"）已被**折叠阶梯**取代：
+     远处的工具输出在**读路径上**先被折叠（见 tool-output-fold.test.ts 的 FD-1..FD-6），
+     所以不再需要"改库裁剪"那条更危险的路，也不再保留这个依赖夹具的判据。 */
 
   it("FC-D14（真机缺陷①）：软删之后**本进程**立刻读不到那些消息（不许等重载）", () => {
     /*

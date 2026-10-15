@@ -585,7 +585,8 @@ const listMessagesMock = vi.fn();
 const deleteMessagesByIdsMock = vi.fn();
 const createMessageMock = vi.fn();
 
-vi.mock("../core/storage/message", () => ({
+vi.mock("../core/storage/message", () => ({  isHiddenStateAuthoritative: () => true,
+
   listMessages: (...args: any[]) => listMessagesMock(...args),
   /**
    * 第 47 轮（功能上下文审计 P2-D12）：`ContextMonitor` 现在按**模型侧同一口径**

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 上下文水位的**唯一计算入口**（第 122 轮）。
  *
  * ## 为什么必须是共享模块，而不是各组件各算一遍
@@ -29,10 +29,11 @@ import {
   summarizeDisplayPressure,
   type TokenBudget,
 } from "./context";
+import { foldForLevelIfNeeded } from "../llm/tool-output-fold";
 import { summarizeModelContext } from "../llm/compaction-budget";
 import { pruneStaleToolResults } from "../llm/context-fold";
 import { getTokenTracker } from "../llm/token-tracker";
-import { listVisibleMessages } from "../storage/message";
+import { listVisibleMessages, isHiddenStateAuthoritative } from "../storage/message";
 
 /**
  * 拿不到真实窗口时的兜底窗口。
@@ -73,6 +74,14 @@ export interface ContextWaterLevel {
   level: number;
   /** 可见消息条数（与模型侧同一个入口 `listVisibleMessages`） */
   messageCount: number;
+  /**
+   * ★ 全量审计（用户现场）：这次读数是否建立在**权威隐藏状态**之上。
+   * false = 索引镜像还没就绪（此刻的条数/占用可能把已压缩隐藏的历史算进来）——
+   * 调用方**必须**当「未知」处理，不许据此弹「上下文即将满」。
+   */
+  authoritative: boolean;
+  /** ★ 阶梯痕迹：本轮静默折叠了多少条较远的工具输出（0 = 没折） */
+  foldedToolOutputs?: number;
 }
 
 /** 算不出水位时的取值。
@@ -86,6 +95,8 @@ export const UNKNOWN_WATER_LEVEL: ContextWaterLevel = {
   percent: 0,
   level: WATER_LEVEL.NORMAL,
   messageCount: 0,
+  /* 未知不是「满」，也不是「权威」 */
+  authoritative: false,
 };
 
 /**
@@ -95,21 +106,38 @@ export const UNKNOWN_WATER_LEVEL: ContextWaterLevel = {
  */
 export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
   if (!sessionId) return UNKNOWN_WATER_LEVEL;
+  /**
+   * ★ 全量审计（用户现场）：**权威隐藏状态没就绪 ⇒ 报「未知」** ——
+   * 真机形态：启动后日志已 hydrate（149 条，含 6 万字符的大工具输出）而索引镜像还没加载 ⇒
+   * 隐藏集为空 ⇒ 水位算出 99%「上下文即将满（剩 1,553 tokens）」，镜像就绪后变 5%（横幅自己消失）。
+   * 与「读不到 ≠ 一条消息都没有」同一条纪律：读不到 ≠ 快满了。
+   */
+  if (!isHiddenStateAuthoritative(sessionId)) return UNKNOWN_WATER_LEVEL;
   try {
     const visible = listVisibleMessages(sessionId);
     const contextWindow = getTokenTracker().getContextWindow() || FALLBACK_CONTEXT_WINDOW;
-    const { usedTokens, budgetTokens } = summarizeModelContext(
-      pruneStaleToolResults(visible as never[]),
-      contextWindow,
-    );
-    const display = summarizeDisplayPressure(usedTokens, budgetTokens);
+    /**
+     * ★ 工具输出折叠阶梯（用户提的机制）：水位必须按**折叠后的视图**算 ——
+     * 引擎发出去的就是折叠后的消息（见 `agentic-loop.buildMessages`），
+     * 水位/面板/引擎三处走同一个 `foldForLevelIfNeeded`，否则会出现
+     * 「面板显示 85% 但横幅不弹」（引擎折了、这里没算）这种自相矛盾。
+     * 折叠是**读时视图**：库里原文一字不动，"取回"就是重跑工具。
+     */
+    const estimate = (ms: any[]) => summarizeModelContext(ms as never[], contextWindow).usedTokens;
+    const pruned = pruneStaleToolResults(visible as never[]);
+    const budgetTokens = summarizeModelContext(pruned as never[], contextWindow).budgetTokens;
+    const fold = foldForLevelIfNeeded(pruned, { available: budgetTokens, estimate });
+    const display = summarizeDisplayPressure(fold.ratioAfter * budgetTokens, budgetTokens);
     return {
-      used: usedTokens,
+      used: Math.round(fold.ratioAfter * budgetTokens),
       available: budgetTokens,
       ratio: display.ratio,
       percent: display.percent,
       level: display.level,
       messageCount: visible.length,
+      authoritative: true,
+      /* ★ 阶梯痕迹：这一轮静默折了多少条（>0 时界面用一行说明，不弹窗） */
+      foldedToolOutputs: fold.folded,
     };
   } catch {
     // 读不到水位时**不报假警**。真实的读取失败由既有上报通道
