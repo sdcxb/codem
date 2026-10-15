@@ -154,6 +154,8 @@
 ## 6. 门禁与验证命令（复制即用）
 
 ```powershell
+# 硬盘被中间产物撑大时（target/debug、历史安装包、缓存）：先看计划再加 --apply
+node tools\maintenance\clean-dev-artifacts.mjs
 npx tsc --noEmit                                   # 必须 0
 npx vitest run                                     # 全量（约 2 分钟；668 文件 / 8064 用例）
 node tools/mutate/run.mjs free-model-routing-206    # 变异波次（29 条，全红且"还原后判据全绿"）

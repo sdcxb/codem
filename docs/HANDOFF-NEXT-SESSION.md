@@ -5925,6 +5925,37 @@ knip 棘轮 ✓（去掉了一个多余 export）；css-contract 2866 类无变�
 
 **发版仍等用户点头**（当前已装构建早于本轮 6 个提交，发版前必须重建 + 静默安装验证）。
 
+### 开发中间产物清理：项目从 116 GB 降到 10.6 GB（释放 105.26 GB）
+
+用户报「中间版本的打包产物和缓存占了大量硬盘」⇒ 实测项目占用 **116 GB**：
+
+| 项 | 清理前 | 处置 |
+|---|---|---|
+| `target/release/bundle`（**364 个历史版本的安装包**） | 30.86 GB | 只留当前版本 1.16.320 的 exe/msi/sig，其余 1410 个文件删掉 |
+| `target/debug`（dev 构建缓存） | 42.65 GB | 删（可再生） |
+| `target/release/build`（build 脚本产物） | 27.96 GB | 删（可再生） |
+| `.preview-shot` 的评测产物 + 下载的参考源码 | 2.64 GB | 删产物与 `_src-*`/`_aa-repo`/`_dl`/`_obf`/`_zcode-ref`/`_isolated*`；**保留全部脚本**（含 `_audit/make-latest-json.mjs`） |
+| `.codem-cache`（zg-lab / zvec-release / verify-node 等） | 1.14 GB | 删（下载/构建缓存） |
+| `dist`（前端产物） | 0.09 GB | 删（`npm run build` 45 秒重建，已复验） |
+| 应用运行日志 `codem-runtime-*.log` | 0.02 GB | 删（14 个） |
+
+**保留（脚本里逐条写着，不许误删）**：当前版本产物与根 `latest.json`（发版/复核要用）、
+`target/release/deps` + `.fingerprint`（5.9 GB 编译缓存，留着下次构建快很多）、
+`node_modules`、源码与 `tools`/`docs`、`.git`、5 个对照仓库、**用户数据**
+（`%APPDATA%\com.codem.app\codem-db-rust.bin` 899 MB + WAL + 备份快照 + 旧库）。
+
+**做成可重复运行的脚本**（这类膨胀会反复发生）：`tools/maintenance/clean-dev-artifacts.mjs` ——
+**默认只打印计划**，`--apply` 才动手；保留清单写在代码注释里；版本号从 `package.json` 读，
+所以下一个版本升级后自动改为保留新版本。命令已写进 `AGENTS.md` §3 与 `docs/NEW-SESSION-START.md`。
+
+**代价（如实记）**：Rust 侧构建缓存删了 ⇒ 下次 `tauri build` 会重新编译（首次明显更慢，之后恢复）；
+前端已复验 `npm run build` 退出码 0、`dist` 87.5 MB 重新生成。清理前后 `git status` 都是干净的
+（删的全部是忽略文件，没有动任何受版本控制的东西）。
+
+顺带修的两处文档/判据：`AGENTS.md` 里版本号与测试规模已更新到 1.16.320 / 680 文件 8189 用例；
+新增判据 `BOM-1`（见下一条）—— 这次构建真的被 BOM 挡过一次。
+
+
 ### 真机查实并修掉：选择器认错字段名（蛇形 vs 驼峰）⇒ 工具结果被整批丢掉、水位系统性偏低
 
 **真机形态**：把用户另一台机器的长对话（593k 字符工具结果）注进「对话 22」后，

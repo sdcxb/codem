@@ -14,8 +14,8 @@
 （所以仓库里**大量中文注释在解释"为什么"** ✓ —— 改动前先读注释，很多坑已经写在那里了 ✓）。
 
 - 仓库：`github.com/sdcxb/codem`（主分支 `master`）
-- 当前版本：**1.16.319**（已构建安装，**等待用户批准后才发版**；压缩按距离分档 + 自动记忆降噪。上一版 1.16.318：插件起不来时给真原因+可点出口、压缩上下文看得见）
-- 测试规模：**676 个测试文件 / 8156 个用例全绿**（17 skipped），`tsc` 零错误
+- 当前版本：**1.16.320**（已发布；上下文水位先自动折叠远处的工具输出、占用数字不再偏低、启动不再误报「上下文即将满」。上一版 1.16.319：压缩按距离分档 + 自动记忆降噪）
+- 测试规模：**680 个测试文件 / 8189 个用例全绿**（17 skipped），`tsc` 零错误
   （个别计时敏感用例在全量并行满载下偶发抖动，单独跑必过 ⇒ 先单跑确认，别急着改代码 ✗）
 
 ## 1. 先读哪几个文件（按这个顺序）
@@ -72,6 +72,10 @@ $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content .tauri\codem-updater.key -Raw).Tri
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "dummy"
 node node_modules\@tauri-apps\cli\tauri.js build     # 退出码 1 是**预期的**（stderr 有 warning）；以产物为准
 # 产物：src-tauri\target\release\bundle\nsis\Codem_<版本>_x64-setup.exe（+ .sig）
+
+# 清理开发中间产物（target/debug、历史安装包、缓存与日志；默认只打印计划，--apply 才删）
+node tools\maintenance\clean-dev-artifacts.mjs            # 看计划
+node tools\maintenance\clean-dev-artifacts.mjs --apply    # 执行（2026-10-15 实测一次释放 105 GB）
 
 # 生成更新器清单 + 校验（发布前必做）
 node .preview-shot\_audit\make-latest-json.mjs <版本> "<一句话说明>"
