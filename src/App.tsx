@@ -1548,12 +1548,17 @@ useEffect(() => {
   const onApplied = (e: Event) => {
     const sid = (e as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
     if (!sid) return;
-    if (sid !== uiSessionId) return;
+    /**
+     * ★ 全量审计（第三轮·中高）：用**唯一的活判据** `isSessionOnScreen` ——
+     * 被守的缺陷：原来比的是这次渲染闭包里的 `uiSessionId`（切会话后的同一 commit 内已过期），
+     * 而且它是本仓第二份「在屏会话」判据（自动路径那份的注释明写「同一件事只许有一份」）。
+     */
+    if (!isSessionOnScreen(sid)) return;
     loadMessages(sid);
   };
   window.addEventListener("codem:compaction-applied", onApplied);
   return () => window.removeEventListener("codem:compaction-applied", onApplied);
-}, [uiSessionId]);
+}, []);
 const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
     resolve: (result: PermissionResult) => void;

@@ -705,13 +705,13 @@ export function formatMemoryImportReceipt(
     result.restoredBatches && result.restoredBatches > 0
       ? `从文件恢复了 ${result.restoredBatches} 个撤销凭据（批次）` +
         (result.restoredBatchesKept !== undefined && result.restoredBatchesKept < result.restoredBatches
-          ? `，其中 ${result.restoredBatches - result.restoredBatchesKept} 个因超出上限被丢弃`
+          ? `，其中 ${result.restoredBatches - result.restoredBatchesKept} 个未保留（超出上限，或文件里有重复 id）`
           : "")
       : "",
     result.restoredRejections && result.restoredRejections > 0
       ? `从文件恢复了 ${result.restoredRejections} 条「已拒绝同类」记录（此后同类自动记忆会被跳过）` +
         (result.restoredRejectionsKept !== undefined && result.restoredRejectionsKept < result.restoredRejections
-          ? `，其中 ${result.restoredRejections - result.restoredRejectionsKept} 条因超出上限被丢弃`
+          ? `，其中 ${result.restoredRejections - result.restoredRejectionsKept} 条未保留（超出上限，或文件里有重复 id）`
           : "")
       : "",
   ].filter(Boolean);

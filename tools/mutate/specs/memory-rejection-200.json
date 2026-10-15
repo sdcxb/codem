@@ -102,7 +102,7 @@
       "patches": [
         {
           "file": "src/core/memory/memory.ts",
-          "from": "    const cleared = this.rejections.size;\n    if (cleared === 0) return { cleared: 0, persisted: true, landed: true };\n    this.rejections.clear();\n    /**\n     * ★ 全量审计（中）：回执要含**落库结论** —— `save()` 只表示「已被接受」，不等于已落库；\n     * 界面原来直接拿它宣布「已清空 N 条…同类事实以后可以再被自动提取」（写不进去时是假成功）。\n     */\n    const accepted = this.save();\n    const landed = accepted && this.lastPersistError === null;\n    return { cleared, persisted: accepted, landed };",
+          "from": "    const cleared = this.rejections.size;\n    if (cleared === 0) return { cleared: 0, persisted: true };\n    this.rejections.clear();\n    /**\n     * ★ 全量审计（第三轮·中）：**不再同步假装知道落库结果** ——\n     * `save()` 只把写入挂到异步确认链，而 `lastPersistError` 是**粘性**的（只在异步成功回调里清）\n     * ⇒ 原来那个 `landed` 读到的必然**上一次**的结果：上次失败就一直说「未落库」（哪怕这次成功），\n     * 上次成功就先说「已落库」（哪怕这次失败）。调用方要结论就 `await flushPendingPersist()`。\n     */\n    const accepted = this.save();\n    return { cleared, persisted: accepted };",
           "to": "    const cleared = 0;\n    return { cleared, persisted: true };"
         }
       ],

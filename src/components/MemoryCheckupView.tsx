@@ -310,17 +310,23 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
     setRejections(getMemoryService().listRejections());
   }, [version]);
 
-  const handleClearRejections = () => {
+  const handleClearRejections = async () => {
     const before = rejections.length;
     if (before === 0) {
       setNotice("没有已拒绝记录。");
       return;
     }
-    const result = getMemoryService().clearRejections();
+    const service = getMemoryService();
+    const result = service.clearRejections();
+    /**
+     * ★ 全量审计（第三轮·中）：**等落库确认再下结论** ——
+     * `clearRejections` 的 `persisted` 只表示「写入已被接受」，而落库结果在异步确认链里
+     * （服务层返回的 `landed` 读的是**粘性**的 lastPersistError ⇒ 必然报上一次的结果，双向都会撒谎）。
+     */
+    const landed = await service.flushPendingPersist();
     setRejections([]);
     setNotice(
-      /* ★ 全量审计：拿 landed（已落库）下结论，persisted 只是队列收下了 */
-      result.landed
+      landed
         ? `已清空 ${result.cleared} 条「已拒绝」记录：同类事实以后**可以**再被自动提取（可能重新进入待批准）。`
         : `已清空 ${result.cleared} 条，但**未落库**：${getMemoryService().getLastPersistError() ?? "未知原因"}（重启后这些记录会回来）。`,
     );
@@ -793,7 +799,7 @@ export function MemoryCheckupView({ projectId, sessionId, onNavigate }: MemoryCh
           */}
           {migrationReport.ran
             ? migrationReport.aborted
-              ? `升级时的记忆迁移**没有生效**：快照确认写入失败（${migrationReport.aborted}），` +
+              ? `升级时的记忆迁移**没有生效**（${migrationReport.aborted}），` +
                 `已逐条回滚 ${migrationReport.abortedEntries ?? 0} 条，磁盘与内存都还是迁移前的形态。`
               : `升级时迁移过记忆：旧「项目级」${migrationReport.projectToLegacyPool ?? 0} 条改为平台级（旧版跨项目池）、` +
                 `旧「会话级」${migrationReport.sessionToConversation ?? 0} 条改为对话级（无归属）` +

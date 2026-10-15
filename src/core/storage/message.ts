@@ -3307,10 +3307,15 @@ export function deleteMessagesByIds(ids: string[], knownSessionId?: string): num
    * "参数里看不出规模、实际级联删掉一大堆"，而这里根本没有删除。
    */
   const port = rustMessagePort();
-  /** ★ 全量审计：这次软删是否真的在索引侧落地（false = 端口缺 messages 能力 / 旧库路径） */
-  let softDeleteResponded = false;
-  if (port) {
-    softDeleteResponded = true;
+  /**
+   * ★ 全量审计（第三轮·高）：**能力探测要看 `messages` 在不在** ——
+   * 被守的缺陷：原来写成 `if (port) softDeleteResponded = true` ⇒ 端口注册了但没有 `messages` 能力时，
+   * 报告仍说「索引侧回应了」（与它自己的文档相反），而本该走的告警分支只在 `!port` 时执行 ⇒
+   * 压缩侧据此判断「软删是否落地」的那条闸门**恒为 false**（等于没有）。
+   */
+  const indexCapable = Boolean((port as unknown as { messages?: unknown } | null)?.messages);
+  let softDeleteResponded = indexCapable;
+  if (port && indexCapable) {
     /*
      * P2-4：软删除（压缩隐藏）**不删行**，所以引擎回报里 `count_clamped` 恒 false
      * （行没少 → 计数不可能被夹断）。走统一入口仍然有意义：`missing` 会告诉我们
@@ -3332,15 +3337,16 @@ export function deleteMessagesByIds(ids: string[], knownSessionId?: string): num
     // A 态已退役：渲染侧只剩端口这条路 —— 隐藏没落地由下面的墓碑与上报如实表达
   } else {
     /**
-     * B 态且没有 `messages` 能力（测试双/能力缺失）：**不写旧库**。
-     *
+     * 索引侧没有落地（**两种**原因要分开说）：
+     *  - 端口在但没有 `messages` 能力（测试双 / 未就绪）；
+     *  - 根本没有注册端口（未预热 / 旧库路径）。
      * 这时隐藏没有落地，必须如实上报 —— 否则就退化成当初那个"压缩说移除了 840 条、
      * 实际索引里一条都没变"的假成功。权威日志那一步（下面的墓碑）仍然照写：
      * 日志才是权威，索引可在下次打开时按日志重建。
      */
     reportPersistFailure(
       "message.deleteMessagesByIds",
-      new Error("端口已注册但没有 messages 能力"),
+      new Error(port ? "端口已注册但没有 messages 能力" : "没有可用的存储端口"),
       "消息未在查询索引里隐藏（本次只写了权威日志的墓碑）",
     );
   }

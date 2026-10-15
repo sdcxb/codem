@@ -75,6 +75,21 @@
         "src/test/compaction-audit-228.test.ts"
       ],
       "expectRed": false
+    },
+    {
+      "id": "MUT-6 A2 广播被删（手动压缩后外壳不再重载聊天区）",
+      "why": "CB-10：手动压缩完成后必须广播 codem:compaction-applied（外壳据此重载聊天区）",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "      window.dispatchEvent(new CustomEvent(\"codem:compaction-applied\", { detail: { sessionId } }));",
+          "to": "      void sessionId;"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "expectRed": true
     }
   ]
 }

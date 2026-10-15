@@ -740,7 +740,12 @@ function readContextCompactionThreshold(): number {
   try {
     const raw = getSettingJSON<{ compactionThreshold?: unknown }>("codem-context-config", {});
     const v = raw?.compactionThreshold;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0.1 && v <= 1) return v;
+    /**
+     * ★ 全量审计（第三轮·中）：上界要**严格小于 1** ——
+     * 压力被 `Math.min(1, …)` 钳到 1、而判定用严格大于 ⇒ 写 1 等于「压力触发永不成立」
+     * （只剩反应式溢出压缩）。这里与设置面板滑块的上界一致（0.95）。
+     */
+    if (typeof v === "number" && Number.isFinite(v) && v > 0.1 && v <= 0.95) return v;
   } catch {
     /* 配置读不到 ⇒ 用默认值（引擎行为与改之前一致） */
   }

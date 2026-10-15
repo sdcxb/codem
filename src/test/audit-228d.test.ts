@@ -24,6 +24,7 @@ import {
   injectionTruncationNote,
 } from "../core/memory/memory";
 import { LLMEngine, stripAttachmentText } from "../core/llm/index";
+import { isSessionOnScreen } from "../core/ui/loop-stream-state";
 import * as MessageStorage from "../core/storage/message";
 
 const PROJ_A = "c:\\work\\alpha";
@@ -451,6 +452,38 @@ describe("MA（第三批）：记忆侧", () => {
     expect(entry.ok, "前提：条目写成功").toBe(true);
     const prompt = svc.buildMemoryPrompt({ projectId: undefined, sessionId: undefined } as never, { includeUnscoped: true } as never);
     expect(String(prompt), "注入文本里不许出现明文密钥片段").not.toContain("sk-aaaa");
+  });
+
+  it("MA-29（第三轮·高）：端口在但缺 messages 能力 ⇒ 软删报告必须说「索引侧没有回应」", () => {
+    /*
+     * 被守的缺陷：`softDeleteResponded` 原来只判「端口在不在」⇒ 端口注册了但没有 messages 能力时
+     * 报告仍说「索引侧回应了」，而压缩侧据此判断「软删是否落地」的那条闸门恒为 false（等于没有）。
+     */
+    const svc = createFakeStoragePort({ seed: { settings: [{ key: "noop", value: "" }] } });
+    /* 故意拿掉 messages 能力（模拟未就绪 / 能力缺失的端口） */
+    delete (svc as unknown as { messages?: unknown }).messages;
+    setStoragePort(svc);
+    MessageStorage.deleteMessagesByIds(["m1"], "s-a1");
+    expect(
+      MessageStorage.getLastDeleteReport().softDeleteResponded,
+      "缺 messages 能力时必须如实说「索引侧没有回应」（否则压缩侧的落地闸门是死的）",
+    ).toBe(false);
+  });
+
+  it("MA-30（第三轮·中高）：压缩广播只对**在屏会话**触发重载（唯一活判据，不许比渲染闭包）", () => {
+    /*
+     * 被守的缺陷：监听器原来比的是渲染闭包里的 uiSessionId（切会话后的同一 commit 内已过期），
+     * 而自动路径用的是唯一活判据 isSessionOnScreen ⇒ 会把别的会话的列表铺到界面上、
+     * 还把归属改成后台会话（前台那个会话的 autosave 全被守卫拒绝）。
+     */
+    const app = readFileSync(path.resolve(__dirname, "../App.tsx"), "utf8");
+    /* 处理函数写在 window.addEventListener 之前 ⇒ 取事件名之前的一段一起断言 */
+    const at = app.indexOf("codem:compaction-applied");
+    const region = app.slice(Math.max(0, at - 700), at + 200);
+    expect(region, "处理函数必须用唯一活判据").toContain("isSessionOnScreen(sid)");
+    expect(region, "不许再比渲染闭包变量（那是第二份判据且会过期）").not.toContain("sid !== uiSessionId");
+    expect(isSessionOnScreen("s-not-loaded"), "不在屏的会话必须为 false").toBe(false);
+    expect(isSessionOnScreen(undefined), "空 id 一律 false").toBe(false);
   });
 
   it("MA-18：内存上限的读数要给出**三道闸**（而不是只有 per-scope）", () => {

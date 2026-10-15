@@ -1152,11 +1152,21 @@ function looksLikeMemoryEntryValue(value: unknown): boolean {
  * 判据只有两条硬的：`id` 非空字符串、`rejectedAt` 是有限数；文本缺失就按空串处理
  * （空文本的记录匹配不到任何东西，等价于无效记录 —— 留着它只是占位，不如丢掉）。
  */
-function normalizeLoadedRejection(raw: unknown): MemoryRejection | null {
+/**
+ * ★ 全量审计（第三轮·中）：可选 `out.truncated` —— 记下**这次规范化是否真的截断过原文**。
+ * 为什么要它：截断后的副本就是内存态，`serialize()` 会原样写回 ⇒ 超长原文**永久缩水**，
+ * 而调用方原来无从知晓（回执只数「被丢弃」的条数）。
+ */
+function normalizeLoadedRejection(
+  raw: unknown,
+  out?: { truncated?: boolean },
+): MemoryRejection | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Partial<MemoryRejection>;
   if (typeof r.id !== "string" || r.id.length === 0) return null;
   if (typeof r.rejectedAt !== "number" || !Number.isFinite(r.rejectedAt)) return null;
+  if (typeof r.key === "string" && r.key.length > REJECTION_TEXT_MAX) out && (out.truncated = true);
+  if (typeof r.content === "string" && r.content.length > REJECTION_TEXT_MAX) out && (out.truncated = true);
   const key = typeof r.key === "string" ? r.key.slice(0, REJECTION_TEXT_MAX) : "";
   const content = typeof r.content === "string" ? r.content.slice(0, REJECTION_TEXT_MAX) : "";
   if (key.length === 0 && content.length === 0) return null;
@@ -1475,6 +1485,8 @@ export class MemoryService {
   private rejections: Map<string, MemoryRejection> = new Map();
   /** ★ 全量审计（中低）：批次裁剪披露的节流时间（实例级 —— 模块级会让同进程多实例互相压制） */
   private batchPruneAdvisoryAt = 0;
+  /** ★ 全量审计（第三轮）：拒绝记录裁剪披露的节流时间（与批次裁剪分开） */
+  private rejectionPruneAdvisoryAt = 0;
   private migrationReport: MemoryMigrationReport | null = null;
   /**
    * 读盘状态（M-1）。
@@ -1670,11 +1682,31 @@ export class MemoryService {
 
     /* 第 200 波：已拒绝记录（老 payload 没有这一段 ⇒ 空表，照常读） */
     this.rejections.clear();
+    /**
+     * ★ 全量审计（第三轮·中）：**被截断**（不是被丢弃）的拒绝记录要披露 ——
+     * `normalizeLoadedRejection` 会把超长原文截到 `REJECTION_TEXT_MAX`，而截断后的副本就是内存态、
+     * `serialize()` 原样写回 ⇒ 原文**永久缩水**；不披露的话用户只会发现「我拒绝过的那句话变短了」。
+     */
+    let truncatedRejectionsOnLoad = 0;
     if (container.rejections) {
       for (const raw of container.rejections) {
-        const record = normalizeLoadedRejection(raw);
-        if (record) this.rejections.set(record.id, record);
+        const out: { truncated?: boolean } = {};
+        const record = normalizeLoadedRejection(raw, out);
+        if (record) {
+          this.rejections.set(record.id, record);
+          if (out.truncated) truncatedRejectionsOnLoad += 1;
+        }
       }
+    }
+    if (truncatedRejectionsOnLoad > 0) {
+      reportAdvisory(
+        "memory.rejectionsTruncated",
+        `${truncatedRejectionsOnLoad} 条「已拒绝」记录超长（>${REJECTION_TEXT_MAX} 字符）已在读盘时截断保存`,
+        {
+          title: "部分「已拒绝」记录被截短",
+          nextStep: "截短只影响那句原文的留存长度，不影响「同类不再写」的判定；如需完整留存请改成手动记忆。",
+        },
+      );
     }
     this.pruneRejections();
 
@@ -2874,10 +2906,29 @@ export class MemoryService {
    * 这与本仓 `nextCompactionMarkerId` 那条教训同源："毫秒前缀不够，必须有进程内单调量"。
    */
   private pruneRejections(): void {
+    let dropped = 0;
     while (this.rejections.size > REJECTION_KEEP_MAX) {
       const oldest = this.rejections.keys().next();
-      if (oldest.done) return;
+      if (oldest.done) break;
       this.rejections.delete(oldest.value);
+      dropped += 1;
+    }
+    /**
+     * ★ 全量审计（第三轮·高）：**丢弃「已拒绝」记录必须披露** ——
+     * 被守的缺陷：这里原来零披露（对比 `pruneBatches` 至少有 warn + advisory）⇒
+     * 用户明确拒绝过的事实被静默丢掉后，同类自动记忆会重新被提取、再次请求批准，
+     * 与「拒过的不再写」这条承诺相反。用**独立 area**（共用 area 会被 App 的按-area 去重挡掉）。
+     */
+    if (dropped > 0) {
+      console.warn(`[memory] 已拒绝记录超出上限（${REJECTION_KEEP_MAX}）⇒ 丢弃了 ${dropped} 条较早的记录`);
+      const now = Date.now();
+      if (now - this.rejectionPruneAdvisoryAt > BATCH_PRUNE_ADVISORY_INTERVAL_MS) {
+        this.rejectionPruneAdvisoryAt = now;
+        reportAdvisory("memory.rejectionsPruned", `撤销「已拒绝」记录的条数超出上限，丢弃了 ${dropped} 条较早的记录`, {
+          title: "部分「已拒绝」记录被丢弃",
+          nextStep: "被丢弃的同类事实以后可能重新被自动提取并再次请你批准；如需保留，请把常用事实写进项目说明或手动记忆。",
+        });
+      }
     }
   }
 
@@ -2918,17 +2969,18 @@ export class MemoryService {
    * ★ 全量审计（中）：返回值区分「已被接受」（persisted）与「已落库」（landed）——
    * 界面必须拿 landed 下结论（persisted 只是队列收下了）。
    */
-  clearRejections(): { cleared: number; persisted: boolean; landed: boolean } {
+  clearRejections(): { cleared: number; persisted: boolean } {
     const cleared = this.rejections.size;
-    if (cleared === 0) return { cleared: 0, persisted: true, landed: true };
+    if (cleared === 0) return { cleared: 0, persisted: true };
     this.rejections.clear();
     /**
-     * ★ 全量审计（中）：回执要含**落库结论** —— `save()` 只表示「已被接受」，不等于已落库；
-     * 界面原来直接拿它宣布「已清空 N 条…同类事实以后可以再被自动提取」（写不进去时是假成功）。
+     * ★ 全量审计（第三轮·中）：**不再同步假装知道落库结果** ——
+     * `save()` 只把写入挂到异步确认链，而 `lastPersistError` 是**粘性**的（只在异步成功回调里清）
+     * ⇒ 原来那个 `landed` 读到的必然**上一次**的结果：上次失败就一直说「未落库」（哪怕这次成功），
+     * 上次成功就先说「已落库」（哪怕这次失败）。调用方要结论就 `await flushPendingPersist()`。
      */
     const accepted = this.save();
-    const landed = accepted && this.lastPersistError === null;
-    return { cleared, persisted: accepted, landed };
+    return { cleared, persisted: accepted };
   }
 
   /**
@@ -3564,7 +3616,13 @@ export class MemoryService {
       this.save();
       return undefined;
     }
-    batch.count = written;
+    /**
+     * ★ 全量审计（第三轮·中）：count 一律按**存活条目数**写 ——
+     * 被守的缺陷：`written` 是调用方报的数，而同批次内「明确要求记住」的候选会顶替刚写入的那条
+     * （`supersedeId` 被 `removeMany` 删掉）⇒ count=2 而实际只剩 1 条，面板/确认弹窗与撤销回执互相矛盾。
+     */
+    batch.count = Array.from(this.entries.values()).filter((e) => e.batchId === batchId).length;
+    void written;
     this.batches.set(batchId, batch);
     this.save();
     return batch;
@@ -3972,6 +4030,16 @@ export class MemoryService {
         }
         const landed = await writeMemoryConfirmed(payload);
         if (!landed.ok) {
+          /**
+           * ★ 全量审计（第三轮·高）：**写回失败也要置 aborted + 复位** ——
+           * 被守的缺陷：上一批提交信息声称「端口变更/写回失败两条分支都要置 aborted」，实际只补了端口那条；
+           * 这条失败时磁盘仍是迁移前形态、标记也没写，而界面按 `ran && !aborted` 打印「升级时迁移过记忆」= 假陈述。
+           */
+          if (this.migrationReport) {
+            this.migrationReport.aborted = landed.reason ?? "记忆落库失败";
+            this.migrationReport.abortedEntries = this.migrationReport.abortedEntries ?? 0;
+          }
+          this.migratedThisProcess = false;
           if (this.lastPersistedPayload === payload) this.lastPersistedPayload = null;
           this.lastPersistError = landed.reason ?? "记忆落库失败";
           reportPersistFailure(
@@ -4124,6 +4192,8 @@ export class MemoryService {
     /* ★ 全量审计（中）：条目与拒绝记录**分开计数**（原来混在一个 dropped 里，文案却只说「记忆条目」） */
     let droppedEntries = 0;
     let droppedRejections = 0;
+    /* ★ 全量审计（第三轮）：被**截断**（不是丢弃）的拒绝记录条数 —— 原文会永久缩水，必须披露 */
+    let truncatedRejections = 0;
     for (const [key, value] of container.pairs) {
       const normalized = normalizeLoadedEntry(key, value);
       if (normalized) this.entries.set(normalized.id, normalized);
@@ -4145,9 +4215,12 @@ export class MemoryService {
          * 原来回退自己写了一套更严的校验（还会保留 key/content 都为空的记录）⇒
          * 同一份磁盘数据，走回退与走 load 得到两个数字。
          */
-        const normalized = normalizeLoadedRejection(r);
-        if (normalized) this.rejections.set(normalized.id, normalized);
-        else droppedRejections += 1;
+        const out: { truncated?: boolean } = {};
+        const normalized = normalizeLoadedRejection(r, out);
+        if (normalized) {
+          this.rejections.set(normalized.id, normalized);
+          if (out.truncated) truncatedRejections += 1;
+        } else droppedRejections += 1;
       }
     }
     /* 与正常 load 同一条纪律：这两段都进整份 payload，必须有界 */
@@ -4157,11 +4230,14 @@ export class MemoryService {
      * ★ 全量审计（中）：读入丢弃**要如实上报**（与 `loadFromStorage` 的 memory.entriesDropped 同一口径）——
      * 否则用户看到「写回 N 条」而磁盘 raw 里是 N+M 条，两个数字对不上却无人解释。
      */
-    if (droppedEntries > 0 || droppedRejections > 0) {
+    if (droppedEntries > 0 || droppedRejections > 0 || truncatedRejections > 0) {
       reportAdvisory(
         "memory.entriesDropped",
         `回退时跳过 ${droppedEntries} 条形状不合法（缺 id/key/content 或类型不对）的记忆条目` +
-          (droppedRejections > 0 ? `，另有 ${droppedRejections} 条「已拒绝」记录不合法被跳过` : ""),
+          (droppedRejections > 0 ? `，另有 ${droppedRejections} 条「已拒绝」记录不合法被跳过` : "") +
+          (truncatedRejections > 0
+            ? `；另有 ${truncatedRejections} 条「已拒绝」记录超长（>${REJECTION_TEXT_MAX} 字符）被截断保存`
+            : ""),
         {
           title: "回退时跳过了不合法的条目",
           nextStep: "这些条目在库里的原文仍然保留（本次只把它们挡在内存之外）；可用导出 JSON 查看原文。",
@@ -4630,6 +4706,9 @@ export class MemoryService {
      * ★ 全量审计（中）：**往返保真** —— 导出的 batches / rejections 要能读回来。
      * 被守的缺陷：原来只读 entries ⇒ 回灌后「整批撤销」失效、拒绝记录清零（同类事实会重新被提取）。
      */
+    /* ★ 全量审计：记下**文件里的 id**，修剪后才能如实说「恢复了几条、还剩几条」 */
+    const extraBatchesIds: string[] = [];
+    const extraRejectionsIds: string[] = [];
     const extraBatches = Array.isArray((parsed as { batches?: unknown }).batches)
       ? ((parsed as { batches: unknown[] }).batches as Array<{ id?: unknown }>)
       : [];
@@ -4662,6 +4741,12 @@ export class MemoryService {
       }
       const safeContent = redactSecrets(normalized.content);
       if (safeContent.length > this.config.maxContentLength) result.truncated++;
+      /**
+       * ★ 全量审计（第三轮·低）：**key 被截短也要计入** ——
+       * 导入把 key 截到 `MEMORY_INJECT_KEY_MAX`，而 load 从不截 ⇒ 长 key 条目导入后被静默改短，
+       * 回执却仍说「成功导入 N 条记忆」（truncated 只统计 content）。
+       */
+      if (redactSecrets(normalized.key).length > MEMORY_INJECT_KEY_MAX) result.truncated++;
       const order =
         typeof normalized.order === "number" && Number.isFinite(normalized.order)
           ? normalized.order
@@ -4688,17 +4773,24 @@ export class MemoryService {
       const rec = b as { id?: unknown; createdAt?: unknown; count?: unknown };
       if (typeof rec?.id !== "string" || rec.id.length === 0) continue;
       if (typeof rec.createdAt !== "number" || !Number.isFinite(rec.createdAt)) continue;
+      extraBatchesIds.push(rec.id);
       /* ★ 全量审计：`count < 0` 才算坏（0 也允许 —— 曾见过 count:0 的凭据，丢掉它等于丢撤销入口） */
       if (typeof rec.count !== "number" || !Number.isFinite(rec.count) || rec.count < 0) continue;
       this.batches.set(rec.id, b as never);
       result.restoredBatches += 1;
     }
     for (const r of extraRejections) {
-      const rec = r as { id?: unknown; key?: unknown; content?: unknown; rejectedAt?: unknown };
-      if (typeof rec?.id !== "string" || rec.id.length === 0) continue;
-      if (typeof rec.key !== "string" || typeof rec.content !== "string") continue;
-      if (typeof rec.rejectedAt !== "number" || !Number.isFinite(rec.rejectedAt)) continue;
-      this.rejections.set(rec.id, r as never);
+      /**
+       * ★ 全量审计（第三轮·中）：**走唯一口径** `normalizeLoadedRejection` ——
+       * 被守的缺陷：这里原来自己写了一套（只要 key/content 是字符串就收）⇒
+       * 没有 `REJECTION_TEXT_MAX`(2000) 上限、没有 scope 兜底 ⇒ 一份被改动过的导出文件能把
+       * 任意长度的记录塞进整份读写 payload（`pruneRejections` 只剪条数不剪字节），
+       * 而且同一份磁盘数据 load/回退 得 2000 截断、导入得原文（三处口径分叉）。
+       */
+      const normalized = normalizeLoadedRejection(r);
+      if (!normalized) continue;
+      extraRejectionsIds.push(normalized.id);
+      this.rejections.set(normalized.id, normalized);
       result.restoredRejections += 1;
     }
     /* 有界：这两段都进整份 payload，导入不许把它们撑到无界 */
@@ -4710,8 +4802,13 @@ export class MemoryService {
      *  - `restored*Kept` = 修剪后**实际存活**的条数（原来我把它写回 restored* ⇒ 又变成虚报）。
      * ⚠️ 不许用「内存总数」：那会把**导入前既有**的批次算成本次导入的结果。
      */
-    result.restoredBatchesKept = this.batches.size;
-    result.restoredRejectionsKept = this.rejections.size;
+    /**
+     * ★ 全量审计（第三轮·高）：**按「文件里的那些 id 还剩几个」计数** ——
+     * 原来写成 `this.batches.size`（内存总数）⇒ 导入前已有的批次会把数字垫高，
+     * 「被修剪丢弃」这件事被漏报（实测：已有 50 个批次时导入 5 个较旧批次，5 个全被丢弃而回执照说「恢复了 5 个」）。
+     */
+    result.restoredBatchesKept = extraBatchesIds.filter((id) => this.batches.has(id)).length;
+    result.restoredRejectionsKept = extraRejectionsIds.filter((id) => this.rejections.has(id)).length;
     if (result.imported > 0 || result.restoredBatches > 0 || result.restoredRejections > 0) this.save();
     /**
      * ★ 第 228 波审计（第四批）：导入是**用户显式动作**（照旧放行，不做自动拒绝），

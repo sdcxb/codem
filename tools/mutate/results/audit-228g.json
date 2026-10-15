@@ -1,8 +1,8 @@
 {
   "wave": "audit-228g",
   "description": "第 228 波·审计轮第六批（第五轮审计的 7 条里可复现的部分）：自动路径所有「没压成」的出口统一返回 -1（原来返回 0 被调用方当成一次成功压缩 ⇒ 连记 3 次误报「上下文窗口已满」并中止回合）、手动末位闸带 skipped 的真实原因、裁剪注记放不下时不追加（不许突破自己的预算）、导入回执要讲越界。",
-  "runAt": "2026-10-14T06:31:44.111Z",
-  "specFingerprint": "72fbfc75b5b58e6ac047829e52627291b31c3bb3",
+  "runAt": "2026-10-15T03:45:52.990Z",
+  "specFingerprint": "da55a2efe6dbd6eae933061e5988532c41613664",
   "files": [
     "src/core/llm/agentic-loop.ts",
     "src/components/ContextMonitor.tsx",
@@ -11,7 +11,8 @@
   "tests": [
     "src/test/compaction-audit-228.test.ts",
     "src/test/feature-context-fixes.test.ts",
-    "src/test/audit-228d.test.ts"
+    "src/test/audit-228d.test.ts",
+    "src/test/context-compact-feedback.test.tsx"
   ],
   "restored": true,
   "results": [
@@ -33,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4193
+      "ms": 4256
     },
     {
       "id": "MUT-2 手动末位闸又不带原因（面板编造「可压缩的部分不足」）",
@@ -53,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4153
+      "ms": 4125
     },
     {
       "id": "MUT-3 裁剪注记又整条追加（标记突破自己的预算）",
@@ -73,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4145
+      "ms": 4075
     },
     {
       "id": "MUT-4 导入回执又不讲越界（只写 console.warn = 没说）",
@@ -93,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3893
+      "ms": 3980
     },
     {
       "id": "MUT-5 反向对照：只改一行说明注释",
@@ -113,7 +114,27 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4086
+      "ms": 4234
+    },
+    {
+      "id": "MUT-6 A2 广播被删（手动压缩后外壳不再重载聊天区）",
+      "why": "CB-10：手动压缩完成后必须广播 codem:compaction-applied（外壳据此重载聊天区）",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "      window.dispatchEvent(new CustomEvent(\"codem:compaction-applied\", { detail: { sessionId } }));",
+          "to": "      void sessionId;"
+        }
+      ],
+      "tests": [
+        "src/test/context-compact-feedback.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4169
     }
   ]
 }
