@@ -157,6 +157,26 @@ describe("CB：手动压缩的**可见反馈**与防重复点（第 227 波）",
     expect(text, "要写明有几条查不到归属（实际没被隐藏）").toContain("3 条查不到归属");
   });
 
+  it("CB-10（全量审计）：手动压缩完成后必须广播「压缩已应用」事件（外壳要重载聊天区）", async () => {
+    /*
+     * 被守的缺陷：自动路径在 `compaction_end` 后会 `loadMessages`，手动路径原来只刷新自己面板的数字 ⇒
+     * 用户看到「移除 N 条」而对话列表里一条没少（界面自相矛盾）。
+     */
+    const seen: Array<{ sessionId?: string }> = [];
+    const onApplied = (e: Event) => seen.push((e as CustomEvent<{ sessionId?: string }>).detail ?? {});
+    window.addEventListener("codem:compaction-applied", onApplied);
+    try {
+      render(createElement(ContextMonitor, { sessionId: "s1", visible: true }));
+      await letFramePass();
+      fireEvent.click(compactButton());
+      await letFramePass();
+      expect(seen.length, "压缩成功必须广播事件").toBeGreaterThan(0);
+      expect(seen.at(-1)?.sessionId, "事件要带会话归属（外壳据此判断是否正在看这个会话）").toBe("s1");
+    } finally {
+      window.removeEventListener("codem:compaction-applied", onApplied);
+    }
+  });
+
   it("CB-5：没有可移除的消息时也要说清**为什么**（不许只是默默无事发生）", async () => {
     listVisibleMessagesMock.mockReturnValue(makeMessages(12)); // ≤20 条 ⇒ 无可移除
     render(createElement(ContextMonitor, { sessionId: "s1", visible: true }));
