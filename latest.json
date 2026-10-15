@@ -1,15 +1,15 @@
 {
-  "version": "1.16.319",
-  "notes": "压缩按距离分档 + 自动记忆降噪；三轮全量审计 + 真机验证后的修复（压缩后可见列表立刻刷新、压缩阈值真的读到用户保存值、压缩提示可见性、真实移除数）",
-  "pub_date": "2026-10-15T06:32:48Z",
+  "version": "1.16.320",
+  "notes": "上下文水位接近提示线时先自动折叠较远的大段工具输出（最近几轮不动、原文不删），折完仍高才提示压缩或交接；占用数字不再系统性偏低；启动瞬间不再误报「上下文即将满」",
+  "pub_date": "2026-10-15T10:13:55Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dIaXNpUEJoM2x2alk5bmE3NHVRWFBpOVZ1aENyeklMUENHc1c3S3I2cE9xd2ZFemJmdmRiSm5GNDVlanBkS0JBMlNrbjhGOXM4ZUhFTzFaTE14dFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDQ1OTYzCWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQpWYTFVa0dnWDJlbmgxR2Y4c0RQNVIyNzVRMVVlUE9yeENUU1MydTdiQTZ4TWc5UE1LYk9FblppakJBK1IrTlVwajdaT1FpNERzVi94QS9GUWNSYVpDZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.319/Codem_1.16.319_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZOSXRpUzVZUVE3YjhRcU1jZGtLV0RGa3hqZWkvSVUxam5XUWNJelRpVkM5MXhuVU9zVWxzWWVRb2Qrb1J5cVRFdnZZWmpldkNiMlAyQ0FJWk9uTWdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDU5MjI5CWZpbGU6Q29kZW1fMS4xNi4zMjBfeDY0LXNldHVwLmV4ZQpDYjlCejNQQzIzRlZmNW1rL1BHWm5oWWszQXJkRGtaYmdMQnNneXhGbFYrT3QyS0pUVU96cGlZUHlMd2NYeGVranNvcEZOYUVxZU1mb3hDL2ROTnJEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.320/Codem_1.16.320_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dIaXNpUEJoM2x2alk5bmE3NHVRWFBpOVZ1aENyeklMUENHc1c3S3I2cE9xd2ZFemJmdmRiSm5GNDVlanBkS0JBMlNrbjhGOXM4ZUhFTzFaTE14dFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDQ1OTYzCWZpbGU6Q29kZW1fMS4xNi4zMTlfeDY0LXNldHVwLmV4ZQpWYTFVa0dnWDJlbmgxR2Y4c0RQNVIyNzVRMVVlUE9yeENUU1MydTdiQTZ4TWc5UE1LYk9FblppakJBK1IrTlVwajdaT1FpNERzVi94QS9GUWNSYVpDZz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.319/Codem_1.16.319_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZOSXRpUzVZUVE3YjhRcU1jZGtLV0RGa3hqZWkvSVUxam5XUWNJelRpVkM5MXhuVU9zVWxzWWVRb2Qrb1J5cVRFdnZZWmpldkNiMlAyQ0FJWk9uTWdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDU5MjI5CWZpbGU6Q29kZW1fMS4xNi4zMjBfeDY0LXNldHVwLmV4ZQpDYjlCejNQQzIzRlZmNW1rL1BHWm5oWWszQXJkRGtaYmdMQnNneXhGbFYrT3QyS0pUVU96cGlZUHlMd2NYeGVranNvcEZOYUVxZU1mb3hDL2ROTnJEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.320/Codem_1.16.320_x64-setup.exe"
     }
   }
 }

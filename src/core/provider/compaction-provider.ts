@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 /**
  * Compaction Provider 插件 — 包装真实上下文压缩实现并接入 ctx。
  *

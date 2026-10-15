@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "./components/ui/portal";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection

@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { isNullable } from './misc.ts'
 
 type GlobalConstructorNames = keyof {

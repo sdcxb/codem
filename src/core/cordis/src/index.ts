@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 /** Core context type and root context implementation. */
 export * from './context.ts'
 /** Event bus, dispatch modes, and event augmentation types. */

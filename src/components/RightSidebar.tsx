@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿/**
+/**
  * RightSidebar — 上下文工具面板
  *
  * 设计参考 frakio-work 的 right-rail：

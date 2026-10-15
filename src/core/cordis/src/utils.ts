@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { defineProperty } from '../cosmokit/src/index.ts'
 import type { Context, Service } from './index.ts'
 

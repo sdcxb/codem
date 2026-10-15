@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import {
   getMemoryService,

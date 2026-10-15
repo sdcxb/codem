@@ -24,6 +24,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "node:os";
 import { transformSync } from "esbuild";
 
 const ROOT = process.cwd();
@@ -59,7 +60,7 @@ describe("探针脚本的语法门禁（第 83 轮）", () => {
      */
     const files = fs
       .readdirSync(DIR, { withFileTypes: true })
-      .filter((e) => e.isFile() && e.name.endsWith(".mjs"))
+      .filter((e) => e.isFile() && e.name.endsWith(".mjs") && !e.name.startsWith("__"))
       .map((e) => e.name)
       .sort();
     if (files.length === 0) {
@@ -76,8 +77,16 @@ describe("探针脚本的语法门禁（第 83 轮）", () => {
       `这些探针脚本语法坏了（**import 它们的脚本会全部挂掉**，而测试套件不一定能发现）：\n  - ${broken.join("\n  - ")}\n` +
         `提示：MEASURE_FN 之类的模板字符串里不能出现反引号；中文字符串里别用半角引号。`,
     ).toEqual([]);
-    // 反向对照：确认判据真的在判（故意造一个坏文件必须被抓）
-    const bogus = path.join(DIR, "__syntax_probe_bad.mjs");
+    /**
+     * 反向对照：确认判据真的在判（故意造一个坏文件必须被抓）。
+     *
+     * ★ 全量审计（真机/整批复现）：对照文件原来写在**它自己扫描的那个目录**里
+     * （`.preview-shot/__syntax_probe_bad.mjs`）—— 整批并行跑时，同一用例的另一次执行
+     * （或任何并发扫描这个目录的东西）会在 `readdirSync` 那一刻把它收进待检列表，
+     * 于是"故意写坏的文件"被当成真实缺陷 ⇒ **整批红、单跑绿**（PS-1 抖动的真正原因）。
+     * 修法：对照文件写到**系统临时目录**（不在扫描范围内），并顺手跳过 `__` 前缀。
+     */
+    const bogus = path.join(os.tmpdir(), `codem-syntax-probe-${process.pid}-${Date.now()}.mjs`);
     fs.writeFileSync(bogus, "const x = `unterminated\n", "utf8");
     try {
       expect(syntaxErrorOf(bogus), "对照项：故意写坏的文件必须被判为语法错误").not.toBeNull();

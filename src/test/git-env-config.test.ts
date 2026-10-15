@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 测试：Git 配置 + 环境脚本 功能枚举测试
  *
  * 验证引入 GitConfig（G series）和 EnvironmentConfig（ENV series）后：

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MermaidCanvasView — Mermaid 图表视图
  *
  * 在 ContentFrame 内渲染 Mermaid 图表，支持全屏查看。

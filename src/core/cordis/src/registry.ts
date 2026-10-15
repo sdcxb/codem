@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { defineProperty } from '../cosmokit/src/index.ts'
 import type { Dict } from '../cosmokit/src/index.ts'
 import type { StandardSchemaV1 } from '@standard-schema/spec'

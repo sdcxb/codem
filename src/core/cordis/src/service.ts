@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { defineProperty } from '../cosmokit/src/index.ts'
 import { Context } from './context.ts'
 import { createCallable, joinPrototype, symbols, type Tracker } from './utils.ts'

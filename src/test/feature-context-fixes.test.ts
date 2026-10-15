@@ -1,4 +1,4 @@
-﻿/**
+/**
  * FC-*：功能上下文链路的回归（第 45 轮审计 `.preview-shot/_audit/FEATURE-CONTEXT.md`）
  *
  * 覆盖的条目（每条都在文件里有对应用例）：

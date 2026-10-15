@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Workbench — Code workbench + lightweight Overview
  *
  * Upgraded from simple tool/file display to include:

@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 /** Uppercase the first character of a string. */
 export function capitalize(source: string) {
   return source.charAt(0).toUpperCase() + source.slice(1)

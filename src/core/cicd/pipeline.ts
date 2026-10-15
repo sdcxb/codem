@@ -1,4 +1,4 @@
-﻿/**
+/**
  * P3-29: CI/CD Integration — GitHub Actions pipeline 生成和监控
  *
  * 功能：

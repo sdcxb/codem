@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CostPanel —— 用量 / 成本页（对标 lobster-pet `TokenBar` + 累计消耗卡）。
  *
  * 数据来自宿主 CostTracker 的真实 provider 上报（token 与成本同源），

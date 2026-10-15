@@ -1,4 +1,4 @@
-﻿import type { MessageV2 } from "../llm/session";
+import type { MessageV2 } from "../llm/session";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { reportPersistFailure } from "../storage/persist-failure";
 /**

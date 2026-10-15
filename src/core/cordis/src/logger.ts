@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { defineProperty, hyphenate } from '../cosmokit/src/index.ts'
 import { Context } from './context.ts'
 import { Fiber } from './fiber.ts'

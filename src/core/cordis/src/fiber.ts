@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { defineProperty, isNullable } from '../cosmokit/src/index.ts'
 import type { Awaitable, Dict } from '../cosmokit/src/index.ts'
 import { Context } from './context.ts'
