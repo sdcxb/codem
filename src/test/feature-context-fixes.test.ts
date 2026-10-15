@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FC-*：功能上下文链路的回归（第 45 轮审计 `.preview-shot/_audit/FEATURE-CONTEXT.md`）
  *
  * 覆盖的条目（每条都在文件里有对应用例）：
@@ -81,6 +81,7 @@ import {
   createMessage,
   listMessages,
   listVisibleMessages,
+  deleteMessagesByIds,
   copyMessageToSession,
   __resetTextEventFingerprints,
 } from "../core/storage/message";
@@ -1211,6 +1212,31 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
       /UNIQ\d+/.test(String(marker)),
       "本次新增历史必须按预算写进去（老实现把整段裁掉 ⇒ 新标记里连一条 UNIQ 都没有）",
     ).toBe(true);
+  });
+
+  it("FC-D14（真机缺陷①）：软删之后**本进程**立刻读不到那些消息（不许等重载）", () => {
+    /*
+     * 真机形态（1.16.319，对话 22）：手动压缩回执说「移除 19 条」，索引侧 hidden=19 ✓、
+     * `messages.list include_hidden:false` 返回 21 ✓，但**界面与面板仍显示 40 条**，整页重载后才变 21。
+     * 根因：合并时 `hiddenIds` 只用于删**日志镜像**里的记录；索引镜像的陈旧快照给出的行直接进了 map ⇒ 绕过过滤。
+     */
+    const S = sid("d14");
+    seedSession(S);
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const id = `m${i}`;
+      createMessage({ id, role: i % 2 === 0 ? "user" : "assistant", content: `第 ${i} 条`, timestamp: 100 + i, status: "done" }, S);
+      ids.push(id);
+    }
+    /* 先把索引侧读一遍（把镜像预热成「删除之前」的快照） */
+    expect(listMessages(S).length, "前提：6 条都在").toBe(6);
+    /* 软删最老的 3 条（走真实路径：写索引 + 记本进程隐藏集） */
+    deleteMessagesByIds(ids.slice(0, 3), S);
+    const visible = listVisibleMessages(S);
+    expect(
+      visible.map((m) => m.id),
+      "软删后本进程必须立刻看不到它们（真机上是重载后才对）",
+    ).toEqual(["m3", "m4", "m5"]);
   });
 
   it("FC-D5j（源码级棘轮）：段头条数要与实际渲染进标记的内容一致", () => {

@@ -596,7 +596,25 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
    */
   const hiddenIds = hiddenMessageIds(sessionId);
   const merged = new Map<string, Message>();
-  for (const m of fromIndex) merged.set(m.id, m);
+  for (const m of fromIndex) {
+    /**
+     * ★ 全量审计（真机缺陷①）：**索引侧也要过 hidden 集合** ——
+     *
+     * 被守的缺陷（1.16.319 真机形态）：手动压缩回执说「移除 19 条」，
+     * 索引里 19 行 `hidden=1` ✓、`messages.list include_hidden:false` 返回 21 ✓，
+     * **但界面与面板仍显示 40 条**，整页重载后才变 21（模型侧同样读到旧集合）。
+     *
+     * 根因：`listMessagesFromIndex` 读的是**索引镜像的缓存行**，而
+     * `deleteMessagesByIds` 只把隐藏写进端口/索引，**不会**刷新渲染侧那份缓存的 `hidden` 列；
+     * 而下面那个 `merged.delete(...)` 只作用于**日志镜像**里的记录 ⇒
+     * 陈旧快照给出的这些行从 `fromIndex` 直接进了 map，绕过了过滤。
+     *
+     * 修法：`fromIndex` 也按同一个 `hiddenIds`（镜像 hidden 集合 ∪ 本进程刚隐藏的 id）过滤 ——
+     * 与日志镜像那条路**同一把尺子**，于是「本进程做完软删立刻就读不到」。
+     */
+    if (hiddenIds.has(m.id)) continue;
+    merged.set(m.id, m);
+  }
   for (const rec of cached) {
     /**
      * 第 83 波（防御纵深）：日志镜像里被标记为删除/隐藏的记录**绝不能**进读集合。
