@@ -14,6 +14,10 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { setStoragePort } from "../core/storage/port";
 import { createFakeStoragePort, type FakeStoragePort } from "./fake-storage-port";
+import fs from "node:fs";
+import path from "node:path";
+
+const ROOT = path.join(__dirname, "..", "..");
 
 let port: FakeStoragePort;
 
