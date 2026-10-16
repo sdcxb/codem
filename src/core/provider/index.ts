@@ -48,6 +48,7 @@ import { lspProvider } from './lsp-provider'
 import { codeRuntimeProvider } from './code-runtime-provider'
 import { workflowProvider } from './workflow-provider'
 import { contextInfoProvider } from './context-info-provider'
+import { shellOpsProvider } from '../../plugins/shell-ops/provider'
 import { commandsProvider } from './commands-provider'
 import { userQuestionsProvider } from './user-questions-provider'
 import { notebookProvider } from './notebook-provider'
@@ -241,6 +242,13 @@ export function loadDefaultProviders(ctx: Context): string[] {
     { name: 'codeRuntime', plugin: codeRuntimeProvider },
     { name: 'workflow', plugin: workflowProvider },
     { name: 'contextInfo', plugin: contextInfoProvider },
+    /**
+     * `@codem/shell-ops`：bash 路由（默认开）。**必须在这里注册才会被 apply** ——
+     * 只写 builtin-registry.ts 只会进注册表（插件管理器与可达性门禁看得到），
+     * 服务不会真的被提供 ⇒ 执行层 get('shellOps') 拿不到 ⇒ 静默回退 PowerShell。
+     * 真机验证抓到的就是这个（日志里没有 exec shell=bash、界面报 PowerShell 语法错）。
+     */
+    { name: 'shellOps', plugin: shellOpsProvider },
     { name: 'commands', plugin: commandsProvider },
     { name: 'userQuestions', plugin: userQuestionsProvider },
     { name: 'notebook', plugin: notebookProvider },

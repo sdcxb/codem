@@ -79,4 +79,21 @@ describe("SHELL-OPS：默认开启 + 硬锁 PowerShell", () => {
     expect(svc.plan("git status").kind).toBe("bash");
     expect(svc.describe()).toMatch(/shell-ops/);
   });
+
+  it("SO-6: 插件必须接进**真正会 apply 的入口**（只写 builtin-registry 不会提供任何服务）", () => {
+    /**
+     * 真机验证抓到的缺陷：`registerBuiltinPlugins()` 只把插件写进注册表
+     * （插件管理器与可达性门禁因此都看得到），但**真正 apply provider 的是
+     * `loadDefaultProviders(ctx)`**（src/core/provider/index.ts）。少了这一步：
+     * 服务从没被提供 ⇒ 执行层 `get('shellOps')` 拿不到 ⇒ 静默回退 PowerShell
+     * （真机日志里没有 `exec shell=bash`、界面报 PowerShell 语法错，而单测全绿）。
+     */
+    const providerIndex = fs.readFileSync(path.join(ROOT, "src/core/provider/index.ts"), "utf8");
+    expect(providerIndex, "必须 import 插件 provider").toContain("shellOpsProvider");
+    expect(providerIndex, "必须出现在 loadDefaultProviders 的列表里").toMatch(
+      /{ name: 'shellOps', plugin: shellOpsProvider }/,
+    );
+    const registry = fs.readFileSync(path.join(ROOT, "src/core/plugin-loader/builtin-registry.ts"), "utf8");
+    expect(registry, "注册表里也要有（插件管理器启停用）").toContain("'@codem/shell-ops'");
+  });
 });
