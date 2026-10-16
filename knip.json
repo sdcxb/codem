@@ -29,7 +29,6 @@
     "src/core/pet/index.ts",
     "src/core/plugin-market/index.ts",
     "src/core/prompt/index.ts",
-    "src/core/provider/index.ts",
     "src/core/recovery/index.ts",
     "src/core/retry/index.ts",
     "src/core/settings/index.ts",

@@ -10,8 +10,8 @@
  * 2. 拿不到 `invoke` 时 `return []` ⇒ 把「我做不到」说成「没有匹配文件」。
  *
  * 修法：**接上真实存在的通道**（这个 provider 是活的 —— `builtin-registry.ts:288`
- * 注册为 `@codem/fs-local`，`provider/index.ts:229` 也装配它，`tools.ts:120` 真的在
- * `ctx.get('fs')`），不再自己拼 Rust 命令名：
+ * 注册为 `@codem/fs-local`，`config/codem.base.yml` 声明了它（**那才是会装配的入口**），
+ * `tools.ts:120` 真的在 `ctx.get('fs')`），不再自己拼 Rust 命令名：
  *   - `glob` → `file-api.globSearch`（底层 `glob_search`，第 186 波起是**结构化返回**）；
  *   - `grep` → `file-api.grepSearch`（底层是 PowerShell `Select-String`，**本来就没有**
  *     Rust 侧 grep 命令 —— 见 `file-api.ts:520`）；

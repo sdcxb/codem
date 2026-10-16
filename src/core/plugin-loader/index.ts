@@ -123,8 +123,12 @@ export class PluginLoader {
         if (trimmed.startsWith('  - name:')) {
           if (currentPlugin) {
             // 保存前一个插件
-            // 注意：codem.yml 声明的插件不自动加载，因为它们已通过 loadDefaultProviders 加载
-            // 这里只用于元数据注册
+            // 注意：codem.yml 声明的插件**不在这里加载** —— 真正装配它们的是
+            // `config/codem.base.yml` → `loadFromEntries()` → `ctx.plugin()`（见 App.tsx 的 getCordisContext）。
+            // 2026-10-16 更正：这一行原文写的是"已通过 loadDefaultProviders 加载" —— 那是**死代码**
+            // （`src/core/provider/index.ts`，全仓无调用者，已删除），
+            // 照它理解会得出"插件已经被装配了"的错误结论（真机上就是这么翻车的）。
+            // 这里只用于元数据注册。
           }
           const name = trimmed.replace('  - name:', '').trim().replace(/['"]/g, '')
           currentPlugin = { name, meta: {} }

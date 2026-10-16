@@ -16,7 +16,6 @@
   "src/core/pet/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/plugin-market/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/prompt/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
-  "src/core/provider/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/recovery/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/retry/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",
   "src/core/settings/index.ts": "barrel 转出口：只做 re-export，没有自己的运行时行为（knip.json 里已逐条登记；不是「假装有功能」）",

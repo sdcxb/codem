@@ -12,8 +12,10 @@
  *
  * 原文案承诺"注册后用户可在输入框输入 `/compact` 触发"，实际相反：
  * - **零生产调用者**：全仓 grep `isCompactCommand` / `registerHandler` / `commandCompact`
- *   的命中只有"本文件定义"、"`builtin-registry.ts` / `provider/index.ts` 的注册"、
+ *   的命中只有"本文件定义"、"`builtin-registry.ts` 的注册"、
  *   "`plugin-registry-provider.ts` 的展示条目"—— **没有任何代码调它们**。
+ *   （2026-10-16：这里原来还列了 `provider/index.ts` 的注册 —— 那个文件是**死代码**
+ *   （全仓没有调用者），已删除；装配入口是 `config/codem.base.yml`。）
  * - **App 侧没有这个分支**：`src/App.tsx` 的命令分发里只有 `/feedback`
  *   （以及更早的那些内置命令），没有 `/compact` 分支；命令菜单
  *   （`components/SlashCommandMenu.tsx`）只列**技能**，所以 `/compact` 连菜单里都不出现。
