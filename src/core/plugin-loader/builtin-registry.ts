@@ -259,6 +259,7 @@ import { userApprovalProvider } from '../provider/user-approval-provider'
 import { skillBadgeProvider } from '../provider/skill-badge-provider'
 import { skillFilesystemProvider } from '../provider/skill-filesystem-provider'
 import { personaProvider } from '../provider/persona-provider'
+import { shellOpsProvider } from '../../plugins/shell-ops/provider'
 import { commandFeedbackProvider } from '../provider/command-feedback-provider'
 import { cordisClientRunnerProvider } from '../provider/cordis-client-runner-provider'
 import { cordisHostRunnerProvider } from '../provider/cordis-host-runner-provider'
@@ -525,6 +526,13 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/skill-badge', { provides: ['skillBadge'], inject: ['skill'], priority: 0, hot: true }, () => skillBadgeProvider)
   registerBuiltinPlugin('@codem/skill-filesystem', { provides: ['skillFilesystem'], inject: ['skill', 'fs'], priority: 0, hot: true }, () => skillFilesystemProvider)
   registerBuiltinPlugin('@codem/persona', { provides: ['persona'], inject: [], priority: 0, hot: true }, () => personaProvider)
+  /**
+   * `@codem/shell-ops`：Windows 上把 `bash` 工具的执行器从 Windows PowerShell 5.1
+   * 换成真正的 bash，并**拒绝**点名 PowerShell 的命令（找不到 bash 时大声失败、不回退）。
+   * 判定暴露为 `shellOps` 服务；消费方按既有方式 `ctx.get('shellOps')`（见 `plugins/shell-ops/`）。
+   * 它出现在插件管理器的可启停列表里；删掉本行 + 插件目录即完全移除。
+   */
+  registerBuiltinPlugin('@codem/shell-ops', { provides: ['shellOps'], inject: [], priority: 0, hot: true, platform: ['win32'] }, () => shellOpsProvider)
   registerBuiltinPlugin('@codem/command-feedback', { provides: ['commandFeedback'], inject: [], priority: 0, hot: true }, () => commandFeedbackProvider)
   registerBuiltinPlugin('@codem/cordis-client-runner', { provides: ['cordisClientRunner'], inject: ['sdkClient'], priority: 0, hot: true }, () => cordisClientRunnerProvider)
   registerBuiltinPlugin('@codem/cordis-host-runner', { provides: ['cordisHostRunner'], inject: ['host'], priority: 0, hot: true }, () => cordisHostRunnerProvider)
