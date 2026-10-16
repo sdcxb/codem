@@ -27,7 +27,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { REPO_ROOT, filesToRestore } from "./tasks-repo.mjs";
@@ -285,6 +285,47 @@ function resetDir(ws) {
 }
 
 /**
+ * 把 `tarPath` 解开到 `destDir` —— **不依赖 GNU tar 的"远程归档"解释**。
+ *
+ * ## 为什么不能写 `["-xf", tarPath, "-C", destDir]`（2026-10-16 实测）
+ *
+ * GNU tar 把 `-f HOST:PATH` 当成**远程归档**；而 Windows 绝对路径 `C:\Users\…\x.tar`
+ * 正好长得像 `HOST:PATH` ⇒ GNU tar 直接报
+ *
+ * ```text
+ * tar: Cannot connect to C: resolve failed
+ * ```
+ *
+ * 于是 `node tools/eval/run-repo-arm.mjs --verify-workspace`（进而 `npm run audit` 的
+ * `eval:repo-workspace` 那一步）在**GNU tar 排在 PATH 前面**的环境里必挂 ——
+ * 本机就踩到了：DSH 的 bash 把 `@dsh-ops/bash-win32-…/ucrt64/bin`（GNU tar 1.35）前置，
+ * 而 `C:\Windows\System32\tar.exe` 是 bsdtar 3.8.9（它按 Windows 路径处理，所以宿主 PowerShell 里一直没暴露）。
+ *
+ * ## 现在的写法
+ *
+ * `-f` 只给**文件名**、用 `cwd` 指到归档所在目录；`-C` 的目标路径**转成正斜杠**。
+ * 实测（GNU tar 1.35 / bsdtar 3.8.9，本机两套都在）：
+ *
+ * | 写法 | GNU tar | bsdtar |
+ * |---|---|---|
+ * | `-f <C:\绝对路径>` | ✗ `Cannot connect to C:` | ✓ |
+ * | `-f <裸名>` + `cwd` | ✓ | ✓ |
+ * | `-C <C:\反斜杠>`（解包） | ✗ `Cannot open: C\:\…` | ✓ |
+ * | `-C <C:/正斜杠>` | ✓ | ✓ |
+ * | `-C <相对路径>` | ✓ | ✓ |
+ *
+ * 所以取「裸名 + cwd」×「正斜杠」这一组：两个实现都成立，也不需要 GNU 专有的 `--force-local`。
+ * 判据：`src/test/eval-tar-portability.test.ts`（TP-1 功能验证：在 Windows 绝对路径上建包再解开；
+ * TP-2 静态：不许再出现把绝对路径直接喂给 `-f` 的写法）。
+ */
+export function untarInto(tarPath, destDir) {
+  return spawnSync("tar", ["-xf", basename(tarPath), "-C", String(destDir).replace(/\\/g, "/")], {
+    cwd: dirname(tarPath),
+    encoding: "utf8",
+  });
+}
+
+/**
  * 在 `ws` 里造出 bug 状态并**提交**（幂等：`ws` 已存在时先清空）。
  *
  * @param task 任务对象（用 `revertPaths` / `buggyCommit`）
@@ -311,7 +352,7 @@ export function createRepoWorkspace(task, ws = mkdtempSync(join(tmpdir(), `codem
   const tar = join(tmpdir(), `codem-eval-archive-${task.id}-${process.pid}-${Date.now()}.tar`);
   const archive = git(["archive", "--format=tar", "-o", tar, "HEAD"]);
   if (archive.status !== 0) throw new Error(`git archive 失败：${archive.stderr || archive.stdout}`);
-  const untar = spawnSync("tar", ["-xf", tar, "-C", ws], { encoding: "utf8" });
+  const untar = untarInto(tar, ws);
   rmSync(tar, { force: true });
   if (untar.status !== 0) throw new Error(`解包失败：${untar.stderr || untar.stdout}`);
 
