@@ -23,6 +23,7 @@ import { apply as marketApply } from './ui-market/index.ts'
 import { apply as skinDefaultApply } from './ui-skin-default/index.ts'
 import { apply as skinPetApply } from './ui-skin-pet/index.ts'
 import { uiPetProvider } from '../provider/ui-pet-provider'
+import { uiGameProvider } from '../provider/ui-game-provider'
 import { apply as cordisApply } from './ui-cordis/index.tsx'
 
 // 导入 UI Provider — 对标 DSH 的 ui-* 插件包
@@ -126,6 +127,14 @@ export function loadUIPlugins(ctx: Context) {
     { name: 'ui-message-feedback', plugin: uiMessageFeedbackProvider },
     { name: 'ui-pet', plugin: uiPetProvider },
     { name: 'ui-library-ops', plugin: uiLibraryOpsProvider },
+    /**
+     * `@codem/ui-game`（2026-10-16 接入）：它是**开关插件**，`apply` 是空操作
+     * —— 游戏界面由 `App.tsx` 直接渲染、显隐读 `codem-disabled-plugins`。
+     * 在这里装配它 = 给它一个**真实装配路径**（此前它只在注册表里，永远不被 ctx.plugin，
+     * 判据 SO-8 就是抓这个形状的），同时它也不再宣称未声明的槽位 `app.game`
+     * 与没有任何消费者的假服务 `uiGame`。
+     */
+    { name: 'ui-game', plugin: uiGameProvider },
   ]
 
   // 插件禁用门控（审计 D1/D2）：被插件管理器禁用的 UI 插件不装配 provider。

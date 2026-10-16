@@ -751,14 +751,11 @@
 # - id: ui-pet
 #   name: '@codem/ui-pet'
 #   inject: [slots]
-# - id: ui-primitives
-#   name: '@codem/ui-primitives'
-# - id: ui-input-trigger
-#   name: '@codem/ui-input-trigger'
-# - id: ui-agent-preset
-#   name: '@codem/ui-agent-preset'
-# - id: ui-skill-panel
-#   name: '@codem/ui-skill-panel'
+# 2026-10-16：下面 4 条**已下架**（provider 文件与注册表登记一并删除）——
+# 它们的服务（uiPrimitives / uiInputTrigger / uiAgentPreset / uiSkillPanel）全仓没有任何消费者，
+# 也没有任何装配路径，却在插件市场里对用户宣称"关闭后基础 UI 组件 / 输入触发器 / 技能面板不可用"：
+# 纯假承诺。真实功能各自另有实现（`/` 命令、Agent 预设、技能管理、`components/ui/*`）。
+# 判据：src/test/plugin-assembly-path.test.ts 的 CAT-1（目录宣称的服务必须有已装配的提供者）。
 # - id: ui-attachment
 #   name: '@codem/ui-attachment'
 #   inject: [slots]

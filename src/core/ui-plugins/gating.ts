@@ -10,6 +10,12 @@
 export const GATED_PROVIDERS: Record<string, string> = {
   "ui-pet": "@codem/ui-pet",
   "ui-library-ops": "@codem/ui-library-ops",
+  /**
+   * 2026-10-16 补：`@codem/ui-game` 是**默认关闭**的开关插件（游戏界面由 `App.tsx` 直接渲染，
+   * 显隐读 `codem-disabled-plugins`）。登记在这里是为了让"禁用 = 不装配"这条语义对它也成立
+   * —— 与 ui-pet / ui-library-ops 同一形态；它的 `apply` 是空操作，所以装配与否都不改变界面行为。
+   */
+  "ui-game": "@codem/ui-game",
 };
 
 /** 该 UI 插件是否被插件管理器禁用（禁用则不装配 provider） */

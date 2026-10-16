@@ -137,10 +137,6 @@ import { hostPluginInventoryProvider } from '../provider/host-plugin-inventory-p
 import { sdkProtocolProvider } from '../provider/sdk-protocol-provider'
 
 // P2-7.14: UI 原语和面板插件
-import { uiPrimitivesProvider } from '../provider/ui-primitives-provider'
-import { uiInputTriggerProvider } from '../provider/ui-input-trigger-provider'
-import { uiAgentPresetProvider } from '../provider/ui-agent-preset-provider'
-import { uiSkillPanelProvider } from '../provider/ui-skill-panel-provider'
 
 // P2-7.15: Typert 类型系统插件
 import { typertGeneratorProvider } from '../provider/typert-generator-provider'
@@ -413,10 +409,6 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/sdk-protocol', { provides: ['sdkProtocol'], inject: ['hostClient'], priority: 0, hot: true }, () => sdkProtocolProvider)
 
   // P2-7.14: UI 原语和面板插件
-  registerBuiltinPlugin('@codem/ui-primitives', { provides: ['uiPrimitives'], inject: [], priority: 0, hot: true }, () => uiPrimitivesProvider)
-  registerBuiltinPlugin('@codem/ui-input-trigger', { provides: ['uiInputTrigger'], inject: [], priority: 0, hot: true }, () => uiInputTriggerProvider)
-  registerBuiltinPlugin('@codem/ui-agent-preset', { provides: ['uiAgentPreset'], inject: [], priority: 0, hot: true }, () => uiAgentPresetProvider)
-  registerBuiltinPlugin('@codem/ui-skill-panel', { provides: ['uiSkillPanel'], inject: [], priority: 0, hot: true }, () => uiSkillPanelProvider)
 
   // P2-7.15: Typert 类型系统插件
   registerBuiltinPlugin('@codem/typert-generator', { provides: ['typertGenerator'], inject: [], priority: 0, hot: true }, () => typertGeneratorProvider)
@@ -518,7 +510,14 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/ui-user-questions', { provides: ['uiUserQuestions'], inject: ['slots'], priority: 0, hot: true }, () => uiUserQuestionsProvider)
   registerBuiltinPlugin('@codem/ui-workflow-run', { provides: ['uiWorkflowRun'], inject: ['slots'], priority: 0, hot: true }, () => uiWorkflowRunProvider)
   registerBuiltinPlugin('@codem/ui-workspace', { provides: ['uiWorkspace'], inject: ['slots'], priority: 0, hot: true }, () => uiWorkspaceProvider)
-  registerBuiltinPlugin('@codem/ui-game', { provides: ['uiGame'], inject: ['slots'], priority: 0, hot: true }, () => uiGameProvider)
+  /**
+   * `@codem/ui-game`：**开关插件**（不是 UI 实现）。
+   * 游戏界面由 `App.tsx` 直接渲染、显隐由 `codem-disabled-plugins` 决定；
+   * 这个条目存在是为了让插件管理器里有可启停的一项，`apply` 是**空操作**
+   * （旧版在这里注册一个**未声明**的槽位 `app.game` + 一个假服务 `uiGame` —— 一装配就抛）。
+   * 它同时声明在 `config/codem.base.yml` 里（装配入口），判据 SO-8 守这一条。
+   */
+  registerBuiltinPlugin('@codem/ui-game', { provides: [], inject: [], priority: 0, hot: true }, () => uiGameProvider)
   registerBuiltinPlugin('@codem/ui-library-ops', { provides: ['uiLibraryOps'], inject: ['slots'], priority: 0, hot: true }, () => uiLibraryOpsProvider)
   registerBuiltinPlugin('@codem/lsp-stdio', { provides: ['lspStdio'], inject: ['lsp'], priority: 0, hot: true }, () => lspStdioProvider)
   registerBuiltinPlugin('@codem/atomic-write', { provides: ['atomicWrite'], inject: ['fs'], priority: 0, hot: true }, () => atomicWriteProvider)
