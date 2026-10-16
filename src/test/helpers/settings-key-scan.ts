@@ -34,6 +34,13 @@ export const READ_FNS = new Set([
 export const WRITE_FNS = new Set([
   "setSetting",
   "setSettingJSON",
+  // 确认式写入（settings.ts::setSettingConfirmed：等引擎确认才返回 true）。
+  //
+  // 2026-10-16 补：`@codem/shell-ops` 的默认设置项改用它来落库 —— 上一版在插件装配时
+  // 用 setSetting 抢写，而那时存储还没预热，真机上每次都报「设置未保存」且键永远不存在。
+  // 扫描器当时只认 setSetting，于是那条键被判成「只读不写」。它本来就是一个写入 API
+  // （设置键迁移 migration.ts 也用），漏登记的是**扫描器**，不是代码。
+  "setSettingConfirmed",
   "removeSetting",
   "setItem",
   "removeItem",

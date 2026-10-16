@@ -28,24 +28,15 @@
  *
  * 可启停：注册进插件管理器（`registerBuiltinPlugin`），状态走既有持久化；
  * 可删除：代码只在本目录 + `builtin-registry.ts` 一行注册 + 消费方一次取值。
+ *
+ * ## 导出面（2026-10-16 收口，knip 棘轮逼出来的）
+ *
+ * 包入口**只转出装配真正需要的那一个符号**（`shellOpsProvider` —— `builtin-registry` 用它）。
+ * 之前这里把 `policy` / `provider` 的 19 个名字全部原样转出，而它们**没有任何生产消费者**
+ * （只有测试与这个 barrel 自己引用）：knip 实测 `exports=73 / types=25`（基线 49/21），
+ * 多出来的 24+4 条**全部**来自本插件。删掉这层间接后回到 49/21，新增 0 条。
+ *
+ * 需要判定或需要服务的人**直接 import 对应模块**（`./policy`、`./provider`）。
  */
 
-export {
-  SHELL_OPS_PLUGIN_NAME,
-  SHELL_OPS_ENABLED_KEY,
-  SHELL_OPS_BASH_PATH_KEY,
-  SHELL_OPS_PWSH_PATH_KEY,
-  BASH_STANDARD_PATHS,
-  PWSH_STANDARD_PATHS,
-  isShellOpsEnabled,
-  configuredBashPath,
-  configuredPwshPath,
-  mentionsWindowsPowerShell,
-  mentionsPwsh7,
-  pwshRouteHint,
-  resolveShellPlan,
-  describeShellOps,
-} from "./policy";
-export type { ShellKind, ShellPlan } from "./policy";
-export { SHELL_OPS_SERVICE, createShellOpsService, shellOpsProvider } from "./provider";
-export type { ShellOpsService } from "./provider";
+export { shellOpsProvider } from "./provider";

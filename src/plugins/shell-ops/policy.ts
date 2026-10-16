@@ -42,27 +42,34 @@
  *   不识别 `cmd.exe /c powershell ...` 这类二次包装（少见；真发生可从执行日志 `exec start cmd=...` 看到）。
  */
 
-import { getSetting } from "../../core/storage/settings";
+import { getSetting, setSettingConfirmed } from "../../core/storage/settings";
 
-/** 插件名（与 `registerBuiltinPlugin` 一致，插件管理器按它启停）。 */
-export const SHELL_OPS_PLUGIN_NAME = "@codem/shell-ops";
+/**
+ * 导出面（2026-10-16 收口，`node tools/audit/knip-gate.mjs` 棘轮逼出来的）：
+ * **只导出真实被生产代码消费的东西**。
+ *
+ * 收口前这里 export 了 11 个符号、`index.ts` 又原样转出去 16 个，knip 实测
+ * `exports=73 / types=25`（基线 49/21）—— 多出来的 24+4 条**全部**来自本插件。
+ * 那些导出没有任何生产消费者（只有 barrel 自己与测试引用）⇒ 是真的死面，不是"公共 API"。
+ * 现在只留：设置键 `SHELL_OPS_ENABLED_KEY`（provider 要用来落默认值）+ 三个函数 + `ShellPlan`。
+ *
+ * 插件名不再做成常量：它只出现在注册表（`registerBuiltinPlugin` 的字面量）与文档里，
+ * 一个没有任何读者的常量只是"看起来像契约"。
+ */
+// 插件名（与 registerBuiltinPlugin 里的一致）：@codem/shell-ops
 
 /** 设置键：插件总开关（默认**开** —— 用户要求默认开启）。 */
 export const SHELL_OPS_ENABLED_KEY = "codem-shell-ops-enabled";
 /** 设置键：显式 bash 路径（可选；留空则由 Rust 侧按标准位置探测）。 */
-export const SHELL_OPS_BASH_PATH_KEY = "codem-shell-ops-bash-path";
+const SHELL_OPS_BASH_PATH_KEY = "codem-shell-ops-bash-path";
 /** 设置键：显式 PowerShell 7 路径（可选；仅用于错误提示里给出可执行出口）。 */
-export const SHELL_OPS_PWSH_PATH_KEY = "codem-shell-ops-pwsh-path";
+const SHELL_OPS_PWSH_PATH_KEY = "codem-shell-ops-pwsh-path";
 
-/** 标准 bash 位置（Rust 侧同一份顺序；这里只用于提示与面板显示）。 */
-export const BASH_STANDARD_PATHS = [
-  "C:\\Program Files\\Git\\bin\\bash.exe",
-  "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
-  "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
-];
+// 标准 bash 位置**不在这里维护**：唯一的判定源是 Rust 侧 `resolve_bash_path()`
+// （显式配置 → 环境变量 → 标准安装位置），本文件不复制一份"看起来像规则"的列表。
 
-/** 标准 PowerShell 7 位置。 */
-export const PWSH_STANDARD_PATHS = [
+/** 标准 PowerShell 7 位置（只用于给模型的可执行提示）。 */
+const PWSH_STANDARD_PATHS = [
   "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
   "C:\\Program Files\\PowerShell\\7-preview\\pwsh.exe",
 ];
@@ -98,7 +105,7 @@ export function isShellOpsEnabled(): boolean {
 }
 
 /** 显式配置的 bash 路径（可能为空 ⇒ 交给 Rust 探测）。 */
-export function configuredBashPath(): string | null {
+function configuredBashPath(): string | null {
   const fromSetting = readString(SHELL_OPS_BASH_PATH_KEY);
   if (fromSetting) return fromSetting;
   const fromEnv = (process.env.CODEM_SHELL_OPS_BASH || "").trim();
@@ -106,18 +113,16 @@ export function configuredBashPath(): string | null {
 }
 
 /** 显式配置的 PowerShell 7 路径（用于提示）。 */
-export function configuredPwshPath(): string | null {
+function configuredPwshPath(): string | null {
   const fromSetting = readString(SHELL_OPS_PWSH_PATH_KEY);
   if (fromSetting) return fromSetting;
   const fromEnv = (process.env.CODEM_SHELL_OPS_PWSH || "").trim();
   return fromEnv || null;
 }
 
-export type ShellKind = "bash" | "powershell";
-
 export interface ShellPlan {
   /** 本次要用的执行器 */
-  kind: ShellKind;
+  kind: "bash" | "powershell";
   /** 交给 Rust 的 bash 路径提示（空 ⇒ 由 Rust 按标准位置探测） */
   bashPath: string | null;
   /** 拒绝执行时的提示（有它 ⇒ 调用方必须直接把 message 交回模型，不许执行） */
@@ -129,21 +134,63 @@ export interface ShellPlan {
  *
  * 判定按「命令词」：命令开头、或 `;` `&&` `||` `|`／换行之后的第一个词是
  * `powershell` / `powershell.exe`（允许带盘符路径）。`pwsh` **不算**（那是 7，是我们要留的出口）。
+ *
+ * 不再 export（只有本模块的 `resolveShellPlan` 用）：判据从**行为**上测
+ * （`resolveShellPlan(cmd).refusal` 有/无），比钉一个内部谓词更结实。
  */
-export function mentionsWindowsPowerShell(command: string): boolean {
+function mentionsWindowsPowerShell(command: string): boolean {
   return /(^|[\n;|]|&&|\|\|)\s*(?:[A-Za-z]:\\[^"'\s]*\\)?powershell(?:\.exe)?\b/i.test(command);
 }
 
-/** 命令里是否点名调用了 PowerShell 7（pwsh）。 */
-export function mentionsPwsh7(command: string): boolean {
-  return /(^|[\n;|]|&&|\|\|)\s*(?:[A-Za-z]:\\[^"'\s]*\\)?pwsh(?:\.exe)?\b/i.test(command);
-}
-
 /** 给模型的 PowerShell 7 出口提示（有显式配置就用它，否则给标准位置 + PATH 上的 pwsh）。 */
-export function pwshRouteHint(): string {
+function pwshRouteHint(): string {
   const explicit = configuredPwshPath();
   const list = [explicit, ...PWSH_STANDARD_PATHS].filter(Boolean) as string[];
   return `"${list[0]}"（或先运行 where pwsh 找到本机路径）`;
+}
+
+/**
+ * 把「默认开启」落成一条**真实的设置项**（键不存在时写 `true`）。
+ *
+ * ## 为什么不在插件装配（apply）时写（真机取证，2026-10-16）
+ *
+ * 打包版启动时 CDP 抓到的事实：
+ *
+ * ```text
+ * [shell-ops] shell-ops：已开启（…）                      ← apply 跑了
+ * [error] [PersistFailure] settings.setSetting 写盘失败（第 1 次）：
+ *         端口已注册但该域镜像未接手（未就绪 / 未镜像 / 被逐出）（设置未保存）
+ * ```
+ *
+ * 装配发生在存储端口**预热之前**，那时写设置必失败（`RustDataPort.setConfirmed`
+ * 对未预热的端口明确"不写、返回 false"，以免用空表覆盖已有内容）。
+ * 结果是：每次启动都报一次「设置未保存」，而那个键**永远不存在** ——
+ * "插件确实跑过"在设置面上就没有任何证据。
+ *
+ * ## 现在怎么写
+ *
+ * 放到**真正要跑命令时**（`resolveShellPlan` 的第一句）：那时应用早就完成预热。
+ * 用**确认式写入**（`setSettingConfirmed`：等引擎确认才返回 true），
+ * 因此"写成功"与"没写成功"是两件事，后者会如实进 console（行为不受影响 ——
+ * 键缺失本来按默认开启处理）。
+ *
+ * 只在键缺失时写 ⇒ 永不覆盖用户/脚本显式设过的值；写入成功后键就存在了，
+ * 后续判定只读不写（不会每条命令都写盘）。
+ */
+function materializeEnabledDefault(): void {
+  let existing: unknown;
+  try {
+    existing = getSetting(SHELL_OPS_ENABLED_KEY);
+  } catch {
+    return; // 读都读不了：不在这里做任何判定（放行决定由 isShellOpsEnabled 负责）
+  }
+  if (existing !== null && existing !== undefined) return; // 已存在（含用户设过）⇒ 一个字不动
+  void setSettingConfirmed(SHELL_OPS_ENABLED_KEY, "true")
+    .then((ok) => {
+      if (ok) console.log("[shell-ops] 已落默认设置 codem-shell-ops-enabled=true（默认开启）");
+      else console.warn("[shell-ops] 默认设置未落库（行为不受影响：键缺失按默认开启处理）");
+    })
+    .catch((e) => console.warn("[shell-ops] 默认设置写入异常（不影响本次运行）:", e));
 }
 
 /**
@@ -154,6 +201,8 @@ export function pwshRouteHint(): string {
  * - 其它 ⇒ `bash`（bash 是否存在由 Rust 解析；解析不到时 Rust 侧拒绝执行，**不回退**）。
  */
 export function resolveShellPlan(command: string): ShellPlan {
+  // 这里是"真的要用这个插件"的入口（应用已预热），默认设置项在这一刻才落（见上）。
+  materializeEnabledDefault();
   if (!isShellOpsEnabled()) {
     return { kind: "powershell", bashPath: null };
   }

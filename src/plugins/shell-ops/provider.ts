@@ -18,20 +18,20 @@
  */
 
 import type { Plugin } from "../../core/cordis/src/index.ts";
-import { getSetting, setSetting } from "../../core/storage/settings";
-import {
-  SHELL_OPS_ENABLED_KEY,
-  describeShellOps,
-  isShellOpsEnabled,
-  resolveShellPlan,
-  type ShellPlan,
-} from "./policy";
+import { describeShellOps, isShellOpsEnabled, resolveShellPlan, type ShellPlan } from "./policy";
 
-/** 服务名（消费方按它取）。 */
-export const SHELL_OPS_SERVICE = "shellOps";
+/**
+ * 服务名。
+ *
+ * ⚠️ **不 export**（2026-10-16 导出面收口）：消费方是 `core/llm/tools.ts` 的
+ * `getToolContext()?.get("shellOps")` —— 那里必须写**字面量**（core 不许 import 插件，
+ * 删掉插件目录后 core 仍要能编译）⇒ 导出一个没人 import 的常量只会让人以为
+ * "改这里就能换服务名"，是假的单一来源。判据从行为上钉：真装配后 `ctx.get("shellOps")` 必须拿得到（SO-7）。
+ */
+const SHELL_OPS_SERVICE = "shellOps";
 
-/** 服务对象形状（消费方按这个接口调用）。 */
-export interface ShellOpsService {
+/** 服务对象形状。 */
+interface ShellOpsService {
   /** 插件是否启用（默认开）。 */
   isEnabled(): boolean;
   /** 决定这条命令用哪个执行器；返回值里有 `refusal` 时必须拒绝执行。 */
@@ -46,7 +46,7 @@ export interface ShellOpsService {
  * 注意：判定**每次调用都现算**（读设置、读环境变量），这样插件启停与设置改动
  * 立即生效，不需要重启 —— 与 Codem 插件管理器"切换后当前进程立即生效"的语义一致。
  */
-export function createShellOpsService(): ShellOpsService {
+function createShellOpsService(): ShellOpsService {
   return {
     isEnabled: () => isShellOpsEnabled(),
     plan: (command: string) => resolveShellPlan(command),
@@ -56,13 +56,18 @@ export function createShellOpsService(): ShellOpsService {
 
 /** Cordis 插件：把服务提供出去（`provides: ["shellOps"]`）。 */
 export const shellOpsProvider: Plugin = (ctx: any) => {
-  // 落一次默认值：这一行同时是**设置键的写入方**（判据 SKEY-2 要求每个键既有人读、也有人写）。
-  // 只在键不存在时写 ⇒ 不覆盖用户/界面已设过的值（默认开，但用户关掉后不会被改回来）。
-  try {
-    if (getSetting(SHELL_OPS_ENABLED_KEY) === null) setSetting(SHELL_OPS_ENABLED_KEY, "true");
-  } catch (e) {
-    console.warn("[shell-ops] 写默认设置失败（不影响本次运行）:", e);
-  }
+  /**
+   * ⚠️ **装配时这里不写设置**（2026-10-16 真机取证后改的）。
+   *
+   * 原实现在这里落默认值（`codem-shell-ops-enabled`），而装配发生在存储端口预热之前，
+   * 那一笔写**必失败**：真机 console 每次启动都有
+   * `[PersistFailure] settings.setSetting 写盘失败 … 端口已注册但该域镜像未接手`，
+   * 键因此**永远不存在**（"插件确实跑过"在设置面上没有任何证据）。
+   *
+   * 现在落默认值的地方是 `policy.ts::resolveShellPlan()` 的第一句 —— 那是
+   * "真的要用这个插件"的时刻，应用早就完成预热，而且用的是**确认式写入**
+   * （写成功/没写成功分得开）。服务本身仍然在这里 provide：apply 的职责就是提供它。
+   */
   const service = createShellOpsService();
   console.log(`[shell-ops] ${service.describe()}`);
   return ctx.provide(SHELL_OPS_SERVICE, service);
