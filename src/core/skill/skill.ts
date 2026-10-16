@@ -1019,7 +1019,7 @@ export class SkillRegistry {
      * 以前这里内嵌了「从仓库安装的 5 步」整段（几十行），既让系统提示变长，
      * 又与文档形成**两份会各自漂移的副本** ✗。现在：
      * - 常驻事实（真值根 / 布局 / frontmatter 必填 / 自动发现 / 卸载 / 反例）留在提示里 ✓；
-     * - 安装步骤放 `docs/SKILLS-INSTALL.md`、插件机制放 `docs/PLUGIN-INSTALL.md` ✓，
+     * - 安装步骤放 `docs/manuals/SKILLS-INSTALL.md`、插件机制放 `docs/manuals/PLUGIN-INSTALL.md` ✓，
      *   提示里只给路径 + 一条「先读、不要试探」的纪律 ✓。
      * 判据随内容一起迁移：步骤类断言改为断言**文档**（见 `skill-environment-facts.test.ts` ENV-2、
      * `install-discipline.test.ts`）—— 保证不会因为搬走而失去守护 ✓。
@@ -1036,8 +1036,8 @@ export class SkillRegistry {
       "  - 技能根下**名为 `SKILL.md` 的目录**会被判为结构异常并跳过 ✗（别把技能文件放成同名目录 ✓）",
       "- **卸载** ✓：删掉 `<技能根>/<技能名>/` 整个目录 ✓",
       "- **要装东西时先读手册（不要试探 ✗）**：",
-      "  - 装**技能** ⇒ `docs/SKILLS-INSTALL.md`（布局、安装五步、验证、卸载 ✓）",
-      "  - 装/写**插件** ⇒ `docs/PLUGIN-INSTALL.md`（Codem 插件机制：provider + `registerBuiltinPlugin` 注册一行 ✓）",
+      "  - 装**技能** ⇒ `docs/manuals/SKILLS-INSTALL.md`（布局、安装五步、验证、卸载 ✓）",
+      "  - 装/写**插件** ⇒ `docs/manuals/PLUGIN-INSTALL.md`（Codem 插件机制：provider + `registerBuiltinPlugin` 注册一行 ✓）",
       "  - 两本手册是权威；**没有写到的路径不存在** ⇒ 不要靠 npm 安装、改应用数据目录或反复重启来「试出」机制 ✗",
       "",    ].join("\n");
   }

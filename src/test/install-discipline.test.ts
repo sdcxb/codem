@@ -21,8 +21,8 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 describe("INST：安装纪律（提示只给指针，步骤在文档）", () => {
   it("INST-1: 两本手册存在且含关键锚点", () => {
-    const skills = read("docs/SKILLS-INSTALL.md");
-    const plugins = read("docs/PLUGIN-INSTALL.md");
+    const skills = read("docs/manuals/SKILLS-INSTALL.md");
+    const plugins = read("docs/manuals/PLUGIN-INSTALL.md");
     for (const [name, doc, anchors] of [
       ["SKILLS-INSTALL", skills, [".codem/skills", "SKILL.md", "frontmatter", "description", "复制"]],
       [
@@ -40,15 +40,15 @@ describe("INST：安装纪律（提示只给指针，步骤在文档）", () => 
   it("INST-2: 系统提示必须点名两本手册（只给指针，不再内嵌整段步骤）", async () => {
     const { getSkillRegistry } = await import("../core/skill/skill");
     const section = getSkillRegistry().buildSkillEnvironmentSection();
-    expect(section, "必须点名技能手册").toContain("docs/SKILLS-INSTALL.md");
-    expect(section, "必须点名插件手册").toContain("docs/PLUGIN-INSTALL.md");
+    expect(section, "必须点名技能手册").toContain("docs/manuals/SKILLS-INSTALL.md");
+    expect(section, "必须点名插件手册").toContain("docs/manuals/PLUGIN-INSTALL.md");
     expect(section, "要给出「先读手册、不要试探」的纪律").toMatch(/先读手册|不要试探/);
     // 反向对照：细则不该还留在提示里（否则等于没下沉，白占稳定前缀）
     expect(section, "细则不该还内嵌在提示里（应只在文档里）").not.toContain("从仓库/URL 安装");
   });
 
   it("INST-3: 插件手册要写清四步机制（含「取不到就回退」）", () => {
-    const doc = read("docs/PLUGIN-INSTALL.md");
+    const doc = read("docs/manuals/PLUGIN-INSTALL.md");
     expect(doc).toContain("registerBuiltinPlugin");
     expect(doc).toContain("ctx.provide");
     expect(doc).toContain("getToolContext()");
@@ -56,7 +56,7 @@ describe("INST：安装纪律（提示只给指针，步骤在文档）", () => 
   });
 
   it("INST-4: 插件手册要写明「没有第三方插件包安装服务」这条禁行", () => {
-    const doc = read("docs/PLUGIN-INSTALL.md");
+    const doc = read("docs/manuals/PLUGIN-INSTALL.md");
     expect(doc).toMatch(/pluginInstaller|安装服务/);
     expect(doc, "要明确禁止试探").toMatch(/不要.*试|别去试/);
   });
