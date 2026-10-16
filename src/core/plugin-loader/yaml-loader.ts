@@ -357,7 +357,17 @@ function loadFromYaml(ctx: Context, ymlContent: string): YamlLoadResult {
       }
 
       const fiber = ctx.plugin(plugin as any)
-      registerActiveFiber(entry.name, fiber)
+      /**
+       * 登记 fiber 用的 key **必须是唯一且可查的**：优先用条目声明的 `name`，
+       * 没写 name 的（例如 `codem.desktop.yml` 里那 9 条只写 `disabled: true` 的覆盖条目）
+       * 退化成 `@codem/<id>` —— 与 `findPluginInRegistry` 的解析口径一致。
+       *
+       * 2026-10-16 修：原来直接用 `entry.name`，而解析器对缺失 name 给的是**空串**，
+       * 于是这些条目**全部登记在同一个空 key 上**（只剩最后一条），
+       * 插件管理器按真实名字 `getActiveFiber()` 永远找不到 ⇒ 它们的"真卸载"一直失效。
+       * （空串的根因已在 `mergeYamlEntries` 修掉；这里再兜一层，让 key 永不为空。）
+       */
+      registerActiveFiber(entry.name || `@codem/${entry.id}`, fiber)
       /**
        * ⚠️ 这里进的是「已装配」名单（第 184 波 F6）：`ctx.plugin()` 返回只说明
        * 装配调用没抛，激活是异步的（见 `YamlLoadResult.loaded` 的说明）。
@@ -365,7 +375,7 @@ function loadFromYaml(ctx: Context, ymlContent: string): YamlLoadResult {
        */
       result.loaded.push(entry.id)
       result.handles = result.handles ?? []
-      result.handles.push({ id: entry.id, name: entry.name, fiber })
+      result.handles.push({ id: entry.id, name: entry.name || `@codem/${entry.id}`, fiber })
     } catch (err: any) {
       result.failed.push({
         name: entry.id,
@@ -561,6 +571,21 @@ export function formatBootCompletion(activationErrors: string[]): { ok: boolean;
  * - overlay 中新增的条目追加到列表末尾
  * - overlay 中 `disabled: true` 的条目会将 base 中同 id 条目标记为禁用
  *
+ * ## ⚠️ overlay 的**空值不许清掉 base 的字段**（2026-10-16 修，判据 MS-1/SO-9）
+ *
+ * `codem.desktop.yml` 里那 9 条覆盖层条目只写 `disabled: true`（桌面模式关掉 HTTP 服务/CLI），
+ * 而它们**没有** `name` 字段 —— 解析器当时会给缺失的 name 补一个空串 `''`，
+ * 于是 `{...existing, ...entry}` 把 base 的 `name` 抹成空串：
+ *
+ * - 这 9 条的 `name` 全变成 `''`，`registerActiveFiber(entry.name, fiber)` 于是把它们
+ *   **全部登记在同一个空 key 下**（只剩最后一条），插件管理器按真实名字找不到 fiber
+ *   ⇒ 那 9 个插件的"真卸载"一直失效；
+ * - 装配侥幸还能成（`findPluginInRegistry` 的 `@codem/<id>` 回退救了它）——
+ *   这正是"靠回退路径兜住"的典型：错了但不报错，直到有人做反向对账（SO-9）才发现。
+ *
+ * 现在：**只覆盖 overlay 真正给出的值**（空/未给的一律保留 base）。原实现只对
+ * `inject` / `config` 做了保留，`name`（以及将来的字段）漏了。
+ *
  * @param baseYml base 层 YAML 文本
  * @param overlayYml overlay 层 YAML 文本（如 codem.desktop.yml）
  * @returns 合并后的 YamlPluginEntry 数组
@@ -577,14 +602,14 @@ export function mergeYamlEntries(baseYml: string, overlayYml: string): YamlPlugi
   for (const entry of overlayEntries) {
     const existing = merged.get(entry.id)
     if (existing) {
-      // 合并：overlay 的字段覆盖 base 的
-      merged.set(entry.id, {
-        ...existing,
-        ...entry,
-        // 如果 overlay 只是设置 disabled: true，保留 base 的其他字段
-        inject: entry.inject ?? existing.inject,
-        config: entry.config ?? existing.config,
-      })
+      const next: YamlPluginEntry = { ...existing }
+      for (const [key, value] of Object.entries(entry)) {
+        // 只覆盖"overlay 真的给了值"的字段：undefined / null / 空串一律视为"没给"
+        // （`disabled: false` 是明确的值，照常覆盖；`name: ''` 是解析器对缺失字段的占位，必须跳过）
+        if (value === undefined || value === null || value === "") continue
+        ;(next as any)[key] = value
+      }
+      merged.set(entry.id, next)
     } else {
       merged.set(entry.id, entry)
     }
@@ -662,7 +687,17 @@ export function loadFromEntries(ctx: Context, entries: YamlPluginEntry[]): YamlL
       }
 
       const fiber = ctx.plugin(plugin as any)
-      registerActiveFiber(entry.name, fiber)
+      /**
+       * 登记 fiber 用的 key **必须是唯一且可查的**：优先用条目声明的 `name`，
+       * 没写 name 的（例如 `codem.desktop.yml` 里那 9 条只写 `disabled: true` 的覆盖条目）
+       * 退化成 `@codem/<id>` —— 与 `findPluginInRegistry` 的解析口径一致。
+       *
+       * 2026-10-16 修：原来直接用 `entry.name`，而解析器对缺失 name 给的是**空串**，
+       * 于是这些条目**全部登记在同一个空 key 上**（只剩最后一条），
+       * 插件管理器按真实名字 `getActiveFiber()` 永远找不到 ⇒ 它们的"真卸载"一直失效。
+       * （空串的根因已在 `mergeYamlEntries` 修掉；这里再兜一层，让 key 永不为空。）
+       */
+      registerActiveFiber(entry.name || `@codem/${entry.id}`, fiber)
       /**
        * ⚠️ 这里进的是「已装配」名单（第 184 波 F6）：`ctx.plugin()` 返回只说明
        * 装配调用没抛，激活是异步的（见 `YamlLoadResult.loaded` 的说明）。
@@ -670,7 +705,7 @@ export function loadFromEntries(ctx: Context, entries: YamlPluginEntry[]): YamlL
        */
       result.loaded.push(entry.id)
       result.handles = result.handles ?? []
-      result.handles.push({ id: entry.id, name: entry.name, fiber })
+      result.handles.push({ id: entry.id, name: entry.name || `@codem/${entry.id}`, fiber })
     } catch (err: any) {
       result.failed.push({
         name: entry.id,
