@@ -33,6 +33,10 @@ import {
   type MemorySource,
   type ApprovalScopeSetting,
 } from "../memory/memory";
+/* ★ 第 229 波：待批准**积压**的闸门与超限处置（速率上限治不了存量 —— 见该文件头） */
+import { MEMORY_PENDING_BACKLOG_LIMIT, decidePendingBacklog } from "../memory/pending-backlog";
+/* ★ 第 229 波：入队前把同主题候选并成一条（阈值与误合并代价见该文件头） */
+import { mergeSameTopicCandidates } from "../memory/candidate-merge";
 import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, minutePrecisionDate, type SystemPromptConfig } from "../prompt/prompt";
 import { buildPersonaPromptSection } from "../persona/persona";
@@ -260,6 +264,12 @@ const degradedMemoryProjectIdKeys = new Set<string>();
  *
  * ⚠️ 这个名额**只针对"要用户批准"的条目**：`explicit: true`（用户在对话里明确要求记住）不占名额、
  * 也不进待批准区（见下面的循环）—— 那是用户自己的请求，不该被我们的预算丢掉。
+ *
+ * ★★ 第 229 波补记（用户实报「修过一次，但一次对话后又是 9 条待批准」——**这条上限治不了它**）：
+ * 它约束的是**速率**（每次提取几条），而用户被烦到的那 9 条是**存量**：待批准区是累积的，
+ * 且一次对话可以触发多次提取。真机取证的形态正是"两条待批准相隔两天各自带着批次躺着"。
+ * ⇒ 存量的闸门是 `MEMORY_PENDING_BACKLOG_LIMIT`（`core/memory/pending-backlog.ts`），
+ * 与本常量**职责不同、必须都在**：降速率是"别每轮都写"，限存量是"写满了就别再烦用户"。
  */
 const MEMORY_MAX_PER_EXTRACTION = 2;
 
@@ -2607,7 +2617,44 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
        */
       let droppedByTotalCap = 0;
       let droppedByApprovalCap = 0;
-      for (const mem of memories) {
+      /**
+       * ★ 第 229 波：**待批准积压闸门**的两个计数（与上面那两类上限**分开** ——
+       * 第 228 波审计吃过"把不同闸门混成一句话"的亏：排查时按那句话去调参数完全无效）。
+       */
+      let demotedByBacklog = 0;
+      let refusedByBacklog = 0;
+      /**
+       * ★ 第 229 波：**循环开始时**库内的待批准总量（全局）。循环里每次加"本轮已经写成的待批准条数"
+       * ⇒ 同一次提取连写多条时，第一条把积压推上去之后，后面的候选立刻能看到新读数。
+       */
+      const pendingBacklogBase = this.memory.countPendingEntries();
+      /** 审批开关在整轮里只读一次（每条都读设置会让"同一次提取里开关变化"这种不存在的事变成可能的分叉） */
+      const approvalSetting = getWriteApprovalSetting();
+      /**
+       * ★ 第 229 波：**入队前先做同主题合并**（`candidate-merge.ts`）。
+       *
+       * 被守的缺陷：模型一次给的多条候选里常有"同一件事的两种说法"，而它们恰好落在
+       * 写入侧判重不敢用的相似度档（0.22~0.30，真机混着误报）⇒ 每一条各占一个待批准名额，
+       * 用户要点两次、看两遍。合并把它们并成一条（正文拼接保留，不丢内容）。
+       *
+       * ⚠️ 过滤放在这里（形状不合法的候选不参与合并）：合并要算相似度，非字符串进 `bigrams` 会抛。
+       * 循环里那道形状检查**保留**（合并返回的候选仍然要过一遍同样的闸）。
+       */
+      const mergeOutcome = mergeSameTopicCandidates(
+        memories.filter((m) => typeof m?.key === "string" && typeof m?.content === "string"),
+      );
+      const candidates = mergeOutcome.candidates;
+      for (const record of mergeOutcome.merges) {
+        console.log(
+          `[extractMemories] 入队前同主题合并：把 ${record.ids.length} 条候选并成 1 条` +
+            `（相似度 ${record.similarity.toFixed(2)}，「${record.pair[0]}」≈「${record.pair[1]}」）` +
+            `；被并的标题：${record.keys.join(" / ")}` +
+            (record.droppedContentKeys.length > 0
+              ? `；因正文长度上限只保留了标题（正文未并入，如实留痕）：${record.droppedContentKeys.join(" / ")}`
+              : ""),
+        );
+      }
+      for (const mem of candidates) {
         if (typeof mem?.key !== "string" || typeof mem?.content !== "string") continue;
         // F2.1: Redact sensitive data before saving
         const safeKey = redactSecrets(mem.key);
@@ -2621,11 +2668,19 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
          * 审批与归属键都跟着**这一条**走（不是整轮一个值）：
          * 对话级 ⇒ 默认不审批、归属当前会话；项目级 ⇒ 默认待批准、归属当前项目。
          */
-        const itemScope = memoryScopeFromExtraction(mem.scope);
-        const approvalRequired = approvalRequiredForScope(itemScope);
+        const intendedScope = memoryScopeFromExtraction(mem.scope);
+        /**
+         * ★ 第 229 波：`itemScope` / `approvalRequired` / `ownership` 从 `const` 改成 `let` ——
+         * 因为下面多了一道**待批准积压闸门**，它可以在"本来要落成待批准"时把这条降到对话级
+         * （见 `pending-backlog.ts`；降级同时改作用域、归属与审批判定，三者必须一起动）。
+         */
+        let itemScope: MemoryScope = intendedScope;
+        let approvalRequired = approvalRequiredForScope(itemScope);
         /** 归属键只带与作用域匹配的那一个（避免条目上挂着一个用不到的归属，界面会看不懂） */
-        const ownership: { projectId?: string; sessionId?: string } =
+        let ownership: { projectId?: string; sessionId?: string } =
           itemScope === "conversation" ? { sessionId } : { projectId };
+        /** 这一条是不是被积压闸门降到对话级的（留痕用，见下面的日志） */
+        let demotedForBacklog = false;
 
         /**
          * **用户拒绝过的同类，不再自动写入**（第 200 波，用户要求）。
@@ -2654,6 +2709,47 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
                 `（拒绝于 ${new Date(rejected.rejectedAt).toLocaleString("zh-CN")}）`,
             );
             continue;
+          }
+        }
+
+        /**
+         * ★ 第 229 波：**待批准积压闸门**（被守的缺陷：待批准区是累积的，`MEMORY_MAX_PER_EXTRACTION`
+         * 只限速率不限存量 ⇒ 用户实报「修过一次，一次对话后又 9 条」）。
+         *
+         * 完整论证（上限为什么是 5、三条候选路径为什么选"降级为对话级"、代价是什么）写在
+         * `core/memory/pending-backlog.ts` 的文件头 —— 这里只留"接线"这一半：
+         *
+         * - 只用**全局**积压读数（`countPendingEntries()`，不看 ctx）：积压的成本是用户的决策次数，
+         *   按项目各算各的等于没治；
+         * - 本轮已经写成的待批准条（`writtenPending`）要一起算 —— 否则同一次提取里连续几条
+         *   会各自看到"超限前的旧读数"，一次就把积压推过上限；
+         * - `explicitRequest` 的条目**不进这道闸**：用户自己要求记住的，直接生效，本来就不占名额；
+         * - 超限时**要么降级、要么如实拒绝并计数**，两条路都写日志 —— 不许静默丢弃。
+         */
+        if (approvalRequired && !explicitRequest) {
+          const decision = decidePendingBacklog({
+            intendedScope,
+            pendingTotal: pendingBacklogBase + writtenPending,
+            conversationNeedsApproval: approvalSetting.conversation,
+          });
+          if (decision.action === "reject-new-pending") {
+            refusedByBacklog++;
+            console.log(
+              `[extractMemories] 待批准积压已达上限（${MEMORY_PENDING_BACKLOG_LIMIT} 条）且降级不可用` +
+                ` ⇒ 不写入也不打扰用户：${safeKey}（${decision.reason}）`,
+            );
+            continue;
+          }
+          if (decision.action === "demote-conversation") {
+            demotedByBacklog++;
+            demotedForBacklog = true;
+            itemScope = decision.scope;
+            approvalRequired = approvalRequiredForScope(itemScope);
+            ownership = { sessionId };
+            console.log(
+              `[extractMemories] 待批准积压已达上限 ⇒ 这一条降级为对话级（直接生效、不再打扰用户，` +
+                `内容不丢、面板仍可见可改；原作用域 ${intendedScope}）：${safeKey}（${decision.reason}）`,
+            );
           }
         }
 
@@ -2789,7 +2885,10 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           `写入 ${written} 条（直接生效 ${writtenActive} 条 / 待批准 ${writtenPending} 条）、` +
           `已有相似记忆跳过 ${duplicates} 条、用户拒绝过同类跳过 ${rejectedByUser} 条、已手动记住拦下 ${blockedByManual} 条、` +
           `因上限丢弃 ${droppedByCap} 条（每次提取总上限 ${MEMORY_MAX_WRITES_PER_EXTRACTION} 条挡下 ${droppedByTotalCap} 条 /` +
-          `待批准上限 ${MEMORY_MAX_PER_EXTRACTION} 条挡下 ${droppedByApprovalCap} 条）、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
+          `待批准上限 ${MEMORY_MAX_PER_EXTRACTION} 条挡下 ${droppedByApprovalCap} 条）、` +
+          `待批准积压上限 ${MEMORY_PENDING_BACKLOG_LIMIT} 条触发降级 ${demotedByBacklog} 条 /` +
+          `如实拒绝 ${refusedByBacklog} 条、入队前同主题合并 ${mergeOutcome.merges.length} 组` +
+          `（候选 ${memories.length} → ${candidates.length} 条）、容量拒绝 ${rejectedCapacity} 条。批次号 ${batchId}`,
       );
 
       /**

@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-196",
   "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。 ⚠️「界面：拆掉选中集合随待批准列表收敛（幽灵选中）」这条**已撤掉**：一次性修复后它不再能让任何判据变红（该能力仍由 memory-pending-batch 的行为用例守着），按纪律不保留无效变异。",
-  "runAt": "2026-10-14T06:36:21.841Z",
-  "specFingerprint": "090141367f2c61f84b788951e6b46d4d1b06f366",
+  "runAt": "2026-10-16T17:20:55.356Z",
+  "specFingerprint": "08b98df52a592ec4c521278f4a320c0290ab6e58",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -34,16 +34,16 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3984
+      "ms": 8876
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
-      "why": "MAS-2 / MAS-7：这一波的核心就是「每条记忆自己决定作用域」；写死 project 之后对话级永远不会出现（用户要的「对话级默认直接生效」整条失效）",
+      "why": "MAS-2 / MAS-7：这一波的核心就是「每条记忆自己决定作用域」；写死 project 之后对话级永远不会出现（用户要的「对话级默认直接生效」整条失效） ⚠️ 锚点在第 229 波跟着改名走过一次（itemScope → intendedScope）：那一波加了「待批准积压闸门」后，这个名字表示的是「模型/兜底规则给出的作用域」，而最终落哪个桶由 intendedScope 加上降级闸门共同决定 —— 变异要改的仍是「不再按条目判作用域」这件事本身。",
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "        const itemScope = memoryScopeFromExtraction(mem.scope);",
-          "to": "        const itemScope: MemoryScope = \"project\";"
+          "from": "        const intendedScope = memoryScopeFromExtraction(mem.scope);",
+          "to": "        const intendedScope: MemoryScope = \"project\";"
         }
       ],
       "tests": [
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3978
+      "ms": 8881
     },
     {
       "id": "MUT-3 默认档改成「对话也需批准」",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3987
+      "ms": 8837
     },
     {
       "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3924
+      "ms": 8723
     },
     {
       "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3817
+      "ms": 11020
     },
     {
       "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3837
+      "ms": 9686
     },
     {
       "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4073
+      "ms": 10204
     },
     {
       "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
@@ -174,7 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4070
+      "ms": 9536
     },
     {
       "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
@@ -194,7 +194,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4192
+      "ms": 9736
     },
     {
       "id": "MUT-12 反向对照：只改一行说明注释",
@@ -216,7 +216,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4022
+      "ms": 9597
     }
   ]
 }

@@ -2827,6 +2827,26 @@ export class MemoryService {
   }
 
   /**
+   * **库内待批准条目的全局总量**（第 229 波）。
+   *
+   * ## 为什么必须有一个"不看 ctx"的读数
+   *
+   * `listPending(scope, ctx)` 是**界面视图**：它按当前位置（项目 / 会话 / 无归属）过滤，
+   * 因为"在项目 A 里不该看到项目 B 的待批准内容"。而"待批准积压"这件事的成本是
+   * **用户的决策次数**，那是**全局**的 —— 按项目各算各的，就等于"每个项目攒 5 条"，
+   * 换个项目再攒 5 条 ⇒ 上限形同虚设（这正是第 229 波要治的形态）。
+   *
+   * 所以：**界面用 `listPending`，闸门用这个方法**。两处口径不同是刻意的，
+   * 判据 `MEMP-2` 会同时钉住"面板按 ctx 过滤"和"闸门不看 ctx"两件事，
+   * 防止后来者把其中一个改成另一个。
+   */
+  countPendingEntries(): number {
+    let count = 0;
+    for (const entry of this.entries.values()) if (isPendingMemoryEntry(entry)) count++;
+    return count;
+  }
+
+  /**
    * 批准一条待审条目 ⇒ 之后它才参与上下文注入。
    * 批准同样受容量约束（否则它可以绕过 `add` 的上限）。
    */

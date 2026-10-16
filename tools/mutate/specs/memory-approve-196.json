@@ -18,12 +18,12 @@
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
-      "why": "MAS-2 / MAS-7：这一波的核心就是「每条记忆自己决定作用域」；写死 project 之后对话级永远不会出现（用户要的「对话级默认直接生效」整条失效）",
+      "why": "MAS-2 / MAS-7：这一波的核心就是「每条记忆自己决定作用域」；写死 project 之后对话级永远不会出现（用户要的「对话级默认直接生效」整条失效） ⚠️ 锚点在第 229 波跟着改名走过一次（itemScope → intendedScope）：那一波加了「待批准积压闸门」后，这个名字表示的是「模型/兜底规则给出的作用域」，而最终落哪个桶由 intendedScope 加上降级闸门共同决定 —— 变异要改的仍是「不再按条目判作用域」这件事本身。",
       "patches": [
         {
           "file": "src/core/llm/index.ts",
-          "from": "        const itemScope = memoryScopeFromExtraction(mem.scope);",
-          "to": "        const itemScope: MemoryScope = \"project\";"
+          "from": "        const intendedScope = memoryScopeFromExtraction(mem.scope);",
+          "to": "        const intendedScope: MemoryScope = \"project\";"
         }
       ],
       "tests": [

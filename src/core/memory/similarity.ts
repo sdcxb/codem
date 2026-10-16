@@ -34,9 +34,26 @@
  */
 import type { MemoryEntry } from "./memory";
 
-/** 合并（标题 + 正文）相似度达到这个值 ⇒ 直接判重（真机 0.31 起全是真重复） */
-const MEMORY_DUPLICATE_THRESHOLD = 0.3;
-/** 低档：合并 ≥0.22 时，还必须"标题自己也像"（key ≥0.40）才判重 —— 用来挡开 0.23 那类误报 */
+/**
+ * 合并（标题 + 正文）相似度达到这个值 ⇒ 直接判重（真机 0.31 起全是真重复）。
+ *
+ * ⚠️ **导出的理由（第 229 波）**：入队前的同主题合并（`candidate-merge.ts`）要**同一把尺**。
+ * 那里曾想"既然只比同一次提取的候选，就把阈值放宽到 0.22"——**试出来的结论是不行**：
+ * `clusterDuplicateMemories` 的命中判定里 `combined >= threshold` 与
+ * `combined >= 0.22 && keySim >= 0.40` 是**两条并列**的条件，threshold 一降到 0.22
+ * 就等于把"标题自己也像"那道附加闸**整条短路**（真机哨兵：MCP 那对误报当场被合并进来）。
+ * ⇒ 合并侧因此改用这一档（0.3）：覆盖率靠"全批两两比 + 传递闭包"变宽，而不是靠降阈值。
+ */
+export const MEMORY_DUPLICATE_THRESHOLD = 0.3;
+/**
+ * 低档：合并 ≥0.22 时，还必须"标题自己也像"（key ≥0.40）才判重 —— 用来挡开 0.23 那类误报。
+ *
+ * ⚠️ **它不是一个可以拿去做 `clusterDuplicateMemories` 阈值的值**：那一档是"正文相似度 ≥0.22
+ * **且** 标题 ≥0.40"，而把 0.22 当阈值传进去会让 `combined >= threshold` 先命中 ⇒
+ * 标题那道闸被短路（第 229 波给「入队前合并」选阈值时实测到的坑）。
+ * 所以入队前合并（`candidate-merge.ts`）用的是 `MEMORY_DUPLICATE_THRESHOLD`，**不引用**这个值 ——
+ * 两个常量语义不同（这一个恒与 `MEMORY_DUPLICATE_KEY_ASSIST_KEY` 配对出现），各写各的反而安全。
+ */
 const MEMORY_DUPLICATE_KEY_ASSIST_MIN = 0.22;
 const MEMORY_DUPLICATE_KEY_ASSIST_KEY = 0.4;
 /** 同一档：标题几乎逐字相同（key ≥0.60）且正文有一点重叠 ⇒ 判重 */
