@@ -6212,3 +6212,90 @@ knip 棘轮 ✓（去掉了一个多余 export）；css-contract 2866 类无变�
 3. **`tools/eval/repo-workspace.mjs` 的 tar 调用没有 portable 化**：`-f` 传 Windows 绝对路径时
    GNU tar 会当远程主机。下一步：`spawnSync("tar", ["-xf", basename(tar), "-C", ws], { cwd: tmpdir() })`
    之类不依赖 `--force-local`（GNU 专有）的写法，并加一条判据。
+
+---
+
+## 2026-10-16（第二棒）装配路径零例外 · 死代码摘账 · 脚手架可移植 · 判据卫生
+
+> 上一轮（同一日期）修掉了 shell-ops "注册了但从不装配" 与 `when` 平台条件全失效两条真机缺陷，
+> 并把三条未修项写进了本文件末尾。**这一轮把三条未修项全部修掉，并对同类问题做了一次系统性排查**。
+> 未发新版（发版需用户批准）。六个提交：`d549c3ec` `0b44e700` `6f55814a` `c504e288` `70189c7b` `ccf8756f`。
+
+### 一、未修项 ①：4 个"假插件" + `ui-game` 的错实现（都只在注册表里）
+
+对账口径：注册表（`registerBuiltinPlugin`）204 个插件 vs `config/codem.base.yml` + `codem.desktop.yml` +
+`src/core/ui-plugins/index.ts::loadUIPlugins()`。**恰好 5 个只在注册表里**：
+
+| 插件 | 真实情况 | 处置 |
+|---|---|---|
+| `@codem/ui-primitives` | 注册的是占位组件（`({children}) => children \|\| null`），无消费者 | **下架**（删文件 + 注册表 + 目录条目） |
+| `@codem/ui-input-trigger` | 管一个没有任何调用方的 Map | **下架** |
+| `@codem/ui-agent-preset` | 同上（真实预设由 `@codem/preset` 实现） | **下架** |
+| `@codem/ui-skill-panel` | 同上（真实技能管理另有实现） | **下架** |
+| `@codem/ui-game` | 职责是真的（游戏 Tab 开关），但 `apply` 注册**未声明**的槽位 `app.game`（`slots/index.ts:171` 直接抛）+ 假服务 `uiGame`；界面其实由 `App.tsx` 直接渲染、显隐读 `codem-disabled-plugins` | **改对**：空操作开关插件 + 接进 `loadUIPlugins`（真实装配路径）+ 登记 `GATED_PROVIDERS` + 目录条目如实描述 |
+
+4 个被下架的插件在插件市场里宣称"关闭后基础 UI 组件 / 输入触发器 / 技能面板不可用" —— 那些服务
+**全仓没有任何消费者也没有装配路径**，是纯假承诺 ⇒ 现在由 **CAT-1** 守（目录宣称的 `provides` 必须有已装配的提供者）。
+
+### 二、未修项 ②：`src/core/provider/index.ts` 是死代码却被当 barrel/entry
+
+- 枚举全部引用：**没有生产代码 import 它**（`grep` 命中全是别的模块自己的 `./provider`）。
+- 删除 472 行 + `knip.json` 的 entry + 可达性白名单条目 + 覆盖率地板条目；
+  更正三处把它当装配入口的注释（`fs-provider.ts` / `command-compact-provider.ts` / `plugin-loader/index.ts`）——
+  最后那处原文写"codem.yml 声明的插件已通过 `loadDefaultProviders` 加载"，**正是"以为已经装配了"的根源**。
+- 新增 **CTR-1/CTR-2**（`src/test/criteria-target-reachability.test.ts`）：判据代码里引用可达性扫描判为
+  **不可达**的文件必须逐条登记理由（白名单 9 条，都是刻意测那个模块本身的情形），且白名单必须仍被引用。
+
+### 三、未修项 ③：`tools/eval/repo-workspace.mjs` 的 tar 不可移植（真机实测）
+
+GNU tar 把 `-f HOST:PATH` 当远程归档，而 Windows 绝对路径 `C:\…` 正好长得像 `HOST:PATH`：
+
+    tar: Cannot connect to C: resolve failed
+
+本机 DSH 的 bash 前置了 GNU tar 1.35（`@dsh-ops/bash-win32-…/ucrt64/bin`），
+`C:\Windows\System32\tar.exe` 是 bsdtar 3.8.9 ⇒ **宿主 PowerShell 一直不暴露，换到 bash 就必挂**。
+
+修法与实测矩阵（两个实现都在本机）：
+
+| 写法 | GNU tar 1.35 | bsdtar 3.8.9 |
+|---|---|---|
+| `-f <C:\绝对路径>` | ✗ Cannot connect to C: | ✓ |
+| `-f <裸名>` + `cwd` | ✓ | ✓ |
+| `-C <C:\反斜杠>`（解包） | ✗ Cannot open | ✓ |
+| `-C <C:/正斜杠>` | ✓ | ✓ |
+| `-C <相对路径>` | ✓ | ✓ |
+
+取「裸名 + cwd」×「正斜杠」。**判据 TP-1（功能：在 Windows 绝对路径上建包再解开）+ TP-2（静态：不许把
+绝对路径喂给 `-f`，也不许用 `--force-local` / `sed -i` / `find -printf` / `sha256sum -c` 这类单实现方言）**。
+证据：删掉临时 PATH shim 后 `node tools/eval/run-repo-arm.mjs --verify-workspace` = **12/12 通过**；
+`npm run audit` 在 **GNU tar 1.35 优先**的 PATH 下全链路通过。
+
+### 四、系统性排查（同类问题，不只是列出的那几处）
+
+1. **注册表 ↔ 装配面全量对账**（SO-8）⇒ 零例外；**反向**对账（SO-9：YAML 里的名字必须在注册表里）也加了。
+2. **平台条件全覆盖**（WHEN-1/WHEN-2）：清单里每个 `when` 都要受支持，且**逐条**核对装配/跳过决定
+   与**独立**期望一致（不是抽样；期望值按当前平台算，所以在非 Windows 上也有意义）。
+3. **YAML 覆盖层合并缺陷（MS-1，新发现）**：`codem.desktop.yml` 里 9 条只写 `disabled: true` 的覆盖条目
+   **没有 name**，解析器对缺失字段给空串 ⇒ `{...existing, ...entry}` 把 base 的 `name` 抹成 `''`
+   ⇒ `registerActiveFiber(entry.name, fiber)` 把这 9 条**全登记在同一个空 key** 下（只剩最后一条），
+   插件管理器按真实名字找不到 fiber ⇒ 它们的"真卸载"一直失效。装配侥幸还能成（`@codem/<id>` 回退救了它）
+   —— **靠回退路径兜住的错不会报错**，是 SO-9 的反向对账把它照出来的。修：只覆盖 overlay 真的给了值的字段。
+4. **启动期抢写存储（加载窗口）**：shell-ops 那次的形状现在有可复用判据 **BOOT-1/2/3**
+   （测试替身新增 `writes` / `blockedWrites` 计数，能把"未预热读"与"未预热写"分开；
+   BOOT-3 是静态棘轮：会写设置的 provider 必须逐条分类）。变异自证：把 `setSetting` 塞回 apply ⇒ BOOT-1 红。
+5. **判据钉在死代码上**（CTR）：上一轮 SO-6 就是这种形状。变异自证：临时加一个读 `sync-engine.ts` 的测试 ⇒ 红。
+
+### 五、真机/门禁数字（本轮）
+
+- `npx tsc --noEmit` = **0 错误**
+- `npm run audit` = **通过**（PATH 上是 GNU tar 1.35，无 shim；`eval:repo-workspace` 12/12、
+  控制字节 0、上报点 268=268、变异波次 39 全可用）
+- `node tools/audit/reachability-scan.mjs --check` = **通过**（生产 874 / 可达 835 / 不可达 39，白名单无过期条目）
+- 新增判据：`plugin-assembly-path`（9：YW/SO-6/SO-8/SO-9/MS-1/WHEN-1/WHEN-2/CAT-1）、
+  `ui-game-switch`（3）、`boot-storage-writes`（4）、`criteria-target-reachability`（2）、`eval-tar-portability`（2）
+- **仍红的项（都不是本轮的改动，归属并行同事的在途工作）**：
+  · `knip-gate`：`exports 50/49`、`types 23/21` —— 三条新增全部落在 `src/core/memory/{similarity,pending-backlog,candidate-merge}.ts`
+    （隔离证据：HEAD 态 70 条 = 基线 49/21；而被本轮的改动/删除波及的文件上，条目与 HEAD **逐条相同**）；
+  · `CSS-INTEGRITY-7`（`src/styles.css` 被并行同事改动，快照需同步）；
+  · `MD-5`（`src/test/memory-pending-detail.test.tsx`，并行同事在途）。
+  这几条已当面通知对方（同工作区并行），**不由本轮的改动负责**。
