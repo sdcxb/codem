@@ -861,6 +861,18 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
   }
   let pendingWrites = 0;
   let configFailures = 0;
+  /**
+   * 写入尝试的可观测计数（2026-10-16 加，供"启动期不许写存储"的判据用）。
+   *
+   * `writes`：真的写进内存镜像的次数；`blockedWrites`：**未预热时被拒的写入尝试**次数。
+   *
+   * 为什么需要它：`failures` 是读/写混在一起的（未预热读也会 +1），
+   * 而"启动期抢写设置"这类缺陷只能靠**写**的那一半分辨 —— 混在一起时判据分不清
+   * "某个 provider 在 apply 期读了一次设置"（安全，返回兜底）与
+   * "它在 apply 期写了一次设置"（危险：真机上必失败、用户设置永远存不下来）。
+   */
+  let configWrites = 0;
+  let configBlockedWrites = 0;
 
   const config: StorageConfigPort = {
     async warmup() {
@@ -895,9 +907,11 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
        */
       if (!configWarmed) {
         configFailures += 1;
+        configBlockedWrites += 1;
         return;
       }
       configMemory.set(key, value);
+      configWrites += 1;
       pendingWrites += 1;
       try {
         persist("crud.upsert", {
@@ -927,6 +941,7 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
     async setConfirmed(key: string, value: unknown): Promise<boolean> {
       if (!configWarmed) {
         configFailures += 1;
+        configBlockedWrites += 1;
         return false;
       }
       try {
@@ -937,6 +952,9 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       }
     },
     remove(key: string) {
+      // 计数与"未预热拒写"同形语义：未预热时真端口不会真的落库，这里如实记成 blocked
+      if (!configWarmed) configBlockedWrites += 1;
+      else configWrites += 1;
       configMemory.delete(key);
       pendingWrites += 1;
       try {
@@ -949,7 +967,14 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       }
     },
     stats() {
-      return { warmed: configWarmed, keys: configMemory.size, pendingWrites, failures: configFailures };
+      return {
+        warmed: configWarmed,
+        keys: configMemory.size,
+        pendingWrites,
+        failures: configFailures,
+        writes: configWrites,
+        blockedWrites: configBlockedWrites,
+      };
     },
   };
 
