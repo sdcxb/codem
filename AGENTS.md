@@ -131,6 +131,16 @@ Start-Process "<setup.exe 路径>" -ArgumentList '/S' -Wait
 5. **别把长跑进程接进会提前结束的管道** ✗（`| Select-Object -First N` 会把它杀掉 ⇒ 用后台作业 + `job_output`）。
 6. **写脚本时中文引号一律用「」** ✗：把中文引号写进 JS 双引号串会让脚本直接崩 ✓（这个坑踩过 18 次 ✗）；
    长文本先写文件再让脚本读（`git commit -F`、`gh release edit --notes-file`、`.txt` 中转）✓。
+6b. **写进文件的脚本，先 `node --check` 再跑** ✓（与 6 是同一类坑的另一半：
+   6 说的是「用 shell 传字符串」时的引号地狱，6b 说的是「往文件里写代码」时的内容错误 ✓）。
+   实测踩过三种（都会被 node 当场判死，且**与用哪个 shell 无关**）：
+   ① JS **模板串里嵌反引号**（写 .mjs 时踩了 3 次 ✗）—— 要写反引号就改用「」或字符串拼接 ✓；
+   ② **块注释里嵌星号斜杠** ✗（注释会提前结束）；
+   ③ 中文串里混**半角引号** ✗。
+   纪律：写完脚本**立刻** `node --check <file>` ✓（`.preview-shot/*.mjs` 另有判据 `PS-1` 守 ✓，
+   但那是全量跑时才报，自己先 check 能省一整轮 ✗）。
+   ⚠️ 容易误判的边界 ✓：装了 dsh-ops 之后 shell 是 bash ✓，**bash 只保证「我传进去的字符串原样到达」** ✓，
+   它**不能**修正我写进文件里的代码本身 ✗ —— 别把「内容错误」误当成「shell 又坑我」 ✗。
 7. **回退一律 `git checkout -- <file>`** ✓：用"行号 + 花括号计数"删代码段不可靠（字符串里的花括号会打断计数）✗。
 8. **日志的真相**：`%APPDATA%\com.codem.app\codem-runtime-*.log` **只收 Rust 侧**（`exec start/end` 等）✓；
    渲染侧 `console.*` 只能靠 **CDP** 抓（评测驱动已抓，落在 `.preview-shot/<case>.r<N>.console.jsonl`）✓。
