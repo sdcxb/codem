@@ -211,6 +211,18 @@ function parseCodemYaml(content: string): YamlPluginEntry[] {
  * 支持的表达式：
  * - platform == 'win32'
  * - platform != 'win32'
+ *
+ * ## ⚠️ 为什么引号必须是**可选**的（2026-10-16 真机缺陷）
+ *
+ * `parseCodemYaml` 会把所有值里的引号去掉（`value.trim().replace(/['"]/g, '')`），
+ * 所以配置里写的 `when: platform == 'win32'` 到这里已经变成 `platform == win32`。
+ * 原来两个正则都**要求引号存在** ⇒ 一个都匹配不上 ⇒ 落到最后的 `return true`
+ * ⇒ **6 条平台条件全部形同不存在**：`bash-sandbox`（非 Windows）在 Windows 上照样装配、
+ * `tmux-context` 同样、新加的 `@codem/shell-ops` 的 Windows 作用域也是摆设。
+ *
+ * 这正是本仓反复出现的那类形状：判定悄悄失败，然后被当成"通过"。
+ * 现在：引号可选（真配置能匹配上）；**认不出来的表达式大声报错**再按通过处理
+ * （不静默失败；也不 fail-closed —— 那会把写错 when 的插件悄悄关掉，是另一种静默失真）。
  */
 function evaluateWhen(when: string | undefined): boolean {
   if (!when) return true
@@ -219,14 +231,17 @@ function evaluateWhen(when: string | undefined): boolean {
     ? process.platform
     : (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Win') ? 'win32' : 'linux')
 
-  // platform == 'win32'
-  const eqMatch = when.match(/platform\s*==\s*['"](\w+)['"]/)
+  // platform == win32 / platform == 'win32'（引号已被解析器去掉）
+  const eqMatch = when.match(/platform\s*==\s*['"]?([\w.-]+)['"]?/)
   if (eqMatch) return platform === eqMatch[1]
 
-  // platform != 'win32'
-  const neqMatch = when.match(/platform\s*!=\s*['"](\w+)['"]/)
+  // platform != win32 / platform != 'win32'
+  const neqMatch = when.match(/platform\s*!=\s*['"]?([\w.-]+)['"]?/)
   if (neqMatch) return platform !== neqMatch[1]
 
+  console.warn(
+    `[YamlLoader] 无法识别的 when 表达式，按「通过」处理（支持 platform == 'x' / platform != 'x'）：${when}`,
+  )
   return true
 }
 

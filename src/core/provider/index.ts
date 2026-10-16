@@ -209,7 +209,21 @@ export {
 
 /**
  * 加载所有默认 Provider。
- * 在 App.tsx 的 getCordisContext() 中调用。
+ *
+ * ## ⚠️ 死代码警告（第二次真机缺陷的现场，别再拿它当装配入口）
+ *
+ * 注释原来写的是「在 App.tsx 的 getCordisContext() 中调用」—— **这句话是错的**：
+ * 全仓没有任何调用者（`App.tsx` 走的是 `config/codem.base.yml` → `loadFromEntries()`），
+ * 于是这个文件连同下面这张表在打包时被整体摇掉。
+ *
+ * 后果不是"少一个入口"这么轻：它看起来**特别像**装配入口。上一轮修
+ * `@codem/shell-ops` 就是照它改的（把 `shellOps` 加进下面这张表），
+ * 判据也钉在它上面 ⇒ **单测全绿、真机完全不生效**（服务从没被提供，执行层静默回退 PowerShell）。
+ *
+ * 所以：
+ * - 新插件要真的生效，**必须**登记到 `config/codem.base.yml`（或 desktop 覆盖层）；
+ * - 本函数的唯一价值是给非桌面入口留一份清单，**不要**再让任何判据依赖它
+ *   （判据 SO-6/SO-7/SO-8 已改钉真实装配清单）。
  */
 export function loadDefaultProviders(ctx: Context): string[] {
   const loaded: string[] = []
@@ -363,7 +377,17 @@ export function loadDefaultProviders(ctx: Context): string[] {
       ctx.plugin(plugin as any)
       loaded.push(name)
     } catch (err) {
-      console.warn(`[Providers] Failed to load ${name}:`, err)
+      /**
+       * 这里原来是 `console.warn`。真机排障时它不够用：**装配失败与装配成功都只是日志一行**，
+       * 而"某个服务根本没被提供"这件事在消费侧只表现为静默回退（正是 shell-ops 那次）。
+       * 现在按 error 级报出来，并把唯一可信的装配入口写进消息里，避免下一个人又来改这张表。
+       * 仍然**不抛**：这是非桌面入口的清单，缺一个不该让进程起不来。
+       */
+      console.error(
+        `[Providers] Failed to load ${name}:`,
+        err,
+        `（注意：本清单不是桌面应用的装配入口，新插件请登记 config/codem.base.yml）`,
+      )
     }
   }
 

@@ -89,6 +89,18 @@
   when: platform != 'win32'
   inject: [shell, sandbox]
 
+# `@codem/shell-ops`（Windows）：把 `bash` 工具的执行器从 Windows PowerShell 5.1 换成真 bash，
+# 并在**执行之前**拒绝点名 `powershell` 的命令（找不到 bash 时大声失败、不回退）。
+#
+# ⚠️ 这一条是**装配路径**，不是可有可无的登记：`registerBuiltinPlugins()` 只把插件写进注册表，
+# 真正 `ctx.plugin()`（= provider 的 apply 才会跑）的是这份 YAML 清单经 `loadFromEntries`。
+# 只写注册表 ⇒ 服务从没被提供 ⇒ 执行层 `get('shellOps')` 拿不到 ⇒ **静默回退 PowerShell**
+# （真机取证：设置键 `codem-shell-ops-enabled` 为 null、console 里没有 `[shell-ops]`、
+# Rust 日志里没有 `exec shell=bash`，而当时单测全绿）。判据 SO-6/SO-7/SO-8 守这一步。
+- id: shell-ops
+  name: '@codem/shell-ops'
+  when: platform == 'win32'
+
 # dsh 协议兼容别名（懒解析；供插件市场"可适配" dsh 插件经 dshLlm/dshShell/dshFs/dshTools 消费）
 - id: dsh-compat
   name: '@codem/dsh-compat'
