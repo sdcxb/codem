@@ -284,7 +284,7 @@ const KNOWN_PLUGINS = [
     // 那次页签栏重构把三套皮肤里的「游戏」按钮一起删掉了；`bottom-panel.tabs` 槽位也没有任何贡献者）。
     // 旧条目还宣称 provides:['uiGame'] + 槽位 app.game（槽位从未声明、register 必抛、服务也无消费者）。
     // 现在如实描述，并把「入口缺失」写进面向用户的说明里 —— 不许再对用户假承诺（判据 CAT-1/GAME-2）。
-    { name: '@codem/ui-game', version: '1.0.0', description: '大富翁小游戏（默认关闭）—— 开关插件：面板由 App 直接渲染；**当前没有 UI 入口**（入口在 e1bdd01e 的页签栏重构里被删除）', provides: [], inject: [], keywords: ['ui', 'game', 'monopoly'], category: 'ui', tags: ['ui', 'switch'], hot: true, icon: '🎮', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后游戏面板不渲染；注意当前没有入口，开关它对界面暂时没有可见差别', uiImpact: { degradedTo: '游戏面板不渲染（当前无 UI 入口）' } },
+    { name: '@codem/ui-game', version: '1.0.0', description: '大富翁小游戏（默认关闭）—— 开关插件：面板由 App 直接渲染；当前没有 UI 入口（入口在 e1bdd01e 的页签栏重构里被删除）', provides: [], inject: [], keywords: ['ui', 'game', 'monopoly'], category: 'ui', tags: ['ui', 'switch'], hot: true, icon: '🎮', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后游戏面板不渲染；注意当前没有入口，开关它对界面暂时没有可见差别', uiImpact: { degradedTo: '游戏面板不渲染（当前无 UI 入口）' } },
     { name: '@codem/ui-library-ops', version: '1.0.0', description: '图书馆运营监控 — 团队角色/子智能体化身动画角色在图书馆各岗位工作；接管「任务管理 → 看板」页签，在 Issues 看板之上追加场景/用量/工具/错误/时间线/设置视图（完全独立可启停，无独立页签）', provides: ['uiLibraryOps'], inject: ['slots'], slots: ['task-center.board'], keywords: ['ui', 'library', 'monitor', 'team', 'subagent', 'dashboard'], category: 'ui', tags: ['provider', 'ui', 'monitor'], hot: true, icon: '📚', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后「看板」页签回退到宿主自带 Issues 看板，不影响任何现有功能（插件只读宿主数据）', uiImpact: { slots: ['task-center.board'], buttons: [], degradedTo: '「看板」页签回退到宿主自带 Issues 看板（其余页签不受影响）' } },
     ]
 
