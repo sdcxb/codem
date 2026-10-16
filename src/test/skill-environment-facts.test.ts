@@ -33,11 +33,21 @@ describe("技能环境事实（第 47 波 ✓）", () => {
     const composed = reg.buildSkillEnvironmentSection() + reg.buildSkillPrompt();
     expect(composed, "布局要说清").toContain("<根>/<技能名>/SKILL.md");
     expect(composed, "发现是自动的要说清").toMatch(/发现是自动的|no registration|没有注册步骤/);
-    expect(composed, "要给出从仓库安装的步骤").toMatch(/从仓库\/URL 安装/);
-    expect(composed, "要有验证步骤").toMatch(/验证/);
     expect(composed, "要提醒别把技能装成同名目录").toMatch(/名为 `SKILL\.md` 的目录/);
+    expect(composed, "要点名安装手册（细则已下沉，提示只给指针 ✓）").toContain("docs/SKILLS-INSTALL.md");
   });
 
+  /**
+   * ENV-2b —— 步骤随内容一起**搬到文档**（用户要求：系统提示别太长）。
+   * 断言从「提示里含 5 步」改为「手册里含 5 步」：保证搬走之后仍有守护 ✓。
+   */
+  it("ENV-2b ★ 安装步骤在 `docs/SKILLS-INSTALL.md` 里（下沉后的权威位置 ✓）", () => {
+    const doc = read("docs/SKILLS-INSTALL.md");
+    expect(doc, "要给出从仓库安装的步骤").toMatch(/从仓库|仓库\/URL/);
+    expect(doc, "要有验证步骤").toMatch(/验证/);
+    expect(doc, "要写清装到哪个根").toContain(".codem/skills");
+    expect(doc, "要写清卸载").toMatch(/卸载/);
+  });
   it("ENV-3 `buildSkillPrompt()` 自身输出**未被改动** ✓（既有 30+ 条判据的前提 ✓）", () => {
     const reg = getSkillRegistry();
     const p = reg.buildSkillPrompt();

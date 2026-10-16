@@ -1013,6 +1013,17 @@ export class SkillRegistry {
     const projectLine = project
       ? `- **项目级技能根（本机真值 ✓）**：\`${project}\``
       : "- **项目级技能根**：`<项目根>/.codem/skills/`（随项目走 ✓，只对该项目生效 ✓）";
+    /**
+     * ★ 系统提示**只留事实 + 指针**（用户要求：提示太长 ⇒ 细则下沉到文档 ✓）。
+     *
+     * 以前这里内嵌了「从仓库安装的 5 步」整段（几十行），既让系统提示变长，
+     * 又与文档形成**两份会各自漂移的副本** ✗。现在：
+     * - 常驻事实（真值根 / 布局 / frontmatter 必填 / 自动发现 / 卸载 / 反例）留在提示里 ✓；
+     * - 安装步骤放 `docs/SKILLS-INSTALL.md`、插件机制放 `docs/PLUGIN-INSTALL.md` ✓，
+     *   提示里只给路径 + 一条「先读、不要试探」的纪律 ✓。
+     * 判据随内容一起迁移：步骤类断言改为断言**文档**（见 `skill-environment-facts.test.ts` ENV-2、
+     * `install-discipline.test.ts`）—— 保证不会因为搬走而失去守护 ✓。
+     */
     return [
       "### Skill environment (facts — 不要再去别处反推 ✗)",
       "",
@@ -1021,19 +1032,14 @@ export class SkillRegistry {
       "- **布局（唯一被识别的形状 ✓）**：每个技能一个目录，目录里放 `SKILL.md`：`<根>/<技能名>/SKILL.md`",
       "  - `SKILL.md` 以 YAML frontmatter 开头，**必填** `name` 与 `description`（`name` 用 kebab-case ✓）",
       "  - 名字取自 frontmatter 的 `name` ✓；目录名与它一致最省事 ✓",
-      "- **发现是自动的 ✓**：只要目录符合上面的形状就会被加载 ✓ —— **没有注册步骤 ✓、没有清单文件要改 ✓**",
+      "- **发现是自动的 ✓**：目录符合上面的形状就会被加载 ✓ —— **没有注册步骤 ✓、没有清单文件要改 ✓**",
       "  - 技能根下**名为 `SKILL.md` 的目录**会被判为结构异常并跳过 ✗（别把技能文件放成同名目录 ✓）",
-      "- **从仓库/URL 安装一个技能（照这个做 ✓，不要逐仓试探 ✗）**：",
-      "  1. 先看仓库里技能目录在哪 ✓：根目录有 `SKILL.md` ⇒ 整仓就是一个技能 ✓；",
-      "     否则找 `skills/<名>/SKILL.md`、`.agents/skills/<名>/SKILL.md`、`.claude/skills/<名>/SKILL.md` 等 ✓",
-      "  2. 把**那一个技能目录**（含它自己的 `SKILL.md` 与脚本 ✓）复制到用户级技能根下 ✓：",
-      "     `<用户级技能根>/<技能名>/` —— 不要整仓拷进去 ✗（仓库里的 README/测试不是技能的一部分 ✓）",
-      "  3. 只用 `git clone`（或下载 zip 解压 ✓）取文件 ✓；**不需要**任何安装器 ✓、也不需要改配置 ✓",
-      "  4. **验证** ✓：读回 `<用户级技能根>/<技能名>/SKILL.md` ✓；能读到且 frontmatter 有 `name`/`description` ⇒ 装好了 ✓",
-      "  5. 装好后它会出现在上面的技能目录里 ✓；若这一轮还没出现 ⇒ 让用户重启应用或等下一次重扫 ✓（不要重复装 ✗）",
-      "- **卸载** ✓：删掉 `<用户级技能根>/<技能名>/` 整个目录 ✓",
-      "",
-    ].join("\n");
+      "- **卸载** ✓：删掉 `<技能根>/<技能名>/` 整个目录 ✓",
+      "- **要装东西时先读手册（不要试探 ✗）**：",
+      "  - 装**技能** ⇒ `docs/SKILLS-INSTALL.md`（布局、安装五步、验证、卸载 ✓）",
+      "  - 装/写**插件** ⇒ `docs/PLUGIN-INSTALL.md`（Codem 插件机制：provider + `registerBuiltinPlugin` 注册一行 ✓）",
+      "  - 两本手册是权威；**没有写到的路径不存在** ⇒ 不要靠 npm 安装、改应用数据目录或反复重启来「试出」机制 ✗",
+      "",    ].join("\n");
   }
 
   /** Build skill prompt for system prompt (only name + description, not full prompt) */
