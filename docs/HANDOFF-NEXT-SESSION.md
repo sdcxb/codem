@@ -6131,3 +6131,84 @@ knip 棘轮 ✓（去掉了一个多余 export）；css-contract 2866 类无变�
   要改成真值就必须「删后改写」，那是拿数据安全换一句话的精确度 ⇒ 不换。
 - 压缩事件的 `deleteUnresolved` / `softDeleteResponded` 字段**暂无读取方**（诊断字段，留给排障与将来）。
 
+
+## 2026-10-16：`@codem/shell-ops` 真机验证（第二次）—— 插件**从没被装配** + 平台条件全部失效
+
+用户报的现象：打包版里 `bash` 工具仍然在跑 Windows PowerShell 5.1（界面报
+`$DefaultParameterValues['Out-File:Encoding'] … echo a && echo b`），而插件单测全绿。
+
+### 真因（两条独立缺陷，都不是"插件写错了"）
+
+1. **装配入口找错了（本轮的根因）**。上一轮把 `shellOps` 加进了
+   `src/core/provider/index.ts::loadDefaultProviders()`，判据 SO-6 也钉在它上面 ——
+   而那个函数**是死代码**：全仓没有调用者（`reachability-scan` 判它不可达），
+   桌面应用真正的装配路径是 `config/codem.base.yml` → `loadFromEntries()` → `ctx.plugin()`。
+   于是 `registerBuiltinPlugins()` 只把插件写进**注册表**（插件管理器、可达性门禁都因此看得到），
+   `apply` 从来没跑过 ⇒ 服务从没被提供 ⇒ `getToolContext()?.get("shellOps")` 拿不到 ⇒ 静默回退 PowerShell。
+   **判据钉在错的入口上 = 单测全绿、功能全死。**
+   修法：在 `codem.base.yml` 里声明 `@codem/shell-ops`（`when: platform == 'win32'`）；
+   并加**通用棘轮 SO-8**：注册表里的非 UI 插件必须在 YAML 装配清单里出现，
+   否则判据变红（UI 插件走 `loadUIPlugins` 另一条路，已在判据里写明）。
+2. **平台条件全部失效**。`parseCodemYaml` 会把值里的引号去掉
+   （`value.trim().replace(/['"]/g, '')`），而 `evaluateWhen` 的两个正则**都要求引号存在**
+   ⇒ 一个都匹配不上 ⇒ `return true`：`bash-sandbox`（非 Windows）、`tmux-context`（非 Windows）
+   在 Windows 上照样装配；新加的 shell-ops 的 Windows 作用域也是摆设。
+   修法：正则改成引号可选；**认不出来的表达式大声 warn** 再按通过处理（不 fail-closed：
+   那会把写错 `when` 的插件悄悄关掉，是另一种静默失真）。判据 `src/test/yaml-platform-when.test.ts`
+   （YW-1/YW-2，含反向对照）。
+
+### 第三处缺陷（真机抓到，本轮一并修掉）
+
+插件的默认设置项在 **apply 时**用 `setSetting` 抢写，而装配发生在存储端口预热之前 ——
+真机 console 每次启动都有一条
+`[PersistFailure] settings.setSetting 写盘失败（第 1 次）：端口已注册但该域镜像未接手`，
+键**永远不存在**（"插件确实跑过"在设置面上没有任何证据）。
+修法：落默认值挪到 `resolveShellPlan()` 的第一句（真的要用插件时，应用早预热完了），
+改用 `setSettingConfirmed`（确认式写入，成功/失败分得开）；只在键缺失时写。
+判据 SO-7 用假端口的 `asyncLoad: true` 锁住（装配时**不许**写；预热后第一次判定必须落库）。
+
+### 导出面收口（knip 棘轮逼出来的）
+
+`knip-gate` 在 HEAD 上就是红的（exports 73/49、types 25/21），**多出来的 24+4 条全部来自本插件**：
+`index.ts` 把 19 个名字原样转出、`policy.ts` 又 export 了 11 个，而它们没有任何生产消费者。
+修法：包入口只转出 `shellOpsProvider`；判定谓词/常量降为模块内部（判据从**行为**上测，
+不再 import 内部谓词）。收口后 **49/49、21/21，新增 0 条** —— 没有动 knip.json 与白名单。
+
+### 真机证据（打包版 1.16.321，安装后 CDP + Rust 日志）
+
+- `[shell-ops] shell-ops：已开启（…）` 出现在页面 console；`激活结算：assembled 156 ⇒ activated 156，not activated 0`。
+- 运行日志：`exec start … cmd=echo a && echo b; printf "中文 ok\n"` →
+  `exec shell=bash exe="C:\Program Files\Git\bin\bash.exe"` → `exec end exit=Some(0) elapsed_ms=113`。
+- 界面：模型贴出 `a / b / 中文 ok`，并自己注明"这次真的跑成功了（之前报 `&&` 解析错误）"。
+- 点名 PowerShell：工具卡片是拒绝原文、计数 `0/1 · 1 failed`；**全日志里没有任何 `exec start … powershell`**。
+- 设置项 `codem-shell-ops-enabled`：第一条命令前 `<absent>`（懒落库）→ 命令执行后 `"true"`；本轮启动期 **0 条 PersistFailure**。
+- 部署可信：`%LOCALAPPDATA%\Codem\codem.exe` 与 `target\release\codem.exe` **只差 3 字节**
+  （`__TAURI_BUNDLE_TYPE_VAR_UNK` → `…NSS`，NSIS 打包时写死）；把那 3 字节补上，sha256 与安装产物**逐字节相等**
+  （`a5d7e219…` → 补 NSS 后 `ee7d5c91…` = 安装产物 sha256）。**所以"安装后 sha256 与构建产物不一致"是预期的，不是部署失真。**
+
+### 环境坑（本轮踩到，记下来）
+
+- **DSH bash 的 PATH 把 GNU tar 1.35 排在 System32 的 bsdtar 前面**，而
+  `tools/eval/repo-workspace.mjs` 用 `tar -xf <Windows 绝对路径>` 解包 ⇒ GNU tar 把 `C:\…` 当成远程主机
+  （`tar: Cannot connect to C: resolve failed`），`npm run audit` 在 `eval:repo-workspace` 步骤挂掉。
+  绕过：给 PATH 前置一个**只含 `tar.exe`（System32 的副本）**的目录（`.preview-shot/shim-bin/`），
+  别整个 System32 前置（那会让 `bash` 解析成 WSL 启动器、报"没有已安装的发行版"）。
+  代码侧仍是 `-f <Windows 路径>` 的老假设（GNU tar 不支持）—— 未改，见下。
+- 构建时若应用正跑在 `target\release\codem.exe` 上，cargo 会在
+  `failed to remove file … codem.exe（拒绝访问 os error 5）` 处失败。先停应用再构建。
+- `PS-1`（扫 `.preview-shot/*.mjs` 的语法门禁）在默认 5 秒超时下**整批红、单跑绿**：
+  该目录顶层已有 2490 个 `.mjs`（约 8 MB），单跑约 3.5 秒。已给它显式 30 秒超时（查语法不查速度）。
+
+### 明确**未修**（留给下一轮，都写清下一步）
+
+1. **4 个 UI 原语插件注册了但没有装配路径**：`@codem/ui-primitives` / `ui-input-trigger` /
+   `ui-agent-preset` / `ui-skill-panel`（只在注册表与死代码 `provider/index.ts` 里出现）。
+   已带理由登记进 SO-8 的 `KNOWN_REGISTRY_ONLY`（另有 `@codem/ui-game`，仓库里本来就有取证说它没被装载）。
+   下一步：要么给它们真实装配入口，要么从注册表删掉。
+2. **`src/core/provider/index.ts` 是死代码**，却仍在 `knip.json` 的 `entry` 与可达性白名单里以
+   "barrel 转出口"记账 —— 这正是上一轮把判据钉错入口的原因。本轮只加了醒目的死代码警告，
+   没有删文件：删它会牵动 `knip.json` 的 entry 名单、可达性白名单与 21/21 的门面交叉对账，
+   属于独立的一次清理（下一步：从两处名单里摘掉它，再决定是删文件还是保留为"非桌面入口的清单"）。
+3. **`tools/eval/repo-workspace.mjs` 的 tar 调用没有 portable 化**：`-f` 传 Windows 绝对路径时
+   GNU tar 会当远程主机。下一步：`spawnSync("tar", ["-xf", basename(tar), "-C", ws], { cwd: tmpdir() })`
+   之类不依赖 `--force-local`（GNU 专有）的写法，并加一条判据。

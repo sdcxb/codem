@@ -1,15 +1,15 @@
 {
-  "version": "1.16.320",
-  "notes": "上下文水位接近提示线时先自动折叠较远的大段工具输出（最近几轮不动、原文不删），折完仍高才提示压缩或交接；占用数字不再系统性偏低；启动瞬间不再误报「上下文即将满」",
-  "pub_date": "2026-10-15T10:13:55Z",
+  "version": "1.16.321",
+  "notes": "Windows 上「bash」工具真的走 bash：默认开启的 shell 路由插件（点名 PowerShell 5.1 在执行前被拒、找不到 bash 明确报错、Windows 原生活儿走 PowerShell 7），另新增《插件安装手册》《技能安装手册》",
+  "pub_date": "2026-10-16T15:47:56Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZOSXRpUzVZUVE3YjhRcU1jZGtLV0RGa3hqZWkvSVUxam5XUWNJelRpVkM5MXhuVU9zVWxzWWVRb2Qrb1J5cVRFdnZZWmpldkNiMlAyQ0FJWk9uTWdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDU5MjI5CWZpbGU6Q29kZW1fMS4xNi4zMjBfeDY0LXNldHVwLmV4ZQpDYjlCejNQQzIzRlZmNW1rL1BHWm5oWWszQXJkRGtaYmdMQnNneXhGbFYrT3QyS0pUVU96cGlZUHlMd2NYeGVranNvcEZOYUVxZU1mb3hDL2ROTnJEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.320/Codem_1.16.320_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1crT2VTd1MyZnlnUnRtMDduRzUrVmlXYmpYWW9zT3VaQ3hFSURQSGJWODF5ZWx2b2hHNTVSNDNZajJhVTQ3dENuOHFUSFpXalMyMzdteERsWHRPYmd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMTY1NTAzCWZpbGU6Q29kZW1fMS4xNi4zMjFfeDY0LXNldHVwLmV4ZQpKU2V5QVo5N0Y2TmhsS2JqbGdRV1hKUjhvSDdGM2dWczlrU2IrZUlnVEg4cVN6SkpYTWFHbm9PcWp1bmxRcmN2S29SdHJxMW9pT01NVHhHSFZKekxCQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.321/Codem_1.16.321_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2ZOSXRpUzVZUVE3YjhRcU1jZGtLV0RGa3hqZWkvSVUxam5XUWNJelRpVkM5MXhuVU9zVWxzWWVRb2Qrb1J5cVRFdnZZWmpldkNiMlAyQ0FJWk9uTWdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDU5MjI5CWZpbGU6Q29kZW1fMS4xNi4zMjBfeDY0LXNldHVwLmV4ZQpDYjlCejNQQzIzRlZmNW1rL1BHWm5oWWszQXJkRGtaYmdMQnNneXhGbFYrT3QyS0pUVU96cGlZUHlMd2NYeGVranNvcEZOYUVxZU1mb3hDL2ROTnJEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.320/Codem_1.16.320_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1crT2VTd1MyZnlnUnRtMDduRzUrVmlXYmpYWW9zT3VaQ3hFSURQSGJWODF5ZWx2b2hHNTVSNDNZajJhVTQ3dENuOHFUSFpXalMyMzdteERsWHRPYmd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMTY1NTAzCWZpbGU6Q29kZW1fMS4xNi4zMjFfeDY0LXNldHVwLmV4ZQpKU2V5QVo5N0Y2TmhsS2JqbGdRV1hKUjhvSDdGM2dWczlrU2IrZUlnVEg4cVN6SkpYTWFHbm9PcWp1bmxRcmN2S29SdHJxMW9pT01NVHhHSFZKekxCQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.321/Codem_1.16.321_x64-setup.exe"
     }
   }
 }
