@@ -20724,6 +20724,25 @@ html[data-contrast="high"] {
   cursor: not-allowed;
 }
 
+/* ---- 第 229 波：本批读数 + 一键全部批准/拒绝 ---- */
+.memory-pending-all-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding-top: var(--space-3);
+  /* 与上面的"勾选 + 批量处置"用一条细线分开：两种口径（勾选数 / 总数）不许看起来是同一件事 */
+  border-top: 1px solid var(--border-separator);
+}
+
+.memory-pending-batch-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
 .memory-pending-item {
   display: flex;
   flex-wrap: wrap;

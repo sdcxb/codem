@@ -7802,6 +7802,15 @@
     "display": "flex",
     "gap": "var(--space-2)"
   },
+  "memory-pending-all-bar": {
+    "align-items": "center",
+    "border-top": "1px solid var(--border-separator)",
+    "display": "flex",
+    "flex-wrap": "wrap",
+    "gap": "var(--space-4)",
+    "margin-bottom": "var(--space-4)",
+    "padding-top": "var(--space-3)"
+  },
   "memory-pending-badge": {
     "align-items": "center",
     "background": "var(--error)",
@@ -7822,6 +7831,12 @@
     "flex-wrap": "wrap",
     "gap": "var(--space-4)",
     "margin-bottom": "var(--space-4)"
+  },
+  "memory-pending-batch-hint": {
+    "color": "var(--text-secondary)",
+    "flex": "1",
+    "font-size": "var(--fs-2xs)",
+    "min-width": "0"
   },
   "memory-pending-check": {
     "align-items": "center",

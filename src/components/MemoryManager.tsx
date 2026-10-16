@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import {
   getMemoryService,
@@ -447,6 +447,44 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     setExpandedPending((prev) => pruneAliveIds(prev, pending));
   }, [pending]);
 
+  /**
+   * ★ 第 229 波：「本批」= 待批准区里**最新那一个自动提取批次**（用户要求"同批显示本批 N 条"）。
+   *
+   * 为什么按 `batchId` 而不是"全部待批准"：积压是**跨批次累积**的（真机取证：两条待批准
+   * 带着各自批次相隔两天躺着）。用户打开面板时真正要处置的是**刚产生的那一批**，
+   * 而更早的批次是"上次没处理完的存货"——两者混成一个数字，用户没法判断"这次又给我加了什么"。
+   *
+   * `pending` 已按 `timestamp` 倒序（`listPending` 的排序），所以第一条带批次的
+   * 就是最新批次。**全部都没批次**（升级前的旧自动记忆）时是 `undefined` ⇒ 不做默认勾选
+   * （没有"本批"这个概念，勾了反而是替用户猜）。
+   */
+  const latestBatchId = pending.find((p) => p.batchId)?.batchId;
+  const batchPending = latestBatchId ? pending.filter((p) => p.batchId === latestBatchId) : [];
+
+  /**
+   * ★ 第 229 波：**本批默认勾选**（用户要求"默认全选当前批"，目的是"面板少动手"）。
+   *
+   * 三条纪律：
+   * ① **只勾一次**：用 `autoSelectedBatchRef` 记住"已经替用户勾过哪个批次" —— 否则用户手动
+   *    取消勾选后任何一次重渲染都会把它勾回来（用户会看到"取消不掉"）；
+   * ② **只在批次变化时再勾**：新一批产生（`batchId` 变了）才重新默认勾选；
+   * ③ **不碰勾选集合里已有的内容**（`union`，不是 `replace`）—— 用户在别的批次上勾过的选择
+   *    不该被一次自动勾选抹掉。
+   *
+   * 放在 `pruneAliveIds` 那个 effect **之后**：先让"已经不存在的 id"退场，再补默认勾选。
+   */
+  const autoSelectedBatchRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!latestBatchId || batchPending.length === 0) return;
+    if (autoSelectedBatchRef.current === latestBatchId) return;
+    autoSelectedBatchRef.current = latestBatchId;
+    setSelectedPending((prev) => {
+      const next = new Set(prev);
+      for (const p of batchPending) next.add(p.id);
+      return next;
+    });
+  }, [latestBatchId, batchPending]);
+
   const handleApproveSelected = async () => {
     const ids = [...selectedPending];
     const service = getMemoryService();
@@ -460,6 +498,65 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
       landed
         ? result.message
         : `${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些改动会失效）。`,
+    );
+    setSelectedPending(new Set());
+    loadEntries();
+  };
+
+  /**
+   * ★ 第 229 波：**一键全部批准**（用户要求「面板少动手」）。
+   *
+   * ## 与「批量同意（N）」的区别（不是重复功能，别合并）
+   *
+   * - 「批量同意」作用于**用户勾选的**那些（勾几条动几条，按钮文案带勾选数）；
+   * - 「全部批准」作用于**当前待批准区的全部**（不看勾选）。
+   *
+   * 两者并存是刻意的：待批准积压的处置动作绝大多数是"这一批我都认"或"这一批我都不要"，
+   * 而那时用户要的是**一次点击**；逐条判断的场合仍然走勾选（`MB-UI-2` 那类场景）。
+   * 所以这里不改动、也不复用 `selectedPending` —— 否则"全选才敢点"的老路径会被悄悄改掉。
+   */
+  const handleApproveAll = async () => {
+    const ids = pending.map((p) => p.id);
+    const service = getMemoryService();
+    const result = service.approveMany(ids);
+    const landed = await service.flushPendingPersist();
+    setNotice(
+      landed
+        ? `一键全部批准：${result.message}`
+        : `一键全部批准：${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些改动会失效）。`,
+    );
+    setSelectedPending(new Set());
+    loadEntries();
+  };
+
+  /**
+   * ★ 第 229 波：**一键全部拒绝**（删掉当前待批准区的全部条目）。
+   *
+   * ## 为什么这个动作**必须**有二次确认，而勾选版没有
+   *
+   * 勾选版最多删用户亲手勾的那几条（他刚刚看过每一条）；这一版会在**一次点击里删掉整片积压**，
+   * 而积压里可能混着用户还没看过的条目 ⇒ 命中本仓既有纪律「一次删 N 条要有二次确认」
+   * （`handleUndoBatch` 与体检的批量删除走的是同一道闸）。
+   * 「全部批准」**不加**确认：它是把条目变成生效，随时可以用「撤销该批」或删除回退，
+   * 与"不可逆地删数据"不同档。
+   */
+  const handleRejectAll = async () => {
+    const confirmed = await confirmDialog(
+      `确定拒绝并删除全部 ${pending.length} 条待批准记忆？此操作不可撤销。` +
+        "它们会被记为「已拒绝同类」⇒ 此后相似的自动记忆会被静默跳过；已生效的记忆不受影响。",
+    );
+    if (!confirmed) {
+      setNotice("已取消：没有删除任何待批准记忆。");
+      return;
+    }
+    const ids = pending.map((p) => p.id);
+    const service = getMemoryService();
+    const result = service.rejectMany(ids);
+    const landed = await service.flushPendingPersist();
+    setNotice(
+      landed
+        ? `一键全部拒绝：${result.message}`
+        : `一键全部拒绝：${result.message}，但**未落库**：${service.getLastPersistError() ?? "未知原因"}（重启后这些条目会回来）。`,
     );
     setSelectedPending(new Set());
     loadEntries();
@@ -1035,6 +1132,36 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
               onClick={handleRejectSelected}
             >
               批量拒绝（{selectedPending.size}）
+            </button>
+          </div>
+          {/*
+            ★ 第 229 波：「本批 N 条」+ **一键全部批准 / 全部拒绝**（用户要求「面板少动手」）。
+
+            为什么**独占一行**（`.memory-pending-all-bar`）而不是塞进上面的批量条：
+            上面那一条的语义是"勾选 + 批量处置"（数字 = **勾选数**），这里两个按钮的数字 =
+            **待批准总数**。两种口径挤在一行里，用户会把「批量同意（2）」与「全部批准（9）」
+            读成同一件事的两个数字 —— 那正是本仓反复强调的"两个数必须各说清各是什么"。
+          */}
+          <div className="memory-pending-all-bar">
+            <span className="memory-pending-batch-hint">
+              {latestBatchId
+                ? `本批 ${batchPending.length} 条（最近一次自动提取 · ${latestBatchId}）；待批准共 ${pending.length} 条。`
+                : `待批准共 ${pending.length} 条（没有批次号 —— 升级前的旧数据）⇒ 不默认勾选。`}
+              {latestBatchId && batchPending.length > 0 ? "本批已默认勾选，可直接批量处置。" : ""}
+            </span>
+            <button
+              className="memory-approve-btn"
+              title={`批准当前全部 ${pending.length} 条待批准记忆：它们从现在起参与上下文`}
+              onClick={handleApproveAll}
+            >
+              全部批准（{pending.length}）
+            </button>
+            <button
+              className="memory-reject-btn"
+              title={`拒绝并删除当前全部 ${pending.length} 条待批准记忆（删除前会二次确认）`}
+              onClick={handleRejectAll}
+            >
+              全部拒绝（{pending.length}）
             </button>
           </div>
           {pending.map((entry) => {

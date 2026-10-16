@@ -195,9 +195,17 @@ describe("MEM-APPROVE-DETAIL：待批准区双击展开详细信息（第 226 �
     const container = await renderPanel();
     const check = rowFor(container, "长条目").querySelector<HTMLInputElement>("input[type=checkbox]")!;
 
-    act(() => {
-      fireEvent.click(check); // 先勾上
-    });
+    /*
+     * ★ 第 229 波：面板现在**默认勾选本批**（用户要求"面板少动手"），于是"一进面板就是未勾选"
+     * 这个前提不再成立 —— 无条件点一下会把它**取消**掉，下面的前提断言当场红。
+     * 这条判据要守的没变（"勾选框上的双击不许展开这一行"），只是需要一个**已知的已勾选状态**：
+     * 所以写成"没勾上才去勾"（对"有默认勾选"和"没有默认勾选"两种实现都成立，不会变成哑巴）。
+     */
+    if (!check.checked) {
+      act(() => {
+        fireEvent.click(check);
+      });
+    }
     expect(check.checked, "前提：这一条已被勾选").toBe(true);
 
     act(() => {
