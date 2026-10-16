@@ -6299,3 +6299,35 @@ GNU tar 把 `-f HOST:PATH` 当远程归档，而 Windows 绝对路径 `C:\…` �
   · `CSS-INTEGRITY-7`（`src/styles.css` 被并行同事改动，快照需同步）；
   · `MD-5`（`src/test/memory-pending-detail.test.tsx`，并行同事在途）。
   这几条已当面通知对方（同工作区并行），**不由本轮的改动负责**。
+
+### 六、真机取证（第二棒，构建产物 + CDP）—— 并在真机上又抓到一条回归
+
+构建 `node node_modules/@tauri-apps/cli/tauri.js build`（签名变量必带，见 §3）后启动产物：
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`，用 `.preview-shot/_ui-game-e2e.mjs`
+（`boot` 模式不重载，避开 CDP 的 console 历史回放污染）与 `.preview-shot/_ui-game-db.mjs`（写 DB 权威介质）取证：
+
+| `@codem/ui-game` 的状态 | provider 是否被装配 | 界面是否有游戏入口 |
+|---|---|---|
+| 默认（禁用列表 = `["@codem/ui-game"]`） | ✗（门控跳过 ✓） | ✗ |
+| DB 权威介质里清空后重载 | ✓（`[UI Plugins] Loaded provider: ui-game`） | **✗** |
+
+两轮都是 `激活结算：assembled 156 ⇒ activated 156，not activated 0`（零失败），无 `Failed to load`、无 exception。
+⇒ 新接的装配路径 + 门控在真机上两个方向都成立。
+
+**新发现的回归（本轮未修，属产品决定）**：游戏面板**从来没有入口** —— `bottomTab === "game"`
+在全仓**没有任何 setter**。`git log -S 'setBottomTab("game")'` 指向 `e1bdd01e`
+（"终端功能全面对标 dsh-desktop … UI 入口打通"）：那次页签栏重构把三套皮肤里的「游戏」按钮一起删掉了，
+而 `bottom-panel.tabs` 槽位至今没有贡献者、容器还 `display:none`。也就是说 `@codem/ui-game`
+现在是一个"开关背后没有东西"的开关，旧目录文案却说"关闭后游戏 Tab 入口隐藏"。
+
+处置（本轮已做）：目录文案改成如实描述（"**当前没有 UI 入口**"），并新增判据 **GAME-4** 把事实钉住 ——
+要么恢复入口（产品决定），要么删掉 game 分支与插件，不许再留"单测绿、功能死"的中间态。
+同族还有 `perf` / `files` / `jobs` / `cicd` 四个 `BottomTab` 成员（都没有 setter，各自的面板组件都在），
+建议单独一轮做产品裁决。
+
+**并行协作注意**：本轮与另一个子代理**同工作区并行**（它改 `src/core/memory/*`、`src/core/llm/index.ts`、
+记忆面板组件、`src/test/memory-*`）。两条纪律后来被明确下来：
+① 禁止整树 git 操作（`stash` / `checkout -- .` / `reset --hard`）—— 对照基线用 `git show HEAD:<path>`
+或 `git worktree add <临时目录> HEAD`；② 提交只 `git add <显式路径>`。
+另外：同工作区并行时，`ops_bash` 的输出**可能串到别人的命令**（本轮遇到过一次把并行同事的 tauri 构建日志
+当成自己命令的输出）⇒ 一条命令跑完要**用文件内容/退出码复核**，别只信 stdout。

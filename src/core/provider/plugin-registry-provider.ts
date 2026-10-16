@@ -277,9 +277,14 @@ const KNOWN_PLUGINS = [
     { name: '@codem/tool-jobs', version: '1.0.0', description: 'Jobs 工具，独立插件形式的后台任务管理工具', provides: ['toolJobs'], inject: ['tools', 'automation'], keywords: ['tool', 'jobs'], category: 'provider', tags: ['provider', 'tool'], hot: true, icon: '📋', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 Jobs 工具不可用' },
     { name: '@codem/storage-domain', version: '1.0.0', description: '存储域定义，分域存储命名空间管理', provides: ['storageDomain'], inject: ['storage'], keywords: ['storage', 'domain', 'namespace'], category: 'provider', tags: ['provider', 'storage'], hot: true, icon: '🗂️', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后存储域不可用' },
     { name: '@codem/storage-json', version: '1.0.0', description: 'JSON 存储后端，基于 JSON 文件的键值存储', provides: ['storageJson'], inject: ['storage'], keywords: ['storage', 'json'], category: 'provider', tags: ['provider', 'storage'], hot: true, icon: '📄', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 JSON 存储后端不可用' },
-    // 2026-10-16 定性：这不是 UI 实现，是**开关**。旧条目宣称 provides:['uiGame'] + 槽位 app.game，
-    // 而槽位从未声明、register 必抛，服务也没有任何消费者 ⇒ 改成如实描述（provides 为空、不宣称槽位）。
-    { name: '@codem/ui-game', version: '1.0.0', description: '大富翁小游戏（默认关闭）—— 开关插件：游戏界面由 App 直接渲染，启停由本条目控制', provides: [], inject: [], keywords: ['ui', 'game', 'monopoly'], category: 'ui', tags: ['ui', 'switch'], hot: true, icon: '🎮', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后游戏 Tab 入口隐藏，不影响其他功能', uiImpact: { buttons: ["game"], degradedTo: '游戏 Tab 入口隐藏' } },
+    // 2026-10-16 定性（第二棒）：这不是 UI 实现，是**开关** —— 而且**当前没有可开关的入口**。
+    // 真机取证：把 DB 权威介质里的 `@codem/ui-game` 清空后重载 —— provider 确实被装配了
+    // （`[UI Plugins] Loaded provider: ui-game` + 激活结算 156⇒156 无失败），但界面**仍然没有游戏入口**：
+    // `bottomTab === "game"` 在全仓**没有任何 setter**（`git log -S 'setBottomTab("game")'` ⇒ `e1bdd01e`：
+    // 那次页签栏重构把三套皮肤里的「游戏」按钮一起删掉了；`bottom-panel.tabs` 槽位也没有任何贡献者）。
+    // 旧条目还宣称 provides:['uiGame'] + 槽位 app.game（槽位从未声明、register 必抛、服务也无消费者）。
+    // 现在如实描述，并把「入口缺失」写进面向用户的说明里 —— 不许再对用户假承诺（判据 CAT-1/GAME-2）。
+    { name: '@codem/ui-game', version: '1.0.0', description: '大富翁小游戏（默认关闭）—— 开关插件：面板由 App 直接渲染；**当前没有 UI 入口**（入口在 e1bdd01e 的页签栏重构里被删除）', provides: [], inject: [], keywords: ['ui', 'game', 'monopoly'], category: 'ui', tags: ['ui', 'switch'], hot: true, icon: '🎮', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后游戏面板不渲染；注意当前没有入口，开关它对界面暂时没有可见差别', uiImpact: { degradedTo: '游戏面板不渲染（当前无 UI 入口）' } },
     { name: '@codem/ui-library-ops', version: '1.0.0', description: '图书馆运营监控 — 团队角色/子智能体化身动画角色在图书馆各岗位工作；接管「任务管理 → 看板」页签，在 Issues 看板之上追加场景/用量/工具/错误/时间线/设置视图（完全独立可启停，无独立页签）', provides: ['uiLibraryOps'], inject: ['slots'], slots: ['task-center.board'], keywords: ['ui', 'library', 'monitor', 'team', 'subagent', 'dashboard'], category: 'ui', tags: ['provider', 'ui', 'monitor'], hot: true, icon: '📚', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后「看板」页签回退到宿主自带 Issues 看板，不影响任何现有功能（插件只读宿主数据）', uiImpact: { slots: ['task-center.board'], buttons: [], degradedTo: '「看板」页签回退到宿主自带 Issues 看板（其余页签不受影响）' } },
     ]
 

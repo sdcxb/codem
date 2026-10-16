@@ -66,7 +66,30 @@ describe("@codem/ui-game：开关插件（不是 UI 实现）", () => {
     expect(line, "目录里必须有 @codem/ui-game 这一条（插件管理器要展示它）").toBeTruthy();
     expect(line!, "不许宣称提供 uiGame 服务（没有消费者）").not.toMatch(/provides:\s*\[[^\]]*uiGame/);
     expect(line!, "不许宣称 app.game 槽位（那个槽位从来没声明过）").not.toContain("app.game");
-    expect(line!, "要把「关闭后游戏 Tab 入口隐藏」这个真实影响说清楚").toContain("游戏 Tab");
+    expect(line!, "不许宣称「游戏 Tab 入口隐藏」—— 那个入口根本不存在（真机实测）").not.toContain("入口隐藏");
+    expect(line!, "必须如实写出「当前没有 UI 入口」（否则就是对用户假承诺）").toContain("没有 UI 入口");
+  });
+
+  it("GAME-4: 游戏页签**没有任何 UI 入口**（回归事实 + 棘轮）", () => {
+    /**
+     * 真机取证（2026-10-16）：把 DB 权威介质里的 `@codem/ui-game` 清空后重载 ——
+     * provider 确实被装配（`[UI Plugins] Loaded provider: ui-game`）、激活结算 156⇒156 无失败，
+     * 但界面**仍然没有游戏入口**：`bottomTab === "game"` 全仓没有任何 setter。
+     *
+     * 历史：`git log -S 'setBottomTab("game")'` ⇒ `e1bdd01e`（页签栏重构）把三套皮肤里的
+     * 「游戏」按钮一起删掉了；`bottom-panel.tabs` 槽位还 `display:none` 且没有任何贡献者。
+     * 恢复入口是**产品决定**，所以这里把事实钉住：恢复入口 ⇒ 这条判据要求同步改，
+     * 删掉 game 分支/插件 ⇒ 同样要改；**不许留「单测绿、功能死」的中间态**。
+     */
+    const app = fs.readFileSync(path.join(ROOT, "src/App.tsx"), "utf8");
+    const declared = /type BottomTab = [^\n]*"game"/.test(app);
+    const hasSetter = /setBottomTab\(\s*["']game["']\s*\)/.test(app);
+    expect(declared, "前置条件：BottomTab 里必须有 game（渲染分支存在）").toBe(true);
+    expect(
+      hasSetter,
+      "`bottomTab === \"game\"` 的分支没有任何 setter ⇒ 面板永远不可达（入口在 e1bdd01e 被删）。" +
+        "要么恢复 UI 入口（产品决定），要么删掉这条分支与 @codem/ui-game。",
+    ).toBe(false);
   });
 
   it("GAME-3: 真实来源成立 —— App.tsx 直接渲染 GameView + 读禁用列表；app.game 不是槽位", () => {
