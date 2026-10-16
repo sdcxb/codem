@@ -2166,8 +2166,49 @@ fn join_thread_within<T>(
     }
 }
 
+/// 解析可用的 bash（`@codem/shell-ops` 插件用）。
+///
+/// 只认：显式路径 → 环境变量 → Git for Windows 的标准安装位置。
+/// **不去 PATH 里随便捡**一个未经验证的 bash（那是「悄悄换执行器」的另一种形态）。
+fn resolve_bash_path(explicit: Option<&str>) -> Option<String> {
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(e) = explicit {
+        if !e.trim().is_empty() {
+            candidates.push(e.trim().to_string());
+        }
+    }
+    for key in ["CODEM_SHELL_OPS_BASH", "CODEM_BASH_PATH"] {
+        if let Ok(v) = std::env::var(key) {
+            if !v.trim().is_empty() {
+                candidates.push(v.trim().to_string());
+            }
+        }
+    }
+    candidates.extend(
+        [
+            "C:\\Program Files\\Git\\bin\\bash.exe",
+            "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+            "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+        ]
+        .iter()
+        .map(|s| s.to_string()),
+    );
+    candidates.into_iter().find(|p| std::path::Path::new(p).is_file())
+}
+
 #[tauri::command]
-async fn execute_command(command: String, cwd: Option<String>, timeout_ms: Option<u64>) -> Result<serde_json::Value, String> {
+async fn execute_command(
+    command: String,
+    cwd: Option<String>,
+    timeout_ms: Option<u64>,
+    // ★ `@codem/shell-ops` 插件：执行器选择（"bash" / "powershell" / None=旧行为）。
+    // 这个命令以前**写死走 windows powershell 5.1**（不认 shell 参数），而工具名字叫 `bash`
+    // ⇒ 模型按 bash 习惯写的命令反复撞 5.1 的坑（`&&` 语法错误、`Set-Content -Encoding UTF8`
+    // 写 BOM 炸 JSON 解析、单元素数组转 JSON 降级），每次报错都变成一轮「读错误 → 改写 → 再试」。
+    shell: Option<String>,
+    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。
+    bash_path: Option<String>,
+) -> Result<serde_json::Value, String> {
     let work_dir = cwd.unwrap_or_else(|| std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default());
@@ -2178,6 +2219,29 @@ async fn execute_command(command: String, cwd: Option<String>, timeout_ms: Optio
     runtime_log::append_line("INFO", &format!("exec start cwd={:?} cmd={}", work_dir, log_cmd));
     let exec_started = std::time::Instant::now();
 
+    /**
+     * ★ bash 分支（插件请求时）。三条纪律：
+     * 1. **解析不到 bash ⇒ 返回错误**，绝不悄悄退回 PowerShell ——
+     *    悄悄换执行器正是「bash 工具其实在跑 PowerShell 5.1」这个缺陷的成因；
+     * 2. 只认显式路径 / 环境变量 / 标准安装位置，不去 PATH 里随便捡未经验证的 bash；
+     * 3. 不注入 PowerShell 的 UTF-8 前缀（bash 默认 UTF-8，那段是 PowerShell 专属）。
+     */
+    let mut cmd = if shell.as_deref() == Some("bash") {
+        let Some(bash) = resolve_bash_path(bash_path.as_deref()) else {
+            return Err(
+                "E_SHELL_OPS_NO_BASH: @codem/shell-ops 已启用但找不到可用的 bash，已拒绝执行。\
+                 请安装 Git for Windows（自带 bash），或在设置里指定 codem-shell-ops-bash-path。\
+                 不会退回 Windows PowerShell 5.1。"
+                    .to_string(),
+            );
+        };
+        let mut c = std::process::Command::new(&bash);
+        // `-c` 而非 `-lc`：不读登录 profile（与 PowerShell 侧 `-NoProfile` 同一纪律：
+        // 欢迎语/代理初始化会污染工具输出，也可能挂住交互提示）。
+        c.arg("-c").arg(&command).current_dir(&work_dir);
+        runtime_log::append_line("INFO", &format!("exec shell=bash exe={:?}", bash));
+        c
+    } else {
     // Always use PowerShell for consistent UTF-8 handling
     let mut cmd = std::process::Command::new("powershell");
     // Strip powershell prefix if present
@@ -2221,6 +2285,10 @@ async fn execute_command(command: String, cwd: Option<String>, timeout_ms: Optio
      */
     cmd.arg("-NoProfile").arg("-NonInteractive").arg("-Command").arg(&full_command).current_dir(&work_dir);
     // Python encoding: PYTHONIOENCODING for stdin/stdout, PYTHONUTF8 for UTF-8 mode (3.7+)
+    cmd
+    }; // ← 结束 bash/PowerShell 分支
+
+    // 两个 shell 共用：Python 编码三件套（bash 下同样有效）
     cmd.env("PYTHONIOENCODING", "utf-8");
     cmd.env("PYTHONUTF8", "1");
     cmd.env("PYTHONLEGACYWINDOWSSTDIO", "0");

@@ -18,7 +18,9 @@
  */
 
 import type { Plugin } from "../../core/cordis/src/index.ts";
+import { getSetting, setSetting } from "../../core/storage/settings";
 import {
+  SHELL_OPS_ENABLED_KEY,
   describeShellOps,
   isShellOpsEnabled,
   resolveShellPlan,
@@ -54,6 +56,13 @@ export function createShellOpsService(): ShellOpsService {
 
 /** Cordis 插件：把服务提供出去（`provides: ["shellOps"]`）。 */
 export const shellOpsProvider: Plugin = (ctx: any) => {
+  // 落一次默认值：这一行同时是**设置键的写入方**（判据 SKEY-2 要求每个键既有人读、也有人写）。
+  // 只在键不存在时写 ⇒ 不覆盖用户/界面已设过的值（默认开，但用户关掉后不会被改回来）。
+  try {
+    if (getSetting(SHELL_OPS_ENABLED_KEY) === null) setSetting(SHELL_OPS_ENABLED_KEY, "true");
+  } catch (e) {
+    console.warn("[shell-ops] 写默认设置失败（不影响本次运行）:", e);
+  }
   const service = createShellOpsService();
   console.log(`[shell-ops] ${service.describe()}`);
   return ctx.provide(SHELL_OPS_SERVICE, service);

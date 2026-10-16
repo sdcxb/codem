@@ -28,6 +28,13 @@ describe("execute_command timeout 透传（防僵尸进程）", () => {
       command: "sleep 60",
       cwd: "C:\\work",
       timeout_ms: 15000,
+      /**
+       * ★ `@codem/shell-ops` 接线后契约多了两个字段（判据跟着契约走 ✓）：
+       * 不传 shellPlan ⇒ `shell: "powershell"`（旧行为）、`bash_path: null`。
+       * 这两个字段在 Rust 侧才生效；TMO-001 的本意（timeout_ms 必须透传）不变 ✓。
+       */
+      shell: "powershell",
+      bash_path: null,
     });
   });
 

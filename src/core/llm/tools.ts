@@ -1111,6 +1111,37 @@ export function createBashTool(): ToolDef {
         console.log(`[bash tool] Prepended chcp 65001 for .bat/.cmd execution`);
       }
 
+      /**
+       * ★ `@codem/shell-ops`（默认开启）：执行前问一次插件服务决定用哪个 shell。
+       *
+       * 取服务用的是 Codem 插件机制的既有方式（`getToolContext()?.get('<服务名>')`，
+       * 与 `dynamic-plugin-tools.ts` 取 `dynamicCordisRunner` 同一条通道 ✓）；
+       * **取不到 ⇒ 旧行为**（PowerShell）—— 插件被停用/删除后应用照常工作 ✓。
+       *
+       * `refusal` 必须在**执行之前**处理：那是插件对"点名 PowerShell / 没有可用 bash"的硬拒绝，
+       * 直接作为工具结果交回模型（`isError`）—— 这样模型绕不过去，只能改用 bash 语法 ✓。
+       */
+      let shellPlan: { kind: "bash" | "powershell"; bashPath?: string | null } | null = null;
+      try {
+        const shellOps = getToolContext()?.get?.("shellOps") as
+          | { plan: (c: string) => { kind: "bash" | "powershell"; bashPath?: string | null; refusal?: string } }
+          | undefined;
+        if (shellOps?.plan) {
+          const plan = shellOps.plan(command);
+          if (plan.refusal) {
+            return { title: "bash", output: plan.refusal, isError: true };
+          }
+          shellPlan = { kind: plan.kind, bashPath: plan.bashPath ?? null };
+        }
+      } catch (e) {
+        // 服务本身出错时**不静默换执行器**：如实报错交回模型（宁可失败，也不许悄悄用另一种 shell）。
+        return {
+          title: "bash",
+          output: `Error: shell-ops 计划失败，已拒绝执行（不做静默回退）：${e instanceof Error ? e.message : String(e)}`,
+          isError: true,
+        };
+      }
+
       // LLM can specify timeout; clamp to safe range
       const requestedTimeout = (args.timeout_ms as number) || 30000;
       const timeoutMs = Math.max(5000, Math.min(requestedTimeout, 600000));
@@ -1134,7 +1165,7 @@ export function createBashTool(): ToolDef {
         const data = await Promise.race([
           // FIX: 传 timeoutMs 给 Rust — 超时时 Rust 真正杀进程树（之前前端
           // Promise.race 只是放弃 Promise，底层命令仍在后台跑）。
-          executeCommand(command, workdir, timeoutMs),
+          executeCommand(command, workdir, timeoutMs, shellPlan ?? undefined),
           new Promise<never>((_, reject) => {
             timeoutAbortFn = () => {
               reject(new Error(`Command timed out after ${timeoutMs}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.`));

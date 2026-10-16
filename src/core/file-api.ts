@@ -433,11 +433,41 @@ export async function exists(path: string): Promise<boolean> {
   }
 }
 
-export async function executeCommand(command: string, cwd?: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string; exitCode?: number }> {
+/**
+ * 执行一条命令。
+ *
+ * ★ `@codem/shell-ops` 插件（默认开启）会通过 `shellPlan` 决定**用哪个 shell**：
+ * - 不传 ⇒ 旧行为（Rust 侧走 Windows PowerShell，历史默认）；
+ * - 传 `{ kind: "bash", bashPath }` ⇒ Rust 用**真正的 bash**（解析不到就报
+ *   `E_SHELL_OPS_NO_BASH`，**绝不回退 PowerShell** —— 悄悄换执行器正是"bash 工具其实在跑
+ *   PowerShell 5.1"这个缺陷的成因）；
+ * - 调用方负责在**执行之前**处理 `refusal`（插件点名拒绝时不许执行）。
+ *
+ * 为什么计划由**调用方**传入、而不是这里去查插件：core 不认识插件（删掉插件目录后 core 仍要能编译、
+ * 且要回到旧行为）。取服务的地方在工具层（`getToolContext()?.get('shellOps')`），
+ * 那是 Codem 插件机制的既有消费方式 ✓。
+ */
+export interface ShellPlanArg {
+  kind: "bash" | "powershell";
+  bashPath?: string | null;
+}
+
+export async function executeCommand(
+  command: string,
+  cwd?: string,
+  timeoutMs?: number,
+  shellPlan?: ShellPlanArg,
+): Promise<{ stdout: string; stderr: string; exitCode?: number }> {
   // FIX(对标 dsh): pass timeout_ms so Rust kills the process tree on timeout —
   // previously the frontend Promise.race abandoned the promise while the
   // PowerShell child kept running (zombie processes on repeated timeouts).
-  return tauriInvoke("execute_command", { command, cwd, timeout_ms: timeoutMs });
+  return tauriInvoke("execute_command", {
+    command,
+    cwd,
+    timeout_ms: timeoutMs,
+    shell: shellPlan?.kind ?? "powershell",
+    bash_path: shellPlan?.bashPath ?? null,
+  });
 }
 
 /**

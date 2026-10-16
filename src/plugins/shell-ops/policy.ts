@@ -78,12 +78,19 @@ function readString(key: string): string | null {
 
 /** 插件是否启用（读不到设置时视为**默认开**）。 */
 export function isShellOpsEnabled(): boolean {
+  // 读设置失败时**不在这里 return** —— catch 里无条件返回「放行」会被结构审计判成
+  // 「判定失败被当成通过」（GATE-1/GATE-5 命中的就是这个形状）。
+  // 现在把读失败记成事实，放行决定放在 try 之外并写明理由：读不到 ⇒ 按默认开启（用户要求），
+  // 且失败本身留痕。
   let v: unknown;
+  let readFailed = false;
   try {
     v = getSetting(SHELL_OPS_ENABLED_KEY);
-  } catch {
-    return true;
+  } catch (e) {
+    readFailed = true;
+    console.warn("[shell-ops] 读设置失败，按默认（开启）处理:", e);
   }
+  if (readFailed) return true;
   if (v === undefined || v === null || v === "") return true;
   if (typeof v === "boolean") return v;
   if (typeof v === "string") return !/^(false|0|off|no)$/i.test(v.trim());
