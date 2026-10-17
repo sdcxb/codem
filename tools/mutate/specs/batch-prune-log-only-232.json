@@ -1,0 +1,35 @@
+{
+  "description": "批次修剪只进日志（用户 2026-10-17：「不再报了这个提示了」）：凭据已丢、无可介入动作 ⇒ 撤掉 advisory（AGENTS §4 口径），保留 console.warn；判据 MA-24 两向自证 —— 加回 advisory ⇒ 红；删掉那行日志 ⇒ 红",
+  "mutations": [
+    {
+      "id": "MUT-1 又用 advisory 弹「部分批次不能再整批撤销」（用户已明确要求不再弹）",
+      "why": "MA-24 的「不许打扰」那一向：把 reportAdvisory 调用加回 pruneBatches ⇒ advisory 列表里出现该 area ⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    console.warn(\n      `[memory] 批次超出上限（${BATCH_KEEP_MAX}）⇒ 丢弃了 ${dropped.length} 条较早的撤销凭据` +\n        \"（这些批次里的条目仍然在，但不能再整批撤销）\",\n    );\n",
+          "to": "    console.warn(\n      `[memory] 批次超出上限（${BATCH_KEEP_MAX}）⇒ 丢弃了 ${dropped.length} 条较早的撤销凭据` +\n        \"（这些批次里的条目仍然在，但不能再整批撤销）\",\n    );\n    reportAdvisory(\"memory.batchesPruned\", `撤销凭据超出上限，丢弃了 ${dropped.length} 条较早批次的撤销入口`, {\n      title: \"部分批次不能再整批撤销\",\n      nextStep: \"这些批次里的条目仍然在，只是不能再「整批撤销」；需要的话请在记忆面板里逐条删除。\",\n    });\n"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 又把那行 console.warn 删掉（撤销凭据被静默丢弃）",
+      "why": "MA-24 的「不许沉默」那一向：删掉 pruneBatches 里的 [memory] 日志 ⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src/core/memory/memory.ts",
+          "from": "    console.warn(\n      `[memory] 批次超出上限（${BATCH_KEEP_MAX}）⇒ 丢弃了 ${dropped.length} 条较早的撤销凭据` +\n        \"（这些批次里的条目仍然在，但不能再整批撤销）\",\n    );\n",
+          "to": "    // 变异（MUT-2）：把「不许沉默」的那行披露整段删掉 —— 判据必须红\n"
+        }
+      ],
+      "tests": [
+        "src/test/audit-228d.test.ts"
+      ],
+      "expectRed": true
+    }
+  ]
+}

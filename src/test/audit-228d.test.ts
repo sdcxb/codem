@@ -15,6 +15,7 @@ import {
   planCompactionKeep,
 } from "../core/llm/compaction-budget";
 import { setStoragePort } from "../core/storage/port";
+import { getPersistFailures, resetPersistFailures } from "../core/storage/persist-failure";
 import { createFakeStoragePort } from "./fake-storage-port";
 import { saveMemory, setSetting } from "../core/storage/settings";
 import {
@@ -362,11 +363,23 @@ describe("MA（第三批）：记忆侧", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("MA-24（全量审计）：批次被有界修剪丢弃时要披露（撤销凭据不许静默消失）", () => {
+  it("MA-24（全量审计 + 用户决定）：批次修剪只进日志 —— 不许弹 advisory，也不许沉默", () => {
     /*
-     * 被守的缺陷：`pruneBatches()` 在 `serialize()` 里静默丢掉超出上限的批次 ——
-     * 那是「整批撤销」的唯一凭据，用户点撤销时只会看到「未找到批次」。
+     * ## 这一条的来龙去脉（改写原因写在判据里，免得下一个人以为是漏了弹窗）
+     *
+     * 原来这里钉的是「丢弃撤销凭据必须有可见披露」，实现是 `console.warn` + 一条 advisory 横幅
+     * （标题「部分批次不能再整批撤销」）。用户 2026-10-17 明确要求不再弹：「不再报了这个提示了」。
+     *
+     * 依据 AGENTS §4 的口径：**用户没有可介入的动作** ⇒ 这类自检发现只进日志、不占界面。
+     * 凭据已经丢了，用户即使知道也无事可做（逐条删也没意义：条目还在，只是不能整批撤销）。
+     *
+     * 所以本判据**两个方向都钉住**（少任一个都会退化成恒真判据）：
+     * ① 不许打扰：这个 area 不许再进 advisory 通道（回退成弹窗 ⇒ 红）；
+     * ② 不许沉默：那行 `[memory] 批次超出上限…` 必须仍然发生（删掉它 ⇒ 红）——
+     *    用户点「撤销该批」只会看到「未找到批次」，这条日志是唯一线索（CDP / 运行时日志）。
      */
+    const ADVISORY_KEY = "memory.batchesPruned";
+    resetPersistFailures();
     const svc = new MemoryService();
     const warnings: string[] = [];
     const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
@@ -378,10 +391,33 @@ describe("MA（第三批）：记忆侧", () => {
       svc.finalizeBatch(id, 1);
     }
     expect(svc.listBatches().length, "批次必须有界").toBeLessThanOrEqual(60);
+
+    /* ② 不许沉默：日志要真的打出来（而且必须是那一行，不是被别处的 warn 顺带盖住） */
     expect(
       warnings.join("\n"),
-      "丢弃撤销凭据必须留下披露（否则用户点撤销只会看到「未找到批次」）",
-    ).toContain("批次");
+      "丢弃撤销凭据必须留下日志（否则用户点撤销只会看到「未找到批次」，且我们自己也查不到）",
+    ).toContain("[memory] 批次超出上限");
+
+    /* ① 不许打扰：advisory 通道里不许出现这个 area */
+    const reported = getPersistFailures();
+    expect(
+      reported.filter((e) => e.area === ADVISORY_KEY).map((e) => e.area),
+      "★ 这条不许再以 advisory / 横幅形式出现（用户明确要求不再弹出）",
+    ).toEqual([]);
+    /* 换个 area 再弹同一条也不行（否则「改个去重键」就能绕过上面那条） */
+    expect(
+      reported.filter((e) => e.lastMessage.includes("撤销凭据")).map((e) => e.area),
+      "也不许换一个 area 再弹同一条（去重键不是逃生门）",
+    ).toEqual([]);
+
+    /* 静态面：行为面之外的第二条独立证据（源码里这个调用点必须整段消失） */
+    const memorySrc = src("../core/memory/memory.ts");
+    expect(
+      memorySrc.includes('reportAdvisory(' + '"' + ADVISORY_KEY + '"'),
+      "★ 静态面：源码里不许再有这条 advisory 调用",
+    ).toBe(false);
+    expect(memorySrc.includes('"' + ADVISORY_KEY + '"'), "这个 area 在实现里彻底消失（连同它的节流字段）").toBe(false);
+    expect(memorySrc, "「不许沉默」的静态面：那行日志必须留在源码里").toContain("[memory] 批次超出上限");
     spy.mockRestore();
   });
 

@@ -735,8 +735,13 @@ export function injectionTruncationNote(
 }
 
 /** 快照/批次参数 */
-/** ★ 全量审计：批次修剪披露的节流间隔（节流状态在**实例字段**上，见 batchPruneAdvisoryAt） */
-const BATCH_PRUNE_ADVISORY_INTERVAL_MS = 10 * 60 * 1000;
+/**
+ * ★ 全量审计：**修剪披露的节流间隔**（节流状态在实例字段上，见 `rejectionPruneAdvisoryAt`）。
+ *
+ * 批次修剪那条披露已改成**只进日志**（用户明确要求不再弹，见 `pruneBatches()`）⇒
+ * 现在只有「已拒绝记录被丢弃」这一条 advisory 还用它，所以名字不再带 BATCH。
+ */
+const PRUNE_ADVISORY_INTERVAL_MS = 10 * 60 * 1000;
 const BATCH_KEEP_MAX = 50;
 
 /**
@@ -1506,9 +1511,12 @@ export class MemoryService {
    * 键是记录自己的 id（由来源条目 id 派生，于是"同一条被拒两次"不会留两条）。
    */
   private rejections: Map<string, MemoryRejection> = new Map();
-  /** ★ 全量审计（中低）：批次裁剪披露的节流时间（实例级 —— 模块级会让同进程多实例互相压制） */
-  private batchPruneAdvisoryAt = 0;
-  /** ★ 全量审计（第三轮）：拒绝记录裁剪披露的节流时间（与批次裁剪分开） */
+  /**
+   * ★ 全量审计（第三轮）：拒绝记录裁剪披露的节流时间（实例级 —— 模块级会让同进程多实例互相压制）。
+   *
+   * 批次裁剪那条披露已**只进日志**（用户明确要求不再弹）⇒ 原来与它成对的批次节流字段随之删除，
+   * 只剩这一个节流状态。
+   */
   private rejectionPruneAdvisoryAt = 0;
   private migrationReport: MemoryMigrationReport | null = null;
   /**
@@ -2232,28 +2240,19 @@ export class MemoryService {
     const dropped = sorted.slice(BATCH_KEEP_MAX);
     for (const stale of dropped) this.batches.delete(stale.id);
     /**
-     * ★ 全量审计（中）：**丢掉撤销凭据必须披露**。
+     * ★ **只进日志，不进 advisory**（用户 2026-10-17 明确要求：这条提示不再弹）。
      *
-     * 被守的缺陷：批次是「整批撤销」的唯一凭据，而它是在 `serialize()` 里被静默修剪的 ⇒
-     * 用户过一阵子点「撤销该批」只会看到「未找到批次」，完全不知道是产品把凭据丢了。
-     * 只进日志（这条是「用户即使知道也没有可介入动作」的形态：凭据已经没了）—— 但**不许沉默**。
+     * 被守的缺陷没变：批次是「整批撤销」的唯一凭据，而它是在 `serialize()` 里被有界修剪的 ⇒
+     * 用户过一阵子点「撤销该批」只会看到「未找到批次」。所以这行日志**必须留下**（不许沉默）。
+     *
+     * 为什么**不能**是 advisory（AGENTS §4 的口径）：凭据**已经丢了**，用户没有可介入的动作 ——
+     * 「即使知道也无动作可做」的自检发现只进日志（CDP / 运行时日志是唯一去处），不占界面。
+     * 判据 `MA-24` 两个方向都钉住了：把 advisory 调用加回来 ⇒ 红；把这行 `console.warn` 删掉 ⇒ 也红。
      */
     console.warn(
       `[memory] 批次超出上限（${BATCH_KEEP_MAX}）⇒ 丢弃了 ${dropped.length} 条较早的撤销凭据` +
         "（这些批次里的条目仍然在，但不能再整批撤销）",
     );
-    /**
-     * ★ 全量审计（低）：**渲染侧 console 用户看不到**（只有 CDP 能抓）⇒ 这条披露必须进 advisory。
-     * 用模块级节流：`pruneBatches` 在每次写盘路径都可能被调用，不能每次弹一条。
-     */
-    const now = Date.now();
-    if (now - this.batchPruneAdvisoryAt > BATCH_PRUNE_ADVISORY_INTERVAL_MS) {
-      this.batchPruneAdvisoryAt = now;
-      reportAdvisory("memory.batchesPruned", `撤销凭据超出上限，丢弃了 ${dropped.length} 条较早批次的撤销入口`, {
-        title: "部分批次不能再整批撤销",
-        nextStep: "这些批次里的条目仍然在，只是不能再「整批撤销」；需要的话请在记忆面板里逐条删除。",
-      });
-    }
   }
 
   /**
@@ -2984,14 +2983,18 @@ export class MemoryService {
     }
     /**
      * ★ 全量审计（第三轮·高）：**丢弃「已拒绝」记录必须披露** ——
-     * 被守的缺陷：这里原来零披露（对比 `pruneBatches` 至少有 warn + advisory）⇒
+     * 被守的缺陷：这里原来零披露（对比 `pruneBatches` 至少有一行 warn）⇒
      * 用户明确拒绝过的事实被静默丢掉后，同类自动记忆会重新被提取、再次请求批准，
      * 与「拒过的不再写」这条承诺相反。用**独立 area**（共用 area 会被 App 的按-area 去重挡掉）。
+     *
+     * ⚠️ 与批次修剪的区别（别照抄那条）：这里**保留 advisory** ——
+     * 用户对这一条**有动作可做**（把常用事实写进项目说明 / 手动记忆），所以它该被看见；
+     * 批次修剪那条凭据已丢、无可介入动作 ⇒ 只进日志（见 `pruneBatches()`）。
      */
     if (dropped > 0) {
       console.warn(`[memory] 已拒绝记录超出上限（${REJECTION_KEEP_MAX}）⇒ 丢弃了 ${dropped} 条较早的记录`);
       const now = Date.now();
-      if (now - this.rejectionPruneAdvisoryAt > BATCH_PRUNE_ADVISORY_INTERVAL_MS) {
+      if (now - this.rejectionPruneAdvisoryAt > PRUNE_ADVISORY_INTERVAL_MS) {
         this.rejectionPruneAdvisoryAt = now;
         reportAdvisory("memory.rejectionsPruned", `撤销「已拒绝」记录的条数超出上限，丢弃了 ${dropped} 条较早的记录`, {
           title: "部分「已拒绝」记录被丢弃",
