@@ -97,8 +97,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "              className=\"memory-approve-btn\"\n              disabled={selectedPending.size === 0}",
-          "to": "              className=\"memory-approve-btn\"\n              disabled={false}"
+          "from": "                className=\"memory-approve-btn\"\n                disabled={selectedPending.size === 0}",
+          "to": "                className=\"memory-approve-btn\"\n                disabled={false}"
         }
       ],
       "tests": [

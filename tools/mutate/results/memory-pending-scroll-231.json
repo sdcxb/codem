@@ -1,0 +1,116 @@
+{
+  "wave": "memory-pending-scroll-231",
+  "description": "第 231 波：记忆面板待批准列表能滚（section 可压缩 + list 唯一滚动区 + head 不收缩），顶部提示/批量栏不随列表滚走",
+  "runAt": "2026-10-17T06:33:00.114Z",
+  "specFingerprint": "4898634aeb3d3cff7db341493778de712c0706f3",
+  "files": [
+    "src/styles.css",
+    "src/components/MemoryManager.tsx"
+  ],
+  "tests": [
+    "src/test/memory-pending-scroll.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 去掉滚动区的 overflow-y: auto（缺陷原形）",
+      "why": "MPS-231-1：没有 `overflow-y: auto` 就没有任何元素负责滚动 —— 正是用户报的形态",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": ".memory-pending-list {\n  flex: 1 1 auto;\n  min-height: 0;\n  overflow-y: auto;",
+          "to": ".memory-pending-list {\n  flex: 1 1 auto;\n  min-height: 0;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-scroll.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7341
+    },
+    {
+      "id": "MUT-2 去掉滚动区的 min-height: 0",
+      "why": "MPS-231-1：flex 子项默认 `min-height: auto` ⇒ 列表不肯缩，滚动容器高度撑不出来",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": ".memory-pending-list {\n  flex: 1 1 auto;\n  min-height: 0;",
+          "to": ".memory-pending-list {\n  flex: 1 1 auto;"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-scroll.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 8040
+    },
+    {
+      "id": "MUT-3 去掉 section 的 min-height: 0",
+      "why": "MPS-231-1：section 不缩 ⇒ 12 条把它撑到面板之外，溢出被祖先裁掉（真机量到的 619 > 558）",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": ".memory-pending-section {\n  display: flex;\n  flex-direction: column;\n  flex: 0 0 auto;\n  min-height: 0;\n",
+          "to": ".memory-pending-section {\n  display: flex;\n  flex-direction: column;\n  flex: 0 0 auto;\n"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-scroll.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7162
+    },
+    {
+      "id": "MUT-4 不滚的头部改成可收缩",
+      "why": "MPS-231-1：头部一旦参与收缩，高度不够时先被压掉的是读数与批量按钮 —— 用户就看不到「几 条待批准」也点不到批",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": ".memory-pending-head {\n  flex: none;\n}",
+          "to": ".memory-pending-head {\n  flex: 0 1 auto;\n}"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-scroll.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 9779
+    },
+    {
+      "id": "MUT-5 滚动区的类名换掉（结构回退）",
+      "why": "MPS-231-2：条目不再落在唯一的滚动区里 ⇒ 12 条又变成「一个撑开的块」，第 12 条没有归属的滚动者",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "<div className=\"memory-pending-list\">",
+          "to": "<div className=\"memory-pending-body\">"
+        }
+      ],
+      "tests": [
+        "src/test/memory-pending-scroll.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7593
+    }
+  ]
+}

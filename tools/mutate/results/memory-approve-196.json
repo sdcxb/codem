@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-196",
   "description": "第 196 波：记忆写入审批的两项改动 —— ①自动提取按条目判作用域（对话级默认直接生效、项目级默认待批准、平台级只能手写、**拿不准归对话级**）；②待批准区勾选 + 批量同意/拒绝（含全选，且批量只落库一次）。 ⚠️「界面：拆掉选中集合随待批准列表收敛（幽灵选中）」这条**已撤掉**：一次性修复后它不再能让任何判据变红（该能力仍由 memory-pending-batch 的行为用例守着），按纪律不保留无效变异。",
-  "runAt": "2026-10-16T17:20:55.356Z",
-  "specFingerprint": "08b98df52a592ec4c521278f4a320c0290ab6e58",
+  "runAt": "2026-10-17T06:45:22.071Z",
+  "specFingerprint": "171c0212136018673ba5b58a9bdda68e7c35a4ed",
   "files": [
     "src/core/memory/memory.ts",
     "src/core/llm/index.ts",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 8876
+      "ms": 8035
     },
     {
       "id": "MUT-2 提取不再按条目判作用域（回到写死 project）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 8881
+      "ms": 8273
     },
     {
       "id": "MUT-3 默认档改成「对话也需批准」",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 8837
+      "ms": 7134
     },
     {
       "id": "MUT-4 审批开关不再按作用域判（一律看平台那档）",
@@ -94,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 8723
+      "ms": 7152
     },
     {
       "id": "MUT-5 批量批准改成逐条落库（写放大回来）",
@@ -114,7 +114,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 11020
+      "ms": 7331
     },
     {
       "id": "MUT-6 批量拒绝不再检查「是不是待批准」（非待批准条目也会被删）",
@@ -134,7 +134,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 9686
+      "ms": 7078
     },
     {
       "id": "MUT-7 界面：批量按钮不再按勾选数禁用",
@@ -142,8 +142,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "              className=\"memory-approve-btn\"\n              disabled={selectedPending.size === 0}",
-          "to": "              className=\"memory-approve-btn\"\n              disabled={false}"
+          "from": "                className=\"memory-approve-btn\"\n                disabled={selectedPending.size === 0}",
+          "to": "                className=\"memory-approve-btn\"\n                disabled={false}"
         }
       ],
       "tests": [
@@ -154,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 10204
+      "ms": 7552
     },
     {
       "id": "MUT-8 界面：全选按「集合非空」判（部分勾选时会清空）",
@@ -174,7 +174,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 9536
+      "ms": 6787
     },
     {
       "id": "MUT-11 体检的「批量同意选中」只改界面不落库（假成功）",
@@ -194,7 +194,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 9736
+      "ms": 7783
     },
     {
       "id": "MUT-12 反向对照：只改一行说明注释",
@@ -216,7 +216,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 9597
+      "ms": 6982
     }
   ]
 }

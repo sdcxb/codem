@@ -1,8 +1,8 @@
 {
   "wave": "pending-scope-199",
   "description": "第 199 波：待批准条目必须显示作用域（用户真机直报「没显示类型是平台级、项目级还是对话级，我没法判断是否批准」）—— 面板补齐作用域徽标，文案收敛到唯一一份表（MEMORY_SCOPE_BADGE_LABEL），未知作用域原样显示，无归属键显式标出。判据 PENDSCOPE-1..5。",
-  "runAt": "2026-10-10T07:04:39.037Z",
-  "specFingerprint": "2c758be59b388ea9cde2409d48885c0d33ef2238",
+  "runAt": "2026-10-17T06:44:00.757Z",
+  "specFingerprint": "0e6eda72c5ccf807d6766f7fbfce8f9c31b3431b",
   "files": [
     "src/components/MemoryManager.tsx",
     "src/components/MemoryCheckupView.tsx",
@@ -19,8 +19,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "              <span\n                className=\"memory-pending-scope\"\n                style={{ color: getScopeColor(entry.scope) }}\n                title={pendingScopeTitle(entry)}\n              >\n                {pendingScopeLabel(entry)}\n              </span>",
-          "to": "              <span className=\"memory-pending-scope\" style={{ color: getScopeColor(entry.scope) }} />"
+          "from": "                <span\n                  className=\"memory-pending-scope\"\n                  style={{ color: getScopeColor(entry.scope) }}\n                  title={pendingScopeTitle(entry)}\n                >\n                  {pendingScopeLabel(entry)}\n                </span>",
+          "to": "                <span className=\"memory-pending-scope\" style={{ color: getScopeColor(entry.scope) }} />"
         }
       ],
       "tests": [
@@ -31,7 +31,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3814
+      "ms": 8142
     },
     {
       "id": "MUT-2 徽标写死成常量（不管条目是什么作用域）",
@@ -51,7 +51,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3747
+      "ms": 9285
     },
     {
       "id": "MUT-3 认不出的作用域猜成对话级",
@@ -71,7 +71,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3801
+      "ms": 7927
     },
     {
       "id": "MUT-4 无归属的待批准条目不标记",
@@ -91,7 +91,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3800
+      "ms": 7729
     },
     {
       "id": "MUT-5 体检那边又写一份作用域字面量（两处说法分叉）",
@@ -111,7 +111,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3761
+      "ms": 7735
     },
     {
       "id": "MUT-6 反向对照：只改一行说明注释",
@@ -131,7 +131,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3757
+      "ms": 8131
     }
   ]
 }

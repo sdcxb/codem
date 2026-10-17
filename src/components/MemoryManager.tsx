@@ -1127,146 +1127,168 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
 
       {notice && <div className="memory-notice">{notice}</div>}
 
+      {/*
+        ★ 第 231 波（用户实报）：待批准条数 11，列表**只显示 7 条、没有滚动条**，第 8 条起被裁在底部
+        —— 既看不到也批不了，剩下 4 条无从触达。
+
+        根因（真机量测，VP 1200×700，隔离根造 12 条 pending）：
+        `.memory-pending-section` 既没有自己的高度约束、也没有 `overflow`，12 条一路把它撑到
+        **619px**，而 `.memory-manager` 只有 **558px** ⇒ 超出的部分被祖先 `.app-content` 的
+        `overflow: hidden` 裁掉；`section` / `manager` 的 `scrollTop` 都动不了（`tryScroll.moved=false`），
+        第 12 条的 `getBoundingClientRect().bottom = 895` 已经越过面板底边 629 ——
+        **没有任何一个元素负责滚动**，所以"看不到"就变成"不可达"。
+
+        修法（结构）：把这块拆成**两段** ——
+        · `.memory-pending-head`：标题 / 手势提示 / 勾选+批量栏 / 本批+一键全部，**不滚**（`flex: none`）；
+        · `.memory-pending-list`：唯一的滚动区（`flex: 1 1 auto; min-height: 0; overflow-y: auto`），
+          条目与展开块都在里面 ⇒ 展开一条也只是把它的 scrollHeight 撑大，后面的条目仍能滚到。
+        高度上限交给 `.memory-pending-section` 的 `max-height: 55%` + `min-height: 0`（不写 `100vh` 之类）。
+      */}
       {/* 待批准区 */}
       {pending.length > 0 && (
         <div className="memory-pending-section">
-          <div className="memory-pending-title">待批准的自动记忆（{pending.length} 条，未批准不进上下文）</div>
-          {/*
-            第 226 波（用户报「审批时看不到详细信息，没法判断该不该通过」）：
-            **双击任意一条**即可展开它的完整内容与判断依据（作用域 / 归属 / 来源 / 是否会进上下文）。
-            这句提示是功能的一部分 —— 手势类交互没有可点的外观，不写出来用户就永远不知道有它
-            （判据 MEM-APPROVE-DETAIL-7 钉住它必须在界面上）。
-          */}
-          <div className="memory-pending-expand-hint">
-            双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。
-          </div>
-          {/*
-            第 196 波：勾选 + 批量同意/拒绝（用户要求「含全选」）。
-            三个细节是刻意的：
-            ① 「全选」复选框的可访问名说清**它管的是哪一批**（不是光秃秃一个勾选框）；
-            ② 两个批量按钮在没有勾选时 **disabled**（点了也不会误伤，避免"空批量"看起来像生效了）；
-            ③ 按钮上的数字是**当前勾选数**（用户勾几条就等于知道自己要动几条）。
-          */}
-          <div className="memory-pending-batch-bar">
-            <label className="memory-pending-check memory-pending-check-all">
-              <input
-                type="checkbox"
-                checked={pending.every((p) => selectedPending.has(p.id))}
-                onChange={toggleSelectAllPending}
-                aria-label={`全选当前 ${pending.length} 条待批准记忆`}
-              />
-              <span>全选</span>
-            </label>
-            <span className="memory-pending-selected-hint">
-              {selectedPending.size > 0 ? `已勾选 ${selectedPending.size} / ${pending.length} 条` : "勾选后可批量处置"}
-            </span>
-            <button
-              className="memory-approve-btn"
-              disabled={selectedPending.size === 0}
-              title="批准所有勾选的条目：它们从现在起参与上下文"
-              onClick={handleApproveSelected}
-            >
-              批量同意（{selectedPending.size}）
-            </button>
-            <button
-              className="memory-reject-btn"
-              disabled={selectedPending.size === 0}
-              title="拒绝并删除所有勾选的条目"
-              onClick={handleRejectSelected}
-            >
-              批量拒绝（{selectedPending.size}）
-            </button>
-          </div>
-          {/*
-            ★ 第 229 波：「本批 N 条」+ **一键全部批准 / 全部拒绝**（用户要求「面板少动手」）。
-
-            为什么**独占一行**（`.memory-pending-all-bar`）而不是塞进上面的批量条：
-            上面那一条的语义是"勾选 + 批量处置"（数字 = **勾选数**），这里两个按钮的数字 =
-            **待批准总数**。两种口径挤在一行里，用户会把「批量同意（2）」与「全部批准（9）」
-            读成同一件事的两个数字 —— 那正是本仓反复强调的"两个数必须各说清各是什么"。
-          */}
-          <div className="memory-pending-all-bar">
-            <span className="memory-pending-batch-hint">
-              {latestBatchId
-                ? `本批 ${batchPending.length} 条（最近一次自动提取 · ${latestBatchId}）；待批准共 ${pending.length} 条。`
-                : `待批准共 ${pending.length} 条（没有批次号 —— 升级前的旧数据）⇒ 不默认勾选。`}
-              {latestBatchId && batchPending.length > 0 ? "本批已默认勾选，可直接批量处置。" : ""}
-            </span>
-            <button
-              className="memory-approve-btn"
-              title={`批准当前全部 ${pending.length} 条待批准记忆：它们从现在起参与上下文`}
-              onClick={handleApproveAll}
-            >
-              全部批准（{pending.length}）
-            </button>
-            <button
-              className="memory-reject-btn"
-              title={`拒绝并删除当前全部 ${pending.length} 条待批准记忆（删除前会二次确认）`}
-              onClick={handleRejectAll}
-            >
-              全部拒绝（{pending.length}）
-            </button>
-          </div>
-          {pending.map((entry) => {
-            const expanded = expandedPending.has(entry.id);
-            return (
-            <div
-              key={entry.id}
-              className={`memory-pending-item${expanded ? " expanded" : ""}`}
-              /*
-               * 第 226 波：**双击展开**（用户要求的手势）。
-               * 只在"非控件区"生效：点在勾选框/批准/拒绝上连点两下时不许顺手展开这一行
-               * —— 那时它多半已经被批准/拒绝了，展开一个马上要消失的行毫无意义，
-               * 反而会让按钮的连点行为看起来"多做了一件事"。
-               */
-              onDoubleClick={(event) => {
-                const target = event.target as HTMLElement | null;
-                if (target?.closest("button, input, label, select, a")) return;
-                togglePendingExpanded(entry.id);
-              }}
-              title={
-                expanded
-                  ? "双击收起详细信息"
-                  : "双击展开完整内容与判断依据（作用域 / 归属 / 来源 / 是否会进上下文）"
-              }
-            >
-              <label className="memory-pending-check">
+          <div className="memory-pending-head">
+            <div className="memory-pending-title">待批准的自动记忆（{pending.length} 条，未批准不进上下文）</div>
+            {/*
+              第 226 波（用户报「审批时看不到详细信息，没法判断该不该通过」）：
+              **双击任意一条**即可展开它的完整内容与判断依据（作用域 / 归属 / 来源 / 是否会进上下文）。
+              这句提示是功能的一部分 —— 手势类交互没有可点的外观，不写出来用户就永远不知道有它
+              （判据 MEM-APPROVE-DETAIL-7 钉住它必须在界面上）。
+            */}
+            <div className="memory-pending-expand-hint">
+              双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。
+            </div>
+            {/*
+              第 196 波：勾选 + 批量同意/拒绝（用户要求「含全选」）。
+              三个细节是刻意的：
+              ① 「全选」复选框的可访问名说清**它管的是哪一批**（不是光秃秃一个勾选框）；
+              ② 两个批量按钮在没有勾选时 **disabled**（点了也不会误伤，避免"空批量"看起来像生效了）；
+              ③ 按钮上的数字是**当前勾选数**（用户勾几条就等于知道自己要动几条）。
+            */}
+            <div className="memory-pending-batch-bar">
+              <label className="memory-pending-check memory-pending-check-all">
                 <input
                   type="checkbox"
-                  checked={selectedPending.has(entry.id)}
-                  onChange={() => togglePendingSelected(entry.id)}
-                  aria-label={`勾选「${entry.key}」`}
+                  checked={pending.every((p) => selectedPending.has(p.id))}
+                  onChange={toggleSelectAllPending}
+                  aria-label={`全选当前 ${pending.length} 条待批准记忆`}
                 />
+                <span>全选</span>
               </label>
-              <span className="memory-pending-key">{entry.key}</span>
-              {/*
-                第 199 波（用户直报：待批准区没显示类型，没法判断该不该批准）：
-                **作用域**是批准与否的第一依据 —— 平台级处处生效、项目级对这个项目以后的每个对话生效、
-                对话级只影响当前对话。徽标文案取自唯一一份表（`MEMORY_SCOPE_BADGE_LABEL`），
-                认不出来的旧作用域**原样显示**（不许猜成三者之一，那正是"归属未知"要防的事）。
-              */}
-              <span
-                className="memory-pending-scope"
-                style={{ color: getScopeColor(entry.scope) }}
-                title={pendingScopeTitle(entry)}
-              >
-                {pendingScopeLabel(entry)}
+              <span className="memory-pending-selected-hint">
+                {selectedPending.size > 0 ? `已勾选 ${selectedPending.size} / ${pending.length} 条` : "勾选后可批量处置"}
               </span>
-              {!hasPendingOwner(entry) && (
-                <span className="memory-pending-noowner" title="这条没有归属键 ⇒ 任何上下文都不会注入它">
-                  无归属
-                </span>
-              )}
-              <span className="memory-pending-content">{entry.content.substring(0, 80)}</span>
-              <div className="memory-pending-actions">
-                <button className="memory-approve-btn" onClick={() => handleApprove(entry.id)}>批准</button>
-                <button className="memory-reject-btn" onClick={() => handleReject(entry.id)}>拒绝</button>
-              </div>
-              {/* 第 226 波：双击展开的判断依据（独占一行，见 CSS 的 flex: 1 0 100%） */}
-              {expanded && renderPendingDetail(entry)}
+              <button
+                className="memory-approve-btn"
+                disabled={selectedPending.size === 0}
+                title="批准所有勾选的条目：它们从现在起参与上下文"
+                onClick={handleApproveSelected}
+              >
+                批量同意（{selectedPending.size}）
+              </button>
+              <button
+                className="memory-reject-btn"
+                disabled={selectedPending.size === 0}
+                title="拒绝并删除所有勾选的条目"
+                onClick={handleRejectSelected}
+              >
+                批量拒绝（{selectedPending.size}）
+              </button>
             </div>
-            );
-          })}
+            {/*
+              ★ 第 229 波：「本批 N 条」+ **一键全部批准 / 全部拒绝**（用户要求「面板少动手」）。
+
+              为什么**独占一行**（`.memory-pending-all-bar`）而不是塞进上面的批量条：
+              上面那一条的语义是"勾选 + 批量处置"（数字 = **勾选数**），这里两个按钮的数字 =
+              **待批准总数**。两种口径挤在一行里，用户会把「批量同意（2）」与「全部批准（9）」
+              读成同一件事的两个数字 —— 那正是本仓反复强调的"两个数必须各说清各是什么"。
+            */}
+            <div className="memory-pending-all-bar">
+              <span className="memory-pending-batch-hint">
+                {latestBatchId
+                  ? `本批 ${batchPending.length} 条（最近一次自动提取 · ${latestBatchId}）；待批准共 ${pending.length} 条。`
+                  : `待批准共 ${pending.length} 条（没有批次号 —— 升级前的旧数据）⇒ 不默认勾选。`}
+                {latestBatchId && batchPending.length > 0 ? "本批已默认勾选，可直接批量处置。" : ""}
+              </span>
+              <button
+                className="memory-approve-btn"
+                title={`批准当前全部 ${pending.length} 条待批准记忆：它们从现在起参与上下文`}
+                onClick={handleApproveAll}
+              >
+                全部批准（{pending.length}）
+              </button>
+              <button
+                className="memory-reject-btn"
+                title={`拒绝并删除当前全部 ${pending.length} 条待批准记忆（删除前会二次确认）`}
+                onClick={handleRejectAll}
+              >
+                全部拒绝（{pending.length}）
+              </button>
+            </div>
+          </div>
+          {/* 唯一的滚动区：条目与展开块都在这层里（见上面第 231 波的说明） */}
+          <div className="memory-pending-list">
+            {pending.map((entry) => {
+              const expanded = expandedPending.has(entry.id);
+              return (
+              <div
+                key={entry.id}
+                className={`memory-pending-item${expanded ? " expanded" : ""}`}
+                /*
+                 * 第 226 波：**双击展开**（用户要求的手势）。
+                 * 只在"非控件区"生效：点在勾选框/批准/拒绝上连点两下时不许顺手展开这一行
+                 * —— 那时它多半已经被批准/拒绝了，展开一个马上要消失的行毫无意义，
+                 * 反而会让按钮的连点行为看起来"多做了一件事"。
+                 */
+                onDoubleClick={(event) => {
+                  const target = event.target as HTMLElement | null;
+                  if (target?.closest("button, input, label, select, a")) return;
+                  togglePendingExpanded(entry.id);
+                }}
+                title={
+                  expanded
+                    ? "双击收起详细信息"
+                    : "双击展开完整内容与判断依据（作用域 / 归属 / 来源 / 是否会进上下文）"
+                }
+              >
+                <label className="memory-pending-check">
+                  <input
+                    type="checkbox"
+                    checked={selectedPending.has(entry.id)}
+                    onChange={() => togglePendingSelected(entry.id)}
+                    aria-label={`勾选「${entry.key}」`}
+                  />
+                </label>
+                <span className="memory-pending-key">{entry.key}</span>
+                {/*
+                  第 199 波（用户直报：待批准区没显示类型，没法判断该不该批准）：
+                  **作用域**是批准与否的第一依据 —— 平台级处处生效、项目级对这个项目以后的每个对话生效、
+                  对话级只影响当前对话。徽标文案取自唯一一份表（`MEMORY_SCOPE_BADGE_LABEL`），
+                  认不出来的旧作用域**原样显示**（不许猜成三者之一，那正是"归属未知"要防的事）。
+                */}
+                <span
+                  className="memory-pending-scope"
+                  style={{ color: getScopeColor(entry.scope) }}
+                  title={pendingScopeTitle(entry)}
+                >
+                  {pendingScopeLabel(entry)}
+                </span>
+                {!hasPendingOwner(entry) && (
+                  <span className="memory-pending-noowner" title="这条没有归属键 ⇒ 任何上下文都不会注入它">
+                    无归属
+                  </span>
+                )}
+                <span className="memory-pending-content">{entry.content.substring(0, 80)}</span>
+                <div className="memory-pending-actions">
+                  <button className="memory-approve-btn" onClick={() => handleApprove(entry.id)}>批准</button>
+                  <button className="memory-reject-btn" onClick={() => handleReject(entry.id)}>拒绝</button>
+                </div>
+                {/* 第 226 波：双击展开的判断依据（独占一行，见 CSS 的 flex: 1 0 100%） */}
+                {expanded && renderPendingDetail(entry)}
+              </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

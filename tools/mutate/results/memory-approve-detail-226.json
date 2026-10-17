@@ -1,8 +1,8 @@
 {
   "wave": "memory-approve-detail-226",
   "description": "第 226 波（用户直报「记忆系统里审批时看不到详细信息，没法判断该不该通过」）：待批准条目**双击展开**完整内容与判断依据（作用域/生效范围/归属/来源/状态/批次/时间/标签），摘要态照旧只给前 80 字，控件区的行为不受这个手势影响。",
-  "runAt": "2026-10-13T08:50:44.382Z",
-  "specFingerprint": "95a9fbbaee5d9223e0cc5812fb681922b942f27c",
+  "runAt": "2026-10-17T06:46:37.053Z",
+  "specFingerprint": "e4dfe2ae7b06a2ebd1291ff4e44f0614a5a1cb87",
   "files": [
     "src/components/MemoryManager.tsx"
   ],
@@ -17,8 +17,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "                togglePendingExpanded(entry.id);",
-          "to": "                void entry.id; /* 变异：双击不再展开 */"
+          "from": "                  togglePendingExpanded(entry.id);",
+          "to": "                  void entry.id; /* 变异：双击不再展开 */"
         }
       ],
       "tests": [
@@ -29,7 +29,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3911
+      "ms": 7451
     },
     {
       "id": "MUT-2 详情块里的内容又被截断（展开等于没展开）",
@@ -49,7 +49,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4082
+      "ms": 7230
     },
     {
       "id": "MUT-3 展开集合不再走那条收敛能力（幽灵展开：接线被拆掉）",
@@ -69,7 +69,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4044
+      "ms": 7488
     },
     {
       "id": "MUT-4 双击落在按钮/勾选框上也展开（控件区被手势抢走）",
@@ -77,8 +77,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "                if (target?.closest(\"button, input, label, select, a\")) return;",
-          "to": "                void target; /* 变异：不再排除控件区 */"
+          "from": "                  if (target?.closest(\"button, input, label, select, a\")) return;",
+          "to": "                  void target; /* 变异：不再排除控件区 */"
         }
       ],
       "tests": [
@@ -89,7 +89,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4064
+      "ms": 7176
     },
     {
       "id": "MUT-5 界面上不写「双击」提示（手势没有可点的外观 ⇒ 用户永远不知道）",
@@ -97,8 +97,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "          <div className=\"memory-pending-expand-hint\">\n            双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。\n          </div>",
-          "to": "          {null}"
+          "from": "            <div className=\"memory-pending-expand-hint\">\n              双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。\n            </div>",
+          "to": "            {null}"
         }
       ],
       "tests": [
@@ -109,7 +109,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4025
+      "ms": 6811
     },
     {
       "id": "MUT-6 收敛过头：列表一变就把展开集合整个清空",
@@ -129,7 +129,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4110
+      "ms": 7561
     },
     {
       "id": "MUT-7 反向对照：只改一行说明注释",
@@ -149,7 +149,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4090
+      "ms": 6675
     }
   ]
 }

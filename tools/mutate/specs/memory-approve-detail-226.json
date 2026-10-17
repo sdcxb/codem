@@ -7,8 +7,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "                togglePendingExpanded(entry.id);",
-          "to": "                void entry.id; /* 变异：双击不再展开 */"
+          "from": "                  togglePendingExpanded(entry.id);",
+          "to": "                  void entry.id; /* 变异：双击不再展开 */"
         }
       ],
       "tests": [
@@ -52,8 +52,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "                if (target?.closest(\"button, input, label, select, a\")) return;",
-          "to": "                void target; /* 变异：不再排除控件区 */"
+          "from": "                  if (target?.closest(\"button, input, label, select, a\")) return;",
+          "to": "                  void target; /* 变异：不再排除控件区 */"
         }
       ],
       "tests": [
@@ -67,8 +67,8 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "          <div className=\"memory-pending-expand-hint\">\n            双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。\n          </div>",
-          "to": "          {null}"
+          "from": "            <div className=\"memory-pending-expand-hint\">\n              双击任意一条可展开**完整内容与判断依据**（作用域 / 归属 / 来源 / 是否进上下文）；再双击一次收起。摘要只有前 80 字，长条目**必须**展开看全文再决定。\n            </div>",
+          "to": "            {null}"
         }
       ],
       "tests": [

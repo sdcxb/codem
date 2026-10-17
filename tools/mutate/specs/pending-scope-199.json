@@ -7,11 +7,13 @@
       "patches": [
         {
           "file": "src/components/MemoryManager.tsx",
-          "from": "              <span\n                className=\"memory-pending-scope\"\n                style={{ color: getScopeColor(entry.scope) }}\n                title={pendingScopeTitle(entry)}\n              >\n                {pendingScopeLabel(entry)}\n              </span>",
-          "to": "              <span className=\"memory-pending-scope\" style={{ color: getScopeColor(entry.scope) }} />"
+          "from": "                <span\n                  className=\"memory-pending-scope\"\n                  style={{ color: getScopeColor(entry.scope) }}\n                  title={pendingScopeTitle(entry)}\n                >\n                  {pendingScopeLabel(entry)}\n                </span>",
+          "to": "                <span className=\"memory-pending-scope\" style={{ color: getScopeColor(entry.scope) }} />"
         }
       ],
-      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "tests": [
+        "src/test/pending-scope-badge.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -24,7 +26,9 @@
           "to": "  return MEMORY_SCOPE_BADGE_LABEL.project;"
         }
       ],
-      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "tests": [
+        "src/test/pending-scope-badge.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -37,7 +41,9 @@
           "to": "  return MEMORY_SCOPE_BADGE_LABEL[entry.scope as MemoryScope] ?? MEMORY_SCOPE_BADGE_LABEL.conversation;"
         }
       ],
-      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "tests": [
+        "src/test/pending-scope-badge.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -50,7 +56,9 @@
           "to": "              {false && hasPendingOwner(entry) && ("
         }
       ],
-      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "tests": [
+        "src/test/pending-scope-badge.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -63,7 +71,9 @@
           "to": "  if (entry.scope === \"platform\") return \"平台级\";\n  if (entry.scope === \"project\") return \"项目级\";\n  return \"对话级\";"
         }
       ],
-      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "tests": [
+        "src/test/pending-scope-badge.test.tsx"
+      ],
       "expectRed": true
     },
     {
@@ -76,7 +86,9 @@
           "to": " * ## 为什么要有它（用户真机直报；反向对照：只改这一行注释）"
         }
       ],
-      "tests": ["src/test/pending-scope-badge.test.tsx"],
+      "tests": [
+        "src/test/pending-scope-badge.test.tsx"
+      ],
       "expectRed": false
     }
   ]

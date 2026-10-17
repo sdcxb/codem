@@ -20815,10 +20815,55 @@ html[data-contrast="high"] {
 }
 
 /* ---- 待批准区 ---- */
+/*
+ * 第 231 波（用户实报：11 条待批准只显示 7 条、没有滚动条，第 8 条起被裁掉 ⇒ 既看不到也批不了）。
+ *
+ * 根因是**没有元素负责滚动**：这块原来只有内边距与背景，12 条会把它一路撑到 619px，
+ * 而 `.memory-manager` 只有 558px ⇒ 溢出的部分被祖先 `.app-content` 的 `overflow: hidden` 裁掉，
+ * `scrollTop` 想设也设不动（真机量测：section / manager 的 scrollTop 都留在 0）。
+ *
+ * 所以这里做三件事，缺一不可：
+ *   ① 自己能被**压缩**：`min-height: 0`（flex 子项默认 `min-height: auto`，不加这条它宁可溢出也不缩）；
+ *   ② 高度上限 `max-height: 55%`（不写 100vh 之类的窗口 hack，窗口变高变矮、面板最大化/还原
+ *      都只跟着父容器走）；
+ *   ③ **到了上限就不再让位**：`flex: 0 0 auto`。
+ *      真机对照三种写法（VP 1200×700、12 条 pending）：`flex: 0 1 auto` 会被继续压到 246px
+ *      ⇒ 列表只剩 104px（约 3 条）；`flex: 0 0 auto` 稳在上限 307px ⇒ 列表 164px（4 条）。
+ *      省下的高度给下面的内容区（它自己有内部滚动，见 `.memory-content`）。
+ */
 .memory-pending-section {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 55%;
+  overflow: hidden;
   padding: var(--space-6) var(--space-8);
   background: var(--warning-surface);
   border-bottom: 1px solid var(--border-primary);
+}
+
+/*
+ * 不随列表滚走的那一半：标题（含「N 条」读数）、双击手势提示、勾选+批量处置栏、
+ * 本批读数+一键全部批准/拒绝栏。`flex: none` = 内容多高就多高，剩下的高度全给列表。
+ */
+.memory-pending-head {
+  flex: none;
+}
+
+/*
+ * **唯一滚动区**：条目与（展开后的）判断依据块都在这层里 ——
+ * 展开一条只会把它自己的 scrollHeight 撑大，后面的条目照样能滚到。
+ * `min-height: 0` 是滚动能成立的前提（同 .memory-pending-section 的那条）；
+ * 滚动条样式走全局 `::-webkit-scrollbar` 的令牌，不在这里另画一套。
+ */
+.memory-pending-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* 滚到头不把滚动传给外层（否则鼠标滚轮会让整个面板跟着动） */
+  overscroll-behavior: contain;
+  padding-right: var(--space-2);
 }
 
 .memory-pending-title {

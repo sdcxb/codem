@@ -7961,6 +7961,9 @@
     "font-size": "var(--fs-2xs)",
     "padding": "0 var(--space-4) var(--space-3)"
   },
+  "memory-pending-head": {
+    "flex": "none"
+  },
   "memory-pending-hint": {
     "border-left": "2px solid var(--border-strong)",
     "color": "var(--text-muted)",
@@ -7982,6 +7985,13 @@
     "font-size": "var(--fs-2xs)",
     "font-weight": "var(--weight-medium)"
   },
+  "memory-pending-list": {
+    "flex": "1 1 auto",
+    "min-height": "0",
+    "overflow-y": "auto",
+    "overscroll-behavior": "contain",
+    "padding-right": "var(--space-2)"
+  },
   "memory-pending-noowner": {
     "background": "var(--warning-surface-strong)",
     "border-radius": "var(--radius-full)",
@@ -8000,6 +8010,12 @@
   "memory-pending-section": {
     "background": "var(--warning-surface)",
     "border-bottom": "1px solid var(--border-primary)",
+    "display": "flex",
+    "flex": "0 0 auto",
+    "flex-direction": "column",
+    "max-height": "55%",
+    "min-height": "0",
+    "overflow": "hidden",
     "padding": "var(--space-6) var(--space-8)"
   },
   "memory-pending-selected-hint": {

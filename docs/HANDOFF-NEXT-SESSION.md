@@ -6650,3 +6650,77 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
   用完例的 `afterAll` 显式清 —— vitest worker 是被父进程结束的，`exit` 钩子不一定跑得到，
   实测留下过两个 40 KB 的 `%TEMP%/codem-ro-db-*`。清完连跑 4 次无残留。
 
+---
+
+## 第 231 波（追加）：记忆面板**待批准列表滚不动**（用户实报，真机取证 + 修 + 判据）
+
+**用户报的**：面板头部写「待批准的自动记忆（11 条）」，列表**只显示 7 条、没有滚动条**，
+第 8 条起被裁在底部 ⇒ **既看不到也批不了**。
+
+### 复现（隔离根，不碰真库）
+
+`CODEM_DATA_HOME=%TEMP%\codem-mem231\data`；往引擎 `memory` 表 `id='default'` 写 12 条
+`status:"pending"` 的条目（`version:2` 载荷，`scope: platform` ⇒ 任何位置可见）；只按 PID 结束自己 spawn 的实例；
+CDP 连 WebView2 并用 `Emulation.setDeviceMetricsOverride` 把视口压到 **1200×700**
+（这台机器的默认窗口够高、12 条放得下 ⇒ 缺陷平时不显形，这也是"为什么用户会撞上我们却看不到"）。
+脚本：`.preview-shot/_mem231-repro.mjs`（造数据/起停）、`_mem231-probe.mjs`（量测 + 判据 + 截图）。
+
+### 修前实测（VP 1200×700、12 条）
+
+| 量 | 值 |
+| --- | --- |
+| `.memory-manager` | y 71 → 629（高 558） |
+| `.memory-pending-section` | y 289 → **908**（高 **619**，比面板还高 61px） |
+| 滚动区 | **不存在**（`section.overflowY = visible`，没有 `.memory-pending-list`） |
+| `scrollTop = 400` | section / manager 都仍 **0**（`moved: false`） |
+| 第 12 条 rect | y 859 → **895**（越过面板底边 629，也在视口之外） |
+| `elementFromPoint` | 命中 `modal-overlay` / `tour-overlay`（不是第 12 条） |
+
+**根因**：这块既没有高度约束也没有 `overflow` ⇒ 12 条把它撑到 619px，溢出被祖先 `.app-content` 的
+`overflow: hidden` 裁掉，而**没有任何元素负责滚动** ⇒ "看不到"变成"不可达"。
+
+### 修法
+
+1. `.memory-pending-section`：`display:flex; flex-direction:column; min-height:0; max-height:55%;
+   flex:0 0 auto; overflow:hidden`；
+2. 拆成**不滚的头** `.memory-pending-head`（标题读数 / 手势提示 / 勾选+批量 / 本批+一键全部，`flex:none`）
+   与**唯一滚动区** `.memory-pending-list`（`flex:1 1 auto; min-height:0; overflow-y:auto;
+   overscroll-behavior:contain`，滚动条走全局令牌）；
+3. 条目与展开块都留在滚动区内 ⇒ 展开一条只撑大 `scrollHeight`，后面的条目照样能滚到。
+
+**为什么是 `flex: 0 0 auto` 而不是 `0 1 auto`**（真机注入对照，同一构建、只改这一条）：
+`0 1 auto` 会被继续压到 246px（列表 104px ≈ 3 条可见）；`0 0 auto` 稳在 `max-height` 307px
+（列表 164px ≈ 4 条可见）。让位让掉的是用户的决策效率。
+
+### 修后实测（同现场、同量法）
+
+`section` 高 294（y 289 → 583）；`.memory-pending-list` 高 **164**（y 419 → 583）；
+`list.scrollTop` **0 → 311.7**；第 12 条 y 547 → 583（完整落在列表与面板内）；
+`elementFromPoint` 命中第 12 条自己的勾选框；**顶部标题 y 301→301、批量栏 y 350→350（不随列表滚走）**；
+判据脚本 **退出码 0**（`ok: true`）。
+
+截图（`docs/evidence/memory-pending-scroll-231/`）：`before-clipped.png`（第 1–5 条可见、第 6 条被底边裁断、
+无滚动条）、`after-scroll-to-12.png`（滚到末尾：第 9–12 条可见、第 12 条带批准/拒绝、右侧有列表滚动条）。
+⚠️ 修前的原始 exe 已被本轮重新构建覆盖，所以 `before-clipped.png` 是在**当前构建**上用 CDP 注入旧的三条声明
+复现的（修法只动那三条 + 滚动区那条）；"修前"一列的数值来自改代码之前对当时构建的实测，与复现值一致。
+
+### 判据与变异
+
+- `src/test/memory-pending-scroll.test.tsx` 的 `MPS-231-1..4`（happy-dom 无布局引擎 ⇒
+  声明判据 + "12 条全在滚动区里 / 头在滚动区外 / 展开块仍在滚动区 / 语义未变"）；
+- 真机几何判据：`.preview-shot/_mem231-probe.mjs`（`ok:true`、退出码 0 才算过）；
+- 新波次 `memory-pending-scroll-231`（5 条变异）：去掉滚动区 `overflow-y` / 去掉两处 `min-height:0` /
+  头改成可收缩 / 换掉滚动区类名 ⇒ **全部按期望变红、`restored=true`**。
+
+### 顺带
+
+- 把待批准区包了两层后，三条既有波次的**锚点缩进**跟着 +2（`pending-scope-199` / `memory-approve-196` /
+  `memory-approve-detail-226`），只动行首空白，重跑三波后 `check-artifacts` 45 个波次全过；
+- `tools/ui-audit/css-contract.json` 用 `--write` 登记了 `.memory-pending-*` 三个类的生效取值。
+
+### 已知未做（如实）
+
+待批准区占 `max-height: 55%`，在小窗口且 pending 很多时下面的内容区会被压到接近 0 ——
+这是这块面板**在窄窗口下的既有过度订阅**（修前同样是 0，本次不是新增劣化）；要治得动顶部那几块
+固定高度（统计 / 搜索 / 过滤 / 提示），属另一件事。
+
