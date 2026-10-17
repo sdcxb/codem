@@ -46,7 +46,8 @@
     "audit-228f": "第 228 波·审计轮第五批：手动压缩会删光可见历史（折叠后没有重夹保底）、手动标记预算不含级联段、锁被占而跳过的回执被丢掉、段头条数不符 —— 5 条变异（4 红 + 1 反向对照）；「stale-id 合并同步 keepCount」按纪律撤掉（无区分性判据）",
     "audit-228g": "第 228 波·审计轮第六批：自动路径所有「没压成」的出口统一返回 -1（原来返回 0 被当成一次成功压缩 ⇒ 连记 3 次误报窗口已满并中止回合）、手动末位闸带 skipped 的真原因、裁剪注记放不下时不追加（不许突破自己的预算）、导入回执要讲越界 —— 5 条变异（4 红 + 1 反向对照）",
     "deepseek-web-tools-233": "第 233 波：DeepSeek Search / Fetch 接入 —— web_search 在开关打开时优先走官方检索（失败不回退）、新增 web_fetch 工具（开关 + 「工具管理」双重门控、正文 20KB 截断并标注）、设置面板加两个默认关闭的开关与条数。6 条变异（5 红 + 1 反向对照）：默认 count 改错、402 当可重试、Key 拼进错误信息、去掉 Fetch 关闭守卫、失败静默回退",
-    "save-refresh-panel": "2026-10-17（用户实报）：provider 卡片「保存并刷新模型」误导 —— 原来是一条裸写，宣称保存却不走 handleSave 规范流程、也不刷新模型。判据 SAVE-REFRESH-1/2：改回裸写 ⇒ 红；只保存不刷新 ⇒ 红"
+    "save-refresh-panel": "2026-10-17（用户实报）：provider 卡片「保存并刷新模型」误导 —— 原来是一条裸写，宣称保存却不走 handleSave 规范流程、也不刷新模型。判据 SAVE-REFRESH-1/2：改回裸写 ⇒ 红；只保存不刷新 ⇒ 红",
+    "web-search-card-234": "第 234 波：web_search 的报告被当成 grep 结果渲染（真机取证：DeepSeek Search 的元数据行「站点: … · 日期: 2026-10-17T09:12:12.122Z」命中 ^(.+?):(\\d+):(.*)$，卡片显示成 3 个假文件、每个 1 match，而专用卡片 WebSearchResultCard 永远到不了）⇒ 门禁从 includes('search') 改成精确 id 白名单 grep/glob（顺带修掉 search_notebook 的同源误伤）；判据 WEBSEARCH-CARD-1/2/3，3 条变异（子串回退 / 白名单漏 grep / 专用卡片关掉）"
   },
   "waves": [
     "batch-prune-log-only-232",
@@ -97,6 +98,7 @@
     "datahome-behavior-230",
     "tauri-arity-230",
     "deepseek-web-tools-233",
-    "save-refresh-panel"
+    "save-refresh-panel",
+    "web-search-card-234"
   ]
 }

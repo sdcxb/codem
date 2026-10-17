@@ -1,0 +1,105 @@
+{
+  "what": "DeepSeek Search / Fetch 的 HTTP 200 成功路径 —— 两次真机、一份网络层记录",
+  "how": "在渲染器里用 window.fetch 包装器记录所有 URL 含 /v1/tools/ 的请求（status / 毫秒 / 响应体字符数 / 解析后的结果条数与正文长度）。包装器只记录、不改请求；聊天请求不在记录范围内。",
+  "caveat": "毫秒数来自渲染器 performance.now()，包含浏览器侧排队与 Tauri WebView 的 DNS/TLS；服务端耗时未知。",
+  "runs": [
+    {
+      "id": "run1",
+      "label": "修 UI 缺陷之前（安装版 1.16.323，源码 6ab209f6）",
+      "app": {
+        "exe": "%LOCALAPPDATA%\\Codem\\codem.exe",
+        "version": "1.16.323",
+        "launchedAt": "2026-10-17T22:12+08:00",
+        "cdpPort": 9222
+      },
+      "prompt": "请真的调用工具……web_search（query =「DeepSeek 官方文档 网页搜索与抓取」）……web_fetch（url = https://api-docs.deepseek.com/zh-cn/guides/search/）",
+      "model": "deepseek-flash",
+      "records": [
+        {
+          "url": "https://api.deepseek.com/v1/tools/search",
+          "status": 200,
+          "ms": 347,
+          "atUtc": "2026-10-17T14:14:26.918Z",
+          "bodyChars": 14593,
+          "results": 5,
+          "firstResult": {
+            "title": "网页搜索与抓取",
+            "url": "https://api-docs.deepseek.com/zh-cn/guides/search/",
+            "summaryChars": 2406,
+            "authority": 3,
+            "rerankScore": 2.398479461669922
+          }
+        },
+        {
+          "url": "https://api.deepseek.com/v1/tools/fetch",
+          "status": 200,
+          "ms": 855,
+          "atUtc": "2026-10-17T14:14:27.428Z",
+          "bodyChars": 7503,
+          "contentChars": 6402,
+          "title": "网页搜索与抓取",
+          "contentHead": "Search \\/ Fetch API 已上线，使用自研搜索引擎，支持网页搜索与"
+        }
+      ],
+      "appToolMetadata": [
+        { "tool": "web_search", "status": "done", "durationMs": 350, "resultChars": 13510, "source": "DeepSeek Search", "resultCount": 5 },
+        { "tool": "web_fetch", "status": "done", "durationMs": 857, "resultChars": 6519, "source": "DeepSeek Fetch", "totalChars": 6402 }
+      ]
+    },
+    {
+      "id": "run2",
+      "label": "修 UI 缺陷之后（本地重建 + 静默安装，工作树 = 1f6f67d7 + 本目录所述改动）",
+      "app": {
+        "exe": "%LOCALAPPDATA%\\Codem\\codem.exe",
+        "version": "1.16.323",
+        "installerSha256": "59409f50acbb789f9ad136b4eaa089065daa9702cc7c314a667c0077e4bb6684",
+        "installedAt": "2026-10-17T22:21:46+08:00",
+        "cdpPort": 9222
+      },
+      "prompt": "同上（同一条提示词）",
+      "model": "deepseek-flash",
+      "records": [
+        {
+          "url": "https://api.deepseek.com/v1/tools/search",
+          "status": 200,
+          "ms": 352,
+          "atUtc": "2026-10-17T14:23:24.255Z",
+          "bodyChars": 32148,
+          "results": 10,
+          "note": "模型未指定条数 ⇒ 走设置缺省 10（count=10）"
+        },
+        {
+          "url": "https://api.deepseek.com/v1/tools/search",
+          "status": 200,
+          "ms": 290,
+          "atUtc": "2026-10-17T14:23:26.486Z",
+          "bodyChars": 14593,
+          "results": 5,
+          "note": "模型显式指定条数 ⇒ count=5（模型参数优先于设置）"
+        },
+        {
+          "url": "https://api.deepseek.com/v1/tools/fetch",
+          "status": 200,
+          "ms": 213,
+          "atUtc": "2026-10-17T14:23:29.169Z",
+          "bodyChars": 7503,
+          "contentChars": 6402,
+          "title": "网页搜索与抓取"
+        }
+      ],
+      "appToolMetadata": [
+        { "tool": "web_search", "status": "done", "durationMs": 394, "resultChars": 30154 },
+        { "tool": "web_search", "status": "done", "durationMs": 290, "resultChars": 13510 },
+        { "tool": "web_fetch", "status": "done", "durationMs": 216, "resultChars": 6519, "totalChars": 6402 },
+        { "tool": "web_search", "status": "done", "durationMs": 370, "resultChars": 9555 },
+        { "tool": "web_fetch", "status": "done", "durationMs": 128, "resultChars": 6519, "totalChars": 6402 }
+      ]
+    }
+  ],
+  "settingsDuringCapture": {
+    "codem-deepseek-web-search": "1",
+    "codem-deepseek-web-fetch": "1",
+    "codem-deepseek-web-search-count": null,
+    "note": "两个开关是**在设置面板里真点击打开**的（aria-checked 由 false→true），取证后已点回关闭并复核落库为 \"0\"。"
+  }
+}

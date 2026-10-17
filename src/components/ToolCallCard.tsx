@@ -418,10 +418,25 @@ function ReadBlockCard({ path, content }: { path: string; content: string }) {
 
 // ====== 专用卡片：Search (grep/glob 结果分组) ======
 
+/**
+ * 输出契约是「`路径:行号:内容`」或「纯路径列表」的工具 —— **只有 grep / glob**。
+ *
+ * 这里原先写的是 `lower.includes('search')`，于是 `web_search` 与 `search_notebook`
+ * 也被放了进来：只要报告里出现一行 `x:数字:y` 形状的文本，整张卡片就被渲染成
+ * 「假的文件 + N match」，而排在它后面的专用卡片（`WebSearchResultCard`）**永远到不了**。
+ * 真机取证（2026-10-17）里触发它的是 DeepSeek Search 的元数据行
+ * `站点: … · 日期: 2026-10-17T09:12:12.122Z`（`T09:12:12` 被读成「09 行」）。
+ * 判据：`WEBSEARCH-CARD-1/2/3`。
+ *
+ * 用**精确 id 白名单**而不是"排除 web_search"：下次再加一个名字带 search 的工具时，
+ * 默认落到通用卡片（正确的那一边），而不是默认落到猜形状的分支里。
+ */
+const FILE_SHAPE_SEARCH_TOOLS = new Set(['grep', 'glob'])
+
 function trySearchModel(toolName: string, result: string | undefined): { kind: 'matches' | 'paths'; files?: Array<{ path: string; matches: Array<{ lineNumber: number; line: string }> }>; paths?: string[] } | null {
   if (!result) return null
   const lower = toolName.toLowerCase()
-  if (lower !== 'grep' && lower !== 'glob' && lower !== 'search' && !lower.includes('search')) return null
+  if (!FILE_SHAPE_SEARCH_TOOLS.has(lower)) return null
 
   // 尝试解析为 grep 输出（file:line:content 或 file:line: ）
   const lines = result.split('\n').filter(l => l.trim())

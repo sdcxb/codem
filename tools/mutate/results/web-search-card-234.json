@@ -1,0 +1,75 @@
+{
+  "wave": "web-search-card-234",
+  "description": "web_search 的报告不许被当成「路径:行号:内容」渲染（门禁从子串改成精确 id 白名单；判据 WEBSEARCH-CARD-1/2/3）",
+  "runAt": "2026-10-17T14:38:51.087Z",
+  "specFingerprint": "d82f1e0754a106da4bc4d90dbd9cf11985b1123d",
+  "files": [
+    "src/components/ToolCallCard.tsx"
+  ],
+  "tests": [
+    "src/test/web-search-card-not-grep.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 门禁退回名字子串（旧写法）",
+      "why": "WEBSEARCH-CARD-1/3：`includes('search')` 会把 web_search / search_notebook 放进『猜 grep 形状』的分支，报告里的日期行就变成假文件行",
+      "patches": [
+        {
+          "file": "src/components/ToolCallCard.tsx",
+          "from": "  if (!FILE_SHAPE_SEARCH_TOOLS.has(lower)) return null",
+          "to": "  if (lower !== 'grep' && lower !== 'glob' && lower !== 'search' && !lower.includes('search')) return null"
+        }
+      ],
+      "tests": [
+        "src/test/web-search-card-not-grep.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2531
+    },
+    {
+      "id": "MUT-2 白名单漏掉 grep",
+      "why": "WEBSEARCH-CARD-2（反向）：grep 的输出契约就是文件行，漏掉它等于把真的搜索结果卡片弄坏",
+      "patches": [
+        {
+          "file": "src/components/ToolCallCard.tsx",
+          "from": "const FILE_SHAPE_SEARCH_TOOLS = new Set(['grep', 'glob'])",
+          "to": "const FILE_SHAPE_SEARCH_TOOLS = new Set(['glob'])"
+        }
+      ],
+      "tests": [
+        "src/test/web-search-card-not-grep.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2579
+    },
+    {
+      "id": "MUT-3 专用卡片关掉（isWebSearch 恒 false）",
+      "why": "WEBSEARCH-CARD-1：不误判只是『没画错』；专用卡片必须真的渲染出来（否则等于把一次搜索退化成通用 IN/OUT 卡）",
+      "patches": [
+        {
+          "file": "src/components/ToolCallCard.tsx",
+          "from": "  const isWebSearch = toolName.toLowerCase() === 'web_search'",
+          "to": "  const isWebSearch = false"
+        }
+      ],
+      "tests": [
+        "src/test/web-search-card-not-grep.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2546
+    }
+  ]
+}
