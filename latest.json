@@ -1,15 +1,15 @@
 {
-  "version": "1.16.322",
-  "notes": "底部面板四个页签恢复且可用；记忆积压上限与滚动修复；只读分析与隔离数据根",
-  "pub_date": "2026-10-17T08:13:38Z",
+  "version": "1.16.323",
+  "notes": "接入 DeepSeek 网页搜索/抓取；移除顶部页签栏；撤销凭据提示改为只写日志",
+  "pub_date": "2026-10-17T10:37:03Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JQaEozMlVqdWdXVEVkQWZsSEd4TzdQS0JnYmNPaTNtdUFJbmNtcHJFWWFtUnI0MmdVTWNZVUppOWZuZFZGU2hTaFpob2tZTytKZm5oblFCUXZZaFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjI0ODE0CWZpbGU6Q29kZW1fMS4xNi4zMjJfeDY0LXNldHVwLmV4ZQpGeWIySytjd2R6NnptRVhTYVZMK0JpSmZRZGZIYmxrSUJDZkFlZU53aHpUZk9lM1Ftc0JZbVJTY082NTZlc21Hb3o2cXVubUgvRitmMUhSb3BBYUhBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.322/Codem_1.16.322_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1E0UU4vTWRYcUs5M1VvS0plL01LUFhDbUV2Z1VPTTZxTzg5RmhUb1dReE9wOG51QTArbHZ5R0YyTUF3SWNueGNUWENhb0pma3NyOVBtVEFLTmdRK2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjMzNDE4CWZpbGU6Q29kZW1fMS4xNi4zMjNfeDY0LXNldHVwLmV4ZQpodmhWUDdjWk5tQXBtVktHUHhObDdBMGZpdDVmS2xPd1RyN1J1c3ROMmxtWUZOQ254VGFGOVByMUZKNVNUd2ZoMkRYQ2hEOHZoS25QTEJTQWxMZ0dBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.323/Codem_1.16.323_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JQaEozMlVqdWdXVEVkQWZsSEd4TzdQS0JnYmNPaTNtdUFJbmNtcHJFWWFtUnI0MmdVTWNZVUppOWZuZFZGU2hTaFpob2tZTytKZm5oblFCUXZZaFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjI0ODE0CWZpbGU6Q29kZW1fMS4xNi4zMjJfeDY0LXNldHVwLmV4ZQpGeWIySytjd2R6NnptRVhTYVZMK0JpSmZRZGZIYmxrSUJDZkFlZU53aHpUZk9lM1Ftc0JZbVJTY082NTZlc21Hb3o2cXVubUgvRitmMUhSb3BBYUhBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.322/Codem_1.16.322_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1E0UU4vTWRYcUs5M1VvS0plL01LUFhDbUV2Z1VPTTZxTzg5RmhUb1dReE9wOG51QTArbHZ5R0YyTUF3SWNueGNUWENhb0pma3NyOVBtVEFLTmdRK2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjMzNDE4CWZpbGU6Q29kZW1fMS4xNi4zMjNfeDY0LXNldHVwLmV4ZQpodmhWUDdjWk5tQXBtVktHUHhObDdBMGZpdDVmS2xPd1RyN1J1c3ROMmxtWUZOQ254VGFGOVByMUZKNVNUd2ZoMkRYQ2hEOHZoS25QTEJTQWxMZ0dBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.323/Codem_1.16.323_x64-setup.exe"
     }
   }
 }
