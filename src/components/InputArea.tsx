@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
 import { createPortal } from "./ui/portal";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
@@ -25,6 +25,7 @@ import { getMultimodalSettings, transcribeAudioFile, getVoiceInputEngine, isSTTC
 import { useProjectStore } from "../core/store";
 import { ContextBadgeList } from "./ContextBadgeList";
 import { MentionAutocomplete, type MentionItem } from "./MentionAutocomplete";
+import { MentionMenuPortal } from "./MentionMenuPortal";
 import { ComposerBadges, type ComposerBadge } from "./ComposerBadges";
 import { GenerateModeSelector } from "./GenerateModeSelector";
 import { ResolutionSelector } from "./ResolutionSelector";
@@ -525,6 +526,65 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // P4: Mention autocomplete state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
+  /**
+   * @ 提及候选的锚点（第 232 波：候选改成 Portal 到 body 后由这里提供定位）。
+   * 口径与 `/` 菜单一致：`bottom = innerHeight - 输入行 top + 4`（贴在输入行上方）。
+   */
+  const [mentionMenuPos, setMentionMenuPos] = useState<{ left: number; bottom: number; width: number } | null>(null);
+
+  /**
+   * 第 232 波：`@` 候选改成 **Portal 到 body**（与 `/` 菜单同口径）。
+   *
+   * 缺陷取证（真机，CDP）：候选面板 240px 高，而祖辈 `.input-area.input-card-container` 是
+   * `overflow: hidden; height: 135px`（高度有意固定）⇒ 被裁到**只剩 9px** 可见，
+   * `elementFromPoint` 在候选位置命中 `.messages-container` —— 既看不见也点不到。
+   * 修法与 `/` 菜单对齐：候选挂到 body（`position: fixed`），不再待在裁剪链里。
+   *
+   * 定位：锚定输入行，贴在它上方 4px。fixed 不随滚动，所以在 `resize` 与**任意滚动**
+   * （捕获阶段，消息区自己滚也算）时重算；`input` 进依赖是因为多行输入会让输入行变高。
+   */
+  useLayoutEffect(() => {
+    if (mentionQuery === null) {
+      setMentionMenuPos(null);
+      return;
+    }
+    const update = () => {
+      const row = textareaRowRef.current;
+      if (!row) return;
+      const rect = row.getBoundingClientRect();
+      const next = { left: rect.left, bottom: window.innerHeight - rect.top + 4, width: rect.width };
+      setMentionMenuPos((prev) =>
+        prev && prev.left === next.left && prev.bottom === next.bottom && prev.width === next.width ? prev : next,
+      );
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [mentionQuery, input]);
+
+  /**
+   * 第 232 波：点在外面关掉候选。
+   *
+   * 候选改成 Portal 之后就不是输入卡的子节点了 —— 原来的"点输入卡里的别的控件时顺带收掉"
+   * 不再成立，所以要显式处理。用 `pointerdown`（而不是 `click`）：按下即关，且候选面板
+   * 与输入卡内部都在排除名单里，避免"按下就关、click 收不到"。
+   */
+  useEffect(() => {
+    if (mentionQuery === null) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (!t || typeof t.closest !== "function") return;
+      if (t.closest(".mention-menu-portal")) return;
+      if (t.closest(".input-card-container")) return;
+      setMentionQuery(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [mentionQuery]);
   // Composer badges: file refs, GitHub links, quotes, URLs
   const [composerBadges, setComposerBadges] = useState<ComposerBadge[]>([]);
   const fileMentionCache = useRef<{ cwd: string; items: MentionItem[]; ts: number } | null>(null);
@@ -1381,23 +1441,26 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           {/* SlotListBridge 消费 conversation.input slot — 允许插件注入输入区组件 */}
           <SlotListBridge name="conversation.input" />
 
-          {/* P4: Mention autocomplete dropdown */}
-          {mentionQuery !== null && (
-            <MentionAutocomplete
-              items={mentionItems}
-              query={mentionQuery}
-              onSelect={(item) => {
-                const newVal = input.replace(/@([^\s]*)$/, `@${item.label} `);
-                setInput(newVal);
-                setDraft(newVal);
-                setMentionQuery(null);
-                if (item.type === "file" && item.path) {
-                  addFileBadge(item.path, item.label);
-                }
-                textareaRef.current?.focus();
-              }}
-              onClose={() => setMentionQuery(null)}
-            />
+          {/* P4: Mention autocomplete dropdown —— 第 232 波：经 MentionMenuPortal 挂到 body，
+              否则会被输入卡的 overflow:hidden 裁到只剩 9px（见 mentionMenuPos 处的取证注释） */}
+          {mentionQuery !== null && mentionMenuPos && (
+            <MentionMenuPortal pos={mentionMenuPos}>
+              <MentionAutocomplete
+                items={mentionItems}
+                query={mentionQuery}
+                onSelect={(item) => {
+                  const newVal = input.replace(/@([^\s]*)$/, `@${item.label} `);
+                  setInput(newVal);
+                  setDraft(newVal);
+                  setMentionQuery(null);
+                  if (item.type === "file" && item.path) {
+                    addFileBadge(item.path, item.label);
+                  }
+                  textareaRef.current?.focus();
+                }}
+                onClose={() => setMentionQuery(null)}
+              />
+            </MentionMenuPortal>
           )}
 
           {/* P4: Context badges showing active attachments and skills */}

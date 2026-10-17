@@ -8144,6 +8144,10 @@
     "margin": "0",
     "padding": "0"
   },
+  "mention-menu-portal": {
+    "position": "fixed",
+    "z-index": "var(--z-top)"
+  },
   "mention-path": {
     "color": "var(--text-muted, #6b6b7b)",
     "display": "block",

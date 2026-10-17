@@ -124,6 +124,13 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
             key={item.id}
             data-mention-index={index}
             className={`mention-item ${index === selectedIndex ? "selected" : ""}`}
+            /**
+             * 第 232 波：候选改成 Portal 到 body 之后，它已经不在输入卡的 DOM 子树里。
+             * 不拦住 mousedown 的话，按下候选会让 textarea 失焦 ⇒ 输入卡的 `onBlurCapture`
+             * 会把多行输入折叠起来（`setBlurFolded`），看起来像"点一下候选就跳了"。
+             * 下拉项的常规做法就是阻止默认的焦点转移：click 照常触发，焦点留在输入框。
+             */
+            onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => onSelect(item)}
           >

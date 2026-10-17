@@ -80,11 +80,11 @@
 
 截图：`walk-03-slash-menu.jpg`（`cd581197…`）、`walk-04-mention-menu.jpg`（`258c0599…`）。
 
-> ⚠️ 旁支缺陷（**与插件下架无关，本轮未修**）：`@` 候选虽然渲染了 20 条真实条目，但在当前布局里被
-> `.input-area.input-card-container{overflow:hidden;height:135px}` **裁剪**（`elementFromPoint` 在候选位置上
-> 命中的是 `.rich-content`，截图上完全看不到候选框）。`/` 菜单没有这个问题 —— 它显式 Portal 到 `document.body`
-> （`InputArea.tsx` 里有注释「避免被 overflow:hidden 裁剪」），而 `MentionAutocomplete` 是直接渲染在
-> `.input-textarea-row` 里。下一步：把提及面板也改成 Portal（或把它的锚点移出裁剪容器）。
+> ⚠️ 旁支缺陷（**与插件下架无关**；**本轮已修复**，见第 5 节）：`@` 候选虽然渲染了 20 条真实条目，
+> 但在当时的布局里被 `.input-area.input-card-container{overflow:hidden;height:135px}` **裁剪**
+> （`elementFromPoint` 在候选位置上命中的是 `.rich-content`，截图上完全看不到候选框）。`/` 菜单没有这个问题
+> —— 它显式 Portal 到 `document.body`（`InputArea.tsx` 里有注释「避免被 overflow:hidden 裁剪」），
+> 而 `MentionAutocomplete` 当时是直接渲染在 `.input-textarea-row` 里。
 > 取证范围：build ① 实测；`InputArea.tsx` / `MentionAutocomplete.tsx` 在两次构建之间未被任何提交改动。
 
 ### 2.3 Agent 预设：7 个内置预设 + 详情真实可读；切预设真的改变权限姿态
@@ -209,29 +209,134 @@
 | A：注册表回潮 | 在 `builtin-registry.ts` 的 `// P2-7.14` 段加回 `registerBuiltinPlugin('@codem/ui-primitives', { provides: ['uiPrimitives'] … })` | **RUP-1 红**：`注册表出现了已下架插件的重新登记：registerBuiltinPlugin：@codem/ui-primitives`（其余 4 条仍绿）；`git checkout --` 还原后 5/5 绿 |
 | B：真实实现断线 | 把 `SkillManager.tsx` 的 `import { Badge } from "./ui/badge"` 删掉 | **RUP-4 红**：`真实实现断线：基础 UI 组件（…）→ src/components/SkillManager.tsx 缺 /from "\.\/ui\/badge"/…`；还原后 5/5 绿 |
 
-## 5. 门禁（本轮实测）
+## 5. 本轮修复：`@` 候选被裁剪（Portal 化）+ 权限预设重复派发
+
+### 5.1 复现（修复前，exe `29222bfd…`、PID 38128、端口 9333）
+
+操作：真实项目会话（`对话 2` / 项目 `mimo-gui`）里原生清空输入框 → 敲 `@` → 1.2s 后量测。
+
+| 量测项 | 值 |
+|---|---|
+| 候选面板 rect | `top 718 / bottom 958 / height 240 / width 318.2` |
+| 是否在 `.input-area` 内 | `true`（链条：`input-textarea-row` → `input-wrapper` → `.input-area.input-card-container`） |
+| 裁剪祖先 | `.input-area.input-card-container`（`overflow: hidden`、`height: 135px`）等 5 层 |
+| 可见高度 / 被裁掉 | **9px / 231px**（共 240px） |
+| `elementFromPoint` | 面板中心 → `.qa-turn-footer`；首条候选 → `.messages-container`（都不是候选） |
+| 候选内容 | header `提及文件 (65)`、`itemCount 20` —— 数据与渲染都正常，纯粹「看不见 / 点不到」 |
+
+截图：`mention-fix-00-before.jpg`（原图 sha256 `8a38f060…`）。
+
+### 5.2 修法（与 `/` 对齐，不动输入区布局）
+
+- **采用**：候选经新组件 `MentionMenuPortal`（共享入口 `ui/portal`）**Portal 到 `document.body`**；
+  `InputArea` 量输入行 rect 算出 `{left, bottom, width}`（与 `/` 菜单同一口径：贴在输入行上方 4px），
+  `resize` 与**捕获阶段 scroll** 时重算；包裹层 `.mention-menu-portal{position:fixed; z-index:var(--z-top)}`，
+  内层 `.mention-autocomplete{position:static; width:100%; z-index:auto}`。
+- **否决**：调 `.input-area` 的 `height`/`overflow` 把候选「挤出来」—— 那个高度是折叠/展开/多行共用的有意固定值，
+  改它会牵动整个 Composer；而且只是把裁剪口子开大，换个高度/滚动位置还会再犯。
+- Portal 之后补的两件交互：
+  ① **点外面关闭**（候选已不在输入卡子树里）→ `document` 捕获 `pointerdown`，排除 `.mention-menu-portal`
+  与 `.input-card-container`；
+  ② 候选 `<li>` 上 `onMouseDown={e => e.preventDefault()}` —— 否则按下候选会让 textarea 失焦，
+  输入卡的 `onBlurCapture` 会把多行输入折叠（Portal 之前它被 `card.contains(relatedTarget)` 排除了）。
+- `Escape` / `ArrowUp` / `ArrowDown` / `Enter` 仍由 `MentionAutocomplete` 的 document 键盘监听处理
+  （Portal 不改变事件路径），真机复验见 5.4。
+
+### 5.3 判据与变异（`src/test/mention-menu-portal.test.tsx`，6 条全绿）
+
+| # | 守什么 |
+|---|---|
+| MP-1 | InputArea 必须经 `MentionMenuPortal` 渲染候选（源码形态 + 位置计算/滚动监听存在）；反向对照：就地渲染样本必须判红 |
+| MP-2 | Portal 宿主确实挂在 `document.body` 下、不在 `.input-card-container` 裁剪链里；定位由 fixed 包裹层给 |
+| MP-3 | CSS：包裹层 fixed、内层 static；且**没有**靠放宽 `.input-card-container` 的 `overflow` 来「挤出来」 |
+| MP-4 | InputArea 真组件：`@` → 候选 → `ArrowDown` + `Enter` → `"@beta.ts "`、候选关闭（真实链路不回退） |
+| MP-5 | 权限预设一次点击**只派发一次** `codem-security-mode-changed`（旧写法两次） |
+| MP-6 | `MentionAutocomplete` 自身键盘语义：`ArrowDown×2 + Enter` 选第 3 条、`Escape` 关闭 |
+
+变异自证（先红后绿）：
+
+| 变异 | 结果 |
+|---|---|
+| A 把 `<MentionMenuPortal pos={mentionMenuPos}>` 改回就地 `<MentionAutocomplete>` | **MP-1 红**（形态判为 inline）、**MP-4 红**（DOM 里没有 `.mention-menu-portal`）；还原后 6/6 绿 |
+| B 把 `handleSelect` 改回「自己写 + 再调 `onModeChange`」 | **MP-5 红**：`一次点击派发了 2 次同值事件（应恰好 1 次）`；还原后 6/6 绿 |
+
+### 5.4 真机复核（修复后，exe `d9dab7b4…`、PID 2352 / 32540、端口 9444）
+
+- 构建：标准命令 `… tauri.js build --no-bundle`，exit 0，`Finished release profile in 3m37s`。
+  ⚠️ 期间另一路实例（PID 31212，**不是本路**）占着 `target/release/codem.exe`，cargo 报
+  `failed to remove file … (os error 5)`。处置：把被占用的 exe **重命名**为 `codem-held-by-31212.exe`
+  （Windows 允许重命名运行中的镜像；**没有 kill 别人的进程**）→ 重新构建成功 → 收尾删除该重命名文件。
+  另：两个实例共用 WebView2 用户数据目录时第二个起不来，本路用
+  `WEBVIEW2_USER_DATA_FOLDER=.preview-shot/wv2-mentionfix` 隔离（**数据根仍是真实数据根**）。
+- 量测（原文）：`panelRect {top 356, bottom 596, height 240, left 251, width 893}`、`insideInputArea false`、
+  祖先链只有 `mention-menu-portal` + `body`、`visibleHeightPx 240 / clippedByPx 0`、
+  首条候选命中 `mention-label`、`header 提及文件 (65)`、20 条。
+- 截图：`mention-fix-01-open.jpg`（完整候选列表，带图标/文件名/路径）、`mention-fix-02-keyboard.jpg`（键盘插入后）、
+  `mention-fix-03-mouse.jpg`（真实鼠标点选后）。
+- 键盘：`ArrowDown ×2 + Enter` → 输入框 `"@com.codem.app "`、菜单关闭。
+- 鼠标：真实点击第 2 条 → `reachable=true top=mention-label`，输入框 `"@artifacts "`、菜单关闭。
+- 点外面：点 `.chat-header` → 菜单关闭、输入框值不变（仍 `@`）。
+- resize 重定位：视口宽 1200→900，面板 `left 251→220`、`width 893→624`（inline style 同步改变），证明重算生效。
+  （诚实说明：`bottom` 是视口相对量，单纯改高度不会改变它，所以用**宽度变化**做判据更准。）
+- 未单独观测：滚动重算 —— 本布局消息区自滚、输入行不动，造不出可见位移；该路径由 MP-1 的监听断言守。
+
+### 5.5 顺带修掉的重复派发
+
+- 现象（真机）：一次点击收到两条 `codem-security-mode-changed`（`auto/project` ×2）。
+- 根因：`PermissionPresetSelector.handleSelect` 先自己 `setGlobal/setProjectSecurityMode`，再 `onModeChange?.(mode)`；
+  而 `InputArea` 的 `onModeChange` 做的就是同一件事。
+- 修法：给了 `onModeChange` 就由它全权写（否则组件自己写）—— 判据 MP-5。
+- 修复后真机：四次点击 → 恰好四条事件 `auto → full → auto → full`（每次一条），按钮文字/class 同步，
+  最后切回 `完全访问` 收尾。截图 `mention-fix-04-preset-single.jpg`。
+
+### 5.6 锚定复验（面板滚动 / 窗口缩放）与两条样式门禁
+
+**锚定**（同一 exe，口径 = 候选底边到输入行顶边恒为 4px）：
+
+| 场景 | 结果 |
+|---|---|
+| 候选列表自身滚动 | `scrollTop 0 → 140`（`scrollHeight 930 / clientHeight 238`），面板 `top 356 / bottom 596` **不变**、gap 4px（截图 `mention-fix-05-scroll.jpg`） |
+| 视口宽度 1200 → 900 | 面板 `left 251 → 220`、`width 893 → 624`（inline style 同步变），gap 4px；还原后回 251/893 |
+| 视口高度 727 → 527 | 面板随输入行上移 `top 356 → 156`，gap **恒 4px**；还原后回 356 |
+| 消息面板滚动 | **未观测到**：`.messages-container` 的 `scrollTop` 恒为 0（该会话内容不足一屏，没有可滚动溢出）；候选锚的是输入行，输入行不随消息区滚动 ⇒ 这一条如实记为未验 |
+
+**两条样式门禁**（新增浮层会踩到的两处，均已按仓库既有机制修绿）：
+
+- **CSS 契约快照**：新增 `.mention-menu-portal` 必须登记进 `tools/ui-audit/css-contract.json`。
+  用仓库工具生成（**没有手改快照**）：`node tools/ui-audit/css-contract.mjs --write` → `快照已写入 …（2886 个类）`；
+  再跑一次 `node tools/ui-audit/css-contract.mjs` → `✅ 无变化`；`npx vitest run src/test/css-integrity.test.ts` → **10/10 绿**。
+- **写死值棘轮**：第一版内层覆盖写了 `z-index: auto`（裸 z-index 字面量）⇒ `scan-style-literals --check` 红（`z-index` 族 25→26）。
+  改法是不写那一行 —— 内层保留 `.mention-autocomplete` 自带的 `z-index: var(--z-chrome)`，包裹层 `z-index: var(--z-top)`
+  已建立层叠上下文；**没有**改阈值、没有加白名单。复核：`node tools/audit/scan-style-literals.mjs --check` →
+  `✅ 棘轮通过：11 个族全部不超过基线`；`npx vitest run src/test/style-token-gates.test.ts` → **40/40 绿**。
+
+## 6. 门禁（本轮实测）
 
 | 门禁 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | 0 错误 |
-| `npx vitest run`（全量） | **695 文件 / 8283 通过 + 17 skipped**（基线 693 / 8267 + 17：+本判据 1 文件 5 例，+ 另一路并行改动 1 文件 11 例） |
-| `npm run audit` | exit 0（末段：`分诊闸门通过：登记波次 44 个…`、`✅ 语法门禁通过`、`probe-guard 自证 26/26`、`✅ 可达性门禁通过`） |
+| `npx vitest run`（全量） | **697 文件 / 8295 通过 + 17 skipped，0 失败**（基线 695 / 8283：+本修复 1 文件 6 例 + 另一路记忆面板 1 文件 6 例） |
+| `npm run audit` | exit 0（末段：`上报点分诊闸门通过：扫描命中 268 处 = 登记表 268 条`、`✅ 语法门禁通过`、`probe-guard 自证 26/26`、`✅ 可达性门禁通过`） |
 | `npm run audit:knip`（knip-gate） | `✅ 没有增长`（exports 49/49、types 21/21、duplicates 10/10；entry 20 = 可达性白名单 20） |
 | `node tools/audit/scan-report-sites.mjs --check` | `扫描命中 268 处 = 登记表 268 条（triaged 268 / pending 0）`，漂移/过期/缓存漂移均为 0 |
-| `node tools/mutate/check-artifacts.mjs`（check-artifacts） | `分诊闸门通过：登记波次 44 个，全部有可用且未过期的变异证据` |
+| `node tools/mutate/check-artifacts.mjs`（check-artifacts） | `分诊闸门通过：登记波次 45 个，全部有可用且未过期的变异证据` |
+| `node tools/audit/scan-style-literals.mjs --check` | `✅ 棘轮通过：11 个族全部不超过基线` |
+| `node tools/ui-audit/css-contract.mjs`（快照核对） | `CSS 有效声明快照 —— 比对 2886 个类` → `✅ 无变化` |
+| `npx vitest run src/test/css-integrity.test.ts` | **10/10 绿**（含 `CSS-INTEGRITY-7`） |
+| `npx vitest run src/test/style-token-gates.test.ts` | **40/40 绿**（含 `LIT-5`） |
 
-## 6. 未做 / 未验（如实）
+## 7. 未做 / 未验（如实）
 
-1. **`@` 提及候选项被裁剪**（2.2 的旁支缺陷）—— 只做了取证，没有修；它**不是**插件下架引入的
-   （渲染链在 `InputArea` 里，与那 4 个服务无关）。
+1. **`@` 提及候选被裁剪**（2.2 的旁支缺陷）—— **本轮已修**（见第 5 节：Portal 化 + 6 条判据 + 两次变异 +
+   修复后真机量测/截图/键盘/鼠标/resize 复验）。它**不是**插件下架引入的（渲染链在 `InputArea` 里，
+   与那 4 个服务无关），是按「发现问题就修」的纪律顺手收掉的。
 2. **技能安装/卸载/启停没有真做**：安装要写用户真实技能目录、卸载会删用户文件；内置技能的开关本身
    `disabled`，因此「启停」只验证了开关原语渲染，没有验证停用效果。
 3. **预设切换只验证了「切换生效 + 事件 + 持久化键」**，没有跑一次带工具调用的回合去观察审批弹窗差异
    （`ask` vs `full` 的差异在工具审批链路上；本轮不发版、不跑模型回合）。
 4. 预设切换在**项目维度**写了一次 override：`codem-security-mode-project:C:\mimo-gui = full`
    （与全局 `full` 同值，行为不变；这是 `PermissionPresetSelector` 在有 `projectPath` 时的正常写路径）。
-   另外观察到该组件一次点击会派发**两次**同值事件（`handleSelect` 与 `onModeChange` 各写一次），
-   本轮未改，登记为旁支问题。
+   ~~另外观察到该组件一次点击会派发**两次**同值事件~~ —— **本轮已修**（见 5.5），修复后每次点击恰好一条事件。
 5. **走查①的实例在收尾前自行退出**（PID 19692 在最后一次点击后消失，`tasklist` 为空，因此没有 `taskkill`）；
    走查②（exact HEAD，PID 18760）是**按 PID 显式 kill**的（`taskkill /PID 18760 /T /F`），全程未用 `/IM`；
    收尾后还起过一次**只为清理输入框残留草稿**的实例（PID 25204，同样按 PID kill，`security-mode` 复核仍为

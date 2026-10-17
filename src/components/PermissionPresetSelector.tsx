@@ -118,12 +118,22 @@ export function PermissionPresetSelector({
   }, [open])
 
   const handleSelect = (mode: SecurityMode) => {
-    if (projectPath) {
+    /**
+     * 第 232 波：一次点击只写一次。
+     *
+     * 旧写法先自己 `setProjectSecurityMode` / `setGlobalSecurityMode`，再 `onModeChange?.(mode)`
+     * —— 而 `InputArea` 的 `onModeChange` 做的就是同一件事 ⇒ 一次点击**派发两次**
+     * `codem-security-mode-changed`（真机取证：一次点击收到两条 `auto/project`）。
+     * 现在把「写哪个键（全局 / 项目）」交给 `onModeChange`（给了它就全权负责）；
+     * 没给回调时才由本组件自己写（保持组件可独立使用）。
+     */
+    if (onModeChange) {
+      onModeChange(mode)
+    } else if (projectPath) {
       setProjectSecurityMode(projectPath, mode)
     } else {
       setGlobalSecurityMode(mode)
     }
-    onModeChange?.(mode)
     setOpen(false)
     window.dispatchEvent(new Event('codem-settings-changed'))
   }

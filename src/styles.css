@@ -15726,6 +15726,24 @@ color: var(--accent, #7c6cf0);
   z-index: var(--z-chrome);
   box-shadow: 0 -4px 12px var(--shadow-color);
 }
+/* 第 232 波：`@` 候选改走 Portal（与 `/` 菜单同口径）。
+   就地渲染时祖辈 `.input-area.input-card-container` 的 `overflow: hidden; height: 135px`
+   会把 240px 的面板裁到只剩 9px（真机 elementFromPoint 命中的是消息区）——
+   用户既看不见也点不到。定位交给 Portal 包裹层（fixed），内层面板回到 static。 */
+.mention-menu-portal {
+  position: fixed;
+  z-index: var(--z-top);
+}
+.mention-menu-portal .mention-autocomplete {
+  position: static;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  /* 不写 `z-index: auto` —— 那是一条没有 var() 的写死值，会被 LIT-5 的 z-index 族棘轮记一笔。
+     内层保留 `.mention-autocomplete` 自带的 `z-index: var(--z-chrome)` 即可：
+     包裹层（var(--z-top)）已经建立层叠上下文，内层的层级只在这个上下文里生效。 */
+  max-height: 240px;
+}
 .mention-header {
   display: flex;
   justify-content: space-between;
