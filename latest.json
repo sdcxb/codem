@@ -1,15 +1,15 @@
 {
-  "version": "1.16.321",
-  "notes": "Windows 上「bash」工具真的走 bash：默认开启的 shell 路由插件（点名 PowerShell 5.1 在执行前被拒、找不到 bash 明确报错、Windows 原生活儿走 PowerShell 7），另新增《插件安装手册》《技能安装手册》",
-  "pub_date": "2026-10-16T15:47:56Z",
+  "version": "1.16.322",
+  "notes": "底部面板四个页签恢复且可用；记忆积压上限与滚动修复；只读分析与隔离数据根",
+  "pub_date": "2026-10-17T08:13:38Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1crT2VTd1MyZnlnUnRtMDduRzUrVmlXYmpYWW9zT3VaQ3hFSURQSGJWODF5ZWx2b2hHNTVSNDNZajJhVTQ3dENuOHFUSFpXalMyMzdteERsWHRPYmd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMTY1NTAzCWZpbGU6Q29kZW1fMS4xNi4zMjFfeDY0LXNldHVwLmV4ZQpKU2V5QVo5N0Y2TmhsS2JqbGdRV1hKUjhvSDdGM2dWczlrU2IrZUlnVEg4cVN6SkpYTWFHbm9PcWp1bmxRcmN2S29SdHJxMW9pT01NVHhHSFZKekxCQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.321/Codem_1.16.321_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JQaEozMlVqdWdXVEVkQWZsSEd4TzdQS0JnYmNPaTNtdUFJbmNtcHJFWWFtUnI0MmdVTWNZVUppOWZuZFZGU2hTaFpob2tZTytKZm5oblFCUXZZaFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjI0ODE0CWZpbGU6Q29kZW1fMS4xNi4zMjJfeDY0LXNldHVwLmV4ZQpGeWIySytjd2R6NnptRVhTYVZMK0JpSmZRZGZIYmxrSUJDZkFlZU53aHpUZk9lM1Ftc0JZbVJTY082NTZlc21Hb3o2cXVubUgvRitmMUhSb3BBYUhBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.322/Codem_1.16.322_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1crT2VTd1MyZnlnUnRtMDduRzUrVmlXYmpYWW9zT3VaQ3hFSURQSGJWODF5ZWx2b2hHNTVSNDNZajJhVTQ3dENuOHFUSFpXalMyMzdteERsWHRPYmd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMTY1NTAzCWZpbGU6Q29kZW1fMS4xNi4zMjFfeDY0LXNldHVwLmV4ZQpKU2V5QVo5N0Y2TmhsS2JqbGdRV1hKUjhvSDdGM2dWczlrU2IrZUlnVEg4cVN6SkpYTWFHbm9PcWp1bmxRcmN2S29SdHJxMW9pT01NVHhHSFZKekxCQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.321/Codem_1.16.321_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JQaEozMlVqdWdXVEVkQWZsSEd4TzdQS0JnYmNPaTNtdUFJbmNtcHJFWWFtUnI0MmdVTWNZVUppOWZuZFZGU2hTaFpob2tZTytKZm5oblFCUXZZaFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjI0ODE0CWZpbGU6Q29kZW1fMS4xNi4zMjJfeDY0LXNldHVwLmV4ZQpGeWIySytjd2R6NnptRVhTYVZMK0JpSmZRZGZIYmxrSUJDZkFlZU53aHpUZk9lM1Ftc0JZbVJTY082NTZlc21Hb3o2cXVubUgvRitmMUhSb3BBYUhBQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.322/Codem_1.16.322_x64-setup.exe"
     }
   }
 }
