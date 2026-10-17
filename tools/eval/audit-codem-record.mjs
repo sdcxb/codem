@@ -16,7 +16,7 @@
  *   node tools/eval/audit-codem-record.mjs --last            # 最新会话
  *   node tools/eval/audit-codem-record.mjs --task repo-04-session-update-drops-fields
  */
-import { DatabaseSync } from "node:sqlite";
+import { openReadOnlyDb } from "../maintenance/read-only-db.mjs";
 import { join } from "node:path";
 
 const DB_PATH = join(process.env.APPDATA ?? "", "com.codem.app", "codem-db-rust.bin");
@@ -47,7 +47,16 @@ if (args.help) {
   process.exit(0);
 }
 
-const db = new DatabaseSync(DB_PATH, { readOnly: true });
+/**
+ * 只读打开**真库的副本**（`openReadOnlyDb`）。
+ *
+ * ⚠️ 为什么不是 `new DatabaseSync(DB_PATH, { readOnly: true })`：只读连接一个带 WAL 的库，
+ * SQLite 必须共享 `-shm` 这个 wal-index 共享内存文件 ⇒ **真库的 `-shm` 的 mtime 与内容都会被改**
+ * （连接标记）。内容类文件逐字节未变，但「只读」在文件系统层面留了痕 —— 用户现场不该被我们碰。
+ * 副本里带 `-wal`，所以未 checkpoint 的数据照样读得到（比只读 `.bin` 只多不少）；
+ * 判据见 `src/test/read-only-db.test.ts`（RODB-231-1..8）。
+ */
+const db = openReadOnlyDb(DB_PATH);
 
 function resolveSession() {
   if (args.session) return args.session;

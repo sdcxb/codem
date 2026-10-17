@@ -177,8 +177,77 @@ describe("RODB-231 只读钻取不许动真库（含 -shm 的 mtime）", () => {
     }
   });
 
-  it("RODB-231-5 指纹比对函数能把 mtime / 大小 / 新增 / 删除都判出来（判据自证）", () => {
-    const row = (file, exists, mtimeMs, size) => ({ file, exists, mtimeMs, size, sha256: null });
+  /**
+   * RODB-231-8：**副本读到的行数 ≥ 只读 `.bin` 读到的行数**（迁移两个 `tools/eval` 报告脚本时的口径）。
+   *
+   * 为什么要有这一条：把「直接读真库」换成「读副本」时，唯一能影响**结论**的风险是
+   * 「数据变少了」（例如漏掉 WAL/`-shm`，于是统计口径静默缩水）。所以这里造一个
+   * **一半在 `.bin`、一半在 `-wal`** 的现场：
+   *   · 先写 1 条并 `wal_checkpoint(TRUNCATE)` ⇒ 它进主库，WAL 清空；
+   *   · 再写 2 条（不 checkpoint）⇒ 它们只在 WAL 里；
+   * 然后用**两个报告脚本各自的那条 SQL** 分别从「副本（bin+wal）」和「只读 bin」读一次：
+   *   · 只读 bin ⇒ 只有 1 条（看不到 WAL 里那 2 条）；
+   *   · 副本 ⇒ 3 条（一条不少，且 ≥ 1）。
+   * 这就是「换成副本只会看到更多、不会更少」的可执行证据 —— 报告口径不会因为这次迁移而缩水。
+   */
+  it("RODB-231-8 ★副本读到的行数 ≥ 只读 .bin 读到的行数（迁移报告工具时不丢数据）", () => {
+    const real = path.join(TMP, "counts-" + ++seq + ".bin");
+    const writer = new DatabaseSync(real);
+    writer.exec("PRAGMA journal_mode=WAL");
+    writer.exec("PRAGMA wal_autocheckpoint=0");
+    writer.exec("CREATE TABLE session_events(session_id TEXT, seq INTEGER, event_type TEXT, payload TEXT)");
+    writer.exec("INSERT INTO session_events VALUES ('s1', 1, 'tool_call', '{\"tool\":\"write\"}')");
+    /* 把这 1 条折进主库并清空 WAL：之后的写入才真的是「只在 WAL 里」 */
+    writer.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    writer.exec("INSERT INTO session_events VALUES ('s1', 2, 'tool_call', '{\"tool\":\"edit\"}')");
+    writer.exec("INSERT INTO session_events VALUES ('s1', 3, 'tool_result', '{}')");
+    const kept = DB_SIBLINGS.map((suffix) => {
+      const file = real + suffix;
+      return [file, fs.existsSync(file) ? fs.readFileSync(file) : null] as [string, Buffer | null];
+    });
+    writer.close();
+    for (const [file, bytes] of kept) {
+      if (bytes) fs.writeFileSync(file, bytes);
+    }
+
+    /* ① 只读 .bin（等价于「直接读主库、忽略 WAL」的口径） */
+    const binOnly = path.join(TMP, "counts-bin-only-" + seq + ".bin");
+    fs.copyFileSync(real, binOnly);
+    let binOnlyRows = 0;
+    let opened = null;
+    try {
+      opened = new DatabaseSync(binOnly, { readOnly: true });
+      binOnlyRows = opened.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = ?").get("s1").n;
+    } catch {
+      binOnlyRows = 0;
+    } finally {
+      if (opened) opened.close();
+    }
+
+    /* ② 副本（bin + wal）：用**报告脚本的 SQL 形状**读 */
+    const copy = copyDbForRead(real);
+    const db = new DatabaseSync(copy.dbPath, { readOnly: true });
+    let copyRows = 0;
+    let toolRows: Array<{ event_type: string; payload: string }> = [];
+    try {
+      copyRows = db.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = ?").get("s1").n;
+      toolRows = db
+        .prepare(
+          "SELECT event_type, payload FROM session_events WHERE session_id = ? AND event_type IN ('tool_call','tool_result') ORDER BY seq",
+        )
+        .all("s1");
+    } finally {
+      db.close();
+      fs.rmSync(copy.dir, { recursive: true, force: true });
+    }
+
+    expect(binOnlyRows, "打底那条（已 checkpoint）在 .bin 里，所以只读 .bin 至少能看到它").toBe(1);
+    expect(copyRows, "副本必须看到全部 3 条（WAL 里那 2 条一条不少）").toBe(3);
+    expect(copyRows >= binOnlyRows, "迁移口径：副本看到的行数不许少于只读 .bin（否则报告数字会静默缩水）").toBe(true);
+    expect(toolRows.length, "报告脚本那条 SQL 在副本上也要读到全部 3 条").toBe(3);
+  });
+
+  it("RODB-231-5 指纹比对函数能把 mtime / 大小 / 新增 / 删除都判出来（判据自证）", () => {    const row = (file, exists, mtimeMs, size) => ({ file, exists, mtimeMs, size, sha256: null });
     const base = [row("a.bin", true, 100, 10), row("a.bin-wal", true, 100, 20), row("a.bin-shm", false, null, null)];
 
     expect(diffDbSnapshots(base, base), "两份一样的指纹不该报差异").toEqual([]);
@@ -216,11 +285,13 @@ describe("RODB-231 只读钻取不许动真库（含 -shm 的 mtime）", () => {
 });
 
 /**
- * RODB-231-7：**钻取脚手架里不许再有「直接打开真库」的写法**。
+ * RODB-231-7：**仓库里（和本地脚手架里）不许再有「直接打开真库」的写法**。
  *
- * `.preview-shot/` 被 gitignore（一次性脚本不进仓库），所以纪律只能写在两个地方：
- * 受版本控制的 helper（本判据上方这个文件）＋ 这条**本地棘轮**。
- * 干净 clone 上没有 `.preview-shot/` ⇒ 本条自动跳过（不是假绿：跳过会在输出里显示 skipped）。
+ * 扫两处：
+ * - `tools/`（**受版本控制**，任何 clone 上都会跑）—— 这一层是本轮补的：`tools/eval/` 里两个
+ *   出报告的脚本原来也直接只读打开真库（同样会在用户现场的 `-shm` 上留 mtime 痕迹）；
+ * - `.preview-shot/`（被 gitignore 的一次性脚本）—— 干净 clone 上不存在 ⇒ 自动跳过
+ *   （不是假绿：跳过会在输出里显示 skipped）。
  *
  * 认两种写法（迁移时实测就这两种，别的都是副本）：
  * 1. **内联**：`new DatabaseSync(<含有 APPDATA/com.codem.app 与 codem-db-rust.bin 的表达式>, { readOnly: true })`；
@@ -231,11 +302,37 @@ describe("RODB-231 只读钻取不许动真库（含 -shm 的 mtime）", () => {
  * 豁免：同一个变量还被**读-写**打开（`new DatabaseSync(DB)`）的脚本 = 会改库的工具，不是只读钻取；
  * 它本来就要写 WAL/-shm，把它的只读那一次换成副本反而制造「读到一份、写另一份」的缺陷。
  * 指向**副本**的路径（`path.join(dir, …)`、`TEMP/codem-dbq`、脚本自己 mkdtemp 的目录）故意不认。
+ *
+ * ⚠️ 扫之前**先去掉注释**：解释「以前这里是 `new DatabaseSync(真库, { readOnly: true })`」的注释
+ * 不该被当成违规（本仓大量注释在讲历史；不剥注释就会逼着人把理由从代码里删掉）。
  */
-describe("RODB-231-7 钻取脚手架不许再直接打开真库", () => {
-  const scratch = path.join(process.cwd(), ".preview-shot");
-  const hasScratch = fs.existsSync(scratch);
+describe("RODB-231-7 不许再直接打开真库（tools/ + 本地脚手架）", () => {
+  const ROOT = process.cwd();
   const inlineOpen = /new DatabaseSync\(\s*(?:[^)]*APPDATA[^)]*codem-db-rust\.bin[^)]*|REAL_DB)\s*,\s*\{\s*readOnly:\s*true\s*\}\s*\)/;
+
+  /** 去掉行注释与块注释（够用的剥法：块注释跨行状态机；行注释遇到 `//` 截断） */
+  function stripComments(src: string): string {
+    const out: string[] = [];
+    let inBlock = false;
+    for (const raw of src.split("\n")) {
+      let line = raw;
+      if (inBlock) {
+        const end = line.indexOf("*/");
+        if (end < 0) continue;
+        line = line.slice(end + 2);
+        inBlock = false;
+      }
+      const blockAt = line.indexOf("/*");
+      if (blockAt >= 0 && line.indexOf("*/", blockAt + 2) < 0) {
+        inBlock = true;
+        line = line.slice(0, blockAt);
+      }
+      const lineAt = line.indexOf("//");
+      if (lineAt >= 0) line = line.slice(0, lineAt);
+      out.push(line);
+    }
+    return out.join("\n");
+  }
 
   /** 单行常量定义里同时出现 APPDATA（或 com.codem.app）与 codem-db-rust.bin 的变量名 */
   function realDbConstNames(src: string): string[] {
@@ -247,37 +344,76 @@ describe("RODB-231-7 钻取脚手架不许再直接打开真库", () => {
     return [...names];
   }
 
-  it.skipIf(!hasScratch)("RODB-231-7 .preview-shot/*.mjs 里没有「直接只读打开真库」（有就说明没用 helper）", () => {
-    const offenders: string[] = [];
-    for (const name of fs.readdirSync(scratch)) {
-      if (!/\.(mjs|cjs)$/.test(name)) continue;
-      const src = fs.readFileSync(path.join(scratch, name), "utf8");
-      /*
-       * 只查**真的会开库**的脚本（导入了 `node:sqlite`）。一次性变异/探针脚本里可能只是
-       * 把旧写法当字符串引用（本判据第一版就把它当成了违规 —— 文本级扫描的固有噪声），
-       * 那种文件不 import `node:sqlite`，据此跳过。
-       */
-      if (!/from\s+"node:sqlite"/.test(src)) continue;
-      /*
-       * 便宜的预筛（先看子串再看正则）：`.preview-shot` 里有一千多个文件，
-       * 直接对每个文件跑带 `[^)]*` 的正则会在大文件上回溯得很难看（实测这条用例曾吃掉 2 秒，
-       * 而全量并行时同批还有别的"整树走查"用例 —— 别让本地棘轮去抢它们的超时预算）。
-       */
-      if (!src.includes("new DatabaseSync(") || !src.includes("codem-db-rust.bin")) continue;
-      const names = realDbConstNames(src);
-      const openReadOnly = (n: string) =>
-        new RegExp("new DatabaseSync\\(\\s*" + n + "\\s*,\\s*\\{\\s*readOnly:\\s*true\\s*\\}\\s*\\)").test(src);
-      const openReadWrite = (n: string) => new RegExp("new DatabaseSync\\(\\s*" + n + "\\s*\\)").test(src);
-      const isWriteTool = names.some((n) => openReadWrite(n));
-      const indirect = names.some((n) => openReadOnly(n));
-      if (isWriteTool) continue;
-      if (inlineOpen.test(src) || indirect) offenders.push(".preview-shot/" + name);
+  /** 递归收集脚本文件（跳过 node_modules / .git；扩展名 .mjs/.cjs/.js） */
+  function collectScripts(dir: string): string[] {
+    const out: string[] = [];
+    if (!fs.existsSync(dir)) return out;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...collectScripts(p));
+      else if (/\.(mjs|cjs|js)$/.test(entry.name)) out.push(p);
     }
+    return out;
+  }
+
+  /** 这个文件里有没有「直接只读打开真库」（返回违规原因或 null） */
+  function realDbReadOffense(file: string): string | null {
+    const src = stripComments(fs.readFileSync(file, "utf8"));
+    /* 只查**真的会开库**的文件（导入了 `node:sqlite`）：把旧写法当字符串引用的探针/变异脚本不算 */
+    if (!/from\s+"node:sqlite"/.test(src)) return null;
+    /*
+     * 便宜的预筛（先看子串再看正则）：脚手架里有一千多个文件，直接跑带 `[^)]*` 的正则
+     * 会在大文件上回溯得很难看（实测曾吃掉 2 秒，全量并行时那 2 秒会去抢别人的超时预算）。
+     */
+    if (!src.includes("new DatabaseSync(") || !src.includes("codem-db-rust.bin")) return null;
+    const names = realDbConstNames(src);
+    const openReadOnly = (n: string) =>
+      new RegExp("new DatabaseSync\\(\\s*" + n + "\\s*,\\s*\\{\\s*readOnly:\\s*true\\s*\\}\\s*\\)").test(src);
+    const openReadWrite = (n: string) => new RegExp("new DatabaseSync\\(\\s*" + n + "\\s*\\)").test(src);
+    /* 会改库的工具：它本来就要写 WAL/-shm，只读那一次换副本反而制造「读到一份、写另一份」 */
+    if (names.some((n) => openReadWrite(n))) return null;
+    if (inlineOpen.test(src)) return "内联了真库路径并只读打开";
+    if (names.some((n) => openReadOnly(n))) return "经变量 path 只读打开真库（" + names.join("/") + "）";
+    return null;
+  }
+
+  function scan(files: readonly string[]): string[] {
+    const offenders: string[] = [];
+    for (const file of files) {
+      const why = realDbReadOffense(file);
+      if (why) offenders.push(path.relative(ROOT, file).replace(/\\/g, "/") + "（" + why + "）");
+    }
+    return offenders;
+  }
+
+  it("RODB-231-7a ★受版本控制的 tools/ 里没有「直接只读打开真库」（有就说明没用 helper）", () => {
+    const offenders = scan(collectScripts(path.join(ROOT, "tools")));
     expect(
       offenders,
-      "这些脚本还在直接只读打开真库（会在真库 -shm 上留 mtime 痕迹）：" +
-        offenders.join(", ") +
-        " —— 改成 openReadOnlyDb(...)（见 tools/maintenance/read-only-db.mjs 的说明）",
+      "这些工具还在直接只读打开真库（会在用户现场的 -shm 上留 mtime 痕迹）：\n  " +
+        offenders.join("\n  ") +
+        "\n—— 改成 openReadOnlyDb / withReadOnlyDb（见 tools/maintenance/read-only-db.mjs 的说明）",
     ).toEqual([]);
   });
+
+  it.skipIf(!fs.existsSync(path.join(ROOT, ".preview-shot")))(
+    "RODB-231-7b 本地脚手架（.preview-shot）里同样没有「直接只读打开真库」",
+    () => {
+      const scratch = path.join(ROOT, ".preview-shot");
+      const offenders = scan(
+        fs
+          .readdirSync(scratch)
+          .filter((name) => /\.(mjs|cjs|js)$/.test(name))
+          .map((name) => path.join(scratch, name)),
+      );
+      expect(
+        offenders,
+        "这些脚本还在直接只读打开真库（会在真库 -shm 上留 mtime 痕迹）：\n  " +
+          offenders.join("\n  ") +
+          "\n—— 改成 openReadOnlyDb(...)（见 tools/maintenance/read-only-db.mjs 的说明）",
+      ).toEqual([]);
+    },
+  );
 });
+

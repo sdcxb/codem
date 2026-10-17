@@ -6587,26 +6587,51 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
 
 ### 未做 / 未验（如实）
 
-- **`tools/eval/` 里还有两处直接只读打开真库**（`tools/eval/audit-codem-record.mjs:50`、
-  `tools/eval/codem-records-report.mjs:70`）—— 都在本轮的文件边界之外，**没动**；
-  它们跑的是评测报告，会同样更新真库 `-shm` 的 mtime ⇒ 建议下一轮按同样方式改成 `openReadOnlyDb`。
+- ~~`tools/eval/` 里还有两处直接只读打开真库~~ —— **本轮已补（见下面「追加」一节）**：
+  两个报告脚本都改成走 `openReadOnlyDb`，并纳入受版本控制的棘轮 `RODB-231-7a`。
+- `src/components/SettingsPanel.tsx:1165` 的过期注释 —— **本轮已改如实（见下面「追加」一节）**。
 - `.preview-shot/` 里另有 8 处 `new DatabaseSync(path.join(<变量>, …), { readOnly: true })` 没迁：
   它们指向的**本来就是副本**（`TEMP/codem-dbq`、脚本自己 mkdtemp 的目录等），直读副本无副作用。
-- `src/components/SettingsPanel.tsx:1165` 的注释还提到 `onPerf 仍然先设 performance`（现在这段实参已删）。
-  该文件不在本轮边界内，**没动**；下次改设置面板时顺手把那句注释改成「perf 的入口是底部页签」。
 - 真机没有重新走查这两个入口（本轮约定不起应用；另一路正在真机走查，互不影响）：
   「点底部『性能』页签能打开面板」这一点由既有的 `BOTTOM-TAB-4/6` + 本轮 `PERFENTRY-231-3` 守，
   装机版的视觉确认留给下一轮。
 
+### 追加（同一轮，收到复核意见后补齐的两项「同类问题」）
+
+1. **`tools/eval` 的两个报告脚本也改成走 helper**（原先同样直接只读打开真库）：
+   - `tools/eval/audit-codem-record.mjs`：`new DatabaseSync(DB_PATH, { readOnly: true })` ⇒ `openReadOnlyDb(DB_PATH)`；
+   - `tools/eval/codem-records-report.mjs`：事后复核那次打开改成**整份报告只开一次**的懒连接
+     （`getRecheckDb()`）—— 按记录数一条开一次会把 942 MB 复制几十遍，那是拿时间换没人需要的东西；末尾显式 `close()`。
+   - **数据口径不变的证据**：新判据 `RODB-231-8` 造「一半在 `.bin`、一半在 `-wal`」的现场
+     （先写 1 条 + `wal_checkpoint(TRUNCATE)`，再写 2 条），用两个报告脚本各自的 SQL 分别读：
+     只读 `.bin` = **1** 条、副本 = **3** 条 ⇒ 「副本 ≥ 只读 `.bin`」成立（只会看到更多，不会更少）。
+     真数据对照（`.preview-shot/_rodb-parity-real.mjs`）：同一个真实会话，
+     副本 **1346 行 / 626 次泄露**，只读 `.bin` **1346 行 / 626 次**（相等，符合 ≥），
+     且真库三件套 mtime 未变。两个工具都实跑过：`audit-codem-record --last` 正常出判定（退出码 0）、
+     `codem-records-report` 用一份造出来的 records 文件跑出「污染 626 次」的复核结论（退出码 0）。
+   - **纳入棘轮**：`RODB-231-7` 改成扫两处 —— **7a：`tools/`（受版本控制，任何 clone 上都跑）**、
+     7b：`.preview-shot`（干净 clone 上跳过）；扫描前**先剥注释**（否则「解释旧写法」的注释会被当成违规）。
+     变异 `MUT-5`：把 `audit-codem-record.mjs` 退回直读（连 `node:sqlite` import 一起换回，才是真实回退）
+     ⇒ `RODB-231-7a` 红并点出该文件。
+2. **`src/components/SettingsPanel.tsx` 的过期注释**已改如实：那句「性能的跳转仍然先设 performance」
+   说的是本轮删掉的死 prop；现在写明「进入『性能』面板的正当入口是底部页签，设置里的性能分区仍自己可达」。
+   复核：`grep -rn "onPerf\|onCicd" src | grep -v /test/` **为空**（只剩判据文件在讲历史 + 钉住不许复活）。
+
+顺带量了一下计时（回应 `BOTTOM-TAB-9` 那条抖动）：单跑时 `BOTTOM-TAB-9` 自身 **2.3 s**（预算 5 s），
+超时是 8 worker 满载 + 扫描类用例扎堆造成的；同期 `PS-1`（esbuild 解析 1100+ 脚手架脚本）**5.4 s**、
+`ui-consistency` 两条 **5.8–6.3 s** 都还在过（它们本来就重，且是解析/DOM 绑定，文本预筛帮不上），
+所以除本轮 `RODB-231-7` 的预筛（2.0 s → 0.8 s）外没有再加别的预筛 —— 不为一条既有抖动去改别人的判据。
+
 ### 门禁（本轮实测）
 
-`npx tsc --noEmit` **0 错误**；全量 `npx vitest run` **695 文件 / 8283 通过 + 17 skipped**
-（其中本轮新增 `src/test/read-only-db.test.ts` 的 7 条；另一个子代理同期的
+`npx tsc --noEmit` **0 错误**；全量 `npx vitest run` **695 文件 / 8285 通过 + 17 skipped**
+（其中本轮新增 `src/test/read-only-db.test.ts` 的 9 条；另一个子代理同期的
 `src/test/retired-ui-plugins.test.ts` 也在这次全量里、同样是绿的 —— 它当时还未提交）；
 `npm run audit`（整链跑完，`&&` 到最后一个 `audit:control-bytes` 仍通过，日志里 `npm ERR` = 0）；
 `knip-gate` **没有增长**（exports 49/49、types 21/21、duplicates 10/10，files=0）；
 `scan-report-sites --check` **268 = 268**（triaged 268 / pending 0）；
-`check-artifacts` 登记波次 **44** 个（新增 `sidebar-props-readonly-db-231`：4 条变异按期望变红 + 反向对照不红）。
+`check-artifacts` 登记波次 **44** 个（`sidebar-props-readonly-db-231` 现有 **6 条**变异：
+5 条按期望变红 + 1 条反向对照，`restored=true`）；`check-node-syntax` 通过。
 
 ⚠️ 全量跑里遇到一条**计时抖动**（如实记）：`BOTTOM-TAB-9`（`bottom-tab-entry-ratchet.test.tsx`）在
 8 worker 满载时 `Test timed out in 5000ms`（它要整树走查 `src` 数槽位贡献者，本来就在 5 秒边缘）。

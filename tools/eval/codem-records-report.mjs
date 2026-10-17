@@ -18,7 +18,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+// 只读钻取唯一实现：复制真库到临时目录再读，真库的 -shm mtime 都不动（见该文件的说明）
+import { openReadOnlyDb } from "../maintenance/read-only-db.mjs";
 // 与驱动**同一份**判据：避免"事后复核"和"实时判定"各有一把尺子（第 101 波）
 import { classifySessionAccess } from "./codem-record-integrity.mjs";
 
@@ -55,6 +56,30 @@ const records = readFileSync(file, "utf8")
   .map((l) => JSON.parse(l));
 
 /**
+ * 事后复核用的只读连接：**整份报告只开一次**。
+ *
+ * 为什么是「一次」：`openReadOnlyDb` 会把库（`.bin` + `-wal` + `-shm`，真库 942 MB）复制到临时目录，
+ * 按记录数一条开一次会把 942 MB 复制几十遍 —— 那是拿时间换了个没人需要的东西。
+ *
+ * 为什么不是直接读真库：只读连接一个带 WAL 的库会把真库 `-shm` 的 mtime 与内容改掉
+ * （SQLite 的 wal-index 共享内存，属连接标记）。读到的**数据**与直接读相同（副本带 `-wal`，
+ * 未 checkpoint 的行照样可见，只多不少）—— 差别只在「不碰用户现场」。
+ */
+let recheckDb = null;
+let recheckDbTried = false;
+function getRecheckDb() {
+  if (recheckDbTried) return recheckDb;
+  recheckDbTried = true;
+  if (!existsSync(DB_PATH)) return null;
+  try {
+    recheckDb = openReadOnlyDb(DB_PATH);
+  } catch {
+    recheckDb = null;
+  }
+  return recheckDb;
+}
+
+/**
  * **事后复核污染**：用当前判据（`codem-record-integrity.mjs`）从**会话事件**重新判一次，
  * 覆盖记录里存的那个 `contaminated` 快照。
  *
@@ -64,13 +89,9 @@ const records = readFileSync(file, "utf8")
  * 旧结论还挂在那里。
  */
 function recheckContamination(record) {
-  if (!record.session || !existsSync(DB_PATH)) return null;
-  let d;
-  try {
-    d = new DatabaseSync(DB_PATH, { readOnly: true });
-  } catch {
-    return null;
-  }
+  if (!record.session) return null;
+  const d = getRecheckDb();
+  if (!d) return null;
   try {
     const rows = d
       .prepare(
@@ -81,8 +102,6 @@ function recheckContamination(record) {
     return classifySessionAccess(rows);
   } catch {
     return null;
-  } finally {
-    d.close();
   }
 }
 
@@ -174,3 +193,6 @@ if (showAll) {
     );
   }
 }
+
+/* 复核用的副本连接收尾（close 会连临时目录一起删；进程退出时还有一道 exit 钩子兜底） */
+if (recheckDb) recheckDb.close();

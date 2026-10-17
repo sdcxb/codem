@@ -1162,7 +1162,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
              *
              * ⚠️ 只动了**渲染顺序**：`activeTab` 的取值、"更多"折叠逻辑、
              * 以及各分区自身的实现都没动 —— 所以不影响任何跳转（例如侧栏/标题栏的
-             * "打开设置"仍然落到 `general`，`onPerf` 仍然先设 `performance`）。
+             * "打开设置"仍然落到 `general`）。
+             *
+             * 第 231 波更正：这一段原来还写着「性能的跳转仍然先设 performance」——
+             * 那句说的是 `App.tsx` 传给侧栏的一个**死 prop**（从 `7d768d3f` 起 Sidebar
+             * 函数体一次都没读过它），本轮已随死 prop 一起删掉。现在进「性能」面板的
+             * 正当入口是**底部页签**（`BottomPanelTabs` 的「性能」 ⇒ `setBottomTab("perf")`）；
+             * 设置里的「性能」分区仍然自己可达，只是不再有「从侧栏跳进来」这条路。
+             * 判据：`src/test/sidebar-user-settings-click.test.ts` 的 `PERFENTRY-231-1..4`。
              */}
             <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`}
               aria-current={activeTab === "advanced" ? "page" : undefined} onClick={() => setActiveTab("advanced")}>

@@ -84,5 +84,42 @@ export default {
       tests: ["src/test/sidebar-user-settings-click.test.ts"],
       expectRed: false,
     },
+    {
+      id: "MUT-5 受版本控制的 tools/ 里的报告脚本改回直接打开真库",
+      why:
+        "RODB-231-7a：`tools/` 那一层是这条纪律**在干净 clone 上也生效**的那一半 —— " +
+        "`codem-records-report` 的事后复核要读真库会话事件，退回直读就会在用户现场 -shm 上留痕",
+      patches: [
+        {
+          file: "tools/eval/audit-codem-record.mjs",
+          from: "const db = openReadOnlyDb(DB_PATH);",
+          to: "const db = new DatabaseSync(DB_PATH, { readOnly: true });",
+        },
+        {
+          /* 真实的回退会连 import 一起换回来（不然脚本根本跑不起来）—— 变异也要还原这一步，
+             否则测的是「引用了一个没导入的符号」，不是「退回直读真库」 */
+          file: "tools/eval/audit-codem-record.mjs",
+          from: 'import { openReadOnlyDb } from "../maintenance/read-only-db.mjs";',
+          to: 'import { DatabaseSync } from "node:sqlite";',
+        },
+      ],
+      tests: ["src/test/read-only-db.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-6 副本不带 -wal（等效于「只读 .bin」的口径）",
+      why:
+        "RODB-231-8：复制时漏掉 -wal ⇒ 未 checkpoint 的行静默消失（行数 3 → 1），" +
+        "报告数字缩水而没人报错。判据必须能看见这件事",
+      patches: [
+        {
+          file: "tools/maintenance/read-only-db.mjs",
+          from: "      if (!fs.existsSync(file)) continue;",
+          to: '      if (!fs.existsSync(file) || file.endsWith("-wal")) continue;',
+        },
+      ],
+      tests: ["src/test/read-only-db.test.ts"],
+      expectRed: true,
+    },
   ],
 };
