@@ -1,0 +1,135 @@
+{
+  "wave": "panel-other-pending-230",
+  "description": "第 230 波：本处待批准 0 条而全局 >0 时补一行读数的判据（MOP-1..5），6 条变异各改坏一处",
+  "runAt": "2026-10-17T01:33:47.870Z",
+  "specFingerprint": "1751c68ac0dbe6e54f518fd41398a4ecf406676f",
+  "files": [
+    "src/components/MemoryManager.tsx"
+  ],
+  "tests": [
+    "src/test/memory-other-projects-pending.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 条件恒真（去掉 globalPending > 0）",
+      "why": "MOP-2 / MOP-3：本处有待批准、或库内一条都没有时也会渲染 —— 那行字会开始解释一个不存在的积压",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "{pending.length === 0 && globalPending > 0 && (",
+          "to": "{true && ("
+        }
+      ],
+      "tests": [
+        "src/test/memory-other-projects-pending.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 8027
+    },
+    {
+      "id": "MUT-2 条件恒假（改成本处 >0 才显示）",
+      "why": "MOP-1：本处 0 条、全局 3 条时那一行不出现 —— 用户又看不到「别的项目还有积压」这个事实了",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "{pending.length === 0 && globalPending > 0 && (",
+          "to": "{pending.length > 0 && ("
+        }
+      ],
+      "tests": [
+        "src/test/memory-other-projects-pending.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7175
+    },
+    {
+      "id": "MUT-3 N 换成本地数（stats.pendingEntries）",
+      "why": "MOP-1 / MOP-4：本处为 0 时显示「还有 0 条」—— 数字口径与闸门分叉",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "其它项目还有 {globalPending} 条待批准（去记忆体检处置）",
+          "to": "其它项目还有 {stats.pendingEntries} 条待批准（去记忆体检处置）"
+        }
+      ],
+      "tests": [
+        "src/test/memory-other-projects-pending.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 6256
+    },
+    {
+      "id": "MUT-4 N 换成常量 0",
+      "why": "MOP-1 / MOP-4：恒显示「还有 0 条」（把读数写死成常数是最容易被误当成「修好了」的形态）",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "其它项目还有 {globalPending} 条待批准（去记忆体检处置）",
+          "to": "其它项目还有 {0} 条待批准（去记忆体检处置）"
+        }
+      ],
+      "tests": [
+        "src/test/memory-other-projects-pending.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7403
+    },
+    {
+      "id": "MUT-5 取数口径换成面板统计（两处口径分叉）",
+      "why": "MOP-1 / MOP-4：那一行的数不再等于 `countPendingEntries()`（闸门读的那个数）⇒ 界面开始解释一个与降级闸门无关的数字",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "setGlobalPending(service.countPendingEntries());",
+          "to": "setGlobalPending(service.getStats(ctx).pendingEntries);"
+        }
+      ],
+      "tests": [
+        "src/test/memory-other-projects-pending.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7187
+    },
+    {
+      "id": "MUT-6 把「本处」那份换成全项目（别处内容泄进面板）",
+      "why": "MOP-4 / MOP-2：用「把列表也改成全局」来抹平两个读数的差异 ⇒ 别的项目的待批准内容（含摘要，可编辑/可删）被摊在面板里，这是 `listPending` 按 ctx 过滤要防的跨项目泄漏",
+      "patches": [
+        {
+          "file": "src/components/MemoryManager.tsx",
+          "from": "const ctx = { projectId, sessionId };",
+          "to": "const ctx = { projectId, sessionId, showAllProjects: true };"
+        }
+      ],
+      "tests": [
+        "src/test/memory-other-projects-pending.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7083
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "wave": "tauri-arity-230",
+  "description": "第 230 波：`#[tauri::command]` 的形参个数与 lib.rs 里调用实参个数必须一致（挡住「改了签名忘了改 Rust 测试」⇒ cargo test --lib 编不过）",
+  "runAt": "2026-10-17T01:34:26.408Z",
+  "specFingerprint": "a4593c17d8cf55124b2f13e5245e8e6659a4ef5b",
+  "files": [
+    "src-tauri/src/lib.rs"
+  ],
+  "tests": [
+    "src/test/tauri-command-test-arity.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 某条用例少传一个实参（本轮真缺陷的形状）",
+      "why": "TAURI-ARITY-1：`execute_command` 是 5 参而这里只给 4 个 ⇒ 编译期 E0061 ⇒ 整个 Rust 单测面静默消失",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None, None)",
+          "to": "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None)"
+        }
+      ],
+      "tests": [
+        "src/test/tauri-command-test-arity.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3136
+    },
+    {
+      "id": "MUT-2 某条用例多传一个实参",
+      "why": "TAURI-ARITY-1：反过来多给一个也会 E0061（判据必须两边都看得见，不能只查「够不够」）",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "            Some(120_000),\n            None,\n            None,\n        )",
+          "to": "            Some(120_000),\n            None,\n            None,\n            None,\n        )"
+        }
+      ],
+      "tests": [
+        "src/test/tauri-command-test-arity.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3355
+    },
+    {
+      "id": "MUT-3 给命令加一个形参却不改调用点",
+      "why": "TAURI-ARITY-1 / TAURI-ARITY-2：从**签名那一侧**改坏 —— 证明这条判据不是只盯着调用点，而是两边任何一边动都会红（这正是本轮缺陷的成因方向）",
+      "patches": [
+        {
+          "file": "src-tauri/src/lib.rs",
+          "from": "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n) -> Result<serde_json::Value, String> {",
+          "to": "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n    extra_probe: Option<String>,\n) -> Result<serde_json::Value, String> {"
+        }
+      ],
+      "tests": [
+        "src/test/tauri-command-test-arity.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3352
+    }
+  ]
+}

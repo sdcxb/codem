@@ -81,6 +81,10 @@
     "memory-badge-192",
     "cmd-arg-192",
     "index-call-192",
-    "json-repair-192"
+    "json-repair-192",
+    "panel-other-pending-230",
+    "data-home-230",
+    "datahome-behavior-230",
+    "tauri-arity-230"
   ]
 }
