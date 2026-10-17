@@ -6962,3 +6962,43 @@ spawn 了 17 个 `node <script>.ts` 真进程）。单跑必过、满载必挂 �
 - 无头浏览器探针要盯三件事：**视口怎么定**（`--window-size` 可能不生效）、**上一份文档会不会串台**（先回 `about:blank`）、
   **清理成本**（别用起子进程当 sleep）。
 - 探针坏了 ≠ 判据该放宽：先换通道，再谈取舍。
+
+
+## 2026-10-18：发版 1.16.324（修复「网页搜索」结果卡片 + 成功返回真机核对）
+
+### 1）这一版动了什么（面向用户）
+
+- **「网页搜索」卡片显示真结果**：上一版展开会看到几个并不存在的「文件名 + 行号」（每个 1 match），
+  真正的标题 / 链接 / 摘要看不到 —— 根因是「猜 grep 形状」的门禁写成了名字子串（`toolName.includes("search")`），
+  DeepSeek 报告里的 `日期: …T09:12:12.122Z` 恰好命中 `^(.+?):(\d+):(.*)$`。门禁改成精确 id 白名单 `grep`/`glob`，
+  判据 `WEBSEARCH-CARD-1/2/3` + 波次 `web-search-card-234`。
+- 网页搜索 / 抓取的**成功返回**在真机上逐项核对过（条数、摘要长度、正文长度与界面标注一致）。
+
+### 2）发版流程实做（每一步的实测结果）
+
+1. 版本号四处同步：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` / `src-tauri/Cargo.lock`；
+   `CHANGELOG` 加 1.16.324 段、`PROJECT-GUIDE` 版本历史补行；`version-consistency`（5 条）与
+   `update-manifest-generator`（6 条）通过。
+2. 构建（带签名环境变量）：exit 0，产物 `Codem_1.16.324_x64-setup.exe` + `.sig`、`Codem_1.16.324_x64_en-US.msi` + `.sig`。
+3. `make-latest-json.mjs 1.16.324` → 平台键 `windows-x86_64-nsis` + `windows-x86_64`；
+   `verify-update-manifest.mjs` 本地 5 项、`--remote` 7 项（含远端资产 sha256 与本地产物一致）全过。
+   ⚠️ `latest.json` 是**入库**文件，版本一变就要一起提交。
+4. `gh release create v1.16.324 --notes-file …` + `gh release upload` 5 个资产；`gh release list` 显示
+   `v1.16.324 = Latest`（发布即 Latest，不需要再抢）。
+5. 真机：静默安装（exit 0）→ `codem.exe` 的 `FileVersion/ProductVersion = 1.16.324` →
+   `window.__TAURI__.app.getVersion()` 也回 `1.16.324` → 打开两个付费开关、跑一句真搜索：
+   **5 次工具调用全部 done**（4 次 search 285/386/344/347ms，1 次 fetch 152ms、正文 6,402 字），
+   DOM 计数 `.websearch-head=1`、`.websearch-item=13`、`.search-match-row=0`、`.search-block=0`，
+   前两条链接分别是 `…/zh-cn/guides/search/` 与 `…/zh-cn/api/fetch/`；截图与数据落
+   `docs/evidence/release-1.16.324/`。
+6. 收尾：两个付费开关点回关闭并只读复核落库 `"0"`（默认关闭是产品口径）；按 PID 关掉自己起的实例、释放真机锁。
+
+### 3）教训 / 注意
+
+- **付费开关的取证顺序**：先开 → 跑 → **点回关闭 → 只读复盘**。这次第一遍点关闭时两个开关在屏幕外，
+  点击落在 `reachable=false` 上（没生效），复查 DOM 才发现；必须 `scrollIntoView` 后再点，并以
+  `aria-checked` + 真库只读副本双重复核。
+- 发布说明按标准样式写（本版要点 / 修复 / 健壮性 / 升级说明 / 对标结果 / 已知问题 / 校验），
+  不写测试数量、不写波次号与内部编号。
+- `gh release view --json isLatest` **不是合法字段**（会报 Unknown JSON field）；要判断 Latest 用
+  `gh release list`。
