@@ -6596,10 +6596,16 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
 
 ### 门禁（本轮实测）
 
-`npx tsc --noEmit` **0 错误**；全量 `npx vitest run` **694 文件 / 8278 通过 + 17 skipped**
-（其中本轮新增 `src/test/read-only-db.test.ts` 的 7 条；相对交接里那份 693 / 8267 基线多出的 4 条
-来自本轮之前已在 HEAD 里的测试，与本轮改动无关 —— 工作区里没有别人的未提交改动）；
-`npm run audit`（后台整链）见下方结论；`knip-gate` **没有增长**（exports 49/49、types 21/21、duplicates 10/10，files=0）；
+`npx tsc --noEmit` **0 错误**；全量 `npx vitest run` **695 文件 / 8283 通过 + 17 skipped**
+（其中本轮新增 `src/test/read-only-db.test.ts` 的 7 条；另一个子代理同期的
+`src/test/retired-ui-plugins.test.ts` 也在这次全量里、同样是绿的 —— 它当时还未提交）；
+`npm run audit`（整链跑完，`&&` 到最后一个 `audit:control-bytes` 仍通过，日志里 `npm ERR` = 0）；
+`knip-gate` **没有增长**（exports 49/49、types 21/21、duplicates 10/10，files=0）；
 `scan-report-sites --check` **268 = 268**（triaged 268 / pending 0）；
-`check-artifacts` 登记波次 **44** 个（新增 `sidebar-props-readonly-db-231`：4 条变异全绿 + 反向对照）。
+`check-artifacts` 登记波次 **44** 个（新增 `sidebar-props-readonly-db-231`：4 条变异按期望变红 + 反向对照不红）。
+
+⚠️ 全量跑里遇到一条**计时抖动**（如实记）：`BOTTOM-TAB-9`（`bottom-tab-entry-ratchet.test.tsx`）在
+8 worker 满载时 `Test timed out in 5000ms`（它要整树走查 `src` 数槽位贡献者，本来就在 5 秒边缘）。
+单跑 3/3 全绿（9 passed），与本轮改动无关；顺着这条把本地棘轮 `RODB-231-7` 的扫描加了便宜预筛
+（先看子串再跑正则），单条耗时从 ~2000ms 降到 ~766ms，之后全量复跑 695/695 绿。
 

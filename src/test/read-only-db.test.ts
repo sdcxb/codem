@@ -258,6 +258,12 @@ describe("RODB-231-7 钻取脚手架不许再直接打开真库", () => {
        * 那种文件不 import `node:sqlite`，据此跳过。
        */
       if (!/from\s+"node:sqlite"/.test(src)) continue;
+      /*
+       * 便宜的预筛（先看子串再看正则）：`.preview-shot` 里有一千多个文件，
+       * 直接对每个文件跑带 `[^)]*` 的正则会在大文件上回溯得很难看（实测这条用例曾吃掉 2 秒，
+       * 而全量并行时同批还有别的"整树走查"用例 —— 别让本地棘轮去抢它们的超时预算）。
+       */
+      if (!src.includes("new DatabaseSync(") || !src.includes("codem-db-rust.bin")) continue;
       const names = realDbConstNames(src);
       const openReadOnly = (n: string) =>
         new RegExp("new DatabaseSync\\(\\s*" + n + "\\s*,\\s*\\{\\s*readOnly:\\s*true\\s*\\}\\s*\\)").test(src);
