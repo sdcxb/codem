@@ -337,7 +337,7 @@
 | 门禁 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | 0 错误 |
-| `npx vitest run`（全量） | **697 文件 / 8296 通过 + 17 skipped**；2 条红**均不在本修复面**（单跑确认：`css-checkup-classes` 报 `MemoryManager.tsx` 的 `memory-demoted-section` 无 CSS 定义、`update-manifest-generator` 报入库 `latest.json` 仍是 `1.16.321` 而 `package.json` 已是 `1.16.322` —— 分别是另一路的面与发版台账；本目录只记录，不改别人的面） |
+| `npx vitest run`（全量） | **698 文件 / 8305 通过 + 17 skipped**；1 条红**不在本修复面**（单跑确认：`update-manifest-generator` 报入库 `latest.json` 仍是 `1.16.321` 而 `package.json` 已是 `1.16.322` —— 发版台账，属另一面；本目录只记录，不改别人的面） |
 | `npm run audit` | exit 0（末段：`上报点分诊闸门通过：扫描命中 268 处 = 登记表 268 条`、`✅ 语法门禁通过`、`probe-guard 自证 26/26`、`✅ 可达性门禁通过`） |
 | `npm run audit:knip`（knip-gate） | `✅ 没有增长`（exports 49/49、types 21/21、duplicates 10/10；entry 20 = 可达性白名单 20） |
 | `node tools/audit/scan-report-sites.mjs --check` | `扫描命中 268 处 = 登记表 268 条（triaged 268 / pending 0）`，漂移/过期/缓存漂移均为 0 |
