@@ -6866,7 +6866,7 @@ CDP 连 WebView2 并用 `Emulation.setDeviceMetricsOverride` 把视口压到 **1
 已记进交接 §9 第 7 项。**没有**为了让它们变绿去改断言。
 `knip` 无增长；`report-sites` 267=267；`css-contract` 无变化；`scan-style-literals` 11 族不超基线；
 `check-artifacts` **50 波次**全过（新增 `web-search-card-234`）；`reachability` 通过；`docs-evidence-budget` 通过
-（新批次 2.17 MB / 单批上限 3 MB，含 README）。本轮没动 Rust ⇒ 未跑 `cargo`。
+（新批次 2.22 MB / 单批上限 3 MB，含 README；`docs/evidence` 合计 5.29 MB / 总量上限 10 MB）。本轮没动 Rust ⇒ 未跑 `cargo`。
 真机：重建包已静默安装（`59409f50…`，同版本号 1.16.323），两轮 200 证据都出自**安装版**而非 dev server。
 
 ### 5）教训（写给下一个我）
