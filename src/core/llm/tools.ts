@@ -161,6 +161,8 @@ function getI18n() {
 }
 import { createLoadSkillTool } from "./tools/load-skill";
 import { createWebSearchTool } from "./tools/web-search";
+// DeepSeek Fetch：抓取网页正文（Markdown）—— 受设置开关与「工具管理」禁用列表双重约束
+import { createWebFetchTool } from "./tools/deepseek-web";
 import { createReadAttachmentTool } from "./tools/read-attachment";
 import { createSearchNotebookTool } from "./tools/search-notebook";
 // P1-6: AI 跨笔记操作工具 (对标 NotebookLM 笔记操作)
@@ -2526,6 +2528,8 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   registry.register(createLoadSkillTool(registry));
   // B4: web_search tool
   registry.register(createWebSearchTool());
+  // DeepSeek Fetch：把指定 URL 的页面正文取回成 Markdown（默认关闭，需在设置里显式开启）
+  registry.register(createWebFetchTool());
   // B5: read_attachment tool
   registry.register(createReadAttachmentTool());
   // F5: search_notebook tool for knowledge base mode

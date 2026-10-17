@@ -95,6 +95,14 @@ interface ToggleEntryProps {
   description?: string;
   value: boolean;
   onChange: (value: boolean) => void;
+  /**
+   * 不可用（例如「DeepSeek 联网能力」在没配 Key 时）—— 禁用而不是"点了没反应"。
+   *
+   * 为什么要有这个 prop 而不是让调用方自己包一层：`disabled` 必须真的落在
+   * `<button>` 上（否则读屏与键盘仍认为它可用），而样式在
+   * `.toggle-entry:disabled` 里统一给（见 `styles/codem-ui.css`）。
+   */
+  disabled?: boolean;
 }
 
 export const ToggleEntry = memo(function ToggleEntry({
@@ -102,14 +110,17 @@ export const ToggleEntry = memo(function ToggleEntry({
   description,
   value,
   onChange,
+  disabled = false,
 }: ToggleEntryProps) {
   return (
     <ConfigEntry label={label} description={description}>
       <button
         className={`toggle-entry ${value ? "on" : ""}`}
         onClick={() => onChange(!value)}
+        disabled={disabled}
         role="switch"
         aria-checked={value}
+        aria-disabled={disabled}
         /* 走查量到"有 aria-checked 却没有可访问名"（读屏只念得出开关状态、念不出它管什么）
            ⇒ 用条目自身的 label 当可访问名。只加属性，不动布局与样式。 */
         aria-label={label}

@@ -2251,6 +2251,18 @@ body.resizing-columns * {
 .toggle-entry.on::after {
   transform: translateX(18px);
 }
+/*
+ * 不可用状态（DeepSeek 联网能力在没配 API Key 时）。
+ *
+ * 为什么需要一条真规则：`<button disabled>` 只是"点不动"，长得和可用的一模一样 ——
+ * 用户会以为开关坏了。这里只调两件事（不新增设计令牌）：
+ *   · 降低不透明度 ⇒ 走 H5 口径的 `--opacity-disabled`（不许写裸数值）；
+ *   · 指针形状 ⇒ `not-allowed`，鼠标悬停时也说得清"为什么点不动"。
+ */
+.toggle-entry:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
 
 /* ========== 21. Token Activity Grid + Usage Chart ========== */
 .token-activity-grid {

@@ -73,6 +73,16 @@ import {
 } from "../core/theme/appearance-modes";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
+import {
+  DEEPSEEK_DEFAULT_SEARCH_COUNT,
+  DEEPSEEK_MAX_SEARCH_COUNT,
+  deepseekToolBaseUrl,
+  readDeepSeekWebConfig,
+  setDeepSeekFetchEnabled,
+  setDeepSeekSearchCount,
+  setDeepSeekSearchEnabled,
+  type DeepSeekWebConfig,
+} from "../core/llm/tools/deepseek-web";
 import { setSandboxAclEnabled, isSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
 import { showToast } from "./ToastNotification";
 // P2 #35: Import UsageStats for embedding in settings
@@ -282,6 +292,17 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
    * 勾选后调用 set/removeSetting 却不触发重渲染，界面上的勾选状态要等面板重开才更新。
    */
   const [sandboxOn, setSandboxOn] = useState<boolean>(() => isSandboxAclEnabled());
+  /**
+   * DeepSeek 联网能力（Search / Fetch）的开关与条数 —— **默认关闭**。
+   *
+   * 为什么默认关：这两个接口**按成功次数计费**（各 5 元/1000 次）。默认打开等于
+   * 让用户在不知情的情况下花钱；"要花钱的能力必须用户显式点头"是产品侧的硬规矩。
+   *
+   * 为什么放自己 state 而不是塞进 `settings`（codem-settings JSON）：开关必须**立刻生效**
+   * （工具侧读 DB，不等「保存」），而且它和"哪家 provider"无关 —— 塞进 provider 卡片
+   * 之外的扁平键才不会被「保存并刷新」的整块覆盖逻辑牵连。
+   */
+  const [deepseekWeb, setDeepseekWeb] = useState<DeepSeekWebConfig>(() => readDeepSeekWebConfig());
   const [identity, setIdentity] = useState<IdentityConfig>(defaultIdentity);
   const [userConfig, setUserConfig] = useState<UserConfig>(defaultUser);
   const [saved, setSaved] = useState(false);
@@ -324,6 +345,17 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
    * —— 没改过的字段以库为准（库是更晚的事实）。
    */
   const dirtyLocalFields = useRef<Set<string>>(new Set());
+
+  /**
+   * DeepSeek 联网能力的面板快照：保存 provider（含 Base URL / API Key）或别处改了设置时刷新。
+   * 不刷新的话「实际使用的 base URL」会一直显示打开面板那一刻的旧值 —— 那正是
+   * 这条只读展示想避免的事（面板说的和工具真正打的必须是同一条解析链）。
+   */
+  useEffect(() => {
+    const refreshDeepseekWeb = () => setDeepseekWeb(readDeepSeekWebConfig());
+    window.addEventListener("codem-settings-changed", refreshDeepseekWeb);
+    return () => window.removeEventListener("codem-settings-changed", refreshDeepseekWeb);
+  }, []);
 
   useEffect(() => {
     const stored = getSettingJSON<Settings | null>("codem-settings", null);
@@ -2000,6 +2032,89 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   onChange={(e) => updateProvider(provider.id, { baseUrl: e.target.value })}
                 />
               </div>
+
+              {/* DeepSeek 专属：联网能力（Search / Fetch）。两个开关默认关闭 —— 按成功次数计费。 */}
+              {provider.id === "deepseek" && (
+                <div className="setting-group">
+                  <label>
+                    {lang === "zh" ? "联网能力（DeepSeek Search / Fetch）" : "Web tools (DeepSeek Search / Fetch)"}
+                  </label>
+                  <div className="sp-note sp-note--tight">
+                    {lang === "zh"
+                      ? "每次成功调用计费 5 元/1000 次（Search 有结果、Fetch 取到正文才计费，失败或无结果不计费）；Search 与 Fetch 各自独立 QPS 5。默认关闭 —— 付费能力需要你显式开启。"
+                      : "Each successful call costs ¥5 per 1000 (only billed when Search returns results or Fetch returns body text; failures and empty results are free). Search and Fetch have independent QPS 5. Off by default — paid capabilities need explicit opt-in."}
+                  </div>
+
+                  {!provider.apiKey && (
+                    <div className="sp-hint">
+                      {lang === "zh"
+                        ? "未检测到 DeepSeek API Key：先在上方填写并点「保存并刷新」，两个开关才会启用。"
+                        : "No DeepSeek API key yet: fill it in above and click Save & Refresh — the switches stay disabled until then."}
+                    </div>
+                  )}
+
+                  <ToggleEntry
+                    label={lang === "zh" ? "网页搜索（DeepSeek Search）" : "Web search (DeepSeek Search)"}
+                    description={
+                      lang === "zh"
+                        ? "让 web_search 优先走 DeepSeek 真实检索（返回 title/url/snippet/summary/权威度）。开启后失败会直接报原因，不会静默回退到凭记忆的旧后端。"
+                        : "Makes web_search use DeepSeek real search first (title/url/snippet/summary/authority). Failures are reported instead of silently falling back."
+                    }
+                    value={deepseekWeb.searchEnabled}
+                    disabled={!provider.apiKey}
+                    onChange={(next) => {
+                      setDeepSeekSearchEnabled(next);
+                      setDeepseekWeb(readDeepSeekWebConfig());
+                    }}
+                  />
+
+                  <ToggleEntry
+                    label={lang === "zh" ? "网页抓取（DeepSeek Fetch）" : "Web fetch (DeepSeek Fetch)"}
+                    description={
+                      lang === "zh"
+                        ? "开放 web_fetch 工具：把指定 URL 的正文取回为 Markdown（超过 20 KB 会截断并标注）。关闭时该工具一律拒绝，不发任何请求。"
+                        : "Enables the web_fetch tool: returns a page's body as Markdown (truncated and labelled above 20 KB). When off, the tool is refused without any request."
+                    }
+                    value={deepseekWeb.fetchEnabled}
+                    disabled={!provider.apiKey}
+                    onChange={(next) => {
+                      setDeepSeekFetchEnabled(next);
+                      setDeepseekWeb(readDeepSeekWebConfig());
+                    }}
+                  />
+
+                  <ConfigEntry
+                    label={lang === "zh" ? "每次搜索条数" : "Results per search"}
+                    description={
+                      lang === "zh"
+                        ? `范围 1~${DEEPSEEK_MAX_SEARCH_COUNT}，缺省 ${DEEPSEEK_DEFAULT_SEARCH_COUNT}。模型在调用时显式指定条数时以模型为准。`
+                        : `Range 1~${DEEPSEEK_MAX_SEARCH_COUNT}, default ${DEEPSEEK_DEFAULT_SEARCH_COUNT}. An explicit num_results from the model wins.`
+                    }
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={DEEPSEEK_MAX_SEARCH_COUNT}
+                      value={deepseekWeb.searchCount}
+                      aria-label={lang === "zh" ? "每次搜索条数" : "Results per search"}
+                      disabled={!provider.apiKey}
+                      onChange={(e) => {
+                        const next = Number.parseInt(e.target.value, 10);
+                        setDeepSeekSearchCount(Number.isFinite(next) ? next : DEEPSEEK_DEFAULT_SEARCH_COUNT);
+                        setDeepseekWeb(readDeepSeekWebConfig());
+                      }}
+                      className="sp-input sp-input--compact"
+                    />
+                  </ConfigEntry>
+
+                  {/* 实际请求地址：与工具侧同一个解析函数，避免"面板写的和真正打的"不是一条链 */}
+                  <div className="sp-hint">
+                    {lang === "zh"
+                      ? `实际使用的 base URL（只读，改上面的 Base URL 需保存后生效）：${deepseekToolBaseUrl(deepseekWeb.baseUrl)}`
+                      : `Base URL in use (read-only; a change to Base URL above applies after saving): ${deepseekToolBaseUrl(deepseekWeb.baseUrl)}`}
+                  </div>
+                </div>
+              )}
 
               <div className="setting-group sp-row sp-row--wrap">
                 <button

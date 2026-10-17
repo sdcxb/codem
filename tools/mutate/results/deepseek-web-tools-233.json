@@ -1,0 +1,136 @@
+{
+  "wave": "deepseek-web-tools-233",
+  "description": "第 233 波：DeepSeek Search / Fetch 接入（web_search 优先后端 + 新 web_fetch 工具 + 设置开关）。5 条变异 4 红 + 1 反向对照",
+  "runAt": "2026-10-17T10:02:45.377Z",
+  "specFingerprint": "f4e88148bc2d2258ad4eb835336a98e8abeb4539",
+  "files": [
+    "src/core/llm/tools/deepseek-web.ts",
+    "src/core/llm/tools/web-search.ts"
+  ],
+  "tests": [
+    "src/test/deepseek-web-tools.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 默认搜索条数从 10 改错成 8",
+      "why": "DSWEB-1-2 钉的就是「body 缺省 count=10」（硬编码断言，不 import 常量）⇒ 常量改错必须红；DSWEB-4-4 的「缺省配置条数 10」同时会红",
+      "patches": [
+        {
+          "file": "src/core/llm/tools/deepseek-web.ts",
+          "from": "export const DEEPSEEK_DEFAULT_SEARCH_COUNT = 10;",
+          "to": "export const DEEPSEEK_DEFAULT_SEARCH_COUNT = 8;"
+        }
+      ],
+      "tests": [
+        "src/test/deepseek-web-tools.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 5389
+    },
+    {
+      "id": "MUT-2 把 402（余额不足）当成可重试状态",
+      "why": "DSWEB-3-4 断言 402 只请求一次、DSWEB-4-3 断言失败后只有一次 DeepSeek 请求 ⇒ 402 进重试表后请求次数变 3，两条同时红。重试永远不会把余额变出来，只会白烧 QPS",
+      "patches": [
+        {
+          "file": "src/core/llm/tools/deepseek-web.ts",
+          "from": "  if (status === 408 || status === 429) return true;",
+          "to": "  if (status === 402 || status === 408 || status === 429) return true;"
+        }
+      ],
+      "tests": [
+        "src/test/deepseek-web-tools.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7326
+    },
+    {
+      "id": "MUT-3 把 API Key 拼进错误信息",
+      "why": "DSWEB-3-6 断言错误信息与日志里都不含 Key。变异把 Key 拼进我们**自己写的**那一段（官方的 message 段另有抹除逻辑，所以这条必须红在「我们自己不写」上）",
+      "patches": [
+        {
+          "file": "src/core/llm/tools/deepseek-web.ts",
+          "from": "  const retried = attempts > 1 ? `（已重试 ${attempts - 1} 次）` : \"\";",
+          "to": "  const retried = attempts > 1 ? `（已重试 ${attempts - 1} 次）` : `（key=${apiKey}）`;"
+        }
+      ],
+      "tests": [
+        "src/test/deepseek-web-tools.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 5929
+    },
+    {
+      "id": "MUT-4 去掉「Fetch 开关关闭」的守卫",
+      "why": "DSWEB-5-3 断言关闭时明确拒绝且零网络请求、DSWEB-6-2 断言开关关闭时 web_search 不发 DeepSeek 请求。守卫去掉后 web_fetch 会尝试发请求（stub 的 fetch 无返回 ⇒ 抛错），「关闭」这句文案消失 ⇒ 判据红",
+      "patches": [
+        {
+          "file": "src/core/llm/tools/deepseek-web.ts",
+          "from": "      if (!config.fetchEnabled) {",
+          "to": "      if (false && !config.fetchEnabled) {"
+        }
+      ],
+      "tests": [
+        "src/test/deepseek-web-tools.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7559
+    },
+    {
+      "id": "MUT-5 DeepSeek 失败后静默回退到旧后端",
+      "why": "DSWEB-4-3 断言失败就报错、不回退（输出里不许出现旧后端的 source）。变异把异常吞掉并落回老三条后端 ⇒ 402 被掩盖成「搜到了东西」，判据红",
+      "patches": [
+        {
+          "file": "src/core/llm/tools/web-search.ts",
+          "from": "    const hits = await deepseekSearch(query, {\n      count: options.count ?? deepseek.searchCount,\n    });\n    return { results: deepseekHitsToResults(hits), source: \"DeepSeek Search\" };",
+          "to": "    try {\n      const hits = await deepseekSearch(query, { count: options.count ?? deepseek.searchCount });\n      return { results: deepseekHitsToResults(hits), source: \"DeepSeek Search\" };\n    } catch {\n      // 变异：静默回退（不许这样）\n    }"
+        }
+      ],
+      "tests": [
+        "src/test/deepseek-web-tools.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 5660
+    },
+    {
+      "id": "MUT-6 反向对照：只改一句注释",
+      "why": "反向对照（expectRed=false）：判据读的是行为与扫描后的设置键，注释改动**不许**让它变红；若红了说明判据在盯源码文本而不是盯行为",
+      "patches": [
+        {
+          "file": "src/core/llm/tools/deepseek-web.ts",
+          "from": "/** 官方上限：count ∈ 1..50 */",
+          "to": "/** 官方上限：count ∈ 1..50（反向对照：只改注释，判据不许红） */"
+        }
+      ],
+      "tests": [
+        "src/test/deepseek-web-tools.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": false,
+      "observedRed": false,
+      "ok": true,
+      "exitCode": 0,
+      "ms": 5587
+    }
+  ]
+}
