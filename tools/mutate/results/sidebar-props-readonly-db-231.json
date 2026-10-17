@@ -1,7 +1,7 @@
 {
   "wave": "sidebar-props-readonly-db-231",
   "description": "第 231 波：①Sidebar 死 prop（性能 / CI-CD 的旧跳转）清干净、perf 的正当入口是底部页签；②只读钻取复制副本、真库三件套的 mtime 与 sha256 一动不动",
-  "runAt": "2026-10-17T05:21:59.387Z",
+  "runAt": "2026-10-17T05:40:47.914Z",
   "specFingerprint": "2c8d0864b14dce3dc1ed239a0deff427d60a65e0",
   "files": [
     "tools/maintenance/read-only-db.mjs",
@@ -33,7 +33,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 5243
+      "ms": 5445
     },
     {
       "id": "MUT-2 App 重新给 Sidebar 传 onPerf（死 prop 复活）",
@@ -53,7 +53,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4111
+      "ms": 4343
     },
     {
       "id": "MUT-3 perf 页签入口去掉门控",
@@ -73,7 +73,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3958
+      "ms": 4357
     },
     {
       "id": "MUT-4 只改一句注释（反向对照：不许红）",
@@ -93,7 +93,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 4492
+      "ms": 5446
     }
   ]
 }

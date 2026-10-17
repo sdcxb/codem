@@ -216,23 +216,39 @@ describe("RODB-231 只读钻取不许动真库（含 -shm 的 mtime）", () => {
 });
 
 /**
- * RODB-231-7：**钻取脚手架里不许再有"直接打开真库"的写法**。
+ * RODB-231-7：**钻取脚手架里不许再有「直接打开真库」的写法**。
  *
  * `.preview-shot/` 被 gitignore（一次性脚本不进仓库），所以纪律只能写在两个地方：
  * 受版本控制的 helper（本判据上方这个文件）＋ 这条**本地棘轮**。
  * 干净 clone 上没有 `.preview-shot/` ⇒ 本条自动跳过（不是假绿：跳过会在输出里显示 skipped）。
  *
- * 只认「明确指向真库」的写法（脚本里的真库路径一共就那几种，迁移前量过）：
- * `process.env.APPDATA` + `com.codem.app` + `codem-db-rust.bin`，或脚本自己的 `REAL_DB`。
- * `path.join(dir, ...)` 这类指向**副本**的路径故意不认（那是本来就该直接读的）。
+ * 认两种写法（迁移时实测就这两种，别的都是副本）：
+ * 1. **内联**：`new DatabaseSync(<含有 APPDATA/com.codem.app 与 codem-db-rust.bin 的表达式>, { readOnly: true })`；
+ * 2. **经变量**：同一文件里 `const DB = <真库路径>;`（单行常量）后面又 `new DatabaseSync(DB, { readOnly: true })`。
+ * 第二种是第一轮迁移**漏掉**的那批（当时只按调用文本量，漏了 16 个文件）—— 漏掉的后果与本判据要防的
+ * 完全相同，所以这里的解析必须跟迁移脚本同口径。
+ *
+ * 豁免：同一个变量还被**读-写**打开（`new DatabaseSync(DB)`）的脚本 = 会改库的工具，不是只读钻取；
+ * 它本来就要写 WAL/-shm，把它的只读那一次换成副本反而制造「读到一份、写另一份」的缺陷。
+ * 指向**副本**的路径（`path.join(dir, …)`、`TEMP/codem-dbq`、脚本自己 mkdtemp 的目录）故意不认。
  */
 describe("RODB-231-7 钻取脚手架不许再直接打开真库", () => {
   const scratch = path.join(process.cwd(), ".preview-shot");
   const hasScratch = fs.existsSync(scratch);
-  const realDbOpen = /new DatabaseSync\(\s*(?:[^)]*APPDATA[^)]*codem-db-rust\.bin[^)]*|REAL_DB)\s*,\s*\{\s*readOnly:\s*true\s*\}\s*\)/;
+  const inlineOpen = /new DatabaseSync\(\s*(?:[^)]*APPDATA[^)]*codem-db-rust\.bin[^)]*|REAL_DB)\s*,\s*\{\s*readOnly:\s*true\s*\}\s*\)/;
+
+  /** 单行常量定义里同时出现 APPDATA（或 com.codem.app）与 codem-db-rust.bin 的变量名 */
+  function realDbConstNames(src: string): string[] {
+    const names = new Set<string>();
+    for (const line of src.split("\n")) {
+      const m = /^\s*(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(.+);\s*$/.exec(line);
+      if (m && /codem-db-rust\.bin/.test(m[2]) && /APPDATA|com\.codem\.app/.test(m[2])) names.add(m[1]);
+    }
+    return [...names];
+  }
 
   it.skipIf(!hasScratch)("RODB-231-7 .preview-shot/*.mjs 里没有「直接只读打开真库」（有就说明没用 helper）", () => {
-    const offenders = [];
+    const offenders: string[] = [];
     for (const name of fs.readdirSync(scratch)) {
       if (!/\.(mjs|cjs)$/.test(name)) continue;
       const src = fs.readFileSync(path.join(scratch, name), "utf8");
@@ -242,7 +258,14 @@ describe("RODB-231-7 钻取脚手架不许再直接打开真库", () => {
        * 那种文件不 import `node:sqlite`，据此跳过。
        */
       if (!/from\s+"node:sqlite"/.test(src)) continue;
-      if (realDbOpen.test(src)) offenders.push(".preview-shot/" + name);
+      const names = realDbConstNames(src);
+      const openReadOnly = (n: string) =>
+        new RegExp("new DatabaseSync\\(\\s*" + n + "\\s*,\\s*\\{\\s*readOnly:\\s*true\\s*\\}\\s*\\)").test(src);
+      const openReadWrite = (n: string) => new RegExp("new DatabaseSync\\(\\s*" + n + "\\s*\\)").test(src);
+      const isWriteTool = names.some((n) => openReadWrite(n));
+      const indirect = names.some((n) => openReadOnly(n));
+      if (isWriteTool) continue;
+      if (inlineOpen.test(src) || indirect) offenders.push(".preview-shot/" + name);
     }
     expect(
       offenders,

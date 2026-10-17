@@ -6555,7 +6555,9 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
 
 **变异自证（实测）**：把 `openReadOnlyDb` 改回 `new DatabaseSync(dbPath, { readOnly: true })` ⇒
 `RODB-231-1` / `-2` 红，报错原文 `dirty-1.bin-shm：mtime 变了（1792213128482.988 → 1792213128501.0095）`；
-把 `.preview-shot/_table-counts.mjs` 改回直开原库 ⇒ `RODB-231-7` 红并点出该文件名。
+把 `.preview-shot/_table-counts.mjs`（内联写法）改回直开原库 ⇒ `RODB-231-7` 红并点出该文件名；
+把 `.preview-shot/_verify-296.mjs`（**经变量**写法）改回直开原库 ⇒ `RODB-231-7` 同样红
+（第二口径有效，不是只认内联那一半）。
 前一条也已登记进 `sidebar-props-readonly-db-231` 波次（MUT-1）。
 
 **真库同尺寸端到端（本轮实测）**：对「真库三件套的副本」跑 `withReadOnlyDb` ⇒
@@ -6566,8 +6568,18 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
 **钻取纪律（以后照这个来）**：新写的取数/钻取脚本一律
 `import { openReadOnlyDb, withReadOnlyDb } from "../tools/maintenance/read-only-db.mjs"`，
 **不许** `new DatabaseSync(<真库路径>, { readOnly: true })`。`.preview-shot/` 已按此迁完
-**85 处 / 85 个文件**（迁移前用探针量过：真库直开共 9 种写法、5 种指向真库），
-迁移后用 `node --check` 逐文件校验，并抽查 `_table-counts` / `_list-sessions` / `_db-counts` 正常出数。
+**101 个文件 / 105 处调用**，分两轮（口径不同，教训记下来）：
+
+- 第一轮按**调用文本**认内联的真库路径 ⇒ 85 个文件 / 85 处；
+- 第二轮才发现还有「经变量间接指向真库」的一批（`const DB = join(process.env.APPDATA, …)` 然后
+  `new DatabaseSync(DB, { readOnly: true })`）—— 第一轮的口径**漏了 16 个文件 / 16 处**；
+- 5 个脚本**刻意不迁**：它们对同一个库还有**读-写**打开（`_codem-repo-eval` / `_register-eval-project` /
+  `_set-effort` / `_set-last-project` / `drop-probe-events`）⇒ 那是会改库的工具，不是只读钻取，
+  把它的只读那一次换成副本会造出「读到一份、写另一份」的缺陷；
+- 迁移后用 `node --check` 逐文件校验（`_migrate-real-db-reads*.mjs` 里改完即 check，失败自动回滚），
+  并抽查 `_table-counts` / `_list-sessions` / `_db-counts` / `_storage-health` / `_check-db-size` 正常出数；
+- `RODB-231-7` 的棘轮**两种写法都认**（内联 + 经变量），并对「读-写工具」豁免 ——
+  口径与迁移脚本一致，否则就是"迁完了但判据看不见新写法"。
 
 ### 未做 / 未验（如实）
 
