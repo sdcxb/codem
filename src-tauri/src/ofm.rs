@@ -52,11 +52,13 @@ pub struct OfmProcessState {
 pub const OFM_EXTENSION_DIR: &str = "extensions/our-free-model";
 
 /// 扩展目录的绝对路径（**唯一**的路径来源；渲染侧也用不到别的路径）
+///
+/// 第 230 波：走 `crate::app_data_dir_path`（应用数据目录的唯一入口）——
+/// 设了隔离数据根（`CODEM_DATA_HOME`）时插件目录也跟着进隔离根，
+/// 这样"隔离钻取"不会因为用户点一下插件就在真目录里下载几百 MB 的便携 Node。
 #[tauri::command]
 pub async fn ofm_extension_dir(app: AppHandle) -> Result<String, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
+    let dir = crate::app_data_dir_path(&app)
         .map_err(|e| format!("取不到应用数据目录：{e}"))?
         .join(OFM_EXTENSION_DIR);
     Ok(strip_verbatim(dir))

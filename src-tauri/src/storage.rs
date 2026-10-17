@@ -179,19 +179,142 @@ pub struct ResolvedDbPath {
 ///
 /// 现在的顺序（每一步都能说清"为什么是这里"，非标准一律告警 + 由 `storage_info` 暴露）：
 ///
+/// 0. `CODEM_DATA_HOME`（**隔离数据根**：库 / 日志 / 台账 / 附件 / 溢出全跟着走；见下）；
 /// 1. `CODEM_DB_PATH`（显式覆盖，**唯一**受支持的"把库放到别处"的方式）；
 /// 2. `dirs::data_dir()`（**与 Tauri 同源**：Windows = Roaming AppData）；
 /// 3. `XDG_DATA_HOME` / `HOME`（非 Windows 习惯）；
 /// 4. `%USERPROFILE%\.codem`（Windows 上连已知文件夹都取不到时的**私有**目录）；
 /// 5. 全都没有 → 工作目录下的 **`.codem-portable/`** 子目录（名字自带说明）＋ 大声告警。
+///
+/// ⚠️ 第 0 档（`CODEM_DATA_HOME`）**排在 `CODEM_DB_PATH` 前面**：前者定义"整个数据根"，
+/// 后者只定义"库文件在哪"；两个都设是**自相矛盾**的配置，这时按范围更大的那个取，
+/// 并由 `resolve_db_path_warned()` 大声告警 —— 绝不静默挑一个。
 pub fn resolve_db_path() -> ResolvedDbPath {
-    resolve_db_path_from(
+    resolve_db_path_full(
+        isolated_data_home(),
         std::env::var_os("CODEM_DB_PATH"),
         dirs::data_dir(),
         std::env::var_os("XDG_DATA_HOME"),
         std::env::var_os("HOME"),
         std::env::var_os("USERPROFILE"),
     )
+}
+
+/**
+ * **隔离数据根**的环境变量名（第 230 波 · 测试便利性开关）。
+ *
+ * 语义（刻意只有一条）：设了它 ⇒ **所有**落在"应用数据根"下的东西都进这个目录。
+ * 没设（或设成空串）⇒ 与今天**逐字节相同**，一个分支都不多走。
+ */
+pub const DATA_HOME_ENV: &str = "CODEM_DATA_HOME";
+
+/**
+ * 隔离数据根（**唯一**读取 `CODEM_DATA_HOME` 的地方）。
+ *
+ * ## 为什么要有这个开关（被守的形态：验记忆面板时"没地方可站"）
+ *
+ * 记忆面板的取证需要一个**能被随意写坏**的数据根：待批准积压要造 5 条以上、候选合并要造
+ * 同主题两条…… 而这些只能用**可丢弃的数据**做。原来唯一的手段是 `CODEM_DB_PATH`，但它只挪
+ * **库文件**：库在副本目录，而运行日志 / 崩溃标记 / 数据目录台账 / 功能目录（`.codem/skills`、
+ * `workspace/`、附件与溢出）仍然写在 `%APPDATA%\com.codem.app` —— 于是"隔离钻取"实际上
+ * **在写用户的真目录**（第 229 波真机实测：`data-home.json` 的代次真的被顶掉了一代，
+ * 而那次启动自以为是隔离的；第 230 波复现见 `.preview-shot/_iso-probe-a.json`）。
+ * 隔离必须**以目录为单位**，才谈得上"用完清理、且能断言没碰真库"。
+ *
+ * ## 为什么**不**让 `CODEM_DB_PATH` 顺带重定位整个数据根（二选一的理由）
+ *
+ * | 方案 | 为什么没选 |
+ * | --- | --- |
+ * | 让 `CODEM_DB_PATH` 连带重定位数据根 | 它是**已发布**的开关，语义被文档、判据（`data-root-single-source` / `resolve_db_path_rules_are_reproducible`）与"非标准位置告警"钉着："库文件放在哪个**文件**"（便携 / U 盘的用法）。给它加"顺带把日志、台账、技能目录也搬走"的副作用，等于**静默改掉老用户已有的行为**，而且他们没有任何办法回到旧行为 —— 便携模式里"库在 U 盘、日志在本机"是**有意**的（见 `data-root.ts` 文件头：功能目录要不要跟进是产品决策）。 |
+ * | **新增 `CODEM_DATA_HOME`（选它）** ✓ | 默认（无环境变量）走进来的路径一个字节都没变；语义是"**整根**放在这里"，与"隔离开一次钻取"这个真实需求同粒度；它可以被静态断言（"只有一处读它"），也可以被行为断言（"真目录逐字节不变"）。 |
+ *
+ * ⚠️ 它**不是**给普通用户用的功能（不是便携模式）：没有任何界面入口、没有文档指引，
+ * 只在环境变量显式存在时生效。便携模式仍然是 `CODEM_DB_PATH`。
+ */
+pub fn isolated_data_home() -> Option<PathBuf> {
+    isolated_data_home_from(std::env::var_os(DATA_HOME_ENV))
+}
+
+/**
+ * 纯函数形态（每一条都能被单测覆盖）：**空串与未设置同义**。
+ *
+ * 为什么空串必须算"没设"：`set CODEM_DATA_HOME=` 在 Windows 脚本里会留下一个**存在的空变量**，
+ * 而那时把数据根解析成 `""`（相对的当前目录）就是第 55 轮真事故的形态（数据落进工作目录）。
+ */
+pub(crate) fn isolated_data_home_from(v: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    v.filter(|s| !s.is_empty()).map(PathBuf::from)
+}
+
+/**
+ * 隔离根里**必需**的子目录（第 230 波）—— **以代码为准**列在这里，一处一份。
+ *
+ * 为什么需要"补齐"：盘上现成的数据根（真目录、或从别处拷来的半份）都有这些目录，
+ * 而一个**全新的空目录**什么都没有。应用各条写路径大多会自己 `create_dir_all`，但
+ * ① 目录写不进去时表现为"某个功能悄悄失败"，② 取证脚本没法先断言"这个根是齐的"。
+ * 所以设了隔离根就**主动补齐**，并把结果写进日志。
+ *
+ * 这张表的来源（逐个在代码里核过）：
+ * - `sessions/`     —— 权威追加日志 `<base>sessions/<sid>.jsonl`（`core/storage/session-jsonl.ts`）
+ * - `attachments/`  —— 大附件正文 `<base>attachments/<id>-<name>`（`core/storage/attachment-files.ts`）
+ * - `spill/`        —— 超大工具结果溢出 `<base>spill/<sid>/…`（`core/storage/spill.ts`）
+ * - `.codem/skills` —— 技能安装目录 `<base>.codem/skills`（`core/skill/installer.ts`）
+ *
+ * 刻意**不**包括 `workspace/`：那是"全局对话的默认工作目录"，由 `get_default_cwd` 按需创建
+ * （它不是数据，先建出来反而会让人以为那里有东西）。
+ */
+pub const ISOLATED_ROOT_SUBDIRS: &[&str] = &["sessions", "attachments", "spill", ".codem/skills"];
+
+/**
+ * 补齐隔离根的必要结构（**只在设了 `CODEM_DATA_HOME` 时被调用**）。
+ *
+ * 返回这次真的创建出来的路径（已存在的跳过）。失败**不 panic**：返回 `Err` 由调用方
+ * **如实告警**（隔离根写不进去 = 这次钻取的取证不作数，必须让人看见）。
+ */
+pub fn ensure_isolated_root(root: &std::path::Path) -> Result<Vec<PathBuf>, String> {
+    let mut made: Vec<PathBuf> = Vec::new();
+    let mut ensure = |p: PathBuf| -> Result<(), String> {
+        if !p.exists() {
+            std::fs::create_dir_all(&p)
+                .map_err(|e| format!("创建 {} 失败：{e}", p.to_string_lossy()))?;
+            made.push(p);
+        }
+        Ok(())
+    };
+    ensure(root.to_path_buf())?;
+    for sub in ISOLATED_ROOT_SUBDIRS {
+        let mut p = root.to_path_buf();
+        // 逐段 join：不依赖平台对 "a/b" 这种混合分隔符的处理
+        for part in sub.split('/') {
+            p = p.join(part);
+        }
+        ensure(p)?;
+    }
+    Ok(made)
+}
+
+/**
+ * 纯函数形态的完整解析：`data_home` 非空 ⇒ **整个数据根**用它（库就在它下面）；
+ * 否则与第 55 轮的规则**逐字节相同**（委托给 `resolve_db_path_from`）。
+ *
+ * 抽成纯函数是为了让"默认路径不变"这条能**被断言**，而不是靠读代码相信：
+ * `resolve_db_path_full(None, a, b, c, d, e) == resolve_db_path_from(a, b, c, d, e)`。
+ */
+pub(crate) fn resolve_db_path_full(
+    data_home: Option<PathBuf>,
+    explicit: Option<std::ffi::OsString>,
+    known_folder: Option<PathBuf>,
+    xdg: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+    userprofile: Option<std::ffi::OsString>,
+) -> ResolvedDbPath {
+    if let Some(root) = data_home {
+        return ResolvedDbPath {
+            path: root.join(DB_FILE_NAME),
+            standard: false,
+            reason: Some(format!("由环境变量 {DATA_HOME_ENV} 指定（隔离数据根）")),
+        };
+    }
+    resolve_db_path_from(explicit, known_folder, xdg, home, userprofile)
 }
 
 /// 纯函数形态：把"各种候选来源"作为参数传进来，**每一档都可被单测覆盖**。
@@ -267,6 +390,14 @@ pub(crate) fn resolve_db_path_from(
 
 /// 解析并**把非标准位置说出来**（供 `init_state` 与诊断使用）
 pub fn resolve_db_path_warned() -> ResolvedDbPath {
+    // 两个"把数据放到别处"的开关同时设 = 自相矛盾的配置：按范围更大的那个取，
+    // 但**必须说出来**（静默挑一个正是这个仓库反复吃过亏的形态）。
+    if isolated_data_home().is_some() && std::env::var_os("CODEM_DB_PATH").is_some() {
+        eprintln!(
+            "[Storage] ⚠️ {DATA_HOME_ENV} 与 CODEM_DB_PATH 同时存在：以 {DATA_HOME_ENV}（整个数据根）为准，\
+             库文件不再取 CODEM_DB_PATH 指定的那个文件。请只设其中一个。"
+        );
+    }
     let resolved = resolve_db_path();
     if let Some(reason) = &resolved.reason {
         eprintln!(
@@ -285,7 +416,39 @@ pub const DB_FILE_NAME: &str = "codem-db-rust.bin";
 /// 初始化存储态（在 `run()` 里构造并 `manage`）。
 ///
 /// 走 `resolve_db_path_warned()`：**非标准位置必须留下一行告警**（第 55 轮）。
+///
+/// 第 230 波补充：设了 `CODEM_DATA_HOME` 时**先把隔离根的必要结构补齐**
+/// （`ensure_isolated_root`）—— 它是这次进程里最早的一处"数据根已定"的时刻，
+/// 而各条写路径都假设根是齐的。补齐失败**不挡住启动**（那会让钻取变成"应用起不来"），
+/// 但必须留下告警 + 一行运行日志。
 pub fn init_state() -> StorageState {
+    if let Some(root) = isolated_data_home() {
+        match ensure_isolated_root(&root) {
+            Ok(made) => {
+                eprintln!(
+                    "[Storage] 🧪 隔离数据根（{DATA_HOME_ENV}）：{}（本次新建 {} 个目录）",
+                    root.to_string_lossy(),
+                    made.len()
+                );
+                crate::runtime_log::append_line(
+                    "INFO",
+                    &format!(
+                        "isolated data home = {} (env {DATA_HOME_ENV}); created {} dir(s): {}",
+                        root.to_string_lossy(),
+                        made.len(),
+                        made.iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                );
+            }
+            Err(e) => {
+                eprintln!("[Storage] ⚠️ 隔离数据根不可用：{e}（本次取证不作数）");
+                crate::runtime_log::append_line("WARN", &format!("isolated data home unusable: {e}"));
+            }
+        }
+    }
     let resolved = resolve_db_path_warned();
     let mut state = StorageState::new(resolved.path);
     state.db_path_standard = resolved.standard;
@@ -566,6 +729,17 @@ pub fn storage_info(state: State<'_, StorageState>) -> Value {
 mod tests {
     use super::*;
 
+    /// 改环境变量的用例**共用同一把锁**（进程级环境变量是两个用例之间唯一的共享可变状态；
+    /// 各写各的 `static` 等于没锁 —— 第 230 波把原来函数内的那个锁提到模块级就是为了这个）。
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 临时目录（隔离根的行为判据用）：跑完自己删掉，绝不留在盘上。
+    fn temp_root(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("codem-iso-root-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        p
+    }
+
     #[test]
     fn search_paths_are_sane() {
         // 只验证路径拼接与状态构造，不依赖 Tauri 运行时
@@ -659,7 +833,6 @@ mod tests {
     /// 所以它守的是"引擎与 Tauri 同源"这个**接线**（纯函数测不到接线）。
     #[test]
     fn db_path_does_not_depend_on_appdata_env_var() {
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         let saved_appdata = std::env::var_os("APPDATA");
@@ -682,6 +855,150 @@ mod tests {
         if let Some(v) = saved_explicit {
             std::env::set_var("CODEM_DB_PATH", v);
         }
+    }
+
+    // ================= 第 230 波：隔离数据根（CODEM_DATA_HOME） =================
+
+    /// ① **默认一个字都不变**（判据 `ISO-1`）。
+    ///
+    /// 这一条是"绝不能影响正常启动路径"的落点：`data_home = None`（默认）时，完整解析
+    /// 必须与第 55 轮的 `resolve_db_path_from` **逐字段相同** —— 路径、`standard`、`reason`
+    /// 三样都比。变异自证：把 `resolve_db_path_full` 里的提前返回改成"无论如何都返回隔离根"
+    /// （或把委托那行删掉自己重写一遍），这条立刻红。
+    #[test]
+    fn default_resolution_is_identical_to_pre_230_rules() {
+        use std::ffi::OsString;
+        let cases: Vec<(
+            Option<OsString>,
+            Option<PathBuf>,
+            Option<OsString>,
+            Option<OsString>,
+            Option<OsString>,
+        )> = vec![
+            // 标准情形（已知文件夹可用）
+            (None, Some(PathBuf::from(r"C:\Users\t\AppData\Roaming")), None, None, None),
+            // 便携/钻取：显式库路径
+            (
+                Some(OsString::from(r"D:\portable\codem-db-rust.bin")),
+                Some(PathBuf::from(r"C:\Users\t\AppData\Roaming")),
+                None,
+                None,
+                None,
+            ),
+            // 逐级退回：连已知文件夹都取不到
+            (None, None, Some(OsString::from("/xdg")), Some(OsString::from("/home/t")), None),
+            // 全空（最后的兜底）
+            (None, None, None, None, None),
+        ];
+        for (explicit, known, xdg, home, profile) in cases {
+            let before = resolve_db_path_from(
+                explicit.clone(),
+                known.clone(),
+                xdg.clone(),
+                home.clone(),
+                profile.clone(),
+            );
+            let after = resolve_db_path_full(None, explicit, known, xdg, home, profile);
+            assert_eq!(after, before, "默认（无 CODEM_DATA_HOME）时解析结果必须逐字段不变");
+        }
+    }
+
+    /// ②③ **设了就整根跟着走 / 空串等于没设**（判据 `ISO-2`）。
+    #[test]
+    fn data_home_env_moves_the_whole_root_and_empty_means_unset() {
+        // 空串必须被当成"没设"（否则解析出相对路径 = 第 55 轮真事故的形态）
+        assert_eq!(isolated_data_home_from(None), None);
+        assert_eq!(isolated_data_home_from(Some(std::ffi::OsString::from(""))), None);
+        assert_eq!(
+            isolated_data_home_from(Some(std::ffi::OsString::from(r"E:\iso-root"))),
+            Some(PathBuf::from(r"E:\iso-root"))
+        );
+
+        let r = resolve_db_path_full(
+            Some(PathBuf::from(r"E:\iso-root")),
+            Some(std::ffi::OsString::from(r"D:\portable\db.bin")), // 故意同时给 CODEM_DB_PATH
+            Some(PathBuf::from(r"C:\Users\t\AppData\Roaming")),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            r.path,
+            PathBuf::from(r"E:\iso-root").join(DB_FILE_NAME),
+            "设了隔离根 ⇒ 库文件必须落在隔离根下（且压过 CODEM_DB_PATH）"
+        );
+        assert!(!r.standard, "隔离根不是标准位置");
+        assert!(
+            r.reason.as_deref().unwrap_or("").contains(DATA_HOME_ENV),
+            "非标准位置必须点名是哪个环境变量造成的（第 55 轮纪律），实际：{:?}",
+            r.reason
+        );
+    }
+
+    /// ④ **补齐隔离根的必要结构**（判据 `ISO-3`）。
+    ///
+    /// 变异自证：把 `ISOLATED_ROOT_SUBDIRS` 里的 `sessions` 去掉 ⇒ 这条红；
+    /// 把 `ensure` 里的 `create_dir_all` 短路（只在已存在时记一笔）⇒ 这条红。
+    #[test]
+    fn ensure_isolated_root_creates_every_required_dir() {
+        let root = temp_root("ensure");
+        let made = ensure_isolated_root(&root).expect("创建隔离根不该失败");
+        assert!(root.is_dir(), "根目录本身也要建出来");
+        for sub in ISOLATED_ROOT_SUBDIRS {
+            let p = root.join(sub.replace('/', std::path::MAIN_SEPARATOR_STR));
+            assert!(p.is_dir(), "隔离根缺少必需目录：{}", p.to_string_lossy());
+            assert!(made.contains(&p), "新建出来的目录要如实列在返回值里：{}", sub);
+        }
+        // 幂等：第二次调用不该报错、也不该重复"新建"
+        let again = ensure_isolated_root(&root).expect("重复补齐必须幂等");
+        assert!(again.is_empty(), "已存在的目录不许再算成新建：{:?}", again);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// ⑤ **接线**（行为面）：真的设上环境变量之后，`resolve_db_path()` 走的就是隔离根；
+    /// 清掉之后必须**回到**原来的解析结果。
+    ///
+    /// 这一条与 ① 的区别：① 测的是纯函数，这一条测的是**真的去读环境变量**这条接线
+    /// （纯函数测不到"函数到底调没调它"）。
+    #[test]
+    fn resolve_db_path_reads_data_home_env_and_returns_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let saved_home = std::env::var_os(DATA_HOME_ENV);
+        let saved_db = std::env::var_os("CODEM_DB_PATH");
+
+        let root = temp_root("env");
+        std::env::remove_var("CODEM_DB_PATH");
+        std::env::set_var(DATA_HOME_ENV, &root);
+        let with_env = resolve_db_path();
+        assert_eq!(
+            with_env.path,
+            root.join(DB_FILE_NAME),
+            "设了 {DATA_HOME_ENV} ⇒ resolve_db_path() 必须落在隔离根下"
+        );
+        assert!(!with_env.standard);
+
+        std::env::remove_var(DATA_HOME_ENV);
+        let without = resolve_db_path();
+        let expected = resolve_db_path_full(
+            None,
+            std::env::var_os("CODEM_DB_PATH"),
+            dirs::data_dir(),
+            std::env::var_os("XDG_DATA_HOME"),
+            std::env::var_os("HOME"),
+            std::env::var_os("USERPROFILE"),
+        );
+        assert_eq!(without, expected, "清掉环境变量后必须回到原来的解析结果");
+        assert_ne!(without.path, root.join(DB_FILE_NAME), "清掉之后不许还指向隔离根");
+
+        match saved_home {
+            Some(v) => std::env::set_var(DATA_HOME_ENV, v),
+            None => std::env::remove_var(DATA_HOME_ENV),
+        }
+        match saved_db {
+            Some(v) => std::env::set_var("CODEM_DB_PATH", v),
+            None => std::env::remove_var("CODEM_DB_PATH"),
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

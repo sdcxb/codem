@@ -58,7 +58,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
@@ -293,17 +293,23 @@ pub fn auth_device<'a>(devices: &'a [Device], secret: Option<&str>) -> Option<&'
 
 // ---- 持久化 ----
 
+/*
+ * 第 230 波：下面三个都走 `crate::app_data_dir_path`（应用数据目录的**唯一**入口）。
+ * 原来它们各自 `app.path().app_data_dir()` 一次 —— 于是"隔离数据根"这个开关只要漏接一处，
+ * 隔离钻取就仍然在写用户真目录（手机配对/TLS 证书）。本仓的纪律是同一件事只留一条路：
+ * 现在全仓 `app_data_dir()` 的调用点只剩 `lib.rs::app_data_dir_path` 一处，
+ * 判据 `ISO-4`（`src/test/data-home-isolation-switch.test.ts`）会读源码钉住这一点。
+ */
+
 /// 手机连接的持久化目录（同步版，给需要在 setup 里取目录的地方用）。
 pub fn phone_dir(app: &AppHandle) -> std::path::PathBuf {
-    app.path()
-        .app_data_dir()
+    crate::app_data_dir_path(app)
         .map(|d| d.join(PHONE_DIR))
         .unwrap_or_else(|_| std::env::temp_dir().join(PHONE_DIR))
 }
 
 async fn data_dir(app: &AppHandle) -> std::path::PathBuf {
-    app.path()
-        .app_data_dir()
+    crate::app_data_dir_path(app)
         .map(|d| d.join(PHONE_DIR))
         .unwrap_or_else(|_| std::env::temp_dir().join(PHONE_DIR))
 }
@@ -313,9 +319,7 @@ async fn data_dir(app: &AppHandle) -> std::path::PathBuf {
 /// 单独一个函数是因为 `tls::ensure` 自己会拼 `phone/tls` ——
 /// 复用 `data_dir` 会得到 `phone/phone/tls`（我第一次就是这么写的）。
 fn app_data_root(app: &AppHandle) -> std::path::PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::env::temp_dir())
+    crate::app_data_dir_path(app).unwrap_or_else(|_| std::env::temp_dir())
 }
 
 async fn save_devices(app: &AppHandle, st: &Arc<PhoneState>) {

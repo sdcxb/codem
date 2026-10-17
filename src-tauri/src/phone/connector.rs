@@ -645,10 +645,11 @@ pub fn new_identity() -> (String, String) {
 /// 配置文件落盘位置：`<app_data>/phone/connector.json`。
 ///
 /// 文件名与 AA 相同（`connector/process.ts:123` 也用 `connector.json`）。
+///
+/// 第 230 波：走 `crate::app_data_dir_path`（应用数据目录的唯一入口）——
+/// 设了隔离数据根（`CODEM_DATA_HOME`）时它也跟着进隔离根。
 fn config_path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    use tauri::Manager;
-    app.path()
-        .app_data_dir()
+    crate::app_data_dir_path(app)
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("phone")
         .join("connector.json")

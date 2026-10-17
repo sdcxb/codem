@@ -34,7 +34,15 @@ const MAX_LINE_BYTES: usize = 8 * 1024;
 /// 日志所在目录（与 active-run.json / codem-crash.log 同目录）。
 /// app_data_dir 在 panic hook 阶段不可用，统一从环境变量解析
 /// （Windows %APPDATA%\com.codem.app；非 Windows $HOME/com.codem.app）。
+///
+/// 第 230 波：设了**隔离数据根**（`CODEM_DATA_HOME`）时优先用它 —— 运行日志是"这次进程
+/// 写进数据根的东西"，隔离钻取时必须落在隔离根里（否则"隔离"启动照样在写用户真目录，
+/// 而第 229 波真机上正是这么发生的）。取数走 `storage::isolated_data_home()` **唯一那一处**，
+/// 本模块不再自己读一遍环境变量（同一件事两处口径是本仓反复吃亏的形态）。
 pub fn default_base_dir() -> PathBuf {
+    if let Some(root) = crate::storage::isolated_data_home() {
+        return root;
+    }
     #[cfg(target_os = "windows")]
     let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
     #[cfg(not(target_os = "windows"))]

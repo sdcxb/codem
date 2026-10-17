@@ -1349,9 +1349,27 @@ fn move_directory_to_recycle_bin(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/**
+ * 应用数据目录的**唯一解析入口**（第 230 波）。
+ *
+ * 默认（没有 `CODEM_DATA_HOME`）⇒ 与今天**逐字节相同**：走 Tauri 的 `app_data_dir()`
+ * （Windows = `SHGetKnownFolderPath(FOLDERID_RoamingAppData)` + identifier）。
+ * 设了隔离根 ⇒ 用它（测试/钻取时，渲染侧拿到的数据根与引擎用的库目录才是同一个）。
+ *
+ * 为什么必须在这一处收口：渲染侧的数据根最终**只认这一个 IPC**（`get_app_data_dir`）——
+ * 数据目录台账、功能目录（`.codem/skills`、`workspace/`）都从它派生。只在引擎侧隔离而这里
+ * 不隔离，就是"库在副本目录、台账与功能目录还在写真目录"（第 229 波真机实测的形态）。
+ */
+pub(crate) fn app_data_dir_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    if let Some(root) = storage::isolated_data_home() {
+        return Ok(root);
+    }
+    app.path().app_data_dir().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
-    let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let path = app_data_dir_path(&app)?;
     std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
     let mut dir_str = path.to_string_lossy().to_string();
     if !dir_str.ends_with(std::path::MAIN_SEPARATOR) {
@@ -1365,7 +1383,7 @@ async fn get_default_cwd(app: tauri::AppHandle) -> Result<String, String> {
     // Return app data dir + "workspace" as the default working directory.
     // This is the global chat workspace — it contains AGENTS.md and other
     // project instruction files, so the LLM has context even without a project.
-    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let data_dir = app_data_dir_path(&app)?;
     let workspace = data_dir.join("workspace");
     std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
 
@@ -4015,7 +4033,9 @@ async fn quit_app(app: AppHandle, pty_map: State<'_, PtyMap>) -> Result<(), Stri
 const ACTIVE_RUN_MARKER: &str = "active-run.json";
 
 fn crash_marker_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    // 第 230 波：设了隔离数据根就用它（崩溃标记也是"这次进程写在数据根里的东西"，
+    // 隔离钻取不该把它写进真目录）。
+    let dir = app_data_dir_path(app)?;
     Ok(dir.join(ACTIVE_RUN_MARKER))
 }
 
@@ -4514,11 +4534,15 @@ fn install_panic_hook() {
         );
         eprintln!("[panic] {}", msg.trim());
         // 写日志到用户目录（app_data_dir 在 hook 阶段不可用，用 APPDATA/HOME）
+        //
+        // 第 230 波：设了隔离数据根（CODEM_DATA_HOME）时优先用它 —— panic 现场也属于
+        // "这次进程写进数据根的东西"，隔离钻取不该把崩溃日志落到真目录。
         #[cfg(target_os = "windows")]
         let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
         #[cfg(not(target_os = "windows"))]
         let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let dir = std::path::Path::new(&base).join("com.codem.app");
+        let dir = storage::isolated_data_home()
+            .unwrap_or_else(|| std::path::Path::new(&base).join("com.codem.app"));
         let _ = std::fs::create_dir_all(&dir);
         // 同时写入运行时日志（同目录，按日轮转 + 脱敏）。
         runtime_log::append_line_to(&dir, "FATAL", &runtime_log::mask_secrets(msg.trim()));
@@ -6255,10 +6279,15 @@ mod harden_185_tests {
     }
 
     /// **端到端**：改过读取路径之后，命令仍然能跑、输出仍然正确，且超限时**如实标注**。
+    ///
+    /// ⚠️ 第 230 波顺带修：本用例（以及下面两条同族用例）只传了 3 个实参，而
+    /// `execute_command` 后来加了 `shell` / `bash_path` 两个参数 ⇒ **`cargo test --lib`
+    /// 在本波之前根本编译不过**（`E0061` ×3，见交接记录）。补上 `None, None`（= 旧行为：
+    /// 走 PowerShell，不改执行器选择）后与原来要测的东西完全一致。
     #[cfg(target_os = "windows")]
     #[tokio::test]
     async fn r3_execute_command_still_works_and_marks_truncation() {
-        let ok = execute_command("Write-Output 'hello-185'".to_string(), None, Some(30_000))
+        let ok = execute_command("Write-Output 'hello-185'".to_string(), None, Some(30_000), None, None)
             .await
             .expect("普通命令必须成功");
         assert_eq!(ok["stdout"].as_str().unwrap().trim(), "hello-185");
@@ -6269,6 +6298,8 @@ mod harden_185_tests {
             "1..4000 | ForEach-Object { 'x' * 40 }".to_string(),
             None,
             Some(120_000),
+            None,
+            None,
         )
         .await
         .expect("大量输出的命令也必须成功返回");
@@ -6289,6 +6320,8 @@ mod harden_185_tests {
             "Write-Output 'start'; Start-Sleep -Seconds 30; Write-Output 'end'".to_string(),
             None,
             Some(1_000),
+            None,
+            None,
         )
         .await
         .expect_err("超时必须返回错误");

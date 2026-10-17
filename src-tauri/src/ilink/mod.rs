@@ -28,7 +28,7 @@ use crate::ilink::proto::{
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{Mutex as TokioMutex, Notify};
 use tokio::time::Duration;
 
@@ -199,9 +199,11 @@ pub fn now_ms() -> i64 {
 }
 
 /// app-data/ilink 目录。
+///
+/// 第 230 波：走 `crate::app_data_dir_path`（应用数据目录的唯一入口）——
+/// 设了隔离数据根（`CODEM_DATA_HOME`）时它也跟着进隔离根。
 pub async fn data_dir(app: &AppHandle) -> std::path::PathBuf {
-    app.path()
-        .app_data_dir()
+    crate::app_data_dir_path(app)
         .map(|d| d.join(ILINK_DIR))
         .unwrap_or_else(|_| std::env::temp_dir().join(ILINK_DIR))
 }
