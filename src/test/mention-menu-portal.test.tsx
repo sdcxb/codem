@@ -192,6 +192,83 @@ describe("@ 提及候选 Portal 化（第 232 波）", () => {
     expect(events.length, `一次点击派发了 ${events.length} 次同值事件（应恰好 1 次）`).toBe(1);
     expect(events[0]?.mode).toBe("auto");
   });
+
+  it("MP-7: 鼠标点「发送」时 @ 候选必须收起（Portal 之后这条旧状态 bug 变可见了）", async () => {
+    const user = userEvent.setup();
+    const { onSend } = renderInputArea({ sessionKey: "s1" });
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+
+    // 输入 @ 让候选出现（此时键盘 Enter 会被候选拦截，走不到发送 —— 只有鼠标点发送会漏）
+    await user.type(ta, "@");
+    await waitFor(() => expect(document.querySelector(".mention-menu-portal")).toBeTruthy());
+    expect(ta.value).toBe("@");
+
+    const sendBtn = document.querySelector(".send-btn.send-btn--split-left") as HTMLButtonElement | null;
+    expect(sendBtn, "发送按钮没渲染").toBeTruthy();
+    expect(sendBtn!.disabled).toBe(false);
+    await user.click(sendBtn!);
+
+    await waitFor(() => {
+      expect(onSend, "点发送必须真的发出去（本判据不许用 disabled 蒙混）").toHaveBeenCalledTimes(1);
+    });
+    expect(onSend.mock.calls[0][0]).toBe("@");
+    expect(document.querySelector(".mention-menu-portal"), "发送后 @ 候选必须消失").toBeNull();
+    expect(ta.value, "发送后输入框必须清空").toBe("");
+
+    // 反向对照：清空之后没有残留的“半开”状态（再敲 @ 能重新打开，说明是收尾不是禁用）
+    await user.type(ta, "@");
+    await waitFor(() => expect(document.querySelector(".mention-menu-portal")).toBeTruthy());
+  });
+
+  it("MP-8: Escape 关闭候选后 mentionQuery 归零（Enter 不再被候选拦截）", async () => {
+    const user = userEvent.setup();
+    const { onSend } = renderInputArea({ sessionKey: "s1" });
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+
+    await user.type(ta, "@");
+    await waitFor(() => expect(document.querySelector(".mention-menu-portal")).toBeTruthy());
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".mention-menu-portal"), "Escape 后候选必须消失").toBeNull());
+    expect(ta.value, "Escape 不应改动输入内容").toBe("@");
+
+    /**
+     * `mentionQuery` 是否真的归零，最硬的可见证据是 **Enter 的归属**：
+     * 候选打开时 `handleKeyDown` 会直接 return（Enter 交给候选去选中），
+     * 只有 `mentionQuery === null` 时 Enter 才会走发送。若 Escape 只关了浮层没清状态，这里就发不出去。
+     */
+    fireEvent.keyDown(ta, { key: "Enter" });
+    await waitFor(() => expect(onSend, "Escape 后 Enter 应正常发送（说明 mentionQuery 已归零）").toHaveBeenCalledTimes(1));
+    expect(onSend.mock.calls[0][0]).toBe("@");
+    expect(document.querySelector(".mention-menu-portal")).toBeNull();
+  });
+
+  it("MP-9: 切会话时 @ 候选随输入一起清（与 / 菜单同口径）", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderInputArea({ sessionKey: "s1" });
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+
+    await user.type(ta, "@");
+    await waitFor(() => expect(document.querySelector(".mention-menu-portal")).toBeTruthy());
+
+    rerender(
+      <InputArea
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        disabled={false}
+        isStreaming={false}
+        collaborationMode={"default" as CollaborationMode}
+        onModeChange={vi.fn()}
+        connected={true}
+        sessionKey="s2"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector(".mention-menu-portal"), "切会话后候选必须消失").toBeNull();
+      expect((screen.getByRole("textbox") as HTMLTextAreaElement).value, "切会话后输入必须清空").toBe("");
+    });
+  });
 });
 
 describe("MentionAutocomplete 自身键盘语义（Portal 不改变它）", () => {

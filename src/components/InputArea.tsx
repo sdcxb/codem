@@ -870,6 +870,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       setSelectedSkills([]);
       setInput("");
       setSlashFilter(null);
+      /* 第 232 波 A4：切会话同样要收起 `@` 候选（与 setSlashFilter 同口径；
+         否则输入被清空、旧候选还挂在 body 上 —— Portal 之后它可见）。 */
+      setMentionQuery(null);
       setComposerBadges([]);
       clearDraft();
     }
@@ -1032,6 +1035,15 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     setPendingAttachments([]);
     setSelectedSkills([]);
     setSlashFilter(null);
+    /**
+     * 第 232 波 A4：发送时也要收起 `@` 候选。
+     *
+     * `mentionQuery` 的唯一重算点是 `onChange`；键盘 Enter 在候选打开时被拦截（不会走到这里），
+     * 但**鼠标点发送按钮**会：输入被清空、`mentionQuery` 仍是旧值 ⇒ 浮层留在原地。
+     * Portal 之前它被输入卡裁到 9px 看不见；Portal 之后就成了"点了发送还挂着一个空候选框"的可见 bug。
+     * 与 `setSlashFilter(null)` 放在同一处，两条浮层的收尾口径保持一致。
+     */
+    setMentionQuery(null);
     setComposerBadges([]);
     // P3: Reset multimodal after send
     if (showMultimodal && generateMode !== "text") {

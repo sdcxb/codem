@@ -310,16 +310,39 @@
   已建立层叠上下文；**没有**改阈值、没有加白名单。复核：`node tools/audit/scan-style-literals.mjs --check` →
   `✅ 棘轮通过：11 个族全部不超过基线`；`npx vitest run src/test/style-token-gates.test.ts` → **40/40 绿**。
 
+### 5.7 A4：鼠标点「发送」不收起候选（Portal 化把它从不可见变成可见）
+
+- **缺陷**：`mentionQuery` 的唯一重算点是 `onChange`；候选打开时键盘 Enter 被拦截，
+  但**鼠标点发送按钮**会走 `handleSubmit` —— 它只清输入、不收候选 ⇒ 浮层留在原地。
+  Portal 之前它被输入卡裁到 9px 看不见；Portal 之后就成了「点了发送还挂着一个空候选框」的可见回归。
+- **修法**：`handleSubmit` 里与 `setSlashFilter(null)` 同一处补 `setMentionQuery(null)`；
+  切会话的重置处（`setSlashFilter(null)` 的同一段）也补一处 —— 两条浮层收尾口径一致。
+  键盘 Enter 路径不受影响（候选打开时它根本到不了 `handleSubmit`，由候选自己处理）。
+- **判据（新 3 条，共 9 条全绿）**：
+  | # | 守什么 |
+  |---|---|
+  | MP-7 | 候选打开 + **鼠标点发送** ⇒ 真的发出（`onSend` 收到 `"@"`）、候选消失、输入清空；清空后能再次敲 `@` 打开（证明是收尾不是禁用） |
+  | MP-8 | `Escape` 后候选消失、值不变，且 **Enter 不再被候选拦截**（会真的发送）—— 这是「`mentionQuery` 归零」最硬的可见证据 |
+  | MP-9 | 切会话（`sessionKey` 变化）时候选随输入一起清空 |
+  变异自证：**A4a** 去掉发送处的 `setMentionQuery(null)` ⇒ **MP-7 红**
+  （`发送后 @ 候选必须消失: expected <div …> to be null`），其余 8 条仍绿；**A4b** 去掉切会话处那一行 ⇒ **MP-9 红**
+  （`切会话后候选必须消失: expected <div …> to be null`）；两次均还原后 9/9 绿。
+- **真机复核：本条如实记为「未做真机」**。理由：真机点发送会**真的发起一次模型回合**（花钱、且污染会话），
+  而这条是纯前端状态收尾，`jsdom` 判据已覆盖「发送真的发生 + 浮层消失 + 输入清空 + 可再次打开」四个事实；
+  同一浮层的 `Escape` / 点外面 / 键盘插入 / 锚定在上一轮已做真机（5.4），本轮只新增这一条收尾路径。
+  未做的事不假装做过。
+
 ## 6. 门禁（本轮实测）
 
 | 门禁 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | 0 错误 |
-| `npx vitest run`（全量） | **697 文件 / 8295 通过 + 17 skipped，0 失败**（基线 695 / 8283：+本修复 1 文件 6 例 + 另一路记忆面板 1 文件 6 例） |
+| `npx vitest run`（全量） | **697 文件 / 8296 通过 + 17 skipped**；2 条红**均不在本修复面**（单跑确认：`css-checkup-classes` 报 `MemoryManager.tsx` 的 `memory-demoted-section` 无 CSS 定义、`update-manifest-generator` 报入库 `latest.json` 仍是 `1.16.321` 而 `package.json` 已是 `1.16.322` —— 分别是另一路的面与发版台账；本目录只记录，不改别人的面） |
 | `npm run audit` | exit 0（末段：`上报点分诊闸门通过：扫描命中 268 处 = 登记表 268 条`、`✅ 语法门禁通过`、`probe-guard 自证 26/26`、`✅ 可达性门禁通过`） |
 | `npm run audit:knip`（knip-gate） | `✅ 没有增长`（exports 49/49、types 21/21、duplicates 10/10；entry 20 = 可达性白名单 20） |
 | `node tools/audit/scan-report-sites.mjs --check` | `扫描命中 268 处 = 登记表 268 条（triaged 268 / pending 0）`，漂移/过期/缓存漂移均为 0 |
-| `node tools/mutate/check-artifacts.mjs`（check-artifacts） | `分诊闸门通过：登记波次 45 个，全部有可用且未过期的变异证据` |
+| `node tools/mutate/check-artifacts.mjs`（check-artifacts） | `分诊闸门通过：登记波次 46 个，全部有可用且未过期的变异证据` |
+| `npx vitest run src/test/mention-menu-portal.test.tsx` | **9/9 绿**（MP-1..9） |
 | `node tools/audit/scan-style-literals.mjs --check` | `✅ 棘轮通过：11 个族全部不超过基线` |
 | `node tools/ui-audit/css-contract.mjs`（快照核对） | `CSS 有效声明快照 —— 比对 2886 个类` → `✅ 无变化` |
 | `npx vitest run src/test/css-integrity.test.ts` | **10/10 绿**（含 `CSS-INTEGRITY-7`） |
