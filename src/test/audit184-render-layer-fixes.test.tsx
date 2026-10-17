@@ -344,7 +344,13 @@ describe("F1：笔记本回合的流式正文", () => {
     // 正文那条 flush + 两者之间的 `streamViewRef` 声明
     const flush = src.slice(start, end);
     expect(flush, "正文那条 flush 必须走共用判据").toContain("routeBufferedTextToOwnCopy");
-    const reasoning = src.slice(end, src.indexOf("// Flush all buffers on unmount"));
+    /**
+     * ⚠️ 终点必须是**代码级锚点**：`src` 已经过 `stripComments`，用注释当锚点会 `indexOf=-1`
+     * ⇒ `slice(end, -1)` 把文件后半段全圈进来（这条判据曾在干净树上恒红）。
+     */
+    const reasoningEnd = src.indexOf("useEffect(() => {", end);
+    expect(reasoningEnd, "找不到推理 flush 之后的代码锚点（代码搬家了就更新这条接线检查）").toBeGreaterThan(end);
+    const reasoning = src.slice(end, reasoningEnd);
     expect(reasoning, "推理那条 flush 同样走共用判据（两处一个口径）").toContain("routeBufferedTextToOwnCopy");
     expect(
       flush + reasoning,
