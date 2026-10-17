@@ -1,0 +1,88 @@
+/**
+ * 变异自证（第 231 波 · 判据 `PERFENTRY-231-1..4` / `RODB-231-1..7`）。
+ *
+ * 这一波收两条尾巴：
+ *
+ * 1. **Sidebar 的两个死 prop**（`onPerf` / `onCicd`，从 `7d768d3f` 起就没有读者）清掉，
+ *    并把「perf 从 Sidebar 跳设置页」那条守死代码的旧前提换成现实里的入口（底部页签）；
+ * 2. **只读钻取不许动真库一个 mtime**：钻取改走 `tools/maintenance/read-only-db.mjs`
+ *    （复制 `.bin` + `-wal` + `-shm` 到临时目录再读），判据见 `src/test/read-only-db.test.ts`。
+ *
+ * | 变异 | 坏法 | 必须红在哪 |
+ * | --- | --- | --- |
+ * | MUT-1 | 只读入口改回**直接打开原库**（上一轮的真实现） | `RODB-231-1` / `RODB-231-2` |
+ * | MUT-2 | App 重新给 Sidebar 传 `onPerf`（死 prop 复活） | `PERFENTRY-231-2` / `PERFENTRY-231-3` |
+ * | MUT-3 | perf 页签入口去掉门控（入口与开关脱钩） | `PERFENTRY-231-3` |
+ * | MUT-4 | 只改一句注释（**反向对照**：不许红） | 无（`expectRed: false`） |
+ *
+ * MUT-4 是刻意的反向对照：判据读的是源码文本，如果它把"注释改动"也判红，
+ * 就说明它盯错了东西（本仓在 `PERFENTRY-231-1` 上主动选择了"连注释也算"，
+ * 但那条钉的是**两个具体标识符**，不是任意注释 —— 反向对照把这条边界说清楚）。
+ */
+export default {
+  description:
+    "第 231 波：①Sidebar 死 prop（性能 / CI-CD 的旧跳转）清干净、perf 的正当入口是底部页签；②只读钻取复制副本、真库三件套的 mtime 与 sha256 一动不动",
+  mutations: [
+    {
+      id: "MUT-1 只读入口改回直接打开原库（上一轮的真实现）",
+      why:
+        "RODB-231-1 / RODB-231-2：直接只读打开带 WAL 的库会更新 -shm 的 mtime 与内容" +
+        "（SQLite 连接标记）⇒ 真库被动过，判据必须红",
+      patches: [
+        {
+          file: "tools/maintenance/read-only-db.mjs",
+          from: "  const db = new DatabaseSync(snapshot.dbPath, { readOnly: true });",
+          to: "  const db = new DatabaseSync(dbPath, { readOnly: true });",
+        },
+      ],
+      tests: ["src/test/read-only-db.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-2 App 重新给 Sidebar 传 onPerf（死 prop 复活）",
+      why:
+        "PERFENTRY-231-2：没人读的 prop 传进来就是假接线；PERFENTRY-231-3 同时会红，" +
+        "因为那段实参里带着 setSettingsInitialTab(\"performance\")（perf 又从设置页进）",
+      patches: [
+        {
+          file: "src/App.tsx",
+          from: "                    onAgents={() => setShowAgentManager(true)}\n",
+          to:
+            "                    onAgents={() => setShowAgentManager(true)}\n" +
+            '                    onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}\n',
+        },
+      ],
+      tests: ["src/test/sidebar-user-settings-click.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-3 perf 页签入口去掉门控",
+      why:
+        "PERFENTRY-231-3：入口与 perfEnabled 脱钩（插件被禁用时仍渲染入口 ⇒ 点进去是空白/降级）",
+      patches: [
+        {
+          file: "src/components/BottomPanelTabs.tsx",
+          from: '  { id: "perf", zh: "性能", en: "Perf", icon: Activity, gate: "perf" },',
+          to: '  { id: "perf", zh: "性能", en: "Perf", icon: Activity },',
+        },
+      ],
+      tests: ["src/test/sidebar-user-settings-click.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-4 只改一句注释（反向对照：不许红）",
+      why:
+        "判据读源码文本，但必须只盯「行为契约」（那两个标识符与入口归属）；" +
+        "改注释不该让任何判据变红 —— 否则以后没人敢把理由写进代码里",
+      patches: [
+        {
+          file: "src/components/Sidebar.tsx",
+          from: "那一条判据连**注释里**都不许出现这两个标识符（防止有人顺手把名字抄回来就复活了 prop），",
+          to: "那一条判据连注释也算（理由见下面的入口归属）。",
+        },
+      ],
+      tests: ["src/test/sidebar-user-settings-click.test.ts"],
+      expectRed: false,
+    },
+  ],
+};
