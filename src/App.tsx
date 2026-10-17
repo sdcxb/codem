@@ -296,6 +296,8 @@ import { setActiveSourceFilter as setNotebookSourceFilter, createNote, listSourc
 import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
 import { CicdPanel } from "./components/CicdPanel";
 import { PerformanceDashboard } from "./components/PerformanceDashboard";
+import { JobsPanel, type JobsPanelTask } from "./components/JobsPanel";
+import { BottomPanelTabs } from "./components/BottomPanelTabs";
 import { PlanApprovalCard } from "./components/PlanApprovalCard";
 import { setPlanApprovalCallback, clearPlanApprovalCallback, type PlanApprovalOutcome } from "./core/llm/tools/exit-plan-mode";
 import { SearchDialog } from "./components/SearchDialog";
@@ -783,7 +785,9 @@ useEffect(() => {
   // P1-3: 其他 tab 的降级回退
   if (bottomTab === "files" && !workspacePanelEnabled) setBottomTab("chat");
   if (bottomTab === "jobs" && !jobsPanelEnabled) setBottomTab("chat");
-}, [bottomTab, perfEnabled, workspacePanelEnabled, jobsPanelEnabled]);
+  // 底部页签恢复入口（BOTTOM-TAB-5）：CI/CD 原来没有这条降级 —— 开关关掉后会卡在空面板
+  if (bottomTab === "cicd" && !cicdEnabled) setBottomTab("chat");
+}, [bottomTab, perfEnabled, workspacePanelEnabled, jobsPanelEnabled, cicdEnabled]);
   const [fileExplorerProjectId, setFileExplorerProjectId] = useState<string | null>(null);
   const [fileExplorerRefreshKey, setFileExplorerRefreshKey] = useState(0);
   const [editingFile, setEditingFile] = useState<string | null>(null);
@@ -4951,6 +4955,74 @@ engineRef.current?.abort();
 
   const { skin } = useSkin();
 
+  /**
+   * 底部面板的**四个可选页签内容**（perf / files / jobs / cicd）。
+   *
+   * 为什么抽成一个函数而不是在三套皮肤里各抄一遍：这三段原来就是逐字重复的
+   * （`e1bdd01e` 之前 chat/terminal/perf/cicd 分支在三处各写一份），
+   * 任何一处漏改都会让某一套皮肤下的页签点开是空白 —— 单一来源 + 棘轮判据
+   * （`src/test/bottom-tab-entry-ratchet.test.tsx` 的 BOTTOM-TAB-6）一起守。
+   *
+   * 门控与入口同源：入口不渲染时这里的 `bottomTab === "<id>"` 也不可能为真
+   * （App 顶部还有一条降级 effect 把 bottomTab 拉回 chat，见 BOTTOM-TAB-5）。
+   */
+  const bottomPanelGates = {
+    perf: perfEnabled,
+    files: workspacePanelEnabled,
+    jobs: jobsPanelEnabled,
+    cicd: cicdEnabled,
+  };
+  const renderBottomPanelBody = () => (
+    <>
+      {perfEnabled && bottomTab === "perf" && (
+        <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} showDegraded />
+      )}
+      {workspacePanelEnabled && bottomTab === "files" && (
+        /*
+         * 不传 showDegraded：`app.file-explorer` 槽位**至今没有任何注册方**
+         * （全仓只有 declare-slots 里的声明），降级横幅会说「插件已关闭：app.file-explorer」——
+         * 那是一句假话（插件没关，只是没有插件贡献这个槽位）。真机截图上抓到过同族的假横幅。
+         * 面板本体仍是 FileExplorer（与侧边栏文件树同一个组件）。
+         */
+        <SlotBridge
+          name="app.file-explorer"
+          fallback={FileExplorer}
+          cwd={currentProject?.path || appRoot}
+          onFileClick={(filePath: string) => {
+            // 与侧边栏文件树同一条链路：打开文件编辑器（App 里有 codem:open-file 的监听）
+            window.dispatchEvent(new CustomEvent("codem:open-file", { detail: filePath }));
+          }}
+        />
+      )}
+      {jobsPanelEnabled && bottomTab === "jobs" && (
+        /*
+         * 同样不传 showDegraded：`app.jobs` 槽位没有贡献者（@codem/ui-jobs 只注册 app.jobs-badge），
+         * 走宿主兜底面板是**常态**而不是「插件已关闭」—— 真机截图里那句横幅是假信息。
+         */
+        <SlotBridge
+          name="app.jobs"
+          fallback={JobsPanel}
+          onClose={() => setBottomTab("chat")}
+          tasks={subagentTasks.map(
+            (task): JobsPanelTask => ({
+              id: task.id,
+              label: task.name || task.prompt?.slice(0, 40) || task.id,
+              kind: task.agentId || "subagent",
+              status: task.status,
+              startedAt: task.startedAt || task.createdAt || Date.now(),
+              finishedAt: task.completedAt,
+              detail: task.error,
+            }),
+          )}
+        />
+      )}
+      {/* perf / cicd 两个槽位**有**贡献者（ui-misc / ui-panels），关掉那个插件时横幅是真话，保持原样 */}
+      {cicdEnabled && bottomTab === "cicd" && (
+        <SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")} showDegraded />
+      )}
+    </>
+  );
+
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={500}>
     <div className="app">
@@ -5039,9 +5111,7 @@ onRemoveProject={(id, name, path) => {
               mainPanel={
                 <div className="main-area">
                   <div className="panel-right">
-                    <div className="panel-tabs" style={{ display: "none" }}>
-<SlotListBridge name="bottom-panel.tabs" />
-</div>
+                    <BottomPanelTabs tab={bottomTab} gates={bottomPanelGates} lang={lang} onSelect={setBottomTab} />
                     <div className="panel-content">
                       {compactionStatus && compactionStatus.sessionId === uiSessionId && (
                         <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
@@ -5110,6 +5180,9 @@ notebookId={activeNotebookId || undefined}
 </div>
 )}
 
+{/* 四个可选页签的面板内容（perf / files / jobs / cicd）：三套皮肤共用同一段 */}
+{renderBottomPanelBody()}
+
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
     <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
@@ -5148,7 +5221,7 @@ onRemoveProject={(id, name, path) => {
 
               <div className="main-area">
                 <div className="panel-right">
-                  <div className="panel-tabs" style={{ display: "none" }}></div>
+                  <BottomPanelTabs tab={bottomTab} gates={bottomPanelGates} lang={lang} onSelect={setBottomTab} />
                   <div className="panel-content">
                     {compactionStatus && compactionStatus.sessionId === uiSessionId && (
                       <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
@@ -5217,6 +5290,9 @@ notebookId={activeNotebookId || undefined}
 </div>
 )}
 
+{/* 四个可选页签的面板内容（perf / files / jobs / cicd）：三套皮肤共用同一段 */}
+{renderBottomPanelBody()}
+
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
     <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
@@ -5277,7 +5353,7 @@ onRemoveProject={(id, name, path) => {
 
       <div className="main-area">
         <div className="panel-right">
-          <div className="panel-tabs" style={{ display: "none" }}></div>
+          <BottomPanelTabs tab={bottomTab} gates={bottomPanelGates} lang={lang} onSelect={setBottomTab} />
 
           <div className="panel-content">
             {compactionStatus && compactionStatus.sessionId === uiSessionId && (
@@ -5355,6 +5431,9 @@ notebookId={activeNotebookId || undefined}
   </div>
 </div>
 )}
+
+{/* 四个可选页签的面板内容（perf / files / jobs / cicd）：三套皮肤共用同一段 */}
+{renderBottomPanelBody()}
 
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>

@@ -5838,6 +5838,94 @@
     "gap": "var(--space-4)",
     "margin-bottom": "var(--space-6)"
   },
+  "jobs-panel": {
+    "background": "var(--surface-raised)",
+    "display": "flex",
+    "flex-direction": "column",
+    "gap": "var(--space-6)",
+    "height": "100%",
+    "overflow": "auto",
+    "padding": "var(--space-8)",
+    "width": "100%"
+  },
+  "jobs-panel-actions": {
+    "align-items": "center",
+    "display": "inline-flex",
+    "gap": "var(--space-4)"
+  },
+  "jobs-panel-btn": {
+    "align-items": "center",
+    "background": "var(--bg-secondary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
+    "cursor": "pointer",
+    "display": "inline-flex",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-2)",
+    "padding": "var(--space-2) var(--space-5)"
+  },
+  "jobs-panel-header": {
+    "align-items": "center",
+    "display": "flex",
+    "gap": "var(--space-6)",
+    "justify-content": "space-between"
+  },
+  "jobs-panel-id": {
+    "color": "var(--text-primary)",
+    "flex": "1",
+    "min-width": "0",
+    "overflow": "hidden",
+    "text-overflow": "ellipsis",
+    "white-space": "nowrap"
+  },
+  "jobs-panel-list": {
+    "display": "flex",
+    "flex-direction": "column",
+    "gap": "var(--space-2)",
+    "list-style": "none",
+    "margin": "0",
+    "padding": "0"
+  },
+  "jobs-panel-live": {
+    "color": "var(--success)",
+    "font-size": "var(--fs-sm)"
+  },
+  "jobs-panel-meta": {
+    "color": "var(--text-muted)",
+    "white-space": "nowrap"
+  },
+  "jobs-panel-notice": {
+    "background": "var(--bg-secondary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-sm)",
+    "padding": "var(--space-4) var(--space-6)"
+  },
+  "jobs-panel-row": {
+    "align-items": "center",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "display": "flex",
+    "font-size": "var(--fs-sm)",
+    "gap": "var(--space-5)",
+    "padding": "var(--space-4) var(--space-6)"
+  },
+  "jobs-panel-status": {
+    "color": "var(--text-secondary)",
+    "min-width": "72px"
+  },
+  "jobs-panel-subtitle": {
+    "color": "var(--text-secondary)",
+    "font-size": "var(--fs-sm)"
+  },
+  "jobs-panel-title": {
+    "align-items": "center",
+    "color": "var(--text-primary)",
+    "display": "inline-flex",
+    "font-size": "var(--fs-base)",
+    "gap": "var(--space-4)"
+  },
   "kg-action-btn": {
     "align-items": "center",
     "border-radius": "var(--radius)",
@@ -11282,6 +11370,17 @@
     "gap": "var(--panel-tabs-gap)",
     "height": "var(--panel-tabs-height)",
     "padding": "var(--panel-tabs-padding)"
+  },
+  "panel-tabs-close": {
+    "background": "none",
+    "border": "none",
+    "color": "var(--text-secondary)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-lg)",
+    "line-height": "var(--lh-none)",
+    "margin-left": "auto",
+    "padding": "var(--space-4) var(--space-6)",
+    "transition": "var(--transition-color)"
   },
   "paragraph-action-btn": {
     "align-items": "center",
