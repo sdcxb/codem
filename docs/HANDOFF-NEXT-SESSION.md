@@ -6705,7 +6705,9 @@ CDP 连 WebView2 并用 `Emulation.setDeviceMetricsOverride` 把视口压到 **1
 判据脚本 **退出码 0**（`ok: true`）。
 
 截图（`docs/evidence/memory-pending-scroll-231/`）：`before-clipped.png`（第 1–5 条可见、第 6 条被底边裁断、
-无滚动条）、`after-scroll-to-12.png`（滚到末尾：第 9–12 条可见、第 12 条带批准/拒绝、右侧有列表滚动条）。
+无滚动条）、`after-scroll-to-12.png`（滚到末尾：第 9–12 条可见、第 12 条带批准/拒绝、右侧有列表滚动条）、
+`after-approve-12.png`（**能批**：点第 12 条自己的「批准」⇒ 读数 12→11、列表少一条、回执
+「已批准 mem-seed-12：该自动记忆从现在起参与上下文。」，`.preview-shot/_mem231-act.mjs` 退出码 0）。
 ⚠️ 修前的原始 exe 已被本轮重新构建覆盖，所以 `before-clipped.png` 是在**当前构建**上用 CDP 注入旧的三条声明
 复现的（修法只动那三条 + 滚动区那条）；"修前"一列的数值来自改代码之前对当时构建的实测，与复现值一致。
 
