@@ -12,10 +12,10 @@
  * 且 `applyThemeAttribute()` 幂等 —— 档位没变就不碰 DOM、不改镜像。
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { findChromiumBrowser, readFixtureProbes } from "./helpers/browser-probe";
 import {
   DEFAULT_THEME,
   THEME_CACHE_KEY,
@@ -147,51 +147,54 @@ describe("启动主题契约（第 60 波）", () => {
   });
 });
 
-describe("首屏底色真实渲染契约（第 60 波，需要浏览器）", () => {
+/**
+ * 首屏底色的真渲染契约。
+ *
+ * ## 为什么要换传输层（2026-10-17）
+ *
+ * 原来这里用 `msedge --headless=new --dump-dom` 拿 DOM，再正则抠 `PROBE_JSON=`。
+ * 真机发现这台 Windows 上一次性无头输出**是哑的**（`--dump-dom` / `--screenshot` /
+ * `--print-to-pdf` 都 exit 0、跑约 1 秒、0 字节输出），于是**整个文件在加载期就抛**，
+ * 连不依赖浏览器的 6 条静态判据也一起不跑了。
+ * 现在改走 CDP（`helpers/browser-probe.ts`）：同一个浏览器、同一份 fixture、
+ * 同样的断言，只是把结果改成从协议里读。
+ */
+const BROWSER = findChromiumBrowser();
+
+interface FirstPaint {
+  cache: string | null;
+  dataTheme: string | null;
+  colorScheme: string;
+  htmlBackground: string;
+  splashBackground: string | null;
+  bgPrimaryToken: string;
+}
+
+describe.skipIf(!BROWSER)("首屏底色真实渲染契约（第 60 波，需要浏览器）", () => {
   const FIXTURE = join(ROOT, "src", "test", "fixtures", "theme-firstpaint-probe.html");
 
-  function findBrowser(): string | null {
-    const candidates = [
-      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "/usr/bin/microsoft-edge",
-      "/usr/bin/google-chrome",
-    ];
-    for (const c of candidates) if (existsSync(c)) return c;
-    return null;
-  }
-  const BROWSER = findBrowser();
+  let dark: FirstPaint;
+  let light: FirstPaint;
+  let none: FirstPaint;
 
-  interface FirstPaint {
-    cache: string | null;
-    dataTheme: string | null;
-    colorScheme: string;
-    htmlBackground: string;
-    splashBackground: string | null;
-    bgPrimaryToken: string;
-  }
-
-  function firstPaint(cache: "dark" | "light" | "none"): FirstPaint {
-    const out = execFileSync(
-      BROWSER as string,
+  beforeAll(async () => {
+    if (!BROWSER) return;
+    // 三种镜像态**共用一次浏览器启动**（每次冷启动 2~4 秒，全量跑时还要和别的 worker 抢磁盘）；
+    // 每个 probe 之间会先回 about:blank，DOM 不会串台。fixture 自己按 ?cache= 写镜像再量首帧。
+    const [d, l, n] = await readFixtureProbes<FirstPaint>(
       [
-        "--headless=new", "--disable-gpu", "--no-sandbox", "--dump-dom",
-        "--window-size=1200,800", "--virtual-time-budget=4000",
-        `file:///${FIXTURE.replace(/\\/g, "/")}?cache=${cache}`,
+        { fixture: FIXTURE, query: "?cache=dark", viewport: [1200, 800] },
+        { fixture: FIXTURE, query: "?cache=light", viewport: [1200, 800] },
+        { fixture: FIXTURE, query: "?cache=none", viewport: [1200, 800] },
       ],
-      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
+      BROWSER,
     );
-    const m = /PROBE_JSON=(\{.*?\})<\/pre>/s.exec(out);
-    if (!m) throw new Error("首屏主题探针没有输出：检查 fixtures/theme-firstpaint-probe.html 是否被改动");
-    return JSON.parse(m[1].replace(/&quot;/g, '"'));
-  }
+    dark = d;
+    light = l;
+    none = n;
+  }, 90_000);
 
-  const dark = BROWSER ? firstPaint("dark") : null;
-  const light = BROWSER ? firstPaint("light") : null;
-  const none = BROWSER ? firstPaint("none") : null;
-
-  it.skipIf(!BROWSER)("THEME-BOOT-7: 镜像为暗色时，首帧就是暗色（画布与启动页都不白）", () => {
+  it("THEME-BOOT-7: 镜像为暗色时，首帧就是暗色（画布与启动页都不白）", () => {
     expect(dark!.dataTheme, "内联脚本应按镜像设好 data-theme").toBe("dark");
     expect(dark!.colorScheme).toBe("dark");
     expect(dark!.htmlBackground, "画布必须是暗底（而不是浏览器默认白）").toBe("rgb(14, 15, 15)");
@@ -199,7 +202,7 @@ describe("首屏底色真实渲染契约（第 60 波，需要浏览器）", () 
     expect(dark!.splashBackground, "启动页底色必须与画布一致（加载期间不闪相反色）").toBe("rgb(14, 15, 15)");
   }, 30_000);
 
-  it.skipIf(!BROWSER)("THEME-BOOT-8: 镜像为浅色 / 缺失时，首帧是浅色（默认档）", () => {
+  it("THEME-BOOT-8: 镜像为浅色 / 缺失时，首帧是浅色（默认档）", () => {
     expect(light!.dataTheme).toBe("light");
     // 第 65 轮：亮色档内容面由近白 #fcfcfb 改为**纯白**（抬升方向反转的第一步），
     // 所以首帧底色随之变成 rgb(255, 255, 255)。这条断言仍然在守同一件事：

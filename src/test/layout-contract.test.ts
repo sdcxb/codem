@@ -17,30 +17,85 @@
  * 机器上没有 Edge 时**跳过**（并打印原因），不阻塞其它环境。
  */
 
-import { describe, it, expect } from "vitest";
-import { execFileSync } from "node:child_process";
+import { describe, it, expect, beforeAll } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { findChromiumBrowser, readFixtureProbes } from "./helpers/browser-probe";
 
 const ROOT = join(__dirname, "..", "..");
 const FIXTURE = join(ROOT, "src", "test", "fixtures", "settings-modal-probe.html");
+const CHIP_FIXTURE = join(ROOT, "src", "test", "fixtures", "chip-rows-probe.html");
+const TOOLBAR_FIXTURE = join(ROOT, "src", "test", "fixtures", "toolbar-rows-probe.html");
 
-/** 找一个 Chromium 系浏览器（Edge 在 Windows 上默认存在；Chrome 作为兜底） */
-function findBrowser(): string | null {
-  const candidates = [
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    "/usr/bin/microsoft-edge",
-    "/usr/bin/google-chrome",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  ];
-  for (const c of candidates) if (existsSync(c)) return c;
-  return null;
+const BROWSER = findChromiumBrowser();
+
+/**
+ * 四个真实渲染点位（宽屏舞台扫描 / 窄屏媒体查询 / 标签墙 / 工具行）**一次浏览器启动全取**。
+ *
+ * 为什么合并：无头浏览器每次冷启动 2~4 秒，四份分开起会让全量跑明显抢磁盘
+ * （实测把 `skill-creator` 的真进程用例挤到 5s 默认超时）。每次 probe 之间先回
+ * `about:blank`，上一份文档的 DOM 不会串到下一份。
+ */
+type ChipRow = {
+  w: number;
+  case: string;
+  overflow: boolean;
+  display: string;
+  flexWrap: string;
+  children: Array<{ cls: string; lines: number; chars: number; w: number }>;
+  squeezed: Array<{ cls: string; chars: number; lines: number; w: number }>;
+};
+
+interface ToolbarRowLite {
+  case: string;
+  innerWidth: number;
+  display: string;
+  gridColumns: string;
+  overflow: boolean;
+  wrapped: boolean;
+  lastRightGap: number | null;
+  growable: Array<{ cls: string; w: number; ratio: number }>;
 }
 
-const BROWSER = findBrowser();
+const PROBE_RESULTS: {
+  sweep: { viewport: { w: number; h: number; dpr: number }; results: Row[] } | null;
+  narrow: { viewport: { w: number; h: number; dpr: number }; results: Row[] } | null;
+  chips: ChipRow[] | null;
+  toolbars: ToolbarRowLite[] | null;
+} = { sweep: null, narrow: null, chips: null, toolbars: null };
+
+/** 给测试用的只读视图（beforeAll 里填好；没浏览器时用例整体 skip） */
+const PROBES = {
+  get sweep() {
+    return PROBE_RESULTS.sweep!;
+  },
+  get narrow() {
+    return PROBE_RESULTS.narrow!;
+  },
+  get chips() {
+    return PROBE_RESULTS.chips!;
+  },
+  get toolbars() {
+    return PROBE_RESULTS.toolbars!;
+  },
+};
+
+beforeAll(async () => {
+  if (!BROWSER) return;
+  const [wide, small, chips, toolbars] = await readFixtureProbes<any>(
+    [
+      { fixture: FIXTURE, viewport: [2600, 1500] },
+      { fixture: FIXTURE, viewport: [740, 900] },
+      { fixture: CHIP_FIXTURE, viewport: [1400, 2000], timeoutMs: 30_000 },
+      { fixture: TOOLBAR_FIXTURE, viewport: [1400, 1200], timeoutMs: 30_000 },
+    ],
+    BROWSER,
+  );
+  PROBE_RESULTS.sweep = wide;
+  PROBE_RESULTS.narrow = small;
+  PROBE_RESULTS.chips = chips.results;
+  PROBE_RESULTS.toolbars = toolbars.results;
+}, 180_000);
 
 interface Box {
   w: number;
@@ -61,60 +116,52 @@ interface Row {
   media: { max768: boolean };
 }
 
-function measure(windowSize: [number, number]): { viewport: { w: number; h: number; dpr: number }; results: Row[] } {
-  const out = execFileSync(
-    BROWSER as string,
-    [
-      "--headless=new",
-      "--disable-gpu",
-      "--no-sandbox",
-      "--dump-dom",
-      `--window-size=${windowSize[0]},${windowSize[1]}`,
-      `file:///${FIXTURE.replace(/\\/g, "/")}`,
-    ],
-    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
-  );
-  const m = /PROBE_JSON=(\{.*?\})<\/pre>/s.exec(out);
-  if (!m) throw new Error("布局探针没有输出：请检查 fixture 是否被改动（PROBE_JSON 标记缺失）");
-  return JSON.parse(m[1].replace(/&quot;/g, '"'));
+/**
+ * 真渲染测量（换过传输层：2026-10-17）。
+ *
+ * 原来用 `msedge --headless=new --dump-dom` 抠 `PROBE_JSON=`；真机上这条路是哑的
+ * （exit 0、0 字节输出），整个文件因此在**加载期**就抛 —— 连不依赖浏览器的静态判据
+ * 也一起不跑。现在走 CDP（`helpers/browser-probe.ts`）：同一个浏览器、同一份 fixture、
+ * 同样的断言，只是把结果从协议里读。视口用 `Emulation.setDeviceMetricsOverride`
+ * 覆盖（实测 `--window-size` 在无头 Edge 里不生效，会让 `LAYOUT-0` 变成恒假判据）。
+ */
+interface LayoutProbe {
+  viewport: { w: number; h: number; dpr: number };
+  results: Row[];
 }
 
 describe.skipIf(!BROWSER)("弹窗外壳真实布局契约（第 54 波）", () => {
-  // 舞台扫描：一次浏览器启动测完所有可用区域
-  const sweep = measure([2600, 1500]);
-  // 窄屏另有媒体查询分支，单独跑一次
-  const narrow = measure([740, 900]);
 
   it("LAYOUT-0: 探针确实拿到了测量结果（防止 fixture 坏掉导致「空集也通过」）", () => {
-    expect(sweep.results.length).toBeGreaterThanOrEqual(10);
-    expect(sweep.viewport.h).toBeGreaterThan(500);
+    expect(PROBES!.sweep.results.length).toBeGreaterThanOrEqual(10);
+    expect(PROBES!.sweep.viewport.h).toBeGreaterThan(500);
   });
 
   it("LAYOUT-1: 设置弹窗在各分辨率下都够宽（不是塌成一条窄条）", () => {
-    const bad = sweep.results
+    const bad = PROBES!.sweep.results
       .filter((r) => r.panel.w < 480)
       .map((r) => `${r.w}x${r.h} → 面板宽 ${r.panel.w}px`);
     expect(bad, `设置弹窗在这些可用区域下塌掉了：\n${bad.join("\n")}`).toEqual([]);
   });
 
   it("LAYOUT-2: 设置弹窗的内容区不会被挤成一条（≥320px），且宽度随可用区域自适应", () => {
-    const bad = sweep.results
+    const bad = PROBES!.sweep.results
       .filter((r) => r.content.w < 320)
       .map((r) => `${r.w}x${r.h} → 内容区宽 ${r.content.w}px`);
     expect(bad, `内容区被挤没了：\n${bad.join("\n")}`).toEqual([]);
     // 自适应：可用区域 ≥1090px 时是设计宽度 760，且弹窗不超过可用区域
-    const wide = sweep.results.filter((r) => r.w >= 1090);
+    const wide = PROBES!.sweep.results.filter((r) => r.w >= 1090);
     for (const r of wide) {
       expect(r.panel.w, `${r.w}x${r.h} 弹窗应为设计宽度 760px`).toBe(760);
     }
-    const narrowStage = sweep.results.filter((r) => r.w < 760);
+    const narrowStage = PROBES!.sweep.results.filter((r) => r.w < 760);
     for (const r of narrowStage) {
       expect(r.panel.w, `${r.w}x${r.h} 弹窗不得超过可用区域`).toBeLessThanOrEqual(r.w);
     }
   });
 
   it("LAYOUT-3: 窄屏媒体查询下弹窗走整宽（可用区域小于 768px 时不能被固定宽度撑破）", () => {
-    const rows = narrow.results.filter((r) => r.media.max768);
+    const rows = PROBES!.narrow.results.filter((r) => r.media.max768);
     expect(rows.length).toBeGreaterThan(0);
     for (const r of rows) {
       expect(r.panel.w, `${r.w} 宽下应铺满可用区域`).toBe(r.w);
@@ -213,37 +260,10 @@ describe("弹窗外壳的静态契约（第 54 波，不依赖浏览器）", () 
   });
 });
 
-describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览器）", () => {
-  const CHIP_FIXTURE = join(ROOT, "src", "test", "fixtures", "chip-rows-probe.html");
+describe.skipIf(!BROWSER)("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览器）", () => {
 
-  function measureChips(): Array<{
-    w: number;
-    case: string;
-    overflow: boolean;
-    display: string;
-    flexWrap: string;
-    children: Array<{ cls: string; lines: number; chars: number; w: number }>;
-    squeezed: Array<{ cls: string; chars: number; lines: number; w: number }>;
-  }> {
-    const out = execFileSync(
-      BROWSER as string,
-      [
-        "--headless=new", "--disable-gpu", "--no-sandbox", "--dump-dom",
-        "--window-size=1400,2000", "--virtual-time-budget=6000",
-        `file:///${CHIP_FIXTURE.replace(/\\/g, "/")}`,
-      ],
-      { encoding: "utf8", maxBuffer: 128 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
-    );
-    const m = /PROBE_JSON=(\{.*?\})<\/pre>/s.exec(out);
-    if (!m) throw new Error("标签墙探针没有输出：检查 fixtures/chip-rows-probe.html 是否被改动");
-    return JSON.parse(m[1].replace(/&quot;/g, '"')).results;
-  }
-
-  // 无头浏览器冷启动可能超过 vitest 默认的 5s，所以：测量只跑一次 + 显式放宽超时
-  const chipRows = BROWSER ? measureChips() : [];
-
-  it.skipIf(!BROWSER)("LAYOUT-8: 标签墙/工具栏在 320~1200px 下都不竖排、不溢出", () => {
-    const rows = chipRows;
+  it("LAYOUT-8: 标签墙/工具栏在 320~1200px 下都不竖排、不溢出", () => {
+    const rows = PROBES!.chips;
     expect(rows.length, "探针测量点太少，可能 fixture 坏了").toBeGreaterThanOrEqual(50);
     const squeezed = rows.filter((r) => r.squeezed.length);
     const overflow = rows.filter((r) => r.overflow);
@@ -257,8 +277,8 @@ describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览�
     ).toEqual([]);
   }, 30_000);
 
-  it.skipIf(!BROWSER)("LAYOUT-9: 设置「通用」的身份/风格标签、性能面板页签行确实是一行一个标签", () => {
-    const rows = chipRows;
+  it("LAYOUT-9: 设置「通用」的身份/风格标签、性能面板页签行确实是一行一个标签", () => {
+    const rows = PROBES!.chips;
     for (const name of ["identity-options", "identity-style", "perf-tab-group"]) {
       const cases = rows.filter((r) => r.case === name);
       expect(cases.length, `探针里缺少 ${name} 的测量点`).toBeGreaterThan(0);
@@ -271,43 +291,14 @@ describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览�
   }, 30_000);
 });
 
-describe("工具行/搜索行的「撑开与靠右」契约（第 57 波，需要浏览器）", () => {
-  const TOOLBAR_FIXTURE = join(ROOT, "src", "test", "fixtures", "toolbar-rows-probe.html");
+describe.skipIf(!BROWSER)("工具行/搜索行的「撑开与靠右」契约（第 57 波，需要浏览器）", () => {
 
-  interface ToolbarRow {
-    case: string;
-    innerWidth: number;
-    display: string;
-    gridColumns: string;
-    overflow: boolean;
-    wrapped: boolean;
-    lastRightGap: number | null;
-    growable: Array<{ cls: string; w: number; ratio: number }>;
-  }
 
-  function measureToolbars(): ToolbarRow[] {
-    const out = execFileSync(
-      BROWSER as string,
-      [
-        "--headless=new", "--disable-gpu", "--no-sandbox", "--dump-dom",
-        "--window-size=1400,1200", "--virtual-time-budget=6000",
-        `file:///${TOOLBAR_FIXTURE.replace(/\\/g, "/")}`,
-      ],
-      { encoding: "utf8", maxBuffer: 128 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
-    );
-    const m = /PROBE_JSON=(\{.*?\})<\/pre>/s.exec(out);
-    if (!m) throw new Error("工具行探针没有输出：检查 fixtures/toolbar-rows-probe.html 是否被改动");
-    return JSON.parse(m[1].replace(/&quot;/g, '"')).results;
-  }
-
-  // 同上：测量只跑一次，并显式放宽超时（无头浏览器冷启动可能 >5s）
-  const toolbarRows = BROWSER ? measureToolbars() : [];
-
-  it.skipIf(!BROWSER)("LAYOUT-10: 可伸缩元素必须真的撑开、行尾控件必须贴右（不得靠左留一片空白）", () => {
+  it("LAYOUT-10: 可伸缩元素必须真的撑开、行尾控件必须贴右（不得靠左留一片空白）", () => {
     // 真实事故（用户报）：右侧栏「筛选文件」搜索行的刷新按钮没有居右，右边空了一片。
     // 根因：容器写的是 repeat(3, max-content) 的网格，而输入框上写着 flex: 1 —— 在 grid 里
     // **完全无效**，于是整行内容按内容宽度靠左排（实测 724px 宽的行里按钮距右边缘还差 527px）。
-    const rows = toolbarRows;
+    const rows = PROBES!.toolbars;
     expect(rows.length, "探针测量点太少，可能 fixture 坏了").toBeGreaterThanOrEqual(30);
 
     const problems: string[] = [];
