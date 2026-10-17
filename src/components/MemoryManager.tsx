@@ -249,6 +249,21 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
    * 留在集合里，等哪天有同名 id 出现时会被莫名其妙地展开（"幽灵展开"）。
    */
   const [expandedPending, setExpandedPending] = useState<Set<string>>(new Set());
+  /**
+   * 第 230 波（用户拍板）：**库内待批准条目的全局总量**（不看 ctx）。
+   *
+   * 为什么必须与 `pending`（本地那份）分开存：
+   * 面板的待批准列表按当前位置过滤（`listPending(undefined, ctx)`）—— 这是对的（在项目 A
+   * 不该看到项目 B 的待批准内容）。但**积压的成本是用户的决策次数**，那是全局的：
+   * 本处 0 条、别处 5 条时，用户看到的是"没有待批准"，而实际上系统已经在
+   * `MEMORY_PENDING_BACKLOG_LIMIT` 那道闸上把新候选降级成对话级了 —— 两件事对不上。
+   *
+   * ⚠️ **取数口径必须与闸门同一处**（`MemoryService.countPendingEntries()`）：
+   * 它就是 `llm/index.ts` 里 `decidePendingBacklog` 的入参来源（第 229 波）。
+   * 这里**不许**另写一份"遍历 entries 数 pending"的实现 —— 那样两处口径一分叉，
+   * 界面会开始解释一个与闸门无关的数字（本仓吃过同类亏，见 `panel-scope.ts` 的文件头）。
+   */
+  const [globalPending, setGlobalPending] = useState(0);
   const [batches, setBatches] = useState<MemoryBatch[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MemorySearchResult[]>([]);
@@ -310,6 +325,12 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     setEntries(service.listAllForPanel(ctx));
     // 待批准列表**同样按当前位置过滤**（旧实现全量返回 ⇒ 项目 A 能看到项目 B 的待批准内容）
     setPending(service.listPending(undefined, ctx));
+    /*
+     * 第 230 波：「本处 0 条、别处还有」那一行读的是**全局**待批准数。
+     * 与上面的 `pending`（按 ctx 过滤的界面视图）**刻意不同口径**，理由写在 state 的注释里；
+     * 取数走闸门同一个方法（`countPendingEntries()`），不另写一份。
+     */
+    setGlobalPending(service.countPendingEntries());
     setBatches(service.listBatches().filter((b) => !b.undone));
     /*
      * B7：统计与列表**同一个 ctx**。旧实现 `getStats()` 遍历全库，而列表是按项目过滤的，
@@ -1061,6 +1082,28 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
           ? `有 ${pending.length} 条自动记忆等待批准：它们**现在不会进上下文**，批准后才生效（手动条目不受影响）。可以逐条批准/拒绝，也可以勾选后批量处置（含全选）。`
           : `自动提取的记忆按上面「写入审批」的开关处理：**对话级默认直接生效**（只跟本次对话有关的事实不再打扰你），项目级 / 平台级默认先进待批准区、批准后才进上下文。`}
       </div>
+
+      {/*
+        第 230 波（用户拍板）：**本处为 0、全局 > 0** 时补一行。
+
+        被守的形态：面板按当前位置过滤（本处 0 条 ⇒ 待批准区整块不渲染），而库里
+        **别处**还躺着待批准条目 —— 用户看到的是"没有待批准"，同时系统已经在
+        `MEMORY_PENDING_BACKLOG_LIMIT`（5 条）那道闸上把新候选降级成对话级了。
+        两个读数对不上，而用户没有任何地方能看出"积压其实满了"。
+
+        刻意只做**一行文字**（用既有的 `.memory-pending-hint.active` 样式，不动 styles.css）：
+        - 不弹窗、不做横幅 —— 它不是失败，只是"还有别处的事"（弹窗会打断正在做的事）；
+        - 不改任何既有语义：单条批准/拒绝、批量、全选、一键全部批准/拒绝、整合、双击展开
+          一个字节都没动（本处 0 条时那些控件本来就不渲染）。
+
+        判据 `MEM-OTHER-PENDING-1`~`4`（真渲染 + 变异自证）钉住：
+        `本处==0 && 全局>0` ⇒ 出现且 N = **全局**数；`本处>0` ⇒ 不出现；`全局==0` ⇒ 不出现。
+      */}
+      {pending.length === 0 && globalPending > 0 && (
+        <div className="memory-pending-hint active" data-testid="memory-other-projects-pending">
+          其它项目还有 {globalPending} 条待批准（去记忆体检处置）
+        </div>
+      )}
 
       {/* 写入审批开关（对标 Hermes write approval）：开启 ⇒ 自动提取只进待批准区 */}
       <div className="memory-approval-bar">
