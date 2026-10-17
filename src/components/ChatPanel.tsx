@@ -33,7 +33,7 @@ import { useDomainReady } from "../hooks/use-domain-ready";
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
-  Activity, Pencil,
+  Activity, Pencil, Paperclip,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -61,12 +61,18 @@ import { DeliverableFiles } from "./DeliverableFiles";
 import { TrajectoryPanel } from "./TrajectoryPanel";
 /** 第 184 波（F5）：删除失败不许抹记录 —— 两条面板路径共用同一份实现 */
 import { deleteGeneratedFiles } from "../core/ui/generated-files-cleanup";
+import { decideAutoScroll } from "../core/ui/scroll-pinning";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
   onCancel: () => void;
-  /** Send a guidance message to the currently running agentic loop */
-  onSendGuidance?: (message: string) => void;
+  /**
+   * Send a guidance message to the currently running agentic loop.
+   *
+   * 2026-10-18：**必须带附件** —— 旧签名只有文本，流式期间追加的图片在
+   * 这里就被丢掉（真机报"模型说没看到图片"）。判据 `GUIDE-ATT-2`。
+   */
+  onSendGuidance?: (message: string, attachments?: MessageAttachment[]) => void;
   onToggleSidebar: () => void;
   /** 侧边栏当前是否展开（决定收起/展开图标） */
   sidebarOpen?: boolean;
@@ -360,6 +366,38 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const prevMessagesLenRef = useRef(0);
   const isInitialLoadRef = useRef(true);
   const loadingHistoryRef = useRef(false);
+  /*
+   * 流式滚动的两个标记（2026-10-18，对标滚动物理学）：
+   * - `lastUserScrollAtRef`：用户**主动**滚动/按键的时间点。流式追加时若距它 ≤150ms 就不抢视口，
+   *   否则会出现"我刚滚上去又被弹回底部"。
+   * - `programmaticScrollRef`：下一次 scroll 事件是**我们自己**触发的，分类逻辑要忽略它
+   *   （否则"程序滚动"会被记成"用户在看底部"，把用户的选择覆盖掉）。
+   */
+  const lastUserScrollAtRef = useRef(0);
+  const programmaticScrollRef = useRef(false);
+  useEffect(() => {
+    const container = (messagesContainerRef.current?.parentElement ?? null) as HTMLElement | null;
+    if (!container) return;
+    const markUserScroll = () => {
+      if (programmaticScrollRef.current) {
+        // 自己触发的滚动：不算"用户输入"，也不覆盖用户的贴底状态
+        programmaticScrollRef.current = false;
+        return;
+      }
+      lastUserScrollAtRef.current = performance.now();
+    };
+    container.addEventListener("wheel", markUserScroll, { passive: true });
+    container.addEventListener("touchstart", markUserScroll, { passive: true });
+    container.addEventListener("keydown", markUserScroll);
+    container.addEventListener("scroll", markUserScroll, { passive: true });
+    return () => {
+      container.removeEventListener("wheel", markUserScroll);
+      container.removeEventListener("touchstart", markUserScroll);
+      container.removeEventListener("keydown", markUserScroll);
+      container.removeEventListener("scroll", markUserScroll);
+    };
+  }, []);
+
   useEffect(() => {
     if (isInitialLoadRef.current && messages.length > 0) {
       isInitialLoadRef.current = false;
@@ -385,12 +423,27 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
         }
       }, 50);
     } else if (messages.length > prevMessagesLenRef.current) {
-      // P0 fix: Only auto-scroll if user is already at/near bottom.
-      // If scrolled up, don't force-scroll — let the unread indicator show instead.
-      const container = messagesContainerRef.current;
+      // 只在"用户在看最新"时自动跟到底；用户滚开就让未读提示条去提示。
+      // 额外两条（2026-10-18）：① 用户刚滚过（≤150ms）不抢视口；② 流式期用 auto 瞬时对齐，
+      // 避免 smooth 动画与 token 追加互相拉扯。判定逻辑在 `core/ui/scroll-pinning.ts`（判据 SCROLLPIN-*）。
+      const container = (messagesContainerRef.current?.parentElement ?? null) as HTMLElement | null;
       const scrollPos = useAppStore.getState().scrollPosition;
-      if (container && (scrollPos === "bottom" || scrollPos === "near-bottom")) {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      const distanceFromBottom = container
+        ? container.scrollHeight - container.scrollTop - container.clientHeight
+        : 0;
+      const decision = decideAutoScroll({
+        distanceFromBottom,
+        msSinceUserInput: performance.now() - lastUserScrollAtRef.current,
+        streaming: useAppStore.getState().isStreaming,
+        isPinned: scrollPos === "bottom" || scrollPos === "near-bottom",
+      });
+      if (decision.scroll) {
+        if (container) {
+          programmaticScrollRef.current = true;
+          container.scrollTo({ top: container.scrollHeight, behavior: decision.behavior });
+        } else {
+          messagesEndRef.current?.scrollIntoView();
+        }
       }
       prevMessagesLenRef.current = messages.length;
     }
@@ -1484,7 +1537,25 @@ canEdit={!isSessionStreaming}
                       : (lang === "zh" ? "待接收" : "Queued")}
                   </span>
                 </div>
-                <p className="guidance-item-text">{g.message}</p>
+                {g.message ? <p className="guidance-item-text">{g.message}</p> : null}
+                {g.attachments && g.attachments.length > 0 && (
+                  <div className="guidance-item-attachments">
+                    {g.attachments.map((att) => (
+                      <span key={att.id} className="guidance-attachment" title={att.name}>
+                        {att.type === "image" && (att.content || att.preview) ? (
+                          <img
+                            className="guidance-attachment-thumb"
+                            src={att.content || att.preview}
+                            alt={att.name}
+                          />
+                        ) : (
+                          <Paperclip className="icon-xs" />
+                        )}
+                        <span className="guidance-attachment-name">{att.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               {!g.consumed && (
                 <div className="guidance-item-actions">
@@ -1529,7 +1600,7 @@ canEdit={!isSessionStreaming}
         </div>
       )}
 
-      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode}
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode}
         /* 第 46 波：这两个动作从会话头部移到编辑器底部工具行（见 InputArea 的注释） */
         searchOpen={showSearch}
         onToggleSearch={() => {

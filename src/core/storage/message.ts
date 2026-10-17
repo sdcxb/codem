@@ -3993,13 +3993,44 @@ export function messagesToLLMMessages(messages: Message[]): LLMMessage[] {
 
   for (const msg of messages) {
     if (msg.role === "user") {
-      const cleanContent = stripSystemReminders(msg.content || "(empty)");
+      /**
+       * 运行中追加（mid-turn guidance）：落库正文是**用户原文**（界面直接显示），
+       * 给模型看的那份（带 "Runtime guidance from the user" 框架）存在
+       * `metadata.guidanceModelContent`。这里只换"给模型的那一份"，不改历史。
+       * metadata 缺失时（索引投影不带它）就按原文发 —— 仍然是一条 user 指令，
+       * 语义不会错，只是少了那层"不要当成普通聊天消息回应"的提示。
+       * 判据 `GUIDE-VIS-2`（模型看到模板 + 原文只出现一次）。
+       */
+      const guidanceModelContent =
+        msg.metadata?.midTurnGuidance === true && typeof msg.metadata?.guidanceModelContent === "string"
+          ? msg.metadata.guidanceModelContent
+          : null;
+      const cleanContent = stripSystemReminders(guidanceModelContent ?? (msg.content || "(empty)"));
       if (!cleanContent) continue;
 
-      // Check for media attachments (image/audio) — generate ContentBlock[] for multimodal
-      const mediaAttachments = (msg.attachments || []).filter(
-        (a) => (a.type === "image" || a.type === "audio") && a.content
-      );
+      /**
+       * 多模态附件：正文可能在**外置文件**里（`file:<路径>`），或者被索引投影抹掉了
+       * （`attachmentsFromMirror` 只投影元数据列）。
+       *
+       * 旧写法直接读 `a.content`，于是：
+       * ① 外置的情况下把 `file:C:\…` 当成 base64 塞进 `data:` URL —— 发出去的是**坏图**；
+       * ② 投影抹掉正文时这一条根本不算 media attachment ⇒ 图片**根本不到模型**
+       *    （用户真机报的"追加的图片模型没看到"，与这一条形态一致）。
+       * 现在统一按 id 取回正文（`getAttachmentContent` 同步读缓存/外置文件）。
+       */
+      const resolveMediaContent = (att: any): string => {
+        const raw = typeof att?.content === "string" ? att.content : "";
+        if (raw && !raw.startsWith("file:")) return raw;
+        try {
+          return getAttachmentContent(att.id) ?? "";
+        } catch {
+          return "";
+        }
+      };
+      const mediaAttachments = (msg.attachments || [])
+        .filter((a) => a.type === "image" || a.type === "audio")
+        .map((a) => ({ ...a, content: resolveMediaContent(a) }))
+        .filter((a) => a.content);
       if (mediaAttachments.length > 0) {
         const blocks: ContentBlock[] = [
           { type: "text", text: cleanContent },

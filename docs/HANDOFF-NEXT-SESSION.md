@@ -7002,3 +7002,64 @@ spawn 了 17 个 `node <script>.ts` 真进程）。单跑必过、满载必挂 �
   不写测试数量、不写波次号与内部编号。
 - `gh release view --json isLatest` **不是合法字段**（会报 Unknown JSON field）；要判断 Latest 用
   `gh release list`。
+
+## 2026-10-18 01:10 — 第 236 波：运行中追加的可见性与附件（真机缺陷）+ 窄容器 + 流式滚动
+
+### 1）用户直报的两个缺陷（都已在真机复现并修掉）
+
+1. **追加后看不见**：对话执行中点「立刻引导」之后，状态栏气泡被删、对话流里没有新消息、刷新即消失。
+2. **追加的图片模型没看到**：引导通道 `onSendGuidance(message)` 只有文本参数，附件在 `ChatPanel` 就被丢掉。
+
+根因是同一条：引导在消费点被拼成**只活在本次请求里**的临时 user 消息（`agentic-loop.ts:2672` 附近），
+不落库、不建索引；而图片块是由 `messagesToLLMMessages` 从**落库消息的 attachments** 转出来的
+（`storage/message.ts:3991`）。
+
+修法（一次性把两条一起收口）：
+- `GuidanceItem` 带 `attachments`，`sendGuidance(message, attachments)` / `sendGuidanceImmediate(...)` 全链路透传；
+- 消费时 `createMessage` 落库（附件块 + `GUIDANCE_MESSAGE_TEMPLATE`），`msgCache = null` 后**重建**本轮投影；
+  落库失败退回临时注入并给用户明确提示（不许静默）；
+- `guidance_received` 带回 `persistedMessage`；App 收到后 `addMessage`（不二次落库）；
+- 新增 `core/llm/guidance-display.ts`：显示口径唯一实现（剥 `<attachment>` 块、剥模板前缀、id 前缀兜底），
+  `MessageBubble` 用它 + 显示 ⚡「运行中追加」徽标；
+- 顺带修掉一条**坏图路径**：外置附件的 `content` 是 `file:<路径>` 标记，旧代码把它当 base64 塞进 `data:` URL
+  ⇒ 现在按 id 取回正文（`getAttachmentContent`），并在索引投影抹掉正文时也能拿到图。
+
+判据：`src/test/guidance-visible-and-attachments.test.ts`（`GUIDE-VIS-1..5` + `GUIDE-ATT-1..3`）；
+变异波次 `guidance-persist-attachments`（4 条全红：不落库 / 队列丢附件 / 显示口径退回 / 多模态不按 id 取回）。
+
+真机（`Codem_1.16.324_x64-setup.exe` 静默安装 + WebView2 CDP）：流式中贴 96×96 红底 IMG 图 + 一句引导 ⇒
+引导栏显示「待接收」+ 缩略；点「立刻引导」⇒ 对话流出现「运行中追加」徽标 + **红色图片可见** + 用户原文；
+`Page.reload` 后消息仍在（`hasText=true`、徽标 1、附件消息 1）。取证：`docs/evidence/guidance-append-2026-10-18/`。
+
+### 2）对标借鉴（P0/P1，只做不修缺陷的那三条）
+
+- **窄容器 `@container`**：`.tool-card`（<420px：IN/OUT 段竖排、头部换行）与 `.settings-content`（<520px：行内换行、
+  输入框占满）。新增真渲染探针 `src/test/fixtures/narrow-containers-probe.html`（320/384/480/576/760 五档），
+  判据 `NARROW-1..3`，波次 `narrow-containers`（去掉两处 `container-type` 分别对红）。
+  ⚠️ 一条**被变异自证否掉**的判据：`white-space: pre-wrap` 在 Chromium 里已经会给超长单词折行，
+  `overflow-wrap: anywhere` 写不写都绿 ⇒ 没把它做成判据（规则保留作防御）。
+- **流式滚动图钉**：`core/ui/scroll-pinning.ts` 纯函数（40px 容差 / 150ms 用户输入冷却 / 流式 `auto`），
+  ChatPanel 接 `wheel/touchstart/keydown/scroll` 与 `programmaticScroll` 标记。判据 `SCROLLPIN-1..4`，波次 `scroll-pinning`。
+
+### 3）审计
+
+- `tsc` 0；全量 **705 文件 / 8370 通过 + 17 skipped**；变异闸门 **54 波**全过；
+- 非 eval 审计链 23 项全过（上报点 267=267、CSS 契约 2900 类、knip/可达性/schema/command/row-builders/
+  write-return/silent-write/false-success/fail-open/guard-bypass/control-bytes/token-hygiene/color-roles 等）；
+- 审计中修掉三处**由本轮改动引入**的红：`ICON-1`（新写的 `size={11/12}` → 改 `className="icon-xs"`）、
+  UI 一致性（`padding: 2px` → `var(--space-1)`）、`DOCS-2`（计划文档改名 `systematic-revision-2026-10-18.md`，
+  避开 `PLAN` 前缀的历史文档横幅闸门）。
+
+### 4）未做（等用户拍板，已写入 HANDOVER §9 第 6 条）
+
+边缘 7 档渐隐、Diff 分屏/统一、图片预览 View Transitions、单文件组件目录 + 文档 token 对账、
+roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
+
+### 5）教训
+
+- **判据要先证明能红**：窄容器那条 `overflow-wrap` 判据在变异里**没红**，说明它恒真；当时删掉它而不是留着凑数。
+- happy-dom 没有布局引擎（`scrollHeight` 恒 0）⇒ 滚动行为测**纯函数**，别在 jsdom 里伪造几何。
+- 索引投影**不保证带回 `metadata`**（只回 id/content 的形态真机与测试都出现过）⇒ 显示口径不能依赖 metadata，
+  必须能从正文无损剥离；metadata 只做优先值与徽标。
+- CDP 真机驱动时，流式期间发送按钮会**变成「取消」**；「发送引导消息」标题只在输入框有内容/附件时才出现 ——
+  用错误的信号会在"还没进引导模式"时误点成普通发送（本轮第一版脚本就踩了这条）。

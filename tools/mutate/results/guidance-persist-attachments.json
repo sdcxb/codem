@@ -1,0 +1,98 @@
+{
+  "wave": "guidance-persist-attachments",
+  "description": "运行中追加：消费时落库成 user 消息、附件随消息落库并被转成 image block、界面显示用户原文（判据 GUIDE-VIS-1..5 / GUIDE-ATT-1..3）",
+  "runAt": "2026-10-17T16:54:34.140Z",
+  "specFingerprint": "1a6c601a00901912c97d371745408d161ae00b94",
+  "files": [
+    "src/core/llm/agentic-loop.ts",
+    "src/core/llm/guidance-queue.ts",
+    "src/core/llm/guidance-display.ts",
+    "src/core/storage/message.ts"
+  ],
+  "tests": [
+    "src/test/guidance-visible-and-attachments.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 消费时不落库（回到「临时消息」旧行为）",
+      "why": "GUIDE-VIS-1/2：不落库就没有历史里的那条消息，界面与刷新后都看不到，模型也只能看到临时副本",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "          this.getMessageStorage().createMessage(persistedMessage, sessionId);",
+          "to": "          void persistedMessage;"
+        }
+      ],
+      "tests": [
+        "src/test/guidance-visible-and-attachments.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 6245
+    },
+    {
+      "id": "MUT-2 队列丢掉附件（回到只传文本）",
+      "why": "GUIDE-ATT-1/2：附件不进消息 ⇒ 图片块不存在 ⇒ 模型看不到图（真机报的形态）",
+      "patches": [
+        {
+          "file": "src/core/llm/guidance-queue.ts",
+          "from": "      ...(files ? { attachments: files } : {}),",
+          "to": "      ...(files ? { attachments: undefined } : {}),"
+        }
+      ],
+      "tests": [
+        "src/test/guidance-visible-and-attachments.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 6266
+    },
+    {
+      "id": "MUT-3 显示口径退回「直接显示落库正文」",
+      "why": "GUIDE-VIS-5：正文是模板形态，直接显示会让用户看到 `Runtime guidance from the user`",
+      "patches": [
+        {
+          "file": "src/core/llm/guidance-display.ts",
+          "from": "export function guidanceDisplayMessage(message: GuidanceDisplayMessage): string {\n  if (!isMidTurnGuidance(message)) return message.content;",
+          "to": "export function guidanceDisplayMessage(message: GuidanceDisplayMessage): string {\n  return message.content;"
+        }
+      ],
+      "tests": [
+        "src/test/guidance-visible-and-attachments.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 6977
+    },
+    {
+      "id": "MUT-4 多模态附件不做按 id 取回（只读 att.content）",
+      "why": "GUIDE-ATT-1：索引投影会抹掉附件正文，不按 id 取回就永远拿不到图片块",
+      "patches": [
+        {
+          "file": "src/core/storage/message.ts",
+          "from": "      const mediaAttachments = (msg.attachments || [])\n        .filter((a) => a.type === \"image\" || a.type === \"audio\")\n        .map((a) => ({ ...a, content: resolveMediaContent(a) }))\n        .filter((a) => a.content);",
+          "to": "      const mediaAttachments = (msg.attachments || []).filter(\n        (a) => (a.type === \"image\" || a.type === \"audio\") && a.content\n      );"
+        }
+      ],
+      "tests": [
+        "src/test/guidance-visible-and-attachments.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 7440
+    }
+  ]
+}

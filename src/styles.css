@@ -5077,6 +5077,11 @@ background: var(--bg-secondary);
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+  /* 窄容器自适应：设置面板 760px ↔ 95vw，行内"输入 + 按钮"在窄档必须换行而不是被挤扁。
+     判据 NARROW-4/5。容器放在**内容列**（不是 .settings-panel）：避免 layout containment
+     影响弹窗自身的绝对定位子元素。 */
+  container-type: inline-size;
+  container-name: settings;
 }
 
 .setting-group {
@@ -13942,6 +13947,55 @@ html.pet-window-mode body,
   overflow: hidden;
 }
 
+/* 2026-10-18：追加消息可以带附件（图片/文件）—— 引导栏里必须看得见，否则用户会重复发 */
+.guidance-item-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.guidance-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 180px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.guidance-attachment-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.guidance-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 「运行中追加」徽标：让这条 user 消息与"回合结束后说的话"一眼可分 */
+.midturn-guidance-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  color: var(--accent, #7c6cf0);
+}
+
+.midturn-guidance-label {
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-reading);
+}
+
 .guidance-item-actions {
   display: grid;
   grid-template-columns: repeat(3, max-content);
@@ -18136,6 +18190,16 @@ color: var(--accent, #7c6cf0);
  * sp-* 管面板内部的零件。
  * ========================================================================== */
 .sp-row { display: flex; align-items: center; gap: var(--space-4); }
+
+@container settings (max-width: 520px) {
+  /* 窄档：行内控件允许换行，输入框占满整行，说明文字可任意断行 */
+  .sp-row { flex-wrap: wrap; }
+  .sp-row > * { min-width: 0; }
+  .setting-group input[type="text"],
+  .setting-group select,
+  .setting-group textarea { width: 100%; box-sizing: border-box; }
+  .sp-note { overflow-wrap: anywhere; }
+}
 .sp-row--between { justify-content: space-between; }
 
 

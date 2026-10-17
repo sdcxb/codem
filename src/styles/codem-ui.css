@@ -3207,6 +3207,35 @@ background: var(--bg-secondary);
   font-size: var(--fs-sm);
 }
 .tool-card--scroll { max-height: 300px; overflow-y: auto; }
+/**
+ * 窄容器自适应（container queries）—— 2026-10-18
+ *
+ * ## 为什么这里需要容器查询而不是媒体查询
+ *
+ * 工具卡与设置行会被放进**宽度差异很大**的区域：对话区可能是 1200px，也可能是
+ * 与右侧抽屉并存时的 380px；设置面板是 760px，但窄窗口下会走 95vw。
+ * 媒体查询看的是**视口**，同一份视口下这两处的真实可用宽度可以差 3 倍 —— 这正是
+ * 本项目两次真实事故的形态（`@` 提及候选被裁到 9px、设置窗塌成 160px）。
+ *
+ * ## 断点来源
+ *
+ * 与对标项目（open-claude-ui 的四阶 576/480/384/320）取同一量级，但**数值按我们自己的
+ * 组件尺寸重定**（工具卡 420 / 设置行 520），不照搬对方像素。
+ *
+ * 判据：`NARROW-1..5`（真渲染探针在 320/384/480/576/760 五档量溢出与换行）。
+ */
+.tool-card {
+  container-type: inline-size;
+  container-name: toolcard;
+}
+
+@container toolcard (max-width: 420px) {
+  /* 极窄：IN/OUT 标签从"占一列"改成"占一行"，把宽度全留给正文 */
+  .tool-io-section { flex-direction: column; gap: var(--space-2); }
+  .tool-io-label { align-self: flex-start; }
+  .tool-card-head { flex-wrap: wrap; }
+}
+
 
 .tool-card-head {
   display: flex;
@@ -3405,6 +3434,9 @@ background: var(--bg-secondary);
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   white-space: pre-wrap;
+  /* 长路径 / JSON / base64 没有空格可断 ⇒ 不加这条会横向溢出（旧形态被 .tool-card 的
+     overflow:hidden 裁掉，看着像"内容就这么多"）。判据 NARROW-3。 */
+  overflow-wrap: anywhere;
 }
 .tool-io-text[data-error] { color: var(--error); }
 .tool-io-paths {

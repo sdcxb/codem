@@ -6,17 +6,37 @@
  * never during tool execution or subagent waiting — ensuring the message
  * chain stays intact.
  *
- * Guided messages are ephemeral: they are appended to the LLM input for
- * one iteration only and are NOT persisted to the message database.
+ * ## 可见性契约（2026-10-18 修正）
+ *
+ * 早期实现把引导消息当成"只给模型看的一次性上下文"（不落库）—— 于是用户在真机上
+ * 追加一句话、点「立刻引导」之后**界面上什么都看不到**，刷新更是彻底消失，
+ * 用户无法判断追加是否成功；带图片的追加还会因为不落库而**永远到不了模型**
+ * （图片块是从落库消息的 `attachments` 转出来的，见 `storage/message.ts` 的
+ * `messagesToLLMMessages`）。
+ *
+ * 现在的契约：**入队即可见、被消费时落库成真实 user 消息**
+ * （`agentic-loop` 消费点用 `GUIDANCE_MESSAGE_TEMPLATE` 落库 + 重建消息投影）。
+ * 队列本身仍然只活在内存里 —— 它只是"还没被消费"的暂存区，落库发生在消费那一刻。
+ * 判据：`GUIDE-VIS-*` / `GUIDE-ATT-*`。
  */
+
+import type { MessageAttachment } from "../../store";
 
 export interface GuidanceItem {
   /** Unique identifier for this guidance item */
   id: string;
-  /** The user's guidance message text */
+  /** The user's guidance message text（可能为空 —— 只追加了附件时） */
   message: string;
   /** Timestamp when the guidance was enqueued */
   timestamp: number;
+  /**
+   * 随引导一起发送的附件（图片/文件）。
+   *
+   * 必须随条目一路带到消费点：消费时它们会写进落库消息的 `attachments`，
+   * 图片再由 `messagesToLLMMessages` 转成 image block 交给模型。
+   * 早期只传文本参数，附件在这里被静默丢弃 —— 那就是"模型说没看到图片"的根因。
+   */
+  attachments?: MessageAttachment[];
 }
 
 /**
@@ -37,38 +57,32 @@ export class GuidanceQueue {
    * Enqueue a guidance message for the given session.
    * Called externally (e.g., from the UI) when the user sends a mid-turn message.
    */
-  enqueue(sessionId: string, message: string): GuidanceItem {
-    if (!message.trim()) {
-      throw new Error("Guidance message cannot be empty");
-    }
-
-    let queue = this.queues.get(sessionId);
-    if (!queue) {
-      queue = [];
-      this.queues.set(sessionId, queue);
-    }
-
-    const item: GuidanceItem = {
-      id: `guide-${Date.now()}-${this.idCounter++}`,
-      message: message.trim(),
-      timestamp: Date.now(),
-    };
-
-    queue.push(item);
-    console.log(
-      `[GuidanceQueue] Enqueued for session ${sessionId}: id=${item.id}, ` +
-        `msg="${message.substring(0, 80)}...", ` +
-        `queue_size=${queue.length}`,
-    );
-    return item;
+  enqueue(sessionId: string, message: string, attachments?: MessageAttachment[]): GuidanceItem {
+    return this.push(sessionId, message, attachments, "back");
   }
 
   /**
    * Enqueue a high-priority guidance message — inserted at the front
    * of the queue so it's consumed first at the next iteration boundary.
    */
-  enqueuePriority(sessionId: string, message: string): GuidanceItem {
-    if (!message.trim()) {
+  enqueuePriority(sessionId: string, message: string, attachments?: MessageAttachment[]): GuidanceItem {
+    return this.push(sessionId, message, attachments, "front");
+  }
+
+  /**
+   * 入队的唯一实现（back/front 只差插入位置）。
+   *
+   * 空文本**只有在带附件时才允许**：用户可能只想追加一张图。
+   */
+  private push(
+    sessionId: string,
+    message: string,
+    attachments: MessageAttachment[] | undefined,
+    where: "back" | "front",
+  ): GuidanceItem {
+    const text = (message ?? "").trim();
+    const files = Array.isArray(attachments) && attachments.length > 0 ? attachments : undefined;
+    if (!text && !files) {
       throw new Error("Guidance message cannot be empty");
     }
 
@@ -80,14 +94,16 @@ export class GuidanceQueue {
 
     const item: GuidanceItem = {
       id: `guide-${Date.now()}-${this.idCounter++}`,
-      message: message.trim(),
+      message: text,
       timestamp: Date.now(),
+      ...(files ? { attachments: files } : {}),
     };
 
-    queue.unshift(item);
+    if (where === "front") queue.unshift(item);
+    else queue.push(item);
     console.log(
-      `[GuidanceQueue] Enqueued (priority) for session ${sessionId}: id=${item.id}, ` +
-        `msg="${message.substring(0, 80)}...", ` +
+      `[GuidanceQueue] Enqueued${where === "front" ? " (priority)" : ""} for session ${sessionId}: id=${item.id}, ` +
+        `msg="${text.substring(0, 80)}...", attachments=${item.attachments?.length ?? 0}, ` +
         `queue_size=${queue.length}`,
     );
     return item;

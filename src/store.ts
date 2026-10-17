@@ -129,6 +129,13 @@ export interface GuidanceMessage {
   timestamp: number;
   /** Whether the guidance has been consumed by the agentic loop */
   consumed: boolean;
+  /**
+   * 随引导一起发送的附件（图片/文件）。
+   *
+   * 界面上要显示它们（否则用户以为没发出去），引擎消费时会写进落库消息。
+   * 判据 `GUIDE-ATT-2`。
+   */
+  attachments?: MessageAttachment[];
 }
 
 /**

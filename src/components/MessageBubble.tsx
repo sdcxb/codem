@@ -22,11 +22,12 @@ import { VideoPlayer } from "./VideoPlayer";
 import { RichContent } from "./rich-content/RichContent";
 import { createFileMentions } from "../utils/file-mentions";
 import { autoLinkFilePaths } from "../utils/auto-link-paths";
+import { isMidTurnGuidance, guidanceDisplayMessage } from "../core/llm/guidance-display";
 import { openFileLink } from "../utils/file-link";
 // P3-26: Voice output (TTS) — browser speech synthesis hook
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
-import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff, Trash2 } from "lucide-react";
+import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff, Trash2, Zap } from "lucide-react";
 import { getSettingJSON } from "../core/storage/settings";
 import { getAttachmentContent } from "../core/storage/message";
 import type { UserConfig } from "../core/types";
@@ -372,8 +373,17 @@ const [galleryIndex, setGalleryIndex] = useState(0);
   // markers), but the UI should only show the user's actual text — attachments are
   // already rendered as separate cards above. Without this, uploaded file content
   // (e.g. another AI's system prompt) would be fully displayed in the chat bubble.
+  /**
+   * 运行中追加（mid-turn guidance）的消息：落库内容是「附件内联块 + 注入模板」，
+   * 但**用户要看的是他自己写的那句话**，不是模板里那句 "Runtime guidance from the user"。
+   * 原文存在 `metadata.guidanceRaw`（见 agentic-loop 的消费点）。
+   * 判据 `GUIDE-VIS-5`。
+   */
+  const midTurnGuidance = isUser && isMidTurnGuidance(message);
   const rawContent = isUser
-    ? message.content.replace(/<attachment>[\s\S]*?<\/attachment>\s*/g, "").trim()
+    ? (midTurnGuidance
+        ? guidanceDisplayMessage(message)
+        : message.content.replace(/<attachment>[\s\S]*?<\/attachment>\s*/g, "").trim())
     : message.content;
 
   // P1-2: Process citations — convert [Source N: name] to clickable markdown links
@@ -602,6 +612,15 @@ setTimeout(() => setCopied(false), 2000);
                 {new Date(message.timestamp).toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
+          </div>
+        )}
+        {/* 运行中追加的标记（区别于"回合结束后才说的话"） */}
+        {midTurnGuidance && (
+          <div className="midturn-guidance-header">
+            <Zap className="icon-xs" />
+            <span className="midturn-guidance-label">
+              {lang === "zh" ? "运行中追加" : "Mid-run guidance"}
+            </span>
           </div>
         )}
         {/* Attachments */}

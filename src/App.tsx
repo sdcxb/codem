@@ -312,7 +312,7 @@ import { getProject as getStoredProject } from "./core/storage/project";
 const GameViewLazy = lazy(() => import("./plugins/monopoly-game/components/GameView").then(m => ({ default: m.GameView })));
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
-import type { Message, ToolCall } from "./store";
+import type { Message, MessageAttachment, ToolCall } from "./store";
 import { useProjectStore } from "./core/store";
 import { setGlobalCwd } from "./utils/file-link";
 import { loadAppIdentity } from "./core/config/loader";
@@ -3460,11 +3460,18 @@ if (!session) {
   // ========== Guidance (mid-turn steering) ==========
   // Send a guidance message to the currently running agentic loop.
   // The message is enqueued and will be consumed at the next iteration boundary.
-  const handleSendGuidance = useCallback((message: string) => {
+  const handleSendGuidance = useCallback((message: string, attachments?: MessageAttachment[]) => {
     const session = useProjectStore.getState().currentSession;
     if (!session) return;
     const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
-    const item = engine.sendGuidance(session.id, message);
+    /*
+     * 2026-10-18：附件必须一路带到引擎。
+     *
+     * 旧签名只有 `message`，于是"执行中追加一张图"在 ChatPanel 那一层就被丢掉
+     * （`onSendGuidance(msg)`），模型永远看不到 —— 真机报"模型说没看到图片"。
+     * 现在附件进队列 → 消费时落库 → `messagesToLLMMessages` 从落库附件转 image block。
+     */
+    const item = engine.sendGuidance(session.id, message, attachments);
     if (item) {
       // Add to guidance messages in the store for UI display (id matches the queue item)
       addGuidanceMessage({
@@ -3472,14 +3479,15 @@ if (!session) {
         message,
         timestamp: item.timestamp,
         consumed: false,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
-      console.log(`[Guidance] Sent to session ${session.id}: "${message.substring(0, 80)}..."`);
+      console.log(`[Guidance] Sent to session ${session.id}: "${message.substring(0, 80)}...", attachments=${attachments?.length ?? 0}`);
     } else {
       console.warn(`[Guidance] Failed to send — no active loop for session ${session.id}`);
     }
   }, [addGuidanceMessage]);
 
-  const handleSendGuidanceImmediate = useCallback((message: string, existingGuidanceId?: string) => {
+  const handleSendGuidanceImmediate = useCallback((message: string, existingGuidanceId?: string, attachments?: MessageAttachment[]) => {
     const session = useProjectStore.getState().currentSession;
     if (!session) return;
     const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
@@ -3495,13 +3503,14 @@ if (!session) {
       }
       return;
     }
-    const item = engine.sendGuidanceImmediate(session.id, message);
+    const item = engine.sendGuidanceImmediate(session.id, message, attachments);
     if (item) {
       addGuidanceMessage({
         id: item.id,
         message,
         timestamp: item.timestamp,
         consumed: false,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
       console.log(`[Guidance] Sent (immediate) to session ${session.id}: "${message.substring(0, 80)}..."`);
     } else {
@@ -4367,8 +4376,18 @@ flushReasoningBuffer(session.id);
           case "guidance_received": {
             // Mark the guidance message as consumed in the store
             markGuidanceConsumed(event.guidanceId);
-        // Injected guidance no longer stays in the status bar — remove it so the bar auto-disappears.
-        removeGuidanceMessage(event.guidanceId);
+            // Injected guidance no longer stays in the status bar — remove it so the bar auto-disappears.
+            removeGuidanceMessage(event.guidanceId);
+            /*
+             * 2026-10-18：引导被消费时引擎已经把它**落库成真实 user 消息**，
+             * 这里把那条消息放进当前列表 —— 否则用户点了「立刻引导」之后
+             * 状态栏气泡被删、对话流里又没有新消息，等于"追加了但看不见"。
+             * 消息本身已在引擎侧落库，所以这里只更新界面（不二次落库）。
+             */
+            if (event.persistedMessage) {
+              const pm = event.persistedMessage;
+              addMessage(pm);
+            }
             // Show a brief toast/notification via pet system
             getPet().showRawBubble(`📨 引导消息已注入: ${event.message.substring(0, 40)}...`, 3000);
             break;

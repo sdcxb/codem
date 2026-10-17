@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>narrow-containers-probe</title>
+<!-- 加载**真实**样式：容器查询规则写在这两份里，探针量的必须是它们 -->
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="../../styles/codem-ui.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg-primary); }
+  .probe-stage { padding: 8px; box-sizing: border-box; }
+  .probe-settings { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="stages"></div>
+<pre id="probe"></pre>
+<script>
+  const WIDTHS = [320, 384, 480, 576, 760];
+
+  /** 真实工具卡结构（ToolCallCard 展开后的标记：head + IN/OUT 段） */
+  function makeToolCard() {
+    const card = document.createElement("div");
+    card.className = "tool-card tool-card--scroll";
+    card.innerHTML =
+      '<div class="tool-card-head"><svg width="12" height="12"></svg>' +
+      '<span class="tool-card-title">bash · npm run build --filter @codem/very-long-package-name</span></div>' +
+      '<div class="tool-io-card">' +
+      '<div class="tool-io-section tool-io-section--bordered"><span class="tool-io-label">IN</span>' +
+      '<pre class="tool-io-text">{\n  "command": "npm run build --filter @codem/very-long-package-name -- --mode production"\n}</pre></div>' +
+      '<div class="tool-io-section"><span class="tool-io-label">OUT</span>' +
+      '<pre class="tool-io-text">' + "A".repeat(240) + '</pre></div>' +
+      "</div>";
+    return card;
+  }
+
+  /** 真实设置行结构：setting-group（label + 输入 + 说明）+ sp-row（输入 + 两个按钮） */
+  function makeSettings() {
+    const wrap = document.createElement("div");
+    wrap.className = "settings-content probe-settings";
+    wrap.innerHTML =
+      '<div class="setting-group"><label>DeepSeek API Key（很长的一行标签，用来测试窄档折行与不溢出）</label>' +
+      '<input type="text" value="sk-0123456789abcdef0123456789abcdef" />' +
+      '<div class="sp-note">说明文字也会很长：这里是一段用于测试窄容器下折行的说明，长到必须换行才不会把容器撑破。</div></div>' +
+      '<div class="sp-row"><input type="text" class="sp-input" value="base url" />' +
+      '<button class="sp-btn sp-btn--sm">保存并刷新模型</button>' +
+      '<button class="sp-btn sp-btn--sm">重置</button></div>';
+    return wrap;
+  }
+
+  const out = { widths: WIDTHS, tool: [], settings: [] };
+
+  for (const w of WIDTHS) {
+    const stage = document.createElement("div");
+    stage.className = "probe-stage";
+    stage.style.width = w + "px";
+    const card = makeToolCard();
+    stage.appendChild(card);
+    document.getElementById("stages").appendChild(stage);
+
+    const head = card.querySelector(".tool-card-head");
+    const io = card.querySelector(".tool-io-section");
+    const ioText = card.querySelector(".tool-io-text");
+    out.tool.push({
+      width: w,
+      cardScroll: card.scrollWidth,
+      cardClient: card.clientWidth,
+      headScroll: head.scrollWidth,
+      headClient: head.clientWidth,
+      headFlexWrap: getComputedStyle(head).flexWrap,
+      ioFlexDirection: getComputedStyle(io).flexDirection,
+      textScroll: ioText.scrollWidth,
+      textClient: ioText.clientWidth,
+    });
+
+    const settingsWrap = document.createElement("div");
+    settingsWrap.className = "probe-stage";
+    settingsWrap.style.width = w + "px";
+    const content = makeSettings();
+    settingsWrap.appendChild(content);
+    document.getElementById("stages").appendChild(settingsWrap);
+
+    const row = content.querySelector(".sp-row");
+    const input = content.querySelector(".sp-row .sp-input");
+    const groupInput = content.querySelector(".setting-group input[type=text]");
+    out.settings.push({
+      width: w,
+      containerWidth: content.clientWidth,
+      rowFlexWrap: getComputedStyle(row).flexWrap,
+      contentScroll: content.scrollWidth,
+      contentClient: content.clientWidth,
+      groupInputWidth: Math.round(groupInput.getBoundingClientRect().width),
+      rowInputWidth: Math.round(input.getBoundingClientRect().width),
+    });
+  }
+
+  document.getElementById("probe").textContent = "PROBE_JSON=" + JSON.stringify(out);
+</script>
+</body>
+</html>

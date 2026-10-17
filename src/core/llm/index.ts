@@ -1926,26 +1926,26 @@ Report earlier as well whenever a partial finding changes what that agent should
  * The message will be injected at the next iteration boundary, allowing
  * the user to steer the agent mid-turn without interrupting tool execution.
  */
-sendGuidance(sessionId: string, message: string): import("./guidance-queue").GuidanceItem | null {
+sendGuidance(sessionId: string, message: string, attachments?: import("../../store").MessageAttachment[]): import("./guidance-queue").GuidanceItem | null {
 const loop = this.loopPool.get(sessionId);
 if (!loop) {
 console.warn(`[Engine] No active loop for session ${sessionId} — cannot send guidance`);
 return null;
 }
-return loop.sendGuidance(message);
+return loop.sendGuidance(message, attachments);
 }
 
 /**
  * Send a guidance message with immediate priority — aborts current LLM stream
  * and injects the message at the next iteration boundary.
  */
-sendGuidanceImmediate(sessionId: string, message: string): import("./guidance-queue").GuidanceItem | null {
+sendGuidanceImmediate(sessionId: string, message: string, attachments?: import("../../store").MessageAttachment[]): import("./guidance-queue").GuidanceItem | null {
 const loop = this.loopPool.get(sessionId);
 if (!loop) {
 console.warn(`[Engine] No active loop for session ${sessionId} — cannot send guidance`);
 return null;
 }
-return loop.sendGuidanceImmediate(message);
+return loop.sendGuidanceImmediate(message, attachments);
 }
 
 /**

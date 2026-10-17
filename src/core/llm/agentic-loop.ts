@@ -28,6 +28,8 @@ import { appendVolatileAppendix } from "../prompt/prompt";
 import { reportActionFailure } from "../storage/persist-failure";
 import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE, type GuidanceItem } from "./guidance-queue";
+import { formatAttachmentsInline } from "./attachment-formatter";
+import type { MessageAttachment } from "../../store";
 import { getNeedsYouQueue } from "./needs-you-queue";
 import { tryGetCtx } from "../consumer/index.ts";
 import { AgentMessageQueue } from "./agent-message-queue";
@@ -574,7 +576,13 @@ export type LoopEvent =
   | { type: "compaction_end"; messagesRemoved: number; skipped?: boolean; skipReason?: string }
   | { type: "retry"; attempt: number; delay: number; error: string; errorType: string | null }
   | { type: "usage"; usage: TokenUsage }
-  | { type: "guidance_received"; message: string; guidanceId: string }
+  | {
+      type: "guidance_received";
+      message: string;
+      guidanceId: string;
+      /** 落库成功时带回那条真实 user 消息（前端直接显示，不再二次落库） */
+      persistedMessage?: { id: string; role: "user"; content: string; timestamp: number; status: "done"; attachments?: any[]; metadata?: Record<string, any> };
+    }
   // P1: Clarification form event — AI asks user a structured question
   | { type: "clarification"; form: ClarificationFormData; resolve: (answers: string[]) => void }
   // P1: Correction mode event — fact-check result ready for comparison
@@ -1977,9 +1985,18 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.getMessageStorage().createMessage({
           id: `guidance-carryover-${item.id}`,
           role: "user",
-          content: GUIDANCE_MESSAGE_TEMPLATE(item.message),
+          // 界面看到原文；模板只给模型看（见 messagesToLLMMessages）
+          content:
+            (item.attachments && item.attachments.length > 0 ? formatAttachmentsInline(item.attachments) + "\n\n" : "") +
+            item.message,
           timestamp: item.timestamp,
           status: "done",
+          ...(item.attachments && item.attachments.length > 0 ? { attachments: item.attachments } : {}),
+          metadata: {
+            midTurnGuidance: true,
+            guidanceRaw: item.message,
+            guidanceModelContent: GUIDANCE_MESSAGE_TEMPLATE(item.message),
+          },
         }, sessionId);
         // 落库改变了历史 ⇒ 让消息缓存重建（否则本轮可能用旧投影，看不到这条）
         this.msgCache = null;
@@ -2637,28 +2654,79 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
 
       // === Guidance injection (mid-turn steering) ===
       // Consume one guidance item from the queue at this iteration boundary.
-      // This is the ONLY injection point — safe because:
-      // 1. Previous iteration's tools have fully completed
-      // 2. We're about to call the LLM, so the model will see it immediately
-      // 3. The message is ephemeral — NOT persisted to the message database
-      // 4. Does not corrupt msgCache (we create a new array, cache is untouched)
-      // 5. Does not interfere with wait_for_subagent (that runs inside tools)
+      // Safe because: previous iteration's tools have fully completed, and we're
+      // about to call the LLM so the model sees it immediately.
+      //
+      // ## 2026-10-18：消费时**落库**（不再是"临时消息"）
+      //
+      // 旧实现把引导拼成一条**只活在本次请求里**的 user 消息：不落库、不建索引，
+      // 只发一个 `guidance_received` 事件让前端把状态栏气泡删掉 —— 于是用户在真机上
+      // 「追加 + 立刻引导」之后界面上什么都不剩，刷新后更是彻底消失；带图片的追加
+      // 也永远到不了模型（图片块是从**落库消息**的 attachments 转出来的）。
+      //
+      // 现在：落库成真实 user 消息（与 `run()` 开头"遗留引导"的 carryover 同一套做法），
+      // 然后 `msgCache = null` + 重建 `messagesForIteration`，保证模型看到的内容与
+      // 历史里那条**逐字节一致**（不会出现"临时一份 + 历史一份"的重复）。
+      // 界面上它是一条普通的 user 消息，带 `metadata.midTurnGuidance` 标记 ⇒ 显示
+      // 「运行中追加」徽标 + 用户原文。判据 `GUIDE-VIS-*` / `GUIDE-ATT-*`。
       const guidanceItem = this.guidanceQueue.consume(sessionId);
       if (guidanceItem) {
-        const guidanceMsg = {
+        const guidanceAttachments =
+          guidanceItem.attachments && guidanceItem.attachments.length > 0 ? guidanceItem.attachments : undefined;
+        // 附件内联块与正常发送同源（App.handleSend 也是 `formatAttachmentsInline` 前置）
+        const attachmentInfo = guidanceAttachments ? formatAttachmentsInline(guidanceAttachments) : "";
+        const persistedMessage = {
           id: `guidance-${guidanceItem.id}`,
           role: "user" as const,
-          content: GUIDANCE_MESSAGE_TEMPLATE(guidanceItem.message),
+          // 正文 = 附件块 + 模板（模型侧不依赖 metadata —— 索引投影会丢它）；
+          // 界面由 guidance-display 统一剥掉附件块与模板，显示用户原文。
+          content: (attachmentInfo ? attachmentInfo + "\n\n" : "") + GUIDANCE_MESSAGE_TEMPLATE(guidanceItem.message),
+          timestamp: guidanceItem.timestamp,
+          status: "done" as const,
+          ...(guidanceAttachments ? { attachments: guidanceAttachments } : {}),
+          metadata: {
+            midTurnGuidance: true,
+            guidanceRaw: guidanceItem.message,
+            // 给模型的那一份（`messagesToLLMMessages` 读它）
+            guidanceModelContent: GUIDANCE_MESSAGE_TEMPLATE(guidanceItem.message),
+          },
         };
-        messagesForIteration = [...messagesForIteration, guidanceMsg];
-        console.log(
-          `[AgenticLoop] Injected guidance ${guidanceItem.id} at iteration ${this.state.iteration}: "${guidanceItem.message.substring(0, 80)}..."`
-        );
+        try {
+          this.getMessageStorage().createMessage(persistedMessage, sessionId);
+          // 落库改变了历史 ⇒ 让消息缓存重建，并把本轮请求也换成"从历史读出来的那份"
+          this.msgCache = null;
+          try {
+            messagesForIteration = await this.buildMessages(sessionId);
+          } catch (rebuildErr) {
+            // 重建失败也不能丢：退回"注入临时消息"的老行为（模型这一轮仍能看到）
+            console.warn("[AgenticLoop] Guidance persisted but message rebuild failed — injecting a temporary copy:", rebuildErr);
+            messagesForIteration = [
+              ...messagesForIteration,
+              { id: persistedMessage.id, role: "user", content: persistedMessage.content } as any,
+            ];
+          }
+          console.log(
+            `[AgenticLoop] Persisted guidance ${guidanceItem.id} as a user message at iteration ${this.state.iteration}: "${guidanceItem.message.substring(0, 80)}...", attachments=${guidanceAttachments?.length ?? 0}`,
+          );
+        } catch (e) {
+          // 落库失败：退回临时注入（模型仍能看到），并**明确告诉用户**它没进历史
+          console.warn("[AgenticLoop] Failed to persist guidance — falling back to ephemeral injection:", e);
+          messagesForIteration = [
+            ...messagesForIteration,
+            { id: persistedMessage.id, role: "user", content: persistedMessage.content } as any,
+          ];
+          yield {
+            type: "text_delta",
+            text: `\n\n⚠️ 你刚才的追加没能写入会话历史（「${guidanceItem.message.slice(0, 80)}」）—— 本轮模型能看到它，但刷新后会消失。\n`,
+          };
+        }
         yield {
           type: "guidance_received",
           message: guidanceItem.message,
           guidanceId: guidanceItem.id,
-        };
+          // 落库成功时把这条消息带回前端（App 直接 addMessage，不再二次落库）
+          persistedMessage,
+        } as any;
       }
 
       // R3-B10: Consume pending agent messages at iteration boundary
@@ -6624,12 +6692,12 @@ ${truncatedConv}`;
    *
    * If no run is active, the message is discarded (returns false).
    */
-  sendGuidance(message: string): GuidanceItem | null {
+  sendGuidance(message: string, attachments?: MessageAttachment[]): GuidanceItem | null {
     if (!this.currentSessionId) {
       console.warn("[AgenticLoop] Cannot send guidance — no active run");
       return null;
     }
-    return this.guidanceQueue.enqueue(this.currentSessionId, message);
+    return this.guidanceQueue.enqueue(this.currentSessionId, message, attachments);
   }
 
   /**
@@ -6638,13 +6706,13 @@ ${truncatedConv}`;
    * Additionally, if the LLM is currently streaming a response, abort it
    * so the new guidance takes effect immediately.
    */
-  sendGuidanceImmediate(message: string): GuidanceItem | null {
+  sendGuidanceImmediate(message: string, attachments?: MessageAttachment[]): GuidanceItem | null {
     if (!this.currentSessionId) {
       console.warn("[AgenticLoop] Cannot send guidance — no active run");
       return null;
     }
     // Insert at the front of the queue (high priority)
-    const item = this.guidanceQueue.enqueuePriority(this.currentSessionId, message);
+    const item = this.guidanceQueue.enqueuePriority(this.currentSessionId, message, attachments);
     // Set flag so AbortError handler knows this is a guidance interrupt, not a cancel
     this.guidanceInterrupt = true;
     // Abort current LLM stream so the loop re-enters and consumes guidance

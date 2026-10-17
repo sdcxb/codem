@@ -1,0 +1,56 @@
+{
+  "wave": "narrow-containers",
+  "description": "工具卡与设置行的窄容器自适应：去掉 .tool-card 的 container-type ⇒ NARROW-1 红；去掉 .settings-content 的 container-type ⇒ NARROW-2/3 红",
+  "runAt": "2026-10-17T17:02:37.714Z",
+  "specFingerprint": "b08ad76c116671c634057e4ba2f18f16d09c4bc2",
+  "files": [
+    "src/styles/codem-ui.css",
+    "src/styles.css"
+  ],
+  "tests": [
+    "src/test/narrow-containers.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 工具卡不再是容器（退回 @container 无效）",
+      "why": "NARROW-1：没有容器就没有查询，窄档 IN/OUT 段不会变竖排（标签吃掉正文宽度）",
+      "patches": [
+        {
+          "file": "src/styles/codem-ui.css",
+          "from": ".tool-card {\n  container-type: inline-size;\n  container-name: toolcard;\n}",
+          "to": ".tool-card {\n  /* mutated */\n}"
+        }
+      ],
+      "tests": [
+        "src/test/narrow-containers.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 10404
+    },
+    {
+      "id": "MUT-2 设置内容列不再是容器",
+      "why": "NARROW-2/3：窄档设置行不换行、输入框被按钮挤扁，容器横向溢出",
+      "patches": [
+        {
+          "file": "src/styles.css",
+          "from": "  container-type: inline-size;\n  container-name: settings;",
+          "to": "  /* mutated */"
+        }
+      ],
+      "tests": [
+        "src/test/narrow-containers.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 10454
+    }
+  ]
+}
