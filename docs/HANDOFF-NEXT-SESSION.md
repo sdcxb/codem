@@ -6331,3 +6331,87 @@ GNU tar 把 `-f HOST:PATH` 当远程归档，而 Windows 绝对路径 `C:\…` �
 或 `git worktree add <临时目录> HEAD`；② 提交只 `git add <显式路径>`。
 另外：同工作区并行时，`ops_bash` 的输出**可能串到别人的命令**（本轮遇到过一次把并行同事的 tauri 构建日志
 当成自己命令的输出）⇒ 一条命令跑完要**用文件内容/退出码复核**，别只信 stdout。
+
+---
+
+## 第 230 波（2026-10-17）：记忆面板「本处 0 / 别处有」一行 + 隔离数据根开关 `CODEM_DATA_HOME`
+
+**三件事**：① 面板补一行如实读数；② 新增只影响测试的隔离数据根开关；③ 用它做真机取证。
+
+### 1. 面板那一行（`src/components/MemoryManager.tsx`）
+
+条件严格是 `本处 pending.length === 0 && 全局 countPendingEntries() > 0`，N 取**全局**数，
+文案 `其它项目还有 N 条待批准（去记忆体检处置）`，复用既有 `.memory-pending-hint.active`
+（不动 styles.css），不弹窗、不改任何既有批准/拒绝/批量/全选/一键/整合/双击语义。
+
+- 取数**复用闸门那一处**（`MemoryService.countPendingEntries()`，就是 `decidePendingBacklog`
+  的入参来源），不另写一份"遍历 entries 数 pending"；
+- 判据 `src/test/memory-other-projects-pending.test.tsx`（MOP-1..5，真渲染）；
+  变异自证 `.preview-shot/_mutate-230-panel.mjs`：6 条变异（条件恒真/恒假、N 换本地数、
+  N 换常量 0、口径换成面板统计、把本处那份换成全项目）**全红**，还原后逐字节一致且 5/5 通过。
+
+### 2. 隔离数据根开关（`CODEM_DATA_HOME`）
+
+**为什么选新增开关，而不是让 `CODEM_DB_PATH` 连带重定位**：后者是已发布开关，语义被文档/判据/
+非标准位置告警钉着（「库文件放在哪个文件」）；给它加"顺带把日志、台账、技能目录也搬走"的副作用
+等于静默改掉老用户行为且无法回退（便携模式里「库在 U 盘、日志在本机」是有意的）。
+
+真机对照组（`.preview-shot/_iso-230-report.json`）：`CODEM_DB_PATH` 指向副本启动，
+**真目录的 `data-home.json` 真的被改写**（代次 57 → 58、activeHome 变成副本目录）
+⇒ 所谓"隔离钻取"其实在写用户真目录；`CODEM_DATA_HOME` 则让真目录的
+库/台账/崩溃标记/运行日志四个文件 sha256 与目录列举**逐字节不变**。
+
+实现要点：`storage.rs::isolated_data_home()` 是**唯一**读该变量的地方（空串 = 没设）；
+`resolve_db_path_full` 把它当第 0 档，为空时**委托**给第 55 轮的 `resolve_db_path_from`
+⇒ 默认路径按构造不变；`ensure_isolated_root()` 补齐 `sessions / attachments / spill / .codem/skills`
+（表 `ISOLATED_ROOT_SUBDIRS` 与 TS 侧真正拼路径的四个模块**逐条对齐**，判据 ISO-S5 读源码核对）；
+`lib.rs::app_data_dir_path()` 是**全仓唯一**的 `app_data_dir()` 调用点（get_app_data_dir /
+get_default_cwd / crash_marker_path / panic hook / ofm / ilink / phone 全部收口）。
+
+- Rust 单测 4 条（默认逐字段不变、设了整根走、空串=没设、补齐且幂等、接线真读环境变量）；
+- 静态契约 `src/test/data-home-isolation-switch.test.ts` 6 条（读点唯一、`app_data_dir()` 只剩一处、
+  日志/崩溃标记/panic 同入口、功能目录同入口、必需目录表与消费方对齐、第 55 轮五档来源一个不少）；
+- 变异自证 `.preview-shot/_mutate-230-iso.mjs`：静态 6 条 + 行为 4 条**全红**，还原后两侧全绿。
+
+### 3. 顺带修：`cargo test --lib` 在本轮之前**根本编译不过**
+
+`src-tauri/src/lib.rs` 三条 `execute_command` 用例只传 3 个实参，而该函数后来加了
+`shell` / `bash_path` ⇒ `E0061 ×3`（**HEAD 上同样如此**：签名 5 参、调用点 3 参）。
+补 `None, None`（= 旧行为：走 PowerShell）后，本波的全部 Rust 判据才跑得起来。
+
+### 4. 未完成：①「积压满 ⇒ 降级为对话级」与 ②「同批同主题合并」的**真机**取证
+
+在隔离根上跑真实回合取这两条，**四次尝试都没拿到**：应用进程在回合开始后 10–60 秒之间
+**无痕消失**（无 `codem-crash.log`、Windows Application 日志无 Application Error、
+`active-run.json` 仍在 ⇒ 不是干净退出）。已排除的变量：
+- 不是 settings 整表拷贝引起（对照探针 `.preview-shot/_iso-230v-probe.mjs`：空库 / 只拷必要几条 /
+  整表拷贝三种都活过 100 秒，心跳正常）；
+- 不是"另一个 agent 起了新实例"（最后一轮轮询里真实数据根日志的 `app started` 计数 **+0**）；
+- 消失点在**回合末**：隔离根 Rust 日志最后一行总是
+  `exec start … git -C <proj> rev-parse --is-inside-work-tree`（文件变更追踪器），
+  之后没有任何 `exec end`，也没有下一条心跳。
+
+**记录**：这两条语义**已有判据覆盖**，而且走的是**真 `LLMEngine.extractMemoriesFromSession`**
+（只桩掉模型返回 `provider.complete` / `spawnForked`）：
+- ①：`src/test/memory-pending-backlog.test.ts` 的 `MEMP-1`（断言日志里出现「降级为对话级」）、
+  `MEMP-1b`（反向对照）、`MEMP-6`（汇总日志给出条数与上限）、`MEMP-7`（本轮已写成的 pending 一起算）；
+- ②：同文件 `MEMC-1..MEMC-5`，其中 `MEMC-5` 是端到端（同批三条同主题候选 ⇒ 只写出一条待批准）。
+缺的**只是真机那一层**；要补的话得先弄清上面那个"回合末进程消失"，建议下一轮用
+`CODEM_DATA_HOME` + `ISO230_KEEP=1`（`.preview-shot/_iso-230b-turn.mjs` 已留好参数，
+现场不删）在**没有其他 agent 同机起应用**的时间窗里跑。
+
+### 5. 门禁（本轮实测）
+
+`npx tsc --noEmit` 0 错误；全量 `npx vitest run` **692 文件 / 8264 通过 + 17 skipped**
+（基线 688/8241 ⇒ 含另一个子代理同期新增的 2 个文件）；`npm run audit` 通过；
+`knip-gate` **没有增长**；`scan-report-sites --check` 268 = 268；`check-artifacts` 通过；
+`cargo check --release` 通过（只剩 5 条既有警告）；`cargo test --release --lib storage::tests` 10/10 通过。
+**未发版**（版本号与已发布 release 一字未动）。
+
+### 6. 真数据纪律（本轮实际发生的写）
+
+- 真库只读（sha256 起点 = 收尾：`a888ea1a…`）；真目录里**只有** `data-home.json` 被对照组改动过，
+  收尾**按字节恢复**并复核 sha256（与起点一致）；`active-run.json` 未变；
+- 唯一的残留：`codem-db-rust.bin-shm` 与 `codem-db.bin-shm` 的 mtime 被读连接更新
+  （SQLite 读一个带 WAL 的库时必然共享内存文件）——内容类文件（`.bin` / `-wal` / 日志）逐字节未变；
+- 所有造出来的数据都在 `%TEMP%\codem-iso-230*`，收尾**已整个删除**（报告里逐条记了清理结果）。
