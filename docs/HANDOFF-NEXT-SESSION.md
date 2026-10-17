@@ -6560,10 +6560,14 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
 （第二口径有效，不是只认内联那一半）。
 前一条也已登记进 `sidebar-props-readonly-db-231` 波次（MUT-1）。
 
-**真库同尺寸端到端（本轮实测）**：对「真库三件套的副本」跑 `withReadOnlyDb` ⇒
-读前/读后 `codem-db-rust.bin`、`-wal`、`-shm` 的 mtime **与 sha256 全部一致**（`sessions=562`）。
-⚠️ 没有直接对着**真库**量：本轮另一个子代理正用装机版做真机走查（`codem.exe` 在跑，真数据根有写入），
-那时对真库量会把别人的写入算到钻取头上。合成库判据 + 同尺寸副本这两层已经能把"钻取不动真库"钉住。
+**真库端到端（本轮实测，两层）**：
+1. 对「真库三件套的副本」跑 `withReadOnlyDb` ⇒ 读前/读后 `codem-db-rust.bin`、`-wal`、`-shm`
+   的 mtime **与 sha256 全部一致**（`sessions=562`），942 MB 现场钻取耗时 1835 ms；
+2. 后来等到了一个**静止窗口**（先采样 3 秒确认三件套 mtime 未变、`codem` 进程数 = 0），
+   直接对**真库**跑一次：钻取 2199 ms、读到 `sessions=562`，读后三件套 mtime 与 sha256
+   **一动不动**（`.preview-shot/_rodb-real-quiet-check.mjs` 可复跑）。
+   ⚠️ 之前没量是因为另一个子代理正用装机版走查（`codem.exe` 在跑，真库随时被写）——
+   那种窗口里量会把别人的写入算到钻取头上，所以先判静止再量。
 
 **钻取纪律（以后照这个来）**：新写的取数/钻取脚本一律
 `import { openReadOnlyDb, withReadOnlyDb } from "../tools/maintenance/read-only-db.mjs"`，
