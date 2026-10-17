@@ -6879,3 +6879,86 @@ CDP 连 WebView2 并用 `Emulation.setDeviceMetricsOverride` 把视口压到 **1
 - **开关是付费能力**：取证完必须点回关闭并复核落库，别把"临时打开"留在用户机器上。
 - 花括号/引号地狱照旧：给 `registry.json` 写长中文说明时经 bash 传参，反引号被吃掉成空串
   ⇒ 改成**写 .mjs 文件再跑**（`node --check` 先过一遍）。
+
+
+## 第 235 波（2026-10-17 深夜）：真渲染探针换传输层（`--dump-dom` → CDP），18 条判据恢复执行
+
+### 0）起点：不是"测试坏了"，是"取结果的通道哑了"
+
+上一波收尾时全量是 **700/702**：`theme-boot` / `layout-contract` 两个文件在**模块加载期**就抛错
+（`0 test`）。用户当时的追问很关键 ——「Edge 不是能用吗？它不就是 Chrome 内核？」—— 追问逼出了正确诊断：
+
+- **Edge 本体完全正常**（正常窗口能用；`--headless=new --remote-debugging-port` 起得来，`/json/version`
+  回 `Edg/155.0.4283.62`，profile 真的写盘，CDP 能打开 fixture 并读出 `PROBE_JSON`）；
+- **哑的是"一次性输出"**：`--dump-dom` / `--screenshot` / `--print-to-pdf` 都是 **exit 0、跑约 1 秒、stdout 与 stderr 0 字节**；
+  两个已安装版本（`155.0.4283.45` 旧 / `.62` 新）、`--headless=old|new|chrome`、独立 `--user-data-dir`
+  （Windows 路径）、`--no-sandbox`、`--enable-logging=stderr --v=1`、bash 管道 / node 管道 /
+  PowerShell `Start-Process -RedirectStandardOutput` —— 全部一样，且旧版二进制也一样 ⇒ **不能归给这次 Edge 升级**，
+  只能说"这条通道在这台机器上坏了，原因在 Edge 一侧，没查到 internals 级解释"。
+
+⇒ 结论：**别急着放宽断言，先换传输层**。同一个内核换个通道就通。
+
+### 1）改了什么
+
+新增 `src/test/helpers/browser-probe.ts`：
+
+- `--headless=new --remote-debugging-port=0`（端口从 profile 里的 `DevToolsActivePort` 读；vitest 并行跑多个文件，
+  固定端口会互相踩）；
+- `Emulation.setDeviceMetricsOverride` 定视口 —— **不用 `--window-size`**：实测它在无头 Edge 里不生效
+  （传 1200,800 时 fixture 量到的 `innerWidth` 仍是 500），会让 `LAYOUT-0` 的 `viewport.h > 500` 变成**恒假判据**；
+- 逐份 fixture 导航，从 `Runtime.evaluate` 读探针元素的 `textContent`（原本是从 `--dump-dom` 的 HTML 里正则抠，
+  现在不需要 HTML 序列化了）；
+- **每次 probe 之间先回 `about:blank`** 再导航：否则上一份文档的元素文本可能被当成本次结果（静默串台）；
+- 只杀**自己 spawn 的 pid 树**（`taskkill /PID <pid> /T /F`），profile 目录带重试删除。
+
+两个测试文件的断言、fixture、判据编号**一个字都没改**，只把 `measure()/firstPaint()` 换成 `beforeAll` 里的
+`readFixtureProbes(...)`；顺带修好了两处结构问题：
+① 文件级 throw 会把**同一文件里 6 条不依赖浏览器的静态判据**一起带走，现在它们照常跑；
+② 三种镜像态（暗/亮/无缓存）与宽/窄两档视口各自**共用一次浏览器启动**（`layout` 连四份 probe 也只起一次）。
+
+### 2）顺手修的两个坑（都会让判据变软）
+
+- **`--window-size` 在无头 Edge 里不生效**：`LAYOUT-0` 断言 `viewport.h > 500`，靠它就成了恒假判据 ⇒ 改协议层覆盖。
+- **探针 profile 清理用 `ping` 当 sleep**：起一次 `ping` 约 1 秒，重试 8 次就是十几秒（实测 `layout` 46s → 12s）。
+  改用 `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)))` 同步等，总重试上限压到约 1 秒。
+
+### 3）结果
+
+| | 之前 | 现在 |
+|---|---|---|
+| `theme-boot.test.ts` | 整文件 0 test（加载期抛） | **8/8 通过**，~6.4s（一次浏览器启动跑三种镜像态） |
+| `layout-contract.test.ts` | 整文件 0 test | **10/10 通过**，~6.9s（一次浏览器启动跑四份 probe） |
+| 全量 | 700 文件 / 8336 通过 | **702 文件 / 8354 通过 + 17 skipped**，`tsc` 0 |
+
+变异波次 `browser-probe-cdp`，5 条（4 红 + 1 反向对照）：
+
+1. 探针拿回空对象（模拟"一次性输出静默为空"）⇒ 两个文件都红；
+2. 不导航（停在 `about:blank`）⇒ 红（超时抛错，而不是静默跳过）；
+3. **设置窗宽度塌回 160px**（第 54 波事故签名）⇒ `LAYOUT-1/2` 红；
+4. **启动页底色改白**（第 60 波事故签名）⇒ `THEME-BOOT-7` 红；
+5. 反向对照：只把轮询间隔 100ms→50ms ⇒ **必须绿**（判据不许对启动快慢过敏）。
+
+第 3、4 条是我特意加的：**只证明"坏数据会红"还不够**，得证明这两条判据测的仍然是**真渲染的 CSS**
+（否则换传输层后完全可能变成"读一个常量再断言它"）。
+
+### 4）门禁（本轮实测）
+
+`tsc` **0**；全量 `vitest run` **702/702 文件、8354 通过 + 17 skipped、exit 0**；
+`knip` 无增长（exports 49/49）；`report-sites` 267=267；`css-contract` 无变化；`scan-style-literals` 11 族不超基线；
+`check-artifacts` **51 波次**全过（新增 `browser-probe-cdp`，`restored=true`、锚点未过期）；`reachability` / `node-syntax` /
+`control-bytes` / `docs-evidence-budget` 全过。本轮没动 Rust ⇒ 未跑 `cargo`。
+
+### 5）一个真踩到的连带现象（如实记）
+
+第一次换成 CDP 后全量跑 **`skill-creator-scripts.test.ts > CLI-1` 超时**（默认 5s，这个用例在一条里
+spawn 了 17 个 `node <script>.ts` 真进程）。单跑必过、满载必挂 —— 典型的"被新负载挤过超时"。
+处理方式不是改断言，而是**把探针的冷启动次数从 6 次压到 2 次**（每个文件一次），压完复跑全量即绿。
+下一个会话若又见到它红：先 `npx vitest run src/test/skill-creator-scripts.test.ts` 单跑确认，再决定是负载还是回归。
+
+### 6）教训
+
+- **用户的一句质疑值一整天**：我一开始把"Edge 无头"说成"引擎/版本坏了"，被问「Edge 不是能用吗」才逼出
+  "引擎好、一次性打印坏"的准确结论；**诊断粒度不够就会开错药**（差点去建议装 Chrome）。
+- 无头浏览器探针要盯三件事：**视口怎么定**（`--window-size` 可能不生效）、**上一份文档会不会串台**（先回 `about:blank`）、
+  **清理成本**（别用起子进程当 sleep）。
+- 探针坏了 ≠ 判据该放宽：先换通道，再谈取舍。
