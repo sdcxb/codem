@@ -515,7 +515,10 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
    * 游戏界面由 `App.tsx` 直接渲染、显隐由 `codem-disabled-plugins` 决定；
    * 这个条目存在是为了让插件管理器里有可启停的一项，`apply` 是**空操作**
    * （旧版在这里注册一个**未声明**的槽位 `app.game` + 一个假服务 `uiGame` —— 一装配就抛）。
-   * 它同时声明在 `config/codem.base.yml` 里（装配入口），判据 SO-8 守这一条。
+   * 它**不在** `config/codem.base.yml` 里（那是内置**非 UI** 插件的装配入口）—— 它的装配入口是
+   * `src/core/ui-plugins/index.ts::loadUIPlugins()` 的清单（UI 插件走那一条），判据 SO-8 守这一条。
+   * 2026-10-17 更正：原文写的是「它同时声明在 `config/codem.base.yml` 里」—— 与事实不符
+   * （全仓 `grep ui-game config/` 零命中），照着这句会去错误的文件里找它的装配点。
    */
   registerBuiltinPlugin('@codem/ui-game', { provides: [], inject: [], priority: 0, hot: true }, () => uiGameProvider)
   registerBuiltinPlugin('@codem/ui-library-ops', { provides: ['uiLibraryOps'], inject: ['slots'], priority: 0, hot: true }, () => uiLibraryOpsProvider)

@@ -21,8 +21,14 @@
   `platform`（如 `['win32']`）/ `hot`（热重载）/ `optional` / `priority`
 - **消费**：`getToolContext()?.get('<服务名>')`
   （`src/core/llm/tools.ts` 导出 `getToolContext()` ✓；`dynamic-plugin-tools.ts` 就是这么取 `dynamicCordisRunner` 的 ✓）
-- **发现外部插件包**：仓库根 `codem.yml`（Vite `?raw` 注入）+ `package.json` 的 `codem` 字段
-  （见 `src/core/plugin-loader/index.ts` 顶部注释与 `loadDefaultProviders` ✓）
+- **装配（谁真的跑 apply）**：内置插件由装配清单 **`config/codem.base.yml`**（+ 覆盖层
+  `config/codem.desktop.yml`）经 `mergeYamlEntries()` → `loadFromEntries()` → `ctx.plugin()` 真正装配
+  （见 `src/core/plugin-loader/index.ts` 顶部注释 ✓）。⚠️ `registerBuiltinPlugin()` **只写注册表**，
+  不装配 —— 只注册不声明进清单 ⇒ 服务永远不会被提供，而单测可以全绿。
+  另外：`src/core/provider/index.ts::loadDefaultProviders()` **已删除**（全仓无调用者的死代码），
+  不要再照着它理解装配。
+- **发现外部插件包**：仓库根 `codem.yml`（Vite `?raw` 注入）+ `package.json` 的 `codem` 字段（这是
+  "外部插件包的发现层"，与上面内置插件的装配清单是两件事 ✓）
 - **启停**：`src/core/plugin-loader/plugin-manager-service.ts` —— 依赖图级联 + 确认回调 +
   持久化（`saveDisabledPlugins`，DB 权威 + localStorage 镜像）。**切换后当前进程立即生效** ✓
 - **默认开启**：插件不写"默认开"字段；**是否默认开由你的服务实现自己决定**
@@ -34,8 +40,17 @@
 2. **写 provider**：`export const <名>Provider: Plugin = (ctx) => ctx.provide('<服务名>', { ...方法 })`
    - 服务对象的方法要**幂等、无副作用**，读设置时**每次现算**（这样启停/改设置立刻生效，
      不要在建对象时读一次就缓存住 ✗ —— `context.ts` 就踩过"构造时读、之后不刷新"的坑）
-3. **注册一行**：在 `builtin-registry.ts` 里
-   `registerBuiltinPlugin('@codem/<插件名>', { provides: ['<服务名>'], inject: [], priority: 0, hot: true, platform: ['win32'] }, () => <名>Provider)`
+3. **注册一行 + 声明一行（两步都做，缺一不可）**：
+   - 在 `builtin-registry.ts` 里
+     `registerBuiltinPlugin('@codem/<插件名>', { provides: ['<服务名>'], inject: [], priority: 0, hot: true, platform: ['win32'] }, () => <名>Provider)`
+   - 在装配清单 `config/codem.base.yml` 里声明（否则上面那行只是注册表里的一个名字，**永远不 apply**）：
+     ```yaml
+     - id: <插件名>
+       name: '@codem/<插件名>'
+       when: platform == 'win32'   # 可省；平台限定时必须写
+       inject: [<依赖的服务名>]     # 可省；有 inject 时必须与注册表一致
+     ```
+   判据 `SO-6`/`SO-8`（`src/test/plugin-assembly-path.test.ts`）守这两步的对应关系 ✓
 4. **接线消费方**：在需要它的**执行入口**用 `getToolContext()?.get('<服务名>')` 取服务；
    **取不到必须回退到旧行为**（插件被禁用/被删除后应用照常工作 ✓）
 
@@ -44,8 +59,9 @@
 - 针对"插件开 / 插件关"两个方向各写一条判据（关的那条是**反向对照**，防止把判据做成哑巴全拦 ✗）；
 - 真机：插件管理器里能看到它、能启停；启用/停用后行为**当场**变化（不需要重启）。
 
-**卸载**：删掉 `src/plugins/<插件名>/` 目录 + `builtin-registry.ts` 里那一行注册 + 消费方那次取值。
-三者都在本手册第 2 步里点名了 —— 这就是"完全独立可启停可删除"的完整含义 ✓。
+**卸载**：删掉 `src/plugins/<插件名>/` 目录 + `builtin-registry.ts` 里那一行注册 +
+`config/codem.base.yml` 里那一行声明 + 消费方那次取值。
+四处都在本手册第 2 步里点名了 —— 这就是"完全独立可启停可删除"的完整含义 ✓。
 
 ## 3. 目前**没有**被证实的路径（别去试 ✗）
 
