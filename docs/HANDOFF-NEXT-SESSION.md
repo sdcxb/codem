@@ -6806,3 +6806,76 @@ CDP 连 WebView2 并用 `Emulation.setDeviceMetricsOverride` 把视口压到 **1
 本轮没动 Rust ⇒ 未跑 `cargo check`。
 
 
+
+
+## 第 234 波（2026-10-17 晚）：DeepSeek Search **200 成功路径真机取证** + `web_search` 卡片被当成 grep（提交 `b79e88c5`）
+
+### 0）这一棒要解决的是「已实现但拿不到证据」，不是「再实现一遍」
+
+交接 §9 第 1 项：能力已实现（38 条判据 + 6 变异）、端点为真（无效 Key 401/225ms），但**开发机的 Key 是
+`dsh1:` 密文**（库里明文 `apiKey` 是空串、`apiKeySealed` 529 字符），库外探针只能拿密文去打
+⇒ 永远 401 ⇒「HTTP 200 成功路径」一直只有判据、没有真机。
+
+**换了取证位置**：不再在库外拼请求，而是**让应用自己**（设置层会水合明文）去调工具。
+代价是必须驱动一次真实模型回合；收益是这条证据连"探针自己拼错了地址"这种可能都排除了。
+
+### 1）做法（脚本都在 `docs/evidence/deepseek-web-200-2026-10-17/scripts/`，已入库）
+
+1. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` 起应用；
+2. CDP 注入一层 `window.fetch` 包装（只记录 URL 含 `/v1/tools/` 的请求，不改请求）；
+3. 设置面板里**真点击**打开两个开关（`elementFromPoint` 命中测试通过；`aria-checked` false→true），
+   再用只读钻取复核落库 `"1"`；
+4. 新对话发同一条提示词，要求模型**真调** `web_search` + `web_fetch` 并抄回 `Length` 行；
+5. 取证三份：渲染器网络探针（status/ms/响应体字符数/条数/正文字数）、**会话日志**（工具层 status/metadata）、截图；
+6. 收尾把两个开关点回关闭（复核 `"0"`）—— 默认关闭是产品口径，别给用户留下付费能力常开。
+
+### 2）结果（两轮真机，两次构建）
+
+| | search | fetch |
+|---|---|---|
+| run1（安装版 1.16.323 / `6ab209f6`） | 200，347 ms，14,593 字符，5 条 | 200，855 ms，正文 6,402 字 |
+| run2（重建+静默安装 `b79e88c5`） | 200，352/290 ms，32,148/14,593 字符，10/5 条 | 200，213/216/128 ms，正文 6,402 字 |
+
+- 工具层全部 `status=done`，`source` = `DeepSeek Search` / `DeepSeek Fetch`；`Length: 6402 字` 与网络层 `contentChars` 一致。
+- 条数语义真机见了一次：模型不指定 ⇒ 缺省 10；显式指定 ⇒ 5（模型参数优先于设置）。
+- **仍未覆盖**：`ori_question`、`need_content=true`、非中文 query、429/5xx 重试（后者仍只有判据）。
+- 官方 Fetch 正文是**转义过的 Markdown**（`JSON.parse` 之后仍有 `\/`、`\#`、`\-`）：**没有反转义**——
+  官方文档没说客户端应当反转义，自作主张会破坏代码块里合法的反斜杠。已记在证据 README 的「没改的两点」里。
+
+### 3）取证时撞见的真缺陷（顺手修掉）：`web_search` 报告被当成 grep 渲染
+
+`trySearchModel` 的门禁写的是 `toolName.toLowerCase().includes('search')` ⇒ `web_search` / `search_notebook`
+都进了「猜 `路径:行号:内容`」的分支；DeepSeek 报告里的
+`站点: … · 日期: 2026-10-17T09:12:12.122Z` 命中 `^(.+?):(\d+):(.*)$`（`T09:12:12` 被读成第 09 行），
+于是展开的卡片是**3 个假文件、每个 `· 1 match`**，而排在 `searchModel !== null` 之后的
+`WebSearchResultCard` **永远到不了**（真机计数：`.search-block=1 / .search-match-row=3 / .websearch-head=0`）。
+
+修法：门禁改成**精确 id 白名单** `grep` / `glob`（只有这两个工具的输出契约是那个形状）。
+用白名单而不是"排除 web_search"：下次再加一个名字带 search 的工具时，默认落到通用卡片（正确的那一边）。
+判据 `WEBSEARCH-CARD-1/2/3`（真渲染 DOM，含 grep 反向守卫与「专用卡片必须真的在」）；变异波次
+`web-search-card-234`（子串回退 / 白名单漏 grep / `isWebSearch` 恒 false，3 条全红、`restored=true`）。
+修后真机：`.websearch-head=1`、`.websearch-item=10`、`.search-match-row=0`，链接 href 正确（见证据目录两张 after 图）。
+
+### 4）门禁（本轮实测）
+
+`tsc` **0**；全量 `vitest run`：**700/702 文件绿（8336 通过 + 17 skipped）**，
+两个失败文件是 `theme-boot` / `layout-contract` —— 二者都在**模块加载期**用
+`msedge --headless --dump-dom` 渲染探针页，而本机 Edge 155.0.4283.62 的 headless **静默返回空**
+（`--dump-dom "data:text/html,<h1>hi</h1>"` 也是 0 字节 / exit 0；`--headless=old|new|chrome`、
+独立 `--user-data-dir`、`--screenshot` 全部一样）⇒ 与本次改动无关（两个文件都不 import 改动模块），
+已记进交接 §9 第 7 项。**没有**为了让它们变绿去改断言。
+`knip` 无增长；`report-sites` 267=267；`css-contract` 无变化；`scan-style-literals` 11 族不超基线；
+`check-artifacts` **50 波次**全过（新增 `web-search-card-234`）；`reachability` 通过；`docs-evidence-budget` 通过
+（新批次 2.17 MB / 单批上限 3 MB，含 README）。本轮没动 Rust ⇒ 未跑 `cargo`。
+真机：重建包已静默安装（`59409f50…`，同版本号 1.16.323），两轮 200 证据都出自**安装版**而非 dev server。
+
+### 5）教训（写给下一个我）
+
+- **「拿不到明文」不等于「拿不到证据」**：库外探针受限于封存，应用**自己**发请求就不受限 ——
+  先问"证据必须由谁来产生"，再决定探针放在哪里。
+- **UI 缺陷只在真机图表上现形**：这条 200 取证第一眼看到的就是"搜索结果变成 3 个假文件"，
+  而所有单测当时全绿（没有用例喂过"报告里带 `x:12:y` 形状的行"）。
+- **形状猜测定据必须按工具 id**：按名字子串会随着新增工具不断误伤（这次一次抓到两个）。
+- **开关是付费能力**：取证完必须点回关闭并复核落库，别把"临时打开"留在用户机器上。
+- 花括号/引号地狱照旧：给 `registry.json` 写长中文说明时经 bash 传参，反引号被吃掉成空串
+  ⇒ 改成**写 .mjs 文件再跑**（`node --check` 先过一遍）。
