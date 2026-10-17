@@ -2,7 +2,7 @@ import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle, ArrowUpDown, Check } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Puzzle, ArrowUpDown, Check } from "lucide-react";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
@@ -47,8 +47,19 @@ interface SidebarProps {
   onNotebooks?: () => void;
   onTaskCenter?: () => void;
   onAgents?: () => void;
-  onCicd?: () => void;
-  onPerf?: () => void;
+  /**
+   * ⚠️ 第 231 波：这里原来还有两个**死 prop**（性能 / CI-CD 的跳转回调）—— **已删除**，别加回来。
+   *
+   * 它们从 `7d768d3f`（UI restructure：把「性能 / CI-CD」两个按钮从侧栏移走）起就没有读者：
+   * 接口声明着、解构里取着、函数体一次都没用 ⇒ 典型的死 prop（传进来什么都不会发生）。
+   * 现在两条入口各有正当归属，Sidebar 不再是它们的地方：
+   *   · 性能 → **底部页签**（`BottomPanelTabs` 的「性能」，点它 `setBottomTab("perf")`；
+   *     可达性由 `BOTTOM-TAB-1..9` 守）；
+   *   · CI/CD → **右侧浮层**（`PanelSidebar` 的「CI/CD」页签）。
+   * 判据：`src/test/sidebar-user-settings-click.test.ts` 的 `PERFENTRY-231-1..4`。
+   * 那一条判据连**注释里**都不许出现这两个标识符（防止有人顺手把名字抄回来就复活了 prop），
+   * 所以这段说明刻意只写中文名与入口归属 —— 要查旧实现看 `git show 7d768d3f -- src/components/Sidebar.tsx`。
+   */
   onRemoveProject?: (projectId: string, projectName: string, projectPath: string) => void;
   fileExplorerProjectId?: string | null;
   onToggleFileExplorer?: (projectId: string) => void;
@@ -69,7 +80,7 @@ const SORT_OPTIONS: Array<{ key: SessionSortKey; dir: SessionSortDir; label: { z
   { key: "name", dir: "desc", label: S.sidebar.sortNameDesc },
 ];
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onPlugins, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onCicd, onPerf, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onPlugins, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   /* 第 166 轮 P1-3：分组标题吸顶（滚到顶时加 is-stuck，CSS 才画分隔线） */
   const stickyGlobalRef = useStickySectionHeader<HTMLDivElement>();
 

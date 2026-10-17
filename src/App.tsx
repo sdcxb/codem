@@ -5099,7 +5099,6 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onAgents={() => setShowAgentManager(true)}
-                    onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -5210,7 +5209,6 @@ identity={appIdentity}
                   onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -5342,7 +5340,6 @@ identity={appIdentity}
           onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -5482,7 +5479,6 @@ identity={appIdentity}
               onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); setMobileSidebarOpen(false); }}
 onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
-onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); setMobileSidebarOpen(false); } : undefined}
               onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
               fileExplorerProjectId={fileExplorerProjectId}
               onToggleFileExplorer={handleToggleFileExplorer}

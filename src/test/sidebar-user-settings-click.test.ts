@@ -11,15 +11,49 @@
  *   · 点用户区能开设置（onSettings 接线 + 语义是按钮 + 插件按钮不许被包进按钮里）
  *   · 设置侧栏里"高级""帮助"这两项排在最后
  * **如实标注**：源码级判据守不了"点下去真的弹出来了" —— 那由装机版实机确认。
+ *
+ * ## 第 231 波：一条前提**作废**并换成现实里的那条（不是把判据删掉了事）
+ *
+ * 原来这里钉着「`onPerf` 应当仍然落到 performance」（`App.tsx` 里必须出现
+ * `setSettingsInitialTab("performance")`）。这条前提**从一开始就钉着死代码**：
+ * `7d768d3f`（UI restructure）把 Sidebar 上「性能 / CI-CD」两个按钮移走之后，
+ * `Sidebar` 只是**声明并解构**了 `onPerf` / `onCicd` 两个 prop，**函数体里一次都没读**
+ * （`git show 7d768d3f -- src/components/Sidebar.tsx` 可复核：`onClick={onPerf}` 那两处被删）。
+ * 也就是说那段 `setSettingsInitialTab("performance")` 永远不会被执行 —— 判据绿着，功能早没了。
+ *
+ * 后来 `perf` 的入口由**底部页签**承担（`20bd7781` 恢复四页签；`BOTTOM-TAB-1..9` 判据守其可达性），
+ * `cicd` 的入口则由右侧浮层 `PanelSidebar` 承担。所以现实是：
+ *   · perf 的正当入口 = 底部「性能」页签（点它 ⇒ `onSelect("perf")` ⇒ `setBottomTab("perf")`）；
+ *   · Sidebar 上**没有**这两个入口，也不该再接收这两个 prop。
+ * 于是把前提换成上面那两条，并**额外**钉住"不许出现点了没反应的死按钮"（源码里连 prop 名都不许有）。
+ * ⚠️ 这条判据与 `BOTTOM-TAB-4`（点每个页签回传它自己）有意重叠：前提就住在这一条里，
+ * 换掉一处前提必须在新位置把同一件事重新说清楚，而不是靠"别处还有一条"。
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createElement } from "react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import {
+  BOTTOM_PANEL_TABS,
+  BottomPanelTabs,
+  type BottomPanelGates,
+  type BottomPanelTabId,
+} from "../components/BottomPanelTabs";
 
 const ROOT = process.cwd();
 const SIDEBAR = readFileSync(path.join(ROOT, "src/components/Sidebar.tsx"), "utf8");
 const SETTINGS = readFileSync(path.join(ROOT, "src/components/SettingsPanel.tsx"), "utf8");
 const CSS = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
+const APP = readFileSync(path.join(ROOT, "src/App.tsx"), "utf8");
+/** 右侧浮层（cicd 的正当入口在这里） */
+const PANEL_SIDEBAR = readFileSync(path.join(ROOT, "src/components/PanelSidebar.tsx"), "utf8");
+
+const ALL_GATES_ON: BottomPanelGates = { perf: true, files: true, jobs: true, cicd: true };
+
+beforeEach(() => {
+  cleanup();
+});
 
 /**
  * 取某条 CSS 规则的**规则体内文**（`selector {` 到其后第一个 `}`）。
@@ -142,11 +176,15 @@ describe("SETTINGSORDER-197 设置里「高级」「帮助」排到最后", () =
     expect(tabs[1], "第二项应当仍是「外观」").toBe("appearance");
   });
 
-  it("SETTINGSORDER-197-3 只动了渲染顺序：tab 标识与跳转入口都没变", () => {
+  it("SETTINGSORDER-197-3 只动了渲染顺序：跳转入口仍落在原来的页", () => {
     /* 只调顺序不该影响任何人"点进来落哪一页"。逐个钉住既有入口。 */
-    const app = readFileSync(path.join(ROOT, "src/App.tsx"), "utf8");
-    expect(app, "onPerf 应当仍然落到 performance").toMatch(/setSettingsInitialTab\("performance"\)/);
-    expect(app, "打开设置应当仍然落到 general").toMatch(/setSettingsInitialTab\("general"\)/);
+    expect(APP, "打开设置应当仍然落到 general").toMatch(/setSettingsInitialTab\("general"\)/);
+    /**
+     * ⚠️ 第 231 波：原来这里还有一条「`onPerf` 应当仍然落到 performance」。
+     * 那条前提守的是**死代码**（Sidebar 从 `7d768d3f` 起就不再读 `onPerf`），
+     * 而 perf 的入口早已换成底部页签 ⇒ 前提搬到下面 `PERFENTRY-231` 并换成现实里的那条。
+     * **没有删判据**：断言条数从 1 条变成 4 条，钉的是同一件事（perf 怎么进、进去落在哪）。
+     */
     /* 两个 tab 的 id 不变（改 id 会让会话里保存的"上次所在页"失效） */
     expect(SETTINGS).toMatch(/activeTab === "advanced"/);
     expect(SETTINGS).toMatch(/activeTab === "help"/);
@@ -165,5 +203,71 @@ describe("SETTINGSORDER-197 设置里「高级」「帮助」排到最后", () =
     for (const must of ["general", "appearance", "security", "tools", "persona", "pet", "usage", "performance", "advanced", "help"]) {
       expect(tabs, `缺少分区 ${must}`).toContain(must);
     }
+  });
+});
+
+/**
+ * 第 231 波：**`onPerf` / `onCicd` 两个死 prop 的收尾判据**（取代原来那条「onPerf → 设置页」）。
+ *
+ * 现实（取证见文件头）：Sidebar 不再有这两个入口，perf 走底部页签、cicd 走右侧浮层。
+ * 这四条钉的就是"收尾没有把入口弄丢、也没有留下点了没反应的按钮"：
+ *   1. Sidebar 一个字节里都不许再出现 `onPerf` / `onCicd`（声明、解构、`onClick` 全算）；
+ *   2. App 不再给 Sidebar 传这两个 prop（传了也没人读 = 假接线）；
+ *   3. perf 的入口是底部页签，点它回传的必须是 `perf`（不是"跳设置页"、不是"没反应"）；
+ *   4. 两条正当入口都还在：设置面板自己的「性能」分区（`setActiveTab("performance")`）、
+ *      右侧浮层的 cicd 页签（`PanelSidebar` 的 tab 登记）。
+ */
+describe("PERFENTRY-231 Sidebar 的 onPerf / onCicd 死 prop 收尾", () => {
+  it("PERFENTRY-231-1 Sidebar 的 props 里不再有 onPerf / onCicd（也没有任何 onCicd/onPerf 引用）", () => {
+    const from = SIDEBAR.indexOf("interface SidebarProps");
+    expect(from, "找不到 SidebarProps 接口").toBeGreaterThan(-1);
+    const propsBlock = SIDEBAR.slice(from, SIDEBAR.indexOf("}", from));
+    expect(propsBlock, "SidebarProps 里还有 onCicd（死 prop 没清干净）").not.toMatch(/\bonCicd\b/);
+    expect(propsBlock, "SidebarProps 里还有 onPerf（死 prop 没清干净）").not.toMatch(/\bonPerf\b/);
+    expect(SIDEBAR, "Sidebar 里还有 onCicd/onPerf 的引用（声明或 onClick 都算）").not.toMatch(/\bon(?:Perf|Cicd)\b/);
+  });
+
+  it("PERFENTRY-231-2 App 不再给 Sidebar 传 onPerf / onCicd", () => {
+    expect(APP, "App.tsx 还在给 Sidebar 传 onPerf（没人读 = 假接线）").not.toMatch(/\bonPerf\b/);
+    expect(APP, "App.tsx 还在给 Sidebar 传 onCicd（没人读 = 假接线）").not.toMatch(/\bonCicd\b/);
+    /* 收尾不许把别的接线一起带走：Sidebar 仍收得到它的既有 prop */
+    expect(APP, "App.tsx 仍在给 Sidebar 传 onSettings").toMatch(/onSettings=\{/);
+    expect(APP, "App.tsx 仍在给 Sidebar 传 onAgents").toMatch(/onAgents=\{/);
+  });
+
+  it("PERFENTRY-231-3 ★perf 的入口是底部页签：点它回传 perf（不是跳设置页、不是没反应）", () => {
+    const perfEntry = BOTTOM_PANEL_TABS.find((entry) => entry.id === "perf");
+    expect(perfEntry, "页签登记里没有 perf 入口").toBeTruthy();
+    expect(perfEntry?.gate, "perf 入口必须挂在 perfEnabled 门控上").toBe("perf");
+
+    const picked: BottomPanelTabId[] = [];
+    render(
+      createElement(BottomPanelTabs, {
+        tab: "chat",
+        gates: ALL_GATES_ON,
+        lang: "zh",
+        onSelect: (id: BottomPanelTabId) => picked.push(id),
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /性能/ }));
+    expect(picked, "点「性能」页签必须把它自己回传给 setter").toEqual(["perf"]);
+
+    /**
+     * 反向的一半：**perf 不再走「跳设置页」那条路**。
+     * 那段 `setSettingsInitialTab("performance")` 只存在于死 prop 的实参里，
+     * 清掉之后 App.tsx 里不该再有它 —— 有，就说明有人把死 prop 又接回来了。
+     */
+    expect(APP, "perf 不该再从设置页进入（那是死 prop 的产物）").not.toMatch(/setSettingsInitialTab\("performance"\)/);
+    /* App 必须仍把页签栏接到 setBottomTab 上，否则"选中 perf 页签"就没有落点 */
+    expect(APP, "页签栏必须直接接 setBottomTab").toMatch(/<BottomPanelTabs[^>]*onSelect=\{setBottomTab\}/s);
+    expect(APP, "App.tsx 里必须有 perf 页签的渲染分支").toMatch(/bottomTab === "perf"/);
+  });
+
+  it("PERFENTRY-231-4 两条正当入口都还在：设置页的性能分区 + 右侧浮层的 cicd 页签", () => {
+    /* 设置面板自己的「性能」分区（Sidebar 的 onPerf 走的就是它，现在它自己就是入口） */
+    expect(SETTINGS, "设置面板里没有「性能」分区了").toMatch(/setActiveTab\("performance"\)/);
+    /* cicd：右侧浮层的页签（`7d768d3f` 起它的入口就在这里） */
+    expect(PANEL_SIDEBAR, "右侧浮层里没有 cicd 页签登记").toMatch(/id: "cicd"/);
+    expect(PANEL_SIDEBAR, "右侧浮层的 cicd 页签必须挂在门控上").toMatch(/if \(cicdEnabled\) \{/);
   });
 });
