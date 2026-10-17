@@ -297,7 +297,8 @@ import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
 import { CicdPanel } from "./components/CicdPanel";
 import { PerformanceDashboard } from "./components/PerformanceDashboard";
 import { JobsPanel, type JobsPanelTask } from "./components/JobsPanel";
-import { BottomPanelTabs } from "./components/BottomPanelTabs";
+/* 第 233 波：页签栏隐藏后，成员/门控/入口登记的唯一来源（该组件已删除，不再渲染入口栏） */
+import { BOTTOM_PANEL_GATE_FLAGS, type BottomPanelTabId } from "./core/ui/bottom-tab-entries";
 import { PlanApprovalCard } from "./components/PlanApprovalCard";
 import { setPlanApprovalCallback, clearPlanApprovalCallback, type PlanApprovalOutcome } from "./core/llm/tools/exit-plan-mode";
 import { SearchDialog } from "./components/SearchDialog";
@@ -449,7 +450,11 @@ const APP_ROOT_FALLBACK = "D:\\mimo";
 // 不是任务总时长硬限制（长编译/长推理不会被误杀）。
 const WATCHDOG_IDLE_MS = 15 * 60 * 1000; // 15 分钟无事件
 const WATCHDOG_CHECK_MS = 30_000;        // 每 30s 检查一次
-type BottomTab = "chat" | "terminal" | "perf" | "files" | "jobs" | "cicd" | "game";
+/**
+ * 第 233 波：页签栏已隐藏，成员类型改从登记模块现算（`bottom-tab-entries.ts` 是唯一定义处）。
+ * 这样「成员清单」与「入口登记表」不可能各写一份而漂移 —— 判据 BOTTOM-TAB-1 会核对这条别名。
+ */
+type BottomTab = BottomPanelTabId;
 
 function getCliSessionKey(projectId: string, sessionId: string) {
   return `codem-cli-session-${projectId}-${sessionId}`;
@@ -779,14 +784,26 @@ useEffect(() => {
 }, []);
 const [showAgentManager, setShowAgentManager] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
-// 如果性能 tab 被禁用但当前选中它，回退到对话
+/**
+ * 插件把某个面板关掉时，把 `bottomTab` 拉回对话（否则会卡在空面板）。
+ *
+ * 第 233 波：四条手写 if 收成**按登记表现算** —— 成员与门控的对应关系不再有两份来源
+ * （`BOTTOM_PANEL_GATE_FLAGS` 是唯一一张表）。页签栏虽然隐藏了，这条降级仍然有效：
+ * 终端仍可由标题栏进入，四条面板分支也仍作为兜底挂载点保留。
+ */
 useEffect(() => {
-  if (bottomTab === "perf" && !perfEnabled) setBottomTab("chat");
-  // P1-3: 其他 tab 的降级回退
-  if (bottomTab === "files" && !workspacePanelEnabled) setBottomTab("chat");
-  if (bottomTab === "jobs" && !jobsPanelEnabled) setBottomTab("chat");
-  // 底部页签恢复入口（BOTTOM-TAB-5）：CI/CD 原来没有这条降级 —— 开关关掉后会卡在空面板
-  if (bottomTab === "cicd" && !cicdEnabled) setBottomTab("chat");
+  const flags: Record<string, boolean> = {
+    perfEnabled,
+    workspacePanelEnabled,
+    jobsPanelEnabled,
+    cicdEnabled,
+  };
+  for (const [tabId, flagName] of Object.entries(BOTTOM_PANEL_GATE_FLAGS)) {
+    if (bottomTab === (tabId as BottomTab) && !flags[flagName]) {
+      setBottomTab("chat");
+      break;
+    }
+  }
 }, [bottomTab, perfEnabled, workspacePanelEnabled, jobsPanelEnabled, cicdEnabled]);
   const [fileExplorerProjectId, setFileExplorerProjectId] = useState<string | null>(null);
   const [fileExplorerRefreshKey, setFileExplorerRefreshKey] = useState(0);
@@ -4966,12 +4983,6 @@ engineRef.current?.abort();
    * 门控与入口同源：入口不渲染时这里的 `bottomTab === "<id>"` 也不可能为真
    * （App 顶部还有一条降级 effect 把 bottomTab 拉回 chat，见 BOTTOM-TAB-5）。
    */
-  const bottomPanelGates = {
-    perf: perfEnabled,
-    files: workspacePanelEnabled,
-    jobs: jobsPanelEnabled,
-    cicd: cicdEnabled,
-  };
   const renderBottomPanelBody = () => (
     <>
       {perfEnabled && bottomTab === "perf" && (
@@ -5110,7 +5121,6 @@ onRemoveProject={(id, name, path) => {
               mainPanel={
                 <div className="main-area">
                   <div className="panel-right">
-                    <BottomPanelTabs tab={bottomTab} gates={bottomPanelGates} lang={lang} onSelect={setBottomTab} />
                     <div className="panel-content">
                       {compactionStatus && compactionStatus.sessionId === uiSessionId && (
                         <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
@@ -5219,7 +5229,6 @@ onRemoveProject={(id, name, path) => {
 
               <div className="main-area">
                 <div className="panel-right">
-                  <BottomPanelTabs tab={bottomTab} gates={bottomPanelGates} lang={lang} onSelect={setBottomTab} />
                   <div className="panel-content">
                     {compactionStatus && compactionStatus.sessionId === uiSessionId && (
                       <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
@@ -5350,7 +5359,6 @@ onRemoveProject={(id, name, path) => {
 
       <div className="main-area">
         <div className="panel-right">
-          <BottomPanelTabs tab={bottomTab} gates={bottomPanelGates} lang={lang} onSelect={setBottomTab} />
 
           <div className="panel-content">
             {compactionStatus && compactionStatus.sessionId === uiSessionId && (

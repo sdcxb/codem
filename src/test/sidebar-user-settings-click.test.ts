@@ -34,12 +34,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import {
-  BOTTOM_PANEL_TABS,
-  BottomPanelTabs,
-  type BottomPanelGates,
-  type BottomPanelTabId,
-} from "../components/BottomPanelTabs";
+import { BOTTOM_TAB_ENTRIES } from "../core/ui/bottom-tab-entries";
 
 const ROOT = process.cwd();
 const SIDEBAR = readFileSync(path.join(ROOT, "src/components/Sidebar.tsx"), "utf8");
@@ -49,7 +44,6 @@ const APP = readFileSync(path.join(ROOT, "src/App.tsx"), "utf8");
 /** 右侧浮层（cicd 的正当入口在这里） */
 const PANEL_SIDEBAR = readFileSync(path.join(ROOT, "src/components/PanelSidebar.tsx"), "utf8");
 
-const ALL_GATES_ON: BottomPanelGates = { perf: true, files: true, jobs: true, cicd: true };
 
 beforeEach(() => {
   cleanup();
@@ -235,32 +229,40 @@ describe("PERFENTRY-231 Sidebar 的 onPerf / onCicd 死 prop 收尾", () => {
     expect(APP, "App.tsx 仍在给 Sidebar 传 onAgents").toMatch(/onAgents=\{/);
   });
 
-  it("PERFENTRY-231-3 ★perf 的入口是底部页签：点它回传 perf（不是跳设置页、不是没反应）", () => {
-    const perfEntry = BOTTOM_PANEL_TABS.find((entry) => entry.id === "perf");
-    expect(perfEntry, "页签登记里没有 perf 入口").toBeTruthy();
-    expect(perfEntry?.gate, "perf 入口必须挂在 perfEnabled 门控上").toBe("perf");
-
-    const picked: BottomPanelTabId[] = [];
-    render(
-      createElement(BottomPanelTabs, {
-        tab: "chat",
-        gates: ALL_GATES_ON,
-        lang: "zh",
-        onSelect: (id: BottomPanelTabId) => picked.push(id),
-      }),
-    );
-    fireEvent.click(screen.getByRole("tab", { name: /性能/ }));
-    expect(picked, "点「性能」页签必须把它自己回传给 setter").toEqual(["perf"]);
+  it("PERFENTRY-231-3 ★perf 的入口是登记表里的「设置 → 性能」分区（页签栏已于第 233 波隐藏）", () => {
+    /**
+     * 第 233 波：顶部页签栏整体隐藏（用户要求），所以这条判据的口径从
+     * 「点页签把 perf 回传 setter」改成「perf 有一条**登记在表里**的可达入口」。
+     * 事实仍然是同一个渲染：设置 → 性能分区渲染的就是 `PerformanceDashboard`。
+     */
+    const perfEntries = BOTTOM_TAB_ENTRIES.perf ?? [];
+    expect(perfEntries.length, "perf 必须至少有一条登记入口").toBeGreaterThan(0);
+    expect(
+      perfEntries.some((e) => e.kind === "settings-section" && e.file === "src/components/SettingsPanel.tsx"),
+      "perf 的入口必须登记为设置面板的性能分区",
+    ).toBe(true);
+    expect(SETTINGS, "设置面板必须仍有性能分区").toContain('activeTab === "performance"');
+    /*
+     * 同一个组件的证据：性能分区那一段里就直接渲染 `<PerformanceDashboard`。
+     * 用子串切片而不是长正则 —— 这一行上的正则转义被生成脚本吃掉过一次（`` 变成退格符），
+     * 切片写法没有转义面，读起来也更直。
+     */
+    const perfBlockStart = SETTINGS.indexOf('{activeTab === "performance" && (');
+    expect(perfBlockStart, "设置面板里找不到性能分区的渲染块").toBeGreaterThan(0);
+    expect(
+      SETTINGS.slice(perfBlockStart, perfBlockStart + 400),
+      "性能分区渲染的必须是同一个 PerformanceDashboard",
+    ).toContain("<PerformanceDashboard");
+    expect(PANEL_SIDEBAR, "perf 不走右侧抽屉（那里没有性能页签）").not.toMatch(/id:\s*"perf"/);
 
     /**
-     * 反向的一半：**perf 不再走「跳设置页」那条路**。
-     * 那段 `setSettingsInitialTab("performance")` 只存在于死 prop 的实参里，
-     * 清掉之后 App.tsx 里不该再有它 —— 有，就说明有人把死 prop 又接回来了。
+     * 反向的一半：**perf 不再走「跳设置页初始 tab」那条路**（那是死 prop 的产物）。
+     * 现在"进设置再点分区"是真入口，但 App 仍不该用 `setSettingsInitialTab("performance")` 代跳。
      */
-    expect(APP, "perf 不该再从设置页进入（那是死 prop 的产物）").not.toMatch(/setSettingsInitialTab\("performance"\)/);
-    /* App 必须仍把页签栏接到 setBottomTab 上，否则"选中 perf 页签"就没有落点 */
-    expect(APP, "页签栏必须直接接 setBottomTab").toMatch(/<BottomPanelTabs[^>]*onSelect=\{setBottomTab\}/s);
-    expect(APP, "App.tsx 里必须有 perf 页签的渲染分支").toMatch(/bottomTab === "perf"/);
+    expect(APP, "perf 不该再从设置页初始 tab 代跳（那是死 prop 的产物）").not.toMatch(/setSettingsInitialTab\("performance"\)/);
+    /* 页签栏已隐藏：App 不许再渲染它，也不许再有"点页签才有落点"的接线 */
+    expect(APP, "页签栏已隐藏，App 不该再渲染 BottomPanelTabs").not.toMatch(/<BottomPanelTabs/);
+    expect(APP, "App.tsx 里必须仍有 perf 面板的兜底分支（面板本体不删）").toMatch(/bottomTab === "perf"/);
   });
 
   it("PERFENTRY-231-4 两条正当入口都还在：设置页的性能分区 + 右侧浮层的 cicd 页签", () => {

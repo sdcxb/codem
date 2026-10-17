@@ -1319,24 +1319,12 @@ overflow: hidden;
   padding: var(--space-4) var(--space-6);
 }
 
-/* 底部面板页签栏的显式关闭按钮（只在非「对话」页签出现，动作 = setBottomTab("chat")）。
-   与 .tab.file-toggle 同一类右对齐控件；不带 .tab 类，所以皮肤覆盖不会漏掉它。 */
-.panel-tabs-close {
-  margin-left: auto;
-  padding: var(--space-4) var(--space-6);
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: var(--fs-lg);
-  line-height: var(--lh-none);
-  transition: var(--transition-color);
-}
-
-.panel-tabs-close:is(:hover, :focus-visible) {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
+/*
+ * 第 233 波：顶部页签栏已按用户要求整体隐藏（三套皮肤都不再渲染），
+ * 页签栏的显式关闭按钮 `.panel-tabs-close` 随之没有宿主 —— 这两条规则（含 hover 态）已删除。
+ * 留着的后果不是"没用"，而是 UI 一致性门禁报 `css-class-unused`（基线是 0 warn）。
+ * 将来恢复入口栏时，按钮与样式一起恢复（顺序不要反：先有渲染再谈样式）。
+ */
 
 /* 底部「任务」页签的宿主面板（JobsPanel）：真实后台任务（PTY 后台发送，可终止）+ 子智能体任务 */
 .jobs-panel {

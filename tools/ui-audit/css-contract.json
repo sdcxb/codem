@@ -11437,17 +11437,6 @@
     "height": "var(--panel-tabs-height)",
     "padding": "var(--panel-tabs-padding)"
   },
-  "panel-tabs-close": {
-    "background": "none",
-    "border": "none",
-    "color": "var(--text-secondary)",
-    "cursor": "pointer",
-    "font-size": "var(--fs-lg)",
-    "line-height": "var(--lh-none)",
-    "margin-left": "auto",
-    "padding": "var(--space-4) var(--space-6)",
-    "transition": "var(--transition-color)"
-  },
   "paragraph-action-btn": {
     "align-items": "center",
     "background": "var(--bg-secondary)",

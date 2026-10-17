@@ -123,8 +123,15 @@ export function declareAppSlots(ctx: Context): void {
   slots.declareSlot('sidebar.tabs', { kind: 'list', scope: 'root' }, 'framework')
   slots.declareSlot('sidebar.bottom-tabs', { kind: 'list', scope: 'root' }, 'framework')
 
-  // ===== 底部面板 tab 槽位（list 类型） =====
-  slots.declareSlot('bottom-panel.tabs', { kind: 'list', scope: 'root' }, 'framework')
+  // ===== 底部面板 tab 槽位 =====
+  /*
+   * 第 233 波：**已撤销** `bottom-panel.tabs`。
+   *
+   * 它从声明那天起就没有过任何贡献者（`git log -S bottom-panel.tabs` 可查），唯一的宿主是
+   * 顶部那条页签栏 —— 而页签栏已按用户要求整体隐藏（三套皮肤都不渲染）。
+   * 没有宿主的槽位留着就是「看起来能扩展、其实没人渲染」的假扩展点，所以连同声明一起删掉。
+   * 将来若要恢复入口栏，先恢复宿主再重新声明这个槽位（顺序反了会得到一个永远渲染不出来的注册方）。
+   */
 
   // ===== UI 插件使用的额外槽位（与上面的简短名称是不同的 slot） =====
   slots.declareSlot('app.goal-bar', { kind: 'single', scope: 'root' }, 'framework')

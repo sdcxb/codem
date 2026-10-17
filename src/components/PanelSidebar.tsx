@@ -8,12 +8,13 @@ import { Workbench } from "./Workbench";
 import { FileChangesList } from "./FileChangesList";
 import { FileExplorer } from "./FileExplorer";
 import { CicdPanel } from "./CicdPanel";
+import { JobsPanel } from "./JobsPanel";
 import { useProjectStore } from "../core/store";
 // 第 47 轮补：工作台面板的文件改动区块要读**真实数据**（原来是硬编码空数组）
 import { FileChangeStorage } from "../core/storage/file-change-storage";
 import { onFileChangesTracked } from "../core/environment/file-change-tracker";
 
-type SidebarTab = "git" | "workbench" | "files" | "changes" | "cicd";
+type SidebarTab = "git" | "workbench" | "files" | "changes" | "jobs" | "cicd";
 
 /** 读取被禁用的插件列表 */
 function useDisabledPlugins(): string[] {
@@ -63,7 +64,7 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   const disabledPlugins = useDisabledPlugins();
   const cicdEnabled = !disabledPlugins.includes('@codem/ui-misc');
 
-  // 构建 tab 列表 — CI/CD tab 根据插件状态条件渲染
+  // 构建 tab 列表 — CI/CD / 任务 tab 根据插件状态条件渲染
   // 注：智能体活动已收敛至对话顶部「智能体与团队」按钮（AgentPanel，个体 + 团队双维度），此处不再单列
   const tabs: Array<{ id: SidebarTab; icon: typeof GitBranch; label: string }> = [
     { id: "git", icon: GitBranch, label: "Git" },
@@ -71,6 +72,18 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
     { id: "changes", icon: ListChecks, label: zh ? "变更" : "Changes" },
     { id: "workbench", icon: Wrench, label: zh ? "工作台" : "Workbench" },
   ];
+  /**
+   * 第 233 波：**任务（jobs）页签**在这里落脚。
+   *
+   * 顶部页签栏隐藏后，`jobs` 一度只剩那条栏一个入口（`JobsBadge` 从来没被渲染过 ——
+   * 它只有定义，全仓没有 `<JobsBadge`）。抽屉里已经有「文件」「CI/CD」两处**同一个组件**的
+   * 第二挂载点（`FileExplorer` / `CicdPanel`），所以「任务」按同一形状补在这里：
+   * 渲染同一个 `JobsPanel`，与底部兜底面板读同一份数据（后台 PTY 任务 + 子智能体任务）。
+   */
+  const jobsEnabled = !disabledPlugins.includes('@codem/ui-jobs');
+  if (jobsEnabled) {
+    tabs.push({ id: "jobs", icon: ListChecks, label: zh ? "任务" : "Jobs" });
+  }
   if (cicdEnabled) {
     tabs.push({ id: "cicd", icon: GitBranch, label: "CI/CD" });
   }
@@ -209,6 +222,10 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         )}
         {effectiveTab === "changes" && currentProject && (
           <FileChangesList sessionId={currentSessionId || ""} workspace={currentProject.path} />
+        )}
+        {effectiveTab === "jobs" && jobsEnabled && (
+          /* 与底部兜底面板同一个组件、同一份数据；抽屉自带关闭按钮，这里不需要 onClose */
+          <JobsPanel />
         )}
         {effectiveTab === "cicd" && cicdEnabled && (
           <CicdPanel />

@@ -82,9 +82,18 @@ describe("@codem/ui-game：开关插件（不是 UI 实现）", () => {
      * 删掉 game 分支/插件 ⇒ 同样要改；**不许留「单测绿、功能死」的中间态**。
      */
     const app = fs.readFileSync(path.join(ROOT, "src/App.tsx"), "utf8");
-    const declared = /type BottomTab = [^\n]*"game"/.test(app);
+    /**
+     * 第 233 波：页签栏隐藏后，成员类型从 `App.tsx` 挪到了登记模块
+     * （`src/core/ui/bottom-tab-entries.ts` 的 `export type BottomPanelTabId`；
+     * `App.tsx` 只剩 `type BottomTab = BottomPanelTabId` 这个别名）。
+     * 这条判据守的事实不变：**game 是成员，但没有任何 UI 入口**。
+     */
+    const registry = fs.readFileSync(path.join(ROOT, "src/core/ui/bottom-tab-entries.ts"), "utf8");
+    const declared = /export type BottomPanelTabId = [^\n]*"game"/.test(registry);
+    const aliased = /type\s+BottomTab\s*=\s*BottomPanelTabId\s*;/.test(app);
     const hasSetter = /setBottomTab\(\s*["']game["']\s*\)/.test(app);
-    expect(declared, "前置条件：BottomTab 里必须有 game（渲染分支存在）").toBe(true);
+    expect(declared, "前置条件：成员类型里必须有 game（渲染分支存在）").toBe(true);
+    expect(aliased, "前置条件：App.tsx 的 BottomTab 必须仍是该成员类型的别名（成员只有一份定义）").toBe(true);
     expect(
       hasSetter,
       "`bottomTab === \"game\"` 的分支没有任何 setter ⇒ 面板永远不可达（入口在 e1bdd01e 被删）。" +

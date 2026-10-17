@@ -56,14 +56,23 @@ export default {
       expectRed: true,
     },
     {
-      id: "MUT-3 perf 页签入口去掉门控",
+      id: "MUT-3 perf 入口从登记表里删掉",
       why:
-        "PERFENTRY-231-3：入口与 perfEnabled 脱钩（插件被禁用时仍渲染入口 ⇒ 点进去是空白/降级）",
+        "PERFENTRY-231-3（第 233 波改写后）：页签栏已隐藏，perf 的入口是登记表里的「设置 → 性能」分区；" +
+        "把这条登记删掉 ⇒ 判据必须红（否则「有其它入口」就成了一句话，没有机器事实）",
       patches: [
         {
-          file: "src/components/BottomPanelTabs.tsx",
-          from: '  { id: "perf", zh: "性能", en: "Perf", icon: Activity, gate: "perf" },',
-          to: '  { id: "perf", zh: "性能", en: "Perf", icon: Activity },',
+          file: "src/core/ui/bottom-tab-entries.ts",
+          from:
+            '  perf: [\n' +
+            '    {\n' +
+            '      kind: "settings-section",\n' +
+            '      file: "src/components/SettingsPanel.tsx",\n' +
+            '      symbol: \'activeTab === "performance"\',\n' +
+            '      why: "设置 → 性能分区渲染**同一个** PerformanceDashboard（第 231 波从主区顶部移入设置）",\n' +
+            '    },\n' +
+            '  ],\n',
+          to: "  perf: [],\n",
         },
       ],
       tests: ["src/test/sidebar-user-settings-click.test.ts"],
