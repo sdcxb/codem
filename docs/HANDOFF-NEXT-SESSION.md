@@ -6475,3 +6475,119 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
 **下次用只读钻取请注意**：只读连接一个带 WAL 的库会更新 `-shm` 的 mtime（连接标记），
 本轮已确认内容类文件（`.bin` / `-wal` / 日志）**逐字节未变**；若要求连 mtime 都不动，
 可以把库**复制**到临时目录再读（本轮真库 942 MB，复制成本可接受），或改用 `immutable=1` 的 URI 打开。
+
+---
+
+## 第 231 波（收尾，两个子代理并行：这一路只做「两条尾巴」，另一个在真机走查）
+
+**本轮不发版**：版本号三处一字未动（`1.16.321`），已发布 release 一个没碰。
+
+### 尾巴 ①：Sidebar 的两个死 prop（性能 / CI-CD 的旧跳转）
+
+**取证（先查清再动手）**：`git show 7d768d3f -- src/components/Sidebar.tsx` —— 那一波把
+「性能 / CI-CD」两个按钮从侧栏移走（改由 `PanelSidebar` 与底部页签承担），但 `SidebarProps` 里
+`onPerf` / `onCicd` 两条声明与解构**留了下来**，函数体**一次都没读过**。于是：
+
+- Sidebar 上**没有**这两个按钮（`git log -S` 可证：`onClick={onPerf}` 那两处在 `7d768d3f` 被删）；
+- `App.tsx` 里 4 处 `onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}`
+  传进一个没人读的 prop ⇒ **假接线**；`onCicd` 干脆一次都没传过；
+- 上一轮 `20bd7781` 把 `perf` 的入口恢复成**底部页签**（`BOTTOM-TAB-1..9` 守其可达性），
+  `cicd` 的入口早就由右侧浮层 `PanelSidebar` 承担 ⇒ 「perf 从 Sidebar 跳设置页」这条路
+  **产品上已经不该存在**。
+
+**处置：选 (b)（入口本身已不该存在 ⇒ 连 prop 一起删）**，理由就是上面的取证：
+这两个入口在 Sidebar 上**早已不存在**，没有"点了没反应的按钮"可救；真正要做的收尾是
+**删掉死 prop 与假接线**，并把判据里那条守死代码的旧前提换成现实里的入口。
+（选 (a) 反而会**新增**两个侧栏入口 —— 与上一轮刚统一到页签/浮层的方向相反。）
+
+改动：`Sidebar.tsx` 删 `onCicd?` / `onPerf?` 声明 + 解构 + 顺手清掉只为旧按钮而存在的
+`Activity` 图标导入；`App.tsx` 删 4 处 `onPerf=` 实参（`setSettingsInitialTab("general")` 等其余接线未动）。
+
+**判据跟着现实走（没删判据）**：`src/test/sidebar-user-settings-click.test.ts`
+原来钉「`onPerf` 应当仍然落到 performance」（对 `App.tsx` 做 `toMatch(/setSettingsInitialTab("performance")/)`），
+**前提换成新行为**，新增 `PERFENTRY-231-1..4`（共 4 条，替换原来 1 条）：
+
+| 判据 | 钉什么 |
+| --- | --- |
+| `PERFENTRY-231-1` | `SidebarProps` 里没有这两个名字；整份 `Sidebar.tsx` 里也不许出现（连注释都算，防"抄名字回来复活 prop"） |
+| `PERFENTRY-231-2` | `App.tsx` 不再给 Sidebar 传它们（且 `onSettings` / `onAgents` 等既有接线还在） |
+| `PERFENTRY-231-3` | perf 的入口是**底部页签**：真的渲染 `BottomPanelTabs` 并点「性能」⇒ `onSelect("perf")`；`App.tsx` 里 `setSettingsInitialTab("performance")` 不许再有、`onSelect={setBottomTab}` 与 `bottomTab === "perf"` 渲染分支必须在 |
+| `PERFENTRY-231-4` | 两条正当入口都还在：设置面板自己的「性能」分区（`setActiveTab("performance")`）、右侧浮层的 cicd 页签（`id: "cicd"` + 门控） |
+
+**先红后绿 + 变异自证（实测）**：
+- 红：实现未改时跑新判据 ⇒ `231-1` / `231-2` / `231-3` 三条失败（`2 failed | 9 passed` 与 `1 failed | 10 passed` 两轮）；
+- 绿：删 prop 后 **11/11 通过**；
+- 变异 1（跳设置页复活）：把 `onPerf={… setSettingsInitialTab("performance") …}` 加回一处 ⇒
+  `PERFENTRY-231-2` / `-3` 红（原文：`App.tsx 还在给 Sidebar 传 onPerf（没人读 = 假接线）`）；
+- 变异 2（点了没反应）：`SidebarProps` 加回 `onPerf?` + 解构 + 一个 `onClick={onPerf}` 按钮 ⇒ `-1` 红；
+- 变异 3（页签接空 setter）：三套皮肤 `onSelect={setBottomTab}` → `onSelect={() => {}}` ⇒ `-3` 红；
+- 变异 4（点开是空白）：`bottomTab === "perf"` 改名 ⇒ `-3` 红；
+- 以上前四个已登记成**可复跑的波次** `sidebar-props-readonly-db-231`（`tools/mutate/specs/…231.mjs`），
+  另含反向对照（只改一句注释 ⇒ 不许红）。
+
+### 尾巴 ②：只读钻取连 `-shm` 的 mtime 都不动
+
+**为什么必须动**：上一轮真机实测（本文件上面那段「下次用只读钻取请注意」）——
+只读打开带 WAL 的真库，`codem-db-rust.bin-shm` 的 mtime 与内容都会被 SQLite 的连接标记更新。
+内容类文件逐字节未变，但「只读」在文件系统层面留了痕。
+
+**改成什么：复制副本再读**（`tools/maintenance/read-only-db.mjs`，**受版本控制**）：
+把 `.bin` + `-wal` + `-shm` 复制到 `%TEMP%/codem-ro-db-*`，只读打开**副本**，`close()` 即删临时目录；
+`withReadOnlyDb(dbPath, fn)` 还会在读完前后**复核源库指纹**（存在性 / 大小 / mtime，可选 sha256），
+有变化直接抛 `ReadOnlyDbTouchedError`。`openReadOnlyDb(dbPath)` 是旧写法的 drop-in（同样返回 `DatabaseSync`）。
+
+**为什么不用 `immutable=1`**：immutable 的语义是「这个文件不会被改」，SQLite 因此**不读 WAL**；
+而真库常态是「`.bin` + 几十 MB 的 `-wal` 里有未 checkpoint 的数据」⇒ 用 immutable 读到的是
+**折叠前的旧状态**，钻取结论会静默失真（比动 mtime 更糟）。判据里专门钉了这一条：
+只拿 `.bin`（不带 `-wal`）**读不到**那些未 checkpoint 的行（`RODB-231-4`），而副本读得到（`RODB-231-1`）。
+
+**代价（实测）**：真库同尺寸现场（942 MB 主库 + 26 MB WAL）复制+开连接+两条查询+清理 = **1835 ms**
+（复制三件套本身 356 ms，NTFS 有缓存）；临时空间约等于库大小 + WAL。静止性护栏：
+复制前后比指纹，变了就重试 3 次，仍变就抛错（意思是「先停应用再钻取」，既有纪律不变）。
+残留：异常退出（kill -9 / 任务管理器）会留 `%TEMP%/codem-ro-db-*`，可手工清。
+
+**判据（`src/test/read-only-db.test.ts`，`RODB-231-1..7`，全部用合成小库，不依赖真库）**：
+1 副本读得到 WAL 里未 checkpoint 的行；2 ★读完原库三件套的 **mtime + sha256 全不变**；
+3 ★**对照实验**：同一现场**直接打开**原库 ⇒ `-shm` 的 mtime 与 sha 都会变（判据能红的内建证明）；
+4 只读 `.bin` 读不到那些行（immutable 会丢数据的证据）；5 指纹比对纯函数的自证；
+6 `openReadOnlyDb` drop-in + `close()` 删临时目录；7 **本地棘轮**：`.preview-shot/*.mjs` 里
+不许再有「直接只读打开真库」的写法（干净 clone 上没有该目录 ⇒ `skipped`，不是假绿）。
+
+**变异自证（实测）**：把 `openReadOnlyDb` 改回 `new DatabaseSync(dbPath, { readOnly: true })` ⇒
+`RODB-231-1` / `-2` 红，报错原文 `dirty-1.bin-shm：mtime 变了（1792213128482.988 → 1792213128501.0095）`；
+把 `.preview-shot/_table-counts.mjs` 改回直开原库 ⇒ `RODB-231-7` 红并点出该文件名。
+前一条也已登记进 `sidebar-props-readonly-db-231` 波次（MUT-1）。
+
+**真库同尺寸端到端（本轮实测）**：对「真库三件套的副本」跑 `withReadOnlyDb` ⇒
+读前/读后 `codem-db-rust.bin`、`-wal`、`-shm` 的 mtime **与 sha256 全部一致**（`sessions=562`）。
+⚠️ 没有直接对着**真库**量：本轮另一个子代理正用装机版做真机走查（`codem.exe` 在跑，真数据根有写入），
+那时对真库量会把别人的写入算到钻取头上。合成库判据 + 同尺寸副本这两层已经能把"钻取不动真库"钉住。
+
+**钻取纪律（以后照这个来）**：新写的取数/钻取脚本一律
+`import { openReadOnlyDb, withReadOnlyDb } from "../tools/maintenance/read-only-db.mjs"`，
+**不许** `new DatabaseSync(<真库路径>, { readOnly: true })`。`.preview-shot/` 已按此迁完
+**85 处 / 85 个文件**（迁移前用探针量过：真库直开共 9 种写法、5 种指向真库），
+迁移后用 `node --check` 逐文件校验，并抽查 `_table-counts` / `_list-sessions` / `_db-counts` 正常出数。
+
+### 未做 / 未验（如实）
+
+- **`tools/eval/` 里还有两处直接只读打开真库**（`tools/eval/audit-codem-record.mjs:50`、
+  `tools/eval/codem-records-report.mjs:70`）—— 都在本轮的文件边界之外，**没动**；
+  它们跑的是评测报告，会同样更新真库 `-shm` 的 mtime ⇒ 建议下一轮按同样方式改成 `openReadOnlyDb`。
+- `.preview-shot/` 里另有 8 处 `new DatabaseSync(path.join(<变量>, …), { readOnly: true })` 没迁：
+  它们指向的**本来就是副本**（`TEMP/codem-dbq`、脚本自己 mkdtemp 的目录等），直读副本无副作用。
+- `src/components/SettingsPanel.tsx:1165` 的注释还提到 `onPerf 仍然先设 performance`（现在这段实参已删）。
+  该文件不在本轮边界内，**没动**；下次改设置面板时顺手把那句注释改成「perf 的入口是底部页签」。
+- 真机没有重新走查这两个入口（本轮约定不起应用；另一路正在真机走查，互不影响）：
+  「点底部『性能』页签能打开面板」这一点由既有的 `BOTTOM-TAB-4/6` + 本轮 `PERFENTRY-231-3` 守，
+  装机版的视觉确认留给下一轮。
+
+### 门禁（本轮实测）
+
+`npx tsc --noEmit` **0 错误**；全量 `npx vitest run` **694 文件 / 8278 通过 + 17 skipped**
+（其中本轮新增 `src/test/read-only-db.test.ts` 的 7 条；相对交接里那份 693 / 8267 基线多出的 4 条
+来自本轮之前已在 HEAD 里的测试，与本轮改动无关 —— 工作区里没有别人的未提交改动）；
+`npm run audit`（后台整链）见下方结论；`knip-gate` **没有增长**（exports 49/49、types 21/21、duplicates 10/10，files=0）；
+`scan-report-sites --check` **268 = 268**（triaged 268 / pending 0）；
+`check-artifacts` 登记波次 **44** 个（新增 `sidebar-props-readonly-db-231`：4 条变异全绿 + 反向对照）。
+
