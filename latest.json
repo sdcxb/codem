@@ -1,15 +1,15 @@
 {
-  "version": "1.16.323",
-  "notes": "接入 DeepSeek 网页搜索/抓取；移除顶部页签栏；撤销凭据提示改为只写日志",
-  "pub_date": "2026-10-17T10:37:03Z",
+  "version": "1.16.324",
+  "notes": "修复「网页搜索」结果卡片（此前会显示成不存在的文件名+行号列表）；网页搜索与抓取的成功返回已真机核对",
+  "pub_date": "2026-10-17T16:22:13Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1E0UU4vTWRYcUs5M1VvS0plL01LUFhDbUV2Z1VPTTZxTzg5RmhUb1dReE9wOG51QTArbHZ5R0YyTUF3SWNueGNUWENhb0pma3NyOVBtVEFLTmdRK2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjMzNDE4CWZpbGU6Q29kZW1fMS4xNi4zMjNfeDY0LXNldHVwLmV4ZQpodmhWUDdjWk5tQXBtVktHUHhObDdBMGZpdDVmS2xPd1RyN1J1c3ROMmxtWUZOQ254VGFGOVByMUZKNVNUd2ZoMkRYQ2hEOHZoS25QTEJTQWxMZ0dBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.323/Codem_1.16.323_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JrTytsRy9hU25mcFdESXVGcVRVMFVldFZMK0hMZXFnT1ZPaHlOMVEwVTB6MTg3bE43eGFlNmxTVmdzNGNNeDIwNGVrZC96cGhRZCtSdTFNU3RJMXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjU0MTIxCWZpbGU6Q29kZW1fMS4xNi4zMjRfeDY0LXNldHVwLmV4ZQpYY1gwdWhMQUVWZ2xEQm5uNzI0SEJWQ1NobmFIZXdSTDlPdVZuTWx6NXJ6aVRrRVdtN2NZTmFTMFRnSDlyTFpPZXJJNE1ac2tBNnMvS1hzOTZ1d1hDUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.324/Codem_1.16.324_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1E0UU4vTWRYcUs5M1VvS0plL01LUFhDbUV2Z1VPTTZxTzg5RmhUb1dReE9wOG51QTArbHZ5R0YyTUF3SWNueGNUWENhb0pma3NyOVBtVEFLTmdRK2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjMzNDE4CWZpbGU6Q29kZW1fMS4xNi4zMjNfeDY0LXNldHVwLmV4ZQpodmhWUDdjWk5tQXBtVktHUHhObDdBMGZpdDVmS2xPd1RyN1J1c3ROMmxtWUZOQ254VGFGOVByMUZKNVNUd2ZoMkRYQ2hEOHZoS25QTEJTQWxMZ0dBQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.323/Codem_1.16.323_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1JrTytsRy9hU25mcFdESXVGcVRVMFVldFZMK0hMZXFnT1ZPaHlOMVEwVTB6MTg3bE43eGFlNmxTVmdzNGNNeDIwNGVrZC96cGhRZCtSdTFNU3RJMXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjU0MTIxCWZpbGU6Q29kZW1fMS4xNi4zMjRfeDY0LXNldHVwLmV4ZQpYY1gwdWhMQUVWZ2xEQm5uNzI0SEJWQ1NobmFIZXdSTDlPdVZuTWx6NXJ6aVRrRVdtN2NZTmFTMFRnSDlyTFpPZXJJNE1ac2tBNnMvS1hzOTZ1d1hDUT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.324/Codem_1.16.324_x64-setup.exe"
     }
   }
 }
