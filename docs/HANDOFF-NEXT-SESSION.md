@@ -6731,3 +6731,69 @@ CDP 连 WebView2 并用 `Emulation.setDeviceMetricsOverride` 把视口压到 **1
 这是这块面板**在窄窗口下的既有过度订阅**（修前同样是 0，本次不是新增劣化）；要治得动顶部那几块
 固定高度（统计 / 搜索 / 过滤 / 提示），属另一件事。
 
+---
+
+## 第 231 波（追加二）：独立审计三条（A1 降级无信号 / A2 合并继承作用域 / A3 副本失败漏目录）
+
+### A1（中 · 安全面）降级为对话级之后，用户没有任何信号
+
+**缺陷**：待批准积压撞上限后 `src/core/llm/index.ts` 把候选**降级为对话级直接生效**
+（`scope=conversation`、`status=active`、`sessionId=当前会话`）—— 从「不注入」变成**注入当前对话上下文**，
+而 `globalPending` 不计它、面板一个字的提示都没有 ⇒ 用户这次否决机会被拿走却不知道
+（代价只写在 `pending-backlog.ts` 的文件头注释里，等于只对开发者可见）。
+
+**修法**（不做弹窗）：
+1. 写入路径在条目上留 `demotedFrom`（原作用域）—— 只有积压闸门这一条路径会写；
+2. 引擎给**唯一**取数口径 `MemoryService.listBacklogDemotedForSession(sessionId)`
+   （只认 `demotedFrom` + `scope=conversation` + `sessionId==当前`）；
+3. 面板在「待批准」标题旁显示可点开的「本会话已自动降级 N 条（查看）」，点开列出
+   标题 / 时间 / **原作用域**，并明写「它们已进入本会话上下文」；
+   **待批准为空时信号也独立出现**（`.memory-demoted-section`）—— 那是它最该被看到的形态。
+
+**口径（最小必要，写在这里免得后来者改成别的）**：
+- **按会话**：降级只在这个会话里悄悄生效，跨会话汇总会把用户在那儿根本看不到、也改不了的条目混进数字；
+- **不锁存历史**：用户把条目删掉/搬去别的会话之后 N 跟着现实走（不因"曾经降级过"永久计数）；
+- **不看 `status`**：用户之后批准/编辑它仍然是"这条曾经没问过你就生效了"，删掉才消失；
+- **N ≠ pending 数**（`MEM-DEMOTE-1` 与 `MEMP-8` 同时钉住两处口径）。
+
+**判据/变异**：`MEMP-8`（真实提取触发 2 条降级 ⇒ `demotedFrom=project`、本会话数出 2、别的会话 0、
+正常对话级条目不算、删一条 N 减一）、`MEM-DEMOTE-1..4`（面板：N 正确 / N=0 不出现 / 点开能看到条目与
+原作用域 / 待批准为空时独立出现）。变异：把 N 改成数 pending、计数恒 0、无条件渲染、写入路径不打
+`demotedFrom` ⇒ 全部按期望变红。
+
+### A2（低）同批合并继承了「正文最长那条」的 scope
+
+**缺陷**：`candidate-merge.ts` 的 `{...bodyOwner, content, tags}` ⇒ 一条 `project` + 一条
+`conversation` 合并后可能变成**对话级直接生效**（本该问用户的那部分被合并绕过：无审批、无日志、无上限）。
+
+**修法**：合并条作用域取**组内最严**（`project` > `conversation`），提升写进 `merges[].scopePromoted`，
+日志里加一句「**因合并提升为 project**」；组内作用域缺失/不认识时**不猜**（保持 bodyOwner 的，且不谎报提升）。
+判据 `MEMC-3b`（正文最长的是对话级那条 ⇒ 合并结果必须是 project + 留痕）、`MEMC-3c`（组内全对话级 ⇒
+保持对话级、无提升记录）；变异：改回继承 bodyOwner ⇒ `MEMC-3b` 红。
+
+### A3（低）只读副本复制失败会残留临时目录
+
+**缺陷**：`copyDbForRead` 把 `cleanupTempDir` / `TEMP_DIRS.add` 放在复制循环**之后** ⇒
+`copyFileSync` 一抛（ENOSPC / EPERM / EBUSY，或源路径其实是目录）就带着一个空目录逃走
+（审计实测 `LEAKED_DIRS=["codem-ro-db-jhxC72"]`），而调用方只看到"抛了错"。
+
+**修法**：`mkdtempSync` 之后**立刻记账**（进程被硬杀时 `exit` 钩子还能兜底），复制放进 `try`，
+`catch` 里 `cleanupTempDir(dir)` 后**原样重抛**（真实原因不许被吃掉）。
+判据 `RODB-231-9`：临时根用 `options.tmpRoot` 指到用例自己的沙箱（8 worker 共用 `%TEMP%`，
+直接数会假红），把 `<db>-wal` 做成**目录**触发失败 ⇒ 断言「错误照常抛 + 沙箱里零残留」；
+变异：去掉 catch 里的清理 ⇒ 红。
+
+### 门禁（本轮实测）
+
+`tsc` **0**；全量 `vitest run` **697/698 文件通过、8305 通过 + 17 skipped**，
+唯一失败是 `update-manifest-generator` 的 `UPD-MANIFEST-6`（**发版面**：入库的 `latest.json` 还是
+1.16.321 而 `package.json` 已是 1.16.322 —— 属发版流程待办，不是本轮三条）；
+`knip` 无增长；`report-sites` 268=268；`reachability` 通过；`check-node-syntax` 通过；
+`check-artifacts` **46 波次**（本轮新增 `demoted-signal-merge-leak-231`，6 条变异全红、`restored=true`）；
+`scan-style-literals` 11 族均不超基线；`scan-color-roles` 通过；`scan-control-bytes` 通过；
+`css-contract` 用 `--write` 登记 `.memory-demoted-*`（2895 个类）；`css-checkup-classes` / `ui-consistency`
+都回到 0 违规（第一版把独立的信号外壳写成 `memory-pending-section memory-demoted-section` 两个类，
+被 `css-class-undefined` 抓到「`memory-demoted-section` 没定义」⇒ 改成自带样式的独立类）。
+本轮没动 Rust ⇒ 未跑 `cargo check`。
+
+

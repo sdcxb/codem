@@ -76,6 +76,14 @@ interface CandidateMergeRecord {
   pair: [string, string];
   /** 因正文长度上限而**只保留了标题**的候选（如实留痕：这些条目的正文没有进合并条） */
   droppedContentKeys: string[];
+  /**
+   * 合并把作用域**提升**了的话，这里是 from → to（第 231 波 A2 的留痕）。
+   *
+   * 合并条的作用域取组内**最严**的那条（`project` 比 `conversation` 严），
+   * 而不是继承"正文最长"那条 —— 否则一条 `project` + 一条 `conversation` 并起来会变成
+   * 对话级、直接生效（本该走审批的那部分**悄悄不问了**，且没有任何日志/上限）。
+   */
+  scopePromoted?: { from: string; to: string };
 }
 
 export interface CandidateMergeOutcome<T extends MemoryCandidateShape> {
@@ -142,6 +150,7 @@ export function mergeSameTopicCandidates<T extends MemoryCandidateShape>(
       similarity: group.similarity,
       pair: group.pair,
       droppedContentKeys: merged.droppedContentKeys,
+      ...(merged.scopePromoted ? { scopePromoted: merged.scopePromoted } : {}),
     });
     for (const m of members.slice(1)) absorbed.add(Number(m.id));
   }
@@ -150,16 +159,46 @@ export function mergeSameTopicCandidates<T extends MemoryCandidateShape>(
 }
 
 /**
+ * 作用域的**严格程度**：数字越大越严（`platform` 从不作为候选出现，列在这里只为表意完整）。
+ *
+ * 合并条取**组内最严**的那一条（第 231 波 A2）—— 与下面"正文取最长"是两件独立的事：
+ * 正文取最长是为了信息量；作用域取最严是为了**审批**不被合并绕过。
+ */
+const SCOPE_STRICTNESS: Record<string, number> = { conversation: 1, project: 2, platform: 3 };
+
+/** 组内最严的作用域；有成员的作用域缺失/不认识时返回 `null`（**不猜**，见调用处） */
+function strictestScope(ordered: readonly MemoryCandidateShape[]): string | null {
+  let best: string | null = null;
+  let bestRank = 0;
+  for (const item of ordered) {
+    const scope = typeof item.scope === "string" ? item.scope : "";
+    const rank = SCOPE_STRICTNESS[scope];
+    if (!rank) return null;
+    if (rank > bestRank) {
+      best = scope;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+/**
  * 把一个组并成一条候选。
  *
  * **保留正文的判据是"最长的那条"**（不是组长）：正文最长的候选信息最全，
  * 用它当合并条的正文能少一段"补充说明"。组长只决定位置，不决定正文 ——
  * 这两件事分开是刻意的：位置影响名额分配（既有口径），正文影响信息量（本次目标）。
+ *
+ * **作用域不跟着正文走**（第 231 波 A2，被守的缺陷）：旧写法 `{ ...bodyOwner, content, tags }`
+ * 让合并条继承了正文最长那条的 `scope`。于是一条 `project`（本该待批准）+ 一条 `conversation`
+ * （对话级默认直接生效）合并后可能变成**对话级并直接生效** ⇒ 用户既没被问、也没有日志和上限。
+ * 现在作用域取组内**最严**（`project` > `conversation`）：宁可多问一次，也不许合并绕过审批。
+ * 提升会写进 `merges[].scopePromoted` 并打进日志（"因合并提升为 project"）。
  */
 function mergeGroup<T extends MemoryCandidateShape>(
   keeper: T,
   rest: readonly T[],
-): { candidate: T; droppedContentKeys: string[] } {
+): { candidate: T; droppedContentKeys: string[]; scopePromoted?: { from: string; to: string } } {
   if (rest.length === 0) return { candidate: keeper, droppedContentKeys: [] };
   const ordered = [keeper, ...rest];
   const bodyOwner = ordered.reduce((best, item) => (item.content.length > best.content.length ? item : best), keeper);
@@ -187,7 +226,15 @@ function mergeGroup<T extends MemoryCandidateShape>(
    * （搜索走 key/content/tags，见 `MemoryService.search`）。去重后按原顺序。
    */
   const tags = dedupeTags([...(bodyOwner.tags ?? []), ...others.map((o) => o.key)]);
-  return { candidate: { ...bodyOwner, content, tags }, droppedContentKeys };
+
+  const strictest = strictestScope(ordered);
+  const promoted =
+    strictest !== null && strictest !== bodyOwner.scope
+      ? { from: typeof bodyOwner.scope === "string" ? bodyOwner.scope : "（未标）", to: strictest }
+      : undefined;
+  const scope = promoted ? promoted.to : bodyOwner.scope;
+
+  return { candidate: { ...bodyOwner, content, tags, scope }, droppedContentKeys, scopePromoted: promoted };
 }
 
 function dedupeTags(tags: readonly string[]): string[] {

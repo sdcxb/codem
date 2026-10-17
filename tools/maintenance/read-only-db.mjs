@@ -215,30 +215,48 @@ function installExitHook() {
  */
 export function copyDbForRead(dbPath, options = {}) {
   const retries = Number.isInteger(options.retries) ? options.retries : 3;
+  /*
+   * 临时根目录**可注入**（生产不传 = `os.tmpdir()`）。
+   *
+   * 为什么留这个缝：判据要断言"复制失败后没有残留 `codem-ro-db-*`"，而全量测试是 8 个 worker
+   * 并行、共用同一个 `%TEMP%` —— 直接数 `%TEMP%` 里的目录会把别的 worker 的目录算进来
+   * （假红）。把根目录换成用例自己的沙箱，断言就只关于这一次调用。
+   */
+  const tmpRoot = typeof options.tmpRoot === "string" && options.tmpRoot ? options.tmpRoot : os.tmpdir();
   if (!fs.existsSync(dbPath)) {
     throw new Error("只读钻取：库文件不存在（" + dbPath + "）");
   }
   let lastDiff = null;
   for (let attempt = 1; attempt <= retries; attempt++) {
     const before = snapshotDbFiles(dbPath);
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codem-ro-db-"));
+    const dir = fs.mkdtempSync(path.join(tmpRoot, "codem-ro-db-"));
     const copyPath = path.join(dir, path.basename(dbPath));
     const copied = [];
-    for (const file of dbFiles(dbPath)) {
-      if (!fs.existsSync(file)) continue;
-      const target = path.join(dir, path.basename(file));
-      fs.copyFileSync(file, target);
-      copied.push(target);
+    /*
+     * ★ 第 231 波 A3（独立审计实测漏过 `codem-ro-db-jhxC72`）：**复制失败也要收掉临时目录**。
+     *
+     * 旧写法把 `cleanupTempDir` / `TEMP_DIRS.add` 都放在复制循环**之后** ⇒ `copyFileSync` 抛
+     * （ENOSPC / EPERM / EBUSY，或源路径其实是个目录）就带着一个空目录逃走：
+     * 每失败一次漏一个 `%TEMP%/codem-ro-db-*`，而调用方只看到"抛了错"，不会去查临时目录。
+     * 现在：**先记账**（进程被硬杀时 `exit` 钩子还能兜底），复制抛错时当场清掉再**原样重抛**
+     * （错误不许被吃掉：调用方要看到 ENOSPC 这类真实原因）。
+     */
+    TEMP_DIRS.add(dir);
+    installExitHook();
+    try {
+      for (const file of dbFiles(dbPath)) {
+        if (!fs.existsSync(file)) continue;
+        const target = path.join(dir, path.basename(file));
+        fs.copyFileSync(file, target);
+        copied.push(target);
+      }
+    } catch (err) {
+      cleanupTempDir(dir);
+      throw err;
     }
     const after = snapshotDbFiles(dbPath);
     lastDiff = diffDbSnapshots(before, after);
     if (lastDiff.length === 0) {
-      /*
-       * 记账：`copyDbForRead` 的调用方**忘记删**也能被兜住（`exit` 钩子 / `cleanupTempCopies()`）。
-       * 用例里被父进程结束的 vitest worker 就是这种情况 —— 实测漏过两个 40 KB 的残目录。
-       */
-      TEMP_DIRS.add(dir);
-      installExitHook();
       return { dir, dbPath: copyPath, files: copied, attempts: attempt, sourceChanges: [] };
     }
     cleanupTempDir(dir);

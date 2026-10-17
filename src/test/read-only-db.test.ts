@@ -429,5 +429,51 @@ describe("RODB-231-7 不许再直接打开真库（tools/ + 本地脚手架）",
       ).toEqual([]);
     },
   );
+
+  /**
+   * ★ RODB-231-9（第 231 波 A3）：**复制失败也必须收掉临时目录**。
+   *
+   * ## 被守的缺陷（独立审计实测）
+   *
+   * `copyDbForRead` 旧写法把 `cleanupTempDir(dir)` / `TEMP_DIRS.add` 都放在复制循环**之后**：
+   * `copyFileSync` 一抛（ENOSPC / EPERM / EBUSY，或源路径其实是目录）就带着一个空目录逃走
+   * —— 审计那轮实测 `LEAKED_DIRS=["codem-ro-db-jhxC72"]`，而调用方只看到"抛了错"。
+   *
+   * ## 判据怎么做到可复现
+   *
+   * 临时根目录用 `options.tmpRoot` 指到**本用例自己的沙箱**（全量跑是 8 worker 共用 `%TEMP%`，
+   * 直接数 `%TEMP%` 会把别的 worker 的目录算进来 ⇒ 假红）。
+   * 触发失败的办法：把 `<db>-wal` 做成**目录** ⇒ `copyFileSync(目录 → 文件)` 必抛。
+   */
+  it("RODB-231-9 ★复制失败也不许残留 codem-ro-db-*（临时目录要当场收掉，错误照常抛）", () => {
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "codem-rodb-fail-"));
+    try {
+      const dbPath = path.join(sandbox, "dirty.bin");
+      fs.writeFileSync(dbPath, "not-really-sqlite");
+      /* 让三件套里的 `-wal` 变成目录：copyFileSync 会以 EPERM/EISDIR 失败 */
+      fs.mkdirSync(dbPath + "-wal");
+
+      const leftover = () => fs.readdirSync(sandbox).filter((name) => name.startsWith("codem-ro-db-"));
+      expect(leftover(), "前提：沙箱里此时还没有副本目录").toEqual([]);
+
+      let thrown: unknown = null;
+      try {
+        copyDbForRead(dbPath, { retries: 1, tmpRoot: sandbox });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown, "复制失败必须**照常抛出**（不许把真实原因吃掉）").not.toBeNull();
+      expect(
+        leftover(),
+        "复制失败后残留了临时目录 —— 每失败一次就漏一个 %TEMP%/codem-ro-db-*（审计实测过）",
+      ).toEqual([]);
+    } finally {
+      try {
+        fs.rmSync(sandbox, { recursive: true, force: true });
+      } catch {
+        /* 沙箱删不掉不影响判据结论（它自己在 %TEMP% 里，且名字可辨） */
+      }
+    }
+  });
 });
 

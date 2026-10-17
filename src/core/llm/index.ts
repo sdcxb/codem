@@ -2649,6 +2649,10 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           `[extractMemories] 入队前同主题合并：把 ${record.ids.length} 条候选并成 1 条` +
             `（相似度 ${record.similarity.toFixed(2)}，「${record.pair[0]}」≈「${record.pair[1]}」）` +
             `；被并的标题：${record.keys.join(" / ")}` +
+            (record.scopePromoted
+              ? `；**因合并提升为 ${record.scopePromoted.to}**（组内有一条 ${record.scopePromoted.from} 级：` +
+                `合并条取最严的那条，免得合并把审批绕过去）`
+              : "") +
             (record.droppedContentKeys.length > 0
               ? `；因正文长度上限只保留了标题（正文未并入，如实留痕）：${record.droppedContentKeys.join(" / ")}`
               : ""),
@@ -2842,6 +2846,13 @@ scope 只有两个取值，按这条事实**跨不跨对话**来判：
           // 用户明确要求记住的那条直接生效（见上面那段）
           status: statusForThisItem,
           batchId,
+          /*
+           * ★ 第 231 波 A1：被积压闸门降到对话级的，**把原作用域写在条目上**（`demotedFrom`）。
+           * 理由：降级的代价是"用户少了一次否决机会"，而这件事只写日志的话用户侧没有任何信号
+           * ⇒ 面板会据此显示「本会话已自动降级 N 条（查看）」（判据 `MEM-DEMOTE-1..4`）。
+           * 只有这一条路径会写它，别的写入不许带。
+           */
+          ...(demotedForBacklog ? { demotedFrom: intendedScope } : {}),
         });
 
         if (!result.ok) {

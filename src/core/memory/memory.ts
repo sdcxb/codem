@@ -436,6 +436,20 @@ export interface MemoryEntry {
    */
   legacyPool?: true;
   /**
+   * **因「待批准积压上限」被降级时，原来的作用域**（第 231 波 A1，`pending-backlog.ts` 的接线）。
+   *
+   * ## 为什么要把它写在条目上（而不是只写日志）
+   *
+   * 降级这件事的代价是「用户少了一次否决机会」：本来该进待批准、等他点一下的条目，
+   * 因为积压到上限被改成**对话级、直接生效**（只影响当前会话）。只写日志的话，
+   * 用户侧**没有任何信号** —— 面板不会提它（`globalPending` 不计），于是"悄悄生效"是真的悄悄。
+   *
+   * 有了这个字段，界面可以在「待批准」标题旁如实说「本会话已自动降级 N 条（查看）」，
+   * 并列出 N 条的标题/时间/原作用域。它**只有积压闸门会写**，别的地方不许设
+   * （判据 `MEM-DEMOTE-1` 钉的就是"N = 降级写入的条数，不是 pending 数"）。
+   */
+  demotedFrom?: MemoryScope;
+  /**
    * **创建序**（只增不减的整数；`add` 时分配，`update` 永不动它）。
    *
    * ## 为什么必须**持久化**一个序号（第 189 波 R2，实测）
@@ -1128,6 +1142,15 @@ function normalizeLoadedEntry(idKey: string, value: unknown): MemoryEntry | null
     sessionId: optionalString(raw.sessionId),
     batchId: optionalString(raw.batchId),
     legacyPool: raw.legacyPool === true ? true : undefined,
+    /*
+     * 第 231 波 A1：降级来源也要跨重启保住 —— 否则「本会话已自动降级 N 条」重启后就变成 0，
+     * 而那几条**确实**已经在本会话上下文里生效了（这才是用户需要知道的事）。
+     * 只认三种合法作用域名，其余一律 `undefined`（不猜，也不把脏数据带进界面）。
+     */
+    demotedFrom:
+      raw.demotedFrom === "platform" || raw.demotedFrom === "project" || raw.demotedFrom === "conversation"
+        ? (raw.demotedFrom as MemoryScope)
+        : undefined,
     // 创建序（R2）：非法/缺失一律 `undefined`，由 `load()` / `importFromJSON` 幂等补齐
     order: typeof raw.order === "number" && Number.isFinite(raw.order) ? raw.order : undefined,
   };
@@ -2844,6 +2867,32 @@ export class MemoryService {
     let count = 0;
     for (const entry of this.entries.values()) if (isPendingMemoryEntry(entry)) count++;
     return count;
+  }
+
+  /**
+   * **本会话里被「待批准积压上限」降级、因而已经悄悄生效的条目**（第 231 波 A1）。
+   *
+   * ## 为什么必须由引擎给，而不是界面自己扫库
+   *
+   * 「降级了几条」是**写入路径的产物**（`pending-backlog.ts` 的判定 + `demotedFrom` 留痕），
+   * 界面自己按"对话级 + auto + 本会话"扫一遍会得到**另一个口径**（那些正常就该对话级生效的条目
+   * 也会被算进去），于是用户看到的数字既不是"被降级的条数"，也无法与日志核对。
+   * 这里只认 `demotedFrom` 存在的那批 —— 它与 `[extractMemories] …降级为对话级` 那行日志**同一来源**。
+   *
+   * ## 口径（最小必要）
+   *
+   * - **按当前会话**：降级是"只在这个会话里悄悄生效"，跨会话提示会把别的会话的事混进来
+   *   （用户在上面那个会话里根本看不到这些条目，点了也改不了）⇒ 不做跨会话汇总；
+   * - **仍然只算"还在这条会话里、还是对话级"的条目**：用户把它改成项目级/删掉/搬到别处之后，
+   *   它要么不再"只因降级而生效"，要么根本不存在了 ⇒ 数字跟着现实走（不锁存历史）；
+   * - 不看 `status`：降级写的是 `active`，但用户之后批准/编辑它仍然是同一件事
+   *   （"这条曾经没问过你就生效了"），所以不因状态变化而消失；删掉才消失。
+   */
+  listBacklogDemotedForSession(sessionId?: string): MemoryEntry[] {
+    if (!sessionId) return [];
+    return Array.from(this.entries.values())
+      .filter((entry) => entry.demotedFrom !== undefined && entry.scope === "conversation" && entry.sessionId === sessionId)
+      .sort((a, b) => b.timestamp - a.timestamp);
   }
 
   /**

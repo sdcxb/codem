@@ -20870,6 +20870,81 @@ html[data-contrast="high"] {
 }
 
 /*
+ * 第 231 波 A1：**「本会话已自动降级 N 条（查看）」** —— 待批准积压撞上限后，候选被降级为
+ * 对话级直接生效（不再问用户）。它必须**看得见**：一行可点开的计数 + 展开后的条目清单。
+ *
+ * 视觉上刻意比"待批准"弱一档（`--warning-*` 那套留给待批准，这里用次级文字色 + 细边框），
+ * 因为它是"已经发生了、你需要知道"的说明，不是"等你操作"的待办。
+ */
+.memory-demoted-notice {
+  margin-bottom: var(--space-4);
+}
+
+/*
+ * 待批准区为空、但本会话确实有被降级的条目时，这条信号**独立**出现（第 231 波 A1）。
+ *
+ * 刻意不复用 `.memory-pending-section` 那一套：那个类带着 `flex: 0 0 auto` + `max-height: 55%`
+ * （为"列表要能滚"服务的），而这里只是一段说明 + 可展开的清单，没有滚动列表要它管。
+ * 视觉上仍然与待批准区同源（同样的底色/内边距/下边框），用户一眼看出它属于"待批准"这件事。
+ */
+.memory-demoted-section {
+  padding: var(--space-6) var(--space-8);
+  background: var(--warning-surface);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.memory-demoted-toggle {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.memory-demoted-toggle:is(:hover, :focus-visible) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.memory-demoted-body {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+}
+
+.memory-demoted-hint {
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.memory-demoted-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: var(--fs-2xs);
+}
+
+.memory-demoted-item + .memory-demoted-item {
+  border-top: 1px solid var(--border-separator);
+}
+
+.memory-demoted-key {
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.memory-demoted-time,
+.memory-demoted-scope {
+  color: var(--text-secondary);
+}
+
+/*
  * **唯一滚动区**：条目与（展开后的）判断依据块都在这层里 ——
  * 展开一条只会把它自己的 scrollHeight 撑大，后面的条目照样能滚到。
  * `min-height: 0` 是滚动能成立的前提（同 .memory-pending-section 的那条）；

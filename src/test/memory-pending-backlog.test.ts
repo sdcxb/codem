@@ -138,8 +138,72 @@ describe("MEMP：待批准积压上限（速率上限治不了存量）", () => 
     expect(logs.join("\n"), "降级必须如实留痕（日志点名原作用域）").toContain("降级为对话级");
   });
 
-  it("MEMP-1b（反向对照）：**未达**上限时仍然是待批准（闸门不许做成永远降级）", async () => {
+  /**
+   * ★ MEMP-8（第 231 波 A1，独立审计 · 中 · 安全面）：降级必须在**条目上留痕**，
+   * 且引擎能按会话数出来 —— 这是面板「本会话已自动降级 N 条（查看）」的**唯一**取数口径。
+   *
+   * 被守的缺陷：降级把"本该问用户"变成"直接进当前对话上下文"，而面板此前一个字的提示都没有
+   * ⇒ 用户这次否决机会被拿走却不知道。只写日志不算信号（用户看不到日志）。
+   *
+   * 这条判据同时钉住三件事：
+   * - N 的来源是**降级写入的条数**（`demotedFrom`），不是 pending 数（此刻 pending 仍满 5 条）；
+   * - 只有**本会话**的降级条目算进来（别的会话一条都不算）；
+   * - 记录里带**原作用域**（面板要显示"原作用域：项目级"，否则用户不知道被吞掉的是什么级别的事实）。
+   */
+  it("MEMP-8 ★降级要留痕（demotedFrom）并按会话数得出来；N ≠ pending 数", async () => {
     const svc = new MemoryService();
+    seedPendingBacklog(svc, MEMORY_PENDING_BACKLOG_LIMIT);
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+
+    await engineForExtraction(
+      svc,
+      SESSION,
+      JSON.stringify([
+        /*
+         * ⚠️ 两条刻意写成**互不相似**的主题：同主题会被入队前的合并（`candidate-merge.ts`）
+         * 并成一条，那就只剩一个降级条目，测不到「N = 条数」这件事（本判据第一版就这么红过）。
+         */
+        { key: "构建命令", content: "本项目跑构建用特定的打包脚本，参数与环境变量按仓库说明来", scope: "project" },
+        { key: "代码风格", content: "提交信息一律用中文，注释解释为什么而不是是什么", scope: "project" },
+      ]),
+    ).extractMemoriesFromSession(SESSION, PROJ_A);
+
+    const demoted = svc.listBacklogDemotedForSession(SESSION);
+    expect(
+      demoted.map((e) => e.key).sort(),
+      "两条被降级的都要能点名（面板「查看」列的就是它们）",
+    ).toEqual(["代码风格", "构建命令"]);
+    expect(
+      demoted.every((e) => e.demotedFrom === "project"),
+      "要记下**原作用域**（面板显示「原作用域：项目级」；缺了用户不知道被吞掉的是什么级别的事实）",
+    ).toBe(true);
+    expect(demoted.every((e) => e.scope === "conversation" && e.sessionId === SESSION)).toBe(true);
+    expect(
+      demoted.length,
+      "★ N = 降级写入的条数（2），不是 pending 数（此刻仍是满 5 条）—— 两处口径不许混",
+    ).toBe(2);
+    expect(svc.countPendingEntries(), "前提：积压没有被这两条改动").toBe(MEMORY_PENDING_BACKLOG_LIMIT);
+    expect(svc.listBacklogDemotedForSession("s-other"), "别的会话一条都不算进本会话的 N").toEqual([]);
+    expect(
+      svc.listBacklogDemotedForSession(undefined),
+      "没有会话上下文时不许瞎报（返回空，而不是把全库降级条目都算上）",
+    ).toEqual([]);
+    /* 正常就该对话级生效的条目（没有 demotedFrom）不许被算成"被降级" */
+    svc.add({ scope: "conversation", sessionId: SESSION, key: "本来就不用审批的对话级事实", content: "这是一条正常写入的对话级记忆（不是降级来的）", source: "auto", status: "active" });
+    expect(
+      svc.listBacklogDemotedForSession(SESSION).length,
+      "没有 demotedFrom 的对话级条目不算降级（否则 N 会把「本来就不审批」的那批也数进来）",
+    ).toBe(2);
+    /* 删掉一条 ⇒ N 跟着现实走（不锁存历史） */
+    svc.removeMany([demoted[0].id], { actor: "user" });
+    expect(svc.listBacklogDemotedForSession(SESSION).length, "删掉一条降级条目 ⇒ N 少一条").toBe(1);
+    expect(logs.join("\n"), "降级仍要如实留痕（日志与 N 同源）").toContain("降级为对话级");
+  });
+
+  it("MEMP-1b（反向对照）：**未达**上限时仍然是待批准（闸门不许做成永远降级）", async () => {    const svc = new MemoryService();
     seedPendingBacklog(svc, MEMORY_PENDING_BACKLOG_LIMIT - 1);
     await engineForExtraction(
       svc,
@@ -397,8 +461,51 @@ describe("MEMC：入队前同主题合并（同批候选不许各占一个待批
     expect(out.candidates[1].content, "另一条的正文也在（合并 ≠ 丢内容）").toContain("版本差异");
   });
 
-  it("MEMC-4（如实留痕）：正文超过上限时只保留标题，并记进 droppedContentKeys", () => {
-    const long = "很长的正文".repeat(Math.ceil(CANDIDATE_MERGE_MAX_CONTENT_CHARS / 5));
+  /**
+   * ★ MEMC-3b（第 231 波 A2，独立审计 · 低）：**合并条的作用域取组内最严**。
+   *
+   * 被守的缺陷：旧写法 `{ ...bodyOwner, content, tags }` 让合并条继承了"正文最长"那条的
+   * `scope`。一条 `project`（本该进待批准）+ 一条 `conversation`（对话级默认直接生效）合并后，
+   * 如果正文最长的是对话级那条 ⇒ 合并条变成**对话级直接生效**：本该问用户的这部分
+   * 既没被问、也没有日志和上限（合并把审批绕过去了）。
+   *
+   * 修法：作用域取组内**最严**（`project` > `conversation`），并把提升写进 `merges[].scopePromoted`
+   * （日志里因此能写"因合并提升为 project"）。
+   */
+  it("MEMC-3b ★合并条的作用域取组内最严（project），不继承正文最长那条（否则合并绕过审批）", () => {
+    const out = mergeSameTopicCandidates([
+      { key: "开发环境:Windows + PowerShell", content: "本项目在 Windows 上开发，命令走 PowerShell 执行。", scope: "project" },
+      {
+        key: "Shell 环境:Windows PowerShell 5.1",
+        /* 刻意写得更长 ⇒ 它成为 bodyOwner（正文与标题都来自它） */
+        content: "本机 shell 是 Windows PowerShell 5.1，注意版本差异；这条正文更长，所以合并条会保留它的正文。",
+        scope: "conversation",
+      },
+    ]);
+    expect(out.candidates, "同主题 ⇒ 并成一条").toHaveLength(1);
+    /* 前提自检：bodyOwner 确实是**对话级**那条（否则这条判据测不到"不许继承正文最长"这件事） */
+    expect(out.candidates[0].key, "前提：保留正文/标题的是对话级那条").toContain("Shell 环境");
+    expect(
+      out.candidates[0].scope,
+      "合并条必须是 project（组内最严）—— 若是 conversation，审批就被合并绕过去了",
+    ).toBe("project");
+    expect(out.merges[0].scopePromoted, "提升必须留痕（日志据此写「因合并提升为 project」）").toEqual({
+      from: "conversation",
+      to: "project",
+    });
+  });
+
+  it("MEMC-3c（反向对照）：组内全是对话级 ⇒ 合并条仍是对话级，且不许谎报提升", () => {
+    const out = mergeSameTopicCandidates([
+      { key: "开发环境:Windows + PowerShell", content: "本项目在 Windows 上开发，命令走 PowerShell 执行。", scope: "conversation" },
+      { key: "Shell 环境:Windows PowerShell 5.1", content: "本机 shell 是 Windows PowerShell 5.1，注意版本差异。", scope: "conversation" },
+    ]);
+    expect(out.candidates).toHaveLength(1);
+    expect(out.candidates[0].scope, "组内本来就都是对话级 ⇒ 保持对话级（不许一律往严里报）").toBe("conversation");
+    expect(out.merges[0].scopePromoted, "没有提升就不许留提升记录").toBeUndefined();
+  });
+
+  it("MEMC-4（如实留痕）：正文超过上限时只保留标题，并记进 droppedContentKeys", () => {    const long = "很长的正文".repeat(Math.ceil(CANDIDATE_MERGE_MAX_CONTENT_CHARS / 5));
     const a = { key: "超长条目", content: long };
     const b = { key: "超长条目的另一种说法", content: `${long}补充说明` };
     /* 前提自检：这两条必须真的落在判重档（否则这条判据测不到"超限留痕"，只是测了"没合并"） */

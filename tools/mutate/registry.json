@@ -1,6 +1,7 @@
 {
   "_how_to_triage": "本文件登记「必须留下变异证据」的波次（O-53 / MUTATE-ARTIFACT-1）。每登记一个波次，就必须有 tools/mutate/specs/<wave>.{json,mjs} 与 tools/mutate/results/<wave>.json，且结果里 restored===true、每条变异 ok===true、锚点未过期。新增判据而没登记波次 = 没留下变异证据。",
   "_waves": {
+    "demoted-signal-merge-leak-231": "独立审计三条（全部带判据 + 变异自证）：A1 降级要有可见信号 —— 待批准积压撞上限后候选被降级为对话级直接生效，此前用户侧一个字的提示都没有（代价只写在 pending-backlog.ts 注释里）⇒ 写入路径在条目上留 demotedFrom（原作用域），面板在「待批准」标题旁显示可点开的「本会话已自动降级 N 条（查看）」，点开列出标题/时间/原作用域并明写「已进入本会话上下文」；N 只走引擎 listBacklogDemotedForSession（只认 demotedFrom，不是 pending 数、也不是界面自己扫库）；待批准为空时信号也要独立出现。A2 合并取组内最严作用域 —— 旧写法 {...bodyOwner} 让同批合并条继承「正文最长」那条的 scope，一条 project + 一条 conversation 合并后可能变成对话级直接生效（合并把审批绕过去，无日志无上限）⇒ 改为 project > conversation 取最严，并把提升写进 merges[].scopePromoted、日志写「因合并提升为 project」。A3 只读副本复制失败不漏临时目录 —— 旧写法把 cleanup/记账放在复制循环之后，copyFileSync 一抛就漏一个 %TEMP%/codem-ro-db-*（审计实测漏过 jhxC72）⇒ 先记账再复制、catch 里当场清理后原样重抛；判据用可注入的 tmpRoot 在沙箱里断言零残留",
     "memory-pending-scroll-231": "记忆面板**待批准列表能滚**（用户实报：头部写「待批准（11 条）」而列表只显示 7 条、没有滚动条，第 8 条起被裁在底部 ⇒ 既看不到也批不了）：根因是**没有任何元素负责滚动** —— 待批准区既无高度约束也无 overflow，12 条把它撑到 619px 而面板只有 558px，溢出被祖先 `.app-content` 的 `overflow:hidden` 裁掉（真机量测：section/manager 的 scrollTop 设 400 后仍是 0，第 12 条 bottom=895 越过面板底边 629）。修法：拆成不滚的 `.memory-pending-head`（标题读数/手势提示/勾选+批量/本批+一键全部，`flex:none`）与唯一的滚动区 `.memory-pending-list`（`flex:1 1 auto` + `min-height:0` + `overflow-y:auto` + `overscroll-behavior:contain`），section 自己 `min-height:0` + `max-height:55%` 可压缩；展开块仍在滚动区里 ⇒ 展开一条不会把后面的挤没",
     "sidebar-props-readonly-db-231": "两条收尾（不发版）：①Sidebar 的两个**死 prop**（性能 / CI-CD 的旧跳转回调，从 7d768d3f 起函数体一次都没读）连声明、解构、`onClick` 一起清掉，并把判据里那条「onPerf → 跳设置页」的**旧前提**换成现实里的入口 —— perf 走底部页签（点它 `setBottomTab(\"perf\")`）、cicd 走右侧浮层的页签；原判据没有删，换前提后条数从 1 条变成 4 条（连「这两个标识符不许再出现在 Sidebar 里」一起钉住）；②只读钻取改成**复制副本再读**（`tools/maintenance/read-only-db.mjs`：`.bin` + `-wal` + `-shm` 复制到临时目录，读完删目录），真库三件套的 mtime 与 sha256 一动不动 —— 判据用合成的小 WAL 库钉住，并内建「直接打开原库 ⇒ -shm 的 mtime/sha 会变」的对照实验",
     "context-memory-228": "压缩**按距离分档**（用户要求，对标「最近 5–6 轮 100% 保留 + 压缩率随距离上升」）：近端最近 3 轮绝不切断（token 收缩只许切更老的部分，极端超长轮次按 60 条上限截断并记日志）、中间档走确定性结构化要点（不调 LLM）、更早的交给 LLM 检查点且**分块全覆盖**（不再 head 40%+tail 60% 掐中段），连分块都装不下的最老部分降级成最低保真清单并在标记里明写；同时记忆自动提取降噪 —— project 的例子不再列技术栈/目录/构建命令（与门槛去自相矛盾）、每轮待批准上限 3→2、名额只在真写出一条待批准条目时扣",
@@ -45,6 +46,7 @@
     "audit-228g": "第 228 波·审计轮第六批：自动路径所有「没压成」的出口统一返回 -1（原来返回 0 被当成一次成功压缩 ⇒ 连记 3 次误报窗口已满并中止回合）、手动末位闸带 skipped 的真原因、裁剪注记放不下时不追加（不许突破自己的预算）、导入回执要讲越界 —— 5 条变异（4 红 + 1 反向对照）"
   },
   "waves": [
+    "demoted-signal-merge-leak-231",
     "memory-pending-scroll-231",
     "sidebar-props-readonly-db-231",
     "audit-228g",

@@ -264,6 +264,21 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
    * 界面会开始解释一个与闸门无关的数字（本仓吃过同类亏，见 `panel-scope.ts` 的文件头）。
    */
   const [globalPending, setGlobalPending] = useState(0);
+  /**
+   * ★ 第 231 波 A1：**本会话里被「待批准积压上限」降级为对话级、因而已经悄悄生效的条目**。
+   *
+   * 被守的缺陷（独立审计 · 中 · 安全面）：`llm/index.ts` 把超限候选降级为 `conversation`
+   * （`status=active`、`sessionId=当前会话`）⇒ 从"不注入"变成**注入当前对话上下文**，
+   * 而 `globalPending` 不计它、面板一个字的提示都没有 ⇒ 用户**这次否决机会被拿走了却不知道**。
+   * 代价只写在 `pending-backlog.ts` 的文件头注释里，等于只对开发者可见。
+   *
+   * 现在：面板在「待批准」区标题旁显示一行可点开的计数「本会话已自动降级 N 条（查看）」，
+   * 点开列出这 N 条的标题 / 时间 / **原作用域**，并明写"它们已进入本会话上下文"。
+   * N 的来源是引擎（`listBacklogDemotedForSession`），不是在这里数 pending、也不是自己扫库另算。
+   */
+  const [demotedBacklog, setDemotedBacklog] = useState<MemoryEntry[]>([]);
+  /** 降级清单是否展开（界面瞬态，与待批准区的展开/勾选同一类东西） */
+  const [demotedOpen, setDemotedOpen] = useState(false);
   const [batches, setBatches] = useState<MemoryBatch[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MemorySearchResult[]>([]);
@@ -331,6 +346,15 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
      * 取数走闸门同一个方法（`countPendingEntries()`），不另写一份。
      */
     setGlobalPending(service.countPendingEntries());
+    /*
+     * ★ 第 231 波 A1：**本会话被积压闸门降级、因而已经悄悄生效的条目**。
+     *
+     * 取数**只走引擎那一处**（`listBacklogDemotedForSession`）——它只认写入路径打的
+     * `demotedFrom` 标记，与 `[extractMemories] …降级为对话级` 那行日志同源。
+     * 界面自己按「对话级 + auto + 本会话」扫一遍会得到另一个口径（正常就该对话级生效的条目
+     * 也会被算进来），那正是本仓反复吃过的"两处口径一分叉"。
+     */
+    setDemotedBacklog(service.listBacklogDemotedForSession(sessionId));
     setBatches(service.listBatches().filter((b) => !b.undone));
     /*
      * B7：统计与列表**同一个 ctx**。旧实现 `getStats()` 遍历全库，而列表是按项目过滤的，
@@ -955,6 +979,54 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
     </div>
   );
 
+  /**
+   * ★ 第 231 波 A1：**「本会话已自动降级 N 条」的可见信号**。
+   *
+   * 被守的缺陷（独立审计 · 中 · 安全面）：待批准积压到上限后，`llm/index.ts` 会把本来要用户
+   * 批准的候选**降级为对话级直接生效**（只影响当前会话）。代价是"用户少了一次否决机会"，
+   * 而面板此前一个字的提示都没有 ⇒ 用户不知道这次绕过了他。
+   *
+   * 这段的两个刻意之处：
+   * - **计数来自引擎**（`listBacklogDemotedForSession`，只认写入路径打的 `demotedFrom`），
+   *   不在这里数 pending、也不自己按"对话级 + auto"扫库另算（那样会多算本来就不审批的条目）；
+   * - **点开要能看到是谁**：标题 / 时间 / **原作用域**，并明写"它们已进入本会话上下文" ——
+   *   只给一个数字等于让用户知道"有件事发生过"却查不到，那和没提示差不多。
+   */
+  const renderDemotedBacklogNotice = () => {
+    if (demotedBacklog.length === 0) return null;
+    const n = demotedBacklog.length;
+    return (
+      <div className="memory-demoted-notice">
+        <button
+          type="button"
+          className="memory-demoted-toggle"
+          aria-expanded={demotedOpen}
+          onClick={() => setDemotedOpen((open) => !open)}
+          title="这些条目在待批准积压达到上限时被降级为对话级、并且**直接生效**了 —— 点开看是哪几条"
+        >
+          {demotedOpen ? "收起本会话自动降级的条目" : "本会话已自动降级 " + n + " 条（查看）"}
+        </button>
+        {demotedOpen && (
+          <div className="memory-demoted-body">
+            <div className="memory-demoted-hint">
+              待批准积压达到上限后，这 {n} 条没能进入待批准区，被**降级为对话级直接生效** ——
+              它们已进入本会话上下文（未经你逐条批准）。要撤销就删掉它们，或把作用域改回原样。
+            </div>
+            {demotedBacklog.map((entry) => (
+              <div className="memory-demoted-item" key={entry.id}>
+                <span className="memory-demoted-key">{entry.key}</span>
+                <span className="memory-demoted-time">{formatTime(entry.timestamp)}</span>
+                <span className="memory-demoted-scope">
+                  原作用域：{MEMORY_SCOPE_BADGE_LABEL[entry.demotedFrom as MemoryScope] ?? String(entry.demotedFrom)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="memory-manager">
       <div className="memory-manager-header">
@@ -1149,6 +1221,7 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
         <div className="memory-pending-section">
           <div className="memory-pending-head">
             <div className="memory-pending-title">待批准的自动记忆（{pending.length} 条，未批准不进上下文）</div>
+            {renderDemotedBacklogNotice()}
             {/*
               第 226 波（用户报「审批时看不到详细信息，没法判断该不该通过」）：
               **双击任意一条**即可展开它的完整内容与判断依据（作用域 / 归属 / 来源 / 是否会进上下文）。
@@ -1290,6 +1363,15 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
             })}
           </div>
         </div>
+      )}
+
+      {/*
+        第 231 波 A1：**待批准区为空、但本会话确实有被降级的条目**时，这条信号也必须出现 ——
+        否则"积压撞上限把候选悄悄放行"最典型的形态（待批准清空了、降级发生过）恰好没有提示。
+        与上面 pending 区里那一处是同一个渲染函数，不另写一份。
+      */}
+      {pending.length === 0 && demotedBacklog.length > 0 && (
+        <div className="memory-demoted-section">{renderDemotedBacklogNotice()}</div>
       )}
 
       {/* 自动提取批次（整批撤销） */}
