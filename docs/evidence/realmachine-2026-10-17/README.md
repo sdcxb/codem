@@ -85,6 +85,7 @@
 > 命中的是 `.rich-content`，截图上完全看不到候选框）。`/` 菜单没有这个问题 —— 它显式 Portal 到 `document.body`
 > （`InputArea.tsx` 里有注释「避免被 overflow:hidden 裁剪」），而 `MentionAutocomplete` 是直接渲染在
 > `.input-textarea-row` 里。下一步：把提及面板也改成 Portal（或把它的锚点移出裁剪容器）。
+> 取证范围：build ① 实测；`InputArea.tsx` / `MentionAutocomplete.tsx` 在两次构建之间未被任何提交改动。
 
 ### 2.3 Agent 预设：7 个内置预设 + 详情真实可读；切预设真的改变权限姿态
 
@@ -232,8 +233,9 @@
    另外观察到该组件一次点击会派发**两次**同值事件（`handleSelect` 与 `onModeChange` 各写一次），
    本轮未改，登记为旁支问题。
 5. **走查①的实例在收尾前自行退出**（PID 19692 在最后一次点击后消失，`tasklist` 为空，因此没有 `taskkill`）；
-   走查②（exact HEAD，PID 18760）是**按 PID 显式 kill**的（`taskkill /PID 18760 /T /F`），全程未用 `/IM`。
-   前者的形态与交接里已记录的「真机回合末进程消失（未定性 → 后定性为互踩）」一致。
+   走查②（exact HEAD，PID 18760）是**按 PID 显式 kill**的（`taskkill /PID 18760 /T /F`），全程未用 `/IM`；
+   收尾后还起过一次**只为清理输入框残留草稿**的实例（PID 25204，同样按 PID kill，`security-mode` 复核仍为
+   `完全访问`）。前者的形态与交接里已记录的「真机回合末进程消失（未定性 → 后定性为互踩）」一致。
 6. **同一实例上出现过另一路驱动**：运行时日志有非本路发起的
    `exec start … cmd=node -v`、`cmd=git -C 'C:\mimo-gui' rev-parse --is-inside-work-tree`，
    9222 那个实例的输入框里还出现过一条 `C:/Users/abee/.dsh/…/bash-win32-x64/`（我清空时被草稿回填干扰过一次）。
