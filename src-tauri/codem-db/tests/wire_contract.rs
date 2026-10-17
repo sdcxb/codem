@@ -212,6 +212,23 @@ fn wire_fixtures_match_both_sides() {
     if let Some(obj) = fresh.as_object_mut() {
         obj.remove("_generatedAtMs");
     }
+
+    /*
+     * ★ 诚实续期：把「这次真的跑过 Rust 侧 wire 契约测试」记到一个**不入库**的戳文件里。
+     *
+     * 为什么不直接刷新 `_generatedAtMs`：那会让每次 `cargo test` 都改这个被跟踪的文件
+     * （上面那段注释就是为了避免这种噪声）。改写成戳文件后，仓库仍然只有在**契约内容真的变了**
+     * 时才动；而 TS 侧的 WIRE-0 能读到"上次验证时间"，于是 `npm run db:test` 可以真正续期
+     * —— 不再出现"满 30 天必红、提示的修法却无效"的日历炸弹。
+     */
+    {
+        let stamp = serde_json::json!({
+            "verifiedAtMs": codem_db::schema::now_ms(),
+            "body": fresh.clone(),
+        });
+        let stamp_path = out.with_file_name("wire-fixtures.verified.json");
+        let _ = std::fs::write(stamp_path, serde_json::to_string_pretty(&stamp).unwrap());
+    }
     if prev_body.as_ref() == Some(&fresh) {
         // 契约没变：保持文件原样（时间戳也保持不变，避免无意义的 diff）
         return;

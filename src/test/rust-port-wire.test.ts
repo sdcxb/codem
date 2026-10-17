@@ -86,6 +86,42 @@ function transportBackedByFixtures(map: Record<string, unknown>, health?: unknow
 
 describe("线协议 —— Rust 生成的金样本必须被 TS 端口正确解包", () => {
   it("WIRE-0: 金样本不能过期太久（太久说明没人重跑 Rust 侧，契约已经在漂）", () => {
+    /**
+     * ★ 判定优先级（修日历炸弹）：
+     * 1) **验证戳**（`wire-fixtures.verified.json`，Rust 每次跑真实 wire 测试时重写、不入库）：
+     *    仅当戳里的正文与当前样本逐字段一致、且戳不超过 30 天 ⇒ 放行（"刚跑过 db:test"）。
+     * 2) 否则退回 `_generatedAtMs`（原规则）：没人重跑 Rust 侧时，仍会在 30 天后变红。
+     *
+     * 为什么不能只看 `_generatedAtMs`：Rust 侧**故意**在契约内容没变时不重写样本文件
+     *（避免每次 cargo test 都脏仓库），于是那个时间戳永远停在首次生成那天 ⇒ 满 30 天必红，
+     * 而提示里让用户"重跑 db:test"按设计**无效**。戳文件把"内容变更"和"上次验证"两件事分开。
+     */
+    const sanitize = (v: any) => {
+      const copy = JSON.parse(JSON.stringify(v));
+      delete copy._generatedAtMs;
+      return copy;
+    };
+    const stampPath = path.join(__dirname, "..", "..", "src-tauri", "codem-db", "tests", "wire-fixtures.verified.json");
+    let verifiedDays: number | null = null;
+    try {
+      const stamp = JSON.parse(fs.readFileSync(stampPath, "utf8"));
+      if (
+        typeof stamp.verifiedAtMs === "number" &&
+        stamp.body &&
+        JSON.stringify(sanitize(stamp.body)) === JSON.stringify(sanitize(fixtures))
+      ) {
+        verifiedDays = (Date.now() - stamp.verifiedAtMs) / 86_400_000;
+      }
+    } catch {
+      verifiedDays = null;
+    }
+    if (verifiedDays !== null) {
+      expect(
+        verifiedDays,
+        `Rust 侧最近一次 wire 验证已 ${verifiedDays.toFixed(1)} 天；请运行 npm run db:test`,
+      ).toBeLessThan(30);
+      return;
+    }
     const at = fixtures._generatedAtMs;
     expect(typeof at, "金样本缺少 _generatedAtMs（重跑 wire_contract 生成）").toBe("number");
     const ageDays = (Date.now() - at) / 86_400_000;

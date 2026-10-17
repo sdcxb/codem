@@ -174,3 +174,5 @@ src-tauri/resources/node/
 
 # 调研中间产物（子代理抓的网页与笔记，不进仓库）
 .trae-research/
+# wire 契约的「上次验证时间」戳（Rust 每次跑测试重写，不入库）
+src-tauri/codem-db/tests/wire-fixtures.verified.json
