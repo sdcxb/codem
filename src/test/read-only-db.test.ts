@@ -33,6 +33,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   DB_SIBLINGS,
+  cleanupTempCopies,
   copyDbForRead,
   diffDbSnapshots,
   formatDbChanges,
@@ -53,11 +54,24 @@ afterAll(async () => {
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       fs.rmSync(TMP, { recursive: true, force: true });
-      if (!fs.existsSync(TMP)) return;
+      if (!fs.existsSync(TMP)) break;
     } catch {
       /* 重试 */
     }
     await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+  /*
+   * helper 自己建的副本目录（`%TEMP%/codem-ro-db-*`）也收掉：**vitest worker 是被父进程结束的**，
+   * `exit` 钩子不一定跑得到 ⇒ 用例跑完会留下几十 KB 的残留（实测见过）。这里显式清；
+   * Windows 上 close 之后句柄可能还没释放，删不掉就等一会儿再试 —— 只告警，不判红。
+   */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      cleanupTempCopies();
+    } catch {
+      /* 清理失败不改变判据结论 */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120));
   }
   if (fs.existsSync(TMP)) console.warn("[RODB-231] 临时目录残留（可手工清理）：" + TMP);
 });

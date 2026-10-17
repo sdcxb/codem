@@ -1,7 +1,7 @@
 {
   "wave": "sidebar-props-readonly-db-231",
   "description": "第 231 波：①Sidebar 死 prop（性能 / CI-CD 的旧跳转）清干净、perf 的正当入口是底部页签；②只读钻取复制副本、真库三件套的 mtime 与 sha256 一动不动",
-  "runAt": "2026-10-17T05:54:44.340Z",
+  "runAt": "2026-10-17T06:02:29.836Z",
   "specFingerprint": "1c59b74d8f4e3c3afef50a9625af1821a47061c9",
   "files": [
     "tools/maintenance/read-only-db.mjs",
@@ -34,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4996
+      "ms": 4612
     },
     {
       "id": "MUT-2 App 重新给 Sidebar 传 onPerf（死 prop 复活）",
@@ -54,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3798
+      "ms": 3671
     },
     {
       "id": "MUT-3 perf 页签入口去掉门控",
@@ -74,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3596
+      "ms": 3378
     },
     {
       "id": "MUT-4 只改一句注释（反向对照：不许红）",
@@ -94,7 +94,7 @@
       "observedRed": false,
       "ok": true,
       "exitCode": 0,
-      "ms": 3465
+      "ms": 3518
     },
     {
       "id": "MUT-5 受版本控制的 tools/ 里的报告脚本改回直接打开真库",
@@ -119,7 +119,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4529
+      "ms": 4227
     },
     {
       "id": "MUT-6 副本不带 -wal（等效于「只读 .bin」的口径）",
@@ -139,7 +139,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4928
+      "ms": 5256
     }
   ]
 }

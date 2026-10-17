@@ -229,6 +229,14 @@ describe("底部面板页签入口棘轮", () => {
     expect(wiredCount, "页签栏的 onSelect 必须直接接到 setBottomTab（有 setter）").toBeGreaterThanOrEqual(3);
   });
 
+  /**
+   * ⚠️ 第 231 波：这条用例给**显式超时 20 秒**。
+   *
+   * 它是 I/O 密集的整树扫描（`slotContributors` 逐个读 `src` 下的 ts/tsx 现算注册方），
+   * 单跑约 **1.9 秒**、判据本身与耗时无关；但全量跑是 8 worker 并行、同批还有一批同样走查整树的
+   * 用例，实测两次撞上默认 5000ms（`Test timed out in 5000ms`，断言还没跑到）。
+   * 抬超时不会放宽任何断言 —— 它只是不再把「机器此刻忙」误报成「判据失败」。
+   */
   it("BOTTOM-TAB-9: 只有「有贡献者」的槽位才允许挂降级横幅（否则横幅就是假信息）", () => {
     /*
      * 真机截图抓到的假信息：`app.jobs` 槽位**没有**任何注册方，却挂了 showDegraded，
@@ -251,5 +259,5 @@ describe("底部面板页签入口棘轮", () => {
         ).toBe(false);
       }
     }
-  });
+  }, 20_000);
 });

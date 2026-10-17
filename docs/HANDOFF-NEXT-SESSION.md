@@ -6638,3 +6638,15 @@ console 原文（隔离根、`deepseek-flash`、真实回合）：
 单跑 3/3 全绿（9 passed），与本轮改动无关；顺着这条把本地棘轮 `RODB-231-7` 的扫描加了便宜预筛
 （先看子串再跑正则），单条耗时从 ~2000ms 降到 ~766ms，之后全量复跑 695/695 绿。
 
+**再追加（同一轮，把这类抖动一次收干净）**：
+
+- 两次全量里又看到 `unrun-siblings-premise` 的 `PREM-1/PREM-2` 撞默认 5000ms（同样是整树跑
+  grep 的前提判据）。这两条与 `BOTTOM-TAB-9` 单跑分别是 **1.1–1.2 s / 1.9 s**，断言根本没跑到 ——
+  于是给这**三条 I/O 密集扫描用例**加显式 **20 s 超时**（`bottom-tab-entry-ratchet.test.tsx`、
+  `unrun-siblings-premise.test.ts`），**不动任何断言**；理由写在用例注释里，免得下一个人再踩。
+  （不为它去改别人的扫描实现：`PS-1` 5.4 s、`ui-consistency` 5.8–6.3 s 都还在过，且是 esbuild 解析
+  / DOM 绑定，文本预筛帮不上。）
+- `read-only-db.mjs` 补 `cleanupTempCopies()`：`copyDbForRead` 的目录也记账（原先只有 `openReadOnlyDb` 记），
+  用完例的 `afterAll` 显式清 —— vitest worker 是被父进程结束的，`exit` 钩子不一定跑得到，
+  实测留下过两个 40 KB 的 `%TEMP%/codem-ro-db-*`。清完连跑 4 次无残留。
+

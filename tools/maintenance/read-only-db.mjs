@@ -175,6 +175,22 @@ function cleanupTempDir(dir) {
   if (tryRemove()) TEMP_DIRS.delete(dir);
 }
 
+/**
+ * 主动清理还没删掉的副本目录，返回**删掉了几个**。
+ *
+ * 什么时候需要它：进程正常退出时 `exit` 钩子会兜底，但**测试进程**（vitest worker）是被父进程
+ * 结束的，钩子不一定跑得到；长跑脚本想在 `finally` 里立刻收干净也可以显式调。
+ * 删不掉的（Windows 句柄未释放）会留着，下次调用再试 —— 不抛错。
+ */
+export function cleanupTempCopies() {
+  let removed = 0;
+  for (const dir of [...TEMP_DIRS]) {
+    cleanupTempDir(dir);
+    if (!TEMP_DIRS.has(dir)) removed++;
+  }
+  return removed;
+}
+
 function installExitHook() {
   if (exitHookInstalled) return;
   exitHookInstalled = true;
@@ -217,6 +233,12 @@ export function copyDbForRead(dbPath, options = {}) {
     const after = snapshotDbFiles(dbPath);
     lastDiff = diffDbSnapshots(before, after);
     if (lastDiff.length === 0) {
+      /*
+       * 记账：`copyDbForRead` 的调用方**忘记删**也能被兜住（`exit` 钩子 / `cleanupTempCopies()`）。
+       * 用例里被父进程结束的 vitest worker 就是这种情况 —— 实测漏过两个 40 KB 的残目录。
+       */
+      TEMP_DIRS.add(dir);
+      installExitHook();
       return { dir, dbPath: copyPath, files: copied, attempts: attempt, sourceChanges: [] };
     }
     cleanupTempDir(dir);
