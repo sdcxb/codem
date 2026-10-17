@@ -105,11 +105,20 @@ describe("并发安全名单：每个名字都必须是真实工具 id", () => {
       "list_dir",
       "codebase_search",
       "file_search",
-      "web_fetch",
+      // 注意：`web_fetch` 已不在幽灵名之列（2026-10-17）。它现在是真工具（DeepSeek Fetch，
+      // 只读无副作用），必须留在并发白名单里 —— 见下一条正向断言。当年把它写进这张表是对的
+      //（那时它只是计划里的名字）；现在删它才是回归。
     ];
     for (const g of knownGhosts) {
       expect(CONCURRENCY_SAFE_TOOL_IDS).not.toContain(g);
     }
+  });
+
+  it("web_fetch 必须留在名单里（它已从幽灵名升级为真工具）", () => {
+    // 历史：`web_fetch` 曾长期只是计划中的名字，被上面那张幽灵名表挡在名单外。
+    // 2026-10-17 接入 DeepSeek Fetch 后它变成真工具（只读、无副作用、可并发）。
+    // 这条正向断言防止有人照着旧注释又把它删掉（那会静默退化成串行）。
+    expect(CONCURRENCY_SAFE_TOOL_IDS, "web_fetch 应当可并发").toContain("web_fetch");
   });
 
   it("zvec 搜索工具必须留在名单里（曾经被我误删）", () => {

@@ -50,6 +50,13 @@ export const CONCURRENCY_SAFE_TOOL_IDS: readonly string[] = [
   "glob",
   "lsp",
   "web_search",
+  /*
+   * `web_fetch`（2026-10-17 起）：抓取网页正文（DeepSeek Fetch，Markdown）。
+   * 只读、无副作用、多次抓取互不依赖 ⇒ 与 `web_search` 同属可并发。
+   * 历史：它曾是「计划中但不存在」的名字，被判据列为幽灵名挡在名单外；现在是真工具，
+   * 判据已改成正向断言（见 tool-concurrency-list.test.ts），别再当幽灵删掉。
+   */
+  "web_fetch",
   // 由 zvec-grep MCP 服务器在运行时注册（`tools/zvec-tool.ts` 的
   // `createZvecTool()` 用 `id: name`，name 来自 MCP 工具清单），
   // 因此**任何静态扫描都看不到这两个 id**。
