@@ -485,7 +485,13 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
     return merged;
   };
 
-  const handleSave = async () => {
+  /**
+   * 规范保存流程。**返回"这次保存是否确认落库"**（true = 写队列已排空且窗口内没有新增失败）。
+   *
+   * 为什么要有返回值：provider 卡片上的「保存并刷新模型」要先确认"存上了"再去拉模型列表
+   * —— 否则会在"没存上"的前提下装作已保存（2026-10-17「保存并刷新模型」误导实报，见该按钮处的注释）。
+   */
+  const handleSave = async (): Promise<boolean> => {
     /**
      * D-21：写入是"内存即时生效 + 异步落库"，`setSetting*` 返回 `void`，
      * 所以"✅ 已保存"必须建立在**可等待的确认**上，而不是"没抛异常"。
@@ -541,13 +547,14 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
       setSaveFailure(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-      return;
+      return true;
     }
     // **不许把"写入失败"演成"已保存"**：如实显示未确认 + 为什么会失败
     setSaved(false);
     const reason = describeWriteFailure(report, lang);
     setSaveFailure(reason);
     showToast("error", reason, 6000);
+    return false;
   };
 
   /** 把"没落库"讲清楚（给用户看的原因 + 给排查看的区域名） */
@@ -2180,14 +2187,35 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 )}
               </div>
 
+              {/**
+               * 2026-10-17（用户实报：「卡片里那个是『保存并刷新模型』（只管模型列表）这个不对，会误导用户」）。
+               *
+               * 这里原来是一条**裸写** —— `setSettingJSON("codem-settings", { ...settings })`：
+               * 只把面板快照整块塞进库，**不经过上面那条规范保存流程** `handleSave()`
+               * （没有 `beginSettingsWriteProbe()` 的写后确认、没有 `buildSavePayload()`
+               * 以库值做基座、没有 `dirtyLocalFields` 结账，也就没有"凭据必须封存"的保证）。
+               * 用户真机复现：在 DeepSeek 卡片里填完 API Key（35 字符）连点两次，库里**没有**
+               * `apiKeySealed`；改点底部「保存设置」（走 `handleSave`）才立刻出现。
+               * 也就是说这个按钮宣称的"保存"对凭据类改动**是不成立的** ——
+               * 真正兑现的语义只剩"刷新模型列表"。
+               * ⚠️ 补封存是写回闸门**异步**补做的（单测里裸写也能补上），所以这里缺的不只是
+               * "那一行封存"，而是规范保存的整套：**可等待的写后确认** + 以库值为基座做合并 +
+               * 本地改动结账 + 如实报失败 —— 用户看到的形态正是"点了没存上"。
+               *
+               * 修法选**让它名副其实**（标签不变）：先 `handleSave()`，**确认落库之后**
+               * 才刷新这个 provider 的模型列表；没确认（`false`）就什么都不刷。
+               * 两半都写在标签里，所以两半都必须真的发生。
+               *
+               * 不会双写、也不会重复触发：`handleSave()` 本身不刷新模型列表，
+               * 而 `refreshProviderModels()` 只写 `codem-dynamic-models`，不碰 `codem-settings`。
+               */}
               <button
-                onClick={() => {
-                  // Save settings
-                  const newSettings = { ...settings };
-                  setSettingJSON("codem-settings", newSettings);
-                  // Trigger engine reconfigure
-                  window.dispatchEvent(new Event("codem-settings-changed"));
+                onClick={async () => {
+                  const confirmed = await handleSave();
+                  if (!confirmed) return;
+                  await refreshProviderModels(provider.id);
                 }}
+                disabled={refreshingModels[provider.id]}
                 className="sp-btn sp-btn--sm sp-btn--primary sp-btn--spaced"
               >
                 {S.settings.saveRefresh[lang]}

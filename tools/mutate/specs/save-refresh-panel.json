@@ -1,0 +1,35 @@
+{
+  "description": "provider 卡片「保存并刷新模型」误导（用户 2026-10-17 实报）：原来是一条裸写，宣称保存却不走规范保存流程、也不刷新模型。修法 = 先 handleSave() 确认落库、再 refreshProviderModels()。判据 SAVE-REFRESH-1/2 两向自证 —— 改回裸写 ⇒ 红；只保存不刷新 ⇒ 红",
+  "mutations": [
+    {
+      "id": "MUT-1 把「保存并刷新模型」改回裸写 setSettingJSON({...settings})（用户报的那个实现）",
+      "why": "SAVE-REFRESH-1 的「走规范保存 + 真刷新」两半：裸写不写 codem-identity / codem-user、不刷新模型列表 ⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "                onClick={async () => {\n                  const confirmed = await handleSave();\n                  if (!confirmed) return;\n                  await refreshProviderModels(provider.id);\n                }}\n",
+          "to": "                onClick={() => {\n                  const newSettings = { ...settings };\n                  setSettingJSON(\"codem-settings\", newSettings);\n                  window.dispatchEvent(new Event(\"codem-settings-changed\"));\n                }}\n"
+        }
+      ],
+      "tests": [
+        "src/test/settings-panel-save-refresh.test.tsx"
+      ],
+      "expectRed": true
+    },
+    {
+      "id": "MUT-2 只保存、不刷新模型列表（标签仍写「保存并刷新模型」）",
+      "why": "SAVE-REFRESH-1 的「并刷新」那一半：删掉 refreshProviderModels 调用 ⇒ 不请求 /models、不写 codem-dynamic-models、界面没有「获取到 N 个模型」⇒ 判据必须红",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "                onClick={async () => {\n                  const confirmed = await handleSave();\n                  if (!confirmed) return;\n                  await refreshProviderModels(provider.id);\n                }}\n",
+          "to": "                onClick={async () => {\n                  await handleSave();\n                }}\n"
+        }
+      ],
+      "tests": [
+        "src/test/settings-panel-save-refresh.test.tsx"
+      ],
+      "expectRed": true
+    }
+  ]
+}
