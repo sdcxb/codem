@@ -909,6 +909,9 @@ fn write_sandbox_violation(
     path: &str,
     workspace: Option<&str>,
     sandbox_enabled: Option<bool>,
+    // 用户显式加入白名单的目录（`codem-sandbox-allowed-dirs`）。写侧必须和前端同一份事实，
+    // 否则会出现「TS 放行、Rust 拦下」——正是 `sandbox-mode-consistency` 判据在守的形态。
+    allowed_roots: Option<&[String]>,
 ) -> Result<Option<String>, String> {
     if !sandbox_enabled.unwrap_or(true) {
         return Ok(None);
@@ -923,8 +926,16 @@ fn write_sandbox_violation(
     if path_within_workspace(&target_resolved, &ws_resolved) {
         return Ok(None);
     }
+    for root in allowed_roots.unwrap_or(&[]) {
+        let Ok(root_resolved) = resolve_sandbox_path(std::path::Path::new(root)) else {
+            continue;
+        };
+        if path_within_workspace(&target_resolved, &root_resolved) {
+            return Ok(None);
+        }
+    }
     Ok(Some(format!(
-        "Sandbox: Write to '{}' is outside the workspace '{}'. Set the workspace directory or disable sandbox mode in settings.",
+        "Sandbox: Write to '{}' is outside the workspace '{}'. Add that directory to the sandbox allowlist in settings, or write within the workspace.",
         path, ws
     )))
 }
@@ -938,9 +949,16 @@ async fn write_file(
     // ★ 误拒修复：由前端那**唯一一处**开关判定（`sandbox-acl.isSandboxAclEnabled()`）传下来。
     // 缺省 ⇒ 按"开着"处理（见 `write_sandbox_violation` 的说明）。
     sandbox_enabled: Option<bool>,
+    // 用户显式加入白名单的目录（与前端 `getSandboxAllowedDirs()` 同源）。
+    allowed_roots: Option<Vec<String>>,
 ) -> Result<(), String> {
     // S5: Sandbox path whitelist — 只在该**用户真的开着沙箱**时才限制写入范围。
-    if let Some(err) = write_sandbox_violation(&path, workspace.as_deref(), sandbox_enabled)? {
+    if let Some(err) = write_sandbox_violation(
+        &path,
+        workspace.as_deref(),
+        sandbox_enabled,
+        allowed_roots.as_deref(),
+    )? {
         return Err(err);
     }
 
@@ -7650,18 +7668,18 @@ mod harden_185_tests {
 
         // ① 沙箱**关** ⇒ 工作区外也必须放行（关了就真的关）—— 这就是用户点名的误拒
         assert!(
-            write_sandbox_violation(&outside_str, Some(&ws_str), Some(false))
+            write_sandbox_violation(&outside_str, Some(&ws_str), Some(false), None)
                 .unwrap()
                 .is_none(),
             "沙箱关闭时工作区外的写必须放行（改前这里会拦 = 关了沙箱沙箱还生效）"
         );
         // 沙箱关 + 界内：同样放行
-        assert!(write_sandbox_violation(&inside_str, Some(&ws_str), Some(false))
+        assert!(write_sandbox_violation(&inside_str, Some(&ws_str), Some(false), None)
             .unwrap()
             .is_none());
 
         // ② 沙箱**开** ⇒ 工作区外必须拦，且文案说清是沙箱
-        let denied = write_sandbox_violation(&outside_str, Some(&ws_str), Some(true))
+        let denied = write_sandbox_violation(&outside_str, Some(&ws_str), Some(true), None)
             .unwrap()
             .expect("沙箱开启时工作区外的写必须被拒");
         assert!(
@@ -7670,15 +7688,15 @@ mod harden_185_tests {
         );
         // ③ 沙箱开 + 界内 ⇒ 放行（不许把好调用也拦了）
         assert!(
-            write_sandbox_violation(&inside_str, Some(&ws_str), Some(true))
+            write_sandbox_violation(&inside_str, Some(&ws_str), Some(true), None)
                 .unwrap()
                 .is_none(),
             "沙箱开启时工作区内的新文件必须放行（不许修成假失败）"
         );
 
         // ④ 两个方向必须相反 —— 逐条对照，防"无条件拦"混过单方向判据
-        let off = write_sandbox_violation(&outside_str, Some(&ws_str), Some(false)).unwrap();
-        let on = write_sandbox_violation(&outside_str, Some(&ws_str), Some(true)).unwrap();
+        let off = write_sandbox_violation(&outside_str, Some(&ws_str), Some(false), None).unwrap();
+        let on = write_sandbox_violation(&outside_str, Some(&ws_str), Some(true), None).unwrap();
         assert_ne!(
             off.is_none(),
             on.is_none(),
@@ -7700,19 +7718,19 @@ mod harden_185_tests {
         let outside_str = outside.to_string_lossy().to_string();
 
         assert!(
-            write_sandbox_violation(&outside_str, None, Some(true))
+            write_sandbox_violation(&outside_str, None, Some(true), None)
                 .unwrap()
                 .is_none(),
             "没给 workspace ⇒ 不判（既有语义：应用自管读写不走工具路径）"
         );
         assert!(
-            write_sandbox_violation(&outside_str, Some(&ws_str), None)
+            write_sandbox_violation(&outside_str, Some(&ws_str), None, None)
                 .unwrap()
                 .is_some(),
             "开关缺省必须按「开着」处理（fail-closed），不许把用户开着的沙箱静默关掉"
         );
         assert!(
-            write_sandbox_violation(&outside_str, None, Some(false))
+            write_sandbox_violation(&outside_str, None, Some(false), None)
                 .unwrap()
                 .is_none()
         );

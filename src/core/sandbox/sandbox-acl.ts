@@ -476,3 +476,87 @@ export function initSandboxGuard(policy: SandboxPolicy): SandboxGuard {
 export function initDefaultSandbox(workspacePath: string): SandboxGuard {
   return initSandboxGuard(createDefaultPolicy(workspacePath));
 }
+
+// ========== 沙箱允许目录（白名单） ==========
+
+/**
+ * 沙箱允许目录（额外放行的绝对路径）设置键。
+ *
+ * ## 为什么需要（2026-10-18 用户现场）
+ *
+ * 交接正文里写的是绝对路径（`C:/mimo-gui/docs/ui-spec.md`），而新会话的工作区是
+ * `D:\mimo` ⇒ 沙箱把这**一个**路径判成工作区外，新会话第一件事就卡住。
+ * 只给"关闭沙箱"这一条出路太重（那会放开**所有**路径），所以允许用户把
+ * **具体目录**加进白名单 —— 范围可控、可撤销。
+ *
+ * 存的是 JSON 字符串数组；读写都经过 `normalizeAllowedDir`（同一套规范化），
+ * 比较时大小写不敏感（Windows）且**按路径段**判前缀（`C:/a` 不算 `C:/ab` 的父目录）。
+ */
+const SANDBOX_ALLOWED_DIRS_KEY = "codem-sandbox-allowed-dirs";
+
+/** 规范化一个允许目录：反斜杠→`/`、展开 `~`、去掉尾部分隔符 */
+export function normalizeAllowedDir(dir: string): string {
+  return normalizeSandboxPath(dir).replace(/\/+$/, "");
+}
+
+/** 读取允许目录（坏数据/读失败都按"没有"处理，但不会静默改写成别的值） */
+export function getSandboxAllowedDirs(): string[] {
+  try {
+    const raw = getSetting(SANDBOX_ALLOWED_DIRS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return Array.from(new Set(parsed.map((d) => normalizeAllowedDir(String(d ?? ""))).filter(Boolean)));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 判断路径是否落在**任一**允许目录内（路径段边界，大小写不敏感）。
+ *
+ * 纯函数（目录可注入）⇒ 判据可以直接测，不依赖存储与真实磁盘。
+ */
+export function isWithinAllowedDirs(
+  target: string,
+  dirs: readonly string[] = getSandboxAllowedDirs(),
+): boolean {
+  const t = normalizeAllowedDir(target).toLowerCase();
+  if (!t) return false;
+  for (const dir of dirs) {
+    const d = normalizeAllowedDir(dir).toLowerCase();
+    if (!d) continue;
+    if (t === d) return true;
+    if (t.startsWith(d + "/")) return true;
+  }
+  return false;
+}
+
+/**
+ * 把目录加入白名单（去重、跳过空串）。
+ *
+ * @returns 实际新增的目录（已存在的不重复写、也不重复返回）
+ */
+export function addSandboxAllowedDirs(dirs: readonly string[]): string[] {
+  const existing = getSandboxAllowedDirs();
+  const known = new Set(existing.map((d) => d.toLowerCase()));
+  const added: string[] = [];
+  for (const raw of dirs) {
+    const dir = normalizeAllowedDir(String(raw ?? ""));
+    if (!dir || known.has(dir.toLowerCase())) continue;
+    known.add(dir.toLowerCase());
+    added.push(dir);
+  }
+  if (added.length > 0) {
+    const next = [...existing, ...added];
+    setSetting(SANDBOX_ALLOWED_DIRS_KEY, JSON.stringify(next));
+  }
+  return added;
+}
+
+/** 从白名单移除一个目录（大小写不敏感；移除不存在的目录是空操作） */
+export function removeSandboxAllowedDir(dir: string): void {
+  const target = normalizeAllowedDir(dir).toLowerCase();
+  const next = getSandboxAllowedDirs().filter((d) => d.toLowerCase() !== target);
+  setSetting(SANDBOX_ALLOWED_DIRS_KEY, JSON.stringify(next));
+}

@@ -48,6 +48,7 @@ import { reportActionFailure, reportAdvisory } from "../core/storage/persist-fai
 import { getDelegationOrchestrator } from "../core/session/orchestrator";
 import { buildHandover } from "../core/session/ui-handoff";
 import { nextHandoverTitle } from "../core/session/handoff-session";
+import { requestSandboxAllowlist } from "../core/session/handoff-sandbox";
 import { WATER_LEVEL, useContextWaterLevel } from "../core/context/water-level";
 import { readContextDrop, subscribeContextDrop, contextDropVersion } from "../core/llm/context-visibility";
 
@@ -305,6 +306,8 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
         projectId,
       });
 
+      // 交接正文里的工作区外绝对路径 ⇒ 提示用户加入沙箱允许目录（只提示，不自动放行）
+      requestSandboxAllowlist(handover.body, useProjectStore.getState().currentProject?.path || "");
       setNote({
         ok: true,
         text: zh

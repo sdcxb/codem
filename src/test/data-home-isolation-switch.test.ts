@@ -124,11 +124,20 @@ describe("ISO-STATIC：隔离数据根的结构性不变量", () => {
     };
     walk(RUST, "");
 
+    /*
+     * ⚠️ 不再钉**行号**：`lib.rs` 每加几行（比如给沙箱写守卫加参数），行号就会漂，
+     * 判据会红在一次无关的编辑上 —— 那会训练人"看到这条红了就改数字"，等于废掉它。
+     * 现在钉的是**结构与唯一性**：恰好一处调用、就在 `app_data_dir_path` 的函数体范围内。
+     */
+    expect(hits, "`app_data_dir()` 只允许出现在 lib.rs::app_data_dir_path 一处 —— 其余调用点在设了隔离根时会把数据写进用户的真目录").toHaveLength(1);
+    expect(hits[0].file).toBe("lib.rs");
+    const fnStart = libRs.split("\n").findIndex((l) => l.includes("pub(crate) fn app_data_dir_path(")) + 1;
+    expect(fnStart, "找不到 app_data_dir_path 函数").toBeGreaterThan(0);
     expect(
-      hits.map((h) => `${h.file}:${h.line}`),
-      "`app_data_dir()` 只允许出现在 lib.rs::app_data_dir_path 一处 —— " +
-        "其余调用点在设了隔离根时会把数据写进用户的真目录",
-    ).toEqual(["lib.rs:1367"]);
+      hits[0].line,
+      `唯一调用点必须在 app_data_dir_path 内（实际 lib.rs:${hits[0].line}，函数起于 ${fnStart}）`,
+    ).toBeGreaterThanOrEqual(fnStart);
+    expect(hits[0].line).toBeLessThanOrEqual(fnStart + 40);
     // 而且那一处必须**先看隔离根**
     const fn = bodyOf(libRs, "pub(crate) fn app_data_dir_path(");
     expect(fn, "唯一入口必须先看隔离根").toContain("storage::isolated_data_home()");

@@ -79,6 +79,14 @@ export interface OpenHandoverSessionOptions {
   }) => Promise<{ id: string }>;
   /** 注入：时钟（测试可固定时间） */
   now?: Date;
+  /**
+   * 建会话的重试次数（默认 3）。
+   *
+   * 为什么要重试：交接的**目的是"到新对话去"** —— 建会话失败（同名冲突、存储抖动）时
+   * 直接报错等于没完成目的，用户还得手动重来。这里**换一个标题重试**（标题带序号/时间戳），
+   * 仍然**绝不**退化成"委派给某个已有会话"。
+   */
+  attempts?: number;
 }
 
 export interface OpenHandoverSessionResult {
@@ -97,10 +105,32 @@ export interface OpenHandoverSessionResult {
 export async function openHandoverSession(
   opts: OpenHandoverSessionOptions,
 ): Promise<OpenHandoverSessionResult> {
-  const title = nextHandoverTitle(opts.existingTitles, opts.zh, opts.now ?? new Date());
-  const created = opts.createSession(title);
+  const attempts = Math.max(1, Math.min(10, opts.attempts ?? 3));
+  const tried: string[] = [];
+  let lastError = "";
+  let created: { id: string; title?: string } | null | undefined = null;
+  let title = "";
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    title = nextHandoverTitle([...opts.existingTitles, ...tried], opts.zh, opts.now ?? new Date());
+    tried.push(title);
+    try {
+      created = opts.createSession(title);
+      if (created?.id) break;
+      lastError = opts.zh ? "没有拿到会话 id" : "no session id returned";
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e ?? "");
+      created = null;
+    }
+    console.warn(`[handoff] 新建会话第 ${attempt + 1}/${attempts} 次失败（${title}）：${lastError}`);
+  }
+
   if (!created?.id) {
-    throw new Error(opts.zh ? "新建会话失败（没有拿到会话 id）" : "Failed to create the new session (no id)");
+    throw new Error(
+      (opts.zh
+        ? `新建会话失败（已换名字重试 ${attempts} 次：${tried.join(" / ")}；最后一次：${lastError}）`
+        : `Failed to create the new session after ${attempts} attempts (${tried.join(" / ")}; last: ${lastError})`),
+    );
   }
   const task = await opts.delegate({
     sourceSessionId: opts.sourceSessionId,

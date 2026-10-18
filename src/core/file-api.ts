@@ -22,7 +22,7 @@
  * `SANDBOX_SETTING_KEY`，并且按第 87 轮的纪律在"读失败"时沿用上次成功读到的值）。
  * 判据见 `src/test/sandbox-mode-consistency.test.ts`（SB-OFF-1/2、SB-ON-1/2、SB-ONE-1）。
  */
-import { isSandboxAclEnabled } from "./sandbox/sandbox-acl";
+import { isSandboxAclEnabled, getSandboxAllowedDirs, isWithinAllowedDirs } from "./sandbox/sandbox-acl";
 
 const isTauri = () => !!(window as any).__TAURI__;
 
@@ -142,9 +142,16 @@ async function assertWithinWorkspace(
    */
   if (!(sandboxEnabled ?? isSandboxAclEnabled())) return;
   if (await resolveWithinWorkspace(target, workspace)) return;
+  /**
+   * 用户显式加入的**允许目录**（2026-10-18，交接正文里的绝对路径常在工作区外）。
+   * 与工作区判定同一优先级：命中任一允许目录即放行；否则如实拒绝，
+   * 并在文案里给出"加入允许目录"这条出路（不再只让人关沙箱）。
+   */
+  if (isWithinAllowedDirs(target, getSandboxAllowedDirs())) return;
   throw new Error(
     `Sandbox: ${verb} "${target}" is outside the workspace "${workspace}". ` +
-    `The sandbox restricts file access to the workspace directory and its subdirectories.`,
+    `The sandbox restricts file access to the workspace directory and its subdirectories. ` +
+    `Add that directory to the sandbox allowlist in settings, or use a path within the workspace.`,
   );
 }
 
@@ -295,6 +302,8 @@ export async function writeFile(path: string, content: string, options?: { encod
     encoding: options?.encoding,
     workspace: options?.workspace,
     sandbox_enabled: sandboxEnabled,
+    // 写侧的 Rust 守卫必须和前端同一份白名单，否则「TS 放行、Rust 拦下」
+    allowed_roots: sandboxEnabled ? getSandboxAllowedDirs() : [],
   });
 }
 

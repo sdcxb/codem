@@ -11,7 +11,7 @@ import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
 // ★ 误拒修复：「沙箱是否启用」的唯一实现在 `sandbox-acl.ts`（与 `file-api` 的读写判定共用）——
 // 这里不再自己读设置（同一规则不许两份）。
-import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
+import { isSandboxAclEnabled, getSandboxAllowedDirs, isWithinAllowedDirs } from "../sandbox/sandbox-acl";
 import type { Context } from "../cordis/src/index.ts";
 import type { PlanUpdateOp } from "./plan-utils";
 import { findAmbiguousLiteral, replaceLiteral, suggestEditCandidates } from "./edit-matchers";
@@ -241,7 +241,9 @@ function checkSandbox(path: string, ctx: ToolContext): string | null {
   // Resolve relative paths against the workspace before checking
   const resolvedPath = resolvePath(path, workspace);
   if (!isPathWithinWorkspace(resolvedPath, workspace)) {
-    return `Sandbox: Write to "${path}" is outside the workspace "${workspace}". The sandbox is enabled — disable it in settings or write within the workspace.`;
+    // 允许目录（用户显式白名单）与工作区同权：交接常把绝对路径放在工作区外
+    if (isWithinAllowedDirs(resolvedPath, getSandboxAllowedDirs())) return null;
+    return `Sandbox: Write to "${path}" is outside the workspace "${workspace}". The sandbox is enabled — add that directory to the sandbox allowlist in settings, or write within the workspace.`;
   }
   return null;
 }

@@ -36,6 +36,7 @@ import { SpillPolicyMiddleware } from "./spill-policy";
 import { analyzeBashCommand } from "../permission/bash-analyzer";
 import { CONCURRENCY_SAFE_TOOL_IDS } from './concurrency-policy';
 import { credentialShapeTestPattern } from '../utils/credential-shapes';
+import { isWithinAllowedDirs } from '../sandbox/sandbox-acl';
 import {
   allowedInReadOnlyMode,
   isShellLike,
@@ -826,13 +827,16 @@ class SandboxGuard implements GuardMiddleware {
        * 变量拼出来的路径、编码后的路径、脚本里二次构造的路径都拦不住。
        * 所以评测那边还有一道"污染检测"兜底（`.preview-shot/_codem-repo-eval.mjs` 的 `contaminated`）。
        */
-      const leak = findOutOfWorkspacePath(args, ctx.cwd, isWithinWorkspace);
+      // 允许目录与工作区同权（交接正文里的绝对路径常在工作区外，用户已显式加白）
+      const withinOrAllowed = (p: string, ws: string) =>
+        isWithinWorkspace(p, ws) || isWithinAllowedDirs(p);
+      const leak = findOutOfWorkspacePath(args, ctx.cwd, withinOrAllowed);
       if (leak) {
         return {
           action: "deny",
           denyMessage:
             `Sandbox: the command references "${leak}" which is outside the workspace "${ctx.cwd}". ` +
-            `The sandbox is enabled — disable it in settings or stay within the workspace.`,
+            `The sandbox is enabled — add that directory to the sandbox allowlist in settings, or stay within the workspace.`,
         };
       }
       return { action: "proceed" };
@@ -845,14 +849,14 @@ class SandboxGuard implements GuardMiddleware {
       resolvedPath = ctx.cwd.replace(/[\\/]+$/, "") + sep + path.replace(/^[\\/]+/, "");
     }
 
-    if (!isWithinWorkspace(resolvedPath, ctx.cwd)) {
+    if (!isWithinWorkspace(resolvedPath, ctx.cwd) && !isWithinAllowedDirs(resolvedPath)) {
       // 文案按工具类别说清楚：原来对**所有**工具都说 "Write to"，
       // 于是「读操作被沙箱拒绝」时用户看到「写入被拒绝」，排查方向被带偏。
       // 现在三态由契约给出（`destructive` / `readOnly`），不再靠名单。
       const verb = contract.destructive ? "Delete" : allowedInReadOnlyMode(contract) ? "Read from" : "Write to";
       return {
         action: "deny",
-        denyMessage: `Sandbox: ${verb} "${path}" is outside the workspace "${ctx.cwd}". The sandbox is enabled — disable it in settings or use a path within the workspace.`,
+        denyMessage: `Sandbox: ${verb} "${path}" is outside the workspace "${ctx.cwd}". The sandbox is enabled — add that directory to the sandbox allowlist in settings, or use a path within the workspace.`,
       };
     }
     return { action: "proceed" };

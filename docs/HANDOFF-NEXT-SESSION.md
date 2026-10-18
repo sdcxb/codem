@@ -7183,3 +7183,39 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   模型按判据如实报告，这是沙箱配置问题，需要用户把路径加进允许目录或换工作区。
 - 静默安装在本次验证时挂住（两次超时），改用 `target/release/codem.exe` 直接启动验证
   （同一构建产物）；发版前需要重新走一次安装器验证。
+
+
+## 2026-10-18 12:05 — 第 240 波：交接失败要换名重试 + 交接路径自动提示加入沙箱白名单
+
+### 1）用户指出：「新建会话失败直接报错，等于没完成目的」
+
+- 改法：`openHandoverSession` 最多 3 次（`attempts`），每次用 `nextHandoverTitle` **换一个标题**
+  （`… (2)` / `… (3)`）；全部失败才报错，错误里列出试过的标题，**仍绝不**委派给已有会话。
+- 判据 `HANDOFF-NEW-8..10`；变异 `sandbox-allowlist-and-retry` MUT-1/2（不重试 / 重试不换名）。
+
+### 2）沙箱允许目录：从"手动去设置里加"变成"交接时自动提示"
+
+- 新模块 `core/sandbox/sandbox-acl.ts` 增加 `codem-sandbox-allowed-dirs`（JSON 数组）+ 
+  `isWithinAllowedDirs`（路径段边界、大小写不敏感）+ `addSandboxAllowedDirs`。
+- 新模块 `core/session/handoff-sandbox.ts`：`extractAbsolutePaths`（盘符/UNC）→
+  `outsideWorkspacePaths`（工作区外且未放行）→ `requestSandboxAllowlist` 派发事件。
+- 新组件 `SandboxAllowPrompt`：提示条列出路径，点「加入允许目录」才写入（**不自动放行**）。
+- 闸门三处都认同一份白名单：`file-api.assertWithinWorkspace`、`llm/tools.checkSandbox`、
+  `tool-pipeline` 的路径闸与命令文本闸；写侧 Rust `write_sandbox_violation(..., allowed_roots)`。
+- 判据 `ALLOW-1..6`；变异 `sandbox-allowlist-and-retry` MUT-3/4/5/6。
+
+### 3）真机（构建产物 + CDP）
+
+- 交接正文含 `C:/mimo-gui/docs/ui-spec.md` ⇒ 提示条出现（1 个路径）；
+  点「加入允许目录」⇒ `已加入允许目录：C:/mimo-gui/docs`；
+  随后同一交接会话 `read` 该文件**成功**，第一行与磁盘逐字一致（`# Codem UI 规格（唯一口径）`）。
+- ⚠️ 第一次真机验证**没通过**：提示条出现了、设置也写了，但 `read` 仍被拒 ——
+  漏掉了 `tool-pipeline` 在进工具之前的路径闸。补上后再验证才通过。这正说明"只改一处闸门"不够。
+
+### 4）审计
+
+- 全量 **716 文件 / 8418 通过 + 17 skipped**；`tsc` 0；变异闸门 **59 波**；非 eval 链全过。
+- 顺带修：`ISO-S2` 不再钉 lib.rs 行号（改为"恰好一处且位于 `app_data_dir_path` 内"），
+  `handoff-new-session` 的 MUT-2 锚点按重试改造后的代码重新锚定。
+- 教训：沙箱判定有**四道**（file-api / tools / tool-pipeline / Rust），加白名单必须四处同改；
+  真机验证要"加完白名单之后再读一次"，否则会把"提示条出现"误当成"已经能用"。

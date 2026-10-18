@@ -18,12 +18,12 @@ export default {
     },
     {
       id: "MUT-2 新建失败也继续委派",
-      why: "HANDOFF-NEW-4：没有新会话 id 还去委派 ⇒ 只能落到某个已有会话（正是真机缺陷形态）",
+      why: "HANDOFF-NEW-4：没有新会话 id 还返回一个结果 ⇒ 任务只能落到某个已有会话（正是真机缺陷形态）",
       patches: [
         {
           file: "src/core/session/handoff-session.ts",
-          from: "  if (!created?.id) {\n    throw new Error(opts.zh ? \"新建会话失败（没有拿到会话 id）\" : \"Failed to create the new session (no id)\");\n  }",
-          to: "  if (!created?.id) {\n    return { sessionId: opts.existingTitles[0] ?? \"\", title, delegationId: \"del-fallback\" } as any;\n  }",
+          from: "  if (!created?.id) {\n    throw new Error(",
+          to: "  if (!created?.id) {\n    return { sessionId: opts.existingTitles[0] ?? \"\", title, delegationId: \"del-fallback\" } as any;\n    throw new Error(",
         },
       ],
       tests: ["src/test/handoff-new-session.test.ts"],

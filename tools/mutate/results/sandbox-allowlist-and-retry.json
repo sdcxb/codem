@@ -1,0 +1,139 @@
+{
+  "wave": "sandbox-allowlist-and-retry",
+  "description": "交接加固：建会话失败换标题重试（不退化到已有会话）；交接正文里的工作区外绝对路径自动提示加入沙箱允许目录（只提示、不自动放行；读写闸门与 Rust 守卫同一份白名单）。判据 HANDOFF-NEW-8..10、ALLOW-1..6；5 条变异各自对红",
+  "runAt": "2026-10-18T03:51:57.077Z",
+  "specFingerprint": "cdaeb09afe2b2b6e24de8f6c1bfada7cc6795187",
+  "files": [
+    "src/core/session/handoff-session.ts",
+    "src/core/file-api.ts",
+    "src/components/SandboxAllowPrompt.tsx",
+    "src/core/llm/tool-pipeline.ts"
+  ],
+  "tests": [
+    "src/test/handoff-new-session.test.ts",
+    "src/test/sandbox-allowlist-handoff.test.tsx"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 不再重试（只建一次）",
+      "why": "HANDOFF-NEW-8/10：建会话失败直接报错，没完成「移交给新对话」的目的",
+      "patches": [
+        {
+          "file": "src/core/session/handoff-session.ts",
+          "from": "  const attempts = Math.max(1, Math.min(10, opts.attempts ?? 3));",
+          "to": "  const attempts = 1;"
+        }
+      ],
+      "tests": [
+        "src/test/handoff-new-session.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2767
+    },
+    {
+      "id": "MUT-2 重试时仍用同一个标题",
+      "why": "HANDOFF-NEW-8/9：同名冲突重试永远失败 ⇒ 等于没重试",
+      "patches": [
+        {
+          "file": "src/core/session/handoff-session.ts",
+          "from": "    title = nextHandoverTitle([...opts.existingTitles, ...tried], opts.zh, opts.now ?? new Date());",
+          "to": "    title = nextHandoverTitle(opts.existingTitles, opts.zh, opts.now ?? new Date());"
+        }
+      ],
+      "tests": [
+        "src/test/handoff-new-session.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2697
+    },
+    {
+      "id": "MUT-3 读侧闸门不认白名单",
+      "why": "ALLOW-4：提示加了白名单，读还是被拦 ⇒ 用户点了也没用",
+      "patches": [
+        {
+          "file": "src/core/file-api.ts",
+          "from": "  if (isWithinAllowedDirs(target, getSandboxAllowedDirs())) return;",
+          "to": "  if (false) return;"
+        }
+      ],
+      "tests": [
+        "src/test/sandbox-allowlist-handoff.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3204
+    },
+    {
+      "id": "MUT-4 提示一出现就自动放行",
+      "why": "ALLOW-5：不点确认就写白名单 ⇒ 沙箱变成摆设",
+      "patches": [
+        {
+          "file": "src/components/SandboxAllowPrompt.tsx",
+          "from": "      setPaths(next);",
+          "to": "      setPaths(next);\n      addSandboxAllowedDirs(next.map((p) => String(p).replace(/\\/[^/]*$/, \"\")));"
+        }
+      ],
+      "tests": [
+        "src/test/sandbox-allowlist-handoff.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3204
+    },
+    {
+      "id": "MUT-6 工具管线的路径闸不认白名单",
+      "why": "ALLOW-4：`read` 在进工具前就被管线拦住 ⇒ 白名单加了也读不到（真机第一次没修好的正是这处）",
+      "patches": [
+        {
+          "file": "src/core/llm/tool-pipeline.ts",
+          "from": "    if (!isWithinWorkspace(resolvedPath, ctx.cwd) && !isWithinAllowedDirs(resolvedPath)) {",
+          "to": "    if (!isWithinWorkspace(resolvedPath, ctx.cwd)) {"
+        }
+      ],
+      "tests": [
+        "src/test/sandbox-allowlist-handoff.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3704
+    },
+    {
+      "id": "MUT-5 事件名不一致（提示条收不到）",
+      "why": "ALLOW-5：工具/横幅发了事件，组件听的是另一个名字 ⇒ 提示永远不出现",
+      "patches": [
+        {
+          "file": "src/components/SandboxAllowPrompt.tsx",
+          "from": "    window.addEventListener(SANDBOX_ALLOW_REQUEST_EVENT, onRequest as EventListener);",
+          "to": "    window.addEventListener(\"codem-sandbox-allow-request-typo\", onRequest as EventListener);"
+        }
+      ],
+      "tests": [
+        "src/test/sandbox-allowlist-handoff.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4018
+    }
+  ]
+}

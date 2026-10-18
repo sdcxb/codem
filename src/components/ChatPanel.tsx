@@ -15,6 +15,7 @@ import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
 import { WaterLevelBanner } from "./WaterLevelBanner";
+import { SandboxAllowPrompt } from "./SandboxAllowPrompt";
 import { SideSessionPanel } from "./SideSessionPanel";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
@@ -940,6 +941,9 @@ setStepTooltipLocked(false);
           setSelectedAgentId(null);
         }}
       />
+
+      {/* 交接正文里有工作区外绝对路径时出现（只提示，不自动放行） */}
+      <SandboxAllowPrompt />
 
       <div className={`chat-body ${showWorkbench ? "workbench-split-active" : ""}`}>
         <div className="messages-container" ref={messagesContainerRef}>

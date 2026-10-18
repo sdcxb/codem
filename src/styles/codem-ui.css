@@ -857,6 +857,80 @@
   font-size: var(--fs-sm);
   animation: connection-banner-slide-in 0.3s ease-out;
 }
+/* ========== 5c-2. Sandbox Allow Prompt（交接正文里的工作区外路径） ==========
+   与水位提示条同一层：全宽横条、不打开面板就能看见。
+   **只提示、不自动放行** —— 按钮点下去才把目录加入 `codem-sandbox-allowed-dirs`。 */
+.sandbox-allow-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-4) var(--space-8);
+  background: var(--warning-surface);
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning-content);
+  font-size: var(--fs-sm);
+}
+.sandbox-allow-prompt.is-done {
+  background: var(--success-surface);
+  border-bottom-color: var(--success-border);
+  color: var(--success-content);
+}
+.sandbox-allow-title {
+  font-weight: var(--weight-semibold);
+  min-width: 0;
+}
+.sandbox-allow-details {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.sandbox-allow-summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+.sandbox-allow-list {
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-6);
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.sandbox-allow-item {
+  overflow-wrap: anywhere;
+}
+.sandbox-allow-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-inline-start: auto;
+}
+.sandbox-allow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-primary);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-swift);
+}
+.sandbox-allow-btn:hover {
+  background: var(--surface-2);
+}
+.sandbox-allow-btn.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+.sandbox-allow-btn.is-primary:hover {
+  background: var(--accent-hover);
+}
+
 .water-level-banner.is-critical {
   background: var(--error-surface);
   border-bottom-color: var(--error-border);

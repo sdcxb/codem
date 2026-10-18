@@ -1,8 +1,8 @@
 {
   "wave": "handoff-new-session",
   "description": "handoff_to_new_session：标题唯一化（时间戳 + 冲突序号）、新建会话后委派到新 id、新建失败不退化、工具注册与提示词路由规则、横幅用唯一标题。8 条判据 HANDOFF-NEW-1..7；5 条变异各自对红",
-  "runAt": "2026-10-18T02:35:49.176Z",
-  "specFingerprint": "591768852cbbc27c1d088d6f275393dab5b22467",
+  "runAt": "2026-10-18T03:38:10.290Z",
+  "specFingerprint": "223c826f778e820708ee0b53c14621525587ac61",
   "files": [
     "src/core/session/handoff-session.ts",
     "src/core/llm/index.ts",
@@ -32,16 +32,16 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2500
+      "ms": 2892
     },
     {
       "id": "MUT-2 新建失败也继续委派",
-      "why": "HANDOFF-NEW-4：没有新会话 id 还去委派 ⇒ 只能落到某个已有会话（正是真机缺陷形态）",
+      "why": "HANDOFF-NEW-4：没有新会话 id 还返回一个结果 ⇒ 任务只能落到某个已有会话（正是真机缺陷形态）",
       "patches": [
         {
           "file": "src/core/session/handoff-session.ts",
-          "from": "  if (!created?.id) {\n    throw new Error(opts.zh ? \"新建会话失败（没有拿到会话 id）\" : \"Failed to create the new session (no id)\");\n  }",
-          "to": "  if (!created?.id) {\n    return { sessionId: opts.existingTitles[0] ?? \"\", title, delegationId: \"del-fallback\" } as any;\n  }"
+          "from": "  if (!created?.id) {\n    throw new Error(",
+          "to": "  if (!created?.id) {\n    return { sessionId: opts.existingTitles[0] ?? \"\", title, delegationId: \"del-fallback\" } as any;\n    throw new Error("
         }
       ],
       "tests": [
@@ -52,7 +52,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2162
+      "ms": 2393
     },
     {
       "id": "MUT-3 引擎不注册新工具",
@@ -72,7 +72,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3691
+      "ms": 2635
     },
     {
       "id": "MUT-4 提示词删掉路由规则",
@@ -92,7 +92,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3215
+      "ms": 2481
     },
     {
       "id": "MUT-5 横幅退回固定标题",
@@ -112,7 +112,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2184
+      "ms": 3039
     }
   ]
 }

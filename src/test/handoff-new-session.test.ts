@@ -81,6 +81,86 @@ describe("HANDOFF-NEW 创建新会话并委派", () => {
     expect(oldIds).not.toContain(delegated[0].targetSessionId);
   });
 
+  it("HANDOFF-NEW-8: 建会话失败会**换名字重试**，成功后委派到新会话", async () => {
+    const tried: string[] = [];
+    const delegateTargets: string[] = [];
+    let calls = 0;
+    const result = await openHandoverSession({
+      zh: true,
+      task: "交接正文",
+      sourceSessionId: "sess-source",
+      projectId: "",
+      existingTitles: ["名词解释"],
+      // 前两次失败（模拟同名冲突/存储抖动），第三次成功
+      createSession: (title) => {
+        calls += 1;
+        tried.push(title);
+        if (calls < 3) throw new Error("UNIQUE constraint failed: sessions.title");
+        return { id: "sess-retry-ok" };
+      },
+      delegate: async (args) => {
+        delegateTargets.push(args.targetSessionId);
+        return { id: "del-retry" };
+      },
+      attempts: 3,
+      now: new Date(2026, 9, 18, 10, 30, 0),
+    });
+    expect(result.sessionId).toBe("sess-retry-ok");
+    expect(calls, "必须真的重试").toBe(3);
+    expect(new Set(tried).size, `每次重试都要换标题（实际：${tried.join(" / ")}）`).toBe(3);
+    expect(delegateTargets).toEqual(["sess-retry-ok"]);
+  });
+
+  it("HANDOFF-NEW-9: 同名冲突导致失败时，换标题重试能成功（不占用已有会话）", async () => {
+    const taken = new Set<string>(["交接会话 · 10-18 10:30"]);
+    const created: string[] = [];
+    const result = await openHandoverSession({
+      zh: true,
+      task: "交接正文",
+      sourceSessionId: "s",
+      projectId: "",
+      existingTitles: [],
+      createSession: (title) => {
+        if (taken.has(title)) throw new Error("UNIQUE constraint failed: sessions.title");
+        taken.add(title);
+        created.push(title);
+        return { id: `sess-${created.length}` };
+      },
+      delegate: async () => ({ id: "del-dup" }),
+      attempts: 3,
+      now: new Date(2026, 9, 18, 10, 30, 0),
+    });
+    expect(result.title.endsWith("(2)"), `第二次应生成 (2) 标题（实际 ${result.title}）`).toBe(true);
+    expect(created, "只应真正建成一个会话").toHaveLength(1);
+  });
+
+  it("HANDOFF-NEW-10: 重试次数用尽才报错，且错误写明重试过几个标题", async () => {
+    const tried: string[] = [];
+    let delegated = false;
+    await expect(
+      openHandoverSession({
+        zh: true,
+        task: "交接正文",
+        sourceSessionId: "s",
+        projectId: "",
+        existingTitles: [],
+        createSession: (title) => {
+          tried.push(title);
+          return null;
+        },
+        delegate: async () => {
+          delegated = true;
+          return { id: "del-x" };
+        },
+        attempts: 3,
+        now: new Date(2026, 9, 18, 10, 30, 0),
+      }),
+    ).rejects.toThrow(/重试 3 次/);
+    expect(tried, "应当尝试 3 个不同标题").toHaveLength(3);
+    expect(new Set(tried).size).toBe(3);
+    expect(delegated, "建会话失败时绝不允许退化委派").toBe(false);
+  });
+
   it("HANDOFF-NEW-4: 新建失败时抛错，且绝不退化成委派到已有会话", async () => {
     const delegate = async () => ({ id: "del-should-not-happen" });
     let called = false;

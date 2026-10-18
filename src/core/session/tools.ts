@@ -17,6 +17,7 @@ import { getDelegationOrchestrator } from "./orchestrator";
 import { cancelSessionExecution, isSessionExecuting } from "./executor";
 import { checkHandover } from "./handover";
 import { openHandoverSession } from "./handoff-session";
+import { requestSandboxAllowlist } from "./handoff-sandbox";
 import * as MessageStorage from "../storage/message";
 import * as SessionStorage from "../storage/session";
 import { useProjectStore } from "../store";
@@ -252,6 +253,11 @@ export function createHandoffToNewSessionTool(): ToolDef {
           createSession: (title) => useProjectStore.getState().createSession(title),
           delegate: (payload) => orchestrator.delegate(payload),
         });
+        /**
+         * 交接正文里的绝对路径若在工作区外，**提示**用户把它们所在目录加入沙箱允许目录。
+         * 只提示、不自动放行（放行必须用户点确认）。见 `handoff-sandbox.ts` 的说明。
+         */
+        requestSandboxAllowlist(task, store.currentProject?.path || ctx.cwd || "");
         return {
           title: `handoff_to_new_session: ${result.title}`,
           output:
