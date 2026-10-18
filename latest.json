@@ -1,15 +1,15 @@
 {
-  "version": "1.16.325",
-  "notes": "修复运行中追加不可见/附件丢失；窄容器自适应、Diff 分屏、滚动图钉、边缘渐隐、共享元素转场、提示音",
-  "pub_date": "2026-10-18T01:56:53Z",
+  "version": "1.16.326",
+  "notes": "修「移交给新对话」投给老会话；建会话失败换名重试；交接路径提示加入沙箱允许目录",
+  "pub_date": "2026-10-18T05:33:10Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dJbzdNRHNPbHN3NmNXNHZ3TFgrTjMzdlFVOFRKekZ6ZWRTSGQ1TUY1T1FCTHZ3REhUS3dzL3NhaElUTnFtZnJGZ2pRWCsrWVRwTk9nTmhDRGpUdlFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjg4NjA5CWZpbGU6Q29kZW1fMS4xNi4zMjVfeDY0LXNldHVwLmV4ZQo5SjR0RTRoT3dRNnhlRVpFRmVBNUhYNzJiVjY1WjhSMi9qeEhqa2p4R0ZKbmV2WXp1SGVSUWZPM1AyY1Z6RGdSakhjQkgrTjdLaDZLQUY1MUdaSTBDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.325/Codem_1.16.325_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RBRE9keVliQldBRE5KNXM0K1pKRFg4enI2M2dXVWZSYk9HMEFCY1ROTDR0R0g5T2pYbGxSRnFXVEVad1NvbG5HajlSa1IvRmZ2ampXSWF5QzJoTUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzAxNDMwCWZpbGU6Q29kZW1fMS4xNi4zMjZfeDY0LXNldHVwLmV4ZQpqZnBOVkE2TW5pdkZyK1FxMERnTko0UlBIWHpXUytsTW5OTTZjZjFpTGJDSzVBU3BUS0RvWnRmTElxSjhjTkhqVGJ0NnR6QnpMcEl5WEMxYVRNTitCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.326/Codem_1.16.326_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1dJbzdNRHNPbHN3NmNXNHZ3TFgrTjMzdlFVOFRKekZ6ZWRTSGQ1TUY1T1FCTHZ3REhUS3dzL3NhaElUTnFtZnJGZ2pRWCsrWVRwTk9nTmhDRGpUdlFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjg4NjA5CWZpbGU6Q29kZW1fMS4xNi4zMjVfeDY0LXNldHVwLmV4ZQo5SjR0RTRoT3dRNnhlRVpFRmVBNUhYNzJiVjY1WjhSMi9qeEhqa2p4R0ZKbmV2WXp1SGVSUWZPM1AyY1Z6RGdSakhjQkgrTjdLaDZLQUY1MUdaSTBDUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.325/Codem_1.16.325_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RBRE9keVliQldBRE5KNXM0K1pKRFg4enI2M2dXVWZSYk9HMEFCY1ROTDR0R0g5T2pYbGxSRnFXVEVad1NvbG5HajlSa1IvRmZ2ampXSWF5QzJoTUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzAxNDMwCWZpbGU6Q29kZW1fMS4xNi4zMjZfeDY0LXNldHVwLmV4ZQpqZnBOVkE2TW5pdkZyK1FxMERnTko0UlBIWHpXUytsTW5OTTZjZjFpTGJDSzVBU3BUS0RvWnRmTElxSjhjTkhqVGJ0NnR6QnpMcEl5WEMxYVRNTitCdz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.326/Codem_1.16.326_x64-setup.exe"
     }
   }
 }

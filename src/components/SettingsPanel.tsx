@@ -83,7 +83,7 @@ import {
   setDeepSeekSearchEnabled,
   type DeepSeekWebConfig,
 } from "../core/llm/tools/deepseek-web";
-import { setSandboxAclEnabled, isSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
+import { setSandboxAclEnabled, isSandboxAclEnabled, getSandboxAllowedDirs, removeSandboxAllowedDir } from "../core/sandbox/sandbox-acl";
 import { showToast } from "./ToastNotification";
 import { useEdgeFade } from "./EdgeFade";
 import { useRovingFocus } from "../hooks/useRovingFocus";
@@ -303,6 +303,13 @@ export function SettingsPanel({
    * 勾选后调用 set/removeSetting 却不触发重渲染，界面上的勾选状态要等面板重开才更新。
    */
   const [sandboxOn, setSandboxOn] = useState<boolean>(() => isSandboxAclEnabled());
+  /** 沙箱允许目录（交接时一键加入的那些）—— 这里必须能**看到并移除**，否则"可撤销"是假的 */
+  const [allowedDirs, setAllowedDirs] = useState<string[]>(() => getSandboxAllowedDirs());
+  useEffect(() => {
+    const refresh = () => setAllowedDirs(getSandboxAllowedDirs());
+    window.addEventListener("codem-settings-changed", refresh);
+    return () => window.removeEventListener("codem-settings-changed", refresh);
+  }, []);
   /**
    * DeepSeek 联网能力（Search / Fetch）的开关与条数 —— **默认关闭**。
    *
@@ -637,6 +644,16 @@ export function SettingsPanel({
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
 const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "phone" | "codegraph" | "advanced" | "help" | "usage" | "performance" | "memory-checkup">((initialTab as any) || "general");
+  /**
+   * 切到「安全」时**重新读一次**允许目录。
+   *
+   * 真机教训（1.16.326 验证时发现）：设置面板是常驻挂载的，`useState(getSandboxAllowedDirs())`
+   * 只在**首次挂载**求值 —— 那时存储端口可能还没就绪，读到空数组就再也不刷新，
+   * 于是"库里明明有允许目录、界面上却显示暂无"。这里按 tab 重读，事件监听仍负责热更新。
+   */
+  useEffect(() => {
+    if (activeTab === "security") setAllowedDirs(getSandboxAllowedDirs());
+  }, [activeTab]);
   /**
    * 运行模式的「更多」是否展开（第 186 轮）。
    *
@@ -2361,6 +2378,41 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 ? "开启后，AI 助手只能在当前工作目录及其子目录中写入文件，防止意外修改项目外部文件。"
                 : "When enabled, the AI assistant can only write files within the current workspace directory and its subdirectories."}
             </div>
+            {/*
+              允许目录（2026-10-18）：交接正文里的绝对路径常在工作区外，提示条可以一键把这些目录加进来。
+              ⚠️ 必须能移除 —— 加进来的是**真实文件访问权限**，只进不出就是把"可撤销"说成假的。
+            */}
+            {sandboxOn && (
+              <div className="sp-note sp-note--spaced">
+                <div>
+                  {lang === "zh" ? "沙箱允许目录（工作区外额外放行）" : "Sandbox allowlist (extra readable folders)"}
+                </div>
+                {allowedDirs.length === 0 ? (
+                  <div className="hint-sm">
+                    {lang === "zh" ? "暂无。交接时若正文里有工作区外的路径，会出现「加入允许目录」的提示。" : "None. Handovers with out-of-workspace paths will offer to add them."}
+                  </div>
+                ) : (
+                  <ul className="sp-allowlist">
+                    {allowedDirs.map((dir) => (
+                      <li key={dir} className="sp-allowlist-item">
+                        <span className="sp-allowlist-path" title={dir}>{dir}</span>
+                        <button
+                          type="button"
+                          className="sp-btn sp-btn--sm"
+                          onClick={() => {
+                            removeSandboxAllowedDir(dir);
+                            setAllowedDirs(getSandboxAllowedDirs());
+                          }}
+                          title={lang === "zh" ? "从允许目录移除" : "Remove from allowlist"}
+                        >
+                          {lang === "zh" ? "移除" : "Remove"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
 
 </>

@@ -111,6 +111,18 @@ describe("ALLOW-4 闸门与 Rust 守卫都认白名单", () => {
   });
 });
 
+describe("ALLOW-7 允许目录可管理（设置里能移除）", () => {
+  it("ALLOW-7: 设置面板列出允许目录并可移除（不是只进不出）", () => {
+    const src = read("src/components/SettingsPanel.tsx");
+    expect(src).toContain("getSandboxAllowedDirs");
+    expect(src).toContain("removeSandboxAllowedDir(dir)");
+    expect(src).toContain("sp-allowlist");
+    expect(src).toContain("从允许目录移除");
+    // 样式必须存在（否则列表不可见，等于没做）
+    expect(read("src/styles/codem-ui.css")).toContain(".sp-allowlist-item");
+  });
+});
+
 describe("ALLOW-5 提示条（行为）", () => {
   it("ALLOW-5: 事件出现提示条；点「加入允许目录」真的写进设置", async () => {
     const { SandboxAllowPrompt } = await import("../components/SandboxAllowPrompt");

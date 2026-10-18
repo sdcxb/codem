@@ -69,6 +69,19 @@ export default {
       expectRed: true,
     },
     {
+      id: "MUT-7 设置里的允许目录不能移除",
+      why: "ALLOW-7：只进不出的白名单等于假的可撤销（加的是真实文件访问权限）",
+      patches: [
+        {
+          file: "src/components/SettingsPanel.tsx",
+          from: "                            removeSandboxAllowedDir(dir);",
+          to: "                            void 0;",
+        },
+      ],
+      tests: ["src/test/sandbox-allowlist-handoff.test.tsx"],
+      expectRed: true,
+    },
+    {
       id: "MUT-5 事件名不一致（提示条收不到）",
       why: "ALLOW-5：工具/横幅发了事件，组件听的是另一个名字 ⇒ 提示永远不出现",
       patches: [

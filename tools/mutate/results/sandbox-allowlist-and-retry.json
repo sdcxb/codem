@@ -1,13 +1,14 @@
 {
   "wave": "sandbox-allowlist-and-retry",
   "description": "交接加固：建会话失败换标题重试（不退化到已有会话）；交接正文里的工作区外绝对路径自动提示加入沙箱允许目录（只提示、不自动放行；读写闸门与 Rust 守卫同一份白名单）。判据 HANDOFF-NEW-8..10、ALLOW-1..6；5 条变异各自对红",
-  "runAt": "2026-10-18T03:51:57.077Z",
-  "specFingerprint": "cdaeb09afe2b2b6e24de8f6c1bfada7cc6795187",
+  "runAt": "2026-10-18T04:56:16.573Z",
+  "specFingerprint": "b0846ae1a81ff9025fdb33a59009d7ab83df1546",
   "files": [
     "src/core/session/handoff-session.ts",
     "src/core/file-api.ts",
     "src/components/SandboxAllowPrompt.tsx",
-    "src/core/llm/tool-pipeline.ts"
+    "src/core/llm/tool-pipeline.ts",
+    "src/components/SettingsPanel.tsx"
   ],
   "tests": [
     "src/test/handoff-new-session.test.ts",
@@ -33,7 +34,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2767
+      "ms": 2833
     },
     {
       "id": "MUT-2 重试时仍用同一个标题",
@@ -53,7 +54,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2697
+      "ms": 3033
     },
     {
       "id": "MUT-3 读侧闸门不认白名单",
@@ -73,7 +74,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3204
+      "ms": 3357
     },
     {
       "id": "MUT-4 提示一出现就自动放行",
@@ -93,7 +94,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3204
+      "ms": 3257
     },
     {
       "id": "MUT-6 工具管线的路径闸不认白名单",
@@ -113,7 +114,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3704
+      "ms": 3344
+    },
+    {
+      "id": "MUT-7 设置里的允许目录不能移除",
+      "why": "ALLOW-7：只进不出的白名单等于假的可撤销（加的是真实文件访问权限）",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "                            removeSandboxAllowedDir(dir);",
+          "to": "                            void 0;"
+        }
+      ],
+      "tests": [
+        "src/test/sandbox-allowlist-handoff.test.tsx"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3163
     },
     {
       "id": "MUT-5 事件名不一致（提示条收不到）",
@@ -133,7 +154,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 4018
+      "ms": 4625
     }
   ]
 }

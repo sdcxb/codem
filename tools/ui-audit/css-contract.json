@@ -16461,6 +16461,31 @@
     "font-size": "var(--fs-xs)",
     "margin-left": "var(--space-4)"
   },
+  "sp-allowlist": {
+    "display": "flex",
+    "flex-direction": "column",
+    "gap": "var(--space-2)",
+    "list-style": "none",
+    "margin": "var(--space-2) 0 0",
+    "padding": "0"
+  },
+  "sp-allowlist-item": {
+    "align-items": "center",
+    "background": "var(--surface-1)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "display": "flex",
+    "gap": "var(--space-3)",
+    "padding": "var(--space-2) var(--space-3)"
+  },
+  "sp-allowlist-path": {
+    "color": "var(--text-secondary)",
+    "flex": "1",
+    "font-family": "var(--font-mono)",
+    "font-size": "var(--fs-xs)",
+    "min-width": "0",
+    "overflow-wrap": "anywhere"
+  },
   "sp-auto": {
     "flex": "0 0 auto"
   },
