@@ -16,6 +16,7 @@ import { getLang } from "../i18n/lang";
 import { getDelegationOrchestrator } from "./orchestrator";
 import { cancelSessionExecution, isSessionExecuting } from "./executor";
 import { checkHandover } from "./handover";
+import { openHandoverSession } from "./handoff-session";
 import * as MessageStorage from "../storage/message";
 import * as SessionStorage from "../storage/session";
 import { useProjectStore } from "../store";
@@ -163,6 +164,115 @@ export function createDelegateToSessionTool(): ToolDef {
         return {
           title: "delegate_to_session",
           output: (zh ? "错误: " : "Error: ") + error.message, isError: true,
+        };
+      }
+    },
+  };
+}
+
+// ========== 1b. handoff_to_new_session ==========
+
+/**
+ * 把任务移交到**一个新建的会话**（不是已有会话）。
+ *
+ * ## 为什么必须单独有这个工具（2026-10-18 用户直报）
+ *
+ * 用户在一个很长、效果变差的对话里说「把这个任务移交给新对话」。agent 手里只有
+ * `delegate_to_session(target_session_id)` —— **没有"新建会话"的能力**，于是它去
+ * `list_sessions` 里挑了一条**标题相似的已有老会话**（「名词解释」还给了「名词解释啊」），
+ * 任务被投进了那段旧上下文，用户看到的形态就是"移交给了名词解释的老对话"。
+ *
+ * 这个工具把"新会话"变成**唯一正确出口**：自己建会话（标题带时间戳、保证唯一）、
+ * 再把交接正文委派过去；返回 `SESSION_ID` + `TASK_ID`。它**不接受**目标会话参数 ——
+ * 从签名上就堵死"投给已有会话"。
+ *
+ * 判据 `HANDOFF-NEW-1..4`。
+ */
+export function createHandoffToNewSessionTool(): ToolDef {
+  return {
+    id: "handoff_to_new_session",
+    contract: { readOnly: false, accessScope: "session", persistResult: true },
+    guidance:
+      "Use handoff_to_new_session when the user asks to hand the work over to a NEW conversation/session. " +
+      "It creates a brand-new session and delegates the handover there. Do NOT reuse an existing session for this.",
+    description:
+      "Hand the current work over to a BRAND-NEW session. Creates the session (unique title with a timestamp) " +
+      "and delegates the handover text to it. Use this whenever the user says 新对话 / 新会话 / 移交 / hand off / start fresh. " +
+      "Never pick an existing session by title similarity — if the user names an existing session explicitly, " +
+      "use delegate_to_session with its id instead. Task text is validated as a handover (absolute path + definition of done).",
+    parameters: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description:
+            "The handover body for the new session: current state + absolute paths + definition of done (same rules as delegate_to_session).",
+        },
+      },
+      required: ["task"],
+    },
+    async execute(args, ctx): Promise<ToolExecuteResult> {
+      const zh = getLang() === "zh";
+      const task = String(args.task ?? "").trim();
+
+      const check = checkHandover(task);
+      if (!check.ok) {
+        return {
+          title: "handoff_to_new_session",
+          output:
+            (zh ? "交接正文不合规，未新建会话：\n\n" : "Handover rejected, no session created:\n\n") +
+            check.error +
+            (zh ? "\n\n补齐后重新调用 handoff_to_new_session。" : "\n\nFix it and call handoff_to_new_session again."),
+          isError: true,
+        };
+      }
+
+      const store = useProjectStore.getState();
+      const projectId = store.currentProject?.id || "";
+      const orchestrator = getDelegationOrchestrator();
+      let existingTitles: string[] = [];
+      try {
+        existingTitles = [
+          ...store.sessions.map((s: any) => String(s.title ?? "")),
+          ...SessionStorage.listSessions(projectId).map((s: any) => String(s.title ?? "")),
+        ];
+      } catch (e) {
+        // 读不到已有标题不影响"新会话"这个动作本身：标题仍带时间戳，冲突概率极低
+        console.warn("[handoff_to_new_session] 读已有标题失败（仍会生成带时间戳的标题）:", e);
+        existingTitles = store.sessions.map((s: any) => String(s.title ?? ""));
+      }
+
+      try {
+        const result = await openHandoverSession({
+          zh,
+          task,
+          sourceSessionId: ctx.sessionId,
+          projectId,
+          existingTitles,
+          createSession: (title) => useProjectStore.getState().createSession(title),
+          delegate: (payload) => orchestrator.delegate(payload),
+        });
+        return {
+          title: `handoff_to_new_session: ${result.title}`,
+          output:
+            (zh ? "已移交到一个**新建**的会话" : "Handed over to a NEW session") +
+            `\nSESSION_ID: ${result.sessionId}` +
+            `\nTASK_ID: ${result.delegationId}` +
+            `\n` +
+            (zh ? `新会话标题: ${result.title}` : `New session title: ${result.title}`) +
+            `\n\n` +
+            (zh
+              ? "新会话已开始后台处理。用 wait_for_delegation 获取结果；需要给用户看时把 SESSION_ID 一起说出来。"
+              : "The new session is now processing in the background. Use wait_for_delegation for the result; mention SESSION_ID to the user.") +
+            (check.warning ? (zh ? `\n\n提醒：${check.warning}` : `\n\nNote: ${check.warning}`) : ""),
+          isError: false,
+          metadata: { delegationTaskId: result.delegationId, sessionId: result.sessionId, title: result.title },
+        };
+      } catch (error: any) {
+        return {
+          title: "handoff_to_new_session",
+          output: (zh ? "移交失败: " : "Handoff failed: ") + (error?.message ?? String(error)),
+          isError: true,
         };
       }
     },
@@ -400,6 +510,16 @@ export function createListSessionsTool(): ToolDef {
        */
       const isExecuting = isSessionExecuting;
 
+      /**
+       * 同名会话在侧栏里很常见（`交接会话` 每次都会新建一条），标题**不是身份**。
+       * 这里把标题重复数标出来，避免 agent 用一个模糊的标题做判断。
+       */
+      const titleCounts = new Map<string, number>();
+      for (const { s } of rows) {
+        const key = String(s.title ?? "");
+        titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+      }
+
       const lines = rows.map(({ s, scope }) => {
         const delegations = orchestrator.getDelegationsByTarget(s.id);
         const pendingCount = delegations.filter((d) => d.status === "pending" || d.status === "running").length;
@@ -409,13 +529,18 @@ export function createListSessionsTool(): ToolDef {
             ? (zh ? `委派中(${pendingCount})` : `delegated(${pendingCount})`)
             : (zh ? "空闲" : "idle");
 
-        return `  ${s.id} | ${s.title} | ${status} | ${s.messageCount ?? 0} msgs | scope=${scope}`;
+        const dup = (titleCounts.get(String(s.title ?? "")) ?? 1) > 1
+          ? (zh ? ` | ⚠同名${titleCounts.get(String(s.title ?? ""))}` : ` | ⚠same-title×${titleCounts.get(String(s.title ?? ""))}`)
+          : "";
+        return `  ${s.id} | ${s.title}${dup} | ${status} | ${s.messageCount ?? 0} msgs | scope=${scope}`;
       });
 
       const scopes = new Set(rows.map((r) => r.scope));
       const header = zh
         ? `会话列表 (${rows.length} 个，覆盖作用域 ${scopes.size} 个):\n  ID | 标题 | 状态 | 消息数 | 作用域\n` +
-          `（委派目标可以是其中**任意一条**：跨作用域允许，只要该会话存在。）`
+          `（委派目标可以是其中**任意一条**：跨作用域允许，只要该会话存在。）
+` +
+          `（⚠同名 = 标题重复：标题**不是身份**，要投给已有会话必须由用户点名，或使用 handoff_to_new_session 新建。）`
         : `Sessions (${rows.length}, ${scopes.size} scope(s)):\n  ID | Title | Status | Messages | Scope\n` +
           `(Any of these can be a delegation target — cross-scope is allowed as long as the session exists.)`;
 

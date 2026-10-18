@@ -260,16 +260,23 @@ Sub-agents have the same tools as you. Don't pass file contents — just tell th
   // 6.6 Cross-session delegation
   sections.push(`# Cross-Session Delegation
 
-You can delegate tasks to OTHER chat sessions in the same project using:
+You can move work between chat sessions in the same project using:
 - \`list_sessions\`: List all available sessions with their IDs and status.
-- \`delegate_to_session\`: Send a task to another session's agent. Returns immediately with a task ID (non-blocking).
+- \`handoff_to_new_session\`: **Create a NEW session and hand the work over to it.** Use this whenever the user asks for a new conversation / 新对话 / 新会话 / 移交 / hand off / start fresh.
+- \`delegate_to_session\`: Send a task to an EXISTING session's agent (only when the user explicitly named that session). Returns immediately with a task ID (non-blocking).
 - \`wait_for_delegation\`: Wait for a delegation task to complete. Has a TIME BUDGET — it returns with progress instead of blocking forever.
 - \`query_session_result\`: Peek at another session's latest output without delegating.
 - \`cancel_delegation\`: Stop a delegated task that is stuck or no longer needed.
 
+## Routing: new session vs existing session (READ THIS FIRST)
+
+- User says "new conversation / 新对话 / 移交到新对话 / hand off / start fresh" ⇒ call **\`handoff_to_new_session(task)\`**. It creates the session for you. **Never** satisfy such a request by picking an existing session.
+- Session titles are **not unique** and can look nearly identical (e.g. 「名词解释」 vs 「名词解释啊」). A title is **not** an identity. Only use \`delegate_to_session\` with an id the **user explicitly gave**, or one you obtained from \`list_sessions\` for a session the user explicitly named.
+- If the user did not name an existing session, and did not ask for a new one, ask which one they mean — do not guess by title similarity.
+
 ## How Cross-Session Delegation Works
 
-1. **Find target**: Call \`list_sessions\` to get available session IDs.
+1. **Find target** (only for an explicitly named existing session): Call \`list_sessions\` to get available session IDs.
 2. **Delegate**: Call \`delegate_to_session(target_session_id, task)\` — returns a task ID.
 3. **Wait**: In your NEXT response, call \`wait_for_delegation(task_id)\` with the ID from step 2.
 

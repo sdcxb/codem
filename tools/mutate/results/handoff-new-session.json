@@ -1,0 +1,118 @@
+{
+  "wave": "handoff-new-session",
+  "description": "handoff_to_new_session：标题唯一化（时间戳 + 冲突序号）、新建会话后委派到新 id、新建失败不退化、工具注册与提示词路由规则、横幅用唯一标题。8 条判据 HANDOFF-NEW-1..7；5 条变异各自对红",
+  "runAt": "2026-10-18T02:35:49.176Z",
+  "specFingerprint": "591768852cbbc27c1d088d6f275393dab5b22467",
+  "files": [
+    "src/core/session/handoff-session.ts",
+    "src/core/llm/index.ts",
+    "src/core/prompt/prompt.ts",
+    "src/components/WaterLevelBanner.tsx"
+  ],
+  "tests": [
+    "src/test/handoff-new-session.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 标题不再考虑已有会话",
+      "why": "HANDOFF-NEW-2：同一分钟内多次交接会撞标题（侧栏又出现无法区分的同名会话）",
+      "patches": [
+        {
+          "file": "src/core/session/handoff-session.ts",
+          "from": "  const taken = new Set(existing.map((t) => String(t ?? \"\")));",
+          "to": "  const taken = new Set<string>();"
+        }
+      ],
+      "tests": [
+        "src/test/handoff-new-session.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2500
+    },
+    {
+      "id": "MUT-2 新建失败也继续委派",
+      "why": "HANDOFF-NEW-4：没有新会话 id 还去委派 ⇒ 只能落到某个已有会话（正是真机缺陷形态）",
+      "patches": [
+        {
+          "file": "src/core/session/handoff-session.ts",
+          "from": "  if (!created?.id) {\n    throw new Error(opts.zh ? \"新建会话失败（没有拿到会话 id）\" : \"Failed to create the new session (no id)\");\n  }",
+          "to": "  if (!created?.id) {\n    return { sessionId: opts.existingTitles[0] ?? \"\", title, delegationId: \"del-fallback\" } as any;\n  }"
+        }
+      ],
+      "tests": [
+        "src/test/handoff-new-session.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2162
+    },
+    {
+      "id": "MUT-3 引擎不注册新工具",
+      "why": "HANDOFF-NEW-5：模型看不到 handoff_to_new_session，只能退回挑已有会话",
+      "patches": [
+        {
+          "file": "src/core/llm/index.ts",
+          "from": "      this.tools.register(createHandoffToNewSessionTool());",
+          "to": "      void createHandoffToNewSessionTool;"
+        }
+      ],
+      "tests": [
+        "src/test/handoff-new-session.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3691
+    },
+    {
+      "id": "MUT-4 提示词删掉路由规则",
+      "why": "HANDOFF-NEW-6：只剩工具没有规则，模型仍可能按标题相似度挑已有会话",
+      "patches": [
+        {
+          "file": "src/core/prompt/prompt.ts",
+          "from": "## Routing: new session vs existing session (READ THIS FIRST)",
+          "to": "## Cross-session notes"
+        }
+      ],
+      "tests": [
+        "src/test/handoff-new-session.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3215
+    },
+    {
+      "id": "MUT-5 横幅退回固定标题",
+      "why": "HANDOFF-NEW-7：交接会话再次全部同名，用户无法区分哪次是哪次",
+      "patches": [
+        {
+          "file": "src/components/WaterLevelBanner.tsx",
+          "from": "      const target = createSession(nextHandoverTitle(existingTitles, zh));",
+          "to": "      const target = createSession(zh ? \"交接会话\" : \"Handover session\");"
+        }
+      ],
+      "tests": [
+        "src/test/handoff-new-session.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2184
+    }
+  ]
+}

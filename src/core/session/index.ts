@@ -59,6 +59,8 @@ export {
 // ========== 委派工具 ==========
 export {
   createDelegateToSessionTool,
+  /* 2026-10-18：移交到**新建**会话（用户直报"移交给新对话却投给了老对话"） */
+  createHandoffToNewSessionTool,
   createWaitForDelegationTool,
   createQuerySessionResultTool,
   createListSessionsTool,
@@ -66,3 +68,14 @@ export {
   /* 第 190 轮：把会话标记为内部（不进对话目录）—— 由 agent 显式声明，可逆 */
   createSetSessionInternalTool,
 } from "./tools";
+
+// ========== 交接会话（标题唯一化 + 创建/委派流程） ==========
+export {
+  HANDOVER_TITLE_EN,
+  HANDOVER_TITLE_ZH,
+  handoverStamp,
+  nextHandoverTitle,
+  openHandoverSession,
+  type OpenHandoverSessionOptions,
+  type OpenHandoverSessionResult,
+} from "./handoff-session";

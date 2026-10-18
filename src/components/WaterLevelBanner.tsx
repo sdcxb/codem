@@ -47,6 +47,7 @@ import { listVisibleMessages } from "../core/storage/message";
 import { reportActionFailure, reportAdvisory } from "../core/storage/persist-failure";
 import { getDelegationOrchestrator } from "../core/session/orchestrator";
 import { buildHandover } from "../core/session/ui-handoff";
+import { nextHandoverTitle } from "../core/session/handoff-session";
 import { WATER_LEVEL, useContextWaterLevel } from "../core/context/water-level";
 import { readContextDrop, subscribeContextDrop, contextDropVersion } from "../core/llm/context-visibility";
 
@@ -287,7 +288,13 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
         return;
       }
 
-      const target = createSession(zh ? "交接会话" : "Handover session");
+      /*
+       * 标题必须**可区分**（2026-10-18 用户直报：侧栏里反复出现同名「交接会话」，
+       * 分不清哪次是哪次）。用 `nextHandoverTitle` 生成带时间戳的标题；
+       * 同一分钟内重复交接还有 ` (2)` 序号兜底。
+       */
+      const existingTitles = useProjectStore.getState().sessions.map((s) => String(s.title ?? ""));
+      const target = createSession(nextHandoverTitle(existingTitles, zh));
       if (!target?.id) throw new Error(zh ? "新建会话失败（没有拿到会话 id）" : "New session was not created");
 
       const projectId = useProjectStore.getState().currentProject?.id || "";

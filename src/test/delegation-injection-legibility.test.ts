@@ -82,9 +82,16 @@ describe("第 194 波 · 新会话标题去重（O-56 的第四环）", () => {
     const src = readFileSync("src/core/store.ts", "utf8");
     expect(src, "createSession 必须做标题去重（否则侧栏一堆同名「交接会话」）").toMatch(/finalTitle/);
     expect(src, "去重要用序号后缀").toMatch(/`\$\{baseTitle\} · \$\{n\}`/);
-    // 与产品同一处：横幅交接仍传「交接会话」这个标题（去重是 createSession 的职责）
+    /*
+     * 2026-10-18 起**口径前移**：横幅交接不再传固定「交接会话」，而是用
+     * `nextHandoverTitle` 生成「交接会话 · MM-DD HH:mm」（同名再追加 (2)）。
+     * 理由（用户直报）：只靠 createSession 的 `· 2` 兜底，侧栏仍是一串近似名字，
+     * 分不清哪次是哪次，也分不清"新会话"与"上次的交接"。
+     * createSession 的去重仍是第二层保险（DELEG-TITLE-2 守着）。
+     */
     const banner = readFileSync("src/components/WaterLevelBanner.tsx", "utf8");
-    expect(banner).toContain('createSession(zh ? "交接会话"');
+    expect(banner).toContain("nextHandoverTitle(existingTitles, zh)");
+    expect(banner).not.toContain('createSession(zh ? "交接会话"');
   });
 
   it("DELEG-TITLE-2（反向对照）：只有**同名**才加序号，不同名的一个字都不动", async () => {

@@ -7144,3 +7144,42 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   （含新增 `audit:motion`、`audit:doc-tokens`）。
 - 教训：源码级判据切函数体时不能用 `indexOf("};")`（会切在嵌套对象上），要么按缩进锚点、
   要么做花括号配平；`git check-ignore` 评估 ignore 规则要加 `--no-index`。
+
+## 2026-10-18 11:20 — 第 239 波：「移交给新对话」被投给老会话（用户直报的重大缺陷）
+
+### 1）现象与根因
+
+用户在一个很长的对话里让 agent「把名词解释任务移交给新对话」，任务被投给了**标题相似的已有老会话**
+（「名词解释」还给了「名词解释啊」）；同时侧栏反复出现同名「交接会话」，分不清哪次是哪次。
+
+根因两条：
+1. 跨会话工具只有 `delegate_to_session(target_session_id)` —— **没有"新建会话"的能力**。
+   agent 只能从 `list_sessions` 里挑；标题既不唯一、也没有身份语义 ⇒ 一挑就错。
+2. 横幅交接每次 `createSession("交接会话")`；`createSession` 的第二层去重只追加 ` · 2`，
+   于是侧栏是一串近似名字（用户看到的形态就是"每次都是交接对话"）。
+
+### 2）修法
+
+- 新增 `core/session/handoff-session.ts`：`nextHandoverTitle`（`交接会话 · MM-DD HH:mm`，同名追加 `(2)`）
+  + `openHandoverSession`（依赖注入：创建会话 + 委派，**委派目标必须是刚创建的 id**；新建失败直接抛错）。
+- 新增工具 `handoff_to_new_session(task)`：签名里**没有**目标会话参数；交接正文仍走 `checkHandover`。
+- 提示词新增 `Routing: new session vs existing session`：新对话必须用新工具；**标题不是身份**；
+  只有用户点名已有会话才用 `delegate_to_session`。
+- `list_sessions` 给同名会话打 `⚠同名N` + 表头说明；横幅改用唯一标题。
+
+### 3）判据 / 变异 / 真机
+
+- 判据 `HANDOFF-NEW-1..7`；变异波次 `handoff-new-session`（5 条全红：标题不查重 / 新建失败仍委派 /
+  不注册工具 / 删路由规则 / 横幅退回固定标题）。
+- 真机（构建产物 + CDP）：模型据提示词调用 `handoff_to_new_session`；界面切到新会话，
+  标题 `交接会话 · 10-18 11:15`（与 11:02 那次可区分）；老会话一条没被动过。
+  证据 `docs/evidence/handoff-new-session-2026-10-18/`。
+- 顺带修两条本轮引入的红：`DELEG-TITLE-1`（口径前移到 `nextHandoverTitle`，判据同步更新）、
+  `TIME-SINGLE-SOURCE`（`handoverStamp` 必须走 `core/time/local-time.ts`）。
+
+### 4）已知遗留（不在本修复范围）
+
+- 新会话按交接读 `C:/mimo-gui/docs/ui-spec.md` 时被**沙箱**拒绝（工作区是 `D:\mimo`）——
+  模型按判据如实报告，这是沙箱配置问题，需要用户把路径加进允许目录或换工作区。
+- 静默安装在本次验证时挂住（两次超时），改用 `target/release/codem.exe` 直接启动验证
+  （同一构建产物）；发版前需要重新走一次安装器验证。

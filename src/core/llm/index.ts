@@ -528,6 +528,7 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
   private setupDelegationTools() {
     import("../session").then(({
       createDelegateToSessionTool,
+      createHandoffToNewSessionTool,
       createWaitForDelegationTool,
       createQuerySessionResultTool,
       createListSessionsTool,
@@ -535,6 +536,8 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       createSetSessionInternalTool,
     }) => {
       this.tools.register(createDelegateToSessionTool());
+      /* 2026-10-18：用户说"移交给新对话"时必须走这条（新建会话），不能挑已有会话 */
+      this.tools.register(createHandoffToNewSessionTool());
       this.tools.register(createWaitForDelegationTool());
       this.tools.register(createQuerySessionResultTool());
       this.tools.register(createListSessionsTool());
