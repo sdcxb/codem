@@ -1,0 +1,35 @@
+{
+  "wave": "docs-key-tracking",
+  "description": "关键文档靠 .gitignore 的 negation 显式放行，并由 DOCSKEY-1..3 验证存在/被跟踪/不被忽略；变异：去掉 ui-spec 的放行 ⇒ DOCSKEY-3 必须红",
+  "runAt": "2026-10-18T01:45:26.220Z",
+  "specFingerprint": "ca6c9aeeffecf0eb18e391d80ee29dde2b632974",
+  "files": [
+    ".gitignore"
+  ],
+  "tests": [
+    "src/test/docs-key-tracking.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 去掉 ui-spec 的放行规则",
+      "why": "DOCSKEY-3：negation 缺失时该文档重新变成 ignored（新克隆/新会话拿不到它）",
+      "patches": [
+        {
+          "file": ".gitignore",
+          "from": "!docs/ui-spec.md",
+          "to": "# !docs/ui-spec.md (mutated)"
+        }
+      ],
+      "tests": [
+        "src/test/docs-key-tracking.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 4438
+    }
+  ]
+}

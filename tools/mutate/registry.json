@@ -52,7 +52,9 @@
     "guidance-persist-attachments": "运行中追加（mid-turn guidance）的可见性与附件：消费时落库成真实 user 消息（不再只是临时注入）、附件随条目落库并由 messagesToLLMMessages 按 id 取回正文转成 image block、界面统一剥掉附件块与注入模板显示用户原文。判据 GUIDE-VIS-1..5 / GUIDE-ATT-1..3；4 条变异（不落库 / 队列丢附件 / 显示口径退回 / 多模态不按 id 取回）",
     "narrow-containers": "窄容器自适应（@container）：工具卡 420px 以下 IN/OUT 段竖排、tool-io-text 允许长 token 任意断行；设置内容列 520px 以下行内控件换行、输入框占满。判据 NARROW-1..4（真渲染探针，五档宽度）；3 条变异（去掉两处 container-type + 去掉 overflow-wrap）各自对红",
     "scroll-pinning": "流式滚动图钉：贴底容差 40px、用户主动滚动后 150ms 冷却、流式期 behavior:auto（非流式 smooth）。判据 SCROLLPIN-1..4；3 条变异（容差归零 / 冷却归零 / 流式改 smooth）",
-    "ui-craft-p2": "UI 工艺 P2（对标 open-claude-ui 的七项）：边缘 7 档渐隐（触边归零）、Diff 统一/分屏（行配对+行号）、图片预览共享元素转场（含降级）、UI 规格文档令牌对账 + 组件目录、roving focus 统一钩子、WebAudio 合成提示音（默认关）、动效令牌 + 裸 cubic-bezier 棘轮。判据 EDGEFADE/DIFFVIEW/VIEWTRANS/UIDOC/ROVING/SOUND/MOTION；8 条变异各自对红"
+    "ui-craft-p2": "UI 工艺 P2（对标 open-claude-ui 的七项）：边缘 7 档渐隐（触边归零）、Diff 统一/分屏（行配对+行号）、图片预览共享元素转场（含降级）、UI 规格文档令牌对账 + 组件目录、roving focus 统一钩子、WebAudio 合成提示音（默认关）、动效令牌 + 裸 cubic-bezier 棘轮。判据 EDGEFADE/DIFFVIEW/VIEWTRANS/UIDOC/ROVING/SOUND/MOTION；8 条变异各自对红",
+    "custom-provider-unified-save": "自定义 Provider 的添加并入规范保存：appendCustomProvider 纯逻辑（去空格/custom- 前缀/custom 标记）+ addCustomProvider 调 handleSave(新列表) 且确认后才收起表单，不再裸写 codem-settings。判据 CUSTPROV-1..4；2 条变异（不传新列表 / 未确认也收起）各自对红",
+    "docs-key-tracking": "文档策略：关键文档（HANDOVER/HANDOFF/GAP-LIST/NEW-SESSION-START/RELEASE-GUIDE/DEAD-CODE-TRIAGE/PROJECT-GUIDE/ui-spec）靠 .gitignore negation 强制入库，判据 DOCSKEY-1..3（存在/被跟踪/不被忽略）；变异：去掉一条放行 ⇒ DOCSKEY-3 红"
   },
   "waves": [
     "batch-prune-log-only-232",
@@ -109,6 +111,8 @@
     "guidance-persist-attachments",
     "narrow-containers",
     "scroll-pinning",
-    "ui-craft-p2"
+    "ui-craft-p2",
+    "custom-provider-unified-save",
+    "docs-key-tracking"
   ]
 }

@@ -88,6 +88,7 @@ import { showToast } from "./ToastNotification";
 import { useEdgeFade } from "./EdgeFade";
 import { useRovingFocus } from "../hooks/useRovingFocus";
 import { SOUND_CUES_SETTING_KEY } from "../core/ui/sound-cues";
+import { appendCustomProvider } from "../core/settings/custom-provider";
 // P2 #35: Import UsageStats for embedding in settings
 import { UsageStats } from "./UsageStats";
 import { PerformanceDashboard } from "./PerformanceDashboard";
@@ -501,7 +502,15 @@ export function SettingsPanel({
    * 为什么要有返回值：provider 卡片上的「保存并刷新模型」要先确认"存上了"再去拉模型列表
    * —— 否则会在"没存上"的前提下装作已保存（2026-10-17「保存并刷新模型」误导实报，见该按钮处的注释）。
    */
-  const handleSave = async (): Promise<boolean> => {
+  const handleSave = async (panelOverride?: Settings): Promise<boolean> => {
+    /**
+     * `panelOverride`：给"先改本地 state、紧接着要保存"的路径用。
+     *
+     * `setSettings()` 是异步的，`await handleSave()` 在同一个 tick 里读到的 `settings`
+     * 还是旧值 —— 添加自定义 Provider 如果直接调 `handleSave()`，新 provider 根本不会进库。
+     * 所以调用方把**它刚算出来的那份**显式传进来（并同时 `setSettings` 让界面跟上）。
+     */
+    const panel = panelOverride ?? settings;
     /**
      * D-21：写入是"内存即时生效 + 异步落库"，`setSetting*` 返回 `void`，
      * 所以"✅ 已保存"必须建立在**可等待的确认**上，而不是"没抛异常"。
@@ -511,8 +520,8 @@ export function SettingsPanel({
      */
     const probe = beginSettingsWriteProbe();
 
-    setSettingJSON("codem-settings", buildSavePayload(settings));
-    setLang(settings.language);
+    setSettingJSON("codem-settings", buildSavePayload(panel));
+    setLang(panel.language);
 
     const identityToSave: IdentityConfig = {
       name: identity.name,
@@ -840,23 +849,30 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     });
   };
 
-  const addCustomProvider = () => {
-    const name = customName.trim();
-    const baseUrl = customBaseUrl.trim();
-    if (!name || !baseUrl) return;
-    const id = `custom-${Date.now()}`;
-    const newProvider: ProviderKey = {
-      id,
-      name,
-      apiKey: customApiKey.trim(),
-      baseUrl,
-      custom: true,
-    };
-    const newSettings = { ...settings, providers: [...settings.providers, newProvider] };
+  /**
+   * 添加自定义 Provider —— **必须并入规范保存流程**（2026-10-18）。
+   *
+   * 旧实现在这里裸写 `setSettingJSON("codem-settings", newSettings)`：
+   * 没有写后确认（`beginSettingsWriteProbe`/`flushSettingsWrites`），没有以库值为基座合并，
+   * 也没有 `dirtyLocalFields` 结账 —— 于是"添加了"可能只是内存里添加了，
+   * 重启后 provider 消失，用户毫无察觉（与 provider 卡片那个"假保存"同一类缺陷）。
+   *
+   * 现在：先把新列表放进本地 state（界面立刻可见），再把**这一份**显式传给 `handleSave(panel)`，
+   * 只有保存被确认（`true`）才收起表单并清空输入；未确认就保留表单、由 `handleSave`
+   * 自己给出失败原因（横幅 + toast），用户可以重试。
+   */
+  const addCustomProvider = async () => {
+    const { providers, provider } = appendCustomProvider<ProviderKey>(settings.providers, {
+      name: customName,
+      baseUrl: customBaseUrl,
+      apiKey: customApiKey,
+    });
+    if (!provider) return;
+    const newSettings = { ...settings, providers };
     dirtyLocalFields.current.add("providers");
     setSettings(newSettings);
-    setSettingJSON("codem-settings", newSettings);
-    window.dispatchEvent(new Event("codem-settings-changed"));
+    const confirmed = await handleSave(newSettings);
+    if (!confirmed) return;
     setShowAddCustom(false);
     setCustomName("");
     setCustomBaseUrl("");
@@ -2758,7 +2774,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           )}
           {saved && <span className="save-success">{S.settings.saved[lang]}</span>}
           {saveFailure && <span className="sp-hint">{saveFailure}</span>}
-          <button className="save-btn" onClick={handleSave}>{S.settings.saveSettings[lang]}</button>
+          <button className="save-btn" onClick={() => { void handleSave(); }}>{S.settings.saveSettings[lang]}</button>
         </div>
       </div>
       <PetMarketDialog open={showPetMarket} onClose={() => setShowPetMarket(false)} />
@@ -3564,7 +3580,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
           <input value={editing.scope || ""} onChange={(e) => setEditing({ ...editing, scope: e.target.value })} placeholder={zh ? "范围（如：组件开发/性能优化）" : "Scope (e.g.: Components/Performance)"} className="sp-input sp-input--compact" />
           <textarea value={editing.experience_summary || ""} onChange={(e) => setEditing({ ...editing, experience_summary: e.target.value })} placeholder={zh ? "经验摘要（可选）" : "Experience summary (optional)"}  rows={2} className="sp-input sp-input--compact sp-input--resize" />
           <div className="sp-row">
-            <button onClick={handleSave} className="sp-btn sp-btn--sm sp-btn--primary">{zh ? "保存" : "Save"}</button>
+            <button onClick={() => { void handleSave(); }} className="sp-btn sp-btn--sm sp-btn--primary">{zh ? "保存" : "Save"}</button>
             <button onClick={() => setEditing(null)} className="sp-btn sp-btn--sm sp-btn--ghost">{zh ? "取消" : "Cancel"}</button>
           </div>
         </div>

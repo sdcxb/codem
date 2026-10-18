@@ -1,0 +1,55 @@
+{
+  "wave": "custom-provider-unified-save",
+  "description": "addCustomProvider 走 handleSave(新列表) 并在确认后才收起表单；变异：不传新列表 / 未确认也收起 ⇒ CUSTPROV-3 必须红",
+  "runAt": "2026-10-18T01:44:22.954Z",
+  "specFingerprint": "e00c7c1a70c4b5ff072734da9b86bff7555f8710",
+  "files": [
+    "src/components/SettingsPanel.tsx"
+  ],
+  "tests": [
+    "src/test/custom-provider-save-flow.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 只调 handleSave()（不传刚算出的列表）",
+      "why": "CUSTPROV-3：setSettings 是异步的，handleSave 读到旧 settings ⇒ 新 provider 不会进库（旧缺陷形态）",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "    const confirmed = await handleSave(newSettings);",
+          "to": "    const confirmed = await handleSave();"
+        }
+      ],
+      "tests": [
+        "src/test/custom-provider-save-flow.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2823
+    },
+    {
+      "id": "MUT-2 未确认也收起表单",
+      "why": "CUSTPROV-3：把「没存上」演成「已添加」，用户不会重试",
+      "patches": [
+        {
+          "file": "src/components/SettingsPanel.tsx",
+          "from": "    if (!confirmed) return;\n    setShowAddCustom(false);",
+          "to": "    if (false) return;\n    setShowAddCustom(false);"
+        }
+      ],
+      "tests": [
+        "src/test/custom-provider-save-flow.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2618
+    }
+  ]
+}

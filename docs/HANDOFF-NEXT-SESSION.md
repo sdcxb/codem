@@ -7108,3 +7108,39 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 `docs/evidence/ui-craft-p2-2026-10-18/`（设置外观页：运行时令牌、mask、提示音开关 true→false；
 组件目录页整页截图）。View Transitions 的动画本身无法用截图证明，只证明了代码路径与降级；
 提示音默认关闭，未在真机听音。
+
+## 2026-10-18 09:57 — 第 238 波：自定义 Provider 并入规范保存 + 关键文档强制入库 + 发布 1.16.325
+
+### 1）自定义 Provider 的「添加」并入 handleSave（用户拍板）
+
+- 缺陷：`addCustomProvider` 裸写 `setSettingJSON("codem-settings", newSettings)` —— 没有写后确认、
+  没有以库值为基座合并、没有 `dirtyLocalFields` 结账 ⇒ 与 provider 卡片那次"假保存"同类。
+- 修法：纯函数 `core/settings/custom-provider.ts::appendCustomProvider`（去空格 / `custom-<ts>` / `custom: true`）；
+  组件里 `setSettings(newSettings)` 后 `await handleSave(newSettings)`（`handleSave` 新增可选 `panelOverride`），
+  **只有确认落库才收起表单**，未确认保留表单并显示 `handleSave` 的失败原因。
+- 判据 `CUSTPROV-1..4`；变异波次 `custom-provider-unified-save`（不传新列表 / 未确认也收起 ⇒ 各自对红）。
+- 真机（1.16.325）：填表 → 「保存 Provider」→ 卡片出现；关闭重开仍在（落库）；随后删除清理。
+
+### 2）文档策略：关键文档强制入库
+
+- `.gitignore` 增加 negation：`HANDOVER-*`、`HANDOFF-NEXT-SESSION`、`GAP-LIST`、`NEW-SESSION-START`、
+  `RELEASE-GUIDE`、`DEAD-CODE-TRIAGE`、`PROJECT-GUIDE`、`ui-spec`。
+- 判据 `DOCSKEY-1..3`：存在 / `git ls-files --error-unmatch` 跟踪 / `git check-ignore --no-index` 不忽略。
+  ⚠️ **必须带 `--no-index`**：默认 `check-ignore` 对已跟踪文件永远返回"不忽略"，变异自证当场抓到这条恒真。
+- 波次 `docs-key-tracking`（去掉一条放行 ⇒ DOCSKEY-3 红）。
+
+### 3）发布 1.16.325
+
+- 版本四处 + CHANGELOG；构建签名（NSIS 420 字节 sig / MSI）；
+  `make-latest-json` → 本地 5 项、远端 7 项通过；`gh release create` 5 资产；`gh release list` = Latest。
+- 真机：静默安装 → `getVersion()=1.16.325`；自定义 Provider 加/重开/删全流程；
+  证据 `docs/evidence/release-1.16.325/`。
+- 发布说明按标准样式（发布信息 / 本版要点 / 修复 / 改进 / 健壮性 / 升级说明 / 对标结果 / 已知问题 / 校验），
+  不写测试数量与波次号。
+
+### 4）审计
+
+- 全量 **714 文件 / 8402 通过 + 17 skipped**；`tsc` 0；变异闸门 **57 波**；非 eval 链 27 项全过
+  （含新增 `audit:motion`、`audit:doc-tokens`）。
+- 教训：源码级判据切函数体时不能用 `indexOf("};")`（会切在嵌套对象上），要么按缩进锚点、
+  要么做花括号配平；`git check-ignore` 评估 ignore 规则要加 `--no-index`。

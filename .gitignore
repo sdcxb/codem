@@ -54,6 +54,15 @@ docs/*.docx
 !docs/PROJECT-GUIDE.md
 !docs/ARCH-SQLITE-TO-RUST.md
 !docs/STORAGE-INVENTORY.md
+# 关键文档必须在库里（2026-10-18 文档策略：靠 negation 显式放行，判据 docs-key-tracking.test.ts 守）。
+# 只放行"下一个会话/接手/发布必须读"的那几份；其余 docs/*.md 仍是本地工作稿。
+!docs/HANDOVER-*.md
+!docs/HANDOFF-NEXT-SESSION.md
+!docs/GAP-LIST.md
+!docs/NEW-SESSION-START.md
+!docs/RELEASE-GUIDE.md
+!docs/DEAD-CODE-TRIAGE.md
+!docs/ui-spec.md
 !docs/STORAGE-COVERAGE.md
 !docs/DB-SCALE-BENCH.json
 !docs/TODO.md
