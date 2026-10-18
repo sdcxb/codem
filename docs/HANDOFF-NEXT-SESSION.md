@@ -7271,3 +7271,14 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 - 全量 **717 文件 / 8422 通过 + 17 skipped**；`tsc` 0；变异闸门 **60 波**；非 eval 链全过。
 - 本轮踩的坑：`NC-1` 判据禁止裸 `window.confirm(` ⇒ 改用项目统一的 `confirmDialog`（原生对话框，CDP 点不了，
   因此真机只验证了"按钮是否存在"这一层）。
+
+
+## 2026-10-18 15:09 — 第 243 波：发布 1.16.327（记忆审批一键降噪）
+
+- 版本 1.16.327，5 个资产；`verify-update-manifest --remote` 7 项通过；`gh release list` = Latest。
+- 本机静默安装（bash 用 `//S`）→ `getVersion()=1.16.327`。
+- 真机核过「写入审批」的 project 档：点一下 ⇒ `memory-write-approval` 从
+  `{"platform":true,"project":true,"conversation":false}` 变为 project=false；再点一次恢复，未留改动。
+  新增的「以后不再逐条批准」与这一档走**同一个** `handleToggleApproval("project")`。
+- 局限：当前作用域没有 pending，待批准区与新增按钮本次未渲染（不伪造）；原生确认框 CDP 点不了。
+- 审计：全量 **717 文件 / 8422 通过 + 17 skipped**；`tsc` 0；变异闸门 **60 波**；非 eval 链全过。

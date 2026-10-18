@@ -1,15 +1,15 @@
 {
-  "version": "1.16.326",
-  "notes": "修「移交给新对话」投给老会话；建会话失败换名重试；交接路径提示加入沙箱允许目录",
-  "pub_date": "2026-10-18T05:33:10Z",
+  "version": "1.16.327",
+  "notes": "记忆审批降噪：一键关掉项目级逐条审批",
+  "pub_date": "2026-10-18T07:04:29Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RBRE9keVliQldBRE5KNXM0K1pKRFg4enI2M2dXVWZSYk9HMEFCY1ROTDR0R0g5T2pYbGxSRnFXVEVad1NvbG5HajlSa1IvRmZ2ampXSWF5QzJoTUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzAxNDMwCWZpbGU6Q29kZW1fMS4xNi4zMjZfeDY0LXNldHVwLmV4ZQpqZnBOVkE2TW5pdkZyK1FxMERnTko0UlBIWHpXUytsTW5OTTZjZjFpTGJDSzVBU3BUS0RvWnRmTElxSjhjTkhqVGJ0NnR6QnpMcEl5WEMxYVRNTitCdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.326/Codem_1.16.326_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hoSlBnRnRxcWpnc3BoeHlUekVXaDNDU1E1b3d3cVkvRVhycGlRR1ptSlRLWHc1NGRsaUZUdHREbWRLZEdpR1JsdEVXd2wxSFdnK3J6aTFaVkV4K2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzA3MDM4CWZpbGU6Q29kZW1fMS4xNi4zMjdfeDY0LXNldHVwLmV4ZQpYYjAzY3oxRkNzNlRKRjZWVkJKT3hwVUwvU3JDQ3BkWG8yTGRhYUgrNGRibWZVZGIzcitYRG9aOTlaK0xuRmw3ZU5UdDVkZTRRRklyYkg3N2tDUDBCZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.327/Codem_1.16.327_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV2RBRE9keVliQldBRE5KNXM0K1pKRFg4enI2M2dXVWZSYk9HMEFCY1ROTDR0R0g5T2pYbGxSRnFXVEVad1NvbG5HajlSa1IvRmZ2ampXSWF5QzJoTUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzAxNDMwCWZpbGU6Q29kZW1fMS4xNi4zMjZfeDY0LXNldHVwLmV4ZQpqZnBOVkE2TW5pdkZyK1FxMERnTko0UlBIWHpXUytsTW5OTTZjZjFpTGJDSzVBU3BUS0RvWnRmTElxSjhjTkhqVGJ0NnR6QnpMcEl5WEMxYVRNTitCdz09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.326/Codem_1.16.326_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1hoSlBnRnRxcWpnc3BoeHlUekVXaDNDU1E1b3d3cVkvRVhycGlRR1ptSlRLWHc1NGRsaUZUdHREbWRLZEdpR1JsdEVXd2wxSFdnK3J6aTFaVkV4K2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzA3MDM4CWZpbGU6Q29kZW1fMS4xNi4zMjdfeDY0LXNldHVwLmV4ZQpYYjAzY3oxRkNzNlRKRjZWVkJKT3hwVUwvU3JDQ3BkWG8yTGRhYUgrNGRibWZVZGIzcitYRG9aOTlaK0xuRmw3ZU5UdDVkZTRRRklyYkg3N2tDUDBCZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.327/Codem_1.16.327_x64-setup.exe"
     }
   }
 }
