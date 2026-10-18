@@ -1297,6 +1297,31 @@ export function MemoryManager({ onClose, sessionId, projectId }: MemoryManagerPr
               >
                 全部拒绝（{pending.length}）
               </button>
+              {/*
+                2026-10-18（用户实报「每轮都有很多审批，拒绝了很多还是每轮都有」）：
+                根因不是"批得太慢"，而是**项目级自动记忆默认逐条审批** —— 用户每轮都要做一次
+                同样的决定。这里给一个**一次性关掉这档审批**的入口（就是写入审批里的 project 档），
+                以后项目级自动记忆直接生效、不再逐条打扰；平台级仍保留审批。
+                文案必须写明代价：关掉之后它不再问你就进上下文（可在写入审批里重新打开）。
+              */}
+              {approval.project && (
+                <button
+                  className="memory-approve-btn"
+                  title="把「项目级」写入审批关掉：以后项目级自动记忆直接生效，不再逐条询问（平台级仍会问）"
+                  onClick={async () => {
+                    // 用项目统一的原生确认框（裸 window.confirm 被 NC-1 判据禁止）
+                    const ok = await confirmDialog(
+                      "以后项目级自动记忆直接生效、不再逐条询问（平台级仍会询问）。" +
+                        "代价：这些条目会不经你确认就进入此后该项目的上下文" +
+                        "（仍可在「写入审批」里重新打开审批，或在记忆列表里删除）。确定关闭吗？",
+                    );
+                    if (!ok) return;
+                    await handleToggleApproval("project");
+                  }}
+                >
+                  以后不再逐条批准
+                </button>
+              )}
             </div>
           </div>
           {/* 唯一的滚动区：条目与展开块都在这层里（见上面第 231 波的说明） */}

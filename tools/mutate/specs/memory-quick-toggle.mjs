@@ -1,0 +1,46 @@
+/** 变异波次：待批准区「以后不再逐条批准」一键关掉项目级审批。 */
+export default {
+  description:
+    "MEM-QUICK：待批准区提供一次性关掉「项目级」写入审批的入口（仅 approval.project 开启时出现；关的是开关不是删记忆；文案写明代价）。判据 MEM-QUICK-1..3；3 条变异各自对红",
+  mutations: [
+    {
+      id: "MUT-1 按钮不再受 approval.project 控制",
+      why: "MEM-QUICK-1：审批已经关了还显示这个按钮 ⇒ 重复操作、语义混乱",
+      patches: [
+        {
+          file: "src/components/MemoryManager.tsx",
+          from: "              {approval.project && (",
+          to: "              {true && (",
+        },
+      ],
+      tests: ["src/test/memory-approval-quick-toggle.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-2 关错档位（去关平台级）",
+      why: "MEM-QUICK-3：用户想关的是项目级；关平台级会把跨项目的审批也放掉（爆炸半径变大）",
+      patches: [
+        {
+          file: "src/components/MemoryManager.tsx",
+          from: '                    await handleToggleApproval("project");',
+          to: '                    await handleToggleApproval("platform");',
+        },
+      ],
+      tests: ["src/test/memory-approval-quick-toggle.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-3 确认文案不再讲代价",
+      why: "MEM-QUICK-2：不写「不经你确认就进上下文」= 让用户在没有知情的情况下关掉安全闸",
+      patches: [
+        {
+          file: "src/components/MemoryManager.tsx",
+          from: "代价：这些条目会不经你确认就进入此后该项目的上下文",
+          to: "代价：这些条目会进入此后该项目的上下文",
+        },
+      ],
+      tests: ["src/test/memory-approval-quick-toggle.test.ts"],
+      expectRed: true,
+    },
+  ],
+};

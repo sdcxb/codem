@@ -56,7 +56,8 @@
     "custom-provider-unified-save": "自定义 Provider 的添加并入规范保存：appendCustomProvider 纯逻辑（去空格/custom- 前缀/custom 标记）+ addCustomProvider 调 handleSave(新列表) 且确认后才收起表单，不再裸写 codem-settings。判据 CUSTPROV-1..4；2 条变异（不传新列表 / 未确认也收起）各自对红",
     "docs-key-tracking": "文档策略：关键文档（HANDOVER/HANDOFF/GAP-LIST/NEW-SESSION-START/RELEASE-GUIDE/DEAD-CODE-TRIAGE/PROJECT-GUIDE/ui-spec）靠 .gitignore negation 强制入库，判据 DOCSKEY-1..3（存在/被跟踪/不被忽略）；变异：去掉一条放行 ⇒ DOCSKEY-3 红",
     "handoff-new-session": "移交到新对话：handoff_to_new_session（新建会话 + 唯一标题 + 委派到新 id；新建失败不退化）、提示词路由规则（新会话 vs 已有会话；标题不是身份）、list_sessions 同名告警、横幅交接用唯一标题。判据 HANDOFF-NEW-1..7；5 条变异（标题不查重 / 新建失败仍委派 / 不注册工具 / 删路由规则 / 横幅退回固定标题）",
-    "sandbox-allowlist-and-retry": "交接加固两项：① 建会话失败换标题重试（最多 3 次，绝不退化到已有会话）；② 交接正文里的工作区外绝对路径自动提示加入沙箱允许目录（只提示不自动放行；读侧闸门 + 写侧 Rust 守卫同一份白名单；提示条可一键加入）。判据 HANDOFF-NEW-8..10、ALLOW-1..6；5 条变异"
+    "sandbox-allowlist-and-retry": "交接加固两项：① 建会话失败换标题重试（最多 3 次，绝不退化到已有会话）；② 交接正文里的工作区外绝对路径自动提示加入沙箱允许目录（只提示不自动放行；读侧闸门 + 写侧 Rust 守卫同一份白名单；提示条可一键加入）。判据 HANDOFF-NEW-8..10、ALLOW-1..6；5 条变异",
+    "memory-quick-toggle": "记忆审批降噪：待批准区「以后不再逐条批准」一键关掉项目级写入审批（仅开启时出现、关的是开关不是删记忆、文案写明代价与可重开）。判据 MEM-QUICK-1..3；3 条变异（不受控 / 关错档 / 删代价）"
   },
   "waves": [
     "batch-prune-log-only-232",
@@ -117,6 +118,7 @@
     "custom-provider-unified-save",
     "docs-key-tracking",
     "handoff-new-session",
-    "sandbox-allowlist-and-retry"
+    "sandbox-allowlist-and-retry",
+    "memory-quick-toggle"
   ]
 }
