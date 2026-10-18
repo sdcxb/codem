@@ -96,6 +96,11 @@
       "site": "src/core/storage/message.ts::isHiddenStateAuthoritative",
       "direction": "conservative",
       "reason": "权威隐藏状态（软删/压缩隐藏的真相只在索引镜像里）的就绪探测：问不到就当作未就绪 ⇒ 水位不报数（宁可晚一拍弹提示条，也不误报「上下文即将满」）、压缩不动手（绝不基于混着已隐藏历史的错集合去删和写标记）。真机 bug 正是把「读不到」当成「看全了」，方向不能反向改。"
+    },
+    {
+      "site": "src/core/ui/sound-cues.ts::isSoundCuesEnabled",
+      "direction": "conservative",
+      "reason": "提示音开关读取：读设置失败⇒当作关闭（不发声）。这是纯装饰能力，不涉及安全/写入/放行；失败方向是「更安静」，与 C-18 沙箱开关那类「失败⇒放行」正好相反。"
     }
   ]
 }

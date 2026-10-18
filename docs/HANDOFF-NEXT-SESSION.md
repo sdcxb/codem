@@ -7063,3 +7063,48 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
   必须能从正文无损剥离；metadata 只做优先值与徽标。
 - CDP 真机驱动时，流式期间发送按钮会**变成「取消」**；「发送引导消息」标题只在输入框有内容/附件时才出现 ——
   用错误的信号会在"还没进引导模式"时误点成普通发送（本轮第一版脚本就踩了这条）。
+
+## 2026-10-18 09:35 — 第 237 波：UI 工艺 P2 七项（对标 open-claude-ui 的剩余借鉴项）
+
+### 1）做了什么（一次做完，全部有判据 + 变异）
+
+| 项 | 实现 | 判据 | 变异 |
+|---|---|---|---|
+| 边缘 7 档渐隐 | `core/ui/edge-fade.ts`（28px / 每侧 7 档 y≈x^1.5 / 触边归零）+ `useEdgeFade`；设置内容列、引导栏接入 | `EDGEFADE-1..4` | 去掉触顶判断 ⇒ 红 |
+| Diff 分屏/统一 | `core/ui/diff-view.ts` 行模型（删除/新增配对、双侧行号）+ `components/DiffBlockCard.tsx` 切换按钮 | `DIFFVIEW-1..5` | 不配对 ⇒ 红 |
+| 图片预览共享元素转场 | `core/ui/view-transition.ts`（支持则转场、不支持/抛错都退回普通更新）；缩略图与画廊成对命名 | `VIEWTRANS-1..3` | 强制退化 ⇒ 红 |
+| UI 文档 + 组件目录 | `docs/ui-spec.md`、`tools/audit/check-doc-tokens.mjs`、`docs/component-gallery.html` | `UIDOC-1/2` | 文档写错令牌 / 目录写错类 ⇒ 红 |
+| roving focus | `core/ui/roving-focus.ts` + `hooks/useRovingFocus.ts`，设置侧栏接入 | `ROVING-1..5` | 去掉 RTL 镜像 ⇒ 红 |
+| 合成提示音 | `core/ui/sound-cues.ts`（WebAudio 双音、0 素材、默认关、失败静默）+ 设置 → 外观开关 | `SOUND-1..3` | 默认打开 ⇒ 红 |
+| 动效令牌 + 棘轮 | `--ease-swift/pop` + `tools/audit/scan-motion-tokens.mjs`（裸 cubic-bezier 基线 0） | `MOTION-1..3` | 写裸曲线 ⇒ 红 |
+
+新增 npm 脚本：`audit:motion`、`audit:doc-tokens`。
+
+### 2）审计（修到 0）
+
+- 全量 **712 文件 / 8395 通过 + 17 skipped**；`tsc` 0；变异闸门 **55 波**全过；非 eval 审计链 **27 项**全过。
+- 审计中修掉本轮引入的 5 处红：
+  1. `skin-contrast` CT-1/CT-2：测试里的 `varsOf()` 用 `indexOf(selector)` 命中了**注释**里的
+     `[data-theme="dark"]`，于是"下一个 `{`"落到了我新插的 `::view-transition-*` 规则上 ⇒ dark 块读成空。
+     修法是让它只认"选择器 + 空白 + `{`"且不在注释里的命中（不是放宽判据）。
+  2. `color-roles`：`.diff-view-mode-btn.is-active` 用就地 `color-mix()` 当底色 ⇒ 多一条"解析不了的配对"；
+     改用派生令牌/`--bg-tertiary`，并确认没有新增未登记配对。
+  3. `fail-open`：`isSoundCuesEnabled` 的 `catch → false` 是新的"检查失败⇒否定值"；
+     定性为 conservative（失败⇒不发声，与 C-18 安全开关相反方向）并写进白名单。
+  4. `knip`：新导出 `EDGE_FADE_EDGE_TOLERANCE_PX` 与 `DiffLineKind` 未被外部使用 ⇒ 前者在判据里钉值、后者去掉 `export`。
+  5. `CSS 契约`：新类名未定义/跨文件冲突（`diff-mode-btn` 与既有类撞名 ⇒ 改名 `diff-view-mode-btn`）。
+
+### 3）教训
+
+- **往 `:root` 里插 CSS 块会静默毁掉后续所有令牌**：`::view-transition-*` 那次把 `:root` 提前闭合，
+  后面 `--ease-*` 全变成顶层无效声明（tsc/测试都不会直接报，只有 `skin-contrast` 从侧面炸出来）。
+  改 `:root` 后先看 `node tools/ui-audit/css-contract.mjs --check` 与主题测试。
+- **判据要能红**：`overflow-wrap` 那条在 Chromium 的 `pre-wrap` 下恒真，删掉判据保留规则；
+  `--ease-pop` 一开始被我当"未用令牌"删了，结果插件 CSS 引用它 ⇒ `css-var-undefined`。
+- 真机验证 CDP 驱动时不要 `taskkill /IM msedge.exe`（会关掉用户已开的浏览器窗口）——按 PID 关自己起的实例。
+
+### 4）真机取证
+
+`docs/evidence/ui-craft-p2-2026-10-18/`（设置外观页：运行时令牌、mask、提示音开关 true→false；
+组件目录页整页截图）。View Transitions 的动画本身无法用截图证明，只证明了代码路径与降级；
+提示音默认关闭，未在真机听音。

@@ -1121,7 +1121,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  animation: lo-pop 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: lo-pop 0.24s var(--ease-pop);
   pointer-events: none;
   z-index: 2;
 }

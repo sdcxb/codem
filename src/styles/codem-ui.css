@@ -2815,7 +2815,7 @@ background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
   padding: var(--space-1);
 }
-.inline-diff-mode-btn {
+.inline-diff-view-mode-btn {
   padding: var(--space-2) var(--space-5);
   border: none;
   background: transparent;
@@ -2825,7 +2825,7 @@ background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
-.inline-diff-mode-btn.active {
+.inline-diff-view-mode-btn.active {
   background: var(--surface-hover);
   color: var(--text-primary);
   font-weight: 500;
@@ -3342,6 +3342,86 @@ background: var(--bg-secondary);
 .diff-line { color: var(--text-secondary); }
 .diff-line--add { color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
 .diff-line--del { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
+
+/* 统一 / 分屏两种视图（2026-10-18）。行号列用 tabular-nums 保证不抖动；
+   分屏是 4 列网格（旧号 / 旧文 / 新号 / 新文），窄容器下由 @container 收紧行号列 */
+.diff-view-mode-bar {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.diff-view-mode-btn {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
+  padding: var(--space-1) var(--space-4);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-swift), background-color var(--duration-fast) var(--ease-swift);
+}
+
+.diff-view-mode-btn.is-active {
+  color: var(--text-primary);
+  /* 用派生令牌而不是就地 color-mix：颜色角色门禁要求底色能解析成**单个令牌**，
+     就地 color-mix 会被记成"解析不了的底"（预算 +1）。 */
+  background: var(--bg-tertiary);
+  border-color: var(--accent-border-strong);
+}
+
+.diff-unified .diff-line {
+  display: grid;
+  grid-template-columns: 44px 44px minmax(0, 1fr);
+  align-items: start;
+}
+
+.diff-lnum {
+  color: var(--text-muted);
+  text-align: right;
+  padding-right: var(--space-2);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2xs);
+}
+
+.diff-line-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-lnum--old { color: var(--text-muted); }
+.diff-lnum--new { color: var(--text-secondary); }
+/* kind 修饰类（组件按 `diff-line--${kind}` / `diff-split-row--${kind}` / `diff-cell--${kind}` 拼接） */
+.diff-line--ctx { color: var(--text-secondary); }
+.diff-split-row--ctx .diff-cell { color: var(--text-secondary); }
+.diff-split-row--change { background: color-mix(in srgb, var(--bg-tertiary) 30%, transparent); }
+.diff-cell--ctx { color: var(--text-secondary); }
+
+
+.diff-split-grid { display: flex; flex-direction: column; }
+
+.diff-split-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.diff-cell {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  padding: 0 var(--space-3);
+  min-width: 0;
+}
+
+.diff-cell--del { background: color-mix(in srgb, var(--error) 10%, transparent); }
+.diff-cell--add { background: color-mix(in srgb, var(--success) 10%, transparent); }
+.diff-cell--empty { background: var(--bg-tertiary); }
+
+@container toolcard (max-width: 480px) {
+  .diff-lnum { padding-right: var(--space-1); }
+  .diff-unified .diff-line { grid-template-columns: 32px 32px minmax(0, 1fr); }
+  .diff-split-row { grid-template-columns: 32px minmax(0, 1fr) 32px minmax(0, 1fr); }
+}
 
 .line-num {
   min-width: 24px;

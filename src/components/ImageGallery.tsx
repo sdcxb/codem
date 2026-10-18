@@ -5,6 +5,8 @@
  */
 
 import { memo, useState, useEffect } from "react";
+import { flushSync } from "react-dom";
+import { runViewTransition } from "../core/ui/view-transition";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useLang, S } from "../core/i18n/lang";
 import { ActionIcons } from "../core/icons/icon-map";
@@ -16,12 +18,18 @@ interface ImageGalleryProps {
   initialIndex?: number;
   /** Close gallery */
   onClose: () => void;
+  /**
+   * 共享元素转场名（与缩略图上的 `view-transition-name` 成对，见 MessageBubble）。
+   * 未提供时退化为普通淡入。
+   */
+  transitionName?: string;
 }
 
 export const ImageGallery = memo(function ImageGallery({
   images,
   initialIndex = 0,
   onClose,
+  transitionName,
 }: ImageGalleryProps) {
   const lang = useLang();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
@@ -40,7 +48,13 @@ export const ImageGallery = memo(function ImageGallery({
 
   /* 第 173 轮 P2-6：Escape 走共享 hook（方向键仍是这个 handler 的职责 —— 它属于"元素自己的
      按键语义"，不该搬到 document 级去做浮层关闭）。 */
-  useDismissableLayer({ onDismiss: onClose });
+  const closeWithTransition = () => {
+    runViewTransition(() => {
+      flushSync(() => onClose());
+    });
+  };
+
+  useDismissableLayer({ onDismiss: closeWithTransition });
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "ArrowLeft") handlePrev();
@@ -53,9 +67,9 @@ export const ImageGallery = memo(function ImageGallery({
   }, []);
 
   return (
-    <div className="image-gallery-overlay" onClick={onClose}>
+    <div className="image-gallery-overlay" onClick={closeWithTransition}>
       <div className="image-gallery" onClick={(e) => e.stopPropagation()}>
-        <button className="gallery-close" onClick={onClose} aria-label="关闭"><ActionIcons.close size={16} /></button>
+        <button className="gallery-close" onClick={closeWithTransition} aria-label="关闭"><ActionIcons.close size={16} /></button>
         <button className="gallery-nav prev" onClick={handlePrev}>
           ‹
         </button>
@@ -63,6 +77,7 @@ export const ImageGallery = memo(function ImageGallery({
           src={images[currentIndex]}
           alt={`Image ${currentIndex + 1}`}
           className="gallery-image"
+          style={transitionName ? { viewTransitionName: transitionName } : undefined}
         />
         <button className="gallery-nav next" onClick={handleNext}>
           ›

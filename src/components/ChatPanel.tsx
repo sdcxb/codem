@@ -62,6 +62,8 @@ import { TrajectoryPanel } from "./TrajectoryPanel";
 /** 第 184 波（F5）：删除失败不许抹记录 —— 两条面板路径共用同一份实现 */
 import { deleteGeneratedFiles } from "../core/ui/generated-files-cleanup";
 import { decideAutoScroll } from "../core/ui/scroll-pinning";
+import { useEdgeFade } from "./EdgeFade";
+import { playSoundCue } from "../core/ui/sound-cues";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -239,6 +241,8 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
   // Whether the current session is actively streaming (running an agentic loop)
   const isSessionStreaming = !currentSessionId ? isStreaming : activeSessions.has(currentSessionId);
+  /* 引导栏是纯内容滚动区（max-height 168px）：边缘 7 档渐隐，判据 EDGEFADE-* */
+  const guidanceFade = useEdgeFade<HTMLDivElement>();
 
   // Derive RunPhase from llmStatus for RunStatusBar
   const runPhase: RunPhase = isSessionStreaming
@@ -458,6 +462,8 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isSessionStreaming;
 if (wasStreaming && !isSessionStreaming) {
+      /* 合成提示音（默认关；设置 → 外观 里打开，判据 SOUND-*） */
+      playSoundCue("done");
 // Reset step tooltip lock when streaming ends
 setStepTooltipLocked(false);
       // Streaming just ended — scroll to the "task complete" badge so the user
@@ -1526,7 +1532,7 @@ canEdit={!isSessionStreaming}
 
       {/* Guidance messages display — shown when agent is running */}
       {isSessionStreaming && guidanceMessages.length > 0 && (
-        <div className="guidance-messages-bar">
+        <div className="guidance-messages-bar" ref={guidanceFade.ref} style={guidanceFade.style}>
           {guidanceMessages.map((g) => (
             <div key={g.id} className={`guidance-item ${g.consumed ? 'consumed' : 'pending'}`}>
               <div className="guidance-item-body">
@@ -1600,7 +1606,7 @@ canEdit={!isSessionStreaming}
         </div>
       )}
 
-      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode}
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { playSoundCue("sent"); if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg, atts); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode}
         /* 第 46 波：这两个动作从会话头部移到编辑器底部工具行（见 InputArea 的注释） */
         searchOpen={showSearch}
         onToggleSearch={() => {

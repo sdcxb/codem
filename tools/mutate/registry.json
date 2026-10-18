@@ -51,7 +51,8 @@
     "browser-probe-cdp": "真实渲染探针换传输层：这台 Windows 上无头 Edge 的一次性输出全哑（--dump-dom / --screenshot / --print-to-pdf 都 exit 0、0 字节），theme-boot 与 layout-contract 因此在加载期就抛、18 条判据一条不跑 ⇒ 改走 CDP 取同一份 PROBE_JSON（src/test/helpers/browser-probe.ts，视口走 Emulation.setDeviceMetricsOverride，因为 --window-size 在无头 Edge 里不生效），断言与契约一字未改。5 条变异（4 红 + 1 反向对照）：拿回空数据 / 不导航 / 设置窗宽度塌回 160px（第 54 波事故签名）/ 启动页底色改白（第 60 波事故签名）/ 只改轮询间隔（必须保持绿）",
     "guidance-persist-attachments": "运行中追加（mid-turn guidance）的可见性与附件：消费时落库成真实 user 消息（不再只是临时注入）、附件随条目落库并由 messagesToLLMMessages 按 id 取回正文转成 image block、界面统一剥掉附件块与注入模板显示用户原文。判据 GUIDE-VIS-1..5 / GUIDE-ATT-1..3；4 条变异（不落库 / 队列丢附件 / 显示口径退回 / 多模态不按 id 取回）",
     "narrow-containers": "窄容器自适应（@container）：工具卡 420px 以下 IN/OUT 段竖排、tool-io-text 允许长 token 任意断行；设置内容列 520px 以下行内控件换行、输入框占满。判据 NARROW-1..4（真渲染探针，五档宽度）；3 条变异（去掉两处 container-type + 去掉 overflow-wrap）各自对红",
-    "scroll-pinning": "流式滚动图钉：贴底容差 40px、用户主动滚动后 150ms 冷却、流式期 behavior:auto（非流式 smooth）。判据 SCROLLPIN-1..4；3 条变异（容差归零 / 冷却归零 / 流式改 smooth）"
+    "scroll-pinning": "流式滚动图钉：贴底容差 40px、用户主动滚动后 150ms 冷却、流式期 behavior:auto（非流式 smooth）。判据 SCROLLPIN-1..4；3 条变异（容差归零 / 冷却归零 / 流式改 smooth）",
+    "ui-craft-p2": "UI 工艺 P2（对标 open-claude-ui 的七项）：边缘 7 档渐隐（触边归零）、Diff 统一/分屏（行配对+行号）、图片预览共享元素转场（含降级）、UI 规格文档令牌对账 + 组件目录、roving focus 统一钩子、WebAudio 合成提示音（默认关）、动效令牌 + 裸 cubic-bezier 棘轮。判据 EDGEFADE/DIFFVIEW/VIEWTRANS/UIDOC/ROVING/SOUND/MOTION；8 条变异各自对红"
   },
   "waves": [
     "batch-prune-log-only-232",
@@ -107,6 +108,7 @@
     "browser-probe-cdp",
     "guidance-persist-attachments",
     "narrow-containers",
-    "scroll-pinning"
+    "scroll-pinning",
+    "ui-craft-p2"
   ]
 }

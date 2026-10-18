@@ -85,6 +85,9 @@ import {
 } from "../core/llm/tools/deepseek-web";
 import { setSandboxAclEnabled, isSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
 import { showToast } from "./ToastNotification";
+import { useEdgeFade } from "./EdgeFade";
+import { useRovingFocus } from "../hooks/useRovingFocus";
+import { SOUND_CUES_SETTING_KEY } from "../core/ui/sound-cues";
 // P2 #35: Import UsageStats for embedding in settings
 import { UsageStats } from "./UsageStats";
 import { PerformanceDashboard } from "./PerformanceDashboard";
@@ -277,7 +280,14 @@ const PRESET_AVATARS: string[] = [
   "https://api.dicebear.com/9.x/pixel-art/svg?seed=Onyx",
 ];
 
-export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initialTab, setShowOnboardingReplay }: SettingsPanelProps) {
+export function SettingsPanel({
+  onClose, onSessionRecovery, onUsageStats, initialTab, setShowOnboardingReplay }: SettingsPanelProps) {
+  /* 滚动边缘渐隐（判据 EDGEFADE-*）：设置内容列是纯内容滚动区，可安全上 mask */
+  const contentFade = useEdgeFade<HTMLDivElement>();
+  /* 设置侧栏是一组按钮：方向键在组内移动、Tab 正常离开（判据 ROVING-*） */
+  const sidebarRoving = useRovingFocus<HTMLDivElement>({ orientation: "vertical" });
+  /* 提示音默认关闭（打扰性能力）；开关状态从设置里读，写回同一令牌 */
+  const [soundCues, setSoundCues] = useState<boolean>(() => getSetting(SOUND_CUES_SETTING_KEY) === "1");
   const lang = useLang();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   /**
@@ -1103,7 +1113,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         </div>
 
         <div className="settings-body">
-          <div className="settings-sidebar">
+          <div className="settings-sidebar" ref={sidebarRoving.containerRef} onKeyDown={sidebarRoving.onKeyDown}>
             <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`}
               aria-current={activeTab === "general" ? "page" : undefined} onClick={() => setActiveTab("general")}>
               <span className="sidebar-icon"><SettingsIcon size={16} /></span>{lang === "zh" ? "通用" : "General"}
@@ -1220,7 +1230,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </button>
           </div>
 
-          <div className="settings-content">
+          <div className="settings-content" ref={contentFade.ref} style={contentFade.style}>
           {activeTab === "general" && (
           <>
           <div className="settings-mode-switch">
@@ -1554,6 +1564,30 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {activeTab === "appearance" && (
           <>
           <SkinSelector />
+
+          <div className="setting-group">
+            <label>{lang === "zh" ? "提示音" : "Sound cues"}</label>
+            <div className="sp-row sp-row--between">
+              <span className="sp-note">
+                {lang === "zh"
+                  ? "发送 / 任务完成时播放合成提示音（WebAudio 现场合成，默认关闭）"
+                  : "Play synthesized cues on send / turn completion (WebAudio, off by default)"}
+              </span>
+              <button
+                className={`sp-toggle ${soundCues ? "is-on" : ""}`}
+                role="switch"
+                aria-checked={soundCues}
+                aria-label={lang === "zh" ? "提示音" : "Sound cues"}
+                onClick={() => {
+                  const next = !soundCues;
+                  setSoundCues(next);
+                  setSetting(SOUND_CUES_SETTING_KEY, next ? "1" : "0");
+                }}
+              >
+                <span className="sp-toggle-knob" />
+              </button>
+            </div>
+          </div>
 
           <div className="setting-group">
             <label>语言 / Language</label>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>Codem 组件目录（可视化对照）</title>
+<!-- 直接加载**真实样式**：目录里的样子必须和运行时长一样 -->
+<link rel="stylesheet" href="../src/styles.css" />
+<link rel="stylesheet" href="../src/styles/codem-ui.css" />
+<style>
+  /* 页面自身的排版（gallery- 前缀，不参与组件契约） */
+  .gallery-page { max-width: 1080px; margin: 0 auto; padding: 32px 24px 96px; }
+  .gallery-section { margin-top: 40px; }
+  .gallery-title { font-size: 18px; margin: 0 0 4px; }
+  .gallery-note { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; }
+  .gallery-frame { border: 1px solid var(--border-primary); border-radius: var(--radius); padding: 16px; background: var(--bg-primary); }
+  .gallery-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .gallery-label { font-size: 11px; color: var(--text-muted); margin: 12px 0 4px; }
+</style>
+</head>
+<body class="gallery-page">
+  <h1 class="gallery-title">Codem 组件目录</h1>
+  <p class="gallery-note">
+    这份页面是"文档 ↔ 实现"的可视化对照：它能被浏览器直接打开，判据会检查这里用到的每个组件类都真的在 CSS 契约里。
+  </p>
+
+  <section class="gallery-section">
+    <h2 class="gallery-title">按钮与开关</h2>
+    <p class="gallery-note">动效只用语义曲线令牌（`--ease-swift` / `--ease-pop`），不允许裸 cubic-bezier。</p>
+    <div class="gallery-frame gallery-row">
+      <button class="diff-view-mode-btn is-active">统一</button>
+      <button class="diff-view-mode-btn">分屏</button>
+      <button class="sp-toggle is-on" role="switch" aria-checked="true"><span class="sp-toggle-knob"></span></button>
+      <button class="settings-sidebar-item active">通用</button>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2 class="gallery-title">工具卡（含 IN/OUT）</h2>
+    <p class="gallery-note">窄容器（&lt;420px）时 IN/OUT 段自动竖排 —— 见 `@container toolcard`。</p>
+    <div class="gallery-frame">
+      <div class="tool-card tool-card--scroll">
+        <div class="tool-card-head">bash · npm run build</div>
+        <div class="tool-io-card">
+          <div class="tool-io-section tool-io-section--bordered">
+            <span class="tool-io-label">IN</span>
+            <pre class="tool-io-text">{"command":"npm run build"}</pre>
+          </div>
+          <div class="tool-io-section">
+            <span class="tool-io-label">OUT</span>
+            <pre class="tool-io-text">✅ built in 12.4s</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2 class="gallery-title">Diff（统一 / 分屏）</h2>
+    <p class="gallery-note">两套视图共用同一份行模型（`core/ui/diff-view.ts`），行号 tabular-nums 对齐。</p>
+    <div class="gallery-frame">
+      <div class="diff-view-mode-bar" role="group" aria-label="diff view mode">
+        <button class="diff-view-mode-btn is-active">统一</button>
+        <button class="diff-view-mode-btn">分屏</button>
+      </div>
+      <pre class="tool-card-pre tool-card-pre--tight tool-card-pre--plain diff-unified">
+        <div class="diff-line diff-line--ctx"><span class="diff-lnum diff-lnum--old">1</span><span class="diff-lnum diff-lnum--new">1</span><span class="diff-line-text">const a = 1;</span></div>
+        <div class="diff-line diff-line--del"><span class="diff-lnum diff-lnum--old">2</span><span class="diff-lnum diff-lnum--new"></span><span class="diff-line-text">const b = 2;</span></div>
+        <div class="diff-line diff-line--add"><span class="diff-lnum diff-lnum--old"></span><span class="diff-lnum diff-lnum--new">2</span><span class="diff-line-text">const b = 3;</span></div>
+      </pre>
+      <div class="diff-split-grid">
+        <div class="diff-split-row diff-split-row--change">
+          <span class="diff-lnum diff-lnum--old">2</span><span class="diff-cell diff-cell--del">const b = 2;</span>
+          <span class="diff-lnum diff-lnum--new">2</span><span class="diff-cell diff-cell--add">const b = 3;</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2 class="gallery-title">消息气泡 ·「运行中追加」</h2>
+    <p class="gallery-note">追加消息显示用户原文 + 徽标；附件（图片）照常显示。显示口径只在 `guidance-display.ts`。</p>
+    <div class="gallery-frame">
+      <div class="message message-bubble user">
+        <div class="message-body">
+          <div class="midturn-guidance-header"><span class="midturn-guidance-label">运行中追加</span></div>
+          <div class="message-attachments">
+            <div class="message-attachment"><img class="attachment-image" alt="截图" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PzWvWQAAAABJRU5ErkJggg==" /></div>
+          </div>
+          <div class="message-content">进度顺便报一下。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2 class="gallery-title">引导栏（待接收 + 附件）</h2>
+    <div class="gallery-frame">
+      <div class="guidance-messages-bar">
+        <div class="guidance-item pending">
+          <div class="guidance-item-body">
+            <div class="guidance-item-meta"><span class="guidance-status-badge">待接收</span></div>
+            <p class="guidance-item-text">我补一句：进度顺便报一下。</p>
+            <div class="guidance-item-attachments">
+              <span class="guidance-attachment"><span class="guidance-attachment-name">screenshot.png</span></span>
+            </div>
+          </div>
+          <div class="guidance-item-actions">
+            <button class="guidance-action-btn guidance-action-primary">立刻引导</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2 class="gallery-title">滚动边缘渐隐</h2>
+    <p class="gallery-note">28px 羽化 / 每侧 7 档（`useEdgeFade`），触顶/触底时对应侧归零。</p>
+    <div class="gallery-frame">
+      <div class="tool-card tool-card--scroll" style="max-height:120px;overflow-y:auto;mask-image:linear-gradient(to bottom, rgba(0,0,0,1) 0px, rgba(0,0,0,1) 28px, rgba(0,0,0,1) calc(100% - 28px), rgba(0,0,0,0.5) calc(100% - 14px), rgba(0,0,0,0) calc(100% - 0px));">
+        <div class="tool-card-head">长列表（边缘渐隐示意）</div>
+        <pre class="tool-card-pre tool-card-pre--tight">第 1 行
+第 2 行
+第 3 行
+第 4 行
+第 5 行
+第 6 行</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2 class="gallery-title">设置行（窄容器换行）</h2>
+    <div class="gallery-frame">
+      <div class="settings-content" style="max-width:520px">
+        <div class="setting-group">
+          <label>提示音</label>
+          <div class="sp-row sp-row--between">
+            <span class="sp-note">发送 / 任务完成时播放合成提示音（默认关闭）</span>
+            <button class="sp-toggle" role="switch" aria-checked="false"><span class="sp-toggle-knob"></span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

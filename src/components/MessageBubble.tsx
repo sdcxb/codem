@@ -23,6 +23,8 @@ import { RichContent } from "./rich-content/RichContent";
 import { createFileMentions } from "../utils/file-mentions";
 import { autoLinkFilePaths } from "../utils/auto-link-paths";
 import { isMidTurnGuidance, guidanceDisplayMessage } from "../core/llm/guidance-display";
+import { flushSync } from "react-dom";
+import { runViewTransition } from "../core/ui/view-transition";
 import { openFileLink } from "../utils/file-link";
 // P3-26: Voice output (TTS) — browser speech synthesis hook
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
@@ -258,6 +260,8 @@ const [isEditing, setIsEditing] = useState(false);
 const [isEditingRewind, setIsEditingRewind] = useState(false);
 const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
 const [galleryIndex, setGalleryIndex] = useState(0);
+/* 共享元素转场名：与缩略图上的 view-transition-name 成对（判据 VIEWTRANS-*） */
+const [galleryTransitionName, setGalleryTransitionName] = useState<string | undefined>(undefined);
   const contentRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -654,11 +658,23 @@ setTimeout(() => setCopied(false), 2000);
                     src={att.content}
                     alt={att.name}
                     className="attachment-image"
+                    style={{
+                      // 画廊打开期间缩略图必须有名字，否则共享元素会"两个同名元素"失效
+                      viewTransitionName: galleryImages
+                        ? "none"
+                        : `chat-image-${att.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
                       const imgs = message.attachments?.filter(a => a.type === "image" && a.content).map(a => a.content!) || [];
-                      setGalleryImages(imgs);
-                      setGalleryIndex(imgs.indexOf(att.content || ""));
+                      const name = `chat-image-${att.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+                      runViewTransition(() => {
+                        flushSync(() => {
+                          setGalleryImages(imgs);
+                          setGalleryIndex(imgs.indexOf(att.content || ""));
+                          setGalleryTransitionName(name);
+                        });
+                      });
                     }}
                   />
                 ) : (
@@ -694,7 +710,11 @@ setTimeout(() => setCopied(false), 2000);
           <ImageGallery
             images={galleryImages}
             initialIndex={galleryIndex}
-            onClose={() => setGalleryImages(null)}
+            transitionName={galleryTransitionName}
+            onClose={() => {
+              setGalleryImages(null);
+              setGalleryTransitionName(undefined);
+            }}
           />
         )}
 

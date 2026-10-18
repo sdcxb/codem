@@ -15,11 +15,12 @@
 | C | 工具卡 / 设置行的**窄容器自适应**（`@container` 四阶），消灭"挤成竖排/溢出" | 对标借鉴 |
 | D | 流式期间的**滚动图钉**：150ms 用户输入冷却 + 40px 容差 + `behavior:auto` + 忽略自身滚动 | 对标借鉴 |
 
-### 本轮明确不做（放到最后一节，等你拍板）
+### 第二批（2026-10-18 09:35 已完成）
 
 边缘 7 档渐隐、Diff 分屏/统一、图片预览 View Transitions、组件目录 + 文档 token 对账、
-roving focus 统一、WebAudio 合成提示音、动效令牌棘轮（`--ease-*` 收口）。
-理由统一写在 §7：**它们都不修真实缺陷**，且都要动 CSS 契约/大量组件；与 A–D 叠加会让本轮审计面失控。
+roving focus 统一、WebAudio 合成提示音、动效令牌棘轮 —— 七项全部落地，判据
+`EDGEFADE/DIFFVIEW/VIEWTRANS/UIDOC/ROVING/SOUND/MOTION`，变异波次 `ui-craft-p2`（8 条全红），
+真机取证 `docs/evidence/ui-craft-p2-2026-10-18/`。
 
 ## 1. 缺陷 A：运行中追加的消息看不见
 
@@ -142,8 +143,8 @@ ChatPanel 在消息增量处调用它；`programmaticScroll` 标记忽略自身�
 
 ## 7. 需要你拍板（睡觉时不用回，醒了再看）
 
-1. **边缘 7 档渐隐 / Diff 分屏 / 图片预览 View Transitions / 组件目录 / roving focus / 合成音效 / 动效令牌棘轮**：
-   本轮都不做（不修缺陷、改动面大）。建议单独开一轮"UI 工艺批次"，我可以先出 3 张对照图再动手。
+1. ~~边缘 7 档渐隐 / Diff 分屏 / 图片预览 View Transitions / 组件目录 / roving focus / 合成音效 / 动效令牌棘轮~~
+   —— **已于 2026-10-18 09:35 全部完成**（见 §0 第二批）。
 2. **`--dump-dom` 类环境问题**已用 CDP 绕过；若你希望彻底摆脱对 Edge 的依赖，可以装 Chrome（需你同意）。
 3. **发版**：本轮结束后是否发 1.16.325（含追加可见 + 追加附件），由你决定。
 4. **`addCustomProvider` 是否并入 `handleSave`**（历史遗留的产品取舍）。

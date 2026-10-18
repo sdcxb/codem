@@ -3120,6 +3120,26 @@
     "max-height": "300px",
     "overflow-y": "auto"
   },
+  "diff-cell": {
+    "font-family": "var(--font-mono)",
+    "font-size": "var(--fs-sm)",
+    "min-width": "0",
+    "overflow-wrap": "anywhere",
+    "padding": "0 var(--space-3)",
+    "white-space": "pre-wrap"
+  },
+  "diff-cell--add": {
+    "background": "color-mix(in srgb, var(--success) 10%, transparent)"
+  },
+  "diff-cell--ctx": {
+    "color": "var(--text-secondary)"
+  },
+  "diff-cell--del": {
+    "background": "color-mix(in srgb, var(--error) 10%, transparent)"
+  },
+  "diff-cell--empty": {
+    "background": "var(--bg-tertiary)"
+  },
   "diff-close-btn": {
     "align-items": "center",
     "background": "transparent",
@@ -3229,6 +3249,9 @@
     "background": "color-mix(in srgb, var(--success) 8%, transparent)",
     "color": "var(--success)"
   },
+  "diff-line--ctx": {
+    "color": "var(--text-secondary)"
+  },
   "diff-line--del": {
     "background": "color-mix(in srgb, var(--error) 8%, transparent)",
     "color": "var(--error)"
@@ -3253,6 +3276,24 @@
     "text-align": "right",
     "user-select": "none",
     "width": "40px"
+  },
+  "diff-line-text": {
+    "overflow-wrap": "anywhere",
+    "white-space": "pre-wrap"
+  },
+  "diff-lnum": {
+    "color": "var(--text-muted)",
+    "font-size": "var(--fs-2xs)",
+    "font-variant-numeric": "tabular-nums",
+    "padding-right": "var(--space-2)",
+    "text-align": "right",
+    "user-select": "none"
+  },
+  "diff-lnum--new": {
+    "color": "var(--text-secondary)"
+  },
+  "diff-lnum--old": {
+    "color": "var(--text-muted)"
   },
   "diff-message": {
     "color": "var(--text-muted)",
@@ -3375,11 +3416,23 @@
   "diff-split": {
     "width": "100%"
   },
+  "diff-split-grid": {
+    "display": "flex",
+    "flex-direction": "column"
+  },
   "diff-split-header-new": {
     "border-left": "1px solid var(--border-primary)"
   },
   "diff-split-header-old": {
     "border-right": "1px solid var(--border-primary)"
+  },
+  "diff-split-row": {
+    "align-items": "stretch",
+    "display": "grid",
+    "grid-template-columns": "44px minmax(0, 1fr) 44px minmax(0, 1fr)"
+  },
+  "diff-split-row--change": {
+    "background": "color-mix(in srgb, var(--bg-tertiary) 30%, transparent)"
   },
   "diff-stat-added": {
     "color": "var(--success)"
@@ -3395,6 +3448,22 @@
   },
   "diff-unchanged": {
     "background": "transparent"
+  },
+  "diff-view-mode-bar": {
+    "border-bottom": "1px solid var(--border-primary)",
+    "display": "flex",
+    "gap": "var(--space-2)",
+    "padding": "var(--space-2) var(--space-4)"
+  },
+  "diff-view-mode-btn": {
+    "background": "var(--bg-secondary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius)",
+    "color": "var(--text-secondary)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-2xs)",
+    "padding": "var(--space-1) var(--space-4)",
+    "transition": "color var(--duration-fast) var(--ease-swift), background-color var(--duration-fast) var(--ease-swift)"
   },
   "diff-view-mode-toggle": {
     "background": "var(--bg-primary)",
@@ -5298,16 +5367,6 @@
     "white-space": "nowrap",
     "width": "36px"
   },
-  "inline-diff-mode-btn": {
-    "background": "transparent",
-    "border": "none",
-    "border-radius": "var(--radius-sm)",
-    "color": "var(--text-muted)",
-    "cursor": "pointer",
-    "font-size": "var(--fs-sm)",
-    "padding": "var(--space-2) var(--space-5)",
-    "transition": "var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade)"
-  },
   "inline-diff-mode-toggle": {
     "background": "var(--surface-2)",
     "border-radius": "var(--radius-sm)",
@@ -5447,6 +5506,16 @@
   "inline-diff-unified": {
     "display": "block",
     "overflow-x": "auto"
+  },
+  "inline-diff-view-mode-btn": {
+    "background": "transparent",
+    "border": "none",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-muted)",
+    "cursor": "pointer",
+    "font-size": "var(--fs-sm)",
+    "padding": "var(--space-2) var(--space-5)",
+    "transition": "var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade)"
   },
   "inline-edit-actions": {
     "align-items": "center",

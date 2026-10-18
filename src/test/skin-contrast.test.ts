@@ -37,11 +37,27 @@ import { evaluateContrast, formatRatio } from "../core/theme/contrast-checker";
 const ROOT = join(__dirname, "..", "..");
 const CSS = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
 
-/** 取某个选择器块的**本层**自定义属性（花括号配平；嵌套块里的同名变量不算） */
+/**
+ * 取某个选择器块的**本层**自定义属性（花括号配平；嵌套块里的同名变量不算）。
+ *
+ * ⚠️ 不能用 `CSS.indexOf(selector)` 直接找：选择器字符串也会出现在注释里
+ * （例如 `:root` 里那句"暗色档必须单独加强（见 [data-theme=\"dark\"]）"），
+ * 那样取到的"下一个 `{`"可能属于别的规则（2026-10-18 就因此把 dark 块读成空）。
+ * 这里只认"选择器 + 可选空白 + `{`"且**不在注释里**的命中。
+ */
+function findRuleBrace(selector: string): number {
+  const pattern = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{", "g");
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(CSS))) {
+    const inComment = CSS.lastIndexOf("/*", match.index) > CSS.lastIndexOf("*/", match.index);
+    if (inComment) continue;
+    return match.index + match[0].length - 1;
+  }
+  return -1;
+}
+
 function varsOf(selector: string): Record<string, string> {
-  const at = CSS.indexOf(selector);
-  if (at < 0) return {};
-  const open = CSS.indexOf("{", at);
+  const open = findRuleBrace(selector);
   if (open < 0) return {};
   let depth = 0;
   let end = -1;

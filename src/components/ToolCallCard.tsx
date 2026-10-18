@@ -19,6 +19,7 @@ import {
   ExternalLink, Globe, Code2, Sparkles, Files,
 } from "lucide-react";
 import { handleFileLinkClick, handleFileLinkContextMenu } from "../utils/file-link";
+import { DiffBlockCard, type DiffHunk } from "./DiffBlockCard";
 
 // ====== 类型定义 ======
 
@@ -327,12 +328,6 @@ function TerminalBlock({ model }) {
 
 // ====== 专用卡片：Diff ======
 
-interface DiffHunk {
-  path: string
-  oldText: string | null
-  newText: string
-}
-
 function tryDiffModel(metadata: any, result: string | undefined): DiffHunk[] | null {
   // 从 metadata.diff 或 result 中解析 diff
   if (metadata?.diff && Array.isArray(metadata.diff)) {
@@ -343,36 +338,6 @@ function tryDiffModel(metadata: any, result: string | undefined): DiffHunk[] | n
     return [{ path: 'file', oldText: null, newText: result }]
   }
   return null
-}
-
-function DiffBlockCard({ hunks }: { hunks: DiffHunk[] }) {
-  return (
-    <div className="tool-card tool-card--scroll diff-block">
-      {hunks.map((hunk, idx) => (
-        <div key={idx} className="tool-card-row">
-          <div className="tool-card-head">
-            <FileEdit size={12} /> {hunk.path}
-          </div>
-          <pre className="tool-card-pre tool-card-pre--tight tool-card-pre--plain">
-            {hunk.newText.split('\n').map((line, i) => (
-              <div
-                key={i}
-                className={
-                  line.startsWith('+') && !line.startsWith('+++')
-                    ? 'diff-line diff-line--add'
-                    : line.startsWith('-') && !line.startsWith('---')
-                    ? 'diff-line diff-line--del'
-                    : 'diff-line'
-                }
-              >
-                {line || ' '}
-              </div>
-            ))}
-          </pre>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ====== 专用卡片：Read (行号 + 内容) ======
