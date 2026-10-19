@@ -42,5 +42,18 @@ export default {
       tests: ["src/test/water-banner-stability.test.ts"],
       expectRed: true,
     },
+    {
+      id: "MUT-4 阈值退回 70%（HIGH）",
+      why: "STAB-6：70–89% 又打扰用户（自动压缩已经接手），A 方案失效",
+      patches: [
+        {
+          file: "src/core/context/water-level.ts",
+          from: "  const high = level.level >= WATER_LEVEL.CRITICAL;",
+          to: "  const high = level.level >= WATER_LEVEL.HIGH;",
+        },
+      ],
+      tests: ["src/test/water-banner-stability.test.ts"],
+      expectRed: true,
+    },
   ],
 };

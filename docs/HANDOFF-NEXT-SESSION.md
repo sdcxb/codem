@@ -7380,3 +7380,14 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 `HEADROOM-1..3`（阈值/保留/行为收缩）、`FOLD-LONGTURN-6/7`（小结果、重复读取）；
 变异波次 `compaction-headroom`（3 条全红）、`fold-long-turn`（5 条全红）。
 全量 **721 文件 / 8441 通过 + 17 skipped**；`tsc` 0；变异闸门 **64 波**；非 eval 链全过。
+
+
+## 2026-10-19 11:05 — 第 247 波：提示条阈值提到 90%（A 方案）
+
+- 用户拍板 A：70–90% 交给**自动压缩**（阈值 0.7、保留 40%）静默处理；提示条只在 **≥90%（critical）** 出现，
+  避免"打开会话先被提示、发一轮又被压下去"。
+- 实现：`reduceWaterBanner` 的判定从 `WATER_LEVEL.HIGH` 改为 `WATER_LEVEL.CRITICAL`；
+  提示条仍走同一个防抖（连续 2 拍、读不到不改可见性）。
+- 判据：`STAB-6`（70–89% 永不点亮、90% 才点亮）+ 24 条提示条判据同步改（WB-1/4/5/13/16 等）。
+- 变异 `water-banner-stability` 加 MUT-4（阈值退回 HIGH）⇒ 4 条全红。
+- 全量 **721 文件 / 8442 通过 + 17 skipped**；`tsc` 0；变异闸门 **64 波**；非 eval 链全过。

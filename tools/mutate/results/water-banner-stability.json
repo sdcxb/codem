@@ -1,8 +1,8 @@
 {
   "wave": "water-banner-stability",
   "description": "STAB：提示条可见性防抖（连续 2 拍 ≥70% 才显示、连续 2 拍低于才隐藏、读不到不改可见性）。判据 STAB-1..5；3 条变异各自对红",
-  "runAt": "2026-10-19T00:14:24.602Z",
-  "specFingerprint": "6cf87c5e058e75bd10d3936dfd48f52188f9008c",
+  "runAt": "2026-10-19T03:01:09.524Z",
+  "specFingerprint": "14e4985d93e04ce4f943f656042ac0f127dbdaa4",
   "files": [
     "src/core/context/water-level.ts",
     "src/components/WaterLevelBanner.tsx"
@@ -30,7 +30,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2815
+      "ms": 2965
     },
     {
       "id": "MUT-2 读不到就立刻隐藏",
@@ -50,7 +50,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2788
+      "ms": 3031
     },
     {
       "id": "MUT-3 提示条不接防抖 hook",
@@ -70,7 +70,27 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2950
+      "ms": 3154
+    },
+    {
+      "id": "MUT-4 阈值退回 70%（HIGH）",
+      "why": "STAB-6：70–89% 又打扰用户（自动压缩已经接手），A 方案失效",
+      "patches": [
+        {
+          "file": "src/core/context/water-level.ts",
+          "from": "  const high = level.level >= WATER_LEVEL.CRITICAL;",
+          "to": "  const high = level.level >= WATER_LEVEL.HIGH;"
+        }
+      ],
+      "tests": [
+        "src/test/water-banner-stability.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3387
     }
   ]
 }

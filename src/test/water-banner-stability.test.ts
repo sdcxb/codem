@@ -39,14 +39,14 @@ function level(ratio: number, opts: { authoritative?: boolean } = {}): ContextWa
 
 describe("STAB 提示条防抖", () => {
   it("STAB-1: 单拍高水位不显示；连续两拍才显示", () => {
-    let s = reduceWaterBanner(INITIAL_WATER_BANNER_STATE, level(0.75));
+    let s = reduceWaterBanner(INITIAL_WATER_BANNER_STATE, level(0.95));
     expect(s.visible, "第一拍就显示 = 打开时闪一下").toBe(false);
-    s = reduceWaterBanner(s, level(0.76));
+    s = reduceWaterBanner(s, level(0.96));
     expect(s.visible, "连续两拍（≈6 秒）后才显示").toBe(true);
   });
 
   it("STAB-2: 读不到（authoritative=false）不改变可见性", () => {
-    let s = reduceWaterBanner(reduceWaterBanner(INITIAL_WATER_BANNER_STATE, level(0.8)), level(0.8));
+    let s = reduceWaterBanner(reduceWaterBanner(INITIAL_WATER_BANNER_STATE, level(0.95)), level(0.95));
     expect(s.visible).toBe(true);
     s = reduceWaterBanner(s, level(0, { authoritative: false }));
     expect(s.visible, "读不到既不证明满也不证明不满 ⇒ 保持显示").toBe(true);
@@ -55,7 +55,7 @@ describe("STAB 提示条防抖", () => {
   });
 
   it("STAB-3: 低一拍不隐藏；连续两拍低才隐藏", () => {
-    let s = reduceWaterBanner(reduceWaterBanner(INITIAL_WATER_BANNER_STATE, level(0.8)), level(0.8));
+    let s = reduceWaterBanner(reduceWaterBanner(INITIAL_WATER_BANNER_STATE, level(0.95)), level(0.95));
     s = reduceWaterBanner(s, level(0.6));
     expect(s.visible, "刚掉下来一拍就隐藏 = 用户看到闪一下").toBe(true);
     s = reduceWaterBanner(s, level(0.55));
@@ -64,10 +64,19 @@ describe("STAB 提示条防抖", () => {
 
   it("STAB-4: 高/低交替（正是启动现场的闪烁）永远不会显示", () => {
     let s = INITIAL_WATER_BANNER_STATE;
-    for (const r of [0.8, 0.6, 0.8, 0.6, 0.8, 0.6]) {
+    for (const r of [0.95, 0.6, 0.95, 0.6, 0.95, 0.6]) {
       s = reduceWaterBanner(s, level(r));
       expect(s.visible, "交替波动不许点亮提示条").toBe(false);
     }
+  });
+
+  it("STAB-6: 70–89% 永不点亮（交给自动压缩）；90% 才按防抖点亮", () => {
+    let s = INITIAL_WATER_BANNER_STATE;
+    for (const r of [0.72, 0.8, 0.85, 0.89]) s = reduceWaterBanner(s, level(r));
+    expect(s.visible, "A 方案：70–89% 不打扰").toBe(false);
+    s = reduceWaterBanner(s, level(0.9));
+    s = reduceWaterBanner(s, level(0.9));
+    expect(s.visible, "到 90% 且连续两拍才显示").toBe(true);
   });
 
   it("STAB-5: 提示条接线到防抖 hook（不是裸 useContextWaterLevel）", () => {

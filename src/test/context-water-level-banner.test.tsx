@@ -63,7 +63,7 @@ vi.mock("../core/context/water-level", async (importOriginal) => {
      */
     useStableContextWaterLevel: () => ({
       level: { ...levelBox },
-      visible: levelBox.level >= 2,
+      visible: levelBox.level >= 3,
       showStreak: 2,
       hideStreak: 0,
     }),
@@ -196,13 +196,13 @@ describe("第 122 轮 · 提示条可见性（不打开任何面板）", () => {
   const banner = (onOpenDetail = () => {}) =>
     render(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail }));
 
-  it("WB-1: 70% 时**自动出现**，且带可断言的标记与百分比", () => {
-    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2, messageCount: 40 });
+  it("WB-1: 90%（critical）时**自动出现**，且带可断言的标记与百分比（70–90% 交给自动压缩）", () => {
+    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.92, percent: 92, level: 3, messageCount: 40 });
     const { queryByTestId } = banner();
     const el = queryByTestId("water-level-banner");
     expect(el).not.toBeNull();
-    expect(el!.getAttribute("data-level")).toBe("2");
-    expect(el!.getAttribute("data-percent")).toBe("70");
+    expect(el!.getAttribute("data-level")).toBe("3");
+    expect(el!.getAttribute("data-percent")).toBe("92");
   });
 
   it("WB-2: 50%（还不到告警线）**不打扰** —— 提示条不是常驻仪表", () => {
@@ -217,16 +217,21 @@ describe("第 122 轮 · 提示条可见性（不打开任何面板）", () => {
     expect(queryByTestId("water-level-banner")).toBeNull();
   });
 
-  it("WB-4: 90% 用**错误色档**（is-critical），70% 用警告档 —— 两档行为差别是实质的", () => {
+  it("WB-4: 90% 用**错误色档**（is-critical）；70–89% **不出现**（A：交给自动压缩）", () => {
     Object.assign(levelBox, { used: 106000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
-    const { queryByTestId } = banner();
-    const el = queryByTestId("water-level-banner")!;
+    const a = banner();
+    const el = a.queryByTestId("water-level-banner")!;
     expect(el.className).toContain("is-critical");
     expect(el.className).not.toContain("is-high");
+    a.unmount();
+
+    Object.assign(levelBox, { used: 90000, available: 115200, ratio: 0.85, percent: 85, level: 2 });
+    const b = banner();
+    expect(b.queryByTestId("water-level-banner"), "85% 不该打扰（自动压缩在 70% 已接手）").toBeNull();
   });
 
   it("WB-5: 关闭后消失，**水位再涨 5 个百分点**会重新出现（风险不许被静音）", () => {
-    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2 });
+    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
     const onOpen = vi.fn();
     const { queryByTestId, rerender } = render(
       createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: onOpen }),
@@ -237,18 +242,18 @@ describe("第 122 轮 · 提示条可见性（不打开任何面板）", () => {
     expect(queryByTestId("water-level-banner")).toBeNull();
 
     // 只涨 2 个百分点（< 5）⇒ 仍然安静
-    Object.assign(levelBox, { used: 83000, available: 115200, ratio: 0.723, percent: 72, level: 2 });
+    Object.assign(levelBox, { used: 83000, available: 115200, ratio: 0.94, percent: 94, level: 3 });
     rerender(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: onOpen }));
     expect(queryByTestId("water-level-banner")).toBeNull();
 
-    // 涨到 76%（≥ 70.3% + 5）⇒ 必须回来
-    Object.assign(levelBox, { used: 87600, available: 115200, ratio: 0.76, percent: 76, level: 2 });
+    // 再涨到 98%（≥ 92% + 5）⇒ 必须回来（0.97 因浮点误差会卡在边界，用 0.98）
+    Object.assign(levelBox, { used: 98000, available: 115200, ratio: 0.98, percent: 98, level: 3 });
     rerender(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: onOpen }));
     expect(queryByTestId("water-level-banner")).not.toBeNull();
   });
 
   it("WB-6: 换会话时「已关闭」状态不跟过去（新会话该提示就得提示）", () => {
-    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2 });
+    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
     const { queryByTestId, rerender } = render(
       createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }),
     );
@@ -260,7 +265,7 @@ describe("第 122 轮 · 提示条可见性（不打开任何面板）", () => {
   });
 
   it("WB-7: 两个出口的**代价**分开写清楚（C 项）——压缩保摘要 / 新对话归零并交接", () => {
-    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2 });
+    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
     const { queryByTestId } = banner();
     const text = queryByTestId("water-level-banner")!.textContent ?? "";
     // 必须说明"会发生什么"（B 项：静默丢弃这件事不许静默）
@@ -275,7 +280,7 @@ describe("第 122 轮 · 提示条可见性（不打开任何面板）", () => {
   });
 
   it("WB-8: 「查看详情」把用户送到既有的压缩面板（不自己造第二个压缩入口）", () => {
-    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2 });
+    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
     const onOpen = vi.fn();
     const { queryByTestId } = banner(onOpen);
     fireEvent.click(queryByTestId("water-level-detail")!);
@@ -324,7 +329,7 @@ describe("第 122 轮 · 「开启新对话」是**交接**，不是从零开始
     render(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
 
   function armHighLevel() {
-    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2 });
+    Object.assign(levelBox, { used: 106000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
   }
 
   /**
@@ -453,7 +458,7 @@ describe("第 191 波 · 回执不许混进风险提示条（真机报的「已�
     render(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
 
   function armHighLevel() {
-    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.703, percent: 70, level: 2 });
+    Object.assign(levelBox, { used: 81000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
   }
 
   /** 真机那条 1M 窗口的会话形态：可用预算 ≈ 904,998、已用 ≈ 9,000 ⇒ 1% */
@@ -537,7 +542,7 @@ describe("第 191 波 · 回执不许混进风险提示条（真机报的「已�
     const { queryByTestId } = banner();
     const el = queryByTestId("water-level-banner");
     expect(el).not.toBeNull();
-    expect(el!.textContent).toContain("上下文压力偏高");
+    expect(el!.textContent).toContain("即将满");
     expect(queryByTestId("water-level-handoff")).not.toBeNull();
     expect(queryByTestId("water-level-detail")).not.toBeNull();
     // 而"窄回执条"这种形态此刻**不该**出现（它是给"没有风险"用的）
@@ -590,12 +595,9 @@ describe("第 191 波 · 回执不许混进风险提示条（真机报的「已�
     vis.__resetContextDrops();
   });
 
-  it("WB-16 反向对照: 等级真的到线时，标题照旧说「压力偏高 / 即将满」", () => {
+  it("WB-16 反向对照: 等级真的到线（90%）时，标题必须说「即将满」", () => {
     armHighLevel();
-    const { queryByTestId, rerender } = banner();
-    expect(queryByTestId("water-level-title")!.textContent).toContain("上下文压力偏高");
-    Object.assign(levelBox, { used: 106000, available: 115200, ratio: 0.92, percent: 92, level: 3 });
-    rerender(createElement(WaterLevelBanner, { sessionId: SESSION, onOpenDetail: () => {} }));
+    const { queryByTestId } = banner();
     expect(queryByTestId("water-level-title")!.textContent).toContain("即将满");
   });
 });

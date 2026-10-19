@@ -164,8 +164,12 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
  *
  * ## 规则（只作用于"风险"这条显示理由）
  *
- * - 连续 `showAfter` 次（默认 2 拍 ≈ 6 秒）都 ≥ 70% 才显示；
- * - 连续 `hideAfter` 次低于 70% 才隐藏；
+ * - 连续 `showAfter` 次（默认 2 拍 ≈ 6 秒）都 **≥ 90%（critical）** 才显示；
+ * - 连续 `hideAfter` 次低于该线才隐藏；
+ *
+ * ⚠️ 阈值是 **90% 而不是 70%**（2026-10-19 用户拍板 A）：70–90% 交给**自动压缩**
+ * （阈值 0.7、压完留 30% 余量）静默处理；提示条只在"压缩也不一定够"的临界档出现，
+ * 避免"打开会话先被提示、发一轮又被压下去"的打扰。
  * - `authoritative === false`（读不到/未就绪）**不改可见性**（保持上一拍），
  *   因为"读不到"既不证明满、也不证明不满。
  *
@@ -196,7 +200,8 @@ export function reduceWaterBanner(
     // 读数不可信：保留可见性与 streaks，只更新展示用的 level（避免 UI 闪成 0%）
     return { ...prev, level };
   }
-  const high = level.level >= WATER_LEVEL.HIGH;
+  /* A 方案：只在 critical（≥90%）提示；70–90% 由自动压缩静默处理 */
+  const high = level.level >= WATER_LEVEL.CRITICAL;
   if (high) {
     const showStreak = prev.showStreak + 1;
     return {
