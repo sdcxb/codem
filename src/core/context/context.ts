@@ -97,7 +97,7 @@ const DEFAULT_CONFIG: CompactionConfig = {
   maxContextWindow: 128000,
   outputReserve: 4096,
   systemPromptTokens: 2000,
-  compactionThreshold: 0.8,
+  compactionThreshold: 0.7,
   maxMessagesAfterCompaction: 20,
   preserveRecentToolOutputs: true,
 };

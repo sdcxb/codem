@@ -130,7 +130,13 @@ describe("FD 折叠阶梯：工具输出（用户提的机制）", () => {
     expect(web, "网页抓取必须被当成候选（但不能折狠）").toBeTruthy();
     /* 40,000 字符：可重放会折到 4096+note+1024 ≈ 5.2k；不可重放留 8192+note+2048 ⇒ 明显更大 */
     expect(web!.afterChars, "不可重放要留更大片段").toBeGreaterThan(10_000);
-    expect(read, "小于阈值的可重放结果不该入选").toBeFalsy();
+    /*
+     * 1,000 字符的可重放结果：第一档折不动（head 4096 比它还大），但**允许作为第二档候选**
+     * （换成 240 字存根）。这里钉的是"第一档不许动它"。
+     */
+    expect(read, "小于第一档阈值的结果仍然可以进第二档候选").toBeTruthy();
+    expect(read!.afterChars, "第一档不许把它改小").toBe(read!.beforeChars);
+    expect(read!.stubChars, "第二档存根最多 240 字").toBeLessThanOrEqual(240);
   });
 
   it("FD-5：按「距离 × 体积」选 —— 更近但更大的那条也会被折（只看最老的不够）", () => {

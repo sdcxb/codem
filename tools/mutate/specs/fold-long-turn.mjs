@@ -9,8 +9,8 @@ export default {
       patches: [
         {
           file: "src/core/llm/tool-output-fold.ts",
-          from: "    if (!Array.isArray(m?.toolCalls)) return;",
-          to: "    if (i >= opts.protectedFromIndex) return;\n    if (!Array.isArray(m?.toolCalls)) return;",
+          from: "    if (protectedByRecency.has(i)) return; // 最近几条工具结果：保护\n    if (!Array.isArray(m?.toolCalls)) return;",
+          to: "    if (protectedByRecency.has(i)) return;\n    if (i >= opts.protectedFromIndex) return;\n    if (!Array.isArray(m?.toolCalls)) return;",
         },
       ],
       tests: ["src/test/tool-output-fold-long-turn.test.ts"],
@@ -37,6 +37,32 @@ export default {
           file: "src/core/llm/tool-output-fold.ts",
           from: "export const FOLD_KEEP_RECENT_RESULTS = 2;",
           to: "export const FOLD_KEEP_RECENT_RESULTS = 0;",
+        },
+      ],
+      tests: ["src/test/tool-output-fold-long-turn.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-5 小结果不进候选（第二档只处理第一档折得动的）",
+      why: "FOLD-LONGTURN-6：真机大量 1–2K 工具结果会被漏掉，折叠后仍超预算",
+      patches: [
+        {
+          file: "src/core/llm/tool-output-fold.ts",
+          from: "      const stubbable = reproducible && text.length > AGGRESSIVE_STUB_CHARS;\n      if (!duplicate && folded.length >= text.length && !stubbable) return;",
+          to: "      if (!duplicate && folded.length >= text.length) return;",
+        },
+      ],
+      tests: ["src/test/tool-output-fold-long-turn.test.ts"],
+      expectRed: true,
+    },
+    {
+      id: "MUT-6 关掉重复读取去重",
+      why: "FOLD-LONGTURN-7：同一路径读 40 次时旧结果不换「重复」存根，浪费大量预算",
+      patches: [
+        {
+          file: "src/core/llm/tool-output-fold.ts",
+          from: "      const duplicate = reproducible && hasArgs(tc) && lastByKey.get(keyOf(tc)) !== key;",
+          to: "      const duplicate = false;",
         },
       ],
       tests: ["src/test/tool-output-fold-long-turn.test.ts"],

@@ -1225,7 +1225,10 @@ describe("FC-D5：手动压缩（P1-D5）", () => {
     /* ① 端口不可用时就先摸一次单例（模拟启动早期其它模块抢先取用） */
     setStoragePort(null);
     const early = getContextManager();
-    expect(early.getConfig().compactionThreshold, "端口没就绪时用默认值（这一步不是缺陷）").toBe(0.8);
+    expect(
+      early.getConfig().compactionThreshold,
+      "端口没就绪时用默认值（2026-10-19 起默认 0.7：与提示线一致，压完留 30% 余量）",
+    ).toBe(0.7);
     /* ② 端口接上，磁盘里已有用户保存的 0.55（设置面按 settings 表 seed：列名 key/value） */
     const port2 = createFakeStoragePort({
       seed: {

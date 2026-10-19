@@ -505,7 +505,7 @@ const DEFAULT_LOOP_CONFIG: LoopConfig = {
   contextWindow: 128000,
   maxConsecutiveErrors: 3,
   enableCompaction: true,
-  compactionThreshold: 0.8,
+  compactionThreshold: 0.7,
   enableReactiveCompaction: true,
   enablePermissions: true,
   maxOutputTokens: 4096,
@@ -2584,7 +2584,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     if (!hiddenStateReady) {
       console.log("[compactMessages] 跳过压力压缩：消息索引镜像还没就绪（可见集可能含已隐藏的历史）");
     }
-    if (hiddenStateReady && this.state.contextPressure > this.config.compactionThreshold && this.config.enableCompaction) {
+    if (hiddenStateReady && this.state.contextPressure >= this.config.compactionThreshold && this.config.enableCompaction) {
         // Prevent infinite compaction loops (max 3 consecutive compactions)
         if (this.state.consecutiveCompactions >= 3) {
           console.warn("[AgenticLoop] Too many consecutive compactions, forcing stop");
@@ -5943,7 +5943,18 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
      */
     const windowTokens = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
     // 预算：窗口的一半。留一半给系统提示、工具 schema、以及模型输出。
-    const keepBudget = Math.max(8000, Math.floor(windowTokens * 0.5));
+    /**
+     * ★ 2026-10-19：压缩后要留**真正的余量**，不能"压到刚好 70%"。
+     *
+     * 原来保留预算 = 窗口 50%，而提示线是 70% ⇒ 压完 ≈50–55%，下一轮涨 15–20% 就再次提示，
+     * 用户感觉"刚压完又报满"。参考 DSH（`compaction-basic`：阈值 0.8、`retainTokens` 65536
+     * ≈ 窗口 50% ⇒ 留 30% 余量）与 Claude Code（接近上限才自动压缩）：
+     * 压缩的价值是**买回一段可用的对话空间**，不是把指针挪到阈值下面。
+     *
+     * 这里保留 40%：阈值 70% - 保留 40% = **30% 余量**（128K 窗口约 38K token），
+     * 与 DSH 的余量同量级；剩余空间足够十几轮普通对话，不会"压完下一轮又满"。
+     */
+    const keepBudget = Math.max(8000, Math.floor(windowTokens * 0.4));
     /**
      * ★ 第 228 波审计修复（**高**）：估算保留集时必须算上**工具结果**。
      *

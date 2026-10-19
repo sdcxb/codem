@@ -97,6 +97,10 @@ export interface FoldCandidate {
   /** 折叠后字符数 */
   afterChars: number;
   reproducible: boolean;
+  /** 同一（工具, 参数）的重复结果：只保留最新一次，更早的换存根 */
+  duplicate?: boolean;
+  /** 这条最多能压到多少字符（第二档存根只作用于可重放结果） */
+  stubChars?: number;
 }
 
 export interface FoldResult {
@@ -119,9 +123,15 @@ function toolResultChars(m: any): number {
 const AGGRESSIVE_STUB_CHARS = 240;
 
 /** 生成"短存根"：原长度 + 首行 + 工具名 + 可重读提示 */
-function aggressiveStub(text: string, tool: string, originalChars: number): string {
+function aggressiveStub(text: string, tool: string, originalChars: number, duplicate = false): string {
   const firstLine = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? "";
   const head = firstLine.trim().slice(0, 120);
+  if (duplicate) {
+    return (
+      `[重复读取同一参数的工具结果已折叠：原始 ${originalChars} 字符，工具 ${tool || "unknown"}]` +
+      `\n（同一工具的同一参数在更近的位置还有一次结果；需要原文请重新调用该工具。）`
+    ).slice(0, AGGRESSIVE_STUB_CHARS);
+  }
   return (
     `[工具结果中段已折叠：原始 ${originalChars} 字符，工具 ${tool || "unknown"}]` +
     (head ? `\n首行：${head}` : "") +
@@ -153,15 +163,8 @@ export function planToolOutputFold(
   },
 ): FoldCandidate[] {
   const keepRecent = opts.keepRecentResults ?? FOLD_KEEP_RECENT_RESULTS;
-  const minFoldChars = opts.minFoldChars ?? 2048;
-  /*
-   * ⚠️ 折叠**不再按"最近几轮"保护**（2026-10-19）。
-   *
-   * 一条 agent 回合可以跑几十次工具调用，那一整轮都属于"最近 1 轮" ⇒ 整轮被保护 ⇒
-   * 折叠在**真正的大头**上完全失效（真机形态：水位照样冲 70%）。
-   * 现在只有两道保护：**最近 2 条工具结果**（`FOLD_KEEP_RECENT_RESULTS`）与
-   * "只折工具结果、不动任何文本"。更早的"轮内陈旧工具输出"都可以折。
-   */
+  /** 小于存根尺寸的结果本来就压不动，不必进入候选 */
+  const minFoldChars = opts.minFoldChars ?? AGGRESSIVE_STUB_CHARS;
 
   /* 先定位"最近 N 条工具结果"所属的消息下标（它们一律保护） */
   const withResults: number[] = [];
@@ -170,49 +173,93 @@ export function planToolOutputFold(
   });
   const protectedByRecency = new Set(withResults.slice(Math.max(0, withResults.length - keepRecent)));
 
+  /**
+   * 只有**带参数**的调用才参与重复检测：无参工具（git_status / build 之类）每次结果都可能不同，
+   * 把"同一工具名"当重复会把它们的旧结果全换成存根（实验里这就是 FOLD-LONGTURN-5 的误判）。
+   */
+  const hasArgs = (tc: any): boolean => {
+    const a = tc?.args;
+    if (a === undefined || a === null) return false;
+    if (typeof a === "object" && Object.keys(a).length === 0) return false;
+    return true;
+  };
+  const keyOf = (tc: any): string => {
+    const tool = String(tc?.tool ?? "").toLowerCase();
+    let args = "";
+    try {
+      args = JSON.stringify(tc?.args ?? null);
+    } catch {
+      args = "?";
+    }
+    return `${tool}|${args}`;
+  };
+  /**
+   * 每个 (工具, 参数) 的**最后一次**出现（全局，含受保护的那些）——
+   * 用于"重复读取"去重：只保留最新一次的结果，更早的同一路径结果换成存根。
+   */
+  const lastByKey = new Map<string, string>();
+  messages.forEach((m) => {
+    if (!Array.isArray(m?.toolCalls)) return;
+    m.toolCalls.forEach((tc: any, ti: number) => {
+      if (!isReproducibleTool(String(tc?.tool ?? "")) || !hasArgs(tc)) return;
+      const text = typeof tc?.result === "string" ? tc.result : "";
+      if (text.length > AGGRESSIVE_STUB_CHARS) lastByKey.set(keyOf(tc), `${m.id}#${ti}`);
+    });
+  });
+
   const out: FoldCandidate[] = [];
   messages.forEach((m, i) => {
-    // （不按轮/位置设边界：只有下面的 keepRecent 与"仅折工具结果"两道保护）
     if (protectedByRecency.has(i)) return; // 最近几条工具结果：保护
     if (!Array.isArray(m?.toolCalls)) return;
     m.toolCalls.forEach((tc: any, ti: number) => {
       const text = typeof tc?.result === "string" ? tc.result : "";
-      if (text.length < minFoldChars) return;
+      if (text.length <= minFoldChars) return;
       const reproducible = isReproducibleTool(String(tc?.tool ?? ""));
       const folded = foldOne(text, reproducible);
-      if (folded.length >= text.length) return;
+      const key = `${m.id}#${ti}`;
+      const duplicate = reproducible && hasArgs(tc) && lastByKey.get(keyOf(tc)) !== key;
+      /*
+       * 第一档折不动、也不是重复读取 ⇒ 这条没有收益（例如 2K 的可重放结果，
+       * 第一档的 head 4096 比它还大）。但**重复读取**即使第一档折不动也有收益
+       * （第二档换成 240 字存根），所以单独放行。
+       */
+      /*
+       * 第一档折不动（例如 2K 的可重放结果，head 4096 比它还大）也**要进候选**：
+       * 第二档能把它换成 240 字存根。真机上大量工具结果正是 1–2K。
+       */
+      const stubbable = reproducible && text.length > AGGRESSIVE_STUB_CHARS;
+      if (!duplicate && folded.length >= text.length && !stubbable) return;
+      const afterChars = Math.min(folded.length, text.length);
       out.push({
         messageId: String(m.id),
         toolIndex: ti,
         tool: String(tc?.tool ?? ""),
         beforeChars: text.length,
-        afterChars: folded.length,
+        afterChars,
         reproducible,
+        duplicate,
+        /** 最多能压到多少（第二档存根只能作用于可重放结果） */
+        stubChars: reproducible ? Math.min(afterChars, AGGRESSIVE_STUB_CHARS) : afterChars,
       });
     });
   });
 
   /*
-   * 排序：**距离 × 体积** —— 只看距离可能一条都不降（真机上占大头的是少数几条巨型结果），
-   * 只看体积又会把"刚刚发生的大动作"折掉。距离用下标做权重：越老权重越大。
+   * 排序：**距离 × 可省体积** —— 只看距离可能一条都不降，只看体积又会先折"刚刚发生的大动作"。
+   * 重复读取按"换成 240 字存根"估算收益，否则它会被排到最后（第一档对它是 0 收益）。
    */
   const n = Math.max(1, messages.length);
   return out.sort((a, b) => {
     const idxA = messages.findIndex((m) => String(m?.id) === a.messageId);
     const idxB = messages.findIndex((m) => String(m?.id) === b.messageId);
-    const scoreA = (n - idxA) * (a.beforeChars - a.afterChars);
-    const scoreB = (n - idxB) * (b.beforeChars - b.afterChars);
+    const saveA = Math.max(a.beforeChars - a.afterChars, a.beforeChars - (a.stubChars ?? a.afterChars));
+    const saveB = Math.max(b.beforeChars - b.afterChars, b.beforeChars - (b.stubChars ?? b.afterChars));
+    const scoreA = (n - idxA) * saveA;
+    const scoreB = (n - idxB) * saveB;
     return scoreB - scoreA;
   });
 }
 
-/**
- * 折叠**到目标为止**：按候选顺序逐条折，直到估算值不再超目标。
- *
- * @param estimate 给定消息数组的 token 估算（调用方传 `summarizeModelContext(...).usedTokens` 一类）
- * @param targetTokens 目标上限
- * @param maxFold 单次最多折几条（防止一次动太多；默认不限）
- */
 export function foldToolOutputsUnderTarget(
   messages: any[],
   opts: {
@@ -230,12 +277,14 @@ export function foldToolOutputsUnderTarget(
   const limit = opts.maxFold ?? all.length;
   let current = messages;
   const applied: FoldCandidate[] = [];
+  /** 进入过评估的候选（含"第一档折不动但第二档能换存根"的），第二档要用 */
+  const reviewed: FoldCandidate[] = [];
   let savedChars = 0;
 
   for (const cand of all) {
     if (applied.length >= limit) break;
     if (opts.estimate(current) <= opts.targetTokens) break;
-    /* 折这一条 */
+    reviewed.push(cand);
     const next = current.map((m: any) => {
       if (String(m?.id) !== cand.messageId || !Array.isArray(m.toolCalls)) return m;
       const calls = m.toolCalls.map((tc: any, ti: number) => {
@@ -246,27 +295,27 @@ export function foldToolOutputsUnderTarget(
       });
       return { ...m, toolCalls: calls };
     });
-    /* 没真的变（理论上不会）就跳过 */
-    if (next === current) continue;
     const changed = next.some((m: any, i: number) => m !== current[i]);
-    if (!changed) continue;
+    if (!changed) continue; // 第一档没收益；留给第二档
     current = next;
     applied.push(cand);
     savedChars += cand.beforeChars - cand.afterChars;
-    if (savedChars <= 0) break;
   }
 
   /*
-   * 第二档：第一档折完仍高于目标 ⇒ 把**已折过的可重放结果**换成短存根。
+   * 第二档：第一档折完仍高于目标 ⇒ 把**可重放**的结果换成短存根。
    *
    * 为什么可以这么狠：这些是"较远 + 可重放"的工具结果（读文件/列目录/grep/构建…），
    * 需要原文时重跑一次工具即可；保留 5K 对模型几乎没有增量信息，却持续占着预算。
-   * 不可重放的（网页抓取、一次性命令）**不参与**这一档 —— 取不回来的内容不能只留 240 字。
+   * 不可重放的（网页抓取、一次性命令）**不参与**这一档。
+   *
+   * ⚠️ 2026-10-19 补：第二档也覆盖**第一档折不动的小结果**（2K~5K）与**重复读取**——
+   * 真机上大量工具结果在 1–2K，只走第一档时它们根本不进候选（而它们加起来才是大头）。
    */
   if (opts.estimate(current) > opts.targetTokens) {
-    const stubbable = applied
-      .filter((c) => c.reproducible && c.afterChars > AGGRESSIVE_STUB_CHARS)
-      .sort((a, b) => b.afterChars - a.afterChars);
+    const stubbable = reviewed
+      .filter((c) => c.reproducible && c.beforeChars > AGGRESSIVE_STUB_CHARS)
+      .sort((a, b) => b.beforeChars - a.beforeChars);
     for (const cand of stubbable) {
       if (opts.estimate(current) <= opts.targetTokens) break;
       const next = current.map((m: any) => {
@@ -275,7 +324,7 @@ export function foldToolOutputsUnderTarget(
           if (ti !== cand.toolIndex) return tc;
           const text = typeof tc?.result === "string" ? tc.result : "";
           if (!text) return tc;
-          const stub = aggressiveStub(text, String(tc?.tool ?? ""), cand.beforeChars);
+          const stub = aggressiveStub(text, String(tc?.tool ?? ""), cand.beforeChars, Boolean(cand.duplicate));
           return stub.length < text.length ? { ...tc, result: stub } : tc;
         });
         return { ...m, toolCalls: calls };
@@ -283,7 +332,7 @@ export function foldToolOutputsUnderTarget(
       const changed = next.some((m: any, i: number) => m !== current[i]);
       if (!changed) continue;
       current = next;
-      savedChars += Math.max(0, cand.afterChars - AGGRESSIVE_STUB_CHARS);
+      savedChars += Math.max(0, cand.beforeChars - (cand.stubChars ?? AGGRESSIVE_STUB_CHARS));
     }
   }
 

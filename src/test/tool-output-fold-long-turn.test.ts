@@ -112,6 +112,53 @@ describe("FOLD-LONGTURN 长回合折叠", () => {
     expect(ids.has("t0"), "更早的可以折").toBe(true);
   });
 
+  it("FOLD-LONGTURN-6: 大量 1–2K 的小工具结果也能在超预算时换成存根（真机形态）", () => {
+    const msgs: any[] = [{ id: "u0", role: "user", content: "开始" }];
+    for (let i = 0; i < 400; i++) {
+      msgs.push({
+        id: `s${i}`,
+        role: "assistant",
+        content: "",
+        toolCalls: [{ tool: "read", args: { path: `src/f${i}.ts` }, result: "x".repeat(1_500) }],
+      });
+    }
+    const before = estimate(msgs) / AVAILABLE;
+    expect(before, "构造场景必须真的很高").toBeGreaterThan(1);
+
+    const result = foldToolOutputsUnderTarget(msgs, {
+      protectedFromIndex: 0,
+      targetTokens: Math.floor(AVAILABLE * 0.45),
+      estimate,
+    });
+    const after = estimate(result.messages) / AVAILABLE;
+    expect(after, `小结果也必须能压下来（实际 ${(after * 100).toFixed(0)}%）`).toBeLessThan(0.7);
+    const stub = result.messages.find((m: any) => m.id === "s5")?.toolCalls[0].result as string;
+    expect(stub).toContain("工具结果中段已折叠");
+    expect(stub.length).toBeLessThan(400);
+  });
+
+  it("FOLD-LONGTURN-7: 重复读取同一路径：只保留最新一次，旧的换成「重复」存根", () => {
+    const msgs: any[] = [{ id: "u0", role: "user", content: "开始" }];
+    for (let i = 0; i < 40; i++) {
+      msgs.push({
+        id: `r${i}`,
+        role: "assistant",
+        content: "",
+        toolCalls: [{ tool: "read", args: { path: "src/big.ts" }, result: "x".repeat(20_000) }],
+      });
+    }
+    const result = foldToolOutputsUnderTarget(msgs, {
+      protectedFromIndex: 0,
+      targetTokens: Math.floor(AVAILABLE * 0.45),
+      estimate,
+    });
+    const texts = result.messages.filter((m: any) => m.toolCalls?.length).map((m: any) => m.toolCalls[0].result as string);
+    const last = texts[texts.length - 1];
+    expect(last.length, "最新一次必须保留原文").toBe(20_000);
+    const dupStubs = texts.slice(0, -1).filter((t) => t.includes("重复读取同一参数"));
+    expect(dupStubs.length, "旧结果应换成重复存根").toBeGreaterThan(0);
+  });
+
   it("FOLD-LONGTURN-5: 第一档不够时换短存根，可重放的结果被折到 240 字符，不可重放的保留更多", () => {
     const msgs: any[] = [userMsg("u0")];
     for (let k = 0; k < 20; k++) msgs.push(toolMsg(`big${k}`, 60_000, k === 0 ? "web_fetch" : "read"));

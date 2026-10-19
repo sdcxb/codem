@@ -1,8 +1,8 @@
 {
   "wave": "fold-long-turn",
   "description": "FOLD-LONGTURN：折叠保护边界改为「末尾 8 条消息 + 最近 2 条工具结果」，让单个长回合里陈旧的工具输出也能折；变异：退回按轮保护 / 去掉尾部保护 / 连最近 2 条也折 ⇒ 各自对红",
-  "runAt": "2026-10-19T00:14:37.507Z",
-  "specFingerprint": "d49b444dc4bf8ce68349519e78bab1dc5d5dc92c",
+  "runAt": "2026-10-19T00:52:25.879Z",
+  "specFingerprint": "c3f8a05ecb69c84a39a3ada97b9f82d60ffcf942",
   "files": [
     "src/core/llm/tool-output-fold.ts"
   ],
@@ -17,8 +17,8 @@
       "patches": [
         {
           "file": "src/core/llm/tool-output-fold.ts",
-          "from": "    if (!Array.isArray(m?.toolCalls)) return;",
-          "to": "    if (i >= opts.protectedFromIndex) return;\n    if (!Array.isArray(m?.toolCalls)) return;"
+          "from": "    if (protectedByRecency.has(i)) return; // 最近几条工具结果：保护\n    if (!Array.isArray(m?.toolCalls)) return;",
+          "to": "    if (protectedByRecency.has(i)) return;\n    if (i >= opts.protectedFromIndex) return;\n    if (!Array.isArray(m?.toolCalls)) return;"
         }
       ],
       "tests": [
@@ -29,7 +29,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2595
+      "ms": 3110
     },
     {
       "id": "MUT-4 去掉第二档短存根",
@@ -49,7 +49,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2491
+      "ms": 2949
     },
     {
       "id": "MUT-3 连最近 2 条工具结果也折",
@@ -69,7 +69,47 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2369
+      "ms": 2940
+    },
+    {
+      "id": "MUT-5 小结果不进候选（第二档只处理第一档折得动的）",
+      "why": "FOLD-LONGTURN-6：真机大量 1–2K 工具结果会被漏掉，折叠后仍超预算",
+      "patches": [
+        {
+          "file": "src/core/llm/tool-output-fold.ts",
+          "from": "      const stubbable = reproducible && text.length > AGGRESSIVE_STUB_CHARS;\n      if (!duplicate && folded.length >= text.length && !stubbable) return;",
+          "to": "      if (!duplicate && folded.length >= text.length) return;"
+        }
+      ],
+      "tests": [
+        "src/test/tool-output-fold-long-turn.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2867
+    },
+    {
+      "id": "MUT-6 关掉重复读取去重",
+      "why": "FOLD-LONGTURN-7：同一路径读 40 次时旧结果不换「重复」存根，浪费大量预算",
+      "patches": [
+        {
+          "file": "src/core/llm/tool-output-fold.ts",
+          "from": "      const duplicate = reproducible && hasArgs(tc) && lastByKey.get(keyOf(tc)) !== key;",
+          "to": "      const duplicate = false;"
+        }
+      ],
+      "tests": [
+        "src/test/tool-output-fold-long-turn.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 2940
     }
   ]
 }
