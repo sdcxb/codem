@@ -7427,3 +7427,12 @@ roving focus 统一、WebAudio 合成提示音、动效令牌棘轮。
 
 `ARGSFOLD-1..4`；变异 `fold-tool-args`（完全不折 / 连最近 2 次也折 / 把 bash 也当可折）3 条全红。
 全量 **722 文件 / 8446 通过 + 17 skipped**；`tsc` 0；变异闸门 **65 波**；非 eval 链全过。
+
+
+## 2026-10-19 16:38 — 第 250 波：发布 1.16.329（旧工具参数折叠）
+
+- 版本 1.16.329，5 个资产；`verify-update-manifest --remote` 7 项通过；`gh release list` = Latest。
+- 本机静默安装（bash `//S`）→ `getVersion()=1.16.329`。
+- 内容：`write`/`edit`/`multi_edit` 旧调用只留 path、正文换「可用 read 重读」标记；最近 2 次不动、bash 不参与、原文不删。
+- 证据 `docs/evidence/release-1.16.329/`（版本、日志测算 247%→58% / 220%→85%、发布链路、局限）。
+- 审计：全量 **722 文件 / 8446 通过 + 17 skipped**；`tsc` 0；变异闸门 **65 波**；非 eval 链全过。

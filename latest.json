@@ -1,15 +1,15 @@
 {
-  "version": "1.16.328",
-  "notes": "上下文压缩与提示条：70% 自动压缩、压完留 30% 余量；提示条只在 ≥90% 出现",
-  "pub_date": "2026-10-19T04:35:50Z",
+  "version": "1.16.329",
+  "notes": "上下文降噪：折叠旧工具参数（write/edit/multi_edit 只留 path）",
+  "pub_date": "2026-10-19T08:33:42Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1l0MDQycXlVVHE1Mmo1OGY3RWpkWjI2MmdGZFExbzlZcUVYRnRBd3U1Z1lxVE1HSW56NXVIM3NVTVEwanhKM0dNSGFEdy9HN1F6TjJISXRNQlhUS3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzg0NTI0CWZpbGU6Q29kZW1fMS4xNi4zMjhfeDY0LXNldHVwLmV4ZQpQZ0J6cHRPUW9uWGxkOGtlL283VHdoaFFEYmxzcEw0dDhWQlMvZmUxSjdWNkFXM09KaEF5eS9LQTBLeDh6bmlqZmo0K1FlTllXbDRyTmdmdHhuMUVEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.328/Codem_1.16.328_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RoSERSWDJTYVZ4U2l6VGlPSnB5OHoxeU44bk9sc25YdTBQWXBkZnVQRGwzWjBQeC9qRUZkRFJ2U3pKUTZPZDNaQXdrRjh2SmFLZks4Uk5oM3NSQmdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzk4Nzk3CWZpbGU6Q29kZW1fMS4xNi4zMjlfeDY0LXNldHVwLmV4ZQpOdjdvY3lLV25tc0xMR3ZKSXpkTUdVbU1TcmF3a3ZPdzhPY21CNTBCdHE1bFdqc2lCeUd0NTMwd3dwVXZjRXFHZHVld29NMkY2VHcvUVdJbisrNnZEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.329/Codem_1.16.329_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1l0MDQycXlVVHE1Mmo1OGY3RWpkWjI2MmdGZFExbzlZcUVYRnRBd3U1Z1lxVE1HSW56NXVIM3NVTVEwanhKM0dNSGFEdy9HN1F6TjJISXRNQlhUS3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzg0NTI0CWZpbGU6Q29kZW1fMS4xNi4zMjhfeDY0LXNldHVwLmV4ZQpQZ0J6cHRPUW9uWGxkOGtlL283VHdoaFFEYmxzcEw0dDhWQlMvZmUxSjdWNkFXM09KaEF5eS9LQTBLeDh6bmlqZmo0K1FlTllXbDRyTmdmdHhuMUVEUT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.328/Codem_1.16.328_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RoSERSWDJTYVZ4U2l6VGlPSnB5OHoxeU44bk9sc25YdTBQWXBkZnVQRGwzWjBQeC9qRUZkRFJ2U3pKUTZPZDNaQXdrRjh2SmFLZks4Uk5oM3NSQmdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzk4Nzk3CWZpbGU6Q29kZW1fMS4xNi4zMjlfeDY0LXNldHVwLmV4ZQpOdjdvY3lLV25tc0xMR3ZKSXpkTUdVbU1TcmF3a3ZPdzhPY21CNTBCdHE1bFdqc2lCeUd0NTMwd3dwVXZjRXFHZHVld29NMkY2VHcvUVdJbisrNnZEQT09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.329/Codem_1.16.329_x64-setup.exe"
     }
   }
 }
