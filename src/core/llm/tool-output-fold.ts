@@ -33,6 +33,23 @@ export const FOLD_TARGET_RATIO = 0.45;
 export const FOLD_MIN_KEEP_TURNS = 3;
 /** 最近多少条工具结果绝不折（与请求侧 `pruneStaleToolResults` 的默认值同源） */
 export const FOLD_KEEP_RECENT_RESULTS = 2;
+/**
+ * **旧工具参数**的折叠（2026-10-19）：只对"内容在磁盘上、可重读"的写文件类工具做。
+ *
+ * 真机数据（用户另一台电脑的 25 万 token 会话）：工具**参数**占 98K token ——
+ * 那是 `write` 写出去的整份文件正文。折叠结果救不了它（它不是"结果"），
+ * 但旧调用只保留 `path`、把正文换成一句"可用 read 重读"的标记，就能把这 98K 拿回来。
+ *
+ * 保守边界：最近 `ARGS_KEEP_TAIL_CALLS` 次工具调用不动（当前正在写的东西），
+ * 只有 `write` / `edit` / `multi_edit` 这几个"落盘"工具参与。
+ */
+export const FOLDABLE_ARGS_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "multi_edit"]);
+/** 参数序列化后小于这个长度不值得折 */
+export const ARGS_FOLD_MIN_CHARS = 2048;
+/** 最近多少次工具调用不折参数 */
+const ARGS_KEEP_TAIL_CALLS = 2;
+/** 参数里单个字符串字段超过这个长度就换成标记 */
+const ARGS_STRING_LIMIT = 512;
 
 /** 不可重放类保留更大片段（head / tail） */
 const IRREPRODUCIBLE_HEAD = 8192;
@@ -101,6 +118,8 @@ export interface FoldCandidate {
   duplicate?: boolean;
   /** 这条最多能压到多少字符（第二档存根只作用于可重放结果） */
   stubChars?: number;
+  /** `result`（工具结果，默认）或 `args`（旧工具参数） */
+  kind?: "result" | "args";
 }
 
 export interface FoldResult {
@@ -154,6 +173,24 @@ function foldOne(text: string, reproducible: boolean): string {
  * @param opts.protectedFromIndex 从这个下标起（含）属于"最近 FOLD_MIN_KEEP_TURNS 轮"，一律保护；
  *                                调用方可用 `protectedFromIndexForTurns()` 算出来。
  */
+/** 把参数里的长字符串（文件正文等）换成"可重读"标记；只读视图，不改入参 */
+function foldToolArgs(args: unknown, depth = 0): unknown {
+  if (depth > 3 || args === null || args === undefined) return args;
+  if (typeof args === "string") {
+    if (args.length <= ARGS_STRING_LIMIT) return args;
+    return `[已折叠：原 ${args.length} 字符；内容已在磁盘上，可用 read 重新读取原文]`;
+  }
+  if (Array.isArray(args)) return args.map((v) => foldToolArgs(v, depth + 1));
+  if (typeof args === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+      out[k] = foldToolArgs(v, depth + 1);
+    }
+    return out;
+  }
+  return args;
+}
+
 export function planToolOutputFold(
   messages: any[],
   opts: {
@@ -244,6 +281,50 @@ export function planToolOutputFold(
     });
   });
 
+
+  /*
+   * 旧**工具参数**：只对落盘类工具（write/edit/multi_edit）做，最近 2 次调用不动。
+   * 参数里的长字符串（文件正文）换成"可用 read 重读"的标记；path/命令等短字段保留。
+   */
+  const withCalls: number[] = [];
+  messages.forEach((m, i) => {
+    if (Array.isArray(m?.toolCalls) && m.toolCalls.length > 0) withCalls.push(i);
+  });
+  const protectedCalls = new Set(withCalls.slice(Math.max(0, withCalls.length - ARGS_KEEP_TAIL_CALLS)));
+  messages.forEach((m, i) => {
+    if (protectedCalls.has(i)) return;
+    if (!Array.isArray(m?.toolCalls)) return;
+    m.toolCalls.forEach((tc: any, ti: number) => {
+      const tool = String(tc?.tool ?? "").toLowerCase();
+      if (!FOLDABLE_ARGS_TOOLS.has(tool) || tc?.args === undefined) return;
+      let before = "";
+      try {
+        before = JSON.stringify(tc.args);
+      } catch {
+        return;
+      }
+      if (before.length < ARGS_FOLD_MIN_CHARS) return;
+      const foldedArgs = foldToolArgs(tc.args);
+      let after = "";
+      try {
+        after = JSON.stringify(foldedArgs);
+      } catch {
+        return;
+      }
+      if (after.length >= before.length) return;
+      out.push({
+        messageId: String(m.id),
+        toolIndex: ti,
+        tool,
+        beforeChars: before.length,
+        afterChars: after.length,
+        reproducible: true,
+        kind: "args",
+        stubChars: after.length,
+      });
+    });
+  });
+
   /*
    * 排序：**距离 × 可省体积** —— 只看距离可能一条都不降，只看体积又会先折"刚刚发生的大动作"。
    * 重复读取按"换成 240 字存根"估算收益，否则它会被排到最后（第一档对它是 0 收益）。
@@ -289,6 +370,11 @@ export function foldToolOutputsUnderTarget(
       if (String(m?.id) !== cand.messageId || !Array.isArray(m.toolCalls)) return m;
       const calls = m.toolCalls.map((tc: any, ti: number) => {
         if (ti !== cand.toolIndex) return tc;
+        if (cand.kind === "args") {
+          const foldedArgs = foldToolArgs(tc?.args);
+          const same = JSON.stringify(foldedArgs) === JSON.stringify(tc?.args);
+          return same ? tc : { ...tc, args: foldedArgs };
+        }
         const text = typeof tc?.result === "string" ? tc.result : "";
         const folded = foldOne(text, cand.reproducible);
         return folded === text ? tc : { ...tc, result: folded };
@@ -314,7 +400,7 @@ export function foldToolOutputsUnderTarget(
    */
   if (opts.estimate(current) > opts.targetTokens) {
     const stubbable = reviewed
-      .filter((c) => c.reproducible && c.beforeChars > AGGRESSIVE_STUB_CHARS)
+      .filter((c) => c.kind !== "args" && c.reproducible && c.beforeChars > AGGRESSIVE_STUB_CHARS)
       .sort((a, b) => b.beforeChars - a.beforeChars);
     for (const cand of stubbable) {
       if (opts.estimate(current) <= opts.targetTokens) break;
