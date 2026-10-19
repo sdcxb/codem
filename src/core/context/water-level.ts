@@ -30,7 +30,7 @@ import {
   type TokenBudget,
 } from "./context";
 import { foldForLevelIfNeeded } from "../llm/tool-output-fold";
-import { summarizeModelContext } from "../llm/compaction-budget";
+import { summarizeModelContext, estimateRawContextTokens } from "../llm/compaction-budget";
 import { pruneStaleToolResults } from "../llm/context-fold";
 import { getTokenTracker } from "../llm/token-tracker";
 import { listVisibleMessages, isHiddenStateAuthoritative } from "../storage/message";
@@ -123,7 +123,12 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
      * 「面板显示 85% 但横幅不弹」（引擎折了、这里没算）这种自相矛盾。
      * 折叠是**读时视图**：库里原文一字不动，"取回"就是重跑工具。
      */
-    const estimate = (ms: any[]) => summarizeModelContext(ms as never[], contextWindow).usedTokens;
+    /*
+     * ★ 2026-10-19：读数用**原始** token（不做优先级选择）。
+     * 用 `summarizeModelContext(...).usedTokens` 时，选择器会把预算塞满 ⇒ 长会话恒为 ~100%，
+     * 折叠前后读数不降反升（真机：253K/128K 的两个会话都在 100%），折叠永远"看起来没生效"。
+     */
+    const estimate = (ms: any[]) => estimateRawContextTokens(ms as never[]);
     const pruned = pruneStaleToolResults(visible as never[]);
     const budgetTokens = summarizeModelContext(pruned as never[], contextWindow).budgetTokens;
     const fold = foldForLevelIfNeeded(pruned, { available: budgetTokens, estimate });
@@ -132,7 +137,8 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
       used: Math.round(fold.ratioAfter * budgetTokens),
       available: budgetTokens,
       ratio: display.ratio,
-      percent: display.percent,
+      /* 超过预算时百分比显示 100%（原始值仍可从 used/available 看出超了多少） */
+      percent: Math.min(100, display.percent),
       level: display.level,
       messageCount: visible.length,
       authoritative: true,
@@ -145,6 +151,96 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
     // 因为"读失败"而显示"上下文即将满"。
     return UNKNOWN_WATER_LEVEL;
   }
+}
+
+/**
+ * 提示条可见性的**防抖状态机**（2026-10-19，用户实报「打开就闪一下」）。
+ *
+ * ## 被守的缺陷
+ *
+ * 会话一打开，水位要经过几拍：索引镜像未就绪（UNKNOWN）→ 就绪后先读到"高"→
+ * 同一轮里折叠/压缩把读数拉下来 → 又可能升回去。`visible` 直接跟着每一拍变化，
+ * 用户看到的就是「出现 1–2 秒 → 消失 → 几秒后又出现」。
+ *
+ * ## 规则（只作用于"风险"这条显示理由）
+ *
+ * - 连续 `showAfter` 次（默认 2 拍 ≈ 6 秒）都 ≥ 70% 才显示；
+ * - 连续 `hideAfter` 次低于 70% 才隐藏；
+ * - `authoritative === false`（读不到/未就绪）**不改可见性**（保持上一拍），
+ *   因为"读不到"既不证明满、也不证明不满。
+ *
+ * "本轮真的丢过上下文"那条理由是**事实**，不参与防抖（该立刻说）。
+ */
+export interface WaterBannerState {
+  level: ContextWaterLevel;
+  visible: boolean;
+  showStreak: number;
+  hideStreak: number;
+}
+
+export const INITIAL_WATER_BANNER_STATE: WaterBannerState = {
+  level: UNKNOWN_WATER_LEVEL,
+  visible: false,
+  showStreak: 0,
+  hideStreak: 0,
+};
+
+export function reduceWaterBanner(
+  prev: WaterBannerState,
+  level: ContextWaterLevel,
+  opts: { showAfter?: number; hideAfter?: number } = {},
+): WaterBannerState {
+  const showAfter = Math.max(1, opts.showAfter ?? 2);
+  const hideAfter = Math.max(1, opts.hideAfter ?? 2);
+  if (!level.authoritative) {
+    // 读数不可信：保留可见性与 streaks，只更新展示用的 level（避免 UI 闪成 0%）
+    return { ...prev, level };
+  }
+  const high = level.level >= WATER_LEVEL.HIGH;
+  if (high) {
+    const showStreak = prev.showStreak + 1;
+    return {
+      level,
+      visible: prev.visible || showStreak >= showAfter,
+      showStreak,
+      hideStreak: 0,
+    };
+  }
+  const hideStreak = prev.hideStreak + 1;
+  return {
+    level,
+    visible: prev.visible && hideStreak < hideAfter,
+    showStreak: 0,
+    hideStreak,
+  };
+}
+
+/**
+ * 带防抖的水位订阅（提示条用）。
+ *
+ * 与 `useContextWaterLevel` 同频轮询，但可见性由 `reduceWaterBanner` 决定；
+ * 会话切换时重置（否则上一个会话的 visible 会带过来）。
+ */
+export function useStableContextWaterLevel(
+  sessionId: string,
+  pollMs = 3000,
+): WaterBannerState {
+  const [state, setState] = useState<WaterBannerState>(INITIAL_WATER_BANNER_STATE);
+  useEffect(() => {
+    if (!sessionId) {
+      setState(INITIAL_WATER_BANNER_STATE);
+      return;
+    }
+    setState(INITIAL_WATER_BANNER_STATE);
+    const tick = () => {
+      const next = readContextWaterLevel(sessionId);
+      setState((prev) => reduceWaterBanner(prev, next));
+    };
+    tick();
+    const timer = setInterval(tick, pollMs);
+    return () => clearInterval(timer);
+  }, [sessionId, pollMs]);
+  return state;
 }
 
 /**
@@ -166,16 +262,3 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
  *
  * @param pollMs 轮询间隔（默认与 ContextMonitor 一致：3000ms）
  */
-export function useContextWaterLevel(sessionId: string, pollMs = 3000): ContextWaterLevel {
-  const [level, setLevel] = useState<ContextWaterLevel>(UNKNOWN_WATER_LEVEL);
-  useEffect(() => {
-    if (!sessionId) {
-      setLevel(UNKNOWN_WATER_LEVEL);
-      return;
-    }
-    setLevel(readContextWaterLevel(sessionId));
-    const timer = setInterval(() => setLevel(readContextWaterLevel(sessionId)), pollMs);
-    return () => clearInterval(timer);
-  }, [sessionId, pollMs]);
-  return level;
-}

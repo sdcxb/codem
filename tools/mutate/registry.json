@@ -58,7 +58,9 @@
     "handoff-new-session": "移交到新对话：handoff_to_new_session（新建会话 + 唯一标题 + 委派到新 id；新建失败不退化）、提示词路由规则（新会话 vs 已有会话；标题不是身份）、list_sessions 同名告警、横幅交接用唯一标题。判据 HANDOFF-NEW-1..7；5 条变异（标题不查重 / 新建失败仍委派 / 不注册工具 / 删路由规则 / 横幅退回固定标题）",
     "sandbox-allowlist-and-retry": "交接加固两项：① 建会话失败换标题重试（最多 3 次，绝不退化到已有会话）；② 交接正文里的工作区外绝对路径自动提示加入沙箱允许目录（只提示不自动放行；读侧闸门 + 写侧 Rust 守卫同一份白名单；提示条可一键加入）。判据 HANDOFF-NEW-8..10、ALLOW-1..6；5 条变异",
     "memory-quick-toggle": "记忆审批降噪：待批准区「以后不再逐条批准」一键关掉项目级写入审批（仅开启时出现、关的是开关不是删记忆、文案写明代价与可重开）。判据 MEM-QUICK-1..3；3 条变异（不受控 / 关错档 / 删代价）",
-    "fold-long-turn": "长回合工具输出折叠：保护边界改为「末尾 8 条消息 + 最近 2 条工具结果」，允许折单个长回合里更早的陈旧工具输出（原来按“最近 3 轮”保护会把整轮堵死）。判据 FOLD-LONGTURN-1..3；3 条变异（退回按轮 / 去尾部保护 / 连最近 2 条也折）"
+    "fold-long-turn": "长回合工具输出折叠：保护边界改为「末尾 8 条消息 + 最近 2 条工具结果」，允许折单个长回合里更早的陈旧工具输出（原来按“最近 3 轮”保护会把整轮堵死）。判据 FOLD-LONGTURN-1..3；3 条变异（退回按轮 / 去尾部保护 / 连最近 2 条也折）",
+    "raw-context-metric": "水位/面板/引擎折叠读数改用 estimateRawContextTokens（选择前）：选择后口径在长会话里恒 ~100%，折叠不降反升、永远提示将满。判据 RAWCTX-1..4；3 条变异",
+    "water-banner-stability": "水位提示条防抖：连续 2 拍 ≥70% 才显示、连续 2 拍低于才隐藏、读不到不改可见性（修打开 Codem 时提示条闪 1-2 秒）。判据 STAB-1..5；3 条变异"
   },
   "waves": [
     "batch-prune-log-only-232",
@@ -121,6 +123,8 @@
     "handoff-new-session",
     "sandbox-allowlist-and-retry",
     "memory-quick-toggle",
-    "fold-long-turn"
+    "fold-long-turn",
+    "raw-context-metric",
+    "water-banner-stability"
   ]
 }

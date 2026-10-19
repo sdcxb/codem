@@ -49,7 +49,7 @@ import { planCompactionKeep, alignKeepToRoundBoundary, alignKeepToRoundBoundaryD
   messageCharSizeForEstimate,
   recentToolResultIds,
 } from "./compaction-budget";
-import { summarizeModelContext } from "./compaction-budget";
+import { summarizeModelContext, estimateRawContextTokens } from "./compaction-budget";
 import {
   FOLD_TARGET_RATIO,
   foldToolOutputsUnderTarget,
@@ -5467,12 +5467,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     try {
       const windowTokens = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
       const available = Math.max(16000, Math.round(windowTokens * 0.9));
-      const before = summarizeModelContext(messages as never[], windowTokens).usedTokens;
+      // ★ 原始 token（选择前）：选择后的读数在长会话里恒贴近预算，折叠会让它不降反升
+      const before = estimateRawContextTokens(messages as never[]);
       if (shouldFoldToolOutputs(before / available)) {
         const fold = foldToolOutputsUnderTarget(messages, {
           protectedFromIndex: protectedFromIndexForTurns(messages),
           targetTokens: Math.floor(available * FOLD_TARGET_RATIO),
-          estimate: (ms) => summarizeModelContext(ms as never[], windowTokens).usedTokens,
+          estimate: (ms) => estimateRawContextTokens(ms as never[]),
         });
         if (fold.candidates.length > 0) {
           messages = fold.messages;

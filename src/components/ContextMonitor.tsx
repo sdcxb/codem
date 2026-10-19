@@ -25,6 +25,7 @@ import {
   COMPACTION_MIN_KEEP_TURNS,
   /* 第 228 波审计：识别"上一次的摘要标记"，避免它被渲染第二遍（会让上下文变大） */
   isCompactionMarker,
+  estimateRawContextTokens,
 } from "../core/llm/compaction-budget";
 /* 第 228 波审计：手动与自动压缩必须互斥（共用同一把按会话的锁） */
 import { acquireCompactionLock, releaseCompactionLock } from "../core/llm/compaction-control";
@@ -627,12 +628,13 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
          */
         const prunedForPanel = pruneStaleToolResults(visible as any[]);
         const budgetTokens = summarizeModelContext(prunedForPanel as never[], contextWindow).budgetTokens;
-        const estimateForPanel = (ms: any[]) => summarizeModelContext(ms as never[], contextWindow).usedTokens;
+        // 与水位同一把尺子：原始 token（选择前）
+        const estimateForPanel = (ms: any[]) => estimateRawContextTokens(ms as never[]);
         const foldedForPanel = foldForLevelIfNeeded(prunedForPanel, {
           available: budgetTokens,
           estimate: estimateForPanel,
         });
-        const usedTokens = Math.round(foldedForPanel.ratioAfter * budgetTokens);
+        const usedTokens = Math.min(budgetTokens, Math.round(foldedForPanel.ratioAfter * budgetTokens));
         /**
          * `calculateBudgetFromMessages` 仍然用**同一份可见列表**计算（它读的是"消息集合"，
          * 不是"库里有多少行"）—— 只是它的 `used/available` 会被下面的模型侧口径覆盖。
@@ -843,10 +845,11 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
       setMessageCount(visible.length);
       const contextManager = getContextManager();
       const contextWindow = getTokenTracker().getContextWindow() || DEFAULT_BUDGET.total;
-      const { usedTokens, budgetTokens } = summarizeModelContext(
+      const budgetTokens = summarizeModelContext(
         pruneStaleToolResults(visible as any[]),
         contextWindow,
-      );
+      ).budgetTokens;
+      const usedTokens = Math.min(budgetTokens, estimateRawContextTokens(pruneStaleToolResults(visible as any[])));
       const b = contextManager.calculateBudgetFromMessages(visible as any[]);
       setBudget({ ...b, used: usedTokens, available: budgetTokens, remaining: Math.max(0, budgetTokens - usedTokens) });
       // 第 72 轮：不再单独 setPressure —— 压力等级由渲染时的 summarizeDisplayPressure 导出

@@ -56,7 +56,17 @@ vi.mock("../core/context/water-level", async (importOriginal) => {
     ...actual,
     // 只替换"订阅"这一层：真正的计算函数（readContextWaterLevel / waterLevelFromBudget /
     // WATER_LEVEL / PRESSURE 口径）全部用真货 —— 这条是刻意的，见文件头第 1 条判据。
-    useContextWaterLevel: () => ({ ...levelBox }),
+    /*
+     * 2026-10-19：提示条改用**防抖** hook（连续 2 拍才显示，修打开时闪烁）。
+     * 本文件测的是"可见性/文案/交接行为"，不是防抖节奏；防抖节奏由
+     * `water-banner-stability.test.ts` 直接测 reducer。这里保留"立即按当前档位可见"的替身。
+     */
+    useStableContextWaterLevel: () => ({
+      level: { ...levelBox },
+      visible: levelBox.level >= 2,
+      showStreak: 2,
+      hideStreak: 0,
+    }),
   };
 });
 

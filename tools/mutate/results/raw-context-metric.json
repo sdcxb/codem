@@ -1,0 +1,77 @@
+{
+  "wave": "raw-context-metric",
+  "description": "RAWCTX：水位、面板、引擎折叠触发都用 estimateRawContextTokens（选择前）；选择后口径会让长会话恒 ~100% 且折叠不降反升。判据 RAWCTX-1..4；3 条变异各自对红",
+  "runAt": "2026-10-19T00:13:33.669Z",
+  "specFingerprint": "00ca37eadebdd244cd2ed2e2ddffb7abf4d8a7d2",
+  "files": [
+    "src/core/context/water-level.ts",
+    "src/components/ContextMonitor.tsx",
+    "src/core/llm/agentic-loop.ts"
+  ],
+  "tests": [
+    "src/test/context-raw-metric.test.ts"
+  ],
+  "restored": true,
+  "results": [
+    {
+      "id": "MUT-1 水位退回「选择后」口径",
+      "why": "RAWCTX-3：水位的分子被选择器塞满 ⇒ 长会话恒接近 100%，折叠永远看起来没生效",
+      "patches": [
+        {
+          "file": "src/core/context/water-level.ts",
+          "from": "    const estimate = (ms: any[]) => estimateRawContextTokens(ms as never[]);",
+          "to": "    const estimate = (ms: any[]) => summarizeModelContext(ms as never[], contextWindow).usedTokens;"
+        }
+      ],
+      "tests": [
+        "src/test/context-raw-metric.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3841
+    },
+    {
+      "id": "MUT-2 面板退回「选择后」口径",
+      "why": "RAWCTX-3：面板与提示条必须同一把尺子，否则又是两个答案",
+      "patches": [
+        {
+          "file": "src/components/ContextMonitor.tsx",
+          "from": "        const estimateForPanel = (ms: any[]) => estimateRawContextTokens(ms as never[]);",
+          "to": "        const estimateForPanel = (ms: any[]) => summarizeModelContext(ms as never[], contextWindow).usedTokens;"
+        }
+      ],
+      "tests": [
+        "src/test/context-raw-metric.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3951
+    },
+    {
+      "id": "MUT-3 引擎折叠触发退回「选择后」口径",
+      "why": "RAWCTX-3：触发与目标必须用同一口径，否则折叠会永远够不到目标（或不触发）",
+      "patches": [
+        {
+          "file": "src/core/llm/agentic-loop.ts",
+          "from": "      const before = estimateRawContextTokens(messages as never[]);",
+          "to": "      const before = summarizeModelContext(messages as never[], windowTokens).usedTokens;"
+        }
+      ],
+      "tests": [
+        "src/test/context-raw-metric.test.ts"
+      ],
+      "runner": "vitest",
+      "expectedRed": true,
+      "observedRed": true,
+      "ok": true,
+      "exitCode": 1,
+      "ms": 3938
+    }
+  ]
+}

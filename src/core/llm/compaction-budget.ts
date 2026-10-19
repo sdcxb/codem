@@ -737,6 +737,45 @@ export function selectMessagesByPriority(
  * 那里面包含被软删的历史与被裁掉的旧消息，于是面板显示"占用 130%"而模型其实只收到一半。
  * 这个函数返回模型**实际会收到**的那几条，以及它们的估算 token 合计。
  */
+/**
+ * **原始上下文 token（不做任何选择/裁剪）** —— 水位与折叠触发必须用它。
+ *
+ * ## 被守的缺陷（2026-10-19，用户实报「折叠了还是提示上下文将满」）
+ *
+ * `summarizeModelContext().usedTokens` 只统计**选择后**的消息（按优先级塞进预算），
+ * 于是"原始内容远超预算"的会话里，它会**恒定贴近预算**（≈100%），而折叠后再选一次
+ * 又能把别的消息塞进来 ⇒ 折叠前后读数可能**不降反升**、`foldForLevelIfNeeded` 的目标
+ * 永远达不成。真机现场：日志 253K token / 128K 窗口，两个会话的折叠后读数都在 100%。
+ *
+ * 水位的语义本来是"上下文有多满" —— 那应该是**原始待发内容的量**，不是"选择器塞满后的量"。
+ * 选择/裁剪仍然由 `summarizeModelContext` 负责（发出去的那一份），但**读数**用本函数。
+ */
+export function estimateRawContextTokens(
+  messages: any[],
+  estimateTokensFn?: (text: string) => number,
+): number {
+  const estimate = estimateTokensFn ?? estimateTokens;
+  let total = 0;
+  for (const m of messages) {
+    const content = typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "");
+    total += estimate(content);
+    const calls = (m as { toolCalls?: Array<{ result?: unknown; args?: unknown }> })?.toolCalls;
+    if (Array.isArray(calls)) {
+      for (const tc of calls) {
+        if (typeof tc?.result === "string") total += estimate(tc.result);
+        if (tc?.args !== undefined) {
+          try {
+            total += estimate(JSON.stringify(tc.args));
+          } catch {
+            /* 参数不可序列化时忽略（与 summarizeModelContext 一致） */
+          }
+        }
+      }
+    }
+  }
+  return Math.ceil(total);
+}
+
 export function summarizeModelContext(
   messages: any[],
   contextWindow: number,

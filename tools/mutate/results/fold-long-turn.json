@@ -1,7 +1,7 @@
 {
   "wave": "fold-long-turn",
   "description": "FOLD-LONGTURN：折叠保护边界改为「末尾 8 条消息 + 最近 2 条工具结果」，让单个长回合里陈旧的工具输出也能折；变异：退回按轮保护 / 去掉尾部保护 / 连最近 2 条也折 ⇒ 各自对红",
-  "runAt": "2026-10-18T23:53:44.021Z",
+  "runAt": "2026-10-19T00:14:37.507Z",
   "specFingerprint": "d49b444dc4bf8ce68349519e78bab1dc5d5dc92c",
   "files": [
     "src/core/llm/tool-output-fold.ts"
@@ -29,7 +29,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2901
+      "ms": 2595
     },
     {
       "id": "MUT-4 去掉第二档短存根",
@@ -49,7 +49,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2630
+      "ms": 2491
     },
     {
       "id": "MUT-3 连最近 2 条工具结果也折",
@@ -69,7 +69,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 2780
+      "ms": 2369
     }
   ]
 }

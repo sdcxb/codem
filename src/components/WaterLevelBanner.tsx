@@ -49,7 +49,7 @@ import { getDelegationOrchestrator } from "../core/session/orchestrator";
 import { buildHandover } from "../core/session/ui-handoff";
 import { nextHandoverTitle } from "../core/session/handoff-session";
 import { requestSandboxAllowlist } from "../core/session/handoff-sandbox";
-import { WATER_LEVEL, useContextWaterLevel } from "../core/context/water-level";
+import { WATER_LEVEL, useStableContextWaterLevel } from "../core/context/water-level";
 import { readContextDrop, subscribeContextDrop, contextDropVersion } from "../core/llm/context-visibility";
 
 /** 被关掉之后，水位再涨这么多（5 个百分点）就重新出现 */
@@ -73,7 +73,11 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
    * 刷新由 hook 内部的 3 秒轮询驱动（与面板同频），理由见 `useContextWaterLevel` 的注释：
    * 长会话里没有便宜的"消息版本号"可用（`useAppStore().messages` 只有最后 10 条）。
    */
-  const level = useContextWaterLevel(sessionId);
+  /**
+   * 带**防抖**的水位：连续 2 拍（≈6 秒）都在告警档才显示，连续 2 拍低于才隐藏。
+   * 直接跟每一拍变化会让会话打开时"闪一下"（镜像未就绪 → 高 → 折叠后又低）。
+   */
+  const { level, visible: stableRiskVisible } = useStableContextWaterLevel(sessionId);
   /** 用户关掉时的水位比值；null = 当前没被关掉 */
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState<"compact" | "handoff" | null>(null);
@@ -121,10 +125,10 @@ export function WaterLevelBanner({ sessionId, onOpenDetail }: WaterLevelBannerPr
   const visible = useMemo(() => {
     if (!sessionId) return false;
     if (drop && (drop.droppedMessages > 0 || drop.strippedToolCalls > 0)) return true;
-    if (level.level < WATER_LEVEL.HIGH) return false;
+    if (!stableRiskVisible) return false;
     if (dismissedAt !== null && level.ratio < dismissedAt + RE_ALERT_DELTA) return false;
     return true;
-  }, [sessionId, level.level, level.ratio, dismissedAt, drop]);
+  }, [sessionId, stableRiskVisible, level.ratio, dismissedAt, drop]);
 
   const dismiss = useCallback(() => setDismissedAt(level.ratio), [level.ratio]);
 
