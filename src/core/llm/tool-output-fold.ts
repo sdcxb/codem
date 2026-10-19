@@ -33,6 +33,7 @@ export const FOLD_TARGET_RATIO = 0.45;
 export const FOLD_MIN_KEEP_TURNS = 3;
 /** 最近多少条工具结果绝不折（与请求侧 `pruneStaleToolResults` 的默认值同源） */
 export const FOLD_KEEP_RECENT_RESULTS = 2;
+
 /** 不可重放类保留更大片段（head / tail） */
 const IRREPRODUCIBLE_HEAD = 8192;
 const IRREPRODUCIBLE_TAIL = 2048;
@@ -114,6 +115,19 @@ function toolResultChars(m: any): number {
   return n;
 }
 
+/** 第二档存根的正文上限（含标记；越小省得越多，但必须够模型判断"要不要重读"） */
+const AGGRESSIVE_STUB_CHARS = 240;
+
+/** 生成"短存根"：原长度 + 首行 + 工具名 + 可重读提示 */
+function aggressiveStub(text: string, tool: string, originalChars: number): string {
+  const firstLine = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? "";
+  const head = firstLine.trim().slice(0, 120);
+  return (
+    `[工具结果中段已折叠：原始 ${originalChars} 字符，工具 ${tool || "unknown"}]` +
+    (head ? `\n首行：${head}` : "") +
+    `\n（需要原文请重新调用该工具；这是读时视图，日志里的原文没有被删除。）`
+  ).slice(0, AGGRESSIVE_STUB_CHARS);
+}
 /** 一条工具结果按类别折叠（可重放走请求侧同一形状；不可重放留更大片段并说明） */
 function foldOne(text: string, reproducible: boolean): string {
   if (!text) return text;
@@ -132,10 +146,22 @@ function foldOne(text: string, reproducible: boolean): string {
  */
 export function planToolOutputFold(
   messages: any[],
-  opts: { protectedFromIndex: number; keepRecentResults?: number; minFoldChars?: number },
+  opts: {
+    protectedFromIndex: number;
+    keepRecentResults?: number;
+    minFoldChars?: number;
+  },
 ): FoldCandidate[] {
   const keepRecent = opts.keepRecentResults ?? FOLD_KEEP_RECENT_RESULTS;
   const minFoldChars = opts.minFoldChars ?? 2048;
+  /*
+   * ⚠️ 折叠**不再按"最近几轮"保护**（2026-10-19）。
+   *
+   * 一条 agent 回合可以跑几十次工具调用，那一整轮都属于"最近 1 轮" ⇒ 整轮被保护 ⇒
+   * 折叠在**真正的大头**上完全失效（真机形态：水位照样冲 70%）。
+   * 现在只有两道保护：**最近 2 条工具结果**（`FOLD_KEEP_RECENT_RESULTS`）与
+   * "只折工具结果、不动任何文本"。更早的"轮内陈旧工具输出"都可以折。
+   */
 
   /* 先定位"最近 N 条工具结果"所属的消息下标（它们一律保护） */
   const withResults: number[] = [];
@@ -146,7 +172,7 @@ export function planToolOutputFold(
 
   const out: FoldCandidate[] = [];
   messages.forEach((m, i) => {
-    if (i >= opts.protectedFromIndex) return; // 最近几轮：保护
+    // （不按轮/位置设边界：只有下面的 keepRecent 与"仅折工具结果"两道保护）
     if (protectedByRecency.has(i)) return; // 最近几条工具结果：保护
     if (!Array.isArray(m?.toolCalls)) return;
     m.toolCalls.forEach((tc: any, ti: number) => {
@@ -228,6 +254,37 @@ export function foldToolOutputsUnderTarget(
     applied.push(cand);
     savedChars += cand.beforeChars - cand.afterChars;
     if (savedChars <= 0) break;
+  }
+
+  /*
+   * 第二档：第一档折完仍高于目标 ⇒ 把**已折过的可重放结果**换成短存根。
+   *
+   * 为什么可以这么狠：这些是"较远 + 可重放"的工具结果（读文件/列目录/grep/构建…），
+   * 需要原文时重跑一次工具即可；保留 5K 对模型几乎没有增量信息，却持续占着预算。
+   * 不可重放的（网页抓取、一次性命令）**不参与**这一档 —— 取不回来的内容不能只留 240 字。
+   */
+  if (opts.estimate(current) > opts.targetTokens) {
+    const stubbable = applied
+      .filter((c) => c.reproducible && c.afterChars > AGGRESSIVE_STUB_CHARS)
+      .sort((a, b) => b.afterChars - a.afterChars);
+    for (const cand of stubbable) {
+      if (opts.estimate(current) <= opts.targetTokens) break;
+      const next = current.map((m: any) => {
+        if (String(m?.id) !== cand.messageId || !Array.isArray(m.toolCalls)) return m;
+        const calls = m.toolCalls.map((tc: any, ti: number) => {
+          if (ti !== cand.toolIndex) return tc;
+          const text = typeof tc?.result === "string" ? tc.result : "";
+          if (!text) return tc;
+          const stub = aggressiveStub(text, String(tc?.tool ?? ""), cand.beforeChars);
+          return stub.length < text.length ? { ...tc, result: stub } : tc;
+        });
+        return { ...m, toolCalls: calls };
+      });
+      const changed = next.some((m: any, i: number) => m !== current[i]);
+      if (!changed) continue;
+      current = next;
+      savedChars += Math.max(0, cand.afterChars - AGGRESSIVE_STUB_CHARS);
+    }
   }
 
   return { messages: current, candidates: applied, savedChars };

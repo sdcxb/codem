@@ -2,7 +2,7 @@
  * 折叠阶梯的判据（纯函数，不依赖端口夹具 —— 夹具那条路本轮已经证明不可靠，别再走）。
  *
  * FD-1：水位过 0.5 时，折叠远处的大工具结果能把估算压到目标以下（这就是"先不提示"的依据）。
- * FD-2：最近 3 轮、最近 2 条工具结果**绝不**被折（当前正在干的事依赖它们）。
+ * FD-2：最近 2 条工具结果**绝不**被折。
  * FD-3：折叠是**读时视图** —— 原文一个字都不少（不销毁信息，"取回"等于重跑工具或直接看历史）。
  * FD-4：不可重放类留更大片段并写明原因（网页/API 那种取不回来的）。
  * FD-5：按「距离 × 体积」选 —— 只折最老的那条不够时，会继续折"更近但更大"的那条。
@@ -86,20 +86,17 @@ describe("FD 折叠阶梯：工具输出（用户提的机制）", () => {
     ).toBeLessThanOrEqual(target);
   });
 
-  it("FD-2：最近 3 轮与最近 2 条工具结果绝不被折", () => {
+  it("FD-2：最近 2 条工具结果绝不被折", () => {
     const msgs = longHistory();
     const protectedFrom = protectedFromIndexForTurns(msgs);
     const candidates = planToolOutputFold(msgs, { protectedFromIndex: protectedFrom });
-    const protectedIds = new Set(msgs.slice(protectedFrom).map((m) => String(m.id)));
-    for (const c of candidates) {
-      expect(protectedIds.has(c.messageId), `不许折最近几轮里的 ${c.messageId}`).toBe(false);
-    }
-    /* 最近 N 条工具结果（无论在第几轮）也不许折 */
+    /* 最近 N 条工具结果（无论在第几轮）不许折 */
     const withResults = msgs.filter((m) => m.toolCalls?.length).map((m) => String(m.id));
     const recentResults = new Set(withResults.slice(-FOLD_KEEP_RECENT_RESULTS));
     for (const c of candidates) {
       expect(recentResults.has(c.messageId), `不许折最近 ${FOLD_KEEP_RECENT_RESULTS} 条工具结果`).toBe(false);
     }
+    /* "长回合内陈旧输出可折"由 `tool-output-fold-long-turn.test.ts` 单独钉（这里近处故意很小） */
   });
 
   it("FD-3：折叠是读时视图 —— 原文一个字都不少（不销毁信息）", () => {
