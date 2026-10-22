@@ -1,6 +1,6 @@
 # ADR：Codem 要不要 Projects 化（2026-10-22）
 
-- 状态：**Proposed — 机制已验证，报告可信度仍有缺口（gate 重验未做），暂不转 Accepted**
+- 状态：**Accepted（MVP）** —— 混合模式在真实官网项目跑通；P2 前置条件是 gate 自动重验（见 `docs/PROJECTS-MVP-REVIEW.md`）
 - 决策人：产品/架构（本仓由用户拍板）
 - 关联：`docs/CLAUDE-PROJECTS-BENCHMARK.md`、`docs/CODEM-FEATURES.md`、`docs/COORDINATOR-P0.md`
 
