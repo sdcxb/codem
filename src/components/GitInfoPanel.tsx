@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { executeCommand } from "../core/file-api";
-import { mergeWorktreeToProject } from "../core/environment";
+import { mergeWorktreeToProject, removeWorktree } from "../core/environment";
 import { confirmDialog } from "../core/ui/native-dialog";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
@@ -47,6 +47,7 @@ export function GitInfoPanel() {
   const [commitMsg, setCommitMsg] = useState("");
   const [actionResult, setActionResult] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [conflictFiles, setConflictFiles] = useState<string[]>([]);
 
   // Monitor the worktree path if session is in worktree mode, otherwise project path
   const projectPath = currentSession?.worktreePath || currentProject?.path;
@@ -212,25 +213,40 @@ export function GitInfoPanel() {
    * 2026-10-22 真机缺口：worktree 只能进不能出；这里补最小入口。
    * 冲突/主工作区不干净时由 mergeWorktreeToProject 回滚并抛错，不在主工作区留冲突态。
    */
-  const handleMergeWorktree = async () => {
+  const handleMergeWorktree = async (onConflict?: "worktree" | "main") => {
     const worktreePath = currentSession?.worktreePath;
     const mainPath = currentProject?.path;
     if (!worktreePath || !mainPath) return;
-    const ok = await confirmDialog(
-      zh
-        ? "把工作树改动提交并合并到主工作区？\n\n主工作区必须干净；冲突会自动回滚，不会留在冲突状态。"
-        : "Commit the worktree changes and merge them into the main workspace?\n\nThe main workspace must be clean; conflicts are rolled back automatically."
-    );
-    if (!ok) return;
+    if (!onConflict) {
+      const ok = await confirmDialog(
+        zh
+          ? "把工作树改动提交并合并到主工作区，然后删除工作树并切回本地？主工作区必须干净；冲突会先回滚，再由你选择保留哪一边。"
+          : "Commit the worktree changes, merge them into the main workspace, then remove the worktree and switch back to local? The main workspace must be clean; conflicts are rolled back first, then you choose a side."
+      );
+      if (!ok) return;
+    }
     setActionResult(null);
+    setConflictFiles([]);
     try {
-      const res = await mergeWorktreeToProject(mainPath, worktreePath);
-      setActionResult(`✅ ${zh ? "已合并到主工作区" : "Merged"}: ${res.mergedSha.slice(0, 7)}`);
+      const res = await mergeWorktreeToProject(mainPath, worktreePath, { onConflict: onConflict ?? "abort" });
+      try {
+        await removeWorktree(mainPath, worktreePath);
+      } catch (cleanupErr) {
+        console.warn("[GitInfoPanel] worktree 清理失败（已合并，目录可能残留）:", cleanupErr);
+      }
+      if (currentSession) {
+        useProjectStore.getState().updateSession(currentSession.id, {
+          executionMode: "current_workspace",
+          worktreePath: undefined,
+        });
+      }
+      setActionResult(`✅ ${zh ? "已合并并清理工作树" : "Merged and removed worktree"}: ${res.mergedSha.slice(0, 7)}`);
       refresh();
     } catch (e: any) {
       setActionResult(`❌ ${e?.message || e}`);
+      if (Array.isArray(e?.conflictFiles) && e.conflictFiles.length > 0) setConflictFiles(e.conflictFiles);
     }
-    setTimeout(() => setActionResult(null), 8000);
+    setTimeout(() => setActionResult(null), 10000);
   };
 
   if (!projectPath) {
@@ -334,7 +350,7 @@ export function GitInfoPanel() {
             🌒 {currentSession.worktreePath}
           </div>
           <button
-            onClick={handleMergeWorktree}
+            onClick={() => handleMergeWorktree()}
             disabled={loading}
             title={zh ? "提交工作树改动并合并回主工作区" : "Commit worktree changes and merge into the main workspace"}
             style={{
@@ -351,6 +367,26 @@ export function GitInfoPanel() {
       {actionResult && (
         <div style={{ fontSize: 'var(--fs-xs)', color: actionResult.startsWith("✅") ? "var(--success)" : "var(--error)" }}>
           {actionResult}
+        </div>
+      )}
+
+      {conflictFiles.length > 0 && (
+        <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div>{zh ? "冲突文件（选一边后合并，工作树会清理）" : "Conflicted files (pick a side; worktree will be removed)"}: {conflictFiles.join(", ")}</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => handleMergeWorktree("worktree")}
+              style={{ padding: "3px 8px", fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)", cursor: "pointer" }}
+            >
+              {zh ? "以工作树为准" : "Use worktree"}
+            </button>
+            <button
+              onClick={() => handleMergeWorktree("main")}
+              style={{ padding: "3px 8px", fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)", cursor: "pointer" }}
+            >
+              {zh ? "以主工作区为准" : "Use main"}
+            </button>
+          </div>
         </div>
       )}
 

@@ -94,6 +94,39 @@ describe("worktree 合并回主工作区", () => {
     expect(fs.readFileSync(path.join(repo, baseFile), "utf8").trim()).toBe("main");
   });
 
+  it("WT-MERGE-5：冲突 + onConflict=worktree → 保留工作树版本，主工作区干净", async () => {
+    fs.writeFileSync(path.join(wt, baseFile), "worktree");
+    fs.writeFileSync(path.join(repo, baseFile), "main");
+    git(repo, "add -A");
+    git(repo, "commit -qm main-change");
+    const res = await mergeWorktreeToProject(repo, wt, { onConflict: "worktree" });
+    expect(res.conflictsResolved).toBe("worktree");
+    expect(fs.readFileSync(path.join(repo, baseFile), "utf8").trim()).toBe("worktree");
+    expect(git(repo, "status --porcelain").trim()).toBe("");
+  });
+
+  it("WT-MERGE-6：冲突 + onConflict=main → 保留主工作区版本，主工作区干净", async () => {
+    fs.writeFileSync(path.join(wt, baseFile), "worktree");
+    fs.writeFileSync(path.join(repo, baseFile), "main");
+    git(repo, "add -A");
+    git(repo, "commit -qm main-change");
+    const res = await mergeWorktreeToProject(repo, wt, { onConflict: "main" });
+    expect(res.conflictsResolved).toBe("main");
+    expect(fs.readFileSync(path.join(repo, baseFile), "utf8").trim()).toBe("main");
+    expect(git(repo, "status --porcelain").trim()).toBe("");
+  });
+
+  it("WT-MERGE-7：首轮冲突回滚后，worktree 已提交但仍可重试选边", async () => {
+    fs.writeFileSync(path.join(wt, baseFile), "worktree");
+    fs.writeFileSync(path.join(repo, baseFile), "main");
+    git(repo, "add -A");
+    git(repo, "commit -qm main-change");
+    await expect(mergeWorktreeToProject(repo, wt)).rejects.toThrow(/合并冲突/);
+    const res = await mergeWorktreeToProject(repo, wt, { onConflict: "worktree" });
+    expect(res.conflictsResolved).toBe("worktree");
+    expect(fs.readFileSync(path.join(repo, baseFile), "utf8").trim()).toBe("worktree");
+  });
+
   it("WT-MERGE-4：worktree 没有改动 → 拒绝", async () => {
     await expect(mergeWorktreeToProject(repo, wt)).rejects.toThrow(/没有可合并的改动/);
   });

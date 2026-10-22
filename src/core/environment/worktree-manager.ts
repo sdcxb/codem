@@ -284,11 +284,34 @@ export async function removeWorktree(
  *
  * 注意：只合并 git 跟踪 + 未忽略的文件；`git add -A` 尊重 .gitignore。
  */
+export type MergeConflictChoice = "abort" | "worktree" | "main";
+
+export interface MergeWorktreeResult {
+  commitSha: string;
+  mergedSha: string;
+  /** 冲突时用户选择保留哪一边；无冲突为 null */
+  conflictsResolved: "worktree" | "main" | null;
+}
+
+/**
+ * 把 worktree 的改动合并回主工作区（2026-10-22 真机缺口：worktree 只能进不能出）。
+ *
+ * 策略（与实验 `brief/MERGE-POLICY.md` 对齐）：
+ * 1. 主工作区必须干净（有未提交改动就拒绝，不替用户 stash）；
+ * 2. worktree 有改动 → 先 `git add -A` 并在 worktree 提交（detached HEAD 上的临时提交）；
+ * 3. 主工作区 `git merge --no-ff` 该提交；
+ * 4. 冲突：
+ *    - 默认 `abort`：`merge --abort` 回滚，抛错并带 `conflictFiles`（绝不留在冲突态）；
+ *    - `worktree` / `main`：明确选择一边，`-X theirs/ours` 重试（theirs=worktree，ours=主工作区）。
+ * 5. 成功返回合并后的 HEAD；worktree 的删除由调用方决定（UI 合并后清理）。
+ */
 export async function mergeWorktreeToProject(
   projectPath: string,
   worktreePath: string,
-  commitMessage = "worktree: merge session changes"
-): Promise<{ commitSha: string; mergedSha: string }> {
+  options: { commitMessage?: string; onConflict?: MergeConflictChoice } = {}
+): Promise<MergeWorktreeResult> {
+  const commitMessage = options.commitMessage ?? "worktree: merge session changes";
+  const onConflict = options.onConflict ?? "abort";
   const source = psQuote(projectPath);
   const wt = psQuote(worktreePath);
   const run = async (command: string, cwd: string) => {
@@ -305,37 +328,67 @@ export async function mergeWorktreeToProject(
   }
 
   const wtStatus = await run(`git -C '${wt}' status --porcelain`, worktreePath);
-  if (!wtStatus.stdout.trim()) {
-    throw new Error("工作树没有可合并的改动");
+  let commitSha: string;
+  if (wtStatus.stdout.trim()) {
+    await run(`git -C '${wt}' add -A`, worktreePath);
+    const msg = psQuote(commitMessage);
+    await run(
+      `git -C '${wt}' -c user.name='Codem' -c user.email='codem@local' commit -m '${msg}'`,
+      worktreePath
+    );
+    commitSha = (await run(`git -C '${wt}' rev-parse HEAD`, worktreePath)).stdout.trim();
+  } else {
+    /*
+     * 冲突首轮已把 worktree 提交掉（工作区变干净）；用户选边重试时不能报"没有改动"。
+     * 用 HEAD 判断它是否已经被主分支包含：已包含才是真的没东西可合。
+     */
+    const head = (await run(`git -C '${wt}' rev-parse HEAD`, worktreePath)).stdout.trim();
+    const contained = await executeCommand(
+      `git -C '${source}' merge-base --is-ancestor '${head}' HEAD`,
+      projectPath
+    );
+    if (contained.exitCode === 0) {
+      throw new Error("工作树没有可合并的改动");
+    }
+    commitSha = head;
   }
-
-  await run(`git -C '${wt}' add -A`, worktreePath);
-  const msg = psQuote(commitMessage);
-  await run(
-    `git -C '${wt}' -c user.name='Codem' -c user.email='codem@local' commit -m '${msg}'`,
-    worktreePath
-  );
-  const commitSha = (await run(`git -C '${wt}' rev-parse HEAD`, worktreePath)).stdout.trim();
 
   const merge = await executeCommand(
     `git -C '${source}' merge --no-ff --no-edit '${commitSha}'`,
     projectPath
   );
+  let conflictsResolved: "worktree" | "main" | null = null;
   if (merge.exitCode && merge.exitCode !== 0) {
     const conflicts = await executeCommand(
       `git -C '${source}' diff --name-only --diff-filter=U`,
       projectPath
     );
-    // 绝不把主工作区留在冲突态：先 abort，再抛冲突清单
-    await executeCommand(`git -C '${source}' merge --abort`, projectPath).catch(() => undefined);
     const files = conflicts.stdout.trim();
-    throw new Error(
-      files ? `合并冲突，已回滚主工作区；冲突文件: ${files}` : `合并失败，已回滚主工作区: ${merge.stderr}`
+    await executeCommand(`git -C '${source}' merge --abort`, projectPath).catch(() => undefined);
+
+    if (onConflict === "abort") {
+      const err = new Error(
+        files ? `合并冲突，已回滚主工作区；冲突文件: ${files}` : `合并失败，已回滚主工作区: ${merge.stderr}`
+      ) as Error & { conflictFiles?: string[] };
+      err.conflictFiles = files ? files.split(String.fromCharCode(10)).map((f) => f.trim()).filter(Boolean) : [];
+      throw err;
+    }
+
+    // 用户明确选边：-X theirs = 工作树，-X ours = 主工作区
+    const strategy = onConflict === "worktree" ? "theirs" : "ours";
+    const retry = await executeCommand(
+      `git -C '${source}' merge --no-ff --no-edit -X ${strategy} '${commitSha}'`,
+      projectPath
     );
+    if (retry.exitCode && retry.exitCode !== 0) {
+      await executeCommand(`git -C '${source}' merge --abort`, projectPath).catch(() => undefined);
+      throw new Error(`按 ${strategy} 合并仍失败，已回滚主工作区: ${retry.stderr}`);
+    }
+    conflictsResolved = onConflict;
   }
 
   const mergedSha = (await run(`git -C '${source}' rev-parse HEAD`, projectPath)).stdout.trim();
-  return { commitSha, mergedSha };
+  return { commitSha, mergedSha, conflictsResolved };
 }
 
 export async function scanWorktrees(
