@@ -1,6 +1,5 @@
 {
   "_note": "结果契约（outputSchema）采纳率基线 —— **只许增长**。由 tools/audit/output-schema-baseline.mjs 生成；判据在 src/test/output-schema-ratchet.test.ts。给某个工具注册结果契约后跑 --update 抬高基线；若要有意去掉某个契约，同时更新这里并写明原因（否则门禁会红）。",
-  "_toolCountAtBaseline_note": "⚠️ 这个数字是**手工订正过**的，不是脚本静态扫描的原始输出。脚本的形态启发式（`export function createXxxTool(): ToolDef` + 后 60 行内出现 contract/guidance/parameters）实测得出的数（第 233 波时是 79）**远大于**真实 registry，差在：有些非工具文件里也有 `createXxxTool` + `id:` 的组合被计入。棘轮那条判据要的是\"真实 registry\"这个数（它会跟 `getAll()` 对账），所以这里必须是 52。订正这件事本身由 `output-schema-ratchet.test.ts` 的\"基线工具数与真实 registry 一致\"那条判据守着 —— 写错就红。",
   "covered": [
     "bash",
     "glob",
@@ -8,5 +7,5 @@
     "read",
     "web_fetch"
   ],
-  "toolCountAtBaseline": 52
+  "toolCountAtBaseline": 53
 }

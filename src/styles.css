@@ -5407,6 +5407,10 @@ color: var(--text-primary);
 
 
 /* ========== Modal File Editor ========== */
+.project-overview-panel {
+  min-width: 0;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;

@@ -511,6 +511,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     } catch (e) { console.warn('[store.ts]', e) }
     // 用户点"删除会话"是明确的破坏性意图 → 如实传达给存储层（见 deleteProject 的说明）
     try { SessionStorage.deleteSession(sessionId, { confirmBulk: true }); } catch (e) { console.warn('[store.ts]', e) }
+    const ownerProject = session ? get().projects.find((p) => p.id === session.projectId) : undefined;
+    const ownerPath = ownerProject?.path
+      || (session?.projectId === get().currentProject?.id ? get().currentProject?.path : undefined);
+    if (ownerPath) {
+      void import("./project/coordinator/storage")
+        .then((m) => m.clearCoordinatorIfMatches(ownerPath, sessionId))
+        .catch((e) => console.warn("[store.deleteSession] 清理协调者指针失败（不影响删除本身）:", e));
+    }
     set({ sessions: get().sessions.filter((s) => s.id !== sessionId), currentSession: get().currentSession?.id === sessionId ? null : get().currentSession });
     /**
      * 第 47 轮（D-20）：被删掉的会话不该继续是"上次打开的会话"。

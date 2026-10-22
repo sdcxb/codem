@@ -13676,6 +13676,9 @@
     "overflow": "hidden",
     "width": "560px"
   },
+  "project-overview-panel": {
+    "min-width": "0"
+  },
   "prompt-draft-picker": {
     "background": "var(--bg-secondary, #1a1a20)",
     "border": "1px solid var(--border-primary)",

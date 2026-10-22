@@ -1,4 +1,4 @@
-import { readProjectState, scanReports } from "./storage";
+import { missingEvidenceRefs, readProjectState, scanReports } from "./storage";
 import type { ProjectThread, ThreadReport } from "./types";
 
 /**
@@ -19,6 +19,7 @@ export interface ProjectOverview {
   threads: OverviewThread[];
   counts: Record<OverviewBucket, number>;
   invalidReports: Array<{ file: string; error: string }>;
+  missingEvidence: number;
   updatedAt: number;
 }
 
@@ -40,11 +41,17 @@ export function bucketForThread(thread: ProjectThread, report?: ThreadReport): O
 export async function buildProjectOverview(projectPath: string): Promise<ProjectOverview> {
   const [state, scan] = await Promise.all([readProjectState(projectPath), scanReports(projectPath)]);
   const byId = new Map(scan.valid.map((r) => [r.report_id, r] as const));
-  const threads: OverviewThread[] = state.threads.map((thread) => {
+  const threads: OverviewThread[] = [];
+  let missingEvidence = 0;
+  for (const thread of state.threads) {
     const latestReport = thread.lastReportId ? byId.get(thread.lastReportId) : undefined;
-    return { ...thread, latestReport, bucket: bucketForThread(thread, latestReport) };
-  });
+    if (latestReport) {
+      const missing = await missingEvidenceRefs(projectPath, latestReport);
+      missingEvidence += missing.length;
+    }
+    threads.push({ ...thread, latestReport, bucket: bucketForThread(thread, latestReport) });
+  }
   const counts: Record<OverviewBucket, number> = { waiting: 0, working: 0, review: 0, done: 0 };
   for (const thread of threads) counts[thread.bucket]++;
-  return { threads, counts, invalidReports: scan.invalid, updatedAt: state.updatedAt };
+  return { threads, counts, invalidReports: scan.invalid, missingEvidence, updatedAt: state.updatedAt };
 }

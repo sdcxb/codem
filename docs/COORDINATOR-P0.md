@@ -29,10 +29,22 @@
 - `blocked` 必须给 `question/options(≥2)/default`；
 - 校验失败**不写任何东西**。
 
-### 3. 协调者会话
+### 3. project_report 工具
+
+- thread 通过 `project_report` 写 v3.1 报告，工具把 `thread_id` 固定为当前会话；
+- 报告里的 log/file 证据如果只在 worktree，工具会复制到主工作区 `.codem/evidence/<threadId>/` 并改写 ref；
+- 主工作区用 `git --git-common-dir` 解析，worktree 里也不会写错地方。
+
+### 4. 项目 Overview
+
+- `buildProjectOverview` 四态：等你 / 运行中 / 待评审 / 已完成；
+- 侧栏项目行「项目总览」打开弹窗，显示计数、thread、gate、坏报告与缺失证据；
+- 坏报告不再静默：`scanReports` 返回 `{valid, invalid}`，协调者上下文与 Overview 都会显示数量。
+
+### 5. 协调者会话
 
 - 侧栏项目行的皇冠按钮「新建协调者对话（项目级）」→ `createCoordinatorSession()`；
-- 会话标题为「协调者」，强制 `current_workspace`（worktree 里没有项目状态）；
+- 会话标题为「协调者」，强制 `current_workspace`（worktree 里没有项目状态）；删除协调者会话会清空指针；
 - 项目状态里记录 `coordinatorSessionId`；
 - `buildSystemPromptAsync` 每轮读取项目状态，只有当前会话是协调者时才追加：
   - brief + thread registry + 最近 12 份报告 + gates + 协调规则；
@@ -46,7 +58,7 @@
 1. 打开项目，点项目行皇冠按钮；
 2. 编辑 `.codem/project/brief.md` 填目标/约束/验收；
 3. 在协调者会话里提问；它会带项目状态回答；
-4. thread 报告可以写入 `.codem/project/reports/<id>.json` 后由协调者读取（P0 还没有“报告工具/UI”）。
+4. thread 直接调用 `project_report` 工具写报告；协调者下一轮会读到。
 
 ## 判据与验证
 
@@ -56,6 +68,16 @@
   - 点皇冠 → 生成 `state.json`（coordinatorSessionId 正确）与 `brief.md`；
   - 写入 brief「目标代号是蓝鲸」后，直接调用 `buildSystemPromptAsync`，返回 46,166 字符，包含 `蓝鲸` 与 `项目协调者上下文`。
   - 没有依赖模型回答（模型那次卡在递归搜索，已取消），注入事实由 prompt 本体证明。
+
+## 真实多 thread 验证（2026-10-22）
+
+- 项目：`.preview-shot/coordinator-lab/site-project`（Codem 官网，7 页 / 15 区 / 2779 功能点）；
+- 3 个真实 thread + 3 个 worktree，3 份 `project_report`；
+- Overview 实测 `waiting 0 / working 0 / review 2 / done 1`；
+- 新协调者重建 prompt 39,097 字符，包含 thread 标题/摘要/gate；
+- 同文件冲突：合并返回 `conflictFiles:["site/README.md"]`，按 worktree 侧收口；
+- 合并后门禁：build 0 / check 24/24 / audit 29/29 / e2e PASS / smoke PASS。
+- 详细记录：`.preview-shot/coordinator-lab/logs/PROJECTS-E2E.md`。
 
 ## P0 没做的（下一刀）
 

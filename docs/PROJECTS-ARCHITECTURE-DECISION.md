@@ -1,6 +1,6 @@
 # ADR：Codem 要不要 Projects 化（2026-10-22）
 
-- 状态：**Proposed（用 MVP 验证后转 Accepted/Rejected）**
+- 状态：**Proposed — 机制已验证，报告可信度仍有缺口（gate 重验未做），暂不转 Accepted**
 - 决策人：产品/架构（本仓由用户拍板）
 - 关联：`docs/CLAUDE-PROJECTS-BENCHMARK.md`、`docs/CODEM-FEATURES.md`、`docs/COORDINATOR-P0.md`
 
@@ -95,7 +95,16 @@ Codem 现在是**会话平铺**：项目只是文件夹，用户自己当协调�
 - **状态膨胀**：报告/事件越积越多。缓解：协调者只读最近 12 份；完整文件留盘。
 - **协调者失真**：只读状态仍可能编造。缓解：gate/证据契约；回答必须引用 report_id。
 
-## 10. 验证计划
+## 10. 已验证（2026-10-22，MVP 机制）
+
+- 3 个真实 thread + worktree + `project_report`，Overview 实测 `review 2 / done 1`；
+- 新协调者重建 prompt 39,097 字符，包含 thread 标题/摘要/gate；
+- 同文件冲突返回 `site/README.md`，按 worktree 侧收口，主工作区干净；
+- 合并后五道门禁全绿；
+- 发现的缺口：报告可“假绿”（T3 声称 gates 全绿，但 e2e 在独立项目下实际失败）；证据存在性已暴露，gate 自动重验未做。
+- 详细记录：`docs/COORDINATOR-P0.md`。
+
+## 11. 验证计划
 
 1. 用本仓库自身做一个 3-thread 项目（例如：官网、协调者文档、测试）；
 2. 每个 thread 用 worktree，写 `project_report`；

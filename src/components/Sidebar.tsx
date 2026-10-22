@@ -870,7 +870,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                         onClick={(e) => { e.stopPropagation(); handleNewCoordinatorSession(project.id); }}
                         title="新建协调者对话（项目级）"
                         aria-label="新建协调者对话"
-                      ><Crown size={12} /></button>
+                      ><Crown className="icon-xs" /></button>
                     )}
                     {project.id !== "__global__" && (
                       <button
@@ -878,7 +878,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                         onClick={(e) => { e.stopPropagation(); setOverviewProject({ path: project.path, name: project.name }); }}
                         title="项目总览"
                         aria-label="项目总览"
-                      ><LayoutDashboard size={12} /></button>
+                      ><LayoutDashboard className="icon-xs" /></button>
                     )}
                     <div
                       className="sidebar-project-more-wrapper"

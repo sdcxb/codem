@@ -2,6 +2,7 @@ import {
   readBrief,
   readGates,
   readProjectState,
+  missingEvidenceRefs,
   scanReports,
 } from "./storage";
 
@@ -36,15 +37,17 @@ export async function buildCoordinatorContext(
     : "- （还没有注册 thread）";
 
   const latest = reports.slice(-12);
-  const reportLines = latest.length
-    ? latest.map((r) => {
-        const gatesText = r.gates?.length
-          ? ` · gates: ${r.gates.map((g) => `${g.id}=${g.passed ? "pass" : "fail"}`).join(",")}`
-          : "";
-        const conflict = r.conflict ? ` · conflict: ${r.conflict}` : "";
-        return `- ${r.report_id}｜${r.thread_id}｜${r.status}｜${r.summary}${gatesText}${conflict}`;
-      }).join("\n")
-    : "- （还没有报告）";
+  const reportLines: string[] = [];
+  for (const r of latest) {
+    const gatesText = r.gates?.length
+      ? ` · gates: ${r.gates.map((g) => `${g.id}=${g.passed ? "pass" : "fail"}`).join(",")}`
+      : "";
+    const conflict = r.conflict ? ` · conflict: ${r.conflict}` : "";
+    const missing = await missingEvidenceRefs(projectPath, r);
+    const evidenceText = missing.length ? ` · ⚠ 证据缺失: ${missing.join(",")}` : "";
+    reportLines.push(`- ${r.report_id}｜${r.thread_id}｜${r.status}｜${r.summary}${gatesText}${conflict}${evidenceText}`);
+  }
+  const reportText = reportLines.length ? reportLines.join(String.fromCharCode(10)) : "- （还没有报告）";
 
   const gateLines = gates.length
     ? gates.map((g) => `- ${g.id}｜${g.title}｜${g.passed ? "pass" : "fail"}｜${g.verified_by}`).join("\n")
@@ -60,7 +63,7 @@ export async function buildCoordinatorContext(
     "",
     `### thread registry（${state.threads.length} 个）\n${threadLines}`,
     "",
-    `### 最近报告（${latest.length}/${reports.length}）\n${reportLines}`,
+    `### 最近报告（${latest.length}/${reports.length}）\n${reportText}`,
     "",
     `### 验收 gate\n${gateLines}`,
     "",

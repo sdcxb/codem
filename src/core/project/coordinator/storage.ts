@@ -116,14 +116,26 @@ export async function ensureProjectState(projectPath: string, projectName = "Pro
 
 export async function setCoordinatorSession(projectPath: string, sessionId: string | null, projectName?: string): Promise<ProjectState> {
   const state = await ensureProjectState(projectPath, projectName);
+  const previous = state.coordinatorSessionId;
   state.coordinatorSessionId = sessionId;
   await writeProjectState(projectPath, state);
   await appendProjectEvent(projectPath, {
     at: Date.now(),
     type: sessionId ? "coordinator.assigned" : "coordinator.cleared",
     sessionId: sessionId ?? undefined,
+    data: previous && previous !== sessionId ? { replaced: previous } : undefined,
   });
   return state;
+}
+
+/** 删除协调者会话时清空指针；不影响其他 thread。 */
+export async function clearCoordinatorIfMatches(projectPath: string, sessionId: string): Promise<boolean> {
+  const state = await readProjectState(projectPath);
+  if (state.coordinatorSessionId !== sessionId) return false;
+  state.coordinatorSessionId = null;
+  await writeProjectState(projectPath, state);
+  await appendProjectEvent(projectPath, { at: Date.now(), type: "coordinator.cleared", sessionId });
+  return true;
 }
 
 export async function registerThread(
@@ -195,6 +207,22 @@ export async function scanReports(projectPath: string): Promise<ReportScan> {
 export async function listReports(projectPath: string): Promise<ThreadReport[]> {
   return (await scanReports(projectPath)).valid;
 }
+/**
+ * 报告里声明为 log/file 的证据，必须在主工作区真实存在。
+ * 返回缺失的 ref；`command` 是命令文本，不做文件存在性判断。
+ */
+export async function missingEvidenceRefs(projectPath: string, report: ThreadReport): Promise<string[]> {
+  const missing: string[] = [];
+  for (const ev of report.evidence ?? []) {
+    if (ev.kind !== "log" && ev.kind !== "file") continue;
+    const ref = ev.ref || "";
+    if (!ref || ref.startsWith("/") || /^[A-Za-z]:/.test(ref)) continue;
+    const existsOnDisk = await fileApi.exists(`${projectPath.replace(/[\/]+$/, "")}/${ref}`);
+    if (!existsOnDisk) missing.push(ev.ref);
+  }
+  return missing;
+}
+
 
 /**
  * 写入一份 thread 报告：先校验，再落盘，再更新 thread registry，最后追加事件。

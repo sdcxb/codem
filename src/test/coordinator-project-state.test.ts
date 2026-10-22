@@ -149,6 +149,19 @@ describe("项目 Overview 四态", () => {
     expect(bucketForThread(thread("working"), report("blocked"))).toBe("waiting");
   });
 
+  it("OV-3：证据文件缺失会被 Overview 与协调者上下文标记", async () => {
+    await setCoordinatorSession(PROJECT, "coord-1");
+    await writeThreadReport(PROJECT, {
+      report_id: "r-miss", thread_id: "t1", status: "done", summary: "声称完成",
+      evidence: [{ kind: "log", ref: "logs/does-not-exist.log" }],
+    }, { title: "T1" });
+    const overview = await buildProjectOverview(PROJECT);
+    expect(overview.missingEvidence).toBe(1);
+    files.set(projectStatePath(PROJECT, "brief.md"), "# Brief");
+    const context = await buildCoordinatorContext(PROJECT, "coord-1");
+    expect(context).toContain("证据缺失");
+  });
+
   it("OV-2：坏报告被计数，且不出现在 thread 结论里", async () => {
     files.set(projectStatePath(PROJECT, "reports/bad.json"), "{ not json");
     files.set(projectStatePath(PROJECT, "reports/r1.json"), JSON.stringify({
