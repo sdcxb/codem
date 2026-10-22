@@ -9,6 +9,7 @@ export {
 export {
   createWorktree,
   removeWorktree,
+  mergeWorktreeToProject,
   scanWorktrees,
   decideWorktreeDirtyGuard,
   hasUncommittedChanges,

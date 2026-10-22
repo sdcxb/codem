@@ -13,6 +13,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { executeCommand } from "../core/file-api";
+import { mergeWorktreeToProject } from "../core/environment";
+import { confirmDialog } from "../core/ui/native-dialog";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
 import { onAutoCommitted } from "../core/environment/git-commit-service";
@@ -205,6 +207,32 @@ export function GitInfoPanel() {
     setTimeout(() => setActionResult(null), 5000);
   };
 
+  /**
+   * 把当前会话的 worktree 改动合并回**主项目**（不是 worktree）。
+   * 2026-10-22 真机缺口：worktree 只能进不能出；这里补最小入口。
+   * 冲突/主工作区不干净时由 mergeWorktreeToProject 回滚并抛错，不在主工作区留冲突态。
+   */
+  const handleMergeWorktree = async () => {
+    const worktreePath = currentSession?.worktreePath;
+    const mainPath = currentProject?.path;
+    if (!worktreePath || !mainPath) return;
+    const ok = await confirmDialog(
+      zh
+        ? "把工作树改动提交并合并到主工作区？\n\n主工作区必须干净；冲突会自动回滚，不会留在冲突状态。"
+        : "Commit the worktree changes and merge them into the main workspace?\n\nThe main workspace must be clean; conflicts are rolled back automatically."
+    );
+    if (!ok) return;
+    setActionResult(null);
+    try {
+      const res = await mergeWorktreeToProject(mainPath, worktreePath);
+      setActionResult(`✅ ${zh ? "已合并到主工作区" : "Merged"}: ${res.mergedSha.slice(0, 7)}`);
+      refresh();
+    } catch (e: any) {
+      setActionResult(`❌ ${e?.message || e}`);
+    }
+    setTimeout(() => setActionResult(null), 8000);
+  };
+
   if (!projectPath) {
     return (
       <div style={{ padding: 12, fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
@@ -301,8 +329,22 @@ export function GitInfoPanel() {
       </div>
 
       {currentSession?.worktreePath && (
-        <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          🌒 {currentSession.worktreePath}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 'var(--fs-xs)', color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            🌒 {currentSession.worktreePath}
+          </div>
+          <button
+            onClick={handleMergeWorktree}
+            disabled={loading}
+            title={zh ? "提交工作树改动并合并回主工作区" : "Commit worktree changes and merge into the main workspace"}
+            style={{
+              flexShrink: 0, padding: "3px 8px", fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-xs)",
+              border: "1px solid var(--border-primary)", background: "var(--bg-secondary)",
+              color: "var(--text-primary)", cursor: loading ? "default" : "pointer",
+            }}
+          >
+            {zh ? "合并回主工作区" : "Merge to main"}
+          </button>
         </div>
       )}
 
