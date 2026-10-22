@@ -423,3 +423,12 @@ describe("Git Worktree — 运行时目录不进仓库", () => {
     expect(gitignore.split(/\r?\n/)).toContain(".codem-worktrees/");
   });
 });
+
+describe("Git Worktree — dev watcher 不扫 worktree 根", () => {
+  it("WTR-037: vite server.watch.ignored 必须包含 .codem-worktrees（否则整页 reload 丢会话状态）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const viteConfig = fs.readFileSync(path.join(__dirname, "../../vite.config.ts"), "utf-8");
+    expect(viteConfig).toContain(".codem-worktrees");
+  });
+});

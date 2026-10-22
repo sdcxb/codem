@@ -35,6 +35,12 @@ export default defineConfig({
         "**/*.tmpdir/**",
         "**/*.tmp",
         "**/.preview-shot/**",
+        /*
+         * 会话 worktree 根（2026-10-22 真机）：worktree 是完整 checkout，Vite 会逐文件
+         * `page reload .codem-worktrees/…`，把 dev 窗口刷到丢状态（worktreePath 还没写库就重载）。
+         * 只加 .gitignore 不够 —— watcher 不看 .gitignore，必须显式忽略。
+         */
+        "**/.codem-worktrees/**",
         "**/tools/preview/dist/**",
         "**/dist/**",
         /*

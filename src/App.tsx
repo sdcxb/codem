@@ -3835,7 +3835,20 @@ streamingSessionIdRef.current = session.id;
         const wtPath = await createWorktree(currentProject.path, session.id, session.worktreeBranch);
         cwd = wtPath;
         // Persist the worktree path on the session
-        useProjectStore.getState().updateSession(session.id, { worktreePath: wtPath });
+        /*
+         * 2026-10-22 真机：worktree 建好后，`updateSession(worktreePath)` 偶发**回读仍是 NULL**
+         * （会话行刚由引擎建立/页面重载窗口内），下一次发送又建一个 worktree、Git 面板也看不到路径。
+         * 这里改成"写 + 回读确认 + 最多重试 5 次"，失败必须上报，不能静默丢。
+         */
+        let persisted = false;
+        for (let i = 0; i < 5; i++) {
+          useProjectStore.getState().updateSession(session.id, { worktreePath: wtPath });
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          if (SessionStorage.getSession(session.id)?.worktreePath === wtPath) { persisted = true; break; }
+        }
+        if (!persisted) {
+          reportActionFailure("app.persistWorktreePath", new Error("回读 worktreePath 仍为空"), "工作树路径未保存，重启后会回到主工作区");
+        }
         session.worktreePath = wtPath;
       } catch (e) {
         console.error("[App] Failed to create worktree, falling back to project dir:", e);
