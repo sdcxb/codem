@@ -1,8 +1,8 @@
 import {
-  listReports,
   readBrief,
   readGates,
   readProjectState,
+  scanReports,
 } from "./storage";
 
 /**
@@ -21,11 +21,12 @@ export async function buildCoordinatorContext(
   const state = await readProjectState(projectPath);
   if (!state.coordinatorSessionId || state.coordinatorSessionId !== sessionId) return "";
 
-  const [brief, reports, gates] = await Promise.all([
+  const [brief, scan, gates] = await Promise.all([
     readBrief(projectPath),
-    listReports(projectPath),
+    scanReports(projectPath),
     readGates(projectPath),
   ]);
+  const reports = scan.valid;
 
   const threadLines = state.threads.length
     ? state.threads.map((t) => {

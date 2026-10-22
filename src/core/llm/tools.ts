@@ -210,6 +210,7 @@ import { createRunCodeTool } from "./tools/run-code";
 import { createSessionSearchTool, createSessionEventSearchTool, createSessionTraceTool, createSessionEventReadTool } from "./tools/session-search";
 // P2-12: Goal tools for automatic continuation
 import { createGoalTools } from "./tools/goal-tools";
+import { createProjectReportTool } from "./tools/project-report";
 // P2-11: Workflow tool for JS-based task orchestration
 import { createWorkflowTool } from "./workflow-engine";
 // P2-19/20: Job and Terminal tools for background task & terminal management
@@ -2564,6 +2565,8 @@ registry.register(createSessionSearchTool());
 registry.register(createSessionEventSearchTool());
 registry.register(createSessionTraceTool());
 registry.register(createSessionEventReadTool());
+  // 协调者 P0：thread 报告工具（写 .codem/project/reports）
+  registry.register(createProjectReportTool());
   // P2-12: Goal tools — create/get/update goals for automatic continuation
   for (const tool of createGoalTools()) {
     registry.register(tool);

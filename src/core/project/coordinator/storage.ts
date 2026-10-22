@@ -150,26 +150,50 @@ export async function registerThread(
   return next;
 }
 
-export async function listReports(projectPath: string): Promise<ThreadReport[]> {
+export interface InvalidReport {
+  file: string;
+  error: string;
+}
+
+export interface ReportScan {
+  valid: ThreadReport[];
+  invalid: InvalidReport[];
+}
+
+/**
+ * 扫描全部报告，**坏报告不再静默丢弃**：返回 `{valid, invalid}`。
+ * 协调者上下文会显示坏报告数量，Overview 也会显示；静态消费方仍可用 `listReports()`。
+ */
+export async function scanReports(projectPath: string): Promise<ReportScan> {
   const dir = projectStatePath(projectPath, "reports");
   let entries: Array<{ name: string; isDirectory: boolean }> = [];
   try {
     entries = await fileApi.listDirectory(dir);
   } catch {
-    return [];
+    return { valid: [], invalid: [] };
   }
-  const reports: ThreadReport[] = [];
+  const valid: ThreadReport[] = [];
+  const invalid: InvalidReport[] = [];
   for (const entry of entries) {
     if (entry.isDirectory || !entry.name.endsWith(".json")) continue;
-    const parsed = await readJson<unknown>(`${dir}/${entry.name}`, projectPath);
-    if (!parsed) continue;
+    const file = `${dir}/${entry.name}`;
+    const parsed = await readJson<unknown>(file, projectPath);
+    if (!parsed) {
+      invalid.push({ file: entry.name, error: "JSON 解析失败" });
+      continue;
+    }
     try {
-      reports.push(validateThreadReport(parsed));
-    } catch {
-      // 坏报告不能静默当成好报告；context 里会有 unknown 计数（见 buildCoordinatorContext）
+      valid.push(validateThreadReport(parsed));
+    } catch (e) {
+      invalid.push({ file: entry.name, error: e instanceof Error ? e.message : String(e) });
     }
   }
-  return reports.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0) || a.report_id.localeCompare(b.report_id));
+  valid.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0) || a.report_id.localeCompare(b.report_id));
+  return { valid, invalid };
+}
+
+export async function listReports(projectPath: string): Promise<ThreadReport[]> {
+  return (await scanReports(projectPath)).valid;
 }
 
 /**

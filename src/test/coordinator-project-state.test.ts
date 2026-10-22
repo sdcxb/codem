@@ -22,6 +22,9 @@ vi.mock("../core/file-api", () => ({
 
 import {
   buildCoordinatorContext,
+  buildProjectOverview,
+  bucketForThread,
+  scanReports,
   listReports,
   registerThread,
   projectStatePath,
@@ -30,6 +33,7 @@ import {
   writeThreadReport,
 } from "../core/project/coordinator";
 import { ReportContractError, validateThreadReport } from "../core/project/coordinator/report-contract";
+import type { ProjectThread, ThreadReport } from "../core/project/coordinator/types";
 
 const PROJECT = "C:/proj";
 
@@ -126,5 +130,40 @@ describe("项目状态与协调者上下文", () => {
     const context = await buildCoordinatorContext(PROJECT, "coord-1");
     expect(context.length).toBeLessThanOrEqual(9000 + 40);
     expect(context).toContain("已截断");
+  });
+});
+
+describe("项目 Overview 四态", () => {
+  const thread = (status: ProjectThread["status"]): ProjectThread => ({
+    sessionId: "t1", title: "T1", status, createdAt: 1, updatedAt: 1,
+  });
+  const report = (status: ThreadReport["status"], gates?: ThreadReport["gates"]): ThreadReport => ({
+    report_id: "r1", thread_id: "t1", status, summary: "s", gates,
+  });
+
+  it("OV-1：blocked→等你，done 无 gate→待评审，done 全过→完成，in_progress→运行中", () => {
+    expect(bucketForThread(thread("blocked"))).toBe("waiting");
+    expect(bucketForThread(thread("working"), report("done"))).toBe("review");
+    expect(bucketForThread(thread("working"), report("done", [{ id: "g1", passed: true, verified_by: "command", evidence_ref: "log" }]))).toBe("done");
+    expect(bucketForThread(thread("working"), report("in_progress"))).toBe("working");
+    expect(bucketForThread(thread("working"), report("blocked"))).toBe("waiting");
+  });
+
+  it("OV-2：坏报告被计数，且不出现在 thread 结论里", async () => {
+    files.set(projectStatePath(PROJECT, "reports/bad.json"), "{ not json");
+    files.set(projectStatePath(PROJECT, "reports/r1.json"), JSON.stringify({
+      report_id: "r1", thread_id: "t1", status: "done", summary: "ok",
+      evidence: [{ kind: "log", ref: "logs/t1.log" }],
+    }));
+    // 让 t1 进入 registry
+    await writeThreadReport(PROJECT, {
+      report_id: "r2", thread_id: "t1", status: "done", summary: "ok2",
+      evidence: [{ kind: "log", ref: "logs/t2.log" }],
+    }, { title: "T1" });
+    const scan = await scanReports(PROJECT);
+    expect(scan.invalid.map((i) => i.file)).toContain("bad.json");
+    const overview = await buildProjectOverview(PROJECT);
+    expect(overview.invalidReports).toHaveLength(1);
+    expect(overview.counts.review).toBe(1);
   });
 });

@@ -2,12 +2,13 @@ import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Puzzle, ArrowUpDown, Check, Crown } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Puzzle, ArrowUpDown, Check, Crown, LayoutDashboard } from "lucide-react";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
 import { OverflowText } from "./OverflowText";
+import { ProjectOverviewDialog } from "./ProjectOverviewDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { SpaceSwitcher } from "./SpaceSwitcher";
@@ -153,6 +154,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onP
   }, []);
   // Theme is now managed solely by TitleBar to avoid state conflicts.
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [overviewProject, setOverviewProject] = useState<{ path: string; name: string } | null>(null);
   const [allSessions, setAllSessions] = useState<Record<string, Array<typeof currentSession & { lastMessageAt: number; messageCount: number }>>>({});
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -870,6 +872,14 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                         aria-label="新建协调者对话"
                       ><Crown size={12} /></button>
                     )}
+                    {project.id !== "__global__" && (
+                      <button
+                        className="sidebar-project-btn"
+                        onClick={(e) => { e.stopPropagation(); setOverviewProject({ path: project.path, name: project.name }); }}
+                        title="项目总览"
+                        aria-label="项目总览"
+                      ><LayoutDashboard size={12} /></button>
+                    )}
                     <div
                       className="sidebar-project-more-wrapper"
                       onMouseEnter={(e) => {
@@ -1178,6 +1188,13 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </button>
         )}
       </div>
+      {overviewProject && (
+        <ProjectOverviewDialog
+          projectPath={overviewProject.path}
+          projectName={overviewProject.name}
+          onClose={() => setOverviewProject(null)}
+        />
+      )}
     </div>
   );
 }
