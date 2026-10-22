@@ -39,6 +39,7 @@ import { MEMORY_PENDING_BACKLOG_LIMIT, decidePendingBacklog } from "../memory/pe
 import { mergeSameTopicCandidates } from "../memory/candidate-merge";
 import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, minutePrecisionDate, type SystemPromptConfig } from "../prompt/prompt";
+import { buildCoordinatorContext } from "../project/coordinator/context";
 import { buildPersonaPromptSection } from "../persona/persona";
 import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
@@ -1093,7 +1094,15 @@ function readContextCompactionThreshold(): number {
         : "",
     };
 
-    const prompt = buildSystemPrompt(config);
+    const basePrompt = buildSystemPrompt(config);
+    let coordinatorContext = "";
+    try {
+      coordinatorContext = await buildCoordinatorContext(cwd, sessionId);
+    } catch (e) {
+      // 协调者状态读失败不能拖垮整轮对话；但要在日志里可见（不静默当没有协调者）。
+      console.warn("[buildSystemPromptAsync] 协调者上下文读取失败，本轮不注入：", e);
+    }
+    const prompt = coordinatorContext ? basePrompt + String.fromCharCode(10, 10) + coordinatorContext : basePrompt;
     const lang = getLang();
     console.log("[buildSystemPromptAsync] prompt length:", prompt.length, "lang:", lang, "has zh rule:", prompt.includes("语言规则"));
     return prompt;

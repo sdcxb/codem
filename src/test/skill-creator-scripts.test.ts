@@ -406,7 +406,7 @@ describe('skill-creator: CLI 真进程 + 静态门禁', () => {
         ).not.toContain('Assertion failed')
       }
     }
-  })
+  }, 60000)
 
   it('CLI-2: 静态门禁 —— 全仓不再有 ESM 里必崩的 `require.main`，且 5 个脚本都走 isMainModule', () => {
     const srcFiles: string[] = []

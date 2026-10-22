@@ -33,6 +33,8 @@ interface ProjectState {
   getProjectSessions: (projectId: string) => Session[];
 
   createSession: (title?: string) => Session;
+  /** 创建“项目协调者”会话：普通会话 + 项目状态里的 coordinatorSessionId */
+  createCoordinatorSession: (title?: string) => Session;
   forkSession: (sourceSessionId: string, messageIndex: number, title?: string) => Session;
   /** @returns 是否真的切过去了（找不到该会话时返回 false —— 第 184 波 F4） */
   switchSession: (sessionId: string) => boolean;
@@ -265,6 +267,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const updated = [...get().sessions, session];
     set({ sessions: updated, currentSession: session });
     console.log(`[createSession] Set currentSession to: ${session.id}, title: ${session.title}`);
+    return session;
+  },
+
+  createCoordinatorSession: (title) => {
+    const project = get().currentProject;
+    const session = get().createSession(title || "协调者");
+    // 协调者必须跑在主工作区：worktree 里没有项目状态，也看不到其他 thread 的合并结果。
+    if (session.executionMode !== "current_workspace" || session.worktreePath) {
+      get().updateSession(session.id, { executionMode: "current_workspace", worktreePath: undefined });
+    }
+    if (project?.path) {
+      void import("./project/coordinator/storage")
+        .then((m) => m.setCoordinatorSession(project.path!, session.id, project.name))
+        .catch((e) => reportPersistFailure("store.createCoordinatorSession", e));
+    }
     return session;
   },
 

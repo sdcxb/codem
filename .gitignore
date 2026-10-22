@@ -106,6 +106,8 @@ notebook-section.txt
 .oh-my-ppt-ref/
 
 # Agent tooling runtime artifacts
+# 协调者 P0 的项目状态（session id / reports / events 是本机运行态；brief 可另存）
+.codem/project/
 .codem-cache/
 .codem-snapshots/
 .codem-tool-results/

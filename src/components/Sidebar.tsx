@@ -2,7 +2,7 @@ import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Puzzle, ArrowUpDown, Check } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Puzzle, ArrowUpDown, Check, Crown } from "lucide-react";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
@@ -108,7 +108,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onP
   const { clearMessages, loadMessages } = useAppStore();
   const {
     projects, currentProject, currentSession,
-    createSession, switchSession, deleteSession,
+    createSession, createCoordinatorSession, switchSession, deleteSession,
     openProject, getProjectSessions, updateProject,
     renameSession,
   } = useProjectStore();
@@ -365,6 +365,13 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       }
       return next;
     });
+  };
+
+  const handleNewCoordinatorSession = (projectId: string) => {
+    if (projectId === "__global__") return;
+    openProject(projectId);
+    createCoordinatorSession();
+    loadAllSessions();
   };
 
   const handleNewSession = (projectId: string) => {
@@ -855,6 +862,14 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                       onClick={(e) => { e.stopPropagation(); handleNewSession(project.id); }}
                       title={S.sidebar.newChat[lang]}
                     >+</button>
+                    {project.id !== "__global__" && (
+                      <button
+                        className="sidebar-project-btn"
+                        onClick={(e) => { e.stopPropagation(); handleNewCoordinatorSession(project.id); }}
+                        title="新建协调者对话（项目级）"
+                        aria-label="新建协调者对话"
+                      ><Crown size={12} /></button>
+                    )}
                     <div
                       className="sidebar-project-more-wrapper"
                       onMouseEnter={(e) => {

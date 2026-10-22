@@ -84,7 +84,13 @@ Claude Projects 的创新不在"并行"，而在**把项目变成一个有人负
 
 Codem 的底层积木（worktree、委派、子代理、Squad、Inbox、记忆、指令层）已经齐了，缺的是**项目层的协调者与状态**。实验证明这条架构可行，且 worktree 合并入口已经落地；**但截至今天，Codem 还没有项目级协调者，也没有 thread 状态/Overview** —— 对标分析可以收口，实现还没开始。
 
-## 七、边界
+## 七、仓库内对照
+
+- 功能基线：`docs/CODEM-FEATURES.md`（18 slice / 362 组 / 2779 条）
+- 现有实现：`src/core/store.ts`、`src/core/storage/session.ts`、`src/core/environment/worktree-manager.ts`
+- 实验记录：`.preview-shot/coordinator-lab/logs/`
+
+## 八、边界
 
 - 未验证：真实模型写报告的质量、协调者路由歧义率、并发同文件冲突的自动合并；
 - 未做：PR 生命周期、云执行、项目级定时任务；
