@@ -79,6 +79,7 @@ export function TitleBar({
   const [theme, setTheme] = useState<"dark" | "light">(() => resolveEffectiveTheme(getSetting));
   // 执行模式切换（本地处理 / 新工作树）—— 由 InputArea 底部 bar 移至顶部状态栏
   const currentProject = useProjectStore((s) => s.currentProject);
+  const currentSession = useProjectStore((s) => s.currentSession);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("current_workspace");
   const [isGitProject, setIsGitProject] = useState(false);
   const isStreaming = useAppStore((s) => s.isStreaming);
@@ -178,18 +179,22 @@ export function TitleBar({
       setIsGitProject(false);
       return;
     }
-    setExecutionMode(getProjectExecutionMode(projectPath));
+    /*
+     * 真机（2026-10-22）：显示必须优先跟随**当前会话**。只读项目偏好会让
+     * 「旧会话是本地、项目偏好后来改成 worktree」时标题栏说 worktree、实际跑本地。
+     */
+    setExecutionMode(currentSession?.executionMode ?? getProjectExecutionMode(projectPath));
     isGitRepo(projectPath).then(setIsGitProject).catch(() => setIsGitProject(false));
-  }, [projectPath]);
+  }, [projectPath, currentSession?.executionMode]);
 
   // 监听执行模式外部变更（如设置面板/其他入口），保持按钮状态同步
   useEffect(() => {
     const handler = () => {
-      if (projectPath) setExecutionMode(getProjectExecutionMode(projectPath));
+      if (projectPath) setExecutionMode(currentSession?.executionMode ?? getProjectExecutionMode(projectPath));
     };
     window.addEventListener("codem-execution-mode-changed", handler);
     return () => window.removeEventListener("codem-execution-mode-changed", handler);
-  }, [projectPath]);
+  }, [projectPath, currentSession?.executionMode]);
 
   // 切换执行模式：非 Git 项目禁用；有未提交修改需确认
   const handleToggleExecutionMode = useCallback(async () => {
@@ -228,9 +233,22 @@ export function TitleBar({
     }
     setProjectExecutionMode(projectPath, next);
     setExecutionMode(next);
+    /*
+     * ★ 2026-10-22 真机（worktree 验证）：原来这里只写「项目偏好」，不写当前会话。
+     * 后果：已有会话点标题栏切「新工作树」后，按钮变绿、项目偏好也变了，但
+     * `session.executionMode` 仍是 `current_workspace`，下一次发送根本不会建 worktree
+     * （App.runAgenticLoop 只在 session.executionMode === "git_worktree" 时创建）。
+     * 现在同步当前会话；切回本地时清掉 worktreePath，否则发送路径仍优先用它。
+     */
+    if (currentSession && currentProject && currentSession.projectId === currentProject.id) {
+      useProjectStore.getState().updateSession(currentSession.id, {
+        executionMode: next,
+        ...(next === "current_workspace" ? { worktreePath: undefined } : {}),
+      });
+    }
     // 通知 InputArea 等其他组件同步（如需要）
     window.dispatchEvent(new CustomEvent("codem-execution-mode-changed"));
-  }, [projectPath, isStreaming, executionMode, isGitProject, zh]);
+  }, [projectPath, isStreaming, executionMode, isGitProject, zh, currentSession, currentProject]);
 
   // P1: Cmd+K shortcut for search
   useEffect(() => {

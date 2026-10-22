@@ -414,3 +414,12 @@ describe("Git Worktree — Session 类型字段", () => {
     expect(typesSrc).toContain("current_workspace");
   });
 });
+
+describe("Git Worktree — 运行时目录不进仓库", () => {
+  it("WTR-036: .gitignore 必须忽略 .codem-worktrees/（否则主工作区变脏 + 切换守卫误报）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const gitignore = fs.readFileSync(path.join(__dirname, "../../.gitignore"), "utf-8");
+    expect(gitignore.split(/\r?\n/)).toContain(".codem-worktrees/");
+  });
+});

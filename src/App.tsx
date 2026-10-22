@@ -3855,7 +3855,7 @@ streamingSessionIdRef.current = session.id;
       safeAddMessage({
         id: `wt-ok-${Date.now()}`,
         role: "system",
-        content: lang === "zh" ? `🌲 工作树已创建: ${session.worktreePath}` : `🌲 Worktree created: ${session.worktreePath}`,
+        content: lang === "zh" ? `🌲 工作树已创建: \`${session.worktreePath}\`` : `🌲 Worktree created: \`${session.worktreePath}\``,
         timestamp: Date.now(),
         status: "done",
       });
