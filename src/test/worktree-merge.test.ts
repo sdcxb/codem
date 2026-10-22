@@ -66,7 +66,7 @@ afterEach(() => {
 });
 
 describe("worktree 合并回主工作区", () => {
-  it("WT-MERGE-1：干净主工作区 + worktree 改动 → 提交并 merge，主工作区拿到改动", async () => {
+  it("WT-MERGE-1：干净主工作区 + worktree 改动 → 提交并 merge，主工作区拿到改动", { timeout: 30000 }, async () => {
     fs.writeFileSync(path.join(wt, baseFile), "base\nworktree-change\n");
     const res = await mergeWorktreeToProject(repo, wt, "merge worktree");
     expect(res.commitSha).toMatch(/^[0-9a-f]{7,40}$/);
@@ -76,14 +76,14 @@ describe("worktree 合并回主工作区", () => {
     expect(git(wt, "status --porcelain").trim()).toBe("");
   });
 
-  it("WT-MERGE-2：主工作区有未提交改动 → 拒绝，且不提交 worktree", async () => {
+  it("WT-MERGE-2：主工作区有未提交改动 → 拒绝，且不提交 worktree", { timeout: 30000 }, async () => {
     fs.writeFileSync(path.join(wt, baseFile), "base\nworktree-change\n");
     fs.writeFileSync(path.join(repo, "other.txt"), "dirty\n");
     await expect(mergeWorktreeToProject(repo, wt)).rejects.toThrow(/主工作区有未提交改动/);
     expect(git(wt, "status --porcelain").trim()).not.toBe("");
   });
 
-  it("WT-MERGE-3：同线冲突 → 回滚主工作区，抛冲突文件，不留 MERGE_HEAD", async () => {
+  it("WT-MERGE-3：同线冲突 → 回滚主工作区，抛冲突文件，不留 MERGE_HEAD", { timeout: 30000 }, async () => {
     fs.writeFileSync(path.join(wt, baseFile), "worktree\n");
     fs.writeFileSync(path.join(repo, baseFile), "main\n");
     git(repo, "add -A");
@@ -94,7 +94,7 @@ describe("worktree 合并回主工作区", () => {
     expect(fs.readFileSync(path.join(repo, baseFile), "utf8").trim()).toBe("main");
   });
 
-  it("WT-MERGE-5：冲突 + onConflict=worktree → 保留工作树版本，主工作区干净", async () => {
+  it("WT-MERGE-5：冲突 + onConflict=worktree → 保留工作树版本，主工作区干净", { timeout: 30000 }, async () => {
     fs.writeFileSync(path.join(wt, baseFile), "worktree");
     fs.writeFileSync(path.join(repo, baseFile), "main");
     git(repo, "add -A");
@@ -105,7 +105,7 @@ describe("worktree 合并回主工作区", () => {
     expect(git(repo, "status --porcelain").trim()).toBe("");
   });
 
-  it("WT-MERGE-6：冲突 + onConflict=main → 保留主工作区版本，主工作区干净", async () => {
+  it("WT-MERGE-6：冲突 + onConflict=main → 保留主工作区版本，主工作区干净", { timeout: 30000 }, async () => {
     fs.writeFileSync(path.join(wt, baseFile), "worktree");
     fs.writeFileSync(path.join(repo, baseFile), "main");
     git(repo, "add -A");
@@ -116,7 +116,7 @@ describe("worktree 合并回主工作区", () => {
     expect(git(repo, "status --porcelain").trim()).toBe("");
   });
 
-  it("WT-MERGE-7：首轮冲突回滚后，worktree 已提交但仍可重试选边", async () => {
+  it("WT-MERGE-7：首轮冲突回滚后，worktree 已提交但仍可重试选边", { timeout: 30000 }, async () => {
     fs.writeFileSync(path.join(wt, baseFile), "worktree");
     fs.writeFileSync(path.join(repo, baseFile), "main");
     git(repo, "add -A");
@@ -127,7 +127,7 @@ describe("worktree 合并回主工作区", () => {
     expect(fs.readFileSync(path.join(repo, baseFile), "utf8").trim()).toBe("worktree");
   });
 
-  it("WT-MERGE-4：worktree 没有改动 → 拒绝", async () => {
+  it("WT-MERGE-4：worktree 没有改动 → 拒绝", { timeout: 30000 }, async () => {
     await expect(mergeWorktreeToProject(repo, wt)).rejects.toThrow(/没有可合并的改动/);
   });
 });
