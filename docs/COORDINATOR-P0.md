@@ -76,7 +76,13 @@
 - 自动化会话在协调者项目里会自动注册为 thread；
 - 任务中心表单新增「项目（可选）」选择。
 
-### 10. 项目 Overview
+### 10. thread 详情
+
+- Overview 的 thread 行可展开：worktree、改动、证据、逐 gate 重验状态、最近拍板；
+- 「打开会话」直接切到该 thread；
+- 只读，详情数据来自同一份项目状态，不读聊天记录。
+
+### 11. 项目 Overview
 
 - `buildProjectOverview` 四态：等你 / 运行中 / 待评审 / 已完成；
 - 侧栏项目行「项目总览」打开弹窗，显示计数、thread、gate、坏报告与缺失证据；

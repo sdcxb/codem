@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "./ui/portal";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, RefreshCw, X } from "lucide-react";
+import { useProjectStore } from "../core/store";
 import { Spinner } from "./ui/Spinner";
 import { buildProjectOverview, verifyProjectGates, resolveThreadDecision, syncPullRequests, type ProjectOverview, type OverviewBucket } from "../core/project/coordinator";
 import { confirmDialog } from "../core/ui/native-dialog";
@@ -26,6 +27,7 @@ export function ProjectOverviewDialog({
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [syncingPr, setSyncingPr] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -37,6 +39,11 @@ export function ProjectOverviewDialog({
     } finally {
       setLoading(false);
     }
+  };
+
+  const openThread = (sessionId: string) => {
+    useProjectStore.getState().switchSession(sessionId);
+    onClose();
   };
 
   const decide = async (sessionId: string, choice: string) => {
@@ -160,7 +167,14 @@ export function ProjectOverviewDialog({
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {items.map((t) => (
-                        <div key={t.sessionId} className="project-overview-thread">
+                        <div
+                          key={t.sessionId}
+                          className="project-overview-thread"
+                          onClick={() => setExpanded(expanded === t.sessionId ? null : t.sessionId)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpanded(expanded === t.sessionId ? null : t.sessionId); }}
+                        >
                           <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
                             <span style={{ fontWeight: 600, fontSize: "var(--fs-sm, 12px)" }}>{t.title}</span>
                             <span style={{ fontSize: "var(--fs-xs, 10px)", color: "var(--text-muted, #888)" }}>{t.status} · {t.sessionId}</span>
@@ -202,6 +216,31 @@ export function ProjectOverviewDialog({
                             <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--text-secondary, #bbb)", marginTop: 2 }}>
                               {t.latestReport.summary}
                               {t.latestReport.gates?.length ? ` · gates: ${t.latestReport.gates.map((g) => `${g.id}=${g.passed ? "pass" : "fail"}`).join(",")}` : ""}
+                            </div>
+                          )}
+                          {expanded === t.sessionId && (
+                            <div className="project-overview-detail" onClick={(e) => e.stopPropagation()}>
+                              <div className="project-overview-detail-row">worktree：{t.worktreePath || "（主工作区）"}</div>
+                              {t.latestReport?.changes?.length ? (
+                                <div className="project-overview-detail-row">改动：{t.latestReport.changes.map((c) => `${c.kind} ${c.path}`).join("、")}</div>
+                              ) : null}
+                              {t.latestReport?.evidence?.length ? (
+                                <div className="project-overview-detail-row">证据：{t.latestReport.evidence.map((e) => `${e.kind}:${e.ref}`).join("、")}</div>
+                              ) : null}
+                              {t.latestReport?.gates?.length ? (
+                                <div className="project-overview-detail-row">
+                                  gates：{t.latestReport.gates.map((g) => {
+                                    const check = t.gateChecks.find((c) => c.gateId === g.id);
+                                    return `${g.id}=${g.passed ? "pass" : "fail"}/${check ? (check.ok ? "verified" : check.reason || "unverified") : "no-check"}`;
+                                  }).join("、")}
+                                </div>
+                              ) : null}
+                              {t.decisions.length ? (
+                                <div className="project-overview-detail-row">拍板：{t.decisions[t.decisions.length - 1].question} → {t.decisions[t.decisions.length - 1].choice}</div>
+                              ) : null}
+                              <div className="project-overview-detail-actions">
+                                <button className="project-overview-action" onClick={() => openThread(t.sessionId)}>打开会话</button>
+                              </div>
                             </div>
                           )}
                         </div>

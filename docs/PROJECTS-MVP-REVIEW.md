@@ -8,7 +8,7 @@
 | 并行 thread | 云 thread | 普通会话 + worktree | 本地等价物 |
 | 项目状态 | instructions/memory/threads | `.codem/project` brief/state/gates/events/reports | 文件化、可人工检查 |
 | 上下文重建 | 云端项目记忆 | 协调者只读状态，9000 字符上限 | 已验证：39,097 字符 prompt 含 3 thread 报告 |
-| Overview | 六状态 | 四状态（等你/运行中/待评审/已完成）+ 审批按钮 | 够用；没有 Landing/Idle |
+| Overview | 六状态 | 四状态 + 审批按钮 + 展开 thread 详情 | 够用；没有 Landing/Idle |
 | 报告/验收 | PR/评审 | v3.1 report + gate + 独立重验 + 证据缺失降级 | 可信验收已落地 |
 | 记忆/指令 | 项目记忆文件 | 项目 brief + 现有指令/记忆注入 | brief 已注入；记忆索引未做 |
 | PR/CI | 全自动 | `gh` 只读同步 PR/CI + Overview 展示；无自动创建/修复 | 本地优先，写操作暂不做 |
