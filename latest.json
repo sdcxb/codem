@@ -1,15 +1,15 @@
 {
-  "version": "1.16.329",
-  "notes": "上下文降噪：折叠旧工具参数（write/edit/multi_edit 只留 path）",
-  "pub_date": "2026-10-19T08:33:42Z",
+  "version": "1.16.330",
+  "notes": "Codem v1.16.330：插件检查更新/一键升级，统一插件详情页，删除会话立即结束命令树",
+  "pub_date": "2026-10-23T11:53:26Z",
   "platforms": {
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RoSERSWDJTYVZ4U2l6VGlPSnB5OHoxeU44bk9sc25YdTBQWXBkZnVQRGwzWjBQeC9qRUZkRFJ2U3pKUTZPZDNaQXdrRjh2SmFLZks4Uk5oM3NSQmdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzk4Nzk3CWZpbGU6Q29kZW1fMS4xNi4zMjlfeDY0LXNldHVwLmV4ZQpOdjdvY3lLV25tc0xMR3ZKSXpkTUdVbU1TcmF3a3ZPdzhPY21CNTBCdHE1bFdqc2lCeUd0NTMwd3dwVXZjRXFHZHVld29NMkY2VHcvUVdJbisrNnZEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.329/Codem_1.16.329_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FFcFJONjVWTE0xMURIb3YyQ3I2RHNOUm9ORW9XVnBhMmdOQng3cDYyMGZWMEVlRngreTVEV05zUGMvTytEMmEzOWJhM1FsYzRrcjAzOWxKVmpQUndRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyNzU2MzEyCWZpbGU6Q29kZW1fMS4xNi4zMzBfeDY0LXNldHVwLmV4ZQpEQVpYUFhxeENQWE80WlVtSUw5T1A5MnVnaEdESGxjK2ZSSEM3VDVDcUlJOFdLKzhtME94QStjaS9rOWVTUDllKzBwT1YxK2NidTNkODJIb3J3QkFEZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.330/Codem_1.16.330_x64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1RoSERSWDJTYVZ4U2l6VGlPSnB5OHoxeU44bk9sc25YdTBQWXBkZnVQRGwzWjBQeC9qRUZkRFJ2U3pKUTZPZDNaQXdrRjh2SmFLZks4Uk5oM3NSQmdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMzk4Nzk3CWZpbGU6Q29kZW1fMS4xNi4zMjlfeDY0LXNldHVwLmV4ZQpOdjdvY3lLV25tc0xMR3ZKSXpkTUdVbU1TcmF3a3ZPdzhPY21CNTBCdHE1bFdqc2lCeUd0NTMwd3dwVXZjRXFHZHVld29NMkY2VHcvUVdJbisrNnZEQT09Cg==",
-      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.329/Codem_1.16.329_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRU0ZNUEhBSWRqV1FFcFJONjVWTE0xMURIb3YyQ3I2RHNOUm9ORW9XVnBhMmdOQng3cDYyMGZWMEVlRngreTVEV05zUGMvTytEMmEzOWJhM1FsYzRrcjAzOWxKVmpQUndRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyNzU2MzEyCWZpbGU6Q29kZW1fMS4xNi4zMzBfeDY0LXNldHVwLmV4ZQpEQVpYUFhxeENQWE80WlVtSUw5T1A5MnVnaEdESGxjK2ZSSEM3VDVDcUlJOFdLKzhtME94QStjaS9rOWVTUDllKzBwT1YxK2NidTNkODJIb3J3QkFEZz09Cg==",
+      "url": "https://github.com/sdcxb/codem/releases/download/v1.16.330/Codem_1.16.330_x64-setup.exe"
     }
   }
 }
