@@ -1,4 +1,4 @@
-import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
+﻿import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
@@ -864,22 +864,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                       onClick={(e) => { e.stopPropagation(); handleNewSession(project.id); }}
                       title={S.sidebar.newChat[lang]}
                     >+</button>
-                    {project.id !== "__global__" && (
-                      <button
-                        className="sidebar-project-btn"
-                        onClick={(e) => { e.stopPropagation(); handleNewCoordinatorSession(project.id); }}
-                        title="新建协调者对话（项目级）"
-                        aria-label="新建协调者对话"
-                      ><Crown className="icon-xs" /></button>
-                    )}
-                    {project.id !== "__global__" && (
-                      <button
-                        className="sidebar-project-btn"
-                        onClick={(e) => { e.stopPropagation(); setOverviewProject({ path: project.path, name: project.name }); }}
-                        title="项目总览"
-                        aria-label="项目总览"
-                      ><LayoutDashboard className="icon-xs" /></button>
-                    )}
+
                     <div
                       className="sidebar-project-more-wrapper"
                       onMouseEnter={(e) => {
@@ -951,6 +936,18 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                             }
                           }}
                         >
+                          {project.id !== "__global__" && (
+                            <button onClick={(e) => { e.stopPropagation(); setHoverMenuProjectId(null); setClickedMenuProjectId(null); handleNewCoordinatorSession(project.id); }}>
+                              <Crown className="pm-menu-icon icon-sm" />
+                              <span>新建协调者对话</span>
+                            </button>
+                          )}
+                          {project.id !== "__global__" && (
+                            <button onClick={(e) => { e.stopPropagation(); setHoverMenuProjectId(null); setClickedMenuProjectId(null); setOverviewProject({ path: project.path, name: project.name }); }}>
+                              <LayoutDashboard className="pm-menu-icon icon-sm" />
+                              <span>项目总览</span>
+                            </button>
+                          )}
                           <button onClick={(e) => { e.stopPropagation(); updateProject(project.id, { pinned: !project.pinned }); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
                             <Pin size={14} className="pm-menu-icon" />
                             <span>{project.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}</span>
@@ -1299,3 +1296,5 @@ function SessionItem({
     </div>
   );
 }
+
+

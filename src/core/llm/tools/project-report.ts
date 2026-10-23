@@ -1,4 +1,4 @@
-/**
+﻿/**
  * project_report —— 让 thread 用**契约 JSON** 向项目协调者汇报。
  *
  * 为什么不是让模型“在聊天里说做完了”：协调者不读 thread 聊天记录；
@@ -37,7 +37,7 @@ Report fields:
 - summary: <=300 chars
 - changes: [{ path, kind? }]
 - evidence: [{ kind: log|command|file, ref, note? }]
-- gates: [{ id, passed, verified_by: command|manual|none, evidence_ref? }]
+- gates: [{ id, passed, verified_by: command|manual|none, evidence_ref?, command? }]
 - blocking: { question, options: string[], default }
 - supersedes / conflict / resolution (optional)`,
     parameters: {
@@ -75,6 +75,7 @@ Report fields:
               passed: { type: "boolean" },
               verified_by: { type: "string", enum: ["command", "manual", "none"] },
               evidence_ref: { type: "string" },
+              command: { type: "string", description: "Re-runnable command for this gate (required for done across restarts)" },
             },
             required: ["id", "passed", "verified_by"],
           },
@@ -158,3 +159,4 @@ Report fields:
     },
   };
 }
+

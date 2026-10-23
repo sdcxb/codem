@@ -1,4 +1,4 @@
-/* ========== Custom Fonts ========== */
+﻿/* ========== Custom Fonts ========== */
 /* 第 35 波：这确实是**可变字体**（fvar 轴 wght 200–700 + BEVL 1–100，18 个具名实例），
    所以 --weight-* 的 560/620 细档是真实生效的，不是靠浏览器取整。
    `font-weight` 声明改成真实轴范围 200–700：以前写 100 900 会让浏览器在 700 以上
@@ -1717,7 +1717,7 @@ flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: var(--space-2) var(--space-6) var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-4);
 }
 
 .sidebar-projects-section .sidebar-projects {
@@ -1734,7 +1734,7 @@ flex-shrink: 0;
 
 /* ========== Sidebar Projects ========== */
 .sidebar-projects {
-  padding: 0 var(--space-6);
+  padding: 0;
 }
 
 
@@ -1747,11 +1747,12 @@ flex-shrink: 0;
 }
 
 .sidebar-project-header {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex-shrink: 0;
-  padding: var(--space-4) var(--space-4);
+  padding: var(--space-2) var(--space-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-secondary);
@@ -1819,6 +1820,10 @@ flex-shrink: 0;
 
 .sidebar-project-btn {
   opacity: 0;
+  position: absolute;
+  top: 50%;
+  right: calc(var(--space-2) + 28px);
+  transform: translateY(-50%);
   /* 第 168 轮：22 → **24×24**（WCAG 2.5.8 的下限）。第 166 轮把同一族的 .sidebar-section-btn
      提到 24 时漏了这一族 —— 装机实测它们仍是 22×22。行高 30px，24 的盒子放得下。 */
   width: 24px;
@@ -1878,7 +1883,15 @@ flex-shrink: 0;
 }
 
 .sidebar-project-more-wrapper {
-  position: relative;
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
 }
 
 /* 外观统一走 .popover-shell（Sidebar 项目菜单） */
@@ -21493,4 +21506,7 @@ html[data-contrast="high"] {
 }
 
 /* ===== CSS-CHECKUP-END ===== */
+
+
+
 
