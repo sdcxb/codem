@@ -346,9 +346,10 @@ describe("XSESS-4 源码级同源守卫（按锚点取段，防后人回退）",
 
   /** 去掉注释（避免"注释里提到 addMessage"造成假阳性） */
 
-  /** 6 处早退各自的**内容锚点**（每条都在 `safeAddMessage({...})` 的正文里） */
+  /** 7 处早退各自的**内容锚点**（每条都在 `safeAddMessage({...})` 的正文里） */
   const ANCHORS = [
     "这个会话已有一轮正在执行中",
+    "busy-limit-",
     "LLM Engine 未初始化",
     "MiMo auth not found",
     // 取到 `\n\nDebug` 为止：同一段前面还有一条文本相同的 `console.warn`（日志，不是消息）
@@ -357,7 +358,7 @@ describe("XSESS-4 源码级同源守卫（按锚点取段，防后人回退）",
     "工作树已创建",
   ];
 
-  it("XSESS-4a: 前导段里 0 处裸 addMessage，6 处早退一律 safeAddMessage", () => {
+  it("XSESS-4a: 前导段里 0 处裸 addMessage，7 处早退一律 safeAddMessage", () => {
     const code = stripComments(preamble());
     /*
      * "裸"的定义：**任何**不是 `safeAddMessage` 的 `addMessage(...)` 调用 ——
@@ -372,10 +373,10 @@ describe("XSESS-4 源码级同源守卫（按锚点取段，防后人回退）",
     ).toEqual([]);
 
     const safeCalls = [...code.matchAll(/safeAddMessage\s*\(\{/g)].length;
-    expect(safeCalls, "6 处早退一处都不许少（删掉一处也是丢信息）").toBe(ANCHORS.length);
+    expect(safeCalls, "7 处早退一处都不许少（删掉一处也是丢信息）").toBe(ANCHORS.length);
   });
 
-  it("XSESS-4b: 6 个锚点各自紧邻的调用是 safeAddMessage（逐条取段，不用「文件里包含某字符串」）", () => {
+  it("XSESS-4b: 7 个锚点各自紧邻的调用是 safeAddMessage（逐条取段，不用「文件里包含某字符串」）", () => {
     const code = stripComments(preamble());
     for (const anchor of ANCHORS) {
       const at = code.indexOf(anchor);

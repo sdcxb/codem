@@ -134,32 +134,32 @@ class TimerEngine {
   }
 
   private fire(trigger: AutomationTrigger): void {
-    // Check cooldown (debounce)
-    if (trigger.cooldownMs && trigger.lastTriggered) {
-      const elapsed = Date.now() - trigger.lastTriggered;
-      if (elapsed < trigger.cooldownMs) return;
-    }
-    // Update last triggered
-    updateTrigger(trigger.id, { lastTriggered: Date.now() });
-    // Log to history
+    /*
+     * timer 闭包捕获的是 start 时的 trigger 快照，`lastTriggered` 永远停在旧值；
+     * 直接拿它判冷却会让 cooldown 形同虚设（真机：同一个 trigger 15s 内建了两个会话）。
+     * 每次触发都从最新配置取一次。
+     */
+    const latest = getAutomationConfig().triggers.find((t) => t.id === trigger.id) ?? trigger;
+    const now = Date.now();
+    if (latest.cooldownMs && latest.lastTriggered && now - latest.lastTriggered < latest.cooldownMs) return;
+    updateTrigger(latest.id, { lastTriggered: now });
     addTriggerHistory({
-      triggerId: trigger.id,
-      triggerName: trigger.name,
-      timestamp: Date.now(),
-      message: trigger.message,
+      triggerId: latest.id,
+      triggerName: latest.name,
+      timestamp: now,
+      message: latest.message,
     });
-    // Write to Inbox
     try {
       getInboxManager().add({
         category: "automation",
-        title: `自动化触发: ${trigger.name}`,
-        body: trigger.message.substring(0, 200),
+        title: `自动化触发: ${latest.name}`,
+        body: latest.message.substring(0, 200),
         sourceType: "automation",
-        sourceId: trigger.id,
+        sourceId: latest.id,
         priority: "low",
       });
     } catch {}
-    this.onTrigger?.(trigger);
+    this.onTrigger?.(latest);
   }
 
   refresh(): void {

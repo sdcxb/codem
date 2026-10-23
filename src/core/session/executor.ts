@@ -90,6 +90,26 @@ const activeExecutions = new Map<string, AbortController>();
  * ⚠️ 登记表里存的 controller 只是"忙碌"标记：前台的中止仍然走
  * `abortControllersRef` + `engineRef.current.abortSession(session.id)`（既有路径不变）。
  */
+/** 当前真正在跑的会话数（前台 + 后台）。 */
+export function getActiveExecutionCount(): number {
+  return activeExecutions.size;
+}
+
+/**
+ * 机器感知的并发上限：并发不是越多越好。
+ * 8 核以下 1 个、8–15 核 2 个、16 核以上 3 个；内存 <=4GB 一律 1 个。
+ * 这是硬上限，超出的回合会被拒绝并提示，不会把机器压死。
+ */
+export function getConcurrencyLimit(): number {
+  const nav = typeof navigator !== "undefined" ? navigator : undefined;
+  const cores = nav?.hardwareConcurrency ?? 4;
+  const mem = (nav as (Navigator & { deviceMemory?: number }) | undefined)?.deviceMemory ?? 8;
+  if (mem <= 4) return 1;
+  if (cores >= 16) return 3;
+  if (cores >= 8) return 2;
+  return 1;
+}
+
 export function startSessionExecution(sessionId: string): void {
   if (activeExecutions.has(sessionId)) return;
   activeExecutions.set(sessionId, new AbortController());

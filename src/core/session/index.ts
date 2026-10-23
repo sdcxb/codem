@@ -50,6 +50,8 @@ export {
   isSessionExecuting,
   startSessionExecution,
   endSessionExecution,
+  getActiveExecutionCount,
+  getConcurrencyLimit,
   cancelSessionExecution,
   processPendingDelegations,
   type ExecuteSessionTurnParams,

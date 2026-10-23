@@ -305,7 +305,7 @@ import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
 import { loadInstalledSkills } from "./core/skill/installer";
-import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting, startSessionExecution, endSessionExecution } from "./core/session";
+import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting, startSessionExecution, endSessionExecution, getActiveExecutionCount, getConcurrencyLimit } from "./core/session";
 import { getSession as getStoredSession } from "./core/storage/session";
 import { getProject as getStoredProject } from "./core/storage/project";
 // 大富翁小游戏 — 懒加载
@@ -314,6 +314,7 @@ import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
 import type { Message, MessageAttachment, ToolCall } from "./store";
 import { useProjectStore } from "./core/store";
+import { registerSessionAbort, unregisterSessionAbort } from "./core/session-abort-registry";
 import { setGlobalCwd } from "./utils/file-link";
 import { loadAppIdentity } from "./core/config/loader";
 import { AppIdentity, type Session } from "./core/types";
@@ -3745,6 +3746,20 @@ if (!session) {
       });
       return;
     }
+    const activeCount = getActiveExecutionCount();
+    const concurrencyLimit = getConcurrencyLimit();
+    if (activeCount >= concurrencyLimit) {
+      const reason = `同时运行的回合已达上限（${activeCount}/${concurrencyLimit}）。为避免拖垮电脑，请等一个回合结束再发。`;
+      reportActionFailure("app.concurrency", new Error(reason), reason);
+      safeAddMessage({
+        id: `busy-limit-${Date.now()}`,
+        role: "system",
+        content: `[Error] ${reason}`,
+        timestamp: Date.now(),
+        status: "error",
+      });
+      return;
+    }
     startSessionExecution(session.id);
     try {
     const notebookIdForLoop = opts?.notebookId ?? activeNotebookId;
@@ -3927,6 +3942,7 @@ streamingSessionIdRef.current = session.id;
 console.log(`[runAgenticLoop] starting engine.process for session=${session.id}`);
 const sessionAbort = new AbortController();
 abortControllersRef.current.set(session.id, sessionAbort);
+registerSessionAbort(session.id, sessionAbort);
 
       // 事件级 idle 看门狗：仅当连续 WATCHDOG_IDLE_MS 无任何事件输出才触发。
       // 触发后 abort 该会话底层 LLM 调用并强制清理状态，让会话恢复可用。
@@ -4648,7 +4664,9 @@ useAppStore.getState().setSessionActive(session.id, false);
 resetWriteConfirmStats(session.id);
 }
 streamingSessionIdRef.current = null;
+const abortedController = abortControllersRef.current.get(session?.id || "");
 abortControllersRef.current.delete(session?.id || "");
+unregisterSessionAbort(session?.id || "", abortedController);
       // P0-1：回合结束时把 loop 自己那份落库（explicit 形态）——
       // 用户已经切走时，这一步就是"后台跑完的那轮消息"唯一的落库点
       persistLoopMessages();
