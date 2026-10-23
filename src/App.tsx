@@ -874,7 +874,7 @@ useEffect(() => {
             return;
           }
           setSettingJSON(MAINT_LAST_KEY, Date.now());
-          await new Promise((r) => setTimeout(r, 8000));
+          await new Promise((r) => setTimeout(r, 30000));
           const { runDatabaseMaintenance } = await import("./core/storage/maintenance");
           performance.mark('maint:start');
           await runDatabaseMaintenance();
@@ -6245,6 +6245,7 @@ onClose={() => setCitationViewer(null)}
 }
 
 export default App;
+
 
 
 
