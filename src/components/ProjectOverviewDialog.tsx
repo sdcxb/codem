@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "./ui/portal";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, RefreshCw, X } from "lucide-react";
 import { Spinner } from "./ui/Spinner";
-import { buildProjectOverview, verifyProjectGates, resolveThreadDecision, type ProjectOverview, type OverviewBucket } from "../core/project/coordinator";
+import { buildProjectOverview, verifyProjectGates, resolveThreadDecision, syncPullRequests, type ProjectOverview, type OverviewBucket } from "../core/project/coordinator";
 import { confirmDialog } from "../core/ui/native-dialog";
 
 const BUCKETS: Array<{ id: OverviewBucket; zh: string; en: string; color: string; icon: typeof Clock3 }> = [
@@ -25,6 +25,7 @@ export function ProjectOverviewDialog({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [syncingPr, setSyncingPr] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -44,6 +45,19 @@ export function ProjectOverviewDialog({
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
+    }
+  };
+
+  const syncPr = async () => {
+    setSyncingPr(true);
+    setError(null);
+    try {
+      await syncPullRequests(projectPath);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setSyncingPr(false);
     }
   };
 
@@ -86,6 +100,9 @@ export function ProjectOverviewDialog({
             <div style={{ fontSize: "var(--fs-lg, 16px)", fontWeight: 600 }}>项目总览 · {projectName}</div>
             <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--text-muted, #999)" }}>只读 .codem/project 的项目状态；不读 thread 聊天记录</div>
           </div>
+          <button aria-label="同步 PR" title="同步 PR" disabled={syncingPr} onClick={() => void syncPr()} style={{ background: "none", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", cursor: "pointer", padding: "3px 8px", fontSize: "var(--fs-xs)" }}>
+            {syncingPr ? "同步中…" : "同步 PR"}
+          </button>
           <button aria-label="重验 gate" title="重验 gate" disabled={verifying} onClick={() => void reverify()} style={{ background: "none", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", cursor: "pointer", padding: "3px 8px", fontSize: "var(--fs-xs)" }}>
             {verifying ? "重验中…" : "重验 gate"}
           </button>
@@ -143,19 +160,23 @@ export function ProjectOverviewDialog({
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {items.map((t) => (
-                        <div key={t.sessionId} style={{ border: "1px solid var(--border-primary, #333)", borderRadius: "var(--radius-md)", padding: "7px 10px" }}>
+                        <div key={t.sessionId} className="project-overview-thread">
                           <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
                             <span style={{ fontWeight: 600, fontSize: "var(--fs-sm, 12px)" }}>{t.title}</span>
                             <span style={{ fontSize: "var(--fs-xs, 10px)", color: "var(--text-muted, #888)" }}>{t.status} · {t.sessionId}</span>
                           </div>
-                          {t.latestReport?.pull_request && (
-                            <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--text-secondary, #bbb)", marginTop: 2 }}>
-                              PR {t.latestReport.pull_request.number ? `#${t.latestReport.pull_request.number} ` : ""}
-                              {t.latestReport.pull_request.state}
-                              {t.latestReport.pull_request.checks ? ` · CI ${t.latestReport.pull_request.checks}` : ""}
-                              {t.latestReport.pull_request.url ? ` · ${t.latestReport.pull_request.url}` : ""}
-                            </div>
-                          )}
+                          {(t.pullRequestSnapshot || t.latestReport?.pull_request) && (() => {
+                            const pr = t.pullRequestSnapshot ?? t.latestReport!.pull_request!;
+                            const prError = "error" in pr ? pr.error : undefined;
+                            return (
+                              <div style={{ fontSize: "var(--fs-xs, 11px)", color: prError ? "var(--error, #ef4444)" : "var(--text-secondary, #bbb)", marginTop: 2 }}>
+                                PR {pr.number ? `#${pr.number} ` : ""}{pr.state}
+                                {pr.checks ? ` · CI ${pr.checks}` : ""}
+                                {prError ? ` · 同步失败：${prError}` : ""}
+                                {pr.url ? ` · ${pr.url}` : ""}
+                              </div>
+                            );
+                          })()}
                           {t.latestReport?.blocking && (
                             <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--warning, #d97706)", marginTop: 2 }}>
                               等你：{t.latestReport.blocking.question}（默认：{t.latestReport.blocking.default}）

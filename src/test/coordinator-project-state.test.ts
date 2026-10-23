@@ -31,6 +31,7 @@ import {
   removeThread,
   resolveThreadDecision,
   readDecisions,
+  syncPullRequests,
   listReports,
   registerThread,
   projectStatePath,
@@ -280,6 +281,37 @@ describe("审批动作", () => {
     expect(overview.counts.working).toBe(1);
     const context = await buildCoordinatorContext(PROJECT, "coord-1");
     expect(context).toContain("选 A 还是 B？ → B");
+  });
+});
+
+describe("PR/CI 同步", () => {
+  it("PR-1：gh 返回成功/挂起/失败时映射成 passing/pending/failing", async () => {
+    const fileApi = await import("../core/file-api");
+    await setCoordinatorSession(PROJECT, "coord-1");
+    await writeThreadReport(PROJECT, {
+      report_id: "r-pr", thread_id: "t-pr", status: "done", summary: "PR 已开",
+      evidence: [{ kind: "log", ref: "logs/pr.log" }],
+      pull_request: { number: 12, state: "open", checks: "pending" },
+    }, { title: "T PR" });
+    files.set(PROJECT + "/logs/pr.log", "ok");
+
+    vi.mocked(fileApi.executeCommand).mockResolvedValueOnce({
+      stdout: JSON.stringify({ state: "OPEN", url: "https://github.com/x/y/pull/12", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] }),
+      stderr: "", exitCode: 0,
+    });
+    let snaps = await syncPullRequests(PROJECT);
+    expect(snaps[0]).toMatchObject({ state: "open", checks: "passing" });
+
+    vi.mocked(fileApi.executeCommand).mockResolvedValueOnce({
+      stdout: JSON.stringify({ state: "OPEN", statusCheckRollup: [{ status: "IN_PROGRESS" }] }),
+      stderr: "", exitCode: 0,
+    });
+    snaps = await syncPullRequests(PROJECT);
+    expect(snaps[0].checks).toBe("pending");
+
+    vi.mocked(fileApi.executeCommand).mockResolvedValueOnce({ stdout: "", stderr: "gh: not found", exitCode: 1 });
+    snaps = await syncPullRequests(PROJECT);
+    expect(snaps[0].error).toContain("gh: not found");
   });
 });
 })

@@ -57,11 +57,12 @@
 - 选择必须在报告 options 里；同一报告幂等，不重复记；
 - 协调者上下文注入最近 8 条「问题 → 选择」。
 
-### 7. PR/CI 收口（本地记录）
+### 7. PR/CI 收口
 
 - 报告新增可选 `pull_request`（number/url/title/state/checks）；
-- Overview 显示 PR 状态与 CI 结果；
-- 这是**状态收口**，不是 GitHub 自动操作：不创建 PR、不修 CI、不自动合并。
+- Overview「同步 PR」按钮调用 `gh pr view <url|number> --json state,statusCheckRollup,title,url`；
+- 同步结果写 `pull-requests.json`，Overview 显示 state / CI；gh 不可用或未登录时把错误写进快照，不假装成功；
+- 仍然**不创建 PR、不修 CI、不自动合并**。
 
 ### 8. 项目指令修复
 
@@ -69,7 +70,13 @@
 - 已在 `buildSystemPromptAsync` 中把 project 层并入 `projectInstructions`（AGENTS.md 保留）；
 - 真机：写入「项目代号：灯塔」后，协调者 prompt 36,145 字符包含该句。
 
-### 9. 项目 Overview
+### 9. 项目级自动化
+
+- `AutomationTrigger` 新增 `projectId`：触发时先切到目标项目，再建会话；
+- 自动化会话在协调者项目里会自动注册为 thread；
+- 任务中心表单新增「项目（可选）」选择。
+
+### 10. 项目 Overview
 
 - `buildProjectOverview` 四态：等你 / 运行中 / 待评审 / 已完成；
 - 侧栏项目行「项目总览」打开弹窗，显示计数、thread、gate、坏报告与缺失证据；

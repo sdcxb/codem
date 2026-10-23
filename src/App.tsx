@@ -2030,6 +2030,12 @@ flushStreamBuffer(); // flush all on unmount
         if (config.triggers.length > 0) {
           startAutomationEngines((trigger) => {
             console.log(`[Automation] Triggered: ${trigger.name}`);
+            // 项目级自动化：trigger 指定 projectId 时先切项目，再建 thread。
+            if (trigger.projectId) {
+              const store = useProjectStore.getState();
+              const target = store.projects.find((p) => p.id === trigger.projectId);
+              if (target && store.currentProject?.id !== target.id) store.openProject(target.id);
+            }
             // Create a new session and send the trigger message
             const session = useProjectStore.getState().createSession(`🤖 ${trigger.name}`);
             if (session) {

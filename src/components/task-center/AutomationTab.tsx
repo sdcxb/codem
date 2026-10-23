@@ -21,6 +21,7 @@ import {
   type TriggerType,
 } from "../../core/automation/automation-manager";
 import { useLang } from "../../core/i18n/lang";
+import { useProjectStore } from "../../core/store";
 import { ISSUE_STATUS_META } from "./issue-status-meta";
 
 export function AutomationTab() {
@@ -29,6 +30,8 @@ export function AutomationTab() {
   const [triggers, setTriggers] = useState<AutomationTrigger[]>([]);
   const [editing, setEditing] = useState<Partial<AutomationTrigger> | null>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const allProjects = useProjectStore((s) => s.projects);
+  const projects = allProjects.filter((p) => p.path);
   // 暂停状态从模块读取（引擎是单例）：卸载重挂 / 切页签都不会与真实状态脱节
   const [enginesStopped, setEnginesStopped] = useState(() => isAutomationStopped());
 
@@ -223,6 +226,17 @@ export function AutomationTab() {
               <option value="file_watch">{zh ? "文件监听" : "File Watch"}</option>
               <option value="cron">{zh ? "Cron 定时" : "Cron Schedule"}</option>
               <option value="issue_status">{zh ? "Issue 状态变化" : "Issue Status Change"}</option>
+            </select>
+          </div>
+          <div className="tc-field-row">
+            <label className="tc-label">{zh ? "项目（可选）" : "Project (optional)"}</label>
+            <select
+              value={editing.projectId || ""}
+              onChange={(e) => setEditing({ ...editing, projectId: e.target.value || undefined })}
+              className="tc-field"
+            >
+              <option value="">{zh ? "当前项目" : "Current project"}</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div className="tc-field-row">

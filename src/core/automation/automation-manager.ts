@@ -37,6 +37,8 @@ export interface AutomationTrigger {
   issueStatusFilter?: string;
   /** issue_status: 监听的项目 ID（可选，留空 = 全局） */
   issueProjectId?: string;
+  /** 触发时切到哪个项目（可选；留空 = 当前项目） */
+  projectId?: string;
   /** 上次触发时间 */
   lastTriggered?: number;
 }

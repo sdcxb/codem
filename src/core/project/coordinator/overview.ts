@@ -1,4 +1,4 @@
-import { missingEvidenceRefs, readDecisions, readGateChecks, readProjectState, scanReports, type GateCheck, type ProjectDecision } from "./storage";
+import { missingEvidenceRefs, readDecisions, readGateChecks, readProjectState, readPullRequestSnapshots, scanReports, type GateCheck, type ProjectDecision, type PullRequestSnapshot } from "./storage";
 import type { ProjectThread, ThreadReport } from "./types";
 
 /**
@@ -16,6 +16,7 @@ export interface OverviewThread extends ProjectThread {
   missingEvidence: number;
   gateChecks: GateCheck[];
   decisions: ProjectDecision[];
+  pullRequestSnapshot?: PullRequestSnapshot;
 }
 
 export interface ProjectOverview {
@@ -54,7 +55,9 @@ export function bucketForThread(
 export async function buildProjectOverview(projectPath: string): Promise<ProjectOverview> {
   const [state, scan] = await Promise.all([readProjectState(projectPath), scanReports(projectPath)]);
   const byId = new Map(scan.valid.map((r) => [r.report_id, r] as const));
-  const [checks, decisions] = await Promise.all([readGateChecks(projectPath), readDecisions(projectPath)]);
+  const [checks, decisions, prSnapshots] = await Promise.all([
+    readGateChecks(projectPath), readDecisions(projectPath), readPullRequestSnapshots(projectPath),
+  ]);
   const threads: OverviewThread[] = [];
   let missingEvidence = 0;
   let unverifiedGates = 0;
@@ -75,6 +78,7 @@ export async function buildProjectOverview(projectPath: string): Promise<Project
       missingEvidence: missing.length,
       gateChecks: reportChecks,
       decisions: threadDecisions,
+      pullRequestSnapshot: latestReport ? prSnapshots.find((p) => p.reportId === latestReport.report_id) : undefined,
       bucket: bucketForThread(thread, latestReport, {
         missingEvidence: missing.length,
         gateChecks: reportChecks,

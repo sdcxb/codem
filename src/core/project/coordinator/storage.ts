@@ -365,6 +365,86 @@ export interface GateCheck {
   checkedAt: number;
 }
 
+export interface PullRequestSnapshot {
+  reportId: string;
+  threadId: string;
+  url?: string;
+  number?: number;
+  title?: string;
+  state: "draft" | "open" | "merged" | "closed";
+  checks: "pending" | "passing" | "failing" | "none";
+  fetchedAt: number;
+  error?: string;
+}
+
+export async function readPullRequestSnapshots(projectPath: string): Promise<PullRequestSnapshot[]> {
+  const parsed = await readJson<{ snapshots?: PullRequestSnapshot[] }>(projectStatePath(projectPath, "pull-requests.json"), projectPath);
+  return Array.isArray(parsed?.snapshots) ? parsed!.snapshots : [];
+}
+
+/**
+ * 用 gh CLI 同步报告里登记的 PR 状态/CI。
+ * 这不是自动创建/合并：只在用户点「同步 PR」时查询一次；没有 gh 或未登录时把错误写进快照，不假装成功。
+ */
+export async function syncPullRequests(projectPath: string, opts: { timeoutMs?: number } = {}): Promise<PullRequestSnapshot[]> {
+  const reports = await listReports(projectPath);
+  const latestByThread = new Map<string, ThreadReport>();
+  for (const r of reports) {
+    const prev = latestByThread.get(r.thread_id);
+    if (!prev || (r.timestamp ?? 0) >= (prev.timestamp ?? 0)) latestByThread.set(r.thread_id, r);
+  }
+  const snapshots: PullRequestSnapshot[] = [];
+  for (const report of latestByThread.values()) {
+    const pr = report.pull_request;
+    if (!pr) continue;
+    const ref = pr.url || (pr.number ? String(pr.number) : "");
+    const base: PullRequestSnapshot = {
+      reportId: report.report_id,
+      threadId: report.thread_id,
+      url: pr.url,
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      checks: pr.checks ?? "none",
+      fetchedAt: Date.now(),
+    };
+    if (!ref) {
+      snapshots.push({ ...base, error: "没有 PR URL 或 number" });
+      continue;
+    }
+    try {
+      const cmd = `gh pr view '${ref.replace(/'/g, "'\''")}' --json state,statusCheckRollup,title,url`;
+      const r = await fileApi.executeCommand(cmd, projectPath, opts.timeoutMs ?? 60000);
+      if (r.exitCode !== 0) {
+        snapshots.push({ ...base, error: (r.stderr || r.stdout || "gh 查询失败").trim().slice(0, 500) });
+        continue;
+      }
+      const data = JSON.parse(r.stdout) as {
+        state?: string; title?: string; url?: string;
+        statusCheckRollup?: Array<{ conclusion?: string; status?: string }>;
+      };
+      const rollup = data.statusCheckRollup ?? [];
+      const checks = rollup.length === 0 ? "none"
+        : rollup.some((c) => c.conclusion && !["SUCCESS", "NEUTRAL", "SKIPPED"].includes(c.conclusion)) ? "failing"
+        : rollup.some((c) => c.status && c.status !== "COMPLETED") ? "pending"
+        : "passing";
+      const state = (data.state || "").toLowerCase();
+      snapshots.push({
+        ...base,
+        url: data.url || base.url,
+        title: data.title || base.title,
+        state: ["draft", "open", "merged", "closed"].includes(state) ? state as PullRequestSnapshot["state"] : base.state,
+        checks,
+        fetchedAt: Date.now(),
+      });
+    } catch (e) {
+      snapshots.push({ ...base, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  await writeText(projectStatePath(projectPath, "pull-requests.json"), JSON.stringify({ snapshots }, null, 2) + String.fromCharCode(10), projectPath);
+  return snapshots;
+}
+
 export interface ProjectDecision {
   at: number;
   threadId: string;
