@@ -656,6 +656,14 @@ const DAY_LITERAL_EXCEPTIONS: DayLiteralException[] = [
       "两处都是裁剪水位线：遥测 keepTelemetryDays * 24h 与审计 AUDIT_RETENTION_DAYS * 24h —— retention",
   },
   {
+    file: "src/App.tsx",
+    literal: "24 * 60 * 60 * 1000",
+    occurrences: 1,
+    kind: "elapsed",
+    reason:
+      "启动维护的自动执行间隔（24h）：**经过时长**，不是按本地日历日分格；维护只需「距上次 ≥24h」",
+  },
+  {
     file: "src/plugins/library-ops/core/telemetry-adapter.ts",
     literal: "24 * 3600_000",
     occurrences: 2,
