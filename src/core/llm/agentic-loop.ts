@@ -69,6 +69,7 @@ import { evaluateWithSecurityMode } from "../permission/security-mode";
 import { FileChangeTracker } from "../environment/file-change-tracker";
 import { TranscriptCache } from "../storage/transcript-cache";
 import { tryAutoCommit } from "../environment/git-commit-service";
+import { filterToolDefsForSession } from "./tool-policy";
 
 // ========== Agentic Loop Types ==========
 export type LoopResult =
@@ -2324,7 +2325,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
       //   (matches Wegent's ChatContext._build_extra_tools has_attachments pattern)
       // P0-2: Use core definitions (non-deferred) + deferred hints to save tokens.
       // Deferred tools (like lsp) are loaded on-demand via tool_search.
-      const allToolDefs = this.tools.getCoreDefinitions();
+      const allToolDefs = filterToolDefsForSession(sessionId, this.tools.getCoreDefinitions());
       const deferredHints = this.tools.getDeferredDefinitions();
       const writeToolNames = new Set(["write", "edit", "multi_edit", "tts", "image_gen"]);
 

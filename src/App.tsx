@@ -315,6 +315,7 @@ import { useAppStore } from "./store";
 import type { Message, MessageAttachment, ToolCall } from "./store";
 import { useProjectStore } from "./core/store";
 import { registerSessionAbort, unregisterSessionAbort } from "./core/session-abort-registry";
+import { setSessionDisabledTools, clearSessionDisabledTools, THREAD_DISABLED_TOOLS } from "./core/llm/tool-policy";
 import { setGlobalCwd } from "./utils/file-link";
 import { loadAppIdentity } from "./core/config/loader";
 import { AppIdentity, type Session } from "./core/types";
@@ -3764,6 +3765,18 @@ if (!session) {
       });
       return;
     }
+    let threadToolPolicySet = false;
+    try {
+      const project = useProjectStore.getState().projects.find((p) => p.id === session.projectId);
+      if (project?.path) {
+        const { readProjectState } = await import("./core/project/coordinator/storage");
+        const state = await readProjectState(project.path);
+        if (state.coordinatorSessionId && state.coordinatorSessionId !== session.id) {
+          setSessionDisabledTools(session.id, THREAD_DISABLED_TOOLS);
+          threadToolPolicySet = true;
+        }
+      }
+    } catch { /* 非项目线程忽略 */ }
     startSessionExecution(session.id);
     try {
     const notebookIdForLoop = opts?.notebookId ?? activeNotebookId;
@@ -4723,6 +4736,7 @@ unregisterSessionAbort(session?.id || "", abortedController);
       }
     }
     } finally {
+      if (threadToolPolicySet) clearSessionDisabledTools(session.id);
       // 与入口的 startSessionExecution 成对：无论如何都要注销（见函数头 P1-I2 的说明）
       endSessionExecution(session.id);
     }
