@@ -367,8 +367,8 @@
       "patches": [
         {
           "file": "src/components/PluginManager.tsx",
-          "from": "      {(searchQuery.trim() === '' || FREE_MODEL_CARD_KEYWORDS.some(k => searchQuery.trim().toLowerCase().includes(k))) && (\n        <FreeModelPluginCard />\n      )}\n",
-          "to": ""
+          "from": "<FreeModelPluginCard key={plugin.name} compact",
+          "to": "<FreeModelPluginCard key={plugin.name}"
         }
       ],
       "tests": [

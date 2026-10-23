@@ -101,9 +101,10 @@ describe("OFM-HOST：免费模型插件的宿主接线棘轮", () => {
     expect(manager, "关键词要覆盖用户会搜的词（free / model / 免费 / 模型）").toMatch(
       /FREE_MODEL_CARD_KEYWORDS = \[[^\]]*"free"[^\]]*"model"[^\]]*"免费"[^\]]*"模型"/,
     );
-    /* 默认页签（非 market 分支）里也要渲染它 —— 渲染点至少两处（market + installed） */
-    const renders = manager.match(/<FreeModelPluginCard \/>/g) ?? [];
-    expect(renders.length, "卡片要在市场页与已安装页**各渲染一次**（否则默认页搜不到）").toBeGreaterThanOrEqual(2);
+    /* 新契约：已安装页渲染**紧凑入口**，完整控制面板只在详情弹层里渲染 */
+    expect(manager, "默认页要有紧凑入口（可搜索、不占大面板）").toMatch(/<FreeModelPluginCard[^>]* compact/);
+    expect(manager, "详情弹层要渲染完整控制面板").toMatch(/<FreeModelPluginCard \/>/);
+    expect(manager, "点击紧凑入口应打开详情").toContain("setFreeModelDetail(true)");
 
     const card = readFileSync(path.join(root, "src/components/FreeModelPluginCard.tsx"), "utf8");
     expect(card, "卡片打开时也要暖一次模型缓存（用户点开插件管理就该恢复显示）").toContain(

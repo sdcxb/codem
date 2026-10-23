@@ -38,3 +38,12 @@ Codem 的「插件管理 → 已安装」里新增了一张 **DSH Ops / DSH 已�
 ```
 
 停用只影响 Codem 的外部插件管理状态；dsh-ops 的代码从未被注入 Codem 运行时，所以不会影响 Codem 其他功能。
+
+
+## 插件详情页
+
+所有插件卡点击后都会弹出统一详情页：名称、版本、服务标签、依赖、被依赖、提供的服务、风险、启停按钮。免费模型插件的完整控制面板只放在它自己的详情页里；列表里只保留一张和其他插件同级的紧凑卡片。
+
+![插件列表（紧凑入口）](project-mode/images/09-plugin-list-compact.png)
+
+![插件详情页](project-mode/images/10-plugin-detail.png)

@@ -38,7 +38,10 @@ const NODE_VIA_LABEL: Record<"bundled" | "system" | "portable", string> = {
   portable: "插件自己下载的",
 };
 
-export function FreeModelPluginCard() {
+export function FreeModelPluginCard({
+  compact = false,
+  onOpenDetail,
+}: { compact?: boolean; onOpenDetail?: () => void } = {}) {
   const [status, setStatus] = useState<PluginStatus | null>(null);
   /* 第 215 波：可用性检测的进度/结论文案（null=没在检测也没结论） */
   const [probe, setProbe] = useState<string | null>(null);
@@ -171,6 +174,31 @@ export function FreeModelPluginCard() {
             : "已启用，尚未启动";
 
   const healthy = !!status.health;
+
+  if (compact) {
+    return (
+      <div
+        className={`market-skill-card ofm-compact-card ${status.enabled ? "" : "is-off"}`}
+        role="button"
+        tabIndex={0}
+        onClick={onOpenDetail}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpenDetail?.(); }}
+      >
+        <div className="market-skill-card-header">
+          <span className="market-skill-icon"><PanelIcons.plugins /></span>
+          <div className="market-skill-card-title">
+            <span className="market-skill-name">{freeModelPlugin.name}</span>
+            <span className="ofm-compact-badge">外部服务</span>
+          </div>
+          <span className="ofm-compact-more">查看详情</span>
+        </div>
+        <div className="market-skill-desc">独立本地服务：免费模型列表与起停控制，点击查看详情。</div>
+        <div className="market-skill-card-footer">
+          <span className="hint-sm">{stateLabel}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="ofm-card">

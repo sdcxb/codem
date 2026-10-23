@@ -54,6 +54,20 @@ interface PluginManagerProps {
  */
 const FREE_MODEL_CARD_KEYWORDS = ["free", "model", "免费", "模型", "our free model", "插件"];
 
+/** 免费模型插件在「已安装」网格里的合成条目（它不在 cordis 注册表里）。 */
+const FREE_MODEL_PLUGIN_STUB = {
+  name: "our-free-model",
+  description: "独立本地服务：免费模型列表与起停控制；点击查看详情。",
+  version: "",
+  status: "enabled",
+  category: "provider",
+  tags: ["provider"],
+  keywords: FREE_MODEL_CARD_KEYWORDS,
+  core: false,
+  dependencies: [],
+  dependents: [],
+};
+
 const TAG_CONFIG: Record<PluginTag, { label: string; variant: 'default' | 'success' | 'warning' | 'info' | 'muted' }> = {
   service:   { label: '服务定义', variant: 'info' },
   provider:  { label: '服务实现', variant: 'success' },
@@ -273,7 +287,7 @@ function PluginCard({
           {plugin.author && <span className="hint-sm">@{plugin.author}</span>}
           {plugin.hot && <Badge variant="warning">可热重载</Badge>}
         </div>
-        <div className="plugin-mgr-switch-row">
+        <div className="plugin-mgr-switch-row" onClick={(e) => e.stopPropagation()}>
           {plugin.hot && isEnabled && (
             <button
               className="market-skill-link-btn plugin-mgr-hot-btn"
@@ -382,6 +396,95 @@ function CascadeConfirmDialog({
 }
 
 /** 插件管理器主组件 */
+/**
+ * 插件详情弹层：点击任意插件卡打开。
+ * 所有插件共用同一个详情页；FreeModel 的控制面板作为它的详情内容挂在这里，
+ * 不再在列表里占一大块。
+ */
+function PluginDetailDialog({
+  plugin,
+  zh,
+  onClose,
+  onToggle,
+  onRestart,
+}: {
+  plugin: any
+  zh: boolean
+  onClose: () => void
+  onToggle: (name: string) => void
+  onRestart: (name: string) => void
+}) {
+  const isCore = plugin.core || plugin.locked
+  const tags: PluginTag[] = plugin.tags || []
+  return (
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
+      <div
+        className="modal-editor plugin-detail-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${plugin.name} 详情`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="plugin-detail-head">
+          <span className="market-skill-icon">{plugin.icon || <CommonIcons.package />}</span>
+          <div className="plugin-detail-title">
+            <strong>{plugin.name}</strong>
+            {plugin.version && <Badge variant="muted">v{plugin.version}</Badge>}
+            {isCore && <Badge variant="info">{zh ? '核心' : 'Core'}</Badge>}
+          </div>
+          <button className="plugin-detail-close" onClick={onClose} aria-label={zh ? '关闭详情' : 'Close details'}>
+            <ActionIcons.close />
+          </button>
+        </div>
+        <p className="plugin-detail-desc">{plugin.description || (zh ? '暂无描述' : 'No description')}</p>
+        {tags.length > 0 && (
+          <div className="plugin-detail-tags">
+            {tags.map((tag) => <Badge key={tag} variant={TAG_CONFIG[tag]?.variant ?? 'default'}>{TAG_CONFIG[tag]?.label ?? tag}</Badge>)}
+          </div>
+        )}
+        {plugin.riskLevel && plugin.riskLevel !== 'safe' && (
+          <div className={`plugin-detail-risk ${plugin.riskLevel === 'danger' ? 'is-danger' : 'is-warn'}`}>
+            {RISK_LEVEL_CONFIG[plugin.riskLevel].icon} {RISK_LEVEL_CONFIG[plugin.riskLevel].label}
+            {plugin.riskDescription ? ` — ${plugin.riskDescription}` : ''}
+          </div>
+        )}
+        {plugin.dependencies?.length > 0 && (
+          <div className="plugin-detail-section">
+            <div className="plugin-detail-label">{zh ? '依赖的插件' : 'Dependencies'}</div>
+            <div className="plugin-detail-chips">{plugin.dependencies.map((d: string) => <Badge key={d} variant="info">{d}</Badge>)}</div>
+          </div>
+        )}
+        {plugin.dependents?.length > 0 && (
+          <div className="plugin-detail-section">
+            <div className="plugin-detail-label">{zh ? '被以下插件依赖' : 'Dependents'}</div>
+            <div className="plugin-detail-chips">{plugin.dependents.map((d: string) => <Badge key={d} variant="warning">{d}</Badge>)}</div>
+          </div>
+        )}
+        {(plugin.provides?.length > 0 || plugin.inject?.length > 0) && (
+          <div className="plugin-detail-section">
+            <div className="plugin-detail-label">{zh ? '服务' : 'Services'}</div>
+            <div className="plugin-detail-chips">
+              {(plugin.provides ?? []).map((s: string) => <Badge key={`p-${s}`} variant="success">提供 {s}</Badge>)}
+              {(plugin.inject ?? []).map((s: string) => <Badge key={`i-${s}`} variant="muted">消费 {s}</Badge>)}
+            </div>
+          </div>
+        )}
+        <div className="plugin-detail-actions">
+          {!isCore && (
+            <button className="plugin-detail-btn" onClick={() => onToggle(plugin.name)}>
+              {plugin.status === 'enabled' ? (zh ? '停用' : 'Disable') : (zh ? '启用' : 'Enable')}
+            </button>
+          )}
+          {plugin.status === 'error' && (
+            <button className="plugin-detail-btn" onClick={() => onRestart(plugin.name)}>{zh ? '重启' : 'Restart'}</button>
+          )}
+          <span className="plugin-detail-status">{plugin.status}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function PluginManager({ onClose }: PluginManagerProps) {
   const lang = useLang()
   const zh = lang === 'zh'
@@ -402,6 +505,8 @@ export function PluginManager({ onClose }: PluginManagerProps) {
   const [confirmRequest, setConfirmRequest] = useState<DisableConfirmationRequest | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'warning' } | null>(null)
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null)
+  const [detailPlugin, setDetailPlugin] = useState<any | null>(null)
+  const [freeModelDetail, setFreeModelDetail] = useState(false)
   const [tab, setTab] = useState<'installed' | 'market'>('installed')
 
   // 初始化 PluginManagerService — 带重试机制，等待 Cordis Context 就绪
@@ -659,12 +764,15 @@ export function PluginManager({ onClose }: PluginManagerProps) {
     if (activeCategory !== 'all') {
       list = list.filter(p => (p.category || 'core') === activeCategory)
     }
+    const freeMatch = !searchQuery || FREE_MODEL_CARD_KEYWORDS.some(k => searchQuery.toLowerCase().includes(k));
+    const freeCategory = activeCategory === 'all' || activeCategory === 'provider';
+    if (freeMatch && freeCategory) list = [FREE_MODEL_PLUGIN_STUB, ...list];
     return list
   }, [manager, searchQuery, activeCategory, stateVersion])
 
   // 统计数量
-  const totalCount = manager?.getPluginStates().length || 0
-  const enabledCount = manager?.getPluginStates().filter(p => p.status === 'enabled').length || 0
+  const totalCount = (manager?.getPluginStates().length || 0) + 1
+  const enabledCount = (manager?.getPluginStates().filter(p => p.status === 'enabled').length || 0) + 1
 
   return (
     <div className="skill-manager">
@@ -702,7 +810,6 @@ export function PluginManager({ onClose }: PluginManagerProps) {
             它**不是** cordis 插件（不受这里的启用/禁用注册表管），所以单独一张卡片、单独三个动作 ——
             用户的要求就是"独立存在、可开启/暂停/删除、不影响 codem"。
           */}
-          <FreeModelPluginCard />
           <PluginMarketTab
             manager={manager}
             stateVersion={stateVersion}
@@ -741,10 +848,6 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       */}
       {(searchQuery.trim() === '' || /dsh|ops|插件|plugin/i.test(searchQuery)) && (
         <DshExternalPluginsCard zh={zh} notify={(msg, type) => setToast({ msg, type: type ?? 'info' })} />
-      )}
-
-      {(searchQuery.trim() === '' || FREE_MODEL_CARD_KEYWORDS.some(k => searchQuery.trim().toLowerCase().includes(k))) && (
-        <FreeModelPluginCard />
       )}
 
       {/* 分类过滤（动态：只显示实际存在插件的分类 + 全部，避免恒 0 的空分类按钮） */}
@@ -792,7 +895,9 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           moreLabel={(rest, next) =>
             zh ? `再显示 ${next} 个插件（还有 ${rest} 个）` : `Show ${next} more plugins (${rest} left)`
           }
-          renderItem={(plugin) => (
+          renderItem={(plugin) => plugin.name === "our-free-model" ? (
+            <FreeModelPluginCard key={plugin.name} compact onOpenDetail={() => setFreeModelDetail(true)} />
+          ) : (
             <PluginCard
               key={plugin.name}
               plugin={plugin}
@@ -806,8 +911,8 @@ export function PluginManager({ onClose }: PluginManagerProps) {
                   type: result.success ? 'success' : 'error',
                 })
               }}
-              isSelected={selectedPlugin === plugin.name}
-              onSelect={() => setSelectedPlugin(selectedPlugin === plugin.name ? null : plugin.name)}
+              isSelected={false}
+              onSelect={() => setDetailPlugin(plugin)}
             />
           )}
         />
@@ -827,6 +932,30 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           onConfirm={handleConfirmCascade}
           onCancel={handleCancelCascade}
         />
+      )}
+
+      {detailPlugin && (
+        <PluginDetailDialog
+          plugin={detailPlugin}
+          zh={zh}
+          onClose={() => setDetailPlugin(null)}
+          onToggle={(name) => { onToggle(name); setDetailPlugin(null) }}
+          onRestart={(name) => { onRestart(name) }}
+        />
+      )}
+
+      {freeModelDetail && (
+        <div className="modal-overlay" role="presentation" onClick={() => setFreeModelDetail(false)}>
+          <div className="modal-editor plugin-detail-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="plugin-detail-head">
+              <strong>{zh ? 'Our Free Model · 详情' : 'Our Free Model · Details'}</strong>
+              <button className="plugin-detail-close" onClick={() => setFreeModelDetail(false)} aria-label={zh ? '关闭详情' : 'Close details'}>
+                <ActionIcons.close />
+              </button>
+            </div>
+            <FreeModelPluginCard />
+          </div>
+        </div>
       )}
 
       {/* Toast 消息 */}
