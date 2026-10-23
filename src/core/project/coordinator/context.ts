@@ -4,6 +4,7 @@ import {
   readProjectState,
   readMemoryIndex,
   readGateChecks,
+  readDecisions,
   missingEvidenceRefs,
   scanReports,
 } from "./storage";
@@ -24,12 +25,13 @@ export async function buildCoordinatorContext(
   const state = await readProjectState(projectPath);
   if (!state.coordinatorSessionId || state.coordinatorSessionId !== sessionId) return "";
 
-  const [brief, scan, gates, memoryIndex, gateChecks] = await Promise.all([
+  const [brief, scan, gates, memoryIndex, gateChecks, decisions] = await Promise.all([
     readBrief(projectPath),
     scanReports(projectPath),
     readGates(projectPath),
     readMemoryIndex(projectPath),
     readGateChecks(projectPath),
+    readDecisions(projectPath),
   ]);
   const reports = scan.valid;
 
@@ -56,6 +58,9 @@ export async function buildCoordinatorContext(
     reportLines.push(`- ${r.report_id}｜${r.thread_id}｜${r.status}｜${r.summary}${gatesText}${conflict}${evidenceText}${checkText ? ` · gate-check: ${checkText}` : ""}`);
   }
   const reportText = reportLines.length ? reportLines.join(String.fromCharCode(10)) : "- （还没有报告）";
+  const decisionText = decisions.length
+    ? decisions.slice(-8).map((d) => `- ${d.threadId}｜${d.question} → ${d.choice}`).join(String.fromCharCode(10))
+    : "- （还没有用户拍板记录）";
 
   const gateLines = gates.length
     ? gates.map((g) => `- ${g.id}｜${g.title}｜${g.passed ? "pass" : "fail"}｜${g.verified_by}`).join("\n")
@@ -75,6 +80,8 @@ export async function buildCoordinatorContext(
     `### thread registry（${state.threads.length} 个）\n${threadLines}`,
     "",
     `### 最近报告（${latest.length}/${reports.length}）\n${reportText}`,
+    "",
+    `### 用户拍板（最近 ${Math.min(decisions.length, 8)} 条）\n${decisionText}`,
     "",
     `### 验收 gate\n${gateLines}`,
     "",

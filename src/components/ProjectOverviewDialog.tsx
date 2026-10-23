@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "./ui/portal";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, RefreshCw, X } from "lucide-react";
 import { Spinner } from "./ui/Spinner";
-import { buildProjectOverview, verifyProjectGates, type ProjectOverview, type OverviewBucket } from "../core/project/coordinator";
+import { buildProjectOverview, verifyProjectGates, resolveThreadDecision, type ProjectOverview, type OverviewBucket } from "../core/project/coordinator";
 import { confirmDialog } from "../core/ui/native-dialog";
 
 const BUCKETS: Array<{ id: OverviewBucket; zh: string; en: string; color: string; icon: typeof Clock3 }> = [
@@ -35,6 +35,15 @@ export function ProjectOverviewDialog({
       setError(e?.message || String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const decide = async (sessionId: string, choice: string) => {
+    try {
+      await resolveThreadDecision(projectPath, sessionId, choice);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || String(e));
     }
   };
 
@@ -149,7 +158,23 @@ export function ProjectOverviewDialog({
                           )}
                           {t.latestReport?.blocking && (
                             <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--warning, #d97706)", marginTop: 2 }}>
-                              等你：{t.latestReport.blocking.question}（选项：{t.latestReport.blocking.options.join(" / ")}；默认：{t.latestReport.blocking.default}）
+                              等你：{t.latestReport.blocking.question}（默认：{t.latestReport.blocking.default}）
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                                {t.latestReport.blocking.options.map((opt) => (
+                                  <button
+                                    key={opt}
+                                    onClick={() => void decide(t.sessionId, opt)}
+                                    style={{ background: "none", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", cursor: "pointer", padding: "2px 8px", fontSize: "var(--fs-xs)" }}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {t.decisions.length > 0 && (
+                            <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--success, #16a34a)", marginTop: 2 }}>
+                              已拍板：{t.decisions[t.decisions.length - 1].choice}
                             </div>
                           )}
                           {t.latestReport && (

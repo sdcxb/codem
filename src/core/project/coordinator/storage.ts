@@ -365,6 +365,52 @@ export interface GateCheck {
   checkedAt: number;
 }
 
+export interface ProjectDecision {
+  at: number;
+  threadId: string;
+  reportId: string;
+  question: string;
+  choice: string;
+}
+
+/** 用户在 Overview 对 blocked 报告拍板后的决策记录；thread 下次汇报应引用它。 */
+export async function readDecisions(projectPath: string): Promise<ProjectDecision[]> {
+  const text = await readText(projectStatePath(projectPath, "decisions.jsonl"), projectPath);
+  if (!text) return [];
+  return text.split(String.fromCharCode(10)).filter(Boolean).flatMap((line) => {
+    try { return [JSON.parse(line) as ProjectDecision]; } catch { return []; }
+  });
+}
+
+export async function resolveThreadDecision(
+  projectPath: string,
+  sessionId: string,
+  choice: string
+): Promise<ProjectDecision> {
+  const state = await readProjectState(projectPath);
+  const thread = state.threads.find((t) => t.sessionId === sessionId);
+  if (!thread) throw new Error("thread 不在项目 registry 里");
+  const reports = await listReports(projectPath);
+  const latest = reports
+    .filter((r) => r.thread_id === sessionId)
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))[0];
+  if (!latest?.blocking) throw new Error("该 thread 最新报告没有 blocked 问题");
+  if (!latest.blocking.options.includes(choice)) throw new Error("选择不在报告给出的选项里");
+  const existing = (await readDecisions(projectPath)).find((d) => d.reportId === latest.report_id);
+  if (existing) return existing;
+  const decision: ProjectDecision = {
+    at: Date.now(),
+    threadId: sessionId,
+    reportId: latest.report_id,
+    question: latest.blocking.question,
+    choice,
+  };
+  await fileApi.appendFile(projectStatePath(projectPath, "decisions.jsonl"), JSON.stringify(decision) + String.fromCharCode(10));
+  await updateThreadStatus(projectPath, sessionId, "working");
+  await appendProjectEvent(projectPath, { at: decision.at, type: "thread.decision", sessionId, data: { choice, reportId: latest.report_id } });
+  return decision;
+}
+
 export async function readGateChecks(projectPath: string): Promise<GateCheck[]> {
   const parsed = await readJson<{ checks?: GateCheck[] }>(projectStatePath(projectPath, "gate-checks.json"), projectPath);
   return Array.isArray(parsed?.checks) ? parsed!.checks : [];

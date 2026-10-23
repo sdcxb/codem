@@ -8,8 +8,8 @@
 | 并行 thread | 云 thread | 普通会话 + worktree | 本地等价物 |
 | 项目状态 | instructions/memory/threads | `.codem/project` brief/state/gates/events/reports | 文件化、可人工检查 |
 | 上下文重建 | 云端项目记忆 | 协调者只读状态，9000 字符上限 | 已验证：39,097 字符 prompt 含 3 thread 报告 |
-| Overview | 六状态 | 四状态（等你/运行中/待评审/已完成） | 够 MVP；没有 Landing/Idle |
-| 报告/验收 | PR/评审 | v3.1 report + gate + evidence | 有契约；**gate 未自动重验** |
+| Overview | 六状态 | 四状态（等你/运行中/待评审/已完成）+ 审批按钮 | 够用；没有 Landing/Idle |
+| 报告/验收 | PR/评审 | v3.1 report + gate + 独立重验 + 证据缺失降级 | 可信验收已落地 |
 | 记忆/指令 | 项目记忆文件 | 项目 brief + 现有指令/记忆注入 | brief 已注入；记忆索引未做 |
 | PR/CI | 全自动 | 报告记录 PR/CI 状态 + Overview 展示；无自动创建/修复 | 本地优先，自动操作暂不做 |
 | 云执行 | 云 sandbox | 本地 | 差异点，不跟 |
@@ -41,7 +41,9 @@
 2. **证据存在性**：缺失证据把 done 降为 review，Overview 显示缺失数；
 3. **项目记忆索引**：`.codem/project/MEMORY.md` 注入协调者上下文（≤2000 字符）；
 4. **假绿回归**：`OV-4` 用“done + gate passed 但无 command”钉住，删掉重验逻辑必红；
-5. 真实官网项目复验：T3 五道门禁命令 exit 0；T1/T2 10 个 gate 无 command 仍为待评审，Overview `review 2 / done 1`。
+5. 真实官网项目复验：T3 五道门禁命令 exit 0；T1/T2 10 个 gate 无 command 仍为待评审，Overview `review 2 / done 1`；
+6. **审批动作**：blocked 选项按钮 → `decisions.jsonl` → thread 回运行中，协调者上下文可见「问题 → 选择」；
+7. **thread 生命周期**：新建即 idle、开跑 working、报告更新、删除移除；无报告也进 Overview。
 
 ## 5. 风险与边界
 

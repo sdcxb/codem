@@ -29,6 +29,8 @@ import {
   verifyProjectGates,
   updateThreadStatus,
   removeThread,
+  resolveThreadDecision,
+  readDecisions,
   listReports,
   registerThread,
   projectStatePath,
@@ -255,6 +257,29 @@ describe("thread 生命周期", () => {
     await registerThread(PROJECT, { sessionId: "coord-1", title: "协调者" });
     const overview = await buildProjectOverview(PROJECT);
     expect(overview.threads.some((t) => t.sessionId === "coord-1")).toBe(false);
+  });
+});
+
+describe("审批动作", () => {
+  it("D-1：blocked 选项拍板后写入 decisions，thread 从等你转运行中", async () => {
+    await setCoordinatorSession(PROJECT, "coord-1");
+    await writeThreadReport(PROJECT, {
+      report_id: "r-blocked", thread_id: "t-blocked", status: "blocked", summary: "需要选择",
+      blocking: { question: "选 A 还是 B？", options: ["A", "B"], default: "A" },
+    }, { title: "T blocked" });
+    let overview = await buildProjectOverview(PROJECT);
+    expect(overview.counts.waiting).toBe(1);
+
+    await expect(resolveThreadDecision(PROJECT, "t-blocked", "C")).rejects.toThrow(/选项/);
+    const d = await resolveThreadDecision(PROJECT, "t-blocked", "B");
+    expect(d.choice).toBe("B");
+    expect((await readDecisions(PROJECT))[0].choice).toBe("B");
+
+    overview = await buildProjectOverview(PROJECT);
+    expect(overview.counts.waiting).toBe(0);
+    expect(overview.counts.working).toBe(1);
+    const context = await buildCoordinatorContext(PROJECT, "coord-1");
+    expect(context).toContain("选 A 还是 B？ → B");
   });
 });
 })
