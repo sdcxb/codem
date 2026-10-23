@@ -35,6 +35,7 @@ import {
 import { tryGetCtx } from '../core/consumer'
 import { runtimePluginList } from '../core/provider/plugin-registry-provider'
 import { PluginMarketTab } from './plugin-market/PluginMarketTab'
+import { DshExternalPluginsCard } from './plugin-market/DshExternalPluginsCard'
 // 第 201 波：免费模型插件（独立本地服务）的控制卡片
 import { FreeModelPluginCard } from './FreeModelPluginCard'
 // P2-15: 初始化失败要经既有上报通道（并配 setToast 的可见提示），不再静默吞掉
@@ -734,6 +735,14 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         修法：把那张卡片也放到**默认的「已安装」页签**里，并且让它**参与搜索**
         （关键词命中就显示：free / model / 免费 / 模型 …）。市场页签仍然常驻它。
       */}
+      {/*
+        外部 DSH 插件（dsh-ops 真实用例）：不是 cordis 内置插件，单独一张卡片，
+        支持检查更新 / 升级安装 / 停用；停用只改 Codem 管理状态，不注入运行时。
+      */}
+      {(searchQuery.trim() === '' || /dsh|ops|插件|plugin/i.test(searchQuery)) && (
+        <DshExternalPluginsCard zh={zh} notify={(msg, type) => setToast({ msg, type: type ?? 'info' })} />
+      )}
+
       {(searchQuery.trim() === '' || FREE_MODEL_CARD_KEYWORDS.some(k => searchQuery.trim().toLowerCase().includes(k))) && (
         <FreeModelPluginCard />
       )}
