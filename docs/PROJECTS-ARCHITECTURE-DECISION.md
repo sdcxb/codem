@@ -1,6 +1,6 @@
 # ADR：Codem 要不要 Projects 化（2026-10-22）
 
-- 状态：**Accepted（MVP + P2 可信验收）** —— gate 自动重验、证据缺失降级、记忆索引已落地；真实官网项目复验通过（见 `docs/PROJECTS-MVP-REVIEW.md`）
+- 状态：**Accepted（项目工作台 MVP）** —— 协调者/thread/Overview/审批/可信验收/指令/PR 只读/项目自动化已在一个真实项目跑通；P3 只做可靠性硬化（见 `docs/PROJECTS-MVP-REVIEW.md`）
 - 决策人：产品/架构（本仓由用户拍板）
 - 关联：`docs/CLAUDE-PROJECTS-BENCHMARK.md`、`docs/CODEM-FEATURES.md`、`docs/COORDINATOR-P0.md`
 
