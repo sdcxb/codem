@@ -2031,6 +2031,10 @@ flushStreamBuffer(); // flush all on unmount
         if (config.triggers.length > 0) {
           startAutomationEngines((trigger) => {
             console.log(`[Automation] Triggered: ${trigger.name}`);
+            if (getActiveExecutionCount() >= getConcurrencyLimit()) {
+              console.warn(`[Automation] 跳过 ${trigger.name}：并发已满 ${getActiveExecutionCount()}/${getConcurrencyLimit()}`);
+              return;
+            }
             // 项目级自动化：trigger 指定 projectId 时先切项目，再建 thread。
             if (trigger.projectId) {
               const store = useProjectStore.getState();

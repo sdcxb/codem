@@ -8,6 +8,7 @@
  */
 
 import { isCompactionInProgress } from "../storage/compaction-state";
+import { isSessionDeleted } from "../storage/session-tombstones";
 import { storageUnavailable } from "../storage/health";
 import { reportPersistFailure } from "../storage/persist-failure";
 import { domainDeleteWhere, domainPort, domainWrite } from "../storage/domain-store";
@@ -566,6 +567,8 @@ class TelemetryCollector {
      * 第 18 轮：判据从 `isDatabaseFatal()`（旧引擎致命态，rust 下恒为 false）
      * 换成 `storageUnavailable()`（本进程没有可用存储 = 端口没注册）。
      */
+    // 已删除会话的遥测不再写入：外键会失败，而且这些事件已无归属。
+    this.events = this.events.filter((e) => !isSessionDeleted(e.sessionId));
     if (storageUnavailable()) {
       if (!this.reportedFatal) {
         this.reportedFatal = true;

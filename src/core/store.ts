@@ -6,6 +6,7 @@ import * as MessageStorage from "./storage/message";
 import { getProjectExecutionMode, createWorktree, removeWorktree, getWorktreeRoot } from "./environment";
 import { reportPersistFailure, reportActionFailure } from "./storage/persist-failure";
 import { abortSessionLoop } from "./session-abort-registry";
+import { markSessionDeleted, clearSessionDeleted, isSessionDeleted } from "./storage/session-tombstones";
 
 interface ProjectState {
   currentProject: Project | null;
@@ -265,6 +266,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         }));
       } catch { /* 非浏览器环境（测试）忽略 */ }
     }
+    clearSessionDeleted(session.id);
     const updated = [...get().sessions, session];
     set({ sessions: updated, currentSession: session });
     /*
@@ -495,6 +497,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   deleteSession: (sessionId) => {
+    markSessionDeleted(sessionId);
     // 先停掉正在跑的 loop，再删数据；否则工具/模型回调会在已删会话上写消息（FK 失败）。
     abortSessionLoop(sessionId);
     // Clean up worktree if this session had one

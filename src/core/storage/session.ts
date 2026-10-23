@@ -3,6 +3,7 @@
 import type { Session } from "../types";
 import { appendSessionTombstone } from "./session-jsonl";
 import { pendingMessageCountAdjustment, releaseSessionLogCache } from "./message";
+import { markSessionDeleted } from "./session-tombstones";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite, reportWriteNotAccepted } from "./domain-store";
 
 /**
@@ -768,6 +769,7 @@ export function updateSession(id: string, update: Partial<Session>): void {
  * 这样"删除失败不丢会话"与"删除成功不复活会话"才同时成立。
  */
 export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}): void {
+  markSessionDeleted(id);
   /**
    * 墓碑是 fire-and-forget（`appendSessionTombstone` 内部自己吞异常并告警）：
    * 删除路径不该因为一次文件写入失败而卡住 —— 日志写入失败会留下

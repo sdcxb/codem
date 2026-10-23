@@ -8,6 +8,7 @@ import {
   DEFAULT_EXTERNALIZE_THRESHOLD,
 } from "./attachment-files";
 import { storageUnavailable } from "./health";
+import { isSessionDeleted } from "./session-tombstones";
 import { getEventLog, isSessionEventsReadable, whenSessionEventsLoaded } from "./event-log";
 import { getStoragePort, hasStoragePort } from "./port";
 import type { SessionEventType } from "./event-types";
@@ -1581,6 +1582,14 @@ export function getMessage(id: string): Message | null {
  * 现在的顺序是：①日志先落盘（不受索引影响）→ ②再写索引；索引失败只上报、不再让调用方失败。
  */
 export function createMessage(message: Message, sessionId: string): void {
+  if (isSessionDeleted(sessionId)) {
+    // 墓碑只对"确实已经不在 sessions 表里"的会话生效；测试/恢复会重新 seed 同 id。
+    const stillExists = domainReadOne("sessions", { id: sessionId }, (r) => r.id);
+    if (stillExists === null || stillExists === undefined) {
+      console.warn(`[MessageStorage] 跳过已删除会话 ${sessionId} 的消息写入`);
+      return;
+    }
+  }
   // ① 权威日志：追加即持久，不碰索引、不做整库导出
   void appendSessionMessage(sessionId, message);
 

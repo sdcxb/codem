@@ -40,12 +40,15 @@ getConcurrencyLimit():
 
 并登记 `app.concurrency` 上报点（action）。
 
-### 2.2 删除会话先 abort loop
+### 2.2 删除会话先 abort loop + 墓碑短路
 
 - `src/core/session-abort-registry.ts`：按 sessionId 登记 AbortController；
 - App 启动 loop 时注册，finally 注销；
 - `store.deleteSession` 先 `abortSessionLoop(sessionId)`，再删；
-- `saveMessages` 发现会话已删直接跳过（不再插 FK 失败）。
+- `src/core/storage/session-tombstones.ts`：删除后进程内标记；
+- `MessageStorage.createMessage` 对“已删除且 DB 里确实没有”的会话直接跳过，
+  `telemetry.flush` 也过滤这些会话的事件 —— 不再撞 `message.createMessage.index` / `telemetry.flush` 的 FK；
+- `saveMessages` 同样跳过。
 
 ### 2.3 自动化冷却
 
@@ -63,7 +66,16 @@ getConcurrencyLimit():
 taskkill /PID <pid> /T /F
 ```
 
-### 3.2 清理遗留无头 Edge
+### 3.2 清理孤儿 dev server
+
+强杀 Codem 后 Vite 可能还占着 1420，下一次 `tauri dev` 直接失败：
+
+```bash
+node tools/maintenance/clean-orphan-dev.mjs          # 只在 codem.exe 不在时动手
+node tools/maintenance/clean-orphan-dev.mjs --apply
+```
+
+### 3.3 清理遗留无头 Edge
 
 新增：
 
@@ -75,7 +87,15 @@ node tools/maintenance/clean-orphan-test-browsers.mjs --apply  # 杀进程树
 只匹配测试标记（`codem-site-e2e-` / `codem-shot-` / `remote-debugging-port=933`），
 不碰用户正常 Edge。
 
-## 4. 本机复查（重启后）
+## 4. 真机验证（2026-10-23 重启后）
+
+- 复现：创建会话 → 发 `ping` 长命令 → 4 秒后删除；
+- 修复后：**无 `FOREIGN KEY`、无 `数据保存失败` 横幅、无遗留 ping 进程**；
+- 清理：旧 cooldown bug 留下的 **37 个自动化测试会话**及其 thread 全部删除；
+- 自动化 trigger 已加“并发满则跳过”，避免再堆会话；
+- 全量 `--maxWorkers=2`：**729 文件 / 8485 通过 + 17 skipped**。
+
+## 5. 本机复查（重启后）
 
 - 当前无 Codem 进程，无测试遗留 Edge；
 - 唯一大体量后台是用户自己的 Edge/QQ/DSH/REA watchdog，不是测试残留；
