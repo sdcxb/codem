@@ -1,4 +1,4 @@
-﻿/* ========== Custom Fonts ========== */
+/* ========== Custom Fonts ========== */
 /* 第 35 波：这确实是**可变字体**（fvar 轴 wght 200–700 + BEVL 1–100，18 个具名实例），
    所以 --weight-* 的 560/620 细档是真实生效的，不是靠浏览器取整。
    `font-weight` 声明改成真实轴范围 200–700：以前写 100 900 会让浏览器在 700 以上
@@ -1734,7 +1734,7 @@ flex-shrink: 0;
 
 /* ========== Sidebar Projects ========== */
 .sidebar-projects {
-  padding: 0;
+  padding: 0 var(--space-6);
 }
 
 
@@ -1743,7 +1743,7 @@ flex-shrink: 0;
 /* 第 179 轮 P2-1：并入 .empty-hint（几何原本就一致） */
 
 .sidebar-project {
-  margin-bottom: var(--space-1);
+  margin: 0 calc(-1 * var(--space-6)) var(--space-1);
 }
 
 .sidebar-project-header {
@@ -1752,7 +1752,7 @@ flex-shrink: 0;
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
-  padding: var(--space-2) var(--space-2);
+  padding: var(--space-4) var(--space-4);
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-secondary);

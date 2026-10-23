@@ -1,4 +1,4 @@
-﻿import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
+import { useStickySectionHeader } from "../hooks/useStickySectionHeader";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "./ui/portal";
