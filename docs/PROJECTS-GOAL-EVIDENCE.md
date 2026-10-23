@@ -57,3 +57,18 @@
 - provider 限流/失败：已有重试与 turn-outcome 判据（测试通过），但没有在本轮强制制造真实 provider 故障；
 - 删除运行中会话：本轮之前已真机验证无 FK，最新构建未重跑；
 - 审批：本轮用临时 blocked 报告验证 waiting 1 → 选 B → working 1，未走 UI 按钮全链路。
+
+## 第二轮补验（2026-10-23）
+
+- **删除运行中会话（UI 真机）**：项目内新建 `对话 5`，发送 `ping 127.0.0.1 -n 30`，4 秒后右键删除并确认；
+  - 无 `FOREIGN KEY`、无“数据保存失败”横幅；
+  - thread registry 仍只有 T1/T2/T3，被删会话未留幽灵；
+  - ping 子进程在命令自身 30 秒结束后退出，没有常驻孤儿（删除不会立刻杀子进程，是已知边界）。
+- **PR/CI 只读同步（真实 GitHub PR）**：临时报告指向 `https://github.com/cli/cli/pull/1`，
+  `syncPullRequests` 调用 `gh pr view` 返回 `state=merged`、`checks=none`，无错误；验证后已删除临时报告/thread。
+- **审批 UI 全链路**：临时 blocked thread 在 Overview 显示「等你 1」；点击「B 方案」后变为「运行中 1」，
+  并显示「已拍板：B 方案」；清理后恢复 `0/0/0/3`。
+- **provider 失败/重试判据**：`dsh-d1-llm-failure-not-completed`、`retry-classification-capacity`、
+  `retry-budget`、`app-turn-outcome-rendering` 共 30 项通过（400 不可重试不为完成、500 重试后成功、预算耗尽如实报错）。
+- **全量回归**：731 文件 / 8491 通过 + 17 skipped，`tsc` 0。
+- **Process**：测试结束无遗留 Edge、无 1420 残留、无 Codem 进程；app 已停止。
