@@ -236,6 +236,18 @@ describe("项目 Overview 四态", () => {
     expect(overview.counts.done).toBe(1);
   });
 
+
+  it("LOCK-1：并发注册三个 thread 不许丢写", async () => {
+    await setCoordinatorSession(PROJECT, "coord-1");
+    await Promise.all([
+      registerThread(PROJECT, { sessionId: "lock-a", title: "A" }),
+      registerThread(PROJECT, { sessionId: "lock-b", title: "B" }),
+      registerThread(PROJECT, { sessionId: "lock-c", title: "C" }),
+    ]);
+    const state = await readProjectState(PROJECT);
+    expect(state.threads.map((t) => t.sessionId).sort()).toEqual(["lock-a", "lock-b", "lock-c"]);
+  });
+
 describe("thread 生命周期", () => {
   it("TL-1：未写报告的 thread 也算运行中，blocked 进等你，删除后消失", async () => {
     await setCoordinatorSession(PROJECT, "coord-1");

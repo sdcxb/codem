@@ -26,6 +26,30 @@ import type {
 
 const PROJECT_SUBDIR = ".codem/project";
 
+/**
+ * 同一个项目的状态文件是**读-改-写**：三个 thread 同时注册时，
+ * 各自 read 到同一份旧 state，最后一个 write 就会把前两个覆盖掉
+ * （真机：并行建 3 个 thread，registry 只剩 1 个）。
+ * 用进程内串行锁把同一 projectPath 的写操作排队。
+ */
+const projectLocks = new Map<string, Promise<unknown>>();
+
+async function withProjectLock<T>(projectPath: string, fn: () => Promise<T>): Promise<T> {
+  const key = projectPath.replace(/[\/]+$/, "");
+  const prev = projectLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const tail = prev.catch(() => undefined).then(() => gate);
+  projectLocks.set(key, tail);
+  await prev.catch(() => undefined);
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (projectLocks.get(key) === tail) projectLocks.delete(key);
+  }
+}
+
 export function projectStateDir(projectPath: string): string {
   return `${projectPath.replace(/[\\/]+$/, "")}/${PROJECT_SUBDIR}`;
 }
@@ -155,7 +179,7 @@ export async function clearCoordinatorIfMatches(projectPath: string, sessionId: 
   return true;
 }
 
-export async function registerThread(
+async function registerThreadUnlocked(
   projectPath: string,
   thread: { sessionId: string; title: string; worktreePath?: string; status?: ProjectThreadStatus }
 ): Promise<ProjectThread> {
@@ -183,8 +207,16 @@ export async function registerThread(
   return next;
 }
 
+export async function registerThread(projectPath: string, thread: { sessionId: string; title: string; worktreePath?: string; status?: ProjectThreadStatus }): Promise<ProjectThread> {
+  return withProjectLock(projectPath, () => registerThreadUnlocked(projectPath, thread));
+}
+
 /** 更新 thread 生命周期状态；协调者自身不算 thread。 */
-export async function updateThreadStatus(
+export async function updateThreadStatus(projectPath: string, sessionId: string, status: ProjectThreadStatus): Promise<boolean> {
+  return withProjectLock(projectPath, () => updateThreadStatusUnlocked(projectPath, sessionId, status));
+}
+
+async function updateThreadStatusUnlocked(
   projectPath: string,
   sessionId: string,
   status: ProjectThreadStatus
@@ -200,8 +232,12 @@ export async function updateThreadStatus(
   return true;
 }
 
-/** 删除 thread 时从 registry 移除，避免 Overview 里留幽灵项。 */
 export async function removeThread(projectPath: string, sessionId: string): Promise<boolean> {
+  return withProjectLock(projectPath, () => removeThreadUnlocked(projectPath, sessionId));
+}
+
+/** 删除 thread 时从 registry 移除，避免 Overview 里留幽灵项。 */
+async function removeThreadUnlocked(projectPath: string, sessionId: string): Promise<boolean> {
   const state = await readProjectState(projectPath);
   const next = state.threads.filter((t) => t.sessionId !== sessionId);
   if (next.length === state.threads.length) return false;
