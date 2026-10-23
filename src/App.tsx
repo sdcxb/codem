@@ -857,8 +857,28 @@ useEffect(() => {
             console.warn(`[App] 存储维护等到上限仍在忙（${gate.waitedMs}ms），照常开跑 ✓`);
           }
           // 第 18 轮：维护模块从旧引擎里抽出来了（它本来一行都不跑，见 storage/maintenance.ts 的说明）
+          /**
+           * ⚠️ 启动维护不能每次启动都跑：真机 669 个会话 / 942 MB 库时，
+           * 即使裁剪/回填已限量，日志压缩、VACUUM、完整性检查、605 次计数对账
+           * 仍要几十秒 ~ 数分钟。它放在后台仍会抢 CPU/磁盘，让"刚打开就卡"。
+           * 现在：24 小时内只跑一次；且延迟 8 秒，先让首屏与首条输入跑起来。
+           */
+          const { getSettingJSON, setSettingJSON } = await import("./core/storage/settings");
+          const MAINT_LAST_KEY = "codem-maintenance-last-auto-run";
+          const MAINT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+          const lastRun = getSettingJSON<number | null>(MAINT_LAST_KEY, null);
+          if (typeof lastRun === "number" && Date.now() - lastRun < MAINT_INTERVAL_MS) {
+            console.log(
+              `[Maintenance] 24 小时内已自动维护过（${Math.round((Date.now() - lastRun) / 60000)} 分钟前），本次跳过`,
+            );
+            return;
+          }
+          setSettingJSON(MAINT_LAST_KEY, Date.now());
+          await new Promise((r) => setTimeout(r, 8000));
           const { runDatabaseMaintenance } = await import("./core/storage/maintenance");
+          performance.mark('maint:start');
           await runDatabaseMaintenance();
+          performance.measure('maint:runDatabaseMaintenance','maint:start');
         } catch (e) {
           console.warn("[App] 存储维护失败（不影响使用）:", e);
         }
@@ -1802,12 +1822,15 @@ flushStreamBuffer(); // flush all on unmount
      */
     (async () => {
       try {
+        performance.mark('boot:start');
         const { registerRustStoragePort, importSettingsFromLegacyDb, migrateFromLegacyDb } = await import("./core/storage/bootstrap");
 
         // ① 注册端口（唯一的数据源）
         let boot: Awaited<ReturnType<typeof registerRustStoragePort>> = { kind: "skipped", reason: "未尝试" };
         try {
+          performance.mark('boot:port-start');
           boot = await registerRustStoragePort();
+          performance.measure('boot:registerPort','boot:port-start');
         } catch (e) {
           // 注册函数内部已把失败如实上报 + 广播"存储不可用"；这里只补一行诊断
           console.error("[Storage] 端口注册未预期地抛错（本进程将没有可用存储）:", e);
@@ -1826,10 +1849,14 @@ flushStreamBuffer(); // flush all on unmount
           // 引擎是 rust 时渲染进程不再加载旧库，所以新库若是空的，界面会显示"暂无对话" ——
           // 而用户的会话其实都在旧库里。这一步由 Rust 侧只读打开旧库搬过来（含逐表对账）。
           // 幂等：新库已有会话 / 已有迁移标记时直接跳过，绝不覆盖用户在新库上的数据。
+          performance.mark('boot:migrate-start');
           await migrateFromLegacyDb();
+          performance.measure('boot:migrate','boot:migrate-start');
           // 给"已经迁移过"的库补上搜索索引重建（中文搜索修复）。
           // 独立于迁移标记：迁移幂等会跳过，这些用户否则永远拿不到修复。
+          performance.mark('boot:fts-start');
           await (await import("./core/storage/bootstrap")).repairSearchIndexOnce();
+          performance.measure('boot:repairFts','boot:fts-start');
           // 旧库路径在这里解析一次并传入：让该函数的依赖显式可见（也便于测试替身）
           await importSettingsFromLegacyDb("storage.settings-import", await (await import("./core/storage/bootstrap")).legacyDbPath());
           /*
@@ -1843,7 +1870,9 @@ flushStreamBuffer(); // flush all on unmount
           try {
             const { verifyUserContentOrRestore } = await import("./core/storage/self-heal");
             const { legacyDbPath } = await import("./core/storage/bootstrap");
+            performance.mark('boot:heal-start');
             const heal = await verifyUserContentOrRestore(await legacyDbPath());
+            performance.measure('boot:selfHeal','boot:heal-start');
             if (heal.kind === "restored") {
               console.warn(
                 `[Storage] 自检发现消息全空（上次水位 ${heal.previous?.messages} 条）—— 已从旧库恢复 ${heal.restoredRows} 行`,
@@ -1910,7 +1939,9 @@ flushStreamBuffer(); // flush all on unmount
          */
         try {
           const { prefetchDomainMirrors, HOT_DOMAIN_TABLES } = await import("./core/storage/bootstrap");
+          performance.mark('boot:prefetch-start');
           const pf = await prefetchDomainMirrors();
+          performance.measure('boot:prefetch','boot:prefetch-start');
           console.log(
             `[Storage] 域镜像预取：就绪 ${pf.ready.length}/${HOT_DOMAIN_TABLES.length}（${pf.ms}ms）` +
               (pf.pending.length > 0 ? `；未就绪：${pf.pending.join(" / ")}` : ""),
@@ -1932,7 +1963,9 @@ flushStreamBuffer(); // flush all on unmount
         } catch (e) {
           console.warn("[Storage] 域镜像预取失败（不影响启动，各域按需惰性加载）:", e);
         }
+        performance.mark('boot:load-start');
         useProjectStore.getState().loadFromDB();
+        performance.measure('boot:loadProjects','boot:load-start');
         // S0-3: Initialize Capability Seam — register default local providers
         /**
          * 启动竞态修正（第 24 轮）：**端口就绪前读到的是空列表，之后没人再读一次。**

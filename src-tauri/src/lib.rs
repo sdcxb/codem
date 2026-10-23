@@ -1194,6 +1194,7 @@ async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<s
             "name": name,
             "path": entry.path().to_string_lossy(),
             "isDirectory": metadata.is_dir(),
+            "size": metadata.len(),
         }));
     }
 

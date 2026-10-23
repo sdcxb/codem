@@ -371,7 +371,7 @@ function pathComponents(p: string): string[] {
     }, []);
 }
 
-export async function listDirectory(path: string): Promise<Array<{ name: string; path: string; isDirectory: boolean }>> {
+export async function listDirectory(path: string): Promise<Array<{ name: string; path: string; isDirectory: boolean; size?: number }>> {
   return tauriInvoke("list_directory", { path });
 }
 

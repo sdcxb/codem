@@ -104,6 +104,33 @@ export const UNKNOWN_WATER_LEVEL: ContextWaterLevel = {
  *
  * @param sessionId 会话 id；为空或读取失败时返回 {@link UNKNOWN_WATER_LEVEL}
  */
+/**
+ * 水位结果缓存：同一会话、同一消息集合（长度/最后一条/内容总长/工具结果总长/窗口）
+ * 直接复用上一拍。水位每 3 秒轮询一次；没有缓存时，大工具输出会话每次都要把
+ * 全部消息重新 prune/fold/估算一遍，主线程会周期性卡住。
+ */
+const WATER_CACHE_MAX = 32;
+/** 仅判据/诊断使用：清空水位缓存，验证冷/热两条路径。 */
+export function __resetWaterLevelCache(): void { waterCache.clear(); }
+const waterCache = new Map<string, { sig: string; result: ContextWaterLevel }>();
+
+function waterSignature(visible: any[], contextWindow: number): string {
+  let size = 0;
+  for (const m of visible) {
+    const content = typeof m?.content === "string" ? m.content : "";
+    size += content.length;
+    const calls = (m as { toolCalls?: Array<{ result?: unknown; args?: unknown }> })?.toolCalls;
+    if (Array.isArray(calls)) {
+      for (const tc of calls) {
+        size += typeof tc?.result === "string" ? tc.result.length : 0;
+        if (tc?.args !== undefined) size += 1;
+      }
+    }
+  }
+  const last = visible[visible.length - 1];
+  return `${visible.length}:${String(last?.id ?? "")}:${String(last?.timestamp ?? "")}:${size}:${contextWindow}`;
+}
+
 export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
   if (!sessionId) return UNKNOWN_WATER_LEVEL;
   /**
@@ -116,6 +143,9 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
   try {
     const visible = listVisibleMessages(sessionId);
     const contextWindow = getTokenTracker().getContextWindow() || FALLBACK_CONTEXT_WINDOW;
+    const sig = waterSignature(visible as never[], contextWindow);
+    const cached = waterCache.get(sessionId);
+    if (cached?.sig === sig) return cached.result;
     /**
      * ★ 工具输出折叠阶梯（用户提的机制）：水位必须按**折叠后的视图**算 ——
      * 引擎发出去的就是折叠后的消息（见 `agentic-loop.buildMessages`），
@@ -133,7 +163,7 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
     const budgetTokens = summarizeModelContext(pruned as never[], contextWindow).budgetTokens;
     const fold = foldForLevelIfNeeded(pruned, { available: budgetTokens, estimate });
     const display = summarizeDisplayPressure(fold.ratioAfter * budgetTokens, budgetTokens);
-    return {
+    const result: ContextWaterLevel = {
       used: Math.round(fold.ratioAfter * budgetTokens),
       available: budgetTokens,
       ratio: display.ratio,
@@ -145,6 +175,9 @@ export function readContextWaterLevel(sessionId: string): ContextWaterLevel {
       /* ★ 阶梯痕迹：这一轮静默折了多少条（>0 时界面用一行说明，不弹窗） */
       foldedToolOutputs: fold.folded,
     };
+    if (waterCache.size >= WATER_CACHE_MAX) waterCache.clear();
+    waterCache.set(sessionId, { sig, result });
+    return result;
   } catch {
     // 读不到水位时**不报假警**。真实的读取失败由既有上报通道
     // （`reportActionFailure`）负责，这里静默降级即可 —— 水位提示条绝不能

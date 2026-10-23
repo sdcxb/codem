@@ -900,6 +900,33 @@ export interface IntegrityCheckOutcome {
  * 要点：只比**日志已 hydrate** 的会话；口径对 `messages.count.total`（含 hidden，
  * 因为裁剪是软删除、行留在库里）；跳过有会话墓碑的（用户删掉的会话）。
  */
+/**
+ * 「索引落后于权威日志」的对账要逐个 hydrate 日志；669 个会话 / 267 MB 日志时
+ * 启动维护会把整批正文读进内存（真机 heap 一度 1 GB）。它不是首屏必需：
+ * 大库每次启动只轮转扫描固定数量，游标持久化，最终覆盖全部会话；
+ * 小库仍然一次全扫，保持判据与既有行为。
+ */
+const BEHIND_LOG_SCAN_LIMIT = 5;
+const BEHIND_LOG_CURSOR_KEY = "codem-maintenance-behind-log-cursor";
+
+async function boundedBehindLogSessions(sessionIds: string[]): Promise<string[]> {
+  if (sessionIds.length <= BEHIND_LOG_SCAN_LIMIT) return sessionIds;
+  try {
+    const raw = getSettingJSON<number | null>(BEHIND_LOG_CURSOR_KEY, null);
+    const start = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) % sessionIds.length : 0;
+    const rotated = [...sessionIds.slice(start), ...sessionIds.slice(0, start)];
+    const batch = rotated.slice(0, BEHIND_LOG_SCAN_LIMIT);
+    setSettingJSON(BEHIND_LOG_CURSOR_KEY, (start + BEHIND_LOG_SCAN_LIMIT) % sessionIds.length);
+    console.log(
+      `[Maintenance] 大库 ${sessionIds.length} 个会话：本轮只对账 ${batch.length} 个（轮转游标 ${start}），其余下次继续`,
+    );
+    return batch;
+  } catch {
+    // 游标读写失败：退回全量（宁可慢，不可静默不检查）
+    return sessionIds;
+  }
+}
+
 async function detectSessionsBehindLog(): Promise<
   Array<{ sessionId: string; indexRows: number; logIds: number }>
 > {
@@ -918,6 +945,7 @@ async function detectSessionsBehindLog(): Promise<
     console.warn("[Maintenance] 列会话日志失败（本次不做索引/日志对账）:", e);
     return [];
   }
+  sessionIds = await boundedBehindLogSessions(sessionIds);
 
   const behind: Array<{ sessionId: string; indexRows: number; logIds: number }> = [];
   for (const sessionId of sessionIds) {
@@ -2047,6 +2075,7 @@ export async function runDatabaseMaintenance(
     keepIndexedMessages?: number;
   } = {},
 ): Promise<MaintenanceResult> {
+  performance.mark('maint:start');
   const keepTelemetryDays = opts.keepTelemetryDays ?? 7;
   const keepIndexedMessages = opts.keepIndexedMessages ?? 500;
   /** 遥测裁剪结果（B-8：三态，不再用一个 `0` 混着"没得裁 / 失败 / 没跑"） */
@@ -2253,19 +2282,24 @@ export async function runDatabaseMaintenance(
       } catch (e) {
         console.warn("[Maintenance] 索引与日志的对账未完成（不影响使用）:", e);
       }
+      performance.measure('maint:behindLog','maint:start');
 
       /**
        * 第 62 轮：回填的返回值从"一个数"变成"**两件事**"（回填了多少 / 因镜像没就绪而没跑几个会话）。
        * 理由与索引裁剪的 `skippedNotLoaded` 完全同一条：把"没跑"混进"0 条"，
        * 日志上就分不出"确实没有可回填的"与"整条步骤静默没做"。
        */
+      performance.mark('maint:backfill-start');
       const backfill = await bridge.backfillAllSessions();
+      performance.measure('maint:backfill','maint:backfill-start');
       result.backfilledMessages = backfill.backfilled;
       result.backfillSkippedUnreadable = backfill.skippedUnreadable;
       result.backfillDeferredSessions = backfill.deferredSessions;
 
       if (keepIndexedMessages > 0) {
+        performance.mark('maint:trim-start');
         const trimmed = await bridge.trimIndexedMessages({ keepPerSession: keepIndexedMessages });
+        performance.measure('maint:trim','maint:trim-start');
         result.trimmedIndexMessages = trimmed.deletedMessages;
         /**
          * 跳过原因必须**分开报**（第 44 轮修掉的误导性日志）。
@@ -2403,7 +2437,9 @@ export async function runDatabaseMaintenance(
         );
       }
 
+      performance.mark('maint:logCompact-start');
       const compactedLog = await bridge.compactOversizedSessionLogs();
+      performance.measure('maint:logCompact','maint:logCompact-start');
       result.compactedLogSessions = compactedLog.compactedSessions;
       if (compactedLog.compactedSessions > 0) {
         console.log(
@@ -2805,6 +2841,8 @@ export async function runDatabaseMaintenance(
         unreadableSessions: result.invariantUnreadableSessions,
       }),
   );
+  performance.measure('maint:total','maint:start');
   return result;
 }
+
 

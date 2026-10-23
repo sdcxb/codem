@@ -326,12 +326,33 @@ const sessionsMirror = domainReadMany<Record<string, unknown>>("sessions", (r) =
   // `mirrorWaitMs` 只为测试注入（默认走上面那个有依据的常量）：
   // 让"超时分支"能被快速覆盖，而不必让用例真的等 5 秒。
   const deadline = Date.now() + (opts.mirrorWaitMs ?? TRIM_MIRROR_WAIT_TOTAL_MS);
-  for (const row of sessionsMirror) {
+  /**
+   * 启动维护不能把 600+ 个会话的消息镜像**同时**拉起来（真机 669 个会话 / 942 MB 库，
+   * 这一步会在首屏后把全部会话的正文读进渲染进程，堆一度到 1 GB）。
+   * 只裁剪"消息数 > 保留数"的会话，并按消息数从大到小取前 80：
+   * - 消息数不超过 keep 的会话没有可裁候选，加载纯浪费；
+   * - 真正需要裁的长会话优先覆盖；其余下次维护再处理。
+   */
+  const TRIM_SCAN_LIMIT = 20;
+  const trimCandidates = sessionsMirror
+    .filter((row) => {
+      const count = row.message_count;
+      // 镜像缺该列（假端口/老数据）时按"未知"处理，保留原行为；真实行有计数。
+      return count === undefined || count === null || Number(count) <= 0 || Number(count) > keepPerSession;
+    })
+    .sort((a, b) => Number(b.message_count ?? 0) - Number(a.message_count ?? 0));
+  const scanRows = trimCandidates.slice(0, TRIM_SCAN_LIMIT);
+  if (trimCandidates.length > scanRows.length) {
+    console.log(
+      `[Index] 本轮只裁剪 ${scanRows.length}/${trimCandidates.length} 个长会话（按消息数优先；其余下次维护继续）`,
+    );
+  }
+  for (const row of scanRows) {
     const sid = String(row.id ?? "");
     if (sid) port.messages.ensureLoaded(sid);
   }
 
-  for (const row of sessionsMirror) {
+  for (const row of scanRows) {
   const sessionId = String(row.id ?? "");
   if (!sessionId) continue;
   try {

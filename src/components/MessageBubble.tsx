@@ -198,6 +198,23 @@ const COLLAPSE_THRESHOLD = 400;
 // （布局被跳过），用字符长度估算作为主判断。约 1500 字符 ≈ 400px 文本高度。
 const COLLAPSE_CHARS = 1500;
 
+/**
+ * 工具结果进入 DOM 前的硬上限。
+ *
+ * 真机有一个 7 MB 的 tool_result：整段 JSON 交给 ToolCallCard 后，
+ * read/diff/search 判定、逐行 split、语法高亮都会在打开会话时扫全量，
+ * 单次主线程 585ms。完整结果仍在会话日志与库里；聊天卡片只需要可读预览。
+ */
+const MAX_TOOL_RESULT_DISPLAY_CHARS = 8 * 1024;
+
+function toolResultForDisplay(result: string | undefined): string | undefined {
+  if (!result || result.length <= MAX_TOOL_RESULT_DISPLAY_CHARS) return result;
+  return (
+    result.slice(0, MAX_TOOL_RESULT_DISPLAY_CHARS) +
+    `\n\n…（输出过长，已截断显示；完整结果保留在会话日志）`
+  );
+}
+
 interface MessageBubbleProps {
   message: Message;
   index?: number;
@@ -923,7 +940,7 @@ const opLabel = tc.tool === 'create_note'
                 const isSubagent = tc.tool === "spawn_subagent" || tc.tool === "subagent";
                 const agentId = isSubagent ? (tc.args?.agentId || tc.args?.description) as string : null;
                 let agentName = isSubagent ? (tc.args?.name || tc.args?.description) as string : null;
-                if (!agentName && isSubagent && tc.result) {
+                if (!agentName && isSubagent && tc.result && tc.result.length < 200_000) {
                   const nameMatch = tc.result.match(/(?:子智能体|Sub-agent|后台子智能体)\s*([^\.\s,]+)/);
                   if (nameMatch) agentName = nameMatch[1];
                 }
@@ -936,7 +953,7 @@ const opLabel = tc.tool === 'create_note'
                 return {
                   toolName: displayName,
                   toolArgs: tc.args ? JSON.stringify(tc.args, null, 2) : undefined,
-                  toolResult: tc.result || undefined,
+                  toolResult: toolResultForDisplay(tc.result),
                   status: tc.status as "running" | "done" | "error",
                   duration: (tc.metadata as any)?.duration,
                   argsSummary: typeof rawSummary === "string" && rawSummary ? rawSummary : undefined,
@@ -1171,5 +1188,6 @@ const opLabel = tc.tool === 'create_note'
     </div>
   );
 });
+
 
 

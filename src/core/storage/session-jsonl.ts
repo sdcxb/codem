@@ -811,6 +811,22 @@ export async function backfillSessionLog(sessionId: string, messages: Message[])
 /**
  * 列出已有日志文件的会话 id（维护时用来决定哪些会话需要回填/可裁剪）。
  */
+/** 与 listSessionLogs 同一份目录枚举，但带文件大小（启动维护据此跳过小日志，避免逐文件 stat/读窗）。 */
+export async function listSessionLogsWithSize(): Promise<Array<{ id: string; size: number }>> {
+  try {
+    const dir = await sessionsDir();
+    const entries = await listDirectory(dir);
+    return entries
+      .filter((e) => !e.isDirectory && e.name.endsWith(".jsonl"))
+      .map((e) => ({
+        id: e.name.replace(/\.jsonl$/, ""),
+        size: typeof e.size === "number" ? e.size : 0,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export async function listSessionLogs(): Promise<string[]> {
   try {
     const dir = await sessionsDir();

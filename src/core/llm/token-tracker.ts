@@ -28,18 +28,43 @@ import type { TokenUsage } from "./types";
  * - 空白/标点：~0.5 tokens/char
  * - JSON 结构开销：{} [], : " 等约 0.5 tokens/char
  */
+/** ASCII 标点查表（旧实现每字符两次正则，是长工具输出估算慢的主因）。 */
+const PUNCT_ASCII = (() => {
+  const table = new Uint8Array(128);
+  for (const ch of "{}[],:\"'<>/\\(){}.;,!?@#$%^&*+=|~`") {
+    const code = ch.charCodeAt(0);
+    if (code < 128) table[code] = 1;
+  }
+  return table;
+})();
+
 export function estimateTokens(text: string): number {
   if (!text || text.length === 0) return 0;
+
+  /**
+   * 单条 7 MB 工具输出会走几十万/几百万次逐字符分类；旧实现每个字符还跑两次正则，
+   * 真机一次水位/压缩估算就能占住主线程 ~585ms（水位每 3 秒还会再算一次）。
+   *
+   * 两个改动：
+   * 1. 小于 128 KB：逐 charCodeAt 分类，标点用 128 项查表，不再每字符跑正则；
+   * 2. 大于 128 KB：等距抽样 64K 字符后按比例放大。对上下文压力这种**估算**足够，
+   *    但把 O(7M) 的逐字符扫描压到 O(64K)。
+   */
+  const SAMPLE_THRESHOLD = 64 * 1024;
+  const SAMPLE_TARGET = 16 * 1024;
+  const sampled = text.length > SAMPLE_THRESHOLD;
+  const step = sampled ? Math.max(1, Math.floor(text.length / SAMPLE_TARGET)) : 1;
 
   let cjkChars = 0;
   let digitChars = 0;
   let whitespaceChars = 0;
   let punctChars = 0;
   let otherChars = 0;
+  let counted = 0;
 
-  for (const ch of text) {
-    const code = ch.charCodeAt(0);
-    // CJK Unified Ideographs + Extension A + Hiragana + Katakana + Hangul
+  for (let i = 0; i < text.length; i += step) {
+    const code = text.charCodeAt(i);
+    counted++;
     if (
       (code >= 0x4e00 && code <= 0x9fff) ||
       (code >= 0x3400 && code <= 0x4dbf) ||
@@ -47,24 +72,28 @@ export function estimateTokens(text: string): number {
       (code >= 0xac00 && code <= 0xd7af)
     ) {
       cjkChars++;
-    } else if (ch >= "0" && ch <= "9") {
+    } else if (code >= 48 && code <= 57) {
       digitChars++;
-    } else if (/\s/.test(ch)) {
+    } else if (
+      code === 32 || code === 9 || code === 10 || code === 13 ||
+      code === 11 || code === 12 || code === 0xa0 || code === 0x3000
+    ) {
       whitespaceChars++;
-    } else if (/[{}[\],:"'<>\/\\(){}.;,!?@#$%^&*+=|~`]/.test(ch)) {
+    } else if (code < 128 && PUNCT_ASCII[code]) {
       punctChars++;
     } else {
       otherChars++;
     }
   }
 
-  return (
+  const weighted =
     cjkChars * 0.6 +
     digitChars * 0.33 +
     whitespaceChars * 0.25 +
     punctChars * 0.5 +
-    otherChars * 0.25
-  );
+    otherChars * 0.25;
+
+  return sampled && counted > 0 ? (weighted * text.length) / counted : weighted;
 }
 
 /**

@@ -33,7 +33,7 @@ import { sessionTombstoneBinding } from "./session";
  * ⚠️ 上限**只允许推迟、不允许跳过** ✗：多出来的会话必须计入 `deferredSessions` 并打日志 ✓
  * —— 否则就是"静默没做"✗（这个文件第 62 轮的教训 ✓）。
  */
-const DEFAULT_BACKFILL_SWEEP_MAX = 32;
+const DEFAULT_BACKFILL_SWEEP_MAX = 8;
 
 export { trimIndexedMessages };
 
@@ -554,7 +554,12 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
  */
 export async function compactOversizedSessionLogs(): Promise<{ compactedSessions: number; linesSaved: number }> {
   const out = { compactedSessions: 0, linesSaved: 0 };
-  for (const sessionId of await listSessionLogs()) {
+  // 只碰 >256KB 的日志：600+ 个小文件逐个 stat/读窗正是启动维护慢的主因之一。
+  const MIN_BYTES = 256 * 1024;
+  const { listSessionLogsWithSize } = await import("./session-jsonl");
+  const logs = await listSessionLogsWithSize();
+  for (const { id: sessionId, size } of logs) {
+    if (size > 0 && size < MIN_BYTES) continue;
     try {
       const result = await compactSessionLog(sessionId);
       if (result.compacted) {
