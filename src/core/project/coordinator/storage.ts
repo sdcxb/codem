@@ -134,6 +134,7 @@ export async function setCoordinatorSession(projectPath: string, sessionId: stri
   const state = await ensureProjectState(projectPath, projectName);
   const previous = state.coordinatorSessionId;
   state.coordinatorSessionId = sessionId;
+  if (sessionId) state.threads = state.threads.filter((t) => t.sessionId !== sessionId);
   await writeProjectState(projectPath, state);
   await appendProjectEvent(projectPath, {
     at: Date.now(),
@@ -160,6 +161,10 @@ export async function registerThread(
 ): Promise<ProjectThread> {
   const state = await ensureProjectState(projectPath);
   const now = Date.now();
+  if (state.coordinatorSessionId === thread.sessionId) {
+    // 协调者不是 thread；即使调用方先 register 后 setCoordinator，也不要留两条身份。
+    return { sessionId: thread.sessionId, title: thread.title, status: thread.status ?? "idle", createdAt: now, updatedAt: now };
+  }
   const existing = state.threads.find((t) => t.sessionId === thread.sessionId);
   const next: ProjectThread = existing
     ? { ...existing, title: thread.title, worktreePath: thread.worktreePath ?? existing.worktreePath, status: thread.status ?? existing.status, updatedAt: now }
@@ -176,6 +181,34 @@ export async function registerThread(
     : [...state.threads, next];
   await writeProjectState(projectPath, state);
   return next;
+}
+
+/** 更新 thread 生命周期状态；协调者自身不算 thread。 */
+export async function updateThreadStatus(
+  projectPath: string,
+  sessionId: string,
+  status: ProjectThreadStatus
+): Promise<boolean> {
+  const state = await readProjectState(projectPath);
+  if (state.coordinatorSessionId === sessionId) return false;
+  const thread = state.threads.find((t) => t.sessionId === sessionId);
+  if (!thread) return false;
+  thread.status = status;
+  thread.updatedAt = Date.now();
+  await writeProjectState(projectPath, state);
+  await appendProjectEvent(projectPath, { at: Date.now(), type: "thread.status", sessionId, data: { status } });
+  return true;
+}
+
+/** 删除 thread 时从 registry 移除，避免 Overview 里留幽灵项。 */
+export async function removeThread(projectPath: string, sessionId: string): Promise<boolean> {
+  const state = await readProjectState(projectPath);
+  const next = state.threads.filter((t) => t.sessionId !== sessionId);
+  if (next.length === state.threads.length) return false;
+  state.threads = next;
+  await writeProjectState(projectPath, state);
+  await appendProjectEvent(projectPath, { at: Date.now(), type: "thread.removed", sessionId });
+  return true;
 }
 
 export interface InvalidReport {

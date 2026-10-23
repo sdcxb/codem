@@ -91,6 +91,17 @@ Report fields:
         supersedes: { type: "string" },
         conflict: { type: "string" },
         resolution: { type: "string" },
+        pull_request: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+            number: { type: "number" },
+            title: { type: "string" },
+            state: { type: "string", enum: ["draft", "open", "merged", "closed"] },
+            checks: { type: "string", enum: ["pending", "passing", "failing", "none"] },
+          },
+          required: ["state"],
+        },
       },
       required: ["status", "summary"],
     },

@@ -266,6 +266,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
     const updated = [...get().sessions, session];
     set({ sessions: updated, currentSession: session });
+    /*
+     * 项目已经有协调者时，新建会话就是 thread：先以 idle 注册，
+     * 这样 Overview 在它写第一份报告前也能看到“运行中/空闲”。
+     * 协调者自己会被 setCoordinatorSession 从 registry 移除。
+     */
+    if (project?.path) {
+      void import("./project/coordinator/storage")
+        .then(async (m) => {
+          const state = await m.readProjectState(project.path!);
+          if (state.coordinatorSessionId && state.coordinatorSessionId !== session.id) {
+            await m.registerThread(project.path!, { sessionId: session.id, title: session.title, status: "idle" });
+          }
+        })
+        .catch((e) => console.warn("[store.createSession] 注册 thread 失败（不影响会话）:", e));
+    }
     console.log(`[createSession] Set currentSession to: ${session.id}, title: ${session.title}`);
     return session;
   },
@@ -516,8 +531,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       || (session?.projectId === get().currentProject?.id ? get().currentProject?.path : undefined);
     if (ownerPath) {
       void import("./project/coordinator/storage")
-        .then((m) => m.clearCoordinatorIfMatches(ownerPath, sessionId))
-        .catch((e) => console.warn("[store.deleteSession] 清理协调者指针失败（不影响删除本身）:", e));
+        .then((m) => Promise.all([
+          m.clearCoordinatorIfMatches(ownerPath, sessionId),
+          m.removeThread(ownerPath, sessionId),
+        ]))
+        .catch((e) => console.warn("[store.deleteSession] 清理协调者/thread 失败（不影响删除本身）:", e));
     }
     set({ sessions: get().sessions.filter((s) => s.id !== sessionId), currentSession: get().currentSession?.id === sessionId ? null : get().currentSession });
     /**

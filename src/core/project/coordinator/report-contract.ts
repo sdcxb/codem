@@ -21,6 +21,7 @@ const TOP_LEVEL = new Set([
   "conflict",
   "resolution",
   "retroactive",
+  "pull_request",
 ]);
 
 const STATUS = new Set(["in_progress", "done", "blocked", "failed"]);
@@ -141,6 +142,18 @@ export function validateThreadReport(input: unknown): ThreadReport {
   if (input.conflict !== undefined && typeof input.conflict !== "string") issues.push("conflict 必须是字符串");
   if (input.resolution !== undefined && typeof input.resolution !== "string") issues.push("resolution 必须是字符串");
   if (input.retroactive !== undefined && typeof input.retroactive !== "boolean") issues.push("retroactive 必须是布尔值");
+
+  const pr = input.pull_request;
+  if (pr !== undefined) {
+    if (!isRecord(pr)) issues.push("pull_request 必须是对象");
+    else {
+      if (typeof pr.state !== "string" || !["draft", "open", "merged", "closed"].includes(pr.state)) issues.push("pull_request.state 非法");
+      if (pr.checks !== undefined && (typeof pr.checks !== "string" || !["pending", "passing", "failing", "none"].includes(pr.checks))) issues.push("pull_request.checks 非法");
+      if (pr.url !== undefined && typeof pr.url !== "string") issues.push("pull_request.url 必须是字符串");
+      if (pr.number !== undefined && !Number.isFinite(pr.number)) issues.push("pull_request.number 必须是数字");
+      if (pr.title !== undefined && typeof pr.title !== "string") issues.push("pull_request.title 必须是字符串");
+    }
+  }
 
   if (issues.length > 0) throw new ReportContractError(issues);
   return input as unknown as ThreadReport;

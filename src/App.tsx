@@ -3565,6 +3565,16 @@ if (!session) {
   ) => {
     if (!session) return;
 
+    // thread 生命周期：开跑即 working；协调者自身由 storage 内部跳过。
+    try {
+      const project = useProjectStore.getState().projects.find((p) => p.id === session.projectId);
+      if (project?.path) {
+        void import("./core/project/coordinator/storage")
+          .then((m) => m.updateThreadStatus(project.path, session.id, "working"))
+          .catch(() => undefined);
+      }
+    } catch { /* 非项目会话忽略 */ }
+
     /**
      * ===== P0-1：这个 loop **自己的那份消息列表**（跨会话污染的修法） =====
      *

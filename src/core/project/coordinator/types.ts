@@ -46,6 +46,17 @@ export interface ReportGate {
   command?: string;
 }
 
+export type PullRequestState = "draft" | "open" | "merged" | "closed";
+export type CiStatus = "pending" | "passing" | "failing" | "none";
+
+export interface PullRequestInfo {
+  url?: string;
+  number?: number;
+  title?: string;
+  state: PullRequestState;
+  checks?: CiStatus;
+}
+
 export interface ReportBlocking {
   question: string;
   options: string[];
@@ -67,6 +78,8 @@ export interface ThreadReport {
   conflict?: string;
   resolution?: string;
   retroactive?: boolean;
+  /** v3.3：PR/CI 收口信息（本地记录，不代替 GitHub 真实状态） */
+  pull_request?: PullRequestInfo;
 }
 
 export interface ProjectEvent {

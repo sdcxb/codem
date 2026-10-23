@@ -27,6 +27,8 @@ import {
   bucketForThread,
   scanReports,
   verifyProjectGates,
+  updateThreadStatus,
+  removeThread,
   listReports,
   registerThread,
   projectStatePath,
@@ -82,6 +84,20 @@ describe("协调者报告契约 v3.1", () => {
     })).toThrow(/default/);
   });
 });
+
+
+  it("RPT-5：pull_request 只接受合法状态/CI", () => {
+    expect(() => validateThreadReport({
+      report_id: "r1", thread_id: "t1", status: "done", summary: "ok",
+      evidence: [{ kind: "log", ref: "logs/x.log" }],
+      pull_request: { state: "unknown" },
+    })).toThrow(/pull_request.state/);
+    expect(validateThreadReport({
+      report_id: "r1", thread_id: "t1", status: "done", summary: "ok",
+      evidence: [{ kind: "log", ref: "logs/x.log" }],
+      pull_request: { number: 12, state: "open", checks: "passing" },
+    }).pull_request?.checks).toBe("passing");
+  });
 
 describe("项目状态与协调者上下文", () => {
   it("PST-1：设置协调者后，上下文包含 brief 与协调规则", async () => {
@@ -216,4 +232,29 @@ describe("项目 Overview 四态", () => {
     const overview = await buildProjectOverview(PROJECT);
     expect(overview.counts.done).toBe(1);
   });
+
+describe("thread 生命周期", () => {
+  it("TL-1：未写报告的 thread 也算运行中，blocked 进等你，删除后消失", async () => {
+    await setCoordinatorSession(PROJECT, "coord-1");
+    await registerThread(PROJECT, { sessionId: "t-idle", title: "T idle", status: "idle" });
+    let overview = await buildProjectOverview(PROJECT);
+    expect(overview.counts.working).toBe(1);
+    expect(overview.threads[0].title).toBe("T idle");
+
+    await updateThreadStatus(PROJECT, "t-idle", "blocked");
+    overview = await buildProjectOverview(PROJECT);
+    expect(overview.counts.waiting).toBe(1);
+
+    await removeThread(PROJECT, "t-idle");
+    overview = await buildProjectOverview(PROJECT);
+    expect(overview.threads).toHaveLength(0);
+  });
+
+  it("TL-2：协调者自身不进 thread registry", async () => {
+    await setCoordinatorSession(PROJECT, "coord-1");
+    await registerThread(PROJECT, { sessionId: "coord-1", title: "协调者" });
+    const overview = await buildProjectOverview(PROJECT);
+    expect(overview.threads.some((t) => t.sessionId === "coord-1")).toBe(false);
+  });
+});
 })

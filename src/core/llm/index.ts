@@ -1028,6 +1028,24 @@ function readContextCompactionThreshold(): number {
         const { getSetting, getSettingJSON } = await import("../storage/settings");
         const maxBytes = parseInt(getSetting("agentsMdMaxBytes") || "32768", 10);
         projectInstructions = await loadHierarchicalProjectInstructions(cwd, cwd, maxBytes) || undefined;
+        /*
+         * 项目指令层（`.codem/instructions.md`）此前只有定义、没有消费方：
+         * `loadLayeredInstructions` 全仓零调用 ⇒ 用户写的项目指令根本不进提示词。
+         * 这里把 project 层并入 projectInstructions（AGENTS.md 仍保留，二者拼接）。
+         */
+        try {
+          const { loadLayeredInstructions } = await import("../prompt/instruction-layers");
+          const layered = await loadLayeredInstructions(cwd);
+          const projectLayer = layered.entries
+            .filter((e) => e.layer === "project")
+            .map((e) => e.content)
+            .join(String.fromCharCode(10, 10));
+          if (projectLayer.trim()) {
+            projectInstructions = [projectInstructions, projectLayer].filter(Boolean).join(String.fromCharCode(10, 10));
+          }
+        } catch (e) {
+          console.warn("[buildSystemPromptAsync] 项目指令层读取失败（其余提示保持完整）：", e);
+        }
         // Load Git config (global setting, per-project override via .codem/settings.json)
         gitConfig = getSettingJSON<import("../settings/settings").GitConfig | null>("codem-git-config", null) || undefined;
         // Load Environment config

@@ -43,7 +43,26 @@
 - 证据缺失从“提示”升级为 gate 失败：done 报告缺证据 → 待评审；
 - 项目记忆索引 `.codem/project/MEMORY.md`：协调者上下文注入索引（≤2000 字符），正文按需读。
 
-### 5. 项目 Overview
+### 5. thread 生命周期
+
+- 项目有协调者后，新建会话会以 `idle` 注册为 thread（协调者自身会被移除）；
+- 开跑时 `working`，报告写入时按 done/blocked/failed 更新，删除会话时从 registry 移除；
+- Overview 在 thread 写第一份报告前就能看到“运行中/空闲”；
+- blocked 报告的 question/options/default 直接显示在「等你」分组。
+
+### 6. PR/CI 收口（本地记录）
+
+- 报告新增可选 `pull_request`（number/url/title/state/checks）；
+- Overview 显示 PR 状态与 CI 结果；
+- 这是**状态收口**，不是 GitHub 自动操作：不创建 PR、不修 CI、不自动合并。
+
+### 7. 项目指令修复
+
+- 发现 `.codem/instructions.md` 的加载函数全仓**零调用**，项目指令实际不进提示词；
+- 已在 `buildSystemPromptAsync` 中把 project 层并入 `projectInstructions`（AGENTS.md 保留）；
+- 真机：写入「项目代号：灯塔」后，协调者 prompt 36,145 字符包含该句。
+
+### 8. 项目 Overview
 
 - `buildProjectOverview` 四态：等你 / 运行中 / 待评审 / 已完成；
 - 侧栏项目行「项目总览」打开弹窗，显示计数、thread、gate、坏报告与缺失证据；

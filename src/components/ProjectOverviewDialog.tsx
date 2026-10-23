@@ -137,8 +137,21 @@ export function ProjectOverviewDialog({
                         <div key={t.sessionId} style={{ border: "1px solid var(--border-primary, #333)", borderRadius: "var(--radius-md)", padding: "7px 10px" }}>
                           <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
                             <span style={{ fontWeight: 600, fontSize: "var(--fs-sm, 12px)" }}>{t.title}</span>
-                            <span style={{ fontSize: "var(--fs-xs, 10px)", color: "var(--text-muted, #888)" }}>{t.sessionId}</span>
+                            <span style={{ fontSize: "var(--fs-xs, 10px)", color: "var(--text-muted, #888)" }}>{t.status} · {t.sessionId}</span>
                           </div>
+                          {t.latestReport?.pull_request && (
+                            <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--text-secondary, #bbb)", marginTop: 2 }}>
+                              PR {t.latestReport.pull_request.number ? `#${t.latestReport.pull_request.number} ` : ""}
+                              {t.latestReport.pull_request.state}
+                              {t.latestReport.pull_request.checks ? ` · CI ${t.latestReport.pull_request.checks}` : ""}
+                              {t.latestReport.pull_request.url ? ` · ${t.latestReport.pull_request.url}` : ""}
+                            </div>
+                          )}
+                          {t.latestReport?.blocking && (
+                            <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--warning, #d97706)", marginTop: 2 }}>
+                              等你：{t.latestReport.blocking.question}（选项：{t.latestReport.blocking.options.join(" / ")}；默认：{t.latestReport.blocking.default}）
+                            </div>
+                          )}
                           {t.latestReport && (
                             <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--text-secondary, #bbb)", marginTop: 2 }}>
                               {t.latestReport.summary}
