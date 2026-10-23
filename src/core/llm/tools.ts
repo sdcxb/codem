@@ -1170,12 +1170,21 @@ export function createBashTool(): ToolDef {
         const data = await Promise.race([
           // FIX: 传 timeoutMs 给 Rust — 超时时 Rust 真正杀进程树（之前前端
           // Promise.race 只是放弃 Promise，底层命令仍在后台跑）。
-          executeCommand(command, workdir, timeoutMs, shellPlan ?? undefined),
+          executeCommand(command, workdir, timeoutMs, shellPlan ?? undefined, ctx.sessionId),
           new Promise<never>((_, reject) => {
             timeoutAbortFn = () => {
               reject(new Error(`Command timed out after ${timeoutMs}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.`));
             };
             externalAbortFn = () => {
+              // abort 只让前端 race 返回还不够：Rust 侧子进程要立刻杀掉，
+              // 否则删除运行中会话后命令仍会跑到自己结束。
+              if (ctx.sessionId) {
+                // 动态 import：测试里大量 `vi.mock("../core/file-api")` 没有这个新导出，
+                // 静态引用会让所有 abort 用例直接抛 "No export"。
+                void import("../file-api")
+                  .then((m) => m.killSessionProcesses?.(ctx.sessionId!))
+                  .catch(() => {});
+              }
               reject(new Error("Command cancelled"));
             };
             timeoutController!.signal.addEventListener("abort", timeoutAbortFn);

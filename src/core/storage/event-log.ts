@@ -30,6 +30,7 @@
  * `validateReplay`（维护自检），详见 `event-projection.ts` 模块头。
  */
 
+import { isSessionDeleted } from "./session-tombstones";
 import { getStoragePort, hasStoragePort } from "./port";
 import { reportAdvisory, reportPersistFailure } from "./persist-failure";
 
@@ -261,6 +262,14 @@ export class EventLog {
     payload: Record<string, unknown>,
   ): SessionEvent {
     guardEventType(type);
+    /**
+     * 删除会话是同步删行；正在跑的 loop/工具回调仍可能追加事件。
+     * 不短路就会在已删会话上写 session_events → FOREIGN KEY constraint failed。
+     * 返回 seq=0 的未落库事件是既有失败形状（不是成功）。
+     */
+    if (isSessionDeleted(sessionId)) {
+      return { seq: 0, sessionId, type: type as SessionEventType, payload, timestamp: Date.now() };
+    }
     // 路由到镜像的**唯一条件**：该会话的事件已完整加载（见 rustEventPort 注释）。
     // 未加载完 → 由下面的 `rustEventPortAny()` 接手（占位 seq 会被加载逻辑保留）。
     const routed = rustEventPort(sessionId);
@@ -339,6 +348,15 @@ export class EventLog {
     events: Array<{ type: SessionEventType | string; payload: Record<string, unknown> }>,
   ): SessionEvent[] {
     for (const evt of events) guardEventType(evt.type);
+    if (isSessionDeleted(sessionId)) {
+      return events.map((evt) => ({
+        seq: 0,
+        sessionId,
+        type: evt.type as SessionEventType,
+        payload: evt.payload,
+        timestamp: Date.now(),
+      }));
+    }
     // 与 append 同样的分流：该会话已加载完 → 走镜像 + 批量发件箱（单事务、seq 连续）
     const routed = rustEventPort(sessionId) ?? rustEventPortAny();
     if (routed) {

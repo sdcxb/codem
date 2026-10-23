@@ -25,8 +25,8 @@ export default {
       patches: [
         {
           file: "src-tauri/src/lib.rs",
-          from: "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None, None)",
-          to: "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None)",
+          from: "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None, None, None)",
+          to: "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None, None)",
         },
       ],
       tests: ["src/test/tauri-command-test-arity.test.ts"],
@@ -38,8 +38,8 @@ export default {
       patches: [
         {
           file: "src-tauri/src/lib.rs",
-          from: "            Some(120_000),\n            None,\n            None,\n        )",
-          to: "            Some(120_000),\n            None,\n            None,\n            None,\n        )",
+          from: "            Some(120_000),\n            None,\n            None,\n            None,\n        )",
+          to: "            Some(120_000),\n            None,\n            None,\n            None,\n            None,\n        )",
         },
       ],
       tests: ["src/test/tauri-command-test-arity.test.ts"],
@@ -53,8 +53,8 @@ export default {
       patches: [
         {
           file: "src-tauri/src/lib.rs",
-          from: "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n) -> Result<serde_json::Value, String> {",
-          to: "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n    extra_probe: Option<String>,\n) -> Result<serde_json::Value, String> {",
+          from: "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n    // 发起这条命令的会话；用于删除会话/abort 时立即杀掉命令进程树。\n    session_id: Option<String>,\n) -> Result<serde_json::Value, String> {",
+          to: "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n    // 发起这条命令的会话；用于删除会话/abort 时立即杀掉命令进程树。\n    session_id: Option<String>,\n    extra_probe: Option<String>,\n) -> Result<serde_json::Value, String> {",
         },
       ],
       tests: ["src/test/tauri-command-test-arity.test.ts"],

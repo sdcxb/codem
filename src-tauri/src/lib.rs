@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::WindowEvent as WinEvent;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
@@ -317,6 +317,13 @@ struct AppState {
     default_model: Mutex<String>,
     default_agent: Mutex<String>,
     mcp_processes: TokioMutex<HashMap<String, McpProcessHandle>>,
+}
+
+/// 正在执行命令的 session → 子进程 pid。删除会话/abort 时按 session 杀进程树。
+/// 用全局表而不是 AppState：execute_command 的 Rust 单测只传命令参数，拿不到 State。
+fn exec_processes() -> &'static Mutex<HashMap<String, u32>> {
+    static TABLE: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+    TABLE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 // ========== Commands ==========
@@ -2245,6 +2252,8 @@ async fn execute_command(
     shell: Option<String>,
     // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。
     bash_path: Option<String>,
+    // 发起这条命令的会话；用于删除会话/abort 时立即杀掉命令进程树。
+    session_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let work_dir = cwd.unwrap_or_else(|| std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
@@ -2352,6 +2361,10 @@ async fn execute_command(
 
     // Take child pid before moving child into a thread
     let child_pid = child.id();
+    let exec_session = session_id.filter(|s| !s.is_empty());
+    if let Some(ref sid) = exec_session {
+        exec_processes().lock().unwrap().insert(sid.clone(), child_pid);
+    }
 
     // ===== 输出读取（★ 第 185 波：**读取阶段就有上限**）=====
     //
@@ -2437,6 +2450,10 @@ async fn execute_command(
                     runtime_log::truncate_utf8(&runtime_log::mask_secrets(&command), 200)
                 ),
             );
+            if let Some(ref sid) = exec_session {
+                let mut map = exec_processes().lock().unwrap();
+                if map.get(sid) == Some(&child_pid) { map.remove(sid); }
+            }
             return Err(format!(
                 "Command timed out after {}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.",
                 effective_timeout
@@ -2462,11 +2479,33 @@ async fn execute_command(
         ),
     );
 
+    if let Some(ref sid) = exec_session {
+        let mut map = exec_processes().lock().unwrap();
+        if map.get(sid) == Some(&child_pid) { map.remove(sid); }
+    }
     Ok(serde_json::json!({
         "stdout": stdout,
         "stderr": stderr,
         "exitCode": status.code(),
     }))
+}
+
+/// 立即杀掉某个会话仍在前台执行的命令进程树（删除会话 / abort 用）。
+/// 返回 true 表示确实找到了在跑的命令并发了 kill。
+#[tauri::command]
+async fn kill_session_processes(session_id: String) -> Result<bool, String> {
+    let pid = exec_processes().lock().unwrap().remove(&session_id);
+    match pid {
+        Some(pid) => {
+            kill_process_tree(Some(pid))?;
+            runtime_log::append_line(
+                "INFO",
+                &format!("session abort: killed exec tree session={} pid={}", session_id, pid),
+            );
+            Ok(true)
+        }
+        None => Ok(false),
+    }
 }
 
 #[tauri::command]
@@ -4659,6 +4698,7 @@ let app = tauri::Builder::default()
             delete_directory,
             delete_directory_permanent,
             execute_command,
+            kill_session_processes,
 codegraph_install,
             open_folder_dialog,
             open_file_external,
@@ -6306,7 +6346,7 @@ mod harden_185_tests {
     #[cfg(target_os = "windows")]
     #[tokio::test]
     async fn r3_execute_command_still_works_and_marks_truncation() {
-        let ok = execute_command("Write-Output 'hello-185'".to_string(), None, Some(30_000), None, None)
+        let ok = execute_command("Write-Output 'hello-185'".to_string(), None, Some(30_000), None, None, None)
             .await
             .expect("普通命令必须成功");
         assert_eq!(ok["stdout"].as_str().unwrap().trim(), "hello-185");
@@ -6317,6 +6357,7 @@ mod harden_185_tests {
             "1..4000 | ForEach-Object { 'x' * 40 }".to_string(),
             None,
             Some(120_000),
+            None,
             None,
             None,
         )
@@ -6339,6 +6380,7 @@ mod harden_185_tests {
             "Write-Output 'start'; Start-Sleep -Seconds 30; Write-Output 'end'".to_string(),
             None,
             Some(1_000),
+            None,
             None,
             None,
         )

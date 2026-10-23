@@ -466,6 +466,7 @@ export async function executeCommand(
   cwd?: string,
   timeoutMs?: number,
   shellPlan?: ShellPlanArg,
+  sessionId?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode?: number }> {
   // FIX(对标 dsh): pass timeout_ms so Rust kills the process tree on timeout —
   // previously the frontend Promise.race abandoned the promise while the
@@ -476,7 +477,13 @@ export async function executeCommand(
     timeout_ms: timeoutMs,
     shell: shellPlan?.kind ?? "powershell",
     bash_path: shellPlan?.bashPath ?? null,
+    sessionId,
   });
+}
+
+/** 立即杀掉某会话仍在跑的命令进程树（删除会话 / abort）。 */
+export async function killSessionProcesses(sessionId: string): Promise<boolean> {
+  return tauriInvoke("kill_session_processes", { sessionId });
 }
 
 /**

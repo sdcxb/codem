@@ -1,8 +1,8 @@
 {
   "wave": "tauri-arity-230",
   "description": "第 230 波：`#[tauri::command]` 的形参个数与 lib.rs 里调用实参个数必须一致（挡住「改了签名忘了改 Rust 测试」⇒ cargo test --lib 编不过）",
-  "runAt": "2026-10-17T01:34:26.408Z",
-  "specFingerprint": "a4593c17d8cf55124b2f13e5245e8e6659a4ef5b",
+  "runAt": "2026-10-23T09:24:17.990Z",
+  "specFingerprint": "b14d36d48c40a5b3acf915f0665472f439b0d443",
   "files": [
     "src-tauri/src/lib.rs"
   ],
@@ -17,8 +17,8 @@
       "patches": [
         {
           "file": "src-tauri/src/lib.rs",
-          "from": "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None, None)",
-          "to": "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None)"
+          "from": "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None, None, None)",
+          "to": "        let ok = execute_command(\"Write-Output 'hello-185'\".to_string(), None, Some(30_000), None, None)"
         }
       ],
       "tests": [
@@ -29,7 +29,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3136
+      "ms": 2727
     },
     {
       "id": "MUT-2 某条用例多传一个实参",
@@ -37,8 +37,8 @@
       "patches": [
         {
           "file": "src-tauri/src/lib.rs",
-          "from": "            Some(120_000),\n            None,\n            None,\n        )",
-          "to": "            Some(120_000),\n            None,\n            None,\n            None,\n        )"
+          "from": "            Some(120_000),\n            None,\n            None,\n            None,\n        )",
+          "to": "            Some(120_000),\n            None,\n            None,\n            None,\n            None,\n        )"
         }
       ],
       "tests": [
@@ -49,7 +49,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3355
+      "ms": 2706
     },
     {
       "id": "MUT-3 给命令加一个形参却不改调用点",
@@ -57,8 +57,8 @@
       "patches": [
         {
           "file": "src-tauri/src/lib.rs",
-          "from": "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n) -> Result<serde_json::Value, String> {",
-          "to": "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n    extra_probe: Option<String>,\n) -> Result<serde_json::Value, String> {"
+          "from": "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n    // 发起这条命令的会话；用于删除会话/abort 时立即杀掉命令进程树。\n    session_id: Option<String>,\n) -> Result<serde_json::Value, String> {",
+          "to": "    // 显式 bash 路径（插件设置来的）；为空则按标准位置探测。\n    bash_path: Option<String>,\n    // 发起这条命令的会话；用于删除会话/abort 时立即杀掉命令进程树。\n    session_id: Option<String>,\n    extra_probe: Option<String>,\n) -> Result<serde_json::Value, String> {"
         }
       ],
       "tests": [
@@ -69,7 +69,7 @@
       "observedRed": true,
       "ok": true,
       "exitCode": 1,
-      "ms": 3352
+      "ms": 2783
     }
   ]
 }

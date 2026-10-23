@@ -500,6 +500,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     markSessionDeleted(sessionId);
     // 先停掉正在跑的 loop，再删数据；否则工具/模型回调会在已删会话上写消息（FK 失败）。
     abortSessionLoop(sessionId);
+    // abort 的 bash 监听会顺手杀命令树；这里再兜一次（命令在 abort 监听注册前就 spawn 的情况）。
+    void import("./file-api")
+      .then((m) => m.killSessionProcesses(sessionId))
+      .catch(() => {});
     // Clean up worktree if this session had one
     const session = get().sessions.find(s => s.id === sessionId);
     if (session?.worktreePath && session.executionMode === "git_worktree") {
