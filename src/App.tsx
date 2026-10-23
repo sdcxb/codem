@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
+﻿import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "./components/ui/portal";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -2027,10 +2027,10 @@ flushStreamBuffer(); // flush all on unmount
 
       // Start automation engines (file watch + timer triggers)
       try {
-        const { startAutomationEngines, getAutomationConfig } = await import("./core/automation/automation-manager");
-        const config = getAutomationConfig();
-        if (config.triggers.length > 0) {
-          startAutomationEngines((trigger) => {
+        const { startAutomationEngines } = await import("./core/automation/automation-manager");
+        // 无论启动时有没有触发器都要装配 handler：否则用户运行中新增第一个定时器时，
+        // refreshAutomationEngines 只刷新表、没有 handler，触发后不会建会话。
+        startAutomationEngines((trigger) => {
             console.log(`[Automation] Triggered: ${trigger.name}`);
             if (getActiveExecutionCount() >= getConcurrencyLimit()) {
               console.warn(`[Automation] 跳过 ${trigger.name}：并发已满 ${getActiveExecutionCount()}/${getConcurrencyLimit()}`);
@@ -2047,8 +2047,7 @@ flushStreamBuffer(); // flush all on unmount
             if (session) {
               handleSendRef.current(trigger.message, [], []);
             }
-          });
-        }
+        });
       } catch (e) {
         console.warn("[App] Automation engine startup failed:", e);
       }
@@ -6213,5 +6212,6 @@ onClose={() => setCitationViewer(null)}
 }
 
 export default App;
+
 
 
