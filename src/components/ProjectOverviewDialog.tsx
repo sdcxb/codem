@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { createPortal } from "./ui/portal";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, RefreshCw, X } from "lucide-react";
 import { Spinner } from "./ui/Spinner";
-import { buildProjectOverview, type ProjectOverview, type OverviewBucket } from "../core/project/coordinator";
+import { buildProjectOverview, verifyProjectGates, type ProjectOverview, type OverviewBucket } from "../core/project/coordinator";
+import { confirmDialog } from "../core/ui/native-dialog";
 
 const BUCKETS: Array<{ id: OverviewBucket; zh: string; en: string; color: string; icon: typeof Clock3 }> = [
   { id: "waiting", zh: "等你", en: "Waiting on you", color: "var(--warning, #d97706)", icon: AlertTriangle },
@@ -23,6 +24,7 @@ export function ProjectOverviewDialog({
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -33,6 +35,21 @@ export function ProjectOverviewDialog({
       setError(e?.message || String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const reverify = async () => {
+    const ok = await confirmDialog("重验 gate 会重新执行报告里登记的命令（在工作区里跑），确认继续？");
+    if (!ok) return;
+    setVerifying(true);
+    setError(null);
+    try {
+      await verifyProjectGates(projectPath);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -60,6 +77,9 @@ export function ProjectOverviewDialog({
             <div style={{ fontSize: "var(--fs-lg, 16px)", fontWeight: 600 }}>项目总览 · {projectName}</div>
             <div style={{ fontSize: "var(--fs-xs, 11px)", color: "var(--text-muted, #999)" }}>只读 .codem/project 的项目状态；不读 thread 聊天记录</div>
           </div>
+          <button aria-label="重验 gate" title="重验 gate" disabled={verifying} onClick={() => void reverify()} style={{ background: "none", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", cursor: "pointer", padding: "3px 8px", fontSize: "var(--fs-xs)" }}>
+            {verifying ? "重验中…" : "重验 gate"}
+          </button>
           <button aria-label="刷新" title="刷新" onClick={() => void load()} style={{ background: "none", border: "none", color: "var(--text-secondary, #aaa)", cursor: "pointer", padding: 6 }}>
             <RefreshCw className="icon-sm" />
           </button>
@@ -85,6 +105,12 @@ export function ProjectOverviewDialog({
                 );
               })}
             </div>
+
+            {overview.unverifiedGates > 0 && (
+              <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--warning, #d97706)", color: "var(--warning, #d97706)", fontSize: "var(--fs-xs, 11px)" }}>
+                <AlertTriangle className="icon-xs" /> {overview.unverifiedGates} 个 gate 未重验（报告说通过不算，点「重验 gate」）
+              </div>
+            )}
 
             {overview.missingEvidence > 0 && (
               <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--warning, #d97706)", color: "var(--warning, #d97706)", fontSize: "var(--fs-xs, 11px)" }}>

@@ -42,6 +42,8 @@ export interface ReportGate {
   passed: boolean;
   verified_by: GateVerifier;
   evidence_ref?: string;
+  /** v3.2：可独立重跑的命令；没有它则这条 gate 只能算“未重验” */
+  command?: string;
 }
 
 export interface ReportBlocking {

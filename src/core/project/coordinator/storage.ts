@@ -38,6 +38,18 @@ function defaultState(): ProjectState {
   return { version: 1, coordinatorSessionId: null, threads: [], updatedAt: Date.now() };
 }
 
+function defaultMemoryIndex(projectName: string): string {
+  return [
+    `# ${projectName} · 记忆索引`,
+    "",
+    "> 协调者只读这个索引；需要正文时按路径读，不要把整库塞进上下文。",
+    "",
+    "- `brief.md` — 项目目标/约束/验收",
+    "- `reports/` — thread 报告",
+    "",
+  ].join(String.fromCharCode(10));
+}
+
 function defaultBrief(projectName: string): string {
   return [
     `# ${projectName} · 项目 brief`,
@@ -107,6 +119,10 @@ export async function ensureProjectState(projectPath: string, projectName = "Pro
   const briefPath = projectStatePath(projectPath, "brief.md");
   if (!(await fileApi.exists(briefPath))) {
     await writeText(briefPath, defaultBrief(projectName), projectPath);
+  }
+  const memoryPath = projectStatePath(projectPath, "MEMORY.md");
+  if (!(await fileApi.exists(memoryPath))) {
+    await writeText(memoryPath, defaultMemoryIndex(projectName), projectPath);
   }
   if (!(await fileApi.exists(projectStatePath(projectPath, "state.json")))) {
     await writeProjectState(projectPath, state);
@@ -303,6 +319,73 @@ export async function registerGate(projectPath: string, gate: Omit<ProjectGate, 
 export async function readGates(projectPath: string): Promise<ProjectGate[]> {
   const parsed = await readJson<{ gates?: ProjectGate[] }>(projectStatePath(projectPath, "gates.json"), projectPath);
   return Array.isArray(parsed?.gates) ? parsed!.gates : [];
+}
+
+export interface GateCheck {
+  reportId: string;
+  gateId: string;
+  command?: string;
+  ok: boolean;
+  reason?: string;
+  exitCode?: number;
+  outputTail?: string;
+  checkedAt: number;
+}
+
+export async function readGateChecks(projectPath: string): Promise<GateCheck[]> {
+  const parsed = await readJson<{ checks?: GateCheck[] }>(projectStatePath(projectPath, "gate-checks.json"), projectPath);
+  return Array.isArray(parsed?.checks) ? parsed!.checks : [];
+}
+
+async function writeGateChecks(projectPath: string, checks: GateCheck[]): Promise<void> {
+  await writeText(projectStatePath(projectPath, "gate-checks.json"), JSON.stringify({ checks }, null, 2) + String.fromCharCode(10), projectPath);
+}
+
+/**
+ * 独立重验 gate：只对每 thread 最新报告里 `passed=true` 的 gate 执行。
+ * **必须由用户显式触发**（Overview 的「重验 gate」按钮），不在每次读上下文时偷偷跑命令。
+ * 没有 `command` 的 gate 记为 no-command（未重验），不能算 done。
+ */
+export async function verifyProjectGates(
+  projectPath: string,
+  opts: { timeoutMs?: number } = {}
+): Promise<GateCheck[]> {
+  const reports = await listReports(projectPath);
+  const latestByThread = new Map<string, ThreadReport>();
+  for (const r of reports) {
+    const prev = latestByThread.get(r.thread_id);
+    if (!prev || (r.timestamp ?? 0) >= (prev.timestamp ?? 0)) latestByThread.set(r.thread_id, r);
+  }
+  const checks: GateCheck[] = [];
+  for (const report of latestByThread.values()) {
+    for (const gate of report.gates ?? []) {
+      if (!gate.passed) continue;
+      const base = { reportId: report.report_id, gateId: gate.id, command: gate.command, checkedAt: Date.now() };
+      if (!gate.command || !gate.command.trim()) {
+        checks.push({ ...base, ok: false, reason: "no-command" });
+        continue;
+      }
+      try {
+        const r = await fileApi.executeCommand(gate.command, projectPath, opts.timeoutMs ?? 120000);
+        const output = ((r.stdout || "") + String.fromCharCode(10) + (r.stderr || "")).trim();
+        checks.push({
+          ...base,
+          ok: r.exitCode === 0,
+          exitCode: r.exitCode,
+          outputTail: output.slice(-800),
+          reason: r.exitCode === 0 ? undefined : "command-failed",
+        });
+      } catch (e) {
+        checks.push({ ...base, ok: false, reason: e instanceof Error ? e.message : String(e) });
+      }
+    }
+  }
+  await writeGateChecks(projectPath, checks);
+  return checks;
+}
+
+export async function readMemoryIndex(projectPath: string): Promise<string> {
+  return (await readText(projectStatePath(projectPath, "MEMORY.md"), projectPath)) ?? "";
 }
 
 export async function readBrief(projectPath: string): Promise<string> {

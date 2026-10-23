@@ -35,7 +35,15 @@
 - 报告里的 log/file 证据如果只在 worktree，工具会复制到主工作区 `.codem/evidence/<threadId>/` 并改写 ref；
 - 主工作区用 `git --git-common-dir` 解析，worktree 里也不会写错地方。
 
-### 4. 项目 Overview
+### 4. gate 重验与项目记忆索引（P2）
+
+- 报告 gate 新增可选 `command`；`verifyProjectGates` 对每 thread 最新报告的 `passed=true` gate 独立重跑；
+- 没有 `command` 的 gate 记为 `no-command`，**不能算 done**；Overview 显示「N 个 gate 未重验」；
+- 重验是**用户显式动作**（总览弹窗「重验 gate」，会确认），不在读上下文时偷偷跑命令；
+- 证据缺失从“提示”升级为 gate 失败：done 报告缺证据 → 待评审；
+- 项目记忆索引 `.codem/project/MEMORY.md`：协调者上下文注入索引（≤2000 字符），正文按需读。
+
+### 5. 项目 Overview
 
 - `buildProjectOverview` 四态：等你 / 运行中 / 待评审 / 已完成；
 - 侧栏项目行「项目总览」打开弹窗，显示计数、thread、gate、坏报告与缺失证据；

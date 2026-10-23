@@ -86,6 +86,9 @@ export function validateThreadReport(input: unknown): ThreadReport {
         if (typeof gate.verified_by !== "string" || !VERIFIER.has(gate.verified_by)) {
           issues.push(`gates[${i}].verified_by 非法`);
         }
+        if (gate.command !== undefined && (typeof gate.command !== "string" || !gate.command.trim())) {
+          issues.push(`gates[${i}].command 必须是非空字符串`);
+        }
         if (gate.passed === true) {
           if (gate.verified_by !== "command") issues.push(`gates[${i}] passed=true 必须 verified_by=command`);
           if (typeof gate.evidence_ref !== "string" || !gate.evidence_ref.trim()) {

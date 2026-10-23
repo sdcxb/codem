@@ -10,6 +10,7 @@ vi.mock("../core/file-api", () => ({
   writeFile: vi.fn(async (p: string, c: string) => { files.set(p, c); }),
   appendFile: vi.fn(async (p: string, c: string) => { files.set(p, (files.get(p) ?? "") + c); }),
   exists: vi.fn(async (p: string) => files.has(p)),
+  executeCommand: vi.fn(async () => ({ stdout: "ok", stderr: "", exitCode: 0 })),
   listDirectory: vi.fn(async (dir: string) => {
     const names = new Set<string>();
     for (const p of files.keys()) {
@@ -25,6 +26,7 @@ import {
   buildProjectOverview,
   bucketForThread,
   scanReports,
+  verifyProjectGates,
   listReports,
   registerThread,
   projectStatePath,
@@ -89,6 +91,7 @@ describe("项目状态与协调者上下文", () => {
     expect(context).toContain("发布官网");
     expect(context).toContain("项目协调者上下文");
     expect(context).toContain("协调规则");
+    expect(context).toContain("记忆索引");
   });
 
   it("PST-2：写报告会更新 thread registry，并在上下文里出现", async () => {
@@ -144,7 +147,11 @@ describe("项目 Overview 四态", () => {
   it("OV-1：blocked→等你，done 无 gate→待评审，done 全过→完成，in_progress→运行中", () => {
     expect(bucketForThread(thread("blocked"))).toBe("waiting");
     expect(bucketForThread(thread("working"), report("done"))).toBe("review");
-    expect(bucketForThread(thread("working"), report("done", [{ id: "g1", passed: true, verified_by: "command", evidence_ref: "log" }]))).toBe("done");
+    const passedGate = report("done", [{ id: "g1", passed: true, verified_by: "command", evidence_ref: "log" }]);
+    expect(bucketForThread(thread("working"), passedGate)).toBe("review");
+    expect(bucketForThread(thread("working"), passedGate, {
+      gateChecks: [{ reportId: "r1", gateId: "g1", ok: true, checkedAt: 1 }],
+    })).toBe("done");
     expect(bucketForThread(thread("working"), report("in_progress"))).toBe("working");
     expect(bucketForThread(thread("working"), report("blocked"))).toBe("waiting");
   });
@@ -179,4 +186,34 @@ describe("项目 Overview 四态", () => {
     expect(overview.invalidReports).toHaveLength(1);
     expect(overview.counts.review).toBe(1);
   });
-});
+
+  it("OV-4：T3 假绿回归——没有 command 的 gate 不能算 done", async () => {
+    await setCoordinatorSession(PROJECT, "coord-1");
+    await writeThreadReport(PROJECT, {
+      report_id: "r-fake-green", thread_id: "t1", status: "done", summary: "五道门禁全绿",
+      evidence: [{ kind: "log", ref: "logs/t3.log" }],
+      gates: [{ id: "g1", passed: true, verified_by: "command", evidence_ref: "logs/t3.log" }],
+    }, { title: "T3 测试验收" });
+    files.set(projectStatePath(PROJECT, "logs/t3.log"), "claim only");
+    const checks = await verifyProjectGates(PROJECT);
+    expect(checks[0]).toMatchObject({ gateId: "g1", ok: false, reason: "no-command" });
+    const overview = await buildProjectOverview(PROJECT);
+    expect(overview.counts.done).toBe(0);
+    expect(overview.counts.review).toBe(1);
+    expect(overview.unverifiedGates).toBe(1);
+  });
+
+  it("OV-5：带 command 的 gate 重验通过后才算 done", async () => {
+    await setCoordinatorSession(PROJECT, "coord-1");
+    files.set(PROJECT + "/logs/t5.log", "exit 0");
+    await writeThreadReport(PROJECT, {
+      report_id: "r-verified", thread_id: "t5", status: "done", summary: "真绿",
+      evidence: [{ kind: "log", ref: "logs/t5.log" }],
+      gates: [{ id: "g1", passed: true, verified_by: "command", evidence_ref: "logs/t5.log", command: "node site/check.mjs" }],
+    }, { title: "T5 测试" });
+    const checks = await verifyProjectGates(PROJECT);
+    expect(checks[0]).toMatchObject({ gateId: "g1", ok: true });
+    const overview = await buildProjectOverview(PROJECT);
+    expect(overview.counts.done).toBe(1);
+  });
+})

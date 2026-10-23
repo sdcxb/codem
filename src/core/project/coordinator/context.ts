@@ -2,6 +2,8 @@ import {
   readBrief,
   readGates,
   readProjectState,
+  readMemoryIndex,
+  readGateChecks,
   missingEvidenceRefs,
   scanReports,
 } from "./storage";
@@ -22,10 +24,12 @@ export async function buildCoordinatorContext(
   const state = await readProjectState(projectPath);
   if (!state.coordinatorSessionId || state.coordinatorSessionId !== sessionId) return "";
 
-  const [brief, scan, gates] = await Promise.all([
+  const [brief, scan, gates, memoryIndex, gateChecks] = await Promise.all([
     readBrief(projectPath),
     scanReports(projectPath),
     readGates(projectPath),
+    readMemoryIndex(projectPath),
+    readGateChecks(projectPath),
   ]);
   const reports = scan.valid;
 
@@ -45,7 +49,11 @@ export async function buildCoordinatorContext(
     const conflict = r.conflict ? ` · conflict: ${r.conflict}` : "";
     const missing = await missingEvidenceRefs(projectPath, r);
     const evidenceText = missing.length ? ` · ⚠ 证据缺失: ${missing.join(",")}` : "";
-    reportLines.push(`- ${r.report_id}｜${r.thread_id}｜${r.status}｜${r.summary}${gatesText}${conflict}${evidenceText}`);
+    const checkText = (r.gates ?? []).map((g) => {
+      const c = gateChecks.find((x) => x.reportId === r.report_id && x.gateId === g.id);
+      return `${g.id}=${c ? (c.ok ? "verified" : `unverified(${c.reason || "fail"})`) : "unverified(no-check)"}`;
+    }).join(",");
+    reportLines.push(`- ${r.report_id}｜${r.thread_id}｜${r.status}｜${r.summary}${gatesText}${conflict}${evidenceText}${checkText ? ` · gate-check: ${checkText}` : ""}`);
   }
   const reportText = reportLines.length ? reportLines.join(String.fromCharCode(10)) : "- （还没有报告）";
 
@@ -61,6 +69,9 @@ export async function buildCoordinatorContext(
     "",
     `### 项目 brief\n${brief.trim().slice(0, 5000) || "（brief 为空）"}`,
     "",
+    "### 记忆索引（MEMORY.md）" + String.fromCharCode(10) +
+      (memoryIndex.trim().slice(0, 2000) || "（索引为空：可写 .codem/project/MEMORY.md）"),
+    "",
     `### thread registry（${state.threads.length} 个）\n${threadLines}`,
     "",
     `### 最近报告（${latest.length}/${reports.length}）\n${reportText}`,
@@ -69,6 +80,7 @@ export async function buildCoordinatorContext(
     "",
     "### 协调规则",
     "- `done` 报告必须有日志证据；`passed` gate 必须由命令验证并带 evidence_ref。",
+    "- gate 只有经过独立重验（gate-check=verified）才算通过；`unverified` 一律按评审未完成。",
     "- 报告之间冲突时先看 gate/证据，不要按标题猜。",
     "- 需要用户拍板时，blocked 报告必须给至少 2 个选项和默认项。",
   ].join("\n");

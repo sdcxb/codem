@@ -35,12 +35,13 @@
   没有它，协调者仍可能被 T3 那种“声称全绿”骗过；
 - 如果 P2 的 gate 重验 + 一次真实回归仍不能拦住假绿，则收缩为“只做项目总览 + 报告”，不把协调者作为默认入口。
 
-## 4. P2 必须做
+## 4. P2 已做（2026-10-23）
 
-1. **gate 重验**：协调者/Overview 对 `verified_by=command` 的 gate 重新执行命令（或校验 evidence 的退出码），失败即从 done 降为 review；
-2. **证据存在性**：已做“缺失可见”；P2 要把它变成 gate 失败，而不是只提示；
-3. **项目记忆索引**：brief 之外的 `MEMORY.md` 式索引，按需读正文；
-4. **协调者误报回归**：用 T3 假绿样本做判据，删掉重验逻辑必须变红。
+1. **gate 重验**：`verifyProjectGates` 对每 thread 最新报告的 passed gate 重跑 `command`；没有 command = no-command，不算 done；
+2. **证据存在性**：缺失证据把 done 降为 review，Overview 显示缺失数；
+3. **项目记忆索引**：`.codem/project/MEMORY.md` 注入协调者上下文（≤2000 字符）；
+4. **假绿回归**：`OV-4` 用“done + gate passed 但无 command”钉住，删掉重验逻辑必红；
+5. 真实官网项目复验：T3 五道门禁命令 exit 0；T1/T2 10 个 gate 无 command 仍为待评审，Overview `review 2 / done 1`。
 
 ## 5. 风险与边界
 

@@ -1,4 +1,4 @@
-import { missingEvidenceRefs, readProjectState, scanReports } from "./storage";
+import { missingEvidenceRefs, readGateChecks, readProjectState, scanReports, type GateCheck } from "./storage";
 import type { ProjectThread, ThreadReport } from "./types";
 
 /**
@@ -13,6 +13,8 @@ export type OverviewBucket = "waiting" | "working" | "review" | "done";
 export interface OverviewThread extends ProjectThread {
   bucket: OverviewBucket;
   latestReport?: ThreadReport;
+  missingEvidence: number;
+  gateChecks: GateCheck[];
 }
 
 export interface ProjectOverview {
@@ -20,16 +22,25 @@ export interface ProjectOverview {
   counts: Record<OverviewBucket, number>;
   invalidReports: Array<{ file: string; error: string }>;
   missingEvidence: number;
+  unverifiedGates: number;
   updatedAt: number;
 }
 
-export function bucketForThread(thread: ProjectThread, report?: ThreadReport): OverviewBucket {
+export function bucketForThread(
+  thread: ProjectThread,
+  report?: ThreadReport,
+  opts: { missingEvidence?: number; gateChecks?: GateCheck[] } = {}
+): OverviewBucket {
   if (report) {
     if (report.status === "blocked" || report.status === "failed") return "waiting";
     if (report.status === "done") {
       const gates = report.gates ?? [];
-      if (gates.length > 0 && gates.every((g) => g.passed)) return "done";
-      return "review";
+      if (gates.length === 0 || !gates.every((g) => g.passed)) return "review";
+      if ((opts.missingEvidence ?? 0) > 0) return "review";
+      const checks = opts.gateChecks ?? [];
+      const allVerified = gates.every((g) => checks.some((c) => c.gateId === g.id && c.reportId === report.report_id && c.ok));
+      if (!allVerified) return "review";
+      return "done";
     }
     return "working";
   }
@@ -41,17 +52,29 @@ export function bucketForThread(thread: ProjectThread, report?: ThreadReport): O
 export async function buildProjectOverview(projectPath: string): Promise<ProjectOverview> {
   const [state, scan] = await Promise.all([readProjectState(projectPath), scanReports(projectPath)]);
   const byId = new Map(scan.valid.map((r) => [r.report_id, r] as const));
+  const checks = await readGateChecks(projectPath);
   const threads: OverviewThread[] = [];
   let missingEvidence = 0;
+  let unverifiedGates = 0;
   for (const thread of state.threads) {
     const latestReport = thread.lastReportId ? byId.get(thread.lastReportId) : undefined;
+    const missing = latestReport ? await missingEvidenceRefs(projectPath, latestReport) : [];
+    missingEvidence += missing.length;
+    const reportChecks = latestReport ? checks.filter((c) => c.reportId === latestReport.report_id) : [];
     if (latestReport) {
-      const missing = await missingEvidenceRefs(projectPath, latestReport);
-      missingEvidence += missing.length;
+      for (const gate of latestReport.gates ?? []) {
+        if (gate.passed && !reportChecks.some((c) => c.gateId === gate.id && c.ok)) unverifiedGates++;
+      }
     }
-    threads.push({ ...thread, latestReport, bucket: bucketForThread(thread, latestReport) });
+    threads.push({
+      ...thread,
+      latestReport,
+      missingEvidence: missing.length,
+      gateChecks: reportChecks,
+      bucket: bucketForThread(thread, latestReport, { missingEvidence: missing.length, gateChecks: reportChecks }),
+    });
   }
   const counts: Record<OverviewBucket, number> = { waiting: 0, working: 0, review: 0, done: 0 };
   for (const thread of threads) counts[thread.bucket]++;
-  return { threads, counts, invalidReports: scan.invalid, missingEvidence, updatedAt: state.updatedAt };
+  return { threads, counts, invalidReports: scan.invalid, missingEvidence, unverifiedGates, updatedAt: state.updatedAt };
 }
