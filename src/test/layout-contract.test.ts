@@ -149,10 +149,10 @@ describe.skipIf(!BROWSER)("弹窗外壳真实布局契约（第 54 波）", () =
       .filter((r) => r.content.w < 320)
       .map((r) => `${r.w}x${r.h} → 内容区宽 ${r.content.w}px`);
     expect(bad, `内容区被挤没了：\n${bad.join("\n")}`).toEqual([]);
-    // 自适应：可用区域 ≥1090px 时是设计宽度 760，且弹窗不超过可用区域
-    const wide = PROBES!.sweep.results.filter((r) => r.w >= 1090);
+    // P2-1 后设计宽度是 1080；可用区域 ≥1200px 时稳定取 1080（再窄由 95vw 兜底）
+    const wide = PROBES!.sweep.results.filter((r) => r.w >= 1200);
     for (const r of wide) {
-      expect(r.panel.w, `${r.w}x${r.h} 弹窗应为设计宽度 760px`).toBe(760);
+      expect(r.panel.w, `${r.w}x${r.h} 弹窗应为设计宽度 1080px`).toBe(1080);
     }
     const narrowStage = PROBES!.sweep.results.filter((r) => r.w < 760);
     for (const r of narrowStage) {
@@ -210,12 +210,14 @@ describe("弹窗外壳的静态契约（第 54 波，不依赖浏览器）", () 
     ).toEqual([]);
   });
 
-  it("LAYOUT-5: 设置弹窗的设计宽度仍然来自它自己那条规则（760px + 95vw 上限）", () => {
+  it("LAYOUT-5: 设置弹窗的设计宽度来自它自己的 1080 规则（95vw 兜底仍在共用外壳规则）", () => {
     const css = readFileSync(join(ROOT, "src", "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
-    const m = /(?:^|\n)\.settings-panel,\s*\.project-manager,\s*\.config-editor\s*\{([^}]*)\}/.exec(css);
-    expect(m, "应能定位 .settings-panel 的外壳规则").toBeTruthy();
-    expect(m![1]).toMatch(/width:\s*760px;/);
-    expect(m![1]).toMatch(/max-width:\s*95vw;/);
+    const shell = /(?:^|\n)\.settings-panel,\s*\.project-manager,\s*\.config-editor\s*\{([^}]*)\}/.exec(css);
+    expect(shell, "应能定位共用外壳规则").toBeTruthy();
+    expect(shell![1]).toMatch(/max-width:\s*95vw;/);
+    const design = /(?:^|\n)\.settings-panel\s*\{([^}]*)\}/.exec(css);
+    expect(design, "应能定位 .settings-panel 自己的设计宽度规则").toBeTruthy();
+    expect(design![1]).toMatch(/width:\s*min\(1080px,\s*95vw\);/);
   });
 
   it("LAYOUT-7: 文字标签墙不得使用「小轨道 + max-content」的 auto-fill 网格（会压成竖排）", () => {

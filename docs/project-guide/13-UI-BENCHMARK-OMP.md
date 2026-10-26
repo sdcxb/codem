@@ -368,6 +368,27 @@ P3       Hub/Dream 形状与背景气质
 - `css-contract` 快照更新（2972 类），`scan-ui` 0/0；
 - 全量 **737 文件：735 通过 / 2 既有失败**、8522 用例通过。
 
+#### 0.9 第 208 轮 P2-1/P2-2 施工记录（2026-10-26）
+
+已落：
+
+- **P2-1 设置 1080 工作台**：`.settings-panel` 从 760 → `min(1080px, 95vw)`；左导航 160 → 220；头部压缩到 52px；`.settings-content` 858 宽，行组卡保留。
+  - 同时修掉一个真实回归：面板还是 `overflow:hidden` 的块级容器时，header 52 + body 484 + footer 68 = 604 > 85vh 上限，**底部按钮被裁掉一半**。现改为 `display:flex; flex-direction:column`，body `flex:1 1 auto; min-height:0; max-height:none`，footer 固定完整可见。截图实测：1080×571 面板下 footer 68px 完整。
+- **P2-2 右侧 Inspector**：`RightSidebar` 默认宽 400（≤1440 宽 360，持久化值优先）；App 在 ≥1440 默认展开、≤1280 resize 自动收起，避免挤压 820 正文列。右栏仍复用 Files/Browser 与 `panel-sidebar-width` 的持久化机制。
+- **P2-3 底部面板：按要求跳过**，没有动底部栏。
+
+未做（明确边界）：
+
+- **SettingsPage 路由 + 两级 IA（左 8 组 + 右侧子导航）**：这一轮只做 1080 工作台，不伪造“整页路由”。现有 23 个 tab 仍是单层左导航；要做整页必须新增路由/返回栈、迁移 23 个 tab、处理快捷键与未保存状态，属于单独立项，不能用 CSS 假装修完。
+- **P2-4 页面级导航、P2-5、P2-6** 未动；底部栏明确跳过。
+
+判据：
+
+- `ui-benchmark-construction` 增加 P2-1（1080/220/52/flex footer）与 P2-2（1440/1280 断点）；
+- `layout-contract` LAYOUT-2/5 从 760 更新为 1080 设计宽度（保留 95vw 兜底）；
+- `css-contract` 2972 类、`scan-ui` 0/0；
+- 全量 **737 文件：735 通过 / 2 既有失败**、**8524 用例通过**。
+
 ---
 
 ## 1. 证据与方法

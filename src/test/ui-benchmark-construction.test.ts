@@ -90,6 +90,23 @@ describe('UI 对标施工合同', () => {
     expect(settings).toContain('"记忆体检"')
   })
 
+  it('P2-1：设置 1080 工作台，侧栏 220，头部 52，内容区最高 760', () => {
+    expect(block(css, '.settings-panel')).toContain('width: min(1080px, 95vw)')
+    expect(block(css, '.settings-header')).toContain('min-height: 52px')
+    expect(block(css, '.settings-panel')).toContain('display: flex')
+    expect(block(css, '.settings-body')).toContain('flex: 1 1 auto')
+    expect(block(css, '.settings-body')).toContain('min-height: 0')
+    expect(block(codemUi, '.settings-sidebar')).toContain('width: 220px')
+  })
+
+  it('P2-2：右栏 1440 默认展开，1440 宽 360，≤1280 自动收起', () => {
+    const right = readFileSync(join(ROOT, 'src/components/RightSidebar.tsx'), 'utf8')
+    const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8')
+    expect(right).toContain('window.innerWidth <= 1440 ? 360 : 400')
+    expect(app).toContain('window.innerWidth >= 1440')
+    expect(app).toContain('window.innerWidth <= 1280')
+  })
+
   it('P1-7：设置内容一张行组卡，菜单/模态统一无阴影，Tooltip 500ms/11px', () => {
     const settingsContent = block(codemUi, '.settings-content')
     expect(settingsContent).toContain('background: var(--surface-1) !important')

@@ -15338,8 +15338,10 @@
   },
   "settings-body": {
     "display": "flex",
+    "flex": "1 1 auto",
     "flex-direction": "row",
-    "max-height": "60vh",
+    "max-height": "none",
+    "min-height": "0",
     "overflow": "hidden",
     "padding": "0"
   },
@@ -15391,7 +15393,8 @@
     "border-bottom": "1px solid var(--border-primary)",
     "display": "flex",
     "justify-content": "space-between",
-    "padding": "var(--space-8) var(--space-9)"
+    "min-height": "52px",
+    "padding": "var(--space-2) var(--space-6)"
   },
   "settings-mode-switch": {
     "margin-bottom": "var(--space-8)"
@@ -15444,11 +15447,13 @@
     "border": "1px solid var(--border-primary)",
     "border-radius": "var(--radius-lg)",
     "box-shadow": "0 8px 32px var(--shadow-color)",
+    "display": "flex",
+    "flex-direction": "column",
     "max-height": "85vh",
     "max-width": "95vw",
     "overflow": "hidden",
     "transform-origin": "center",
-    "width": "760px"
+    "width": "min(1080px, 95vw)"
   },
   "settings-row": {
     "align-items": "center",
@@ -15494,7 +15499,7 @@
     "overflow-y": "auto",
     "overscroll-behavior": "contain",
     "padding": "var(--space-6) var(--space-4)",
-    "width": "160px"
+    "width": "220px"
   },
   "settings-sidebar-item": {
     "align-items": "center",

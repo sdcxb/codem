@@ -66,7 +66,8 @@ export function RightSidebar(props: RightSidebarProps = {}) {
 const { width: sidebarWidth, isResizing, onResizeStart } = usePaneResize({
 min: 360,
 max: 620,
-initial: 420,
+/* P2-2：1440 宽给 360，宽屏给 400；持久化值仍优先。 */
+initial: typeof window !== "undefined" && window.innerWidth <= 1440 ? 360 : 400,
 storageKey: "right-sidebar-width",
 });
 

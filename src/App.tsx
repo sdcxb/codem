@@ -607,7 +607,17 @@ setGlobalCwd(currentProject?.path || "");
   }, []);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-const [rightRailOpen, setRightRailOpen] = useState(false);
+  // P2-2：1440 以上默认展开右侧 Inspector；≤1280 自动收起，避免挤压 820 正文列。
+  const [rightRailOpen, setRightRailOpen] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth >= 1440
+  );
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth <= 1280) setRightRailOpen(false);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   // P3 #46: Mobile sidebar drawer
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [appRoot, setAppRoot] = useState<string>(APP_ROOT_FALLBACK);
