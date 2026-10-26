@@ -46,29 +46,26 @@ function stripCssComments(css: string): string {
 }
 
 describe("SEARCHMOVE-198 设置搜索框移到标题栏中间", () => {
-  it("SEARCHMOVE-198-1 搜索框在标题栏里，且排在左侧栏**之前**", () => {
-    const headerAt = PANEL.indexOf('className="settings-header"');
+  it("SEARCHMOVE-198-1 全屏页搜索在左侧栏，弹窗模式才用标题栏", () => {
     const sidebarAt = PANEL.indexOf('className="settings-sidebar"');
-    const searchAt = PANEL.indexOf('settings-search-box--in-header');
-    expect(headerAt, "找不到 .settings-header").toBeGreaterThan(-1);
+    const contentAt = PANEL.indexOf('className="settings-content"', sidebarAt);
     expect(sidebarAt, "找不到 .settings-sidebar").toBeGreaterThan(-1);
-    expect(searchAt, "找不到搬过去之后的搜索框（--in-header）").toBeGreaterThan(-1);
-    /* 在标题栏区间内 */
-    const headerEnd = PANEL.indexOf("settings-body", headerAt);
-    expect(searchAt, "搜索框不在标题栏区间里").toBeGreaterThan(headerAt);
-    expect(searchAt, "搜索框不在标题栏区间里").toBeLessThan(headerEnd);
-    /* 且在左侧栏之前（左侧栏属于 body） */
-    expect(searchAt, "搜索框应当出现在左侧栏之前").toBeLessThan(sidebarAt);
+    expect(contentAt, "找不到 settings-content").toBeGreaterThan(sidebarAt);
+    const sidebarBlock = PANEL.slice(sidebarAt, contentAt);
+    expect(sidebarBlock, "全屏页缺少左侧搜索框").toContain("settings-side-search");
+    expect(sidebarBlock, "全屏页缺少搜索占位符").toContain("搜索设置...");
+    /* 非全屏弹窗仍保留标题栏搜索（旧路径不能丢） */
+    expect(PANEL, "弹窗模式缺少标题栏搜索").toContain("settings-search-box--in-header");
   });
 
-  it("SEARCHMOVE-198-2 ★左侧栏里不再有搜索框（防止搬不干净或被放回去）", () => {
+  it("SEARCHMOVE-198-2 ★全屏页左侧栏必须有搜索框（用户 2026-10-26 新要求）", () => {
     const sidebarAt = PANEL.indexOf('className="settings-sidebar"');
     const contentAt = PANEL.indexOf('className="settings-content"', sidebarAt);
     expect(contentAt, "找不到 settings-content 作为侧栏结束锚点").toBeGreaterThan(sidebarAt);
     const sidebarBlock = PANEL.slice(sidebarAt, contentAt);
-    expect(sidebarBlock, "左侧栏里仍然有搜索框").not.toContain("settings-search-box");
-    expect(sidebarBlock, "左侧栏里仍然有搜索输入框").not.toContain("sp-search-input");
-    expect(sidebarBlock, "左侧栏里仍然有搜索占位符").not.toContain("搜索设置...");
+    expect(sidebarBlock, "左侧栏缺少搜索框").toContain("settings-side-search");
+    expect(sidebarBlock, "左侧栏缺少搜索输入框").toContain("sp-search-input");
+    expect(sidebarBlock, "左侧栏缺少搜索占位符").toContain("搜索设置...");
   });
 
   it("SEARCHMOVE-198-3 搜索的**功能**没被搬丢（输入、清空、匹配提示都还在）", () => {

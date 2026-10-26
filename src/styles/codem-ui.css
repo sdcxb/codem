@@ -2574,6 +2574,7 @@ body.resizing-columns * {
    教训：选择器列表里混入无关的类是**合法 CSS**，构建、单测、审计都看不见它 —— 见 §7 新增的布局契约。 */
 .settings-sidebar {
   width: 220px;
+  scrollbar-width: none;
   flex-shrink: 0;
   padding: var(--space-6) var(--space-4);
   border-right: 1px solid var(--glass-border) !important;
@@ -2584,6 +2585,9 @@ body.resizing-columns * {
   background: var(--glass-bg-subtle);
   backdrop-filter: blur(var(--glass-blur-subtle));
   -webkit-backdrop-filter: blur(var(--glass-blur-subtle));
+}
+.settings-sidebar::-webkit-scrollbar {
+  display: none;
 }
 .settings-nav-group-label {
   padding: var(--space-3) var(--space-3) var(--space-1);
@@ -2678,6 +2682,74 @@ body.resizing-columns * {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
+}
+.settings-back--with-label {
+  width: auto;
+  height: 28px;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+  font-size: var(--fs-2xs);
+}
+.settings-side-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 0 var(--space-4);
+}
+.settings-side-head .settings-back--with-label {
+  margin-left: var(--space-2);
+}
+.settings-side-head h2 {
+  padding: 0 var(--space-2);
+}
+.settings-side-head h2 {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.settings-side-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+}
+.settings-side-search .sp-search-icon {
+  flex: none;
+}
+.settings-side-search .sp-search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.settings-side-search button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.settings-side-search button svg {
+  width: 12px;
+  height: 12px;
 }
 .settings-back:is(:hover, :focus-visible) {
   background: var(--bg-hover);

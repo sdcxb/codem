@@ -546,7 +546,7 @@
        取值是活体 A/B 量出来的（`.preview-shot/_ab-chrome.mjs`）：
        #fafaf9→0.0199 / #f8f8f6→0.028 / **#f7f7f5→0.0317** / #f6f6f4→0.0356 / #f4f4f2→0.0434
        —— 取 0.0317 是为了「达标且留余量、又不偏灰」。 */
-  --sidebar-bg: #fbfbfa;
+  --sidebar-bg: #f4f4f6;
   --input-bg: #ffffff;
   --scrollbar-track: rgb(242 242 240 / 80%);
   --scrollbar-thumb: rgb(31 31 30 / 16%);
@@ -767,7 +767,7 @@
   --message-bubble-user-border: rgba(124, 108, 240, 0.25);
   --code-bg: rgba(22, 27, 34, 1);
   --system-bg: #212424;
-  --sidebar-bg: rgba(26, 28, 28, 1);
+  --sidebar-bg: #0d0f12;
   --input-bg: rgba(22, 27, 34, 1);
   --scrollbar-track: rgba(26, 28, 28, 0.80);
   --scrollbar-thumb: rgba(255, 255, 255, 0.12);
@@ -1561,6 +1561,7 @@ overflow: hidden;
 .sidebar {
 position: relative;
 width: 240px;
+min-width: 240px;
 background: var(--sidebar-bg);
 /* 第 166 轮 P0-0：右边界从 5% 的 `--border-separator` 改成**墨色 8% hairline** ——
    实测 5% 黑在近白面上约等于不存在（侧栏与内容之间"没有分界"，是"看着廉价"的一条）。
@@ -1596,7 +1597,7 @@ flex-shrink: 0;
    列表 `padding: 2px 6px`）；行间 gap 统一 2px（对方 `calc(space-1/2)`）。
    此前是 4/12 + 12/16 + 8/12 三套，左边缘上三排文字起点各不相同。 */
 .sidebar-nav {
-  padding: var(--space-2) var(--space-6);
+  padding: var(--space-2) var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -1618,7 +1619,7 @@ flex-shrink: 0;
   background: none;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--text-primary);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: var(--fs-sm);
   text-align: left;
@@ -1645,9 +1646,10 @@ flex-shrink: 0;
 .sidebar-tool-row {
   display: flex;
   gap: var(--space-1);
-  margin: var(--space-2) 0;
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
+  margin: var(--space-3) 0 var(--space-4);
+  padding: 0;
+  border-top: 1px solid var(--border-secondary);
+  border-bottom: 1px solid var(--border-secondary);
   /*
    * ★ 第 185 波（用户报「亮色下有种廉价感」）：**默认底从品牌浅紫改成中性灰**，
    * 把那份紫**挪到悬停**（见下面 `:hover/:focus-within`）。
@@ -1660,8 +1662,8 @@ flex-shrink: 0;
    * 为什么用 `--row-hover`：它是仓库**既有的中性底**（`--text-base` 6% 混合，随主题自动换墨/白），
    * 与"悬停"同一族视觉重量 ⇒ 默认灰、悬停紫，两者对比清楚且不新增写死值。
    */
-  background: var(--row-hover);
-  box-shadow: inset 0 1px 3px var(--shadow-color-soft);
+  background: transparent;
+  box-shadow: none;
 }
 
 /*
@@ -1687,7 +1689,6 @@ flex-shrink: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   border: none;
-  border-radius: var(--radius);
   cursor: pointer;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
@@ -1722,7 +1723,7 @@ flex-shrink: 0;
 }
 
 /* ========== Independent Scroll Sections ========== */
-.sidebar-global-section {
+.sidebar-section.sidebar-global-section {
   flex-shrink: 0;
   padding: var(--space-2) var(--space-4) var(--space-2);
 }
@@ -1732,7 +1733,7 @@ flex-shrink: 0;
   overflow-y: auto;
 }
 
-.sidebar-projects-section {
+.sidebar-section.sidebar-projects-section {
   flex: 1 1 0;
   min-height: 0;
   display: flex;
@@ -1762,7 +1763,16 @@ flex-shrink: 0;
 
 /* ========== Sidebar Projects ========== */
 .sidebar-projects {
-  padding: 0 var(--space-6);
+  padding: 0 0;
+}
+
+.sidebar-sessions,
+.sidebar-projects {
+  scrollbar-width: none;
+}
+.sidebar-sessions::-webkit-scrollbar,
+.sidebar-projects::-webkit-scrollbar {
+  display: none;
 }
 
 

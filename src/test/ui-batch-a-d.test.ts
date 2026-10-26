@@ -423,7 +423,7 @@ describe("批次 C: 侧栏宽度持久化", () => {
 
   // 模拟 resize 时的边界限制
   function clampWidth(width: number): number {
-    return Math.max(200, Math.min(500, width));
+    return Math.max(240, Math.min(500, width));
   }
 
   it("未存储时返回默认值 240", () => {
@@ -453,13 +453,13 @@ describe("批次 C: 侧栏宽度持久化", () => {
     expect(parseSidebarWidth(-100)).toBe(240);
   });
 
-  it("resize 时宽度限制在 200-500 之间", () => {
-    expect(clampWidth(100)).toBe(200);  // 最小值
-    expect(clampWidth(200)).toBe(200);  // 边界
+  it("resize 时宽度限制在 240-500 之间（HTML 基线 240）", () => {
+    expect(clampWidth(100)).toBe(240);  // 最小值
+    expect(clampWidth(240)).toBe(240);  // 边界
     expect(clampWidth(300)).toBe(300);  // 正常
     expect(clampWidth(500)).toBe(500);  // 边界
     expect(clampWidth(600)).toBe(500);  // 最大值
-    expect(clampWidth(0)).toBe(200);    // 极小值
+    expect(clampWidth(0)).toBe(240);    // 极小值
   });
 
   it("宽度持久化为字符串类型（setSetting 接受 string）", () => {

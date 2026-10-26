@@ -15366,6 +15366,14 @@
     "justify-content": "center",
     "width": "30px"
   },
+  "settings-back--with-label": {
+    "font-size": "var(--fs-2xs)",
+    "gap": "var(--space-2)",
+    "height": "28px",
+    "margin-left": "calc(-1 * var(--space-2))",
+    "padding": "0 var(--space-2)",
+    "width": "auto"
+  },
   "settings-body": {
     "display": "flex",
     "flex": "1 1 auto",
@@ -15542,6 +15550,24 @@
     "font-weight": "var(--weight-bold)",
     "margin-bottom": "var(--space-4)"
   },
+  "settings-side-head": {
+    "display": "flex",
+    "flex-direction": "column",
+    "gap": "var(--space-3)",
+    "padding": "0 0 var(--space-4)"
+  },
+  "settings-side-search": {
+    "align-items": "center",
+    "background": "var(--bg-secondary)",
+    "border": "1px solid var(--border-primary)",
+    "border-radius": "var(--radius-sm)",
+    "color": "var(--text-muted)",
+    "display": "flex",
+    "gap": "var(--space-2)",
+    "height": "30px",
+    "margin": "0",
+    "padding": "0 var(--space-3)"
+  },
   "settings-sidebar": {
     "-webkit-backdrop-filter": "blur(var(--glass-blur-subtle))",
     "backdrop-filter": "blur(var(--glass-blur-subtle))",
@@ -15554,6 +15580,7 @@
     "overflow-y": "auto",
     "overscroll-behavior": "contain",
     "padding": "var(--space-6) var(--space-4)",
+    "scrollbar-width": "none",
     "width": "220px"
   },
   "settings-sidebar-item": {
@@ -15639,6 +15666,7 @@
     "display": "flex",
     "flex-direction": "column",
     "flex-shrink": "0",
+    "min-width": "240px",
     "overflow": "hidden",
     "position": "relative",
     "width": "240px"
@@ -15651,10 +15679,6 @@
     "background": "var(--border-primary)",
     "height": "1px",
     "margin": "var(--space-2) 0"
-  },
-  "sidebar-global-section": {
-    "flex-shrink": "0",
-    "padding": "var(--space-2) var(--space-4) var(--space-2)"
   },
   "sidebar-header": {
     "align-items": "center",
@@ -15669,7 +15693,7 @@
     "flex-direction": "column",
     "flex-shrink": "0",
     "gap": "var(--space-1)",
-    "padding": "var(--space-2) var(--space-6)"
+    "padding": "var(--space-2) var(--space-4)"
   },
   "sidebar-nav-icon": {
     "font-size": "var(--fs-lg)",
@@ -15681,7 +15705,7 @@
     "background": "none",
     "border": "none",
     "border-radius": "var(--radius-sm)",
-    "color": "var(--text-primary)",
+    "color": "var(--text-secondary)",
     "cursor": "pointer",
     "display": "flex",
     "flex-shrink": "0",
@@ -15769,15 +15793,8 @@
     "white-space": "nowrap"
   },
   "sidebar-projects": {
-    "padding": "0 var(--space-6)"
-  },
-  "sidebar-projects-section": {
-    "display": "flex",
-    "flex": "1 1 0",
-    "flex-direction": "column",
-    "min-height": "0",
-    "overflow": "hidden",
-    "padding": "var(--space-2) var(--space-4) var(--space-4)"
+    "padding": "0 0",
+    "scrollbar-width": "none"
   },
   "sidebar-rail": {
     "-webkit-backdrop-filter": "blur(var(--glass-blur-subtle))",
@@ -15964,7 +15981,8 @@
     "display": "flex",
     "flex-direction": "column",
     "gap": "var(--space-1)",
-    "padding-left": "0"
+    "padding-left": "0",
+    "scrollbar-width": "none"
   },
   "sidebar-sort-check": {
     "align-items": "center",
@@ -16017,7 +16035,7 @@
     "align-items": "center",
     "background": "transparent",
     "border": "none",
-    "border-radius": "var(--radius)",
+    "border-radius": "var(--radius-sm)",
     "color": "var(--text-secondary)",
     "cursor": "pointer",
     "display": "flex",
@@ -16045,13 +16063,14 @@
     "white-space": "nowrap"
   },
   "sidebar-tool-row": {
-    "background": "var(--row-hover)",
-    "border-radius": "var(--radius-md)",
-    "box-shadow": "inset 0 1px 3px var(--shadow-color-soft)",
+    "background": "transparent",
+    "border-bottom": "1px solid var(--border-secondary)",
+    "border-top": "1px solid var(--border-secondary)",
+    "box-shadow": "none",
     "display": "flex",
     "gap": "var(--space-1)",
-    "margin": "var(--space-2) 0",
-    "padding": "var(--space-2)"
+    "margin": "var(--space-3) 0 var(--space-4)",
+    "padding": "0"
   },
   "sidebar-user-area": {
     "align-items": "center",

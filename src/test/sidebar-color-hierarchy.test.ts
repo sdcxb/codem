@@ -50,10 +50,10 @@ function decl(body: string, prop: string): string {
 }
 
 describe("第 185 波 · 侧栏颜色语义（默认灰 / 悬停紫 / 选中紫）", () => {
-  it("SC-1:【MCP/技能/记忆/智能体】那一栏的**默认底**必须是中性色（不许是品牌紫）", () => {
+  it("SC-1:【MCP/技能/记忆/智能体】那一栏的**默认底**必须是中性/透明（不许是品牌紫）", () => {
     const bg = decl(ruleBody(".sidebar-tool-row"), "background");
     expect(bg, `默认底不许动用品牌色（那是"你正在这里"的语义）：${bg}`).not.toMatch(/--accent/);
-    expect(bg, `默认底要是中性令牌：${bg}`).toMatch(/--row-hover|--bg-tertiary|--text-base/);
+    expect(bg, `默认底要是中性/透明：${bg}`).toMatch(/--row-hover|--bg-tertiary|--text-base|transparent/);
   });
 
   it("SC-2: 同一栏**悬停/键盘焦点进入**时变品牌紫（就是原来那份浅紫）", () => {

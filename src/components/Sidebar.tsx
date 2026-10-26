@@ -349,7 +349,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
     if (!isResizing) return;
     const handleMouseMove = (e: MouseEvent) => {
       const delta = e.clientX - resizeStartX.current;
-      const newWidth = Math.max(200, Math.min(500, resizeStartWidth.current + delta));
+      const newWidth = Math.max(240, Math.min(500, resizeStartWidth.current + delta));
       setSidebarWidth(newWidth);
     };
     const handleMouseUp = () => {

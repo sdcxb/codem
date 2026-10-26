@@ -1183,16 +1183,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         aria-label="设置"
         onClick={(e) => e.stopPropagation()}
       >
+        {!fullPage && (
         <div className="settings-header">
-          {fullPage && (
-            <button
-              className="settings-back"
-              aria-label={lang === "zh" ? "返回" : "Back"}
-              onClick={onClose}
-            >
-              <ArrowLeft />
-            </button>
-          )}
           <h3>{S.settings.title[lang]}</h3>
           {/**
            * 第 198 轮：**搜索框从左侧栏搬进标题栏中间**（用户要求）。
@@ -1239,9 +1231,34 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               （读屏只念"按钮"；第 63 轮走查脚本也因此按名字找不到它、只能按位置兜底）。 */}
           <button className="settings-close" aria-label={lang === "zh" ? "关闭设置" : "Close settings"} onClick={onClose}><X size={16} /></button>
         </div>
+        )}
 
         <div className="settings-body">
           <div className="settings-sidebar" ref={sidebarRoving.containerRef} onKeyDown={sidebarRoving.onKeyDown}>
+            {fullPage && (
+              <div className="settings-side-head">
+                <button className="settings-back settings-back--with-label" onClick={onClose}>
+                  <ArrowLeft />
+                  <span>{lang === "zh" ? "返回工作台" : "Back to workspace"}</span>
+                </button>
+                <h2>{S.settings.title[lang]}</h2>
+                <div className="settings-side-search">
+                  <SearchIcon className="sp-search-icon" />
+                  <input
+                    type="text"
+                    placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
+                    value={settingsSearch}
+                    onChange={(e) => setSettingsSearch(e.target.value)}
+                    className="sp-search-input"
+                  />
+                  {settingsSearch && (
+                    <button aria-label={lang === "zh" ? "清空搜索" : "Clear search"} onClick={() => setSettingsSearch("")}>
+                      <X />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="settings-nav-group-label">{lang === "zh" ? "日常" : "Essentials"}</div>
             <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`}
               aria-current={activeTab === "general" ? "page" : undefined} onClick={() => setActiveTab("general")}>

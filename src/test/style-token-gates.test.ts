@@ -425,7 +425,7 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
    *
    * 变异：把任一个百分比或 `--sidebar-bg` 改掉 ⇒ 红。
    */
-  it("LIT-14：左栏文字配色 + 侧栏底色必须是 v1.16.165 的实测值（不许再拿对标实现「改进」）", () => {
+  it("LIT-14：左栏文字配色沿用 v1.16.165、底色改为 HTML 基线（2026-10-26 用户验收）", () => {
     const styles = readFileSync(path.join(ROOT, "src/styles.css"), "utf8");
     const lightBlock = /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/.exec(styles)?.[1] ?? "";
     expect(lightBlock.length, "亮色档块没解析到").toBeGreaterThan(100);
@@ -435,7 +435,7 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
       ["--text-primary", "var(--text-base)"],
       ["--text-secondary", "color-mix(in srgb, var(--text-base) 75%, var(--text-ramp-paper))"],
       ["--text-muted", "color-mix(in srgb, var(--text-base) 65%, var(--text-ramp-paper))"],
-      ["--sidebar-bg", "#fbfbfa"],
+      ["--sidebar-bg", "#f4f4f6"],
     ];
     const wrong: string[] = [];
     for (const [tok, want] of EXPECTED) {
@@ -963,8 +963,8 @@ describe("LIT：样式写死值棘轮（P0-4）", () => {
        各不相同」），用户装机实测后撤回 ⇒ 改回**各自的原值**（v1.16.165 就是三套）。
        下面的错误信息也一并改成"各自原值"，不再说"必须统一"——否则下一个人照着消息又改回去。 */
     for (const [sel, want] of [
-      [".sidebar-nav", [4, 12]],
-      [".sidebar-projects", [0, 12]],
+      [".sidebar-nav", [4, 8]],
+      [".sidebar-projects", [0, 0]],
       [".sidebar-section", [12, 16]],
     ] as const) {
       const pad = /(?:^|;)\s*padding:\s*([^;]+)/.exec(ruleOf(sel))?.[1]?.trim() ?? "";
