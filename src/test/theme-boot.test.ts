@@ -197,9 +197,11 @@ describe.skipIf(!BROWSER)("首屏底色真实渲染契约（第 60 波，需要�
   it("THEME-BOOT-7: 镜像为暗色时，首帧就是暗色（画布与启动页都不白）", () => {
     expect(dark!.dataTheme, "内联脚本应按镜像设好 data-theme").toBe("dark");
     expect(dark!.colorScheme).toBe("dark");
-    expect(dark!.htmlBackground, "画布必须是暗底（而不是浏览器默认白）").toBe("rgb(14, 15, 15)");
+    /* 第 205 轮：暗色画布从 #0e0f0f 提到 #0f1217（对标 OMP 的冷黑；
+       仍是暗底，启动页必须与画布同色，不能闪白）。 */
+    expect(dark!.htmlBackground, "画布必须是暗底（而不是浏览器默认白）").toBe("rgb(15, 18, 23)");
     expect(dark!.htmlBackground).not.toMatch(/rgba?\(0,\s*0,\s*0,\s*0\)/);
-    expect(dark!.splashBackground, "启动页底色必须与画布一致（加载期间不闪相反色）").toBe("rgb(14, 15, 15)");
+    expect(dark!.splashBackground, "启动页底色必须与画布一致（加载期间不闪相反色）").toBe("rgb(15, 18, 23)");
   }, 30_000);
 
   it("THEME-BOOT-8: 镜像为浅色 / 缺失时，首帧是浅色（默认档）", () => {

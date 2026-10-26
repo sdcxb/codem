@@ -530,8 +530,9 @@
   --user-bg: #6b5ce7;
   --message-bubble-user: rgba(107, 92, 231, 0.08);
   --message-bubble-user-border: rgba(107, 92, 231, 0.16);
-  --system-bg: #f2f2f0;
   --code-bg: #f6f6f4;
+  /* 系统消息的轻量底/轨色；第 205 轮系统消息改成左轨行，仍保留该令牌供皮肤契约使用。 */
+  --system-bg: #f2f2f0;
   /* 外壳色（chrome）**三改其手**，每次都留下「为什么」：
      · 第 156 轮：从 `#f8f8f7` 提到 `#fbfbfa` —— 用户当时反馈「侧栏还是比较深的灰色」，
        而那时内容面是纯白、侧栏是屏幕上唯一偏灰的一块 ⇒ 读起来像「灰板」。
@@ -700,33 +701,29 @@
  */
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg-primary: rgba(14, 15, 15, 1);
-  --bg-secondary: rgba(26, 28, 28, 1);
-  --bg-tertiary: rgba(33, 36, 36, 1);
-  --bg-hover: rgba(42, 45, 45, 1);
-  /* 暗色档同一条口径（见亮色档注释）：墨色 `#d4d4d4` 是唯一真相源，三档由它派生。
-     暗色下"纸"就是画布 `#0e0f0f`（往它混 = 压暗）；比例取 82% / 67% 时
-     派生结果与原手工值 `#b0b0b0` / `#939393` **逐通道差 ≤1/255**。 */
-  --text-base: #d4d4d4;
-  --text-ramp-paper: #0e0f0f;
+  --bg-primary: #0f1217;
+  --bg-secondary: #1a1d23;
+  --bg-tertiary: #23272e;
+  --bg-hover: #2b3038;
+  /* 暗色档同一条口径（见亮色档注释）：墨色 `#e6e7ea` 是唯一真相源，三档由它派生。
+     暗色下"纸"就是画布 `#0f1217`（往它混 = 压暗）；82% / 67% 两档在四个面上
+     仍分别 ≥6:1 / ≥4.5:1（DARK-UI-2/3 守）。 */
+  --text-base: #e6e7ea;
+  --text-ramp-paper: #0f1217;
   --text-primary: var(--text-base);
   --text-secondary: color-mix(in srgb, var(--text-base) 82%, var(--text-ramp-paper));
-  /* 第 155 轮（暗色对标 OpenBitFun）：`--text-muted` 从 `#888888` 提到 **`#939393`**。
-     原因是实测出来的**可访问性缺口**：`#888888` 在 `--bg-hover`（`#2a2d2d`，悬停行）上只有
-     **3.92:1**，低于 4.5 —— 而"悬停时读的元信息"（时间戳/计数/路径）正好大量落在这一档。
-     `#939393` 反解：bg-hover 上 **4.52**、bg-tertiary 5.09、bg-secondary 5.57、bg-primary 6.25。
-     （对照：对方 dark `content.muted = #858585`，在它的 panel `#1c1c1f` 上是 4.61 —— 它没有我们这么亮的悬停面。）
-     门禁 DARK-UI-1 会守住"四个面上都 ≥ 4.5"。 */
+  /* 第 205 轮：`--text-muted` 仍按 `--text-base` 67% 派生，但 base/画布都换了档；
+     现行值在 bg-hover / bg-tertiary / bg-secondary / bg-primary 四个面上都 ≥4.5，
+     由 DARK-UI-2 守。不要再手写 `#939393`：它只属于旧画布 `#0e0f0f`。 */
   --text-muted: color-mix(in srgb, var(--text-base) 67%, var(--text-ramp-paper));
-  --border-primary: rgba(255, 255, 255, 0.14);
-  --border-secondary: rgba(255, 255, 255, 0.08);
-  /* 与亮色档同名同源：结构分隔线一档（亮 5% ↔ 暗 8% 白） */
-  --border-separator: rgba(255, 255, 255, 0.08);
-  /* 边框阶梯补全 + 暗色强度上调（第 155 轮 P0-2 与暗色对标）：
-     实测（对标脚本 `_contrast-pairs-dark.mjs`）我们暗色的控件边界在 `--bg-secondary` 上只有 **1.35**，
-     而对方 dark 的 `border.default`（白 18%）是 **1.78** —— 暗底上低 alpha 的白线本来就更容易"糊掉"。
-     现在 10%→**14%**（1.35→**1.54**）、6%→**8%**（1.19→1.25），往参考实现靠一档但不到它的 18%。
-     `--border-strong` 34% 已经比对方的 30% 强（3.11 vs 2.71），不动。 */
+  --border-primary: rgba(255, 255, 255, 0.12);
+  --border-secondary: rgba(255, 255, 255, 0.07);
+  /* 与亮色档同名同源：结构分隔线一档（亮 5% ↔ 暗 7% 白） */
+  --border-separator: rgba(255, 255, 255, 0.07);
+  /* 第 205 轮（2026-10-26 对标 OMP）：暗色边框从 14% 收到 **12%**。
+     OMP 的 7% 在它更亮的面板上成立；Codem 的面更深，7–9% 会让线条低于 1.4:1，
+     现有 DARK-UI-4 会判红。12% 是"能看见 + 不再满屏线框"的交点；
+     secondary/separator 同步降到 7%。`--border-strong` 34% 保持不动。 */
   --border-strong: rgba(255, 255, 255, 0.34);
   --field-border-hover: rgba(255, 255, 255, 0.22);
   --field-border-focus: var(--border-strong);
@@ -764,8 +761,8 @@
   --user-bg: rgba(124, 108, 240, 1);
   --message-bubble-user: rgba(124, 108, 240, 0.15);
   --message-bubble-user-border: rgba(124, 108, 240, 0.25);
-  --system-bg: rgba(33, 36, 36, 1);
   --code-bg: rgba(22, 27, 34, 1);
+  --system-bg: #212424;
   --sidebar-bg: rgba(26, 28, 28, 1);
   --input-bg: rgba(22, 27, 34, 1);
   --scrollbar-track: rgba(26, 28, 28, 0.80);
@@ -2507,15 +2504,20 @@ font-size: var(--fs-base);
 
 
 /* ========== Messages ========== */
+:root {
+  --reading-column: 820px;
+  --reading-gutter: 48px;
+}
+
 .messages-container {
 flex: 1;
-padding: var(--space-9) clamp(24px, 4vw, 48px);
+padding: var(--space-9) var(--reading-gutter);
 display: flex;
 flex-direction: column;
 gap: var(--space-5);
 background: var(--bg-primary);
-/* 自适应窗口宽度：小屏占满，大屏限制最大宽度避免阅读过宽，但上限更大 */
-max-width: clamp(100%, 90vw, 1400px);
+/* 第 205 轮：正文列固定 820（含 48px 左右 gutter），与 Composer 对齐；不再随 90vw 放大 */
+max-width: calc(var(--reading-column) + var(--reading-gutter) * 2);
 margin: 0 auto;
 width: 100%;
 }
@@ -2949,11 +2951,13 @@ margin-top: var(--space-1);
 }
 
 .system .message-content {
-  padding: var(--space-4) var(--space-7);
-  background: var(--system-bg);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  font-size: var(--fs-base);
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  background: transparent;
+  border: none;
+  border-left: 2px solid color-mix(in srgb, var(--system-bg) 55%, var(--border-primary));
+  border-radius: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
 }
 
 .message-content pre {
@@ -3283,6 +3287,21 @@ z-index: 50;
   overflow: hidden;
 }
 
+/* 第 205 轮 P0-1：输入区是一张 820px 的 surface 卡片，不是一个 1013px 的透明框。
+   选择器带两层类，压过上面 `.input-card-container` 的透明底/零圆角/重阴影；
+   不改 `.input-textarea-row:has(...)` 的焦点环位置（那是 188/189 轮用户验收过的）。 */
+.input-area.input-card-container {
+  width: min(100%, var(--reading-column));
+  max-width: var(--reading-column);
+  margin: 0 auto var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  transition: border-color var(--transition-color), box-shadow var(--transition-color);
+}
+
 /* 第 185/186/187 轮：输入区的焦点环 —— 位置、宽度、**触发条件**都改过，三次各有实测依据。
  *
  * ## ① 宽度（185 轮）：2px，不是 1.5px —— 有物理像素读数
@@ -3403,9 +3422,9 @@ z-index: 50;
   display: flex;
   align-items: flex-end;
   gap: var(--space-3);
-  padding: var(--space-5) var(--space-7) var(--space-1);
+  padding: var(--space-3) var(--space-3) 0;
   position: relative;
-  border-top: 1px solid var(--border-primary);
+  border-top: none;
 }
 
 /* P-UI: action 行 — 左侧工具 + 右侧发送 */
@@ -3414,7 +3433,7 @@ z-index: 50;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-7) var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-1);
   min-width: 0;
 }
 
@@ -17650,19 +17669,83 @@ color: var(--accent, #7c6cf0);
   text-align: center;
 }
 
-/* 推理折叠行：子元素样式在 tsx 内联里，这里只补容器与交互态 */
+/* 推理折叠行（第 205 轮，DSH 单行）：折叠固定 24px，body 不挂载；展开才挂分块正文。 */
 .reasoning-row {
   display: flex;
   flex-direction: column;
-  margin: var(--space-2) 0;
+  margin: 0 0 var(--space-2);
+}
+.reasoning-row:not([data-expanded]) {
+  height: 24px;
+  contain: size layout;
+  overflow: hidden;
+}
+.reasoning-row[data-expanded] {
+  margin-bottom: var(--space-3);
 }
 .reasoning-row .reasoning-toggle {
-  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-base);
+  text-align: left;
+  cursor: pointer;
   transition: var(--transition-color);
+}
+.reasoning-chev {
+  flex: none;
+  color: var(--text-muted);
+}
+.reasoning-icon {
+  flex: none;
+}
+.reasoning-icon-streaming {
+  animation: reasoning-pulse 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-icon-streaming {
+    animation: none;
+  }
+}
+.reasoning-title {
+  flex: none;
+  font-weight: 600;
+}
+.reasoning-meta {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.reasoning-separator {
+  flex: none;
+  color: var(--text-muted);
+  opacity: .5;
 }
 .reasoning-row[data-state="running"] .reasoning-toggle,
 .reasoning-row .reasoning-toggle:is(:hover, :focus-visible) {
   color: var(--accent-hover);
+}
+.reasoning-jump {
+  align-self: flex-start;
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--accent-strong);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+  cursor: pointer;
 }
 
 /* 文件树子层（此前没有定义，层级完全靠 .file-entry 自身内边距） */
@@ -18858,22 +18941,30 @@ input[type="range"].sp-flex-fill {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
   color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.8;
 }
 .reasoning-body {
-  margin-left: var(--space-9);
-  padding: var(--space-4) var(--space-6);
-  max-height: 400px;
+  margin: 0 0 var(--space-2) var(--space-9);
+  padding: var(--space-2) var(--space-3);
+  max-height: 360px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-left: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  line-height: var(--lh-reading);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.reasoning-chunk {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
   white-space: pre-wrap;
   word-break: break-word;
 }

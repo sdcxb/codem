@@ -32,9 +32,9 @@ Codem 的功能比 OMP 多得多（23 个设置分区、任务中心、知识笔
 | # | 改动 | 为什么 | 验收 |
 |---|---|---|---|
 | 1 | Composer 变成 820 宽、14px 圆角、surface 底、无阴影、无内线 | 当前最像“工具条”，不是“输入卡” | 空/运行/焦点三态截图；computed 断言 |
-| 2 | 正文列 820，Markdown 标题 16/15/14 | 907px + 20px h1 让聊天像网页 | 长消息截图；行宽/标题对照 |
-| 3 | 暗色边框 .14→.09，文字 #d4d4d4→#e6e7ea | 去“黑框套黑框”，提阅读对比 | 对比度脚本 + 主界面截图 |
-| 4 | 焦点单环：输入 3px 柔光，其余 2px outline | 现有双环/常亮历史 | Tab 20 控件无“双环” |
+| 2 | 正文列 820；系统消息改左轨行（标题 16/15/14 留给 P0-6） | 907px + 20px h1 让聊天像网页 | 长消息截图；行宽/标题对照 |
+| 3 | 暗色边框 .14→**.12**，文字 #d4d4d4→#e6e7ea | 去“黑框套黑框”，提阅读对比；9% 会低于 DARK-UI-4 的 1.4:1 下限 | 对比度脚本 + 主界面截图 |
+| 4 | 焦点单环：保留 188/189 轮验收过的 `.input-textarea-row` 2px 环（不移到卡上）；其余 2px outline | 现有双环/常亮历史 | Tab 20 控件无“双环” |
 | 5 | 设置 active 20%→14%，行组卡片化 | 选中态厚重、内容散 | 设置页截图；行组圆角 |
 | 6 | 命令面板改命令中心（分组/导航/快捷键） | 现在只是“项目搜索” | 四组命令截图；键盘可达 |
 | 7 | 模型菜单按角色分组 + 选中 check + 隐藏未知 | 现在是 10 行模型名 + `【未知】` | 首屏 ≤7 行；每行三要素 |
@@ -308,6 +308,25 @@ P3       Hub/Dream 形状与背景气质
 
 **一句话**：能开工，但先做 Phase 0、先锁 6 个默认值；不要拿着“总纲”直接让执行者猜组件 API。
 
+#### 0.6 第 205 轮已施工（2026-10-26）
+
+已落：
+
+- **P0-1** Composer 820×116、14px 圆角、`--bg-secondary` 底、无阴影、去顶线；实拍 CDP：`820×116 / radius 14 / shadow none`。
+- **P0-2** 正文内容 820（容器 916 = 820 + 2×48），与 Composer 同宽；系统消息改左轨行。
+- **P0-3** 暗色 `#0f1217 / #1a1d23 / #23272e / #2b3038`，`--text-base #e6e7ea`，边框 12%/7%；对比度门禁全过。
+- **P0-4** 保持既有 `.input-textarea-row` 单环（未移到卡上，避免违背 188/189 轮判据）。
+- **P0-8** 用户头像 24px；气泡仍是 `.15/.25 + 1px 3px`，未改实底。
+- **P1-6** 思考块移到正文前；默认折叠 24px；段落级摘要；展开才挂 64 行/4096 字符分块 body；`content-visibility:auto`；无 ResizeObserver。
+
+未做（不在本轮）：P0-5 设置选中态、P0-6 标题降级、P0-7 三皮肤 token、全部 P1（cmdk/模型/侧栏/工具/空态）、P2。
+
+判据：
+
+- 新增 `src/test/ui-benchmark-construction.test.ts`（4）、`src/test/reasoning-row-dsh.test.tsx`（3）；
+- 更新 `theme-boot` 暗色首帧、`color-roles` 两对真实父面数字、`css-contract` 快照；
+- `tsc` 0、`build` 0、全量 **735 文件：733 通过 / 2 既有失败**（未跟踪游戏文档 BOM、历史缺口清单横幅）、8504 用例通过；`scan-ui` 0/0、`css-integrity` 通过。
+
 ---
 
 ## 1. 证据与方法
@@ -375,7 +394,7 @@ P3       Hub/Dream 形状与背景气质
 | 主文字（暗） | `#e7e8eb` | `#d4d4d4` | `#e6e7ea` | P0 |
 | 次文字（暗） | `#a7abb4` | `82%` 混合 | `#a7abb4` | P0 |
 | 弱文字（暗） | `#8b909a` | `67%` 混合 | `#8b909a` | P0 |
-| 边框（暗） | `rgba(255,255,255,.07)` | `rgba(255,255,255,.14)` | `.09`（主）/`.05`（次） | **P0** |
+| 边框（暗） | `rgba(255,255,255,.07)` | `rgba(255,255,255,.14)` | `.12`（主）/`.07`（次） | **P0** |
 | 浮层边框 | `#46505f` | `--border-primary` | `#3a424e`，仅浮层 | P1 |
 | 强调（暗） | `#9e8cfc` | `#7c6cf0` | **P0 保持 `#7c6cf0`**；P1 再评估提亮（会牵动 `--text-on-accent`） | P1 |
 | 强调（亮） | `#6e56cf` | `#6555e0` | 保持 Codem 品牌蓝紫（不复制 OMP） | — |
@@ -383,7 +402,7 @@ P3       Hub/Dream 形状与背景气质
 | 成功/警告/错误 | `#46b983` / `#e0a23c` / `#f06568` | 现有令牌 | 降饱和 8–12%，先测对比度 | P1 |
 | 选中文本 | `rgba(158,140,252,.30)` | `accent 32%` | 保持 | — |
 
-> 暗色边框从 14% 降到 9% 是**单项收益最大**的改动：它会把“每个面板都像盒子”变成“面板靠底色分层”。先只改默认皮肤，Hub/Dream 单独验证。
+> 暗色边框从 14% 降到 **12%** 是**单项收益最大**的改动：它会把“每个面板都像盒子”变成“面板靠底色分层”。⚠️ 不是 9%：Codem 的面比 OMP 更深，9% 在 `--bg-secondary` 上只有约 1.30:1，低于现有 DARK-UI-4 的 1.4 下限；12% 约 1.43:1，既软化又看得见。先只改默认皮肤，Hub/Dream 单独验证。
 
 ### 3.2 字体
 
@@ -674,53 +693,53 @@ P3       Hub/Dream 形状与背景气质
 **改成**：
 
 ```css
-.input-area > .input-card-container {
-  max-width: 820px;
-}
-
-.input-card-container {
+/* 实际落地：input-area 自己就是 input-card-container，不是它的子元素 */
+.input-area.input-card-container {
+  width: min(100%, var(--reading-column));
+  max-width: var(--reading-column);
+  margin: 0 auto;
+  padding: 4px 10px 8px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: none;
   overflow: hidden;
 }
 
 .input-textarea-row {
   border-top: none;          /* 去掉那条“通栏内线” */
-  padding: 10px 16px 2px;
+  padding: 6px 6px 0;
 }
 
-.input-card-container:has(.message-input:focus-visible) {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-primary));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+.input-action-row {
+  padding: 4px 6px 2px;
 }
 ```
 
-- 运行中：`border-color: var(--info)`（或 `--accent`），不要整卡发光。
-- 发送按钮保持分裂；只把左半圆角改 8px。
+- 运行中：暂不改卡边框（本轮没有真实运行态截图，不先写死）；发送按钮保持分裂。
 - 去掉 `--shadow-raise-2`，不要用阴影表达“卡片”。
+- ⚠️ **焦点环仍留在 `.input-textarea-row:has(.message-input:focus-visible)`**：这是 188/189 轮用户验收过的位置，且 `input-ring-trigger` 判据钉死；本轮不把它移到卡上。
+- ⚠️ **不改 textarea 的 16px / min-height 56**：`architecture-changes.test.tsx` 的“输入框字号 ≥15px + min-height 56”是既有可访问性判据；Composer 高度靠 padding/行距收，不靠压字号。
 
 **验收**：
 
-- computed：`border-radius: 14px`、`background-color != transparent`、`box-shadow: none`、`max-width: 820px`、总高 **112–124**。
+- computed：`border-radius: 14px`、`background-color != transparent`、`box-shadow: none`、`width/max-width: 820px`、总高 **112–124**（实拍 116）。
 - 截图：空态 / 运行中 / 焦点三态；320/768/1024/1280 宽不溢出。
-- 键盘：Tab 进输入框只出现一圈柔光；点工具条按钮不亮整卡；queue dock 36px 另计，不挤进 Composer 内部。
+- 键盘：Tab 进输入框只有 `.input-textarea-row` 那一圈；点工具条按钮不亮整卡；queue dock 36px 另计，不挤进 Composer 内部。
 
-#### P0-2 文档列收窄 + 系统消息降级
+#### P0-2 文档列收窄 + 系统消息降级（标题降级拆到 P0-6）
 
 **文件**：`src/styles.css`（`.messages-container`、`.assistant .message-content`、`.system .message-content`、`.message-content h1/h2/h3`）。
 
-- `.messages-container { max-width: 820px; padding-inline: 24px; }`（`box-sizing: border-box`，820 是外框；正文内容约 772）
-- `.assistant .message-content { padding-bottom: 16px; }`
-- `.message.system { max-width: 100%; }`
-- `.system .message-content`：`max-width: 100%; background: transparent; border: none; border-left: 2px solid var(--border-primary); border-radius: 0; padding: 4px 0 4px 10px; font-size: 12px; color: var(--text-secondary);`
-- Markdown 标题：`h1 16 / h2 15 / h3 14`，字重 600，间距 12/6。
+- `.messages-container { max-width: calc(820px + 48px * 2); padding-inline: 48px; }`：**820 是正文内容宽**，916 是容器外框；否则会得到 772 的正文，与 Composer 对不齐。
+- `.assistant .message-content` 保持现有 padding；只由容器收窄控制行宽。
+- `.system .message-content`：`background: transparent; border: none; border-left: 2px solid var(--border-primary); border-radius: 0; padding: 4px 0 4px 10px; font-size: var(--fs-sm); color: var(--text-secondary);`。
+- Markdown 标题 16/15/14 **本轮未做**（会与既有 heading 判据/视觉一起改，留给 P0-6）。
 - 表格允许横向滚动，不强行 820。
 
 **验收**：
 
-- 1600 宽下正文列**外框** = 820 ± 2px；composer 与正文左缘对齐。
+- 1600 宽下正文内容宽 = **820px**（容器 916，padding 48），Composer 也是 820；实拍 CDP 读数 `messages 916 / input 820`。
 - 系统消息不再出现 90% 宽大色块；截图对照。
 - 20 条长消息滚动无横向溢出；表格可横滚。
 
@@ -730,15 +749,17 @@ P3       Hub/Dream 形状与背景气质
 
 只改默认皮肤，不动 Hub/Dream：
 
-- `--bg-primary: #101318`
-- `--bg-secondary: #17191d`
-- `--bg-tertiary: #1d2025`
-- `--text-primary: #e6e7ea`
-- `--text-secondary: #a7abb4`
-- `--text-muted: #8b909a`
-- `--border-primary: rgba(255,255,255,.09)`
+- `--bg-primary: #0f1217`
+- `--bg-secondary: #1a1d23`
+- `--bg-tertiary: #23272e`
+- `--bg-hover: #2b3038`
+- `--text-base: #e6e7ea`（`--text-primary` 派生；secondary/muted 仍按 82%/67% 混）
+- `--text-ramp-paper: #0f1217`
+- `--border-primary: rgba(255,255,255,.12)`（9% 会被 DARK-UI-4 判红）
+- `--border-secondary / --border-separator: rgba(255,255,255,.07)`
 - **不要在这一步改 `--accent`**：Codem 的 `--text-on-accent` 是白色，提亮 accent 会让主按钮白字掉对比度。accent 与 on-accent 必须成对改，放 P1 并做全量按钮审计。
 - **不要全局改 `--accent-muted`**：它同时用于 hover/徽章/软底；P0 只在设置选中态用 14%（见 P0-5）。
+- 为什么不是计划里的 `#101318 / #17191d / #1d2025`：三段亮度差只有 0.003–0.004，`DARK-UI-1` 要求每段 ≥0.005；现在的 `#0f1217 → #1a1d23 → #23272e → #2b3038` 实测 0.0062/0.0079/0.0091。
 
 **验收**：
 
@@ -750,10 +771,10 @@ P3       Hub/Dream 形状与背景气质
 
 **文件**：`src/styles.css` 全局 focus 段 + `.input-textarea-row` / `.message-input`。
 
-- 删除 textarea 的 `box-shadow` 环；只保留 `.input-card-container:has(...)` 的 3px 柔光。
-- 按钮/树/菜单统一 `outline: 2px solid var(--accent); outline-offset: 2px;`。
-- 树/滚动容器用 `box-shadow: inset 0 0 0 2px`，避免被裁。
-- 禁止一个控件同时出现 outline + box-shadow 两圈。
+- **本轮不改环的位置**：`textarea` 自身没有环；唯一一圈在 `.input-textarea-row:has(.message-input:focus-visible)`（188/189 轮用户验收 + `input-ring-trigger.test.tsx` 钉死）。计划里“移到卡片上”与既有判据冲突，已撤回。
+- 环仍是 `box-shadow: 0 0 0 2px var(--accent)`；没有同时出现 outline + box-shadow 两圈。
+- 按钮/树/菜单继续走各自的 `:focus-visible`；不要在卡片上加第二圈。
+- 后续若要做 3px 柔光，必须同时改 `input-ring-trigger` / `style-token-gates` 判据并重拍真机；不在本轮。
 
 **验收**：
 

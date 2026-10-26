@@ -49,7 +49,7 @@ function UserAvatar() {
   if (avatar) {
     return (
       <div className="user-msg-avatar" style={{
-        width: 32, height: 32, borderRadius: "50%", overflow: "hidden",
+        width: 24, height: 24, borderRadius: "50%", overflow: "hidden",
         flexShrink: 0, border: "1px solid var(--border-primary)",
       }}>
         <img src={avatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -58,11 +58,11 @@ function UserAvatar() {
   }
   return (
     <div className="user-msg-avatar" style={{
-      width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+      width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
       background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      <User size={16} style={{ color: "var(--text-muted)" }} />
+      <User size={14} style={{ color: "var(--text-muted)" }} />
     </div>
   );
 }
@@ -635,6 +635,11 @@ setTimeout(() => setCopied(false), 2000);
             )}
           </div>
         )}
+        {/* 思考块：DSH 单行，放在正文之前；计算顺序是“思考 → 正文 → 工具回执”。 */}
+        {!isUser && !isSystem && message.reasoning && showReasoning && (
+          <ReasoningRow text={message.reasoning} running={isStreaming} />
+        )}
+
         {/* 运行中追加的标记（区别于"回合结束后才说的话"） */}
         {midTurnGuidance && (
           <div className="midturn-guidance-header">
@@ -866,11 +871,6 @@ setTimeout(() => setCopied(false), 2000);
               </button>
             ))}
           </div>
-        )}
-
-        {/* ReasoningRow — 对标 DSH Think 折叠行：流式最新行跟踪 + 灰底缩进展开 */}
-        {message.reasoning && showReasoning && (
-          <ReasoningRow text={message.reasoning} running={isStreaming} />
         )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (() => {
