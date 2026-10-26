@@ -58,7 +58,8 @@ describe('UI 对标施工合同', () => {
     expect(item).toContain('padding: 0 var(--space-3)')
 
     const active = block(codemUi, '.settings-sidebar-item.active')
-    expect(active).toContain('color-mix(in srgb, var(--accent) 14%, transparent)')
+    expect(active).toContain('background: var(--accent-selected)')
+    expect(css).toContain('--accent-selected: color-mix(in srgb, var(--accent) 14%, transparent)')
     expect(active).toContain('color: var(--accent-strong)')
     expect(active).toContain('box-shadow: none')
     // 旧的实心规则和 aria-current inset 条都必须删掉；不能靠后加载压住
@@ -86,6 +87,13 @@ describe('UI 对标施工合同', () => {
     }
     expect(settings).toContain('["memory-checkup"')
     expect(settings).toContain('"记忆体检"')
+  })
+
+  it('P1-3（安全子集）：文件树 26px，Git 状态只留单字母不画药丸', () => {
+    expect(block(css, '.file-entry')).toContain('height: 26px')
+    expect(block(css, '.git-status-badge')).toContain('background: transparent')
+    expect(css).toContain('.file-entry .git-status-badge')
+    // 导航/会话行高与内边距继续由 RHYTHM-1/2 守，不在这一轮硬改
   })
 
   it('思考块默认 24px 折叠、正文分块、位置在正文之前', () => {

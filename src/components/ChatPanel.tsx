@@ -22,6 +22,7 @@ import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentRuntime } from "../core/subagent/index";
 import { useLang, S } from "../core/i18n/lang";
 import { MIMO_MODELS, getConfiguredApiModels } from "../core/model-config";
+import { groupModelsByFamily, isUnknownModelName, type ModelFamily } from "./model-menu-groups";
 import { ScrollbarMarkers } from "./ScrollbarMarkers";
 import { listPinnedIds, togglePin, subscribePins } from "../core/nav-pins";
 import { ScrollToBottomIndicator } from "./ScrollToBottomIndicator";
@@ -107,6 +108,17 @@ onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
 /** P3/P4: Active notebook ID for source selector in InputArea */
 notebookId?: string;
 }
+
+const MODEL_FAMILY_LABELS: Record<ModelFamily, { zh: string; en: string }> = {
+  free: { zh: "免费模型", en: "Free models" },
+  deepseek: { zh: "DeepSeek", en: "DeepSeek" },
+  anthropic: { zh: "Anthropic", en: "Anthropic" },
+  openai: { zh: "OpenAI", en: "OpenAI" },
+  gemini: { zh: "Gemini", en: "Gemini" },
+  moonshot: { zh: "Moonshot", en: "Moonshot" },
+  mimo: { zh: "MiMo", en: "MiMo" },
+  other: { zh: "其它模型", en: "Other models" },
+};
 
 export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onEditAndRewind, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
@@ -240,6 +252,12 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   }, []);
 
   const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
+  /* P1-2：只按**可证明的来源**分组。Codem 没有权威的 model role 字段，
+     按名字猜 Default/Fast/Thinking 会把 gpt-4o / o3 这类模型贴错标签。 */
+  const menuModels = models.filter((m) => m.id === model || !freeModelPlugin.models.isUnavailable(m.id));
+  const menuKnown = menuModels.filter((m) => m.id === model || !isUnknownModelName(m.name));
+  const menuUnknown = menuModels.filter((m) => m.id !== model && isUnknownModelName(m.name));
+  const menuGroups = groupModelsByFamily(menuKnown, isFreeModelId);
   // Whether the current session is actively streaming (running an agentic loop)
   const isSessionStreaming = !currentSessionId ? isStreaming : activeSessions.has(currentSessionId);
   /* 引导栏是纯内容滚动区（max-height 168px）：边缘 7 档渐隐，判据 EDGEFADE-* */
@@ -717,33 +735,63 @@ setStepTooltipLocked(false);
           {showModelPicker && (
             <div className="model-picker" onClick={(e) => e.stopPropagation()}>
               {/* 第 218 波（用户实报）：已知不可用的免费模型**不列出来**
-                  （当前选中的那个除外 —— 否则用户不知道自己在用哪个）。 */}
-              {models
-                .filter((m) => m.id === model || !freeModelPlugin.models.isUnavailable(m.id))
-                .map((m) => (
-                <div
-                  key={m.id}
-                  className={`model-option ${model === m.id ? "active" : ""}`}
-                  onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
-                >
-                  {/* 第 224 波：名字过长由 CSS 截断，这里把全称放进 title ⇒ 悬停显示完整模型名 */}
-                  <span className="model-option-name" title={m.name}>
-                    {m.name}
-                  </span>
-                  {/* 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据就如实标未知，不许用名字猜 */}
-                  {isFreeModelId(m.id) && (
-                    <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
-                  )}
-                  {/* 第 215 波（用户实报：刷出来的模型一调就报"上游不可用"）：
-                      对话里的模型选择器也要标出**已知不可用**的免费模型 ——
-                      否则用户只能靠"选一次、报一次错"来发现。结论带时间戳，过期不标。 */}
-                  {isFreeModelId(m.id) && freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en") ? (
-                    <span className="model-option-note">
-                      {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
-                    </span>
-                  ) : null}
+                  （当前选中的那个除外 —— 否则用户不知道自己在用哪个）。
+                  P1-2：按来源分组；选中项用 check，不用整行紫底。 */}
+              {menuGroups.map((group) => (
+                <div className="model-group" key={group.family}>
+                  <div className="model-group-title">
+                    {MODEL_FAMILY_LABELS[group.family][lang === "zh" ? "zh" : "en"]}
+                  </div>
+                  {group.models.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`model-option ${model === m.id ? "active" : ""}`}
+                      role="option"
+                      aria-selected={model === m.id}
+                      onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
+                    >
+                      {/* 第 224 波：名字过长由 CSS 截断，这里把全称放进 title ⇒ 悬停显示完整模型名 */}
+                      <span className="model-option-name" title={m.name}>
+                        {m.name}
+                      </span>
+                      {/* 第 222 波：模态三态标注（【多模态】/【文本】/【未知】）—— 没有依据就如实标未知，不许用名字猜 */}
+                      {isFreeModelId(m.id) && (
+                        <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
+                      )}
+                      {/* 第 215 波（用户实报：刷出来的模型一调就报"上游不可用"）：
+                          对话里的模型选择器也要标出**已知不可用**的免费模型 ——
+                          否则用户只能靠"选一次、报一次错"来发现。结论带时间戳，过期不标。 */}
+                      {isFreeModelId(m.id) && freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en") ? (
+                        <span className="model-option-note">
+                          {freeModelPlugin.models.unavailableSuffix(m.id, lang === "zh" ? "zh" : "en")}
+                        </span>
+                      ) : null}
+                      {model === m.id && <Check size={14} className="model-option-check" aria-label={lang === "zh" ? "当前模型" : "Current model"} />}
+                    </div>
+                  ))}
                 </div>
               ))}
+              {menuUnknown.length > 0 && (
+                <details className="model-unknown-group">
+                  <summary>
+                    {lang === "zh" ? `更多模型（${menuUnknown.length}）` : `More models (${menuUnknown.length})`}
+                  </summary>
+                  {menuUnknown.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`model-option ${model === m.id ? "active" : ""}`}
+                      role="option"
+                      aria-selected={model === m.id}
+                      onClick={() => { onModelChange(m.id); setShowModelPicker(false); }}
+                    >
+                      <span className="model-option-name" title={m.name}>{m.name}</span>
+                      {isFreeModelId(m.id) && (
+                        <span className="model-option-note">{freeModelPlugin.models.modalityLabel(m.id, lang === "zh" ? "zh" : "en")}</span>
+                      )}
+                    </div>
+                  ))}
+                </details>
+              )}
               {/* Reasoning effort divider + selector */}
               <div className="menu-divider" />
               <div className="chat-effort-row press-layer-host" role="button" tabIndex={0} aria-expanded={showEffortPicker} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}

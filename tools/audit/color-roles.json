@@ -6,6 +6,10 @@
   "--accent-strong|--accent-muted": {
    "registeredAt": "2026-09-26"
   },
+  "--accent-strong|--accent-selected": {
+   "_why": "第 206 轮 P1-1/P0-5：命令中心与设置 active 使用 14% 选中软底，文字用 accent-strong；与 --accent-muted 分开是为了不让全局 chip 跟着变重。",
+   "registeredAt": "2026-10-26"
+  },
   "--accent-strong|--accent-surface": {
    "registeredAt": "2026-09-26"
   },

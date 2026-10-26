@@ -330,6 +330,25 @@ P3       Hub/Dream 形状与背景气质
 - 更新 `theme-boot` 暗色首帧、`color-roles` 两对真实父面数字、`css-contract` 快照；
 - `tsc` 0、`build` 0、全量 **735 文件：733 通过 / 2 既有失败**（未跟踪游戏文档 BOM、历史缺口清单横幅）、8508 用例通过；`scan-ui` 0/0、`css-integrity` 通过。
 
+#### 0.7 第 206 轮 P1 施工记录（2026-10-26）
+
+已落：
+
+- **P1-1 命令中心**：`SearchDialog` 重排为「项目 / 对话 / 命令」分组；修掉旧实现“会话渲染在项目前、键盘索引却按项目先”的错位；`Ctrl+1…9 / Ctrl+N / Ctrl+S / Ctrl+,` 全部有处理器；输入框 `combobox` + 列表 `listbox/option` + `aria-activedescendant`；660×600，34px 行，底部快捷键提示。监听器仍只订阅一次（RL-5 不退化）。
+- **P1-2 模型菜单**：按**可证明的来源**分组（免费 / DeepSeek / Anthropic / OpenAI / Gemini / Moonshot / MiMo / 其它）；选中项用 check，不再整行紫底；`【未知】` 收进「更多模型」折叠；菜单 340–460px、max-height 460。
+  - **没有按 Default/Fast/Thinking/Vision 伪造 role**：Codem 的 `ModelOption` 只有 `id/name`，没有权威 role 字段；按名字猜会把 `gpt-4o / o3` 贴错标签。等有真实元数据再做角色分组。
+- **P1-3 侧栏/树密度：只做安全子集。** 文件树 28→26，Git 状态从带底色的药丸改成单字母（颜色仍按 M/A/D/U/R 区分）；**导航 34 / 会话 30 不做** —— `RHYTHM-1/2` 明确钉住 v1.16.165 用户验收过的侧栏行高/内边距（导航、会话、项目头都不许写死 height，padding 必须是各自原值；行必须 flex-shrink:0）。P1-3 的“34/30”与这些判据直接冲突；按“稳定优先”不硬改。侧栏默认宽度本来就是 260；持久化宽度 231 是用户设置，不覆盖。
+
+判据：
+
+- 新增 `src/test/search-command-center.test.tsx`（4）：分组顺序、Enter 执行、会话结果错位回归、Ctrl+数字；
+- 新增 `src/test/model-menu-groups.test.ts`（4）：来源识别、免费优先/保序/不丢、未知识别、ChatPanel 使用分组/check/折叠；
+- 手工变异：`Ctrl+数字` 索引改成 1 基 → 命令中心判据 1 红；`ORDER` 把 free 移到最后 → 分组判据 1 红；均已还原；
+- `color-roles` 新增 `--accent-strong|--accent-selected` 登记；`--accent-selected` 14% 在 light/dark 都定义；
+- `style-token-gates` 的 COND-1/1b 改用共享 `.empty-hint.is-compact`；新样式全部走令牌；
+- `css-contract` 快照更新（2970 类），`scan-ui` 0/0；
+- 全量 **737 文件：735 通过 / 2 既有失败**（未跟踪游戏文档 BOM、历史缺口清单横幅）、8517 用例通过；`tools/mutate` 的 `free-model-routing-206` 已按新锚点重跑并更新结果。
+
 ---
 
 ## 1. 证据与方法

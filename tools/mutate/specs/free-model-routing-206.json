@@ -262,8 +262,8 @@
       "patches": [
         {
           "file": "src/components/ChatPanel.tsx",
-          "from": "              {models\n                .filter((m) => m.id === model || !freeModelPlugin.models.isUnavailable(m.id))\n                .map((m) => (",
-          "to": "              {models\n                .map((m) => ("
+          "from": "  const menuModels = models.filter((m) => m.id === model || !freeModelPlugin.models.isUnavailable(m.id));",
+          "to": "  const menuModels = models;"
         }
       ],
       "tests": [
@@ -337,7 +337,7 @@
       "patches": [
         {
           "file": "src/styles.css",
-          "from": "  max-height: min(52vh, 420px);\n  overflow-y: auto;",
+          "from": "  max-height: min(52vh, 460px);\n  overflow-y: auto;",
           "to": "  overflow-y: visible;"
         }
       ],
@@ -352,7 +352,7 @@
       "patches": [
         {
           "file": "src/styles.css",
-          "from": "  min-width: 320px;\n  width: max-content;\n  max-width: min(560px, 92vw);",
+          "from": "  min-width: 340px;\n  width: max-content;\n  max-width: min(460px, 92vw);",
           "to": "  min-width: 160px;"
         }
       ],

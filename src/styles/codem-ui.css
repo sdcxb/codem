@@ -2607,7 +2607,7 @@ body.resizing-columns * {
   background: var(--surface-hover) !important;
 }
 .settings-sidebar-item.active {
-  background: color-mix(in srgb, var(--accent) 14%, transparent) !important;
+  background: var(--accent-selected) !important;
   color: var(--accent-strong) !important;
   font-weight: 500 !important;
   box-shadow: none;
